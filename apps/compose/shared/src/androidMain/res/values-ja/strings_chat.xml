@@ -42,6 +42,9 @@
     <string name="timeline_resend">再送信</string>
     <string name="timeline_undecryptable">復号できません：このデバイスにこのメッセージの鍵がありません</string>
     <string name="timeline_undecryptable_notice">このデバイスでは以前の暗号化メッセージを読めません。</string>
+    <!-- 一行ヒント：読めない過去メッセージの鍵の取り方。引数なし。 -->
+    <string name="timeline_key_notice_recovery">「チャットのバックアップ」で復旧キーを入力すると、以前のメッセージが読めます。</string>
+    <string name="timeline_key_notice_verify">「チャットのバックアップ」で別のデバイスからこのデバイスを確認し、鍵を受け取ります。</string>
     <string name="timeline_redacted">メッセージは削除されました</string>
     <string name="timeline_unsupported">まだ表示に対応していないメッセージ（%1$s）</string>
     <!-- Timeline note: someone renamed themselves. Arguments: the old and the new name. -->
