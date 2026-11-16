@@ -497,93 +497,114 @@ pub async fn install(
     match json_body::<InstallRequest>(&headers, &body) {
         Some(Err(e)) => install_error(&e),
         Some(Ok(request)) => {
-            let finish = {
-                let request = request.clone();
-                let headers = headers.clone();
-                move |gateway: Arc<Gateway>| {
-                    let request = request.clone();
-                    let headers = headers.clone();
-                    async move {
-                        let id = gateway.plugins.install_source(&request).await?.id;
-                        gateway
-                            .plugins
-                            .installed_plugin(&id, &languages(&headers))
-                            .ok_or_else(|| InstallError::NotInstalled(id.to_string()))
-                    }
-                }
-            };
-            let gate =
-                install_gates::install_source(&gateway, peer, &headers, &person, &request, finish)
-                    .await;
-            match install_gates::settle(gate, "install", &langs).await {
-                Ok(result) => response_for_requester(
-                    &gateway,
-                    peer,
-                    &headers,
-                    &person,
-                    result,
-                    |gateway, peer, person, plugin| {
-                        super::bot_projection::installed_response(
-                            gateway,
-                            peer,
-                            &headers,
-                            person,
-                            plugin,
-                            StatusCode::CREATED,
-                        )
-                    },
-                ),
-                Err(response) => response,
+            install_by_source(gateway, peer, headers, person, request, langs).await
+        }
+        None => install_by_upload(gateway, peer, headers, person, query, body, langs).await,
+    }
+}
+
+/// JSON 请求体的按来源安装：门槛通过后装来源指向的插件，回 201 和装好后的详情。
+async fn install_by_source(
+    gateway: Arc<Gateway>,
+    peer: Option<Extension<TunnelPeer>>,
+    headers: HeaderMap,
+    person: Person,
+    request: InstallRequest,
+    langs: Languages,
+) -> Response {
+    let finish = {
+        let request = request.clone();
+        let headers = headers.clone();
+        move |gateway: Arc<Gateway>| {
+            let request = request.clone();
+            let headers = headers.clone();
+            async move {
+                let id = gateway.plugins.install_source(&request).await?.id;
+                gateway
+                    .plugins
+                    .installed_plugin(&id, &languages(&headers))
+                    .ok_or_else(|| InstallError::NotInstalled(id.to_string()))
             }
         }
-        None => {
-            // 门槛的预览和闭包各用一份：闭包装的是主人批准后的同一份包。
-            let package = match package(&langs, &headers, &body) {
-                Ok(package) => package,
-                Err(e) => return install_error(&e),
-            };
-            let for_install = package.clone();
-            let finish = {
-                let headers = headers.clone();
-                move |gateway: Arc<Gateway>| {
-                    let package = for_install.clone();
-                    let headers = headers.clone();
-                    let query = query.clone();
-                    async move {
-                        let id = install_upload_package(&gateway, &headers, &query, package)
-                            .await?
-                            .id;
-                        gateway
-                            .plugins
-                            .installed_plugin(&id, &languages(&headers))
-                            .ok_or_else(|| InstallError::NotInstalled(id.to_string()))
-                    }
-                }
-            };
-            let gate =
-                install_gates::install_upload(&gateway, peer, &headers, &person, &package, finish)
-                    .await;
-            match install_gates::settle(gate, "install", &langs).await {
-                Ok(result) => response_for_requester(
-                    &gateway,
+    };
+    let gate =
+        install_gates::install_source(&gateway, peer, &headers, &person, &request, finish).await;
+    match install_gates::settle(gate, "install", &langs).await {
+        Ok(result) => response_for_requester(
+            &gateway,
+            peer,
+            &headers,
+            &person,
+            result,
+            |gateway, peer, person, plugin| {
+                super::bot_projection::installed_response(
+                    gateway,
                     peer,
                     &headers,
-                    &person,
-                    result,
-                    |gateway, peer, person, plugin| {
-                        super::bot_projection::installed_response(
-                            gateway,
-                            peer,
-                            &headers,
-                            person,
-                            plugin,
-                            StatusCode::CREATED,
-                        )
-                    },
-                ),
-                Err(response) => response,
+                    person,
+                    plugin,
+                    StatusCode::CREATED,
+                )
+            },
+        ),
+        Err(response) => response,
+    }
+}
+
+/// 上传插件包安装：门槛通过后装上传的包，回 201 和装好后的详情。
+async fn install_by_upload(
+    gateway: Arc<Gateway>,
+    peer: Option<Extension<TunnelPeer>>,
+    headers: HeaderMap,
+    person: Person,
+    query: InstallQuery,
+    body: Bytes,
+    langs: Languages,
+) -> Response {
+    // 门槛的预览和闭包各用一份：闭包装的是主人批准后的同一份包。
+    let package = match package(&langs, &headers, &body) {
+        Ok(package) => package,
+        Err(e) => return install_error(&e),
+    };
+    let for_install = package.clone();
+    let finish = {
+        let headers = headers.clone();
+        move |gateway: Arc<Gateway>| {
+            let package = for_install.clone();
+            let headers = headers.clone();
+            let query = query.clone();
+            async move {
+                let id = install_upload_package(&gateway, &headers, &query, package)
+                    .await?
+                    .id;
+                gateway
+                    .plugins
+                    .installed_plugin(&id, &languages(&headers))
+                    .ok_or_else(|| InstallError::NotInstalled(id.to_string()))
             }
         }
+    };
+    let gate =
+        install_gates::install_upload(&gateway, peer, &headers, &person, &package, finish).await;
+    match install_gates::settle(gate, "install", &langs).await {
+        Ok(result) => response_for_requester(
+            &gateway,
+            peer,
+            &headers,
+            &person,
+            result,
+            |gateway, peer, person, plugin| {
+                super::bot_projection::installed_response(
+                    gateway,
+                    peer,
+                    &headers,
+                    person,
+                    plugin,
+                    StatusCode::CREATED,
+                )
+            },
+        ),
+        Err(response) => response,
     }
 }
 

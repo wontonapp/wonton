@@ -36,6 +36,9 @@ pub(super) struct Bots {
     /// 等于会话恒在；闭包自己走真实 HTTP 取数。没装时照旧按会话有无分派。
     #[cfg(test)]
     pub(super) own_bot_fetch: Mutex<Option<OwnBotFetch>>,
+    /// 测试接缝的完成回执：取数任务取走，发布闸门判定完发一次；用例等它定序，不靠固定时长。
+    #[cfg(test)]
+    pub(super) own_bot_fetch_done: Mutex<Option<tokio::sync::oneshot::Sender<()>>>,
     pub refresh_serial: AtomicU64,
     pub local: Mutex<Local>,
 }
@@ -148,6 +151,8 @@ impl Bots {
             own_epoch: Mutex::default(),
             #[cfg(test)]
             own_bot_fetch: Mutex::default(),
+            #[cfg(test)]
+            own_bot_fetch_done: Mutex::default(),
             local: Mutex::default(),
             refresh_serial: AtomicU64::new(0),
         });
@@ -235,16 +240,21 @@ impl Bots {
         });
     }
 
-    /// 接缝取数的后台任务：和会话取数是同一条发布闸门，唯一区别是闭包替代了会话上的取数。
+    /// 接缝取数的后台任务：和会话取数是同一条发布闸门，闭包替代了会话上的取数。
+    /// 一次性取走完成回执，在发布闸门判定完才发：用例据此确认旧任务已经过闸门，不等固定时长。
     #[cfg(test)]
     fn spawn_own_bot_fetch(self: &Arc<Self>, fetch: OwnBotFetch, epoch: u64) {
         let weak = Arc::downgrade(self);
+        let done = lock(&self.own_bot_fetch_done).take();
         self.runtime.spawn(async move {
             let outcome = fetch().await;
             let Some(bots) = weak.upgrade() else {
                 return;
             };
             bots.publish_own_private_bot(epoch, outcome);
+            if let Some(done) = done {
+                let _ = done.send(());
+            }
         });
     }
 

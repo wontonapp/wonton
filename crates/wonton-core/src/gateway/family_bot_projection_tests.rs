@@ -9,8 +9,17 @@ use crate::members::MemberRecord;
 use crate::plugin::languages::Languages;
 use crate::plugin::{PluginId, PluginPackage, PluginStatus};
 
-#[tokio::test]
-async fn default_identity_preserves_active_contacts_and_shared_bots() {
+/// 装好 whoami 插件的共用底座：contact facts 钉着 mia 的活跃联系人，mia、lee 各一台设备，
+/// Bot 记录是主人的私 Bot（`@private:test`）。`_matrix_state` 撑住 Matrix 状态目录的生命周期。
+struct PrivateBotFixture {
+    h: Harness,
+    app: axum::Router,
+    _matrix_state: tempfile::TempDir,
+    plugin: PluginId,
+    devices: Vec<iroh::EndpointId>,
+}
+
+async fn installed_whoami_with_private_bot() -> PrivateBotFixture {
     let h = Harness::start(None).await;
     let contact_path = h.data_dir.join("contact-facts.json");
     std::fs::write(
@@ -22,7 +31,7 @@ async fn default_identity_preserves_active_contacts_and_shared_bots() {
         .unwrap(),
     )
     .unwrap();
-    let (app, _matrix_state) = app_with_contact_facts(&h).await;
+    let (app, matrix_state) = app_with_contact_facts(&h).await;
     let source = WHOAMI
         .replace("  kind: app", "  kind: agent\n  agent: {protocol: matrix}")
         .replace(
@@ -62,6 +71,24 @@ async fn default_identity_preserves_active_contacts_and_shared_bots() {
             "test-token",
         )],
     );
+    PrivateBotFixture {
+        h,
+        app,
+        _matrix_state: matrix_state,
+        plugin,
+        devices,
+    }
+}
+
+#[tokio::test]
+async fn default_identity_preserves_active_contacts_and_shared_bots() {
+    let PrivateBotFixture {
+        h,
+        app,
+        _matrix_state,
+        plugin,
+        devices,
+    } = installed_whoami_with_private_bot().await;
     let path = "/_wonton/api/plugins/app.whoami";
     let contact = send_as(&app, Some(devices[0]), Method::GET, CORE, path, &[], "").await;
     assert_eq!(contact.status, StatusCode::OK, "{}", contact.text());
@@ -114,8 +141,6 @@ async fn default_identity_preserves_active_contacts_and_shared_bots() {
         stranger.json()["installed"]["bot_user_id"]
     );
 
-    assert_mismatched_homeserver_is_an_error(&h, &app, &plugin, devices[0]).await;
-
     h.manager.bot_records_for_test(
         &plugin,
         &[(
@@ -132,6 +157,12 @@ async fn default_identity_preserves_active_contacts_and_shared_bots() {
         shared.json()["installed"]["default_bot_visibility"],
         "visible"
     );
+}
+
+#[tokio::test]
+async fn mismatched_homeserver_is_an_error() {
+    let f = installed_whoami_with_private_bot().await;
+    assert_mismatched_homeserver_is_an_error(&f.h, &f.app, &f.plugin, f.devices[0]).await;
 }
 
 async fn assert_mismatched_homeserver_is_an_error(

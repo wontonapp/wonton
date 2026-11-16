@@ -481,6 +481,9 @@ async fn a_foregrounded_read_in_flight_at_logout_cannot_write_back_its_old_ident
     let _old = own_bot_identity("app.old", "old-bot", "@old-bot:test", "!old:test");
     let new = own_bot_identity("app.new", "new-bot", "@new-bot:test", "!new:test");
     let mut watch = chat.bots.view.subscribe();
+    // 完成回执给第一笔（旧）取数：spawn_own_bot_fetch 一次性取走，发布闸门判定完发。
+    let (old_done_tx, old_done_rx) = tokio::sync::oneshot::channel();
+    *crate::chat::lock(&chat.bots.own_bot_fetch_done) = Some(old_done_tx);
 
     // 第一笔取数卡在响应前；接缝下 refresh 恒走取数分支，注销本身也会再发一笔。
     let (release_tx, release_rx) = tokio::sync::oneshot::channel();
@@ -498,9 +501,13 @@ async fn a_foregrounded_read_in_flight_at_logout_cannot_write_back_its_old_ident
     wait_own_bot(&mut watch, &new).await;
     assert_eq!(core.requests.load(Ordering::SeqCst), 2);
 
-    // 放行迟到的旧响应：它的代已作废，不得覆盖新读取。
+    // 放行迟到的旧响应：它的代已作废，不得覆盖新读取。等旧任务的完成回执，
+    // 证明它已经走过发布闸门（闸门判定完才发），再断言双槽仍是新读取的。
     release_tx.send(()).unwrap();
-    tokio::time::sleep(Duration::from_millis(100)).await;
+    tokio::time::timeout(Duration::from_secs(10), old_done_rx)
+        .await
+        .expect("old fetch did not reach the publish gate")
+        .unwrap();
     let view = watch.borrow_and_update();
     assert_eq!(view.own_private_bot, Some(new));
     assert!(view.own_private_bot_problem.is_none());
