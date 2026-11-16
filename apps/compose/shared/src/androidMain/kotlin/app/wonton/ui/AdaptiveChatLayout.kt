@@ -22,9 +22,11 @@ import androidx.compose.material3.adaptive.navigation.rememberListDetailPaneScaf
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.CompositionLocalProvider
 import androidx.compose.runtime.compositionLocalOf
+import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.SideEffect
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
+import androidx.compose.runtime.remember
 import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
@@ -113,6 +115,9 @@ internal fun ExpandedChatPane(
 
 @Composable
 internal fun ExpandedChatList(nav: AppNavigation, chat: ChatViewModel) {
+    val core = nav.pages.core
+    val confirmations by remember(core) { core.confirmationsUpdates() }
+        .collectAsState(remember(core) { core.confirmations() })
     var appsExpanded by rememberSaveable { mutableStateOf(false) }
     Column(Modifier.fillMaxSize().statusBarsPadding()) {
         ExpandedChatActions({ nav.sidebar(SidebarDestination.NewChat) }, { appsExpanded = !appsExpanded },
@@ -126,7 +131,7 @@ internal fun ExpandedChatList(nav: AppNavigation, chat: ChatViewModel) {
         Box(Modifier.weight(1f)) {
             ChatListScreen(
                 chat, nav.pages.plugins, nav.plugins,
-                confirmationCount = chat.pendingConfirmations.size,
+                confirmationCount = confirmations.pending.size + confirmations.contactRequests.size,
                 onOpenConfirmations = nav.chat::openConfirmations,
                 onAction = { nav.pages.plugins.reject(nav.pages.core.send(it)) },
                 onOpenRoom = {
