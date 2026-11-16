@@ -677,36 +677,8 @@ async fn an_undecryptable_timeline_settles_instead_of_flooding_the_shell() {
     assert!(arrived, "新消息没有送到");
 }
 
-/// 走查的第 5 步：已经配好、交接也已经跳过，进程被杀后再扫一次自己的家。`PairHome` 同步成功就把槽位换掉，
-/// 服务端回话和登录都还在后台；登录成功会重新点起交接页，主人再点“跳过”时那一次点在活动中的交接上，
-/// 只能原地结束，不能再把壳切回恢复密钥。
-#[tokio::test(flavor = "multi_thread")]
-#[ignore = "需要 Docker，用 --include-ignored 运行"]
-async fn pairing_again_arms_the_handoff_and_skipping_afterwards_ends_it() {
-    let old_dir = tempfile::tempdir().unwrap();
-    let new_dir = tempfile::tempdir().unwrap();
-    let old = Phone::open(old_dir.path());
-    let new = Phone::open(new_dir.path());
-    let home = Home::start(&[old.device_id()]).await;
-    old_phone(&home, &old, true).await;
-    pair(&new, home.pairing_code());
-    new.signed_in().await;
-    new.wait_chat("第一次交接出现", |view| {
-        matches!(
-            view.encryption.key_handoff,
-            Some(KeyHandoff::Receiving { .. })
-        )
-        .then_some(())
-    })
-    .await;
-    new.dispatch(Action::SkipKeyHandoff).unwrap();
-    new.wait_chat("第一次交接跳过", |view| {
-        (view.encryption.key_handoff.is_none()
-            && view.encryption.backup_reminder == Some(BackupReminder::EnterRecoveryKey))
-        .then_some(())
-    })
-    .await;
-
+/// 让服务端拖住下一次配对的回应：同步换槽要发生在回话和登录之前。返回旧槽 id 和登录次数。
+async fn pair_again_while_server_stalls(new: &Phone, home: &Home) -> (String, u64) {
     let old_slot = new
         .servers()
         .servers
@@ -759,6 +731,41 @@ async fn pairing_again_arms_the_handoff_and_skipping_afterwards_ends_it() {
     assert!(new.home().server_id.is_none());
     assert_eq!(home.login_tokens(), tokens, "还没登录");
     assert!(new.pages().stack.is_empty(), "原来开着的那一页随旧槽位没了");
+
+    (old_slot, tokens)
+}
+
+/// 走查的第 5 步：已经配好、交接也已经跳过，进程被杀后再扫一次自己的家。`PairHome` 同步成功就把槽位换掉，
+/// 服务端回话和登录都还在后台；登录成功会重新点起交接页，主人再点“跳过”时那一次点在活动中的交接上，
+/// 只能原地结束，不能再把壳切回恢复密钥。
+#[tokio::test(flavor = "multi_thread")]
+#[ignore = "需要 Docker，用 --include-ignored 运行"]
+async fn pairing_again_arms_the_handoff_and_skipping_afterwards_ends_it() {
+    let old_dir = tempfile::tempdir().unwrap();
+    let new_dir = tempfile::tempdir().unwrap();
+    let old = Phone::open(old_dir.path());
+    let new = Phone::open(new_dir.path());
+    let home = Home::start(&[old.device_id()]).await;
+    old_phone(&home, &old, true).await;
+    pair(&new, home.pairing_code());
+    new.signed_in().await;
+    new.wait_chat("第一次交接出现", |view| {
+        matches!(
+            view.encryption.key_handoff,
+            Some(KeyHandoff::Receiving { .. })
+        )
+        .then_some(())
+    })
+    .await;
+    new.dispatch(Action::SkipKeyHandoff).unwrap();
+    new.wait_chat("第一次交接跳过", |view| {
+        (view.encryption.key_handoff.is_none()
+            && view.encryption.backup_reminder == Some(BackupReminder::EnterRecoveryKey))
+        .then_some(())
+    })
+    .await;
+
+    let (old_slot, tokens) = pair_again_while_server_stalls(&new, &home).await;
 
     // 服务端回话、登录成功：交接页重新点起来。
     new.wait_chat("配上并重新登录后再次出现交接", |view| {
