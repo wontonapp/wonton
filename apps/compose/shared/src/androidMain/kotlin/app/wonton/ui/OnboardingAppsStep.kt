@@ -35,6 +35,7 @@ internal fun OnboardingAppsStep(
                 selected = need.selected,
                 onSelect = { send(Action.Onboarding(OnboardingAction.ToggleOnboardingNeed(need.id))) },
                 multiple = true,
+                neutralSelection = true,
             )
             // 子项跟着分组一起勾：勾的粒度是需求，子项列出它装哪些应用，点子项同切换。
             Column(
@@ -59,7 +60,8 @@ private fun OnboardingAppRow(item: StoreItem, selected: Boolean, plugins: Plugin
         title = item.title,
         selected = selected,
         onSelect = onToggle,
-        blocked = item.blocked,
+        blocked = item.blocked.takeIf { item.installedVersion == null },
+        neutralSelection = true,
         leading = { PluginIconImage(item.icon, WontonTheme.size.taskIcon, plugins) },
         trailing = {
             if (item.installedVersion != null) {

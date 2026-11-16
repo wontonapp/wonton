@@ -5,6 +5,7 @@ struct StepOptionRow<Leading: View, Trailing: View>: View {
     var description: String?
     let isSelected: Bool
     var blocked: String?
+    var neutralSelection = false
     let select: () -> Void
     @ViewBuilder var leading: Leading
     @ViewBuilder var trailing: Trailing
@@ -16,19 +17,21 @@ struct StepOptionRow<Leading: View, Trailing: View>: View {
                 HStack(alignment: .top, spacing: WontonTheme.spacing.s12) {
                     Group {
                         if isSelected {
-                            SelectedMark()
+                            SelectedMark(neutral: neutralSelection)
                         } else {
                             Circle()
                                 .strokeBorder(lineWidth: WontonTheme.size.hairline)
                                 .frame(width: WontonTheme.size.icon, height: WontonTheme.size.icon)
                         }
                     }
-                    .foregroundStyle(Color(isSelected ? colors.accentInkOnFill : colors.textSecondary))
+                    .foregroundStyle(Color(isSelected && neutralSelection ? colors.primary :
+                        isSelected ? colors.accentInkOnFill : colors.textSecondary))
                     leading
                     VStack(alignment: .leading, spacing: WontonTheme.spacing.s4) {
                         Text(verbatim: title)
                             .wontonText(WontonTheme.typography.itemTitle)
-                            .foregroundStyle(Color(isSelected ? colors.textOnAccentFill : colors.textPrimary))
+                            .foregroundStyle(Color(isSelected && !neutralSelection ?
+                                colors.textOnAccentFill : colors.textPrimary))
                         if let description {
                             Text(verbatim: description)
                                 .wontonText(WontonTheme.typography.supporting)
@@ -53,7 +56,7 @@ struct StepOptionRow<Leading: View, Trailing: View>: View {
         .padding(WontonTheme.spacing.s12)
         .background {
             let shape = RoundedRectangle(cornerRadius: WontonTheme.radii.card)
-            if isSelected {
+            if isSelected && !neutralSelection {
                 Color.clear.accentFill(shape)
             } else {
                 shape.fill(Color(colors.surfaceSubtle))
@@ -65,16 +68,17 @@ struct StepOptionRow<Leading: View, Trailing: View>: View {
 /// 选中的圈勾。用形状画，不用 `WontonIcon` 的 Image：iOS 27 会把行里的 Image 露成
 /// 盖住整行的辅助功能元素，选中那一行的按钮就成了“点不到”（issue #793）。
 private struct SelectedMark: View {
+    let neutral: Bool
     @Environment(\.wontonColors) private var colors
 
     var body: some View {
         ZStack {
             // 跟 checkCircleFill 图标同比例：24 点里圆占 19.5，勾 9 点、线宽 1.5。
             Circle()
-                .fill(Color(colors.accentInkOnFill))
+                .fill(Color(neutral ? colors.primary : colors.accentInkOnFill))
                 .padding(2)
             Checkmark()
-                .stroke(Color(colors.accentFill),
+                .stroke(Color(neutral ? colors.onPrimary : colors.accentFill),
                         style: StrokeStyle(lineWidth: 1.5, lineCap: .round, lineJoin: .round))
                 .padding(7.5)
         }
@@ -94,17 +98,17 @@ private struct Checkmark: Shape {
 
 extension StepOptionRow where Leading == EmptyView, Trailing == EmptyView {
     init(title: String, description: String? = nil, isSelected: Bool, blocked: String? = nil,
-         select: @escaping () -> Void) {
+         neutralSelection: Bool = false, select: @escaping () -> Void) {
         self.init(title: title, description: description, isSelected: isSelected, blocked: blocked,
-                  select: select, leading: { EmptyView() }, trailing: { EmptyView() })
+                  neutralSelection: neutralSelection, select: select, leading: { EmptyView() }, trailing: { EmptyView() })
     }
 }
 
 extension StepOptionRow where Leading == EmptyView {
     init(title: String, description: String? = nil, isSelected: Bool, blocked: String? = nil,
-         select: @escaping () -> Void,
+         neutralSelection: Bool = false, select: @escaping () -> Void,
          @ViewBuilder trailing: @escaping () -> Trailing) {
         self.init(title: title, description: description, isSelected: isSelected, blocked: blocked,
-                  select: select, leading: { EmptyView() }, trailing: trailing)
+                  neutralSelection: neutralSelection, select: select, leading: { EmptyView() }, trailing: trailing)
     }
 }
