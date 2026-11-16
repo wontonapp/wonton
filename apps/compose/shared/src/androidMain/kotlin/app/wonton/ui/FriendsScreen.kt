@@ -149,6 +149,18 @@ private fun FriendScanPage(onBack: () -> Unit, onSubmit: (String) -> Unit) {
     }
 }
 
+/** 公网访问总开关关着：如实挂一条（ADR-0090 第 2 节），列表态和空页共用。 */
+@Composable
+internal fun FriendPublicAccessNotice(friends: FriendsViewModel) {
+    if (!friends.publicAccessOff) return
+    WontonNotice(
+        icon = WontonIcon.Info,
+        title = stringResource(R.string.friends_public_access_off),
+        isError = false,
+        lines = listOf(stringResource(R.string.friends_public_access_off_detail)),
+    )
+}
+
 @Composable
 private fun FriendContent(
     friends: app.wonton.protocol.FriendsViewModel,
@@ -181,15 +193,7 @@ private fun FriendContent(
         }
         state == FriendsState.Loading -> LoadingView()
         else -> Column(verticalArrangement = Arrangement.spacedBy(WontonTheme.spacing.s12)) {
-            if (friends.publicAccessOff) {
-                // 公网访问总开关关着：空页也如实挂一条（ADR-0090 第 2 节）。
-                WontonNotice(
-                    icon = WontonIcon.Info,
-                    title = stringResource(R.string.friends_public_access_off),
-                    isError = false,
-                    lines = listOf(stringResource(R.string.friends_public_access_off_detail)),
-                )
-            }
+            FriendPublicAccessNotice(friends)
             // 空页自己铺满，压进横幅下面的剩余高度，别把加好友按钮挤出屏。
             Box(Modifier.weight(1f)) { FriendEmpty(onAdd) }
         }

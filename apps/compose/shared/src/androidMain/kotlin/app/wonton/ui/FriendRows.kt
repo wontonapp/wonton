@@ -59,15 +59,7 @@ internal fun FriendList(
         verticalArrangement = Arrangement.spacedBy(WontonTheme.spacing.sectionGap),
     ) {
         failed?.let { ProblemRow(it.problem(), onRetry) }
-        if (friends.publicAccessOff) {
-            // 公网访问总开关关着：如实挂一条（ADR-0090 第 2 节）。
-            WontonNotice(
-                icon = WontonIcon.Info,
-                title = stringResource(R.string.friends_public_access_off),
-                isError = false,
-                lines = listOf(stringResource(R.string.friends_public_access_off_detail)),
-            )
-        }
+        FriendPublicAccessNotice(friends)
         FriendRequestRows(friends, onAction)
         FriendRows(friends, onMenu, onAdd)
         FriendGroups(friends, onNewGroup, onRenameGroup, onDeleteGroup)
