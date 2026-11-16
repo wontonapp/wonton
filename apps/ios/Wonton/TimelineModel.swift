@@ -33,6 +33,7 @@ final class TimelineModel {
     var attempt = 0
 
     private let core: ClientCore
+    private var subscription: TimelineSubscription?
     let roomId: String
     /// 旁聊根的事件 ID；空是房间的主时间线（ADR-0093）。
     let threadRoot: String?
@@ -55,41 +56,56 @@ final class TimelineModel {
             failure = error.problem
             return false
         }
-        defer { subscription.cancel() }
+        self.subscription = subscription
+        defer {
+            subscription.cancel()
+            if self.subscription === subscription { self.subscription = nil }
+        }
         guard !Task.isCancelled else { return false }
         for await update in subscription.updates() {
             guard !Task.isCancelled else { break }
-            // 翻页由房间的锚点恢复处理；仅保留不改变开头的实时追加和编辑。
-            let prepends = update.diffs.contains { diff in
-                switch diff {
-                case .pushFront, .clear, .reset: true
-                case let .insert(index, _): index == 0
-                default: false
-                }
-            }
-            if !prepends { pin.prepareForUpdate() }
-            if update.scrollToBottom { pin.pin() }
-            for diff in update.diffs {
-                apply(diff)
-            }
-            backPagination = update.backPagination
-            confirmations = update.confirmations
-            viewport = update.viewport
-            panel = update.panel
-            panelSelected = update.panelSelected
-            entryBlocked = update.entryBlocked
-            confirmations = update.confirmations
-            notice = update.keyNotice
-            sideChat = update.sideChat
-            widgets = update.widgets
-            callActive = update.callActive
-            if let anchor = update.anchor {
-                self.anchor = anchor
-            }
-            if isLoaded { pin.stick() }
-            isLoaded = true
+            apply(update, pin: pin)
+        }
+        if !Task.isCancelled {
+            failure = Problem(title: String(localized: .Problem1.problemGenericTitle))
         }
         return !Task.isCancelled
+    }
+
+    func setScroll(_ scroll: TimelineScroll) {
+        subscription?.setScroll(scroll: scroll)
+    }
+
+    private func apply(_ update: TimelineUpdate, pin: BottomPin) {
+        if !prepends(update.diffs) { pin.prepareForUpdate() }
+        if update.scrollToBottom { pin.pin() }
+        for diff in update.diffs {
+            apply(diff)
+        }
+        backPagination = update.backPagination
+        confirmations = update.confirmations
+        viewport = update.viewport
+        panel = update.panel
+        panelSelected = update.panelSelected
+        entryBlocked = update.entryBlocked
+        notice = update.keyNotice
+        sideChat = update.sideChat
+        widgets = update.widgets
+        callActive = update.callActive
+        if let anchor = update.anchor { self.anchor = anchor }
+        if isLoaded { pin.stick() }
+        isLoaded = true
+    }
+
+    // 翻页由房间锚点恢复处理，不应触发实时追加的底部跟随。
+    private func prepends(_ diffs: [TimelineDiff]) -> Bool {
+        diffs.contains { diff in
+            switch diff {
+            case .pushFront, .clear, .reset: true
+            case let .insert(index, _): index == 0
+            default: false
+            }
+        }
     }
 
     private func apply(_ diff: TimelineDiff) {

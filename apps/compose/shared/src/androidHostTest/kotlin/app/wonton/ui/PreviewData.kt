@@ -149,6 +149,7 @@ internal fun previewHome() = HomeViewModel(
         lossPerMille = 2u,
         rttMs = 48u,
         lastFailure = null,
+        diagnostic = null,
         addressesStale = false,
         udpFlows = listOf(
             UdpFlowStats(

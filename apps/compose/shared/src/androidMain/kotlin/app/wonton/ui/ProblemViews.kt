@@ -15,6 +15,7 @@ import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
+import androidx.compose.foundation.layout.heightIn
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.widthIn
@@ -324,7 +325,7 @@ fun ProblemDetail(
     val tint = colors.textSecondary.toColor()
     Column(verticalArrangement = Arrangement.spacedBy(WontonTheme.spacing.s4)) {
         Row(
-            modifier.clickable(role = Role.Button) { expanded = !expanded },
+            modifier.clickable(role = Role.Button) { expanded = !expanded }.heightIn(min = WontonTheme.size.target),
             horizontalArrangement = Arrangement.spacedBy(WontonTheme.spacing.s4),
             verticalAlignment = Alignment.CenterVertically,
         ) {

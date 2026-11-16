@@ -27,4 +27,5 @@
     <string name="tab_page_close">關閉頁面</string>
     <!-- Light hint at the top of a call page when the connection only goes through the public relay; the call still works. No arguments. -->
     <string name="tab_call_relay_hint">只連上了公共中繼，畫面可能卡頓。</string>
+    <string name="tab_back_to_chat">回聊天</string>
 </resources>
