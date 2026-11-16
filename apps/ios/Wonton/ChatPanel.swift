@@ -161,6 +161,8 @@ struct ChatPanelHost<Content: View>: View {
             // 收着时没有拖动了：入口只有顶栏的按钮，直接 move 换级。
             return .closed
         case .peek:
+            // 空面板没有第 2 级可去：往外推不震也不动。
+            if items.isEmpty { return closes ? .closed : .peek }
             return advances ? .full : closes ? .closed : .peek
         case .full:
             return closes ? .peek : .full

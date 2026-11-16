@@ -214,8 +214,9 @@ internal class ChatPanelState(
         return when (from) {
             // 收着时没有拖动了：入口只有顶栏的按钮，直接 move 换级。
             PanelLevel.CLOSED -> PanelLevel.CLOSED
+            // 空面板没有第 2 级可去，move 会把 FULL 降回 PEEK，这里也别震。
             PanelLevel.PEEK -> when {
-                pushes -> PanelLevel.FULL
+                pushes && pages.isNotEmpty() -> PanelLevel.FULL
                 closes -> PanelLevel.CLOSED
                 else -> PanelLevel.PEEK
             }
