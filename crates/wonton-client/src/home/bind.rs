@@ -54,6 +54,7 @@ impl HomeLink {
         let error = match tokio::time::timeout(deadline, &mut bind).await {
             Ok(Ok(Ok(endpoint))) => return Ok(endpoint),
             Err(_) => {
+                let relays = relays.to_vec();
                 tokio::spawn(async move {
                     let elapsed = started.elapsed();
                     match bind.await {
@@ -61,7 +62,9 @@ impl HomeLink {
                             tracing::info!(?elapsed, "an abandoned bind only finished now")
                         }
                         Ok(Err(error)) => {
-                            tracing::info!(?elapsed, error = %error, "an abandoned bind only failed now");
+                            let diagnostic =
+                                super::failure::redact_relays(&relays, &error.to_string());
+                            tracing::info!(?elapsed, error = %diagnostic, "an abandoned bind only failed now");
                         }
                         Err(_) => {}
                     }

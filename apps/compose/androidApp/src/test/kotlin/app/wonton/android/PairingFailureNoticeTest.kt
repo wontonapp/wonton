@@ -6,10 +6,12 @@ import androidx.compose.ui.test.junit4.v2.createComposeRule
 import androidx.compose.ui.test.onNodeWithTag
 import androidx.compose.ui.test.onNodeWithText
 import androidx.compose.ui.test.performClick
+import androidx.test.core.app.ApplicationProvider
 import androidx.test.ext.junit.runners.AndroidJUnit4
 import app.wonton.protocol.PairingFailure
 import app.wonton.protocol.PairingStatus
 import app.wonton.ui.PairingFailureNotice
+import app.wonton.ui.R
 import app.wonton.ui.design.WontonTheme
 import org.junit.Assert.assertEquals
 import org.junit.Rule
@@ -20,24 +22,35 @@ import org.robolectric.annotation.GraphicsMode
 
 @RunWith(AndroidJUnit4::class)
 @GraphicsMode(GraphicsMode.Mode.NATIVE)
-@Config(sdk = [36], application = Application::class)
+@Config(sdk = [36], application = Application::class, qualifiers = "w390dp-h844dp-mdpi")
 class PairingFailureNoticeTest {
     @get:Rule
     val compose = createComposeRule()
+
+    private val context = ApplicationProvider.getApplicationContext<Application>()
 
     @Test
     fun usedCodeOffersRescanWithoutLeavingAndKeepsDetailsCollapsed() {
         var scans = 0
         var exits = 0
+        val message = "core-localized-failure-summary"
         val diagnostic = "diagnostic-token-not-for-the-primary-notice"
         compose.setContent {
             WontonTheme(testAppearance()) {
                 PairingFailureNotice(
-                    PairingStatus.Failed(PairingFailure.USED, diagnostic),
+                    PairingStatus.Failed(PairingFailure.USED, message, diagnostic),
                     onRetry = {}, onScanAgain = { scans++ }, onBack = { exits++ },
                 )
             }
         }
+        compose.onNodeWithText(diagnostic).assertDoesNotExist()
+        compose.onNodeWithText(message).assertDoesNotExist()
+        compose.onNodeWithText(context.getString(R.string.common_details)).performClick()
+        compose.onNodeWithText(message).assertIsDisplayed()
+        compose.onNodeWithText(diagnostic).assertDoesNotExist()
+        compose.onNodeWithText(context.getString(R.string.common_diagnostics)).performClick()
+        compose.onNodeWithText(diagnostic).assertIsDisplayed()
+        compose.onNodeWithText(context.getString(R.string.common_diagnostics)).performClick()
         compose.onNodeWithText(diagnostic).assertDoesNotExist()
         compose.onNodeWithTag("pairing-retry").assertDoesNotExist()
         compose.onNodeWithTag("pairing-scan-again").assertIsDisplayed().performClick()
@@ -54,7 +67,7 @@ class PairingFailureNoticeTest {
         compose.setContent {
             WontonTheme(testAppearance()) {
                 PairingFailureNotice(
-                    PairingStatus.Failed(PairingFailure.TRANSPORT_UNAVAILABLE, ""),
+                    PairingStatus.Failed(PairingFailure.TRANSPORT_UNAVAILABLE, "", null),
                     onRetry = { retries++ }, onScanAgain = {}, onBack = { exits++ },
                 )
             }

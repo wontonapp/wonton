@@ -44,14 +44,14 @@ impl<H: PairHandler> PairProtocol<H> {
         Self { handler }
     }
 
-    async fn respond(&self, conn: &Connection) -> Result<(), String> {
+    async fn respond(&self, conn: &Connection) -> Result<(), &'static str> {
         let (mut send, mut recv) = tokio::time::timeout(REQUEST_TIMEOUT, conn.accept_bi())
             .await
-            .map_err(|_| "the device did not open a stream in time".to_owned())?
-            .map_err(|e| e.to_string())?;
+            .map_err(|_| "the device did not open a stream in time")?
+            .map_err(|_| "opening the pairing stream failed")?;
         let request = tokio::time::timeout(REQUEST_TIMEOUT, recv.read_to_end(MAX_MESSAGE_LEN))
             .await
-            .map_err(|_| "the device did not finish writing its request in time".to_owned())?;
+            .map_err(|_| "the device did not finish writing its request in time")?;
         let response = match request.map_err(|e| e.to_string()).and_then(|bytes| {
             serde_json::from_slice::<PairRequest>(&bytes).map_err(|e| e.to_string())
         }) {
@@ -67,8 +67,11 @@ impl<H: PairHandler> PairProtocol<H> {
             },
         };
         let body = serde_json::to_vec(&response).expect("the response always serializes to JSON");
-        send.write_all(&body).await.map_err(|e| e.to_string())?;
-        send.finish().map_err(|e| e.to_string())?;
+        send.write_all(&body)
+            .await
+            .map_err(|_| "writing the pairing response failed")?;
+        send.finish()
+            .map_err(|_| "finishing the pairing response failed")?;
         Ok(())
     }
 }
