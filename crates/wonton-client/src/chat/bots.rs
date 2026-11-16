@@ -28,10 +28,49 @@ pub(super) struct Bots {
     pub foreground: watch::Sender<bool>,
     pub changed: Notify,
     pub epoch: AtomicU64,
-    /// 本人 Bot 读取的发布代。结果发布与换会话／注销竞态：发布时在同一把锁里比对，`set_session` 和 Drop 都在同一把锁里加代。
-    pub own_epoch: Mutex<u64>,
+    /// 本人 Bot 读取的发布资格。`epoch` 防迟到结果，`retired` 防交接后的旧链接再发有效代。
+    pub own_epoch: Mutex<OwnEpoch>,
     pub refresh_serial: AtomicU64,
     pub local: Mutex<Local>,
+}
+
+#[derive(Default)]
+pub(super) struct OwnEpoch {
+    epoch: u64,
+    retired: bool,
+    // 同步生命周期没有 await；测试在捕获代号后、检查写槽资格前暂停一次真实调用。
+    #[cfg(test)]
+    pub(super) before_refresh: Option<Box<dyn FnOnce() + Send>>,
+}
+
+impl OwnEpoch {
+    #[cfg(test)]
+    pub(super) fn current(&self) -> u64 {
+        self.epoch
+    }
+
+    /// 领取有效代；退役后不再发号。
+    fn issue(&mut self) -> Option<u64> {
+        if self.retired {
+            return None;
+        }
+        self.epoch = self.epoch.wrapping_add(1);
+        Some(self.epoch)
+    }
+
+    /// 只有当前且未退役的代能写槽。
+    fn accepts(&self, epoch: u64) -> bool {
+        !self.retired && self.epoch == epoch
+    }
+}
+
+impl Bots {
+    /// 不可逆退役：此后本链接不再发有效代，迟到的结果与清槽都被拒。
+    pub(super) fn retire_own_private_bot(&self) {
+        let mut own = lock(&self.own_epoch);
+        own.epoch = own.epoch.wrapping_add(1);
+        own.retired = true;
+    }
 }
 
 #[derive(Default)]
@@ -108,15 +147,17 @@ impl Bots {
 
     pub fn set_session(self: &Arc<Self>, session: Option<Arc<MatrixSession>>) {
         self.epoch.fetch_add(1, Ordering::SeqCst);
-        let own_epoch = {
-            let mut epoch = lock(&self.own_epoch);
-            *epoch = epoch.wrapping_add(1);
-            *epoch
-        };
         self.clear_activity();
-        self.session.send_replace(session.clone());
+        let issued = {
+            let mut own = lock(&self.own_epoch);
+            let issued = own.issue();
+            self.session.send_replace(session.clone());
+            issued
+        };
         self.changed.notify_one();
-        self.refresh_own_private_bot(session, own_epoch);
+        if let Some(issued) = issued {
+            self.refresh_own_private_bot(session, issued);
+        }
         self.view.send_modify(|view| {
             for bot in &mut view.bots {
                 bot.saving = false;
@@ -133,9 +174,16 @@ impl Bots {
         session: Option<Arc<MatrixSession>>,
         epoch: u64,
     ) {
+        #[cfg(test)]
+        {
+            let pause = lock(&self.own_epoch).before_refresh.take();
+            if let Some(pause) = pause {
+                pause();
+            }
+        }
         let Some(session) = session else {
-            let current = lock(&self.own_epoch);
-            if *current != epoch {
+            let own = lock(&self.own_epoch);
+            if !own.accepts(epoch) {
                 return;
             }
             self.view.send_modify(|view| {
@@ -161,8 +209,8 @@ impl Bots {
         epoch: u64,
         outcome: Result<wonton_protocol::OwnPrivateBotView, wonton_protocol::OwnBotProblem>,
     ) {
-        let current = lock(&self.own_epoch);
-        if *current != epoch {
+        let own = lock(&self.own_epoch);
+        if !own.accepts(epoch) {
             return;
         }
         self.view.send_modify(|view| match outcome {
@@ -176,14 +224,15 @@ impl Bots {
 
     pub fn foregrounded(self: &Arc<Self>) {
         self.foreground.send_replace(true);
-        let session = self.session.borrow().clone();
-        // 每次发起都换一代：先前在飞的本人读取即使同一会话也不能再回写。
-        let epoch = {
-            let mut epoch = lock(&self.own_epoch);
-            *epoch = epoch.wrapping_add(1);
-            *epoch
+        // 会话快照与代号在同一把锁里取：并发换会话不会把旧会话配到新代上。每次发起都换一代，先前在飞的结果作废。
+        let issued = {
+            let mut own = lock(&self.own_epoch);
+            own.issue()
+                .map(|epoch| (self.session.borrow().clone(), epoch))
         };
-        self.refresh_own_private_bot(session, epoch);
+        if let Some((session, epoch)) = issued {
+            self.refresh_own_private_bot(session, epoch);
+        }
         self.refresh_all();
     }
 
@@ -531,6 +580,20 @@ fn profile_view(
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn retired_epoch_stops_issuing_and_rejects_late_results() {
+        let mut own = OwnEpoch::default();
+        let first = own.issue().unwrap();
+        let second = own.issue().unwrap();
+        assert_eq!(own.current(), second);
+        assert!(!own.accepts(first));
+        own.retired = true;
+        let retired = own.current();
+        assert_eq!(own.issue(), None);
+        assert_eq!(own.current(), retired);
+        assert!(!own.accepts(second));
+    }
 
     fn view(activity: Option<BotActivity>, states: &[(&str, BotActivity)]) -> BotView {
         BotView {

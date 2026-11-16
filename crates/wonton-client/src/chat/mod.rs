@@ -187,13 +187,12 @@ impl Drop for Active {
 }
 
 impl ChatLink {
-    /// 撤销本人 Bot 结果的上写资格，不碰 ViewModel：旧任务在飞的发送随后被代际拒绝。
+    /// 不可逆地撤销本人 Bot 的发号与上写资格，不碰 ViewModel。
     ///
     /// 换服务器时共用同一个 ViewModel 发送端，旧链接这时还没 Drop；交接前先撤销，旧作用域关停最多等一秒，
-    /// 不能靠 Drop 兜这个窗口。Drop 里同样只撤销，不清新作用域的快照。
+    /// 不能靠 Drop 兜这个窗口；旧同步生命周期调用也不能再发号或清槽。Drop 同样只退役，不清新作用域的快照。
     pub(crate) fn abandon_own_private_bot(&self) {
-        let mut epoch = lock(&self.bots.own_epoch);
-        *epoch = epoch.wrapping_add(1);
+        self.bots.retire_own_private_bot();
     }
 }
 
