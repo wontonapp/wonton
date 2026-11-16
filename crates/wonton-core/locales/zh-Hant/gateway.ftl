@@ -171,6 +171,14 @@ clients-unavailable = 核心沒有跑在安裝好的容器裡，網域設定用�
 clients-passwords-unavailable = 現在讀不到專用密碼的存放處
 clients-password-label-invalid = 給用戶端起個 1-128 個字元、不帶換行的名字
 clients-password-not-found = 這個專用密碼已經不存在了
+clients-password-shared = 應用密碼
+clients-credentials-missing = 這個應用不用憑證驗證
+clients-credentials-shared-exists = 這個應用已經有它唯一的共享密碼
+clients-credentials-timeout = 應用裡的命令逾時，可能已經生效，會重試
+clients-credentials-unavailable = 外掛沒在執行，現在發不了密碼
+clients-credentials-missing-command = 清單裡沒有 { $op } 命令
+clients-credentials-failed = 應用裡的命令失敗：{ $error }
+gateway-entry-credentials-not-issued = 應用還沒有密碼，入口先不開
 clients-domain-read-failed = 網域設定讀不了：{ $error }
 gateway-chains-disabled = 家裡的伺服器沒有啟用呼叫鏈帳本
 

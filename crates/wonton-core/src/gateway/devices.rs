@@ -10,7 +10,7 @@
 //! | POST | `/_wonton/api/pairing-codes` | 发一个配对码，请求体可选 `{"direct_addrs": ["192.168.1.2:18482"]}`；经隧道的已配对设备也能调（App 里的“添加设备”），码归这台设备的人 |
 //! | POST | `/_wonton/api/pairing-codes/first` | 首次配对码，和状态页上的是同一个；已经有设备时 409 `paired`。请求体同上 |
 
-use wonton_protocol::PermissionItem;
+use wonton_protocol::{PermissionItem, RevokeDeviceRequest};
 
 use std::net::SocketAddr;
 use std::str::FromStr;
@@ -26,6 +26,7 @@ use serde_json::json;
 
 use super::api::{denied, error_response, languages, plugin_denied, requester};
 use super::{Gateway, TunnelPeer, lan, permissions};
+use crate::clients::pending::DeviceRevokeReport;
 use crate::device::DeviceError;
 use crate::l10n;
 use crate::pairing::{CodeKind, IssuedCode};
@@ -112,13 +113,20 @@ pub async fn add(
 }
 
 /// 吊销一台设备并清它的推送登记、接管时段和专用密码；设备和移除家人共用（ADR-0045）。
-pub(super) fn revoke_device(gateway: &Gateway, id: &EndpointId) -> Result<bool, DeviceError> {
+///
+/// 这台设备建过或看过的专用密码跟着走（ADR-0021「在 App 里」）：`per_client` 的吊销，
+/// 共享密码默认换值、`keep_shared` 时只吊销。设备已不在表里时也照做：上次吊销在半路失败时，
+/// 再来一次能把密码清掉。命令没跑成的列进报告，插件启动时重试。
+pub(super) async fn revoke_device(
+    gateway: &Gateway,
+    id: &EndpointId,
+    keep_shared: bool,
+) -> Result<(bool, DeviceRevokeReport), DeviceError> {
     let removed = gateway.tunnel.devices.remove(id)?;
-    // 这台设备建过或看过的专用密码跟着吊销（ADR-0021「在 App 里」）。设备已不在表里时也照做：
-    // 上次吊销在半路失败时，再来一次能把密码清掉。
-    if let Some(store) = &gateway.plugins.client_passwords {
-        store.revoke_for_device(&id.to_string())?;
-    }
+    let report = gateway
+        .plugins
+        .revoke_passwords_for_device(&id.to_string(), keep_shared)
+        .await?;
     if removed {
         tracing::info!(device = %id.fmt_short(), "吊销设备");
         super::push::forget_device(gateway, id);
@@ -126,7 +134,7 @@ pub(super) fn revoke_device(gateway: &Gateway, id: &EndpointId) -> Result<bool, 
             mcp.bus.end_device_takeovers(&id.to_string());
         }
     }
-    Ok(removed)
+    Ok((removed, report))
 }
 
 pub async fn remove(
@@ -134,6 +142,7 @@ pub async fn remove(
     peer: Option<Extension<TunnelPeer>>,
     headers: HeaderMap,
     Path(id): Path<String>,
+    body: Option<Json<RevokeDeviceRequest>>,
 ) -> Response {
     if let Some(denied) = plugin_denied(&gateway, peer, &headers) {
         return denied;
@@ -160,9 +169,18 @@ pub async fn remove(
     {
         return error_response(StatusCode::FORBIDDEN, "not_yours", "这不是你的设备");
     }
-    match revoke_device(&gateway, &id) {
-        Ok(true) => Json(json!({"endpoint_id": id, "removed": true})).into_response(),
-        Ok(false) => error_response(
+    let keep_shared = body
+        .map(|Json(request)| request.keep_shared_passwords)
+        .unwrap_or(false);
+    match revoke_device(&gateway, &id, keep_shared).await {
+        Ok((true, report)) => Json(json!({
+            "endpoint_id": id,
+            "removed": true,
+            "pending_revokes": report.pending_revokes,
+            "ends_sessions_false": report.ends_sessions_false,
+        }))
+        .into_response(),
+        Ok((false, _)) => error_response(
             StatusCode::NOT_FOUND,
             "not_found",
             &l10n::text(&langs, "gateway-devices-not-found", &[]),
