@@ -488,7 +488,11 @@ async fn a_rejected_image_goes_out_once_resent_and_a_cancelled_one_never_does() 
 /// 断网重启场景的现场：两边都是 SQLite 存储，经中转连接，加密私聊已打开并预热过一条。
 struct RestartChat {
     room_id: OwnedRoomId,
+    // 两个会话句柄不被读取，但不能删：删了会话在 open()/restart() 返回时提前 drop、
+    // 同步循环随之终结，恢复阶段收不到消息（实测单测失败）。持有即用途，不是死代码。
+    #[allow(dead_code)]
     alice: MatrixSession,
+    #[allow(dead_code)]
     bob: MatrixSession,
     alice_room: ChatRoom,
     bob_room: ChatRoom,
