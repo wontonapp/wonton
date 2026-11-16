@@ -10,6 +10,7 @@ import android.view.accessibility.AccessibilityNodeInfo
 import androidx.compose.ui.geometry.Offset
 import androidx.compose.ui.test.SemanticsNodeInteraction
 import androidx.compose.ui.test.assertIsDisplayed
+import androidx.compose.ui.test.assertIsNotDisplayed
 import androidx.compose.ui.test.click
 import androidx.compose.ui.test.hasClickAction
 import androidx.compose.ui.test.hasContentDescription
@@ -85,10 +86,10 @@ class RoomPanelGestureTest {
         canvasSwipe(0.5f, 0.25f, 0.5f, 0.7f)
         openButton.assertIsDisplayed()
         closePage.assertDoesNotExist()
-        closeStrip.assertDoesNotExist()
+        closeStrip.assertIsNotDisplayed()
         openButton.performTouchInput { click() }
         closePage.assertIsDisplayed()
-        closeStrip.assertDoesNotExist()
+        closeStrip.assertIsNotDisplayed()
         compose.onNodeWithContentDescription("Player").performClick()
         // 假网页是普通 URL 页，没有 Bot 网页的登录披露；真 Bot 页有就必须先确认。
         val disclosure = compose.onAllNodesWithText(compose.activity.getString(R.string.bot_web_open))
@@ -106,7 +107,7 @@ class RoomPanelGestureTest {
         compose.waitUntil(10_000) { visiblePlayer(instrumentation.uiAutomation.rootInActiveWindow) }
         closeStrip.assertIsDisplayed()
         canvasSwipe(0.005f, 0.5f, 0.85f, 0.5f)
-        closeStrip.assertDoesNotExist()
+        closeStrip.assertIsNotDisplayed()
         closePage.assertDoesNotExist()
         openButton.assertIsDisplayed()
         screenshot("main-edge-closed")
@@ -144,7 +145,7 @@ class RoomPanelGestureTest {
         screenshot("room-strip-closed")
         pressBack()
         openButton.assertIsDisplayed()
-        compose.onNode(hasSetTextAction()).assertDoesNotExist()
+        compose.onNode(hasSetTextAction()).assertIsNotDisplayed()
     }
 
     private fun pressBack() {
@@ -177,7 +178,7 @@ class RoomPanelGestureTest {
         assertTrue("Closed panel must leave the composer in place",
             kotlin.math.abs(composer.fetchSemanticsNode().boundsInWindow.bottom - originalBottom) < 3f)
         closePage.assertDoesNotExist()
-        closeStrip.assertDoesNotExist()
+        closeStrip.assertIsNotDisplayed()
         openButton.assertIsDisplayed()
     }
 
