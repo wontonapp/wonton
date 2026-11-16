@@ -35,6 +35,8 @@
     <!-- Content description of the small pin on an app row: the app\'s page is pinned to the navigation bar. -->
     <string name="sidebar_pinned">Pinned to the navigation bar</string>
     <!-- Row note for an app whose update needs confirmation before it can start. -->
+    <!-- Sidebar row note: tapping the row hands the app to the system browser instead of opening it in the app. -->
+    <string name="sidebar_opens_in_browser">Opens in browser</string>
     <!-- Content description of the red dot on the settings button in the sidebar. -->
     <string name="sidebar_needs_attention">Needs your attention</string>
     <string name="sidebar_problem">Has a problem</string>
