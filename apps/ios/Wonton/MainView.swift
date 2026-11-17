@@ -52,6 +52,9 @@ struct MainView: View {
         .onPreferenceChange(ChatPanelOpenKey.self) { showsPanel = $0 }
         .onChange(of: horizontalSizeClass) { _, _ in showsSidebar = false }
         .overlay { if chat.isOpeningChat { ProgressView() } }
+        #if DEBUG
+        .overlay(alignment: .topLeading) { KeyHandoffTestState(model: chat) }
+        #endif
         .modifier(ChatDialogs(model: chat))
         .modifier(DeviceVerificationDialogs(model: chat, suppressed: verificationSurfacesOpen))
         .modifier(TabMediaDialogs(model: pages))
