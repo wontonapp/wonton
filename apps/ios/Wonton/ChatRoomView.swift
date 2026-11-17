@@ -276,7 +276,8 @@ private extension ChatRoomView {
                     let joinsPrevious = index > 0 && item.joins(timeline.items[index - 1])
                     let joinsNext = index + 1 < timeline.items.count && timeline.items[index + 1].joins(item)
                     let flushesPrevious = index > 0 && timeline.items[index - 1].flushesWith(next: item)
-                    let flushesNext = index + 1 < timeline.items.count && item.flushesWith(next: timeline.items[index + 1])
+                    let flushesNext = index + 1 < timeline.items.count
+                        && item.flushesWith(next: timeline.items[index + 1])
                     // 做完了又没什么可写的 Agent 状态行不占一行。
                     if !item.isBlankAgentRun {
                         TimelineRow(
