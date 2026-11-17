@@ -12,6 +12,7 @@ import androidx.compose.foundation.layout.displayCutoutPadding
 import androidx.compose.foundation.layout.padding
 import androidx.compose.material3.CircularProgressIndicator
 import androidx.compose.material3.MaterialTheme
+import androidx.compose.ui.graphics.graphicsLayer
 import app.wonton.ui.design.WontonEdgeToEdgeScaffold
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
@@ -22,8 +23,6 @@ import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
-import androidx.compose.runtime.movableContentOf
-import androidx.compose.runtime.rememberUpdatedState
 import androidx.compose.runtime.setValue
 import androidx.compose.runtime.saveable.rememberSaveableStateHolder
 import androidx.compose.runtime.saveable.SaveableStateHolder
@@ -198,15 +197,18 @@ private fun AppContent(
                     }
                 }
             }
-            val latestPage by rememberUpdatedState(page)
-            val retainedPage = remember { movableContentOf { latestPage() } }
             CompositionLocalProvider(LocalChatPanel provides panel) {
+                // 面板可用性变化只改变叠层与平移，不搬移带有待处理 LazyList 操作的主页面。
                 if (panel != null) {
-                    ChatPanelHost(panel, pages, home, appearance, onDraft = onDraft, onDetails = nav::detail,
-                        content = retainedPage)
-                } else {
-                    retainedPage()
+                    ChatPanelHost(panel, pages, home, appearance, onDraft = onDraft, onDetails = nav::detail)
                 }
+                Box(Modifier.fillMaxSize().graphicsLayer {
+                    translationY = (panel?.shiftPx ?: 0f) * (panel?.sign ?: 1f)
+                }) {
+                    page()
+                    if (panel?.level == PanelLevel.PEEK) ChatPanelStrip(panel)
+                }
+                if (panel != null) ChatPanelOverlay(panel)
             }
         }
     }

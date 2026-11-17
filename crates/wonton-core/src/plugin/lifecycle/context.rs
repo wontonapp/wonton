@@ -8,7 +8,7 @@ use super::super::core_address;
 use super::super::hostdir::{self, Owner};
 use super::super::languages::Languages;
 use super::super::manager::{InstallError, PluginManager};
-use super::super::manifest::{Manifest, Permission, Sso};
+use super::super::manifest::{Manifest, ManifestExt, Permission, Sso};
 use super::super::render::InstallContext;
 use super::super::vars::{OidcVars, OwnerVars};
 use super::Undo;
@@ -90,7 +90,7 @@ impl PluginManager {
             })?;
         }
         let capabilities = {
-            let mut vars = self.dependency_vars(manifest)?;
+            let mut vars = self.dependency_vars(manifest, None)?;
             vars.extend(self.matrix_rtc_vars(manifest, &self.cfg.apps_dir.join(&slug), langs)?);
             vars.extend(self.agent_acp_provider_vars(manifest)?);
             vars

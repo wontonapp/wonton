@@ -1,5 +1,9 @@
 <?xml version="1.0" encoding="utf-8"?>
 <resources>
+    <!-- Section title for host hardware already authorized for this installed app. No arguments. -->
+    <string name="plugin_granted_devices">Authorized devices</string>
+    <!-- Fallback name for an authorized serial device with no name. No arguments. -->
+    <string name="plugin_device_serial">Serial device</string>
     <!-- Button that revokes one save permission. No arguments; short label. -->
     <string name="plugin_save_revoke">Revoke</string>
     <string name="plugin_settings_open">Open settings</string>

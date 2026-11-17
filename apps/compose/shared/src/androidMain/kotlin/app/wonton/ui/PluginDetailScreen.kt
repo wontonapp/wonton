@@ -261,6 +261,7 @@ private fun InstalledDetailSections(
     secretsInView: BringIntoViewRequester,
 ) {
     val installed = detail.installed ?: return
+    if (detail.devices.isNotEmpty()) GrantedDevicesSection(detail.devices)
     if (detail.hasSettings) {
         SettingsEntry(detail, navigation)
     }

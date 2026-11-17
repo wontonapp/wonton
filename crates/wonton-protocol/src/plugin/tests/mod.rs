@@ -332,6 +332,7 @@ fn detail() -> PluginDetail {
         blocked: None,
         notices: Vec::new(),
         problems: Vec::new(),
+        devices: Vec::new(),
         hints: vec![PluginHint {
             category: PluginHintCategory::ModelsNotConnected,
             detail: Some("模型网关没在运行".into()),

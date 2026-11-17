@@ -23,7 +23,7 @@ pub use remote_mcp::{
     RemoteOauthStart, plugin_remote_oauth_finish_path, plugin_remote_oauth_start_path,
     remote_oauth_start_path,
 };
-pub use view_model::PluginsViewModel;
+pub use view_model::{PluginsViewModel, StoreLoadState};
 mod permission;
 pub(super) mod ports;
 mod secret_input;
@@ -48,7 +48,7 @@ pub use owner_secrets::{
 };
 pub use permission::{
     PermissionLine, PermissionOpened, PermissionRisk, PermissionUpdate, PluginDevice,
-    PluginDeviceKind,
+    PluginDeviceKind, PluginGrantedDevice,
 };
 pub use secret_input::{
     SecretInput, SecretInputState, SecretUpdate, SecretValues, secret_input_path,

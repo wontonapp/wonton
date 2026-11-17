@@ -13,6 +13,7 @@ use wonton_core::plugin::capabilities;
 use wonton_core::plugin::compat::{self, Verdict};
 use wonton_core::plugin::github_source::SourceRef;
 use wonton_core::plugin::languages::Languages;
+use wonton_core::plugin::manifest::PluginKind;
 use wonton_core::plugin::package::PluginPackage;
 use wonton_core::plugin::package_files::{COMPOSE_FILE, PackageFiles};
 use wonton_core::plugin::render::dry_run;
@@ -49,6 +50,7 @@ fn problems(index: &Index) -> Vec<String> {
         .iter()
         .map(|plugin| format!("读不懂 {}：{}", plugin.source, plugin.reason))
         .collect();
+    problems.extend(onboarding_problems(index));
     problems.extend(uncovered(index));
     problems.extend(colliding_subdirs(index));
     for listed in &index.plugins {
@@ -58,6 +60,43 @@ fn problems(index: &Index) -> Vec<String> {
         }
         if let Some(reason) = compat_problem(&listed.entry) {
             problems.push(format!("{}：{reason}", listed.entry.source));
+        }
+    }
+    problems
+}
+
+fn onboarding_problems(index: &Index) -> Vec<String> {
+    let catalog = match (&index.onboarding, &index.onboarding_problem) {
+        (_, Some(reason)) => return vec![reason.clone()],
+        (Some(catalog), None) => catalog,
+        (None, None) => return vec!["onboarding：索引缺少引导推荐清单".to_owned()],
+    };
+    let mut problems = Vec::new();
+    for id in &catalog.agents {
+        match index
+            .plugins
+            .iter()
+            .find(|plugin| plugin.manifest.id.as_str() == id)
+        {
+            None => problems.push(format!("onboarding.agents：插件 {id} 不在索引里")),
+            Some(plugin) if plugin.manifest.kind != PluginKind::Agent => {
+                problems.push(format!("onboarding.agents：插件 {id} 不是 Agent"));
+            }
+            Some(_) => {}
+        }
+    }
+    for need in &catalog.needs {
+        for id in &need.plugins {
+            if !index
+                .plugins
+                .iter()
+                .any(|plugin| plugin.manifest.id.as_str() == id)
+            {
+                problems.push(format!(
+                    "onboarding.needs[{}]：插件 {id} 不在索引里",
+                    need.id
+                ));
+            }
         }
     }
     problems

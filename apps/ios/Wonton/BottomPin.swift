@@ -19,6 +19,8 @@ final class BottomPin {
     private var updateGeneration = 0
     private var settling = false
 
+    var viewportHeight: CGFloat { scrollView?.bounds.height ?? 0 }
+
     /// List 会为末尾追加和变高的行调整 contentOffset；翻走时保留更新前的位置，不借内容高度反推主人的手势。
     func prepareForUpdate() {
         guard !isPinned, let scrollView, !scrollView.isDragging, !scrollView.isDecelerating else { return }

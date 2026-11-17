@@ -18,7 +18,9 @@ use super::Refusal;
 use super::audience::Subject;
 use super::audit::{Basis, Decision, Grounds};
 use super::cards::{Draft, line};
-use super::{Bus, Caller, Outcome, ToolFailure, core_tools, with_confirmation, with_failure};
+use super::{
+    Bus, Caller, Outcome, ToolFailure, TurnSender, core_tools, with_confirmation, with_failure,
+};
 use crate::friends::FriendStatus;
 use crate::plugin::languages::Languages;
 
@@ -85,16 +87,12 @@ pub(super) async fn call(
             ),
         );
     };
-    // 放行时段按收件人放宽，前提是链的发起人就是这个 Bot 的归属人；认不清就不放宽。
-    let initiator_is_keeper = caller
-        .chain
-        .as_ref()
-        .and_then(|chain| {
-            bus.agent_chains()
-                .and_then(|chains| chains.ledger().row(chain))
-        })
-        .and_then(|row| initiator_username(bus, &row.user))
-        .is_some_and(|user| user == keeper);
+    // 放行时段按收件人放宽，前提是这轮的说话人就是这个 Bot 的归属人；认不清就不放宽。
+    let initiator_is_keeper = matches!(
+        &caller.sender,
+        Some(TurnSender::Local(user_id))
+            if super::audience::localpart(user_id) == Some(keeper.as_str())
+    );
     if initiator_is_keeper
         && let Some(window) = bus
             .confirmations()
@@ -242,14 +240,6 @@ fn resolve_recipient(bus: &Bus, recipient: &str) -> Option<String> {
 }
 
 /// 卡片上显示的名字：资料里的显示名，没填就用户名。
-/// 链发起人的本机用户名：`@名:本服务器` 才认得出来，别家的认不出（就不放宽）。
-fn initiator_username(bus: &Bus, user_id: &str) -> Option<String> {
-    let server = bus.people().ok()?.server_name.as_str();
-    let rest = user_id.strip_prefix('@')?;
-    let (name, host) = rest.split_once(':')?;
-    (host == server).then(|| name.to_owned())
-}
-
 fn display_name_of(display_name: Option<&str>, fallback: &str) -> String {
     display_name
         .filter(|name| !name.is_empty())

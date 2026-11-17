@@ -2,6 +2,66 @@
   "sourceLanguage": "en",
   "version": "1.0",
   "strings": {
+    "plugin.deviceUnavailable": {
+      "comment": "Status below an authorized host device that the core reports as unavailable. Keep short.",
+      "extractionState": "manual",
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Unavailable"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "不可用"
+          }
+        },
+        "zh-Hant": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "無法使用"
+          }
+        },
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "利用不可"
+          }
+        }
+      }
+    },
+    "plugin.grantedDevices": {
+      "comment": "Section heading in installed plugin details listing authorized host hardware, not paired phones.",
+      "extractionState": "manual",
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Authorized devices"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "已授权设备"
+          }
+        },
+        "zh-Hant": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "授權的裝置"
+          }
+        },
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "許可済みデバイス"
+          }
+        }
+      }
+    },
     "plugin.permission.added": {
       "comment": "Small tag next to a permission that's newly requested in this update.",
       "extractionState": "manual",

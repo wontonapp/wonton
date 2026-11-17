@@ -157,6 +157,25 @@ async fn explicit_webui_health_still_passes_under_spec_0_13() {
     assert!(report.warnings.is_empty(), "{report:?}");
 }
 
+// `WONTON_BOT_AI_LEVEL` 是 0.15 才注入的变量：`spec` 写低时 `plugin check` 在发布前就报要升 spec，
+// 不要等装到旧核心上才在插值时报“变量没有注入”。
+#[tokio::test]
+async fn check_names_the_spec_floor_for_the_bot_ai_level_variable() {
+    let services = format!(
+        "  web:\n    image: nginx:1.27@sha256:{}\n    environment:\n      LEVEL: ${{WONTON_BOT_AI_LEVEL}}",
+        "a".repeat(64)
+    );
+    let report = run(repo(&compose(&services, "")).path(), false)
+        .await
+        .unwrap();
+    assert!(
+        report.problems.iter().any(|problem| {
+            problem.contains("references WONTON_BOT_AI_LEVEL") && problem.contains("spec \"0.15\"")
+        }),
+        "{report:?}"
+    );
+}
+
 #[tokio::test]
 async fn the_official_index_refuses_hardcoded_proxy_addresses() {
     let services = |environment: &str| {
