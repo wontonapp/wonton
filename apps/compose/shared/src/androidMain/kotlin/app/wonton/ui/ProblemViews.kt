@@ -15,6 +15,7 @@ import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
+import androidx.compose.foundation.layout.heightIn
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.widthIn
@@ -324,7 +325,7 @@ fun ProblemDetail(
     val tint = colors.textSecondary.toColor()
     Column(verticalArrangement = Arrangement.spacedBy(WontonTheme.spacing.s4)) {
         Row(
-            modifier.clickable(role = Role.Button) { expanded = !expanded },
+            modifier.clickable(role = Role.Button) { expanded = !expanded }.heightIn(min = WontonTheme.size.target),
             horizontalArrangement = Arrangement.spacedBy(WontonTheme.spacing.s4),
             verticalAlignment = Alignment.CenterVertically,
         ) {
@@ -424,14 +425,16 @@ fun ProblemRow(problem: Problem, onRetry: (() -> Unit)? = null) {
 
 /** 过了几秒还没好时才出现的一句话。 */
 @Composable
-private fun SlowHint() {
+private fun SlowHint(
+    text: String = stringResource(R.string.problem_slow_loading),
+) {
     var slow by remember { mutableStateOf(false) }
     LaunchedEffect(Unit) {
         delay(SLOW_AFTER_MS)
         slow = true
     }
     Text(
-        stringResource(R.string.problem_slow_loading),
+        text,
         Modifier.fillMaxWidth().alpha(if (slow) 1f else 0f),
         style = WontonTheme.typography.supporting.copy(textAlign = TextAlign.Center),
         color = WontonTheme.colors.textSecondary.toColor(),
@@ -453,7 +456,10 @@ fun LoadingView() {
 
 /** 取列表：骨架占住列表的位置，慢了说一句。 */
 @Composable
-fun ListSkeleton(iconSize: Dp) {
+fun ListSkeleton(
+    iconSize: Dp,
+    slowHint: String = stringResource(R.string.problem_slow_loading),
+) {
     val loadingLabel = stringResource(R.string.problem_loading)
     val secondary = WontonTheme.ratio.secondaryContent
     val pulse by rememberInfiniteTransition(label = "skeleton").animateFloat(
@@ -482,6 +488,6 @@ fun ListSkeleton(iconSize: Dp) {
                 }
             }
         }
-        SlowHint()
+        SlowHint(slowHint)
     }
 }

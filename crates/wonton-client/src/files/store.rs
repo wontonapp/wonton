@@ -57,6 +57,9 @@ pub(super) enum Job {
         path: Option<String>,
         /// 半截文件对应的 ETag：接着下时交给 `If-Range`，文件变了核心给整个文件。
         etag: Option<String>,
+        /// 触发这次下载的房间，传输条按它归属。
+        #[serde(default)]
+        room: Option<String>,
     },
 }
 
@@ -276,9 +279,9 @@ fn view_of(
 fn transfer(record: &Record, downloads_dir: &Path) -> Transfer {
     let (direction, room, destination) = match &record.job {
         Job::Upload { room, .. } => (TransferDirection::Upload, room.clone(), None),
-        Job::Download { path, .. } => (
+        Job::Download { path, room, .. } => (
             TransferDirection::Download,
-            None,
+            room.clone(),
             path.as_ref()
                 .map(|path| downloads_dir.join(path).to_string_lossy().into_owned()),
         ),

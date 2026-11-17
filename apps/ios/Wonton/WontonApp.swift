@@ -6,7 +6,6 @@ import WontonClient
 
 @main
 struct WontonApp: App {
-    @Environment(\.scenePhase) private var scenePhase
     @UIApplicationDelegateAdaptor(FullscreenOrientation.self) private var orientation
     /// 整个 App 只有一个核心实例，状态都在它里面。
     @State private var launch: Launch
@@ -19,7 +18,7 @@ struct WontonApp: App {
     var body: some Scene {
         WindowGroup {
             switch launch {
-            case let .ready(chat, home, plugins, appearance, navigation, systemEntry, lock):
+            case let .ready(chat, home, plugins, appearance, navigation, _, lock, _):
                 WontonThemeRoot(appearance: appearance.viewModel) {
                     // 锁页盖在整棵树上：深链、设置页和插件网页都挡得住（ADR-0102）。
                     AppLockGate(lock: lock) {
@@ -45,6 +44,7 @@ struct WontonApp: App {
                     }
                 }
                 .environmentObject(orientation)
+                .modifier(ContentWindowOpening(core: chat.core))
                 .task { await appearance.observe() }
                 .task { await lock.observe() }
                 .onContinueUserActivity(CSSearchableItemActionType) { activity in
@@ -52,18 +52,36 @@ struct WontonApp: App {
                           let url = URL(string: identifier) else { return }
                     navigation.receive(url)
                 }
-                .onChange(of: scenePhase) { old, phase in
-                    // 挂起期间服务端可能已经放弃了连接、网络也可能变了，让核心检查并重连。离开后台就发，不等
-                    // .active（实测晚约 0.4 秒）：核心要赶在网页恢复后的第一个请求之前开始检查。
-                    if old == .background, phase != .background { home.send(.home(action: .appForegrounded)) }
-                    if phase == .background { home.send(.home(action: .appBackgrounded)) }
-                }
             case let .failed(reason):
                 WontonThemeRoot(appearance: defaultAppearance()) {
                     ContentUnavailableView(
                         String(localized: .appLaunchFailed), systemImage: "exclamationmark.triangle",
                         description: Text(reason)
                     )
+                }
+            }
+        }
+        WindowGroup(for: ContentWindowTarget.self) { $target in
+            switch launch {
+            case let .ready(chat, home, plugins, appearance, navigation, _, lock, _):
+                WontonThemeRoot(appearance: appearance.viewModel) {
+                    AppLockGate(lock: lock) {
+                        if let target {
+                            ContentWindow(target: target, chat: chat, home: home, plugins: plugins,
+                                          appearance: appearance, navigation: navigation)
+                                .id(target)
+                        } else {
+                            Text(.Sidebar.sidebarWindowUnavailable)
+                        }
+                    }
+                }
+                .environmentObject(orientation)
+                .modifier(ContentWindowOpening(core: chat.core))
+                .task { await lock.observe() }
+            case let .failed(reason):
+                WontonThemeRoot(appearance: defaultAppearance()) {
+                    ContentUnavailableView(String(localized: .appLaunchFailed), systemImage: "exclamationmark.triangle",
+                                           description: Text(reason))
                 }
             }
         }
@@ -75,7 +93,7 @@ struct WontonApp: App {
 private enum Launch {
     case ready(
         ChatModel, HomeModel, PluginsModel, AppearanceModel, AppNavigation, SystemEntryModel,
-        AppLockModel)
+        AppLockModel, AppActivity)
     case failed(String)
 
     /// 开发时 `WONTON_DEV_OPEN_WEB=<插件网页地址>`：本地代理就绪后自动打开（见 HomeView）。
@@ -135,7 +153,7 @@ private enum Launch {
         let systemEntry = SystemEntryModel(core: core, dataDirectory: directory)
         return .ready(
             chat, home, plugins, AppearanceModel(core: core), navigation, systemEntry,
-            AppLockModel(core: core))
+            AppLockModel(core: core), AppActivity(home: home))
     }
 
     /// 核心的数据目录，存设备密钥和连接信息。

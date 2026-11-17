@@ -86,7 +86,12 @@ impl TunnelClient {
         let mut live = None;
         if let Some(attempt) = current.as_ref() {
             tracing::info!(
-                outcome = ?attempt.outcome().map(|result| result.map(|conn| conn.close_reason())),
+                outcome = match attempt.outcome() {
+                    None => "pending",
+                    Some(Ok(conn)) if conn.close_reason().is_none() => "connected",
+                    Some(Ok(_)) => "disconnected",
+                    Some(Err(err)) => err.code(),
+                },
                 revalidating = attempt.revalidating,
                 "revalidate: existing attempt"
             );
@@ -274,7 +279,7 @@ impl TunnelClient {
                 Ok(conn)
             }
             Verdict::Ping(Err(err)) => {
-                info!("现有连接不可用，重新建连：{err}");
+                info!(code = err.code(), "现有连接不可用，重新建连");
                 self.dial_replacement(Some(conn)).await
             }
             Verdict::Silent(Some((proof, received))) => {

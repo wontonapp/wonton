@@ -118,7 +118,10 @@ async fn a_download_waits_out_the_services_when_asking_the_name() {
     world
         .phone()
         .dispatch(Action::Files {
-            action: wonton_protocol::FileAction::DownloadFile { id: file.clone() },
+            action: wonton_protocol::FileAction::DownloadFile {
+                id: file.clone(),
+                room: "!bot:home".into(),
+            },
         })
         .unwrap();
     paused_by_the_services(&world).await;
@@ -140,7 +143,10 @@ async fn a_download_waits_out_the_services_when_fetching_the_content() {
     world
         .phone()
         .dispatch(Action::Files {
-            action: wonton_protocol::FileAction::DownloadFile { id: file.clone() },
+            action: wonton_protocol::FileAction::DownloadFile {
+                id: file.clone(),
+                room: "!bot:home".into(),
+            },
         })
         .unwrap();
     world

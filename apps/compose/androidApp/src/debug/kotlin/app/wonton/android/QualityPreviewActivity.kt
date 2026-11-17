@@ -176,6 +176,7 @@ private fun previewHome(
         lossPerMille = 73u.toUShort(),
         rttMs = 1240u,
         lastFailure = null,
+        diagnostic = null,
         addressesStale = false,
         udpFlows = flows,
         udpBufferEvictedDatagrams = evicted,

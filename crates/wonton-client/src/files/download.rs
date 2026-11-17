@@ -82,7 +82,7 @@ fn local(error: &io::Error) -> Problem {
 }
 
 pub(super) async fn run(link: &Arc<FilesLink>, record: Record) -> Result<(), Problem> {
-    let Job::Download { path, etag } = record.job else {
+    let Job::Download { path, etag, .. } = record.job else {
         unreachable!("record job is not a download");
     };
     let file = record.file.expect("download record always has a file id");

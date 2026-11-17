@@ -194,6 +194,7 @@ dependencies {
     androidTestImplementation(libs.junit)
     androidTestImplementation(libs.androidx.test.junit)
     androidTestImplementation(libs.androidx.test.rules)
+    androidTestImplementation(libs.compose.foundation)
     androidTestImplementation(libs.compose.ui.test.junit4)
     // shared 用 implementation 引 Compose，测试编译 StepCardFrame 要自己拿到这些类型。
     testImplementation(libs.compose.runtime)
