@@ -56,6 +56,8 @@ mod friends;
 mod friends_wiring;
 mod health;
 mod hosted;
+mod install_gate_cards;
+mod install_gate_checks;
 mod install_gates;
 mod isolation;
 mod join_requests;
