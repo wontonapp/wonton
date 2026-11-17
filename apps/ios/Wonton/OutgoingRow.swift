@@ -2,7 +2,7 @@ import SwiftUI
 import WontonClient
 
 /// 点了发送、还没交给 Matrix 的一条（ADR-0094），画在时间线最后一条后面。附件各自画着上传的进展；交出去以后由 SDK 的本地回显代替。
-/// 传着的时候有「取消发送」按钮，确认后整条不发、上传停下；传不上去时整条变红，点开重发或者删掉。
+/// 传着的时候有「取消发送」按钮，确认后整条不发、上传停下；传不上去时状态行画警告图标，点开重发或者删掉。
 struct OutgoingRow: View {
     let message: OutgoingMessage
     let composer: ComposerModel
@@ -17,7 +17,8 @@ struct OutgoingRow: View {
     var body: some View {
         HStack(spacing: 0) {
             Spacer(minLength: WontonTheme.spacing.s48)
-            VStack(alignment: .trailing, spacing: WontonTheme.spacing.s4) {
+            // 附件、配文和状态是同一次发送（ADR-0094）：装进同一个气泡，状态提示也画在里面，不看成几次发送。
+            VStack(alignment: .trailing, spacing: WontonTheme.spacing.s8) {
                 if !message.attachments.isEmpty {
                     LazyVGrid(
                         columns: Array(
@@ -36,12 +37,12 @@ struct OutgoingRow: View {
                     Text(message.body)
                         .wontonText(WontonTheme.typography.body)
                         .foregroundStyle(Color(colors.textOnAccentFill))
-                        .padding(.horizontal, WontonTheme.spacing.s12)
-                        .padding(.vertical, WontonTheme.spacing.s8)
-                        .accentFill(shape)
                 }
                 footer
             }
+            .padding(.horizontal, WontonTheme.spacing.s12)
+            .padding(.vertical, WontonTheme.spacing.s8)
+            .accentFill(shape)
         }
         .accessibilityIdentifier("outgoingMessage")
     }
@@ -54,8 +55,10 @@ struct OutgoingRow: View {
                     Text(.Message2.messageSendingProgress(
                         Double(progress).formatted(.percent.precision(.fractionLength(0)))
                     ))
+                    .foregroundStyle(Color(colors.textOnAccentFill))
                 } else {
                     Text(.Message2.messageSending)
+                        .foregroundStyle(Color(colors.textOnAccentFill))
                 }
                 // 盲测在气泡上找不到取消：状态文字不像能点，取消要自己长成看得见的按钮，点开确认。
                 // 传着的时候也能取消：整条不发，上传停下（盲测：取消了照样发出去）。
@@ -84,7 +87,7 @@ struct OutgoingRow: View {
                         WontonIcon.warningCircle.view(size: WontonTheme.size.iconTiny)
                         Text(.Message1.messageSendFailed(reason))
                     }
-                    .foregroundStyle(Color(colors.danger))
+                    .foregroundStyle(Color(colors.textOnAccentFill))
                 }
                 .buttonStyle(.plain)
                 .wontonActionSheet(isPresented: $isChoosingFailed, actions: [
@@ -100,6 +103,5 @@ struct OutgoingRow: View {
             }
         }
         .wontonText(WontonTheme.typography.caption)
-        .foregroundStyle(Color(colors.textSecondary))
     }
 }
