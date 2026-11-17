@@ -66,6 +66,43 @@ impl ClientCore {
         core.seed_ui_fake();
         Ok(core)
     }
+
+    /// UI 测试专用：恢复页面初态并写出 fixture；只接受 ui-fake 核心。
+    pub fn reset_ui_fake_pages_fixture(&self, path: String) -> Result<(), CoreError> {
+        if !self.ui_fake.load(Ordering::SeqCst) {
+            return Err(CoreError::InvalidInput {
+                reason: "page fixtures require a ui-fake core".into(),
+            });
+        }
+        let views = self.views();
+        let pages = fake_pages(views.pages.borrow().clone());
+        let fixture = serde_json::to_vec(&pages).map_err(|error| CoreError::InvalidInput {
+            reason: format!("cannot encode page fixture: {error}"),
+        })?;
+        std::fs::write(path, fixture).map_err(|error| CoreError::InvalidInput {
+            reason: format!("cannot write page fixture: {error}"),
+        })?;
+        views.pages.send_replace(pages);
+        Ok(())
+    }
+
+    /// UI 测试专用：从 fixture 发布页面状态帧，不执行生产操作。
+    pub fn apply_ui_fake_pages_fixture(&self, path: String) -> Result<(), CoreError> {
+        if !self.ui_fake.load(Ordering::SeqCst) {
+            return Err(CoreError::InvalidInput {
+                reason: "page fixtures require a ui-fake core".into(),
+            });
+        }
+        let fixture = std::fs::read(path).map_err(|error| CoreError::InvalidInput {
+            reason: format!("cannot read page fixture: {error}"),
+        })?;
+        let pages: PagesViewModel =
+            serde_json::from_slice(&fixture).map_err(|error| CoreError::InvalidInput {
+                reason: format!("cannot decode page fixture: {error}"),
+            })?;
+        self.views().pages.send_replace(pages);
+        Ok(())
+    }
 }
 
 impl ClientCore {

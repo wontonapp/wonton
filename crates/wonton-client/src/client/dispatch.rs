@@ -325,7 +325,6 @@ impl ClientCore {
             | PageAction::SelectPanelPage { .. }
             | PageAction::SetBotPinConsent { .. }
             | PageAction::PinCurrentPage { .. }
-            | PageAction::SetRoomEntryBlocked { .. }
             | PageAction::ReloadTab { .. }
             | PageAction::DismissUninstalledTabs) => scope.pages.dispatch(action),
         }

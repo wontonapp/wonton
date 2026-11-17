@@ -48,11 +48,6 @@ pub struct TimelineUpdate {
     /// 房间面板上次看的那一页（本机记住，不同步），下次拉开还是它。没记住时为 `None`。
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub panel_selected: Option<crate::TabRef>,
-    /// 房间里另有东西开着（长按菜单、多选模式、转发或删除确认、交给 Bot 的选择、斜杠命令列表）：
-    /// 上推拉面板的入口不响应。壳只读它，不自己合成；状态由
-    /// [`PageAction::SetRoomEntryBlocked`](crate::PageAction::SetRoomEntryBlocked) 报告，换房间后按没盖算。
-    #[serde(default)]
-    pub entry_blocked: bool,
     /// 时间线里有本设备解不开的消息时，给主人的下一步；没有或者这台设备已经有密钥时长这样。
     ///
     /// 由核心按账号的恢复状态给出，壳在输入栏上方显示一行说明和按钮，按类别跳到备份页。
@@ -697,7 +692,6 @@ mod tests {
             anchor: Some("5".into()),
             panel: Vec::new(),
             panel_selected: None,
-            entry_blocked: true,
             key_notice: Some(KeyNotice::EnterRecoveryKey),
             confirmations: Vec::new(),
             side_chat: None,
@@ -759,7 +753,6 @@ mod tests {
             anchor: None,
             panel: Vec::new(),
             panel_selected: None,
-            entry_blocked: false,
             key_notice: Some(KeyNotice::VerifyWithOtherDevice),
             confirmations: Vec::new(),
             side_chat: None,

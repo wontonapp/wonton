@@ -60,13 +60,6 @@ final class PanelPagePullTests: XCTestCase {
         XCTAssertEqual(moved, [150])
     }
 
-    func testChatListPullsFromAnywhere() {
-        let anchor = PullAnchor(attachesToAncestor: false, edge: .top)
-        wire(anchor)
-        drag(anchor, fromY: 400, by: 150)
-        XCTAssertEqual(moved, [150], "The chat list has no start zone")
-    }
-
     func testZoneGeometry() {
         let visible = CGRect(x: 0, y: 100, width: 390, height: 600)
         let zone = WontonTheme.gesture.pageEdgeZone
@@ -82,7 +75,7 @@ final class PanelPagePullTests: XCTestCase {
     private var visible: CGRect { window.bounds.inset(by: window.safeAreaInsets) }
 
     private func pageAnchor(edge: PanelEdge, obscured: UIEdgeInsets = .zero) -> PullAnchor {
-        let anchor = PullAnchor(attachesToAncestor: false, edge: edge)
+        let anchor = PullAnchor(edge: edge)
         anchor.startZone = PagePullZone(obscured: obscured)
         wire(anchor)
         return anchor

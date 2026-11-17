@@ -483,10 +483,6 @@ pub enum PageAction {
         title: Option<String>,
         to: crate::PinTarget,
     },
-    /// 壳报告房间里盖着消息列表的东西开没开：长按菜单、多选模式、转发或删除确认、交给 Bot 的选择、
-    /// 斜杠命令列表。核心把它和核心自己知道的状态合成 [`TimelineUpdate::entry_blocked`]，
-    /// 壳只读那一个字段决定上推拉面板的入口响不响应。换房间后按没盖算，壳不用补发。
-    SetRoomEntryBlocked { room_id: String, blocked: bool },
     /// 重新加载插件页（重试、“···”里的重新加载）。`page` 指是哪一份：栈里的和面板里的同一页面
     /// 各自加载，互不影响（ADR-0052）。
     ReloadTab { page: crate::PlacedTab },
