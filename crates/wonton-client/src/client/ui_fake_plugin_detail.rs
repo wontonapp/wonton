@@ -40,7 +40,7 @@ pub(super) fn detail(
     // main 侧的“安装失败”详情：别的应用装着且带安装失败时，拿它自己的头面给一份；从空白底子起，
     // 不带 hub 的设备、问题，也不带 hub 的分享状态（那是 Home Hub 的，不是这个插件的）。
     let installed = installed.filter(|plugin| plugin.install_failure.is_some())?;
-    let mut detail = app(&id, &installed.title, &installed.summary, None);
+    let mut detail = app(id, &installed.title, &installed.summary, None);
     detail.source = installed.source.clone();
     detail.kind = installed.kind;
     detail.version = installed.version.clone();
