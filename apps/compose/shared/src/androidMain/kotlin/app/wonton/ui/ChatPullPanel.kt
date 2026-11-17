@@ -76,10 +76,9 @@ private const val PAGE_MATCH = 0.01f
 private const val PAGE_WINDOW = 1.01f
 
 /**
- * 聊天页和从列表那一头拉出来的面板（ADR-0052）：面板垫在聊天页后面，聊天页跟着手指移动。
- * 主聊天页的面板在上（往下拉），房间的面板在下（往上推）。壳只画核心给的面板数据。
+ * 面板的尺寸子组合只承载面板页；主页面与手势层留在调用方的同一父级，避免面板切换时搬移主页面。
+ * 主聊天页的面板在上（往下拉），房间的面板在下（往上推）。
  */
-@Suppress("CyclomaticComplexMethod") // 层叠、返回、几何都在这，拆开要带一堆参数。
 @Composable
 internal fun ChatPanelHost(
     panel: ChatPanelState,
@@ -88,7 +87,6 @@ internal fun ChatPanelHost(
     appearance: AppearanceViewModel,
     onDraft: (String) -> Unit,
     onDetails: (String) -> Unit,
-    content: @Composable () -> Unit,
 ) {
     val density = LocalDensity.current
     val keyboard = LocalSoftwareKeyboardController.current
@@ -110,14 +108,12 @@ internal fun ChatPanelHost(
     LaunchedEffect(panel.pages.isEmpty()) {
         if (panel.pages.isEmpty() && panel.level == PanelLevel.FULL) panel.move(PanelLevel.PEEK)
     }
-    val current = panel.controller
     BoxWithConstraints(Modifier.fillMaxSize()) {
         panel.ready(constraints.maxHeight.toFloat(), with(density) { status.calculateTopPadding().toPx() },
             with(density) { navigation.calculateBottomPadding().toPx() })
         panel.geometry(density.density)
         val height = constraints.maxHeight.toFloat()
         val shift = panel.shiftPx
-        val safeBottom = with(density) { navigation.calculateBottomPadding() }
         if (panel.visible) {
             Box(
                 Modifier.fillMaxSize().graphicsLayer {
@@ -132,10 +128,15 @@ internal fun ChatPanelHost(
                 }
             }
         }
-        Box(Modifier.fillMaxSize().graphicsLayer { translationY = shift * panel.sign }) {
-            content()
-            if (panel.level == PanelLevel.PEEK) ChatPanelStrip(panel)
-        }
+    }
+}
+
+/** 手势层排在主页面之后，保证边缘热区的命中优先级。 */
+@Composable
+internal fun ChatPanelOverlay(panel: ChatPanelState) {
+    val status = WindowInsets.statusBars.asPaddingValues()
+    val safeBottom = WindowInsets.navigationBars.asPaddingValues().calculateBottomPadding()
+    Box(Modifier.fillMaxSize()) {
         ChatPanelEdge(panel, panel.visible)
         ChatPanelTopPull(panel)
         if (!panel.visible && panel.pages.any { it.attention }) {
