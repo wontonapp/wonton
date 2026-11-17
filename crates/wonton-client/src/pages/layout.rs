@@ -2,8 +2,8 @@ use std::path::Path;
 
 use serde::{Deserialize, Serialize};
 use wonton_protocol::{
-    CoreError, LayoutSettings, MAX_PANEL_PAGES, MyAppEntry, MyAppRef, PanelEntry, TabIcon,
-    TabLayout, TabRef,
+    CoreError, LayoutSettings, MAX_PANEL_PAGES, MyAppEntry, MyAppRef, PagesFailure, PanelEntry,
+    TabIcon, TabLayout, TabRef,
 };
 
 use super::{entry_plugin_id, invalid};
@@ -25,6 +25,12 @@ pub(super) struct LayoutFile {
     /// 主聊天页下拉面板里的页面，按显示顺序（ADR-0052）。
     #[serde(default)]
     pub(super) panel: Vec<PanelEntry>,
+}
+
+#[derive(Clone)]
+pub(super) struct LayoutReadError {
+    pub(super) reason: PagesFailure,
+    pub(super) message: String,
 }
 
 impl LayoutFile {
@@ -96,32 +102,39 @@ pub(super) struct StoredPage {
     pub(super) layout: TabLayout,
 }
 
-pub(super) fn read_file(path: &Path) -> Result<LayoutFile, String> {
+pub(super) fn read_file(path: &Path) -> Result<LayoutFile, LayoutReadError> {
     let bytes = match std::fs::read(path) {
         Ok(bytes) => bytes,
         Err(error) if error.kind() == std::io::ErrorKind::NotFound => {
             return Ok(default_file(None));
         }
         Err(error) => {
-            return Err(l10n!(
-                CATALOG,
-                language(),
-                "tabs-config-read-failed",
-                path = path.display().to_string(),
-                reason = error.to_string()
-            ));
+            return Err(LayoutReadError {
+                reason: PagesFailure::StorageRead,
+                message: l10n!(
+                    CATALOG,
+                    language(),
+                    "tabs-config-read-failed",
+                    path = path.display().to_string(),
+                    reason = error.to_string()
+                ),
+            });
         }
     };
-    let file: LayoutFile = serde_json::from_slice(&bytes).map_err(|error| {
-        l10n!(
+    let file: LayoutFile = serde_json::from_slice(&bytes).map_err(|error| LayoutReadError {
+        reason: PagesFailure::InvalidConfig,
+        message: l10n!(
             CATALOG,
             language(),
             "tabs-config-corrupt",
             path = path.display().to_string(),
             reason = error.to_string()
-        )
+        ),
     })?;
-    validate_file(&file)?;
+    validate_file(&file).map_err(|message| LayoutReadError {
+        reason: PagesFailure::InvalidConfig,
+        message,
+    })?;
     Ok(file)
 }
 

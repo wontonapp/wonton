@@ -506,7 +506,19 @@ async fn corrupted_config_recovers_and_restart_starts_with_an_empty_stack() {
     assert!(broken.problem.is_some());
     assert!(!broken.my_app_candidates.is_empty());
 
-    // 下一次成功的配置改动重写文件，原因消失。
+    // 文件坏着时配置改动返回错误：失败即停，不装作成功，原因保持。
+    let rejected = rig.app.dispatch(Action::Pages {
+        action: wonton_protocol::PageAction::SetAutoAddApps { enabled: false },
+    });
+    assert!(matches!(rejected, Err(CoreError::Storage { .. })));
+    assert!(rig.app.pages().problem.is_some());
+
+    // 修好文件后，同一个改动成功：原因消失，改动落盘，重启后保持。
+    std::fs::write(
+        rig.data_dir().join("layout.json"),
+        b"{\"server_id\":null,\"my_apps\":[],\"auto_add\":true,\"my_apps_initialized\":true}",
+    )
+    .unwrap();
     rig.app
         .dispatch(Action::Pages {
             action: wonton_protocol::PageAction::SetAutoAddApps { enabled: false },
