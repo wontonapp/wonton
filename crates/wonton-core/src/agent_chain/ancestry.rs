@@ -11,7 +11,6 @@ use super::{
 
 #[derive(Debug)]
 pub(super) struct SessionPath {
-    pub session: String,
     pub bot: BotRef,
     pub layer: u32,
     pub parents: Vec<Arc<SessionPath>>,
@@ -108,7 +107,6 @@ pub(super) fn register(
         layer,
     );
     let path = Arc::new(SessionPath {
-        session: session.to_owned(),
         bot: bot.clone(),
         layer,
         parents,
