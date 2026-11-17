@@ -75,9 +75,15 @@ impl Gateway {
                 core.kick(&room, &member.user_id).await?;
             }
         }
-        matrix.join_family_room(&room, owner).await?;
+        // 主人没填过名字时不写：`owner()` 这时拿用户名充数，写进去就成了一条“用户名改名为用户名”。
+        let owner_name = self.owner.profile().display_name;
+        matrix
+            .join_family_room(&room, owner, owner_name.as_deref())
+            .await?;
         for member in family {
-            matrix.join_family_room(&room, &member.username).await?;
+            matrix
+                .join_family_room(&room, &member.username, Some(&member.display_name))
+                .await?;
         }
         Ok(())
     }
