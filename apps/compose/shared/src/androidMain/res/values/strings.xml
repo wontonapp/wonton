@@ -100,7 +100,7 @@
     <!-- Widget text when the app is switching servers or the widget data can't be read. Tapping opens the app. No arguments. -->
     <string name="widget_open_to_refresh">Open Wonton to refresh</string>
     <!-- Agent status widget when no default agent is set. Tapping opens the app. No arguments. -->
-    <string name="widget_choose_agent">Choose a default agent in Wonton</string>
+    <string name="widget_choose_agent">Choose a default assistant in Wonton</string>
     <!-- Agent status widget when the agent hasn't reported what it's doing. No arguments. -->
     <string name="widget_agent_status_unknown">Status unknown</string>
     <!-- Footer of the recent chats widget: when its data was last written. Argument: a time like 14:05, or a date and time if not today. -->
