@@ -260,20 +260,6 @@ impl PagesLink {
         }
     }
 
-    /// 壳报告房间里盖着消息列表的东西开没开。不是打开着的房间就忽略（壳的报告迟到了）。
-    pub(super) fn set_room_entry_blocked(
-        &self,
-        room_id: &str,
-        blocked: bool,
-    ) -> Result<(), CoreError> {
-        self.runtime_change(|state, _| {
-            if let Some(room) = state.rooms.get_mut(room_id) {
-                room.blocked = blocked;
-            }
-            Ok(())
-        })
-    }
-
     /// 房间面板的改动：写进房间账号数据，成功才算改了（房间面板没有本机文件，离线开的是
     /// 同步到的旧内容）。改动是否合法由调用方先对着当前内容验好；这里只负责写和喂回。
     /// 成功后把新内容喂回去，视图马上跟上；失败显示原因，面板不动。

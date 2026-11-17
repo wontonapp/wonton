@@ -148,7 +148,6 @@ pub(crate) struct RoomPanelView {
     pub(crate) room_id: OwnedRoomId,
     pub(crate) panel: Vec<PanelItem>,
     pub(crate) selected: Option<TabRef>,
-    pub(crate) blocked: bool,
     /// 房间顶栏的 widget 入口（ADR-0096）。
     pub(crate) widgets: Vec<wonton_protocol::RoomWidget>,
 }
@@ -276,9 +275,6 @@ impl PagesLink {
             }
             PageAction::SelectPanelPage { scope, tab } => self.select_panel_page(scope, tab),
             PageAction::PinCurrentPage { url, title, to } => self.pin_current_page(&url, title, to),
-            PageAction::SetRoomEntryBlocked { room_id, blocked } => {
-                self.set_room_entry_blocked(&room_id, blocked)
-            }
             PageAction::DismissUninstalledTabs => self.dismiss_uninstalled(),
         }
     }
