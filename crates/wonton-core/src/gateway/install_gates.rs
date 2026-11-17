@@ -411,14 +411,15 @@ where
     }
 }
 
-/// 升级的门槛：卡片内容按升级预览写，批准后执行 `run`。
+/// 升级的门槛：卡片内容按升级预览写，批准后执行 `run`。`enabled` 是请求带上的可选项全集，
+/// 预览按它算生效集——成员升级时顺手打开的可选权限，卡片上也要看得见。
 pub(crate) async fn upgrade<F, Fut>(
     gateway: &Arc<Gateway>,
     peer: Option<Extension<TunnelPeer>>,
     headers: &HeaderMap,
     person: &Person,
     id: &PluginId,
-    (to, selected): (UpgradeTo, &[String]),
+    (to, selected, enabled): (UpgradeTo, &[String], Option<&[String]>),
     run: F,
 ) -> GateOutcome<Outcome<Response>>
 where
@@ -429,7 +430,11 @@ where
         Gate::Allow => GateOutcome::Wait(ready(Outcome::Done(run(gateway.clone()).await))),
         wonton_protocol::Gate::AskAdmin => {
             let langs = gateway.plugins.owner_languages();
-            match gateway.plugins.preview_upgrade(id, to, &langs).await {
+            match gateway
+                .plugins
+                .preview_upgrade(id, to, enabled, &langs)
+                .await
+            {
                 Ok(preview) => {
                     let (first, second) = match nvme_admin_cards(&preview, selected, true, &langs) {
                         Ok(cards) => cards,

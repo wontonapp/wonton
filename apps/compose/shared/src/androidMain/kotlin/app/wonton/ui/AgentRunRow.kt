@@ -5,6 +5,7 @@ import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
+import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.heightIn
 import androidx.compose.foundation.layout.padding
@@ -17,6 +18,7 @@ import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
+import androidx.compose.runtime.produceState
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
@@ -27,6 +29,7 @@ import androidx.compose.ui.platform.testTag
 import androidx.compose.ui.res.pluralStringResource
 import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.semantics.Role
+import kotlinx.coroutines.delay
 import app.wonton.protocol.AgentRunEnd
 import app.wonton.protocol.AgentRunState
 import app.wonton.protocol.ThemeColors
@@ -81,6 +84,11 @@ val TimelineContent.AgentRun.isBlank: Boolean
 
 /** 展开时尖角朝下：转四分之一圈。 */
 private const val EXPANDED_TURN = 90f
+
+/** 已等待的分钟数多久刷新一次；分钟粒度，半分钟内跟上就行。 */
+private const val WAITED_TICK_MS = 30_000L
+
+private const val MINUTE_MS = 60_000L
 
 /** 做完的一轮：一行“N 步”，有总结时能点开；没有步数只有总结时直接写总结。 */
 @Composable
@@ -151,10 +159,40 @@ private fun StatusLine(run: TimelineContent.AgentRun, onOpenCard: (String) -> Un
                 color = statusInk(run, colors).toColor(),
             )
         }
+        if (run.state == AgentRunState.Working) {
+            // 步骤文字用 weight 顶开整行；没有它时长自己顶，两处都靠右。
+            if (text.isEmpty()) {
+                Spacer(Modifier.weight(1f))
+            }
+            Waited(run.timestampMs)
+        }
         if (cardId != null) {
             // 装饰：整行可点，箭头只表示能过去。
             Icon(WontonIcon.Forward, null, Modifier.size(WontonTheme.size.iconSmall), tint = colors.accentInk.toColor())
         }
+    }
+}
+
+/**
+ * 已等待的分钟数（ADR-0082 §4）：从状态消息自己的发送时间算（编辑不改它），走针按
+ * [ConfirmationRemaining] 的写法；不满一分钟不写，不凑数。状态不再是 working 时整块消失。
+ */
+@Composable
+private fun Waited(sinceMs: ULong) {
+    if (sinceMs == 0uL) return
+    val now by produceState(System.currentTimeMillis(), sinceMs) {
+        while (true) {
+            value = System.currentTimeMillis()
+            delay(WAITED_TICK_MS)
+        }
+    }
+    val minutes = ((now - sinceMs.toLong()) / MINUTE_MS).coerceAtLeast(0)
+    if (minutes >= 1) {
+        Text(
+            stringResource(R.string.agent_run_waited, minutes),
+            style = WontonTheme.typography.supporting,
+            color = WontonTheme.colors.textSecondary.toColor(),
+        )
     }
 }
 

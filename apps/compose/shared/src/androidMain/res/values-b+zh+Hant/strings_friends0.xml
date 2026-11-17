@@ -29,4 +29,7 @@
     <string name="friends_error_rate_limited">請求太多，等 %1$d 秒</string>
     <!-- Failure title for the remaining categories. -->
     <string name="friends_error_other">出了點問題，稍後再試。</string>
+
+    <!-- 橫幅下的一行解釋：總開關重新打開前，別的伺服器上的好友聯絡不到這台。 -->
+    <string name="friends_public_access_off_detail">別的伺服器上的好友暫時聯絡不到這台；重新打開公網訪問後，對方重試就能到。</string>
 </resources>

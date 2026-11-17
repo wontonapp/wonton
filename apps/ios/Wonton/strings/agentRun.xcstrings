@@ -163,6 +163,36 @@
           }
         }
       }
+    },
+    "agentRun.waited": {
+      "comment": "Elapsed wait on a working run, from the status message's own send time. Argument: whole minutes, at least 1.",
+      "extractionState": "manual",
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "%lld min elapsed"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "已等待 %lld 分钟"
+          }
+        },
+        "zh-Hant": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "已等待 %lld 分鐘"
+          }
+        },
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "%lld 分待ち"
+          }
+        }
+      }
     }
   }
 }
