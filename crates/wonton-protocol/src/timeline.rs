@@ -71,11 +71,12 @@ pub struct TimelineUpdate {
     /// 房间里有人在通话（`m.call.member` 里有没过期的通话成员）：入口显示“通话中”，点了就是加入。
     #[serde(default)]
     pub call_active: bool,
-    /// 群里在场的 AI（本账号认识的 Bot 的 Matrix 用户 ID）：按房间成员和 Bot 记录算，每批都带当前值，
-    /// 变了也会补发一批。私聊不算：私聊的 Bot 顶栏本来就显示。壳据此展示“群里有谁可以用”，群里没有时
-    /// 说明 @ 不会有人回应。
+    /// 房间里在场的 AI（本账号认识的 Bot 的 Matrix 用户 ID）：按房间成员和 Bot 记录算，每批都带当前值，
+    /// 变了也会补发一批。私聊不算：私聊的 Bot 顶栏本来就显示。`None` 是成员名单还没从服务器取全、在场
+    /// 的算不准，壳别下“群里没有 AI”的结论；`Some` 是取全后的名单，空才是确定没有。壳据此展示
+    /// “群里有谁可以用”，确定没有时说明 @ 不会有人回应。
     #[serde(default)]
-    pub room_bots: Vec<String>,
+    pub room_bots: Option<Vec<String>>,
 }
 
 /// 解不开的消息旁边的入口，壳按它写按钮。
@@ -716,7 +717,7 @@ mod tests {
                 entry: crate::WidgetEntry::VideoCall,
             }],
             call_active: true,
-            room_bots: vec!["@hermes:wonton.localhost".into()],
+            room_bots: Some(vec!["@hermes:wonton.localhost".into()]),
         };
         assert_eq!(round_trip(&update), update);
         assert!(
@@ -771,12 +772,15 @@ mod tests {
             side_chat: None,
             widgets: Vec::new(),
             call_active: false,
-            room_bots: Vec::new(),
+            room_bots: None,
         };
         let mut value = serde_json::to_value(empty()).unwrap();
         value.as_object_mut().unwrap().remove("key_notice");
+        value.as_object_mut().unwrap().remove("room_bots");
         let update: TimelineUpdate = serde_json::from_value(value).unwrap();
         assert_eq!(update.key_notice, None);
+        // 没有这一字段的旧核心发来的一批照旧收下，在场的 AI 落到“不确定”。
+        assert_eq!(update.room_bots, None);
     }
 
     fn text_with_file() -> MessageContent {

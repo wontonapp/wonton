@@ -80,10 +80,11 @@ pub(super) fn timeline(room_id: &str) -> TimelineUpdate {
         },
         call_active: in_call,
         // UI 测试的假房间：私聊（顶栏显示 Bot）不带；通话群是群聊，带一个在场的 AI。
+        // 假数据的成员名单视为已取全，所以都是 Some。
         room_bots: if in_call {
-            vec!["@hermes:home.example".into()]
+            Some(vec!["@hermes:home.example".into()])
         } else {
-            Vec::new()
+            Some(Vec::new())
         },
     }
 }

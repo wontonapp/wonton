@@ -246,7 +246,7 @@ impl Outbox {
         viewport: TimelineViewport,
         anchor: Option<String>,
         call_active: bool,
-        room_bots: Vec<String>,
+        room_bots: Option<Vec<String>>,
     ) -> Result<(), ()> {
         let scroll_to_bottom = lock(&self.menus).apply(&diffs);
         let room_view = self
@@ -490,7 +490,7 @@ mod tests {
                     away,
                     None,
                     false,
-                    Vec::new(),
+                    None,
                 )
                 .unwrap()
         };

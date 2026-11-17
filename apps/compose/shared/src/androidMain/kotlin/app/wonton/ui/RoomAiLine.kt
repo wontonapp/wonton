@@ -26,15 +26,17 @@ import app.wonton.ui.icons.Info
 import app.wonton.ui.icons.WontonIcon
 
 /**
- * 群里能用的 AI：在场的 Bot 一行小胶囊，点了开 Bot 资料；一个都没有时说明 @ 不会有人回应。
- * 私聊不显示：Bot 本来就在顶栏（ADR-0044）。空列表（群里没有能用的 AI）时给如实的一行说明。
+ * 群里能用的 AI：在场的 Bot 一行小胶囊，点了开 Bot 资料；确定一个都没有时说明 @ 不会有人回应。
+ * 私聊不显示：Bot 本来就在顶栏（ADR-0044）。成员名单没取全（roomAi 是 null）时在场的算不准，
+ * 不下“群里没有”的结论，什么都不显示。
  */
 @Composable
 internal fun RoomAiLine(
-    roomAi: List<BotView>,
+    roomAi: List<BotView>?,
     plugins: PluginsState,
     onOpenBotProfile: (BotRef) -> Unit,
 ) {
+    roomAi ?: return
     if (roomAi.isEmpty()) {
         val colors = WontonTheme.colors
         Row(

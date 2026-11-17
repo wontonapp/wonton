@@ -357,6 +357,11 @@ impl ChatRoom {
         self.names.borrow().user_ids()
     }
 
+    /// 成员名单有没有从服务器取全；取 [`Self::member_user_ids`] 前先看这个，没取全时名单可能缺人。
+    pub fn are_members_synced(&self) -> bool {
+        self.room.are_members_synced()
+    }
+
     /// 撤回一条消息：理由随撤回事件发给服务器，房间里的人都能看到；撤回不能撤销。
     pub async fn redact(&self, event_id: &str, reason: &str) -> Result<()> {
         let event_id: OwnedEventId = event_id

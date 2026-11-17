@@ -186,8 +186,8 @@ struct View {
     sent_call: bool,
     /// 群里在场的 AI（本账号认识的 Bot 里在房间成员中的），和上一批送出去的：变了补发一批。
     /// 私聊里 Bot 本来就在顶栏，壳不消费这个字段。
-    bots_in_room: Vec<String>,
-    sent_bots_in_room: Vec<String>,
+    bots_in_room: Option<Vec<String>>,
+    sent_bots_in_room: Option<Vec<String>>,
 }
 
 impl View {
@@ -203,11 +203,13 @@ impl View {
     async fn refresh_unread(&mut self, room: &ChatRoom, bots: &BotsView) {
         self.unread = u32::try_from(room.unread_messages().await).unwrap_or(u32::MAX);
         self.call = room.call_active();
-        self.bots_in_room = room
-            .member_user_ids()
-            .into_iter()
-            .filter(|member| bots.is_bot(member))
-            .collect();
+        // 成员没取全时按成员算在场的 AI 会漏人，如实带“不确定”（None）；取全了空名单才是“群里确定没有”。
+        self.bots_in_room = room.are_members_synced().then(|| {
+            room.member_user_ids()
+                .into_iter()
+                .filter(|member| bots.is_bot(member))
+                .collect()
+        });
     }
 
     /// 在场的 AI 变了没有（和上一批送出去的比）。
@@ -373,13 +375,15 @@ async fn forward(
                         &previews,
                     );
                     view.refresh_unread(room, &new_bots).await;
+                    // 名单先存下来再判断跳不跳：改动已经被 borrow_and_update 消费掉，不存就丢了，
+                    // 之后的批次会拿旧名单算（diff 为空和 bots_changed 不成立时尤其会走到 continue）。
+                    bots = new_bots;
                     if diffs.is_empty()
                         && sender.key_notice(&entries) == view.notice
                         && !view.bots_changed()
                     {
                         continue;
                     }
-                    bots = new_bots;
                     Batch::Sent(send(sender, &entries, diffs, &mut view, None), false)
                 }
                 changed = confirmations.changed() => {
@@ -447,8 +451,8 @@ async fn start_batch(
         notice: None,
         call: false,
         sent_call: false,
-        bots_in_room: Vec::new(),
-        sent_bots_in_room: Vec::new(),
+        bots_in_room: None,
+        sent_bots_in_room: None,
     };
     view.refresh_unread(room, bots).await;
     let position = read_index(room, entries).await;

@@ -141,8 +141,9 @@ internal class TimelineState {
     var confirmations by mutableStateOf<List<ConfirmationView>>(emptyList())
     var openedConfirmation by mutableStateOf<String?>(null)
 
-    /** 群里在场的 AI（本账号认识的 Bot 的 Matrix 用户 ID）；私聊不算。空说明群里没有能回应的 AI。 */
-    var roomBots by mutableStateOf<List<String>>(emptyList())
+    /** 群里在场的 AI（本账号认识的 Bot 的 Matrix 用户 ID）；私聊不算。null 是成员名单还没取全、
+     * 在场的算不准，别下“群里没有 AI”的结论；空列表才是确定没有。 */
+    var roomBots by mutableStateOf<List<String>?>(null)
 
     fun apply(diff: TimelineDiff) {
         when (diff) {
@@ -335,8 +336,9 @@ private fun RoomScreen(
                     core, target, sideChats, isDirect, isReadOnly, timeline, composer, draft, onAction, onReject,
                     rooms.firstOrNull { it.roomId == roomId }?.plugin, title, openMenu,
                     onOpenBackup, backdrop,
-                    // 群里能用的 AI：本账号认识的 Bot 里在场的；私聊为空，不显示。
-                    roomAi = if (isDirect) emptyList() else timeline.roomBots.mapNotNull { id ->
+                    // 群里能用的 AI：本账号认识的 Bot 里在场的；私聊为空，不显示。成员没取全（null）照传，
+                    // 让 RoomAiLine 不下“群里没有”的结论。
+                    roomAi = if (isDirect) emptyList() else timeline.roomBots?.mapNotNull { id ->
                         bots.firstOrNull { it.userId == id }
                     },
                     plugins = plugins,
@@ -490,7 +492,7 @@ private fun Conversation(
     onOpenMenu: (TimelineItem, TimelineMessage, Rect) -> Unit,
     onOpenBackup: () -> Unit,
     backdrop: RoomBackdrop,
-    roomAi: List<BotView>,
+    roomAi: List<BotView>?,
     plugins: PluginsState,
     onOpenBotProfile: (BotRef) -> Unit,
 ) {
