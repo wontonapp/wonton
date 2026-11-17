@@ -17,8 +17,6 @@ struct PairingView: View {
     @State private var deviceName = UIDevice.current.name
     /// 核心当场拒绝的原因，比如扫到的不是配对码。
     @State private var refusal: Problem?
-    /// 最近一次出示的码供手动重试使用；扫码锁独立于码的内容。
-    @State private var lastCode: String?
     @State private var scanConsumed = false
     @FocusState private var isEditingCode: Bool
     @State private var showsMatrixLogin = false
@@ -53,7 +51,7 @@ struct PairingView: View {
                     PairingProgress(
                         status: pairing,
                         recognized: scanConsumed,
-                        retry: lastCode.map { code in { pair(code) } },
+                        retry: model.lastPairingCode.map { code in { pair(code) } },
                         scanAgain: scanAgain,
                         back: leaveFailure,
                         cancel: cancelPairing
@@ -197,7 +195,7 @@ struct PairingView: View {
 
     private func scanAgain() {
         refusal = nil
-        lastCode = nil
+        model.lastPairingCode = nil
         scanConsumed = false
         scannerProblem = nil
         model.pairingCode = ""
@@ -206,14 +204,14 @@ struct PairingView: View {
 
     private func cancelPairing() {
         scanConsumed = false
-        lastCode = nil
+        model.lastPairingCode = nil
         model.cancelPairing()
     }
 
     private func leaveFailure() {
         guard hasFailedPairing else { return }
         refusal = nil
-        lastCode = nil
+        model.lastPairingCode = nil
         scanConsumed = false
         model.dismissPairingFailure()
         if model.servers.adding {
@@ -234,7 +232,7 @@ struct PairingView: View {
         guard !isPairing else { return }
         // 先收起键盘，避免挡住进展或失败后的操作。
         isEditingCode = false
-        lastCode = code
+        model.lastPairingCode = code
         refusal = model.pair(code: code, deviceName: deviceName)
     }
 
@@ -388,6 +386,7 @@ private struct PairingProgress: View {
                         Text(.Pairing.pairingRetrySameCode).frame(maxWidth: .infinity)
                     }
                     .buttonStyle(WontonButtonStyle())
+                    .accessibilityIdentifier("pairing-retry")
                 }
                 Button(action: back) {
                     Text(.Pairing.pairingBack).frame(maxWidth: .infinity)

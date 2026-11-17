@@ -12,6 +12,9 @@ final class HomeModel {
     var rejection: Problem?
     /// 深链接和手动输入共用草稿；只有配对页确认后才交给核心。
     var pairingCode = ""
+    /// 最近一次出示的码，失败面上提供「同一码重试」。放模型里是因为失败时根页面会换成新的
+    /// PairingView 实例，视图 @State 里的码交接不过去。
+    var lastPairingCode: String?
 
     private let core: ClientCore
 

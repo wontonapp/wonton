@@ -1,6 +1,6 @@
 import XCTest
 
-/// 输一个连不上的配对码：提交后要留在配对页显示失败，详情和诊断都能展开，码文本不外露。
+/// 输一个连不上的配对码：提交后要留在配对页显示失败，同一码重试按钮在，详情和诊断都能展开，码文本不外露。
 /// 走新鲜路径（未配对 → 引导的配对表单），中英各一轮（…Zh 是中文轮）。
 /// 不走「已配对 → 设置 → 重新配对」：那条路在已连接的设备上点重新配对会立即重配并关掉设置
 /// 弹层（1117 走查三帧实测），空表单只有离线设备才到得了，测试环境造不出离线；而且弹层里的
@@ -102,10 +102,16 @@ final class PairingFailureUITests: XCTestCase {
         try assertFailureContent(code: code)
     }
 
-    /// 失败面可见后的行为断言：详情和诊断按标识定位、能展开，码里的 secret 不出现在任何静态文本里，
-    /// 最后留档截图。
+    /// 失败面可见后的行为断言：可重试的失败面上有同一码重试按钮，详情和诊断按标识定位、能展开，
+    /// 码里的 secret 不出现在任何静态文本里，最后留档截图。
     private func assertFailureContent(code: String) throws {
         let app = XCUIApplication()
+        // 死节点的失败按 transportUnavailable 收尾（核心看门线程），可同一码重试；失败面被换成根页的
+        // 新实例，重试码存在模型里，按钮在才算交接没丢。
+        XCTAssertTrue(
+            app.buttons["pairing-retry"].firstMatch.waitForExistence(timeout: 10),
+            app.debugDescription
+        )
         let details = app.buttons["pairing-failure-details"].firstMatch
         XCTAssertTrue(details.waitForExistence(timeout: 10), app.debugDescription)
         details.tap()
