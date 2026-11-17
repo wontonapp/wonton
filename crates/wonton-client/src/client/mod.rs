@@ -664,6 +664,13 @@ impl ClientCore {
         *switch::lock(&self.language_refresh_hook) = hook;
     }
 
+    /// 页面配置有落了盘、还没写进账号数据的改动时为真。只给测试读。
+    #[cfg(feature = "test-hooks")]
+    #[doc(hidden)]
+    pub fn test_pages_layout_dirty(&self) -> bool {
+        self.scope().pages.test_dirty()
+    }
+
     #[cfg(feature = "test-hooks")]
     fn test_before_language_refresh(&self) {
         let hook = switch::lock(&self.language_refresh_hook).clone();

@@ -263,7 +263,7 @@ struct MainView: View {
 extension MainView {
     @ViewBuilder fileprivate var notices: some View {
         if let problem = pages.viewModel.problem {
-            ProblemRow(problem: Problem(title: TabText.configurationFailed, detail: problem.message))
+            ProblemRow(problem: problem.problem)
                 .padding(.horizontal, WontonTheme.spacing.pageInset)
         }
         if !pages.viewModel.uninstalled.isEmpty {

@@ -224,3 +224,53 @@ async fn cancellation_wakes_a_waiting_content_receiver() {
     content.cancel();
     assert!(waiting.await.is_none());
 }
+
+#[tokio::test]
+async fn configuration_failure_and_recovery_preserve_content_and_room_views() {
+    let rig = Rig::new();
+    let content = rig.tabs.subscribe_content_page(page_tab()).unwrap();
+    rig.open(page_tab());
+    let room: OwnedRoomId = "!content:home.example".parse().unwrap();
+    let room_tab = url_tab("https://example.com/room");
+    rig.open_room(
+        &room,
+        RoomPanel {
+            pages: vec![PanelEntry {
+                tab: room_tab.clone(),
+                title: None,
+            }],
+        },
+    );
+    rig.tabs
+        .dispatch(PageAction::SelectPanelPage {
+            scope: PanelScope::Room {
+                room_id: room.to_string(),
+            },
+            tab: room_tab,
+        })
+        .unwrap();
+    let stack = rig.view().stack;
+    let content_page = content.page();
+    let room_view = rig.tabs.room_view(room.as_str()).unwrap();
+    if rig.tabs.path.exists() {
+        std::fs::remove_file(&rig.tabs.path).unwrap();
+    }
+    std::fs::create_dir(&rig.tabs.path).unwrap();
+    assert!(matches!(
+        rig.tabs
+            .dispatch(PageAction::SetAutoAddApps { enabled: false }),
+        Err(CoreError::Storage { .. })
+    ));
+    assert!(rig.view().problem.is_some());
+    assert_eq!(rig.view().stack, stack);
+    assert_eq!(content.page(), content_page);
+    assert_eq!(rig.tabs.room_view(room.as_str()).unwrap(), room_view);
+    std::fs::remove_dir(&rig.tabs.path).unwrap();
+    rig.tabs
+        .dispatch(PageAction::SetAutoAddApps { enabled: false })
+        .unwrap();
+    assert!(rig.view().problem.is_none());
+    assert_eq!(rig.view().stack, stack);
+    assert_eq!(content.page(), content_page);
+    assert_eq!(rig.tabs.room_view(room.as_str()).unwrap(), room_view);
+}
