@@ -2,9 +2,7 @@
 //! 或者按 `x-<作者>.<名字>` 格式自己定义的第三方能力。核心只按名字配对提供方和使用方。
 //!
 //! 转发约束：使用方经 `<名字>.wonton.internal` 的访问走模型网关同一条转发路径（WebSocket 升级、流式
-//! 不缓冲、不限时），不得另起一套。`agent_acp` 是例外（ADR-0061 第 10 节）：核心要数链上的
-//! `session/prompt`、停链时向提供方注入 `session/cancel`，必须在核心终结 WebSocket、逐帧转发，
-//! 不能走字节管道。
+//! 不缓冲、不限时），不得另起一套。
 
 use super::languages::Languages;
 use super::manifest::{Manifest, ManifestError, Runtime};
@@ -131,11 +129,10 @@ pub const PERSONAL_DATA: Capability = Capability {
 };
 
 /// Agent 运行时（ADR-0061）：前端和编排器经它指挥已装的 Agent，Agent 之间也能互相交接。
-/// 提供方只认核心转发来、带提供方令牌的连接，所以和出网代理一样不声明凭据。
-/// 提供方可以同时 `wants`/`requires` 这个能力（ADR-0061 第 9 节）。
+/// 和出网代理一样不声明凭据；提供方可以同时 `wants`/`requires` 这个能力（ADR-0061 第 9 节）。
 pub const AGENT_ACP: Capability = Capability {
     name: "agent_acp",
-    interface: "ACP over WebSocket（/acp），核心注入身份和上限头",
+    interface: "ACP over WebSocket（/acp），走通用转发，核心注入来源身份",
     credentials: Credentials::None,
     high_privilege: true,
     hosted: None,
@@ -172,8 +169,8 @@ pub const MATRIX_RTC_PREFIX: &str = "/_wonton/matrix-rtc";
 /// 注入给 [`MATRIX_RTC`] 提供方的 Matrix 服务器名（填 lk-jwt-service 的 `LIVEKIT_FULL_ACCESS_HOMESERVERS`）。
 pub const MATRIX_SERVER_NAME_VAR: &str = "WONTON_MATRIX_SERVER_NAME";
 
-/// 注入给 [`AGENT_ACP`] 提供方网关服务的提供方令牌（ADR-0061 第 3 节）：核心转发时带在 `Authorization`
-/// 里，网关不认没有它的连接。和使用方的 [`var_url`]（`WONTON_AGENT_ACP_URL`）成对。
+/// 注入给 [`AGENT_ACP`] 提供方网关服务的提供方令牌（ADR-0061 第 3 节），和使用方的
+/// [`var_url`]（`WONTON_AGENT_ACP_URL`）成对；核心不再终结 ACP WebSocket 后，令牌只发给提供方，不再由核心验证。
 pub const AGENT_ACP_TOKEN_VAR: &str = "WONTON_AGENT_ACP_TOKEN";
 
 /// 没有使用方声明的能力：核心或网关自己用，不能写在 requires/wants 里。

@@ -240,7 +240,7 @@ pub struct Transfer {
     pub file: Option<FileId>,
     pub name: String,
     pub direction: TransferDirection,
-    /// 上传的目标房间，链接发到这里；下载和不发进房间的上传为空。
+    /// 上传的目标房间，链接发到这里；下载是触发它的房间；不发进房间的上传为空。
     pub room: Option<String>,
     pub transferred_bytes: u64,
     /// 总字节数；下载还没拿到响应头时为空，核心没给 `Content-Length` 时一直为空。
@@ -328,6 +328,8 @@ pub struct RoomTransfers {
     pub here: Vec<Transfer>,
     /// 发到别的房间、出了问题的上传：链接传完才发，时间线上没有痕迹，主人不在那个房间就不知道。
     pub elsewhere: Vec<TransferElsewhere>,
+    /// 这个房间触发下载、已经下完的：下载属于触发它的房间，别的房间不显示，免得以为当前聊天发生了下载。
+    pub downloaded: Vec<Transfer>,
 }
 
 #[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize)]
@@ -340,6 +342,7 @@ pub struct TransferElsewhere {
 
 impl TransfersViewModel {
     /// 这个房间的传输条列什么。进行中的上传只在目标房间显示：在别处点“重发链接”会以为发到眼前这里，所以别处的都写明目标房间。
+    /// 下载完的按触发房间归属，别的房间不列。
     pub fn for_room(&self, room_id: &str, rooms: &[RoomRow]) -> RoomTransfers {
         let mut listed = RoomTransfers::default();
         for transfer in &self.active {
@@ -359,6 +362,11 @@ impl TransfersViewModel {
                     }
                 }
                 _ => listed.here.push(transfer.clone()),
+            }
+        }
+        for transfer in &self.downloaded {
+            if transfer.room.as_deref() == Some(room_id) {
+                listed.downloaded.push(transfer.clone());
             }
         }
         listed

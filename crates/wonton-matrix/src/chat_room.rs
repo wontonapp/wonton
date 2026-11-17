@@ -111,6 +111,7 @@ pub struct ChatRoom {
     profiles: JoinHandle<()>,
     /// 这条时间线看的是哪一段：整个房间平铺、主对话（话题收起）或一个话题（ADR-0093）。
     pub(crate) focus: Focus,
+    pub(crate) watch: Option<crate::rooms::RoomWatch>,
 }
 
 impl Drop for ChatRoom {
@@ -157,6 +158,7 @@ impl ChatRoom {
             refresh,
             profiles,
             focus,
+            watch: None,
         })
     }
 
