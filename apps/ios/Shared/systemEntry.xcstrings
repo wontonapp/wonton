@@ -309,25 +309,25 @@
         "en": {
           "stringUnit": {
             "state": "translated",
-            "value": "Choose a default agent in Wonton"
+            "value": "Choose a default assistant in Wonton"
           }
         },
         "zh-Hans": {
           "stringUnit": {
             "state": "translated",
-            "value": "在云吞里选一个默认 Agent"
+            "value": "在云吞里选一个默认助手"
           }
         },
         "zh-Hant": {
           "stringUnit": {
             "state": "translated",
-            "value": "在雲吞裡選一個預設 Agent"
+            "value": "在雲吞裡選一個預設助手"
           }
         },
         "ja": {
           "stringUnit": {
             "state": "translated",
-            "value": "Wontonでデフォルトのエージェントを選んでください"
+            "value": "Wontonでデフォルトのアシスタントを選んでください"
           }
         }
       }
