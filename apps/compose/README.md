@@ -20,6 +20,9 @@ Android expanded 宽度（至少 840dp）用 `WindowSizeClass` 与 `NavigableLis
 右侧房间或插件页；compact/medium 保留单列和抽屉。尺寸变化沿用 `ChatNavigation` 和核心页面栈，不新建 Activity 或核心实例。
 窗口尺寸和折叠姿态来自 AndroidX Window 与 Material 3 Adaptive（均为 Apache-2.0）。
 
+Android 主页面保持在同一组合位置：面板是否可用只改变页面平移与叠层，不在尺寸子组合之间搬移页面。
+面板页在内容下方，边缘手势与返回处理在内容上方；切换到应用网格或设置再返回时沿用页面状态。
+
 ## 构建
 
 需要 JDK 21、Android SDK（platform 37 和 NDK）、Rust 的 Android target 和 cargo-ndk：
