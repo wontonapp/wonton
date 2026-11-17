@@ -437,6 +437,7 @@ internal fun AgentDegradedPreview() {
                 canStart = false,
             ),
             title = "Home Hub",
+            plugins = previewPlugins(),
             onAction = {},
         )
     }

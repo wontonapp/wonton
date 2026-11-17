@@ -568,7 +568,7 @@ private fun Conversation(
                     .onSizeChanged { headerHeight = it.height }
                     .testTag("room-header"),
             ) {
-                AgentPluginStatusBanner(plugin, title, onAction)
+                AgentPluginStatusBanner(plugin, title, plugins.viewModel, onAction)
                 timeline.sideChat?.let { SideChatHeaderLine(it.state) }
                 if (sideChats.unsupportedHint) NoSideChatsHint()
                 // 群里能用的 AI；私聊不显示，Bot 本来就在顶栏（ADR-0044）。
