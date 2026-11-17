@@ -266,11 +266,10 @@ async fn forward(
         };
         let links = LinkTargets::of(&plugins.view());
         // Bot 列表、活动和等回答的卡片变了，AgentRun 条目的显示跟着变：每批都带上现在的情况，变了就重算。
-        let bots = BotsView::of(
-            &chat.borrow_and_update(),
-            &sender.confirmations(),
-            ledger.ready(),
-        );
+        // 就绪先单独取：下面的 borrow_and_update 读锁活到语句结束，锁内再锁账本会和 reconcile 的
+        // 「先账本、后写 chat」反序，Bot 在打字时就会死锁。
+        let ready = ledger.ready();
+        let bots = BotsView::of(&chat.borrow_and_update(), &sender.confirmations(), ready);
         let side_chats = SideChatsView::load(room, bots.supports(support, room)).await;
         sender.set_side_chat(side_chats.header());
         let mut bots = bots.with_side_chats(side_chats);
@@ -352,8 +351,11 @@ async fn forward(
                     }
                     // 插件表变了：链接的类别跟着变；「清单已就绪」也在这里翻面。装了插件但一个 Bot
                     // 都没有时 Bot 列表不变、chat 不醒，就靠这一路把就绪带进名单，变了补发一批空的。
-                    let new_bots = BotsView::of(&chat.borrow_and_update(), &sender.confirmations(), ledger.ready())
-                        .with_side_chats(bots.side_chats().clone());
+                    // 就绪先单独取（原因见首批那段）：不在 chat 的读锁里锁账本。
+                    let ready = ledger.ready();
+                    let new_bots =
+                        BotsView::of(&chat.borrow_and_update(), &sender.confirmations(), ready)
+                            .with_side_chats(bots.side_chats().clone());
                     view.refresh_unread(room, &new_bots).await;
                     let relinked =
                         relinked_batch(&entries, &read, plugins, sender, &mut view, &new_bots, &previews);
@@ -392,8 +394,11 @@ async fn forward(
                         return;
                     }
                     // 加密状态变了入口跟着变；Bot 列表或活动变了，AgentRun 条目跟着重算（ADR-0082）。
-                    let new_bots = BotsView::of(&chat.borrow_and_update(), &sender.confirmations(), ledger.ready())
-                        .with_side_chats(bots.side_chats().clone());
+                    // 就绪先单独取（原因见首批那段）：不在 chat 的读锁里锁账本。
+                    let ready = ledger.ready();
+                    let new_bots =
+                        BotsView::of(&chat.borrow_and_update(), &sender.confirmations(), ready)
+                            .with_side_chats(bots.side_chats().clone());
                     let diffs = refreshed_agent_runs(
                         &entries,
                         &read,
