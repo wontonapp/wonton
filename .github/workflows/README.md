@@ -50,7 +50,7 @@ PR 合并前只等快检查：格式、Clippy、detekt、SwiftLint、行数门�
   lint 不看开关：冲突标记和密钥可能写在任何文件里，不按路径过滤；它里面的结构门禁只查源码文件，
   只改文档的提交和草稿 PR 上跳过。
 - 过滤范围按“这个工作流真会读什么”列：Rust 只列测试和预热读的部署文件（`deploy/install/`、
-  `deploy/dev/{acp-bridge,matrix}/`、`deploy/dev/core/compose.yaml`、`deploy/dev/core/Dockerfile`），
+  `deploy/dev/matrix/`、`deploy/dev/core/compose.yaml`、`deploy/dev/core/Dockerfile`），
   `deploy/dev` 其余的只给本机开发栈（开发索引 `core/store/`、`experiments/`、smoke 脚本），改了不跑重作业；
   新的 `include_str!` 指向 `deploy/` 时要补进列表。只改 `.md` 的 PR 每个工作流都跳过（`apps/compose/` 下的也算）。
   新增依赖或测试输入时必须同步维护；定时和手动运行不按路径过滤。`rust-docker` 不是必需检查，路径直接写在

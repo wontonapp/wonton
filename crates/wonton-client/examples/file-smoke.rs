@@ -83,7 +83,7 @@ async fn run(core: &Arc<ClientCore>, code: &str, bot: &str, data_dir: &str) -> O
     if !matches!(info.source, FileSource::Bot { .. }) {
         return Err(format!("卡片应写明来自 Bot：{:?}", info.source));
     }
-    let bytes = download(core, &info).await?;
+    let bytes = download(core, &info, &room).await?;
     let text = String::from_utf8_lossy(&bytes);
     if !text.contains("应退税 1234 元") {
         return Err(format!("下载到的内容不对：{text}"));
@@ -148,7 +148,10 @@ async fn resume_after_restart(data_dir: &str, room: &str) -> Outcome<()> {
     println!("✓ 上传到 {upload_at} 字节时杀掉，重启后接着传完");
 
     core.dispatch(Action::Files {
-        action: FileAction::DownloadFile { id: file },
+        action: FileAction::DownloadFile {
+            id: file,
+            room: room.to_owned(),
+        },
     })
     .map_err(|e| format!("下载被拒绝：{e}"))?;
     let download_at = kill_midway(core, TransferDirection::Download).await?;
@@ -416,10 +419,11 @@ async fn card(core: &Arc<ClientCore>, id: &FileId) -> Outcome<FileInfo> {
     }
 }
 
-async fn download(core: &Arc<ClientCore>, info: &FileInfo) -> Outcome<Vec<u8>> {
+async fn download(core: &Arc<ClientCore>, info: &FileInfo, room: &str) -> Outcome<Vec<u8>> {
     core.dispatch(Action::Files {
         action: FileAction::DownloadFile {
             id: info.id.clone(),
+            room: room.to_owned(),
         },
     })
     .map_err(|e| format!("下载被拒绝：{e}"))?;

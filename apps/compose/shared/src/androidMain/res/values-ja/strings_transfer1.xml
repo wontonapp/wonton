@@ -4,6 +4,8 @@
     <string name="transfer_cleanup_title">「%1$s」を削除</string>
     <!-- Title of the sheet listing downloaded transfers. -->
     <string name="transfer_downloaded">ダウンロード済み</string>
+    <!-- Caption button above the chat composer when one file was downloaded in this chat: opens the list. Argument: the file's name. -->
+    <string name="transfer_downloaded_one">「%1$s」をダウンロード済み</string>
     <!-- Caption button above the chat composer: opens the list of downloaded transfers. Argument: their count. -->
     <plurals name="transfer_downloaded_count">
         <item quantity="other">%1$d件ダウンロード済み</item>

@@ -124,6 +124,8 @@
   原样只放得下一个单字母的空变体；照上面搬完后 `Action` 空出约 2.9 KB，`TimelineAction` 编译通过。
 - `ClientCore::subscribe_timeline` 和 `draft` 的参数从 `room_id` 换成 `TimelineTarget`；新增 `ClientCore::start_side_chat(room_id, body)`，
   返回根的事件 ID（第 4 节“开旁聊”）。它要等服务器回 ID，是请求–应答，和 `subscribe_timeline` 一样做成方法，不占 `Action`。
+- 同一目标可以有多份独立订阅；需要区分窗口的滚动报告发给各自的 `TimelineSubscription::set_scroll`，
+  既有 `TimelineAction::SetTimelineScroll` 仍供单订阅调用方使用。
 - 以后 `Action` 再要加一组相关操作，同样先搬成一个带嵌套枚举的变体，不逐个加；`Action` 空出来的地方留给这类搬家，不拿来加单个变体。
 
 ViewModel：
