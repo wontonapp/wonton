@@ -64,7 +64,6 @@ jobs:
               # 测试和预热读的部署文件（include_str! 和 Dockerfile）；deploy/dev 其余的只给本机开发栈，改了不用跑。
               # 新的 include_str! 指向 deploy/ 时要补在这里。
               - "deploy/install/**"
-              - "deploy/dev/acp-bridge/**"
               - "deploy/dev/core/compose.yaml"
               - "deploy/dev/core/Dockerfile"
               - "deploy/dev/matrix/**"

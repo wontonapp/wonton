@@ -131,6 +131,10 @@ impl TimelineSubscription {
         })
     }
 
+    pub(super) fn is_active(&self) -> bool {
+        !*self.cancelled.borrow() && !self.cancelled.is_closed()
+    }
+
     pub(super) fn is_at_bottom(&self) -> bool {
         *self.scroll.borrow() == TimelineScroll::Bottom && !*self.cancelled.borrow()
     }
@@ -150,7 +154,7 @@ impl TimelineSubscription {
         }
     }
 
-    /// 壳报告列表停在哪（[`TimelineAction::SetTimelineScroll`](wonton_protocol::TimelineAction::SetTimelineScroll)）。
+    /// 壳直接向本订阅报告列表位置；同一目标的其他订阅不受影响。
     /// 跨过底部时发一次，下一批更新里带重新算过的位置和新消息数。
     pub fn set_scroll(&self, scroll: TimelineScroll) {
         self.scroll.send_replace(scroll);

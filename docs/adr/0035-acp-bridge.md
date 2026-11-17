@@ -1,6 +1,6 @@
 # ADR-0035 ACP 桥：Matrix 与 ACP Agent 的连接形态
 
-- 状态：已被 [ADR-0108](0108-hermes-default-kernel.md) 取代（主人 2026-11-15）。不再建设自有 Matrix↔ACP 桥及逐家适配，调用其他 Agent 改用 Hermes 原生 ACP 委派；下文设计与验证作为历史依据保留，不代表桥已删除。通用身份、MCP 与核心确认边界不随之取消。
+- 状态：已被 [ADR-0108](0108-hermes-default-kernel.md) 取代（主人 2026-11-15）。不再建设自有 Matrix↔ACP 桥及逐家适配，调用其他 Agent 改用 Hermes 原生 ACP 委派；下文设计与验证作为历史依据保留；桥、逐家适配和 `deploy/dev/experiments/acp` 已删除，协议与核心侧转发在后续 PR 清掉。通用身份、MCP 与核心确认边界不随之取消。
 
 ## 背景
 

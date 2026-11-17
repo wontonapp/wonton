@@ -229,6 +229,11 @@ magpie 的做法（`internal/plugin` 的 `github.go`、`market.go`、`dist.go`�
 - 状态：`subscribe_plugins()` 推 `PluginsViewModel`：已安装的插件、商店、最近一次取列表的问题，以及安装、升级、卸载的
   进展（`tasks`）、可更新的应用（`updatable`）、侧边栏的内容（`sidebar`），以及一键装、一键升的进展
   （`pending`）和要主人拿主意的确认（`confirmation`）。
+- 商店请求的 `store_load` 与已安装列表的 `refreshing` / `problem` 分开：尚未请求、等连接、请求中、已取得、失败。
+  请求失败保留已取得的内容和来源级错误，即使连接状态栏没有报错，也不能把已结束的商店请求画成骨架。
+  等待多久都不能据此推断离线或网络慢；仅请求中显示骨架，并提供已有的手动刷新；等连接时沿用连接状态栏的操作，
+  不加自动重试或改变请求时限。已安装列表的成功或失败不改变商店状态；商店从刷新意图产生起以最后一次为准，
+  等连接也会作废旧请求，旧请求和旧服务器的内容、错误均不能覆盖它；已取得状态必须同时带商店内容。
 - 操作：`SetLanguages`（壳把系统的语言偏好告诉核心，核心据此带 `Accept-Language`）、`RefreshPlugins`、
   `RefreshStore { force }`、`InstallPlugin { preview, secrets, settings }`、`UpgradePlugin { preview, secrets, settings }`、`UninstallPlugin`、
   `DismissPluginTask`，以及一键装、一键升：`InstallNow { source }`、`UpgradeNow { plugin_id }`、`UpgradeAll`、

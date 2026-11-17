@@ -13,14 +13,16 @@ use crate::{CoreUpgradeViewModel, EgressViewModel, RegistryMirrorViewModel};
 pub struct PluginsViewModel {
     /// 已安装的插件；还没取到过时为空，不代表没装插件。
     pub installed: Option<InstalledPlugins>,
-    /// 商店；还没取过时为空。
+    /// 最近取得的商店；刷新失败时保留，未取得过时为空。
     pub store: Option<StoreListing>,
+    /// 商店请求的状态，与已安装列表及其问题相互独立。
+    pub store_load: StoreLoadState,
     /// 侧边栏的内容。
     #[serde(default)]
     pub sidebar: crate::SidebarViewModel,
-    /// 正在从家里的服务器取已安装列表或商店。
+    /// 正在从家里的服务器取已安装列表；商店进度见 `store_load`。
     pub refreshing: bool,
-    /// 最近一次取列表失败的原因，这时显示的是上次取到的列表；再取成功后清空。
+    /// 已安装列表或启动失败的原因；成功只清除同一来源的问题。
     pub problem: Option<PluginProblem>,
     /// 安装、升级、卸载的进展，按发起的先后。同一个插件同时只有一个。
     pub tasks: Vec<PluginTask>,
@@ -67,4 +69,19 @@ pub struct PluginsViewModel {
     /// 网页要摄像头/麦克风的决定，按插件 ID 记在本机；没问过的不在里面。按插件 ID 排序。
     #[serde(default)]
     pub media_grants: Vec<PluginMediaGrant>,
+}
+
+/// 商店请求的生命周期；连接原因仍由 `HomeViewModel` 提供，不从等待时长推断。
+#[derive(Clone, Debug, Default, PartialEq, Eq, Serialize, Deserialize)]
+#[cfg_attr(feature = "uniffi", derive(uniffi::Enum))]
+#[serde(tag = "state", rename_all = "snake_case")]
+pub enum StoreLoadState {
+    #[default]
+    NotRequested,
+    WaitingForConnection,
+    Loading,
+    Ready,
+    Failed {
+        problem: PluginProblem,
+    },
 }
