@@ -176,7 +176,7 @@ struct HomeView: View {
 
     /// 点图标：Agent 插件进和它的 Bot 的私聊，有网页的打开小程序；都没有、或者正在装、升级、卸载时看详情。
     private func tap(_ plugin: InstalledPlugin) {
-        if !plugin.isBusy, let entry = plugin.entries.first {
+        if plugin.installFailure == nil, !plugin.isBusy, let entry = plugin.entries.first {
             open(entry)
         } else {
             path.append(PluginRoute.installed(id: plugin.id))
@@ -255,13 +255,13 @@ extension HomeView {
             }
         ]
         // 有 Bot 又有网页的 Agent 插件，点图标进私聊，网页从这里打开。
-        if plugin.entries.count > 1, let web = plugin.entries.last {
+        if plugin.installFailure == nil, plugin.entries.count > 1, let web = plugin.entries.last {
             actions.append(WontonSheetAction(title: String(localized: .Launcher.launcherOpenWeb),
                 icon: .web) { open(web) })
         }
         // 已加进“我的应用”的页给移出，没加的给加进。
         let mine = plugins.viewModel.sidebar.apps.compactMap(\.tab)
-        for choice in plugin.tabChoices {
+        for choice in plugin.installFailure == nil ? plugin.tabChoices : [] {
             if supportsMultipleWindows, UIDevice.current.userInterfaceIdiom == .pad, let openContent {
                 let title = String(localized: .Sidebar.sidebarOpenWindow)
                     + (plugin.tabChoices.count > 1 ? " · \(choice.title)" : "")
@@ -365,6 +365,11 @@ private struct LauncherIcon: View {
                 .wontonText(WontonTheme.typography.caption)
                 .foregroundStyle(Color(colors.textPrimary))
                 .lineLimit(1)
+            if plugin.installFailure != nil {
+                Text(.Launcher.launcherInstallFailed)
+                    .wontonText(WontonTheme.typography.caption)
+                    .foregroundStyle(Color(colors.danger))
+            }
         }
         .frame(maxWidth: .infinity)
         .contentShape(Rectangle())
@@ -383,7 +388,12 @@ private struct LauncherIcon: View {
     }
 
     @ViewBuilder private var problemBadge: some View {
-        if case .degraded = plugin.status {
+        if plugin.installFailure != nil {
+            WontonIcon.warningCircleFill.view(size: WontonTheme.size.iconSmall)
+                .foregroundStyle(Color(colors.danger))
+                .background(Circle().fill(Color(colors.canvas)))
+                .accessibilityHidden(true)
+        } else if case .degraded = plugin.status {
             WontonIcon.warningCircleFill.view(size: WontonTheme.size.iconSmall)
                 .foregroundStyle(Color(colors.danger))
                 .background(Circle().fill(Color(colors.canvas)))
