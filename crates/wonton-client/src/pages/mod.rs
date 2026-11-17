@@ -358,6 +358,8 @@ impl PagesLink {
     /// 落了盘的配置往账号数据补一份：有会话就交给它推。`mark_dirty` 只给恢复路径：
     /// 账号数据漏掉了修好的这份，会话没就绪也要先记下；普通的首次初始化照旧等会话就绪，
     /// 不然 reconcile 会把本机默认值推上去，盖掉另一台设备已有的配置。
+    /// 就绪分支里无条件置脏：推送失败时 push_layout 不清它（sync.rs 只在成功时清），
+    /// 重连对账才不会拿服务器旧配置盖掉本机落盘的新入口。
     fn push_layout_if_ready(&self, state: &PagesState, mark_dirty: bool) {
         let settings = state.config.layout();
         if mark_dirty {
@@ -367,6 +369,7 @@ impl PagesLink {
         if let Some(session) = session
             && self.layout_ready.load(Ordering::SeqCst)
         {
+            self.dirty.store(true, Ordering::SeqCst);
             let weak = lock(&self.weak).clone();
             self.runtime.spawn(async move {
                 if let Some(link) = weak.upgrade() {
