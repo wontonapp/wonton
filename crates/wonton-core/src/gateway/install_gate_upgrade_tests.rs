@@ -1,0 +1,208 @@
+//! 要管理员批的升级（#767）：按 App 实际发的请求（沿用预览的开关和设备）照常发卡；主人关着的可选项被
+//! 新版本改成必需只限主人；卡片挂着时主人改了记录，批准后不执行。
+
+use hyper::StatusCode;
+use serde_json::json;
+
+use super::install_gate_owner_tests::{
+    ask_admin_member, assert_owner_required, finished, member_post, pending_cards, staged, version,
+};
+use super::install_nvme_gate_tests::{
+    answer_admin_card, disk_compose, disk_gate_fixture, disk_preview, optional_socket_compose,
+    pending_admin_card, spawn_member_request,
+};
+use crate::plugin::languages::Languages;
+use crate::plugin::manifest::Permission;
+use crate::plugin::store::OpenedBy;
+use crate::plugin::{PluginId, PluginPackage, UpgradeTo};
+
+use super::super::tests::Harness;
+
+const PATH: &str = "/_wonton/api/plugins/app.echo/upgrade";
+
+fn required_socket_compose(version: &str) -> String {
+    let optional = optional_socket_compose(version);
+    let required = optional.replace(
+        "  permissions: []\n  optional_permissions:\n    docker.socket:\n      off_loss: {zh: 看不到容器, en: No containers}",
+        "  permissions: [docker.socket]",
+    );
+    assert_ne!(optional, required);
+    required
+}
+
+fn echo() -> PluginId {
+    PluginId::parse("app.echo").unwrap()
+}
+
+/// 批准两张卡（`docker.socket` 是最高级），回执行的结果。
+async fn approve_both(
+    h: &Harness,
+    waiting: tokio::task::JoinHandle<(StatusCode, String)>,
+) -> (StatusCode, String) {
+    let first = pending_admin_card(h).await;
+    answer_admin_card(h, &first, "approve").await;
+    let second = pending_admin_card(h).await;
+    assert_ne!(first["id"], second["id"]);
+    answer_admin_card(h, &second, "approve").await;
+    finished(waiting).await
+}
+
+/// 装着的版本里 `docker.socket` 是可选、主人关着；新版本改成必需。生效集会从关变成开，只限主人。
+#[tokio::test]
+async fn optional_turned_required_while_off_needs_the_owner() {
+    let h = Harness::start(None).await;
+    let member = ask_admin_member(&h).await;
+    h.manager
+        .install(&optional_socket_compose("0.1.0"), &[], Languages::default())
+        .await
+        .unwrap();
+    let newer =
+        PluginPackage::parse(&required_socket_compose("0.2.0"), &Languages::default()).unwrap();
+    let (source, digest) = staged(&h, newer).await;
+    let request = json!({"source": source, "digest": digest, "grant": ["docker.socket"]});
+    assert_owner_required(&member_post(&h, member, PATH, &request).await);
+    assert_eq!(pending_cards(&h).await, 0);
+    let record = h.manager.store().load(&echo()).unwrap().unwrap();
+    assert_eq!(record.version, "0.1.0");
+    assert!(record.enabled().is_empty());
+}
+
+/// 卡片挂着时主人关掉了 `docker.socket`：批准后原样执行的请求会把它重新打开，所以停在 409 `changed`。
+#[tokio::test]
+async fn owner_changes_while_the_card_waits_stop_the_upgrade() {
+    let h = Harness::start(None).await;
+    let member = ask_admin_member(&h).await;
+    h.manager
+        .install(&optional_socket_compose("0.1.0"), &[], Languages::default())
+        .await
+        .unwrap();
+    let toggle = |on: bool| {
+        h.manager.set_plugin_permission(
+            echo(),
+            Permission::DockerSocket,
+            on,
+            OpenedBy::Owner,
+            Languages::default(),
+        )
+    };
+    toggle(true).await.unwrap();
+    let newer =
+        PluginPackage::parse(&optional_socket_compose("0.2.0"), &Languages::default()).unwrap();
+    let (source, digest) = staged(&h, newer).await;
+    let request = json!({"source": source, "digest": digest, "grant": [],
+        "enabled_permissions": ["docker.socket"]});
+    let waiting = spawn_member_request(&h, member, PATH, request);
+    pending_admin_card(&h).await;
+    toggle(false).await.unwrap();
+    let (status, body) = approve_both(&h, waiting).await;
+    assert_eq!(status, StatusCode::CONFLICT, "{body}");
+    let record = h.manager.store().load(&echo()).unwrap().unwrap();
+    assert_eq!(record.version, "0.1.0");
+    assert!(record.enabled().is_empty());
+}
+
+/// 旧版必需、新版改成可选：App 按升级预览的开关发请求，预览沿用原来的生效状态（开着），
+/// 所以成员什么都没动时照常发卡，批准后它仍生效。
+#[tokio::test]
+async fn required_turned_optional_keeps_its_state_in_the_app_request() {
+    let h = Harness::start(None).await;
+    let member = ask_admin_member(&h).await;
+    h.manager
+        .install(
+            &required_socket_compose("0.1.0"),
+            &[Permission::DockerSocket],
+            Languages::default(),
+        )
+        .await
+        .unwrap();
+    let newer =
+        PluginPackage::parse(&optional_socket_compose("0.2.0"), &Languages::default()).unwrap();
+    let preview = h
+        .manager
+        .preview_upgrade(
+            &echo(),
+            UpgradeTo::Upload(Box::new(newer)),
+            None,
+            &Languages::default(),
+        )
+        .await
+        .unwrap();
+    let enabled: Vec<&str> = preview
+        .permissions
+        .iter()
+        .filter(|line| line.optional && line.enabled)
+        .map(|line| line.permission.as_str())
+        .collect();
+    assert_eq!(enabled, ["docker.socket"]);
+    let request = json!({"source": preview.source, "digest": preview.digest, "grant": [],
+        "enabled_permissions": enabled});
+    let waiting = spawn_member_request(&h, member, PATH, request);
+    let (status, body) = approve_both(&h, waiting).await;
+    assert_eq!(status, StatusCode::OK, "{body}");
+    let record = h.manager.store().load(&echo()).unwrap().unwrap();
+    assert_eq!(record.version, "0.2.0");
+    assert_eq!(record.enabled(), [Permission::DockerSocket]);
+}
+
+/// App 升级带设备的插件时原样带上选中的设备、局域网开关和可选项：和装着的一样，照常发卡，
+/// 批准后版本升上去、设备不变。
+#[tokio::test]
+async fn an_app_shaped_upgrade_with_the_same_disk_gets_a_card() {
+    let (_host, h, member) = disk_gate_fixture().await;
+    let disk = "disk:/dev/disk/by-id/ata-test";
+    h.manager
+        .install_with_devices(
+            &disk_compose("0.1.0"),
+            &[Permission::DevicesDisk],
+            &[disk.to_owned()],
+            Languages::default(),
+        )
+        .await
+        .unwrap();
+    let devices = h.manager.store().load(&echo()).unwrap().unwrap().devices;
+    let preview = disk_preview(&h, "0.2.0").await;
+    let request = json!({"source": preview.source, "digest": preview.digest,
+        "grant": ["devices.disk"], "devices": [disk], "lan_webui": false,
+        "enabled_permissions": []});
+    let waiting = spawn_member_request(&h, member, PATH, request);
+    let card = pending_admin_card(&h).await;
+    answer_admin_card(&h, &card, "approve").await;
+    let (status, body) = finished(waiting).await;
+    assert_eq!(status, StatusCode::OK, "{body}");
+    assert_eq!(version(&h, "app.echo"), "0.2.0");
+    assert_eq!(
+        h.manager.store().load(&echo()).unwrap().unwrap().devices,
+        devices
+    );
+}
+
+/// 门槛时设备列表读不到：请求带的是原有设备，回 422 `device_unavailable`，不当成换了设备要主人。
+#[tokio::test]
+async fn an_unreadable_device_list_is_device_unavailable() {
+    let (host, h, member) = disk_gate_fixture().await;
+    let disk = "disk:/dev/disk/by-id/ata-test";
+    h.manager
+        .install_with_devices(
+            &disk_compose("0.1.0"),
+            &[Permission::DevicesDisk],
+            &[disk.to_owned()],
+            Languages::default(),
+        )
+        .await
+        .unwrap();
+    let preview = disk_preview(&h, "0.2.0").await;
+    // `serial/by-id` 是个文件：列目录失败，整个设备列表读不到。
+    let serial = host.dev().join("serial");
+    let _ = std::fs::remove_dir_all(&serial);
+    std::fs::create_dir_all(&serial).unwrap();
+    std::fs::write(serial.join("by-id"), b"").unwrap();
+    let before = h.docker.writes();
+    let request = json!({"source": preview.source, "digest": preview.digest,
+        "grant": ["devices.disk"], "devices": [disk]});
+    let (status, kind, body) = member_post(&h, member, PATH, &request).await;
+    assert_eq!(status, StatusCode::UNPROCESSABLE_ENTITY, "{body}");
+    assert_eq!(kind.as_deref(), Some("device_unavailable"));
+    assert_eq!(pending_cards(&h).await, 0);
+    assert_eq!(h.docker.writes(), before);
+    assert_eq!(version(&h, "app.echo"), "0.1.0");
+}

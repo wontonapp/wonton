@@ -184,7 +184,9 @@ pub(super) async fn propose(
     Ok(Proposed { request, second })
 }
 
-fn disclose_provider(
+/// 一起装的提供方写进卡片：标题和 ID、来源、每项权限，以及默认关着的可选项。HTTP 安装门槛
+/// （`gateway::install_gate_cards`）也用它，两条路给管理员看的是同一套。
+pub(crate) fn disclose_provider(
     draft: &mut cards::Draft,
     preview: &InstallPreview,
     request: &InstallRequest,
