@@ -80,6 +80,7 @@ plugin-install-start-failed = Couldn't start: { $error }
 plugin-install-conflict-rebuilding = { $id } is being rebuilt; try again when it finishes
 plugin-install-record-unusable = This app's install record is unusable, so it can't start
 plugin-install-container-missing = Container { $name } doesn't exist
+plugin-install-start-timeout-container-gone = The start timed out and container { $name } is gone; install the app again
 plugin-install-container-not-owned = Container { $name } doesn't belong to app { $id }
 
 # ── Out of memory (oom.rs) ───────────────────────────────────────────────────
