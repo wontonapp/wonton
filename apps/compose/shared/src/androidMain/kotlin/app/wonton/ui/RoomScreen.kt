@@ -43,6 +43,7 @@ import androidx.compose.runtime.withFrameNanos
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.blur
+import androidx.compose.ui.draw.clip
 import androidx.compose.ui.layout.onSizeChanged
 import androidx.compose.ui.geometry.Rect
 import androidx.compose.ui.platform.LocalDensity
@@ -139,6 +140,10 @@ internal class TimelineState {
     var confirmations by mutableStateOf<List<ConfirmationView>>(emptyList())
     var openedConfirmation by mutableStateOf<String?>(null)
 
+    /** 群里在场的 AI（本账号认识的 Bot 的 Matrix 用户 ID）；私聊不算。null 是成员名单还没取全、
+     * 在场的算不准，别下“群里没有 AI”的结论；空列表才是确定没有。 */
+    var roomBots by mutableStateOf<List<String>?>(null)
+
     fun apply(diff: TimelineDiff) {
         when (diff) {
             is TimelineDiff.Append -> items.addAll(diff.items)
@@ -175,6 +180,7 @@ internal fun RoomRoute(
     isDirect: Boolean,
     isReadOnly: Boolean,
     bot: BotView?,
+    bots: List<BotView>,
     plugins: PluginsState,
     rooms: List<RoomRow>,
     onAction: (Action) -> Unit,
@@ -199,6 +205,7 @@ internal fun RoomRoute(
                 timeline.sideChat = update.sideChat
                 timeline.call = RoomCall(update.widgets, update.callActive)
                 timeline.confirmations = update.confirmations
+                timeline.roomBots = update.roomBots
                 if (update.scrollToBottom) timeline.bottomRequest++
                 timeline.revision++
                 timeline.loaded = true
@@ -237,6 +244,7 @@ internal fun RoomRoute(
             isDirect,
             isReadOnly,
             bot,
+            bots,
             plugins,
             rooms,
             timeline,
@@ -279,6 +287,7 @@ private fun RoomScreen(
     isDirect: Boolean,
     isReadOnly: Boolean,
     bot: BotView?,
+    bots: List<BotView>,
     plugins: PluginsState,
     rooms: List<RoomRow>,
     timeline: TimelineState,
@@ -317,6 +326,13 @@ private fun RoomScreen(
                     core, target, sideChats, isDirect, isReadOnly, timeline, composer, draft, onAction, onReject,
                     rooms.firstOrNull { it.roomId == roomId }?.plugin, title, openMenu,
                     onOpenBackup, backdrop,
+                    // 群里能用的 AI：本账号认识的 Bot 里在场的；私聊为空，不显示。成员没取全（null）照传，
+                    // 让 RoomAiLine 不下“群里没有”的结论。
+                    roomAi = if (isDirect) emptyList() else timeline.roomBots?.mapNotNull { id ->
+                        bots.firstOrNull { it.userId == id }
+                    },
+                    plugins = plugins,
+                    onOpenBotProfile = onOpenBotProfile,
                 )
             }
         }
@@ -472,6 +488,9 @@ private fun Conversation(
     onOpenMenu: (TimelineItem, TimelineMessage, Rect) -> Unit,
     onOpenBackup: () -> Unit,
     backdrop: RoomBackdrop,
+    roomAi: List<BotView>?,
+    plugins: PluginsState,
+    onOpenBotProfile: (BotRef) -> Unit,
 ) {
     val density = LocalDensity.current
     var composerHeight by remember { mutableIntStateOf(0) }
@@ -504,6 +523,10 @@ private fun Conversation(
             AgentPluginStatusBanner(plugin, title, onAction)
             timeline.sideChat?.let { SideChatHeaderLine(it.state) }
             if (sideChats.unsupportedHint) NoSideChatsHint()
+            // 群里能用的 AI；私聊不显示，Bot 本来就在顶栏（ADR-0044）。
+            if (!isDirect && target.threadRoot == null) {
+                RoomAiLine(roomAi, plugins, onOpenBotProfile)
+            }
         }
         Column(
             Modifier.align(Alignment.BottomCenter).fillMaxWidth()
