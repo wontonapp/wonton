@@ -25,6 +25,9 @@ extension MainView {
         case .newChat:
             pages.open(.chat)
             chat.path = [.startChat]
+        case let .failedApp(id):
+            openApps()
+            appsPath.append(PluginRoute.installed(id: id))
         case let .app(app):
             switch app.open {
             case .botChat(let botUserId):
