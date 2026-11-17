@@ -21,8 +21,6 @@ final class TimelineModel {
     private(set) var panel: [PanelItem] = []
     /// 房间面板上次看的那一页（本机记住，不同步）。
     private(set) var panelSelected: TabRef?
-    /// 房间里盖着消息列表的东西开着：上推拉面板的入口不响应。核心合成，壳只读。
-    private(set) var entryBlocked = false
     /// 这条时间线是旁聊时给标题和状态（ADR-0093），主时间线为空。
     private(set) var sideChat: SideChatCard?
     /// 顶栏的 widget 入口和房间里有没有人在通话（ADR-0096）。
@@ -87,7 +85,6 @@ final class TimelineModel {
         viewport = update.viewport
         panel = update.panel
         panelSelected = update.panelSelected
-        entryBlocked = update.entryBlocked
         notice = update.keyNotice
         sideChat = update.sideChat
         widgets = update.widgets

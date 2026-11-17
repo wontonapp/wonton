@@ -8,7 +8,6 @@ struct ChatListView: View {
     @Environment(\.wontonColors) private var colors
     @Environment(PagesModel.self) private var pages
     @Environment(\.wontonOpenApps) private var openApps
-    @Environment(\.chatPull) private var pull
     @State private var confirmation: PluginConfirmation?
     /// 这次会话里刚关掉的提醒：关了立刻收横幅；换类提醒由 onChange 重新看存下来的记忆。
     @State private var locallyDismissed = false
@@ -66,7 +65,6 @@ struct ChatListView: View {
                         }
                     }
                 }
-                .background { if let pull { ChatPullDetector(pull: pull) } }
             }
             .overlay {
                 if isEmpty { NoChats().allowsHitTesting(false) }
@@ -78,7 +76,7 @@ struct ChatListView: View {
                         .padding(.bottom, WontonTheme.spacing.s12)
                 }
             }
-            .wontonRootScreen(TabText.chat, hasActions: false) { EmptyView() }
+            .wontonRootScreen(TabText.chat, hasActions: true) { PanelEntryButton() }
             .task { await model.confirmations.observe() }
             .fullScreenCover(item: $confirmation) { InstallConfirmView(model: plugins, confirmation: $0) }
             .environment(\.goToInstalledApps, { pages.open(.apps) })

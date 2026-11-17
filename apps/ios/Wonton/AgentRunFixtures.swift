@@ -32,7 +32,8 @@ enum AgentRunFixtures {
         body: String = "",
         cardId: String? = nil,
         choices: [AgentRunChoice] = [],
-        senderName: String = ""
+        senderName: String = "",
+        timestampMs: UInt64 = 0
     ) -> AnyView {
         AnyView(AgentRunRow(
             state: state,
@@ -45,6 +46,8 @@ enum AgentRunFixtures {
             cardId: cardId,
             choices: choices,
             senderName: senderName,
+            // 0 = 不带发送时间：已等待那行不显示，参考图不吃真实时钟。
+            timestampMs: timestampMs,
             openCard: { _ in },
             answerChoice: { _ in }
         ))
