@@ -52,7 +52,9 @@ final class PairingLinkTests: XCTestCase {
 
     private func makeCore() throws -> ClientCore {
         let directory = FileManager.default.temporaryDirectory.appendingPathComponent(UUID().uuidString)
-        addTeardownBlock { try FileManager.default.removeItem(at: directory) }
+        // ClientCore 没有显式 shutdown，SQLite/WAL 句柄要等核心析构才释放；收尾抢在释放前删目录会报
+        // Code 513。目录在临时区，系统会清：删不掉不算测试失败。
+        addTeardownBlock { try? FileManager.default.removeItem(at: directory) }
         return try ClientCore(dataDir: directory.path)
     }
 
