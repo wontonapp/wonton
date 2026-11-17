@@ -79,6 +79,7 @@ plugin-install-start-failed = 起動できませんでした：{ $error }
 plugin-install-conflict-rebuilding = アプリ{ $id }は再構築中です。終わってから起動してください
 plugin-install-record-unusable = このアプリのインストール記録が壊れているため、起動できません
 plugin-install-container-missing = コンテナ{ $name }は存在しません
+plugin-install-start-timeout-container-gone = 起動がタイムアウトし、コンテナ{ $name }は存在しません。もう一度インストールしてください
 plugin-install-container-not-owned = コンテナ{ $name }はアプリ{ $id }のものではありません
 
 # ── メモリ不足（oom.rs）────────────────────────────────────────────────────
