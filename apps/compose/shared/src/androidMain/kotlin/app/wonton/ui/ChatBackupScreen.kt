@@ -46,7 +46,6 @@ import app.wonton.protocol.ChatAction
 import app.wonton.protocol.BackupReminder
 import app.wonton.protocol.DeviceVerification
 import app.wonton.protocol.EncryptionStatus
-import app.wonton.protocol.KeyNotice
 import app.wonton.protocol.RecoveryNextStep
 import app.wonton.protocol.RecoveryStatus
 import app.wonton.ui.design.wontonContentPadding
@@ -256,14 +255,6 @@ val RecoveryStatus.backupValue: String
         RecoveryStatus.INCOMPLETE -> stringResource(R.string.chat_backup_value_incomplete)
         RecoveryStatus.IN_PROGRESS -> stringResource(R.string.chat_backup_value_in_progress)
         RecoveryStatus.UNKNOWN -> stringResource(R.string.chat_backup_value_unknown)
-    }
-
-/** 按钮上的字；`OTHER` 是更新的核心给的新类别，只显示说明。 */
-val KeyNotice.action: Int?
-    get() = when (this) {
-        KeyNotice.ENTER_RECOVERY_KEY -> R.string.verification_use_recovery_key
-        KeyNotice.VERIFY_WITH_OTHER_DEVICE -> R.string.verification_verify_with_other_device
-        KeyNotice.OTHER -> null
     }
 
 val BackupReminder.text: String?

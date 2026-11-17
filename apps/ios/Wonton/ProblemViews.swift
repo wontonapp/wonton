@@ -495,11 +495,12 @@ struct ProblemRow: View {
 
 /// 过了几秒还没好时才出现的一句话。
 private struct SlowHint: View {
+    var message: LocalizedStringResource = .Problem2.problemSlowLoading
     @State private var isSlow = false
     @Environment(\.wontonColors) private var colors
 
     var body: some View {
-        Text(.Problem2.problemSlowLoading)
+        Text(message)
             .wontonText(WontonTheme.typography.supporting)
             .foregroundStyle(Color(colors.textSecondary))
             .multilineTextAlignment(.center)
@@ -525,6 +526,7 @@ struct LoadingView: View {
 /// 取列表：骨架占住列表的位置，慢了说一句。
 struct ListSkeleton: View {
     let iconSize: CGFloat
+    var slowHint: LocalizedStringResource = .Problem2.problemSlowLoading
     @State private var isDim = false
     @Environment(\.accessibilityReduceMotion) private var reduceMotion
     @Environment(\.wontonColors) private var colors
@@ -532,7 +534,7 @@ struct ListSkeleton: View {
     var body: some View {
         VStack(alignment: .leading, spacing: WontonTheme.spacing.s16) {
             ForEach(0 ..< 5, id: \.self) { _ in row }
-            SlowHint().frame(maxWidth: .infinity)
+            SlowHint(message: slowHint).frame(maxWidth: .infinity)
             Spacer(minLength: 0)
         }
         .padding(WontonTheme.spacing.pageInset)

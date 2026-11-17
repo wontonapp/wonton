@@ -449,7 +449,10 @@ fn file_actions_round_trip_through_json() {
             },
         },
         Action::Files {
-            action: FileAction::DownloadFile { id: id() },
+            action: FileAction::DownloadFile {
+                id: id(),
+                room: "!bot:home".into(),
+            },
         },
         Action::Files {
             action: FileAction::CancelTransfer {
@@ -566,4 +569,31 @@ fn a_room_lists_its_own_transfers_and_what_went_wrong_elsewhere() {
             },
         ]
     );
+}
+
+/// 下载完的属于触发它的房间，别的房间不列，免得以为当前聊天发生了下载。
+#[test]
+fn a_finished_download_is_listed_only_in_the_room_that_started_it() {
+    let view = TransfersViewModel {
+        downloaded: vec![
+            download_to(Some("!here")),
+            download_to(Some("!other")),
+            download_to(None),
+        ],
+        ..TransfersViewModel::default()
+    };
+    let listed = view.for_room("!here", &[room_row("!other", "妈妈")]);
+    assert_eq!(listed.downloaded, [download_to(Some("!here"))]);
+    assert!(listed.here.is_empty() && listed.elsewhere.is_empty());
+    let other = view.for_room("!other", &[]);
+    assert_eq!(other.downloaded, [download_to(Some("!other"))]);
+}
+
+fn download_to(room: Option<&str>) -> Transfer {
+    Transfer {
+        direction: TransferDirection::Download,
+        state: TransferState::Done,
+        destination: Some("/data/downloads/a.mov".into()),
+        ..upload_to(room, TransferState::Done)
+    }
 }

@@ -50,6 +50,7 @@ import app.wonton.protocol.PluginTaskState
 import app.wonton.protocol.PluginTrust
 import app.wonton.protocol.StoreItem
 import app.wonton.protocol.StoreListing
+import app.wonton.protocol.StoreLoadState
 import app.wonton.protocol.StoreConfirmation
 import app.wonton.protocol.UpdatablePlugin
 import app.wonton.protocol.StoreSection
@@ -73,7 +74,7 @@ private val SPINNER_STROKE = 2.dp
 /** “应用商店”：已审核的插件和社区插件分开列，可以按分类筛、按关键词找；上面是安装、升级、卸载的进展。 */
 @Composable
 fun StoreRoute(plugins: PluginsState, navigation: PluginNavigation, onBack: () -> Unit) {
-    LaunchedEffect(plugins) { plugins.refresh(Action.Plugins(PluginAction.RefreshStore(force = false))) }
+    LaunchedEffect(plugins) { plugins.refreshStore(force = false) }
     StoreScreen(plugins, navigation, onBack)
 }
 
@@ -114,9 +115,9 @@ private fun StoreScreen(plugins: PluginsState, navigation: PluginNavigation, onB
     ) {
         Column(Modifier.fillMaxSize()) {
             PullToRefreshBox(
-                // 第一次取的时候 StorePlaceholder 已经在转圈，这里不再转一个。
-                isRefreshing = viewModel.refreshing && store != null,
-                onRefresh = { plugins.send(Action.Plugins(PluginAction.RefreshStore(force = true))) },
+                // 首次加载由 StorePlaceholder 展示骨架，不再叠加下拉刷新指示器。
+                isRefreshing = viewModel.storeLoad is StoreLoadState.Loading && store != null,
+                onRefresh = { plugins.refreshStore(force = true) },
                 modifier = Modifier.fillMaxSize(),
             ) {
                 if (store == null) {
@@ -136,21 +137,13 @@ private fun StoreScreen(plugins: PluginsState, navigation: PluginNavigation, onB
                                 )
                             }
                         }
-                        viewModel.problem?.let { problem ->
-                            item(key = "problem") {
-                                Box(Modifier.padding(WontonTheme.spacing.pageInset)) {
-                                    ProblemRow(problem.problem) {
-                                        plugins.send(Action.Plugins(PluginAction.RefreshStore(force = true)))
-                                    }
-                                }
-                            }
-                        }
+                        item(key = "store-load-problems") { StoreLoadProblems(plugins) }
                         if (query.isEmpty()) {
                             listing(
                                 store,
                                 tag,
                                 onTag = { tag = it },
-                                onRetry = { plugins.send(Action.Plugins(PluginAction.RefreshStore(force = true))) },
+                                onRetry = { plugins.refreshStore(force = true) },
                             ) { row(it) }
                         } else {
                             results(plugins.core.searchStore(query)) { row(it) }
@@ -166,19 +159,6 @@ private fun StoreScreen(plugins: PluginsState, navigation: PluginNavigation, onB
         UpdateAllSheet(plugins, viewModel.updatable, onDismiss = { showsUpdateAll = false }) {
             plugins.send(Action.Plugins(PluginAction.UpgradeAll))
         }
-    }
-}
-
-/** 还没取到商店：取不到的原因和下一步，或者正在取。 */
-@Composable
-private fun StorePlaceholder(plugins: PluginsState) {
-    val problem = plugins.viewModel.problem
-    val rejection = plugins.refreshRejection
-    val retry = { plugins.send(Action.Plugins(PluginAction.RefreshStore(force = true))) }
-    when {
-        problem != null -> ProblemView(problem.problem, retry)
-        rejection != null -> ProblemView(rejection.problem, retry)
-        else -> ListSkeleton(WontonTheme.size.storeIcon)
     }
 }
 

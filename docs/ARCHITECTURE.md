@@ -103,6 +103,10 @@ flowchart LR
 iPad regular 宽度与 Android expanded 宽度使用“会话列表 + 当前内容”两栏；插件页只铺内容栏，窄屏保留单列和侧边栏抽屉。
 房间选择与导航路径属于窗口的壳内状态，尺寸变化只换布局、不替主人选择房间；插件页面栈仍由客户端核心维护。
 布局与内容窗口的边界见 [ADR-0103](adr/0103-ipad-and-large-screens.md)。
+iPad 内容窗口共享进程内的 `ClientCore`，不复制主页面栈。每份时间线订阅独立保活房间、保存滚动回执，
+最后一份订阅释放后撤销房间 watch；房间面板按房间路由。独立插件页通过 `subscribe_content_page` 保活，
+`PlacedTab::Content` 复用页面解析、权限与桥，加载状态与主栈同页共享，WebView 和场景滚动位置各自独立。
+端口自动映射取主页面与内容页的可见集合，最后一个页面关闭才释放；应用前后台与网络变化由进程级监听上报。
 
 账号槽位既可以是配对的 Wonton，也可以是外部 Matrix 账号；导航条目和应用页操作由客户端核心给出，
 壳不按槽位种类自行隐藏。好友身份、分组、插件分享和 OpenID 连接的边界见 [ADR-0051](adr/0051-friends-and-plugin-sharing.md)；
@@ -364,6 +368,10 @@ deploy/              一行安装脚本、compose 模板、升级器
 docs/                文档
 scripts/             CI 与开发脚本
 ```
+
+插件清单的类型和 serde 解析在 `wonton-protocol::manifest`，不导出到 UniFFI；服务端的
+`plugin::manifest` 重新导出这些类型。语义校验、权限风险表、Compose 白名单和规范版本下限仍由
+`wonton-core` 执行；`ManifestExt`、`PermissionExt` 扩展 trait 保留核心的校验与权限计算方法。
 
 ## 选型
 

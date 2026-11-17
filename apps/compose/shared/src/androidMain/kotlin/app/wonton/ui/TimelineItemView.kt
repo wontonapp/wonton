@@ -404,6 +404,7 @@ private fun MessageBody(
             // 一次发送里主人写的字是最后一张照片的说明文字（ADR-0094），画在照片下面。
             body.image.caption?.let { caption -> TextMessageBody(caption.blocks, emptyList(), core) }
         }
+        is MessageContent.File -> MessageFileCard(body.file, core, onLongPress)
         is MessageContent.Confirmation -> ConfirmationCardView(body.view, onCardAction)
         MessageContent.Undecryptable -> Row(horizontalArrangement = Arrangement.spacedBy(WontonTheme.spacing.s8)) {
             // 装饰：右边就是说明文字。

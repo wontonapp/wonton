@@ -54,7 +54,6 @@ struct Asked {
     /// 收件人的语言：卡片结束时的文字也用它。
     langs: Languages,
     settled: bool,
-    permission: Option<super::handoff::Permission>,
 }
 
 impl Asked {
@@ -160,7 +159,6 @@ impl Bus {
             request,
             langs,
             settled: true,
-            permission: None,
         };
         let (card, answered) = match self.confirmations.open_as(&caller.id, draft, audience) {
             Ok(opened) => opened,
@@ -181,15 +179,6 @@ impl Bus {
             }
             bound
         });
-        if asked.chain.is_some()
-            && let Some(session) = asked.request.session.as_deref()
-        {
-            asked.permission = Some(self.handoffs.permission(
-                session,
-                &card.id,
-                card.expires_at_ms,
-            ));
-        }
         match self.confirmations.deliver(&card, answered).await {
             Ok(chosen) => Ok(asked.answered(chosen.choice_id.as_deref()).await),
             Err(Refusal::Expired) => {

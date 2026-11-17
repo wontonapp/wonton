@@ -390,6 +390,8 @@ fn is_shared_page(page: &wonton_protocol::PlacedTab) -> bool {
         page,
         wonton_protocol::PlacedTab::Page {
             tab: wonton_protocol::TabRef::SharedApp { .. },
+        } | wonton_protocol::PlacedTab::Content {
+            tab: wonton_protocol::TabRef::SharedApp { .. },
         }
     )
 }
