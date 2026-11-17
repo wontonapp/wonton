@@ -164,7 +164,7 @@ async fn run(
                 match result {
                     Ok(None) => debug!(flow = id.get(), "UDP flow ended: control stream EOF"),
                     Ok(Some(_)) => debug!(flow = id.get(), "UDP flow ended: control stream carried data"),
-                    Err(error) => debug!(flow = id.get(), error = %error, "UDP flow ended: control stream read error"),
+                    Err(_) => debug!(flow = id.get(), "UDP flow ended: control stream read error"),
                 }
                 break;
             }
@@ -189,7 +189,7 @@ async fn run(
                     match mux.send(id, next_packet, &upstream[..len], counters) {
                         Ok(()) => next_packet += 1,
                         Err(SendFailure::Tunnel(error)) => {
-                            debug!(flow = id.get(), error = %error, "UDP flow ended: tunnel lost");
+                            debug!(flow = id.get(), code = error.code(), "UDP flow ended: tunnel lost");
                             break;
                         }
                         Err(SendFailure::DatagramsUnsupported) => {

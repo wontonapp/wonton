@@ -6,14 +6,22 @@
     <string name="store_get">获取</string>
     <!-- Small tag on a store row for an app that asks for risky permissions. -->
     <string name="store_high_permissions">高权限</string>
+    <!-- Button that requests store content when it has not been loaded. -->
+    <string name="store_load">加载商店</string>
     <!-- Shown when a store search found nothing. -->
     <string name="store_no_results">没有找到</string>
+    <!-- Store state before any store load has been requested. -->
+    <string name="store_not_requested">尚未加载商店</string>
     <!-- Button on a store row to open an installed app. -->
     <string name="store_open">打开</string>
+    <!-- Shown after five seconds of loading without claiming a cause. -->
+    <string name="store_pending">还没取得商店内容，原因尚不确定。</string>
     <!-- Problem title in the store with the source it came from. Arguments: the provider's name, the problem title from the core. -->
     <string name="store_problem_from_source">%1$s：%2$s</string>
     <!-- Placeholder under an added source whose list hasn't been fetched yet. Argument: the source's provider name. -->
     <string name="store_reading">正在读取 %1$s</string>
+    <!-- Button that requests a new store load after loading takes a while. -->
+    <string name="store_reload">重新加载</string>
     <!-- Placeholder of the search field on the Store screen. -->
     <string name="store_search_prompt">搜索</string>
     <!-- Section title above community apps in the store. -->
@@ -30,6 +38,8 @@
     <string name="store_update">更新</string>
     <!-- Caption on a store row whose listing comes through an index. Argument: the index's name. -->
     <string name="store_via_index">经 %1$s</string>
+    <!-- Store load is waiting for a connection; connection controls remain in the status line. -->
+    <string name="store_waiting_for_connection">正在等待连接，以加载商店</string>
     <!-- 一次更新所有有更新的应用之前，底部面板的标题。 -->
     <plurals name="store_update_all_title">
         <item quantity="other">更新 %1$d 个应用</item>

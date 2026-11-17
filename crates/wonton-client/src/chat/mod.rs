@@ -68,14 +68,12 @@ use tokio::runtime::Handle;
 use tokio::sync::{mpsc, watch};
 use tokio::task::JoinHandle;
 use wonton_l10n::l10n;
-use wonton_matrix::{
-    ChatRoom, Error, MatrixSession, OwnedRoomId, OwnedUserId, RoomId, SyncStatus, UserId,
-};
+use wonton_matrix::{ChatRoom, Error, MatrixSession, OwnedRoomId, OwnedUserId, SyncStatus, UserId};
 use wonton_protocol::{
     CORE_LOCALPART, ChatAccount, ChatAction, ChatFailure, ChatSync, ChatViewModel,
     ConfirmationView, ConfirmationsViewModel, CoreError, DeviceVerification, EncryptionStatus,
-    MediaHandle, PushMethod, PushStatus, RecoveryNextStep, RecoveryStatus, RoomPanel,
-    TimelineAction, TimelineScroll, TimelineTarget,
+    MediaHandle, PushMethod, PushStatus, RecoveryNextStep, RecoveryStatus, TimelineAction,
+    TimelineScroll, TimelineTarget,
 };
 
 pub use bots::bot_current_avatar;
@@ -95,7 +93,7 @@ use layout::Layouts;
 pub(crate) use storage::{ChatStorage, StoredSession};
 pub(crate) use target::TimelineKey;
 use util::{invalid, lock};
-use view::core_error;
+pub(crate) use view::core_error;
 
 /// 向前翻页一次最多加载的事件数。
 const PAGE: u16 = 30;
@@ -115,8 +113,7 @@ pub(crate) struct ChatLink {
     active: tokio::sync::Mutex<Option<Active>>,
     session: Mutex<Option<Arc<MatrixSession>>>,
     session_out: watch::Sender<Option<Arc<MatrixSession>>>,
-    room_panel_out: watch::Sender<Option<(OwnedRoomId, RoomPanel)>>,
-    /// 订阅着的时间线：同一时间只开一个房间，主对话和一个旁聊可以同时开着（[`target`]）。
+    /// 每份订阅独立的滚动位置、菜单；同目标共用 Matrix 时间线。
     open: Mutex<target::OpenTimelines>,
     opening: tokio::sync::Mutex<()>,
     /// 各房间的旁聊支持声明（ADR-0093 §1），按信任规则核对过。
@@ -218,8 +215,6 @@ pub(crate) struct ChatChannels {
     pub(crate) lock_screen: watch::Receiver<crate::lock_screen::Hidden>,
     /// 登录着的会话。
     pub(crate) session_out: watch::Sender<Option<Arc<MatrixSession>>>,
-    /// 打开的房间的面板（房间账号数据）。
-    pub(crate) room_panel_out: watch::Sender<Option<(OwnedRoomId, RoomPanel)>>,
     /// 外部 Matrix 账号的槽位（ADR-0051）：不跟着家里的连接走，直连 homeserver，用登录时存下的状态恢复。
     pub(crate) external: bool,
 }
@@ -258,7 +253,6 @@ impl ChatLink {
             app_lock,
             lock_screen,
             session_out,
-            room_panel_out,
             external,
         } = channels;
         let storage = ChatStorage::open(data_dir)?;
@@ -299,7 +293,6 @@ impl ChatLink {
             active: tokio::sync::Mutex::new(None),
             session: Mutex::new(None),
             session_out,
-            room_panel_out,
             open: Mutex::default(),
             opening: tokio::sync::Mutex::new(()),
             side_chat_support: Arc::default(),
@@ -515,16 +508,6 @@ impl ChatLink {
         let key = TimelineKey::parse(target)?;
         let mut open = lock(&self.open);
         let id = open.begin(&key);
-        self.room_panel_out.send_if_modified(|current| {
-            if current
-                .as_ref()
-                .is_some_and(|(room, _)| room == &key.room_id)
-            {
-                return false;
-            }
-            *current = None;
-            true
-        });
         Ok(target::TimelineOpening {
             key,
             id,
@@ -532,8 +515,7 @@ impl ChatLink {
         })
     }
 
-    /// 订阅一条时间线（主对话或旁聊）。打开另一个房间会关掉前一个房间的订阅；同一个房间里主对话和一个旁聊
-    /// 可以同时开着。
+    /// 每份订阅钉住所需的房间；取消或释放不影响其他订阅。
     ///
     /// `room_view` 是 tabs 合成的房间面板视图（面板页、上次看的那页、入口有没有被盖住），每批时间线增量
     /// 都带上当前值；变了也发一批（增量为空）。
@@ -543,7 +525,6 @@ impl ChatLink {
         room_view: watch::Receiver<Option<Arc<crate::pages::RoomPanelView>>>,
     ) -> Result<Arc<TimelineSubscription>, CoreError> {
         let key = opening.key.clone();
-        // Matrix 的 opened 订阅是单槽；旧请求的副作用必须先结束，才能让新房间接管。
         let _opening = self.opening.lock().await;
         if !lock(&self.open).contains_request(opening.id) {
             return Err(target::not_subscribed(&key));
@@ -553,16 +534,18 @@ impl ChatLink {
         if *self.bots.foreground.borrow() {
             self.bots.refresh_all();
         }
-        let room = Arc::new(
-            open_chat_room(&session, &key)
-                .await
-                .map_err(|e| core_error(&e))?,
-        );
+        let existing = lock(&self.open)
+            .get(&key)
+            .and_then(|open| open.room.upgrade());
+        let room = match existing {
+            Some(room) => room,
+            None => Arc::new(
+                open_chat_room(&session, &key)
+                    .await
+                    .map_err(|error| core_error(&error))?,
+            ),
+        };
         let menus = Arc::new(Mutex::new(menu::Menus::default()));
-        let panel = Self::read_room_panel(&session, &room_id).await;
-        if !opening.publish_panel(panel) {
-            return Err(target::not_subscribed(&key));
-        }
         let mut open = lock(&self.open);
         if !open.contains_request(opening.id) {
             return Err(target::not_subscribed(&key));
@@ -575,6 +558,7 @@ impl ChatLink {
         if plugins.installed.is_none() && !plugins.refreshing {
             self.plugins.refresh_installed();
         }
+        let id = opening.id;
         let subscription = TimelineSubscription::start(
             &self.runtime,
             TimelineSource {
@@ -591,25 +575,13 @@ impl ChatLink {
             opening,
         );
         open.insert(target::OpenTimeline {
+            id,
             key,
-            room,
-            menus,
+            room: Arc::downgrade(&room),
+            menus: Arc::downgrade(&menus),
             subscription: Arc::downgrade(&subscription),
         });
         Ok(subscription)
-    }
-
-    /// 读不了时按没有面板开：房间照常打开，主人编辑面板时写不进去，那里会报原因。
-    async fn read_room_panel(session: &Arc<MatrixSession>, room_id: &RoomId) -> RoomPanel {
-        match session.room_panel(room_id).await {
-            Ok(content) => content
-                .and_then(|content| serde_json::from_value(content.0.into()).ok())
-                .unwrap_or_default(),
-            Err(error) => {
-                tracing::warn!("could not read the room panel of {room_id}: {error}");
-                RoomPanel::default()
-            }
-        }
     }
 
     /// 壳报告列表滚到了哪儿：交给这条时间线现在的订阅。
@@ -725,18 +697,17 @@ impl ChatLink {
     fn opened(&self, key: &TimelineKey) -> Result<Arc<ChatRoom>, CoreError> {
         lock(&self.open)
             .get(key)
-            .map(|open| open.room.clone())
+            .and_then(|open| open.room.upgrade())
             .ok_or_else(|| target::not_subscribed(key))
     }
 
-    /// 已打开的房间直接用，否则打开它。
-    ///
-    /// 打开会把 Sliding Sync 的房间订阅换成这个房间（同一时间只订阅一个，见 `MatrixSession::open_room`），正在看的
-    /// 房间就只剩房间列表带来的最新一条，时间线会断。现在界面只在打开着的房间里发消息、标为已读，走不到这一步；
-    /// 以后在列表上做“标为已读”这类不进房间的操作时，要改成不动订阅的写法（比如直接对 SDK 的 `Room` 发回执）。
+    /// 已打开的目标共用时间线；临时操作独立持有房间监听。
     async fn room(&self, key: &TimelineKey) -> Result<Arc<ChatRoom>, Error> {
-        if let Some(open) = lock(&self.open).get(key) {
-            return Ok(open.room.clone());
+        if let Some(room) = lock(&self.open)
+            .get(key)
+            .and_then(|open| open.room.upgrade())
+        {
+            return Ok(room);
         }
         let session = self.current().map_err(|e| Error::NotReady(e.to_string()))?;
         Ok(Arc::new(open_chat_room(&session, key).await?))
@@ -747,11 +718,7 @@ impl ChatLink {
     async fn forget_current(&self) {
         self.bots.set_session(None);
         self.session_out.send_replace(None);
-        {
-            let mut open = lock(&self.open);
-            open.clear();
-            self.room_panel_out.send_replace(None);
-        }
+        lock(&self.open).clear();
         *lock(&self.verification) = None;
         self.side_chat_support.clear();
         self.room_order.clear();
@@ -836,10 +803,13 @@ impl ChatLink {
 }
 
 /// 打开主对话或旁聊的时间线（ADR-0093 §4）。
-async fn open_chat_room(session: &MatrixSession, key: &TimelineKey) -> Result<ChatRoom, Error> {
+async fn open_chat_room(
+    session: &Arc<MatrixSession>,
+    key: &TimelineKey,
+) -> Result<ChatRoom, Error> {
     match key.thread() {
-        Some(root) => session.open_thread(&key.room_id, root).await,
-        None => session.open_main(&key.room_id).await,
+        Some(root) => session.watch_thread(&key.room_id, root).await,
+        None => session.watch_main(&key.room_id).await,
     }
 }
 
