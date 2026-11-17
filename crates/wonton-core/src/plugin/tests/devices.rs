@@ -4,12 +4,12 @@ use std::os::unix::fs::MetadataExt;
 
 use serde_json::{Value, json};
 
-use super::super::PluginManager;
 use super::super::fake_docker::FakeDocker;
 use super::super::gpu::fake_host::FakeHost;
 use super::super::manifest::Permission;
 use super::super::names::container_name;
 use super::super::package::PluginPackage;
+use super::super::{PluginManager, UpgradeSwitches};
 use super::manager::manager_with;
 use super::{langs, render_err};
 
@@ -341,7 +341,7 @@ async fn upgrades_keep_the_chosen_devices_and_uninstall_releases_them() {
     m.upgrade_checked(
         parse(&next).unwrap(),
         &granted(),
-        &[],
+        &UpgradeSwitches::Requested(Vec::new()),
         false,
         &[],
         Default::default(),
@@ -500,7 +500,7 @@ async fn missing_selected_disk_prevents_upgrade_without_discarding_other_choices
         .upgrade_checked(
             parse(&plugin("").replace("version: 1.0.0", "version: 1.1.0")).unwrap(),
             &granted(),
-            &[],
+            &UpgradeSwitches::Requested(Vec::new()),
             false,
             &[],
             Default::default(),
@@ -558,7 +558,7 @@ async fn nvme_upgrade_refreshes_controller_and_deduplicates_disks_shared_by_serv
         .upgrade_checked(
             parse(&source.replace("version: 1.0.0", "version: 1.1.0")).unwrap(),
             &[Permission::DevicesDisk],
-            &[],
+            &UpgradeSwitches::Requested(Vec::new()),
             false,
             &[],
             Default::default(),
@@ -637,7 +637,7 @@ async fn switching_disk_type_changes_only_the_disk_service_and_its_risk() {
         .upgrade_checked(
             parse(&source.replace("version: 1.0.0", "version: 1.1.0")).unwrap(),
             &[Permission::DevicesDisk],
-            &[],
+            &UpgradeSwitches::Requested(Vec::new()),
             false,
             &nvme,
             Default::default(),
@@ -661,7 +661,7 @@ async fn switching_disk_type_changes_only_the_disk_service_and_its_risk() {
         .upgrade_checked(
             parse(&source.replace("version: 1.0.0", "version: 1.2.0")).unwrap(),
             &[Permission::DevicesDisk],
-            &[],
+            &UpgradeSwitches::Requested(Vec::new()),
             false,
             &sata,
             Default::default(),

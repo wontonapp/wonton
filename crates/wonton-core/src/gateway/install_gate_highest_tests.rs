@@ -1,5 +1,5 @@
 //! 要管理员批的安装、升级（#767）：必需项里有最高级（`privileged`、`host.pid` 等）时第二张卡照 NVMe
-//! 的做法发（ADR-0036）；卡片第一行写包的真实来源；成员发起、管理员批准的升级不改可选项原来的
+//! 的做法发（ADR-0036）；卡片不把别的来源写成官方索引；成员发起、管理员批准的升级不改可选项原来的
 //! 打开人和时间，旧版必需、新版可选的项记装的时候。
 
 use hyper::StatusCode;
@@ -59,7 +59,7 @@ fn installed(h: &Harness) -> bool {
     h.manager.store().load(&echo()).unwrap().is_some()
 }
 
-/// 成员按来源装一个必需 `privileged` 的上传包：第一张卡的版本行写“来自上传的插件包”，不写官方索引；
+/// 成员按来源装一个必需 `privileged` 的上传包：第一张卡的版本行不写官方索引，来源只由未审核提示写一处；
 /// 第二张卡标出最高级，两张都批了才装，记录里的授予就是这一项必需权限。
 #[tokio::test]
 async fn a_required_highest_permission_needs_the_second_card() {
@@ -73,12 +73,16 @@ async fn a_required_highest_permission_needs_the_second_card() {
     let first = pending_admin_card(&h).await;
     let langs = h.manager.owner_languages();
     let version = |key: &str| l10n::text(&langs, key, &[("version", "0.1.0".into())]);
+    assert!(has_line(&first, &version("chat-card-version")), "{first}");
     assert!(
-        has_line(&first, &version("chat-card-version-upload")),
+        !has_line(&first, &version("chat-card-version-official")),
         "{first}"
     );
     assert!(
-        !has_line(&first, &version("chat-card-version-official")),
+        has_line(
+            &first,
+            &l10n::text(&langs, "install-unreviewed-upload", &[])
+        ),
         "{first}"
     );
     answer_admin_card(&h, &first, "approve").await;

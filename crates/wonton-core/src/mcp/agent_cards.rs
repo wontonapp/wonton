@@ -10,7 +10,7 @@ use super::{Bus, Outcome};
 use crate::l10n;
 use crate::plugin::languages::Languages;
 use crate::plugin::manifest::Permission;
-use crate::plugin::{PluginId, PluginPackage, PluginView};
+use crate::plugin::{PluginId, PluginPackage, PluginView, UpgradeSwitches};
 
 /// 更新执行完的结果：卡片上的话按主人的语言写，给 Agent 的还是结构化的 JSON。
 /// `writer` 是接手时记下的归属（#817）；没记下来时下次更新还会再问一次主人，两边都要如实说。
@@ -42,17 +42,20 @@ pub(super) async fn upgrade_ran(
             ),
         );
     }
-    // 可选项按执行这一刻的记录沿用，不用发卡时的快照：主人在卡片挂着时关掉的项，批准不会重新打开（#767）。
-    let upgraded = match bus.plugins.kept_switches(&id, &package.manifest, &langs) {
-        Ok(enabled) => {
-            bus.plugins
-                .upgrade_upload(
-                    &id, package, granted, enabled, lan_webui, &devices, &settings, &langs,
-                )
-                .await
-        }
-        Err(e) => Err(e),
-    };
+    // 可选项按执行时读到的记录沿用，不用发卡时的快照：主人在卡片挂着时关掉的项，批准不会重新打开（#767）。
+    let upgraded = bus
+        .plugins
+        .upgrade_upload(
+            &id,
+            package,
+            granted,
+            UpgradeSwitches::Kept,
+            lan_webui,
+            &devices,
+            &settings,
+            &langs,
+        )
+        .await;
     match upgraded {
         Ok(()) => {
             let note = match writer.map(|writer| bus.plugins.set_writer(&id, Some(writer))) {

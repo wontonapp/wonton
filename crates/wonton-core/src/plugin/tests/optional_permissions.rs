@@ -8,7 +8,7 @@ use super::super::fake_docker::FakeDocker;
 use super::super::languages::Languages;
 use super::super::names::container_name;
 use super::super::store::{EnabledPermission, OpenedBy};
-use super::super::{PluginId, PluginManager, PluginPackage};
+use super::super::{PluginId, PluginManager, PluginPackage, UpgradeSwitches};
 use super::manager::manager_with;
 use super::{env_of_container, package};
 use crate::plugin::manifest::Permission;
@@ -465,9 +465,16 @@ async fn upgrading_away_the_optional_one_drops_the_mount() {
         )
         .replace("version: 1.0.0", "version: 1.1.0"),
     );
-    m.upgrade_checked(next, &[], &[], false, &[], Default::default())
-        .await
-        .unwrap();
+    m.upgrade_checked(
+        next,
+        &[],
+        &UpgradeSwitches::Requested(Vec::new()),
+        false,
+        &[],
+        Default::default(),
+    )
+    .await
+    .unwrap();
     assert!(!has_socket(&docker, "agent"));
     let record = m.store.load(&id()).unwrap().unwrap();
     assert!(record.enabled_permissions.is_empty());
@@ -513,11 +520,42 @@ async fn an_old_app_grant_records_only_the_required_permissions() {
     assert!(record.granted_permissions.is_empty());
     assert!(record.enabled_permissions.is_empty());
     let next = parsed(&optional().replace("version: 1.0.0", "version: 1.1.0"));
-    m.upgrade_checked(next, &socket, &[], false, &[], Default::default())
-        .await
-        .unwrap();
+    m.upgrade_checked(
+        next,
+        &socket,
+        &UpgradeSwitches::Requested(Vec::new()),
+        false,
+        &[],
+        Default::default(),
+    )
+    .await
+    .unwrap();
     let record = m.store.load(&id()).unwrap().unwrap();
     assert_eq!(record.version, "1.1.0");
     assert!(record.granted_permissions.is_empty());
     assert!(!has_socket(&docker, "agent"));
+}
+
+/// 老 App 写下的记录里 `granted_permissions` 混着可选项（旧清单里它就是可选的，主人关着）：升级时主人打开它，
+/// 记的是这次打开，不是装的时候。旧版必需还是可选按旧清单判断，和不带请求的预览同一条规则。
+#[tokio::test]
+async fn opening_an_option_an_old_app_recorded_as_granted_counts_from_now() {
+    let (_docker, m, _dir) = installed(&parsed(&optional()), &[]).await;
+    let mut record = m.store.load(&id()).unwrap().unwrap();
+    record.granted_permissions = vec![Permission::DockerSocket];
+    record.installed_at = 1;
+    m.store.save(&record).unwrap();
+    let next = parsed(&optional().replace("version: 1.0.0", "version: 1.1.0"));
+    m.upgrade_checked(
+        next,
+        &[],
+        &UpgradeSwitches::Requested(opened("docker.socket")),
+        false,
+        &[],
+        Default::default(),
+    )
+    .await
+    .unwrap();
+    let record = m.store.load(&id()).unwrap().unwrap();
+    assert_eq!(record.enabled_permissions, opened("docker.socket"));
 }

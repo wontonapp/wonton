@@ -295,37 +295,17 @@ pub(super) async fn source_admin_cards(
     Ok((first, second))
 }
 
-/// 卡片第一行：版本和包的真实来源。只有官方索引审核过的写“来自官方索引”；上传的写上传，GitHub 和
-/// 第三方索引写核心核实过的提供方（`provider`）和索引主机。预装的和不认识的来源只写版本，
-/// 来源提示在 `notices` 里。
+/// 卡片第一行：版本。只有官方索引审核过的写“来自官方索引”；其余来源（上传的包、提供方和第三方索引）
+/// 由预览 `notices` 里醒目的未审核提示写一处，版本行不再重复同样的提供方和主机。
 fn version_line(preview: &InstallPreview, langs: &Languages) -> CardLine {
-    let version = ("version", preview.version.as_str().into());
-    let text = match (
-        preview.trust,
-        preview.provider.as_deref(),
-        preview.via_index.as_deref(),
-    ) {
-        (PluginTrust::Official, ..) => l10n::text(langs, "chat-card-version-official", &[version]),
-        (PluginTrust::Local, ..) => l10n::text(langs, "chat-card-version-upload", &[version]),
-        (PluginTrust::Community, Some(provider), Some(host)) => l10n::text(
-            langs,
-            "chat-card-version-provider-via",
-            &[
-                version,
-                ("provider", provider.into()),
-                ("host", host.into()),
-            ],
-        ),
-        (PluginTrust::Community, Some(provider), None) => l10n::text(
-            langs,
-            "chat-card-version-provider",
-            &[version, ("provider", provider.into())],
-        ),
-        _ => l10n::text(langs, "chat-card-version", &[version]),
+    let key = if preview.trust == PluginTrust::Official {
+        "chat-card-version-official"
+    } else {
+        "chat-card-version"
     };
     CardLine {
-        text,
-        emphasis: preview.trust != PluginTrust::Official,
+        text: l10n::text(langs, key, &[("version", preview.version.as_str().into())]),
+        emphasis: false,
     }
 }
 

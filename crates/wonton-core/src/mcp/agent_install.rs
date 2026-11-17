@@ -22,7 +22,9 @@ use crate::plugin::languages::Languages;
 use crate::plugin::manifest::{Manifest, Permission};
 use crate::plugin::privileges::{self, CapabilityRisk};
 use crate::plugin::store::InstalledRecord;
-use crate::plugin::{InstallError, PluginId, PluginPackage, PluginView, package_files};
+use crate::plugin::{
+    InstallError, PluginId, PluginPackage, PluginView, UpgradeSwitches, package_files,
+};
 use wonton_protocol::{CardLine, PluginWriter, SecretValues};
 
 fn result(value: &Value) -> CallToolResult {
@@ -481,24 +483,20 @@ async fn quiet_update(
     let id = package.manifest.id.clone();
     let version = package.manifest.version.clone();
     let langs = bus.plugins.owner_languages();
-    // 和发卡的更新同一套：可选项按执行这一刻的记录沿用（#767）。
-    let run = match bus.plugins.kept_switches(&id, &package.manifest, &langs) {
-        Ok(enabled) => {
-            bus.plugins
-                .upgrade_upload(
-                    &id,
-                    package,
-                    granted,
-                    enabled,
-                    record.lan_webui,
-                    &[],
-                    &Default::default(),
-                    &langs,
-                )
-                .await
-        }
-        Err(e) => Err(e),
-    };
+    // 和发卡的更新同一套：可选项按执行时读到的记录沿用（#767）。
+    let run = bus
+        .plugins
+        .upgrade_upload(
+            &id,
+            package,
+            granted,
+            UpgradeSwitches::Kept,
+            record.lan_webui,
+            &[],
+            &Default::default(),
+            &langs,
+        )
+        .await;
     bus.audit.record(&Record {
         caller: caller.id.as_str(),
         tool: name,
