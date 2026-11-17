@@ -190,3 +190,7 @@ gateway-agent-acp-busy = このアプリの開いている Agent 接続が上限
 
 gateway-install-rejected = 管理者が承認しなかったため、{$action}は行われませんでした
 gateway-install-expired = 管理者が期限内に回答しなかったため、{$action}は行われませんでした
+gateway-install-card-device = 渡すデバイス：{ $device }
+gateway-install-card-secret = リクエストで入力されたシークレット：{ $title }
+gateway-install-card-setting = リクエストで入力された設定：{ $title } = { $value }
+gateway-install-changed = カードの送信後に { $id } の権限、デバイス、設定が変更されたため、アップグレードしませんでした。もう一度リクエストしてください。
