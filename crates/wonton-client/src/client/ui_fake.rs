@@ -362,6 +362,7 @@ fn fake_plugins(mut plugins: PluginsViewModel) -> PluginsViewModel {
             stage: wonton_protocol::InstallStage::PullingImages,
             failed_plugin_id: id.into(),
             cleanup_errors: Vec::new(),
+            retryable: true,
         });
         installed.push(failed);
     }

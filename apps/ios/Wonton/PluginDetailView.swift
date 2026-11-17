@@ -45,38 +45,6 @@ struct PluginDetailView: View {
             }
     }
 
-    private var task: PluginTask? {
-        model.viewModel.tasks.first { $0.id == pluginId }
-    }
-
-    private var isWorking: Bool {
-        task?.state == .running
-    }
-
-    private var retainedInstallFailureTask: Bool {
-        guard let task, task.operation == .install, case .failed = task.state else { return false }
-        return liveInstalled(task.id)?.installFailure != nil
-    }
-
-    private var isUncertain: Bool {
-        if case .uncertain = task?.state { return true }
-        return false
-    }
-
-    /// 详情只在打开时取一次，任务做完要重取，按钮才对。要不要关这一页由核心判断：插件已经卸掉了，核心让关。
-    private func taskEnded() {
-        Task {
-            do {
-                switch try await model.core.pluginDetailAfterTask(route: route.coreRoute) {
-                case .close: dismiss()
-                case let .detail(detail): loaded = .success(detail)
-                }
-            } catch {
-                loaded = .failure(error)
-            }
-        }
-    }
-
     @ViewBuilder private var content: some View {
         switch loaded {
         case nil:
@@ -259,6 +227,40 @@ struct PluginDetailView: View {
             }
         }
     }
+}
+
+extension PluginDetailView {
+    private var task: PluginTask? {
+        model.viewModel.tasks.first { $0.id == pluginId }
+    }
+
+    private var isWorking: Bool {
+        task?.state == .running
+    }
+
+    private var retainedInstallFailureTask: Bool {
+        guard let task, task.operation == .install, case .failed = task.state else { return false }
+        return liveInstalled(task.id)?.installFailure != nil
+    }
+
+    private var isUncertain: Bool {
+        if case .uncertain = task?.state { return true }
+        return false
+    }
+
+    /// 详情只在打开时取一次，任务做完要重取，按钮才对。要不要关这一页由核心判断：插件已经卸掉了，核心让关。
+    private func taskEnded() {
+        Task {
+            do {
+                switch try await model.core.pluginDetailAfterTask(route: route.coreRoute) {
+                case .close: dismiss()
+                case let .detail(detail): loaded = .success(detail)
+                }
+            } catch {
+                loaded = .failure(error)
+            }
+        }
+    }
 
     /// 有 Bot 的应用的那个 Bot（和资料一节同一个）：它的联系人页从这里进（ADR-0045）。
     private func bot(of pluginId: String) -> BotRef? {
@@ -295,9 +297,6 @@ struct PluginDetailView: View {
         model.viewModel.starts.first { $0.pluginId == id }?.state
     }
 
-}
-
-extension PluginDetailView {
     /// 标题旁的按钮：没装的“获取”，能升级的“更新”（和商店列表行尾同一个核心动作，要不要确认由核心判断），装着的“打开”。
     private func action(for detail: PluginDetail) -> DetailAction? {
         if let failure = installFailure(for: detail) {
@@ -308,32 +307,7 @@ extension PluginDetailView {
             }
         }
         if let installed = liveInstalled(detail.id) {
-            if installed.installFailure != nil {
-                let busy = isWorking || model.viewModel.pending.contains(installed.id)
-                if let source = installed.source, model.viewModel.actions.contains(.store) {
-                    return DetailAction(title: String(localized: .Common.commonRetry), enabled: !busy) {
-                        confirmation = .install(source: source)
-                    }
-                }
-                if installed.source == nil, model.viewModel.actions.contains(.addSource) {
-                    return DetailAction(
-                        title: String(localized: .PluginSources.pluginSourcesInstallFromFile), enabled: !busy
-                    ) {
-                        archiveProblem = nil
-                        pickingFailedArchive = true
-                    }
-                }
-                return nil
-            }
-            if installed.upgrade != nil {
-                // 取预览还没回来时任务还没建，列表行尾靠 pending 转圈，这里用同一个口径。
-                let busy = isWorking || model.viewModel.pending.contains(installed.id)
-                return DetailAction(title: String(localized: .Store.storeUpdate), enabled: !busy) {
-                    model.send(.plugins(action: .upgradeNow(pluginId: installed.id)))
-                }
-            }
-            guard let entry = installed.entries.first else { return nil }
-            return DetailAction(title: String(localized: .Store.storeOpen), enabled: !installed.isBusy) { open(entry) }
+            return installedAction(for: installed)
         }
         guard detail.installed == nil else { return nil }
         guard let source = detail.source else { return nil }
@@ -345,13 +319,45 @@ extension PluginDetailView {
             confirmation = .install(source: source)
         }
     }
+
+    private func installedAction(for installed: InstalledPlugin) -> DetailAction? {
+        if installed.installFailure != nil {
+            return failedInstallAction(for: installed)
+        }
+        if installed.upgrade != nil {
+            // 取预览还没回来时任务还没建，列表行尾靠 pending 转圈，这里用同一个口径。
+            let busy = isWorking || model.viewModel.pending.contains(installed.id)
+            return DetailAction(title: String(localized: .Store.storeUpdate), enabled: !busy) {
+                model.send(.plugins(action: .upgradeNow(pluginId: installed.id)))
+            }
+        }
+        guard let entry = installed.entries.first else { return nil }
+        return DetailAction(title: String(localized: .Store.storeOpen), enabled: !installed.isBusy) { open(entry) }
+    }
+
+    private func failedInstallAction(for installed: InstalledPlugin) -> DetailAction? {
+        let busy = isWorking || model.viewModel.pending.contains(installed.id)
+        if let source = installed.source, model.viewModel.actions.contains(.store) {
+            return DetailAction(title: String(localized: .Common.commonRetry), enabled: !busy) {
+                confirmation = .install(source: source)
+            }
+        }
+        if installed.source == nil, model.viewModel.actions.contains(.addSource) {
+            return DetailAction(
+                title: String(localized: .PluginSources.pluginSourcesInstallFromFile), enabled: !busy
+            ) {
+                archiveProblem = nil
+                pickingFailedArchive = true
+            }
+        }
+        return nil
+    }
 }
 
 private struct InstallFailureNotice: View {
     let model: PluginsModel
     let failure: InstallFailure
     @Environment(\.wontonColors) private var colors
-
 
     var body: some View {
         let detail = ([failure.message] + failure.cleanupErrors).joined(separator: "\n")
@@ -670,12 +676,12 @@ extension View {
                     kind: keepDataOnly ? .danger : .secondary
                 ) {
                     model.send(.plugins(action: .uninstallPlugin(id: id, deleteData: false)))
-                },
+                }
             ]
             + (keepDataOnly ? [] : [
                 WontonDialogAction(title: String(localized: .Plugin1.pluginUninstallDeleteData), kind: .danger) {
                     model.send(.plugins(action: .uninstallPlugin(id: id, deleteData: true)))
-                },
+                }
             ])
             + [
                 WontonDialogAction(title: String(localized: .Common.commonCancel))

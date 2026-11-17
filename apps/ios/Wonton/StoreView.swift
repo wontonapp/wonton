@@ -487,7 +487,8 @@ struct TaskRow: View {
                         action: review).buttonStyle(WontonSmallButtonStyle())
                 }
                 if showsRetry, task.operation == .install,
-                   model.viewModel.installed?.plugins.first(where: { $0.id == task.id })?.installFailure?.retryable == true {
+                   model.viewModel.installed?.plugins
+                       .first(where: { $0.id == task.id })?.installFailure?.retryable == true {
                     Button(.Common.commonRetry) { model.send(.plugins(action: .retryPluginInstall(id: task.id))) }
                         .buttonStyle(WontonSmallButtonStyle())
                 }
