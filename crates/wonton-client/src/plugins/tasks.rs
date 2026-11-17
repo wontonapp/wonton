@@ -1,6 +1,7 @@
 //! 安装、升级、卸载：一个插件同时只有一个任务，进展放在 `PluginsViewModel.tasks` 里。家里的服务器单独执行这些操作，请求
 //! 断开了也照样做完（ADR-0017），所以连接断了不算失败，要从已安装列表里等结果。
 
+use std::collections::HashSet;
 use std::future::Future;
 use std::sync::Arc;
 use std::sync::atomic::Ordering;
@@ -10,10 +11,11 @@ use tokio::sync::watch;
 
 use wonton_l10n::l10n;
 use wonton_protocol::{
-    CoreError, HomeStatus, HomeViewModel, InstallPreview, InstallRequest, PluginDetail,
-    PluginFailure, PluginIcon, PluginOperation, PluginProblem, PluginState, PluginTask,
-    PluginTaskNextStep, PluginTaskState, PluginsViewModel, SecretString, SecretUpdate,
-    SecretValues, SettingValues, UpgradeRequest, UpgradeResult,
+    CapabilityProvider, CardLine, CoreError, HomeStatus, HomeViewModel, InstallPreview,
+    InstallRequest, InstallTogether, MissingCapability, PluginDetail, PluginFailure, PluginIcon,
+    PluginOperation, PluginProblem, PluginState, PluginTask, PluginTaskNextStep, PluginTaskState,
+    PluginsViewModel, SecretString, SecretUpdate, SecretValues, SettingValues, UpgradeRequest,
+    UpgradeResult,
 };
 
 use super::api::{CoreApi, INSTALL_TIMEOUT, to_core_error};
@@ -62,6 +64,7 @@ impl PluginsLink {
             .take()
             .and_then(crate::selected_plugin_audience);
         let devices = Self::chosen_devices(&preview);
+        let missing = preview.missing_requires.clone();
         let Some(source) = preview.source else {
             return Err(CoreError::InvalidInput {
                 reason: l10n!(CATALOG, language(), "plugins-tasks-preview-no-source"),
@@ -73,7 +76,7 @@ impl PluginsLink {
             preview.icon.clone(),
             PluginOperation::Install,
         )?;
-        let request = InstallRequest {
+        let mut request = InstallRequest {
             source,
             digest: preview.digest,
             plan: preview.plan,
@@ -96,11 +99,44 @@ impl PluginsLink {
             let Some(api) = link.task_api(&id, generation) else {
                 return;
             };
-            let sent = api.post_unit(&["plugins"], &request, INSTALL_TIMEOUT);
+            let sent = async {
+                request.install_together = link.providers(&missing).await.map_err(problem)?;
+                api.post_unit(&["plugins"], &request, INSTALL_TIMEOUT).await
+            };
             link.finish_task(&id, Outcome::Running { version: None }, sent)
                 .await;
         });
         Ok(())
+    }
+
+    /// 一起装的提供方（ADR-0053）：预览里缺的必需能力各取列表的第一个提供方，连同它自己的预览一起装。
+    /// 确认页没有选提供方的操作，主人看到的是 [`provider_notices`] 写下的那一行。
+    async fn providers(
+        self: &Arc<Self>,
+        missing: &[MissingCapability],
+    ) -> Result<Vec<InstallTogether>, CoreError> {
+        let mut together = Vec::with_capacity(missing.len());
+        let mut chosen = HashSet::new();
+        for capability in missing {
+            let provider = capability
+                .providers
+                .first()
+                .ok_or_else(|| CoreError::NotReady {
+                    reason: l10n!(
+                        CATALOG,
+                        language(),
+                        "plugins-tasks-preview-no-provider",
+                        capability = capability.capability.as_str()
+                    ),
+                })?;
+            // 同一个提供方同时补几个缺的能力时只装一次：核心的预检也只收一条，装上它几个能力都补齐。
+            if !chosen.insert(provider.id.as_str()) {
+                continue;
+            }
+            let preview = self.preview_install(provider.source.clone()).await?;
+            together.push(provider_install(provider, preview)?);
+        }
+        Ok(together)
     }
 
     /// 填一项密钥或清空可选项（ADR-0064）：核心重建用到它的服务，做完才回应。
@@ -630,4 +666,126 @@ fn enabled_permissions(preview: &InstallPreview) -> Vec<String> {
         .filter(|line| line.optional && line.enabled)
         .map(|line| line.permission.clone())
         .collect()
+}
+
+/// 确认页写明会一起装的提供方（ADR-0053）：安装确认页就是这次授权的确认，高权限的提供方要醒目。
+pub(super) fn provider_notices(preview: &mut InstallPreview) {
+    // 同一个提供方补几个缺的能力时只写一行：能力名列全，emphasis 取各行 high_privilege 的“或”
+    //（同一个插件对不同能力的高权限标记可以不一样），和 [`PluginsLink::providers`] 的一次安装对上。
+    let mut rows: Vec<(&str, &str, Vec<&str>, bool)> = Vec::new();
+    for missing in &preview.missing_requires {
+        let Some(provider) = missing.providers.first() else {
+            continue;
+        };
+        match rows.iter_mut().find(|(id, ..)| *id == provider.id.as_str()) {
+            Some((_, _, capabilities, emphasis)) => {
+                capabilities.push(missing.capability.as_str());
+                *emphasis |= provider.high_privilege;
+            }
+            None => rows.push((
+                provider.id.as_str(),
+                provider.title.as_str(),
+                vec![missing.capability.as_str()],
+                provider.high_privilege,
+            )),
+        }
+    }
+    for (_, title, capabilities, emphasis) in rows {
+        preview.notices.push(CardLine {
+            text: l10n!(
+                CATALOG,
+                language(),
+                "plugins-tasks-install-together",
+                title = title,
+                capability = capabilities.join(", ").as_str()
+            ),
+            emphasis,
+        });
+    }
+}
+
+/// 一个提供方的安装决定：它预览里列出的权限照授，内层不再带别的依赖（ADR-0053）。
+fn provider_install(
+    provider: &CapabilityProvider,
+    mut preview: InstallPreview,
+) -> Result<InstallTogether, CoreError> {
+    // 一起装时确认页只有使用方的预览：提供方自己的高风险权限（ADR-0036 的各级，最高级的
+    // “单独确认”在内）和醒目提示（高权限能力的“谁连上谁”在里面，ADR-0053）都没经过主人，
+    // 丢掉提示就照连不行。这种提供方请主人先单独装，装它的确认页把提示和确认走全。
+    if preview
+        .permissions
+        .iter()
+        .any(|line| !line.optional && line.risk.is_some())
+        || preview.notices.iter().any(|notice| notice.emphasis)
+    {
+        return Err(CoreError::NotReady {
+            reason: l10n!(
+                CATALOG,
+                language(),
+                "plugins-tasks-provider-needs-own-confirm",
+                title = provider.title.as_str()
+            ),
+        });
+    }
+    let grant = confirmed(&preview)?;
+    let enabled_permissions = enabled_permissions(&preview);
+    let lan_webui = lan_webui_chosen(&preview);
+    let devices = PluginsLink::chosen_devices(&preview);
+    let audience = preview
+        .audience
+        .take()
+        .and_then(crate::selected_plugin_audience);
+    let Some(source) = preview.source.take() else {
+        return Err(CoreError::InvalidInput {
+            reason: l10n!(CATALOG, language(), "plugins-tasks-preview-no-source"),
+        });
+    };
+    Ok(InstallTogether {
+        id: provider.id.clone(),
+        request: InstallRequest {
+            source,
+            digest: preview.digest,
+            plan: preview.plan,
+            scope: None,
+            audience,
+            grant,
+            enabled_permissions,
+            secrets: SecretValues::new(),
+            settings: Default::default(),
+            devices,
+            lan_webui,
+            install_together: Vec::new(),
+            connect_plugins: Vec::new(),
+            remote_oauth: None,
+        },
+    })
+}
+
+/// 取提供方预览失败：断线照样可能已经装上了（从已安装列表等结果），错误按原因分给任务，不再
+/// 混成“输入非法”。NotReady 是“提供方要单独确认/商店里没有提供方”，和 onboarding 的 core_problem
+/// 一样归 Upstream，不给“重新安装”的下一步。
+fn problem(error: CoreError) -> PluginProblem {
+    let (reason, message, min_version) = match error {
+        CoreError::TransportUnavailable { reason } => {
+            (PluginFailure::TransportUnavailable, reason, None)
+        }
+        CoreError::InvalidInput { reason } | CoreError::SettingsInvalid { reason, .. } => {
+            (PluginFailure::Invalid, reason, None)
+        }
+        CoreError::Unauthorized { reason } => (PluginFailure::Unauthorized, reason, None),
+        CoreError::Forbidden { reason }
+        | CoreError::Storage { reason }
+        | CoreError::NotReady { reason }
+        | CoreError::Upstream { reason } => (PluginFailure::Upstream, reason, None),
+        CoreError::ServerTooOld {
+            reason,
+            min_version,
+        } => (PluginFailure::ServerTooOld, reason, min_version),
+    };
+    PluginProblem {
+        reason,
+        message,
+        min_version,
+        settings: None,
+    }
 }
