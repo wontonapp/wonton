@@ -131,9 +131,13 @@ private fun OutgoingFooter(message: OutgoingMessage, roomId: String, onAction: (
                     // 装饰：失败原因写在右边的文字里。
                     contentDescription = null,
                     modifier = Modifier.size(WontonTheme.size.iconTiny),
-                    tint = danger,
+                    tint = colors.textOnAccentFill.toColor(),
                 )
-                Text(stringResource(R.string.timeline_send_failed, state.message), style = style, color = danger)
+                Text(
+                    stringResource(R.string.timeline_send_failed, state.message),
+                    style = style,
+                    color = colors.textOnAccentFill.toColor(),
+                )
             }
             SendState.Sent -> Unit
         }

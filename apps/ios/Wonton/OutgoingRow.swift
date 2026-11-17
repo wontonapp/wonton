@@ -55,8 +55,10 @@ struct OutgoingRow: View {
                     Text(.Message2.messageSendingProgress(
                         Double(progress).formatted(.percent.precision(.fractionLength(0)))
                     ))
+                    .foregroundStyle(Color(colors.textOnAccentFill))
                 } else {
                     Text(.Message2.messageSending)
+                        .foregroundStyle(Color(colors.textOnAccentFill))
                 }
                 // 盲测在气泡上找不到取消：状态文字不像能点，取消要自己长成看得见的按钮，点开确认。
                 // 传着的时候也能取消：整条不发，上传停下（盲测：取消了照样发出去）。
@@ -70,7 +72,6 @@ struct OutgoingRow: View {
                     .foregroundStyle(Color(colors.danger))
                 }
                 .buttonStyle(.plain)
-                .foregroundStyle(Color(colors.textOnAccentFill))
                 .wontonActionSheet(isPresented: $isChoosingSending, actions: [
                     WontonSheetAction(
                         title: String(localized: .Message2.messageCancelSend), icon: .close, isDanger: true
@@ -86,7 +87,7 @@ struct OutgoingRow: View {
                         WontonIcon.warningCircle.view(size: WontonTheme.size.iconTiny)
                         Text(.Message1.messageSendFailed(reason))
                     }
-                    .foregroundStyle(Color(colors.danger))
+                    .foregroundStyle(Color(colors.textOnAccentFill))
                 }
                 .buttonStyle(.plain)
                 .wontonActionSheet(isPresented: $isChoosingFailed, actions: [
