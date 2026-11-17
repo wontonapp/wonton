@@ -67,7 +67,7 @@
         "zh-Hans": {
           "stringUnit": {
             "state": "translated",
-            "value": "已下载 %#@files@ 个"
+            "value": "已下载 %#@files@ 个文件"
           },
           "substitutions": {
             "files": {
@@ -89,7 +89,7 @@
         "zh-Hant": {
           "stringUnit": {
             "state": "translated",
-            "value": "已下載 %#@files@ 個"
+            "value": "已下載 %#@files@ 個檔案"
           },
           "substitutions": {
             "files": {
