@@ -26,6 +26,9 @@ final class TimelineModel {
     /// 顶栏的 widget 入口和房间里有没有人在通话（ADR-0096）。
     private(set) var widgets: [RoomWidget] = []
     private(set) var callActive = false
+    /// 群里在场的 AI（本账号认识的 Bot 的 Matrix 用户 ID）；私聊不算。nil 是成员名单还没取全、
+    /// 在场的算不准，别下“群里没有 AI”的结论；空列表才是确定没有。
+    private(set) var roomBots: [String]?
     private(set) var failure: Problem?
     /// 打不开时点“重试”加一，视图按它重新订阅。
     var attempt = 0
@@ -89,6 +92,7 @@ final class TimelineModel {
         sideChat = update.sideChat
         widgets = update.widgets
         callActive = update.callActive
+        roomBots = update.roomBots
         if let anchor = update.anchor { self.anchor = anchor }
         if isLoaded { pin.stick() }
         isLoaded = true
