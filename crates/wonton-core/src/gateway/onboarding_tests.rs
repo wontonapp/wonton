@@ -79,8 +79,6 @@ fn write_catalog(dir: &Path) -> PluginPackage {
             "title": {"zh": "备份照片", "en": "Back up photos"},
             "plugins": ["app.example.photos"]
         }],
-        "providers": {},
-        "more_providers": [],
         "prompts": [{"zh": "你能帮我做什么", "en": "What can you help me with"}]
     });
     fs::write(path, serde_json::to_vec_pretty(&index).unwrap()).unwrap();

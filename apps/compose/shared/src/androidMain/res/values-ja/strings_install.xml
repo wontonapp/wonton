@@ -18,6 +18,8 @@
     <string name="install_completion_uncertain">インストール結果が不確定です</string>
     <!-- Shown in the devices section when the app asks for whole disks and the home server lists none to tick. -->
     <string name="install_device_disks_none">このサーバーには選べるディスクがありません</string>
+    <!-- Warning when a selected NVMe disk requires host-level privileges. -->
+    <string name="install_device_nvme_risk">このアプリはホスト全体をほぼ制御できます。</string>
     <!-- Label above the serial ports to pick one from. %1$s is the name of the app's service that gets the port. -->
     <string name="install_device_serial_for">%1$s 用のシリアルポート</string>
     <!-- Shown in the devices section when the app asks for a serial port and the home server has none plugged in. -->

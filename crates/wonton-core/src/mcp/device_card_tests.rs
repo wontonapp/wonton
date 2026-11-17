@@ -169,3 +169,165 @@ async fn leaving_all_disks_unselected_grants_only_the_required_serial() {
             .any(|d| d["PathOnHost"] == "/dev/disk/by-id/ata-test")
     );
 }
+
+fn select(card: &wonton_protocol::ConfirmationCard, nvme: bool) -> Vec<String> {
+    card.devices
+        .iter()
+        .filter(|device| {
+            device.kind == PluginDeviceKind::Serial
+                || (device.kind == PluginDeviceKind::Disk
+                    && device.target.starts_with("/dev/nvme") == nvme)
+        })
+        .map(|device| device.id.clone())
+        .collect()
+}
+
+fn add_nvme(host: &FakeHost) {
+    host.disk("nvme2n1", "nvme-test", "wwn-nvme", "NVMe", "N1", "259:0");
+    host.dev_node("nvme2");
+}
+
+#[tokio::test]
+async fn nvme_install_needs_two_cards_and_rejecting_second_never_installs() {
+    for accept in [false, true] {
+        let (b, docker, host) = fixture().await;
+        add_nvme(&host);
+        package(&b, "1.0.0", false);
+        let call = b.s.spawn(INSTALL, json!({"dir": "devices"}));
+        let first = b.s.cards.wait_for(1).await;
+        approve(&b, &first.id, select(&first, true));
+        let second = b.s.cards.wait_for(2).await;
+        assert!(!b.installed("app.agent.devices"));
+        assert!(
+            second
+                .permissions
+                .iter()
+                .any(|line| line.permission == "devices.disk"
+                    && line.risk == Some(PermissionRisk::Highest))
+        );
+        b.s.answer(
+            &second.id,
+            if accept {
+                Answer::Approve
+            } else {
+                Answer::Reject
+            },
+        )
+        .unwrap();
+        let result = call.await.unwrap();
+        assert_eq!(failed(&result), !accept);
+        assert_eq!(b.installed("app.agent.devices"), accept);
+        if accept {
+            let created = docker
+                .created(&container_name("app-agent-devices", "web"))
+                .unwrap();
+            assert_eq!(
+                created["HostConfig"]["CapAdd"],
+                json!(["SYS_RAWIO", "SYS_ADMIN"])
+            );
+        }
+    }
+}
+
+#[tokio::test]
+async fn bot_disk_switch_confirms_nvme_and_removes_capability_when_returning_to_sata() {
+    let (b, docker, host) = fixture().await;
+    add_nvme(&host);
+    package(&b, "1.0.0", false);
+    let call = b.s.spawn(INSTALL, json!({"dir": "devices"}));
+    let first = b.s.cards.wait_for(1).await;
+    approve(&b, &first.id, select(&first, false));
+    assert!(!failed(&call.await.unwrap()));
+    assert_eq!(b.s.cards.posted.lock().unwrap().len(), 1);
+    let name = container_name("app-agent-devices", "web");
+    assert_eq!(
+        docker.created(&name).unwrap()["HostConfig"]["CapAdd"],
+        json!(["SYS_RAWIO"])
+    );
+
+    package(&b, "1.1.0", false);
+    let call = b.s.spawn(INSTALL, json!({"dir": "devices"}));
+    let first = b.s.cards.wait_for(2).await;
+    approve(&b, &first.id, select(&first, true));
+    let second = b.s.cards.wait_for(3).await;
+    assert_eq!(
+        docker.created(&name).unwrap()["HostConfig"]["CapAdd"],
+        json!(["SYS_RAWIO"])
+    );
+    b.s.answer(&second.id, Answer::Approve).unwrap();
+    assert!(!failed(&call.await.unwrap()));
+    assert_eq!(
+        docker.created(&name).unwrap()["HostConfig"]["CapAdd"],
+        json!(["SYS_RAWIO", "SYS_ADMIN"])
+    );
+
+    package(&b, "1.2.0", false);
+    let call = b.s.spawn(INSTALL, json!({"dir": "devices"}));
+    let first = b.s.cards.wait_for(4).await;
+    approve(&b, &first.id, select(&first, false));
+    assert!(!failed(&call.await.unwrap()));
+    assert_eq!(b.s.cards.posted.lock().unwrap().len(), 4);
+    assert_eq!(
+        docker.created(&name).unwrap()["HostConfig"]["CapAdd"],
+        json!(["SYS_RAWIO"])
+    );
+}
+
+#[tokio::test]
+async fn legacy_nvme_bot_upgrade_cannot_gain_admin_after_rejection() {
+    let (b, docker, host) = fixture().await;
+    add_nvme(&host);
+    package(&b, "1.0.0", false);
+    let call = b.s.spawn(INSTALL, json!({"dir": "devices"}));
+    let first = b.s.cards.wait_for(1).await;
+    approve(&b, &first.id, select(&first, true));
+    let second = b.s.cards.wait_for(2).await;
+    b.s.answer(&second.id, Answer::Approve).unwrap();
+    assert!(!failed(&call.await.unwrap()));
+
+    let id = crate::plugin::PluginId::parse("app.agent.devices").unwrap();
+    let store = b.s.manager.store();
+    let mut saved = serde_json::to_value(store.load(&id).unwrap().unwrap()).unwrap();
+    for device in saved["devices"].as_array_mut().unwrap() {
+        device.as_object_mut().unwrap().remove("nvme_admin");
+    }
+    store.save(&serde_json::from_value(saved).unwrap()).unwrap();
+    let before = docker.writes();
+    package(&b, "1.1.0", false);
+    let call = b.s.spawn(INSTALL, json!({"dir": "devices"}));
+    let first = b.s.cards.wait_for(3).await;
+    approve(&b, &first.id, Vec::new());
+    let second = b.s.cards.wait_for(4).await;
+    assert!(second.permissions.iter().any(
+        |line| line.permission == "devices.disk" && line.risk == Some(PermissionRisk::Highest)
+    ));
+    assert_eq!(docker.writes(), before);
+    b.s.answer(&second.id, Answer::Reject).unwrap();
+    assert!(failed(&call.await.unwrap()));
+    assert_eq!(docker.writes(), before);
+    assert!(
+        store
+            .load(&id)
+            .unwrap()
+            .unwrap()
+            .devices
+            .iter()
+            .all(|device| !device.nvme_admin)
+    );
+
+    let call = b.s.spawn(INSTALL, json!({"dir": "devices"}));
+    let first = b.s.cards.wait_for(5).await;
+    approve(&b, &first.id, Vec::new());
+    let second = b.s.cards.wait_for(6).await;
+    b.s.answer(&second.id, Answer::Approve).unwrap();
+    assert!(!failed(&call.await.unwrap()));
+    assert!(
+        store
+            .load(&id)
+            .unwrap()
+            .unwrap()
+            .devices
+            .iter()
+            .any(|device| device.nvme_admin)
+    );
+}

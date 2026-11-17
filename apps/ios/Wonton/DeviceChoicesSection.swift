@@ -25,6 +25,13 @@ struct DeviceChoicesSection: View {
                     .accessibilityIdentifier("deviceUsbAll")
             }
             ForEach(choices.disks, id: \.id) { row($0) }
+            if choices.highestRisk {
+                Tag(text: String(localized: .Plugin1.pluginPermissionRiskHighest), tint: colors.danger)
+                    .accessibilityIdentifier("deviceHighestRisk")
+                Text(.Install.installDeviceNvmeRisk)
+                    .wontonText(WontonTheme.typography.supporting)
+                    .foregroundStyle(Color(colors.danger))
+            }
             if choices.disksMissing {
                 note(String(localized: .Install.installDeviceDisksNone))
             }

@@ -570,6 +570,7 @@ impl PagesLink {
                 .config
                 .my_apps
                 .iter()
+                .filter(|entry| !is_failed_install(entry, plugins))
                 .filter_map(|entry| build_app(&state, entry, plugins, &view.stack))
                 .collect()
         };

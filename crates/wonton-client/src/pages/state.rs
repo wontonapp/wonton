@@ -410,6 +410,17 @@ pub(super) fn entry_plugin_id(entry: &StoredApp) -> Option<&str> {
     }
 }
 
+pub(super) fn is_failed_install(entry: &StoredApp, plugins: &PluginsViewModel) -> bool {
+    entry_plugin_id(entry).is_some_and(|id| {
+        plugins.installed.as_ref().is_some_and(|installed| {
+            installed
+                .plugins
+                .iter()
+                .any(|plugin| plugin.id == id && plugin.install_failure.is_some())
+        })
+    })
+}
+
 pub(super) fn is_plugin_page(entry: &StoredApp) -> bool {
     entry_plugin_id(entry).is_some()
 }

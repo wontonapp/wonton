@@ -156,8 +156,9 @@ fun NotificationSettingsScreen(core: ClientCore, settings: SettingsViewModel, on
                         channel == null -> stringResource(R.string.notification_channel_not_created)
                         else -> stringResource(R.string.notification_value_on)
                     }
+                    val categoryTitle = stringResource(category.category.notificationTitleRes)
                     WontonRow(
-                        stringResource(category.category.notificationTitleRes), status, showsForward = true,
+                        categoryTitle, status, showsForward = true,
                         onClick = if (!enabled) openSystem else {
                             {
                                 context.startActivity(Intent(Settings.ACTION_CHANNEL_NOTIFICATION_SETTINGS)
@@ -168,7 +169,10 @@ fun NotificationSettingsScreen(core: ClientCore, settings: SettingsViewModel, on
                     )
                     WontonSeparator()
                     // 锁屏上给不给看内容（ADR-0101 §5）：默认给，关掉后锁屏只写一句占位。
-                    LockScreenToggle(!category.lockScreenPrivate) { shown ->
+                    // 标题带上分类名，三个分类的开关行才分得清（#687）。
+                    LockScreenToggle(
+                        stringResource(R.string.notification_lock_screen, categoryTitle), !category.lockScreenPrivate,
+                    ) { shown ->
                         rejection = core.setLockScreen(category.category, !shown)
                     }
                 }
@@ -187,10 +191,9 @@ private fun ClientCore.setLockScreen(category: NotificationCategory, hidden: Boo
         rejection.problem
     }
 
-/** 一个类别的“锁屏上显示内容”开关。 */
+/** 一个分类的“锁屏上显示内容”开关；标题由调用方拼好、带上分类名（#687）。 */
 @Composable
-private fun LockScreenToggle(shown: Boolean, onChange: (Boolean) -> Unit) {
-    val title = stringResource(R.string.notification_lock_screen)
+private fun LockScreenToggle(title: String, shown: Boolean, onChange: (Boolean) -> Unit) {
     Row(
         Modifier.fillMaxWidth()
             .heightIn(min = WontonTheme.size.target)
