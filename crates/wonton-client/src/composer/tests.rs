@@ -1,5 +1,8 @@
 //! 附件区的行为测试：给定一串操作，断言壳看到的 ViewModel 和交给 Matrix 的事件。Matrix 和文件服务换成测试替身。
 
+#[path = "retry_tests.rs"]
+mod retry_tests;
+
 use std::collections::HashMap;
 use std::sync::{Arc, Mutex};
 use std::time::Duration;
@@ -29,6 +32,7 @@ struct Group {
 struct Fake {
     uploads: Mutex<HashMap<String, oneshot::Sender<Result<Uploaded, UplinkError>>>>,
     upload_calls: Mutex<Vec<String>>,
+    file_calls: Mutex<Vec<String>>,
     encrypted: Mutex<bool>,
     online: watch::Sender<bool>,
     transfers: watch::Sender<TransfersViewModel>,
@@ -46,6 +50,7 @@ impl Fake {
         Arc::new(Self {
             uploads: Mutex::default(),
             upload_calls: Mutex::default(),
+            file_calls: Mutex::default(),
             encrypted: Mutex::new(false),
             online: watch::Sender::new(true),
             transfers: watch::Sender::new(TransfersViewModel::default()),
@@ -148,7 +153,16 @@ impl Uplink for Fake {
         name: String,
         _mime_type: Option<String>,
     ) -> Result<String, UplinkError> {
-        let id = format!("t-{name}");
+        let id = {
+            let mut calls = self.file_calls.lock().unwrap();
+            calls.push(name.clone());
+            let attempt = calls.iter().filter(|seen| *seen == &name).count();
+            if attempt == 1 {
+                format!("t-{name}")
+            } else {
+                format!("t-{name}-{attempt}")
+            }
+        };
         self.transfers.send_modify(|view| {
             view.active.push(Transfer {
                 id: id.clone(),
@@ -169,6 +183,8 @@ impl Uplink for Fake {
 
     fn drop_file(&self, transfer: &str) {
         self.log.lock().unwrap().push(format!("drop {transfer}"));
+        self.transfers
+            .send_modify(|view| view.active.retain(|seen| seen.id != transfer));
     }
 
     fn transfers(&self) -> watch::Receiver<TransfersViewModel> {
