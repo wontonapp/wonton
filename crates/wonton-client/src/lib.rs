@@ -67,6 +67,7 @@ pub use chat::bot_current_avatar;
 pub use client::{ClientCore, ShareInSubscription};
 pub use device_choices::{
     DeviceChoices, SerialChoice, chosen_device_ids, device_choices, toggle_device,
+    upgrade_highest_risk,
 };
 pub use files::{FileOpenError, FileOpener};
 pub use home::Network;

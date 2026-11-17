@@ -3,6 +3,7 @@ package app.wonton.ui
 import app.wonton.client.PluginInstallAction
 import app.wonton.client.deviceChoices
 import app.wonton.client.previewInstallAction
+import app.wonton.client.upgradeHighestRisk
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.padding
 import androidx.compose.runtime.Composable
@@ -55,6 +56,7 @@ internal fun InstallPermissionChoices(
 @Composable
 internal fun ConfirmInstallButton(
     preview: InstallPreview,
+    originalDevices: List<PluginDevice>,
     title: String,
     secretsReady: Boolean = true,
     onConfirm: () -> Unit,
@@ -63,7 +65,11 @@ internal fun ConfirmInstallButton(
     val rootPermissions = preview.permissions.filter { line ->
         line.needsRootConfirmation && (!line.optional || line.enabled)
     }
-    val deviceHighestRisk = deviceChoices(preview.devices.orEmpty(), preview.permissions)?.highestRisk == true
+    val deviceHighestRisk = upgradeHighestRisk(
+        originalDevices,
+        preview.devices.orEmpty(),
+        preview.permissions,
+    )
     WontonButton(
         title,
         { if (rootPermissions.isEmpty() && !deviceHighestRisk) onConfirm() else acknowledging = true },
