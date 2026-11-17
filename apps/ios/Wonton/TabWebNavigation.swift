@@ -47,6 +47,10 @@ extension TabWebSession: WKNavigationDelegate {
         // 内容在容器里滚、只有一屏高的页面底下就是一条白（iOS 26.5 实测）。
         webView.isOpaque = true
         recoveryURL = nil
+        if inLogin, let url = webView.url, !loginRoute.contains(url) {
+            inLogin = false
+            loginLanding = TabReloadTarget.landing(url)
+        }
         canGoBack = webView.canGoBack
         if parked {
             missedFinish = true
@@ -135,13 +139,10 @@ extension TabWebSession: WKNavigationDelegate {
             return
         }
         let entry = input?.page.url.flatMap(URL.init(string:))
-        let domain = input?.proxy?.domain
-        let authHost = domain.map { "auth.\($0)" }
-        // OIDC 登录会经过核心的这段路径；系统浏览器没有隧道和设备身份，走不完。
-        let coreLogin = url.host == domain && url.path.hasPrefix("/_wonton/oidc/")
-        let local = (url.scheme == "http" || url.scheme == "https")
-            && (url.host == entry?.host || url.host == authHost || coreLogin)
+        let login = loginRoute.contains(url)
+        let local = (url.scheme == "http" || url.scheme == "https") && (url.host == entry?.host || login)
         if local {
+            if login { inLogin = true }
             if navigation.targetFrame == nil {
                 decisionHandler(.cancel)
                 webView.load(navigation.request)
