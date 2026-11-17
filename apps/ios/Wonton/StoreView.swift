@@ -216,9 +216,19 @@ struct StoreView: View {
     }
 
     /// 行尾的按钮：没装的“获取”，装着旧版本的“更新”，装着的“打开”；取预览和装、升级、卸载时转圈。点了就开始，不跳页。
+    /// 有失败安装（或一键安装结果不确定）时不给按钮：行下的红字带下一步，重试走保留的决定。
     private func button(for item: StoreItem) -> StoreButton {
         if model.isWorking(on: item.id) || model.viewModel.pending.contains(item.id) {
             return .busy
+        }
+        let plugin = model.viewModel.installed?.plugins.first { $0.id == item.id }
+        let uncertainInstall = model.viewModel.tasks.contains { task in
+            guard task.id == item.id, task.operation == .install else { return false }
+            if case .uncertain = task.state { return true }
+            return false
+        }
+        if plugin?.installFailure != nil || uncertainInstall {
+            return .hidden
         }
         guard let version = item.installedVersion else {
             let action = storeInstallAction(item: item)
@@ -329,8 +339,10 @@ private struct StoreItemRow: View {
                 HStack(alignment: .firstTextBaseline, spacing: WontonTheme.spacing.s8) {
                     failureRow(failure)
                     Spacer(minLength: 0)
-                    Button(String(localized: .Common.commonRetry)) { retry() }
-                        .buttonStyle(WontonSmallButtonStyle())
+                    if showsRetry {
+                        Button(String(localized: .Common.commonRetry)) { retry() }
+                            .buttonStyle(WontonSmallButtonStyle())
+                    }
                 }
                 .padding(.leading, WontonTheme.size.storeIcon + WontonTheme.spacing.s12)
             }
@@ -339,11 +351,20 @@ private struct StoreItemRow: View {
         .padding(.vertical, WontonTheme.spacing.s8)
     }
 
-    /// 再点一次“获取”或“更新”。
+    /// 再点一次“重试”：失败安装还留着原始决定时按原决定重装；没有失败记录的只有升级失败重试升级，
+    /// 一键安装取预览失败再点“获取”就是重试，这里不给。
+    private var showsRetry: Bool {
+        guard case .failed = failure else { return false }
+        let installFailure = model.viewModel.installed?.plugins.first { $0.id == item.id }?.installFailure
+        if installFailure != nil { return installFailure?.retryable == true }
+        return model.viewModel.tasks.first { $0.id == item.id }?.operation == .upgrade
+    }
+
     private func retry() {
-        if item.installedVersion == nil {
-            model.send(.plugins(action: .installNow(source: item.source)))
-        } else {
+        let installFailure = model.viewModel.installed?.plugins.first { $0.id == item.id }?.installFailure
+        if installFailure?.retryable == true {
+            model.send(.plugins(action: .retryPluginInstall(id: item.id)))
+        } else if installFailure == nil {
             model.send(.plugins(action: .upgradeNow(pluginId: item.id)))
         }
     }

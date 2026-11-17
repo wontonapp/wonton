@@ -476,6 +476,89 @@ async fn retry_after_install_rollback_updates_the_task_and_installed_view() {
     assert_eq!(rig.core.seen(&Method::POST, path).len(), 1);
 }
 
+/// 重试的请求没到服务器（空体 502 按传输不可用算，同 an_install_that_never_shows_up 的口径）：
+/// 任务进 settle 等结果。服务器还在装依赖，列表先给“重试中”的条目（安装中、不带旧失败记录），
+/// 任务保持在做、等列表给出结果才成功；不得把服务器上还没替换的旧失败记录当成这次的结果报失败
+/// ——报了失败任务就结束，后面不可能再成功。
+#[tokio::test]
+async fn a_retry_lost_in_transport_keeps_waiting_instead_of_failing_on_the_old_record() {
+    let rig = Rig::new().await;
+    rig.core.set_lists(vec![Vec::new()]);
+    rig.connected().await;
+    rig.wait_for(|view| view.installed.is_some()).await;
+    let mut failed = installed(
+        "app.photos",
+        PluginState::Degraded {
+            reason: "image denied".into(),
+        },
+    );
+    failed.install_failure = Some(wonton_protocol::InstallFailure {
+        kind: "image_pull_failed".into(),
+        message: "image denied".into(),
+        stage: wonton_protocol::InstallStage::PullingImages,
+        failed_plugin_id: "app.photos".into(),
+        cleanup_errors: Vec::new(),
+        retryable: true,
+    });
+    rig.core.set_lists(vec![vec![failed]]);
+    // 列表不会因 set_lists 自动重取：主动刷新一次，让视图拿到这条可重试的失败记录。
+    rig.app
+        .dispatch(Action::Plugins {
+            action: wonton_protocol::PluginAction::RefreshPlugins,
+        })
+        .unwrap();
+    rig.wait_for(|view| {
+        view.installed.as_ref().is_some_and(|list| {
+            list.plugins.iter().any(|plugin| {
+                plugin.id == "app.photos"
+                    && plugin
+                        .install_failure
+                        .as_ref()
+                        .is_some_and(|failure| failure.retryable)
+            })
+        })
+    })
+    .await;
+
+    let path = "/_wonton/api/plugins/app.photos/retry";
+    // POST 按传输不可用失败（空体 502，同 an_install_that_never_shows_up 的口径），连接本身不断：
+    // 任务进 settle 等列表，列表先给“重试中”的条目（安装中、不带旧失败），不得把旧失败记录当成这次的结果。
+    rig.core
+        .answer(Method::POST, path, Canned(502, String::new()));
+    rig.app
+        .dispatch(Action::Plugins {
+            action: wonton_protocol::PluginAction::RetryPluginInstall {
+                id: "app.photos".into(),
+            },
+        })
+        .unwrap();
+    // 服务器已过预检、开始装依赖：列表换成“重试中”的条目（安装中、不带旧失败）。settle 首次轮询在
+    // 3 秒后，这个窗口足够；放在 dispatch 后是为了让重试入口读到的还是带失败记录的旧视图。
+    rig.core
+        .set_lists(vec![vec![installed("app.photos", PluginState::Installing)]]);
+    let view = rig
+        .wait_for(|view| {
+            view.tasks
+                .iter()
+                .any(|task| task.id == "app.photos" && task.waiting_for_connection)
+        })
+        .await;
+    assert_eq!(view.tasks[0].state, PluginTaskState::Running);
+
+    // settle 的轮询看到“重试中”的条目：继续等，不判失败。任务报了失败就结束，后面不可能再成功，
+    // 所以最终成功本身就证明中途没有误报。
+    rig.core.set_lists(vec![vec![running("app.photos")]]);
+    let view = rig
+        .wait_for(|view| {
+            view.tasks
+                .iter()
+                .any(|task| task.id == "app.photos" && task.state == PluginTaskState::Succeeded)
+        })
+        .await;
+    assert_eq!(view.tasks[0].state, PluginTaskState::Succeeded);
+    assert_eq!(rig.core.seen(&Method::POST, path).len(), 1);
+}
+
 /// 请求还吊着时断网：不等请求报错就先说在等连接，连回来再回到在做。
 #[tokio::test]
 async fn losing_the_network_while_the_request_is_out_waits_at_once() {

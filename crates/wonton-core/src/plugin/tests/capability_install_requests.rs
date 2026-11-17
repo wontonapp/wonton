@@ -664,6 +664,70 @@ async fn a_retry_that_fails_again_at_a_provider_updates_the_consumers_failed_rec
 }
 
 #[tokio::test]
+async fn a_retry_in_progress_lists_the_consumer_as_installing_without_the_old_failure() {
+    let bed = bed().await;
+    let outer = transaction(&bed, "app.test", &["x-acme.search", "x-acme.ledger"]).await;
+    bed.docker.set_start_state(
+        &container_name("app-test", "web"),
+        json!({
+            "Status": "exited", "Running": false, "ExitCode": 29
+        }),
+    );
+    bed.manager.install_source(&outer).await.unwrap_err();
+    let failed = bed
+        .manager
+        .installed_plugin(&id("app.test"), &langs())
+        .unwrap();
+    assert!(failed.install_failure.as_ref().is_some_and(|f| f.retryable));
+
+    bed.docker.set_start_state(
+        &container_name("app-test", "web"),
+        json!({"Status": "running", "Running": true, "Health": {"Status": "healthy"}}),
+    );
+    let start = bed.docker.hold(&format!(
+        "POST /containers/{}/start",
+        container_name("app-search", "api")
+    ));
+    let manager = bed.manager.clone();
+    let retry = tokio::spawn(async move { manager.retry_failed_install(id("app.test")).await });
+    tokio::time::timeout(Duration::from_secs(5), start.reached())
+        .await
+        .unwrap();
+
+    // 重试已在逐层安装：列表把根插件照安装中显示，不带服务器上还没替换的旧失败记录，
+    // 客户端断线重连后才不会把旧记录当成这次的结果。
+    let listed = bed.manager.installed(&langs()).plugins;
+    let view = listed
+        .iter()
+        .find(|plugin| plugin.id == id("app.test").to_string())
+        .expect("重试中的条目还在列表里");
+    assert_eq!(view.status, wonton_protocol::PluginState::Installing);
+    assert!(view.install_failure.is_none());
+    let detail = bed
+        .manager
+        .installed_plugin(&id("app.test"), &langs())
+        .unwrap();
+    assert_eq!(detail.status, wonton_protocol::PluginState::Installing);
+    assert!(detail.install_failure.is_none());
+
+    start.release();
+    tokio::time::timeout(Duration::from_secs(5), retry)
+        .await
+        .unwrap()
+        .unwrap()
+        .unwrap();
+    let installed = bed
+        .manager
+        .installed_plugin(&id("app.test"), &langs())
+        .unwrap();
+    assert!(matches!(
+        installed.status,
+        wonton_protocol::PluginState::Running { .. }
+    ));
+    assert!(installed.install_failure.is_none());
+}
+
+#[tokio::test]
 async fn a_failed_transaction_restores_retained_secrets_and_data_for_every_layer() {
     let bed = bed().await;
     let outer = transaction(&bed, "app.test", &["x-acme.search"]).await;

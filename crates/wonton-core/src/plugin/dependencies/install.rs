@@ -104,6 +104,11 @@ impl PluginManager {
             .take(layers.len().saturating_sub(1))
             .map(|layer| layer.decision.package.clone())
             .collect();
+        // 预检已过、开始逐层安装：把根插件旧失败条目标成重试中，客户端断线后的等待逻辑据此
+        // 不把服务器上还没替换的旧失败记录当成这次的结果。
+        if previous.is_some() {
+            self.mark_retrying(&retry.package.manifest.id);
+        }
         self.install_batch_layers(layers, &options, &retry, snapshot, consumers)
             .await
     }

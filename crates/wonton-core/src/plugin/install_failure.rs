@@ -3,7 +3,7 @@
 use std::collections::BTreeMap;
 use std::sync::Arc;
 
-use wonton_protocol::{InstallFailure, InstallRequest, InstallStage, InstalledPlugin};
+use wonton_protocol::{InstallFailure, InstallRequest, InstallStage, InstalledPlugin, PluginState};
 
 use super::entry::{Entry, PluginStatus};
 use super::languages::Languages;
@@ -23,6 +23,9 @@ pub(super) struct FailedInstall {
     pub entry: Entry,
     pub failure: InstallFailure,
     pub retry: Option<RetryInstall>,
+    /// 重试已过预检、正在逐层安装：列表把它显示成安装中，不再当失败（客户端断线后的
+    /// 等待逻辑靠它区分“还在装”和“这次又失败了”）。任何写回/删除都会换掉整条记录，标记随之消失。
+    pub retrying: bool,
 }
 
 impl PluginManager {
@@ -86,6 +89,7 @@ impl PluginManager {
                 entry: Entry::new(listed, PluginStatus::Degraded { reason }, None),
                 failure,
                 retry,
+                retrying: false,
             },
         );
         drop(failed);
@@ -172,6 +176,20 @@ impl PluginManager {
             .contains_key(id)
     }
 
+    /// 重试预检通过、开始逐层安装：根插件的旧失败条目标成重试中，列表照安装中显示、不带旧失败。
+    /// 不删整条记录：删了列表里就没有这个插件，客户端断线重连后会按 MISSING_LIMIT 判成不确定。
+    pub(super) fn mark_retrying(&self, id: &PluginId) {
+        if let Some(entry) = self
+            .failed_installs
+            .write()
+            .expect("安装结果锁中毒")
+            .get_mut(id)
+        {
+            entry.retrying = true;
+        }
+        self.changed();
+    }
+
     pub(super) fn failed_listing(
         &self,
         plugins: &BTreeMap<PluginId, Entry>,
@@ -180,7 +198,12 @@ impl PluginManager {
         langs: &Languages,
     ) -> InstalledPlugin {
         let mut plugin = self.listing(plugins, id, &failed.entry, langs);
-        plugin.install_failure = Some(failed.failure.clone());
+        // 重试正在逐层安装：照安装中显示，不带旧失败，客户端断线后的等待逻辑据此不判失败。
+        if failed.retrying {
+            plugin.status = PluginState::Installing;
+        } else {
+            plugin.install_failure = Some(failed.failure.clone());
+        }
         plugin.install_progress = None;
         plugin.web_url = None;
         plugin.declares_tools = false;
