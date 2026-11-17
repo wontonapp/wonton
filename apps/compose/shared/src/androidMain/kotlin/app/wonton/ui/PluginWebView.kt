@@ -198,7 +198,8 @@ private data class WebLayer(val profile: String?, val multiProfile: Boolean)
 private fun rememberWebLayer(proxy: ProxySettings?, profileName: String?, publicPage: Boolean): WebLayer? {
     val route = LocalPluginProxy.current
     val account = LocalPluginAccount.current
-    val profile = profileName ?: account?.let { pluginProfileName(it) }
+    // 公网页不取插件账号的 Profile：它挂独立的公网 Profile，由 factory 里 setProfile（ADR-0052）。
+    val profile = if (publicPage) null else profileName ?: account?.let { pluginProfileName(it) }
     val multiProfile = WebViewFeature.isFeatureSupported(WebViewFeature.MULTI_PROFILE)
     // 公网页不走本机代理（proxy 为 null），挂在独立的公网 Profile 上；插件页必须在本机代理路由里。
     val usable = if (publicPage) multiProfile else proxy != null && route?.contains(proxy) == true
@@ -270,9 +271,12 @@ fun PluginWebView(
                     settings.mediaPlaybackRequiresUserGesture = false
                     settings.builtInZoomControls = true
                     settings.displayZoomControls = false
-                    if (layer.multiProfile && layer.profile != null) {
+                    if (publicPage) {
+                        // 公网页优先：账号非空时 layer.profile 也不该指到插件 Profile（ADR-0052）。
+                        WebViewCompat.setProfile(this, publicProfile.getName())
+                    } else if (layer.multiProfile && layer.profile != null) {
                         WebViewCompat.setProfile(this, layer.profile)
-                    } else if (publicPage) WebViewCompat.setProfile(this, publicProfile.getName())
+                    }
                     configureAppearance(this, canvas, darkTheme)
                     // 模拟器用 SwiftShader 画 WebView，整屏网页常超显存配额，图一片都不出（渲染进程
                     // 仍可能崩）；调试包在模拟器上改软件层，真机照旧走硬件。
