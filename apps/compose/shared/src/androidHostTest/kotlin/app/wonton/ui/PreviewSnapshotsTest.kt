@@ -10,6 +10,8 @@ import java.util.TimeZone
  * 参考图在 `src/androidHostTest/snapshots`，直接进 git。只画预览自己带的固定数据，不连核心、不加载 .so。
  * 录制和比对的命令见 `.github/workflows/README.md`。
  */
+// 一张预览一个用例，数量跟着预览面走；拆类没有职责边界，按 main 源集的先例在这里抑制。
+@Suppress("TooManyFunctions")
 class PreviewSnapshotsTest {
     // 固定一台手机和英文：系统语言换了、设备换了，参考图不该跟着变。软按键不画，画面就是内容本身。
     @get:Rule
@@ -30,6 +32,9 @@ class PreviewSnapshotsTest {
 
     @Test
     fun chatFailure() = paparazzi.snapshot { ChatFailurePreview() }
+
+    @Test
+    fun agentDegraded() = paparazzi.snapshot { AgentDegradedPreview() }
 
     @Test
     fun chatInvite() = paparazzi.snapshot { ChatInvitePreview() }
