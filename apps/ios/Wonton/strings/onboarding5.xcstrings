@@ -489,25 +489,25 @@
         "en": {
           "stringUnit": {
             "state": "translated",
-            "value": "Agent"
+            "value": "Assistant"
           }
         },
         "zh-Hans": {
           "stringUnit": {
             "state": "translated",
-            "value": "Agent"
+            "value": "助手"
           }
         },
         "zh-Hant": {
           "stringUnit": {
             "state": "translated",
-            "value": "Agent"
+            "value": "助手"
           }
         },
         "ja": {
           "stringUnit": {
             "state": "translated",
-            "value": "Agent"
+            "value": "アシスタント"
           }
         }
       }
