@@ -9,7 +9,7 @@ use wonton_protocol::{
     PluginFailure,
 };
 
-use super::rig::{Canned, Rig, WAIT, preview};
+use super::rig::{Canned, Rig, WAIT, core_error, preview};
 
 const PROVIDER_SOURCE: &str = "github:owner/app.downloader@v2.0.0";
 
@@ -145,7 +145,7 @@ async fn a_required_capability_with_no_provider_stops_before_the_request() {
         matches!(
             state,
             PluginTaskState::Failed {
-                reason: PluginFailure::RecordUnusable,
+                reason: PluginFailure::Upstream,
                 ref message,
             } if message.contains("torrent_client")
         ),
@@ -182,7 +182,7 @@ async fn a_provider_with_risky_permissions_is_not_installed_together() {
         matches!(
             state,
             PluginTaskState::Failed {
-                reason: PluginFailure::RecordUnusable,
+                reason: PluginFailure::Upstream,
                 ref message,
             } if message.contains("下载器")
         ),
@@ -304,7 +304,7 @@ async fn a_provider_with_a_prominent_connection_notice_is_not_installed_together
         matches!(
             state,
             PluginTaskState::Failed {
-                reason: PluginFailure::RecordUnusable,
+                reason: PluginFailure::Upstream,
                 ref message,
             } if message.contains("下载器")
         ),
@@ -315,5 +315,44 @@ async fn a_provider_with_a_prominent_connection_notice_is_not_installed_together
             .seen(&Method::POST, "/_wonton/api/plugins")
             .is_empty(),
         "不能丢掉醒目的连接提示就把提供方连上"
+    );
+}
+
+/// 提供方的预览取不到时按真实原因收场：商店源连不上是 Upstream，不归成“输入非法”。
+#[tokio::test]
+async fn a_failing_provider_preview_keeps_the_real_failure_reason() {
+    let rig = Rig::new().await;
+    rig.connected().await;
+    rig.core.answer(
+        Method::POST,
+        "/_wonton/api/plugins/preview",
+        Canned(200, serde_json::to_string(&consumer_preview()).unwrap()),
+    );
+    rig.core.answer(
+        Method::POST,
+        "/_wonton/api/plugins/preview",
+        core_error(502, "upstream", "商店源暂时连不上"),
+    );
+
+    let shown = rig
+        .app
+        .preview_install("github:owner/app.photos".to_owned())
+        .await
+        .unwrap();
+    install(&rig, shown);
+    let state = rig
+        .task_within("app.photos", Duration::from_secs(WAIT.as_secs()), |state| {
+            *state != PluginTaskState::Running
+        })
+        .await;
+    assert!(
+        matches!(
+            state,
+            PluginTaskState::Failed {
+                reason: PluginFailure::Upstream,
+                ref message,
+            } if message.contains("商店源暂时连不上")
+        ),
+        "{state:?}"
     );
 }
