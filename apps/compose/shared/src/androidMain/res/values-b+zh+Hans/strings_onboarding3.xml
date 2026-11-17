@@ -1,7 +1,7 @@
 <?xml version="1.0" encoding="utf-8"?>
 <resources>
     <!-- Problem title in setup when no agent can be chosen. -->
-    <string name="onboarding_agent_empty">没有可选的 Agent，可以刷新重试。</string>
+    <string name="onboarding_agent_empty">没有可选的助手，可以刷新重试。</string>
     <!-- Notice when tapping "Get API key" found no browser to open the link. -->
     <string name="onboarding_model_no_browser">没有浏览器能打开这个链接，请安装或启用浏览器后重试。</string>
     <!-- Button that opens the model gateway's settings page. -->
