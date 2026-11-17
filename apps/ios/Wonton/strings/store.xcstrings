@@ -92,6 +92,36 @@
         }
       }
     },
+    "store.load": {
+      "comment": "Button to request the store when it has not been loaded yet.",
+      "extractionState": "manual",
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Load store"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "加载商店"
+          }
+        },
+        "zh-Hant": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "載入商店"
+          }
+        },
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "ストアを読み込む"
+          }
+        }
+      }
+    },
     "store.noResults": {
       "comment": "Shown when a store search found nothing.",
       "extractionState": "manual",
@@ -122,6 +152,36 @@
         }
       }
     },
+    "store.notRequested": {
+      "comment": "Empty store state before a store request has been made.",
+      "extractionState": "manual",
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "The store hasn’t been loaded."
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "尚未加载商店"
+          }
+        },
+        "zh-Hant": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "尚未載入商店"
+          }
+        },
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "ストアはまだ読み込まれていません"
+          }
+        }
+      }
+    },
     "store.open": {
       "comment": "Button on a store row to open an installed app.",
       "extractionState": "manual",
@@ -148,6 +208,36 @@
           "stringUnit": {
             "state": "translated",
             "value": "開く"
+          }
+        }
+      }
+    },
+    "store.pending": {
+      "comment": "Neutral hint after five seconds waiting for store content; the cause is not yet known.",
+      "extractionState": "manual",
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Still waiting for the store. The cause is not yet known."
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "还没取得商店内容，原因尚不确定。"
+          }
+        },
+        "zh-Hant": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "還沒取得商店內容，原因尚不確定。"
+          }
+        },
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "ストアの内容をまだ取得できていません。原因は不明です。"
           }
         }
       }
@@ -208,6 +298,36 @@
           "stringUnit": {
             "state": "translated",
             "value": "%@を読み込み中…"
+          }
+        }
+      }
+    },
+    "store.reload": {
+      "comment": "Button to explicitly reload store content while it is still pending.",
+      "extractionState": "manual",
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Reload"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "重新加载"
+          }
+        },
+        "zh-Hant": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "重新載入"
+          }
+        },
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "再読み込み"
           }
         }
       }
@@ -584,6 +704,36 @@
           "stringUnit": {
             "state": "translated",
             "value": "全部更新"
+          }
+        }
+      }
+    },
+    "store.waitingForConnection": {
+      "comment": "Empty store state waiting for a connection; connection actions remain in the status line.",
+      "extractionState": "manual",
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Waiting for a connection to load the store."
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "正在等待连接，以加载商店"
+          }
+        },
+        "zh-Hant": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "正在等待連線以載入商店"
+          }
+        },
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "接続を待ってからストアを読み込みます"
           }
         }
       }
