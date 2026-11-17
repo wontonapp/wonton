@@ -34,6 +34,18 @@ use review::ReviewEntry;
 use storage::OnboardingStorage;
 use view::render;
 
+/// 谁要的这趟重新取。
+#[derive(Clone, Copy, PartialEq, Eq)]
+enum Trigger {
+    /// 主人要的：从网关网页回来、出错后点重试。设备被拒绝过就先再拨一次，主人可能刚把它加回去。
+    Owner,
+    /// 重看引导后的那趟，也是主人要的；失败另外处理，见 [`OnboardingLink::refresh_after_local_reset`]。
+    AfterReset,
+    /// 跟着连接、插件列表、语言变化自己取的：不重拨被拒绝的设备（ADR-0032）。决定取的时候还连着，派出去的任务
+    /// 跑起来时设备可能刚被吊销；这时重拨，就成了被移除的设备自己连回去。
+    Automatic,
+}
+
 #[derive(Default)]
 struct LocalState {
     /// 家里服务器上的引导状态：只记走没走完和默认 Agent。
@@ -145,7 +157,7 @@ impl OnboardingLink {
             }
         };
         if changed && self.home.view().status == HomeStatus::Connected {
-            self.refresh();
+            self.refresh_automatically();
         } else if changed {
             self.publish();
         }
@@ -197,17 +209,23 @@ impl OnboardingLink {
 
     /// 重新取家里服务器上的状态。记下的选择和正在显示的一步不变：从网关网页回来、出错后重试都走这里。
     fn refresh(self: &Arc<Self>) {
-        self.refresh_impl(false);
+        self.refresh_impl(Trigger::Owner);
+    }
+
+    /// 和 [`Self::refresh`] 一样重新取，但不是主人要的，见 [`Trigger::Automatic`]。
+    fn refresh_automatically(self: &Arc<Self>) {
+        self.refresh_impl(Trigger::Automatic);
     }
 
     /// 本地重置（重看引导）后的那趟和普通刷新一样，完整取到的资料、模型设置和错误必须落地。
     /// 插件变化触发的静默刷新只更新 onboarding，可能先一步增加 revision；它不能让这趟已取到的详情失效。
     /// 重置后的失败仍由 `after_reset` 单独处理，因为那是之后唯一会取资料和模型设置的请求。
     pub(super) fn refresh_after_local_reset(self: &Arc<Self>) {
-        self.refresh_impl(true);
+        self.refresh_impl(Trigger::AfterReset);
     }
 
-    fn refresh_impl(self: &Arc<Self>, after_reset: bool) {
+    fn refresh_impl(self: &Arc<Self>, trigger: Trigger) {
+        let after_reset = trigger == Trigger::AfterReset;
         let (generation, operation, revision) = {
             let mut state = lock(&self.state);
             state.loading = true;
@@ -222,7 +240,9 @@ impl OnboardingLink {
         self.publish();
         let link = self.clone();
         self.runtime.spawn(async move {
-            link.home.retry_if_rejected().await;
+            if trigger != Trigger::Automatic {
+                link.home.retry_if_rejected().await;
+            }
             let result = match link.plugins.api() {
                 Ok(api) => api::get(&api).await.map(|onboarding| (api, onboarding)),
                 Err(problem) => Err(problem),

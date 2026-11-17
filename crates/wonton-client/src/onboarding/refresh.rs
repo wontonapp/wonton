@@ -80,7 +80,7 @@ async fn refresh(link: &Arc<OnboardingLink>) {
             let retry = !state.loading && link.home.view().status == HomeStatus::Connected;
             drop(state);
             if retry {
-                link.refresh();
+                link.refresh_automatically();
             }
             return;
         }

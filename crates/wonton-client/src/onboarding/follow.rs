@@ -46,7 +46,7 @@ async fn follow_home(
             link.publish();
         }
         if now_connected && (!connected || server_changed) {
-            link.refresh();
+            link.refresh_automatically();
         }
         connected = now_connected;
         drop(link);
