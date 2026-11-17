@@ -301,6 +301,36 @@
           }
         }
       }
+    },
+    "friends.status.publicAccessOffDetail": {
+      "comment": "Explanation under the banner: friends on other servers can't reach this home until it is turned back on.",
+      "extractionState": "manual",
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Friends on other servers can't reach this home right now. They'll get through after public access is turned back on and they retry."
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "别的服务器上的好友暂时联系不到这台；重新打开公网访问后，对方重试就能到。"
+          }
+        },
+        "zh-Hant": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "別的伺服器上的好友暫時聯絡不到這台；重新打開公網訪問後，對方重試就能到。"
+          }
+        },
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "ほかのサーバーの友達とは今つながりません。外部からのアクセスをオンに戻せば、相手の再試行で届きます。"
+          }
+        }
+      }
     }
   }
 }
