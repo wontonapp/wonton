@@ -2,7 +2,7 @@ import SwiftUI
 import WontonClient
 
 /// 点了发送、还没交给 Matrix 的一条（ADR-0094），画在时间线最后一条后面。附件各自画着上传的进展；交出去以后由 SDK 的本地回显代替。
-/// 传着的时候有「取消发送」按钮，确认后整条不发、上传停下；传不上去时整条变红，点开重发或者删掉。
+/// 传着的时候有「取消发送」按钮，确认后整条不发、上传停下；传不上去时状态行画警告图标，点开重发或者删掉。
 struct OutgoingRow: View {
     let message: OutgoingMessage
     let composer: ComposerModel

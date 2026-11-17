@@ -46,7 +46,7 @@ private const val TILES_PER_ROW = 3
 
 /**
  * 点了发送、还没交给 Matrix 的一条（ADR-0094），画在时间线最新一条下面。附件各自画着上传的进展；交出去以后由时间线里的
- * 本地回显代替。传着的时候有「取消发送」按钮，确认后整条不发、上传停下；传不上去时整条变红，点开重发或者删掉。
+ * 本地回显代替。传着的时候有「取消发送」按钮，确认后整条不发、上传停下；传不上去时状态行画警告图标，点开重发或者删掉。
  */
 @Composable
 internal fun OutgoingRow(message: OutgoingMessage, roomId: String, core: ClientCore, onAction: (Action) -> Unit) {
