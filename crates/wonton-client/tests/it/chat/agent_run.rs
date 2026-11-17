@@ -2,7 +2,7 @@
 //! 解读；Bot 离线时显示成不确定；waiting 时带上这个 Bot 在这个房间等回答的卡片（从「等你确认」列表来，
 //! ADR-0016，不在时间线里）；Bot 自己发的 `choices` 以反应回答。
 
-use std::time::Duration;
+use std::time::{Duration, SystemTime, UNIX_EPOCH};
 
 use serde_json::{Value, json};
 
@@ -176,12 +176,24 @@ async fn a_round_with_edits_is_one_agent_run_following_the_latest_edit() {
         ))
         .await
         .unwrap();
-    let entry = timeline
-        .until("状态行出现了", |item| {
-            agent_run(&item.content)
-                .and_then(|state| (state == AgentRunState::Working).then(|| item.id.clone()))
+    let sent_at = SystemTime::now()
+        .duration_since(UNIX_EPOCH)
+        .unwrap()
+        .as_millis() as u64;
+    let (entry, waited_since) = timeline
+        .until("状态行出现了", |item| match &item.content {
+            TimelineContent::AgentRun {
+                state,
+                timestamp_ms,
+                ..
+            } if *state == AgentRunState::Working => Some((item.id.clone(), *timestamp_ms)),
+            _ => None,
         })
         .await;
+    // 状态行带上这条消息自己的发送时间：壳的“已等待”从它算（ADR-0082 §4），
+    // 和测试机上的现在比，允许服务器同机时钟的小出入。
+    let drift = waited_since.abs_diff(sent_at);
+    assert!(drift < 120_000, "状态消息的发送时间差了 {drift} 毫秒");
 
     // 编辑的目标是状态消息的事件 ID，不是时间线条目的 ID。
     edit_status(
