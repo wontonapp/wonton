@@ -147,15 +147,22 @@ fn test_bus(
 
 impl Harness {
     pub async fn start(hydra_admin: Option<SocketAddr>) -> Self {
-        Self::start_full(hydra_admin, Egress::default(), None, StoreConfig::default()).await
+        Self::start_full(
+            hydra_admin,
+            Egress::default(),
+            None,
+            StoreConfig::default(),
+            None,
+        )
+        .await
     }
 
     pub async fn start_with(hydra_admin: Option<SocketAddr>, egress: Egress) -> Self {
-        Self::start_full(hydra_admin, egress, None, StoreConfig::default()).await
+        Self::start_full(hydra_admin, egress, None, StoreConfig::default(), None).await
     }
 
     pub async fn start_with_store(hydra_admin: Option<SocketAddr>, store: StoreConfig) -> Self {
-        Self::start_full(hydra_admin, Egress::default(), None, store).await
+        Self::start_full(hydra_admin, Egress::default(), None, store, None).await
     }
 
     pub async fn start_with_upgrades(
@@ -167,6 +174,18 @@ impl Harness {
             Egress::default(),
             upgrades,
             StoreConfig::default(),
+            None,
+        )
+        .await
+    }
+
+    pub async fn start_on_host(host: crate::plugin::gpu::HostPaths) -> Self {
+        Self::start_full(
+            None,
+            Egress::default(),
+            None,
+            StoreConfig::default(),
+            Some(host),
         )
         .await
     }
@@ -176,6 +195,7 @@ impl Harness {
         egress: Egress,
         upgrades: Option<Arc<crate::upgrade::service::Upgrades>>,
         store_config: StoreConfig,
+        host: Option<crate::plugin::gpu::HostPaths>,
     ) -> Self {
         let hits = Arc::new(AtomicUsize::new(0));
         let upstream = echo_upstream(hits.clone()).await;
@@ -216,19 +236,21 @@ impl Harness {
         };
         // 安装预览要查宿主架构，和安装一样连 Docker。
         let (docker, engine) = FakeDocker::start().await;
-        let manager = Arc::new(
-            PluginManager::new(
-                engine,
-                Store::open(dir.path().join("plugins")).unwrap(),
-                http.clone(),
-                hydra.as_ref().map(|(h, _)| h.clone()),
-                lifecycle,
-                ImageWorker::in_process(),
-            )
-            .with_store(store_config)
-            .with_lan(super::lan_api_tests::lan())
-            .with_egress(egress),
-        );
+        let manager = PluginManager::new(
+            engine,
+            Store::open(dir.path().join("plugins")).unwrap(),
+            http.clone(),
+            hydra.as_ref().map(|(h, _)| h.clone()),
+            lifecycle,
+            ImageWorker::in_process(),
+        )
+        .with_store(store_config)
+        .with_lan(super::lan_api_tests::lan())
+        .with_egress(egress);
+        let manager = Arc::new(match host {
+            Some(host) => manager.with_host(host),
+            None => manager,
+        });
         let manifest =
             PluginPackage::manifest_of(WHOAMI, &Languages::from_header(Some("zh-Hans"))).unwrap();
         manager.register_for_test(manifest, PluginStatus::Running, Some(upstream.to_string()));

@@ -5,7 +5,7 @@ use wonton_protocol::{BlockedCategory, PluginDevice, PluginDeviceKind};
 use super::super::languages::Languages;
 use super::super::manifest::ManifestDevices;
 use super::super::manifest::Permission;
-use super::{DeviceClass, DeviceGrant, Listing, disk_target};
+use super::{DeviceClass, DeviceGrant, Listing, disk_id, disk_target};
 use crate::l10n::{list, text};
 
 /// 预览里的设备项：串口的每个位置 × 每个可选设备，硬盘一盘一项。`chosen` 由主人改。
@@ -28,7 +28,7 @@ pub fn preview_items(devices: &ManifestDevices, listing: &Listing) -> Vec<Plugin
     if let Some(slot) = devices.disk.first() {
         for (index, candidate) in listing.disks.iter().enumerate() {
             items.push(PluginDevice {
-                id: format!("disk:{}", candidate.host_path),
+                id: disk_id(candidate),
                 name: candidate.name.clone(),
                 target: disk_target(index, candidate.node.starts_with("nvme")),
                 service: slot.service.clone(),
@@ -102,6 +102,14 @@ pub fn apply(
         let caps = host.cap_add.get_or_insert_with(Vec::new);
         if !caps.iter().any(|cap| cap == "SYS_RAWIO" || cap == "ALL") {
             caps.push("SYS_RAWIO".to_owned());
+        }
+        if grant
+            .of(service)
+            .iter()
+            .any(|device| device.class == DeviceClass::Disk && device.nvme_admin)
+            && !caps.iter().any(|cap| cap == "SYS_ADMIN" || cap == "ALL")
+        {
+            caps.push("SYS_ADMIN".to_owned());
         }
     }
     if granted.contains(&Permission::DevicesUsb)

@@ -58,6 +58,7 @@ use audience::Subject;
 use audit::{Audit, Basis, Decision, Grounds, Record};
 pub use cards::Draft;
 pub use cards::text as card_text;
+pub(crate) use cards::{highest_confirm_for, mark_nvme_risk};
 pub use confirm::{AnswerError, Audience, Confirmations, Notifier, Recipients, Refusal, Ticket};
 pub use notifier::DevicePush;
 pub use server::{Caller, TurnSender};
