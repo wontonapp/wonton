@@ -12,7 +12,7 @@ use super::super::{PluginManager, PluginStatus};
 use super::manager::manager_with;
 use super::package;
 
-fn retry_due(manager: &PluginManager, id: &super::super::PluginId) {
+pub(super) fn retry_due(manager: &PluginManager, id: &super::super::PluginId) {
     let mut record = manager.store.load(id).unwrap().unwrap();
     record.lifecycle.recovery.as_mut().unwrap().next_retry_at = Some(0);
     manager.store.save(&record).unwrap();
