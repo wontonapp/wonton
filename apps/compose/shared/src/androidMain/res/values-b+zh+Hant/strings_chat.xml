@@ -34,7 +34,7 @@
     <string name="room_scroll_to_bottom_count">回到底部，還有 %1$d 條新訊息</string>
     <string name="timeline_start">以上是聊天的開頭</string>
     <string name="timeline_edited">已編輯</string>
-    <string name="timeline_sending">傳送中</string>
+    <string name="timeline_sending">已儲存，等待送達</string>
     <string name="timeline_read">已讀</string>
     <string name="timeline_delivered">已送達</string>
     <string name="timeline_send_failed_retrying">傳送失敗，會自動重試</string>
