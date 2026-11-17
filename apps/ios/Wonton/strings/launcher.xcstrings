@@ -39,25 +39,25 @@
         "en": {
           "stringUnit": {
             "state": "translated",
-            "value": "Default Agent"
+            "value": "Default assistant"
           }
         },
         "zh-Hans": {
           "stringUnit": {
             "state": "translated",
-            "value": "默认 Agent"
+            "value": "默认助手"
           }
         },
         "zh-Hant": {
           "stringUnit": {
             "state": "translated",
-            "value": "預設 Agent"
+            "value": "預設助手"
           }
         },
         "ja": {
           "stringUnit": {
             "state": "translated",
-            "value": "デフォルトのエージェント"
+            "value": "デフォルトのアシスタント"
           }
         }
       }
@@ -368,6 +368,36 @@
           "stringUnit": {
             "state": "translated",
             "value": "%@にアップデート"
+          }
+        }
+      }
+    },
+    "launcher.installFailed": {
+      "comment": "Status of an app whose installation failed, shown in the app grid and sidebar.",
+      "extractionState": "manual",
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Install failed"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "安装失败"
+          }
+        },
+        "zh-Hant": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "安裝失敗"
+          }
+        },
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "インストール失敗"
           }
         }
       }

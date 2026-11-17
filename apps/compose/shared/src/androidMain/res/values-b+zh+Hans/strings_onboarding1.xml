@@ -1,9 +1,9 @@
 <?xml version="1.0" encoding="utf-8"?>
 <resources>
-    <!-- Description of an agent row in setup when it has no account login: it needs a model provider key in the next step. -->
-    <string name="onboarding_agent_connection_key">在下一步填模型服务商的 key</string>
+    <!-- Description of an agent row in setup when it has no account logins: it connects through the model gateway, set up in the next step. -->
+    <string name="onboarding_agent_connection_key">在下一步设置模型</string>
     <!-- Dialog title for choosing the default agent. -->
-    <string name="onboarding_default_agent_title">默认 Agent</string>
+    <string name="onboarding_default_agent_title">默认助手</string>
     <!-- Loading spinner shown while setup data loads. -->
     <string name="onboarding_loading">正在加载</string>
     <!-- Label of the field for the model's name (like gpt-4o). -->

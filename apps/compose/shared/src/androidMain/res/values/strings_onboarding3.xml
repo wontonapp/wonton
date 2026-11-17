@@ -1,7 +1,7 @@
 <?xml version="1.0" encoding="utf-8"?>
 <resources>
     <!-- Problem title in setup when no agent can be chosen. -->
-    <string name="onboarding_agent_empty">No agents to choose from. Try refreshing.</string>
+    <string name="onboarding_agent_empty">No assistants to choose from. Try refreshing.</string>
     <!-- Notice when tapping "Get API key" found no browser to open the link. -->
     <string name="onboarding_model_no_browser">No browser can open this link. Install or enable a browser and try again.</string>
     <!-- Button that opens the model gateway's settings page. -->

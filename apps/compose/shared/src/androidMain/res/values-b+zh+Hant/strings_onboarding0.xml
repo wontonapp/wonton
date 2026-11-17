@@ -1,7 +1,7 @@
 <?xml version="1.0" encoding="utf-8"?>
 <resources>
-    <!-- Description of an agent row in setup: how it connects to a model. Argument: the account-login names, already formatted as a list. -->
-    <string name="onboarding_agent_connection_logins">%1$s或 API 金鑰</string>
+    <!-- Description of an agent row in setup: how it connects to a model. Argument: the connection names from the agent's metadata, already formatted as a list. -->
+    <string name="onboarding_agent_connection_logins">用%1$s接模型</string>
     <!-- Button that collapses the list of less common model providers. -->
     <string name="onboarding_model_less">收起供應商</string>
     <!-- Problem title in setup: the app and the home server versions don't work together. -->
@@ -23,13 +23,13 @@
     <!-- Kind label above a review row: the profile that will be saved. -->
     <string name="onboarding_review_section_profile">資料</string>
     <!-- Kind label above a review row: the default agent. -->
-    <string name="onboarding_review_section_agent">Agent</string>
+    <string name="onboarding_review_section_agent">助手</string>
     <!-- Kind label above a review row: the model. -->
     <string name="onboarding_review_section_model">模型</string>
     <!-- Label while an install task waits for others to finish. -->
     <string name="onboarding_review_waiting">排隊中</string>
     <!-- Card title at the top of the agent step in setup: pick the agent to use. -->
-    <string name="onboarding_step_agent">選擇 Agent</string>
+    <string name="onboarding_step_agent">選擇助手</string>
     <!-- Card title at the top of the model step in setup: connect a model provider. -->
     <string name="onboarding_step_model">連接模型</string>
 </resources>

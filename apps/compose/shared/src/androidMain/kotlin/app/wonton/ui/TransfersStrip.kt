@@ -28,6 +28,7 @@ import androidx.compose.ui.res.pluralStringResource
 import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.semantics.Role
 import androidx.compose.ui.text.style.TextDecoration
+import androidx.compose.ui.text.style.TextOverflow
 import app.wonton.client.ClientCore
 import app.wonton.protocol.FileAction
 import app.wonton.protocol.Action
@@ -78,12 +79,21 @@ fun TransfersStrip(roomId: String, core: ClientCore) {
                     listed.downloaded.size,
                 )
             }
-            Text(
-                caption,
-                Modifier.align(Alignment.End).clickable(role = Role.Button) { showingDownloaded = true },
-                style = WontonTheme.typography.caption.copy(textDecoration = TextDecoration.Underline),
-                color = colors.textPrimary.toColor(),
-            )
+            Box(
+                Modifier.align(Alignment.End)
+                    .heightIn(min = WontonTheme.size.target)
+                    .clickable(role = Role.Button) { showingDownloaded = true }
+                    .padding(horizontal = WontonTheme.spacing.s4),
+                contentAlignment = Alignment.Center,
+            ) {
+                Text(
+                    caption,
+                    style = WontonTheme.typography.caption.copy(textDecoration = TextDecoration.Underline),
+                    color = colors.textPrimary.toColor(),
+                    maxLines = 1,
+                    overflow = TextOverflow.Ellipsis,
+                )
+            }
         }
     }
     if (showingDownloaded && listed.downloaded.isNotEmpty()) {

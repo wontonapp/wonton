@@ -447,6 +447,7 @@ pub async fn install(
                 Err(e) => return install_error(&e),
             };
             let for_install = package.clone();
+            let selected_devices = devices(&query.devices);
             let finish = {
                 let headers = headers.clone();
                 move |gateway: Arc<Gateway>| {
@@ -471,9 +472,15 @@ pub async fn install(
                     }
                 }
             };
-            let gate =
-                install_gates::install_upload(&gateway, peer, &headers, &person, &package, finish)
-                    .await;
+            let gate = install_gates::install_upload(
+                &gateway,
+                peer,
+                &headers,
+                &person,
+                (&package, &selected_devices),
+                finish,
+            )
+            .await;
             match install_gates::settle(gate, "install", &langs).await {
                 Ok(response) => response,
                 Err(response) => response,
@@ -527,6 +534,8 @@ async fn install_upload_package(
 struct UpgradeFrom {
     #[serde(default)]
     source: Option<String>,
+    #[serde(default)]
+    devices: Vec<String>,
 }
 
 pub async fn preview_upgrade(
@@ -549,8 +558,9 @@ pub async fn preview_upgrade(
         Some(Err(e)) => return install_error(&e),
         Some(Ok(UpgradeFrom {
             source: Some(source),
+            ..
         })) => UpgradeTo::Source(source),
-        Some(Ok(UpgradeFrom { source: None })) => UpgradeTo::Offered,
+        Some(Ok(UpgradeFrom { source: None, .. })) => UpgradeTo::Offered,
         None if body.is_empty() => UpgradeTo::Offered,
         None => match package(&languages(&headers), &headers, &body) {
             Ok(package) => UpgradeTo::Upload(Box::new(package)),
@@ -664,19 +674,35 @@ pub async fn upgrade(
         move |gateway: Arc<Gateway>| perform_upgrade(gateway, id, headers, query, body)
     };
     // 门槛要升级预览的内容写卡片，先把请求体读出来。
-    let to = match json_body::<UpgradeFrom>(&headers, &body) {
+    let (to, selected) = match json_body::<UpgradeFrom>(&headers, &body) {
         Some(Err(e)) => return install_error(&e),
         Some(Ok(UpgradeFrom {
             source: Some(source),
-        })) => UpgradeTo::Source(source),
-        Some(Ok(UpgradeFrom { source: None })) => UpgradeTo::Offered,
-        None if body.is_empty() => UpgradeTo::Offered,
+            devices,
+        })) => (UpgradeTo::Source(source), devices),
+        Some(Ok(UpgradeFrom {
+            source: None,
+            devices,
+        })) => (UpgradeTo::Offered, devices),
+        None if body.is_empty() => (UpgradeTo::Offered, devices(&query.devices)),
         None => match package(&languages(&headers), &headers, &body) {
-            Ok(package) => UpgradeTo::Upload(Box::new(package)),
+            Ok(package) => (
+                UpgradeTo::Upload(Box::new(package)),
+                devices(&query.devices),
+            ),
             Err(e) => return install_error(&e),
         },
     };
-    let gate = install_gates::upgrade(&gateway, peer, &headers, &person, &id, to, finish).await;
+    let gate = install_gates::upgrade(
+        &gateway,
+        peer,
+        &headers,
+        &person,
+        &id,
+        (to, &selected),
+        finish,
+    )
+    .await;
     match install_gates::settle(gate, "upgrade", &langs).await {
         Ok(response) => response,
         Err(response) => response,

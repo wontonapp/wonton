@@ -3,7 +3,7 @@
 use wonton_protocol::{PluginDeviceKind, PluginFailure, PluginGrantedDevice};
 
 use super::super::manifest::{Permission, PluginId};
-use super::devices::{device_host, granted, on_host, plugin};
+use super::devices::{device_host, granted, on_host, parse, plugin};
 use super::langs;
 
 const SERIAL: &str = "/dev/serial/by-id/usb-FTDI-if00-port0";
@@ -118,7 +118,19 @@ async fn a_shared_nvme_disk_is_listed_once_without_its_controller() {
         "  smart: {image: example/scrutiny}\n  other: {image: example/scrutiny}",
         "  permissions: [devices.disk]\n  devices:\n    disk:\n      - {service: smart}\n      - {service: other}",
     );
-    let chosen = vec!["disk:/dev/disk/by-id/nvme-Test_S3".to_owned()];
+    let preview = m
+        .preview_install(&parse(&source).unwrap(), &langs())
+        .await
+        .unwrap();
+    let selected = preview
+        .devices
+        .unwrap()
+        .into_iter()
+        .find(|device| {
+            device.kind == PluginDeviceKind::Disk && device.target.starts_with("/dev/nvme")
+        })
+        .unwrap();
+    let chosen = vec![selected.id];
     m.install_with_devices(&source, &[Permission::DevicesDisk], &chosen, langs())
         .await
         .unwrap();
@@ -249,6 +261,7 @@ async fn stale_device_records_stay_visible_and_unreadable_records_report_a_probl
         name: "Retired disk".into(),
         gid: 0,
         system: false,
+        nvme_admin: false,
     });
     m.store.save(&record).unwrap();
     let detail = m.installed_detail(&id, &langs()).unwrap();
