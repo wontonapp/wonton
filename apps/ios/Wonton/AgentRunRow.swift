@@ -27,6 +27,8 @@ struct AgentRunRow: View {
     let choices: [AgentRunChoice]
     /// 发这条状态的 Bot 的名字，choices 区标明是谁在问。
     let senderName: String
+    /// 这条状态消息自己的发送时间（Unix 毫秒，编辑不改它）；working 行从它算已经等了多久。
+    let timestampMs: UInt64
     /// 点开这张等回答的确认卡片（waiting 且有卡片 ID 时才有）。
     let openCard: (String) -> Void
     /// 对 Bot 自己的提问以主人的身份发反应作答（choices 的 key）。
@@ -135,10 +137,35 @@ struct AgentRunRow: View {
                     .foregroundStyle(Color(ink))
                     .multilineTextAlignment(.leading)
             }
+            if showsWaited {
+                // 只有 working 行带时长：有它才撑满整行，把时长顶到右边；别的行保持原宽。
+                Spacer(minLength: 0)
+                waited
+            }
             if cardId != nil, state == .waiting {
                 // 装饰：整行可点，箭头只表示能过去。
                 WontonIcon.forward.view(size: WontonTheme.size.iconSmall)
                     .foregroundStyle(Color(colors.accentInk))
+            }
+        }
+    }
+
+    /// working 且带发送时间才显示时长；时间戳为 0 是夹具的“不显示”。
+    private var showsWaited: Bool {
+        state == .working && timestampMs > 0
+    }
+
+    /// 已等待的分钟数（ADR-0082 §4）：从状态消息自己的发送时间算（编辑不改它），
+    /// TimelineView 每分钟走一次；不满一分钟不写，不凑数。
+    private var waited: some View {
+        TimelineView(.periodic(from: .now, by: 60)) { context in
+            let elapsedMs = context.date.timeIntervalSince1970 * 1_000 - Double(timestampMs)
+            let minutes = Int(elapsedMs / 60_000)
+            if minutes >= 1 {
+                Text(.AgentRun.agentRunWaited(minutes))
+                    .wontonText(WontonTheme.typography.supporting)
+                    .foregroundStyle(Color(colors.textSecondary))
+                    .accessibilityIdentifier("agentRun-elapsed")
             }
         }
     }

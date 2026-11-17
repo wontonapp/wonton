@@ -3,6 +3,7 @@
     <string name="agent_run_waiting">等你確認</string>
     <string name="agent_run_cancelled">被打斷了</string>
     <string name="agent_run_uncertain">結果不確定</string>
+    <string name="agent_run_waited">已等待 %1$d 分鐘</string>
     <string name="agent_run_asking">%1$s 正在問</string>
     <plurals name="agent_run_steps">
         <item quantity="other">%1$d 步</item>
