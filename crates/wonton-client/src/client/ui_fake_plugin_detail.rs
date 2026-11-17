@@ -1,6 +1,6 @@
-//! 假数据入口（`ui_fake.rs`）里一个拿了设备的已装应用的详情页（ADR-0036）：一个串口不在了，USB 整类，
-//! 两块硬盘里一块是系统盘；分享给了一位好友。另一个应用一份分享都没有。没有后端，别的应用的详情照旧取不到；
-//! 这两个写死，界面测试看“设备”和“分享的家人”两节怎么画。
+//! 假数据入口里写死的已装应用详情（ADR-0036）：Home Hub 一个串口不在了，USB 整类，两块硬盘里一块是系统盘，
+//! 还分享给了一位好友；Budget 一份分享都没有；别的应用带着安装失败装着时，给一份“安装失败”详情。
+//! 没有后端，其余应用的详情照旧取不到，界面测试看“设备”“分享的家人”和安装失败这几页怎么画。
 
 use wonton_protocol::{
     Gate, InstalledPlugin, PluginDetail, PluginDetailRoute, PluginDeviceKind, PluginFailure,
@@ -23,7 +23,7 @@ pub(super) fn status() -> PluginState {
 
 const GONE: &str = "Sonoff Zigbee 3.0 is not connected. Plug it back in.";
 
-/// 这条路径是那个带设备的假应用时是它的详情；别的路径为空，照常走没有后端的那条路。
+/// 未提供测试数据的详情照常走没有后端的路径。
 pub(super) fn detail(
     route: &PluginDetailRoute,
     installed: Option<InstalledPlugin>,
@@ -31,11 +31,22 @@ pub(super) fn detail(
     let PluginDetailRoute::Installed { id } = route else {
         return None;
     };
-    match id.as_str() {
-        HUB_ID => Some(hub(installed)),
-        BUDGET_ID => Some(budget(installed)),
-        _ => None,
+    if id == HUB_ID {
+        return Some(hub(installed));
     }
+    if id == BUDGET_ID {
+        return Some(budget(installed));
+    }
+    // main 侧的“安装失败”详情：别的应用装着且带安装失败时，拿它自己的头面给一份；从空白底子起，
+    // 不带 hub 的设备、问题，也不带 hub 的分享状态（那是 Home Hub 的，不是这个插件的）。
+    let installed = installed.filter(|plugin| plugin.install_failure.is_some())?;
+    let mut detail = app(&id, &installed.title, &installed.summary, None);
+    detail.source = installed.source.clone();
+    detail.kind = installed.kind;
+    detail.version = installed.version.clone();
+    detail.trust = installed.trust;
+    detail.installed = Some(installed);
+    Some(detail)
 }
 
 fn budget(installed: Option<InstalledPlugin>) -> PluginDetail {

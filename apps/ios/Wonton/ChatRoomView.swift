@@ -275,11 +275,15 @@ private extension ChatRoomView {
                 ForEach(Array(timeline.items.enumerated()), id: \.element.id) { index, item in
                     let joinsPrevious = index > 0 && item.joins(timeline.items[index - 1])
                     let joinsNext = index + 1 < timeline.items.count && timeline.items[index + 1].joins(item)
+                    let flushesPrevious = index > 0 && timeline.items[index - 1].flushesWith(next: item)
+                    let flushesNext = index + 1 < timeline.items.count
+                        && item.flushesWith(next: timeline.items[index + 1])
                     // 做完了又没什么可写的 Agent 状态行不占一行。
                     if !item.isBlankAgentRun {
                         TimelineRow(
                             item: item, core: model.core, showsSender: !isDirect,
                             joinsPrevious: joinsPrevious, joinsNext: joinsNext,
+                            flushesPrevious: flushesPrevious, flushesNext: flushesNext,
                             retry: { sendTimeline(.retrySend(target: target, itemId: item.id)) },
                             cancel: { sendTimeline(.cancelSend(target: target, itemId: item.id)) },
                             cardAction: { model.send($0) },
@@ -475,22 +479,6 @@ private extension ChatRoomView {
         model.viewModel.rooms.first { $0.roomId == roomId }?.isReadOnly ?? false
     }
 }
-private extension ChatRoomView {
-    /// 有消息解不开时的一行说明和入口：账号设过备份就输恢复密钥，没设过就请另一台设备确认。都去备份页。
-    private func keyNotice(_ notice: KeyNotice) -> some View {
-        WontonNotice(icon: .lockKey, title: String(localized: .Message2.messageUndecryptableNotice), isError: false) {
-            // 更新的核心给出的类别没有按钮，说明照常显示。
-            if let action = notice.action {
-                NavigationLink(value: ChatRoute.chatBackup) {
-                    Text(action).frame(maxWidth: .infinity)
-                }
-                .buttonStyle(WontonButtonStyle(kind: .primary))
-            }
-        }
-        .padding(.horizontal, WontonTheme.spacing.pageInset)
-        .padding(.vertical, WontonTheme.spacing.s8)
-    }
-}
 
 private extension TimelineItem {
     /// 和上一条 `earlier` 是同一个人连着发的：并成一组，气泡挨紧，相接的角收小。
@@ -498,6 +486,18 @@ private extension TimelineItem {
     func joins(_ earlier: TimelineItem) -> Bool {
         guard case let .message(mine) = content, case let .message(theirs) = earlier.content else { return false }
         return mine.senderId == theirs.senderId && !mine.startsTimeGroup && theirs.receipt == nil
+    }
+
+    /// 这条和紧跟着的 `next` 之间能不能不留衬垫贴成一摞：同一次发送（ADR-0094 的组标记）里挨着的两张照片，
+    /// `next` 不带引用、这条不带说明，中间也没有隔着别的行（`next` 上方的时间、这条下面的已读）。
+    func flushesWith(next: TimelineItem) -> Bool {
+        guard case let .message(mine) = content, case let .message(theirs) = next.content,
+            let group = mine.group, theirs.group?.id == group.id,
+            mine.senderId == theirs.senderId,
+            !theirs.startsTimeGroup, mine.receipt == nil, theirs.reply == nil
+        else { return false }
+        guard case let .image(mineImage) = mine.body, case .image = theirs.body else { return false }
+        return mineImage.caption == nil
     }
 
     var isBlankAgentRun: Bool {
@@ -521,22 +521,47 @@ private extension TimelineItem {
     }
 }
 
-/// 有消息解不开时的一行说明和入口：账号设过备份就输恢复密钥，没设过就请另一台设备确认。都去备份页。
+/// 有消息解不开时的一行说明和入口：账号设过备份就输恢复密钥，没设过就请另一台设备确认，整行点去备份页（ADR-0046）。
+/// 这行常驻输入框上方，收成一行，别把能看到的消息挤走。
 private struct KeyNoticeBanner: View {
     let notice: KeyNotice
+    @Environment(\.wontonColors) private var colors
 
     var body: some View {
-        WontonNotice(icon: .lockKey, title: String(localized: .Message2.messageUndecryptableNotice), isError: false) {
-            // 更新的核心给出的类别没有按钮，说明照常显示。
-            if let action = notice.action {
-                NavigationLink(value: ChatRoute.chatBackup) {
-                    Text(action).frame(maxWidth: .infinity)
-                }
-                .buttonStyle(WontonButtonStyle(kind: .primary))
-            }
+        switch notice {
+        case .enterRecoveryKey, .verifyWithOtherDevice:
+            NavigationLink(value: ChatRoute.chatBackup) { row }
+                .buttonStyle(.plain)
+        // 更新的核心给出的类别没有按钮，说明照常显示。
+        case .other:
+            row
         }
+    }
+
+    private var row: some View {
+        HStack(spacing: WontonTheme.spacing.s8) {
+            WontonIcon.lockKey.view(size: WontonTheme.size.iconTiny)
+                .foregroundStyle(Color(colors.textSecondary))
+            Text(notice.text)
+                .multilineTextAlignment(.leading)
+                .frame(maxWidth: .infinity, alignment: .leading)
+        }
+        .wontonText(WontonTheme.typography.body)
+        .foregroundStyle(Color(colors.textPrimary))
         .padding(.horizontal, WontonTheme.spacing.pageInset)
         .padding(.vertical, WontonTheme.spacing.s8)
+        .frame(minHeight: WontonTheme.size.target)
+    }
+}
+
+extension KeyNotice {
+    /// 按类别说明密钥怎么找回；两条路的入口都在备份页（ADR-0046）。
+    var text: String {
+        switch self {
+        case .enterRecoveryKey: String(localized: .Message1.messageKeyNoticeRecovery)
+        case .verifyWithOtherDevice: String(localized: .Message1.messageKeyNoticeVerify)
+        case .other: String(localized: .Message2.messageUndecryptableNotice)
+        }
     }
 }
 
@@ -635,14 +660,22 @@ private struct RoomTopBar<Trailing: View>: ViewModifier {
     /// 旁聊页返回键的动作：收起旁聊，不动导航栈。
     let close: (() -> Void)?
     @ViewBuilder let trailing: () -> Trailing
+    @Environment(\.wontonColors) private var colors
 
     func body(content: Content) -> some View {
-        if let sideChatTitle {
-            content.wontonPushedScreen(sideChatTitle, showsStatus: true, onClose: close) { EmptyView() }
-        } else {
-            content.wontonPushedScreen(
-                title, avatar: avatar, showsStatus: true, showsStatusLine: true, trailing: trailing
-            )
+        content.wontonTopBar {
+            Group {
+                if let sideChatTitle {
+                    WontonPushedBar(title: sideChatTitle, showsStatus: true, onClose: close) { EmptyView() }
+                } else {
+                    WontonPushedBar(
+                        title: title, showsStatus: true, showsStatusLine: true, avatar: avatar, trailing: trailing
+                    )
+                }
+            }
+            .background(.regularMaterial, ignoresSafeAreaEdges: .top)
         }
+        .toolbar(.hidden, for: .navigationBar)
+        .background(Color(colors.canvas).ignoresSafeArea())
     }
 }

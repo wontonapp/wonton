@@ -129,25 +129,25 @@
         "en": {
           "stringUnit": {
             "state": "translated",
-            "value": "Choose an Agent"
+            "value": "Choose an assistant"
           }
         },
         "zh-Hans": {
           "stringUnit": {
             "state": "translated",
-            "value": "选 Agent"
+            "value": "选助手"
           }
         },
         "zh-Hant": {
           "stringUnit": {
             "state": "translated",
-            "value": "選擇 Agent"
+            "value": "選擇助手"
           }
         },
         "ja": {
           "stringUnit": {
             "state": "translated",
-            "value": "エージェントの選択"
+            "value": "アシスタントの選択"
           }
         }
       }

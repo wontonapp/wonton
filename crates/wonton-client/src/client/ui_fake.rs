@@ -344,6 +344,27 @@ fn fake_plugins(mut plugins: PluginsViewModel) -> PluginsViewModel {
         super::ui_fake_plugin_detail::status(),
         Some(web_url(super::ui_fake_plugin_detail::HUB_ID)),
     ));
+    if std::env::var_os("WONTON_UI_FAILED_INSTALL").is_some() {
+        let id = "app.example.failed";
+        let message = "The image could not be downloaded.";
+        let mut failed = fake_plugin(
+            "Failed Example",
+            id,
+            PluginState::Degraded {
+                reason: message.into(),
+            },
+            None,
+        );
+        failed.source = Some("github:example/failed-app@v1.0.0".into());
+        failed.install_failure = Some(wonton_protocol::InstallFailure {
+            kind: "docker".into(),
+            message: message.into(),
+            stage: wonton_protocol::InstallStage::PullingImages,
+            failed_plugin_id: id.into(),
+            cleanup_errors: Vec::new(),
+        });
+        installed.push(failed);
+    }
     plugins.installed = Some(InstalledPlugins {
         plugins: installed,
         upgrade_check: None,

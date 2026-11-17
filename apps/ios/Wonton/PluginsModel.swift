@@ -13,6 +13,8 @@ final class PluginsModel {
     var rejection: Problem?
     /// 页面出现时自动发的刷新被核心拒绝的原因。不弹窗，没有 `viewModel.problem` 时就地显示。
     private(set) var refreshRejection: CoreError?
+    /// 商店刷新被核心拒绝的原因，由商店就地展示，不影响已安装列表。
+    private(set) var storeRefreshRejection: CoreError?
 
     let core: ClientCore
     /// 核心给的图片地址内容不变（ADR-0017），按地址缓存解码后的图片。
@@ -62,6 +64,15 @@ final class PluginsModel {
             refreshRejection = nil
         } catch {
             refreshRejection = error as? CoreError ?? .Upstream(reason: String(describing: error))
+        }
+    }
+
+    func refreshStore(force: Bool) {
+        do {
+            try core.dispatch(action: .plugins(action: .refreshStore(force: force)))
+            storeRefreshRejection = nil
+        } catch {
+            storeRefreshRejection = error as? CoreError ?? .Upstream(reason: String(describing: error))
         }
     }
 

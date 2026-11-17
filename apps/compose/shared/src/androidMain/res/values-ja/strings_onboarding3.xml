@@ -1,7 +1,7 @@
 <?xml version="1.0" encoding="utf-8"?>
 <resources>
     <!-- Problem title in setup when no agent can be chosen. -->
-    <string name="onboarding_agent_empty">選べるエージェントがありません。再読み込みして再試行できます。</string>
+    <string name="onboarding_agent_empty">選べるアシスタントがありません。再読み込みして再試行できます。</string>
     <!-- Notice when tapping "Get API key" found no browser to open the link. -->
     <string name="onboarding_model_no_browser">このリンクを開けるブラウザがありません。ブラウザをインストールまたは有効にしてから再試行してください。</string>
     <!-- Button that opens the model gateway's settings page. -->

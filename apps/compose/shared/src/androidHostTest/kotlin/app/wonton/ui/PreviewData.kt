@@ -47,10 +47,12 @@ import app.wonton.protocol.RecoveryStatus
 import app.wonton.protocol.RegistryMirrorViewModel
 import app.wonton.protocol.RolesViewModel
 import app.wonton.protocol.RoomMembership
+import app.wonton.protocol.RoomPlugin
 import app.wonton.protocol.RoomRow
 import app.wonton.protocol.Rgb
 import app.wonton.protocol.SidebarViewModel
 import app.wonton.protocol.StorageUsage
+import app.wonton.protocol.StoreLoadState
 import app.wonton.protocol.TextSize
 import app.wonton.protocol.ThemeColors
 import app.wonton.protocol.ThemeMode
@@ -252,6 +254,7 @@ internal fun previewInstalled() = InstalledPlugins(
 internal fun previewPlugins() = PluginsViewModel(
     installed = InstalledPlugins(plugins = emptyList(), upgradeCheck = null),
     store = null,
+    storeLoad = StoreLoadState.NotRequested,
     sidebar = SidebarViewModel(apps = emptyList(), moreApps = false, updates = 0u, settingsBadge = false),
     refreshing = false,
     problem = null,
@@ -416,6 +419,24 @@ internal fun ChatFailurePreview() {
                 account = ChatAccount.Failed(reason = ChatFailure.UPSTREAM, message = "502 Bad Gateway"),
             ),
             onOpenBackup = {},
+        )
+    }
+}
+
+/** AI 管家聊天页顶部的应用状态卡（降级）：说清应用是什么状态，核心写的原因收进详情。 */
+@Preview(name = "Agent 降级提示", locale = "en", widthDp = 390, heightDp = 200)
+@Composable
+internal fun AgentDegradedPreview() {
+    PreviewFrame {
+        AgentPluginStatusBanner(
+            plugin = RoomPlugin(
+                pluginId = "app.example.hub",
+                status = PluginState.Degraded(reason = "container app-example-hub exited with code 137"),
+                start = null,
+                canStart = false,
+            ),
+            title = "Home Hub",
+            onAction = {},
         )
     }
 }

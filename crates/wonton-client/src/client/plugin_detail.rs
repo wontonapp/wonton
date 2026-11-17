@@ -94,11 +94,14 @@ impl ClientCore {
         if !self.ui_fake.load(std::sync::atomic::Ordering::SeqCst) {
             return None;
         }
+        let PluginDetailRoute::Installed { id } = route else {
+            return None;
+        };
         let installed = self.plugins().installed.and_then(|installed| {
             installed
                 .plugins
                 .into_iter()
-                .find(|plugin| plugin.id == super::ui_fake_plugin_detail::HUB_ID)
+                .find(|plugin| &plugin.id == id)
         });
         super::ui_fake_plugin_detail::detail(route, installed)
     }

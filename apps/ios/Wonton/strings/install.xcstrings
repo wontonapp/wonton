@@ -332,6 +332,36 @@
         }
       }
     },
+    "install.deviceNvmeRisk": {
+      "comment": "Warning when a selected NVMe disk requires host-level privileges.",
+      "extractionState": "manual",
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "This app can almost completely control this host."
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "这个应用几乎能控制整台主机。"
+          }
+        },
+        "zh-Hant": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "這個應用程式幾乎能控制整台主機。"
+          }
+        },
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "このアプリはホスト全体をほぼ制御できます。"
+          }
+        }
+      }
+    },
     "install.deviceSerialFor": {
       "comment": "Label above the serial ports to pick one from. %@ is the name of the app's service that gets the port.",
       "extractionState": "manual",

@@ -7,7 +7,7 @@ use axum::http::Method;
 use iroh::SecretKey;
 use wonton_client::{
     Action, ConnectionNotice, CoreError, HomeFailure, HomeStatus, PluginFailure, PluginState,
-    PluginTaskNextStep, PluginTaskState,
+    PluginTaskNextStep, PluginTaskState, StoreLoadState,
 };
 
 use super::rig::{
@@ -154,14 +154,13 @@ async fn without_a_server_a_task_fails_at_once() {
 }
 
 #[tokio::test]
-async fn a_list_only_clears_its_own_problem() {
+async fn store_load_keeps_its_problem_through_installed_failures_and_successes() {
     let rig = Rig::new().await;
     rig.core
         .set_lists(vec![vec![installed("app.photos", PluginState::Installing)]]);
     rig.connected().await;
     rig.wait_for(|view| view.installed.is_some()).await;
 
-    // 每 3 秒取一次已安装列表，商店取不到的原因不能因此消失。
     rig.core.answer(
         Method::GET,
         "/_wonton/api/store",
@@ -172,38 +171,46 @@ async fn a_list_only_clears_its_own_problem() {
             action: wonton_protocol::PluginAction::RefreshStore { force: false },
         })
         .unwrap();
-    rig.wait_for(|view| view.problem.is_some()).await;
-    let polled = rig.core.seen(&Method::GET, "/_wonton/api/plugins").len();
-    let deadline = Instant::now() + Duration::from_secs(10);
-    while rig.core.seen(&Method::GET, "/_wonton/api/plugins").len() == polled {
-        assert!(Instant::now() < deadline, "没有在轮询");
-        tokio::time::sleep(Duration::from_millis(20)).await;
-    }
-    tokio::time::sleep(Duration::from_millis(200)).await;
-    assert_eq!(
-        rig.app.plugins().problem.map(|problem| problem.reason),
-        Some(PluginFailure::SourceUnavailable)
-    );
+    let failed = rig
+        .wait_for(|view| matches!(view.store_load, StoreLoadState::Failed { .. }))
+        .await
+        .store_load;
+    assert!(matches!(
+        &failed,
+        StoreLoadState::Failed { problem } if problem.reason == PluginFailure::SourceUnavailable
+    ));
 
-    // 主屏上的重试连商店一起取，问题才清得掉。
-    rig.app
-        .dispatch(Action::Plugins {
-            action: wonton_protocol::PluginAction::RefreshPlugins,
-        })
-        .unwrap();
-    let view = rig
-        .wait_for(|view| view.problem.is_none() && view.store.is_some())
-        .await;
-    assert!(view.installed.is_some());
-
-    // 轮询失败也要说。
-    rig.core.answer(
+    // 后台轮询的失败和随后的成功，都不能遮住商店失败。
+    rig.core.answer_always(
         Method::GET,
         "/_wonton/api/plugins",
         core_error(401, "unauthenticated", "不认这台设备"),
     );
     let view = rig.wait_for(|view| view.problem.is_some()).await;
     assert_eq!(view.problem.unwrap().reason, PluginFailure::Unauthorized);
+    assert_eq!(view.store_load, failed);
+    rig.core.stop_answering(Method::GET, "/_wonton/api/plugins");
+    rig.app
+        .dispatch(Action::Plugins {
+            action: wonton_protocol::PluginAction::RefreshPlugins,
+        })
+        .unwrap();
+    let view = rig
+        .wait_for(|view| view.problem.is_none() && !view.refreshing)
+        .await;
+    assert_eq!(view.store_load, failed);
+    assert!(view.store.is_none());
+
+    rig.app
+        .dispatch(Action::Plugins {
+            action: wonton_protocol::PluginAction::RefreshStore { force: true },
+        })
+        .unwrap();
+    let view = rig
+        .wait_for(|view| view.store_load == StoreLoadState::Ready)
+        .await;
+    assert!(view.installed.is_some());
+    assert!(view.store.is_some());
 }
 
 #[tokio::test]

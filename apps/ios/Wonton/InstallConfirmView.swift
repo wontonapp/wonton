@@ -147,7 +147,11 @@ struct InstallConfirmView: View {
         let needsHost = preview.permissions.contains { line in
             line.requiresHostConfirmation && (!line.optional || enabled.contains(line.permission))
                 && (line.optional || line.risk != nil)
-        }
+        } || upgradeHighestRisk(
+            original: preview.devices ?? [],
+            current: devices,
+            permissions: preview.permissionLines(enabling: enabled)
+        )
         if needsHost {
             hostAcknowledgement = true
         } else {

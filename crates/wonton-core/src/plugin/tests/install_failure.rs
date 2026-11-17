@@ -251,19 +251,141 @@ async fn docker_request_timeout_keeps_its_category_and_cleans_started_resources(
     tokio::time::timeout(Duration::from_secs(10), held.reached())
         .await
         .unwrap();
+    // 第一次超时后容器不见了，照计划重建并再启动一次；这次超时后仍不见，才算确定失败。
+    let second = docker.hold("POST /containers/wonton-app-test--app/start");
+    docker.remove("wonton-app-test--app");
+    tokio::time::sleep(Duration::from_millis(1500)).await;
+    held.release();
+    tokio::time::timeout(Duration::from_secs(10), second.reached())
+        .await
+        .unwrap();
+    docker.remove("wonton-app-test--app");
+    tokio::time::sleep(Duration::from_millis(1500)).await;
+    second.release();
     let error = tokio::time::timeout(Duration::from_secs(10), install)
         .await
         .unwrap()
         .unwrap()
         .unwrap_err();
-    held.release();
-    assert_eq!(error.kind(), "docker_rejected");
+    // 超时不是被拒。
+    assert_eq!(error.kind(), "docker_timed_out");
     let failed = failure(&manager);
     assert_eq!(failed["kind"], error.kind());
     assert_eq!(failed["stage"], "starting");
     assert_eq!(failed["cleanup_errors"], json!([]));
     assert!(docker.containers().is_empty());
     assert!(docker.networks().is_empty());
+}
+
+#[tokio::test]
+async fn a_create_timeout_removes_the_container_docker_already_created() {
+    let (docker, engine) = FakeDocker::start().await;
+    let dir = tempfile::tempdir().unwrap();
+    let manager = Arc::new(manager_with(
+        engine.with_request_limit_for_test(Duration::from_secs(1)),
+        &dir,
+    ));
+    let held = docker.hold_committed_create("wonton-app-test--app");
+    let install = tokio::spawn({
+        let manager = manager.clone();
+        async move { manager.install(&source(), &[], langs()).await }
+    });
+    tokio::time::timeout(Duration::from_secs(10), held.reached())
+        .await
+        .unwrap();
+    let error = tokio::time::timeout(Duration::from_secs(10), install)
+        .await
+        .unwrap()
+        .unwrap()
+        .unwrap_err();
+    held.release();
+    assert_eq!(error.kind(), "docker_timed_out");
+    let failed = failure(&manager);
+    assert_eq!(failed["kind"], error.kind());
+    assert_eq!(failed["stage"], "starting");
+    assert_eq!(failed["cleanup_errors"], json!([]));
+    assert!(docker.containers().is_empty());
+    assert!(docker.networks().is_empty());
+}
+
+#[tokio::test]
+async fn a_create_timeout_whose_leftover_cannot_be_removed_reports_the_cleanup_error() {
+    let (docker, engine) = FakeDocker::start().await;
+    let dir = tempfile::tempdir().unwrap();
+    let manager = Arc::new(manager_with(
+        engine.with_request_limit_for_test(Duration::from_secs(1)),
+        &dir,
+    ));
+    docker.fail_remove("wonton-app-test--app", Some("cleanup rejected"));
+    let held = docker.hold_committed_create("wonton-app-test--app");
+    let install = tokio::spawn({
+        let manager = manager.clone();
+        async move { manager.install(&source(), &[], langs()).await }
+    });
+    tokio::time::timeout(Duration::from_secs(10), held.reached())
+        .await
+        .unwrap();
+    let error = tokio::time::timeout(Duration::from_secs(10), install)
+        .await
+        .unwrap()
+        .unwrap()
+        .unwrap_err();
+    held.release();
+    assert_eq!(error.kind(), "docker_timed_out");
+    assert!(error.to_string().contains("cleanup rejected"));
+    let failed = failure(&manager);
+    assert!(
+        failed["cleanup_errors"]
+            .as_array()
+            .unwrap()
+            .iter()
+            .any(|error| error.as_str().unwrap().contains("cleanup rejected"))
+    );
+    assert_eq!(docker.containers(), ["wonton-app-test--app"]);
+}
+
+#[tokio::test]
+async fn a_create_timeout_does_not_rollback_a_same_name_container_it_did_not_create() {
+    // 超时的回答没到，等到的同名容器不一定是本次建的（比如 409 的回答丢了）：
+    // 回滚按账本删，不是本次建的就不记账。
+    let (docker, engine) = FakeDocker::start().await;
+    let dir = tempfile::tempdir().unwrap();
+    let manager = Arc::new(manager_with(
+        engine.with_request_limit_for_test(Duration::from_secs(1)),
+        &dir,
+    ));
+    let held = docker.hold("POST /containers/create");
+    let install = tokio::spawn({
+        let manager = manager.clone();
+        async move { manager.install(&source(), &[], langs()).await }
+    });
+    tokio::time::timeout(Duration::from_secs(10), held.reached())
+        .await
+        .unwrap();
+    docker.add_stranger_container("wonton-app-test--app", json!({"Image": "nginx"}));
+    let error = tokio::time::timeout(Duration::from_secs(20), install)
+        .await
+        .unwrap()
+        .unwrap()
+        .unwrap_err();
+    held.release();
+    assert_eq!(error.kind(), "docker_timed_out");
+    assert_eq!(docker.containers(), ["wonton-app-test--app"]);
+    assert!(docker.networks().is_empty());
+}
+
+#[tokio::test]
+async fn a_create_name_conflict_leaves_the_existing_container_alone() {
+    // 同名容器可能是主人或别的工具建的，没有本插件的标签：create 撞名后回滚不能按名字删它。
+    let (docker, engine) = FakeDocker::start().await;
+    docker.add_stranger_container("wonton-app-test--app", json!({"Image": "nginx"}));
+    let dir = tempfile::tempdir().unwrap();
+    let manager = manager_with(engine, &dir);
+    let error = manager.install(&source(), &[], langs()).await.unwrap_err();
+    assert_eq!(error.kind(), "docker_rejected");
+    assert_eq!(docker.containers(), ["wonton-app-test--app"]);
+    assert!(docker.networks().is_empty());
+    assert!(manager.store.load(&id()).unwrap().is_none());
 }
 
 #[tokio::test]
