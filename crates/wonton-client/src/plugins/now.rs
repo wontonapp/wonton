@@ -184,14 +184,17 @@ impl PluginsLink {
 
     async fn preview_for_install(&self, source: &str) -> Result<InstallPreview, PluginProblem> {
         let api = self.api()?;
-        api.post(
-            &["plugins", "preview"],
-            &wonton_protocol::InstallSource {
-                source: source.to_owned(),
-            },
-            SOURCE_TIMEOUT,
-        )
-        .await
+        let mut preview: InstallPreview = api
+            .post(
+                &["plugins", "preview"],
+                &wonton_protocol::InstallSource {
+                    source: source.to_owned(),
+                },
+                SOURCE_TIMEOUT,
+            )
+            .await?;
+        super::tasks::provider_notices(&mut preview);
+        Ok(preview)
     }
 
     async fn preview_for_upgrade(&self, id: &str) -> Result<InstallPreview, PluginProblem> {
