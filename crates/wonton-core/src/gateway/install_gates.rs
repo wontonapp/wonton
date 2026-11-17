@@ -18,14 +18,14 @@ use wonton_protocol::{
 };
 
 use super::api::{acted_by, error_response, install_error};
-use super::install_gate_cards::{nvme_admin_cards, source_admin_cards};
-use super::install_gate_checks::{self, UpgradeAsk};
+use super::install_gate_cards::{admin_cards, filled_lines, source_admin_cards};
+use super::install_gate_checks::{self, Installed, RecordState, UpgradeAsk};
 use super::pages::ERROR_HEADER;
 use super::{Gateway, Person, TunnelPeer};
 use crate::l10n;
 use crate::mcp::{Draft, Refusal};
 use crate::plugin::languages::Languages;
-use crate::plugin::{InstallError, ManifestExt, PluginId, UpgradeTo};
+use crate::plugin::{InstallError, PluginId, UpgradeTo};
 
 pub(crate) enum GateOutcome<R> {
     /// 卡片在后台等管理员；断开连接不影响它。等回来的值已经是
@@ -204,7 +204,7 @@ where
     GateOutcome::Wait(waited)
 }
 
-/// 发卡：选了 NVMe 时两张都要批（ADR-0036），否则一张。
+/// 发卡：选了 NVMe 或有最高级权限时两张都要批（ADR-0036），否则一张。
 fn send_cards<F, Fut>(
     gateway: &Arc<Gateway>,
     peer: Option<Extension<TunnelPeer>>,
@@ -309,7 +309,12 @@ where
                     .preview_upload(package.clone(), &langs)
                     .await?;
                 install_gate_checks::installable(&preview)?;
-                let (first, second) = nvme_admin_cards(&preview, selected, (false, &[]), &langs)?;
+                let (mut first, second) = admin_cards(&preview, selected, (false, &[]), &langs)?;
+                let secrets = super::api_switch::secrets(headers)?;
+                let settings = super::api_switch::settings(headers)?;
+                first
+                    .lines
+                    .extend(filled_lines(&preview, secrets.keys(), &settings, &langs));
                 Ok::<_, InstallError>((first, second, preview.title))
             };
             match cards.await {
@@ -348,14 +353,22 @@ where
         Gate::AskAdmin => {
             let langs = gateway.plugins.owner_languages();
             match upgrade_cards(gateway, id, ask, &langs).await {
-                Ok((first, second, version)) => {
+                Ok((first, second, version, state)) => {
                     let success = l10n::text(
                         &langs,
                         "chat-update-done",
                         &[("version", version.as_str().into())],
                     );
                     let cards = (first, second, success, Some(id.to_string()));
-                    send_cards(gateway, peer, headers, cards, run)
+                    let id = id.clone();
+                    let checked = move |gateway: Arc<Gateway>| async move {
+                        let langs = gateway.plugins.owner_languages();
+                        match state.still(&gateway.plugins, &id, &langs) {
+                            Ok(()) => run(gateway).await,
+                            Err(e) => install_error(&e),
+                        }
+                    };
+                    send_cards(gateway, peer, headers, cards, checked)
                 }
                 Err(response) => GateOutcome::Stop(response),
             }
@@ -364,7 +377,8 @@ where
     }
 }
 
-/// 升级要发的卡：先核对摘要、能不能装、改没改权限，再按预览和记录里的 NVMe 写。
+/// 升级要发的卡：先核对摘要、能不能装、改没改权限，再按预览和记录里的 NVMe 写。另给发卡时的
+/// [`RecordState`]，执行前再比一次。
 #[expect(
     clippy::result_large_err,
     reason = "网关的错误响应都是同一个大小，这条函数不做拆分"
@@ -374,18 +388,10 @@ async fn upgrade_cards(
     id: &PluginId,
     mut ask: UpgradeAsk,
     langs: &Languages,
-) -> Result<(Draft, Option<Draft>, String), Response> {
+) -> Result<(Draft, Option<Draft>, String, RecordState), Response> {
     let failed = |error: InstallError| install_error(&error);
-    let record = gateway
-        .plugins
-        .installed_record(id)
-        .map_err(|e| failed(e.into()))?
-        .ok_or_else(|| failed(InstallError::not_installed(langs, id)))?;
-    let before = record
-        .package(langs)
-        .map_err(|e| failed(e.into()))?
-        .manifest
-        .effective_permissions(&record.enabled());
+    let (record, state) = RecordState::read(&gateway.plugins, id, langs).map_err(failed)?;
+    let installed = Installed::of(&record, langs).map_err(failed)?;
     let to = std::mem::replace(&mut ask.to, UpgradeTo::Offered);
     let preview = gateway
         .plugins
@@ -401,14 +407,18 @@ async fn upgrade_cards(
             &preview, id, langs,
         )));
     }
-    if install_gate_checks::upgrade_changes_permissions(&preview, &before, &ask) {
+    // 先看装不装得了：设备列表读不到时是 `device_unavailable`，不是换了设备要主人。
+    install_gate_checks::installable(&preview).map_err(failed)?;
+    if install_gate_checks::upgrade_changes_permissions(&preview, &installed, &ask) {
         return Err(permission_required(PermissionItem::Owner));
     }
-    install_gate_checks::installable(&preview).map_err(failed)?;
     let kept = install_gate_checks::kept_nvme(&preview, &record);
-    let (first, second) =
-        nvme_admin_cards(&preview, &ask.devices, (true, &kept), langs).map_err(failed)?;
-    Ok((first, second, preview.version))
+    let (mut first, second) =
+        admin_cards(&preview, &ask.devices, (true, &kept), langs).map_err(failed)?;
+    first
+        .lines
+        .extend(filled_lines(&preview, &ask.secrets, &ask.settings, langs));
+    Ok((first, second, preview.version, state))
 }
 
 /// 卸载的门槛：卡片按已装应用写，批准后执行 `run`。

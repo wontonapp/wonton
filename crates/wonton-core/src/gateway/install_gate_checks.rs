@@ -8,6 +8,7 @@
 //!   要补的（还没填的密钥、没值也没默认值的必填项、过不了新 Schema 的项），改已有的值同样只限主人。
 //! - 装不了：预览 `blocked` 时按类别停下，不发卡。设备暂时不在、设备列表读不到时预览认不出 NVMe，
 //!   发出去的卡会少第二张，执行时设备回来就多给了 `SYS_ADMIN`。
+//! - 卡片挂着时记录变了：升级执行前按 [`RecordState`] 再比一次。
 //!
 //! 能装（`Allow`）的人和主人不经卡片，不走这里。
 
@@ -24,7 +25,7 @@ use crate::l10n;
 use crate::plugin::languages::Languages;
 use crate::plugin::manifest::DeviceClass;
 use crate::plugin::store::InstalledRecord;
-use crate::plugin::{InstallError, Permission, PluginId, UpgradeTo};
+use crate::plugin::{InstallError, ManifestExt, Permission, PluginId, UpgradeTo};
 
 /// 升级请求里门槛要看的部分：JSON 和上传两种写法读成同一份，执行仍按原请求体。
 pub(crate) struct UpgradeAsk {
@@ -152,25 +153,47 @@ pub(super) fn changed_upgrade(
     ))
 }
 
+/// 装着的版本：生效的权限（必需项加开着的可选项）和清单里声明成可选的项。
+pub(super) struct Installed {
+    pub(super) before: Vec<Permission>,
+    pub(super) optional: Vec<Permission>,
+}
+
+impl Installed {
+    pub(super) fn of(record: &InstalledRecord, langs: &Languages) -> Result<Self, InstallError> {
+        let manifest = record.package(langs)?.manifest;
+        Ok(Self {
+            before: manifest.effective_permissions(&record.enabled()),
+            optional: manifest.optional_permissions.keys().cloned().collect(),
+        })
+    }
+
+    fn has(list: &[Permission], line: &str) -> bool {
+        list.iter().any(|permission| permission.to_string() == line)
+    }
+}
+
 /// 升级请求和装着的比改了权限：可选项的开关、选的设备、局域网开关，或者覆盖已有的密钥、设置。
-/// `preview` 是按请求带的可选项算的升级预览，`before` 是装着的版本生效的权限（必需项加开着的可选项）。
-/// 不看 `granted_permissions`：老 App 会把可选项也放进 `grant`，它记着的不一定生效。
+/// `preview` 是按请求带的可选项算的升级预览。不看 `granted_permissions`：老 App 会把可选项也放进
+/// `grant`，它记着的不一定生效。调用方先判过 [`installable`]：设备列表读不到时报 `device_unavailable`，
+/// 不当成换了设备。
 pub(super) fn upgrade_changes_permissions(
     preview: &InstallPreview,
-    before: &[Permission],
+    installed: &Installed,
     ask: &UpgradeAsk,
 ) -> bool {
+    let (optional, required): (Vec<_>, Vec<_>) =
+        preview.permissions.iter().partition(|line| line.optional);
     // 新版本把原来的必需项改成可选时，沿用它要在请求里打开：按生效着没有比，不按开关记录比。
-    let optional = preview
-        .permissions
+    let toggled = optional
         .iter()
-        .filter(|line| line.optional)
-        .any(|line| {
-            line.enabled
-                != before
-                    .iter()
-                    .any(|permission| permission.to_string() == line.permission)
-        });
+        .any(|line| line.enabled != Installed::has(&installed.before, &line.permission));
+    // 以前可选、主人关着，新版本改成必需：生效集从关变成开，同样是主人的决定（ADR-0057“可选改成
+    // 必需：不自动生效”）。从没声明过的新必需项不算，卡片上照常列出。
+    let forced = required.iter().any(|line| {
+        Installed::has(&installed.optional, &line.permission)
+            && !Installed::has(&installed.before, &line.permission)
+    });
     let devices = !ask.devices.is_empty()
         && preview.devices.as_ref().is_none_or(|items| {
             let chosen: BTreeSet<&str> = items
@@ -188,7 +211,64 @@ pub(super) fn upgrade_changes_permissions(
         (ask.lan_webui, &preview.lan_webui),
         (Some(wanted), Some(offer)) if wanted != offer.enabled
     );
-    optional || devices || lan || overwrites_inputs(preview, ask)
+    toggled || forced || devices || lan || overwrites_inputs(preview, ask)
+}
+
+/// 发卡时装着的插件里，请求会改到的部分。管理员批准时可能已经过了很久，这期间主人关掉的权限、
+/// 局域网开关、改过的设置和设备，不能被原样执行的请求悄悄改回去：执行前再比一次，对不上回 409 `changed`。
+#[derive(PartialEq, Eq)]
+pub(super) struct RecordState {
+    version: String,
+    enabled: BTreeSet<String>,
+    lan_webui: bool,
+    devices: Vec<crate::plugin::store::InstalledDevice>,
+    settings: std::collections::BTreeMap<String, serde_json::Value>,
+    secrets: BTreeSet<String>,
+}
+
+impl RecordState {
+    pub(super) fn read(
+        plugins: &crate::plugin::PluginManager,
+        id: &PluginId,
+        langs: &Languages,
+    ) -> Result<(InstalledRecord, Self), InstallError> {
+        let record = plugins
+            .installed_record(id)?
+            .ok_or_else(|| InstallError::not_installed(langs, id))?;
+        let secrets = plugins
+            .store()
+            .secrets()
+            .load(id)?
+            .map(|filled| filled.into_keys().collect())
+            .unwrap_or_default();
+        let state = Self {
+            version: record.version.clone(),
+            enabled: record.enabled().iter().map(ToString::to_string).collect(),
+            lan_webui: record.lan_webui,
+            devices: record.devices.clone(),
+            settings: record.settings.clone(),
+            secrets,
+        };
+        Ok((record, state))
+    }
+
+    /// 执行前：记录还是发卡时的样子。
+    pub(super) fn still(
+        &self,
+        plugins: &crate::plugin::PluginManager,
+        id: &PluginId,
+        langs: &Languages,
+    ) -> Result<(), InstallError> {
+        let (_, now) = Self::read(plugins, id, langs)?;
+        if &now == self {
+            return Ok(());
+        }
+        Err(InstallError::Changed(l10n::text(
+            langs,
+            "gateway-install-changed",
+            &[("id", id.as_str().into())],
+        )))
+    }
 }
 
 /// 请求里的密钥只能是升级预览列出来要填的；设置只能填没值也没默认值的必填项、改过不了新 Schema 的项，

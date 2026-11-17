@@ -19,7 +19,7 @@ use crate::plugin::manifest::Permission;
 
 const BOGUS: &str = "sha256:0000000000000000000000000000000000000000000000000000000000000000";
 
-async fn ask_admin_member(h: &Harness) -> iroh::PublicKey {
+pub(super) async fn ask_admin_member(h: &Harness) -> iroh::PublicKey {
     let device = invite_member(h, "mia").await;
     let role = h
         .roles
@@ -35,7 +35,7 @@ async fn ask_admin_member(h: &Harness) -> iroh::PublicKey {
     device
 }
 
-async fn staged(h: &Harness, package: crate::plugin::PluginPackage) -> (Value, Value) {
+pub(super) async fn staged(h: &Harness, package: crate::plugin::PluginPackage) -> (Value, Value) {
     let preview = h
         .manager
         .preview_upload(package, &Languages::default())
@@ -44,7 +44,7 @@ async fn staged(h: &Harness, package: crate::plugin::PluginPackage) -> (Value, V
     (json!(preview.source), json!(preview.digest))
 }
 
-async fn member_post(
+pub(super) async fn member_post(
     h: &Harness,
     member: iroh::PublicKey,
     path: &str,
@@ -64,7 +64,7 @@ async fn member_post(
     (reply.status, kind, reply.json())
 }
 
-async fn pending_cards(h: &Harness) -> usize {
+pub(super) async fn pending_cards(h: &Harness) -> usize {
     let reply = send_as(
         &h.app,
         None,
@@ -78,18 +78,20 @@ async fn pending_cards(h: &Harness) -> usize {
     reply.json()["confirmations"].as_array().map_or(0, Vec::len)
 }
 
-fn assert_owner_required((status, kind, body): &(StatusCode, Option<String>, Value)) {
+pub(super) fn assert_owner_required((status, kind, body): &(StatusCode, Option<String>, Value)) {
     assert_eq!(*status, StatusCode::FORBIDDEN, "{body}");
     assert_eq!(kind.as_deref(), Some("permission_required"), "{body}");
     assert_eq!(body["missing"], "owner", "{body}");
 }
 
-fn version(h: &Harness, id: &str) -> String {
+pub(super) fn version(h: &Harness, id: &str) -> String {
     let id = PluginId::parse(id).unwrap();
     h.manager.store().load(&id).unwrap().unwrap().version
 }
 
-async fn finished(waiting: tokio::task::JoinHandle<(StatusCode, String)>) -> (StatusCode, String) {
+pub(super) async fn finished(
+    waiting: tokio::task::JoinHandle<(StatusCode, String)>,
+) -> (StatusCode, String) {
     tokio::time::timeout(std::time::Duration::from_secs(10), waiting)
         .await
         .unwrap()
@@ -221,9 +223,21 @@ async fn ask_admin_upgrades_keep_the_optional_permissions() {
     assert_eq!(pending_cards(&h).await, 0);
     assert_eq!(version(&h, "app.echo"), "0.1.0");
 
+    // `docker.socket` 开着就是最高级：两张卡都要批（ADR-0036）。
     let waiting = spawn_member_request(&h, member, path, opening);
-    let card = pending_admin_card(&h).await;
-    answer_admin_card(&h, &card, "approve").await;
+    let first = pending_admin_card(&h).await;
+    answer_admin_card(&h, &first, "approve").await;
+    let second = pending_admin_card(&h).await;
+    assert_ne!(first["id"], second["id"]);
+    assert!(
+        second["permissions"]
+            .as_array()
+            .unwrap()
+            .iter()
+            .any(|line| line["permission"] == "docker.socket" && line["risk"] == "highest"),
+        "{second}"
+    );
+    answer_admin_card(&h, &second, "approve").await;
     let (status, body) = finished(waiting).await;
     assert_eq!(status, StatusCode::OK, "{body}");
     let record = h.manager.store().load(&id).unwrap().unwrap();
