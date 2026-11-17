@@ -98,9 +98,6 @@ struct MainView: View {
         .task { await chat.observe() }
         .task { await chat.files.observe() }
         .task { await settings.observe() }
-        .task {
-            for await network in DeviceNetwork.changes() { home.send(.home(action: .networkChanged(network: network))) }
-        }
         .environment(pages)
         .environment(onboarding)
         .environment(\.panelDeps, PanelDependencies(

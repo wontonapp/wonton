@@ -265,3 +265,26 @@ fn devices_from_older_cores_default_the_new_fields() {
     assert_eq!(device.kind, PluginDeviceKind::Other);
     assert!(!device.system && !device.chosen);
 }
+
+#[test]
+fn granted_devices_preserve_unknown_kinds_and_missing_devices() {
+    let devices: Vec<PluginGrantedDevice> = serde_json::from_value(json!([
+        {"path": "/dev/disk/by-id/ata-1", "name": "WDC", "kind": "disk", "system": true, "available": true},
+        {"path": "/dev/bus/usb", "kind": "usb", "available": false},
+        {"path": "/dev/rfkill", "name": "Bluetooth", "kind": "bluetooth", "available": true}
+    ]))
+    .unwrap();
+    assert_eq!(devices[0].kind, PluginDeviceKind::Disk);
+    assert!(devices[0].system && devices[0].available);
+    assert_eq!(devices[1].kind, PluginDeviceKind::Usb);
+    assert_eq!(devices[1].name, None);
+    assert!(!devices[1].available);
+    assert_eq!(devices[2].kind, PluginDeviceKind::Other);
+    assert_eq!(devices[2].path, "/dev/rfkill");
+    assert_eq!(round_trip(&devices), devices);
+
+    let mut old = serde_json::to_value(detail()).unwrap();
+    old.as_object_mut().unwrap().remove("devices");
+    let old: PluginDetail = serde_json::from_value(old).unwrap();
+    assert!(old.devices.is_empty());
+}

@@ -31,6 +31,10 @@ impl ClientCore {
         &self,
         route: PluginDetailRoute,
     ) -> Result<PluginDetailOutcome, CoreError> {
+        #[cfg(feature = "ui-fake")]
+        if let Some(detail) = self.ui_fake_detail(&route) {
+            return Ok(PluginDetailOutcome::Detail { detail });
+        }
         let scope = self.scope();
         let plugins = scope.plugins.clone();
         scope.run(async move { plugins.detail(&route).await }).await
@@ -41,6 +45,10 @@ impl ClientCore {
         &self,
         route: PluginDetailRoute,
     ) -> Result<PluginDetailOutcome, CoreError> {
+        #[cfg(feature = "ui-fake")]
+        if let Some(detail) = self.ui_fake_detail(&route) {
+            return Ok(PluginDetailOutcome::Detail { detail });
+        }
         let scope = self.scope();
         let plugins = scope.plugins.clone();
         scope
@@ -77,5 +85,21 @@ impl ClientCore {
                 plugins.installed_plugin(&id).await
             })
             .await
+    }
+}
+
+#[cfg(feature = "ui-fake")]
+impl ClientCore {
+    fn ui_fake_detail(&self, route: &PluginDetailRoute) -> Option<PluginDetail> {
+        if !self.ui_fake.load(std::sync::atomic::Ordering::SeqCst) {
+            return None;
+        }
+        let installed = self.plugins().installed.and_then(|installed| {
+            installed
+                .plugins
+                .into_iter()
+                .find(|plugin| plugin.id == super::ui_fake_plugin_detail::HUB_ID)
+        });
+        super::ui_fake_plugin_detail::detail(route, installed)
     }
 }

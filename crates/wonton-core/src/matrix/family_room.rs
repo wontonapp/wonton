@@ -46,13 +46,14 @@ impl Session<'_> {
         users: &Map<String, Value>,
     ) -> Result<String, MatrixError> {
         // v12 的创建者有隐含最高权限，不能放进 users；人都在建房后邀请，不授予创建者身份。
+        // Tuwunel v2.0.0 忽略 initial_state 中 content 为空对象的事件，标记必须有内容。
         let body = json!({
             "preset": "private_chat",
             "room_version": "12",
             "name": name,
             "power_level_content_override": {"users": users},
             "initial_state": [
-                {"type": FAMILY_ROOM_EVENT, "state_key": "", "content": {}},
+                {"type": FAMILY_ROOM_EVENT, "state_key": "", "content": {"version": 1}},
                 {"type": "m.room.encryption", "state_key": "",
                  "content": {"algorithm": "m.megolm.v1.aes-sha2"}},
             ],

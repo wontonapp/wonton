@@ -12,8 +12,8 @@ use wonton_protocol::SecretValues;
 use super::audience::Subject;
 use super::audit::{Decision, Record};
 use super::{
-    Bus, Caller, Outcome, ToolFailure, agent_install, authoring_tools, cards, file_tools,
-    handoff_tools, naming, panel_tools, people_tools, profile_tools, save_tools, send_message_tool,
+    Bus, Caller, Outcome, ToolFailure, agent_install, authoring_tools, cards, file_tools, naming,
+    panel_tools, people_tools, profile_tools, save_tools, send_message_tool,
 };
 use crate::bot_activity::Guard;
 use crate::l10n;
@@ -118,7 +118,6 @@ pub fn definitions() -> Vec<Tool> {
     tools.extend(people_tools::definitions());
     tools.extend(panel_tools::definitions());
     tools.push(send_message_tool::definition());
-    tools.extend(handoff_tools::definitions());
     tools
 }
 
@@ -156,9 +155,6 @@ pub async fn call(
         people_tools::USER_LOCALE => people_tools::call(bus, caller, &args),
         SEND_MESSAGE => {
             return send_message_tool::call(bus, caller, &name, args, activity).await;
-        }
-        handoff_tools::HAND_OFF | handoff_tools::STATUS => {
-            return handoff_tools::call(bus, caller, tool, args, activity).await;
         }
         panel_tools::PIN | panel_tools::UNPIN | panel_tools::LIST => {
             return panel_tools::call(bus, caller, tool, args, activity).await;

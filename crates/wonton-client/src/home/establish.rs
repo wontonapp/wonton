@@ -36,6 +36,38 @@ const COLD_DIAL_DEADLINE: Duration = Duration::from_secs(30);
 /// （启动时读回连接信息、配对的第一次建连）：连上过以后换服务器、重建都是热路径，主人要尽快看到“连不上”。
 const COLD_DIALS: u32 = 2;
 
+#[derive(Clone, Debug)]
+pub(super) enum SetupFailure {
+    Bind(String),
+    BindTimeout(Duration),
+    ProxyStart(String),
+    ProxyRoute(String),
+}
+
+impl SetupFailure {
+    fn summary(&self) -> String {
+        let lang = language();
+        match self {
+            Self::Bind(_) => l10n!(CATALOG, lang, "home-network-setup-failed"),
+            Self::BindTimeout(deadline) => l10n!(
+                CATALOG,
+                lang,
+                "home-bind-timeout",
+                seconds = super::failure::seconds(*deadline)
+            ),
+            Self::ProxyStart(_) => l10n!(CATALOG, lang, "home-proxy-start-failed"),
+            Self::ProxyRoute(_) => l10n!(CATALOG, lang, "home-proxy-route-failed"),
+        }
+    }
+
+    fn diagnostic(&self) -> String {
+        match self {
+            Self::Bind(error) | Self::ProxyStart(error) | Self::ProxyRoute(error) => error.clone(),
+            Self::BindTimeout(deadline) => format!("endpoint binding exceeded {deadline:?}"),
+        }
+    }
+}
+
 impl HomeLink {
     /// 换上这台服务器并开始建连。这台进程还没连上过时算冷启动（启动时读回连接信息、配对的第一次建连）：
     /// 只有这种时候才发冷启动的握手名额；连上过以后换服务器、或者重建，按正常时限，主人要尽快看到“连不上”。
@@ -105,7 +137,8 @@ impl HomeLink {
             tracing::info!(
                 failures,
                 ?delay,
-                "could not set up the connection: {message}"
+                diagnostic = %message.diagnostic(),
+                "could not set up the connection"
             );
             *self.lock_unlinked() = Some((message, failures));
             self.republish_unlinked();
@@ -161,7 +194,7 @@ impl HomeLink {
         (COLD_DIAL_DEADLINE, wonton_tunnel::DIAL_DEADLINE)
     }
 
-    fn lock_unlinked(&self) -> std::sync::MutexGuard<'_, Option<(String, u32)>> {
+    fn lock_unlinked(&self) -> std::sync::MutexGuard<'_, Option<(SetupFailure, u32)>> {
         self.unlinked
             .lock()
             .unwrap_or_else(std::sync::PoisonError::into_inner)
@@ -173,10 +206,12 @@ impl HomeLink {
         let Some((message, failures)) = self.lock_unlinked().clone() else {
             return;
         };
+        let summary = message.summary();
+        let diagnostic = message.diagnostic();
         let now = Instant::now();
         let status = HomeStatus::Disconnected {
             reason: HomeFailure::TransportUnavailable,
-            message: message.clone(),
+            message: summary.clone(),
         };
         let mut tracker = self.lock_tracker();
         tracker.observe(&status, ConnectionCheck::Unknown, failures, now);
@@ -199,28 +234,27 @@ impl HomeLink {
                 disconnects,
                 failed_dials: failures,
                 last_connected_at_ms: view.details.last_connected_at_ms,
-                last_failure: Some(message),
+                last_failure: Some(summary),
+                diagnostic: Some(diagnostic),
                 ..Default::default()
             };
         });
     }
 
-    async fn open(self: &Arc<Self>, ticket: &Ticket) -> Result<Link, String> {
+    async fn open(self: &Arc<Self>, ticket: &Ticket) -> Result<Link, SetupFailure> {
         let started = Instant::now();
         let lang = language();
         let (cold_dial, warm_dial) = self.cold_allowance();
         let deadline = self.establish_timing().0;
         let endpoint = match self.bind_endpoint(ticket.relays(), 1, lang, deadline).await {
             Ok(endpoint) => endpoint,
-            Err(BindError::Failed(message)) => return Err(message),
-            Err(BindError::TimedOut) => {
-                return Err(l10n!(
-                    CATALOG,
-                    lang,
-                    "home-bind-timeout",
-                    seconds = deadline.as_secs()
-                ));
+            Err(BindError::Failed(diagnostic)) => {
+                return Err(SetupFailure::Bind(super::failure::redact_relays(
+                    ticket.relays(),
+                    &diagnostic,
+                )));
             }
+            Err(BindError::TimedOut) => return Err(SetupFailure::BindTimeout(deadline)),
         };
         tracing::info!(elapsed = ?started.elapsed(), "bound the endpoint");
         // 只建最优先的一档（ADR-0048）；掉档回退由这个任务盯着家中继状态做。DirectOnly 不连中继，
@@ -243,18 +277,21 @@ impl HomeLink {
         };
         let proxy = LocalProxy::bind(client.clone(), (Ipv4Addr::LOCALHOST, 0).into(), access)
             .await
-            .map_err(|e| {
-                l10n!(
-                    CATALOG,
-                    lang,
-                    "home-proxy-start-failed",
-                    error = e.to_string()
-                )
+            .map_err(|error| {
+                SetupFailure::ProxyStart(super::failure::redact_relays(
+                    ticket.relays(),
+                    &error.to_string(),
+                ))
             })?;
         let registration = self
             .hub
             .register(proxy.local_addr(), credential, domain.clone())
-            .map_err(|_| "proxy route registration failed".to_owned())?;
+            .map_err(|error| {
+                SetupFailure::ProxyRoute(super::failure::redact_relays(
+                    ticket.relays(),
+                    &format!("proxy route registration failed: {error:?}"),
+                ))
+            })?;
         let credential = registration.credential();
         {
             let mut current = self.lock_lifecycle_client();

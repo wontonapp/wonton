@@ -95,7 +95,10 @@ async fn a_file_name_cannot_write_outside_the_app_downloads() {
         world
             .phone()
             .dispatch(Action::Files {
-                action: wonton_protocol::FileAction::DownloadFile { id: file.clone() },
+                action: wonton_protocol::FileAction::DownloadFile {
+                    id: file.clone(),
+                    room: "!bot:home".into(),
+                },
             })
             .unwrap();
         let done = world
@@ -474,7 +477,10 @@ async fn a_download_appears_in_the_app_folder_only_when_complete() {
     world
         .phone()
         .dispatch(Action::Files {
-            action: wonton_protocol::FileAction::DownloadFile { id: file.clone() },
+            action: wonton_protocol::FileAction::DownloadFile {
+                id: file.clone(),
+                room: "!bot:home".into(),
+            },
         })
         .unwrap();
     let transfer = world
@@ -498,7 +504,10 @@ async fn downloading_again_replaces_the_finished_entry() {
         .lock()
         .serve("a.pdf", &source_bytes(1024), "\"v1\"");
     let download = Action::Files {
-        action: wonton_protocol::FileAction::DownloadFile { id: file },
+        action: wonton_protocol::FileAction::DownloadFile {
+            id: file,
+            room: "!bot:home".into(),
+        },
     };
     world.phone().dispatch(download.clone()).unwrap();
     let first = world
@@ -527,7 +536,10 @@ async fn a_download_continues_after_the_app_restarts() {
     world
         .phone()
         .dispatch(Action::Files {
-            action: wonton_protocol::FileAction::DownloadFile { id: file },
+            action: wonton_protocol::FileAction::DownloadFile {
+                id: file,
+                room: "!bot:home".into(),
+            },
         })
         .unwrap();
     // 等核心发的都写完再停：写到一半就读长度的话，停下之前可能又写了一些。
@@ -561,7 +573,10 @@ async fn a_file_that_changed_while_paused_is_downloaded_from_the_start() {
     world
         .phone()
         .dispatch(Action::Files {
-            action: wonton_protocol::FileAction::DownloadFile { id: file.clone() },
+            action: wonton_protocol::FileAction::DownloadFile {
+                id: file.clone(),
+                room: "!bot:home".into(),
+            },
         })
         .unwrap();
     world
@@ -591,6 +606,7 @@ async fn download_failures_say_which_side_failed() {
         .dispatch(Action::Files {
             action: wonton_protocol::FileAction::DownloadFile {
                 id: unknown.clone(),
+                room: "!bot:home".into(),
             },
         })
         .unwrap();
@@ -610,7 +626,10 @@ async fn download_failures_say_which_side_failed() {
     world
         .phone()
         .dispatch(Action::Files {
-            action: wonton_protocol::FileAction::DownloadFile { id: file },
+            action: wonton_protocol::FileAction::DownloadFile {
+                id: file,
+                room: "!bot:home".into(),
+            },
         })
         .unwrap();
     let transfer = world
@@ -628,7 +647,10 @@ async fn a_file_is_not_downloaded_twice_at_once() {
         .serve("a.mov", &source_bytes(4 * MIB), "v1");
     world.core.lock().hold_download_after = Some(MIB);
     let download = Action::Files {
-        action: wonton_protocol::FileAction::DownloadFile { id: file },
+        action: wonton_protocol::FileAction::DownloadFile {
+            id: file,
+            room: "!bot:home".into(),
+        },
     };
     world.phone().dispatch(download.clone()).unwrap();
     assert!(matches!(

@@ -158,8 +158,8 @@ async fn failures_and_reload_cover_pages_inside_plugins_and_public_pages() {
 async fn room_panel_entries_from_other_clients_are_checked_when_built() {
     let rig = Rig::new();
     let room: wonton_matrix::OwnedRoomId = "!r:home.example".parse().unwrap();
-    rig.room_panel.send_replace(Some((
-        room,
+    rig.open_room(
+        &room,
         RoomPanel {
             pages: vec![
                 PanelEntry {
@@ -175,9 +175,9 @@ async fn room_panel_entries_from_other_clients_are_checked_when_built() {
                 },
             ],
         },
-    )));
+    );
     rig.tabs.recompute();
-    let view = rig.tabs.room_view.borrow().clone().unwrap();
+    let view = rig.tabs.room_view(room.as_str()).unwrap();
     // 房间面板来自账号数据，绕过入口校验：非 https 的不打开并说清原因，越界路径没有网址。
     assert_eq!(view.panel[0].page.url, None);
     assert_eq!(
@@ -225,8 +225,8 @@ async fn room_panel_entry_for_an_undeclared_page_says_removed() {
     let rig = Rig::new();
     rig.open(page_tab());
     let room: wonton_matrix::OwnedRoomId = "!r:home.example".parse().unwrap();
-    rig.room_panel.send_replace(Some((
-        room,
+    rig.open_room(
+        &room,
         RoomPanel {
             pages: vec![PanelEntry {
                 tab: TabRef::Plugin {
@@ -236,9 +236,9 @@ async fn room_panel_entry_for_an_undeclared_page_says_removed() {
                 title: None,
             }],
         },
-    )));
+    );
     rig.tabs.recompute();
-    let view = rig.tabs.room_view.borrow().clone().unwrap();
+    let view = rig.tabs.room_view(room.as_str()).unwrap();
     assert_eq!(view.panel[0].page.state, TabState::PageRemoved);
     assert_eq!(view.panel[0].page.url, None);
 

@@ -3,7 +3,6 @@
 
 use std::collections::BTreeSet;
 
-use serde::{Deserialize, Serialize};
 use wonton_protocol::{LanClient, LanWebuiOffer};
 
 use crate::l10n;
@@ -15,15 +14,7 @@ use crate::plugin::secrets;
 
 const HOST: &str = "{host}";
 
-#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
-#[serde(deny_unknown_fields)]
-pub struct LanClientSpec {
-    /// 连接地址，`{host}` 换成端口开着的局域网地址，如 `http://{host}:4533`。
-    pub address: String,
-    /// 主人的账号模板；不能用显示名 `{name}` 或网页请求者的 `{role}`。
-    pub username: String,
-    pub password: String,
-}
+pub use wonton_protocol::manifest::LanClientSpec;
 
 pub(super) fn validate(
     manifest: &Manifest,
