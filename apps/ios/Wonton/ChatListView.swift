@@ -179,6 +179,7 @@ struct ChatListView: View {
                                 reminderDismissals.dismiss(backupReminder)
                                 locallyDismissed = true
                             }
+                            .accessibilityIdentifier("chat-backup-reminder-dismiss")
                         }
                     }
                 }
