@@ -108,7 +108,13 @@ impl Bus {
         caller: &Caller,
         name: &str,
         args: Value,
-        (draft, second, held_ms, activity): (Draft, Option<Draft>, Option<u64>, Guard),
+        (draft, second, device_second, held_ms, activity): (
+            Draft,
+            Option<Draft>,
+            Option<Draft>,
+            Option<u64>,
+            Guard,
+        ),
         run: F,
     ) -> CallToolResult
     where
@@ -117,7 +123,7 @@ impl Bus {
             + 'static,
         Fut: Future<Output = Outcome> + Send,
     {
-        let Some(second) = second else {
+        if second.is_none() && device_second.is_none() {
             return self
                 .confirmed_after_hold(
                     caller,
@@ -128,7 +134,16 @@ impl Bus {
                     (held_ms, Subject::PluginAdmin),
                 )
                 .await;
-        };
+        }
+        let nvme: Vec<(String, bool)> = draft
+            .devices
+            .iter()
+            .filter(|device| {
+                device.kind == wonton_protocol::PluginDeviceKind::Disk
+                    && device.target.starts_with("/dev/nvme")
+            })
+            .map(|device| (device.id.clone(), device.chosen))
+            .collect();
         drop(activity);
         let bus = self.clone();
         let caller = caller.clone();
@@ -144,21 +159,29 @@ impl Bus {
                 Ok(ticket) => ticket,
                 Err(refusal) => return bus.refused(&caller, &name, &args, &refusal, None),
             };
-            // 第一张批准了还没执行：第二张拒绝或过期时什么都不装，两张卡片都说清楚。
-            let second_ticket = match bus.confirmations.ask_as(&caller.id, second, audience).await {
-                Ok(second) => second,
-                Err(refusal) => {
-                    let message = refusal.message();
-                    bus.confirmations
-                        .finish(
-                            ticket,
-                            ConfirmationState::Failed {
-                                message: message.clone(),
-                            },
-                        )
-                        .await;
-                    return bus.refused(&caller, &name, &args, &refusal, None);
+            let selected_nvme = nvme.iter().any(|(id, chosen)| {
+                ticket.devices.contains(id) || (ticket.devices.is_empty() && *chosen)
+            });
+            let mut second = second.or_else(|| selected_nvme.then_some(device_second).flatten());
+            if selected_nvme && let Some(second) = &mut second {
+                super::cards::mark_nvme_risk(
+                    second,
+                    &bus.card_languages(&caller, Subject::PluginAdmin),
+                );
+            }
+            let second_ticket = if let Some(second) = second {
+                match bus.confirmations.ask_as(&caller.id, second, audience).await {
+                    Ok(second) => Some(second),
+                    Err(refusal) => {
+                        let message = refusal.message();
+                        bus.confirmations
+                            .finish(ticket, ConfirmationState::Failed { message })
+                            .await;
+                        return bus.refused(&caller, &name, &args, &refusal, None);
+                    }
                 }
+            } else {
+                None
             };
             let activity = bus.plugins.activity.start_tool(&caller.id);
             let outcome = run(
@@ -187,7 +210,9 @@ impl Bus {
             );
             let state = outcome.state.clone();
             bus.confirmations.finish(ticket, state.clone()).await;
-            bus.confirmations.finish(second_ticket, state).await;
+            if let Some(second_ticket) = second_ticket {
+                bus.confirmations.finish(second_ticket, state).await;
+            }
             with_confirmation(outcome.result, confirmation)
         });
         task.await

@@ -515,39 +515,43 @@ async fn install_by_source(
     let finish = {
         let request = request.clone();
         let headers = headers.clone();
+        let person = person.clone();
         move |gateway: Arc<Gateway>| {
             let request = request.clone();
             let headers = headers.clone();
             async move {
-                let id = gateway.plugins.install_source(&request).await?.id;
-                gateway
-                    .plugins
-                    .installed_plugin(&id, &languages(&headers))
-                    .ok_or_else(|| InstallError::NotInstalled(id.to_string()))
+                let installed = async {
+                    let id = gateway.plugins.install_source(&request).await?.id;
+                    gateway
+                        .plugins
+                        .installed_plugin(&id, &languages(&headers))
+                        .ok_or_else(|| InstallError::NotInstalled(id.to_string()))
+                }
+                .await;
+                response_for_requester(
+                    &gateway,
+                    peer,
+                    &headers,
+                    &person,
+                    installed,
+                    |gateway, peer, person, plugin| {
+                        super::bot_projection::installed_response(
+                            gateway,
+                            peer,
+                            &headers,
+                            person,
+                            plugin,
+                            StatusCode::CREATED,
+                        )
+                    },
+                )
             }
         }
     };
     let gate =
         install_gates::install_source(&gateway, peer, &headers, &person, &request, finish).await;
     match install_gates::settle(gate, "install", &langs).await {
-        Ok(result) => response_for_requester(
-            &gateway,
-            peer,
-            &headers,
-            &person,
-            result,
-            |gateway, peer, person, plugin| {
-                super::bot_projection::installed_response(
-                    gateway,
-                    peer,
-                    &headers,
-                    person,
-                    plugin,
-                    StatusCode::CREATED,
-                )
-            },
-        ),
-        Err(response) => response,
+        Ok(response) | Err(response) => response,
     }
 }
 
@@ -567,44 +571,56 @@ async fn install_by_upload(
         Err(e) => return install_error(&e),
     };
     let for_install = package.clone();
+    let selected_devices = devices(&query.devices);
     let finish = {
         let headers = headers.clone();
+        let person = person.clone();
         move |gateway: Arc<Gateway>| {
             let package = for_install.clone();
             let headers = headers.clone();
             let query = query.clone();
             async move {
-                let id = install_upload_package(&gateway, &headers, &query, package)
-                    .await?
-                    .id;
-                gateway
-                    .plugins
-                    .installed_plugin(&id, &languages(&headers))
-                    .ok_or_else(|| InstallError::NotInstalled(id.to_string()))
+                let installed = async {
+                    let id = install_upload_package(&gateway, &headers, &query, package)
+                        .await?
+                        .id;
+                    gateway
+                        .plugins
+                        .installed_plugin(&id, &languages(&headers))
+                        .ok_or_else(|| InstallError::NotInstalled(id.to_string()))
+                }
+                .await;
+                response_for_requester(
+                    &gateway,
+                    peer,
+                    &headers,
+                    &person,
+                    installed,
+                    |gateway, peer, person, plugin| {
+                        super::bot_projection::installed_response(
+                            gateway,
+                            peer,
+                            &headers,
+                            person,
+                            plugin,
+                            StatusCode::CREATED,
+                        )
+                    },
+                )
             }
         }
     };
-    let gate =
-        install_gates::install_upload(&gateway, peer, &headers, &person, &package, finish).await;
+    let gate = install_gates::install_upload(
+        &gateway,
+        peer,
+        &headers,
+        &person,
+        (&package, &selected_devices),
+        finish,
+    )
+    .await;
     match install_gates::settle(gate, "install", &langs).await {
-        Ok(result) => response_for_requester(
-            &gateway,
-            peer,
-            &headers,
-            &person,
-            result,
-            |gateway, peer, person, plugin| {
-                super::bot_projection::installed_response(
-                    gateway,
-                    peer,
-                    &headers,
-                    person,
-                    plugin,
-                    StatusCode::CREATED,
-                )
-            },
-        ),
-        Err(response) => response,
+        Ok(response) | Err(response) => response,
     }
 }
 
@@ -653,6 +669,8 @@ async fn install_upload_package(
 struct UpgradeFrom {
     #[serde(default)]
     source: Option<String>,
+    #[serde(default)]
+    devices: Vec<String>,
 }
 
 pub async fn preview_upgrade(
@@ -675,8 +693,9 @@ pub async fn preview_upgrade(
         Some(Err(e)) => return install_error(&e),
         Some(Ok(UpgradeFrom {
             source: Some(source),
+            ..
         })) => UpgradeTo::Source(source),
-        Some(Ok(UpgradeFrom { source: None })) => UpgradeTo::Offered,
+        Some(Ok(UpgradeFrom { source: None, .. })) => UpgradeTo::Offered,
         None if body.is_empty() => UpgradeTo::Offered,
         None => match package(&languages(&headers), &headers, &body) {
             Ok(package) => UpgradeTo::Upload(Box::new(package)),
@@ -781,41 +800,63 @@ pub async fn upgrade(
         let query = query.clone();
         let body = body.clone();
         let id = id.clone();
-        move |gateway: Arc<Gateway>| perform_upgrade(gateway, id, headers, query, body)
+        let person = person.clone();
+        move |gateway: Arc<Gateway>| {
+            let upgraded = perform_upgrade(gateway.clone(), id, headers.clone(), query, body);
+            async move {
+                let result = upgraded.await;
+                response_for_requester(
+                    &gateway,
+                    peer,
+                    &headers,
+                    &person,
+                    result,
+                    |gateway, peer, person, mut value| match super::bot_projection::installed(
+                        gateway,
+                        peer,
+                        &headers,
+                        person,
+                        &mut value.plugin,
+                    ) {
+                        Ok(()) => Json(value).into_response(),
+                        Err(response) => *response,
+                    },
+                )
+            }
+        }
     };
     // 门槛要升级预览的内容写卡片，先把请求体读出来。
-    let to = match json_body::<UpgradeFrom>(&headers, &body) {
+    let (to, selected) = match json_body::<UpgradeFrom>(&headers, &body) {
         Some(Err(e)) => return install_error(&e),
         Some(Ok(UpgradeFrom {
             source: Some(source),
-        })) => UpgradeTo::Source(source),
-        Some(Ok(UpgradeFrom { source: None })) => UpgradeTo::Offered,
-        None if body.is_empty() => UpgradeTo::Offered,
+            devices,
+        })) => (UpgradeTo::Source(source), devices),
+        Some(Ok(UpgradeFrom {
+            source: None,
+            devices,
+        })) => (UpgradeTo::Offered, devices),
+        None if body.is_empty() => (UpgradeTo::Offered, devices(&query.devices)),
         None => match package(&languages(&headers), &headers, &body) {
-            Ok(package) => UpgradeTo::Upload(Box::new(package)),
+            Ok(package) => (
+                UpgradeTo::Upload(Box::new(package)),
+                devices(&query.devices),
+            ),
             Err(e) => return install_error(&e),
         },
     };
-    let gate = install_gates::upgrade(&gateway, peer, &headers, &person, &id, to, finish).await;
+    let gate = install_gates::upgrade(
+        &gateway,
+        peer,
+        &headers,
+        &person,
+        &id,
+        (to, &selected),
+        finish,
+    )
+    .await;
     match install_gates::settle(gate, "upgrade", &langs).await {
-        Ok(result) => response_for_requester(
-            &gateway,
-            peer,
-            &headers,
-            &person,
-            result,
-            |gateway, peer, person, mut value| match super::bot_projection::installed(
-                gateway,
-                peer,
-                &headers,
-                person,
-                &mut value.plugin,
-            ) {
-                Ok(()) => Json(value).into_response(),
-                Err(response) => *response,
-            },
-        ),
-        Err(response) => response,
+        Ok(response) | Err(response) => response,
     }
 }
 

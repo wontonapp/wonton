@@ -132,10 +132,20 @@ fn serial(by_id: &str, name: &str) -> PluginDevice {
 }
 
 fn disk(by_id: &str, name: &str, system: bool) -> PluginDevice {
+    let kind = if by_id.starts_with("nvme-") {
+        "nvme:"
+    } else {
+        ""
+    };
     PluginDevice {
-        id: format!("disk:/dev/disk/by-id/{by_id}"),
+        id: format!("disk:{kind}/dev/disk/by-id/{by_id}"),
         name: name.into(),
-        target: String::new(),
+        target: if by_id.starts_with("nvme-") {
+            "/dev/nvme0n1"
+        } else {
+            "/dev/sda"
+        }
+        .into(),
         service: "smart".into(),
         optional: false,
         kind: PluginDeviceKind::Disk,
