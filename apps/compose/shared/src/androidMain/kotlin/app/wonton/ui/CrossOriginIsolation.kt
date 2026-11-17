@@ -28,6 +28,7 @@ import app.wonton.protocol.InstalledPlugin
 import app.wonton.protocol.TabPage
 import app.wonton.protocol.TabRef
 import app.wonton.ui.design.WontonButton
+import app.wonton.ui.design.WontonButtonKind
 import app.wonton.ui.design.WontonTheme
 import app.wonton.ui.design.toColor
 
@@ -51,21 +52,22 @@ private const val EXTRA_KEEP_ALIVE = "android.support.customtabs.extra.KEEP_ALIV
 private const val KEEP_ALIVE_SERVICE = "app.wonton.android.browser.BrowserKeepAliveService"
 
 /**
- * 要跨源隔离的插件页（`TabPage.opensInBrowser`，ADR-0033）：Android WebView 给不了，App 里不加载，只留一行说明。
- * [autoOpen] 时进来就交给浏览器一次；回到 App 再点按钮重新打开。
+ * 要跨源隔离的插件页（`TabPage.opensInBrowser`，ADR-0033）：Android WebView 给不了，App 里不加载。
+ * [autoOpen] 时进来就交给浏览器一次。开过之后这一页讲明它已交给浏览器，并给回聊天和再打开一次，
+ * 从浏览器（HOME 再点图标、关掉标签）回来不会停在无出路的页面上。
  */
 @Composable
-internal fun BrowserPageStatus(page: TabPage, core: ClientCore, autoOpen: Boolean) {
+internal fun BrowserPageStatus(page: TabPage, core: ClientCore, autoOpen: Boolean, onBackToChat: () -> Unit) {
     val context = LocalContext.current
     val url = page.url ?: return
     var problem by remember(url) { mutableStateOf<Problem?>(null) }
     var opened by rememberSaveable(url, page.reload) { mutableStateOf(false) }
-    val open = { problem = openPluginInBrowser(context, core, url) }
+    val open = {
+        opened = true
+        problem = openPluginInBrowser(context, core, url)
+    }
     LaunchedEffect(url, page.reload, autoOpen) {
-        if (autoOpen && !opened) {
-            opened = true
-            open()
-        }
+        if (autoOpen && !opened) open()
     }
     problem?.let {
         ProblemView(it, onRetry = open)
@@ -77,11 +79,16 @@ internal fun BrowserPageStatus(page: TabPage, core: ClientCore, autoOpen: Boolea
         horizontalAlignment = Alignment.CenterHorizontally,
     ) {
         Text(
-            stringResource(R.string.tab_opens_in_browser, page.title),
+            stringResource(if (opened) R.string.tab_opened_in_browser else R.string.tab_opens_in_browser, page.title),
             style = WontonTheme.typography.itemTitle,
             color = WontonTheme.colors.textPrimary.toColor(),
         )
-        WontonButton(stringResource(R.string.tab_open_in_browser), open)
+        if (opened) {
+            WontonButton(stringResource(R.string.tab_back_to_chat), onBackToChat)
+            WontonButton(stringResource(R.string.tab_reopen_in_browser), open, kind = WontonButtonKind.SECONDARY)
+        } else {
+            WontonButton(stringResource(R.string.tab_open_in_browser), open)
+        }
     }
 }
 
@@ -96,6 +103,9 @@ internal fun openPluginInBrowser(context: Context, core: ClientCore, url: String
         return error.problem
     }
     val tab = CustomTabsIntent.Builder().build()
+    // 开在浏览器自己的任务里：HOME 再点云吞图标回到的是云吞，不回刚离开的浏览器（回到 App 的落地页），
+    // 两者不再挤在同一个任务栈里（ADR-0033）。
+    tab.intent.addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
     tab.intent.putExtra(EXTRA_KEEP_ALIVE, Intent().setComponent(ComponentName(context.packageName, KEEP_ALIVE_SERVICE)))
     return try {
         tab.launchUrl(context, Uri.parse(target))

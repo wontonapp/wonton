@@ -168,17 +168,6 @@ extension EncryptionStatus {
     }
 }
 
-extension KeyNotice {
-    /// 按钮上的字；`other` 是更新的核心给的新类别，只显示说明。
-    var action: String? {
-        switch self {
-        case .enterRecoveryKey: return String(localized: .Verification1.verificationUseRecoveryKey)
-        case .verifyWithOtherDevice: return String(localized: .Verification1.verificationVerifyWithOtherDevice)
-        case .other: return nil
-        }
-    }
-}
-
 extension BackupReminder {
     var text: String? {
         switch self {

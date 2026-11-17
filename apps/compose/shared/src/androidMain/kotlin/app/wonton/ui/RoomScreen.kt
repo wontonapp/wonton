@@ -1,16 +1,20 @@
 package app.wonton.ui
 
+import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.PaddingValues
+import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.WindowInsets
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
+import androidx.compose.foundation.layout.heightIn
 import androidx.compose.foundation.layout.ime
 import androidx.compose.foundation.layout.navigationBars
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.safeDrawing
+import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.union
 import androidx.compose.foundation.layout.windowInsetsPadding
 import androidx.compose.foundation.lazy.LazyColumn
@@ -19,6 +23,8 @@ import androidx.compose.foundation.lazy.items
 import androidx.compose.foundation.lazy.itemsIndexed
 import androidx.compose.foundation.lazy.rememberLazyListState
 import androidx.compose.material3.CircularProgressIndicator
+import androidx.compose.material3.Icon
+import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.CompositionLocalProvider
 import androidx.compose.runtime.DisposableEffect
@@ -44,6 +50,7 @@ import androidx.compose.ui.platform.LocalLayoutDirection
 import androidx.compose.ui.platform.LocalWindowInfo
 import androidx.compose.ui.platform.testTag
 import androidx.compose.ui.res.stringResource
+import androidx.compose.ui.semantics.Role
 import androidx.compose.ui.unit.dp
 import app.wonton.client.ClientCore
 import app.wonton.protocol.ChatAction
@@ -74,14 +81,13 @@ import app.wonton.protocol.TimelineAction
 import app.wonton.protocol.TimelineTarget
 import app.wonton.ui.design.LocalWontonBottomInset
 import app.wonton.ui.design.LocalWontonTopInset
-import app.wonton.ui.design.WontonButton
-import app.wonton.ui.design.WontonButtonKind
 import app.wonton.ui.design.WontonDialog
 import app.wonton.ui.design.WontonDialogAction
+import app.wonton.ui.design.WontonButtonKind
 import app.wonton.ui.design.WontonIconButton
-import app.wonton.ui.design.WontonNotice
 import app.wonton.ui.design.WontonPushedBar
 import app.wonton.ui.design.WontonTheme
+import app.wonton.ui.design.toColor
 import app.wonton.ui.icons.Compose
 import app.wonton.ui.icons.Info
 import app.wonton.ui.icons.LockKey
@@ -222,7 +228,7 @@ internal fun RoomRoute(
     // 旁聊页没有房间的面板（ADR-0052）：面板跟着主对话。
     val panel = if (target.threadRoot == null) LocalChatPanel.current else null
     CompositionLocalProvider(
-        LocalFiles provides FilesContext(transfers, onAction, onReject),
+        LocalFiles provides FilesContext(target.roomId, transfers, onAction, onReject),
         LocalChatPanel provides panel,
     ) {
         RoomScreen(
@@ -531,22 +537,43 @@ private fun Conversation(
 }
 
 /**
- * 有消息解不开时的一行说明和入口：账号设过备份就输恢复密钥，没设过就请另一台设备确认。都去备份页。
- * 更新的核心给出的类别没有按钮，说明照常显示。
+ * 有消息解不开时的一行说明和入口：账号设过备份就输恢复密钥，没设过就请另一台设备确认，整行点去备份页（ADR-0046）。
+ * 这行常驻输入框上方，收成一行，别把能看到的消息挤走；更新的核心给出的类别没有按钮，说明照常显示。
  */
 @Composable
 private fun KeyNoticeRow(notice: KeyNotice, onOpenBackup: () -> Unit) {
-    Column(
+    val colors = WontonTheme.colors
+    Row(
         Modifier.fillMaxWidth()
-            .padding(horizontal = WontonTheme.spacing.pageInset, vertical = WontonTheme.spacing.s8),
+            .clickable(enabled = notice != KeyNotice.OTHER, onClick = onOpenBackup, role = Role.Button)
+            .heightIn(min = WontonTheme.size.target)
+            .padding(horizontal = WontonTheme.spacing.pageInset),
+        verticalAlignment = Alignment.CenterVertically,
+        horizontalArrangement = Arrangement.spacedBy(WontonTheme.spacing.s8),
     ) {
-        WontonNotice(WontonIcon.LockKey, stringResource(R.string.timeline_undecryptable_notice), isError = false) {
-            notice.action?.let { action ->
-                WontonButton(stringResource(action), onOpenBackup, Modifier.fillMaxWidth(), WontonButtonKind.PRIMARY)
-            }
-        }
+        Icon(
+            WontonIcon.LockKey,
+            // 装饰：右边的字说了要做什么。
+            contentDescription = null,
+            Modifier.size(WontonTheme.size.iconTiny),
+            tint = colors.textSecondary.toColor(),
+        )
+        Text(
+            stringResource(notice.text),
+            Modifier.weight(1f).padding(vertical = WontonTheme.spacing.s4),
+            style = WontonTheme.typography.body,
+            color = colors.textPrimary.toColor(),
+        )
     }
 }
+
+/** 按类别说明密钥怎么找回；两条路的入口都在备份页（ADR-0046）。 */
+private val KeyNotice.text: Int
+    get() = when (this) {
+        KeyNotice.ENTER_RECOVERY_KEY -> R.string.timeline_key_notice_recovery
+        KeyNotice.VERIFY_WITH_OTHER_DEVICE -> R.string.timeline_key_notice_verify
+        KeyNotice.OTHER -> R.string.timeline_undecryptable_notice
+    }
 
 /** 转发能去的房间：别的、已经加入、能发的房间。 */
 private fun RoomRow.forwardTarget(roomId: String): Boolean =
