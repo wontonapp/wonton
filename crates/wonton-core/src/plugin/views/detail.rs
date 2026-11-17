@@ -46,6 +46,19 @@ impl PluginManager {
         let devices = record
             .map(|record| super::super::device::granted(m, record, self.host.dev.as_deref()))
             .unwrap_or_default();
+        let mut permissions = super::super::views_permissions::permission_lines(
+            m,
+            record.map_or(&[][..], |record| &record.enabled_permissions),
+            langs,
+        );
+        if record.is_some_and(|record| record.has_nvme_admin())
+            && let Some(line) = permissions
+                .iter_mut()
+                .find(|line| line.permission == "devices.disk")
+        {
+            line.risk = Some(wonton_protocol::PermissionRisk::Highest);
+            line.notice = Some(l10n::text(langs, "permission-notice-highest-risk", &[]));
+        }
         Some(PluginDetail {
             source: origin.map(|o| o.repo.clone()),
             provider: origin.map(Origin::provider),
@@ -75,13 +88,7 @@ impl PluginManager {
             license_url: m.license_url.clone(),
             stars: None,
             release_notes: m.release_notes.as_ref().map(|t| langs.pick_owned(t)),
-            permissions: super::super::views_permissions::permission_lines(
-                m,
-                record
-                    .as_ref()
-                    .map_or(&[][..], |record| &record.enabled_permissions),
-                langs,
-            ),
+            permissions,
             widget_capabilities: super::super::manifest_widget::capabilities(m),
             requirements: Vec::new(),
             secret_inputs: self.installed_input_states(id, m, langs),

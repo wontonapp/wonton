@@ -42,6 +42,9 @@ pub struct InstalledDevice {
     pub name: String,
     pub gid: u32,
     pub system: bool,
+    /// 授权此服务对这块 NVMe 使用 SYS_ADMIN；旧记录缺此字段时不授予。
+    #[serde(default, skip_serializing_if = "std::ops::Not::not")]
+    pub nvme_admin: bool,
 }
 
 /// 一项可选权限现在开着，以及是谁、什么时候打开的（ADR-0057）。
@@ -138,6 +141,14 @@ pub struct InstalledRecord {
 }
 
 impl InstalledRecord {
+    pub(in crate::plugin) fn has_nvme_admin(&self) -> bool {
+        self.devices.iter().any(|device| {
+            device.class == super::manifest::DeviceClass::Disk
+                && device.target.starts_with("/dev/nvme")
+                && device.nvme_admin
+        })
+    }
+
     /// 记录里的插件包：引用的文件之外，静态网页只有文件摘要（文件在托管目录里）。
     pub fn package(
         &self,

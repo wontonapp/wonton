@@ -158,7 +158,7 @@ impl PluginManager {
             gone.push(disk.name.clone());
             required |= classes.contains(&DeviceClass::Disk);
             items.push(PluginDevice {
-                id: format!("disk:{}", disk.host_path),
+                id: device::disk_id(disk),
                 name: disk.name.clone(),
                 target: String::new(),
                 service: devices

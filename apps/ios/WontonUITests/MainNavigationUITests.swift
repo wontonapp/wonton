@@ -110,6 +110,25 @@ final class MainNavigationUITests: XCTestCase {
         assertOnChatRoot("关掉设置")
     }
 
+    func testSettingsLanguageExplainsSystemJump() {
+        openFromSidebar("Settings", "设置")
+        XCTAssertTrue(waitHittable(settingsClose), "侧边栏的设置没打开\n\(app.debugDescription)")
+
+        // 语言行的值是当前语言的自称（“English”），按钮的标签是“Language, English”。小屏上可能要滚一下。
+        let language = app.buttons.matching(NSPredicate(format: "label BEGINSWITH %@", "Language"))
+        if !waitHittable(language, timeout: 4) { app.swipeUp() }
+        XCTAssertTrue(waitHittable(language), "设置里没有语言行\n\(app.debugDescription)")
+        tap(language, "设置里的语言")
+        let alert = app.alerts.firstMatch
+        XCTAssertTrue(alert.waitForExistence(timeout: 8), "点语言没有出跳转说明\n\(app.debugDescription)")
+        XCTAssertTrue(alert.staticTexts.firstMatch.exists, "跳转说明是空的\n\(app.debugDescription)")
+        shot("settings-language-hint")
+
+        // 说明之后跳不跳系统设置，不在这里点：那会离开被测的 App，落点留给走查证明。
+        tap(app.alerts.buttons.matching(NSPredicate(format: "label == %@", "Cancel")), "说明的取消")
+        XCTAssertTrue(waitGone(app.alerts), "取消没关掉说明\n\(app.debugDescription)")
+    }
+
     // MARK: 聊天
 
     func testChatRoomBack() {

@@ -1,7 +1,7 @@
 <?xml version="1.0" encoding="utf-8"?>
 <resources>
     <!-- Title of the default agent picker, opened from Settings. -->
-    <string name="launcher_default_agent">デフォルトのエージェント</string>
+    <string name="launcher_default_agent">デフォルトのアシスタント</string>
     <!-- Shown on the launcher when no apps are installed yet. -->
     <string name="launcher_empty">アプリはまだインストールされていません</string>
     <!-- Button under it that opens the Store. -->

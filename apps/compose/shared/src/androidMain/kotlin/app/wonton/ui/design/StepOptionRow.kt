@@ -69,7 +69,7 @@ fun StepOptionRow(
                     )
                 }
                 blocked?.let {
-                    Text(it, style = WontonTheme.typography.supporting, color = textColor.toColor())
+                    Text(it, style = WontonTheme.typography.supporting, color = colors.danger.toColor())
                 }
             }
             if (selected) {
