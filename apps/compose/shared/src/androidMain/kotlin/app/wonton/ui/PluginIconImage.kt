@@ -46,7 +46,8 @@ fun PluginIconImage(icon: PluginIcon?, size: Dp, plugins: PluginsState) {
 fun PluginIconImage(icon: PluginIcon?, size: Dp, imageOrNull: suspend (PluginImage) -> ImageBitmap?) {
     val shape = pluginIconShape(size)
     val source = if (size > LARGE_FROM) icon?.large else icon?.small
-    val state by produceState<IconState>(IconState.Loading, source) {
+    // 没有图标可取时结果是确定的（占位），初始值直接取它：produceState 先发 Loading 会画出一帧灰底，快照也录不到稳态。
+    val state by produceState<IconState>(if (source == null) IconState.Missing else IconState.Loading, source) {
         value = source?.let { imageOrNull(it) }?.let { IconState.Loaded(it) } ?: IconState.Missing
     }
     val colors = WontonTheme.colors

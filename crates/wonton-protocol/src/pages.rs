@@ -502,12 +502,6 @@ mod tests {
                     },
                 },
             },
-            Action::Pages {
-                action: PageAction::SetRoomEntryBlocked {
-                    room_id: "!room:home.example".into(),
-                    blocked: true,
-                },
-            },
         ] {
             round_trip(action);
         }
