@@ -435,6 +435,7 @@ async fn upgrading_keeps_a_kept_option_and_turns_a_new_required_one_into_added()
         .preview_upgrade(
             &id(),
             super::super::upgrade::UpgradeTo::Upload(Box::new(next.clone())),
+            None,
             &Languages::default(),
         )
         .await
