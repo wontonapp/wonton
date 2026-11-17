@@ -12,7 +12,8 @@ use super::install_nvme_gate_tests::{
     answer_admin_card, optional_socket_compose, pending_admin_card, spawn_member_request,
     spawn_member_yaml,
 };
-use crate::l10n;
+use wonton_protocol::{CardLine, PluginTrust};
+
 use crate::plugin::languages::Languages;
 use crate::plugin::manifest::Permission;
 use crate::plugin::store::OpenedBy;
@@ -49,42 +50,42 @@ fn highest_line(card: &Value, permission: &str) -> bool {
     })
 }
 
-fn has_line(card: &Value, text: &str) -> bool {
-    card["lines"]
-        .as_array()
-        .is_some_and(|lines| lines.iter().any(|line| line["text"] == text))
+/// 卡片里和预览给的这一行相同的行有几行：提示行由预览给出，卡片原样带上。
+fn copies(card: &Value, line: &CardLine) -> usize {
+    card["lines"].as_array().map_or(0, |lines| {
+        lines
+            .iter()
+            .filter(|item| item["text"] == line.text.as_str())
+            .count()
+    })
 }
 
 fn installed(h: &Harness) -> bool {
     h.manager.store().load(&echo()).unwrap().is_some()
 }
 
-/// 成员按来源装一个必需 `privileged` 的上传包：第一张卡的版本行不写官方索引，来源只由未审核提示写一处；
-/// 第二张卡标出最高级，两张都批了才装，记录里的授予就是这一项必需权限。
+/// 成员按来源装一个必需 `privileged` 的上传包：核心认作上传的（版本行不写官方索引），来源只由预览的
+/// 未审核提示写一处；第二张卡标出最高级，两张都批了才装，记录里的授予就是这一项必需权限。
 #[tokio::test]
 async fn a_required_highest_permission_needs_the_second_card() {
     let h = Harness::start(None).await;
     let member = ask_admin_member(&h).await;
     let compose = highest_compose("privileged: true", "privileged");
     let package = PluginPackage::parse(&compose, &Languages::default()).unwrap();
-    let (source, digest) = staged(&h, package).await;
-    let request = json!({"source": source, "digest": digest, "plan": "", "grant": ["privileged"]});
+    let preview = h
+        .manager
+        .preview_upload(package, &h.manager.owner_languages())
+        .await
+        .unwrap();
+    assert_eq!(preview.trust, PluginTrust::Local);
+    let request = json!({"source": preview.source, "digest": preview.digest, "plan": "",
+        "grant": ["privileged"]});
     let waiting = spawn_member_request(&h, member, "/_wonton/api/plugins", request);
     let first = pending_admin_card(&h).await;
-    let langs = h.manager.owner_languages();
-    let version = |key: &str| l10n::text(&langs, key, &[("version", "0.1.0".into())]);
-    assert!(has_line(&first, &version("chat-card-version")), "{first}");
-    assert!(
-        !has_line(&first, &version("chat-card-version-official")),
-        "{first}"
-    );
-    assert!(
-        has_line(
-            &first,
-            &l10n::text(&langs, "install-unreviewed-upload", &[])
-        ),
-        "{first}"
-    );
+    assert!(!preview.notices.is_empty());
+    for notice in &preview.notices {
+        assert_eq!(copies(&first, notice), 1, "{first}");
+    }
     answer_admin_card(&h, &first, "approve").await;
     assert!(!installed(&h), "第二张没批之前不装");
     let second = pending_admin_card(&h).await;

@@ -12,6 +12,7 @@
 //!
 //! 能装（`Allow`）的人和主人不经卡片，不走这里。
 
+use sha2::Digest as _;
 use std::collections::BTreeSet;
 
 use hyper::HeaderMap;
@@ -215,7 +216,7 @@ pub(super) fn upgrade_changes_permissions(
 }
 
 /// 发卡时装着的插件里，请求会改到的部分。管理员批准时可能已经过了很久，这期间主人关掉的权限、
-/// 局域网开关、改过的设置和设备，不能被原样执行的请求悄悄改回去：执行前再比一次，对不上回 409 `changed`。
+/// 局域网开关、改过的设置、设备和密钥，不能被原样执行的请求悄悄改回去：执行前再比一次，对不上回 409 `changed`。
 #[derive(PartialEq, Eq)]
 pub(super) struct RecordState {
     version: String,
@@ -223,7 +224,8 @@ pub(super) struct RecordState {
     lan_webui: bool,
     devices: Vec<crate::plugin::store::InstalledDevice>,
     settings: std::collections::BTreeMap<String, serde_json::Value>,
-    secrets: BTreeSet<String>,
+    /// 密钥名 → 值的 SHA-256：主人改了值也要认出来，卡片挂着的这段时间不在内存里多留一份明文。
+    secrets: std::collections::BTreeMap<String, [u8; 32]>,
 }
 
 impl RecordState {
@@ -239,7 +241,12 @@ impl RecordState {
             .store()
             .secrets()
             .load(id)?
-            .map(|filled| filled.into_keys().collect())
+            .map(|filled| {
+                filled
+                    .into_iter()
+                    .map(|(name, value)| (name, sha2::Sha256::digest(&value).into()))
+                    .collect()
+            })
             .unwrap_or_default();
         let state = Self {
             version: record.version.clone(),

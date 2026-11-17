@@ -101,6 +101,40 @@ async fn owner_changes_while_the_card_waits_stop_the_upgrade() {
     assert!(record.enabled().is_empty());
 }
 
+/// 卡片挂着时主人改了已有密钥的值（`PUT …/secrets/{name}` 写的就是这份密钥存储）：名字没变，值变了，
+/// 批准后同样停在 409 `changed`。
+#[tokio::test]
+async fn an_owner_secret_change_while_the_card_waits_stops_the_upgrade() {
+    let h = Harness::start(None).await;
+    let member = ask_admin_member(&h).await;
+    h.manager
+        .install(&optional_socket_compose("0.1.0"), &[], Languages::default())
+        .await
+        .unwrap();
+    let secrets = h.manager.store().secrets();
+    let fill = |value: &str| {
+        secrets
+            .save(
+                &echo(),
+                &[("token".to_owned(), value.as_bytes().to_vec())].into(),
+            )
+            .unwrap();
+    };
+    fill("before");
+    let newer =
+        PluginPackage::parse(&optional_socket_compose("0.2.0"), &Languages::default()).unwrap();
+    let (source, digest) = staged(&h, newer).await;
+    let request = json!({"source": source, "digest": digest, "grant": []});
+    let waiting = spawn_member_request(&h, member, PATH, request);
+    let card = pending_admin_card(&h).await;
+    fill("after");
+    answer_admin_card(&h, &card, "approve").await;
+    let (status, body) = finished(waiting).await;
+    assert_eq!(status, StatusCode::CONFLICT, "{body}");
+    let record = h.manager.store().load(&echo()).unwrap().unwrap();
+    assert_eq!(record.version, "0.1.0");
+}
+
 /// 旧版必需、新版改成可选：App 按升级预览的开关发请求，预览沿用原来的生效状态（开着），
 /// 所以成员什么都没动时照常发卡，批准后它仍生效。
 #[tokio::test]

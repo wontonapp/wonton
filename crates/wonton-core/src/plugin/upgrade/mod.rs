@@ -238,15 +238,21 @@ fn upgrade_enabled(
         .collect()
 }
 
-/// 还没提交请求时的生效集：记录里开着的可选项，加上旧版必需、新版改成可选的项。后者装着时一直生效，
-/// 默认关掉就是升级悄悄收回了它；预览按开着画，App 照预览开关发出的请求就和装着的一样，要管理员批的
-/// 人不会因为没动开关而被当成改权限（ADR-0057“可选保留：沿用开关”）。
+/// 还没提交请求时的生效集：记录里开着、新版还是可选的项，加上旧版必需、新版改成可选的项。后者装着时一直
+/// 生效，默认关掉就是升级悄悄收回了它；预览按开着画，App 照预览开关发出的请求就和装着的一样，要管理员批的
+/// 人不会因为没动开关而被当成改权限（ADR-0057“可选保留：沿用开关”）。新版删掉或改成必需的项不留在这里：
+/// 必需的由 `granted` 授予，留着会被当成打开了不可选的项，升级失败。
 fn kept_enabled(
     manifest: &Manifest,
     record: &InstalledRecord,
     old: &Manifest,
 ) -> Vec<EnabledPermission> {
-    let mut enabled = record.enabled_permissions.clone();
+    let mut enabled: Vec<EnabledPermission> = record
+        .enabled_permissions
+        .iter()
+        .filter(|item| manifest.optional_permissions.contains_key(&item.permission))
+        .cloned()
+        .collect();
     for permission in manifest.optional_permissions.keys() {
         if !enabled.iter().any(|item| &item.permission == permission)
             && let Some(item) = carried(record, old, permission)

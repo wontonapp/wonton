@@ -480,6 +480,53 @@ async fn upgrading_away_the_optional_one_drops_the_mount() {
     assert!(record.enabled_permissions.is_empty());
 }
 
+/// Agent 的更新卡、静默更新沿用记录里的开关：新版删掉或改成必需的项不能还算“打开的可选项”，否则升级失败。
+#[tokio::test]
+async fn a_kept_upgrade_drops_an_option_the_new_version_removed() {
+    let (docker, m, _dir) = installed(&parsed(&optional()), &opened("docker.socket")).await;
+    let next = parsed(
+        &package(
+            "  web:\n    image: nginx\n  agent:\n    image: example/agent",
+            "  permissions: []",
+        )
+        .replace("version: 1.0.0", "version: 1.1.0"),
+    );
+    m.upgrade_checked(
+        next,
+        &[],
+        &UpgradeSwitches::Kept,
+        false,
+        &[],
+        Default::default(),
+    )
+    .await
+    .unwrap();
+    assert!(!has_socket(&docker, "agent"));
+    let record = m.store.load(&id()).unwrap().unwrap();
+    assert!(record.enabled_permissions.is_empty());
+}
+
+#[tokio::test]
+async fn a_kept_upgrade_grants_an_option_the_new_version_requires() {
+    let (docker, m, _dir) = installed(&parsed(&optional()), &opened("docker.socket")).await;
+    let next = parsed(&app("docker.socket", "").replace("version: 1.0.0", "version: 1.1.0"));
+    let granted = next.manifest.permissions.clone();
+    m.upgrade_checked(
+        next,
+        &granted,
+        &UpgradeSwitches::Kept,
+        false,
+        &[],
+        Default::default(),
+    )
+    .await
+    .unwrap();
+    assert!(has_socket(&docker, "agent"));
+    let record = m.store.load(&id()).unwrap().unwrap();
+    assert!(record.enabled_permissions.is_empty());
+    assert_eq!(record.granted_permissions, granted);
+}
+
 #[tokio::test]
 async fn the_detail_shows_the_switch_state_and_who_opened_it() {
     let (_docker, m, _dir) = installed(&parsed(&optional()), &[]).await;
