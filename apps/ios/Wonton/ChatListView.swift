@@ -512,8 +512,11 @@ private struct StartChatView: View {
 
     var body: some View {
         // 联系人由核心读取，观察其两份来源以便来源变化时重新查询。
+        // SwiftUI 的 body 是结果构建器，裸的 `_ = x` 编不过，只能用 `let _ =`（e167cc38 回退过一次）。
+        // swiftlint:disable redundant_discardable_let
         let _ = model.viewModel
         let _ = plugins.viewModel.installed
+        // swiftlint:enable redundant_discardable_let
         let input = peer.trimmingCharacters(in: .whitespacesAndNewlines)
         let contacts = model.core.chatContacts(query: input)
         ScrollView {
