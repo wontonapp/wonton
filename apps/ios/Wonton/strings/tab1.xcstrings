@@ -332,6 +332,36 @@
         }
       }
     },
+    "tab.degradedLine": {
+      "comment": "Supporting line on the banner for an app that is only partly working. The reason the server wrote stays collapsed in Details. No arguments.",
+      "extractionState": "manual",
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "The app is installed, but part of it isn't running. The exact reason is in Details."
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "应用已安装，但部分功能没有在运行；具体原因在「详情」里。"
+          }
+        },
+        "zh-Hant": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "應用程式已安裝，但部分功能未在執行；具體原因在「詳細資訊」裡。"
+          }
+        },
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "アプリはインストール済みですが、一部の機能が動いていません。詳しい原因は「詳細」にあります。"
+          }
+        }
+      }
+    },
     "tab.failedTitle": {
       "comment": "Failure title above the reason a page's app failed. Argument: the app name.",
       "extractionState": "manual",

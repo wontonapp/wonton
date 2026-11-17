@@ -47,6 +47,8 @@ internal fun PluginDetailStatus(detail: PluginDetail, plugins: PluginsState, wor
         plugins.viewModel.starts.firstOrNull { it.pluginId == installed.id }?.state,
         installed.status is PluginState.Stopped && !working && installed.id !in plugins.viewModel.pending,
         detail.title, stringResource(R.string.tab_stopped, detail.title), plugins::send,
+        // 安装失败并回滚的插件带着降级状态，但不是“已安装”。
+        degradedLine = installed.installFailure == null,
     )
 }
 
@@ -60,6 +62,7 @@ internal fun PluginStatusNotice(
     stoppedText: String,
     onAction: (Action) -> Unit,
     startingText: String = stringResource(R.string.tab_starting),
+    degradedLine: Boolean = true,
 ) {
     val launch = { onAction(Action.Plugins(PluginAction.StartPlugin(pluginId))) }
     when (start) {
@@ -73,7 +76,7 @@ internal fun PluginStatusNotice(
                 }
             }
         }
-        null -> PluginStateNotice(status, canStart, title, stoppedText, launch)
+        null -> PluginStateNotice(status, canStart, title, stoppedText, launch, degradedLine)
     }
 }
 
@@ -84,6 +87,7 @@ private fun PluginStateNotice(
     title: String,
     stoppedText: String,
     launch: () -> Unit,
+    degradedLine: Boolean,
 ) {
     when (status) {
         is PluginState.Stopped -> WontonNotice(WontonIcon.PauseFill, stoppedText, isError = false) {
@@ -91,8 +95,12 @@ private fun PluginStateNotice(
         }
         is PluginState.Degraded -> WontonNotice(
             WontonIcon.Warning, stringResource(R.string.tab_problem, title),
+            lines = if (degradedLine) listOf(stringResource(R.string.tab_degraded_line)) else emptyList(),
         ) {
-            ProblemDetail(status.reason, modifier = Modifier.heightIn(min = 48.dp))
+            // 原因是核心按语言写的，个别场景夹着原始报错；没有内容时不给一个展开是空的详情。
+            if (status.reason.isNotBlank()) {
+                ProblemDetail(status.reason, modifier = Modifier.heightIn(min = 48.dp))
+            }
         }
         is PluginState.NeedsConfiguration -> WontonNotice(
             WontonIcon.Warning, stringResource(R.string.launcher_badge_needs_configuration), isError = false,

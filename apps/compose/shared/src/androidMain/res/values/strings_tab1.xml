@@ -16,6 +16,8 @@
     <string name="tab_unpin_from_bar">Remove from navigation bar</string>
     <!-- Problem title when the app isn't ready to show its page. No arguments. -->
     <string name="tab_load_not_ready">The app isn\'t ready</string>
+    <!-- Supporting line on the banner for an app that is only partly working. The reason the server wrote stays collapsed in Details. No arguments. -->
+    <string name="tab_degraded_line">The app is installed, but part of it isn\'t running. The exact reason is in Details.</string>
     <string name="tab_media_prompt_microphone">Allow %1$s to use your microphone?</string>
     <string name="tab_media_system_settings">Open settings</string>
     <!-- Accessibility label of the fullscreen button in the page bar. No arguments. -->
