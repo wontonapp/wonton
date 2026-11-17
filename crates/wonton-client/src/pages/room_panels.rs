@@ -6,7 +6,6 @@ use super::*;
 pub(super) struct RoomPanelState {
     pub(super) panel: RoomPanel,
     pub(super) selected: Option<TabRef>,
-    pub(super) blocked: bool,
     pub(super) removed: Vec<String>,
     pub(super) view: watch::Sender<Option<Arc<RoomPanelView>>>,
     session: std::sync::Weak<MatrixSession>,
@@ -17,7 +16,6 @@ impl RoomPanelState {
         Self {
             panel,
             selected: None,
-            blocked: false,
             removed: Vec::new(),
             view: watch::Sender::new(None),
             session: std::sync::Weak::new(),
@@ -180,7 +178,6 @@ impl PagesLink {
                 room_id: room_id.parse().expect("registered Matrix room ID"),
                 panel: room_panel_items(&state, &room.panel, &scope, plugins),
                 selected: room.selected.clone(),
-                blocked: room.blocked,
                 widgets: if self.plugins.is_external() {
                     Vec::new()
                 } else {

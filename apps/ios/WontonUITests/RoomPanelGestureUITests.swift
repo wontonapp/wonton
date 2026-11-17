@@ -1,9 +1,7 @@
 import XCTest
 
-/// 房间里到底后往上推出面板（ADR-0052）：不要后端，用 `WONTON_UI_FAKE` 的假数据。
-///
-/// 假数据的时间线里有几条比屏幕还高的消息，最后一条也是；进房间落在靠前的一条上，点“回到底部”再往上推，
-/// 和开发栈上房间走屏的顺序一样。
+/// 房间顶栏按钮打开面板（ADR-0052）：不要后端，用 `WONTON_UI_FAKE` 的假数据。
+/// 高消息贴底后继续上滑不打开面板；按钮打开整页，网页栏缘收回和聊天条拖动保留。
 final class RoomPanelGestureUITests: XCTestCase {
     private var app: XCUIApplication!
 
@@ -11,8 +9,8 @@ final class RoomPanelGestureUITests: XCTestCase {
         continueAfterFailure = false
     }
 
-    /// 回到底部后，最后一条消息的最后一行真的在输入框上面；从这里往上推出面板。
-    func testPullFromBottomAfterTallMessages() {
+    /// 回到底部后继续上滑只滚消息；顶栏按钮仍可打开整页面板。
+    func testScrollingLeavesPanelClosedAndButtonOpensFull() {
         launch()
         let field = enterRoom()
         note("landed \(scrollState)")
@@ -31,10 +29,12 @@ final class RoomPanelGestureUITests: XCTestCase {
         XCTAssertGreaterThan(last.frame.minY, app.frame.midY, "最后一行不在底部：\(last.frame) \(scrollState)")
 
         pullUp(above: field)
-        note("after-pull \(scrollState)")
-        shot("03-pulled")
-        XCTAssertTrue(app.otherElements["chatPanel"].waitForExistence(timeout: 5),
-                      "到底后往上推没有面板：\(scrollState)")
+        XCTAssertFalse(app.otherElements["chatPanel"].exists, "到底后上滑打开了面板")
+        tap(app.buttons["panelOpen"])
+        let panel = app.otherElements["chatPanel"]
+        XCTAssertTrue(panel.waitForExistence(timeout: 5), "房间按钮没有打开面板")
+        XCTAssertTrue(wait(5) { panel.value as? String == "full" }, "有页面的房间按钮没有直接进入整页")
+        shot("03-button-full")
     }
 
     /// 房间的面板到了整页：网页里面起手的下拉归网页，面板不动；从网页顶边附近起手才退回第 1 级。
@@ -44,14 +44,9 @@ final class RoomPanelGestureUITests: XCTestCase {
         let safeTop = app.buttons["Back"].frame.minY
         tap(app.buttons.matching(NSPredicate(format: "label BEGINSWITH %@", "Back to bottom")).firstMatch)
         Thread.sleep(forTimeInterval: 2)
-        pullUp(above: field)
+        tap(app.buttons["panelOpen"])
         XCTAssertTrue(app.webViews.staticTexts["Fixture player"].waitForExistence(timeout: 20), "面板网页没加载出来")
-        XCTAssertTrue(onScreen(field), "往上推一小段就进了整页")
-        // 露出的那条聊天页往外推，进整页。
-        app.coordinate(withNormalizedOffset: CGVector(dx: 0.5, dy: 0.1))
-            .press(forDuration: 0.05, thenDragTo: app.coordinate(withNormalizedOffset: CGVector(dx: 0.5, dy: 0.02)),
-                   withVelocity: .slow, thenHoldForDuration: 0)
-        XCTAssertTrue(wait(5) { !self.onScreen(field) }, "在露出的聊天条上推没有到整页")
+        XCTAssertTrue(wait(5) { !self.onScreen(field) }, "有页面的房间按钮没有直接进入整页")
         shot("11-room-full")
 
         dragDown(fromY: app.frame.height * 0.45)
@@ -61,6 +56,10 @@ final class RoomPanelGestureUITests: XCTestCase {
         dragDown(fromY: safeTop + 12)
         XCTAssertTrue(wait(5) { self.onScreen(field) }, "从网页顶边起手的下拉没回第 1 级")
         shot("13-back-to-peek")
+        app.coordinate(withNormalizedOffset: CGVector(dx: 0.5, dy: 0.1))
+            .press(forDuration: 0.05, thenDragTo: app.coordinate(withNormalizedOffset: CGVector(dx: 0.5, dy: 0.02)),
+                   withVelocity: .slow, thenHoldForDuration: 0)
+        XCTAssertTrue(wait(5) { !self.onScreen(field) }, "露出的聊天条拖动不能回到整页")
     }
 }
 
@@ -82,7 +81,7 @@ extension RoomPanelGestureUITests {
         return field
     }
 
-    /// 手指从输入框上面一点往上推到第 1 级：慢拖，不让惯性把列表甩走；不推太远，一口气推过头会直接进整页。
+    /// 从消息区慢速上滑，确认长距离滚动不会再触发面板入口。
     private func pullUp(above field: XCUIElement) {
         let origin = app.coordinate(withNormalizedOffset: .zero)
         let start = origin.withOffset(CGVector(dx: app.frame.midX, dy: field.frame.minY - 40))
