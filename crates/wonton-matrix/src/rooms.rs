@@ -821,8 +821,8 @@ fn profile_name(profile: &TimelineDetails<Profile>, sender: &OwnedUserId) -> Str
         TimelineDetails::Ready(Profile {
             display_name: Some(name),
             ..
-        }) => name.clone(),
-        _ => sender.to_string(),
+        }) if !name.trim().is_empty() => name.clone(),
+        _ => crate::message::fallback_name(sender).to_owned(),
     }
 }
 

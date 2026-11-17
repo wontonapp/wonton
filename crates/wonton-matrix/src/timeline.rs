@@ -15,7 +15,7 @@ use matrix_sdk_ui::timeline::{
     TimelineItemContent, TimelineItemKind, VirtualTimelineItem, default_event_filter,
 };
 
-use crate::message::{MemberNames, Message, message, sender_name};
+use crate::message::{MemberNames, Message, fallback_name, message, sender_name};
 
 /// 时间线里的一条。
 #[derive(Clone, Debug, PartialEq)]
@@ -87,12 +87,14 @@ fn event_kind(event: &EventTimelineItem, names: &MemberNames) -> EntryKind {
     if let TimelineItemContent::ProfileChange(change) = event.content() {
         let user_id = change.user_id().to_owned();
         let name_change = change.displayname_change();
-        let name = name_change.map_or_else(
-            || names.name(&user_id),
-            |change| change.new.clone().unwrap_or_else(|| user_id.to_string()),
-        );
-        let previous_name =
-            name_change.map(|change| change.old.clone().unwrap_or_else(|| user_id.to_string()));
+        let shown = |name: &Option<String>| {
+            name.as_deref()
+                .filter(|name| !name.trim().is_empty())
+                .unwrap_or_else(|| fallback_name(&user_id))
+                .to_owned()
+        };
+        let name = name_change.map_or_else(|| names.name(&user_id), |change| shown(&change.new));
+        let previous_name = name_change.map(|change| shown(&change.old));
         return EntryKind::ProfileChange {
             user_id,
             name,
@@ -111,6 +113,7 @@ fn notice(event: &EventTimelineItem, names: &MemberNames) -> String {
             // 成员事件自己带着显示名（加入时设好的），没有时用本机已有的成员显示名。
             let user = change
                 .display_name()
+                .filter(|name| !name.trim().is_empty())
                 .unwrap_or_else(|| names.name(change.user_id()));
             membership_notice(&user, change.change())
         }

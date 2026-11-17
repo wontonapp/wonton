@@ -166,9 +166,9 @@ impl NoticeRoom {
     }
 }
 
-/// 给核心账号设显示名。已经是这个名字就不写：改名会在核心的每个房间里留一条记录。名字只影响通知的标题，设不上不能挡住
-/// 主人要确认的卡片，所以只记错误日志。
-async fn name_core_account(core: &Session<'_>) {
+/// 给核心账号设显示名。已经是这个名字就不写：改名会在核心的每个房间里留一条记录。名字只影响通知的标题和家庭群里建群的那条
+/// 说明，设不上不能挡住主人要确认的卡片和建群，所以只记错误日志。
+pub(super) async fn name_core_account(core: &Session<'_>) {
     let named = async {
         if core.display_name().await?.as_deref() != Some(ROOM_NAME) {
             core.set_display_name(ROOM_NAME).await?;
