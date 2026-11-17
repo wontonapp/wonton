@@ -176,6 +176,24 @@ android {
     }
 }
 
+// Robolectric 默认在测试进程里自己连 Maven 拉 android-all-instrumented，绕开 Gradle 的依赖缓存，网络一抖测试就失败。
+// 改由 Gradle 解析（进 Gradle 缓存，CI 由 setup-gradle 缓存），同步成 Robolectric 认的平铺目录（<artifactId>-<version>.jar），
+// 测试里开 robolectric.offline 只读这个目录。缺哪个 SDK 会在测试里报 Unable to locate dependency，不会退回联网。
+// 每个 SDK 一个 configuration：同一模块的几个版本放在一起，Gradle 冲突解析只留最高的那个。
+fun robolectricSdk(name: String): Configuration = configurations.create(name) {
+    isCanBeConsumed = false
+    isTransitive = false
+}
+val robolectricSdk32 = robolectricSdk("robolectricSdk32")
+val robolectricSdk36 = robolectricSdk("robolectricSdk36")
+
+val robolectricSdkDir = layout.buildDirectory.dir("robolectric-sdk")
+
+val prepareRobolectricSdks = tasks.register<Sync>("prepareRobolectricSdks") {
+    from(robolectricSdk32, robolectricSdk36)
+    into(robolectricSdkDir)
+}
+
 dependencies {
     implementation(project(":shared"))
     implementation(libs.androidx.activity.compose)
@@ -190,6 +208,8 @@ dependencies {
     testImplementation(libs.junit)
     testImplementation(libs.robolectric)
     testImplementation(libs.androidx.test.junit)
+    robolectricSdk32(libs.robolectric.android.all.api32)
+    robolectricSdk36(libs.robolectric.android.all.api36)
     // 仪器测试（夜跑用）：启动 App 到首屏的骨架和 Compose 语义树断言。
     androidTestImplementation(libs.junit)
     androidTestImplementation(libs.androidx.test.junit)
@@ -213,10 +233,17 @@ dependencies {
 
 /** Robolectric 要读 strings.xml 和各语言的 values-*，资源得进单元测试。 */
 tasks.withType<Test>().configureEach {
-    // Robolectric 第一次跑会按系统属性里的代理下载 android-all（CI 和本机都靠 https_proxy）。
-    listOf("http.proxyHost", "http.proxyPort", "https.proxyHost", "https.proxyPort").forEach { key ->
-        System.getProperty(key)?.let { systemProperty(key, it) }
-    }
+    // 换 SDK jar 要让测试重跑；Robolectric 按文件名找，绝对路径不进缓存键（所以目录走参数提供者，不写进 systemProperty）。
+    inputs.files(prepareRobolectricSdks)
+        .withPropertyName("robolectricSdks")
+        .withPathSensitivity(PathSensitivity.NAME_ONLY)
+    systemProperty("robolectric.offline", "true")
+    val sdkDir = robolectricSdkDir
+    jvmArgumentProviders.add(
+        CommandLineArgumentProvider {
+            listOf("-Drobolectric.dependency.dir=${sdkDir.get().asFile.absolutePath}")
+        },
+    )
     // JDK 21 默认不导出 Robolectric 在 API 36 上要用的内部类（jdk.internal.access、FileDescriptor）。
     jvmArgs(
         "--add-exports=java.base/jdk.internal.access=ALL-UNNAMED",
