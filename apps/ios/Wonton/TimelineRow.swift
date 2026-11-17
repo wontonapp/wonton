@@ -148,6 +148,11 @@ private struct MessageBubble: View {
     @State private var isChoosingFailed = false
     @Environment(\.wontonColors) private var colors
 
+    /// 菜单里写的发送时间：完整日期加时间（ADR-0029 的时间不常驻气泡，这里是单条查询）。
+    private var sentAt: String {
+        TimelineRow.date(message.timestampMs).formatted(.dateTime.year().month().day().hour().minute())
+    }
+
     /// 自己的气泡靠右，相接的是右边的角；别人的相反。
     private var shape: UnevenRoundedRectangle {
         let full = WontonTheme.radii.bubble
@@ -179,6 +184,11 @@ private struct MessageBubble: View {
                     .contextMenu {
                         ForEach(Array(message.actions.enumerated()), id: \.offset) { _, action in
                             menuItem(action)
+                        }
+                        // 时间不贴在气泡上（ADR-0029），这里是查单条时间的入口：带完整日期，隔了天也对得上。
+                        Section {
+                            Text(.Message1.messageSentAt(sentAt))
+                                .accessibilityIdentifier("messageSentAt")
                         }
                     }
                 // 有回复的普通消息下面挂着旁聊的卡片（ADR-0093 §6）。

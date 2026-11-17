@@ -49,7 +49,7 @@ iOS 26 的标准导航、菜单和系统面板由平台负责材质与反馈；�
 
 Android 的 Material 3 组件取色来自令牌：`WontonTheme` 把令牌映射进 `MaterialTheme`，不用动态取色和默认紫。选中的指示条用 `accentFill`，选中时再换字或图标，这条规则不变。
 
-消息的时间和送达状态不贴在气泡上（两端都是）：隔了 15 分钟以上的那条上方居中写一行时间，日期分隔线带着当天第一条的时间；“已送达”“已读”只写在自己发的最后一条下面。哪条上方写时间、哪条下面写状态由核心给（`TimelineMessage.starts_time_group`、`receipt`），壳不自己比时间。其余消息的时间，iOS 左滑整列露出来（同 iMessage），Android 点一下气泡露出来（同 Google Messages）。
+消息的时间和送达状态不贴在气泡上（两端都是）：隔了 15 分钟以上的那条上方居中写一行时间，日期分隔线带着当天第一条的时间；“已送达”“已读”只写在自己发的最后一条下面。哪条上方写时间、哪条下面写状态由核心给（`TimelineMessage.starts_time_group`、`receipt`），壳不自己比时间。其余消息的时间，iOS 左滑整列露出来（同 iMessage），Android 点一下气泡露出来（同 Google Messages）；单条时间的查询入口在长按菜单底部（iOS，盲测 {{SECRET_rwshghnz}}）：带完整日期和时间，不是常驻显示。
 
 Android 的长按菜单用 `Modifier.blur` 模糊背后的页面，它只在 Android 12 及以上生效。Android 10 和 11（`minSdk` 是 29）上只把页面压暗。
 
