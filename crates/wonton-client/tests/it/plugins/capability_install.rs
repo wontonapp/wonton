@@ -356,3 +356,36 @@ async fn a_failing_provider_preview_keeps_the_real_failure_reason() {
         "{state:?}"
     );
 }
+
+/// 同一提供方补的几个能力里高权限的排在后面：这一行仍要醒目（emphasis 取各行 high_privilege 的“或”），
+/// 能力名合并在同一行里。
+#[tokio::test]
+async fn the_provider_notice_stays_prominent_when_the_high_privilege_capability_comes_second() {
+    let rig = Rig::new().await;
+    rig.connected().await;
+    let mut consumer = consumer_preview();
+    let mut plain = requires("indexer");
+    plain.providers[0].high_privilege = false;
+    consumer.missing_requires = vec![plain, requires("agent_acp")];
+    answer_previews(&rig, &consumer, &provider_preview());
+
+    let shown = rig
+        .app
+        .preview_install("github:owner/app.photos".to_owned())
+        .await
+        .unwrap();
+    let noticed = shown
+        .notices
+        .iter()
+        .filter(|line| line.text.contains("下载器"))
+        .count();
+    assert_eq!(noticed, 1, "同一个提供方只写一行：{:?}", shown.notices);
+    let line = shown
+        .notices
+        .iter()
+        .find(|line| line.text.contains("下载器"))
+        .expect("确认页要写明会一起装提供方");
+    assert!(line.emphasis, "第二个能力是高权限时这一行仍要醒目");
+    assert!(line.text.contains("indexer"), "{line:?}");
+    assert!(line.text.contains("agent_acp"), "{line:?}");
+}

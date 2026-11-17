@@ -669,24 +669,36 @@ fn enabled_permissions(preview: &InstallPreview) -> Vec<String> {
 
 /// 确认页写明会一起装的提供方（ADR-0053）：安装确认页就是这次授权的确认，高权限的提供方要醒目。
 pub(super) fn provider_notices(preview: &mut InstallPreview) {
-    let mut noticed = HashSet::new();
+    // 同一个提供方补几个缺的能力时只写一行：能力名列全，emphasis 取各行 high_privilege 的“或”
+    //（同一个插件对不同能力的高权限标记可以不一样），和 [`PluginsLink::providers`] 的一次安装对上。
+    let mut rows: Vec<(&str, &str, Vec<&str>, bool)> = Vec::new();
     for missing in &preview.missing_requires {
         let Some(provider) = missing.providers.first() else {
             continue;
         };
-        // 同一个提供方补几个缺的能力时只写一行，和 [`PluginsLink::providers`] 的一次安装对上。
-        if !noticed.insert(provider.id.as_str()) {
-            continue;
+        match rows.iter_mut().find(|(id, ..)| *id == provider.id.as_str()) {
+            Some((_, _, capabilities, emphasis)) => {
+                capabilities.push(missing.capability.as_str());
+                *emphasis |= provider.high_privilege;
+            }
+            None => rows.push((
+                provider.id.as_str(),
+                provider.title.as_str(),
+                vec![missing.capability.as_str()],
+                provider.high_privilege,
+            )),
         }
+    }
+    for (_, title, capabilities, emphasis) in rows {
         preview.notices.push(CardLine {
             text: l10n!(
                 CATALOG,
                 language(),
                 "plugins-tasks-install-together",
-                title = provider.title.as_str(),
-                capability = missing.capability.as_str()
+                title = title,
+                capability = capabilities.join(", ").as_str()
             ),
-            emphasis: provider.high_privilege,
+            emphasis,
         });
     }
 }
