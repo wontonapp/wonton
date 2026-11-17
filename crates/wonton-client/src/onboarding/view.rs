@@ -160,7 +160,9 @@ fn project_default_bot_visibility(
     onboarding: &Onboarding,
     default_agent: Option<&OnboardingAgent>,
 ) -> DefaultBotVisibility {
-    if state.loading || state.bot_refreshing || state.bot_problem.is_some() {
+    // 只在 Bot 身份本身待核实（静默重取在飞、上次取失败）时收起；整页刷新（loading）不掩盖
+    // 最新一份已核实的身份，否则完成引导后 Bot 一直点不了，等旧 GET 的每条测试也钉不住。
+    if state.bot_refreshing || state.bot_problem.is_some() {
         DefaultBotVisibility::Unknown
     } else if onboarding.primary_agent.is_none() {
         DefaultBotVisibility::Absent

@@ -9,6 +9,8 @@ fn hide_unverified(plugin: &mut InstalledPlugin) {
     match (plugin.default_bot_visibility, plugin.bot_user_id.is_some()) {
         (Some(DefaultBotVisibility::Visible), true) if valid_id => {}
         (Some(DefaultBotVisibility::Absent | DefaultBotVisibility::Unknown), false) => {}
+        // 没 Bot、核心也没发可见性（旧核心）：没有要藏的身份，原样透传；视图把 None 也当 Unknown。
+        (None, false) => {}
         _ => {
             if plugin.bot_user_id.is_some()
                 || plugin.default_bot_visibility == Some(DefaultBotVisibility::Visible)

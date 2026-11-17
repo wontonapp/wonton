@@ -512,8 +512,8 @@ private struct StartChatView: View {
 
     var body: some View {
         // 联系人由核心读取，观察其两份来源以便来源变化时重新查询。
-        let _ = model.viewModel
-        let _ = plugins.viewModel.installed
+        _ = model.viewModel
+        _ = plugins.viewModel.installed
         let input = peer.trimmingCharacters(in: .whitespacesAndNewlines)
         let contacts = model.core.chatContacts(query: input)
         ScrollView {
