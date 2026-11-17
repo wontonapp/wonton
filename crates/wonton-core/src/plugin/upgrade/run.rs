@@ -129,18 +129,7 @@ impl PluginManager {
                 &[],
             )));
         }
-        let enabled: Vec<EnabledPermission> = requested
-            .iter()
-            .filter(|item| manifest.optional_permissions.contains_key(&item.permission))
-            .map(|item| {
-                record
-                    .enabled_permissions
-                    .iter()
-                    .find(|old| old.permission == item.permission)
-                    .cloned()
-                    .unwrap_or_else(|| item.clone())
-            })
-            .collect();
+        let enabled = super::upgrade_enabled(manifest, &record, requested);
         check_permissions(manifest, granted, &enabled, &langs)?;
         super::super::capabilities::unsupported_model_dependency(manifest, &langs)?;
         if super::super::install_hosted::is_containerless(manifest) {
