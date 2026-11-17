@@ -102,6 +102,8 @@ pub struct GrantedDevice {
     pub target: String,
     pub gid: u32,
     pub system: bool,
+    #[serde(default)]
+    pub nvme_admin: bool,
 }
 
 /// 一次安装交给服务的全部设备：服务名 → 设备。
@@ -323,14 +325,19 @@ pub fn resolve(
             {
                 return Err(SelectionProblem::Twice(id.clone()));
             }
-        } else if let Some(path) = id.strip_prefix("disk:") {
+        } else if let Some(rest) = id.strip_prefix("disk:") {
+            let (path, nvme) = rest
+                .strip_prefix("nvme:")
+                .map_or((rest, false), |path| (path, true));
             if devices.disk.is_empty() {
                 return Err(SelectionProblem::NotADisk);
             }
             let candidate = listing
                 .disks
                 .iter()
-                .find(|candidate| candidate.host_path == path)
+                .find(|candidate| {
+                    candidate.host_path == path && candidate.node.starts_with("nvme") == nvme
+                })
                 .ok_or_else(|| SelectionProblem::Unavailable(id.clone()))?;
             if !disk_seen.insert(path) {
                 return Err(SelectionProblem::Twice(id.clone()));
@@ -351,12 +358,23 @@ pub fn resolve(
     Ok(selection)
 }
 
+/// 选择绑定盘的类型，避免 by-id 在确认后改指 NVMe 时把 SATA 确认变成 SYS_ADMIN 授权。
+pub(super) fn disk_id(candidate: &Candidate) -> String {
+    let kind = if candidate.node.starts_with("nvme") {
+        "nvme:"
+    } else {
+        ""
+    };
+    format!("disk:{kind}{}", candidate.host_path)
+}
+
 /// 按选择、清单和生效权限算出交给各服务的设备：可选权限关着的类不交。
 pub fn grant(
     devices: &ManifestDevices,
     selection: &Selection,
     granted: &[Permission],
     udev: bool,
+    nvme_confirmed: bool,
 ) -> DeviceGrant {
     let mut grant = DeviceGrant {
         udev,
@@ -380,6 +398,7 @@ pub fn grant(
                 source: candidate.host_path.clone(),
                 target: target.clone(),
                 gid: candidate.gid,
+                nvme_admin: false,
                 system: false,
             });
     }
@@ -394,6 +413,7 @@ pub fn grant(
                     target: disk_target(index, nvme),
                     gid: disk.gid,
                     system: disk.system,
+                    nvme_admin: nvme && nvme_confirmed,
                 });
                 if nvme {
                     // NVMe 的管理命令走控制器，SMART 要它。
@@ -403,6 +423,7 @@ pub fn grant(
                         target: controller_target(index),
                         gid: disk.gid,
                         system: disk.system,
+                        nvme_admin: false,
                     });
                 }
             }
@@ -461,6 +482,7 @@ pub fn record(grant: &DeviceGrant, selection: &Selection) -> Vec<super::store::I
                 name: name(&device.source),
                 gid: device.gid,
                 system: device.system,
+                nvme_admin: device.nvme_admin,
             })
         })
         .collect()
@@ -591,6 +613,7 @@ impl super::manager::PluginManager {
         manifest: &Manifest,
         granted: &[Permission],
         chosen: &[String],
+        nvme_confirmed: bool,
         langs: &Languages,
     ) -> Result<(DeviceGrant, Vec<super::store::InstalledDevice>), super::manager::InstallError>
     {
@@ -613,7 +636,7 @@ impl super::manager::PluginManager {
         check_usb(devices, granted, &listing, langs)?;
         let selection = resolve(devices, chosen, &listing, granted)
             .map_err(|problem| selection_error(problem, langs))?;
-        let grant = grant(devices, &selection, granted, listing.udev);
+        let grant = grant(devices, &selection, granted, listing.udev, nvme_confirmed);
         let record = record(&grant, &selection);
         Ok((grant, record))
     }
@@ -676,6 +699,15 @@ impl super::manager::PluginManager {
                         &[("devices", candidate.name.as_str().into())],
                     ))
                 })?;
+            if candidate.class == DeviceClass::Disk
+                && candidate.node.starts_with("nvme") != current.node.starts_with("nvme")
+            {
+                return Err(super::manager::InstallError::DeviceUnavailable(text(
+                    langs,
+                    "plugin-install-device-gone",
+                    &[("devices", candidate.name.as_str().into())],
+                )));
+            }
             *candidate = current.clone();
         }
         if granted.contains(&Permission::DevicesSerial)
@@ -689,7 +721,7 @@ impl super::manager::PluginManager {
                 langs,
             ));
         }
-        let grant = grant(devices, &selection, granted, listing.udev);
+        let grant = grant(devices, &selection, granted, listing.udev, true);
         let record = record(&grant, &selection);
         Ok((grant, record))
     }

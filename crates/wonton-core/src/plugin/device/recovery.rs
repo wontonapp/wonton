@@ -12,7 +12,7 @@ use super::super::health::{self, Target};
 use super::super::languages::Languages;
 use super::super::lifecycle::Undo;
 use super::super::manager::{Deployed, InstallError, PluginManager};
-use super::super::manifest::{Manifest, Permission, PluginId};
+use super::super::manifest::{DeviceClass, Manifest, Permission, PluginId};
 use super::super::names::LABEL_PLUGIN;
 use super::super::package::PluginPackage;
 use super::super::render::{Deployment, InstallContext, render, start_order};
@@ -53,7 +53,20 @@ impl PluginManager {
             }
         }
         let udev = self.host.udev.as_deref().is_some_and(Path::is_dir);
-        let mut result = grant(devices, &selection, &granted, udev);
+        let mut result = grant(devices, &selection, &granted, udev, false);
+        for (service, devices) in &mut result.services {
+            for device in devices {
+                device.nvme_admin = device.class == DeviceClass::Disk
+                    && device.target.starts_with("/dev/nvme")
+                    && record.devices.iter().any(|saved| {
+                        saved.class == DeviceClass::Disk
+                            && saved.service == *service
+                            && saved.source == device.source
+                            && saved.target.starts_with("/dev/nvme")
+                            && saved.nvme_admin
+                    });
+            }
+        }
         for (service, devices) in &result.services {
             for device in devices {
                 if metadata(&visible(self.host.dev.as_deref(), &device.source), &langs)?.is_none() {
