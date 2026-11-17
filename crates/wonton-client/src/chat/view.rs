@@ -14,8 +14,8 @@ use wonton_matrix::{
     SendStatus, TimelineEntry, UserId, VectorDiff, Verification,
 };
 use wonton_protocol::{
-    ChatFailure, ChatLayout, CoreError, DeviceVerification, EncryptionStatus, FileLinks,
-    ImageCaption, ImageContent, KeyNotice, MediaHandle, MessageContent, MessageSummary,
+    ChatFailure, ChatLayout, CoreError, DeviceVerification, EncryptionStatus, FileAttachment,
+    FileLinks, ImageCaption, ImageContent, KeyNotice, MediaHandle, MessageContent, MessageSummary,
     QuotedMessage, RecoveryStatus, RichBlock, RoomMembership, RoomPreview, RoomRow, SendState,
     TimelineContent, TimelineDiff, TimelineItem, TimelineMessage, extract_file_links,
 };
@@ -174,7 +174,13 @@ pub(crate) fn timeline_item(
                     MessageBody::Text(text) | MessageBody::Notice(text) => text.clone(),
                     _ => String::new(),
                 };
-                bots.content(status, &body, message.sender.as_str(), &message.sender_name)
+                bots.content(
+                    status,
+                    &body,
+                    message.sender.as_str(),
+                    &message.sender_name,
+                    message.timestamp_ms,
+                )
             }
             // 旁聊的结果行和带标记的根（ADR-0093 §4）。
             _ => match bots.side_chats().content(&message) {
@@ -293,8 +299,19 @@ pub(super) fn message_content(
         },
         MessageBody::Undecryptable => MessageContent::Undecryptable,
         MessageBody::Redacted => MessageContent::Redacted,
-        MessageBody::File(_) => MessageContent::Unsupported {
-            kind: "m.file".to_owned(),
+        MessageBody::File(file) => MessageContent::File {
+            file: FileAttachment {
+                media: MediaHandle {
+                    token: file.media_token(),
+                },
+                filename: file.filename,
+                mime_type: file.mime_type,
+                size: file.size,
+                caption: file.caption.map(|body| ImageCaption {
+                    blocks: blocks_of(&body, is_own, links),
+                    body,
+                }),
+            },
         },
         MessageBody::Other { kind } => MessageContent::Unsupported { kind },
     }

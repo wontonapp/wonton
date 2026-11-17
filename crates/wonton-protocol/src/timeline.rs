@@ -48,11 +48,6 @@ pub struct TimelineUpdate {
     /// 房间面板上次看的那一页（本机记住，不同步），下次拉开还是它。没记住时为 `None`。
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub panel_selected: Option<crate::TabRef>,
-    /// 房间里另有东西开着（长按菜单、多选模式、转发或删除确认、交给 Bot 的选择、斜杠命令列表）：
-    /// 上推拉面板的入口不响应。壳只读它，不自己合成；状态由
-    /// [`PageAction::SetRoomEntryBlocked`](crate::PageAction::SetRoomEntryBlocked) 报告，换房间后按没盖算。
-    #[serde(default)]
-    pub entry_blocked: bool,
     /// 时间线里有本设备解不开的消息时，给主人的下一步；没有或者这台设备已经有密钥时长这样。
     ///
     /// 由核心按账号的恢复状态给出，壳在输入栏上方显示一行说明和按钮，按类别跳到备份页。
@@ -203,6 +198,9 @@ pub enum TimelineContent {
         choices: Vec<AgentRunChoice>,
         /// 发这条状态的 Bot 的显示名，没有设置时是用户 ID。壳在 `choices` 区标明是谁在问。
         sender_name: String,
+        /// 这条状态消息的发送时间（Unix 毫秒）。编辑不改它：状态是 `Working` 时，壳从它算
+        /// 这轮已经等了多久；其余状态用不到。
+        timestamp_ms: u64,
     },
     /// 一行说明，比如成员加入、离开，房间改名。文字由核心给出。
     Notice {
@@ -359,6 +357,11 @@ pub enum MessageContent {
     Image {
         image: ImageContent,
     },
+    /// 文件消息（`m.file`）。字节经 `ClientCore::load_media` 取（同图片，核心负责下载、解密和缓存），
+    /// 壳画文件卡片，下载后交给系统打开或分享（ADR-0020 的信任边界：不在 App 里渲染）。
+    File {
+        file: FileAttachment,
+    },
     /// 确认卡片（ADR-0016）。只有核心账号发的才是卡片，别人发的同样结构的内容是 [`MessageContent::Text`]。卡片靠编辑
     /// 消息更新状态，[`TimelineMessage::edited`] 总是假。
     Confirmation {
@@ -482,7 +485,7 @@ pub struct ImageContent {
     pub caption: Option<ImageCaption>,
 }
 
-/// 图片的说明文字。
+/// 图片的说明文字。图片和文件的说明同用这个（Matrix v1.10 的媒体说明）。
 #[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize)]
 #[cfg_attr(feature = "uniffi", derive(uniffi::Record))]
 pub struct ImageCaption {
@@ -490,6 +493,23 @@ pub struct ImageCaption {
     pub body: String,
     /// 排好版的样子，壳画这个，同 [`MessageContent::Text`] 的 `blocks`。
     pub blocks: Vec<RichBlock>,
+}
+
+/// 文件消息（`m.file`）的附件。和 [`ImageContent`] 的差别：没有像素尺寸和缩略图，点开走文件卡片。
+#[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize)]
+#[cfg_attr(feature = "uniffi", derive(uniffi::Record))]
+pub struct FileAttachment {
+    /// 原文件，经 `ClientCore::load_media` 取。
+    pub media: MediaHandle,
+    pub filename: String,
+    /// MIME 类型，发送方没有声明时为空。
+    pub mime_type: Option<String>,
+    /// 字节数。
+    pub size: Option<u64>,
+    /// 说明文字（Matrix v1.10 的媒体说明），壳画在文件卡片下面。没有时为空。
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    #[cfg_attr(feature = "uniffi", uniffi(default = None))]
+    pub caption: Option<ImageCaption>,
 }
 
 /// 取媒体用的句柄。对壳是不透明的，原样交回核心即可；里面可能有加密附件的密钥，不要写进日志。
@@ -542,26 +562,13 @@ mod tests {
             item(
                 "3",
                 message(
-                    MessageContent::Image {
-                        image: ImageContent {
-                            media: media.clone(),
-                            thumbnail: Some(media.clone()),
-                            filename: "cat.jpg".into(),
-                            mime_type: Some("image/jpeg".into()),
-                            size: Some(4096),
-                            width: Some(640),
-                            height: Some(480),
-                            caption: Some(ImageCaption {
-                                body: "哪张好看".into(),
-                                blocks: Vec::new(),
-                            }),
-                        },
-                    },
+                    sample_image(media.clone()),
                     SendState::Sending {
                         progress: Some(0.5),
                     },
                 ),
             ),
+            item("3a", message(sample_file(media.clone()), SendState::Sent)),
             item(
                 "4",
                 message(
@@ -603,6 +610,7 @@ mod tests {
                         label: "继续".into(),
                     }],
                     sender_name: "Hermes".into(),
+                    timestamp_ms: 1_793_000_000_000,
                 },
             ),
             item("5", TimelineContent::ReadMarker),
@@ -613,6 +621,41 @@ mod tests {
                 },
             ),
         ]
+    }
+
+    /// 图片样例：有缩略图和说明。
+    fn sample_image(media: MediaHandle) -> MessageContent {
+        MessageContent::Image {
+            image: ImageContent {
+                thumbnail: Some(media.clone()),
+                filename: "cat.jpg".into(),
+                mime_type: Some("image/jpeg".into()),
+                size: Some(4096),
+                width: Some(640),
+                height: Some(480),
+                caption: Some(ImageCaption {
+                    body: "哪张好看".into(),
+                    blocks: Vec::new(),
+                }),
+                media,
+            },
+        }
+    }
+
+    /// 文件样例：带 MIME、大小和说明。
+    fn sample_file(media: MediaHandle) -> MessageContent {
+        MessageContent::File {
+            file: FileAttachment {
+                filename: "2025-报税表.pdf".into(),
+                mime_type: Some("application/pdf".into()),
+                size: Some(262_144),
+                caption: Some(ImageCaption {
+                    body: "上个月的账单".into(),
+                    blocks: Vec::new(),
+                }),
+                media,
+            },
+        }
     }
 
     /// 契约：时间线增量的每种变化和每种条目都能经 JSON 往返；媒体句柄不进 Debug 输出。
@@ -653,7 +696,6 @@ mod tests {
             anchor: Some("5".into()),
             panel: Vec::new(),
             panel_selected: None,
-            entry_blocked: true,
             key_notice: Some(KeyNotice::EnterRecoveryKey),
             confirmations: Vec::new(),
             side_chat: None,
@@ -715,7 +757,6 @@ mod tests {
             anchor: None,
             panel: Vec::new(),
             panel_selected: None,
-            entry_blocked: false,
             key_notice: Some(KeyNotice::VerifyWithOtherDevice),
             confirmations: Vec::new(),
             side_chat: None,

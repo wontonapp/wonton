@@ -7,11 +7,18 @@ import android.os.Bundle
 import androidx.activity.ComponentActivity
 import androidx.activity.compose.setContent
 import androidx.activity.enableEdgeToEdge
+import androidx.compose.foundation.background
+import androidx.compose.foundation.layout.Arrangement
+import androidx.compose.foundation.layout.Column
+import androidx.compose.foundation.layout.fillMaxSize
+import androidx.compose.foundation.layout.padding
+import androidx.compose.foundation.layout.statusBarsPadding
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.CompositionLocalProvider
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.setValue
+import androidx.compose.ui.Modifier
 import androidx.compose.ui.res.stringResource
 import app.wonton.protocol.AppearanceViewModel
 import app.wonton.protocol.ConnectionCheck
@@ -22,12 +29,14 @@ import app.wonton.protocol.FontStyle
 import app.wonton.protocol.HomePath
 import app.wonton.protocol.HomeStatus
 import app.wonton.protocol.HomeViewModel
+import app.wonton.protocol.OnboardingAgentRow
 import app.wonton.protocol.Rgb
 import app.wonton.protocol.ThemeColors
 import app.wonton.protocol.ThemeMode
 import app.wonton.protocol.TextSize
 import app.wonton.protocol.UdpFlowStats
 import app.wonton.ui.ConnectionDetailsPage
+import app.wonton.ui.OnboardingAgentStep
 import app.wonton.ui.R
 import app.wonton.ui.connectionBarStatus
 import app.wonton.ui.design.LocalWontonBarStatus
@@ -35,6 +44,7 @@ import app.wonton.ui.design.WontonPushedBar
 import app.wonton.ui.design.WontonRootBar
 import app.wonton.ui.design.WontonScreen
 import app.wonton.ui.design.WontonTheme
+import app.wonton.ui.design.toColor
 
 /**
  * #847 的界面走查：核心还没判 Poor 时，用假数据把三种状态摆出来。`-e screen poor|relay|details|details-flows` 选页。
@@ -51,6 +61,7 @@ class QualityPreviewActivity : ComponentActivity() {
             WontonTheme(previewAppearance()) {
                 when (screen) {
                     SCREEN_RELAY -> RelayBarPreview()
+                    SCREEN_AGENTS -> AgentsPreview()
                     SCREEN_DETAILS -> ConnectionDetailsPage(previewHome(relay = true), null, onBack = {})
                     SCREEN_DETAILS_FLOWS -> ConnectionDetailsPage(
                         previewHome(relay = true, flows = previewUdpFlows(), evicted = 57uL),
@@ -86,6 +97,18 @@ class QualityPreviewActivity : ComponentActivity() {
         }
     }
 
+    /** #672 的界面走查：假助手行摆出选中、带登录方式列表、装不了三种状态，文案和选中样式直接看。 */
+    @Composable
+    private fun AgentsPreview() {
+        Column(
+            Modifier.fillMaxSize().background(WontonTheme.colors.canvas.toColor()).statusBarsPadding()
+                .padding(WontonTheme.spacing.s16),
+            verticalArrangement = Arrangement.spacedBy(WontonTheme.spacing.s12),
+        ) {
+            OnboardingAgentStep(previewAgents()) {}
+        }
+    }
+
     @Composable
     private fun WithBarStatus(home: HomeViewModel, content: @Composable () -> Unit) {
         CompositionLocalProvider(
@@ -97,8 +120,37 @@ class QualityPreviewActivity : ComponentActivity() {
 private const val EXTRA_SCREEN = "screen"
 private const val SCREEN_POOR = "poor"
 private const val SCREEN_RELAY = "relay"
+private const val SCREEN_AGENTS = "onboarding-agents"
 private const val SCREEN_DETAILS = "details"
 private const val SCREEN_DETAILS_FLOWS = "details-flows"
+
+/** 假助手行照官方清单的形状：Hermes 选中且无登录方式，omp 带订阅登录列表，OpenClaw 装不了。 */
+private fun previewAgents() = listOf(
+    OnboardingAgentRow(
+        id = "hermes",
+        title = "Hermes",
+        logins = listOf(),
+        selected = true,
+        source = null,
+        blocked = null,
+    ),
+    OnboardingAgentRow(
+        id = "omp",
+        title = "AI 编程助手（omp）",
+        logins = listOf("ChatGPT 订阅登录", "GitHub Copilot 订阅登录", "magpie 模型网关"),
+        selected = false,
+        source = null,
+        blocked = null,
+    ),
+    OnboardingAgentRow(
+        id = "openclaw",
+        title = "AI 管家（OpenClaw）",
+        logins = listOf(),
+        selected = false,
+        source = null,
+        blocked = "需要把核心更新到新版本",
+    ),
+)
 
 private fun previewHome(
     relay: Boolean,
@@ -124,6 +176,7 @@ private fun previewHome(
         lossPerMille = 73u.toUShort(),
         rttMs = 1240u,
         lastFailure = null,
+        diagnostic = null,
         addressesStale = false,
         udpFlows = flows,
         udpBufferEvictedDatagrams = evicted,

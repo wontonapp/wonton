@@ -52,6 +52,9 @@ struct MainView: View {
         .onPreferenceChange(ChatPanelOpenKey.self) { showsPanel = $0 }
         .onChange(of: horizontalSizeClass) { _, _ in showsSidebar = false }
         .overlay { if chat.isOpeningChat { ProgressView() } }
+        #if DEBUG
+        .overlay(alignment: .topLeading) { KeyHandoffTestState(model: chat) }
+        #endif
         .modifier(ChatDialogs(model: chat))
         .modifier(DeviceVerificationDialogs(model: chat, suppressed: verificationSurfacesOpen))
         .modifier(TabMediaDialogs(model: pages))
@@ -98,9 +101,6 @@ struct MainView: View {
         .task { await chat.observe() }
         .task { await chat.files.observe() }
         .task { await settings.observe() }
-        .task {
-            for await network in DeviceNetwork.changes() { home.send(.home(action: .networkChanged(network: network))) }
-        }
         .environment(pages)
         .environment(onboarding)
         .environment(\.panelDeps, PanelDependencies(
@@ -173,8 +173,9 @@ struct MainView: View {
     }
 
     /// 根页面：配对后是聊天（下拉面板在它上面），没配对是应用网格（配对页也在它上面）。
+    /// 配对失败还没走开时也算配对中：失败面只在配对页上，切走就丢了总耗时和诊断。
     @ViewBuilder var rootContent: some View {
-        if home.servers.adding {
+        if showsPairingPage {
             NavigationStack {
                 PairingView(model: home)
                     .toolbar(.hidden, for: .navigationBar)
@@ -223,12 +224,11 @@ struct MainView: View {
         ChatPanelHost(
             pages: pages, home: home, plugins: plugins, chat: chat, appearance: appearance,
             scope: .main, edge: .top, items: pages.viewModel.panel, selected: pages.viewModel.panelSelected,
-            blocked: false, draft: receiveDraft, open: open,
+            draft: receiveDraft, open: open,
             pendingCards: chat.viewModel.pendingConfirmations, openCardRoom: openCardRoom,
             select: { pages.send(.pages(action: .selectPanelPage(scope: .main, tab: $0))) },
             remove: { pages.send(.pages(action: .removePanelPage(scope: .main, tab: $0))) },
             move: { pages.send(.pages(action: .movePanelPage(scope: .main, tab: $0, index: UInt32($1)))) },
-            pullAnchor: nil,
             content: { ChatListView(model: chat, plugins: plugins, listOnly: listOnly) }
         )
     }
@@ -246,6 +246,13 @@ struct MainView: View {
     }
 
     var isPaired: Bool { home.viewModel.status != .notConfigured }
+
+    /// 配对页正在顶上：正在添加，或者添加已结束但失败面还开着（失败面只在配对页上）。
+    var showsPairingPage: Bool {
+        if home.servers.adding { return true }
+        if case .failed = home.viewModel.pairing { return true }
+        return false
+    }
 
     private var onboardingGatewayPage: TabPage? {
         guard let choice = onboardingGateway else { return nil }

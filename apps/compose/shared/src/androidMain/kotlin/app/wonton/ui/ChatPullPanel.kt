@@ -41,6 +41,7 @@ import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.zIndex
 import androidx.compose.ui.draw.clipToBounds
 import androidx.compose.ui.graphics.graphicsLayer
 import androidx.compose.ui.platform.LocalDensity
@@ -49,8 +50,6 @@ import androidx.compose.ui.platform.LocalSoftwareKeyboardController
 import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.semantics.Role
 import androidx.compose.ui.semantics.contentDescription
-import androidx.compose.ui.semantics.customActions
-import androidx.compose.ui.semantics.CustomAccessibilityAction
 import androidx.compose.ui.semantics.semantics
 import androidx.compose.ui.unit.IntOffset
 import androidx.compose.ui.unit.dp
@@ -67,6 +66,7 @@ import kotlinx.coroutines.Job
 import kotlinx.coroutines.launch
 import kotlin.math.abs
 import kotlin.math.roundToInt
+import kotlin.math.sign
 
 private val DOT = 7.dp
 private val DOT_OFFSET = 4.dp
@@ -76,10 +76,9 @@ private const val PAGE_MATCH = 0.01f
 private const val PAGE_WINDOW = 1.01f
 
 /**
- * 聊天页和从列表那一头拉出来的面板（ADR-0052）：面板垫在聊天页后面，聊天页跟着手指移动。
- * 主聊天页的面板在上（往下拉），房间的面板在下（往上推）。壳只画核心给的面板数据。
+ * 面板的尺寸子组合只承载面板页；主页面与手势层留在调用方的同一父级，避免面板切换时搬移主页面。
+ * 主聊天页的面板在上（往下拉），房间的面板在下（往上推）。
  */
-@Suppress("CyclomaticComplexMethod") // 层叠、返回、几何都在这，拆开要带一堆参数。
 @Composable
 internal fun ChatPanelHost(
     panel: ChatPanelState,
@@ -88,7 +87,6 @@ internal fun ChatPanelHost(
     appearance: AppearanceViewModel,
     onDraft: (String) -> Unit,
     onDetails: (String) -> Unit,
-    content: @Composable () -> Unit,
 ) {
     val density = LocalDensity.current
     val keyboard = LocalSoftwareKeyboardController.current
@@ -107,17 +105,12 @@ internal fun ChatPanelHost(
             panel.selection?.let { tabs.send(Action.Pages(PageAction.SelectPanelPage(panel.scope, it))) }
         }
     }
-    LaunchedEffect(panel.pages.isEmpty()) {
-        if (panel.pages.isEmpty() && panel.level == PanelLevel.FULL) panel.move(PanelLevel.PEEK)
-    }
-    val current = panel.controller
     BoxWithConstraints(Modifier.fillMaxSize()) {
         panel.ready(constraints.maxHeight.toFloat(), with(density) { status.calculateTopPadding().toPx() },
             with(density) { navigation.calculateBottomPadding().toPx() })
         panel.geometry(density.density)
         val height = constraints.maxHeight.toFloat()
         val shift = panel.shiftPx
-        val safeBottom = with(density) { navigation.calculateBottomPadding() }
         if (panel.visible) {
             Box(
                 Modifier.fillMaxSize().graphicsLayer {
@@ -132,10 +125,15 @@ internal fun ChatPanelHost(
                 }
             }
         }
-        Box(Modifier.fillMaxSize().graphicsLayer { translationY = shift * panel.sign }) {
-            content()
-            if (panel.level == PanelLevel.PEEK) ChatPanelStrip(panel)
-        }
+    }
+}
+
+/** 手势层排在主页面之后，保证边缘热区的命中优先级。 */
+@Composable
+internal fun ChatPanelOverlay(panel: ChatPanelState) {
+    val status = WindowInsets.statusBars.asPaddingValues()
+    val safeBottom = WindowInsets.navigationBars.asPaddingValues().calculateBottomPadding()
+    Box(Modifier.fillMaxSize()) {
         ChatPanelEdge(panel, panel.visible)
         ChatPanelTopPull(panel)
         if (!panel.visible && panel.pages.any { it.attention }) {
@@ -203,7 +201,12 @@ private fun PanelPager(
             touch.position = { position }
             touch.width = { width }
             touch.flipTo = flipTo
-            touch.flipEnd = { velocity -> settlePage(position - velocity / width * FLIP_PROJECT) }
+            touch.flipEnd = { released, velocity, base ->
+                // 松手事件偶尔改报起点坐标，速度方向会和拖动相反；落页只认拖动方向，速度只加距离。
+                val drag = released - base
+                val direction = if (drag == 0f) -sign(velocity) else sign(drag)
+                settlePage(released + abs(velocity / width * FLIP_PROJECT) * direction)
+            }
         }
         Box(Modifier.fillMaxSize()) {
             pages.forEachIndexed { index, item ->
@@ -219,7 +222,7 @@ private fun PanelPager(
                             active = panel.visible,
                             current = index == chosen,
                             touch = touch,
-                            modifier = Modifier.fillMaxSize().graphicsLayer {
+                            modifier = Modifier.fillMaxSize().zIndex(if (index == chosen) 1f else 0f).graphicsLayer {
                                 translationX = (index - position) * width
                             },
                             onDraft = onDraft,
@@ -309,18 +312,5 @@ private fun PanelEmpty(onAdd: () -> Unit) {
             }
             Text(label, style = WontonTheme.typography.supporting, color = colors.textSecondary.toColor())
         }
-    }
-}
-
-/** 消息列表上的读屏动作“打开面板”：过度拉动做不了，用一个动作补上。 */
-@Composable
-internal fun Modifier.panelAction(panel: ChatPanelState?): Modifier {
-    if (panel == null) return this
-    val label = stringResource(R.string.panel_open)
-    return semantics {
-        customActions = listOf(CustomAccessibilityAction(label) {
-            panel.move(PanelLevel.PEEK)
-            true
-        })
     }
 }

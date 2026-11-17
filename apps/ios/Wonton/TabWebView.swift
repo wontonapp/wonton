@@ -11,6 +11,8 @@ final class TabWebViewStore {
     private var accountId: String?
     /// 释放过 WebView 的计数：页面视图据此判断手里的会话还能不能用、要不要重新要一份。
     private(set) var generation = 0
+    /// 公网网页与插件凭据分开，窗口之间仍共享同一公网存储。
+    private static let publicPanelStore = UUID(uuidString: "6C3B0E7A-6C61-4A0E-9E2B-5C5A0B7C8F61")!
 
     func session(for placed: PlacedTab, core: ClientCore) -> TabWebSession {
         let currentAccount = core.servers().servers.first(where: { $0.current })?.id
@@ -27,6 +29,8 @@ final class TabWebViewStore {
                 store = .nonPersistent()
                 sharedStores[ownerUserId] = store
             }
+        } else if case .url = placed.tab {
+            store = WKWebsiteDataStore(forIdentifier: Self.publicPanelStore)
         } else { store = .default() }
         let session = TabWebSession(placed: placed, core: core, dataStore: store)
         sessions[placed] = session
@@ -56,7 +60,7 @@ final class TabWebViewStore {
 extension PlacedTab {
     var tab: TabRef {
         switch self {
-        case let .page(tab), let .panel(_, tab): tab
+        case let .page(tab), let .content(tab), let .panel(_, tab): tab
         }
     }
 }
@@ -88,6 +92,9 @@ final class TabWebSession: NSObject {
     @ObservationIgnored var loadedProxy: ProxySettings?
     @ObservationIgnored var recoveryURL: URL?
     @ObservationIgnored var navigationURL: URL?
+    /// 主框架正在登录的路上（跳去了认证页；落回插件的回调页加载完成前也还在路上），和落回插件时的地址：见 `TabReloadTarget`。
+    @ObservationIgnored var inLogin = false
+    @ObservationIgnored var loginLanding: URL?
     @ObservationIgnored var hasContent = false
     @ObservationIgnored private var configuredProxy: ProxySettings?
     @ObservationIgnored var lastContext: String?
@@ -142,7 +149,7 @@ final class TabWebSession: NSObject {
             if webView == nil { try create() }
             guard let webView else { return }
             if loadedReload != input.page.reload || loadedEntry != entry || loadedProxy != proxy {
-                let destination = loadedEntry == entry ? recoveryURL ?? webView.url ?? url : url
+                let destination = loadedEntry == entry ? reloadDestination(entry: url) : url
                 ready = false
                 problem = nil
                 loadedReload = input.page.reload
@@ -160,7 +167,7 @@ final class TabWebSession: NSObject {
 
     private func create() throws {
         let configuration = WKWebViewConfiguration()
-        configuration.websiteDataStore = Self.dataStore(for: placed)
+        configuration.websiteDataStore = dataStore
         // 公网网页没有桥，也不注入变量和脚本（ADR-0052）。
         if bridged {
             let controller = configuration.userContentController
@@ -279,14 +286,6 @@ final class TabWebSession: NSObject {
         return true
     }
 
-    /// 公网网页不和插件页共用 Cookie 和存储（ADR-0052）：公网页面共用一个单独的存储。
-    private static let publicPanelStore = UUID(uuidString: "6C3B0E7A-6C61-4A0E-9E2B-5C5A0B7C8F61")!
-
-    private static func dataStore(for placed: PlacedTab) -> WKWebsiteDataStore {
-        guard case .url = placed.tab else { return .default() }
-        return WKWebsiteDataStore(forIdentifier: publicPanelStore)
-    }
-
     /// 面板拉开、翻到这一页：经桥告诉页面它被看到了。
     func seen() {
         guard let webView else { return }
@@ -337,20 +336,6 @@ final class TabWebSession: NSObject {
         update(input, action: action)
     }
 
-    /// Remove a previously loaded page when exact Bot metadata or pre-open consent no longer permits it.
-    func withhold() {
-        dispose()
-        input = nil
-        ready = false
-        hasContent = false
-        canGoBack = false
-        loadedReload = nil
-        loadedEntry = nil
-        loadedProxy = nil
-        recoveryURL = nil
-        navigationURL = nil
-    }
-
     func dispose() {
         widgetChannel.stop()
         setMediaPlaying(false)
@@ -367,6 +352,32 @@ final class TabWebSession: NSObject {
         }
         webView = nil
         action = nil
+    }
+}
+
+extension TabWebSession {
+    var loginRoute: TabLoginRoute { TabLoginRoute(domain: input?.proxy?.domain) }
+
+    /// 重新加载回正在看的地址；登录往返里一次性的地址不重放（见 `TabReloadTarget`）。
+    func reloadDestination(entry: URL) -> URL {
+        TabReloadTarget(entry: entry, login: loginRoute, loginLanding: loginLanding, inLogin: inLogin)
+            .resolve(recovery: recoveryURL, current: webView?.url)
+    }
+
+    /// Remove a previously loaded page when exact Bot metadata or pre-open consent no longer permits it.
+    func withhold() {
+        dispose()
+        input = nil
+        ready = false
+        hasContent = false
+        canGoBack = false
+        loadedReload = nil
+        loadedEntry = nil
+        loadedProxy = nil
+        recoveryURL = nil
+        navigationURL = nil
+        inLogin = false
+        loginLanding = nil
     }
 }
 

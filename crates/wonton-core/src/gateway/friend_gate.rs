@@ -198,6 +198,8 @@ fn hold(
         secret_inputs: Vec::new(),
         settings: None,
         category: None,
+        permissions: Vec::new(),
+        devices: Vec::new(),
     };
     let (sent, waited) = tokio::sync::oneshot::channel();
     let gateway = Arc::clone(gateway);

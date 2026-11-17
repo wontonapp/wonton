@@ -5,7 +5,7 @@ use wonton_protocol::{BlockedCategory, CardLine, PluginDevice};
 use super::device;
 use super::languages::Languages;
 use super::manager::{InstallError, PluginManager};
-use super::manifest::{DeviceClass, Manifest};
+use super::manifest::{DeviceClass, Manifest, ManifestExt};
 use super::store::{EnabledPermission, InstalledRecord};
 use super::views::line;
 use crate::l10n;
@@ -158,7 +158,7 @@ impl PluginManager {
             gone.push(disk.name.clone());
             required |= classes.contains(&DeviceClass::Disk);
             items.push(PluginDevice {
-                id: format!("disk:{}", disk.host_path),
+                id: device::disk_id(disk),
                 name: disk.name.clone(),
                 target: String::new(),
                 service: devices

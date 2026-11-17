@@ -1,6 +1,6 @@
 # ADR-0061 Agent 的运行时和前端分开：运行时经一道 ACP 网关提供能力，聊天、网页、看板都是前端
 
-- 状态：已接受（2026-11-08）
+- 状态：多运行时、多前端、`agent_acp` 网关、跨内核委派及电脑 ACP 运行时路线已被 [ADR-0108](0108-hermes-default-kernel.md) 取代（主人 2026-11-15）；受控发送、来源身份、预算与停止、任务展示等通用约束保留，不沿用其 ACP 专用承载作为实现要求。
 - 修订：[ADR-0035](0035-acp-bridge.md) 的桥的拆分（见第 5 节）；[ADR-0058](0058-agent-side-sessions.md) 的“改同一个文件时排队”挪到网关
 - 2026-11-11 修订（主人定）：`agent_acp` 双向，Agent 既能被调也能调别人；编排器插件（[ADR-0059](0059-team-ops-plugins.md)）是使用方；
   Wonton MCP 加“交给另一个 Agent”“给某人发消息”两个工具；调用链有层数、绕圈、轮数和花费的限制，按链记账，随时能停整条链（第 9、10 节）；
@@ -23,6 +23,8 @@ ADR-0015 要求组件只经标准接口连接、每个都能单独替换。这�
 是 `agent_acp` 的使用方：经它指挥主人已装的 Agent，复用那些 Agent 已登录的账号和设置。Agent 自己也能经它把事交给另一个 Agent（第 9 节）。
 
 ## 决策
+
+> 以下 ACP 网关、`agent_acp`、`wonton__hand_off` 与链载体记录旧路线，不是 Hermes 原生委派的接入要求。裁剪须先分离受控发送等通用职责；`wonton__send_message` 的收件人、全文确认与来源身份不能随桥删除，边界见 ADR-0108。
 
 ### 1. 接口是 ACP，能力名 `agent_acp`
 
@@ -228,6 +230,8 @@ Agent 插件 `wants: [agent_acp]` 时，确认页同样写明它能把事交给 
   `serde_json::Value` 因此变大，wonton-core 里两处返回 `CallToolResult` 的地方会触发 `clippy::result_large_err`（#255 发现），换库前先把它们装箱或改小。
 
 ### 12. 跨插件传链：`session/new` 的 `_meta` 里带链载体
+
+> ACP 桥和交接删除后，`ChainCarrier` 与 `ACP_CHAIN_META_KEY` 也离开了协议；下面是接入 ACP 类 Agent 时沿用/恢复的契约。
 
 编排器类 Agent 经 `agent_acp` 调别的 Agent 时，那一跳不能把层数清零，否则绕一圈就躲过第 10 节的上限。做法照分布式追踪传上下文的现成标准
 （W3C Trace Context 的 traceparent）：链的上下文跟着 `session/new` 走，写的都是可信的一侧，读的原样往下带。

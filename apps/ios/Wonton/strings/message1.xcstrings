@@ -2,6 +2,66 @@
   "sourceLanguage": "en",
   "version": "1.0",
   "strings": {
+    "message.keyNoticeRecovery": {
+      "comment": "One-line hint beside undecryptable history: the account has a key backup.",
+      "extractionState": "manual",
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Enter your recovery key in Chat Backup to read these earlier messages."
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "在「聊天记录备份」输入恢复密钥，解开这些旧消息。"
+          }
+        },
+        "zh-Hant": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "在「聊天記錄備份」輸入復原金鑰，解開這些舊訊息。"
+          }
+        },
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "「チャットのバックアップ」で復旧キーを入力すると、以前のメッセージが読めます。"
+          }
+        }
+      }
+    },
+    "message.keyNoticeVerify": {
+      "comment": "One-line hint beside undecryptable history: no backup, another verified device must confirm.",
+      "extractionState": "manual",
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Verify this device from your other device to receive the keys. Start in Chat Backup."
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "在「聊天记录备份」用另一台设备确认这台设备，取回密钥。"
+          }
+        },
+        "zh-Hant": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "在「聊天記錄備份」用另一部裝置確認這台裝置，取回金鑰。"
+          }
+        },
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "「チャットのバックアップ」で別のデバイスからこのデバイスを確認し、鍵を受け取ります。"
+          }
+        }
+      }
+    },
     "message.linkOpenBrowser": {
       "comment": "Action in a message link's long-press menu; opens the link in the system browser.",
       "extractionState": "manual",
@@ -178,6 +238,36 @@
           "stringUnit": {
             "state": "translated",
             "value": "全員のメッセージを送信取消にしますか？"
+          }
+        }
+      }
+    },
+    "message.sentAt": {
+      "comment": "Label of the send time shown at the bottom of a message's context menu.",
+      "extractionState": "manual",
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Sent at %@"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "发送时间 %@"
+          }
+        },
+        "zh-Hant": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "傳送時間 %@"
+          }
+        },
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "送信日時 %@"
           }
         }
       }

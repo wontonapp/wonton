@@ -69,6 +69,10 @@ fn plugin_routes() -> Router<Arc<Gateway>> {
             put(super::capability_settings::set_consumer),
         )
         .route(
+            "/_wonton/api/plugins/{id}/bots/{bot}/capabilities",
+            get(super::capability_settings::list_bot).put(super::capability_settings::set_bot),
+        )
+        .route(
             "/_wonton/api/plugins/{id}/uninstall/preview",
             get(super::capability_settings::uninstall_preview),
         )

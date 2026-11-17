@@ -397,7 +397,8 @@ pub enum FileAction {
     },
     /// 下载到 App 自己的目录，路径在 [`Transfer::destination`](crate::Transfer::destination)，传完才出现在这个路径上。断了从断点
     /// 接着下，文件变了从头下。要存到别处，壳调用系统的分享或保存。这个文件正在下载时返回 `InvalidInput`。
-    DownloadFile { id: FileId },
+    /// `room` 是触发下载的房间：下载完的提示只列在这个房间里，别的房间不显示，免得以为当前聊天发生了下载。
+    DownloadFile { id: FileId, room: String },
     /// 取消进行中、暂停或者链接没发出的传输，并从列表里拿掉；上传时连服务器上传了一半的内容一起删，字节已经传完的不删，文件留在
     /// 服务器上。已经做完或失败的不受影响：取消和传完撞上时不算错。`id` 是 [`Transfer::id`](crate::Transfer::id)，不是文件编号。
     CancelTransfer { id: String },
@@ -480,10 +481,6 @@ pub enum PageAction {
         title: Option<String>,
         to: crate::PinTarget,
     },
-    /// 壳报告房间里盖着消息列表的东西开没开：长按菜单、多选模式、转发或删除确认、交给 Bot 的选择、
-    /// 斜杠命令列表。核心把它和核心自己知道的状态合成 [`TimelineUpdate::entry_blocked`]，
-    /// 壳只读那一个字段决定上推拉面板的入口响不响应。换房间后按没盖算，壳不用补发。
-    SetRoomEntryBlocked { room_id: String, blocked: bool },
     /// 重新加载插件页（重试、“···”里的重新加载）。`page` 指是哪一份：栈里的和面板里的同一页面
     /// 各自加载，互不影响（ADR-0052）。
     ReloadTab { page: crate::PlacedTab },

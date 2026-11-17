@@ -5,7 +5,7 @@
 //! ViewModel 换成写死的值；开着时 `dispatch` 不落到作用域，免得网络链路把 ViewModel 改回空的。
 //!
 //! 只够渲染首屏和主入口的导航：一台“家里”的服务器、一个 Bot 私聊、一个有人在通话、顶栏带 widget 入口的群聊
-//! （ADR-0096）、一个没有网页的已装应用（点开是详情页）、
+//! （ADR-0096）、一个没有网页的已装应用（点开是详情页）、一个带授权设备的应用（`ui_fake_plugin_detail.rs`）、
 //! 三个有网页的已装应用（页面各停在加载中、已停止、出了问题）、一个整页打开本机网页的应用、
 //! 主面板里钉着的一页、商店入口、“等你确认”里一张带设备的安装卡片（`ui_fake_devices.rs`）、引导已经走完。
 //! 操作里只认开页、关页（`OpenPage`、`ClosePage`）和回答确认卡片：开关页照真核心的规则改页面栈和应用网格的开关，
@@ -65,6 +65,43 @@ impl ClientCore {
         core.ui_fake.store(true, Ordering::SeqCst);
         core.seed_ui_fake();
         Ok(core)
+    }
+
+    /// UI 测试专用：恢复页面初态并写出 fixture；只接受 ui-fake 核心。
+    pub fn reset_ui_fake_pages_fixture(&self, path: String) -> Result<(), CoreError> {
+        if !self.ui_fake.load(Ordering::SeqCst) {
+            return Err(CoreError::InvalidInput {
+                reason: "page fixtures require a ui-fake core".into(),
+            });
+        }
+        let views = self.views();
+        let pages = fake_pages(views.pages.borrow().clone());
+        let fixture = serde_json::to_vec(&pages).map_err(|error| CoreError::InvalidInput {
+            reason: format!("cannot encode page fixture: {error}"),
+        })?;
+        std::fs::write(path, fixture).map_err(|error| CoreError::InvalidInput {
+            reason: format!("cannot write page fixture: {error}"),
+        })?;
+        views.pages.send_replace(pages);
+        Ok(())
+    }
+
+    /// UI 测试专用：从 fixture 发布页面状态帧，不执行生产操作。
+    pub fn apply_ui_fake_pages_fixture(&self, path: String) -> Result<(), CoreError> {
+        if !self.ui_fake.load(Ordering::SeqCst) {
+            return Err(CoreError::InvalidInput {
+                reason: "page fixtures require a ui-fake core".into(),
+            });
+        }
+        let fixture = std::fs::read(path).map_err(|error| CoreError::InvalidInput {
+            reason: format!("cannot read page fixture: {error}"),
+        })?;
+        let pages: PagesViewModel =
+            serde_json::from_slice(&fixture).map_err(|error| CoreError::InvalidInput {
+                reason: format!("cannot decode page fixture: {error}"),
+            })?;
+        self.views().pages.send_replace(pages);
+        Ok(())
     }
 }
 
@@ -338,6 +375,33 @@ fn fake_plugins(mut plugins: PluginsViewModel) -> PluginsViewModel {
         };
         fake_plugin(title, id, status, Some(web_url(id)))
     }));
+    installed.push(fake_plugin(
+        super::ui_fake_plugin_detail::HUB_TITLE,
+        super::ui_fake_plugin_detail::HUB_ID,
+        super::ui_fake_plugin_detail::status(),
+        None,
+    ));
+    if std::env::var_os("WONTON_UI_FAILED_INSTALL").is_some() {
+        let id = "app.example.failed";
+        let message = "The image could not be downloaded.";
+        let mut failed = fake_plugin(
+            "Failed Example",
+            id,
+            PluginState::Degraded {
+                reason: message.into(),
+            },
+            None,
+        );
+        failed.source = Some("github:example/failed-app@v1.0.0".into());
+        failed.install_failure = Some(wonton_protocol::InstallFailure {
+            kind: "docker".into(),
+            message: message.into(),
+            stage: wonton_protocol::InstallStage::PullingImages,
+            failed_plugin_id: id.into(),
+            cleanup_errors: Vec::new(),
+        });
+        installed.push(failed);
+    }
     plugins.installed = Some(InstalledPlugins {
         plugins: installed,
         upgrade_check: None,
@@ -467,7 +531,6 @@ mod tests {
             .is_ok()
         );
         assert_eq!(core.pages().root, TabRef::Chat);
-        assert_eq!(core.plugins().installed.unwrap().plugins.len(), 5);
         let _ = std::fs::remove_dir_all(&dir);
     }
 

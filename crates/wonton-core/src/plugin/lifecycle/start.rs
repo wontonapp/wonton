@@ -1,18 +1,26 @@
 //! 启动插件容器并等待健康：依赖顺序、一次性服务和核心 HTTP 探测。
 
+use std::time::Duration;
+
 use tokio::time::Instant;
 use wonton_protocol::InstallStage;
 
 use super::super::compose::DependCondition;
 use super::super::configs;
+use super::super::docker::EngineError;
 use super::super::health::{self, Target};
 use super::super::install_notes::note_dropped_capabilities;
 use super::super::languages::Languages;
 use super::super::manager::{Health, InstallError, PluginManager};
 use super::super::manifest::{Manifest, PluginId};
 use super::super::names::LABEL_PLUGIN;
-use super::super::render::Deployment;
+use super::super::render::{ContainerPlan, Deployment};
+use super::super::start::{StartSettled, container_gone_after_start_timeout};
 use super::Undo;
+
+/// 创建请求超时后等 Docker 把容器建出来（见 [`PluginManager::settle_timed_out_create`]）。
+const CREATE_SETTLE: Duration = Duration::from_secs(15);
+const CREATE_SETTLE_STEP: Duration = Duration::from_millis(200);
 
 impl PluginManager {
     pub(in crate::plugin) async fn start_containers(
@@ -29,19 +37,7 @@ impl PluginManager {
             Box::pin(self.wait_dependencies(manifest, &container.depends_on, deadline, langs))
                 .await
                 .map_err(|e| note_dropped_capabilities(e, container, langs))?;
-            // 只读根的服务在创建容器之前就要把文件写进核心数据目录（单文件绑定挂载的源必须存在）。
-            if container.store_dir.is_some() {
-                Box::pin(configs::deliver(&self.engine, container, &plan.labels)).await?;
-            }
-            self.engine
-                .create_container(&container.name, container.body.clone())
-                .await
-                .map_err(InstallError::from_create_engine_error)?;
-            undo.containers.push(container.name.clone());
-            if container.store_dir.is_none() {
-                Box::pin(configs::deliver(&self.engine, container, &plan.labels)).await?;
-            }
-            self.engine.start_container(&container.name).await?;
+            Box::pin(self.launch_container(container, plan, undo, langs)).await?;
         }
         if let Some(id) = id {
             self.stage(id, InstallStage::WaitingForBot);
@@ -70,5 +66,85 @@ impl PluginManager {
         }
         self.wait_ready_containers(manifest, plan, deadline, langs)
             .await
+    }
+
+    /// 创建并启动一个容器。启动超时后 Docker 说容器已经不在了就照同一份计划重建一次（issue #649）；
+    /// 仍在的容器不删，只再发一次启动。
+    async fn launch_container(
+        &self,
+        container: &ContainerPlan,
+        plan: &Deployment,
+        undo: &mut Undo,
+        langs: &Languages,
+    ) -> Result<(), InstallError> {
+        self.create_for_start(container, plan, undo).await?;
+        if let StartSettled::Missing = Box::pin(self.start_settled(&container.name)).await? {
+            self.create_for_start(container, plan, undo).await?;
+            if let StartSettled::Missing = Box::pin(self.start_settled(&container.name)).await? {
+                return Err(container_gone_after_start_timeout(langs, &container.name));
+            }
+        }
+        Ok(())
+    }
+
+    /// 照渲染好的计划创建容器，只读根的文件先写进核心数据目录（单文件绑定挂载的源必须存在）。
+    async fn create_for_start(
+        &self,
+        container: &ContainerPlan,
+        plan: &Deployment,
+        undo: &mut Undo,
+    ) -> Result<(), InstallError> {
+        if container.store_dir.is_some() {
+            Box::pin(configs::deliver(&self.engine, container, &plan.labels)).await?;
+        }
+        if let Err(error) = self
+            .engine
+            .create_container(&container.name, container.body.clone())
+            .await
+        {
+            // 超时只说明没等到回答，结果不确定：Docker 可能建出了本次的容器，也可能回的是
+            // 409 之类的失败而回答丢了。等它落下来、核对归属（同启动前的 check_ownership）
+            // 才记账，别人的同名容器不记账，回滚不去动它；没等到的删除容忍 404。
+            if matches!(error, EngineError::TimedOut(_)) {
+                let plugin = plan.labels.get(LABEL_PLUGIN).map(String::as_str);
+                self.settle_timed_out_create(undo, &container.name, plugin)
+                    .await;
+            }
+            return Err(error.into());
+        }
+        if undo.containers.contains(&container.name) {
+            // 重建同一个名字：回滚删一次就够。
+        } else {
+            undo.containers.push(container.name.clone());
+        }
+        if container.store_dir.is_none() {
+            Box::pin(configs::deliver(&self.engine, container, &plan.labels)).await?;
+        }
+        Ok(())
+    }
+
+    /// 创建请求超时后，Docker 可能还在建这个容器：等它出现，核对归属（这套核心的实例标签加
+    /// LABEL_PLUGIN 指向本插件，同启动前的 check_ownership）才记进回滚账本；别人的同名容器
+    /// 不记账，回滚不去动它。到窗口尽头还没出现就照常回滚，删除容忍容器不存在。
+    async fn settle_timed_out_create(&self, undo: &mut Undo, name: &str, plugin: Option<&str>) {
+        let until = Instant::now() + CREATE_SETTLE;
+        while Instant::now() < until {
+            if let Ok(Some(info)) = self.engine.inspect_container(name).await {
+                let labels = info
+                    .config
+                    .and_then(|config| config.labels)
+                    .unwrap_or_default();
+                if self.cfg.instance.owns(&labels)
+                    && plugin
+                        .is_some_and(|id| labels.get(LABEL_PLUGIN).map(String::as_str) == Some(id))
+                    && !undo.containers.iter().any(|recorded| recorded == name)
+                {
+                    // 重建同一个名字：回滚删一次就够。
+                    undo.containers.push(name.to_owned());
+                }
+                return;
+            }
+            tokio::time::sleep(CREATE_SETTLE_STEP).await;
+        }
     }
 }

@@ -446,8 +446,6 @@ async fn onboarding_keeps_a_cached_catalog_when_the_official_source_breaks() {
     index["onboarding"] = json!({
         "agents": [],
         "needs": [],
-        "providers": {},
-        "more_providers": [],
         "prompts": [{"en": "What can you help me with"}]
     });
     github.publish_index(serde_json::to_vec(&index).unwrap());
@@ -561,7 +559,7 @@ async fn a_subdirectory_entry_is_listed_installed_and_checked_for_upgrades() {
         &"b".repeat(40),
     );
     let upgrade = m
-        .preview_upgrade(&id, super::super::UpgradeTo::Offered, &zh())
+        .preview_upgrade(&id, super::super::UpgradeTo::Offered, None, &zh())
         .await
         .unwrap();
     assert_eq!(upgrade.version, "0.2.0");

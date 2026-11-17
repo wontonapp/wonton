@@ -90,6 +90,8 @@ fun TimelineItemView(
     onOpenAgentCard: (String) -> Unit,
     onAnswerAgentChoice: (String) -> Unit,
     onOpenSideChat: (String) -> Unit,
+    flushesPrevious: Boolean = false,
+    flushesNext: Boolean = false,
 ) {
     when (val content = item.content) {
         // 时间不贴在气泡上：隔得久的那条上方写一行，其余的点一下气泡才露出来。
@@ -107,6 +109,8 @@ fun TimelineItemView(
                 { message, bounds -> onOpenMenu(item, message, bounds) },
                 onReply,
                 onOpenSideChat,
+                flushesPrevious,
+                flushesNext,
             )
         }
         is TimelineContent.Notice -> CenteredNote(content.text)
@@ -185,6 +189,8 @@ private fun MessageBubble(
     onOpenMenu: (TimelineMessage, Rect) -> Unit,
     onReply: (TimelineMessage) -> Unit,
     onOpenSideChat: (String) -> Unit,
+    flushesPrevious: Boolean = false,
+    flushesNext: Boolean = false,
 ) {
     val colors = WontonTheme.colors
     val isOwn = message.isOwn
@@ -233,6 +239,8 @@ private fun MessageBubble(
                 onCancel,
                 onCardAction,
                 onLongPress = openMenu.takeIf { showsMenu },
+                flushesPrevious = flushesPrevious,
+                flushesNext = flushesNext,
             )
         }
         if (showsTime) {
@@ -261,6 +269,8 @@ fun BubbleSurface(
     onCancel: () -> Unit,
     onCardAction: (Action) -> Unit,
     onLongPress: (() -> Unit)? = null,
+    flushesPrevious: Boolean = false,
+    flushesNext: Boolean = false,
 ) {
     val colors = WontonTheme.colors
     val isOwn = message.isOwn
@@ -270,7 +280,11 @@ fun BubbleSurface(
     } else {
         Modifier.background(colors.surfaceSubtle.toColor(), shape)
     }
-    val padded = modifier.then(fill).padding(horizontal = WontonTheme.spacing.s12, vertical = WontonTheme.spacing.s8)
+    // 同一次发送里贴着的照片不留上下衬垫，贴成一摞（ADR-0094）。
+    val padded = modifier.then(fill)
+        .padding(horizontal = WontonTheme.spacing.s12)
+        .padding(top = if (flushesPrevious) 0.dp else WontonTheme.spacing.s8)
+        .padding(bottom = if (flushesNext) 0.dp else WontonTheme.spacing.s8)
     val content = if (isOwn) colors.textOnAccentFill else colors.textPrimary
     val styledBody: @Composable (String?) -> Unit = { reserve ->
         Column(verticalArrangement = Arrangement.spacedBy(WontonTheme.spacing.s4)) {
@@ -404,6 +418,7 @@ private fun MessageBody(
             // 一次发送里主人写的字是最后一张照片的说明文字（ADR-0094），画在照片下面。
             body.image.caption?.let { caption -> TextMessageBody(caption.blocks, emptyList(), core) }
         }
+        is MessageContent.File -> MessageFileCard(body.file, core, onLongPress)
         is MessageContent.Confirmation -> ConfirmationCardView(body.view, onCardAction)
         MessageContent.Undecryptable -> Row(horizontalArrangement = Arrangement.spacedBy(WontonTheme.spacing.s8)) {
             // 装饰：右边就是说明文字。

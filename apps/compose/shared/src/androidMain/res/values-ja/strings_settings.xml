@@ -3,7 +3,7 @@
     <string name="settings_profile">プロフィール</string>
     <string name="settings_appearance">外観</string>
     <string name="settings_nav_bar">ナビゲーションバー</string>
-    <string name="settings_default_agent">デフォルトのエージェント</string>
+    <string name="settings_default_agent">デフォルトのアシスタント</string>
     <string name="settings_about">Wontonについて</string>
     <string name="settings_version">バージョン</string>
     <string name="settings_toolbar">設定</string>
@@ -55,6 +55,6 @@
     <string name="applock_timeout_five_minutes">5 分後</string>
     <string name="applock_timeout_fifteen_minutes">15 分後</string>
     <!-- Lock screen content switch in the notification settings, per category (ADR-0101 §5). -->
-    <string name="notification_lock_screen">ロック画面に表示</string>
+    <string name="notification_lock_screen">%1$sをロック画面に表示</string>
     <string name="settings_my_apps">マイアプリ</string>
 </resources>

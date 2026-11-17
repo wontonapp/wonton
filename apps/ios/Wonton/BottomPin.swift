@@ -19,6 +19,8 @@ final class BottomPin {
     private var updateGeneration = 0
     private var settling = false
 
+    var viewportHeight: CGFloat { scrollView?.bounds.height ?? 0 }
+
     /// List 会为末尾追加和变高的行调整 contentOffset；翻走时保留更新前的位置，不借内容高度反推主人的手势。
     func prepareForUpdate() {
         guard !isPinned, let scrollView, !scrollView.isDragging, !scrollView.isDecelerating else { return }
@@ -119,8 +121,7 @@ final class BottomPin {
 }
 
 extension UIScrollView {
-    /// 贴底的位置；内容不满一屏时就是顶上。贴底（`BottomPin`）和到底后上推（`PullAnchor`）都按这一个算：
-    /// 两处各算各的，差一点就是“贴着底却推不出面板”或一推就被拽回去。
+    /// 贴底的位置；内容不满一屏时就是顶上。贴底和面板网页的栏缘拖动按同一个内容底边计算。
     ///
     /// 可见的最下面那一格比 `contentSize` 还靠下时按格子算：行高刚量出来、`contentSize` 还没跟上的那一轮也不落在半截。
     /// 停稳以后两者一致（iOS 26.5 模拟器，3000pt 高的行，2026-11-14 实测 `contentSize`、布局的内容高度和最后一格的

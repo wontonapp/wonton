@@ -129,25 +129,55 @@
         "en": {
           "stringUnit": {
             "state": "translated",
-            "value": "Downloaded"
+            "value": "Downloaded Files"
           }
         },
         "zh-Hans": {
           "stringUnit": {
             "state": "translated",
-            "value": "已下载"
+            "value": "已下载的文件"
           }
         },
         "zh-Hant": {
           "stringUnit": {
             "state": "translated",
-            "value": "已下載"
+            "value": "已下載的檔案"
           }
         },
         "ja": {
           "stringUnit": {
             "state": "translated",
-            "value": "ダウンロード済み"
+            "value": "ダウンロード済みのファイル"
+          }
+        }
+      }
+    },
+    "transfer.downloadedOne": {
+      "comment": "Caption button above the chat composer when one file was downloaded in this chat: opens the list. Argument: the file's name.",
+      "extractionState": "manual",
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Downloaded “%1$@”"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "已下载“%1$@”"
+          }
+        },
+        "zh-Hant": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "已下載「%1$@」"
+          }
+        },
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "「%1$@」をダウンロード済み"
           }
         }
       }

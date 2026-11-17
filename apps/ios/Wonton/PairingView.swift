@@ -17,18 +17,18 @@ struct PairingView: View {
     @State private var deviceName = UIDevice.current.name
     /// 核心当场拒绝的原因，比如扫到的不是配对码。
     @State private var refusal: Problem?
-    /// 最近一次出示的码供手动重试使用；扫码锁独立于码的内容。
-    @State private var lastCode: String?
     @State private var scanConsumed = false
     @FocusState private var isEditingCode: Bool
     @State private var showsMatrixLogin = false
     @Environment(\.wontonColors) private var colors
 
     /// 相机状态和设备名都可以传入：截图测试要把它们固定住，模拟器的权限和设备名每次不一样。
+    /// 显式传入的设备名最优先（截图测试的固定值）；没传才取模型里最近一次提交用的（重试换实例
+    /// 不丢），再退回设备默认名。
     init(
         model: HomeModel,
         camera: CameraAccess = .current,
-        deviceName: String = UIDevice.current.name,
+        deviceName: String? = nil,
         onBack: (() -> Void)? = nil,
         onPaired: @escaping () -> Void = {}
     ) {
@@ -36,7 +36,9 @@ struct PairingView: View {
         self.onBack = onBack
         self.onPaired = onPaired
         _camera = State(initialValue: camera)
-        _deviceName = State(initialValue: deviceName)
+        _deviceName = State(
+            initialValue: deviceName ?? model.lastPairingDeviceName ?? UIDevice.current.name
+        )
     }
 
     var body: some View {
@@ -53,7 +55,7 @@ struct PairingView: View {
                     PairingProgress(
                         status: pairing,
                         recognized: scanConsumed,
-                        retry: lastCode.map { code in { pair(code) } },
+                        retry: model.lastPairingCode.map { code in { pair(code) } },
                         scanAgain: scanAgain,
                         back: leaveFailure,
                         cancel: cancelPairing
@@ -101,8 +103,12 @@ struct PairingView: View {
             }
         }
         .task { await askForCamera() }
+        // 失败状态不随卸载自动清：根实例和 HomeView 里的实例（不带 onBack）卸载，正是失败面向根配对页
+        // 交接的时刻，清了会当场清掉交接（走查实测失败面闪没、落回空表单）。设置推进来的实例例外：
+        // 它的系统返回/侧滑只出栈、不走 leaveFailure，不清会把已经离开的失败面留给根页面。
         .onDisappear {
-            if hasFailedPairing { model.send(.home(action: .dismissPairingFailure)) }
+            guard onBack != nil, hasFailedPairing else { return }
+            model.dismissPairingFailure()
         }
         .onChange(of: model.pairingCode) { _, _ in refusal = nil }
         .onChange(of: scenePhase) { _, phase in
@@ -197,7 +203,6 @@ struct PairingView: View {
 
     private func scanAgain() {
         refusal = nil
-        lastCode = nil
         scanConsumed = false
         scannerProblem = nil
         model.pairingCode = ""
@@ -206,14 +211,12 @@ struct PairingView: View {
 
     private func cancelPairing() {
         scanConsumed = false
-        lastCode = nil
         model.cancelPairing()
     }
 
     private func leaveFailure() {
         guard hasFailedPairing else { return }
         refusal = nil
-        lastCode = nil
         scanConsumed = false
         model.dismissPairingFailure()
         if model.servers.adding {
@@ -234,7 +237,6 @@ struct PairingView: View {
         guard !isPairing else { return }
         // 先收起键盘，避免挡住进展或失败后的操作。
         isEditingCode = false
-        lastCode = code
         refusal = model.pair(code: code, deviceName: deviceName)
     }
 
@@ -372,7 +374,7 @@ private struct PairingProgress: View {
                 }
             }
             .accessibilityIdentifier("pairing-connecting")
-        case let .failed(reason, message):
+        case let .failed(reason, message, diagnostic):
             WontonNotice(
                 icon: .warning,
                 title: Self.title(reason),
@@ -388,13 +390,25 @@ private struct PairingProgress: View {
                         Text(.Pairing.pairingRetrySameCode).frame(maxWidth: .infinity)
                     }
                     .buttonStyle(WontonButtonStyle())
+                    .accessibilityIdentifier("pairing-retry")
                 }
                 Button(action: back) {
                     Text(.Pairing.pairingBack).frame(maxWidth: .infinity)
                 }
                 .buttonStyle(WontonButtonStyle(kind: .secondary))
                 if !message.isEmpty {
-                    ProblemDetail(text: message, minimumTargetHeight: WontonTheme.size.target)
+                    ProblemDetail(
+                        text: message, minimumTargetHeight: WontonTheme.size.target,
+                        toggleIdentifier: "pairing-failure-details"
+                    )
+                }
+                if let diagnostic, !diagnostic.isEmpty {
+                    ProblemDetail(
+                        text: diagnostic, minimumTargetHeight: WontonTheme.size.target,
+                        label: .Common.commonDiagnostics,
+                        toggleIdentifier: "pairing-failure-diagnostics"
+                    )
+                    .id(diagnostic)
                 }
             }
             .accessibilityElement(children: .contain)

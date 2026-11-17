@@ -31,6 +31,10 @@ SwiftUI 原生壳，外加通知扩展（解密推送）和小组件扩展（ADR
 - `project.yml`：XcodeGen 工程描述。`Wonton.xcodeproj` 和 `Wonton/Info.plist` 由它生成，不提交。
 - iPad regular 宽度用 `NavigationSplitView` 展示会话列表和当前内容，插件页只铺右栏；compact 宽度保留单列和抽屉。
   当前房间沿用 `ChatModel.path`，旋转和系统分屏不改选中项；iPad 不套用 iPhone 的竖屏限制。
+- iPad 的会话行、我的应用和插件页胶囊长按菜单可“在新窗口打开”。每个内容窗口独立保存目标与滚动位置，
+  房间窗口保留完整聊天操作，插件窗口关闭胶囊只清空本窗口页面；系统关窗才销毁窗口。
+  所有窗口共用一个核心、连接和房间草稿，时间线订阅与 WebView 各自独立；切换服务器后，旧服务器窗口提示切回，
+  不把旧目标交给新服务器。系统重复打开的完整主窗口仍共享页面栈，链接和快捷指令只路由到主窗口。
 - `scripts/build-core.sh`：编译 Rust 核心、生成 XCFramework 和 Swift 绑定。
 
 插件的可选权限在安装预览中本地选择，升级沿用核心预览的开关；提交包含最高风险或未知风险权限时另行确认主机控制权。
@@ -49,12 +53,13 @@ SwiftUI 原生壳，外加通知扩展（解密推送）和小组件扩展（ADR
 没有选房间或所选房间只读时先到聊天列表，选择可写房间后再填入，不调用发送接口。
 停止页的启动操作直接交给核心，失败留在页面上；加载失败的 HTTP 状态放在收起的详情里，不显示上游错误页。
 历史页恢复成功时通知核心清掉加载失败，不触发重载；被取消的错误响应不算加载成功。
-WebContent 进程终止后重建 WebView，恢复当前地址，重新加载期间显示骨架。
+WebContent 进程终止后重建 WebView，恢复当前地址，重新加载期间显示骨架。重新加载都回正在看的地址；登录往返里一次性的地址
+（从认证页跳回插件时的落点、认证页自己）不重放，回插件入口（`TabReloadTarget.swift`）。
 关闭目标由核心决定。网页框、安全区和胶囊见 [ADR-0095](../../docs/adr/0095-no-tab-bar.md) 的“铺满”：iOS 26 起网页框整屏，
 顶上的状态栏加胶囊那一行设成 `obscuredContentInsets`；iOS 17–18 没有这个接口，网页框从这一条下面开始，这一条涂
 WebKit 给的页面颜色（`themeColor`，没有就是 `underPageBackgroundColor`）。不取网页的像素，不注入 `viewport-fit=cover`。
 
-插件端口映射由核心按页面栈顶和 App 前后台状态启停（[ADR-0072](../../docs/adr/0072-tunnel-udp.md)），
+插件端口映射由核心按主窗口页面栈顶、存活内容页和 App 前后台状态启停（[ADR-0072](../../docs/adr/0072-tunnel-udp.md)），
 壳不另报可见插件。详情页显示核心给的映射状态、拒绝原因和公共中继带宽提示；没有状态时显示未知，
 不把端口声明当作已绑定成功。iOS 不提供第三方 App 用的手动映射开关。
 
@@ -187,6 +192,11 @@ apps/ios/scripts/ui-test.sh <模拟器 UDID> test \
 
 要后端的界面用例（好友、粘贴、安装行、图片查看、Bot 资料）用 `apps/ios/scripts/ui-test.sh` 跑：配对码只经环境变量
 `PAIRING_CODE` 传进去，没给就 XCTSkip，给了但不像配对码就直接失败。
+
+配对后的交接前置共用 `UITestBackend.settleKeyHandoff`：等真实 ViewModel 结束 `Checking`，有交接页就从
+“手边没有别的设备”进入备份页并返回，有恢复提醒就关提醒；不假定交接页必出现，也不以一段静默时间判成功。
+测试启动时经 `passPairingCode` 设置 `WONTON_UI_TEST_STATE=1`；自行启动的调用方也要设置。Debug 只读 AX 标识
+只暴露登录、同步和交接类别，不含密钥、不改核心状态；真正验证 SAS 交接的 `KeyHandoffUITests` 不调用跳过前置。
 
 ```bash
 PAIRING_CODE="$(deploy/dev/core/dev.sh pair <地址> | tail -n 1)" apps/ios/scripts/ui-test.sh <模拟器 UDID> test \

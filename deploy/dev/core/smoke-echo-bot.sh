@@ -44,7 +44,7 @@ elapsed=$(( $(date +%s) - started ))
 ok "/delay 5 的回声 ${elapsed} 秒后才到"
 # crypto store 丢了（数据卷被删、容器重建没挂卷）：同一台设备重启后 Bot 解不开任何人的加密消息
 # （服务器还留着旧身份签的一次性密钥，Olm 会话建不起来，房间密钥被扣），探针如实报错；
-# 重装换新设备后恢复收发。恢复说明在 crates/wonton-acp-bridge/README.md 的排错节。
+# 重装换新设备后恢复收发。现象和恢复办法见 plugins/examples/echo-bot/README.md。
 docker exec "$echo_bot" sh -c 'rm -rf /data/*'
 docker restart "$echo_bot"
 for _ in $(seq 60); do

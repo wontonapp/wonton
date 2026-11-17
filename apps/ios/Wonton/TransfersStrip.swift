@@ -10,23 +10,31 @@ struct TransfersStrip: View {
     @Environment(\.wontonColors) private var colors
 
     var body: some View {
-        let view = files.viewModel
+        // 读一下传输列表当变化信号：一变就重取这个房间的传输条；下载完的按房间归属在里面。
+        // swiftlint:disable:next redundant_discardable_let
+        let _ = files.viewModel
         let listed = files.core.roomTransfers(roomId: roomId)
         // 不用 `Group`：它没有自己的视图，内容变空时 `onChange` 可能不触发。
         VStack(spacing: 0) {
-            if !listed.here.isEmpty || !listed.elsewhere.isEmpty || !view.downloaded.isEmpty {
+            if !listed.here.isEmpty || !listed.elsewhere.isEmpty || !listed.downloaded.isEmpty {
                 VStack(spacing: WontonTheme.spacing.s8) {
                     ForEach(listed.here, id: \.id) { TransferRow(transfer: $0) }
                     ForEach(listed.elsewhere, id: \.transfer.id) {
                         TransferRow(transfer: $0.transfer, elsewhere: $0)
                     }
-                    if !view.downloaded.isEmpty {
-                        Button(.Transfer1.transferDownloadedCount(files: view.downloaded.count)) {
+                    if !listed.downloaded.isEmpty {
+                        Button {
                             isShowingDownloaded = true
+                        } label: {
+                            Text(caption(listed.downloaded))
+                                .wontonText(WontonTheme.typography.caption)
+                                .foregroundStyle(Color(colors.textPrimary))
+                                .underline()
+                                .lineLimit(1)
+                                .frame(minHeight: WontonTheme.size.target)
+                                .padding(.horizontal, WontonTheme.spacing.s4)
+                                .contentShape(Rectangle())
                         }
-                            .wontonText(WontonTheme.typography.caption)
-                            .foregroundStyle(Color(colors.textPrimary))
-                            .underline()
                             .buttonStyle(.plain)
                             .frame(maxWidth: .infinity, alignment: .trailing)
                     }
@@ -40,22 +48,35 @@ struct TransfersStrip: View {
                     isPresented: $isShowingDownloaded,
                     title: String(localized: .Transfer0.transferDownloaded), usesSystemPresentation: true
                 ) { _ in
-                    DownloadedList().environment(files)
+                    DownloadedList(roomId: roomId).environment(files)
                 }
             }
         }
-        .onChange(of: view.downloaded.isEmpty) { _, empty in
+        .onChange(of: listed.downloaded.isEmpty) { _, empty in
             if empty { isShowingDownloaded = false }
         }
+    }
+
+    /// 一个文件直接写它的名字，多个才写数量。
+    private func caption(_ downloaded: [Transfer]) -> String {
+        if downloaded.count == 1 {
+            return String(localized: .Transfer0.transferDownloadedOne(downloaded[0].name))
+        }
+        return String(localized: .Transfer1.transferDownloadedCount(files: downloaded.count))
     }
 }
 
 private struct DownloadedList: View {
+    let roomId: String
     @Environment(FilesModel.self) private var files
 
     var body: some View {
+        // 读传输列表当变化信号：列表开着时来新的下载，跟着变。
+        // swiftlint:disable:next redundant_discardable_let
+        let _ = files.viewModel
+        let listed = files.core.roomTransfers(roomId: roomId)
         VStack(spacing: WontonTheme.spacing.s8) {
-            ForEach(files.viewModel.downloaded, id: \.id) { TransferRow(transfer: $0) }
+            ForEach(listed.downloaded, id: \.id) { TransferRow(transfer: $0) }
         }
         .padding(.horizontal, WontonTheme.spacing.pageInset)
     }

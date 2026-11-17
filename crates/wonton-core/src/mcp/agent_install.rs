@@ -37,6 +37,32 @@ fn highest(manifest: &Manifest) -> bool {
         .any(|p| privileges::risk(p) == Some(CapabilityRisk::Highest))
 }
 
+fn device_second(
+    draft: &cards::Draft,
+    package: &PluginPackage,
+    langs: &Languages,
+) -> Option<cards::Draft> {
+    draft
+        .devices
+        .iter()
+        .any(|device| {
+            device.kind == wonton_protocol::PluginDeviceKind::Disk
+                && device.target.starts_with("/dev/nvme")
+        })
+        .then(|| cards::highest_confirm(package, langs))
+}
+
+fn update_confirmations(
+    draft: &cards::Draft,
+    package: &PluginPackage,
+    langs: &Languages,
+) -> (Option<cards::Draft>, Option<cards::Draft>) {
+    (
+        highest(&package.manifest).then(|| cards::highest_confirm(package, langs)),
+        device_second(draft, package, langs),
+    )
+}
+
 pub(super) async fn install(
     bus: &Arc<Bus>,
     caller: &Caller,
@@ -135,6 +161,7 @@ async fn official(
         Err(failure) => return bus.deny(caller, name, value, &failure),
     };
     let second = proposed.second.take();
+    let device_second = device_second(&draft, &package, &langs);
     let langs = langs.clone();
     let id_for_run = package.manifest.id.clone();
     let run = move |bus: Arc<Bus>,
@@ -161,7 +188,7 @@ async fn official(
         caller,
         name,
         value.clone(),
-        (draft, second, None, activity),
+        (draft, second, device_second, None, activity),
         run,
     )
     .await
@@ -403,6 +430,7 @@ async fn first_install(
             Err(failure) => return bus.deny(caller, name, value, &failure),
         };
     let second = proposed.second.take();
+    let device_second = device_second(&draft, &package, langs);
     let writer = PluginWriter {
         plugin_id: caller.id.to_string(),
         title: caller.name.clone(),
@@ -433,7 +461,7 @@ async fn first_install(
         caller,
         name,
         value.clone(),
-        (draft, second, None, activity),
+        (draft, second, device_second, None, activity),
         run,
     )
     .await
@@ -671,15 +699,8 @@ async fn card_update(
         inputs,
         langs,
     );
-    let preview = match bus
-        .plugins
-        .preview_upgrade(
-            &id,
-            crate::plugin::UpgradeTo::Upload(Box::new(package.clone())),
-            langs,
-        )
-        .await
-    {
+    let to = crate::plugin::UpgradeTo::Upload(Box::new(package.clone()));
+    let preview = match bus.plugins.preview_upgrade(&id, to, None, langs).await {
         Ok(preview) => preview,
         Err(e) => {
             return bus.deny(
@@ -693,7 +714,7 @@ async fn card_update(
     draft.settings = preview.settings;
     draft.permissions = preview.permissions;
     draft.devices = preview.devices.unwrap_or_default();
-    let second = highest(&package.manifest).then(|| cards::highest_confirm(&package, langs));
+    let (second, device_second) = update_confirmations(&draft, &package, langs);
     let id_for_run = id;
     let writer = adopt.then(|| PluginWriter {
         plugin_id: caller.id.to_string(),
@@ -712,7 +733,7 @@ async fn card_update(
         caller,
         name,
         value.clone(),
-        (draft, second, None, activity),
+        (draft, second, device_second, None, activity),
         run,
     )
     .await

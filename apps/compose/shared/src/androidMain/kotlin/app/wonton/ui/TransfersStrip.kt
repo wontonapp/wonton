@@ -28,6 +28,7 @@ import androidx.compose.ui.res.pluralStringResource
 import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.semantics.Role
 import androidx.compose.ui.text.style.TextDecoration
+import androidx.compose.ui.text.style.TextOverflow
 import app.wonton.client.ClientCore
 import app.wonton.protocol.FileAction
 import app.wonton.protocol.Action
@@ -53,11 +54,12 @@ import app.wonton.ui.icons.WontonIcon
 /** 输入框上方进行中和要处理的传输，还有下载完的入口。上传完的已经是房间里的一条消息。 */
 @Composable
 fun TransfersStrip(roomId: String, core: ClientCore) {
+    // 只当变化信号用：传输列表一变就重取这个房间的传输条；下载完的按房间归属在里面。
     val view = LocalFiles.current.transfers
     val listed = remember(view, roomId) { core.roomTransfers(roomId) }
     var showingDownloaded by remember { mutableStateOf(false) }
-    if (view.downloaded.isEmpty()) showingDownloaded = false
-    if (listed.here.isEmpty() && listed.elsewhere.isEmpty() && view.downloaded.isEmpty()) return
+    if (listed.downloaded.isEmpty()) showingDownloaded = false
+    if (listed.here.isEmpty() && listed.elsewhere.isEmpty() && listed.downloaded.isEmpty()) return
     val colors = WontonTheme.colors
     Column(
         Modifier.fillMaxWidth()
@@ -67,22 +69,40 @@ fun TransfersStrip(roomId: String, core: ClientCore) {
     ) {
         listed.here.forEach { TransferRow(it) }
         listed.elsewhere.forEach { TransferRow(it.transfer, Destination(it.roomName)) }
-        if (view.downloaded.isNotEmpty()) {
-            Text(
-                pluralStringResource(R.plurals.transfer_downloaded_count, view.downloaded.size, view.downloaded.size),
-                Modifier.align(Alignment.End).clickable(role = Role.Button) { showingDownloaded = true },
-                style = WontonTheme.typography.caption.copy(textDecoration = TextDecoration.Underline),
-                color = colors.textPrimary.toColor(),
-            )
+        if (listed.downloaded.isNotEmpty()) {
+            val caption = if (listed.downloaded.size == 1) {
+                stringResource(R.string.transfer_downloaded_one, listed.downloaded[0].name)
+            } else {
+                pluralStringResource(
+                    R.plurals.transfer_downloaded_count,
+                    listed.downloaded.size,
+                    listed.downloaded.size,
+                )
+            }
+            Box(
+                Modifier.align(Alignment.End)
+                    .heightIn(min = WontonTheme.size.target)
+                    .clickable(role = Role.Button) { showingDownloaded = true }
+                    .padding(horizontal = WontonTheme.spacing.s4),
+                contentAlignment = Alignment.Center,
+            ) {
+                Text(
+                    caption,
+                    style = WontonTheme.typography.caption.copy(textDecoration = TextDecoration.Underline),
+                    color = colors.textPrimary.toColor(),
+                    maxLines = 1,
+                    overflow = TextOverflow.Ellipsis,
+                )
+            }
         }
     }
-    if (showingDownloaded && view.downloaded.isNotEmpty()) {
+    if (showingDownloaded && listed.downloaded.isNotEmpty()) {
         WontonSheet({ showingDownloaded = false }, stringResource(R.string.transfer_downloaded)) {
             LazyColumn(
                 contentPadding = PaddingValues(horizontal = WontonTheme.spacing.pageInset),
                 verticalArrangement = Arrangement.spacedBy(WontonTheme.spacing.s8),
             ) {
-                items(view.downloaded, key = { it.id }) { TransferRow(it) }
+                items(listed.downloaded, key = { it.id }) { TransferRow(it) }
             }
         }
     }

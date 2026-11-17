@@ -11,7 +11,6 @@ uniffi::setup_scaffolding!();
 mod action;
 mod action_domains;
 mod agent_chain;
-mod agent_handoff;
 mod agent_outbox;
 mod agent_permission;
 mod agent_run;
@@ -38,6 +37,7 @@ mod home;
 mod lan;
 mod link;
 mod link_preview;
+pub mod manifest;
 mod matrix_login;
 mod onboarding;
 mod owner;
@@ -75,21 +75,19 @@ pub use action_domains::{
     SettingsAction, SharingAction,
 };
 pub use agent_chain::{
-    ACP_CHAIN_META_KEY, AGENT_CHAINS_API_PATH, AGENT_CHAINS_PATH, AGENT_CHAINS_WAIT_SECS,
-    AGENT_LIMITS_PATH, AGENT_OUTBOX_PATH, AGENT_OUTBOX_WAIT_SECS, AGENT_SETTINGS_PATH, AgentAction,
+    AGENT_CHAINS_API_PATH, AGENT_CHAINS_PATH, AGENT_CHAINS_WAIT_SECS, AGENT_LIMITS_PATH,
+    AGENT_OUTBOX_PATH, AGENT_OUTBOX_WAIT_SECS, AGENT_SETTINGS_PATH, AgentAction,
     AgentActionFailure, AgentChainBot, AgentChainRow, AgentChainStatus, AgentChainsViewModel,
-    AgentConcurrency, AgentSettingsViewModel, BOT_TOKEN_HEADER, ChainCarrier, ChainError,
-    ChainLimitKind, ChainLimits, ChainRefusal, ChainSpend, ChainTurnGrant, ChainTurnReport,
-    DEFAULT_CONSUMER_AGENT_CONCURRENCY, SESSION_HEADER, WONTON_BOT_HEADER, WONTON_CHAIN_HEADER,
-    WONTON_MAX_DEPTH_HEADER, WONTON_MAX_ROUNDS_HEADER, WONTON_MAX_TOKENS_HEADER,
-    WONTON_ON_BEHALF_OF_HEADER, WONTON_PLUGIN_HEADER, WONTON_USER_HEADER, agent_chain_stop_path,
-    agent_consumer_concurrency_path,
+    AgentConcurrency, AgentSettingsViewModel, BOT_TOKEN_HEADER, ChainError, ChainLimitKind,
+    ChainLimits, ChainRefusal, ChainSpend, ChainTurnGrant, ChainTurnReport,
+    DEFAULT_CONSUMER_AGENT_CONCURRENCY, SESSION_HEADER, WONTON_BOT_HEADER, WONTON_MAX_DEPTH_HEADER,
+    WONTON_MAX_ROUNDS_HEADER, WONTON_MAX_TOKENS_HEADER, WONTON_ON_BEHALF_OF_HEADER,
+    WONTON_USER_HEADER, agent_chain_stop_path, agent_consumer_concurrency_path,
 };
-pub use agent_handoff::{
-    HAND_OFF_STATUS_TOOL, HAND_OFF_TOOL, HandOffRequest, HandOffResult, HandOffSession,
-    HandOffState, HandOffStatusRequest, SEND_MESSAGE_TOOL, SendMessageRequest,
+pub use agent_outbox::{
+    OutboxFailure, OutboxItem, OutboxKind, OutboxReceipt, OutboxResult, SEND_MESSAGE_TOOL,
+    SendMessageRequest,
 };
-pub use agent_outbox::{OutboxFailure, OutboxItem, OutboxKind, OutboxReceipt, OutboxResult};
 pub use agent_permission::{
     AGENT_PERMISSION_PATH, AGENT_PERMISSION_TTL_SECS, AgentPermissionKind, AgentPermissionOption,
     AgentPermissionOutcome, AgentPermissionRequest,
@@ -255,6 +253,7 @@ pub use personal_data::{
     RetentionPolicy, RetentionSetting, SleepStage, WriteAccepted, data_path, query_path,
 };
 pub use plugin::LanClient;
+pub use plugin::StoreLoadState;
 pub use plugin::StoreUnreadable;
 pub use plugin::hint::{PluginHint, PluginHintCategory};
 pub use plugin::ports::{PortProtocol, PortSpec, TunnelSpec};
@@ -269,21 +268,22 @@ pub use plugin::{
     OwnerSecretFailure, OwnerSecretProblem, OwnerSecretView, OwnerSecretsView, PermissionLine,
     PermissionOpened, PermissionRisk, PermissionUpdate, PluginAuthor, PluginDetail,
     PluginDetailOutcome, PluginDetailRoute, PluginDevice, PluginDeviceKind, PluginFailure,
-    PluginHealth, PluginIcon, PluginImage, PluginKind, PluginLimits, PluginMediaGrant,
-    PluginOperation, PluginProblem, PluginRuntime, PluginScope, PluginSettingField,
-    PluginSettingKind, PluginSettingOption, PluginSettingsUpdate, PluginSettingsView, PluginState,
-    PluginTakeover, PluginTask, PluginTaskNextStep, PluginTaskState, PluginTrust, PluginWidget,
-    PluginWriter, PluginsViewModel, RemoteAuth, RemoteAuthorization, RemoteMcpDetail,
-    RemoteMcpPreview, RemoteOauthGrant, RemoteOauthStart, RequirementLine, RequirementStatus,
-    RoomWidget, SecretInput, SecretInputState, SecretUpdate, SecretValues, SecurityTier,
-    SettingValue, SettingValues, SettingsFieldError, SettingsFieldProblem,
-    SettingsFieldProblemKind, SettingsForm, SettingsInvalidError, SettingsProblem,
-    SettingsSchemaError, SettingsSchemaProblem, SettingsSchemaProblemKind, SourceKind,
-    StorageUsage, StoreFailure, StoreItem, StoreListing, StoreProblem, StoreSection, TakeoverState,
-    ToolAccess, ToolPolicyEntry, ToolPolicyView, UninstallPreview, UninstallRequest, UpgradeOffer,
-    UpgradeRequest, UpgradeResult, WidgetCapability, WidgetCapabilityLevel, WidgetEntry,
-    plugin_remote_oauth_finish_path, plugin_remote_oauth_start_path, plugin_scope_path,
-    plugin_settings_path, plugin_settings_preview_path, remote_oauth_start_path, secret_input_path,
+    PluginGrantedDevice, PluginHealth, PluginIcon, PluginImage, PluginKind, PluginLimits,
+    PluginMediaGrant, PluginOperation, PluginProblem, PluginRuntime, PluginScope,
+    PluginSettingField, PluginSettingKind, PluginSettingOption, PluginSettingsUpdate,
+    PluginSettingsView, PluginState, PluginTakeover, PluginTask, PluginTaskNextStep,
+    PluginTaskState, PluginTrust, PluginWidget, PluginWriter, PluginsViewModel, RemoteAuth,
+    RemoteAuthorization, RemoteMcpDetail, RemoteMcpPreview, RemoteOauthGrant, RemoteOauthStart,
+    RequirementLine, RequirementStatus, RoomWidget, SecretInput, SecretInputState, SecretUpdate,
+    SecretValues, SecurityTier, SettingValue, SettingValues, SettingsFieldError,
+    SettingsFieldProblem, SettingsFieldProblemKind, SettingsForm, SettingsInvalidError,
+    SettingsProblem, SettingsSchemaError, SettingsSchemaProblem, SettingsSchemaProblemKind,
+    SourceKind, StorageUsage, StoreFailure, StoreItem, StoreListing, StoreProblem, StoreSection,
+    TakeoverState, ToolAccess, ToolPolicyEntry, ToolPolicyView, UninstallPreview, UninstallRequest,
+    UpgradeOffer, UpgradeRequest, UpgradeResult, WidgetCapability, WidgetCapabilityLevel,
+    WidgetEntry, plugin_remote_oauth_finish_path, plugin_remote_oauth_start_path,
+    plugin_scope_path, plugin_settings_path, plugin_settings_preview_path, remote_oauth_start_path,
+    secret_input_path,
 };
 pub use plugin::{PluginDesiredState, PluginLifecycle, PluginRecovery, PluginRecoveryStage};
 pub use plugin::{PluginStart, PluginStartState, RoomPlugin};
@@ -337,8 +337,8 @@ pub use side_chat::{
 };
 pub use sidebar::{SidebarApp, SidebarBadge, SidebarOpen, SidebarViewModel};
 pub use timeline::{
-    BackPagination, ImageCaption, ImageContent, KeyNotice, MatrixTarget, MediaHandle,
-    MessageAction, MessageContent, MessageReceipt, RichBlock, RichBlockKind, RichLink,
+    BackPagination, FileAttachment, ImageCaption, ImageContent, KeyNotice, MatrixTarget,
+    MediaHandle, MessageAction, MessageContent, MessageReceipt, RichBlock, RichBlockKind, RichLink,
     RichLinkKind, RichSpan, SendState, TimelineContent, TimelineDiff, TimelineItem,
     TimelineMessage, TimelineScroll, TimelineUpdate, TimelineViewport,
 };

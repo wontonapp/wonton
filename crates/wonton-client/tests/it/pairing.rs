@@ -1,7 +1,9 @@
 //! 扫码配对和添加设备的行为测试：只经导出给原生壳的接口驱动。服务端是只走回环地址的隧道入口，配对的处理方按发出去的
 //! 码决定登记还是拒绝，登记就是把设备加进隧道的白名单；经隧道来的 HTTP 请求由一个模拟的核心回答。
 
+mod invalid_details;
 mod joining;
+mod language;
 mod reset;
 mod stuck_bind;
 
@@ -18,8 +20,8 @@ use serde_json::json;
 use tokio::io::{AsyncReadExt, AsyncWriteExt};
 use url::Url;
 use wonton_client::{
-    Action, ClientCore, CoreError, DeviceInvite, HomeFailure, HomeStatus, HomeViewModel, Network,
-    PairingFailure, PairingStage, PairingStatus, SecretString,
+    Action, ChatAccount, ClientCore, CoreError, DeviceInvite, HomeFailure, HomeStatus,
+    HomeViewModel, Network, PairingFailure, PairingStage, PairingStatus, SecretString, TabRef,
 };
 use wonton_protocol::{JoinOutcome, RoleDef};
 use wonton_tunnel::pair::{
@@ -43,6 +45,7 @@ struct Codes {
     server_id: EndpointId,
     direct_addrs: Vec<SocketAddr>,
     codes: Mutex<HashMap<String, Option<RejectReason>>>,
+    refusal_message: Mutex<Option<String>>,
     /// 加入别人家的码：配对时回这个结果和角色，不登记设备。
     joins: Mutex<HashMap<String, (JoinOutcome, Option<RoleDef>)>>,
     names: Mutex<Vec<String>>,
@@ -104,7 +107,12 @@ impl PairHandler for Codes {
             Some(None) => PairResponse::Paired,
             Some(Some(reason)) => PairResponse::Rejected {
                 reason: *reason,
-                message: format!("{reason:?}"),
+                message: self
+                    .refusal_message
+                    .lock()
+                    .unwrap()
+                    .clone()
+                    .unwrap_or_else(|| format!("{reason:?}")),
             },
             None => PairResponse::Rejected {
                 reason: RejectReason::UnknownCode,
@@ -155,6 +163,7 @@ impl Home {
             server_id: endpoint.id(),
             direct_addrs: endpoint.bound_sockets(),
             codes: Mutex::new(HashMap::new()),
+            refusal_message: Mutex::new(None),
             joins: Mutex::new(HashMap::new()),
             names: Mutex::new(Vec::new()),
             invites: Mutex::new(Vec::new()),
@@ -304,14 +313,17 @@ impl Phone {
             .unwrap_or_else(|_| panic!("等待超时，当前：{:?}", self.home()))
     }
 
-    /// 失败的原因连同原文一起带出去：断言消息里要能看到 TunnelError 的原文，CI 再红时才能区分
-    /// 服务端先关（LINGER）和服务端没读到请求（REQUEST_TIMEOUT）两个失败窗口。
+    /// 把摘要和独立诊断一起带入断言的失败输出，便于区分服务端先关和没读到请求。
     async fn pairing_failure(&self) -> (PairingFailure, String) {
         let view = self
             .wait_for(|view| matches!(view.pairing, Some(PairingStatus::Failed { .. })))
             .await;
         match view.pairing {
-            Some(PairingStatus::Failed { reason, message }) => (reason, message),
+            Some(PairingStatus::Failed {
+                reason,
+                message,
+                diagnostic,
+            }) => (reason, format!("{message}\n{diagnostic:?}")),
             _ => unreachable!(),
         }
     }
@@ -331,7 +343,7 @@ async fn a_code_with_an_http_relay_is_rejected_at_once() {
     );
     let error = phone.pair(&code).unwrap_err();
     let text = format!("{error:?}");
-    assert!(text.contains("https"), "{text}");
+    assert!(text.to_ascii_lowercase().contains("https"), "{text}");
 }
 
 #[tokio::test]
@@ -362,6 +374,29 @@ async fn unreachable_pairing_stops_before_cleanup_and_retry_starts_again() {
         .await
         .expect("pairing failure must be published before endpoint cleanup");
     assert_eq!(failure, PairingFailure::TransportUnavailable, "{message}");
+    let Some(PairingStatus::Failed {
+        message,
+        diagnostic,
+        ..
+    }) = phone.home().pairing
+    else {
+        unreachable!()
+    };
+    let diagnostic = diagnostic.expect("原始诊断仍可获得");
+    assert!(
+        !message.contains("tunnel transport unavailable"),
+        "{message}"
+    );
+    assert!(
+        !message.contains(&dead.local_addr().unwrap().to_string()),
+        "{message}"
+    );
+    assert!(diagnostic.contains("transport-unavailable"), "{diagnostic}");
+    assert!(
+        diagnostic.contains(&dead.local_addr().unwrap().to_string()),
+        "{diagnostic}"
+    );
+    assert!(!diagnostic.contains(PairingCode::parse(&code).unwrap().secret.expose()));
     assert_eq!(phone.home().status, HomeStatus::NotConfigured);
     assert!(phone.home().server_id.is_none());
     phone
@@ -794,4 +829,75 @@ async fn retrying_the_same_code_after_a_failure_pairs() {
     phone.test_set_pair_deadlines(Duration::from_secs(10), WATCH);
     phone.pair(&code).unwrap();
     phone.wait_for(paired).await;
+}
+
+/// 手机上已经配好一台服务器时再扫一个会被服务端拒绝的码：`PairHome` 同步返回成功，槽位当场就换了，
+/// 拒绝要等服务端回话才出现；拒绝之后停在新槽、不回到原来那台，原来开着的那一页也没了。
+#[tokio::test(flavor = "multi_thread", worker_threads = 2)]
+async fn pairing_again_switches_the_slot_before_the_server_rejects() {
+    let home = Home::start().await;
+    let dir = tempfile::tempdir().unwrap();
+    let phone = Phone::open(dir.path());
+    phone.pair(&home.code(None)).unwrap();
+    phone.wait_for(paired).await;
+    let old = phone
+        .servers()
+        .servers
+        .iter()
+        .find(|server| server.current)
+        .unwrap()
+        .id
+        .clone();
+    phone
+        .dispatch(Action::Pages {
+            action: wonton_protocol::PageAction::OpenPage {
+                tab: TabRef::Url {
+                    url: "https://example.test/".to_owned(),
+                },
+            },
+        })
+        .unwrap();
+    assert_eq!(phone.pages().stack.len(), 1);
+
+    // 服务端拖住回应：核心这边已经同步成功，结论还没到。
+    *home.codes.slow.lock().unwrap() = 1;
+    phone.pair(&home.code(Some(RejectReason::Expired))).unwrap();
+    let view = phone
+        .wait_for(|view| {
+            matches!(
+                view.pairing,
+                Some(PairingStatus::InProgress {
+                    stage: PairingStage::Confirming,
+                    ..
+                })
+            )
+        })
+        .await;
+    // 槽位在服务端回话前就换了：当前已经是不配对的新槽位，旧的那台不再挂着，界面停在配对页。
+    assert_eq!(view.status, HomeStatus::NotConfigured);
+    assert!(view.server_id.is_none());
+    let servers = phone.servers();
+    assert_eq!(servers.servers.len(), 1);
+    assert_eq!(servers.servers[0].id, old);
+    assert!(!servers.servers[0].current);
+    assert!(servers.adding);
+    assert!(matches!(phone.chat().account, ChatAccount::SignedOut));
+    assert!(
+        phone.pages().stack.is_empty(),
+        "原来开着的那一页已经随旧槽位没了"
+    );
+
+    let (reason, _) = phone.pairing_failure().await;
+    assert_eq!(reason, PairingFailure::Expired);
+    assert!(phone.home().pairing.is_some());
+    assert_eq!(phone.home().status, HomeStatus::NotConfigured);
+    // 拒绝之后也没有自动回到原来那台：旧服务器仍不挂着，手机得自己取消或重试。
+    let servers = phone.servers();
+    assert_eq!(servers.servers.len(), 1);
+    assert_eq!(servers.servers[0].id, old);
+    assert!(!servers.servers[0].current);
+    assert!(servers.adding);
+    assert!(phone.home().server_id.is_none());
+    // 新槽没有登录，谈不上交接页。
+    assert!(phone.chat().encryption.key_handoff.is_none());
 }

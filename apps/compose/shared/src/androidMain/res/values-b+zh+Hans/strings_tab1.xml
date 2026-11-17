@@ -3,9 +3,12 @@
     <string name="tab_uninstalling">正在卸载…</string>
     <string name="tab_upgrading">正在更新…</string>
     <string name="tab_opens_in_browser">%1$s 在浏览器里打开</string>
+    <string name="tab_opened_in_browser">%1$s 已在浏览器里打开</string>
+    <string name="tab_reopen_in_browser">再打开一次</string>
     <string name="tab_open_in_browser">打开</string>
     <string name="tab_unpin_from_bar">从底栏移除</string>
     <string name="tab_load_not_ready">应用还没有准备好</string>
+    <string name="tab_degraded_line">应用已安装，但部分功能没有在运行；具体原因在「详情」里。</string>
     <string name="tab_media_prompt_microphone">允许 %1$s 使用麦克风吗？</string>
     <string name="tab_media_system_settings">去设置</string>
     <string name="tab_fullscreen">全屏</string>

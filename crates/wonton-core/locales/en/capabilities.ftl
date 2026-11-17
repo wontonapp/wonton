@@ -16,3 +16,4 @@ plugin-capability-plan-changed = The installation plan changed after preview. Op
 plugin-capability-choices-unsupported = This core cannot apply selected devices or a restricted bot scope. These choices have not been changed or installed.
 plugin-capability-uninstall-selection = The selected providers are still in use or weren't offered for removal. Open the uninstall preview again.
 plugin-capability-self-only = Capability { $capability } needs a provider other than this app: it provides the capability itself, so install another provider first
+plugin-capability-bot-missing = The selected Bot { $bot } in { $provider } is no longer available. Choose a Bot again.

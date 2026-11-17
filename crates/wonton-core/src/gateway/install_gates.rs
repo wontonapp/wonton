@@ -21,7 +21,7 @@ use super::api::{acted_by, error_response, install_error};
 use super::pages::ERROR_HEADER;
 use super::{Gateway, Person, TunnelPeer};
 use crate::l10n;
-use crate::mcp::{Draft, Refusal};
+use crate::mcp::{Draft, Refusal, highest_confirm_for, mark_nvme_risk};
 use crate::plugin::languages::Languages;
 use crate::plugin::{InstallError, PluginId, UpgradeTo};
 
@@ -126,7 +126,7 @@ where
     let (sent, waited) = oneshot::channel();
     tokio::spawn(async move {
         let outcome = match bus.ask_plugin_admin(identity, draft).await {
-            Ok(_ticket) => Outcome::Done(run(gateway).await),
+            Ok(_) => Outcome::Done(run(gateway).await),
             Err(Refusal::Rejected) => Outcome::Rejected,
             Err(Refusal::Unavailable(message)) => Outcome::Unavailable(message),
             Err(_) => Outcome::Expired,
@@ -134,6 +134,124 @@ where
         let _ = sent.send(outcome);
     });
     GateOutcome::Wait(waited)
+}
+
+fn ask_admin_nvme<F, Fut>(
+    gateway: &Arc<Gateway>,
+    peer: Option<Extension<TunnelPeer>>,
+    headers: &HeaderMap,
+    (first, second, success, upgrade_id): (Draft, Draft, String, Option<String>),
+    run: F,
+) -> GateOutcome<Outcome<Response>>
+where
+    F: FnOnce(Arc<Gateway>) -> Fut + Send + 'static,
+    Fut: Future<Output = Response> + Send,
+{
+    let bus = gateway
+        .mcp
+        .as_ref()
+        .expect("调用方已判过有总线")
+        .bus
+        .clone();
+    let identity = acted_by(gateway, peer.as_ref(), headers);
+    let langs = gateway.plugins.owner_languages();
+    let gateway = Arc::clone(gateway);
+    let (sent, waited) = oneshot::channel();
+    tokio::spawn(async move {
+        let outcome = match bus.ask_plugin_admin_twice(identity, first, second).await {
+            Ok((first, second)) => {
+                let response = run(gateway).await;
+                let state = if response.status().is_success() {
+                    wonton_protocol::ConfirmationState::Succeeded { message: success }
+                } else {
+                    let status = response.status().to_string();
+                    let kind = response
+                        .headers()
+                        .get(ERROR_HEADER)
+                        .and_then(|value| value.to_str().ok())
+                        .unwrap_or("http_error");
+                    let message = if let Some(id) = &upgrade_id {
+                        l10n::text(
+                            &langs,
+                            "chat-update-failed",
+                            &[
+                                ("id", id.as_str().into()),
+                                ("kind", kind.into()),
+                                ("error", status.as_str().into()),
+                            ],
+                        )
+                    } else {
+                        l10n::text(
+                            &langs,
+                            "chat-install-failed",
+                            &[("kind", kind.into()), ("error", status.as_str().into())],
+                        )
+                    };
+                    wonton_protocol::ConfirmationState::Failed { message }
+                };
+                bus.confirmations().finish(first, state.clone()).await;
+                bus.confirmations().finish(second, state).await;
+                Outcome::Done(response)
+            }
+            Err(Refusal::Rejected) => Outcome::Rejected,
+            Err(Refusal::Unavailable(message)) => Outcome::Unavailable(message),
+            Err(_) => Outcome::Expired,
+        };
+        let _ = sent.send(outcome);
+    });
+    GateOutcome::Wait(waited)
+}
+
+fn nvme_admin_cards(
+    preview: &InstallPreview,
+    selected: &[String],
+    retain: bool,
+    langs: &Languages,
+) -> Result<(Draft, Option<Draft>), InstallError> {
+    let items = preview.devices.as_deref().unwrap_or_default();
+    for id in selected {
+        if !items.iter().any(|device| &device.id == id) {
+            return Err(InstallError::Invalid(l10n::text(
+                langs,
+                "plugin-install-device-unknown",
+                &[("id", id.as_str().into())],
+            )));
+        }
+    }
+    let mut first = preview_draft(preview, langs);
+    let nvme: Vec<_> = items
+        .iter()
+        .filter(|device| {
+            device.kind == wonton_protocol::PluginDeviceKind::Disk
+                && device.target.starts_with("/dev/nvme")
+                && (selected.contains(&device.id)
+                    || (retain && selected.is_empty() && device.chosen))
+        })
+        .collect();
+    if nvme.is_empty() {
+        return Ok((first, None));
+    }
+    first.permissions = preview.permissions.clone();
+    mark_nvme_risk(&mut first, langs);
+    first.lines.extend(nvme.iter().map(|device| CardLine {
+        text: format!("· {}", device.name),
+        emphasis: true,
+    }));
+    first.lines.push(CardLine {
+        text: l10n::text(langs, "permission-notice-highest-risk", &[]),
+        emphasis: true,
+    });
+    let mut second = highest_confirm_for(
+        &preview.title,
+        &preview.id,
+        first.permissions.clone(),
+        langs,
+    );
+    second.lines.extend(nvme.iter().map(|device| CardLine {
+        text: format!("· {}", device.name),
+        emphasis: true,
+    }));
+    Ok((first, Some(second)))
 }
 
 fn choices(langs: &Languages) -> Vec<CardChoice> {
@@ -151,19 +269,61 @@ fn choices(langs: &Languages) -> Vec<CardChoice> {
     ]
 }
 
+async fn source_admin_cards(
+    gateway: &Gateway,
+    request: &wonton_protocol::InstallRequest,
+    preview: &InstallPreview,
+    langs: &Languages,
+) -> Result<(Draft, Option<Draft>), InstallError> {
+    let (mut first, mut second) = nvme_admin_cards(preview, &request.devices, false, langs)?;
+    for provider in &request.install_together {
+        if provider.request.devices.is_empty() {
+            continue;
+        }
+        let item = gateway
+            .plugins
+            .preview_source(&provider.request.source, langs)
+            .await?;
+        if item.id != provider.id || item.digest != provider.request.digest {
+            return Err(InstallError::Changed(l10n::text(
+                langs,
+                "plugin-capability-plan-changed",
+                &[],
+            )));
+        }
+        let (provider_first, provider_second) =
+            nvme_admin_cards(&item, &provider.request.devices, false, langs)?;
+        if let Some(provider_second) = provider_second {
+            first.lines.push(CardLine {
+                text: item.title.clone(),
+                emphasis: true,
+            });
+            first.lines.extend(provider_first.lines);
+            first.permissions.extend(provider_first.permissions);
+            match &mut second {
+                Some(second) => {
+                    second.lines.extend(provider_second.lines);
+                    second.permissions.extend(provider_second.permissions);
+                }
+                None => second = Some(provider_second),
+            }
+        }
+    }
+    Ok((first, second))
+}
+
 /// 按来源安装的门槛：卡片内容按预览写，批准后执行 `run`。
-pub(crate) async fn install_source<R, F, Fut>(
+pub(crate) async fn install_source<F, Fut>(
     gateway: &Arc<Gateway>,
     peer: Option<Extension<TunnelPeer>>,
     headers: &HeaderMap,
     person: &Person,
     request: &wonton_protocol::InstallRequest,
     run: F,
-) -> GateOutcome<Outcome<R>>
+) -> GateOutcome<Outcome<Response>>
 where
-    R: Send + 'static,
     F: FnOnce(Arc<Gateway>) -> Fut + Send + 'static,
-    Fut: Future<Output = R> + Send,
+    Fut: Future<Output = Response> + Send,
 {
     match gateway.permissions(person).install_apps {
         Gate::Allow => GateOutcome::Wait(ready(Outcome::Done(run(gateway.clone()).await))),
@@ -175,8 +335,21 @@ where
                 .await
             {
                 Ok(preview) => {
-                    let draft = preview_draft(&preview, &langs);
-                    ask_admin(gateway, peer, headers, draft, run)
+                    let (first, second) =
+                        match source_admin_cards(gateway, request, &preview, &langs).await {
+                            Ok(cards) => cards,
+                            Err(error) => return GateOutcome::Stop(install_error(&error)),
+                        };
+                    if let Some(second) = second {
+                        let success = l10n::text(
+                            &langs,
+                            "chat-install-done",
+                            &[("title", preview.title.as_str().into())],
+                        );
+                        ask_admin_nvme(gateway, peer, headers, (first, second, success, None), run)
+                    } else {
+                        ask_admin(gateway, peer, headers, first, run)
+                    }
                 }
                 Err(e) => GateOutcome::Stop(install_error(&e)),
             }
@@ -193,18 +366,17 @@ fn ready<R>(result: Outcome<R>) -> oneshot::Receiver<Outcome<R>> {
 }
 
 /// 上传插件包安装的门槛：卡片按包的预览写，批准后执行 `run`。
-pub(crate) async fn install_upload<R, F, Fut>(
+pub(crate) async fn install_upload<F, Fut>(
     gateway: &Arc<Gateway>,
     peer: Option<Extension<TunnelPeer>>,
     headers: &HeaderMap,
     person: &Person,
-    package: &crate::plugin::PluginPackage,
+    (package, selected): (&crate::plugin::PluginPackage, &[String]),
     run: F,
-) -> GateOutcome<Outcome<R>>
+) -> GateOutcome<Outcome<Response>>
 where
-    R: Send + 'static,
     F: FnOnce(Arc<Gateway>) -> Fut + Send + 'static,
-    Fut: Future<Output = R> + Send,
+    Fut: Future<Output = Response> + Send,
 {
     match gateway.permissions(person).install_apps {
         Gate::Allow => GateOutcome::Wait(ready(Outcome::Done(run(gateway.clone()).await))),
@@ -216,8 +388,21 @@ where
                 .await
             {
                 Ok(preview) => {
-                    let draft = preview_draft(&preview, &langs);
-                    ask_admin(gateway, peer, headers, draft, run)
+                    let (first, second) = match nvme_admin_cards(&preview, selected, false, &langs)
+                    {
+                        Ok(cards) => cards,
+                        Err(error) => return GateOutcome::Stop(install_error(&error)),
+                    };
+                    if let Some(second) = second {
+                        let success = l10n::text(
+                            &langs,
+                            "chat-install-done",
+                            &[("title", preview.title.as_str().into())],
+                        );
+                        ask_admin_nvme(gateway, peer, headers, (first, second, success, None), run)
+                    } else {
+                        ask_admin(gateway, peer, headers, first, run)
+                    }
                 }
                 Err(e) => GateOutcome::Stop(install_error(&e)),
             }
@@ -226,29 +411,51 @@ where
     }
 }
 
-/// 升级的门槛：卡片内容按升级预览写，批准后执行 `run`。
-pub(crate) async fn upgrade<R, F, Fut>(
+/// 升级的门槛：卡片内容按升级预览写，批准后执行 `run`。`enabled` 是请求带上的可选项全集，
+/// 预览按它算生效集——成员升级时顺手打开的可选权限，卡片上也要看得见。
+pub(crate) async fn upgrade<F, Fut>(
     gateway: &Arc<Gateway>,
     peer: Option<Extension<TunnelPeer>>,
     headers: &HeaderMap,
     person: &Person,
     id: &PluginId,
-    to: UpgradeTo,
+    (to, selected, enabled): (UpgradeTo, &[String], Option<&[String]>),
     run: F,
-) -> GateOutcome<Outcome<R>>
+) -> GateOutcome<Outcome<Response>>
 where
-    R: Send + 'static,
     F: FnOnce(Arc<Gateway>) -> Fut + Send + 'static,
-    Fut: Future<Output = R> + Send,
+    Fut: Future<Output = Response> + Send,
 {
     match gateway.permissions(person).install_apps {
         Gate::Allow => GateOutcome::Wait(ready(Outcome::Done(run(gateway.clone()).await))),
         wonton_protocol::Gate::AskAdmin => {
             let langs = gateway.plugins.owner_languages();
-            match gateway.plugins.preview_upgrade(id, to, &langs).await {
+            match gateway
+                .plugins
+                .preview_upgrade(id, to, enabled, &langs)
+                .await
+            {
                 Ok(preview) => {
-                    let draft = preview_draft(&preview, &langs);
-                    ask_admin(gateway, peer, headers, draft, run)
+                    let (first, second) = match nvme_admin_cards(&preview, selected, true, &langs) {
+                        Ok(cards) => cards,
+                        Err(error) => return GateOutcome::Stop(install_error(&error)),
+                    };
+                    if let Some(second) = second {
+                        let success = l10n::text(
+                            &langs,
+                            "chat-update-done",
+                            &[("version", preview.version.as_str().into())],
+                        );
+                        ask_admin_nvme(
+                            gateway,
+                            peer,
+                            headers,
+                            (first, second, success, Some(id.to_string())),
+                            run,
+                        )
+                    } else {
+                        ask_admin(gateway, peer, headers, first, run)
+                    }
                 }
                 Err(e) => GateOutcome::Stop(install_error(&e)),
             }

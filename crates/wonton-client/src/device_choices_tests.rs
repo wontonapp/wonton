@@ -8,7 +8,9 @@ fn device(id: &str, kind: PluginDeviceKind, service: &str) -> PluginDevice {
         name: id.into(),
         target: match kind {
             PluginDeviceKind::Serial => format!("/dev/{service}"),
-            PluginDeviceKind::Disk | PluginDeviceKind::Other => String::new(),
+            PluginDeviceKind::Usb | PluginDeviceKind::Disk | PluginDeviceKind::Other => {
+                String::new()
+            }
         },
         service: service.into(),
         optional: false,
@@ -100,6 +102,82 @@ fn disks_are_ticked_one_by_one_and_start_unticked() {
 }
 
 #[test]
+fn only_selected_nvme_requires_highest_confirmation() {
+    let mut sata = device("disk:sata", PluginDeviceKind::Disk, "smart");
+    sata.target = "/dev/sda".into();
+    let mut nvme = device("disk:nvme", PluginDeviceKind::Disk, "smart");
+    nvme.target = "/dev/nvme0n1".into();
+    let permissions = vec![permission(DISK)];
+    let devices = toggle_device(vec![sata, nvme], "disk:sata".into());
+    assert!(
+        !device_choices(devices.clone(), permissions.clone())
+            .unwrap()
+            .highest_risk
+    );
+    let devices = toggle_device(devices, "disk:nvme".into());
+    assert!(
+        device_choices(devices.clone(), permissions.clone())
+            .unwrap()
+            .highest_risk
+    );
+    let devices = toggle_device(devices, "disk:nvme".into());
+    assert!(!device_choices(devices, permissions).unwrap().highest_risk);
+}
+
+/// 升级预览按记录把旧盘预先勾上（ADR-0036“空列表也表示沿用”）。全部取消后请求为空，服务端会沿用
+/// 记录并给 NVMe 加 `nvme_admin`，第二步照旧要弹。
+#[test]
+fn clearing_every_disk_still_asks_when_the_preview_kept_an_nvme() {
+    let mut sata = device("disk:sata", PluginDeviceKind::Disk, "smart");
+    sata.target = "/dev/sda".into();
+    sata.chosen = true;
+    let mut nvme = device("disk:nvme", PluginDeviceKind::Disk, "smart");
+    nvme.target = "/dev/nvme0n1".into();
+    nvme.chosen = true;
+    let permissions = vec![permission(DISK)];
+    let preview = vec![sata.clone(), nvme.clone()];
+    let cleared = toggle_device(
+        toggle_device(preview.clone(), "disk:sata".into()),
+        "disk:nvme".into(),
+    );
+    assert!(upgrade_highest_risk(
+        preview.clone(),
+        cleared.clone(),
+        permissions.clone()
+    ));
+    // 沿用的只有 SATA 时没有要新增的 SYS_ADMIN，不必弹。
+    let mut nvme_unticked = nvme;
+    nvme_unticked.chosen = false;
+    let cleared_sata = vec![nvme_unticked];
+    assert!(!upgrade_highest_risk(vec![sata], cleared_sata, permissions));
+}
+
+#[test]
+fn a_kept_serial_port_replaces_the_record_so_the_nvme_is_not_retained() {
+    let mut nvme = device("disk:nvme", PluginDeviceKind::Disk, "smart");
+    nvme.target = "/dev/nvme0n1".into();
+    nvme.chosen = true;
+    let serial = device("serial:0:a", PluginDeviceKind::Serial, "zigbee");
+    let permissions = vec![permission(SERIAL), permission(DISK)];
+    let preview = vec![serial, nvme];
+    // 串口还勾着：请求非空，服务端整个换成新选择，记录里的 NVMe 不再沿用。
+    let kept = toggle_device(preview.clone(), "serial:0:a".into());
+    let kept = toggle_device(kept, "disk:nvme".into());
+    assert!(!upgrade_highest_risk(preview, kept, permissions));
+}
+
+#[test]
+fn switching_the_disk_permission_off_silences_the_retained_nvme() {
+    let mut nvme = device("disk:nvme", PluginDeviceKind::Disk, "smart");
+    nvme.target = "/dev/nvme0n1".into();
+    nvme.chosen = true;
+    let preview = vec![nvme];
+    let cleared = toggle_device(preview.clone(), "disk:nvme".into());
+    let off = vec![optional(DISK, false)];
+    assert!(!upgrade_highest_risk(preview, cleared, off));
+}
+
+#[test]
 fn the_section_groups_serial_ports_by_service_and_waits_for_required_ones() {
     let mut devices = two_services();
     devices.push(device("disk:a", PluginDeviceKind::Disk, "smart"));
@@ -152,16 +230,13 @@ fn a_class_whose_optional_permission_is_off_is_neither_shown_nor_sent() {
 }
 
 #[test]
-fn kinds_from_a_newer_core_are_listed_but_never_sent() {
-    let mut newer = device("bluetooth:a", PluginDeviceKind::Other, "ha");
-    newer.chosen = true;
-    let devices = toggle_device(vec![newer], "bluetooth:a".into());
-    assert_eq!(
-        device_choices(devices.clone(), Vec::new())
-            .unwrap()
-            .unknown
-            .len(),
-        1
-    );
-    assert!(chosen_device_ids(devices, Vec::new()).is_empty());
+fn kinds_without_individual_selection_are_listed_but_never_sent() {
+    for kind in [PluginDeviceKind::Other, PluginDeviceKind::Usb] {
+        let mut device = device("newer:a", kind, "ha");
+        device.chosen = true;
+        let devices = toggle_device(vec![device], "newer:a".into());
+        let choices = device_choices(devices.clone(), Vec::new()).unwrap();
+        assert_eq!(choices.unknown[0].kind, kind);
+        assert!(chosen_device_ids(devices, Vec::new()).is_empty());
+    }
 }

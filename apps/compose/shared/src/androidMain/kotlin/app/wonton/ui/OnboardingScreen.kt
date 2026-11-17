@@ -106,7 +106,7 @@ internal fun OnboardingViewModel.title(): String = when (step) {
     OnboardingStep.OTHER -> stringResource(R.string.onboarding_step_other)
 }
 
-/** 接模型的方式，如“ChatGPT 账号或 key”；没有账号登录时只有 key。 */
+/** 接模型的方式，清单里声明的名字，如“ChatGPT 账号、模型设置（magpie）”；没有时走模型网关，在下一步设置。 */
 @Composable
 internal fun OnboardingAgentRow.connection(): String {
     if (logins.isEmpty()) return stringResource(R.string.onboarding_agent_connection_key)
@@ -132,7 +132,7 @@ private fun OnboardingViewModel.primaryText(): String = if (step == OnboardingSt
 }
 
 @Composable
-private fun OnboardingAgentStep(agents: List<OnboardingAgentRow>, send: (Action) -> Unit) {
+fun OnboardingAgentStep(agents: List<OnboardingAgentRow>, send: (Action) -> Unit) {
     if (agents.isEmpty()) {
         OnboardingProblem(stringResource(R.string.onboarding_agent_empty), null) {
             send(Action.Onboarding(OnboardingAction.RefreshOnboarding))

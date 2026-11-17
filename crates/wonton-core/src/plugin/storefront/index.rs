@@ -555,10 +555,6 @@ mod tests {
                     "title": {"zh": "备份照片", "en": "Back up photos"},
                     "plugins": ["app.example.photos"]
                 }],
-                "providers": {
-                    "en": [{"id": "openrouter", "key_url": "https://openrouter.ai/keys"}]
-                },
-                "more_providers": [{"id": "deepseek", "key_url": "https://platform.deepseek.com/api_keys"}],
                 "prompts": [{"zh": "你能帮我做什么", "en": "What can you help me with"}]
             }
         }"#;
@@ -567,15 +563,6 @@ mod tests {
         let onboarding = index.onboarding.unwrap();
         assert_eq!(onboarding.agents, ["com.example.agent"]);
         assert_eq!(onboarding.needs[0].plugins, ["app.example.photos"]);
-        assert_eq!(
-            onboarding.providers["en"][0].key_url,
-            "https://openrouter.ai/keys"
-        );
-        assert_eq!(onboarding.more_providers[0].id, "deepseek");
-        assert_eq!(
-            onboarding.more_providers[0].key_url,
-            "https://platform.deepseek.com/api_keys"
-        );
         assert_eq!(index.onboarding_problem, None);
     }
 
@@ -592,14 +579,6 @@ mod tests {
                     "plugins": ["app.example.photos"],
                     "future_need": true
                 }],
-                "providers": {
-                    "en": [{
-                        "id": "openrouter",
-                        "key_url": "https://openrouter.ai/keys",
-                        "future_provider": true
-                    }]
-                },
-                "more_providers": [],
                 "prompts": [{"en": "What can you help me with"}],
                 "future_catalog": true
             }
@@ -608,7 +587,6 @@ mod tests {
         let index = Index::parse(json.as_bytes(), &Languages::default()).unwrap();
         let onboarding = index.onboarding.unwrap();
         assert_eq!(onboarding.needs[0].id, "photos");
-        assert_eq!(onboarding.providers["en"][0].id, "openrouter");
         assert_eq!(index.onboarding_problem, None);
     }
 
@@ -626,11 +604,11 @@ mod tests {
     }
 
     #[test]
-    fn missing_more_providers_rejects_only_the_onboarding_catalog() {
+    fn missing_needs_rejects_only_the_onboarding_catalog() {
         let json = br#"{
             "format": 1,
             "plugins": [],
-            "onboarding": {"agents": [], "needs": [], "providers": {}, "prompts": []}
+            "onboarding": {"agents": [], "prompts": []}
         }"#;
 
         let index = Index::parse(json, &Languages::default()).unwrap();

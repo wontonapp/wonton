@@ -23,6 +23,7 @@ enum WontonIcon: String {
     case cpu
     case cpuFill
     case device
+    case disk
     case document
     case documentFill
     case download
@@ -65,6 +66,7 @@ enum WontonIcon: String {
     case reply
     case search
     case send
+    case serialPort
     case server
     case settings
     case settingsFill
@@ -78,6 +80,7 @@ enum WontonIcon: String {
     case tasksFill
     case trash
     case upload
+    case usb
     case videoCall
     case videoCallFill
     case voiceCall

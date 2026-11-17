@@ -5,7 +5,7 @@ use wonton_protocol::{InstallRequest, PluginScope, SecretValues};
 use super::{InstallError, Languages, PluginManager, generic, service};
 use crate::l10n;
 use crate::plugin::installation::InstallDecision;
-use crate::plugin::manifest::PluginKind;
+use crate::plugin::manifest::{ManifestExt, PluginKind};
 use crate::plugin::package::PluginPackage;
 use crate::plugin::secrets::Secrets;
 use crate::plugin::store::OpenedBy;
@@ -207,7 +207,7 @@ impl PluginManager {
             manifest.effective_permissions(&crate::plugin::store::permission_set(&enabled));
         self.gpu_grant(manifest, &effective, langs).await?;
         self.lan_grant(&package, request.lan_webui, langs).await?;
-        self.resolve_devices(manifest, &effective, &request.devices, langs)?;
+        self.resolve_devices(manifest, &effective, &request.devices, false, langs)?;
         let store = self.store.secrets();
         let secrets_before = store.load(&manifest.id)?;
         let mut secrets = secrets_before.clone().unwrap_or_default();

@@ -21,4 +21,7 @@
     <string name="friends_error_rate_limited">リクエストが多すぎます。%1$d 秒お待ちください。</string>
     <!-- Failure title for the remaining categories. -->
     <string name="friends_error_other">問題が起きました。後でもう一度お試しください。</string>
+
+    <!-- バナーの下の説明：スイッチをオンに戻すまで、ほかのサーバーの友達はこのホームに届きません。 -->
+    <string name="friends_public_access_off_detail">ほかのサーバーの友達とは今つながりません。外部からのアクセスをオンに戻せば、相手の再試行で届きます。</string>
 </resources>

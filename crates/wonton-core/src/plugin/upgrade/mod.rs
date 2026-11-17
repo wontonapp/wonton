@@ -15,7 +15,7 @@ use super::github_source::{self, Origin, SourceRef, Trust, Wanted};
 use super::lan::webui::{open_ports, switched};
 use super::languages::Languages;
 use super::manager::{InstallError, PluginManager, detached};
-use super::manifest::{Permission, PluginId};
+use super::manifest::{Manifest, Permission, PluginId};
 use super::package::PluginPackage;
 use super::source_address::chosen_source;
 use super::store::{EnabledPermission, InstalledRecord};
@@ -172,19 +172,38 @@ struct Consent {
     notices: Vec<CardLine>,
 }
 
+/// 升级生效的可选项：请求带上的全集（App 按当前开关状态发）里，只有新版本还声明成可选的留下；
+/// 以前开过的沿用原来的打开时间和人（ADR-0057）。确认卡的预览和执行都按它算，两边是同一个生效集。
+fn upgrade_enabled(
+    manifest: &Manifest,
+    record: &InstalledRecord,
+    requested: &[EnabledPermission],
+) -> Vec<EnabledPermission> {
+    requested
+        .iter()
+        .filter(|item| manifest.optional_permissions.contains_key(&item.permission))
+        .map(|item| {
+            record
+                .enabled_permissions
+                .iter()
+                .find(|old| old.permission == item.permission)
+                .cloned()
+                .unwrap_or_else(|| item.clone())
+        })
+        .collect()
+}
+
 /// 新版本比装着的版本多要的项。权限是装的时候就记下的 `granted_permissions` 对比，widget 能力是装着的清单对比：
 /// 多出来的能力要主人再确认一次，App 见到 `added` 就照权限那样弹确认页。
 fn consent_of(
     record: &InstalledRecord,
     package: &PluginPackage,
     old: &PluginPackage,
+    enabled: &[EnabledPermission],
     langs: &Languages,
 ) -> Consent {
-    let mut permissions = super::views_permissions::permission_lines(
-        &package.manifest,
-        &record.enabled_permissions,
-        langs,
-    );
+    let mut permissions =
+        super::views_permissions::permission_lines(&package.manifest, enabled, langs);
     for line in &mut permissions {
         line.added = !record
             .granted_permissions
@@ -335,11 +354,35 @@ impl PluginManager {
         Ok(())
     }
 
+    /// 请求带上的可选项全集（App 按当前开关状态发）先解析成记录条目，再和记录合成生效集；
+    /// 还没提交请求的预览（详情页、Agent 卡）给 `None`，按记录里开着的算。
+    fn requested_enabled(
+        &self,
+        manifest: &Manifest,
+        record: &InstalledRecord,
+        requested: Option<&[String]>,
+    ) -> Result<Vec<EnabledPermission>, InstallError> {
+        let Some(names) = requested else {
+            return Ok(record.enabled_permissions.clone());
+        };
+        let parsed = super::store::parse_enabled(
+            names,
+            super::store::OpenedBy::Owner,
+            super::manager::now_secs(),
+        )
+        .map_err(|e| InstallError::Invalid(e.to_string()))?;
+        Ok(upgrade_enabled(manifest, record, &parsed))
+    }
+
     /// 升级预览：默认取能升到的版本，也可以是主人选的来源或者上传的插件包。什么也不改。
+    /// `requested` 是升级请求带上的可选项全集（App 按当前开关状态发，同
+    /// [`UpgradeRequest::enabled_permissions`]）：给了就按它算生效集，确认卡和执行看到的是同一份；
+    /// 还没提交请求的预览（详情页、Agent 卡）给 `None`，按记录里开着的算。
     pub async fn preview_upgrade(
         &self,
         id: &PluginId,
         to: UpgradeTo,
+        requested: Option<&[String]>,
         langs: &Languages,
     ) -> Result<InstallPreview, InstallError> {
         let _changing = self.dependencies.changing.lock().await;
@@ -363,6 +406,7 @@ impl PluginManager {
                 )));
             }
         }
+        let enabled = self.requested_enabled(&package.manifest, &record, requested)?;
         let blocked = self.host_block(&package.manifest, langs).await?;
         let mut preview = self
             .preview_with(
@@ -370,7 +414,7 @@ impl PluginManager {
                 langs,
                 blocked,
                 record.written_by.clone(),
-                &record.enabled_permissions,
+                &enabled,
                 Some(&record),
             )
             .await?;
@@ -386,7 +430,7 @@ impl PluginManager {
         let warnings = chosen_warnings(&record, &package, langs);
         preview.notices.splice(0..0, warnings);
         let old = installed_package(&record, langs)?;
-        let consent = consent_of(&record, &package, &old, langs);
+        let consent = consent_of(&record, &package, &old, &enabled, langs);
         preview.permissions = consent.permissions;
         preview.widget_capabilities = consent.widget_capability_lines;
         preview.notices.extend(consent.notices);

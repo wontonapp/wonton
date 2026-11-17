@@ -28,4 +28,7 @@
     <string name="friends_error_request_not_found">这条请求已经处理过了</string>
     <!-- Failure title when the server refused the change. -->
     <string name="friends_error_upstream">服务器没有接受</string>
+
+    <!-- 公网访问总开关关着时，好友页顶上挂的横幅标题。 -->
+    <string name="friends_public_access_off">公网访问已关</string>
 </resources>

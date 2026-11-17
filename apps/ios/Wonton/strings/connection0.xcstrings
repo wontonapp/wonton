@@ -92,6 +92,36 @@
         }
       }
     },
+    "connection.pairAgainHint": {
+      "comment": "Supporting line under the re-pair row: entering only opens the pairing page; the connection changes on pairing. May wrap.",
+      "extractionState": "manual",
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Opens the pairing code page; the current connection stays until you pair with a new code."
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "打开配对码页面；提交新的配对码后才会断开现在的连接。"
+          }
+        },
+        "zh-Hant": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "打開配對碼頁面；送出新的配對碼後才會斷開現在的連線。"
+          }
+        },
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "ペアリングコードのページを開きます。新しいコードでペアリングするまで、現在の接続は切れません。"
+          }
+        }
+      }
+    },
     "connection.relay": {
       "comment": "Connection route through the relay; also a row in the connection page.",
       "extractionState": "manual",

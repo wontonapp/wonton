@@ -1,16 +1,20 @@
 package app.wonton.ui
 
+import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.PaddingValues
+import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.WindowInsets
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
+import androidx.compose.foundation.layout.heightIn
 import androidx.compose.foundation.layout.ime
 import androidx.compose.foundation.layout.navigationBars
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.safeDrawing
+import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.union
 import androidx.compose.foundation.layout.windowInsetsPadding
 import androidx.compose.foundation.lazy.LazyColumn
@@ -19,6 +23,8 @@ import androidx.compose.foundation.lazy.items
 import androidx.compose.foundation.lazy.itemsIndexed
 import androidx.compose.foundation.lazy.rememberLazyListState
 import androidx.compose.material3.CircularProgressIndicator
+import androidx.compose.material3.Icon
+import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.CompositionLocalProvider
 import androidx.compose.runtime.DisposableEffect
@@ -44,6 +50,7 @@ import androidx.compose.ui.platform.LocalLayoutDirection
 import androidx.compose.ui.platform.LocalWindowInfo
 import androidx.compose.ui.platform.testTag
 import androidx.compose.ui.res.stringResource
+import androidx.compose.ui.semantics.Role
 import androidx.compose.ui.unit.dp
 import app.wonton.client.ClientCore
 import app.wonton.protocol.ChatAction
@@ -74,15 +81,15 @@ import app.wonton.protocol.TimelineAction
 import app.wonton.protocol.TimelineTarget
 import app.wonton.ui.design.LocalWontonBottomInset
 import app.wonton.ui.design.LocalWontonTopInset
-import app.wonton.ui.design.WontonButton
-import app.wonton.ui.design.WontonButtonKind
 import app.wonton.ui.design.WontonDialog
 import app.wonton.ui.design.WontonDialogAction
+import app.wonton.ui.design.WontonButtonKind
 import app.wonton.ui.design.WontonIconButton
-import app.wonton.ui.design.WontonNotice
 import app.wonton.ui.design.WontonPushedBar
 import app.wonton.ui.design.WontonTheme
+import app.wonton.ui.design.toColor
 import app.wonton.ui.icons.Compose
+import app.wonton.ui.icons.Home
 import app.wonton.ui.icons.Info
 import app.wonton.ui.icons.LockKey
 import app.wonton.ui.icons.WontonIcon
@@ -124,8 +131,6 @@ internal class TimelineState {
     /** 这个房间的面板（ADR-0052）：核心每一批带上。 */
     var panel by mutableStateOf<List<PanelItem>>(emptyList())
     var panelSelected by mutableStateOf<TabRef?>(null)
-    /** 另有东西盖着消息列表（长按菜单、转发、删除确认），上推拉面板的入口不响应。 */
-    var entryBlocked by mutableStateOf(false)
 
     /** 旁聊页顶上的标题和状态（ADR-0093）；主对话为空。 */
     var sideChat by mutableStateOf<SideChatCard?>(null)
@@ -191,7 +196,6 @@ internal fun RoomRoute(
                 update.anchor?.let { timeline.anchor = it }
                 timeline.panel = update.panel
                 timeline.panelSelected = update.panelSelected
-                timeline.entryBlocked = update.entryBlocked
                 timeline.sideChat = update.sideChat
                 timeline.call = RoomCall(update.widgets, update.callActive)
                 timeline.confirmations = update.confirmations
@@ -222,7 +226,7 @@ internal fun RoomRoute(
     // 旁聊页没有房间的面板（ADR-0052）：面板跟着主对话。
     val panel = if (target.threadRoot == null) LocalChatPanel.current else null
     CompositionLocalProvider(
-        LocalFiles provides FilesContext(transfers, onAction, onReject),
+        LocalFiles provides FilesContext(target.roomId, transfers, onAction, onReject),
         LocalChatPanel provides panel,
     ) {
         RoomScreen(
@@ -297,14 +301,6 @@ private fun RoomScreen(
     // 转发、撤回都要时间线条目的 id，菜单开着的那条。
     var forwarding by remember { mutableStateOf<String?>(null) }
     var redacting by remember { mutableStateOf<MessageMenuTarget?>(null) }
-    // 有东西盖着列表时上推的入口不响应，由核心合成（ADR-0052）。旁聊页没有面板，不报。
-    val messageOverlay = menu != null || forwarding != null || redacting != null
-    val covers = messageOverlay || timeline.openedConfirmation != null
-    if (target.threadRoot == null) {
-        LaunchedEffect(covers, target.roomId) {
-            onAction(Action.Pages(PageAction.SetRoomEntryBlocked(target.roomId, covers)))
-        }
-    }
     Box(Modifier.fillMaxSize()) {
         // 菜单开着时背后的页面模糊（ADR-0029）。Android 12 以下没有模糊，只靠菜单的压暗。
         Box(if (menu != null) Modifier.blur(WontonTheme.size.menuBlur) else Modifier) {
@@ -385,10 +381,8 @@ private fun RoomPanelEffects(timeline: TimelineState, draft: RoomDraft) {
     val panel = LocalChatPanel.current
     val panelPages = timeline.panel
     val panelSelected = timeline.panelSelected
-    val entryBlocked = timeline.entryBlocked
     SideEffect {
         panel?.feed(panelPages, panelSelected)
-        panel?.blocked = entryBlocked
     }
     DisposableEffect(panel, draft) {
         panel?.draftSink = { text -> draft.change(if (draft.text.isBlank()) text else "${draft.text}\n$text") }
@@ -425,6 +419,7 @@ private fun RoomBar(
     } else {
         null
     }
+    val panel = LocalChatPanel.current
     WontonPushedBar(
         barTitle,
         onClose,
@@ -432,6 +427,13 @@ private fun RoomBar(
         showsStatusLine = true,
         avatar = barAvatar,
         actions = {
+            if (panel != null) {
+                WontonIconButton(
+                    WontonIcon.Home,
+                    stringResource(R.string.panel_open),
+                    { panel.move(PanelLevel.FULL) },
+                )
+            }
             RoomCallEntry(call, onOpenWidget)
             if (isDirect && bot != null) {
                 Box(Modifier.testTag("bot-profile-open")) {
@@ -531,22 +533,43 @@ private fun Conversation(
 }
 
 /**
- * 有消息解不开时的一行说明和入口：账号设过备份就输恢复密钥，没设过就请另一台设备确认。都去备份页。
- * 更新的核心给出的类别没有按钮，说明照常显示。
+ * 有消息解不开时的一行说明和入口：账号设过备份就输恢复密钥，没设过就请另一台设备确认，整行点去备份页（ADR-0046）。
+ * 这行常驻输入框上方，收成一行，别把能看到的消息挤走；更新的核心给出的类别没有按钮，说明照常显示。
  */
 @Composable
 private fun KeyNoticeRow(notice: KeyNotice, onOpenBackup: () -> Unit) {
-    Column(
+    val colors = WontonTheme.colors
+    Row(
         Modifier.fillMaxWidth()
-            .padding(horizontal = WontonTheme.spacing.pageInset, vertical = WontonTheme.spacing.s8),
+            .clickable(enabled = notice != KeyNotice.OTHER, onClick = onOpenBackup, role = Role.Button)
+            .heightIn(min = WontonTheme.size.target)
+            .padding(horizontal = WontonTheme.spacing.pageInset),
+        verticalAlignment = Alignment.CenterVertically,
+        horizontalArrangement = Arrangement.spacedBy(WontonTheme.spacing.s8),
     ) {
-        WontonNotice(WontonIcon.LockKey, stringResource(R.string.timeline_undecryptable_notice), isError = false) {
-            notice.action?.let { action ->
-                WontonButton(stringResource(action), onOpenBackup, Modifier.fillMaxWidth(), WontonButtonKind.PRIMARY)
-            }
-        }
+        Icon(
+            WontonIcon.LockKey,
+            // 装饰：右边的字说了要做什么。
+            contentDescription = null,
+            Modifier.size(WontonTheme.size.iconTiny),
+            tint = colors.textSecondary.toColor(),
+        )
+        Text(
+            stringResource(notice.text),
+            Modifier.weight(1f).padding(vertical = WontonTheme.spacing.s4),
+            style = WontonTheme.typography.body,
+            color = colors.textPrimary.toColor(),
+        )
     }
 }
+
+/** 按类别说明密钥怎么找回；两条路的入口都在备份页（ADR-0046）。 */
+private val KeyNotice.text: Int
+    get() = when (this) {
+        KeyNotice.ENTER_RECOVERY_KEY -> R.string.timeline_key_notice_recovery
+        KeyNotice.VERIFY_WITH_OTHER_DEVICE -> R.string.timeline_key_notice_verify
+        KeyNotice.OTHER -> R.string.timeline_undecryptable_notice
+    }
 
 /** 转发能去的房间：别的、已经加入、能发的房间。 */
 private fun RoomRow.forwardTarget(roomId: String): Boolean =
@@ -588,7 +611,6 @@ private fun Messages(
     modifier: Modifier,
 ) {
     val listState = rememberLazyListState()
-    val panel = LocalChatPanel.current
     ScrollEffects(listState, timeline, target, sideChats.covered, onAction)
     // 待发消息出现、交出去换成本地回显时，在底部附近的跟着到底：插在第 0 项前面的行，列表按键记位置不会自己露出来。
     val outgoingIds = outgoing.map { it.id }
@@ -609,9 +631,7 @@ private fun Messages(
     Box(modifier) {
         LazyColumn(
             modifier = Modifier.fillMaxSize()
-                .testTag("room-timeline")
-                .panelAction(panel)
-                .chatPanelPull(panel, { !listState.canScrollBackward }, !timeline.entryBlocked),
+                .testTag("room-timeline"),
             state = listState,
             reverseLayout = true,
             overscrollEffect = null,
@@ -635,6 +655,8 @@ private fun Messages(
                 if (item.isBlankAgentRun) return@itemsIndexed
                 val joinsPrevious = item.joins(newestFirst.getOrNull(index + 1))
                 val joinsNext = newestFirst.getOrNull(index - 1)?.joins(item) == true
+                val flushesPrevious = newestFirst.getOrNull(index + 1)?.flushesWith(next = item) == true
+                val flushesNext = item.flushesWith(next = newestFirst.getOrNull(index - 1))
                 Box(Modifier.padding(top = if (joinsPrevious) 0.dp else WontonTheme.spacing.s8 - JOINED_GAP)) {
                     TimelineItemView(
                         item,
@@ -652,6 +674,8 @@ private fun Messages(
                             onAction(Action.Chat(ChatAction.AnswerAgentChoice(target.roomId, item.id, key)))
                         },
                         onOpenSideChat = sideChats.onOpen,
+                        flushesPrevious = flushesPrevious,
+                        flushesNext = flushesNext,
                     )
                 }
             }
@@ -675,20 +699,6 @@ private fun Messages(
 }
 
 private val JOINED_GAP = 2.dp
-
-/**
- * 和上一条 `earlier` 是同一个人连着发的：并成一组，气泡挨紧，相接的角收小。
- * 中间隔着一行字的不并：这条上方写了时间，或者上一条下面写着已送达、已读。
- */
-private fun TimelineItem.joins(earlier: TimelineItem?): Boolean {
-    val mine = message
-    val theirs = earlier?.message
-    return mine != null && theirs != null &&
-        mine.senderId == theirs.senderId && !mine.startsTimeGroup && theirs.receipt == null
-}
-
-private val TimelineItem.message
-    get() = (content as? TimelineContent.Message)?.message
 
 private val TimelineItem.isBlankAgentRun
     get() = (content as? TimelineContent.AgentRun)?.isBlank == true

@@ -46,16 +46,19 @@ private const val TILES_PER_ROW = 3
 
 /**
  * 点了发送、还没交给 Matrix 的一条（ADR-0094），画在时间线最新一条下面。附件各自画着上传的进展；交出去以后由时间线里的
- * 本地回显代替。传着的时候点状态能取消，传不上去时整条变红，点开重发或者删掉。
+ * 本地回显代替。传着的时候有「取消发送」按钮，确认后整条不发、上传停下；传不上去时状态行画警告图标，点开重发或者删掉。
  */
 @Composable
 internal fun OutgoingRow(message: OutgoingMessage, roomId: String, core: ClientCore, onAction: (Action) -> Unit) {
     val colors = WontonTheme.colors
     Row(Modifier.fillMaxWidth().testTag("outgoingMessage")) {
         Spacer(Modifier.weight(1f).widthIn(min = WontonTheme.spacing.s48))
+        // 附件、配文和状态是同一次发送（ADR-0094）：装进同一个气泡，状态提示也画在里面，不看成几次发送。
         Column(
+            Modifier.accentFill(RoundedCornerShape(WontonTheme.radii.bubble))
+                .padding(horizontal = WontonTheme.spacing.s12, vertical = WontonTheme.spacing.s8),
             horizontalAlignment = Alignment.End,
-            verticalArrangement = Arrangement.spacedBy(WontonTheme.spacing.s4),
+            verticalArrangement = Arrangement.spacedBy(WontonTheme.spacing.s8),
         ) {
             if (message.attachments.isNotEmpty()) {
                 FlowRow(
@@ -71,8 +74,6 @@ internal fun OutgoingRow(message: OutgoingMessage, roomId: String, core: ClientC
             if (message.body.isNotEmpty()) {
                 Text(
                     message.body,
-                    Modifier.accentFill(RoundedCornerShape(WontonTheme.radii.bubble))
-                        .padding(horizontal = WontonTheme.spacing.s12, vertical = WontonTheme.spacing.s8),
                     style = WontonTheme.typography.body,
                     color = colors.textOnAccentFill.toColor(),
                 )
@@ -86,33 +87,57 @@ internal fun OutgoingRow(message: OutgoingMessage, roomId: String, core: ClientC
 private fun OutgoingFooter(message: OutgoingMessage, roomId: String, onAction: (Action) -> Unit) {
     val colors = WontonTheme.colors
     val style = WontonTheme.typography.caption
+    val danger = colors.danger.toColor()
     var choosing by remember { mutableStateOf(false) }
     val target = TimelineTarget(roomId, null)
     val cancel = { onAction(Action.Timeline(TimelineAction.CancelOutgoing(target, message.id))) }
     Row(
-        Modifier.clickable(role = Role.Button) { choosing = true },
         verticalAlignment = Alignment.CenterVertically,
         horizontalArrangement = Arrangement.spacedBy(WontonTheme.spacing.s4),
     ) {
         when (val state = message.state) {
-            is SendState.Sending -> Text(
-                state.progress?.let { progress ->
-                    val percent = NumberFormat.getPercentInstance().format(progress.toDouble())
-                    stringResource(R.string.timeline_sending_progress, percent)
-                } ?: stringResource(R.string.timeline_sending),
-                style = style,
-                color = colors.textSecondary.toColor(),
-            )
-            is SendState.Failed -> {
-                val danger = colors.danger.toColor()
+            is SendState.Sending -> {
+                Text(
+                    state.progress?.let { progress ->
+                        val percent = NumberFormat.getPercentInstance().format(progress.toDouble())
+                        stringResource(R.string.timeline_sending_progress, percent)
+                    } ?: stringResource(R.string.timeline_sending),
+                    style = style,
+                    color = colors.textOnAccentFill.toColor(),
+                )
+                // 盲测在气泡上找不到取消：状态文字不像能点，取消要自己长成看得见的按钮，点开确认。
+                Row(
+                    Modifier.clickable(role = Role.Button) { choosing = true },
+                    verticalAlignment = Alignment.CenterVertically,
+                    horizontalArrangement = Arrangement.spacedBy(WontonTheme.spacing.s4),
+                ) {
+                    Icon(
+                        WontonIcon.Close,
+                        // 装饰：右边的文字写了是什么。
+                        contentDescription = null,
+                        modifier = Modifier.size(WontonTheme.size.iconTiny),
+                        tint = danger,
+                    )
+                    Text(stringResource(R.string.timeline_cancel_send), style = style, color = danger)
+                }
+            }
+            is SendState.Failed -> Row(
+                Modifier.clickable(role = Role.Button) { choosing = true },
+                verticalAlignment = Alignment.CenterVertically,
+                horizontalArrangement = Arrangement.spacedBy(WontonTheme.spacing.s4),
+            ) {
                 Icon(
                     WontonIcon.WarningCircle,
                     // 装饰：失败原因写在右边的文字里。
                     contentDescription = null,
                     modifier = Modifier.size(WontonTheme.size.iconTiny),
-                    tint = danger,
+                    tint = colors.textOnAccentFill.toColor(),
                 )
-                Text(stringResource(R.string.timeline_send_failed, state.message), style = style, color = danger)
+                Text(
+                    stringResource(R.string.timeline_send_failed, state.message),
+                    style = style,
+                    color = colors.textOnAccentFill.toColor(),
+                )
             }
             SendState.Sent -> Unit
         }

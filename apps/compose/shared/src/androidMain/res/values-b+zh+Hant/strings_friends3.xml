@@ -28,4 +28,7 @@
     <string name="friends_error_request_not_found">這則邀請已經處理過了</string>
     <!-- Failure title when the server refused the change. -->
     <string name="friends_error_upstream">伺服器沒有接受</string>
+
+    <!-- 公網訪問總開關關著時，好友頁頂上掛的橫幅標題。 -->
+    <string name="friends_public_access_off">公網訪問已關</string>
 </resources>

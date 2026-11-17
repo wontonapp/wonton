@@ -92,7 +92,7 @@
     <string name="widget_open_to_pair">打開雲吞完成配對</string>
     <string name="widget_open_to_sign_in">已登出，打開雲吞重新登入</string>
     <string name="widget_open_to_refresh">打開雲吞重新整理</string>
-    <string name="widget_choose_agent">在雲吞裡選一個預設 Agent</string>
+    <string name="widget_choose_agent">在雲吞裡選一個預設助手</string>
     <string name="widget_agent_status_unknown">狀態不明</string>
     <string name="widget_updated_at">更新於 %1$s</string>
     <string name="widget_status_at">%1$s · %2$s</string>

@@ -82,7 +82,7 @@ enum SnapshotFixtures {
                 row(TimelineItem(id: "run", content: .agentRun(
                     run: nil, state: .done, step: nil, steps: 3, progress: nil,
                     result: "Checked the card sequence", end: nil, body: "", cardId: nil, choices: [],
-                    senderName: "Ada Lovelace"
+                    senderName: "Ada", timestampMs: 0
                 )), core: core, showsSender: false)
                 row(message(id: "m3", sender: "Owner", isOwn: true, text: "And the punched cards.",
                             minutesLater: 40, receipt: .delivered, startsTimeGroup: true),
@@ -201,7 +201,7 @@ enum SnapshotFixtures {
                 details: ConnectionDetails(
                     network: nil, relay: .unknown, server: .unknown, lastConnectedAtMs: nil,
                     handshakeMs: nil, disconnects: 0, failedDials: 0, sentPackets: 0, lostPackets: 0,
-                    quality: .unknown, lossPerMille: nil, rttMs: nil, lastFailure: nil,
+                    quality: .unknown, lossPerMille: nil, rttMs: nil, lastFailure: nil, diagnostic: nil,
                     addressesStale: false, udpFlows: [], udpBufferEvictedDatagrams: nil
                 ),
                 proxy: nil, webUrl: nil, pairing: nil, invite: nil, keepConnection: false, justRecovered: false

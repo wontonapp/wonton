@@ -13,7 +13,7 @@ use crate::plugin::lan::webui::switched;
 use crate::plugin::languages::Languages;
 use crate::plugin::lifecycle::Undo;
 use crate::plugin::listed::Listed;
-use crate::plugin::manifest::{Manifest, Permission, PluginId};
+use crate::plugin::manifest::{Manifest, ManifestExt, Permission, PluginId};
 use crate::plugin::models::ProviderState;
 use crate::plugin::package::PluginPackage;
 use crate::plugin::render::dry_run;
@@ -172,7 +172,7 @@ impl PluginManager {
         let effective = manifest.effective_permissions(&super::store::permission_set(enabled));
         let gpu = self.gpu_grant(manifest, &effective, langs).await?;
         let (devices, device_record) =
-            self.resolve_devices(manifest, &effective, chosen_devices, langs)?;
+            self.resolve_devices(manifest, &effective, chosen_devices, true, langs)?;
         let lan_webui = *lan_webui && switched(package).is_some();
         let lan = self.lan_grant(package, lan_webui, langs).await?;
         self.reserve(

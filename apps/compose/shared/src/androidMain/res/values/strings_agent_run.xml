@@ -6,6 +6,8 @@
     <string name="agent_run_cancelled">Stopped</string>
     <!-- Status line when the core cannot tell how the run ended, or the bot is offline mid-run. No arguments. -->
     <string name="agent_run_uncertain">Result uncertain</string>
+    <!-- Elapsed wait on a working run, from the status message's own send time. Argument: whole minutes, at least 1. -->
+    <string name="agent_run_waited">%1$d min elapsed</string>
     <!-- Source line above the bot's own choices. Argument: the bot's name. -->
     <string name="agent_run_asking">%1$s is asking</string>
     <!-- Small summary line under a finished run; tapping it shows the bot's own summary. Argument: how many steps it took. -->

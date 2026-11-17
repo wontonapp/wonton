@@ -8,6 +8,7 @@ use super::super::host_facts::HostFacts;
 use super::super::languages::Languages;
 use super::super::manager::PluginManager;
 use super::super::manifest::{Manifest, PluginId};
+use super::super::store::{InstalledRecord, StoreError};
 use super::text::{author, cross_origin_isolation_notice, line, setup_notice};
 use crate::l10n;
 
@@ -40,7 +41,24 @@ impl PluginManager {
         let needs_configuration = installed.status == PluginState::NeedsConfiguration;
         let m = &listed.manifest;
         let origin = listed.origin.as_ref();
-        let record = self.store.load(id).ok().flatten();
+        let saved = self.store.load(id);
+        let record = saved.as_ref().ok().and_then(Option::as_ref);
+        let devices = record
+            .map(|record| super::super::device::granted(m, record, self.host.dev.as_deref()))
+            .unwrap_or_default();
+        let mut permissions = super::super::views_permissions::permission_lines(
+            m,
+            record.map_or(&[][..], |record| &record.enabled_permissions),
+            langs,
+        );
+        if record.is_some_and(|record| record.has_nvme_admin())
+            && let Some(line) = permissions
+                .iter_mut()
+                .find(|line| line.permission == "devices.disk")
+        {
+            line.risk = Some(wonton_protocol::PermissionRisk::Highest);
+            line.notice = Some(l10n::text(langs, "permission-notice-highest-risk", &[]));
+        }
         Some(PluginDetail {
             source: origin.map(|o| o.repo.clone()),
             provider: origin.map(Origin::provider),
@@ -70,13 +88,7 @@ impl PluginManager {
             license_url: m.license_url.clone(),
             stars: None,
             release_notes: m.release_notes.as_ref().map(|t| langs.pick_owned(t)),
-            permissions: super::super::views_permissions::permission_lines(
-                m,
-                record
-                    .as_ref()
-                    .map_or(&[][..], |record| &record.enabled_permissions),
-                langs,
-            ),
+            permissions,
             widget_capabilities: super::super::manifest_widget::capabilities(m),
             requirements: Vec::new(),
             secret_inputs: self.installed_input_states(id, m, langs),
@@ -97,16 +109,13 @@ impl PluginManager {
                 .chain(self.dependency_hints(m, langs))
                 .chain(self.hosted_hint(m))
                 .collect(),
-            // 选中的设备不在了就是一条 device_unavailable，其他问题详情页不背。
-            problems: record
-                .as_ref()
-                .map(|record| {
-                    super::super::device::problems(record, self.host.dev.as_deref(), langs)
-                })
-                .unwrap_or_default(),
+            problems: recorded_device_problems(&saved, &devices, langs),
+            devices,
             missing_requires: Vec::new(),
             missing_wants: Vec::new(),
-            capability_providers: self.consumer_capabilities(m, langs).unwrap_or_default(),
+            capability_providers: self
+                .consumer_capabilities(m, langs, None)
+                .unwrap_or_default(),
             lan_webui: listed
                 .lan_switched
                 .as_ref()
@@ -236,5 +245,24 @@ fn broken_detail(installed: InstalledPlugin) -> PluginDetail {
         limits: None,
         shares: None,
         problems: Vec::new(),
+        devices: Vec::new(),
     }
+}
+
+fn recorded_device_problems(
+    saved: &Result<Option<InstalledRecord>, StoreError>,
+    devices: &[wonton_protocol::PluginGrantedDevice],
+    langs: &Languages,
+) -> Vec<wonton_protocol::PluginProblem> {
+    let message = match saved {
+        Ok(Some(_)) => return super::super::device::problems(devices, langs),
+        Ok(None) => l10n::text(langs, "plugin-install-record-unusable", &[]),
+        Err(error) => super::super::manager::unreadable_record(error, langs),
+    };
+    vec![wonton_protocol::PluginProblem {
+        reason: wonton_protocol::PluginFailure::RecordUnusable,
+        message,
+        min_version: None,
+        settings: None,
+    }]
 }

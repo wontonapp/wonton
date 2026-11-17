@@ -28,4 +28,7 @@
     <string name="friends_error_request_not_found">そのリクエストは処理済みです</string>
     <!-- Failure title when the server refused the change. -->
     <string name="friends_error_upstream">サーバーに断られました</string>
+
+    <!-- 公開アクセスのマスタースイッチがオフの間、友達ページの上部に出すバナーのタイトル。 -->
+    <string name="friends_public_access_off">外部からのアクセスはオフです</string>
 </resources>

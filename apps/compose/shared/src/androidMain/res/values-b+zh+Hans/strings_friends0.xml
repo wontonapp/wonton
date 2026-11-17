@@ -21,4 +21,7 @@
     <string name="friends_error_rate_limited">请求太多，等 %1$d 秒</string>
     <!-- Failure title for the remaining categories. -->
     <string name="friends_error_other">出了点问题，稍后再试。</string>
+
+    <!-- 横幅下的一行解释：总开关重新打开前，别的服务器上的好友联系不到这台。 -->
+    <string name="friends_public_access_off_detail">别的服务器上的好友暂时联系不到这台；重新打开公网访问后，对方重试就能到。</string>
 </resources>

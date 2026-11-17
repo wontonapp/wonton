@@ -35,13 +35,13 @@ ui-fake = []
 # MIT OR Apache-2.0。校验推送订阅里 base64url 编码的公钥和认证密钥。
 base64 = { workspace = true }
 # MIT OR Apache-2.0。
-futures-util = "0.3.34"
+futures-util = { workspace = true }
 # MIT OR Apache-2.0。文件传输本地编号和播放地址的令牌；wonton-tunnel 已经用它。
 getrandom = { workspace = true }
 # MIT。给播放器的回环地址（ADR-0020 的 `file_stream_url`）：核心、wonton-tunnel 的依赖里已有。
 http-body-util = "0.1.5"
 hyper = { version = "1.12.0", features = ["http1", "server"] }
-hyper-util = { version = "0.1.21", features = ["tokio"] }
+hyper-util = { workspace = true, features = ["tokio"] }
 iroh = { workspace = true }
 # MIT OR Apache-2.0。认出消息文字里没有写成 Markdown 链接的网址。
 linkify = "0.11.0"
@@ -90,7 +90,7 @@ rustls-platform-verifier = "0.7.1"
 wonton-tunnel = { path = "../wonton-tunnel", features = ["test-hooks"] }
 # MIT OR Apache-2.0. Local TLS discovery fixtures; no external homeserver calls.
 rcgen = "0.14.10"
-tokio-rustls = { version = "0.26.6", default-features = false, features = ["ring", "tls12"] }
+tokio-rustls = { workspace = true, features = ["ring", "tls12"] }
 # MIT。插件和文件接口的行为测试用它在本机假扮核心（文件还假扮 tusd）。
 axum = { workspace = true }
 tempfile = { workspace = true }

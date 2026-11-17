@@ -250,14 +250,13 @@ impl Outbox {
             .borrow()
             .clone()
             .filter(|view| view.room_id == self.room_id);
-        let (panel, panel_selected, entry_blocked, widgets) = match room_view {
+        let (panel, panel_selected, widgets) = match room_view {
             Some(view) => (
                 view.panel.clone(),
                 view.selected.clone(),
-                view.blocked,
                 view.widgets.clone(),
             ),
-            None => (Vec::new(), None, false, Vec::new()),
+            None => (Vec::new(), None, Vec::new()),
         };
         let key_notice = self.key_notice(entries);
         let confirmations = self.confirmations();
@@ -270,7 +269,6 @@ impl Outbox {
                 anchor,
                 panel,
                 panel_selected,
-                entry_blocked,
                 key_notice,
                 confirmations,
                 side_chat: lock(&self.side_chat).clone(),
@@ -294,11 +292,14 @@ impl ChatLink {
         item_id: &str,
         wanted: impl Fn(&MessageAction) -> bool,
     ) -> Result<OwnedEventId, CoreError> {
-        let menus = lock(&self.open)
-            .get(key)
-            .map(|open| open.menus.clone())
-            .ok_or_else(|| super::target::not_subscribed(key))?;
-        let event_id = lock(&menus).event_with(item_id, wanted);
+        let open = lock(&self.open);
+        if open.get(key).is_none() {
+            return Err(super::target::not_subscribed(key));
+        }
+        let event_id = open
+            .matching(key)
+            .filter_map(|timeline| timeline.menus.upgrade())
+            .find_map(|menus| lock(&menus).event_with(item_id, &wanted));
         event_id.ok_or_else(|| {
             invalid(&l10n!(
                 CATALOG,

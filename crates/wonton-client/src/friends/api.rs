@@ -8,7 +8,10 @@ use reqwest::header::{ACCEPT_LANGUAGE, CONTENT_TYPE};
 use reqwest::{Client, Method};
 use serde::de::DeserializeOwned;
 use url::Url;
-use wonton_protocol::{FriendFailure, FriendProblem, FriendsList, ProxySettings};
+use wonton_protocol::{
+    CLIENTS_HEADER, ClientsStatus, FriendFailure, FriendProblem, FriendsList, ProxySettings,
+    PublicReach, clients_status_path,
+};
 
 use crate::l10n::text;
 
@@ -144,12 +147,26 @@ impl Api {
         path: &str,
         body: Option<&serde_json::Value>,
     ) -> Result<Vec<u8>, Failure> {
+        self.call_with(method, path, body, false).await
+    }
+
+    /// 第三方客户端接口要自报 `X-Wonton-Clients: 1`（ADR-0021），核心才认隧道身份；别的接口不带。
+    async fn call_with(
+        &self,
+        method: Method,
+        path: &str,
+        body: Option<&serde_json::Value>,
+        clients_header: bool,
+    ) -> Result<Vec<u8>, Failure> {
         let url = self.url(path)?;
         let mut request = self
             .client
             .request(method, url)
             .timeout(CALL_TIMEOUT)
             .header(ACCEPT_LANGUAGE, &self.languages);
+        if clients_header {
+            request = request.header(CLIENTS_HEADER, "1");
+        }
         let bytes = body.map(serde_json::to_vec).transpose().map_err(|error| {
             Failure::other(text(
                 "friends-request-body",
@@ -188,6 +205,15 @@ impl Api {
     pub(super) async fn list(&self) -> Result<FriendsList, Failure> {
         let bytes = self.call(Method::GET, "/_wonton/api/friends", None).await?;
         parse(&bytes)
+    }
+
+    /// 公网访问总开关现在的状态类别（ADR-0090 第 2 节）。路由、状态类别都是 C2/C20 的协议面。
+    pub(super) async fn public_reach(&self) -> Result<PublicReach, Failure> {
+        let bytes = self
+            .call_with(Method::GET, &clients_status_path(), None, true)
+            .await?;
+        let status: ClientsStatus = parse(&bytes)?;
+        Ok(status.public_reach)
     }
 
     pub(super) async fn accept(

@@ -4,6 +4,7 @@ mod agent_dispatch;
 mod ask_every_update;
 mod audience;
 mod bots;
+mod capability_install;
 mod chat_rows;
 mod connection;
 mod core_upgrade;
@@ -16,6 +17,7 @@ mod registry_mirror;
 pub mod rig;
 mod share_recipients;
 mod stale_list;
+mod store_load;
 mod takeover;
 mod tool_policy;
 
@@ -24,7 +26,7 @@ use std::time::{Duration, Instant};
 use axum::http::Method;
 use wonton_client::{
     Action, AddedSource, AddedTools, CoreError, OwnerProfileUpdate, PluginFailure, PluginImage,
-    PluginOperation, PluginState, PluginTaskState, SourceKind, StoreSection,
+    PluginOperation, PluginState, PluginTaskState, SourceKind, StoreLoadState, StoreSection,
 };
 
 use rig::{
@@ -91,7 +93,7 @@ async fn a_plugin_that_is_still_installing_updates_without_a_refresh() {
 }
 
 #[tokio::test]
-async fn the_store_is_fetched_refreshed_and_searched() {
+async fn store_load_is_fetched_refreshed_and_searched() {
     let rig = Rig::new().await;
     assert!(
         rig.app.search_store("photos".to_owned()).is_empty(),
@@ -473,8 +475,13 @@ async fn failures_keep_their_reason() {
             action: wonton_protocol::PluginAction::RefreshStore { force: false },
         })
         .unwrap();
-    let view = rig.wait_for(|view| view.problem.is_some()).await;
-    assert_eq!(view.problem.unwrap().reason, PluginFailure::Unauthorized);
+    let view = rig
+        .wait_for(|view| matches!(view.store_load, StoreLoadState::Failed { .. }))
+        .await;
+    assert!(matches!(
+        view.store_load,
+        StoreLoadState::Failed { problem } if problem.reason == PluginFailure::Unauthorized
+    ));
     rig.core.stop_answering(Method::GET, "/_wonton/api/store");
 
     rig.core.answer(

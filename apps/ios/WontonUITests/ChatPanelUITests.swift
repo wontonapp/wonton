@@ -1,6 +1,6 @@
 import XCTest
 
-/// 聊天页下拉面板（#33，ADR-0052）的走屏：主聊天页拉到第 1 级、推进第 2 级、胶囊退出、空面板加一页网址。
+/// 聊天面板按钮（ADR-0052）的走屏：空面板第 1 级、有页面第 2 级、展开后换级与胶囊退出。
 ///
 /// 要连家里的服务器（开发栈）：外部传 `PAIRING_CODE`（`deploy/dev/core/dev.sh pair <地址>` 打出的配对码），
 /// App 启动时交给核心配对（`WontonApp` 的 `WONTON_DEV_PAIRING_CODE`），没有就跳过。
@@ -11,14 +11,15 @@ final class ChatPanelUITests: XCTestCase {
         continueAfterFailure = false
     }
 
-    func testPullPanelLevelsAndCapsule() throws {
+    func testPanelButtonLevelsAndCapsule() throws {
         try launch()
         shot("01-list")
         let panel = app.otherElements["chatPanel"]
         XCTAssertFalse(panel.exists, "面板一开始就是开的")
 
-        pull(.down)
-        XCTAssertTrue(panel.waitForExistence(timeout: 5), "列表到顶后往下拉没有面板")
+        openPanel()
+        XCTAssertTrue(panel.waitForExistence(timeout: 5), "聊天顶栏按钮没有打开面板")
+        XCTAssertEqual(panel.value as? String, "peek", "空面板按钮没有进入第 1 级")
         shot("02-peek")
         XCTAssertFalse(capsule.exists, "空面板就有胶囊")
         XCTAssertTrue(app.buttons["panelAdd"].exists, "空面板没有添加页面的加号")
@@ -42,9 +43,10 @@ final class ChatPanelUITests: XCTestCase {
         XCTAssertTrue(waitGone(capsule) && waitGone(panel), "胶囊退出后面板还开着")
         shot("05-closed")
 
-        pull(.down)
-        XCTAssertTrue(app.webViews.firstMatch.waitForExistence(timeout: 10), "收起后再拉开，面板里的网页不在")
-        XCTAssertTrue(capsule.exists, "收起后再拉开没有胶囊")
+        openPanel()
+        XCTAssertTrue(waitFull(), "有页面时按钮没有直接打开整页")
+        XCTAssertTrue(app.webViews.firstMatch.waitForExistence(timeout: 10), "重新打开后面板网页不在")
+        XCTAssertTrue(capsule.exists, "重新打开后没有胶囊")
         shot("06-reopened")
     }
 
@@ -54,7 +56,7 @@ final class ChatPanelUITests: XCTestCase {
         XCUIDevice.shared.appearance = .dark
         defer { XCUIDevice.shared.appearance = .light }
         try launch(arguments: ["-UIPreferredContentSizeCategoryName", "UICTContentSizeCategoryAccessibilityXXXL"])
-        pull(.down)
+        openPanel()
         XCTAssertTrue(app.buttons["panelAdd"].waitForExistence(timeout: 10), "空面板加号没出来")
         app.buttons["panelAdd"].tap()
         let field = app.textFields["https://"]
@@ -83,23 +85,24 @@ final class ChatPanelUITests: XCTestCase {
         shot("23-closed")
     }
 
-    func testRoomPullFromBottom() throws {
+    func testRoomPanelButtonAndExpandedGestures() throws {
         try launch()
         XCTAssertNotNil(enterBotRoom(), "没进 Bot 的房间（开发栈默认装 Hermes，或先装回声 Bot）")
 
         let panel = app.otherElements["chatPanel"]
-        pullUpInRoom()
-        XCTAssertTrue(panel.waitForExistence(timeout: 5), "到底后往上推没有面板")
-        shot("11-room-peek")
-        addPageIfEmpty()
-        pullStrip(.upward)
-        XCTAssertTrue(waitFull(), "在露出的聊天条上推没有到整页")
+        openPanel()
+        XCTAssertTrue(panel.waitForExistence(timeout: 5), "房间顶栏按钮没有打开面板")
+        if panel.value as? String == "peek" {
+            addPageIfEmpty()
+            pullStrip(.upward)
+        }
+        XCTAssertTrue(waitFull(), "有页面的房间面板没有进入整页")
         shot("12-room-full")
         capsule.tap()
         XCTAssertTrue(waitGone(capsule), "胶囊退出后面板还开着")
     }
 
-    func testHomePullRequiresDeliberateGesture() throws {
+    func testHomeScrollingNeverOpensPanel() throws {
         try launch()
         XCTAssertNotNil(botRoom(timeout: 30), "Real chat list has not finished loading")
         shot("polish-home-before-pulls")
@@ -110,15 +113,14 @@ final class ChatPanelUITests: XCTestCase {
         drag(start, dy: 64, velocity: .slow)
         XCTAssertTrue(waitGone(panel), "Short slow home pull opened the panel")
         drag(start, dy: 120, velocity: .slow)
-        XCTAssertTrue(panel.waitForExistence(timeout: 5), "Deliberate slow home pull did not open")
-        shot("polish-home-slow-peek")
-        app.coordinate(withNormalizedOffset: CGVector(dx: 0.5, dy: 0.94)).tap()
-        XCTAssertTrue(waitGone(panel))
+        XCTAssertTrue(waitGone(panel), "Long home scroll opened the panel")
         drag(start, dy: 64, velocity: XCUIGestureVelocity(rawValue: 1_200))
-        XCTAssertTrue(panel.waitForExistence(timeout: 5), "Qualified fast home pull did not open")
+        XCTAssertTrue(waitGone(panel), "Fast home scroll opened the panel")
+        openPanel()
+        XCTAssertTrue(panel.waitForExistence(timeout: 5), "Home panel button did not open")
     }
 
-    func testRoomPullRequiresDeliberateGesture() throws {
+    func testRoomScrollingNeverOpensPanel() throws {
         try launch()
         XCTAssertNotNil(enterBotRoom())
         let panel = app.otherElements["chatPanel"]
@@ -128,12 +130,11 @@ final class ChatPanelUITests: XCTestCase {
         drag(start, dy: -64, velocity: .slow)
         XCTAssertTrue(waitGone(panel), "Short slow room pull opened the panel")
         drag(start, dy: -120, velocity: .slow)
-        XCTAssertTrue(panel.waitForExistence(timeout: 5), "Deliberate slow room pull did not open")
-        shot("polish-room-slow-peek")
-        app.coordinate(withNormalizedOffset: CGVector(dx: 0.5, dy: 0.15)).tap()
-        XCTAssertTrue(waitGone(panel))
+        XCTAssertTrue(waitGone(panel), "Long room scroll opened the panel")
         drag(start, dy: -64, velocity: XCUIGestureVelocity(rawValue: 1_200))
-        XCTAssertTrue(panel.waitForExistence(timeout: 5), "Qualified fast room pull did not open")
+        XCTAssertTrue(waitGone(panel), "Fast room scroll opened the panel")
+        openPanel()
+        XCTAssertTrue(panel.waitForExistence(timeout: 5), "Room panel button did not open")
     }
 
     func testSidebarRequiresDeliberateEdgeSwipe() throws {
@@ -163,6 +164,8 @@ final class ChatPanelUITests: XCTestCase {
         XCTAssertTrue(waitGone(collapse))
         let button = app.buttons.matching(UITestSidebar.button).firstMatch
         XCTAssertTrue(button.isHittable, "Accessible sidebar button was lost")
+        // 收起动画还没完时按钮可点，但这一下会被吞；等它落定再点。
+        Thread.sleep(forTimeInterval: 0.6)
         button.tap()
         XCTAssertTrue(collapse.waitForExistence(timeout: 5))
     }
@@ -182,7 +185,7 @@ final class ChatPanelUITests: XCTestCase {
         shot("polish-top-and-composer-under-scrolled-message")
         goToBottom()
         shot("polish-last-message-above-composer")
-        pullUpInRoom()
+        openPanel()
         XCTAssertTrue(app.otherElements["chatPanel"].waitForExistence(timeout: 5))
         if app.buttons["panelAdd"].exists {
             app.buttons["panelAdd"].tap()
@@ -257,6 +260,31 @@ extension ChatPanelUITests {
         passOnboarding()
         UITestBackend.settleKeyHandoff(app)
         XCTAssertTrue(app.scrollViews.firstMatch.waitForExistence(timeout: 20), "没到聊天页")
+        clearPanelPages()
+    }
+
+    /// 面板页面存在账号数据里，同一账号前一用例加的页会留到下一用例。用例开头都要空面板，先删干净。
+    private func clearPanelPages() {
+        let panel = app.otherElements["chatPanel"]
+        openPanel()
+        let deadline = Date().addingTimeInterval(20)
+        while panel.value as? String == "full", Date() < deadline {
+            app.buttons["pageMore"].firstMatch.tap()
+            guard let edit = waitAnyButton(["Edit Panel", "编辑面板"], timeout: 5) else { break }
+            edit.tap()
+            let removes = app.buttons.matching(NSPredicate(format: "label IN %@", ["Remove", "移除"]))
+            while removes.firstMatch.exists, removes.firstMatch.isHittable {
+                removes.firstMatch.tap()
+            }
+            tapAnyButton(["Done", "完成", "完了"], timeout: 5, required: true)
+        }
+        if capsule.waitForExistence(timeout: 1) {
+            capsule.tap()
+        } else {
+            // 空面板只有第 1 级，没有胶囊：再点顶栏按钮收起。
+            app.buttons.matching(identifier: "panelOpen").firstMatch.tap()
+        }
+        XCTAssertTrue(waitGone(panel), "清完面板后收不起来")
     }
 
     /// 配对页的输入框不在、又已经出了页面（聊天列表或引导）才算配上；出现拒绝提示就不用再等。
@@ -308,20 +336,16 @@ extension ChatPanelUITests {
         inside.press(forDuration: 0.05, thenDragTo: outward, withVelocity: .slow, thenHoldForDuration: 0)
     }
 
-    /// 从列表里往上下拖。用慢速拖动，不让惯性把列表甩走。
-    private func pull(_ direction: Direction) {
-        XCTAssertTrue(app.scrollViews.firstMatch.waitForExistence(timeout: 10), "找不到聊天列表")
-        let low = app.coordinate(withNormalizedOffset: CGVector(dx: 0.5, dy: 0.28))
-        let high = app.coordinate(withNormalizedOffset: CGVector(dx: 0.5, dy: 0.92))
-        switch direction {
-        case .down: low.press(forDuration: 0.05, thenDragTo: high, withVelocity: .slow, thenHoldForDuration: 0)
-        case .upward: high.press(forDuration: 0.05, thenDragTo: low, withVelocity: .slow, thenHoldForDuration: 0)
-        }
+    private func openPanel() {
+        let button = app.buttons.matching(identifier: "panelOpen").allElementsBoundByIndex
+            .first { $0.exists && $0.isHittable }
+        guard let button else { return XCTFail("没有可达的面板入口按钮\n\(app.debugDescription)") }
+        button.tap()
     }
 
     /// 进 Bot 的房间，返回输入框。新配对的设备走完引导直接落在主 Bot 的房间里，这时不用再从列表点进去。
     private func enterBotRoom() -> XCUIElement? {
-        skipKeyHandoff()
+        UITestBackend.settleKeyHandoff(app)
         if let field = composer(timeout: 3) {
             goToBottom()
             return field
@@ -405,15 +429,6 @@ extension ChatPanelUITests {
         add(attachment)
     }
 
-    /// 新配上的设备先整屏盖着加设备的密钥交接页“在另一台设备上继续”，落进房间后才出来也有。
-    /// 这里不测交接：选“手边没有别的设备”，再从它打开的聊天备份页退回列表。
-    private func skipKeyHandoff() {
-        let labels = ["I don't have my other device", "手边没有别的设备"]
-        guard let button = waitAnyButton(labels, timeout: 10) else { return }
-        button.tap()
-        tapAnyButton(["Back", "返回"], timeout: 5)
-    }
-
     /// 列表里 Bot 的房间行。按名字找：列表顶上还可能有整行宽的提示（如恢复聊天备份），按位置挑会点错。
     private func botRoom(timeout: TimeInterval) -> XCUIElement? {
         let deadline = Date().addingTimeInterval(timeout)
@@ -439,23 +454,6 @@ extension ChatPanelUITests {
             _ = app.wait(for: .runningForeground, timeout: 0.5)
         }
         return nil
-    }
-
-    /// 房间里的手指从不挡输入框的位置往上推。
-    private func pullUpInRoom() {
-        let list = app.collectionViews.firstMatch
-        let field = composer(timeout: 1)
-        let upper = max(app.frame.minY + 150, list.frame.minY + 24)
-        // 没聊过的房间，输入框上面还有一排横着滚的引导提问：从那一排起手拖不动消息列表。
-        let prompts = app.scrollViews["onboardingPrompts"]
-        let floor = [list.frame.maxY, field?.frame.minY, prompts.exists ? prompts.frame.minY : nil]
-            .compactMap { $0 }.min() ?? list.frame.maxY
-        let lower = floor - 24
-        XCTAssertGreaterThan(lower - upper, 96, "Not enough unobscured timeline for a deliberate pull")
-        let origin = app.coordinate(withNormalizedOffset: .zero)
-        let start = origin.withOffset(CGVector(dx: app.frame.midX, dy: lower))
-        let end = origin.withOffset(CGVector(dx: app.frame.midX, dy: upper))
-        start.press(forDuration: 0.05, thenDragTo: end, withVelocity: .slow, thenHoldForDuration: 0)
     }
 
     /// 面板到了第 2 级（整页）。第 1 级也有胶囊（iOS 没有系统返回键），不能拿胶囊在不在当整页的信号。

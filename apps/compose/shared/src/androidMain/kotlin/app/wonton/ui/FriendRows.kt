@@ -30,12 +30,14 @@ import app.wonton.protocol.FriendsViewModel
 import app.wonton.ui.design.WontonButton
 import app.wonton.ui.design.WontonButtonKind
 import app.wonton.ui.design.WontonGroup
+import app.wonton.ui.design.WontonNotice
 import app.wonton.ui.design.WontonRow
 import app.wonton.ui.design.WontonSeparator
 import app.wonton.ui.design.WontonSmallButton
 import app.wonton.ui.design.WontonTheme
 import app.wonton.ui.design.toColor
 import app.wonton.ui.design.wontonContentPadding
+import app.wonton.ui.icons.WontonIcon
 
 @Composable
 internal fun FriendList(
@@ -53,6 +55,7 @@ internal fun FriendList(
         verticalArrangement = Arrangement.spacedBy(WontonTheme.spacing.sectionGap),
     ) {
         failed?.let { ProblemRow(it.problem(), onRetry) }
+        FriendPublicAccessNotice(friends)
         FriendRequestRows(friends, onAction)
         FriendRows(friends, onMenu, onAdd)
         BlockedSection(friends.blocks(), friends.canBlockFederation, onBlockServer) {

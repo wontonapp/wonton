@@ -12,6 +12,11 @@ final class HomeModel {
     var rejection: Problem?
     /// 深链接和手动输入共用草稿；只有配对页确认后才交给核心。
     var pairingCode = ""
+    /// 最近一次出示的码，失败面上提供「同一码重试」。放模型里是因为失败时根页面会换成新的
+    /// PairingView 实例，视图 @State 里的码交接不过去。
+    var lastPairingCode: String?
+    /// 最近一次提交用的设备名，同码重试时带回去；和 lastPairingCode 同时机写入和清空。
+    var lastPairingDeviceName: String?
 
     private let core: ClientCore
 
@@ -53,13 +58,21 @@ final class HomeModel {
     }
 
     func dismissPairingFailure() {
+        clearLastPairingAttempt()
         send(.home(action: .dismissPairingFailure))
         viewModel = core.home()
     }
 
     func cancelPairing() {
+        clearLastPairingAttempt()
         send(.home(action: .cancelPairing))
         viewModel = core.home()
+    }
+
+    /// 重试码和设备名只在失败面活着时有意义；失败被清（离开、取消、深链接换码）就一起清。
+    private func clearLastPairingAttempt() {
+        lastPairingCode = nil
+        lastPairingDeviceName = nil
     }
 
     func prefillPairing(from url: URL) -> Bool {
@@ -69,7 +82,7 @@ final class HomeModel {
         // 配对正在进行时不接新的码。
         if case .inProgress = current.pairing { return false }
         pairingCode = url.absoluteString
-        if case .failed? = current.pairing { send(.home(action: .dismissPairingFailure)) }
+        if case .failed? = current.pairing { dismissPairingFailure() }
         return true
     }
 
@@ -101,12 +114,15 @@ final class HomeModel {
 
     /// 扫到的不是配对码时核心当场拒绝，原因返回给配对页就地显示，不弹窗；之后的进展在 `viewModel.pairing` 里。
     func pair(code: String, deviceName: String) -> Problem? {
+        lastPairingCode = code
+        lastPairingDeviceName = deviceName
         defer { viewModel = core.home() }
         do {
             try core.dispatch(action: .home(action: .pairHome(code: code, deviceName: deviceName)))
             return nil
         } catch {
-            return Problem(title: error.problem.title, detail: String(describing: error))
+            let problem = error.problem
+            return Problem(title: problem.title, detail: problem.nextStep ?? problem.detail)
         }
     }
 }

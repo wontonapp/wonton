@@ -7,8 +7,8 @@ use wonton_protocol::{
     Answer, BotKeeper, BotRef, ChainTurnReport, ConfirmationCategory, ConfirmationState,
 };
 
-use super::Caller;
 use super::test_setup::{self, Setup};
+use super::{Caller, TurnSender};
 use crate::gateway::agent_chains::AgentChains;
 use crate::members::MemberRecord;
 use crate::plugin::PluginId;
@@ -169,7 +169,12 @@ async fn the_window_relaxes_only_the_same_recipient() {
     let send = send_setup().await;
     send.s.members.invite(member("mom", "妈妈")).unwrap();
     send.s.members.invite(member("dad", "爸爸")).unwrap();
-    let caller = chain_caller(&send, "sess-1", "@owner:wonton.localhost");
+    let mut caller = chain_caller(&send, "sess-1", "@owner:wonton.localhost");
+    // 请求头和会话头都没有时，从这个 Bot 进行中的轮次取说话人。
+    caller.sender = None;
+    caller.session = None;
+    caller.chain = None;
+    caller.sender = crate::mcp::server::turn_sender(&send.s.bus, &caller, None);
     let first = send
         .s
         .spawn_as(&caller, TOOL, json!({"recipient": "mom", "body": "第一条"}));
@@ -303,6 +308,17 @@ fn bot_ref() -> BotRef {
 
 fn chain_caller(send: &Send, session: &str, sender: &str) -> Caller {
     let mut caller = send.caller.clone();
+    caller.sender = Some(
+        match sender
+            .strip_prefix('@')
+            .and_then(|rest| rest.split_once(':'))
+        {
+            Some((_, server)) if server == send.s.bus.people().unwrap().server_name.as_str() => {
+                TurnSender::Local(sender.into())
+            }
+            _ => TurnSender::Unknown,
+        },
+    );
     let grant = send
         .chains
         .ledger()
@@ -315,7 +331,7 @@ fn chain_caller(send: &Send, session: &str, sender: &str) -> Caller {
                 sender: sender.into(),
                 event_id: format!("${session}"),
             },
-            // 说话人不是 Bot：链代表就是说话人（网关侧对 Bot 说话人才换归属人，第 8 块）。
+            // 说话人不是 Bot：链代表就是说话人。
             None,
             sender.into(),
         )
