@@ -366,6 +366,8 @@ struct ProblemDetail: View {
     let text: String
     var minimumTargetHeight: CGFloat?
     var label: LocalizedStringResource = .Common.commonDetails
+    /// 展开按钮的无障碍标识；UI 测试按它定位，不按文案。
+    var toggleIdentifier: String?
     @State private var isExpanded = false
     @Environment(\.wontonColors) private var colors
 
@@ -383,6 +385,7 @@ struct ProblemDetail: View {
                 .foregroundStyle(Color(colors.textSecondary))
             }
             .buttonStyle(.plain)
+            .accessibilityIdentifier(toggleIdentifier ?? "")
             if isExpanded {
                 Text(text)
                     .foregroundStyle(Color(colors.textSecondary))
