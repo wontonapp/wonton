@@ -91,8 +91,12 @@ private fun PluginStateNotice(
         }
         is PluginState.Degraded -> WontonNotice(
             WontonIcon.Warning, stringResource(R.string.tab_problem, title),
+            lines = listOf(stringResource(R.string.tab_degraded_line)),
         ) {
-            ProblemDetail(status.reason, modifier = Modifier.heightIn(min = 48.dp))
+            // 原因是核心按语言写的，个别场景夹着原始报错；没有内容时不给一个展开是空的详情。
+            if (status.reason.isNotBlank()) {
+                ProblemDetail(status.reason, modifier = Modifier.heightIn(min = 48.dp))
+            }
         }
         is PluginState.NeedsConfiguration -> WontonNotice(
             WontonIcon.Warning, stringResource(R.string.launcher_badge_needs_configuration), isError = false,
