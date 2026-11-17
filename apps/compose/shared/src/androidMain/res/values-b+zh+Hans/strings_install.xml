@@ -18,6 +18,8 @@
     <string name="install_completion_uncertain">安装结果不确定</string>
     <!-- Shown in the devices section when the app asks for whole disks and the home server lists none to tick. -->
     <string name="install_device_disks_none">这台服务器上没有可选的硬盘</string>
+    <!-- Warning when a selected NVMe disk requires host-level privileges. -->
+    <string name="install_device_nvme_risk">这个应用几乎能控制整台主机。</string>
     <!-- Label above the serial ports to pick one from. %1$s is the name of the app's service that gets the port. -->
     <string name="install_device_serial_for">给 %1$s 用的串口</string>
     <!-- Shown in the devices section when the app asks for a serial port and the home server has none plugged in. -->
