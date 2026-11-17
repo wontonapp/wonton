@@ -253,6 +253,7 @@ private fun NativeTab(
                 nav.settingsOverlay = false
                 nav.plugins.open(entry)
             },
+            checkInstalled = { nav.checkInstalled() },
         ) { nav.settingsPage = it }
         pages.viewModel.showsApps || pages.current == TabRef.Apps ||
             home.status is HomeStatus.NotConfigured -> HomeRoute(

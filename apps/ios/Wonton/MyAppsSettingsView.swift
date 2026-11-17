@@ -1,14 +1,15 @@
 import SwiftUI
-import UIKit
 import WontonClient
 
 /// 设置里的“我的应用”：放哪些、顺序、新装应用自动加入。数据是核心算好的（侧边栏同一份）。
 /// 应用行点开是插件详情页，分享给家人的入口和已有分享都在那里（#693：设置里找不到授权入口）。
+/// 详情里的“打开”先收起设置浮层再走主界面（MainView 注入的 [open]），“查看已安装”同（[checkInstalled]）。
 struct MyAppsSettingsView: View {
     let chat: ChatModel
+    let open: (PluginEntry) -> Void
+    let checkInstalled: () -> Void
     @Environment(PagesModel.self) private var pages
     @Environment(PluginsModel.self) private var plugins
-    @Environment(\.dismiss) private var dismiss
     @Environment(\.wontonColors) private var colors
     @Environment(\.editMode) private var editMode
     @State private var showsCandidates = false
@@ -79,6 +80,7 @@ struct MyAppsSettingsView: View {
                         open(entry)
                     }
                 }
+                .environment(\.goToInstalledApps, checkInstalled)
             }
         }
     }
@@ -113,19 +115,6 @@ struct MyAppsSettingsView: View {
             get: { openedPluginId != nil },
             set: { if !$0 { openedPluginId = nil } }
         )
-    }
-
-    /// 详情页上的“打开”：收起设置浮层，照主界面的方式打开应用或私聊。
-    private func open(_ entry: PluginEntry) {
-        dismiss()
-        switch entry {
-        case let .web(tab):
-            pages.open(tab)
-        case let .chat(botUserId):
-            if chat.openDirectChat(with: botUserId, from: .chat) { pages.open(.chat) }
-        case let .browser(url):
-            UIApplication.shared.open(url)
-        }
     }
 
     /// onMove 的 destination 是“插入位置”（删掉拖动行之前算的），换算成核心要的下标。

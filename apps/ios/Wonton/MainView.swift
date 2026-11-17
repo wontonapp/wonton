@@ -62,7 +62,11 @@ struct MainView: View {
 
         .fullScreenCover(isPresented: $showsSettings) {
             SettingsTab(model: settings, appearance: appearance, appLock: lock, chat: chat,
-                        home: home, plugins: plugins, isModal: true)
+                        home: home, plugins: plugins,
+                        // 设置里的应用行进了详情后，“打开”和“查看已安装”都要先收起设置，再走主界面这一层。
+                        open: { showsSettings = false; open($0) },
+                        checkInstalled: { showsSettings = false; pages.open(.apps) },
+                        isModal: true)
         }
         .wontonDialog(problem: pages.rejection, isPresented: Binding(
             get: { pages.rejection != nil }, set: { if !$0 { pages.rejection = nil } }

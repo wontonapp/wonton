@@ -82,10 +82,10 @@ private fun SidebarApp.myAppRef(): MyAppRef? {
 }
 
 @Composable
-fun MyAppsSettingsScreen(onBack: () -> Unit, open: (PluginEntry) -> Unit) {
+fun MyAppsSettingsScreen(onBack: () -> Unit, open: (PluginEntry) -> Unit, checkInstalled: () -> Unit) {
     val pages = LocalPages.current
     // 应用行打开的详情页：设置的浮层里没有插件页栈，单开一个；返回键先关详情。
-    val navigation = remember { PluginNavigation(open = open, checkInstalled = onBack) }
+    val navigation = remember { PluginNavigation(open = open, checkInstalled = checkInstalled) }
     var adding by remember { mutableStateOf(false) }
     var editingPanel by remember { mutableStateOf(false) }
     val editor = if (editingPanel) rememberChatPanelState(PanelEdge.TOP, PanelScope.Main) else null
