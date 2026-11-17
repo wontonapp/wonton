@@ -130,7 +130,10 @@ async fn onboarding_get_put_persists_and_validates_requests() {
     assert_eq!(initial["agents"][1]["id"], "com.example.extra");
     assert_eq!(initial["agents"].as_array().unwrap().len(), 2);
     assert_eq!(initial["agents"][0]["logins"][0]["id"], "chatgpt");
-    assert_eq!(initial["agents"][0]["bot_user_id"], "@agent:example.com");
+    assert!(
+        initial["agents"][0]["bot_user_id"].is_null(),
+        "没接 Matrix 时调用者身份不可核实，Bot 身份不投影"
+    );
     assert_eq!(initial["agents"][0]["status"]["state"], "running");
     assert_eq!(
         initial["needs"][0]["plugins"][0]["id"],
@@ -198,7 +201,7 @@ async fn onboarding_get_put_persists_and_validates_requests() {
 
 #[tokio::test]
 async fn onboarding_hides_other_peoples_private_bot_from_a_family_admin() {
-    const OWNER_BOT: &str = "@owner-agent:example.com";
+    const OWNER_BOT: &str = "@owner-agent:test";
     let index = tempfile::tempdir().unwrap();
     let agent = write_catalog(index.path());
     let h = Harness::start_with_store(
