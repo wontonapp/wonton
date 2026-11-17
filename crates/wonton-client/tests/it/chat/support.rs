@@ -101,11 +101,16 @@ pub struct Home {
     _core: JoinHandle<()>,
 }
 
-/// 配对的假服务端：配上就把设备放行。chat 的测试只配一次，不区分发出去的码。
+/// 配对的假服务端：配上就把设备放行。chat 的测试通常只配一次，不区分发出去的码。
 #[derive(Debug)]
 struct Pairing {
     allowlist: Allowlist,
+    /// 接下来这么多个配对请求在回应前睡 [`SLOW_PAIR`]：核心已经成功换了槽位，服务端的结论还没到。
+    slow: Mutex<u32>,
 }
+
+/// 比一次调度长、比超时短：够测试在服务端回话前把状态读一遍。
+const SLOW_PAIR: Duration = Duration::from_secs(3);
 
 impl PairHandler for Pairing {
     fn pair(
@@ -114,6 +119,15 @@ impl PairHandler for Pairing {
         _secret: &PairingSecret,
         _device_name: &str,
     ) -> PairResponse {
+        let slow = {
+            let mut slow = self.slow.lock().unwrap();
+            let hit = *slow > 0;
+            *slow = slow.saturating_sub(1);
+            hit
+        };
+        if slow {
+            std::thread::sleep(SLOW_PAIR);
+        }
         self.allowlist.allow(device);
         PairResponse::Paired
     }
@@ -312,6 +326,7 @@ impl Home {
         let allowlist = Allowlist::new(devices.iter().copied());
         let pairing = Arc::new(Pairing {
             allowlist: allowlist.clone(),
+            slow: Mutex::new(0),
         });
         let (tunnel, listener) = TunnelServer::spawn_embedded_with_pairing(
             endpoint,
@@ -566,6 +581,11 @@ impl Home {
     /// 挂起（`true`）或放行（`false`）推送登记接口的响应；挂起期间请求照记不误。
     pub fn hold_push_registrations(&self, hold: bool) {
         self.core.hold_push_registrations.send_replace(hold);
+    }
+
+    /// 下一个配对请求的回应晚 [`SLOW_PAIR`] 才发：核心成功换槽之后、服务端结论之前。
+    pub fn slow_next_pairing(&self) {
+        *self.pairing.slow.lock().unwrap() = 1;
     }
 
     /// 订阅推送登记请求的到达次数；等的一方靠事件变化再查，不睡固定间隔。
