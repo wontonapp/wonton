@@ -699,15 +699,8 @@ async fn card_update(
         inputs,
         langs,
     );
-    let preview = match bus
-        .plugins
-        .preview_upgrade(
-            &id,
-            crate::plugin::UpgradeTo::Upload(Box::new(package.clone())),
-            langs,
-        )
-        .await
-    {
+    let to = crate::plugin::UpgradeTo::Upload(Box::new(package.clone()));
+    let preview = match bus.plugins.preview_upgrade(&id, to, None, langs).await {
         Ok(preview) => preview,
         Err(e) => {
             return bus.deny(

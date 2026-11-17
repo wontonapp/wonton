@@ -536,6 +536,9 @@ struct UpgradeFrom {
     source: Option<String>,
     #[serde(default)]
     devices: Vec<String>,
+    /// 门槛的确认卡按它算生效集（同 [`UpgradeRequest::enabled_permissions`]）；执行用的是同一份请求体。
+    #[serde(default)]
+    enabled_permissions: Vec<String>,
 }
 
 pub async fn preview_upgrade(
@@ -568,7 +571,7 @@ pub async fn preview_upgrade(
         },
     };
     let langs = languages(&headers);
-    match gateway.plugins.preview_upgrade(&id, to, &langs).await {
+    match gateway.plugins.preview_upgrade(&id, to, None, &langs).await {
         Ok(mut preview) => {
             if let Ok(person) = requester(&gateway, peer, &headers) {
                 install_gates::project_preview(&gateway, &person, &mut preview);
@@ -673,23 +676,40 @@ pub async fn upgrade(
         let id = id.clone();
         move |gateway: Arc<Gateway>| perform_upgrade(gateway, id, headers, query, body)
     };
-    // 门槛要升级预览的内容写卡片，先把请求体读出来。
-    let (to, selected) = match json_body::<UpgradeFrom>(&headers, &body) {
+    // 门槛要升级预览的内容写卡片，先把请求体读出来。`enabled_permissions` 一并读出：
+    // 卡片按请求里的生效集生成，和执行算的是同一份。
+    let (to, selected, enabled) = match json_body::<UpgradeFrom>(&headers, &body) {
         Some(Err(e)) => return install_error(&e),
         Some(Ok(UpgradeFrom {
             source: Some(source),
             devices,
-        })) => (UpgradeTo::Source(source), devices),
+            enabled_permissions,
+        })) => (
+            UpgradeTo::Source(source),
+            devices,
+            Some(enabled_permissions),
+        ),
         Some(Ok(UpgradeFrom {
             source: None,
             devices,
-        })) => (UpgradeTo::Offered, devices),
-        None if body.is_empty() => (UpgradeTo::Offered, devices(&query.devices)),
+            enabled_permissions,
+        })) => (UpgradeTo::Offered, devices, Some(enabled_permissions)),
+        None if body.is_empty() => (UpgradeTo::Offered, devices(&query.devices), None),
         None => match package(&languages(&headers), &headers, &body) {
-            Ok(package) => (
-                UpgradeTo::Upload(Box::new(package)),
-                devices(&query.devices),
-            ),
+            Ok(package) => {
+                let enabled = match enabled(&query) {
+                    Ok(enabled) => enabled
+                        .iter()
+                        .map(|item| item.permission.to_string())
+                        .collect(),
+                    Err(e) => return install_error(&e),
+                };
+                (
+                    UpgradeTo::Upload(Box::new(package)),
+                    devices(&query.devices),
+                    Some(enabled),
+                )
+            }
             Err(e) => return install_error(&e),
         },
     };
@@ -699,7 +719,7 @@ pub async fn upgrade(
         &headers,
         &person,
         &id,
-        (to, &selected),
+        (to, &selected, enabled.as_deref()),
         finish,
     )
     .await;

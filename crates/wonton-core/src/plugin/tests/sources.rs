@@ -190,7 +190,7 @@ async fn the_owner_can_go_back_to_an_older_version_after_a_warning() {
 
     let older = package(&hello("1.0.0", ""));
     let preview = m
-        .preview_upgrade(&id(), UpgradeTo::Upload(Box::new(older)), &zh())
+        .preview_upgrade(&id(), UpgradeTo::Upload(Box::new(older)), None, &zh())
         .await
         .unwrap();
     assert_eq!(preview.upgrade_from.as_deref(), Some("2.0.0"));
@@ -215,19 +215,29 @@ async fn the_same_package_is_refused_and_a_changed_one_with_the_same_version_is_
     m.install_source(&install_request(&first)).await.unwrap();
 
     let same = m
-        .preview_upgrade(&id(), UpgradeTo::Upload(Box::new(package(&compose))), &zh())
+        .preview_upgrade(
+            &id(),
+            UpgradeTo::Upload(Box::new(package(&compose))),
+            None,
+            &zh(),
+        )
         .await
         .unwrap_err();
     assert_eq!(same.kind(), "invalid_input", "{same}");
 
     let rebuilt = package(&hello("1.0.0", "  author: {name: 开发中}\n"));
-    m.preview_upgrade(&id(), UpgradeTo::Upload(Box::new(rebuilt)), &zh())
+    m.preview_upgrade(&id(), UpgradeTo::Upload(Box::new(rebuilt)), None, &zh())
         .await
         .unwrap();
 
     let other = hello("1.1.0", "").replace("id: app.hello", "id: app.other");
     let err = m
-        .preview_upgrade(&id(), UpgradeTo::Upload(Box::new(package(&other))), &zh())
+        .preview_upgrade(
+            &id(),
+            UpgradeTo::Upload(Box::new(package(&other))),
+            None,
+            &zh(),
+        )
         .await
         .unwrap_err();
     assert_eq!(err.kind(), "invalid_input", "{err}");
@@ -248,6 +258,7 @@ async fn switching_an_upload_to_a_repository_starts_following_that_repository() 
         .preview_upgrade(
             &id(),
             UpgradeTo::Source("https://github.com/acme/hello".to_owned()),
+            None,
             &zh(),
         )
         .await
@@ -282,14 +293,24 @@ async fn the_same_content_can_only_be_switched_to_from_another_source() {
     m.install_source(&install_request(&first)).await.unwrap();
 
     let err = m
-        .preview_upgrade(&id(), UpgradeTo::Upload(Box::new(package(&compose))), &zh())
+        .preview_upgrade(
+            &id(),
+            UpgradeTo::Upload(Box::new(package(&compose))),
+            None,
+            &zh(),
+        )
         .await
         .unwrap_err();
     assert_eq!(err.kind(), "invalid_input", "{err}");
 
     github.publish(REPO, "v1.0.0", &[("docker-compose.yml", &compose)]);
     let preview = m
-        .preview_upgrade(&id(), UpgradeTo::Source("acme/hello".to_owned()), &zh())
+        .preview_upgrade(
+            &id(),
+            UpgradeTo::Source("acme/hello".to_owned()),
+            None,
+            &zh(),
+        )
         .await
         .unwrap();
     assert!(texts(&preview).iter().any(|t| t.contains("来源从")));
@@ -429,7 +450,7 @@ async fn a_plugin_from_a_third_party_index_is_unreviewed_and_only_follows_that_i
     let offer = m.installed_plugin(&id(), &zh()).unwrap().upgrade.unwrap();
     assert_eq!(offer.version, "3.0.0");
     let upgrade = m
-        .preview_upgrade(&id(), UpgradeTo::Offered, &zh())
+        .preview_upgrade(&id(), UpgradeTo::Offered, None, &zh())
         .await
         .unwrap();
     assert_eq!(upgrade.source.as_deref(), Some(source.as_str()));
@@ -617,6 +638,7 @@ async fn an_upgrade_only_asks_for_new_and_unfilled_inputs() {
         .preview_upgrade(
             &id(),
             super::super::UpgradeTo::Upload(Box::new(package(&v2))),
+            None,
             &zh(),
         )
         .await
