@@ -23,11 +23,11 @@ enum OnboardingAgentsPreview {
                 "omp", "Coding Bot (omp)",
                 [
                     "ChatGPT subscription sign-in", "GitHub Copilot subscription sign-in",
-                    "magpie model gateway",
+                    "magpie model gateway"
                 ],
                 false, nil
             ),
-            row("openclaw", "All-Purpose Bot (OpenClaw)", [], false, "Update the core first"),
+            row("openclaw", "All-Purpose Bot (OpenClaw)", [], false, "Update the core first")
         ]
     }
 
