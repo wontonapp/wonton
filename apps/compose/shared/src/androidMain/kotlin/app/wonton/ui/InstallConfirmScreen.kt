@@ -114,6 +114,7 @@ fun InstallConfirmScreen(
                 val sent = secretValues(chosen.secretInputs, secrets)
                 ConfirmInstallButton(
                     chosen,
+                    preview.devices.orEmpty(),
                     if (previewInstallAction(chosen) == PluginInstallAction.REQUEST_ADMIN) {
                         stringResource(R.string.install_request_admin)
                     } else { title },

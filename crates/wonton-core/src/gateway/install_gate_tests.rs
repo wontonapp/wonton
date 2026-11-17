@@ -449,3 +449,6 @@ async fn the_audience_interface_is_owner_only() {
     assert_eq!(get.error_kind(), Some("permission_required"));
     assert_eq!(get.json()["missing"], "owner");
 }
+
+#[path = "install_nvme_gate_tests.rs"]
+mod install_nvme_gate_tests;

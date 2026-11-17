@@ -83,7 +83,7 @@ class DeviceGrantTest {
         const val CARD_TITLE = "Echo wants to install Home Hub"
         const val INSTALL = "Install"
         const val SERIAL = "serial:0:/dev/serial/by-id/usb-ITead_Sonoff_Zigbee_3.0-if00-port0"
-        const val SYSTEM_DISK = "disk:/dev/disk/by-id/nvme-Samsung_SSD_990_PRO_1TB"
+        const val SYSTEM_DISK = "disk:nvme:/dev/disk/by-id/nvme-Samsung_SSD_990_PRO_1TB"
         const val DATA_DISK = "disk:/dev/disk/by-id/ata-WDC_WD40EFRX-68N32N0"
     }
 }

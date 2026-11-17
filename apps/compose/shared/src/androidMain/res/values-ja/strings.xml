@@ -92,7 +92,7 @@
     <string name="widget_open_to_pair">Wontonを開いてペアリング</string>
     <string name="widget_open_to_sign_in">サインアウトしました。Wontonを開いてサインインしてください。</string>
     <string name="widget_open_to_refresh">Wontonを開いて更新</string>
-    <string name="widget_choose_agent">Wontonでデフォルトのエージェントを選んでください</string>
+    <string name="widget_choose_agent">Wontonでデフォルトのアシスタントを選んでください</string>
     <string name="widget_agent_status_unknown">状態不明</string>
     <string name="widget_updated_at">%1$s に更新</string>
     <string name="widget_status_at">%1$s · %2$s</string>
