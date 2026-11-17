@@ -18,7 +18,7 @@ struct OnboardingAgentStep: View {
         }
     }
 
-    /// 接模型的方式，如“ChatGPT 账号或 key”；没有账号登录时只有 key。
+    /// 接模型的方式，清单里声明的名字，如“ChatGPT 账号、模型设置（magpie）”；没有时走模型网关，在下一步设置。
     private func connection(_ logins: [String]) -> String {
         guard !logins.isEmpty else { return String(localized: .Onboarding0.onboardingAgentConnectionKey) }
         return String(localized: .Onboarding4.onboardingAgentConnectionLogins(logins.formatted(.list(type: .or))))

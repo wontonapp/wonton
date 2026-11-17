@@ -201,6 +201,8 @@ dependencies {
     testImplementation(libs.compose.foundation)
     testImplementation(libs.compose.ui.test.junit4)
     debugImplementation(libs.compose.ui.test.manifest)
+    // Debug 变体的走查页（QualityPreviewActivity）直接摆 Compose 行：只在 Debug 带上。
+    debugImplementation(libs.compose.foundation)
 
     // Apache-2.0。设备上跑 androidTest 的 runner（testInstrumentationRunner 指它）；
     // AndroidJUnitRunner 在这个包里，ext:junit 不带。
