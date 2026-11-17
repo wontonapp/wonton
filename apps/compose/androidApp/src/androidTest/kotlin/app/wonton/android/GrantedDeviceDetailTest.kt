@@ -63,7 +63,7 @@ class GrantedDeviceDetailTest {
         PATHS.forEach { compose.onNodeWithText(it, useUnmergedTree = true).assertDoesNotExist() }
         rowText(0, names[0]).performScrollTo().assertIsDisplayed()
         screenshot("list")
-        rowText(0, compose.activity.getString(R.string.plugin_device_unavailable)).assertIsDisplayed()
+        rowText(0, compose.activity.getString(R.string.plugin_device_unavailable)).performScrollTo().assertIsDisplayed()
         screenshot("unavailable")
         compose.onNodeWithTag("plugin-granted-device-details-${identity(0)}")
             .performScrollTo().performClick()
@@ -96,7 +96,8 @@ class GrantedDeviceDetailTest {
 
     private fun assertState(index: Int, resource: Int, expected: Boolean) {
         val node = rowText(index, compose.activity.getString(resource))
-        if (expected) node.assertIsDisplayed() else node.assertDoesNotExist()
+        // 状态 Tag 排在行标题下方：窄视口滚到标题时 Tag 可能还在折叠线下，断言前要滚到 Tag 本身。
+        if (expected) node.performScrollTo().assertIsDisplayed() else node.assertDoesNotExist()
     }
 
     private fun screenshot(state: String) {

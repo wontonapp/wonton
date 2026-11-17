@@ -30,6 +30,7 @@ import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clipToBounds
+import androidx.compose.ui.graphics.graphicsLayer
 import androidx.compose.ui.platform.testTag
 import androidx.compose.ui.res.stringResource
 import androidx.window.core.layout.WindowSizeClass
@@ -104,9 +105,12 @@ internal fun ExpandedChatPane(
     CompositionLocalProvider(LocalChatPanel provides panel) {
         ChatPanelHost(panel, nav.pages, home, appearance,
             onDraft = { text -> draft.text = text; nav.pages.send(Action.Pages(PageAction.OpenPage(TabRef.Chat))) },
-            onDetails = nav::detail) {
+            onDetails = nav::detail)
+        Box(Modifier.fillMaxSize().graphicsLayer { translationY = panel.shiftPx * panel.sign }) {
             ExpandedChatList(nav, chat)
+            if (panel.level == PanelLevel.PEEK) ChatPanelStrip(panel)
         }
+        ChatPanelOverlay(panel)
     }
     if (panel.editing) ChatPanelEditor(panel, nav.pages) { panel.editing = false }
 }
