@@ -3,31 +3,31 @@
   "version": "1.0",
   "strings": {
     "onboarding.agent.connectionLogins": {
-      "comment": "Description of an agent row in setup: how it connects to a model. The argument is the account-login names, already formatted as a list.",
+      "comment": "Description of an agent row in setup: how it connects to a model. The argument is the connection names from the agent's metadata, already formatted as a list.",
       "extractionState": "manual",
       "localizations": {
         "en": {
           "stringUnit": {
             "state": "translated",
-            "value": "%@ or an API key"
+            "value": "Connects with %@"
           }
         },
         "zh-Hans": {
           "stringUnit": {
             "state": "translated",
-            "value": "%@或 key"
+            "value": "用%@接模型"
           }
         },
         "zh-Hant": {
           "stringUnit": {
             "state": "translated",
-            "value": "%@或 API 金鑰"
+            "value": "用%@接模型"
           }
         },
         "ja": {
           "stringUnit": {
             "state": "translated",
-            "value": "%@、またはAPIキー"
+            "value": "%@でモデルに接続します"
           }
         }
       }
