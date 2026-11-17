@@ -302,7 +302,7 @@
         }
       }
     },
-    "friends.status.publicAccessOff": {
+    "friendsPublicAccessOff": {
       "comment": "Title of the banner on the friends page while the public access master switch is off.",
       "extractionState": "manual",
       "localizations": {

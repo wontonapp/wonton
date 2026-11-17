@@ -28,6 +28,7 @@ import app.wonton.protocol.FriendBlockTarget
 import app.wonton.protocol.FriendGroup
 import app.wonton.protocol.FriendRow
 import app.wonton.protocol.FriendsState
+import app.wonton.protocol.FriendsViewModel
 import app.wonton.ui.design.WontonActionSheet
 import app.wonton.ui.design.WontonButton
 import app.wonton.ui.design.WontonButtonKind
@@ -43,6 +44,7 @@ import app.wonton.ui.design.wontonContentPadding
 import app.wonton.ui.icons.Add
 import app.wonton.ui.icons.Blocked
 import app.wonton.ui.icons.Folder
+import app.wonton.ui.icons.Info
 import app.wonton.ui.icons.Trash
 import app.wonton.ui.icons.WontonIcon
 

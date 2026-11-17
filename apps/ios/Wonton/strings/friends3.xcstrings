@@ -302,7 +302,7 @@
         }
       }
     },
-    "friends.status.publicAccessOffDetail": {
+    "friendsPublicAccessOffDetail": {
       "comment": "Explanation under the banner: friends on other servers can't reach this home until it is turned back on.",
       "extractionState": "manual",
       "localizations": {
