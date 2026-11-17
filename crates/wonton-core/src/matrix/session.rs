@@ -93,7 +93,12 @@ impl<'a> Session<'a> {
 
     /// 账号的显示名。Matrix 规定没设时回 `M_NOT_FOUND`。
     pub async fn display_name(&self) -> Result<Option<String>, MatrixError> {
-        let path = self.profile_path("displayname");
+        self.display_name_of(&self.user_id).await
+    }
+
+    /// 任一账号的显示名，没设时同样是 `None`。
+    pub async fn display_name_of(&self, user_id: &str) -> Result<Option<String>, MatrixError> {
+        let path = format!("/_matrix/client/v3/profile/{}/displayname", encode(user_id));
         match self.json(Method::GET, &path, None, "读显示名").await {
             Ok(profile) => super::bot_profile::profile_string(&profile, "displayname"),
             Err(e) if e.errcode() == "M_NOT_FOUND" => Ok(None),
