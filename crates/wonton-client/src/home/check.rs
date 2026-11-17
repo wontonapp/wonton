@@ -70,7 +70,7 @@ pub(super) async fn keep_checking(home: Weak<HomeLink>, endpoint: Endpoint, clie
                 CHECK_INTERVAL
             }
             Err(err) => {
-                tracing::info!("tunnel check failed: {err}");
+                tracing::info!(code = err.code(), "tunnel check failed");
                 // 检查失败本身不是重建的证据：服务器关机、断电时它也失败，网络却好好的。
                 // 本机 socket 死了的证据是配对信息里的中继一个都不在（中继连接走同一个 UDP socket，跟着
                 // 一起死；而服务器死掉不影响中继，ADR-0032 §4）。endpoint 关闭后中继状态整个清空，

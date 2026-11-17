@@ -6,6 +6,8 @@
     <string name="connection_server_offline">Your home server seems to be offline</string>
     <!-- Value of the update row while a new version is available. -->
     <string name="connection_new_version">New version</string>
+    <!-- Supporting line under the re-pair row: entering only opens the pairing page; the connection changes on pairing. May wrap. -->
+    <string name="connection_pair_again_hint">Opens the pairing code page; the current connection stays until you pair with a new code.</string>
     <!-- Label of the link kind in the connection details. -->
     <!-- Row label in the connection page: whether the phone's mobile network works. No arguments. -->
     <string name="connection_mobile_network">Mobile network</string>

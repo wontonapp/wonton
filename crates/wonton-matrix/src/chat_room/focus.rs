@@ -1,5 +1,7 @@
 //! 时间线看房间的哪一段（ADR-0093 §4）：平铺整个房间（桥、后台跟着的房间）、主对话（话题回复收起）、一个话题。
 
+use std::sync::Arc;
+
 use matrix_sdk::{
     Room,
     ruma::{EventId, OwnedEventId},
@@ -68,5 +70,35 @@ impl MatrixSession {
     ) -> Result<ChatRoom> {
         let room = self.subscribe_opened(room_id).await?;
         ChatRoom::open_with(room, Focus::Thread(root.to_owned())).await
+    }
+
+    /// Watch a main conversation without replacing any other room subscription.
+    /// The watch is released when the returned room is dropped.
+    pub async fn watch_main(
+        self: &Arc<Self>,
+        room_id: &matrix_sdk::ruma::RoomId,
+    ) -> Result<ChatRoom> {
+        self.watch_focused(room_id, Focus::Main).await
+    }
+
+    /// Watch a thread independently, retaining thread sending and receipt semantics.
+    pub async fn watch_thread(
+        self: &Arc<Self>,
+        room_id: &matrix_sdk::ruma::RoomId,
+        root: &EventId,
+    ) -> Result<ChatRoom> {
+        self.watch_focused(room_id, Focus::Thread(root.to_owned()))
+            .await
+    }
+
+    async fn watch_focused(
+        self: &Arc<Self>,
+        room_id: &matrix_sdk::ruma::RoomId,
+        focus: Focus,
+    ) -> Result<ChatRoom> {
+        let (room, watch) = self.subscribe_watched(room_id).await?;
+        let mut room = ChatRoom::open_with(room, focus).await?;
+        room.watch = Some(watch);
+        Ok(room)
     }
 }

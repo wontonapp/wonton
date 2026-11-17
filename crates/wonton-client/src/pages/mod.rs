@@ -46,10 +46,13 @@ mod reload;
 use reload::*;
 mod actions;
 mod bot;
+mod content;
 mod panel;
 mod pins;
+mod room_panels;
 mod sync;
 pub(crate) mod widget;
+pub use content::ContentPageSubscription;
 
 #[cfg(test)]
 mod tests;
@@ -66,6 +69,7 @@ struct PagesState {
     problem: Option<PagesProblem>,
     /// 打开着的页面，从底到顶；空就是根页面。
     stack: Vec<StoredItem>,
+    content: HashMap<TabRef, content::ContentPage>,
     /// 配上了服务器：根页面是聊天；没配对时根是应用网格页（配对页在它上面）。
     paired: bool,
     shows_apps: bool,
@@ -79,14 +83,8 @@ struct PagesState {
     attention: HashSet<PlacedTab>,
     /// 主面板上次看的那一页（本机记住，不同步）。
     panel_selected: Option<TabRef>,
-    /// 打开的房间和它的面板（房间账号数据来的）。没打开房间时没有。
-    open_room: Option<(OwnedRoomId, RoomPanel)>,
-    /// 房间面板上次看的那一页；换房间清掉。
-    room_panel_selected: Option<TabRef>,
-    /// 打开的房间里盖着消息列表的东西开着（壳报告的，ADR-0052）。
-    entry_blocked: bool,
-    /// 卸载插件时从打开房间的面板里拿掉的插件：recompute 收尾时把房间账号数据也清一遍。
-    room_panel_removed: Vec<String>,
+    /// 每个房间独立保留面板、选中页与入口状态。
+    rooms: HashMap<String, room_panels::RoomPanelState>,
     /// Bot 往主面板钉的页（服务器上的，ADR-0052 的 bot 钉页）。不算进用户的面板条目。
     bot_pins: Vec<BotPanelPin>,
     /// 每个 Bot 的钉页同意（设置里显示和收回）。
@@ -118,10 +116,6 @@ pub(crate) struct PagesLink {
     writing: Mutex<()>,
     /// 登录着的会话（chat 喂）：账号数据跟着它读写。
     session: watch::Receiver<Option<Arc<MatrixSession>>>,
-    /// 打开的房间的面板内容（chat 读账号数据喂进来；tabs 自己写成功也往回喂）。
-    room_panel: RoomPanelChannel,
-    /// 打开的房间的面板视图（合成好的），时间线订阅每批都带上。
-    room_view: watch::Sender<Option<Arc<RoomPanelView>>>,
     /// 写账号数据没同步上的原因；写成了清掉，recompute 拿去显示。
     sync_problem: watch::Sender<Option<String>>,
     /// 本机改了还没写上账号数据：登录后推，服务器来的变化也让位。
@@ -135,12 +129,6 @@ pub(crate) struct PagesLink {
     /// 跑着的 widget 驱动（ADR-0096）。
     widgets: widget::Sessions,
 }
-
-/// 打开的房间的面板这一对通道：chat 往里喂，tabs 消费。
-pub(crate) type RoomPanelChannel = (
-    watch::Sender<Option<(OwnedRoomId, RoomPanel)>>,
-    watch::Receiver<Option<(OwnedRoomId, RoomPanel)>>,
-);
 
 /// 打开的房间的面板，合成给壳的：时间线订阅的每一批都带上（ADR-0052）。
 #[derive(Clone, Debug, PartialEq)]
@@ -162,7 +150,6 @@ impl PagesLink {
         data_dir: &Path,
         view: Option<watch::Sender<PagesViewModel>>,
         session: watch::Receiver<Option<Arc<MatrixSession>>>,
-        room_panel: RoomPanelChannel,
         chat: watch::Receiver<ChatViewModel>,
     ) -> Arc<Self> {
         let path = data_dir.join(LAYOUT_FILE);
@@ -200,6 +187,7 @@ impl PagesLink {
             config,
             problem,
             stack: Vec::new(),
+            content: HashMap::new(),
             paired: home_view.server_id.is_some(),
             shows_apps: false,
             failures: HashMap::new(),
@@ -209,10 +197,7 @@ impl PagesLink {
             connected: matches!(home_view.status, HomeStatus::Connected),
             attention: HashSet::new(),
             panel_selected: None,
-            open_room: None,
-            room_panel_selected: None,
-            entry_blocked: false,
-            room_panel_removed: Vec::new(),
+            rooms: HashMap::new(),
             bot_pins: Vec::new(),
             bot_pin_consents: Vec::new(),
             core_url: home.core_url(),
@@ -221,7 +206,6 @@ impl PagesLink {
             widget: None,
             bots: Vec::new(),
         };
-        let room_view = watch::Sender::new(None);
         let sync_problem = watch::Sender::new(None);
         let link = Arc::new(Self {
             runtime: runtime.clone(),
@@ -235,8 +219,6 @@ impl PagesLink {
             state: Mutex::new(state),
             writing: Mutex::new(()),
             session,
-            room_panel,
-            room_view,
             sync_problem,
             dirty: AtomicBool::new(false),
             layout_ready: AtomicBool::new(false),
@@ -322,60 +304,23 @@ impl PagesLink {
         Ok(())
     }
 
-    pub(crate) fn room_view(&self) -> Option<Arc<RoomPanelView>> {
-        self.room_view.borrow().clone()
-    }
-
-    /// 订阅打开着的房间的面板视图：时间线订阅每批带上，变了发一批空的。
-    pub(crate) fn subscribe_room_view(&self) -> watch::Receiver<Option<Arc<RoomPanelView>>> {
-        self.room_view.subscribe()
-    }
-
-    fn inputs(
-        &self,
-    ) -> (
-        PluginsViewModel,
-        HomeViewModel,
-        Option<(OwnedRoomId, RoomPanel)>,
-        Vec<BotView>,
-    ) {
+    fn inputs(&self) -> (PluginsViewModel, HomeViewModel, Vec<BotView>) {
         // 持有身份快照时只取同源列表，Home 与插件观察者的发布先后不影响页面归属。
         let home = self.home.borrow();
         let plugins = self.plugins.view_for_server(home.server_id.as_deref());
-        let open_room = self.room_panel.1.borrow().clone();
         let bots = if matches!(home.status, HomeStatus::Connected) {
             self.chat.borrow().bots.clone()
         } else {
             Vec::new()
         };
-        (plugins, home.clone(), open_room, bots)
+        (plugins, home.clone(), bots)
     }
 
     pub(super) fn recompute(&self) {
         let _writing = lock(&self.writing);
-        let (plugins, home, open_room, bots) = self.inputs();
+        let (plugins, home, bots) = self.inputs();
         let mut state = lock(&self.state).clone();
         bot::replace_bots(&mut state, bots);
-        // 换了房间：上次看的那页、入口状态和红点都是那个房间的，清掉。
-        let room_changed = match (&state.open_room, &open_room) {
-            (Some((old, _)), Some((new, _))) => old != new,
-            (None, Some(_)) | (Some(_), None) => true,
-            (None, None) => false,
-        };
-        if room_changed {
-            state.room_panel_selected = None;
-            state.entry_blocked = false;
-            state.attention.retain(|placed| {
-                !matches!(
-                    placed,
-                    PlacedTab::Panel {
-                        scope: PanelScope::Room { .. },
-                        ..
-                    }
-                )
-            });
-        }
-        state.open_room = open_room;
         let config_changed = refresh_state(&mut state, &plugins, &home);
         if config_changed {
             match persist(&self.path, &state.config) {
@@ -398,35 +343,7 @@ impl PagesLink {
                 });
             }
         }
-        // 卸载插件牵连到打开房间的面板：房间账号数据也清一遍。
-        let removed = std::mem::take(&mut state.room_panel_removed);
-        if let (Some((room_id, _)), false) = (&state.open_room, removed.is_empty())
-            && let Some(session) = self.session.borrow().clone()
-        {
-            let room_id = room_id.clone();
-            self.runtime.spawn(async move {
-                let _ = session
-                    .update_room_panel(&room_id, |raw| {
-                        let Ok(mut panel) =
-                            serde_json::from_value::<RoomPanel>(std::mem::take(raw).into())
-                        else {
-                            return;
-                        };
-                        let removed: std::collections::HashSet<&str> =
-                            removed.iter().map(String::as_str).collect();
-                        panel.pages.retain(|entry| {
-                            tab_ref_plugin_id(&entry.tab).is_none_or(|id| !removed.contains(id))
-                        });
-                        if let Some(fields) = serde_json::to_value(panel)
-                            .ok()
-                            .and_then(|value| value.as_object().cloned())
-                        {
-                            *raw = fields;
-                        }
-                    })
-                    .await;
-            });
-        }
+        self.remove_uninstalled_room_pages(&mut state);
         // 断线时账号数据读不了：配置用本机缓存照常显示（不弹窗、不打断），只标“可能不是最新的”，
         // 重连对账成功后清（盲测 bug #8）。只在有缓存内容时标，空列表不提示。
         // 先判断再写，防止 send_replace 通知又触发 recompute 的自激循环。
@@ -453,10 +370,9 @@ impl PagesLink {
         F: FnOnce(&mut PagesState, &PluginsViewModel) -> Result<(), CoreError>,
     {
         let _writing = lock(&self.writing);
-        let (plugins, home, open_room, bots) = self.inputs();
+        let (plugins, home, bots) = self.inputs();
         let previous = lock(&self.state).clone();
         let mut state = previous.clone();
-        state.open_room = open_room;
         bot::replace_bots(&mut state, bots);
         refresh_state(&mut state, &plugins, &home);
         change(&mut state, &plugins)?;
@@ -500,9 +416,8 @@ impl PagesLink {
         F: FnOnce(&mut PagesState, &PluginsViewModel) -> Result<(), CoreError>,
     {
         let _writing = lock(&self.writing);
-        let (plugins, home, open_room, bots) = self.inputs();
+        let (plugins, home, bots) = self.inputs();
         let mut state = lock(&self.state).clone();
-        state.open_room = open_room;
         bot::replace_bots(&mut state, bots);
         let config_changed = refresh_state(&mut state, &plugins, &home);
         change(&mut state, &plugins)?;
@@ -537,50 +452,47 @@ impl PagesLink {
                 TabRef::Plugin { .. } | TabRef::PluginPath { .. } | TabRef::Widget { .. }
             )
         });
-        self.plugins.set_visible_plugin(
-            visible
-                .and_then(|tab| tab_plugin_id(tab))
-                .map(str::to_owned),
-        );
+        let mut visible: HashSet<String> = visible
+            .and_then(tab_plugin_id)
+            .map(str::to_owned)
+            .into_iter()
+            .collect();
+        {
+            let state = lock(&self.state);
+            for (tab, content) in &state.content {
+                if let Some(plugin_id) = match tab {
+                    TabRef::Bot { bot, .. } => Some(bot.plugin_id.as_str()),
+                    _ => tab_plugin_id(tab),
+                } {
+                    visible.insert(plugin_id.to_owned());
+                }
+                let page = build_page_item(&state, &content.stored, plugins);
+                content.view.send_if_modified(|current| {
+                    if *current == page {
+                        return false;
+                    }
+                    *current = page;
+                    true
+                });
+            }
+        }
+        self.plugins.set_visible_plugins(visible);
         let apps = {
             let state = lock(&self.state);
             state
                 .config
                 .my_apps
                 .iter()
+                .filter(|entry| !is_failed_install(entry, plugins))
                 .filter_map(|entry| build_app(&state, entry, plugins, &view.stack))
                 .collect()
         };
         let more_apps = !view.my_app_candidates.is_empty();
         self.plugins.set_sidebar_apps(apps, more_apps);
         self.view.send_replace(view);
-        let state = lock(&self.state);
-        let room_view = state.open_room.as_ref().map(|(room_id, panel)| {
-            let scope = PanelScope::Room {
-                room_id: room_id.to_string(),
-            };
-            RoomPanelView {
-                room_id: room_id.clone(),
-                panel: room_panel_items(&state, panel, &scope, plugins),
-                selected: state.room_panel_selected.clone(),
-                blocked: state.entry_blocked,
-                widgets: if self.plugins.is_external() {
-                    Vec::new()
-                } else {
-                    widget::entries(room_id.as_str(), plugins)
-                },
-            }
-        });
-        let widget = widget::open_generation(&state);
-        drop(state);
+        let widget = widget::open_generation(&lock(&self.state));
         self.settle_widget(widget);
-        self.room_view.send_if_modified(|current| {
-            if current.as_ref().map(|view| &**view) != room_view.as_ref() {
-                *current = room_view.map(Arc::new);
-                return true;
-            }
-            false
-        });
+        self.publish_room_views(plugins);
     }
 }
 

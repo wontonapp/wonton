@@ -42,6 +42,12 @@ impl Bus {
         let (Some(bot), Some(contacts)) = (&caller.bot, self.contacts.get()) else {
             return false;
         };
+        if let Some(sender) = &caller.sender {
+            return match sender {
+                super::TurnSender::Local(user_id) => contacts.is_remote(user_id),
+                super::TurnSender::Unknown => true,
+            };
+        }
         let bot = BotRef {
             plugin_id: caller.id.to_string(),
             bot: bot.bot.clone(),

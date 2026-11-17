@@ -115,7 +115,7 @@ private fun ReadyCard(info: FileInfo, core: ClientCore) {
             FileCardAction.Play -> playing = true
             FileCardAction.Download -> {
                 opensWhenDone = true
-                files.onAction(Action.Files(FileAction.DownloadFile(info.id)))
+                files.onAction(Action.Files(FileAction.DownloadFile(info.id, files.roomId)))
             }
             is FileCardAction.Open -> openWithSystem(context, action.path, info.mimeType)?.let(files.onReject) ?: Unit
             FileCardAction.Wait -> Unit

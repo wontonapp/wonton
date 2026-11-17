@@ -469,10 +469,7 @@ fn open_gateway(
     clients: Option<Arc<wonton_core::clients::domain::Domain>>,
     agent_chains: Arc<AgentChains>,
 ) -> Arc<Gateway> {
-    let agent_acp = gateway::agent_acp::Registry::new();
-    // 停链对 agent_acp 会话的取消（ADR-0061 第 10 节）走这张注册表。
-    agent_chains.attach_acp_cancel(agent_acp.clone());
-    let gateway = Arc::new(
+    Arc::new(
         Gateway::new(
             cfg.public.clone(),
             owner,
@@ -501,15 +498,10 @@ fn open_gateway(
         .with_friends(Some(friends))
         .with_contacts(contacts)
         .with_agent_chains(Some(agent_chains))
-        .with_agent_acp(Some(agent_acp))
         .with_federation_blocks(federation_blocks)
         .with_sharing(Some(sharing))
         .with_clients(clients),
-    );
-    if let Some(mcp) = &gateway.mcp {
-        mcp.bus.attach_handoff_gateway(Arc::downgrade(&gateway));
-    }
-    gateway
+    )
 }
 
 fn lifecycle_config(cfg: &Config, owner: Arc<OwnerStore>) -> LifecycleConfig {

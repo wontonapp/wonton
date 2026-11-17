@@ -172,7 +172,6 @@ async fn restart_comes_back_to_the_root_and_keeps_the_panel() {
         rig._dir.path(),
         None,
         watch::channel(None).1,
-        watch::channel(None),
         rig.chat.subscribe(),
     );
     let view = restarted.view();
@@ -238,6 +237,7 @@ async fn unpaired_chat_returns_to_pairing_without_losing_pairing_failure() {
     let failure = wonton_protocol::PairingStatus::Failed {
         reason: wonton_protocol::PairingFailure::TransportUnavailable,
         message: "connection failed".to_owned(),
+        diagnostic: Some("raw transport error".to_owned()),
     };
     for pairing in [None, Some(failure)] {
         let mut unpaired = home("old-server");

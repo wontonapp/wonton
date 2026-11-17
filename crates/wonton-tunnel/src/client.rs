@@ -440,8 +440,8 @@ impl TunnelClient {
             match open_stream(&conn, request, &self.inner.streams).await {
                 Ok(stream) => return Ok(stream),
                 // 连接恰好在检查之后断开。这时还没发出任何数据，换一条新连接重试一次是安全的。
-                Err(err @ TunnelError::TransportUnavailable { .. }) if !retried => {
-                    debug!("开流失败，换新连接重试：{err}");
+                Err(TunnelError::TransportUnavailable { .. }) if !retried => {
+                    debug!("开流失败，换新连接重试：transport-unavailable");
                     retried = true;
                 }
                 Err(err) => return Err(err),
@@ -594,7 +594,7 @@ impl Inner {
         server: &impl fmt::Display,
         deadline: Duration,
     ) -> TunnelError {
-        info!(%server, ?deadline, "隧道建连失败：{err}");
+        info!(%server, ?deadline, code = err.code(), "隧道建连失败");
         lock(&self.pacing).failed();
         let mut stats = lock(&self.stats);
         stats.failed_dials = stats.failed_dials.saturating_add(1);
@@ -676,7 +676,7 @@ fn watch_close(inner: Weak<Inner>, conn: &Connection) {
         }
         let err = from_connection_error(&closed.reason);
         let server = lock(&inner.server).id.fmt_short();
-        info!(%server, "隧道连接已断开：{err}");
+        info!(%server, code = err.code(), "隧道连接已断开");
         let confirmed = *lock(&inner.confirmed) == Some(conn_id);
         if !confirmed {
             lock(&inner.pacing).failed();

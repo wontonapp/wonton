@@ -6,14 +6,22 @@
     <string name="store_get">Get</string>
     <!-- Small tag on a store row for an app that asks for risky permissions. -->
     <string name="store_high_permissions">High permissions</string>
+    <!-- Button that requests store content when it has not been loaded. -->
+    <string name="store_load">Load store</string>
     <!-- Shown when a store search found nothing. -->
     <string name="store_no_results">No results</string>
+    <!-- Store state before any store load has been requested. -->
+    <string name="store_not_requested">The store hasn\'t been loaded.</string>
     <!-- Button on a store row to open an installed app. -->
     <string name="store_open">Open</string>
+    <!-- Shown after five seconds of loading without claiming a cause. -->
+    <string name="store_pending">Still waiting for the store. The cause is not yet known.</string>
     <!-- Problem title in the store with the source it came from. Arguments: the provider's name, the problem title from the core. -->
     <string name="store_problem_from_source">%1$s: %2$s</string>
     <!-- Placeholder under an added source whose list hasn't been fetched yet. Argument: the source's provider name. -->
     <string name="store_reading">Loading %1$s…</string>
+    <!-- Button that requests a new store load after loading takes a while. -->
+    <string name="store_reload">Reload</string>
     <!-- Placeholder of the search field on the Store screen. -->
     <string name="store_search_prompt">Search</string>
     <!-- Section title above community apps in the store. -->
@@ -30,6 +38,8 @@
     <string name="store_update">Update</string>
     <!-- Caption on a store row whose listing comes through an index. Argument: the index's name. -->
     <string name="store_via_index">via %1$s</string>
+    <!-- Store load is waiting for a connection; connection controls remain in the status line. -->
+    <string name="store_waiting_for_connection">Waiting for a connection to load the store.</string>
     <!-- Sheet title before updating every app that has an update at once. Argument: the count. -->
     <plurals name="store_update_all_title">
         <item quantity="one">Update %1$d app</item>
