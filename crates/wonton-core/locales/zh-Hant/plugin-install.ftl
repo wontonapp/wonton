@@ -79,6 +79,7 @@ plugin-install-start-failed = 無法啟動：{ $error }
 plugin-install-conflict-rebuilding = 應用程式 { $id } 正在重建，結束後再啟動
 plugin-install-record-unusable = 這個應用程式的安裝記錄無法使用，因此無法啟動
 plugin-install-container-missing = 容器 { $name } 不存在
+plugin-install-start-timeout-container-gone = 啟動逾時後容器 { $name } 已不存在，重新安裝即可
 plugin-install-container-not-owned = 容器 { $name } 不屬於應用程式 { $id }
 
 # ── 記憶體不足（oom.rs）────────────────────────────────────────────────────
