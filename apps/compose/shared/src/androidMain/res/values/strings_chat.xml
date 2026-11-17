@@ -39,8 +39,8 @@
     <string name="timeline_start">Start of the chat</string>
     <!-- Footer label of an edited message. No arguments. -->
     <string name="timeline_edited">Edited</string>
-    <!-- Footer label while a message is sending. No arguments. -->
-    <string name="timeline_sending">Sending</string>
+    <!-- Footer label of a message saved on this device but not yet confirmed delivered by the server (queued or in flight). No arguments. -->
+    <string name="timeline_sending">Saved, not delivered yet</string>
     <!-- Small line under your own message that the others have read. No arguments. -->
     <string name="timeline_read">Read</string>
     <!-- Small line under your own latest message: the server has it, nobody has read it yet. No arguments. -->
@@ -54,6 +54,9 @@
     <!-- Body placeholder of a message this device can't decrypt. No arguments. -->
     <string name="timeline_undecryptable">Can\'t decrypt: this device doesn\'t have the key for this message</string>
     <string name="timeline_undecryptable_notice">Earlier encrypted messages can\'t be read on this device.</string>
+    <!-- One-line hints beside undecryptable history: how to get the keys back. No arguments. -->
+    <string name="timeline_key_notice_recovery">Enter your recovery key in Chat backup to read these earlier messages.</string>
+    <string name="timeline_key_notice_verify">Verify this device from your other device to receive the keys. Start in Chat backup.</string>
     <!-- Body placeholder of a redacted message. No arguments. -->
     <string name="timeline_redacted">Message deleted</string>
     <!-- Body placeholder of a message type that can't be shown. Argument: the event type, like m.sticker. -->

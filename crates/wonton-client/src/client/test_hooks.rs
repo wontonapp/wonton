@@ -8,6 +8,12 @@ use std::time::Duration;
 use super::ClientCore;
 
 impl ClientCore {
+    /// 等待旧商店响应处理完的测试栅栏；不把它们算进已安装列表的刷新进度。
+    #[doc(hidden)]
+    pub fn test_store_requests_in_flight(&self) -> usize {
+        self.scope().plugins.store_requests_in_flight()
+    }
+
     /// 打开卡片成功的钩子：下一次成功在“补不补取”之前先报到，等 [`Self::test_release_card_success`]
     /// 放行才继续。
     #[doc(hidden)]

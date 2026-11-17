@@ -27,18 +27,10 @@ use crate::plugin::PluginId;
 /// 请求体的上限：一轮的报告就是几个 ID，再大是调用方的错。
 const MAX_BODY: usize = 64 * 1024;
 
-/// `agent_acp` 连接上会话的取消（ADR-0061 第 10 节，第 5 块的网关接上）：停链时核心对每个经 `agent_acp`
-/// 的会话发 `session/cancel`，网关自己把未决的权限请求回 `cancelled`。取消是异步的，接口不等它。
-pub trait AgentAcpCancel: Send + Sync {
-    fn cancel(&self, session: &str);
-}
-
 pub struct AgentChains {
     ledger: Arc<Chains>,
     outbox: Arc<Outbox>,
     settings: Arc<AgentSettings>,
-    /// `agent_acp` 的取消方；第 5 块接上之前停链只停桥的轮次。
-    acp: std::sync::OnceLock<Arc<dyn AgentAcpCancel>>,
 }
 
 impl AgentChains {
@@ -47,7 +39,6 @@ impl AgentChains {
             ledger,
             outbox,
             settings,
-            acp: std::sync::OnceLock::new(),
         }
     }
     #[cfg(test)]
@@ -79,15 +70,8 @@ impl AgentChains {
         &self.settings
     }
 
-    /// 接上 `agent_acp` 的取消方（第 5 块）。接两次时保留先接上的。
-    pub fn attach_acp_cancel(&self, cancel: Arc<dyn AgentAcpCancel>) {
-        if self.acp.set(cancel).is_err() {
-            tracing::warn!("agent_acp 的取消方接了两次，用先接上的");
-        }
-    }
-
-    /// 停整条链（ADR-0061 第 10 节）：账本置 `Stopped` 并交出活会话和待答卡片；桥的轮次进这个 Bot 的出箱
-    /// 发 `CancelTurn`，`agent_acp` 的会话交给网关取消。撤回卡片归总线（[`crate::mcp::Bus::stop_chain`]）。
+    /// 停整条链（ADR-0061 第 10 节）：账本置 `Stopped` 并交出活会话和待答卡片；轮次进这个 Bot 的出箱
+    /// 发 `CancelTurn`。撤回卡片归总线（[`crate::mcp::Bus::stop_chain`]）。
     pub fn stop(
         &self,
         chain: &str,
@@ -105,11 +89,6 @@ impl AgentChains {
                 tracing::warn!(%error, session = %session.session, "取消轮次没能排进出箱");
             }
         }
-        if let Some(acp) = self.acp.get() {
-            for session in outcome.agent_acp.iter().chain(&outcome.hand_off) {
-                acp.cancel(&session.session);
-            }
-        }
         Ok(outcome)
     }
 }
@@ -121,43 +100,51 @@ impl Gateway {
         self
     }
 
-    /// 接上 `agent_acp` 的连接注册表：并发计数和停链取消这才可用。
-    pub fn with_agent_acp(mut self, registry: Option<Arc<super::agent_acp::Registry>>) -> Self {
-        self.agent_acp = registry;
-        self
-    }
-
     /// 这个 Bot 听的人里有没有 `sender`（ADR-0045 的名单）：归属人本人、已成立的联系人，或者同一个归属人的
     /// 另一个 Bot（ADR-0083 第 4 节）。认不出这个 Bot 时是假。
     pub(crate) fn bot_listens_to(&self, bot: &BotRef, sender: &str) -> bool {
-        let Ok(id) = PluginId::parse(&bot.plugin_id) else {
-            return false;
-        };
-        let Some(account) = self.plugins.bot_account(&id, &bot.bot) else {
-            return false;
-        };
-        // 归属人：私人 Bot 是这个人，共享 Bot 是主人。同一个归属人的另一个 Bot 也算（Bot 之间按名字叫）。
-        let viewer = self.plugins.bot_by_user(sender);
-        if let Some((_, _, keeper)) = &viewer
-            && self
-                .plugins
-                .bot_by_user(&account.user_id)
-                .is_some_and(|(_, _, own)| &own == keeper)
-        {
-            return true;
-        }
-        let keeper = keeper_of(&self.plugins, &account.user_id);
-        let keeper_id = self.matrix.as_ref().map(|m| m.user_id(&keeper));
-        if keeper_id.as_deref() == Some(sender) {
-            return true;
-        }
-        self.contacts().is_some_and(|contacts| {
-            contacts
-                .allowed_users(&account.user_id)
-                .iter()
-                .any(|u| u == sender)
-        })
+        bot_listens_to(
+            &self.plugins,
+            self.matrix.as_deref(),
+            self.contacts().map(Arc::as_ref),
+            bot,
+            sender,
+        )
     }
+}
+
+/// [`Gateway::bot_listens_to`] 的实现：MCP 总线也要验请求头里报的说话人。
+pub(crate) fn bot_listens_to(
+    plugins: &crate::plugin::PluginManager,
+    matrix: Option<&crate::matrix::Matrix>,
+    contacts: Option<&crate::contacts::Contacts>,
+    bot: &BotRef,
+    sender: &str,
+) -> bool {
+    let Ok(id) = PluginId::parse(&bot.plugin_id) else {
+        return false;
+    };
+    let Some(account) = plugins.bot_account(&id, &bot.bot) else {
+        return false;
+    };
+    // 归属人：私人 Bot 是这个人，共享 Bot 是主人。同一个归属人的另一个 Bot 也算（Bot 之间按名字叫）。
+    if let Some((_, _, keeper)) = plugins.bot_by_user(sender)
+        && plugins
+            .bot_by_user(&account.user_id)
+            .is_some_and(|(_, _, own)| own == keeper)
+    {
+        return true;
+    }
+    let keeper = keeper_of(plugins, &account.user_id);
+    if matrix.map(|m| m.user_id(&keeper)).as_deref() == Some(sender) {
+        return true;
+    }
+    contacts.is_some_and(|contacts| {
+        contacts
+            .allowed_users(&account.user_id)
+            .iter()
+            .any(|u| u == sender)
+    })
 }
 
 fn keeper_of(plugins: &crate::plugin::PluginManager, bot_user_id: &str) -> String {

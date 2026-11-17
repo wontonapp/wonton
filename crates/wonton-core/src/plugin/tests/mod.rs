@@ -8,7 +8,6 @@ use super::manifest::{Permission, Sso};
 use super::package::{PackageError, PluginPackage};
 use super::render::{RenderError, dry_run};
 
-pub(crate) mod agent_acp_contract;
 mod bot_ai_levels;
 mod bot_avatars;
 mod bot_lifecycle;
