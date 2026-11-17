@@ -7,9 +7,11 @@ struct AgentPluginStatusBanner: View {
     let model: PluginsModel
 
     /// 降级卡的标题带应用名；已安装列表还没到时退回不带名字的写法。
-    private var title: String? {
-        model.viewModel.installed?.plugins.first { $0.id == plugin.pluginId }?.title
+    private var installedItem: InstalledPlugin? {
+        model.viewModel.installed?.plugins.first { $0.id == plugin.pluginId }
     }
+
+    private var title: String? { installedItem?.title }
 
     var body: some View {
         Group {
@@ -39,7 +41,8 @@ struct AgentPluginStatusBanner: View {
             WontonNotice(
                 icon: .warning,
                 title: title.map { String(localized: .Tab1.tabFailedTitle($0)) } ?? TabText.failed,
-                lines: [String(localized: .Tab1.tabDegradedLine)]
+                // 安装失败并回滚的插件带着降级状态，但不是“已安装”；列表没到时无从判断，照旧显示。
+                lines: installedItem?.installFailure == nil ? [String(localized: .Tab1.tabDegradedLine)] : []
             ) {
                 // 原因是核心按语言写的，个别场景夹着原始报错；没有内容时不给一个展开是空的详情。
                 if !reason.isEmpty {
