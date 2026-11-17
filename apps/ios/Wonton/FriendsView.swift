@@ -272,9 +272,9 @@ private extension FriendsView {
     private var publicAccessNotice: some View {
         WontonNotice(
             icon: .info,
-            title: String(localized: .Friends2.friendsPublicAccessOff),
+            title: String(localized: .Friends2.friendsStatusPublicAccessOff),
             isError: false,
-            lines: [String(localized: .Friends3.friendsPublicAccessOffDetail)]
+            lines: [String(localized: .Friends3.friendsStatusPublicAccessOffDetail)]
         )
     }
 
