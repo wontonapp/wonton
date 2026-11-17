@@ -5,17 +5,17 @@ use std::time::Duration;
 use axum::http::Method;
 use wonton_client::{Action, PluginTaskState};
 use wonton_protocol::{
-    CapabilityProvider, InstallPreview, MissingCapability, PluginAction, PluginFailure,
+    CapabilityProvider, InstallPreview, MissingCapability, PermissionRisk, PluginAction,
+    PluginFailure,
 };
 
 use super::rig::{Canned, Rig, WAIT, preview};
 
 const PROVIDER_SOURCE: &str = "github:owner/app.downloader@v2.0.0";
 
-fn consumer_preview() -> InstallPreview {
-    let mut consumer = preview("app.photos");
-    consumer.missing_requires = vec![MissingCapability {
-        capability: "torrent_client".to_owned(),
+fn requires(capability: &str) -> MissingCapability {
+    MissingCapability {
+        capability: capability.to_owned(),
         third_party: false,
         providers: vec![CapabilityProvider {
             id: "app.downloader".to_owned(),
@@ -23,7 +23,12 @@ fn consumer_preview() -> InstallPreview {
             source: PROVIDER_SOURCE.to_owned(),
             high_privilege: true,
         }],
-    }];
+    }
+}
+
+fn consumer_preview() -> InstallPreview {
+    let mut consumer = preview("app.photos");
+    consumer.missing_requires = vec![requires("torrent_client")];
     consumer
 }
 
@@ -150,5 +155,89 @@ async fn a_required_capability_with_no_provider_stops_before_the_request() {
         rig.core
             .seen(&Method::POST, "/_wonton/api/plugins")
             .is_empty()
+    );
+}
+
+/// 一起装时确认页没有提供方自己的权限，最高级的“单独确认”（ADR-0036）没处走：这种提供方整单停下。
+#[tokio::test]
+async fn a_provider_with_risky_permissions_is_not_installed_together() {
+    let rig = Rig::new().await;
+    rig.connected().await;
+    let mut provider = provider_preview();
+    provider.permissions[0].risk = Some(PermissionRisk::Highest);
+    answer_previews(&rig, &consumer_preview(), &provider);
+
+    let shown = rig
+        .app
+        .preview_install("github:owner/app.photos".to_owned())
+        .await
+        .unwrap();
+    install(&rig, shown);
+    let state = rig
+        .task_within("app.photos", Duration::from_secs(WAIT.as_secs()), |state| {
+            *state != PluginTaskState::Running
+        })
+        .await;
+    assert!(
+        matches!(
+            state,
+            PluginTaskState::Failed {
+                reason: PluginFailure::RecordUnusable,
+                ref message,
+            } if message.contains("下载器")
+        ),
+        "{state:?}"
+    );
+    assert!(
+        rig.core
+            .seen(&Method::POST, "/_wonton/api/plugins")
+            .is_empty(),
+        "不能带着没确认的提供方权限发安装请求"
+    );
+}
+
+/// 一个提供方同时补几个缺的必需能力：只装它一次，确认页也只写一行。
+#[tokio::test]
+async fn one_provider_covering_two_missing_capabilities_is_installed_once() {
+    let rig = Rig::new().await;
+    rig.connected().await;
+    let mut consumer = consumer_preview();
+    consumer.missing_requires = vec![requires("torrent_client"), requires("indexer")];
+    answer_previews(&rig, &consumer, &provider_preview());
+
+    let shown = rig
+        .app
+        .preview_install("github:owner/app.photos".to_owned())
+        .await
+        .unwrap();
+    assert_eq!(
+        shown
+            .notices
+            .iter()
+            .filter(|line| line.text.contains("下载器"))
+            .count(),
+        1,
+        "同一个提供方只写一行：{:?}",
+        shown.notices
+    );
+
+    install(&rig, shown);
+    let state = rig
+        .task("app.photos", |state| *state != PluginTaskState::Running)
+        .await;
+    assert_eq!(state, PluginTaskState::Succeeded);
+
+    let sent: serde_json::Value =
+        serde_json::from_str(&rig.core.seen(&Method::POST, "/_wonton/api/plugins")[0].body)
+            .unwrap();
+    let together = sent["install_together"].as_array().unwrap();
+    assert_eq!(together.len(), 1, "同一个提供方只装一次：{sent:?}");
+    assert_eq!(together[0]["id"], "app.downloader");
+    // 使用方和提供方各取一次预览，去重后不再为第二个能力重复取。
+    assert_eq!(
+        rig.core
+            .seen(&Method::POST, "/_wonton/api/plugins/preview")
+            .len(),
+        2
     );
 }

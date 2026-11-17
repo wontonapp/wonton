@@ -44,6 +44,8 @@ plugins-tasks-preview-no-source = 这份预览没有来源，装不了。
 plugins-tasks-install-together = 装它会一起装上「{ $title }」：缺的必需能力 { $capability } 由它提供。
 # $capability 是缺着的必需能力。
 plugins-tasks-preview-no-provider = 缺的必需能力 { $capability } 在商店里没有提供方，装不了。
+# $title 是提供方的名字。
+plugins-tasks-provider-needs-own-confirm = 「{ $title }」有需要单独确认的权限，先单独装上它，再回来装这个插件。
 
 # $id 是原样的任务 ID。
 plugins-tasks-no-such-task = 没有这个任务：{ $id }

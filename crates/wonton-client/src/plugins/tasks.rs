@@ -1,6 +1,7 @@
 //! 安装、升级、卸载：一个插件同时只有一个任务，进展放在 `PluginsViewModel.tasks` 里。家里的服务器单独执行这些操作，请求
 //! 断开了也照样做完（ADR-0017），所以连接断了不算失败，要从已安装列表里等结果。
 
+use std::collections::HashSet;
 use std::future::Future;
 use std::sync::Arc;
 use std::sync::atomic::Ordering;
@@ -115,6 +116,7 @@ impl PluginsLink {
         missing: &[MissingCapability],
     ) -> Result<Vec<InstallTogether>, CoreError> {
         let mut together = Vec::with_capacity(missing.len());
+        let mut chosen = HashSet::new();
         for capability in missing {
             let provider = capability
                 .providers
@@ -127,6 +129,10 @@ impl PluginsLink {
                         capability = capability.capability.as_str()
                     ),
                 })?;
+            // 同一个提供方同时补几个缺的能力时只装一次：核心的预检也只收一条，装上它几个能力都补齐。
+            if !chosen.insert(provider.id.as_str()) {
+                continue;
+            }
             let preview = self.preview_install(provider.source.clone()).await?;
             together.push(provider_install(provider, preview)?);
         }
@@ -663,10 +669,15 @@ fn enabled_permissions(preview: &InstallPreview) -> Vec<String> {
 
 /// 确认页写明会一起装的提供方（ADR-0053）：安装确认页就是这次授权的确认，高权限的提供方要醒目。
 pub(super) fn provider_notices(preview: &mut InstallPreview) {
+    let mut noticed = HashSet::new();
     for missing in &preview.missing_requires {
         let Some(provider) = missing.providers.first() else {
             continue;
         };
+        // 同一个提供方补几个缺的能力时只写一行，和 [`PluginsLink::providers`] 的一次安装对上。
+        if !noticed.insert(provider.id.as_str()) {
+            continue;
+        }
         preview.notices.push(CardLine {
             text: l10n!(
                 CATALOG,
@@ -685,6 +696,22 @@ fn provider_install(
     provider: &CapabilityProvider,
     mut preview: InstallPreview,
 ) -> Result<InstallTogether, CoreError> {
+    // 一起装时确认页只有使用方的预览，提供方自己的高风险权限（ADR-0036 的各级，最高级的
+    // “单独确认”在内）没经过主人：这种提供方请主人先单独装，装它的确认页把提示和确认走全。
+    if preview
+        .permissions
+        .iter()
+        .any(|line| !line.optional && line.risk.is_some())
+    {
+        return Err(CoreError::NotReady {
+            reason: l10n!(
+                CATALOG,
+                language(),
+                "plugins-tasks-provider-needs-own-confirm",
+                title = provider.title.as_str()
+            ),
+        });
+    }
     let grant = confirmed(&preview)?;
     let enabled_permissions = enabled_permissions(&preview);
     let lan_webui = lan_webui_chosen(&preview);

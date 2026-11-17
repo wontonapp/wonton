@@ -44,6 +44,8 @@ plugins-tasks-preview-no-source = このプレビューには提供元がない�
 plugins-tasks-install-together = { $title }も一緒にインストールします：不足している必須機能{ $capability }はこれが提供します。
 # $capability は不足している必須機能です。
 plugins-tasks-preview-no-provider = 不足している必須機能{ $capability }を提供するプラグインがストアにないため、インストールできません。
+# $title は提供側プラグインの名前。
+plugins-tasks-provider-needs-own-confirm = { $title }には個別の確認が必要な権限があります。先に「{ $title }」だけをインストールしてから、このプラグインをインストールしてください。
 
 # $id はそのままのタスクIDです。
 plugins-tasks-no-such-task = そのようなタスクはありません：{ $id }
