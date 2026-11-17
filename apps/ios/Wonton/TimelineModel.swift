@@ -30,7 +30,7 @@ final class TimelineModel {
     private(set) var callActive = false
     /// 群里在场的 AI（本账号认识的 Bot 的 Matrix 用户 ID）；私聊不算。nil 是成员名单还没取全、
     /// 在场的算不准，别下“群里没有 AI”的结论；空列表才是确定没有。
-    private(set) var roomBots: [String]? = nil
+    private(set) var roomBots: [String]?
     private(set) var failure: Problem?
     /// 打不开时点“重试”加一，视图按它重新订阅。
     var attempt = 0
