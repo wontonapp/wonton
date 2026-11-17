@@ -50,7 +50,9 @@ use wonton_protocol::{
 
 pub(super) use super::api_body::{MAX_UPLOAD_BYTES, invalid_body, json_body, package};
 use super::api_switch::{enabled, granted, secrets, settings, upload_parts};
-use super::{Gateway, Person, TunnelPeer, install_gates, isolation, pages, permissions};
+use super::{
+    Gateway, Person, TunnelPeer, install_gate_checks, install_gates, isolation, pages, permissions,
+};
 
 pub use super::api_switch::set_plugin_permission;
 use crate::l10n;
@@ -447,7 +449,8 @@ pub async fn install(
                 Err(e) => return install_error(&e),
             };
             let for_install = package.clone();
-            let selected_devices = devices(&query.devices);
+            let selected_devices = comma_list(&query.devices);
+            let changes = install_gate_checks::upload_changes_permissions(&query);
             let finish = {
                 let headers = headers.clone();
                 move |gateway: Arc<Gateway>| {
@@ -477,7 +480,7 @@ pub async fn install(
                 peer,
                 &headers,
                 &person,
-                (&package, &selected_devices),
+                (&package, &selected_devices, changes),
                 finish,
             )
             .await;
@@ -489,8 +492,8 @@ pub async fn install(
     }
 }
 
-/// 逗号分隔的设备 ID 列表。
-fn devices(value: &str) -> Vec<String> {
+/// 查询串里逗号分隔的列表（设备 ID、可选项）。
+pub(super) fn comma_list(value: &str) -> Vec<String> {
     value
         .split(',')
         .map(str::trim)
@@ -522,7 +525,7 @@ async fn install_upload_package(
             granted,
             enabled,
             query.lan_webui,
-            &devices(&query.devices),
+            &comma_list(&query.devices),
             settings,
             langs.clone(),
         )
@@ -534,11 +537,6 @@ async fn install_upload_package(
 struct UpgradeFrom {
     #[serde(default)]
     source: Option<String>,
-    #[serde(default)]
-    devices: Vec<String>,
-    /// 门槛的确认卡按它算生效集（同 [`UpgradeRequest::enabled_permissions`]）；执行用的是同一份请求体。
-    #[serde(default)]
-    enabled_permissions: Vec<String>,
 }
 
 pub async fn preview_upgrade(
@@ -561,9 +559,8 @@ pub async fn preview_upgrade(
         Some(Err(e)) => return install_error(&e),
         Some(Ok(UpgradeFrom {
             source: Some(source),
-            ..
         })) => UpgradeTo::Source(source),
-        Some(Ok(UpgradeFrom { source: None, .. })) => UpgradeTo::Offered,
+        Some(Ok(UpgradeFrom { source: None })) => UpgradeTo::Offered,
         None if body.is_empty() => UpgradeTo::Offered,
         None => match package(&languages(&headers), &headers, &body) {
             Ok(package) => UpgradeTo::Upload(Box::new(package)),
@@ -616,7 +613,7 @@ async fn perform_upgrade(
                         grant,
                         enabled,
                         query.lan_webui,
-                        &devices(&query.devices),
+                        &comma_list(&query.devices),
                         &given,
                         &langs,
                     )
@@ -676,53 +673,12 @@ pub async fn upgrade(
         let id = id.clone();
         move |gateway: Arc<Gateway>| perform_upgrade(gateway, id, headers, query, body)
     };
-    // 门槛要升级预览的内容写卡片，先把请求体读出来。`enabled_permissions` 一并读出：
-    // 卡片按请求里的生效集生成，和执行算的是同一份。
-    let (to, selected, enabled) = match json_body::<UpgradeFrom>(&headers, &body) {
-        Some(Err(e)) => return install_error(&e),
-        Some(Ok(UpgradeFrom {
-            source: Some(source),
-            devices,
-            enabled_permissions,
-        })) => (
-            UpgradeTo::Source(source),
-            devices,
-            Some(enabled_permissions),
-        ),
-        Some(Ok(UpgradeFrom {
-            source: None,
-            devices,
-            enabled_permissions,
-        })) => (UpgradeTo::Offered, devices, Some(enabled_permissions)),
-        None if body.is_empty() => (UpgradeTo::Offered, devices(&query.devices), None),
-        None => match package(&languages(&headers), &headers, &body) {
-            Ok(package) => {
-                let enabled = match enabled(&query) {
-                    Ok(enabled) => enabled
-                        .iter()
-                        .map(|item| item.permission.to_string())
-                        .collect(),
-                    Err(e) => return install_error(&e),
-                };
-                (
-                    UpgradeTo::Upload(Box::new(package)),
-                    devices(&query.devices),
-                    Some(enabled),
-                )
-            }
-            Err(e) => return install_error(&e),
-        },
+    // 门槛要升级预览的内容写卡片，先把请求体读出来；执行用的是同一份请求体。
+    let ask = match install_gate_checks::UpgradeAsk::read(&headers, &body, &query) {
+        Ok(ask) => ask,
+        Err(e) => return install_error(&e),
     };
-    let gate = install_gates::upgrade(
-        &gateway,
-        peer,
-        &headers,
-        &person,
-        &id,
-        (to, &selected, enabled.as_deref()),
-        finish,
-    )
-    .await;
+    let gate = install_gates::upgrade(&gateway, peer, &headers, &person, &id, ask, finish).await;
     match install_gates::settle(gate, "upgrade", &langs).await {
         Ok(response) => response,
         Err(response) => response,

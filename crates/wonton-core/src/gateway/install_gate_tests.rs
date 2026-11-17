@@ -452,3 +452,6 @@ async fn the_audience_interface_is_owner_only() {
 
 #[path = "install_nvme_gate_tests.rs"]
 mod install_nvme_gate_tests;
+
+#[path = "install_gate_owner_tests.rs"]
+mod install_gate_owner_tests;
