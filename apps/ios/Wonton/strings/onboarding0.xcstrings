@@ -3,31 +3,31 @@
   "version": "1.0",
   "strings": {
     "onboarding.agent.connectionKey": {
-      "comment": "Connection note for an agent that has no account logins: it needs a model provider key in the next step.",
+      "comment": "Description of an agent row in setup when it has no account logins: it connects through the model gateway, set up in the next step.",
       "extractionState": "manual",
       "localizations": {
         "en": {
           "stringUnit": {
             "state": "translated",
-            "value": "Set up a model provider key in the next step"
+            "value": "Set up a model in the next step"
           }
         },
         "zh-Hans": {
           "stringUnit": {
             "state": "translated",
-            "value": "在下一步填模型服务商的 key"
+            "value": "在下一步设置模型"
           }
         },
         "zh-Hant": {
           "stringUnit": {
             "state": "translated",
-            "value": "在下一步填模型服務商的 key"
+            "value": "在下一步設定模型"
           }
         },
         "ja": {
           "stringUnit": {
             "state": "translated",
-            "value": "次のステップでモデルプロバイダーのキーを入力します"
+            "value": "次のステップでモデルを設定します"
           }
         }
       }
