@@ -47,7 +47,7 @@ async fn upgrading_the_last_required_provider_without_its_capability_is_blocked_
     release(&github, &provider("1.1.0", false));
     let before = docker.writes();
     let preview = m
-        .preview_upgrade(&id(), UpgradeTo::Offered, &zh())
+        .preview_upgrade(&id(), UpgradeTo::Offered, None, &zh())
         .await
         .unwrap();
     assert_eq!(
@@ -124,7 +124,7 @@ async fn upgrading_a_provider_can_drop_a_capability_when_an_alternative_remains(
     .unwrap();
     release(&github, &provider("1.1.0", false));
     let preview = m
-        .preview_upgrade(&id(), UpgradeTo::Offered, &zh())
+        .preview_upgrade(&id(), UpgradeTo::Offered, None, &zh())
         .await
         .unwrap();
     assert!(preview.blocked_category.is_none());
@@ -169,7 +169,7 @@ async fn provider_upgrade_cannot_grant_an_unconfirmed_high_privilege_replacement
     release(&github, &provider("1.1.0", false));
     let before = docker.writes();
     let preview = m
-        .preview_upgrade(&id(), UpgradeTo::Offered, &zh())
+        .preview_upgrade(&id(), UpgradeTo::Offered, None, &zh())
         .await
         .unwrap();
     assert_eq!(
