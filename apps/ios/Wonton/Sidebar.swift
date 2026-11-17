@@ -191,6 +191,10 @@ struct SidebarPanel: View {
 
     private var sidebar: SidebarViewModel { plugins.viewModel.sidebar }
 
+    private var failedApps: [InstalledPlugin] {
+        plugins.viewModel.installed?.plugins.filter { $0.installFailure != nil } ?? []
+    }
+
     private var header: some View {
         VStack(alignment: .leading, spacing: WontonTheme.spacing.s4) {
             Text(.Sidebar.sidebarTitle)
@@ -207,6 +211,7 @@ struct SidebarPanel: View {
     }
 
     @ViewBuilder private var myApps: some View {
+        let failed = failedApps
         HStack(alignment: .firstTextBaseline) {
             Text(.Sidebar.sidebarMyApps)
                 .wontonText(WontonTheme.typography.supporting)
@@ -223,18 +228,31 @@ struct SidebarPanel: View {
         .padding(.top, WontonTheme.spacing.s24)
         .padding(.bottom, WontonTheme.spacing.s4)
         ForEach(sidebar.apps, id: \.self) { app in
-            SidebarRow(
-                title: app.title,
-                selected: selected(app),
-                badgeMark: SidebarBadgeMark(
-                    update: app.badge.update, problem: app.badge.problem, stopped: app.badge.stopped
-                )
-            ) {
-                PluginIconView(icon: app.icon, size: 28, model: plugins)
-            } action: {
-                openDestination(.app(app))
+            if !failed.contains(where: { $0.id == app.pluginId }) {
+                SidebarRow(
+                    title: app.title,
+                    selected: selected(app),
+                    badgeMark: SidebarBadgeMark(
+                        update: app.badge.update, problem: app.badge.problem, stopped: app.badge.stopped
+                    )
+                ) {
+                    PluginIconView(icon: app.icon, size: 28, model: plugins)
+                } action: {
+                    openDestination(.app(app))
+                }
+                .contextMenu { myAppMenu(app) }
             }
-            .contextMenu { myAppMenu(app) }
+        }
+        ForEach(failed, id: \.id) { plugin in
+            SidebarRow(
+                title: plugin.title,
+                subtitle: String(localized: .Launcher.launcherInstallFailed),
+                selected: false
+            ) {
+                PluginIconView(icon: plugin.icon, size: 28, model: plugins)
+            } action: {
+                openDestination(.failedApp(plugin.id))
+            }
         }
         if pages.viewModel.syncStale {
             HStack(spacing: WontonTheme.spacing.s8) {
@@ -340,6 +358,7 @@ enum SidebarDestination {
     case settings
     case newChat
     case app(SidebarApp)
+    case failedApp(String)
 }
 
 /// 行尾各个独立状态的来源，分开画。
@@ -351,6 +370,7 @@ struct SidebarBadgeMark {
 
 private struct SidebarRow<Icon: View>: View {
     let title: String
+    var subtitle: String?
     var badge = 0
     var dotOnly = false
     let selected: Bool
@@ -363,10 +383,17 @@ private struct SidebarRow<Icon: View>: View {
         Button(action: action) {
             HStack(spacing: WontonTheme.spacing.s12) {
                 icon.frame(width: 28, height: 28)
-                Text(title)
-                    .wontonText(WontonTheme.typography.body)
-                    .fontWeight(selected ? .semibold : .regular)
-                    .lineLimit(1)
+                VStack(alignment: .leading, spacing: WontonTheme.spacing.s4) {
+                    Text(title)
+                        .wontonText(WontonTheme.typography.body)
+                        .fontWeight(selected ? .semibold : .regular)
+                        .lineLimit(1)
+                    if let subtitle {
+                        Text(subtitle)
+                            .wontonText(WontonTheme.typography.caption)
+                            .foregroundStyle(Color(colors.danger))
+                    }
+                }
                 Spacer(minLength: 0)
                 if let badgeMark {
                     if badgeMark.stopped {
