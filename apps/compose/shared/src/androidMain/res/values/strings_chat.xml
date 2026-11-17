@@ -39,8 +39,8 @@
     <string name="timeline_start">Start of the chat</string>
     <!-- Footer label of an edited message. No arguments. -->
     <string name="timeline_edited">Edited</string>
-    <!-- Footer label while a message is sending. No arguments. -->
-    <string name="timeline_sending">Sending</string>
+    <!-- Footer label of a message saved on this device but not yet confirmed delivered by the server (queued or in flight). No arguments. -->
+    <string name="timeline_sending">Saved, not delivered yet</string>
     <!-- Small line under your own message that the others have read. No arguments. -->
     <string name="timeline_read">Read</string>
     <!-- Small line under your own latest message: the server has it, nobody has read it yet. No arguments. -->

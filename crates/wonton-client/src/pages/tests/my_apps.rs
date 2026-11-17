@@ -138,7 +138,7 @@ async fn first_install_after_an_empty_plugin_snapshot_is_added() {
 }
 
 #[tokio::test]
-async fn a_failed_install_is_hidden_until_a_successful_retry() {
+async fn failed_install_does_not_persist_a_my_apps_entry_before_retry() {
     let rig = Rig::new();
     let mut failed = plugins("old-content");
     let plugin = &mut failed.installed.as_mut().unwrap().plugins[0];
@@ -169,6 +169,35 @@ async fn a_failed_install_is_hidden_until_a_successful_retry() {
     rig.plugins.send_replace(plugins("old-content"));
     rig.tabs.recompute();
     assert!(rig.my_app_titles().is_empty());
+}
+
+#[tokio::test]
+async fn failed_install_keeps_a_saved_page_until_retry_succeeds() {
+    let rig = Rig::new();
+    rig.add_app(MyAppRef::Page { tab: page_tab() });
+
+    let mut failed = plugins("old-content");
+    let plugin = &mut failed.installed.as_mut().unwrap().plugins[0];
+    plugin.status = PluginState::Degraded {
+        reason: "image pull failed".to_owned(),
+    };
+    plugin.web_url = None;
+    plugin.install_failure = Some(InstallFailure {
+        kind: "image_pull_failed".to_owned(),
+        message: "image pull failed".to_owned(),
+        stage: InstallStage::PullingImages,
+        failed_plugin_id: plugin.id.clone(),
+        cleanup_errors: Vec::new(),
+    });
+    rig.plugins.send_replace(failed);
+    rig.tabs.recompute();
+    assert!(rig.my_app_titles().is_empty());
+
+    rig.plugins.send_replace(plugins("old-content"));
+    rig.tabs.recompute();
+    let sidebar = rig.tabs.plugins.view().sidebar;
+    assert_eq!(sidebar.apps.len(), 1);
+    assert_eq!(sidebar.apps[0].open, SidebarOpen::Page { tab: page_tab() });
 }
 
 #[tokio::test]
