@@ -6,7 +6,7 @@ use super::super::tests::{CORE, Harness};
 use super::{echo_compose, invite_member};
 use crate::plugin::languages::Languages;
 
-fn disk_compose(version: &str) -> String {
+pub(super) fn disk_compose(version: &str) -> String {
     echo_compose()
         .replace("spec: '0.4'", "spec: '0.14'")
         .replace("version: 0.1.0", &format!("version: {version}"))
@@ -17,7 +17,7 @@ fn disk_compose(version: &str) -> String {
         )
 }
 
-async fn disk_gate_fixture() -> (
+pub(super) async fn disk_gate_fixture() -> (
     crate::plugin::gpu_fake_host::FakeHost,
     Harness,
     iroh::PublicKey,
@@ -44,7 +44,7 @@ async fn disk_gate_fixture() -> (
     (host, h, device)
 }
 
-async fn disk_preview(h: &Harness, version: &str) -> wonton_protocol::InstallPreview {
+pub(super) async fn disk_preview(h: &Harness, version: &str) -> wonton_protocol::InstallPreview {
     let package =
         crate::plugin::PluginPackage::parse(&disk_compose(version), &Languages::default()).unwrap();
     h.manager
@@ -55,7 +55,7 @@ async fn disk_preview(h: &Harness, version: &str) -> wonton_protocol::InstallPre
 
 /// 新旧版本都带一项普通可选权限 `docker.socket`（默认关）的 compose；挂了 socket 的服务
 /// 让"声明了就要用到"的校验通过。
-fn optional_socket_compose(version: &str) -> String {
+pub(super) fn optional_socket_compose(version: &str) -> String {
     echo_compose()
         .replace("spec: '0.4'", "spec: '0.14'")
         .replace("version: 0.1.0", &format!("version: {version}"))
@@ -69,7 +69,7 @@ fn optional_socket_compose(version: &str) -> String {
         )
 }
 
-async fn pending_admin_card(h: &Harness) -> Value {
+pub(super) async fn pending_admin_card(h: &Harness) -> Value {
     tokio::time::timeout(std::time::Duration::from_secs(5), async {
         loop {
             let reply = send_as(
@@ -95,7 +95,7 @@ async fn pending_admin_card(h: &Harness) -> Value {
     .expect("管理员卡片未出现")
 }
 
-async fn answer_admin_card(h: &Harness, card: &Value, answer: &str) {
+pub(super) async fn answer_admin_card(h: &Harness, card: &Value, answer: &str) {
     let id = card["id"].as_str().unwrap();
     let body = json!({"answer": answer}).to_string();
     let reply = send_as(
@@ -114,7 +114,7 @@ async fn answer_admin_card(h: &Harness, card: &Value, answer: &str) {
     assert_eq!(reply.status, StatusCode::OK, "{}", reply.text());
 }
 
-fn spawn_member_request(
+pub(super) fn spawn_member_request(
     h: &Harness,
     device: iroh::PublicKey,
     path: &'static str,
@@ -476,7 +476,7 @@ async fn regular_upgrade_preview_matches_the_record() {
     assert_eq!(requested.permissions, record.permissions);
 }
 
-fn spawn_member_yaml(
+pub(super) fn spawn_member_yaml(
     h: &Harness,
     device: iroh::PublicKey,
     path: &'static str,
@@ -520,44 +520,6 @@ async fn ask_admin_upload_nvme_install_rejection_has_no_side_effects() {
     assert_eq!(status, StatusCode::FORBIDDEN, "{body}");
     let name = crate::plugin::names::container_name("app-echo", "web");
     assert!(h.docker.created(&name).is_none());
-}
-
-#[tokio::test]
-async fn ask_admin_upload_upgrade_to_nvme_requires_both_cards() {
-    let (_host, h, member) = disk_gate_fixture().await;
-    h.manager
-        .install_with_devices(
-            &disk_compose("0.1.0"),
-            &[crate::plugin::manifest::Permission::DevicesDisk],
-            &["disk:/dev/disk/by-id/ata-test".to_owned()],
-            Languages::default(),
-        )
-        .await
-        .unwrap();
-    let before = h.docker.writes();
-    let waiting = spawn_member_yaml(
-        &h,
-        member,
-        "/_wonton/api/plugins/app.echo/upgrade?grant=devices.disk&devices=disk%3Anvme%3A%2Fdev%2Fdisk%2Fby-id%2Fnvme-test",
-        disk_compose("0.2.0"),
-    );
-    let first = pending_admin_card(&h).await;
-    assert_disk_highest(&first);
-    answer_admin_card(&h, &first, "approve").await;
-    let second = pending_admin_card(&h).await;
-    assert_disk_highest(&second);
-    assert_eq!(h.docker.writes(), before);
-    answer_admin_card(&h, &second, "approve").await;
-    let (status, body) = tokio::time::timeout(std::time::Duration::from_secs(10), waiting)
-        .await
-        .unwrap()
-        .unwrap();
-    assert_eq!(status, StatusCode::OK, "{body}");
-    let name = crate::plugin::names::container_name("app-echo", "web");
-    assert_eq!(
-        h.docker.created(&name).unwrap()["HostConfig"]["CapAdd"],
-        json!(["SYS_RAWIO", "SYS_ADMIN"])
-    );
 }
 
 #[tokio::test]

@@ -190,3 +190,7 @@ gateway-agent-acp-busy = This app already has the maximum number of concurrent a
 
 gateway-install-rejected = An administrator declined; the { $action } was not done
 gateway-install-expired = No administrator answered in time; the { $action } was not done
+gateway-install-card-device = Device handed to it: { $device }
+gateway-install-card-secret = Secret filled in by the request: { $title }
+gateway-install-card-setting = Setting filled in by the request: { $title } = { $value }
+gateway-install-changed = The permissions, devices or settings of { $id } changed after the card was sent, so it was not upgraded. Please ask again.
