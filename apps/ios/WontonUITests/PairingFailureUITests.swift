@@ -1,6 +1,6 @@
 import XCTest
 
-/// 输一个连不上的配对码：提交后要留在配对页显示失败，能看到总耗时（秒）和诊断，码文本不外露。
+/// 输一个连不上的配对码：提交后要留在配对页显示失败，详情和诊断都能展开，码文本不外露。
 /// 走新鲜路径（未配对 → 引导的配对表单），中英各一轮（…Zh 是中文轮）。
 /// 不走「已配对 → 设置 → 重新配对」：那条路在已连接的设备上点重新配对会立即重配并关掉设置
 /// 弹层（1117 走查三帧实测），空表单只有离线设备才到得了，测试环境造不出离线；而且弹层里的
@@ -73,7 +73,7 @@ final class PairingFailureUITests: XCTestCase {
     }
 
     /// 不给启动码（DEBUG 启动会无条件 pairHome，把用例变成另一条路）；每次启动用全新数据目录，
-    /// 保证从未配对、引导从头走。断言带双语候选，防文案与语言错配。
+    /// 保证从未配对、引导从头走。两轮只差语言，断言全按无障碍标识，不依赖文案。
     private func runFresh(verifyZh: Bool) throws {
         let app = XCUIApplication()
         app.launchArguments += verifyZh
@@ -88,7 +88,8 @@ final class PairingFailureUITests: XCTestCase {
         let failure = app.buttons["pairing-scan-again"].firstMatch
         XCTAssertTrue(field.waitForExistence(timeout: 60), app.debugDescription)
         field.tap()
-        field.typeText(try dead(try XCTUnwrap(UITestBackend.codes().first)))
+        let code = try dead(try XCTUnwrap(UITestBackend.codes().first))
+        field.typeText(code)
         app.buttons["pairing-submit"].tap()
         // 提交后立刻和 30 秒各抓一帧：失败面若中途消失，两帧能对上时间线。
         dump(app, "submitted-0s")
@@ -98,32 +99,28 @@ final class PairingFailureUITests: XCTestCase {
         XCTAssertTrue(failure.waitForExistence(timeout: 330), app.debugDescription)
         // 失败面就在这一页：表单不再出现，也没被换走。
         XCTAssertFalse(field.exists)
-        assertFailureContent(verifyZh: verifyZh)
+        try assertFailureContent(code: code)
     }
 
-    /// 失败面可见后的内容断言：秒数在 Details 展开层，诊断直连地址在 Diagnostics 层，最后留档截图。
-    private func assertFailureContent(verifyZh: Bool) {
+    /// 失败面可见后的行为断言：详情和诊断按标识定位、能展开，码里的 secret 不出现在任何静态文本里，
+    /// 最后留档截图。
+    private func assertFailureContent(code: String) throws {
         let app = XCUIApplication()
-        let details = app.buttons.matching(NSPredicate(
-            format: "label IN %@", ["Details", "详情"]
-        )).firstMatch
+        let details = app.buttons["pairing-failure-details"].firstMatch
         XCTAssertTrue(details.waitForExistence(timeout: 10), app.debugDescription)
         details.tap()
-        let message = app.staticTexts.matching(NSPredicate(
-            format: "label CONTAINS %@", verifyZh ? "总耗时" : "Total elapsed"
-        )).firstMatch
-        XCTAssertTrue(message.waitForExistence(timeout: 10), app.debugDescription)
-        XCTAssertTrue(message.label.contains(verifyZh ? "秒" : "seconds"), message.label)
-
-        let diagnostics = app.buttons.matching(NSPredicate(
-            format: "label IN %@", ["Diagnostics", "诊断信息"]
-        )).firstMatch
+        let diagnostics = app.buttons["pairing-failure-diagnostics"].firstMatch
         XCTAssertTrue(diagnostics.waitForExistence(timeout: 10), app.debugDescription)
         diagnostics.tap()
-        let direct = app.staticTexts.matching(NSPredicate(
-            format: "label CONTAINS %@", verifyZh ? "直连地址" : "Direct addresses"
-        )).firstMatch
-        XCTAssertTrue(direct.waitForExistence(timeout: 10), app.debugDescription)
+        // 展开两层后再扫：详情和诊断的文本这时都在页面上，secret 一个字都不该出现。
+        let secret = try XCTUnwrap(
+            URLComponents(string: code)?.queryItems?.first { $0.name == "secret" }?.value
+        )
+        XCTAssertFalse(
+            app.staticTexts.containing(NSPredicate(format: "label CONTAINS %@", secret))
+                .firstMatch.exists,
+            app.debugDescription
+        )
         let shot = XCTAttachment(screenshot: XCUIScreen.main.screenshot())
         shot.name = "pairing-failure-stays"
         shot.lifetime = .keepAlways

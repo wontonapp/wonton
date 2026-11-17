@@ -394,12 +394,16 @@ private struct PairingProgress: View {
                 }
                 .buttonStyle(WontonButtonStyle(kind: .secondary))
                 if !message.isEmpty {
-                    ProblemDetail(text: message, minimumTargetHeight: WontonTheme.size.target)
+                    ProblemDetail(
+                        text: message, minimumTargetHeight: WontonTheme.size.target,
+                        toggleIdentifier: "pairing-failure-details"
+                    )
                 }
                 if let diagnostic, !diagnostic.isEmpty {
                     ProblemDetail(
                         text: diagnostic, minimumTargetHeight: WontonTheme.size.target,
-                        label: .Common.commonDiagnostics
+                        label: .Common.commonDiagnostics,
+                        toggleIdentifier: "pairing-failure-diagnostics"
                     )
                     .id(diagnostic)
                 }
