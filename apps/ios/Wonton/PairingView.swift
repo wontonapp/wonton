@@ -101,9 +101,9 @@ struct PairingView: View {
             }
         }
         .task { await askForCamera() }
-        .onDisappear {
-            if hasFailedPairing { model.send(.home(action: .dismissPairingFailure)) }
-        }
+        // 失败状态不在这里自动清：失败时 MainView.showsPairingPage 会把根配对页换上来，这个视图卸载时
+        // 触发 dismiss 会把交接给根页面的失败面当场清掉（走查实测失败面闪没、落回空表单）。用户离开
+        // 的每条路（返回/重扫/重试/取消）都各自显式 dismiss，不需要卸载兜底。
         .onChange(of: model.pairingCode) { _, _ in refusal = nil }
         .onChange(of: scenePhase) { _, phase in
             // 可能刚从系统设置里改了相机权限回来。
