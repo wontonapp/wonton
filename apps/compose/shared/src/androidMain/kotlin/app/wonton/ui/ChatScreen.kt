@@ -76,6 +76,7 @@ import app.wonton.ui.design.toColor
 import app.wonton.ui.icons.Add
 import app.wonton.ui.icons.Close
 import app.wonton.ui.icons.Connection
+import app.wonton.ui.icons.Home
 import app.wonton.ui.icons.LockFill
 import app.wonton.ui.icons.VoiceCallFill
 import app.wonton.ui.icons.WontonIcon
@@ -207,13 +208,21 @@ internal fun ChatListScreen(
     val panel = LocalChatPanel.current
     val listState = rememberLazyListState()
     WontonScreen(
-        bar = { WontonRootBar(stringResource(R.string.tab_chat)) },
+        bar = {
+            WontonRootBar(stringResource(R.string.tab_chat), actions = if (panel != null) {
+                {
+                    WontonIconButton(
+                        WontonIcon.Home,
+                        stringResource(R.string.panel_open),
+                        { panel.move(PanelLevel.FULL) },
+                    )
+                }
+            } else null)
+        },
     ) {
         Box(Modifier.fillMaxSize()) {
             LazyColumn(
-                Modifier.fillMaxSize()
-                    .panelAction(panel)
-                    .chatPanelPull(panel, { !listState.canScrollBackward }, panel != null),
+                Modifier.fillMaxSize(),
                 state = listState,
                 overscrollEffect = null,
                 contentPadding = wontonContentPaddingValues(

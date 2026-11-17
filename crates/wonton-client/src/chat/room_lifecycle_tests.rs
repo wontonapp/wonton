@@ -72,7 +72,6 @@ async fn a_timeline_does_not_receive_another_rooms_panel() {
             room_id,
             panel: Vec::new(),
             selected: Some(selected.clone()),
-            blocked: true,
             widgets: Vec::new(),
         }))
     };
@@ -98,7 +97,6 @@ async fn a_timeline_does_not_receive_another_rooms_panel() {
         .unwrap();
     let update = updates.try_recv().unwrap();
     assert_eq!(update.panel_selected, None);
-    assert!(!update.entry_blocked);
 
     room_view.send_replace(panel(room));
     outbox
@@ -113,5 +111,4 @@ async fn a_timeline_does_not_receive_another_rooms_panel() {
         .unwrap();
     let update = updates.try_recv().unwrap();
     assert_eq!(update.panel_selected, Some(selected));
-    assert!(update.entry_blocked);
 }
