@@ -203,19 +203,29 @@ impl View {
     async fn refresh_unread(&mut self, room: &ChatRoom, bots: &BotsView) {
         self.unread = u32::try_from(room.unread_messages().await).unwrap_or(u32::MAX);
         self.call = room.call_active();
-        // 成员没取全时按成员算在场的 AI 会漏人，如实带“不确定”（None）；取全了空名单才是“群里确定没有”。
-        self.bots_in_room = room.are_members_synced().then(|| {
-            room.member_user_ids()
-                .into_iter()
-                .filter(|member| bots.is_bot(member))
-                .collect()
-        });
+        self.bots_in_room = room_bots(room.are_members_synced(), bots, || room.member_user_ids());
     }
 
     /// 在场的 AI 变了没有（和上一批送出去的比）。
     fn bots_changed(&self) -> bool {
         self.bots_in_room != self.sent_bots_in_room
     }
+}
+
+/// 在场的 AI 名单：成员没取全会漏人，Bot 清单没就绪会把认识的 Bot 对不上（用户 ID 集合是空的），
+/// 都算不出确定的名单，如实给「不确定」；两样都齐了才给名单，空就是「群里确定没有」。
+/// `members` 惰性取：不确定时不去读成员。
+fn room_bots(
+    members_synced: bool,
+    bots: &BotsView,
+    members: impl FnOnce() -> Vec<String>,
+) -> Option<Vec<String>> {
+    (members_synced && bots.ready()).then(|| {
+        members()
+            .into_iter()
+            .filter(|member| bots.is_bot(member))
+            .collect()
+    })
 }
 
 /// 先发当前条目，再逐批转发增量；翻页状态、滚动位置变了也发一批（增量为空）。
@@ -251,7 +261,11 @@ async fn forward(
         };
         let links = LinkTargets::of(&plugins.view());
         // Bot 列表、活动和等回答的卡片变了，AgentRun 条目的显示跟着变：每批都带上现在的情况，变了就重算。
-        let bots = BotsView::of(&chat.borrow_and_update(), &sender.confirmations());
+        let bots = BotsView::of(
+            &chat.borrow_and_update(),
+            &sender.confirmations(),
+            plugins.bots_ready(),
+        );
         let side_chats = SideChatsView::load(room, bots.supports(support, room)).await;
         sender.set_side_chat(side_chats.header());
         let mut bots = bots.with_side_chats(side_chats);
@@ -331,12 +345,21 @@ async fn forward(
                     if changed.is_err() {
                         return;
                     }
-                    let Some(batch) =
-                        relinked_batch(&entries, &read, plugins, sender, &mut view, &bots, &previews)
-                    else {
+                    // 插件表变了：链接的类别跟着变；「清单已就绪」也在这里翻面。装了插件但一个 Bot
+                    // 都没有时 Bot 列表不变、chat 不醒，就靠这一路把就绪带进名单，变了补发一批空的。
+                    let new_bots = BotsView::of(&chat.borrow_and_update(), &sender.confirmations(), plugins.bots_ready())
+                        .with_side_chats(bots.side_chats().clone());
+                    view.refresh_unread(room, &new_bots).await;
+                    let relinked =
+                        relinked_batch(&entries, &read, plugins, sender, &mut view, &new_bots, &previews);
+                    bots = new_bots;
+                    if let Some(batch) = relinked {
+                        batch
+                    } else if view.bots_changed() {
+                        Batch::Sent(send(sender, &entries, Vec::new(), &mut view, None), false)
+                    } else {
                         continue;
-                    };
-                    batch
+                    }
                 }
                 next = statuses.next() => {
                     let Some(next) = next else { return };
@@ -364,7 +387,7 @@ async fn forward(
                         return;
                     }
                     // 加密状态变了入口跟着变；Bot 列表或活动变了，AgentRun 条目跟着重算（ADR-0082）。
-                    let new_bots = BotsView::of(&chat.borrow_and_update(), &sender.confirmations())
+                    let new_bots = BotsView::of(&chat.borrow_and_update(), &sender.confirmations(), plugins.bots_ready())
                         .with_side_chats(bots.side_chats().clone());
                     let diffs = refreshed_agent_runs(
                         &entries,

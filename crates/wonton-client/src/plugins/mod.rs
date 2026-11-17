@@ -186,6 +186,11 @@ impl PluginsLink {
         self.view.borrow().clone()
     }
 
+    /// 已安装插件清单拿到没有：没拿到时 Bot 列表是空的，是「不认识任何 Bot」，不是「一个 Bot 都没有」。
+    pub(crate) fn bots_ready(&self) -> bool {
+        self.view.borrow().installed.is_some()
+    }
+
     pub(crate) fn is_external(&self) -> bool {
         self.external
     }
