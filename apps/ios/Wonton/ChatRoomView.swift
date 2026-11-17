@@ -43,7 +43,7 @@ struct ChatRoomView: View {
         self.title = title
         _timeline = State(initialValue: TimelineModel(core: model.core, roomId: roomId, threadRoot: threadRoot))
         _composer = State(initialValue: ComposerModel(chat: model, roomId: roomId, threadRoot: threadRoot))
-        _presenter = State(initialValue: RoomPresenter(files: model.files))
+        _presenter = State(initialValue: RoomPresenter(files: model.files, roomId: roomId))
         let key = model.draftKey(TimelineTarget(roomId: roomId, threadRoot: threadRoot))
         _savedAnchor = SceneStorage(wrappedValue: "", "timeline.anchor.\(key)")
     }
@@ -475,22 +475,6 @@ private extension ChatRoomView {
         model.viewModel.rooms.first { $0.roomId == roomId }?.isReadOnly ?? false
     }
 }
-private extension ChatRoomView {
-    /// 有消息解不开时的一行说明和入口：账号设过备份就输恢复密钥，没设过就请另一台设备确认。都去备份页。
-    private func keyNotice(_ notice: KeyNotice) -> some View {
-        WontonNotice(icon: .lockKey, title: String(localized: .Message2.messageUndecryptableNotice), isError: false) {
-            // 更新的核心给出的类别没有按钮，说明照常显示。
-            if let action = notice.action {
-                NavigationLink(value: ChatRoute.chatBackup) {
-                    Text(action).frame(maxWidth: .infinity)
-                }
-                .buttonStyle(WontonButtonStyle(kind: .primary))
-            }
-        }
-        .padding(.horizontal, WontonTheme.spacing.pageInset)
-        .padding(.vertical, WontonTheme.spacing.s8)
-    }
-}
 
 private extension TimelineItem {
     /// 和上一条 `earlier` 是同一个人连着发的：并成一组，气泡挨紧，相接的角收小。
@@ -521,22 +505,47 @@ private extension TimelineItem {
     }
 }
 
-/// 有消息解不开时的一行说明和入口：账号设过备份就输恢复密钥，没设过就请另一台设备确认。都去备份页。
+/// 有消息解不开时的一行说明和入口：账号设过备份就输恢复密钥，没设过就请另一台设备确认，整行点去备份页（ADR-0046）。
+/// 这行常驻输入框上方，收成一行，别把能看到的消息挤走。
 private struct KeyNoticeBanner: View {
     let notice: KeyNotice
+    @Environment(\.wontonColors) private var colors
 
     var body: some View {
-        WontonNotice(icon: .lockKey, title: String(localized: .Message2.messageUndecryptableNotice), isError: false) {
-            // 更新的核心给出的类别没有按钮，说明照常显示。
-            if let action = notice.action {
-                NavigationLink(value: ChatRoute.chatBackup) {
-                    Text(action).frame(maxWidth: .infinity)
-                }
-                .buttonStyle(WontonButtonStyle(kind: .primary))
-            }
+        switch notice {
+        case .enterRecoveryKey, .verifyWithOtherDevice:
+            NavigationLink(value: ChatRoute.chatBackup) { row }
+                .buttonStyle(.plain)
+        // 更新的核心给出的类别没有按钮，说明照常显示。
+        case .other:
+            row
         }
+    }
+
+    private var row: some View {
+        HStack(spacing: WontonTheme.spacing.s8) {
+            WontonIcon.lockKey.view(size: WontonTheme.size.iconTiny)
+                .foregroundStyle(Color(colors.textSecondary))
+            Text(notice.text)
+                .multilineTextAlignment(.leading)
+                .frame(maxWidth: .infinity, alignment: .leading)
+        }
+        .wontonText(WontonTheme.typography.body)
+        .foregroundStyle(Color(colors.textPrimary))
         .padding(.horizontal, WontonTheme.spacing.pageInset)
         .padding(.vertical, WontonTheme.spacing.s8)
+        .frame(minHeight: WontonTheme.size.target)
+    }
+}
+
+extension KeyNotice {
+    /// 按类别说明密钥怎么找回；两条路的入口都在备份页（ADR-0046）。
+    var text: String {
+        switch self {
+        case .enterRecoveryKey: String(localized: .Message1.messageKeyNoticeRecovery)
+        case .verifyWithOtherDevice: String(localized: .Message1.messageKeyNoticeVerify)
+        case .other: String(localized: .Message2.messageUndecryptableNotice)
+        }
     }
 }
 
