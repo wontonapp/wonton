@@ -251,13 +251,24 @@ async fn docker_request_timeout_keeps_its_category_and_cleans_started_resources(
     tokio::time::timeout(Duration::from_secs(10), held.reached())
         .await
         .unwrap();
+    // 第一次超时后容器不见了，照计划重建并再启动一次；这次超时后仍不见，才算确定失败。
+    let second = docker.hold("POST /containers/wonton-app-test--app/start");
+    docker.remove("wonton-app-test--app");
+    tokio::time::sleep(Duration::from_millis(1500)).await;
+    held.release();
+    tokio::time::timeout(Duration::from_secs(10), second.reached())
+        .await
+        .unwrap();
+    docker.remove("wonton-app-test--app");
+    tokio::time::sleep(Duration::from_millis(1500)).await;
+    second.release();
     let error = tokio::time::timeout(Duration::from_secs(10), install)
         .await
         .unwrap()
         .unwrap()
         .unwrap_err();
-    held.release();
-    assert_eq!(error.kind(), "docker_rejected");
+    // 超时不是被拒。
+    assert_eq!(error.kind(), "docker_timed_out");
     let failed = failure(&manager);
     assert_eq!(failed["kind"], error.kind());
     assert_eq!(failed["stage"], "starting");

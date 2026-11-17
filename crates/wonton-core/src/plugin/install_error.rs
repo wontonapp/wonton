@@ -205,12 +205,6 @@ impl InstallError {
             Self::CoreUpgrading(m) => Self::CoreUpgrading(m),
         }
     }
-    pub(crate) fn from_create_engine_error(error: EngineError) -> Self {
-        match error {
-            EngineError::TimedOut(message) => Self::DockerTimedOut(message),
-            other => other.into(),
-        }
-    }
 }
 
 impl From<PackageError> for InstallError {
@@ -239,7 +233,8 @@ impl From<EngineError> for InstallError {
     fn from(e: EngineError) -> Self {
         match e {
             EngineError::Unavailable(m) => Self::DockerUnavailable(m),
-            EngineError::TimedOut(m) => Self::Docker(m),
+            // 超时是“没收到回话”，不是被拒：重试有意义，界面也说操作可能还在继续。
+            EngineError::TimedOut(m) => Self::DockerTimedOut(m),
             EngineError::Unsupported(m) => Self::Unsupported(m),
             pull @ EngineError::Pull { .. } => Self::ImagePull(pull.to_string()),
             EngineError::PortTaken(m) => Self::PortTaken(m),
