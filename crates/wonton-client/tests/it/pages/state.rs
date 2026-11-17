@@ -579,7 +579,16 @@ async fn a_failed_layout_push_keeps_the_local_entry_on_reconciliation() {
     .await
     .expect("对账没有收下服务器的旧配置");
 
-    // 新装的插件到达，自动加入 append 并落盘；就绪分支置 dirty 后推送，这时让写失败。
+    // 让 Tuwunel 整体断开：update_layout 要先读服务器再写，两步都断，推送必失败。
+    // set_layout_down 只拦 app.wonton.chat_layout，拦不到这里的 app.wonton.layout。
+    home.set_matrix_down(true);
+    phone
+        .wait_chat("同步因断线停下", |view| {
+            matches!(view.sync, wonton_client::ChatSync::Failed { .. }).then_some(())
+        })
+        .await;
+
+    // 新装的插件到达，自动加入 append 并落盘；就绪分支置 dirty 后推送，写失败不清它。
     let mut new_plugin = web_plugin(
         "app.push-failure-new",
         PluginState::Running {
@@ -588,7 +597,6 @@ async fn a_failed_layout_push_keeps_the_local_entry_on_reconciliation() {
         vec![page("home")],
     );
     new_plugin.web_url = Some("http://app.push-failure-new.wonton.localhost/".to_owned());
-    home.set_layout_down(true);
     home.set_installed_plugins(vec![plugin, new_plugin]);
     tokio::time::timeout(crate::plugins::rig::WAIT, async {
         while !phone.test_pages_layout_dirty() {
@@ -598,14 +606,7 @@ async fn a_failed_layout_push_keeps_the_local_entry_on_reconciliation() {
     .await
     .expect("自动加入后没有置 dirty");
 
-    // Matrix 断开又回来触发重连对账：dirty=true 时推本机合并后的配置，不收服务器的旧配置。
-    home.set_layout_down(false);
-    home.set_matrix_down(true);
-    phone
-        .wait_chat("同步因断线停下", |view| {
-            matches!(view.sync, wonton_client::ChatSync::Failed { .. }).then_some(())
-        })
-        .await;
+    // Matrix 回来触发重连对账：dirty=true 时推本机合并后的配置，不收服务器的旧配置。
     home.set_matrix_down(false);
 
     let deadline = tokio::time::Instant::now() + crate::plugins::rig::WAIT;
