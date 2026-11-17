@@ -17,6 +17,8 @@ use super::rig::{
 /// 建连尝试可能要等到握手超时。
 const DIAL: Duration = Duration::from_secs(90);
 
+const PLUGINS: &str = "/_wonton/api/plugins";
+
 /// 等第一次建连失败，返回隧道报的原因。
 async fn first_failure(rig: &Rig) -> HomeFailure {
     let deadline = Instant::now() + DIAL;
@@ -249,7 +251,18 @@ async fn disconnect_hides_last_known_bot_until_list_is_refetched() {
     })
     .await;
 
-    rig.app.set_home_status_for_test(HomeStatus::Connecting);
+    // 隧道每秒按真实连接重新发布状态，单次设置会被盖回“已连接”，盖得早时断开根本没被观察到。
+    // 断言做完前一直设着“正在连接”；其间被盖回时触发的取列表按住不回，不让它把身份写回来。
+    rig.core.hold(Method::GET, PLUGINS);
+    let offline_guard = {
+        let app = rig.app.clone();
+        tokio::spawn(async move {
+            loop {
+                app.set_home_status_for_test(HomeStatus::Connecting);
+                tokio::time::sleep(Duration::from_millis(5)).await;
+            }
+        })
+    };
     let offline = rig
         .wait_for(|view| {
             view.installed.as_ref().is_some_and(|list| {
@@ -265,6 +278,8 @@ async fn disconnect_hides_last_known_bot_until_list_is_refetched() {
             .iter()
             .all(|contact| contact.user_id != "@mine:home")
     );
+    offline_guard.abort();
+    rig.core.release(Method::GET, PLUGINS);
 
     rig.app.set_home_status_for_test(HomeStatus::Connected);
     rig.wait_for(|view| {

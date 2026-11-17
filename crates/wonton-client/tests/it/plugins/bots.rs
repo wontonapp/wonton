@@ -101,7 +101,12 @@ async fn plugin_refresh_does_not_switch_between_bots_of_the_same_plugin() {
         rev: 1,
         bots: vec![alice, facts(Some("default"), "@default:home")],
     });
+    // 列表落地时 Bot 列表按安装记录重建，只剩默认 Bot；报告先到、列表后到时，alice 要等下一份报告
+    // （长轮询最长 25 秒）才回来。先等列表落地再放行报告，两者的先后不靠调度运气。
+    rig.core.hold(Method::GET, ACTIVITY);
     rig.connected().await;
+    wait(&rig, |bots| bots.len() == 1 && bots[0].bot.bot == "default").await;
+    rig.core.release(Method::GET, ACTIVITY);
     let before = wait(&rig, |bots| {
         bots.len() == 2
             && bots[0].bot.bot == "alice"
