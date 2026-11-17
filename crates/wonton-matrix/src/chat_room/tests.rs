@@ -16,7 +16,7 @@ const ROOM: &str = "!chat:example.org";
 const BOT: &str = "@bot:example.org";
 
 async fn cached_items() -> (Client, Vector<Arc<TimelineItem>>) {
-    let response = json!({
+    synced_items(json!({
         "next_batch": "one",
         "rooms": {"join": {ROOM: {
             "state": {"events": [{
@@ -33,7 +33,12 @@ async fn cached_items() -> (Client, Vector<Arc<TimelineItem>>) {
                 "origin_server_ts": 3, "content": {"msgtype": "m.text", "body": "hello"}
             }]}
         }}}
-    });
+    }))
+    .await
+}
+
+/// 一次同步拿到 `response` 后的时间线条目。
+async fn synced_items(response: serde_json::Value) -> (Client, Vector<Arc<TimelineItem>>) {
     let app = Router::new()
         .route(
             "/_matrix/client/v3/sync",
@@ -110,7 +115,7 @@ async fn a_late_member_name_updates_displayed_messages_without_another_sdk_event
     let (current, updates) = named_entries(items, stream::pending(), receiver);
     let mut current: Vector<_> = current.into_iter().collect();
     let original = only_message(&current).clone();
-    assert_eq!(original.sender_name, BOT);
+    assert_eq!(original.sender_name, "bot");
     assert_eq!(original.body, crate::MessageBody::Text("hello".into()));
     let ids: Vec<_> = current.iter().map(|entry| entry.id.clone()).collect();
     let mut updates = pin!(updates);
@@ -185,4 +190,69 @@ async fn member_updates_keep_the_indices_of_queued_timeline_changes() {
             .collect::<Vec<_>>(),
         ids
     );
+}
+
+#[tokio::test]
+async fn family_room_entries_show_names_instead_of_user_ids() {
+    let member = |user: &str, content: serde_json::Value| {
+        json!({"type": "m.room.member", "state_key": user, "event_id": format!("${user}"),
+               "sender": user, "origin_server_ts": 2, "content": content})
+    };
+    let (client, items) = synced_items(json!({
+        "next_batch": "one",
+        "rooms": {"join": {ROOM: {
+            "state": {"events": [{
+                "type": "m.room.create", "state_key": "", "event_id": "$create",
+                "sender": "@owner:example.org", "origin_server_ts": 1,
+                "content": {"creator": "@owner:example.org", "room_version": "10"}
+            },
+            member("@owner:example.org", json!({"membership": "join", "displayname": "爸爸"})),
+            member("@kid:example.org", json!({"membership": "join"})),
+            member("@mom:example.org", json!({"membership": "join"}))]},
+            "timeline": {"limited": false, "prev_batch": "zero", "events": [{
+                "type": "m.room.name", "state_key": "", "event_id": "$name",
+                "sender": "@owner:example.org", "origin_server_ts": 4,
+                "content": {"name": "家庭群"}
+            }, {
+                "type": "m.room.message", "event_id": "$message", "sender": "@kid:example.org",
+                "origin_server_ts": 5, "content": {"msgtype": "m.text", "body": "hi"}
+            }, {
+                "type": "m.room.member", "state_key": "@mom:example.org",
+                "event_id": "$mom_rename", "sender": "@mom:example.org", "origin_server_ts": 6,
+                "content": {"membership": "join", "displayname": "妈妈"},
+                "unsigned": {"prev_content": {"membership": "join"}}
+            }]}
+        }}}
+    }))
+    .await;
+    let room = client.get_room(room_id!("!chat:example.org")).unwrap();
+    let names = local_member_names(&room).await;
+    let entries: Vec<_> = items
+        .iter()
+        .map(|item| timeline::entry(item, &names))
+        .collect();
+    let notice = entries
+        .iter()
+        .find_map(|entry| match &entry.kind {
+            EntryKind::Notice(text) => Some(text),
+            _ => None,
+        })
+        .expect("改群名有一条说明");
+    assert!(
+        notice.contains("爸爸") && !notice.contains("@owner"),
+        "{notice}"
+    );
+    let messages: Vec<_> = entries
+        .iter()
+        .filter_map(|entry| match &entry.kind {
+            EntryKind::Message(message) => Some(message.sender_name.as_str()),
+            _ => None,
+        })
+        .collect();
+    assert_eq!(messages, ["kid"]);
+    assert!(entries.iter().any(|entry| matches!(
+        &entry.kind,
+        EntryKind::ProfileChange { name, previous_name: Some(previous), .. }
+            if name == "妈妈" && previous == "mom"
+    )));
 }

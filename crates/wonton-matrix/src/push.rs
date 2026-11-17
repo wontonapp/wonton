@@ -77,7 +77,7 @@ pub struct BackgroundNotification {
 #[derive(Clone, Debug, PartialEq, Eq)]
 pub struct Notification {
     pub sender: OwnedUserId,
-    /// 发送者的显示名，没有时是用户 ID。
+    /// 发送者的显示名，没有时是账号名（用户 ID 里 `@` 和 `:` 之间的部分）。
     pub sender_name: String,
     /// 房间名；私聊和两个人的房间为 `None`，标题用发送者。
     pub room_name: Option<String>,
@@ -339,7 +339,7 @@ impl NotificationFetcher {
     }
 
     /// 取不回正文时的占位：照实说解不开（超时和缺密钥对用户是同一句），点开还能看到时间线里的那条。
-    /// 发送者名取本机已知的成员显示名，取不到用用户 ID；`_no_sync` 是关键——这时外层时限往往已经到了、
+    /// 发送者名取本机已知的成员显示名，取不到用账号名；`_no_sync` 是关键——这时外层时限往往已经到了、
     /// 隧道正被压着，`get_member` 的 lazy-loading 还会发 `/members`（默认 30 秒超时），能再把占位拖慢半分钟。
     async fn unavailable(&self, room_id: &RoomId, sender: OwnedUserId) -> Notification {
         let sender_name = match self.client.get_room(room_id) {
@@ -348,10 +348,15 @@ impl NotificationFetcher {
                 .await
                 .ok()
                 .flatten()
-                .and_then(|member| member.display_name().map(str::to_owned)),
+                .and_then(|member| {
+                    member
+                        .display_name()
+                        .filter(|name| !name.trim().is_empty())
+                        .map(str::to_owned)
+                }),
             None => None,
         }
-        .unwrap_or_else(|| sender.to_string());
+        .unwrap_or_else(|| crate::message::fallback_name(&sender).to_owned());
         Notification {
             sender_name,
             sender,
@@ -385,7 +390,8 @@ fn notification(item: NotificationItem, one_to_one: bool) -> Notification {
         custom,
         sender_name: item
             .sender_display_name
-            .unwrap_or_else(|| sender.to_string()),
+            .filter(|name| !name.trim().is_empty())
+            .unwrap_or_else(|| crate::message::fallback_name(&sender).to_owned()),
         room_name: (!one_to_one).then_some(item.room_computed_display_name),
         body: match item.event {
             NotificationEvent::Timeline(event) => body(&event),
