@@ -37,9 +37,15 @@ async fn the_lock_is_off_until_it_is_turned_on() {
     let core = open(&dir);
     assert!(!core.app_lock().enabled);
     // 关着的时候前后台切换不锁。
-    core.dispatch(Action::AppBackgrounded).unwrap();
+    core.dispatch(Action::Home {
+        action: wonton_protocol::HomeAction::AppBackgrounded,
+    })
+    .unwrap();
     core.expire_app_lock_for_test(Duration::from_secs(3600));
-    core.dispatch(Action::AppForegrounded).unwrap();
+    core.dispatch(Action::Home {
+        action: wonton_protocol::HomeAction::AppForegrounded,
+    })
+    .unwrap();
     assert!(!core.app_lock().locked);
 }
 
@@ -57,7 +63,10 @@ async fn the_immediate_timeout_locks_as_soon_as_the_app_leaves() {
     let core = open(&dir);
     lock(&core, AppLockTimeout::Immediate);
 
-    core.dispatch(Action::AppBackgrounded).unwrap();
+    core.dispatch(Action::Home {
+        action: wonton_protocol::HomeAction::AppBackgrounded,
+    })
+    .unwrap();
     assert!(core.app_lock().locked);
 }
 
@@ -69,7 +78,10 @@ async fn the_chosen_grace_is_waited_out_before_locking() {
     let updates = core.subscribe_app_lock();
     updates.next().await.unwrap();
 
-    core.dispatch(Action::AppBackgrounded).unwrap();
+    core.dispatch(Action::Home {
+        action: wonton_protocol::HomeAction::AppBackgrounded,
+    })
+    .unwrap();
     core.expire_app_lock_for_test(Duration::from_secs(30));
     assert!(!core.app_lock().locked, "还没到一分钟");
 
@@ -84,9 +96,15 @@ async fn coming_back_within_the_grace_does_not_ask_again() {
     let core = open(&dir);
     lock(&core, AppLockTimeout::FiveMinutes);
 
-    core.dispatch(Action::AppBackgrounded).unwrap();
+    core.dispatch(Action::Home {
+        action: wonton_protocol::HomeAction::AppBackgrounded,
+    })
+    .unwrap();
     core.expire_app_lock_for_test(Duration::from_secs(120));
-    core.dispatch(Action::AppForegrounded).unwrap();
+    core.dispatch(Action::Home {
+        action: wonton_protocol::HomeAction::AppForegrounded,
+    })
+    .unwrap();
     assert!(!core.app_lock().locked);
 }
 
@@ -96,9 +114,15 @@ async fn coming_back_after_the_grace_lands_on_the_lock_page() {
     let core = open(&dir);
     lock(&core, AppLockTimeout::OneMinute);
 
-    core.dispatch(Action::AppBackgrounded).unwrap();
+    core.dispatch(Action::Home {
+        action: wonton_protocol::HomeAction::AppBackgrounded,
+    })
+    .unwrap();
     core.expire_app_lock_for_test(Duration::from_secs(61));
-    core.dispatch(Action::AppForegrounded).unwrap();
+    core.dispatch(Action::Home {
+        action: wonton_protocol::HomeAction::AppForegrounded,
+    })
+    .unwrap();
     assert!(core.app_lock().locked);
 }
 
@@ -107,7 +131,10 @@ async fn unlocking_needs_a_verification_only_when_locked() {
     let dir = tempfile::tempdir().unwrap();
     let core = open(&dir);
     lock(&core, AppLockTimeout::Immediate);
-    core.dispatch(Action::AppBackgrounded).unwrap();
+    core.dispatch(Action::Home {
+        action: wonton_protocol::HomeAction::AppBackgrounded,
+    })
+    .unwrap();
     assert!(core.app_lock().locked);
 
     core.unlock_app();
@@ -122,7 +149,10 @@ async fn turning_the_lock_off_releases_the_lock_page() {
     let dir = tempfile::tempdir().unwrap();
     let core = open(&dir);
     lock(&core, AppLockTimeout::Immediate);
-    core.dispatch(Action::AppBackgrounded).unwrap();
+    core.dispatch(Action::Home {
+        action: wonton_protocol::HomeAction::AppBackgrounded,
+    })
+    .unwrap();
     assert!(core.app_lock().locked);
 
     core.set_app_lock(false, AppLockTimeout::Immediate).unwrap();

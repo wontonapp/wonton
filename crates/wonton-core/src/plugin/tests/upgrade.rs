@@ -77,6 +77,7 @@ async fn install(m: &Arc<PluginManager>, source: &str) {
     let preview = m.preview_source(source, &zh()).await.unwrap();
     let request = InstallRequest {
         scope: None,
+        audience: None,
         source: preview.source.clone().unwrap(),
         digest: preview.digest.clone(),
         plan: preview.plan.clone(),
@@ -93,6 +94,7 @@ async fn install(m: &Arc<PluginManager>, source: &str) {
         lan_webui: false,
         install_together: Vec::new(),
         connect_plugins: Vec::new(),
+        remote_oauth: None,
     };
     m.install_source(&request).await.unwrap();
 }
@@ -419,6 +421,7 @@ async fn plugins_without_a_tag_are_not_checked_and_uploads_are_not_offered_upgra
         Vec::new(),
         Vec::new(),
         false,
+        &[],
         &Default::default(),
         &super::langs(),
     )
@@ -439,6 +442,7 @@ async fn plugins_without_a_tag_are_not_checked_and_uploads_are_not_offered_upgra
             Vec::new(),
             Vec::new(),
             false,
+            &[],
             &Default::default(),
             &super::langs(),
         )
@@ -479,6 +483,7 @@ pub(super) async fn upgrade_expect_rollback(
             permissions(&broken),
             Vec::new(),
             false,
+            &[],
             &Default::default(),
             &super::langs(),
         )
@@ -649,6 +654,7 @@ async fn nothing_is_upgraded_while_the_core_itself_is_upgrading() {
             Vec::new(),
             Vec::new(),
             false,
+            &[],
             &Default::default(),
             &super::langs(),
         )

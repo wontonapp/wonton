@@ -40,8 +40,10 @@ impl Site {
         let wire = Wire::start(home.server().endpoint().bound_sockets()[0]).await;
         wire.set(0, delay);
         phone
-            .dispatch(Action::ConnectHome {
-                ticket: home.ticket_at(wire.addr()),
+            .dispatch(Action::Home {
+                action: wonton_protocol::HomeAction::ConnectHome {
+                    ticket: home.ticket_at(wire.addr()),
+                },
             })
             .unwrap();
         let proxy = phone

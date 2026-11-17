@@ -37,7 +37,6 @@ fn plugin(id: &str, origin: &str, isolated: bool) -> InstalledPlugin {
         declares_tools: false,
         tabs: Vec::new(),
         bot_user_id: None,
-        family: false,
         upgrade: None,
         removable: true,
         notices: Vec::new(),

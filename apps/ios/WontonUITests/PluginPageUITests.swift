@@ -3,7 +3,7 @@ import XCTest
 /// 整页插件页的出口（ADR-0095，盲测 P0）：从侧边栏“我的应用”打开应用，胶囊一直在、切后台回来还在、点了回聊天；
 /// 左边缘右滑回聊天；页面中间的横滑归网页，不返回。
 ///
-/// 要连装好了这些应用的开发栈：外部传 `PAIRING_CODE`（见 ChatPanelUITests）。没装的应用那一条直接失败。
+/// 要连装好了这些应用的开发栈：外部传 `PAIRING_CODE`（见 ChatPanelUITests），没有就跳过。没装的应用那一条直接失败。
 final class PluginPageUITests: XCTestCase {
     private var app: XCUIApplication!
 
@@ -11,6 +11,7 @@ final class PluginPageUITests: XCTestCase {
         continueAfterFailure = false
         // 配对、引导、等网页、切后台再回来、开两次：一条走下来超过默认的 90 秒。
         executionTimeAllowance = 300
+        try XCTSkipIf(try UITestBackend.codes().isEmpty, "需要开发栈：没有 PAIRING_CODE")
     }
 
     func testImmich() throws { try walk("Immich") }
@@ -96,8 +97,10 @@ final class PluginPageUITests: XCTestCase {
                    withVelocity: .fast, thenHoldForDuration: 0)
     }
 
+    /// 按标识认胶囊的退出，不按“关闭”这个名字：聊天页的提示条（如“输入恢复密钥”）的关闭也叫这个名字，
+    /// 页面关掉回到聊天页以后按名字找会找到它，误报“页面还在”。
     private var capsule: XCUIElement {
-        app.buttons.matching(NSPredicate(format: "label IN %@", ["Close", "关闭", "關閉", "閉じる"])).firstMatch
+        app.buttons.matching(identifier: "pageClose").firstMatch
     }
 
     /// 照 ChatPanelUITests 的启动：等配对完成，走完引导，到聊天列表。等待都短于单条测试的 90 秒上限，

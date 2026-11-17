@@ -33,7 +33,7 @@ use rmcp::transport::streamable_http_client::{
 };
 use rmcp::{ClientLifecycleMode, ClientServiceExt};
 use serde_json::Value;
-use wonton_protocol::TOOL_CALL_USER_META;
+use wonton_protocol::{TOOL_CALL_CAPABILITIES_META, TOOL_CALL_USER_META};
 
 use tokio::time::Instant;
 
@@ -213,6 +213,21 @@ enum CallFailure {
     /// 插件回了错误，或者回答不合协议。连接本身没事。
     Plugin(ServiceError),
 }
+/// 转给插件时随调用带上的调用者身份（ADR-0088 第 8 节）。
+pub(crate) struct CallIdentity {
+    /// 替谁办事：`_meta` 的 `app.wonton/user`。
+    pub(crate) user: Option<String>,
+    /// 这个人在这个应用里的能力：`_meta` 的 `app.wonton/capabilities`。
+    pub(crate) capabilities: Vec<String>,
+}
+
+impl CallIdentity {
+    /// 认不出调用者：插件只能当全家共用的数据。
+    pub(crate) const EMPTY: Self = Self {
+        user: None,
+        capabilities: Vec::new(),
+    };
+}
 
 pub struct Upstreams {
     http: reqwest::Client,
@@ -282,6 +297,19 @@ impl Upstreams {
     #[cfg(test)]
     pub(crate) fn set_tools_timeout(&mut self, tools_timeout: Duration) {
         self.tools_timeout = tools_timeout;
+    }
+
+    /// 测试用的不带身份调用。
+    #[cfg(test)]
+    pub(crate) async fn call(
+        &self,
+        server: &McpServer,
+        tool: &str,
+        arguments: Option<JsonObject>,
+        cancelled: impl Future<Output = ()>,
+    ) -> Result<CallToolResult, CallError> {
+        self.call_with_identity(server, tool, arguments, CallIdentity::EMPTY, cancelled)
+            .await
     }
 
     /// 还能用的连接；没有时给出握手要持有的锁。地址或者请求头（密钥换过了）和现在的不一样就换新槽。
@@ -484,13 +512,14 @@ impl Upstreams {
         }
     }
 
-    /// 调用插件的工具，期限见模块说明。`cancelled` 完成时调用方已经不要结果了：告诉插件取消。
-    pub async fn call(
+    /// 调用插件的工具，期限见模块说明。带 [`CallIdentity`] 时 `_meta` 同时带用户名和能力，
+    /// 认不出人（`user: None`）时两个都不带。
+    pub(crate) async fn call_with_identity(
         &self,
         server: &McpServer,
         tool: &str,
         arguments: Option<JsonObject>,
-        on_behalf_of: Option<String>,
+        identity: CallIdentity,
         cancelled: impl Future<Output = ()>,
     ) -> Result<CallToolResult, CallError> {
         let connection = self.connection(server).await.map_err(CallError::NotSent)?;
@@ -498,12 +527,16 @@ impl Upstreams {
         if let Some(arguments) = arguments {
             params = params.with_arguments(arguments);
         }
-        // 替谁办事（ADR-0045）：私人 Bot 是归属人的用户名，多用户的应用按它切数据。
-        if let Some(user) = on_behalf_of {
+        // 带人时 `_meta` 同时带用户名和能力（ADR-0088 第 8 节）；认不出人就整个不带。
+        if let Some(user) = identity.user {
+            let mut metadata = serde_json::Map::new();
+            metadata.insert(TOOL_CALL_USER_META.to_owned(), Value::from(user));
+            metadata.insert(
+                TOOL_CALL_CAPABILITIES_META.to_owned(),
+                Value::from(identity.capabilities),
+            );
             params.meta = Some(rmcp::model::RequestMetaObject(rmcp::model::MetaObject(
-                [(TOOL_CALL_USER_META.to_owned(), Value::from(user))]
-                    .into_iter()
-                    .collect(),
+                metadata,
             )));
         }
         let limits = server.tool_limits;

@@ -24,6 +24,27 @@ pub(super) fn check_runtime(manifest: &Manifest, langs: &Languages) -> Result<()
 }
 
 impl PluginManager {
+    /// 同 [`Self::install`]，带上主人选的设备 ID（ADR-0036）。
+    pub async fn install_with_devices(
+        &self,
+        source: &str,
+        granted: &[Permission],
+        devices: &[String],
+        langs: Languages,
+    ) -> Result<PluginView, InstallError> {
+        let package = PluginPackage::parse(source, &langs)?;
+        self.install_user_enabled(
+            package,
+            granted,
+            &[],
+            false,
+            devices,
+            Default::default(),
+            langs,
+        )
+        .await
+    }
+
     /// 安装只有 compose 文本的插件包，见 [`Self::install_package`]。
     pub async fn install(
         &self,
@@ -60,6 +81,7 @@ impl PluginManager {
             granted,
             &[],
             lan_webui,
+            &[],
             Default::default(),
             langs,
         ))
@@ -67,12 +89,15 @@ impl PluginManager {
     }
 
     /// 同 [`Self::install_user`]，另外带上主人打开了的可选权限（ADR-0057）。
+    // 装插件要的几样各管各的来源，打包反而看不清哪来的（同 deploy_retained）。
+    #[allow(clippy::too_many_arguments)]
     pub async fn install_user_enabled(
         &self,
         package: PluginPackage,
         granted: &[Permission],
         enabled: &[EnabledPermission],
         lan_webui: bool,
+        devices: &[String],
         settings: std::collections::BTreeMap<String, serde_json::Value>,
         langs: Languages,
     ) -> Result<PluginView, InstallError> {
@@ -84,7 +109,10 @@ impl PluginManager {
                 &[],
             )));
         }
-        Box::pin(self.install_checked(package, granted, enabled, lan_webui, settings, &langs)).await
+        Box::pin(self.install_checked(
+            package, granted, enabled, lan_webui, devices, settings, &langs,
+        ))
+        .await
     }
 
     /// 同 [`Self::install_user`]，但在独立的任务里执行（见 [`detached`]）：网关和 MCP 总线都经这里安装。
@@ -98,26 +126,32 @@ impl PluginManager {
     ) -> Result<PluginView, InstallError> {
         let this = Arc::clone(self);
         detached(async move {
-            this.install_user_enabled(package, &granted, &[], lan_webui, settings, langs)
+            this.install_user_enabled(package, &granted, &[], lan_webui, &[], settings, langs)
                 .await
         })
         .await
     }
 
     /// 同 [`Self::install_detached`]，另外带上主人打开了的可选权限（ADR-0057）。
+    // 装插件要的几样各管各的来源，打包反而看不清哪来的（同 deploy_retained）。
+    #[allow(clippy::too_many_arguments)]
     pub async fn install_detached_enabled(
         self: &Arc<Self>,
         package: PluginPackage,
         granted: Vec<Permission>,
         enabled: Vec<EnabledPermission>,
         lan_webui: bool,
+        devices: &[String],
         settings: std::collections::BTreeMap<String, serde_json::Value>,
         langs: Languages,
     ) -> Result<PluginView, InstallError> {
         let this = Arc::clone(self);
+        let devices = devices.to_vec();
         detached(async move {
-            this.install_user_enabled(package, &granted, &enabled, lan_webui, settings, langs)
-                .await
+            this.install_user_enabled(
+                package, &granted, &enabled, lan_webui, &devices, settings, langs,
+            )
+            .await
         })
         .await
     }

@@ -293,25 +293,6 @@ plugin-settings-models-list-malformed = 模型閘道 { $provider } 的模型清�
 plugin-settings-models-connect-first = 先在「模型設定」接上模型，Bot 才能回覆。
 plugin-settings-models-not-ready = 模型閘道 { $provider } 未就緒：{ $error }
 plugin-settings-models-command-rejected = 模型閘道 { $provider } 拒絕了憑證命令（{ $command }，結束代碼 { $code }）：{ $stderr }
-plugin-settings-model-action-save = 儲存
-plugin-settings-model-action-test = 測試
-plugin-settings-model-disconnected-saved = 供應商連不上，key 已儲存
-plugin-settings-model-disconnected-unsaved = 供應商連不上，什麼都沒儲存
-plugin-settings-model-no-provider-commands = 模型閘道 { $provider } 沒有宣告供應商命令
-plugin-settings-model-provider-unsupported = 模型閘道不支援供應商 { $id }
-plugin-settings-model-custom-unsupported = 模型閘道不支援自訂供應商
-plugin-settings-model-custom-encode-failed = 自訂供應商的請求編碼失敗
-plugin-settings-model-command-timeout = 模型閘道 { $provider } 命令執行失敗或逾時
-plugin-settings-model-invalid-endpoint = 供應商位址或模型名稱不合法
-plugin-settings-model-key-rejected = 供應商拒絕了 key，key 沒有儲存
-plugin-settings-model-provider-command-failed = 模型閘道 { $provider } { $action }供應商失敗，結束代碼 { $code }
-plugin-settings-model-list-failed = 模型閘道 { $provider } 列出供應商失敗：{ $error }
-plugin-settings-model-list-exit = 模型閘道 { $provider } 列出供應商失敗，結束代碼 { $code }
-plugin-settings-model-list-not-json = 模型閘道 { $provider } 的供應商清單不是合法 JSON
-plugin-settings-model-key-invalid = key 不能空白、不能有換行，且不能超過 4 KiB
-plugin-settings-model-url-invalid = 供應商位址必須是 http 或 https URL、不能有空白，且不能超過 2 KiB
-plugin-settings-model-name-invalid = 模型名稱不能空白、不能有空白或控制字元，且不能超過 200 位元組
-plugin-settings-model-request-format = 模型供應商的請求格式不正確
 
 # ── 商店索引（storefront）──────────────────────────────────────────────────
 

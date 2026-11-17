@@ -12,6 +12,7 @@ import androidx.compose.runtime.setValue
 import androidx.compose.ui.platform.LocalConfiguration
 import androidx.compose.ui.platform.LocalContext
 import app.wonton.client.ClientCore
+import app.wonton.protocol.HomeAction
 import app.wonton.protocol.Action
 import app.wonton.protocol.HomeStatus
 import app.wonton.ui.design.WontonTheme
@@ -39,7 +40,7 @@ fun WontonApp(
         ready = null
         val request = requestedRoom ?: return@LaunchedEffect
         if (core.servers().servers.none { it.id == request.serverId && it.current }) {
-            val problem = core.send(Action.SwitchServer(request.serverId))
+            val problem = core.send(Action.Home(HomeAction.SwitchServer(request.serverId)))
             if (problem != null) {
                 rejection = problem
                 onRoomRequestHandled()

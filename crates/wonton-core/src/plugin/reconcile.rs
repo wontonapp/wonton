@@ -115,6 +115,34 @@ impl Containers {
 }
 
 impl PluginManager {
+    /// 网络缺了就照安装规格重建，返回是否重建过；网络在但地址段对不上就整体报错——那不是漂移，是配错。
+    async fn ensure_network_reach(&self, manifest: &Manifest) -> Result<bool, InstallError> {
+        let slug = manifest.id.slug();
+        let langs = self.owner_languages();
+        let network = self.cfg.instance.network(&slug);
+        let expected = self.network_reach(manifest);
+        // 重建分支的 future 大（含建网络、起容器的整条安装路径），Box::pin 切断栈深度（见 #434）。
+        let network_recreated = Box::pin(self.recreate_missing_network(manifest)).await?;
+        // 刚重建的网络就是按 expected 建的，不用再问一遍 Docker。
+        let actual = if network_recreated {
+            Some(expected)
+        } else {
+            self.engine.network_reach(&network).await?
+        };
+        if actual != Some(expected) {
+            return Err(InstallError::Conflict(l10n::text(
+                &langs,
+                "plugin-install-network-mismatch",
+                &[
+                    ("network", network.into()),
+                    ("actual", describe_reach(actual, &langs).into()),
+                    ("expected", describe_reach(Some(expected), &langs).into()),
+                ],
+            )));
+        }
+        Ok(network_recreated)
+    }
+
     /// 核心重启后核对插件：一次性服务已以 0 退出，长期运行的容器在运行、健康检查没有失败；核心在插件
     /// 网络里、OIDC 客户端已登记、插件密钥都在，并重新收存一次插件写下的密钥。`None` 表示常驻服务全部停止。
     ///
@@ -134,37 +162,38 @@ impl PluginManager {
         let slug = manifest.id.slug();
         let langs = self.owner_languages();
         self.ensure_bot_web_registration(manifest).await?;
+        let network_recreated = self.ensure_network_reach(manifest).await?;
         let network = self.cfg.instance.network(&slug);
-        let expected = self.network_reach(manifest);
-        let actual = self.engine.network_reach(&network).await?;
-        if actual != Some(expected) {
-            return Err(InstallError::Conflict(l10n::text(
-                &langs,
-                "plugin-install-network-mismatch",
-                &[
-                    ("network", network.into()),
-                    ("actual", describe_reach(actual, &langs).into()),
-                    ("expected", describe_reach(Some(expected), &langs).into()),
-                ],
-            )));
-        }
         // 先接核心再看容器：靠核心的内部别名才起得来的插件，核心不接回去就一直崩，先看容器的话两边互相等。
         if let Some(core) = &self.cfg.core_container {
             self.attach_core(&network, core, manifest).await?;
         }
         // 渲染和容器上的摘要对不上（核心升级换了注入的值，或旧容器没有摘要）就照安装的路径重建。全停着的
-        // 插件不在这里动，留给启动流程（见 start.rs）。
-        if !self.recovery_pending(&record.id) {
-            self.recreate_on_drift(package, record, &langs, false, gate)
-                .await?;
+        // 插件不在这里动，留给启动流程（见 start.rs）。例外：网络刚重建时容器引用的还是已删除的旧网络，
+        // 必须跟着重建，续建中的也不例外；失败照实往外报，不回退成用旧容器。
+        if network_recreated || !self.recovery_pending(&record.id) {
+            Box::pin(self.recreate_on_drift(
+                package,
+                record,
+                &langs,
+                false,
+                gate,
+                network_recreated,
+            ))
+            .await?;
         }
         let checked = self.check_containers(package, &langs).await?;
         self.refresh_bot_web_routes(manifest).await?;
+        let devices = self.recovery_devices(manifest, record)?;
+        let blocked = devices.blocked_services(package, &langs)?;
         let health = match checked.state {
-            ContainersState::Stopped => return Ok(None),
+            ContainersState::Stopped if blocked.is_empty() => return Ok(None),
+            ContainersState::Stopped => Health::Unknown,
             ContainersState::Running(health) => health,
         };
-        let problem = checked.problem(&langs).map(|problem| problem.to_string());
+        let problem = devices
+            .problem(&langs)
+            .or_else(|| checked.problem(&langs).map(|problem| problem.to_string()));
         self.ensure_relays(manifest, record).await?;
         self.check_bot(manifest).await?;
         let secrets = self.check_secrets(manifest).await?;
@@ -213,7 +242,7 @@ impl PluginManager {
         };
         Ok(Some(Deployed {
             upstream: self.webui_upstream(manifest, &network).await?,
-            serving: checked.serving().clone(),
+            serving: checked.serving().difference(&blocked).cloned().collect(),
             problem,
             health,
             models: self.models_upstream(manifest, &network).await?,
@@ -250,47 +279,6 @@ impl PluginManager {
         }
     }
 
-    /// `webui.health` 的一次探测：2xx/3xx 之外都算不健康，失败原因带状态码或连不上的原因。
-    async fn probe_webui_health(
-        &self,
-        container: &str,
-        path: &str,
-        endpoint: Option<&super::upstreams::Endpoint>,
-    ) -> Result<(), String> {
-        let langs = self.owner_languages();
-        let Some(endpoint) = endpoint else {
-            return Err(l10n::text(
-                &langs,
-                "plugin-install-container-health-probe-failed",
-                &[
-                    ("container", container.into()),
-                    ("path", path.into()),
-                    ("reason", "no known address".into()),
-                ],
-            ));
-        };
-        match super::upstreams::status(&self.http, endpoint, path, super::upstreams::PROBE_TIMEOUT)
-            .await
-        {
-            Ok(200..=399) => Ok(()),
-            outcome => {
-                let reason = match outcome {
-                    Ok(code) => format!("HTTP {code}"),
-                    Err(e) => e.to_string(),
-                };
-                Err(l10n::text(
-                    &langs,
-                    "plugin-install-container-health-probe-failed",
-                    &[
-                        ("container", container.into()),
-                        ("path", path.into()),
-                        ("reason", reason.into()),
-                    ],
-                ))
-            }
-        }
-    }
-
     /// 看一眼插件的每个容器，不等待。不因为第一个不健康的容器就停下，把每个都看一遍。
     pub(super) async fn check_containers(
         &self,
@@ -307,19 +295,6 @@ impl PluginManager {
         let mut failures = Vec::new();
         let mut missing = Vec::new();
         let mut served = BTreeSet::new();
-        // 声明了 `webui.health` 的网页服务由核心代探测（镜像里没有 shell，写不出 healthcheck）。
-        let probed = match &package.manifest.webui {
-            Some(webui) if webui.health.is_some() => {
-                let network = self.cfg.instance.network(&slug);
-                let endpoint = self.webui_upstream(&package.manifest, &network).await?;
-                Some((
-                    webui.service.clone(),
-                    webui.health.clone().unwrap_or_default(),
-                    endpoint,
-                ))
-            }
-            _ => None,
-        };
         // Bot 服务按 Bot 一组容器，每个都核对；全插件一份的服务照旧一个。
         let instances = |service: &str| -> Vec<String> {
             if bot_services.contains(service) && !bots.is_empty() {
@@ -342,24 +317,15 @@ impl PluginManager {
                     langs,
                 )
                 .await?;
+                let checked = self
+                    .check_webui_health(&package.manifest, service, &name, checked, langs)
+                    .await;
                 match checked {
                     Checked::Completed => {}
-                    Checked::Healthy | Checked::Running => {
+                    Checked::Healthy | Checked::Starting | Checked::Running => {
                         running += 1;
-                        // 探测过的网页服务以代探测为准，其余的只有在跑、不知道健康。
-                        match probed.as_ref().filter(|(web, _, _)| web == service) {
-                            Some((_, path, endpoint)) => {
-                                if let Err(reason) = self
-                                    .probe_webui_health(&name, path, endpoint.as_ref())
-                                    .await
-                                {
-                                    healthy = false;
-                                    serving = false;
-                                    failures.push(reason);
-                                }
-                            }
-                            None if checked == Checked::Running => healthy = false,
-                            None => {}
+                        if checked != Checked::Healthy {
+                            healthy = false;
                         }
                     }
                     Checked::Stopped => {
@@ -383,6 +349,50 @@ impl PluginManager {
         Ok(classify(
             running, healthy, stopped, missing, failures, served, langs,
         ))
+    }
+
+    /// 插件的网络不在（开发栈 down、Docker 数据丢了）就按安装的规格重建：核对只核对已存在的网络，
+    /// 少了它启动和核对都过不去，主人不该因此重装。网络在时不动，返回没有重建过；规格对不上由核对
+    /// 照旧报冲突。重建后要把出口容器接回去（安装时是这一步建的端点），不然插件起来了也出不了网，
+    /// 并重新登记地址段（网关据此认出插件的请求）。返回有没有重建过：重建后容器引用的还是旧网络，
+    /// 调用方要按安装的路径重建容器（见 [`Self::recreate_on_drift`]）。
+    pub(super) async fn recreate_missing_network(
+        &self,
+        manifest: &Manifest,
+    ) -> Result<bool, InstallError> {
+        let network = self.cfg.instance.network(&manifest.id.slug());
+        let reach = self.network_reach(manifest);
+        if self.engine.network_reach(&network).await?.is_some() {
+            return Ok(false);
+        }
+        tracing::info!(plugin = %manifest.id, %network, "插件的网络不在，按安装的规格重建");
+        if let Err(error) = self
+            .engine
+            .create_network(&network, &self.cfg.instance.labels(&manifest.id), reach)
+            .await
+        {
+            let error: InstallError = error.into();
+            tracing::error!(
+                plugin = %manifest.id,
+                operation = "reconcile",
+                %network,
+                error_kind = error.kind(),
+                reason = %error,
+                "插件网络重建失败"
+            );
+            return Err(error);
+        }
+        if reach == NetworkReach::Egress {
+            self.attach_relay(&network).await?;
+        }
+        self.register_source(manifest, &network).await?;
+        tracing::info!(
+            plugin = %manifest.id,
+            operation = "reconcile",
+            %network,
+            "插件网络重建完成"
+        );
+        Ok(true)
     }
 
     /// 核对插件密钥：生成的都还在，插件写下的重新收存一次，变了就更新。返回全量密钥（generate 和

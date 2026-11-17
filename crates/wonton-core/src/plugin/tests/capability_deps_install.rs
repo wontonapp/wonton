@@ -594,6 +594,7 @@ async fn a_provider_losing_the_capability_or_leaving_keeps_the_others_tokens() {
             vec![],
             vec![],
             false,
+            &[],
             &Default::default(),
             &langs(),
         )

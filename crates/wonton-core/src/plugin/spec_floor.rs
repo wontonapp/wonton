@@ -36,6 +36,8 @@ enum Added {
     NoNewPrivilegesWithoutPermission,
     /// 网页代登录模板里的 `{role}`。
     ProxyRole,
+    /// 没有显式健康路径或有效 compose 健康检查的长期网页服务。
+    AutomaticWebuiHealth,
 }
 
 const V0_7: SpecVersion = SpecVersion::new(0, 7);
@@ -46,8 +48,10 @@ const V0_11: SpecVersion = SpecVersion::new(0, 11);
 const V0_12: SpecVersion = SpecVersion::new(0, 12);
 const V0_13: SpecVersion = SpecVersion::new(0, 13);
 const V0_14: SpecVersion = SpecVersion::new(0, 14);
+const V0_15: SpecVersion = SpecVersion::new(0, 15);
 
-/// 0.6 以后才有的写法。新加清单字段时在这里加一行，规范的“各版本新增的字段”同步加。
+/// 0.6 以后才有的写法。新加清单字段时在这里加一行，规范的“各版本新增的字段”同步加；漏改时
+/// spec_floor_tests 里照规范手抄的期望清单测试会红。
 const TABLE: &[(SpecVersion, Added)] = &[
     (V0_7, Added::Field(&["webui", "cross_origin_isolated"])),
     (V0_7, Added::Field(&["webui", "oidc", "post_logout_paths"])),
@@ -71,6 +75,8 @@ const TABLE: &[(SpecVersion, Added)] = &[
     (V0_8, Added::Field(&["secrets", "*", "show_owner"])),
     (V0_8, Added::Field(&["secrets", "*", "input"])),
     (V0_9, Added::ProxyRole),
+    (V0_9, Added::Variable("WONTON_BOT_NAME")),
+    (V0_9, Added::Variable("WONTON_BOT_DATA")),
     (V0_10, Added::Field(&["runtime"])),
     (V0_10, Added::Field(&["agent", "skills", "mount"])),
     (V0_11, Added::Field(&["tunnel", "ports"])),
@@ -81,6 +87,7 @@ const TABLE: &[(SpecVersion, Added)] = &[
     (V0_11, Added::Variable("WONTON_SMTP_HOST")),
     (V0_11, Added::Variable("WONTON_SMTP_PORT")),
     (V0_11, Added::Variable("WONTON_MAIL_FROM")),
+    (V0_12, Added::Field(&["settings"])),
     (V0_12, Added::Value("runtime", "static_web")),
     (V0_12, Added::Value("runtime", "link")),
     (V0_12, Added::Field(&["static_web"])),
@@ -105,6 +112,15 @@ const TABLE: &[(SpecVersion, Added)] = &[
     (V0_14, Added::Field(&["webui", "guests"])),
     (V0_14, Added::Permission("network.clients")),
     (V0_14, Added::Variable("WONTON_EXTERNAL_URL")),
+    (V0_14, Added::Field(&["devices"])),
+    (V0_14, Added::Permission("devices.disk")),
+    (V0_15, Added::Field(&["remote_mcp"])),
+    (V0_15, Added::AutomaticWebuiHealth),
+    (V0_15, Added::Field(&["provides", "agent_acp"])),
+    (V0_15, Added::ValueAt(&["requires"], "agent_acp")),
+    (V0_15, Added::ValueAt(&["wants"], "agent_acp")),
+    (V0_15, Added::Variable("WONTON_AGENT_ACP_URL")),
+    (V0_15, Added::Variable("WONTON_BOT_AI_LEVEL")),
 ];
 
 /// 清单（整份 compose 文档）里用到、但 `spec` 写得太低的写法，一处一条。`spec` 读不出来时不查：解析那一步已经报过。
@@ -198,7 +214,9 @@ fn places(
             .into_iter()
             .flat_map(|provides| provides.iter())
             .filter(|(name, value)| {
-                !matches!(name.as_str(), "models" | "egress_proxy") && !value.is_null()
+                // `agent_acp` 有自己的 0.15 行，不按通用能力的 0.11 报。
+                !matches!(name.as_str(), "models" | "egress_proxy" | "agent_acp")
+                    && !value.is_null()
             })
             .map(|(name, _)| format!("x-wonton.provides.{name}"))
             .collect(),
@@ -229,7 +247,52 @@ fn places(
             )
         }
         Added::NoNewPrivilegesWithoutPermission => Vec::new(),
+        Added::AutomaticWebuiHealth => automatic_webui_health(manifest, services),
         Added::Variable(_) => unreachable!("variable references are scanned together"),
+    }
+}
+
+fn automatic_webui_health(manifest: &Value, services: &[(&String, &Value)]) -> Vec<String> {
+    if manifest["runtime"]
+        .as_str()
+        .is_some_and(|runtime| runtime != "compose")
+        || !manifest["webui"]["health"].is_null()
+    {
+        return Vec::new();
+    }
+    let Some(name) = manifest["webui"]["service"].as_str() else {
+        return Vec::new();
+    };
+    let Some((_, service)) = services
+        .iter()
+        .find(|(service, _)| service.as_str() == name)
+    else {
+        return Vec::new();
+    };
+    let one_shot = service["restart"].as_str() == Some("no")
+        || services.iter().any(|(_, service)| {
+            service["depends_on"][name]["condition"].as_str()
+                == Some("service_completed_successfully")
+        });
+    if one_shot || effective_healthcheck(&service["healthcheck"]) {
+        return Vec::new();
+    }
+    vec![format!(
+        "x-wonton.webui automatic HTTP health probe for services.{name}"
+    )]
+}
+
+fn effective_healthcheck(check: &Value) -> bool {
+    if check["disable"].as_bool() == Some(true) {
+        return false;
+    }
+    match &check["test"] {
+        Value::String(command) => !command.trim().is_empty(),
+        Value::Array(test) => test
+            .first()
+            .and_then(Value::as_str)
+            .is_some_and(|first| !first.trim().is_empty() && first != "NONE"),
+        _ => false,
     }
 }
 
@@ -257,8 +320,14 @@ fn walk_at(
     found: &mut Vec<String>,
 ) {
     let Some((key, rest)) = path.split_first() else {
+        // `wanted` 也认数组里的成员（`requires: [agent_acp]` 的下限写在数组上）。
         let matched = match wanted {
-            Some(wanted) => value.as_str() == Some(wanted),
+            Some(wanted) => {
+                value.as_str() == Some(wanted)
+                    || value
+                        .as_array()
+                        .is_some_and(|items| items.iter().any(|item| item.as_str() == Some(wanted)))
+            }
             None => !value.is_null(),
         };
         if matched {

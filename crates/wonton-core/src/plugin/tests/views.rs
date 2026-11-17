@@ -123,6 +123,7 @@ async fn content_revision_changes_without_a_version_bump_and_survives_restore() 
         Vec::new(),
         Vec::new(),
         false,
+        &[],
         &Default::default(),
         &super::langs(),
     )

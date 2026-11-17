@@ -152,7 +152,6 @@ mod tests {
             cross_origin_isolated: false,
             tabs: Vec::new(),
             bot_user_id: bot.map(str::to_owned),
-            family: false,
             upgrade: None,
             removable: true,
             notices: Vec::new(),
@@ -167,6 +166,7 @@ mod tests {
     fn room(name: &str, peer: Option<&str>, read_only: bool) -> RoomRow {
         RoomRow {
             layout: Default::default(),
+            call_active: false,
             room_id: format!("!{name}:s"),
             name: name.to_owned(),
             is_direct: peer.is_some(),

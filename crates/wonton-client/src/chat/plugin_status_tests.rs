@@ -27,7 +27,6 @@ fn plugin(status: PluginState) -> InstalledPlugin {
         tabs: Vec::new(),
         chat: Some(Default::default()),
         bot_user_id: Some("@agent:example.org".into()),
-        family: false,
         upgrade: None,
         removable: true,
         notices: Vec::new(),
@@ -53,6 +52,7 @@ fn rooms() -> Vec<RoomRow> {
         side_chats: false,
         unread_count: 0,
         layout: Default::default(),
+        call_active: false,
     }]
 }
 

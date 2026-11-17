@@ -39,7 +39,7 @@ pub enum SettingsEntry {
     },
     /// 当前 Matrix 账号的设备、验证和密钥备份入口；不是服务器的配对设备。
     MatrixDevices,
-    /// 添加自己的 Wonton，发送 `Action::AddServer`，不把外部账号变成 Wonton。
+    /// 添加自己的 Wonton，发送 `HomeAction::AddServer`，不把外部账号变成 Wonton。
     AddWontonServer,
     /// 任意账号的好友和好友请求，不要求拥有或配对 Wonton。
     Friends {

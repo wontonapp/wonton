@@ -356,7 +356,6 @@ mod tests {
             declares_tools: false,
             tabs: Vec::new(),
             bot_user_id: bot.map(str::to_owned),
-            family: false,
             upgrade: None,
             removable: true,
             notices: Vec::new(),
@@ -396,6 +395,7 @@ mod tests {
             kind: wonton_protocol::PluginKind::Agent,
             runtime: Default::default(),
             security_tier: None,
+            remote: None,
             scope_choices: Vec::new(),
             has_bot,
             icon: None,
@@ -420,12 +420,15 @@ mod tests {
             devices: None,
             lan_webui: None,
             always_allowed: Vec::new(),
+            audience: None,
+            install_gate: wonton_protocol::Gate::Allow,
         }
     }
 
     fn room(bot: &str) -> RoomRow {
         RoomRow {
             layout: ChatLayout::default(),
+            call_active: false,
             room_id: format!("!{bot}:home"),
             name: bot.into(),
             is_direct: true,

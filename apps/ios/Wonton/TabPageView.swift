@@ -32,6 +32,7 @@ struct TabPageView: View {
     @Environment(\.wontonColors) private var colors
     @Environment(\.wontonBarStatus) private var status
     @Environment(\.openURL) private var openURL
+    @Environment(\.scenePhase) private var scenePhase
     @ScaledMetric(relativeTo: .body) private var textScale: CGFloat = 1
 
     init(
@@ -63,7 +64,7 @@ struct TabPageView: View {
     }
 
     var body: some View {
-        content
+        sceneContent
         // 键盘交给 WebKit 自己让（和 Safari 一样：可视区域缩小，焦点输入框滚进来）。SwiftUI 默认再把网页框缩到键盘上面，
         // 两边各让一次：网页只剩一条，noVNC 这类按窗口缩放的页面跟着缩，缩放动画里画面被拉成竖条（iOS 26.5 实测）。
         .ignoresSafeArea(.keyboard)
@@ -71,6 +72,10 @@ struct TabPageView: View {
         .onChange(of: session.ready) { notifySeen() }
         .onChange(of: panel?.visible) { _, visible in
             if visible == true { seenReady = false; notifySeen() }
+        }
+        .onChange(of: scenePhase) { _, phase in
+            // 第一版离开通话页就挂断（ADR-0096 第 3 节）：App 退到后台，widget 页跟着关。
+            if phase == .background, tab.isWidget { closePage() }
         }
         .onAppear { notifySeen(); isVisible = true }
         .onDisappear {
@@ -93,6 +98,14 @@ struct TabPageView: View {
         }
     }
 
+    @ViewBuilder private var sceneContent: some View {
+        if case .content = placed {
+            content.modifier(ContentPageScroll(session: session))
+        } else {
+            content
+        }
+    }
+
     /// 拆开写：整段放在 `body` 里时，Xcode 27 的编译器会报“类型检查超时”（CI 的模拟器构建因此失败）。
     private var content: some View {
         GeometryReader { geometry in
@@ -108,9 +121,12 @@ struct TabPageView: View {
                         updatePermittedSession(inputs)
                     }, cancel: closePage)
                 } else {
-                    if let webView = session.webView, sourceAvailable, !tab.isWidget {
-                        TabWebView(webView: webView, obscured: obscured())
+                    if let webView = session.webView, sourceAvailable {
+                        let top = framedTop(safe: safe)
+                        if top > 0 { PageTopStrip(color: session.ready ? session.topColor : nil, height: top) }
+                        TabWebView(webView: webView, obscured: obscured(safe: safe))
                             .id(ObjectIdentifier(webView))
+                            .padding(.top, top)
                             .ignoresSafeArea(.container)
                     }
                     TabPageStateView(
@@ -127,7 +143,7 @@ struct TabPageView: View {
                 if let panel {
                     PanelPagePull(
                         enabled: panel.pagePull && isVisible, webView: session.webView, edge: panel.pageEdge,
-                        zone: PagePullZone(obscured: obscured()),
+                        zone: PagePullZone(obscured: obscured(safe: safe)),
                         changed: panel.pageChanged, ended: panel.pageEnded, cancelled: panel.pageCancelled
                     )
                 }
@@ -146,7 +162,7 @@ struct TabPageView: View {
                 page: page, tab: tab, placed: placed, pages: pages, session: session, takeover: takeover,
                 details: { showsDetails = true },
                 shown: capsuleAllowed, panel: panel,
-                close: close ?? { pages.send(.closePage) }
+                close: close ?? { pages.send(.pages(action: .closePage)) }
             )
             // 面板里按网页框的顶边放：房间的面板第 1 级从屏幕中间开始，那里没有状态栏要让。
             .padding(.top, panel?.insetTop ?? safe.top)
@@ -156,9 +172,21 @@ struct TabPageView: View {
                 PendingCardBanner(cards: pendingCards, open: openCardRoom)
             }
             if let takeover { TakeoverNotice(takeover: takeover) }
+            if callRelayed {
+                CallRelayHint()
+                    .padding(.top, WontonTheme.spacing.s8)
+                    .padding(.leading, safe.leading + WontonTheme.spacing.s8)
+                    .padding(.trailing, safe.trailing + WontonTheme.spacing.s8)
+            }
             Spacer(minLength: 0)
         }
         .ignoresSafeArea(.container)
+    }
+
+    /// widget 页的媒体走插件的端口映射；映射只连上了公共中继时核心给提醒的类别（ADR-0096 第 4 节）。
+    private var callRelayed: Bool {
+        guard case let .widget(pluginId, _) = tab else { return false }
+        return plugins.viewModel.portMappings.first { $0.pluginId == pluginId }?.warning == .publicRelayBandwidth
     }
 
     private func closePage() {
@@ -167,7 +195,7 @@ struct TabPageView: View {
         } else if let close {
             close()
         } else {
-            pages.send(.closePage)
+            pages.send(.pages(action: .closePage))
         }
     }
 
@@ -296,25 +324,37 @@ private extension TabPageView {
         return PageTakeover(pluginId: pluginId, current: plugins.viewModel.takeover, send: plugins.send)
     }
 
-    /// 整页铺满整个屏幕、不替页面让安全区（ADR-0095）：刘海和 Home 条由页面自己按 env(safe-area-inset-*) 或桥给的
-    /// 安全区让。面板里的页面照面板的布局让出上下两条（ADR-0052）。
-    private func obscured() -> UIEdgeInsets {
-        guard let panel else { return .zero }
-        return UIEdgeInsets(top: panel.insetTop, left: 0, bottom: panel.insetBottom, right: 0)
+    /// 网页被浮在上面的东西挡住的上下两条。整页铺满整个屏幕（ADR-0095），顶上是状态栏加胶囊那一行：
+    /// 页面的背景照样画到屏幕顶，固定在顶上的按钮和滚动到头的位置让到胶囊下面，不然压在胶囊底下点不到。
+    /// 面板里的页面照面板的布局让出上下两条（ADR-0052）。网页框自己让开的系统上（`framedTop`）没有被挡住的。
+    private func obscured(safe: EdgeInsets) -> UIEdgeInsets {
+        if let panel {
+            return UIEdgeInsets(top: panel.insetTop, left: 0, bottom: panel.insetBottom, right: 0)
+        }
+        if PageTopInset.framesWebView { return .zero }
+        return UIEdgeInsets(top: safe.top + TabPageCapsule.rowHeight, left: 0, bottom: 0, right: 0)
     }
 
+    /// 整页的网页框顶边到屏幕顶的距离：iOS 26 之前是状态栏加胶囊那一行（见 `PageTopInset`），之后是 0。
+    private func framedTop(safe: EdgeInsets) -> CGFloat {
+        guard panel == nil, PageTopInset.framesWebView else { return 0 }
+        return safe.top + TabPageCapsule.rowHeight
+    }
+
+    /// 整页的顶上一条壳已经替页面让开了（`obscured` 或 `framedTop`），桥的 `--wonton-inset-top` 和
+    /// `safeAreaInsets.top` 报 0：照实给的话，按桥适配过的页面会再让一次。
     private func inputs(safe: EdgeInsets) -> TabWebInputs {
         let bottom = panel?.insetBottom ?? 0
-        let top = panel?.insetTop ?? safe.top
         return TabWebInputs(
             page: page, proxy: sourceProxy, connected: connected,
             appearance: appearance.viewModel,
             environment: TabEnvironment(
                 locale: AppLanguage.current,
                 timeZone: TimeZone.current.identifier, platform: .ios, dark: colorScheme == .dark,
-                insetTop: Double(top), insetBottom: Double(bottom + (panel == nil ? safe.bottom : 0)),
+                insetTop: Double(panel?.insetTop ?? 0),
+                insetBottom: Double(bottom + (panel == nil ? safe.bottom : 0)),
                 safeArea: TabSafeArea(
-                    top: Double(safe.top), right: Double(safe.trailing),
+                    top: Double(panel == nil ? 0 : safe.top), right: Double(safe.trailing),
                     bottom: Double(safe.bottom), left: Double(safe.leading)
                 )
             ), textScale: textScale
@@ -347,13 +387,5 @@ private extension TabPageView {
             case let .draftMessage(text): draft(text)
             }
         }
-    }
-}
-
-private extension TabRef {
-    /// widget 页这一版的壳不加载（见 `TabPageStateView`）。
-    var isWidget: Bool {
-        if case .widget = self { return true }
-        return false
     }
 }

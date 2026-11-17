@@ -452,6 +452,16 @@
         }
       }
     },
+    "confirmationCard.answeredBy": {
+      "comment": "Status line on an administrators-only approval request already handled by another administrator. Argument: user ID.",
+      "extractionState": "manual",
+      "localizations": {
+        "en": { "stringUnit": { "state": "translated", "value": "Handled by %@" } },
+        "zh-Hans": { "stringUnit": { "state": "translated", "value": "已由 %1$@ 处理" } },
+        "zh-Hant": { "stringUnit": { "state": "translated", "value": "已由 %1$@ 處理" } },
+        "ja": { "stringUnit": { "state": "translated", "value": "%1$@ が対応しました" } }
+      }
+    },
     "confirmationCard.windowUntil": {
       "comment": "Line on an approval request card: further actions run without asking until the approval window closes. Argument: the closing time, already formatted as a time.",
       "extractionState": "manual",

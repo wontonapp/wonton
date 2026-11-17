@@ -38,7 +38,7 @@ services:
   app:
     image: traefik/whoami:v1.11
 x-wonton:
-  spec: '0.4'
+  spec: '0.8'
   id: app.secrets.demo
   version: 0.1.0
   kind: app
@@ -54,6 +54,9 @@ x-wonton:
       show_owner: { label: { zh: 数据库密码, en: Database password } }
     web_key:
       generate: { bytes: 16 }
+    owner_input:
+      input:
+        title: { zh: 主人填写的令牌, en: Owner input token }
     recovery_key:
       collect: { service: app, path: /tmp/recovery.txt }
 "#;
@@ -106,7 +109,11 @@ async fn home() -> Home {
     assert_eq!(manifest.id.as_str(), PLUGIN);
     manager.secrets_for_test(
         &manifest.id,
-        &[("admin_password", SECRET_VALUE), ("web_key", "web-value")],
+        &[
+            ("admin_password", SECRET_VALUE),
+            ("web_key", "web-value"),
+            ("owner_input", "filled-input-value"),
+        ],
     );
     manager.register_for_test(manifest, PluginStatus::Running, None);
     let tunnel_devices = loopback_tunnel(dir.path()).await;
@@ -198,6 +205,19 @@ async fn owner_lists_declared_secrets_without_values() {
             {"name": "db_password", "label": "数据库密码"}
         ]})
     );
+    // 用户填写的密钥不进入列表，即使核心密钥库里已有值也不能取回。
+    assert!(
+        !reply
+            .body
+            .windows(b"owner_input".len())
+            .any(|window| window == b"owner_input")
+    );
+    assert!(
+        !reply
+            .body
+            .windows(b"filled-input-value".len())
+            .any(|window| window == b"filled-input-value")
+    );
     let english = h.get(LIST, "en").await;
     assert_eq!(english.json()["secrets"][0]["label"], "Admin password");
 }
@@ -270,6 +290,21 @@ async fn undeclared_collect_and_missing_plugin_have_distinct_errors() {
         .await;
     assert_eq!(reply.status, StatusCode::NOT_FOUND);
     assert_eq!(reply.error_kind(), "not_found");
+    let reply = h
+        .get(
+            "/_wonton/api/plugins/app.secrets.demo/secrets/owner_input",
+            "zh",
+        )
+        .await;
+    assert_eq!(reply.status, StatusCode::NOT_FOUND);
+    assert_eq!(reply.error_kind(), "not_found");
+    assert_eq!(reply.header("cache-control"), "no-store");
+    assert!(
+        !reply
+            .body
+            .windows(b"filled-input-value".len())
+            .any(|window| window == b"filled-input-value")
+    );
     // 清单里没有的名字。
     let reply = h
         .get("/_wonton/api/plugins/app.secrets.demo/secrets/nope", "zh")

@@ -162,6 +162,7 @@ fn agent(activity: Option<BotActivity>) -> BotView {
 fn room(name: &str, peer: Option<&str>, unread: u64) -> RoomRow {
     RoomRow {
         layout: Default::default(),
+        call_active: false,
         room_id: format!("!{name}:home.example"),
         name: name.to_owned(),
         is_direct: peer.is_some(),
@@ -206,7 +207,6 @@ fn plugin(id: &str, web: bool) -> InstalledPlugin {
         cross_origin_isolated: false,
         tabs: Vec::new(),
         bot_user_id: None,
-        family: false,
         upgrade: None,
         removable: true,
         notices: Vec::new(),

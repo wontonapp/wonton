@@ -1,14 +1,28 @@
 //! 页面的壳接口：注入脚本、桥消息和网页权限的询问，拆出 [client mod] 保持文件在门禁内。
 
+use std::sync::Arc;
+
 use wonton_protocol::{CoreError, PlacedTab, TabRef};
 
 use super::ClientCore;
 use super::sharing;
+use crate::pages::ContentPageSubscription;
 use crate::pages::bridge::{self, TabBridgeResult, TabEnvironment};
 use crate::pages::media_permission::TabMediaPermission;
 
 #[uniffi::export]
 impl ClientCore {
+    /// 打开独立内容页订阅，不改变主窗口页面栈。
+    pub fn subscribe_content_page(
+        &self,
+        tab: TabRef,
+    ) -> Result<Arc<ContentPageSubscription>, CoreError> {
+        let scope = self.scope();
+        let subscription = scope.pages.subscribe_content_page(tab.clone())?;
+        self.probe_shared_page(&scope, &tab);
+        Ok(subscription)
+    }
+
     /// 文档开始前、只在插件自己的主框架注入；原生通道名为 `wontonBridge`。
     pub fn tab_document_script(
         &self,
@@ -104,16 +118,5 @@ impl ClientCore {
         allow: bool,
     ) -> Result<TabMediaPermission, CoreError> {
         self.scope().pages.decide_media_permission(allow)
-    }
-
-    /// 插件详情页的开关：`true` 是允许，`false` 是改回没问过（清掉，下次再问）。
-    /// 拒绝只在询问弹窗里产生，开关给不出拒绝。不经 [`Action`](wonton_protocol::Action)：
-    /// 那个枚举的 uniffi 元数据已贴着上限，加变体会编不过。
-    pub fn set_plugin_media_permission(
-        &self,
-        plugin_id: String,
-        allow: bool,
-    ) -> Result<(), CoreError> {
-        self.scope().plugins.set_media_permission(plugin_id, allow)
     }
 }

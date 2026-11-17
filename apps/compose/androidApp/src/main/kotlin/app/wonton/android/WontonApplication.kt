@@ -2,6 +2,7 @@ package app.wonton.android
 
 import android.app.Application
 import app.wonton.client.ClientCore
+import app.wonton.client.configureUniFfiCallbackThreads
 import app.wonton.protocol.CoreException
 import app.wonton.media.PageMediaCoreOwner
 import app.wonton.ui.ContentFileOpener
@@ -15,6 +16,7 @@ import kotlinx.coroutines.SupervisorJob
 open class WontonApplication : Application(), PageMediaCoreOwner {
     override fun onCreate() {
         super.onCreate()
+        configureUniFfiCallbackThreads()
         // 赶在第一个 Activity 的 AppCompat 同步之前，系统设置里的“应用语言”才不会被清掉（AppLanguage.kt）。
         syncAppLocalesFromSystem(this)
         installSystemDns()

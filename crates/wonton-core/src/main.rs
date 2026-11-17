@@ -242,6 +242,12 @@ fn check_host_dev(cfg: &Config) -> anyhow::Result<()> {
             dev.display()
         );
     }
+    // udev 数据库不是每个宿主都有（没装 udev 的最小系统），缺了照常启动。
+    if let Some(udev) = &cfg.host_udev
+        && !udev.is_dir()
+    {
+        tracing::warn!(path = %udev.display(), "WONTON_HOST_UDEV 指向的不是目录，设备插件的自动发现可能用不了");
+    }
     Ok(())
 }
 
@@ -463,10 +469,7 @@ fn open_gateway(
     clients: Option<Arc<wonton_core::clients::domain::Domain>>,
     agent_chains: Arc<AgentChains>,
 ) -> Arc<Gateway> {
-    let agent_acp = gateway::agent_acp::Registry::new();
-    // 停链对 agent_acp 会话的取消（ADR-0061 第 10 节）走这张注册表。
-    agent_chains.attach_acp_cancel(agent_acp.clone());
-    let gateway = Arc::new(
+    Arc::new(
         Gateway::new(
             cfg.public.clone(),
             owner,
@@ -495,15 +498,10 @@ fn open_gateway(
         .with_friends(Some(friends))
         .with_contacts(contacts)
         .with_agent_chains(Some(agent_chains))
-        .with_agent_acp(Some(agent_acp))
         .with_federation_blocks(federation_blocks)
         .with_sharing(Some(sharing))
         .with_clients(clients),
-    );
-    if let Some(mcp) = &gateway.mcp {
-        mcp.bus.attach_handoff_gateway(Arc::downgrade(&gateway));
-    }
-    gateway
+    )
 }
 
 fn lifecycle_config(cfg: &Config, owner: Arc<OwnerStore>) -> LifecycleConfig {
@@ -666,7 +664,7 @@ fn open_plugin_manager(
         images,
     )
     .with_matrix(matrix)
-    .with_host(HostPaths::new(cfg.host_dev.clone()))
+    .with_host(HostPaths::new(cfg.host_dev.clone(), cfg.host_udev.clone()))
     .with_lan(Lan::from_config(cfg))
     .with_egress(
         Egress::new(cfg.egress_proxy.clone(), cfg.egress_proxy_detected.clone())

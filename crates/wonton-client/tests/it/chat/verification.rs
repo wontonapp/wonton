@@ -43,7 +43,11 @@ impl Devices {
                     .then_some(())
                 })
                 .await;
-            first.dispatch(Action::ConfirmRecoveryKeySaved).unwrap();
+            first
+                .dispatch(Action::Chat {
+                    action: wonton_protocol::ChatAction::ConfirmRecoveryKeySaved,
+                })
+                .unwrap();
         } else {
             first
                 .wait_chat("没有备份私钥的已验证设备", |view| {
@@ -54,7 +58,11 @@ impl Devices {
                 })
                 .await;
             home.reject_backup_creation(false);
-            first.dispatch(Action::DismissChatProblem).unwrap();
+            first
+                .dispatch(Action::Chat {
+                    action: wonton_protocol::ChatAction::DismissChatProblem,
+                })
+                .unwrap();
         }
         assert!(!first.chat().encryption.can_verify_with_other_device);
         Self {
@@ -128,7 +136,9 @@ async fn sas_recovers_open_history_in_place_and_survives_restart() {
     }
     assert_recovered(&devices.second);
     assert!(matches!(
-        devices.second.dispatch(Action::StartDeviceVerification),
+        devices.second.dispatch(Action::Chat {
+            action: wonton_protocol::ChatAction::StartDeviceVerification
+        }),
         Err(CoreError::NotReady { .. })
     ));
     timeline
@@ -180,8 +190,10 @@ async fn the_new_phone_asks_again_for_keys_the_old_phone_dropped() {
     devices.home.deliver_key_request_before_done(&old_phone);
     devices
         .second
-        .dispatch(Action::ConfirmVerification {
-            flow_id: id.clone(),
+        .dispatch(Action::Chat {
+            action: wonton_protocol::ChatAction::ConfirmVerification {
+                flow_id: id.clone(),
+            },
         })
         .unwrap();
     flow_at(&devices.second, |stage| {
@@ -190,8 +202,10 @@ async fn the_new_phone_asks_again_for_keys_the_old_phone_dropped() {
     .await;
     devices
         .first
-        .dispatch(Action::ConfirmVerification {
-            flow_id: id.clone(),
+        .dispatch(Action::Chat {
+            action: wonton_protocol::ChatAction::ConfirmVerification {
+                flow_id: id.clone(),
+            },
         })
         .unwrap();
     // 丢掉的请求要再要才补得回来，补回来前会先以 `KeysMissing` 结束，所以这里只等完成，不等取消。
@@ -210,8 +224,10 @@ async fn keys_that_arrive_after_the_deadline_turn_keys_missing_into_done() {
     devices.home.hold_key_requests(true);
     for phone in [&devices.first, &devices.second] {
         phone
-            .dispatch(Action::ConfirmVerification {
-                flow_id: id.clone(),
+            .dispatch(Action::Chat {
+                action: wonton_protocol::ChatAction::ConfirmVerification {
+                    flow_id: id.clone(),
+                },
             })
             .unwrap();
     }
@@ -249,8 +265,10 @@ async fn lost_key_requests_are_asked_for_again_after_the_deadline() {
     devices.home.drop_key_requests(true);
     for phone in [&devices.first, &devices.second] {
         phone
-            .dispatch(Action::ConfirmVerification {
-                flow_id: id.clone(),
+            .dispatch(Action::Chat {
+                action: wonton_protocol::ChatAction::ConfirmVerification {
+                    flow_id: id.clone(),
+                },
             })
             .unwrap();
     }
@@ -281,8 +299,10 @@ async fn cancellation_and_rejection_report_who_cancelled_and_allow_a_new_request
     let id = incoming(&devices.first, &devices.second).await;
     devices
         .second
-        .dispatch(Action::CancelDeviceVerification {
-            flow_id: id.clone(),
+        .dispatch(Action::Chat {
+            action: wonton_protocol::ChatAction::CancelDeviceVerification {
+                flow_id: id.clone(),
+            },
         })
         .unwrap();
     cancelled(&devices.second, &id, VerificationCancel::ByMe).await;
@@ -293,8 +313,10 @@ async fn cancellation_and_rejection_report_who_cancelled_and_allow_a_new_request
     assert_ne!(id, next);
     devices
         .first
-        .dispatch(Action::CancelDeviceVerification {
-            flow_id: next.clone(),
+        .dispatch(Action::Chat {
+            action: wonton_protocol::ChatAction::CancelDeviceVerification {
+                flow_id: next.clone(),
+            },
         })
         .unwrap();
     cancelled(&devices.first, &next, VerificationCancel::ByMe).await;
@@ -310,8 +332,10 @@ async fn denying_the_sas_cancels_both_sides_as_mismatch_without_trusting_the_new
     let id = compare(&devices.first, &devices.second).await;
     devices
         .second
-        .dispatch(Action::DenyVerification {
-            flow_id: id.clone(),
+        .dispatch(Action::Chat {
+            action: wonton_protocol::ChatAction::DenyVerification {
+                flow_id: id.clone(),
+            },
         })
         .unwrap();
     cancelled(&devices.second, &id, VerificationCancel::Mismatch).await;
@@ -354,11 +378,15 @@ async fn verification_without_a_backup_secret_expires_as_keys_missing_not_done()
 async fn invalid_flow_ids_and_unready_operations_do_not_change_the_active_request() {
     let devices = Devices::new(true).await;
     assert!(matches!(
-        devices.second.dispatch(Action::StartDeviceVerification),
+        devices.second.dispatch(Action::Chat {
+            action: wonton_protocol::ChatAction::StartDeviceVerification
+        }),
         Err(CoreError::NotReady { .. })
     ));
     assert!(matches!(
-        devices.first.dispatch(Action::StartDeviceVerification),
+        devices.first.dispatch(Action::Chat {
+            action: wonton_protocol::ChatAction::StartDeviceVerification
+        }),
         Err(CoreError::NotReady { .. })
     ));
     devices.connect_second().await;
@@ -366,14 +394,20 @@ async fn invalid_flow_ids_and_unready_operations_do_not_change_the_active_reques
     assert_invalid_ids(&devices.first);
     assert_invalid_ids(&devices.second);
     for action in [
-        Action::AcceptDeviceVerification {
-            flow_id: id.clone(),
+        Action::Chat {
+            action: wonton_protocol::ChatAction::AcceptDeviceVerification {
+                flow_id: id.clone(),
+            },
         },
-        Action::ConfirmVerification {
-            flow_id: id.clone(),
+        Action::Chat {
+            action: wonton_protocol::ChatAction::ConfirmVerification {
+                flow_id: id.clone(),
+            },
         },
-        Action::DenyVerification {
-            flow_id: id.clone(),
+        Action::Chat {
+            action: wonton_protocol::ChatAction::DenyVerification {
+                flow_id: id.clone(),
+            },
         },
     ] {
         assert!(matches!(
@@ -382,11 +416,15 @@ async fn invalid_flow_ids_and_unready_operations_do_not_change_the_active_reques
         ));
     }
     for action in [
-        Action::ConfirmVerification {
-            flow_id: id.clone(),
+        Action::Chat {
+            action: wonton_protocol::ChatAction::ConfirmVerification {
+                flow_id: id.clone(),
+            },
         },
-        Action::DenyVerification {
-            flow_id: id.clone(),
+        Action::Chat {
+            action: wonton_protocol::ChatAction::DenyVerification {
+                flow_id: id.clone(),
+            },
         },
     ] {
         assert!(matches!(
@@ -395,7 +433,9 @@ async fn invalid_flow_ids_and_unready_operations_do_not_change_the_active_reques
         ));
     }
     assert!(matches!(
-        devices.second.dispatch(Action::StartDeviceVerification),
+        devices.second.dispatch(Action::Chat {
+            action: wonton_protocol::ChatAction::StartDeviceVerification
+        }),
         Err(CoreError::NotReady { .. })
     ));
     assert_eq!(
@@ -420,8 +460,10 @@ async fn invalid_flow_ids_and_unready_operations_do_not_change_the_active_reques
     );
     devices
         .first
-        .dispatch(Action::CancelDeviceVerification {
-            flow_id: id.clone(),
+        .dispatch(Action::Chat {
+            action: wonton_protocol::ChatAction::CancelDeviceVerification {
+                flow_id: id.clone(),
+            },
         })
         .unwrap();
     cancelled(&devices.second, &id, VerificationCancel::ByOther).await;
@@ -453,7 +495,11 @@ async fn overlapping_requests_cancel_both_flows_and_allow_a_fresh_verification()
     third.signed_in().await;
     available(&third).await;
     let original = incoming(&first, &second).await;
-    third.dispatch(Action::StartDeviceVerification).unwrap();
+    third
+        .dispatch(Action::Chat {
+            action: wonton_protocol::ChatAction::StartDeviceVerification,
+        })
+        .unwrap();
     // The new outgoing flow can reach cancellation before Requested is observed.
     let rejected = flow_at(&third, |stage| {
         *stage
@@ -475,8 +521,10 @@ async fn overlapping_requests_cancel_both_flows_and_allow_a_fresh_verification()
     assert_ne!(fresh, original);
     assert_ne!(fresh, rejected.flow_id);
     second
-        .dispatch(Action::CancelDeviceVerification {
-            flow_id: fresh.clone(),
+        .dispatch(Action::Chat {
+            action: wonton_protocol::ChatAction::CancelDeviceVerification {
+                flow_id: fresh.clone(),
+            },
         })
         .unwrap();
     cancelled(&second, &fresh, VerificationCancel::ByMe).await;
@@ -506,7 +554,9 @@ async fn failed_sends_cancel_the_flow_and_distinguish_server_from_transport_erro
         devices.home.fail_verification(status);
         devices
             .second
-            .dispatch(Action::StartDeviceVerification)
+            .dispatch(Action::Chat {
+                action: wonton_protocol::ChatAction::StartDeviceVerification,
+            })
             .unwrap();
         devices
             .second
@@ -530,7 +580,12 @@ async fn failed_sends_cancel_the_flow_and_distinguish_server_from_transport_erro
             })
             .await;
         assert_unverified(&devices.second);
-        devices.second.dispatch(Action::DismissChatProblem).unwrap();
+        devices
+            .second
+            .dispatch(Action::Chat {
+                action: wonton_protocol::ChatAction::DismissChatProblem,
+            })
+            .unwrap();
     }
     devices.home.fail_verification(0);
 }
@@ -558,7 +613,9 @@ async fn another_trusted_device_taking_over_marks_the_request_accepted_elsewhere
     second.signed_in().await;
     available(&second).await;
     second
-        .dispatch(Action::RecoverEncryption { recovery_key: key })
+        .dispatch(Action::Chat {
+            action: wonton_protocol::ChatAction::RecoverEncryption { recovery_key: key },
+        })
         .unwrap();
     second
         .wait_chat("第二台也持有身份和备份", |view| {
@@ -574,8 +631,10 @@ async fn another_trusted_device_taking_over_marks_the_request_accepted_elsewhere
     let pending = flow_at(&second, |stage| *stage == VerificationStage::Incoming).await;
     assert_eq!(pending.flow_id, id);
     first
-        .dispatch(Action::AcceptDeviceVerification {
-            flow_id: id.clone(),
+        .dispatch(Action::Chat {
+            action: wonton_protocol::ChatAction::AcceptDeviceVerification {
+                flow_id: id.clone(),
+            },
         })
         .unwrap();
     cancelled(&second, &id, VerificationCancel::AcceptedElsewhere).await;
@@ -584,8 +643,10 @@ async fn another_trusted_device_taking_over_marks_the_request_accepted_elsewhere
     })
     .await;
     third
-        .dispatch(Action::CancelDeviceVerification {
-            flow_id: id.clone(),
+        .dispatch(Action::Chat {
+            action: wonton_protocol::ChatAction::CancelDeviceVerification {
+                flow_id: id.clone(),
+            },
         })
         .unwrap();
     cancelled(&first, &id, VerificationCancel::ByOther).await;
@@ -613,7 +674,11 @@ async fn flow_at(phone: &Phone, check: impl Fn(&VerificationStage) -> bool) -> V
 }
 
 async fn incoming(first: &Phone, second: &Phone) -> String {
-    second.dispatch(Action::StartDeviceVerification).unwrap();
+    second
+        .dispatch(Action::Chat {
+            action: wonton_protocol::ChatAction::StartDeviceVerification,
+        })
+        .unwrap();
     let requested = flow_at(second, |stage| *stage == VerificationStage::Requested).await;
     let received = flow_at(first, |stage| *stage == VerificationStage::Incoming).await;
     assert_eq!(requested.flow_id, received.flow_id);
@@ -627,8 +692,10 @@ async fn incoming(first: &Phone, second: &Phone) -> String {
 pub(super) async fn compare(first: &Phone, second: &Phone) -> String {
     let id = incoming(first, second).await;
     first
-        .dispatch(Action::AcceptDeviceVerification {
-            flow_id: id.clone(),
+        .dispatch(Action::Chat {
+            action: wonton_protocol::ChatAction::AcceptDeviceVerification {
+                flow_id: id.clone(),
+            },
         })
         .unwrap();
     let left = flow_at(first, |stage| {
@@ -691,15 +758,19 @@ async fn confirm_and_observe(
     };
     let confirming = async {
         first
-            .dispatch(Action::ConfirmVerification {
-                flow_id: id.to_owned(),
+            .dispatch(Action::Chat {
+                action: wonton_protocol::ChatAction::ConfirmVerification {
+                    flow_id: id.to_owned(),
+                },
             })
             .unwrap();
         flow_at(first, |stage| *stage == VerificationStage::WaitingForOther).await;
         assert_unverified(second);
         second
-            .dispatch(Action::ConfirmVerification {
-                flow_id: id.to_owned(),
+            .dispatch(Action::Chat {
+                action: wonton_protocol::ChatAction::ConfirmVerification {
+                    flow_id: id.to_owned(),
+                },
             })
             .unwrap();
     };
@@ -739,17 +810,25 @@ fn assert_recovered(phone: &Phone) {
 
 fn assert_invalid_ids(phone: &Phone) {
     for action in [
-        Action::AcceptDeviceVerification {
-            flow_id: "unknown-flow".into(),
+        Action::Chat {
+            action: wonton_protocol::ChatAction::AcceptDeviceVerification {
+                flow_id: "unknown-flow".into(),
+            },
         },
-        Action::ConfirmVerification {
-            flow_id: "unknown-flow".into(),
+        Action::Chat {
+            action: wonton_protocol::ChatAction::ConfirmVerification {
+                flow_id: "unknown-flow".into(),
+            },
         },
-        Action::DenyVerification {
-            flow_id: "unknown-flow".into(),
+        Action::Chat {
+            action: wonton_protocol::ChatAction::DenyVerification {
+                flow_id: "unknown-flow".into(),
+            },
         },
-        Action::CancelDeviceVerification {
-            flow_id: "unknown-flow".into(),
+        Action::Chat {
+            action: wonton_protocol::ChatAction::CancelDeviceVerification {
+                flow_id: "unknown-flow".into(),
+            },
         },
     ] {
         assert!(matches!(

@@ -91,6 +91,14 @@ pub(super) struct Setup {
 }
 
 pub(super) fn manager(engine: Engine, dir: &tempfile::TempDir) -> Arc<PluginManager> {
+    manager_on_host(engine, dir, None)
+}
+
+fn manager_on_host(
+    engine: Engine,
+    dir: &tempfile::TempDir,
+    host: Option<crate::plugin::gpu::HostPaths>,
+) -> Arc<PluginManager> {
     let owner = fs::metadata(dir.path()).unwrap();
     let cfg = LifecycleConfig {
         public: PublicUrls {
@@ -133,6 +141,10 @@ pub(super) fn manager(engine: Engine, dir: &tempfile::TempDir) -> Arc<PluginMana
         cfg,
         ImageWorker::in_process(),
     );
+    let manager = match host {
+        Some(host) => manager.with_host(host),
+        None => manager,
+    };
     Arc::new(manager.with_store(index))
 }
 
@@ -274,8 +286,19 @@ pub(super) async fn setup_with(
     upstreams: Upstreams,
     manifest_source: &str,
 ) -> Setup {
+    setup_on_host(engine, ttl, window, upstreams, manifest_source, None).await
+}
+
+pub(super) async fn setup_on_host(
+    engine: Engine,
+    ttl: Duration,
+    window: Duration,
+    upstreams: Upstreams,
+    manifest_source: &str,
+    host: Option<crate::plugin::gpu::HostPaths>,
+) -> Setup {
     let dir = tempfile::tempdir().unwrap();
-    let manager = manager(engine, &dir);
+    let manager = manager_on_host(engine, &dir, host);
     let notes = Notes::default();
     let url = serve_notes(notes.clone()).await;
     let manifest = PluginPackage::parse(manifest_source, &Languages::from_header(Some("zh-Hans")))
@@ -370,6 +393,7 @@ impl Setup {
             None,
             secrets,
             Default::default(),
+            Vec::new(),
             &Languages::from_header(None),
         )
     }

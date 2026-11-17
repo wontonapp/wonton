@@ -49,6 +49,7 @@ import app.wonton.client.ClientCore
 import app.wonton.client.accentHex
 import app.wonton.client.parseAccent
 import app.wonton.protocol.Action
+import app.wonton.protocol.SettingsAction
 import app.wonton.protocol.AppearanceViewModel
 import app.wonton.protocol.FontStyle
 import app.wonton.protocol.Rgb
@@ -84,7 +85,7 @@ internal fun AppearanceScreen(core: ClientCore, appearance: AppearanceViewModel)
                 appearance.themeModes.forEachIndexed { index, option ->
                     if (index > 0) SettingsSeparator()
                     ChoiceRow(option.label, option == appearance.themeMode) {
-                        send(Action.SetThemeMode(option))
+                        send(Action.Settings(SettingsAction.SetThemeMode(option)))
                     }
                 }
             }
@@ -95,7 +96,7 @@ internal fun AppearanceScreen(core: ClientCore, appearance: AppearanceViewModel)
                 appearance.textSizes.forEachIndexed { index, option ->
                     if (index > 0) SettingsSeparator()
                     ChoiceRow(option.label, option == appearance.textSize) {
-                        send(Action.SetTextSize(option))
+                        send(Action.Settings(SettingsAction.SetTextSize(option)))
                     }
                 }
             }
@@ -105,7 +106,7 @@ internal fun AppearanceScreen(core: ClientCore, appearance: AppearanceViewModel)
                 appearance.fonts.forEachIndexed { index, option ->
                     if (index > 0) SettingsSeparator()
                     ChoiceRow(option.label, option == appearance.font, FontSample(option.family)) {
-                        send(Action.SetFont(option))
+                    send(Action.Settings(SettingsAction.SetFont(option)))
                     }
                 }
             }
@@ -272,7 +273,7 @@ private fun Swatches(
                         isSelected = swatch == appearance.accent,
                         label = "$label ${row * columns + column + 1}",
                         modifier = Modifier.weight(1f),
-                    ) { send(Action.SetAccentColor(swatch)) }
+                    ) { send(Action.Settings(SettingsAction.SetAccentColor(swatch))) }
                 }
             }
         }
@@ -323,7 +324,7 @@ private fun HexInput(accent: Rgb, send: (Action) -> Unit) {
         keyboardActions = KeyboardActions(
             onDone = {
                 val color = parseAccent(text)
-                if (color != null) send(Action.SetAccentColor(color)) else isInvalid = true
+                if (color != null) send(Action.Settings(SettingsAction.SetAccentColor(color))) else isInvalid = true
             },
         ),
     )

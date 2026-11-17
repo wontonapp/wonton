@@ -1,7 +1,7 @@
 //! 新设备由自己账号的另一台设备确认：Matrix 的 SAS 自我验证（ADR-0046）。
 //!
 //! 两台设备对照同一组表情，主人在两边都确认“相同”后，新设备从旧设备取到交叉签名私钥和备份密钥，以前的消息随之
-//! 解开。和输入恢复密钥（[`Action::RecoverEncryption`](crate::Action::RecoverEncryption)）并列，结果一样。
+//! 解开。和输入恢复密钥（[`ChatAction::RecoverEncryption`](crate::ChatAction::RecoverEncryption)）并列，结果一样。
 
 use serde::{Deserialize, Serialize};
 
@@ -27,12 +27,12 @@ pub struct VerificationFlow {
 pub enum VerificationStage {
     /// 本设备发起了，等另一台设备上的主人接受。
     Requested,
-    /// 另一台设备发来请求，等主人在本设备上接受（[`Action::AcceptDeviceVerification`](crate::Action::AcceptDeviceVerification)）。
+    /// 另一台设备发来请求，等主人在本设备上接受（[`ChatAction::AcceptDeviceVerification`](crate::ChatAction::AcceptDeviceVerification)）。
     Incoming,
     /// 双方都接受了，正在交换密钥，马上出表情。
     Starting,
-    /// 主人对照两台设备上的表情：一样就 [`Action::ConfirmVerification`](crate::Action::ConfirmVerification)，
-    /// 不一样就 [`Action::DenyVerification`](crate::Action::DenyVerification)。对方不支持表情时 `emoji` 为空，
+    /// 主人对照两台设备上的表情：一样就 [`ChatAction::ConfirmVerification`](crate::ChatAction::ConfirmVerification)，
+    /// 不一样就 [`ChatAction::DenyVerification`](crate::ChatAction::DenyVerification)。对方不支持表情时 `emoji` 为空，
     /// 对照三个四位数 `decimals`。
     Compare {
         emoji: Vec<VerificationEmoji>,
@@ -109,7 +109,7 @@ pub enum KeyHandoff {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::Action;
+    use crate::{Action, ChatAction, HomeAction};
 
     /// 契约：确认的快照能经 JSON 往返。
     #[test]
@@ -152,21 +152,35 @@ mod tests {
     #[test]
     fn verification_actions_round_trip_and_unknown_values_fall_back() {
         for action in [
-            Action::StartDeviceVerification,
-            Action::AcceptDeviceVerification {
-                flow_id: "flow".into(),
+            Action::Chat {
+                action: ChatAction::StartDeviceVerification,
             },
-            Action::ConfirmVerification {
-                flow_id: "flow".into(),
+            Action::Chat {
+                action: ChatAction::AcceptDeviceVerification {
+                    flow_id: "flow".into(),
+                },
             },
-            Action::DenyVerification {
-                flow_id: "flow".into(),
+            Action::Chat {
+                action: ChatAction::ConfirmVerification {
+                    flow_id: "flow".into(),
+                },
             },
-            Action::CancelDeviceVerification {
-                flow_id: "flow".into(),
+            Action::Chat {
+                action: ChatAction::DenyVerification {
+                    flow_id: "flow".into(),
+                },
             },
-            Action::CloseDeviceInvite,
-            Action::SkipKeyHandoff,
+            Action::Chat {
+                action: ChatAction::CancelDeviceVerification {
+                    flow_id: "flow".into(),
+                },
+            },
+            Action::Home {
+                action: HomeAction::CloseDeviceInvite,
+            },
+            Action::Chat {
+                action: ChatAction::SkipKeyHandoff,
+            },
         ] {
             let json = serde_json::to_string(&action).unwrap();
             assert_eq!(serde_json::from_str::<Action>(&json).unwrap(), action);

@@ -64,6 +64,7 @@ async fn upgrading_the_last_required_provider_without_its_capability_is_blocked_
             vec![],
             vec![],
             false,
+            &[],
             &Default::default(),
             &zh(),
         )

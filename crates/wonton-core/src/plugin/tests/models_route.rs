@@ -169,6 +169,7 @@ async fn bed_with_route(state: RouteState) -> Bed {
             &[],
             &[],
             false,
+            &[],
             Default::default(),
             &langs(),
         )
@@ -217,6 +218,25 @@ impl Bed {
             "模型问题不改变插件状态"
         );
     }
+}
+
+#[tokio::test]
+async fn model_settings_uses_stored_consumer_state_without_probing() {
+    let state = Arc::new(Mutex::new(RouteReply {
+        listed: true,
+        ..RouteReply::default()
+    }));
+    let bed = bed_with_route(state.clone()).await;
+    let before = state.lock().unwrap().catalogs;
+    let settings = bed.manager.model_settings(&langs()).await.unwrap();
+    assert!(!settings.has_configured_models);
+    assert_eq!(state.lock().unwrap().catalogs, before);
+
+    bed.install_consumer().await;
+    let before = state.lock().unwrap().catalogs;
+    let settings = bed.manager.model_settings(&langs()).await.unwrap();
+    assert!(settings.has_configured_models);
+    assert_eq!(state.lock().unwrap().catalogs, before);
 }
 
 #[tokio::test]

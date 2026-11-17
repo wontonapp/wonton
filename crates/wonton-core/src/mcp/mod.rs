@@ -20,8 +20,6 @@ mod core_tools;
 mod dependencies;
 mod file_results;
 mod file_tools;
-mod handoff;
-mod handoff_tools;
 mod naming;
 mod notifier;
 mod panel_tools;
@@ -46,7 +44,7 @@ use rmcp::service::{Peer, RoleServer};
 use rmcp::transport::streamable_http_server::session::local::LocalSessionManager;
 use rmcp::transport::streamable_http_server::{StreamableHttpServerConfig, StreamableHttpService};
 use serde_json::Value;
-use wonton_protocol::{ConfirmationState, FileFailure, SecretValues};
+use wonton_protocol::{AiLevel, ConfirmationState, FileFailure, SecretValues};
 
 use crate::bot_activity::Guard;
 use crate::config::PLUGIN_MCP_HOST;
@@ -60,9 +58,9 @@ use audience::Subject;
 use audit::{Audit, Basis, Decision, Grounds, Record};
 pub use cards::Draft;
 pub use cards::text as card_text;
-pub use confirm::{AnswerError, Audience, Confirmations, Notifier, Refusal};
+pub use confirm::{AnswerError, Audience, Confirmations, Notifier, Recipients, Refusal, Ticket};
 pub use notifier::DevicePush;
-pub use server::Caller;
+pub use server::{Caller, TurnSender};
 use takeover::Takeovers;
 pub use tool_policy::PolicyChange;
 use upstream::Upstreams;
@@ -121,8 +119,6 @@ pub struct Bus {
     agent_chains: OnceLock<Arc<crate::gateway::agent_chains::AgentChains>>,
     /// 好友名单（ADR-0051）：`wonton__send_message` 认收件人用（[`Bus::attach_friends`]）。
     friends: OnceLock<Arc<crate::friends::Friends>>,
-    handoffs: Arc<handoff::Handoffs>,
-    handoff_gateway: OnceLock<std::sync::Weak<crate::gateway::Gateway>>,
     /// Bot 钉进主面板的同意卡片的等待：每个（插件）最多一张。
     pin_cards: Mutex<HashSet<PluginId>>,
     /// 旧协议（2026-07-28 之前）的会话：工具列表变了要逐个通知。
@@ -160,8 +156,6 @@ impl Bus {
             contacts: OnceLock::new(),
             agent_chains: OnceLock::new(),
             friends: OnceLock::new(),
-            handoffs: Arc::default(),
-            handoff_gateway: OnceLock::new(),
             pin_cards: Mutex::new(HashSet::new()),
             peers: Mutex::new(Vec::new()),
         });
@@ -210,6 +204,14 @@ impl Bus {
     /// 接上 Matrix 和主人：Bot 往主面板钉页的同意卡片发在 Bot 自己的房间里。
     pub fn attach_matrix(&self, matrix: Option<Arc<crate::matrix::Matrix>>, owner: String) {
         let _ = self.matrix.set(Cards { matrix, owner });
+    }
+
+    fn matrix(&self) -> Option<&crate::matrix::Matrix> {
+        self.matrix.get()?.matrix.as_deref()
+    }
+
+    fn contacts(&self) -> Option<&crate::contacts::Contacts> {
+        self.contacts.get().map(Arc::as_ref)
     }
 
     fn cards(&self) -> Result<&Cards, String> {
@@ -270,12 +272,6 @@ impl Bus {
         self.agent_chains.get()
     }
 
-    pub fn attach_handoff_gateway(&self, gateway: std::sync::Weak<crate::gateway::Gateway>) {
-        if self.handoff_gateway.set(gateway).is_err() {
-            tracing::error!("交接的网关接了两次，用先接上的");
-        }
-    }
-
     /// 接上好友名单（ADR-0051）。只接一次。
     pub fn attach_friends(&self, friends: Arc<crate::friends::Friends>) {
         if self.friends.set(friends).is_err() {
@@ -291,7 +287,7 @@ impl Bus {
         &self.audit
     }
 
-    /// 停整条链（ADR-0061 第 10 节）：账本置 `Stopped`、桥的轮次进他的出箱、`agent_acp` 的会话交给网关取消，
+    /// 停整条链（ADR-0061 第 10 节）：账本置 `Stopped`、轮次进他的出箱并撤回待答卡片，
     /// 链上还等着的卡片撤回（等待方拿到 `cancelled`）。
     pub async fn stop_chain(
         self: &Arc<Self>,
@@ -340,6 +336,48 @@ impl Bus {
         match recipient.and_then(|person| self.plugins.person_languages(person)) {
             Some(header) => Languages::from_header(Some(&header)),
             None => self.owner_languages(),
+        }
+    }
+    /// `tools/call` 转给插件时的调用者身份（ADR-0088 第 8 节）：私人 Bot 带归属人，主人和在这个
+    /// 应用里当管理员（“能打开”且勾了“当管理员”）的人再带 [`Capability::PluginAdmin`]；共享 Bot
+    /// 和认不出的人两个都不带，插件只能按全家共用的数据处理。认人的口径和工具放行一致（`bot_access`）：
+    /// 记录在、人没被移除，就认。
+    pub(crate) fn tool_call_identity(
+        &self,
+        caller: &Caller,
+        plugin: &PluginId,
+    ) -> upstream::CallIdentity {
+        use wonton_protocol::{BotKeeper, Capability, MemberStatus};
+        let Some(username) = caller.bot.as_ref().and_then(|bot| match &bot.keeper {
+            BotKeeper::User { username } => Some(username),
+            BotKeeper::Household | BotKeeper::Other => None,
+        }) else {
+            return upstream::CallIdentity::EMPTY;
+        };
+        if username == self.plugins.owner_name() {
+            return upstream::CallIdentity {
+                user: Some(username.clone()),
+                capabilities: vec![Capability::PluginAdmin.as_str().to_owned()],
+            };
+        }
+        let people = self.people.get();
+        let Some(member) = people
+            .and_then(|people| people.members.get(username))
+            .filter(|member| member.status != MemberStatus::Removed)
+        else {
+            return upstream::CallIdentity::EMPTY;
+        };
+        let capabilities = people
+            .and_then(|people| people.roles.get(&member.role_id))
+            .filter(|role| {
+                role.permissions.open_apps.allows_plugin(plugin.as_str())
+                    && role.permissions.plugin_admin.allows_plugin(plugin.as_str())
+            })
+            .map(|_| vec![Capability::PluginAdmin.as_str().to_owned()])
+            .unwrap_or_default();
+        upstream::CallIdentity {
+            user: Some(username.clone()),
+            capabilities,
         }
     }
 
@@ -396,11 +434,12 @@ impl Bus {
     /// 调用方能看到的工具：核心自己的，加上所有在运行、对它放行（[`Bus::bot_access`]）的插件的。并发地问，一个插件卡住
     /// 挡不住别的（每个插件有期限，见 [`Upstreams::tools`]）。列不出工具的插件记一条警告后跳过，它的工具这时本来也调不通。
     ///
-    /// 必填密钥还没填的插件不连：直接把原因记进工具的 `tools_problem`，省掉一次必然失败的握手。
+    /// 封顶“只读”的（ADR-0088 第 5 节）只列只读的插件工具；核心安装等工具各按自己的权限项管，`save_file` 另按 AI 级别管。
     async fn tools(&self, caller: &Caller) -> Vec<Tool> {
         if self.remote_contact_blocked(caller) {
             return contacts_gate::tools();
         }
+        let cap = self.ai_cap(caller);
         let mut servers = self.plugins.mcp_servers();
         servers.retain(|server| self.bot_access(caller, &server.id).is_ok());
         let listed = servers.iter().map(|server| async {
@@ -422,6 +461,14 @@ impl Bus {
                 })),
                 Err(e) => tracing::warn!(caller = %caller.id, error = %e, "插件的工具暂时不可用"),
             }
+        }
+        if cap == AiLevel::ReadOnly {
+            let save = naming::join(naming::CORE, save_tools::SAVE);
+            tools.retain(|tool| {
+                tool.name != save
+                    && (naming::split(&tool.name).is_some_and(|(owner, _)| owner == naming::CORE)
+                        || risky::classify(tool) == AiLevel::ReadOnly)
+            });
         }
         tools
     }
@@ -524,6 +571,35 @@ impl Bus {
         })
     }
 
+    /// 一次插件工具调用的确认决定：封顶不够直接拒（失败即停），会删、会覆盖的调用在“删除要管理员批”的封顶下
+    /// 把卡片交给管理员（ADR-0088 第 5 节），其余按 ADR-0024。
+    fn plugin_decision(
+        &self,
+        caller: &Caller,
+        server: &McpServer,
+        definition: &Tool,
+    ) -> Result<risky::ToolDecision, ToolFailure> {
+        let cap = self.ai_cap(caller);
+        let tool_level = risky::classify(definition);
+        if risky::capped(cap, tool_level) {
+            return Err(ToolFailure::new(
+                "permission_denied",
+                "这次的 AI 动手级别是只读，这个工具会改或删数据，没有执行",
+            ));
+        }
+        let highest = self.plugins.requires_root_confirmation(&server.id);
+        let subject = if cap == AiLevel::AdminApprovesDeletes && tool_level == AiLevel::SelfConfirms
+        {
+            Subject::ToolDelete
+        } else {
+            Subject::Tool
+        };
+        let relaxed = cap == AiLevel::SelfConfirms;
+        Ok(risky::ToolDecision::new(
+            definition, cap, highest, subject, relaxed,
+        ))
+    }
+
     async fn call_plugin(
         self: &Arc<Self>,
         caller: &Caller,
@@ -537,23 +613,20 @@ impl Bus {
             Ok(definition) => definition,
             Err(result) => return *result,
         };
-        let read_only = definition
-            .annotations
-            .as_ref()
-            .and_then(|a| a.read_only_hint)
-            == Some(true);
-        let highest = self.plugins.requires_root_confirmation(&server.id);
-        let every_time = highest || risky::deletes(&definition);
-        let relaxed = handoff::allows_relaxation(self, caller);
+        let decision = match self.plugin_decision(caller, server, &definition) {
+            Ok(decision) => decision,
+            Err(failure) => return self.deny(caller, name, &args, &failure),
+        };
         let policy = self.plugins.tool_policy();
         let clearance = || {
-            relaxed
+            decision
+                .relaxed
                 .then(|| policy.clearance(caller.id.as_str(), server.id.as_str(), tool))
                 .flatten()
         };
-        let not_sensitive = if every_time {
+        let not_sensitive = if decision.every_time {
             None
-        } else if read_only {
+        } else if decision.read_only {
             Some(Basis::PluginReadOnly)
         } else {
             clearance()
@@ -573,12 +646,15 @@ impl Bus {
                 Err(result) => return *result,
             };
             // 停住期间主人可能改了放宽，时段也可能到期，所以放在停住之后判定。每次都问的工具全部不放宽。
-            let cleared = if every_time || !relaxed {
+            let cleared = if decision.every_time || !decision.relaxed {
                 None
             } else {
                 clearance().map(Basis::from).or_else(|| {
                     self.confirmations
-                        .allow_in_window(&caller.id, server.id.as_str())
+                        .allow_in_window(
+                            &caller.id,
+                            &risky::window_scope(caller, server.id.as_str()),
+                        )
                         .map(Basis::Window)
                 })
             };
@@ -604,12 +680,13 @@ impl Bus {
                 _ => outcome.result,
             };
         }
-        let draft = self.tool_card(caller, server, &definition, &args, highest);
+        let draft = self.tool_card(caller, server, &definition, &args, decision);
         // 不传 `cancelled`：确认过的调用不跟着 Agent 走，它断开了照样执行，结果在卡片上（ADR-0016）。
         let (agent, server, tool) = (caller.clone(), server.clone(), tool.to_owned());
         let run = move |bus: Arc<Bus>,
                         _secrets: SecretValues,
-                        _settings: wonton_protocol::SettingValues| async move {
+                        _settings: wonton_protocol::SettingValues,
+                        _devices: Vec<String>| async move {
             forward(
                 &bus,
                 &agent,
@@ -626,7 +703,7 @@ impl Bus {
             args,
             (draft, activity),
             run,
-            (held_ms, Subject::Tool),
+            (held_ms, decision.subject),
         )
         .await
     }
@@ -712,6 +789,8 @@ impl Bus {
 #[cfg(test)]
 mod activity_tests;
 #[cfg(test)]
+mod admin_cards_tests;
+#[cfg(test)]
 mod agent_install_adopt_tests;
 #[cfg(test)]
 mod agent_install_card_tests;
@@ -722,27 +801,29 @@ mod agent_install_tests;
 #[cfg(test)]
 mod agent_permission_tests;
 #[cfg(test)]
+mod ai_level_tests;
+#[cfg(test)]
 mod authoring_tests;
 #[cfg(test)]
 mod bot_access_tests;
 #[cfg(test)]
 mod capability_install_tests;
 #[cfg(test)]
+mod clients_passwords_isolation_tests;
+#[cfg(test)]
 mod contacts_gate_tests;
+#[cfg(test)]
+mod device_card_tests;
 #[cfg(test)]
 mod file_block_tests;
 #[cfg(test)]
 mod file_tests;
 #[cfg(test)]
-mod handoff_path_tests;
-#[cfg(test)]
-mod handoff_test_support;
-#[cfg(test)]
-mod handoff_tests;
-#[cfg(test)]
 mod help_tests;
 #[cfg(test)]
 mod highest_tool_tests;
+#[cfg(test)]
+mod install_gate_tests;
 #[cfg(test)]
 mod optional_permission_tests;
 #[cfg(test)]
@@ -769,6 +850,8 @@ pub(crate) mod test_support;
 mod tests;
 #[cfg(test)]
 mod tool_failure_tests;
+#[cfg(test)]
+mod tool_identity_tests;
 #[cfg(test)]
 mod tool_policy_tests;
 #[cfg(test)]

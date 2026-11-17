@@ -20,8 +20,8 @@ use wonton_protocol::ConfirmationCard;
 
 use super::Notifier;
 
-/// 假插件：`search`、`find` 标了只读，`delete`、`archive` 没标（会改数据），`purge` 标了会删东西
-/// （`destructiveHint`）。`deleted` 记下删过的笔记。
+/// 假插件：`search`、`find` 标了只读，`delete` 什么都没标（按会删算，ADR-0088），`archive` 标了
+/// `destructiveHint: false`（会改不删），`purge` 标了会删东西。`deleted` 记下删过的笔记。
 #[derive(Clone)]
 pub struct Notes {
     pub deleted: Arc<Mutex<Vec<String>>>,
@@ -88,7 +88,8 @@ impl ServerHandler for Notes {
         ));
         let find = Tool::new("find", "找文件", schema())
             .with_annotations(ToolAnnotations::new().read_only(true));
-        let archive = Tool::new("archive", "归档文件", schema());
+        let archive = Tool::new("archive", "归档文件", schema())
+            .with_annotations(ToolAnnotations::new().destructive(false));
         let boom = Tool::new("boom", "总是报错", schema())
             .with_annotations(ToolAnnotations::new().read_only(true));
         let purge = Tool::new("purge", "彻底删掉笔记", schema())
@@ -214,7 +215,7 @@ impl Cards {
 impl Notifier for Cards {
     fn post<'a>(
         &'a self,
-        recipient: Option<&'a str>,
+        recipients: &'a super::Recipients,
         card: &'a ConfirmationCard,
     ) -> BoxFuture<'a, Result<(), String>> {
         async move {
@@ -224,10 +225,11 @@ impl Notifier for Cards {
             // 两张表在同一把锁下追加，下标才对得上。
             let mut posted = self.posted.lock().unwrap();
             posted.push(card.clone());
-            self.recipients
-                .lock()
-                .unwrap()
-                .push(recipient.map(str::to_owned));
+            let recipient = match recipients {
+                super::Recipients::Keeper(person) => person.clone(),
+                super::Recipients::Admins(_) => None,
+            };
+            self.recipients.lock().unwrap().push(recipient);
             Ok(())
         }
         .boxed()

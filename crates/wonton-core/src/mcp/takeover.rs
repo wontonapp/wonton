@@ -129,6 +129,12 @@ impl Takeovers {
         self.lock().operating.keys().cloned().collect()
     }
 
+    /// 测试等调用真的停住再往下走：只睡一段时间的话，机器忙时调用可能还没走到停住那一步。
+    #[cfg(test)]
+    pub(super) fn held_by(&self, caller: &PluginId) -> usize {
+        self.lock().held.get(caller).copied().unwrap_or(0)
+    }
+
     fn take_slot(&self, caller: &PluginId) -> Option<Slot<'_>> {
         let mut table = self.lock();
         let count = table.held.entry(caller.clone()).or_default();

@@ -16,6 +16,7 @@ import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.platform.LocalConfiguration
 import androidx.compose.ui.res.stringResource
+import app.wonton.protocol.OnboardingAction
 import app.wonton.protocol.Action
 import app.wonton.protocol.OnboardingItemProblem
 import app.wonton.protocol.OnboardingItemState
@@ -40,7 +41,9 @@ internal fun OnboardingReviewStep(review: OnboardingReview, plugins: PluginsStat
                 ) {
                     ReviewItemHeading(item, plugins)
                     InstallAccessDetails(item.notices, item.permissions)
-                    ReviewItemState(item.state) { send(Action.RetryOnboardingItem(item.id)) }
+                    ReviewItemState(item.state) {
+                        send(Action.Onboarding(OnboardingAction.RetryOnboardingItem(item.id)))
+                    }
                 }
             }
         }

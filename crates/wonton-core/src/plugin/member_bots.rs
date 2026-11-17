@@ -156,17 +156,23 @@ impl PluginManager {
             .bots()
             .entry(&package.manifest.id, bot)?
             .ok_or_else(|| InstallError::NotFound(bot.to_owned()))?;
-        let runtime = BotVars {
-            model_key,
-            matrix: Some(self.matrix_vars(provisioned)),
-            mcp_url: Some(format!(
-                "http://{}:{}/mcp/{}",
-                crate::config::PLUGIN_MCP_HOST,
-                self.cfg.gateway_port,
-                entry.bus_token
-            )),
-            app_url: None,
-            oidc: None,
+        let runtime = {
+            let (ai_level, keeper_read_only) = self.bot_levels(keeper);
+            BotVars {
+                model_key,
+                matrix: Some(self.matrix_vars(provisioned)),
+                mcp_url: Some(format!(
+                    "http://{}:{}/mcp/{}",
+                    crate::config::PLUGIN_MCP_HOST,
+                    self.cfg.gateway_port,
+                    entry.bus_token
+                )),
+                app_url: None,
+                oidc: None,
+                dependencies: self.dependency_vars(&package.manifest, Some(bot))?,
+                ai_level,
+                keeper_read_only,
+            }
         };
         self.start_bot_containers(package, record, bot, runtime)
             .await?;
@@ -267,8 +273,7 @@ impl PluginManager {
     ) -> Result<(), InstallError> {
         let id = PluginId::parse(&reference.plugin_id)
             .map_err(|e| InstallError::Invalid(e.to_string()))?;
-        let _allocating = self.bot_allocation.lock().await;
-        self.remove_bot_locked(&id, &reference.bot, keep_data, Some(username))
+        self.remove_bot_checked(&id, &reference.bot, keep_data, Some(username))
             .await?;
         Ok(())
     }

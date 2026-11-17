@@ -110,3 +110,62 @@ async fn plugin_state_update_between_request_and_decide_keeps_the_pending_prompt
     assert!(rig.view().media_prompt.is_none());
     assert!(rig.dir().join("plugin-media.json").exists());
 }
+
+#[tokio::test]
+async fn same_page_rerequest_replaces_the_pending_and_the_old_request_is_rejected() {
+    let rig = Rig::new();
+    rig.plugins.send_replace(plugins("1"));
+    rig.open(page_tab());
+    // 订在第一次请求前：壳看到的每次 ViewModel 更新都能收进来。
+    let mut updates = rig.tabs.view.subscribe();
+
+    // 第一份：只要麦克风。
+    let first = rig
+        .tabs
+        .request_media_permission(&rig.placed_page(), Rig::origin(), false, true)
+        .unwrap();
+    assert!(matches!(first, TabMediaPermission::Prompt));
+    assert!(updates.has_changed().unwrap(), "第一份的询问该发给壳");
+    let published = updates.borrow_and_update().clone();
+    assert_eq!(
+        published
+            .media_prompt
+            .map(|prompt| (prompt.camera, prompt.microphone)),
+        Some((false, true))
+    );
+
+    // 同页再来一份（这次连摄像头一起）：旧的那份按“被新请求替换”收场（壳收到这次的
+    // Prompt 就拒掉旧的网页请求），ViewModel 上只剩第二份。
+    let second = rig
+        .tabs
+        .request_media_permission(&rig.placed_page(), Rig::origin(), true, true)
+        .unwrap();
+    assert!(matches!(second, TabMediaPermission::Prompt));
+    assert!(updates.has_changed().unwrap(), "替换后该再发一次更新");
+    let published = updates.borrow_and_update().clone();
+    assert_eq!(
+        published
+            .media_prompt
+            .map(|prompt| (prompt.camera, prompt.microphone)),
+        Some((true, true)),
+        "挂着的应是第二份的请求"
+    );
+
+    // 回答只作用于挂着的第二份：记下决定、清掉询问，落盘里只有这一条。
+    let answered = rig.tabs.decide_media_permission(true).unwrap();
+    assert!(matches!(answered, TabMediaPermission::Allow));
+    assert!(rig.view().media_prompt.is_none());
+    let saved = std::fs::read_to_string(rig.dir().join("plugin-media.json")).unwrap();
+    assert!(
+        saved.contains("\"app.shared\":true"),
+        "记下的应是允许: {saved}"
+    );
+
+    // 同款再要：第二份记下的决定直接放行，不再询问。
+    let again = rig
+        .tabs
+        .request_media_permission(&rig.placed_page(), Rig::origin(), true, true)
+        .unwrap();
+    assert!(matches!(again, TabMediaPermission::Allow));
+    assert!(rig.view().media_prompt.is_none());
+}

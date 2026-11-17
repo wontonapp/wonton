@@ -6,6 +6,7 @@ import androidx.compose.runtime.Composable
 import androidx.compose.runtime.key
 import androidx.compose.ui.res.stringResource
 import app.wonton.protocol.Action
+import app.wonton.protocol.OnboardingAction
 import app.wonton.protocol.OnboardingModelChoice
 import app.wonton.ui.design.StepOptionRow
 import app.wonton.ui.design.WontonButton
@@ -21,7 +22,9 @@ internal fun OnboardingModelStep(
     Column(verticalArrangement = Arrangement.spacedBy(WontonTheme.spacing.s12)) {
         model.problem?.let { problem ->
             key(problem) {
-                OnboardingProblem(problem.onboardingTitle(), problem.message) { send(Action.RefreshOnboarding) }
+                OnboardingProblem(problem.onboardingTitle(), problem.message) {
+                    send(Action.Onboarding(OnboardingAction.RefreshOnboarding))
+                }
             }
         }
         if (model.settings == null && model.problem == null) OnboardingLoading()
@@ -29,7 +32,7 @@ internal fun OnboardingModelStep(
             StepOptionRow(
                 title = stringResource(R.string.onboarding_model_use_current),
                 selected = model.choice is OnboardingModelChoice.Current,
-                onSelect = { send(Action.UseCurrentModel) },
+                onSelect = { send(Action.Onboarding(OnboardingAction.UseCurrentModel)) },
             )
         }
         model.settings?.let { settings ->
@@ -44,7 +47,7 @@ internal fun OnboardingModelStep(
                 StepOptionRow(
                     title = stringResource(R.string.onboarding_model_use_login, login.title),
                     selected = (model.choice as? OnboardingModelChoice.Login)?.id == login.id,
-                    onSelect = { send(Action.ChooseModelLogin(login.id)) },
+                    onSelect = { send(Action.Onboarding(OnboardingAction.ChooseModelLogin(login.id))) },
                 )
             }
         }

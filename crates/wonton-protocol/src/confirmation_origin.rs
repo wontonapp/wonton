@@ -91,7 +91,7 @@ pub struct ConfirmationsViewModel {
     /// 还没取到过列表。
     pub loading: bool,
     /// 最近一次取列表没成：连不上、没权限。上面两个列表是上次取到的，可能已经过时，壳照实提示并给重试
-    /// （[`Action::RetryConfirmations`](crate::Action::RetryConfirmations)）。
+    /// （[`ChatAction::RetryConfirmations`](crate::ChatAction::RetryConfirmations)）。
     pub problem: Option<ChatProblem>,
 }
 

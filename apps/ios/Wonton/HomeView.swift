@@ -1,4 +1,5 @@
 import SwiftUI
+import UIKit
 import WontonClient
 
 /// “应用”：配对入口、已装插件和应用商店。只渲染核心给出的 ViewModel。
@@ -21,6 +22,8 @@ struct HomeView: View {
     var devWebURL: URL?
     @Environment(\.wontonColors) private var colors
     @Environment(PagesModel.self) private var pages
+    @Environment(\.wontonOpenContent) private var openContent
+    @Environment(\.supportsMultipleWindows) private var supportsMultipleWindows
     @State private var openedDevPage = false
     @Binding var path: NavigationPath
     @State private var confirmation: PluginConfirmation?
@@ -97,22 +100,22 @@ struct HomeView: View {
             .padding(WontonTheme.spacing.pageInset)
         }
         .refreshable {
-            if plugins.viewModel.actions.contains(.store) { plugins.send(.refreshPlugins) }
-            plugins.send(.refreshSharedApps(ownerUserId: nil))
+            if plugins.viewModel.actions.contains(.store) { plugins.send(.plugins(action: .refreshPlugins)) }
+            plugins.send(.sharing(action: .refreshSharedApps(ownerUserId: nil)))
         }
         .task {
-            if plugins.viewModel.actions.contains(.store) { plugins.refresh(.refreshPlugins) }
-            plugins.send(.refreshSharedApps(ownerUserId: nil))
+            if plugins.viewModel.actions.contains(.store) { plugins.refresh(.plugins(action: .refreshPlugins)) }
+            plugins.send(.sharing(action: .refreshSharedApps(ownerUserId: nil)))
         }
 
     }
 
     @ViewBuilder private func installedPlugins(_ installed: InstalledPlugins) -> some View {
         if let problem = plugins.viewModel.problem {
-            ProblemRow(problem: problem.problem) { plugins.send(.refreshPlugins) }
+            ProblemRow(problem: problem.problem) { plugins.send(.plugins(action: .refreshPlugins)) }
         }
         if let check = installed.upgradeCheck {
-            ProblemRow(problem: check.problem) { plugins.send(.refreshPlugins) }
+            ProblemRow(problem: check.problem) { plugins.send(.plugins(action: .refreshPlugins)) }
         }
         if installed.plugins.isEmpty {
             NoPlugins { path.append(AppsRoute.store) }
@@ -163,9 +166,9 @@ struct HomeView: View {
     /// 还没取到已安装的插件：取不到的原因和下一步，或者正在取。
     @ViewBuilder private var placeholder: some View {
         if let problem = plugins.viewModel.problem {
-            ProblemView(problem: problem.problem) { plugins.send(.refreshPlugins) }
+            ProblemView(problem: problem.problem) { plugins.send(.plugins(action: .refreshPlugins)) }
         } else if let rejection = plugins.refreshRejection {
-            ProblemView(problem: rejection.problem) { plugins.send(.refreshPlugins) }
+            ProblemView(problem: rejection.problem) { plugins.send(.plugins(action: .refreshPlugins)) }
         } else {
             LoadingView()
         }
@@ -232,7 +235,7 @@ extension HomeView {
                 guard new == nil, let shown = old, case let .store(offer) = shown else { return }
                 let current = plugins.viewModel.confirmation
                 if current?.preview.id == offer.preview.id {
-                    plugins.send(.dismissStoreConfirmation)
+                    plugins.send(.plugins(action: .dismissStoreConfirmation))
                 }
             }
             .uninstallDialog($uninstalling, model: plugins)
@@ -259,21 +262,26 @@ extension HomeView {
         // 已加进“我的应用”的页给移出，没加的给加进。
         let mine = plugins.viewModel.sidebar.apps.compactMap(\.tab)
         for choice in plugin.tabChoices {
+            if supportsMultipleWindows, UIDevice.current.userInterfaceIdiom == .pad, let openContent {
+                let title = String(localized: .Sidebar.sidebarOpenWindow)
+                    + (plugin.tabChoices.count > 1 ? " · \(choice.title)" : "")
+                actions.append(WontonSheetAction(title: title, icon: .web) { openContent(.tab(tab: choice.tab)) })
+            }
             let added = mine.contains(choice.tab)
             let title = (added ? TabText.removeFromMyApps : TabText.addToMyApps)
                 + (plugin.tabChoices.count > 1 ? " · \(choice.title)" : "")
             actions.append(WontonSheetAction(title: title, icon: .apps) {
                 if added {
-                    pages.send(.removeMyApp(app: .page(tab: choice.tab)))
+                    pages.send(.pages(action: .removeMyApp(app: .page(tab: choice.tab))))
                 } else {
-                    pages.send(.addMyApp(app: .page(tab: choice.tab), title: nil, index: nil))
+                    pages.send(.pages(action: .addMyApp(app: .page(tab: choice.tab), title: nil, index: nil)))
                 }
             })
         }
         if let upgrade = plugin.upgrade {
             let title = String(localized: .Launcher.launcherUpgradeTo(upgrade.version))
             actions.append(WontonSheetAction(title: title, icon: .download) {
-                plugins.send(.upgradeNow(pluginId: plugin.id))
+                plugins.send(.plugins(action: .upgradeNow(pluginId: plugin.id)))
             })
         }
         if plugin.removable {

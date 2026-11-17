@@ -27,7 +27,7 @@ async fn newly_installed_apps_append_to_my_apps_and_the_switch_controls_it() {
 
     // 关掉开关后再装的只进“全部应用”。
     rig.tabs
-        .dispatch(Action::SetAutoAddApps { enabled: false })
+        .dispatch(PageAction::SetAutoAddApps { enabled: false })
         .unwrap();
     let mut third = plugins("old-content");
     let installed = third.installed.as_mut().unwrap();
@@ -57,10 +57,10 @@ async fn newly_installed_apps_append_to_my_apps_and_the_switch_controls_it() {
 
     // 用户移除过的：同样的列表再发布一次，不会因为“新装”回填。
     rig.tabs
-        .dispatch(Action::SetAutoAddApps { enabled: true })
+        .dispatch(PageAction::SetAutoAddApps { enabled: true })
         .unwrap();
     rig.tabs
-        .dispatch(Action::RemoveMyApp {
+        .dispatch(PageAction::RemoveMyApp {
             app: plugin_app("app.shared.notes"),
         })
         .unwrap();
@@ -162,7 +162,7 @@ async fn a_failed_install_is_hidden_until_a_successful_retry() {
     assert_eq!(rig.my_app_titles(), ["old-content"]);
 
     rig.tabs
-        .dispatch(Action::RemoveMyApp {
+        .dispatch(PageAction::RemoveMyApp {
             app: plugin_app("app.shared"),
         })
         .unwrap();
@@ -256,7 +256,7 @@ async fn link_plugins_open_in_the_system_browser_from_my_apps() {
 
     // 移除后能从候选再加回来，加出来的行还是外部浏览器。
     rig.tabs
-        .dispatch(Action::RemoveMyApp {
+        .dispatch(PageAction::RemoveMyApp {
             app: plugin_app("app.link"),
         })
         .unwrap();
@@ -267,7 +267,7 @@ async fn link_plugins_open_in_the_system_browser_from_my_apps() {
             .any(|candidate| candidate.tab == link_tab)
     );
     rig.tabs
-        .dispatch(Action::AddMyApp {
+        .dispatch(PageAction::AddMyApp {
             app: MyAppRef::Page { tab: link_tab },
             title: None,
             index: None,
@@ -294,7 +294,7 @@ async fn link_plugins_open_in_the_system_browser_from_my_apps() {
     rig.tabs.recompute();
     assert!(
         rig.tabs
-            .dispatch(Action::AddMyApp {
+            .dispatch(PageAction::AddMyApp {
                 app: plugin_app("app.offline"),
                 title: None,
                 index: None,

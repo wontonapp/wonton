@@ -35,6 +35,7 @@ import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.platform.LocalContext
+import androidx.compose.ui.platform.testTag
 import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.semantics.contentDescription
 import androidx.compose.ui.semantics.semantics
@@ -43,6 +44,7 @@ import androidx.compose.ui.text.input.KeyboardCapitalization
 import androidx.compose.ui.text.style.TextOverflow
 import app.wonton.client.ClientCore
 import app.wonton.protocol.Action
+import app.wonton.protocol.ChatAction
 import app.wonton.protocol.ChatAccount
 import app.wonton.protocol.ChatContact
 import app.wonton.protocol.ChatFailure
@@ -75,6 +77,7 @@ import app.wonton.ui.icons.Add
 import app.wonton.ui.icons.Close
 import app.wonton.ui.icons.Connection
 import app.wonton.ui.icons.LockFill
+import app.wonton.ui.icons.VoiceCallFill
 import app.wonton.ui.icons.WontonIcon
 import java.time.Instant
 import java.time.LocalDate
@@ -180,7 +183,7 @@ fun ChatRoute(
         }
     }
 
-    viewModel.problem?.let { ProblemDialog(it.problem) { onAction(Action.DismissChatProblem) } }
+    viewModel.problem?.let { ProblemDialog(it.problem) { onAction(Action.Chat(ChatAction.DismissChatProblem)) } }
     rejection?.let { ProblemDialog(it) { rejection = null } }
 }
 
@@ -396,6 +399,15 @@ private fun RoomItem(row: RoomRow, bot: BotView?, plugins: PluginsState, isSelec
                             tint = colors.textSecondary.toColor(),
                         )
                     }
+                    // 有人在通话（ADR-0096）。
+                    if (row.callActive) {
+                        Icon(
+                            WontonIcon.VoiceCallFill,
+                            contentDescription = stringResource(R.string.room_call_active),
+                            modifier = Modifier.size(WontonTheme.size.iconTiny).testTag("room-row-call-active"),
+                            tint = (if (isSelected) colors.accentInkOnFill else colors.success).toColor(),
+                        )
+                    }
                 }
                 row.preview?.let {
                     Text(
@@ -498,9 +510,13 @@ internal fun InviteItem(row: RoomRow, onAction: (Action) -> Unit) {
             color = WontonTheme.colors.textPrimary.toColor(),
         )
         Row(horizontalArrangement = Arrangement.spacedBy(WontonTheme.spacing.s8)) {
-            WontonButton(stringResource(R.string.chat_invite_accept), { onAction(Action.JoinRoom(row.roomId)) })
             WontonButton(
-                stringResource(R.string.chat_invite_decline), { onAction(Action.LeaveRoom(row.roomId)) },
+                stringResource(R.string.chat_invite_accept),
+                { onAction(Action.Chat(ChatAction.JoinRoom(row.roomId))) },
+            )
+            WontonButton(
+                stringResource(R.string.chat_invite_decline),
+                { onAction(Action.Chat(ChatAction.LeaveRoom(row.roomId))) },
                 kind = WontonButtonKind.SECONDARY,
             )
         }

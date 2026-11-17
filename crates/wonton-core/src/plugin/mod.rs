@@ -1,5 +1,6 @@
 //! 插件管理：解析 `x-wonton` 插件包、渲染部署计划、经 Docker API 安装和卸载。
 
+mod audience;
 mod bot_activity;
 mod bot_avatars;
 mod bot_intents;
@@ -14,6 +15,7 @@ mod bots_lifecycle;
 mod by_source;
 pub mod capabilities;
 pub mod check;
+pub(crate) mod check_element_call;
 pub(crate) mod clients_entry;
 mod clients_setup;
 pub mod compat;
@@ -25,12 +27,12 @@ pub mod core_address;
 #[cfg(test)]
 mod core_address_tests;
 pub(crate) mod dependencies;
+pub mod device;
 pub mod docker;
 pub mod docker_exec;
 mod docker_limits;
 pub mod egress;
 mod entry;
-pub mod family;
 pub mod gallery;
 pub mod github;
 pub mod github_source;
@@ -72,10 +74,12 @@ mod manager_options;
 pub mod manifest;
 mod manifest_agent;
 mod manifest_clients;
+mod manifest_device;
 mod manifest_gpu_images;
 mod manifest_mcp;
 mod manifest_oidc;
 mod manifest_permission;
+mod manifest_remote;
 mod manifest_static;
 mod manifest_tabs;
 pub(crate) mod manifest_widget;
@@ -84,7 +88,6 @@ pub mod matrix_rtc_ca;
 mod mcp_server;
 mod member_bots;
 pub(crate) mod model_health;
-pub(crate) mod model_providers;
 pub mod models;
 pub mod mounts;
 pub mod names;
@@ -148,10 +151,12 @@ mod vars;
 pub mod views;
 mod views_agent_logins;
 mod views_bots;
+mod views_devices;
 mod views_icons;
 mod views_permissions;
 mod views_source;
 mod watch;
+mod webui_health;
 pub mod written_by;
 
 #[cfg(test)]
@@ -160,7 +165,7 @@ pub(crate) mod fake_docker;
 pub(crate) mod tests;
 
 pub use manager::{Health, InstallError, PluginManager, PluginStatus, PluginView};
-pub use manifest::{Manifest, Permission, PluginId};
+pub use manifest::{Manifest, ManifestExt, Permission, PermissionExt, PluginId};
 pub(crate) use manifest_tabs::validate_path;
 pub use mcp_server::{McpServer, ToolLimits};
 pub use owner_secrets::{SecretValue, ViewableSecrets};

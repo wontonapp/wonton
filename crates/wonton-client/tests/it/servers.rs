@@ -43,7 +43,9 @@ async fn a_second_server_is_added_beside_the_first_and_both_are_kept() {
     let b = Home::start(&[phone.device_id()]).await;
     assert!(
         matches!(
-            phone.dispatch(Action::AddServer),
+            phone.dispatch(Action::Home {
+                action: wonton_protocol::HomeAction::AddServer
+            }),
             Err(CoreError::InvalidInput { .. })
         ),
         "还没配好第一台"
@@ -52,7 +54,11 @@ async fn a_second_server_is_added_beside_the_first_and_both_are_kept() {
     connected_to(&phone, &a).await;
     assert_eq!(phone.servers().servers, [row("1", 1, true)]);
 
-    phone.dispatch(Action::AddServer).unwrap();
+    phone
+        .dispatch(Action::Home {
+            action: wonton_protocol::HomeAction::AddServer,
+        })
+        .unwrap();
     wait_unpaired(&phone).await;
     assert!(phone.servers().adding);
     phone.connect(&b);
@@ -64,7 +70,9 @@ async fn a_second_server_is_added_beside_the_first_and_both_are_kept() {
     );
 
     phone
-        .dispatch(Action::SwitchServer { id: "1".into() })
+        .dispatch(Action::Home {
+            action: wonton_protocol::HomeAction::SwitchServer { id: "1".into() },
+        })
         .unwrap();
     connected_to(&phone, &a).await;
     drop(phone);
@@ -86,7 +94,11 @@ async fn the_current_servers_name_follows_renames() {
     phone.connect(&a);
     connected_to(&phone, &a).await;
     assert_eq!(server_name(&phone), None, "只有一台时不写名字");
-    phone.dispatch(Action::AddServer).unwrap();
+    phone
+        .dispatch(Action::Home {
+            action: wonton_protocol::HomeAction::AddServer,
+        })
+        .unwrap();
     wait_unpaired(&phone).await;
     phone.connect(&b);
     wait_servers(&phone, |servers| servers.servers.len() == 2).await;
@@ -96,9 +108,11 @@ async fn the_current_servers_name_follows_renames() {
     .await;
 
     phone
-        .dispatch(Action::RenameServer {
-            id: "2".into(),
-            name: " 办公室 ".into(),
+        .dispatch(Action::Home {
+            action: wonton_protocol::HomeAction::RenameServer {
+                id: "2".into(),
+                name: " 办公室 ".into(),
+            },
         })
         .unwrap();
     let renamed = ServerName::Named {
@@ -107,9 +121,11 @@ async fn the_current_servers_name_follows_renames() {
     assert_eq!(phone.servers().servers[1].name, renamed);
     wait_settings(&phone, |name| name == Some(&renamed)).await;
     for (id, name) in [("2", "  "), ("9", "别处")] {
-        let renamed = phone.dispatch(Action::RenameServer {
-            id: id.into(),
-            name: name.into(),
+        let renamed = phone.dispatch(Action::Home {
+            action: wonton_protocol::HomeAction::RenameServer {
+                id: id.into(),
+                name: name.into(),
+            },
         });
         assert!(
             matches!(renamed, Err(CoreError::InvalidInput { .. })),
@@ -131,10 +147,18 @@ async fn cancelling_an_add_returns_to_the_server_you_were_on() {
     phone.connect(&a);
     connected_to(&phone, &a).await;
 
-    phone.dispatch(Action::AddServer).unwrap();
+    phone
+        .dispatch(Action::Home {
+            action: wonton_protocol::HomeAction::AddServer,
+        })
+        .unwrap();
     wait_unpaired(&phone).await;
     assert!(dir.path().join("servers/2").exists());
-    phone.dispatch(Action::CancelAddServer).unwrap();
+    phone
+        .dispatch(Action::Home {
+            action: wonton_protocol::HomeAction::CancelAddServer,
+        })
+        .unwrap();
 
     connected_to(&phone, &a).await;
     let servers = phone.servers();
@@ -152,20 +176,28 @@ async fn removing_servers_deletes_their_data_and_the_last_one_returns_to_pairing
     let b = Home::start(&[phone.device_id()]).await;
     phone.connect(&a);
     connected_to(&phone, &a).await;
-    phone.dispatch(Action::AddServer).unwrap();
+    phone
+        .dispatch(Action::Home {
+            action: wonton_protocol::HomeAction::AddServer,
+        })
+        .unwrap();
     wait_unpaired(&phone).await;
     phone.connect(&b);
     wait_servers(&phone, |servers| servers.servers.len() == 2).await;
 
     phone
-        .dispatch(Action::RemoveServer { id: "2".into() })
+        .dispatch(Action::Home {
+            action: wonton_protocol::HomeAction::RemoveServer { id: "2".into() },
+        })
         .unwrap();
     connected_to(&phone, &a).await;
     assert_eq!(phone.servers().servers, [row("1", 1, true)]);
     assert!(!dir.path().join("servers/2").exists());
 
     phone
-        .dispatch(Action::RemoveServer { id: "1".into() })
+        .dispatch(Action::Home {
+            action: wonton_protocol::HomeAction::RemoveServer { id: "1".into() },
+        })
         .unwrap();
     wait_unpaired(&phone).await;
     assert!(phone.servers().servers.is_empty());
@@ -182,7 +214,11 @@ async fn pairing_the_same_server_again_replaces_its_old_place() {
     phone.connect(&a);
     connected_to(&phone, &a).await;
 
-    phone.dispatch(Action::AddServer).unwrap();
+    phone
+        .dispatch(Action::Home {
+            action: wonton_protocol::HomeAction::AddServer,
+        })
+        .unwrap();
     wait_unpaired(&phone).await;
     phone.connect(&a);
 
@@ -199,12 +235,18 @@ async fn pairing_the_same_server_again_replaces_its_old_place() {
     .await
     .expect("旧位置应删掉");
     phone
-        .dispatch(Action::RenameServer {
-            id: "2".into(),
-            name: "办公室".into(),
+        .dispatch(Action::Home {
+            action: wonton_protocol::HomeAction::RenameServer {
+                id: "2".into(),
+                name: "办公室".into(),
+            },
         })
         .unwrap();
-    phone.dispatch(Action::AddServer).unwrap();
+    phone
+        .dispatch(Action::Home {
+            action: wonton_protocol::HomeAction::AddServer,
+        })
+        .unwrap();
     wait_unpaired(&phone).await;
     phone.connect(&a);
     wait_servers(&phone, |servers| {

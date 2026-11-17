@@ -6,6 +6,7 @@ import androidx.compose.foundation.combinedClickable
 import androidx.compose.foundation.interaction.MutableInteractionSource
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
+import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.heightIn
@@ -34,6 +35,7 @@ import androidx.compose.ui.semantics.contentDescription
 import androidx.compose.ui.semantics.semantics
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
+import app.wonton.protocol.PageAction
 import app.wonton.protocol.Action
 import app.wonton.protocol.InstalledPlugin
 import app.wonton.protocol.MyAppRef
@@ -68,10 +70,16 @@ internal fun SidebarAppRow(
     // 长按菜单用的页面清单还在已安装列表里（核心只给点开的那一个）。
     val plugin = plugins.viewModel.installed?.plugins?.firstOrNull { it.id == app.pluginId }
     val choice = (app.open as? SidebarOpen.Page)?.tab
+    // 这两类行出门就交给系统浏览器：先在行上讲明，点开时不会以为是内嵌页面（ADR-0033、ADR-0080）。
+    // 条件照核心的 `browser::opens_in_browser` 抄（这边只有 Android，省掉引擎判断），改规则时两处一起改；
+    // `Page` 已限定为插件的网页页，BotChat 行点开是聊天、`ExternalBrowser` 本来就直开浏览器。
+    val inBrowser = app.open is SidebarOpen.ExternalBrowser ||
+        (app.open is SidebarOpen.Page && plugin?.crossOriginIsolated == true && plugin.webUrl != null)
     SidebarRow(
         title = app.title,
         selected = choice != null && choice == current,
         interactive = interactive,
+        subtitle = stringResource(R.string.sidebar_opens_in_browser).takeIf { inBrowser },
         badgeMark = SidebarAppBadge(app.badge.update, app.badge.problem, app.badge.stopped),
         onClick = {
             when (val open = app.open) {
@@ -97,7 +105,7 @@ private fun MyAppMenuItems(plugin: InstalledPlugin, pages: PagesState, onDismiss
                 text = { Text(stringResource(R.string.myapp_remove)) },
                 onClick = {
                     onDismiss()
-                    pages.send(Action.RemoveMyApp(MyAppRef.Page(choice.tab)))
+                    pages.send(Action.Pages(PageAction.RemoveMyApp(MyAppRef.Page(choice.tab))))
                 },
             )
         } else {
@@ -105,7 +113,7 @@ private fun MyAppMenuItems(plugin: InstalledPlugin, pages: PagesState, onDismiss
                 text = { Text(stringResource(R.string.myapp_add)) },
                 onClick = {
                     onDismiss()
-                    pages.send(Action.AddMyApp(MyAppRef.Page(choice.tab), null, null))
+                    pages.send(Action.Pages(PageAction.AddMyApp(MyAppRef.Page(choice.tab), null, null)))
                 },
             )
         }
@@ -122,6 +130,7 @@ internal fun SidebarRow(
     onClick: () -> Unit,
     icon: @Composable () -> Unit,
     modifier: Modifier = Modifier,
+    subtitle: String? = null,
     badge: Int = 0,
     dotOnly: Boolean = false,
     badgeMark: SidebarAppBadge? = null,
@@ -149,15 +158,24 @@ internal fun SidebarRow(
             horizontalArrangement = Arrangement.spacedBy(spacing.s12),
         ) {
             icon()
-            Text(
-                title,
-                Modifier.weight(1f),
-                style = WontonTheme.typography.body.copy(
-                    fontWeight = if (selected) FontWeight.SemiBold else FontWeight.Normal,
-                ),
-                color = colors.textPrimary.toColor(),
-                maxLines = 1,
-            )
+            Column(Modifier.weight(1f), verticalArrangement = Arrangement.spacedBy(2.dp)) {
+                Text(
+                    title,
+                    style = WontonTheme.typography.body.copy(
+                        fontWeight = if (selected) FontWeight.SemiBold else FontWeight.Normal,
+                    ),
+                    color = colors.textPrimary.toColor(),
+                    maxLines = 1,
+                )
+                subtitle?.let {
+                    Text(
+                        it,
+                        style = WontonTheme.typography.supporting,
+                        color = colors.textSecondary.toColor(),
+                        maxLines = 1,
+                    )
+                }
+            }
             badgeMark?.let { mark ->
                 Row(horizontalArrangement = Arrangement.spacedBy(4.dp)) {
                     if (mark.stopped) {

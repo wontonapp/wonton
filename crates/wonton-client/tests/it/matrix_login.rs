@@ -59,8 +59,10 @@ pub(super) async fn settled(core: &ClientCore) -> MatrixLoginViewModel {
 }
 
 pub(super) fn start(core: &ClientCore, homeserver: &str) {
-    core.dispatch(Action::StartMatrixLogin {
-        homeserver: Some(homeserver.to_owned()),
+    core.dispatch(Action::Home {
+        action: wonton_protocol::HomeAction::StartMatrixLogin {
+            homeserver: Some(homeserver.to_owned()),
+        },
     })
     .unwrap();
 }
@@ -77,12 +79,14 @@ pub(super) async fn slot_dir_gone(dir: &Path, slot: &str) {
 }
 
 fn password(login_id: &str, user_id: &str, password: &str) -> Action {
-    Action::SubmitMatrixPassword {
-        login: MatrixPasswordLogin {
-            login_id: login_id.to_owned(),
-            user_id: user_id.to_owned(),
-            password: SecretString::new(password),
-            device_name: "测试手机".to_owned(),
+    Action::Home {
+        action: wonton_protocol::HomeAction::SubmitMatrixPassword {
+            login: MatrixPasswordLogin {
+                login_id: login_id.to_owned(),
+                user_id: user_id.to_owned(),
+                password: SecretString::new(password),
+                device_name: "测试手机".to_owned(),
+            },
         },
     }
 }
@@ -222,8 +226,10 @@ async fn cancelling_a_login_keeps_the_slots_and_refuses_late_submissions() {
 
     start(&core, &server.url);
     let ready = settled(&core).await;
-    core.dispatch(Action::CancelMatrixLogin {
-        login_id: ready.login_id.clone(),
+    core.dispatch(Action::Home {
+        action: wonton_protocol::HomeAction::CancelMatrixLogin {
+            login_id: ready.login_id.clone(),
+        },
     })
     .unwrap();
     assert_eq!(
@@ -235,8 +241,10 @@ async fn cancelling_a_login_keeps_the_slots_and_refuses_late_submissions() {
         Err(CoreError::InvalidInput { .. })
     ));
     assert!(matches!(
-        core.dispatch(Action::CancelMatrixLogin {
-            login_id: "login-somebody-else".into()
+        core.dispatch(Action::Home {
+            action: wonton_protocol::HomeAction::CancelMatrixLogin {
+                login_id: "login-somebody-else".into(),
+            },
         }),
         Err(CoreError::InvalidInput { .. })
     ));

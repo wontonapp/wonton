@@ -24,7 +24,7 @@ use super::lifecycle::LifecycleConfig;
 use super::listed::Listed;
 #[cfg(test)]
 use super::manifest::Permission;
-use super::manifest::{LocalizedText, Manifest, PluginId};
+use super::manifest::{LocalizedText, Manifest, ManifestExt, PluginId};
 use super::mcp_server::{McpServer, ToolLimits};
 #[cfg(test)]
 use super::models::ModelsRoute;
@@ -43,7 +43,7 @@ use crate::matrix::Matrix;
 pub(super) mod busy;
 mod views;
 
-pub use views::{ClientsRoute, HostedRoute, PluginView, Route, StorageRoute};
+pub use views::{ClientsRoute, ClientsView, HostedRoute, PluginView, Route, StorageRoute};
 
 pub(super) use busy::{busy, detached};
 
@@ -104,10 +104,11 @@ pub struct PluginManager {
     pub(super) plugins: RwLock<BTreeMap<PluginId, Entry>>,
     pub(super) failed_installs: RwLock<BTreeMap<PluginId, super::install_failure::FailedInstall>>,
     pub(super) dependencies: super::dependencies::Dependencies,
+    pub(crate) client_passwords: Option<Arc<crate::clients::passwords::PasswordStore>>,
     /// 插件表每变一次加一：MCP 总线据此刷新工具列表（见 [`Self::changes`]）。
     changes: tokio::sync::watch::Sender<u64>,
-    pub(crate) clients: Arc<crate::clients::state::State>,
     pub(crate) activity: Arc<crate::bot_activity::BotActivity>,
+    pub(crate) clients: Arc<crate::clients::state::State>,
     /// 随核心附带的插件（预装目录里的插件包），见 [`super::preinstall`]。
     pub(super) bundled: RwLock<BTreeSet<PluginId>>,
     /// 局域网端口开在哪里，见 [`super::lan`]。
@@ -121,6 +122,8 @@ pub struct PluginManager {
     pub(super) upgrade_frozen: Option<tokio::sync::watch::Receiver<bool>>,
     /// 查到的新版本，见 [`super::upgrade`]。
     pub(super) upgrades: Upgrades,
+    /// 拔掉和插回的设备，见 [`super::device::watch`]。
+    pub(super) devices: super::device::watch::DeviceWatch,
     pub(super) oom: super::oom::OomRecords,
     pub(super) staged: StagedUploads,
     /// 写“每个人的语言”表时串行化：读改整份文件，两个人同时来不能互相盖掉。
@@ -175,7 +178,11 @@ impl PluginManager {
             Storefront::new(github.clone(), StoreConfig::default(), store.index_cache());
         let dependencies = super::dependencies::Dependencies::open(store.capabilities_path());
         let clients = Arc::new(crate::clients::state::State::new(&store));
+        let client_passwords = crate::clients::passwords::PasswordStore::open(&cfg.data_dir)
+            .map(Arc::new)
+            .ok();
         Self {
+            client_passwords,
             engine,
             store,
             http,
@@ -185,7 +192,7 @@ impl PluginManager {
             matrix_rtc_ca: None,
             mailpit: None,
             profiles: Default::default(),
-            host: HostPaths::new(host_dev),
+            host: HostPaths::new(host_dev, None),
             nvidia_memory: NvidiaMemory::default(),
             cfg,
             sources: Sources::default(),
@@ -209,6 +216,7 @@ impl PluginManager {
             upgrade_frozen: None,
             oom: Default::default(),
             upgrades: Upgrades::default(),
+            devices: Default::default(),
             staged: StagedUploads::default(),
             people_writes: std::sync::Mutex::new(()),
             sharing: std::sync::OnceLock::new(),
@@ -386,14 +394,17 @@ impl PluginManager {
             .is_some_and(|entry| entry.system)
     }
 
-    /// OIDC 客户端（ID 是插件的 `id`）在 `owner` 之外要发的组名（清单 `oidc.admin_groups`）。
-    /// 客户端没登记、没声明或已卸载时为空，只有 `owner`。
-    pub fn oidc_admin_groups(&self, client_id: &str) -> Vec<String> {
+    /// OIDC 客户端（ID 是插件的 `id`，Bot 的网页客户端按它的插件 ID 查）声明的管理员组和角色声明；
+    /// 插件没登记时返回空值。
+    pub fn oidc_identity_claims(
+        &self,
+        client_id: &str,
+    ) -> (Vec<String>, Option<super::manifest::RoleClaim>) {
         let identity = match self.bot_web_oidc_identity(client_id) {
             Ok(identity) => identity,
             Err(error) => {
                 tracing::warn!(%error, "Cannot read Bot OIDC identity");
-                return Vec::new();
+                return (Vec::new(), None);
             }
         };
         let Ok(id) = PluginId::parse(
@@ -401,7 +412,7 @@ impl PluginManager {
                 .as_ref()
                 .map_or(client_id, |bot| bot.plugin_id.as_str()),
         ) else {
-            return Vec::new();
+            return (Vec::new(), None);
         };
         self.plugins
             .read()
@@ -410,7 +421,7 @@ impl PluginManager {
             .and_then(|entry| entry.listed.as_ref())
             .and_then(|listed| listed.manifest.webui.as_ref())
             .and_then(|webui| webui.oidc.as_ref())
-            .map(|client| client.admin_groups.clone())
+            .map(|client| (client.admin_groups.clone(), client.role_claim.clone()))
             .unwrap_or_default()
     }
 

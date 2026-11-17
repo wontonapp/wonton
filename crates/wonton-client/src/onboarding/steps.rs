@@ -202,7 +202,7 @@ impl OnboardingLink {
                 OnboardingStep::Model
             }
             OnboardingStep::Model => {
-                if state.draft.model(state.providers.as_ref()).is_none() {
+                if state.draft.model(state.model_settings.as_ref()).is_none() {
                     return Err(invalid(&l10n!(
                         CATALOG,
                         language(),

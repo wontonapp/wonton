@@ -8,7 +8,6 @@ use tokio::time::Instant;
 use wonton_protocol::PluginRecoveryStage;
 
 use super::compose::DependCondition;
-use super::docker::NetworkReach;
 use super::health::{self, Target};
 use super::health_gate::Gate;
 use super::languages::Languages;
@@ -86,6 +85,35 @@ impl PluginManager {
     }
 
     pub(super) async fn start_with_gate(
+        &self,
+        id: &PluginId,
+        gate: Gate,
+        manual: bool,
+    ) -> Result<(PluginView, bool), InstallError> {
+        tracing::info!(plugin = %id, operation = "start", phase = "start", manual, "插件启动开始");
+        let result = self.start_with_gate_locked(id, gate, manual).await;
+        match &result {
+            Ok(_) => tracing::info!(
+                plugin = %id,
+                operation = "start",
+                phase = "finish",
+                result = "succeeded",
+                "插件启动完成"
+            ),
+            Err(error) => tracing::error!(
+                plugin = %id,
+                operation = "start",
+                phase = "finish",
+                result = "failed",
+                error_kind = error.kind(),
+                reason = %error,
+                "插件启动失败"
+            ),
+        }
+        result
+    }
+
+    async fn start_with_gate_locked(
         &self,
         id: &PluginId,
         gate: Gate,
@@ -249,6 +277,7 @@ impl PluginManager {
             .ok_or_else(|| InstallError::not_installed(langs, id))?;
         let mut package = PluginPackage::with_files(&record.source, record.files.clone(), langs)?;
         package.origin = record.origin.clone();
+        let devices = self.recovery_devices(&package.manifest, &record)?;
         self.start_dependency_providers(&package.manifest, langs, gate == Gate::StartPeriod)
             .await?;
         if super::install_hosted::is_containerless(&package.manifest) {
@@ -264,7 +293,7 @@ impl PluginManager {
         }
         let checked = self.check_containers(&package, langs).await?;
         // 有容器不在：先照安装的路径重建再启动（见本文件头），不看别的核对结果——重建会把它们一起修好。
-        let state = if replacement || checked.has_missing() {
+        let state = if replacement || checked.has_missing() || !devices.unavailable.is_empty() {
             ContainersState::Stopped
         } else {
             checked.ready(langs)?
@@ -295,7 +324,7 @@ impl PluginManager {
                     .await?;
                 true
             } else {
-                self.recreate_on_drift(&package, &record, langs, true, gate)
+                self.recreate_on_drift(&package, &record, langs, true, gate, false)
                     .await?
             };
             if !replaced {
@@ -304,7 +333,7 @@ impl PluginManager {
                     .await?;
             }
         } else if self.recovery_pending(id) {
-            self.recreate_on_drift(&package, &record, langs, true, gate)
+            self.recreate_on_drift(&package, &record, langs, true, gate, false)
                 .await?;
         }
         self.recovery_stage(id, PluginRecoveryStage::Reconciling)?;
@@ -314,7 +343,9 @@ impl PluginManager {
             .ok_or_else(|| {
                 InstallError::Unhealthy(l10n::text(langs, "plugin-install-resident-stopped", &[]))
             })?;
-        if let (Some(upstream), Some(webui)) = (&deployed.upstream, &package.manifest.webui) {
+        if let (Some(upstream), Some(webui)) = (&deployed.upstream, &package.manifest.webui)
+            && deployed.serving.contains(&webui.service)
+        {
             health::wait_webui(&self.http, upstream, &webui.path, deadline, langs).await?;
         }
         Ok(Started {
@@ -324,22 +355,9 @@ impl PluginManager {
         })
     }
 
-    /// 插件的网络不在（开发栈 down、Docker 数据丢了）就按安装的规格重建：核对只核对已存在的网络，
-    /// 少了它启动和核对都过不去。网络在但规格对不上时不动，由核对如实报冲突。出网插件的网络重建后
-    /// 要把出口容器接回去（安装时是这一步建的端点），不然插件起来了也出不了网。
+    /// 启动前把网络补齐（见 [`reconcile`] 的 `recreate_missing_network`）。
     async fn ensure_network(&self, manifest: &Manifest) -> Result<(), InstallError> {
-        let network = self.cfg.instance.network(&manifest.id.slug());
-        let reach = self.network_reach(manifest);
-        if self.engine.network_reach(&network).await?.is_none() {
-            self.engine
-                .create_network(&network, &self.cfg.instance.labels(&manifest.id), reach)
-                .await?;
-            tracing::info!(plugin = %manifest.id, %network, "插件的网络不在，按安装的规格重建");
-            if reach == NetworkReach::Egress {
-                self.attach_relay(&network).await?;
-            }
-        }
-        Ok(())
+        self.recreate_missing_network(manifest).await.map(|_| ())
     }
 
     /// 启动不重渲染计划：生效的 healthcheck（安装时把镜像自带的并了进去）在容器配置里，等待时限据此算。
@@ -392,6 +410,9 @@ impl PluginManager {
         let one_shot = package.one_shot_services();
         let bot_services = super::bot_services::bot_services(&package.manifest);
         let bots = self.bot_names(&package.manifest.id);
+        let blocked = self
+            .recovery_devices(&package.manifest, record)?
+            .blocked_services(package, langs)?;
         // 要启动的容器：Bot 服务的按 Bot 一组，其余全插件一份；启动顺序不变。
         let name_of = |service: &str, bot: Option<&str>| match bot {
             Some(bot) => self.cfg.instance.bot_container(&slug, service, bot),
@@ -399,7 +420,7 @@ impl PluginManager {
         };
         let mut group: Vec<(&str, Option<&str>)> = Vec::new();
         for service in &order {
-            if one_shot.contains(service.as_str()) {
+            if one_shot.contains(service.as_str()) || blocked.contains(service.as_str()) {
                 continue;
             }
             if bot_services.contains(service.as_str()) && !bots.is_empty() {
@@ -429,7 +450,8 @@ impl PluginManager {
                     (name_of(dependency, dep_bot), condition)
                 })
                 .collect();
-            health::wait_for_all(&self.engine, &self.http, &deps, deadline, langs).await?;
+            self.wait_dependencies(Some(&package.manifest), &deps, deadline, langs)
+                .await?;
             let name = name_of(service, *bot);
             self.engine.start_container(&name).await?;
         }

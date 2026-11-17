@@ -18,7 +18,7 @@ fn bot_pin(id: &str, tab: TabRef, attention: bool) -> wonton_protocol::BotPanelP
 async fn bot_pinned_pages_come_after_user_pages_and_count_toward_the_limit() {
     let rig = Rig::new();
     rig.tabs
-        .dispatch(Action::AddPanelPage {
+        .dispatch(PageAction::AddPanelPage {
             scope: main_scope(),
             tab: page_tab(),
         })
@@ -44,7 +44,7 @@ async fn bot_pinned_pages_come_after_user_pages_and_count_toward_the_limit() {
     assert!(!view.panel[1].movable);
     assert!(view.panel[1].attention);
     rig.tabs
-        .dispatch(Action::MovePanelPage {
+        .dispatch(PageAction::MovePanelPage {
             scope: main_scope(),
             tab: url_tab("https://example.com/bot-3"),
             index: 0,
@@ -52,14 +52,14 @@ async fn bot_pinned_pages_come_after_user_pages_and_count_toward_the_limit() {
         .unwrap();
 
     rig.tabs
-        .dispatch(Action::AddPanelPage {
+        .dispatch(PageAction::AddPanelPage {
             scope: main_scope(),
             tab: url_tab("https://example.com/fifth"),
         })
         .unwrap();
     let sixth = rig
         .tabs
-        .dispatch(Action::AddPanelPage {
+        .dispatch(PageAction::AddPanelPage {
             scope: main_scope(),
             tab: url_tab("https://example.com/sixth"),
         })
@@ -67,7 +67,7 @@ async fn bot_pinned_pages_come_after_user_pages_and_count_toward_the_limit() {
     assert!(matches!(sixth, CoreError::InvalidInput { .. }));
 
     rig.tabs
-        .dispatch(Action::SelectPanelPage {
+        .dispatch(PageAction::SelectPanelPage {
             scope: main_scope(),
             tab: url_tab("https://example.com/bot-3"),
         })

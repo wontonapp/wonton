@@ -16,7 +16,7 @@ use wonton_tunnel::pair::{
 };
 use wonton_tunnel::{Allowlist, TunnelError, TunnelServer};
 
-use crate::support::{Timeouts, loopback_endpoint};
+use crate::support::{Timeouts, capture_logs, isolated_log_test, loopback_endpoint};
 
 /// 只认一个密钥，记下谁来配过。
 #[derive(Debug)]
@@ -177,5 +177,199 @@ async fn a_rejection_the_device_already_received_survives_the_server_closing_fir
         ),
         "{reply:?}"
     );
+    router.shutdown().await.unwrap();
+}
+
+#[derive(Debug)]
+struct ObservedPairServer {
+    inner: PairProtocol<OneCode>,
+    entered: Mutex<Option<tokio::sync::oneshot::Sender<()>>>,
+}
+
+impl ProtocolHandler for ObservedPairServer {
+    async fn accept(&self, conn: Connection) -> Result<(), AcceptError> {
+        if let Some(entered) = self.entered.lock().unwrap().take() {
+            let _ = entered.send(());
+        }
+        self.inner.accept(conn).await
+    }
+}
+
+#[tokio::test]
+async fn pairing_server_log_omits_client_close_reason() {
+    const CANARY: &str = "synthetic-pair-close-707";
+    if isolated_log_test("pairing::pairing_server_log_omits_client_close_reason") {
+        return;
+    }
+    let logs = capture_logs("wonton_tunnel::pair::server=debug");
+    let server = loopback_endpoint(SecretKey::generate(), 0, Timeouts::Default).await;
+    let phone = loopback_endpoint(SecretKey::generate(), 0, Timeouts::Default).await;
+    let handler = Arc::new(OneCode {
+        secret: PairingSecret::from_bytes([7; SECRET_LEN]),
+        paired: Mutex::new(Vec::new()),
+    });
+    let (entered, ready) = tokio::sync::oneshot::channel();
+    let router = Router::builder(server.clone())
+        .accept(
+            PAIR_ALPN,
+            ObservedPairServer {
+                inner: PairProtocol::new(handler),
+                entered: Mutex::new(Some(entered)),
+            },
+        )
+        .spawn();
+    let conn = tokio::time::timeout(
+        Duration::from_secs(15),
+        phone.connect(server.addr(), PAIR_ALPN),
+    )
+    .await
+    .unwrap()
+    .unwrap();
+    tokio::time::timeout(Duration::from_secs(15), ready)
+        .await
+        .unwrap()
+        .unwrap();
+    conn.close(VarInt::from_u32(42), CANARY.as_bytes());
+    tokio::time::timeout(
+        Duration::from_secs(15),
+        logs.wait_for("pairing request not completed"),
+    )
+    .await
+    .unwrap();
+    let text = logs.text();
+    phone.close().await;
+    router.shutdown().await.unwrap();
+    assert!(text.contains("opening the pairing stream failed"));
+    assert!(
+        !text.contains(CANARY),
+        "pairing client close reason leaked into server log"
+    );
+}
+
+#[derive(Debug)]
+struct CloseIncomplete {
+    reason: &'static str,
+    attempts: Arc<std::sync::atomic::AtomicUsize>,
+}
+
+impl ProtocolHandler for CloseIncomplete {
+    async fn accept(&self, conn: Connection) -> Result<(), AcceptError> {
+        let (_send, mut recv) = conn.accept_bi().await.unwrap();
+        recv.read_to_end(MAX_MESSAGE_LEN).await.unwrap();
+        self.attempts
+            .fetch_add(1, std::sync::atomic::Ordering::SeqCst);
+        conn.close(VarInt::from_u32(42), self.reason.as_bytes());
+        Ok(())
+    }
+}
+
+#[tokio::test]
+async fn incomplete_pairing_close_reason_is_not_logged() {
+    const SECRET: &str = "07070707070707070707070707070707";
+    if isolated_log_test("pairing::incomplete_pairing_close_reason_is_not_logged") {
+        return;
+    }
+    let logs = capture_logs("wonton_tunnel=debug");
+    let server = loopback_endpoint(SecretKey::generate(), 0, Timeouts::Default).await;
+    let phone = loopback_endpoint(SecretKey::generate(), 0, Timeouts::Default).await;
+    let attempts = Arc::new(std::sync::atomic::AtomicUsize::new(0));
+    let router = Router::builder(server.clone())
+        .accept(
+            PAIR_ALPN,
+            CloseIncomplete {
+                reason: SECRET,
+                attempts: attempts.clone(),
+            },
+        )
+        .spawn();
+    let code = code_for(&server, PairingSecret::from_bytes([7; SECRET_LEN]));
+
+    let error = tokio::time::timeout(Duration::from_secs(15), pair(&phone, &code, "phone"))
+        .await
+        .unwrap()
+        .unwrap_err();
+    assert_eq!(attempts.load(std::sync::atomic::Ordering::SeqCst), 2);
+    assert_eq!(error.code(), "transport-unavailable");
+    assert!(
+        error.to_string().contains(SECRET),
+        "the returned error must remain unchanged: {error}"
+    );
+    let text = logs.text();
+    assert!(
+        text.contains("pairing lost the connection before the reply"),
+        "{text}"
+    );
+    assert!(text.contains("transport-unavailable"), "{text}");
+    assert!(!text.contains(SECRET), "{text}");
+    phone.close().await;
+    router.shutdown().await.unwrap();
+}
+
+#[derive(Debug)]
+struct CloseEstablished {
+    close: Mutex<Option<tokio::sync::oneshot::Receiver<()>>>,
+}
+
+impl ProtocolHandler for CloseEstablished {
+    async fn accept(&self, conn: Connection) -> Result<(), AcceptError> {
+        let (mut send, mut recv) = conn.accept_bi().await.unwrap();
+        let request = recv.read_to_end(16).await.unwrap();
+        assert_eq!(request, [wonton_tunnel::wire::Request::Ping as u8]);
+        send.write_all(&[wonton_tunnel::wire::Status::Ok as u8])
+            .await
+            .unwrap();
+        send.finish().unwrap();
+        let close = self.close.lock().unwrap().take().unwrap();
+        close.await.unwrap();
+        conn.close(VarInt::from_u32(42), b"synthetic-relay-token-707");
+        Ok(())
+    }
+}
+
+#[tokio::test]
+async fn established_tunnel_close_reason_is_not_logged() {
+    const SECRET: &str = "synthetic-relay-token-707";
+    if isolated_log_test("pairing::established_tunnel_close_reason_is_not_logged") {
+        return;
+    }
+    let logs = capture_logs("wonton_tunnel=debug");
+    let server = loopback_endpoint(SecretKey::generate(), 0, Timeouts::Default).await;
+    let phone = loopback_endpoint(SecretKey::generate(), 0, Timeouts::Default).await;
+    let (close_tx, close_rx) = tokio::sync::oneshot::channel();
+    let router = Router::builder(server.clone())
+        .accept(
+            wonton_tunnel::wire::ALPN,
+            CloseEstablished {
+                close: Mutex::new(Some(close_rx)),
+            },
+        )
+        .spawn();
+    let client = wonton_tunnel::TunnelClient::new(phone, server.addr());
+    let mut status = client.watch_status();
+
+    client.ping().await.unwrap();
+    assert_eq!(client.status(), wonton_tunnel::TunnelStatus::Connected);
+    close_tx.send(()).unwrap();
+    let status = tokio::time::timeout(
+        Duration::from_secs(15),
+        status.wait_for(|status| matches!(status, wonton_tunnel::TunnelStatus::Disconnected(_))),
+    )
+    .await
+    .unwrap()
+    .unwrap()
+    .clone();
+    let wonton_tunnel::TunnelStatus::Disconnected(error) = status else {
+        unreachable!()
+    };
+    assert_eq!(error.code(), "transport-unavailable");
+    assert!(
+        error.to_string().contains(SECRET),
+        "the status error must remain unchanged: {error}"
+    );
+    let text = logs.text();
+    assert!(text.contains("隧道连接已断开"), "{text}");
+    assert!(text.contains("transport-unavailable"), "{text}");
+    assert!(!text.contains(SECRET), "{text}");
+    client.close();
     router.shutdown().await.unwrap();
 }

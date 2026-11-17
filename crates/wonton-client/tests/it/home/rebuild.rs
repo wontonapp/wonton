@@ -23,13 +23,17 @@ async fn a_dead_server_never_rebuilds_the_endpoint() {
     let mut home = Home::start(&[phone.device_id()]).await;
     let (_relay_map, relay_url, _relay) = run_relay_server().await.unwrap();
     phone
-        .dispatch(Action::ConnectHome {
-            ticket: ticket_with_relay(&home, &relay_url),
+        .dispatch(Action::Home {
+            action: wonton_protocol::HomeAction::ConnectHome {
+                ticket: ticket_with_relay(&home, &relay_url),
+            },
         })
         .unwrap();
     phone
-        .dispatch(Action::NetworkChanged {
-            network: DeviceNetwork::Wifi,
+        .dispatch(Action::Home {
+            action: wonton_protocol::HomeAction::NetworkChanged {
+                network: DeviceNetwork::Wifi,
+            },
         })
         .unwrap();
     let first = phone
@@ -63,13 +67,17 @@ async fn a_dead_local_endpoint_is_rebuilt_when_the_relays_are_gone_and_the_netwo
     let home = Home::start(&[phone.device_id()]).await;
     let (_relay_map, relay_url, _relay) = run_relay_server().await.unwrap();
     phone
-        .dispatch(Action::ConnectHome {
-            ticket: ticket_with_relay(&home, &relay_url),
+        .dispatch(Action::Home {
+            action: wonton_protocol::HomeAction::ConnectHome {
+                ticket: ticket_with_relay(&home, &relay_url),
+            },
         })
         .unwrap();
     phone
-        .dispatch(Action::NetworkChanged {
-            network: DeviceNetwork::Wifi,
+        .dispatch(Action::Home {
+            action: wonton_protocol::HomeAction::NetworkChanged {
+                network: DeviceNetwork::Wifi,
+            },
         })
         .unwrap();
     let first = phone

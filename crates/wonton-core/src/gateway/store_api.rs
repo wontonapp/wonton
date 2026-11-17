@@ -20,6 +20,7 @@ use wonton_protocol::AddSourceRequest;
 
 use super::Gateway;
 use super::api::{install_error, invalid_body, languages, requester};
+use super::install_gates;
 use super::permissions;
 use wonton_protocol::PermissionItem;
 
@@ -41,10 +42,19 @@ pub async fn store(
         return denied;
     }
     drop(gateway.plugins.spawn_upgrade_check(query.refresh));
-    let listing = gateway
+    let person = match requester(&gateway, peer, &headers) {
+        Ok(person) => person,
+        Err(response) => return *response,
+    };
+    let mut listing = gateway
         .plugins
         .store_listing(&languages(&headers), query.refresh)
         .await;
+    for section in [&mut listing.official, &mut listing.community] {
+        for item in &mut section.plugins {
+            install_gates::project_store(&gateway, &person, item);
+        }
+    }
     Json(listing).into_response()
 }
 
@@ -74,9 +84,11 @@ pub async fn store_plugin(
         .await
     {
         Ok(mut detail) => {
+            let id = detail.id.clone();
             if !person.is_owner() {
                 detail.scope = None;
             }
+            install_gates::project_detail(&gateway, &person, &id, &mut detail);
             Json(detail).into_response()
         }
         Err(e) => install_error(&e),

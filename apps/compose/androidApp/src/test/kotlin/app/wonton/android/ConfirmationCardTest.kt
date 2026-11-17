@@ -22,6 +22,7 @@ import androidx.test.core.app.ApplicationProvider
 import androidx.test.ext.junit.runners.AndroidJUnit4
 import app.wonton.protocol.Action
 import app.wonton.protocol.Answer
+import app.wonton.protocol.ChatAction
 import app.wonton.protocol.CardAudience
 import app.wonton.protocol.CardChoice
 import app.wonton.protocol.ConfirmationCard
@@ -73,6 +74,8 @@ class ConfirmationCardTest {
             origin = null,
             audience = CardAudience.KEEPER,
             answeredBy = null,
+            permissions = emptyList(),
+            devices = emptyList(),
         ),
         sending = null,
         sendingChoiceId = null,
@@ -117,7 +120,13 @@ class ConfirmationCardTest {
         compose.onNodeWithText(arguments, substring = true).assertDoesNotExist()
         compose.onNodeWithText("Continue").performClick()
         assertEquals(
-            listOf(Action.AnswerConfirmation("first", Answer.APPROVE, "approve-once", emptyMap(), emptyMap())),
+            listOf(
+                Action.Chat(
+                    ChatAction.AnswerConfirmation(
+                        "first", Answer.APPROVE, "approve-once", emptyMap(), emptyMap(), emptyList(),
+                    ),
+                ),
+            ),
             actions,
         )
     }

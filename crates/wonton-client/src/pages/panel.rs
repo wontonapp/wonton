@@ -13,7 +13,7 @@ impl PagesLink {
         tab: TabRef,
         title: Option<String>,
     ) -> Result<(), CoreError> {
-        let (plugins, _, _, _) = self.inputs();
+        let (plugins, _, _) = self.inputs();
         {
             let state = lock(&self.state);
             let entries = panel_entries(&state, &scope)?;
@@ -204,7 +204,10 @@ impl PagesLink {
             }
             match scope {
                 PanelScope::Main => state.panel_selected = Some(tab),
-                PanelScope::Room { .. } => state.room_panel_selected = Some(tab),
+                PanelScope::Room { ref room_id } => {
+                    let room = state.rooms.get_mut(room_id).ok_or_else(not_in_panel)?;
+                    room.selected = Some(tab);
+                }
             }
             Ok(())
         })?;
@@ -234,7 +237,7 @@ impl PagesLink {
         title: Option<String>,
         to: PinTarget,
     ) -> Result<(), CoreError> {
-        let (plugins, _, _, _) = self.inputs();
+        let (plugins, _, _) = self.inputs();
         let (tab, default_title) = classify_pin_for_state(url, &plugins, &lock(&self.state))?;
         let title = title.or(default_title);
         match to {
@@ -258,10 +261,8 @@ impl PagesLink {
         blocked: bool,
     ) -> Result<(), CoreError> {
         self.runtime_change(|state, _| {
-            if let Some((open, _)) = &state.open_room
-                && open.as_str() == room_id
-            {
-                state.entry_blocked = blocked;
+            if let Some(room) = state.rooms.get_mut(room_id) {
+                room.blocked = blocked;
             }
             Ok(())
         })
@@ -286,7 +287,12 @@ impl PagesLink {
         let Ok(room_id) = room_id.parse::<OwnedRoomId>() else {
             return Err(invalid(&l10n!(CATALOG, language(), "panel-room-unknown")));
         };
-        let sender = self.room_panel.0.clone();
+        let view = lock(&self.state)
+            .rooms
+            .get(room_id.as_str())
+            .map(|room| room.view.clone())
+            .ok_or_else(not_in_panel)?;
+        let weak = lock(&self.weak).clone();
         let sync_problem = self.sync_problem.clone();
         self.runtime.spawn(async move {
             let written = session
@@ -304,8 +310,10 @@ impl PagesLink {
             match written {
                 Ok(content) => {
                     sync_problem.send_replace(None);
-                    if let Ok(panel) = serde_json::from_value::<RoomPanel>(content.0.into()) {
-                        publish_written_panel(&sender, &room_id, panel);
+                    if let Ok(panel) = serde_json::from_value::<RoomPanel>(content.0.into())
+                        && let Some(link) = weak.upgrade()
+                    {
+                        let _ = link.receive_room_panel(&room_id, panel, &view);
                     }
                 }
                 Err(error) => {
@@ -318,11 +326,7 @@ impl PagesLink {
 
     pub(super) fn assert_room_open(&self, room_id: &str) -> Result<(), CoreError> {
         let state = lock(&self.state);
-        if state
-            .open_room
-            .as_ref()
-            .is_some_and(|(open, _)| open.as_str() == room_id)
-        {
+        if state.rooms.contains_key(room_id) {
             return Ok(());
         }
         Err(invalid(&l10n!(CATALOG, language(), "panel-room-not-open")))
@@ -359,24 +363,6 @@ impl PagesLink {
     }
 }
 
-fn publish_written_panel(
-    sender: &watch::Sender<Option<(OwnedRoomId, RoomPanel)>>,
-    room_id: &OwnedRoomId,
-    panel: RoomPanel,
-) {
-    // 写入仍要完成，但不能把已经离开的房间重新设成打开状态。
-    sender.send_if_modified(|current| {
-        let Some((open, current_panel)) = current else {
-            return false;
-        };
-        if open != room_id {
-            return false;
-        }
-        *current_panel = panel;
-        true
-    });
-}
-
 #[cfg(test)]
 #[path = "panel_writeback_tests.rs"]
 mod panel_writeback_tests;
@@ -388,10 +374,9 @@ fn panel_entries<'a>(
     match scope {
         PanelScope::Main => Ok(&state.config.panel),
         PanelScope::Room { room_id } => state
-            .open_room
-            .as_ref()
-            .filter(|(open, _)| open.as_str() == room_id)
-            .map(|(_, panel)| &panel.pages)
+            .rooms
+            .get(room_id)
+            .map(|room| &room.panel.pages)
             .ok_or_else(not_in_panel),
     }
 }

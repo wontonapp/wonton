@@ -5,8 +5,9 @@ use serde::{Deserialize, Serialize};
 use super::WidgetCapability;
 use super::{
     ConsumerCapabilitySetting, InstalledPlugin, LanWebuiOffer, MissingCapability, PermissionLine,
-    PluginAuthor, PluginIcon, PluginImage, PluginKind, PluginLimits, PluginRuntime, PluginScope,
-    PluginTrust, RequirementLine, SecretInputState, SecurityTier, hint,
+    PluginAuthor, PluginGrantedDevice, PluginIcon, PluginImage, PluginKind, PluginLimits,
+    PluginProblem, PluginRuntime, PluginScope, PluginTrust, RemoteMcpDetail, RequirementLine,
+    SecretInputState, SecurityTier, hint,
 };
 use crate::{CardLine, PluginShares};
 
@@ -35,9 +36,21 @@ pub struct PluginDetail {
     /// `runtime` 是 [`PluginRuntime::Link`] 时的网页地址，壳原样交给系统的 App 内浏览器；其他形态为空。
     #[serde(default)]
     pub link_url: Option<String>,
-    /// 只有主人能看到的安装范围；家人或未安装时为空。
+    /// `runtime: remote_mcp` 的远端服务器和授权状态（ADR-0066）；其他形态为空。
+    #[serde(default)]
+    #[cfg_attr(feature = "uniffi", uniffi(default = None))]
+    pub remote: Option<RemoteMcpDetail>,
+    /// 装卸权限是 Allow 时可见的安装范围。
     #[serde(default)]
     pub scope: Option<PluginScope>,
+    /// 主人可修改的角色开放范围；其他人只收到风险类别，不收到角色列表。
+    #[serde(default)]
+    pub audience: Option<crate::PluginAudienceView>,
+    /// 这个人能否直接安装；要管理员批时为 false。
+    #[serde(default)]
+    pub installable: bool,
+    #[serde(default)]
+    pub install_gate: crate::Gate,
     /// 详情说的版本。
     pub version: String,
     pub trust: PluginTrust,
@@ -89,6 +102,12 @@ pub struct PluginDetail {
     /// 能力都接上了）时是空列表。
     #[serde(default)]
     pub hints: Vec<hint::PluginHint>,
+    /// 装着的插件现在的问题，壳按类别提示主人下一步（目前是选中的设备不在了，ADR-0036）；状态照常，没有时为空。
+    #[serde(default)]
+    pub problems: Vec<PluginProblem>,
+    /// 持久安装记录中已授权的宿主设备；串口、硬盘逐项列出，USB 整类一项，未授权或未安装时为空。
+    #[serde(default)]
+    pub devices: Vec<PluginGrantedDevice>,
     /// 缺的 `requires` 能力（ADR-0053）：`providers` 列索引里能提供它的插件；没有的装不上。
     #[serde(default)]
     pub missing_requires: Vec<MissingCapability>,

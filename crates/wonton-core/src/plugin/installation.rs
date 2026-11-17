@@ -13,7 +13,7 @@ use crate::plugin::lan::webui::switched;
 use crate::plugin::languages::Languages;
 use crate::plugin::lifecycle::Undo;
 use crate::plugin::listed::Listed;
-use crate::plugin::manifest::{Manifest, Permission, PluginId};
+use crate::plugin::manifest::{Manifest, ManifestExt, Permission, PluginId};
 use crate::plugin::models::ProviderState;
 use crate::plugin::package::PluginPackage;
 use crate::plugin::render::dry_run;
@@ -25,16 +25,61 @@ pub(in crate::plugin) struct InstallDecision {
     pub enabled: Vec<EnabledPermission>,
     pub lan_webui: bool,
     pub targets: Option<BTreeMap<String, String>>,
+    /// 主人选的设备（ADR-0036）。
+    pub devices: Vec<String>,
 }
 
 impl PluginManager {
     /// 检查并部署，API 安装和预装（见 [`super::preinstall`]）共用。
+    // 装插件要的几样各管各的来源，打包反而看不清哪来的（同 deploy_retained）。
+    #[allow(clippy::too_many_arguments)]
     pub(super) async fn install_checked(
         &self,
         package: PluginPackage,
         granted: &[Permission],
         enabled: &[EnabledPermission],
         lan_webui: bool,
+        devices: &[String],
+        settings: std::collections::BTreeMap<String, serde_json::Value>,
+        langs: &Languages,
+    ) -> Result<PluginView, InstallError> {
+        let id = package.manifest.id.clone();
+        tracing::info!(plugin = %id, operation = "install", phase = "start", "插件安装开始");
+        let result = self
+            .install_checked_guarded(
+                package, granted, enabled, lan_webui, devices, settings, langs,
+            )
+            .await;
+        match &result {
+            Ok(_) => tracing::info!(
+                plugin = %id,
+                operation = "install",
+                phase = "finish",
+                result = "succeeded",
+                "插件安装完成"
+            ),
+            Err(error) => tracing::error!(
+                plugin = %id,
+                operation = "install",
+                phase = "finish",
+                result = "failed",
+                error_kind = error.kind(),
+                reason = %error,
+                "插件安装失败"
+            ),
+        }
+        result
+    }
+
+    // 装决策的完整输入（包、权限、网络、设备、设置、语言）一起进守卫，拆了反而要再造中间结构。
+    #[allow(clippy::too_many_arguments)]
+    async fn install_checked_guarded(
+        &self,
+        package: PluginPackage,
+        granted: &[Permission],
+        enabled: &[EnabledPermission],
+        lan_webui: bool,
+        devices: &[String],
         settings: std::collections::BTreeMap<String, serde_json::Value>,
         langs: &Languages,
     ) -> Result<PluginView, InstallError> {
@@ -49,6 +94,7 @@ impl PluginManager {
             enabled: enabled.to_vec(),
             lan_webui,
             targets: None,
+            devices: devices.to_vec(),
         };
         let manifest = decision.package.manifest.clone();
         // 保持 install 子树的 future 状态机在堆上：默认 2 MiB 测试线程栈装不下整条线性 await 链
@@ -106,6 +152,7 @@ impl PluginManager {
             enabled,
             lan_webui,
             targets,
+            devices: chosen_devices,
         } = decision;
         let manifest = &package.manifest;
         super::install_entry::check_runtime(manifest, langs)?;
@@ -124,6 +171,8 @@ impl PluginManager {
         self.check_egress(manifest, langs).await?;
         let effective = manifest.effective_permissions(&super::store::permission_set(enabled));
         let gpu = self.gpu_grant(manifest, &effective, langs).await?;
+        let (devices, device_record) =
+            self.resolve_devices(manifest, &effective, chosen_devices, langs)?;
         let lan_webui = *lan_webui && switched(package).is_some();
         let lan = self.lan_grant(package, lan_webui, langs).await?;
         self.reserve(
@@ -148,7 +197,19 @@ impl PluginManager {
             return Err(error);
         }
         match self
-            .deploy_retained(package, granted, enabled, (gpu, lan), settings, langs)
+            .deploy_retained(
+                package,
+                granted,
+                enabled,
+                super::lifecycle::Grants {
+                    gpu,
+                    lan,
+                    devices,
+                    device_record,
+                },
+                settings,
+                langs,
+            )
             .await
         {
             Ok((deployed, undo)) => {
@@ -415,7 +476,7 @@ impl PluginManager {
         }
         drop(_changing);
         self.changed();
-        tracing::info!(plugin = %id, purge, "开始卸载插件");
+        tracing::info!(plugin = %id, operation = "uninstall", phase = "start", purge, "插件卸载开始");
         let removed = async {
             self.revoke_dependency_keys(id, langs).await?;
             self.teardown(id, purge, langs).await
@@ -430,10 +491,27 @@ impl PluginManager {
                 self.remove_capability_records(id, removing, approve_connections, langs)
                     .await?;
                 self.changed();
-                tracing::info!(plugin = %id, "插件已卸载");
+                tracing::info!(
+                    plugin = %id,
+                    operation = "uninstall",
+                    phase = "finish",
+                    result = "succeeded",
+                    purge,
+                    "插件卸载完成"
+                );
                 Ok(report)
             }
             Err(e) => {
+                tracing::error!(
+                    plugin = %id,
+                    operation = "uninstall",
+                    phase = "finish",
+                    result = "failed",
+                    purge,
+                    error_kind = e.kind(),
+                    reason = %e,
+                    "插件卸载未完成"
+                );
                 let reason = l10n::text(
                     langs,
                     "plugin-install-uninstall-unfinished",

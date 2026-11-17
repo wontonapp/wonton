@@ -63,9 +63,9 @@ type DelayedCanned = VecDeque<(Canned, Duration)>;
 pub struct CoreState {
     /// 依次给出的已安装列表，最后一份一直用下去。
     lists: Mutex<VecDeque<Vec<InstalledPlugin>>>,
-    /// 假核心保存的引导状态和服务商列表。
+    /// 假核心保存的引导状态和模型设置。
     onboarding: Mutex<Option<serde_json::Value>>,
-    providers: Mutex<Option<serde_json::Value>>,
+    model_settings: Mutex<Option<serde_json::Value>>,
     /// 假核心保存的资料；为空时是还没填的。
     owner: Mutex<Option<serde_json::Value>>,
     /// 某个方法和路径依次给出的回应：App 还会向核心要 Matrix 登录令牌，预设的回应不能让别的请求用掉。
@@ -131,11 +131,13 @@ impl CoreState {
     }
 
     /// 让这个请求一直等，直到 [`Self::release`]。
-    pub fn hold(&self, method: Method, path: &str) {
+    pub fn hold(&self, method: Method, path: &str) -> Arc<watch::Sender<bool>> {
+        let held = Arc::new(watch::channel(true).0);
         self.holds
             .lock()
             .unwrap()
-            .insert((method, path.to_owned()), Arc::new(watch::channel(true).0));
+            .insert((method, path.to_owned()), held.clone());
+        held
     }
 
     pub fn release(&self, method: Method, path: &str) {
@@ -166,8 +168,8 @@ impl CoreState {
         *self.owner.lock().unwrap() = Some(owner_json(name, email));
     }
 
-    pub fn set_providers(&self, providers: serde_json::Value) {
-        *self.providers.lock().unwrap() = Some(providers);
+    pub fn set_model_settings(&self, model_settings: serde_json::Value) {
+        *self.model_settings.lock().unwrap() = Some(model_settings);
     }
 
     pub fn all_seen(&self) -> Vec<Seen> {
@@ -386,10 +388,10 @@ async fn onboarding_routes(
             _ => core_error_response(405),
         });
     }
-    if path == "/_wonton/api/models/providers" {
+    if path == "/_wonton/api/models/settings" {
         return Some(match *method {
             Method::GET => core
-                .providers
+                .model_settings
                 .lock()
                 .unwrap()
                 .clone()
@@ -408,27 +410,6 @@ async fn onboarding_routes(
             value["email"] = update.get("email").cloned().unwrap_or_default();
         }
         return Some(json_value(value.clone()));
-    }
-    // 只测不存。
-    if path.starts_with("/_wonton/api/models/") && path.ends_with("/test") {
-        return Some(StatusCode::OK.into_response());
-    }
-    if path == "/_wonton/api/models/custom-provider" && method == Method::PUT {
-        return Some(StatusCode::OK.into_response());
-    }
-    if path.starts_with("/_wonton/api/models/providers/") && method == Method::PUT {
-        if let Some(providers) = core.providers.lock().unwrap().as_mut() {
-            providers["any_configured"] = serde_json::Value::Bool(true);
-            if let Some(items) = providers
-                .get_mut("providers")
-                .and_then(|items| items.as_array_mut())
-            {
-                for provider in items {
-                    provider["configured"] = serde_json::Value::Bool(true);
-                }
-            }
-        }
-        return Some(StatusCode::OK.into_response());
     }
     None
 }
@@ -466,7 +447,6 @@ pub fn installed(id: &str, status: PluginState) -> InstalledPlugin {
         declares_tools: false,
         tabs: Vec::new(),
         bot_user_id: None,
-        family: false,
         upgrade: None,
         removable: true,
         notices: Vec::new(),
@@ -502,6 +482,7 @@ pub fn preview(id: &str) -> InstallPreview {
         kind: PluginKind::App,
         runtime: Default::default(),
         security_tier: None,
+        remote: None,
         scope_choices: Vec::new(),
         has_bot: false,
         icon: None,
@@ -537,6 +518,8 @@ pub fn preview(id: &str) -> InstallPreview {
         devices: None,
         lan_webui: None,
         always_allowed: Vec::new(),
+        audience: None,
+        install_gate: wonton_client::Gate::Allow,
     }
 }
 
@@ -561,6 +544,8 @@ pub fn item(id: &str, title: &str, tags: &[&str]) -> StoreItem {
         security_tier: None,
         high_permissions: false,
         blocked: None,
+        installable: true,
+        install_gate: wonton_client::Gate::Allow,
     }
 }
 
@@ -693,7 +678,11 @@ impl Rig {
     }
 
     pub fn connect_to(&self, ticket: String) {
-        self.app.dispatch(Action::ConnectHome { ticket }).unwrap();
+        self.app
+            .dispatch(Action::Home {
+                action: wonton_protocol::HomeAction::ConnectHome { ticket },
+            })
+            .unwrap();
     }
 
     #[allow(dead_code)]

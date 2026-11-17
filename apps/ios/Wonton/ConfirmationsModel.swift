@@ -36,9 +36,9 @@ final class ConfirmationsModel {
         guard !contactBusy else { return }
         actingBot = request.bot
         do {
-            try core.dispatch(action: approve
+            try core.dispatch(action: .botContacts(action: approve
                 ? .approveBotContact(bot: request.bot, userId: request.contact.userId)
-                : .rejectBotContact(bot: request.bot, userId: request.contact.userId))
+                : .rejectBotContact(bot: request.bot, userId: request.contact.userId)))
             contacts = core.botContacts()
         } catch {
             actingBot = nil

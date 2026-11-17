@@ -1,19 +1,19 @@
 //! 确认卡片发给谁、谁发起、显示在哪个会话（ADR-0016 第 2 步，ADR-0045 的“卡片发给归属人”）。
 //!
-//! 发给谁按调用方的 Bot 定：私人 Bot 发给归属人，共享 Bot 和没有 Bot 的插件发给主人；装卸插件这类管理插件的卡片，
-//! 归属人得到主人授权“能装插件”才发给他，否则发给主人。来源会话由 Agent 一侧报（[`reported_origin`]），是不可信
-//! 输入：只认发起的 Bot 和收件人都已加入的房间，对不上、查不了时落到 Bot 的主房间；主房间收件人不在时卡片只在列表里。
+//! 私人 Bot 的普通卡片发给归属人，共享 Bot 和没有 Bot 的插件发给主人。装卸按归属人的角色：能装时问本人，
+//! 要管理员批时问创建卡片时的全部管理员。来源会话只认发起的 Bot 和收件人都已加入的房间。
 
 use hyper::HeaderMap;
 use serde::Serialize;
 use serde_json::Value;
 use wonton_protocol::{
-    BotKeeper, BotRef, ConfirmationOrigin, ConfirmationRequester, MemberStatus, ORIGIN_ROOM_HEADER,
-    ORIGIN_THREAD_HEADER,
+    AiLevel, BotKeeper, BotRef, ConfirmationOrigin, ConfirmationRequester, Gate, MemberStatus,
+    ORIGIN_ROOM_HEADER, ORIGIN_THREAD_HEADER,
 };
 
-use super::confirm::{Audience, Refusal, Ticket};
-use super::{Bus, Caller, Draft};
+use super::confirm::{Audience, Recipients, Refusal, Ticket};
+use super::{Bus, Caller, Draft, TurnSender};
+use crate::ai_level::{lower, strict_ai};
 use crate::matrix::BotAccount;
 use crate::plugin::languages::Languages;
 
@@ -25,7 +25,9 @@ const MAX_ID: usize = 255;
 pub(super) enum Subject {
     /// 调插件的工具、Agent 自己的工具：发给 Bot 的归属人。
     Tool,
-    /// 装卸、升级插件，开关插件的权限：归属人有“能装插件”才发给他，否则发给主人。
+    /// 会删、会覆盖的工具调用，在“删除要管理员批”的封顶下：发给所有管理员（ADR-0088 第 5 节）。
+    ToolDelete,
+    /// 装卸、升级插件，开关插件的权限：按归属人的 install_apps 决定。
     PluginAdmin,
 }
 
@@ -71,7 +73,7 @@ struct OriginRecord<'a> {
 }
 
 impl Bus {
-    /// 卡片发给谁：家人的用户名；`None` 是主人。
+    /// 卡片普通收件人的用户名；`None` 是主人。管理员卡片另在 [`Self::audience`] 里冻结完整名单。
     pub(super) fn recipient(&self, caller: &Caller, subject: Subject) -> Option<String> {
         let BotKeeper::User { username } = &caller.bot.as_ref()?.keeper else {
             return None;
@@ -80,31 +82,228 @@ impl Bus {
             return None;
         }
         match subject {
-            Subject::Tool => Some(username.clone()),
+            Subject::Tool | Subject::ToolDelete => Some(username.clone()),
             Subject::PluginAdmin => self.may_install(username).then(|| username.clone()),
         }
     }
 
-    /// 这个家人还在家里、角色又能装卸应用（ADR-0088）。记录没接上时按没授权：卡片发给主人。
     fn may_install(&self, username: &str) -> bool {
-        self.people.get().is_some_and(|people| {
-            people.members.get(username).is_some_and(|record| {
-                record.status != MemberStatus::Removed
-                    && people.roles.get(&record.role_id).is_some_and(|role| {
-                        role.permissions.install_apps == wonton_protocol::Gate::Allow
-                    })
+        matches!(self.install_gate_for(username), Gate::Allow)
+    }
+
+    /// 一个人的 AI 动手级别（ADR-0088 第 5 节“谁让 Bot 做的事，按谁的角色封顶”）：主人不受角色约束，
+    /// 其余按角色；人查不到、角色查不到、取值不认识时按最严并记日志，不按最松的放行。
+    pub(crate) fn person_ai(&self, username: &str) -> AiLevel {
+        crate::ai_level::person_ai(
+            self.plugins.owner_name(),
+            self.people
+                .get()
+                .map(|people| (&*people.members, &*people.roles)),
+            username,
+        )
+    }
+
+    /// 共享 Bot 没有进行中的轮次时的封顶：能用人（角色“用共享 Bot”为“能”）里最低的级别，主人算在内。
+    pub(crate) fn shared_bot_ai(&self) -> AiLevel {
+        crate::ai_level::shared_bot_ai(
+            self.people
+                .get()
+                .map(|people| (&*people.members, &*people.roles)),
+        )
+    }
+
+    /// 这次调用的封顶（ADR-0088 第 5 节、ADR-0083 第 5 节）：有进行中的桥轮次时按轮次里级别最低的人算，
+    /// 没有时私人 Bot 按归属人、共享 Bot 按能用人里最低的。没有 Bot 的工具插件按主人的自动化算。
+    pub(crate) fn ai_cap(&self, caller: &Caller) -> AiLevel {
+        if let Some(level) = caller.ai_level {
+            return strict_ai(level);
+        }
+        let Some(bot) = &caller.bot else {
+            return AiLevel::SelfConfirms;
+        };
+        if let Some(sender) = &caller.sender {
+            return match sender {
+                TurnSender::Local(user_id) => localpart(user_id)
+                    .map_or(AiLevel::ReadOnly, |username| self.person_ai(username)),
+                TurnSender::Unknown => AiLevel::ReadOnly,
+            };
+        }
+        match &bot.keeper {
+            BotKeeper::User { username } => {
+                let turns = self.live_turn_ais(caller);
+                match turns.into_iter().reduce(lower) {
+                    Some(lowest) => lowest,
+                    None => self.person_ai(username),
+                }
+            }
+            BotKeeper::Household => {
+                let turns = self.live_turn_ais(caller);
+                match turns.into_iter().reduce(lower) {
+                    Some(lowest) => lowest,
+                    None => self.shared_bot_ai(),
+                }
+            }
+            BotKeeper::Other => {
+                tracing::warn!(
+                    plugin = caller.id.as_str(),
+                    "认不出 Bot 的归属人，AI 动手按只读封顶"
+                );
+                AiLevel::ReadOnly
+            }
+        }
+    }
+
+    /// 进行中的桥轮次各自代表的级别。说话的人认不出时按最严，不用链代表的人替代（ChainSessionInfo 的 `sender`
+    /// 是这条轮次的说话人；认不清时不能按更松的链身份放行）。
+    fn live_turn_ais(&self, caller: &Caller) -> Vec<AiLevel> {
+        let Some(chains) = self.agent_chains.get() else {
+            return Vec::new();
+        };
+        let ledger = chains.ledger();
+        let Some(bot) = caller.bot.as_ref().map(|identity| BotRef {
+            plugin_id: caller.id.to_string(),
+            bot: identity.bot.clone(),
+        }) else {
+            return Vec::new();
+        };
+        ledger
+            .live_bridge_turns(&bot)
+            .into_iter()
+            .map(|turn| {
+                let Some(username) = localpart(&turn.sender) else {
+                    tracing::warn!(
+                        plugin = caller.id.as_str(),
+                        sender = turn.sender.as_str(),
+                        "认不出这轮说话的人，AI 动手按只读封顶"
+                    );
+                    return AiLevel::ReadOnly;
+                };
+                self.person_ai_option(username).unwrap_or_else(|| {
+                    tracing::warn!(
+                        plugin = caller.id.as_str(),
+                        sender = turn.sender.as_str(),
+                        "认不出这轮说话的人，AI 动手按只读封顶"
+                    );
+                    AiLevel::ReadOnly
+                })
             })
-        })
+            .collect()
     }
 
-    /// 卡片的文字用收件人的语言（ADR-0043）。
+    fn person_ai_option(&self, username: &str) -> Option<AiLevel> {
+        let known = username == self.plugins.owner_name()
+            || self
+                .people
+                .get()
+                .and_then(|people| people.members.get(username))
+                .is_some_and(|member| {
+                    matches!(member.status, MemberStatus::Invited | MemberStatus::Joined)
+                });
+        known.then(|| self.person_ai(username))
+    }
+
+    fn install_gate_for(&self, username: &str) -> Gate {
+        if username == self.plugins.owner_name() {
+            return Gate::Allow;
+        }
+        self.people
+            .get()
+            .and_then(|people| {
+                let member = people.members.get(username)?;
+                if member.status != MemberStatus::Joined {
+                    return None;
+                }
+                people
+                    .roles
+                    .get(&member.role_id)
+                    .map(|role| role.permissions.install_apps)
+            })
+            .unwrap_or(Gate::Deny)
+    }
+
+    pub(crate) fn plugin_install_gate(&self, caller: &Caller) -> Gate {
+        match caller.bot.as_ref().map(|bot| &bot.keeper) {
+            Some(BotKeeper::User { username }) => self.install_gate_for(username),
+            None | Some(BotKeeper::Household) => Gate::Allow,
+            Some(BotKeeper::Other) => Gate::Deny,
+        }
+    }
+
+    pub(super) fn require_plugin_install(&self, caller: &Caller) -> Result<(), super::ToolFailure> {
+        match self.plugin_install_gate(caller) {
+            Gate::Allow | Gate::AskAdmin => Ok(()),
+            Gate::Deny | Gate::Other => Err(super::ToolFailure::new(
+                "permission_denied",
+                "归属人的角色不允许装、卸载或更改应用",
+            )),
+        }
+    }
+
+    fn plugin_admins(&self) -> Vec<String> {
+        self.people
+            .get()
+            .map(|people| {
+                people
+                    .members
+                    .list()
+                    .into_iter()
+                    .filter(|member| {
+                        member.username != self.plugins.owner_name()
+                            && member.status == MemberStatus::Joined
+                            && people
+                                .roles
+                                .get(&member.role_id)
+                                .is_some_and(|role| role.permissions.manage_members)
+                    })
+                    .map(|member| member.username)
+                    .collect()
+            })
+            .unwrap_or_default()
+    }
+
+    /// Requests an approval from the administrators present when the card is created.
+    pub async fn ask_plugin_admin(
+        &self,
+        requester: String,
+        draft: Draft,
+    ) -> Result<Ticket, Refusal> {
+        let caller = crate::plugin::PluginId::parse("app.wonton.core")
+            .expect("core plugin identifier is valid");
+        let mut draft = draft;
+        draft.lines.insert(
+            0,
+            wonton_protocol::CardLine {
+                text: requester,
+                emphasis: false,
+            },
+        );
+        let audience = Audience {
+            recipients: Recipients::Admins(self.plugin_admins()),
+            ..Audience::default()
+        };
+        self.confirmations.ask_as(&caller, draft, audience).await
+    }
+
+    /// 卡片的文字用谁的语言（ADR-0043）：发给管理员的（会删工具的、安装的）按主人的语言，其余发给谁按谁的。
     pub(super) fn card_languages(&self, caller: &Caller, subject: Subject) -> Languages {
-        self.languages_for(self.recipient(caller, subject).as_deref())
+        let recipient = match subject {
+            Subject::ToolDelete => None,
+            _ => self.recipient(caller, subject),
+        };
+        self.languages_for(recipient.as_deref())
     }
 
-    /// 发卡片要的全部：收件人、发起者和核对过的来源会话。卡片不进任何房间，推送发到收件人的设备（ADR-0016）。
+    /// 发卡片要的全部：收件人、发起者和核对过的来源会话。卡片不进任何 Matrix 房间，推送发到冻结收件人的设备。
     pub(super) async fn audience(&self, caller: &Caller, subject: Subject) -> Audience {
         let recipient = self.recipient(caller, subject);
+        let recipients = match subject {
+            // 会删、会覆盖的工具调用按封顶发管理员，谁先答算谁的（ADR-0088 第 5 节）。
+            Subject::ToolDelete => Recipients::Admins(self.plugin_admins()),
+            Subject::PluginAdmin if self.plugin_install_gate(caller) == Gate::AskAdmin => {
+                Recipients::Admins(self.plugin_admins())
+            }
+            _ => Recipients::Keeper(recipient.clone()),
+        };
         let bot = caller.bot.as_ref().and_then(|bot| {
             let account = self.plugins.bot_account(&caller.id, &bot.bot)?;
             Some((bot, account))
@@ -132,13 +331,14 @@ impl Bus {
             ),
         };
         Audience {
-            recipient,
+            recipients,
             requester: Some(requester),
             origin,
+            category: None,
         }
     }
 
-    /// 请收件人确认（[`Self::audience`]），等到回答或者过期。
+    /// 请冻结收件人确认，等到回答或者过期。
     pub(super) async fn ask_for(
         &self,
         caller: &Caller,
@@ -230,6 +430,13 @@ impl Bus {
             Err("not_shared: the bot and the recipient are not both in this room".to_owned())
         }
     }
+}
+
+/// Matrix 用户 ID（`@localpart:服务器名`）里的用户名；不是这个写法返回 `None`，让查角色时按认不出处理。
+pub(super) fn localpart(user_id: &str) -> Option<&str> {
+    let rest = user_id.strip_prefix('@')?;
+    let (localpart, server) = rest.split_once(':')?;
+    (!localpart.is_empty() && !server.is_empty()).then_some(localpart)
 }
 
 #[cfg(test)]

@@ -55,6 +55,12 @@ pub struct ConfirmationCard {
     /// 要主人填的设置（ADR-0077）：壳用同一套原生控件画，值随回答的 [`ConfirmationAnswer::settings`] 带回。
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub settings: Option<crate::SettingsForm>,
+    /// Raw permission categories and risks disclosed before execution.
+    #[serde(default)]
+    pub permissions: Vec<crate::PermissionLine>,
+    /// Host device choices; IDs are submitted explicitly by the owner.
+    #[serde(default)]
+    pub devices: Vec<crate::PluginDevice>,
     /// 谁请主人确认。核心自己发起的（如服务器配对，ADR-0050）为空。
     #[serde(default, skip_serializing_if = "Option::is_none")]
     #[cfg_attr(feature = "uniffi", uniffi(default = None))]
@@ -266,6 +272,8 @@ pub struct ConfirmationAnswer {
     /// 装插件、升级插件的卡片要主人填的设置（ADR-0077），键是卡片表单的项；校验不过返回 400 `settings_invalid`。
     #[serde(default)]
     pub settings: crate::SettingValues,
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub devices: Vec<String>,
 }
 
 /// 回答之后卡片的状态。
@@ -389,6 +397,7 @@ mod tests {
             choice_id: Some("opaque-2".into()),
             secrets: crate::SecretValues::new(),
             settings: crate::SettingValues::new(),
+            devices: Vec::new(),
         };
         assert_eq!(
             json!(answer),

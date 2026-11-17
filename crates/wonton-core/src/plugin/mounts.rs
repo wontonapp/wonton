@@ -15,6 +15,9 @@ use super::render::{InstallContext, RenderError, list, service_err};
 pub(super) struct Mounts<'a> {
     pub ctx: &'a InstallContext,
     pub read_only_shares: &'a [PathBuf],
+    /// 这个容器的 Bot 归属人“AI 动手”是只读（ADR-0088 第 5 节）：共享文件夹一律只读挂载，插件
+    /// 自己声明了写权限的也一样。全插件一份的服务和其余 Bot 是 false。
+    pub forced_shares_read_only: bool,
     pub named: &'a BTreeSet<String>,
     pub service: &'a str,
     pub allow_docker_socket: bool,
@@ -107,6 +110,7 @@ impl Mounts<'_> {
                 &[("target", volume.target.as_str().into())],
             )));
         }
+        let mut read_only = volume.read_only;
         let source = match (volume.kind, volume.source) {
             (VolumeType::Tmpfs, _) => None,
             (VolumeType::Volume, None) => None,
@@ -135,7 +139,12 @@ impl Mounts<'_> {
                 Some(super::privileges::DOCKER_SOCKET.to_owned())
             }
             (VolumeType::Bind, Some(path)) => {
-                let path = self.check_bind(&path, volume.read_only)?;
+                let path = self.check_bind(&path, read_only)?;
+                if self.forced_shares_read_only
+                    && self.ctx.shares.values().any(|root| *root == path)
+                {
+                    read_only = true;
+                }
                 binds.push((self.service.to_owned(), path.clone()));
                 Some(path.display().to_string())
             }
@@ -149,7 +158,7 @@ impl Mounts<'_> {
             target: Some(volume.target),
             source,
             typ: Some(typ),
-            read_only: Some(volume.read_only),
+            read_only: Some(read_only),
             ..Default::default()
         })
     }

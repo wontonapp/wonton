@@ -36,7 +36,9 @@ async fn approving_a_request_calls_the_api_and_refreshes() {
         ),
     );
     rig.app
-        .dispatch(Action::ApprovePeerRequest { id: "r1".into() })
+        .dispatch(Action::Peers {
+            action: wonton_protocol::PeerAction::ApprovePeerRequest { id: "r1".into() },
+        })
         .unwrap();
     wait_peers(&rig, |view| {
         view.state == PeersState::Ready && view.requests.is_empty() && view.peers.len() == 1
@@ -87,7 +89,9 @@ async fn rejecting_and_unrejecting_requests_call_the_api() {
         ),
     );
     rig.app
-        .dispatch(Action::RejectPeerRequest { id: "r1".into() })
+        .dispatch(Action::Peers {
+            action: wonton_protocol::PeerAction::RejectPeerRequest { id: "r1".into() },
+        })
         .unwrap();
     wait_peers(&rig, |view| !view.rejected.is_empty()).await;
 
@@ -102,7 +106,9 @@ async fn rejecting_and_unrejecting_requests_call_the_api() {
         Canned(StatusCode::OK.as_u16(), peers_view(Vec::new())),
     );
     rig.app
-        .dispatch(Action::UnrejectPeerRequest { id: "r1".into() })
+        .dispatch(Action::Peers {
+            action: wonton_protocol::PeerAction::UnrejectPeerRequest { id: "r1".into() },
+        })
         .unwrap();
     wait_peers(&rig, |view| {
         view.state == PeersState::Ready && view.rejected.is_empty()
@@ -146,7 +152,9 @@ async fn a_failed_request_action_fails_with_the_server_s_category() {
         peer_error_headered(404, "request_not_found"),
     );
     rig.app
-        .dispatch(Action::ApprovePeerRequest { id: "r1".into() })
+        .dispatch(Action::Peers {
+            action: wonton_protocol::PeerAction::ApprovePeerRequest { id: "r1".into() },
+        })
         .unwrap();
     assert!(matches!(
         wait_failed(&rig, PeerError::RequestNotFound).await.state,

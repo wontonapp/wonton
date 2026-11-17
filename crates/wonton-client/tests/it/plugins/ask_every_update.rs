@@ -22,6 +22,7 @@ fn detail(ask: bool) -> Canned {
         runtime: Default::default(),
         security_tier: None,
         link_url: None,
+        remote: None,
         scope: None,
         widget_capabilities: Vec::new(),
         version: "1.0.0".to_owned(),
@@ -46,12 +47,17 @@ fn detail(ask: bool) -> Canned {
         missing_requires: Vec::new(),
         missing_wants: Vec::new(),
         hints: Vec::new(),
+        problems: Vec::new(),
+        devices: Vec::new(),
         capability_providers: Vec::new(),
         lan_webui: None,
         save_grants: Vec::new(),
         limits: None,
         ask_every_update: Some(ask),
         shares: None,
+        audience: None,
+        installable: true,
+        install_gate: wonton_client::Gate::Allow,
     };
     Canned(200, serde_json::to_string(&detail).unwrap())
 }

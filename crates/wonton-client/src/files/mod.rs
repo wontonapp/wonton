@@ -22,7 +22,7 @@ use tokio::sync::{Semaphore, watch};
 use tokio::task::JoinHandle;
 use wonton_l10n::l10n;
 use wonton_protocol::{
-    Action, CoreError, FileCard, FileFailure, FileId, FileInfo, FileOperation, FileProblem,
+    CoreError, FileAction, FileCard, FileFailure, FileId, FileInfo, FileOperation, FileProblem,
     FileSource, HomeStatus, HomeViewModel, TransferDirection, TransferState, TransfersViewModel,
     UploadSource,
 };
@@ -141,22 +141,22 @@ impl FilesLink {
         }
     }
 
-    pub(crate) fn dispatch(self: &Arc<Self>, action: Action) -> Result<(), CoreError> {
+    pub(crate) fn dispatch(self: &Arc<Self>, action: FileAction) -> Result<(), CoreError> {
         match action {
-            Action::UploadFile {
+            FileAction::UploadFile {
                 source,
                 name,
                 mime_type,
                 room,
             } => self.start_upload(source, name, mime_type, room),
-            Action::DownloadFile { id } => self.start_download(id),
-            Action::CancelTransfer { id } => self.cancel(&id),
-            Action::DismissTransfer {
+            FileAction::DownloadFile { id, room } => self.start_download(id, room),
+            FileAction::CancelTransfer { id } => self.cancel(&id),
+            FileAction::DismissTransfer {
                 id,
                 delete_local_file,
             } => self.dismiss(&id, delete_local_file),
-            Action::ResendFileLink { id } => self.resend_link(&id),
-            Action::DeleteFile { id } => {
+            FileAction::ResendFileLink { id } => self.resend_link(&id),
+            FileAction::DeleteFile { id } => {
                 lock(&self.cards).remove(&id);
                 lock(&self.stale).remove(&id);
                 lock(&self.checked).remove(&id);
@@ -165,23 +165,22 @@ impl FilesLink {
                 });
                 Ok(())
             }
-            Action::SendFileToDevices { id } => {
+            FileAction::SendFileToDevices { id } => {
                 self.operate(FileOperation::SendToDevices, id, |api, id| async move {
                     api.send_to_devices(&id).await
                 });
                 Ok(())
             }
-            Action::GrantFileToRoom { id, room } => {
+            FileAction::GrantFileToRoom { id, room } => {
                 self.operate(FileOperation::GrantToRoom, id, |api, id| async move {
                     api.grant(&id, &room).await
                 });
                 Ok(())
             }
-            Action::DismissFileProblem => {
+            FileAction::DismissFileProblem => {
                 self.store.set_problem(None);
                 Ok(())
             }
-            _ => Err(invalid(&l10n!(CATALOG, language(), "files-invalid-action"))),
         }
     }
 
@@ -236,7 +235,7 @@ impl FilesLink {
         })
     }
 
-    fn start_download(self: &Arc<Self>, id: FileId) -> Result<(), CoreError> {
+    fn start_download(self: &Arc<Self>, id: FileId, room: String) -> Result<(), CoreError> {
         let same_file: Vec<_> = self
             .store
             .view()
@@ -287,6 +286,7 @@ impl FilesLink {
             job: Job::Download {
                 path: None,
                 etag: None,
+                room: Some(room),
             },
         })
     }

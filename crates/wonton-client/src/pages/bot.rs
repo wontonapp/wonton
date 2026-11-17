@@ -59,20 +59,26 @@ pub(super) fn replace_bots(state: &mut PagesState, bots: Vec<BotView>) {
         })
         .collect();
     state.failures.retain(|placed, _| !matches!(placed_tab_ref(placed), TabRef::Bot { bot, .. } if changed.contains(bot)));
-    let placed: Vec<_> = state
+    let placed: HashSet<_> = state
         .stack
         .iter()
         .map(|item| PlacedTab::Page {
             tab: item.tab.clone(),
         })
+        .chain(
+            state
+                .content
+                .keys()
+                .map(|tab| PlacedTab::Page { tab: tab.clone() }),
+        )
         .chain(state.config.panel.iter().map(|entry| PlacedTab::Panel {
             scope: PanelScope::Main,
             tab: entry.tab.clone(),
         }))
-        .chain(state.open_room.iter().flat_map(|(room, panel)| {
-            panel.pages.iter().map(move |entry| PlacedTab::Panel {
+        .chain(state.rooms.iter().flat_map(|(room, state)| {
+            state.panel.pages.iter().map(move |entry| PlacedTab::Panel {
                 scope: PanelScope::Room {
-                    room_id: room.to_string(),
+                    room_id: room.clone(),
                 },
                 tab: entry.tab.clone(),
             })

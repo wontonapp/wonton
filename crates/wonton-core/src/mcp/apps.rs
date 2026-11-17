@@ -1,18 +1,16 @@
 //! MCP Apps（ADR-0052 的“Bot 往面板上放页面”）：界面只经宿主页说话，工具调用和资源读取由核心转发。
 //!
-//! 界面能调的只限提供它的那个插件上、`_meta.ui.visibility` 含 `app` 的工具；调用方记成主人，
-//! 敏感的照常请主人确认（ADR-0016 的卡片）。这里只放转发本身，HTTP 入口在网关。
+//! 界面能调的只限提供它的那个插件上、`_meta.ui.visibility` 含 `app` 的工具；调用不带人也不带能力，
+//! 插件只能当全家共用的数据处理，敏感的照常请人确认（ADR-0016 的卡片）。这里只放转发本身，HTTP 入口在网关。
 
 use std::sync::Arc;
 
 use rmcp::model::{CallToolResult, JsonObject, Tool};
 use serde_json::Value;
 
-use super::server::BotIdentity;
 use super::{Bus, Caller, ToolFailure, naming, upstream::ReadError};
 use crate::l10n;
 use crate::plugin::{McpServer, PluginId};
-use wonton_protocol::BotKeeper;
 
 /// 工具声明了给界面用（`_meta.ui.visibility` 含 `app`）。
 pub(super) fn visible(tool: &Tool) -> bool {
@@ -75,17 +73,8 @@ impl Bus {
                 format!("工具 {tool} 没有声明给界面用"),
             ));
         }
-        let owner = self
-            .cards()
-            .map_err(|e| ToolFailure::new("service_unavailable", e))?
-            .owner
-            .clone();
         let mut caller = Caller::new(server.id.clone(), Some(&server.title));
         caller.name = l10n::text(&self.owner_languages(), "mcp-app-owner", &[]);
-        caller.bot = Some(BotIdentity {
-            bot: "app".to_owned(),
-            keeper: BotKeeper::User { username: owner },
-        });
         let name = naming::join(&server.id.slug(), tool);
         let activity = self.plugins.activity.start_tool(&server.id);
         Ok(self

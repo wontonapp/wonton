@@ -13,11 +13,17 @@ mod install;
 mod lifecycle;
 pub use lifecycle::{PluginDesiredState, PluginLifecycle, PluginRecovery, PluginRecoveryStage};
 mod owner_secrets;
+mod remote_mcp;
 pub mod store;
 mod view_model;
 mod widget;
 pub use install::{InstallPreview, InstallRequest, UpgradeRequest};
-pub use view_model::PluginsViewModel;
+pub use remote_mcp::{
+    RemoteAuth, RemoteAuthorization, RemoteMcpDetail, RemoteMcpPreview, RemoteOauthGrant,
+    RemoteOauthStart, plugin_remote_oauth_finish_path, plugin_remote_oauth_start_path,
+    remote_oauth_start_path,
+};
+pub use view_model::{PluginsViewModel, StoreLoadState};
 mod permission;
 pub(super) mod ports;
 mod secret_input;
@@ -42,6 +48,7 @@ pub use owner_secrets::{
 };
 pub use permission::{
     PermissionLine, PermissionOpened, PermissionRisk, PermissionUpdate, PluginDevice,
+    PluginDeviceKind, PluginGrantedDevice,
 };
 pub use secret_input::{
     SecretInput, SecretInputState, SecretUpdate, SecretValues, secret_input_path,
@@ -172,9 +179,6 @@ pub struct InstalledPlugin {
     pub chat: Option<PluginChat>,
     /// 这台设备的人在这个插件里的 Bot（Matrix 用户 ID）：Agent 插件点开就是和它的私聊。
     pub bot_user_id: Option<String>,
-    /// 插件记录里的 `family` 标记；可见性由当前角色的 `open_apps` 决定。
-    #[serde(default)]
-    pub family: bool,
     /// 能升级到的版本；没有新版本时为空。
     pub upgrade: Option<UpgradeOffer>,
     /// 主人能卸载它；系统插件不能。
@@ -433,6 +437,11 @@ pub struct StoreItem {
     pub security_tier: Option<SecurityTier>,
     /// 装不了的原因（宿主架构不符、需要核心不支持的权限、规范版本比核心新）；能装时为空。
     pub blocked: Option<String>,
+    /// 这个人可直接安装；AskAdmin 时为 false，但仍可请求管理员。
+    #[serde(default)]
+    pub installable: bool,
+    #[serde(default)]
+    pub install_gate: crate::Gate,
     /// 安全档位到了要醒目提示的程度（ADR-0080 的 High 及以上，比这个 App 新的档位也算）：商店里
     /// 标红。档位比较只在核心这一处，壳不重复。旧核心不给时按没有算。
     #[serde(default)]
@@ -585,6 +594,10 @@ pub enum PluginFailure {
     CoreUpgrading,
     /// 主人配的代理连不上或者拒绝了，出网插件装不上：要主人在代理设置里改地址，或者修好代理（ADR-0023）。
     EgressProxyUnavailable,
+    /// 连不上远端 MCP 服务器：DNS、TLS、超时、拒连（ADR-0066）。
+    RemoteUnavailable,
+    /// 远端 MCP 服务器回 5xx 或者说了连接器听不懂的话（ADR-0066）。
+    RemoteError,
     /// 家里的服务器上出错了：Docker、身份提供方、Matrix、模型网关没就绪，或者插件没通过健康检查。
     Upstream,
     /// 设置值没通过 Schema（ADR-0077），明细在 [`PluginProblem::settings`]。

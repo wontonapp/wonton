@@ -170,8 +170,10 @@ async fn an_older_server_is_reported_as_too_old() {
     let (tcp, udp) = (free_port(), free_port());
     home.core.set_lists(vec![vec![remote(tcp, udp)]]);
     app.core
-        .dispatch(wonton_client::Action::ConnectHome {
-            ticket: home.ticket(),
+        .dispatch(wonton_client::Action::Home {
+            action: wonton_protocol::HomeAction::ConnectHome {
+                ticket: home.ticket(),
+            },
         })
         .unwrap();
     app.mapping(PortMappingState::Off).await;
@@ -256,6 +258,102 @@ async fn showing_a_plugin_page_maps_its_ports_and_leaving_releases_them() {
     assert_eq!(tcp_round_trip(home.tcp, b"again").await, b"again");
 }
 
+/// widget 页（ADR-0096）在栈顶时也映射插件的端口：通话的媒体走这些端口；关掉页面就放掉。
+#[tokio::test]
+async fn showing_a_widget_page_maps_its_ports_and_closing_releases_them() {
+    let home = MapHome::start().await;
+    let dir = tempfile::tempdir().unwrap();
+    let app = App::open(dir.path());
+    app.connect(&home);
+    app.mapping(PortMappingState::Off).await;
+    let mut call = remote(home.tcp, home.udp);
+    call.matrix_widget = Some(wonton_client::PluginWidget {
+        url: "/room?widgetId=$matrix_widget_id".to_owned(),
+        entry: wonton_client::WidgetEntry::VideoCall,
+        capabilities: Vec::new(),
+    });
+    home.core.set_lists(vec![vec![call]]);
+    // 列表不会自己重取（没有插件页开着就不轮询）：明说刷新一次。
+    app.core
+        .dispatch(wonton_client::Action::Plugins {
+            action: wonton_protocol::PluginAction::RefreshPlugins,
+        })
+        .unwrap();
+    app.plugins(|view| {
+        view.installed.as_ref().is_some_and(|list| {
+            list.plugins
+                .iter()
+                .any(|plugin| plugin.matrix_widget.is_some())
+        })
+    })
+    .await;
+
+    // 没登录聊天，驱动起不来、页面停在出错上，但它在栈顶：映射看的是页面在不在，不是驱动。
+    let widget = wonton_client::TabRef::Widget {
+        plugin_id: PLUGIN.to_owned(),
+        room_id: "!call:home.example".to_owned(),
+    };
+    let deadline = std::time::Instant::now() + WAIT;
+    while let Err(error) = app.core.dispatch(wonton_client::Action::Pages {
+        action: wonton_protocol::PageAction::OpenPage {
+            tab: widget.clone(),
+        },
+    }) {
+        // 页面那边可能还没收到新列表，同 `App::show`。
+        assert!(
+            std::time::Instant::now() < deadline,
+            "打不开 widget 页：{error:?}"
+        );
+        tokio::time::sleep(Duration::from_millis(20)).await;
+    }
+    assert_eq!(
+        app.core.pages().stack.last().map(|open| open.tab.clone()),
+        Some(widget)
+    );
+    let mapping = app.mapping(PortMappingState::On).await;
+    assert!(!mapping.enabled, "自动映射不动手动开关");
+    assert_eq!(tcp_round_trip(home.tcp, b"call").await, b"call");
+
+    app.core
+        .dispatch(wonton_client::Action::Pages {
+            action: wonton_protocol::PageAction::ClosePage,
+        })
+        .unwrap();
+    app.mapping(PortMappingState::Off).await;
+}
+
+#[tokio::test]
+async fn content_windows_keep_ports_until_the_last_page_closes() {
+    let home = MapHome::start().await;
+    let dir = tempfile::tempdir().unwrap();
+    let app = App::open(dir.path());
+    app.connect(&home);
+    app.mapping(PortMappingState::Off).await;
+    app.show(Some(PLUGIN)).await;
+    let tab = wonton_client::TabRef::Plugin {
+        plugin_id: PLUGIN.to_owned(),
+        page: None,
+    };
+    let first = app.core.subscribe_content_page(tab.clone()).unwrap();
+    let second = app.core.subscribe_content_page(tab).unwrap();
+    app.show(None).await;
+    app.mapping(PortMappingState::On).await;
+    assert_eq!(
+        tcp_round_trip(home.tcp, b"content only").await,
+        b"content only"
+    );
+    first.cancel();
+    assert_eq!(
+        tcp_round_trip(home.tcp, b"second window").await,
+        b"second window"
+    );
+    drop(second);
+    app.mapping(PortMappingState::Off).await;
+    std::net::TcpListener::bind(SocketAddr::from((Ipv4Addr::LOCALHOST, home.tcp))).unwrap();
+    let _udp = bind_udp_until_free(home.udp).await;
+    assert!(app.core.pages().stack.is_empty());
+}
+
 /// 手动打开的映射不被页面看不见关掉：再连一次，服务器拒绝的原因照样经还开着的监听报上来。
 #[tokio::test]
 async fn a_manually_opened_mapping_survives_the_page_becoming_invisible() {
@@ -298,7 +396,9 @@ async fn going_to_the_background_counts_as_invisible_and_foreground_restores_the
     app.mapping(PortMappingState::On).await;
 
     app.core
-        .dispatch(wonton_client::Action::AppBackgrounded)
+        .dispatch(wonton_client::Action::Home {
+            action: wonton_protocol::HomeAction::AppBackgrounded,
+        })
         .unwrap();
     app.mapping(PortMappingState::Off).await;
     std::net::TcpListener::bind(SocketAddr::from((Ipv4Addr::LOCALHOST, home.tcp))).unwrap();
@@ -306,7 +406,9 @@ async fn going_to_the_background_counts_as_invisible_and_foreground_restores_the
     drop(held);
 
     app.core
-        .dispatch(wonton_client::Action::AppForegrounded)
+        .dispatch(wonton_client::Action::Home {
+            action: wonton_protocol::HomeAction::AppForegrounded,
+        })
         .unwrap();
     app.mapping(PortMappingState::On).await;
     assert_eq!(tcp_round_trip(home.tcp, b"back").await, b"back");
@@ -324,12 +426,16 @@ async fn a_page_left_while_backgrounded_stays_invisible_on_foreground() {
     app.mapping(PortMappingState::On).await;
 
     app.core
-        .dispatch(wonton_client::Action::AppBackgrounded)
+        .dispatch(wonton_client::Action::Home {
+            action: wonton_protocol::HomeAction::AppBackgrounded,
+        })
         .unwrap();
     app.mapping(PortMappingState::Off).await;
     app.show(None).await;
     app.core
-        .dispatch(wonton_client::Action::AppForegrounded)
+        .dispatch(wonton_client::Action::Home {
+            action: wonton_protocol::HomeAction::AppForegrounded,
+        })
         .unwrap();
     assert_eq!(
         app.core.plugins().port_mappings[0].state,
@@ -383,7 +489,9 @@ async fn a_manually_opened_mapping_stays_on_in_the_background() {
     app.mapping(PortMappingState::On).await;
 
     app.core
-        .dispatch(wonton_client::Action::AppBackgrounded)
+        .dispatch(wonton_client::Action::Home {
+            action: wonton_protocol::HomeAction::AppBackgrounded,
+        })
         .unwrap();
     // 拒绝同步：能等到拒绝原因，说明监听还在，后台那次核对也处理完了。
     home.refuse(Some(PortResolveError::PluginNotRunning));
@@ -402,7 +510,9 @@ async fn a_manually_opened_mapping_stays_on_in_the_background() {
     );
 
     app.core
-        .dispatch(wonton_client::Action::AppForegrounded)
+        .dispatch(wonton_client::Action::Home {
+            action: wonton_protocol::HomeAction::AppForegrounded,
+        })
         .unwrap();
     assert_eq!(tcp_round_trip(home.tcp, b"back").await, b"back");
     assert!(app.mapping(PortMappingState::On).await.enabled);

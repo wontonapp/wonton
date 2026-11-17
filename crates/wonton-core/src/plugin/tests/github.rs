@@ -215,6 +215,7 @@ async fn a_source_without_a_version_installs_the_latest_release_and_remembers_it
 
     let request = InstallRequest {
         scope: None,
+        audience: None,
         source: preview.source.clone().unwrap(),
         digest: preview.digest.clone(),
         plan: preview.plan.clone(),
@@ -226,6 +227,7 @@ async fn a_source_without_a_version_installs_the_latest_release_and_remembers_it
         lan_webui: false,
         install_together: Vec::new(),
         connect_plugins: Vec::new(),
+        remote_oauth: None,
     };
     m.install_source(&request).await.unwrap();
     let id = PluginId::parse("app.hello").unwrap();
@@ -269,6 +271,7 @@ async fn a_tag_moved_after_the_preview_is_not_installed() {
     release(&github, "1.0.0", "evil");
     let request = InstallRequest {
         scope: None,
+        audience: None,
         source: preview.source.unwrap(),
         digest: preview.digest,
         plan: preview.plan,
@@ -280,6 +283,7 @@ async fn a_tag_moved_after_the_preview_is_not_installed() {
         lan_webui: false,
         install_together: Vec::new(),
         connect_plugins: Vec::new(),
+        remote_oauth: None,
     };
     let err = m.install_source(&request).await.unwrap_err();
     assert_eq!(err.kind(), "changed", "{err}");

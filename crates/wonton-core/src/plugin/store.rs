@@ -19,7 +19,7 @@ use super::bots::BotStore;
 use super::egress::settings::StoredEgress;
 use super::github_source::Origin;
 use super::languages::Languages;
-use super::manifest::{Manifest, Permission, PluginId};
+use super::manifest::{Manifest, ManifestExt, Permission, PluginId};
 use super::models::ModelKeyStore;
 use super::package_files::PackageFiles;
 use super::pins::PinStore;
@@ -27,6 +27,22 @@ use super::preinstall::PreinstallMarks;
 use super::save_grants::SaveGrantStore;
 use super::secrets::SecretStore;
 use super::tool_policy::ToolPolicy;
+
+/// 安装时交给某个服务的一个宿主设备（ADR-0036）。
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+pub struct InstalledDevice {
+    pub service: String,
+    pub class: super::manifest::DeviceClass,
+    /// 宿主上的 by-id 路径（NVMe 的控制器是 `/dev/nvmeN`）。
+    pub source: String,
+    /// 容器里的路径。
+    pub target: String,
+    /// 给主人看的设备名，设备不在时详情页写它。
+    #[serde(default)]
+    pub name: String,
+    pub gid: u32,
+    pub system: bool,
+}
 
 /// 一项可选权限现在开着，以及是谁、什么时候打开的（ADR-0057）。
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
@@ -64,6 +80,9 @@ pub struct InstalledRecord {
     /// 主人或 Bot 打开了的可选项（ADR-0057）；关着的可选项不在这里。
     #[serde(default, skip_serializing_if = "Vec::is_empty")]
     pub enabled_permissions: Vec<EnabledPermission>,
+    /// 主人选的宿主设备（ADR-0036）：升级保留，卸载随记录删掉。
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub devices: Vec<InstalledDevice>,
     #[serde(default, skip_serializing_if = "limits_empty")]
     pub limits: PluginLimits,
     /// 开关 `lan_webui`（见 [`super::lan::webui`]），默认关。
@@ -90,9 +109,6 @@ pub struct InstalledRecord {
     /// 主人打开的“每次都问”：这个 Agent 每次更新都发卡片。只在 written_by 有值时有意义。
     #[serde(default, skip_serializing_if = "std::ops::Not::not")]
     pub ask_every_update: bool,
-    /// `family` 设置接口保存的标记，不参与 `open_apps` 授权。
-    #[serde(default, skip_serializing_if = "std::ops::Not::not")]
-    pub family: bool,
     /// 入口上的标签（`<标签>.<后缀>`），装的时候定下，升级和重启不变。
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub entry_label: Option<String>,
@@ -652,6 +668,7 @@ mod tests {
             files: [("config.yaml".to_owned(), b"a: \x01\xff".to_vec())].into(),
             granted_permissions: vec!["storage.share.photos:read".parse().unwrap()],
             enabled_permissions: Vec::new(),
+            devices: Vec::new(),
             limits: Default::default(),
             oidc_client_secret: Some("s3cret".into()),
             installed_at: 1,
@@ -661,7 +678,6 @@ mod tests {
             origin: None,
             written_by: None,
             ask_every_update: false,
-            family: false,
             settings: Default::default(),
             settings_changed_ms: None,
             static_files: Default::default(),

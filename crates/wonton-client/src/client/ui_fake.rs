@@ -4,10 +4,13 @@
 //! 另在 `#if DEBUG` 里。开着时 `new_ui_fake` 仍然建一个正常的 `ClientCore`（没有后端），再把塞进订阅的
 //! ViewModel 换成写死的值；开着时 `dispatch` 不落到作用域，免得网络链路把 ViewModel 改回空的。
 //!
-//! 只够渲染首屏和主入口的导航：一台“家里”的服务器、一个 Bot 私聊、一个没有网页的已装应用（点开是详情页）、
-//! 三个有网页的已装应用（页面各停在加载中、已停止、出了问题）、主面板里钉着的一页、商店入口、引导已经走完。
-//! 操作里只认开页和关页（`OpenPage`、`ClosePage`），照真核心的规则改页面栈，壳的出口才有东西可测；
-//! 没有隧道，插件的网页本身加载不出来；房间的时间线和面板里那张加载得出来的本机网页在 `ui_fake_room.rs`。
+//! 只够渲染首屏和主入口的导航：一台“家里”的服务器、一个 Bot 私聊、一个有人在通话、顶栏带 widget 入口的群聊
+//! （ADR-0096）、一个没有网页的已装应用（点开是详情页）、一个带授权设备的应用（`ui_fake_plugin_detail.rs`）、
+//! 三个有网页的已装应用（页面各停在加载中、已停止、出了问题）、一个整页打开本机网页的应用、
+//! 主面板里钉着的一页、商店入口、“等你确认”里一张带设备的安装卡片（`ui_fake_devices.rs`）、引导已经走完。
+//! 操作里只认开页、关页（`OpenPage`、`ClosePage`）和回答确认卡片：开关页照真核心的规则改页面栈和应用网格的开关，
+//! 壳的出口才有东西可测；
+//! 没有隧道，插件的网页本身加载不出来；房间的时间线和加载得出来的本机网页（面板里一张、整页一张）在 `ui_fake_room.rs`。
 //! 媒体、商店列表和别的操作后的新状态不在里面，
 //! 要用这些的测试仍然连开发栈（见 `apps/ios/WontonUITests/UITestBackend.swift`）。
 
@@ -16,25 +19,32 @@ use std::sync::atomic::Ordering;
 use tokio::sync::watch;
 
 use wonton_protocol::{
-    Action, AppsAction, ChatAccount, ChatLayout, ChatLayoutChoice, ChatSync, ChatViewModel,
-    CoreError, DeviceNetwork, DeviceVerification, EncryptionStatus, HomePath, HomeStatus,
-    HomeViewModel, InstalledPlugin, InstalledPlugins, MessageSummary, OnboardingStep,
-    OnboardingViewModel, OpenPage, PagesViewModel, PanelItem, PanelSource, PluginHealth,
-    PluginKind, PluginState, PluginTrust, PluginsViewModel, PushStatus, RecoveryNextStep,
-    RecoveryStatus, RoomMembership, RoomPreview, RoomRow, ServerKind, ServerName, ServerRow,
-    ServersViewModel, TabIcon, TabLayout, TabPage, TabRef, TabState,
+    AppsAction, ChatAccount, ChatLayout, ChatLayoutChoice, ChatSync, ChatViewModel, CoreError,
+    DeviceNetwork, DeviceVerification, EncryptionStatus, HomePath, HomeStatus, HomeViewModel,
+    InstalledPlugin, InstalledPlugins, MessageSummary, OnboardingStep, OnboardingViewModel,
+    OpenPage, PagesViewModel, PanelItem, PanelSource, PluginHealth, PluginKind, PluginState,
+    PluginTrust, PluginsViewModel, PushStatus, RecoveryNextStep, RecoveryStatus, RoomMembership,
+    RoomPreview, RoomRow, ServerKind, ServerName, ServerRow, ServersViewModel, TabIcon, TabLayout,
+    TabPage, TabRef, TabState,
 };
 
 use super::ClientCore;
 
 const ROOM_ID: &str = "!ui-fake:home.example";
+/// 有人在通话的群聊：列表这一行和顶栏都标“通话中”，顶栏有 [`CALL_PLUGIN`] 的 widget 入口。
+pub(super) const CALL_ROOM_ID: &str = "!ui-fake-call:home.example";
+/// 声明了 `matrix_widget` 的假插件；没有隧道，它的 widget 页停在加载中。
+const CALL_PLUGIN: &str = "app.example.call";
 
 /// 有网页的假应用：标题、ID，和它的页面停在哪个状态。
-const WEB_APPS: [(&str, &str, FakePage); 3] = [
+const WEB_APPS: [(&str, &str, FakePage); 4] = [
     ("Budget", "app.example.budget", FakePage::Loading),
     ("Photos", "app.example.photos", FakePage::Stopped),
     ("Papers", "app.example.papers", FakePage::Failed),
+    ("Corner", CORNER_APP, FakePage::Local),
 ];
+/// 点开是一张加载得出来的本机网页（`ui_fake_room::corner`），整页上有真网页可测。
+const CORNER_APP: &str = "app.example.corner";
 
 #[derive(Clone, Copy)]
 enum FakePage {
@@ -42,6 +52,8 @@ enum FakePage {
     Loading,
     Stopped,
     Failed,
+    /// 没有隧道也加载得出来：打开时换成回环地址上的公网网页那一类（`TabRef::Url`），壳直接连。
+    Local,
 }
 
 #[uniffi::export]
@@ -71,7 +83,9 @@ impl ClientCore {
             friends: watch::Sender::new(current.friends.borrow().clone()),
             bot_contacts: watch::Sender::new(current.bot_contacts.borrow().clone()),
             settings: watch::Sender::new(current.settings.borrow().clone()),
-            confirmations: watch::Sender::new(current.confirmations.borrow().clone()),
+            confirmations: watch::Sender::new(super::ui_fake_devices::confirmations(
+                current.confirmations.borrow().clone(),
+            )),
             agent_chains: watch::Sender::new(current.agent_chains.borrow().clone()),
         };
         drop(current);
@@ -83,18 +97,25 @@ impl ClientCore {
     }
 
     /// 假数据下的操作：开页、关页照真核心的规则改页面栈（`pages::actions`），其余不动 ViewModel。
-    pub(super) fn dispatch_ui_fake(&self, action: Action) -> Result<(), CoreError> {
+    pub(super) fn dispatch_ui_fake(
+        &self,
+        action: wonton_protocol::PageAction,
+    ) -> Result<(), CoreError> {
         let views = self.views();
         match action {
-            Action::OpenPage { tab } => {
-                let Some(page) = fake_page(&tab) else {
-                    // 根页面（聊天、应用）一路弹回根。
-                    views.pages.send_modify(|pages| pages.stack.clear());
+            wonton_protocol::PageAction::OpenPage { tab } => {
+                let Some((tab, page)) = fake_open(tab.clone()) else {
+                    // 根页面（聊天、应用）一路弹回根；应用网格开没开记在页面视图里。
+                    views.pages.send_modify(|pages| {
+                        pages.stack.clear();
+                        pages.shows_apps = tab == TabRef::Apps;
+                    });
                     return Ok(());
                 };
                 views.pages.send_if_modified(|pages| {
+                    let left_apps = std::mem::take(&mut pages.shows_apps);
                     if pages.stack.last().is_some_and(|open| open.tab == tab) {
-                        return false;
+                        return left_apps;
                     }
                     pages.stack.retain(|open| open.tab != tab);
                     pages.stack.push(OpenPage { tab, page });
@@ -102,10 +123,11 @@ impl ClientCore {
                 });
                 Ok(())
             }
-            Action::ClosePage => {
+            wonton_protocol::PageAction::ClosePage => {
                 let mut closed = false;
                 views.pages.send_if_modified(|pages| {
-                    closed = pages.stack.pop().is_some();
+                    // 应用网格开着时关的是它，栈不动。
+                    closed = std::mem::take(&mut pages.shows_apps) || pages.stack.pop().is_some();
                     closed
                 });
                 if closed {
@@ -119,6 +141,20 @@ impl ClientCore {
             _ => Ok(()),
         }
     }
+
+    pub(super) fn dispatch_ui_fake_chat(&self, action: wonton_protocol::ChatAction) {
+        if let wonton_protocol::ChatAction::AnswerConfirmation {
+            id,
+            answer,
+            devices,
+            ..
+        } = action
+        {
+            self.views().confirmations.send_if_modified(|view| {
+                super::ui_fake_devices::answer(view, &id, answer, &devices)
+            });
+        }
+    }
 }
 
 fn web_app_tab(plugin_id: &str) -> TabRef {
@@ -128,7 +164,40 @@ fn web_app_tab(plugin_id: &str) -> TabRef {
     }
 }
 
+/// [`CALL_ROOM_ID`] 顶栏的 widget 入口。
+pub(super) fn call_widget() -> wonton_protocol::RoomWidget {
+    wonton_protocol::RoomWidget {
+        tab: TabRef::Widget {
+            plugin_id: CALL_PLUGIN.into(),
+            room_id: CALL_ROOM_ID.into(),
+        },
+        title: "Call".into(),
+        icon: None,
+        entry: wonton_protocol::WidgetEntry::VideoCall,
+    }
+}
+
+/// 打开 `tab` 时压进栈的那一项；`None` 是根页面。
+fn fake_open(tab: TabRef) -> Option<(TabRef, TabPage)> {
+    if tab == web_app_tab(CORNER_APP) {
+        return super::ui_fake_room::corner();
+    }
+    let page = fake_page(&tab)?;
+    Some((tab, page))
+}
+
 fn fake_page(tab: &TabRef) -> Option<TabPage> {
+    if *tab == call_widget().tab {
+        return Some(TabPage {
+            title: "Call".into(),
+            icon: TabIcon::Plugin { icon: None },
+            url: Some(web_url(CALL_PLUGIN)),
+            layout: TabLayout::EdgeToEdge,
+            state: TabState::Ready,
+            reload: 0,
+            opens_in_browser: false,
+        });
+    }
     let TabRef::Plugin { plugin_id, .. } = tab else {
         return None;
     };
@@ -139,7 +208,7 @@ fn fake_page(tab: &TabRef) -> Option<TabPage> {
         url: Some(web_url(plugin_id)),
         layout: TabLayout::default(),
         state: match kind {
-            FakePage::Loading => TabState::Ready,
+            FakePage::Loading | FakePage::Local => TabState::Ready,
             FakePage::Stopped => TabState::Stopped,
             FakePage::Failed => TabState::Failed {
                 reason: "fake failure from the UI test fixture".into(),
@@ -223,7 +292,23 @@ fn fake_chat(mut chat: ChatViewModel) -> ChatViewModel {
         unread_count: 1,
         side_chats: false,
         layout: ChatLayout::default(),
+        call_active: false,
     }];
+    chat.rooms.push(RoomRow {
+        room_id: CALL_ROOM_ID.into(),
+        name: "Family".into(),
+        is_direct: false,
+        direct_user_id: None,
+        plugin: None,
+        is_encrypted: true,
+        is_read_only: false,
+        membership: RoomMembership::Joined,
+        preview: None,
+        unread_count: 0,
+        side_chats: false,
+        layout: ChatLayout::default(),
+        call_active: true,
+    });
     chat.problem = None;
     chat.push = PushStatus::NoEndpoint;
     chat.pending_confirmations.clear();
@@ -247,17 +332,31 @@ fn fake_plugins(mut plugins: PluginsViewModel) -> PluginsViewModel {
     installed.extend(WEB_APPS.iter().map(|(title, id, kind)| {
         let status = match kind {
             FakePage::Stopped => PluginState::Stopped,
-            FakePage::Loading | FakePage::Failed => PluginState::Running {
+            FakePage::Loading | FakePage::Failed | FakePage::Local => PluginState::Running {
                 health: PluginHealth::Healthy,
             },
         };
         fake_plugin(title, id, status, Some(web_url(id)))
     }));
+    installed.push(fake_plugin(
+        super::ui_fake_plugin_detail::HUB_TITLE,
+        super::ui_fake_plugin_detail::HUB_ID,
+        super::ui_fake_plugin_detail::status(),
+        None,
+    ));
     plugins.installed = Some(InstalledPlugins {
         plugins: installed,
         upgrade_check: None,
     });
     plugins.problem = None;
+    // 通话插件的端口映射只连上了公共中继：它的 widget 页上有中继提示可看（ADR-0096 第 4 节）。
+    plugins.port_mappings = vec![wonton_protocol::PluginPortMapping {
+        plugin_id: CALL_PLUGIN.into(),
+        enabled: false,
+        state: wonton_protocol::PortMappingState::On,
+        ports: Vec::new(),
+        warning: Some(wonton_protocol::PortMappingWarning::PublicRelayBandwidth),
+    }];
     plugins
 }
 
@@ -289,7 +388,6 @@ fn fake_plugin(
         tabs: Vec::new(),
         chat: None,
         bot_user_id: None,
-        family: false,
         upgrade: None,
         removable: true,
         notices: Vec::new(),
@@ -335,6 +433,7 @@ fn fake_onboarding(mut onboarding: OnboardingViewModel) -> OnboardingViewModel {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use wonton_protocol::{Action, PageAction};
 
     /// 假数据塞进了各订阅、操作不落到作用域：漏填字段或写坏类型在这里就炸。
     #[test]
@@ -346,6 +445,7 @@ mod tests {
         assert_eq!(core.home().status, HomeStatus::Connected);
         assert_eq!(core.servers().servers.len(), 1);
         assert_eq!(core.chat().rooms[0].room_id, ROOM_ID);
+        assert!(core.chat().rooms[1].call_active);
         assert_eq!(core.pages().root, TabRef::Chat);
         assert_eq!(core.onboarding().step, Some(OnboardingStep::Finished));
         assert_eq!(core.plugins().installed.unwrap().plugins[0].title, "Notes");
@@ -361,24 +461,32 @@ mod tests {
         assert_eq!(core.onboarding().step, Some(OnboardingStep::Finished));
         // 操作不落到作用域。
         assert!(
-            core.dispatch(Action::OpenPage { tab: TabRef::Apps })
-                .is_ok()
+            core.dispatch(Action::Pages {
+                action: PageAction::OpenPage { tab: TabRef::Apps },
+            })
+            .is_ok()
         );
-        assert!(core.dispatch(Action::RefreshPlugins).is_ok());
+        assert!(
+            core.dispatch(Action::Plugins {
+                action: wonton_protocol::PluginAction::RefreshPlugins
+            })
+            .is_ok()
+        );
         assert_eq!(core.pages().root, TabRef::Chat);
-        assert_eq!(core.plugins().installed.unwrap().plugins.len(), 4);
         let _ = std::fs::remove_dir_all(&dir);
     }
 
-    /// 开页、关页照真核心的规则走：压栈、同一页只留一份并挪到栈顶、关页弹栈、根页面清栈、空栈关页被拒。
+    /// 开页、关页照真核心的规则走：压栈、同一页只留一份并挪到栈顶、关页弹栈、根页面清栈、空栈关页被拒、应用网格的开关。
     #[test]
     fn pages_open_and_close_like_the_real_stack() {
         let dir = std::env::temp_dir().join(format!("wonton-ui-fake-pages-{}", std::process::id()));
         let _ = std::fs::remove_dir_all(&dir);
         let core = ClientCore::new_ui_fake(dir.to_string_lossy().into_owned()).unwrap();
         let open = |id: &str| {
-            core.dispatch(Action::OpenPage {
-                tab: web_app_tab(id),
+            core.dispatch(Action::Pages {
+                action: PageAction::OpenPage {
+                    tab: web_app_tab(id),
+                },
             })
         };
         let stack = || -> Vec<TabRef> {
@@ -402,17 +510,132 @@ mod tests {
         );
         assert_eq!(core.pages().stack[0].page.state, TabState::Stopped);
 
-        core.dispatch(Action::ClosePage).unwrap();
+        core.dispatch(Action::Pages {
+            action: PageAction::ClosePage,
+        })
+        .unwrap();
         assert_eq!(stack(), [web_app_tab("app.example.photos")]);
-        core.dispatch(Action::OpenPage { tab: TabRef::Chat })
-            .unwrap();
+        core.dispatch(Action::Pages {
+            action: PageAction::OpenPage { tab: TabRef::Chat },
+        })
+        .unwrap();
         assert!(stack().is_empty());
         assert!(matches!(
-            core.dispatch(Action::ClosePage),
+            core.dispatch(Action::Pages {
+                action: PageAction::ClosePage
+            }),
             Err(CoreError::InvalidInput { .. })
         ));
+        // 应用网格：打开记在视图里，关页关的是它；从网格开一页也收起它。
+        core.dispatch(Action::Pages {
+            action: PageAction::OpenPage { tab: TabRef::Apps },
+        })
+        .unwrap();
+        assert!(core.pages().shows_apps);
+        core.dispatch(Action::Pages {
+            action: PageAction::ClosePage,
+        })
+        .unwrap();
+        assert!(!core.pages().shows_apps);
+        core.dispatch(Action::Pages {
+            action: PageAction::OpenPage { tab: TabRef::Apps },
+        })
+        .unwrap();
+        open("app.example.budget").unwrap();
+        assert!(!core.pages().shows_apps);
+        assert_eq!(stack(), [web_app_tab("app.example.budget")]);
+        // 整页打开本机网页的那个应用：压进栈的是加载得出来的那一页。
+        open(CORNER_APP).unwrap();
+        let top = core.pages().stack.pop().unwrap();
+        assert!(matches!(top.tab, TabRef::Url { .. }));
+        assert_eq!(top.page.state, TabState::Ready);
+        core.dispatch(Action::Pages {
+            action: PageAction::ClosePage,
+        })
+        .unwrap();
         // 面板里钉着的那一页一直在，不跟着栈变。
         assert_eq!(core.pages().panel.len(), 2);
+        let _ = std::fs::remove_dir_all(&dir);
+    }
+
+    /// 带设备的安装卡片：同意以后卡片结束，结果里是随回答带上的设备 ID。
+    #[test]
+    fn answering_the_device_card_reports_the_devices_sent() {
+        let dir =
+            std::env::temp_dir().join(format!("wonton-ui-fake-devices-{}", std::process::id()));
+        let _ = std::fs::remove_dir_all(&dir);
+        let core = ClientCore::new_ui_fake(dir.to_string_lossy().into_owned()).unwrap();
+        let card = core.confirmations().pending.remove(0).card;
+        assert!(card.devices.iter().all(|device| !device.chosen));
+        let devices = crate::toggle_device(
+            card.devices,
+            "disk:/dev/disk/by-id/ata-WDC_WD40EFRX-68N32N0".into(),
+        );
+        core.dispatch(Action::Chat {
+            action: wonton_protocol::ChatAction::AnswerConfirmation {
+                id: card.id,
+                answer: wonton_protocol::Answer::Approve,
+                choice_id: None,
+                secrets: Default::default(),
+                settings: Default::default(),
+                devices: crate::chosen_device_ids(devices, card.permissions),
+            },
+        })
+        .unwrap();
+        let view = core.confirmations();
+        assert!(view.pending.is_empty());
+        assert_eq!(
+            view.finished[0].card.state,
+            wonton_protocol::ConfirmationState::Succeeded {
+                message: "disk:/dev/disk/by-id/ata-WDC_WD40EFRX-68N32N0".into()
+            }
+        );
+        let _ = std::fs::remove_dir_all(&dir);
+    }
+
+    /// 通话中的群聊：时间线带 widget 入口和“通话中”，入口的页面开得出来、关得回去；别的房间没有入口。
+    #[test]
+    fn the_call_room_offers_a_widget_page() {
+        let dir = std::env::temp_dir().join(format!("wonton-ui-fake-call-{}", std::process::id()));
+        let _ = std::fs::remove_dir_all(&dir);
+        let core = ClientCore::new_ui_fake(dir.to_string_lossy().into_owned()).unwrap();
+        // 核心自己带运行时，不能在异步上下文里释放：只有取时间线这两步放进一个临时的运行时。
+        let runtime = tokio::runtime::Builder::new_current_thread()
+            .build()
+            .unwrap();
+        let first = |room_id: &str| {
+            let target = wonton_protocol::TimelineTarget {
+                room_id: room_id.into(),
+                thread_root: None,
+            };
+            runtime.block_on(async {
+                let timeline = core.subscribe_timeline(target).await.unwrap();
+                timeline.next().await.unwrap()
+            })
+        };
+        let quiet = first(ROOM_ID);
+        assert!(quiet.widgets.is_empty() && !quiet.call_active);
+        let call = first(CALL_ROOM_ID);
+        assert!(call.call_active);
+        let [entry] = call.widgets.as_slice() else {
+            panic!("the call room must have exactly one widget entry");
+        };
+
+        core.dispatch(Action::Pages {
+            action: PageAction::OpenPage {
+                tab: entry.tab.clone(),
+            },
+        })
+        .unwrap();
+        let pages = core.pages();
+        assert_eq!(pages.stack.len(), 1);
+        assert_eq!(pages.stack[0].tab, entry.tab);
+        assert_eq!(pages.stack[0].page.state, TabState::Ready);
+        core.dispatch(Action::Pages {
+            action: PageAction::ClosePage,
+        })
+        .unwrap();
+        assert!(core.pages().stack.is_empty());
         let _ = std::fs::remove_dir_all(&dir);
     }
 }

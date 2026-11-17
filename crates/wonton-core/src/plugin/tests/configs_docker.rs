@@ -92,6 +92,7 @@ async fn a_read_only_service_reads_configs_mounted_from_the_core_store() {
         vec![],
         Vec::new(),
         false,
+        &[],
         &Default::default(),
         &super::langs(),
     )

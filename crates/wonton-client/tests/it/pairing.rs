@@ -1,7 +1,9 @@
 //! 扫码配对和添加设备的行为测试：只经导出给原生壳的接口驱动。服务端是只走回环地址的隧道入口，配对的处理方按发出去的
 //! 码决定登记还是拒绝，登记就是把设备加进隧道的白名单；经隧道来的 HTTP 请求由一个模拟的核心回答。
 
+mod invalid_details;
 mod joining;
+mod language;
 mod reset;
 mod stuck_bind;
 
@@ -43,6 +45,7 @@ struct Codes {
     server_id: EndpointId,
     direct_addrs: Vec<SocketAddr>,
     codes: Mutex<HashMap<String, Option<RejectReason>>>,
+    refusal_message: Mutex<Option<String>>,
     /// 加入别人家的码：配对时回这个结果和角色，不登记设备。
     joins: Mutex<HashMap<String, (JoinOutcome, Option<RoleDef>)>>,
     names: Mutex<Vec<String>>,
@@ -104,7 +107,12 @@ impl PairHandler for Codes {
             Some(None) => PairResponse::Paired,
             Some(Some(reason)) => PairResponse::Rejected {
                 reason: *reason,
-                message: format!("{reason:?}"),
+                message: self
+                    .refusal_message
+                    .lock()
+                    .unwrap()
+                    .clone()
+                    .unwrap_or_else(|| format!("{reason:?}")),
             },
             None => PairResponse::Rejected {
                 reason: RejectReason::UnknownCode,
@@ -155,6 +163,7 @@ impl Home {
             server_id: endpoint.id(),
             direct_addrs: endpoint.bound_sockets(),
             codes: Mutex::new(HashMap::new()),
+            refusal_message: Mutex::new(None),
             joins: Mutex::new(HashMap::new()),
             names: Mutex::new(Vec::new()),
             invites: Mutex::new(Vec::new()),
@@ -281,9 +290,11 @@ impl Phone {
     }
 
     fn pair(&self, code: &str) -> Result<(), CoreError> {
-        self.dispatch(Action::PairHome {
-            code: SecretString::new(code),
-            device_name: "Alice 的 iPhone".to_owned(),
+        self.dispatch(Action::Home {
+            action: wonton_protocol::HomeAction::PairHome {
+                code: SecretString::new(code),
+                device_name: "Alice 的 iPhone".to_owned(),
+            },
         })
     }
 
@@ -302,14 +313,17 @@ impl Phone {
             .unwrap_or_else(|_| panic!("等待超时，当前：{:?}", self.home()))
     }
 
-    /// 失败的原因连同原文一起带出去：断言消息里要能看到 TunnelError 的原文，CI 再红时才能区分
-    /// 服务端先关（LINGER）和服务端没读到请求（REQUEST_TIMEOUT）两个失败窗口。
+    /// 把摘要和独立诊断一起带入断言的失败输出，便于区分服务端先关和没读到请求。
     async fn pairing_failure(&self) -> (PairingFailure, String) {
         let view = self
             .wait_for(|view| matches!(view.pairing, Some(PairingStatus::Failed { .. })))
             .await;
         match view.pairing {
-            Some(PairingStatus::Failed { reason, message }) => (reason, message),
+            Some(PairingStatus::Failed {
+                reason,
+                message,
+                diagnostic,
+            }) => (reason, format!("{message}\n{diagnostic:?}")),
             _ => unreachable!(),
         }
     }
@@ -329,7 +343,7 @@ async fn a_code_with_an_http_relay_is_rejected_at_once() {
     );
     let error = phone.pair(&code).unwrap_err();
     let text = format!("{error:?}");
-    assert!(text.contains("https"), "{text}");
+    assert!(text.to_ascii_lowercase().contains("https"), "{text}");
 }
 
 #[tokio::test]
@@ -360,9 +374,36 @@ async fn unreachable_pairing_stops_before_cleanup_and_retry_starts_again() {
         .await
         .expect("pairing failure must be published before endpoint cleanup");
     assert_eq!(failure, PairingFailure::TransportUnavailable, "{message}");
+    let Some(PairingStatus::Failed {
+        message,
+        diagnostic,
+        ..
+    }) = phone.home().pairing
+    else {
+        unreachable!()
+    };
+    let diagnostic = diagnostic.expect("原始诊断仍可获得");
+    assert!(
+        !message.contains("tunnel transport unavailable"),
+        "{message}"
+    );
+    assert!(
+        !message.contains(&dead.local_addr().unwrap().to_string()),
+        "{message}"
+    );
+    assert!(diagnostic.contains("transport-unavailable"), "{diagnostic}");
+    assert!(
+        diagnostic.contains(&dead.local_addr().unwrap().to_string()),
+        "{diagnostic}"
+    );
+    assert!(!diagnostic.contains(PairingCode::parse(&code).unwrap().secret.expose()));
     assert_eq!(phone.home().status, HomeStatus::NotConfigured);
     assert!(phone.home().server_id.is_none());
-    phone.dispatch(Action::DismissPairingFailure).unwrap();
+    phone
+        .dispatch(Action::Home {
+            action: wonton_protocol::HomeAction::DismissPairingFailure,
+        })
+        .unwrap();
     assert!(phone.home().pairing.is_none());
     assert_eq!(phone.home().status, HomeStatus::NotConfigured);
     phone.pair(&code).unwrap();
@@ -401,12 +442,18 @@ async fn an_unreachable_server_stays_connecting_and_the_wait_grows() {
             )
         })
         .await;
-    phone.dispatch(Action::CancelPairing).unwrap();
+    phone
+        .dispatch(Action::Home {
+            action: wonton_protocol::HomeAction::CancelPairing,
+        })
+        .unwrap();
     assert!(phone.home().pairing.is_none());
     assert_eq!(phone.home().status, HomeStatus::NotConfigured);
     assert!(
         matches!(
-            phone.dispatch(Action::CancelPairing),
+            phone.dispatch(Action::Home {
+                action: wonton_protocol::HomeAction::CancelPairing
+            }),
             Err(CoreError::InvalidInput { .. })
         ),
         "没有正在进行的配对时取消该报输入错误"
@@ -435,7 +482,11 @@ async fn cancelling_a_slow_pairing_returns_to_the_form_and_a_retry_pairs() {
             )
         })
         .await;
-    phone.dispatch(Action::CancelPairing).unwrap();
+    phone
+        .dispatch(Action::Home {
+            action: wonton_protocol::HomeAction::CancelPairing,
+        })
+        .unwrap();
     assert!(phone.home().pairing.is_none());
     assert_eq!(phone.home().status, HomeStatus::NotConfigured);
     // 取消不是配上：核心不给 Paired，壳的“配上了”只看这个类别，取消回到没有进展。
@@ -578,7 +629,11 @@ async fn a_rejected_code_says_what_to_do_next() {
             HomeStatus::NotConfigured,
             "配不上就不存连接信息"
         );
-        phone.dispatch(Action::DismissPairingFailure).unwrap();
+        phone
+            .dispatch(Action::Home {
+                action: wonton_protocol::HomeAction::DismissPairingFailure,
+            })
+            .unwrap();
         assert!(phone.home().pairing.is_none());
         phone.pair(&code).unwrap();
         let (rescanned, message) = phone.pairing_failure().await;
@@ -616,7 +671,9 @@ async fn a_paired_phone_gets_a_code_that_adds_another_device() {
     let phone = Phone::open(dir.path());
     assert!(
         matches!(
-            phone.dispatch(Action::InviteDevice),
+            phone.dispatch(Action::Home {
+                action: wonton_protocol::HomeAction::InviteDevice
+            }),
             Err(CoreError::NotReady { .. })
         ),
         "还没配对时不能添加设备"
@@ -624,7 +681,11 @@ async fn a_paired_phone_gets_a_code_that_adds_another_device() {
     phone.pair(&home.code(None)).unwrap();
     phone.wait_for(paired).await;
 
-    phone.dispatch(Action::InviteDevice).unwrap();
+    phone
+        .dispatch(Action::Home {
+            action: wonton_protocol::HomeAction::InviteDevice,
+        })
+        .unwrap();
     let view = phone
         .wait_for(|view| matches!(view.invite, Some(DeviceInvite::Ready { .. })))
         .await;
@@ -674,7 +735,11 @@ async fn a_refused_invite_says_why() {
         (404, HomeFailure::Protocol),
     ] {
         *home.codes.refuse.lock().unwrap() = Some(status);
-        phone.dispatch(Action::InviteDevice).unwrap();
+        phone
+            .dispatch(Action::Home {
+                action: wonton_protocol::HomeAction::InviteDevice,
+            })
+            .unwrap();
         let view = phone
             .wait_for(|view| matches!(view.invite, Some(DeviceInvite::Failed { .. })))
             .await;

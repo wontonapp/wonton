@@ -629,6 +629,20 @@ impl Engine {
         }
     }
 
+    /// 重启容器：dockerd 会重新解析设备节点上的 by-id，拔插后编号变了也拿到新节点（ADR-0036 的实测）。
+    pub async fn restart_container(&self, name: &str, _langs: &Languages) -> Result<()> {
+        self.patient()
+            .restart_container(name, None)
+            .await
+            .map_err(|error| {
+                self.fail_name(
+                    "plugin-install-docker-context-restart-container",
+                    name,
+                    error,
+                )
+            })
+    }
+
     /// 停止但保留容器及卷；已停止视为成功。
     pub async fn stop_container(&self, name: &str) -> Result<()> {
         let stop = StopContainerOptionsBuilder::default().t(10).build();

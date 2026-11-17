@@ -186,7 +186,11 @@ async fn refreshing_lists_the_paired_servers_and_the_settings_entry() {
             peers_view(vec![row("abc12345.wonton")]),
         ),
     );
-    rig.app.dispatch(Action::RefreshPeers).unwrap();
+    rig.app
+        .dispatch(Action::Peers {
+            action: wonton_protocol::PeerAction::RefreshPeers,
+        })
+        .unwrap();
     wait_peers(&rig, |view| {
         view.state == PeersState::Ready && view.peers.len() == 1
     })
@@ -218,7 +222,9 @@ async fn scanning_a_code_submits_it_and_refreshes_the_list() {
         ),
     );
     rig.app
-        .dispatch(Action::ScanPeerCode { code: code.clone() })
+        .dispatch(Action::Peers {
+            action: wonton_protocol::PeerAction::ScanPeerCode { code: code.clone() },
+        })
         .unwrap();
     let view = wait_peers(&rig, |view| {
         view.state == PeersState::Ready && !view.peers.is_empty()
@@ -256,8 +262,10 @@ async fn removing_a_peer_refreshes_the_list() {
         ),
     );
     rig.app
-        .dispatch(Action::RemovePeer {
-            server_name: "abc12345.wonton".into(),
+        .dispatch(Action::Peers {
+            action: wonton_protocol::PeerAction::RemovePeer {
+                server_name: "abc12345.wonton".into(),
+            },
         })
         .unwrap();
     wait_peers(&rig, |view| {
@@ -287,8 +295,10 @@ async fn removing_the_last_peer_zeroes_the_settings_count() {
     // 取列表压住：那一行要在删除成功后马上没有，不等下一次取列表。
     rig.core.hold(Method::GET, PEERS_PATH);
     rig.app
-        .dispatch(Action::RemovePeer {
-            server_name: "abc12345.wonton".into(),
+        .dispatch(Action::Peers {
+            action: wonton_protocol::PeerAction::RemovePeer {
+                server_name: "abc12345.wonton".into(),
+            },
         })
         .unwrap();
     wait_peers(&rig, |view| view.peers.is_empty()).await;
@@ -353,8 +363,10 @@ async fn a_failed_scan_fails_with_the_server_s_category() {
         rig.core
             .answer_headered(Method::POST, PEERS_PATH, peer_error_headered(status, kind));
         rig.app
-            .dispatch(Action::ScanPeerCode {
-                code: SecretString::new("wonton://peer?v=1&token=abc"),
+            .dispatch(Action::Peers {
+                action: wonton_protocol::PeerAction::ScanPeerCode {
+                    code: SecretString::new("wonton://peer?v=1&token=abc"),
+                },
             })
             .unwrap();
         assert!(
@@ -378,8 +390,10 @@ async fn an_unknown_category_fails_with_other() {
         peer_error_headered(400, "code_lost"),
     );
     rig.app
-        .dispatch(Action::ScanPeerCode {
-            code: SecretString::new("wonton://peer?v=1&token=abc"),
+        .dispatch(Action::Peers {
+            action: wonton_protocol::PeerAction::ScanPeerCode {
+                code: SecretString::new("wonton://peer?v=1&token=abc"),
+            },
         })
         .unwrap();
     assert!(
@@ -398,7 +412,11 @@ async fn an_unknown_category_fails_with_other() {
 #[tokio::test]
 async fn without_a_connection_the_list_fails_with_transport_unavailable() {
     let rig = Rig::new().await;
-    rig.app.dispatch(Action::RefreshPeers).unwrap();
+    rig.app
+        .dispatch(Action::Peers {
+            action: wonton_protocol::PeerAction::RefreshPeers,
+        })
+        .unwrap();
     let view = wait_failed(&rig, PeerError::TransportUnavailable).await;
     assert!(matches!(&view.state, PeersState::Failed { message, .. } if !message.is_empty()));
     assert_eq!(peers_entry(&rig), None);
@@ -421,7 +439,11 @@ async fn a_broken_tunnel_fails_with_transport_unavailable() {
             "隧道未连接\n".into(),
         ),
     );
-    rig.app.dispatch(Action::RefreshPeers).unwrap();
+    rig.app
+        .dispatch(Action::Peers {
+            action: wonton_protocol::PeerAction::RefreshPeers,
+        })
+        .unwrap();
     wait_failed(&rig, PeerError::TransportUnavailable).await;
     // 台数拿不到，设置首页不放这一行；刚才是 Ready，要等设置首页跟着撤掉。
     wait_peers_entry(&rig, None).await;
@@ -469,7 +491,11 @@ async fn an_open_code_page_polls_fast_and_hiding_it_stops() {
             serde_json::to_string(&code).unwrap(),
         ),
     );
-    rig.app.dispatch(Action::ShowPeerCode).unwrap();
+    rig.app
+        .dispatch(Action::Peers {
+            action: wonton_protocol::PeerAction::ShowPeerCode,
+        })
+        .unwrap();
     wait_peers(&rig, |view| view.code.is_some()).await;
 
     // 对方扫了：下一次快取把请求带进来。
@@ -493,12 +519,20 @@ async fn an_open_code_page_polls_fast_and_hiding_it_stops() {
         PEERS_PATH,
         Canned(StatusCode::OK.as_u16(), peers_view(Vec::new())),
     );
-    rig.app.dispatch(Action::RefreshPeers).unwrap();
+    rig.app
+        .dispatch(Action::Peers {
+            action: wonton_protocol::PeerAction::RefreshPeers,
+        })
+        .unwrap();
     wait_peers(&rig, |view| {
         view.state == PeersState::Ready && view.requests.is_empty() && view.code.is_some()
     })
     .await;
-    rig.app.dispatch(Action::HidePeerCode).unwrap();
+    rig.app
+        .dispatch(Action::Peers {
+            action: wonton_protocol::PeerAction::HidePeerCode,
+        })
+        .unwrap();
     wait_peers(&rig, |view| view.code.is_none()).await;
     let before = rig.core.seen(&Method::GET, PEERS_PATH).len();
     let deadline = Instant::now() + QUIET;
@@ -535,8 +569,10 @@ async fn an_approval_is_picked_up_by_the_poll() {
         ),
     );
     rig.app
-        .dispatch(Action::ScanPeerCode {
-            code: SecretString::new("wonton://peer?v=1&token=abc"),
+        .dispatch(Action::Peers {
+            action: wonton_protocol::PeerAction::ScanPeerCode {
+                code: SecretString::new("wonton://peer?v=1&token=abc"),
+            },
         })
         .unwrap();
     wait_peers(&rig, |view| {
@@ -586,7 +622,11 @@ async fn a_checking_row_is_followed_until_it_settles_and_polling_then_stops() {
             }]),
         ),
     );
-    rig.app.dispatch(Action::RefreshPeers).unwrap();
+    rig.app
+        .dispatch(Action::Peers {
+            action: wonton_protocol::PeerAction::RefreshPeers,
+        })
+        .unwrap();
     wait_peers(&rig, |view| {
         view.state == PeersState::Ready
             && view

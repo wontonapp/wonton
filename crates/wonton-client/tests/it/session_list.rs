@@ -28,20 +28,26 @@ fn new_core() -> TestCore {
 }
 
 fn create(title: &str) -> Action {
-    Action::CreateSession {
-        title: title.into(),
+    Action::Session {
+        action: wonton_protocol::SessionAction::CreateSession {
+            title: title.into(),
+        },
     }
 }
 
 fn select(session_id: &str) -> Action {
-    Action::SelectSession {
-        session_id: session_id.into(),
+    Action::Session {
+        action: wonton_protocol::SessionAction::SelectSession {
+            session_id: session_id.into(),
+        },
     }
 }
 
 fn delete(session_id: &str) -> Action {
-    Action::DeleteSession {
-        session_id: session_id.into(),
+    Action::Session {
+        action: wonton_protocol::SessionAction::DeleteSession {
+            session_id: session_id.into(),
+        },
     }
 }
 

@@ -99,6 +99,7 @@ async fn official_plugins_come_from_the_index_and_are_checked_against_it() {
     );
     let request = InstallRequest {
         scope: None,
+        audience: None,
         source: preview.source.unwrap(),
         digest: preview.digest,
         plan: preview.plan,
@@ -110,6 +111,7 @@ async fn official_plugins_come_from_the_index_and_are_checked_against_it() {
         lan_webui: false,
         install_together: Vec::new(),
         connect_plugins: Vec::new(),
+        remote_oauth: None,
     };
     m.install_source(&request).await.unwrap();
     let id = PluginId::parse("app.hello").unwrap();
@@ -528,6 +530,7 @@ async fn a_subdirectory_entry_is_listed_installed_and_checked_for_upgrades() {
     assert_eq!(preview.trust, PluginTrust::Official);
     m.install_source(&InstallRequest {
         scope: None,
+        audience: None,
         source: preview.source.unwrap(),
         digest: preview.digest,
         plan: preview.plan,
@@ -539,6 +542,7 @@ async fn a_subdirectory_entry_is_listed_installed_and_checked_for_upgrades() {
         lan_webui: false,
         install_together: Vec::new(),
         connect_plugins: Vec::new(),
+        remote_oauth: None,
     })
     .await
     .unwrap();

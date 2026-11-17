@@ -130,8 +130,8 @@ GOAL 的 M2 第 4、6 项：主人邀请家人，每人有私人 Bot 和私人�
   就绪时 `BotWebPage` 带完整 `BotRef`、URL、显示方式和跨源隔离要求；页面身份专用
   `TabRef::Bot { bot: BotRef, path: Option<String> }`，不存 URL，不借 `TabRef::Plugin` 或 `TabRef::Url`。
   `path: None` 打开同一个 `BotRef` 的 `BotView.web` 在 `Ready` 时给出的 `page.url`；`Some(path)` 只允许该
-  origin 内的路径，可含查询和片段。选择／打开沿用 `Action::SelectTab`，固定沿用 `PinTab`、`PinCurrentPage`
-  和 `Panel`；`PlacedTab` 保留相同的 Bot 身份和路径。桥、媒体、`--wonton-*` 走既有 `TabRef`／`PlacedTab`
+  origin 内的路径，可含查询和片段。打开沿用 `PageAction::OpenPage`，加入沿用 `PageAction::AddMyApp`、`PageAction::PinCurrentPage`
+  和面板；`PlacedTab` 保留相同的 Bot 身份和路径。桥、媒体、`--wonton-*` 走既有 `TabRef`／`PlacedTab`
   和页面容器，不另建壳层 WebView，也不省略桥。
   聊天已有的 `BotView` watch 通道传给 `TabsLink`，Bot 网页状态变化时重算 `TabsViewModel` 的
   `TabPage`，桥和媒体使用它的精确页面 URL／origin。URL 只来自该 `BotRef` 的 `BotView.web.Ready.page.url`，

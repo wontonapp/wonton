@@ -4,7 +4,9 @@ use serde::{Deserialize, Serialize};
 use serde_json::json;
 
 use super::*;
-use crate::{Action, EgressViewModel, PluginState, StoreConfirmation, TabRef, UpdatablePlugin};
+use crate::{
+    Action, EgressViewModel, PluginAction, PluginState, StoreConfirmation, TabRef, UpdatablePlugin,
+};
 
 fn round_trip<T>(value: &T) -> T
 where
@@ -65,6 +67,7 @@ fn one_tap_requests_round_trip() {
         source: "github:someone/wonton-samba@v1.0.0".into(),
         digest: preview().digest,
         plan: "consumer-plan".into(),
+        audience: None,
         scope: None,
         grant: vec!["network.host".into()],
         enabled_permissions: vec!["docker.socket".into()],
@@ -78,6 +81,7 @@ fn one_tap_requests_round_trip() {
                 source: "github:example/wonton-model-gateway".into(),
                 digest: format!("sha256:{}", "ab".repeat(32)),
                 plan: "provider-plan".into(),
+                audience: None,
                 scope: None,
                 grant: Vec::new(),
                 enabled_permissions: Vec::new(),
@@ -87,9 +91,11 @@ fn one_tap_requests_round_trip() {
                 lan_webui: false,
                 install_together: Vec::new(),
                 connect_plugins: Vec::new(),
+                remote_oauth: None,
             },
         }],
         connect_plugins: Vec::new(),
+        remote_oauth: None,
     };
     assert_eq!(round_trip(&request), request);
     let upgrade = UpgradeRequest {
@@ -116,6 +122,7 @@ fn sidebar_view_model_round_trip() {
         installed: Some(installed),
         roles: Default::default(),
         store: Some(store()),
+        store_load: StoreLoadState::Ready,
         refreshing: true,
         problem: Some(PluginProblem {
             reason: PluginFailure::TransportUnavailable,
@@ -205,23 +212,33 @@ fn sidebar_view_model_round_trip() {
 
 fn wire_format_is_stable() {
     for action in [
-        Action::InstallNow {
-            source: "github:owner/repo".into(),
+        Action::Plugins {
+            action: PluginAction::InstallNow {
+                source: "github:owner/repo".into(),
+            },
         },
-        Action::UpgradeNow {
-            plugin_id: "app.memos".into(),
+        Action::Plugins {
+            action: PluginAction::UpgradeNow {
+                plugin_id: "app.memos".into(),
+            },
         },
-        Action::UpgradeAll,
-        Action::DismissStoreConfirmation,
+        Action::Plugins {
+            action: PluginAction::UpgradeAll,
+        },
+        Action::Plugins {
+            action: PluginAction::DismissStoreConfirmation,
+        },
     ] {
         assert_eq!(round_trip(&action), action);
     }
     assert_eq!(
-        serde_json::to_value(Action::UpgradeNow {
-            plugin_id: "app.memos".into()
+        serde_json::to_value(Action::Plugins {
+            action: PluginAction::UpgradeNow {
+                plugin_id: "app.memos".into(),
+            }
         })
         .unwrap(),
-        json!({"type": "upgrade_now", "plugin_id": "app.memos"})
+        json!({"domain": "plugins", "action": {"type": "upgrade_now", "plugin_id": "app.memos"}})
     );
     assert_eq!(
         serde_json::to_value(installed()).unwrap()["revision"],

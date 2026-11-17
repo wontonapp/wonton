@@ -7,12 +7,10 @@
 
 use std::collections::{BTreeMap, HashMap};
 
-use hyper::header::{HeaderName, HeaderValue};
-use wonton_protocol::Role;
-
 use super::manifest::{Manifest, ManifestError, SecretSpec, Sso};
 use super::secrets::Secrets;
 use crate::owner::{Owner, internal_email};
+use hyper::header::{HeaderName, HeaderValue};
 
 use super::languages::Languages;
 use crate::l10n::text;
@@ -20,7 +18,8 @@ use crate::l10n::text;
 /// 代登录用的密钥至少这么长：网关按值从响应里找出并去掉它，值太短会误伤别的内容。
 const MIN_SECRET_BYTES: usize = 16;
 
-/// 不能代加的请求头：Host 和 Cookie 由网关自己处理，转发头由网关重新设置，逐跳头不能转发。
+/// 不能代加的请求头：Host 和 Cookie 由网关自己处理，转发头由网关重新设置，逐跳头不能转发，
+/// 能力头只能由网关按这个人注入（页面自己带的会被删掉，清单也不能声明）。
 const FORBIDDEN_HEADERS: &[&str] = &[
     "host",
     "cookie",
@@ -34,6 +33,7 @@ const FORBIDDEN_HEADERS: &[&str] = &[
     "trailer",
     "transfer-encoding",
     "upgrade",
+    "x-wonton-capabilities",
 ];
 
 /// 值模板里的一段。`Secret` 解析清单时是密钥的名字，网关用的时候是它的值。
@@ -45,6 +45,49 @@ enum Part {
     Email,
     Role,
     Secret(String),
+}
+
+/// 远端 MCP 的请求头（`remote_mcp.headers`）：名字合法、不在禁止名单里（`X-Wonton-*` 由核心写，MCP 的协议头由
+/// 传输层写），值是合法头值。返回模板引用的密钥名，只有 `{secret:…}` 能用。
+pub fn validate_header_spec(
+    name: &str,
+    template: &str,
+    langs: &Languages,
+) -> Result<Vec<String>, String> {
+    let lower = name.to_ascii_lowercase();
+    if HeaderName::from_bytes(name.as_bytes()).is_err()
+        || FORBIDDEN_HEADERS.contains(&lower.as_str())
+        || lower.starts_with("x-forwarded-")
+        || lower.starts_with("x-wonton-")
+        || MCP_PROTOCOL_HEADERS.contains(&lower.as_str())
+    {
+        return Err(text(
+            langs,
+            "plugin-install-remote-header-forbidden",
+            &[("name", name.into())],
+        ));
+    }
+    let mut secrets = Vec::new();
+    for part in parse(template, langs)? {
+        match part {
+            Part::Secret(secret) => secrets.push(secret),
+            Part::Text(text) if HeaderValue::from_str(&text).is_err() => {
+                return Err(control_chars_error(langs, template));
+            }
+            Part::Text(_) => {}
+            other => {
+                return Err(text(
+                    langs,
+                    "plugin-install-remote-identity-placeholder",
+                    &[
+                        ("placeholder", part_name(&other).into()),
+                        ("template", template.into()),
+                    ],
+                ));
+            }
+        }
+    }
+    Ok(secrets)
 }
 
 /// 解析好的代登录凭据：请求头和 Cookie 的名字及值模板，`{secret:…}` 已经换成核心生成的值。`Debug` 只打印名字。
@@ -112,9 +155,9 @@ impl ProxyAuth {
     pub fn headers(
         &self,
         owner: &Owner,
-        role: Role,
+        plugin_admin: bool,
     ) -> Result<Vec<(HeaderName, String)>, RenderError> {
-        let role = role_name(role)?;
+        let role = role_name(plugin_admin);
         self.headers
             .iter()
             .map(|(name, parts)| Ok((name.clone(), render(parts, owner, Some(role))?)))
@@ -122,8 +165,12 @@ impl ProxyAuth {
     }
 
     /// 代加的 Cookie：名字和这次请求的值。
-    pub fn cookies(&self, owner: &Owner, role: Role) -> Result<Vec<(&str, String)>, RenderError> {
-        let role = role_name(role)?;
+    pub fn cookies(
+        &self,
+        owner: &Owner,
+        plugin_admin: bool,
+    ) -> Result<Vec<(&str, String)>, RenderError> {
+        let role = role_name(plugin_admin);
         self.cookies
             .iter()
             .map(|(name, parts)| Ok((name.as_str(), render(parts, owner, Some(role))?)))
@@ -155,6 +202,37 @@ impl ProxyAuth {
     }
 }
 
+/// Render `clients.http.auth.gateway.headers` with the same placeholders as
+/// `webui.proxy.headers`.
+pub fn render_gateway_headers(
+    headers: &BTreeMap<String, String>,
+    owner: &Owner,
+    plugin_admin: bool,
+    generated: &BTreeMap<String, String>,
+    langs: &Languages,
+) -> Result<Vec<(HeaderName, String)>, String> {
+    headers
+        .iter()
+        .map(|(name, template)| {
+            let name =
+                HeaderName::from_bytes(name.as_bytes()).map_err(|error| error.to_string())?;
+            let parts = parse(template, langs)?
+                .into_iter()
+                .map(|part| match part {
+                    Part::Secret(name) => generated
+                        .get(&name)
+                        .map(|value| Part::Secret(value.clone()))
+                        .ok_or_else(|| secret_missing(langs, &name)),
+                    other => Ok(other),
+                })
+                .collect::<Result<Vec<_>, String>>()?;
+            let value = render(&parts, owner, Some(role_name(plugin_admin)))
+                .map_err(|error| error.to_string())?;
+            Ok((name, value))
+        })
+        .collect()
+}
+
 /// 模板要了不认识请求者角色时，不生成代登录凭据；身份资料本身都已经能取到。
 #[derive(Debug, thiserror::Error)]
 pub enum RenderError {
@@ -162,13 +240,8 @@ pub enum RenderError {
     UnknownRole,
 }
 
-fn role_name(role: Role) -> Result<&'static str, RenderError> {
-    match role {
-        Role::Owner => Ok("owner"),
-        Role::Member => Ok("member"),
-        Role::Friend => Ok("friend"),
-        Role::Other => Err(RenderError::UnknownRole),
-    }
+fn role_name(plugin_admin: bool) -> &'static str {
+    if plugin_admin { "admin" } else { "user" }
 }
 
 fn render(parts: &[Part], owner: &Owner, role: Option<&str>) -> Result<String, RenderError> {
@@ -701,33 +774,6 @@ mod tests {
             fill_template("{user}", &owner, &BTreeMap::new(), &langs).unwrap(),
             "owner"
         );
-    }
-
-    #[test]
-    fn unknown_roles_fail_even_for_secret_only_credentials() {
-        let manifest = manifest(
-            "  webui:\n    service: web\n    port: 80\n    sso: proxy\n    proxy:\n      \
-             headers: {X-Key: '{secret:key}'}\n      cookies: {key: '{secret:key}'}\n  \
-             secrets: {key: {generate: {bytes: 32}}}",
-        );
-        let langs = Languages::default();
-        let generated = BTreeMap::from([("key".into(), "0123456789abcdef0123456789abcdef".into())]);
-        let auth = ProxyAuth::resolve(&manifest, &generated, &langs)
-            .unwrap()
-            .unwrap();
-        let owner = Owner {
-            username: "future".into(),
-            display_name: "Future".into(),
-            email: None,
-        };
-        assert!(matches!(
-            auth.headers(&owner, Role::Other),
-            Err(RenderError::UnknownRole)
-        ));
-        assert!(matches!(
-            auth.cookies(&owner, Role::Other),
-            Err(RenderError::UnknownRole)
-        ));
     }
 
     #[test]

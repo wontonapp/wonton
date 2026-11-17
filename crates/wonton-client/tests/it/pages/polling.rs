@@ -77,7 +77,9 @@ async fn chat_is_idle_open_page_polls_and_background_pauses_until_foreground() {
     let (rig, pinned, mut plugin) = connected_page_rig("app.poll-pinned", "home").await;
     // 回到根页面（栈空）：不活跃。
     rig.app
-        .dispatch(Action::OpenPage { tab: TabRef::Chat })
+        .dispatch(Action::Pages {
+            action: wonton_protocol::PageAction::OpenPage { tab: TabRef::Chat },
+        })
         .unwrap();
     quiet(&rig, false).await;
     enter(
@@ -85,20 +87,28 @@ async fn chat_is_idle_open_page_polls_and_background_pauses_until_foreground() {
         &pinned,
         &mut plugin,
         "entered",
-        Action::OpenPage {
-            tab: pinned.clone(),
+        Action::Pages {
+            action: wonton_protocol::PageAction::OpenPage {
+                tab: pinned.clone(),
+            },
         },
     )
     .await;
     periodic_change(&rig, &pinned, &mut plugin).await;
-    rig.app.dispatch(Action::AppBackgrounded).unwrap();
+    rig.app
+        .dispatch(Action::Home {
+            action: wonton_protocol::HomeAction::AppBackgrounded,
+        })
+        .unwrap();
     quiet(&rig, false).await;
     enter(
         &rig,
         &pinned,
         &mut plugin,
         "foreground",
-        Action::AppForegrounded,
+        Action::Home {
+            action: wonton_protocol::HomeAction::AppForegrounded,
+        },
     )
     .await;
 }
@@ -130,9 +140,11 @@ async fn a_panel_instance_polls_but_a_disconnected_page_does_not_request_or_redi
     // 面板里再放一份入口（网址入口那一页）：栈里的和面板里的各自计数。
     let panel = tab(&plugin.id, None);
     rig.app
-        .dispatch(Action::AddPanelPage {
-            scope: PanelScope::Main,
-            tab: panel.clone(),
+        .dispatch(Action::Pages {
+            action: wonton_protocol::PageAction::AddPanelPage {
+                scope: PanelScope::Main,
+                tab: panel.clone(),
+            },
         })
         .unwrap();
     enter(
@@ -140,8 +152,10 @@ async fn a_panel_instance_polls_but_a_disconnected_page_does_not_request_or_redi
         &pinned,
         &mut plugin,
         "panel-entered",
-        Action::OpenPage {
-            tab: pinned.clone(),
+        Action::Pages {
+            action: wonton_protocol::PageAction::OpenPage {
+                tab: pinned.clone(),
+            },
         },
     )
     .await;
@@ -157,6 +171,10 @@ async fn a_panel_instance_polls_but_a_disconnected_page_does_not_request_or_redi
     }
     // 重新授权后如错误轮询触发重拨，将能真正连上，不能被拒绝响应掩盖。
     home.allowed.allow(rig.device());
-    rig.app.dispatch(Action::OpenPage { tab: panel }).unwrap();
+    rig.app
+        .dispatch(Action::Pages {
+            action: wonton_protocol::PageAction::OpenPage { tab: panel },
+        })
+        .unwrap();
     quiet(&rig, true).await;
 }

@@ -35,24 +35,23 @@ fn runtime_determines_whether_services_are_allowed() {
             ));
         }
     }
-    for (runtime, expected) in [
-        ("remote_mcp", Runtime::RemoteMcp),
-        ("skills", Runtime::Skills),
-    ] {
-        assert_eq!(
-            parse(&document(Some(runtime), None))
-                .unwrap()
-                .manifest
-                .runtime,
-            expected
-        );
+    let skills = document(Some("skills"), None);
+    assert_eq!(parse(&skills).unwrap().manifest.runtime, Runtime::Skills);
+    let mut remote = document(Some("remote_mcp"), None);
+    remote["x-wonton"]["remote_mcp"] = json!({"url": "https://mcp.example.com/mcp"});
+    assert_eq!(parse(&remote).unwrap().manifest.runtime, Runtime::RemoteMcp);
+    for parsed in [skills, remote] {
         for forbidden in [json!({}), services.clone(), Value::Null, json!([])] {
-            assert!(matches!(
-                parse(&document(Some(runtime), Some(forbidden))),
-                Err(PackageError::Service { .. })
-            ));
+            let mut doc = parsed.clone();
+            doc["services"] = forbidden;
+            assert!(matches!(parse(&doc), Err(PackageError::Service { .. })));
         }
     }
+    // 远端形态必须写 `remote_mcp`。
+    assert!(matches!(
+        parse(&document(Some("remote_mcp"), None)),
+        Err(PackageError::Manifest(_))
+    ));
     assert!(matches!(
         parse(&document(Some("future"), None)),
         Err(PackageError::Manifest(_))

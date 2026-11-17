@@ -73,12 +73,16 @@ async fn public_pages_get_no_document_script_or_bridge() {
         url: "https://example.com/news".to_owned(),
     };
     rig.app
-        .dispatch(Action::OpenPage { tab: tab.clone() })
+        .dispatch(Action::Pages {
+            action: wonton_protocol::PageAction::OpenPage { tab: tab.clone() },
+        })
         .unwrap();
     rig.app
-        .dispatch(Action::AddPanelPage {
-            scope: PanelScope::Main,
-            tab: tab.clone(),
+        .dispatch(Action::Pages {
+            action: wonton_protocol::PageAction::AddPanelPage {
+                scope: PanelScope::Main,
+                tab: tab.clone(),
+            },
         })
         .unwrap();
 

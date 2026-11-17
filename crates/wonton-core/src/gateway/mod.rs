@@ -19,7 +19,6 @@
 //! 隔离规则见 `isolation`：插件上只认同源请求和导航，核心上改状态的请求只接受同源，插件的 Cookie 出不了
 //! 自己的子域名。
 
-pub mod agent_acp;
 pub mod agent_chains;
 mod agent_chains_api;
 pub mod agent_outbox;
@@ -42,6 +41,7 @@ mod chain_mentions;
 mod clients_api;
 mod clients_domain;
 mod clients_entry;
+mod clients_passwords;
 mod confirmations;
 mod core_routes;
 mod core_upgrade;
@@ -56,6 +56,7 @@ mod friends;
 mod friends_wiring;
 mod health;
 mod hosted;
+mod install_gates;
 mod isolation;
 mod join_requests;
 mod lan;
@@ -66,7 +67,7 @@ pub mod matrix_rtc_alias;
 mod mcp;
 mod mcp_apps;
 mod me;
-mod model_providers;
+mod model_settings;
 mod models;
 pub(crate) mod notify;
 pub(crate) mod notify_limit;
@@ -77,6 +78,7 @@ mod panel_pins;
 mod peers;
 pub mod people_limits;
 pub(crate) mod permissions;
+mod plugin_audience;
 mod plugin_scope;
 mod plugin_settings;
 mod plugin_start;
@@ -228,8 +230,6 @@ pub struct Gateway {
     sessions: session::SessionStore,
     /// 调用链（ADR-0061 第 10 节）：账本、出箱、设置和 `agent_acp` 的取消方，见 [`agent_chains::AgentChains`]。
     pub(crate) agent_chains: Option<Arc<agent_chains::AgentChains>>,
-    /// `agent_acp` 的活连接注册表（ADR-0061 第 5 块）：并发计数和停链取消。
-    pub(crate) agent_acp: Option<Arc<agent_acp::Registry>>,
 }
 impl Gateway {
     /// `hydra` 带上身份提供方公开端点的地址，必须来自 [`crate::config::Config`]：配置层已经校验过它是
@@ -305,7 +305,6 @@ impl Gateway {
             domain: None,
             sessions: session::SessionStore::default(),
             agent_chains: None,
-            agent_acp: None,
         }
     }
 
@@ -584,6 +583,18 @@ impl Gateway {
             .get(&record.role_id)
             .map_or_else(Permissions::strictest, |role| role.permissions)
     }
+    /// 这个人是否在指定应用里具备插件管理员能力。应用未对他开放时，管理员范围也不生效。
+    pub(crate) fn plugin_admin(&self, person: &Person, plugin_id: &str) -> bool {
+        if person.is_owner() {
+            return true;
+        }
+        if person.role == Role::Friend {
+            return false;
+        }
+        let permissions = self.permissions(person);
+        permissions.open_apps.allows_plugin(plugin_id)
+            && permissions.plugin_admin.allows_plugin(plugin_id)
+    }
 
     /// 这个角色有几人在用：没移除的家人和还在名单里的好友。角色接口接上之前只有测试用。
     #[cfg_attr(not(test), allow(dead_code))]
@@ -753,6 +764,8 @@ mod friends_tests;
 #[cfg(test)]
 mod health_tests;
 #[cfg(test)]
+mod install_gate_tests;
+#[cfg(test)]
 mod isolation_policy_tests;
 #[cfg(test)]
 mod isolation_tests;
@@ -781,8 +794,6 @@ mod mcp_takeover_tests;
 #[cfg(test)]
 mod mcp_tests;
 #[cfg(test)]
-mod model_providers_tests;
-#[cfg(test)]
 mod models_tests;
 #[cfg(test)]
 mod notify_tests;
@@ -800,6 +811,8 @@ mod pairing_tests;
 mod panel_pins_tests;
 #[cfg(test)]
 mod peers_api_tests;
+#[cfg(test)]
+mod plugin_capability_tests;
 #[cfg(test)]
 mod plugin_forms_tests;
 #[cfg(test)]

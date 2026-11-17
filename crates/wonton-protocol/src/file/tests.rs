@@ -3,7 +3,7 @@ use serde::de::DeserializeOwned;
 use serde_json::json;
 
 use super::*;
-use crate::{Action, RoomRow};
+use crate::{Action, FileAction, RoomRow};
 
 const ID: &str = "aaaqeayeaudaocajbifqydiob4";
 const OTHER_ID: &str = "77777777777777777777777774";
@@ -428,40 +428,63 @@ fn what_is_stored_on_the_phone_keeps_its_spelling() {
 #[test]
 fn file_actions_round_trip_through_json() {
     for action in [
-        Action::UploadFile {
-            source: UploadSource::Opaque {
-                handle: "content://media/external/images/1".into(),
+        Action::Files {
+            action: FileAction::UploadFile {
+                source: UploadSource::Opaque {
+                    handle: "content://media/external/images/1".into(),
+                },
+                name: "a.jpg".into(),
+                mime_type: Some("image/jpeg".into()),
+                room: Some("!room:home.example".into()),
             },
-            name: "a.jpg".into(),
-            mime_type: Some("image/jpeg".into()),
-            room: Some("!room:home.example".into()),
         },
-        Action::UploadFile {
-            source: UploadSource::Path {
-                path: "/tmp/a.mov".into(),
+        Action::Files {
+            action: FileAction::UploadFile {
+                source: UploadSource::Path {
+                    path: "/tmp/a.mov".into(),
+                },
+                name: "a.mov".into(),
+                mime_type: None,
+                room: None,
             },
-            name: "a.mov".into(),
-            mime_type: None,
-            room: None,
         },
-        Action::DownloadFile { id: id() },
-        Action::CancelTransfer {
-            id: "local-1".into(),
+        Action::Files {
+            action: FileAction::DownloadFile {
+                id: id(),
+                room: "!bot:home".into(),
+            },
         },
-        Action::DismissTransfer {
-            id: "local-1".into(),
-            delete_local_file: true,
+        Action::Files {
+            action: FileAction::CancelTransfer {
+                id: "local-1".into(),
+            },
         },
-        Action::ResendFileLink {
-            id: "local-1".into(),
+        Action::Files {
+            action: FileAction::DismissTransfer {
+                id: "local-1".into(),
+                delete_local_file: true,
+            },
         },
-        Action::DeleteFile { id: id() },
-        Action::SendFileToDevices { id: id() },
-        Action::GrantFileToRoom {
-            id: id(),
-            room: "!room:home.example".into(),
+        Action::Files {
+            action: FileAction::ResendFileLink {
+                id: "local-1".into(),
+            },
         },
-        Action::DismissFileProblem,
+        Action::Files {
+            action: FileAction::DeleteFile { id: id() },
+        },
+        Action::Files {
+            action: FileAction::SendFileToDevices { id: id() },
+        },
+        Action::Files {
+            action: FileAction::GrantFileToRoom {
+                id: id(),
+                room: "!room:home.example".into(),
+            },
+        },
+        Action::Files {
+            action: FileAction::DismissFileProblem,
+        },
     ] {
         assert_eq!(round_trip(&action), action);
     }
@@ -486,6 +509,7 @@ fn upload_to(room: Option<&str>, state: TransferState) -> Transfer {
 fn room_row(room_id: &str, name: &str) -> RoomRow {
     RoomRow {
         layout: Default::default(),
+        call_active: false,
         room_id: room_id.into(),
         name: name.into(),
         is_direct: true,
@@ -545,4 +569,31 @@ fn a_room_lists_its_own_transfers_and_what_went_wrong_elsewhere() {
             },
         ]
     );
+}
+
+/// 下载完的属于触发它的房间，别的房间不列，免得以为当前聊天发生了下载。
+#[test]
+fn a_finished_download_is_listed_only_in_the_room_that_started_it() {
+    let view = TransfersViewModel {
+        downloaded: vec![
+            download_to(Some("!here")),
+            download_to(Some("!other")),
+            download_to(None),
+        ],
+        ..TransfersViewModel::default()
+    };
+    let listed = view.for_room("!here", &[room_row("!other", "妈妈")]);
+    assert_eq!(listed.downloaded, [download_to(Some("!here"))]);
+    assert!(listed.here.is_empty() && listed.elsewhere.is_empty());
+    let other = view.for_room("!other", &[]);
+    assert_eq!(other.downloaded, [download_to(Some("!other"))]);
+}
+
+fn download_to(room: Option<&str>) -> Transfer {
+    Transfer {
+        direction: TransferDirection::Download,
+        state: TransferState::Done,
+        destination: Some("/data/downloads/a.mov".into()),
+        ..upload_to(room, TransferState::Done)
+    }
 }

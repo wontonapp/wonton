@@ -1,5 +1,9 @@
 package app.wonton.ui
 
+import app.wonton.client.PluginInstallAction
+import app.wonton.client.deviceChoices
+import app.wonton.client.previewInstallAction
+import app.wonton.client.toggleDevice
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
@@ -23,6 +27,7 @@ import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.res.stringResource
+import app.wonton.protocol.PluginAction
 import app.wonton.protocol.Action
 import app.wonton.protocol.CoreException
 import app.wonton.protocol.InstallPreview
@@ -56,8 +61,7 @@ fun InstallConfirmScreen(
     val isUpgrade = confirmation.isUpgrade
     var attempt by remember { mutableIntStateOf(0) }
     var rejection by remember { mutableStateOf<Problem?>(null) }
-    var lanWebui by remember { mutableStateOf(false) }
-    var enabled by remember { mutableStateOf<Set<String>>(emptySet()) }
+    val choices = remember(confirmation) { InstallChoices() }
     var secrets by remember(confirmation) { mutableStateOf<Map<String, String>>(emptyMap()) }
     var fillingProfile by remember { mutableStateOf(false) }
     var submittedId by remember(confirmation) { mutableStateOf<String?>(null) }
@@ -66,10 +70,7 @@ fun InstallConfirmScreen(
         value = null
         value = try {
             Result.success(
-                loadInstallPreview(plugins, confirmation).also { preview ->
-                    lanWebui = preview.lanWebui?.enabled ?: false
-                    enabled = preview.permissions.filter { it.optional && it.enabled }.map { it.permission }.toSet()
-                },
+                loadInstallPreview(plugins, confirmation).also { preview -> choices.reset(preview) },
             )
         } catch (failure: CoreException) {
             Result.failure(failure)
@@ -97,36 +98,31 @@ fun InstallConfirmScreen(
         val preview = result?.getOrNull()
         Column(Modifier.fillMaxSize()) {
             Box(Modifier.weight(1f).fillMaxWidth()) {
-                when {
-                    result == null -> LoadingView()
-                    result.isFailure -> ProblemView(result.failureProblem, onRetry = { attempt++ })
-                    preview != null -> PreviewContent(
-                        preview,
-                        plugins,
-                        lanWebui,
-                        enabled,
-                        onFillProfile = { fillingProfile = true },
-                        onLanWebui = { lanWebui = it },
-                        onOptional = { permission, on ->
-                            enabled = if (on) enabled + permission else enabled - permission
-                        },
-                        secrets = secrets,
-                        onSecret = { name, value -> secrets = secrets + (name to value) },
-                    )
-                }
+                PreviewResult(
+                    result,
+                    onRetry = { attempt++ },
+                    preview = preview,
+                    plugins = plugins,
+                    choices = choices,
+                    onFillProfile = { fillingProfile = true },
+                    secrets = secrets,
+                    onSecret = { name, value -> secrets = secrets + (name to value) },
+                )
             }
             preview?.let { current ->
-                val chosen = current.withPermissionChoices(lanWebui, enabled)
+                val chosen = choices.applyTo(current)
                 val sent = secretValues(chosen.secretInputs, secrets)
                 ConfirmInstallButton(
                     chosen,
-                    title,
+                    if (previewInstallAction(chosen) == PluginInstallAction.REQUEST_ADMIN) {
+                        stringResource(R.string.install_request_admin)
+                    } else { title },
                     secretsReady = !missingRequiredSecret(chosen.secretInputs, secrets),
                 ) {
                     val action = if (isUpgrade) {
-                        Action.UpgradePlugin(chosen, sent, emptyMap())
+                        Action.Plugins(PluginAction.UpgradePlugin(chosen, sent, emptyMap()))
                     } else {
-                        Action.InstallPlugin(chosen, sent, emptyMap())
+                        Action.Plugins(PluginAction.InstallPlugin(chosen, sent, emptyMap()))
                     }
                     previousTask = plugins.viewModel.tasks.firstOrNull { it.id == chosen.id }
                     rejection = plugins.core.send(action)
@@ -154,6 +150,32 @@ private suspend fun loadInstallPreview(plugins: PluginsState, confirmation: Plug
         is PluginConfirmation.UpgradeUpload -> plugins.core.previewUpgradeUpload(confirmation.id, confirmation.archive)
         is PluginConfirmation.Store -> error("core preview already returned above")
     }
+
+/** 装载、失败和可预览三种状态里画哪一种。 */
+@Composable
+private fun PreviewResult(
+    result: Result<InstallPreview>?,
+    onRetry: () -> Unit,
+    preview: InstallPreview?,
+    plugins: PluginsState,
+    choices: InstallChoices,
+    onFillProfile: () -> Unit,
+    secrets: Map<String, String>,
+    onSecret: (String, String) -> Unit,
+) {
+    when {
+        result == null -> LoadingView()
+        result.isFailure -> ProblemView(result.failureProblem, onRetry = onRetry)
+        preview != null -> PreviewContent(
+            preview,
+            plugins,
+            choices,
+            onFillProfile = onFillProfile,
+            secrets = secrets,
+            onSecret = onSecret,
+        )
+    }
+}
 
 /** 留在安装页等核心任务完成，成功后才提供固定入口。 */
 @Composable
@@ -247,11 +269,8 @@ fun InstallFailure(reason: PluginFailure, message: String, onReview: () -> Unit)
 private fun PreviewContent(
     preview: InstallPreview,
     plugins: PluginsState,
-    lanWebui: Boolean,
-    enabled: Set<String>,
+    choices: InstallChoices,
     onFillProfile: () -> Unit,
-    onLanWebui: (Boolean) -> Unit,
-    onOptional: (String, Boolean) -> Unit,
     secrets: Map<String, String>,
     onSecret: (String, String) -> Unit,
 ) {
@@ -289,14 +308,18 @@ private fun PreviewContent(
             }
         }
         if (preview.notices.isNotEmpty()) NoticeLines(preview.notices)
-        InstallPermissionChoices(preview.permissions, enabled, onOptional)
+        choices.audience?.let { PluginAudienceSection(it, onChange = { changed -> choices.audience = changed }) }
+        InstallPermissionChoices(preview.permissions, choices.enabled, choices::setOptional, preview.widgetCapabilities)
+        deviceChoices(choices.devices, choices.applyTo(preview).permissions)?.let { section ->
+            DeviceChoicesSection(section) { id -> choices.devices = toggleDevice(choices.devices, id) }
+        }
         if (preview.secretInputs.isNotEmpty()) {
             DetailSection(stringResource(R.string.secret_section_title)) {
                 SecretInputsSection(preview.secretInputs, secrets, onChange = onSecret)
             }
         }
         AlwaysAllowed(preview, plugins)
-        preview.lanWebui?.let { LanWebuiToggle(it, lanWebui, enabled = true, onLanWebui) }
+        preview.lanWebui?.let { LanWebuiToggle(it, choices.lanWebui, enabled = true) { on -> choices.lanWebui = on } }
         preview.releaseNotes?.let { notes ->
             DetailSection(stringResource(R.string.install_release_notes)) {
                 Text(notes, style = WontonTheme.typography.body, color = colors.textPrimary.toColor())

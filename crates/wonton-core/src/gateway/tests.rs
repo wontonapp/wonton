@@ -126,6 +126,25 @@ pub(super) fn owner() -> Owner {
     }
 }
 
+/// 网关测试接上真的总线（确认卡片用测试替身），装卸门槛的卡片流程走它。
+fn test_bus(
+    manager: &Arc<PluginManager>,
+    data_dir: &std::path::Path,
+    members: &Arc<crate::members::Members>,
+    roles: &Arc<crate::roles::Roles>,
+) -> crate::mcp::Endpoint {
+    let bus = crate::mcp::Bus::new(
+        manager.clone(),
+        Arc::new(crate::mcp::Confirmations::new(
+            Arc::new(crate::mcp::test_support::Cards::default()),
+            Duration::from_secs(60),
+        )),
+        Arc::new(crate::mcp::audit::Audit::new(data_dir.join("audit.jsonl"))),
+    );
+    bus.attach_people("wonton-test".to_owned(), members.clone(), roles.clone());
+    bus.endpoint()
+}
+
 impl Harness {
     pub async fn start(hydra_admin: Option<SocketAddr>) -> Self {
         Self::start_full(hydra_admin, Egress::default(), None, StoreConfig::default()).await
@@ -215,6 +234,7 @@ impl Harness {
         manager.register_for_test(manifest, PluginStatus::Running, Some(upstream.to_string()));
         let (tunnel, members) = loopback_tunnel(dir.path()).await;
         let roles = Arc::new(crate::roles::Roles::open(dir.path().join("roles.json")).unwrap());
+        let mcp = test_bus(&manager, dir.path(), &members, &roles);
         let gateway = Gateway::new(
             public,
             profile,
@@ -226,7 +246,8 @@ impl Harness {
             tunnel.clone(),
         )
         .with_roles(roles.clone())
-        .with_upgrades(upgrades);
+        .with_upgrades(upgrades)
+        .with_mcp(Some(mcp));
         let gateway = Arc::new(gateway);
         let app = router(gateway.clone());
         let entry = TunnelEntry::spawn(&tunnel, app.clone());

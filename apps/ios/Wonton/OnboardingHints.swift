@@ -69,7 +69,7 @@ struct ReplacedAgentOffer: ViewModifier {
     private func answer(_ agent: ReplacedAgent?, uninstall: Bool) {
         guard let agent else { return }
         answeredId = agent.id
-        model.send(.dismissReplacedAgentOffer)
+        model.send(.onboarding(action: .dismissReplacedAgentOffer))
         if uninstall { uninstalling = UninstallTarget(id: agent.id, title: agent.title) }
     }
 }

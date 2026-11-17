@@ -42,6 +42,9 @@
     <string name="timeline_resend">重新傳送</string>
     <string name="timeline_undecryptable">無法解密：這支裝置還沒有這則訊息的金鑰</string>
     <string name="timeline_undecryptable_notice">這台裝置讀不了先前的加密訊息。</string>
+    <!-- 一行提示：解不開的舊訊息怎麼把金鑰找回來。無參數。 -->
+    <string name="timeline_key_notice_recovery">在「聊天記錄備份」輸入復原金鑰，解開這些舊訊息。</string>
+    <string name="timeline_key_notice_verify">在「聊天記錄備份」用另一部裝置確認這台裝置，取回金鑰。</string>
     <string name="timeline_redacted">訊息已收回</string>
     <string name="timeline_unsupported">暫不支援顯示的訊息（%1$s）</string>
     <!-- Timeline note: someone renamed themselves. Arguments: the old and the new name. -->
@@ -70,6 +73,8 @@
     <string name="confirmation_card_tool_root">這個操作會以 root 身分在這台機器上執行</string>
     <string name="confirmation_card_requests">待確認的請求</string>
     <string name="confirmation_card_unavailable">這項請求已不在清單裡</string>
+    <!-- Status line on an administrators-only approval request already handled by another administrator. Argument: user ID. -->
+    <string name="confirmation_card_answered_by">已由 %1$s 處理</string>
     <string name="timeline_sending_progress">傳送中 %1$s</string>
     <string name="timeline_cancel_send">取消傳送</string>
     <string name="side_chat">旁聊</string>
@@ -139,4 +144,10 @@
     <string name="bot_web_login_title">開啟此 Bot 網頁前</string>
     <string name="bot_web_login_warning">伺服器主人可以查看、管理這裡的登入狀態。</string>
     <string name="bot_web_shared_state">家人可能查看或修改同一份上游應用程式狀態。帳號是否獨立取決於應用程式本身，不保證登入或資料按人隔離。</string>
+    <!-- Accessibility label of the room top bar button that opens the room's video call. No arguments. -->
+    <string name="room_call_video">視訊通話</string>
+    <!-- Accessibility label of the room top bar button that opens the room's voice call. No arguments. -->
+    <string name="room_call_voice">語音通話</string>
+    <!-- Short mark on the room top bar button and on the chat list row while someone is in a call in this room; tapping the button joins. Keep it very short. No arguments. -->
+    <string name="room_call_active">通話中</string>
 </resources>

@@ -36,6 +36,7 @@ permission-devices-gpu = GPUを使用します（高権限）
 permission-device = ホストのデバイス{ $path }にアクセスします（高権限）
 permission-devices-serial = ホストのシリアルデバイスを使います（高権限）
 permission-devices-usb = ホストの USB デバイスを使います（高権限）
+permission-devices-disk = 選んだディスク全体を読み書きします（とても高い権限）
 permission-docker-socket = Dockerを操作します（最高権限）
 
 # 高い権限の下に付く詳しい説明。
@@ -45,6 +46,8 @@ permission-notice-highest-risk = このアプリはホスト全体を制御で�
 permission-notice-network-lan = ローカルネットワークのデバイスから、Wontonのログインなしでアプリが開放したポートに直接接続できます。認証はアプリ自身が行います。
 permission-notice-device = このアプリはホストのデバイス{ $path }にアクセスできます。
 permission-notice-devices = このアプリは渡したホストのデバイスにアクセスできます。
+permission-notice-devices-disk = このアプリは選んだディスク上のすべてのデータを読み書きできます。
+permission-notice-devices-usb = このアプリはこのホストのすべての USB デバイス（USB メモリやカードリーダーも）にアクセスできます。
 
 # アプリ詳細の通知。
 plugin-firewall-notice = このマシンのファイアウォールが外部からの接続を遮断している可能性があり、ローカルネットワークのデバイスから接続できないかもしれません

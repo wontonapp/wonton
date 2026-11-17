@@ -11,6 +11,8 @@ final class TabWebViewStore {
     private var accountId: String?
     /// 释放过 WebView 的计数：页面视图据此判断手里的会话还能不能用、要不要重新要一份。
     private(set) var generation = 0
+    /// 公网网页与插件凭据分开，窗口之间仍共享同一公网存储。
+    private static let publicPanelStore = UUID(uuidString: "6C3B0E7A-6C61-4A0E-9E2B-5C5A0B7C8F61")!
 
     func session(for placed: PlacedTab, core: ClientCore) -> TabWebSession {
         let currentAccount = core.servers().servers.first(where: { $0.current })?.id
@@ -27,6 +29,8 @@ final class TabWebViewStore {
                 store = .nonPersistent()
                 sharedStores[ownerUserId] = store
             }
+        } else if case .url = placed.tab {
+            store = WKWebsiteDataStore(forIdentifier: Self.publicPanelStore)
         } else { store = .default() }
         let session = TabWebSession(placed: placed, core: core, dataStore: store)
         sessions[placed] = session
@@ -56,7 +60,7 @@ final class TabWebViewStore {
 extension PlacedTab {
     var tab: TabRef {
         switch self {
-        case let .page(tab), let .panel(_, tab): tab
+        case let .page(tab), let .content(tab), let .panel(_, tab): tab
         }
     }
 }
@@ -100,9 +104,14 @@ final class TabWebSession: NSObject {
     @ObservationIgnored private(set) var parked = false
     @ObservationIgnored var missedFinish = false
     @ObservationIgnored private var backObservation: NSKeyValueObservation?
+    /// 页面自己的顶栏颜色，只在网页框让出顶上一条的系统上跟（`PageTopInset.framesWebView`）。
+    var topColor: UIColor?
+    @ObservationIgnored var topColorObservations: [NSKeyValueObservation] = []
     @ObservationIgnored private let dataStore: WKWebsiteDataStore
     /// 这份会话的网页在放媒体：开始或停止时经 [`PageMediaActive`] 上报核心。
     @ObservationIgnored private var mediaPlaying = false
+    /// widget 页（ADR-0096）：驱动发给页面的消息，见 `TabWidgetChannel`。
+    @ObservationIgnored let widgetChannel = TabWidgetChannel()
 
     init(placed: PlacedTab, core: ClientCore, dataStore: WKWebsiteDataStore) {
         self.placed = placed
@@ -123,7 +132,7 @@ final class TabWebSession: NSObject {
                 try configure(webView)
                 if missedFinish {
                     missedFinish = false
-                    try core.dispatch(action: .tabLoadSucceeded(page: placed))
+                    try core.dispatch(action: .pages(action: .tabLoadSucceeded(page: placed)))
                     try updateContext(webView, force: true)
                 } else {
                     try updateContext(webView)
@@ -145,6 +154,8 @@ final class TabWebSession: NSObject {
                 loadedProxy = proxy
                 recoveryURL = nil
                 webView.load(URLRequest(url: destination))
+                // widget 页每次加载都是一次新的 widget 会话（重新加载换驱动、换地址）：页面开始加载后订阅。
+                if tab.isWidget { try widgetChannel.start(page: placed, core: core, into: self) }
             }
         } catch {
             problem = error.problem
@@ -153,7 +164,7 @@ final class TabWebSession: NSObject {
 
     private func create() throws {
         let configuration = WKWebViewConfiguration()
-        configuration.websiteDataStore = Self.dataStore(for: placed)
+        configuration.websiteDataStore = dataStore
         // 公网网页没有桥，也不注入变量和脚本（ADR-0052）。
         if bridged {
             let controller = configuration.userContentController
@@ -189,6 +200,7 @@ final class TabWebSession: NSObject {
         backObservation = view.observe(\.canGoBack, options: [.initial, .new]) { [weak self] _, _ in
             Task { @MainActor in self?.canGoBack = self?.webView?.canGoBack ?? false }
         }
+        if PageTopInset.framesWebView, case .page = placed { observeTopColor(of: view) }
     }
 
     private func configure(_ view: WKWebView) throws {
@@ -271,14 +283,6 @@ final class TabWebSession: NSObject {
         return true
     }
 
-    /// 公网网页不和插件页共用 Cookie 和存储（ADR-0052）：公网页面共用一个单独的存储。
-    private static let publicPanelStore = UUID(uuidString: "6C3B0E7A-6C61-4A0E-9E2B-5C5A0B7C8F61")!
-
-    private static func dataStore(for placed: PlacedTab) -> WKWebsiteDataStore {
-        guard case .url = placed.tab else { return .default() }
-        return WKWebsiteDataStore(forIdentifier: publicPanelStore)
-    }
-
     /// 面板拉开、翻到这一页：经桥告诉页面它被看到了。
     func seen() {
         guard let webView else { return }
@@ -297,11 +301,11 @@ final class TabWebSession: NSObject {
         problem = nil
         do {
             if case let .sharedApp(ownerUserId, _) = tab {
-                try core.dispatch(action: .refreshSharedApps(ownerUserId: ownerUserId))
+                try core.dispatch(action: .sharing(action: .refreshSharedApps(ownerUserId: ownerUserId)))
             } else {
-                try core.dispatch(action: .refreshPlugins)
+                try core.dispatch(action: .plugins(action: .refreshPlugins))
             }
-            try core.dispatch(action: .reloadTab(page: placed))
+            try core.dispatch(action: .pages(action: .reloadTab(page: placed)))
         } catch { problem = error.problem }
     }
 
@@ -344,8 +348,11 @@ final class TabWebSession: NSObject {
     }
 
     func dispose() {
+        widgetChannel.stop()
         setMediaPlaying(false)
         backObservation = nil
+        topColorObservations = []
+        topColor = nil
         webView?.stopLoading()
         webView?.navigationDelegate = nil
         webView?.uiDelegate = nil
@@ -361,7 +368,8 @@ final class TabWebSession: NSObject {
 
 struct TabWebView: UIViewRepresentable {
     let webView: WKWebView
-    /// 面板挡住的上下两条（ADR-0052）：页面照样画在后面，但固定定位的元素和滚动的终点让开。整页是 0（ADR-0095）。
+    /// 浮在网页上面、挡住它的上下两条：整页是状态栏加胶囊那一行（ADR-0095），面板里是面板的布局（ADR-0052）。
+    /// 页面照样画在后面，但固定定位的元素和滚动的终点让开。iOS 26 之前没有这个接口，见 `PageTopInset`。
     let obscured: UIEdgeInsets
 
     func makeUIView(context: Context) -> WKWebView {

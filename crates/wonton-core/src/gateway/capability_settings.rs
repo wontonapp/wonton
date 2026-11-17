@@ -91,6 +91,60 @@ pub async fn set_consumer(
     )
 }
 
+pub async fn list_bot(
+    State(gateway): State<Arc<Gateway>>,
+    peer: Option<Extension<TunnelPeer>>,
+    headers: HeaderMap,
+    Path((id, bot)): Path<(String, String)>,
+) -> Response {
+    if let Some(denied) =
+        permissions::require(&gateway, peer, &headers, PermissionItem::ServerSettings)
+    {
+        return denied;
+    }
+    let id = match plugin_id(&id) {
+        Ok(id) => id,
+        Err(error) => return install_error(&error),
+    };
+    match gateway
+        .plugins
+        .bot_capability_settings(&id, &bot, &languages(&headers))
+    {
+        Ok(settings) => Json(settings).into_response(),
+        Err(error) => install_error(&error),
+    }
+}
+
+pub async fn set_bot(
+    State(gateway): State<Arc<Gateway>>,
+    peer: Option<Extension<TunnelPeer>>,
+    headers: HeaderMap,
+    Path((id, bot)): Path<(String, String)>,
+    body: Bytes,
+) -> Response {
+    if let Some(denied) =
+        permissions::require(&gateway, peer, &headers, PermissionItem::ServerSettings)
+    {
+        return denied;
+    }
+    let langs = languages(&headers);
+    let choice: ConsumerCapabilityChoice = match parse(&body, &langs) {
+        Ok(choice) => choice,
+        Err(error) => return install_error(&error),
+    };
+    let id = match plugin_id(&id) {
+        Ok(id) => id,
+        Err(error) => return install_error(&error),
+    };
+    gateway.note_languages(peer.map(|Extension(peer)| peer), &headers);
+    result(
+        gateway
+            .plugins
+            .set_capability_binding(&id, Some(&bot), choice, None, &langs)
+            .await,
+    )
+}
+
 pub async fn uninstall_preview(
     State(gateway): State<Arc<Gateway>>,
     peer: Option<Extension<TunnelPeer>>,

@@ -47,10 +47,21 @@ runs:
         while IFS= read -r tag; do
           tags+=(--tag "$tag")
         done < <(tr ',' '\n' <<<"$TAGS")
-        docker buildx imagetools create "${tags[@]}" "${refs[@]}"
-        docker buildx imagetools inspect "${tags[1]}"
-        got=$(docker buildx imagetools inspect --raw "${TAGS%%,*}" \
-          | jq -r '.manifests[] | select(.platform.os != "unknown") | .platform.os + "/" + .platform.architecture')
+        meta="$RUNNER_TEMP/merge-manifest-meta.json"
+        docker buildx imagetools create --metadata-file "$meta" "${tags[@]}" "${refs[@]}"
+        # 校验按刚推出的 digest 查：推完立刻按标签查，GHCR 读写有延迟会报 not found，而镜像其实已经推好。
+        # digest 拿不到时才退回标签，同样有上限地重试。
+        ref="${TAGS%%,*}"
+        digest=$(jq -r '."containerimage.digest" // empty' "$meta" 2>/dev/null || true)
+        if [ -n "$digest" ]; then ref="$image@$digest"; fi
+        raw=""
+        for attempt in 1 2 3 4 5; do
+          if raw=$(docker buildx imagetools inspect --raw "$ref"); then break; fi
+          echo "第 $attempt 次读取 $ref 失败，5 秒后重试" >&2
+          sleep 5
+        done
+        [ -n "$raw" ] || { echo "读不到合出来的 manifest：$ref" >&2; exit 1; }
+        got=$(jq -r '.manifests[] | select(.platform.os != "unknown") | .platform.os + "/" + .platform.architecture' <<<"$raw")
         for platform in $(tr ',' ' ' <<<"$PLATFORMS"); do
           grep -qx "$platform" <<<"$got" || { echo "合出来的 manifest 缺 $platform（实有：$got）" >&2; exit 1; }
         done

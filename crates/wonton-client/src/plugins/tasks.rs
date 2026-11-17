@@ -37,10 +37,18 @@ enum Outcome {
 }
 
 impl PluginsLink {
+    /// 主人在预览里选中的设备 ID（ADR-0036）；没选为空，升级时为空就沿用装着的。可选权限关着的那一类不带。
+    fn chosen_devices(preview: &InstallPreview) -> Vec<String> {
+        crate::chosen_device_ids(
+            preview.devices.clone().unwrap_or_default(),
+            preview.permissions.clone(),
+        )
+    }
+
     /// `InstallPlugin`：按预览安装，授予预览里列出的全部权限。
     pub(crate) fn install(
         self: &Arc<Self>,
-        preview: InstallPreview,
+        mut preview: InstallPreview,
         secrets: SecretValues,
         settings: SettingValues,
     ) -> Result<(), CoreError> {
@@ -49,6 +57,11 @@ impl PluginsLink {
         self.remember_preview(&preview);
         let lan_webui = lan_webui_chosen(&preview);
         let enabled_permissions = enabled_permissions(&preview);
+        let audience = preview
+            .audience
+            .take()
+            .and_then(crate::selected_plugin_audience);
+        let devices = Self::chosen_devices(&preview);
         let Some(source) = preview.source else {
             return Err(CoreError::InvalidInput {
                 reason: l10n!(CATALOG, language(), "plugins-tasks-preview-no-source"),
@@ -65,14 +78,16 @@ impl PluginsLink {
             digest: preview.digest,
             plan: preview.plan,
             scope: None,
+            audience,
             grant,
             enabled_permissions,
             secrets,
             settings,
-            devices: Vec::new(),
+            devices,
             lan_webui,
             install_together: Vec::new(),
             connect_plugins: Vec::new(),
+            remote_oauth: None,
         };
         let link = self.clone();
         let id = preview.id;
@@ -128,7 +143,7 @@ impl PluginsLink {
         )?;
         let enabled_permissions = enabled_permissions(&preview);
         let request = UpgradeRequest {
-            devices: Vec::new(),
+            devices: Self::chosen_devices(&preview),
             source: preview.source,
             digest: preview.digest,
             grant,
@@ -579,7 +594,7 @@ pub(super) fn server_changed() -> PluginTaskState {
     }
 }
 
-/// 主人在确认页上打开了开关（[`Action::InstallPlugin`](wonton_protocol::Action::InstallPlugin)）。
+/// 主人在确认页上打开了开关（[`PluginAction::InstallPlugin`](wonton_protocol::PluginAction::InstallPlugin)）。
 fn lan_webui_chosen(preview: &InstallPreview) -> bool {
     preview
         .lan_webui

@@ -3,7 +3,9 @@ use std::time::Duration;
 
 use iroh::endpoint::presets;
 use iroh::{Endpoint, SecretKey};
-use wonton_protocol::{Action, CoreError, DeviceInvite, HomeFailure, HomeStatus};
+use wonton_protocol::{
+    Action, CoreError, DeviceInvite, HomeAction, HomeFailure, HomeStatus, SettingsAction,
+};
 use wonton_tunnel::{Allowlist, TunnelServer};
 
 use super::{CATALOG, RESOURCES};
@@ -61,13 +63,15 @@ async fn set_languages_localizes_invite_details_and_core_error_prefixes() {
     let id = endpoint.id();
     let server = TunnelServer::spawn(endpoint, Allowlist::new([device]), address);
     client
-        .dispatch(Action::ConnectHome {
-            ticket: serde_json::json!({
-                "server": { "endpoint_id": id, "direct_addrs": [addr] },
-                "base_domain": "wonton.localhost",
-                "core_url": "http://wonton.localhost:18480/"
-            })
-            .to_string(),
+        .dispatch(Action::Home {
+            action: HomeAction::ConnectHome {
+                ticket: serde_json::json!({
+                    "server": { "endpoint_id": id, "direct_addrs": [addr] },
+                    "base_domain": "wonton.localhost",
+                    "core_url": "http://wonton.localhost:18480/"
+                })
+                .to_string(),
+            },
         })
         .unwrap();
     let subscription = client.subscribe_home();
@@ -75,6 +79,13 @@ async fn set_languages_localizes_invite_details_and_core_error_prefixes() {
         view.status == HomeStatus::Connected && view.proxy.is_some()
     })
     .await;
+    assert_language_invites(&client, &subscription).await;
+    server.shutdown().await;
+    upstream.abort();
+    drop(client);
+}
+
+async fn assert_language_invites(client: &ClientCore, subscription: &HomeSubscription) {
     for languages in [
         vec!["ja"],
         vec!["fr-FR"],
@@ -85,12 +96,18 @@ async fn set_languages_localizes_invite_details_and_core_error_prefixes() {
     ] {
         let lang = CATALOG.negotiate(&languages[..languages.len().min(1)]);
         client
-            .dispatch(Action::SetLanguages {
-                languages: languages.iter().map(|tag| (*tag).to_owned()).collect(),
+            .dispatch(Action::Settings {
+                action: SettingsAction::SetLanguages {
+                    languages: languages.iter().map(|tag| (*tag).to_owned()).collect(),
+                },
             })
             .unwrap();
-        client.dispatch(Action::InviteDevice).unwrap();
-        let view = wait_home(&subscription, |view| {
+        client
+            .dispatch(Action::Home {
+                action: HomeAction::InviteDevice,
+            })
+            .unwrap();
+        let view = wait_home(subscription, |view| {
             matches!(view.invite, Some(DeviceInvite::Failed { .. }))
         })
         .await;
@@ -118,9 +135,6 @@ async fn set_languages_localizes_invite_details_and_core_error_prefixes() {
         assert_eq!(detail, expected);
         assert_error_prefixes(lang);
     }
-    server.shutdown().await;
-    upstream.abort();
-    drop(client);
 }
 
 fn assert_error_prefixes(lang: wonton_l10n::Lang) {

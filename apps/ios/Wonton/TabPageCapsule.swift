@@ -19,6 +19,9 @@ struct TabPageCapsule: View {
     @Environment(\.wontonColors) private var colors
     @Environment(\.wontonBarStatus) private var status
 
+    /// 胶囊那一行的高度。整页的网页把状态栏加这一行当作被挡住的一条让开（ADR-0095“铺满”）。
+    static var rowHeight: CGFloat { WontonTheme.size.target }
+
     var body: some View {
         VStack(spacing: WontonTheme.spacing.s8) {
             HStack(spacing: WontonTheme.spacing.s8) {
@@ -31,7 +34,7 @@ struct TabPageCapsule: View {
                     .accessibilityHidden(!shown)
                     .animation(.easeInOut(duration: 0.2), value: shown)
             }
-            .frame(height: WontonTheme.size.target)
+            .frame(height: Self.rowHeight)
             // 胶囊占着右边：连接原因单独一行，短句也不许挤成省略号（#149）。
             if let line = status.line {
                 line.padding(WontonTheme.spacing.s12)
@@ -66,22 +69,24 @@ struct TabPageCapsule: View {
                     Button(TabText.back) { session.webView?.goBack() }
                 }
                 if let takeover { TakeoverButton(takeover: takeover) }
-                Button(TabText.reload) { pages.send(.reloadTab(page: placed)) }
+                Button(TabText.reload) { pages.send(.pages(action: .reloadTab(page: placed))) }
+                if !tab.isWidget { ContentWindowButton(target: .tab(tab: tab)) }
                 if let panel {
                     Button(TabText.editPanel, action: panel.edit)
                 } else {
                     // 钉住正在看的这页到聊天页的下拉面板（ADR-0052）；插件页再加进“我的应用”。
-                    if let url = session.webView?.url {
+                    // widget 页只能从房间里打开，不能钉进面板（ADR-0096）。
+                    if let url = session.webView?.url, !tab.isWidget {
                         Button(TabText.pinToPanel) {
-                            pages.send(.pinCurrentPage(
+                            pages.send(.pages(action: .pinCurrentPage(
                                 url: url.absoluteString, title: session.webView?.title,
                                 to: .panel(scope: .main)
-                            ))
+                            )))
                         }
                     }
                     if case .plugin = tab {
                         Button(TabText.addToMyApps) {
-                            pages.send(.addMyApp(app: .page(tab: tab), title: nil, index: nil))
+                            pages.send(.pages(action: .addMyApp(app: .page(tab: tab), title: nil, index: nil)))
                         }
                         Button(TabText.details, action: details)
                     }
@@ -91,6 +96,7 @@ struct TabPageCapsule: View {
             }
             .buttonStyle(.plain)
             .accessibilityLabel(TabText.more)
+            .accessibilityIdentifier("pageMore")
             Rectangle()
                 .fill(Color(colors.separator))
                 .frame(width: WontonTheme.size.hairline, height: WontonTheme.size.iconSmall)

@@ -60,7 +60,9 @@ struct ChatListView: View {
                             }
                             .buttonStyle(.plain)
                             .accessibilityAddTraits(selected ? .isSelected : [])
+                            .accessibilityValue(row.callActive ? String(localized: .Chat.roomCallActive) : "")
                             .accessibilityIdentifier("chatRoom.\(row.roomId)")
+                            .contextMenu { ContentWindowButton(target: .room(roomId: row.roomId)) }
                         }
                     }
                 }
@@ -249,7 +251,7 @@ struct ChatDialogs: ViewModifier {
             .wontonDialog(
                 problem: model.viewModel.problem?.problem,
                 isPresented: isShowingProblem,
-                onDismiss: { model.send(.dismissChatProblem) }
+                onDismiss: { model.send(.chat(action: .dismissChatProblem)) }
             )
     }
 
@@ -260,7 +262,7 @@ struct ChatDialogs: ViewModifier {
     private var isShowingProblem: Binding<Bool> {
         Binding(
             get: { model.viewModel.problem != nil },
-            set: { if !$0 { model.send(.dismissChatProblem) } }
+            set: { if !$0 { model.send(.chat(action: .dismissChatProblem)) } }
         )
     }
 }
@@ -378,6 +380,11 @@ private struct RoomRowView: View {
                                 .foregroundStyle(Color(colors.textSecondary))
                                 .accessibilityLabel(Text(.Chat0.chatEncrypted))
                         }
+                        // 有人在通话（ADR-0096）。图标是装饰，读屏的那句挂在整行上（见列表里的 accessibilityValue）。
+                        if row.callActive {
+                            WontonIcon.voiceCallFill.view(size: WontonTheme.size.iconTiny)
+                                .foregroundStyle(Color(selected ? colors.accentInkOnFill : colors.success))
+                        }
                     }
                     Spacer(minLength: 0)
                     if let preview = row.preview {
@@ -484,9 +491,9 @@ private struct InviteRow: View {
                 .wontonText(WontonTheme.typography.itemTitle)
                 .foregroundStyle(Color(colors.textPrimary))
             HStack(spacing: WontonTheme.spacing.s8) {
-                Button(.Chat0.chatInviteAccept) { model.send(.joinRoom(roomId: row.roomId)) }
+                Button(.Chat0.chatInviteAccept) { model.send(.chat(action: .joinRoom(roomId: row.roomId))) }
                     .buttonStyle(WontonButtonStyle(kind: .primary))
-                Button(.Chat1.chatInviteDecline) { model.send(.leaveRoom(roomId: row.roomId)) }
+                Button(.Chat1.chatInviteDecline) { model.send(.chat(action: .leaveRoom(roomId: row.roomId))) }
                     .buttonStyle(WontonButtonStyle(kind: .secondary))
             }
         }
