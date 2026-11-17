@@ -88,7 +88,7 @@ final class TabWebSession: NSObject {
     @ObservationIgnored var loadedProxy: ProxySettings?
     @ObservationIgnored var recoveryURL: URL?
     @ObservationIgnored var navigationURL: URL?
-    /// 主框架正在登录的路上（跳去了认证页，还没落回插件），和落回插件时的地址：见 `TabReloadTarget`。
+    /// 主框架正在登录的路上（跳去了认证页；落回插件的回调页加载完成前也还在路上），和落回插件时的地址：见 `TabReloadTarget`。
     @ObservationIgnored var inLogin = false
     @ObservationIgnored var loginLanding: URL?
     @ObservationIgnored var hasContent = false
@@ -364,7 +364,7 @@ extension TabWebSession {
 
     /// 重新加载回正在看的地址；登录往返里一次性的地址不重放（见 `TabReloadTarget`）。
     func reloadDestination(entry: URL) -> URL {
-        TabReloadTarget(entry: entry, login: loginRoute, loginLanding: loginLanding)
+        TabReloadTarget(entry: entry, login: loginRoute, loginLanding: loginLanding, inLogin: inLogin)
             .resolve(recovery: recoveryURL, current: webView?.url)
     }
 

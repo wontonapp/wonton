@@ -19,12 +19,15 @@ struct TabLoginRoute: Equatable {
 /// - 登录往返的落点：从认证页跳回插件时地址里带着授权码。插件拿它换完会话、把下一页的数据取回来以后才换地址，
 ///   这期间重放它，插件拿用过的授权码再换一次。Immich v3.4.1 实测（iOS 26.5）：第二次换时登录用的 Cookie
 ///   已经在第一次成功后清掉，页面停在登录页报 “OAuth state is missing”，其实已经登录好了。
-/// - 还在登录的路上：地址里是认证服务一次性的登录挑战。
+/// - 还在登录的路上：地址里是认证服务一次性的登录挑战；回调页从认证页落回插件后、加载完成前也还在路上，
+///   这时地址里已带着授权码。
 struct TabReloadTarget {
     let entry: URL
     let login: TabLoginRoute
     /// 最近一次登录往返落在插件上的地址。
     let loginLanding: URL?
+    /// 主框架还在登录的路上：见 `TabWebSession.inLogin`。
+    let inLogin: Bool
 
     /// `recovery` 是加载失败或网页进程被杀时记下的地址，`current` 是 WebView 现在的地址。
     func resolve(recovery: URL?, current: URL?) -> URL {
@@ -33,6 +36,7 @@ struct TabReloadTarget {
     }
 
     private func replayable(_ url: URL) -> Bool {
-        url != loginLanding && !login.contains(url)
+        // 在登录的路上，手里的地址要么是一次性的登录挑战，要么是带授权码的回调地址，重放都不得。
+        !inLogin && url != loginLanding && !login.contains(url)
     }
 }

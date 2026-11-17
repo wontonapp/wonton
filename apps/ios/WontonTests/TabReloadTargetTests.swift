@@ -7,8 +7,8 @@ final class TabReloadTargetTests: XCTestCase {
     private let landing = URL(string: "http://photos.home.example/auth/login?code=abc&state=xyz")!
     private let login = TabLoginRoute(domain: "home.example")
 
-    private func target(loginLanding: URL? = nil) -> TabReloadTarget {
-        TabReloadTarget(entry: entry, login: login, loginLanding: loginLanding)
+    private func target(loginLanding: URL? = nil, inLogin: Bool = false) -> TabReloadTarget {
+        TabReloadTarget(entry: entry, login: login, loginLanding: loginLanding, inLogin: inLogin)
     }
 
     func testReloadStaysOnTheCurrentPage() {
@@ -30,6 +30,12 @@ final class TabReloadTargetTests: XCTestCase {
     func testLoginLandingIsNotReplayed() {
         XCTAssertEqual(target(loginLanding: landing).resolve(recovery: nil, current: landing), entry)
         XCTAssertEqual(target(loginLanding: landing).resolve(recovery: landing, current: nil), entry)
+    }
+
+    func testMidLoginAddressesAreNotReplayed() {
+        // 回调页落回插件后、加载完成前 inLogin 还是真的：带授权码的回调地址不重放，回入口。
+        XCTAssertEqual(target(inLogin: true).resolve(recovery: landing, current: nil), entry)
+        XCTAssertEqual(target(inLogin: true).resolve(recovery: nil, current: landing), entry)
     }
 
     func testAddressesOnTheLoginRouteAreNotReplayed() {
