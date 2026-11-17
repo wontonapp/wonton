@@ -23,12 +23,18 @@ struct TransfersStrip: View {
                         TransferRow(transfer: $0.transfer, elsewhere: $0)
                     }
                     if !listed.downloaded.isEmpty {
-                        Button(caption(listed.downloaded)) {
+                        Button {
                             isShowingDownloaded = true
+                        } label: {
+                            Text(caption(listed.downloaded))
+                                .wontonText(WontonTheme.typography.caption)
+                                .foregroundStyle(Color(colors.textPrimary))
+                                .underline()
+                                .lineLimit(1)
+                                .frame(minHeight: WontonTheme.size.target)
+                                .padding(.horizontal, WontonTheme.spacing.s4)
+                                .contentShape(Rectangle())
                         }
-                            .wontonText(WontonTheme.typography.caption)
-                            .foregroundStyle(Color(colors.textPrimary))
-                            .underline()
                             .buttonStyle(.plain)
                             .frame(maxWidth: .infinity, alignment: .trailing)
                     }
