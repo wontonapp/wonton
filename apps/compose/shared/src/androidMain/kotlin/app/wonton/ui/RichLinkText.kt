@@ -84,7 +84,8 @@ internal fun RichLinkText(
 
 private fun linkAt(layout: TextLayoutResult, spans: List<RichSpan>, position: Offset): RichLink? {
     val line = layout.getLineForVerticalPosition(position.y)
-    if (!isInsideLine(layout, line, position)) return null
+    // Compose extends short links' touch targets vertically; y can lie outside the glyph layout.
+    if (position.x !in layout.getLineLeft(line)..layout.getLineRight(line)) return null
     val offset = layout.getOffsetForPosition(position)
     var start = 0
     return spans.firstNotNullOfOrNull { span ->
@@ -95,9 +96,6 @@ private fun linkAt(layout: TextLayoutResult, spans: List<RichSpan>, position: Of
     }
 }
 
-private fun isInsideLine(layout: TextLayoutResult, line: Int, position: Offset): Boolean =
-    position.y in 0f..layout.size.height.toFloat() &&
-        position.x in layout.getLineLeft(line)..layout.getLineRight(line)
 
 @Composable
 private fun LinkActions(link: RichLink, onDismiss: () -> Unit) {
