@@ -44,14 +44,15 @@ enum UITestBackend {
     }
 
     /// 只处理已经出现的交接入口；引导循环和收尾等待共用同一条导航路径。
+    /// 引导期间聊天栈没挂载（OnboardingGate 只渲染引导页），配对没走完时备份页也来不及出现：
+    /// 点了 Skip 等不到备份页就算了，硬断言只留在 settleKeyHandoff 的 finished 判定里。
     @discardableResult
     static func skipKeyHandoff(_ app: XCUIApplication) -> Bool {
         let skip = app.buttons["key-handoff-skip"]
         if skip.exists && skip.isHittable {
             skip.tap()
-            let backup = app.scrollViews["chat-backup"]
-            XCTAssertTrue(backup.waitForExistence(timeout: 10), app.debugDescription)
-            return closeChatBackup(app)
+            if app.scrollViews["chat-backup"].waitForExistence(timeout: 10) { return closeChatBackup(app) }
+            return true
         }
         if app.scrollViews["chat-backup"].exists { return closeChatBackup(app) }
         let reminder = app.buttons["chat-backup-reminder-dismiss"]
