@@ -489,3 +489,35 @@ async fn the_detail_shows_the_switch_state_and_who_opened_it() {
         wonton_protocol::PluginState::Running { .. }
     ));
 }
+
+/// 老 App 把可选项也放进 `grant`：装和升级都只把必需项记进 `granted_permissions`（ADR-0057），
+/// 可选项不算打开，也不记成授予过。
+#[tokio::test]
+async fn an_old_app_grant_records_only_the_required_permissions() {
+    let (docker, engine) = FakeDocker::start().await;
+    let dir = tempfile::tempdir().unwrap();
+    let m = Arc::new(manager_with(engine, &dir));
+    let socket = [Permission::DockerSocket];
+    m.install_user_enabled(
+        parsed(&optional()),
+        &socket,
+        &[],
+        false,
+        &[],
+        Default::default(),
+        super::langs(),
+    )
+    .await
+    .unwrap();
+    let record = m.store.load(&id()).unwrap().unwrap();
+    assert!(record.granted_permissions.is_empty());
+    assert!(record.enabled_permissions.is_empty());
+    let next = parsed(&optional().replace("version: 1.0.0", "version: 1.1.0"));
+    m.upgrade_checked(next, &socket, &[], false, &[], Default::default())
+        .await
+        .unwrap();
+    let record = m.store.load(&id()).unwrap().unwrap();
+    assert_eq!(record.version, "1.1.0");
+    assert!(record.granted_permissions.is_empty());
+    assert!(!has_socket(&docker, "agent"));
+}

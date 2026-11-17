@@ -295,21 +295,42 @@ pub(super) async fn source_admin_cards(
     Ok((first, second))
 }
 
-pub(super) fn preview_draft(preview: &InstallPreview, langs: &Languages) -> Draft {
-    // 只有官方索引审核过的写“来自官方索引”；上传、GitHub 和第三方索引的来源提示在 `notices` 里。
-    let version = if preview.trust == PluginTrust::Official {
-        "chat-card-version-official"
-    } else {
-        "chat-card-version"
-    };
-    let mut lines = vec![CardLine {
-        text: l10n::text(
+/// 卡片第一行：版本和包的真实来源。只有官方索引审核过的写“来自官方索引”；上传的写上传，GitHub 和
+/// 第三方索引写核心核实过的提供方（`provider`）和索引主机。预装的和不认识的来源只写版本，
+/// 来源提示在 `notices` 里。
+fn version_line(preview: &InstallPreview, langs: &Languages) -> CardLine {
+    let version = ("version", preview.version.as_str().into());
+    let text = match (
+        preview.trust,
+        preview.provider.as_deref(),
+        preview.via_index.as_deref(),
+    ) {
+        (PluginTrust::Official, ..) => l10n::text(langs, "chat-card-version-official", &[version]),
+        (PluginTrust::Local, ..) => l10n::text(langs, "chat-card-version-upload", &[version]),
+        (PluginTrust::Community, Some(provider), Some(host)) => l10n::text(
             langs,
-            version,
-            &[("version", preview.version.as_str().into())],
+            "chat-card-version-provider-via",
+            &[
+                version,
+                ("provider", provider.into()),
+                ("host", host.into()),
+            ],
         ),
-        emphasis: false,
-    }];
+        (PluginTrust::Community, Some(provider), None) => l10n::text(
+            langs,
+            "chat-card-version-provider",
+            &[version, ("provider", provider.into())],
+        ),
+        _ => l10n::text(langs, "chat-card-version", &[version]),
+    };
+    CardLine {
+        text,
+        emphasis: preview.trust != PluginTrust::Official,
+    }
+}
+
+pub(super) fn preview_draft(preview: &InstallPreview, langs: &Languages) -> Draft {
+    let mut lines = vec![version_line(preview, langs)];
     lines.extend(preview.permissions.iter().map(|line| CardLine {
         text: format!("· {}", line.text),
         emphasis: line.risk.is_some(),

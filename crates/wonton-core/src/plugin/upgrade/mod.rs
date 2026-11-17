@@ -174,6 +174,8 @@ struct Consent {
 
 /// 升级生效的可选项：请求带上的全集（App 按当前开关状态发）里，只有新版本还声明成可选的留下；
 /// 以前开过的沿用原来的打开时间和人（ADR-0057）。确认卡的预览和执行都按它算，两边是同一个生效集。
+/// 旧版必需、新版改成可选的项不是这次打开的：装的时候就授予了，时间记装的时候，和 [`kept_enabled`] 一致，
+/// 不记成发起升级的人这一刻打开的。
 fn upgrade_enabled(
     manifest: &Manifest,
     record: &InstalledRecord,
@@ -183,12 +185,21 @@ fn upgrade_enabled(
         .iter()
         .filter(|item| manifest.optional_permissions.contains_key(&item.permission))
         .map(|item| {
-            record
+            if let Some(old) = record
                 .enabled_permissions
                 .iter()
                 .find(|old| old.permission == item.permission)
-                .cloned()
-                .unwrap_or_else(|| item.clone())
+            {
+                return old.clone();
+            }
+            if record.granted_permissions.contains(&item.permission) {
+                return EnabledPermission {
+                    permission: item.permission.clone(),
+                    since: record.installed_at,
+                    opened_by: super::store::OpenedBy::Owner,
+                };
+            }
+            item.clone()
         })
         .collect()
 }
@@ -520,6 +531,20 @@ impl PluginManager {
             .flatten()
             .unwrap_or_default();
         super::secret_input::lines(manifest, &|name| filled.contains_key(name), true, langs)
+    }
+
+    /// 沿用开关的升级（Agent 的更新卡、静默更新）在执行那一刻的可选项：读这时的记录，不用发卡时的快照，
+    /// 主人在卡片挂着时关掉的项保持关着，批准不会把它重新打开（#767）。算法同还没提交请求的预览
+    /// （[`kept_enabled`]），卡片上画的和执行的是同一套规则。
+    pub fn kept_switches(
+        &self,
+        id: &PluginId,
+        manifest: &Manifest,
+        langs: &Languages,
+    ) -> Result<Vec<EnabledPermission>, InstallError> {
+        let record = self.upgradable_record(id, langs)?;
+        let old = installed_package(&record, langs)?;
+        Ok(kept_enabled(manifest, &record, &old.manifest))
     }
 
     /// 按预览给的摘要升级。升级本身在独立的任务里执行，请求断开了也照样做完。

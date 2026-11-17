@@ -21,7 +21,7 @@ use crate::plugin::check;
 use crate::plugin::languages::Languages;
 use crate::plugin::manifest::{Manifest, Permission};
 use crate::plugin::privileges::{self, CapabilityRisk};
-use crate::plugin::store::{EnabledPermission, InstalledRecord};
+use crate::plugin::store::InstalledRecord;
 use crate::plugin::{InstallError, PluginId, PluginPackage, PluginView, package_files};
 use wonton_protocol::{CardLine, PluginWriter, SecretValues};
 
@@ -480,19 +480,25 @@ async fn quiet_update(
 ) -> CallToolResult {
     let id = package.manifest.id.clone();
     let version = package.manifest.version.clone();
-    let run = bus
-        .plugins
-        .upgrade_upload(
-            &id,
-            package,
-            granted,
-            record.enabled_permissions.clone(),
-            record.lan_webui,
-            &[],
-            &Default::default(),
-            &bus.plugins.owner_languages(),
-        )
-        .await;
+    let langs = bus.plugins.owner_languages();
+    // 和发卡的更新同一套：可选项按执行这一刻的记录沿用（#767）。
+    let run = match bus.plugins.kept_switches(&id, &package.manifest, &langs) {
+        Ok(enabled) => {
+            bus.plugins
+                .upgrade_upload(
+                    &id,
+                    package,
+                    granted,
+                    enabled,
+                    record.lan_webui,
+                    &[],
+                    &Default::default(),
+                    &langs,
+                )
+                .await
+        }
+        Err(e) => Err(e),
+    };
     bus.audit.record(&Record {
         caller: caller.id.as_str(),
         tool: name,
@@ -611,7 +617,6 @@ async fn update(
         )
         .await;
     }
-    let enabled = record.enabled_permissions.clone();
     let lan_webui = record.lan_webui;
     card_update(
         bus,
@@ -622,7 +627,6 @@ async fn update(
         (record, langs, activity),
         (adopt, risky, widened),
         granted,
-        enabled,
         lan_webui,
         filled,
     )
@@ -640,7 +644,6 @@ async fn card_update(
     (record, langs, activity): (InstalledRecord, &Languages, Guard),
     (adopt, risky, widened): (bool, bool, Vec<CardLine>),
     granted: Vec<Permission>,
-    enabled: Vec<EnabledPermission>,
     lan_webui: bool,
     filled: Option<BTreeMap<String, Vec<u8>>>,
 ) -> CallToolResult {
@@ -725,8 +728,8 @@ async fn card_update(
                     settings: wonton_protocol::SettingValues,
                     devices: Vec<String>| {
         upgrade_ran(
-            bus, id_for_run, version, package, granted, enabled, lan_webui, secrets, settings,
-            devices, writer,
+            bus, id_for_run, version, package, granted, lan_webui, secrets, settings, devices,
+            writer,
         )
     };
     bus.confirmed_twice(

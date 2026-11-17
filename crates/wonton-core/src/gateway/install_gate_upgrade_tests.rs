@@ -20,7 +20,7 @@ use super::super::tests::Harness;
 
 const PATH: &str = "/_wonton/api/plugins/app.echo/upgrade";
 
-fn required_socket_compose(version: &str) -> String {
+pub(super) fn required_socket_compose(version: &str) -> String {
     let optional = optional_socket_compose(version);
     let required = optional.replace(
         "  permissions: []\n  optional_permissions:\n    docker.socket:\n      off_loss: {zh: 看不到容器, en: No containers}",
