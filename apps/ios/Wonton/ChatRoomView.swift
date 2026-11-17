@@ -29,8 +29,6 @@ struct ChatRoomView: View {
     @State private var profileBot: BotRef?
     /// 进房间的落点摆好之前不标已读（ADR-0071）：标早了已读行会跳到最新一条，落点就丢了。
     @State private var placed = false
-    /// 在最新一条之后往上推，拉出房间的面板（ADR-0052）。
-    @State private var roomPull = PullAnchor(attachesToAncestor: false, edge: .bottom)
     @Environment(OnboardingModel.self) private var onboarding
     @Environment(PagesModel.self) private var pages
     @Environment(\.wontonContentRoot) private var isContentRoot
@@ -52,8 +50,7 @@ struct ChatRoomView: View {
         if threadRoot == nil {
             // 旁聊页全屏盖在这条主对话上（ADR-0093）：盖层的机制在 SideChatCover。
             SideChatCover(model: model, plugins: plugins, roomId: roomId, title: title) {
-                RoomPanelHost(roomId: roomId, panel: timeline.panel, selected: timeline.panelSelected,
-                              blocked: entryBlocked, pullAnchor: roomPull) {
+                RoomPanelHost(roomId: roomId, panel: timeline.panel, selected: timeline.panelSelected) {
                     roomContent
                     #if DEBUG
                         .overlay(alignment: .topLeading) { ScrollDebug(pin: pin) }
@@ -69,9 +66,6 @@ struct ChatRoomView: View {
 
 @MainActor
 private extension ChatRoomView {
-    /// 房间里另有东西开着：长按菜单之外的转发、删除确认不响应上推入口（ADR-0052）。
-    private var entryBlocked: Bool { pickingForwardRoom || showingRedact || showingConfirmations }
-
     private var roomContent: some View {
         Group {
             if let failure = timeline.failure {
@@ -153,6 +147,10 @@ private extension ChatRoomView {
             sideChatTitle: threadRoot == nil ? nil : timeline.sideChat?.title ?? String(localized: .Chat.sideChat),
             close: threadRoot == nil ? nil : { model.closeSideChat(in: roomId) }
         ) {
+            // 面板跟着主对话（ADR-0093）：旁聊页没有房间的面板，也没有这里的按钮。
+            if threadRoot == nil {
+                PanelEntryButton()
+            }
             // 房间里装着的 widget（通话）：点了全屏打开，关掉回到这里（ADR-0096）。旁聊页没有。
             if threadRoot == nil, !timeline.widgets.isEmpty {
                 RoomCallEntry(widgets: timeline.widgets, active: timeline.callActive) { pages.open($0.tab) }
@@ -185,12 +183,6 @@ private extension ChatRoomView {
         }
         // 留着标签栏时，键盘弹出后输入框和发送按钮被盖在键盘下面（iOS 26.5 模拟器实测）。
         .toolbar(.hidden, for: .tabBar)
-        .onChange(of: entryBlocked, initial: true) { _, blocked in
-            // 旁聊页没有面板，不报（ADR-0093）。
-            if threadRoot == nil {
-                model.send(.pages(action: .setRoomEntryBlocked(roomId: roomId, blocked: blocked)))
-            }
-        }
         .task(id: model.draftKey(target)) { await model.loadDraft(target) }
         .task(id: model.draftKey(target)) { await composer.observe() }
         .task(id: timeline.attempt) {
@@ -280,7 +272,6 @@ private extension ChatRoomView {
                 // 进房间时列表从头排起，这一行一定会出现。
                 .background(EnclosingScrollView { scrollView in
                     pin.attach(scrollView)
-                    roomPull.attach(to: scrollView)
                     reveal.attach(scrollView)
                 })
                 .timelineListRow()

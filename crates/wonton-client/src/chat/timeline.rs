@@ -342,7 +342,7 @@ async fn forward(
                     if changed.is_err() {
                         return;
                     }
-                    // 面板、红点或入口状态变了：增量是空的，壳只更新那几个字段。
+                    // 面板、红点或 widget 入口变了：增量是空的，壳只更新那几个字段。
                     Batch::Sent(send(sender, &entries, Vec::new(), &mut view, None), false)
                 }
                 changed = plugin_changes.changed() => {

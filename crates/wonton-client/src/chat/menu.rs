@@ -254,14 +254,13 @@ impl Outbox {
             .borrow()
             .clone()
             .filter(|view| view.room_id == self.room_id);
-        let (panel, panel_selected, entry_blocked, widgets) = match room_view {
+        let (panel, panel_selected, widgets) = match room_view {
             Some(view) => (
                 view.panel.clone(),
                 view.selected.clone(),
-                view.blocked,
                 view.widgets.clone(),
             ),
-            None => (Vec::new(), None, false, Vec::new()),
+            None => (Vec::new(), None, Vec::new()),
         };
         let key_notice = self.key_notice(entries);
         let confirmations = self.confirmations();
@@ -274,7 +273,6 @@ impl Outbox {
                 anchor,
                 panel,
                 panel_selected,
-                entry_blocked,
                 key_notice,
                 confirmations,
                 side_chat: lock(&self.side_chat).clone(),
