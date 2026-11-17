@@ -3,7 +3,7 @@
 use super::*;
 
 #[tokio::test]
-async fn room_panel_view_reports_selection_and_blocking() {
+async fn room_panel_view_reports_selection() {
     let rig = Rig::new();
     let room: wonton_matrix::OwnedRoomId = "!r:home.example".parse().unwrap();
     rig.open_room(
@@ -20,16 +20,6 @@ async fn room_panel_view_reports_selection_and_blocking() {
     assert_eq!(view.panel.len(), 1);
     assert_eq!(view.panel[0].page.title, "example.com");
     assert_eq!(view.selected, None);
-    assert!(!view.blocked);
-
-    rig.tabs
-        .dispatch(PageAction::SetRoomEntryBlocked {
-            room_id: room.to_string(),
-            blocked: true,
-        })
-        .unwrap();
-    assert!(rig.tabs.room_view(room.as_str()).unwrap().blocked);
-
     rig.tabs
         .dispatch(PageAction::SelectPanelPage {
             scope: PanelScope::Room {
@@ -188,7 +178,7 @@ async fn room_page_bridge_rejects_departed_rooms_with_the_same_page() {
 }
 
 #[tokio::test]
-async fn two_room_panels_keep_their_pages_selection_and_blocking() {
+async fn two_room_panels_keep_their_pages_and_selection() {
     let rig = Rig::new();
     let first: OwnedRoomId = "!first:home.example".parse().unwrap();
     let second: OwnedRoomId = "!second:home.example".parse().unwrap();
@@ -213,19 +203,11 @@ async fn two_room_panels_keep_their_pages_selection_and_blocking() {
             tab: first_tab.clone(),
         })
         .unwrap();
-    rig.tabs
-        .dispatch(PageAction::SetRoomEntryBlocked {
-            room_id: second.to_string(),
-            blocked: true,
-        })
-        .unwrap();
     let a = rig.tabs.room_view(first.as_str()).unwrap();
     let b = rig.tabs.room_view(second.as_str()).unwrap();
     assert_eq!(a.panel[0].tab, first_tab);
     assert_eq!(a.selected, Some(first_tab));
-    assert!(!a.blocked);
     assert_eq!(b.panel[0].tab, second_tab);
     assert_eq!(b.selected, None);
-    assert!(b.blocked);
     assert!(rig.tabs.room_view("!missing:home.example").is_none());
 }

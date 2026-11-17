@@ -12,19 +12,18 @@ final class PanelGestureUITests: XCTestCase {
         continueAfterFailure = false
     }
 
-    /// 主聊天页的面板在第 1 级：网页里面起手的下拉归网页，面板不动；从网页顶边附近起手才进第 2 级。
-    func testPagePullOnlyStartsNearThePageEdge() {
+    /// 有页面的主面板从按钮直接进入整页；网页正文和顶边的拖动都不重新触发开工手势。
+    func testMainPanelButtonOpensFullAndKeepsPageDrags() {
         launch()
+        let start = app.coordinate(withNormalizedOffset: CGVector(dx: 0.5, dy: 0.3))
+        start.press(forDuration: 0.05, thenDragTo: start.withOffset(CGVector(dx: 0, dy: 300)),
+                    withVelocity: .slow, thenHoldForDuration: 0)
+        XCTAssertFalse(panel.exists, "聊天列表拖动打开了面板")
         openMainPanel()
-        shot("01-peek")
-
         dragDown(fromY: app.frame.height * 0.4)
-        XCTAssertFalse(waitLevel("full", timeout: 2), "网页里面起手的下拉把面板拖进了第 2 级")
-        XCTAssertTrue(waitLevel("peek", timeout: 1) && page.exists, "网页里面起手的下拉把面板拖走了")
-        shot("02-still-peek")
-
+        XCTAssertTrue(waitLevel("full", timeout: 2) && page.exists, "网页正文拖动改变了整页面板")
         dragDown(fromY: pageTop + 12)
-        XCTAssertTrue(waitLevel("full", timeout: 5), "从网页顶边起手的下拉没进第 2 级\n\(app.debugDescription)")
+        XCTAssertTrue(waitLevel("full", timeout: 2), "主面板整页的网页顶边拖动改变了级别")
         shot("03-full")
     }
 
@@ -34,7 +33,6 @@ final class PanelGestureUITests: XCTestCase {
         defer { XCUIDevice.shared.appearance = .light }
         launch(arguments: ["-UIPreferredContentSizeCategoryName", "UICTContentSizeCategoryAccessibilityXXXL"])
         openMainPanel()
-        dragDown(fromY: pageTop + 12)
         XCTAssertTrue(waitLevel("full", timeout: 5), "没到第 2 级\n\(app.debugDescription)")
         shot("11-full-largest-type")
 
@@ -52,7 +50,7 @@ final class PanelGestureUITests: XCTestCase {
     func testClosedPanelLeavesNothingForVoiceOver() {
         launch()
         openMainPanel()
-        XCTAssertTrue(capsuleHittable && app.buttons["pageMore"].firstMatch.exists, "第 1 级没有胶囊")
+        XCTAssertTrue(capsuleHittable && app.buttons["pageMore"].firstMatch.exists, "整页面板没有胶囊")
         let close = panel.buttons.matching(identifier: "pageClose").allElementsBoundByIndex.first { $0.isHittable }
         close?.tap()
         // 收起后聊天页回到原位，顶栏按钮回到状态栏下沿。
@@ -68,12 +66,9 @@ final class PanelGestureUITests: XCTestCase {
         XCTAssertEqual(app.webViews.count, 0, "收起的面板里网页还在可访问树里\n\(app.debugDescription)")
         XCTAssertFalse(page.exists, "收起的面板里网页的元素还在可访问树里")
 
-        // 再拉开，旁白又摸得到。
-        let low = app.coordinate(withNormalizedOffset: CGVector(dx: 0.5, dy: 0.3))
-        low.press(forDuration: 0.05, thenDragTo: low.withOffset(CGVector(dx: 0, dy: 160)),
-                  withVelocity: .slow, thenHoldForDuration: 0)
-        XCTAssertTrue(waitLevel("peek", timeout: 5), "收起后再拉不开")
-        XCTAssertTrue(page.waitForExistence(timeout: 20) && capsuleHittable, "再拉开后网页或胶囊不在可访问树里")
+        // 再从按钮打开，旁白又摸得到。空面板第一下只到 PEEK，交给统一入口拉满。
+        openMainPanel()
+        XCTAssertTrue(page.exists && capsuleHittable, "重新打开后网页或胶囊不在可访问树里")
     }
 
     /// 面板里的网页在放声音（网页播放器）：收起面板不打断它，过一阵再拉开，声音一直在放。
@@ -90,10 +85,8 @@ final class PanelGestureUITests: XCTestCase {
         XCTAssertTrue(wait(5) { !self.panel.exists }, "点胶囊的关闭没收起面板")
         Thread.sleep(forTimeInterval: 10)
 
-        let low = app.coordinate(withNormalizedOffset: CGVector(dx: 0.5, dy: 0.3))
-        low.press(forDuration: 0.05, thenDragTo: low.withOffset(CGVector(dx: 0, dy: 160)),
-                  withVelocity: .slow, thenHoldForDuration: 0)
-        XCTAssertTrue(waitLevel("peek", timeout: 5) && audioStatus.waitForExistence(timeout: 10), "收起后再拉不开")
+        app.buttons["panelOpen"].tap()
+        XCTAssertTrue(waitLevel("full", timeout: 5) && audioStatus.waitForExistence(timeout: 10), "收起后按钮打不开")
         // 收起的 10 秒里声音停过的话，播放位置最多只多出收起前后那两三秒。
         XCTAssertTrue(wait(5) { (self.pageAudio?.seconds ?? 0) >= before.seconds + 9 },
                       "面板收起的时候网页的声音停了：收起前 \(before)，再拉开 \(audioStatus.label)")
@@ -116,19 +109,38 @@ extension PanelGestureUITests {
         safeTop = sidebar.frame.minY
     }
 
-    /// 聊天列表到顶后往下拉到第 1 级，翻到加载得出来的那一页（假数据的第一页没有隧道，一直是骨架）。
+    /// `panelDots` 在 iOS 26.5 上落在各圆点叶节点，不能再向下查 descendants。
     private func openMainPanel() {
-        let low = app.coordinate(withNormalizedOffset: CGVector(dx: 0.5, dy: 0.3))
-        low.press(forDuration: 0.05, thenDragTo: low.withOffset(CGVector(dx: 0, dy: 160)),
-                  withVelocity: .slow, thenHoldForDuration: 0)
-        XCTAssertTrue(panel.waitForExistence(timeout: 5), "列表到顶后往下拉没有面板")
-        XCTAssertTrue(waitLevel("peek", timeout: 5), "面板不在第 1 级：\(String(describing: panel.value))")
-        // 第 1 级横着滑是翻页。
-        app.coordinate(withNormalizedOffset: CGVector(dx: 0.85, dy: 0.4))
-            .press(forDuration: 0.05, thenDragTo: app.coordinate(withNormalizedOffset: CGVector(dx: 0.15, dy: 0.4)),
-                   withVelocity: .fast, thenHoldForDuration: 0)
-        XCTAssertTrue(page.waitForExistence(timeout: 20), "面板网页没加载出来\n\(app.debugDescription)")
-        XCTAssertTrue(waitLevel("peek", timeout: 2), "翻页把面板带离了第 1 级：\(String(describing: panel.value))")
+        let open = app.buttons["panelOpen"]
+        XCTAssertTrue(open.waitForExistence(timeout: 5) && open.isHittable, "面板入口按钮不可达")
+        open.tap()
+        XCTAssertTrue(wait(5) {
+            self.panel.exists && (self.panel.value as? String == "peek" || self.panel.value as? String == "full")
+        }, "按钮没有打开面板")
+        let startedPeek = panel.value as? String == "peek"
+        if startedPeek, app.buttons["panelAdd"].exists {
+            app.buttons["panelAdd"].tap()
+            XCTAssertTrue(app.textFields["https://"].waitForExistence(timeout: 5), "空面板加号没有打开编辑页")
+            return XCTFail("fixture 面板为空；已进入添加页面，网页手势场景需要真实 Player 页面")
+        }
+        if !page.exists {
+            let dots = panel.descendants(matching: .any).matching(identifier: "panelDots")
+            let player = dots.matching(NSPredicate(format: "label == %@", "Player")).firstMatch
+            if player.waitForExistence(timeout: 5) {
+                XCTAssertTrue(player.isHittable, "Player 圆点不可点\n\(app.debugDescription)")
+                player.tap()
+            } else {
+                XCTAssertEqual(dots.count, 0, "有分页圆点，但缺少 fixture 的 Player 圆点\n\(app.debugDescription)")
+            }
+        }
+        // 单页没有圆点，仍必须证明当前选中的是实际可加载的 fixture 网页。
+        XCTAssertTrue(page.waitForExistence(timeout: 20), "fixture 没有就绪的 Player 网页；检查单页及回环服务\n\(app.debugDescription)")
+        if startedPeek {
+            dragDown(fromY: pageTop + 12)
+            XCTAssertTrue(waitLevel("full", timeout: 5), "PEEK 里的真实网页没有从栏缘进入 FULL")
+        } else {
+            XCTAssertTrue(waitLevel("full", timeout: 2), "切页改变了整页面板的级别")
+        }
     }
 
     private var panel: XCUIElement { app.otherElements["chatPanel"] }
