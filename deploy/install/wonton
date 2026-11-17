@@ -2,7 +2,7 @@
 # 云吞服务器上的命令。`wonton-core init` 把它写进安装目录，安装脚本链接成 /usr/local/bin/wonton，要用 root 执行。
 #
 #   sudo wonton pair           发一个配对码（10 分钟内有效，只能用一次），已经有设备时也能用：设备都丢了时用它找回
-#   sudo wonton pair --first   显示首次配对码（和局域网网页上的是同一个），第一台设备配上后退出；安装脚本最后执行它
+#   sudo wonton pair --first   显示首次配对码（和局域网网页上的是同一个），第一台设备配上后退出；安装输出是终端时自动执行
 set -eu
 
 install_dir=$(dirname "$(readlink -f "$0")")
