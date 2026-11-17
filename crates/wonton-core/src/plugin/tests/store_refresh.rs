@@ -106,7 +106,7 @@ async fn the_upgrade_preview_fetches_the_index_again_and_says_when_it_cannot() {
 
     // 离上次去取不到一分钟：不重复取。
     let err =
-        o.m.preview_upgrade(&hello(), UpgradeTo::Offered, &zh())
+        o.m.preview_upgrade(&hello(), UpgradeTo::Offered, None, &zh())
             .await
             .unwrap_err();
     assert_eq!(err.kind(), "not_found", "{err}");
@@ -116,7 +116,7 @@ async fn the_upgrade_preview_fetches_the_index_again_and_says_when_it_cannot() {
     o.github.broken.store(true, Ordering::Relaxed);
     for _ in 0..2 {
         let err =
-            o.m.preview_upgrade(&hello(), UpgradeTo::Offered, &zh())
+            o.m.preview_upgrade(&hello(), UpgradeTo::Offered, None, &zh())
                 .await
                 .unwrap_err();
         assert_eq!(err.kind(), "source_unavailable", "{err}");
@@ -125,7 +125,7 @@ async fn the_upgrade_preview_fetches_the_index_again_and_says_when_it_cannot() {
 
     a_minute_later(&o.m).await;
     let preview =
-        o.m.preview_upgrade(&hello(), UpgradeTo::Offered, &zh())
+        o.m.preview_upgrade(&hello(), UpgradeTo::Offered, None, &zh())
             .await
             .unwrap();
     assert_eq!(preview.version, "1.1.0");
