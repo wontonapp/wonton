@@ -1,11 +1,13 @@
 package app.wonton.ui
 
 import android.annotation.SuppressLint
+import android.content.Context
 import android.content.Intent
 import android.content.pm.ApplicationInfo
 import android.graphics.Bitmap
 import android.content.res.Configuration
 import android.net.Uri
+import android.os.Build
 import android.util.Log
 import android.view.View
 import android.view.MotionEvent
@@ -191,16 +193,18 @@ private val publicProfile by lazy(LazyThreadSafetyMode.NONE) {
 
 private data class WebLayer(val profile: String?, val multiProfile: Boolean)
 
-/** 本页该用的 Profile；来源不在本机代理里、或需要 Profile 而系统不支持时返回 null。 */
+/** 本页该用的 Profile；插件页不在本机代理里、公网页不支持多 Profile 时返回 null。 */
 @Composable
-private fun rememberWebLayer(proxy: ProxySettings?, profileName: String?): WebLayer? {
+private fun rememberWebLayer(proxy: ProxySettings?, profileName: String?, publicPage: Boolean): WebLayer? {
     val route = LocalPluginProxy.current
     val account = LocalPluginAccount.current
-    val profile = profileName ?: account?.let { pluginProfileName(it) }
+    // 公网页不取插件账号的 Profile：它挂独立的公网 Profile，由 factory 里 setProfile（ADR-0052）。
+    val profile = if (publicPage) null else profileName ?: account?.let { pluginProfileName(it) }
     val multiProfile = WebViewFeature.isFeatureSupported(WebViewFeature.MULTI_PROFILE)
-    val onRoute = proxy != null && route?.contains(proxy) == true
+    // 公网页不走本机代理（proxy 为 null），挂在独立的公网 Profile 上；插件页必须在本机代理路由里。
+    val usable = if (publicPage) multiProfile else proxy != null && route?.contains(proxy) == true
     val unsupported = profileName != null && !multiProfile
-    return if (!onRoute || unsupported) {
+    return if (!usable || unsupported) {
         null
     } else {
         WebLayer(profile, multiProfile)
@@ -249,7 +253,7 @@ fun PluginWebView(
         overrideProxy(proxy) { if (active) proxyReady = proxy }
         onDispose { active = false }
     }
-    val layer = rememberWebLayer(proxy, profileName) ?: return
+    val layer = rememberWebLayer(proxy, profileName, publicPage) ?: return
     key(controller, generation, layer.profile) {
         AndroidView(
             modifier = modifier.fillMaxSize(),
@@ -267,10 +271,16 @@ fun PluginWebView(
                     settings.mediaPlaybackRequiresUserGesture = false
                     settings.builtInZoomControls = true
                     settings.displayZoomControls = false
-                    if (layer.multiProfile && layer.profile != null) {
+                    if (publicPage) {
+                        // 公网页优先：账号非空时 layer.profile 也不该指到插件 Profile（ADR-0052）。
+                        WebViewCompat.setProfile(this, publicProfile.getName())
+                    } else if (layer.multiProfile && layer.profile != null) {
                         WebViewCompat.setProfile(this, layer.profile)
-                    } else if (publicPage) WebViewCompat.setProfile(this, publicProfile.getName())
+                    }
                     configureAppearance(this, canvas, darkTheme)
+                    // 模拟器用 SwiftShader 画 WebView，整屏网页常超显存配额，图一片都不出（渲染进程
+                    // 仍可能崩）；调试包在模拟器上改软件层，真机照旧走硬件。
+                    setSoftwareLayerIfEmulator(context)
                     controller.view = this
                     webChromeClient = PluginChromeClient(this, controller)
                     webViewClient = ProxyAuthClient(proxy, reload, url, controller, snapshot,
@@ -292,6 +302,7 @@ fun PluginWebView(
                 }
                 configureBackground(view, canvas)
                 view.updateTheme(darkTheme, canvas)
+                view.wantedVisible = visible
                 view.visibility = if (visible) android.view.View.VISIBLE else android.view.View.INVISIBLE
                 if (view.settings.textZoom != textZoom) view.settings.textZoom = textZoom
                 val client = view.webViewClient as ProxyAuthClient
@@ -314,12 +325,18 @@ private fun pluginContext(context: android.content.Context, dark: Boolean): Cont
 private fun pluginTheme(dark: Boolean): Int = if (dark) android.R.style.Theme_Material_NoActionBar
     else android.R.style.Theme_Material_Light_NoActionBar
 
+private fun WebView.setSoftwareLayerIfEmulator(context: Context) {
+    val debug = context.applicationInfo.flags and ApplicationInfo.FLAG_DEBUGGABLE != 0
+    if (debug && Build.HARDWARE == "ranchu") setLayerType(View.LAYER_TYPE_SOFTWARE, null)
+}
+
 private class ThemedPluginWebView(
     private val wrapped: ContextThemeWrapper,
     private var dark: Boolean,
     private val controller: PluginWebViewController,
 ) : WebView(wrapped) {
     var rendererGone = false
+    var wantedVisible = false
     private var disposed = false
     private var bridgeOrigins: Set<String>? = null
     private var startScript: String? = null
@@ -566,6 +583,8 @@ private class ProxyAuthClient(
         controller.updateHistory()
         // 出错的加载也会走到这里。
         if (!failedThisLoad) {
+            // 加载开始时网页框被藏起来，此时组合不一定再跑 update，按当前可见要求自己放出来。
+            view.visibility = if ((view as ThemedPluginWebView).wantedVisible) View.VISIBLE else View.INVISIBLE
             onLoaded()
         }
     }

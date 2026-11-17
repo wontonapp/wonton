@@ -33,6 +33,8 @@ private struct AgentRunPreviewScreen: View {
                 cardId: nil,
                 choices: [],
                 senderName: "Echo",
+                // 十分钟前发出的：已等待显示 10 分钟，走屏跑完也跨不进 11。
+                timestampMs: UInt64(Date.now.timeIntervalSince1970 * 1_000) - 600_000,
                 openCard: { _ in },
                 answerChoice: { _ in }
             )
@@ -48,6 +50,7 @@ private struct AgentRunPreviewScreen: View {
                 cardId: "card-1",
                 choices: [],
                 senderName: "Echo",
+                timestampMs: 0,
                 openCard: { _ in openedCard = true },
                 answerChoice: { _ in }
             )

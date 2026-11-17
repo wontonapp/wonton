@@ -72,38 +72,21 @@ final class PluginExitUITests: XCTestCase {
 
     // MARK: 聊天页的下拉面板
 
-    func testPanelFirstLevelHasExit() {
+    func testPanelButtonHasExit() {
         launch()
-        walkPanel("面板第 1 级")
+        walkPanel("按钮打开的整页面板")
     }
 
-    func testPanelFirstLevelHasExitLargestText() {
+    func testPanelButtonHasExitLargestText() {
         launch(arguments: Self.largestText)
-        walkPanel("最大字号下面板第 1 级")
-    }
-
-    func testPanelSecondLevelCapsuleCloses() {
-        launch()
-        let panel = app.otherElements["chatPanel"]
-        pullPanelOpen()
-        XCTAssertTrue(panel.waitForExistence(timeout: 5), "聊天列表往下拉没有面板\n\(app.debugDescription)")
-        // 露出的那条聊天页往外推，到整页。
-        app.coordinate(withNormalizedOffset: CGVector(dx: 0.5, dy: 0.9))
-            .press(forDuration: 0.05, thenDragTo: app.coordinate(withNormalizedOffset: CGVector(dx: 0.5, dy: 0.99)),
-                   withVelocity: .slow, thenHoldForDuration: 0)
-        let full = XCTNSPredicateExpectation(predicate: NSPredicate(format: "value == %@", "full"), object: panel)
-        XCTAssertEqual(XCTWaiter.wait(for: [full], timeout: 5), .completed, "往外推没有到第 2 级")
-        assertCapsule("面板第 2 级")
-        shot("面板第 2 级")
-        tap(capsule, "面板第 2 级的关闭")
-        assertPanelClosed("面板第 2 级")
+        walkPanel("最大字号下按钮打开的整页面板")
     }
 
     private func walkPanel(_ name: String) {
         let panel = app.otherElements["chatPanel"]
-        pullPanelOpen()
-        XCTAssertTrue(panel.waitForExistence(timeout: 5), "聊天列表往下拉没有面板\n\(app.debugDescription)")
-        XCTAssertEqual(panel.value as? String, "peek", "\(name)：面板不在第 1 级")
+        openPanel()
+        XCTAssertTrue(panel.waitForExistence(timeout: 5), "聊天顶栏按钮没有打开面板\n\(app.debugDescription)")
+        XCTAssertEqual(panel.value as? String, "full", "\(name)：有页面时按钮没有直接进入整页")
         assertCapsule(name)
         shot(name)
         backgroundAndReturn()
@@ -174,11 +157,8 @@ final class PluginExitUITests: XCTestCase {
         XCTAssertTrue(waitGone(sidebarButton), "点 \(name) 没打开页面\n\(app.debugDescription)", file: file, line: line)
     }
 
-    /// 聊天列表往下慢拉，过阈值松手到第 1 级。
-    private func pullPanelOpen() {
-        let start = app.coordinate(withNormalizedOffset: CGVector(dx: 0.5, dy: 0.3))
-        start.press(forDuration: 0.05, thenDragTo: start.withOffset(CGVector(dx: 0, dy: 160)),
-                    withVelocity: .slow, thenHoldForDuration: 0)
+    private func openPanel() {
+        tap(app.buttons.matching(identifier: "panelOpen"), "打开面板按钮")
     }
 
     /// 关闭看得见、点得到，整个在屏幕里（最大字号下被挤出屏幕过）。

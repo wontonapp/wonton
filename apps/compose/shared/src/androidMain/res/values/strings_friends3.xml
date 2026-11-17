@@ -36,4 +36,7 @@
     <string name="friends_error_request_not_found">That request was already handled</string>
     <!-- Failure title when the server refused the change. -->
     <string name="friends_error_upstream">The server refused it</string>
+
+    <!-- Banner shown on the friends page while the public access master switch is off. -->
+    <string name="friends_public_access_off">Public access is off</string>
 </resources>

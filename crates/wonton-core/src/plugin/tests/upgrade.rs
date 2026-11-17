@@ -101,7 +101,9 @@ async fn install(m: &Arc<PluginManager>, source: &str) {
 
 /// 主人在确认页上点了确认。
 async fn upgrade(m: &Arc<PluginManager>) -> Result<(), InstallError> {
-    let preview = m.preview_upgrade(&id(), UpgradeTo::Offered, &zh()).await?;
+    let preview = m
+        .preview_upgrade(&id(), UpgradeTo::Offered, None, &zh())
+        .await?;
     let request = UpgradeRequest {
         devices: Vec::new(),
         source: None,
@@ -187,7 +189,7 @@ async fn a_new_tag_is_offered_and_the_upgrade_keeps_the_data() {
     assert!(!offer.permissions_changed);
 
     let preview = m
-        .preview_upgrade(&id(), UpgradeTo::Offered, &zh())
+        .preview_upgrade(&id(), UpgradeTo::Offered, None, &zh())
         .await
         .unwrap();
     assert_eq!(preview.upgrade_from.as_deref(), Some("1.0.0"));
@@ -217,7 +219,7 @@ async fn a_new_tag_is_offered_and_the_upgrade_keeps_the_data() {
     assert_eq!(record.version, "1.1.0");
     assert_eq!(record.origin.unwrap().tag.as_deref(), Some("v1.1.0"));
     assert_eq!(
-        m.preview_upgrade(&id(), UpgradeTo::Offered, &zh())
+        m.preview_upgrade(&id(), UpgradeTo::Offered, None, &zh())
             .await
             .unwrap_err()
             .kind(),
@@ -332,7 +334,7 @@ async fn more_permissions_need_a_new_confirmation_and_a_moved_tag_a_new_preview(
     );
 
     let preview = m
-        .preview_upgrade(&id(), UpgradeTo::Offered, &zh())
+        .preview_upgrade(&id(), UpgradeTo::Offered, None, &zh())
         .await
         .unwrap();
     assert!(preview.permissions.iter().all(|p| p.added));
@@ -398,7 +400,7 @@ async fn a_rewritten_tag_is_reported_and_not_an_upgrade() {
         plugin.notices
     );
     let err = m
-        .preview_upgrade(&id(), UpgradeTo::Offered, &zh())
+        .preview_upgrade(&id(), UpgradeTo::Offered, None, &zh())
         .await
         .unwrap_err();
     assert_eq!(err.kind(), "not_found", "{err}");
@@ -555,7 +557,7 @@ async fn system_plugins_upgrade_from_the_image_and_say_so_when_they_cannot() {
         m.ensure_system(&system, Backoff::default()).await.unwrap();
         assert_eq!(version(&m), "1.0.0");
         let err = m
-            .preview_upgrade(&id(), UpgradeTo::Offered, &zh())
+            .preview_upgrade(&id(), UpgradeTo::Offered, None, &zh())
             .await
             .unwrap_err();
         assert_eq!(err.kind(), "unsupported", "接口升不了系统插件：{err}");
@@ -689,6 +691,7 @@ async fn ports_that_become_switched_close_and_the_preview_says_so() {
             UpgradeTo::Upload(Box::new(
                 PluginPackage::parse(&v2, &super::langs()).unwrap(),
             )),
+            None,
             &zh(),
         )
         .await
@@ -723,7 +726,7 @@ async fn always_allow_stays_through_an_upgrade_and_the_preview_lists_it() {
     m.check_upgrades_now().await;
 
     let preview = m
-        .preview_upgrade(&id(), UpgradeTo::Offered, &zh())
+        .preview_upgrade(&id(), UpgradeTo::Offered, None, &zh())
         .await
         .unwrap();
     let listed: Vec<_> = preview.always_allowed.iter().map(|b| &b.caller).collect();
@@ -737,7 +740,7 @@ async fn always_allow_stays_through_an_upgrade_and_the_preview_lists_it() {
     release(&github, &hello("1.2.0", "", bot));
     m.check_upgrades_now().await;
     let preview = m
-        .preview_upgrade(&id(), UpgradeTo::Offered, &zh())
+        .preview_upgrade(&id(), UpgradeTo::Offered, None, &zh())
         .await
         .unwrap();
     assert!(preview.always_allowed.is_empty());
@@ -803,7 +806,7 @@ async fn more_widget_capabilities_ask_the_owner_again() {
     );
 
     let preview = m
-        .preview_upgrade(&id(), UpgradeTo::Offered, &zh())
+        .preview_upgrade(&id(), UpgradeTo::Offered, None, &zh())
         .await
         .unwrap();
     let added: Vec<_> = preview
