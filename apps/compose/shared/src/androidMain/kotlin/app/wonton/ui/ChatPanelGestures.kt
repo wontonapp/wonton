@@ -164,7 +164,8 @@ internal class PanelPageTouch(private val state: ChatPanelState) {
 
     /** 翻到绝对页位 [Float]，松手按速度落页。 */
     var flipTo: (Float) -> Unit = {}
-    var flipEnd: (Float) -> Unit = {}
+    /** 松手时的绝对页位、速度（px/s）和按下时的页位；落页方向只认手指拖的方向。 */
+    var flipEnd: (Float, Float, Float) -> Unit = { _, _, _ -> }
     private var flipBase = 0f
 
     /** 手指按下的屏幕坐标：页面自己会滑走，局部坐标跟着动，位移只在屏幕坐标里不变。 */
@@ -198,7 +199,7 @@ internal class PanelPageTouch(private val state: ChatPanelState) {
                 val velocity = tracker.calculateVelocity()
                 catchUp(event)
                 when (mode) {
-                    Mode.FLIP -> flipEnd(velocity.x)
+                    Mode.FLIP -> flipEnd(position(), velocity.x, flipBase)
                     Mode.PULL -> state.settle(PanelLevel.PEEK, velocity.y)
                     Mode.NONE -> Unit
                 }
