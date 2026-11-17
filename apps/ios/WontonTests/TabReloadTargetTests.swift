@@ -33,9 +33,19 @@ final class TabReloadTargetTests: XCTestCase {
     }
 
     func testMidLoginAddressesAreNotReplayed() {
-        // 回调页落回插件后、加载完成前 inLogin 还是真的：带授权码的回调地址不重放，回入口。
+        // 回调页落回插件后、加载完成前 inLogin 还是真的（加载失败也不清，loadFailed 不再动它）：
+        // 带授权码的回调地址不重放，回入口。
         XCTAssertEqual(target(inLogin: true).resolve(recovery: landing, current: nil), entry)
         XCTAssertEqual(target(inLogin: true).resolve(recovery: nil, current: landing), entry)
+    }
+
+    func testLandingIsOnlyTheAddressWithQueryParameters() {
+        // 服务端处理完回调再 302 到的深页没有参数，是正常页面：不记落点，之后在这页重载仍回这一页；
+        // 带授权码的回调地址才记。
+        let albums = URL(string: "http://photos.home.example/albums/42")!
+        XCTAssertEqual(TabReloadTarget.landing(landing), landing)
+        XCTAssertNil(TabReloadTarget.landing(albums))
+        XCTAssertEqual(target(loginLanding: TabReloadTarget.landing(albums)).resolve(recovery: nil, current: albums), albums)
     }
 
     func testAddressesOnTheLoginRouteAreNotReplayed() {

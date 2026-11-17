@@ -49,7 +49,7 @@ extension TabWebSession: WKNavigationDelegate {
         recoveryURL = nil
         if inLogin, let url = webView.url, !loginRoute.contains(url) {
             inLogin = false
-            loginLanding = url
+            loginLanding = TabReloadTarget.landing(url)
         }
         canGoBack = webView.canGoBack
         if parked {
@@ -176,7 +176,6 @@ extension TabWebSession: WKNavigationDelegate {
 
     private func loadFailed(status: UInt16?) {
         ready = hasContent
-        inLogin = false
         if recoveryURL == nil { recoveryURL = navigationURL }
         guard !parked else {
             // 没处报：重开时重新加载，失败了那时再报给核心。

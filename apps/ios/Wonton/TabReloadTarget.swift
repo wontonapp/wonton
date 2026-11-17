@@ -29,6 +29,13 @@ struct TabReloadTarget {
     /// 主框架还在登录的路上：见 `TabWebSession.inLogin`。
     let inLogin: Bool
 
+    /// 登录往返的落点只认带查询参数的地址（带授权码的回调地址）。服务端处理完回调再 302 到的深页
+    /// 是正常页面，没有参数，不记——记了会把这页之后本来就合法的重载误送回入口。
+    static func landing(_ url: URL) -> URL? {
+        guard let query = url.query, !query.isEmpty else { return nil }
+        return url
+    }
+
     /// `recovery` 是加载失败或网页进程被杀时记下的地址，`current` 是 WebView 现在的地址。
     func resolve(recovery: URL?, current: URL?) -> URL {
         guard let wanted = recovery ?? current, replayable(wanted) else { return entry }
