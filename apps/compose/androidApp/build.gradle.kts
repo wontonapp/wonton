@@ -208,8 +208,8 @@ dependencies {
     testImplementation(libs.junit)
     testImplementation(libs.robolectric)
     testImplementation(libs.androidx.test.junit)
-    robolectricSdk32(libs.robolectric.android.all.api32)
-    robolectricSdk36(libs.robolectric.android.all.api36)
+    robolectricSdk32(libs.robolectric.android.all.sdk32)
+    robolectricSdk36(libs.robolectric.android.all.sdk36)
     // 仪器测试（夜跑用）：启动 App 到首屏的骨架和 Compose 语义树断言。
     androidTestImplementation(libs.junit)
     androidTestImplementation(libs.androidx.test.junit)
