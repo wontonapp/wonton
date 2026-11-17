@@ -122,6 +122,7 @@ fn sidebar_view_model_round_trip() {
         installed: Some(installed),
         roles: Default::default(),
         store: Some(store()),
+        store_load: StoreLoadState::Ready,
         refreshing: true,
         problem: Some(PluginProblem {
             reason: PluginFailure::TransportUnavailable,

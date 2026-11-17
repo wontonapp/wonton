@@ -13,6 +13,7 @@ import app.wonton.client.ClientCore
 import app.wonton.protocol.Action
 import app.wonton.protocol.CoreException
 import app.wonton.protocol.InstalledPlugin
+import app.wonton.protocol.PluginAction
 import app.wonton.protocol.PluginImage
 import app.wonton.protocol.PluginDetailRoute
 import app.wonton.protocol.PluginKind
@@ -46,6 +47,10 @@ class PluginsState(val core: ClientCore) {
     var refreshRejection by mutableStateOf<CoreException?>(null)
         private set
 
+    /** 商店刷新被拒绝的原因，只在商店就地显示，不影响已安装列表。 */
+    var storeRefreshRejection by mutableStateOf<CoreException?>(null)
+        private set
+
     /** 核心给的图片地址内容不变（ADR-0017），按地址缓存解码后的图片。 */
     private val images = LruCache<String, ImageBitmap>(CACHED_IMAGES)
 
@@ -69,6 +74,15 @@ class PluginsState(val core: ClientCore) {
     fun refresh(action: Action) {
         refreshRejection = try {
             core.dispatch(action)
+            null
+        } catch (rejection: CoreException) {
+            rejection
+        }
+    }
+
+    fun refreshStore(force: Boolean) {
+        storeRefreshRejection = try {
+            core.dispatch(Action.Plugins(PluginAction.RefreshStore(force = force)))
             null
         } catch (rejection: CoreException) {
             rejection

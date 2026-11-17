@@ -2,7 +2,7 @@ import SwiftUI
 import WontonClient
 
 /// 点了发送、还没交给 Matrix 的一条（ADR-0094），画在时间线最后一条后面。附件各自画着上传的进展；交出去以后由 SDK 的本地回显代替。
-/// 传不上去时整条变红，点开重发或者删掉。
+/// 传着的时候有「取消发送」按钮，确认后整条不发、上传停下；传不上去时整条变红，点开重发或者删掉。
 struct OutgoingRow: View {
     let message: OutgoingMessage
     let composer: ComposerModel
@@ -50,17 +50,23 @@ struct OutgoingRow: View {
         HStack(spacing: WontonTheme.spacing.s4) {
             switch message.state {
             case let .sending(progress):
+                if let progress {
+                    Text(.Message2.messageSendingProgress(
+                        Double(progress).formatted(.percent.precision(.fractionLength(0)))
+                    ))
+                } else {
+                    Text(.Message2.messageSending)
+                }
+                // 盲测在气泡上找不到取消：状态文字不像能点，取消要自己长成看得见的按钮，点开确认。
                 // 传着的时候也能取消：整条不发，上传停下（盲测：取消了照样发出去）。
                 Button {
                     isChoosingSending = true
                 } label: {
-                    if let progress {
-                        Text(.Message2.messageSendingProgress(
-                            Double(progress).formatted(.percent.precision(.fractionLength(0)))
-                        ))
-                    } else {
-                        Text(.Message2.messageSending)
+                    HStack(spacing: WontonTheme.spacing.s4) {
+                        WontonIcon.close.view(size: WontonTheme.size.iconTiny)
+                        Text(.Message2.messageCancelSend)
                     }
+                    .foregroundStyle(Color(colors.danger))
                 }
                 .buttonStyle(.plain)
                 .wontonActionSheet(isPresented: $isChoosingSending, actions: [
