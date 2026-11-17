@@ -45,6 +45,8 @@ impl Session<'_> {
         name: &str,
         users: &Map<String, Value>,
     ) -> Result<String, MatrixError> {
+        // 建群时的群名事件署核心账号的名字，排在建房之前，家人看到的才不是用户 ID。
+        super::notices::name_core_account(self).await;
         // v12 的创建者有隐含最高权限，不能放进 users；人都在建房后邀请，不授予创建者身份。
         // Tuwunel v2.0.0 忽略 initial_state 中 content 为空对象的事件，标记必须有内容。
         let body = json!({
@@ -113,25 +115,38 @@ impl Session<'_> {
 }
 
 impl Matrix {
+    /// 让这个人在家庭群里。`display_name` 是核心记着的名字，和他 Matrix 上的不一样时改成它（同 ADR-0030），`None` 时不动。
     pub(crate) async fn join_family_room(
         &self,
         room: &str,
         username: &str,
+        display_name: Option<&str>,
     ) -> Result<(), MatrixError> {
         let user = self.user_id(username);
         let core = self.core_session();
         let membership = core.membership(room, &user).await?;
-        if membership.as_deref() == Some("join") {
+        let rename = match display_name.map(str::trim).filter(|name| !name.is_empty()) {
+            Some(name) if core.display_name_of(&user).await?.as_deref() != Some(name) => Some(name),
+            _ => None,
+        };
+        if membership.as_deref() == Some("join") && rename.is_none() {
             return Ok(());
         }
         // 先登录确保账号存在；无论邀请或加入成功与否都退出临时设备。
         let login = self.login(username, "Wonton family room").await?;
         let session = self.session(&login);
         let joined = async {
-            if membership.as_deref() != Some("invite") {
-                core.invite(room, &user).await?;
+            // 先改名再加入：加入的成员事件带着名字，群里不多一条改名。
+            if let Some(name) = rename {
+                session.set_display_name(name).await?;
             }
-            session.join(room).await
+            if membership.as_deref() != Some("join") {
+                if membership.as_deref() != Some("invite") {
+                    core.invite(room, &user).await?;
+                }
+                session.join(room).await?;
+            }
+            Ok::<_, MatrixError>(())
         }
         .await;
         let logout = session.logout().await;
