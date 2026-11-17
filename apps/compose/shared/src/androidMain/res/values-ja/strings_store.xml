@@ -6,14 +6,22 @@
     <string name="store_get">入手</string>
     <!-- Small tag on a store row for an app that asks for risky permissions. -->
     <string name="store_high_permissions">高い権限</string>
+    <!-- Button that requests store content when it has not been loaded. -->
+    <string name="store_load">ストアを読み込む</string>
     <!-- Shown when a store search found nothing. -->
     <string name="store_no_results">見つかりません</string>
+    <!-- Store state before any store load has been requested. -->
+    <string name="store_not_requested">ストアはまだ読み込まれていません</string>
     <!-- Button on a store row to open an installed app. -->
     <string name="store_open">開く</string>
+    <!-- Shown after five seconds of loading without claiming a cause. -->
+    <string name="store_pending">ストアの内容をまだ取得できていません。原因は不明です。</string>
     <!-- Problem title in the store with the source it came from. Arguments: the provider's name, the problem title from the core. -->
     <string name="store_problem_from_source">%1$s：%2$s</string>
     <!-- Placeholder under an added source whose list hasn't been fetched yet. Argument: the source's provider name. -->
     <string name="store_reading">%1$sを読み込み中…</string>
+    <!-- Button that requests a new store load after loading takes a while. -->
+    <string name="store_reload">再読み込み</string>
     <!-- Placeholder of the search field on the Store screen. -->
     <string name="store_search_prompt">検索</string>
     <!-- Section title above community apps in the store. -->
@@ -30,6 +38,8 @@
     <string name="store_update">アップデート</string>
     <!-- Caption on a store row whose listing comes through an index. Argument: the index's name. -->
     <string name="store_via_index">%1$s経由</string>
+    <!-- Store load is waiting for a connection; connection controls remain in the status line. -->
+    <string name="store_waiting_for_connection">接続を待ってからストアを読み込みます</string>
     <!-- アップデートのあるアプリをまとめて更新する前のボトムシートのタイトル。 -->
     <plurals name="store_update_all_title">
         <item quantity="other">%1$d個のアプリをアップデート</item>
