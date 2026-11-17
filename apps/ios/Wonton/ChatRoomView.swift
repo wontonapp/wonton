@@ -660,14 +660,22 @@ private struct RoomTopBar<Trailing: View>: ViewModifier {
     /// 旁聊页返回键的动作：收起旁聊，不动导航栈。
     let close: (() -> Void)?
     @ViewBuilder let trailing: () -> Trailing
+    @Environment(\.wontonColors) private var colors
 
     func body(content: Content) -> some View {
-        if let sideChatTitle {
-            content.wontonPushedScreen(sideChatTitle, showsStatus: true, onClose: close) { EmptyView() }
-        } else {
-            content.wontonPushedScreen(
-                title, avatar: avatar, showsStatus: true, showsStatusLine: true, trailing: trailing
-            )
+        content.wontonTopBar {
+            Group {
+                if let sideChatTitle {
+                    WontonPushedBar(title: sideChatTitle, showsStatus: true, onClose: close) { EmptyView() }
+                } else {
+                    WontonPushedBar(
+                        title: title, showsStatus: true, showsStatusLine: true, avatar: avatar, trailing: trailing
+                    )
+                }
+            }
+            .background(.regularMaterial, ignoresSafeAreaEdges: .top)
         }
+        .toolbar(.hidden, for: .navigationBar)
+        .background(Color(colors.canvas).ignoresSafeArea())
     }
 }
