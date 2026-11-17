@@ -226,6 +226,7 @@ internal fun ChatListScreen(
                 item(key = "confirmations") {
                     WontonRow(
                         stringResource(R.string.confirmations_title),
+                        titleTint = if (confirmationCount == 0) WontonTheme.colors.textSecondary else null,
                         badgeCount = confirmationCount,
                         showsForward = true,
                         onClick = onOpenConfirmations,

@@ -242,6 +242,36 @@
         }
       }
     },
+    "message.sentAt": {
+      "comment": "Label of the send time shown at the bottom of a message's context menu.",
+      "extractionState": "manual",
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Sent at %@"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "发送时间 %@"
+          }
+        },
+        "zh-Hant": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "傳送時間 %@"
+          }
+        },
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "送信日時 %@"
+          }
+        }
+      }
+    },
     "message.undecryptable": {
       "comment": "Placeholder when this device has no key for the message.",
       "extractionState": "manual",

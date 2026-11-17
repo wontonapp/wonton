@@ -101,6 +101,7 @@ struct ChatListView: View {
         NavigationLink(value: ChatRoute.confirmations) {
             WontonRow(
                 title: String(localized: .Confirmations.confirmationsTitle),
+                titleTint: model.confirmations.pendingCount == 0 ? colors.textSecondary : nil,
                 value: model.confirmations.pendingCount > 0 ? String(model.confirmations.pendingCount) : nil,
                 showsForward: true
             )
@@ -178,6 +179,7 @@ struct ChatListView: View {
                                 reminderDismissals.dismiss(backupReminder)
                                 locallyDismissed = true
                             }
+                            .accessibilityIdentifier("chat-backup-reminder-dismiss")
                         }
                     }
                 }

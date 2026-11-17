@@ -15,6 +15,7 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.drawWithContent
 import androidx.compose.ui.geometry.Offset
 import androidx.compose.ui.geometry.Rect
+import androidx.compose.ui.geometry.Size
 import androidx.compose.ui.graphics.BlendMode
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.Paint
@@ -49,6 +50,19 @@ internal fun Modifier.recordRoomBackdrop(backdrop: RoomBackdrop): Modifier =
 
 @Composable
 internal fun Modifier.roomBackdrop(backdrop: RoomBackdrop, top: Boolean): Modifier {
+    if (top) {
+        val canvas = WontonTheme.colors.canvas.toColor()
+        val fadeHeight = with(LocalDensity.current) { WontonTheme.spacing.s12.toPx() }
+        val fade = remember(canvas, fadeHeight) {
+            Brush.verticalGradient(listOf(canvas, Color.Transparent), endY = fadeHeight)
+        }
+        return drawWithContent {
+            // Keep the entire measured bar opaque; fade only below it, without changing layout or hit targets.
+            drawRect(canvas)
+            drawContent()
+            translate(top = size.height) { drawRect(fade, size = Size(size.width, fadeHeight)) }
+        }
+    }
     val replay = rememberGraphicsLayer()
     var origin by remember { mutableStateOf(Offset.Zero) }
     val radius = with(LocalDensity.current) { WontonTheme.size.menuBlur.toPx() }
@@ -57,23 +71,15 @@ internal fun Modifier.roomBackdrop(backdrop: RoomBackdrop, top: Boolean): Modifi
     val supportsBlur = Build.VERSION.SDK_INT >= Build.VERSION_CODES.S
     val strong = canvas.copy(alpha = if (supportsBlur) 0.90f else 0.96f)
     val weak = canvas.copy(alpha = if (supportsBlur) 0.64f else 0.85f)
-    val gradient = Brush.verticalGradient(if (top) listOf(strong, weak) else listOf(weak, strong))
+    val gradient = Brush.verticalGradient(listOf(weak, strong))
     val effect = remember(radius) { BlurEffect(radius, radius, TileMode.Clamp) }
     val materialPaint = remember { Paint() }
-    val edgeMask = remember(top) {
-        if (top) {
-            Brush.verticalGradient(
-                0f to Color.Black,
-                (1f - INNER_EDGE_FADE_FRACTION) to Color.Black,
-                1f to Color.Transparent,
-            )
-        } else {
-            Brush.verticalGradient(
-                0f to Color.Transparent,
-                INNER_EDGE_FADE_FRACTION to Color.Black,
-                1f to Color.Black,
-            )
-        }
+    val edgeMask = remember {
+        Brush.verticalGradient(
+            0f to Color.Transparent,
+            INNER_EDGE_FADE_FRACTION to Color.Black,
+            1f to Color.Black,
+        )
     }
     return onGloballyPositioned { origin = it.positionInRoot() }.drawWithContent {
         // Mask the replay and tint together; drawing foreground after restore keeps controls sharp.
