@@ -446,8 +446,6 @@ async fn onboarding_keeps_a_cached_catalog_when_the_official_source_breaks() {
     index["onboarding"] = json!({
         "agents": [],
         "needs": [],
-        "providers": {},
-        "more_providers": [],
         "prompts": [{"en": "What can you help me with"}]
     });
     github.publish_index(serde_json::to_vec(&index).unwrap());
