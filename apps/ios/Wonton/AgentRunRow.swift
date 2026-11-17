@@ -165,6 +165,7 @@ struct AgentRunRow: View {
                 Text(.AgentRun.agentRunWaited(minutes))
                     .wontonText(WontonTheme.typography.supporting)
                     .foregroundStyle(Color(colors.textSecondary))
+                    .accessibilityIdentifier("agentRun-elapsed")
             }
         }
     }

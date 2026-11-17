@@ -12,10 +12,9 @@ final class AgentRunUITests: XCTestCase {
         let working = app.descendants(matching: .any)["agentRun-working"]
         XCTAssertTrue(working.waitForExistence(timeout: 10), "夹具屏没有工作中的状态行\n\(app.debugDescription)")
         XCTAssertTrue(app.staticTexts["Reading files"].exists, "working 没有显示步骤文字")
-        // 已等待的行：夹具把发送时间钉在十分钟前，文字是 "10 min elapsed"（en），值不钉，行要在。
+        // 已等待的行：夹具把发送时间钉在十分钟前，行按稳定标识找，不比对文字。
         XCTAssertTrue(
-            app.staticTexts.matching(NSPredicate(format: "label CONTAINS 'min elapsed'"))
-                .firstMatch.waitForExistence(timeout: 5),
+            app.descendants(matching: .any)["agentRun-elapsed"].waitForExistence(timeout: 5),
             "working 没有显示已等待"
         )
 
@@ -24,7 +23,7 @@ final class AgentRunUITests: XCTestCase {
         XCTAssertTrue(done.waitForExistence(timeout: 5), "同一轮没有收成完成")
         XCTAssertTrue(app.staticTexts["5 steps"].waitForExistence(timeout: 5), "完成没有步数")
         XCTAssertFalse(
-            app.staticTexts.matching(NSPredicate(format: "label CONTAINS 'min elapsed'")).firstMatch.exists,
+            app.descendants(matching: .any)["agentRun-elapsed"].exists,
             "完成后不该还显示已等待"
         )
 
