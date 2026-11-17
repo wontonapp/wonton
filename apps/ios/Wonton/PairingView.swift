@@ -23,6 +23,7 @@ struct PairingView: View {
     @Environment(\.wontonColors) private var colors
 
     /// 相机状态和设备名都可以传入：截图测试要把它们固定住，模拟器的权限和设备名每次不一样。
+    /// 设备名优先取模型里最近一次提交用的：重试落在换过来的新实例上，用户改过的名字不丢。
     init(
         model: HomeModel,
         camera: CameraAccess = .current,
@@ -34,7 +35,7 @@ struct PairingView: View {
         self.onBack = onBack
         self.onPaired = onPaired
         _camera = State(initialValue: camera)
-        _deviceName = State(initialValue: deviceName)
+        _deviceName = State(initialValue: model.lastPairingDeviceName ?? deviceName)
     }
 
     var body: some View {
@@ -99,9 +100,13 @@ struct PairingView: View {
             }
         }
         .task { await askForCamera() }
-        // 失败状态不在这里自动清：失败时 MainView.showsPairingPage 会把根配对页换上来，这个视图卸载时
-        // 触发 dismiss 会把交接给根页面的失败面当场清掉（走查实测失败面闪没、落回空表单）。用户离开
-        // 的每条路（返回/重扫/重试/取消）都各自显式 dismiss，不需要卸载兜底。
+        // 失败状态不随卸载自动清：根实例和 HomeView 里的实例（不带 onBack）卸载，正是失败面向根配对页
+        // 交接的时刻，清了会当场清掉交接（走查实测失败面闪没、落回空表单）。设置推进来的实例例外：
+        // 它的系统返回/侧滑只出栈、不走 leaveFailure，不清会把已经离开的失败面留给根页面。
+        .onDisappear {
+            guard onBack != nil, hasFailedPairing else { return }
+            model.dismissPairingFailure()
+        }
         .onChange(of: model.pairingCode) { _, _ in refusal = nil }
         .onChange(of: scenePhase) { _, phase in
             // 可能刚从系统设置里改了相机权限回来。
@@ -195,7 +200,6 @@ struct PairingView: View {
 
     private func scanAgain() {
         refusal = nil
-        model.lastPairingCode = nil
         scanConsumed = false
         scannerProblem = nil
         model.pairingCode = ""
@@ -204,14 +208,12 @@ struct PairingView: View {
 
     private func cancelPairing() {
         scanConsumed = false
-        model.lastPairingCode = nil
         model.cancelPairing()
     }
 
     private func leaveFailure() {
         guard hasFailedPairing else { return }
         refusal = nil
-        model.lastPairingCode = nil
         scanConsumed = false
         model.dismissPairingFailure()
         if model.servers.adding {
@@ -232,7 +234,6 @@ struct PairingView: View {
         guard !isPairing else { return }
         // 先收起键盘，避免挡住进展或失败后的操作。
         isEditingCode = false
-        model.lastPairingCode = code
         refusal = model.pair(code: code, deviceName: deviceName)
     }
 
