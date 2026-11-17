@@ -49,9 +49,13 @@ impl PluginsLink {
         archive: Vec<u8>,
     ) -> Result<InstallPreview, CoreError> {
         let api = self.api().map_err(to_core_error)?;
-        api.post_archive(&["plugins", "preview"], archive, SOURCE_TIMEOUT)
+        let mut preview: InstallPreview = api
+            .post_archive(&["plugins", "preview"], archive, SOURCE_TIMEOUT)
             .await
-            .map_err(to_core_error)
+            .map_err(to_core_error)?;
+        // 上传的包缺必需能力时同样会一起装提供方（tasks 的安装不分开口）：确认页照常写明。
+        super::tasks::provider_notices(&mut preview);
+        Ok(preview)
     }
 
     /// 换版本的预览：换到主人选的来源（ADR-0031）。

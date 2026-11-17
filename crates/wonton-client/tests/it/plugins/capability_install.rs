@@ -241,3 +241,37 @@ async fn one_provider_covering_two_missing_capabilities_is_installed_once() {
         2
     );
 }
+
+/// 上传的包也一样：缺必需能力会一起装提供方，确认页照常写明，安装请求把提供方带上。
+#[tokio::test]
+async fn an_uploaded_package_preview_also_names_the_provider() {
+    let rig = Rig::new().await;
+    rig.connected().await;
+    let mut staged = preview("app.photos");
+    staged.source = Some("upload:sha256:abc".to_owned());
+    staged.missing_requires = vec![requires("torrent_client")];
+    answer_previews(&rig, &staged, &provider_preview());
+
+    let shown = rig
+        .app
+        .preview_upload(b"\x1f\x8bgz".to_vec())
+        .await
+        .unwrap();
+    let line = shown
+        .notices
+        .iter()
+        .find(|line| line.text.contains("下载器"))
+        .expect("上传包的确认页也要写明会一起装提供方");
+    assert!(line.text.contains("torrent_client"), "{line:?}");
+
+    install(&rig, shown);
+    let state = rig
+        .task("app.photos", |state| *state != PluginTaskState::Running)
+        .await;
+    assert_eq!(state, PluginTaskState::Succeeded);
+    let sent: serde_json::Value =
+        serde_json::from_str(&rig.core.seen(&Method::POST, "/_wonton/api/plugins")[0].body)
+            .unwrap();
+    assert_eq!(sent["source"], "upload:sha256:abc");
+    assert_eq!(sent["install_together"][0]["id"], "app.downloader");
+}
