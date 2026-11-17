@@ -32,7 +32,6 @@ pub(super) fn continue_bridge_round(
     };
     // 同一桥会话的重复 start（响应丢了重试）：幂等重发，不重复记轮。
     if let Some(existing) = state.sessions.get(session)
-        && existing.source == ChainSessionSource::Bridge
         && existing.chain == chain_id
         && existing.bot == *bot
         && existing.live
@@ -63,7 +62,6 @@ pub(super) fn continue_bridge_round(
             bot: bot.clone(),
             layer,
         },
-        ChainSessionSource::Bridge,
         Some(sender),
         parents,
     )?;
@@ -74,8 +72,7 @@ pub(super) fn continue_bridge_round(
     })
 }
 
-/// 开一条新链：首个 Bot 的层由入口核对后给出。桥的轮在开链那刻记一轮（start 就是 prompt 的开始）；
-/// `agent_acp` 的轮等 prompt 来了再记。
+/// 开一条新链：首个 Bot 的层由入口核对后给出，开链那刻记一轮（start 就是 prompt 的开始）。
 /// `user` 是链代表的人；`sender` 是实际说话人，点名的 Bot 说话时两者不同。
 pub(super) fn open_chain(
     state: &mut LedgerState,
@@ -84,19 +81,18 @@ pub(super) fn open_chain(
     origin: ConfirmationOrigin,
     first: store::ChainBotEntry,
     session: &str,
-    source: ChainSessionSource,
 ) -> Result<ChainTurnGrant, ChainLedgerError> {
     if let Some(existing) = state.sessions.get(session) {
-        // 桥会话每轮重新登记（同一会话的下一句话是另一条链，start 的契约）；
-        // 上一轮没报 end 就来登记下一轮，或 `agent_acp` 会话想换链，都是调用方的错。
-        if source != ChainSessionSource::Bridge || existing.live {
+        // 会话每轮重新登记（同一会话的下一句话是另一条链，start 的契约）；
+        // 上一轮没报 end 就来登记下一轮是调用方的错。
+        if existing.live {
             return Err(ChainLedgerError::Invalid(format!(
                 "会话 {session} 已登记在别的链上"
             )));
         }
     }
     let chain_id = new_chain_id();
-    let sender = (source == ChainSessionSource::Bridge).then(|| sender.to_owned());
+    let sender = Some(sender.to_owned());
     let mut chain = store::StoredChain {
         chain: chain_id.clone(),
         user,
@@ -113,9 +109,7 @@ pub(super) fn open_chain(
     };
     let store::ChainBotEntry { bot, layer } = first;
     layers::admit_bot(&mut chain, &bot, layer);
-    if source == ChainSessionSource::Bridge {
-        budget::count_round(&mut chain, &mut state.events).map_err(ChainLedgerError::Rejected)?;
-    }
+    budget::count_round(&mut chain, &mut state.events).map_err(ChainLedgerError::Rejected)?;
     state.chains.insert(chain_id.clone(), chain);
     state.dirty = true;
     bind_session(
@@ -126,7 +120,6 @@ pub(super) fn open_chain(
             bot: bot.clone(),
             layer,
         },
-        source,
         sender.as_deref(),
         Vec::new(),
     )?;
@@ -137,14 +130,12 @@ pub(super) fn open_chain(
     })
 }
 
-/// 登记会话。桥会话每轮重新登记、覆盖旧登记（上一轮必须已报 end）；
-/// `agent_acp` 和交接会话一登记就定死，重复登记同一对（链、Bot）按幂等处理。
+/// 登记会话，每轮重新登记、覆盖旧登记（上一轮必须已报 end）。
 fn bind_session(
     state: &mut LedgerState,
     chain_id: &str,
     session: &str,
     first: store::ChainBotEntry,
-    source: ChainSessionSource,
     sender: Option<&str>,
     parents: Vec<std::sync::Arc<super::ancestry::SessionPath>>,
 ) -> Result<(), ChainLedgerError> {
@@ -153,9 +144,8 @@ fn bind_session(
         chain: chain_id.to_owned(),
         bot: bot.clone(),
         layer,
-        source,
+        source: ChainSessionSource::Bridge,
         path: std::sync::Arc::new(super::ancestry::SessionPath {
-            session: session.to_owned(),
             bot: bot.clone(),
             layer,
             parents,
@@ -164,20 +154,14 @@ fn bind_session(
         sender: sender.map(str::to_owned),
         live: true,
     };
-    match state.sessions.get(session) {
-        Some(existing) if source == ChainSessionSource::Bridge => {
-            if existing.live {
-                return Err(ChainLedgerError::Invalid(format!(
-                    "会话 {session} 的上一轮还没报 end"
-                )));
-            }
-        }
-        Some(_) => {
-            return Err(ChainLedgerError::Invalid(format!(
-                "会话 {session} 已登记在别的链上"
-            )));
-        }
-        None => {}
+    if state
+        .sessions
+        .get(session)
+        .is_some_and(|existing| existing.live)
+    {
+        return Err(ChainLedgerError::Invalid(format!(
+            "会话 {session} 的上一轮还没报 end"
+        )));
     }
     state.sessions.insert(session.to_owned(), entry);
     Ok(())

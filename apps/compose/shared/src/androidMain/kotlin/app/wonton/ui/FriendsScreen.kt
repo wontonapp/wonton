@@ -1,6 +1,7 @@
 package app.wonton.ui
 
 import androidx.compose.foundation.layout.Arrangement
+import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
@@ -27,12 +28,14 @@ import app.wonton.protocol.FriendBlockTarget
 import app.wonton.protocol.FriendGroup
 import app.wonton.protocol.FriendRow
 import app.wonton.protocol.FriendsState
+import app.wonton.protocol.FriendsViewModel
 import app.wonton.ui.design.WontonActionSheet
 import app.wonton.ui.design.WontonButton
 import app.wonton.ui.design.WontonButtonKind
 import app.wonton.ui.design.WontonDialog
 import app.wonton.ui.design.WontonDialogAction
 import app.wonton.ui.design.WontonIconButton
+import app.wonton.ui.design.WontonNotice
 import app.wonton.ui.design.WontonPushedBar
 import app.wonton.ui.design.WontonScreen
 import app.wonton.ui.design.WontonTextField
@@ -41,6 +44,7 @@ import app.wonton.ui.design.wontonContentPadding
 import app.wonton.ui.icons.Add
 import app.wonton.ui.icons.Blocked
 import app.wonton.ui.icons.Folder
+import app.wonton.ui.icons.Info
 import app.wonton.ui.icons.Trash
 import app.wonton.ui.icons.WontonIcon
 
@@ -147,6 +151,18 @@ private fun FriendScanPage(onBack: () -> Unit, onSubmit: (String) -> Unit) {
     }
 }
 
+/** 公网访问总开关关着：如实挂一条（ADR-0090 第 2 节），列表态和空页共用。 */
+@Composable
+internal fun FriendPublicAccessNotice(friends: FriendsViewModel) {
+    if (!friends.publicAccessOff) return
+    WontonNotice(
+        icon = WontonIcon.Info,
+        title = stringResource(R.string.friends_public_access_off),
+        isError = false,
+        lines = listOf(stringResource(R.string.friends_public_access_off_detail)),
+    )
+}
+
 @Composable
 private fun FriendContent(
     friends: app.wonton.protocol.FriendsViewModel,
@@ -178,7 +194,11 @@ private fun FriendContent(
             send(Action.Friends(FriendsAction.RefreshFriends))
         }
         state == FriendsState.Loading -> LoadingView()
-        else -> FriendEmpty(onAdd)
+        else -> Column(verticalArrangement = Arrangement.spacedBy(WontonTheme.spacing.s12)) {
+            FriendPublicAccessNotice(friends)
+            // 空页自己铺满，压进横幅下面的剩余高度，别把加好友按钮挤出屏。
+            Box(Modifier.weight(1f)) { FriendEmpty(onAdd) }
+        }
     }
 }
 

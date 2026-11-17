@@ -84,13 +84,15 @@ impl BotsView {
     }
 
     /// 把状态对象合成成时间线条目；waiting 且这个 Bot 在这个房间有等回答的核心卡片时带上卡片 ID。
-    /// `body` 是消息本身的正文（写给不认识这个格式的客户端的话）。
+    /// `body` 是消息本身的正文（写给不认识这个格式的客户端的话）；`timestamp_ms` 是这条状态消息
+    /// 自己的发送时间（编辑不改），壳在 `working` 行用它算已经等了多久。
     pub(super) fn content(
         &self,
         status: &AgentRunStatus,
         body: &str,
         sender: &str,
         sender_name: &str,
+        timestamp_ms: u64,
     ) -> TimelineContent {
         TimelineContent::AgentRun {
             run: status.run.clone(),
@@ -106,6 +108,7 @@ impl BotsView {
                 .flatten(),
             choices: status.choices.clone(),
             sender_name: sender_name.to_owned(),
+            timestamp_ms,
         }
     }
 }

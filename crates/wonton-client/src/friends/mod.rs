@@ -26,7 +26,7 @@ use url::Url;
 use wonton_protocol::{
     CoreError, FriendBlock, FriendBlockScope, FriendBlockTarget, FriendFailure, FriendProblem,
     FriendRequest, FriendRequestKind, FriendRow, FriendsAction, FriendsList, FriendsState,
-    FriendsViewModel, MatrixTarget, ProxySettings,
+    FriendsViewModel, MatrixTarget, ProxySettings, PublicReach,
 };
 
 use crate::chat::{ChatLink, matrix_target};
@@ -225,9 +225,31 @@ impl FriendsLink {
             outgoing: sync.outgoing,
             blocked,
             can_block_federation,
-            public_access_off: false,
+            // 名单组装好后取一次总开关状态；只是页面顶上的一条辅助提示，挂了不弄失败名单。
+            public_access_off: self.public_access_off().await,
             my_link: Some(format!("https://matrix.to/#/{}", session.user_id())),
         })
+    }
+
+    /// 公网访问总开关关着就是“别的服务器上的好友暂时联系不到这台”（ADR-0090 第 2 节）。
+    /// clients 接口只认主人：外部账号和家人不发这条请求；核心没这条路由（旧版本）、
+    /// 或者传输失败，都按没关处理——好友页不因这条辅助状态失败，只少挂一条提示。
+    async fn public_access_off(&self) -> bool {
+        if !self.uses_server() {
+            return false;
+        }
+        let reach = async {
+            let api = self.api()?;
+            api.public_reach().await
+        }
+        .await;
+        match reach {
+            Ok(reach) => reach == PublicReach::PublicAccessOff,
+            Err(error) => {
+                tracing::debug!(reason = %error.message, "friends public reach unavailable");
+                false
+            }
+        }
     }
 
     /// 名单在服务器上时：取列表，并把同意过但没记上的补记（删掉的墓碑不补）。

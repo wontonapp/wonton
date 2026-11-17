@@ -231,6 +231,8 @@ Agent 插件 `wants: [agent_acp]` 时，确认页同样写明它能把事交给 
 
 ### 12. 跨插件传链：`session/new` 的 `_meta` 里带链载体
 
+> ACP 桥和交接删除后，`ChainCarrier` 与 `ACP_CHAIN_META_KEY` 也离开了协议；下面是接入 ACP 类 Agent 时沿用/恢复的契约。
+
 编排器类 Agent 经 `agent_acp` 调别的 Agent 时，那一跳不能把层数清零，否则绕一圈就躲过第 10 节的上限。做法照分布式追踪传上下文的现成标准
 （W3C Trace Context 的 traceparent）：链的上下文跟着 `session/new` 走，写的都是可信的一侧，读的原样往下带。
 

@@ -47,20 +47,7 @@ internal fun PluginTabStatus(
         )
         return
     }
-    val failure = when {
-        !supported -> Problem(stringResource(R.string.tab_webview_too_old))
-        problem != null -> problem
-        state is TabState.Stopped -> Problem(stringResource(R.string.tab_stopped, page.title))
-        state is TabState.Failed -> Problem(stringResource(R.string.tab_problem, page.title), detail = state.reason)
-        state is TabState.PageRemoved -> Problem(stringResource(R.string.tab_page_removed))
-        state is TabState.Unknown -> Problem(stringResource(R.string.tab_status_unknown))
-        state is TabState.LoadFailed -> Problem(
-            loadFailureTitle(state.failure),
-            // 详情是核心按 App 语言写的（错误码收在里面）；核心没给时退回裸错误码。
-            detail = state.details ?: state.status?.let { "HTTP $it" },
-        )
-        else -> null
-    }
+    val failure = pageFailure(state, problem, page, supported)
     if (failure == null) {
         Column(Modifier.fillMaxSize()) {
             if (state is TabState.Starting || state is TabState.Uninstalling) Text(
@@ -81,6 +68,23 @@ internal fun PluginTabStatus(
             TabStatusActions(state, tab, tabs, onDetails, place)
         }
     }
+}
+
+@Composable
+private fun pageFailure(state: TabState, problem: Problem?, page: TabPage, supported: Boolean): Problem? = when {
+    !supported -> Problem(stringResource(R.string.tab_webview_too_old))
+    // 网页的报错只管还在加载的页；停机、卸载中、被移走的页要显示它自己的状态。
+    problem != null && (state is TabState.Ready || state is TabState.Upgrading) -> problem
+    state is TabState.Stopped -> Problem(stringResource(R.string.tab_stopped, page.title))
+    state is TabState.Failed -> Problem(stringResource(R.string.tab_problem, page.title), detail = state.reason)
+    state is TabState.PageRemoved -> Problem(stringResource(R.string.tab_page_removed))
+    state is TabState.Unknown -> Problem(stringResource(R.string.tab_status_unknown))
+    state is TabState.LoadFailed -> Problem(
+        loadFailureTitle(state.failure),
+        // 详情是核心按 App 语言写的（错误码收在里面）；核心没给时退回裸错误码。
+        detail = state.details ?: state.status?.let { "HTTP $it" },
+    )
+    else -> null
 }
 
 @Composable
