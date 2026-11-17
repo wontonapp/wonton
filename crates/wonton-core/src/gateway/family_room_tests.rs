@@ -4,7 +4,7 @@ use std::sync::Arc;
 use hyper::{Method, StatusCode};
 use iroh::SecretKey;
 use serde_json::{Value, json};
-use wonton_protocol::{FAMILY_ROOM_EVENT, FAMILY_ROOM_SYNC_PATH, MemberStatus};
+use wonton_protocol::{FAMILY_ROOM_EVENT, FAMILY_ROOM_SYNC_PATH, MemberStatus, OwnerProfileUpdate};
 
 use crate::gateway::family_tests::{bearer, send_as};
 use crate::gateway::tests::{CORE, Harness, Reply, TOKEN};
@@ -83,9 +83,19 @@ impl Family {
     }
 
     fn pending(&self, username: &str, role: &str) -> (String, iroh::EndpointId) {
+        self.pending_named(username, username, role)
+    }
+
+    fn pending_named(
+        &self,
+        username: &str,
+        display_name: &str,
+        role: &str,
+    ) -> (String, iroh::EndpointId) {
         self.gateway
             .members
             .invite(MemberRecord {
+                display_name: display_name.to_owned(),
                 role_id: role.to_owned(),
                 wants_private_bot: false,
                 ..MemberRecord::for_test(username)
@@ -531,4 +541,49 @@ async fn a_family_marker_in_someone_elses_room_cannot_receive_family_members() {
     f.assert_people(&f.room(), &[("alice", 0)]);
     assert!(!f.fake.state().rooms[&room].members.contains("@alice:test"));
     assert!(!f.fake.state().rooms[&room].members.contains("@owner:test"));
+}
+
+#[tokio::test]
+async fn the_family_room_shows_the_names_kept_by_the_core() {
+    let f = Family::start().await;
+    let (id, _) = f.pending_named("mia", "妈妈", "family");
+    let reply = f.approve(&id).await;
+    assert_eq!(reply.status, StatusCode::NO_CONTENT, "{}", reply.text());
+    {
+        let state = f.fake.state();
+        assert_eq!(
+            state.user("@mia:test").display_name.as_deref(),
+            Some("妈妈")
+        );
+        assert_eq!(
+            state.user("@owner:test").display_name,
+            f.gateway.owner.profile().display_name
+        );
+        assert!(state.user(&f.matrix.admin_user_id()).display_name.is_some());
+    }
+
+    f.gateway
+        .owner
+        .update(&OwnerProfileUpdate {
+            display_name: "爸爸".to_owned(),
+            email: f.gateway.owner.email(),
+        })
+        .unwrap();
+    f.fake
+        .state()
+        .users
+        .get_mut("@mia:test")
+        .unwrap()
+        .display_name = None;
+    let reply = f.retry().await;
+    assert_eq!(reply.status, StatusCode::NO_CONTENT, "{}", reply.text());
+    let state = f.fake.state();
+    assert_eq!(
+        state.user("@mia:test").display_name.as_deref(),
+        Some("妈妈")
+    );
+    assert_eq!(
+        state.user("@owner:test").display_name.as_deref(),
+        Some("爸爸")
+    );
 }
