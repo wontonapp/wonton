@@ -340,24 +340,28 @@ impl PagesLink {
         (plugins, home.clone(), bots)
     }
 
-    fn reload_config_if_recovered(&self, state: &mut PagesState) {
+    /// 本机配置文件读不了期间被修复：重读并清掉问题。返回刚恢复，recompute 据此把这份配置
+    /// 补写进账号数据——对账时因读取失败跳过了那次写回（sync.rs 的 reconcile），不补的话
+    /// 另一台设备之后发布的配置会覆盖本机修好的文件。
+    fn reload_config_if_recovered(&self, state: &mut PagesState) -> bool {
         if state.read_problem.is_none() || std::fs::symlink_metadata(&self.path).is_err() {
-            return;
+            return false;
         }
         let Ok(config) = read_file(&self.path) else {
-            return;
+            return false;
         };
         state.config = config;
         state.read_problem = None;
+        true
     }
 
     pub(super) fn recompute(&self) {
         let _writing = lock(&self.writing);
         let (plugins, home, bots) = self.inputs();
         let mut state = lock(&self.state).clone();
-        self.reload_config_if_recovered(&mut state);
+        let recovered = self.reload_config_if_recovered(&mut state);
         bot::replace_bots(&mut state, bots);
-        let config_changed = refresh_state(&mut state, &plugins, &home);
+        let config_changed = refresh_state(&mut state, &plugins, &home) || recovered;
         if config_changed && state.read_problem.is_none() {
             let persisted = match persist(&self.path, &state.config) {
                 Ok(()) => {
@@ -369,7 +373,7 @@ impl PagesLink {
                     false
                 }
             };
-            // 新装自动加入、卸载清行都改了配置：本机落了盘，接着写账号数据（和 config_change 同一条路），
+            // 新装自动加入、卸载清行、刚修复的配置都走这里：本机落了盘，接着写账号数据（和 config_change 同一条路），
             // 不然另一台设备收不到，下次收账号数据还会把这里的改动冲掉。
             if persisted {
                 let settings = state.config.layout();
