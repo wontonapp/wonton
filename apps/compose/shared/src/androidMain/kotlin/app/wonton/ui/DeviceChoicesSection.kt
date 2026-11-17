@@ -36,6 +36,16 @@ fun DeviceChoicesSection(choices: DeviceChoices, enabled: Boolean = true, onTogg
             )
         }
         choices.disks.forEach { DeviceRow(it, multiple = true, enabled, onToggle) }
+        if (choices.highestRisk) {
+            Column(Modifier.testTag("device-highest-risk")) {
+                Tag(stringResource(R.string.plugin_permission_risk_highest), colors.danger)
+                Text(
+                    stringResource(R.string.install_device_nvme_risk),
+                    style = WontonTheme.typography.supporting,
+                    color = colors.danger.toColor(),
+                )
+            }
+        }
         if (choices.disksMissing) DeviceNote(stringResource(R.string.install_device_disks_none))
         choices.unknown.forEach { device ->
             Column(verticalArrangement = Arrangement.spacedBy(WontonTheme.spacing.s4)) {
