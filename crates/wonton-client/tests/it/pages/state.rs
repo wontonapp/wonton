@@ -520,6 +520,118 @@ async fn page_problem_normal_actions_do_not_mark_the_layout() {
     assert!(!rig.app.test_pages_layout_dirty());
 }
 
+/// 自动加入落盘后账号数据写失败（Tuwunel 拒掉 layout 账号数据请求）：就绪分支推送前置了
+/// dirty（push_layout 失败不清它），重连对账推的是本机合并后的配置，服务器旧配置盖不掉新
+/// 入口。要真实 Matrix 会话，所以标了 ignore；本机经 cargo-slot 只编不跑，Docker 场景留给 CI。
+#[tokio::test(flavor = "multi_thread")]
+#[ignore = "需要 Docker，用 --include-ignored 运行"]
+async fn a_failed_layout_push_keeps_the_local_entry_on_reconciliation() {
+    use crate::chat::support::{Home, Phone};
+
+    let dir = tempfile::tempdir().unwrap();
+    let phone = Phone::open(dir.path());
+    let home = Home::start(&[phone.device_id()]).await;
+
+    let plugin_id = "app.push-failure";
+    let mut plugin = web_plugin(
+        plugin_id,
+        PluginState::Running {
+            health: PluginHealth::Healthy,
+        },
+        vec![page("home")],
+    );
+    plugin.web_url = Some(format!("http://{plugin_id}.wonton.localhost/"));
+
+    let other = home.matrix.login("owner", "Other device").await;
+    other
+        .update_layout(|raw| {
+            raw.insert(
+                "my_apps".to_owned(),
+                serde_json::json!([{
+                    "app": {"type": "plugin", "plugin_id": plugin_id},
+                    "title": ""
+                }]),
+            );
+        })
+        .await
+        .unwrap();
+    // 旧入口引用的插件也在已装列表里（另一台设备装的），先喂给它建立 previous_plugins
+    // 快照：换成不在列表里的入口，对账后的首次刷新会把它当已卸载删掉，场景就走了样。
+    home.set_installed_plugins(vec![plugin.clone()]);
+
+    phone.connect(&home);
+    phone.signed_in().await;
+    // 首次对账收下服务器旧配置并落盘；等落盘出现旧入口，reconcile（layout_ready）才算完，
+    // 后面自动加入的推送才一定走就绪分支。
+    let layout_path = dir.path().join("servers/1/layout.json");
+    tokio::time::timeout(crate::plugins::rig::WAIT, async {
+        loop {
+            let Ok(content) = std::fs::read_to_string(&layout_path) else {
+                tokio::time::sleep(Duration::from_millis(50)).await;
+                continue;
+            };
+            if content.contains(plugin_id) {
+                break;
+            }
+            tokio::time::sleep(Duration::from_millis(50)).await;
+        }
+    })
+    .await
+    .expect("对账没有收下服务器的旧配置");
+
+    // 新装的插件到达，自动加入 append 并落盘；就绪分支置 dirty 后推送，这时让写失败。
+    let mut new_plugin = web_plugin(
+        "app.push-failure-new",
+        PluginState::Running {
+            health: PluginHealth::Healthy,
+        },
+        vec![page("home")],
+    );
+    new_plugin.web_url = Some("http://app.push-failure-new.wonton.localhost/".to_owned());
+    home.set_layout_down(true);
+    home.set_installed_plugins(vec![plugin, new_plugin]);
+    tokio::time::timeout(crate::plugins::rig::WAIT, async {
+        while !phone.test_pages_layout_dirty() {
+            tokio::time::sleep(Duration::from_millis(50)).await;
+        }
+    })
+    .await
+    .expect("自动加入后没有置 dirty");
+
+    // Matrix 断开又回来触发重连对账：dirty=true 时推本机合并后的配置，不收服务器的旧配置。
+    home.set_layout_down(false);
+    home.set_matrix_down(true);
+    phone
+        .wait_chat("同步因断线停下", |view| {
+            matches!(view.sync, wonton_client::ChatSync::Failed { .. }).then_some(())
+        })
+        .await;
+    home.set_matrix_down(false);
+
+    let deadline = tokio::time::Instant::now() + crate::plugins::rig::WAIT;
+    loop {
+        let server = other.server_layout().await.unwrap();
+        let kept = server.as_ref().is_some_and(|content| {
+            let apps = content.0.get("my_apps").and_then(|apps| apps.as_array());
+            apps.is_some_and(|apps| {
+                apps.iter()
+                    .any(|entry| entry["app"]["plugin_id"] == plugin_id)
+            }) && apps.is_some_and(|apps| {
+                apps.iter()
+                    .any(|entry| entry["app"]["plugin_id"] == "app.push-failure-new")
+            })
+        });
+        if kept {
+            break;
+        }
+        assert!(
+            tokio::time::Instant::now() < deadline,
+            "对账没有把本机新入口推上去：{server:?}"
+        );
+        tokio::time::sleep(Duration::from_millis(100)).await;
+    }
+}
+
 #[cfg(unix)]
 #[tokio::test]
 async fn page_problem_rechecks_a_temporarily_unreadable_local_file() {
