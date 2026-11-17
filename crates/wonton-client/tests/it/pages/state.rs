@@ -472,6 +472,54 @@ async fn page_problem_reloads_an_externally_repaired_local_file() {
     assert!(!recovered.auto_add);
 }
 
+/// 配置坏着的时候对账跳过了账号数据写回（sync.rs 的 reconcile）；文件修好后，第一个普通页面操作
+/// （走 runtime_change）就要把这份配置补上：dirty 置起来，会话来了先推本机的，别的设备的
+/// 默认值盖不掉修好的文件。
+#[tokio::test]
+async fn page_problem_recovery_marks_the_layout_for_push_back() {
+    let mut rig = Rig::new().await;
+    let layout = rig.data_dir().join("layout.json");
+    std::fs::write(&layout, b"{\"server_id\":null}").unwrap();
+    rig.reopen();
+    assert_eq!(
+        rig.app.pages().problem.unwrap().reason,
+        Some(PagesFailure::InvalidConfig)
+    );
+    assert!(!rig.app.test_pages_layout_dirty());
+
+    let fixed = rig.data_dir().join("layout-repaired.json");
+    std::fs::write(
+        &fixed,
+        b"{\"server_id\":null,\"my_apps\":[],\"auto_add\":false}",
+    )
+    .unwrap();
+    std::fs::rename(fixed, layout).unwrap();
+
+    // 第一个普通页面操作（runtime_change）就要接住恢复：补 dirty，别等 5 秒的 recompute 轮询。
+    rig.app
+        .dispatch(Action::Pages {
+            action: wonton_protocol::PageAction::DismissUninstalledTabs,
+        })
+        .unwrap();
+    assert!(rig.app.test_pages_layout_dirty());
+    let recovered = wait_pages(&rig, |view| view.problem.is_none()).await;
+    assert!(!recovered.auto_add);
+}
+
+/// 没有恢复时，普通操作和刷新不得置 dirty：会话就绪前置了它，reconcile 会推本机的
+/// 默认值，盖掉另一台设备已有的配置。
+#[tokio::test]
+async fn page_problem_normal_actions_do_not_mark_the_layout() {
+    let rig = Rig::new().await;
+    assert!(!rig.app.test_pages_layout_dirty());
+    rig.app
+        .dispatch(Action::Pages {
+            action: wonton_protocol::PageAction::DismissUninstalledTabs,
+        })
+        .unwrap();
+    assert!(!rig.app.test_pages_layout_dirty());
+}
+
 #[cfg(unix)]
 #[tokio::test]
 async fn page_problem_rechecks_a_temporarily_unreadable_local_file() {

@@ -340,7 +340,7 @@ impl PagesLink {
         (plugins, home.clone(), bots)
     }
 
-    /// 本机配置文件读不了期间被修复：重读并清掉问题。返回刚恢复，recompute 据此把这份配置
+    /// 本机配置文件读不了期间被修复：重读并清掉问题。返回刚恢复，调用方据此把这份配置
     /// 补写进账号数据——对账时因读取失败跳过了那次写回（sync.rs 的 reconcile），不补的话
     /// 另一台设备之后发布的配置会覆盖本机修好的文件。
     fn reload_config_if_recovered(&self, state: &mut PagesState) -> bool {
@@ -355,13 +355,35 @@ impl PagesLink {
         true
     }
 
+    /// 落了盘的配置往账号数据补一份：有会话就交给它推。`mark_dirty` 只给恢复路径：
+    /// 账号数据漏掉了修好的这份，会话没就绪也要先记下；普通的首次初始化照旧等会话就绪，
+    /// 不然 reconcile 会把本机默认值推上去，盖掉另一台设备已有的配置。
+    fn push_layout_if_ready(&self, state: &PagesState, mark_dirty: bool) {
+        let settings = state.config.layout();
+        if mark_dirty {
+            self.dirty.store(true, Ordering::SeqCst);
+        }
+        let session = self.session.borrow().clone();
+        if let Some(session) = session
+            && self.layout_ready.load(Ordering::SeqCst)
+        {
+            let weak = lock(&self.weak).clone();
+            self.runtime.spawn(async move {
+                if let Some(link) = weak.upgrade() {
+                    link.push_layout(&session, settings).await;
+                }
+            });
+        }
+    }
+
     pub(super) fn recompute(&self) {
         let _writing = lock(&self.writing);
         let (plugins, home, bots) = self.inputs();
         let mut state = lock(&self.state).clone();
         let recovered = self.reload_config_if_recovered(&mut state);
         bot::replace_bots(&mut state, bots);
-        let config_changed = refresh_state(&mut state, &plugins, &home) || recovered;
+        let refreshed = refresh_state(&mut state, &plugins, &home);
+        let config_changed = refreshed || recovered;
         if config_changed && state.read_problem.is_none() {
             let persisted = match persist(&self.path, &state.config) {
                 Ok(()) => {
@@ -376,19 +398,7 @@ impl PagesLink {
             // 新装自动加入、卸载清行、刚修复的配置都走这里：本机落了盘，接着写账号数据（和 config_change 同一条路），
             // 不然另一台设备收不到，下次收账号数据还会把这里的改动冲掉。
             if persisted {
-                let settings = state.config.layout();
-                let session = self.session.borrow().clone();
-                if let Some(session) = session
-                    && self.layout_ready.load(Ordering::SeqCst)
-                {
-                    self.dirty.store(true, Ordering::SeqCst);
-                    let weak = lock(&self.weak).clone();
-                    self.runtime.spawn(async move {
-                        if let Some(link) = weak.upgrade() {
-                            link.push_layout(&session, settings).await;
-                        }
-                    });
-                }
+                self.push_layout_if_ready(&state, recovered && !refreshed);
             }
         }
         self.remove_uninstalled_room_pages(&mut state);
@@ -473,14 +483,20 @@ impl PagesLink {
         let _writing = lock(&self.writing);
         let (plugins, home, bots) = self.inputs();
         let mut state = lock(&self.state).clone();
-        self.reload_config_if_recovered(&mut state);
+        let recovered = self.reload_config_if_recovered(&mut state);
         bot::replace_bots(&mut state, bots);
-        let config_changed = refresh_state(&mut state, &plugins, &home);
+        let refreshed = refresh_state(&mut state, &plugins, &home);
+        let config_changed = refreshed || recovered;
         change(&mut state, &plugins)?;
         ensure_stack(&mut state, &plugins);
         if config_changed && state.read_problem.is_none() {
             match persist(&self.path, &state.config) {
-                Ok(()) => state.problem = None,
+                Ok(()) => {
+                    state.problem = None;
+                    // 刚恢复时这里补的是对账（reconcile）因读取失败跳过的账号数据写回；
+                    // 普通动作不改配置时 config_changed 为 false，不会推。
+                    self.push_layout_if_ready(&state, recovered && !refreshed);
+                }
                 Err(error) => state.problem = Some(storage_problem(&error)),
             }
         }
@@ -491,6 +507,12 @@ impl PagesLink {
         *lock(&self.state) = state;
         self.publish(view, &plugins);
         Ok(())
+    }
+
+    /// 只给测试读：落了盘、还没写进账号数据的改动还在不在。
+    #[cfg(feature = "test-hooks")]
+    pub(super) fn test_dirty(&self) -> bool {
+        self.dirty.load(Ordering::SeqCst)
     }
 
     fn publish(&self, view: PagesViewModel, plugins: &PluginsViewModel) {
