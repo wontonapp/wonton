@@ -385,6 +385,10 @@ impl PagesLink {
         let mut state = lock(&self.state).clone();
         let recovered = self.reload_config_if_recovered(&mut state);
         bot::replace_bots(&mut state, bots);
+        // 恢复的文件属于当前服务器才补写：换服务器、首次配对的对账照旧收服务器的配置。
+        // 不能再加“refreshed 为假”——恢复顺带刷新了标题/图标、清了已卸载的行或自动加入了
+        // 新插件时 refreshed 也为真，漏置脏会让重连对账拿服务器旧配置盖掉修好的文件。
+        let own = recovered && state.config.server_id == home.server_id;
         let refreshed = refresh_state(&mut state, &plugins, &home);
         let config_changed = refreshed || recovered;
         if config_changed && state.read_problem.is_none() {
@@ -401,7 +405,7 @@ impl PagesLink {
             // 新装自动加入、卸载清行、刚修复的配置都走这里：本机落了盘，接着写账号数据（和 config_change 同一条路），
             // 不然另一台设备收不到，下次收账号数据还会把这里的改动冲掉。
             if persisted {
-                self.push_layout_if_ready(&state, recovered && !refreshed);
+                self.push_layout_if_ready(&state, own);
             }
         }
         self.remove_uninstalled_room_pages(&mut state);
@@ -488,6 +492,8 @@ impl PagesLink {
         let mut state = lock(&self.state).clone();
         let recovered = self.reload_config_if_recovered(&mut state);
         bot::replace_bots(&mut state, bots);
+        // 与 recompute 同一个判断：恢复的文件属于当前服务器就补写，refreshed 顺带为真不豁免。
+        let own = recovered && state.config.server_id == home.server_id;
         let refreshed = refresh_state(&mut state, &plugins, &home);
         let config_changed = refreshed || recovered;
         change(&mut state, &plugins)?;
@@ -498,7 +504,7 @@ impl PagesLink {
                     state.problem = None;
                     // 刚恢复时这里补的是对账（reconcile）因读取失败跳过的账号数据写回；
                     // 普通动作不改配置时 config_changed 为 false，不会推。
-                    self.push_layout_if_ready(&state, recovered && !refreshed);
+                    self.push_layout_if_ready(&state, own);
                 }
                 Err(error) => state.problem = Some(storage_problem(&error)),
             }

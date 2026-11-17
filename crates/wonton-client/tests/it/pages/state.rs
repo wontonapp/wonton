@@ -520,6 +520,77 @@ async fn page_problem_normal_actions_do_not_mark_the_layout() {
     assert!(!rig.app.test_pages_layout_dirty());
 }
 
+/// 恢复顺带刷新了配置时也要补置 dirty：修好的文件里带一个已卸载插件的行，refresh_state
+/// 删行后 refreshed 也为真——按旧条件 `recovered && !refreshed` 就漏了，会话没就绪时不记脏，
+/// 重连对账拿服务器旧配置盖掉修好的文件。会话未就绪时置脏只走 mark_dirty 这一条路，正好观察。
+#[tokio::test]
+async fn page_problem_recovery_marks_the_layout_even_when_refreshed() {
+    let mut rig = Rig::new().await;
+    let layout = rig.data_dir().join("layout.json");
+    std::fs::write(
+        &layout,
+        b"{\"server_id\":null,\"my_apps\":[],\"my_apps_initialized\":false}",
+    )
+    .unwrap();
+    rig.reopen();
+
+    // 装插件 A：首份列表初始化把它写进 my_apps 并落盘，快照这份文件字节。
+    let plugin_id = "app.recovered-gone";
+    rig.core.set_lists(vec![vec![web_plugin(
+        plugin_id,
+        PluginState::Running {
+            health: PluginHealth::Healthy,
+        },
+        vec![page("home")],
+    )]]);
+    rig.connected().await;
+    wait_pages(&rig, |_| rig.app.plugins().installed.is_some()).await;
+    tokio::time::timeout(crate::plugins::rig::WAIT, async {
+        loop {
+            let Ok(content) = std::fs::read_to_string(&layout) else {
+                tokio::time::sleep(Duration::from_millis(50)).await;
+                continue;
+            };
+            if content.contains(plugin_id) {
+                break;
+            }
+            tokio::time::sleep(Duration::from_millis(50)).await;
+        }
+    })
+    .await
+    .expect("自动加入没有落盘");
+    let repaired = std::fs::read(&layout).unwrap();
+
+    // 文件坏：进 App（reopen）时读到，进入读不了的状态——运行中坏文件不被发现，
+    // 恢复路径（reload_config_if_recovered）接的就是这种启动坏、运行中修好的文件。
+    std::fs::write(&layout, b"{").unwrap();
+    rig.reopen();
+    wait_pages(&rig, |view| view.problem.is_some()).await;
+
+    // A 卸载：读不了期间 refresh_state 跑在内存默认配置上，删不到行，read_problem 保持。
+    rig.core.set_lists(vec![vec![]]);
+    rig.connected().await;
+    wait_pages(&rig, |_| {
+        rig.app
+            .plugins()
+            .installed
+            .is_some_and(|installed| installed.plugins.is_empty())
+    })
+    .await;
+    assert!(rig.app.pages().problem.is_some());
+
+    // 文件修好（还是带 A 行的那份字节）：第一个普通页面操作接住恢复，refresh_state 把
+    // A 行删掉（refreshed 为真），这份修好的配置照样要记成待推送。
+    std::fs::write(&layout, &repaired).unwrap();
+    rig.app
+        .dispatch(Action::Pages {
+            action: wonton_protocol::PageAction::DismissUninstalledTabs,
+        })
+        .unwrap();
+    wait_pages(&rig, |view| view.problem.is_none()).await;
+    assert!(rig.app.test_pages_layout_dirty());
+}
+
 /// 自动加入落盘后账号数据写失败（Tuwunel 拒掉 layout 账号数据请求）：就绪分支推送前置了
 /// dirty（push_layout 失败不清它），重连对账推的是本机合并后的配置，服务器旧配置盖不掉新
 /// 入口。要真实 Matrix 会话，所以标了 ignore；本机经 cargo-slot 只编不跑，Docker 场景留给 CI。
