@@ -559,7 +559,7 @@ async fn a_subdirectory_entry_is_listed_installed_and_checked_for_upgrades() {
         &"b".repeat(40),
     );
     let upgrade = m
-        .preview_upgrade(&id, super::super::UpgradeTo::Offered, &zh())
+        .preview_upgrade(&id, super::super::UpgradeTo::Offered, None, &zh())
         .await
         .unwrap();
     assert_eq!(upgrade.version, "0.2.0");
