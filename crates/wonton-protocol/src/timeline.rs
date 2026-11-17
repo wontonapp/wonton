@@ -204,6 +204,9 @@ pub enum TimelineContent {
         choices: Vec<AgentRunChoice>,
         /// 发这条状态的 Bot 的显示名，没有设置时是用户 ID。壳在 `choices` 区标明是谁在问。
         sender_name: String,
+        /// 这条状态消息的发送时间（Unix 毫秒）。编辑不改它：状态是 `Working` 时，壳从它算
+        /// 这轮已经等了多久；其余状态用不到。
+        timestamp_ms: u64,
     },
     /// 一行说明，比如成员加入、离开，房间改名。文字由核心给出。
     Notice {
@@ -613,6 +616,7 @@ mod tests {
                         label: "继续".into(),
                     }],
                     sender_name: "Hermes".into(),
+                    timestamp_ms: 1_793_000_000_000,
                 },
             ),
             item("5", TimelineContent::ReadMarker),
