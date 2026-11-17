@@ -10,7 +10,7 @@ use tracing_subscriber::{Layer, Registry};
 use super::super::fake_docker::FakeDocker;
 use super::super::{PluginId, PluginPackage, PluginStatus};
 use super::manager::manager_with;
-use super::{langs, package};
+use super::{langs, message, package};
 
 type RecordedEvent = (tracing::Level, BTreeMap<String, String>);
 
@@ -372,6 +372,45 @@ async fn a_create_timeout_does_not_rollback_a_same_name_container_it_did_not_cre
     assert_eq!(error.kind(), "docker_timed_out");
     assert_eq!(docker.containers(), ["wonton-app-test--app"]);
     assert!(docker.networks().is_empty());
+}
+
+#[tokio::test(start_paused = true)]
+async fn a_create_timeout_with_unverifiable_result_reports_the_rollback_unfinished() {
+    // inspect 一直报错（比如守护进程卡住）时，容器建没建出来无法核实：不记账、不删，但失败
+    // 记录要写明不确定，回滚不能报完成，清除时才走 teardown（issue #764）。
+    let (docker, engine) = FakeDocker::start().await;
+    let dir = tempfile::tempdir().unwrap();
+    let manager = Arc::new(manager_with(
+        engine.with_request_limit_for_test(Duration::from_secs(1)),
+        &dir,
+    ));
+    let held = docker.hold_committed_create("wonton-app-test--app");
+    let install = tokio::spawn({
+        let manager = manager.clone();
+        async move { manager.install(&source(), &[], langs()).await }
+    });
+    held.reached().await;
+    docker.fail_inspect("wonton-app-test--app", Some("inspect refused"));
+    // 推进过 create 的请求时限和整个 settle 窗口（15 秒）。
+    tokio::time::advance(Duration::from_secs(60)).await;
+    let error = install.await.unwrap().unwrap_err();
+    held.release();
+    assert_eq!(error.kind(), "docker_timed_out");
+    let failed = failure(&manager);
+    assert_eq!(failed["stage"], "starting");
+    let unfinished = message(
+        "plugin-install-rollback-create-uncertain",
+        &[("name", "wonton-app-test--app")],
+    );
+    assert!(
+        failed["cleanup_errors"]
+            .as_array()
+            .unwrap()
+            .iter()
+            .any(|error| error.as_str().unwrap() == unfinished)
+    );
+    // 不确定就不删：删错别人的同名容器不可挽回，残留交给清除的 teardown 按标签清。
+    assert_eq!(docker.containers(), ["wonton-app-test--app"]);
 }
 
 #[tokio::test]

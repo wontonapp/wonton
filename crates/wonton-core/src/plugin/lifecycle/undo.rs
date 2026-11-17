@@ -11,6 +11,9 @@ use wonton_protocol::InstallStage;
 #[derive(Default)]
 pub(in crate::plugin) struct Undo {
     pub(super) containers: Vec<String>,
+    /// create 超时后没等到确切结果的容器（见 [`super::start`]）：建没建出来不确定，回滚不删
+    /// 它，但失败要如实记「回滚未完成」，清除时才走 teardown 按标签清。
+    pub(super) uncertain_containers: Vec<String>,
     pub(in crate::plugin) volumes: Vec<String>,
     pub(super) network: Option<String>,
     /// 发布局域网端口的网络（见 [`super::super::lan`]）。

@@ -26,6 +26,7 @@ plugin-install-not-agent-written = { $id }はエージェントが作ったア�
 
 plugin-install-rollback-item = { $what }：{ $error }
 plugin-install-rollback-unfinished = ロールバックが完了せず、一部が残っている可能性があります：{ $failures }
+plugin-install-rollback-create-uncertain = コンテナ{ $name } が作成されたかどうか分かりません
 plugin-install-rb-container = コンテナ{ $name }
 plugin-install-rb-home-room = あなたのメインルーム{ $room }
 plugin-install-rb-bot-device = ボット{ $bot }のデバイス

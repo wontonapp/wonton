@@ -26,6 +26,7 @@ plugin-install-not-agent-written = { $id } 不是 Agent 写的应用，没有“
 
 plugin-install-rollback-item = { $what }：{ $error }
 plugin-install-rollback-unfinished = 回滚未完成，可能有残留：{ $failures }
+plugin-install-rollback-create-uncertain = 不确定容器 { $name } 是否已创建
 plugin-install-rb-container = 容器 { $name }
 plugin-install-rb-home-room = 交给你的主房间 { $room }
 plugin-install-rb-bot-device = Bot { $bot } 的设备
