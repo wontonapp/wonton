@@ -51,6 +51,8 @@ pub struct TimelineSource {
     pub chat: watch::Receiver<wonton_protocol::ChatViewModel>,
     /// 各房间的旁聊支持声明（ADR-0093 §1）。
     pub support: Arc<Support>,
+    /// Bot 名单的账本：「就绪」看已安装表和第一份活动报告都到了没有（[`super::bots::Bots::ready`]）。
+    pub(super) bots: Arc<super::bots::Bots>,
 }
 
 impl TimelineSubscription {
@@ -74,6 +76,7 @@ impl TimelineSubscription {
             room_view,
             chat,
             support,
+            bots: ledger,
         } = source;
         let (sender, receiver) = mpsc::unbounded_channel();
         let (cancelled, mut stop) = watch::channel(false);
@@ -101,6 +104,7 @@ impl TimelineSubscription {
                     chat,
                     confirmations,
                     &support,
+                    &ledger,
                 ) => {}
                 () = outbox.closed() => {}
                 _ = stop.wait_for(|cancelled| *cancelled) => {}
@@ -184,6 +188,10 @@ struct View {
     /// 房间里有没有人在通话（`m.call.member`），和上一批送出去的：变了补发一批（ADR-0096）。
     call: bool,
     sent_call: bool,
+    /// 群里在场的 AI（本账号认识的 Bot 里在房间成员中的），和上一批送出去的：变了补发一批。
+    /// 私聊里 Bot 本来就在顶栏，壳不消费这个字段。
+    bots_in_room: Option<Vec<String>>,
+    sent_bots_in_room: Option<Vec<String>>,
 }
 
 impl View {
@@ -196,10 +204,32 @@ impl View {
         }
     }
 
-    async fn refresh_unread(&mut self, room: &ChatRoom) {
+    async fn refresh_unread(&mut self, room: &ChatRoom, bots: &BotsView) {
         self.unread = u32::try_from(room.unread_messages().await).unwrap_or(u32::MAX);
         self.call = room.call_active();
+        self.bots_in_room = room_bots(room.are_members_synced(), bots, || room.member_user_ids());
     }
+
+    /// 在场的 AI 变了没有（和上一批送出去的比）。
+    fn bots_changed(&self) -> bool {
+        self.bots_in_room != self.sent_bots_in_room
+    }
+}
+
+/// 在场的 AI 名单：成员没取全会漏人，Bot 清单没就绪会把认识的 Bot 对不上（用户 ID 集合是空的），
+/// 都算不出确定的名单，如实给「不确定」；两样都齐了才给名单，空就是「群里确定没有」。
+/// `members` 惰性取：不确定时不去读成员。
+fn room_bots(
+    members_synced: bool,
+    bots: &BotsView,
+    members: impl FnOnce() -> Vec<String>,
+) -> Option<Vec<String>> {
+    (members_synced && bots.ready()).then(|| {
+        members()
+            .into_iter()
+            .filter(|member| bots.is_bot(member))
+            .collect()
+    })
 }
 
 /// 先发当前条目，再逐批转发增量；翻页状态、滚动位置变了也发一批（增量为空）。
@@ -220,6 +250,7 @@ async fn forward(
     mut chat: watch::Receiver<wonton_protocol::ChatViewModel>,
     mut confirmations: watch::Receiver<Arc<Vec<ConfirmationView>>>,
     support: &Support,
+    ledger: &super::bots::Bots,
 ) {
     let mut rebuilt_for: Option<wonton_matrix::OwnedEventId> = None;
     'outer: loop {
@@ -235,7 +266,10 @@ async fn forward(
         };
         let links = LinkTargets::of(&plugins.view());
         // Bot 列表、活动和等回答的卡片变了，AgentRun 条目的显示跟着变：每批都带上现在的情况，变了就重算。
-        let bots = BotsView::of(&chat.borrow_and_update(), &sender.confirmations());
+        // 就绪先单独取：下面的 borrow_and_update 读锁活到语句结束，锁内再锁账本会和 reconcile 的
+        // 「先账本、后写 chat」反序，Bot 在打字时就会死锁。
+        let ready = ledger.ready();
+        let bots = BotsView::of(&chat.borrow_and_update(), &sender.confirmations(), ready);
         let side_chats = SideChatsView::load(room, bots.supports(support, room)).await;
         sender.set_side_chat(side_chats.header());
         let mut bots = bots.with_side_chats(side_chats);
@@ -259,7 +293,7 @@ async fn forward(
         let mut check = tokio::time::interval(std::time::Duration::from_secs(1));
         check.set_missed_tick_behavior(tokio::time::MissedTickBehavior::Delay);
         loop {
-            view.refresh_unread(room).await;
+            view.refresh_unread(room, &bots).await;
             let sent = tokio::select! {
                 batch = diffs.next() => {
                     let Some(batch) = batch else { return };
@@ -272,10 +306,10 @@ async fn forward(
                         Err(broadcast::error::RecvError::Lagged(_)) => {}
                         Err(broadcast::error::RecvError::Closed) => return,
                     }
-                    view.call = room.call_active();
+                    view.refresh_unread(room, &bots).await;
                     let unread_moved =
                         view.scroll != TimelineScroll::Bottom && view.unread != view.sent_unread;
-                    if !unread_moved && view.call == view.sent_call {
+                    if !unread_moved && view.call == view.sent_call && !view.bots_changed() {
                         continue;
                     }
                     Batch::Sent(send(sender, &entries, Vec::new(), &mut view, None), false)
@@ -288,9 +322,19 @@ async fn forward(
                             Batch::Sent(Ok(()), true)
                         }
                         // 旁聊的未读、状态（“没收到结果”按时间到）、头部也按秒重算。
-                        None => match side_chat_batch(room, support, &entries, &read, plugins, sender, &mut view, &mut bots, &previews).await {
-                            Some(batch) => batch,
-                            None => continue,
+                        None => {
+                            // 成员进出不产生时间线条目，在场的 AI 按秒对一次表：变了补发一批空的。
+                            if view.bots_changed() {
+                                Batch::Sent(
+                                    send(sender, &entries, Vec::new(), &mut view, None),
+                                    false,
+                                )
+                            } else {
+                                match side_chat_batch(room, support, &entries, &read, plugins, sender, &mut view, &mut bots, &previews).await {
+                                    Some(batch) => batch,
+                                    None => continue,
+                                }
+                            }
                         },
                     }
                 }
@@ -305,12 +349,24 @@ async fn forward(
                     if changed.is_err() {
                         return;
                     }
-                    let Some(batch) =
-                        relinked_batch(&entries, &read, plugins, sender, &mut view, &bots, &previews)
-                    else {
+                    // 插件表变了：链接的类别跟着变；「清单已就绪」也在这里翻面。装了插件但一个 Bot
+                    // 都没有时 Bot 列表不变、chat 不醒，就靠这一路把就绪带进名单，变了补发一批空的。
+                    // 就绪先单独取（原因见首批那段）：不在 chat 的读锁里锁账本。
+                    let ready = ledger.ready();
+                    let new_bots =
+                        BotsView::of(&chat.borrow_and_update(), &sender.confirmations(), ready)
+                            .with_side_chats(bots.side_chats().clone());
+                    view.refresh_unread(room, &new_bots).await;
+                    let relinked =
+                        relinked_batch(&entries, &read, plugins, sender, &mut view, &new_bots, &previews);
+                    bots = new_bots;
+                    if let Some(batch) = relinked {
+                        batch
+                    } else if view.bots_changed() {
+                        Batch::Sent(send(sender, &entries, Vec::new(), &mut view, None), false)
+                    } else {
                         continue;
-                    };
-                    batch
+                    }
                 }
                 next = statuses.next() => {
                     let Some(next) = next else { return };
@@ -330,7 +386,7 @@ async fn forward(
                         continue;
                     }
                     view.scroll = next;
-                    view.refresh_unread(room).await;
+                    view.refresh_unread(room, &bots).await;
                     Batch::Sent(send(sender, &entries, Vec::new(), &mut view, None), false)
                 }
                 changed = chat.changed() => {
@@ -338,8 +394,11 @@ async fn forward(
                         return;
                     }
                     // 加密状态变了入口跟着变；Bot 列表或活动变了，AgentRun 条目跟着重算（ADR-0082）。
-                    let new_bots = BotsView::of(&chat.borrow_and_update(), &sender.confirmations())
-                        .with_side_chats(bots.side_chats().clone());
+                    // 就绪先单独取（原因见首批那段）：不在 chat 的读锁里锁账本。
+                    let ready = ledger.ready();
+                    let new_bots =
+                        BotsView::of(&chat.borrow_and_update(), &sender.confirmations(), ready)
+                            .with_side_chats(bots.side_chats().clone());
                     let diffs = refreshed_agent_runs(
                         &entries,
                         &read,
@@ -348,10 +407,16 @@ async fn forward(
                         &new_bots,
                         &previews,
                     );
-                    if diffs.is_empty() && sender.key_notice(&entries) == view.notice {
+                    view.refresh_unread(room, &new_bots).await;
+                    // 名单先存下来再判断跳不跳：改动已经被 borrow_and_update 消费掉，不存就丢了，
+                    // 之后的批次会拿旧名单算（diff 为空和 bots_changed 不成立时尤其会走到 continue）。
+                    bots = new_bots;
+                    if diffs.is_empty()
+                        && sender.key_notice(&entries) == view.notice
+                        && !view.bots_changed()
+                    {
                         continue;
                     }
-                    bots = new_bots;
                     Batch::Sent(send(sender, &entries, diffs, &mut view, None), false)
                 }
                 changed = confirmations.changed() => {
@@ -419,8 +484,10 @@ async fn start_batch(
         notice: None,
         call: false,
         sent_call: false,
+        bots_in_room: None,
+        sent_bots_in_room: None,
     };
-    view.refresh_unread(room).await;
+    view.refresh_unread(room, bots).await;
     let position = read_index(room, entries).await;
     let anchor = anchor_of(entries, view.unread, position);
     if anchor.as_deref() != entries.last().map(|entry| entry.id.as_str()) {
@@ -745,6 +812,7 @@ fn send(
     view.sent_unread = view.unread;
     view.notice = sender.key_notice(entries);
     view.sent_call = view.call;
+    view.sent_bots_in_room = view.bots_in_room.clone();
     sender.send(
         entries,
         diffs,
@@ -752,6 +820,7 @@ fn send(
         view.viewport(),
         anchor,
         view.call,
+        view.bots_in_room.clone(),
     )
 }
 

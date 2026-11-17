@@ -1041,6 +1041,36 @@
           }
         }
       }
+    },
+    "room.noAi": {
+      "comment": "One-line hint at the top of a group room that has none of your AIs in it; mentioning an AI there won't get an answer. No arguments.",
+      "extractionState": "manual",
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "No AI in this group yet"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "这个群里还没有 AI"
+          }
+        },
+        "zh-Hant": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "這個群裡還沒有 AI"
+          }
+        },
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "このグループにはまだ AI がいません"
+          }
+        }
+      }
     }
   }
 }
