@@ -5,7 +5,7 @@ use std::time::Duration;
 use axum::http::Method;
 use wonton_client::{Action, PluginTaskState};
 use wonton_protocol::{
-    CapabilityProvider, InstallPreview, MissingCapability, PermissionRisk, PluginAction,
+    CapabilityProvider, CardLine, InstallPreview, MissingCapability, PermissionRisk, PluginAction,
     PluginFailure,
 };
 
@@ -274,4 +274,46 @@ async fn an_uploaded_package_preview_also_names_the_provider() {
             .unwrap();
     assert_eq!(sent["source"], "upload:sha256:abc");
     assert_eq!(sent["install_together"][0]["id"], "app.downloader");
+}
+
+/// 提供方自己 wants 一个已装的高权限能力：预览里醒目的连接提示（ADR-0053）一起装时会丢掉，
+/// 整单停下，请主人单独装它。
+#[tokio::test]
+async fn a_provider_with_a_prominent_connection_notice_is_not_installed_together() {
+    let rig = Rig::new().await;
+    rig.connected().await;
+    let mut provider = provider_preview();
+    provider.notices.push(CardLine {
+        text: "标题 能连上高权限能力".to_owned(),
+        emphasis: true,
+    });
+    answer_previews(&rig, &consumer_preview(), &provider);
+
+    let shown = rig
+        .app
+        .preview_install("github:owner/app.photos".to_owned())
+        .await
+        .unwrap();
+    install(&rig, shown);
+    let state = rig
+        .task_within("app.photos", Duration::from_secs(WAIT.as_secs()), |state| {
+            *state != PluginTaskState::Running
+        })
+        .await;
+    assert!(
+        matches!(
+            state,
+            PluginTaskState::Failed {
+                reason: PluginFailure::RecordUnusable,
+                ref message,
+            } if message.contains("下载器")
+        ),
+        "{state:?}"
+    );
+    assert!(
+        rig.core
+            .seen(&Method::POST, "/_wonton/api/plugins")
+            .is_empty(),
+        "不能丢掉醒目的连接提示就把提供方连上"
+    );
 }
