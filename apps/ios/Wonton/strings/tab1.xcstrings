@@ -213,31 +213,31 @@
       }
     },
     "tab.settingsUnreadable": {
-      "comment": "Notice when the tab settings couldn't be read and the defaults are used.",
+      "comment": "Problem title when saved page settings cannot be read or parsed.",
       "extractionState": "manual",
       "localizations": {
         "en": {
           "stringUnit": {
             "state": "translated",
-            "value": "Couldn't read tab settings. Using the default tabs."
+            "value": "The page settings on this device aren't readable"
           }
         },
         "zh-Hans": {
           "stringUnit": {
             "state": "translated",
-            "value": "底栏设置读不了，已使用默认底栏"
+            "value": "这台设备上的页面设置无法识别"
           }
         },
         "zh-Hant": {
           "stringUnit": {
             "state": "translated",
-            "value": "無法讀取標籤列設定，已使用預設標籤列"
+            "value": "這台裝置上的頁面設定無法識別"
           }
         },
         "ja": {
           "stringUnit": {
             "state": "translated",
-            "value": "タブバーの設定を読み込めませんでした。デフォルトのタブを使います。"
+            "value": "このデバイスのページ設定を読み取れません"
           }
         }
       }
