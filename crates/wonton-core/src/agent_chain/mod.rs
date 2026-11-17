@@ -5,10 +5,7 @@
 //! （来源、会话信息、停链结果、上限事件）只在核心内部第 2/3/6/8 块之间用，不上线。
 
 mod ancestry;
-#[cfg(test)]
-mod ancestry_tests;
 mod budget;
-mod carrier;
 mod layers;
 pub mod settings;
 mod stop;
@@ -29,27 +26,25 @@ use wonton_protocol::{
     ChainLimitKind, ChainLimits, ChainSpend, ChainTurnGrant, ChainTurnReport, ConfirmationOrigin,
 };
 
-/// 会话的来源（ADR-0061 第 10 节）：桥的一轮、`agent_acp` 连接上的会话、交接开出的会话。
+/// 会话是桥的一轮还是 ACP/交接会话：分停止时要取消的会话，也决定能否重复登记。
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub enum ChainSessionSource {
+    /// 桥报来的一轮（`POST /agent/chains` 的 start）。
     Bridge,
+    /// `agent_acp` 的一条连接。
     AgentAcp,
+    /// 交接进来的会话。
     HandOff,
 }
 
-/// 账本里一个会话的登记：会话 ID → 链、Bot、层、来源。
+/// 账本里一个会话的登记：会话 ID → 链、Bot、层。
 #[derive(Clone, Debug, PartialEq, Eq)]
 pub struct ChainSessionInfo {
     pub session: String,
     pub chain: String,
     pub bot: BotRef,
     pub layer: u32,
-    /// Immediate parent session keys for this immutable admission (empty for roots).
-    pub parents: Vec<String>,
-    /// A preissued connection identity, not an executing session.
-    pub connection: bool,
-    pub source: ChainSessionSource,
-    /// 桥的一轮说话的人；别的来源没有。
+    /// 这一轮说话的人。
     pub sender: Option<String>,
     /// 还活着：没报结束、没被停链取消。重启后一律为假。
     pub live: bool,
@@ -122,7 +117,7 @@ struct SessionEntry {
     path: Arc<ancestry::SessionPath>,
     /// Preissued connection identity, not an executing caller session.
     connection: bool,
-    /// 桥的一轮说话的人；别的来源没有。
+    /// 这一轮说话的人；ACP 连接没有。
     sender: Option<String>,
     live: bool,
 }
@@ -233,8 +228,7 @@ impl Chains {
                 .sessions
                 .iter()
                 .filter(|(_, entry)| {
-                    entry.source == ChainSessionSource::Bridge
-                        && entry.live
+                    entry.live
                         && &entry.bot == bot
                         && state.chains.get(&entry.chain).is_some_and(|chain| {
                             !matches!(
@@ -301,44 +295,18 @@ impl Chains {
                     origin,
                     store::ChainBotEntry { bot, layer: 1 },
                     &session,
-                    ChainSessionSource::Bridge,
                 ),
             }
         })
     }
 
     /// 一轮结束（桥的 end 报告、网关侧会话完结）。End 对被拒的轮也会报，
-    /// 没登记的会话静默忽略；不改链的状态（"做完"由 [`Chains::end_chain`] 显式记）。
+    /// 没登记的会话静默忽略；不改链的状态。
     pub fn end_session(&self, session: &str) {
         let mut state = self.state.lock().expect("agent chain ledger lock poisoned");
         if let Some(entry) = state.sessions.get_mut(session) {
             entry.live = false;
         }
-    }
-
-    /// 给网页类前端开一条新链（ADR-0061 第 10 节：核心在建连接时发链 ID）：
-    /// 目标 Bot 是第 1 层并登记这个会话。开链不记轮数——轮数跟着 prompt 走（[`Chains::begin_round`]）。
-    pub fn open_acp_chain(
-        &self,
-        user: &str,
-        origin: ConfirmationOrigin,
-        target: BotRef,
-        session: &str,
-    ) -> Result<ChainTurnGrant, ChainLedgerError> {
-        self.mutate(|state| {
-            turns::open_chain(
-                state,
-                user.to_owned(),
-                user,
-                origin,
-                store::ChainBotEntry {
-                    bot: target,
-                    layer: 1,
-                },
-                session,
-                ChainSessionSource::AgentAcp,
-            )
-        })
     }
 
     /// 记一个 `session/prompt`（`agent_acp` 和交接会话的轮数；桥的轮数在 start 里记）。
@@ -494,14 +462,6 @@ impl Chains {
                 chain: entry.chain.clone(),
                 bot: entry.bot.clone(),
                 layer: entry.layer,
-                source: entry.source,
-                parents: entry
-                    .path
-                    .parents
-                    .iter()
-                    .map(|parent| parent.session.clone())
-                    .collect(),
-                connection: entry.connection,
                 sender: entry.sender.clone(),
                 live: entry.live,
             })
@@ -520,14 +480,6 @@ impl Chains {
                     chain: entry.chain.clone(),
                     bot: entry.bot.clone(),
                     layer: entry.layer,
-                    source: entry.source,
-                    parents: entry
-                        .path
-                        .parents
-                        .iter()
-                        .map(|parent| parent.session.clone())
-                        .collect(),
-                    connection: entry.connection,
                     sender: entry.sender.clone(),
                     live: entry.live,
                 })
