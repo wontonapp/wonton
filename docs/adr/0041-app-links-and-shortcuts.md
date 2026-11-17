@@ -29,7 +29,7 @@ App 里能直接打开的地方是 `AppLink`，写成 `wonton://` 链接。编�
 
 ### “问 Bot”直接发给默认 Agent
 
-带一句话的“问 Bot”用 `Action::AskAgent`：核心把这句话发进和默认 Agent 的私聊，私聊还没有就先建，Bot 发起的邀请
+带一句话的“问 Bot”用 `ChatAction::AskAgent`：核心把这句话发进和默认 Agent 的私聊，私聊还没有就先建，Bot 发起的邀请
 还没接受就先接受；壳随后按 `OnboardingViewModel::primary_bot_user_id` 打开这个私聊。没有默认 Agent 时如实拒绝
 （`NotReady`），不把这句话悄悄丢掉。
 

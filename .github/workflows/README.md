@@ -23,6 +23,9 @@ PR 合并前只等快检查：格式、Clippy、detekt、SwiftLint、行数门�
   留着旧的在争名额；被取消的旧提交按提交标题里的 `(#N)` 归到它的 PR。
 - `main-image.yml`：核心镜像构建。
 - `nightly-ui.yml`：两端的界面测试（XCUITest、设备上的 androidTest），只定时和手动。
+- `release.yml`：版本标签发布核心及组件镜像；手动触发仅接受 main，按 `component` 单独发布远端 MCP 连接器或 ACP 桥，
+  只写 `main-<短提交号>`，不更新核心版本或 stable。只发连接器用 `gh workflow run release.yml --ref main -f component=remote-mcp`；
+  不会联发 ACP 桥，组件发布仍须先取得对应范围的许可。
 
 合后的测试红了，谁合的谁 30 分钟内修，修不好 revert（见 AGENTS.md“Git 与协作”）。快慢的分界按“能不能十分钟内
 出结果”定：新加的测试要起容器、走界面流程（UI 测试）或要构建镜像的，放进合后的工作流，不放进必需检查。
@@ -47,7 +50,7 @@ PR 合并前只等快检查：格式、Clippy、detekt、SwiftLint、行数门�
   lint 不看开关：冲突标记和密钥可能写在任何文件里，不按路径过滤；它里面的结构门禁只查源码文件，
   只改文档的提交和草稿 PR 上跳过。
 - 过滤范围按“这个工作流真会读什么”列：Rust 只列测试和预热读的部署文件（`deploy/install/`、
-  `deploy/dev/{acp-bridge,matrix}/`、`deploy/dev/core/compose.yaml`、`deploy/dev/core/Dockerfile`），
+  `deploy/dev/matrix/`、`deploy/dev/core/compose.yaml`、`deploy/dev/core/Dockerfile`），
   `deploy/dev` 其余的只给本机开发栈（开发索引 `core/store/`、`experiments/`、smoke 脚本），改了不跑重作业；
   新的 `include_str!` 指向 `deploy/` 时要补进列表。只改 `.md` 的 PR 每个工作流都跳过（`apps/compose/` 下的也算）。
   新增依赖或测试输入时必须同步维护；定时和手动运行不按路径过滤。`rust-docker` 不是必需检查，路径直接写在

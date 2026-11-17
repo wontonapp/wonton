@@ -108,14 +108,6 @@ impl PluginManager {
                 &self.owner_languages(),
             )
             .await?;
-            let starting = self
-                .engine
-                .inspect_container(&container)
-                .await?
-                .and_then(|info| info.state)
-                .and_then(|state| state.health)
-                .and_then(|health| health.status)
-                .is_some_and(|status| status == bollard::models::HealthStatusEnum::STARTING);
             let host = super::names::service_host(
                 &slug,
                 &super::bot_services::bot_alias(&web.service, name),
@@ -129,7 +121,7 @@ impl PluginManager {
                     BotRoute {
                         bot,
                         endpoint: Endpoint::Tcp(address),
-                        ready: !starting && matches!(checked, Checked::Healthy | Checked::Running),
+                        ready: matches!(checked, Checked::Healthy | Checked::Running),
                     },
                 );
             }

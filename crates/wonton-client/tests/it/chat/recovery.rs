@@ -28,7 +28,11 @@ async fn a_new_accounts_first_device_automatically_enables_backup_and_reminds_un
     let phone = Phone::open(dir.path());
     phone.signed_in().await;
     assert_eq!(automatic_recovery_key(&phone).await, key);
-    phone.dispatch(Action::ConfirmRecoveryKeySaved).unwrap();
+    phone
+        .dispatch(Action::Chat {
+            action: wonton_protocol::ChatAction::ConfirmRecoveryKeySaved,
+        })
+        .unwrap();
     assert_recovery(
         &phone.chat().encryption,
         RecoveryStatus::Enabled,
@@ -64,7 +68,11 @@ async fn a_second_device_keeps_the_existing_backup_and_recovers_with_the_first_d
     first.connect(&home);
     first.signed_in().await;
     let key = automatic_recovery_key(&first).await;
-    first.dispatch(Action::ConfirmRecoveryKeySaved).unwrap();
+    first
+        .dispatch(Action::Chat {
+            action: wonton_protocol::ChatAction::ConfirmRecoveryKeySaved,
+        })
+        .unwrap();
     // 私聊和一条消息都在第二台设备存在之前：它进房间时这条历史解不开。
     let bot = home.bot("hermes", "Hermes").await;
     let room_id = accept_the_bots_invite(&home, &first, &bot).await;
@@ -130,7 +138,9 @@ async fn a_second_device_keeps_the_existing_backup_and_recovers_with_the_first_d
     assert_eq!(timeline.notice, Some(KeyNotice::EnterRecoveryKey));
 
     second
-        .dispatch(Action::RecoverEncryption { recovery_key: key })
+        .dispatch(Action::Chat {
+            action: wonton_protocol::ChatAction::RecoverEncryption { recovery_key: key },
+        })
         .unwrap();
     wait_for_recovery(
         &second,
@@ -292,8 +302,16 @@ async fn failed_automatic_backup_stays_disabled_until_a_new_session() {
     );
 
     home.reject_backup_creation(false);
-    phone.dispatch(Action::DismissChatProblem).unwrap();
-    phone.dispatch(Action::AppForegrounded).unwrap();
+    phone
+        .dispatch(Action::Chat {
+            action: wonton_protocol::ChatAction::DismissChatProblem,
+        })
+        .unwrap();
+    phone
+        .dispatch(Action::Home {
+            action: wonton_protocol::HomeAction::AppForegrounded,
+        })
+        .unwrap();
     let bot = home.bot("hermes", "Hermes").await;
     accept_the_bots_invite(&home, &phone, &bot).await;
     assert_recovery(
@@ -387,7 +405,11 @@ async fn reset_gives_a_fresh_backup_and_invalidates_the_old_key() {
     first.connect(&home);
     first.signed_in().await;
     let old_key = automatic_recovery_key(&first).await;
-    first.dispatch(Action::ConfirmRecoveryKeySaved).unwrap();
+    first
+        .dispatch(Action::Chat {
+            action: wonton_protocol::ChatAction::ConfirmRecoveryKeySaved,
+        })
+        .unwrap();
 
     second.connect(&home);
     second.signed_in().await;
@@ -400,7 +422,11 @@ async fn reset_gives_a_fresh_backup_and_invalidates_the_old_key() {
     .await;
     assert_incomplete_page(&second);
 
-    second.dispatch(Action::ResetRecovery).unwrap();
+    second
+        .dispatch(Action::Chat {
+            action: wonton_protocol::ChatAction::ResetRecovery,
+        })
+        .unwrap();
     second
         .wait_chat("重置换来新身份、新备份和新密钥", |view| {
             let encryption = &view.encryption;
@@ -413,7 +439,11 @@ async fn reset_gives_a_fresh_backup_and_invalidates_the_old_key() {
         })
         .await;
     let new_key = second.chat().encryption.recovery_key.clone().unwrap();
-    second.dispatch(Action::ConfirmRecoveryKeySaved).unwrap();
+    second
+        .dispatch(Action::Chat {
+            action: wonton_protocol::ChatAction::ConfirmRecoveryKeySaved,
+        })
+        .unwrap();
     second
         .wait_chat("新密钥确认后不再显示", |view| {
             (view.encryption.recovery_key.is_none() && !view.encryption.can_reset).then_some(())
@@ -429,8 +459,10 @@ async fn reset_gives_a_fresh_backup_and_invalidates_the_old_key() {
     )
     .await;
     third
-        .dispatch(Action::RecoverEncryption {
-            recovery_key: old_key,
+        .dispatch(Action::Chat {
+            action: wonton_protocol::ChatAction::RecoverEncryption {
+                recovery_key: old_key,
+            },
         })
         .unwrap();
     third
@@ -440,8 +472,10 @@ async fn reset_gives_a_fresh_backup_and_invalidates_the_old_key() {
         })
         .await;
     third
-        .dispatch(Action::RecoverEncryption {
-            recovery_key: new_key,
+        .dispatch(Action::Chat {
+            action: wonton_protocol::ChatAction::RecoverEncryption {
+                recovery_key: new_key,
+            },
         })
         .unwrap();
     wait_for_recovery(
@@ -466,14 +500,20 @@ async fn a_reset_without_connection_leaves_the_account_alone() {
     first.connect(&home);
     first.signed_in().await;
     let old_key = automatic_recovery_key(&first).await;
-    first.dispatch(Action::ConfirmRecoveryKeySaved).unwrap();
+    first
+        .dispatch(Action::Chat {
+            action: wonton_protocol::ChatAction::ConfirmRecoveryKeySaved,
+        })
+        .unwrap();
     drop(first);
 
     second.connect(&home);
     second.signed_in().await;
     second
-        .dispatch(Action::RecoverEncryption {
-            recovery_key: old_key.clone(),
+        .dispatch(Action::Chat {
+            action: wonton_protocol::ChatAction::RecoverEncryption {
+                recovery_key: old_key.clone(),
+            },
         })
         .unwrap();
     wait_for_recovery(
@@ -484,7 +524,11 @@ async fn a_reset_without_connection_leaves_the_account_alone() {
     .await;
 
     home.stop_tunnel().await;
-    second.dispatch(Action::ResetRecovery).unwrap();
+    second
+        .dispatch(Action::Chat {
+            action: wonton_protocol::ChatAction::ResetRecovery,
+        })
+        .unwrap();
     second
         .wait_chat("要不到登录令牌，如实报错", |view| {
             matches!(
@@ -512,8 +556,10 @@ async fn a_reset_without_connection_leaves_the_account_alone() {
     )
     .await;
     third
-        .dispatch(Action::RecoverEncryption {
-            recovery_key: old_key,
+        .dispatch(Action::Chat {
+            action: wonton_protocol::ChatAction::RecoverEncryption {
+                recovery_key: old_key,
+            },
         })
         .unwrap();
     wait_for_recovery(
@@ -537,12 +583,20 @@ async fn resetting_while_verifying_cancels_the_flow_for_both_sides() {
     first.signed_in().await;
     // 只要自动开启过备份：第二台设备才是有重置出路的残缺状态。密钥本身这条用例用不上。
     let _old_key = automatic_recovery_key(&first).await;
-    first.dispatch(Action::ConfirmRecoveryKeySaved).unwrap();
+    first
+        .dispatch(Action::Chat {
+            action: wonton_protocol::ChatAction::ConfirmRecoveryKeySaved,
+        })
+        .unwrap();
     second.connect(&home);
     second.signed_in().await;
     available(&second).await;
     let id = compare(&first, &second).await;
-    second.dispatch(Action::ResetRecovery).unwrap();
+    second
+        .dispatch(Action::Chat {
+            action: wonton_protocol::ChatAction::ResetRecovery,
+        })
+        .unwrap();
     cancelled(&first, &id, VerificationCancel::ByOther).await;
     second
         .wait_chat("重置换来新身份，流程一并收掉", |view| {
@@ -554,11 +608,19 @@ async fn resetting_while_verifying_cancels_the_flow_for_both_sides() {
         })
         .await;
     let new_key = second.chat().encryption.recovery_key.clone().unwrap();
-    second.dispatch(Action::ConfirmRecoveryKeySaved).unwrap();
+    second
+        .dispatch(Action::Chat {
+            action: wonton_protocol::ChatAction::ConfirmRecoveryKeySaved,
+        })
+        .unwrap();
 
     // 旧设备成了新身份下的未验证设备，等它能请确认了就重新发起，新身份的设备照常收到请求。
     available(&first).await;
-    first.dispatch(Action::StartDeviceVerification).unwrap();
+    first
+        .dispatch(Action::Chat {
+            action: wonton_protocol::ChatAction::StartDeviceVerification,
+        })
+        .unwrap();
     flow_at(&first, |stage| *stage == VerificationStage::Requested).await;
     flow_at(&second, |stage| *stage == VerificationStage::Incoming).await;
     drop(new_key);

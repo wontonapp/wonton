@@ -62,6 +62,8 @@ jobs:
       # 假数据入口（src/client/ui_fake.rs）在 cargo feature 后面，默认的 workspace 构建编不到它，门禁得单独开一遍。
       - name: Clippy 假数据入口（feature ui-fake）
         run: cargo clippy -p wonton-client --all-targets --locked --features ui-fake -- -D warnings
+      - name: Action UniFFI 元数据大小预警
+        run: bash scripts/check-uniffi-enum-sizes.sh
 
   test:
     name: 测试（不含依赖 Docker 的集成测试）${{ matrix.shard }}/4

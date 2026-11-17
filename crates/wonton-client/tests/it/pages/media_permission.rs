@@ -1,6 +1,7 @@
 //! 插件网页要摄像头/麦克风：按插件记决定，没问过的出询问，别的源一律拒。
 
 use super::*;
+use wonton_protocol::PluginAction;
 
 fn origin_of(plugin_id: &str) -> String {
     format!("http://{plugin_id}.wonton.localhost")
@@ -105,13 +106,17 @@ async fn decisions_are_kept_per_plugin() {
     let first_tab = tab("app.first", Some("call"));
     let second_tab = tab("app.second", Some("call"));
     rig.app
-        .dispatch(Action::OpenPage {
-            tab: first_tab.clone(),
+        .dispatch(Action::Pages {
+            action: wonton_protocol::PageAction::OpenPage {
+                tab: first_tab.clone(),
+            },
         })
         .unwrap();
     rig.app
-        .dispatch(Action::OpenPage {
-            tab: second_tab.clone(),
+        .dispatch(Action::Pages {
+            action: wonton_protocol::PageAction::OpenPage {
+                tab: second_tab.clone(),
+            },
         })
         .unwrap();
 
@@ -182,15 +187,24 @@ async fn settings_reset_asks_again_and_rejects_clearing_an_unset_grant() {
 
     // 没问过的插件清不掉。
     assert!(matches!(
-        rig.app
-            .set_plugin_media_permission("app.other".to_owned(), false),
+        rig.app.dispatch(Action::Plugins {
+            action: PluginAction::SetPluginMediaPermission {
+                plugin_id: "app.other".to_owned(),
+                allow: false,
+            },
+        }),
         Err(CoreError::InvalidInput { .. })
     ));
     assert_eq!(grant_of(&rig.app.plugins(), "app.media"), Some(true));
 
     // 详情页把开关改回没问过：记录清掉，下次请求重新出询问。
     rig.app
-        .set_plugin_media_permission("app.media".to_owned(), false)
+        .dispatch(Action::Plugins {
+            action: wonton_protocol::PluginAction::SetPluginMediaPermission {
+                plugin_id: "app.media".to_owned(),
+                allow: false,
+            },
+        })
         .unwrap();
     assert_eq!(grant_of(&rig.app.plugins(), "app.media"), None);
 
@@ -203,7 +217,12 @@ async fn settings_reset_asks_again_and_rejects_clearing_an_unset_grant() {
 
     // 开关给回允许：再请求直接放行。
     rig.app
-        .set_plugin_media_permission("app.media".to_owned(), true)
+        .dispatch(Action::Plugins {
+            action: wonton_protocol::PluginAction::SetPluginMediaPermission {
+                plugin_id: "app.media".to_owned(),
+                allow: true,
+            },
+        })
         .unwrap();
     let after = rig
         .app
@@ -242,7 +261,11 @@ async fn prompt_clears_when_its_page_is_removed() {
     assert!(rig.app.pages().media_prompt.is_some());
 
     // 页面关掉：询问跟着清掉，再答就是错的。
-    rig.app.dispatch(Action::ClosePage).unwrap();
+    rig.app
+        .dispatch(Action::Pages {
+            action: wonton_protocol::PageAction::ClosePage,
+        })
+        .unwrap();
     assert!(rig.app.pages().media_prompt.is_none());
     assert!(matches!(
         rig.app.tab_media_permission_decide(true),

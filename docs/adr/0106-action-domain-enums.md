@@ -1,6 +1,6 @@
 # ADR-0106 客户端 Action 按领域拆成子枚举
 
-- 状态：提议（2026-11-13）
+- 状态：已接受（2026-11-14）
 
 ## 背景
 
@@ -66,12 +66,14 @@ pub enum Action {
 
 | 第二阶段变更 | 归属 | 现有实现/变体 |
 | --- | --- | --- |
-| 插件网页媒体权限详情页开关 | `PluginAction` | 新增 `SetPluginMediaPermission`，取代 `ClientCore::set_plugin_media_permission` |
-| 重看引导退出 | `OnboardingAction` | 新增 `CloseOnboarding`，取代 `ClientCore::close_onboarding` |
-| 通知锁屏内容开关 | `SettingsAction` | 新增 `SetLockScreenContent`，取代 `ClientCore::set_lock_screen_content` |
-| Agent 链操作 | `AgentAction` | 把现有 `AgentChainAction` 的 `StopChain`、`SetAgentLimits`、`SetConsumerAgentConcurrency` 搬进 `Action::Agent` |
+| 插件网页媒体权限详情页开关 | `PluginAction` | `SetPluginMediaPermission` 经统一 `Action::Plugins` 入口处理，取代 `ClientCore::set_plugin_media_permission` |
+| 重看引导退出 | `OnboardingAction` | `CloseOnboarding` 经统一 `Action::Onboarding` 入口处理，取代 `ClientCore::close_onboarding` |
+| 通知锁屏内容开关 | `SettingsAction` | `SetLockScreenContent` 经统一 `Action::Settings` 入口处理，取代 `ClientCore::set_lock_screen_content` |
+| Agent 链操作 | `AgentAction` | `StopChain`、`SetAgentLimits`、`SetConsumerAgentConcurrency` 经 `Action::Agent` 入口处理，取代独立 `AgentChainAction`/`dispatch_agent_chain` |
 
-领域清单与变体归属如下。表中列出本次盘点的 main 变体；“第二阶段新增”是本 ADR 已决定、但本阶段尚未改代码的迁回项。
+Agent 动作由同步 `dispatch` 发起后在后台完成：即时连接错误直接返回，服务器拒绝或请求失败写入 `AgentChainsViewModel.action_failure`，保留动作和 `CoreError` 分类；下一次发起动作时清除。链列表轮询不能覆盖动作失败。
+
+领域清单与变体归属如下。表中列出本次实现从最新 main 盘点到的全部领域变体；`SetPluginAudience` 是盘点后 main 新增、按插件作用域归类的变体。
 
 | 子枚举 | 变体 |
 | --- | --- |
@@ -80,9 +82,9 @@ pub enum Action {
 | `ChatAction` | `JoinRoom`、`LeaveRoom`、`StartDirectChat`、`AskAgent`、`AnswerAgentChoice`、`ResetRecovery`、`ConfirmRecoveryKeySaved`、`RecoverEncryption`、`StartDeviceVerification`、`AcceptDeviceVerification`、`ConfirmVerification`、`DenyVerification`、`CancelDeviceVerification`、`SkipKeyHandoff`、`DismissChatProblem`、`AnswerConfirmation`、`StopConfirmationWindow`、`RetryConfirmations`、`SetChatLayout` |
 | `BotAction` | `SetBotName`、`SetBotAvatar`、`ClearBotAvatar`、`DismissBotProfileProblem` |
 | `PushAction` | `SetPushEndpoint`、`PushUnavailable`、`SetPushMethod` |
-| `PluginAction` | `RefreshPlugins`、`ListOwnerSecrets`、`ShowOwnerSecret`、`HideOwnerSecret`、`DismissOwnerSecrets`、`StartPlugin`、`SetPortMapping`、`RefreshStore`、`InstallPlugin`、`UpgradePlugin`、`UninstallPlugin`、`DismissPluginTask`、`InstallNow`、`UpgradeNow`、`UpgradeAll`、`DismissStoreConfirmation`、`StartTakeover`、`EndTakeover`、`RefreshEgressProxy`、`SaveEgressProxy`、`ConfirmEgressProxy`、`DismissEgressConfirmation`、`RefreshRegistryMirror`、`SaveRegistryMirror`、`TestRegistryMirrors`、`RefreshCoreUpgrade`、`StartCoreUpgrade`、`CancelCoreUpgrade`、`SkipCoreUpgrade`；第二阶段新增 `SetPluginMediaPermission` |
-| `SettingsAction` | `SetLanguages`、`SetAccentColor`、`SetThemeMode`、`SetTextSize`、`SetFont`；第二阶段新增 `SetLockScreenContent` |
-| `OnboardingAction` | `RefreshOnboarding`、`RestartOnboarding`、`ChooseOnboardingAgent`、`ContinueOnboarding`、`SkipOnboardingStep`、`BackOnboardingStep`、`ToggleOnboardingNeed`、`EditOnboardingProfile`、`TestModelProvider`、`UseCurrentModel`、`ChooseModelLogin`、`RetryOnboardingItem`、`DismissModelProviderProblem`、`SetPrimaryAgent`、`DismissReplacedAgentOffer`、`DismissOnboardingTip`；第二阶段新增 `CloseOnboarding` |
+| `PluginAction` | `RefreshPlugins`、`ListOwnerSecrets`、`ShowOwnerSecret`、`HideOwnerSecret`、`DismissOwnerSecrets`、`StartPlugin`、`SetPortMapping`、`RefreshStore`、`InstallPlugin`、`UpgradePlugin`、`UninstallPlugin`、`SetPluginAudience`、`DismissPluginTask`、`InstallNow`、`UpgradeNow`、`UpgradeAll`、`DismissStoreConfirmation`、`StartTakeover`、`EndTakeover`、`RefreshEgressProxy`、`SaveEgressProxy`、`ConfirmEgressProxy`、`DismissEgressConfirmation`、`RefreshRegistryMirror`、`SaveRegistryMirror`、`TestRegistryMirrors`、`RefreshCoreUpgrade`、`StartCoreUpgrade`、`CancelCoreUpgrade`、`SkipCoreUpgrade`、`SetPluginMediaPermission` |
+| `SettingsAction` | `SetLanguages`、`SetAccentColor`、`SetThemeMode`、`SetTextSize`、`SetFont`、`SetLockScreenContent` |
+| `OnboardingAction` | `RefreshOnboarding`、`RestartOnboarding`、`ChooseOnboardingAgent`、`ContinueOnboarding`、`SkipOnboardingStep`、`BackOnboardingStep`、`ToggleOnboardingNeed`、`EditOnboardingProfile`、`UseCurrentModel`、`ChooseModelLogin`、`RetryOnboardingItem`、`SetPrimaryAgent`、`DismissReplacedAgentOffer`、`DismissOnboardingTip`、`CloseOnboarding` |
 | `FileAction` | `UploadFile`、`DownloadFile`、`CancelTransfer`、`DismissTransfer`、`ResendFileLink`、`DeleteFile`、`SendFileToDevices`、`GrantFileToRoom`、`DismissFileProblem` |
 | `PageAction` | `OpenPage`、`ClosePage`、`AddMyApp`、`RemoveMyApp`、`MoveMyApp`、`SetAutoAddApps`、`RetryMyAppSync`、`AddPanelPage`、`RemovePanelPage`、`MovePanelPage`、`SelectPanelPage`、`SetBotPinConsent`、`PinCurrentPage`、`SetRoomEntryBlocked`、`ReloadTab`、`TabLoadFailed`、`TabLoadSucceeded`、`DismissUninstalledTabs` |
 | `PeerAction` | `RefreshPeers`、`ShowPeerCode`、`HidePeerCode`、`ResetPeerCode`、`ScanPeerCode`、`ApprovePeerRequest`、`RejectPeerRequest`、`UnrejectPeerRequest`、`RemovePeer` |
@@ -90,7 +92,9 @@ pub enum Action {
 | `FamilyAction` | `RefreshRoles`、`CreateRole`、`UpdateRole`、`DeleteRole`、`SetDefaultRole`、`AssignMemberRole`、`AssignFriendRole` |
 | `FriendsAction` | `RefreshFriends`、`AddFriend`、`ApproveFriendRequest`、`RejectFriendRequest`、`CancelFriendRequest`、`RemoveFriend`、`BlockFriend`、`UnblockFriend`、`SaveFriendGroup`、`RemoveFriendGroup`、`SetFriendGroups` |
 | `SharingAction` | `CreatePluginShare`、`UpdatePluginShare`、`RevokePluginShare`、`RefreshSharedApps`、`OpenSharedApp` |
-| `AgentAction` | 第二阶段把现有独立 `AgentChainAction` 的 `StopChain`、`SetAgentLimits`、`SetConsumerAgentConcurrency` 搬进来 |
+| `AgentAction` | `StopChain`、`SetAgentLimits`、`SetConsumerAgentConcurrency`（由原独立 `AgentChainAction` 改名并纳入 `Action::Agent`） |
+
+`SetPluginAudience` 归入 `PluginAction`。详情页需要等待保存并取回更新后的详情，因此保留请求–应答方法，参数直接传插件 ID 和授权，不解包顶层 `Action`。
 
 这些边界按核心分发责任划分，而不是按某一页的 UI 结构划分：`dispatch.rs` 把会话、服务器/连接、聊天、推送、引导、文件、外观、页面、跨服务器、联系人、好友/家庭和分享分成不同路由；插件安装、商店、出口、镜像和核心升级也由插件链路统一处理。这样子枚举的操作和负责它们的核心作用域一一对应，迁移后可把 `Action` 的通配拒绝分支缩小为各领域的穷举匹配。
 

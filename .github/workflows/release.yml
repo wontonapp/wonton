@@ -2,8 +2,8 @@ name: release
 
 # 推 vX.Y.Z 的 tag 时构建核心镜像（amd64、arm64），推到 GHCR，同时更新 stable 渠道（ADR-0070）。安装脚本和 App 里的升级
 # 都按 digest 记版本，渠道只是找新版本的入口。只认不带后缀的版本号 tag（v0.2.0），误推的 vfoo、v0.2.0-rc.1 不会发布。
-# 手动触发（只认 main）只发桥镜像，标签 main-<短提交号>，不碰任何渠道：桥和插件一起改名时，插件要先钉上新桥，
-# 不必为此发一版核心。
+# 手动触发（只认 main）只发选中的组件镜像，标签 main-<短提交号>，不碰任何渠道：插件要先钉上新镜像时，
+# 不必为此发一版核心，也不会联发另一个组件。
 #
 # 双架构用 amd64 和 arm64 两种原生 runner 构建（托管 runner 便宜又快，不在 QEMU 里交叉编译），各自按 digest 推，
 # digest 作为 artifact 传给 merge 作业，最后合成多架构 manifest 打上版本和渠道标签。
@@ -12,6 +12,14 @@ on:
     tags:
       - "v[0-9]+.[0-9]+.[0-9]+"
   workflow_dispatch:
+    inputs:
+      component:
+        description: 单独发布的组件（仅 main，不更新 stable）
+        type: choice
+        required: true
+        default: remote-mcp
+        options:
+          - remote-mcp
 
 permissions:
   contents: read
@@ -96,9 +104,9 @@ jobs:
           tags: ${{ steps.meta.outputs.tags }}
           artifact: digests-core
 
-  acp-bridge-image:
-    name: ACP bridge 镜像 ${{ matrix.platform }}
-    if: github.event_name == 'push' || github.ref == 'refs/heads/main'
+  remote-mcp-image:
+    name: 远端 MCP 连接器镜像 ${{ matrix.platform }}
+    if: github.event_name == 'push' || (github.event_name == 'workflow_dispatch' && github.ref == 'refs/heads/main' && inputs.component == 'remote-mcp')
     strategy:
       fail-fast: false
       matrix:
@@ -123,21 +131,19 @@ jobs:
             else
               echo "version=${GITHUB_REF_NAME#v}"
             fi
-            echo "image=ghcr.io/${GITHUB_REPOSITORY_OWNER,,}/wonton-acp-bridge"
+            echo "image=ghcr.io/${GITHUB_REPOSITORY_OWNER,,}/wonton-remote-mcp"
             echo "rust=$mirror/rust:1.99.1-slim-trixie"
-            echo "debian=$mirror/debian:trixie-slim"
-            # 层缓存读 main 上存的那份（cache.yml 的桥镜像作业），发版不写。
-            echo "cache=ghcr.io/${GITHUB_REPOSITORY_OWNER,,}/wonton-ci-cache:acp-bridge"
+            # 发版只读 registry 层缓存，不覆盖 main 的缓存。
+            echo "cache=ghcr.io/${GITHUB_REPOSITORY_OWNER,,}/wonton-ci-cache:remote-mcp"
           } >> "$GITHUB_OUTPUT"
       - id: push
         uses: ./.github/actions/push-image
         with:
           platforms: ${{ matrix.platform }}
-          file: deploy/dev/acp-bridge/Dockerfile
+          file: deploy/remote-mcp/Dockerfile
           version: ${{ steps.meta.outputs.version }}
           extra-build-args: |-
             RUST_IMAGE=${{ steps.meta.outputs.rust }}
-            DEBIAN_IMAGE=${{ steps.meta.outputs.debian }}
           image: ${{ steps.meta.outputs.image }}
           cache-ref: ${{ steps.meta.outputs.cache }}
           push-by-digest: "true"
@@ -150,15 +156,14 @@ jobs:
           echo "$DIGEST" > "digests/${PLATFORM##*/}"
       - uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4
         with:
-          # 每个架构一个 artifact：同名的话 v4 只留下一份，合出来的 manifest 少一个架构（v0.2.0 就这样只有单架构）。
-          name: digests-acp-bridge-${{ strategy.job-index }}
+          name: digests-remote-mcp-${{ strategy.job-index }}
           path: digests/*
           retention-days: 1
 
-  acp-bridge-merge:
-    name: ACP bridge 镜像合 manifest
-    if: github.event_name == 'push' || github.ref == 'refs/heads/main'
-    needs: acp-bridge-image
+  remote-mcp-merge:
+    name: 远端 MCP 连接器镜像合 manifest
+    if: github.event_name == 'push' || (github.event_name == 'workflow_dispatch' && github.ref == 'refs/heads/main' && inputs.component == 'remote-mcp')
+    needs: remote-mcp-image
     runs-on: ubuntu-24.04
     timeout-minutes: 10
     steps:
@@ -168,7 +173,7 @@ jobs:
       - name: 版本、渠道
         id: meta
         run: |
-          image="ghcr.io/${GITHUB_REPOSITORY_OWNER,,}/wonton-acp-bridge"
+          image="ghcr.io/${GITHUB_REPOSITORY_OWNER,,}/wonton-remote-mcp"
           if [ "$GITHUB_EVENT_NAME" = workflow_dispatch ]; then
             echo "tags=$image:main-${GITHUB_SHA::7}" >> "$GITHUB_OUTPUT"
           else
@@ -178,4 +183,4 @@ jobs:
       - uses: ./.github/actions/merge-image-manifest
         with:
           tags: ${{ steps.meta.outputs.tags }}
-          artifact: digests-acp-bridge
+          artifact: digests-remote-mcp

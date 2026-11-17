@@ -15,6 +15,7 @@ mod bots_lifecycle;
 mod by_source;
 pub mod capabilities;
 pub mod check;
+pub(crate) mod check_element_call;
 pub(crate) mod clients_entry;
 mod clients_setup;
 pub mod compat;
@@ -155,6 +156,7 @@ mod views_icons;
 mod views_permissions;
 mod views_source;
 mod watch;
+mod webui_health;
 pub mod written_by;
 
 #[cfg(test)]
@@ -163,7 +165,7 @@ pub(crate) mod fake_docker;
 pub(crate) mod tests;
 
 pub use manager::{Health, InstallError, PluginManager, PluginStatus, PluginView};
-pub use manifest::{Manifest, Permission, PluginId};
+pub use manifest::{Manifest, ManifestExt, Permission, PermissionExt, PluginId};
 pub(crate) use manifest_tabs::validate_path;
 pub use mcp_server::{McpServer, ToolLimits};
 pub use owner_secrets::{SecretValue, ViewableSecrets};

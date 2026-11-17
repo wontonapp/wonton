@@ -9,7 +9,6 @@ import android.graphics.Color
 import android.os.Build
 import android.os.Environment
 import android.provider.MediaStore
-import android.view.KeyEvent
 import android.view.WindowInsets
 import androidx.compose.ui.test.isDialog
 import androidx.compose.ui.test.junit4.createAndroidComposeRule
@@ -24,6 +23,7 @@ import app.wonton.protocol.HomeStatus
 import app.wonton.protocol.Rgb
 import app.wonton.protocol.ThemeMode
 import app.wonton.protocol.Action
+import app.wonton.protocol.SettingsAction
 import app.wonton.ui.send
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertNull
@@ -60,7 +60,7 @@ class SafeAreaBackgroundTest {
         assertTrue("Requires a fresh unpaired app", core.home().status is HomeStatus.NotConfigured)
         val original = core.appearance().themeMode
         try {
-            assertNull(core.send(Action.SetThemeMode(mode)))
+            assertNull(core.send(Action.Settings(SettingsAction.SetThemeMode(mode))))
             awaitRoot()
             val appearance = core.appearance()
             val colors = if (mode == ThemeMode.DARK) appearance.dark else appearance.light
@@ -82,12 +82,6 @@ class SafeAreaBackgroundTest {
             compose.waitForIdle()
             // The real unpaired My Apps route displays pairing, not a fabricated launcher fixture.
             compose.onNodeWithTag("pairing-submit").assertExists()
-            // The legacy native-root action can show a rejection over the unpaired route.
-            // Check the page canvas, not the separate dialog window's intentional dim layer.
-            if (compose.onAllNodes(isDialog()).fetchSemanticsNodes().isNotEmpty()) {
-                instrumentation.sendKeyDownUpSync(KeyEvent.KEYCODE_BACK)
-                compose.waitForIdle()
-            }
             compose.onAllNodes(isDialog()).assertCountEquals(0)
             checkPixels("$prefix-my-apps", colors.canvas)
             compose.onNodeWithTag("sidebar-open").performClick()
@@ -95,7 +89,7 @@ class SafeAreaBackgroundTest {
             compose.waitForIdle()
             checkPixels("$prefix-settings", colors.canvas)
         } finally {
-            assertNull(core.send(Action.SetThemeMode(original)))
+            assertNull(core.send(Action.Settings(SettingsAction.SetThemeMode(original))))
         }
     }
 

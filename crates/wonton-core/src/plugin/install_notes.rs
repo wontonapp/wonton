@@ -42,11 +42,11 @@ impl PluginManager {
 /// 容器失败时，如果核心默认去掉了它可能需要的能力（宿主网络去掉 `NET_RAW`），在错误里点名。
 /// 上游镜像不会说自己要它，只会在起来时 FATAL，没有这句提示作者只能去猜。
 pub(super) fn note_dropped_capabilities(
-    error: super::health::HealthError,
+    error: impl Into<InstallError>,
     container: &ContainerPlan,
     langs: &Languages,
 ) -> InstallError {
-    let error = InstallError::from(error);
+    let error = error.into();
     let host = container.body.host_config.as_ref();
     let dropped = host
         .and_then(|host| host.cap_drop.as_ref())

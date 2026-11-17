@@ -424,7 +424,12 @@ async fn the_lock_screen_switch_hides_only_the_category_it_is_set_for() {
     assert!(!shown.lock_screen_private, "默认显示内容");
 
     phone
-        .set_lock_screen_content(wonton_client::NotificationCategory::Confirmation, true)
+        .dispatch(Action::Settings {
+            action: wonton_protocol::SettingsAction::SetLockScreenContent {
+                category: wonton_client::NotificationCategory::Confirmation,
+                hidden: true,
+            },
+        })
         .unwrap();
     let hidden = phone
         .resolve_push(payload.clone())
@@ -467,7 +472,12 @@ async fn the_lock_screen_switch_hides_only_the_category_it_is_set_for() {
 
     // 关回去，通知照旧显示内容。
     phone
-        .set_lock_screen_content(wonton_client::NotificationCategory::Confirmation, false)
+        .dispatch(Action::Settings {
+            action: wonton_protocol::SettingsAction::SetLockScreenContent {
+                category: wonton_client::NotificationCategory::Confirmation,
+                hidden: false,
+            },
+        })
         .unwrap();
     let shown = phone
         .resolve_push(payload.clone())
@@ -497,7 +507,11 @@ async fn cold_notification_answers_use_local_slots_and_never_fall_back_to_select
         "choices": [{"answer": "approve", "label": "allow"}], "expires_at_ms": now_ms() + 600_000});
     a.set_confirmations(vec![card.clone()], vec![]);
     b.set_confirmations(vec![card], vec![]);
-    phone.dispatch(Action::AddServer).unwrap();
+    phone
+        .dispatch(Action::Home {
+            action: wonton_protocol::HomeAction::AddServer,
+        })
+        .unwrap();
     phone.connect(&b);
     wait_connected(&phone).await;
     drop(phone);
@@ -514,7 +528,9 @@ async fn cold_notification_answers_use_local_slots_and_never_fall_back_to_select
     assert_eq!(a.confirmation_answers().len(), 1);
     assert!(b.confirmation_answers().is_empty());
     phone
-        .dispatch(Action::RemoveServer { id: "1".into() })
+        .dispatch(Action::Home {
+            action: wonton_protocol::HomeAction::RemoveServer { id: "1".into() },
+        })
         .unwrap();
     for server in [None, Some("1".to_owned()), Some(b.server_id())] {
         let result = phone

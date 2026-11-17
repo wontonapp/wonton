@@ -29,6 +29,7 @@ import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.semantics.Role
 import androidx.compose.ui.text.style.TextDecoration
 import app.wonton.client.ClientCore
+import app.wonton.protocol.FileAction
 import app.wonton.protocol.Action
 import app.wonton.protocol.Transfer
 import app.wonton.protocol.TransferAction
@@ -52,11 +53,12 @@ import app.wonton.ui.icons.WontonIcon
 /** 输入框上方进行中和要处理的传输，还有下载完的入口。上传完的已经是房间里的一条消息。 */
 @Composable
 fun TransfersStrip(roomId: String, core: ClientCore) {
+    // 只当变化信号用：传输列表一变就重取这个房间的传输条；下载完的按房间归属在里面。
     val view = LocalFiles.current.transfers
     val listed = remember(view, roomId) { core.roomTransfers(roomId) }
     var showingDownloaded by remember { mutableStateOf(false) }
-    if (view.downloaded.isEmpty()) showingDownloaded = false
-    if (listed.here.isEmpty() && listed.elsewhere.isEmpty() && view.downloaded.isEmpty()) return
+    if (listed.downloaded.isEmpty()) showingDownloaded = false
+    if (listed.here.isEmpty() && listed.elsewhere.isEmpty() && listed.downloaded.isEmpty()) return
     val colors = WontonTheme.colors
     Column(
         Modifier.fillMaxWidth()
@@ -66,22 +68,31 @@ fun TransfersStrip(roomId: String, core: ClientCore) {
     ) {
         listed.here.forEach { TransferRow(it) }
         listed.elsewhere.forEach { TransferRow(it.transfer, Destination(it.roomName)) }
-        if (view.downloaded.isNotEmpty()) {
+        if (listed.downloaded.isNotEmpty()) {
+            val caption = if (listed.downloaded.size == 1) {
+                stringResource(R.string.transfer_downloaded_one, listed.downloaded[0].name)
+            } else {
+                pluralStringResource(
+                    R.plurals.transfer_downloaded_count,
+                    listed.downloaded.size,
+                    listed.downloaded.size,
+                )
+            }
             Text(
-                pluralStringResource(R.plurals.transfer_downloaded_count, view.downloaded.size, view.downloaded.size),
+                caption,
                 Modifier.align(Alignment.End).clickable(role = Role.Button) { showingDownloaded = true },
                 style = WontonTheme.typography.caption.copy(textDecoration = TextDecoration.Underline),
                 color = colors.textPrimary.toColor(),
             )
         }
     }
-    if (showingDownloaded && view.downloaded.isNotEmpty()) {
+    if (showingDownloaded && listed.downloaded.isNotEmpty()) {
         WontonSheet({ showingDownloaded = false }, stringResource(R.string.transfer_downloaded)) {
             LazyColumn(
                 contentPadding = PaddingValues(horizontal = WontonTheme.spacing.pageInset),
                 verticalArrangement = Arrangement.spacedBy(WontonTheme.spacing.s8),
             ) {
-                items(view.downloaded, key = { it.id }) { TransferRow(it) }
+                items(listed.downloaded, key = { it.id }) { TransferRow(it) }
             }
         }
     }
@@ -171,21 +182,21 @@ private fun TransferButton(transfer: Transfer, action: TransferAction) {
         TransferAction.CANCEL -> WontonIconButton(
             WontonIcon.Close,
             stringResource(R.string.common_cancel),
-            { files.onAction(Action.CancelTransfer(transfer.id)) },
+            { files.onAction(Action.Files(FileAction.CancelTransfer(transfer.id))) },
         )
         TransferAction.DISMISS -> WontonIconButton(
             WontonIcon.Close,
             stringResource(R.string.transfer_clear),
-            { files.onAction(Action.DismissTransfer(transfer.id, false)) },
+            { files.onAction(Action.Files(FileAction.DismissTransfer(transfer.id, false))) },
         )
         TransferAction.DISMISS_DOWNLOADED ->
             WontonIconButton(WontonIcon.Trash, stringResource(R.string.transfer_clean_up), { confirming = true })
         TransferAction.RESEND_LINK -> TextAction(
             stringResource(R.string.transfer_resend_link),
-        ) { files.onAction(Action.ResendFileLink(transfer.id)) }
+        ) { files.onAction(Action.Files(FileAction.ResendFileLink(transfer.id))) }
         TransferAction.STOP_SENDING -> TextAction(
             stringResource(R.string.transfer_stop_sending),
-        ) { files.onAction(Action.CancelTransfer(transfer.id)) }
+        ) { files.onAction(Action.Files(FileAction.CancelTransfer(transfer.id))) }
         TransferAction.OPEN -> WontonIconButton(WontonIcon.Eye, stringResource(R.string.transfer_open), {
             path?.let { openWithSystem(context, it, null)?.let(files.onReject) }
         })
@@ -219,7 +230,7 @@ private fun DismissDownloadedDialog(transfer: Transfer, onClose: () -> Unit) {
     val files = LocalFiles.current
     val dismiss = { deleteLocalFile: Boolean ->
         onClose()
-        files.onAction(Action.DismissTransfer(transfer.id, deleteLocalFile))
+        files.onAction(Action.Files(FileAction.DismissTransfer(transfer.id, deleteLocalFile)))
     }
     WontonDialog(
         stringResource(R.string.transfer_cleanup_title, transfer.name),

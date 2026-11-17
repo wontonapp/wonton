@@ -12,6 +12,7 @@ import androidx.compose.foundation.layout.displayCutoutPadding
 import androidx.compose.foundation.layout.padding
 import androidx.compose.material3.CircularProgressIndicator
 import androidx.compose.material3.MaterialTheme
+import androidx.compose.ui.graphics.graphicsLayer
 import app.wonton.ui.design.WontonEdgeToEdgeScaffold
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
@@ -22,8 +23,6 @@ import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
-import androidx.compose.runtime.movableContentOf
-import androidx.compose.runtime.rememberUpdatedState
 import androidx.compose.runtime.setValue
 import androidx.compose.runtime.saveable.rememberSaveableStateHolder
 import androidx.compose.runtime.saveable.SaveableStateHolder
@@ -37,6 +36,9 @@ import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.unit.dp
 import app.wonton.client.ClientCore
 import app.wonton.client.defaultAppearance
+import app.wonton.protocol.HomeAction
+import app.wonton.protocol.SettingsAction
+import app.wonton.protocol.PageAction
 import app.wonton.protocol.Action
 import app.wonton.protocol.AppearanceViewModel
 import app.wonton.protocol.ChatViewModel
@@ -68,7 +70,7 @@ internal fun ServerApp(
     val plugins = remember(core) { PluginsState(core) }
     val pages = remember(core) { PagesState(plugins) }
     val draft = remember(core) { TabDraft() }
-    val chat = rememberChatNavigation { pages.send(Action.OpenPage(it)) }
+    val chat = rememberChatNavigation { pages.send(Action.Pages(PageAction.OpenPage(it))) }
     val context = LocalContext.current.applicationContext
     val navigation = remember(core, context) { AppNavigation(pages, chat, context) }
     LaunchedEffect(pages) { pages.observe() }
@@ -133,7 +135,7 @@ private fun AppContent(
     val expanded = LocalExpandedChat.current
     var showsSidebar by remember { mutableStateOf(false) }
     val nativeState = rememberSaveableStateHolder()
-    val status = connectionBarStatus(home, { pages.send(Action.RetryConnection) }, nav::settings)
+    val status = connectionBarStatus(home, { pages.send(Action.Home(HomeAction.RetryConnection)) }, nav::settings)
     val cards = chat.pendingConfirmations.filter {
         val listShown = shown == TabRef.Chat && !nav.settingsOverlay && !view.showsApps &&
             nav.chat.showingConfirmations
@@ -142,7 +144,10 @@ private fun AppContent(
             it.roomId == nav.chat.openRoom
         !listShown && !roomShown
     }
-    val onDraft: (String) -> Unit = { text -> draft.text = text; pages.send(Action.OpenPage(TabRef.Chat)) }
+    val onDraft: (String) -> Unit = { text ->
+        draft.text = text
+        pages.send(Action.Pages(PageAction.OpenPage(TabRef.Chat)))
+    }
     // 面板只在聊天页和房间里；拉开时左边缘归面板（A 块的手势用来关它）。
     val panelScope = nav.chat.openRoom?.let { PanelScope.Room(it) } ?: PanelScope.Main
     val panelActive = shown == TabRef.Chat && !pluginShown && !nav.settingsOverlay &&
@@ -192,15 +197,18 @@ private fun AppContent(
                     }
                 }
             }
-            val latestPage by rememberUpdatedState(page)
-            val retainedPage = remember { movableContentOf { latestPage() } }
             CompositionLocalProvider(LocalChatPanel provides panel) {
+                // 面板可用性变化只改变叠层与平移，不搬移带有待处理 LazyList 操作的主页面。
                 if (panel != null) {
-                    ChatPanelHost(panel, pages, home, appearance, onDraft = onDraft, onDetails = nav::detail,
-                        content = retainedPage)
-                } else {
-                    retainedPage()
+                    ChatPanelHost(panel, pages, home, appearance, onDraft = onDraft, onDetails = nav::detail)
                 }
+                Box(Modifier.fillMaxSize().graphicsLayer {
+                    translationY = (panel?.shiftPx ?: 0f) * (panel?.sign ?: 1f)
+                }) {
+                    page()
+                    if (panel?.level == PanelLevel.PEEK) ChatPanelStrip(panel)
+                }
+                if (panel != null) ChatPanelOverlay(panel)
             }
         }
     }
@@ -265,7 +273,7 @@ private fun OpenDevWebEffect(url: String?, plugins: PluginsState, pages: PagesSt
             val plugin = installed.plugins.firstOrNull { it.webUrl == url }
             if (plugin != null) {
                 handled = true
-                plugin.tabChoices.firstOrNull()?.let { pages.send(Action.OpenPage(it.tab)) }
+                plugin.tabChoices.firstOrNull()?.let { pages.send(Action.Pages(PageAction.OpenPage(it.tab))) }
             }
         }
     }
@@ -303,7 +311,9 @@ private fun PluginsEffects(plugins: PluginsState) {
     LaunchedEffect(plugins) { plugins.observe() }
     val locales = LocalConfiguration.current.locales
     val shown = appLanguageTag()
-    LaunchedEffect(plugins, locales, shown) { plugins.refresh(Action.SetLanguages(coreLanguageTags(shown, locales))) }
+    LaunchedEffect(plugins, locales, shown) {
+        plugins.refresh(Action.Settings(SettingsAction.SetLanguages(coreLanguageTags(shown, locales))))
+    }
 }
 
 @Composable

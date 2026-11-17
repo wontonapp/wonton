@@ -221,7 +221,7 @@ async fn the_round_limit_sends_one_card_per_person_and_grants_after_all_agree() 
 async fn the_app_stop_cancels_the_turn_and_withdraws_cards() {
     let home = start().await;
     let chain = home.grant(Bot::Alice, "s-1", "@alice:test", "$e1").await;
-    // 链上一个经 agent_acp 的会话：停链要交给网关取消。
+    // 旧版经 agent_acp 建的会话：账本照样收。
     home.chains
         .ledger()
         .register_session(
@@ -285,8 +285,7 @@ async fn the_app_stop_cancels_the_turn_and_withdraws_cards() {
         .await;
     assert_eq!(status, StatusCode::OK);
 
-    // 链上经 agent_acp 的会话交给了网关取消（第 5 块的接口，这里用替身）；桥的轮次进了出箱。
-    assert_eq!(home.acp.cancelled.lock().unwrap().as_slice(), ["s-acp"]);
+    // 轮次进了出箱。
     let item = home
         .outbox(BUS_ALICE, Bot::Alice.matrix())
         .await

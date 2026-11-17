@@ -42,10 +42,10 @@ import androidx.compose.ui.text.input.PasswordVisualTransformation
 import androidx.compose.ui.text.style.TextAlign
 import androidx.fragment.app.FragmentActivity
 import app.wonton.protocol.Action
+import app.wonton.protocol.ChatAction
 import app.wonton.protocol.BackupReminder
 import app.wonton.protocol.DeviceVerification
 import app.wonton.protocol.EncryptionStatus
-import app.wonton.protocol.KeyNotice
 import app.wonton.protocol.RecoveryNextStep
 import app.wonton.protocol.RecoveryStatus
 import app.wonton.ui.design.wontonContentPadding
@@ -80,7 +80,7 @@ fun ChatBackupScreen(
             verticalArrangement = Arrangement.spacedBy(WontonTheme.spacing.sectionGap),
         ) {
             encryption.recoveryKey?.let { saved ->
-                RecoveryKey(saved, onConfirm = { onAction(Action.ConfirmRecoveryKeySaved) })
+                RecoveryKey(saved, onConfirm = { onAction(Action.Chat(ChatAction.ConfirmRecoveryKeySaved)) })
             }
             Column(verticalArrangement = Arrangement.spacedBy(WontonTheme.spacing.s8)) {
                 Text(
@@ -130,7 +130,7 @@ private fun ResetBackup(onAction: (Action) -> Unit) {
                 WontonDialogAction(stringResource(R.string.common_cancel), onClick = dismiss),
                 WontonDialogAction(stringResource(R.string.chat_backup_reset_confirm), WontonButtonKind.DANGER) {
                     dismiss()
-                    onAction(Action.ResetRecovery)
+                    onAction(Action.Chat(ChatAction.ResetRecovery))
                 },
             ),
         )
@@ -160,7 +160,7 @@ private fun NextStep(
         RecoveryNextStep.SHOW_FLOW -> if (encryption.verificationFlow == null) {
             WontonButton(
                 stringResource(R.string.verification_verify_with_other_device),
-                { onAction(Action.StartDeviceVerification) },
+                { onAction(Action.Chat(ChatAction.StartDeviceVerification)) },
                 Modifier.fillMaxWidth(),
             )
         } else if (showKeyEntry) {
@@ -185,7 +185,7 @@ private fun VerificationChoices(onAction: (Action) -> Unit, onUseRecoveryKey: ()
     ) {
         WontonButton(
             stringResource(R.string.verification_verify_with_other_device),
-            { onAction(Action.StartDeviceVerification) },
+            { onAction(Action.Chat(ChatAction.StartDeviceVerification)) },
             Modifier.weight(1f),
         )
         WontonButton(
@@ -216,7 +216,7 @@ private fun RecoveryKeyEntry(key: String, onKeyChange: (String) -> Unit, onActio
         WontonButton(
             stringResource(R.string.chat_backup_recover),
             {
-                onAction(Action.RecoverEncryption(key))
+                onAction(Action.Chat(ChatAction.RecoverEncryption(key)))
                 onKeyChange("")
             },
             Modifier.fillMaxWidth(),
@@ -255,14 +255,6 @@ val RecoveryStatus.backupValue: String
         RecoveryStatus.INCOMPLETE -> stringResource(R.string.chat_backup_value_incomplete)
         RecoveryStatus.IN_PROGRESS -> stringResource(R.string.chat_backup_value_in_progress)
         RecoveryStatus.UNKNOWN -> stringResource(R.string.chat_backup_value_unknown)
-    }
-
-/** 按钮上的字；`OTHER` 是更新的核心给的新类别，只显示说明。 */
-val KeyNotice.action: Int?
-    get() = when (this) {
-        KeyNotice.ENTER_RECOVERY_KEY -> R.string.verification_use_recovery_key
-        KeyNotice.VERIFY_WITH_OTHER_DEVICE -> R.string.verification_verify_with_other_device
-        KeyNotice.OTHER -> null
     }
 
 val BackupReminder.text: String?

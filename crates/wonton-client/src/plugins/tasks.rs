@@ -594,7 +594,7 @@ pub(super) fn server_changed() -> PluginTaskState {
     }
 }
 
-/// 主人在确认页上打开了开关（[`Action::InstallPlugin`](wonton_protocol::Action::InstallPlugin)）。
+/// 主人在确认页上打开了开关（[`PluginAction::InstallPlugin`](wonton_protocol::PluginAction::InstallPlugin)）。
 fn lan_webui_chosen(preview: &InstallPreview) -> bool {
     preview
         .lan_webui

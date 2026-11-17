@@ -24,14 +24,14 @@ final class OnboardingModel {
         do {
             try core.dispatch(action: action)
             rejection = nil
-            if case .restartOnboarding = action { skipsUnavailableGate = false }
+            if case .onboarding(action: .restartOnboarding) = action { skipsUnavailableGate = false }
         } catch {
             rejection = error.problem
         }
     }
 
-    /// 关掉重看的引导：不保存任何东西，壳负责回到设置。
+    /// 关掉重看的引导：不保存任何东西，壳负责回到设置；经统一 `Action.onboarding` 入口发送。
     func close() {
-        core.closeOnboarding()
+        send(.onboarding(action: .closeOnboarding))
     }
 }

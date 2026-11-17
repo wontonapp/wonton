@@ -2,7 +2,7 @@
 //! 时，壳靠 `ChatViewModel::pending_confirmations` 提示有卡片要回答。
 //!
 //! 跟着家里的连接走，不和 Matrix 会话绑定：卡片不是 Matrix 消息，换登录、重连都不动这份状态；连不上核心时如实
-//! 报问题、留上次的列表，退避重试，`Action::RetryConfirmations` 立即重试。
+//! 报问题、留上次的列表，退避重试，`ChatAction::RetryConfirmations` 立即重试。
 
 use std::collections::{HashMap, HashSet};
 use std::sync::{Arc, Weak};
@@ -165,7 +165,7 @@ impl Follower {
     }
 
     /// 连接没就绪就不打核心：留上次的列表，一次都没取到过就还显示加载中。失败过的先等退避；
-    /// `Action::RetryConfirmations` 立即放行。连接没了（作用域释放）返回 `None`。
+    /// `ChatAction::RetryConfirmations` 立即放行。连接没了（作用域释放）返回 `None`。
     async fn wait_ready(&mut self) -> Option<(Url, ProxySettings)> {
         if !self.backoff.is_zero() {
             tokio::select! {

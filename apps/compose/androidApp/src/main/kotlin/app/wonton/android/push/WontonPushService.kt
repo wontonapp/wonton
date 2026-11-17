@@ -8,6 +8,7 @@ import app.wonton.android.WontonApplication
 import app.wonton.client.ClientCore
 import app.wonton.protocol.Action
 import app.wonton.protocol.CoreException
+import app.wonton.protocol.PushAction
 import app.wonton.protocol.PushEndpoint
 import app.wonton.ui.send
 import kotlinx.coroutines.CoroutineScope
@@ -30,9 +31,9 @@ class WontonPushService : PushService() {
         val core = core() ?: return
         val keys = endpoint.pubKeySet
         val action = if (keys == null) {
-            Action.PushUnavailable(getString(R.string.push_no_public_key))
+            Action.Push(PushAction.PushUnavailable(getString(R.string.push_no_public_key)))
         } else {
-            Action.SetPushEndpoint(PushEndpoint(endpoint.url, keys.pubKey, keys.auth))
+            Action.Push(PushAction.SetPushEndpoint(PushEndpoint(endpoint.url, keys.pubKey, keys.auth)))
         }
         core.send(action)?.let { Log.w(TAG, "core rejected the push endpoint: $it") }
     }
@@ -65,11 +66,11 @@ class WontonPushService : PushService() {
     }
 
     override fun onRegistrationFailed(reason: FailedReason, instance: String) {
-        core()?.send(Action.PushUnavailable(getString(R.string.push_registration_rejected, reason)))
+        core()?.send(Action.Push(PushAction.PushUnavailable(getString(R.string.push_registration_rejected, reason))))
     }
 
     override fun onUnregistered(instance: String) {
-        core()?.send(Action.PushUnavailable(getString(R.string.push_unregistered)))
+        core()?.send(Action.Push(PushAction.PushUnavailable(getString(R.string.push_unregistered))))
     }
 
     private fun core(): ClientCore? {

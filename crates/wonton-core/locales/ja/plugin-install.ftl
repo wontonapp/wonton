@@ -79,6 +79,7 @@ plugin-install-start-failed = 起動できませんでした：{ $error }
 plugin-install-conflict-rebuilding = アプリ{ $id }は再構築中です。終わってから起動してください
 plugin-install-record-unusable = このアプリのインストール記録が壊れているため、起動できません
 plugin-install-container-missing = コンテナ{ $name }は存在しません
+plugin-install-start-timeout-container-gone = 起動がタイムアウトし、コンテナ{ $name }は存在しません。もう一度インストールしてください
 plugin-install-container-not-owned = コンテナ{ $name }はアプリ{ $id }のものではありません
 
 # ── メモリ不足（oom.rs）────────────────────────────────────────────────────
@@ -229,7 +230,6 @@ plugin-install-priv-agent-high-risk = エージェントとボットのアプリ
 plugin-install-priv-fixed-device = 固定デバイスの権限で指定できるのは/dev/net/tunと/dev/fuseだけです。{ $permission }は指定できません
 plugin-install-priv-host-network-ports = ホストネットワークのサービスはlan.portsも宣言できません。ポートはアプリが直接ホストネットワークで待ち受けます
 plugin-install-priv-host-network-sso = ホストネットワークのwebuiではsso: proxyを使えません。oidcかnoneを使ってください
-plugin-install-priv-host-network-healthcheck = ホストネットワークのwebuiサービスには、有効なhealthcheckの記載が必要です
 plugin-install-priv-host-network-mail = ホストネットワークを使うアプリはメールを送れません。送信元はネットワークセグメントで識別され、ホストネットワークからのメールは特定できません。アプリケーションネットワークを使うか、メール送信を外してください
 plugin-install-priv-cap-invalid = cap_addのケーパビリティ`{ $cap }`が不正です
 plugin-install-priv-cap-drop-invalid = cap_dropのケーパビリティ`{ $cap }`が不正です

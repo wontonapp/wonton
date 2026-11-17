@@ -31,6 +31,7 @@ import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.text.input.KeyboardType
 import androidx.compose.ui.unit.dp
 import app.wonton.protocol.Action
+import app.wonton.protocol.PluginAction
 import app.wonton.protocol.CoreException
 import app.wonton.protocol.EgressConfirmation
 import app.wonton.protocol.EgressCurrent
@@ -66,14 +67,22 @@ import kotlinx.coroutines.launch
 fun EgressPage(plugins: PluginsState, onBack: () -> Unit) {
     val egress = plugins.viewModel.egress
     val current = egress.current
-    LaunchedEffect(Unit) { plugins.send(Action.RefreshEgressProxy) }
+    LaunchedEffect(Unit) { plugins.send(Action.Plugins(PluginAction.RefreshEgressProxy)) }
     // 核心给的值变了才覆盖输入框：保存失败时主人填的还在。
     var address by remember(current?.address, current?.usePlugin) { mutableStateOf(current?.address.orEmpty()) }
     var usePlugin by remember(current?.address, current?.usePlugin) { mutableStateOf(current?.usePlugin == true) }
     var directCidrs by remember(current?.directCidrs) { mutableStateOf(current?.directCidrs.orEmpty()) }
     val selectedPlugin = current?.settings?.provider != null && usePlugin
     val save = { target: String, plugin: Boolean ->
-        plugins.send(Action.SaveEgressProxy(address = target, directCidrs = directCidrs, usePlugin = plugin))
+        plugins.send(
+            Action.Plugins(
+                PluginAction.SaveEgressProxy(
+                    address = target,
+                    directCidrs = directCidrs,
+                    usePlugin = plugin,
+                ),
+            ),
+        )
     }
     val bar = @Composable {
         WontonPushedBar(stringResource(R.string.egress_title), onBack) {
@@ -127,7 +136,9 @@ fun EgressPage(plugins: PluginsState, onBack: () -> Unit) {
                         )
                     }
                 }
-                problem != null -> ProblemView(problem.problem) { plugins.send(Action.RefreshEgressProxy) }
+                problem != null -> ProblemView(problem.problem) {
+                    plugins.send(Action.Plugins(PluginAction.RefreshEgressProxy))
+                }
                 else -> LoadingView()
             }
         }
@@ -137,7 +148,7 @@ fun EgressPage(plugins: PluginsState, onBack: () -> Unit) {
 
 @Composable
 private fun RestartDialog(confirmation: EgressConfirmation, plugins: PluginsState) {
-    val dismiss = { plugins.send(Action.DismissEgressConfirmation) }
+    val dismiss = { plugins.send(Action.Plugins(PluginAction.DismissEgressConfirmation)) }
     val apps = ListFormatter.getInstance(LocalConfiguration.current.locales[0])
         .format(confirmation.restarts.map { it.title })
     WontonDialog(
@@ -149,7 +160,7 @@ private fun RestartDialog(confirmation: EgressConfirmation, plugins: PluginsStat
         listOf(
             WontonDialogAction(stringResource(R.string.common_cancel), onClick = dismiss),
             WontonDialogAction(stringResource(R.string.egress_restart_confirm), WontonButtonKind.PRIMARY) {
-                plugins.send(Action.ConfirmEgressProxy)
+                plugins.send(Action.Plugins(PluginAction.ConfirmEgressProxy))
             },
         ),
     )

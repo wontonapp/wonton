@@ -21,6 +21,7 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.platform.LocalConfiguration
 import androidx.compose.ui.res.stringResource
 import app.wonton.protocol.Action
+import app.wonton.protocol.OnboardingAction
 import app.wonton.protocol.OnboardingAgentRow
 import app.wonton.protocol.OnboardingCommit
 import app.wonton.protocol.OnboardingStep
@@ -42,7 +43,7 @@ internal fun OnboardingScreen(
     // 系统返回和左边缘右滑同一路：能后退就后退，重看引导的第一步等同关闭。
     BackHandler {
         when {
-            nav.canBack -> send(Action.BackOnboardingStep)
+            nav.canBack -> send(Action.Onboarding(OnboardingAction.BackOnboardingStep))
             nav.canClose -> onboarding.close()
         }
     }
@@ -62,9 +63,9 @@ internal fun OnboardingScreen(
         title = view.title(),
         primaryText = view.primaryText(),
         primaryBusy = view.loading || view.review.commit == OnboardingCommit.RUNNING,
-        onBack = { send(Action.BackOnboardingStep) },
-        onSkip = { send(Action.SkipOnboardingStep) },
-        onPrimary = { send(Action.ContinueOnboarding) },
+        onBack = { send(Action.Onboarding(OnboardingAction.BackOnboardingStep)) },
+        onSkip = { send(Action.Onboarding(OnboardingAction.SkipOnboardingStep)) },
+        onPrimary = { send(Action.Onboarding(OnboardingAction.ContinueOnboarding)) },
         onClose = onboarding.close,
         modifier = modifier,
     ) {
@@ -75,7 +76,9 @@ internal fun OnboardingScreen(
             ) {
                 val problem = view.problem
                 if (problem != null) {
-                    OnboardingProblem(problem.onboardingTitle(), problem.message) { send(Action.RefreshOnboarding) }
+                    OnboardingProblem(problem.onboardingTitle(), problem.message) {
+                        send(Action.Onboarding(OnboardingAction.RefreshOnboarding))
+                    }
                 } else {
                     when (view.step) {
                         OnboardingStep.AGENT -> OnboardingAgentStep(view.agents, send)
@@ -131,7 +134,9 @@ private fun OnboardingViewModel.primaryText(): String = if (step == OnboardingSt
 @Composable
 private fun OnboardingAgentStep(agents: List<OnboardingAgentRow>, send: (Action) -> Unit) {
     if (agents.isEmpty()) {
-        OnboardingProblem(stringResource(R.string.onboarding_agent_empty), null) { send(Action.RefreshOnboarding) }
+        OnboardingProblem(stringResource(R.string.onboarding_agent_empty), null) {
+            send(Action.Onboarding(OnboardingAction.RefreshOnboarding))
+        }
     }
     agents.forEach { agent ->
         key(agent.id) {
@@ -140,7 +145,7 @@ private fun OnboardingAgentStep(agents: List<OnboardingAgentRow>, send: (Action)
                 description = agent.connection(),
                 selected = agent.selected,
                 blocked = agent.blocked,
-                onSelect = { send(Action.ChooseOnboardingAgent(agent.id)) },
+                onSelect = { send(Action.Onboarding(OnboardingAction.ChooseOnboardingAgent(agent.id))) },
             )
         }
     }

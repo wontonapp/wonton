@@ -86,7 +86,7 @@ struct MatrixLoginView: View {
 
     private func start() {
         let text = server.trimmingCharacters(in: .whitespacesAndNewlines)
-        send(.startMatrixLogin(homeserver: text.isEmpty ? nil : text))
+        send(.home(action: .startMatrixLogin(homeserver: text.isEmpty ? nil : text)))
     }
 
     private func send(_ action: Action) {
@@ -96,7 +96,7 @@ struct MatrixLoginView: View {
     private func leave() {
         browser.close()
         guard let login, login.state.isUnderway else { return }
-        _ = model.matrixLogin(.cancelMatrixLogin(loginId: login.loginId))
+        _ = model.matrixLogin(.home(action: .cancelMatrixLogin(loginId: login.loginId)))
     }
 }
 
@@ -171,9 +171,9 @@ private struct MatrixLoginMethods: View {
         }
         if offersOidc {
             Button {
-                send(.startMatrixOidc(login: MatrixOidcLogin(
+                send(.home(action: .startMatrixOidc(login: MatrixOidcLogin(
                     loginId: login.loginId, redirectUri: login.oidcRedirectUri, deviceName: UIDevice.current.name
-                )))
+                ))))
             } label: {
                 Text(.Matrixlogin0.matrixLoginMethodOidc).frame(maxWidth: .infinity)
             }
@@ -218,9 +218,9 @@ private struct MatrixLoginMethods: View {
     private func submit() {
         let user = userId.trimmingCharacters(in: .whitespacesAndNewlines)
         guard !user.isEmpty, !password.isEmpty else { return }
-        send(.submitMatrixPassword(login: MatrixPasswordLogin(
+        send(.home(action: .submitMatrixPassword(login: MatrixPasswordLogin(
             loginId: login.loginId, userId: user, password: password, deviceName: UIDevice.current.name
-        )))
+        ))))
         // 密码交给核心后就不留在界面状态里。
         password = ""
     }

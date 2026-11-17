@@ -8,12 +8,12 @@ use super::manifest::{Permission, Sso};
 use super::package::{PackageError, PluginPackage};
 use super::render::{RenderError, dry_run};
 
-pub(crate) mod agent_acp_contract;
 mod bot_ai_levels;
 mod bot_avatars;
 mod bot_lifecycle;
 mod bot_web;
 mod bots;
+mod capability_bots;
 mod capability_deps_install;
 mod capability_host_network;
 mod capability_install_requests;
@@ -25,6 +25,7 @@ mod check;
 mod clients_manifest_package;
 mod configs;
 mod configs_docker;
+mod device_detail;
 mod device_host;
 mod device_recovery;
 mod devices;
@@ -108,6 +109,7 @@ mod views_l10n;
 mod watch;
 mod watch_docker;
 mod webui_health;
+mod webui_health_docker;
 mod widget;
 
 /// 测试里的请求语言：默认（英文）。断言的期望值用 [`crate::l10n::CATALOG`] 生成。

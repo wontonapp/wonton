@@ -34,7 +34,7 @@
     <string name="room_scroll_to_bottom_count">回到底部，還有 %1$d 條新訊息</string>
     <string name="timeline_start">以上是聊天的開頭</string>
     <string name="timeline_edited">已編輯</string>
-    <string name="timeline_sending">傳送中</string>
+    <string name="timeline_sending">已儲存，等待送達</string>
     <string name="timeline_read">已讀</string>
     <string name="timeline_delivered">已送達</string>
     <string name="timeline_send_failed_retrying">傳送失敗，會自動重試</string>
@@ -42,6 +42,9 @@
     <string name="timeline_resend">重新傳送</string>
     <string name="timeline_undecryptable">無法解密：這支裝置還沒有這則訊息的金鑰</string>
     <string name="timeline_undecryptable_notice">這台裝置讀不了先前的加密訊息。</string>
+    <!-- 一行提示：解不開的舊訊息怎麼把金鑰找回來。無參數。 -->
+    <string name="timeline_key_notice_recovery">在「聊天記錄備份」輸入復原金鑰，解開這些舊訊息。</string>
+    <string name="timeline_key_notice_verify">在「聊天記錄備份」用另一部裝置確認這台裝置，取回金鑰。</string>
     <string name="timeline_redacted">訊息已收回</string>
     <string name="timeline_unsupported">暫不支援顯示的訊息（%1$s）</string>
     <!-- Timeline note: someone renamed themselves. Arguments: the old and the new name. -->

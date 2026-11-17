@@ -23,8 +23,8 @@ flowchart LR
   subgraph Home["家里的 Linux + Docker 主机"]
     Core["wonton-core\n插件管理 · 网关与配对 · 推送代理\nMCP 总线 · 密钥与存储授权"]
     Tuwunel["Tuwunel\nMatrix homeserver"]
-    Agent["Agent 插件\n默认 Hermes"]
-    Magpie["magpie\n模型网关"]
+    Agent["Hermes\n唯一默认内核 · 多个 Bot"]
+    Magpie["magpie（可选插件）\n通用模型网关"]
     Plugins["其他插件\nImmich · Navidrome · Paperless …"]
   end
 
@@ -35,13 +35,15 @@ flowchart LR
   end
 
   GitHub["GitHub\n插件仓库 · 官方索引"]
+  Providers["Hermes 自带供应商\nAPI key / 订阅登录"]
 
   ClientCore <-->|"iroh 隧道"| Core
   Core --> Tuwunel
   Agent <--> Tuwunel
-  Agent --> Magpie
+  Agent --> Providers
   Agent -->|"MCP"| Core
   Core -->|"MCP 与路由"| Plugins
+  Core -.->|"可选模型网关合同"| Magpie
   Tuwunel -->|"pusher"| Core
   Core -->|"加密通知"| PushRelay
   PushRelay -->|"APNs / FCM / HMS"| Client
@@ -62,8 +64,8 @@ flowchart LR
 | `hydra` | 核心组件 | OIDC 提供方，插件的单点登录（ADR-0009）。 |
 | `mailpit` | 核心组件 | 收插件应用发的信（SMTP），接入申请了 `notify` 的插件网络，只收发给家里人的内部邮箱；核心取走后转进聊天（ADR-0056）。 |
 | 第三方 App 入口 | 核心组件（主人打开才有） | 入口容器、局域网转发、连接器和 lego，由核心管理（ADR-0021）。连接器是 TCP 转发、frpc 或 cloudflared，主人在设置里选，公网访问有总开关（ADR-0090）；lego 用主人的 DNS 服务商（ADR-0089）。 |
-| `hermes` | 默认插件（可替换） | 默认 Agent，以 Matrix bot 身份接入；一个 Hermes profile 对应一个 Bot。核心启动后自动装一次，主人卸掉就不再装（ADR-0007）。 |
-| `magpie` | 系统插件 | 模型网关：provider 和 key 只配一次，供插件共用。主人换不掉；我们换实现时 Agent 不用改（ADR-0008）。模型来源边界见 ADR-0055。 |
+| `hermes` | 默认插件（可卸载） | 唯一默认 Agent，走原生 Matrix；各家人的私人 Bot、共享 Bot 保留独立身份与数据边界。核心按普通默认插件机制装一次，卸掉不重装；安装和运行不以 Magpie 为前置（ADR-0108）。 |
+| `magpie` | 可选普通插件 | 通用模型网关；核心和默认装机不依赖它，不再承担 Agent 的模型入口。通用网关合同及其使用方的凭据与授权边界保留（ADR-0008、ADR-0108）。 |
 | 其他 | 可选插件 | Immich、Navidrome、Paperless-ngx、Ollama、Syncthing、Samba 等。 |
 | `wonton-updater` | 一次性容器 | 升级核心时拉起，用核心自己的镜像：拉新镜像、重建核心、健康检查，失败回滚（ADR-0025）。 |
 
@@ -88,11 +90,11 @@ flowchart LR
 | Android | Jetpack Compose | 默认“保持连接”前台服务；UnifiedPush 是设置里的高级选项，推送服务内本地解密（ADR-0003）。 |
 | 桌面（M2） | Compose Multiplatform | 与 Android 共享 UI 模块。 |
 | Web（M3） | Compose 编译到 Web | 核心在服务器上运行，浏览器经 WebSocket 收发。 |
-| 客户端核心 | Rust + UniFFI | matrix-rust-sdk、iroh、本地代理、状态、ViewModel（含设置首页 `SettingsViewModel`）、行为测试。 |
+| 客户端核心 | Rust + UniFFI | matrix-rust-sdk、iroh、本地代理、状态、ViewModel（含设置首页 `SettingsViewModel`）、行为测试；壳经一个 `ClientCore.dispatch(Action)` 入口提交按领域包装的操作。 |
 
 界面文字在两端各自的本地化资源里，语言跟随系统，也能按平台惯例单独设置；客户端核心只给类别和原始值，App 的语言经 `Accept-Language` 带给家里的服务器和插件页（ADR-0043）。服务器把语言按人记下，插件经 OIDC 的 `locale` 声明和核心 MCP 的 `wonton__user_locale` 工具按人取，默认语言由插件自己定。
 
-客户端核心的“详情”用 `crates/wonton-client/locales` 的 Fluent 目录写，按 `SetLanguages` 第一项（App 在用的语言）协商，不支持的退到英文；一次请求用开始时的语言，上游原文和错误码原样嵌入，日志用英文。`CoreError` 的字段不变，前缀由客户端注册给协议 crate 的格式化函数按语言生成，不增加 UniFFI 类型。客户端和服务器共用 `wonton-l10n`（目录、CLDR 协商、一致性检查），资源和当前语言各自持有。
+客户端核心的“详情”用 `crates/wonton-client/locales` 的 Fluent 目录写，按 `SetLanguages` 第一项（App 在用的语言）协商，不支持的退到英文；一次请求用开始时的语言，日志用英文。连接失败的 `HomeStatus.message`、`ConnectionDetails.last_failure` 和配对失败说明只含本地化原因；原始错误及配对连接地址放进各自的可选 `diagnostic`，壳提供独立、默认收起且可复制的诊断入口。配对详情的实际总耗时与每个交换阶段的限时分别用秒表示，不把阶段限时当作整次耗时。其他详情保留上游原文和错误码。`CoreError` 的字段不变，前缀由客户端注册给协议 crate 的格式化函数按语言生成，不增加 UniFFI 类型。客户端和服务器共用 `wonton-l10n`（目录、CLDR 协商、一致性检查），资源和当前语言各自持有。
 
 系统入口（桌面小组件、系统搜索、iOS 控制按钮）不跑客户端核心：核心把当前服务器的最近会话、默认 Agent、联系人和插件投影成
 `wonton-protocol::widget` 的快照，写到数据目录下的 `widget/snapshot.json`（iOS 在 App Group 容器里），入口只读这份文件渲染，
@@ -101,6 +103,10 @@ flowchart LR
 iPad regular 宽度与 Android expanded 宽度使用“会话列表 + 当前内容”两栏；插件页只铺内容栏，窄屏保留单列和侧边栏抽屉。
 房间选择与导航路径属于窗口的壳内状态，尺寸变化只换布局、不替主人选择房间；插件页面栈仍由客户端核心维护。
 布局与内容窗口的边界见 [ADR-0103](adr/0103-ipad-and-large-screens.md)。
+iPad 内容窗口共享进程内的 `ClientCore`，不复制主页面栈。每份时间线订阅独立保活房间、保存滚动回执，
+最后一份订阅释放后撤销房间 watch；房间面板按房间路由。独立插件页通过 `subscribe_content_page` 保活，
+`PlacedTab::Content` 复用页面解析、权限与桥，加载状态与主栈同页共享，WebView 和场景滚动位置各自独立。
+端口自动映射取主页面与内容页的可见集合，最后一个页面关闭才释放；应用前后台与网络变化由进程级监听上报。
 
 账号槽位既可以是配对的 Wonton，也可以是外部 Matrix 账号；导航条目和应用页操作由客户端核心给出，
 壳不按槽位种类自行隐藏。好友身份、分组、插件分享和 OpenID 连接的边界见 [ADR-0051](adr/0051-friends-and-plugin-sharing.md)；
@@ -126,7 +132,7 @@ Matrix 邀请流程只在对方同意后调用存储 API；本机账号分配须
 
 ### 安装与配对
 
-1. 一行安装脚本拉起 `wonton-core` 和系统插件，并让用户选择存储目录。
+1. 一行安装脚本拉起 `wonton-core` 与核心组件，并让用户选择存储目录；默认 Hermes 沿用核心的普通默认插件安装机制，不先装 Magpie 或等待网关凭据（ADR-0108）。
 2. 核心生成服务器的 iroh 身份。还没有配对的设备时，局域网状态页和安装终端显示首次配对码的二维码，码里有
    服务器 endpoint ID、中继和直连地址和一次性密钥（格式见 ADR-0009 的“接口：扫码配对”）。
 3. App 扫码后经 iroh 连接核心、出示密钥。核心记下这台设备的 endpoint ID（QUIC 握手认证过的身份，以后只接受
@@ -141,9 +147,9 @@ Matrix 邀请流程只在对方同意后调用存储 API；本机账号分配须
 
 服务器比 App 旧时，引导不整页报错：某个接口回 404、而服务器报的版本比这个接口要的旧（`minimum_server_version`），客户端核心归成“服务器太旧”，这一步整步不显示、完成时也不做它；连引导接口都没有时整段不出现，只留一条升级服务器的提示。服务器不旧却回 404 的照旧按原类别报。服务器版本从核心升级状态的 `current.version` 取，取不到就不判旧。
 
-配对之后，App 依次带主人填资料、选默认的 Agent、接模型、按需求选应用，最后一页列出全部选择和权限，点完成才保存引导草稿、在后台装 Agent 和应用，然后进入聊天。每一步都能跳过，核心只记走没走完。Agent 名单和推荐清单放在官方索引里，核心取来交给 App，不用发版。
+默认助手只用 Hermes，引导不再要求选择内核或安装 Magpie。资料、应用推荐、安装权限和本地帮助的职责沿用 ADR-0034；内核选择、经桥订阅登录和固定 Magpie 模型页面的规则由 [ADR-0108](adr/0108-hermes-default-kernel.md) 取代。
 
-模型配置使用和侧栏“模型设置”相同的 magpie 原生网页，不另做服务商、key 和测试表单；网页保存不属于引导草稿。入口、官方订阅登录和保存边界见 [ADR-0034](adr/0034-onboarding-and-help.md#接模型)，页面外框见 [ADR-0038](adr/0038-multi-step-cards.md)。
+模型接入使用 Hermes 自带供应商与其原生登录、配置能力，不另建 Wonton provider 或登录适配。未配置、登录失效、上游失败和可用必须区分，不能以打开过页面代替真实模型可用；本篇不决定引导顺序、导航或控件。
 
 ### 帮助文档
 
@@ -152,8 +158,7 @@ Matrix 邀请流程只在对方同意后调用存储 API；本机账号分配须
 ### 聊天
 
 App 的 Matrix 客户端请求进入客户端核心的本地代理，经 iroh 隧道到核心网关，再转给 Tuwunel。
-Bot（Agent 插件）作为 Matrix 用户收到消息，按 [ADR-0055 的模型来源规则](adr/0055-model-gateway-optional.md#agent-的模型来源只有两种)调模型，通过 MCP 调工具，再把回复发回房间，
-由 Sliding Sync 同步到所有设备。
+Hermes 以对应 Bot 的 Matrix 身份收到消息，通过上游自带的供应商接入调模型、经 Wonton MCP 总线调受管工具，再把回复发回房间，由 Sliding Sync 同步到所有设备。模型接入和原生委派的边界见 [ADR-0108](adr/0108-hermes-default-kernel.md)。
 
 Agent 私聊里的插件未就绪提示由客户端核心从插件列表与本设备的启动请求合成：停止、启动中和按类别的启动失败分开显示，
 只在停止且没有启动请求进行中时提供启动动作。启动后重新读取服务器列表，不以按钮点击或启动响应伪造运行状态；
@@ -208,8 +213,8 @@ Agent／插件网络来源在 `self_request` 例外前拒绝；默认与非默�
 [`bot_web` 协议](../crates/wonton-protocol/src/bot_web.rs)区分 Bot 页身份、可用性和失败原因。
 Bot 页使用 `TabRef::Bot { bot: BotRef, path: Option<String> }`，不保存 URL，不降为插件页或公网网页。
 `None` 路径打开对应 `BotView.web.Ready.page.url`，`Some(path)` 仅允许同 origin 内的路径（含查询和片段）；
-选择沿用 `Action::SelectTab`，固定沿用 `PinTab`、`PinCurrentPage` 和 `Panel`，`PlacedTab` 保留同一 Bot 身份及路径。
-聊天已有的 `BotView` watch 通道接入 `TabsLink`，网页状态变化时重算 `TabsViewModel` 的 `TabPage`；
+打开沿用 `PageAction::OpenPage`，加入沿用 `PageAction::AddMyApp`、`PageAction::PinCurrentPage` 和面板，`PlacedTab` 保留同一 Bot 身份及路径。
+聊天已有的 `BotView` watch 通道接入 `PagesLink`，网页状态变化时重算 `PagesViewModel` 的 `TabPage`；
 URL 只来自精确匹配该 `BotRef` 的 Ready 页面，不读 `plugin.web_url`，桥和媒体以 `TabPage.url` 的精确 origin 为准。
 `BotView.web: None` 没有验证可用的 URL；未知、缺失或错误时不发页面 URL，断连或身份变化时清空，不猜 URL 或回退默认 Bot。
 Bot 页复用既有页面容器、桥、媒体和 `--wonton-*`，不另造壳层 WebView、不省略桥。
@@ -242,9 +247,9 @@ MCP 服务和模型网关同一条规则，局域网端口本来就直连各自�
    开卡时一个收件人都没有设备则如实回 503 `confirmation_unavailable`。不能装的人请求返回 403 并写明缺的是哪一项。确认权限的页面随请求带开放范围：哪些角色能打开这个应用
    （“全部应用”的角色自动在内、不可取消），装好后主人可在应用详情里改（只收主人）。
 4. 如果是 Bot 发起的安装，确认按钮出现在聊天里，卡片的批准同样按 Bot 归属人的这一项判断。
-5. 核心准备插件要用的身份和凭据（Bot 账号与令牌、模型网关凭据、插件密钥、OIDC 客户端），渲染
+5. 核心按清单准备所需身份和凭据（Bot 账号与令牌、声明使用模型网关时的受限凭据、插件密钥、OIDC 客户端），渲染
    compose 时注入它们和应用数据目录、已授权的共享文件夹（变量见插件规范），并为插件建独立的
-   Docker 网络：插件经核心访问模型网关和 Tuwunel，出网规则见插件规范。
+   Docker 网络。Tuwunel 和声明使用的通用模型网关经核心访问；Hermes 的供应商接入归上游，出网规则见插件规范。
 6. 经 Docker API 启动，健康检查通过后注册网页路由和 MCP 端点，然后通知主人。
 
 同插件服务可用 Compose 的 `network_mode: service:<服务>` 共用网络命名空间，目标必须使用插件网络且与共用者属于同一
@@ -263,13 +268,15 @@ Agent 通过 MCP 调用核心 MCP 总线。总线按 Bot 放行：主人对某�
 `readOnlyHint: true` 的插件工具；“删除要管理员批”时会改工具的卡片给归属人，会删或覆盖的卡片给管理员；“改动自己确认”
 照常确认并可按 ADR-0024 放宽。共享 Bot 有进行中的轮次时按其中最低级别，没有轮次时按能用它的人里最低级别；查不到人或角色按最严的只读处理并记日志。
 Bot 的容器按 Bot 注入 `WONTON_BOT_AI_LEVEL`（单 Bot 的插件在插件级变量里，值是主人的“改动自己确认”）：私人 Bot 是归属人角色的级别，
-共享 Bot 是能用人里最低的；Agent 插件和桥凭它锁模式。
+共享 Bot 是能用人里最低的；Agent 插件按上游能力落实这项限制，核心总线仍独立校验，不把上游审批当作 Wonton 授权。
 工具调用转给插件时，私人 Bot 的 `_meta` 带归属人的
 `app.wonton/user` 和他在这个应用里的能力 `app.wonton/capabilities`（主人或“在这个应用里当管理员”的人是
 `["plugin_admin"]`）；共享 Bot 和界面的调用不带人也不带能力，插件按全家共用的数据处理
 （[ADR-0088](adr/0088-family-accounts.md) 第 8 节）。敏感操作（装卸插件、删文件、改设置、对外发送）不会直接执行：核心记下一张确认卡片并按收件人推送（归属人，或按上面级别给管理员），App 把它显示在发起的会话里和“等你确认”列表里
 （卡片不进 Matrix 房间，来源会话由 Agent 一侧报、核心核对），主人在 App 里点确认（经隧道请求核心）后才执行，并写审计日志，
 最后把结果返回给 Agent（ADR-0016）。主人可以调整插件工具的确认（ADR-0024）。Agent 有事要主人定时，在 Bot 私聊里用文字问（ADR-0038）。
+
+Wonton 受管资源仍由核心确认，主人设定的自动放行范围不变；Agent 容器内自身工具与原生委派按上游审批，须说明能读取本 Bot 数据和凭据的风险，不宣称所有动作均由核心逐步审批。受控发送保留收件人、全文确认、来源身份与实际投递回报，不能用 Hermes 裸发送替代（ADR-0108）。
 
 Bot 用 `wonton__get_profile`、`wonton__set_profile` 读写自己的资料，无需确认；名字规则、头像检查和每小时成功次数上限由核心统一执行，见 [ADR-0044](adr/0044-bot-profile-and-status-avatars.md)。
 
@@ -303,27 +310,23 @@ Bot 用 `wonton__get_profile`、`wonton__set_profile` 读写自己的资料，�
 
 ## Bot 与 Agent
 
-- Bot = 一个 Matrix 身份 + 一个驱动它的 Agent 插件。核心负责给 Bot 分配身份、权限、模型访问和工具，
-  不和具体 Agent 耦合。
+- Bot = 一个 Matrix 身份 + 一个驱动它的 Agent 插件。核心分配身份、权限与受管工具，不承载 Agent 循环或供应商适配；模型网关是按声明使用的通用能力，不是默认 Hermes 的模型前置。
 - 名字、静态头像和状态头像组以 Matrix 资料为准；主人经隧道接口修改，Agent 可经自身 Matrix 身份或核心工具修改。清单只初始化新账号的名字和静态头像，状态头像只补不存在的字段。核心写入共用 `PluginManager::profile_revisions()` 的版本表，见 [ADR-0044](adr/0044-bot-profile-and-status-avatars.md)。
-- 会说 Matrix 的 Agent 直接接入（Hermes 的 Matrix 平台）。支持 ACP 的 Agent（Codex、Claude Code、
-  Gemini CLI、OpenCode 等）通过通用“ACP 桥”插件接入：一个聊天房间对应一个 ACP 会话，ACP 的权限
-  请求对应聊天里的确认按钮。
-  `agent_acp` 的跨插件调用由核心在创建会话前核对并重写链载体；载体核对规则见
-  [ADR-0061 第 12 节](adr/0061-agent-runtime-and-frontends.md#12-跨插件传链sessionnew-的-_meta-里带链载体)。
-- 模型来源与缺网关处理见 [ADR-0055](adr/0055-model-gateway-optional.md)，官方订阅登录和统一的模型设置入口见 [ADR-0034](adr/0034-onboarding-and-help.md#接模型)。
+- 唯一默认内核为 Hermes，使用其原生 Matrix、MCP 和供应商接入。调用 Codex、Claude Code 等走 Hermes 自带 ACP 委派，不再建设 Wonton ACP 桥、`agent_acp` 网关或逐家登录与模式适配；OpenClaw 只作替换备选，不同时维护两套默认体验（[ADR-0108](adr/0108-hermes-default-kernel.md)）。
+- 原生委派不自动创建另一个 Wonton Bot，也不继承另一个 Bot 的身份或权限。任务、透明记忆、晨报与提醒复用 Hermes 既有能力；App 的具体交互不在本篇固定。旧 ACP 专用资产与通用底座的拆分边界见 ADR-0108。
+- Hermes 插件仅做 Compose、配置、环境变量与最少胶水，原样使用按版本和摘要固定的上游官方镜像，不改源码、不打补丁；升级更新版本并运行真实冒烟，不把文档决定当实现验收。
 - 每个家人有自己的账号、私人 Bot 和私人空间，主人可以建共享 Bot 拉进家庭群；同机的 Bot 之间经联系人互发消息，网关限频率和跳数。见 [ADR-0045](adr/0045-family-members.md)。
 - 网关的管理接口按 ADR-0088 的权限项判断：每个接口声明要哪一项，主人一律放行，其余按这个家人的角色判断，
   缺了回 403 `permission_required` 并写明缺的项；角色的管理本身仍在角色之外，只收主人。
 - 成员邀请按角色发码：主人可选角色，其他有“管理成员”的人只能用默认邀请角色。扫码交码先记绑定设备的加入请求，
   管理员批准时才登记设备；同设备在邀请码的 24 小时期限内重试幂等，其他设备不能复用，被拒绝后要重新邀请。
   已加入的成员给自己添加设备不再审批。见 [ADR-0088](adr/0088-family-accounts.md)。
-- 批准加入后，核心为非朋友模板的成员建立或加入加密家庭群，写入 `app.wonton.family` 状态；只认管理账号创建的群，
-  没有群且仍有家人时重建。朋友模板不自动入群，换成朋友模板或移除成员时踢出。
+- 批准加入后，核心为非朋友模板的成员建立或加入加密家庭群，写入内容非空的 `app.wonton.family` 状态；只认管理账号创建且带标记的群，
+  不按群名收编历史房间。没有群且仍有家人时重建。朋友模板不自动入群，换成朋友模板或移除成员时踢出。
   主人和有“管理成员”权限的人在房间里为 100，其余为 0；管理账号作为 v12 创建者保留隐含最高权限，不写入 `users`。
   批准、成员角色分配、角色权限修改和移除都等同步结束再返回成功；同步失败回 503 并记日志，已落盘的成员与角色记录不回滚。
   下次这些操作或核心启动时全量重算；管理员也可调用 `POST /_wonton/api/members/family-room/sync` 重试，无需重新邀请。
-- 批准加入后，角色允许私人空间的成员会有 `core/home/<用户名>`（0700）；邀请时选择私人 Bot 的，按引导里选定的主 Agent 创建。
+- 批准加入后，角色允许私人空间的成员会有 `core/home/<用户名>`（0700）；邀请时选择私人 Bot 的，按默认 Agent 插件创建（默认 Hermes）。
   Bot 引用先持久预留，健康检查和私聊交接完成才发布到成员记录；管理员可查看引用这一管理信息，不获得私人聊天或文件访问权。
   Matrix 账号与设备先保存为独立预留，不进入可用 Bot 列表；房间的 `app.wonton.bot_home` 标记让建房回复丢失后可找回原私聊。
   插件的 `storage.home` 只给 Bot 服务自动挂载归属人的家到 `/wonton/home`；只读声明或归属人的 AI 为只读时强制只读，
@@ -337,12 +340,12 @@ Bot 用 `wonton__get_profile`、`wonton__set_profile` 读写自己的资料，�
 
 ## 安全模型
 
-- Agent 是不可信执行者：独立容器，只看得到自己的工作区和被授权的文件夹，没有 Docker socket，
-  也没有宿主 root。
+- Agent 是不可信执行者：每个私人或共享 Bot 运行在独立容器与数据边界里，只看得到自己的工作区和被授权的文件夹，没有 Docker socket，
+  也没有宿主 root。同容器内的 profile 不是抵挡自身 shell 读取的隔离边界。
 - 插件权限写在清单里，安装时确认。高权限声明了就给，按风险分三级提示；Docker socket、特权模式这类等于交出宿主 root
   的单独确认；Agent 和 Bot 插件拿不到它们（ADR-0036）。
   显卡由核心按宿主实际有的显卡交给清单指定的服务（ADR-0018）。
-- 模型服务商的 key 由模型网关保存，Agent 只拿受限网关凭据；官方订阅登录态的边界见 ADR-0034。
+- Hermes 的供应商密钥与订阅登录态按上游方式归对应 Bot 保存，自身工具可能读到它们，须明确风险；通用模型网关的使用方仍只获受限网关凭据。不再以“所有 Agent 只拿网关凭据”描述安全边界（ADR-0108）。
 - 来自其他 Bot、网页、文件的内容都视为不可信输入。
 
 ## 仓库布局
@@ -366,6 +369,10 @@ docs/                文档
 scripts/             CI 与开发脚本
 ```
 
+插件清单的类型和 serde 解析在 `wonton-protocol::manifest`，不导出到 UniFFI；服务端的
+`plugin::manifest` 重新导出这些类型。语义校验、权限风险表、Compose 白名单和规范版本下限仍由
+`wonton-core` 执行；`ManifestExt`、`PermissionExt` 扩展 trait 保留核心的校验与权限计算方法。
+
 ## 选型
 
 | 能力 | 选型 | 许可证 | 状态 |
@@ -376,9 +383,9 @@ scripts/             CI 与开发脚本
 | 中继与发现 | iroh-relay、iroh-dns-server | MIT / Apache-2.0 | 已定 |
 | 推送中继 | gorush（APNs、FCM、HMS） | MIT | 已定；小米、OPPO、vivo 在 M2 |
 | Docker 管理 | bollard | Apache-2.0 | 已定 |
-| 默认 Agent | Hermes Agent | MIT | 已定 |
-| Agent 接入 | Matrix 原生、ACP | Apache-2.0（ACP 规范） | 已定 |
-| 模型网关 | magpie | MIT | 已定 |
+| 默认 Agent | Hermes Agent，原版官方镜像 | MIT | 单一默认内核；OpenClaw 仅替换备选（ADR-0108） |
+| Agent 接入与委派 | Hermes 原生 Matrix；调用其他 Agent 用 Hermes 原生 ACP 委派 | Apache-2.0（ACP 规范） | 不再自建 ACP 桥（ADR-0108） |
+| 模型接入与可选网关 | Hermes 自带供应商接入；magpie 是普通可选插件 | Hermes、magpie：MIT | 核心和默认装机不依赖 magpie（ADR-0108） |
 | MCP 总线 | 官方 Rust SDK rmcp，在核心里做最小聚合 | Apache-2.0 | 已定（ADR-0006） |
 | 插件商店 | 插件仓库按 GitHub topic 发现，官方索引是一个仓库（参考 magpie） | — | 已定（ADR-0017） |
 | OIDC 提供方 | Ory Hydra | Apache-2.0 | 已定（ADR-0009） |

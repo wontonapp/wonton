@@ -60,7 +60,7 @@ ADR-0046 已经给了不用恢复密钥的路：SAS 自我验证，验证后自�
 
 ### 接进配对的每一步
 
-1. 旧设备：设置 → 添加设备，显示配对码（`Action::InviteDevice` → `DeviceInvite::Ready`，不变）。
+1. 旧设备：设置 → 添加设备，显示配对码（`HomeAction::InviteDevice` → `DeviceInvite::Ready`，不变）。
 2. 新设备扫码，经隧道配对（`PairHome`），核心签 JWT，新设备登录 Matrix、上传设备密钥（不变）。
 3. 新设备核心：首次登录、本设备未验证、`has_devices_to_verify_against()` 为真时，**自动**发自我验证请求，不等主人点。
    交接期间核心不给“输入恢复密钥”提醒和 `key_notice`，`recovery_next_step` 是新类别“等另一台设备”；壳整屏画交接页

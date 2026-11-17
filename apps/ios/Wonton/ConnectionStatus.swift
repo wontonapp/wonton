@@ -191,7 +191,7 @@ struct ConnectionView: View {
                     WontonRow(title: String(localized: .Egress.egressPathHomeServer), value: view.details.server.text)
                 }
                 if let retrying = view.notice?.retrying {
-                    RetryButton(retrying: retrying) { model.send(.retryConnection) }
+                    RetryButton(retrying: retrying) { model.send(.home(action: .retryConnection)) }
                 }
                 WontonGroup {
                     NavigationLink(value: SettingsRoute.connectionDetails) {
@@ -226,11 +226,17 @@ struct ConnectionView: View {
                 .buttonStyle(.plain)
                 WontonGroup {
                     NavigationLink(value: SettingsRoute.pairing) {
+                        // 进入只是打开配对码页面；断开现在的连接发生在提交新的配对码之后（#712），入口不用破坏性的红色。
                         WontonRow(
                             title: String(localized: .Connection2.connectionPairAgain),
-                            titleTint: colors.danger, showsForward: true
+                            showsForward: true
                         )
                     }
+                    Text(.Connection0.connectionPairAgainHint)
+                        .wontonText(WontonTheme.typography.supporting)
+                        .foregroundStyle(Color(colors.textSecondary))
+                        .padding(.horizontal, WontonTheme.spacing.s16)
+                        .padding(.bottom, WontonTheme.spacing.s12)
                 }
                 .buttonStyle(.plain)
             }
@@ -257,6 +263,14 @@ struct ConnectionDetailsView: View {
                     WontonGroup {
                         WontonRow(title: String(localized: .Connection0.connectionDetailLastFailure), value: failure)
                     }
+                }
+                if let diagnostic = details.diagnostic, !diagnostic.isEmpty {
+                    ProblemDetail(
+                        text: diagnostic, minimumTargetHeight: WontonTheme.size.target,
+                        label: .Common.commonDiagnostics
+                    )
+                    .frame(maxWidth: .infinity, alignment: .leading)
+                    .id(diagnostic)
                 }
             }
             .padding(WontonTheme.spacing.pageInset)

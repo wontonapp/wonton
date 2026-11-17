@@ -22,8 +22,8 @@ struct OnboardingView: View {
         StepCardFrame(
             nav: nav, title: view.step?.title ?? "", primaryTitle: primaryTitle,
             isWorking: view.loading || view.review.commit == .running,
-            back: { model.send(.backOnboardingStep) },
-            skip: { model.send(.skipOnboardingStep) }, next: advance,
+            back: { model.send(.onboarding(action: .backOnboardingStep)) },
+            skip: { model.send(.onboarding(action: .skipOnboardingStep)) }, next: advance,
             close: close.map { _ in handleClose },
             content: {
                 ScrollViewReader { proxy in
@@ -51,7 +51,7 @@ struct OnboardingView: View {
                 enabled: nav.canClose, webView: nil,
                 exit: {
                     if nav.canBack {
-                        model.send(.backOnboardingStep)
+                        model.send(.onboarding(action: .backOnboardingStep))
                     } else {
                         handleClose()
                     }
@@ -62,7 +62,7 @@ struct OnboardingView: View {
 
     @ViewBuilder private func content(_ proxy: ScrollViewProxy) -> some View {
         if let problem = view.problem {
-            ProblemView(problem: problem.problem) { model.send(.refreshOnboarding) }
+            ProblemView(problem: problem.problem) { model.send(.onboarding(action: .refreshOnboarding)) }
         } else {
             VStack(alignment: .leading, spacing: WontonTheme.spacing.s16) {
                 if let problem = model.rejection {
@@ -76,7 +76,9 @@ struct OnboardingView: View {
                         OnboardingProfileStepView(profile: view.profile, send: model.send)
                     }
                 case .agent:
-                    OnboardingAgentStep(agents: view.agents) { model.send(.chooseOnboardingAgent(id: $0)) }
+                    OnboardingAgentStep(agents: view.agents) {
+                        model.send(.onboarding(action: .chooseOnboardingAgent(id: $0)))
+                    }
                 case .model:
                     OnboardingModelStepView(step: view.model, send: model.send,
                                             openGateway: openGateway,
@@ -103,7 +105,7 @@ struct OnboardingView: View {
     }
 
     private func advance() {
-        model.send(.continueOnboarding)
+        model.send(.onboarding(action: .continueOnboarding))
     }
 }
 

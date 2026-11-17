@@ -23,7 +23,8 @@ use super::github_source::Origin;
 use super::images::IconFormat;
 use super::interpolate::{UsedVars, Vars, interpolate, interpolate_value};
 use super::languages::Languages;
-use super::manifest::{Manifest, ManifestError};
+use super::manifest::{Manifest, ManifestError, ManifestExt};
+use super::manifest_static::StaticWebManifestExt;
 use super::package_archive;
 use super::package_files::{
     self, COMPOSE_FILE, FileError, MAX_FILE_BYTES, MAX_PACKAGE_BYTES, PackageFiles,

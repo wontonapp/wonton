@@ -134,8 +134,8 @@ pub struct ContactRequest {
 }
 
 /// 等这个人处理的一条联系人请求（[`ContactState::Incoming`]），“等你确认”列表里的一项。用
-/// [`Action::ApproveBotContact`](crate::Action::ApproveBotContact)、
-/// [`Action::RejectBotContact`](crate::Action::RejectBotContact) 处理，和联系人页是同一对动作。
+/// [`BotContactAction::ApproveBotContact`](crate::BotContactAction::ApproveBotContact)、
+/// [`BotContactAction::RejectBotContact`](crate::BotContactAction::RejectBotContact) 处理，和联系人页是同一对动作。
 #[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize)]
 #[cfg_attr(feature = "uniffi", derive(uniffi::Record))]
 pub struct PendingContactRequest {
@@ -289,7 +289,7 @@ pub enum ContactOutcome {
 #[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize)]
 #[cfg_attr(feature = "uniffi", derive(uniffi::Record))]
 pub struct BotContactsViewModel {
-    /// 正在看的 Bot（[`Action::RefreshBotContacts`](crate::Action::RefreshBotContacts) 选的）；还没打开过时为空。
+    /// 正在看的 Bot（[`BotContactAction::RefreshBotContacts`](crate::BotContactAction::RefreshBotContacts) 选的）；还没打开过时为空。
     pub bot: Option<BotRef>,
     pub state: BotContactsState,
     /// 先是等这个 Bot 的归属人处理的请求，再是其他的；各自按时间排。

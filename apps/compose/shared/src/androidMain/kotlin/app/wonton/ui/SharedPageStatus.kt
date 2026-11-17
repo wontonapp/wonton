@@ -9,6 +9,8 @@ import androidx.compose.foundation.layout.padding
 import androidx.compose.runtime.Composable
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.res.stringResource
+import app.wonton.protocol.PageAction
+import app.wonton.protocol.SharingAction
 import app.wonton.protocol.Action
 import app.wonton.protocol.PlacedTab
 import app.wonton.protocol.SharedAppsSource
@@ -45,15 +47,15 @@ internal fun SharedPageStatus(
             ProblemNotice(failure)
             if (supported) WontonButton(stringResource(R.string.common_retry), {
                 if (source?.state !is SharedAppsState.Ready || row == null || row.problem != null) {
-                    tabs.send(Action.RefreshSharedApps(tab.ownerUserId))
+                    tabs.send(Action.Sharing(SharingAction.RefreshSharedApps(tab.ownerUserId)))
                 }
-                tabs.send(Action.ReloadTab(PlacedTab.Page(tab)))
+                tabs.send(Action.Pages(PageAction.ReloadTab(PlacedTab.Page(tab))))
             }, kind = WontonButtonKind.SECONDARY)
         } else LoadingView()
         WontonButton(stringResource(R.string.share_refresh), {
-            tabs.send(Action.RefreshSharedApps(tab.ownerUserId))
+            tabs.send(Action.Sharing(SharingAction.RefreshSharedApps(tab.ownerUserId)))
         }, kind = WontonButtonKind.SECONDARY)
-        WontonButton(stringResource(R.string.common_close), { tabs.send(Action.ClosePage) },
+        WontonButton(stringResource(R.string.common_close), { tabs.send(Action.Pages(PageAction.ClosePage)) },
             kind = WontonButtonKind.SECONDARY)
     }
 }

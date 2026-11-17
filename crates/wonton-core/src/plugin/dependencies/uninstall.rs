@@ -86,8 +86,14 @@ impl PluginManager {
                 };
                 if !approve_connections
                     && super::high(&provider.listed.manifest, capability)
-                    && super::connection(&state, &consumer.manifest.id, &provider.id, capability)
-                        .is_none()
+                    && super::connection(
+                        &state,
+                        &consumer.manifest.id,
+                        &provider.id,
+                        capability,
+                        None,
+                    )
+                    .is_none()
                 {
                     approval = Some(InstallError::PermissionNotGranted(crate::l10n::text(
                         langs,
@@ -139,17 +145,20 @@ pub(super) fn remaining_provider<'a>(
     capability: &str,
     removing: &[PluginId],
 ) -> Option<&'a super::Provider> {
-    let retained = |id: &&String| {
-        !removing
-            .iter()
-            .any(|removed| removed.as_str() == id.as_str())
-    };
+    let retained = |id: &&str| !removing.iter().any(|removed| removed.as_str() == *id);
     let selected = state
         .selected
         .get(consumer.as_str())
         .and_then(|choices| choices.get(capability))
+        .and_then(super::binding::Binding::provider)
         .filter(retained)
-        .or_else(|| state.defaults.get(capability).filter(retained));
+        .or_else(|| {
+            state
+                .defaults
+                .get(capability)
+                .map(String::as_str)
+                .filter(retained)
+        });
     providers.iter().find(|provider| {
         !removing.contains(&provider.id)
             // 自己提供不算替代：requires 要的是别的插件（ADR-0061 第 9 节）。

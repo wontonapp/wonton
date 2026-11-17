@@ -169,6 +169,7 @@ impl PluginManager {
                 )),
                 app_url: None,
                 oidc: None,
+                dependencies: self.dependency_vars(&package.manifest, Some(bot))?,
                 ai_level,
                 keeper_read_only,
             }
@@ -272,8 +273,7 @@ impl PluginManager {
     ) -> Result<(), InstallError> {
         let id = PluginId::parse(&reference.plugin_id)
             .map_err(|e| InstallError::Invalid(e.to_string()))?;
-        let _allocating = self.bot_allocation.lock().await;
-        self.remove_bot_locked(&id, &reference.bot, keep_data, Some(username))
+        self.remove_bot_checked(&id, &reference.bot, keep_data, Some(username))
             .await?;
         Ok(())
     }

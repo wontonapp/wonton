@@ -70,7 +70,11 @@ async fn flicker(phone: &Phone, home: &Home, poke_room: &ChatRoom, room_id: &str
     })
     .await;
     // 叫醒等退避的重启：回到前台本来就不等间隔（`MatrixSession::resume`），测试里逐次注入用得上。
-    phone.dispatch(Action::AppForegrounded).unwrap();
+    phone
+        .dispatch(Action::Home {
+            action: wonton_protocol::HomeAction::AppForegrounded,
+        })
+        .unwrap();
     phone
         .wait_chat_within_and_sync(home, "行错标成受邀", WAIT, |view| {
             view.rooms
@@ -91,7 +95,11 @@ async fn flicker(phone: &Phone, home: &Home, poke_room: &ChatRoom, room_id: &str
         home.room_list_sync_expired().then_some(())
     })
     .await;
-    phone.dispatch(Action::AppForegrounded).unwrap();
+    phone
+        .dispatch(Action::Home {
+            action: wonton_protocol::HomeAction::AppForegrounded,
+        })
+        .unwrap();
     phone
         .wait_chat_within_and_sync(home, "行回到已加入", WAIT, |view| {
             view.rooms
@@ -186,7 +194,11 @@ async fn a_sync_restart_reapplies_the_open_rooms_subscription() {
         .await
         .expect("戳一下同步");
     // 叫醒等退避的重启，不等间隔。
-    phone.dispatch(Action::AppForegrounded).unwrap();
+    phone
+        .dispatch(Action::Home {
+            action: wonton_protocol::HomeAction::AppForegrounded,
+        })
+        .unwrap();
     wait_for_sync("重启后订阅补挂", &home, || {
         let requests = room_list_requests(&home, injected);
         // 重启的首条请求无 pos，首条和后续带 pos 的请求都必须保留订阅。

@@ -28,8 +28,10 @@ async fn signed_in() -> (tempfile::TempDir, Home, Phone) {
 async fn start_direct_chat(home: &Home, phone: &Phone) {
     let bob = home.bot("bob", "Bob").await;
     phone
-        .dispatch(Action::StartDirectChat {
-            user_id: bob.user_id().to_string(),
+        .dispatch(Action::Chat {
+            action: wonton_protocol::ChatAction::StartDirectChat {
+                user_id: bob.user_id().to_string(),
+            },
         })
         .unwrap();
 }
@@ -87,8 +89,10 @@ async fn a_refused_join_is_not_reported_as_an_expired_login() {
     let room_id = invited_by_the_bot(&home, &phone).await;
     home.refuse_matrix("/join", 403, "M_FORBIDDEN");
     phone
-        .dispatch(Action::JoinRoom {
-            room_id: room_id.to_string(),
+        .dispatch(Action::Chat {
+            action: wonton_protocol::ChatAction::JoinRoom {
+                room_id: room_id.to_string(),
+            },
         })
         .unwrap();
     let problem = problem(&phone, "加入被拒").await;

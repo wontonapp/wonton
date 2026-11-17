@@ -184,8 +184,8 @@ struct SidebarPanel: View {
             }
         }
         .task {
-            plugins.refresh(.refreshPlugins)
-            plugins.refresh(.refreshStore(force: false))
+            plugins.refresh(.plugins(action: .refreshPlugins))
+            plugins.refresh(.plugins(action: .refreshStore(force: false)))
         }
     }
 
@@ -241,7 +241,7 @@ struct SidebarPanel: View {
                 Text(TabText.syncStale)
                     .wontonText(WontonTheme.typography.supporting)
                 Spacer(minLength: 0)
-                Button(TabText.syncStaleRetry) { pages.send(.retryMyAppSync) }
+                Button(TabText.syncStaleRetry) { pages.send(.pages(action: .retryMyAppSync)) }
                     .buttonStyle(WontonSmallButtonStyle())
             }
             .padding(.horizontal, WontonTheme.spacing.s12)
@@ -260,15 +260,16 @@ struct SidebarPanel: View {
 
     /// 长按：这一插件的每一页，加进或移出“我的应用”。
     @ViewBuilder private func myAppMenu(_ app: SidebarApp) -> some View {
+        if case let .page(tab) = app.open { ContentWindowButton(target: .tab(tab: tab)) }
         let plugin = plugins.viewModel.installed?.plugins.first { $0.id == app.pluginId }
         let mine = sidebar.apps.compactMap(\.tab)
         ForEach(plugin?.tabChoices ?? []) { choice in
             let added = mine.contains(choice.tab)
             Button {
                 if added {
-                    pages.send(.removeMyApp(app: .page(tab: choice.tab)))
+                    pages.send(.pages(action: .removeMyApp(app: .page(tab: choice.tab))))
                 } else {
-                    pages.send(.addMyApp(app: .page(tab: choice.tab), title: nil, index: nil))
+                    pages.send(.pages(action: .addMyApp(app: .page(tab: choice.tab), title: nil, index: nil)))
                 }
             } label: {
                 Label(

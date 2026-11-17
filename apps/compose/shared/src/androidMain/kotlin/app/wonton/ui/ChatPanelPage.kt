@@ -16,6 +16,7 @@ import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.unit.dp
 import androidx.webkit.WebViewFeature
 import app.wonton.client.TabBridgeAction
+import app.wonton.protocol.PageAction
 import app.wonton.protocol.Action
 import app.wonton.protocol.AppearanceViewModel
 import app.wonton.protocol.HomeStatus
@@ -134,7 +135,7 @@ internal fun PanelPage(
         if (panel.level == PanelLevel.FULL && current) {
             PluginPageChrome(tab, tabs, safe, 0.dp, shortStatus(page), capsule, state.controller, takeover,
                 onClose = { panel.move(PanelLevel.CLOSED) },
-                onReload = { tabs.send(Action.ReloadTab(place)) },
+                onReload = { tabs.send(Action.Pages(PageAction.ReloadTab(place))) },
                 onDetails = onDetails,
                 onEditPanel = { panel.editing = true })
         }

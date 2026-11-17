@@ -24,7 +24,7 @@ use super::lifecycle::LifecycleConfig;
 use super::listed::Listed;
 #[cfg(test)]
 use super::manifest::Permission;
-use super::manifest::{LocalizedText, Manifest, PluginId};
+use super::manifest::{LocalizedText, Manifest, ManifestExt, PluginId};
 use super::mcp_server::{McpServer, ToolLimits};
 #[cfg(test)]
 use super::models::ModelsRoute;

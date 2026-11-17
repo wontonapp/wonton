@@ -13,6 +13,7 @@ import androidx.test.ext.junit.runners.AndroidJUnit4
 import androidx.test.platform.app.InstrumentationRegistry
 import androidx.test.rule.GrantPermissionRule
 import app.wonton.protocol.Action
+import app.wonton.protocol.PageAction
 import app.wonton.protocol.TabRef
 import app.wonton.ui.send
 import org.junit.Assert.assertNull
@@ -41,7 +42,7 @@ class MainNavigationTest {
     @Before
     fun startFromChatRoot() {
         val core = (compose.activity.application as WontonApplication).core.getOrThrow()
-        assertNull(core.send(Action.OpenPage(TabRef.Chat)))
+        assertNull(core.send(Action.Pages(PageAction.OpenPage(TabRef.Chat))))
         assertChatRoot()
     }
 

@@ -226,8 +226,10 @@ pub(super) fn clear_closed(state: &mut PagesState) {
         return;
     };
     let shown = state.stack.last().is_some_and(|item| item.tab == page.tab);
-    let elsewhere = match (&page.tab, &state.open_room) {
-        (TabRef::Widget { room_id, .. }, Some((open, _))) => open.as_str() != room_id,
+    let elsewhere = match &page.tab {
+        TabRef::Widget { room_id, .. } => {
+            !state.rooms.is_empty() && !state.rooms.contains_key(room_id)
+        }
         _ => false,
     };
     if !shown || elsewhere {

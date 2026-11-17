@@ -11,6 +11,7 @@ import androidx.compose.ui.test.performClick
 import androidx.test.core.app.ApplicationProvider
 import androidx.test.ext.junit.runners.AndroidJUnit4
 import app.wonton.protocol.Action
+import app.wonton.protocol.BotContactAction
 import app.wonton.protocol.BotContact
 import app.wonton.protocol.BotContactFailure
 import app.wonton.protocol.BotContactsState
@@ -92,8 +93,8 @@ class BotContactsContentTest {
         assertEquals(emptyList<BotContact>(), remoteApproved)
         assertEquals(
             listOf(
-                Action.ApproveBotContact(bot, "@a:b.example"),
-                Action.RejectBotContact(bot, "@a:b.example"),
+                Action.BotContacts(BotContactAction.ApproveBotContact(bot, "@a:b.example")),
+                Action.BotContacts(BotContactAction.RejectBotContact(bot, "@a:b.example")),
             ),
             sent,
         )
@@ -133,7 +134,7 @@ class BotContactsContentTest {
 
         compose.onNodeWithText(context.getString(R.string.contacts_withdraw)).performClick()
 
-        assertEquals(listOf<Action>(Action.RemoveBotContact(bot, "@p:b.example")), sent)
+        assertEquals(listOf<Action>(Action.BotContacts(BotContactAction.RemoveBotContact(bot, "@p:b.example"))), sent)
     }
 
     @Test
@@ -154,7 +155,7 @@ class BotContactsContentTest {
 
         compose.onNodeWithText(context.getString(R.string.common_retry)).performClick()
 
-        assertEquals(listOf<Action>(Action.RefreshBotContacts(bot)), sent)
+        assertEquals(listOf<Action>(Action.BotContacts(BotContactAction.RefreshBotContacts(bot))), sent)
     }
 
     @Test

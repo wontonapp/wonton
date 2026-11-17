@@ -14,7 +14,7 @@ struct MyAppsSettingsView: View {
             Section {
                 Toggle(String(localized: .myappAutoAdd), isOn: Binding(
                     get: { pages.viewModel.autoAdd },
-                    set: { pages.send(.setAutoAddApps(enabled: $0)) }
+                    set: { pages.send(.pages(action: .setAutoAddApps(enabled: $0))) }
                 ))
             }
             Section(String(localized: .Sidebar.sidebarMyApps)) {
@@ -36,13 +36,13 @@ struct MyAppsSettingsView: View {
                     for sourceIndex in source {
                         guard let app = apps[safe: sourceIndex], let appRef = app.myAppRef else { continue }
                         let target = destinationIndex(destination, removingAt: sourceIndex, count: apps.count)
-                        pages.send(.moveMyApp(app: appRef, index: UInt32(target)))
+                        pages.send(.pages(action: .moveMyApp(app: appRef, index: UInt32(target))))
                     }
                 }
                 .onDelete { source in
                     for index in source {
                         guard let app = apps[safe: index], let appRef = app.myAppRef else { continue }
-                        pages.send(.removeMyApp(app: appRef))
+                        pages.send(.pages(action: .removeMyApp(app: appRef)))
                     }
                 }
                 if !pages.viewModel.myAppCandidates.isEmpty, editMode?.wrappedValue != .active {
@@ -89,7 +89,7 @@ private struct MyAppCandidates: View {
         List {
             ForEach(pages.viewModel.myAppCandidates, id: \.tab) { (candidate: TabCandidate) in
                 Button {
-                    pages.send(.addMyApp(app: .page(tab: candidate.tab), title: nil, index: nil))
+                    pages.send(.pages(action: .addMyApp(app: .page(tab: candidate.tab), title: nil, index: nil)))
                 } label: {
                     HStack(spacing: WontonTheme.spacing.s12) {
                         if let plugin = candidate.plugin {

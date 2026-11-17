@@ -1,9 +1,5 @@
 package app.wonton.ui
 
-import android.icu.text.DateFormat
-import android.icu.text.RelativeDateTimeFormatter
-import android.icu.text.RelativeDateTimeFormatter.RelativeUnit
-import android.icu.util.ULocale
 import androidx.compose.foundation.ExperimentalFoundationApi
 import androidx.compose.foundation.ScrollState
 import androidx.compose.foundation.combinedClickable
@@ -27,14 +23,15 @@ import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
-import androidx.compose.ui.platform.LocalConfiguration
 import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.semantics.Role
 import androidx.compose.ui.text.font.FontFamily
 import androidx.compose.ui.text.style.TextAlign
 import app.wonton.client.ClientCore
 import app.wonton.protocol.Action
+import app.wonton.protocol.PeerAction
 import app.wonton.protocol.FriendRequest
+import app.wonton.protocol.FriendsAction
 import app.wonton.protocol.FriendsViewModel
 import app.wonton.protocol.PeerError
 import app.wonton.protocol.PeerRow
@@ -62,14 +59,6 @@ import app.wonton.ui.icons.Info
 import app.wonton.ui.icons.QrCode
 import app.wonton.ui.icons.Trash
 import app.wonton.ui.icons.WontonIcon
-import java.util.Date
-import kotlin.math.roundToInt
-
-private const val SECOND_MS = 1000L
-private const val SECONDS_PER_MINUTE = 60
-private const val SECONDS_PER_HOUR = 60.0 * SECONDS_PER_MINUTE
-private const val SECONDS_PER_DAY = SECONDS_PER_HOUR * 24
-private const val SECONDS_PER_MONTH = SECONDS_PER_DAY * 30
 
 /**
  * “其他服务器”（ADR-0050）：和别的 Wonton 服务器配对。列表、发来的请求、出的码和失败原因都来自核心的
@@ -97,22 +86,19 @@ internal fun PeersPage(
     val scroll = rememberScrollState()
     val send = { action: Action -> rejection = core.send(action) }
     LaunchedEffect(core) {
-        send(Action.RefreshPeers)
-        send(Action.RefreshFriends)
+        send(Action.Peers(PeerAction.RefreshPeers))
+        send(Action.Friends(FriendsAction.RefreshFriends))
     }
     // 出码页开着时核心才快取列表；进和出都告诉它（ADR-0050）。
     val showCode = {
         showingCode = true
-        send(Action.ShowPeerCode)
+        send(Action.Peers(PeerAction.ShowPeerCode))
     }
     val hideCode = {
         showingCode = false
-        send(Action.HidePeerCode)
+        send(Action.Peers(PeerAction.HidePeerCode))
     }
-    // 请求在别的设备上处理过了：提醒一句，重取列表让它消失。
-    LaunchedEffect(peers.state) {
-        if ((peers.state as? PeersState.Failed)?.error == PeerError.REQUEST_NOT_FOUND) send(Action.RefreshPeers)
-    }
+    RefreshExpiredPeerRequest(peers.state, send)
     LaunchedEffect(openRequests) {
         if (openRequests) {
             scroll.animateScrollTo(0)
@@ -121,18 +107,18 @@ internal fun PeersPage(
     }
     val refresh = {
         lastScan = false
-        send(Action.RefreshPeers)
-        send(Action.RefreshFriends)
+        send(Action.Peers(PeerAction.RefreshPeers))
+        send(Action.Friends(FriendsAction.RefreshFriends))
     }
     val retry = { if (lastScan) scanning = true else refresh() }
     val scanSubmitted = { code: String ->
         lastScan = true
-        send(Action.ScanPeerCode(code))
+        send(Action.Peers(PeerAction.ScanPeerCode(code)))
     }
     // 取消自己发出、对方还没处理的请求，清掉被拒的记录，都直接做；移除配对两边都会停，才要确认。
     val requestRemove: (PeerRow) -> Unit = { row ->
         if (row.removesDirectly()) {
-            send(Action.RemovePeer(row.serverName))
+            send(Action.Peers(PeerAction.RemovePeer(row.serverName)))
         } else {
             removing = row
         }
@@ -178,14 +164,25 @@ internal fun PeersPage(
             onDismiss = { adding = false },
         )
     }
-    if (showingCode) PeerCodeDialog(peers.code, onDismiss = hideCode, onReset = { send(Action.ResetPeerCode) })
+    if (showingCode) PeerCodeDialog(peers.code, onDismiss = hideCode) {
+        send(Action.Peers(PeerAction.ResetPeerCode))
+    }
     removing?.let { row ->
         RemovePeerDialog(row, onDismiss = { removing = null }, onConfirm = {
             removing = null
-            send(Action.RemovePeer(row.serverName))
+            send(Action.Peers(PeerAction.RemovePeer(row.serverName)))
         })
     }
     rejection?.let { ProblemDialog(it) { rejection = null } }
+}
+
+@Composable
+private fun RefreshExpiredPeerRequest(state: PeersState, send: (Action) -> Unit) {
+    LaunchedEffect(state) {
+        if ((state as? PeersState.Failed)?.error == PeerError.REQUEST_NOT_FOUND) {
+            send(Action.Peers(PeerAction.RefreshPeers))
+        }
+    }
 }
 
 
@@ -278,8 +275,8 @@ internal fun PeerList(
     ) {
         FriendRequestsSection(
             friendRequests,
-            onApprove = { onAction(Action.ApproveFriendRequest(it.roomId)) },
-            onReject = { onAction(Action.RejectFriendRequest(it.roomId)) },
+            onApprove = { onAction(Action.Friends(FriendsAction.ApproveFriendRequest(it.roomId))) },
+            onReject = { onAction(Action.Friends(FriendsAction.RejectFriendRequest(it.roomId))) },
         )
         val state = peers.state
         if (state is PeersState.Failed) {
@@ -298,8 +295,8 @@ internal fun PeerList(
                         if (index > 0) WontonSeparator()
                         PeerRequestRowView(
                             row,
-                            onApprove = { onAction(Action.ApprovePeerRequest(row.id)) },
-                            onReject = { onAction(Action.RejectPeerRequest(row.id)) },
+                            onApprove = { onAction(Action.Peers(PeerAction.ApprovePeerRequest(row.id))) },
+                            onReject = { onAction(Action.Peers(PeerAction.RejectPeerRequest(row.id))) },
                         )
                     }
                 }
@@ -314,7 +311,7 @@ internal fun PeerList(
             }
         }
         if (peers.rejected.isNotEmpty()) {
-            RejectedSection(peers.rejected, onUnreject = { onAction(Action.UnrejectPeerRequest(it)) })
+            RejectedSection(peers.rejected, onUnreject = { onAction(Action.Peers(PeerAction.UnrejectPeerRequest(it))) })
         }
     }
 }
@@ -410,29 +407,3 @@ private fun PeerSubtitle(row: PeerRow) {
         PeerStatus.OTHER -> Text(stringResource(R.string.peers_status_unknown), style = style, color = color)
     }
 }
-
-/** 相对时间（“3 小时前”），按 App 当前的语言格式化（ADR-0043）；一分钟内是“刚刚”，超过一个月用日期。 */
-@Composable
-internal fun RelativeTime(ms: Long): String {
-    val locale = LocalConfiguration.current.locales[0]
-    val formatter = remember(locale) { RelativeDateTimeFormatter.getInstance(ULocale.forLocale(locale)) }
-    val dateFormatter = remember(locale) { DateFormat.getDateInstance(DateFormat.SHORT, locale) }
-    val seconds = ((System.currentTimeMillis() - ms) / SECOND_MS.toDouble()).coerceAtLeast(0.0)
-    return when {
-        seconds < SECONDS_PER_MINUTE -> stringResource(R.string.peers_just_now)
-        seconds < SECONDS_PER_MONTH -> {
-            // Android 的 RelativeDateTimeFormatter 没有按数量自动挑单位的两参 format，这里按数量级挑。
-            val (value, unit) = when {
-                seconds < SECONDS_PER_HOUR -> rounded(seconds, SECONDS_PER_MINUTE.toDouble()) to RelativeUnit.MINUTES
-                seconds < SECONDS_PER_DAY -> rounded(seconds, SECONDS_PER_HOUR) to RelativeUnit.HOURS
-                else -> rounded(seconds, SECONDS_PER_DAY) to RelativeUnit.DAYS
-            }
-            formatter.format(value, RelativeDateTimeFormatter.Direction.LAST, unit)
-        }
-        else -> dateFormatter.format(Date(ms))
-    }
-}
-
-/** 按单位折算成整数（至少 1），ICU 的相对格式带小数不好看。 */
-internal fun rounded(seconds: Double, divisor: Double) =
-    (seconds / divisor).roundToInt().coerceAtLeast(1).toDouble()

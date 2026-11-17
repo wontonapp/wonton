@@ -1,17 +1,18 @@
-//! 启动插件容器并等待健康：依赖顺序、一次性服务和 `webui.health` 探测。
+//! 启动插件容器并等待健康：依赖顺序、一次性服务和核心 HTTP 探测。
 
 use tokio::time::Instant;
 use wonton_protocol::InstallStage;
 
 use super::super::compose::DependCondition;
 use super::super::configs;
-use super::super::health::{self, Readiness, Target};
+use super::super::health::{self, Target};
 use super::super::install_notes::note_dropped_capabilities;
 use super::super::languages::Languages;
 use super::super::manager::{Health, InstallError, PluginManager};
 use super::super::manifest::{Manifest, PluginId};
 use super::super::names::LABEL_PLUGIN;
-use super::super::render::Deployment;
+use super::super::render::{ContainerPlan, Deployment};
+use super::super::start::{StartSettled, container_gone_after_start_timeout};
 use super::Undo;
 
 impl PluginManager {
@@ -26,28 +27,10 @@ impl PluginManager {
     ) -> Result<Health, InstallError> {
         for container in &plan.containers {
             // 容器起不来时，失败可能来自核心默认去掉的能力（宿主网络的 NET_RAW），错误里点名。
-            Box::pin(health::wait_for_all(
-                &self.engine,
-                &self.http,
-                &container.depends_on,
-                deadline,
-                langs,
-            ))
-            .await
-            .map_err(|e| note_dropped_capabilities(e, container, langs))?;
-            // 只读根的服务在创建容器之前就要把文件写进核心数据目录（单文件绑定挂载的源必须存在）。
-            if container.store_dir.is_some() {
-                Box::pin(configs::deliver(&self.engine, container, &plan.labels)).await?;
-            }
-            self.engine
-                .create_container(&container.name, container.body.clone())
+            Box::pin(self.wait_dependencies(manifest, &container.depends_on, deadline, langs))
                 .await
-                .map_err(InstallError::from_create_engine_error)?;
-            undo.containers.push(container.name.clone());
-            if container.store_dir.is_none() {
-                Box::pin(configs::deliver(&self.engine, container, &plan.labels)).await?;
-            }
-            self.engine.start_container(&container.name).await?;
+                .map_err(|e| note_dropped_capabilities(e, container, langs))?;
+            Box::pin(self.launch_container(container, plan, undo, langs)).await?;
         }
         if let Some(id) = id {
             self.stage(id, InstallStage::WaitingForBot);
@@ -78,56 +61,46 @@ impl PluginManager {
             .await
     }
 
-    /// 其余容器都必须健康或稳定运行；`webui.health` 由核心探，和容器自己的健康检查同一条路。
-    async fn wait_ready_containers(
+    /// 创建并启动一个容器。启动超时后 Docker 说容器已经不在了就照同一份计划重建一次（issue #649）；
+    /// 仍在的容器不删，只再发一次启动。
+    async fn launch_container(
         &self,
-        manifest: Option<&Manifest>,
+        container: &ContainerPlan,
         plan: &Deployment,
-        deadline: Instant,
+        undo: &mut Undo,
         langs: &Languages,
-    ) -> Result<Health, InstallError> {
-        let mut healthy = Vec::new();
-        for container in plan.containers.iter().filter(|c| !c.one_shot) {
-            let webui_health = match manifest {
-                Some(manifest) => self.webui_health(manifest, &container.service).await?,
-                None => None,
-            };
-            let readiness = Box::pin(health::wait_for(
-                &self.engine,
-                &self.http,
-                &container.name,
-                Target::Ready,
-                webui_health.as_ref(),
-                deadline,
-                langs,
-            ))
-            .await
-            .map_err(|e| note_dropped_capabilities(e, container, langs))?;
-            healthy.push(readiness == Readiness::Healthy);
+    ) -> Result<(), InstallError> {
+        self.create_for_start(container, plan, undo).await?;
+        if let StartSettled::Missing = Box::pin(self.start_settled(&container.name)).await? {
+            self.create_for_start(container, plan, undo).await?;
+            if let StartSettled::Missing = Box::pin(self.start_settled(&container.name)).await? {
+                return Err(container_gone_after_start_timeout(langs, &container.name));
+            }
         }
-        Ok(Health::of(healthy))
+        Ok(())
     }
 
-    /// 一个服务的 `webui.health` 探测（只有网页服务有）；没声明或是别的服务时为空。调用时容器已经起来，
-    /// 地址才取得到。
-    pub(in crate::plugin) async fn webui_health(
+    /// 照渲染好的计划创建容器，只读根的文件先写进核心数据目录（单文件绑定挂载的源必须存在）。
+    async fn create_for_start(
         &self,
-        manifest: &Manifest,
-        service: &str,
-    ) -> Result<Option<health::WebuiHealth>, InstallError> {
-        let Some(webui) = manifest.webui.as_ref().filter(|w| w.service == service) else {
-            return Ok(None);
-        };
-        let Some(path) = &webui.health else {
-            return Ok(None);
-        };
-        let network = self.cfg.instance.network(&manifest.id.slug());
-        Ok(self
-            .webui_upstream(manifest, &network)
-            .await?
-            .map(|endpoint| health::WebuiHealth {
-                endpoint,
-                path: path.clone(),
-            }))
+        container: &ContainerPlan,
+        plan: &Deployment,
+        undo: &mut Undo,
+    ) -> Result<(), InstallError> {
+        if container.store_dir.is_some() {
+            Box::pin(configs::deliver(&self.engine, container, &plan.labels)).await?;
+        }
+        self.engine
+            .create_container(&container.name, container.body.clone())
+            .await?;
+        if undo.containers.contains(&container.name) {
+            // 重建同一个名字：回滚删一次就够。
+        } else {
+            undo.containers.push(container.name.clone());
+        }
+        if container.store_dir.is_none() {
+            Box::pin(configs::deliver(&self.engine, container, &plan.labels)).await?;
+        }
+        Ok(())
     }
 }

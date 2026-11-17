@@ -6,7 +6,7 @@ use bollard::models::{DeviceMapping, HostConfig};
 
 use super::compose::{NetworkMode, Service, VolumeEntry, VolumeType};
 use super::languages::Languages;
-use super::manifest::{Manifest, ManifestError, Permission, PluginKind, Sso};
+use super::manifest::{Manifest, ManifestError, ManifestExt, Permission, PluginKind, Sso};
 use crate::l10n::text;
 
 pub const DOCKER_SOCKET: &str = "/var/run/docker.sock";
@@ -298,18 +298,6 @@ fn validate_host_network(
             return Err(ServiceError::new(
                 name,
                 text(langs, "plugin-install-priv-host-network-sso", &[]),
-            ));
-        }
-        // `webui.health` 时核心自己探，不用 compose 里的 healthcheck。
-        if webui.health.is_none()
-            && service
-                .healthcheck
-                .as_ref()
-                .is_none_or(|check| check.disable || check.test.is_none())
-        {
-            return Err(ServiceError::new(
-                name,
-                text(langs, "plugin-install-priv-host-network-healthcheck", &[]),
             ));
         }
     }

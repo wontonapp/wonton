@@ -135,8 +135,8 @@ App 被杀后收不到任何消息。
 - 同样会让 Tuwunel 替客户端去外网取东西的还有 URL 预览（`preview_url`）。Tuwunel v1.9.4 默认不开：`url_preview_*`
   的白名单都是空的，请求一律回 403，取之前就拒绝，我们的配置没有打开它。联邦也关着（见“决策”）。
 
-**4. App 一侧**（`wonton-protocol` 的 `push` 模块）：壳把推送订阅交给核心（`Action::SetPushEndpoint`），平台收不了
-推送时如实告诉核心（`Action::PushUnavailable`），进展看 `ChatViewModel::push`。收到推送、解开后交给
+**4. App 一侧**（`wonton-protocol` 的 `push` 模块）：壳把推送订阅交给核心（`PushAction::SetPushEndpoint`），平台收不了
+推送时如实告诉核心（`PushAction::PushUnavailable`），进展看 `ChatViewModel::push`。收到推送、解开后交给
 `ClientCore::resolve_push`，核心取回消息、解密，给出要显示的通知。通知里核心只给类别和原文（消息摘要、邀请、
 取不到正文的原因），占位、“有人邀请你”这些话由壳按 App 的语言写（ADR-0043）。
 

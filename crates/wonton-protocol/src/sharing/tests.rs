@@ -2,7 +2,7 @@ use serde::{Serialize, de::DeserializeOwned};
 use serde_json::json;
 
 use super::*;
-use crate::Action;
+use crate::{Action, SharingAction};
 
 fn round_trip<T>(value: &T)
 where
@@ -61,17 +61,23 @@ fn grants_preserve_person_group_and_optional_expiry() {
                 acknowledge_risk: true,
             };
             round_trip(&update);
-            round_trip(&Action::CreatePluginShare {
-                grant: update.clone(),
+            round_trip(&Action::Sharing {
+                action: SharingAction::CreatePluginShare {
+                    grant: update.clone(),
+                },
             });
-            round_trip(&Action::UpdatePluginShare {
-                id: "grant-1".into(),
-                grant: update,
+            round_trip(&Action::Sharing {
+                action: SharingAction::UpdatePluginShare {
+                    id: "grant-1".into(),
+                    grant: update,
+                },
             });
         }
     }
-    round_trip(&Action::RevokePluginShare {
-        id: "grant-1".into(),
+    round_trip(&Action::Sharing {
+        action: SharingAction::RevokePluginShare {
+            id: "grant-1".into(),
+        },
     });
 }
 
@@ -132,15 +138,21 @@ fn sources_and_app_failures_remain_distinct() {
             identity: Some(identity),
         });
     }
-    round_trip(&Action::RefreshSharedApps {
-        owner_user_id: None,
+    round_trip(&Action::Sharing {
+        action: SharingAction::RefreshSharedApps {
+            owner_user_id: None,
+        },
     });
-    round_trip(&Action::RefreshSharedApps {
-        owner_user_id: Some("@alice:example.org".into()),
+    round_trip(&Action::Sharing {
+        action: SharingAction::RefreshSharedApps {
+            owner_user_id: Some("@alice:example.org".into()),
+        },
     });
-    round_trip(&Action::OpenSharedApp {
-        owner_user_id: "@alice:example.org".into(),
-        plugin_id: "app.snake".into(),
+    round_trip(&Action::Sharing {
+        action: SharingAction::OpenSharedApp {
+            owner_user_id: "@alice:example.org".into(),
+            plugin_id: "app.snake".into(),
+        },
     });
 }
 

@@ -78,10 +78,12 @@ fn plugin_proxy() -> EgressProxySettings {
 }
 
 fn choose_plugin() -> Action {
-    Action::SaveEgressProxy {
-        address: String::new(),
-        direct_cidrs: String::new(),
-        use_plugin: true,
+    Action::Plugins {
+        action: wonton_protocol::PluginAction::SaveEgressProxy {
+            address: String::new(),
+            direct_cidrs: String::new(),
+            use_plugin: true,
+        },
     }
 }
 
@@ -92,7 +94,11 @@ fn ok(settings: &EgressProxySettings) -> Canned {
 async fn opened(rig: &Rig, settings: &EgressProxySettings) -> EgressCurrent {
     rig.connected().await;
     rig.core.answer(Method::GET, PATH, ok(settings));
-    rig.app.dispatch(Action::RefreshEgressProxy).unwrap();
+    rig.app
+        .dispatch(Action::Plugins {
+            action: wonton_protocol::PluginAction::RefreshEgressProxy,
+        })
+        .unwrap();
     rig.wait_for(|view| view.egress.current.is_some() && !view.egress.loading)
         .await
         .egress
@@ -115,17 +121,23 @@ async fn sent(rig: &Rig) -> EgressProxyUpdate {
 async fn the_first_proxy_restarts_plugins_only_after_the_owner_confirms() {
     let rig = Rig::new().await;
     opened(&rig, &unset()).await;
-    let save = || Action::SaveEgressProxy {
-        address: " http://172.17.0.1:7899 ".to_owned(),
-        direct_cidrs: "100.64.0.0/10, 10.1.0.0/16\n".to_owned(),
-        use_plugin: false,
+    let save = || Action::Plugins {
+        action: wonton_protocol::PluginAction::SaveEgressProxy {
+            address: " http://172.17.0.1:7899 ".to_owned(),
+            direct_cidrs: "100.64.0.0/10, 10.1.0.0/16\n".to_owned(),
+            use_plugin: false,
+        },
     };
 
     rig.app.dispatch(save()).unwrap();
     let confirmation = rig.app.plugins().egress.confirmation.unwrap();
     assert_eq!(confirmation.restarts[0].title, "Hermes");
     assert!(!confirmation.cancelling);
-    rig.app.dispatch(Action::DismissEgressConfirmation).unwrap();
+    rig.app
+        .dispatch(Action::Plugins {
+            action: wonton_protocol::PluginAction::DismissEgressConfirmation,
+        })
+        .unwrap();
     assert!(rig.app.plugins().egress.confirmation.is_none());
     assert!(
         rig.core.seen(&Method::PUT, PATH).is_empty(),
@@ -134,7 +146,11 @@ async fn the_first_proxy_restarts_plugins_only_after_the_owner_confirms() {
 
     rig.core.answer(Method::PUT, PATH, ok(&configured()));
     rig.app.dispatch(save()).unwrap();
-    rig.app.dispatch(Action::ConfirmEgressProxy).unwrap();
+    rig.app
+        .dispatch(Action::Plugins {
+            action: wonton_protocol::PluginAction::ConfirmEgressProxy,
+        })
+        .unwrap();
     assert_eq!(
         sent(&rig).await,
         EgressProxyUpdate {
@@ -160,10 +176,12 @@ async fn changing_the_address_or_only_the_ranges_restarts_nothing() {
     let shown = opened(&rig, &configured()).await;
     rig.core.answer(Method::PUT, PATH, ok(&configured()));
     rig.app
-        .dispatch(Action::SaveEgressProxy {
-            address: shown.address.clone(),
-            direct_cidrs: "100.64.0.0/10".to_owned(),
-            use_plugin: false,
+        .dispatch(Action::Plugins {
+            action: wonton_protocol::PluginAction::SaveEgressProxy {
+                address: shown.address.clone(),
+                direct_cidrs: "100.64.0.0/10".to_owned(),
+                use_plugin: false,
+            },
         })
         .unwrap();
     assert!(rig.app.plugins().egress.confirmation.is_none());
@@ -178,14 +196,20 @@ async fn cancelling_the_proxy_is_confirmed_and_sends_no_address() {
     opened(&rig, &configured()).await;
     rig.core.answer(Method::PUT, PATH, ok(&unset()));
     rig.app
-        .dispatch(Action::SaveEgressProxy {
-            address: "  ".to_owned(),
-            direct_cidrs: String::new(),
-            use_plugin: false,
+        .dispatch(Action::Plugins {
+            action: wonton_protocol::PluginAction::SaveEgressProxy {
+                address: "  ".to_owned(),
+                direct_cidrs: String::new(),
+                use_plugin: false,
+            },
         })
         .unwrap();
     assert!(rig.app.plugins().egress.confirmation.unwrap().cancelling);
-    rig.app.dispatch(Action::ConfirmEgressProxy).unwrap();
+    rig.app
+        .dispatch(Action::Plugins {
+            action: wonton_protocol::PluginAction::ConfirmEgressProxy,
+        })
+        .unwrap();
     let update = sent(&rig).await;
     assert_eq!(update.url, None);
     assert_eq!(update.restarts, ["app.hermes"]);
@@ -207,13 +231,19 @@ async fn a_refused_save_says_why_and_the_next_confirmation_uses_the_new_list() {
         core_error(422, "egress_proxy_unavailable", "5 秒没响应"),
     );
     rig.core.answer(Method::GET, PATH, ok(&newer));
-    let save = || Action::SaveEgressProxy {
-        address: "http://192.0.2.1:1".to_owned(),
-        direct_cidrs: String::new(),
-        use_plugin: false,
+    let save = || Action::Plugins {
+        action: wonton_protocol::PluginAction::SaveEgressProxy {
+            address: "http://192.0.2.1:1".to_owned(),
+            direct_cidrs: String::new(),
+            use_plugin: false,
+        },
     };
     rig.app.dispatch(save()).unwrap();
-    rig.app.dispatch(Action::ConfirmEgressProxy).unwrap();
+    rig.app
+        .dispatch(Action::Plugins {
+            action: wonton_protocol::PluginAction::ConfirmEgressProxy,
+        })
+        .unwrap();
     let view = rig
         .wait_for(|view| {
             view.egress.save_problem.is_some()
@@ -312,7 +342,11 @@ async fn no_proxy_has_no_paths_and_a_failed_read_says_why() {
 
     rig.core
         .answer(Method::GET, PATH, core_error(500, "docker", "Docker 出错"));
-    rig.app.dispatch(Action::RefreshEgressProxy).unwrap();
+    rig.app
+        .dispatch(Action::Plugins {
+            action: wonton_protocol::PluginAction::RefreshEgressProxy,
+        })
+        .unwrap();
     let view = rig
         .wait_for(|view| view.egress.load_problem.is_some())
         .await;
@@ -336,10 +370,12 @@ async fn the_choice_on_the_confirmation_page_reaches_the_core() {
         client_problem: None,
     });
     rig.app
-        .dispatch(Action::InstallPlugin {
-            preview: shown,
-            secrets: Default::default(),
-            settings: Default::default(),
+        .dispatch(Action::Plugins {
+            action: wonton_protocol::PluginAction::InstallPlugin {
+                preview: shown,
+                secrets: Default::default(),
+                settings: Default::default(),
+            },
         })
         .unwrap();
     let path = "/_wonton/api/plugins";
@@ -381,14 +417,22 @@ async fn selecting_an_installed_proxy_requires_confirmation_and_can_be_dismissed
     let confirmation = rig.app.plugins().egress.confirmation.unwrap();
     assert!(!confirmation.cancelling);
     assert_eq!(confirmation.restarts, available().restarts);
-    rig.app.dispatch(Action::DismissEgressConfirmation).unwrap();
+    rig.app
+        .dispatch(Action::Plugins {
+            action: wonton_protocol::PluginAction::DismissEgressConfirmation,
+        })
+        .unwrap();
     assert!(rig.app.plugins().egress.confirmation.is_none());
     assert!(rig.core.seen(&Method::PUT, PATH).is_empty());
     assert!(!rig.app.plugins().egress.current.unwrap().use_plugin);
 
     rig.core.answer(Method::PUT, PATH, ok(&plugin_proxy()));
     rig.app.dispatch(choose_plugin()).unwrap();
-    rig.app.dispatch(Action::ConfirmEgressProxy).unwrap();
+    rig.app
+        .dispatch(Action::Plugins {
+            action: wonton_protocol::PluginAction::ConfirmEgressProxy,
+        })
+        .unwrap();
     let update = sent(&rig).await;
     assert!(update.use_plugin);
     assert_eq!(update.url, None);
@@ -420,10 +464,12 @@ async fn switching_manual_and_plugin_proxies_never_requests_plugin_restarts() {
 
     rig.core.answer(Method::PUT, PATH, ok(&manual));
     rig.app
-        .dispatch(Action::SaveEgressProxy {
-            address: manual.url.clone().unwrap(),
-            direct_cidrs: String::new(),
-            use_plugin: false,
+        .dispatch(Action::Plugins {
+            action: wonton_protocol::PluginAction::SaveEgressProxy {
+                address: manual.url.clone().unwrap(),
+                direct_cidrs: String::new(),
+                use_plugin: false,
+            },
         })
         .unwrap();
     rig.wait_for(|view| !view.egress.saving && !view.egress.current.as_ref().unwrap().use_plugin)
@@ -443,15 +489,21 @@ async fn cancelling_the_plugin_proxy_requires_restart_confirmation() {
     opened(&rig, &plugin_proxy()).await;
     rig.core.answer(Method::PUT, PATH, ok(&available()));
     rig.app
-        .dispatch(Action::SaveEgressProxy {
-            address: String::new(),
-            direct_cidrs: String::new(),
-            use_plugin: false,
+        .dispatch(Action::Plugins {
+            action: wonton_protocol::PluginAction::SaveEgressProxy {
+                address: String::new(),
+                direct_cidrs: String::new(),
+                use_plugin: false,
+            },
         })
         .unwrap();
     assert!(rig.app.plugins().egress.confirmation.unwrap().cancelling);
     assert!(rig.core.seen(&Method::PUT, PATH).is_empty());
-    rig.app.dispatch(Action::ConfirmEgressProxy).unwrap();
+    rig.app
+        .dispatch(Action::Plugins {
+            action: wonton_protocol::PluginAction::ConfirmEgressProxy,
+        })
+        .unwrap();
     let update = sent(&rig).await;
     assert!(!update.use_plugin);
     assert_eq!(update.url, None);
@@ -474,7 +526,11 @@ async fn invalid_plugin_choices_never_discard_an_address_or_send_a_request() {
     assert!(rig.core.seen(&Method::PUT, PATH).is_empty());
 
     rig.core.answer(Method::GET, PATH, ok(&available()));
-    rig.app.dispatch(Action::RefreshEgressProxy).unwrap();
+    rig.app
+        .dispatch(Action::Plugins {
+            action: wonton_protocol::PluginAction::RefreshEgressProxy,
+        })
+        .unwrap();
     rig.wait_for(|view| {
         view.egress
             .current
@@ -486,10 +542,12 @@ async fn invalid_plugin_choices_never_discard_an_address_or_send_a_request() {
     })
     .await;
     assert!(matches!(
-        rig.app.dispatch(Action::SaveEgressProxy {
-            address: "http://192.0.2.10:7890".to_owned(),
-            direct_cidrs: String::new(),
-            use_plugin: true,
+        rig.app.dispatch(Action::Plugins {
+            action: wonton_protocol::PluginAction::SaveEgressProxy {
+                address: "http://192.0.2.10:7890".to_owned(),
+                direct_cidrs: String::new(),
+                use_plugin: true,
+            },
         }),
         Err(CoreError::InvalidInput { .. })
     ));
@@ -514,10 +572,12 @@ async fn environment_proxy_selection_is_locked_but_ranges_can_change() {
     assert!(rig.core.seen(&Method::PUT, PATH).is_empty());
     rig.core.answer(Method::PUT, PATH, ok(&settings));
     rig.app
-        .dispatch(Action::SaveEgressProxy {
-            address: current.address,
-            direct_cidrs: "100.64.0.0/10".to_owned(),
-            use_plugin: false,
+        .dispatch(Action::Plugins {
+            action: wonton_protocol::PluginAction::SaveEgressProxy {
+                address: current.address,
+                direct_cidrs: "100.64.0.0/10".to_owned(),
+                use_plugin: false,
+            },
         })
         .unwrap();
     let update = sent(&rig).await;
@@ -582,7 +642,11 @@ async fn saving_a_plugin_proxy_follows_probes_until_the_new_result_arrives() {
     rig.core
         .answer_always(Method::GET, PATH, ok(&plugin_proxy()));
     rig.app.dispatch(choose_plugin()).unwrap();
-    rig.app.dispatch(Action::ConfirmEgressProxy).unwrap();
+    rig.app
+        .dispatch(Action::Plugins {
+            action: wonton_protocol::PluginAction::ConfirmEgressProxy,
+        })
+        .unwrap();
     rig.wait_for(|view| {
         let current = view.egress.current.as_ref().unwrap();
         !view.egress.saving
@@ -604,7 +668,11 @@ async fn a_failed_plugin_save_preserves_the_current_selection_and_reports_the_pr
     );
     rig.core.answer(Method::GET, PATH, ok(&unset()));
     rig.app.dispatch(choose_plugin()).unwrap();
-    rig.app.dispatch(Action::ConfirmEgressProxy).unwrap();
+    rig.app
+        .dispatch(Action::Plugins {
+            action: wonton_protocol::PluginAction::ConfirmEgressProxy,
+        })
+        .unwrap();
     let view = rig
         .wait_for(|view| {
             view.egress.save_problem.is_some()

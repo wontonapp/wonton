@@ -28,6 +28,7 @@ import androidx.compose.ui.semantics.contentDescription
 import androidx.compose.ui.semantics.semantics
 import androidx.compose.ui.text.input.KeyboardType
 import androidx.compose.ui.unit.dp
+import app.wonton.protocol.PluginAction
 import app.wonton.protocol.Action
 import app.wonton.protocol.PluginFailure
 import app.wonton.protocol.RegistryMirrorSettings
@@ -61,7 +62,7 @@ fun RegistryMirrorPage(plugins: PluginsState, onBack: () -> Unit) {
     val mirror = plugins.viewModel.registryMirror
     val settings = mirror.settings
     val loadProblem = mirror.loadProblem
-    LaunchedEffect(Unit) { plugins.send(Action.RefreshRegistryMirror) }
+    LaunchedEffect(Unit) { plugins.send(Action.Plugins(PluginAction.RefreshRegistryMirror)) }
     // Probe, recommendation and choice-list updates must not replace an unfinished draft.
     val draft = remember(settings?.mirror, settings != null) { settings?.let { MirrorDraft(it) } }
     WontonScreen(bar = {
@@ -70,7 +71,7 @@ fun RegistryMirrorPage(plugins: PluginsState, onBack: () -> Unit) {
                 if (mirror.saving) MirrorSpinner()
                 else WontonSmallButton(
                     stringResource(R.string.common_save),
-                    { draft?.let { plugins.send(Action.SaveRegistryMirror(it.target)) } },
+                    { draft?.let { plugins.send(Action.Plugins(PluginAction.SaveRegistryMirror(it.target))) } },
                     enabled = draft?.canSave == true,
                 )
             }
@@ -79,7 +80,7 @@ fun RegistryMirrorPage(plugins: PluginsState, onBack: () -> Unit) {
         when {
             settings != null && draft != null -> MirrorForm(mirror, settings, draft, plugins)
             loadProblem != null -> ProblemView(loadProblem.problem) {
-                plugins.send(Action.RefreshRegistryMirror)
+                plugins.send(Action.Plugins(PluginAction.RefreshRegistryMirror))
             }
             else -> LoadingView()
         }
@@ -101,7 +102,9 @@ private fun MirrorForm(
         mirror.loadProblem?.let {
             ProblemNotice(it.problem)
             WontonSmallButton(
-                stringResource(R.string.common_retry), { plugins.send(Action.RefreshRegistryMirror) }, !mirror.loading,
+                stringResource(R.string.common_retry),
+                { plugins.send(Action.Plugins(PluginAction.RefreshRegistryMirror)) },
+                !mirror.loading,
             )
         }
         mirror.saveProblem?.let {
@@ -126,7 +129,7 @@ private fun MirrorForm(
         ) {
             WontonButton(
                 stringResource(R.string.registry_mirror_test),
-                { plugins.send(Action.TestRegistryMirrors) },
+                { plugins.send(Action.Plugins(PluginAction.TestRegistryMirrors)) },
                 kind = WontonButtonKind.SECONDARY,
                 enabled = !mirror.testing && !mirror.saving,
             )

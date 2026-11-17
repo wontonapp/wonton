@@ -1,8 +1,8 @@
 //! 调用链（ADR-0061 第 10 节）：一句话引出的所有 Agent 会话是一条链，链上记身份、层数、轮数和花费。
 //!
-//! 桥每轮开始时 `POST` [`AGENT_CHAINS_PATH`]，请求体是 [`ChainTurnReport`]，拿到 [`ChainTurnGrant`] 才发给
-//! Agent；被拒时拿到 [`ChainError`]。核心转发 `agent_acp` 连接和模型请求时注入 [`WONTON_CHAIN_HEADER`]
-//! 和上限头，网关改不了。跳与跳之间经 `session/new` 的 `_meta` 传 [`ChainCarrier`]（ADR-0061 第 12 节）。
+//! Bot 前端每轮开始时 `POST` [`AGENT_CHAINS_PATH`]，请求体是 [`ChainTurnReport`]，拿到 [`ChainTurnGrant`] 才
+//! 发给 Agent；被拒时拿到 [`ChainError`]。说话人用 [`WONTON_ON_BEHALF_OF_HEADER`] 报到 MCP 请求上。
+//! 跳与跳之间经 `session/new` 的 `_meta` 传 [`ChainCarrier`]（ADR-0061 第 12 节）。
 //! 链代表的人和链上各 Bot 的归属人随时能停整条链；停了之后的一切新请求都是
 //! [`ChainError::Stopped`]。
 
@@ -17,28 +17,24 @@ pub const AGENT_CHAINS_PATH: &str = "/agent/chains";
 /// 同一道门），回报见 [`crate::OutboxReceipt`]。
 pub const AGENT_OUTBOX_PATH: &str = "/agent/outbox";
 
-/// 核心转发 `agent_acp` 连接时注入的请求头（ADR-0061 第 3、10 节）：哪个前端在连。使用方自己带的同名头被丢掉。
-pub const WONTON_PLUGIN_HEADER: &str = "X-Wonton-Plugin";
-
 /// 核心注入的请求头：这条连接替谁说话。运行时只认这个 Bot 听的人。
 pub const WONTON_USER_HEADER: &str = "X-Wonton-User";
 
-/// 编排器经自己的 Bot 连进来时带的请求头：链代表的人是谁。核心只在他是编排器的 Bot 听的人时采用。
+/// 每轮消息的说话人（MXID）：前端调用工具时带上。核心只在这个 Bot 听的人里采用，否则按只读、
+/// 联系人门按远端；没带时从已报的轮次取，轮次也没有才按 Bot 归属人算。
 pub const WONTON_ON_BEHALF_OF_HEADER: &str = "X-Wonton-On-Behalf-Of";
 
 /// 核心注入的请求头：链上目标 Bot 是哪一个，网关按它起对应的 Agent 进程。
 pub const WONTON_BOT_HEADER: &str = "X-Wonton-Bot";
 
-/// 核心注入的请求头：这条连接属于哪条调用链。
-pub const WONTON_CHAIN_HEADER: &str = "X-Wonton-Chain";
-
-/// 上限头：核心转发时把链的层数上限给网关（ADR-0061 第 10 节），使用方改不了。
+/// 上限头：链的层数上限（ADR-0061 第 10 节）。旧桥转发时注入；ACP 桥删除后暂无注入方，
+/// 接入方按链的 `limits` 自己封顶。
 pub const WONTON_MAX_DEPTH_HEADER: &str = "X-Wonton-Max-Depth";
 
-/// 上限头：链的轮数上限。
+/// 上限头：链的轮数上限（同上，暂无注入方）。
 pub const WONTON_MAX_ROUNDS_HEADER: &str = "X-Wonton-Max-Rounds";
 
-/// 上限头：链的花费上限（token）。
+/// 上限头：链的花费上限（token，同上，暂无注入方）。
 pub const WONTON_MAX_TOKENS_HEADER: &str = "X-Wonton-Max-Tokens";
 
 /// 桥在 `session/new` 给 Wonton MCP 的请求头里放的会话 ID（ADR-0061 第 10 节），核心按它找到当前这一轮的链。
@@ -184,7 +180,7 @@ pub enum ChainRefusal {
 }
 
 /// 链的上限（ADR-0061 第 10 节）：核心转发时放在 [`WONTON_MAX_DEPTH_HEADER`] 等头里给网关，
-/// 设置里只有主人能改（[`AgentChainAction::SetAgentLimits`]）。
+/// 设置里只有主人能改（[`AgentAction::SetAgentLimits`]）。
 #[derive(Clone, Copy, Debug, PartialEq, Eq, Serialize, Deserialize)]
 #[cfg_attr(feature = "uniffi", derive(uniffi::Record))]
 pub struct ChainLimits {
@@ -264,7 +260,7 @@ pub struct AgentChainRow {
     pub rounds: u32,
     pub spend: ChainSpend,
     pub status: AgentChainStatus,
-    /// 链代表的人和链上各 Bot 的归属人能停（[`AgentChainAction::StopChain`]）；别人看不到这一行。
+    /// 链代表的人和链上各 Bot 的归属人能停（[`AgentAction::StopChain`]）；别人看不到这一行。
     pub can_stop: bool,
 }
 
@@ -277,15 +273,16 @@ pub struct AgentChainsViewModel {
     /// 列表的版本，任何一条链变了就变大；下次带 `after=<revision>` 长轮询。核心重启后从头数。
     #[serde(default)]
     pub revision: u64,
+    /// 最近一次动作失败及其原因；再次发送动作时清除。
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub action_failure: Option<AgentActionFailure>,
 }
 
-/// App 发的链动作：停链、改上限、改并发（ADR-0061 第 10 节）。客户端核心给一个单独的分派入口收它，
-/// 和 [`Action`](crate::Action) 并列：[`Action`](crate::Action) 的 UniFFI 元数据（含文档，每变体几十字节）
-/// 只剩下一个短名字的余量，链的动作放不进去，新作用域的动作开自己的枚举和入口。
+/// App 发的 Agent 链动作（ADR-0061 第 10 节）。它通过统一的 `Action::Agent` 包装进入客户端核心。
 #[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize)]
 #[cfg_attr(feature = "uniffi", derive(uniffi::Enum))]
 #[serde(tag = "type", rename_all = "snake_case")]
-pub enum AgentChainAction {
+pub enum AgentAction {
     /// 停下整条链：链代表的人和链上各 Bot 的归属人可以，别的设备返回 `Unauthorized`。停下的链不再接
     /// 新的轮次和请求；链列表里那一行的状态变成 [`AgentChainStatus::Stopped`]。
     StopChain { chain: String },
@@ -294,6 +291,14 @@ pub enum AgentChainAction {
     /// 改一个使用方（插件）同时能开多少条 `agent_acp` 连接（ADR-0061 第 10 节），只有主人能改。满了再连的
     /// 拿到 [`ChainError::Busy`]。
     SetConsumerAgentConcurrency { plugin_id: String, concurrency: u32 },
+}
+
+/// Agent 动作的失败及其分类。
+#[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize)]
+#[cfg_attr(feature = "uniffi", derive(uniffi::Record))]
+pub struct AgentActionFailure {
+    pub action: AgentAction,
+    pub error: crate::CoreError,
 }
 
 /// 设置“Agent”一页（ADR-0061 第 10 节）：层数、轮数、花费上限，只有主人能改。
@@ -480,18 +485,18 @@ mod tests {
         );
     }
 
-    /// 契约：动作的线上形状固定；客户端核心给单独的入口收它（[`crate::Action`] 的元数据放不下）。
+    /// 契约：动作的线上形状固定；通过统一 `Action::Agent` 入口传递。
     #[test]
     fn chain_actions_have_a_stable_wire_format() {
-        let stop = AgentChainAction::StopChain {
+        let stop = AgentAction::StopChain {
             chain: "c-1".into(),
         };
         assert_eq!(json!(stop), json!({"type": "stop_chain", "chain": "c-1"}));
         assert_eq!(
-            serde_json::from_value::<AgentChainAction>(json!(stop)).unwrap(),
+            serde_json::from_value::<AgentAction>(json!(stop)).unwrap(),
             stop
         );
-        let limits = AgentChainAction::SetAgentLimits {
+        let limits = AgentAction::SetAgentLimits {
             limits: ChainLimits {
                 max_depth: 5,
                 max_rounds: 100,
@@ -506,10 +511,10 @@ mod tests {
             })
         );
         assert_eq!(
-            serde_json::from_value::<AgentChainAction>(json!(limits)).unwrap(),
+            serde_json::from_value::<AgentAction>(json!(limits)).unwrap(),
             limits
         );
-        let concurrency = AgentChainAction::SetConsumerAgentConcurrency {
+        let concurrency = AgentAction::SetConsumerAgentConcurrency {
             plugin_id: "app.orchestrator".into(),
             concurrency: 8,
         };
@@ -522,7 +527,7 @@ mod tests {
             })
         );
         assert_eq!(
-            serde_json::from_value::<AgentChainAction>(json!(concurrency)).unwrap(),
+            serde_json::from_value::<AgentAction>(json!(concurrency)).unwrap(),
             concurrency
         );
     }

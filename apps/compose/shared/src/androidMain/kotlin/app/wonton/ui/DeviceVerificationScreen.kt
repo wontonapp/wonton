@@ -21,6 +21,7 @@ import androidx.compose.ui.text.font.FontFamily
 import androidx.compose.ui.unit.dp
 import app.wonton.client.ClientCore
 import app.wonton.protocol.Action
+import app.wonton.protocol.ChatAction
 import app.wonton.protocol.ChatViewModel
 import app.wonton.protocol.TabRef
 import app.wonton.protocol.VerificationCancel
@@ -96,12 +97,12 @@ private fun IncomingRequest(flow: VerificationFlow, onAction: (Action) -> Unit) 
     Row(horizontalArrangement = Arrangement.spacedBy(WontonTheme.spacing.s8)) {
         WontonButton(
             stringResource(R.string.verification_accept),
-            { onAction(Action.AcceptDeviceVerification(flow.flowId)) },
+            { onAction(Action.Chat(ChatAction.AcceptDeviceVerification(flow.flowId))) },
             Modifier.weight(1f),
         )
         WontonButton(
             stringResource(R.string.verification_deny),
-            { onAction(Action.CancelDeviceVerification(flow.flowId)) },
+            { onAction(Action.Chat(ChatAction.CancelDeviceVerification(flow.flowId))) },
             Modifier.weight(1f),
             WontonButtonKind.SECONDARY,
         )
@@ -126,7 +127,7 @@ private fun Waiting(text: String, hint: String?, flowId: String, onAction: (Acti
     }
     WontonButton(
         stringResource(R.string.common_cancel),
-        { onAction(Action.CancelDeviceVerification(flowId)) },
+        { onAction(Action.Chat(ChatAction.CancelDeviceVerification(flowId))) },
         Modifier.fillMaxWidth(),
         WontonButtonKind.SECONDARY,
     )
@@ -148,19 +149,19 @@ private fun Compare(
     Row(horizontalArrangement = Arrangement.spacedBy(WontonTheme.spacing.s8)) {
         WontonButton(
             stringResource(R.string.verification_same),
-            { onAction(Action.ConfirmVerification(flowId)) },
+            { onAction(Action.Chat(ChatAction.ConfirmVerification(flowId))) },
             Modifier.weight(1f),
         )
         WontonButton(
             stringResource(R.string.verification_different),
-            { onAction(Action.DenyVerification(flowId)) },
+            { onAction(Action.Chat(ChatAction.DenyVerification(flowId))) },
             Modifier.weight(1f),
             WontonButtonKind.SECONDARY,
         )
     }
     WontonButton(
         stringResource(R.string.common_cancel),
-        { onAction(Action.CancelDeviceVerification(flowId)) },
+        { onAction(Action.Chat(ChatAction.CancelDeviceVerification(flowId))) },
         Modifier.fillMaxWidth(),
         WontonButtonKind.SECONDARY,
     )
@@ -215,7 +216,7 @@ private fun Cancelled(
         else -> {
             WontonButton(
                 stringResource(R.string.verification_retry),
-                { onAction(Action.StartDeviceVerification) },
+                { onAction(Action.Chat(ChatAction.StartDeviceVerification)) },
                 Modifier.fillMaxWidth(),
             )
             onUseRecoveryKey?.let {

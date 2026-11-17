@@ -1,8 +1,9 @@
 use std::collections::BTreeMap;
+use wonton_protocol::BotRef;
 
 use super::{
     Connection, InstallError, Languages, Manifest, PluginId, PluginManager, PluginStatus, Provider,
-    chosen, connection, declarations, service,
+    chosen, connection_to, declarations, service,
 };
 use crate::plugin::capabilities;
 use crate::plugin::provides::{CredentialCommands, NAME_PLACEHOLDER};
@@ -14,11 +15,15 @@ impl PluginManager {
         provider: &Provider,
         capability: &str,
         langs: &Languages,
+        bot: Option<&BotRef>,
     ) -> Result<(), InstallError> {
         let spec = service(&provider.listed.manifest, capability)
             .ok_or_else(|| InstallError::Invalid(self.capability_missing(capability, langs)))?;
         let state = self.dependencies.load()?;
-        let existing = connection(&state, consumer, &provider.id, capability);
+        let target =
+            self.capability_target_bot(&state, consumer, &provider.id, capability, bot, langs)?;
+        let target_name = target.as_ref().map(|bot| bot.bot.as_str());
+        let existing = connection_to(&state, consumer, &provider.id, capability, bot, target_name);
         let key = spec.credentials.as_ref().map(|_| {
             existing
                 .and_then(|c| c.key.clone())
@@ -26,7 +31,9 @@ impl PluginManager {
         });
         let next = Connection {
             consumer: consumer.to_string(),
+            consumer_bot: bot.map(|bot| bot.bot.clone()),
             provider: provider.id.to_string(),
+            provider_bot: target.as_ref().map(|bot| bot.bot.clone()),
             capability: capability.to_owned(),
             key: key.clone(),
             ready: existing.is_some_and(|c| c.ready),
@@ -34,59 +41,51 @@ impl PluginManager {
             problem: Some(self.capability_stopped(&provider.id, capability, langs)),
         };
         self.dependencies.change(|state| {
-            state.connections.retain(|c| {
-                !(c.consumer == next.consumer
-                    && c.provider == next.provider
-                    && c.capability == next.capability)
-            });
+            state.connections.retain(|c| !c.same_pair(&next));
             state.connections.push(next);
         })?;
-        if !matches!(
+        let result = if !matches!(
             provider.status,
             PluginStatus::Running | PluginStatus::Degraded { .. }
         ) || !provider.serving.contains(&spec.service)
         {
-            return Err(InstallError::UpstreamUnavailable(self.capability_stopped(
+            Err(InstallError::UpstreamUnavailable(self.capability_stopped(
                 &provider.id,
                 capability,
                 langs,
-            )));
-        }
-        if let Some(commands) = &spec.credentials {
-            let result = self
-                .capability_command(
-                    provider,
-                    capability,
-                    commands,
-                    true,
-                    consumer.as_str(),
-                    key.as_deref(),
-                    langs,
-                )
-                .await;
-            if let Err(error) = result {
-                self.dependencies.change(|state| {
-                    if let Some(c) = state.connections.iter_mut().find(|c| {
-                        c.consumer == consumer.as_str()
-                            && c.provider == provider.id.as_str()
-                            && c.capability == capability
-                    }) {
-                        c.problem = Some(error.to_string());
-                    }
-                })?;
-                return Err(error);
-            }
-        }
+            )))
+        } else if let Some(commands) = &spec.credentials {
+            let name = super::binding::credential_name(
+                consumer.as_str(),
+                bot.map(|bot| bot.bot.as_str()),
+                target_name,
+            );
+            self.capability_command(
+                provider,
+                capability,
+                commands,
+                true,
+                &name,
+                key.as_deref(),
+                langs,
+            )
+            .await
+        } else {
+            Ok(())
+        };
         self.dependencies.change(|state| {
             if let Some(c) = state.connections.iter_mut().find(|c| {
                 c.consumer == consumer.as_str()
+                    && c.consumer_bot.as_deref() == bot.map(|bot| bot.bot.as_str())
                     && c.provider == provider.id.as_str()
+                    && c.provider_bot.as_deref() == target_name
                     && c.capability == capability
             }) {
-                c.problem = None;
-                c.ready = true;
+                c.problem = result.as_ref().err().map(ToString::to_string);
+                c.ready |= result.is_ok();
             }
-        })
+        })?;
+        result
     }
 
     #[allow(clippy::too_many_arguments)]
@@ -142,16 +141,50 @@ impl PluginManager {
     pub(in crate::plugin) fn dependency_vars(
         &self,
         manifest: &Manifest,
+        bot: Option<&str>,
     ) -> Result<BTreeMap<String, String>, InstallError> {
         let state = self.dependencies.load()?;
         let providers = self.capability_providers();
         let mut vars = BTreeMap::new();
+        let bot = bot.map(|bot| BotRef {
+            plugin_id: manifest.id.to_string(),
+            bot: bot.to_owned(),
+        });
         for capability in declarations(manifest) {
             // Keep confirmed URLs and keys stable while the provider is unavailable; forwarding
             // checks readiness per request, without rebuilding otherwise healthy consumers.
-            let connected = chosen(&state, &providers, &manifest.id, capability, None)
-                .and_then(|p| connection(&state, &manifest.id, &p.id, capability))
-                .filter(|c| c.ready);
+            let provider = chosen(&state, &providers, &manifest.id, capability, bot.as_ref());
+            let target = provider
+                .map(|provider| {
+                    self.capability_target_bot(
+                        &state,
+                        &manifest.id,
+                        &provider.id,
+                        capability,
+                        bot.as_ref(),
+                        &self.owner_languages(),
+                    )
+                })
+                .transpose();
+            let connected = match target {
+                Ok(target) => provider
+                    .and_then(|p| {
+                        connection_to(
+                            &state,
+                            &manifest.id,
+                            &p.id,
+                            capability,
+                            bot.as_ref(),
+                            target
+                                .as_ref()
+                                .and_then(Option::as_ref)
+                                .map(|bot| bot.bot.as_str()),
+                        )
+                    })
+                    .filter(|c| c.ready),
+                Err(InstallError::UpstreamUnavailable(_)) => None,
+                Err(error) => return Err(error),
+            };
             vars.insert(
                 capabilities::var_url(capability),
                 connected.map_or_else(String::new, |_| {
@@ -195,7 +228,7 @@ impl PluginManager {
                     &connection.capability,
                     commands,
                     false,
-                    &connection.consumer,
+                    &connection.credential_name(),
                     None,
                     langs,
                 )
@@ -226,11 +259,11 @@ impl PluginManager {
                 continue;
             };
             self.dependencies.change(|state| {
-                if let Some(connection) = state.connections.iter_mut().find(|connection| {
-                    connection.consumer == c.consumer
-                        && connection.provider == c.provider
-                        && connection.capability == c.capability
-                }) {
+                if let Some(connection) = state
+                    .connections
+                    .iter_mut()
+                    .find(|connection| connection.same_pair(c))
+                {
                     connection.problem =
                         Some(self.capability_stopped(&provider.id, &c.capability, langs));
                 }
@@ -241,18 +274,18 @@ impl PluginManager {
                     &c.capability,
                     commands,
                     false,
-                    &c.consumer,
+                    &c.credential_name(),
                     None,
                     langs,
                 )
                 .await;
             if let Err(error) = result {
                 self.dependencies.change(|state| {
-                    if let Some(connection) = state.connections.iter_mut().find(|connection| {
-                        connection.consumer == c.consumer
-                            && connection.provider == c.provider
-                            && connection.capability == c.capability
-                    }) {
+                    if let Some(connection) = state
+                        .connections
+                        .iter_mut()
+                        .find(|connection| connection.same_pair(c))
+                    {
                         connection.problem = Some(error.to_string());
                     }
                 })?;

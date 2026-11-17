@@ -98,11 +98,17 @@ async fn bot_profiles_actions_activity_and_cached_video_through_the_tunnel() {
     wait_bot(&phone, |bot| bot.activity.is_none()).await;
     // 后台暂停轮询的前提是收新消息走 UnifiedPush（ADR-0003）：保持连接是默认方式，退到后台也照常轮询。
     phone
-        .dispatch(Action::SetPushMethod {
-            method: PushMethod::UnifiedPush,
+        .dispatch(Action::Push {
+            action: wonton_protocol::PushAction::SetPushMethod {
+                method: PushMethod::UnifiedPush,
+            },
         })
         .unwrap();
-    phone.dispatch(Action::AppBackgrounded).unwrap();
+    phone
+        .dispatch(Action::Home {
+            action: wonton_protocol::HomeAction::AppBackgrounded,
+        })
+        .unwrap();
     let polls = home.bot_api.polls.load(Ordering::SeqCst);
     tokio::time::sleep(Duration::from_millis(3_200)).await;
     assert_eq!(home.bot_api.polls.load(Ordering::SeqCst), polls);
@@ -147,7 +153,11 @@ async fn profile_refreshes(
         bot.state_avatars.len() == 1 && bot.state_avatars[0].image.kind == AvatarKind::Still
     })
     .await;
-    phone.dispatch(Action::AppBackgrounded).unwrap();
+    phone
+        .dispatch(Action::Home {
+            action: wonton_protocol::HomeAction::AppBackgrounded,
+        })
+        .unwrap();
     set_field(
         &home.matrix.url,
         bot,
@@ -155,7 +165,11 @@ async fn profile_refreshes(
         json!({AVATARS_FIELD:{"states":"invalid"}}),
     )
     .await;
-    phone.dispatch(Action::AppForegrounded).unwrap();
+    phone
+        .dispatch(Action::Home {
+            action: wonton_protocol::HomeAction::AppForegrounded,
+        })
+        .unwrap();
     wait_bot(phone, |bot| bot.state_avatars.is_empty()).await;
     set_field(
         &home.matrix.url,
@@ -169,7 +183,11 @@ async fn profile_refreshes(
     let mut installed = home_plugin(bot);
     installed.revision = "changed".to_owned();
     home.set_installed_plugins(vec![installed]);
-    phone.dispatch(Action::RefreshPlugins).unwrap();
+    phone
+        .dispatch(Action::Plugins {
+            action: wonton_protocol::PluginAction::RefreshPlugins,
+        })
+        .unwrap();
     wait_bot(phone, |bot| {
         bot.state_avatars.len() == 1 && bot.state_avatars[0].state == BotActivity::Working
     })
@@ -206,8 +224,10 @@ async fn direct_room(phone: &Phone, bot: &MatrixSession) -> wonton_matrix::Owned
         })
         .await;
     phone
-        .dispatch(Action::JoinRoom {
-            room_id: room.to_string(),
+        .dispatch(Action::Chat {
+            action: wonton_protocol::ChatAction::JoinRoom {
+                room_id: room.to_string(),
+            },
         })
         .unwrap();
     phone
@@ -249,9 +269,11 @@ async fn cache_video(phone: &Phone, home: &Home, media: MediaHandle) {
 
 async fn actions(phone: &Phone, home: &Home) {
     assert!(matches!(
-        phone.dispatch(Action::SetBotName {
-            plugin_id: PLUGIN.into(),
-            name: " \n ".into()
+        phone.dispatch(Action::Bot {
+            action: wonton_protocol::BotAction::SetBotName {
+                plugin_id: PLUGIN.into(),
+                name: " \n ".into()
+            }
         }),
         Err(CoreError::InvalidInput { .. })
     ));
@@ -266,9 +288,11 @@ async fn actions(phone: &Phone, home: &Home) {
         }
     );
     phone
-        .dispatch(Action::SetBotName {
-            plugin_id: PLUGIN.into(),
-            name: "  Named by owner  ".into(),
+        .dispatch(Action::Bot {
+            action: wonton_protocol::BotAction::SetBotName {
+                plugin_id: PLUGIN.into(),
+                name: "  Named by owner  ".into(),
+            },
         })
         .unwrap();
     assert!(phone.chat().bots[0].saving);
@@ -278,34 +302,44 @@ async fn actions(phone: &Phone, home: &Home) {
         json!({"name":"Named by owner"})
     );
     failures(phone, home).await;
+    avatar_actions(phone, home).await;
+}
+
+async fn avatar_actions(phone: &Phone, home: &Home) {
     let uploads = home.bot_api.events.lock().unwrap().len();
     assert!(matches!(
-        phone.dispatch(Action::SetBotAvatar {
-            plugin_id: PLUGIN.into(),
-            state: None,
-            upload: AvatarUpload {
-                mime_type: "image/png".into(),
-                data: vec![0; wonton_protocol::MAX_AVATAR_BYTES as usize + 1],
-                poster: None
-            },
+        phone.dispatch(Action::Bot {
+            action: wonton_protocol::BotAction::SetBotAvatar {
+                plugin_id: PLUGIN.into(),
+                state: None,
+                upload: AvatarUpload {
+                    mime_type: "image/png".into(),
+                    data: vec![0; wonton_protocol::MAX_AVATAR_BYTES as usize + 1],
+                    poster: None
+                },
+            }
         }),
         Err(CoreError::InvalidInput { .. })
     ));
     assert_eq!(home.bot_api.events.lock().unwrap().len(), uploads);
     phone
-        .dispatch(Action::DismissBotProfileProblem {
-            plugin_id: PLUGIN.into(),
+        .dispatch(Action::Bot {
+            action: wonton_protocol::BotAction::DismissBotProfileProblem {
+                plugin_id: PLUGIN.into(),
+            },
         })
         .unwrap();
     home.bot_api.events.lock().unwrap().clear();
     phone
-        .dispatch(Action::SetBotAvatar {
-            plugin_id: PLUGIN.into(),
-            state: Some(BotActivity::Waiting),
-            upload: AvatarUpload {
-                mime_type: "video/mp4".into(),
-                data: b"new video".to_vec(),
-                poster: Some(PNG.to_vec()),
+        .dispatch(Action::Bot {
+            action: wonton_protocol::BotAction::SetBotAvatar {
+                plugin_id: PLUGIN.into(),
+                state: Some(BotActivity::Waiting),
+                upload: AvatarUpload {
+                    mime_type: "video/mp4".into(),
+                    data: b"new video".to_vec(),
+                    poster: Some(PNG.to_vec()),
+                },
             },
         })
         .unwrap();
@@ -336,9 +370,11 @@ async fn actions(phone: &Phone, home: &Home) {
             .starts_with("mxc://")
     );
     phone
-        .dispatch(Action::ClearBotAvatar {
-            plugin_id: PLUGIN.into(),
-            state: None,
+        .dispatch(Action::Bot {
+            action: wonton_protocol::BotAction::ClearBotAvatar {
+                plugin_id: PLUGIN.into(),
+                state: None,
+            },
         })
         .unwrap();
     wait_bot(phone, |bot| !bot.saving && bot.avatar.is_none()).await;
@@ -399,25 +435,31 @@ async fn failures(phone: &Phone, home: &Home) {
             }}),
         ));
         phone
-            .dispatch(Action::SetBotName {
-                plugin_id: PLUGIN.into(),
-                name: "Another name".into(),
+            .dispatch(Action::Bot {
+                action: wonton_protocol::BotAction::SetBotName {
+                    plugin_id: PLUGIN.into(),
+                    name: "Another name".into(),
+                },
             })
             .unwrap();
         let view = wait_bot(phone, |bot| !bot.saving && bot.problem.is_some()).await;
         assert_eq!(view.problem.unwrap().reason, expected);
         phone
-            .dispatch(Action::DismissBotProfileProblem {
-                plugin_id: PLUGIN.into(),
+            .dispatch(Action::Bot {
+                action: wonton_protocol::BotAction::DismissBotProfileProblem {
+                    plugin_id: PLUGIN.into(),
+                },
             })
             .unwrap();
         assert_eq!(phone.chat().bots[0].problem, None);
     }
     *home.bot_api.next_reply.lock().unwrap() = Some((502, serde_json::Value::Null));
     phone
-        .dispatch(Action::SetBotName {
-            plugin_id: PLUGIN.into(),
-            name: "Disconnected".into(),
+        .dispatch(Action::Bot {
+            action: wonton_protocol::BotAction::SetBotName {
+                plugin_id: PLUGIN.into(),
+                name: "Disconnected".into(),
+            },
         })
         .unwrap();
     let bot = wait_bot(phone, |bot| !bot.saving && bot.problem.is_some()).await;
@@ -426,8 +468,10 @@ async fn failures(phone: &Phone, home: &Home) {
         BotProfileFailure::TransportUnavailable
     );
     phone
-        .dispatch(Action::DismissBotProfileProblem {
-            plugin_id: PLUGIN.into(),
+        .dispatch(Action::Bot {
+            action: wonton_protocol::BotAction::DismissBotProfileProblem {
+                plugin_id: PLUGIN.into(),
+            },
         })
         .unwrap();
 }
@@ -459,8 +503,16 @@ async fn status_transitions(
     facts.running = false;
     home.bot_api.facts(facts.clone());
     wait_bot(phone, |bot| bot.activity == Some(BotActivity::Offline)).await;
-    phone.dispatch(Action::AppBackgrounded).unwrap();
+    phone
+        .dispatch(Action::Home {
+            action: wonton_protocol::HomeAction::AppBackgrounded,
+        })
+        .unwrap();
     assert_eq!(phone.chat().bots[0].activity, None);
-    phone.dispatch(Action::AppForegrounded).unwrap();
+    phone
+        .dispatch(Action::Home {
+            action: wonton_protocol::HomeAction::AppForegrounded,
+        })
+        .unwrap();
     wait_bot(phone, |bot| bot.activity == Some(BotActivity::Offline)).await;
 }

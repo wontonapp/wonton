@@ -13,7 +13,7 @@ use crate::plugin::lan::webui::switched;
 use crate::plugin::languages::Languages;
 use crate::plugin::lifecycle::Undo;
 use crate::plugin::listed::Listed;
-use crate::plugin::manifest::{Manifest, Permission, PluginId};
+use crate::plugin::manifest::{Manifest, ManifestExt, Permission, PluginId};
 use crate::plugin::models::ProviderState;
 use crate::plugin::package::PluginPackage;
 use crate::plugin::render::dry_run;

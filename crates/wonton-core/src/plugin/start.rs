@@ -8,6 +8,7 @@ use tokio::time::Instant;
 use wonton_protocol::PluginRecoveryStage;
 
 use super::compose::DependCondition;
+use super::docker::EngineError;
 use super::health::{self, Target};
 use super::health_gate::Gate;
 use super::languages::Languages;
@@ -27,6 +28,24 @@ struct Started {
     health: Health,
     serving: BTreeSet<String>,
     deployed: Option<Deployed>,
+}
+
+/// [`PluginManager::start_settled`] 的结果：Docker 没回话后容器已经不在了，调用方可以照原计划重建。
+pub(in crate::plugin) enum StartSettled {
+    Started,
+    Missing,
+}
+
+/// 超时后确认容器已不在时的失败：说清真实状态，别只说“可能还在继续”。
+pub(in crate::plugin) fn container_gone_after_start_timeout(
+    langs: &Languages,
+    name: &str,
+) -> InstallError {
+    InstallError::DockerTimedOut(l10n::text(
+        langs,
+        "plugin-install-start-timeout-container-gone",
+        &[("name", name.into())],
+    ))
 }
 
 impl PluginManager {
@@ -450,9 +469,12 @@ impl PluginManager {
                     (name_of(dependency, dep_bot), condition)
                 })
                 .collect();
-            health::wait_for_all(&self.engine, &self.http, &deps, deadline, langs).await?;
+            self.wait_dependencies(Some(&package.manifest), &deps, deadline, langs)
+                .await?;
             let name = name_of(service, *bot);
-            self.engine.start_container(&name).await?;
+            if let StartSettled::Missing = self.start_settled(&name).await? {
+                return Err(container_gone_after_start_timeout(langs, &name));
+            }
         }
         for (service, bot) in &group {
             let name = name_of(service, *bot);
@@ -470,6 +492,50 @@ impl PluginManager {
         }
         self.ensure_relays(&package.manifest, record).await?;
         Ok(())
+    }
+
+    /// 启动容器；Docker 没按时回话时按容器的真实状态收尾，不把可能已经跑起来的容器当失败（issue #649）。
+    ///
+    /// 超时只说明没收到回话：先看真实状态，在跑就算启动成功；还在但没起来再发一次；不在了如实回报，
+    /// 由调用方按原计划重建，或者让恢复重试处理。
+    pub(in crate::plugin) async fn start_settled(
+        &self,
+        name: &str,
+    ) -> Result<StartSettled, InstallError> {
+        let message = match self.engine.start_container(name).await {
+            Ok(()) => return Ok(StartSettled::Started),
+            Err(EngineError::TimedOut(message)) => message,
+            Err(other) => return Err(other.into()),
+        };
+        match self.engine.inspect_container(name).await {
+            Ok(None) => Ok(StartSettled::Missing),
+            Ok(Some(info)) => {
+                if info.state.and_then(|state| state.running) == Some(true) {
+                    return Ok(StartSettled::Started);
+                }
+                // 还在（创建了没起来）：Docker 可能就是慢，再发一次。
+                match self.engine.start_container(name).await {
+                    Ok(()) => Ok(StartSettled::Started),
+                    Err(EngineError::TimedOut(late)) => {
+                        let running = self
+                            .engine
+                            .inspect_container(name)
+                            .await?
+                            .and_then(|info| info.state)
+                            .and_then(|state| state.running)
+                            == Some(true);
+                        if running {
+                            Ok(StartSettled::Started)
+                        } else {
+                            Err(InstallError::DockerTimedOut(late))
+                        }
+                    }
+                    Err(other) => Err(other.into()),
+                }
+            }
+            // 连看都看不到：只说超时，别猜。
+            Err(_) => Err(InstallError::DockerTimedOut(message)),
+        }
     }
 
     /// 启动前逐个确认归属：同名但被别的容器占用时不碰它。

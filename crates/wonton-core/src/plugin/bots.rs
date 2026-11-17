@@ -433,6 +433,11 @@ impl PluginManager {
         ctx: &mut super::render::InstallContext,
     ) -> Result<(), InstallError> {
         ctx.matrix = Some(self.matrix_vars(bot));
+        let dependencies =
+            self.dependency_vars(manifest, Some(super::bot_services::DEFAULT_BOT))?;
+        if manifest.bots.is_none() {
+            ctx.capabilities.extend(dependencies.clone());
+        }
         // Bot 的变量先放齐（模型凭据、Matrix 身份），总线地址只有申请了 tools 的插件才有。
         if manifest.bots.is_some() {
             // 默认 Bot 归主人（安装时按主人代登录），级别走归属人的解析。
@@ -448,6 +453,7 @@ impl PluginManager {
                         .and_then(|m| m.bot_keys.get(super::bot_services::DEFAULT_BOT).cloned()),
                     matrix: ctx.matrix.clone(),
                     mcp_url: None,
+                    dependencies,
                     ai_level,
                     keeper_read_only,
                     ..Default::default()

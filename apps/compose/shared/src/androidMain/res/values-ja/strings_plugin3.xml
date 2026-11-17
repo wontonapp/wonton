@@ -1,5 +1,7 @@
 <?xml version="1.0" encoding="utf-8"?>
 <resources>
+    <!-- Fallback name for an authorized device of an unknown kind. No arguments. -->
+    <string name="plugin_device_other">その他のデバイス</string>
     <string name="plugin_settings_update_app">変更するには App のアップデートが必要です</string>
     <!-- Note after saving when the app will restart to apply the new values. No arguments. -->
     <string name="plugin_settings_restart_hint">アプリを一度再起動します</string>

@@ -163,6 +163,9 @@ struct PluginDetailView: View {
                             mapping: model.viewModel.portMappings.first { $0.pluginId == installed.id }
                         )
                     }
+                    if detail.installed != nil, !detail.devices.isEmpty {
+                        PluginGrantedDevicesSection(devices: detail.devices)
+                    }
                     if let installed = detail.installed, !detail.saveGrants.isEmpty {
                         SaveGrants(model: model, id: installed.id, folders: detail.saveGrants) { loaded = .success($0) }
                     }
@@ -245,7 +248,7 @@ struct PluginDetailView: View {
                 // 取预览还没回来时任务还没建，列表行尾靠 pending 转圈，这里用同一个口径。
                 let busy = isWorking || model.viewModel.pending.contains(installed.id)
                 return DetailAction(title: String(localized: .Store.storeUpdate), enabled: !busy) {
-                    model.send(.upgradeNow(pluginId: installed.id))
+                    model.send(.plugins(action: .upgradeNow(pluginId: installed.id)))
                 }
             }
             guard let entry = installed.entries.first else { return nil }
@@ -541,10 +544,10 @@ extension View {
             ),
             actions: [
                 WontonDialogAction(title: String(localized: .Plugin1.pluginUninstallKeepData)) {
-                    model.send(.uninstallPlugin(id: id, deleteData: false))
+                    model.send(.plugins(action: .uninstallPlugin(id: id, deleteData: false)))
                 },
                 WontonDialogAction(title: String(localized: .Plugin1.pluginUninstallDeleteData), kind: .danger) {
-                    model.send(.uninstallPlugin(id: id, deleteData: true))
+                    model.send(.plugins(action: .uninstallPlugin(id: id, deleteData: true)))
                 },
                 WontonDialogAction(title: String(localized: .Common.commonCancel))
             ]

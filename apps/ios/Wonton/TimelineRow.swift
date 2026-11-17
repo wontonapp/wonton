@@ -318,22 +318,31 @@ private struct MessageBubble: View {
                     TextMessageBody(blocks: caption.blocks, ink: textColor, files: [])
                 }
             }
+        case let .file(file):
+            // 一次发送里主人写的字是说明文字（ADR-0094），和图片一样画在卡片下面的气泡墨色里。
+            VStack(alignment: .leading, spacing: WontonTheme.spacing.s8) {
+                // token 变了就是另一份媒体：换掉视图身份，状态（已下载路径、错误）跟着重来，不会显示新名打开旧内容。
+                MessageFileBody(file: file, core: core).id(file.media.token)
+                if let caption = file.caption {
+                    TextMessageBody(blocks: caption.blocks, ink: textColor, files: [])
+                }
+            }
         case let .confirmation(view):
             ConfirmationCardView(
                 view: view,
                 answer: {
                     cardAction(
-                        .answerConfirmation(
+                        .chat(action: .answerConfirmation(
                             id: view.card.id,
                             answer: $0.answer,
                             choiceId: $0.choiceId,
                             secrets: $1,
                             settings: $2,
                             devices: $3
-                        )
+                        ))
                     )
                 },
-                stopWindow: { cardAction(.stopConfirmationWindow(id: view.card.id)) }
+                stopWindow: { cardAction(.chat(action: .stopConfirmationWindow(id: view.card.id))) }
             )
         case .undecryptable:
             Label {

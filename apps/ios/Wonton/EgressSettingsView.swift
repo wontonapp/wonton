@@ -27,7 +27,7 @@ struct EgressSettingsView: View {
                         .padding(.trailing, WontonTheme.spacing.s12)
                 }
             }
-            .onAppear { model.send(.refreshEgressProxy) }
+            .onAppear { model.send(.plugins(action: .refreshEgressProxy)) }
             // 核心给的值变了才覆盖输入框：保存失败时主人填的还在。
             .onChange(of: egress.current?.address, initial: true) { _, value in address = value ?? "" }
             .onChange(of: egress.current?.directCidrs, initial: true) { _, value in directCidrs = value ?? "" }
@@ -46,13 +46,13 @@ struct EgressSettingsView: View {
                 isPresented: .constant(egress.confirmation != nil),
                 actions: [
                     WontonDialogAction(title: String(localized: .Common.commonCancel)) {
-                        model.send(.dismissEgressConfirmation)
+                        model.send(.plugins(action: .dismissEgressConfirmation))
                     },
                     WontonDialogAction(title: String(localized: .Egress.egressRestartConfirm), kind: .primary) {
-                        model.send(.confirmEgressProxy)
+                        model.send(.plugins(action: .confirmEgressProxy))
                     }
                 ],
-                onDismiss: { model.send(.dismissEgressConfirmation) }
+                onDismiss: { model.send(.plugins(action: .dismissEgressConfirmation)) }
             )
     }
 
@@ -60,7 +60,7 @@ struct EgressSettingsView: View {
         if let current = egress.current {
             form(current)
         } else if let problem = egress.loadProblem {
-            ProblemView(problem: problem.problem) { model.send(.refreshEgressProxy) }
+            ProblemView(problem: problem.problem) { model.send(.plugins(action: .refreshEgressProxy)) }
         } else {
             LoadingView()
         }
@@ -157,7 +157,7 @@ struct EgressSettingsView: View {
     }
 
     private func save(address: String, usePlugin: Bool) {
-        model.send(.saveEgressProxy(address: address, directCidrs: directCidrs, usePlugin: usePlugin))
+        model.send(.plugins(action: .saveEgressProxy(address: address, directCidrs: directCidrs, usePlugin: usePlugin)))
     }
 }
 

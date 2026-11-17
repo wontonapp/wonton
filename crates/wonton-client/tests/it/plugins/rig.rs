@@ -131,11 +131,13 @@ impl CoreState {
     }
 
     /// 让这个请求一直等，直到 [`Self::release`]。
-    pub fn hold(&self, method: Method, path: &str) {
+    pub fn hold(&self, method: Method, path: &str) -> Arc<watch::Sender<bool>> {
+        let held = Arc::new(watch::channel(true).0);
         self.holds
             .lock()
             .unwrap()
-            .insert((method, path.to_owned()), Arc::new(watch::channel(true).0));
+            .insert((method, path.to_owned()), held.clone());
+        held
     }
 
     pub fn release(&self, method: Method, path: &str) {
@@ -676,7 +678,11 @@ impl Rig {
     }
 
     pub fn connect_to(&self, ticket: String) {
-        self.app.dispatch(Action::ConnectHome { ticket }).unwrap();
+        self.app
+            .dispatch(Action::Home {
+                action: wonton_protocol::HomeAction::ConnectHome { ticket },
+            })
+            .unwrap();
     }
 
     #[allow(dead_code)]

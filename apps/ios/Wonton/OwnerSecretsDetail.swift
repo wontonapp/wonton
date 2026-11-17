@@ -31,15 +31,15 @@ struct OwnerSecretsDetail: View {
             }
         }
         .task(id: pluginId) { await loadIdentity() }
-        .onDisappear { model.send(.dismissOwnerSecrets(pluginId: pluginId)) }
+        .onDisappear { model.send(.plugins(action: .dismissOwnerSecrets(pluginId: pluginId))) }
     }
 
     private var groupHeader: some View {
         Button {
             if group == nil {
-                model.send(.listOwnerSecrets(pluginId: pluginId))
+                model.send(.plugins(action: .listOwnerSecrets(pluginId: pluginId)))
             } else {
-                model.send(.dismissOwnerSecrets(pluginId: pluginId))
+                model.send(.plugins(action: .dismissOwnerSecrets(pluginId: pluginId)))
             }
         } label: {
             HStack {
@@ -66,8 +66,10 @@ struct OwnerSecretsDetail: View {
             ProgressView()
         } else if let problem = group.problem {
             ProblemNotice(problem: problem.ownerSecretProblem)
-            Button(String(localized: .Common.commonRetry)) { model.send(.listOwnerSecrets(pluginId: pluginId)) }
-                .buttonStyle(WontonSmallButtonStyle())
+            Button(String(localized: .Common.commonRetry)) {
+                model.send(.plugins(action: .listOwnerSecrets(pluginId: pluginId)))
+            }
+            .buttonStyle(WontonSmallButtonStyle())
         } else if group.secrets.isEmpty {
             Text(.ownerSecretsEmpty)
                 .wontonText(WontonTheme.typography.supporting)
@@ -108,7 +110,7 @@ private struct OwnerSecretRow: View {
                     .frame(maxWidth: .infinity, alignment: .leading)
                 Button(String(localized: secret.expanded ? .ownerSecretsHide : .ownerSecretsShow)) {
                     if secret.expanded {
-                        model.send(.hideOwnerSecret(pluginId: pluginId, name: secret.name))
+                        model.send(.plugins(action: .hideOwnerSecret(pluginId: pluginId, name: secret.name)))
                     } else {
                         show()
                     }
@@ -146,7 +148,7 @@ private struct OwnerSecretRow: View {
     }
 
     private func show() {
-        model.send(.showOwnerSecret(pluginId: pluginId, name: secret.name))
+        model.send(.plugins(action: .showOwnerSecret(pluginId: pluginId, name: secret.name)))
     }
 }
 

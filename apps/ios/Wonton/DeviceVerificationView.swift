@@ -55,11 +55,11 @@ struct DeviceVerificationFlowView: View {
                 .wontonText(WontonTheme.typography.itemTitle)
                 .foregroundStyle(Color(colors.textPrimary))
             HStack(spacing: WontonTheme.spacing.s8) {
-                Button { model.send(.acceptDeviceVerification(flowId: flow.flowId)) } label: {
+                Button { model.send(.chat(action: .acceptDeviceVerification(flowId: flow.flowId))) } label: {
                     Text(.Verification0.verificationAccept).frame(maxWidth: .infinity)
                 }
                 .buttonStyle(WontonButtonStyle(kind: .primary))
-                Button { model.send(.cancelDeviceVerification(flowId: flow.flowId)) } label: {
+                Button { model.send(.chat(action: .cancelDeviceVerification(flowId: flow.flowId))) } label: {
                     Text(.Verification0.verificationDeny).frame(maxWidth: .infinity)
                 }
                 .buttonStyle(WontonButtonStyle(kind: .secondary))
@@ -119,11 +119,11 @@ struct DeviceVerificationFlowView: View {
                 }
             }
             HStack(spacing: WontonTheme.spacing.s8) {
-                Button { model.send(.confirmVerification(flowId: flow.flowId)) } label: {
+                Button { model.send(.chat(action: .confirmVerification(flowId: flow.flowId))) } label: {
                     Text(.Verification0.verificationSame).frame(maxWidth: .infinity)
                 }
                 .buttonStyle(WontonButtonStyle(kind: .primary))
-                Button { model.send(.denyVerification(flowId: flow.flowId)) } label: {
+                Button { model.send(.chat(action: .denyVerification(flowId: flow.flowId))) } label: {
                     Text(.Verification1.verificationDifferent).frame(maxWidth: .infinity)
                 }
                 .buttonStyle(WontonButtonStyle(kind: .secondary))
@@ -143,7 +143,7 @@ struct DeviceVerificationFlowView: View {
                 case .acceptedElsewhere, .other:
                     EmptyView()
                 default:
-                    Button { model.send(.startDeviceVerification) } label: {
+                    Button { model.send(.chat(action: .startDeviceVerification)) } label: {
                         Text(.Verification1.verificationRetry).frame(maxWidth: .infinity)
                     }
                     .buttonStyle(WontonButtonStyle(kind: .primary))
@@ -159,7 +159,7 @@ struct DeviceVerificationFlowView: View {
     }
 
     private var cancelButton: some View {
-        Button { model.send(.cancelDeviceVerification(flowId: flow.flowId)) } label: {
+        Button { model.send(.chat(action: .cancelDeviceVerification(flowId: flow.flowId))) } label: {
             Text(.Common.commonCancel).frame(maxWidth: .infinity)
         }
         .buttonStyle(WontonButtonStyle(kind: .secondary))
@@ -195,10 +195,14 @@ struct DeviceVerificationDialogs: ViewModifier {
                 isPresented: incomingPresented,
                 actions: [
                     WontonDialogAction(title: String(localized: .Verification0.verificationAccept), kind: .primary) {
-                        if let flow = currentFlow { model.send(.acceptDeviceVerification(flowId: flow.flowId)) }
+                        if let flow = currentFlow {
+                            model.send(.chat(action: .acceptDeviceVerification(flowId: flow.flowId)))
+                        }
                     },
                     WontonDialogAction(title: String(localized: .Verification0.verificationDeny)) {
-                        if let flow = currentFlow { model.send(.cancelDeviceVerification(flowId: flow.flowId)) }
+                        if let flow = currentFlow {
+                            model.send(.chat(action: .cancelDeviceVerification(flowId: flow.flowId)))
+                        }
                     }
                 ]
             )

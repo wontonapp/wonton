@@ -21,7 +21,7 @@ use super::super::manager::{
     Deployed, Entry, Health, InstallError, PluginManager, PluginStatus, busy, check_permissions,
     now_secs,
 };
-use super::super::manifest::{Manifest, Permission, PluginId, PluginKind};
+use super::super::manifest::{Manifest, ManifestExt, Permission, PluginId, PluginKind};
 use super::super::package::PluginPackage;
 use super::super::proxy_auth::ProxyAuth;
 use wonton_protocol::BotKeeper;
@@ -541,6 +541,13 @@ impl PluginManager {
             .upgrade_model_vars(package, &mut progress.added_models, &langs)
             .await?;
         if let Some(bot) = new_bot {
+            self.prepare_bot_dependencies(
+                manifest,
+                super::super::bot_services::DEFAULT_BOT,
+                &langs,
+                None,
+            )
+            .await?;
             self.fill_default_bot_vars(manifest, &bot, &mut ctx)?;
         } else {
             self.fill_bot_vars(package, &mut ctx, &langs).await?;

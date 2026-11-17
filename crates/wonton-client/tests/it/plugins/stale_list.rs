@@ -64,7 +64,9 @@ async fn a_late_stale_list_does_not_bring_the_uninstalled_plugin_back() {
     rig.connected().await;
     // 连上只会自动取已安装列表；商店要主人进过才取。
     rig.app
-        .dispatch(Action::RefreshStore { force: false })
+        .dispatch(Action::Plugins {
+            action: wonton_protocol::PluginAction::RefreshStore { force: false },
+        })
         .unwrap();
 
     let view = rig
@@ -90,13 +92,19 @@ async fn a_late_stale_list_does_not_bring_the_uninstalled_plugin_back() {
         ),
         Duration::from_secs(2),
     );
-    rig.app.dispatch(Action::RefreshPlugins).unwrap();
+    rig.app
+        .dispatch(Action::Plugins {
+            action: wonton_protocol::PluginAction::RefreshPlugins,
+        })
+        .unwrap();
     tokio::time::sleep(Duration::from_millis(500)).await;
 
     rig.app
-        .dispatch(Action::UninstallPlugin {
-            id: "app.miniflux.miniflux".to_owned(),
-            delete_data: false,
+        .dispatch(Action::Plugins {
+            action: wonton_protocol::PluginAction::UninstallPlugin {
+                id: "app.miniflux.miniflux".to_owned(),
+                delete_data: false,
+            },
         })
         .unwrap();
     let state = rig

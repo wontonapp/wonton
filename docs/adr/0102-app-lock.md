@@ -10,7 +10,7 @@
    （iOS 隐私遮罩、Android `FLAG_SECURE`）。
 2. **谁存、谁判定**：开关和超时档位存核心（本机文件，同 `appearance.json` / `push-method.json` 模式），锁定状态由核心的状态机
    判定（厚核心，行为测试在核心）；壳只做三件事：探测设备有没有锁屏、调系统验证（`LAContext` / `BiometricPrompt`）、画锁定页。
-   新能力用 `ClientCore` 方法，不加 `Action` 变体；前后台沿用已有的 `Action::AppForegrounded` / `Action::AppBackgrounded`。
+   新能力用 `ClientCore` 方法，不加 `Action` 变体；前后台沿用已有的 `HomeAction::AppForegrounded` / `HomeAction::AppBackgrounded`。
 3. **锁着就不露内容**（与 [ADR-0101](0101-notifications.md) 的锁屏隐藏同一方向）：锁定期间到达的通知走 Android 已有的 hidden
    版本；云吞没有小组件，规则先写死：App 锁开着且锁定时，小组件不显示任何消息内容，只显示"已锁定"或占位，数据面由核心同一
    状态驱动。分享进云吞写入收件箱不需要验证，打开 App 看到分享页之前先解锁。
@@ -29,7 +29,7 @@ App 锁要复用这套验证，并回答：什么时候锁、设置存哪谁判�
 
 **已有的地基**（都能直接用，不用新开接口）：
 
-- 前后台信号已经到核心：`Action::AppForegrounded` / `AppBackgrounded`（`crates/wonton-protocol/src/action.rs:95-98`）。
+- 前后台信号已经到核心：`HomeAction::AppForegrounded` / `HomeAction::AppBackgrounded`（`crates/wonton-protocol/src/action_domains.rs`）。
   iOS 由 `apps/ios/Wonton/WontonApp.swift` 的 `scenePhase` 发出（:41-46），Android 由
   `apps/compose/androidApp/src/main/kotlin/app/wonton/android/MainActivity.kt` 的 `onResume` / `onStop` 发出。
 - 本机设置文件的成熟模式：`appearance.json`（`crates/wonton-client/src/appearance/mod.rs`）、`push-method.json`
