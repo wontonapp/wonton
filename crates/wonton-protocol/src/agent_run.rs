@@ -221,6 +221,7 @@ mod tests {
                 card_id: None,
                 choices: Vec::new(),
                 sender_name: "Hermes".into(),
+                timestamp_ms: 1_793_000_000_000,
             },
         };
         let value = serde_json::to_value(&item).unwrap();
@@ -232,5 +233,6 @@ mod tests {
         assert_eq!(value["content"]["card_id"], serde_json::Value::Null);
         assert_eq!(value["content"]["choices"], serde_json::json!([]));
         assert_eq!(value["content"]["sender_name"], "Hermes");
+        assert_eq!(value["content"]["timestamp_ms"], 1_793_000_000_000u64);
     }
 }

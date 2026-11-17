@@ -33,6 +33,7 @@ object AgentRunRowFixtures {
         cardId: String? = null,
         choices: List<AgentRunChoice> = emptyList(),
         senderName: String = "",
+        timestampMs: ULong = 0uL,
     ) = TimelineContent.AgentRun(
         run = null,
         state = state,
@@ -45,6 +46,8 @@ object AgentRunRowFixtures {
         cardId = cardId,
         choices = choices,
         senderName = senderName,
+        // 0 = 不带发送时间：已等待那行不显示，参考图不吃真实时钟。
+        timestampMs = timestampMs,
     )
 
     val working = row(AgentRunState.Working, step = "Reading files")
