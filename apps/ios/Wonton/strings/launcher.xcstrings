@@ -372,6 +372,36 @@
         }
       }
     },
+    "launcher.installFailed": {
+      "comment": "Status of an app whose installation failed, shown in the app grid and sidebar.",
+      "extractionState": "manual",
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Install failed"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "安装失败"
+          }
+        },
+        "zh-Hant": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "安裝失敗"
+          }
+        },
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "インストール失敗"
+          }
+        }
+      }
+    },
     "launcher.badgeDegraded": {
       "comment": "Accessibility label of the warning badge on an app icon in the launcher: the app has a problem.",
       "extractionState": "manual",
