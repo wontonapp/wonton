@@ -432,22 +432,32 @@ pub fn risky_lines(package: &PluginPackage, langs: &Languages) -> Vec<CardLine> 
 /// 最高级的安装和更新要多点一步（ADR-0036）：第一张批准后再点这张，两张都同意才执行。提示文字用 [`permission_line`] 给的，写明代码会以本机 root 身份运行。
 pub fn highest_confirm(package: &PluginPackage, langs: &Languages) -> Draft {
     let manifest = &package.manifest;
-    let notice = manifest
+    let permissions = manifest
         .permissions
         .iter()
-        .filter_map(|p| {
-            let line = permission_line(p, langs);
-            (line.risk == Some(PermissionRisk::Highest)).then_some(line.notice)
-        })
-        .flatten()
-        .next()
-        .unwrap_or_default();
+        .map(|permission| permission_line(permission, langs))
+        .collect();
+    highest_confirm_for(
+        &text(&manifest.title),
+        manifest.id.as_str(),
+        permissions,
+        langs,
+    )
+}
+
+pub(crate) fn highest_confirm_for(
+    title: &str,
+    plugin_id: &str,
+    permissions: Vec<wonton_protocol::PermissionLine>,
+    langs: &Languages,
+) -> Draft {
+    let notice = permissions
+        .iter()
+        .find(|line| line.risk == Some(PermissionRisk::Highest))
+        .and_then(|line| line.notice.clone())
+        .unwrap_or_else(|| l10n::text(langs, "permission-notice-highest-risk", &[]));
     Draft {
-        title: l10n::text(
-            langs,
-            "chat-card-highest-title",
-            &[("title", text(&manifest.title).into())],
-        ),
+        title: l10n::text(langs, "chat-card-highest-title", &[("title", title.into())]),
         lines: vec![
             emphasized(notice),
             emphasized(l10n::text(langs, "chat-card-highest-line", &[])),
@@ -457,17 +467,32 @@ pub fn highest_confirm(package: &PluginPackage, langs: &Languages) -> Draft {
             &l10n::text(langs, "chat-choice-deny-install", &[]),
         ),
         scope: None,
-        plugin_id: Some(manifest.id.to_string()),
+        plugin_id: Some(plugin_id.to_owned()),
         secret_inputs: Vec::new(),
         settings: None,
         category: None,
-        permissions: package
-            .manifest
-            .permissions
-            .iter()
-            .map(|p| permission_line(p, langs))
-            .collect(),
+        permissions,
         devices: Vec::new(),
+    }
+}
+
+pub(crate) fn mark_nvme_risk(draft: &mut Draft, langs: &Languages) {
+    let highest = permission_line(
+        &crate::plugin::manifest::Permission::Capability {
+            name: "SYS_ADMIN".to_owned(),
+        },
+        langs,
+    );
+    let mut found = false;
+    for line in &mut draft.permissions {
+        if line.permission == "devices.disk" {
+            line.risk = highest.risk;
+            line.notice.clone_from(&highest.notice);
+            found = true;
+        }
+    }
+    if !found {
+        draft.permissions.push(highest);
     }
 }
 
