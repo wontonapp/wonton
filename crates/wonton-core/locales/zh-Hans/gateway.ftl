@@ -190,3 +190,7 @@ gateway-agent-acp-busy = 这个应用开着的 Agent 连接已经到上限，稍
 
 gateway-install-rejected = 管理员没有同意，没有{$action}
 gateway-install-expired = 管理员没有在期限内回答，没有{$action}
+gateway-install-card-device = 交给它的设备：{ $device }
+gateway-install-card-secret = 请求里填了密钥：{ $title }
+gateway-install-card-setting = 请求里填的设置：{ $title } = { $value }
+gateway-install-changed = 卡片发出后 { $id } 的权限、设备或设置已经改过，没有升级。请重新发起。

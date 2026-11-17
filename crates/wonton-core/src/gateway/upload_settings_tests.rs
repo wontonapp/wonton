@@ -32,7 +32,7 @@ const SCHEMA: &str = r#"{
   }
 }"#;
 
-fn archive(version: &str) -> Vec<u8> {
+pub(super) fn consent_package(version: &str) -> PluginPackage {
     let compose = format!(
         "services:\n  game:\n    image: nginx\n    environment:\n      EULA: '${{WONTON_SETTING_EULA:-false}}'\n      \
          PLAYERS: '${{WONTON_SETTING_PLAYERS}}'\nx-wonton:\n  spec: '0.13'\n  id: {ID}\n  version: {version}\n  \
@@ -44,16 +44,23 @@ fn archive(version: &str) -> Vec<u8> {
         SCHEMA.as_bytes().to_vec(),
     )]
     .into();
-    PluginPackage::with_files(&compose, files, &Languages::default())
-        .unwrap()
-        .archive()
+    PluginPackage::with_files(&compose, files, &Languages::default()).unwrap()
 }
 
-fn header(values: serde_json::Value) -> String {
+pub(super) fn archive(version: &str) -> Vec<u8> {
+    consent_package(version).archive()
+}
+
+pub(super) fn header(values: serde_json::Value) -> String {
     URL_SAFE_NO_PAD.encode(serde_json::to_vec(&values).unwrap())
 }
 
-async fn upload(h: &Harness, path: &str, body: Vec<u8>, settings: Option<&str>) -> Reply {
+pub(super) async fn upload(
+    h: &Harness,
+    path: &str,
+    body: Vec<u8>,
+    settings: Option<&str>,
+) -> Reply {
     let bearer = format!("Bearer {}", super::tests::TOKEN);
     let mut headers = vec![
         ("authorization", bearer.as_str()),
