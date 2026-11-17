@@ -7,6 +7,7 @@ final class PairingLinkUITests: XCTestCase {
         let app = XCUIApplication()
         app.launchArguments += ["-AppleLanguages", "(en)", "-AppleLocale", "en_US"]
         app.launchEnvironment["WONTON_DEV_DATA_SUFFIX"] = UUID().uuidString
+        UITestBackend.enableStateProbe(to: app)
         app.launch()
         let code = app.descendants(matching: .any)["pairing-code"].firstMatch
         XCTAssertTrue(code.waitForExistence(timeout: 15))
