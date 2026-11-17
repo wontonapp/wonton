@@ -32,5 +32,5 @@
     <string name="friends_error_other">Something went wrong. Try again later.</string>
 
     <!-- Explanation under the banner: friends on other servers can't reach this home until it is turned back on. -->
-    <string name="friends_public_access_off_detail">Friends on other servers can't reach this home right now. They'll get through after public access is turned back on and they retry.</string>
+    <string name="friends_public_access_off_detail">Friends on other servers can\'t reach this home right now. They\'ll get through after public access is turned back on and they retry.</string>
 </resources>
