@@ -1,5 +1,4 @@
-//! 假数据入口（`ui_fake.rs`）里一个拿了设备的已装应用的详情页（ADR-0036）：一个串口不在了，USB 整类，
-//! 两块硬盘里一块是系统盘。没有后端，别的应用的详情照旧取不到；这一个写死，界面测试看“设备”一节怎么画。
+//! 假数据入口中的设备详情和安装失败详情，供无后端的界面测试使用。
 
 use wonton_protocol::{
     Gate, InstalledPlugin, PluginDetail, PluginDetailRoute, PluginDeviceKind, PluginFailure,
@@ -18,7 +17,7 @@ pub(super) fn status() -> PluginState {
 
 const GONE: &str = "Sonoff Zigbee 3.0 is not connected. Plug it back in.";
 
-/// 这条路径是那个带设备的假应用时是它的详情；别的路径为空，照常走没有后端的那条路。
+/// 未提供测试数据的详情照常走没有后端的路径。
 pub(super) fn detail(
     route: &PluginDetailRoute,
     installed: Option<InstalledPlugin>,
@@ -26,7 +25,22 @@ pub(super) fn detail(
     let PluginDetailRoute::Installed { id } = route else {
         return None;
     };
-    (id == HUB_ID).then(|| hub(installed))
+    if id == HUB_ID {
+        return Some(hub(installed));
+    }
+    let installed = installed.filter(|plugin| plugin.install_failure.is_some())?;
+    let mut detail = hub(None);
+    detail.id = installed.id.clone();
+    detail.title = installed.title.clone();
+    detail.summary = installed.summary.clone();
+    detail.source = installed.source.clone();
+    detail.kind = installed.kind;
+    detail.version = installed.version.clone();
+    detail.trust = installed.trust;
+    detail.problems.clear();
+    detail.devices.clear();
+    detail.installed = Some(installed);
+    Some(detail)
 }
 
 fn hub(installed: Option<InstalledPlugin>) -> PluginDetail {
