@@ -2,6 +2,7 @@
 //! 重建。做不到时按原因报类别：镜像拉不到是 `image_pull_failed`，记录读不懂是 `record_unusable`。
 
 use std::sync::Arc;
+use std::time::Duration;
 
 use super::super::egress::settings::Egress;
 use super::super::fake_docker::FakeDocker;
@@ -183,6 +184,142 @@ async fn an_unpullable_image_fails_the_start_as_image_pull_failed() {
     let error = manager.start_detached(installed.id).await.unwrap_err();
     assert_eq!(error.kind(), "image_pull_failed", "{error}");
     assert!(error.to_string().contains("pull access denied"), "{error}");
+    assert!(matches!(
+        manager.list()[0].status,
+        PluginStatus::Degraded { .. }
+    ));
+}
+
+#[tokio::test]
+async fn a_start_timeout_for_a_vanished_container_settles_and_can_be_retried() {
+    let (docker, engine) = FakeDocker::start().await;
+    let engine = engine.with_request_limit_for_test(Duration::from_secs(1));
+    let dir = tempfile::tempdir().unwrap();
+    let manager = Arc::new(manager_with(engine.clone(), &dir));
+    let installed = manager
+        .install(&compose(), &[], super::langs())
+        .await
+        .unwrap();
+    engine.stop_container(&app()).await.unwrap();
+
+    let hold = docker.hold(&format!("POST /containers/{}/start", app()));
+    let start = {
+        let manager = Arc::clone(&manager);
+        let id = installed.id.clone();
+        tokio::spawn(async move { manager.start_detached(id).await })
+    };
+    hold.reached().await;
+    // Docker 没按时回答，容器最后也不在（start 请求丢了，或者被别的东西删了）。
+    docker.remove(&app());
+    tokio::time::sleep(Duration::from_millis(1500)).await;
+    hold.release();
+    // 超时后确认容器不在：失败类别如实是超时，原因说清容器已经不在。
+    let error = start.await.unwrap().unwrap_err();
+    assert_eq!(error.kind(), "docker_timed_out", "{error}");
+    assert!(error.to_string().contains(&app()), "{error}");
+    assert!(docker.containers().is_empty());
+    assert!(matches!(
+        manager.list()[0].status,
+        PluginStatus::Degraded { .. }
+    ));
+    let recovery = manager
+        .lifecycle_status(&installed.id)
+        .unwrap()
+        .recovery
+        .unwrap();
+    assert_eq!(recovery.category, "docker_timed_out");
+
+    // 恢复重试照已安装记录重建，一轮就好；好了以后不再动容器。
+    super::rebuild_resume::retry_due(&manager, &installed.id);
+    manager.watch_containers().await;
+    assert_eq!(manager.list()[0].status, PluginStatus::Running);
+    assert_eq!(docker.containers(), [app().as_str()]);
+    assert_eq!(docker.creations(&app()), 2);
+    assert_eq!(
+        manager.lifecycle_status(&installed.id).unwrap().recovery,
+        None
+    );
+    let writes = docker.writes();
+    manager.watch_containers().await;
+    assert_eq!(docker.writes(), writes);
+}
+
+#[tokio::test]
+async fn an_install_start_timeout_for_a_vanished_container_rebuilds_it() {
+    let (docker, engine) = FakeDocker::start().await;
+    let engine = engine.with_request_limit_for_test(Duration::from_secs(1));
+    let dir = tempfile::tempdir().unwrap();
+    let manager = Arc::new(manager_with(engine.clone(), &dir));
+
+    let hold = docker.hold(&format!("POST /containers/{}/start", app()));
+    let install = {
+        let manager = Arc::clone(&manager);
+        tokio::spawn(async move { manager.install(&compose(), &[], super::langs()).await })
+    };
+    hold.reached().await;
+    docker.remove(&app());
+    tokio::time::sleep(Duration::from_millis(1500)).await;
+    hold.release();
+    // 容器不在了：照同一份计划重建再启动，这次装成功，不是半小时不动。
+    let view = install.await.unwrap().unwrap();
+    assert_eq!(view.status, PluginStatus::Running);
+    assert_eq!(docker.creations(&app()), 2, "超时后容器不在，重建了一次");
+    assert_eq!(docker.containers(), [app().as_str()]);
+    let plugin = manager
+        .installed_plugin(&installed_id(&manager), &super::langs())
+        .unwrap();
+    assert!(plugin.install_failure.is_none());
+}
+
+fn installed_id(manager: &super::super::PluginManager) -> super::super::PluginId {
+    manager.list()[0].id.clone()
+}
+
+#[tokio::test]
+async fn a_second_start_timeout_with_the_container_gone_is_a_definite_failure() {
+    let (docker, engine) = FakeDocker::start().await;
+    let engine = engine.with_request_limit_for_test(Duration::from_secs(1));
+    let dir = tempfile::tempdir().unwrap();
+    let manager = Arc::new(manager_with(engine.clone(), &dir));
+
+    let first = docker.hold(&format!("POST /containers/{}/start", app()));
+    let install = {
+        let manager = Arc::clone(&manager);
+        tokio::spawn(async move { manager.install(&compose(), &[], super::langs()).await })
+    };
+    tokio::time::timeout(Duration::from_secs(10), first.reached())
+        .await
+        .expect("第一次 start 没来");
+    let second = docker.hold(&format!("POST /containers/{}/start", app()));
+    docker.remove(&app());
+    tokio::time::sleep(Duration::from_millis(1500)).await;
+    first.release();
+    // 第一次超时后照计划重建过，这次启动也超时，最后又不在。
+    tokio::time::timeout(Duration::from_secs(10), second.reached())
+        .await
+        .expect("第二次 start 没来");
+    docker.remove(&app());
+    tokio::time::sleep(Duration::from_millis(1500)).await;
+    second.release();
+
+    let error = install.await.unwrap().unwrap_err();
+    assert_eq!(error.kind(), "docker_timed_out", "{error}");
+    assert!(error.to_string().contains(&app()), "{error}");
+    let plugin = manager
+        .installed_plugin(&installed_id(&manager), &super::langs())
+        .unwrap();
+    assert!(matches!(
+        plugin.status,
+        wonton_protocol::PluginState::Degraded { .. }
+    ));
+    assert_eq!(
+        plugin.install_failure.as_ref().unwrap().kind,
+        "docker_timed_out"
+    );
+    assert!(docker.containers().is_empty(), "重建出来的容器也丢了");
+    let writes = docker.writes();
+    manager.watch_containers().await;
+    assert_eq!(docker.writes(), writes, "失败安装不进巡检");
     assert!(matches!(
         manager.list()[0].status,
         PluginStatus::Degraded { .. }
