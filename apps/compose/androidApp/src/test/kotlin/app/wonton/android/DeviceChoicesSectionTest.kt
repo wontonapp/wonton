@@ -38,7 +38,9 @@ class DeviceChoicesSectionTest {
 
     private val context = ApplicationProvider.getApplicationContext<Application>()
     private val serial = device("serial:0:/dev/serial/by-id/usb-zigbee", "Sonoff Zigbee 3.0", PluginDeviceKind.SERIAL)
-    private val systemDisk = device("disk:/dev/disk/by-id/nvme-system", "Samsung SSD 990", PluginDeviceKind.DISK, true)
+    private val systemDisk = device(
+        "disk:nvme:/dev/disk/by-id/nvme-system", "Samsung SSD 990", PluginDeviceKind.DISK, true,
+    )
     private val dataDisk = device("disk:/dev/disk/by-id/ata-data", "WDC WD40EFRX", PluginDeviceKind.DISK)
 
     private fun device(id: String, name: String, kind: PluginDeviceKind, system: Boolean = false) = PluginDevice(
@@ -60,6 +62,7 @@ class DeviceChoicesSectionTest {
         disksMissing = false,
         unknown = emptyList(),
         ready = false,
+        highestRisk = false,
     )
 
     @Test
@@ -81,6 +84,16 @@ class DeviceChoicesSectionTest {
         compose.onNodeWithText(dataDisk.id, substring = true).assertDoesNotExist()
         compose.onNodeWithText(context.getString(R.string.common_details)).performClick()
         compose.onNodeWithText(dataDisk.id, substring = true).assertIsDisplayed()
+    }
+
+    @Test
+    fun highestRiskWarningAppearsForSelectedNvme() {
+        compose.setContent {
+            WontonTheme(testAppearance()) {
+                DeviceChoicesSection(choices.copy(highestRisk = true)) { }
+            }
+        }
+        compose.onNodeWithTag("device-highest-risk").assertIsDisplayed()
     }
 
     @Test

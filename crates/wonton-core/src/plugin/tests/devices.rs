@@ -32,7 +32,7 @@ pub(super) fn granted() -> Vec<Permission> {
         .collect()
 }
 
-fn parse(source: &str) -> Result<PluginPackage, String> {
+pub(super) fn parse(source: &str) -> Result<PluginPackage, String> {
     PluginPackage::parse(source, &langs()).map_err(|e| e.to_string())
 }
 
@@ -53,7 +53,7 @@ pub(super) fn device_host() -> FakeHost {
     host
 }
 
-fn host_config(docker: &FakeDocker, service: &str) -> Value {
+pub(super) fn host_config(docker: &FakeDocker, service: &str) -> Value {
     docker
         .created(&container_name("app-test", service))
         .expect("容器已创建")["HostConfig"]
@@ -532,10 +532,10 @@ async fn nvme_upgrade_refreshes_controller_and_deduplicates_disks_shared_by_serv
     host.dev_node("nvme2");
     let (docker, manager, _dir) = on_host(&host).await;
     let source = super::package(
-        "  smart: {image: example/scrutiny}\n  other: {image: example/scrutiny}",
+        "  smart: {image: example/scrutiny}\n  other: {image: example/scrutiny}\n  web: {image: example/web}",
         "  permissions: [devices.disk]\n  devices:\n    disk:\n      - {service: smart}\n      - {service: other}",
     );
-    let choices = vec!["disk:/dev/disk/by-id/nvme-Test_S3".to_owned()];
+    let choices = vec!["disk:nvme:/dev/disk/by-id/nvme-Test_S3".to_owned()];
     manager
         .install_with_devices(&source, &[Permission::DevicesDisk], &choices, langs())
         .await
@@ -573,5 +573,108 @@ async fn nvme_upgrade_refreshes_controller_and_deduplicates_disks_shared_by_serv
                 {"PathOnHost": "/dev/nvme7", "PathInContainer": "/dev/nvme0", "CgroupPermissions": "r"},
             ])
         );
+        assert_eq!(
+            host_config(&docker, service)["CapAdd"],
+            json!(["SYS_RAWIO", "SYS_ADMIN"])
+        );
     }
+    assert!(host_config(&docker, "web")["CapAdd"].is_null());
+    let id = super::super::manifest::PluginId::parse("app.test").unwrap();
+    let record = manager.store.load(&id).unwrap().unwrap();
+    let package = parse(&source.replace("version: 1.0.0", "version: 1.1.0")).unwrap();
+    let ctx = manager
+        .rebuild_context(&package, &record, None, None)
+        .await
+        .unwrap();
+    let restored = super::super::render::render(&package, &ctx, &langs()).unwrap();
+    for service in ["smart", "other"] {
+        let container = restored
+            .containers
+            .iter()
+            .find(|item| item.service == service)
+            .unwrap();
+        let caps = container
+            .body
+            .host_config
+            .as_ref()
+            .unwrap()
+            .cap_add
+            .as_ref()
+            .unwrap();
+        assert_eq!(caps, &["SYS_RAWIO".to_owned(), "SYS_ADMIN".to_owned()]);
+    }
+}
+
+#[tokio::test]
+async fn switching_disk_type_changes_only_the_disk_service_and_its_risk() {
+    let host = device_host();
+    host.disk(
+        "nvme2n1",
+        "nvme-Test_S3",
+        "wwn-0x5002",
+        "NVMe",
+        "S3",
+        "259:0",
+    );
+    host.dev_node("nvme2");
+    let (docker, manager, _dir) = on_host(&host).await;
+    let source = super::package(
+        "  smart: {image: example/scrutiny}\n  web: {image: example/web}",
+        "  permissions: [devices.disk]\n  devices:\n    disk:\n      - {service: smart}",
+    );
+    let sata = vec!["disk:/dev/disk/by-id/ata-Samsung_SSD".to_owned()];
+    let nvme = vec!["disk:nvme:/dev/disk/by-id/nvme-Test_S3".to_owned()];
+    let id = super::super::manifest::PluginId::parse("app.test").unwrap();
+    manager
+        .install_with_devices(&source, &[Permission::DevicesDisk], &sata, langs())
+        .await
+        .unwrap();
+    assert_eq!(
+        host_config(&docker, "smart")["CapAdd"],
+        json!(["SYS_RAWIO"])
+    );
+    manager
+        .upgrade_checked(
+            parse(&source.replace("version: 1.0.0", "version: 1.1.0")).unwrap(),
+            &[Permission::DevicesDisk],
+            &[],
+            false,
+            &nvme,
+            Default::default(),
+        )
+        .await
+        .unwrap();
+    assert_eq!(
+        host_config(&docker, "smart")["CapAdd"],
+        json!(["SYS_RAWIO", "SYS_ADMIN"])
+    );
+    assert!(host_config(&docker, "web")["CapAdd"].is_null());
+    let detail = manager.installed_detail(&id, &langs()).unwrap();
+    assert!(
+        detail
+            .permissions
+            .iter()
+            .any(|line| line.permission == "devices.disk"
+                && line.risk == Some(wonton_protocol::PermissionRisk::Highest))
+    );
+    manager
+        .upgrade_checked(
+            parse(&source.replace("version: 1.0.0", "version: 1.2.0")).unwrap(),
+            &[Permission::DevicesDisk],
+            &[],
+            false,
+            &sata,
+            Default::default(),
+        )
+        .await
+        .unwrap();
+    assert_eq!(
+        host_config(&docker, "smart")["CapAdd"],
+        json!(["SYS_RAWIO"])
+    );
+    let detail = manager.installed_detail(&id, &langs()).unwrap();
+    assert!(detail.permissions.iter().any(|line| {
+        line.permission == "devices.disk"
+            && line.risk == Some(wonton_protocol::PermissionRisk::VeryHigh)
+    }));
 }

@@ -1,7 +1,7 @@
 <?xml version="1.0" encoding="utf-8"?>
 <resources>
     <!-- Title of the default agent picker, opened from Settings. -->
-    <string name="launcher_default_agent">默认 Agent</string>
+    <string name="launcher_default_agent">默认助手</string>
     <!-- Shown on the launcher when no apps are installed yet. -->
     <string name="launcher_empty">还没有装应用</string>
     <!-- Button under it that opens the Store. -->

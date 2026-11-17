@@ -93,7 +93,7 @@
       }
     },
     "appLock.openSettings": {
-      "comment": "去系统设置（设备密码 / 锁屏）的按钮。",
+      "comment": "Button that opens the system settings (App lock needs a device passcode; the language alert before the jump).",
       "extractionState": "manual",
       "localizations": {
         "en": {
@@ -483,7 +483,7 @@
       }
     },
     "settings.language": {
-      "comment": "Row title on the Settings home page. Tapping opens this app's page in the system settings, where the app language is changed.",
+      "comment": "Row title on the Settings home page. Tapping explains the jump to the system settings, then opens this app's page there, where the app language is changed.",
       "extractionState": "manual",
       "localizations": {
         "en": {
@@ -508,6 +508,66 @@
           "stringUnit": {
             "state": "translated",
             "value": "言語"
+          }
+        }
+      }
+    },
+    "settings.languageChangeHint": {
+      "comment": "Title of the alert shown when the Language row is tapped: the language is changed in the system settings, not in the app.",
+      "extractionState": "manual",
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Change Wonton’s language in system Settings"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "改云吞的语言要去系统设置"
+          }
+        },
+        "zh-Hant": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "改雲吞的語言要去系統設定"
+          }
+        },
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Wonton の言語はシステム設定で変更します"
+          }
+        }
+      }
+    },
+    "settings.languageChangeSteps": {
+      "comment": "Message of the language alert: where the language row lives in the system settings, and that the app restarts afterwards. Destination on purpose: the jump lands wherever the system Settings opens, not always on this app's page (wonton#686, iOS 26 lands at the Settings root).",
+      "extractionState": "manual",
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Tap Language on Wonton’s page in system Settings. Wonton restarts with the new language."
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "在系统设置的「云吞」页点「语言」，改完云吞会重新启动。"
+          }
+        },
+        "zh-Hant": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "在系統設定的「雲吞」頁點「語言」，改完雲吞會重新啟動。"
+          }
+        },
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "システム設定の Wonton ページで「言語」をタップしてください。変更後、Wonton は再起動します。"
           }
         }
       }
