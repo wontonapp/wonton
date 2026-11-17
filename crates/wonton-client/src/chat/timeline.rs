@@ -51,6 +51,8 @@ pub struct TimelineSource {
     pub chat: watch::Receiver<wonton_protocol::ChatViewModel>,
     /// 各房间的旁聊支持声明（ADR-0093 §1）。
     pub support: Arc<Support>,
+    /// Bot 名单的账本：「就绪」看已安装表和第一份活动报告都到了没有（[`super::bots::Bots::ready`]）。
+    pub(super) bots: Arc<super::bots::Bots>,
 }
 
 impl TimelineSubscription {
@@ -74,6 +76,7 @@ impl TimelineSubscription {
             room_view,
             chat,
             support,
+            bots: ledger,
         } = source;
         let (sender, receiver) = mpsc::unbounded_channel();
         let (cancelled, mut stop) = watch::channel(false);
@@ -101,6 +104,7 @@ impl TimelineSubscription {
                     chat,
                     confirmations,
                     &support,
+                    &ledger,
                 ) => {}
                 () = outbox.closed() => {}
                 _ = stop.wait_for(|cancelled| *cancelled) => {}
@@ -246,6 +250,7 @@ async fn forward(
     mut chat: watch::Receiver<wonton_protocol::ChatViewModel>,
     mut confirmations: watch::Receiver<Arc<Vec<ConfirmationView>>>,
     support: &Support,
+    ledger: &super::bots::Bots,
 ) {
     let mut rebuilt_for: Option<wonton_matrix::OwnedEventId> = None;
     'outer: loop {
@@ -264,7 +269,7 @@ async fn forward(
         let bots = BotsView::of(
             &chat.borrow_and_update(),
             &sender.confirmations(),
-            plugins.bots_ready(),
+            ledger.ready(),
         );
         let side_chats = SideChatsView::load(room, bots.supports(support, room)).await;
         sender.set_side_chat(side_chats.header());
@@ -347,7 +352,7 @@ async fn forward(
                     }
                     // 插件表变了：链接的类别跟着变；「清单已就绪」也在这里翻面。装了插件但一个 Bot
                     // 都没有时 Bot 列表不变、chat 不醒，就靠这一路把就绪带进名单，变了补发一批空的。
-                    let new_bots = BotsView::of(&chat.borrow_and_update(), &sender.confirmations(), plugins.bots_ready())
+                    let new_bots = BotsView::of(&chat.borrow_and_update(), &sender.confirmations(), ledger.ready())
                         .with_side_chats(bots.side_chats().clone());
                     view.refresh_unread(room, &new_bots).await;
                     let relinked =
@@ -387,7 +392,7 @@ async fn forward(
                         return;
                     }
                     // 加密状态变了入口跟着变；Bot 列表或活动变了，AgentRun 条目跟着重算（ADR-0082）。
-                    let new_bots = BotsView::of(&chat.borrow_and_update(), &sender.confirmations(), plugins.bots_ready())
+                    let new_bots = BotsView::of(&chat.borrow_and_update(), &sender.confirmations(), ledger.ready())
                         .with_side_chats(bots.side_chats().clone());
                     let diffs = refreshed_agent_runs(
                         &entries,
