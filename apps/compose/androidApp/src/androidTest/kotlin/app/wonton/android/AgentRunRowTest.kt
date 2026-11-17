@@ -71,7 +71,14 @@ class AgentRunRowTest {
         // 工作状态可能是转圈或静态图标；停掉帧钟，阶段之间手动走一帧。
         // 三个阶段共用一次 setContent（ui-test 不允许设第二次），阶段之间改状态。
         compose.mainClock.autoAdvance = false
-        var run by mutableStateOf(fixture(AgentRunState.Working, step = "Reading files"))
+        // 发送时间钉在两分半前：已等待显示 2 分钟，断言跑完也不会跨分钟。
+        var run by mutableStateOf(
+            fixture(
+                AgentRunState.Working,
+                step = "Reading files",
+                timestampMs = (System.currentTimeMillis() - 150_000).toULong(),
+            )
+        )
         compose.setContent {
             // AgentRunRowView 取 WontonTheme 的令牌，CompositionLocal 没有默认值，测试里自己提供一套。
             WontonTheme(previewAppearance()) {
@@ -83,12 +90,14 @@ class AgentRunRowTest {
         compose.mainClock.advanceTimeBy(100)
         compose.onNodeWithTag("agentRunWorkingMark").assertExists()
         compose.onNodeWithText("Reading files").assertExists()
+        compose.onNodeWithText(context.getString(R.string.agent_run_waited, 2)).assertExists()
 
         run = fixture(AgentRunState.Done, steps = 5u)
         compose.mainClock.advanceTimeBy(100)
         compose.onNodeWithTag("agentRunWorkingMark").assertDoesNotExist()
         compose.onNodeWithText(context.resources.getQuantityString(R.plurals.agent_run_steps, 5, 5))
             .assertExists()
+        compose.onNodeWithText(context.getString(R.string.agent_run_waited, 2)).assertDoesNotExist()
 
         run = waiting()
         compose.mainClock.advanceTimeBy(100)
@@ -102,6 +111,7 @@ class AgentRunRowTest {
         step: String? = null,
         steps: UInt? = null,
         cardId: String? = null,
+        timestampMs: ULong = 0uL,
     ) = TimelineContent.AgentRun(
         run = null,
         state = state,
@@ -114,6 +124,7 @@ class AgentRunRowTest {
         cardId = cardId,
         choices = emptyList(),
         senderName = "Echo",
+        timestampMs = timestampMs,
     )
 
     private fun waiting() = fixture(AgentRunState.Waiting, cardId = "card-1")
