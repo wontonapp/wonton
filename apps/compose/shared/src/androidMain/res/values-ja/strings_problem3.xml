@@ -1,5 +1,6 @@
 <?xml version="1.0" encoding="utf-8"?>
 <resources>
+    <string name="problem_default_agent_unverified">このアカウントの既定のアシスタントを確認できません。再試行するか、オーナーにサーバーを確認してもらってください。</string>
     <!-- Problem title: the server refused an action although this device is still signed in. -->
     <string name="problem_forbidden_title">リクエストが拒否されました</string>
     <!-- Accessibility label of the skeleton list placeholder while content loads. -->

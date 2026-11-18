@@ -63,6 +63,7 @@ chat-room-not-subscribed = 要先訂閱聊天室 { $room } 的時間軸
 
 # 還沒選預設 Agent 就詢問時顯示。
 chat-no-default-agent = 還沒有預設 Agent：先在設定裡選一個
+chat-default-agent-unverified = 暫時無法確認預設 Agent，請檢查連線後再試
 
 chat-op-display-name-failed = 無法同步顯示名稱：{ $error }
 

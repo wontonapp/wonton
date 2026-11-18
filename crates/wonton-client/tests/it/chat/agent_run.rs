@@ -94,6 +94,7 @@ async fn setup() -> Setup {
     let hermes = home.bot("hermes", "Hermes").await;
     let mut installed = running(PLUGIN);
     installed.bot_user_id = Some(hermes.user_id().to_string());
+    installed.default_bot_visibility = Some(wonton_protocol::DefaultBotVisibility::Visible);
     // 插件表和活动报告在连接前喂：follow 在连接建立时读一次，连接后再补的不一定被看到。
     home.set_installed_plugins(vec![installed]);
     home.bot_api.facts(BotActivityFacts {

@@ -36,6 +36,7 @@ fn onboarding(step: &str) -> serde_json::Value {
             "source": "github:owner/agent.one",
             "status": null,
             "bot_user_id": "@agent:home",
+            "default_bot_visibility": "visible",
             "logins": [],
             "blocked": null
         }],
@@ -184,6 +185,7 @@ fn installed_onboarding() -> serde_json::Value {
             "source": "github:owner/agent.one",
             "status": {"state": "running", "health": "healthy"},
             "bot_user_id": "@one:home",
+            "default_bot_visibility": "visible",
             "logins": [],
             "blocked": null
         },
@@ -193,6 +195,7 @@ fn installed_onboarding() -> serde_json::Value {
             "source": "github:owner/agent.two",
             "status": {"state": "running", "health": "healthy"},
             "bot_user_id": "@two:home",
+            "default_bot_visibility": "visible",
             "logins": [],
             "blocked": null
         }

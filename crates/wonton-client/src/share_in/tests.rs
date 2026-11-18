@@ -87,6 +87,8 @@ fn chat(account: ChatAccount, sync: ChatSync, rooms: Vec<RoomRow>) -> ChatViewMo
         settled_confirmations: Vec::new(),
         background_notifications: Vec::new(),
         bots: Vec::new(),
+        own_private_bot: None,
+        own_private_bot_problem: None,
     }
 }
 

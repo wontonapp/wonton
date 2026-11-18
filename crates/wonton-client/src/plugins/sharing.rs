@@ -29,6 +29,7 @@ impl PluginsLink {
         .map_err(to_core_error)?;
         api.get(&["plugins", &grant.plugin_id], &[], READ_TIMEOUT)
             .await
+            .map(super::identity::detail)
             .map_err(to_core_error)
     }
 
@@ -43,6 +44,7 @@ impl PluginsLink {
             .map_err(to_core_error)?;
         api.get(&["plugins", plugin], &[], READ_TIMEOUT)
             .await
+            .map(super::identity::detail)
             .map_err(to_core_error)
     }
 

@@ -503,6 +503,7 @@ fn fake_plugin(
         tabs: Vec::new(),
         chat: None,
         bot_user_id: None,
+        default_bot_visibility: None,
         upgrade: None,
         removable: true,
         notices: Vec::new(),

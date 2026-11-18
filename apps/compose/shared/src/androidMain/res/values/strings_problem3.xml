@@ -1,5 +1,7 @@
 <?xml version="1.0" encoding="utf-8"?>
 <resources>
+    <!-- Reason when the default agent identity cannot be verified. -->
+    <string name="problem_default_agent_unverified">Can\'t confirm the default assistant for this account. Try again or ask the owner to check the server.</string>
     <!-- Problem title: the server refused an action although this device is still signed in. -->
     <string name="problem_forbidden_title">The request was refused</string>
     <!-- Accessibility label of the skeleton list placeholder while content loads. -->

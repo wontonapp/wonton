@@ -1,7 +1,6 @@
 <?xml version="1.0" encoding="utf-8"?>
 <resources>
     <string name="problem_apps_not_ready">アプリのリストの準備ができていません。しばらくしてからもう一度お試しください。</string>
-    <string name="problem_no_default_agent">デフォルトのアシスタントがありません。セットアップで選択してインストールしてください。</string>
     <!-- Problem title: the app is busy with another task. -->
     <string name="problem_plugin_conflict_title">このアプリは処理中です</string>
     <!-- Problem title: the device the app should run on isn't available. -->

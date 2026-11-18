@@ -31,6 +31,8 @@ mod bot_activity;
 mod bot_contacts;
 mod bot_plugin_access;
 mod bot_profile;
+mod bot_projection;
+mod bot_visibility;
 mod bot_web;
 #[cfg(test)]
 mod bot_web_tests;
@@ -85,6 +87,7 @@ mod plugin_scope;
 mod plugin_settings;
 mod plugin_start;
 mod plugin_web;
+mod private_bot;
 mod proxy;
 mod proxy_sso;
 mod push;

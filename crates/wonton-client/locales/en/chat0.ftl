@@ -64,6 +64,7 @@ chat-room-not-subscribed = Subscribe to the room's timeline first: { $room }
 
 # Shown when asking the default agent before one is chosen.
 chat-no-default-agent = There's no Default Agent yet. Choose one in Settings.
+chat-default-agent-unverified = Can't confirm your Default Agent right now. Check your connection and try again.
 
 chat-op-display-name-failed = Can't sync your display name: { $error }
 

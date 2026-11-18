@@ -1,7 +1,6 @@
 <?xml version="1.0" encoding="utf-8"?>
 <resources>
     <string name="problem_apps_not_ready">應用程式清單還沒準備好，請稍後重試。</string>
-    <string name="problem_no_default_agent">還沒有預設助手，請先在初始設定中選擇並安裝。</string>
     <!-- Problem title: the app is busy with another task. -->
     <string name="problem_plugin_conflict_title">這個應用程式正忙</string>
     <!-- Problem title: the device the app should run on isn't available. -->

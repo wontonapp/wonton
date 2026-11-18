@@ -5,8 +5,9 @@ use std::sync::atomic::Ordering;
 
 use wonton_l10n::l10n;
 use wonton_protocol::{
-    Action, AgentAction, BotAction, ChatAction, DeviceNetwork, HomeAction, PageAction,
-    PluginAction, PushAction, SessionAction, SettingsAction, TimelineAction,
+    Action, AgentAction, BotAction, ChatAction, DefaultBotVisibility, DeviceNetwork, HomeAction,
+    HomeStatus, PageAction, PluginAction, PushAction, SessionAction, SettingsAction,
+    TimelineAction,
 };
 
 use super::switch::PushInput;
@@ -121,11 +122,28 @@ impl ClientCore {
     fn chat_action(&self, scope: &Scope, action: ChatAction) -> Result<(), CoreError> {
         match action {
             ChatAction::AskAgent { text } => {
-                let bot = scope.onboarding.view().primary_bot_user_id.ok_or_else(|| {
-                    CoreError::NotReady {
-                        reason: l10n!(CATALOG, language(), "chat-no-default-agent"),
+                if scope.home.view().status != HomeStatus::Connected {
+                    return Err(CoreError::NotReady {
+                        reason: l10n!(CATALOG, language(), "chat-default-agent-unverified"),
+                    });
+                }
+                let onboarding = scope.onboarding.view();
+                let bot = match (
+                    onboarding.primary_bot_user_id,
+                    onboarding.default_bot_visibility,
+                ) {
+                    (Some(bot), Some(DefaultBotVisibility::Visible)) => bot,
+                    (_, Some(DefaultBotVisibility::Absent)) => {
+                        return Err(CoreError::NotReady {
+                            reason: l10n!(CATALOG, language(), "chat-no-default-agent"),
+                        });
                     }
-                })?;
+                    _ => {
+                        return Err(CoreError::NotReady {
+                            reason: l10n!(CATALOG, language(), "chat-default-agent-unverified"),
+                        });
+                    }
+                };
                 scope.chat.ask(&bot, &text)
             }
             ChatAction::SkipKeyHandoff => scope.chat.skip_key_handoff(),
