@@ -217,7 +217,7 @@ struct ChatDestination: View {
         case .chatBackup:
             ChatBackupView(model: model)
         case .startChat:
-            StartChatView(model: model)
+            StartChatView(model: model, plugins: plugins)
         case .confirmations:
             ConfirmationsPage(model: model.confirmations, chat: model, plugins: plugins)
         }
@@ -505,9 +505,16 @@ private struct InviteRow: View {
 /// 选一个人或输入用户名发起私聊，房间出现后打开。
 private struct StartChatView: View {
     let model: ChatModel
+    let plugins: PluginsModel
     @State private var peer = ""
 
     var body: some View {
+        // 联系人由核心读取，观察其两份来源以便来源变化时重新查询。
+        // SwiftUI 的 body 是结果构建器，裸的 `_ = x` 编不过，只能用 `let _ =`（e167cc38 回退过一次）。
+        // swiftlint:disable redundant_discardable_let
+        let _ = model.viewModel
+        let _ = plugins.viewModel.installed
+        // swiftlint:enable redundant_discardable_let
         let input = peer.trimmingCharacters(in: .whitespacesAndNewlines)
         let contacts = model.core.chatContacts(query: input)
         ScrollView {

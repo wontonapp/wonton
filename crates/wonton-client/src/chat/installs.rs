@@ -356,6 +356,7 @@ mod tests {
             declares_tools: false,
             tabs: Vec::new(),
             bot_user_id: bot.map(str::to_owned),
+            default_bot_visibility: bot.map(|_| wonton_protocol::DefaultBotVisibility::Visible),
             upgrade: None,
             removable: true,
             notices: Vec::new(),

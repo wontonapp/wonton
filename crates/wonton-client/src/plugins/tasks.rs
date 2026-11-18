@@ -155,6 +155,7 @@ impl PluginsLink {
                 INSTALL_TIMEOUT,
             )
             .await
+            .map(super::identity::detail)
             .map_err(to_core_error);
         self.refresh_installed();
         result

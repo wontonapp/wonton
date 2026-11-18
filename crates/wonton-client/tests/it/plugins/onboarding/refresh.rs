@@ -17,11 +17,13 @@ fn install_state(step: &str, installed: bool) -> serde_json::Value {
     let mut state = onboarding(step);
     state["primary_agent"] = serde_json::json!("agent.one");
     state["agents"][0]["bot_user_id"] = serde_json::Value::Null;
+    state["agents"][0]["default_bot_visibility"] = serde_json::json!("absent");
     let mut photos = item("app.photos", "Photos", &[]);
     if installed {
         photos.installed_version = Some("2.0.0".to_owned());
         state["agents"][0]["status"] = serde_json::json!({"state": "running", "health": "healthy"});
         state["agents"][0]["bot_user_id"] = serde_json::json!("@installed:home");
+        state["agents"][0]["default_bot_visibility"] = serde_json::json!("visible");
     }
     state["needs"] = serde_json::json!([{
         "id": "photos", "title": "Photos", "plugins": [photos]
@@ -42,7 +44,7 @@ async fn install_rig(step: &str) -> Rig {
 }
 
 async fn assert_stays(rig: &Rig, expected: &OnboardingViewModel) {
-    // A dropped response and a failed silent GET deliberately publish nothing.
+    // Obsolete responses must not overwrite newer state.
     let deadline = Instant::now() + Duration::from_millis(300);
     while Instant::now() < deadline {
         assert_eq!(&rig.app.onboarding(), expected);
@@ -105,7 +107,14 @@ async fn a_finished_task_refreshes_rows_even_when_installed_list_is_unchanged() 
     rig.task("app.photos", |state| *state == PluginTaskState::Succeeded)
         .await;
     wait_requests(&rig, Method::GET, ONBOARDING, gets + 1).await;
-    assert_eq!(rig.app.onboarding(), before, "refresh must remain silent");
+    let pending = rig.app.onboarding();
+    assert_eq!(pending.agents, before.agents);
+    assert_eq!(pending.needs, before.needs);
+    assert_eq!(
+        pending.default_bot_visibility,
+        Some(wonton_protocol::DefaultBotVisibility::Unknown),
+    );
+    assert_eq!(pending.primary_bot_user_id, None);
     rig.core.release(Method::GET, ONBOARDING);
     let after = rig
         .wait_onboarding(|view| view.primary_bot_user_id.as_deref() == Some("@installed:home"))
@@ -186,7 +195,31 @@ async fn a_failed_silent_get_keeps_the_visible_errors() {
     );
     change_installed(&rig, "app.photos");
     wait_requests(&rig, Method::GET, ONBOARDING, gets + 1).await;
-    assert_stays(&rig, &before).await;
+    let unknown = rig
+        .wait_onboarding(|view| {
+            view.default_bot_visibility == Some(wonton_protocol::DefaultBotVisibility::Unknown)
+                && view.problem.is_some()
+        })
+        .await;
+    assert_eq!(unknown.model.problem, before.model.problem);
+    assert_eq!(unknown.profile, before.profile);
+    assert_eq!(unknown.step, before.step);
+    assert_eq!(unknown.primary_bot_user_id, None);
+
+    rig.core.set_onboarding(install_state("model", true));
+    act(
+        &rig,
+        Action::Onboarding {
+            action: wonton_protocol::OnboardingAction::RefreshOnboarding,
+        },
+    );
+    let recovered = rig
+        .wait_onboarding(|view| {
+            !view.loading && view.primary_bot_user_id.as_deref() == Some("@installed:home")
+        })
+        .await;
+    assert_eq!(recovered.profile, before.profile);
+    assert_eq!(recovered.step, before.step);
 }
 
 #[tokio::test]

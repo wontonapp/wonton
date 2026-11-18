@@ -136,6 +136,8 @@ fun ChatRoute(
             BackHandler { navigation.startingChat = false }
             StartChatScreen(
                 core = core,
+                viewModel = viewModel,
+                plugins = plugins,
                 onStart = { userId, contact ->
                     navigation.startingChat = false
                     rejection = if (contact != null) {
@@ -535,10 +537,16 @@ internal fun InviteItem(row: RoomRow, onAction: (Action) -> Unit) {
 
 /** 选一个人或输入用户名发起私聊，房间出现后打开。 */
 @Composable
-private fun StartChatScreen(core: ClientCore, onStart: (String, ChatContact?) -> Unit, onClose: () -> Unit) {
+private fun StartChatScreen(
+    core: ClientCore,
+    viewModel: ChatViewModel,
+    plugins: PluginsState,
+    onStart: (String, ChatContact?) -> Unit,
+    onClose: () -> Unit,
+) {
     var peer by rememberSaveable { mutableStateOf("") }
     val input = peer.trim()
-    val contacts = remember(input) { core.chatContacts(input) }
+    val contacts = remember(input, viewModel, plugins.viewModel.installed) { core.chatContacts(input) }
     WontonScreen(bar = { WontonPushedBar(stringResource(R.string.chat_start_direct), onClose) }) {
         Column(
             Modifier.fillMaxSize().verticalScroll(rememberScrollState())

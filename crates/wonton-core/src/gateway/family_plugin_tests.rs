@@ -11,9 +11,298 @@ use super::fakes::fake_hydra_for;
 use super::family_tests::{PORT, bearer, send_as};
 use super::tests::{CORE, Harness, PLUGIN, TOKEN, WHOAMI};
 use crate::members::MemberRecord;
-use crate::plugin::PluginPackage;
 use crate::plugin::languages::Languages;
 use crate::plugin::storefront::index;
+use crate::plugin::{PluginId, PluginPackage, PluginStatus};
+
+#[path = "family_bot_projection_race_tests.rs"]
+mod family_bot_projection_race_tests;
+#[path = "family_bot_projection_tests.rs"]
+mod family_bot_projection_tests;
+
+pub(super) async fn app_with_contact_facts(h: &Harness) -> (axum::Router, tempfile::TempDir) {
+    use super::bot_contacts_tests::{Offline, Recorded};
+    use crate::contacts::wiring::PluginDirectory;
+    use crate::contacts::{Contacts, Ports};
+
+    let (_, config) = crate::matrix::fake::start().await;
+    let matrix_state = tempfile::tempdir().unwrap();
+    let matrix = Arc::new(
+        crate::matrix::Matrix::connect(&config, matrix_state.path(), h.http.clone())
+            .await
+            .unwrap(),
+    );
+    let owner = crate::owner::OwnerStore::for_test(&h.data_dir, &super::tests::owner());
+    let contacts = Contacts::open(
+        h.data_dir.join("contact-facts.json"),
+        matrix.server_name(),
+        Ports {
+            directory: Arc::new(PluginDirectory::new(
+                h.manager.clone(),
+                h.members.clone(),
+                owner.clone(),
+            )),
+            link: Arc::new(Offline),
+            invites: Arc::new(Offline),
+            effects: Arc::new(Recorded::default()),
+            open_federation: false,
+        },
+    )
+    .unwrap();
+    let gateway = super::Gateway::new(
+        crate::config::PublicUrls {
+            scheme: "http".into(),
+            base_domain: CORE.into(),
+            port: PORT,
+        },
+        owner,
+        TOKEN.into(),
+        h.members.clone(),
+        h.manager.clone(),
+        None,
+        h.http.clone(),
+        h.tunnel.clone(),
+    )
+    .with_roles(h.roles.clone())
+    .with_matrix(Some(matrix))
+    .with_contacts(Some(contacts));
+    (super::router(Arc::new(gateway)), matrix_state)
+}
+
+#[tokio::test]
+async fn invalid_plugin_ids_are_not_reported_as_missing_bots() {
+    let h = Harness::start(None).await;
+    let owner = SecretKey::generate().public();
+    h.tunnel.devices.add(owner, None).unwrap();
+    for (method, path) in [
+        (Method::GET, "/_wonton/api/plugins/Bad.Id"),
+        (Method::POST, "/_wonton/api/plugins/Bad.Id/start"),
+        (Method::POST, "/_wonton/api/plugins/Bad.Id/stop"),
+        (Method::POST, "/_wonton/api/plugins/Bad.Id/upgrade"),
+        (
+            Method::PUT,
+            "/_wonton/api/plugins/Bad.Id/permissions/network.egress",
+        ),
+        (Method::PUT, "/_wonton/api/plugins/Bad.Id/lan-webui"),
+        (Method::PUT, "/_wonton/api/plugins/Bad.Id/limits"),
+        (Method::PUT, "/_wonton/api/plugins/Bad.Id/ask-every-update"),
+        (
+            Method::DELETE,
+            "/_wonton/api/plugins/Bad.Id/save-grants?folder=photos",
+        ),
+        (Method::PUT, "/_wonton/api/plugins/Bad.Id/secrets/token"),
+    ] {
+        let reply = send_as(
+            &h.app,
+            Some(owner),
+            method,
+            CORE,
+            path,
+            &[("content-type", "application/json")],
+            "{}",
+        )
+        .await;
+        assert_eq!(
+            reply.status,
+            StatusCode::BAD_REQUEST,
+            "{path}: {}",
+            reply.text()
+        );
+        assert_eq!(reply.error_kind(), Some("invalid_input"), "{path}");
+    }
+}
+
+#[tokio::test]
+async fn family_plugin_responses_hide_others_private_bot() {
+    const OWNER_BOT: &str = "@owner-assistant:test";
+    let h = Harness::start(None).await;
+    let (app, _matrix_state) = app_with_contact_facts(&h).await;
+    let source = WHOAMI
+        .replace("  kind: app", "  kind: agent\n  agent: {protocol: matrix}")
+        .replace(
+            "  permissions: []",
+            "  bot: {display_name: {zh: 助手, en: Assistant}}\n  bots: {services: [web]}\n  permissions: [matrix.bot]",
+        );
+    h.manager.register_for_test(
+        PluginPackage::manifest_of(&source, &Languages::default()).unwrap(),
+        PluginStatus::Running,
+        None,
+    );
+    h.manager
+        .bot_for_test(&PluginId::parse("app.whoami").unwrap(), OWNER_BOT);
+    h.members
+        .invite(MemberRecord {
+            role_id: "admin".to_owned(),
+            wants_private_bot: false,
+            ..MemberRecord::for_test("mia")
+        })
+        .unwrap();
+    h.members.mark_joined("mia").unwrap();
+    let owner = SecretKey::generate().public();
+    h.tunnel.devices.add(owner, None).unwrap();
+    let member = SecretKey::generate().public();
+    h.tunnel
+        .devices
+        .add_if(member, None, Some("mia".into()), |_| true)
+        .unwrap();
+
+    for (path, pointer) in [
+        ("/_wonton/api/plugins", "/plugins/0/bot_user_id"),
+        ("/_wonton/api/plugins/app.whoami", "/installed/bot_user_id"),
+    ] {
+        let own = send_as(&app, Some(owner), Method::GET, CORE, path, &[], "").await;
+        assert_eq!(own.status, StatusCode::OK, "{}", own.text());
+        assert_eq!(
+            own.json().pointer(pointer).and_then(Value::as_str),
+            Some(OWNER_BOT)
+        );
+
+        let other = send_as(&app, Some(member), Method::GET, CORE, path, &[], "").await;
+        assert_eq!(other.status, StatusCode::OK, "{}", other.text());
+        assert!(
+            other
+                .json()
+                .pointer(pointer)
+                .and_then(Value::as_str)
+                .is_none()
+        );
+        assert!(!other.text().contains(OWNER_BOT));
+    }
+
+    const MEMBER_BOT: &str = "@mia-assistant:test";
+    h.manager.bot_records_for_test(
+        &PluginId::parse("app.whoami").unwrap(),
+        &[(
+            "default",
+            MEMBER_BOT,
+            wonton_protocol::BotKeeper::User {
+                username: "mia".into(),
+            },
+            "test-token",
+        )],
+    );
+    for (path, pointer) in [
+        ("/_wonton/api/plugins", "/plugins/0/bot_user_id"),
+        ("/_wonton/api/plugins/app.whoami", "/installed/bot_user_id"),
+    ] {
+        let own = send_as(&app, Some(member), Method::GET, CORE, path, &[], "").await;
+        assert_eq!(own.status, StatusCode::OK, "{}", own.text());
+        assert_eq!(
+            own.json().pointer(pointer).and_then(Value::as_str),
+            Some(MEMBER_BOT)
+        );
+
+        let other = send_as(&app, Some(owner), Method::GET, CORE, path, &[], "").await;
+        assert_eq!(other.status, StatusCode::OK, "{}", other.text());
+        assert!(
+            other
+                .json()
+                .pointer(pointer)
+                .and_then(Value::as_str)
+                .is_none()
+        );
+        assert!(!other.text().contains(MEMBER_BOT));
+    }
+}
+
+#[tokio::test]
+async fn plugin_list_rejects_a_revoked_or_reassigned_device() {
+    for reassign_to_owner in [false, true] {
+        let h = Harness::start(None).await;
+        invite_record(&h, true).await;
+        let device = SecretKey::generate().public();
+        h.tunnel
+            .devices
+            .add_if(device, None, Some("mia".into()), |_| true)
+            .unwrap();
+
+        let mut request = Box::pin(super::api::list(
+            axum::extract::State(h.gateway.clone()),
+            Some(axum::extract::Extension(super::TunnelPeer(device))),
+            hyper::HeaderMap::new(),
+        ));
+        // installed_checked 等待新启动的升级检查；单线程首轮不会运行该任务。
+        assert!(futures_util::poll!(&mut request).is_pending());
+        assert!(h.tunnel.devices.remove(&device).unwrap());
+        if reassign_to_owner {
+            h.tunnel.devices.add(device, None).unwrap();
+        }
+        let reply = super::tests::Reply::of(request.await).await;
+        assert_eq!(reply.status, StatusCode::UNAUTHORIZED, "{}", reply.text());
+        assert_eq!(reply.error_kind(), Some("unauthenticated"));
+    }
+}
+
+#[tokio::test]
+async fn plugin_list_applies_the_current_role_after_loading() {
+    let h = Harness::start(None).await;
+    invite_record(&h, true).await;
+    let device = SecretKey::generate().public();
+    h.tunnel
+        .devices
+        .add_if(device, None, Some("mia".into()), |_| true)
+        .unwrap();
+    let mut request = Box::pin(super::api::list(
+        axum::extract::State(h.gateway.clone()),
+        Some(axum::extract::Extension(super::TunnelPeer(device))),
+        hyper::HeaderMap::new(),
+    ));
+    assert!(futures_util::poll!(&mut request).is_pending());
+    h.members.set_role("mia", "friend").unwrap();
+    let reply = super::tests::Reply::of(request.await).await;
+    assert_eq!(reply.status, StatusCode::OK, "{}", reply.text());
+    assert!(
+        reply.json()["plugins"]
+            .as_array()
+            .unwrap()
+            .iter()
+            .all(|plugin| plugin["id"] != "app.whoami")
+    );
+}
+
+#[tokio::test]
+async fn plugin_detail_rechecks_identity_and_role_after_loading() {
+    for revoke_device in [true, false] {
+        let h = Harness::start(None).await;
+        invite_record(&h, true).await;
+        let device = SecretKey::generate().public();
+        h.tunnel
+            .devices
+            .add_if(device, None, Some("mia".into()), |_| true)
+            .unwrap();
+        let hold = h.docker.hold("GET /info");
+        let app = h.app.clone();
+        let waiting = tokio::spawn(async move {
+            send_as(
+                &app,
+                Some(device),
+                Method::GET,
+                CORE,
+                "/_wonton/api/plugins/app.whoami",
+                &[],
+                "",
+            )
+            .await
+        });
+        tokio::time::timeout(std::time::Duration::from_secs(5), hold.reached())
+            .await
+            .expect("detail request reached Docker");
+        let (status, kind) = if revoke_device {
+            assert!(h.tunnel.devices.remove(&device).unwrap());
+            (StatusCode::UNAUTHORIZED, "unauthenticated")
+        } else {
+            h.members.set_role("mia", "friend").unwrap();
+            (StatusCode::FORBIDDEN, "not_shared")
+        };
+        hold.release();
+        let reply = tokio::time::timeout(std::time::Duration::from_secs(10), waiting)
+            .await
+            .expect("detail response")
+            .unwrap();
+        assert_eq!(reply.status, status, "{}", reply.text());
+        assert_eq!(reply.error_kind(), Some(kind));
+    }
+}
 
 #[tokio::test]
 async fn selected_apps_limit_lists_details_and_webui_even_for_installers() {

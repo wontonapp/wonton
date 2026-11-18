@@ -78,6 +78,8 @@ impl ClientCore {
         let change = change(&self.servers)?;
         let previous = self.scope();
         if let Some(slot) = change.switch_to.filter(|slot| *slot != previous.slot) {
+            // 旧作用域关停最多等一秒，在复用 sender 前先撤掉旧结果的上写资格。
+            previous.chat.abandon_own_private_bot();
             previous.close(true);
             self.visits.end(&slot);
             match self.open_scope(&slot) {

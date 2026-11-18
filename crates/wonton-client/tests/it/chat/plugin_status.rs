@@ -44,6 +44,7 @@ async fn stopped_setup() -> (
     let mut plugin = crate::plugins::rig::installed(ID, PluginState::Stopped);
     plugin.kind = wonton_client::PluginKind::Agent;
     plugin.bot_user_id = Some(bot.user_id().to_string());
+    plugin.default_bot_visibility = Some(wonton_protocol::DefaultBotVisibility::Visible);
     plugin.chat = Some(Default::default());
     home.set_installed_plugins(vec![plugin.clone()]);
     phone

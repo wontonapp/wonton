@@ -29,7 +29,7 @@ use crate::plugin::lifecycle::LifecycleConfig;
 use crate::plugin::manifest::PluginId;
 use crate::plugin::store::Store;
 
-struct Offline;
+pub(super) struct Offline;
 
 impl PeerLink for Offline {
     fn reach(&self, _server: &str) -> PeerReach {
@@ -67,7 +67,7 @@ impl PersonInvites for Offline {
 }
 
 #[derive(Default)]
-struct Recorded {
+pub(super) struct Recorded {
     pushed: Mutex<Vec<String>>,
 }
 

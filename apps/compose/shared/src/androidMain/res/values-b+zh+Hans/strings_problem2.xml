@@ -1,5 +1,6 @@
 <?xml version="1.0" encoding="utf-8"?>
 <resources>
+    <string name="problem_default_agent_absent">没有可向这个账号显示的默认助手，请让主人检查设置。</string>
     <string name="problem_invalid_input_title">这个操作做不了</string>
     <!-- Next step: look at the app again and approve it again. -->
     <string name="problem_plugin_changed_next_step">请重新查看、确认。</string>
