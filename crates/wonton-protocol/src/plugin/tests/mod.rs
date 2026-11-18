@@ -72,6 +72,7 @@ fn installed() -> InstalledPlugin {
             layout: TabLayout::EdgeToEdge,
         }],
         bot_user_id: None,
+        default_bot_visibility: None,
         upgrade: Some(UpgradeOffer {
             version: "2.1.0".into(),
             release_notes: Some("支持视频转码".into()),

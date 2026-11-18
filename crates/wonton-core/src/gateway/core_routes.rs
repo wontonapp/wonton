@@ -210,6 +210,15 @@ fn sharing_routes() -> Router<Arc<Gateway>> {
         )
 }
 
+fn me_routes() -> Router<Arc<Gateway>> {
+    Router::new()
+        .route(wonton_protocol::ME_PATH, get(me::read).put(me::save))
+        .route(
+            wonton_protocol::MY_PRIVATE_BOT_PATH,
+            get(super::private_bot::read),
+        )
+}
+
 pub fn routes(gateway: Arc<Gateway>) -> Router {
     Router::new()
         .route("/", get(home))
@@ -260,7 +269,7 @@ pub fn routes(gateway: Arc<Gateway>) -> Router {
             "/_wonton/api/registry-mirror/test",
             post(super::registry_mirror::test),
         )
-        .route(wonton_protocol::ME_PATH, get(me::read).put(me::save))
+        .merge(me_routes())
         .merge(link_preview_routes())
         .merge(member_routes())
         .merge(panel_routes())

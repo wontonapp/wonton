@@ -10,6 +10,7 @@ use super::health_gate::Gate;
 use super::manager::{InstallError, PluginManager, PluginStatus};
 use super::manifest::PluginId;
 use super::render;
+use super::store::StoreError;
 use super::upgrade::installed_package;
 
 /// Bot 的 Matrix 用户 ID → 它已成立的联系人。
@@ -23,7 +24,36 @@ pub struct BotListing {
     pub keeper: BotKeeper,
 }
 
+/// 核心记录中的身份和主房间；不携带设备、令牌或部署信息。
+#[derive(Debug, PartialEq, Eq)]
+pub(crate) struct BotIdentityRecordFacts {
+    pub(crate) listing: BotListing,
+    pub(crate) home_room: String,
+}
+
 impl PluginManager {
+    /// 只读指定 Bot；无可定位的记录返回 None，真实存储错误不转成“没有”。
+    pub(crate) fn bot_identity_record(
+        &self,
+        bot: &BotRef,
+    ) -> Result<Option<BotIdentityRecordFacts>, StoreError> {
+        let Ok(id) = PluginId::parse(&bot.plugin_id) else {
+            return Ok(None);
+        };
+        Ok(self
+            .store
+            .bots()
+            .entry(&id, &bot.bot)?
+            .map(|entry| BotIdentityRecordFacts {
+                listing: BotListing {
+                    bot: bot.clone(),
+                    user_id: entry.account.user_id,
+                    keeper: entry.keeper,
+                },
+                home_room: entry.account.home_room,
+            }))
+    }
+
     /// 接上联系人记录。只接一次：核心启动时接，之后渲染 Bot 的变量都带上联系人。
     pub fn set_contact_source(&self, source: ContactSource) {
         if self.contact_source.set(source).is_err() {

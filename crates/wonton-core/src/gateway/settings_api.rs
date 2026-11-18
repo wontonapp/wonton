@@ -24,7 +24,9 @@ use wonton_protocol::{
 };
 
 use super::Gateway;
-use super::api::{error_response, install_error, languages, text1};
+use super::api::{
+    current_permitted_requester, error_response, install_error, languages, requester, text1,
+};
 use super::permissions;
 use crate::l10n;
 use crate::plugin::{InstallError, PluginId};
@@ -153,6 +155,10 @@ pub async fn set_lan_webui(
     {
         return denied;
     }
+    let person = match requester(&gateway, peer, &headers) {
+        Ok(person) => person,
+        Err(response) => return *response,
+    };
     let id = match PluginId::parse(&id) {
         Ok(id) => id,
         Err(e) => return install_error(&InstallError::Invalid(e.to_string())),
@@ -164,12 +170,27 @@ pub async fn set_lan_webui(
         }
     };
     let langs = languages(&headers);
-    match gateway
+    let result = gateway
         .plugins
         .set_lan_webui(id, update.enabled, langs)
-        .await
-    {
-        Ok(detail) => Json(detail).into_response(),
+        .await;
+    if let Err(denied) = current_permitted_requester(
+        &gateway,
+        peer,
+        &headers,
+        &person,
+        PermissionItem::InstallApps,
+    ) {
+        return *denied;
+    }
+    match result {
+        Ok(detail) => super::bot_projection::detail_response(
+            &gateway,
+            peer.map(|Extension(peer)| peer),
+            &headers,
+            &person,
+            detail,
+        ),
         Err(e) => install_error(&e),
     }
 }
@@ -187,6 +208,10 @@ pub async fn set_limits(
     {
         return denied;
     }
+    let person = match requester(&gateway, peer, &headers) {
+        Ok(person) => person,
+        Err(response) => return *response,
+    };
     let id = match PluginId::parse(&id) {
         Ok(id) => id,
         Err(e) => return install_error(&InstallError::Invalid(e.to_string())),
@@ -195,12 +220,27 @@ pub async fn set_limits(
         Ok(limits) => limits,
         Err(e) => return error_response(StatusCode::BAD_REQUEST, "invalid_input", &e.to_string()),
     };
-    match gateway
+    let result = gateway
         .plugins
         .set_limits(id, limits, languages(&headers))
-        .await
-    {
-        Ok(detail) => Json(detail).into_response(),
+        .await;
+    if let Err(denied) = current_permitted_requester(
+        &gateway,
+        peer,
+        &headers,
+        &person,
+        PermissionItem::InstallApps,
+    ) {
+        return *denied;
+    }
+    match result {
+        Ok(detail) => super::bot_projection::detail_response(
+            &gateway,
+            peer.map(|Extension(peer)| peer),
+            &headers,
+            &person,
+            detail,
+        ),
         Err(e) => install_error(&e),
     }
 }
@@ -218,6 +258,10 @@ pub async fn set_ask_every_update(
     {
         return denied;
     }
+    let person = match requester(&gateway, peer, &headers) {
+        Ok(person) => person,
+        Err(response) => return *response,
+    };
     let id = match PluginId::parse(&id) {
         Ok(id) => id,
         Err(e) => return install_error(&InstallError::Invalid(e.to_string())),
@@ -229,11 +273,26 @@ pub async fn set_ask_every_update(
         }
     };
     let langs = languages(&headers);
-    match gateway
+    let result = gateway
         .plugins
-        .set_ask_every_update(&id, update.enabled, &langs)
-    {
-        Ok(detail) => Json(detail).into_response(),
+        .set_ask_every_update(&id, update.enabled, &langs);
+    if let Err(denied) = current_permitted_requester(
+        &gateway,
+        peer,
+        &headers,
+        &person,
+        PermissionItem::InstallApps,
+    ) {
+        return *denied;
+    }
+    match result {
+        Ok(detail) => super::bot_projection::detail_response(
+            &gateway,
+            peer.map(|Extension(peer)| peer),
+            &headers,
+            &person,
+            detail,
+        ),
         Err(e) => install_error(&e),
     }
 }
@@ -256,6 +315,10 @@ pub async fn revoke_save_grant(
     {
         return denied;
     }
+    let person = match requester(&gateway, peer, &headers) {
+        Ok(person) => person,
+        Err(response) => return *response,
+    };
     let id = match PluginId::parse(&id) {
         Ok(id) => id,
         Err(e) => return install_error(&InstallError::Invalid(e.to_string())),
@@ -271,8 +334,24 @@ pub async fn revoke_save_grant(
     if let Err(e) = mcp.bus.revoke_save_grant(&id, &query.folder) {
         return install_error(&e.into());
     }
-    match gateway.plugins.judged_detail(&id, &langs).await {
-        Some(detail) => Json(detail).into_response(),
+    let detail = gateway.plugins.judged_detail(&id, &langs).await;
+    if let Err(denied) = current_permitted_requester(
+        &gateway,
+        peer,
+        &headers,
+        &person,
+        PermissionItem::InstallApps,
+    ) {
+        return *denied;
+    }
+    match detail {
+        Some(detail) => super::bot_projection::detail_response(
+            &gateway,
+            peer.map(|Extension(peer)| peer),
+            &headers,
+            &person,
+            detail,
+        ),
         None => install_error(&InstallError::NotInstalled(id.to_string())),
     }
 }
@@ -290,6 +369,10 @@ pub async fn set_secret_input(
     {
         return denied;
     }
+    let person = match requester(&gateway, peer, &headers) {
+        Ok(person) => person,
+        Err(response) => return *response,
+    };
     let id = match PluginId::parse(&id) {
         Ok(id) => id,
         Err(e) => return install_error(&InstallError::Invalid(e.to_string())),
@@ -310,11 +393,26 @@ pub async fn set_secret_input(
             &langs,
         )
         .await;
+    if outcome.is_ok() {
+        audit_secret_change(&gateway, &headers, peer.as_ref(), id.as_str(), &name);
+    }
+    if let Err(denied) = current_permitted_requester(
+        &gateway,
+        peer,
+        &headers,
+        &person,
+        PermissionItem::InstallApps,
+    ) {
+        return *denied;
+    }
     match outcome {
-        Ok(detail) => {
-            audit_secret_change(&gateway, &headers, peer.as_ref(), id.as_str(), &name);
-            Json(detail).into_response()
-        }
+        Ok(detail) => super::bot_projection::detail_response(
+            &gateway,
+            peer.map(|Extension(peer)| peer),
+            &headers,
+            &person,
+            detail,
+        ),
         Err(e) => install_error(&e),
     }
 }

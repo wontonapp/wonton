@@ -96,12 +96,14 @@ fn plugins(writer: &MatrixSession, chatty: &MatrixSession) -> Vec<wonton_client:
     let mut declared = crate::plugins::rig::running(DOCUMENT);
     declared.title = "Writer".to_owned();
     declared.bot_user_id = Some(writer.user_id().to_string());
+    declared.default_bot_visibility = Some(wonton_protocol::DefaultBotVisibility::Visible);
     declared.chat = Some(PluginChat {
         form: ChatForm::Document,
     });
     let mut undeclared = crate::plugins::rig::running(PLAIN);
     undeclared.title = "Chatty".to_owned();
     undeclared.bot_user_id = Some(chatty.user_id().to_string());
+    undeclared.default_bot_visibility = Some(wonton_protocol::DefaultBotVisibility::Visible);
     undeclared.chat = Some(PluginChat {
         form: ChatForm::Bubbles,
     });

@@ -189,6 +189,98 @@ async fn an_ask_admin_install_waits_for_an_administrator() {
 }
 
 #[tokio::test]
+async fn install_response_respects_current_identity_and_role() {
+    install_response_after_access_change(true).await;
+    install_response_after_access_change(false).await;
+}
+
+async fn install_response_after_access_change(revoke_device: bool) {
+    let h = Harness::start(None).await;
+    let device = invite_member(&h, "mia").await;
+    let role = h
+        .roles
+        .create(&wonton_protocol::RoleDraft {
+            name: "approval".into(),
+            permissions: wonton_protocol::Permissions {
+                install_apps: wonton_protocol::Gate::AskAdmin,
+                ..wonton_protocol::Permissions::strictest()
+            },
+        })
+        .unwrap();
+    h.members.set_role("mia", &role.id).unwrap();
+    let package =
+        crate::plugin::PluginPackage::parse(&echo_compose(), &Languages::default()).unwrap();
+    let preview = h
+        .manager
+        .preview_upload(package, &Languages::default())
+        .await
+        .unwrap();
+    let request = json!({
+        "source": preview.source,
+        "digest": preview.digest,
+        "plan": preview.plan,
+        "grant": preview.permissions.iter().map(|p| p.permission.clone()).collect::<Vec<_>>(),
+    })
+    .to_string();
+    let bus = h.gateway.mcp.as_ref().unwrap().bus.clone();
+    let mut changes = bus.confirmations().subscribe();
+    let app = h.app.clone();
+    let waiting = tokio::spawn(async move {
+        send_as(
+            &app,
+            Some(device),
+            Method::POST,
+            CORE,
+            "/_wonton/api/plugins",
+            &[("content-type", "application/json")],
+            &request,
+        )
+        .await
+    });
+    let id = tokio::time::timeout(std::time::Duration::from_secs(5), async {
+        loop {
+            if let Some(card) = bus.confirmations().list(None).0.first() {
+                break card.id.clone();
+            }
+            changes.changed().await.unwrap();
+        }
+    })
+    .await
+    .expect("administrator confirmation");
+    let (status, kind) = if revoke_device {
+        assert!(h.tunnel.devices.remove(&device).unwrap());
+        (StatusCode::UNAUTHORIZED, "unauthenticated")
+    } else {
+        h.members.set_role("mia", "friend").unwrap();
+        (StatusCode::FORBIDDEN, "permission_required")
+    };
+    let approved = send_as(
+        &h.app,
+        None,
+        Method::POST,
+        CORE,
+        &format!("/_wonton/confirmations/{id}"),
+        &[
+            ("authorization", super::family_tests::bearer().as_str()),
+            ("content-type", "application/json"),
+        ],
+        r#"{"answer":"approve"}"#,
+    )
+    .await;
+    assert_eq!(approved.status, StatusCode::OK, "{}", approved.text());
+    let reply = tokio::time::timeout(std::time::Duration::from_secs(10), waiting)
+        .await
+        .expect("installation response")
+        .unwrap();
+    assert_eq!(reply.status, status, "{}", reply.text());
+    assert_eq!(reply.error_kind(), Some(kind));
+    assert!(
+        h.manager
+            .is_installed(&crate::plugin::PluginId::parse("app.echo").unwrap())
+    );
+}
+
+#[tokio::test]
 async fn an_ask_admin_upgrade_completes_after_the_administrator_approves() {
     let h = Harness::start(None).await;
     let device = invite_member(&h, "mia").await;

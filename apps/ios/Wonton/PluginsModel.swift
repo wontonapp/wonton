@@ -105,7 +105,9 @@ extension InstalledPlugin {
     var entries: [PluginEntry] {
         guard installFailure == nil else { return [] }
         var entries: [PluginEntry] = []
-        if kind == .agent, let bot = botUserId { entries.append(.chat(botUserId: bot)) }
+        if kind == .agent, defaultBotVisibility == .visible, let bot = botUserId, !bot.isEmpty {
+            entries.append(.chat(botUserId: bot))
+        }
         if let url = linkUrl, let external = URL(string: url) {
             entries.append(.browser(url: external))
         }

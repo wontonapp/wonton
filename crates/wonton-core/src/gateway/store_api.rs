@@ -19,7 +19,7 @@ use serde::Deserialize;
 use wonton_protocol::AddSourceRequest;
 
 use super::Gateway;
-use super::api::{install_error, invalid_body, languages, requester};
+use super::api::{current_permitted_requester, install_error, invalid_body, languages, requester};
 use super::install_gates;
 use super::permissions;
 use wonton_protocol::PermissionItem;
@@ -78,18 +78,34 @@ pub async fn store_plugin(
         Ok(person) => person,
         Err(response) => return *response,
     };
-    match gateway
+    let result = gateway
         .plugins
         .store_plugin(&query.source, &languages(&headers))
-        .await
-    {
+        .await;
+    let person = match current_permitted_requester(
+        &gateway,
+        peer,
+        &headers,
+        &person,
+        PermissionItem::InstallApps,
+    ) {
+        Ok(person) => person,
+        Err(response) => return *response,
+    };
+    match result {
         Ok(mut detail) => {
             let id = detail.id.clone();
             if !person.is_owner() {
                 detail.scope = None;
             }
             install_gates::project_detail(&gateway, &person, &id, &mut detail);
-            Json(detail).into_response()
+            super::bot_projection::detail_response(
+                &gateway,
+                peer.map(|Extension(peer)| peer),
+                &headers,
+                &person,
+                detail,
+            )
         }
         Err(e) => install_error(&e),
     }

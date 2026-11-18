@@ -67,6 +67,8 @@ fn empty_chat() -> ChatViewModel {
         settled_confirmations: Vec::new(),
         background_notifications: Vec::new(),
         bots: Vec::new(),
+        own_private_bot: None,
+        own_private_bot_problem: None,
     }
 }
 
@@ -283,6 +285,7 @@ fn plugin(id: &str, title: &str, revision: &str) -> InstalledPlugin {
         declares_tools: false,
         tabs: Vec::new(),
         bot_user_id: None,
+        default_bot_visibility: None,
         upgrade: None,
         removable: true,
         notices: Vec::new(),

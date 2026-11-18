@@ -73,8 +73,12 @@ pub struct OnboardingAgent {
     pub source: Option<String>,
     /// 装着时是它的状态；没装时为空。
     pub status: Option<PluginState>,
-    /// 插件的 Bot（Matrix 用户 ID）；没装时为空。
+    /// 已核实可见的默认 Bot 的 Matrix 用户 ID。
     pub bot_user_id: Option<String>,
+    /// 默认 Bot 身份的投影；未提供时表示未知。
+    #[serde(default)]
+    #[cfg_attr(feature = "uniffi", uniffi(default = None))]
+    pub default_bot_visibility: Option<crate::DefaultBotVisibility>,
     /// 官方程序自己的账号登录（清单的 `agent.login`）。为空时只能接模型网关。
     pub logins: Vec<AgentLogin>,
     /// 装不了的原因；能装时为空。
@@ -131,6 +135,10 @@ pub struct OnboardingViewModel {
     pub review: OnboardingReview,
     /// 默认 Agent 的 Bot：引导走完后进入和它的私聊，[`Self::chat_prompts`] 也只在这个私聊里显示。
     pub primary_bot_user_id: Option<String>,
+    /// 默认 Bot 身份的投影；未提供时表示未知，不代表房间发送资格。
+    #[serde(default)]
+    #[cfg_attr(feature = "uniffi", uniffi(default = None))]
+    pub default_bot_visibility: Option<crate::DefaultBotVisibility>,
     /// 输入框上方可点的问题，点了放进输入框当草稿；发过第一条消息后为空。
     pub chat_prompts: Vec<String>,
     /// 默认 Agent 能聊之后，问一次要不要卸掉被换下来的 Agent。卸载走原有流程，回答后发

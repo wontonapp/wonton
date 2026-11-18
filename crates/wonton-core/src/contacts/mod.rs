@@ -26,7 +26,8 @@ use std::sync::{Arc, Mutex, MutexGuard};
 
 use tokio::sync::watch;
 use wonton_protocol::{
-    BotContact, BotRef, ContactError, ContactState, PendingContactRequest, RemoteContact,
+    BotContact, BotRef, ContactError, ContactKind, ContactState, PendingContactRequest,
+    RemoteContact,
 };
 
 pub use ports::{
@@ -45,6 +46,17 @@ pub struct Ports {
     /// 有名字模式（ADR-0051）：Tuwunel 对整个 Matrix 开放联邦，加“人”不要求对方配对；
     /// 私用名保留 ADR-0050 的配对要求。
     pub open_federation: bool,
+}
+
+#[derive(Debug, PartialEq, Eq)]
+pub(crate) enum PersonContactRecordRead {
+    Missing,
+    NotPerson,
+    UnknownKind,
+    Person {
+        state: ContactState,
+        room_id: Option<String>,
+    },
 }
 
 pub struct Contacts {
@@ -146,6 +158,26 @@ impl Contacts {
                     format!("没有 Bot {}/{}", bot.plugin_id, bot.bot),
                 )
             })
+    }
+
+    /// 原始联系人行；记录缺失和未知种类不代表拒绝，也不证明能在其他房间使用 Bot。
+    pub(crate) fn person_contact_record(
+        &self,
+        bot: &BotRef,
+        user_id: &str,
+    ) -> PersonContactRecordRead {
+        let stored = self.lock();
+        let Some(row) = stored.row(bot, user_id) else {
+            return PersonContactRecordRead::Missing;
+        };
+        match row.kind {
+            ContactKind::Bot => PersonContactRecordRead::NotPerson,
+            ContactKind::Other => PersonContactRecordRead::UnknownKind,
+            ContactKind::Person => PersonContactRecordRead::Person {
+                state: row.state,
+                room_id: row.room_id.clone(),
+            },
+        }
     }
 
     /// 这个 Bot 的联系人，先查一遍还在等的人的邀请。只有管它的人能看。

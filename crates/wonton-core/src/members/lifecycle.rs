@@ -11,6 +11,17 @@ pub(crate) struct Lifecycle {
     pub removal: Option<MemberRemoval>,
 }
 
+#[derive(Debug, PartialEq, Eq)]
+pub(crate) struct PrivateBotSnapshot {
+    pub(crate) status: MemberStatus,
+    pub(crate) user_id: String,
+    pub(crate) role_id: String,
+    pub(crate) wants_private_bot: bool,
+    pub(crate) bot: Option<BotRef>,
+    pub(crate) reservation: Option<BotRef>,
+    pub(crate) removing: bool,
+}
+
 impl Members {
     pub(crate) fn lifecycle(&self, username: &str) -> Lifecycle {
         self.lock()
@@ -18,6 +29,24 @@ impl Members {
             .get(username)
             .cloned()
             .unwrap_or_default()
+    }
+
+    pub(crate) fn private_bot_snapshot(&self, username: &str) -> Option<PrivateBotSnapshot> {
+        let stored = self.lock();
+        let member = stored
+            .members
+            .iter()
+            .find(|member| member.username == username)?;
+        let lifecycle = stored.lifecycle.get(username);
+        Some(PrivateBotSnapshot {
+            status: member.status,
+            user_id: member.user_id.clone(),
+            role_id: member.role_id.clone(),
+            wants_private_bot: member.wants_private_bot,
+            bot: member.private_bot.clone(),
+            reservation: lifecycle.and_then(|state| state.bot.clone()),
+            removing: lifecycle.is_some_and(|state| state.removal.is_some()),
+        })
     }
 
     pub(crate) fn reserve_private_bot(

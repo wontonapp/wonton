@@ -104,7 +104,9 @@ impl PluginsLink {
         // 序号从 1 开始，和 fetch_installed_from 一致。
         let seq = self.fetch_seq.fetch_add(1, Ordering::SeqCst) + 1;
         let result = self.list_installed().await;
-        if !self.is_current_home(generation, &server) {
+        if !self.is_current_home(generation, &server)
+            || self.home.view().status != HomeStatus::Connected
+        {
             return Ok(());
         }
         // 和 fetch_installed_from 一样丢掉晚到的旧响应；轮询写完也要把派生字段（横幅数、侧栏）跟着重算。

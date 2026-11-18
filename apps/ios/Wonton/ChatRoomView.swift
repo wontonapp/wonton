@@ -226,7 +226,8 @@ private extension ChatRoomView {
                 showingConfirmations = true
             }
             if !isReadOnly {
-                if threadRoot == nil, let bot = onboarding.viewModel.primaryBotUserId,
+                if threadRoot == nil, onboarding.viewModel.defaultBotVisibility == .visible,
+                   let bot = onboarding.viewModel.primaryBotUserId,
                    model.viewModel.rooms.first(where: { $0.roomId == roomId })?.directUserId == bot,
                    !onboarding.viewModel.chatPrompts.isEmpty {
                     OnboardingChatPrompts(prompts: onboarding.viewModel.chatPrompts) {

@@ -53,6 +53,7 @@ async fn bot_profiles_actions_activity_and_cached_video_through_the_tunnel() {
     let mut installed = running(PLUGIN);
     installed.title = "Plugin fallback".to_owned();
     installed.bot_user_id = Some(bot.user_id().to_string());
+    installed.default_bot_visibility = Some(wonton_protocol::DefaultBotVisibility::Visible);
     home.set_installed_plugins(vec![installed]);
     let mut facts = facts(&bot);
     home.bot_api.facts(facts.clone());
@@ -198,6 +199,7 @@ fn home_plugin(bot: &MatrixSession) -> wonton_client::InstalledPlugin {
     let mut installed = running(PLUGIN);
     installed.title = "Plugin fallback".to_owned();
     installed.bot_user_id = Some(bot.user_id().to_string());
+    installed.default_bot_visibility = Some(wonton_protocol::DefaultBotVisibility::Visible);
     installed
 }
 

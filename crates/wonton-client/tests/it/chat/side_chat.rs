@@ -34,6 +34,7 @@ async fn setup() -> Setup {
     let bot = home.bot("hermes", "Hermes").await;
     let mut installed = running(PLUGIN);
     installed.bot_user_id = Some(bot.user_id().to_string());
+    installed.default_bot_visibility = Some(wonton_protocol::DefaultBotVisibility::Visible);
     home.set_installed_plugins(vec![installed]);
     home.bot_api.facts(BotActivityFacts {
         plugin_id: PLUGIN.to_owned(),

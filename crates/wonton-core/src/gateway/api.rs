@@ -265,6 +265,58 @@ pub(crate) fn requester(
     Ok(person)
 }
 
+pub(super) fn current_requester(
+    gateway: &Gateway,
+    peer: Option<Extension<TunnelPeer>>,
+    headers: &HeaderMap,
+    expected: &Person,
+) -> Result<Person, Box<Response>> {
+    let current = requester(gateway, peer, headers)?;
+    if current != *expected {
+        return Err(Box::new(error_response(
+            StatusCode::UNAUTHORIZED,
+            "unauthenticated",
+            &l10n::text(&languages(headers), "gateway-denied", &[]),
+        )));
+    }
+    Ok(current)
+}
+
+pub(super) fn current_permitted_requester(
+    gateway: &Gateway,
+    peer: Option<Extension<TunnelPeer>>,
+    headers: &HeaderMap,
+    expected: &Person,
+    permission: PermissionItem,
+) -> Result<Person, Box<Response>> {
+    let person = current_requester(gateway, peer, headers, expected)?;
+    if let Some(denied) = permissions::require_person(gateway, &person, permission) {
+        return Err(Box::new(denied));
+    }
+    Ok(person)
+}
+
+fn response_for_requester<T>(
+    gateway: &Gateway,
+    peer: Option<Extension<TunnelPeer>>,
+    headers: &HeaderMap,
+    expected: &Person,
+    result: Result<T, InstallError>,
+    render: impl FnOnce(&Gateway, Option<TunnelPeer>, &Person, T) -> Response,
+) -> Response {
+    let person = match current_requester(gateway, peer, headers, expected) {
+        Ok(person) => person,
+        Err(denied) => return *denied,
+    };
+    if let Some(denied) = install_gates::deny_check(gateway, &person) {
+        return denied;
+    }
+    match result {
+        Ok(value) => render(gateway, peer.map(|Extension(peer)| peer), &person, value),
+        Err(error) => install_error(&error),
+    }
+}
+
 pub async fn list(
     State(gateway): State<Arc<Gateway>>,
     peer: Option<Extension<TunnelPeer>>,
@@ -273,12 +325,15 @@ pub async fn list(
     if let Some(denied) = plugin_denied(&gateway, peer, &headers) {
         return denied;
     }
-    gateway.note_languages(peer.map(|Extension(peer)| peer), &headers);
+    let original = match requester(&gateway, peer, &headers) {
+        Ok(person) => person,
+        Err(response) => return *response,
+    };
     let mut plugins = gateway
         .plugins
         .installed_checked(&languages(&headers))
         .await;
-    let person = match requester(&gateway, peer, &headers) {
+    let person = match current_requester(&gateway, peer, &headers, &original) {
         Ok(person) => person,
         Err(response) => return *response,
     };
@@ -286,6 +341,17 @@ pub async fn list(
     plugins
         .plugins
         .retain(|plugin| open_apps.allows_plugin(&plugin.id));
+    for plugin in &mut plugins.plugins {
+        if let Err(response) = super::bot_projection::installed(
+            &gateway,
+            peer.map(|Extension(peer)| peer),
+            &headers,
+            &person,
+            plugin,
+        ) {
+            return *response;
+        }
+    }
     Json(plugins).into_response()
 }
 
@@ -314,11 +380,23 @@ pub async fn detail(
             &format!("应用 {id} 没有开放给家人"),
         );
     }
-    match gateway
+    let detail = gateway
         .plugins
         .judged_detail(&id, &languages(&headers))
-        .await
-    {
+        .await;
+    let person = match current_requester(&gateway, peer, &headers, &person) {
+        Ok(person) => person,
+        Err(response) => return *response,
+    };
+    let permissions = gateway.permissions(&person);
+    if !permissions.open_apps.allows_plugin(id.as_str()) {
+        return error_response(
+            StatusCode::FORBIDDEN,
+            "not_shared",
+            &format!("应用 {id} 没有开放给家人"),
+        );
+    }
+    match detail {
         Some(mut detail) => {
             if permissions.allows(PermissionItem::ShareApps)
                 && let Some(sharing) = gateway.sharing.as_ref()
@@ -335,6 +413,15 @@ pub async fn detail(
                 }
             }
             install_gates::project_detail(&gateway, &person, id.as_str(), &mut detail);
+            if let Err(response) = super::bot_projection::detail(
+                &gateway,
+                peer.map(|Extension(peer)| peer),
+                &headers,
+                &person,
+                &mut detail,
+            ) {
+                return *response;
+            }
             Json(detail).into_response()
         }
         None => install_error(&InstallError::NotInstalled(id.to_string())),
@@ -413,83 +500,131 @@ pub async fn install(
     match json_body::<InstallRequest>(&headers, &body) {
         Some(Err(e)) => install_error(&e),
         Some(Ok(request)) => {
-            let finish = {
-                let request = request.clone();
-                let headers = headers.clone();
-                move |gateway: Arc<Gateway>| {
-                    let request = request.clone();
-                    let headers = headers.clone();
-                    async move {
-                        let installed = gateway.plugins.install_source(&request).await;
-                        let id = match installed {
-                            Ok(view) => view.id,
-                            Err(e) => return install_error(&e),
-                        };
-                        match gateway.plugins.installed_plugin(&id, &languages(&headers)) {
-                            Some(installed) => {
-                                (StatusCode::CREATED, Json(installed)).into_response()
-                            }
-                            // 装好之后立刻被卸掉了。
-                            None => install_error(&InstallError::NotInstalled(id.to_string())),
-                        }
-                    }
+            install_by_source(gateway, peer, headers, person, request, langs).await
+        }
+        None => install_by_upload(gateway, peer, headers, person, query, body, langs).await,
+    }
+}
+
+/// JSON 请求体的按来源安装：门槛通过后装来源指向的插件，回 201 和装好后的详情。
+async fn install_by_source(
+    gateway: Arc<Gateway>,
+    peer: Option<Extension<TunnelPeer>>,
+    headers: HeaderMap,
+    person: Person,
+    request: InstallRequest,
+    langs: Languages,
+) -> Response {
+    let finish = {
+        let request = request.clone();
+        let headers = headers.clone();
+        let person = person.clone();
+        move |gateway: Arc<Gateway>| {
+            let request = request.clone();
+            let headers = headers.clone();
+            async move {
+                let installed = async {
+                    let id = gateway.plugins.install_source(&request).await?.id;
+                    gateway
+                        .plugins
+                        .installed_plugin(&id, &languages(&headers))
+                        .ok_or_else(|| InstallError::NotInstalled(id.to_string()))
                 }
-            };
-            let gate =
-                install_gates::install_source(&gateway, peer, &headers, &person, &request, finish)
-                    .await;
-            match install_gates::settle(gate, "install", &langs).await {
-                Ok(response) => response,
-                Err(response) => response,
+                .await;
+                response_for_requester(
+                    &gateway,
+                    peer,
+                    &headers,
+                    &person,
+                    installed,
+                    |gateway, peer, person, plugin| {
+                        super::bot_projection::installed_response(
+                            gateway,
+                            peer,
+                            &headers,
+                            person,
+                            plugin,
+                            StatusCode::CREATED,
+                        )
+                    },
+                )
             }
         }
-        None => {
-            // 门槛的预览和闭包各用一份：闭包装的是主人批准后的同一份包。
-            let package = match package(&langs, &headers, &body) {
-                Ok(package) => package,
-                Err(e) => return install_error(&e),
-            };
-            let for_install = package.clone();
-            let selected_devices = comma_list(&query.devices);
-            let changes = install_gate_checks::upload_changes_permissions(&query);
-            let finish = {
-                let headers = headers.clone();
-                move |gateway: Arc<Gateway>| {
-                    let package = for_install.clone();
-                    let headers = headers.clone();
-                    let query = query.clone();
-                    async move {
-                        match install_upload_package(&gateway, &headers, &query, package).await {
-                            Ok(view) => {
-                                let id = view.id;
-                                match gateway.plugins.installed_plugin(&id, &languages(&headers)) {
-                                    Some(installed) => {
-                                        (StatusCode::CREATED, Json(installed)).into_response()
-                                    }
-                                    None => {
-                                        install_error(&InstallError::NotInstalled(id.to_string()))
-                                    }
-                                }
-                            }
-                            Err(e) => install_error(&e),
-                        }
-                    }
+    };
+    let gate =
+        install_gates::install_source(&gateway, peer, &headers, &person, &request, finish).await;
+    match install_gates::settle(gate, "install", &langs).await {
+        Ok(response) | Err(response) => response,
+    }
+}
+
+/// 上传插件包安装：门槛通过后装上传的包，回 201 和装好后的详情。
+async fn install_by_upload(
+    gateway: Arc<Gateway>,
+    peer: Option<Extension<TunnelPeer>>,
+    headers: HeaderMap,
+    person: Person,
+    query: InstallQuery,
+    body: Bytes,
+    langs: Languages,
+) -> Response {
+    // 门槛的预览和闭包各用一份：闭包装的是主人批准后的同一份包。
+    let package = match package(&langs, &headers, &body) {
+        Ok(package) => package,
+        Err(e) => return install_error(&e),
+    };
+    let for_install = package.clone();
+    let selected_devices = comma_list(&query.devices);
+    let changes = install_gate_checks::upload_changes_permissions(&query);
+    let finish = {
+        let headers = headers.clone();
+        let person = person.clone();
+        move |gateway: Arc<Gateway>| {
+            let package = for_install.clone();
+            let headers = headers.clone();
+            let query = query.clone();
+            async move {
+                let installed = async {
+                    let id = install_upload_package(&gateway, &headers, &query, package)
+                        .await?
+                        .id;
+                    gateway
+                        .plugins
+                        .installed_plugin(&id, &languages(&headers))
+                        .ok_or_else(|| InstallError::NotInstalled(id.to_string()))
                 }
-            };
-            let gate = install_gates::install_upload(
-                &gateway,
-                peer,
-                &headers,
-                &person,
-                (&package, &selected_devices, changes),
-                finish,
-            )
-            .await;
-            match install_gates::settle(gate, "install", &langs).await {
-                Ok(response) => response,
-                Err(response) => response,
+                .await;
+                response_for_requester(
+                    &gateway,
+                    peer,
+                    &headers,
+                    &person,
+                    installed,
+                    |gateway, peer, person, plugin| {
+                        super::bot_projection::installed_response(
+                            gateway,
+                            peer,
+                            &headers,
+                            person,
+                            plugin,
+                            StatusCode::CREATED,
+                        )
+                    },
+                )
             }
         }
+    };
+    let gate = install_gates::install_upload(
+        &gateway,
+        peer,
+        &headers,
+        &person,
+        (&package, &selected_devices, changes),
+        finish,
+    )
+    .await;
+    match install_gates::settle(gate, "install", &langs).await {
+        Ok(response) | Err(response) => response,
     }
 }
 
@@ -611,14 +746,14 @@ async fn perform_upgrade(
     headers: HeaderMap,
     query: InstallQuery,
     body: Bytes,
-) -> Response {
+) -> Result<UpgradeResult, InstallError> {
     let langs = languages(&headers);
     let before = match &gateway.mcp {
         Some(mcp) => mcp.bus.tool_names(&id).await,
         None => Err(l10n::text(&langs, "gateway-mcp-disabled", &[])),
     };
     let upgraded = match json_body::<UpgradeRequest>(&headers, &body) {
-        Some(Err(e)) => return install_error(&e),
+        Some(Err(e)) => return Err(e),
         Some(Ok(request)) => gateway.plugins.upgrade_source(&id, &request, &langs).await,
         None => match upload_parts(&languages(&headers), &headers, &body, &query)
             .and_then(|parts| Ok((parts, settings(&headers)?)))
@@ -626,11 +761,7 @@ async fn perform_upgrade(
             Ok(((grant, enabled, secrets, package), given)) => {
                 let plugins = &gateway.plugins;
                 let filled = plugins.store().secrets().load(&id).ok().flatten();
-                if let Err(e) =
-                    plugins.store_input_values(&package.manifest, &secrets, filled.as_ref(), &langs)
-                {
-                    return install_error(&e);
-                }
+                plugins.store_input_values(&package.manifest, &secrets, filled.as_ref(), &langs)?;
                 plugins
                     .upgrade_upload(
                         &id,
@@ -644,12 +775,10 @@ async fn perform_upgrade(
                     )
                     .await
             }
-            Err(e) => return install_error(&e),
+            Err(e) => return Err(e),
         },
     };
-    if let Err(e) = upgraded {
-        return install_error(&e);
-    }
+    upgraded?;
     // 主人经文件或来源升级后，插件不再归 Agent（ADR-0033）：归属和“每次都问”一起清掉。
     if let Err(e) = gateway.plugins.set_writer(&id, None) {
         tracing::error!(plugin = %id, error = %e, "清插件的归属失败");
@@ -660,14 +789,14 @@ async fn perform_upgrade(
             reason: l10n::text(&langs, "gateway-mcp-disabled", &[]),
         },
     };
-    match gateway.plugins.installed_plugin(&id, &langs) {
-        Some(plugin) => Json(UpgradeResult {
-            plugin,
-            added_tools,
-        })
-        .into_response(),
-        None => install_error(&InstallError::NotInstalled(id.to_string())),
-    }
+    let plugin = gateway
+        .plugins
+        .installed_plugin(&id, &langs)
+        .ok_or_else(|| InstallError::NotInstalled(id.to_string()))?;
+    Ok(UpgradeResult {
+        plugin,
+        added_tools,
+    })
 }
 
 pub async fn upgrade(
@@ -696,7 +825,30 @@ pub async fn upgrade(
         let query = query.clone();
         let body = body.clone();
         let id = id.clone();
-        move |gateway: Arc<Gateway>| perform_upgrade(gateway, id, headers, query, body)
+        let person = person.clone();
+        move |gateway: Arc<Gateway>| {
+            let upgraded = perform_upgrade(gateway.clone(), id, headers.clone(), query, body);
+            async move {
+                let result = upgraded.await;
+                response_for_requester(
+                    &gateway,
+                    peer,
+                    &headers,
+                    &person,
+                    result,
+                    |gateway, peer, person, mut value| match super::bot_projection::installed(
+                        gateway,
+                        peer,
+                        &headers,
+                        person,
+                        &mut value.plugin,
+                    ) {
+                        Ok(()) => Json(value).into_response(),
+                        Err(response) => *response,
+                    },
+                )
+            }
+        }
     };
     // 门槛要升级预览的内容写卡片，先把请求体读出来；执行用的是同一份请求体。
     let ask = match install_gate_checks::UpgradeAsk::read(&headers, &body, &query) {
@@ -705,8 +857,7 @@ pub async fn upgrade(
     };
     let gate = install_gates::upgrade(&gateway, peer, &headers, &person, &id, ask, finish).await;
     match install_gates::settle(gate, "upgrade", &langs).await {
-        Ok(response) => response,
-        Err(response) => response,
+        Ok(response) | Err(response) => response,
     }
 }
 

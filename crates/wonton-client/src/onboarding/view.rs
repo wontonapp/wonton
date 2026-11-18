@@ -2,10 +2,11 @@
 
 use std::collections::HashSet;
 
+use wonton_matrix::UserId;
 use wonton_protocol::{
-    ChatViewModel, ModelSettingsPage, Onboarding, OnboardingAgent, OnboardingAgentRow,
-    OnboardingCommit, OnboardingModelStep, OnboardingNeedRow, OnboardingReview, OnboardingStep,
-    OnboardingViewModel, PluginState, ReplacedAgent, StepNav,
+    ChatViewModel, DefaultBotVisibility, ModelSettingsPage, Onboarding, OnboardingAgent,
+    OnboardingAgentRow, OnboardingCommit, OnboardingModelStep, OnboardingNeedRow, OnboardingReview,
+    OnboardingStep, OnboardingViewModel, PluginState, ReplacedAgent, StepNav,
 };
 
 use super::{LocalState, review, storage};
@@ -36,7 +37,9 @@ pub(super) fn prompt_done(
             .primary_agent
             .as_deref()
             .and_then(|id| onboarding.agents.iter().find(|agent| agent.id == id))
+            .filter(|agent| agent.default_bot_visibility == Some(DefaultBotVisibility::Visible))
             .and_then(|agent| agent.bot_user_id.as_deref())
+            .filter(|id| <&UserId>::try_from(*id).is_ok())
     }) else {
         return false;
     };
@@ -53,7 +56,7 @@ pub(super) fn render(
         return (
             OnboardingViewModel {
                 loading: state.loading,
-                problem: state.problem.clone(),
+                problem: state.problem.clone().or_else(|| state.bot_problem.clone()),
                 tips: tips(records),
                 ..OnboardingViewModel::default()
             },
@@ -75,10 +78,17 @@ pub(super) fn render(
     let selected_agent = selected
         .as_deref()
         .and_then(|id| onboarding.agents.iter().find(|agent| agent.id == id));
-    let primary_bot = onboarding
+    let default_agent = onboarding
         .primary_agent
         .as_deref()
-        .and_then(|id| onboarding.agents.iter().find(|agent| agent.id == id))
+        .and_then(|id| onboarding.agents.iter().find(|agent| agent.id == id));
+    let default_bot_visibility = Some(project_default_bot_visibility(
+        state,
+        onboarding,
+        default_agent,
+    ));
+    let primary_bot = default_agent
+        .filter(|_| default_bot_visibility == Some(DefaultBotVisibility::Visible))
         .and_then(|agent| agent.bot_user_id.clone());
     // 收起只看盘上的 `prompts_used`：发过消息的落盘在 `OnboardingLink::publish` 里、渲染用同一份快照，
     // 收起的视图出去时记录一定已经在盘上。房间行不参与收起（行列表抖动不收起），壳只在 Bot 私聊里显示。
@@ -126,7 +136,7 @@ pub(super) fn render(
         nav: step.and_then(|step| navigation(state, step, selected_agent)),
         too_old: state.too_old.clone(),
         loading: state.loading,
-        problem: state.problem.clone(),
+        problem: state.problem.clone().or_else(|| state.bot_problem.clone()),
         catalog_problem: onboarding.catalog_problem.clone(),
         profile: state.draft.profile_step(state.owner.as_ref()),
         agents,
@@ -137,11 +147,38 @@ pub(super) fn render(
             commit: state.commit,
         },
         primary_bot_user_id: primary_bot.clone(),
+        default_bot_visibility,
         chat_prompts,
         replaced_agent: replaced_agent(onboarding),
         tips: tips(records),
     };
     (view, primary_bot)
+}
+
+fn project_default_bot_visibility(
+    state: &LocalState,
+    onboarding: &Onboarding,
+    default_agent: Option<&OnboardingAgent>,
+) -> DefaultBotVisibility {
+    // 只在 Bot 身份本身待核实（静默重取在飞、上次取失败）时收起；整页刷新（loading）不掩盖
+    // 最新一份已核实的身份，否则完成引导后 Bot 一直点不了，等旧 GET 的每条测试也钉不住。
+    if state.bot_refreshing || state.bot_problem.is_some() {
+        DefaultBotVisibility::Unknown
+    } else if onboarding.primary_agent.is_none() {
+        DefaultBotVisibility::Absent
+    } else {
+        match default_agent
+            .map(|agent| (agent.default_bot_visibility, agent.bot_user_id.as_deref()))
+        {
+            Some((Some(DefaultBotVisibility::Visible), Some(id)))
+                if <&UserId>::try_from(id).is_ok() =>
+            {
+                DefaultBotVisibility::Visible
+            }
+            Some((Some(DefaultBotVisibility::Absent), None)) => DefaultBotVisibility::Absent,
+            _ => DefaultBotVisibility::Unknown,
+        }
+    }
 }
 
 fn agent_rows(onboarding: &Onboarding, selected: Option<&str>) -> Vec<OnboardingAgentRow> {
@@ -270,6 +307,7 @@ mod tests {
                     health: wonton_protocol::PluginHealth::Healthy,
                 }),
                 bot_user_id: Some("@hermes:home".to_owned()),
+                default_bot_visibility: Some(DefaultBotVisibility::Visible),
                 logins: Vec::new(),
                 blocked: None,
             }],
@@ -320,6 +358,8 @@ mod tests {
             settled_confirmations: Vec::new(),
             background_notifications: Vec::new(),
             bots: Vec::new(),
+            own_private_bot: None,
+            own_private_bot_problem: None,
         }
     }
 
@@ -385,5 +425,54 @@ mod tests {
         };
         let view = render_with(&reset);
         assert_eq!(view.chat_prompts, ["问我能做什么"]);
+    }
+
+    #[test]
+    fn pending_identity_refresh_does_not_offer_or_forget_the_previous_bot() {
+        let mut state = LocalState {
+            onboarding: Some(onboarding()),
+            bot_refreshing: true,
+            ..LocalState::default()
+        };
+        let pending = render(&state, &storage::Records::default()).0;
+        assert_eq!(
+            pending.default_bot_visibility,
+            Some(DefaultBotVisibility::Unknown)
+        );
+        assert_eq!(pending.primary_bot_user_id, None);
+        assert!(pending.chat_prompts.is_empty());
+
+        state.bot_refreshing = false;
+        let verified = render(&state, &storage::Records::default()).0;
+        assert_eq!(
+            verified.primary_bot_user_id.as_deref(),
+            Some("@hermes:home")
+        );
+        assert!(!verified.chat_prompts.is_empty());
+    }
+
+    #[test]
+    fn invalid_or_contradictory_default_identity_never_becomes_a_chat_target() {
+        for (visibility, id) in [
+            (Some(DefaultBotVisibility::Visible), Some("not-a-matrix-id")),
+            (Some(DefaultBotVisibility::Visible), None),
+            (Some(DefaultBotVisibility::Absent), Some("@private:home")),
+            (None, Some("@private:home")),
+        ] {
+            let mut data = onboarding();
+            data.agents[0].default_bot_visibility = visibility;
+            data.agents[0].bot_user_id = id.map(str::to_owned);
+            let state = LocalState {
+                onboarding: Some(data),
+                ..LocalState::default()
+            };
+            let view = render(&state, &storage::Records::default()).0;
+            assert_eq!(
+                view.default_bot_visibility,
+                Some(DefaultBotVisibility::Unknown)
+            );
+            assert!(view.primary_bot_user_id.is_none());
+            assert!(view.chat_prompts.is_empty());
+        }
     }
 }

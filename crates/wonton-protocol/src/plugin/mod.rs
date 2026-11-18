@@ -179,6 +179,10 @@ pub struct InstalledPlugin {
     pub chat: Option<PluginChat>,
     /// 这台设备的人在这个插件里的 Bot（Matrix 用户 ID）：Agent 插件点开就是和它的私聊。
     pub bot_user_id: Option<String>,
+    /// 默认 Bot 身份的当前投影；未提供时也表示未知，不代表房间发送资格。
+    #[serde(default)]
+    #[cfg_attr(feature = "uniffi", uniffi(default = None))]
+    pub default_bot_visibility: Option<crate::DefaultBotVisibility>,
     /// 能升级到的版本；没有新版本时为空。
     pub upgrade: Option<UpgradeOffer>,
     /// 主人能卸载它；系统插件不能。

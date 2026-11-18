@@ -37,6 +37,7 @@ fn plugin(id: &str, origin: &str, isolated: bool) -> InstalledPlugin {
         declares_tools: false,
         tabs: Vec::new(),
         bot_user_id: None,
+        default_bot_visibility: None,
         upgrade: None,
         removable: true,
         notices: Vec::new(),
@@ -108,6 +109,8 @@ fn chat_view(bots: Vec<wonton_protocol::BotView>) -> wonton_protocol::ChatViewMo
         settled_confirmations: Vec::new(),
         background_notifications: Vec::new(),
         bots,
+        own_private_bot: None,
+        own_private_bot_problem: None,
         chat_layout_default: Default::default(),
     }
 }
