@@ -1,6 +1,6 @@
 # ADR-0096 音视频通话：MatrixRTC + LiveKit，Element Call 作为 Matrix widget 跑在插件页里
 
-- 状态：提议（2026-11-12）。路线（同 Element X：MatrixRTC + LiveKit + Element Call 网页嵌进 App）由主人 2026-11-08 定
+- 状态：已接受（2026-11-12 提议，2026-11-16 接受）。路线（同 Element X：MatrixRTC + LiveKit + Element Call 网页嵌进 App）由主人 2026-11-08 定
 - 细化 [ADR-0014](0014-reserved-capabilities.md) 的“实时通话”：只定房间里的音视频通话；和 Bot 通话、屏幕共享、来电响铃不在这篇
 - 用 [ADR-0072](0072-tunnel-udp.md) 的 UDP 隧道，和 [ADR-0033](0033-plugin-tabs.md) 的插件页、桥、摄像头和麦克风授权
 
@@ -232,8 +232,16 @@ Tuwunel v2.0.0、lk-jwt-service 0.9.0、livekit-server v1.13.11，Linux + Docker
 - full access 的服务器名换到令牌后，授权服务建 LiveKit 房间成功。
 - 网关测试：真实 Tuwunel 发的 OpenID 令牌经 `/_wonton/matrix-rtc/sfu/get` 换回 LiveKit 令牌，假令牌 401，没装提供方 503
   （`gateway/matrix_rtc_docker_tests.rs`）。
-- 设备门：App 的本地代理按主机放行家里服务器的域名，插件页请求 `matrix.<base>/_wonton/matrix-rtc` 带着隧道身份到网关，
-  过得了设备门；预检和 CORS 由授权服务自己答。这条只从代码和网关测试得出，没在真机上跑。
+App 端（两条模拟器设备、Debug、各自独立身份，同一加密房间；本 PR 的复跑补齐，`⏳` 是还没观察到的）：
+
+- 双向音视频打通：两端 LiveKit 日志 `participant active` + `mediaTrack published`（2026-11-16 14:36、16:04 各一次，截图在证据目录）。
+- 相机、麦克风在入会时已授权（`granted`）：APK 装好后 `pm grant`，页面带默认 `facingMode` 取流成功。
+- UDP 直连组：两端 `candidate-pair` 都是 `protocol=udp` 且 `selected`，`/proc/net/udp` 里有到插件 7882 的已连接 socket。⏳
+- 只留插件 TCP 时 `protocol=tcp`（7881）；强制 n0 中继时 `protocol=relay` 且出现 `PortMappingWarning::PublicRelayBandwidth`
+  轻提示。⏳
+- 插件页请求按主机放行，经隧道身份过设备门到网关，再反代到插件；预检和 CORS 由授权服务自己答。三条路径下都成立。⏳
+- 房间里两条 `org.matrix.msc3401.call.member`，`state_key` 是成员 user id（可带 `_<device>` 后缀）。⏳
+- 关页面即挂断，成员随之消失；`force-stop` 后成员由 delayed leave 在十几秒内清掉。⏳
 
 ## 和其他 ADR 的关系
 

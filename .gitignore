@@ -25,3 +25,6 @@ plugin-pr.md
 
 # Python 缓存（scripts/ 下的检查脚本）
 __pycache__/
+
+# 通话冒烟用的插件包副本（真身在插件仓库，脚本用 PKG 指过来）
+deploy/dev/calls/plugin/
