@@ -12,6 +12,7 @@ import app.wonton.protocol.PageAction
 import app.wonton.protocol.AppLink
 import app.wonton.protocol.BotRef
 import app.wonton.protocol.CoreException
+import app.wonton.protocol.DefaultBotVisibility
 import app.wonton.protocol.HomeStatus
 import app.wonton.protocol.OnboardingStep
 import app.wonton.protocol.OnboardingViewModel
@@ -126,10 +127,18 @@ internal class AppNavigation(val pages: PagesState, val chat: ChatNavigation, va
                 pages.send(Action.Pages(PageAction.OpenPage(TabRef.Chat)))
                 val peer = onboarding.primaryBotUserId
                 pages.plugins.reject(
-                    if (peer == null) {
-                        CoreException.NotReady(context.getString(R.string.problem_no_default_agent)).problem
-                    }
-                    else chat.openDirectChat(pages.core, peer, acceptInvite = true),
+                    if (onboarding.defaultBotVisibility != DefaultBotVisibility.VISIBLE || peer.isNullOrEmpty()) {
+                        val reason = if (
+                            onboarding.defaultBotVisibility == DefaultBotVisibility.ABSENT && peer == null
+                        ) {
+                            R.string.problem_default_agent_absent
+                        } else {
+                            R.string.problem_default_agent_unverified
+                        }
+                        onboarding.problem?.problem ?: CoreException.NotReady(context.getString(reason)).problem
+                    } else {
+                        chat.openDirectChat(pages.core, peer, acceptInvite = true)
+                    },
                 )
             }
             // 桌面小组件、桌面搜索点进来的会话（ADR-0100）。

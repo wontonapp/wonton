@@ -131,6 +131,7 @@ impl PluginsLink {
         let result = api
             .put(&["plugins", id, "lan-webui"], &update, INSTALL_TIMEOUT)
             .await
+            .map(super::identity::detail)
             .map_err(to_core_error);
         self.refresh_installed();
         result
@@ -152,6 +153,7 @@ impl PluginsLink {
                 INSTALL_TIMEOUT,
             )
             .await
+            .map(super::identity::detail)
             .map_err(to_core_error);
         self.refresh_installed();
         result
@@ -167,6 +169,7 @@ impl PluginsLink {
         let update = AskEveryUpdate { enabled };
         api.put(&["plugins", id, "ask-every-update"], &update, READ_TIMEOUT)
             .await
+            .map(super::identity::detail)
             .map_err(to_core_error)
     }
 

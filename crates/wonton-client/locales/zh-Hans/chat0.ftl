@@ -63,6 +63,7 @@ chat-room-not-subscribed = 要先订阅房间 { $room } 的时间线
 
 # 还没选默认 Agent 就问它时显示。
 chat-no-default-agent = 还没有默认 Agent：先在设置里选一个
+chat-default-agent-unverified = 暂时无法确认默认 Agent，请检查连接后重试
 
 chat-op-display-name-failed = 同步显示名失败：{ $error }
 

@@ -6,7 +6,7 @@ use std::sync::Arc;
 
 use wonton_l10n::l10n;
 use wonton_protocol::{
-    CoreError, InstallPreview, Onboarding, OnboardingCommit, OnboardingItemProblem,
+    CoreError, HomeStatus, InstallPreview, Onboarding, OnboardingCommit, OnboardingItemProblem,
     OnboardingItemState, OnboardingReviewDetail, OnboardingReviewItem, OnboardingReviewKind,
     OnboardingStep, OnboardingUpdate, PluginFailure, PluginIcon, PluginProblem, PluginTask,
     PluginTaskState, normalized_email,
@@ -540,6 +540,8 @@ impl OnboardingLink {
         match result {
             Ok(onboarding) => {
                 state.onboarding = Some(onboarding);
+                state.bot_refreshing = self.home.view().status != HomeStatus::Connected;
+                state.bot_problem = None;
                 state.revision += 1;
                 true
             }

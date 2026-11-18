@@ -16,10 +16,16 @@ pub(super) fn load(path: &Path, server_id: &str) -> Option<InstalledPlugins> {
     let cached: Cached = serde_json::from_slice(&bytes)
         .inspect_err(|error| tracing::warn!("could not read the cached app list: {error}"))
         .ok()?;
-    (cached.server_id == server_id).then_some(cached.installed)
+    if cached.server_id != server_id {
+        return None;
+    }
+    let mut installed = cached.installed;
+    clear_bot_ids(&mut installed);
+    Some(installed)
 }
 
-pub(super) async fn save(path: &Path, server_id: String, installed: InstalledPlugins) {
+pub(super) async fn save(path: &Path, server_id: String, mut installed: InstalledPlugins) {
+    clear_bot_ids(&mut installed);
     let cached = Cached {
         server_id,
         installed,
@@ -32,6 +38,13 @@ pub(super) async fn save(path: &Path, server_id: String, installed: InstalledPlu
     };
     if let Err(error) = saved.await {
         tracing::warn!("could not save the app list: {error}");
+    }
+}
+
+fn clear_bot_ids(installed: &mut InstalledPlugins) {
+    for plugin in &mut installed.plugins {
+        plugin.bot_user_id = None;
+        plugin.default_bot_visibility = Some(wonton_protocol::DefaultBotVisibility::Unknown);
     }
 }
 

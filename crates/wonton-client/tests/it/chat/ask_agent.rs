@@ -34,6 +34,7 @@ async fn asking_joins_the_bots_chat_and_sends_the_question() {
             "source": null,
             "status": {"state": "running", "health": "healthy"},
             "bot_user_id": "@hermes:wonton.localhost",
+            "default_bot_visibility": "visible",
             "logins": [],
             "blocked": null
         }],

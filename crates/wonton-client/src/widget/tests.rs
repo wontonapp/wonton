@@ -127,6 +127,8 @@ fn chat(account: ChatAccount, sync: ChatSync, rooms: Vec<RoomRow>) -> ChatViewMo
         settled_confirmations: Vec::new(),
         background_notifications: Vec::new(),
         bots: vec![agent(Some(BotActivity::Waiting))],
+        own_private_bot: None,
+        own_private_bot_problem: None,
     }
 }
 
@@ -207,6 +209,7 @@ fn plugin(id: &str, web: bool) -> InstalledPlugin {
         cross_origin_isolated: false,
         tabs: Vec::new(),
         bot_user_id: None,
+        default_bot_visibility: None,
         upgrade: None,
         removable: true,
         notices: Vec::new(),

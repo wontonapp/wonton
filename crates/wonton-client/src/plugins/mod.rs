@@ -8,6 +8,7 @@ pub(crate) mod cards;
 mod core_upgrade;
 mod detail;
 mod egress;
+mod identity;
 mod me;
 mod media;
 mod now;
@@ -498,9 +499,13 @@ impl PluginsLink {
     ) -> Result<(), PluginProblem> {
         // 序号从 1 开始：0 会和 applied_seq 的初值撞车，第一个响应会被当成旧的丢掉。
         let seq = self.fetch_seq.fetch_add(1, Ordering::SeqCst) + 1;
-        let result: Result<InstalledPlugins, PluginProblem> =
-            api.get(&["plugins"], &[], READ_TIMEOUT).await;
-        if !self.is_current_home(generation, server) {
+        let result: Result<InstalledPlugins, PluginProblem> = api
+            .get(&["plugins"], &[], READ_TIMEOUT)
+            .await
+            .map(identity::list);
+        if !self.is_current_home(generation, server)
+            || self.home.view().status != HomeStatus::Connected
+        {
             return Ok(());
         }
         let installed = result?;
@@ -513,7 +518,9 @@ impl PluginsLink {
         {
             cache::save(&self.installed_cache, server.clone(), installed.clone()).await;
         }
-        if !self.is_current_home(generation, server) {
+        if !self.is_current_home(generation, server)
+            || self.home.view().status != HomeStatus::Connected
+        {
             return Ok(());
         }
         self.applied_seq.store(seq, Ordering::SeqCst);
@@ -531,7 +538,10 @@ impl PluginsLink {
     }
 
     async fn list_installed(&self) -> Result<InstalledPlugins, PluginProblem> {
-        self.api()?.get(&["plugins"], &[], READ_TIMEOUT).await
+        self.api()?
+            .get(&["plugins"], &[], READ_TIMEOUT)
+            .await
+            .map(identity::list)
     }
 
     pub(crate) fn api(&self) -> Result<CoreApi, PluginProblem> {

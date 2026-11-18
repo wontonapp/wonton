@@ -17,6 +17,7 @@ import androidx.compose.ui.res.stringResource
 
 import app.wonton.protocol.OnboardingAction
 import app.wonton.protocol.Action
+import app.wonton.protocol.DefaultBotVisibility
 import app.wonton.protocol.OnboardingTip
 import app.wonton.ui.design.WontonButton
 import app.wonton.ui.design.WontonButtonKind
@@ -34,7 +35,9 @@ internal fun OnboardingChatPrompts(roomId: String) {
     val view = context.view
     val room = context.chat.rooms.firstOrNull { it.roomId == roomId }
     val draft = LocalTabDraft.current
-    if (view.primaryBotUserId == null || room?.directUserId != view.primaryBotUserId) return
+    if (view.defaultBotVisibility != DefaultBotVisibility.VISIBLE ||
+        view.primaryBotUserId == null || room?.directUserId != view.primaryBotUserId
+    ) return
     Column(
         Modifier.fillMaxWidth().padding(horizontal = WontonTheme.spacing.pageInset),
         verticalArrangement = Arrangement.spacedBy(WontonTheme.spacing.s8),

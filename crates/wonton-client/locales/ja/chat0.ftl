@@ -63,6 +63,7 @@ chat-room-not-subscribed = 先にルーム{ $room }のタイムラインを購�
 
 # デフォルトのエージェントを選ぶ前に問い合わせたときに表示します。
 chat-no-default-agent = デフォルトのエージェントがまだありません。設定で選んでください
+chat-default-agent-unverified = デフォルトのエージェントを確認できません。接続を確かめて、もう一度お試しください
 
 chat-op-display-name-failed = 表示名を同期できませんでした：{ $error }
 

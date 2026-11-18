@@ -72,6 +72,7 @@ fn plugin() -> InstalledPlugin {
         declares_tools: false,
         tabs: Vec::new(),
         bot_user_id: None,
+        default_bot_visibility: None,
         upgrade: None,
         removable: true,
         notices: Vec::new(),

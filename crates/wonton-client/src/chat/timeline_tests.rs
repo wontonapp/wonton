@@ -198,5 +198,7 @@ fn chat_view(bots: &[&str]) -> ChatViewModel {
                 problem: None,
             })
             .collect(),
+        own_private_bot: None,
+        own_private_bot_problem: None,
     }
 }
