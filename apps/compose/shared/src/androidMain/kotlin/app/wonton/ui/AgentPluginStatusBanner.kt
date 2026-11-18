@@ -57,9 +57,9 @@ internal fun PluginDetailStatus(detail: PluginDetail, plugins: PluginsState, wor
         val settled = task?.state !is PluginTaskState.Uncertain &&
             installed.id !in plugins.viewModel.pending
         if (failure.retryable && !working && settled) {
-            WontonButton(stringResource(R.string.common_retry)) {
+            WontonButton(stringResource(R.string.common_retry), onClick = {
                 plugins.send(Action.Plugins(PluginAction.RetryPluginInstall(id = installed.id)))
-            }
+            })
         }
     } else {
         PluginStatusNotice(

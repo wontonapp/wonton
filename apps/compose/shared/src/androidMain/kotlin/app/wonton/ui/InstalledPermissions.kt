@@ -38,10 +38,11 @@ internal fun PluginPermissionSection(
 ) {
     if (detail.permissions.isEmpty() && detail.widgetCapabilities.isEmpty()) return
     var changing by remember(detail.id) { mutableStateOf<String?>(null) }
+    val installed = detail.installed
     DetailSection(stringResource(R.string.install_permissions)) {
         detail.permissions.forEach { line ->
             key(detail.id, line.permission) {
-                if (line.optional && detail.installed != null && detail.installed.installFailure == null) {
+                if (line.optional && installed != null && installed.installFailure == null) {
                     InstalledPermission(
                         plugins, detail.id, line, changing == null, onUpdated,
                         onBusy = { busy -> changing = if (busy) line.permission else null },

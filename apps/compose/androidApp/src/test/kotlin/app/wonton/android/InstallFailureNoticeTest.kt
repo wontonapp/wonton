@@ -3,7 +3,6 @@ package app.wonton.android
 import android.app.Application
 import androidx.compose.ui.test.assertIsDisplayed
 import androidx.compose.ui.test.junit4.v2.createComposeRule
-import androidx.compose.ui.test.assertDoesNotExist
 import androidx.compose.ui.test.performClick
 import androidx.compose.ui.test.onNodeWithText
 import androidx.test.core.app.ApplicationProvider
