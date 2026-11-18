@@ -202,6 +202,7 @@ internal fun AppNavigation.checkInstalled() {
 }
 
 internal fun AppNavigation.openStore() {
+    settingsOverlay = false
     plugins.detail = null
     plugins.confirmation = null
     openApps(HomePage.STORE)
