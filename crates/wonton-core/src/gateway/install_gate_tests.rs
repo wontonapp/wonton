@@ -553,3 +553,6 @@ mod install_gate_card_tests;
 
 #[path = "install_gate_upgrade_tests.rs"]
 mod install_gate_upgrade_tests;
+
+#[path = "install_gate_highest_tests.rs"]
+mod install_gate_highest_tests;

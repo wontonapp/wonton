@@ -6,7 +6,7 @@ use super::super::languages::Languages;
 use super::super::names::{container_name, service_host};
 use super::super::render::{Deployment, dry_run};
 use super::super::upstreams::Endpoint;
-use super::super::{PluginPackage, PluginStatus};
+use super::super::{PluginPackage, PluginStatus, UpgradeSwitches};
 use super::lan::{granted, office, on};
 use super::manager::manager_in_container;
 use super::package;
@@ -392,7 +392,14 @@ async fn network_mode_upgrade_recreates_the_target_and_every_sidecar() {
     .unwrap();
     let before = docker.writes().len();
     manager
-        .upgrade_checked(next, &[], &[], false, &[], Default::default())
+        .upgrade_checked(
+            next,
+            &[],
+            &UpgradeSwitches::Requested(Vec::new()),
+            false,
+            &[],
+            Default::default(),
+        )
         .await
         .unwrap();
     let writes = docker.writes()[before..].to_vec();

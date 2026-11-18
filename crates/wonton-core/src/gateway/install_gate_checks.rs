@@ -3,7 +3,7 @@
 //!
 //! - 包：请求带的摘要要和门槛预览的一致。执行时拿同一个摘要核对重新取到的包，管理员批的和最后装的
 //!   就是同一个包；来源可变（GitHub latest、分支）时中间变了，停在 409 `changed`。
-//! - 权限：经安装、升级接口改权限只限主人（ADR-0057）。可选权限、设备、局域网开关和装着的不同
+//! - 权限：卡片写不出改权限（ADR-0057）。可选权限、设备、局域网开关和装着的不同
 //!   （新装时非空、非默认）直接回 403 `permission_required{owner}`，不发卡。密钥和设置只能补这个版本
 //!   要补的（还没填的密钥、没值也没默认值的必填项、过不了新 Schema 的项），改已有的值同样只限主人。
 //! - 装不了：预览 `blocked` 时按类别停下，不发卡。设备暂时不在、设备列表读不到时预览认不出 NVMe，
@@ -12,6 +12,7 @@
 //!
 //! 能装（`Allow`）的人和主人不经卡片，不走这里。
 
+use sha2::Digest as _;
 use std::collections::BTreeSet;
 
 use hyper::HeaderMap;
@@ -215,7 +216,7 @@ pub(super) fn upgrade_changes_permissions(
 }
 
 /// 发卡时装着的插件里，请求会改到的部分。管理员批准时可能已经过了很久，这期间主人关掉的权限、
-/// 局域网开关、改过的设置和设备，不能被原样执行的请求悄悄改回去：执行前再比一次，对不上回 409 `changed`。
+/// 局域网开关、改过的设置、设备和密钥，不能被原样执行的请求悄悄改回去：执行前再比一次，对不上回 409 `changed`。
 #[derive(PartialEq, Eq)]
 pub(super) struct RecordState {
     version: String,
@@ -223,7 +224,8 @@ pub(super) struct RecordState {
     lan_webui: bool,
     devices: Vec<crate::plugin::store::InstalledDevice>,
     settings: std::collections::BTreeMap<String, serde_json::Value>,
-    secrets: BTreeSet<String>,
+    /// 密钥名 → 值的 SHA-256：主人改了值也要认出来，卡片挂着的这段时间不在内存里多留一份明文。
+    secrets: std::collections::BTreeMap<String, [u8; 32]>,
 }
 
 impl RecordState {
@@ -239,7 +241,12 @@ impl RecordState {
             .store()
             .secrets()
             .load(id)?
-            .map(|filled| filled.into_keys().collect())
+            .map(|filled| {
+                filled
+                    .into_iter()
+                    .map(|(name, value)| (name, sha2::Sha256::digest(&value).into()))
+                    .collect()
+            })
             .unwrap_or_default();
         let state = Self {
             version: record.version.clone(),

@@ -4,15 +4,14 @@ use super::super::languages::Languages;
 use super::super::manager::{InstallError, PluginManager};
 use super::super::manifest::Permission;
 use super::super::package::PluginPackage;
-use super::super::store::EnabledPermission;
-use super::installed_package;
+use super::{UpgradeSwitches, installed_package};
 
 impl PluginManager {
     pub(in crate::plugin) async fn upgrade_checked(
         &self,
         package: PluginPackage,
         granted: &[Permission],
-        requested: &[EnabledPermission],
+        switches: &UpgradeSwitches,
         lan_webui: bool,
         devices: &[String],
         settings: super::super::settings::Values,
@@ -25,7 +24,7 @@ impl PluginManager {
         let snapshot = self.snapshot_dependency_connections(&manifest.id)?;
         let digest = package.digest();
         let result = self
-            .upgrade_declared(package, granted, requested, lan_webui, devices, settings)
+            .upgrade_declared(package, granted, switches, lan_webui, devices, settings)
             .await;
         // 容器和安装记录已换好后，出口对账仍可能失败；不能撤掉已生效版本的连接授权。
         let retained = match &result {
