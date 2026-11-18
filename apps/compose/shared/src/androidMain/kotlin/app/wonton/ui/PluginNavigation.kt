@@ -15,6 +15,7 @@ import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
+import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
@@ -25,13 +26,17 @@ import androidx.compose.ui.unit.dp
 import app.wonton.protocol.PluginAction
 import app.wonton.protocol.Action
 import app.wonton.protocol.AddedTools
+import app.wonton.protocol.AppsAction
 import app.wonton.protocol.BotRef
+import app.wonton.protocol.InstalledPlugin
+import app.wonton.protocol.PluginDetail
 import app.wonton.protocol.PluginFailure
 import app.wonton.protocol.PluginOperation
 import app.wonton.protocol.PluginTask
 import app.wonton.protocol.PluginTaskNextStep
 import app.wonton.protocol.PluginTaskState
 import app.wonton.protocol.Rgb
+import app.wonton.ui.design.WontonButton
 import app.wonton.ui.design.WontonButtonKind
 import app.wonton.ui.design.WontonDialog
 import app.wonton.ui.design.WontonDialogAction
@@ -142,17 +147,84 @@ internal fun UninstallDialog(target: UninstallTarget, plugins: PluginsState, onD
         plugins.send(Action.Plugins(PluginAction.UninstallPlugin(target.id, deleteData)))
     }
     WontonDialog(
-        stringResource(R.string.plugin_uninstall_title, target.title),
-        stringResource(R.string.plugin_uninstall_delete_data_warning),
+        if (target.keepDataOnly) stringResource(R.string.plugin_clear_failure_title, target.title)
+        else stringResource(R.string.plugin_uninstall_title, target.title),
+        if (target.keepDataOnly) stringResource(R.string.plugin_clear_failure_message)
+        else stringResource(R.string.plugin_uninstall_delete_data_warning),
         onDismiss,
         listOf(
-            WontonDialogAction(stringResource(R.string.plugin_uninstall_keep_data)) { uninstall(false) },
-            WontonDialogAction(stringResource(R.string.plugin_uninstall_delete_data), WontonButtonKind.DANGER) {
-                uninstall(true)
-            },
+            WontonDialogAction(stringResource(
+                if (target.keepDataOnly) R.string.plugin_clear_failure else R.string.plugin_uninstall_keep_data,
+            )) { uninstall(false) },
+            *if (target.keepDataOnly) emptyArray() else arrayOf(
+                WontonDialogAction(stringResource(R.string.plugin_uninstall_delete_data), WontonButtonKind.DANGER) {
+                    uninstall(true)
+                },
+            ),
             WontonDialogAction(stringResource(R.string.common_cancel), onClick = onDismiss),
         ),
     )
+}
+
+/**
+ * 失败安装的后续：核心没留下原决定、不能直接重试时，从来源重新确认，上传的包重新选文件；随时可以只保留数据清掉失败的安装。
+ * 结果不确定时都不给，免得服务器可能还在装时又装一次。下面的任务行照常显示进展。
+ */
+@Composable
+internal fun FailedInstallActions(
+    detail: PluginDetail,
+    plugins: PluginsState,
+    working: Boolean,
+    task: PluginTask?,
+    navigation: PluginNavigation,
+) {
+    detail.installed
+        ?.takeIf {
+            it.installFailure?.retryable == false && !working && it.id !in plugins.viewModel.pending &&
+                task?.state !is PluginTaskState.Uncertain
+        }
+        ?.let { ReinstallButton(it, plugins, navigation) }
+    detail.installed
+        ?.takeIf { it.installFailure != null && !working && task?.state !is PluginTaskState.Uncertain }
+        ?.let { failed ->
+            WontonButton(
+                stringResource(R.string.plugin_clear_failure),
+                { navigation.uninstalling = UninstallTarget(failed.id, failed.title, keepDataOnly = true) },
+                Modifier.fillMaxWidth(),
+                WontonButtonKind.DANGER,
+            )
+        }
+    task?.takeIf {
+        (detail.installed?.installFailure == null || it.state !is PluginTaskState.Failed) &&
+            (it.state !is PluginTaskState.Succeeded || it.hasAddedToolsNews)
+    }?.let {
+        TaskRow(
+            it,
+            plugins,
+            { navigation.confirmation = reconfirmation(it, plugins) },
+            navigation.checkInstalled,
+        )
+    }
+}
+
+@Composable
+private fun ReinstallButton(failed: InstalledPlugin, plugins: PluginsState, navigation: PluginNavigation) {
+    var problem by remember { mutableStateOf<Problem?>(null) }
+    val pickFile = rememberPluginArchivePicker(plugins, onProblem = { problem = Problem(it) }) { archive ->
+        problem = null
+        navigation.confirmation = PluginConfirmation.Upload(archive)
+    }
+    val source = failed.source
+    val actions = plugins.viewModel.actions
+    when {
+        source != null && AppsAction.STORE in actions -> WontonButton(stringResource(R.string.common_retry), {
+            navigation.confirmation = PluginConfirmation.Install(source)
+        })
+        source == null && AppsAction.ADD_SOURCE in actions -> WontonButton(
+            stringResource(R.string.plugin_sources_install_from_file), pickFile,
+        )
+    }
+    problem?.let { ProblemNotice(it) }
 }
 
 /** 安装、升级、卸载的一项进展。插件包在确认之后变了的，[onReview] 重新打开确认页；结果不确定时，[onCheckInstalled] 去已安装列表看。 */
@@ -171,7 +243,9 @@ fun TaskRow(
         PluginIconImage(task.icon, WontonTheme.size.taskIcon, plugins)
         Column(Modifier.weight(1f), verticalArrangement = Arrangement.spacedBy(WontonTheme.spacing.s4)) {
             Text(task.title, style = WontonTheme.typography.itemTitle, color = WontonTheme.colors.textPrimary.toColor())
-            TaskState(task, onReview, onCheckInstalled)
+            val failedInstall = plugins.viewModel.installed?.plugins
+                ?.firstOrNull { it.id == task.id }?.installFailure != null
+            TaskState(task, onReview, onCheckInstalled, failedInstall)
             if (task.state is PluginTaskState.Succeeded) task.addedTools?.let { AddedToolsLine(it) }
         }
         if (task.state is PluginTaskState.Running) {
@@ -187,7 +261,7 @@ fun TaskRow(
 }
 
 @Composable
-private fun TaskState(task: PluginTask, onReview: () -> Unit, onCheckInstalled: () -> Unit) {
+private fun TaskState(task: PluginTask, onReview: () -> Unit, onCheckInstalled: () -> Unit, failedInstall: Boolean) {
     val colors = WontonTheme.colors
     val style = WontonTheme.typography.supporting
     val operation = task.operation
@@ -226,7 +300,7 @@ private fun TaskState(task: PluginTask, onReview: () -> Unit, onCheckInstalled: 
             )
             problem.nextStepText?.let { Text(it, style = style, color = colors.textSecondary.toColor()) }
             ProblemDetail(state.message)
-            if (state.reason == PluginFailure.CHANGED) {
+            if (state.reason == PluginFailure.CHANGED && !failedInstall) {
                 WontonSmallButton(stringResource(R.string.plugin_task_review), onReview)
             }
         }

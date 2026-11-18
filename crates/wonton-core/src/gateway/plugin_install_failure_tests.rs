@@ -38,6 +38,18 @@ async fn failed_install_remains_queryable_until_explicitly_cleared() {
     assert_eq!(result["message"], original);
     assert_eq!(result["stage"], "pulling_images");
     assert_eq!(result["cleanup_errors"], json!([]));
+    assert!(result.get("retryable").is_none());
+    let retry = home
+        .send(
+            Method::POST,
+            CORE,
+            "/_wonton/api/plugins/app.rollback/retry",
+            &headers,
+            Body::empty(),
+        )
+        .await;
+    assert_eq!(retry.status, StatusCode::CONFLICT, "{}", retry.text());
+    assert_eq!(retry.error_kind(), Some("conflict"));
     let list = home.get(CORE, "/_wonton/api/plugins", &headers).await;
     assert_eq!(list.status, StatusCode::OK);
     assert!(
@@ -63,4 +75,65 @@ async fn failed_install_remains_queryable_until_explicitly_cleared() {
         .get(CORE, "/_wonton/api/plugins/app.rollback", &headers)
         .await;
     assert_eq!(missing.status, StatusCode::NOT_FOUND);
+}
+
+#[tokio::test]
+async fn confirmed_install_can_be_retried_after_rollback() {
+    let home = Harness::start(None).await;
+    let bearer = format!("Bearer {TOKEN}");
+    let headers = [("authorization", bearer.as_str())];
+    let package = "services:\n  app:\n    image: nginx\nx-wonton:\n  spec: '0.5'\n  id: app.rollback\n  version: 1.0.0\n  kind: app\n  title: {en: Rollback}\n  description: {en: Rollback}\n  permissions: []\n";
+    let preview = home
+        .send(
+            Method::POST,
+            CORE,
+            "/_wonton/api/plugins/preview",
+            &headers,
+            Body::from(package),
+        )
+        .await;
+    assert_eq!(preview.status, StatusCode::OK, "{}", preview.text());
+    let preview = preview.json();
+    let request = json!({"source": preview["source"], "digest": preview["digest"], "plan": preview["plan"], "grant": []});
+    let json_headers = [
+        ("authorization", bearer.as_str()),
+        ("content-type", "application/json"),
+    ];
+    home.docker
+        .fail_pulls(Some("registry rejected installation"));
+    let failed = home
+        .send(
+            Method::POST,
+            CORE,
+            "/_wonton/api/plugins",
+            &json_headers,
+            Body::from(request.to_string()),
+        )
+        .await;
+    assert_eq!(failed.status, StatusCode::BAD_GATEWAY, "{}", failed.text());
+    assert_eq!(failed.error_kind(), Some("image_pull_failed"));
+    let detail = home
+        .get(CORE, "/_wonton/api/plugins/app.rollback", &headers)
+        .await;
+    assert_eq!(
+        detail.json()["installed"]["install_failure"]["retryable"],
+        true
+    );
+
+    home.docker.fail_pulls(None);
+    let retry = home
+        .send(
+            Method::POST,
+            CORE,
+            "/_wonton/api/plugins/app.rollback/retry",
+            &headers,
+            Body::empty(),
+        )
+        .await;
+    assert_eq!(retry.status, StatusCode::NO_CONTENT, "{}", retry.text());
+    let detail = home
+        .get(CORE, "/_wonton/api/plugins/app.rollback", &headers)
+        .await;
+    assert_eq!(detail.status, StatusCode::OK, "{}", detail.text());
+    assert!(detail.json()["installed"]["install_failure"].is_null());
 }

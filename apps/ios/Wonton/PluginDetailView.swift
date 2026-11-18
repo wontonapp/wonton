@@ -45,33 +45,6 @@ struct PluginDetailView: View {
             }
     }
 
-    private var task: PluginTask? {
-        model.viewModel.tasks.first { $0.id == pluginId }
-    }
-
-    private var isWorking: Bool {
-        task?.state == .running
-    }
-
-    private var retainedInstallFailureTask: Bool {
-        guard let task, task.operation == .install, case .failed = task.state else { return false }
-        return liveInstalled(task.id)?.installFailure != nil
-    }
-
-    /// 详情只在打开时取一次，任务做完要重取，按钮才对。要不要关这一页由核心判断：插件已经卸掉了，核心让关。
-    private func taskEnded() {
-        Task {
-            do {
-                switch try await model.core.pluginDetailAfterTask(route: route.coreRoute) {
-                case .close: dismiss()
-                case let .detail(detail): loaded = .success(detail)
-                }
-            } catch {
-                loaded = .failure(error)
-            }
-        }
-    }
-
     @ViewBuilder private var content: some View {
         switch loaded {
         case nil:
@@ -82,11 +55,13 @@ struct PluginDetailView: View {
             }
         case let .success(detail):
             ScrollView {
+                let failedInstall = installFailure(for: detail)
+                let isInstalled = detail.installed != nil && failedInstall == nil
                 VStack(alignment: .leading, spacing: WontonTheme.spacing.sectionGap) {
-                    if let installed = detail.installed, installed.installFailure == nil {
+                    if isInstalled {
                         BotProfileSection(chat: chat, plugins: model, pluginId: detail.id)
                     }
-                    if let installed = detail.installed, installed.installFailure == nil, bot(of: detail.id) != nil {
+                    if isInstalled, bot(of: detail.id) != nil {
                         WontonGroup {
                             Button {
                                 showsContacts = true
@@ -97,13 +72,10 @@ struct PluginDetailView: View {
                             .accessibilityIdentifier("botContactsEntry")
                         }
                     }
-                    DetailHeader(
-                        model: model, detail: detail, action: action(for: detail),
-                        hasInstallFailureTask: retainedInstallFailureTask
-                    )
+                    DetailHeader(model: model, detail: detail, action: action(for: detail))
                     if let archiveProblem { ProblemNotice(problem: archiveProblem) }
                     if let installed = liveInstalled(detail.id),
-                       installed.status == .stopped || startState(detail.id) != nil {
+                       installed.installFailure == nil, installed.status == .stopped || startState(detail.id) != nil {
                         PluginStartStatusView(
                             model: model, pluginId: detail.id, state: startState(detail.id),
                             canStart: installed.status == .stopped, isAgent: installed.kind == .agent
@@ -117,9 +89,23 @@ struct PluginDetailView: View {
                                 confirmation = model.reconfirmation(for: task)
                             },
                             checkInstalled: goToInstalledApps,
+                            showsRetry: false,
+                            showsReview: failedInstall == nil
                         )
                     }
-                    if let installed = detail.installed, !installed.notices.isEmpty {
+                    if let failure = failedInstall, task == nil {
+                        InstallFailureNotice(model: model, failure: failure)
+                    }
+                    if failedInstall != nil, !isUncertain {
+                        Button(role: .destructive) {
+                            uninstalling = UninstallTarget(id: detail.id, title: detail.title, keepDataOnly: true)
+                        } label: {
+                            Text(.Plugin0.pluginClearFailure).frame(maxWidth: .infinity)
+                        }
+                        .buttonStyle(WontonButtonStyle(kind: .danger))
+                        .disabled(isWorking)
+                    }
+                    if let installed = detail.installed, isInstalled, !installed.notices.isEmpty {
                         NoticeLines(lines: installed.notices)
                     }
                     // 装着的应用现在的问题（选中的设备不在了，ADR-0036）：按类别说明，重试是重新取详情。
@@ -137,10 +123,11 @@ struct PluginDetailView: View {
                             }
                         }
                     }
-                    if let installed = detail.installed, !installed.tabChoices.isEmpty {
+                    if let installed = detail.installed, isInstalled, !installed.tabChoices.isEmpty {
                         MyAppsSection(plugin: installed)
                     }
-                    if let installed = liveInstalled(detail.id), case .needsConfiguration = installed.status, isOwner {
+                    if let installed = liveInstalled(detail.id), installed.installFailure == nil,
+                       case .needsConfiguration = installed.status, isOwner {
                         Button {
                             secretsScrollTarget = pluginSecretsAnchor
                         } label: {
@@ -148,7 +135,7 @@ struct PluginDetailView: View {
                         }
                         .buttonStyle(WontonButtonStyle(kind: .secondary))
                     }
-                    if detail.installed != nil, detail.hasSettings {
+                    if isInstalled, detail.hasSettings {
                         WontonGroup {
                             Button {
                                 showsSettings = true
@@ -167,14 +154,14 @@ struct PluginDetailView: View {
                             .wontonText(WontonTheme.typography.body)
                             .foregroundStyle(Color(colors.textPrimary))
                     }
-                    if let installed = detail.installed, installed.installFailure == nil {
+                    if isInstalled {
                         SecretSection(detail: detail, model: model, isOwner: isOwner) { loaded = .success($0) }
                             .id(pluginSecretsAnchor)
                     }
-                    if let installed = detail.installed, let offer = detail.lanWebui {
+                    if let installed = detail.installed, isInstalled, let offer = detail.lanWebui {
                         InstalledLanWebui(model: model, id: installed.id, offer: offer) { loaded = .success($0) }
                     }
-                    if let installed = detail.installed, !installed.tunnelPorts.isEmpty {
+                    if let installed = detail.installed, isInstalled, !installed.tunnelPorts.isEmpty {
                         PortMappingSection(
                             declaredPorts: installed.tunnelPorts,
                             mapping: model.viewModel.portMappings.first { $0.pluginId == installed.id }
@@ -183,24 +170,26 @@ struct PluginDetailView: View {
                     if detail.installed != nil, !detail.devices.isEmpty {
                         PluginGrantedDevicesSection(devices: detail.devices)
                     }
-                    if let installed = detail.installed, !detail.saveGrants.isEmpty {
+                    if let installed = detail.installed, isInstalled, !detail.saveGrants.isEmpty {
                         SaveGrants(model: model, id: installed.id, folders: detail.saveGrants) { loaded = .success($0) }
                     }
-                    if let shares = detail.shares {
+                    if isInstalled, let shares = detail.shares {
                         PluginSharesSection(model: model, pluginId: detail.id, shares: shares) {
                             loaded = .success($0)
                         }
                     }
                     if let installed = detail.installed, installed.installFailure == nil {
                         OwnerSecretsDetail(model: model, pluginId: installed.id)
+                    }
+                    if let installed = detail.installed, isInstalled {
                         ToolPolicySection(model: model, id: installed.id, version: detail.version)
                     }
-                    if let installed = detail.installed, installed.writtenBy != nil {
+                    if let installed = detail.installed, isInstalled, installed.writtenBy != nil {
                         AskEveryUpdateSection(model: model, id: installed.id, enabled: detail.askEveryUpdate ?? false)
                     }
-                    DetailSections(detail: detail, model: model) { loaded = .success($0) }
+                    DetailSections(detail: detail, model: model, isInstalled: isInstalled) { loaded = .success($0) }
                     if let installed = detail.installed, installed.removable, !isWorking {
-                        if installed.installFailure == nil {
+                        if isInstalled {
                             Button {
                                 changingVersionOf = installed.id
                             } label: {
@@ -226,6 +215,35 @@ struct PluginDetailView: View {
             }
             .navigationDestination(isPresented: $showsContacts) {
                 if let bot = bot(of: detail.id) { BotContactsView(core: model.core, bot: bot) }
+            }
+        }
+    }
+}
+
+extension PluginDetailView {
+    private var task: PluginTask? {
+        model.viewModel.tasks.first { $0.id == pluginId }
+    }
+
+    private var isWorking: Bool {
+        task?.state == .running
+    }
+
+    private var isUncertain: Bool {
+        if case .uncertain = task?.state { return true }
+        return false
+    }
+
+    /// 详情只在打开时取一次，任务做完要重取，按钮才对。要不要关这一页由核心判断：插件已经卸掉了，核心让关。
+    private func taskEnded() {
+        Task {
+            do {
+                switch try await model.core.pluginDetailAfterTask(route: route.coreRoute) {
+                case .close: dismiss()
+                case let .detail(detail): loaded = .success(detail)
+                }
+            } catch {
+                loaded = .failure(error)
             }
         }
     }
@@ -256,42 +274,21 @@ struct PluginDetailView: View {
         model.viewModel.installed?.plugins.first { $0.id == id }
     }
 
+    private func installFailure(for detail: PluginDetail) -> InstallFailure? {
+        (liveInstalled(detail.id) ?? detail.installed)?.installFailure
+    }
+
     private func startState(_ id: String) -> PluginStartState? {
         model.viewModel.starts.first { $0.pluginId == id }?.state
     }
 
-}
-
-extension PluginDetailView {
     /// 标题旁的按钮：没装的“获取”，能升级的“更新”（和商店列表行尾同一个核心动作，要不要确认由核心判断），装着的“打开”。
     private func action(for detail: PluginDetail) -> DetailAction? {
+        if let installed = liveInstalled(detail.id) ?? detail.installed, let failure = installed.installFailure {
+            return failedInstallAction(for: installed, failure: failure)
+        }
         if let installed = liveInstalled(detail.id) {
-            if installed.installFailure != nil {
-                let busy = isWorking || model.viewModel.pending.contains(installed.id)
-                if let source = installed.source, model.viewModel.actions.contains(.store) {
-                    return DetailAction(title: String(localized: .Common.commonRetry), enabled: !busy) {
-                        confirmation = .install(source: source)
-                    }
-                }
-                if installed.source == nil, model.viewModel.actions.contains(.addSource) {
-                    return DetailAction(
-                        title: String(localized: .PluginSources.pluginSourcesInstallFromFile), enabled: !busy
-                    ) {
-                        archiveProblem = nil
-                        pickingFailedArchive = true
-                    }
-                }
-                return nil
-            }
-            if installed.upgrade != nil {
-                // 取预览还没回来时任务还没建，列表行尾靠 pending 转圈，这里用同一个口径。
-                let busy = isWorking || model.viewModel.pending.contains(installed.id)
-                return DetailAction(title: String(localized: .Store.storeUpdate), enabled: !busy) {
-                    model.send(.plugins(action: .upgradeNow(pluginId: installed.id)))
-                }
-            }
-            guard let entry = installed.entries.first else { return nil }
-            return DetailAction(title: String(localized: .Store.storeOpen), enabled: !installed.isBusy) { open(entry) }
+            return installedAction(for: installed)
         }
         guard detail.installed == nil else { return nil }
         guard let source = detail.source else { return nil }
@@ -302,6 +299,63 @@ extension PluginDetailView {
         return DetailAction(title: title, enabled: action != .blocked && !isWorking) {
             confirmation = .install(source: source)
         }
+    }
+
+    private func installedAction(for installed: InstalledPlugin) -> DetailAction? {
+        if installed.upgrade != nil {
+            // 取预览还没回来时任务还没建，列表行尾靠 pending 转圈，这里用同一个口径。
+            let busy = isWorking || model.viewModel.pending.contains(installed.id)
+            return DetailAction(title: String(localized: .Store.storeUpdate), enabled: !busy) {
+                model.send(.plugins(action: .upgradeNow(pluginId: installed.id)))
+            }
+        }
+        guard let entry = installed.entries.first else { return nil }
+        return DetailAction(title: String(localized: .Store.storeOpen), enabled: !installed.isBusy) { open(entry) }
+    }
+
+    /// 没装成的：核心留着原决定就按原决定重装；没留下时从来源重新确认，上传的包重新选文件。
+    /// 结果不确定时不给，免得在服务器可能还在装的时候又装一次。
+    private func failedInstallAction(for installed: InstalledPlugin, failure: InstallFailure) -> DetailAction? {
+        if isUncertain { return nil }
+        let busy = isWorking || model.viewModel.pending.contains(installed.id)
+        if failure.retryable {
+            return DetailAction(title: String(localized: .Common.commonRetry), enabled: !busy) {
+                model.send(.plugins(action: .retryPluginInstall(id: installed.id)))
+            }
+        }
+        if let source = installed.source, model.viewModel.actions.contains(.store) {
+            return DetailAction(title: String(localized: .Common.commonRetry), enabled: !busy) {
+                confirmation = .install(source: source)
+            }
+        }
+        if installed.source == nil, model.viewModel.actions.contains(.addSource) {
+            return DetailAction(
+                title: String(localized: .PluginSources.pluginSourcesInstallFromFile), enabled: !busy
+            ) {
+                archiveProblem = nil
+                pickingFailedArchive = true
+            }
+        }
+        return nil
+    }
+}
+
+private struct InstallFailureNotice: View {
+    let model: PluginsModel
+    let failure: InstallFailure
+    @Environment(\.wontonColors) private var colors
+
+    var body: some View {
+        let detail = ([failure.message] + failure.cleanupErrors).joined(separator: "\n")
+        let problem = model.core.pluginInstallFailureReason(kind: failure.kind).problem(detail: detail)
+        return VStack(alignment: .leading, spacing: WontonTheme.spacing.s4) {
+            Text(.Plugin3.pluginTaskInstallFailed(problem.title)).foregroundStyle(Color(colors.danger))
+            if let nextStep = problem.nextStep {
+                Text(nextStep).foregroundStyle(Color(colors.textSecondary))
+            }
+            ProblemDetail(text: detail)
+        }
+        .wontonText(WontonTheme.typography.supporting)
     }
 }
 
@@ -400,16 +454,8 @@ private struct DetailHeader: View {
     let model: PluginsModel
     let detail: PluginDetail
     let action: DetailAction?
-    let hasInstallFailureTask: Bool
     @Environment(\.wontonColors) private var colors
 
-    private var failureReason: String? {
-        guard !hasInstallFailureTask,
-              let installed = model.viewModel.installed?.plugins.first(where: { $0.id == detail.id }),
-              let failure = installed.installFailure else { return nil }
-        if case let .degraded(reason) = installed.status { return reason }
-        return failure.message
-    }
     var body: some View {
         VStack(alignment: .leading, spacing: WontonTheme.spacing.s12) {
             HStack(alignment: .top, spacing: WontonTheme.spacing.s16) {
@@ -446,18 +492,15 @@ private struct DetailHeader: View {
                 }
                 .buttonStyle(WontonButtonStyle())
                 .disabled(!action.enabled)
+                .accessibilityIdentifier("pluginDetailAction")
             }
             if let blocked = detail.blocked {
                 WontonNotice(icon: .blocked, title: blocked)
             }
-            if let installed = model.viewModel.installed?.plugins.first(where: { $0.id == detail.id }) {
-                if let reason = failureReason {
-                    WontonNotice(icon: .warning, title: String(localized: .Launcher.launcherInstallFailed)) {
-                        ProblemDetail(text: reason)
-                    }
-                } else if !hasInstallFailureTask, case let .degraded(reason) = installed.status {
-                    WontonNotice(icon: .warning, title: reason)
-                }
+            // 没装成的降级原因就是失败原因，由详情页的失败提示按类别写，这里不重复。
+            if let installed = model.viewModel.installed?.plugins.first(where: { $0.id == detail.id }),
+               installed.installFailure == nil, case let .degraded(reason) = installed.status {
+                WontonNotice(icon: .warning, title: reason)
             }
         }
     }
@@ -503,6 +546,7 @@ private struct Screenshot: View {
 private struct DetailSections: View {
     let detail: PluginDetail
     let model: PluginsModel
+    let isInstalled: Bool
     let updated: (PluginDetail) -> Void
     @Environment(\.wontonColors) private var colors
 
@@ -520,7 +564,7 @@ private struct DetailSections: View {
         if !detail.permissions.isEmpty || !detail.widgetCapabilities.isEmpty {
             DetailSection(title: String(localized: .Install.installPermissions)) {
                 ForEach(detail.permissions, id: \.permission) { line in
-                    if line.optional, detail.installed != nil {
+                    if line.optional, isInstalled {
                         OptionalPermissionRow(model: model, id: detail.id, line: line, updated: updated)
                     } else {
                         PermissionRow(line: line)
@@ -582,12 +626,17 @@ private struct DetailSections: View {
 }
 
 extension View {
-    /// 卸载前确认：可以保留数据，也可以连数据一起删。
+    /// 卸载前确认：可以保留数据，也可以连数据一起删。只清失败的安装时数据一定保留，只有一个确认按钮。
     func uninstallDialog(_ target: Binding<UninstallTarget?>, model: PluginsModel) -> some View {
         let id = target.wrappedValue?.id ?? ""
+        let keepDataOnly = target.wrappedValue?.keepDataOnly ?? false
         return wontonDialog(
-            String(localized: .Plugin2.pluginUninstallTitle(target.wrappedValue?.title ?? "")),
-            message: String(localized: .Plugin1.pluginUninstallDeleteDataWarning),
+            keepDataOnly
+                ? String(localized: .Plugin3.pluginClearFailureTitle(target.wrappedValue?.title ?? ""))
+                : String(localized: .Plugin2.pluginUninstallTitle(target.wrappedValue?.title ?? "")),
+            message: keepDataOnly
+                ? String(localized: .Plugin1.pluginClearFailureMessage)
+                : String(localized: .Plugin1.pluginUninstallDeleteDataWarning),
             isPresented: Binding(
                 get: { target.wrappedValue != nil },
                 set: { isShowing in
@@ -595,12 +644,21 @@ extension View {
                 }
             ),
             actions: [
-                WontonDialogAction(title: String(localized: .Plugin1.pluginUninstallKeepData)) {
+                WontonDialogAction(
+                    title: keepDataOnly
+                        ? String(localized: .Plugin0.pluginClearFailure)
+                        : String(localized: .Plugin1.pluginUninstallKeepData),
+                    kind: keepDataOnly ? .danger : .secondary
+                ) {
                     model.send(.plugins(action: .uninstallPlugin(id: id, deleteData: false)))
-                },
+                }
+            ]
+            + (keepDataOnly ? [] : [
                 WontonDialogAction(title: String(localized: .Plugin1.pluginUninstallDeleteData), kind: .danger) {
                     model.send(.plugins(action: .uninstallPlugin(id: id, deleteData: true)))
-                },
+                }
+            ])
+            + [
                 WontonDialogAction(title: String(localized: .Common.commonCancel))
             ]
         )

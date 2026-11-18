@@ -1,13 +1,18 @@
 //! 商店和详情页的取法：插件还在不在由核心判断（ADR-0017 的客户端核心接口），壳只照结果做。
 
 use wonton_protocol::{
-    CoreError, PluginAudience, PluginDetail, PluginDetailOutcome, PluginDetailRoute,
+    CoreError, PluginAudience, PluginDetail, PluginDetailOutcome, PluginDetailRoute, PluginFailure,
 };
 
 use super::ClientCore;
 
 #[uniffi::export]
 impl ClientCore {
+    /// 将安装失败记录的核心错误类别映射成界面使用的分类。
+    pub fn plugin_install_failure_reason(&self, kind: String) -> PluginFailure {
+        crate::plugins::api::failure_kind(Some(&kind), 500)
+    }
+
     /// 商店里一个插件的详情（来源最新的版本）。`source` 是 [`wonton_protocol::StoreItem::source`]。
     pub async fn store_plugin(&self, source: String) -> Result<PluginDetail, CoreError> {
         let scope = self.scope();

@@ -51,6 +51,7 @@ import app.wonton.protocol.ChatFailure
 import app.wonton.protocol.ChatSync
 import app.wonton.protocol.ChatViewModel
 import app.wonton.protocol.BotView
+import app.wonton.protocol.PluginAction
 import app.wonton.protocol.BackupReminder
 import app.wonton.protocol.PluginOperation
 import app.wonton.protocol.RoomMembership
@@ -251,11 +252,11 @@ internal fun ChatListScreen(
                         row,
                         plugins,
                         onRetry = {
-                            onReviewInstall()
-                            // 重试不进核心的执行路径：重新预览，主人在确认页上再点一次（ADR-0067）。
-                            pluginNavigation.confirmation = when (row.operation) {
-                                PluginOperation.UPGRADE -> PluginConfirmation.Upgrade(row.pluginId)
-                                else -> row.source?.let { PluginConfirmation.Install(it) }
+                            if (row.operation == PluginOperation.UPGRADE) {
+                                onReviewInstall()
+                                pluginNavigation.confirmation = PluginConfirmation.Upgrade(row.pluginId)
+                            } else if (row.operation == PluginOperation.INSTALL) {
+                                plugins.send(Action.Plugins(PluginAction.RetryPluginInstall(id = row.pluginId)))
                             }
                         },
                         onOpenPage = onOpenApps,

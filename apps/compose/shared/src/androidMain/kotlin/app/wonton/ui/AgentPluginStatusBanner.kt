@@ -17,6 +17,7 @@ import androidx.compose.ui.unit.dp
 import app.wonton.protocol.PluginAction
 import app.wonton.protocol.Action
 import app.wonton.protocol.PluginDetail
+import app.wonton.protocol.PluginTaskState
 import app.wonton.protocol.PluginStartState
 import app.wonton.protocol.PluginState
 import app.wonton.protocol.RoomPlugin
@@ -42,14 +43,32 @@ internal fun AgentPluginStatusBanner(plugin: RoomPlugin?, title: String, onActio
 @Composable
 internal fun PluginDetailStatus(detail: PluginDetail, plugins: PluginsState, working: Boolean) {
     val installed = detail.installed ?: return
-    PluginStatusNotice(
-        installed.id, installed.status,
-        plugins.viewModel.starts.firstOrNull { it.pluginId == installed.id }?.state,
-        installed.status is PluginState.Stopped && !working && installed.id !in plugins.viewModel.pending,
-        detail.title, stringResource(R.string.tab_stopped, detail.title), plugins::send,
-        // 安装失败并回滚的插件带着降级状态，但不是“已安装”。
-        degradedLine = installed.installFailure == null,
-    )
+    val failure = installed.installFailure
+    if (failure != null) {
+        val task = plugins.viewModel.tasks.firstOrNull { it.id == installed.id }
+        val reason = (task?.state as? PluginTaskState.Failed)?.reason
+            ?: plugins.core.pluginInstallFailureReason(failure.kind)
+        val problem = reason.problem(failure.message)
+        ProblemNotice(Problem(
+            title = stringResource(R.string.plugin_task_install_failed, problem.titleText),
+            nextStep = problem.nextStepText,
+            detail = problem.detail,
+        ))
+        val settled = task?.state !is PluginTaskState.Uncertain &&
+            installed.id !in plugins.viewModel.pending
+        if (failure.retryable && !working && settled) {
+            WontonButton(stringResource(R.string.common_retry), onClick = {
+                plugins.send(Action.Plugins(PluginAction.RetryPluginInstall(id = installed.id)))
+            })
+        }
+    } else {
+        PluginStatusNotice(
+            installed.id, installed.status,
+            plugins.viewModel.starts.firstOrNull { it.pluginId == installed.id }?.state,
+            installed.status is PluginState.Stopped && !working && installed.id !in plugins.viewModel.pending,
+            detail.title, stringResource(R.string.tab_stopped, detail.title), plugins::send,
+        )
+    }
 }
 
 @Composable
@@ -62,7 +81,6 @@ internal fun PluginStatusNotice(
     stoppedText: String,
     onAction: (Action) -> Unit,
     startingText: String = stringResource(R.string.tab_starting),
-    degradedLine: Boolean = true,
 ) {
     val launch = { onAction(Action.Plugins(PluginAction.StartPlugin(pluginId))) }
     when (start) {
@@ -76,7 +94,7 @@ internal fun PluginStatusNotice(
                 }
             }
         }
-        null -> PluginStateNotice(status, canStart, title, stoppedText, launch, degradedLine)
+        null -> PluginStateNotice(status, canStart, title, stoppedText, launch)
     }
 }
 
@@ -87,7 +105,6 @@ private fun PluginStateNotice(
     title: String,
     stoppedText: String,
     launch: () -> Unit,
-    degradedLine: Boolean,
 ) {
     when (status) {
         is PluginState.Stopped -> WontonNotice(WontonIcon.PauseFill, stoppedText, isError = false) {
@@ -95,7 +112,7 @@ private fun PluginStateNotice(
         }
         is PluginState.Degraded -> WontonNotice(
             WontonIcon.Warning, stringResource(R.string.tab_problem, title),
-            lines = if (degradedLine) listOf(stringResource(R.string.tab_degraded_line)) else emptyList(),
+            lines = listOf(stringResource(R.string.tab_degraded_line)),
         ) {
             // 原因是核心按语言写的，个别场景夹着原始报错；没有内容时不给一个展开是空的详情。
             if (status.reason.isNotBlank()) {

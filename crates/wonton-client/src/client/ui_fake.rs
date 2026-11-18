@@ -8,8 +8,8 @@
 //! （ADR-0096）、一个没有网页的已装应用（点开是详情页）、一个带授权设备的应用（`ui_fake_plugin_detail.rs`）、
 //! 三个有网页的已装应用（页面各停在加载中、已停止、出了问题）、一个整页打开本机网页的应用、
 //! 主面板里钉着的一页、商店入口、“等你确认”里一张带设备的安装卡片（`ui_fake_devices.rs`）、引导已经走完。
-//! 操作里只认开页、关页（`OpenPage`、`ClosePage`）和回答确认卡片：开关页照真核心的规则改页面栈和应用网格的开关，
-//! 壳的出口才有东西可测；
+//! 操作里只认开页、关页（`OpenPage`、`ClosePage`）、回答确认卡片和重试失败的安装（`ui_fake_failed_install.rs`）：
+//! 开关页照真核心的规则改页面栈和应用网格的开关，壳的出口才有东西可测；
 //! 没有隧道，插件的网页本身加载不出来；房间的时间线和加载得出来的本机网页（面板里一张、整页一张）在 `ui_fake_room.rs`。
 //! 媒体、商店列表和别的操作后的新状态不在里面，
 //! 要用这些的测试仍然连开发栈（见 `apps/ios/WontonUITests/UITestBackend.swift`）。
@@ -414,27 +414,7 @@ fn fake_plugins(mut plugins: PluginsViewModel) -> PluginsViewModel {
         super::ui_fake_plugin_detail::status(),
         Some(web_url(super::ui_fake_plugin_detail::HUB_ID)),
     ));
-    if std::env::var_os("WONTON_UI_FAILED_INSTALL").is_some() {
-        let id = "app.example.failed";
-        let message = "The image could not be downloaded.";
-        let mut failed = fake_plugin(
-            "Failed Example",
-            id,
-            PluginState::Degraded {
-                reason: message.into(),
-            },
-            None,
-        );
-        failed.source = Some("github:example/failed-app@v1.0.0".into());
-        failed.install_failure = Some(wonton_protocol::InstallFailure {
-            kind: "docker".into(),
-            message: message.into(),
-            stage: wonton_protocol::InstallStage::PullingImages,
-            failed_plugin_id: id.into(),
-            cleanup_errors: Vec::new(),
-        });
-        installed.push(failed);
-    }
+    installed.extend(super::ui_fake_failed_install::plugin());
     plugins.installed = Some(InstalledPlugins {
         plugins: installed,
         upgrade_check: None,
@@ -475,7 +455,7 @@ fn sidebar_app(title: &str, id: &str) -> SidebarApp {
     }
 }
 
-fn fake_plugin(
+pub(super) fn fake_plugin(
     title: &str,
     id: &str,
     status: PluginState,

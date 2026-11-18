@@ -87,6 +87,7 @@ plugin-settings-lan-webui-rollback-failed = Rolling back after the switch failed
 # ── Full sentences for install errors (construction sites of InstallError variants) ──
 
 plugin-settings-not-installed = App { $id } isn't installed
+plugin-settings-retry-unavailable = This installation can no longer be retried. Remove its failed record and install it again from the store.
 plugin-settings-permission-not-granted = These permissions need your confirmation before installing: { $permissions }
 plugin-settings-core-upgrading = The home server is updating. Try again when it finishes
 plugin-settings-bot-matrix-unavailable = The home server isn't connected to Matrix (WONTON_MATRIX_URL), so apps declaring matrix.bot can't be installed

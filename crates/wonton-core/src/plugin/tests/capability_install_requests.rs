@@ -565,11 +565,13 @@ async fn a_provider_that_fails_readiness_rolls_back_before_creating_the_consumer
         assert_eq!(failure["failed_plugin_id"], "app.ledger");
         assert_eq!(failure["kind"], "unhealthy");
     }
-    assert!(
-        bed.manager
-            .installed_plugin(&id("app.test"), &langs())
-            .is_none()
-    );
+    let failed = bed
+        .manager
+        .installed_plugin(&id("app.test"), &langs())
+        .unwrap();
+    let failure = failed.install_failure.unwrap();
+    assert_eq!(failure.failed_plugin_id, "app.ledger");
+    assert!(failure.retryable);
     assert!(bed.docker.containers().is_empty());
     assert_eq!(bed.docker.networks(), ["bridge"]);
     assert!(bed.docker.volumes().is_empty());
@@ -585,6 +587,144 @@ async fn a_provider_that_fails_readiness_rolls_back_before_creating_the_consumer
             .capabilities
             .is_empty()
     );
+    bed.docker.set_start_state(
+        &container_name("app-ledger", "api"),
+        json!({"Status": "running", "Running": true, "Health": {"Status": "healthy"}}),
+    );
+    bed.manager
+        .retry_failed_install(id("app.test"))
+        .await
+        .unwrap();
+    for plugin in ["app.search", "app.ledger", "app.test"] {
+        let installed = bed.manager.installed_plugin(&id(plugin), &langs()).unwrap();
+        assert!(matches!(
+            installed.status,
+            wonton_protocol::PluginState::Running { .. }
+        ));
+        assert!(installed.install_failure.is_none());
+        let expected = if plugin == "app.test" {
+            "consumer-token".to_owned()
+        } else {
+            format!("{plugin}-token")
+        };
+        assert_eq!(
+            stored_secrets(&bed, plugin).unwrap()["token"],
+            expected.as_bytes()
+        );
+    }
+}
+
+#[tokio::test]
+async fn a_retry_that_fails_again_at_a_provider_updates_the_consumers_failed_record() {
+    let bed = bed().await;
+    let outer = transaction(&bed, "app.test", &["x-acme.search", "x-acme.ledger"]).await;
+    bed.docker.set_start_state(
+        &container_name("app-test", "web"),
+        json!({
+            "Status": "exited", "Running": false, "ExitCode": 29
+        }),
+    );
+    bed.manager.install_source(&outer).await.unwrap_err();
+    let failed = bed
+        .manager
+        .installed_plugin(&id("app.test"), &langs())
+        .unwrap();
+    let first = failed.install_failure.clone().expect("首次失败有记录");
+    assert_eq!(first.failed_plugin_id, "app.test");
+    assert!(first.retryable);
+
+    bed.docker.set_start_state(
+        &container_name("app-test", "web"),
+        json!({"Status": "running", "Running": true, "Health": {"Status": "healthy"}}),
+    );
+    bed.docker.set_start_state(
+        &container_name("app-ledger", "api"),
+        json!({
+            "Status": "exited", "Running": false, "ExitCode": 29
+        }),
+    );
+    bed.manager
+        .retry_failed_install(id("app.test"))
+        .await
+        .unwrap_err();
+    let failed = bed
+        .manager
+        .installed_plugin(&id("app.test"), &langs())
+        .unwrap();
+    let second = failed.install_failure.clone().expect("重试失败有记录");
+    assert_eq!(second.failed_plugin_id, "app.ledger");
+    assert!(second.retryable);
+    assert!(bed.docker.containers().is_empty());
+    assert_eq!(bed.docker.networks(), ["bridge"]);
+    assert!(bed.docker.volumes().is_empty());
+    assert!(bed.keys.lock().unwrap().is_empty());
+    for plugin in ["app.search", "app.ledger", "app.test"] {
+        assert_eq!(stored_secrets(&bed, plugin), None);
+    }
+}
+
+#[tokio::test]
+async fn a_retry_in_progress_lists_the_consumer_as_installing_without_the_old_failure() {
+    let bed = bed().await;
+    let outer = transaction(&bed, "app.test", &["x-acme.search", "x-acme.ledger"]).await;
+    bed.docker.set_start_state(
+        &container_name("app-test", "web"),
+        json!({
+            "Status": "exited", "Running": false, "ExitCode": 29
+        }),
+    );
+    bed.manager.install_source(&outer).await.unwrap_err();
+    let failed = bed
+        .manager
+        .installed_plugin(&id("app.test"), &langs())
+        .unwrap();
+    assert!(failed.install_failure.as_ref().is_some_and(|f| f.retryable));
+
+    bed.docker.set_start_state(
+        &container_name("app-test", "web"),
+        json!({"Status": "running", "Running": true, "Health": {"Status": "healthy"}}),
+    );
+    let start = bed.docker.hold(&format!(
+        "POST /containers/{}/start",
+        container_name("app-search", "api")
+    ));
+    let manager = bed.manager.clone();
+    let retry = tokio::spawn(async move { manager.retry_failed_install(id("app.test")).await });
+    tokio::time::timeout(Duration::from_secs(5), start.reached())
+        .await
+        .unwrap();
+
+    // 重试已在逐层安装：列表把根插件照安装中显示，不带服务器上还没替换的旧失败记录，
+    // 客户端断线重连后才不会把旧记录当成这次的结果。
+    let listed = bed.manager.installed(&langs()).plugins;
+    let view = listed
+        .iter()
+        .find(|plugin| plugin.id == id("app.test").to_string())
+        .expect("重试中的条目还在列表里");
+    assert_eq!(view.status, wonton_protocol::PluginState::Installing);
+    assert!(view.install_failure.is_none());
+    let detail = bed
+        .manager
+        .installed_plugin(&id("app.test"), &langs())
+        .unwrap();
+    assert_eq!(detail.status, wonton_protocol::PluginState::Installing);
+    assert!(detail.install_failure.is_none());
+
+    start.release();
+    tokio::time::timeout(Duration::from_secs(5), retry)
+        .await
+        .unwrap()
+        .unwrap()
+        .unwrap();
+    let installed = bed
+        .manager
+        .installed_plugin(&id("app.test"), &langs())
+        .unwrap();
+    assert!(matches!(
+        installed.status,
+        wonton_protocol::PluginState::Running { .. }
+    ));
+    assert!(installed.install_failure.is_none());
 }
 
 #[tokio::test]

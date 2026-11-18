@@ -254,6 +254,7 @@ extension HomeView {
                 path.append(PluginRoute.installed(id: plugin.id))
             }
         ]
+        guard plugin.installFailure == nil else { return actions }
         // 有 Bot 又有网页的 Agent 插件，点图标进私聊，网页从这里打开。
         if plugin.installFailure == nil, plugin.entries.count > 1, let web = plugin.entries.last {
             actions.append(WontonSheetAction(title: String(localized: .Launcher.launcherOpenWeb),
