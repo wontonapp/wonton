@@ -23,7 +23,10 @@ final class MessageTimeUITests: XCTestCase {
         XCTAssertTrue(message.waitForExistence(timeout: 10), "时间线没出来")
         message.press(forDuration: 1.2)
 
-        let sentAt = app.descendants(matching: .any)["messageSentAt"]
+        // iOS 27 的系统菜单不带 SwiftUI 的 accessibilityIdentifier，菜单项只剩 label（“Sent at …”）。
+        let sentAt = app.descendants(matching: .any).matching(NSPredicate(
+            format: "identifier == %@ OR label BEGINSWITH %@", "messageSentAt", "Sent at "
+        )).firstMatch
         XCTAssertTrue(sentAt.waitForExistence(timeout: 5), "长按菜单里没有发送时间\n\(app.debugDescription)")
         XCTAssertTrue(sentAt.label.contains("2026"), "发送时间没带完整日期：\(sentAt.label)")
     }

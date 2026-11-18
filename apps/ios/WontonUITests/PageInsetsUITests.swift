@@ -15,6 +15,8 @@ final class PageInsetsUITests: XCTestCase {
 
     override func setUp() {
         continueAfterFailure = false
+        // 同一台模拟器上前面的类可能停在横屏，胶囊和右上角按钮的位置按竖屏量。
+        XCUIDevice.shared.orientation = .portrait
     }
 
     override func tearDown() {
@@ -231,7 +233,8 @@ final class PageInsetsUITests: XCTestCase {
             file: file, line: line
         )
         XCTAssertTrue(
-            waitProbe(containing: "plain"), "Corner 的网页没加载出来\n\(app.debugDescription)", file: file, line: line
+            // 头一次打开要起本机网页服务、建 WebView，托管机器上 10 秒不够。
+            waitProbe(containing: "plain", timeout: 30), "Corner 的网页没加载出来\n\(app.debugDescription)", file: file, line: line
         )
     }
 
