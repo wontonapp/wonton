@@ -368,6 +368,19 @@ impl ClientCore {
 
     /// 取家里服务器上这台设备的人（ADR-0045），设置页和填资料的页面渲染它。
     pub async fn me(&self) -> Result<Me, CoreError> {
+        #[cfg(feature = "ui-fake")]
+        if self.ui_fake.load(Ordering::SeqCst) {
+            return Ok(Me {
+                user_id: "@owner:home.example".into(),
+                username: "owner".into(),
+                is_owner: true,
+                role_id: None,
+                role_name: None,
+                permissions: None,
+                display_name: Some("Owner".into()),
+                email: None,
+            });
+        }
         let scope = self.scope();
         let plugins = scope.plugins.clone();
         scope.run(async move { plugins.me().await }).await

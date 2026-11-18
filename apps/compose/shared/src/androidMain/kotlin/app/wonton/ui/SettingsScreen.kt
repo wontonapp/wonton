@@ -47,6 +47,8 @@ fun SettingsPage(
     peersOpenRequests: Boolean = false,
     onPeersOpenRequestsHandled: () -> Unit = {},
     onContinueHandoff: () -> Unit,
+    open: (PluginEntry) -> Unit,
+    checkInstalled: () -> Unit,
     onSubpage: (SettingsSubpage) -> Unit,
 ) {
     val core = plugins.core
@@ -58,7 +60,7 @@ fun SettingsPage(
     var rejection by remember { mutableStateOf<Problem?>(null) }
     BackHandler(enabled = subpage != SettingsSubpage.MAIN, onBack = back)
     when (subpage) {
-        SettingsSubpage.MY_APPS -> MyAppsSettingsScreen(back)
+        SettingsSubpage.MY_APPS -> MyAppsSettingsScreen(back, open, checkInstalled)
         SettingsSubpage.BACKUP -> ChatBackupScreen(
             chat.encryption,
             onAction = { action -> rejection = core.send(action) },
