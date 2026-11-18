@@ -6,6 +6,8 @@ final class ContentWindowWalkthroughTests: XCTestCase {
     private var app: XCUIApplication!
 
     override func setUpWithError() throws {
+        // “在新窗口打开”只有 iPad 有（多窗口）；iPhone 上没有这个菜单项。
+        try XCTSkipUnless(UIDevice.current.userInterfaceIdiom == .pad, "多窗口只在 iPad 上")
         continueAfterFailure = false
         executionTimeAllowance = 300
         app = XCUIApplication()
@@ -18,6 +20,12 @@ final class ContentWindowWalkthroughTests: XCTestCase {
             }
             return false
         }
+    }
+
+    // 用例里转了横屏；不转回来，同一台模拟器上后面的类会在横屏下启动。
+    override func tearDown() {
+        XCUIDevice.shared.orientation = .portrait
+        super.tearDown()
     }
 
     func testContentWindowFromConversationMenu() {
@@ -39,7 +47,6 @@ final class ContentWindowWalkthroughTests: XCTestCase {
 
     func testRoomWindowSharesDraftAndRestoresTarget() throws {
         try UITestBackend.require()
-        XCTAssertEqual(UIDevice.current.userInterfaceIdiom, .pad)
         XCUIDevice.shared.orientation = .landscapeLeft
         app.launch()
         XCTAssertTrue(waitForMain(), app.debugDescription)

@@ -73,7 +73,9 @@ final class GrantedDeviceDetailUITests: XCTestCase {
     private func openHomeHubDetail() {
         tap(app.buttons.matching(UITestSidebar.button), "Sidebar")
         tap(app.buttons.matching(NSPredicate(format: "label == %@", "All")), "All apps")
-        tap(app.staticTexts.matching(NSPredicate(format: "label == %@", "Home Hub")), "Home Hub")
+        // Home Hub 带网页，点图标打开网页；长按菜单的 Details 才进详情页。
+        tap(app.staticTexts.matching(NSPredicate(format: "label == %@", "Home Hub")), "Home Hub", press: true)
+        tap(app.buttons.matching(NSPredicate(format: "label == %@", "Details")), "Details in the Home Hub menu")
         XCTAssertTrue(
             row(0).waitForExistence(timeout: 8),
             "Home Hub real detail has no granted hardware section\n\(app.debugDescription)"
@@ -106,13 +108,13 @@ final class GrantedDeviceDetailUITests: XCTestCase {
         XCTAssertTrue(element.exists && element.isHittable, "Element did not become visible\n\(app.debugDescription)")
     }
 
-    private func tap(_ query: XCUIElementQuery, _ name: String) {
+    private func tap(_ query: XCUIElementQuery, _ name: String, press: Bool = false) {
         let deadline = Date().addingTimeInterval(8)
         repeat {
             if let element = query.allElementsBoundByIndex.first(where: {
                 $0.exists && $0.isHittable && $0.isEnabled
             }) {
-                element.tap()
+                if press { element.press(forDuration: 1) } else { element.tap() }
                 return
             }
             Thread.sleep(forTimeInterval: 0.2)

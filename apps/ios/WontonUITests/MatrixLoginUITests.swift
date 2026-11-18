@@ -124,12 +124,14 @@ class MatrixLoginFlow: XCTestCase {
         let oidc = app.buttons["matrix-login-oidc"]
         XCTAssertTrue(oidc.waitForExistence(timeout: timeout), "服务器没给出浏览器登录\n\(app.debugDescription)")
         oidc.tap()
+        // 确认框和网页登录面板由系统另起进程弹出，慢的模拟器上本机桩也要十几秒：不跟等服务器的时间走。
+        let systemUI = max(timeout, 30)
         // 系统的确认，文字跟系统语言走，右边是继续。
-        let allow = systemAlert(timeout: timeout)
+        let allow = systemAlert(timeout: systemUI)
         XCTAssertNotNil(allow, "没弹出系统的登录确认\n\(app.debugDescription)")
         allow?.buttons.element(boundBy: 1).tap()
         let page = app.webViews.firstMatch
-        XCTAssertTrue(page.waitForExistence(timeout: timeout), "授权页没打开\n\(app.debugDescription)")
+        XCTAssertTrue(page.waitForExistence(timeout: systemUI), "授权页没打开\n\(app.debugDescription)")
     }
 
     /// 网页登录面板左上角的关闭，文字跟系统语言走。
