@@ -8,7 +8,7 @@ use super::super::fake_docker::FakeDocker;
 use super::super::languages::Languages;
 use super::super::names::container_name;
 use super::super::store::{EnabledPermission, OpenedBy};
-use super::super::{PluginId, PluginManager, PluginPackage};
+use super::super::{PluginId, PluginManager, PluginPackage, UpgradeSwitches};
 use super::manager::manager_with;
 use super::{env_of_container, package};
 use crate::plugin::manifest::Permission;
@@ -465,12 +465,66 @@ async fn upgrading_away_the_optional_one_drops_the_mount() {
         )
         .replace("version: 1.0.0", "version: 1.1.0"),
     );
-    m.upgrade_checked(next, &[], &[], false, &[], Default::default())
-        .await
-        .unwrap();
+    m.upgrade_checked(
+        next,
+        &[],
+        &UpgradeSwitches::Requested(Vec::new()),
+        false,
+        &[],
+        Default::default(),
+    )
+    .await
+    .unwrap();
     assert!(!has_socket(&docker, "agent"));
     let record = m.store.load(&id()).unwrap().unwrap();
     assert!(record.enabled_permissions.is_empty());
+}
+
+/// Agent 的更新卡、静默更新沿用记录里的开关：新版删掉或改成必需的项不能还算“打开的可选项”，否则升级失败。
+#[tokio::test]
+async fn a_kept_upgrade_drops_an_option_the_new_version_removed() {
+    let (docker, m, _dir) = installed(&parsed(&optional()), &opened("docker.socket")).await;
+    let next = parsed(
+        &package(
+            "  web:\n    image: nginx\n  agent:\n    image: example/agent",
+            "  permissions: []",
+        )
+        .replace("version: 1.0.0", "version: 1.1.0"),
+    );
+    m.upgrade_checked(
+        next,
+        &[],
+        &UpgradeSwitches::Kept,
+        false,
+        &[],
+        Default::default(),
+    )
+    .await
+    .unwrap();
+    assert!(!has_socket(&docker, "agent"));
+    let record = m.store.load(&id()).unwrap().unwrap();
+    assert!(record.enabled_permissions.is_empty());
+}
+
+#[tokio::test]
+async fn a_kept_upgrade_grants_an_option_the_new_version_requires() {
+    let (docker, m, _dir) = installed(&parsed(&optional()), &opened("docker.socket")).await;
+    let next = parsed(&app("docker.socket", "").replace("version: 1.0.0", "version: 1.1.0"));
+    let granted = next.manifest.permissions.clone();
+    m.upgrade_checked(
+        next,
+        &granted,
+        &UpgradeSwitches::Kept,
+        false,
+        &[],
+        Default::default(),
+    )
+    .await
+    .unwrap();
+    assert!(has_socket(&docker, "agent"));
+    let record = m.store.load(&id()).unwrap().unwrap();
+    assert!(record.enabled_permissions.is_empty());
+    assert_eq!(record.granted_permissions, granted);
 }
 
 #[tokio::test]
@@ -488,4 +542,67 @@ async fn the_detail_shows_the_switch_state_and_who_opened_it() {
         m.installed(&Languages::default()).plugins[0].status,
         wonton_protocol::PluginState::Running { .. }
     ));
+}
+
+/// 老 App 把可选项也放进 `grant`：装和升级都只把必需项记进 `granted_permissions`（ADR-0057），
+/// 可选项不算打开，也不记成授予过。
+#[tokio::test]
+async fn an_old_app_grant_records_only_the_required_permissions() {
+    let (docker, engine) = FakeDocker::start().await;
+    let dir = tempfile::tempdir().unwrap();
+    let m = Arc::new(manager_with(engine, &dir));
+    let socket = [Permission::DockerSocket];
+    m.install_user_enabled(
+        parsed(&optional()),
+        &socket,
+        &[],
+        false,
+        &[],
+        Default::default(),
+        super::langs(),
+    )
+    .await
+    .unwrap();
+    let record = m.store.load(&id()).unwrap().unwrap();
+    assert!(record.granted_permissions.is_empty());
+    assert!(record.enabled_permissions.is_empty());
+    let next = parsed(&optional().replace("version: 1.0.0", "version: 1.1.0"));
+    m.upgrade_checked(
+        next,
+        &socket,
+        &UpgradeSwitches::Requested(Vec::new()),
+        false,
+        &[],
+        Default::default(),
+    )
+    .await
+    .unwrap();
+    let record = m.store.load(&id()).unwrap().unwrap();
+    assert_eq!(record.version, "1.1.0");
+    assert!(record.granted_permissions.is_empty());
+    assert!(!has_socket(&docker, "agent"));
+}
+
+/// 老 App 写下的记录里 `granted_permissions` 混着可选项（旧清单里它就是可选的，主人关着）：升级时主人打开它，
+/// 记的是这次打开，不是装的时候。旧版必需还是可选按旧清单判断，和不带请求的预览同一条规则。
+#[tokio::test]
+async fn opening_an_option_an_old_app_recorded_as_granted_counts_from_now() {
+    let (_docker, m, _dir) = installed(&parsed(&optional()), &[]).await;
+    let mut record = m.store.load(&id()).unwrap().unwrap();
+    record.granted_permissions = vec![Permission::DockerSocket];
+    record.installed_at = 1;
+    m.store.save(&record).unwrap();
+    let next = parsed(&optional().replace("version: 1.0.0", "version: 1.1.0"));
+    m.upgrade_checked(
+        next,
+        &[],
+        &UpgradeSwitches::Requested(opened("docker.socket")),
+        false,
+        &[],
+        Default::default(),
+    )
+    .await
+    .unwrap();
+    let record = m.store.load(&id()).unwrap().unwrap();
+    assert_eq!(record.enabled_permissions, opened("docker.socket"));
 }
