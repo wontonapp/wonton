@@ -77,13 +77,19 @@ impl PagesLink {
                     Ok(()) => {
                         let mut state = lock(&link.state);
                         state.bot_pins.retain(|candidate| candidate.id != pin.id);
+                        if matches!(
+                            state.action_problem.as_ref().map(|(action, _)| action),
+                            Some(PinAction::Remove(current)) if current == &pin.id
+                        ) {
+                            state.action_problem = None;
+                        }
                         drop(state);
                         link.recompute();
                     }
-                    Err(error) => {
-                        let message = error.to_string();
+                    Err(problem) => {
                         link.runtime_change(|state, _| {
-                            state.problem = Some(PagesProblem { message });
+                            state.action_problem =
+                                Some((PinAction::Remove(pin.id.clone()), problem));
                             Ok(())
                         })
                         .ok();

@@ -41,6 +41,12 @@ pub(super) struct Local {
 }
 
 impl Local {
+    /// Bot 名单就绪没有：已安装表和第一份活动报告都到了才认得全名单——每个插件的 default Bot 在
+    /// 安装表里，家人自己的 Bot 只在报告里；只有安装表时是「只认识 default」，不是「全部」。
+    fn ready(&self) -> bool {
+        self.installed.is_some() && self.report.is_some()
+    }
+
     #[cfg(test)]
     pub(super) fn clear_runtime(&mut self) {
         self.report = None;
@@ -101,6 +107,11 @@ impl Bots {
             bots.foreground.subscribe(),
         ));
         bots
+    }
+
+    /// Bot 名单就绪没有；就绪了「在场的 AI」才算得准（[`Local::ready`]）。
+    pub fn ready(&self) -> bool {
+        lock(&self.local).ready()
     }
 
     pub fn set_session(self: &Arc<Self>, session: Option<Arc<MatrixSession>>) {
@@ -522,5 +533,24 @@ mod tests {
             bot_current_avatar(view(Some(BotActivity::Working), &[])),
             None
         );
+    }
+
+    /// 行为：已安装表和第一份活动报告都到了，Bot 名单才算就绪；报告被清掉（后台、换会话）又不就绪。
+    #[test]
+    fn the_bot_list_is_ready_only_when_installed_and_a_report_have_arrived() {
+        let mut local = Local::default();
+        assert!(!local.ready());
+        local.installed = Some(InstalledPlugins {
+            plugins: Vec::new(),
+            upgrade_check: None,
+        });
+        assert!(!local.ready());
+        local.report = Some(wonton_protocol::BotActivityReport {
+            rev: 0,
+            bots: Vec::new(),
+        });
+        assert!(local.ready());
+        local.report = None;
+        assert!(!local.ready());
     }
 }
