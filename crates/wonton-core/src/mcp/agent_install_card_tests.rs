@@ -11,6 +11,8 @@ use super::agent_install_tests::{INSTALL, bench, plain, plain_root};
 use super::tests::{failed, text};
 use crate::plugin::PluginId;
 use crate::plugin::languages::Languages;
+use crate::plugin::manifest::Permission;
+use crate::plugin::store::OpenedBy;
 
 #[tokio::test]
 async fn an_official_highest_permission_install_needs_both_cards() {
@@ -318,4 +320,48 @@ async fn a_highest_install_takes_the_secrets_from_the_first_card() {
     let result = call.await.unwrap();
     assert!(!failed(&result), "{result:?}");
     assert!(b.installed("app.example.root"));
+}
+
+/// 更新卡挂着时主人关掉了可选的 `docker.socket`：批准后按执行那一刻的开关升级，不按发卡时的快照
+/// 把它重新打开（#767）。
+#[tokio::test]
+async fn an_update_card_does_not_reopen_an_option_the_owner_closed() {
+    let b = bench().await;
+    let socket = |version: &str| {
+        let (services, _) = plain_root("app.agent.hello", version);
+        let (_, x_wonton) = plain("app.agent.hello", version, "");
+        let optional = "  optional_permissions:\n    docker.socket:\n      \
+                        off_loss: {zh: 看不到容器, en: No containers}\n";
+        (services, format!("{x_wonton}{optional}"))
+    };
+    let (services, x_wonton) = socket("0.1.0");
+    b.write_package("hello", services, &x_wonton);
+    b.installed_with_answer("hello", 1, Answer::Approve).await;
+    let id = PluginId::parse("app.agent.hello").unwrap();
+    let plugins = &b.s.bus.plugins;
+    let toggle = |on: bool| {
+        plugins.set_plugin_permission(
+            id.clone(),
+            Permission::DockerSocket,
+            on,
+            OpenedBy::Owner,
+            Languages::default(),
+        )
+    };
+    toggle(true).await.unwrap();
+    plugins
+        .set_ask_every_update(&id, true, &Languages::default())
+        .unwrap();
+
+    let (services, x_wonton) = socket("0.2.0");
+    b.write_package("hello", services, &x_wonton);
+    let call = b.s.spawn(INSTALL, json!({"dir": "hello"}));
+    let card = b.s.cards.wait_for(2).await;
+    toggle(false).await.unwrap();
+    b.s.answer(&card.id, Answer::Approve).unwrap();
+    let result = call.await.unwrap();
+    assert!(!failed(&result), "{result:?}");
+    let record = plugins.installed_record(&id).unwrap().unwrap();
+    assert_eq!(record.version, "0.2.0");
+    assert!(record.enabled_permissions.is_empty());
 }

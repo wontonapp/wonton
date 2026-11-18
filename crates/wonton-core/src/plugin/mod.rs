@@ -172,4 +172,4 @@ pub use owner_secrets::{SecretValue, ViewableSecrets};
 pub use package::PluginPackage;
 pub use proxy_auth::McpHeaders;
 pub use sharing::FriendAdmissionError;
-pub use upgrade::UpgradeTo;
+pub use upgrade::{UpgradeSwitches, UpgradeTo};

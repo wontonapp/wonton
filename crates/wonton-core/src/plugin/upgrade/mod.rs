@@ -172,45 +172,92 @@ struct Consent {
     notices: Vec<CardLine>,
 }
 
-/// 升级生效的可选项：请求带上的全集（App 按当前开关状态发）里，只有新版本还声明成可选的留下；
-/// 以前开过的沿用原来的打开时间和人（ADR-0057）。确认卡的预览和执行都按它算，两边是同一个生效集。
+/// 升级的可选项从哪来。
+pub enum UpgradeSwitches {
+    /// 请求带上的全集（App 按当前开关状态发）。
+    Requested(Vec<EnabledPermission>),
+    /// 沿用记录里的开关（Agent 的更新卡、静默更新）。执行时用升级读到的那份记录按 [`kept_enabled`] 算，
+    /// 不在外面先算好传进来：主人在卡片挂着时、批准后做检查期间关掉的项都保持关着（#767）。
+    Kept,
+}
+
+impl From<Vec<EnabledPermission>> for UpgradeSwitches {
+    fn from(requested: Vec<EnabledPermission>) -> Self {
+        Self::Requested(requested)
+    }
+}
+
+/// 升级生效的可选项，确认卡的预览和执行都按它算，两边是同一个生效集。
+fn switched_on(
+    manifest: &Manifest,
+    record: &InstalledRecord,
+    old: &Manifest,
+    switches: &UpgradeSwitches,
+) -> Vec<EnabledPermission> {
+    match switches {
+        UpgradeSwitches::Requested(requested) => upgrade_enabled(manifest, record, old, requested),
+        UpgradeSwitches::Kept => kept_enabled(manifest, record, old),
+    }
+}
+
+/// 这一项在升级前就生效时的样子：以前开过的沿用原来的打开时间和人（ADR-0057）；旧版必需、新版改成可选的
+/// 不是这次打开的，装的时候就授予了，时间记装的时候。按旧清单判断必需，不看记录的 `granted_permissions`：
+/// 老 App 写下的记录里那里可能混着可选项。
+fn carried(
+    record: &InstalledRecord,
+    old: &Manifest,
+    permission: &Permission,
+) -> Option<EnabledPermission> {
+    record
+        .enabled_permissions
+        .iter()
+        .find(|item| &item.permission == permission)
+        .cloned()
+        .or_else(|| {
+            old.permissions
+                .contains(permission)
+                .then(|| EnabledPermission {
+                    permission: permission.clone(),
+                    since: record.installed_at,
+                    opened_by: super::store::OpenedBy::Owner,
+                })
+        })
+}
+
+/// 请求带上的全集里，只有新版本还声明成可选的留下；升级前就生效的按 [`carried`] 沿用，其余是这次打开的。
 fn upgrade_enabled(
     manifest: &Manifest,
     record: &InstalledRecord,
+    old: &Manifest,
     requested: &[EnabledPermission],
 ) -> Vec<EnabledPermission> {
     requested
         .iter()
         .filter(|item| manifest.optional_permissions.contains_key(&item.permission))
-        .map(|item| {
-            record
-                .enabled_permissions
-                .iter()
-                .find(|old| old.permission == item.permission)
-                .cloned()
-                .unwrap_or_else(|| item.clone())
-        })
+        .map(|item| carried(record, old, &item.permission).unwrap_or_else(|| item.clone()))
         .collect()
 }
 
-/// 还没提交请求时的生效集：记录里开着的可选项，加上旧版必需、新版改成可选的项。后者装着时一直生效，
-/// 默认关掉就是升级悄悄收回了它；预览按开着画，App 照预览开关发出的请求就和装着的一样，要管理员批的
-/// 人不会因为没动开关而被当成改权限（ADR-0057“可选保留：沿用开关”）。
+/// 还没提交请求时的生效集：记录里开着、新版还是可选的项，加上旧版必需、新版改成可选的项。后者装着时一直
+/// 生效，默认关掉就是升级悄悄收回了它；预览按开着画，App 照预览开关发出的请求就和装着的一样，要管理员批的
+/// 人不会因为没动开关而被当成改权限（ADR-0057“可选保留：沿用开关”）。新版删掉或改成必需的项不留在这里：
+/// 必需的由 `granted` 授予，留着会被当成打开了不可选的项，升级失败。
 fn kept_enabled(
     manifest: &Manifest,
     record: &InstalledRecord,
     old: &Manifest,
 ) -> Vec<EnabledPermission> {
-    let mut enabled = record.enabled_permissions.clone();
+    let mut enabled: Vec<EnabledPermission> = record
+        .enabled_permissions
+        .iter()
+        .filter(|item| manifest.optional_permissions.contains_key(&item.permission))
+        .cloned()
+        .collect();
     for permission in manifest.optional_permissions.keys() {
-        if old.permissions.contains(permission)
-            && !enabled.iter().any(|item| &item.permission == permission)
+        if !enabled.iter().any(|item| &item.permission == permission)
+            && let Some(item) = carried(record, old, permission)
         {
-            enabled.push(EnabledPermission {
-                permission: permission.clone(),
-                since: record.installed_at,
-                opened_by: super::store::OpenedBy::Owner,
-            });
+            enabled.push(item);
         }
     }
     enabled
@@ -380,23 +427,23 @@ impl PluginManager {
     /// 请求带上的可选项全集（App 按当前开关状态发）先解析成记录条目，再和记录合成生效集；
     /// 还没提交请求的预览（详情页、Agent 卡）给 `None`，按 [`kept_enabled`] 算。
     fn requested_enabled(
-        &self,
         manifest: &Manifest,
         record: &InstalledRecord,
+        old: &Manifest,
         requested: Option<&[String]>,
-        langs: &Languages,
     ) -> Result<Vec<EnabledPermission>, InstallError> {
-        let Some(names) = requested else {
-            let old = installed_package(record, langs)?;
-            return Ok(kept_enabled(manifest, record, &old.manifest));
+        let switches = match requested {
+            None => UpgradeSwitches::Kept,
+            Some(names) => UpgradeSwitches::Requested(
+                super::store::parse_enabled(
+                    names,
+                    super::store::OpenedBy::Owner,
+                    super::manager::now_secs(),
+                )
+                .map_err(|e| InstallError::Invalid(e.to_string()))?,
+            ),
         };
-        let parsed = super::store::parse_enabled(
-            names,
-            super::store::OpenedBy::Owner,
-            super::manager::now_secs(),
-        )
-        .map_err(|e| InstallError::Invalid(e.to_string()))?;
-        Ok(upgrade_enabled(manifest, record, &parsed))
+        Ok(switched_on(manifest, record, old, &switches))
     }
 
     /// 升级预览：默认取能升到的版本，也可以是主人选的来源或者上传的插件包。什么也不改。
@@ -431,7 +478,9 @@ impl PluginManager {
                 )));
             }
         }
-        let enabled = self.requested_enabled(&package.manifest, &record, requested, langs)?;
+        let old = installed_package(&record, langs)?;
+        let enabled =
+            Self::requested_enabled(&package.manifest, &record, &old.manifest, requested)?;
         let blocked = self.host_block(&package.manifest, langs).await?;
         let mut preview = self
             .preview_with(
@@ -454,7 +503,6 @@ impl PluginManager {
         }
         let warnings = chosen_warnings(&record, &package, langs);
         preview.notices.splice(0..0, warnings);
-        let old = installed_package(&record, langs)?;
         let consent = consent_of(&record, &package, &old, &enabled, langs);
         preview.permissions = consent.permissions;
         preview.widget_capabilities = consent.widget_capability_lines;
@@ -561,7 +609,7 @@ impl PluginManager {
         self.upgrade_detached(
             package,
             granted,
-            requested,
+            UpgradeSwitches::Requested(requested),
             request.lan_webui,
             request.devices.clone(),
             settings,
@@ -571,14 +619,15 @@ impl PluginManager {
         Ok(())
     }
 
-    /// 升到上传的插件包（开发时用）。开关开着的继续开着，`lan_webui` 时打开。
+    /// 升到上传的插件包（开发时用，Agent 的更新也走这里）。开关开着的继续开着，`lan_webui` 时打开。
+    /// `switches` 给请求带上的可选项全集，或者 [`UpgradeSwitches::Kept`] 沿用执行时记录里的开关。
     #[allow(clippy::too_many_arguments)] // 装插件要的几样各管各的来源，打包反而看不清哪来的。
     pub async fn upgrade_upload(
         self: &Arc<Self>,
         id: &PluginId,
         package: PluginPackage,
         granted: Vec<Permission>,
-        enabled: Vec<EnabledPermission>,
+        switches: impl Into<UpgradeSwitches>,
         lan_webui: bool,
         devices: &[String],
         given: &wonton_protocol::SettingValues,
@@ -590,7 +639,7 @@ impl PluginManager {
         self.upgrade_detached(
             package,
             granted,
-            enabled,
+            switches.into(),
             lan_webui || record.lan_webui,
             devices.to_vec(),
             settings,
@@ -602,14 +651,14 @@ impl PluginManager {
         self: &Arc<Self>,
         package: PluginPackage,
         granted: Vec<Permission>,
-        requested: Vec<EnabledPermission>,
+        switches: UpgradeSwitches,
         lan_webui: bool,
         devices: Vec<String>,
         settings: super::settings::Values,
     ) -> Result<(), InstallError> {
         let this = Arc::clone(self);
         detached(async move {
-            this.upgrade_checked(package, &granted, &requested, lan_webui, &devices, settings)
+            this.upgrade_checked(package, &granted, &switches, lan_webui, &devices, settings)
                 .await
         })
         .await
