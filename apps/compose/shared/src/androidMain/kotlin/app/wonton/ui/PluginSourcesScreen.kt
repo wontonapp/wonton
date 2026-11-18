@@ -229,7 +229,7 @@ private fun SourceAddressField(address: String, onChange: (String) -> Unit) {
 
 /** 选插件的压缩包并读出内容，返回打开选择器的动作。格式由家里的服务器按内容认，这里不按类型筛：`.tgz` 这类系统不一定认得。 */
 @Composable
-private fun rememberPluginArchivePicker(
+internal fun rememberPluginArchivePicker(
     plugins: PluginsState,
     onProblem: (String) -> Unit,
     onPicked: (ByteArray) -> Unit,

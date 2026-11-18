@@ -49,41 +49,7 @@ impl PluginsLink {
 
     /// 安装失败回滚后，核心保留原始安装决定时直接重装，不重新请求来源或权限确认。
     pub(crate) fn retry_install(self: &Arc<Self>, id: String) -> Result<(), CoreError> {
-        let (title, icon, retryable) = {
-            let view = self.view.borrow();
-            if view.tasks.iter().any(|task| {
-                task.id == id && matches!(task.state, PluginTaskState::Uncertain { .. })
-            }) {
-                return Err(CoreError::NotReady {
-                    reason: l10n!(CATALOG, language(), "plugins-tasks-retry-unavailable"),
-                });
-            }
-            let plugin = view
-                .installed
-                .as_ref()
-                .and_then(|installed| installed.plugins.iter().find(|plugin| plugin.id == id))
-                .ok_or_else(|| CoreError::InvalidInput {
-                    reason: l10n!(
-                        CATALOG,
-                        language(),
-                        "plugins-tasks-no-such-task",
-                        id = id.as_str()
-                    ),
-                })?;
-            (
-                plugin.title.clone(),
-                plugin.icon.clone(),
-                plugin
-                    .install_failure
-                    .as_ref()
-                    .is_some_and(|failure| failure.retryable),
-            )
-        };
-        if !retryable {
-            return Err(CoreError::NotReady {
-                reason: l10n!(CATALOG, language(), "plugins-tasks-retry-unavailable"),
-            });
-        }
+        let (title, icon) = Self::retry_target(&self.view.borrow(), &id)?;
         self.begin_task(&id, &title, icon, PluginOperation::Install)?;
         let link = self.clone();
         let generation = self.generation.load(Ordering::SeqCst);
@@ -98,6 +64,40 @@ impl PluginsLink {
                 .await;
         });
         Ok(())
+    }
+
+    /// 能不能按保留的决定重试：结果不确定时不重试（可能已经在装），核心没保留决定的也不行。
+    /// 能重试时给出任务行的标题和图标。UI 假核心也用它，和真实核心拒绝的情形一致。
+    pub(crate) fn retry_target(
+        view: &PluginsViewModel,
+        id: &str,
+    ) -> Result<(String, Option<PluginIcon>), CoreError> {
+        if view
+            .tasks
+            .iter()
+            .any(|task| task.id == id && matches!(task.state, PluginTaskState::Uncertain { .. }))
+        {
+            return Err(CoreError::NotReady {
+                reason: l10n!(CATALOG, language(), "plugins-tasks-retry-unavailable"),
+            });
+        }
+        let plugin = view
+            .installed
+            .as_ref()
+            .and_then(|installed| installed.plugins.iter().find(|plugin| plugin.id == id))
+            .ok_or_else(|| CoreError::InvalidInput {
+                reason: l10n!(CATALOG, language(), "plugins-tasks-no-such-task", id = id),
+            })?;
+        if !plugin
+            .install_failure
+            .as_ref()
+            .is_some_and(|failure| failure.retryable)
+        {
+            return Err(CoreError::NotReady {
+                reason: l10n!(CATALOG, language(), "plugins-tasks-retry-unavailable"),
+            });
+        }
+        Ok((plugin.title.clone(), plugin.icon.clone()))
     }
 
     /// `InstallPlugin`：按预览安装，授予预览里列出的全部权限。
@@ -379,39 +379,50 @@ impl PluginsLink {
     ) -> Result<(), CoreError> {
         let mut outcome = Ok(());
         self.view.send_if_modified(|view| {
-            if view
-                .tasks
-                .iter()
-                .any(|task| task.id == id && task.state.in_progress())
-            {
-                outcome = Err(CoreError::NotReady {
-                    reason: l10n!(
-                        CATALOG,
-                        language(),
-                        "plugins-tasks-task-running",
-                        title = title
-                    ),
-                });
-                return false;
-            }
-            view.tasks.retain(|task| task.id != id);
-            view.tasks.push(PluginTask {
-                id: id.to_owned(),
-                title: title.to_owned(),
-                icon,
-                operation,
-                state: PluginTaskState::Running,
-                install_progress: None,
-                waiting_for_connection: false,
-                added_tools: None,
-            });
-            Self::derive(view);
-            true
+            outcome = Self::push_task(view, id, title, icon, operation);
+            outcome.is_ok()
         });
         if outcome.is_ok() {
             self.start_polling();
         }
         outcome
+    }
+
+    /// 任务行开始转：同一个插件已有在做的任务时拒绝，否则换掉它的旧任务行。UI 假核心也用它。
+    pub(crate) fn push_task(
+        view: &mut PluginsViewModel,
+        id: &str,
+        title: &str,
+        icon: Option<PluginIcon>,
+        operation: PluginOperation,
+    ) -> Result<(), CoreError> {
+        if view
+            .tasks
+            .iter()
+            .any(|task| task.id == id && task.state.in_progress())
+        {
+            return Err(CoreError::NotReady {
+                reason: l10n!(
+                    CATALOG,
+                    language(),
+                    "plugins-tasks-task-running",
+                    title = title
+                ),
+            });
+        }
+        view.tasks.retain(|task| task.id != id);
+        view.tasks.push(PluginTask {
+            id: id.to_owned(),
+            title: title.to_owned(),
+            icon,
+            operation,
+            state: PluginTaskState::Running,
+            install_progress: None,
+            waiting_for_connection: false,
+            added_tools: None,
+        });
+        Self::derive(view);
+        Ok(())
     }
 
     /// 连接信息都没有时，请求发不出去：结果是确定的，不用等。

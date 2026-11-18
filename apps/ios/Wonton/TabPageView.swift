@@ -33,7 +33,6 @@ struct TabPageView: View {
     @Environment(\.wontonBarStatus) private var status
     @Environment(\.openURL) private var openURL
     @Environment(\.scenePhase) private var scenePhase
-    @Environment(\.goToStore) private var goToStore
     @ScaledMetric(relativeTo: .body) private var textScale: CGFloat = 1
 
     init(
@@ -95,7 +94,6 @@ struct TabPageView: View {
                         open(entry)
                     }
                 }
-                .environment(\.goToStore, goToStore.map { action in { showsDetails = false; action() } })
             }
         }
     }

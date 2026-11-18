@@ -13,13 +13,12 @@ extension MainView {
     }
 
     func applyAppNavigation() {
-        let opensStore = navigation.takeOpensStore()
         guard navigation.presentationRevision > 0, navigation.allowsNavigation else { return }
         showsSettings = false
         if navigation.opensSettings || !pages.viewModel.showsApps {
             closeApps()
         } else {
-            appsPath = NavigationPath([AppsRoute.launcher] + (opensStore ? [AppsRoute.store] : []))
+            appsPath = NavigationPath([AppsRoute.launcher])
         }
         onboardingGateway = nil
         if navigation.opensSettings {

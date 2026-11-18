@@ -81,7 +81,6 @@ internal fun PluginStatusNotice(
     stoppedText: String,
     onAction: (Action) -> Unit,
     startingText: String = stringResource(R.string.tab_starting),
-    degradedLine: Boolean = true,
 ) {
     val launch = { onAction(Action.Plugins(PluginAction.StartPlugin(pluginId))) }
     when (start) {
@@ -95,7 +94,7 @@ internal fun PluginStatusNotice(
                 }
             }
         }
-        null -> PluginStateNotice(status, canStart, title, stoppedText, launch, degradedLine)
+        null -> PluginStateNotice(status, canStart, title, stoppedText, launch)
     }
 }
 
@@ -106,7 +105,6 @@ private fun PluginStateNotice(
     title: String,
     stoppedText: String,
     launch: () -> Unit,
-    degradedLine: Boolean,
 ) {
     when (status) {
         is PluginState.Stopped -> WontonNotice(WontonIcon.PauseFill, stoppedText, isError = false) {
@@ -114,7 +112,7 @@ private fun PluginStateNotice(
         }
         is PluginState.Degraded -> WontonNotice(
             WontonIcon.Warning, stringResource(R.string.tab_problem, title),
-            lines = if (degradedLine) listOf(stringResource(R.string.tab_degraded_line)) else emptyList(),
+            lines = listOf(stringResource(R.string.tab_degraded_line)),
         ) {
             // 原因是核心按语言写的，个别场景夹着原始报错；没有内容时不给一个展开是空的详情。
             if (status.reason.isNotBlank()) {

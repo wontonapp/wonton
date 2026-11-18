@@ -3,12 +3,11 @@ import WontonClient
 
 /// 设置里的“我的应用”：放哪些、顺序、新装应用自动加入。数据是核心算好的（侧边栏同一份）。
 /// 应用行点开是插件详情页，分享给家人的入口和已有分享都在那里（#693：设置里找不到授权入口）。
-/// 详情里的“打开”先收起设置浮层再走主界面（MainView 注入的 [open]），“查看已安装”“去商店”同。
+/// 详情里的“打开”先收起设置浮层再走主界面（MainView 注入的 [open]），“查看已安装”同（[checkInstalled]）。
 struct MyAppsSettingsView: View {
     let chat: ChatModel
     let open: (PluginEntry) -> Void
     let checkInstalled: () -> Void
-    let goToStore: () -> Void
     @Environment(PagesModel.self) private var pages
     @Environment(PluginsModel.self) private var plugins
     @Environment(\.wontonColors) private var colors
@@ -79,7 +78,6 @@ struct MyAppsSettingsView: View {
                     }
                 }
                 .environment(\.goToInstalledApps, checkInstalled)
-                .environment(\.goToStore, goToStore)
             }
         }
     }

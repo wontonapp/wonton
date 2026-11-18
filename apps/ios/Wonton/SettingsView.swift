@@ -10,7 +10,6 @@ struct SettingsTab: View {
     let plugins: PluginsModel
     let open: (PluginEntry) -> Void
     let checkInstalled: () -> Void
-    let goToStore: () -> Void
     var isModal = false
     var isActive = true
     @Environment(\.dismiss) private var dismiss
@@ -79,7 +78,7 @@ struct SettingsTab: View {
                 .wontonPushedScreen(String(localized: .Appearance0.appearanceTitle), usesSystemToolbar: true)
         case .chatBackup: ChatBackupView(model: chat)
         case .myApps:
-            MyAppsSettingsView(chat: chat, open: open, checkInstalled: checkInstalled, goToStore: goToStore)
+            MyAppsSettingsView(chat: chat, open: open, checkInstalled: checkInstalled)
                 .wontonPushedScreen(TabText.myApps, usesSystemToolbar: true)
         case .notifications: NotificationSettingsView()
         case .appLock: AppLockSettingsView(model: appLock).wontonPushedScreen(String(localized: .Settings.appLockTitle))

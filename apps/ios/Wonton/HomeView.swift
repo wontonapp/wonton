@@ -36,8 +36,6 @@ struct HomeView: View {
             .environment(\.goToInstalledApps, {
                 pages.open(.apps)
             })
-            // 这里的详情页就在注册了商店的导航栈里：按值压商店，返回回到详情，不用主界面那条收起再跳的路。
-            .environment(\.goToStore, nil)
     }
 
     private var stackRoot: some View {

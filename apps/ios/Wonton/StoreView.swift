@@ -431,7 +431,7 @@ struct TaskRow: View {
             }
             Spacer(minLength: 0)
             if task.state == .running {
-                ProgressView()
+                ProgressView().accessibilityIdentifier("pluginTaskRunning")
             } else if showsDismiss {
                 WontonIconButton(icon: .close, label: String(localized: .Common.commonClose)) {
                     model.send(.plugins(action: .dismissPluginTask(id: task.id)))
@@ -557,7 +557,4 @@ private struct UpdateAllButton: View {
 extension EnvironmentValues {
     /// 关掉叠着的页面、回到已安装的应用格子（结果不确定时用）。
     @Entry var goToInstalledApps: () -> Void = {}
-    /// 详情页的“去商店”：从浮层（设置、插件页的详情）打开时，先收起浮层再在主界面打开商店。
-    /// 没有时详情页在“全部应用”的导航栈里，直接压商店页，返回回到详情。
-    @Entry var goToStore: (() -> Void)?
 }

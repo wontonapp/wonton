@@ -15,6 +15,7 @@ import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
+import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
@@ -25,7 +26,9 @@ import androidx.compose.ui.unit.dp
 import app.wonton.protocol.PluginAction
 import app.wonton.protocol.Action
 import app.wonton.protocol.AddedTools
+import app.wonton.protocol.AppsAction
 import app.wonton.protocol.BotRef
+import app.wonton.protocol.InstalledPlugin
 import app.wonton.protocol.PluginDetail
 import app.wonton.protocol.PluginFailure
 import app.wonton.protocol.PluginOperation
@@ -52,11 +55,7 @@ private val SPINNER_STROKE = 2.dp
 private val STATE_ICON_OFFSET = 3.dp
 
 /** 主屏或商店里打开的详情页、确认页和卸载确认。[open] 打开已安装的插件，[checkInstalled] 回主屏的已安装列表。 */
-class PluginNavigation(
-    val open: (PluginEntry) -> Unit,
-    val checkInstalled: () -> Unit,
-    val openStore: () -> Unit,
-) {
+class PluginNavigation(val open: (PluginEntry) -> Unit, val checkInstalled: () -> Unit) {
     var detail by mutableStateOf<PluginRoute?>(null)
     var confirmation by mutableStateOf<PluginConfirmation?>(null)
     var uninstalling by mutableStateOf<UninstallTarget?>(null)
@@ -167,7 +166,10 @@ internal fun UninstallDialog(target: UninstallTarget, plugins: PluginsState, onD
     )
 }
 
-/** 失败安装的后续：不可重试时回商店重装；随时可以只保留数据清掉失败的安装。下面的任务行照常显示进展。 */
+/**
+ * 失败安装的后续：核心没留下原决定、不能直接重试时，从来源重新确认，上传的包重新选文件；随时可以只保留数据清掉失败的安装。
+ * 结果不确定时都不给，免得服务器可能还在装时又装一次。下面的任务行照常显示进展。
+ */
 @Composable
 internal fun FailedInstallActions(
     detail: PluginDetail,
@@ -176,9 +178,12 @@ internal fun FailedInstallActions(
     task: PluginTask?,
     navigation: PluginNavigation,
 ) {
-    if (detail.installed?.installFailure?.retryable == false && !working) {
-        WontonButton(stringResource(R.string.launcher_go_to_store), navigation.openStore)
-    }
+    detail.installed
+        ?.takeIf {
+            it.installFailure?.retryable == false && !working && it.id !in plugins.viewModel.pending &&
+                task?.state !is PluginTaskState.Uncertain
+        }
+        ?.let { ReinstallButton(it, plugins, navigation) }
     detail.installed
         ?.takeIf { it.installFailure != null && !working && task?.state !is PluginTaskState.Uncertain }
         ?.let { failed ->
@@ -200,6 +205,26 @@ internal fun FailedInstallActions(
             navigation.checkInstalled,
         )
     }
+}
+
+@Composable
+private fun ReinstallButton(failed: InstalledPlugin, plugins: PluginsState, navigation: PluginNavigation) {
+    var problem by remember { mutableStateOf<Problem?>(null) }
+    val pickFile = rememberPluginArchivePicker(plugins, onProblem = { problem = Problem(it) }) { archive ->
+        problem = null
+        navigation.confirmation = PluginConfirmation.Upload(archive)
+    }
+    val source = failed.source
+    val actions = plugins.viewModel.actions
+    when {
+        source != null && AppsAction.STORE in actions -> WontonButton(stringResource(R.string.common_retry), {
+            navigation.confirmation = PluginConfirmation.Install(source)
+        })
+        source == null && AppsAction.ADD_SOURCE in actions -> WontonButton(
+            stringResource(R.string.plugin_sources_install_from_file), pickFile,
+        )
+    }
+    problem?.let { ProblemNotice(it) }
 }
 
 /** 安装、升级、卸载的一项进展。插件包在确认之后变了的，[onReview] 重新打开确认页；结果不确定时，[onCheckInstalled] 去已安装列表看。 */

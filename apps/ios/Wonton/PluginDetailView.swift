@@ -24,7 +24,6 @@ struct PluginDetailView: View {
     @Environment(\.dismiss) private var dismiss
     @Environment(\.wontonColors) private var colors
     @Environment(\.goToInstalledApps) private var goToInstalledApps
-    @Environment(\.goToStore) private var goToStore
 
     var body: some View {
         content
@@ -44,21 +43,6 @@ struct PluginDetailView: View {
             .onChange(of: isWorking) { wasWorking, working in
                 if wasWorking, !working { taskEnded() }
             }
-    }
-
-    /// 浮层里的详情页没有注册 `AppsRoute` 的导航栈，按值跳转点了没反应，所以浮层由上层注入 `goToStore`。
-    @ViewBuilder private var goToStoreButton: some View {
-        if let goToStore {
-            Button(action: goToStore) {
-                Text(.Launcher.launcherGoToStore).frame(maxWidth: .infinity)
-            }
-            .buttonStyle(WontonButtonStyle(kind: .secondary))
-        } else {
-            NavigationLink(value: AppsRoute.store) {
-                Text(.Launcher.launcherGoToStore).frame(maxWidth: .infinity)
-            }
-            .buttonStyle(WontonButtonStyle(kind: .secondary))
-        }
     }
 
     @ViewBuilder private var content: some View {
@@ -88,10 +72,7 @@ struct PluginDetailView: View {
                             .accessibilityIdentifier("botContactsEntry")
                         }
                     }
-                    DetailHeader(
-                        model: model, detail: detail, action: action(for: detail),
-                        hasInstallFailureTask: retainedInstallFailureTask
-                    )
+                    DetailHeader(model: model, detail: detail, action: action(for: detail))
                     if let archiveProblem { ProblemNotice(problem: archiveProblem) }
                     if let installed = liveInstalled(detail.id),
                        installed.installFailure == nil, installed.status == .stopped || startState(detail.id) != nil {
@@ -114,9 +95,6 @@ struct PluginDetailView: View {
                     }
                     if let failure = failedInstall, task == nil {
                         InstallFailureNotice(model: model, failure: failure)
-                    }
-                    if let failure = failedInstall, !failure.retryable {
-                        goToStoreButton
                     }
                     if failedInstall != nil, !isUncertain {
                         Button(role: .destructive) {
@@ -251,11 +229,6 @@ extension PluginDetailView {
         task?.state == .running
     }
 
-    private var retainedInstallFailureTask: Bool {
-        guard let task, task.operation == .install, case .failed = task.state else { return false }
-        return liveInstalled(task.id)?.installFailure != nil
-    }
-
     private var isUncertain: Bool {
         if case .uncertain = task?.state { return true }
         return false
@@ -302,8 +275,7 @@ extension PluginDetailView {
     }
 
     private func installFailure(for detail: PluginDetail) -> InstallFailure? {
-        if let installed = liveInstalled(detail.id) { return installed.installFailure }
-        return detail.installed?.installFailure
+        (liveInstalled(detail.id) ?? detail.installed)?.installFailure
     }
 
     private func startState(_ id: String) -> PluginStartState? {
@@ -312,12 +284,8 @@ extension PluginDetailView {
 
     /// 标题旁的按钮：没装的“获取”，能升级的“更新”（和商店列表行尾同一个核心动作，要不要确认由核心判断），装着的“打开”。
     private func action(for detail: PluginDetail) -> DetailAction? {
-        if let failure = installFailure(for: detail) {
-            if case .uncertain = task?.state { return nil }
-            guard failure.retryable else { return nil }
-            return DetailAction(title: String(localized: .Common.commonRetry), enabled: !isWorking) {
-                model.send(.plugins(action: .retryPluginInstall(id: detail.id)))
-            }
+        if let installed = liveInstalled(detail.id) ?? detail.installed, let failure = installed.installFailure {
+            return failedInstallAction(for: installed, failure: failure)
         }
         if let installed = liveInstalled(detail.id) {
             return installedAction(for: installed)
@@ -334,9 +302,6 @@ extension PluginDetailView {
     }
 
     private func installedAction(for installed: InstalledPlugin) -> DetailAction? {
-        if installed.installFailure != nil {
-            return failedInstallAction(for: installed)
-        }
         if installed.upgrade != nil {
             // 取预览还没回来时任务还没建，列表行尾靠 pending 转圈，这里用同一个口径。
             let busy = isWorking || model.viewModel.pending.contains(installed.id)
@@ -348,8 +313,16 @@ extension PluginDetailView {
         return DetailAction(title: String(localized: .Store.storeOpen), enabled: !installed.isBusy) { open(entry) }
     }
 
-    private func failedInstallAction(for installed: InstalledPlugin) -> DetailAction? {
+    /// 没装成的：核心留着原决定就按原决定重装；没留下时从来源重新确认，上传的包重新选文件。
+    /// 结果不确定时不给，免得在服务器可能还在装的时候又装一次。
+    private func failedInstallAction(for installed: InstalledPlugin, failure: InstallFailure) -> DetailAction? {
+        if isUncertain { return nil }
         let busy = isWorking || model.viewModel.pending.contains(installed.id)
+        if failure.retryable {
+            return DetailAction(title: String(localized: .Common.commonRetry), enabled: !busy) {
+                model.send(.plugins(action: .retryPluginInstall(id: installed.id)))
+            }
+        }
         if let source = installed.source, model.viewModel.actions.contains(.store) {
             return DetailAction(title: String(localized: .Common.commonRetry), enabled: !busy) {
                 confirmation = .install(source: source)
@@ -481,16 +454,8 @@ private struct DetailHeader: View {
     let model: PluginsModel
     let detail: PluginDetail
     let action: DetailAction?
-    let hasInstallFailureTask: Bool
     @Environment(\.wontonColors) private var colors
 
-    private var failureReason: String? {
-        guard !hasInstallFailureTask,
-              let installed = model.viewModel.installed?.plugins.first(where: { $0.id == detail.id }),
-              let failure = installed.installFailure else { return nil }
-        if case let .degraded(reason) = installed.status { return reason }
-        return failure.message
-    }
     var body: some View {
         VStack(alignment: .leading, spacing: WontonTheme.spacing.s12) {
             HStack(alignment: .top, spacing: WontonTheme.spacing.s16) {
@@ -527,18 +492,15 @@ private struct DetailHeader: View {
                 }
                 .buttonStyle(WontonButtonStyle())
                 .disabled(!action.enabled)
+                .accessibilityIdentifier("pluginDetailAction")
             }
             if let blocked = detail.blocked {
                 WontonNotice(icon: .blocked, title: blocked)
             }
-            if let installed = model.viewModel.installed?.plugins.first(where: { $0.id == detail.id }) {
-                if let reason = failureReason {
-                    WontonNotice(icon: .warning, title: String(localized: .Launcher.launcherInstallFailed)) {
-                        ProblemDetail(text: reason)
-                    }
-                } else if !hasInstallFailureTask, case let .degraded(reason) = installed.status {
-                    WontonNotice(icon: .warning, title: reason)
-                }
+            // 没装成的降级原因就是失败原因，由详情页的失败提示按类别写，这里不重复。
+            if let installed = model.viewModel.installed?.plugins.first(where: { $0.id == detail.id }),
+               installed.installFailure == nil, case let .degraded(reason) = installed.status {
+                WontonNotice(icon: .warning, title: reason)
             }
         }
     }
