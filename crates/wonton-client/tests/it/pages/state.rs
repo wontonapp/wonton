@@ -591,12 +591,12 @@ async fn page_problem_recovery_marks_the_layout_even_when_refreshed() {
     assert!(rig.app.test_pages_layout_dirty());
 }
 
-/// 自动加入落盘后账号数据写失败（Tuwunel 拒掉 layout 账号数据请求）：就绪分支推送前置了
-/// dirty（push_layout 失败不清它），重连对账推的是本机合并后的配置，服务器旧配置盖不掉新
-/// 入口。要真实 Matrix 会话，所以标了 ignore；本机经 cargo-slot 只编不跑，Docker 场景留给 CI。
+/// 自动加入落盘后账号数据写失败（Tuwunel 整体断开）：就绪分支推送前置了 dirty（push_layout
+/// 失败不清它）。恢复后服务器的旧配置再到手机，follow_server 不收它、推本机合并后的配置，旧配置
+/// 盖不掉新入口。要真实 Matrix 会话，所以标了 ignore；本机经 cargo-slot 只编不跑，Docker 场景留给 CI。
 #[tokio::test(flavor = "multi_thread")]
 #[ignore = "需要 Docker，用 --include-ignored 运行"]
-async fn a_failed_layout_push_keeps_the_local_entry_on_reconciliation() {
+async fn a_failed_layout_push_keeps_the_local_entry_when_the_server_layout_returns() {
     use crate::chat::support::{Home, Phone};
 
     let dir = tempfile::tempdir().unwrap();
@@ -659,7 +659,8 @@ async fn a_failed_layout_push_keeps_the_local_entry_on_reconciliation() {
         })
         .await;
 
-    // 新装的插件到达，自动加入 append 并落盘；就绪分支置 dirty 后推送，写失败不清它。
+    // 新装的插件到达（主人刷新插件列表），自动加入 append 并落盘；就绪分支置 dirty 后推送，写失败不清它。
+    // 已装列表不轮询，没有刷新就到不了手机。
     let mut new_plugin = web_plugin(
         "app.push-failure-new",
         PluginState::Running {
@@ -669,6 +670,11 @@ async fn a_failed_layout_push_keeps_the_local_entry_on_reconciliation() {
     );
     new_plugin.web_url = Some("http://app.push-failure-new.wonton.localhost/".to_owned());
     home.set_installed_plugins(vec![plugin, new_plugin]);
+    phone
+        .dispatch(Action::Plugins {
+            action: wonton_protocol::PluginAction::RefreshPlugins,
+        })
+        .unwrap();
     tokio::time::timeout(crate::plugins::rig::WAIT, async {
         while !phone.test_pages_layout_dirty() {
             tokio::time::sleep(Duration::from_millis(50)).await;
@@ -677,8 +683,15 @@ async fn a_failed_layout_push_keeps_the_local_entry_on_reconciliation() {
     .await
     .expect("自动加入后没有置 dirty");
 
-    // Matrix 回来触发重连对账：dirty=true 时推本机合并后的配置，不收服务器的旧配置。
+    // Tuwunel 恢复时会话还是原来那个，不会重新对账（restart_sync 只在换会话时跑）。服务器的旧配置
+    // 再来一次（另一台设备在旧配置上改了别的项）：dirty=true 时 follow_server 不收它，推本机合并后的配置。
     home.set_matrix_down(false);
+    other
+        .update_layout(|raw| {
+            raw.insert("auto_add".to_owned(), serde_json::json!(true));
+        })
+        .await
+        .unwrap();
 
     let deadline = tokio::time::Instant::now() + crate::plugins::rig::WAIT;
     loop {
