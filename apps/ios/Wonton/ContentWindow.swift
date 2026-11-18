@@ -37,6 +37,7 @@ struct ContentWindow: View {
             }
         }
         .frame(maxWidth: .infinity, maxHeight: .infinity)
+        .environment(\.goToStore) { navigation.openStore() }
         .environment(pages)
         .environment(plugins)
         .environment(onboarding)

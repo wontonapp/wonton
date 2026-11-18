@@ -49,6 +49,7 @@ struct MainView: View {
     var body: some View {
         @Bindable var navigation = navigation
         return adaptiveContent
+        .environment(\.goToStore) { openApps(above: [.store]) }
         .onPreferenceChange(ChatPanelOpenKey.self) { showsPanel = $0 }
         .onChange(of: horizontalSizeClass) { _, _ in showsSidebar = false }
         .overlay { if chat.isOpeningChat { ProgressView() } }
@@ -66,9 +67,10 @@ struct MainView: View {
         .fullScreenCover(isPresented: $showsSettings) {
             SettingsTab(model: settings, appearance: appearance, appLock: lock, chat: chat,
                         home: home, plugins: plugins,
-                        // 设置里的应用行进了详情后，“打开”和“查看已安装”都要先收起设置，再走主界面这一层。
+                        // 设置里的应用行进了详情后，“打开”“查看已安装”“去商店”都要先收起设置，再走主界面这一层。
                         open: { showsSettings = false; open($0) },
                         checkInstalled: { showsSettings = false; pages.open(.apps) },
+                        goToStore: { showsSettings = false; openApps(above: [.store]) },
                         isModal: true)
         }
         .wontonDialog(problem: pages.rejection, isPresented: Binding(

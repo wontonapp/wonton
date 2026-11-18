@@ -19,6 +19,8 @@ final class AppNavigation {
     private(set) var opensSettings = false
     /// 链接要求直接打开“其他服务器”页并滚到“请求”；由 MainView 取走。
     private var opensPeers = false
+    /// 别的窗口里点了“去商店”：主窗口打开“全部应用”后再压上商店；由 MainView 取走。
+    private var opensStore = false
     /// 正在用 SFSafariViewController 打开的外部网页。
     var safari: SafariTarget?
     private var pending: Task<Void, Never>?
@@ -161,6 +163,22 @@ final class AppNavigation {
             opensSettings = true
             presentationRevision += 1
         }
+    }
+
+    /// 内容窗口里详情页的“去商店”：那个窗口没有应用这一层，交给主窗口打开商店。
+    func openStore() {
+        request { navigation in
+            guard try await navigation.navigationReady() else { return }
+            try navigation.select(.apps)
+            // 在 select 之后置位：select 失败时不留下标记；MainView 下一次刷新才处理新的 presentationRevision。
+            navigation.opensStore = true
+        }
+    }
+
+    /// 取走“去商店”的标记。
+    func takeOpensStore() -> Bool {
+        defer { opensStore = false }
+        return opensStore
     }
 
     /// 链接要求进“其他服务器”。取走标记，调用方去改导航路径。

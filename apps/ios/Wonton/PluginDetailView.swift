@@ -24,6 +24,7 @@ struct PluginDetailView: View {
     @Environment(\.dismiss) private var dismiss
     @Environment(\.wontonColors) private var colors
     @Environment(\.goToInstalledApps) private var goToInstalledApps
+    @Environment(\.goToStore) private var goToStore
 
     var body: some View {
         content
@@ -43,6 +44,21 @@ struct PluginDetailView: View {
             .onChange(of: isWorking) { wasWorking, working in
                 if wasWorking, !working { taskEnded() }
             }
+    }
+
+    /// 浮层里的详情页没有注册 `AppsRoute` 的导航栈，按值跳转点了没反应，所以浮层由上层注入 `goToStore`。
+    @ViewBuilder private var goToStoreButton: some View {
+        if let goToStore {
+            Button(action: goToStore) {
+                Text(.Launcher.launcherGoToStore).frame(maxWidth: .infinity)
+            }
+            .buttonStyle(WontonButtonStyle(kind: .secondary))
+        } else {
+            NavigationLink(value: AppsRoute.store) {
+                Text(.Launcher.launcherGoToStore).frame(maxWidth: .infinity)
+            }
+            .buttonStyle(WontonButtonStyle(kind: .secondary))
+        }
     }
 
     @ViewBuilder private var content: some View {
@@ -100,10 +116,7 @@ struct PluginDetailView: View {
                         InstallFailureNotice(model: model, failure: failure)
                     }
                     if let failure = failedInstall, !failure.retryable {
-                        NavigationLink(value: AppsRoute.store) {
-                            Text(.Launcher.launcherGoToStore).frame(maxWidth: .infinity)
-                        }
-                        .buttonStyle(WontonButtonStyle(kind: .secondary))
+                        goToStoreButton
                     }
                     if failedInstall != nil, !isUncertain {
                         Button(role: .destructive) {

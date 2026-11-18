@@ -103,9 +103,10 @@ enum SnapshotFixtures {
             chat: ChatModel(core: core),
             home: HomeModel(core: core),
             plugins: PluginsModel(core: core),
-            // 参考图不点行：打开与查看已安装不会发生，给空闭包。
+            // 参考图不点行：打开、查看已安装、去商店都不会发生，给空闭包。
             open: { _ in },
             checkInstalled: {},
+            goToStore: {},
             isModal: true
         )
         .environment(OnboardingModel(core: core))
