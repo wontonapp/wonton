@@ -2,6 +2,36 @@
   "sourceLanguage": "en",
   "version": "1.0",
   "strings": {
+    "share.appsRow": {
+      "comment": "Hint under an app in My Apps settings: tapping the row opens the app page where it can be shared with family. No arguments.",
+      "extractionState": "manual",
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Share with family"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "分享给家人"
+          }
+        },
+        "zh-Hant": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "分享給家人"
+          }
+        },
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "家族と共有"
+          }
+        }
+      }
+    },
     "share.cancel": {
       "comment": "Button that dismisses the share editor without saving changes. No arguments.",
       "extractionState": "manual",

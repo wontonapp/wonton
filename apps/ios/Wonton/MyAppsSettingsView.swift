@@ -2,12 +2,18 @@ import SwiftUI
 import WontonClient
 
 /// 设置里的“我的应用”：放哪些、顺序、新装应用自动加入。数据是核心算好的（侧边栏同一份）。
+/// 应用行点开是插件详情页，分享给家人的入口和已有分享都在那里（#693：设置里找不到授权入口）。
+/// 详情里的“打开”先收起设置浮层再走主界面（MainView 注入的 [open]），“查看已安装”同（[checkInstalled]）。
 struct MyAppsSettingsView: View {
+    let chat: ChatModel
+    let open: (PluginEntry) -> Void
+    let checkInstalled: () -> Void
     @Environment(PagesModel.self) private var pages
     @Environment(PluginsModel.self) private var plugins
     @Environment(\.wontonColors) private var colors
     @Environment(\.editMode) private var editMode
     @State private var showsCandidates = false
+    @State private var openedPluginId: String?
 
     var body: some View {
         List {
@@ -21,14 +27,11 @@ struct MyAppsSettingsView: View {
                 let apps = plugins.viewModel.sidebar.apps
                 ForEach(apps, id: \.self) { app in
                     if let appRef = app.myAppRef {
-                        HStack(spacing: WontonTheme.spacing.s12) {
-                            if app.pluginId != nil {
-                                PluginIconView(icon: app.icon, size: WontonTheme.size.icon, model: plugins)
-                            } else {
-                                WontonIcon.settings.view(size: WontonTheme.size.icon)
-                                    .foregroundStyle(Color(colors.textPrimary))
-                            }
-                            Text(app.title)
+                        if let pluginId = app.pluginId {
+                            Button { openedPluginId = pluginId } label: { appRow(app) }
+                                .foregroundStyle(.primary)
+                        } else {
+                            appRow(app)
                         }
                     }
                 }
@@ -66,6 +69,49 @@ struct MyAppsSettingsView: View {
                 MyAppCandidates().wontonModalScreen(TabText.addToMyApps, usesSystemToolbar: true)
             }
         }
+        .sheet(isPresented: detailShown) {
+            if let pluginId = openedPluginId {
+                NavigationStack {
+                    PluginDetailView(model: plugins, chat: chat, route: .installed(id: pluginId)) { entry in
+                        openedPluginId = nil
+                        open(entry)
+                    }
+                }
+                .environment(\.goToInstalledApps, checkInstalled)
+            }
+        }
+    }
+
+    /// 应用行：插件行带一句“分享给家人”和前进箭头，点开是详情页上的分享区。
+    @ViewBuilder private func appRow(_ app: SidebarApp) -> some View {
+        HStack(spacing: WontonTheme.spacing.s12) {
+            if app.pluginId != nil {
+                PluginIconView(icon: app.icon, size: WontonTheme.size.icon, model: plugins)
+            } else {
+                WontonIcon.settings.view(size: WontonTheme.size.icon)
+                    .foregroundStyle(Color(colors.textPrimary))
+            }
+            VStack(alignment: .leading, spacing: WontonTheme.spacing.s4) {
+                Text(app.title)
+                if app.pluginId != nil {
+                    Text(.Share0.shareAppsRow)
+                        .wontonText(WontonTheme.typography.caption)
+                        .foregroundStyle(Color(colors.textSecondary))
+                }
+            }
+            Spacer(minLength: 0)
+            if app.pluginId != nil {
+                WontonIcon.forward.view(size: WontonTheme.size.iconSmall)
+                    .foregroundStyle(Color(colors.textSecondary))
+            }
+        }
+    }
+
+    private var detailShown: Binding<Bool> {
+        Binding(
+            get: { openedPluginId != nil },
+            set: { if !$0 { openedPluginId = nil } }
+        )
     }
 
     /// onMove 的 destination 是“插入位置”（删掉拖动行之前算的），换算成核心要的下标。

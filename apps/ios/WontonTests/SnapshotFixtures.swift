@@ -102,7 +102,11 @@ enum SnapshotFixtures {
             appLock: AppLockModel(core: core),
             chat: ChatModel(core: core),
             home: HomeModel(core: core),
-            plugins: PluginsModel(core: core), isModal: true
+            plugins: PluginsModel(core: core),
+            // 参考图不点行：打开与查看已安装不会发生，给空闭包。
+            open: { _ in },
+            checkInstalled: {},
+            isModal: true
         )
         .environment(OnboardingModel(core: core))
         // 版本号钉死：设置页直接读 Bundle 版本，不钉的话参考图随无 tag 的 Debug 构建漂（构建号 1→0）。
