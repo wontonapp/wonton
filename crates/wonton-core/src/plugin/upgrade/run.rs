@@ -98,12 +98,13 @@ fn pin_images(plan: &mut Deployment, images: &HashMap<String, String>) {
 }
 
 impl PluginManager {
-    /// 检查并升级。`granted` 必须含新版本的全部必需权限：这就是主人的确认；`requested` 是主人勾选的可选项。
+    /// 检查并升级。`granted` 必须含新版本的全部必需权限：这就是主人的确认；`switches` 是主人勾选的可选项，
+    /// 或者沿用记录里的开关。
     pub(super) async fn upgrade_declared(
         &self,
         package: PluginPackage,
         granted: &[Permission],
-        requested: &[EnabledPermission],
+        switches: &super::UpgradeSwitches,
         lan_webui: bool,
         chosen_devices: &[String],
         settings: super::super::settings::Values,
@@ -117,7 +118,7 @@ impl PluginManager {
         self.check_icon(&package, &langs).await?;
         let manifest = &package.manifest;
         let id = &manifest.id;
-        // 只有新版本还声明成可选的才留下；以前开着的沿用原来的时间和人（ADR-0057）。
+        // 生效的可选项按这一刻读到的记录算：沿用开关的升级在读和用之间不留空档（#767）。
         let record = self
             .store
             .load(id)?
@@ -129,7 +130,8 @@ impl PluginManager {
                 &[],
             )));
         }
-        let enabled = super::upgrade_enabled(manifest, &record, requested);
+        let old = super::installed_package(&record, &langs)?;
+        let enabled = super::switched_on(manifest, &record, &old.manifest, switches);
         check_permissions(manifest, granted, &enabled, &langs)?;
         super::super::capabilities::unsupported_model_dependency(manifest, &langs)?;
         if super::super::install_hosted::is_containerless(manifest) {
@@ -424,7 +426,7 @@ impl PluginManager {
             version: manifest.version.clone(),
             source: package.source.clone(),
             files: package.files().clone(),
-            granted_permissions: granted.to_vec(),
+            granted_permissions: super::super::grant::recorded_grant(manifest, granted),
             enabled_permissions: enabled.to_vec(),
             devices,
             limits: old.record.limits,
@@ -826,7 +828,7 @@ impl PluginManager {
         if let Err(e) = Box::pin(self.upgrade_checked(
             package,
             &granted,
-            &installed.enabled_permissions,
+            &super::UpgradeSwitches::Requested(installed.enabled_permissions.clone()),
             installed.lan_webui,
             &[],
             installed.settings.clone(),

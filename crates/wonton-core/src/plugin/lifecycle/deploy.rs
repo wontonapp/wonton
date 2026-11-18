@@ -187,7 +187,7 @@ impl PluginManager {
             version: manifest.version.clone(),
             source: package.source.clone(),
             files: package.files().clone(),
-            granted_permissions: granted.to_vec(),
+            granted_permissions: super::super::grant::recorded_grant(manifest, granted),
             enabled_permissions: enabled.to_vec(),
             devices,
             limits: Default::default(),

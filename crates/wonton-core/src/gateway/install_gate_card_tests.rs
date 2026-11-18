@@ -6,7 +6,7 @@ use serde_json::{Value, json};
 
 use super::super::tests::Harness;
 use super::super::upload_settings_tests::consent_package;
-use super::install_gate_owner_tests::{ask_admin_member, finished, pending_cards, staged};
+use super::install_gate_owner_tests::{ask_admin_member, finished, pending_cards};
 use super::install_nvme_gate_tests::{
     answer_admin_card, disk_gate_fixture, disk_preview, pending_admin_card, spawn_member_request,
 };
@@ -49,12 +49,14 @@ fn has_permission(card: &Value, permission: &str, risk: Option<&str>) -> bool {
     })
 }
 
-fn has_line(card: &Value, part: &str) -> bool {
+/// 卡片有一行写到 `data`。`data` 取自预览（设备名、设置标题），是插件和主机给的数据，不是我们的文案：
+/// 卡片的行只有文字，没有别的字段标出它写的是哪个设备、哪项设置。
+fn mentions(card: &Value, data: &str) -> bool {
     card["lines"].as_array().is_some_and(|lines| {
         lines.iter().any(|line| {
             line["text"]
                 .as_str()
-                .is_some_and(|text| text.contains(part))
+                .is_some_and(|text| text.contains(data))
         })
     })
 }
@@ -149,7 +151,7 @@ async fn the_chosen_disk_is_named_on_the_card() {
     });
     let waiting = spawn_member_request(&h, member, "/_wonton/api/plugins", request);
     let card = pending_admin_card(&h).await;
-    assert!(has_line(&card, &name), "{card}");
+    assert!(mentions(&card, &name), "{card}");
     answer_admin_card(&h, &card, "reject").await;
     let (status, body) = finished(waiting).await;
     assert_eq!(status, StatusCode::FORBIDDEN, "{body}");
@@ -161,14 +163,25 @@ async fn the_chosen_disk_is_named_on_the_card() {
 async fn filled_settings_are_on_the_card() {
     let h = Harness::start(None).await;
     let member = ask_admin_member(&h).await;
-    let (source, digest) = staged(&h, consent_package("1.0.0")).await;
+    let preview = h
+        .manager
+        .preview_upload(consent_package("1.0.0"), &h.manager.owner_languages())
+        .await
+        .unwrap();
+    let eula = preview
+        .settings
+        .as_ref()
+        .and_then(|form| form.fields.iter().find(|field| field.name == "eula"))
+        .unwrap()
+        .title
+        .clone();
     let request = json!({
-        "source": source, "digest": digest, "plan": "", "grant": [],
+        "source": preview.source, "digest": preview.digest, "plan": "", "grant": [],
         "settings": {"eula": {"type": "flag", "value": true}},
     });
     let waiting = spawn_member_request(&h, member, "/_wonton/api/plugins", request);
     let card = pending_admin_card(&h).await;
-    assert!(has_line(&card, "Accept the EULA"), "{card}");
+    assert!(mentions(&card, &eula), "{card}");
     answer_admin_card(&h, &card, "reject").await;
     let (status, body) = finished(waiting).await;
     assert_eq!(status, StatusCode::FORBIDDEN, "{body}");

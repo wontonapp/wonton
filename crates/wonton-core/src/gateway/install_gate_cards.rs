@@ -295,21 +295,22 @@ pub(super) async fn source_admin_cards(
     Ok((first, second))
 }
 
-pub(super) fn preview_draft(preview: &InstallPreview, langs: &Languages) -> Draft {
-    // 只有官方索引审核过的写“来自官方索引”；上传、GitHub 和第三方索引的来源提示在 `notices` 里。
-    let version = if preview.trust == PluginTrust::Official {
+/// 卡片第一行：版本。只有官方索引审核过的写“来自官方索引”；其余来源（上传的包、提供方和第三方索引）
+/// 由预览 `notices` 里醒目的未审核提示写一处，版本行不再重复同样的提供方和主机。
+fn version_line(preview: &InstallPreview, langs: &Languages) -> CardLine {
+    let key = if preview.trust == PluginTrust::Official {
         "chat-card-version-official"
     } else {
         "chat-card-version"
     };
-    let mut lines = vec![CardLine {
-        text: l10n::text(
-            langs,
-            version,
-            &[("version", preview.version.as_str().into())],
-        ),
+    CardLine {
+        text: l10n::text(langs, key, &[("version", preview.version.as_str().into())]),
         emphasis: false,
-    }];
+    }
+}
+
+pub(super) fn preview_draft(preview: &InstallPreview, langs: &Languages) -> Draft {
+    let mut lines = vec![version_line(preview, langs)];
     lines.extend(preview.permissions.iter().map(|line| CardLine {
         text: format!("· {}", line.text),
         emphasis: line.risk.is_some(),

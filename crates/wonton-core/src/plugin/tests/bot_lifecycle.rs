@@ -11,7 +11,7 @@ use super::super::install_error::InstallError;
 use super::super::names::container_name;
 use super::super::package_files::PackageFiles;
 use super::super::store::Store;
-use super::super::{PluginId, PluginManager, PluginStatus};
+use super::super::{PluginId, PluginManager, PluginStatus, UpgradeSwitches};
 use super::manager::manager_in_container;
 use super::{env_of, env_of_container, example, package};
 use crate::http::HttpClient;
@@ -416,9 +416,16 @@ async fn network_mode_bot_group_upgrade_preserves_its_identity_and_removes_the_w
         &super::langs(),
     )
     .unwrap();
-    m.upgrade_checked(package, &granted(), &[], false, &[], Default::default())
-        .await
-        .unwrap();
+    m.upgrade_checked(
+        package,
+        &granted(),
+        &UpgradeSwitches::Requested(Vec::new()),
+        false,
+        &[],
+        Default::default(),
+    )
+    .await
+    .unwrap();
     assert_eq!(env_map(&target), before);
     assert!(bed.token_valid(&before["TOKEN"]));
     assert_eq!(
