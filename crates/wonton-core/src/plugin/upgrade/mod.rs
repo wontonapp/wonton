@@ -193,6 +193,29 @@ fn upgrade_enabled(
         .collect()
 }
 
+/// 还没提交请求时的生效集：记录里开着的可选项，加上旧版必需、新版改成可选的项。后者装着时一直生效，
+/// 默认关掉就是升级悄悄收回了它；预览按开着画，App 照预览开关发出的请求就和装着的一样，要管理员批的
+/// 人不会因为没动开关而被当成改权限（ADR-0057“可选保留：沿用开关”）。
+fn kept_enabled(
+    manifest: &Manifest,
+    record: &InstalledRecord,
+    old: &Manifest,
+) -> Vec<EnabledPermission> {
+    let mut enabled = record.enabled_permissions.clone();
+    for permission in manifest.optional_permissions.keys() {
+        if old.permissions.contains(permission)
+            && !enabled.iter().any(|item| &item.permission == permission)
+        {
+            enabled.push(EnabledPermission {
+                permission: permission.clone(),
+                since: record.installed_at,
+                opened_by: super::store::OpenedBy::Owner,
+            });
+        }
+    }
+    enabled
+}
+
 /// 新版本比装着的版本多要的项。权限是装的时候就记下的 `granted_permissions` 对比，widget 能力是装着的清单对比：
 /// 多出来的能力要主人再确认一次，App 见到 `added` 就照权限那样弹确认页。
 fn consent_of(
@@ -355,15 +378,17 @@ impl PluginManager {
     }
 
     /// 请求带上的可选项全集（App 按当前开关状态发）先解析成记录条目，再和记录合成生效集；
-    /// 还没提交请求的预览（详情页、Agent 卡）给 `None`，按记录里开着的算。
+    /// 还没提交请求的预览（详情页、Agent 卡）给 `None`，按 [`kept_enabled`] 算。
     fn requested_enabled(
         &self,
         manifest: &Manifest,
         record: &InstalledRecord,
         requested: Option<&[String]>,
+        langs: &Languages,
     ) -> Result<Vec<EnabledPermission>, InstallError> {
         let Some(names) = requested else {
-            return Ok(record.enabled_permissions.clone());
+            let old = installed_package(record, langs)?;
+            return Ok(kept_enabled(manifest, record, &old.manifest));
         };
         let parsed = super::store::parse_enabled(
             names,
@@ -406,7 +431,7 @@ impl PluginManager {
                 )));
             }
         }
-        let enabled = self.requested_enabled(&package.manifest, &record, requested)?;
+        let enabled = self.requested_enabled(&package.manifest, &record, requested, langs)?;
         let blocked = self.host_block(&package.manifest, langs).await?;
         let mut preview = self
             .preview_with(

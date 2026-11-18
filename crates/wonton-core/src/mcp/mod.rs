@@ -60,6 +60,7 @@ pub use cards::Draft;
 pub use cards::text as card_text;
 pub(crate) use cards::{highest_confirm_for, mark_nvme_risk};
 pub use confirm::{AnswerError, Audience, Confirmations, Notifier, Recipients, Refusal, Ticket};
+pub(crate) use dependencies::disclose_provider;
 pub use notifier::DevicePush;
 pub use server::{Caller, TurnSender};
 use takeover::Takeovers;

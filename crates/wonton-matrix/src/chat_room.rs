@@ -351,6 +351,17 @@ impl ChatRoom {
             .len())
     }
 
+    /// 在场（已加入）成员的用户 ID，只读本机数据，不等网络；成员还没同步到时可能不全。
+    /// 跟着显示名的那份成员数据一起刷新。
+    pub fn member_user_ids(&self) -> Vec<String> {
+        self.names.borrow().user_ids()
+    }
+
+    /// 成员名单有没有从服务器取全；取 [`Self::member_user_ids`] 前先看这个，没取全时名单可能缺人。
+    pub fn are_members_synced(&self) -> bool {
+        self.room.are_members_synced()
+    }
+
     /// 撤回一条消息：理由随撤回事件发给服务器，房间里的人都能看到；撤回不能撤销。
     pub async fn redact(&self, event_id: &str, reason: &str) -> Result<()> {
         let event_id: OwnedEventId = event_id

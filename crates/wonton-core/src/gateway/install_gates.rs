@@ -13,15 +13,17 @@ use hyper::header::HeaderValue;
 use hyper::{HeaderMap, StatusCode};
 use tokio::sync::oneshot;
 use wonton_protocol::{
-    Answer, CardChoice, CardLine, Gate, InstallPreview, PERMISSION_REQUIRED, PermissionItem,
+    Answer, CardChoice, Gate, InstallPreview, PERMISSION_REQUIRED, PermissionItem,
     PermissionRequired,
 };
 
 use super::api::{acted_by, error_response, install_error};
+use super::install_gate_cards::{admin_cards, filled_lines, source_admin_cards};
+use super::install_gate_checks::{self, Installed, RecordState, UpgradeAsk};
 use super::pages::ERROR_HEADER;
 use super::{Gateway, Person, TunnelPeer};
 use crate::l10n;
-use crate::mcp::{Draft, Refusal, highest_confirm_for, mark_nvme_risk};
+use crate::mcp::{Draft, Refusal};
 use crate::plugin::languages::Languages;
 use crate::plugin::{InstallError, PluginId, UpgradeTo};
 
@@ -80,12 +82,12 @@ pub(crate) async fn settle<R>(
     }
 }
 
-fn permission_required() -> Response {
+/// 403 `permission_required`，带缺的那一项：不能装的人缺“装、删、升级应用”，要管理员批的人
+/// 想改权限缺的是主人（ADR-0057）。
+fn permission_required(missing: PermissionItem) -> Response {
     let mut response = (
         StatusCode::FORBIDDEN,
-        axum::Json(PermissionRequired {
-            missing: PermissionItem::InstallApps,
-        }),
+        axum::Json(PermissionRequired { missing }),
     )
         .into_response();
     response
@@ -98,7 +100,7 @@ fn permission_required() -> Response {
 pub(crate) fn deny_check(gateway: &Gateway, person: &Person) -> Option<Response> {
     match gateway.permissions(person).install_apps {
         Gate::Allow | Gate::AskAdmin => None,
-        Gate::Deny | Gate::Other => Some(permission_required()),
+        Gate::Deny | Gate::Other => Some(permission_required(PermissionItem::InstallApps)),
     }
 }
 
@@ -202,117 +204,32 @@ where
     GateOutcome::Wait(waited)
 }
 
-fn nvme_admin_cards(
-    preview: &InstallPreview,
-    selected: &[String],
-    retain: bool,
-    langs: &Languages,
-) -> Result<(Draft, Option<Draft>), InstallError> {
-    let items = preview.devices.as_deref().unwrap_or_default();
-    for id in selected {
-        if !items.iter().any(|device| &device.id == id) {
-            return Err(InstallError::Invalid(l10n::text(
-                langs,
-                "plugin-install-device-unknown",
-                &[("id", id.as_str().into())],
-            )));
-        }
+/// 发卡：选了 NVMe 或有最高级权限时两张都要批（ADR-0036），否则一张。
+fn send_cards<F, Fut>(
+    gateway: &Arc<Gateway>,
+    peer: Option<Extension<TunnelPeer>>,
+    headers: &HeaderMap,
+    (first, second, success, upgrade_id): (Draft, Option<Draft>, String, Option<String>),
+    run: F,
+) -> GateOutcome<Outcome<Response>>
+where
+    F: FnOnce(Arc<Gateway>) -> Fut + Send + 'static,
+    Fut: Future<Output = Response> + Send,
+{
+    match second {
+        Some(second) => ask_admin_nvme(
+            gateway,
+            peer,
+            headers,
+            (first, second, success, upgrade_id),
+            run,
+        ),
+        None => ask_admin(gateway, peer, headers, first, run),
     }
-    let mut first = preview_draft(preview, langs);
-    let nvme: Vec<_> = items
-        .iter()
-        .filter(|device| {
-            device.kind == wonton_protocol::PluginDeviceKind::Disk
-                && device.target.starts_with("/dev/nvme")
-                && (selected.contains(&device.id)
-                    || (retain && selected.is_empty() && device.chosen))
-        })
-        .collect();
-    if nvme.is_empty() {
-        return Ok((first, None));
-    }
-    first.permissions = preview.permissions.clone();
-    mark_nvme_risk(&mut first, langs);
-    first.lines.extend(nvme.iter().map(|device| CardLine {
-        text: format!("· {}", device.name),
-        emphasis: true,
-    }));
-    first.lines.push(CardLine {
-        text: l10n::text(langs, "permission-notice-highest-risk", &[]),
-        emphasis: true,
-    });
-    let mut second = highest_confirm_for(
-        &preview.title,
-        &preview.id,
-        first.permissions.clone(),
-        langs,
-    );
-    second.lines.extend(nvme.iter().map(|device| CardLine {
-        text: format!("· {}", device.name),
-        emphasis: true,
-    }));
-    Ok((first, Some(second)))
 }
 
-fn choices(langs: &Languages) -> Vec<CardChoice> {
-    vec![
-        CardChoice {
-            answer: Answer::Approve,
-            label: l10n::text(langs, "chat-choice-install", &[]),
-            choice_id: None,
-        },
-        CardChoice {
-            answer: Answer::Reject,
-            label: l10n::text(langs, "chat-choice-deny-install", &[]),
-            choice_id: None,
-        },
-    ]
-}
-
-async fn source_admin_cards(
-    gateway: &Gateway,
-    request: &wonton_protocol::InstallRequest,
-    preview: &InstallPreview,
-    langs: &Languages,
-) -> Result<(Draft, Option<Draft>), InstallError> {
-    let (mut first, mut second) = nvme_admin_cards(preview, &request.devices, false, langs)?;
-    for provider in &request.install_together {
-        if provider.request.devices.is_empty() {
-            continue;
-        }
-        let item = gateway
-            .plugins
-            .preview_source(&provider.request.source, langs)
-            .await?;
-        if item.id != provider.id || item.digest != provider.request.digest {
-            return Err(InstallError::Changed(l10n::text(
-                langs,
-                "plugin-capability-plan-changed",
-                &[],
-            )));
-        }
-        let (provider_first, provider_second) =
-            nvme_admin_cards(&item, &provider.request.devices, false, langs)?;
-        if let Some(provider_second) = provider_second {
-            first.lines.push(CardLine {
-                text: item.title.clone(),
-                emphasis: true,
-            });
-            first.lines.extend(provider_first.lines);
-            first.permissions.extend(provider_first.permissions);
-            match &mut second {
-                Some(second) => {
-                    second.lines.extend(provider_second.lines);
-                    second.permissions.extend(provider_second.permissions);
-                }
-                None => second = Some(provider_second),
-            }
-        }
-    }
-    Ok((first, second))
-}
-
-/// 按来源安装的门槛：卡片内容按预览写，批准后执行 `run`。
+/// 按来源安装的门槛：卡片内容按预览写，批准后执行 `run`。要管理员批时先按 [`install_gate_checks`]
+/// 核对请求；执行按请求里同一个摘要取包，和卡片上的不一致就停。
 pub(crate) async fn install_source<F, Fut>(
     gateway: &Arc<Gateway>,
     peer: Option<Extension<TunnelPeer>>,
@@ -327,34 +244,34 @@ where
 {
     match gateway.permissions(person).install_apps {
         Gate::Allow => GateOutcome::Wait(ready(Outcome::Done(run(gateway.clone()).await))),
-        wonton_protocol::Gate::AskAdmin => {
+        Gate::AskAdmin => {
+            if install_gate_checks::install_changes_permissions(request) {
+                return GateOutcome::Stop(permission_required(PermissionItem::Owner));
+            }
             let langs = gateway.plugins.owner_languages();
-            match gateway
-                .plugins
-                .preview_source(&request.source, &langs)
-                .await
-            {
-                Ok(preview) => {
-                    let (first, second) =
-                        match source_admin_cards(gateway, request, &preview, &langs).await {
-                            Ok(cards) => cards,
-                            Err(error) => return GateOutcome::Stop(install_error(&error)),
-                        };
-                    if let Some(second) = second {
-                        let success = l10n::text(
-                            &langs,
-                            "chat-install-done",
-                            &[("title", preview.title.as_str().into())],
-                        );
-                        ask_admin_nvme(gateway, peer, headers, (first, second, success, None), run)
-                    } else {
-                        ask_admin(gateway, peer, headers, first, run)
-                    }
+            let cards = async {
+                let preview = gateway
+                    .plugins
+                    .preview_source(&request.source, &langs)
+                    .await?;
+                install_gate_checks::matches_install_preview(&preview, &request.digest, &langs)?;
+                let (first, second) =
+                    source_admin_cards(gateway, request, &preview, &langs).await?;
+                Ok::<_, InstallError>((first, second, preview.title))
+            };
+            match cards.await {
+                Ok((first, second, title)) => {
+                    let success = l10n::text(
+                        &langs,
+                        "chat-install-done",
+                        &[("title", title.as_str().into())],
+                    );
+                    send_cards(gateway, peer, headers, (first, second, success, None), run)
                 }
                 Err(e) => GateOutcome::Stop(install_error(&e)),
             }
         }
-        _ => GateOutcome::Stop(permission_required()),
+        _ => GateOutcome::Stop(permission_required(PermissionItem::InstallApps)),
     }
 }
 
@@ -365,13 +282,14 @@ fn ready<R>(result: Outcome<R>) -> oneshot::Receiver<Outcome<R>> {
     waited
 }
 
-/// 上传插件包安装的门槛：卡片按包的预览写，批准后执行 `run`。
+/// 上传插件包安装的门槛：卡片按包的预览写，批准后执行 `run`（装的是同一份包）。`changes` 是查询串
+/// 要打开可选权限或局域网开关，要管理员批的人不能这样装（ADR-0057）。
 pub(crate) async fn install_upload<F, Fut>(
     gateway: &Arc<Gateway>,
     peer: Option<Extension<TunnelPeer>>,
     headers: &HeaderMap,
     person: &Person,
-    (package, selected): (&crate::plugin::PluginPackage, &[String]),
+    (package, selected, changes): (&crate::plugin::PluginPackage, &[String], bool),
     run: F,
 ) -> GateOutcome<Outcome<Response>>
 where
@@ -380,46 +298,50 @@ where
 {
     match gateway.permissions(person).install_apps {
         Gate::Allow => GateOutcome::Wait(ready(Outcome::Done(run(gateway.clone()).await))),
-        wonton_protocol::Gate::AskAdmin => {
+        Gate::AskAdmin => {
+            if changes {
+                return GateOutcome::Stop(permission_required(PermissionItem::Owner));
+            }
             let langs = gateway.plugins.owner_languages();
-            match gateway
-                .plugins
-                .preview_upload(package.clone(), &langs)
-                .await
-            {
-                Ok(preview) => {
-                    let (first, second) = match nvme_admin_cards(&preview, selected, false, &langs)
-                    {
-                        Ok(cards) => cards,
-                        Err(error) => return GateOutcome::Stop(install_error(&error)),
-                    };
-                    if let Some(second) = second {
-                        let success = l10n::text(
-                            &langs,
-                            "chat-install-done",
-                            &[("title", preview.title.as_str().into())],
-                        );
-                        ask_admin_nvme(gateway, peer, headers, (first, second, success, None), run)
-                    } else {
-                        ask_admin(gateway, peer, headers, first, run)
-                    }
+            let cards = async {
+                let preview = gateway
+                    .plugins
+                    .preview_upload(package.clone(), &langs)
+                    .await?;
+                install_gate_checks::installable(&preview)?;
+                let (mut first, second) = admin_cards(&preview, selected, (false, &[]), &langs)?;
+                let secrets = super::api_switch::secrets(headers)?;
+                let settings = super::api_switch::settings(headers)?;
+                first
+                    .lines
+                    .extend(filled_lines(&preview, secrets.keys(), &settings, &langs));
+                Ok::<_, InstallError>((first, second, preview.title))
+            };
+            match cards.await {
+                Ok((first, second, title)) => {
+                    let success = l10n::text(
+                        &langs,
+                        "chat-install-done",
+                        &[("title", title.as_str().into())],
+                    );
+                    send_cards(gateway, peer, headers, (first, second, success, None), run)
                 }
                 Err(e) => GateOutcome::Stop(install_error(&e)),
             }
         }
-        _ => GateOutcome::Stop(permission_required()),
+        _ => GateOutcome::Stop(permission_required(PermissionItem::InstallApps)),
     }
 }
 
-/// 升级的门槛：卡片内容按升级预览写，批准后执行 `run`。`enabled` 是请求带上的可选项全集，
-/// 预览按它算生效集——成员升级时顺手打开的可选权限，卡片上也要看得见。
+/// 升级的门槛：卡片内容按升级预览写，批准后执行 `run`。预览按请求带的可选项全集算生效集，
+/// 要管理员批时它必须和装着的一样（[`install_gate_checks::upgrade_changes_permissions`]）。
 pub(crate) async fn upgrade<F, Fut>(
     gateway: &Arc<Gateway>,
     peer: Option<Extension<TunnelPeer>>,
     headers: &HeaderMap,
     person: &Person,
     id: &PluginId,
-    (to, selected, enabled): (UpgradeTo, &[String], Option<&[String]>),
+    ask: UpgradeAsk,
     run: F,
 ) -> GateOutcome<Outcome<Response>>
 where
@@ -428,40 +350,75 @@ where
 {
     match gateway.permissions(person).install_apps {
         Gate::Allow => GateOutcome::Wait(ready(Outcome::Done(run(gateway.clone()).await))),
-        wonton_protocol::Gate::AskAdmin => {
+        Gate::AskAdmin => {
             let langs = gateway.plugins.owner_languages();
-            match gateway
-                .plugins
-                .preview_upgrade(id, to, enabled, &langs)
-                .await
-            {
-                Ok(preview) => {
-                    let (first, second) = match nvme_admin_cards(&preview, selected, true, &langs) {
-                        Ok(cards) => cards,
-                        Err(error) => return GateOutcome::Stop(install_error(&error)),
+            match upgrade_cards(gateway, id, ask, &langs).await {
+                Ok((first, second, version, state)) => {
+                    let success = l10n::text(
+                        &langs,
+                        "chat-update-done",
+                        &[("version", version.as_str().into())],
+                    );
+                    let cards = (first, second, success, Some(id.to_string()));
+                    let id = id.clone();
+                    let checked = move |gateway: Arc<Gateway>| async move {
+                        let langs = gateway.plugins.owner_languages();
+                        match state.still(&gateway.plugins, &id, &langs) {
+                            Ok(()) => run(gateway).await,
+                            Err(e) => install_error(&e),
+                        }
                     };
-                    if let Some(second) = second {
-                        let success = l10n::text(
-                            &langs,
-                            "chat-update-done",
-                            &[("version", preview.version.as_str().into())],
-                        );
-                        ask_admin_nvme(
-                            gateway,
-                            peer,
-                            headers,
-                            (first, second, success, Some(id.to_string())),
-                            run,
-                        )
-                    } else {
-                        ask_admin(gateway, peer, headers, first, run)
-                    }
+                    send_cards(gateway, peer, headers, cards, checked)
                 }
-                Err(e) => GateOutcome::Stop(install_error(&e)),
+                Err(response) => GateOutcome::Stop(response),
             }
         }
-        _ => GateOutcome::Stop(permission_required()),
+        _ => GateOutcome::Stop(permission_required(PermissionItem::InstallApps)),
     }
+}
+
+/// 升级要发的卡：先核对摘要、能不能装、改没改权限，再按预览和记录里的 NVMe 写。另给发卡时的
+/// [`RecordState`]，执行前再比一次。
+#[expect(
+    clippy::result_large_err,
+    reason = "网关的错误响应都是同一个大小，这条函数不做拆分"
+)]
+async fn upgrade_cards(
+    gateway: &Gateway,
+    id: &PluginId,
+    mut ask: UpgradeAsk,
+    langs: &Languages,
+) -> Result<(Draft, Option<Draft>, String, RecordState), Response> {
+    let failed = |error: InstallError| install_error(&error);
+    let (record, state) = RecordState::read(&gateway.plugins, id, langs).map_err(failed)?;
+    let installed = Installed::of(&record, langs).map_err(failed)?;
+    let to = std::mem::replace(&mut ask.to, UpgradeTo::Offered);
+    let preview = gateway
+        .plugins
+        .preview_upgrade(id, to, ask.enabled.as_deref(), langs)
+        .await
+        .map_err(failed)?;
+    if ask
+        .digest
+        .as_deref()
+        .is_some_and(|digest| digest != preview.digest)
+    {
+        return Err(failed(install_gate_checks::changed_upgrade(
+            &preview, id, langs,
+        )));
+    }
+    // 先看装不装得了：设备列表读不到时是 `device_unavailable`，不是换了设备要主人。
+    install_gate_checks::installable(&preview).map_err(failed)?;
+    if install_gate_checks::upgrade_changes_permissions(&preview, &installed, &ask) {
+        return Err(permission_required(PermissionItem::Owner));
+    }
+    let kept = install_gate_checks::kept_nvme(&preview, &record);
+    let (mut first, second) =
+        admin_cards(&preview, &ask.devices, (true, &kept), langs).map_err(failed)?;
+    first
+        .lines
+        .extend(filled_lines(&preview, &ask.secrets, &ask.settings, langs));
+    Ok((first, second, preview.version, state))
 }
 
 /// 卸载的门槛：卡片按已装应用写，批准后执行 `run`。
@@ -519,35 +476,7 @@ where
             };
             ask_admin(gateway, peer, headers, draft, run)
         }
-        _ => GateOutcome::Stop(permission_required()),
-    }
-}
-
-fn preview_draft(preview: &InstallPreview, langs: &Languages) -> Draft {
-    let mut lines = vec![CardLine {
-        text: l10n::text(
-            langs,
-            "chat-card-version-official",
-            &[("version", preview.version.as_str().into())],
-        ),
-        emphasis: false,
-    }];
-    lines.extend(preview.permissions.iter().map(|line| CardLine {
-        text: format!("· {}", line.text),
-        emphasis: line.risk.is_some(),
-    }));
-    lines.extend(preview.notices.iter().cloned());
-    Draft {
-        title: preview.title.clone(),
-        lines,
-        choices: choices(langs),
-        scope: None,
-        plugin_id: Some(preview.id.clone()),
-        secret_inputs: Vec::new(),
-        settings: None,
-        category: None,
-        permissions: Vec::new(),
-        devices: Vec::new(),
+        _ => GateOutcome::Stop(permission_required(PermissionItem::InstallApps)),
     }
 }
 

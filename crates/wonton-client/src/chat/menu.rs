@@ -235,6 +235,9 @@ impl Outbox {
             .collect()
     }
 
+    /// 一批要带的外壳状态就是这些（时间线条目、增量、翻页状态、落点、通话、在场的 AI），再包一层结构体
+    /// 只是给参数搬个家，和 [`super::timeline::send`] 一样豁免参数个数。
+    #[allow(clippy::too_many_arguments)]
     pub(super) fn send(
         &self,
         entries: &Vector<TimelineEntry>,
@@ -243,6 +246,7 @@ impl Outbox {
         viewport: TimelineViewport,
         anchor: Option<String>,
         call_active: bool,
+        room_bots: Option<Vec<String>>,
     ) -> Result<(), ()> {
         let scroll_to_bottom = lock(&self.menus).apply(&diffs);
         let room_view = self
@@ -274,6 +278,7 @@ impl Outbox {
                 side_chat: lock(&self.side_chat).clone(),
                 widgets,
                 call_active,
+                room_bots,
             })
             .map_err(|_| ())
     }
@@ -489,6 +494,7 @@ mod tests {
                     away,
                     None,
                     false,
+                    None,
                 )
                 .unwrap()
         };

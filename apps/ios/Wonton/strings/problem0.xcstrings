@@ -2,6 +2,16 @@
   "sourceLanguage": "en",
   "version": "1.0",
   "strings": {
+    "problem.pagesWrite.title": {
+      "comment": "Page settings could not be saved on this device.",
+      "extractionState": "manual",
+      "localizations": {
+        "en": { "stringUnit": { "state": "translated", "value": "Couldn't save page settings on this device" } },
+        "zh-Hans": { "stringUnit": { "state": "translated", "value": "这台设备保存不了页面设置" } },
+        "zh-Hant": { "stringUnit": { "state": "translated", "value": "這台裝置無法儲存頁面設定" } },
+        "ja": { "stringUnit": { "state": "translated", "value": "このデバイスにページ設定を保存できません" } }
+      }
+    },
     "problem.notReady.title": {
       "comment": "Problem title when the core says the action can't run yet; the core's own reason is shown as the next step.",
       "extractionState": "manual",

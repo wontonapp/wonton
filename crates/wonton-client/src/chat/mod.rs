@@ -591,6 +591,7 @@ impl ChatLink {
                 room_view,
                 chat: self.view.subscribe(),
                 support,
+                bots: self.bots.clone(),
             },
             opening,
         );

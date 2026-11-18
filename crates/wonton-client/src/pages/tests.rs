@@ -119,6 +119,8 @@ impl Rig {
             state: Mutex::new(PagesState {
                 config,
                 problem: None,
+                read_problem: None,
+                action_problem: None,
                 stack: Vec::new(),
                 content: HashMap::new(),
                 paired: true,

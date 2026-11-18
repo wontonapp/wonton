@@ -19,13 +19,13 @@ use std::sync::atomic::Ordering;
 use tokio::sync::watch;
 
 use wonton_protocol::{
-    AppsAction, ChatAccount, ChatLayout, ChatLayoutChoice, ChatSync, ChatViewModel, CoreError,
-    DeviceNetwork, DeviceVerification, EncryptionStatus, HomePath, HomeStatus, HomeViewModel,
-    InstalledPlugin, InstalledPlugins, MessageSummary, OnboardingStep, OnboardingViewModel,
-    OpenPage, PagesViewModel, PanelItem, PanelSource, PluginHealth, PluginKind, PluginState,
-    PluginTrust, PluginsViewModel, PushStatus, RecoveryNextStep, RecoveryStatus, RoomMembership,
-    RoomPreview, RoomRow, ServerKind, ServerName, ServerRow, ServersViewModel, TabIcon, TabLayout,
-    TabPage, TabRef, TabState,
+    AppsAction, BotActivity, BotRef, BotView, ChatAccount, ChatLayout, ChatLayoutChoice, ChatSync,
+    ChatViewModel, CoreError, DeviceNetwork, DeviceVerification, EncryptionStatus, HomePath,
+    HomeStatus, HomeViewModel, InstalledPlugin, InstalledPlugins, MessageSummary, OnboardingStep,
+    OnboardingViewModel, OpenPage, PagesViewModel, PanelItem, PanelSource, PluginHealth,
+    PluginKind, PluginState, PluginTrust, PluginsViewModel, PushStatus, RecoveryNextStep,
+    RecoveryStatus, RoomMembership, RoomPreview, RoomRow, ServerKind, ServerName, ServerRow,
+    ServersViewModel, TabIcon, TabLayout, TabPage, TabRef, TabState,
 };
 
 use super::ClientCore;
@@ -351,7 +351,39 @@ fn fake_chat(mut chat: ChatViewModel) -> ChatViewModel {
     chat.pending_confirmations.clear();
     chat.settled_confirmations.clear();
     chat.background_notifications.clear();
-    chat.bots.clear();
+    // 两个 Bot：私聊那个顶栏本来就显示，群里的那个走时间线的 room_bots（ui_fake_room）。
+    chat.bots = vec![
+        BotView {
+            user_id: "@echo:home.example".into(),
+            bot: BotRef {
+                plugin_id: "app.example.echo".into(),
+                bot: "echo".into(),
+            },
+            web: None,
+            name: "Echo".into(),
+            avatar: None,
+            state_avatars: Vec::new(),
+            activity: Some(BotActivity::Idle),
+            saving: false,
+            problem: None,
+            chat: Default::default(),
+        },
+        BotView {
+            user_id: "@hermes:home.example".into(),
+            bot: BotRef {
+                plugin_id: "app.example.hermes".into(),
+                bot: "hermes".into(),
+            },
+            web: None,
+            name: "Hermes".into(),
+            avatar: None,
+            state_avatars: Vec::new(),
+            activity: Some(BotActivity::Idle),
+            saving: false,
+            problem: None,
+            chat: Default::default(),
+        },
+    ];
     chat.chat_layout_default = ChatLayoutChoice::default();
     chat
 }

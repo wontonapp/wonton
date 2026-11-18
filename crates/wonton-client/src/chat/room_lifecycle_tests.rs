@@ -101,6 +101,7 @@ async fn a_timeline_does_not_receive_another_rooms_panel() {
             TimelineViewport::Bottom,
             None,
             false,
+            None,
         )
         .unwrap();
     let update = updates.try_recv().unwrap();
@@ -115,6 +116,7 @@ async fn a_timeline_does_not_receive_another_rooms_panel() {
             TimelineViewport::Bottom,
             None,
             false,
+            None,
         )
         .unwrap();
     let update = updates.try_recv().unwrap();
