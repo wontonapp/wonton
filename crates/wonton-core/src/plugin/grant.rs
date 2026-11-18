@@ -8,6 +8,19 @@ use super::manifest::{Manifest, ManifestExt, Permission};
 use super::store::EnabledPermission;
 use crate::l10n;
 
+/// 记进安装记录 `granted_permissions` 的项：只放必需项（ADR-0057）。老 App 会把可选项也放进 `grant`，
+/// 那些不计为打开，也不能记成授予过，否则升级比对会把可选项当成装着时就给过的。
+pub(in crate::plugin) fn recorded_grant(
+    manifest: &Manifest,
+    granted: &[Permission],
+) -> Vec<Permission> {
+    granted
+        .iter()
+        .filter(|permission| manifest.permissions.contains(permission))
+        .cloned()
+        .collect()
+}
+
 /// 核心已经兑现的权限。其余权限在规范里定义了，但核心还不能兑现，安装时如实拒绝。
 pub(in crate::plugin) fn supported(permission: &Permission) -> bool {
     matches!(

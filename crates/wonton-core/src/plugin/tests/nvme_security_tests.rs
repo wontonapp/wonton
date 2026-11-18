@@ -1,5 +1,6 @@
 use serde_json::json;
 
+use super::super::UpgradeSwitches;
 use super::super::manifest::Permission;
 use super::devices::{device_host, host_config, on_host, parse};
 use super::langs;
@@ -68,7 +69,7 @@ async fn legacy_nvme_rebuild_does_not_gain_admin_before_an_upgrade() {
         .upgrade_checked(
             parse(&source.replace("version: 1.0.0", "version: 1.1.0")).unwrap(),
             &[Permission::DevicesDisk],
-            &[],
+            &UpgradeSwitches::Requested(Vec::new()),
             false,
             &[],
             Default::default(),
@@ -140,7 +141,7 @@ async fn nvme_replacement_after_sata_choice_cannot_add_admin() {
                 .upgrade_checked(
                     parse(&source.replace("version: 1.0.0", "version: 1.1.0")).unwrap(),
                     &[Permission::DevicesDisk],
-                    &[],
+                    &UpgradeSwitches::Requested(Vec::new()),
                     false,
                     &[],
                     Default::default(),
