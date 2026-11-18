@@ -31,6 +31,10 @@ impl PagesLink {
                     changed = home.changed() => if changed.is_err() { break },
                 }
                 let Some(link) = weak.upgrade() else { break };
+                let read_failed = lock(&link.state).read_problem.is_some();
+                if read_failed {
+                    link.recompute();
+                }
                 let connected = matches!(link.home.borrow().status, HomeStatus::Connected);
                 if connected && link.home.borrow().proxy.is_some() {
                     link.refresh_bot_pins().await;
@@ -118,7 +122,7 @@ impl PagesLink {
             let settings = {
                 let state = lock(&self.state);
                 // 插件列表还没来时不把空的默认值写成账号偏好，否则它的同步回声会阻止首次初始化。
-                if !state.config.my_apps_initialized && !dirty {
+                if state.read_problem.is_some() || (!state.config.my_apps_initialized && !dirty) {
                     return Ok(());
                 }
                 state.config.layout()
@@ -153,6 +157,7 @@ impl PagesLink {
             .map_err(|reason| CoreError::Upstream { reason })?;
         state.config.my_apps_initialized = has_my_apps;
         persist(&self.path, &state.config)?;
+        state.read_problem = None;
         self.sync_problem.send_replace(None);
         let sync_stale = self.sync_problem.borrow().is_some();
         let view = make_view(&state, &plugins, sync_stale);

@@ -18,6 +18,8 @@ use super::{ChatLink, TimelineKey, lock};
 /// Bot 列表、活动或卡片变了，AgentRun 条目的显示跟着变，所以每批都带上一份。
 #[derive(Clone, Default, PartialEq)]
 pub(super) struct BotsView {
+    /// 插件的已安装清单拿到没有：没拿到时 `users` 是空的，是「不认识任何 Bot」，不是「一个 Bot 都没有」。
+    ready: bool,
     users: HashSet<String>,
     /// 账号 → 当前活动；没有或为 `None` 都算不确定。
     activity: HashMap<String, Option<BotActivity>>,
@@ -28,9 +30,10 @@ pub(super) struct BotsView {
 }
 
 impl BotsView {
-    /// Bot 列表、活动、这个房间等回答的卡片，一次算齐。
-    pub(super) fn of(view: &ChatViewModel, cards: &[ConfirmationView]) -> Self {
+    /// Bot 列表、活动、这个房间等回答的卡片，一次算齐。`ready` 是插件的已安装清单拿到没有。
+    pub(super) fn of(view: &ChatViewModel, cards: &[ConfirmationView], ready: bool) -> Self {
         Self {
+            ready,
             users: view.bots.iter().map(|bot| bot.user_id.clone()).collect(),
             activity: view
                 .bots
@@ -69,6 +72,11 @@ impl BotsView {
 
     pub(super) fn is_bot(&self, sender: &str) -> bool {
         self.users.contains(sender)
+    }
+
+    /// 插件的已安装清单拿到没有：没拿到时 `users` 是空的，是「不认识任何 Bot」，不是「一个 Bot 都没有」。
+    pub(super) fn ready(&self) -> bool {
+        self.ready
     }
 
     /// Bot 离线或活动未知时，还停在 working、waiting 的状态合成成不确定，不转圈（ADR-0082 第 4 节）。

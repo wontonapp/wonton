@@ -1,6 +1,8 @@
 use super::*;
 use wonton_matrix::{Message, MessageBody, SendStatus};
-use wonton_protocol::{MessageContent, RichLinkKind, TimelineContent};
+use wonton_protocol::{
+    BotRef, BotView, ChatViewModel, MessageContent, RichLinkKind, TimelineContent,
+};
 
 fn text_entry(id: &str, body: &str) -> TimelineEntry {
     TimelineEntry {
@@ -130,4 +132,71 @@ fn sending_another_message_moves_delivered_to_it() {
             (2, Some(wonton_protocol::MessageReceipt::Delivered)),
         ]
     );
+}
+
+/// 行为：成员没取全、或插件的已安装清单没拿到（认识的 Bot 集合是空的）时，「在场的 AI」都算不准，
+/// 如实给不确定；两样都齐了才给名单，群里一个认识的 Bot 都没有就是空名单。
+#[test]
+fn room_bots_are_uncertain_until_members_and_the_bot_list_are_ready() {
+    let view = chat_view(&["@hermes:home.example"]);
+    let ready = BotsView::of(&view, &[], true);
+    let not_ready = BotsView::of(&view, &[], false);
+    let members = || {
+        vec![
+            "@hermes:home.example".to_owned(),
+            "@owner:home.example".to_owned(),
+        ]
+    };
+
+    assert_eq!(room_bots(true, &not_ready, members), None);
+    assert_eq!(room_bots(false, &ready, members), None);
+    assert_eq!(
+        room_bots(true, &ready, members),
+        Some(vec!["@hermes:home.example".to_owned()])
+    );
+}
+
+/// 一个认得 `bots` 里那些用户 ID 的聊天状态；别的字段取空值，这个测试只看 Bot 清单。
+fn chat_view(bots: &[&str]) -> ChatViewModel {
+    ChatViewModel {
+        chat_layout_default: Default::default(),
+        account: wonton_protocol::ChatAccount::SignedOut,
+        sync: wonton_protocol::ChatSync::Idle,
+        encryption: wonton_protocol::EncryptionStatus {
+            verification: wonton_protocol::DeviceVerification::Unknown,
+            recovery: wonton_protocol::RecoveryStatus::Unknown,
+            recovery_key: None,
+            backup_reminder: None,
+            can_verify_with_other_device: false,
+            can_reset: false,
+            recovery_next_step: wonton_protocol::RecoveryNextStep::None,
+            verification_flow: None,
+            key_handoff: None,
+        },
+        installing_bots: Vec::new(),
+        rooms: Vec::new(),
+        problem: None,
+        push: wonton_protocol::PushStatus::NoEndpoint,
+        pending_confirmations: Vec::new(),
+        settled_confirmations: Vec::new(),
+        background_notifications: Vec::new(),
+        bots: bots
+            .iter()
+            .map(|user_id| BotView {
+                chat: Default::default(),
+                user_id: (*user_id).to_owned(),
+                bot: BotRef {
+                    plugin_id: "app.hermes".into(),
+                    bot: "default".into(),
+                },
+                web: None,
+                name: "Hermes".into(),
+                avatar: None,
+                state_avatars: Vec::new(),
+                activity: None,
+                saving: false,
+                problem: None,
+            })
+            .collect(),
+    }
 }

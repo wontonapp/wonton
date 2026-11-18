@@ -248,10 +248,48 @@ pub enum TabLoadFailure {
     Upstream,
 }
 
+/// 读不了我的应用配置的原因，壳据此给出下一步；未知取值显示为 `Other`。
+#[derive(Clone, Copy, Debug, PartialEq, Eq, Serialize, Deserialize)]
+#[cfg_attr(feature = "uniffi", derive(uniffi::Enum))]
+#[serde(rename_all = "snake_case")]
+pub enum PagesFailure {
+    /// 本机的页面配置文件读不了。
+    StorageRead,
+    /// 本机的页面配置文件写不了。
+    StorageWrite,
+    /// 本机的页面配置内容无法解析或校验。
+    InvalidConfig,
+    /// 连不上家里的服务器或隧道。
+    TransportUnavailable,
+    /// 服务器不认这台设备。
+    Unauthorized,
+    /// 服务器拒绝了这次页面操作。
+    Forbidden,
+    /// 页面操作的前置条件还没满足。
+    NotReady,
+    /// 页面操作的输入不合法。
+    InvalidInput,
+    /// 要操作的页面已经不存在。
+    NotFound,
+    /// 服务器返回的页面数据无法解析。
+    InvalidResponse,
+    /// 隧道或客户端协议出错。
+    Protocol,
+    /// 家里的服务器返回了错误。
+    Upstream,
+    /// 比这个 App 新的错误类别。
+    #[serde(other)]
+    Other,
+}
+
 /// 读不了我的应用配置的原因。
 #[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize)]
 #[cfg_attr(feature = "uniffi", derive(uniffi::Record))]
 pub struct PagesProblem {
+    /// 错误类别；旧核心没有这个字段时为 `None`。
+    #[serde(default)]
+    #[cfg_attr(feature = "uniffi", uniffi(default = None))]
+    pub reason: Option<PagesFailure>,
     /// 核心写的说明，带上文件路径和原因。
     pub message: String,
 }
@@ -373,6 +411,7 @@ mod tests {
             sync_stale: true,
             bot_pin_consents: Vec::new(),
             problem: Some(PagesProblem {
+                reason: Some(PagesFailure::InvalidConfig),
                 message: "读不了 layout.json".into(),
             }),
             my_app_candidates: vec![TabCandidate {
@@ -531,5 +570,19 @@ mod tests {
         }))
         .unwrap();
         assert_eq!(legacy.layout, TabLayout::EdgeToEdge);
+    }
+
+    #[test]
+    fn page_problem_accepts_missing_and_unknown_failure_categories() {
+        let old: PagesProblem = serde_json::from_value(serde_json::json!({
+            "message": "problem"
+        }))
+        .unwrap();
+        assert_eq!(old.reason, None);
+        let newer: PagesProblem = serde_json::from_value(serde_json::json!({
+            "message": "problem", "reason": "future_failure"
+        }))
+        .unwrap();
+        assert_eq!(newer.reason, Some(PagesFailure::Other));
     }
 }

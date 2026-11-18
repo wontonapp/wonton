@@ -123,6 +123,13 @@ impl CoreState {
             .insert((method, path.to_owned()), headered);
     }
 
+    pub fn stop_answering_headered(&self, method: Method, path: &str) {
+        self.standing_headered
+            .lock()
+            .unwrap()
+            .remove(&(method, path.to_owned()));
+    }
+
     pub fn stop_answering(&self, method: Method, path: &str) {
         self.standing
             .lock()

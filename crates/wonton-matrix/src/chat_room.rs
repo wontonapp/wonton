@@ -127,7 +127,7 @@ impl ChatRoom {
     ///
     /// 显示名先用本机已有的成员事件（同步时随消息发送者一起来）。打开后在后台向服务器取全部成员，取到后时间线
     /// 里发送者的资料随之补上（条目以 `Set` 增量更新）：新登录的设备上，房间列表同步只带最新一条的发送者，更早
-    /// 的发送者要靠这一步才有显示名。取不到（比如隧道断开）不影响聊天，发送者先显示用户 ID，隔一会儿再取。
+    /// 的发送者要靠这一步才有显示名。取不到（比如隧道断开）不影响聊天，发送者先显示账号名，隔一会儿再取。
     ///
     /// 打开前只经房间列表同步过最新一条时，更早的消息隔着缺口，服务器不一定随房间订阅补发，要向前翻页
     /// （[`Self::paginate_backwards`]，界面滚到顶时自动翻）。
@@ -349,6 +349,17 @@ impl ChatRoom {
             .members_no_sync(RoomMemberships::JOIN)
             .await?
             .len())
+    }
+
+    /// 在场（已加入）成员的用户 ID，只读本机数据，不等网络；成员还没同步到时可能不全。
+    /// 跟着显示名的那份成员数据一起刷新。
+    pub fn member_user_ids(&self) -> Vec<String> {
+        self.names.borrow().user_ids()
+    }
+
+    /// 成员名单有没有从服务器取全；取 [`Self::member_user_ids`] 前先看这个，没取全时名单可能缺人。
+    pub fn are_members_synced(&self) -> bool {
+        self.room.are_members_synced()
     }
 
     /// 撤回一条消息：理由随撤回事件发给服务器，房间里的人都能看到；撤回不能撤销。
@@ -728,13 +739,13 @@ async fn refresh_member_names(
     }
 }
 
-/// 本机已有的已加入成员的显示名，以及本账号的撤回权限。成员读不到时记一条警告，“谁已读”显示用户 ID，不影响聊天；
+/// 本机已有的已加入成员的显示名，以及本账号的撤回权限。成员读不到时记一条警告，“谁已读”显示账号名，不影响聊天；
 /// 权限读不到时按房间的默认权限算（SDK 的 `power_levels_or_default`），服务器才是最后的判断。
 async fn local_member_names(room: &Room) -> MemberNames {
     let members = match room.members_no_sync(RoomMemberships::JOIN).await {
         Ok(members) => members,
         Err(error) => {
-            tracing::warn!(room = %room.room_id(), "读不到房间成员，已读者显示用户 ID：{error}");
+            tracing::warn!(room = %room.room_id(), "读不到房间成员，已读者显示账号名：{error}");
             Vec::new()
         }
     };

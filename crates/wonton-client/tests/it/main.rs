@@ -7,7 +7,7 @@
 
 mod app_lock;
 mod bot_contacts;
-mod chat;
+pub(crate) mod chat;
 mod files;
 mod files_cards;
 mod files_services;

@@ -22,7 +22,7 @@ pub struct Message {
     pub event_id: Option<OwnedEventId>,
     /// 发送者。
     pub sender: OwnedUserId,
-    /// 发送者的显示名，没有设置时是用户 ID。
+    /// 发送者的显示名，没有设置时是账号名（用户 ID 里 `@` 和 `:` 之间的部分）。
     pub sender_name: String,
     /// 是否由本账号发出（包括本账号的其他设备）。
     pub is_own: bool,
@@ -198,7 +198,7 @@ impl From<&FileMessageEventContent> for FileContent {
     }
 }
 
-/// 房间成员的显示名（显示发送者、“谁已读”和引用的发送者），以及本账号在房间里的撤回权限。没有记录的成员显示用户 ID。
+/// 房间成员的显示名（显示发送者、“谁已读”和引用的发送者），以及本账号在房间里的撤回权限。没有记录的成员显示 [`fallback_name`]。
 ///
 /// 两样都跟着房间状态变，一起放在这里，变了的时候时间线按 [`Self::affects`] 重发受影响的条目。
 #[derive(Clone, Debug, Default, PartialEq, Eq)]
@@ -227,12 +227,21 @@ impl MemberNames {
         self
     }
 
+    /// 在场成员的用户 ID；"谁在群里"按它算，不按显示名。
+    pub(crate) fn user_ids(&self) -> Vec<String> {
+        self.names.keys().map(|user| user.to_string()).collect()
+    }
+
     pub(crate) fn name(&self, user: &UserId) -> String {
         self.get(user).to_owned()
     }
 
     fn get<'a>(&'a self, user: &'a UserId) -> &'a str {
-        self.names.get(user).map_or(user.as_str(), String::as_str)
+        self.names
+            .get(user)
+            .map(String::as_str)
+            .filter(|name| !name.trim().is_empty())
+            .unwrap_or_else(|| fallback_name(user))
     }
 
     fn can_redact(&self, event: &EventTimelineItem) -> bool {
@@ -303,15 +312,23 @@ pub(crate) fn message(event: &EventTimelineItem, names: &MemberNames) -> Option<
     })
 }
 
-/// 发送者的显示名：事件上带的资料还没加载到时，用本机已有的成员显示名，都没有时用用户 ID。
+/// 发送者的显示名：事件上带的资料还没加载到时，用本机已有的成员显示名，都没有时用 [`fallback_name`]。
 pub(crate) fn sender_name(event: &EventTimelineItem, names: &MemberNames) -> String {
     match event.sender_profile() {
         TimelineDetails::Ready(profile) => profile
             .display_name
-            .clone()
+            .as_deref()
+            .filter(|name| !name.trim().is_empty())
+            .map(ToOwned::to_owned)
             .unwrap_or_else(|| names.name(event.sender())),
         _ => names.name(event.sender()),
     }
+}
+
+/// 没有显示名的人显示账号名（用户 ID 里 `@` 和 `:` 之间的部分）：家人看不懂完整的用户 ID。和 SDK 的
+/// `RoomMember::name` 一致，成员资料读得到和读不到时显示的是同一个。
+pub(crate) fn fallback_name(user: &UserId) -> &str {
+    user.localpart()
 }
 
 fn status(state: Option<&EventSendState>) -> SendStatus {

@@ -444,6 +444,7 @@ pub(super) fn app_title(
 
 pub(super) fn storage_problem(error: &CoreError) -> PagesProblem {
     PagesProblem {
+        reason: Some(PagesFailure::StorageWrite),
         message: l10n!(
             CATALOG,
             language(),

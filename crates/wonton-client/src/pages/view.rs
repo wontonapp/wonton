@@ -2,10 +2,10 @@
 
 use url::Url;
 use wonton_protocol::{
-    CandidatePlugin, CoreError, InstalledPlugin, MyAppRef, OpenPage, PagesProblem, PagesViewModel,
-    PanelEntry, PanelItem, PanelScope, PanelSource, PlacedTab, PluginIcon, PluginState,
-    PluginsViewModel, SidebarApp, SidebarBadge, SidebarOpen, TabCandidate, TabIcon, TabLayout,
-    TabLoadFailure, TabPage, TabRef, TabState,
+    CandidatePlugin, CoreError, InstalledPlugin, MyAppRef, OpenPage, PagesViewModel, PanelEntry,
+    PanelItem, PanelScope, PanelSource, PlacedTab, PluginIcon, PluginState, PluginsViewModel,
+    SidebarApp, SidebarBadge, SidebarOpen, TabCandidate, TabIcon, TabLayout, TabLoadFailure,
+    TabPage, TabRef, TabState,
 };
 
 use super::panel_view::main_panel;
@@ -32,13 +32,17 @@ pub(super) fn make_view(
         shows_apps: state.shows_apps,
         stack,
         uninstalled: state.uninstalled.clone(),
-        // 钉页拉不到（连着却出错）也如实报；已知连不上时 pins 那边不记，只有连接提示和侧边栏的轻提示。
-        problem: state.problem.clone().or_else(|| {
-            state
-                .pins_problem
-                .clone()
-                .map(|message| PagesProblem { message })
-        }),
+        problem: state
+            .problem
+            .clone()
+            .or_else(|| state.read_problem.clone())
+            .or_else(|| {
+                state
+                    .action_problem
+                    .as_ref()
+                    .map(|(_, problem)| problem.clone())
+            })
+            .or_else(|| state.pins_problem.clone()),
         my_app_candidates: my_app_candidates(state, plugins),
         auto_add: state.config.auto_add,
         bot_pin_consents: state.bot_pin_consents.clone(),

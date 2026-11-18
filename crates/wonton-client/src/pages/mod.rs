@@ -15,8 +15,8 @@ use url::Url;
 use wonton_matrix::{LayoutContent, MatrixSession, OwnedRoomId};
 use wonton_protocol::{
     BotPanelPin, BotView, ChatViewModel, CoreError, HomeStatus, HomeViewModel, LayoutSettings,
-    MAX_PANEL_PAGES, MyAppRef, PageAction, PagesProblem, PagesViewModel, PanelEntry, PanelItem,
-    PanelScope, PinTarget, PlacedTab, PluginState, PluginsViewModel, RoomPanel, TabIcon,
+    MAX_PANEL_PAGES, MyAppRef, PageAction, PagesFailure, PagesProblem, PagesViewModel, PanelEntry,
+    PanelItem, PanelScope, PinTarget, PlacedTab, PluginState, PluginsViewModel, RoomPanel, TabIcon,
     TabLoadFailure, TabRef,
 };
 
@@ -63,10 +63,22 @@ struct PreviousPlugin {
     revision: String,
 }
 
+#[derive(Clone, PartialEq, Eq)]
+enum PinAction {
+    Remove(String),
+    Consent {
+        plugin_id: String,
+        bot: String,
+        allowed: bool,
+    },
+}
+
 #[derive(Clone)]
 struct PagesState {
     config: LayoutFile,
     problem: Option<PagesProblem>,
+    read_problem: Option<PagesProblem>,
+    action_problem: Option<(PinAction, PagesProblem)>,
     /// 打开着的页面，从底到顶；空就是根页面。
     stack: Vec<StoredItem>,
     content: HashMap<TabRef, content::ContentPage>,
@@ -92,7 +104,7 @@ struct PagesState {
     /// 核心地址：MCP Apps 的宿主页按它拼。
     core_url: Option<Url>,
     /// 拉 Bot 钉页失败的原因（和配置文件的 problem 分开）。
-    pins_problem: Option<String>,
+    pins_problem: Option<PagesProblem>,
     /// 还没答的摄像头/麦克风询问（一次只有一张，页面关掉就清）。
     media_prompt: Option<PendingMediaPrompt>,
     /// 打开的 widget 页（ADR-0096），同一时间只有一个。
@@ -153,38 +165,30 @@ impl PagesLink {
     ) -> Arc<Self> {
         let path = data_dir.join(LAYOUT_FILE);
         let home_view = home.view();
-        let _home_link = home.clone();
-        let (config, mut problem) = match read_file(&path) {
+        let (config, mut read_problem) = match read_file(&path) {
             Ok(config) => (config, None),
-            Err(reason) => {
+            Err(error) => {
                 let mut config = default_file(home_view.server_id.clone());
                 config.my_apps_initialized = true;
-                (
-                    config,
-                    Some(PagesProblem {
-                        message: l10n!(
-                            CATALOG,
-                            language(),
-                            "pages-file-unreadable",
-                            reason = reason
-                        ),
-                    }),
-                )
+                (config, Some(file_problem(error)))
             }
         };
         let server_changed =
             home_view.server_id.is_some() && config.server_id != home_view.server_id;
         let mut config = config;
+        let mut problem = None;
         normalize_for_server(&mut config, home_view.server_id.clone());
         if server_changed {
             match persist(&path, &config) {
-                Ok(()) => problem = None,
+                Ok(()) => read_problem = None,
                 Err(error) => problem = Some(storage_problem(&error)),
             }
         }
         let state = PagesState {
             config,
             problem,
+            read_problem,
+            action_problem: None,
             stack: Vec::new(),
             content: HashMap::new(),
             paired: home_view.server_id.is_some(),
@@ -275,7 +279,7 @@ impl PagesLink {
         }
     }
 
-    /// 收回或给回一个 Bot 往主面板钉页的同意：写服务器，成了才更新本机。
+    /// 收回或给回一个 Bot 往主面板上钉页的同意：写服务器，成了才更新本机。
     fn set_bot_consent(
         &self,
         plugin_id: String,
@@ -286,11 +290,31 @@ impl PagesLink {
         self.runtime.spawn(async move {
             let Some(link) = weak.upgrade() else { return };
             match link.put_bot_consent(&plugin_id, &bot, allowed).await {
-                Ok(()) => link.recompute(),
-                Err(error) => {
-                    let message = error.to_string();
+                Ok(()) => {
+                    let mut state = lock(&link.state);
+                    if matches!(
+                        state.action_problem.as_ref().map(|(action, _)| action),
+                        Some(PinAction::Consent {
+                            plugin_id: current_plugin,
+                            bot: current_bot,
+                            ..
+                        }) if current_plugin == &plugin_id && current_bot == &bot
+                    ) {
+                        state.action_problem = None;
+                    }
+                    drop(state);
+                    link.recompute();
+                }
+                Err(problem) => {
                     link.runtime_change(|state, _| {
-                        state.problem = Some(PagesProblem { message });
+                        state.action_problem = Some((
+                            PinAction::Consent {
+                                plugin_id,
+                                bot,
+                                allowed,
+                            },
+                            problem,
+                        ));
                         Ok(())
                     })
                     .ok();
@@ -312,31 +336,72 @@ impl PagesLink {
         (plugins, home.clone(), bots)
     }
 
+    /// 本机配置文件读不了期间被修复：重读并清掉问题。返回刚恢复，调用方据此把这份配置
+    /// 补写进账号数据——对账时因读取失败跳过了那次写回（sync.rs 的 reconcile），不补的话
+    /// 另一台设备之后发布的配置会覆盖本机修好的文件。
+    fn reload_config_if_recovered(&self, state: &mut PagesState) -> bool {
+        if state.read_problem.is_none() || std::fs::symlink_metadata(&self.path).is_err() {
+            return false;
+        }
+        let Ok(config) = read_file(&self.path) else {
+            return false;
+        };
+        state.config = config;
+        state.read_problem = None;
+        true
+    }
+
+    /// 落了盘的配置往账号数据补一份：有会话就交给它推。`mark_dirty` 只给恢复路径：
+    /// 账号数据漏掉了修好的这份，会话没就绪也要先记下；普通的首次初始化照旧等会话就绪，
+    /// 不然 reconcile 会把本机默认值推上去，盖掉另一台设备已有的配置。
+    /// 就绪分支里无条件置脏：推送失败时 push_layout 不清它（sync.rs 只在成功时清），
+    /// 重连对账才不会拿服务器旧配置盖掉本机落盘的新入口。
+    fn push_layout_if_ready(&self, state: &PagesState, mark_dirty: bool) {
+        let settings = state.config.layout();
+        if mark_dirty {
+            self.dirty.store(true, Ordering::SeqCst);
+        }
+        let session = self.session.borrow().clone();
+        if let Some(session) = session
+            && self.layout_ready.load(Ordering::SeqCst)
+        {
+            self.dirty.store(true, Ordering::SeqCst);
+            let weak = lock(&self.weak).clone();
+            self.runtime.spawn(async move {
+                if let Some(link) = weak.upgrade() {
+                    link.push_layout(&session, settings).await;
+                }
+            });
+        }
+    }
+
     pub(super) fn recompute(&self) {
         let _writing = lock(&self.writing);
         let (plugins, home, bots) = self.inputs();
         let mut state = lock(&self.state).clone();
+        let recovered = self.reload_config_if_recovered(&mut state);
         bot::replace_bots(&mut state, bots);
-        let config_changed = refresh_state(&mut state, &plugins, &home);
-        if config_changed {
-            match persist(&self.path, &state.config) {
-                Ok(()) => state.problem = None,
-                Err(error) => state.problem = Some(storage_problem(&error)),
-            }
-            // 新装自动加入、卸载清行都改了配置：本机落了盘，接着写账号数据（和 config_change 同一条路），
+        // 恢复的文件属于当前服务器才补写：换服务器、首次配对的对账照旧收服务器的配置。
+        // 不能再加“refreshed 为假”——恢复顺带刷新了标题/图标、清了已卸载的行或自动加入了
+        // 新插件时 refreshed 也为真，漏置脏会让重连对账拿服务器旧配置盖掉修好的文件。
+        let own = recovered && state.config.server_id == home.server_id;
+        let refreshed = refresh_state(&mut state, &plugins, &home);
+        let config_changed = refreshed || recovered;
+        if config_changed && state.read_problem.is_none() {
+            let persisted = match persist(&self.path, &state.config) {
+                Ok(()) => {
+                    state.problem = None;
+                    true
+                }
+                Err(error) => {
+                    state.problem = Some(storage_problem(&error));
+                    false
+                }
+            };
+            // 新装自动加入、卸载清行、刚修复的配置都走这里：本机落了盘，接着写账号数据（和 config_change 同一条路），
             // 不然另一台设备收不到，下次收账号数据还会把这里的改动冲掉。
-            let settings = state.config.layout();
-            let session = self.session.borrow().clone();
-            if let Some(session) = session
-                && self.layout_ready.load(Ordering::SeqCst)
-            {
-                self.dirty.store(true, Ordering::SeqCst);
-                let weak = lock(&self.weak).clone();
-                self.runtime.spawn(async move {
-                    if let Some(link) = weak.upgrade() {
-                        link.push_layout(&session, settings).await;
-                    }
-                });
+            if persisted {
+                self.push_layout_if_ready(&state, own);
             }
         }
         self.remove_uninstalled_room_pages(&mut state);
@@ -369,6 +434,12 @@ impl PagesLink {
         let (plugins, home, bots) = self.inputs();
         let previous = lock(&self.state).clone();
         let mut state = previous.clone();
+        self.reload_config_if_recovered(&mut state);
+        if let Some(problem) = &state.read_problem {
+            return Err(CoreError::Storage {
+                reason: problem.message.clone(),
+            });
+        }
         bot::replace_bots(&mut state, bots);
         refresh_state(&mut state, &plugins, &home);
         change(&mut state, &plugins)?;
@@ -384,6 +455,7 @@ impl PagesLink {
             return Err(error);
         }
         state.problem = None;
+        state.read_problem = None;
         clear_gone_prompt(&mut state);
         widget::clear_closed(&mut state);
         let sync_stale = self.sync_problem.borrow().is_some();
@@ -414,13 +486,22 @@ impl PagesLink {
         let _writing = lock(&self.writing);
         let (plugins, home, bots) = self.inputs();
         let mut state = lock(&self.state).clone();
+        let recovered = self.reload_config_if_recovered(&mut state);
         bot::replace_bots(&mut state, bots);
-        let config_changed = refresh_state(&mut state, &plugins, &home);
+        // 与 recompute 同一个判断：恢复的文件属于当前服务器就补写，refreshed 顺带为真不豁免。
+        let own = recovered && state.config.server_id == home.server_id;
+        let refreshed = refresh_state(&mut state, &plugins, &home);
+        let config_changed = refreshed || recovered;
         change(&mut state, &plugins)?;
         ensure_stack(&mut state, &plugins);
-        if config_changed {
+        if config_changed && state.read_problem.is_none() {
             match persist(&self.path, &state.config) {
-                Ok(()) => state.problem = None,
+                Ok(()) => {
+                    state.problem = None;
+                    // 刚恢复时这里补的是对账（reconcile）因读取失败跳过的账号数据写回；
+                    // 普通动作不改配置时 config_changed 为 false，不会推。
+                    self.push_layout_if_ready(&state, own);
+                }
                 Err(error) => state.problem = Some(storage_problem(&error)),
             }
         }
@@ -431,6 +512,12 @@ impl PagesLink {
         *lock(&self.state) = state;
         self.publish(view, &plugins);
         Ok(())
+    }
+
+    /// 只给测试读：落了盘、还没写进账号数据的改动还在不在。
+    #[cfg(feature = "test-hooks")]
+    pub(super) fn test_dirty(&self) -> bool {
+        self.dirty.load(Ordering::SeqCst)
     }
 
     fn publish(&self, view: PagesViewModel, plugins: &PluginsViewModel) {
@@ -503,7 +590,13 @@ impl PagesState {
     }
 }
 
-// 每次刷新的状态推导函数在 state 模块（refresh_state、卸载清理、自动加入）。
+fn file_problem(error: LayoutReadError) -> PagesProblem {
+    PagesProblem {
+        reason: Some(error.reason),
+        message: error.message,
+    }
+}
+
 fn invalid(reason: &str) -> CoreError {
     CoreError::InvalidInput {
         reason: reason.to_owned(),

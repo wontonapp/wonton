@@ -41,7 +41,7 @@ pub enum Quoted {
 #[derive(Clone, Debug, PartialEq, Eq)]
 pub struct RepliedMessage {
     pub sender: OwnedUserId,
-    /// 发送者的显示名，没有设置时是用户 ID。
+    /// 发送者的显示名，没有设置时是账号名（用户 ID 里 `@` 和 `:` 之间的部分）。
     pub sender_name: String,
     /// 原消息自己是旧式回复（正文带回退引用）时，回退那几行已经去掉。
     pub body: MessageBody,
@@ -73,7 +73,11 @@ pub(crate) fn reply_to(details: &InReplyToDetails, names: &MemberNames) -> Reply
 
 fn embedded(event: &EmbeddedEvent, names: &MemberNames) -> RepliedMessage {
     let sender_name = match &event.sender_profile {
-        TimelineDetails::Ready(profile) => profile.display_name.clone(),
+        TimelineDetails::Ready(profile) => profile
+            .display_name
+            .as_deref()
+            .filter(|name| !name.trim().is_empty())
+            .map(ToOwned::to_owned),
         _ => None,
     };
     let body = match event.content.as_msglike() {
@@ -124,7 +128,7 @@ async fn replied_message(room: &Room, event: TimelineEvent) -> Result<RepliedMes
     let sender = parsed.sender().to_owned();
     let sender_name = match room.get_member_no_sync(&sender).await {
         Ok(Some(member)) => member.name().to_owned(),
-        _ => sender.to_string(),
+        _ => crate::message::fallback_name(&sender).to_owned(),
     };
     Ok(RepliedMessage {
         sender,
