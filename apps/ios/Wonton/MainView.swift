@@ -181,8 +181,15 @@ struct MainView: View {
     @ViewBuilder var rootContent: some View {
         if showsPairingPage {
             NavigationStack {
-                PairingView(model: home)
-                    .toolbar(.hidden, for: .navigationBar)
+                if home.servers.adding {
+                    // 添加服务器有自己的“取消”那一条，不带侧边栏。
+                    PairingView(model: home)
+                        .toolbar(.hidden, for: .navigationBar)
+                } else {
+                    // 没配对时配对失败从 HomeView 的配对页接手过来：照那一页留着侧边栏按钮，失败了也能去别的入口。
+                    PairingView(model: home)
+                        .wontonRootScreen(String(localized: .Pairing.pairingTitle), hasActions: false) { EmptyView() }
+                }
             }
             .wontonDialog(problem: home.rejection, isPresented: Binding(
                 get: { home.rejection != nil }, set: { if !$0 { home.rejection = nil } }

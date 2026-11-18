@@ -276,6 +276,8 @@ struct NoiseTile: View {
         Image(decorative: Self.image, scale: displayScale)
             .resizable(resizingMode: .tile)
             .allowsHitTesting(false)
+            // iOS 27 把平铺的 decorative 图仍暴露成一个盖满整块的无名 Image，挡住底下的按钮。
+            .accessibilityHidden(true)
     }
 }
 
