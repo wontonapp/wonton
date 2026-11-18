@@ -183,6 +183,45 @@ async fn install_stores_values_and_rejects_bad_ones() {
 }
 
 #[tokio::test]
+async fn retry_after_rollback_uses_the_confirmed_package_and_settings() {
+    let (docker, engine) = FakeDocker::start().await;
+    let dir = tempfile::tempdir().unwrap();
+    let m = Arc::new(manager_with(engine, &dir));
+    let pkg = bundle(&compose(SCHEMA), SCHEMA);
+    let (source, digest) = staged(&m, pkg).await;
+    let mut settings = SettingValues::new();
+    settings.insert("budget".to_owned(), setting("personal"));
+    docker.fail_pulls(Some("registry unavailable"));
+    let error = m
+        .install_source(&request(&source, &digest, settings))
+        .await
+        .unwrap_err();
+    assert_eq!(error.kind(), "image_pull_failed");
+    let failed = m
+        .installed_plugin(&id(), &langs())
+        .unwrap()
+        .install_failure
+        .unwrap();
+    assert_eq!(failed.kind, "image_pull_failed");
+    assert!(failed.retryable);
+    assert!(docker.containers().is_empty());
+    assert!(m.store.load(&id()).unwrap().is_none());
+
+    m.staged.remove(&digest);
+    docker.fail_pulls(None);
+    m.retry_failed_install(id()).await.unwrap();
+    let installed = m.installed_plugin(&id(), &langs()).unwrap();
+    assert!(matches!(
+        installed.status,
+        wonton_protocol::PluginState::Running { .. }
+    ));
+    assert!(installed.install_failure.is_none());
+    let record = m.store.load(&id()).unwrap().unwrap();
+    assert_eq!(record.settings["budget"], json!("personal"));
+    assert_eq!(record.settings["months"], json!(3));
+}
+
+#[tokio::test]
 async fn writing_settings_rebuilds_only_the_service_using_it() {
     let (docker, engine) = FakeDocker::start().await;
     let dir = tempfile::tempdir().unwrap();

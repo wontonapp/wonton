@@ -27,6 +27,7 @@ impl ClientCore {
                     self.dispatch_ui_fake_chat(action);
                     Ok(())
                 }
+                Action::Plugins { action } => self.dispatch_ui_fake_plugins(action),
                 _ => Ok(()),
             };
         }
@@ -226,6 +227,7 @@ impl ClientCore {
                 secrets,
                 settings,
             } => scope.plugins.upgrade(preview, secrets, settings),
+            PluginAction::RetryPluginInstall { id } => scope.plugins.retry_install(id),
             PluginAction::UninstallPlugin { id, delete_data } => {
                 scope.plugins.uninstall(id, delete_data)
             }

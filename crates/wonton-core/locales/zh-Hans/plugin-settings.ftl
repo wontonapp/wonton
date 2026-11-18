@@ -87,6 +87,7 @@ plugin-settings-lan-webui-rollback-failed = 改开关失败后退回也失败：
 # ── 安装错误的整句（install_error.rs 各变体的构造点）────────────────────────
 
 plugin-settings-not-installed = 应用 { $id } 没有安装
+plugin-settings-retry-unavailable = 这次安装已无法重试，请清除失败记录后回商店重新安装。
 plugin-settings-permission-not-granted = 以下权限需要你确认后才能安装：{ $permissions }
 plugin-settings-core-upgrading = 家里的服务器正在更新，更新结束后再试
 plugin-settings-bot-matrix-unavailable = 服务器没有接入 Matrix（WONTON_MATRIX_URL），声明 matrix.bot 的应用装不了

@@ -51,6 +51,7 @@ plugins-tasks-provider-needs-own-confirm = 「{ $title }」有需要單獨確認
 plugins-tasks-no-such-task = 沒有這個任務：{ $id }
 
 plugins-tasks-task-not-done = 任務還沒做完。
+plugins-tasks-retry-unavailable = 原本的安裝內容已經不在了，無法重試。
 
 # $title 是應用程式標題，按商店裡的原樣顯示。
 plugins-tasks-task-running = { $title } 正在安裝、更新或解除安裝。

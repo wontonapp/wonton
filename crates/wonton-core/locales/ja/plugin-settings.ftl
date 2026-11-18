@@ -87,6 +87,7 @@ plugin-settings-lan-webui-rollback-failed = スイッチ変更に失敗した後
 # ── インストールエラーの文（install_error.rs 各バリアントの構築点）────────────
 
 plugin-settings-not-installed = アプリ{ $id }はインストールされていません
+plugin-settings-retry-unavailable = このインストールは再試行できません。失敗した記録を削除してからストアで再度インストールしてください。
 plugin-settings-permission-not-granted = インストールには次の権限の確認が必要です：{ $permissions }
 plugin-settings-core-upgrading = 自宅サーバーはアップデート中です。終わってからもう一度お試しください
 plugin-settings-bot-matrix-unavailable = 自宅サーバーがMatrixに接続していないため（WONTON_MATRIX_URL）、matrix.botを宣言するアプリはインストールできません

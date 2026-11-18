@@ -50,6 +50,7 @@ import app.wonton.protocol.CoreException
 import app.wonton.protocol.PluginDetail
 import app.wonton.protocol.PluginDetailOutcome
 import app.wonton.protocol.PluginImage
+import app.wonton.protocol.PluginOperation
 import app.wonton.protocol.PluginState
 import app.wonton.protocol.PluginTask
 import app.wonton.protocol.PluginTaskState
@@ -152,7 +153,8 @@ private fun DetailContent(
     val colors = WontonTheme.colors
     // 和 Bot 的已装应用在最上面有一节“资料”（ADR-0044）；家人线的“谁能用”以后加在这一节下面。
     val chat = rememberChat(plugins.core)
-    val bot = detail.installed?.let { installed ->
+    val installed = detail.installed?.takeIf { it.installFailure == null }
+    val bot = installed?.let { installed ->
         chat.bots.firstOrNull { it.bot.pluginId == installed.id && it.bot.bot == "default" }
     }
     val scrollState = rememberScrollState()
@@ -173,25 +175,18 @@ private fun DetailContent(
         PluginDetailStatus(detail, plugins, working)
         // 装着的应用现在的问题（选中的设备不在了，ADR-0036）：按类别说明，重试是重新取详情。
         detail.problems.forEach { ProblemRow(it.problem, onRetry = onReload) }
-        task?.takeIf { it.state !is PluginTaskState.Succeeded || it.hasAddedToolsNews }?.let {
-            TaskRow(
-                it,
-                plugins,
-                { navigation.confirmation = reconfirmation(it, plugins) },
-                navigation.checkInstalled,
-            )
-        }
-        detail.installed?.InstalledRows(plugins, detail, owner, secretsInView, onToggled)
+        FailedInstallActions(detail, plugins, working, task, navigation)
+        installed?.InstalledRows(plugins, detail, owner, secretsInView, onToggled)
         if (detail.screenshots.isNotEmpty()) {
             LazyRow(horizontalArrangement = Arrangement.spacedBy(WontonTheme.spacing.s12)) {
                 items(detail.screenshots, key = { it.path }) { Screenshot(it, plugins) }
             }
         }
         detail.about?.let { Text(it, style = WontonTheme.typography.body, color = colors.textPrimary.toColor()) }
-        detail.installed?.let { InstalledDetailSections(detail, plugins, navigation, onToggled, owner, secretsInView) }
-        detail.shares?.let { PluginSharesSection(detail.id, it, plugins, onToggled) }
+        installed?.let { InstalledDetailSections(detail, plugins, navigation, onToggled, owner, secretsInView) }
+        if (installed != null) detail.shares?.let { PluginSharesSection(detail.id, it, plugins, onToggled) }
         DetailSections(detail, plugins, onToggled)
-        detail.installed?.takeIf { it.removable && !working }?.let { installed ->
+        installed?.takeIf { it.removable && !working }?.let { installed ->
             WontonButton(
                 stringResource(R.string.install_change_version),
                 { navigation.changingVersion = installed.id },
@@ -349,6 +344,10 @@ private fun detailAction(
     // 取预览还没回来时任务还没建，列表行尾靠 pending 转圈，这里用同一个口径。
     val busy = working || (installed != null && installed.id in plugins.viewModel.pending)
     return when {
+        plugins.viewModel.tasks.any {
+            it.id == detail.id && it.operation == PluginOperation.INSTALL && it.state is PluginTaskState.Uncertain
+        } -> null
+        installed?.installFailure != null -> null
         installed?.upgrade != null -> DetailAction(
             context.getString(R.string.install_action_upgrade), !busy,
         ) { plugins.send(Action.Plugins(PluginAction.UpgradeNow(pluginId = installed.id)))}

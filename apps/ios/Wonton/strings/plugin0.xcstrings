@@ -511,6 +511,36 @@
           }
         }
       }
+    },
+    "plugin.clearFailure": {
+      "comment": "Button that clears a failed installation but keeps the app's data.",
+      "extractionState": "manual",
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Clear failed installation"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "清除失败的安装"
+          }
+        },
+        "zh-Hant": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "清除失敗的安裝"
+          }
+        },
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "失敗したインストールを消去"
+          }
+        }
+      }
     }
   }
 }

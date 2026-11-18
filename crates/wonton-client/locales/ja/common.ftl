@@ -51,6 +51,7 @@ plugins-tasks-provider-needs-own-confirm = { $title }には個別の確認が必
 plugins-tasks-no-such-task = そのようなタスクはありません：{ $id }
 
 plugins-tasks-task-not-done = タスクがまだ完了していません。
+plugins-tasks-retry-unavailable = 元のインストール内容が残っていないため、再試行できません。
 
 # $title はアプリのタイトルです。ストアの表記のまま表示されます。
 plugins-tasks-task-running = { $title }はすでにインストール・アップデート・アンインストールの途中です。

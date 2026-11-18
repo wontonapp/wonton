@@ -264,6 +264,9 @@ pub struct InstallFailure {
     pub failed_plugin_id: String,
     /// 回滚没有完成的清理；为空表示本次回滚完成，不代表之前保留的数据被删除。
     pub cleanup_errors: Vec<String>,
+    /// 核心仍保留了原始清单、确认的权限、设置和密钥，可以直接重装。
+    #[serde(default, skip_serializing_if = "std::ops::Not::not")]
+    pub retryable: bool,
 }
 
 /// 安装或升级的阶段。

@@ -46,6 +46,7 @@ import androidx.compose.ui.unit.dp
 import app.wonton.protocol.PluginAction
 import app.wonton.protocol.Action
 import app.wonton.protocol.AddedSource
+import app.wonton.protocol.PluginOperation
 import app.wonton.protocol.PluginTaskState
 import app.wonton.protocol.PluginTrust
 import app.wonton.protocol.StoreItem
@@ -278,6 +279,7 @@ private fun TagChips(
 @Composable
 private fun StoreRow(item: StoreItem, plugins: PluginsState, navigation: PluginNavigation) {
     val colors = WontonTheme.colors
+    val installFailure = plugins.viewModel.installed?.plugins?.firstOrNull { it.id == item.id }?.installFailure
     Column {
         Row(
             Modifier.fillMaxWidth()
@@ -312,9 +314,10 @@ private fun StoreRow(item: StoreItem, plugins: PluginsState, navigation: PluginN
             }
         }
         // 一键操作在取预览时失败：行下面一行红字配“重试”，不弹窗（ADR-0017）。
-        plugins.viewModel.tasks.firstOrNull { it.id == item.id }?.state
+        plugins.viewModel.tasks.firstOrNull { it.id == item.id }
             ?.takeIf { !plugins.viewModel.hasRunningTask(item.id) && item.id !in plugins.viewModel.pending }
-            ?.let { state ->
+            ?.let { task ->
+                val state = task.state
                 if (state is PluginTaskState.Failed) {
                     val problem = state.reason.problem(state.message)
                     Row(
@@ -334,20 +337,15 @@ private fun StoreRow(item: StoreItem, plugins: PluginsState, navigation: PluginN
                             )
                             ProblemDetail(state.message)
                         }
-                        WontonSmallButton(
-                            stringResource(R.string.common_retry),
-                            {
-                                plugins.send(
-                                    Action.Plugins(
-                                        if (item.installedVersion == null) {
-                                            PluginAction.InstallNow(source = item.source)
-                                        } else {
-                                            PluginAction.UpgradeNow(pluginId = item.id)
-                                        },
-                                    ),
-                                )
-                            },
-                        )
+                        if (installFailure?.retryable == true) {
+                            WontonSmallButton(stringResource(R.string.common_retry), {
+                                plugins.send(Action.Plugins(PluginAction.RetryPluginInstall(id = item.id)))
+                            })
+                        } else if (installFailure == null && task.operation == PluginOperation.UPGRADE) {
+                            WontonSmallButton(stringResource(R.string.common_retry), {
+                                plugins.send(Action.Plugins(PluginAction.UpgradeNow(pluginId = item.id)))
+                            })
+                        }
                     }
                 }
             }
@@ -418,10 +416,14 @@ private sealed interface StoreButton {
 private fun storeButton(item: StoreItem, plugins: PluginsState, navigation: PluginNavigation): StoreButton {
     val viewModel = plugins.viewModel
     val installed = item.installedVersion
-    val entry = viewModel.installed?.plugins?.firstOrNull { it.id == item.id }?.entries?.firstOrNull()
+    val plugin = viewModel.installed?.plugins?.firstOrNull { it.id == item.id }
+    val entry = plugin?.entries?.firstOrNull()
     return when {
         // 取预览、装、升、卸都在转圈。
         viewModel.hasRunningTask(item.id) || item.id in viewModel.pending -> StoreButton.Busy
+        plugin?.installFailure != null || viewModel.tasks.any {
+            it.id == item.id && it.operation == PluginOperation.INSTALL && it.state is PluginTaskState.Uncertain
+        } -> StoreButton.Hidden
         installed == null -> StoreButton.Get(
             stringResource(if (storeInstallAction(item) == PluginInstallAction.REQUEST_ADMIN) {
                 R.string.install_request_admin

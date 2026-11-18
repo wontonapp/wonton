@@ -152,6 +152,7 @@ async fn failed_install_does_not_persist_a_my_apps_entry_before_retry() {
         stage: InstallStage::PullingImages,
         failed_plugin_id: plugin.id.clone(),
         cleanup_errors: Vec::new(),
+        retryable: true,
     });
     rig.plugins.send_replace(failed);
     rig.tabs.recompute();
@@ -188,6 +189,7 @@ async fn failed_install_keeps_a_saved_page_until_retry_succeeds() {
         stage: InstallStage::PullingImages,
         failed_plugin_id: plugin.id.clone(),
         cleanup_errors: Vec::new(),
+        retryable: true,
     });
     rig.plugins.send_replace(failed);
     rig.tabs.recompute();

@@ -661,6 +661,36 @@
           }
         }
       }
+    },
+    "plugin.clearFailureTitle": {
+      "comment": "Clear-failure dialog title. Argument: the app's name.",
+      "extractionState": "manual",
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Clear the failed installation of “%@”?"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "清除“%@”失败的安装吗？"
+          }
+        },
+        "zh-Hant": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "清除「%@」失败的安裝嗎？"
+          }
+        },
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "「%@」の失敗したインストールを消去しますか？"
+          }
+        }
+      }
     }
   }
 }

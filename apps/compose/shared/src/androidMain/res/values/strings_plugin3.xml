@@ -30,4 +30,6 @@
     <string name="plugin_task_upgrade_failed">Update failed: %1$s</string>
     <!-- Button that uninstalls but keeps the app's data. -->
     <string name="plugin_uninstall_keep_data">Uninstall and keep data</string>
+    <string name="plugin_clear_failure">Clear failed installation</string>
+    <string name="plugin_clear_failure_message">The app’s data will be kept.</string>
 </resources>

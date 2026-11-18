@@ -24,9 +24,14 @@ impl PluginManager {
         &self,
         package: PluginPackage,
         request: InstallRequest,
+        retained: Option<&[PluginPackage]>,
         langs: &Languages,
     ) -> Result<Vec<PreparedInstall>, InstallError> {
-        let preview = self.dependency_preview(&package.manifest, langs).await?;
+        let preview = if retained.is_none() {
+            Some(self.dependency_preview(&package.manifest, langs).await?)
+        } else {
+            None
+        };
         // 计划绑定的是依赖图的连接集合：只有触及依赖图的请求（消费方声明了能力，或随批安装提供方）
         // 才要求原样带回计划；没有能力声明的旧调用方（如商店直装）只校验包摘要。
         let enforce_plan = super::declarations(&package.manifest).next().is_some();
@@ -34,45 +39,35 @@ impl PluginManager {
             .prepare_install_decision(package, &request, enforce_plan, langs)
             .await?;
         let mut ids = BTreeSet::from([consumer.decision.package.manifest.id.clone()]);
-        let candidates = if request.install_together.is_empty() {
+        let candidates = if request.install_together.is_empty() || retained.is_some() {
             Vec::new()
         } else {
             self.dependency_candidates(langs).await?
         };
+        if retained.is_some_and(|packages| packages.len() != request.install_together.len()) {
+            return Err(selection_error(langs));
+        }
         let mut providers = Vec::with_capacity(request.install_together.len());
-        for requested in &request.install_together {
+        for (index, requested) in request.install_together.iter().enumerate() {
             let inner = &requested.request;
             if !inner.install_together.is_empty() || !inner.connect_plugins.is_empty() {
                 return Err(selection_error(langs));
             }
-            let candidate = candidates
-                .iter()
-                .find(|candidate| {
-                    candidate.listed.manifest.id.as_str() == requested.id
-                        && preview.missing_requires.iter().any(|missing| {
-                            missing.providers.iter().any(|provider| {
-                                provider.id == requested.id && provider.source == candidate.source()
-                            })
-                        })
-                })
-                .ok_or_else(|| selection_error(langs))?;
-            let package = self.fetch_source(&inner.source).await?;
+            let package = self
+                .resolve_provider_package(
+                    requested,
+                    retained.map(|packages| (packages, index)),
+                    &candidates,
+                    preview.as_ref(),
+                    langs,
+                )
+                .await?;
             if package.digest() != inner.digest {
                 return Err(InstallError::Changed(l10n::text(
                     langs,
                     "plugin-capability-plan-changed",
                     &[],
                 )));
-            }
-            let expected = candidate.files.package(&candidate.listed, langs).await?;
-            if package.digest() != expected.digest()
-                || package.origin.as_ref().is_none_or(|origin| {
-                    origin.repo != candidate.origin.repo
-                        || origin.commit != candidate.origin.commit
-                        || origin.index != candidate.origin.index
-                })
-            {
-                return Err(selection_error(langs));
             }
             if package.manifest.id.as_str() != requested.id
                 || !ids.insert(package.manifest.id.clone())
@@ -120,6 +115,49 @@ impl PluginManager {
         )?;
         providers.push(consumer);
         Ok(providers)
+    }
+
+    /// 重试用核心保留的原包；首次按预览里缺的能力选候选，再取来源并核对摘要与出处一致。
+    async fn resolve_provider_package(
+        &self,
+        requested: &wonton_protocol::InstallTogether,
+        retained: Option<(&[PluginPackage], usize)>,
+        candidates: &[super::preview::Candidate],
+        preview: Option<&super::preview::DependencyPreview>,
+        langs: &Languages,
+    ) -> Result<PluginPackage, InstallError> {
+        let Some((packages, index)) = retained else {
+            let candidate = candidates
+                .iter()
+                .find(|candidate| {
+                    candidate.listed.manifest.id.as_str() == requested.id
+                        && preview
+                            .as_ref()
+                            .expect("首次安装有预览")
+                            .missing_requires
+                            .iter()
+                            .any(|missing| {
+                                missing.providers.iter().any(|provider| {
+                                    provider.id == requested.id
+                                        && provider.source == candidate.source()
+                                })
+                            })
+                })
+                .ok_or_else(|| selection_error(langs))?;
+            let package = self.fetch_source(&requested.request.source).await?;
+            let expected = candidate.files.package(&candidate.listed, langs).await?;
+            if package.digest() != expected.digest()
+                || package.origin.as_ref().is_none_or(|origin| {
+                    origin.repo != candidate.origin.repo
+                        || origin.commit != candidate.origin.commit
+                        || origin.index != candidate.origin.index
+                })
+            {
+                return Err(selection_error(langs));
+            }
+            return Ok(package);
+        };
+        Ok(packages[index].clone())
     }
 
     fn check_batch_slugs(
