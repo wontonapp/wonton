@@ -29,7 +29,8 @@ pub async fn set_plugin_permission(
     Path((id, permission)): Path<(String, String)>,
     body: Bytes,
 ) -> Response {
-    // 可选权限可能授予宿主 root 能力，安装授权不能代替主人的权限确认。
+    // 可选权限可能授予宿主 root 能力；“装、删、升级应用”设为允许的人和主人一样能开关（ADR-0057），
+    // 要管理员批的人在这里直接 403：卡片只批装和升级，不批单独开关。
     if let Some(denied) =
         permissions::require(&gateway, peer, &headers, PermissionItem::InstallApps)
     {
