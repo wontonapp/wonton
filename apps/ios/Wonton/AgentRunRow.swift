@@ -60,7 +60,9 @@ struct AgentRunRow: View {
         }
         .padding(.trailing, WontonTheme.spacing.s48)
         .frame(maxWidth: .infinity, alignment: .leading)
-        // 读屏和界面测试用的稳定标识，跟着核心的键走，不跟语言走。
+        // 读屏和界面测试用的稳定标识，跟着核心的键走，不跟语言走。先包成容器：不然整行的标识会盖掉里面
+        // “已等待”那一行自己的标识。
+        .accessibilityElement(children: .contain)
         .accessibilityIdentifier(identifier)
     }
 
