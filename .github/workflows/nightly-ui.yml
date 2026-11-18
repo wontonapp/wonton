@@ -35,7 +35,9 @@ jobs:
     name: 夜跑 iOS UI 测试
     if: github.event.schedule != '0 4 * * *'
     runs-on: xcode-27
-    timeout-minutes: 75
+    # 上限按跑完全套留足：跑测试前的准备（Rust 核心、测试包、模拟器）约 30 分钟，全套 UI 测试
+    # 在 Apple 芯片的开发机上 40 多分钟（2026-11，约 90 个用例），托管机器更慢。
+    timeout-minutes: 180
     permissions:
       contents: read
       issues: write
@@ -118,7 +120,7 @@ jobs:
             ARCHS=arm64 \
             CODE_SIGNING_ALLOWED=NO
       - name: 跑 WontonUITests 并录屏
-        timeout-minutes: 20
+        timeout-minutes: 120
         run: |
           set -o pipefail
           rm -rf "$RUNNER_TEMP/ui.xcresult"
@@ -139,6 +141,7 @@ jobs:
             -test-timeouts-enabled YES \
             -default-test-execution-time-allowance 90 \
             -maximum-test-execution-time-allowance 600 \
+            -collect-test-diagnostics never \
             ARCHS=arm64 \
             CODE_SIGNING_ALLOWED=NO \
             -skip-testing:WontonUITests/PasteUITests/testPeerShowsImage \
