@@ -31,6 +31,9 @@ final class TimelineModel {
     private(set) var roomBots: [String]?
     /// 正在输入的人的显示名，不含自己（ADR-0109）。
     private(set) var typing: [String] = []
+    /// 房间里各 Bot 的斜杠命令和被截掉的条数（ADR-0054、ADR-0109）：空的时候没有“菜单”按钮，敲“/”也不弹列表。
+    private(set) var commands: [RoomCommand] = []
+    private(set) var commandsOmitted: UInt32 = 0
     /// 跳到原消息的进展和“向下”按钮先回到的那一条（ADR-0109 第 4 节）。
     private(set) var jump: JumpState = .idle
     private(set) var backTo: String?
@@ -103,6 +106,8 @@ final class TimelineModel {
         callActive = update.callActive
         roomBots = update.roomBots
         typing = update.typing
+        commands = update.commands
+        commandsOmitted = update.commandsOmitted
         jump = update.jump
         backTo = update.backTo
         if let focus = update.focus {

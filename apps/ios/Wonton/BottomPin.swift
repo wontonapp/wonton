@@ -18,8 +18,13 @@ final class BottomPin {
     private var heldOffset: CGFloat?
     private var updateGeneration = 0
     private var settling = false
+    /// 主人在滚（拖着或惯性滑着）；停下后再过 `motion.datePillHold` 才变回假，浮动的日期胶囊按它显隐（ADR-0109 第 4 节）。
+    private(set) var isScrolling = false
+    @ObservationIgnored private var scrollEnd: DispatchWorkItem?
 
     var viewportHeight: CGFloat { scrollView?.bounds.height ?? 0 }
+    /// 主人的手指正拖着列表，或者松手后还在滑。
+    var isTouched: Bool { scrollView.map { $0.isDragging || $0.isDecelerating } ?? false }
 
     /// List 会为末尾追加和变高的行调整 contentOffset；翻走时保留更新前的位置，不借内容高度反推主人的手势。
     func prepareForUpdate() {
@@ -57,6 +62,7 @@ final class BottomPin {
                 MainActor.assumeIsolated {
                     guard let self else { return }
                     if scrollView.isDragging || scrollView.isDecelerating {
+                        self.noteScroll()
                         self.heldOffset = nil
                         self.isPinned = scrollView.bottomOffset - scrollView.contentOffset.y <= Self.slack
                     } else if self.isPinned {
@@ -70,6 +76,16 @@ final class BottomPin {
         // 变化，上面那次 stick 量到的是注册前的高度。补一次异步 stick，等这一帧排完再贴底；落点摆放
         // 的异步滚动排在它后面，会按落点覆盖。
         DispatchQueue.main.async { self.stick() }
+    }
+
+    private func noteScroll() {
+        if !isScrolling { isScrolling = true }
+        scrollEnd?.cancel()
+        let end = DispatchWorkItem { [weak self] in
+            MainActor.assumeIsolated { self?.isScrolling = false }
+        }
+        scrollEnd = end
+        DispatchQueue.main.asyncAfter(deadline: .now() + WontonTheme.motion.datePillHold, execute: end)
     }
 
     /// 主人发了东西：不管翻到哪，回到底部看结果。

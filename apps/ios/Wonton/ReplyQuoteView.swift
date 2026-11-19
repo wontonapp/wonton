@@ -17,10 +17,25 @@ struct ReplyQuoteView: View {
     let core: ClientCore
     /// 画在自己气泡里时用气泡的文字颜色。
     let ink: Color
-    /// 输入框上方的那一份带叉，消息里的不带。
+    /// 输入框上方的那一份带叉、撑满一行；消息里的不带，按内容收缩，垫一层淡淡的底色。
     var cancel: (() -> Void)?
+    /// 点了这条引用、核心还在往前翻页找原消息（ADR-0109 第 4 节）。
+    var isLoading = false
 
     var body: some View {
+        if cancel == nil {
+            row
+                .padding(.trailing, WontonTheme.spacing.s8)
+                .background(
+                    RoundedRectangle(cornerRadius: WontonTheme.radii.bubbleJoined)
+                        .fill(ink.opacity(WontonTheme.ratio.codeFill))
+                )
+        } else {
+            row
+        }
+    }
+
+    private var row: some View {
         HStack(spacing: WontonTheme.spacing.s8) {
             Capsule()
                 .fill(ink.opacity(WontonTheme.ratio.secondaryContent))
@@ -36,8 +51,12 @@ struct ReplyQuoteView: View {
                     line(Text(.Message2.messageQuoteUnavailable))
                 }
             }
-            Spacer(minLength: 0)
+            if isLoading {
+                ProgressView().controlSize(.small)
+                    .accessibilityIdentifier("messageQuoteLoading")
+            }
             if let cancel {
+                Spacer(minLength: 0)
                 Button(action: cancel) {
                     WontonIcon.close.view(size: WontonTheme.size.iconTiny)
                         .foregroundStyle(ink)
@@ -73,7 +92,7 @@ struct ReplyQuoteView: View {
             }
         }
         .foregroundStyle(ink)
-        .frame(maxWidth: .infinity, alignment: .leading)
+        .frame(maxWidth: cancel == nil ? nil : .infinity, alignment: .leading)
     }
 
     private func line(_ text: Text) -> some View {

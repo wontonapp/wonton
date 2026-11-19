@@ -20,8 +20,14 @@ struct TimelineRow: View {
     let redact: () -> Void
     /// Agent 在等回答的卡片就在这个房间：滚到那张卡片（ADR-0082）。
     var openCard: (String) -> Void = { _ in }
-    /// 回答 Agent 自己的提问（`choices` 的 key），以主人的身份发反应。
+    /// 回答 Agent 自己的提问或消息下的选项按钮（`choices` 的 key），以主人的身份发反应。
     var answerChoice: (String) -> Void = { _ in }
+    /// 点了气泡里的引用：跳到原消息（参数是原消息的事件 ID，ADR-0109 第 4 节）。
+    var jump: (String) -> Void = { _ in }
+    /// 核心正在为这一条的引用往前翻页找原消息：引用上画加载。
+    var isJumping = false
+    /// 群聊里别人的组尾旁边画的头像；私聊不给。
+    var avatar: ((TimelineMessage) -> AnyView)?
     /// 进旁聊（参数是根的事件 ID）：旁聊卡片和结果行都用它（ADR-0093）。
     var onOpenSideChat: (String) -> Void = { _ in }
     @Environment(\.wontonColors) private var colors
@@ -31,11 +37,13 @@ struct TimelineRow: View {
         case let .message(message):
             // 群聊里名字只在组首写一次；组内位置由核心给（ADR-0109）。
             MessageBubble(
-                message: message, core: core, showsSender: showsSender && message.run.startsRun,
+                itemId: item.id, message: message, core: core,
+                showsSender: showsSender && message.run.startsRun,
                 flushesPrevious: flushesPrevious, flushesNext: flushesNext,
                 retry: retry, cancel: cancel,
                 cardAction: cardAction, reply: reply, forward: forward, redact: redact,
-                openSideChat: onOpenSideChat
+                openSideChat: onOpenSideChat, answerChoice: answerChoice,
+                jump: jump, isJumping: isJumping, avatar: message.isOwn ? nil : avatar
             )
         case let .notice(text):
             note(Text(text))
@@ -63,8 +71,8 @@ struct TimelineRow: View {
                 note(Text(.Chat.timelineAvatarChanged(name)))
             }
         case let .dateDivider(timestampMs):
-            // 分隔线带着这一天第一条消息的时间：日期和时间写在一行，那条消息上方不再另写。
-            note(Text(Self.date(timestampMs), format: .dateTime.year().month().day().weekday().hour().minute()))
+            // 跨天处居中的日期胶囊（ADR-0109 第 4 节）；几点在每条气泡里。
+            DatePill(timestampMs: timestampMs).frame(maxWidth: .infinity)
         case .readMarker:
             HStack(spacing: WontonTheme.spacing.s8) {
                 edge
@@ -105,6 +113,7 @@ struct TimelineRow: View {
 }
 
 private struct MessageBubble: View {
+    let itemId: String
     let message: TimelineMessage
     let core: ClientCore
     let showsSender: Bool
@@ -118,6 +127,11 @@ private struct MessageBubble: View {
     let redact: () -> Void
     /// 挂在这条消息上的旁聊卡片点了就进那个旁聊（ADR-0093）。
     let openSideChat: (String) -> Void
+    let answerChoice: (String) -> Void
+    let jump: (String) -> Void
+    let isJumping: Bool
+    /// 群聊里别人的消息才有：组尾画头像，其余几条留出同样宽的空位，一组的气泡才对得齐。
+    let avatar: ((TimelineMessage) -> AnyView)?
     @State private var isChoosingFailed = false
     @Environment(\.wontonColors) private var colors
 
@@ -131,36 +145,54 @@ private struct MessageBubble: View {
     }
 
     var body: some View {
-        HStack(alignment: .bottom, spacing: 0) {
-            if message.isOwn {
-                Spacer(minLength: WontonTheme.spacing.s48)
-                failedBadge
-            }
-            VStack(alignment: .leading, spacing: WontonTheme.spacing.s4) {
-                if showsSender, !message.isOwn {
-                    Text(message.senderName)
-                        .wontonText(WontonTheme.typography.caption)
-                        .foregroundStyle(Color(colors.textSecondary))
-                }
-                bubble
-                    // 系统的菜单自带预览、背景模糊和材质（ADR-0029）。菜单项的图标也用系统的 SF Symbols：
-                    // 大小、粗细由系统跟着菜单的字排。
-                    .contentShape(.contextMenuPreview, shape)
-                    .contextMenu {
-                        ForEach(Array(message.actions.enumerated()), id: \.offset) { _, action in
-                            menuItem(action)
-                        }
-                        Section {
-                            Text(.Message1.messageSentAt(sentAt))
-                                .accessibilityIdentifier("messageSentAt")
+        VStack(alignment: message.isOwn ? .trailing : .leading, spacing: WontonTheme.spacing.s4) {
+            HStack(alignment: .bubbleBottom, spacing: 0) {
+                if message.isOwn {
+                    Spacer(minLength: 0)
+                    failedBadge
+                } else if let avatar {
+                    Group {
+                        if message.run.endsRun {
+                            avatar(message)
+                                .accessibilityElement(children: .ignore)
+                                .accessibilityLabel(message.senderName)
+                                .accessibilityIdentifier("messageAvatar")
+                        } else {
+                            Color.clear
                         }
                     }
-                // 有回复的普通消息下面挂着旁聊的卡片（ADR-0093 §6）。
-                if let card = message.sideChat {
-                    SideChatCardView(card: card) { openSideChat(card.rootEventId) }
+                    .frame(width: WontonTheme.size.messageAvatar, height: WontonTheme.size.messageAvatar)
+                    .padding(.trailing, WontonTheme.spacing.s4)
                 }
+                BubbleColumn {
+                    bubble
+                        // 系统的菜单自带预览、背景模糊和材质（ADR-0029）。菜单项的图标也用系统的 SF Symbols：
+                        // 大小、粗细由系统跟着菜单的字排。
+                        .contentShape(.contextMenuPreview, shape)
+                        .contextMenu {
+                            ForEach(Array(message.actions.enumerated()), id: \.offset) { _, action in
+                                menuItem(action)
+                            }
+                            Section {
+                                Text(.Message1.messageSentAt(sentAt))
+                                    .accessibilityIdentifier("messageSentAt")
+                            }
+                        }
+                    if let choices = message.choices {
+                        // 按钮对齐气泡的身子，不占尾巴那条边。
+                        MessageChoicesView(choices: choices, answer: answerChoice)
+                            .padding(message.isOwn ? .trailing : .leading, WontonTheme.size.bubbleTail)
+                    }
+                }
+                // 优先级高于两边的空白：不然 HStack 先把宽度平分给空白，气泡的宽度上限就按一半算了。
+                .layoutPriority(1)
+                if !message.isOwn { Spacer(minLength: 0) }
             }
-            if !message.isOwn { Spacer(minLength: WontonTheme.spacing.s48) }
+            // 有回复的普通消息下面挂着旁聊的卡片（ADR-0093 §6）。
+            if let card = message.sideChat {
+                SideChatCardView(card: card) { openSideChat(card.rootEventId) }
+                    .padding(.leading, avatar == nil ? 0 : WontonTheme.size.messageAvatar + WontonTheme.spacing.s4)
+            }
         }
     }
 
@@ -223,15 +255,33 @@ private struct MessageBubble: View {
         }
     }
 
-    /// 回复别人时，正文上方先画被引用的原消息（ADR-0073）；点引用跳转还没做。
-    @ViewBuilder private var quoted: some View {
-        if let quote = message.reply {
-            VStack(alignment: .leading, spacing: WontonTheme.spacing.s8) {
-                ReplyQuoteView(quote: quote, core: core, ink: textColor)
+    /// 群聊里组首气泡顶部写发送者的名字；回复别人时，正文上方画被引用的原消息（ADR-0073），点它跳到原消息。
+    /// 带选项的气泡底下垫一行看不见的字，至少和按钮一样宽。
+    private var quoted: some View {
+        ZStack(alignment: .topLeading) {
+            if let choices = message.choices { ChoicesWidthReserve(choices: choices) }
+            VStack(alignment: .leading, spacing: WontonTheme.spacing.s4) {
+                if showsSender, !message.isOwn {
+                    Text(message.senderName)
+                        .wontonText(WontonTheme.typography.caption)
+                        .fontWeight(.semibold)
+                        .foregroundStyle(Color(colors.accentInk))
+                        .lineLimit(1)
+                }
+                if let quote = message.reply {
+                    Button {
+                        jump(quote.eventId)
+                    } label: {
+                        ReplyQuoteView(quote: quote, core: core, ink: textColor, isLoading: isJumping)
+                            .contentShape(Rectangle())
+                    }
+                    .buttonStyle(.plain)
+                    .disabled(isJumping)
+                    .accessibilityIdentifier("messageQuote.\(itemId)")
+                    .padding(.bottom, WontonTheme.spacing.s4)
+                }
                 laidOut
             }
-        } else {
-            laidOut
         }
     }
 
@@ -307,8 +357,11 @@ private struct MessageBubble: View {
     private var textColor: Color {
         Color(message.isOwn ? colors.textOnAccentFill : colors.textPrimary)
     }
+}
 
-    @ViewBuilder private func content(reserve: String?) -> some View {
+/// 气泡里的正文，按消息的种类画。
+private extension MessageBubble {
+    @ViewBuilder func content(reserve: String?) -> some View {
         switch message.body {
         case let .text(_, blocks, files):
             TextMessageBody(blocks: blocks, ink: textColor, files: files, trailingReserve: reserve)
@@ -364,112 +417,6 @@ private struct MessageBubble: View {
             Text(.Message1.messageUnsupported(kind))
                 .wontonText(WontonTheme.typography.supporting)
                 .opacity(WontonTheme.ratio.secondaryContent)
-        }
-    }
-}
-
-private struct MediaImage: View {
-    let image: ImageContent
-    let core: ClientCore
-    let sendState: SendState
-    @Environment(RoomPresenter.self) private var presenter
-    @State private var preview: Result<UIImage, MediaFailure>?
-
-    var body: some View {
-        Group {
-            switch preview {
-            case let .success(loaded):
-                Image(uiImage: loaded).resizable().scaledToFit()
-            case let .failure(failure):
-                Label {
-                    Text(failure.message)
-                } icon: {
-                    WontonIcon.imageBroken.view(size: WontonTheme.size.iconSmall)
-                }
-                .wontonText(WontonTheme.typography.supporting)
-            case nil:
-                ProgressView().frame(maxWidth: .infinity, maxHeight: .infinity)
-            }
-        }
-        .frame(maxWidth: WontonTheme.size.messageImage)
-        .aspectRatio(ratio, contentMode: .fit)
-        .clipShape(RoundedRectangle(cornerRadius: WontonTheme.radii.control))
-        .overlay(alignment: .bottom) {
-            if case let .sending(progress) = sendState {
-                if let progress {
-                    ProgressView(value: progress)
-                        .progressViewStyle(.linear)
-                        .frame(maxWidth: .infinity)
-                        .padding(4)
-                } else {
-                    ProgressView()
-                        .padding(4)
-                }
-            }
-        }
-        .contentShape(Rectangle())
-        .onTapGesture { presenter.showOriginal(image) }
-        .accessibilityAddTraits(.isButton)
-        .accessibilityLabel(Text(.Message2.messagePhoto))
-        .task(id: image.thumbnail ?? image.media) {
-            preview = await MediaFailure.load(image.thumbnail ?? image.media, from: core)
-        }
-    }
-
-    private var ratio: CGFloat? {
-        guard let width = image.width, let height = image.height, width > 0, height > 0 else { return nil }
-        return CGFloat(width) / CGFloat(height)
-    }
-}
-
-struct OriginalImage: View {
-    let image: ImageContent
-    let core: ClientCore
-    @Environment(\.dismiss) private var dismiss
-    @State private var original: Result<UIImage, MediaFailure>?
-
-    var body: some View {
-        NavigationStack {
-            Group {
-                switch original {
-                case let .success(loaded):
-                    Image(uiImage: loaded).resizable().scaledToFit()
-                case let .failure(failure):
-                    WontonNotice(
-                        icon: .imageBroken, title: String(localized: .Message1.messageOriginalUnavailable),
-                        lines: [failure.message]
-                    )
-                        .padding(WontonTheme.spacing.pageInset)
-                case nil:
-                    ProgressView()
-                }
-            }
-            .frame(maxWidth: .infinity, maxHeight: .infinity)
-            .background(.black)
-            .navigationTitle(image.filename)
-            .navigationBarTitleDisplayMode(.inline)
-            .toolbarColorScheme(.dark, for: .navigationBar)
-            .toolbarBackground(.black, for: .navigationBar)
-            .toolbarBackground(.visible, for: .navigationBar)
-            .toolbar { Button(.Common.commonDone) { dismiss() } }
-        }
-        .task { original = await MediaFailure.load(image.media, from: core) }
-    }
-}
-
-/// 媒体取不到的原因，引用缩略图和原图共用。
-struct MediaFailure: Error {
-    let message: String
-
-    static func load(_ media: MediaHandle, from core: ClientCore) async -> Result<UIImage, MediaFailure> {
-        do {
-            let data = try await core.loadMedia(media: media)
-            guard let image = UIImage(data: data) else {
-                return .failure(MediaFailure(message: String(localized: .Message0.messageImageFormatUnsupported)))
-            }
-            return .success(image)
-        } catch {
-            return .failure(MediaFailure(message: error.problem.title))
         }
     }
 }
