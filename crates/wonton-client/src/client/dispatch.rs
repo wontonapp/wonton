@@ -28,15 +28,13 @@ impl ClientCore {
                     self.dispatch_ui_fake_chat(action);
                     Ok(())
                 }
+                // 假时间线（跳转、发字）和停止钮的假运行段都要看到同一个操作。
                 Action::Timeline { action } => {
-                    self.ui_fake_timelines.timeline_action(action);
-                    Ok(())
-                }
-                Action::Plugins { action } => self.dispatch_ui_fake_plugins(action),
-                Action::Timeline { action } => {
+                    self.ui_fake_timelines.timeline_action(action.clone());
                     self.dispatch_ui_fake_timeline(action);
                     Ok(())
                 }
+                Action::Plugins { action } => self.dispatch_ui_fake_plugins(action),
                 Action::Agent { action } => {
                     self.dispatch_ui_fake_agent(action);
                     Ok(())
