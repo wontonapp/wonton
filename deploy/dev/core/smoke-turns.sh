@@ -196,8 +196,14 @@ marker_state() { docker exec "$hermes" sh -c "test -e '$done_file' && echo 跑�
 # 文件由重发那一轮建，90 秒从那一刻才起算。
 retried="$(comm -13 <(printf '%s\n' "$before" | sort) <(chain_ids | grep -vxF "$chain" | sort) | head -1)"
 if [[ -n $retried ]]; then
-  for _ in $(seq 60); do [[ "$(marker_state)" == 跑完了 ]] && break; sleep 2; done
-  expect "重发那一轮的命令跑完了" "$(marker_state)" 跑完了
+  # 重发那一轮也可能不跑命令、直接回话，先看它有没有再起 sleep 90。
+  for _ in $(seq 60); do (($(sleeping 90) > 0)) && break; sleep 1; done
+  if (($(sleeping 90) > 0)); then
+    for _ in $(seq 60); do [[ "$(marker_state)" == 跑完了 ]] && break; sleep 2; done
+    expect "重发那一轮的命令跑完了" "$(marker_state)" 跑完了
+  else
+    expect "重发那一轮没再跑命令，文件也就没建" "$(marker_state)" 没跑完
+  fi
 else
   expect "命令没有跑完" "$(marker_state)" 没跑完
 fi
