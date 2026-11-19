@@ -119,10 +119,11 @@ impl PluginManager {
     pub(super) async fn initialize_default_avatars(
         &self,
         package: &PluginPackage,
+        name: &str,
         bot: &ProvisionedBot,
     ) -> Result<(), InstallError> {
         if let Err(error) = self
-            .fill_default_avatars(package, &bot.account.user_id)
+            .fill_default_avatars(package, name, &bot.account.user_id)
             .await
         {
             // provision_bot 尚未返回，安装回滚还不知道这台设备；账号记录必须留下供重试。
@@ -149,6 +150,7 @@ impl PluginManager {
     pub(super) async fn fill_default_avatars(
         &self,
         package: &PluginPackage,
+        name: &str,
         user_id: &str,
     ) -> Result<(), InstallError> {
         if package
@@ -160,7 +162,7 @@ impl PluginManager {
         {
             return Ok(());
         }
-        let lock = self.profile_lock(&package.manifest.id);
+        let lock = self.profile_lock(&package.manifest.id, name);
         let _editing = lock.lock().await;
         self.matrix()?
             .as_bot(user_id, async |session| {

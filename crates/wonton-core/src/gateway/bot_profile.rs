@@ -79,9 +79,10 @@ pub(super) async fn save(
 fn failure(error: ProfileError) -> Response {
     let status = match error {
         ProfileError::NotFound => StatusCode::NOT_FOUND,
-        ProfileError::Name(_) | ProfileError::Media(_) | ProfileError::InvalidInput(_) => {
-            StatusCode::BAD_REQUEST
-        }
+        ProfileError::Name(_)
+        | ProfileError::Media(_)
+        | ProfileError::UnknownBot(_)
+        | ProfileError::InvalidInput(_) => StatusCode::BAD_REQUEST,
         ProfileError::MatrixUnavailable(_) => StatusCode::SERVICE_UNAVAILABLE,
         ProfileError::Storage(_) => StatusCode::INTERNAL_SERVER_ERROR,
         ProfileError::RateLimited { .. } => StatusCode::TOO_MANY_REQUESTS,

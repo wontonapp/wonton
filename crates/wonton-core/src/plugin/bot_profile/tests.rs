@@ -138,6 +138,7 @@ async fn failed_agent_edits_do_not_use_quota_and_owner_edits_are_unlimited() {
             .manager
             .set_bot_profile(
                 &bed.id,
+                None,
                 LocalUpdate {
                     name: Some("WONTON".into()),
                     ..Default::default()
@@ -154,6 +155,7 @@ async fn failed_agent_edits_do_not_use_quota_and_owner_edits_are_unlimited() {
             .manager
             .set_bot_profile(
                 &bed.id,
+                None,
                 LocalUpdate {
                     name: Some(format!("Bot {n}")),
                     ..Default::default()
@@ -167,6 +169,7 @@ async fn failed_agent_edits_do_not_use_quota_and_owner_edits_are_unlimited() {
         bed.manager
             .set_bot_profile(
                 &bed.id,
+                None,
                 LocalUpdate {
                     name: Some("Agent blocked".into()),
                     ..Default::default()
@@ -205,6 +208,7 @@ async fn invalid_media_is_checked_before_any_profile_write_or_bot_upload() {
         .manager
         .set_bot_profile(
             &bed.id,
+            None,
             LocalUpdate {
                 name: Some("Not applied".into()),
                 avatar: Some(MediaChange::Set(UploadedAvatar {
@@ -241,6 +245,7 @@ async fn malformed_existing_state_prevents_mutation_before_upload_or_quota() {
         .manager
         .set_bot_profile(
             &bed.id,
+            None,
             LocalUpdate {
                 name: Some("Must not change".into()),
                 ..Default::default()
@@ -266,6 +271,7 @@ async fn confirmed_partial_edits_and_logout_errors_still_advance_revision_and_qu
             .manager
             .set_bot_profile(
                 &bed.id,
+                None,
                 LocalUpdate {
                     name: Some(format!("Confirmed {n}")),
                     avatar: Some(MediaChange::Clear),
@@ -286,6 +292,7 @@ async fn confirmed_partial_edits_and_logout_errors_still_advance_revision_and_qu
         bed.manager
             .set_bot_profile(
                 &bed.id,
+                None,
                 LocalUpdate {
                     name: Some("Blocked".into()),
                     ..Default::default()
@@ -313,4 +320,132 @@ async fn confirmed_partial_edits_and_logout_errors_still_advance_revision_and_qu
         Some("Owner committed")
     );
     assert_eq!(bed.manager.profile_revisions().get("app.echo"), 11);
+}
+
+fn keeper() -> BotKeeper {
+    BotKeeper::User {
+        username: "owner".to_owned(),
+    }
+}
+
+fn named(name: &str) -> LocalUpdate {
+    LocalUpdate {
+        name: Some(name.to_owned()),
+        ..Default::default()
+    }
+}
+
+/// 插件里装第二个 Bot（假 Matrix 用户 + 记录）；返回它的用户 ID。
+async fn bed_with_second_bot() -> (Bed, String) {
+    let bed = Bed::start().await;
+    let second = bed.matrix.login("echo2", "Bot").await.unwrap();
+    bed.matrix
+        .session(&second)
+        .set_display_name("Second")
+        .await
+        .unwrap();
+    bed.manager.bot_records_for_test(
+        &bed.id,
+        &[
+            (
+                crate::plugin::bot_services::DEFAULT_BOT,
+                "@echo:test",
+                keeper(),
+                "bus-token",
+            ),
+            ("second", &second.user_id, keeper(), "second-token"),
+        ],
+    );
+    (bed, second.user_id)
+}
+
+fn name_of(profile: &Profile) -> Option<&str> {
+    profile.name.as_deref()
+}
+
+#[tokio::test]
+async fn each_bot_reads_and_writes_its_own_profile() {
+    let (bed, second) = bed_with_second_bot().await;
+    let profile = bed
+        .manager
+        .set_bot_profile(&bed.id, Some("second"), named("第二个"))
+        .await
+        .unwrap();
+    assert_eq!(name_of(&profile), Some("第二个"));
+    assert_eq!(
+        bed.fake.state().user(&second).display_name.as_deref(),
+        Some("第二个")
+    );
+    assert_eq!(
+        bed.fake.state().user("@echo:test").display_name.as_deref(),
+        Some("Echo")
+    );
+    for (bot, expected) in [
+        ("second", Some("第二个")),
+        (crate::plugin::bot_services::DEFAULT_BOT, Some("Echo")),
+    ] {
+        let profile = bed.manager.bot_profile(&bed.id, Some(bot)).await.unwrap();
+        assert_eq!(name_of(&profile), expected, "{bot}");
+    }
+}
+
+#[tokio::test]
+async fn the_hourly_quota_is_counted_per_bot() {
+    let (bed, _second) = bed_with_second_bot().await;
+    for n in 0..10 {
+        bed.manager
+            .set_bot_profile(&bed.id, Some("second"), named(&format!("Two {n}")))
+            .await
+            .unwrap();
+    }
+    assert!(matches!(
+        bed.manager
+            .set_bot_profile(&bed.id, Some("second"), named("Blocked"))
+            .await,
+        Err(ProfileError::RateLimited { .. })
+    ));
+    let profile = bed
+        .manager
+        .set_bot_profile(
+            &bed.id,
+            Some(crate::plugin::bot_services::DEFAULT_BOT),
+            named("Echo"),
+        )
+        .await
+        .unwrap();
+    assert_eq!(name_of(&profile), Some("Echo"));
+}
+
+#[tokio::test]
+async fn unknown_bots_do_not_fall_back_to_the_default_one() {
+    let (bed, second) = bed_with_second_bot().await;
+    let Err(ProfileError::UnknownBot(bot)) = bed.manager.bot_profile(&bed.id, Some("ghost")).await
+    else {
+        panic!("读未知 Bot 应报 UnknownBot");
+    };
+    assert_eq!(bot, "ghost");
+    let Err(error) = bed
+        .manager
+        .set_bot_profile(&bed.id, Some("ghost"), named("ghost"))
+        .await
+    else {
+        panic!("写未知 Bot 应报 UnknownBot");
+    };
+    assert!(matches!(error, ProfileError::UnknownBot(bot) if bot == "ghost"));
+    assert_eq!(
+        bed.fake.state().user("@echo:test").display_name.as_deref(),
+        Some("Echo")
+    );
+
+    // 记录里没有默认 Bot 时，点名的接口报错，主人的资料页仍取记录里的第一个。
+    bed.manager
+        .bot_records_for_test(&bed.id, &[("second", &second, keeper(), "second-token")]);
+    assert!(matches!(
+        bed.manager
+            .bot_profile(&bed.id, Some(crate::plugin::bot_services::DEFAULT_BOT))
+            .await,
+        Err(ProfileError::UnknownBot(_))
+    ));
+    let profile = bed.manager.bot_profile(&bed.id, None).await.unwrap();
+    assert_eq!(name_of(&profile), Some("Second"));
 }
