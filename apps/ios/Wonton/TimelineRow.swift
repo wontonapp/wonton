@@ -121,6 +121,11 @@ private struct MessageBubble: View {
     @State private var isChoosingFailed = false
     @Environment(\.wontonColors) private var colors
 
+    /// 长按菜单底部的发送时间：完整日期加时间，隔了天也对得上（Telegram 长按同样显示）。
+    private var sentAt: String {
+        TimelineRow.date(message.timestampMs).formatted(.dateTime.year().month().day().hour().minute())
+    }
+
     private var shape: MessageBubbleShape {
         MessageBubbleShape(run: message.run, isOwn: message.isOwn)
     }
@@ -144,6 +149,10 @@ private struct MessageBubble: View {
                     .contextMenu {
                         ForEach(Array(message.actions.enumerated()), id: \.offset) { _, action in
                             menuItem(action)
+                        }
+                        Section {
+                            Text(.Message1.messageSentAt(sentAt))
+                                .accessibilityIdentifier("messageSentAt")
                         }
                     }
                 // 有回复的普通消息下面挂着旁聊的卡片（ADR-0093 §6）。
