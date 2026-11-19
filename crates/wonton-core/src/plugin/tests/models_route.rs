@@ -12,6 +12,7 @@ use tokio::net::TcpListener;
 use tokio::time::{Duration, Instant};
 
 use super::super::fake_docker::FakeDocker;
+use super::super::manifest::Permission;
 use super::super::names::container_name;
 use super::super::{PluginId, PluginManager, PluginPackage, PluginStatus};
 use super::manager::manager_with;
@@ -154,33 +155,51 @@ struct Bed {
     engine: super::super::docker::Engine,
     manager: PluginManager,
     _dir: tempfile::TempDir,
+    _matrix: crate::matrix::fake::Fake,
 }
 
-async fn bed_with_route(state: RouteState) -> Bed {
+/// 装了模型网关的床；`None` 时不装，用来测没有网关的退回。
+async fn bed_with(route: Option<RouteState>) -> Bed {
     let (docker, engine) = FakeDocker::start().await;
-    let keys = Keys::default();
-    docker.on_exec(credential_script(keys.clone()));
-    let port = gateway_with_route(keys.clone(), state).await;
     let dir = tempfile::tempdir().unwrap();
-    let manager = manager_with(engine.clone(), &dir);
-    manager
-        .install_checked(
-            provider(port),
-            &[],
-            &[],
-            false,
-            &[],
-            Default::default(),
-            &langs(),
-        )
-        .await
-        .unwrap();
+    // 声明 matrix.bot 的插件安装时要连 Matrix。
+    let (fake_matrix, cfg) = crate::matrix::fake::start().await;
+    let client = crate::matrix::Matrix::connect(
+        &cfg,
+        &dir.path().join("core"),
+        crate::http::HttpClient::new(),
+    )
+    .await
+    .unwrap();
+    let manager = manager_with(engine.clone(), &dir).with_matrix(Some(Arc::new(client)));
+    if let Some(state) = route {
+        let keys = Keys::default();
+        docker.on_exec(credential_script(keys.clone()));
+        let port = gateway_with_route(keys, state).await;
+        manager
+            .install_checked(
+                provider(port),
+                &[],
+                &[],
+                false,
+                &[],
+                Default::default(),
+                &langs(),
+            )
+            .await
+            .unwrap();
+    }
     Bed {
         docker,
         engine,
         manager,
         _dir: dir,
+        _matrix: fake_matrix,
     }
+}
+
+async fn bed_with_route(state: RouteState) -> Bed {
+    bed_with(Some(state)).await
 }
 
 impl Bed {
@@ -235,9 +254,8 @@ fn agent_with_web(port: u16) -> PluginPackage {
 
 #[tokio::test]
 async fn model_settings_falls_back_to_the_default_bot_page_without_a_gateway() {
-    let (_docker, engine) = FakeDocker::start().await;
-    let dir = tempfile::tempdir().unwrap();
-    let manager = manager_with(engine, &dir);
+    let bed = bed_with(None).await;
+    let manager = &bed.manager;
     let bot = PluginId::parse("app.hermes").unwrap();
     // 没有默认 Bot 插件、或它还没有网页时仍报错。
     assert!(manager.model_settings(&langs()).await.is_err());
@@ -245,7 +263,7 @@ async fn model_settings_falls_back_to_the_default_bot_page_without_a_gateway() {
     assert!(manager.model_settings(&langs()).await.is_err());
 
     manager
-        .install_package(agent_with_web(8080), &[], langs())
+        .install_package(agent_with_web(8080), &[Permission::MatrixBot], langs())
         .await
         .unwrap();
     let settings = manager.model_settings(&langs()).await.unwrap();
@@ -504,7 +522,10 @@ async fn subscription_agent_without_models_permission_is_left_alone() {
         "  agent: {protocol: matrix}\n  permissions: [matrix.bot]",
     )
     .replace("kind: app", "kind: agent");
-    bed.manager.install(&source, &[], langs()).await.unwrap();
+    bed.manager
+        .install(&source, &[Permission::MatrixBot], langs())
+        .await
+        .unwrap();
     let id = PluginId::parse("app.test").unwrap();
     assert!(matches!(
         bed.manager.status_of(&id),
