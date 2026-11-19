@@ -17,7 +17,7 @@ use crate::mcp::Caller;
 const MAX_BODY: usize = 16 * 1024;
 
 /// 认出取项的 Bot：有 Bot 记录，且 Bot 的 Matrix 令牌正是这个 Bot 的（ADR-0061 第 10 节，
-/// 同 /agent/chains 的核验）。批准的消息是主人的私人内容，只有握着 Bot 加密设备的桥能取，
+/// 同 /agent/chains 的核验）。批准的消息是主人的私人内容，只有握着 Bot 的 Matrix 令牌和加密设备的一方能取，
 /// Agent 自己拿总线令牌读不行。
 /// `token` 由调用方先从请求头取好：别把 `&Request` 拿过 await（axum 的 Body 不是 Sync，
 /// 请求的 future 会跟着不是 Send）。
@@ -29,7 +29,7 @@ async fn verified_bot(
     token: Option<&str>,
 ) -> Result<BotRef, Response> {
     let Some(bot) = bot_of(caller) else {
-        return Err(denied("这个插件没有 Bot 记录，出箱只管有 Bot 的前端"));
+        return Err(denied("这个插件没有 Bot 记录，出箱只管有 Bot 的插件"));
     };
     let Some(user_id) = gateway.bot_user_of_token(token.unwrap_or_default()).await else {
         return Err(denied("缺 Bot 的 Matrix 令牌，或者令牌认不出来"));

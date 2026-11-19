@@ -2,7 +2,7 @@
 //! 链交给壳。和确认列表一样的做法：跟着家里的连接走，连不上时留上次的列表、退避后接着轮询。取列表失败的
 //! 原因只进日志，动作失败则写入 [`AgentChainsViewModel::action_failure`]。
 //!
-//! 动作（停链、改上限、改并发）在 [`actions`]，壳经 `ClientCore::dispatch` 发送。聊天里的停止控件在 [`room_stop`]。
+//! 动作（停链、改上限）在 [`actions`]，壳经 `ClientCore::dispatch` 发送。聊天里的停止控件在 [`room_stop`]。
 
 use std::sync::Arc;
 use std::time::Duration;

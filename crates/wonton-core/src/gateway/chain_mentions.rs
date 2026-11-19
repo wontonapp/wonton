@@ -1,9 +1,9 @@
 //! 点名叫回的唤醒标签（ADR-0061 第 10 节，第 8 块）：链上 Bot 经 `matrix.wonton.internal`
 //! 发消息，核心把返回的事件 ID 记到账本（[`Chains::bind_event`]）；之后这条消息触发谁，
-//! 那个 Bot 的桥报 start 就凭标签接回这条链。挂在 [`super::send_limits`] 数跳数的同一组
+//! 那个 Bot 插件报 start 就凭标签接回这条链。挂在 [`super::send_limits`] 数跳数的同一组
 //! 发送上（`PUT /rooms/{房间}/send/{m.room.message|m.room.encrypted|m.sticker}/{txn}`）。
 //!
-//! 自带 Matrix 的 Agent（不经网关发消息）记不上标签：它的桥报 start 时没有标签，
+//! 自带 Matrix 的 Agent（不经网关发消息）记不上标签：它报 start 时没有标签，
 //! 网关按点名者的归属人开新链（`agent_chains`）。
 
 use axum::body::Body;

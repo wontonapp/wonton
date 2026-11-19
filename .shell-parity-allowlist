@@ -63,7 +63,6 @@ AgentChainBot | 壳待前端线接
 AgentChainsViewModel | 壳待前端线接
 AgentSettingsViewModel | 壳待前端线接
 ChainLimits | 壳待前端线接
-AgentConcurrency | 壳待前端线接
 AgentAction | 壳待前端线接
 ClientCore.agent_chains | 壳待前端线接
 ClientCore.subscribe_agent_chains | 壳待前端线接
