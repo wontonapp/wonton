@@ -14,7 +14,7 @@
 //! 设备留着给下次用。
 
 use std::{
-    path::Path,
+    path::{Path, PathBuf},
     sync::{Arc, Mutex},
     time::Duration,
 };
@@ -207,25 +207,13 @@ pub async fn run(args: &[String]) -> anyhow::Result<()> {
                 .restore_session(session)
                 .await
                 .context("恢复存下的登录状态")?;
-        }
-        None => {
-            let data = JsonObject::from_iter([("token".to_owned(), options.token.clone().into())]);
-            let mut login = client
-                .matrix_auth()
-                .login_custom("org.matrix.login.jwt", data)
-                .context("登录请求不对")?
-                .initial_device_display_name("Wonton 冒烟");
-            if let Some(device_id) = &options.device_id {
-                login = login.device_id(device_id);
-            }
-            login.await.context("用登录令牌登录")?;
-            if let (Some(path), Some(AuthSession::Matrix(session))) =
-                (saved.as_ref(), client.session())
-            {
-                std::fs::write(path, serde_json::to_vec(&session)?)
-                    .with_context(|| format!("存下登录状态 {}", path.display()))?;
+            // 服务器会把不用的设备和令牌清掉：存下的登录状态还在，但它已经不认了。这时用同一台设备重新登录。
+            if client.whoami().await.is_err() {
+                eprintln!("存下的设备服务器不认了，用同一台重新登录");
+                login(&client, &options, saved.as_ref()).await?;
             }
         }
+        None => login(&client, &options, saved.as_ref()).await?,
     }
     if options.token_only {
         // 不注销：调用方要拿这个令牌接着调接口。
@@ -246,6 +234,25 @@ pub async fn run(args: &[String]) -> anyhow::Result<()> {
 
 /// Bot 发来的文字（`m.text` 或 `m.notice`）：正文和是不是加密消息。
 type Message = (String, bool);
+
+/// 用登录令牌登录；给了 `--device-id` 就固定成那台。存了存储目录时把登录状态写进去，下次接着用同一台。
+async fn login(client: &Client, options: &Options, saved: Option<&PathBuf>) -> anyhow::Result<()> {
+    let data = JsonObject::from_iter([("token".to_owned(), options.token.clone().into())]);
+    let mut request = client
+        .matrix_auth()
+        .login_custom("org.matrix.login.jwt", data)
+        .context("登录请求不对")?
+        .initial_device_display_name("Wonton 冒烟");
+    if let Some(device_id) = &options.device_id {
+        request = request.device_id(device_id);
+    }
+    request.await.context("用登录令牌登录")?;
+    if let (Some(path), Some(AuthSession::Matrix(session))) = (saved, client.session()) {
+        std::fs::write(path, serde_json::to_vec(&session)?)
+            .with_context(|| format!("存下登录状态 {}", path.display()))?;
+    }
+    Ok(())
+}
 
 /// 按顺序发每条消息，每发一条等 Bot 回一条。
 async fn converse(client: &Client, options: &Options) -> anyhow::Result<()> {
