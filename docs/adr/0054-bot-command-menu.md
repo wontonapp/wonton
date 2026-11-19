@@ -1,6 +1,6 @@
 # ADR-0054 Bot 的斜杠命令菜单：每个 Bot 一个房间状态事件，整表替换
 
-- 状态：已接受（2026-11-07）
+- 状态：已接受（2026-11-07）；2026-11-19 修订（[ADR-0109](0109-chat-like-telegram.md)）：写表的是 Hermes 插件，调用方式经 Hermes 源码核对不变
 
 ## 背景
 
@@ -24,8 +24,11 @@ MSC4133（资料里的自定义字段）按用户而不是按房间，字段变�
 - 调用命令就是一条普通文字消息 “/名字 参数”，不另设事件类型。群里有多个 Bot 时用 Matrix 的提及（`m.mentions`）
   指定 Bot，不学 Telegram 的 `/cmd@bot`。
 - 客户端只认 `state_key` 和发送者相同、且发送者是房间成员的事件。
-- 写事件的是 Bot 自己，核心不经手：ACP Agent 由 wonton-acp-bridge 写，桥自己的 `/wonton` 命令排在最前面；不是 ACP 的
-  Bot（如 Hermes）写同一个事件，也能有菜单。没有权限写状态事件时，桥在房间里提示一次，不静默。
+- 写事件的是 Bot 自己，核心不经手。ACP 桥已删（[ADR-0108](0108-hermes-default-kernel.md)）；Hermes 由它的插件胶水写同一个事件，表里是 Hermes 认的命令。
+  没有权限写状态事件时，插件在房间里提示一次，不静默。
+- 调用方式不加前缀：Hermes 的 Matrix 网关把以“/”开头的正文当命令（v0.22.7 `plugins/platforms/matrix/adapter.py` 第 2171 行）。
+  它另认的“!命令”是给会拦截“/”的客户端用的别名，Wonton 的输入框不拦“/”。
+- 客户端核心把房间里各 Bot 的表合成 `TimelineUpdate::commands`，每条带要发的整句；App 怎么显示见 ADR-0109。
 
 ## 理由
 
