@@ -19,7 +19,6 @@ pub use super::secret_spec::{
 };
 pub use super::secret_spec::{MAX_SECRET_BYTES, is_secret_name};
 use std::collections::BTreeMap;
-pub(super) use wonton_protocol::manifest::is_label;
 pub use wonton_protocol::manifest::{
     Accounts, BotProfile, BotServices, LocalizedTags, LocalizedText, MAX_ID_LEN, Manifest,
     ManifestError, OidcClient, OptionalPermission, PluginId, PluginKind, ProxyCredentials,

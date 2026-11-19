@@ -17,16 +17,14 @@ use std::sync::{Arc, Mutex, MutexGuard};
 
 use tokio::runtime::Handle;
 use tokio::sync::watch;
-use wonton_l10n::l10n;
 use wonton_protocol::{
     CoreError, HomeStatus, Me, ModelSettings, ModelSettingsProblem, ONBOARDING_PATH, Onboarding,
     OnboardingAction, OnboardingCommit, OnboardingStep, OnboardingTip, OnboardingTooOld,
-    OnboardingUpdate, OnboardingViewModel, PluginFailure, PluginProblem, minimum_server_version,
+    OnboardingViewModel, PluginFailure, PluginProblem, minimum_server_version,
 };
 
 use crate::chat::ChatLink;
 use crate::home::HomeLink;
-use crate::l10n::{CATALOG, language};
 use crate::plugins::PluginsLink;
 use crate::scope::reuse;
 use draft::Draft;

@@ -13,6 +13,11 @@ pub(super) fn validate(manifest: &Manifest) -> Result<(), ManifestError> {
     let Some(agent) = &manifest.agent else {
         return Ok(());
     };
+    if agent.protocol == AgentProtocol::Acp {
+        return Err(ManifestError::UnsupportedAgentProtocol {
+            protocol: "acp".to_owned(),
+        });
+    }
     if let Some(skills) = &agent.skills {
         if manifest.kind != PluginKind::Agent {
             return Err(ManifestError::Invalid(

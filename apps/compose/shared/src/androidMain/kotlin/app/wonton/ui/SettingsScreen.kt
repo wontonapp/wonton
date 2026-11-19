@@ -91,7 +91,6 @@ fun SettingsPage(
 @Composable
 private fun SettingsScreen(settings: SettingsViewModel, version: String, onSubpage: (SettingsSubpage) -> Unit) {
     val onboarding = LocalOnboarding.current
-    var choosingAgent by remember { mutableStateOf(false) }
     Column(
         Modifier.fillMaxSize().verticalScroll(rememberScrollState())
             .wontonContentPadding().padding(WontonTheme.spacing.pageInset),
@@ -101,7 +100,7 @@ private fun SettingsScreen(settings: SettingsViewModel, version: String, onSubpa
             WontonGroup {
                 section.entries.forEachIndexed { index, entry ->
                     if (index > 0) WontonSeparator()
-                    SettingsEntryRow(entry, version, onSubpage) { choosingAgent = true }
+                    SettingsEntryRow(entry, version, onSubpage)
                 }
             }
         }
@@ -111,7 +110,6 @@ private fun SettingsScreen(settings: SettingsViewModel, version: String, onSubpa
             }
         }
     }
-    if (choosingAgent) DefaultAgentSelection { choosingAgent = false }
 }
 
 @Composable
@@ -119,7 +117,6 @@ private fun SettingsEntryRow(
     entry: SettingsEntry,
     version: String,
     onSubpage: (SettingsSubpage) -> Unit,
-    onChooseAgent: () -> Unit,
 ) {
     val onboarding = LocalOnboarding.current
     when (entry) {
@@ -166,10 +163,6 @@ private fun SettingsEntryRow(
             ),
             showsForward = true,
             onClick = { onSubpage(SettingsSubpage.NOTIFICATIONS) },
-        )
-        SettingsEntry.DefaultAgent -> WontonRow(
-            stringResource(R.string.settings_default_agent), onboarding.view.agents.firstOrNull { it.selected }?.title,
-            showsForward = true, onClick = onChooseAgent,
         )
         is SettingsEntry.ChatBackup -> WontonRow(
             stringResource(R.string.chat_backup_title), entry.recovery.backupValue, showsForward = true,

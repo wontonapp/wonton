@@ -220,6 +220,40 @@ impl Bed {
     }
 }
 
+/// 一个带网页的 Agent 插件，充当默认 Bot（Hermes 那种：没有模型网关时由它自己的设置页接供应商）。
+fn agent_with_web(port: u16) -> PluginPackage {
+    let yaml = package(
+        "  web:\n    image: nginx\n",
+        &format!(
+            "  agent: {{protocol: matrix}}\n  webui: {{service: web, port: {port}}}\n  permissions: [matrix.bot]"
+        ),
+    )
+    .replace("kind: app", "kind: agent")
+    .replace("id: app.test", "id: app.hermes");
+    PluginPackage::parse(&yaml, &langs()).unwrap()
+}
+
+#[tokio::test]
+async fn model_settings_falls_back_to_the_default_bot_page_without_a_gateway() {
+    let (_docker, engine) = FakeDocker::start().await;
+    let dir = tempfile::tempdir().unwrap();
+    let manager = manager_with(engine, &dir);
+    let bot = PluginId::parse("app.hermes").unwrap();
+    // 没有默认 Bot 插件、或它还没有网页时仍报错。
+    assert!(manager.model_settings(&langs()).await.is_err());
+    manager.set_default_bot_plugin(Some(bot.clone()));
+    assert!(manager.model_settings(&langs()).await.is_err());
+
+    manager
+        .install_package(agent_with_web(8080), &[], langs())
+        .await
+        .unwrap();
+    let settings = manager.model_settings(&langs()).await.unwrap();
+    assert_eq!(settings.plugin_id, bot.as_str());
+    assert!(settings.web_url.is_some());
+    assert!(!settings.has_configured_models);
+}
+
 #[tokio::test]
 async fn model_settings_uses_stored_consumer_state_without_probing() {
     let state = Arc::new(Mutex::new(RouteReply {
@@ -467,7 +501,7 @@ async fn subscription_agent_without_models_permission_is_left_alone() {
     let bed = bed_with_route(state.clone()).await;
     let source = package(
         "  agent:\n    image: agent\n",
-        "  agent: {protocol: acp}\n  permissions: []",
+        "  agent: {protocol: matrix}\n  permissions: [matrix.bot]",
     )
     .replace("kind: app", "kind: agent");
     bed.manager.install(&source, &[], langs()).await.unwrap();

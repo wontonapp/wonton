@@ -42,14 +42,5 @@ internal fun OnboardingModelStep(
                 kind = WontonButtonKind.SECONDARY,
             )
         }
-        model.logins.forEach { login ->
-            key(login.id) {
-                StepOptionRow(
-                    title = stringResource(R.string.onboarding_model_use_login, login.title),
-                    selected = (model.choice as? OnboardingModelChoice.Login)?.id == login.id,
-                    onSelect = { send(Action.Onboarding(OnboardingAction.ChooseModelLogin(login.id))) },
-                )
-            }
-        }
     }
 }

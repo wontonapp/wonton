@@ -236,7 +236,10 @@ fn agent_and_bot_manifests_reject_very_high_and_highest_permissions() {
             "  web:\n    image: nginx",
             &format!("  permissions: [{permission}]"),
         )
-        .replace("  kind: app\n", "  kind: agent\n  agent: {protocol: acp}\n");
+        .replace(
+            "  kind: app\n  permissions: [",
+            "  kind: agent\n  agent: {protocol: matrix}\n  permissions: [matrix.bot, ",
+        );
         let err = PluginPackage::parse(&agent, &langs())
             .unwrap_err()
             .to_string();

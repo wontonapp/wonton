@@ -225,12 +225,12 @@ fn onboarding_missing_or_malformed_catalog_fails() {
 fn onboarding_invalid_plugin_references_fail() {
     let mut missing_app = onboarding_index();
     missing_app["onboarding"]["needs"][0]["plugins"] = json!(["app.missing-photos"]);
-    for (index, id) in [(missing_app, "app.missing-photos")] {
-        let (passed, problems) = checked_index(index);
-        assert!(!passed, "{id}: {problems:?}");
-        assert!(
-            problems.iter().any(|problem| problem.contains(id)),
-            "{problems:?}"
-        );
-    }
+    let (passed, problems) = checked_index(missing_app);
+    assert!(!passed, "{}: {problems:?}", "app.missing-photos");
+    assert!(
+        problems
+            .iter()
+            .any(|problem| problem.contains("app.missing-photos")),
+        "{problems:?}"
+    );
 }

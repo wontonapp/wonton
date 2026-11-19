@@ -383,10 +383,10 @@ async fn onboarding_routes(
                 let Some(value) = state.as_mut() else {
                     return Some(core_error_response(404));
                 };
-                if let Ok(update) = serde_json::from_slice::<serde_json::Value>(body) {
-                    if let Some(next) = update.get("step").filter(|value| !value.is_null()) {
-                        value["step"] = next.clone();
-                    }
+                if let Ok(update) = serde_json::from_slice::<serde_json::Value>(body)
+                    && let Some(next) = update.get("step").filter(|value| !value.is_null())
+                {
+                    value["step"] = next.clone();
                 }
                 json_value(value.clone())
             }

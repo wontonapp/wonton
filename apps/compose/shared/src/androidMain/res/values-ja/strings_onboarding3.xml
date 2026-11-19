@@ -1,15 +1,7 @@
 <?xml version="1.0" encoding="utf-8"?>
 <resources>
-    <!-- Problem title in setup when no agent can be chosen. -->
-    <string name="onboarding_agent_empty">選べるアシスタントがありません。再読み込みして再試行できます。</string>
-    <!-- Notice when tapping "Get API key" found no browser to open the link. -->
-    <string name="onboarding_model_no_browser">このリンクを開けるブラウザがありません。ブラウザをインストールまたは有効にしてから再試行してください。</string>
     <!-- Button that opens the model gateway's settings page. -->
     <string name="onboarding_model_open_settings">モデル設定を開く</string>
-    <!-- Button that checks the typed API key against the model provider. -->
-    <string name="onboarding_model_test">テスト</string>
-    <!-- Row title: sign in to a model provider with an account. Argument: the login's name (like "ChatGPT account"). -->
-    <string name="onboarding_model_use_login">%1$sを使用</string>
     <!-- Problem title in setup: the provider rejected the API key. -->
     <string name="onboarding_problem_model_key_rejected">プロバイダーがこのAPIキーを拒否しました。修正して再テストしてください。</string>
     <!-- Problem title in setup: the provider's address can't be reached. -->
