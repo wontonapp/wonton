@@ -31,7 +31,7 @@ internal fun OnboardingModelStep(
         if (model.hasConfiguredModels) {
             StepOptionRow(
                 title = stringResource(R.string.onboarding_model_use_current),
-                selected = model.choice is OnboardingModelChoice.Current,
+                selected = model.choice == OnboardingModelChoice.CURRENT,
                 onSelect = { send(Action.Onboarding(OnboardingAction.UseCurrentModel)) },
             )
         }
