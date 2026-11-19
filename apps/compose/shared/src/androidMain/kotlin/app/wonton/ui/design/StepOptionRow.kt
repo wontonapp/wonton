@@ -93,9 +93,10 @@ private fun Modifier.optionSelection(
     blocked: String?,
     multiple: Boolean,
 ): Modifier = when {
+    // 没有动作就不是能点的选项：读屏念“停用”，原来的选中状态照念；`blocked` 只是失败原因，写在正文里。
     onSelect == null -> semantics(mergeDescendants = true) {
         selected = isSelected
-        if (blocked != null) disabled()
+        disabled()
     }
     multiple -> toggleable(
         value = isSelected,

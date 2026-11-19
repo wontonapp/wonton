@@ -56,11 +56,13 @@ import androidx.compose.ui.unit.dp
 import app.wonton.client.ClientCore
 import app.wonton.protocol.Action
 import app.wonton.protocol.AgentAction
+import app.wonton.protocol.ComposerAttachment
 import app.wonton.protocol.ComposerViewModel
 import app.wonton.protocol.CoreException
 import app.wonton.protocol.ImageUpload
 import app.wonton.protocol.ReplyQuote
 import app.wonton.protocol.RoomAgentStop
+import app.wonton.protocol.RoomCommand
 import app.wonton.protocol.TimelineAction
 import app.wonton.protocol.TimelineTarget
 import app.wonton.ui.design.WontonActionSheet
@@ -69,14 +71,13 @@ import app.wonton.ui.design.WontonSheetAction
 import app.wonton.ui.design.WontonTheme
 import app.wonton.ui.design.toColor
 import app.wonton.ui.icons.Attach
+import app.wonton.ui.icons.Code
 import app.wonton.ui.icons.Image
 import app.wonton.ui.icons.Send
 import app.wonton.ui.icons.WontonIcon
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
-
-private const val MAX_LINES = 6
 
 /**
  * 聊天页底部的输入栏。`reply` 是正在回复的消息，画在输入框上方；`focusToken` 变一次就把光标放回输入框（开始回复时）。
@@ -85,6 +86,9 @@ private const val MAX_LINES = 6
  *
  * 附件区只有主对话有（ADR-0093、ADR-0094）：[target] 是旁聊时字和照片直接发进那个旁聊，`composer` 是 `null`；
  * 文件上传只认房间，旁聊里不给选文件。
+ *
+ * [commands] 是各 Bot 的斜杠命令（ADR-0054）：输入“/”时按名字前缀在输入框上方列出来，点一条就把 [RoomCommand.text]
+ * 原样发出去。[dropCommand] 非空时发的是它（草稿整句就是一条完整命令，正文里的空行不算），否则发草稿。
  */
 @OptIn(ExperimentalFoundationApi::class)
 @Composable
@@ -100,6 +104,9 @@ fun Composer(
     onReplyCancel: () -> Unit,
     onAction: (Action) -> Unit,
     onReject: (Problem) -> Unit,
+    commands: List<RoomCommand> = emptyList(),
+    commandsOmitted: Int = 0,
+    dropCommand: String? = null,
 ) {
     val incoming = LocalTabDraft.current
     LaunchedEffect(incoming.text) {
@@ -122,8 +129,6 @@ fun Composer(
         null
     }
     val attach = rememberAttachments(roomId, composer, core, onReject, sendImage)
-    val spacing = WontonTheme.spacing
-    val size = WontonTheme.size
     val isEmpty = draft.isBlank() && attachments.isEmpty()
     val focusRequester = remember { FocusRequester() }
     LaunchedEffect(focusToken) { if (focusToken > 0) focusRequester.requestFocus() }
@@ -131,20 +136,107 @@ fun Composer(
         onAction(sendAction(target, text, reply, viaTray))
         onSent()
     }
-    if (!inSideChat) OnboardingChatPrompts(roomId)
-    if (reply != null) ComposerReply(reply, core, onReplyCancel)
-    ComposerTray(attachments, roomId, core, onAction)
     val agentStop by produceState<RoomAgentStop>(RoomAgentStop.Idle, core, target) {
         core.agentStopUpdates(target).collect { value = it }
     }
+    ComposerStack(
+        inSideChat = inSideChat,
+        roomId = roomId,
+        reply = reply,
+        core = core,
+        onReplyCancel = onReplyCancel,
+        attachments = attachments,
+        onAction = onAction,
+        draft = draft,
+        commands = commands,
+        commandsOmitted = commandsOmitted,
+        target = target,
+        onSent = onSent,
+    )
     AgentStopNotice(agentStop)
+    ComposerBar(
+        draft = draft,
+        commands = commands,
+        agentStop = agentStop,
+        isEmpty = isEmpty,
+        focusRequester = focusRequester,
+        onDraftChange = onDraftChange,
+        attach = attach,
+        send = send,
+        dropCommand = dropCommand,
+    )
+    attach.chooser()
+}
+
+/** 草稿以“/”开头且还没打空格时按名字前缀过滤命令（ADR-0109）；打完空格就算普通消息，菜单收起。 */
+private fun commandQuery(draft: String, commands: List<RoomCommand>): List<RoomCommand> {
+    val query = draft.removePrefix("/").takeIf { draft.startsWith("/") && it.none(Char::isWhitespace) }
+    return commands.filter { query != null && it.name.startsWith(query, ignoreCase = true) }
+}
+
+/** 输入框上方跟着草稿变的那一摞：引导、回复、附件区和命令菜单。 */
+@Composable
+private fun ComposerStack(
+    inSideChat: Boolean,
+    roomId: String,
+    reply: ReplyQuote?,
+    core: ClientCore,
+    onReplyCancel: () -> Unit,
+    attachments: List<ComposerAttachment>,
+    onAction: (Action) -> Unit,
+    draft: String,
+    commands: List<RoomCommand>,
+    commandsOmitted: Int,
+    target: TimelineTarget,
+    onSent: () -> Unit,
+) {
+    if (!inSideChat) OnboardingChatPrompts(roomId)
+    if (reply != null) ComposerReply(reply, core, onReplyCancel)
+    val shown = commandQuery(draft, commands)
+    ComposerTray(attachments, roomId, core, onAction)
+    if (shown.isNotEmpty()) {
+        ComposerCommands(shown, commandsOmitted) { command ->
+            onAction(Action.Timeline(TimelineAction.SendText(target, command.text, reply?.eventId)))
+            onSent()
+        }
+    }
+}
+
+/** 输入框这一行：命令菜单、回形针、输入框和发送键。 */
+@OptIn(ExperimentalFoundationApi::class)
+@Composable
+private fun ComposerBar(
+    draft: String,
+    commands: List<RoomCommand>,
+    agentStop: RoomAgentStop,
+    isEmpty: Boolean,
+    focusRequester: FocusRequester,
+    onDraftChange: (String) -> Unit,
+    attach: Attachments,
+    send: (String) -> Unit,
+    dropCommand: String?,
+) {
+    val spacing = WontonTheme.spacing
+    val size = WontonTheme.size
     Row(Modifier.fillMaxWidth().padding(spacing.s4), verticalAlignment = Alignment.Bottom) {
+        // 命令菜单放在回形针左边（ADR-0109），没有命令的房间里不占位置。
+        AnimatedVisibility(visible = commands.isNotEmpty(), enter = fadeIn(), exit = fadeOut()) {
+            WontonIconButton(
+                WontonIcon.List,
+                stringResource(R.string.composer_commands),
+                onClick = {
+                    // 点菜单按钮把“/”垫在草稿前面，再点一下草稿正好是“/”就收回。
+                    onDraftChange(if (draft == "/") "" else "/$draft")
+                    focusRequester.requestFocus()
+                },
+            )
+        }
         WontonIconButton(WontonIcon.Attach, stringResource(R.string.composer_attach), attach.choose)
         ComposerField(
             draft,
             onDraftChange,
             attach.pasteListener,
-            onHardwareSend = send,
+            onHardwareSend = { text -> send(dropCommand ?: text) },
             modifier = Modifier.weight(1f)
                 .focusRequester(focusRequester)
                 .padding(vertical = (size.target - size.composerField) / 2)
@@ -160,10 +252,9 @@ fun Composer(
             enter = scaleIn(motion) + fadeIn(motion),
             exit = scaleOut(motion) + fadeOut(motion),
         ) {
-            SendButton { send(draft) }
+            SendButton { send(dropCommand ?: draft) }
         }
     }
-    attach.chooser()
 }
 
 /** 附件区的入口：选照片、选文件和粘贴，都只放进附件区，不发（旁聊里照片直接发，见 [Composer]）。 */
@@ -302,7 +393,9 @@ private fun ComposerField(
     BasicTextField(
         state = fieldState,
         modifier = modifier.contentReceiver(pasteListener).hardwareMessageKeys(fieldState, onHardwareSend),
-        lineLimits = TextFieldLineLimits.MultiLine(maxHeightInLines = MAX_LINES),
+        lineLimits = TextFieldLineLimits.MultiLine(
+            maxHeightInLines = WontonTheme.ratio.composerLines.toInt(),
+        ),
         textStyle = typography.body.copy(color = colors.textPrimary.toColor()),
         cursorBrush = SolidColor(colors.textPrimary.toColor()),
         decorator = TextFieldDecorator { field ->

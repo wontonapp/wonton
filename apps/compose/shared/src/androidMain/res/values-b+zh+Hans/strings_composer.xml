@@ -36,4 +36,8 @@
     <string name="composer_stop_forbidden">你没有权限停下这一轮。</string>
     <!-- One-line note above the chat composer: the stop request may not have reached the home server, so it is unknown whether the bot's turn stopped. The stop button stays for another try. -->
     <string name="composer_stop_uncertain">没连上家里的服务器，不确定停下没有。可以再试一次。</string>
+    <!-- 输入栏里回形针左边的图标按钮：打开 Bot 命令菜单。也是读屏标签。 -->
+    <string name="composer_commands">命令</string>
+    <!-- 命令菜单末尾：某个 Bot 还有几条没有列出。参数：条数。 -->
+    <string name="composer_commands_more">还有 %1$d 条命令没列出</string>
 </resources>

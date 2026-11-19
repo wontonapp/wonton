@@ -1,12 +1,15 @@
 package app.wonton.ui
 
 import android.content.res.Resources
+import androidx.compose.animation.core.Animatable
+import androidx.compose.animation.core.tween
 import androidx.compose.foundation.background
 import androidx.compose.foundation.border
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.combinedClickable
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
+import androidx.compose.foundation.layout.BoxWithConstraints
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.RowScope
@@ -14,13 +17,17 @@ import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
+import androidx.compose.foundation.layout.widthIn
+import androidx.compose.foundation.shape.GenericShape
 import androidx.compose.foundation.shape.RoundedCornerShape
+import androidx.compose.material3.CircularProgressIndicator
 import androidx.compose.material3.Icon
 import androidx.compose.material3.LocalContentColor
 import androidx.compose.material3.LocalTextStyle
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.CompositionLocalProvider
+import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
@@ -28,28 +35,34 @@ import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.alpha
+import androidx.compose.ui.draw.clip
+import androidx.compose.ui.geometry.CornerRadius
 import androidx.compose.ui.geometry.Rect
+import androidx.compose.ui.geometry.RoundRect
+import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.graphics.Path
 import androidx.compose.ui.graphics.Shape
-import androidx.compose.ui.graphics.graphicsLayer
-import androidx.compose.ui.hapticfeedback.HapticFeedbackType
 import androidx.compose.ui.layout.boundsInRoot
 import androidx.compose.ui.layout.onGloballyPositioned
+import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.platform.LocalDensity
 import androidx.compose.ui.platform.LocalHapticFeedback
 import androidx.compose.ui.platform.testTag
 import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.semantics.Role
 import androidx.compose.ui.semantics.clearAndSetSemantics
+import androidx.compose.ui.semantics.contentDescription
 import androidx.compose.ui.semantics.semantics
 import androidx.compose.ui.semantics.stateDescription
 import androidx.compose.ui.text.font.FontStyle
 import androidx.compose.ui.text.style.TextAlign
-import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.unit.dp
 import app.wonton.client.ClientCore
 import app.wonton.protocol.Action
 import app.wonton.protocol.MessageAction
 import app.wonton.protocol.MessageContent
+import app.wonton.protocol.MessageRun
+import app.wonton.protocol.MessageStatus
 import app.wonton.protocol.RichBlockKind
 import app.wonton.protocol.SendState
 import app.wonton.protocol.TimelineContent
@@ -60,19 +73,22 @@ import app.wonton.ui.design.WontonSheetAction
 import app.wonton.ui.design.WontonTheme
 import app.wonton.ui.design.accentFill
 import app.wonton.ui.design.toColor
+import app.wonton.ui.icons.Check
+import app.wonton.ui.icons.Checks
+import app.wonton.ui.icons.Clock
 import app.wonton.ui.icons.LockKey
 import app.wonton.ui.icons.Refresh
-import app.wonton.ui.icons.Reply
 import app.wonton.ui.icons.Trash
-import app.wonton.ui.icons.WarningCircle
 import app.wonton.ui.icons.WontonIcon
 import java.text.DateFormat
 import java.util.Date
 
 /**
- * `showsSender`：私聊里对方是谁看标题就知道，不在每条消息上重复名字。`joinsPrevious`、`joinsNext`：和上一条、下一条是
- * 不是同一个人连着发的。`onRetry`、`onCancel` 处理发送失败的这一条，`onCardAction` 是确认卡片上的操作。
+ * `showsSender`：私聊里对方是谁看标题就知道，不在每条消息上重复名字。`joinsPrevious`、`joinsNext`：这一条在它那一组里
+ * 排第几（`run`），决定相接的角、尾巴画不画。`focused`、`emphasize`：列表刚滚到这一条，`emphasize` 时背景闪一下。
+ * `onRetry`、`onCancel` 处理发送失败的这一条，`onCardAction` 是确认卡片上的操作。
  * `onOpenAgentCard` 打开这张等回答的卡片，`onAnswerAgentChoice` 回答 Bot 自己的提问（ADR-0082）。
+ * `onJumpQuote` 点引用跳到原消息，`onAnswerChoice` 点这条消息下面的选项（ADR-0109）。
  * `onOpenSideChat` 进旁聊（参数是根的事件 ID），旁聊卡片和结果行都用它（ADR-0093）。
  */
 @Composable
@@ -90,59 +106,79 @@ fun TimelineItemView(
     onOpenAgentCard: (String) -> Unit,
     onAnswerAgentChoice: (String) -> Unit,
     onOpenSideChat: (String) -> Unit,
+    onJumpQuote: (String) -> Unit,
+    onAnswerChoice: (String) -> Unit,
+    focused: Boolean = false,
+    emphasize: Boolean = false,
     flushesPrevious: Boolean = false,
     flushesNext: Boolean = false,
 ) {
-    when (val content = item.content) {
-        // 时间不贴在气泡上：隔得久的那条上方写一行，其余的点一下气泡才露出来。
-        is TimelineContent.Message -> Column(verticalArrangement = Arrangement.spacedBy(WontonTheme.spacing.s8)) {
-            if (content.message.startsTimeGroup) CenteredNote(messageTime(content.message))
-            MessageBubble(
-                content.message,
-                core,
-                showsSender && !joinsPrevious,
-                joinsPrevious,
-                joinsNext,
-                onRetry,
-                onCancel,
-                onCardAction,
-                { message, bounds -> onOpenMenu(item, message, bounds) },
-                onReply,
-                onOpenSideChat,
-                flushesPrevious,
-                flushesNext,
-            )
+    val flash = remember(item.id) { Animatable(0f) }
+    LaunchedEffect(focused, emphasize) {
+        if (focused && emphasize) {
+            flash.snapTo(1f)
+            flash.animateTo(0f, tween(WontonTheme.motion.jumpHighlight))
         }
-        is TimelineContent.Notice -> CenteredNote(content.text)
-        is TimelineContent.AgentRun -> AgentRunRowView(content, onOpenAgentCard, onAnswerAgentChoice)
-        is TimelineContent.ProfileChange -> CenteredNote(
-            content.previousName
-                ?.let { stringResource(R.string.timeline_profile_rename, it, content.name) }
-                ?: stringResource(R.string.timeline_profile_avatar, content.name),
+    }
+    val highlight = if (flash.value > 0f) {
+        Modifier.background(
+            WontonTheme.colors.accentFill.toColor().copy(alpha = FLASH_ALPHA * flash.value),
+            RoundedCornerShape(WontonTheme.radii.control),
         )
-        // 分隔线带着这一天第一条消息的时间：日期和时间写在一行，那条消息上方不再另写。
-        is TimelineContent.DateDivider -> CenteredNote(
-            DateFormat.getDateTimeInstance(DateFormat.FULL, DateFormat.SHORT)
-                .format(Date(content.timestampMs.toLong())),
-        )
-        TimelineContent.ReadMarker -> Row(
-            verticalAlignment = Alignment.CenterVertically,
-            horizontalArrangement = Arrangement.spacedBy(WontonTheme.spacing.s8),
-        ) {
-            NoteEdge()
-            Text(
-                stringResource(R.string.timeline_new_messages_below),
-                style = WontonTheme.typography.caption,
-                color = WontonTheme.colors.accentInk.toColor(),
+    } else {
+        Modifier
+    }
+    Box(Modifier.fillMaxWidth().then(highlight).testTag("item-${item.id}")) {
+        when (val content = item.content) {
+            is TimelineContent.Message -> Column(verticalArrangement = Arrangement.spacedBy(WontonTheme.spacing.s8)) {
+                MessageBubble(
+                    content.message,
+                    core,
+                    showsSender && !joinsPrevious,
+                    joinsPrevious,
+                    joinsNext,
+                    onRetry,
+                    onCancel,
+                    onCardAction,
+                    { message, bounds -> onOpenMenu(item, message, bounds) },
+                    onReply,
+                    onOpenSideChat,
+                    onJumpQuote,
+                    onAnswerChoice,
+                    flushesPrevious,
+                    flushesNext,
+                )
+            }
+            is TimelineContent.Notice -> CenteredNote(content.text)
+            is TimelineContent.AgentRun -> AgentRunRowView(content, onOpenAgentCard, onAnswerAgentChoice)
+            is TimelineContent.ProfileChange -> CenteredNote(
+                content.previousName
+                    ?.let { stringResource(R.string.timeline_profile_rename, it, content.name) }
+                    ?: stringResource(R.string.timeline_profile_avatar, content.name),
             )
-            NoteEdge()
-        }
-        TimelineContent.TimelineStart -> CenteredNote(stringResource(R.string.timeline_start))
-        is TimelineContent.SideChat -> SideChatCardRow(content.card, Modifier.fillMaxWidth()) {
-            onOpenSideChat(content.card.rootEventId)
-        }
-        is TimelineContent.SideChatResult -> SideChatResultRow(content.title, content.state) {
-            onOpenSideChat(content.rootEventId)
+            is TimelineContent.DateDivider -> CenteredNote(
+                DateFormat.getDateTimeInstance(DateFormat.FULL, DateFormat.SHORT)
+                    .format(Date(content.timestampMs.toLong())),
+            )
+            TimelineContent.ReadMarker -> Row(
+                verticalAlignment = Alignment.CenterVertically,
+                horizontalArrangement = Arrangement.spacedBy(WontonTheme.spacing.s8),
+            ) {
+                NoteEdge()
+                Text(
+                    stringResource(R.string.timeline_new_messages_below),
+                    style = WontonTheme.typography.caption,
+                    color = WontonTheme.colors.accentInk.toColor(),
+                )
+                NoteEdge()
+            }
+            TimelineContent.TimelineStart -> CenteredNote(stringResource(R.string.timeline_start))
+            is TimelineContent.SideChat -> SideChatCardRow(content.card, Modifier.fillMaxWidth()) {
+                onOpenSideChat(content.card.rootEventId)
+            }
+            is TimelineContent.SideChatResult -> SideChatResultRow(content.title, content.state) {
+                onOpenSideChat(content.rootEventId)
+            }
         }
     }
 }
@@ -162,20 +198,6 @@ private fun CenteredNote(text: String) {
     )
 }
 
-/** 自己的气泡靠右，相接的是右边的角；别人的相反。 */
-private fun bubbleShape(isOwn: Boolean, joinsPrevious: Boolean, joinsNext: Boolean): Shape {
-    val full = WontonTheme.radii.bubble
-    val joined = WontonTheme.radii.bubbleJoined
-    val top = if (joinsPrevious) joined else full
-    val bottom = if (joinsNext) joined else full
-    return RoundedCornerShape(
-        topStart = if (isOwn) full else top,
-        topEnd = if (isOwn) top else full,
-        bottomEnd = if (isOwn) bottom else full,
-        bottomStart = if (isOwn) full else bottom,
-    )
-}
-
 @Composable
 private fun MessageBubble(
     message: TimelineMessage,
@@ -189,6 +211,8 @@ private fun MessageBubble(
     onOpenMenu: (TimelineMessage, Rect) -> Unit,
     onReply: (TimelineMessage) -> Unit,
     onOpenSideChat: (String) -> Unit,
+    onJumpQuote: (String) -> Unit,
+    onAnswerChoice: (String) -> Unit,
     flushesPrevious: Boolean = false,
     flushesNext: Boolean = false,
 ) {
@@ -198,23 +222,20 @@ private fun MessageBubble(
     var bounds by remember { mutableStateOf(Rect.Zero) }
     val haptics = LocalHapticFeedback.current
     val showsMenu = message.actions.isNotEmpty()
-    // 点一下气泡露出这条的时间，再点收起（Material 的做法，对应 iOS 的左滑整列）。
-    var showsTime by remember { mutableStateOf(false) }
     val swipe = rememberSwipeToReply(message.replyAction != null) { onReply(message) }
-    // 长按开菜单；图片消息自己的点击在它上面处理，长按也从那里来（onLongPress 传下去）。
     val openMenu = {
-        haptics.performHapticFeedback(HapticFeedbackType.LongPress)
+        haptics.performHapticFeedback(androidx.compose.ui.hapticfeedback.HapticFeedbackType.LongPress)
         onOpenMenu(message, bounds)
     }
-    // 时间不画在气泡里了，读屏照样念得到。
     val time = messageTime(message)
+    // 点一下开菜单；菜单里没有这一条的操作时什么也不做。时间一直画在气泡里，读屏照样念得到。
     val pressable = Modifier
         .semantics { stateDescription = time }
         .combinedClickable(
             interactionSource = null,
             indication = null,
             onLongClick = openMenu.takeIf { showsMenu },
-            onClick = { showsTime = !showsTime },
+            onClick = { if (showsMenu) openMenu() },
         )
     Column(
         Modifier.fillMaxWidth().padding(start = if (isOwn) gutter else 0.dp, end = if (isOwn) 0.dp else gutter),
@@ -224,34 +245,47 @@ private fun MessageBubble(
         if (showsSender && !isOwn) {
             Text(message.senderName, style = WontonTheme.typography.caption, color = colors.textSecondary.toColor())
         }
-        Box(
-            Modifier.fillMaxWidth().then(pressable),
-            contentAlignment = if (isOwn) Alignment.CenterEnd else Alignment.CenterStart,
-        ) {
-            SwipeHint(swipe)
-            BubbleSurface(
-                message,
-                core,
-                joinsPrevious,
-                joinsNext,
-                swipe.modifier.onGloballyPositioned { bounds = it.boundsInRoot() },
-                onRetry,
-                onCancel,
-                onCardAction,
-                onLongPress = openMenu.takeIf { showsMenu },
-                flushesPrevious = flushesPrevious,
-                flushesNext = flushesNext,
-            )
+        BoxWithConstraints(Modifier.fillMaxWidth()) {
+            val bubbleWidth = maxWidth * WontonTheme.ratio.bubbleWidth
+            // 右侧的箭头位置留在气泡的宽度之外，气泡本身还是最宽 80%。
+            val rowWidth = bubbleWidth + WontonTheme.size.iconSmall + WontonTheme.spacing.s8
+            Box(
+                Modifier.fillMaxWidth().then(pressable),
+                contentAlignment = if (isOwn) Alignment.CenterEnd else Alignment.CenterStart,
+            ) {
+                Column(Modifier.widthIn(max = rowWidth)) {
+                    Row(
+                        Modifier.fillMaxWidth(),
+                        verticalAlignment = Alignment.Bottom,
+                        horizontalArrangement = if (isOwn) {
+                            Arrangement.spacedBy(WontonTheme.spacing.s4, Alignment.End)
+                        } else {
+                            Arrangement.spacedBy(WontonTheme.spacing.s4, Alignment.Start)
+                        },
+                    ) {
+                        val bubble: @Composable () -> Unit = {
+                            BubbleSurface(
+                                message, core, joinsPrevious, joinsNext,
+                                swipe.modifier.onGloballyPositioned { bounds = it.boundsInRoot() },
+                                onCardAction,
+                                onLongPress = openMenu.takeIf { showsMenu },
+                                onJumpQuote = onJumpQuote,
+                                flushesPrevious = flushesPrevious,
+                                flushesNext = flushesNext,
+                            )
+                        }
+                        (message.sendState as? SendState.Failed)?.let { failed ->
+                            FailedMark(failed, onRetry, onCancel)
+                        }
+                        Box(Modifier.widthIn(max = bubbleWidth)) { bubble() }
+                        SwipeHint(swipe)
+                    }
+                    message.choices?.let { choices ->
+                        MessageChoicesRow(choices) { key -> onAnswerChoice(key) }
+                    }
+                }
+            }
         }
-        if (showsTime) {
-            Text(
-                time,
-                Modifier.testTag("messageTime").clearAndSetSemantics {},
-                style = WontonTheme.typography.caption,
-                color = colors.textSecondary.toColor(),
-            )
-        }
-        ReceiptLine(message.receipt)
         // 有回复的消息下面挂一张旁聊卡片（ADR-0093），点了进那个旁聊。
         message.sideChat?.let { card -> SideChatCardRow(card) { onOpenSideChat(card.rootEventId) } }
     }
@@ -265,10 +299,9 @@ fun BubbleSurface(
     joinsPrevious: Boolean,
     joinsNext: Boolean,
     modifier: Modifier,
-    onRetry: () -> Unit,
-    onCancel: () -> Unit,
     onCardAction: (Action) -> Unit,
     onLongPress: (() -> Unit)? = null,
+    onJumpQuote: (String) -> Unit = {},
     flushesPrevious: Boolean = false,
     flushesNext: Boolean = false,
 ) {
@@ -280,15 +313,22 @@ fun BubbleSurface(
     } else {
         Modifier.background(colors.surfaceSubtle.toColor(), shape)
     }
+    // 尾巴占掉的那一边让出宽度，文字不压在尾巴上。
+    val tail = (if (joinsNext) 0.dp else WontonTheme.size.bubbleTail)
     // 同一次发送里贴着的照片不留上下衬垫，贴成一摞（ADR-0094）。
     val padded = modifier.then(fill)
+        .padding(start = if (isOwn) 0.dp else tail)
+        .padding(end = if (isOwn) tail else 0.dp)
         .padding(horizontal = WontonTheme.spacing.s12)
         .padding(top = if (flushesPrevious) 0.dp else WontonTheme.spacing.s8)
         .padding(bottom = if (flushesNext) 0.dp else WontonTheme.spacing.s8)
     val content = if (isOwn) colors.textOnAccentFill else colors.textPrimary
-    val styledBody: @Composable (String?) -> Unit = { reserve ->
+    val reserve = footerReserve(message, LocalContext.current.resources)
+    // 纯图片没有文字行，时间压在图上的胶囊里；有说明文字的图片把它放进最后一行说明。
+    val overImage = message.body is MessageContent.Image && (message.body as MessageContent.Image).image.caption == null
+    val styledBody: @Composable () -> Unit = {
         Column(verticalArrangement = Arrangement.spacedBy(WontonTheme.spacing.s4)) {
-            message.reply?.let { QuotedMessageRow(it, core, onTint = content.toColor()) }
+            message.reply?.let { QuotedMessageRow(it, core, onTint = content.toColor(), onClick = onJumpQuote) }
             CompositionLocalProvider(
                 LocalContentColor provides content.toColor(),
                 LocalTextStyle provides WontonTheme.typography.body,
@@ -297,25 +337,22 @@ fun BubbleSurface(
             }
         }
     }
-    val reserve = footerReserve(message, LocalContext.current.resources)
-    if (!message.hasFooter) {
-        Box(padded) { styledBody(null) }
-    } else if (reserve != null) {
+    if (reserve != null) {
         // 正文末尾有一段和脚注等宽的透明占位，脚注压在它上面。放不下时占位自己换行，脚注就落在新的一行。
         Box(padded) {
-            styledBody(reserve)
+            styledBody()
             // 占位文字已经念过一遍了。
-            MessageFooter(
-                message,
-                Modifier.align(Alignment.BottomEnd).clearAndSetSemantics {},
-                onRetry,
-                onCancel,
-            )
+            MessageFooter(message, Modifier.align(Alignment.BottomEnd).clearAndSetSemantics {})
+        }
+    } else if (overImage) {
+        Box(padded) {
+            styledBody()
+            TimeCapsule(message, Modifier.align(Alignment.BottomEnd))
         }
     } else {
         Column(padded, verticalArrangement = Arrangement.spacedBy(WontonTheme.spacing.s4)) {
-            styledBody(null)
-            MessageFooter(message, Modifier.align(Alignment.End), onRetry, onCancel)
+            styledBody()
+            MessageFooter(message, Modifier.align(Alignment.End))
         }
     }
 }
@@ -323,82 +360,93 @@ fun BubbleSurface(
 private fun messageTime(message: TimelineMessage): String =
     DateFormat.getTimeInstance(DateFormat.SHORT).format(Date(message.timestampMs.toLong()))
 
-/** 气泡里只在有话要说时才有脚注：编辑过、还在发、没发出去。时间和已读不在气泡里。 */
-private val TimelineMessage.hasFooter: Boolean
-    get() = edited || sendState !is SendState.Sent
-
 /**
- * 脚注能压在最后一行上时，给它留的透明文字。发送失败的说明太长，文件卡片和代码块、表格后面也没有文字行，都单独占一行。
- * 开头是普通空格：不能和前一个词连着折行。
+ * 脚注能压在最后一行上时，给它留的透明文字。文件卡片和代码块、表格以及纯图片后面没有文字行，脚注单独占一行；
+ * 时间一直在脚注里，所以占位里总要留出时间的那一段。开头是普通空格：不能和前一个词连着折行。
  */
 private fun footerReserve(message: TimelineMessage, resources: Resources): String? {
-    val body = message.body as? MessageContent.Text
-    val inlineLast = when (body?.blocks?.lastOrNull()?.kind) {
+    val body = when (val content = message.body) {
+        is MessageContent.Text -> content.blocks
+        is MessageContent.Image -> content.image.caption?.blocks
+        else -> null
+    }
+    val inlineLast = when (body?.lastOrNull()?.kind) {
         RichBlockKind.Paragraph, RichBlockKind.Heading, is RichBlockKind.ListItem -> true
         else -> false
     }
-    if (!inlineLast || !body?.files.isNullOrEmpty() || message.sendState is SendState.Failed) return null
+    val files = (message.body as? MessageContent.Text)?.files
+    if (!inlineLast || !files.isNullOrEmpty()) return null
+    val edited = if (message.edited) resources.getString(R.string.timeline_edited) else ""
     val parts = buildList {
-        if (message.edited) add(resources.getString(R.string.timeline_edited))
-        if (message.sendState is SendState.Sending) add(resources.getString(R.string.timeline_sending))
+        add(messageTime(message))
+        // 时间后面还有一个勾或者钟表的位置，按一个字宽留。
+        add("\u00A0")
+        if (edited.isNotEmpty()) add(edited)
     }
-    return " \u00A0\u00A0" + parts.joinToString("  ").replace(' ', '\u00A0')
+    // 开头留一个普通空格：不能和前一个词连着折行；中间的空格换成不折行，脚注才不会被拆开。
+    return " " + parts.joinToString("  ").replace(' ', '\u00A0')
 }
 
+/**
+ * 气泡右下角的脚注，和正文同一个色系：编辑过、时间、回执。自己的回执是一个钟表（服务器收到了）、一个勾（对方收到了）
+ * 或两个勾（对方读了）；别人的只写时间。
+ */
 @Composable
-private fun MessageFooter(message: TimelineMessage, modifier: Modifier, onRetry: () -> Unit, onCancel: () -> Unit) {
+private fun MessageFooter(message: TimelineMessage, modifier: Modifier) {
     val colors = WontonTheme.colors
     val style = WontonTheme.typography.caption
     val color = (if (message.isOwn) colors.accentInkOnFill else colors.textSecondary).toColor()
     Row(modifier, horizontalArrangement = Arrangement.spacedBy(WontonTheme.spacing.s4)) {
         if (message.edited) Text(stringResource(R.string.timeline_edited), style = style, color = color)
-        when (val state = message.sendState) {
-            is SendState.Sending -> Text(stringResource(R.string.timeline_sending), style = style, color = color)
-            is SendState.Failed -> FailedSend(state, onRetry, onCancel)
-            SendState.Sent -> Unit
+        // 还在发的时间换成一个钟表，发出去以后照常写时间。
+        if (message.sendState is SendState.Sending) {
+            Icon(
+                WontonIcon.Clock,
+                // 装饰：时间在气泡的语义里。
+                contentDescription = null,
+                modifier = Modifier.size(WontonTheme.size.iconTiny).alpha(FOOTER_ICON_ALPHA),
+                tint = color,
+            )
+        } else {
+            Text(
+                messageTime(message),
+                Modifier.testTag("messageTime"),
+                style = style,
+                color = color,
+            )
         }
+        if (message.isOwn) ReceiptMark(message.status, color)
     }
 }
 
-/** 点开选重发或删除。 */
 @Composable
-private fun FailedSend(state: SendState.Failed, onRetry: () -> Unit, onCancel: () -> Unit) {
-    var choosing by remember { mutableStateOf(false) }
-    val danger = WontonTheme.colors.danger.toColor()
-    Box {
-        Row(
-            Modifier.clickable(role = Role.Button) { choosing = true },
-            verticalAlignment = Alignment.CenterVertically,
-            horizontalArrangement = Arrangement.spacedBy(WontonTheme.spacing.s4),
-        ) {
-            Icon(
-                WontonIcon.WarningCircle,
-                // 装饰：失败原因写在右边的文字里。
-                contentDescription = null,
-                modifier = Modifier.size(WontonTheme.size.iconTiny),
-                tint = danger,
-            )
-            Text(
-                if (state.recoverable) {
-                    stringResource(R.string.timeline_send_failed_retrying)
-                } else {
-                    stringResource(R.string.timeline_send_failed, state.message)
-                },
-                style = WontonTheme.typography.caption,
-                color = danger,
-            )
-        }
+private fun ReceiptMark(status: MessageStatus?, color: Color) {
+    val icon = when (status) {
+        MessageStatus.SENT -> WontonIcon.Check
+        MessageStatus.READ -> WontonIcon.Checks
+        else -> return
     }
-    if (choosing) {
-        WontonActionSheet(
-            listOf(
-                WontonSheetAction(stringResource(R.string.timeline_resend), WontonIcon.Refresh, onClick = onRetry),
-                WontonSheetAction(
-                    stringResource(R.string.common_delete), WontonIcon.Trash, isDanger = true, onClick = onCancel,
-                ),
-            ),
-            { choosing = false },
-        )
+    Icon(
+        icon,
+        // 装饰：电话里的回执语义由消息本身给不出，但时间已经念到了。
+        contentDescription = null,
+        modifier = Modifier.size(WontonTheme.size.iconTiny),
+        tint = color,
+    )
+}
+
+/** 纯图片右下角压在图上的时间胶囊：半透明深底、白字。 */
+@Composable
+private fun TimeCapsule(message: TimelineMessage, modifier: Modifier) {
+    Row(
+        modifier.padding(WontonTheme.size.bubbleTail)
+            .background(TIME_CAPSULE_BG, RoundedCornerShape(WontonTheme.radii.pill))
+            .padding(horizontal = WontonTheme.spacing.s8, vertical = WontonTheme.spacing.s4),
+        verticalAlignment = Alignment.CenterVertically,
+        horizontalArrangement = Arrangement.spacedBy(WontonTheme.spacing.s4),
+    ) {
+        Text(messageTime(message), style = WontonTheme.typography.caption, color = Color.White)
+        if (message.isOwn) ReceiptMark(message.status, Color.White)
     }
 }
 
@@ -416,7 +464,7 @@ private fun MessageBody(
         is MessageContent.Image -> Column(verticalArrangement = Arrangement.spacedBy(WontonTheme.spacing.s8)) {
             MessageImage(body.image, core, sendState, onLongPress)
             // 一次发送里主人写的字是最后一张照片的说明文字（ADR-0094），画在照片下面。
-            body.image.caption?.let { caption -> TextMessageBody(caption.blocks, emptyList(), core) }
+            body.image.caption?.let { caption -> TextMessageBody(caption.blocks, emptyList(), core, trailingReserve) }
         }
         is MessageContent.File -> MessageFileCard(body.file, core, onLongPress)
         is MessageContent.Confirmation -> ConfirmationCardView(body.view, onCardAction)
@@ -441,3 +489,16 @@ private fun MessageBody(
 /** 这条消息的回复项，自带引用；菜单里没有就是空。 */
 val TimelineMessage.replyAction: MessageAction.Reply?
     get() = actions.firstOrNull { it is MessageAction.Reply } as? MessageAction.Reply
+
+/** 这一条是不是它那一组的最后一条：组尾才画尾巴。 */
+internal val TimelineItem.endsRun: Boolean
+    get() = message?.let { it.run == MessageRun.ALONE || it.run == MessageRun.LAST } == true
+
+/** 气泡后面闪光的不透明度，只在跳转落到这一条时用。 */
+private const val FLASH_ALPHA = 0.16f
+
+/** 脚注里钟表的轻重：和正文的墨色有区分。 */
+private const val FOOTER_ICON_ALPHA = 0.7f
+
+/** 图片上时间胶囊的底色。 */
+private val TIME_CAPSULE_BG = Color.Black.copy(alpha = 0.45f)
