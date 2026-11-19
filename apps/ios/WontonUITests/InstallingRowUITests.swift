@@ -1,15 +1,16 @@
 import XCTest
 
-/// 聊天列表里的安装行（ADR-0067）的走屏：配对、从商店装一个 Agent，截下阶段和进度、失败、详情和重试。
+/// 聊天列表里的安装行（ADR-0067）的走屏：配对、从商店装一个插件，截下阶段和进度、失败、详情和重试。
 ///
-/// 装的是 `PLUGIN` 环境变量给的插件（默认 Claude Code）：它在首次启动时要下载东西，会在检查期限里失败，
-/// 这样一次运行里既有进度也有失败。外观（浅色/深色）由外部 `simctl ui` 设定，名字写在附件里。
+/// 装的是 `PLUGIN` 环境变量给的插件（默认 vLLM）：它要显卡，没有显卡的机器在预检就失败；有显卡的机器
+/// 会在安装期限里下载权重、仍然失败，两种主机都能走到失败行。外观（浅色/深色）由外部 `simctl ui` 设定，
+/// 名字写在附件里。
 final class InstallingRowUITests: XCTestCase {
     private var app: XCUIApplication!
 
     private var appearance: String { ProcessInfo.processInfo.environment["APPEARANCE"] ?? "light" }
     private var plugin: String {
-        (ProcessInfo.processInfo.environment["PLUGIN"] ?? "Claude Code").replacingOccurrences(of: "%20", with: " ")
+        (ProcessInfo.processInfo.environment["PLUGIN"] ?? "High-Speed AI Models (vLLM)").replacingOccurrences(of: "%20", with: " ")
     }
 
     override func setUpWithError() throws {
@@ -39,6 +40,17 @@ final class InstallingRowUITests: XCTestCase {
         let deadline = Date().addingTimeInterval(timeout)
         while Date() < deadline {
             for query in queries where query[label].firstMatch.exists { return query[label].firstMatch }
+            _ = app.wait(for: .runningForeground, timeout: 1)
+        }
+        return nil
+    }
+
+    /// 失败行的类别文字随类别变（没有显卡和在检查期限里超时的类别不同），按前缀等。
+    private func waitForFailure(timeout: TimeInterval) -> XCUIElement? {
+        let query = app.staticTexts.matching(NSPredicate(format: "label BEGINSWITH 'Install failed:'"))
+        let deadline = Date().addingTimeInterval(timeout)
+        while Date() < deadline {
+            if query.firstMatch.exists { return query.firstMatch }
             _ = app.wait(for: .runningForeground, timeout: 1)
         }
         return nil
@@ -200,7 +212,7 @@ final class InstallingRowUITests: XCTestCase {
         shot("05-waiting")
 
         // 失败：检查期限到了以后插件回滚，这一行给类别、详情和重试。
-        let failed = waitFor([app.staticTexts], "Install failed: Your home server ran into a problem", timeout: 420)
+        let failed = waitForFailure(timeout: 420)
         XCTAssertNotNil(failed, "没等到安装失败")
         shot("06-failed")
         if let details = waitAnyButton(["Details", "详情"], timeout: 10) {

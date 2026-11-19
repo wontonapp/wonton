@@ -4,11 +4,8 @@ onboarding-steps-model-not-chosen = No model is selected.
 
 onboarding-steps-cannot-skip = This step can't be skipped.
 
-onboarding-model-testing = A connection test is already running.
 
-onboarding-model-custom-unsupported = The model gateway doesn't support custom providers.
 
-onboarding-model-base-url-invalid = The base URL must be an https:// address.
 
 onboarding-review-item-missing = That item isn't on the review page.
 

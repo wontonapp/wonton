@@ -78,8 +78,6 @@ pub enum SettingsEntry {
         enabled: bool,
         timeout: AppLockTimeout,
     },
-    /// 默认 Agent。配对以后才有。
-    DefaultAgent,
     ChatBackup {
         recovery: RecoveryStatus,
     },

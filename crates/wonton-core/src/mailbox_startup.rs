@@ -44,7 +44,7 @@ pub(super) fn start_mailpit(
     let component = component.context("Mailpit 未初始化")?;
     component.spawn_members(
         gateway.notices.clone(),
-        super::owner_languages(&gateway.plugins),
+        crate::serve::owner_languages(&gateway.plugins),
     );
     mailbox::start(
         authority,

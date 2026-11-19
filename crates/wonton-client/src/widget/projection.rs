@@ -51,7 +51,7 @@ pub(super) fn project(
         .collect();
     snapshot.default_agent = views
         .onboarding
-        .primary_bot_user_id
+        .default_bot_user_id
         .as_deref()
         .map(|user_id| agent(user_id, chat, &rooms));
     snapshot.contacts = contacts(chat, &rooms);

@@ -32,36 +32,6 @@
         }
       }
     },
-    "launcher.defaultAgent": {
-      "comment": "Title of the default agent picker, opened from Settings.",
-      "extractionState": "manual",
-      "localizations": {
-        "en": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "Default assistant"
-          }
-        },
-        "zh-Hans": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "默认助手"
-          }
-        },
-        "zh-Hant": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "預設助手"
-          }
-        },
-        "ja": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "デフォルトのアシスタント"
-          }
-        }
-      }
-    },
     "launcher.menu": {
       "comment": "Accessibility action on an app icon that opens the long-press menu.",
       "extractionState": "manual",

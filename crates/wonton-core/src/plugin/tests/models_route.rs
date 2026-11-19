@@ -12,6 +12,7 @@ use tokio::net::TcpListener;
 use tokio::time::{Duration, Instant};
 
 use super::super::fake_docker::FakeDocker;
+use super::super::manifest::Permission;
 use super::super::names::container_name;
 use super::super::{PluginId, PluginManager, PluginPackage, PluginStatus};
 use super::manager::manager_with;
@@ -103,6 +104,15 @@ async fn gateway_with_route(keys: Keys, state: RouteState) -> u16 {
     port
 }
 
+/// 一个随便什么请求都 200 的本地服务，给网页入口的健康检查用；端口由内核分配，不跟别的服务撞。
+async fn ok_server() -> u16 {
+    let app = Router::new().route("/", get(|| async { "ok" }));
+    let listener = TcpListener::bind("127.0.0.1:0").await.unwrap();
+    let port = listener.local_addr().unwrap().port();
+    tokio::spawn(async move { axum::serve(listener, app).await.unwrap() });
+    port
+}
+
 fn provider(port: u16) -> PluginPackage {
     let source = format!(
         "services:\n  magpie:\n    image: magpie\nx-wonton:\n  spec: '0.4'\n  id: system.models\n  version: 1.0.0\n  \
@@ -154,33 +164,51 @@ struct Bed {
     engine: super::super::docker::Engine,
     manager: PluginManager,
     _dir: tempfile::TempDir,
+    _matrix: crate::matrix::fake::Fake,
 }
 
-async fn bed_with_route(state: RouteState) -> Bed {
+/// 装了模型网关的床；`None` 时不装，用来测没有网关的退回。
+async fn bed_with(route: Option<RouteState>) -> Bed {
     let (docker, engine) = FakeDocker::start().await;
-    let keys = Keys::default();
-    docker.on_exec(credential_script(keys.clone()));
-    let port = gateway_with_route(keys.clone(), state).await;
     let dir = tempfile::tempdir().unwrap();
-    let manager = manager_with(engine.clone(), &dir);
-    manager
-        .install_checked(
-            provider(port),
-            &[],
-            &[],
-            false,
-            &[],
-            Default::default(),
-            &langs(),
-        )
-        .await
-        .unwrap();
+    // 声明 matrix.bot 的插件安装时要连 Matrix。
+    let (fake_matrix, cfg) = crate::matrix::fake::start().await;
+    let client = crate::matrix::Matrix::connect(
+        &cfg,
+        &dir.path().join("core"),
+        crate::http::HttpClient::new(),
+    )
+    .await
+    .unwrap();
+    let manager = manager_with(engine.clone(), &dir).with_matrix(Some(Arc::new(client)));
+    if let Some(state) = route {
+        let keys = Keys::default();
+        docker.on_exec(credential_script(keys.clone()));
+        let port = gateway_with_route(keys, state).await;
+        manager
+            .install_checked(
+                provider(port),
+                &[],
+                &[],
+                false,
+                &[],
+                Default::default(),
+                &langs(),
+            )
+            .await
+            .unwrap();
+    }
     Bed {
         docker,
         engine,
         manager,
         _dir: dir,
+        _matrix: fake_matrix,
     }
+}
+
+async fn bed_with_route(state: RouteState) -> Bed {
+    bed_with(Some(state)).await
 }
 
 impl Bed {
@@ -218,6 +246,40 @@ impl Bed {
             "模型问题不改变插件状态"
         );
     }
+}
+
+/// 一个带网页的 Agent 插件，充当默认 Bot（Hermes 那种：没有模型网关时由它自己的设置页接供应商）。
+fn agent_with_web(port: u16) -> PluginPackage {
+    let yaml = package(
+        "  web:\n    image: nginx\n",
+        &format!(
+            "  agent: {{protocol: matrix}}\n  webui: {{service: web, port: {port}}}\n  permissions: [matrix.bot]"
+        ),
+    )
+    .replace("kind: app", "kind: agent")
+    .replace("id: app.test", "id: app.hermes");
+    PluginPackage::parse(&yaml, &langs()).unwrap()
+}
+
+#[tokio::test]
+async fn model_settings_falls_back_to_the_default_bot_page_without_a_gateway() {
+    let bed = bed_with(None).await;
+    let manager = &bed.manager;
+    let bot = PluginId::parse("app.hermes").unwrap();
+    // 没有默认 Bot 插件、或它还没有网页时仍报错。
+    assert!(manager.model_settings(&langs()).await.is_err());
+    manager.set_default_bot_plugin(Some(bot.clone()));
+    assert!(manager.model_settings(&langs()).await.is_err());
+
+    let port = ok_server().await;
+    manager
+        .install_package(agent_with_web(port), &[Permission::MatrixBot], langs())
+        .await
+        .unwrap();
+    let settings = manager.model_settings(&langs()).await.unwrap();
+    assert_eq!(settings.plugin_id, bot.as_str());
+    assert!(settings.web_url.is_some());
+    assert!(!settings.has_configured_models);
 }
 
 #[tokio::test]
@@ -467,10 +529,13 @@ async fn subscription_agent_without_models_permission_is_left_alone() {
     let bed = bed_with_route(state.clone()).await;
     let source = package(
         "  agent:\n    image: agent\n",
-        "  agent: {protocol: acp}\n  permissions: []",
+        "  agent: {protocol: matrix}\n  permissions: [matrix.bot]",
     )
     .replace("kind: app", "kind: agent");
-    bed.manager.install(&source, &[], langs()).await.unwrap();
+    bed.manager
+        .install(&source, &[Permission::MatrixBot], langs())
+        .await
+        .unwrap();
     let id = PluginId::parse("app.test").unwrap();
     assert!(matches!(
         bed.manager.status_of(&id),

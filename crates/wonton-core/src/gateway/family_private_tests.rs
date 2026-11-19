@@ -93,14 +93,9 @@ impl Bed {
             }),
             files,
         );
-        fs::write(
-            dir.path().join("core/onboarding.json"),
-            json!({
-                "step": "finished", "primary_agent": AGENT, "replaced_agent_asked": false,
-            })
-            .to_string(),
-        )
-        .unwrap();
+        gateway
+            .plugins
+            .set_default_bot_plugin(Some(PluginId::parse(AGENT).unwrap()));
         let permissions = vec![
             "matrix.bot".parse().unwrap(),
             "storage.home:write".parse().unwrap(),
@@ -568,9 +563,9 @@ async fn failed_removal_survives_restart_and_uses_the_recorded_choices() {
 }
 
 #[tokio::test]
-async fn missing_primary_agent_is_reported_without_guessing_an_installed_agent() {
+async fn missing_default_bot_plugin_is_reported_without_guessing_an_installed_agent() {
     let bed = Bed::start().await;
-    fs::remove_file(bed.dir.path().join("core/onboarding.json")).unwrap();
+    bed.gateway.plugins.set_default_bot_plugin(None);
     let (id, _) = bed.pending("alice", true);
     let reply = bed.approve(&id).await;
     assert_eq!(
@@ -589,14 +584,9 @@ async fn missing_primary_agent_is_reported_without_guessing_an_installed_agent()
             .is_none()
     );
     assert!(bed.gateway.members.lifecycle("alice").bot.is_none());
-    fs::write(
-        bed.dir.path().join("core/onboarding.json"),
-        json!({
-            "step": "finished", "primary_agent": AGENT, "replaced_agent_asked": false,
-        })
-        .to_string(),
-    )
-    .unwrap();
+    bed.gateway
+        .plugins
+        .set_default_bot_plugin(Some(PluginId::parse(AGENT).unwrap()));
     let reply = bed.retry().await;
     assert_eq!(reply.status, StatusCode::NO_CONTENT, "{}", reply.text());
     assert_eq!(bed.bot("alice").plugin_id, AGENT);

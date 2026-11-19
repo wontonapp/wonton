@@ -5,9 +5,7 @@
 
 use serde::{Deserialize, Serialize};
 
-use crate::{
-    CardLine, PermissionLine, PluginIcon, PluginProblem, PluginState, StoreItem, StoreProblem,
-};
+use crate::{CardLine, PermissionLine, PluginIcon, PluginProblem, StoreItem, StoreProblem};
 
 /// 读写引导状态的接口：`GET` 和 `PUT` 都返回 [`Onboarding`]，`PUT` 的请求体是 [`OnboardingUpdate`]。
 pub const ONBOARDING_PATH: &str = "/_wonton/api/onboarding";
@@ -22,7 +20,6 @@ pub const MODEL_SETTINGS_PATH: &str = "/_wonton/api/models/settings";
 #[serde(rename_all = "snake_case")]
 pub enum OnboardingStep {
     Profile,
-    Agent,
     Model,
     Apps,
     /// 列出所有选择和应用要的权限，点完成才执行。
@@ -38,14 +35,10 @@ pub enum OnboardingStep {
 #[cfg_attr(feature = "uniffi", derive(uniffi::Record))]
 pub struct Onboarding {
     pub step: OnboardingStep,
-    /// 默认 Agent 的插件 ID。只决定聊天列表里排第一的是谁，核心不按它路由。
-    pub primary_agent: Option<String>,
-    /// 已经问过要不要卸掉被换下来的 Agent，只问一次。
-    pub replaced_agent_asked: bool,
-    /// 官方索引推荐的 Agent，加上已经装着的。
-    pub agents: Vec<OnboardingAgent>,
+    /// 默认 Bot 插件：默认安装里的那个 Agent 插件。默认安装里没有 Agent 时为空。
+    pub default_bot_plugin: Option<DefaultBotPlugin>,
     pub needs: Vec<OnboardingNeed>,
-    /// 第一次和默认 Agent 聊天时可点的问题，按主人的语言。
+    /// 第一次和默认 Bot 聊天时可点的问题，按主人的语言。
     pub prompts: Vec<String>,
     /// 官方索引的推荐清单取不到或者可能不是最新的原因。
     pub catalog_problem: Option<StoreProblem>,
@@ -57,41 +50,20 @@ pub struct Onboarding {
 pub struct OnboardingUpdate {
     #[serde(default)]
     pub step: Option<OnboardingStep>,
-    #[serde(default)]
-    pub primary_agent: Option<String>,
-    #[serde(default)]
-    pub replaced_agent_asked: Option<bool>,
 }
 
-/// 能选的一个 Agent。
+/// 默认 Bot 插件：家人的私人 Bot 装在它上面，“问 Bot”和聊天列表置顶都找它的默认 Bot。由随核心附带的默认插件
+/// 定，主人不在引导里选；主人卸掉它以后仍是它，私人 Bot 如实报未安装。
 #[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize)]
 #[cfg_attr(feature = "uniffi", derive(uniffi::Record))]
-pub struct OnboardingAgent {
+pub struct DefaultBotPlugin {
     pub id: String,
-    pub title: String,
-    /// 商店给的安装来源；已经装着、不在官方索引里的 Agent 为空。
-    pub source: Option<String>,
-    /// 装着时是它的状态；没装时为空。
-    pub status: Option<PluginState>,
     /// 已核实可见的默认 Bot 的 Matrix 用户 ID。
     pub bot_user_id: Option<String>,
     /// 默认 Bot 身份的投影；未提供时表示未知。
     #[serde(default)]
     #[cfg_attr(feature = "uniffi", uniffi(default = None))]
-    pub default_bot_visibility: Option<crate::DefaultBotVisibility>,
-    /// 官方程序自己的账号登录（清单的 `agent.login`）。为空时只能接模型网关。
-    pub logins: Vec<AgentLogin>,
-    /// 装不了的原因；能装时为空。
-    pub blocked: Option<String>,
-}
-
-/// 官方程序自己的一种账号登录。
-#[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize)]
-#[cfg_attr(feature = "uniffi", derive(uniffi::Record))]
-pub struct AgentLogin {
-    pub id: String,
-    /// 如“ChatGPT 账号”。
-    pub title: String,
+    pub visibility: Option<crate::DefaultBotVisibility>,
 }
 
 /// 一项需求和它推荐的插件。
@@ -129,21 +101,17 @@ pub struct OnboardingViewModel {
     /// 官方索引的推荐清单取不到或者可能不是最新的原因：这一页说明它，可以跳过。
     pub catalog_problem: Option<StoreProblem>,
     pub profile: OnboardingProfileStep,
-    pub agents: Vec<OnboardingAgentRow>,
     pub model: OnboardingModelStep,
     pub needs: Vec<OnboardingNeedRow>,
     pub review: OnboardingReview,
-    /// 默认 Agent 的 Bot：引导走完后进入和它的私聊，[`Self::chat_prompts`] 也只在这个私聊里显示。
-    pub primary_bot_user_id: Option<String>,
+    /// 默认 Bot 插件的默认 Bot：引导走完后进入和它的私聊，[`Self::chat_prompts`] 也只在这个私聊里显示。
+    pub default_bot_user_id: Option<String>,
     /// 默认 Bot 身份的投影；未提供时表示未知，不代表房间发送资格。
     #[serde(default)]
     #[cfg_attr(feature = "uniffi", uniffi(default = None))]
     pub default_bot_visibility: Option<crate::DefaultBotVisibility>,
     /// 输入框上方可点的问题，点了放进输入框当草稿；发过第一条消息后为空。
     pub chat_prompts: Vec<String>,
-    /// 默认 Agent 能聊之后，问一次要不要卸掉被换下来的 Agent。卸载走原有流程，回答后发
-    /// [`OnboardingAction::DismissReplacedAgentOffer`](crate::OnboardingAction::DismissReplacedAgentOffer)。
-    pub replaced_agent: Option<ReplacedAgent>,
     pub tips: OnboardingTips,
     /// 服务器太旧，引导整段打不开（连引导接口都没有）：[`Self::step`] 为空，壳只在引导该出现的地方留一条
     /// “升级服务器后可用”和服务器升级入口。
@@ -186,21 +154,6 @@ pub struct OnboardingProfileStep {
     pub email_problem: Option<String>,
 }
 
-/// 选 Agent 这一步的一行。
-#[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize)]
-#[cfg_attr(feature = "uniffi", derive(uniffi::Record))]
-pub struct OnboardingAgentRow {
-    pub id: String,
-    pub title: String,
-    /// 能用来接模型的账号登录的名字，如“ChatGPT 账号”，服务器给的、已按语言挑好。空表表示只能用模型网关。
-    pub logins: Vec<String>,
-    pub selected: bool,
-    /// 要装时的安装来源，走现有的确认页；已经装着时为空。
-    pub source: Option<String>,
-    /// 装不了的原因；能装时为空。
-    pub blocked: Option<String>,
-}
-
 /// 接模型这一步。
 #[derive(Clone, Debug, Default, PartialEq, Eq, Serialize, Deserialize)]
 #[cfg_attr(feature = "uniffi", derive(uniffi::Record))]
@@ -209,10 +162,7 @@ pub struct OnboardingModelStep {
     pub settings: Option<ModelSettingsPage>,
     /// 网关已有模型配置，不表示上游可达或凭据有效，也不因打开网页变为真。
     pub has_configured_models: bool,
-    /// 选中的 Agent 的账号登录。选了发 [`OnboardingAction::ChooseModelLogin`](crate::OnboardingAction::ChooseModelLogin)，登录链接由 Agent
-    /// 发进聊天。
-    pub logins: Vec<AgentLogin>,
-    /// 沿用网关配置或选择官方登录；网页自己的保存动作不属于引导草稿。
+    /// 沿用网关配置；网页自己的保存动作不属于引导草稿。
     pub choice: Option<OnboardingModelChoice>,
     pub problem: Option<ModelSettingsProblem>,
 }
@@ -232,8 +182,6 @@ pub struct ModelSettingsPage {
 pub enum OnboardingModelChoice {
     /// 沿用模型网关里的配置，点完成时不保存模型；不代表上游存活测试通过。
     Current,
-    /// 用 Agent 官方程序的账号登录（[`AgentLogin`]），登录链接由 Agent 发进聊天。
-    Login { id: String, title: String },
 }
 
 /// 取模型设置网页失败了；可以重试或跳过，不改连其他模型来源。
@@ -273,7 +221,7 @@ pub struct OnboardingNeedRow {
 }
 
 /// 最后一页：列出所有选择和应用要的权限。点完成（[`OnboardingAction::ContinueOnboarding`](crate::OnboardingAction::ContinueOnboarding)）
-/// 算主人确认了这些权限，资料和默认 Agent 依次保存，Agent 和应用在后台安装，每一项的进展都在这里。
+/// 算主人确认了这些权限，先保存资料，应用在后台安装，每一项的进展都在这里。
 #[derive(Clone, Debug, Default, PartialEq, Eq, Serialize, Deserialize)]
 #[cfg_attr(feature = "uniffi", derive(uniffi::Record))]
 pub struct OnboardingReview {
@@ -299,16 +247,16 @@ pub enum OnboardingCommit {
 #[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize)]
 #[cfg_attr(feature = "uniffi", derive(uniffi::Record))]
 pub struct OnboardingReviewItem {
-    /// 重试时带回（[`OnboardingAction::RetryOnboardingItem`](crate::OnboardingAction::RetryOnboardingItem)）。Agent 和应用是插件 ID。
+    /// 重试时带回（[`OnboardingAction::RetryOnboardingItem`](crate::OnboardingAction::RetryOnboardingItem)）。应用是插件 ID。
     pub id: String,
     pub kind: OnboardingReviewKind,
-    /// 资料是填的名字，Agent 和应用是插件名，模型是官方登录名；沿用配置时不复制网关里的服务商列表。
+    /// 资料是填的名字，应用是插件名；沿用模型配置时不复制网关里的服务商列表。
     pub titles: Vec<String>,
     /// 第二行的内容，壳按类别写文字；没有时为空。
     pub detail: Option<OnboardingReviewDetail>,
-    /// 要装的 Agent 和应用的图标。
+    /// 要装的应用的图标。
     pub icon: Option<PluginIcon>,
-    /// 要装的 Agent 和应用申请的权限，点完成就是授予它们。
+    /// 要装的应用申请的权限，点完成就是授予它们。
     pub permissions: Vec<PermissionLine>,
     /// 确认前要看到的其他说明（未审核、镜像来源等），同安装确认页。
     pub notices: Vec<CardLine>,
@@ -322,12 +270,8 @@ pub struct OnboardingReviewItem {
 pub enum OnboardingReviewDetail {
     /// 资料的邮箱。
     Email { email: String },
-    /// 已经装着的 Agent，完成后设成默认。
-    SetAsDefault,
     /// 沿用模型网关的配置，不代表上游可达。
     KeepCurrent,
-    /// 选了 Agent 的账号登录，装好后在聊天里登录。
-    SignInAfterSetup,
     /// 这一类这次不动：完成时不发请求，服务器上的现值保持原样。
     Unchanged,
 }
@@ -337,8 +281,6 @@ pub enum OnboardingReviewDetail {
 #[serde(rename_all = "snake_case")]
 pub enum OnboardingReviewKind {
     Profile,
-    /// 默认 Agent；没装时点完成会装上。
-    Agent,
     Model,
     App,
 }
@@ -380,14 +322,6 @@ pub enum OnboardingItemProblem {
     Plugin { problem: PluginProblem },
 }
 
-/// 可以卸掉的 Agent。
-#[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize)]
-#[cfg_attr(feature = "uniffi", derive(uniffi::Record))]
-pub struct ReplacedAgent {
-    pub id: String,
-    pub title: String,
-}
-
 /// 在用的时候教的提示，每台设备一次。为真时壳在对应的地方显示。
 #[derive(Clone, Debug, Default, PartialEq, Eq, Serialize, Deserialize)]
 #[cfg_attr(feature = "uniffi", derive(uniffi::Record))]
@@ -417,22 +351,12 @@ mod tests {
     fn a_step_from_a_newer_core_does_not_break_the_response() {
         let onboarding: Onboarding = serde_json::from_value(json!({
             "step": "from_the_future",
-            "primary_agent": null,
-            "replaced_agent_asked": false,
-            "agents": [],
+            "default_bot_plugin": null,
             "needs": [],
             "prompts": [],
             "catalog_problem": null,
         }))
         .unwrap();
         assert_eq!(onboarding.step, OnboardingStep::Other);
-    }
-
-    #[test]
-    fn an_update_leaves_out_what_it_does_not_change() {
-        let update: OnboardingUpdate = serde_json::from_value(json!({ "step": "model" })).unwrap();
-        assert_eq!(update.step, Some(OnboardingStep::Model));
-        assert_eq!(update.primary_agent, None);
-        assert_eq!(update.replaced_agent_asked, None);
     }
 }

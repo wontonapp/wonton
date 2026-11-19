@@ -101,7 +101,6 @@ gateway-models-down = 模型閘道沒有在執行
 
 # 初始設定。
 gateway-onboarding-invalid-step = step 只能是 profile 或 finished，不是 { $step }
-gateway-onboarding-invalid-agent = primary_agent 不是可選的 Agent：{ $agent }
 gateway-onboarding-index-missing = 官方索引沒有 onboarding 清單
 
 # 一鍵更新。

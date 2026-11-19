@@ -209,7 +209,7 @@ impl ShareInLink {
         pending: Option<&Claimed>,
         paired: bool,
         chat: &ChatViewModel,
-        primary_bot: Option<&str>,
+        default_bot: Option<&str>,
     ) -> ShareInViewModel {
         let Some(share) = pending else {
             return ShareInViewModel::default();
@@ -231,7 +231,7 @@ impl ShareInLink {
                     })
                     .collect(),
                 text: share.text.clone(),
-                destinations: view::destinations(paired, chat, primary_bot, last_room.as_deref()),
+                destinations: view::destinations(paired, chat, default_bot, last_room.as_deref()),
                 dropped: share.dropped,
             }),
         }

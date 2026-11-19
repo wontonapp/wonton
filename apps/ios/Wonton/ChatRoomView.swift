@@ -227,7 +227,7 @@ private extension ChatRoomView {
             }
             if !isReadOnly {
                 if threadRoot == nil, onboarding.viewModel.defaultBotVisibility == .visible,
-                   let bot = onboarding.viewModel.primaryBotUserId,
+                   let bot = onboarding.viewModel.defaultBotUserId,
                    model.viewModel.rooms.first(where: { $0.roomId == roomId })?.directUserId == bot,
                    !onboarding.viewModel.chatPrompts.isEmpty {
                     OnboardingChatPrompts(prompts: onboarding.viewModel.chatPrompts) {

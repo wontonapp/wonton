@@ -82,7 +82,7 @@ mod tests {
     }
 
     #[test]
-    fn primary_bot_moves_to_front_without_reordering_the_rest() {
+    fn default_bot_moves_to_front_without_reordering_the_rest() {
         let order = RoomOrder::new();
         let rows = order.replace(
             vec![

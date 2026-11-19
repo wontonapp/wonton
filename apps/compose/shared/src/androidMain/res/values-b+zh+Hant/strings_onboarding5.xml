@@ -4,12 +4,6 @@
     <string name="onboarding_app_installed">已安裝</string>
     <!-- Bar title of the in-app browser that opens the model gateway's settings. -->
     <string name="onboarding_gateway_title">模型設定</string>
-    <!-- Row title: type a model provider by hand instead of picking a recommended one. -->
-    <string name="onboarding_model_custom">自訂</string>
-    <!-- Label of the password field for the provider's API key. -->
-    <string name="onboarding_model_form_api_key">API 金鑰</string>
-    <!-- Button that expands the list of less common model providers. -->
-    <string name="onboarding_model_more">更多供應商</string>
     <!-- Primary button that advances to the next setup step. -->
     <string name="onboarding_next">下一步</string>
     <!-- Problem title while installing: the app is already installed or another task is busy. -->

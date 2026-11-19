@@ -18,6 +18,10 @@ pub enum ManifestError {
     UnknownPermission(String),
     #[error("插件按规范 {spec} 写成，这个核心只支持到 {supported}：先升级核心")]
     NewerSpec { spec: String, supported: String },
+    #[error(
+        "`agent.protocol: {protocol}` 已不支持：改用 `matrix`，调别的程序走 Hermes 自带的 ACP 委派"
+    )]
+    UnsupportedAgentProtocol { protocol: String },
     #[error("{0}")]
     Invalid(String),
 }

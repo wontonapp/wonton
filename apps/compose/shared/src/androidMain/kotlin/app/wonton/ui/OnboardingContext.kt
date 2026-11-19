@@ -75,10 +75,7 @@ internal fun OnboardingHost(
             paired && !skipped && view.blocksHome() -> {
                 OnboardingGate(view, plugins, home, send) { skipped = true }
             }
-            else -> {
-                content()
-                if (paired) ReplacedAgentOffer(plugins)
-            }
+            else -> content()
         }
     }
 }
@@ -130,14 +127,14 @@ private fun OnboardingFinishedEffect(view: OnboardingViewModel, paired: Boolean,
     val finished by rememberUpdatedState(onFinished)
     LaunchedEffect(paired, view.step) {
         if (paired && previous.isOnboardingStep() && view.step == OnboardingStep.FINISHED) {
-            finished(view.primaryBotUserId)
+            finished(view.defaultBotUserId)
         }
         previous = view.step.takeIf { paired }
     }
 }
 
 private fun OnboardingStep?.isOnboardingStep(): Boolean = when (this) {
-    OnboardingStep.PROFILE, OnboardingStep.AGENT, OnboardingStep.MODEL,
+    OnboardingStep.PROFILE, OnboardingStep.MODEL,
     OnboardingStep.APPS, OnboardingStep.REVIEW -> true
     else -> false
 }

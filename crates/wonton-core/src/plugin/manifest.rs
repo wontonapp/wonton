@@ -1,7 +1,7 @@
 //! 插件清单的服务端语义校验；类型和 serde 解析由 `wonton-protocol` 提供。
 
 use super::languages::Languages;
-pub use super::manifest_agent::{AgentLogin, AgentProtocol, AgentSpec};
+pub use super::manifest_agent::{AgentProtocol, AgentSpec};
 pub use super::manifest_device::{DeviceClass, DeviceSlot, ManifestDevices};
 pub use super::manifest_gpu_images::GpuImages;
 pub(super) use super::manifest_mcp::DEFAULT_TOOL_TOTAL_SECONDS;
@@ -19,7 +19,6 @@ pub use super::secret_spec::{
 };
 pub use super::secret_spec::{MAX_SECRET_BYTES, is_secret_name};
 use std::collections::BTreeMap;
-pub(super) use wonton_protocol::manifest::is_label;
 pub use wonton_protocol::manifest::{
     Accounts, BotProfile, BotServices, LocalizedTags, LocalizedText, MAX_ID_LEN, Manifest,
     ManifestError, OidcClient, OptionalPermission, PluginId, PluginKind, ProxyCredentials,

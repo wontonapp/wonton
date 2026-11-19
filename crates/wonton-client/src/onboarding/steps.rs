@@ -5,7 +5,7 @@ use std::sync::Arc;
 use wonton_l10n::l10n;
 use wonton_protocol::{CoreError, OnboardingCommit, OnboardingStep};
 
-use super::draft::{AgentChoice, ModelDraft};
+use super::draft::ModelDraft;
 use super::{OnboardingLink, invalid, lock, view};
 use crate::l10n::{CATALOG, language};
 
@@ -68,46 +68,6 @@ impl OnboardingLink {
             let owner = state.owner.clone();
             state.draft.check_profile(owner.as_ref());
         }
-        drop(state);
-        self.publish();
-        Ok(())
-    }
-
-    pub(super) fn choose_agent(&self, id: &str) -> Result<(), CoreError> {
-        let mut state = lock(&self.state);
-        if Self::flow_step(&state)? != OnboardingStep::Agent {
-            return Err(invalid(&l10n!(
-                CATALOG,
-                language(),
-                "onboarding-steps-not-agent-step"
-            )));
-        }
-        let onboarding = state.onboarding.as_ref().ok_or_else(|| {
-            invalid(&l10n!(
-                CATALOG,
-                language(),
-                "onboarding-steps-state-missing"
-            ))
-        })?;
-        let agent = onboarding
-            .agents
-            .iter()
-            .find(|agent| agent.id == id)
-            .ok_or_else(|| {
-                invalid(&l10n!(
-                    CATALOG,
-                    language(),
-                    "onboarding-steps-agent-not-listed"
-                ))
-            })?;
-        if !view::installable(agent) {
-            return Err(invalid(&l10n!(
-                CATALOG,
-                language(),
-                "onboarding-steps-agent-not-installable"
-            )));
-        }
-        state.draft.agent = AgentChoice::Chosen(id.to_owned());
         drop(state);
         self.publish();
         Ok(())
@@ -176,29 +136,6 @@ impl OnboardingLink {
                     self.publish();
                     return Ok(());
                 }
-                OnboardingStep::Agent
-            }
-            OnboardingStep::Agent => {
-                let onboarding = state.onboarding.as_ref().ok_or_else(|| {
-                    invalid(&l10n!(
-                        CATALOG,
-                        language(),
-                        "onboarding-steps-state-missing"
-                    ))
-                })?;
-                let installable = state.draft.agent(onboarding).is_some_and(|id| {
-                    onboarding
-                        .agents
-                        .iter()
-                        .any(|agent| agent.id == id && view::installable(agent))
-                });
-                if !installable {
-                    return Err(invalid(&l10n!(
-                        CATALOG,
-                        language(),
-                        "onboarding-steps-no-installable-agent"
-                    )));
-                }
                 OnboardingStep::Model
             }
             OnboardingStep::Model => {
@@ -239,10 +176,6 @@ impl OnboardingLink {
                 draft.profile_skipped = true;
                 draft.name_problem = None;
                 draft.email_problem = None;
-                OnboardingStep::Agent
-            }
-            OnboardingStep::Agent => {
-                state.draft.agent = AgentChoice::Skipped;
                 OnboardingStep::Model
             }
             OnboardingStep::Model => {
@@ -274,8 +207,7 @@ impl OnboardingLink {
         let mut state = lock(&self.state);
         let step = Self::flow_step(&state)?;
         let mut target = match step {
-            OnboardingStep::Agent => OnboardingStep::Profile,
-            OnboardingStep::Model => OnboardingStep::Agent,
+            OnboardingStep::Model => OnboardingStep::Profile,
             OnboardingStep::Apps => OnboardingStep::Model,
             OnboardingStep::Review => {
                 // 旧预览的结果按 review_generation 丢掉。

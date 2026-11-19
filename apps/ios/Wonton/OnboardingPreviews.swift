@@ -2,16 +2,15 @@
 import SwiftUI
 import WontonClient
 
-/// 重看引导的预览：每步左上的关闭，和确认页的四行汇总（改了的列新值，没改的标“不变”）。假数据只在这里。
+/// 重看引导的预览：每步左上的关闭，和确认页的三类汇总（改了的列新值，没改的标“不变”）。假数据只在这里。
 private enum OnboardingPreviews {
     static func nav(position: UInt32) -> StepNav {
-        StepNav(position: position, total: 5, canBack: position > 1, canSkip: false, canNext: true, canClose: true)
+        StepNav(position: position, total: 4, canBack: position > 1, canSkip: false, canNext: true, canClose: true)
     }
 
     static var review: OnboardingReview {
         OnboardingReview(items: [
             item(id: "profile", kind: .profile, titles: ["Ada Lovelace"], detail: .unchanged),
-            item(id: "app.hermes.agent", kind: .agent, titles: ["Hermes"], detail: .setAsDefault),
             item(id: "model", kind: .model, titles: ["OpenAI"], detail: .unchanged),
             item(id: "app.immich.photos", kind: .app, titles: [String(localized: .Plugins.previewAppName1)],
                 detail: nil)
@@ -58,7 +57,7 @@ private struct OnboardingPreviewFrame<Content: View>: View {
 
 #Preview("Redo setup, later step") {
     OnboardingPreviewFrame(
-        step: 2, title: String(localized: .Onboarding1.onboardingStepAgent),
+        step: 2, title: String(localized: .Onboarding1.onboardingStepModel),
         primaryTitle: String(localized: .Onboarding2.onboardingNext)
     ) { EmptyView() }
 }
@@ -68,7 +67,7 @@ private struct OnboardingPreviewFrame<Content: View>: View {
     let directory = FileManager.default.temporaryDirectory.appendingPathComponent("onboarding-preview")
     if let core = try? ClientCore(dataDir: directory.path) {
         OnboardingPreviewFrame(
-            step: 5, title: String(localized: .Onboarding3.onboardingStepReview),
+            step: 4, title: String(localized: .Onboarding3.onboardingStepReview),
             primaryTitle: String(localized: .Onboarding3.onboardingDone)
         ) {
             OnboardingReviewStep(review: OnboardingPreviews.review, plugins: PluginsModel(core: core)) { _ in }

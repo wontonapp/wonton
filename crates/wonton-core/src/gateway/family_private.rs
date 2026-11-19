@@ -69,8 +69,16 @@ impl Gateway {
         let bot = match member.private_bot.as_ref().or(pending.bot.as_ref()) {
             Some(bot) => bot.clone(),
             None => {
-                let plugin_id = self.onboarding.primary_agent().await?
-                    .ok_or_else(|| InstallError::NotInstalled("No primary Agent is configured; choose an Agent before retrying member setup".to_owned()))?;
+                let plugin_id = self
+                    .plugins
+                    .default_bot_plugin()
+                    .ok_or_else(|| {
+                        InstallError::NotInstalled(
+                            "No default Bot plugin: the default install has no Agent plugin"
+                                .to_owned(),
+                        )
+                    })?
+                    .to_string();
                 let digest = Sha256::digest(member.username.as_bytes());
                 let mut name = String::with_capacity(29);
                 name.push_str("user-");

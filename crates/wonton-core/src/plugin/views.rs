@@ -6,7 +6,6 @@ mod install;
 mod list;
 mod text;
 
-pub(crate) use super::views_agent_logins::agent_login_options;
 pub(crate) use super::views_permissions::permission_line;
 pub use super::views_permissions::permission_text;
 
