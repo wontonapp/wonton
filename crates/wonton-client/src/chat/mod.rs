@@ -45,6 +45,7 @@ mod reply;
 mod rich;
 mod room_link;
 mod room_rows;
+mod room_typing;
 mod runs;
 mod send;
 mod session;
