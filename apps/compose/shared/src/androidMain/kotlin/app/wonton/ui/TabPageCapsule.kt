@@ -37,7 +37,7 @@ import app.wonton.ui.icons.Leave
 import app.wonton.ui.icons.More
 import app.wonton.ui.icons.WontonIcon
 
-/** 页面右上角的 Material 导航胶囊；菜单和退出常驻，不随网页滚动隐藏。 */
+/** 面板页和公网网页右上角的 Material 导航胶囊（应用整页没有，见 [pageKeepsCapsule]）；菜单和退出常驻，不随网页滚动隐藏。 */
 @Composable
 internal fun PluginPageCapsule(
     tab: TabRef, tabs: PagesState, state: PageCapsuleState,

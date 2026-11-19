@@ -421,6 +421,36 @@
           }
         }
       }
+    },
+    "tab.exitHint.text": {
+      "comment": "First-time overlay on a full-screen app page that teaches the edge swipe back to Wonton.",
+      "extractionState": "manual",
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Swipe right from the left edge of the screen to return to Wonton"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "从屏幕左边缘向右滑，回到云吞"
+          }
+        },
+        "zh-Hant": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "從螢幕左邊緣向右滑，回到雲吞"
+          }
+        },
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "画面の左端から右にスワイプすると、ワンタンに戻ります"
+          }
+        }
+      }
     }
   }
 }

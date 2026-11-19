@@ -10,4 +10,6 @@
     <string name="panel_public_unsupported">This device\'s WebView cannot keep public web pages apart from plugin pages, so they cannot be opened here</string>
     <string name="panel_remove">Remove</string>
     <string name="panel_url">Enter a URL</string>
+    <!-- Long-press menu item on a My apps row: put the page into the chat panel. No arguments. -->
+    <string name="panel_pin">Pin to panel</string>
 </resources>

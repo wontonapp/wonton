@@ -107,7 +107,7 @@ final class TabWebSession: NSObject {
     @ObservationIgnored private(set) var parked = false
     @ObservationIgnored var missedFinish = false
     @ObservationIgnored private var backObservation: NSKeyValueObservation?
-    /// 页面自己的顶栏颜色，只在网页框让出顶上一条的系统上跟（`PageTopInset.framesWebView`）。
+    /// 页面自己的顶栏颜色：整页的网页框上面让出来的那一条照它涂（`PageTopStrip`）。
     var topColor: UIColor?
     @ObservationIgnored var topColorObservations: [NSKeyValueObservation] = []
     @ObservationIgnored private let dataStore: WKWebsiteDataStore
@@ -183,7 +183,7 @@ final class TabWebSession: NSObject {
         // 加载出来之前透明，露出 App 底色，不闪白；加载完改成不透明（见 didFinish）。
         view.isOpaque = false
         view.scrollView.contentInsetAdjustmentBehavior = .never
-        // 网页自己的前进后退手势也是左边缘右滑，会抢系统的返回；关掉，网页历史走胶囊菜单的后退。
+        // 网页自己的前进后退手势也是左边缘右滑，会抢系统的返回；关掉，网页历史交给网页自己的界面。
         view.allowsBackForwardNavigationGestures = false
         view.navigationDelegate = self
         if bridged {
@@ -203,7 +203,11 @@ final class TabWebSession: NSObject {
         backObservation = view.observe(\.canGoBack, options: [.initial, .new]) { [weak self] _, _ in
             Task { @MainActor in self?.canGoBack = self?.webView?.canGoBack ?? false }
         }
-        if PageTopInset.framesWebView, case .page = placed { observeTopColor(of: view) }
+        switch placed {
+        case .page, .content: observeTopColor(of: view)
+        // 面板里的页面不让出顶条，不用跟。
+        case .panel: break
+        }
     }
 
     private func configure(_ view: WKWebView) throws {
@@ -383,8 +387,8 @@ extension TabWebSession {
 
 struct TabWebView: UIViewRepresentable {
     let webView: WKWebView
-    /// 浮在网页上面、挡住它的上下两条：整页是状态栏加胶囊那一行（ADR-0095），面板里是面板的布局（ADR-0052）。
-    /// 页面照样画在后面，但固定定位的元素和滚动的终点让开。iOS 26 之前没有这个接口，见 `PageTopInset`。
+    /// 浮在网页上面、挡住它的上下两条：面板里的页面照面板的布局给（ADR-0052），整页的没有。
+    /// 页面照样画在后面，但固定定位的元素和滚动的终点让开。iOS 26 之前没有这个接口，面板里的页面不让。
     let obscured: UIEdgeInsets
 
     func makeUIView(context: Context) -> WKWebView {

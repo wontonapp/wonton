@@ -1,8 +1,8 @@
 import XCTest
 
-/// 插件页的出口，不要后端（`WONTON_UI_FAKE` 的假数据，盲测 P0“困在插件页”）：整页和聊天页的下拉面板上，
-/// 胶囊的关闭都看得见、点得到、点了回聊天；页面停在加载中、已停止、出了问题时一样；最大的辅助字号下一样；
-/// 切后台回来还在；重启 App 回到聊天，不停在插件页。
+/// 插件页的出口，不要后端（`WONTON_UI_FAKE` 的假数据，盲测 P0“困在插件页”）：整页上没有胶囊，左边缘右滑回聊天
+/// （ADR-0095），页面停在加载中、已停止、出了问题时一样，最大的辅助字号下一样，切后台回来一样；聊天页的下拉面板上
+/// 胶囊的关闭看得见、点得到、点了回聊天；重启 App 回到聊天，不停在插件页。
 ///
 ///     apps/ios/scripts/ui-test.sh <模拟器 UDID> test -only-testing:WontonUITests/PluginExitUITests
 ///
@@ -25,10 +25,10 @@ final class PluginExitUITests: XCTestCase {
         launch()
         for name in Self.pages {
             openPage(name)
-            assertCapsule("\(name) 整页")
+            assertNoCapsule("\(name) 整页")
             shot("page-\(name)")
-            tap(capsule, "\(name) 的关闭")
-            assertOnChatRoot("\(name) 点关闭")
+            swipeBack()
+            assertOnChatRoot("\(name) 左边缘右滑")
         }
     }
 
@@ -36,29 +36,21 @@ final class PluginExitUITests: XCTestCase {
         launch(arguments: Self.largestText)
         for name in Self.pages {
             openPage(name)
-            assertCapsule("最大字号下 \(name) 整页")
+            assertNoCapsule("最大字号下 \(name) 整页")
             shot("page-largest-\(name)")
-            tap(capsule, "\(name) 的关闭")
-            assertOnChatRoot("最大字号下 \(name) 点关闭")
+            swipeBack()
+            assertOnChatRoot("最大字号下 \(name) 左边缘右滑")
         }
     }
 
-    func testPageExitSurvivesBackgroundAndEdgeSwipeCloses() {
+    func testPageExitSurvivesBackground() {
         launch()
         openPage("Budget")
         backgroundAndReturn()
-        assertCapsule("切后台再回来")
+        XCTAssertNil(hittable(sidebarButton), "切后台再回来页面自己关了\n\(app.debugDescription)")
         shot("page-after-home")
-        tap(capsule, "切后台回来后的关闭")
-        assertOnChatRoot("切后台回来点关闭")
-
-        openPage("Budget")
-        // 推入的转场走完系统才认返回手势。
-        Thread.sleep(forTimeInterval: 1)
-        app.coordinate(withNormalizedOffset: CGVector(dx: 0.005, dy: 0.5))
-            .press(forDuration: 0.05, thenDragTo: app.coordinate(withNormalizedOffset: CGVector(dx: 0.85, dy: 0.5)),
-                   withVelocity: .default, thenHoldForDuration: 0.2)
-        assertOnChatRoot("整页左边缘右滑")
+        swipeBack()
+        assertOnChatRoot("切后台回来左边缘右滑")
     }
 
     func testRelaunchLandsOnChatNotOnThePage() {
@@ -66,7 +58,7 @@ final class PluginExitUITests: XCTestCase {
         openPage("Budget")
         app.terminate()
         launch()
-        XCTAssertNil(hittable(capsule), "重启后还停在插件页\n\(app.debugDescription)")
+        assertOnChatRoot("重启")
         shot("relaunch")
     }
 
@@ -144,9 +136,22 @@ final class PluginExitUITests: XCTestCase {
     }
 
     private var sidebarButton: XCUIElementQuery { app.buttons.matching(UITestSidebar.button) }
-    /// 胶囊的退出按钮。按标识找：聊天页的提示条上也有叫“关闭”的按钮。
+    /// 面板上胶囊的退出按钮。按标识找：聊天页的提示条上也有叫“关闭”的按钮。
     private var capsule: XCUIElementQuery {
         app.buttons.matching(NSPredicate(format: "identifier == %@", "pageClose"))
+    }
+
+    /// 整页的出口：左边缘右滑。推入的转场走完系统才认返回手势。
+    private func swipeBack() {
+        Thread.sleep(forTimeInterval: 1)
+        app.coordinate(withNormalizedOffset: CGVector(dx: 0.005, dy: 0.5))
+            .press(forDuration: 0.05, thenDragTo: app.coordinate(withNormalizedOffset: CGVector(dx: 0.85, dy: 0.5)),
+                   withVelocity: .default, thenHoldForDuration: 0.2)
+    }
+
+    /// 整页顶上不放壳的控件：页面自己固定在顶上的按钮不被压住。
+    private func assertNoCapsule(_ when: String, file: StaticString = #filePath, line: UInt = #line) {
+        XCTAssertEqual(capsule.count, 0, "\(when)上还有胶囊\n\(app.debugDescription)", file: file, line: line)
     }
 
     /// 从“全部应用”的网格点图标整页打开。

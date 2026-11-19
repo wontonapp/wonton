@@ -174,6 +174,7 @@ internal class AppNavigation(val pages: PagesState, val chat: ChatNavigation, va
             SidebarDestination.Settings -> settings()
             SidebarDestination.NewChat -> selectChatList(startingChat = true)
             is SidebarDestination.Plugin -> plugins.open(destination.entry)
+            is SidebarDestination.Details -> detail(destination.pluginId)
         }
     }
 

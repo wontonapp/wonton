@@ -1,21 +1,23 @@
 import XCTest
 
-/// 整页的网页让开状态栏和出口胶囊那一条（ADR-0095“铺满”），不要后端：假数据里的 Corner 应用整页打开一张本机网页，
-/// 顶上、底下各一条固定的栏，右上角一个固定的按钮（`ui_fake_room.rs` 的 `CORNER`，照 Immich、Actual 的样子摆）。
-/// 按钮不在胶囊下面、点得到；滚下去、切后台回来、重新加载以后一样；底下那条栏没被挤出屏幕；
-/// 自己写了 `viewport-fit=cover` 的那一份不会让两次。
+/// 整页的网页框从状态栏下沿开始，顶上不放壳的控件（ADR-0095），不要后端：假数据里的 Corner 应用整页打开一张本机网页，
+/// 顶上、底下各一条固定的栏，右上角一个固定的按钮（`ui_fake_room.rs` 的 `CORNER`，照 Immich、Syncthing 的样子摆）。
+/// 按钮紧贴状态栏下面、点得到，上面没有胶囊；滚下去、切后台回来以后一样；底下那条栏没被挤出屏幕；
+/// 自己写了 `viewport-fit=cover` 的那一份不会让两次；状态栏那一条跟着页面的颜色。
 ///
 ///     apps/ios/scripts/ui-test.sh <模拟器 UDID> test -only-testing:WontonUITests/PageInsetsUITests
 ///
-/// iOS 26 起靠 `obscuredContentInsets`；更早的系统没有这个接口，网页框从这一条下面开始、这一条涂页面的颜色
-/// （`PageTopInset`）。名字带 Framed 的那条用 `WONTON_UI_FRAMED_PAGE` 在任何系统上走旧系统的排法。
+/// 假数据没有隧道，Corner 只能当公网网页打开；公网网页留着胶囊。`WONTON_UI_URL_AS_APP_PAGE` 让它照应用页排，
+/// 名字带 Public 的那条不设，走公网网页自己的排法：胶囊还在，网页框从胶囊那一行下面开始。
 final class PageInsetsUITests: XCTestCase {
     private var app: XCUIApplication!
     private let dataSuffix = UUID().uuidString
+    /// 聊天页顶栏按钮的顶边，`launch` 里记下：它紧挨在状态栏下沿的下面。
+    private var rootBarTop: CGFloat = 0
 
     override func setUp() {
         continueAfterFailure = false
-        // 同一台模拟器上前面的类可能停在横屏，胶囊和右上角按钮的位置按竖屏量。
+        // 同一台模拟器上前面的类可能停在横屏，右上角按钮的位置按竖屏量。
         XCUIDevice.shared.orientation = .portrait
     }
 
@@ -24,7 +26,7 @@ final class PageInsetsUITests: XCTestCase {
         XCUIDevice.shared.appearance = .light
     }
 
-    func testFixedCornerButtonClearsTheCapsule() {
+    func testFixedCornerButtonSitsRightUnderTheStatusBar() {
         launch()
         openCorner()
         assertCornerClear("刚打开")
@@ -35,10 +37,6 @@ final class PageInsetsUITests: XCTestCase {
 
         backgroundAndReturn()
         assertCornerClear("切后台回来")
-
-        tap(app.buttons.matching(identifier: "pageMore"), "胶囊的菜单")
-        tap(app.buttons.matching(NSPredicate(format: "label == %@", "Reload")), "重新加载")
-        assertCornerClear("重新加载以后")
 
         tap(corner, "右上角的固定按钮")
         XCTAssertTrue(
@@ -77,18 +75,17 @@ final class PageInsetsUITests: XCTestCase {
 
         XCUIDevice.shared.orientation = .landscapeLeft
         Thread.sleep(forTimeInterval: 2)
-        assertCornerClear("横屏")
+        assertCornerClear("横屏", portrait: false)
         shot("corner-landscape")
         XCUIDevice.shared.orientation = .portrait
         Thread.sleep(forTimeInterval: 2)
         assertCornerClear("转回竖屏")
     }
 
-    func testFramedPageClearsTheCapsuleAndStripFollowsThePage() {
-        launch(framed: true)
+    func testStatusBarStripFollowsThePage() {
+        launch()
         openCorner()
-        assertCornerClear("网页框让出顶条")
-        shot("framed")
+        assertCornerClear("刚打开")
         assertStripContinuesBar("页面声明了 theme-color")
         let declared = stripColor
 
@@ -100,19 +97,33 @@ final class PageInsetsUITests: XCTestCase {
         tap(pageButton("Fixture unthemed"), "去掉 theme-color 的按钮")
         XCTAssertTrue(waitStrip(leaves: recolored), "页面去掉了 theme-color，顶条还是原来的颜色 \(recolored)")
         assertStripContinuesBar("页面没声明 theme-color，用它的背景色")
+    }
 
-        backgroundAndReturn()
-        assertCornerClear("切后台回来")
+    func testPublicPageKeepsTheCapsuleAboveTheWebFrame() {
+        launch(appPage: false)
+        openCorner()
+        guard waitHittable(capsule), let close = hittable(capsule) else {
+            return XCTFail("公网网页上没有点得到的胶囊\n\(app.debugDescription)")
+        }
+        let web = app.webViews.firstMatch.frame
+        XCTAssertTrue(
+            web.minY >= close.frame.maxY - 1 && web.minY <= close.frame.maxY + 16,
+            "公网网页的网页框 \(web) 没紧接在胶囊 \(close.frame) 那一行下面。\(probe)"
+        )
+        assertStripContinuesBar("公网网页")
+        shot("public")
         tap(corner, "右上角的固定按钮")
         XCTAssertTrue(
             app.webViews.buttons["Fixture corner tapped"].waitForExistence(timeout: 5),
             "点右上角的固定按钮，网页没收到\n\(app.debugDescription)"
         )
+        close.tap()
+        XCTAssertTrue(waitHittable(sidebarButton), "点胶囊的关闭没回到聊天\n\(app.debugDescription)")
     }
 
     // MARK: 助手
 
-    /// 壳让出来的顶条和页面自己的顶栏是一个颜色，连成一片：在胶囊那一行（顶条里）和它下面的页面顶栏里各取一点。
+    /// 壳让出来的顶条和页面自己的顶栏是一个颜色，连成一片：在状态栏那一条里和它下面的页面顶栏里各取一点。
     private func assertStripContinuesBar(_ when: String, file: StaticString = #filePath, line: UInt = #line) {
         var strip = stripColor, bar = barColor
         let deadline = Date().addingTimeInterval(5)
@@ -130,17 +141,13 @@ final class PageInsetsUITests: XCTestCase {
         return !Self.close(stripColor, old)
     }
 
-    /// 胶囊那一行里靠左边缘的一点：胶囊靠右（带来源域名时伸过中线），左边只有顶条。
-    private var stripColor: [Int] {
-        guard let close = hittable(capsule) else { return [] }
-        return screenColor(x: 12, y: close.frame.midY)
-    }
+    /// 状态栏那一条里贴着下沿、靠左边缘的一点：时间和灵动岛都够不着。
+    private var stripColor: [Int] { screenColor(x: 12, y: webTop - 4) }
 
-    /// 页面顶栏里的一点：网页框紧接在胶囊那一行下面，顶栏高 48，栏里的字靠左、按钮靠右。
-    private var barColor: [Int] {
-        guard let close = hittable(capsule) else { return [] }
-        return screenColor(x: app.frame.midX, y: close.frame.maxY + 24)
-    }
+    /// 页面顶栏里的一点：网页框紧接在状态栏下面，顶栏高 48，栏里的字靠左、按钮靠右。
+    private var barColor: [Int] { screenColor(x: app.frame.midX, y: webTop + 24) }
+
+    private var webTop: CGFloat { app.webViews.firstMatch.frame.minY }
 
     /// 两个颜色每个通道差不过 12（网页里的颜色过一遍色彩管理，实测和壳画的差到 7）；取不到颜色不算一样。
     private static func close(_ one: [Int], _ other: [Int]) -> Bool {
@@ -171,22 +178,31 @@ final class PageInsetsUITests: XCTestCase {
         app.webViews.buttons.matching(NSPredicate(format: "label == %@", label))
     }
 
-    /// 固定在右上角的按钮整个在胶囊下面、点得到；底下那条固定的栏还在屏幕里（视口没被多算一截）。
-    private func assertCornerClear(_ when: String, file: StaticString = #filePath, line: UInt = #line) {
+    /// 网页框的顶边就是状态栏的下沿，上面没有胶囊；固定在右上角的按钮紧贴着它、点得到；
+    /// 底下那条固定的栏还在屏幕里（视口没被多算一截）。横屏没有状态栏，只看按钮贴着网页框的顶边。
+    private func assertCornerClear(
+        _ when: String, portrait: Bool = true, file: StaticString = #filePath, line: UInt = #line
+    ) {
         guard waitHittable(corner), let button = hittable(corner) else {
             return XCTFail("\(when)：右上角的固定按钮不在或点不到。\(probe)\n\(app.debugDescription)", file: file, line: line)
         }
-        guard let close = hittable(capsule) else {
-            return XCTFail("\(when)：没有点得到的胶囊\n\(app.debugDescription)", file: file, line: line)
+        XCTAssertEqual(capsule.count, 0, "\(when)：整页上还有胶囊\n\(app.debugDescription)", file: file, line: line)
+        let web = app.webViews.firstMatch.frame
+        if portrait {
+            // 聊天页的顶栏按钮在状态栏下沿之下几个点以内：网页框的顶边不高过状态栏的字，也不低过那颗按钮。
+            XCTAssertTrue(
+                web.minY >= 40 && web.minY <= rootBarTop + 1,
+                "\(when)：网页框的顶边 \(web) 不在状态栏下沿（聊天页顶栏按钮在 \(rootBarTop)）。\(probe)", file: file, line: line
+            )
         }
         XCTAssertGreaterThanOrEqual(
-            button.frame.minY, close.frame.maxY - 1,
-            "\(when)：固定按钮 \(button.frame) 还在胶囊 \(close.frame) 那一条里。\(probe)", file: file, line: line
+            button.frame.minY, web.minY - 1,
+            "\(when)：固定按钮 \(button.frame) 顶出了网页框 \(web)。\(probe)", file: file, line: line
         )
-        // 让多了也不对：按钮紧接在胶囊那一行下面。
+        // 让多了也不对：按钮紧接在网页框的顶边下面。
         XCTAssertLessThanOrEqual(
-            button.frame.minY, close.frame.maxY + 16,
-            "\(when)：固定按钮 \(button.frame) 离胶囊 \(close.frame) 太远，多让了一截。\(probe)", file: file, line: line
+            button.frame.minY, web.minY + 16,
+            "\(when)：固定按钮 \(button.frame) 离网页框的顶边 \(web) 太远，多让了一截。\(probe)", file: file, line: line
         )
         let foot = app.webViews.staticTexts["Fixture foot"]
         XCTAssertTrue(foot.exists, "\(when)：底下固定的那条栏不在", file: file, line: line)
@@ -215,14 +231,16 @@ final class PageInsetsUITests: XCTestCase {
         return false
     }
 
-    private func launch(arguments: [String] = [], framed: Bool = false) {
+    private func launch(arguments: [String] = [], appPage: Bool = true) {
         app = XCUIApplication()
         app.launchArguments += ["-AppleLanguages", "(en)", "-AppleLocale", "en_US"] + arguments
         app.launchEnvironment["WONTON_DEV_DATA_SUFFIX"] = dataSuffix
         app.launchEnvironment["WONTON_UI_FAKE"] = "1"
-        if framed { app.launchEnvironment["WONTON_UI_FRAMED_PAGE"] = "1" }
+        if appPage { app.launchEnvironment["WONTON_UI_URL_AS_APP_PAGE"] = "1" }
         app.launch()
         XCTAssertTrue(waitHittable(sidebarButton, timeout: 20), "没进主界面\n\(app.debugDescription)")
+        // UI 测试读不到安全区。
+        rootBarTop = hittable(sidebarButton)?.frame.minY ?? 0
     }
 
     private func openCorner(file: StaticString = #filePath, line: UInt = #line) {

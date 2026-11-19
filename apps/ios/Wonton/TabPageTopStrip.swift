@@ -1,20 +1,6 @@
 import SwiftUI
 import WebKit
 
-/// 整页的网页怎么让开状态栏加胶囊那一条（ADR-0095“铺满”）。
-enum PageTopInset {
-    /// 网页框从这一条下面开始，而不是铺到屏幕顶。iOS 26 之前没有 `obscuredContentInsets`，现成应用固定在右上角的
-    /// 按钮只有这样才不压在胶囊底下；按钮点得到比背景铺到顶要紧。让出来的这一条由 `PageTopStrip` 涂页面的颜色。
-    static let framesWebView: Bool = {
-        #if DEBUG
-        // 界面测试在 iOS 26 的模拟器上走一遍旧系统的排法（`PageInsetsUITests`）。
-        if ProcessInfo.processInfo.environment["WONTON_UI_FRAMED_PAGE"] == "1" { return true }
-        #endif
-        if #available(iOS 26, *) { return false }
-        return true
-    }()
-}
-
 /// 网页框上面让出来的那一条：涂页面自己的颜色，和页面的顶栏连成一片；页面还没出来时是 App 底色。
 struct PageTopStrip: View {
     let color: UIColor?

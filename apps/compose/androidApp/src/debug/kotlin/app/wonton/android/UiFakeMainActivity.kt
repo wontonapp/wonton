@@ -6,6 +6,7 @@ import android.os.Bundle
 class UiFakeMainActivity : MainActivity() {
     override fun onCreate(savedInstanceState: Bundle?) {
         intent.putExtra(UI_FAKE_EXTRA, true)
+        intent.putExtra(UI_PAGE_HINT_SEEN_EXTRA, true)
         super.onCreate(savedInstanceState)
     }
 }
