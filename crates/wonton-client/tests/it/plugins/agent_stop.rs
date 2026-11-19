@@ -24,7 +24,6 @@ fn row(status: &str, live: bool) -> serde_json::Value {
         "origin": {"room_id": "!r:home.example", "thread_id": null},
         "bots": [{"bot": {"plugin_id": "app.hermes", "bot": "owner"}, "layer": 1}],
         "rounds": 1,
-        "spend": {"type": "unknown"},
         "status": status,
         "can_stop": true,
         "live": live,

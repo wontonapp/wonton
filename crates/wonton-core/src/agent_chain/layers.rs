@@ -1,5 +1,5 @@
 //! 链上 Bot 的层和开轮前的检查（ADR-0061 第 10 节）。检查顺序固定：已停 → 到上限 → 点名者在不在链上，
-//! 前面的命中就返回、不看后面。这些检查不翻链的状态；翻状态（轮数、花费）在 `budget` 里。
+//! 前面的命中就返回、不看后面。这些检查不翻链的状态；翻状态（轮数）在 `budget` 里。
 
 use wonton_protocol::{AgentChainStatus, BotRef, ChainError, ChainLimitKind, ChainRefusal};
 
