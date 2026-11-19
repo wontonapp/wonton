@@ -20,6 +20,7 @@ mod bot_records;
 mod bot_typing;
 mod bot_web;
 mod bots;
+mod choices;
 mod confirmation;
 mod connect;
 mod contacts;
@@ -44,6 +45,7 @@ mod reply;
 mod rich;
 mod room_link;
 mod room_rows;
+mod runs;
 mod send;
 mod session;
 mod side_chat;
@@ -80,6 +82,9 @@ pub use bots::bot_current_avatar;
 pub(crate) use confirmation::fetch_card;
 pub(crate) use links::{LinkTargets, matrix_target};
 pub(crate) use login::proxy_url;
+pub(crate) use runs::Runs;
+#[cfg(feature = "ui-fake")]
+pub(crate) use runs::apply_diff;
 pub use timeline::{TimelineSource, TimelineSubscription};
 pub(crate) use view::{failure, summary, unread_total};
 

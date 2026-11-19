@@ -178,6 +178,8 @@ pub(super) struct Outbox {
     confirmations: watch::Receiver<Arc<Vec<ConfirmationView>>>,
     /// 旁聊订阅的头部（ADR-0093 §5）：每批都带上现在的；主对话是空的。
     side_chat: Mutex<Option<wonton_protocol::SideChatCard>>,
+    /// 壳那边的列表，给每条消息填组内位置（ADR-0109）。
+    runs: Mutex<super::Runs>,
 }
 
 impl Outbox {
@@ -197,6 +199,7 @@ impl Outbox {
             room_id,
             confirmations,
             side_chat: Mutex::new(None),
+            runs: Mutex::default(),
         }
     }
 
@@ -241,13 +244,14 @@ impl Outbox {
     pub(super) fn send(
         &self,
         entries: &Vector<TimelineEntry>,
-        diffs: Vec<TimelineDiff>,
+        mut diffs: Vec<TimelineDiff>,
         back_pagination: BackPagination,
         viewport: TimelineViewport,
         anchor: Option<String>,
         call_active: bool,
         room_bots: Option<Vec<String>>,
     ) -> Result<(), ()> {
+        lock(&self.runs).apply(&mut diffs);
         let scroll_to_bottom = lock(&self.menus).apply(&diffs);
         let room_view = self
             .room_view

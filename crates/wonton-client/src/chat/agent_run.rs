@@ -151,8 +151,8 @@ fn waiting_cards_from(cards: &[ConfirmationView]) -> HashMap<String, String> {
 }
 
 impl ChatLink {
-    /// 以反应回答 Bot 的提问：主人点了状态行上的选项按钮才发，核心把它发成对状态消息的 `m.annotation`
-    /// 反应。只对现在还是状态消息、还带这个选项的条目发；失败进 `ChatViewModel::problem`。
+    /// 以反应回答 Bot 的选项（ADR-0109 第 7 节）：主人点了消息下面或状态行上的按钮才发，核心把它发成对那条
+    /// 消息的 `m.annotation` 反应。选项没有了、不是问我的、已经答过时试下一条时间线；失败进 `ChatViewModel::problem`。
     pub(super) fn answer_agent_choice(
         self: &Arc<Self>,
         room_id: &str,

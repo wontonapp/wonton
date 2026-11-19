@@ -114,3 +114,5 @@ chat-window-ended =
                *[other] 許可期間が終了しました（{ $count }回許可）。
             }
     }
+
+chat-choice-send-failed-rejected = 送れませんでした：自宅サーバーに拒否されました。（{ $error }）
