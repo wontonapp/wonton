@@ -11,6 +11,8 @@ import WontonClient
 @Observable
 final class ComposerModel {
     private(set) var viewModel: ComposerViewModel?
+    /// 这条时间线的停止控件（ADR-0061 第 10 节）：核心算好的样子，壳只照着画。
+    private(set) var agentStop: RoomAgentStop = .idle
     let roomId: String
     /// 旁聊根的事件 ID；空是房间的主时间线（ADR-0093）。
     let threadRoot: String?
@@ -43,6 +45,18 @@ final class ComposerModel {
         for await update in subscription.updates() {
             viewModel = update
         }
+    }
+
+    /// 在视图的 `.task` 里调用；主对话和旁聊都有。
+    func observeAgentStop() async {
+        for await update in core.subscribeAgentStop(target: target).updates() {
+            agentStop = update
+        }
+    }
+
+    /// 停下这条时间线里 Bot 正在跑的轮次；结果从 `agentStop` 回来。
+    func stopAgent() {
+        chat.send(.agent(action: .stopTurns(target: target)))
     }
 
     /// 相册里选的几张：按选的顺序转码、放进附件区。读不了、转不了的那张报错，别的照样放。

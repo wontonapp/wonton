@@ -2,9 +2,12 @@ use tokio::sync::{Mutex, watch};
 use wonton_protocol::{
     AgentChainsViewModel, AppLockViewModel, AppearanceViewModel, BotContactsViewModel,
     ChatViewModel, ComposerViewModel, ConfirmationsViewModel, FriendsViewModel, HomeViewModel,
-    OnboardingViewModel, PagesViewModel, PeersViewModel, PluginsViewModel, ServersViewModel,
-    SessionListViewModel, SettingsViewModel, TransfersViewModel, WidgetSnapshot,
+    OnboardingViewModel, PagesViewModel, PeersViewModel, PluginsViewModel, RoomAgentStop,
+    ServersViewModel, SessionListViewModel, SettingsViewModel, TimelineTarget, TransfersViewModel,
+    WidgetSnapshot,
 };
+
+use crate::agent_chains::room_stop::{self, Attempts};
 
 use crate::session_store::SessionStore;
 
@@ -504,6 +507,75 @@ impl FriendsSubscription {
     /// 取消订阅，语义同 [`SessionListSubscription::cancel`]。
     pub fn cancel(&self) {
         self.updates.cancel();
+    }
+}
+
+/// 一条时间线的停止控件的订阅，用法同 [`SessionListSubscription`]。链列表每次长轮询回来都会变，
+/// 控件多半没变：只在算出来的值和上一次给的不一样时才返回。
+#[derive(uniffi::Object)]
+pub struct AgentStopSubscription {
+    target: TimelineTarget,
+    state: Mutex<AgentStopState>,
+    cancelled: watch::Sender<bool>,
+}
+
+struct AgentStopState {
+    chains: watch::Receiver<AgentChainsViewModel>,
+    attempts: watch::Receiver<Attempts>,
+    last: Option<RoomAgentStop>,
+}
+
+impl AgentStopSubscription {
+    pub(crate) fn new(
+        chains: watch::Receiver<AgentChainsViewModel>,
+        attempts: watch::Receiver<Attempts>,
+        target: TimelineTarget,
+    ) -> Self {
+        Self {
+            target,
+            state: Mutex::new(AgentStopState {
+                chains,
+                attempts,
+                last: None,
+            }),
+            cancelled: watch::Sender::new(false),
+        }
+    }
+}
+
+#[uniffi::export]
+impl AgentStopSubscription {
+    /// 等待控件的下一个样子，语义同 [`SessionListSubscription::next`]。
+    pub async fn next(&self) -> Option<RoomAgentStop> {
+        let mut cancelled = self.cancelled.subscribe();
+        let mut state = self.state.lock().await;
+        let AgentStopState {
+            chains,
+            attempts,
+            last,
+        } = &mut *state;
+        loop {
+            let current = room_stop::derive(
+                &chains.borrow_and_update(),
+                &attempts.borrow_and_update(),
+                &self.target,
+            );
+            if last.as_ref() != Some(&current) {
+                *last = Some(current.clone());
+                return Some(current);
+            }
+            tokio::select! {
+                biased;
+                _ = cancelled.wait_for(|cancelled| *cancelled) => return None,
+                changed = chains.changed() => changed.ok()?,
+                changed = attempts.changed() => changed.ok()?,
+            }
+        }
+    }
+
+    /// 取消订阅，语义同 [`SessionListSubscription::cancel`]。
+    pub fn cancel(&self) {
+        self.cancelled.send_replace(true);
     }
 }
 

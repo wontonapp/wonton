@@ -14,6 +14,7 @@ mod agent_chain;
 mod agent_outbox;
 mod agent_permission;
 mod agent_run;
+mod agent_stop;
 mod app_lock;
 mod appearance;
 mod bot_commands;
@@ -96,6 +97,7 @@ pub use agent_permission::{
     AgentPermissionOutcome, AgentPermissionRequest,
 };
 pub use agent_run::{AgentRunChoice, AgentRunEnd, AgentRunState};
+pub use agent_stop::RoomAgentStop;
 pub use app_lock::{AppLockTimeout, AppLockViewModel};
 pub use appearance::{
     AppearanceProblem, AppearanceViewModel, FontStyle, Rgb, TextSize, ThemeColors, ThemeMode,

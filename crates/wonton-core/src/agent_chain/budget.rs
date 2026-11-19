@@ -47,7 +47,13 @@ pub(super) fn record_tokens(
         (Some(total), Some(part)) => Some(total + part),
         (Some(_), None) => None,
     };
-    if chain.status == AgentChainStatus::Running && chain.tokens >= chain.limits.max_tokens {
+    // 做完的链也照样算：最后那轮的用量常在 round 结束后才报上来，越限了照样要卡片。
+    // 停了的链不再改状态（停优先）。
+    if matches!(
+        chain.status,
+        AgentChainStatus::Running | AgentChainStatus::Ended
+    ) && chain.tokens >= chain.limits.max_tokens
+    {
         hit_limit(chain, ChainLimitKind::Cost, events);
     }
 }
