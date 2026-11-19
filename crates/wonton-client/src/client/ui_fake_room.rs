@@ -138,7 +138,8 @@ const TALL_PARAGRAPHS: usize = 60;
 const LAST_LINE: &str = "Fixture last line";
 
 fn item(index: usize) -> TimelineItem {
-    let own = index % 2 == 1;
+    // 8..=10 都算 Echo 的，凑一组连发的消息给并排的气泡做样子，其余一左一右轮流。
+    let own = index % 2 == 1 && !(8..=10).contains(&index);
     let last = index + 1 == ITEMS;
     let mut paragraphs = if index == CHOICES_INDEX {
         vec![
