@@ -151,6 +151,36 @@
           }
         }
       }
+    },
+    "NSFaceIDUsageDescription": {
+      "comment": "System prompt the first time the app uses Face ID, for the app lock and viewing the recovery key.",
+      "extractionState": "manual",
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Wonton uses Face ID to unlock the app and to confirm it's you before showing your recovery key."
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "云吞用面容 ID 解锁 App，并在显示恢复密钥前确认是你本人。"
+          }
+        },
+        "zh-Hant": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "雲吞用 Face ID 解鎖 App，並在顯示復原金鑰前確認是你本人。"
+          }
+        },
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "アプリのロック解除と、復旧キーを表示する前の本人確認に Face ID を使用します。"
+          }
+        }
+      }
     }
   }
 }
