@@ -64,6 +64,8 @@ final class ChatTelegramUITests: XCTestCase {
         // 浮动日期只在滚动时盖在消息上，停下后淡出，不压着字（ADR-0109 第 4 节）。
         let floatingDate = app.descendants(matching: .any)["timelineFloatingDate"]
         XCTAssertTrue(floatingDate.waitForNonExistence(timeout: 5), "停止滚动后浮动日期没淡出")
+        // 无障碍树里先没了，淡出的动画还要一会儿；截图等它画完。
+        Thread.sleep(forTimeInterval: 1)
         shot("choices-open")
         approve.tap()
         XCTAssertTrue(wait(5) { approve.isSelected }, "点了的选项没变成选中")
@@ -117,6 +119,11 @@ final class ChatTelegramUITests: XCTestCase {
         for _ in 0..<3 { dragDown() }
         XCTAssertTrue(wait(5) { first.exists && first.frame.minY >= aiLine.frame.maxY },
                       "第一条气泡被 AI 那一行盖住\n\(app.debugDescription)")
+        // 停下以后浮动日期淡出，不再压着第一条气泡（ADR-0109 第 4 节）。
+        let floatingDate = app.descendants(matching: .any)["timelineFloatingDate"]
+        XCTAssertTrue(floatingDate.waitForNonExistence(timeout: 5), "停止滚动后浮动日期没淡出")
+        // 无障碍树里先没了，淡出的动画还要一会儿；截图等它画完。
+        Thread.sleep(forTimeInterval: 1)
         shot("group")
         app.terminate()
         app.launch()
