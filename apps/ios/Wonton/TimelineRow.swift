@@ -6,9 +6,6 @@ struct TimelineRow: View {
     let core: ClientCore
     /// 私聊里对方是谁看标题就知道，不在每条消息上重复名字。
     let showsSender: Bool
-    /// 和上一条、下一条是不是同一个人连着发的。
-    let joinsPrevious: Bool
-    let joinsNext: Bool
     /// 和上一条、下一条是不是同一次发送里贴着的两张照片（ADR-0094）：贴成一摞，中间不留衬垫。
     var flushesPrevious: Bool = false
     var flushesNext: Bool = false
@@ -28,29 +25,18 @@ struct TimelineRow: View {
     /// 进旁聊（参数是根的事件 ID）：旁聊卡片和结果行都用它（ADR-0093）。
     var onOpenSideChat: (String) -> Void = { _ in }
     @Environment(\.wontonColors) private var colors
-    @Environment(TimeReveal.self) private var reveal: TimeReveal?
 
     var body: some View {
         switch item.content {
         case let .message(message):
-            // 时间不贴在气泡上（学 iMessage）：隔得久的那条上方写一行，其余的左滑整列才露出来。
-            VStack(spacing: WontonTheme.spacing.s8) {
-                if message.startsTimeGroup {
-                    note(Text(Self.time(message.timestampMs)))
-                }
-                VStack(alignment: .trailing, spacing: WontonTheme.spacing.s4) {
-                    MessageBubble(
-                        message: message, core: core, showsSender: showsSender && !joinsPrevious,
-                        joinsPrevious: joinsPrevious, joinsNext: joinsNext,
-                        flushesPrevious: flushesPrevious, flushesNext: flushesNext,
-                        retry: retry, cancel: cancel,
-                        cardAction: cardAction, reply: reply, forward: forward, redact: redact,
-                        openSideChat: onOpenSideChat
-                    )
-                    receipt(message.receipt)
-                }
-                .modifier(RevealedTime(timestampMs: message.timestampMs, isOwn: message.isOwn, reveal: reveal))
-            }
+            // 群聊里名字只在组首写一次；组内位置由核心给（ADR-0109）。
+            MessageBubble(
+                message: message, core: core, showsSender: showsSender && message.run.startsRun,
+                flushesPrevious: flushesPrevious, flushesNext: flushesNext,
+                retry: retry, cancel: cancel,
+                cardAction: cardAction, reply: reply, forward: forward, redact: redact,
+                openSideChat: onOpenSideChat
+            )
         case let .notice(text):
             note(Text(text))
         case let .agentRun(
@@ -97,24 +83,6 @@ struct TimelineRow: View {
         }
     }
 
-    /// 自己发的最后一条下面那行小字：已送达、已读。别的消息没有；不认识的取值不写。
-    @ViewBuilder private func receipt(_ receipt: MessageReceipt?) -> some View {
-        switch receipt {
-        case .delivered:
-            receiptLine(Text(.Message2.messageDelivered)).accessibilityIdentifier("messageDelivered")
-        case .read:
-            receiptLine(Text(.Message2.messageRead)).accessibilityIdentifier("messageRead")
-        case .other, nil:
-            EmptyView()
-        }
-    }
-
-    private func receiptLine(_ text: Text) -> some View {
-        text
-            .wontonText(WontonTheme.typography.caption)
-            .foregroundStyle(Color(colors.textSecondary))
-    }
-
     private var edge: some View {
         Rectangle().fill(Color(colors.separator)).frame(height: WontonTheme.size.hairline)
     }
@@ -140,8 +108,6 @@ private struct MessageBubble: View {
     let message: TimelineMessage
     let core: ClientCore
     let showsSender: Bool
-    let joinsPrevious: Bool
-    let joinsNext: Bool
     var flushesPrevious: Bool = false
     var flushesNext: Bool = false
     let retry: () -> Void
@@ -155,29 +121,16 @@ private struct MessageBubble: View {
     @State private var isChoosingFailed = false
     @Environment(\.wontonColors) private var colors
 
-    /// 菜单里写的发送时间：完整日期加时间（ADR-0029 的时间不常驻气泡，这里是单条查询）。
-    private var sentAt: String {
-        TimelineRow.date(message.timestampMs).formatted(.dateTime.year().month().day().hour().minute())
-    }
-
-    /// 自己的气泡靠右，相接的是右边的角；别人的相反。
-    private var shape: UnevenRoundedRectangle {
-        let full = WontonTheme.radii.bubble
-        let joined = WontonTheme.radii.bubbleJoined
-        let top = joinsPrevious ? joined : full
-        let bottom = joinsNext ? joined : full
-        return UnevenRoundedRectangle(
-            topLeadingRadius: message.isOwn ? full : top,
-            bottomLeadingRadius: message.isOwn ? full : bottom,
-            bottomTrailingRadius: message.isOwn ? bottom : full,
-            topTrailingRadius: message.isOwn ? top : full,
-            style: .continuous
-        )
+    private var shape: MessageBubbleShape {
+        MessageBubbleShape(run: message.run, isOwn: message.isOwn)
     }
 
     var body: some View {
-        HStack(spacing: 0) {
-            if message.isOwn { Spacer(minLength: WontonTheme.spacing.s48) }
+        HStack(alignment: .bottom, spacing: 0) {
+            if message.isOwn {
+                Spacer(minLength: WontonTheme.spacing.s48)
+                failedBadge
+            }
             VStack(alignment: .leading, spacing: WontonTheme.spacing.s4) {
                 if showsSender, !message.isOwn {
                     Text(message.senderName)
@@ -191,11 +144,6 @@ private struct MessageBubble: View {
                     .contextMenu {
                         ForEach(Array(message.actions.enumerated()), id: \.offset) { _, action in
                             menuItem(action)
-                        }
-                        // 时间不贴在气泡上（ADR-0029），这里是查单条时间的入口：带完整日期，隔了天也对得上。
-                        Section {
-                            Text(.Message1.messageSentAt(sentAt))
-                                .accessibilityIdentifier("messageSentAt")
                         }
                     }
                 // 有回复的普通消息下面挂着旁聊的卡片（ADR-0093 §6）。
@@ -251,8 +199,11 @@ private struct MessageBubble: View {
     }
 
     @ViewBuilder private var bubble: some View {
+        // 发送者一侧让出尾巴那条边（见 MessageBubbleShape）。
+        let tail = WontonTheme.size.bubbleTail
         let body = quoted
-            .padding(.horizontal, WontonTheme.spacing.s12)
+            .padding(.leading, WontonTheme.spacing.s12 + (message.isOwn ? 0 : tail))
+            .padding(.trailing, WontonTheme.spacing.s12 + (message.isOwn ? tail : 0))
             // 同一次发送里贴着的照片不留上下衬垫，贴成一摞（ADR-0094）。
             .padding(.top, flushesPrevious ? 0 : WontonTheme.spacing.s8)
             .padding(.bottom, flushesNext ? 0 : WontonTheme.spacing.s8)
@@ -275,21 +226,21 @@ private struct MessageBubble: View {
         }
     }
 
+    /// 时间常驻气泡右下角（ADR-0109 第 3 节）：放得下和末行同排，放不下另起一行；纯图片压在图片右下角。
     @ViewBuilder private var laidOut: some View {
-        if !hasFooter {
+        if isBareImage {
             styled(reserve: nil)
-        } else if let reserve = footerReserve {
-            // 正文末尾有一段和脚注等宽的透明占位，脚注压在它上面。放不下时占位自己换行，脚注就落在新的一行。
+        } else if let reserve = metaReserve {
+            // 正文末尾有一段和这一行等宽的透明占位，这一行压在它上面。放不下时占位自己换行，这一行就落在新的一行。
             ZStack(alignment: Alignment(horizontal: .trailing, vertical: .lastTextBaseline)) {
                 styled(reserve: reserve)
-                // 占位文字已经念过一遍了。
-                footer.accessibilityHidden(true)
+                MessageMeta(message: message, textIsSpoken: true)
             }
         } else {
-            // Grid：气泡和最宽的一行一样宽，正文靠左、脚注靠右。VStack 做不到，撑满又会把短消息的气泡也撑满。
+            // Grid：气泡和最宽的一行一样宽，正文靠左、时间靠右。VStack 做不到，撑满又会把短消息的气泡也撑满。
             Grid(alignment: .leading, verticalSpacing: WontonTheme.spacing.s4) {
                 styled(reserve: nil)
-                footer.gridCellAnchor(.trailing)
+                MessageMeta(message: message).gridCellAnchor(.trailing)
             }
         }
     }
@@ -300,27 +251,48 @@ private struct MessageBubble: View {
             .foregroundStyle(textColor)
     }
 
-    /// 气泡里只在有话要说时才有脚注：编辑过、还在发、没发出去。时间和已读不在气泡里。
-    private var hasFooter: Bool {
-        if message.edited { return true }
-        if case .sent = message.sendState { return false }
-        return true
+    /// 没有说明文字的图片：时间画在图片上。
+    private var isBareImage: Bool {
+        if case let .image(image) = message.body { return image.caption == nil }
+        return false
     }
 
-    /// 脚注能压在最后一行上时，给它留的透明文字。发送失败的说明太长，文件卡片和代码块、表格后面也没有文字行，都单独占一行。
-    /// 开头是普通空格：不能和前一个词连着折行。
-    private var footerReserve: String? {
+    /// 时间能压在最后一行上时，给它留的透明文字。文件卡片和代码块、表格后面没有文字行，时间单独占一行。
+    private var metaReserve: String? {
         guard case let .text(_, blocks, files) = message.body, files.isEmpty, let last = blocks.last else { return nil }
         switch last.kind {
         case .paragraph, .heading, .listItem: break
         case .code, .table, .rule: return nil
         }
-        if case .failed = message.sendState { return nil }
-        var parts: [String] = []
-        if message.edited { parts.append(String(localized: .Message2.messageEdited)) }
-        if case .sending = message.sendState { parts.append(String(localized: .Message2.messageSending)) }
-        let glued = parts.joined(separator: "  ").replacingOccurrences(of: " ", with: "\u{00A0}")
-        return " \u{00A0}\u{00A0}" + glued
+        return MessageMeta.reserve(for: message)
+    }
+
+    /// 发送失败：气泡旁的红色感叹号，点它重发或删除；原因写在面板的标题上。
+    @ViewBuilder private var failedBadge: some View {
+        if case let .failed(reason, recoverable) = message.sendState {
+            let title = recoverable
+                ? String(localized: .Message2.messageSendFailedRetrying)
+                : String(localized: .Message1.messageSendFailed(reason))
+            Button {
+                isChoosingFailed = true
+            } label: {
+                WontonIcon.warningCircleFill.view(size: WontonTheme.size.icon)
+                    .foregroundStyle(Color(colors.danger))
+                    .frame(width: WontonTheme.size.smallButton, height: WontonTheme.size.smallButton)
+                    .contentShape(Rectangle())
+            }
+            .buttonStyle(.plain)
+            .accessibilityLabel(title)
+            .accessibilityIdentifier("messageFailed")
+            .wontonActionSheet(isPresented: $isChoosingFailed, title: title, actions: [
+                WontonSheetAction(
+                    title: String(localized: .Message1.messageResend), icon: .refresh, perform: retry
+                ),
+                WontonSheetAction(
+                    title: String(localized: .Common.commonDelete), icon: .trash, isDanger: true, perform: cancel
+                )
+            ])
+        }
     }
 
     private var textColor: Color {
@@ -335,6 +307,11 @@ private struct MessageBubble: View {
             // 一次发送里主人写的字是最后一张照片的说明文字（ADR-0094），画在照片下面。
             VStack(alignment: .leading, spacing: WontonTheme.spacing.s8) {
                 MediaImage(image: image, core: core, sendState: message.sendState)
+                    .overlay(alignment: .bottomTrailing) {
+                        if image.caption == nil {
+                            MessageMeta(message: message, onMedia: true).padding(WontonTheme.spacing.s4)
+                        }
+                    }
                 if let caption = image.caption {
                     TextMessageBody(blocks: caption.blocks, ink: textColor, files: [])
                 }
@@ -379,43 +356,6 @@ private struct MessageBubble: View {
                 .wontonText(WontonTheme.typography.supporting)
                 .opacity(WontonTheme.ratio.secondaryContent)
         }
-    }
-
-    private var footer: some View {
-        HStack(spacing: WontonTheme.spacing.s4) {
-            if message.edited { Text(.Message2.messageEdited) }
-            switch message.sendState {
-            case .sending:
-                Text(.Message2.messageSending)
-            case let .failed(reason, recoverable):
-                Button {
-                    isChoosingFailed = true
-                } label: {
-                    HStack(spacing: WontonTheme.spacing.s4) {
-                        WontonIcon.warningCircle.view(size: WontonTheme.size.iconTiny)
-                        if recoverable {
-                            Text(.Message2.messageSendFailedRetrying)
-                        } else {
-                            Text(.Message1.messageSendFailed(reason))
-                        }
-                    }
-                    .foregroundStyle(Color(colors.danger))
-                }
-                .buttonStyle(.plain)
-                .wontonActionSheet(isPresented: $isChoosingFailed, actions: [
-                    WontonSheetAction(
-                        title: String(localized: .Message1.messageResend), icon: .refresh, perform: retry
-                    ),
-                    WontonSheetAction(
-                        title: String(localized: .Common.commonDelete), icon: .trash, isDanger: true, perform: cancel
-                    )
-                ])
-            case .sent:
-                EmptyView()
-            }
-        }
-        .wontonText(WontonTheme.typography.caption)
-        .foregroundStyle(Color(message.isOwn ? colors.accentInkOnFill : colors.textSecondary))
     }
 }
 

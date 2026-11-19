@@ -12,8 +12,6 @@ struct ChatRoomView: View {
     @State private var composer: ComposerModel
     @State private var presenter: RoomPresenter
     @State private var pin = BottomPin()
-    /// 左滑整列露出每条消息的时间。
-    @State private var reveal = TimeReveal()
     @State private var isKeyboardVisible = false
     @State private var pageAnchor: String?
     @SceneStorage private var savedAnchor: String
@@ -271,14 +269,9 @@ private extension ChatRoomView {
                     }
                 }
                 // 进房间时列表从头排起，这一行一定会出现。
-                .background(EnclosingScrollView { scrollView in
-                    pin.attach(scrollView)
-                    reveal.attach(scrollView)
-                })
+                .background(EnclosingScrollView { pin.attach($0) })
                 .timelineListRow()
                 ForEach(Array(timeline.items.enumerated()), id: \.element.id) { index, item in
-                    let joinsPrevious = index > 0 && item.joins(timeline.items[index - 1])
-                    let joinsNext = index + 1 < timeline.items.count && timeline.items[index + 1].joins(item)
                     let flushesPrevious = index > 0 && timeline.items[index - 1].flushesWith(next: item)
                     let flushesNext = index + 1 < timeline.items.count
                         && item.flushesWith(next: timeline.items[index + 1])
@@ -286,7 +279,6 @@ private extension ChatRoomView {
                     if !item.isBlankAgentRun {
                         TimelineRow(
                             item: item, core: model.core, showsSender: !isDirect,
-                            joinsPrevious: joinsPrevious, joinsNext: joinsNext,
                             flushesPrevious: flushesPrevious, flushesNext: flushesNext,
                             retry: { sendTimeline(.retrySend(target: target, itemId: item.id)) },
                             cancel: { sendTimeline(.cancelSend(target: target, itemId: item.id)) },
@@ -321,8 +313,8 @@ private extension ChatRoomView {
                             saveVisibleAnchor()
                         }
                         .onDisappear { visibleRows.removeValue(forKey: item.id) }
-                        .timelineListRow(joinsPrevious: joinsPrevious, joinsNext: joinsNext)
-                        .modifier(ReplySwipe(quote: item.replyQuote()) { quote in
+                        .timelineListRow(top: item.gapAbove, bottom: item.gapBelow)
+                        .modifier(ReplyDrag(quote: item.replyQuote()) { quote in
                             model.startReply(.ready(message: quote), in: target)
                         })
                     }
@@ -335,7 +327,6 @@ private extension ChatRoomView {
                 }
             }
             .listStyle(.plain)
-            .environment(reveal)
             .coordinateSpace(name: "timelineViewport")
             .task(id: PageRequest(timeline)) {
                 guard timeline.isLoaded, !placed, !savedAnchor.isEmpty else { return }
@@ -485,20 +476,27 @@ private extension ChatRoomView {
 }
 
 private extension TimelineItem {
-    /// 和上一条 `earlier` 是同一个人连着发的：并成一组，气泡挨紧，相接的角收小。
-    /// 中间隔着一行字的不并：这条上方写了时间，或者上一条下面写着已送达、已读。
-    func joins(_ earlier: TimelineItem) -> Bool {
-        guard case let .message(mine) = content, case let .message(theirs) = earlier.content else { return false }
-        return mine.senderId == theirs.senderId && !mine.startsTimeGroup && theirs.receipt == nil
+    /// 这一行上下各留多少：同一组里的两条之间收紧，组和组之间留大间距。组内位置由核心给（ADR-0109），
+    /// 壳不比发送者和时间。相邻两行各出一半。
+    var gapAbove: CGFloat {
+        guard case let .message(message) = content, message.run.joinsPrevious else {
+            return WontonTheme.spacing.groupGap / 2
+        }
+        return WontonTheme.spacing.runGap / 2
+    }
+
+    var gapBelow: CGFloat {
+        guard case let .message(message) = content, message.run.joinsNext else {
+            return WontonTheme.spacing.groupGap / 2
+        }
+        return WontonTheme.spacing.runGap / 2
     }
 
     /// 这条和紧跟着的 `next` 之间能不能不留衬垫贴成一摞：同一次发送（ADR-0094 的组标记）里挨着的两张照片，
-    /// `next` 不带引用、这条不带说明，中间也没有隔着别的行（`next` 上方的时间、这条下面的已读）。
+    /// `next` 不带引用、这条不带说明。
     func flushesWith(next: TimelineItem) -> Bool {
         guard case let .message(mine) = content, case let .message(theirs) = next.content,
-            let group = mine.group, theirs.group?.id == group.id,
-            mine.senderId == theirs.senderId,
-            !theirs.startsTimeGroup, mine.receipt == nil, theirs.reply == nil
+            let group = mine.group, theirs.group?.id == group.id, theirs.reply == nil
         else { return false }
         guard case let .image(mineImage) = mine.body, case .image = theirs.body else { return false }
         return mineImage.caption == nil
@@ -604,15 +602,17 @@ private struct ScrollToBottomButton: View {
 }
 
 private extension View {
-    func timelineListRow(joinsPrevious: Bool = false, joinsNext: Bool = false) -> some View {
+    func timelineListRow(
+        top: CGFloat = WontonTheme.spacing.groupGap / 2, bottom: CGFloat = WontonTheme.spacing.groupGap / 2
+    ) -> some View {
         // 默认样式的按钮放在 List 的行里，点这一行任何地方都会触发。
         buttonStyle(.borderless)
             .listRowSeparator(.hidden)
             .listRowBackground(Color.clear)
             .listRowInsets(EdgeInsets(
-                top: joinsPrevious ? 1 : WontonTheme.spacing.s4,
+                top: top,
                 leading: WontonTheme.spacing.pageInset,
-                bottom: joinsNext ? 1 : WontonTheme.spacing.s4,
+                bottom: bottom,
                 trailing: WontonTheme.spacing.pageInset
             ))
     }
