@@ -13,9 +13,11 @@ use std::net::{Ipv4Addr, TcpListener, TcpStream};
 use std::sync::LazyLock;
 
 use wonton_protocol::{
-    BackPagination, MessageContent, PanelItem, PanelSource, RichBlock, RichBlockKind, RichSpan,
-    SendState, TabIcon, TabLayout, TabPage, TabRef, TabState, TimelineContent, TimelineDiff,
-    TimelineItem, TimelineMessage, TimelineUpdate, TimelineViewport,
+    BackPagination, ChoiceSend, ChoicesState, MessageAction, MessageChoice, MessageChoices,
+    MessageContent, MessageStatus, PanelItem, PanelSource, QuotedContent, QuotedMessage,
+    ReplyQuote, RichBlock, RichBlockKind, RichSpan, RoomCommand, SendState, TabIcon, TabLayout,
+    TabPage, TabRef, TabState, TimelineContent, TimelineDiff, TimelineItem, TimelineMessage,
+    TimelineUpdate, TimelineViewport,
 };
 
 /// 主面板和房间面板里放的那一页。本机端口占不上时没有这一页。
@@ -56,8 +58,9 @@ pub(super) fn corner() -> Option<(TabRef, TabPage)> {
     Some((TabRef::Url { url }, page))
 }
 
-/// 房间的第一批：全部条目，落点在第三条。之后没有别的批次。
+/// 房间的第一批：全部条目，落点在第三条。之后的批次由 `ui_fake_timeline` 按壳的操作推。
 /// 通话中的那个群聊（`ui_fake::CALL_ROOM_ID`）另带顶栏的 widget 入口和“通话中”。
+/// Echo 一直在输入，带三条命令（ADR-0109 的命令表和正在输入）。
 pub(super) fn timeline(room_id: &str) -> TimelineUpdate {
     let in_call = room_id == super::ui_fake::CALL_ROOM_ID;
     let items: Vec<TimelineItem> = (0..ITEMS).map(item).collect();
@@ -85,8 +88,8 @@ pub(super) fn timeline(room_id: &str) -> TimelineUpdate {
         } else {
             Some(Vec::new())
         },
-        typing: Vec::new(),
-        commands: Vec::new(),
+        typing: vec!["Echo".into()],
+        commands: commands(),
         commands_omitted: 0,
         focus: None,
         jump: wonton_protocol::JumpState::Idle,
@@ -94,7 +97,33 @@ pub(super) fn timeline(room_id: &str) -> TimelineUpdate {
     }
 }
 
-const ITEMS: usize = 24;
+fn commands() -> Vec<RoomCommand> {
+    [
+        ("help", "Show help"),
+        ("model", "Switch model"),
+        ("new", "Start over"),
+    ]
+    .into_iter()
+    .map(|(name, description)| RoomCommand {
+        bot_user_id: ECHO.into(),
+        bot_name: "Echo".into(),
+        name: name.into(),
+        description: description.into(),
+        hint: None,
+        text: format!("/{name}"),
+    })
+    .collect()
+}
+
+pub(super) const ITEMS: usize = 24;
+pub(super) const OWNER: &str = "@owner:home.example";
+const ECHO: &str = "@echo:home.example";
+/// 第一条的时间；之后每条隔一分钟。
+pub(super) const FIRST_AT_MS: u64 = 1_792_000_000_000;
+/// 回复第 5 条的那条（自己发的）；它和之前自己的消息 Echo 都读到了，之后的没有。
+pub(super) const REPLY_INDEX: usize = 21;
+/// Echo 带两个选项的那条。
+pub(super) const CHOICES_INDEX: usize = 22;
 /// 每隔几条来一条比屏幕高的；最后一条也是。
 const TALL_EVERY: usize = 4;
 const TALL_PARAGRAPHS: usize = 60;
@@ -104,7 +133,12 @@ const LAST_LINE: &str = "Fixture last line";
 fn item(index: usize) -> TimelineItem {
     let own = index % 2 == 1;
     let last = index + 1 == ITEMS;
-    let mut paragraphs = if last || index.is_multiple_of(TALL_EVERY) {
+    let mut paragraphs = if index == CHOICES_INDEX {
+        vec![
+            "Fixture approval".into(),
+            "✅ = approve once\n❌ = deny".into(),
+        ]
+    } else if last || index.is_multiple_of(TALL_EVERY) {
         (0..TALL_PARAGRAPHS)
             .map(|line| format!("Fixture message {index}, paragraph {line}: a long reply keeps going for a while."))
             .collect()
@@ -114,6 +148,58 @@ fn item(index: usize) -> TimelineItem {
     if last {
         paragraphs.push(LAST_LINE.into());
     }
+    let mut message = text_message(
+        &format!("ui-fake-{index}"),
+        if own { OWNER } else { ECHO },
+        FIRST_AT_MS + index as u64 * 60_000,
+        &paragraphs,
+    );
+    let status = if index <= REPLY_INDEX {
+        MessageStatus::Read
+    } else {
+        MessageStatus::Sent
+    };
+    message.status = own.then_some(status);
+    if index == REPLY_INDEX {
+        message.reply = Some(ReplyQuote::Ready {
+            message: QuotedMessage {
+                event_id: "$ui-fake-5".into(),
+                sender_id: OWNER.into(),
+                sender_name: "Owner".into(),
+                content: QuotedContent::Text {
+                    text: "Fixture message 5".into(),
+                },
+            },
+        });
+    }
+    if index == CHOICES_INDEX {
+        message.choices = Some(MessageChoices {
+            options: [("✅", "approve once"), ("❌", "deny")]
+                .into_iter()
+                .map(|(key, label)| MessageChoice {
+                    key: key.into(),
+                    label: Some(label.into()),
+                    chosen: false,
+                    send: ChoiceSend::Idle,
+                })
+                .collect(),
+            state: ChoicesState::Open,
+        });
+    }
+    TimelineItem {
+        id: format!("ui-fake-{index}"),
+        content: TimelineContent::Message { message },
+    }
+}
+
+/// 一条发出去了的文字消息，段落之间空一行；菜单里有复制和回复（左滑回复要有回复）。组内位置和勾由调用方定。
+pub(super) fn text_message(
+    id: &str,
+    sender: &str,
+    timestamp_ms: u64,
+    paragraphs: &[String],
+) -> TimelineMessage {
+    let own = sender == OWNER;
     let blocks = paragraphs
         .iter()
         .map(|text| RichBlock {
@@ -126,41 +212,44 @@ fn item(index: usize) -> TimelineItem {
             }],
         })
         .collect();
-    TimelineItem {
-        id: format!("ui-fake-{index}"),
-        content: TimelineContent::Message {
-            message: TimelineMessage {
-                event_id: Some(format!("$ui-fake-{index}")),
-                sender_id: if own {
-                    "@owner:home.example"
-                } else {
-                    "@echo:home.example"
-                }
-                .into(),
-                sender_name: if own { "Owner" } else { "Echo" }.into(),
-                is_own: own,
-                timestamp_ms: 1_792_000_000_000 + index as u64 * 60_000,
-                send_state: SendState::Sent,
-                body: MessageContent::Text {
-                    body: paragraphs.join("\n\n"),
-                    blocks,
-                    files: Vec::new(),
+    let body = paragraphs.join("\n\n");
+    let event_id = format!("${id}");
+    let sender_name = if own { "Owner" } else { "Echo" };
+    TimelineMessage {
+        actions: vec![
+            MessageAction::Copy { text: body.clone() },
+            MessageAction::Reply {
+                message: QuotedMessage {
+                    event_id: event_id.clone(),
+                    sender_id: sender.into(),
+                    sender_name: sender_name.into(),
+                    content: QuotedContent::Text { text: body.clone() },
                 },
-                edited: false,
-                read_by: Vec::new(),
-                reply: None,
-                side_chat: None,
-                preview: None,
-                actions: Vec::new(),
-                group: None,
-                receipt: None,
-                starts_time_group: false,
-                run: wonton_protocol::MessageRun::Alone,
-                status: None,
-                choices: None,
-                sender_avatar: None,
             },
+        ],
+        event_id: Some(event_id),
+        sender_id: sender.into(),
+        sender_name: sender_name.into(),
+        is_own: own,
+        timestamp_ms,
+        send_state: SendState::Sent,
+        body: MessageContent::Text {
+            body,
+            blocks,
+            files: Vec::new(),
         },
+        edited: false,
+        read_by: Vec::new(),
+        reply: None,
+        side_chat: None,
+        preview: None,
+        group: None,
+        receipt: None,
+        starts_time_group: false,
+        run: wonton_protocol::MessageRun::Alone,
+        status: None,
+        choices: None,
+        sender_avatar: None,
     }
 }
 

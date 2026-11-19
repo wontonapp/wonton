@@ -9,7 +9,7 @@ use serde::{Deserialize, Serialize};
 #[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize)]
 #[cfg_attr(feature = "uniffi", derive(uniffi::Record))]
 pub struct MessageChoices {
-    /// 按 Bot 放表情的先后排。壳每行等分宽度画在气泡正下方，和气泡同宽。
+    /// 按 Bot 放表情的先后排。Bot 撤掉之后因为我加过而留着的排在后面。壳每行等分宽度画在气泡正下方，和气泡同宽。
     pub options: Vec<MessageChoice>,
     pub state: ChoicesState,
 }

@@ -24,7 +24,12 @@ impl ClientCore {
             return match action {
                 Action::Pages { action } => self.dispatch_ui_fake(action),
                 Action::Chat { action } => {
+                    self.ui_fake_timelines.chat_action(&action);
                     self.dispatch_ui_fake_chat(action);
+                    Ok(())
+                }
+                Action::Timeline { action } => {
+                    self.ui_fake_timelines.timeline_action(action);
                     Ok(())
                 }
                 Action::Plugins { action } => self.dispatch_ui_fake_plugins(action),

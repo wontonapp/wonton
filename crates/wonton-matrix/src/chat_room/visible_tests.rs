@@ -27,6 +27,10 @@ fn message(id: &str, custom: Value) -> TimelineEntry {
             group: None,
             agent_run: None,
             can_redact: false,
+            reactions: Vec::new(),
+            is_direct: false,
+            mentions_me: false,
+            sender_avatar: None,
         })),
     }
 }

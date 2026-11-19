@@ -371,6 +371,11 @@ impl Home {
         });
     }
 
+    /// 清掉 [`Self::refuse_matrix`] 设下的拒绝。
+    pub fn clear_refusals(&self) {
+        self.core.refusals.lock().unwrap().clear();
+    }
+
     /// 服务器丢了房间列表那条 Sliding Sync 连接的位置：下一个请求回 `M_UNKNOWN_POS`，SDK 从头同步。
     pub fn expire_room_list_sync(&self) {
         self.core.expire_room_list.store(true, Ordering::SeqCst);

@@ -93,3 +93,6 @@ chat-avatar-cache-hash-collision = アバターのキャッシュでハッシュ
 chat-draft-clear-failed = 送信済みの下書きを消すのに失敗しました：{ $error }
 
 chat-draft-read-interrupted = 下書きの読み込みが中断されました
+
+chat-choice-send-failed = 送れませんでした：自宅サーバーに繋がりません。（{ $error }）
+chat-op-agent-answer-failed = 選択肢に回答できませんでした：{ $error }
