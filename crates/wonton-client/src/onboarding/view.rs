@@ -1,20 +1,19 @@
-//! 从状态和记录算出壳要显示的 [`OnboardingViewModel`]：这一步的行、最后一页、提示和默认 Agent 的房间置顶。
+//! 从状态和记录算出壳要显示的 [`OnboardingViewModel`]：这一步的行、最后一页、提示和默认 Bot 的房间置顶。
 
 use std::collections::HashSet;
 
 use wonton_matrix::UserId;
 use wonton_protocol::{
-    ChatViewModel, DefaultBotVisibility, ModelSettingsPage, Onboarding, OnboardingAgent,
-    OnboardingAgentRow, OnboardingCommit, OnboardingModelStep, OnboardingNeedRow, OnboardingReview,
-    OnboardingStep, OnboardingViewModel, PluginState, ReplacedAgent, StepNav,
+    ChatViewModel, DefaultBotPlugin, DefaultBotVisibility, ModelSettingsPage, Onboarding,
+    OnboardingCommit, OnboardingModelStep, OnboardingNeedRow, OnboardingReview, OnboardingStep,
+    OnboardingViewModel, StepNav,
 };
 
 use super::{LocalState, review, storage};
 
 /// 引导的步骤，按走的顺序。服务器太旧显不出来的步记在 `LocalState::unavailable` 里。
-pub(super) const STEPS: [OnboardingStep; 5] = [
+pub(super) const STEPS: [OnboardingStep; 4] = [
     OnboardingStep::Profile,
-    OnboardingStep::Agent,
     OnboardingStep::Model,
     OnboardingStep::Apps,
     OnboardingStep::Review,
@@ -25,7 +24,7 @@ pub(super) fn first_visible(unavailable: &HashSet<OnboardingStep>) -> Option<Onb
     STEPS.into_iter().find(|step| !unavailable.contains(step))
 }
 
-/// 主人已经给默认 Agent 的私聊发过消息。发布时据此先把 `prompts_used` 落盘再渲染：收起提问的视图
+/// 主人已经给默认 Bot 的私聊发过消息。发布时据此先把 `prompts_used` 落盘再渲染：收起提问的视图
 /// 出去时记录一定已经在盘上（`OnboardingLink::publish`），App 杀在中间也不会再给一次提问。
 pub(super) fn prompt_done(
     onboarding: Option<&Onboarding>,
@@ -34,11 +33,10 @@ pub(super) fn prompt_done(
 ) -> bool {
     let Some(bot) = onboarding.and_then(|onboarding| {
         onboarding
-            .primary_agent
-            .as_deref()
-            .and_then(|id| onboarding.agents.iter().find(|agent| agent.id == id))
-            .filter(|agent| agent.default_bot_visibility == Some(DefaultBotVisibility::Visible))
-            .and_then(|agent| agent.bot_user_id.as_deref())
+            .default_bot_plugin
+            .as_ref()
+            .filter(|default| default.visibility == Some(DefaultBotVisibility::Visible))
+            .and_then(|default| default.bot_user_id.as_deref())
             .filter(|id| <&UserId>::try_from(*id).is_ok())
     }) else {
         return false;
@@ -63,37 +61,15 @@ pub(super) fn render(
             None,
         );
     };
-    // 引导流程里显示这次记下的选择；流程外（设置里的“默认 Agent”）显示服务器上的现值，
-    // 不让上次没走完的草稿冒充当前设置。
-    let in_flow = matches!(
-        state.step,
-        Some(step) if !matches!(step, OnboardingStep::Finished | OnboardingStep::Other)
-    );
-    let selected = if in_flow {
-        state.draft.agent(onboarding)
-    } else {
-        onboarding.primary_agent.clone()
-    };
-    let agents = agent_rows(onboarding, selected.as_deref());
-    let selected_agent = selected
-        .as_deref()
-        .and_then(|id| onboarding.agents.iter().find(|agent| agent.id == id));
-    let default_agent = onboarding
-        .primary_agent
-        .as_deref()
-        .and_then(|id| onboarding.agents.iter().find(|agent| agent.id == id));
-    let default_bot_visibility = Some(project_default_bot_visibility(
-        state,
-        onboarding,
-        default_agent,
-    ));
-    let primary_bot = default_agent
+    let default_bot = onboarding.default_bot_plugin.as_ref();
+    let default_bot_visibility = Some(project_default_bot_visibility(state, default_bot));
+    let default_bot_user_id = default_bot
         .filter(|_| default_bot_visibility == Some(DefaultBotVisibility::Visible))
-        .and_then(|agent| agent.bot_user_id.clone());
+        .and_then(|default| default.bot_user_id.clone());
     // 收起只看盘上的 `prompts_used`：发过消息的落盘在 `OnboardingLink::publish` 里、渲染用同一份快照，
     // 收起的视图出去时记录一定已经在盘上。房间行不参与收起（行列表抖动不收起），壳只在 Bot 私聊里显示。
     let chat_prompts = if onboarding.step == OnboardingStep::Finished
-        && primary_bot.is_some()
+        && default_bot_user_id.is_some()
         && !records.prompts_used
     {
         onboarding.prompts.clone()
@@ -111,7 +87,6 @@ pub(super) fn render(
             .model_settings
             .as_ref()
             .is_some_and(|settings| settings.has_configured_models),
-        logins: selected_agent.map_or_else(Vec::new, |agent| agent.logins.clone()),
         choice: state
             .draft
             .model(state.model_settings.as_ref())
@@ -133,75 +108,45 @@ pub(super) fn render(
         .flatten();
     let view = OnboardingViewModel {
         step,
-        nav: step.and_then(|step| navigation(state, step, selected_agent)),
+        nav: step.and_then(|step| navigation(state, step)),
         too_old: state.too_old.clone(),
         loading: state.loading,
         problem: state.problem.clone().or_else(|| state.bot_problem.clone()),
         catalog_problem: onboarding.catalog_problem.clone(),
         profile: state.draft.profile_step(state.owner.as_ref()),
-        agents,
         model,
         needs,
         review: OnboardingReview {
             items: state.review.iter().map(review::ReviewEntry::item).collect(),
             commit: state.commit,
         },
-        primary_bot_user_id: primary_bot.clone(),
+        default_bot_user_id: default_bot_user_id.clone(),
         default_bot_visibility,
         chat_prompts,
-        replaced_agent: replaced_agent(onboarding),
         tips: tips(records),
     };
-    (view, primary_bot)
+    (view, default_bot_user_id)
 }
 
 fn project_default_bot_visibility(
     state: &LocalState,
-    onboarding: &Onboarding,
-    default_agent: Option<&OnboardingAgent>,
+    default_bot: Option<&DefaultBotPlugin>,
 ) -> DefaultBotVisibility {
     // 只在 Bot 身份本身待核实（静默重取在飞、上次取失败）时收起；整页刷新（loading）不掩盖
     // 最新一份已核实的身份，否则完成引导后 Bot 一直点不了，等旧 GET 的每条测试也钉不住。
     if state.bot_refreshing || state.bot_problem.is_some() {
         DefaultBotVisibility::Unknown
-    } else if onboarding.primary_agent.is_none() {
-        DefaultBotVisibility::Absent
     } else {
-        match default_agent
-            .map(|agent| (agent.default_bot_visibility, agent.bot_user_id.as_deref()))
-        {
+        match default_bot.map(|default| (default.visibility, default.bot_user_id.as_deref())) {
             Some((Some(DefaultBotVisibility::Visible), Some(id)))
                 if <&UserId>::try_from(id).is_ok() =>
             {
                 DefaultBotVisibility::Visible
             }
-            Some((Some(DefaultBotVisibility::Absent), None)) => DefaultBotVisibility::Absent,
+            None | Some((Some(DefaultBotVisibility::Absent), None)) => DefaultBotVisibility::Absent,
             _ => DefaultBotVisibility::Unknown,
         }
     }
-}
-
-fn agent_rows(onboarding: &Onboarding, selected: Option<&str>) -> Vec<OnboardingAgentRow> {
-    onboarding
-        .agents
-        .iter()
-        .map(|agent| OnboardingAgentRow {
-            id: agent.id.clone(),
-            title: agent.title.clone(),
-            logins: agent
-                .logins
-                .iter()
-                .map(|login| login.title.clone())
-                .collect(),
-            selected: selected == Some(agent.id.as_str()),
-            source: agent
-                .status
-                .is_none()
-                .then(|| agent.source.clone())
-                .flatten(),
-            blocked: agent.blocked.clone(),
-        })
-        .collect()
 }
 
 fn need_rows(state: &LocalState, onboarding: &Onboarding) -> Vec<OnboardingNeedRow> {
@@ -218,11 +163,7 @@ fn need_rows(state: &LocalState, onboarding: &Onboarding) -> Vec<OnboardingNeedR
         .collect()
 }
 
-fn navigation(
-    state: &LocalState,
-    step: OnboardingStep,
-    selected: Option<&OnboardingAgent>,
-) -> Option<StepNav> {
+fn navigation(state: &LocalState, step: OnboardingStep) -> Option<StepNav> {
     let not_started = state.commit == OnboardingCommit::NotStarted;
     // 第几步按还显示得出来的步算：踢掉的步不占号。
     let mut visible = STEPS
@@ -232,7 +173,6 @@ fn navigation(
     let total = u32::try_from(visible.count()).unwrap_or(u32::MAX) + position;
     let can_next = match step {
         OnboardingStep::Profile | OnboardingStep::Apps => true,
-        OnboardingStep::Agent => selected.is_some_and(installable),
         OnboardingStep::Model => state.draft.model(state.model_settings.as_ref()).is_some(),
         OnboardingStep::Review => match state.commit {
             OnboardingCommit::NotStarted => review::can_commit(&state.review),
@@ -259,33 +199,6 @@ fn tips(records: &storage::Records) -> wonton_protocol::OnboardingTips {
     }
 }
 
-/// `blocked` 说的是这台主机装不了它；已经装着的（`status` 有值）不用再装，不受它拦。
-pub(super) fn installable(agent: &OnboardingAgent) -> bool {
-    agent.blocked.is_none() || agent.status.is_some()
-}
-
-fn replaced_agent(onboarding: &Onboarding) -> Option<ReplacedAgent> {
-    if onboarding.replaced_agent_asked {
-        return None;
-    }
-    // 列表第一项是官方推荐排最前的；它已经装着、而默认 Agent 是另一个且在运行，才问要不要卸掉它。
-    let first = onboarding.agents.first()?;
-    if first.status.is_none() || onboarding.primary_agent.as_deref() == Some(first.id.as_str()) {
-        return None;
-    }
-    let primary = onboarding
-        .agents
-        .iter()
-        .find(|agent| Some(agent.id.as_str()) == onboarding.primary_agent.as_deref())?;
-    if !matches!(primary.status, Some(PluginState::Running { .. })) {
-        return None;
-    }
-    Some(ReplacedAgent {
-        id: first.id.clone(),
-        title: first.title.clone(),
-    })
-}
-
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -297,20 +210,11 @@ mod tests {
     fn onboarding() -> Onboarding {
         Onboarding {
             step: OnboardingStep::Finished,
-            primary_agent: Some("hermes".to_owned()),
-            replaced_agent_asked: true,
-            agents: vec![OnboardingAgent {
+            default_bot_plugin: Some(DefaultBotPlugin {
                 id: "hermes".to_owned(),
-                title: "Hermes".to_owned(),
-                source: None,
-                status: Some(PluginState::Running {
-                    health: wonton_protocol::PluginHealth::Healthy,
-                }),
                 bot_user_id: Some("@hermes:home".to_owned()),
-                default_bot_visibility: Some(DefaultBotVisibility::Visible),
-                logins: Vec::new(),
-                blocked: None,
-            }],
+                visibility: Some(DefaultBotVisibility::Visible),
+            }),
             needs: Vec::new(),
             prompts: vec!["问我能做什么".to_owned()],
             catalog_problem: None,
@@ -439,13 +343,13 @@ mod tests {
             pending.default_bot_visibility,
             Some(DefaultBotVisibility::Unknown)
         );
-        assert_eq!(pending.primary_bot_user_id, None);
+        assert_eq!(pending.default_bot_user_id, None);
         assert!(pending.chat_prompts.is_empty());
 
         state.bot_refreshing = false;
         let verified = render(&state, &storage::Records::default()).0;
         assert_eq!(
-            verified.primary_bot_user_id.as_deref(),
+            verified.default_bot_user_id.as_deref(),
             Some("@hermes:home")
         );
         assert!(!verified.chat_prompts.is_empty());
@@ -460,8 +364,9 @@ mod tests {
             (None, Some("@private:home")),
         ] {
             let mut data = onboarding();
-            data.agents[0].default_bot_visibility = visibility;
-            data.agents[0].bot_user_id = id.map(str::to_owned);
+            let default = data.default_bot_plugin.as_mut().unwrap();
+            default.visibility = visibility;
+            default.bot_user_id = id.map(str::to_owned);
             let state = LocalState {
                 onboarding: Some(data),
                 ..LocalState::default()
@@ -471,7 +376,7 @@ mod tests {
                 view.default_bot_visibility,
                 Some(DefaultBotVisibility::Unknown)
             );
-            assert!(view.primary_bot_user_id.is_none());
+            assert!(view.default_bot_user_id.is_none());
             assert!(view.chat_prompts.is_empty());
         }
     }

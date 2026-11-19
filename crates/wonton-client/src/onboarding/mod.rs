@@ -48,7 +48,7 @@ enum Trigger {
 
 #[derive(Default)]
 struct LocalState {
-    /// 家里服务器上的引导状态：只记走没走完和默认 Agent。
+    /// 家里服务器上的引导状态：走没走完和默认 Bot 插件。
     onboarding: Option<Onboarding>,
     /// 防止引导响应倒退；断线时递增以丢弃断线前发出的旧响应，不代表授权版本。
     revision: u64,
@@ -170,7 +170,6 @@ impl OnboardingLink {
                 Ok(())
             }
             OnboardingAction::RestartOnboarding => self.restart(),
-            OnboardingAction::ChooseOnboardingAgent { id } => self.choose_agent(&id),
             OnboardingAction::ContinueOnboarding => self.continue_step(),
             OnboardingAction::SkipOnboardingStep => self.skip_step(),
             OnboardingAction::BackOnboardingStep => self.back_step(),
@@ -180,10 +179,7 @@ impl OnboardingLink {
                 email,
             } => self.edit_profile(display_name, email),
             OnboardingAction::UseCurrentModel => self.use_current_model(),
-            OnboardingAction::ChooseModelLogin { id } => self.choose_login(&id),
             OnboardingAction::RetryOnboardingItem { id } => self.retry_item(&id),
-            OnboardingAction::SetPrimaryAgent { id } => self.set_primary(&id),
-            OnboardingAction::DismissReplacedAgentOffer => self.dismiss_replaced(),
             OnboardingAction::DismissOnboardingTip { tip } => self.dismiss_tip(tip),
             OnboardingAction::CloseOnboarding => {
                 self.close();
@@ -372,106 +368,12 @@ impl OnboardingLink {
         self.publish();
     }
 
-    fn set_primary(self: &Arc<Self>, id: &str) -> Result<(), CoreError> {
-        let state = lock(&self.state);
-        let onboarding = state.onboarding.as_ref().ok_or_else(|| {
-            invalid(&l10n!(
-                CATALOG,
-                language(),
-                "onboarding-steps-state-missing"
-            ))
-        })?;
-        let agent = onboarding
-            .agents
-            .iter()
-            .find(|agent| agent.id == id)
-            .ok_or_else(|| {
-                invalid(&l10n!(
-                    CATALOG,
-                    language(),
-                    "onboarding-steps-agent-not-listed"
-                ))
-            })?;
-        if !view::installable(agent) {
-            return Err(invalid(&l10n!(
-                CATALOG,
-                language(),
-                "onboarding-steps-agent-not-installable"
-            )));
-        }
-        drop(state);
-        self.spawn_update(OnboardingUpdate {
-            primary_agent: Some(id.to_owned()),
-            ..OnboardingUpdate::default()
-        });
-        Ok(())
-    }
-
-    fn dismiss_replaced(self: &Arc<Self>) -> Result<(), CoreError> {
-        if lock(&self.state).onboarding.is_none() {
-            return Err(invalid(&l10n!(
-                CATALOG,
-                language(),
-                "onboarding-steps-state-missing"
-            )));
-        }
-        self.spawn_update(OnboardingUpdate {
-            replaced_agent_asked: Some(true),
-            ..OnboardingUpdate::default()
-        });
-        Ok(())
-    }
-
     fn dismiss_tip(&self, tip: OnboardingTip) -> Result<(), CoreError> {
         self.storage.dismiss_tip(tip)?;
         // 写成功说明本机记录已经完整，启动时“读不了记录”的问题不再成立。
         lock(&self.state).problem = None;
         self.publish();
         Ok(())
-    }
-
-    /// 设置里的改动（默认 Agent、要不要卸掉换下来的）直接保存，不走引导最后一起提交。
-    fn spawn_update(self: &Arc<Self>, update: OnboardingUpdate) {
-        let (generation, operation) = {
-            let mut state = lock(&self.state);
-            state.loading = true;
-            state.problem = None;
-            self.begin_operation()
-        };
-        self.publish();
-        let link = self.clone();
-        self.runtime.spawn(async move {
-            let result = match link.plugins.api() {
-                Ok(api) => api::update(&api, &update).await,
-                Err(problem) => Err(problem),
-            };
-            if !link.operation_is_current(generation, operation) {
-                return;
-            }
-            let mut state = lock(&link.state);
-            state.loading = false;
-            match result {
-                Ok(onboarding) => {
-                    state.onboarding = Some(onboarding);
-                    state.bot_refreshing = link.home.view().status != HomeStatus::Connected;
-                    state.bot_problem = None;
-                    state.revision += 1;
-                }
-                Err(problem) if problem.reason == PluginFailure::ServerTooOld => {
-                    state.too_old = Some(too_old(&problem));
-                    state.bot_refreshing = false;
-                    state.bot_problem = Some(problem);
-                    state.step = None;
-                }
-                Err(problem) => {
-                    state.bot_refreshing = false;
-                    state.bot_problem = Some(problem.clone());
-                    state.problem = Some(problem);
-                }
-            }
-            drop(state);
-            link.publish();
-        });
     }
 
     fn server_changed(&self, server_id: Option<String>) {
@@ -507,7 +409,7 @@ impl OnboardingLink {
                 Err(error) => state.problem = Some(storage_problem(error)),
             }
         }
-        let (view, primary_bot) = render(&state, &records);
+        let (view, default_bot) = render(&state, &records);
         #[cfg(feature = "test-hooks")]
         if let Some(hook) = lock(&self.test_publish_hook).as_ref() {
             hook(&view, &sent_rooms);
@@ -515,7 +417,7 @@ impl OnboardingLink {
         // 快照必须在持锁时发布，不能让较早渲染的 loading 覆盖完成状态。
         self.view.send_replace(view);
         drop(state);
-        self.chat.set_primary_bot(primary_bot);
+        self.chat.set_default_bot(default_bot);
     }
 }
 

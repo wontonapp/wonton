@@ -1,4 +1,3 @@
-onboarding-steps-not-agent-step = セットアップはエージェントのステップではありません
 
 onboarding-steps-not-apps-step = セットアップはアプリのステップではありません
 

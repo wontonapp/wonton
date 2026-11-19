@@ -132,7 +132,7 @@ pub(crate) struct ChatLink {
     /// 正在重置恢复。途中 SDK 会报“未设置”，不能覆盖“处理中”或触发自动开启。
     resetting_recovery: AtomicBool,
     /// 主人的默认 Agent 在 Matrix 上的用户 ID，聊天列表里它的房间排第一。
-    primary_bot: Arc<Mutex<Option<String>>>,
+    default_bot: Arc<Mutex<Option<String>>>,
     /// 房间列表的基准顺序，显示时把默认 Agent 的房间提到最前。
     room_order: Arc<onboarding::RoomOrder>,
     /// 发过消息的房间，引导提示用。
@@ -328,7 +328,7 @@ impl ChatLink {
             retry_confirmations: Arc::new(tokio::sync::Notify::new()),
             card_success,
             resetting_recovery: AtomicBool::default(),
-            primary_bot: Arc::new(Mutex::new(None)),
+            default_bot: Arc::new(Mutex::new(None)),
             room_order: Arc::new(onboarding::RoomOrder::new()),
             sent: watch::Sender::new(Vec::new()),
             display_name: Mutex::new(None),

@@ -149,7 +149,6 @@ mod upgrade;
 pub(crate) mod upstreams;
 mod vars;
 pub mod views;
-mod views_agent_logins;
 mod views_bots;
 mod views_devices;
 mod views_icons;

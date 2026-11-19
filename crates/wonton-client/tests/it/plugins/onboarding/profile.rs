@@ -33,7 +33,7 @@ async fn the_name_is_required_and_the_email_is_optional() {
             action: wonton_protocol::OnboardingAction::ContinueOnboarding,
         },
     );
-    at(&rig, OnboardingStep::Agent).await;
+    at(&rig, OnboardingStep::Model).await;
     assert_nothing_saved(&rig);
 }
 
@@ -65,5 +65,5 @@ async fn a_filled_email_can_be_changed_but_not_cleared() {
             action: wonton_protocol::OnboardingAction::ContinueOnboarding,
         },
     );
-    at(&rig, OnboardingStep::Agent).await;
+    at(&rig, OnboardingStep::Model).await;
 }

@@ -4,11 +4,8 @@ onboarding-steps-model-not-chosen = 还没有选模型
 
 onboarding-steps-cannot-skip = 这一步不能跳过
 
-onboarding-model-testing = 已经在测试
 
-onboarding-model-custom-unsupported = 模型网关不支持自定义服务商
 
-onboarding-model-base-url-invalid = Base URL 要是 https://… 这样的地址
 
 onboarding-review-item-missing = 最后一页上没有这一项
 

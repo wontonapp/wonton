@@ -13,7 +13,6 @@ use wonton_core::plugin::capabilities;
 use wonton_core::plugin::compat::{self, Verdict};
 use wonton_core::plugin::github_source::SourceRef;
 use wonton_core::plugin::languages::Languages;
-use wonton_core::plugin::manifest::PluginKind;
 use wonton_core::plugin::package::PluginPackage;
 use wonton_core::plugin::package_files::{COMPOSE_FILE, PackageFiles};
 use wonton_core::plugin::render::dry_run;
@@ -72,19 +71,6 @@ fn onboarding_problems(index: &Index) -> Vec<String> {
         (None, None) => return vec!["onboarding：索引缺少引导推荐清单".to_owned()],
     };
     let mut problems = Vec::new();
-    for id in &catalog.agents {
-        match index
-            .plugins
-            .iter()
-            .find(|plugin| plugin.manifest.id.as_str() == id)
-        {
-            None => problems.push(format!("onboarding.agents：插件 {id} 不在索引里")),
-            Some(plugin) if plugin.manifest.kind != PluginKind::Agent => {
-                problems.push(format!("onboarding.agents：插件 {id} 不是 Agent"));
-            }
-            Some(_) => {}
-        }
-    }
     for need in &catalog.needs {
         for id in &need.plugins {
             if !index

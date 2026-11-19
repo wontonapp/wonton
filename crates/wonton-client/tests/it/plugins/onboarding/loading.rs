@@ -14,7 +14,7 @@ use wonton_client::{
 use super::super::rig::{Rig, WAIT, running};
 use super::{MODEL_SETTINGS, ONBOARDING, model_settings, onboarding, wait_requests};
 
-/// `onboarding()` 里 agent.one 的 Bot：选它当默认 Agent 后，引导发布把它交给聊天，聊天视图随之通知一次。
+/// `onboarding()` 里默认 Bot 插件 agent.one 的 Bot：它出现后，引导发布把它交给聊天，聊天视图随之通知一次。
 const BOT: &str = "@agent:home";
 
 type NextChat = Pin<Box<dyn Future<Output = Option<ChatViewModel>> + Send>>;
@@ -71,7 +71,7 @@ impl PausedWake {
     }
 }
 
-/// 刷新插件列表，引导跟着取到选了 agent.one 的状态，在它的发布交出默认 Bot 时暂停。取状态先扣住，
+/// 刷新插件列表，引导跟着取到有默认 Bot 插件 agent.one 的状态，在它的发布交出默认 Bot 时暂停。取状态先扣住，
 /// 插件列表这一轮引起的聊天通知都在引导发布之前发完。返回放行用的发送端和这之前取过几次状态。
 async fn pause_selecting_publish(
     rig: &Rig,
@@ -81,7 +81,7 @@ async fn pause_selecting_publish(
     let marker = publisher.clone();
     rig.app.test_set_onboarding_publish_hook(Some(Arc::new(
         move |view: &OnboardingViewModel, _: &HashSet<String>| {
-            if view.primary_bot_user_id.as_deref() == Some(BOT) {
+            if view.default_bot_user_id.as_deref() == Some(BOT) {
                 marker
                     .lock()
                     .unwrap()
@@ -99,9 +99,7 @@ async fn pause_selecting_publish(
         release: Mutex::new(resume),
     });
 
-    let mut selected = onboarding("model");
-    selected["primary_agent"] = serde_json::json!("agent.one");
-    rig.core.set_onboarding(selected);
+    rig.core.set_onboarding(onboarding("model"));
     let gets = rig.core.seen(&Method::GET, ONBOARDING).len();
     rig.core.hold(Method::GET, ONBOARDING);
     rig.core.set_lists(vec![vec![running("agent.one")]]);
@@ -153,7 +151,9 @@ impl Wake for RecordWake {
 #[tokio::test]
 async fn a_delayed_chat_notification_cannot_restore_finished_loading() {
     let rig = Rig::new().await;
-    rig.core.set_onboarding(onboarding("model"));
+    let mut without_bot = onboarding("model");
+    without_bot["default_bot_plugin"] = serde_json::Value::Null;
+    rig.core.set_onboarding(without_bot);
     rig.core.set_model_settings(model_settings(false));
     rig.connected().await;
     rig.wait_onboarding(|view| view.step.is_some() && !view.loading)

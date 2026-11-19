@@ -11,9 +11,6 @@ use super::{act, assert_nothing_saved, at, edit, model_settings, onboarding, wit
 async fn reopening_shows_the_current_settings_on_every_step() {
     let rig = Rig::new().await;
     let mut state = with_photos(onboarding("finished"));
-    state["primary_agent"] = serde_json::json!("agent.one");
-    state["agents"][0]["status"] = serde_json::json!({"state": "running", "health": "healthy"});
-    state["agents"][0]["source"] = serde_json::Value::Null;
     state["needs"][0]["plugins"][0]["installed_version"] = serde_json::json!("1.0.0");
     rig.core.set_onboarding(state);
     rig.core.set_owner(Some("云吞"), Some("me@example.com"));
@@ -42,13 +39,6 @@ async fn reopening_shows_the_current_settings_on_every_step() {
             action: wonton_protocol::OnboardingAction::ContinueOnboarding,
         },
     );
-    assert!(at(&rig, OnboardingStep::Agent).await.agents[0].selected);
-    act(
-        &rig,
-        Action::Onboarding {
-            action: wonton_protocol::OnboardingAction::ContinueOnboarding,
-        },
-    );
     let model = at(&rig, OnboardingStep::Model).await;
     assert_eq!(model.model.choice, Some(OnboardingModelChoice::Current));
     assert!(model.nav.unwrap().can_next);
@@ -71,11 +61,10 @@ async fn reopening_shows_the_current_settings_on_every_step() {
         kinds,
         [
             OnboardingReviewKind::Profile,
-            OnboardingReviewKind::Agent,
             OnboardingReviewKind::Model,
             OnboardingReviewKind::App
         ],
-        "四类各一行，装着的应用也在"
+        "三类各一行，装着的应用也在"
     );
     let details: Vec<_> = review
         .review
@@ -87,25 +76,19 @@ async fn reopening_shows_the_current_settings_on_every_step() {
         details,
         [
             Some(OnboardingReviewDetail::Unchanged),
-            Some(OnboardingReviewDetail::Unchanged),
             Some(OnboardingReviewDetail::KeepCurrent),
             Some(OnboardingReviewDetail::Unchanged),
         ],
         "没动的标不变，模型是“用现在的”"
     );
     assert_eq!(review.review.items[0].titles, ["云吞"]);
-    assert_eq!(review.review.items[1].titles, ["Agent One"]);
     assert_nothing_saved(&rig);
 }
 
 #[tokio::test]
 async fn closing_a_revisit_discards_every_choice_and_saves_nothing() {
     let rig = Rig::new().await;
-    let mut state = onboarding("finished");
-    state["primary_agent"] = serde_json::json!("agent.one");
-    state["agents"][0]["status"] = serde_json::json!({"state": "running", "health": "healthy"});
-    state["agents"][0]["source"] = serde_json::Value::Null;
-    rig.core.set_onboarding(state);
+    rig.core.set_onboarding(onboarding("finished"));
     rig.core.set_owner(Some("云吞"), None);
     rig.core.set_model_settings(model_settings(true));
     rig.connected().await;
@@ -119,20 +102,6 @@ async fn closing_a_revisit_discards_every_choice_and_saves_nothing() {
     );
     at(&rig, OnboardingStep::Profile).await;
     edit(&rig, "改过的名字", "new@example.com");
-    act(
-        &rig,
-        Action::Onboarding {
-            action: wonton_protocol::OnboardingAction::ContinueOnboarding,
-        },
-    );
-    act(
-        &rig,
-        Action::Onboarding {
-            action: wonton_protocol::OnboardingAction::ChooseOnboardingAgent {
-                id: "agent.one".to_owned(),
-            },
-        },
-    );
     act(
         &rig,
         Action::Onboarding {
@@ -161,7 +130,6 @@ async fn closing_a_revisit_discards_every_choice_and_saves_nothing() {
         .wait_onboarding(|view| view.step.is_none() && !view.loading)
         .await;
     assert_eq!(view.profile.display_name, "云吞", "显示的还是现值");
-    assert!(view.agents[0].selected, "默认 Agent 还是现值");
     assert_nothing_saved(&rig);
 
     // 再看重看：从第一步开始，草稿已经丢掉。

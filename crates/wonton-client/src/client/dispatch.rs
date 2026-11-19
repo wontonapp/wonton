@@ -138,7 +138,7 @@ impl ClientCore {
                 }
                 let onboarding = scope.onboarding.view();
                 let bot = match (
-                    onboarding.primary_bot_user_id,
+                    onboarding.default_bot_user_id,
                     onboarding.default_bot_visibility,
                 ) {
                     (Some(bot), Some(DefaultBotVisibility::Visible)) => bot,

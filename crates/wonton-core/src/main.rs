@@ -54,7 +54,7 @@ use wonton_core::plugin::lan::{self, Lan};
 use wonton_core::plugin::languages::Languages;
 use wonton_core::plugin::lifecycle::LifecycleConfig;
 use wonton_core::plugin::names::Instance;
-use wonton_core::plugin::preinstall::Backoff;
+use wonton_core::plugin::preinstall::{Backoff, default_bot_plugin_in};
 use wonton_core::plugin::store::Store;
 use wonton_core::push::Push;
 use wonton_core::roles::Roles;
@@ -864,6 +864,9 @@ async fn start_plugin_manager(
         .with_mailpit(mailpit)
         .with_matrix_rtc_ca(matrix_rtc_ca),
     );
+    if let Some(dir) = &cfg.default_plugins {
+        manager.set_default_bot_plugin(default_bot_plugin_in(dir).context("读取默认插件目录")?);
+    }
     manager.attach_person_state(members, roles);
     manager.attach_sharing(sharing.friends.clone(), sharing.shares.clone());
     manager.spawn_registry_mirror_probe();

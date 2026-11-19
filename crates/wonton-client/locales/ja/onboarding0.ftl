@@ -4,11 +4,8 @@ onboarding-steps-model-not-chosen = モデルがまだ選ばれていません
 
 onboarding-steps-cannot-skip = このステップはスキップできません
 
-onboarding-model-testing = すでにテストが実行中です
 
-onboarding-model-custom-unsupported = モデルゲートウェイはカスタムプロバイダーに対応していません
 
-onboarding-model-base-url-invalid = Base URLはhttps://…の形式のアドレスである必要があります
 
 onboarding-review-item-missing = 最後のページにその項目はありません
 

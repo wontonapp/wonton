@@ -55,7 +55,7 @@ impl ClientCore {
             pending.as_ref(),
             is_paired(&views.home.borrow()),
             &views.chat.borrow(),
-            views.onboarding.borrow().primary_bot_user_id.as_deref(),
+            views.onboarding.borrow().default_bot_user_id.as_deref(),
         )
     }
 
@@ -95,7 +95,7 @@ impl Receivers {
             pending.as_ref(),
             is_paired(&home),
             &chat,
-            onboarding.primary_bot_user_id.as_deref(),
+            onboarding.default_bot_user_id.as_deref(),
         )
     }
 }
