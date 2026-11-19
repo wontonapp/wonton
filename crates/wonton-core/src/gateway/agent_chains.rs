@@ -13,7 +13,9 @@ use axum::body::to_bytes;
 use axum::extract::Request;
 use axum::response::{IntoResponse, Response};
 use hyper::{Method, StatusCode};
-use wonton_protocol::{BOT_TOKEN_HEADER, BotRef, ChainError, ChainRefusal, ChainTurnReport};
+use wonton_protocol::{
+    BOT_TOKEN_HEADER, BotRef, ChainError, ChainLimitKind, ChainRefusal, ChainTurnReport,
+};
 
 use super::Gateway;
 use super::api::error_response;
@@ -321,7 +323,12 @@ pub(super) fn ledger_error(error: ChainLedgerError) -> Response {
 fn refusal_detail(error: &ChainLedgerError) -> String {
     match error {
         ChainLedgerError::Rejected(rejection) => match rejection {
-            ChainError::LimitReached { kind } => format!("链到上限了（{kind:?}）"),
+            ChainError::LimitReached { kind } => match kind {
+                ChainLimitKind::Depth => "链到层数上限了".to_owned(),
+                ChainLimitKind::Rounds => "链到轮数上限了".to_owned(),
+                ChainLimitKind::Cost => "链到花费上限了".to_owned(),
+                ChainLimitKind::Other => "链到上限了".to_owned(),
+            },
             ChainError::Stopped => "链被人停了".to_owned(),
             ChainError::PermissionDenied => "说话人不是这个 Bot 听的人".to_owned(),
             ChainError::InvalidInput { refusal } => match refusal {
