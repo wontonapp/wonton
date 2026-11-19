@@ -490,15 +490,18 @@ private extension ChatRoomView {
         return message.timestampMs
     }
 
-    /// 群聊里组尾气泡旁的头像：认识的 Bot 用它的头像，其余人画名字的第一个字。
+    /// 群聊里组尾气泡旁的头像（ADR-0109 第 2 节）：核心给的 `senderAvatar`，没有图片时画名字的第一个字；
+    /// 图片取到之前先露出底下的字。
     func senderAvatar(_ message: TimelineMessage) -> AnyView {
-        guard let bot = model.viewModel.bots.first(where: { $0.userId == message.senderId }) else {
-            return AnyView(SenderInitial(name: message.senderName))
+        let size = WontonTheme.size.messageAvatar
+        return AnyView(ZStack {
+            SenderInitial(name: message.senderName)
+            if let media = message.senderAvatar {
+                StillAvatarImage(media: media, core: model.core, size: size)
+            }
         }
-        let icon = plugins.viewModel.installed?.plugins.first { $0.id == bot.bot.pluginId }?.icon
-        return AnyView(BotAvatarView(
-            bot: bot, pluginIcon: icon, core: model.core, model: plugins, size: WontonTheme.size.messageAvatar
-        ))
+        .frame(width: size, height: size)
+        .clipShape(Circle()))
     }
 }
 
