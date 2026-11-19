@@ -54,7 +54,12 @@ fun StepOptionRow(
             Modifier.weight(1f).heightIn(min = WontonTheme.size.target)
                 .optionSelection(selected, onSelect, blocked, multiple)
                 .padding(WontonTheme.spacing.s12),
-            horizontalArrangement = if (centered) Arrangement.Center else Arrangement.spacedBy(WontonTheme.spacing.s12),
+            // 挤在一行的窄按钮：表情、字和勾之间留半个字宽，别贴在一起。
+            horizontalArrangement = if (centered) {
+                Arrangement.spacedBy(WontonTheme.spacing.s8, Alignment.CenterHorizontally)
+            } else {
+                Arrangement.spacedBy(WontonTheme.spacing.s12)
+            },
             verticalAlignment = Alignment.CenterVertically,
         ) {
             leading()

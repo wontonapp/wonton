@@ -295,7 +295,8 @@ private fun dayMarksFor(items: List<TimelineItem>): Array<String?> {
     var newer: String? = null
     for (index in items.indices) {
         val own = items[index].timestampMs?.let(::dateLabel) ?: newer
-        // 和更新的一条不是同一天：这条自己起一组，分隔行画在它上面。
+        // 倒排下上面是更新的一条：这条比它早一天（或者它是最新的一条），就由这条起一组，
+        // 分隔行画在这条上面、写这条自己的日期，也就是它下面那些消息的日期。
         if (own != null && own != newer) marks[index] = own
         newer = own
     }

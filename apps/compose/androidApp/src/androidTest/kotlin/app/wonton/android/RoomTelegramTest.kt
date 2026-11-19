@@ -5,6 +5,7 @@ import android.graphics.Bitmap
 import android.os.Build
 import androidx.compose.ui.geometry.Offset
 import androidx.compose.ui.semantics.SemanticsProperties
+import androidx.compose.ui.semantics.getOrNull
 import androidx.compose.ui.test.SemanticsMatcher
 import androidx.compose.ui.test.SemanticsNodeInteraction
 import androidx.compose.ui.test.assertCountEquals
@@ -16,6 +17,7 @@ import androidx.compose.ui.test.assertIsSelected
 import androidx.compose.ui.test.hasAnyAncestor
 import androidx.compose.ui.test.hasSetTextAction
 import androidx.compose.ui.semantics.SemanticsNode
+import androidx.compose.ui.unit.dp
 import androidx.compose.ui.test.hasTestTag
 import androidx.compose.ui.test.isDisplayed
 import androidx.compose.ui.test.junit4.createAndroidComposeRule
@@ -43,6 +45,8 @@ import app.wonton.ui.R
 import app.wonton.ui.send
 import java.io.File
 import java.io.FileOutputStream
+import java.text.DateFormat
+import java.util.Date
 import kotlin.math.abs
 import org.junit.Assert.assertNull
 import org.junit.Before
@@ -149,6 +153,10 @@ class RoomTelegramTest {
             "说明折行了：${label.boundsInRoot.height} > ${emoji.boundsInRoot.height}"
         }
         check(label.boundsInRoot.top < approve.fetchSemanticsNode().boundsInRoot.bottom)
+        // 表情和字之间留一点缝（s8），别贴成一个词，也别拉成两截。
+        val want = with(compose.density) { 8.dp.toPx() }
+        val gap = label.boundsInRoot.left - emoji.boundsInRoot.right
+        check(abs(gap - want) <= 2f) { "表情和字之间是 $gap，不是 $want" }
         screenshot("choices")
         approve.performClick()
         compose.waitUntil(10_000) { !deny.isEnabled() }
@@ -227,8 +235,8 @@ class RoomTelegramTest {
 
     @Test
     fun daySeparatorOwnsARowBetweenDays() {
-        // 第 11 条比上一条早一天：跨日的那条上方是一行固定的日期，它自己占一行。
-        // 分隔行贴着跨日的那两条，翻到附近才进屏幕；两边各翻几条，撞上为止。
+        // 第 10 条是早一天那组的最后一条：倒排下它是那天最新的一条，分隔行就在它上面。
+        // 分隔行翻到附近才进屏幕；两边各翻几条，撞上为止。
         var separators = emptyList<SemanticsNode>()
         var seen = ""
         for (index in listOf(10, 9, 11, 8, 12, 13)) {
@@ -245,8 +253,34 @@ class RoomTelegramTest {
             val mark = separator.boundsInRoot
             check(bubbles.none { it.boundsInRoot.overlaps(mark) }) { "气泡压在日期分隔上：$mark" }
             check(bubbles.any { it.boundsInRoot.bottom <= mark.top + 1f }) { "日期分隔上面没有更早的气泡：$mark" }
-            check(bubbles.any { it.boundsInRoot.top >= mark.bottom - 1f }) { "日期分隔下面没有更新的气泡：$mark" }
+            // 分隔行写的是它下面第一条消息那天的日期。
+            val below = bubbles.filter { it.boundsInRoot.top >= mark.bottom - 1f }.minByOrNull { it.boundsInRoot.top }
+            checkNotNull(below) { "日期分隔下面没有更新的气泡：$mark" }
+            val belowText = texts(below)
+            val index = Regex("Fixture message (\\d+)").find(belowText)?.groupValues?.get(1)?.toInt()
+            checkNotNull(index) { "认不出日期分隔下面的气泡：$belowText" }
+            val shown = texts(separator)
+            check(shown == fixtureDate(index)) { "日期分隔不是下面那条的日期：$shown vs ${fixtureDate(index)}（第 $index 条）" }
         }
+        // 倒排：越往下日期越早。
+        val dates = separators.sortedBy { it.boundsInRoot.top }
+            .map {
+                DateFormat.getDateInstance(DateFormat.MEDIUM).parse(texts(it))
+            }
+        for (position in 1 until dates.size) {
+            check(dates[position].before(dates[position - 1])) { "日期没随消息往下走：$dates" }
+        }
+    }
+
+    /** 节点自己和它下面所有子孙的文字；气泡的标题挂在子节点上。 */
+    private fun texts(node: SemanticsNode): String =
+        node.config.getOrNull(SemanticsProperties.Text).orEmpty().joinToString() +
+            node.children.joinToString("") { texts(it) }
+
+    /** 假数据第 `index` 条的日期：0..=10 在前一天，11 起在后一天，每条隔一分钟（同 `ui_fake_room.rs`）。 */
+    private fun fixtureDate(index: Int): String {
+        val at = 1_792_000_000_000L + index * 60_000L + if (index >= 11) 86_400_000L else 0L
+        return DateFormat.getDateInstance(DateFormat.MEDIUM).format(Date(at))
     }
 
     /** 回到房间列表再进群；用例都在同一个活动里连着跑。 */
