@@ -29,14 +29,8 @@ pub(super) struct StoredChain {
     pub(super) bots: Vec<ChainBotEntry>,
     /// 这条链的上限：开链时抄当时的全局设置，"再给一份"在此基础上加。
     pub(super) limits: ChainLimits,
-    /// 链上所有会话的 `session/prompt` 总数。
+    /// 链上所有轮次的总数。
     pub(super) rounds: u32,
-    /// 经模型网关记账的 token 总数；没经网关的用量记不上，只受轮数上限管。
-    pub(super) tokens: u64,
-    /// 网关报过的金额合计。任何一笔没报金额就算不出总额，保持 `None` 不猜。
-    pub(super) amount: Option<f64>,
-    /// 按 Bot 分账，各项相加等于 [`StoredChain::tokens`]。
-    pub(super) spend_by_bot: Vec<BotSpend>,
     pub(super) status: AgentChainStatus,
     /// `status` 是 `limit_reached` 时是哪一种上限，其余为 `None`。
     pub(super) limit_kind: Option<ChainLimitKind>,
@@ -48,12 +42,6 @@ pub(super) struct StoredChain {
 pub(super) struct ChainBotEntry {
     pub(super) bot: BotRef,
     pub(super) layer: u32,
-}
-
-#[derive(Clone, Debug, Serialize, Deserialize)]
-pub(super) struct BotSpend {
-    pub(super) bot: BotRef,
-    pub(super) tokens: u64,
 }
 
 /// 缺文件等于没有链；坏文件报错，绝不拿空数据顶替。

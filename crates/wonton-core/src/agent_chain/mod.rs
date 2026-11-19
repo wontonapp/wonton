@@ -1,5 +1,5 @@
 //! Agent 调用链账本（ADR-0061 第 10 节，第 2 块）：一句话引出的所有 Agent 会话是一条链，
-//! 链上记身份、层数、轮数和花费，随时能停整条链。纯逻辑，不接 HTTP、Bot 插件和 MCP 工具
+//! 链上记身份、层数和轮数，随时能停整条链。纯逻辑，不接 HTTP、Bot 插件和 MCP 工具
 //! （第 3、6、7 块经这里的公开方法接）；发起人权限、房间表判断（#248）也归它们。
 //! 线上类别（[`ChainError`] 等）用 wonton-protocol 已有的；账本自己的类型
 //! （会话信息、停链结果、上限事件）只在核心内部第 2/3/6/8 块之间用，不上线。
@@ -22,7 +22,7 @@ use tokio::sync::watch;
 
 use wonton_protocol::{
     AgentChainBot, AgentChainRow, AgentChainStatus, AgentChainsViewModel, BotRef, ChainError,
-    ChainLimitKind, ChainLimits, ChainSpend, ChainTurnGrant, ChainTurnReport, ConfirmationOrigin,
+    ChainLimitKind, ChainLimits, ChainTurnGrant, ChainTurnReport, ConfirmationOrigin,
 };
 
 /// 账本里一个会话的登记：会话 ID → 链、Bot、层。
@@ -53,7 +53,7 @@ pub struct ChainStopOutcome {
     pub cards: Vec<String>,
 }
 
-/// 链到上限的那一下（轮数或花费）。每次进入 `limit_reached` 恰好发出一次；
+/// 链到上限的那一下（轮数）。每次进入 `limit_reached` 恰好发出一次；
 /// 层数不算——层数超了只拒那一跳，不翻链的状态，也没有"再给一份"。
 #[derive(Clone, Debug, PartialEq, Eq)]
 pub struct ChainLimitEvent {
@@ -307,36 +307,13 @@ impl Chains {
         self.bump_revision();
     }
 
-    /// 记模型网关报来的用量（按 Bot 分账，链合计同时加）。到花费上限的那一下把链置
-    /// `LimitReached` 并发一次"用到上限"（见 [`Chains::on_limit_event`]）；
-    /// 已停或已到上限的链只记账，不再翻转。
-    pub fn record_tokens(
-        &self,
-        chain_id: &str,
-        bot: &BotRef,
-        tokens: u64,
-        amount: Option<f64>,
-    ) -> Result<(), ChainLedgerError> {
-        self.mutate(|state| {
-            {
-                let chain = state
-                    .chains
-                    .get_mut(chain_id)
-                    .ok_or_else(|| ChainLedgerError::UnknownChain(chain_id.to_owned()))?;
-                budget::record_tokens(chain, bot, tokens, amount, &mut state.events);
-            }
-            state.dirty = true;
-            Ok(())
-        })
-    }
-
     /// 停整条链：置 `Stopped`，交出链上活的轮次和待答的卡片，
     /// 之后一切新登记都是 `stopped`。停是幂等的；做完的链也停（用户按下停止钮时最后一轮可能刚报了 End）。
     pub fn stop(&self, chain_id: &str) -> Result<ChainStopOutcome, ChainLedgerError> {
         self.mutate(|state| stop::stop(state, chain_id))
     }
 
-    /// "再给一份"（上限卡片的按钮）：轮数、花费上限各加一份默认值，回到 `Running`。
+    /// "再给一份"（上限卡片的按钮）：轮数上限加一份默认值，回到 `Running`。
     /// 只对 `limit_reached` 的链有效；层数和绕圈不在此列。
     pub fn grant_another(&self, chain_id: &str) -> Result<(), ChainLedgerError> {
         self.mutate(|state| {
@@ -407,19 +384,6 @@ impl Chains {
                 layer: entry.layer,
                 sender: entry.sender.clone(),
                 live: entry.live,
-            })
-        })
-    }
-
-    /// 链的按 Bot 分账，各项相加等于链的总 token。
-    pub fn spend_by_bot(&self, chain_id: &str) -> Option<Vec<(BotRef, u64)>> {
-        self.read(|state| {
-            state.chains.get(chain_id).map(|chain| {
-                chain
-                    .spend_by_bot
-                    .iter()
-                    .map(|entry| (entry.bot.clone(), entry.tokens))
-                    .collect()
             })
         })
     }
@@ -547,14 +511,6 @@ fn build_row(state: &LedgerState, chain: &store::StoredChain) -> AgentChainRow {
             })
             .collect(),
         rounds: chain.rounds,
-        spend: if chain.tokens > 0 {
-            ChainSpend::ViaGateway {
-                tokens: chain.tokens,
-                amount: chain.amount,
-            }
-        } else {
-            ChainSpend::Unknown
-        },
         status: chain.status,
         can_stop: true,
     }

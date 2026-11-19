@@ -1,5 +1,5 @@
 //! 链用到上限的卡片（ADR-0061 第 10 节）：发给链代表的人和链上各 Bot 的归属人，同一人只发一张。
-//! 全部选“再给一份”才放开（轮数和花费各加一份默认上限）；任一人选“先停着”就停整条链。
+//! 全部选“再给一份”才放开（轮数加一份默认上限）；任一人选“先停着”就停整条链。
 //!
 //! 卡片由账本的“用到上限”回调在后台拉起：回调在账本锁外、同步调用，卡片在这里等回答。
 //! 过期、撤不回、发不出都按“不再放行”处理——宁可停下让人重新说一句，也不悄悄继续烧。
@@ -159,7 +159,6 @@ fn keeper_of(bus: &Bus, bot: &BotRef) -> Option<String> {
 fn draft(row: &AgentChainRow, kind: ChainLimitKind, langs: &Languages) -> Draft {
     let title = match kind {
         ChainLimitKind::Rounds => l10n::text(langs, "chat-chain-limit-title-rounds", &[]),
-        ChainLimitKind::Cost => l10n::text(langs, "chat-chain-limit-title-cost", &[]),
         ChainLimitKind::Depth | ChainLimitKind::Other => {
             l10n::text(langs, "chat-chain-limit-title", &[])
         }

@@ -37,7 +37,7 @@ impl ClientCore {
         ))
     }
 
-    /// 设置“Agent”一页的当前值（层数、轮数、花费上限）：改上限前要有当前值可读。
+    /// 设置“Agent”一页的当前值（层数、轮数上限）：改上限前要有当前值可读。
     pub async fn agent_settings(&self) -> Result<AgentSettingsViewModel, CoreError> {
         let scope = self.scope();
         let (core_url, proxy) = connection(&scope)?;

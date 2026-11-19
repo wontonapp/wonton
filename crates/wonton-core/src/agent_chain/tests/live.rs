@@ -1,9 +1,9 @@
 //! 列表每行的 `live`：App 的停止按钮只在链上有轮次在跑时出现。最后一轮结束链就记成做完、
 //! 从列表里下去，App 不会一直拿着一条早跑完的链显示在跑。
 
-use wonton_protocol::AgentChainStatus;
+use wonton_protocol::{AgentChainStatus, ChainLimits};
 
-use super::{bot, harness, start, start_as};
+use super::{bot, harness, harness_with, start, start_as};
 
 /// 开始一轮 → 在跑；这一轮报了结束 → 不在跑，列表版本跟着变（长轮询的 App 才收得到），
 /// 链也不再进列表；停链之后不算（也停得成）。
@@ -50,16 +50,18 @@ fn a_chain_stays_live_while_another_round_runs() {
     assert!(h.chains.view().chains.is_empty());
 }
 
-/// 到上限的链即使轮次都结束了也留在列表里等卡片回答（`live` 已经为假）；点了“再给一份”回到在跑。
+/// 到上限的链即使没有在跑的轮次也留在列表里等卡片回答（`live` 为假）；点了“再给一份”回到在跑。
 #[test]
 fn a_chain_at_the_limit_waits_in_the_list_without_a_round() {
-    let h = harness();
+    let h = harness_with(ChainLimits {
+        max_rounds: 1,
+        ..ChainLimits::default()
+    });
     let a = bot("app.a", "owner");
     let chain = start(&h, &a, "s-1", "@alex", "$e1").expect("开链").chain;
     h.chains.end_session("s-1");
-    h.chains
-        .record_tokens(&chain, &a, 2_000_000, None)
-        .expect("记账到上限");
+    h.chains.bind_event("$wake", &chain).expect("绑唤醒");
+    start(&h, &a, "s-2", "@alex", "$wake").expect_err("到轮数上限");
     let row = h.chains.row(&chain).expect("链在");
     assert_eq!(row.status, AgentChainStatus::LimitReached);
     assert!(!row.live);
