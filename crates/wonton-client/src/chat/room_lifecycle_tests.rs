@@ -92,6 +92,7 @@ async fn a_timeline_does_not_receive_another_rooms_panel() {
         chat.view.subscribe(),
         room.clone(),
         watch::Sender::new(Arc::new(Vec::new())).subscribe(),
+        crate::chat::jump::seeded(),
     );
     outbox
         .send(

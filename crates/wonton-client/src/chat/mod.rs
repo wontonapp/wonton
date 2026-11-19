@@ -30,6 +30,7 @@ mod follow_home;
 mod forward;
 mod handoff;
 mod installs;
+mod jump;
 mod layout;
 mod links;
 mod login;
@@ -508,9 +509,20 @@ impl ChatLink {
                 self.dismiss_preview(TimelineKey::parse(&target)?);
                 Ok(())
             }
-            // 跳转由下一个 PR 接上（ADR-0109）。
-            TimelineAction::JumpToMessage { .. } | TimelineAction::JumpBack { .. } => {
-                Err(invalid(&l10n!(CATALOG, language(), "chat-invalid-action")))
+            // 跳转的两步只动订阅里的状态：找到就发焦点、找不到就往前翻页（ADR-0109 §4）。
+            TimelineAction::JumpToMessage {
+                target,
+                event_id,
+                from_item_id,
+            } => {
+                let subscription = self.subscription(&TimelineKey::parse(&target)?)?;
+                subscription.jump_to(&event_id, &from_item_id);
+                Ok(())
+            }
+            TimelineAction::JumpBack { target } => {
+                self.subscription(&TimelineKey::parse(&target)?)?
+                    .jump_back();
+                Ok(())
             }
             // 附件区的操作由 `ClientCore::dispatch` 交给附件区（ADR-0094），不会到这里。
             TimelineAction::SendComposer { .. }
@@ -603,6 +615,7 @@ impl ChatLink {
                 chat: self.view.subscribe(),
                 support,
                 bots: self.bots.clone(),
+                session,
             },
             opening,
         );
@@ -622,16 +635,15 @@ impl ChatLink {
         key: &TimelineKey,
         scroll: TimelineScroll,
     ) -> Result<(), CoreError> {
-        let subscription = lock(&self.open)
+        self.subscription(key)?.set_scroll(scroll);
+        Ok(())
+    }
+
+    fn subscription(&self, key: &TimelineKey) -> Result<Arc<TimelineSubscription>, CoreError> {
+        lock(&self.open)
             .get(key)
-            .and_then(|open| open.subscription.upgrade());
-        match subscription {
-            Some(subscription) => {
-                subscription.set_scroll(scroll);
-                Ok(())
-            }
-            None => Err(target::not_subscribed(key)),
-        }
+            .and_then(|open| open.subscription.upgrade())
+            .ok_or_else(|| target::not_subscribed(key))
     }
 
     /// 凭句柄下载媒体原文件（加密附件在本机解密）。
