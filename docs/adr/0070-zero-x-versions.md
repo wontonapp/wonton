@@ -1,6 +1,6 @@
 # ADR-0070 版本号用 0.x，核心镜像只有 stable 一个渠道
 
-- 状态：已接受（2026-11-08）；取代 ADR-0012 里“核心镜像分 stable、beta 两个渠道”一句
+- 状态：已接受（2026-11-08）；取代 ADR-0012 里“核心镜像分 stable、beta 两个渠道”一句；ACP bridge 镜像随桥被 [ADR-0108](0108-hermes-default-kernel.md) 删除（主人 2026-11-15）
 
 ## 背景
 
@@ -11,7 +11,7 @@ ADR-0012 定了 stable、beta 两个渠道，1.0 之前只发预发布版本（`
 ## 决策
 
 - 版本号用 `v0.2.0`、`v0.3.0`……，不带预发布后缀。`release.yml` 只认 `vX.Y.Z`，每个版本都更新 stable。
-- 核心镜像和 ACP bridge 镜像只有 `stable` 一个渠道，新装默认跟它（ADR-0025 的“默认渠道”）。
+- 核心镜像只有 `stable` 一个渠道，新装默认跟它（ADR-0025 的“默认渠道”）。
 - 已经装好、`.env` 里跟着 `:beta` 的主机不迁移：要升到 0.x 就重装，或者把 `WONTON_CORE_SOURCE` 改成 `:stable` 后再
   执行一次 `install.sh`。
 

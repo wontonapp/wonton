@@ -1,6 +1,6 @@
 # ADR-0016 MCP 总线与敏感操作的确认
 
-- 状态：已接受（2026-10-29）。确认卡片发在哪个房间、长什么样、等多久，以及 Bot 能装哪些插件，由主人确认（见“已定”）。由 ADR-0024 补充两件事：主人可以放宽插件工具的确认，安装、卸载仍逐次确认；主人令牌也能回答卡片，包括安装、卸载的卡片。“Bot 能装哪些插件”已被 [ADR-0033](0033-plugin-tabs.md) 取代。多步卡片的提议见 [ADR-0038](0038-multi-step-cards.md)；总线按 Bot 认调用方、卡片发给 Bot 的归属人由 [ADR-0045](0045-family-members.md) 定。卡片显示在哪由主人 2026-11-11 改定：不再发进“Wonton”私聊，显示在发起的会话里，另有推送和“等你确认”列表（见“已定”第 6 条）
+- 状态：已接受（2026-10-29）。确认卡片发在哪个房间、长什么样、等多久，以及 Bot 能装哪些插件，由主人确认（见“已定”）。由 ADR-0024 补充两件事：主人可以放宽插件工具的确认，安装、卸载仍逐次确认；主人令牌也能回答卡片，包括安装、卸载的卡片。“Bot 能装哪些插件”已被 [ADR-0033](0033-plugin-tabs.md) 取代。多步卡片的提议见 [ADR-0038](0038-multi-step-cards.md)；总线按 Bot 认调用方、卡片发给 Bot 的归属人由 [ADR-0045](0045-family-members.md) 定。卡片显示在哪由主人 2026-11-11 改定：不再发进“Wonton”私聊，显示在发起的会话里，另有推送和“等你确认”列表（见“已定”第 6 条）。ACP 桥按会话写来源请求头的做法随桥被 [ADR-0108](0108-hermes-default-kernel.md) 删除（主人 2026-11-15），经 `/agent/permissions` 的权限请求照旧带 `origin` 字段
 
 ## 背景
 
@@ -73,8 +73,8 @@ Bot 能在已授权的文件夹里查找文件，并通过 MCP 在 Immich 里按
      Bot 联系请求也列在待处理项里，显示接收请求的 Bot 和对方的完整账号 ID。同意远端请求前先确认“同意后只聊天”，
      同意、拒绝和失败原因沿用联系人页（ADR-0050）；核心列表不再包含的请求，Android 按同一请求标识撤下通知。
    - **来源怎么报。** 由 Agent 一侧报：MCP `tools/call` 的 `params._meta["app.wonton/origin"]`（`{"room_id", "thread_id"?}`），
-     或者给 MCP 服务器配的固定请求头 `wonton-origin-room`、`wonton-origin-thread`，两样都有时 `_meta` 为准。ACP 桥在
-     `session/new` 的 `mcpServers[].headers` 里按会话放这两个头，Agent 不用改；桥自己的权限请求（ADR-0035）带 `origin` 字段。
+     或者给 MCP 服务器配的固定请求头 `wonton-origin-room`、`wonton-origin-thread`，两样都有时 `_meta` 为准。经 `/agent/permissions` 的权限请求
+     （ADR-0035）带 `origin` 字段。原来 ACP 桥在 `session/new` 的 `mcpServers[].headers` 里按会话放这两个头，桥已随 ADR-0108 删除。
      报不了的 Agent（Hermes 的 MCP 配置是静态的）不报。
    - **来源怎么核对。** 来源是不可信输入。核心只认发起的 Bot 和卡片的接收人（ADR-0045 的归属人）都已加入的房间，以 Bot 的身份查
      `joined_members` 核对（核心临时代 Bot 登录一台设备，查完退出；报的就是主房间、收件人又是主房间的主人时不用查）；

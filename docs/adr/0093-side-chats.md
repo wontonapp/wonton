@@ -2,6 +2,7 @@
 
 - 状态：已接受（2026-11-12）。产品方向由主人定（2026-11-12）：像 Meta Muse 一样一个 AI 一个主对话，旁聊是新的上下文、同一个人格；在主对话里收成卡片；
   旁聊有结果时主对话里一行，AI 下一轮知道；“新建聊天 → 已有的 AI”开新旁聊，不另建私聊。四项待验证项已实测成立（见“代价与待验证项”）。
+  提供方里的 ACP 桥（第 1 节桥的写法、第 2 节“桥”一条、第 4 节和桥共用的事件类型）随桥被 [ADR-0108](0108-hermes-default-kernel.md) 删除（主人 2026-11-15），提供方只有 Hermes 插件。
 - 部分取代 [ADR-0058](0058-agent-side-sessions.md)：“决策”开头“核心和协议不改”一句、话题名字的取法、“主对话里一行提示”的格式。
 
 ## 背景
@@ -52,7 +53,7 @@
 
 结果行是给人看的；发它的 Agent 自己会忽略自己的 `m.notice`。所以“主会话下一轮知道”由发结果行的同一层负责，不经 Matrix：
 
-- **桥**：不变，ADR-0058 的工作板和每轮开头的“其他会话的动态”。
+- ~~**桥**：不变，ADR-0058 的工作板和每轮开头的“其他会话的动态”。~~ 桥已随 ADR-0108 删除。
 - **Hermes**：主会话（会话键里没有 `thread_id` 的那个）每一轮开始前，把上一轮之后有新结果的旁聊列进这一轮的上下文：标题、状态、
   AI 在那个旁聊里最后一次回复的第一段（最多 200 个字符）。格式照桥的动态写。
 
@@ -71,7 +72,7 @@
   也记在插件规范（wonton-docs）的底座问题里：值不值得给插件一个正式的发送入口，随旁聊插件的经验定。
 
 核心（服务器和客户端）不知道哪个 Agent 怎么实现，只认第 1 节的约定。按 [ADR-0015](0015-small-components-standard-interfaces.md)，
-提供方是桥和 Hermes 插件，消费方是客户端核心，合同是 Matrix 事件。
+提供方是 Hermes 插件（原来还有 ACP 桥，已随 ADR-0108 删除），消费方是客户端核心，合同是 Matrix 事件。
 
 ### 4. 客户端核心（`wonton-client`、`wonton-matrix`）
 
@@ -135,8 +136,8 @@ ViewModel：
   `TimelineContent::SideChatResult { root_event_id, title, state }`（结果行）；`TimelineUpdate.side_chat: Option<SideChatCard>`（旁聊订阅的头部，主时间线为空）。
 - `RoomRow.side_chats: bool`（房间里有支持声明）；`MessageSummary::SideChat { title, state }`；
   `ChatContact.side_chat_room_id: Option<String>`（选这个人时在哪个房间开新旁聊；为空就 `StartDirectChat`）；`PushNotification.thread_root: Option<String>`。
-- 三个 Matrix 事件内容（根、结果行、支持声明）的 serde 类型也放在 `wonton-protocol`，桥和客户端核心共用。契约测试：一组 JSON 样例放进
-  这个 crate，桥发出的事件和客户端核心读的都过这组样例；Hermes 插件的测试用 wonton-docs 里同样的样例。
+- 三个 Matrix 事件内容（根、结果行、支持声明）的 serde 类型也放在 `wonton-protocol`，客户端核心用。契约测试：一组 JSON 样例放进
+  这个 crate，客户端核心读的都过这组样例；Hermes 插件的测试用 wonton-docs 里同样的样例。
 
 ### 6. 壳
 
