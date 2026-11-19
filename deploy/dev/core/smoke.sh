@@ -3,7 +3,8 @@
 # 像浏览器一样经核心网关打开插件并自动登录 → 核心预装模型网关，使用方拿到自己的凭据 →
 # 已配对设备经隧道打开插件，直接是主人 → 经隧道登录 Matrix，和回声 Bot 加密收发 →
 # 核心自己装好的默认 Agent Hermes 就绪后出现在主人的私聊里：没有模型时提示去“模型设置”，加了 provider 后经模型网关和
-# 主人加密对话两轮 → 网关代登录打开“模型设置”网页 → 核心重启后恢复、不装回卸掉的 Hermes → 卸载干净。
+# 主人加密对话两轮 → 停链打断 Hermes 正在跑的一轮；批准的私聊经出箱发到家人手里；核心按说话人请求头认人 →
+# 网关代登录打开“模型设置”网页 → 核心重启后恢复、不装回卸掉的 Hermes → 卸载干净。
 # Hermes 一步要真实模型：开发机上要有在运行的 magpie。冒烟的 magpie 容器直连宿主 3425，
 # 凭据是冒烟自己新建的一次性网关凭据：限定到这次的模型，退出时按建 key 时记下的 id 删掉
 # （失败退出也删），凭据不进日志、不写进仓库。
@@ -42,6 +43,8 @@ export WONTON_BUILD_COMMIT
 core="$WONTON_DEV_PROJECT"
 browser="$WONTON_DEV_PROJECT-browser"
 phone="$WONTON_DEV_PROJECT-phone"
+# 家人（妈妈）的手机，停链、出箱、说话人几步用。
+mom_phone="$WONTON_DEV_PROJECT-mom"
 phone_image="wonton-tunnel-client:dev"
 echo_image="wonton-echo-bot:dev"
 curl_image="curlimages/curl:8.23.0"
@@ -85,7 +88,7 @@ ok "没有残留的示例插件资源"
 fi
 # 对着已有的栈跑时不拆栈，只删自己起的探针容器。
 if [[ -n "${SMOKE_ONLY:-}" ]]; then
-  trap '[[ -z "${events_pid:-}" ]] || kill "$events_pid" 2>/dev/null; docker rm -f "$browser" "$phone" >/dev/null 2>&1 || true' EXIT
+  trap '[[ -z "${events_pid:-}" ]] || kill "$events_pid" 2>/dev/null; docker rm -f "$browser" "$phone" "$mom_phone" >/dev/null 2>&1 || true' EXIT
 else trap cleanup EXIT; fi
 
 if step core "启动核心和身份提供方（项目 $core，端口 $WONTON_DEV_PORT）"; then
@@ -318,7 +321,7 @@ reply="$(t -o /dev/null -D - -H "Authorization: Bearer $access" \
 ok "会话 ID 带 %2F 的密钥备份请求转给了 Tuwunel（HTTP $(head -1 <<<"$reply" | cut -d' ' -f2)）"
 
 # 回声 Bot 的安装、加密收发、crypto store 丢失与重装恢复：smoke-echo-bot.sh。
-shellcheck source=deploy/dev/core/smoke-echo-bot.sh
+# shellcheck source=deploy/dev/core/smoke-echo-bot.sh
 source "$here/smoke-echo-bot.sh"
 
 fi
@@ -464,6 +467,17 @@ if cards:
     print(card["id"], card["state"]["type"])'
 }
 answer() { "$@" -sS -o /dev/null -w '%{http_code}' -X POST -H 'content-type: application/json' -d '{"answer": "approve"}'; }
+# 等 Wonton 房间里出现待确认的卡片，输出卡片 ID。
+pending_card() {
+  local card=""
+  for _ in $(seq 240); do
+    card="$(latest_card)"
+    [[ "$card" == *" pending" ]] && { echo "${card%% *}"; return 0; }
+    sleep 1
+  done
+  return 1
+}
+answer_with() { t -sS -o /dev/null -w '%{http_code}' -X POST -H 'content-type: application/json' -d "{\"answer\": \"$1\"}" "$core_url/_wonton/confirmations/$2"; }
 asked="$(mktemp)"
 ask_hermes "$asked" "帮我装一下官方插件里的“文件搜索”。" &
 asking=$!
@@ -516,6 +530,9 @@ grep -q 'wonton://file/' "$asked" || fail "Hermes 的回答里没有文件链接
 ok "Hermes 发出了文件链接，App 显示成文件卡片"
 
 fi
+# 停链、出箱和说话人（ADR-0061 第 10 节）：smoke-turns.sh。放在 files 之前：files 一步最后卸载 Hermes。
+# shellcheck source=deploy/dev/core/smoke-turns.sh
+source "$here/smoke-turns.sh"
 if step files "Bot 存文件（ADR-0027）：主人按路径批准一次，Hermes 就能往里存，Navidrome 看得到"; then
 navidrome_src="$(mktemp -d)"
 git clone -q --depth 1 --branch v0.1.1 -c advice.detachedHead=false https://github.com/geraldpeng6/wonton-plugin-navidrome "$navidrome_src"
@@ -534,17 +551,6 @@ song_task() {
 }
 song_ext=wav
 if [[ -n "${WONTON_SMOKE_SONG_URL:-}" ]]; then song_ext="${WONTON_SMOKE_SONG_URL##*.}"; fi
-# 等 Wonton 房间里出现待确认的卡片，输出卡片 ID。
-pending_card() {
-  local card=""
-  for _ in $(seq 240); do
-    card="$(latest_card)"
-    [[ "$card" == *" pending" ]] && { echo "${card%% *}"; return 0; }
-    sleep 1
-  done
-  return 1
-}
-answer_with() { t -sS -o /dev/null -w '%{http_code}' -X POST -H 'content-type: application/json' -d "{\"answer\": \"$1\"}" "$core_url/_wonton/confirmations/$2"; }
 save_grants() {
   t "$core_url/_wonton/api/plugins/com.nousresearch.hermes" | python3 -c 'import json, sys; print(" ".join(json.load(sys.stdin)["save_grants"]))'
 }

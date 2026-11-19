@@ -43,6 +43,7 @@ cleanup() {
   remove_container "$egress_check"
   remove_container "$browser"
   remove_container "$phone"
+  remove_container "$mom_phone"
   [[ -z "${fake_upstream:-}" ]] || remove_container "$fake_upstream"
   # 中途失败时插件和核心可能都还在：先把这套实例的容器全删完（核心也就停了），网络和卷才删得掉。
   for resource in $(instance_containers); do remove_container "$resource"; done
