@@ -47,10 +47,13 @@ phone="$WONTON_DEV_PROJECT-phone"
 mom_phone="$WONTON_DEV_PROJECT-mom"
 phone_image="wonton-tunnel-client:dev"
 echo_image="wonton-echo-bot:dev"
-# 探针设备的 ID 每次起冒烟换一套（同一个设备 ID 换新密钥时对方的 SDK 会报签名密钥变了，不再认它）：
-# 一次冒烟里重试用同一个，换一次冒烟换新的。
-probe_device="wonton-smoke-probe-$$"
-mom_probe_device="wonton-smoke-mom-probe-$$"
+# 探针设备：加密库和登录状态存在数据目录里，跨步骤、跨续跑都是同一台设备，对方的设备表里一直是它。
+# 每次冒烟换数据目录，也就换新设备；同一个 ID 换新密钥时对方的 SDK 会报签名密钥变了，所以固定 ID 只和数据目录一起用。
+probe_device="wonton-smoke-probe"
+mom_probe_device="wonton-smoke-mom-probe"
+probe_store="$WONTON_DEV_DATA/probe-store"
+mom_probe_store="$WONTON_DEV_DATA/mom-probe-store"
+mkdir -p "$probe_store" "$mom_probe_store"
 curl_image="curlimages/curl:8.23.0"
 busybox_image="public.ecr.aws/docker/library/busybox:1.37"
 core_url="http://$WONTON_DEV_DOMAIN:$WONTON_DEV_PORT"
@@ -102,9 +105,10 @@ probe_in_hermes_room() {
     rc=0
     (( attempt == 1 )) || echo '   · 探针设备被服务器丢了，用同一台重试' >&2
     jwt="$(t -X POST "$core_url/_wonton/matrix/login-token" | json token)" || return 1
-    docker run --rm --network "container:$core" "$echo_image" probe --homeserver "$matrix_url" \
-      --proxy "http://$credential@127.0.0.1:18008" --login-token "$jwt" --room "$hermes_room" --bot "$hermes_user" \
-      --device-id "$probe_device" --reply any "$@" >"$out" 2>&1 || rc=$?
+    docker run --rm --network "container:$core" -v "$probe_store:/probe" "$echo_image" probe \
+      --homeserver "$matrix_url" --proxy "http://$credential@127.0.0.1:18008" --login-token "$jwt" \
+      --room "$hermes_room" --bot "$hermes_user" --device-id "$probe_device" --store /probe \
+      --reply any "$@" >"$out" 2>&1 || rc=$?
     # 有一句正常回复就算过：探针偶尔把 404 当空回复、退出码还是 0。
     if (( rc == 0 )) && grep -q '收到加密的回复：' "$out"; then return 0; fi
     # 不是 404 的失败（含探针自己的报错）不再重来。

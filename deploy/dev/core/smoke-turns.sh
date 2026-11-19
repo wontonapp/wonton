@@ -60,9 +60,10 @@ probe_as_mom() {
   local out="$1" jwt
   shift
   jwt="$(m -X POST "$core_url/_wonton/matrix/login-token" | json token)" || return 1
-  docker run --rm --network "container:$core" "$echo_image" probe --homeserver "$matrix_url" \
-    --proxy "http://$mom_credential@127.0.0.1:18009" --login-token "$jwt" --room "$mom_room" --bot "$hermes_user" \
-    --device-id "$mom_probe_device" --reply any "$@" >"$out" 2>&1
+  docker run --rm --network "container:$core" -v "$mom_probe_store:/probe" "$echo_image" probe \
+    --homeserver "$matrix_url" --proxy "http://$mom_credential@127.0.0.1:18009" --login-token "$jwt" \
+    --room "$mom_room" --bot "$hermes_user" --device-id "$mom_probe_device" --store /probe \
+    --reply any "$@" >"$out" 2>&1
 }
 mom_pair() {
   docker run --rm --network "container:$core" -v "$mom_key:/tmp/mom.key" --entrypoint tunnel-client "$phone_image" \
