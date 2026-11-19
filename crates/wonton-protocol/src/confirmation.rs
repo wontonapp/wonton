@@ -108,14 +108,6 @@ pub enum ConfirmationCategory {
         chain: String,
         kind: crate::ChainLimitKind,
     },
-    /// 把活交给不归链代表的人的 Bot、或这个插件第一次连到这个 Bot，等目标 Bot 的归属人同意
-    /// （ADR-0061 第 9 节）：标题是“发起处 → 目标 Bot”。
-    HandOffConsent {
-        /// 要接活的 Bot。
-        target_bot: crate::BotRef,
-        /// 交活的发起 Bot。
-        from: crate::BotRef,
-    },
     /// 这个 Bot 要给收件人发这条消息，等归属人同意（ADR-0061 第 9 节）；主人可以对某个收件人放宽（ADR-0024）。
     SendMessage {
         /// 收件人的用户名。
@@ -459,20 +451,6 @@ mod tests {
         assert_eq!(
             serde_json::from_value::<ConfirmationCategory>(json!(limit)).unwrap(),
             limit
-        );
-        let consent = ConfirmationCategory::HandOffConsent {
-            target_bot: crate::BotRef {
-                plugin_id: "app.codex".into(),
-                bot: "owner".into(),
-            },
-            from: crate::BotRef {
-                plugin_id: "app.orchestrator".into(),
-                bot: "owner".into(),
-            },
-        };
-        assert_eq!(
-            serde_json::from_value::<ConfirmationCategory>(json!(consent)).unwrap(),
-            consent
         );
         assert_eq!(
             serde_json::from_value::<ConfirmationCategory>(json!({"type": "sms"})).unwrap(),

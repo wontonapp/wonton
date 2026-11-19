@@ -27,7 +27,6 @@ VAR_RE = re.compile(r"^\$\{([A-Za-z_][A-Za-z0-9_]*)(?::-([^}]*))?\}$")
 # 有意的例外：文件 + 服务 → 原因。收得很窄：这个服务的这个行为是设计如此；设计改了就删掉。
 # 例外不进白名单文件而是写在代码里，因为端口放开必须能被一眼看到为什么。
 EXCEPTIONS: Dict[Tuple[str, str], str] = {
-    ("deploy/dev/agent/compose.yaml", "tuwunel"): "局域网里的手机客户端直连测试，监听所有网卡是有意的（compose.yaml 注释同此）",
 }
 
 

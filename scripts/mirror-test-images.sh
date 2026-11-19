@@ -6,7 +6,7 @@
 # 不带摘要的用 <名字>:<标签>。
 #
 # 引用来源：测试代码里 wonton_test_images::image("…") 的字面量、生产镜像常量（gost、socat）、
-# acp-bridge Dockerfile 的 ARG 默认值，外加 tusd（tusd_tests 从 deploy/install/compose.yaml
+# 核心 Dockerfile 的 ARG 默认值，外加 tusd（tusd_tests 从 deploy/install/compose.yaml
 # 解析镜像再覆盖，常量不在上面几处里）。缺了哪个，对应测试拉取失败，把引用补进这里重跑。
 #
 #   scripts/mirror-test-images.sh            用 PATH 里的 crane 复制
@@ -43,7 +43,7 @@ refs=$(
     grep -hA1 -E '^pub const IMAGE: &str =' \
       crates/wonton-core/src/plugin/egress/gost.rs crates/wonton-core/src/plugin/host_relay.rs |
       grep -oE '"[^"]+"' | tr -d '"'
-    grep -hE '^ARG (RUST|DEBIAN|COMPOSE)_IMAGE=' deploy/dev/core/Dockerfile deploy/dev/acp-bridge/Dockerfile | cut -d= -f2
+    grep -hE '^ARG (RUST|DEBIAN|COMPOSE)_IMAGE=' deploy/dev/core/Dockerfile | cut -d= -f2
     # tusd：镜像写在 deploy/install/compose.yaml 里，测试解析后经 wonton_test_images::image 覆盖。
     echo 'docker.io/tusproject/tusd:v2.10.1@sha256:7b1c552a8b42f4b36cb01f2a3bd49f82ab078b2eefd191459e716141dd50376c'
     # Tuwunel：wonton-matrix 的 testkit 从开发栈的 compose 解析镜像（test_docker_check 照它扫），

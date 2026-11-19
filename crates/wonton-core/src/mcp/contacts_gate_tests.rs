@@ -84,7 +84,7 @@ fn attach_ledger(s: &Setup) -> Arc<Chains> {
     s.bus.agent_chains().unwrap().ledger().clone()
 }
 
-/// 桥报这个 Bot 的一轮开始，说话的是 `sender`；`session` 用来结束这一轮。
+/// Bot 插件报这个 Bot 的一轮开始，说话的是 `sender`；`session` 用来结束这一轮。
 fn start_turn(ledger: &Chains, bot: &BotRef, sender: &str, session: &str) {
     let report = ChainTurnReport::Start {
         session: session.to_owned(),
