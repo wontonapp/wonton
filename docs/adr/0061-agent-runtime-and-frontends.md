@@ -200,7 +200,7 @@ Agent 插件 `wants: [agent_acp]` 时，确认页同样写明它能把事交给 
     只受轮数上限管。
   - 到了上限，核心停下这条链（新的轮次、新的 `agent_acp` 请求、链上的模型请求都返回 `limit_reached`），给链代表的人和链上各 Bot 的
     归属人发卡片“这条链用到上限了”，按钮“再给一份”和“先停着”。
-- **随时能停整条链**：链代表的人和链上各 Bot 的归属人，不等到上限，随时能停下整条链（App 里这条链的那一行和链上的卡片上）。
+- **随时能停整条链**：链代表的人和链上各 Bot 的归属人，不等到上限，随时能停下整条链（App 聊天输入栏的停止钮，Bot 有轮次在跑时才出现，把从这条时间线开始的链都停掉；还有链上的卡片上）。
   - 停时核心对链上每个经 `agent_acp` 的会话发 `session/cancel`；发起的那一轮在桥里，核心把它放进这个 Bot 的出箱
     （`CancelTurn`），桥取走后对自己的会话发 `session/cancel`，用 `POST /agent/outbox` 回报结果。
   - 网关和桥把各自未决的权限请求都回 `cancelled`，这是 [ACP 规范](https://agentclientprotocol.com/protocol/v1/prompt-turn#cancellation)

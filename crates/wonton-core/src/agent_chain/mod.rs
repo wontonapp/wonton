@@ -304,8 +304,11 @@ impl Chains {
     /// 没登记的会话静默忽略；不改链的状态。
     pub fn end_session(&self, session: &str) {
         let mut state = self.state.lock().expect("agent chain ledger lock poisoned");
-        if let Some(entry) = state.sessions.get_mut(session) {
-            entry.live = false;
+        if let Some(entry) = state.sessions.get_mut(session)
+            && std::mem::take(&mut entry.live)
+        {
+            // 列表每行的 `live` 跟着变：App 的停止按钮靠这一下收起来。
+            self.bump_revision();
         }
     }
 
@@ -516,7 +519,7 @@ impl Chains {
                 })
                 .map(|chain| {
                     let tick = state.activity.get(&chain.chain).copied().unwrap_or(0);
-                    (tick, build_row(chain))
+                    (tick, build_row(state, chain))
                 })
                 .collect();
             rows.sort_by_key(|(tick, _)| std::cmp::Reverse(*tick));
@@ -533,7 +536,12 @@ impl Chains {
 
     /// 单条链（任意状态，App 的链详情用）。
     pub fn row(&self, chain_id: &str) -> Option<AgentChainRow> {
-        self.read(|state| state.chains.get(chain_id).map(build_row))
+        self.read(|state| {
+            state
+                .chains
+                .get(chain_id)
+                .map(|chain| build_row(state, chain))
+        })
     }
 
     /// 落盘类操作：克隆状态 → 改 → 有落盘改动就原子写盘 → 写成功才提交到内存。
@@ -594,8 +602,17 @@ impl LedgerState {
     }
 }
 
-fn build_row(chain: &store::StoredChain) -> AgentChainRow {
+fn build_row(state: &LedgerState, chain: &store::StoredChain) -> AgentChainRow {
+    let open = !matches!(
+        chain.status,
+        AgentChainStatus::Stopped | AgentChainStatus::Ended
+    );
     AgentChainRow {
+        live: open
+            && state
+                .sessions
+                .values()
+                .any(|entry| entry.live && entry.chain == chain.chain),
         chain: chain.chain.clone(),
         user: chain.user.clone(),
         origin: chain.origin.clone(),

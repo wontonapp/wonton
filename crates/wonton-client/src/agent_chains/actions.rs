@@ -61,6 +61,8 @@ pub(crate) async fn perform(
             let _: AgentConcurrency = parse(status, &response)?;
             Ok(Effect::Done)
         }
+        // 分派时已经拆成逐条 `StopChain`（见 `room_stop`），到不了这里。
+        AgentAction::StopTurns { .. } => Ok(Effect::Done),
     }
 }
 

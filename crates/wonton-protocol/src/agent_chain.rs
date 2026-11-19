@@ -244,6 +244,11 @@ pub struct AgentChainRow {
     pub status: AgentChainStatus,
     /// 链代表的人和链上各 Bot 的归属人能停（[`AgentAction::StopChain`]）；别人看不到这一行。
     pub can_stop: bool,
+    /// 链上有轮次在跑（Bot 报了开始、没报结束，链也没停）：这时停链才打断得到正在做的事。
+    /// 比客户端旧的核心不带这个键，按没有在跑算。
+    #[serde(default)]
+    #[cfg_attr(feature = "uniffi", uniffi(default = false))]
+    pub live: bool,
 }
 
 /// App 的 Agent 链列表（ADR-0061 第 10 节）。
@@ -268,6 +273,9 @@ pub enum AgentAction {
     /// 停下整条链：链代表的人和链上各 Bot 的归属人可以，别的设备返回 `Unauthorized`。停下的链不再接
     /// 新的轮次和请求；链列表里那一行的状态变成 [`AgentChainStatus::Stopped`]。
     StopChain { chain: String },
+    /// 停下这条时间线里 Bot 正在跑的轮次：客户端核心把从这里开始、还有轮次在跑的链都停掉，进展和结果
+    /// 在 [`RoomAgentStop`](crate::RoomAgentStop) 里，不进 [`AgentChainsViewModel::action_failure`]。
+    StopTurns { target: crate::TimelineTarget },
     /// 改设置“Agent”一页的上限（层数、轮数、花费），只有主人能改，别的设备返回 `Unauthorized`。
     SetAgentLimits { limits: ChainLimits },
     /// 改一个使用方（插件）同时能开多少条 `agent_acp` 连接（ADR-0061 第 10 节），只有主人能改。满了再连的
@@ -437,6 +445,20 @@ mod tests {
             serde_json::from_value::<AgentAction>(json!(stop)).unwrap(),
             stop
         );
+        let turns = AgentAction::StopTurns {
+            target: crate::TimelineTarget {
+                room_id: "!r:home.example".into(),
+                thread_root: None,
+            },
+        };
+        assert_eq!(
+            json!(turns),
+            json!({"type": "stop_turns", "target": {"room_id": "!r:home.example"}})
+        );
+        assert_eq!(
+            serde_json::from_value::<AgentAction>(json!(turns)).unwrap(),
+            turns
+        );
         let limits = AgentAction::SetAgentLimits {
             limits: ChainLimits {
                 max_depth: 5,
@@ -506,6 +528,7 @@ mod tests {
             },
             status: AgentChainStatus::Running,
             can_stop: true,
+            live: true,
         };
         assert_eq!(
             serde_json::from_value::<AgentChainRow>(json!(row)).unwrap(),

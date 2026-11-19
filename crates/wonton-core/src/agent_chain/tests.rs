@@ -11,6 +11,8 @@ use wonton_protocol::{
 
 use super::{ChainLedgerError, ChainLimitEvent, ChainSessionSource, Chains};
 
+mod live;
+
 fn bot(plugin: &str, name: &str) -> BotRef {
     BotRef {
         plugin_id: plugin.to_owned(),
