@@ -501,6 +501,10 @@ impl ChatLink {
                 self.dismiss_preview(TimelineKey::parse(&target)?);
                 Ok(())
             }
+            // 跳转由下一个 PR 接上（ADR-0109）。
+            TimelineAction::JumpToMessage { .. } | TimelineAction::JumpBack { .. } => {
+                Err(invalid(&l10n!(CATALOG, language(), "chat-invalid-action")))
+            }
             // 附件区的操作由 `ClientCore::dispatch` 交给附件区（ADR-0094），不会到这里。
             TimelineAction::SendComposer { .. }
             | TimelineAction::RemoveAttachment { .. }

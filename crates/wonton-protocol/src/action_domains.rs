@@ -120,7 +120,10 @@ pub enum ChatAction {
     AskAgent {
         text: String,
     },
-    /// 以反应回答 Bot 的提问。
+    /// 点了消息下的选项按钮（[`MessageChoice`](crate::MessageChoice)，ADR-0109）或 AgentRun 的选项：以本人身份给 `item_id`
+    /// 那条加 `key` 这个表情（`m.annotation`），不往聊天里发消息。进展在那个选项的 [`ChoiceSend`](crate::ChoiceSend)；
+    /// 失败了再发一次就是重发。这组选项不能点（[`ChoicesState`](crate::ChoicesState) 不是 `Open`）或没有这个 `key` 时
+    /// 返回 `InvalidInput`。
     AnswerAgentChoice {
         room_id: String,
         item_id: String,

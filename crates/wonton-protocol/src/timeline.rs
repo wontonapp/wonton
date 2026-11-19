@@ -72,6 +72,29 @@ pub struct TimelineUpdate {
     /// “群里有谁可以用”，确定没有时说明 @ 不会有人回应。
     #[serde(default)]
     pub room_bots: Option<Vec<String>>,
+    /// 房间里正在输入的其他人（显示名），按开始输入的先后排，不含本账号。开始、结束和超时听 Matrix 的正在输入状态，
+    /// 这个人的消息到了核心马上去掉他。壳在顶栏状态行写“正在输入…”：私聊不写名字，群里“某某 正在输入…”，
+    /// 多人时“某某 和另外 N 人”（ADR-0109）。
+    #[serde(default)]
+    pub typing: Vec<String>,
+    /// 房间里各 Bot 的斜杠命令（ADR-0054、ADR-0109），按 Bot 加入房间的先后、表里的顺序排。空的时候不画“菜单”按钮，
+    /// 输入“/”也不弹列表。
+    #[serde(default)]
+    pub commands: Vec<crate::RoomCommand>,
+    /// 各 Bot 的表里因超过上限被截掉的条数之和（[`BotCommands::omitted`](crate::BotCommands::omitted)）。壳在列表末尾写“还有 N 条命令没列出”。
+    #[serde(default)]
+    pub commands_omitted: u32,
+    /// 只在要壳滚到某一条的那一批里有：点引用跳到原消息，或者“向下”按钮回到跳之前的位置（ADR-0109）。
+    /// 和 [`TimelineUpdate::scroll_to_bottom`] 不会同时出现。
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub focus: Option<crate::TimelineFocus>,
+    /// 跳转的进展，每一批都带当前值。
+    #[serde(default)]
+    pub jump: crate::JumpState,
+    /// 跳之前那一条（栈顶）：列表离开底部时，“向下”按钮先发 [`TimelineAction::JumpBack`](crate::TimelineAction::JumpBack)
+    /// 回到这里，为空时才滚到底。壳报告回到底部（[`TimelineScroll::Bottom`]）后核心清空。
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub back_to: Option<String>,
 }
 
 /// 解不开的消息旁边的入口，壳按它写按钮。
@@ -257,7 +280,7 @@ pub struct TimelineMessage {
     pub timestamp_ms: u64,
     pub send_state: SendState,
     pub body: MessageContent,
-    /// 是否被编辑过（显示的是最新内容）。Bot 的流式回复靠编辑消息实现。
+    /// 是否被编辑过（显示的是最新内容）：壳在时间前写“已编辑”，Bot 的消息也一样（ADR-0109）。
     pub edited: bool,
     /// 读过这条的其他人（显示名）。只有自己发的、别人读到的最后一条才有，壳有就显示“已读”。
     pub read_by: Vec<String>,
@@ -276,17 +299,26 @@ pub struct TimelineMessage {
     #[serde(default, skip_serializing_if = "Option::is_none")]
     #[cfg_attr(feature = "uniffi", uniffi(default = None))]
     pub group: Option<crate::MessageGroup>,
-    /// 这条下面那行小字（学 iMessage）：整条时间线里最多两条有——别人读到的自己发的最后一条是
-    /// [`MessageReceipt::Read`]，它后面要是还有发出去了的，最后那条是 [`MessageReceipt::Delivered`]。
-    /// 其余的消息为空，壳不在每个气泡上写状态。还没发出去和发送失败看 [`TimelineMessage::send_state`]。
+    /// 已被 [`TimelineMessage::status`] 取代（ADR-0109），两端改完后删。
+    /// 这条下面那行小字：整条时间线里最多两条有。
     #[serde(default, skip_serializing_if = "Option::is_none")]
     #[cfg_attr(feature = "uniffi", uniffi(default = None))]
     pub receipt: Option<MessageReceipt>,
-    /// 这条和上一条消息隔得够久（间隔由核心定），壳在它上方居中写一行时间。紧跟在
-    /// [`TimelineContent::DateDivider`] 后面的那条为假：分隔线自己带着那条的时间，壳把日期和时间写在一行。
+    /// 已被 [`TimelineMessage::run`] 取代（ADR-0109），两端改完后删。
     #[serde(default)]
     #[cfg_attr(feature = "uniffi", uniffi(default = false))]
     pub starts_time_group: bool,
+    /// 这条在一组连续消息里的位置（ADR-0109）。
+    #[serde(default)]
+    pub run: crate::MessageRun,
+    /// 自己发出去了的消息在时间后面画的勾（ADR-0109）；别人的、还没发出去的和发送失败的为空。
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    #[cfg_attr(feature = "uniffi", uniffi(default = None))]
+    pub status: Option<crate::MessageStatus>,
+    /// 消息下面的选项按钮（ADR-0109）：Bot 在自己发的消息上先放的表情。没有时为空。
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    #[cfg_attr(feature = "uniffi", uniffi(default = None))]
+    pub choices: Option<crate::MessageChoices>,
 }
 
 /// 自己发的消息下面那行小字写什么。
@@ -311,7 +343,7 @@ pub enum MessageAction {
     /// 把 `text` 放进剪贴板。
     Copy { text: String },
     /// 回复这条：壳把 `message` 画在输入框上方，发送时把它的事件 ID 作为 `reply_to` 交回，并用
-    /// [`TimelineAction::SetDraft`](crate::TimelineAction::SetDraft) 记进草稿。有这一项时壳也允许右滑这条消息来回复。
+    /// [`TimelineAction::SetDraft`](crate::TimelineAction::SetDraft) 记进草稿。有这一项时壳也允许左滑这条消息来回复（ADR-0109）。
     Reply { message: QuotedMessage },
     /// 转发到另一个房间（[`TimelineAction::ForwardMessage`](crate::TimelineAction::ForwardMessage)），壳先让主人选房间。
     Forward,
@@ -716,6 +748,22 @@ mod tests {
             }],
             call_active: true,
             room_bots: Some(vec!["@hermes:wonton.localhost".into()]),
+            typing: vec!["Hermes".into()],
+            commands: vec![crate::RoomCommand {
+                bot_user_id: "@hermes:wonton.localhost".into(),
+                bot_name: "Hermes".into(),
+                name: "model".into(),
+                description: "换模型".into(),
+                hint: Some("模型名".into()),
+                text: "/model".into(),
+            }],
+            commands_omitted: 2,
+            focus: Some(crate::TimelineFocus {
+                item_id: "3".into(),
+                highlight: true,
+            }),
+            jump: crate::JumpState::Loading,
+            back_to: Some("5".into()),
         };
         assert_eq!(round_trip(&update), update);
         assert!(
@@ -770,10 +818,17 @@ mod tests {
             widgets: Vec::new(),
             call_active: false,
             room_bots: None,
+            typing: Vec::new(),
+            commands: Vec::new(),
+            commands_omitted: 0,
+            focus: None,
+            jump: crate::JumpState::Idle,
+            back_to: None,
         };
         let mut value = serde_json::to_value(empty()).unwrap();
         value.as_object_mut().unwrap().remove("key_notice");
         value.as_object_mut().unwrap().remove("room_bots");
+        value.as_object_mut().unwrap().remove("jump");
         let update: TimelineUpdate = serde_json::from_value(value).unwrap();
         assert_eq!(update.key_notice, None);
         // 没有这一字段的旧核心发来的一批照旧收下，在场的 AI 落到“不确定”。
@@ -927,6 +982,19 @@ mod tests {
                 }),
                 receipt: Some(MessageReceipt::Read),
                 starts_time_group: true,
+                run: crate::MessageRun::Last,
+                status: Some(crate::MessageStatus::Read),
+                choices: Some(crate::MessageChoices {
+                    options: vec![crate::MessageChoice {
+                        key: "✅".into(),
+                        label: Some("批准一次".into()),
+                        chosen: true,
+                        send: crate::ChoiceSend::Failed {
+                            message: "连不上".into(),
+                        },
+                    }],
+                    state: crate::ChoicesState::Answered,
+                }),
             },
         }
     }

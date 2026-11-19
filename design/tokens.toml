@@ -10,13 +10,17 @@ s32 = 32
 s48 = 48
 pageInset = 16
 sectionGap = 24
+# 聊天气泡照 Telegram（ADR-0109，估计值）：组内两条之间、组与组之间。
+runGap = 2
+groupGap = 8
 
 # 圆角可以分平台（ADR-0029）。
 [radii]
 control = { ios = 14, android = 12 }
 card = { ios = 20, android = 16 }
-bubble = { ios = 18, android = 16 }
-bubbleJoined = { ios = 6, android = 4 }
+# 气泡照 Telegram（ADR-0109，估计值）：大圆角；组内贴近发送者一侧的小圆角。
+bubble = 17
+bubbleJoined = 6
 pill = 999
 bar = { ios = 999, android = 22 }
 barItem = { ios = 999, android = 16 }
@@ -55,12 +59,17 @@ grabberWidth = 36
 grabberHeight = 4
 hairline = 1
 quoteBar = 2
+# 气泡尾巴伸出气泡的宽度（ADR-0109，估计值）。
+bubbleTail = 6
 
 [ratio]
 pluginIconRadius = 0.2237
 secondaryContent = 0.7
 scrim = 0.4
 codeFill = 0.1
+# 气泡最大宽度占可用宽度；输入框最多长到几行（ADR-0109，估计值）。
+bubbleWidth = 0.8
+composerLines = 6
 
 [typography]
 screenTitle = { size = 28, line = 34, weight = "bold", relativeTo = "title" }
@@ -76,6 +85,9 @@ feedback = 120
 state = 180
 panel = 240
 messageInsert = 180
+# 跳到原消息后高亮淡出；停止滚动后日期胶囊停留（ADR-0109，估计值）。
+jumpHighlight = 1000
+datePillHold = 1000
 reduced = 100
 
 # 距离以 pt/dp、速度以 pt/dp 每秒计；快甩仍须越过最小实际距离。
@@ -91,6 +103,9 @@ edgeWidth = 24
 timeReveal = 64
 # 面板网页上能拖动面板的起手区：从网页露出的那条边往里这么高（ADR-0052）。
 pageEdgeZone = 48
+# 左滑回复：过这么远算回复，最多拖这么远（ADR-0109，估计值）。
+replyTrigger = 64
+replyMax = 88
 
 # ADR-0033：公开变量只增不改名。颜色引用 ThemeColors，字体引用 AppearanceViewModel。
 # --wonton-* 只注入根元素；--wonton-inset-* 由运行时环境提供。
