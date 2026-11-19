@@ -26,18 +26,11 @@ async fn asking_joins_the_bots_chat_and_sends_the_question() {
     let home = Home::start(&[phone.device_id()]).await;
     home.set_onboarding(json!({
         "step": "finished",
-        "primary_agent": "hermes",
-        "replaced_agent_asked": true,
-        "agents": [{
+        "default_bot_plugin": {
             "id": "hermes",
-            "title": "Hermes",
-            "source": null,
-            "status": {"state": "running", "health": "healthy"},
             "bot_user_id": "@hermes:wonton.localhost",
-            "default_bot_visibility": "visible",
-            "logins": [],
-            "blocked": null
-        }],
+            "visibility": "visible"
+        },
         "needs": [],
         "prompts": [],
         "catalog_problem": null
@@ -66,7 +59,7 @@ async fn asking_joins_the_bots_chat_and_sends_the_question() {
         .await;
     let primary = phone
         .wait_onboarding_prompts("默认 Agent 就绪", |view| {
-            view.primary_bot_user_id.clone()
+            view.default_bot_user_id.clone()
         })
         .await;
     assert_eq!(primary, bot.user_id().as_str());

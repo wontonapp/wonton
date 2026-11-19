@@ -15,15 +15,13 @@ const PLUGINS: &str = "/_wonton/api/plugins";
 
 fn install_state(step: &str, installed: bool) -> serde_json::Value {
     let mut state = onboarding(step);
-    state["primary_agent"] = serde_json::json!("agent.one");
-    state["agents"][0]["bot_user_id"] = serde_json::Value::Null;
-    state["agents"][0]["default_bot_visibility"] = serde_json::json!("absent");
+    state["default_bot_plugin"]["bot_user_id"] = serde_json::Value::Null;
+    state["default_bot_plugin"]["visibility"] = serde_json::json!("absent");
     let mut photos = item("app.photos", "Photos", &[]);
     if installed {
         photos.installed_version = Some("2.0.0".to_owned());
-        state["agents"][0]["status"] = serde_json::json!({"state": "running", "health": "healthy"});
-        state["agents"][0]["bot_user_id"] = serde_json::json!("@installed:home");
-        state["agents"][0]["default_bot_visibility"] = serde_json::json!("visible");
+        state["default_bot_plugin"]["bot_user_id"] = serde_json::json!("@installed:home");
+        state["default_bot_plugin"]["visibility"] = serde_json::json!("visible");
     }
     state["needs"] = serde_json::json!([{
         "id": "photos", "title": "Photos", "plugins": [photos]
@@ -71,12 +69,6 @@ async fn at_model(rig: &Rig) {
             action: wonton_protocol::OnboardingAction::ContinueOnboarding,
         },
     );
-    act(
-        rig,
-        Action::Onboarding {
-            action: wonton_protocol::OnboardingAction::ContinueOnboarding,
-        },
-    );
     at(rig, OnboardingStep::Model).await;
 }
 
@@ -84,8 +76,7 @@ async fn at_model(rig: &Rig) {
 async fn a_finished_task_refreshes_rows_even_when_installed_list_is_unchanged() {
     let rig = install_rig("apps").await;
     let before = rig.app.onboarding();
-    assert!(before.agents[0].source.is_some());
-    assert_eq!(before.primary_bot_user_id, None);
+    assert_eq!(before.default_bot_user_id, None);
     assert_eq!(before.needs[0].plugins[0].installed_version, None);
     let installed = rig.app.plugins().installed;
     rig.core.hold(Method::POST, PLUGINS);
@@ -108,19 +99,16 @@ async fn a_finished_task_refreshes_rows_even_when_installed_list_is_unchanged() 
         .await;
     wait_requests(&rig, Method::GET, ONBOARDING, gets + 1).await;
     let pending = rig.app.onboarding();
-    assert_eq!(pending.agents, before.agents);
     assert_eq!(pending.needs, before.needs);
     assert_eq!(
         pending.default_bot_visibility,
         Some(wonton_protocol::DefaultBotVisibility::Unknown),
     );
-    assert_eq!(pending.primary_bot_user_id, None);
+    assert_eq!(pending.default_bot_user_id, None);
     rig.core.release(Method::GET, ONBOARDING);
     let after = rig
-        .wait_onboarding(|view| view.primary_bot_user_id.as_deref() == Some("@installed:home"))
+        .wait_onboarding(|view| view.default_bot_user_id.as_deref() == Some("@installed:home"))
         .await;
-    assert_eq!(after.agents[0].source, None);
-    assert!(after.agents[0].selected);
     assert!(after.needs[0].selected);
     assert_eq!(
         after.needs[0].plugins[0].installed_version.as_deref(),
@@ -138,10 +126,9 @@ async fn an_installed_list_change_refreshes_onboarding_without_a_task() {
     change_installed(&rig, "app.photos");
     wait_requests(&rig, Method::GET, ONBOARDING, gets + 1).await;
     let view = rig
-        .wait_onboarding(|view| view.primary_bot_user_id.as_deref() == Some("@installed:home"))
+        .wait_onboarding(|view| view.default_bot_user_id.as_deref() == Some("@installed:home"))
         .await;
     assert!(rig.app.plugins().tasks.is_empty());
-    assert_eq!(view.agents[0].source, None);
     assert_eq!(
         view.needs[0].plugins[0].installed_version.as_deref(),
         Some("2.0.0")
@@ -159,7 +146,7 @@ async fn silent_refresh_keeps_the_model_choice_and_recorded_profile() {
     change_installed(&rig, "app.photos");
     wait_requests(&rig, Method::GET, ONBOARDING, gets + 1).await;
     let refreshed = rig
-        .wait_onboarding(|view| view.primary_bot_user_id.as_deref() == Some("@installed:home"))
+        .wait_onboarding(|view| view.default_bot_user_id.as_deref() == Some("@installed:home"))
         .await;
     assert_eq!(refreshed.step, Some(OnboardingStep::Model));
     assert_eq!(
@@ -204,7 +191,7 @@ async fn a_failed_silent_get_keeps_the_visible_errors() {
     assert_eq!(unknown.model.problem, before.model.problem);
     assert_eq!(unknown.profile, before.profile);
     assert_eq!(unknown.step, before.step);
-    assert_eq!(unknown.primary_bot_user_id, None);
+    assert_eq!(unknown.default_bot_user_id, None);
 
     rig.core.set_onboarding(install_state("model", true));
     act(
@@ -215,44 +202,11 @@ async fn a_failed_silent_get_keeps_the_visible_errors() {
     );
     let recovered = rig
         .wait_onboarding(|view| {
-            !view.loading && view.primary_bot_user_id.as_deref() == Some("@installed:home")
+            !view.loading && view.default_bot_user_id.as_deref() == Some("@installed:home")
         })
         .await;
     assert_eq!(recovered.profile, before.profile);
     assert_eq!(recovered.step, before.step);
-}
-
-#[tokio::test]
-async fn a_silent_response_cannot_rewind_a_settings_save() {
-    let rig = Rig::new().await;
-    let mut state = install_state("finished", true);
-    state["primary_agent"] = serde_json::Value::Null;
-    rig.core.set_onboarding(state.clone());
-    rig.connected().await;
-    rig.wait_for(|view| view.installed.is_some() && !view.refreshing)
-        .await;
-    at(&rig, OnboardingStep::Finished).await;
-    let gets = rig.core.seen(&Method::GET, ONBOARDING).len();
-    rig.core
-        .answer(Method::GET, ONBOARDING, Canned(200, state.to_string()));
-    rig.core.hold(Method::GET, ONBOARDING);
-    change_installed(&rig, "app.photos");
-    wait_requests(&rig, Method::GET, ONBOARDING, gets + 1).await;
-    act(
-        &rig,
-        Action::Onboarding {
-            action: wonton_protocol::OnboardingAction::SetPrimaryAgent {
-                id: "agent.one".to_owned(),
-            },
-        },
-    );
-    let saved = rig
-        .wait_onboarding(|view| {
-            view.primary_bot_user_id.as_deref() == Some("@installed:home") && !view.loading
-        })
-        .await;
-    rig.core.release(Method::GET, ONBOARDING);
-    assert_stays(&rig, &saved).await;
 }
 
 #[tokio::test]
@@ -292,18 +246,10 @@ async fn a_failed_first_get_is_fetched_again_once_plugins_change() {
 
 #[tokio::test]
 async fn a_late_refresh_response_cannot_rewind_the_finished_onboarding() {
-    // Agent 已经装着：点完成不装任何插件，扣住的 GET 不会卡住插件那头的刷新。
-    let mut state = onboarding("profile");
-    state["agents"][0]["status"] = serde_json::json!({ "state": "running", "health": "healthy" });
+    // 只填名字、跳过模型、不选应用：点完成不装任何插件，扣住的 GET 不会卡住插件那头的刷新。
+    let state = onboarding("profile");
     let rig = flow_rig(state.clone()).await;
     edit(&rig, "云吞", "");
-    act(
-        &rig,
-        Action::Onboarding {
-            action: wonton_protocol::OnboardingAction::ContinueOnboarding,
-        },
-    );
-    at(&rig, OnboardingStep::Agent).await;
     act(
         &rig,
         Action::Onboarding {
@@ -326,7 +272,7 @@ async fn a_late_refresh_response_cannot_rewind_the_finished_onboarding() {
     );
     at(&rig, OnboardingStep::Review).await;
 
-    // 旧请求扣在假核心上，回应是点完成之前的状态（primary_agent 还是空）。
+    // 旧请求扣在假核心上，回应是点完成之前的状态（还没走完）。
     rig.core
         .answer(Method::GET, ONBOARDING, Canned(200, state.to_string()));
     rig.core.hold(Method::GET, ONBOARDING);
@@ -339,7 +285,7 @@ async fn a_late_refresh_response_cannot_rewind_the_finished_onboarding() {
     );
     wait_requests(&rig, Method::GET, ONBOARDING, gets + 1).await;
 
-    // 点完成：finish 的回应先落地，走完了和默认 Agent 都比旧请求的新。
+    // 点完成：finish 的回应先落地，走完了比旧请求的新，默认 Bot 的私聊里给出可点的问题。
     act(
         &rig,
         Action::Onboarding {
@@ -347,15 +293,15 @@ async fn a_late_refresh_response_cannot_rewind_the_finished_onboarding() {
         },
     );
     rig.wait_onboarding(|view| {
-        view.review.commit == OnboardingCommit::Done
-            && view.primary_bot_user_id.as_deref() == Some("@agent:home")
+        view.review.commit == OnboardingCommit::Done && !view.chat_prompts.is_empty()
     })
     .await;
 
     // 旧回应放行：不许盖掉刚保存的状态。
     rig.core.release(Method::GET, ONBOARDING);
     let settled = rig.wait_onboarding(|view| !view.loading).await;
-    assert_eq!(settled.primary_bot_user_id.as_deref(), Some("@agent:home"));
+    assert!(!settled.chat_prompts.is_empty());
+    assert_eq!(settled.default_bot_user_id.as_deref(), Some("@agent:home"));
     assert_stays(&rig, &settled).await;
 }
 
@@ -380,7 +326,7 @@ async fn a_silent_refresh_landing_first_does_not_drop_the_revisit_fetch() {
 
     rig.core.set_onboarding(install_state("finished", true));
     change_installed(&rig, "app.photos");
-    rig.wait_onboarding(|view| view.primary_bot_user_id.as_deref() == Some("@installed:home"))
+    rig.wait_onboarding(|view| view.default_bot_user_id.as_deref() == Some("@installed:home"))
         .await;
 
     rig.core.release(Method::GET, MODEL_SETTINGS);
@@ -390,7 +336,7 @@ async fn a_silent_refresh_landing_first_does_not_drop_the_revisit_fetch() {
     assert_eq!(view.step, Some(OnboardingStep::Profile));
     assert_eq!(view.profile.display_name, "云吞");
     assert_eq!(
-        view.primary_bot_user_id.as_deref(),
+        view.default_bot_user_id.as_deref(),
         Some("@installed:home"),
         "重看那趟的 onboarding 比静默刷新的旧，不许盖掉它"
     );
@@ -405,12 +351,6 @@ async fn a_silent_refresh_does_not_drop_details_from_a_manual_refresh() {
         &rig,
         Action::Onboarding {
             action: wonton_protocol::OnboardingAction::SkipOnboardingStep,
-        },
-    );
-    act(
-        &rig,
-        Action::Onboarding {
-            action: wonton_protocol::OnboardingAction::ContinueOnboarding,
         },
     );
     at(&rig, OnboardingStep::Model).await;
@@ -432,7 +372,7 @@ async fn a_silent_refresh_does_not_drop_details_from_a_manual_refresh() {
     change_installed(&rig, "app.photos");
     wait_requests(&rig, Method::GET, ONBOARDING, manual_onboarding_gets + 1).await;
     rig.core.release(Method::GET, ONBOARDING);
-    rig.wait_onboarding(|view| view.primary_bot_user_id.as_deref() == Some("@installed:home"))
+    rig.wait_onboarding(|view| view.default_bot_user_id.as_deref() == Some("@installed:home"))
         .await;
 
     rig.core.release(Method::GET, MODEL_SETTINGS);

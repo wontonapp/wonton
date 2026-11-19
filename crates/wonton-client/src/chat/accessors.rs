@@ -24,9 +24,9 @@ impl ChatLink {
         self.sent.subscribe()
     }
 
-    pub(crate) fn set_primary_bot(&self, bot: Option<String>) {
+    pub(crate) fn set_default_bot(&self, bot: Option<String>) {
         let changed = {
-            let mut current = lock(&self.primary_bot);
+            let mut current = lock(&self.default_bot);
             if *current == bot {
                 false
             } else {

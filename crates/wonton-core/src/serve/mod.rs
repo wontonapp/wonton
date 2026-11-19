@@ -1,6 +1,12 @@
 //! 启动接线的另一半：外部客户、好友记录、分享登记、监听与隧道入口、插件核对。
 use super::*;
 
+mod entry;
+mod plugins;
+
+pub(super) use entry::*;
+pub(super) use plugins::*;
+
 pub(super) fn open_files(
     cfg: &Config,
     host: Arc<CoreHost>,

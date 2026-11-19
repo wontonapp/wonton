@@ -92,66 +92,6 @@
         }
       }
     },
-    "onboarding.review.signInAfterSetup": {
-      "comment": "Row description in the review step: the agent signs in from chat after setup.",
-      "extractionState": "manual",
-      "localizations": {
-        "en": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "Sign in from chat after setup"
-          }
-        },
-        "zh-Hans": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "装好后在聊天里登录"
-          }
-        },
-        "zh-Hant": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "裝好後在聊天裡登入"
-          }
-        },
-        "ja": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "セットアップ後にチャットでログイン"
-          }
-        }
-      }
-    },
-    "onboarding.step.agent": {
-      "comment": "Card title at the top of the agent step in setup: pick the agent to use.",
-      "extractionState": "manual",
-      "localizations": {
-        "en": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "Choose an assistant"
-          }
-        },
-        "zh-Hans": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "选助手"
-          }
-        },
-        "zh-Hant": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "選擇助手"
-          }
-        },
-        "ja": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "アシスタントの選択"
-          }
-        }
-      }
-    },
     "onboarding.step.model": {
       "comment": "Card title at the top of the model step in setup: connect a model provider.",
       "extractionState": "manual",

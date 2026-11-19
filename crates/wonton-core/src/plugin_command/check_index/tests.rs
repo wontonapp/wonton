@@ -38,7 +38,7 @@ fn checked(plugins: Vec<serde_json::Value>) -> (bool, Vec<String>) {
     checked_index(json!({
         "format": 1,
         "plugins": plugins,
-        "onboarding": {"agents": [], "needs": [], "prompts": []}
+        "onboarding": {"needs": [], "prompts": []}
     }))
 }
 
@@ -179,16 +179,10 @@ fn every_required_capability_needs_a_provider_but_one_plugin_can_provide_several
 }
 
 fn onboarding_index() -> serde_json::Value {
-    let agent =
-        compose("agent", &[]).replace("kind: app\n", "kind: agent\n  agent: {protocol: acp}\n");
     json!({
         "format": 1,
-        "plugins": [
-            entry_with_compose("agent", agent),
-            entry("photos", "photos", &[])
-        ],
+        "plugins": [entry("photos", "photos", &[])],
         "onboarding": {
-            "agents": ["app.agent"],
             "needs": [{"id": "photos", "title": {"en": "Photos"}, "plugins": ["app.photos"]}],
             "prompts": [{"en": "What can you do?"}]
         }
@@ -210,7 +204,7 @@ fn onboarding_missing_or_malformed_catalog_fails() {
     let mut null = onboarding_index();
     null["onboarding"] = serde_json::Value::Null;
     cases.push(null);
-    for field in ["agents", "needs", "prompts"] {
+    for field in ["needs", "prompts"] {
         let mut missing = onboarding_index();
         missing["onboarding"].as_object_mut().unwrap().remove(field);
         cases.push(missing);
@@ -229,22 +223,14 @@ fn onboarding_missing_or_malformed_catalog_fails() {
 
 #[test]
 fn onboarding_invalid_plugin_references_fail() {
-    let mut missing_agent = onboarding_index();
-    missing_agent["onboarding"]["agents"] = json!(["app.missing-agent"]);
-    let mut wrong_kind = onboarding_index();
-    wrong_kind["onboarding"]["agents"] = json!(["app.photos"]);
     let mut missing_app = onboarding_index();
     missing_app["onboarding"]["needs"][0]["plugins"] = json!(["app.missing-photos"]);
-    for (index, id) in [
-        (missing_agent, "app.missing-agent"),
-        (wrong_kind, "app.photos"),
-        (missing_app, "app.missing-photos"),
-    ] {
-        let (passed, problems) = checked_index(index);
-        assert!(!passed, "{id}: {problems:?}");
-        assert!(
-            problems.iter().any(|problem| problem.contains(id)),
-            "{problems:?}"
-        );
-    }
+    let (passed, problems) = checked_index(missing_app);
+    assert!(!passed, "{}: {problems:?}", "app.missing-photos");
+    assert!(
+        problems
+            .iter()
+            .any(|problem| problem.contains("app.missing-photos")),
+        "{problems:?}"
+    );
 }

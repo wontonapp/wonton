@@ -186,7 +186,7 @@ fn settings_view(
                 upgrade,
             }],
             phone,
-            vec![SettingsEntry::DefaultAgent, backup],
+            vec![backup],
             vec![SettingsEntry::RestartOnboarding, SettingsEntry::About],
         ];
         // 配对后入口一直可见；还没取到列表时按 0 显示（见 friends_count）。
@@ -332,7 +332,6 @@ mod tests {
                 upgrade: true
             }]
         );
-        assert!(entries(&view).contains(&SettingsEntry::DefaultAgent));
         assert!(entries(&view).contains(&SettingsEntry::RestartOnboarding));
     }
 

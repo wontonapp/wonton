@@ -101,7 +101,6 @@ gateway-models-down = モデルゲートウェイが起動していません
 
 # セットアップ。
 gateway-onboarding-invalid-step = stepはprofileかfinishedだけです（{ $step }が指定されました）
-gateway-onboarding-invalid-agent = primary_agentは選択できるエージェントではありません：{ $agent }
 gateway-onboarding-index-missing = 公式インデックスにonboardingのリストがありません
 
 # ワンクリックアップデート。

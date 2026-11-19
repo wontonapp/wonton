@@ -61,7 +61,8 @@ fn runtime_determines_whether_services_are_allowed() {
 fn agent_mount(mount: &str) -> Value {
     let mut doc = document(None, Some(json!({"agent": {"image": "agent"}})));
     doc["x-wonton"]["kind"] = "agent".into();
-    doc["x-wonton"]["agent"] = json!({"protocol": "acp", "skills": {"mount": mount}});
+    doc["x-wonton"]["permissions"] = json!(["matrix.bot"]);
+    doc["x-wonton"]["agent"] = json!({"protocol": "matrix", "skills": {"mount": mount}});
     doc
 }
 

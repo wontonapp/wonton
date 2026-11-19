@@ -219,13 +219,12 @@ pub use matrix_login::{
 pub use message_choice::{ChoiceSend, ChoicesState, MessageChoice, MessageChoices};
 pub use message_layout::{MessageRun, MessageStatus};
 pub use onboarding::{
-    AgentLogin, MODEL_SETTINGS_PATH, ModelSettings, ModelSettingsFailure, ModelSettingsPage,
-    ModelSettingsProblem, ONBOARDING_PATH, Onboarding, OnboardingAgent, OnboardingAgentRow,
-    OnboardingCommit, OnboardingItemProblem, OnboardingItemState, OnboardingModelChoice,
-    OnboardingModelStep, OnboardingNeed, OnboardingNeedRow, OnboardingProfileStep,
-    OnboardingReview, OnboardingReviewDetail, OnboardingReviewItem, OnboardingReviewKind,
-    OnboardingStep, OnboardingTip, OnboardingTips, OnboardingTooOld, OnboardingUpdate,
-    OnboardingViewModel, ReplacedAgent, StepNav,
+    DefaultBotPlugin, MODEL_SETTINGS_PATH, ModelSettings, ModelSettingsFailure, ModelSettingsPage,
+    ModelSettingsProblem, ONBOARDING_PATH, Onboarding, OnboardingCommit, OnboardingItemProblem,
+    OnboardingItemState, OnboardingModelChoice, OnboardingModelStep, OnboardingNeed,
+    OnboardingNeedRow, OnboardingProfileStep, OnboardingReview, OnboardingReviewDetail,
+    OnboardingReviewItem, OnboardingReviewKind, OnboardingStep, OnboardingTip, OnboardingTips,
+    OnboardingTooOld, OnboardingUpdate, OnboardingViewModel, StepNav,
 };
 pub use owner::{
     MAX_DISPLAY_NAME_CHARS, OwnerProfile, OwnerProfileUpdate, ProfileProblem, check_display_name,

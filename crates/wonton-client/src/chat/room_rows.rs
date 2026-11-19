@@ -19,7 +19,7 @@ impl ChatLink {
         let view = self.view.clone();
         let session = session.clone();
         let room_order = self.room_order.clone();
-        let primary_bot = self.primary_bot.clone();
+        let default_bot = self.default_bot.clone();
         let layouts = self.layouts.clone();
         let bots = self.bots.clone();
         let support = self.side_chat_support.clone();
@@ -89,7 +89,7 @@ impl ChatLink {
                     .collect();
                 super::plugin_status::refresh(&mut rows, &plugins.borrow());
                 sort_rooms(&mut rows);
-                let bot = lock(&primary_bot).clone();
+                let bot = lock(&default_bot).clone();
                 let rows = room_order.replace(rows, bot.as_deref());
                 view.send_modify(|view| view.rooms = rows);
                 if let Some(chat) = chat.upgrade() {

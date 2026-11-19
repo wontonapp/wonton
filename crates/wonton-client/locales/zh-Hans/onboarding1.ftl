@@ -1,4 +1,3 @@
-onboarding-steps-not-agent-step = 不在选 Agent 这一步
 
 onboarding-steps-not-apps-step = 不在选应用这一步
 

@@ -14,7 +14,6 @@ struct SettingsTab: View {
     var isActive = true
     @Environment(\.dismiss) private var dismiss
     @State private var isEditingProfile = false
-    @State private var isChoosingAgent = false
     @Environment(OnboardingModel.self) private var onboarding
 
     var body: some View {
@@ -22,7 +21,6 @@ struct SettingsTab: View {
             settingsRoot
         }
         .fullScreenCover(isPresented: $isEditingProfile) { OwnerProfileView(model: plugins) }
-        .fullScreenCover(isPresented: $isChoosingAgent) { PrimaryAgentPicker(model: onboarding) }
         .task { try? chat.core.dispatch(action: .friends(action: .refreshFriends)) }
         .wontonDialog(problem: home.rejection, isPresented: Binding(
             get: { isActive && home.rejection != nil }, set: { if !$0 && isActive { home.rejection = nil } }
@@ -44,10 +42,7 @@ struct SettingsTab: View {
     }
 
     private var settingsContent: some View {
-        SettingsView(
-            model: model, editProfile: { isEditingProfile = true },
-            chooseAgent: { isChoosingAgent = true }
-        )
+        SettingsView(model: model, editProfile: { isEditingProfile = true })
         .navigationDestination(for: SettingsRoute.self, destination: destination)
     }
 
@@ -90,7 +85,6 @@ struct SettingsTab: View {
 struct SettingsView: View {
     let model: SettingsModel
     let editProfile: () -> Void
-    let chooseAgent: () -> Void
     @Environment(OnboardingModel.self) private var onboarding
     @Environment(\.appVersionOverride) private var appVersionOverride
 
@@ -159,10 +153,6 @@ struct SettingsView: View {
                     value: enabled ? timeout.label : nil,
                     showsForward: true
                 )
-            }
-        case .defaultAgent:
-            Button(action: chooseAgent) {
-                WontonRow(title: String(localized: .Launcher.launcherDefaultAgent), showsForward: true)
             }
         case let .chatBackup(recovery):
             NavigationLink(value: SettingsRoute.chatBackup) {
