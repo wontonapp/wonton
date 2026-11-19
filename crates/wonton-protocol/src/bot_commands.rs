@@ -49,6 +49,23 @@ pub struct BotCommands {
     pub omitted: u32,
 }
 
+/// 房间里一个 Bot 的一条命令，给壳画“/”列表和“菜单”（ADR-0109）。客户端核心按 [`BotCommands::usable`] 合成。
+#[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize)]
+#[cfg_attr(feature = "uniffi", derive(uniffi::Record))]
+pub struct RoomCommand {
+    /// 哪个 Bot 的命令（Matrix 用户 ID）。
+    pub bot_user_id: String,
+    /// 这个 Bot 的显示名，没有设置时是用户 ID。房间里有几个 Bot 时壳在命令旁写出来。
+    pub bot_name: String,
+    /// 不带开头的 `/`，壳按它做前缀过滤。
+    pub name: String,
+    pub description: String,
+    pub hint: Option<String>,
+    /// 点这一条要发出的整句文字（“/名字”），壳原样用 [`TimelineAction::SendText`](crate::TimelineAction::SendText) 发出，
+    /// 不自己拼。
+    pub text: String,
+}
+
 fn is_zero(value: &u32) -> bool {
     *value == 0
 }

@@ -19,13 +19,15 @@ object WontonSpacing {
     val s48 = 48.dp
     val pageInset = 16.dp
     val sectionGap = 24.dp
+    val runGap = 2.dp
+    val groupGap = 8.dp
 }
 
 object WontonRadii {
     val control = 12.dp
     val card = 16.dp
-    val bubble = 16.dp
-    val bubbleJoined = 4.dp
+    val bubble = 17.dp
+    val bubbleJoined = 6.dp
     val pill = 999.dp
     val bar = 22.dp
     val barItem = 16.dp
@@ -65,6 +67,7 @@ object WontonSize {
     val grabberHeight = 4.dp
     val hairline = 1.dp
     val quoteBar = 2.dp
+    val bubbleTail = 6.dp
 }
 
 object WontonRatio {
@@ -72,6 +75,8 @@ object WontonRatio {
     val secondaryContent = 0.7f
     val scrim = 0.4f
     val codeFill = 0.1f
+    val bubbleWidth = 0.8f
+    val composerLines = 6f
 }
 
 object WontonGesture {
@@ -84,6 +89,8 @@ object WontonGesture {
     val edgeWidth = 24f
     val timeReveal = 64f
     val pageEdgeZone = 48f
+    val replyTrigger = 64f
+    val replyMax = 88f
 }
 
 object WontonMotion {
@@ -91,6 +98,8 @@ object WontonMotion {
     val state = 180
     val panel = 240
     val messageInsert = 180
+    val jumpHighlight = 1000
+    val datePillHold = 1000
     val reduced = 100
 }
 

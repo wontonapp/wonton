@@ -39,6 +39,8 @@ mod link;
 mod link_preview;
 pub mod manifest;
 mod matrix_login;
+mod message_choice;
+mod message_layout;
 mod onboarding;
 mod owner;
 mod pages;
@@ -65,6 +67,7 @@ mod side_chat;
 mod sidebar;
 mod timeline;
 mod timeline_action;
+mod timeline_jump;
 mod verification;
 mod widget;
 
@@ -99,7 +102,7 @@ pub use appearance::{
 };
 pub use bot_commands::{
     BOT_COMMANDS_EVENT, BotCommand, BotCommands, MAX_BOT_COMMANDS, MAX_BOT_COMMANDS_BYTES,
-    MAX_COMMAND_DESCRIPTION_CHARS, MAX_COMMAND_HINT_CHARS, MAX_COMMAND_NAME_CHARS,
+    MAX_COMMAND_DESCRIPTION_CHARS, MAX_COMMAND_HINT_CHARS, MAX_COMMAND_NAME_CHARS, RoomCommand,
 };
 pub use bot_contacts::{
     BOT_CONTACT_CREATE_KEY, BotContact, BotContactFailure, BotContacts, BotContactsState,
@@ -213,6 +216,8 @@ pub use matrix_login::{
     MatrixAccount, MatrixLoginFailure, MatrixLoginMethod, MatrixLoginState, MatrixLoginViewModel,
     MatrixOidcCallback, MatrixOidcLogin, MatrixPasswordLogin,
 };
+pub use message_choice::{ChoiceSend, ChoicesState, MessageChoice, MessageChoices};
+pub use message_layout::{MessageRun, MessageStatus};
 pub use onboarding::{
     AgentLogin, MODEL_SETTINGS_PATH, ModelSettings, ModelSettingsFailure, ModelSettingsPage,
     ModelSettingsProblem, ONBOARDING_PATH, Onboarding, OnboardingAgent, OnboardingAgentRow,
@@ -346,6 +351,7 @@ pub use timeline::{
     TimelineMessage, TimelineScroll, TimelineUpdate, TimelineViewport,
 };
 pub use timeline_action::{TimelineAction, TimelineTarget};
+pub use timeline_jump::{JumpState, TimelineFocus};
 pub use verification::{
     KeyHandoff, VerificationCancel, VerificationEmoji, VerificationFlow, VerificationStage,
 };

@@ -11,12 +11,14 @@ enum WontonSpacing {
     static let s48: CGFloat = 48
     static let pageInset: CGFloat = 16
     static let sectionGap: CGFloat = 24
+    static let runGap: CGFloat = 2
+    static let groupGap: CGFloat = 8
 }
 
 enum WontonRadii {
     static let control: CGFloat = 14
     static let card: CGFloat = 20
-    static let bubble: CGFloat = 18
+    static let bubble: CGFloat = 17
     static let bubbleJoined: CGFloat = 6
     static let pill: CGFloat = 999
     static let bar: CGFloat = 999
@@ -57,6 +59,7 @@ enum WontonSize {
     static let grabberHeight: CGFloat = 4
     static let hairline: CGFloat = 1
     static let quoteBar: CGFloat = 2
+    static let bubbleTail: CGFloat = 6
 }
 
 enum WontonRatio {
@@ -64,6 +67,8 @@ enum WontonRatio {
     static let secondaryContent: CGFloat = 0.7
     static let scrim: CGFloat = 0.4
     static let codeFill: CGFloat = 0.1
+    static let bubbleWidth: CGFloat = 0.8
+    static let composerLines: CGFloat = 6
 }
 
 enum WontonGesture {
@@ -76,6 +81,8 @@ enum WontonGesture {
     static let edgeWidth: CGFloat = 24
     static let timeReveal: CGFloat = 64
     static let pageEdgeZone: CGFloat = 48
+    static let replyTrigger: CGFloat = 64
+    static let replyMax: CGFloat = 88
 }
 
 enum WontonMotion {
@@ -83,6 +90,8 @@ enum WontonMotion {
     static let state: Double = 0.18
     static let panel: Double = 0.24
     static let messageInsert: Double = 0.18
+    static let jumpHighlight: Double = 1.0
+    static let datePillHold: Double = 1.0
     static let reduced: Double = 0.1
 }
 

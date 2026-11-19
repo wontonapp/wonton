@@ -27,7 +27,7 @@ pub(crate) const COLOR_VARIABLES: &[ColorVariable] = &[
 ];
 
 pub(crate) const RADIUS_VARIABLES: &[(&str, f64, f64)] = &[
-    ("--border-radius-xs", 6.0, 4.0),
+    ("--border-radius-xs", 6.0, 6.0),
     ("--border-radius-md", 14.0, 12.0),
     ("--border-radius-lg", 20.0, 16.0),
     ("--border-radius-full", 999.0, 999.0),
