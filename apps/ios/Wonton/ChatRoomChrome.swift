@@ -95,8 +95,11 @@ struct RoomAiLine: View {
                         .buttonStyle(.plain)
                     }
                 }
+                .frame(maxWidth: .infinity, alignment: .leading)
                 .padding(.horizontal, WontonTheme.spacing.pageInset)
                 .padding(.vertical, WontonTheme.spacing.s4)
+                .accessibilityElement(children: .contain)
+                .accessibilityIdentifier("roomAiLine")
             }
         }
     }

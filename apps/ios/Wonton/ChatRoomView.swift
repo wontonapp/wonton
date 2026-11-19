@@ -76,26 +76,31 @@ private extension ChatRoomView {
             }
         }
         .safeAreaInset(edge: .top, spacing: 0) {
-            if threadRoot != nil {
-                if let state = timeline.sideChat?.state { SideChatHeaderLine(state: state) }
-            } else if model.noSideChatsRoom == roomId {
-                NoSideChatsHint()
-            }
-            if let plugin = model.viewModel.rooms.first(where: { $0.roomId == roomId })?.plugin {
-                AgentPluginStatusBanner(plugin: plugin, model: plugins)
-            }
-            // 群里能用的 AI；私聊不显示，Bot 本来就在顶栏（ADR-0044）。
-            if threadRoot == nil, !isDirect {
-                RoomAiLine(
-                    roomBots: timeline.roomBots,
-                    bots: model.viewModel.bots,
-                    core: model.core,
-                    plugins: plugins
-                ) { bot in
-                    profileBot = bot
-                    showsBotProfile = true
+            // 顶栏下面这几行垫材质：列表从它们底下滚过去，不垫的话气泡里的字和它们叠在一起。
+            VStack(spacing: 0) {
+                if threadRoot != nil {
+                    if let state = timeline.sideChat?.state { SideChatHeaderLine(state: state) }
+                } else if model.noSideChatsRoom == roomId {
+                    NoSideChatsHint()
+                }
+                if let plugin = model.viewModel.rooms.first(where: { $0.roomId == roomId })?.plugin {
+                    AgentPluginStatusBanner(plugin: plugin, model: plugins)
+                }
+                // 群里能用的 AI；私聊不显示，Bot 本来就在顶栏（ADR-0044）。
+                if threadRoot == nil, !isDirect {
+                    RoomAiLine(
+                        roomBots: timeline.roomBots,
+                        bots: model.viewModel.bots,
+                        core: model.core,
+                        plugins: plugins
+                    ) { bot in
+                        profileBot = bot
+                        showsBotProfile = true
+                    }
                 }
             }
+            .frame(maxWidth: .infinity)
+            .background(.ultraThinMaterial)
         }
         .safeAreaInset(edge: .bottom, spacing: 0) {
             roomBottomBar

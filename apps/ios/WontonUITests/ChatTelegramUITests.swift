@@ -61,6 +61,9 @@ final class ChatTelegramUITests: XCTestCase {
         reveal(approve)
         XCTAssertTrue(approve.isEnabled && deny.isEnabled, "还没选，按钮就点不了")
         XCTAssertFalse(approve.isSelected || deny.isSelected, "还没选，就有按钮是选中的")
+        // 浮动日期只在滚动时盖在消息上，停下后淡出，不压着字（ADR-0109 第 4 节）。
+        let floatingDate = app.descendants(matching: .any)["timelineFloatingDate"]
+        XCTAssertTrue(floatingDate.waitForNonExistence(timeout: 5), "停止滚动后浮动日期没淡出")
         shot("choices-open")
         approve.tap()
         XCTAssertTrue(wait(5) { approve.isSelected }, "点了的选项没变成选中")
@@ -106,6 +109,14 @@ final class ChatTelegramUITests: XCTestCase {
         enter(Self.groupRoom)
         let avatar = app.descendants(matching: .any).matching(identifier: "messageAvatar").firstMatch
         XCTAssertTrue(avatar.waitForExistence(timeout: 5), "群聊里没有发送者头像\n\(app.debugDescription)")
+        // 翻到最上面：顶栏下的 AI 那一行占着自己的位置，第一条气泡排在它下面，不被它盖住。
+        let aiLine = app.descendants(matching: .any)["roomAiLine"]
+        XCTAssertTrue(aiLine.waitForExistence(timeout: 5), "群聊顶栏下没有 AI 那一行\n\(app.debugDescription)")
+        let first = message(0)
+        reveal(first)
+        for _ in 0..<3 { dragDown() }
+        XCTAssertTrue(wait(5) { first.exists && first.frame.minY >= aiLine.frame.maxY },
+                      "第一条气泡被 AI 那一行盖住\n\(app.debugDescription)")
         shot("group")
         app.terminate()
         app.launch()
@@ -145,15 +156,20 @@ final class ChatTelegramUITests: XCTestCase {
         return element.frame.minY > top && element.frame.maxY < bottom
     }
 
-    /// 从底部一段一段往回翻，直到这个元素整个在可见区里。慢拖、松手前停一下：不带惯性，不会一下翻过头。
+    /// 从底部一段一段往回翻，直到这个元素整个在可见区里。
     private func reveal(_ element: XCUIElement, file: StaticString = #filePath, line: UInt = #line) {
         for _ in 0..<60 {
             if inView(element) { return }
-            let start = app.coordinate(withNormalizedOffset: CGVector(dx: 0.5, dy: 0.35))
-            start.press(forDuration: 0.05, thenDragTo: app.coordinate(withNormalizedOffset: CGVector(dx: 0.5, dy: 0.6)),
-                        withVelocity: .default, thenHoldForDuration: 0.2)
+            dragDown()
         }
         XCTFail("往回翻了 60 段也没找到 \(element)\n\(app.debugDescription)", file: file, line: line)
+    }
+
+    /// 往回翻一段。慢拖、松手前停一下：不带惯性，不会一下翻过头。
+    private func dragDown() {
+        let start = app.coordinate(withNormalizedOffset: CGVector(dx: 0.5, dy: 0.35))
+        start.press(forDuration: 0.05, thenDragTo: app.coordinate(withNormalizedOffset: CGVector(dx: 0.5, dy: 0.6)),
+                    withVelocity: .default, thenHoldForDuration: 0.2)
     }
 
     private func tap(_ element: XCUIElement, file: StaticString = #filePath, line: UInt = #line) {
