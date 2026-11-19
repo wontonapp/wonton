@@ -159,7 +159,8 @@ pub(super) async fn fetch_list(
 }
 
 /// 停链成功后核心把停后的整行给回来：就地换进列表，壳马上看到停了。版本不动：下一次长轮询带着旧
-/// `after` 也会等到新版本，带回整表。
+/// `after` 也会等到新版本，带回整表。列表长轮询可能已经把这一行拿走了（停下前恰好报了 End），
+/// 这时插到最前——刚停的链就是最近活动的。
 pub(crate) fn apply_row(view: &mut AgentChainsViewModel, row: AgentChainRow) {
     if let Some(slot) = view
         .chains
@@ -167,6 +168,8 @@ pub(crate) fn apply_row(view: &mut AgentChainsViewModel, row: AgentChainRow) {
         .find(|existing| existing.chain == row.chain)
     {
         *slot = row;
+    } else {
+        view.chains.insert(0, row);
     }
 }
 

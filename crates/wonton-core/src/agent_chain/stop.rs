@@ -1,5 +1,6 @@
 //! 停链（ADR-0061 第 10 节）：置 `Stopped`，交出链上活的会话（按来源分）和带这条链、
 //! 还没答的卡片；之后一切新登记都是 `stopped`。停是幂等的：已停的链再停一次返回空结果。
+//! 做完的链也能停（用户按下停止钮时最后一轮可能刚好报了 End），改成 `Stopped`，之后不再能点名叫回。
 
 use wonton_protocol::AgentChainStatus;
 
@@ -14,14 +15,8 @@ pub(super) fn stop(
     let Some(chain) = state.chains.get_mut(chain_id) else {
         return Err(ChainLedgerError::UnknownChain(chain_id.to_owned()));
     };
-    match chain.status {
-        AgentChainStatus::Ended => {
-            return Err(ChainLedgerError::AlreadyEnded {
-                chain: chain_id.to_owned(),
-            });
-        }
-        AgentChainStatus::Stopped => return Ok(ChainStopOutcome::default()),
-        _ => {}
+    if chain.status == AgentChainStatus::Stopped {
+        return Ok(ChainStopOutcome::default());
     }
     chain.status = AgentChainStatus::Stopped;
     chain.limit_kind = None;

@@ -350,6 +350,54 @@ async fn a_family_member_cannot_see_or_stop_someone_elses_chain() {
     assert_eq!(status, StatusCode::FORBIDDEN);
 }
 
+/// 列表如实说链在不在跑：一轮在跑时列出、算在跑；最后一轮报 end 后从列表里下去、链记成做完；
+/// 点名叫回来又回到列表；用户这时才按停止钮，链改成 `stopped`，回给 App 的行也不在跑。
+#[tokio::test]
+async fn the_list_stops_showing_a_chain_once_its_last_round_ends() {
+    let home = start().await;
+    let chain = home.grant(Bot::Alice, "s-1", "@alice:test", "$e1").await;
+    let rows = home.chains(home.alice_peer).await;
+    assert_eq!(rows.len(), 1);
+    assert_eq!(rows[0]["status"], "running");
+    assert_eq!(rows[0]["live"], true);
+
+    home.end_turn(Bot::Alice, "s-1").await;
+    assert!(
+        home.chains(home.alice_peer).await.is_empty(),
+        "最后一轮结束，列表里不该还有它"
+    );
+    assert_eq!(
+        home.chains.ledger().row(&chain).unwrap().status,
+        wonton_protocol::AgentChainStatus::Ended
+    );
+
+    // 点名叫回同一条链：又有一轮在跑，重新进列表。
+    home.chains.ledger().bind_event("$e2", &chain).unwrap();
+    assert_eq!(
+        home.grant(Bot::Alice, "s-1", "@alice:test", "$e2").await,
+        chain
+    );
+    let rows = home.chains(home.alice_peer).await;
+    assert_eq!(rows.len(), 1);
+    assert_eq!(rows[0]["chain"], chain.as_str());
+    assert_eq!(rows[0]["live"], true);
+
+    // 轮次刚报完 end 就按停止钮：照样停得成，回的行是 stopped、不再算在跑。
+    home.end_turn(Bot::Alice, "s-1").await;
+    let (status, body) = home
+        .app_call(
+            Method::POST,
+            &wonton_protocol::agent_chain_stop_path(&chain),
+            home.alice_peer,
+            Value::Null,
+        )
+        .await;
+    assert_eq!(status, StatusCode::OK, "{body}");
+    assert_eq!(body["status"], "stopped");
+    assert_eq!(body["live"], false);
+    assert!(home.chains(home.alice_peer).await.is_empty());
+}
+
 /// 出箱回报：取过的项回报成功；没取过的报 404。
 #[tokio::test]
 async fn the_outbox_receipt_accepts_taken_items_only() {

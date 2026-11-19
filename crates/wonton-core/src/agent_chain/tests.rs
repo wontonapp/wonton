@@ -365,6 +365,17 @@ fn two_chains_through_the_same_bot_keep_separate_counts() {
     assert_eq!(h.chains.row(&two).expect("链在").rounds, 1);
     assert!(h.chains.spend_by_bot(&two).expect("分账").is_empty());
     assert_eq!(h.chains.row(&two).expect("链在").spend, ChainSpend::Unknown);
+
+    // 结束一条链的一轮只算它自己：另一条链那轮还在跑，不受影响。
+    h.chains.end_session("s-2");
+    assert_eq!(
+        h.chains.row(&two).expect("链在").status,
+        AgentChainStatus::Ended
+    );
+    assert_eq!(
+        h.chains.row(&one).expect("链在").status,
+        AgentChainStatus::Running
+    );
 }
 
 /// 落盘后重开：链还在，进行中的转 `Ended`（重启断连），计数一致；停过的还是停过。
@@ -481,9 +492,10 @@ fn wake_labels_die_with_the_chain_but_survive_a_stop() {
     );
 }
 
-/// 做完的链必须没有活会话；再记一次也是错。
+/// 最后一轮报 End 链就记成做完、从列表下去；显式再记一次是空操作（只摘唤醒标签）。
+/// 还有活会话时不能显式记。
 #[test]
-fn ending_a_chain_requires_no_live_sessions() {
+fn the_last_end_finishes_the_chain_and_a_second_end_is_a_no_op() {
     let h = harness();
     let a = bot("app.a", "owner");
     let chain = start(&h, &a, "s-1", "@alex", "$e1").expect("开链").chain;
@@ -491,12 +503,17 @@ fn ending_a_chain_requires_no_live_sessions() {
         h.chains.end_chain(&chain),
         Err(ChainLedgerError::SessionsLive { .. })
     ));
+
     h.chains.end_session("s-1");
-    h.chains.end_chain(&chain).expect("记成做完");
-    assert!(matches!(
-        h.chains.end_chain(&chain),
-        Err(ChainLedgerError::Invalid(_))
-    ));
+    assert_eq!(
+        h.chains.row(&chain).expect("链在").status,
+        AgentChainStatus::Ended
+    );
+    assert!(h.chains.view().chains.is_empty());
+
+    h.chains.bind_event("$wake", &chain).expect("绑唤醒");
+    h.chains.end_chain(&chain).expect("再记一次");
+    assert_eq!(h.chains.chain_for_event("$wake"), None, "标签摘掉");
 }
 
 /// 断线重连的 `session/load`：同一对（链、Bot）重复登记返回原层；桥会话经 start 登记，别处不收。

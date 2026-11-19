@@ -87,8 +87,6 @@ pub enum ChainLedgerError {
     UnknownSession(String),
     #[error("卡片 {0} 没有登记在账本里")]
     UnknownCard(String),
-    #[error("链 {chain} 已经结束，不能再停")]
-    AlreadyEnded { chain: String },
     #[error("链 {chain} 不在 limit_reached，给不了新的一份")]
     NotAtLimit { chain: String },
     #[error("链 {chain} 还有活着的会话，不能记成做完")]
@@ -301,15 +299,34 @@ impl Chains {
     }
 
     /// 一轮结束（桥的 end 报告、网关侧会话完结）。End 对被拒的轮也会报，
-    /// 没登记的会话静默忽略；不改链的状态。
+    /// 没登记的会话静默忽略。
+    ///
+    /// 最后一轮结束说明这条链上没有在跑的轮次了：没到上限的链记成 `Ended`，从 App 的列表里下去；
+    /// 点名叫它会回到 `Running`（见 `turns`），停下来的链仍能停下来。到上限的留 `LimitReached`
+    /// 等卡片回答，“再给一份”靠它找链。
     pub fn end_session(&self, session: &str) {
         let mut state = self.state.lock().expect("agent chain ledger lock poisoned");
-        if let Some(entry) = state.sessions.get_mut(session)
-            && std::mem::take(&mut entry.live)
-        {
-            // 列表每行的 `live` 跟着变：App 的停止按钮靠这一下收起来。
-            self.bump_revision();
+        let Some(entry) = state.sessions.get_mut(session) else {
+            return;
+        };
+        if !std::mem::take(&mut entry.live) {
+            return;
         }
+        let chain_id = entry.chain.clone();
+        if state
+            .sessions
+            .values()
+            .any(|other| other.live && other.chain == chain_id)
+        {
+            return;
+        }
+        if let Some(chain) = state.chains.get_mut(&chain_id)
+            && chain.status == AgentChainStatus::Running
+        {
+            chain.status = AgentChainStatus::Ended;
+        }
+        // 列表这一行不再算在跑：App 靠版本变化收起停止钮。
+        self.bump_revision();
     }
 
     /// 记一个 `session/prompt`（`agent_acp` 和交接会话的轮数；桥的轮数在 start 里记）。
@@ -330,7 +347,12 @@ impl Chains {
                 )));
             }
             state.dirty = true;
-            budget::count_round(chain, &mut state.events).map_err(ChainLedgerError::Rejected)
+            budget::count_round(chain, &mut state.events).map_err(ChainLedgerError::Rejected)?;
+            // 点名叫回做完的链：又有一轮在跑，回到列表。
+            if chain.status == AgentChainStatus::Ended {
+                chain.status = AgentChainStatus::Running;
+            }
+            Ok(())
         })
     }
 
@@ -358,7 +380,7 @@ impl Chains {
     }
 
     /// 停整条链：置 `Stopped`，交出链上活的会话（按来源分）和待答的卡片，
-    /// 之后一切新登记都是 `stopped`。已停的链再停返回空结果（幂等）；做完的链不能停。
+    /// 之后一切新登记都是 `stopped`。停是幂等的；做完的链也停（用户按下停止钮时最后一轮可能刚报了 End）。
     pub fn stop(&self, chain_id: &str) -> Result<ChainStopOutcome, ChainLedgerError> {
         self.mutate(|state| stop::stop(state, chain_id))
     }
@@ -382,8 +404,8 @@ impl Chains {
         })
     }
 
-    /// 把链记成做完（"做完了"的判断归第 3/8 块，账本只收显式标记）。
-    /// 还有活会话时拒绝——做完的链不该有没取消的会话。摘掉这条链的唤醒标签。
+    /// 把链记成做完：还有活会话时拒绝，摘掉这条链的唤醒标签（之后同一条消息不会再续上它）。
+    /// 最后一轮 End 已经自动把链记成做完，这里再记一次是空操作。
     pub fn end_chain(&self, chain_id: &str) -> Result<(), ChainLedgerError> {
         self.mutate(|state| {
             if state
@@ -395,15 +417,14 @@ impl Chains {
                     chain: chain_id.to_owned(),
                 });
             }
-            let chain = state
-                .chains
-                .get_mut(chain_id)
-                .ok_or_else(|| ChainLedgerError::UnknownChain(chain_id.to_owned()))?;
-            if chain.status == AgentChainStatus::Ended {
-                return Err(ChainLedgerError::Invalid(format!("链 {chain_id} 已经结束")));
+            {
+                let chain = state
+                    .chains
+                    .get_mut(chain_id)
+                    .ok_or_else(|| ChainLedgerError::UnknownChain(chain_id.to_owned()))?;
+                chain.status = AgentChainStatus::Ended;
+                chain.limit_kind = None;
             }
-            chain.status = AgentChainStatus::Ended;
-            chain.limit_kind = None;
             state.dirty = true;
             wake::drop_chain(state, chain_id);
             Ok(())
@@ -503,7 +524,8 @@ impl Chains {
         })
     }
 
-    /// App 的链列表：没结束的按最近活动排；停了和做完的不进列表，留给详情（[`Chains::row`]）。
+    /// App 的链列表：还在跑的（`Running`、到上限等回答的 `LimitReached`）按最近活动排。
+    /// 链上最后那轮报了 End 就记成 `Ended`、从这里下去，停了和做完的留给详情（[`Chains::row`]）。
     /// `can_stop` 恒为真——哪些人看得见、能停（链代表和各 Bot 的归属人）由第 3 块按归属过滤。
     pub fn view(&self) -> AgentChainsViewModel {
         let revision = *self.revision.borrow();

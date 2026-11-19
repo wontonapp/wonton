@@ -189,11 +189,13 @@ impl Default for ChainLimits {
 #[cfg_attr(feature = "uniffi", derive(uniffi::Enum))]
 #[serde(rename_all = "snake_case")]
 pub enum AgentChainStatus {
+    /// 有轮次在跑，或刚被“再给一份”放开、等下一轮。
     Running,
     Stopped,
     /// 到了上限，等上限卡片的回答。
     LimitReached,
-    /// 做完了，或核心重启后连接都断了（ADR-0061 第 2 节）。
+    /// 做完了：最后一轮报了结束，或核心重启后连接都断了（ADR-0061 第 2 节）。在 App 的
+    /// 进行中列表里不出现；点名叫回会把它叫回 `Running`，停它则变成 `Stopped`。
     Ended,
     /// 比壳新的核心给的未知状态。
     #[serde(other)]
@@ -271,7 +273,8 @@ pub struct AgentChainsViewModel {
 #[serde(tag = "type", rename_all = "snake_case")]
 pub enum AgentAction {
     /// 停下整条链：链代表的人和链上各 Bot 的归属人可以，别的设备返回 `Unauthorized`。停下的链不再接
-    /// 新的轮次和请求；链列表里那一行的状态变成 [`AgentChainStatus::Stopped`]。
+    /// 新的轮次和请求；链列表里那一行的状态变成 [`AgentChainStatus::Stopped`]。轮次刚好报完结束、
+    /// 链已经记成做完时也停得成（同样变成 `Stopped`，回给 App 的也是这一行）。
     StopChain { chain: String },
     /// 停下这条时间线里 Bot 正在跑的轮次：客户端核心把从这里开始、还有轮次在跑的链都停掉，进展和结果
     /// 在 [`RoomAgentStop`](crate::RoomAgentStop) 里，不进 [`AgentChainsViewModel::action_failure`]。

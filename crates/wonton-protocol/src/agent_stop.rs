@@ -17,10 +17,11 @@ pub enum RoomAgentStop {
     Running,
     /// 停的请求发出去了，核心还没回。
     Stopping,
-    /// 核心确认停了：链不再接新的轮次和请求，取消已经排给 Bot。Bot 自己有没有收手看它的状态行
+    /// 核心确认停了：链不再接新的轮次和请求，取消已经排给 Bot。刚好已经报完结束的链也回这个——
+    /// 用户按到的时候轮次在跑，就不算失败。Bot 自己有没有收手看它的状态行
     /// （[`TimelineContent::AgentRun`](crate::TimelineContent::AgentRun)）。核心留它几秒就回到 `Idle`。
     Stopped,
-    /// 核心明确没停（不让停、链已经做完、核心出错）：轮次还在跑，可以再点。
+    /// 核心明确没停（不让停、核心出错）：轮次还在跑，可以再点。
     Failed { error: CoreError },
     /// 请求没送到或没等到回应，停没停不知道；链列表还说在跑，可以再点。
     Uncertain { error: CoreError },

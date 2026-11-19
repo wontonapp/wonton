@@ -286,7 +286,7 @@ pub(super) fn ledger_error(error: ChainLedgerError) -> Response {
         ChainLedgerError::UnknownChain(_) | ChainLedgerError::UnknownSession(_) => {
             (StatusCode::NOT_FOUND, "not_found", ChainError::Other)
         }
-        ChainLedgerError::AlreadyEnded { .. } | ChainLedgerError::NotAtLimit { .. } => {
+        ChainLedgerError::NotAtLimit { .. } => {
             (StatusCode::CONFLICT, "invalid_input", ChainError::Other)
         }
         ChainLedgerError::SessionsLive { .. } | ChainLedgerError::Invalid(_) => {
