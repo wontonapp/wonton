@@ -14,6 +14,8 @@ enum WontonIcon: String {
     case check
     case checkCircle
     case checkCircleFill
+    case checks
+    case clock
     case close
     case code
     case codeFill
