@@ -1,8 +1,7 @@
-//! Agent 的设置（ADR-0061 第 10 节）：链的上限和每个使用方的并发，只有主人能改，落盘在核心数据目录。
+//! Agent 的设置（ADR-0061 第 10 节）：链的上限，只有主人能改，落盘在核心数据目录。
 //!
 //! 缺文件等于默认值；坏文件报错，不拿默认值顶替。上限只影响之后新开的链，旧链用“再给一份”。
 
-use std::collections::BTreeMap;
 use std::fs;
 use std::io::Write;
 use std::os::unix::fs::OpenOptionsExt;
@@ -10,7 +9,7 @@ use std::path::{Path, PathBuf};
 use std::sync::Mutex;
 
 use serde::{Deserialize, Serialize};
-use wonton_protocol::{ChainLimits, DEFAULT_CONSUMER_AGENT_CONCURRENCY};
+use wonton_protocol::ChainLimits;
 
 use super::ChainLedgerError;
 
@@ -19,9 +18,6 @@ struct Stored {
     /// 新链的上限；缺失时是默认值。
     #[serde(default)]
     limits: Option<ChainLimits>,
-    /// 使用方（插件 ID）→ 同时能开的 `agent_acp` 连接数；没写的是默认值。
-    #[serde(default)]
-    concurrency: BTreeMap<String, u32>,
 }
 
 /// 设置“Agent”一页的存储。所有方法线程安全，写操作串行并落盘。
@@ -49,22 +45,6 @@ impl AgentSettings {
     /// 改上限：写盘成功才生效。
     pub fn set_limits(&self, limits: ChainLimits) -> Result<(), ChainLedgerError> {
         self.change(|stored| stored.limits = Some(limits))
-    }
-
-    /// 一个使用方同时能开几条 `agent_acp` 连接：没设过是默认值。
-    pub fn concurrency(&self, plugin: &str) -> u32 {
-        self.lock()
-            .concurrency
-            .get(plugin)
-            .copied()
-            .unwrap_or(DEFAULT_CONSUMER_AGENT_CONCURRENCY)
-    }
-
-    /// 改一个使用方的并发上限：写盘成功才生效。
-    pub fn set_concurrency(&self, plugin: &str, concurrency: u32) -> Result<(), ChainLedgerError> {
-        self.change(|stored| {
-            stored.concurrency.insert(plugin.to_owned(), concurrency);
-        })
     }
 
     fn lock(&self) -> std::sync::MutexGuard<'_, Stored> {

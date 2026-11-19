@@ -3,7 +3,7 @@
 
 use wonton_protocol::AgentChainStatus;
 
-use super::{bot, hand_off, harness, start};
+use super::{bot, harness, start, start_as};
 
 /// 开始一轮 → 在跑；这一轮报了结束 → 不在跑，列表版本跟着变（长轮询的 App 才收得到），
 /// 链也不再进列表；停链之后不算（也停得成）。
@@ -38,7 +38,8 @@ fn a_chain_stays_live_while_another_round_runs() {
     let h = harness();
     let (a, b) = (bot("app.a", "owner"), bot("app.b", "owner"));
     let chain = start(&h, &a, "s-1", "@alex", "$e1").expect("开链").chain;
-    hand_off(&h, &chain, &a, &b, "s-2").expect("交给 B");
+    h.chains.bind_event("$wake", &chain).expect("绑唤醒");
+    start_as(&h, &b, "s-2", "@alex", "$wake", Some(a.clone()), "@alex").expect("交给 B");
 
     h.chains.end_session("s-1");
     assert!(h.chains.row(&chain).expect("链在").live, "B 那轮还在跑");

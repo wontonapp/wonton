@@ -167,7 +167,7 @@ impl Bus {
             return Vec::new();
         };
         ledger
-            .live_bridge_turns(&bot)
+            .live_turns(&bot)
             .into_iter()
             .map(|turn| {
                 let Some(username) = localpart(&turn.sender) else {

@@ -283,30 +283,6 @@ async fn setting_agent_limits_sends_them_and_reads_the_new_settings() {
     assert!(matches!(effect, Effect::Done));
 }
 
-/// 行为：改使用方并发把插件 ID 和数字发给核心，回应里的数值解析得回来。
-#[tokio::test]
-async fn setting_consumer_concurrency_sends_the_plugin_and_the_number() {
-    let (core, proxy) = serve(vec![step(
-        "PUT",
-        "/_wonton/api/agent/consumers/app.orchestrator/concurrency",
-        200,
-        json!({"concurrency": 8}),
-        &["\"concurrency\":8"],
-    )])
-    .await;
-    let effect = perform(
-        &core,
-        &proxy,
-        &AgentAction::SetConsumerAgentConcurrency {
-            plugin_id: "app.orchestrator".to_owned(),
-            concurrency: 8,
-        },
-    )
-    .await
-    .unwrap();
-    assert!(matches!(effect, Effect::Done));
-}
-
 /// 行为：设置页取当前上限。
 #[tokio::test]
 async fn agent_settings_reads_the_current_limits() {

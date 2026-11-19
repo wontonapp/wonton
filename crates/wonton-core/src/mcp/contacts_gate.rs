@@ -55,7 +55,7 @@ impl Bus {
         // 判不准的一律往低处算：认不出服务器名的说话人也算远端（证明不了是本机的人）。
         if let Some(turns) = self
             .agent_chains()
-            .map(|chains| chains.ledger().live_bridge_turns(&bot))
+            .map(|chains| chains.ledger().live_turns(&bot))
             .filter(|turns| !turns.is_empty())
         {
             return turns.iter().any(|turn| contacts.is_remote(&turn.sender));
