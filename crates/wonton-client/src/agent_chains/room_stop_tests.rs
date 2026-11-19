@@ -27,7 +27,6 @@ fn row(
         "origin": {"room_id": room, "thread_id": thread},
         "bots": [{"bot": {"plugin_id": "app.hermes", "bot": "owner"}, "layer": 1}],
         "rounds": 1,
-        "spend": {"type": "unknown"},
         "status": status,
         "can_stop": true,
         "live": live,

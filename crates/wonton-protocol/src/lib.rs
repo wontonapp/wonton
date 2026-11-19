@@ -83,7 +83,7 @@ pub use agent_chain::{
     AGENT_OUTBOX_PATH, AGENT_OUTBOX_WAIT_SECS, AGENT_SETTINGS_PATH, AgentAction,
     AgentActionFailure, AgentChainBot, AgentChainRow, AgentChainStatus, AgentChainsViewModel,
     AgentSettingsViewModel, BOT_TOKEN_HEADER, ChainError, ChainLimitKind, ChainLimits,
-    ChainRefusal, ChainSpend, ChainTurnGrant, ChainTurnReport, SESSION_HEADER, WONTON_BOT_HEADER,
+    ChainRefusal, ChainTurnGrant, ChainTurnReport, SESSION_HEADER, WONTON_BOT_HEADER,
     WONTON_ON_BEHALF_OF_HEADER, agent_chain_stop_path,
 };
 pub use agent_outbox::{
