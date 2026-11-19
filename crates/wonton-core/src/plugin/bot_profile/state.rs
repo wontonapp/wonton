@@ -65,20 +65,25 @@ impl EditWindow {
     }
 }
 
+/// 插件和 Bot 一起定位一个编辑窗口；两个 Bot 的窗口和小时配额互相独立。
+type EditKey = (PluginId, String);
+type EditLocks = Mutex<BTreeMap<EditKey, Arc<AsyncMutex<EditWindow>>>>;
+
 #[derive(Default)]
 pub(in crate::plugin) struct ProfileState {
     pub(super) revisions: Arc<ProfileRevisions>,
-    edits: Mutex<BTreeMap<PluginId, Arc<AsyncMutex<EditWindow>>>>,
+    edits: EditLocks,
 }
 
 impl ProfileState {
-    pub(super) fn lock(&self, id: &PluginId) -> Arc<AsyncMutex<EditWindow>> {
+    pub(super) fn lock(&self, id: &PluginId, bot: &str) -> Arc<AsyncMutex<EditWindow>> {
+        let key = (id.clone(), bot.to_owned());
         let mut edits = self.edits.lock().expect("Bot 资料编辑锁中毒");
-        if let Some(lock) = edits.get(id) {
+        if let Some(lock) = edits.get(&key) {
             return lock.clone();
         }
         let lock = Arc::new(AsyncMutex::default());
-        edits.insert(id.clone(), lock.clone());
+        edits.insert(key, lock.clone());
         lock
     }
 }

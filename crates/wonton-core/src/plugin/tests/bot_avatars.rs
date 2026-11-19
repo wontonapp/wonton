@@ -15,6 +15,7 @@ use super::package;
 use crate::http::HttpClient;
 use crate::matrix::Matrix;
 use crate::matrix::fake::{Fake, start};
+use crate::plugin::bot_services::DEFAULT_BOT;
 use crate::plugin::languages::Languages;
 
 const PNG: &[u8] = include_bytes!("../../../tests/fixtures/avatars/square.png");
@@ -250,7 +251,7 @@ async fn defaults_upload_as_bot_and_preserve_any_existing_field_including_empty(
     assert_eq!(bed.manager.profile_revisions().get("app.test"), 1);
     let invalid = bundle("{idle: idle.mp4}", &[("idle.mp4", b"invalid")]);
     bed.manager
-        .fill_default_avatars(&invalid, "@test:test")
+        .fill_default_avatars(&invalid, DEFAULT_BOT, "@test:test")
         .await
         .unwrap();
     assert_eq!(bed.avatars().await, Some(initial));
@@ -278,7 +279,7 @@ async fn defaults_upload_as_bot_and_preserve_any_existing_field_including_empty(
         .unwrap()
         .avatars = Some(json!({"future_shape":true}));
     bed.manager
-        .fill_default_avatars(&package, "@test:test")
+        .fill_default_avatars(&package, DEFAULT_BOT, "@test:test")
         .await
         .unwrap();
     assert_eq!(
@@ -440,6 +441,7 @@ async fn unavailable_matrix_does_not_turn_into_invalid_media_or_touch_existing_d
         .manager
         .fill_default_avatars(
             &bundle("{idle: idle.mp4}", &[("idle.mp4", PNG)]),
+            DEFAULT_BOT,
             "@test:test",
         )
         .await
