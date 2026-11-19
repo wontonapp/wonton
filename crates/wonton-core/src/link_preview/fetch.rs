@@ -1,5 +1,7 @@
 //! 取一个网址：每一跳都重新解析、检查地址，自己连、自己发 HTTP/1.1；跳转最多 3 次。响应体只读到上限为止。
 
+use std::sync::LazyLock;
+
 use http_body_util::{BodyExt, Empty};
 use hyper::body::{Bytes, Incoming};
 use hyper::header::{self, HeaderMap, HeaderValue};
@@ -15,11 +17,15 @@ use super::{Failure, target};
 const MAX_REDIRECTS: usize = 3;
 
 /// 有些站点只给认得出的预览抓取器回 Open Graph，所以写明是预览。
-pub(super) const USER_AGENT: &str = concat!(
-    "Mozilla/5.0 (compatible; WontonLinkPreview/",
-    env!("CARGO_PKG_VERSION"),
-    ")"
-);
+pub(super) fn user_agent() -> &'static str {
+    static USER_AGENT: LazyLock<String> = LazyLock::new(|| {
+        format!(
+            "Mozilla/5.0 (compatible; WontonLinkPreview/{})",
+            crate::build_info::version()
+        )
+    });
+    &USER_AGENT
+}
 
 /// 一次取到的结果：最终网址、响应头和读到的响应体。
 pub(super) struct Fetched {
@@ -133,7 +139,7 @@ async fn once(
     let path = &url[url::Position::BeforePath..url::Position::AfterQuery];
     let request = Request::get(path)
         .header(header::HOST, authority)
-        .header(header::USER_AGENT, USER_AGENT)
+        .header(header::USER_AGENT, user_agent())
         .header(header::ACCEPT, HeaderValue::from_static(accept))
         .body(Empty::<Bytes>::new())
         .map_err(|e| upstream(e.to_string()))?;

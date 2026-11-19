@@ -64,8 +64,10 @@ COPY Cargo.toml Cargo.lock rust-toolchain.toml ./
 COPY crates crates
 COPY vendor vendor
 COPY deploy/install/compose.yaml deploy/install/wonton deploy/install/
-# 构建它的提交号（dev.sh 传入），编进核心、打在启动日志里，一眼看出镜像里是哪份代码。
-ARG WONTON_BUILD_COMMIT=unknown
+# 构建它的提交号（CI、dev.sh 传入），编进核心、打在启动日志里，一眼看出镜像里是哪份代码。
+ARG WONTON_BUILD_COMMIT
+# 发版的版本号（release.yml 传入，不带 v），编进核心给状态页、--version 等显示；别的构建不传，核心显示为开发版。
+ARG WONTON_VERSION
 RUN cargo build --release --locked --target "$(cat /rust-target)" -p wonton-core \
     && cp "target/$(cat /rust-target)/release/wonton-core" /usr/local/bin/wonton-core \
     && if [ "$TARGETARCH" = "$BUILDARCH" ]; then \

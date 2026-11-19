@@ -432,7 +432,7 @@ fn client(proxy: &CoreProxy) -> reqwest::ClientBuilder {
         .proxy(proxy.for_client())
         .connect_timeout(CONNECT_TIMEOUT)
         .timeout(TIMEOUT)
-        .user_agent(concat!("wonton-core/", env!("CARGO_PKG_VERSION")))
+        .user_agent(format!("wonton-core/{}", crate::build_info::version()))
 }
 
 fn unavailable(what: &str, e: &reqwest::Error, langs: &Languages) -> GitHubError {
