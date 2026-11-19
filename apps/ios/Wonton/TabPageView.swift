@@ -348,18 +348,12 @@ private extension TabPageView {
         if case .content = placed { return true }
         if case .url = tab {
             #if DEBUG
-            if Self.urlAsAppPage { return false }
+            if TabWebSession.urlAsAppPage { return false }
             #endif
             return true
         }
         return false
     }
-
-    #if DEBUG
-    /// 界面测试的假数据没有隧道，整页里加载得出来的只有公网网页；设了这个，它照应用页排（没有胶囊），
-    /// `PageInsetsUITests` 才量得到真网页在应用页上的位置。
-    private static let urlAsAppPage = ProcessInfo.processInfo.environment["WONTON_UI_URL_AS_APP_PAGE"] == "1"
-    #endif
 
     private var hasStatusLine: Bool { pageStatus.line != nil || pageStatus.subtitle != nil }
 

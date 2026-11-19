@@ -232,6 +232,7 @@ fun PluginWebView(
     textZoom: Int = 100,
     publicPage: Boolean = false,
     profileName: String? = null,
+    overscroll: Boolean = true,
 ) {
     val loaded by rememberUpdatedState(onLoaded)
     val failed by rememberUpdatedState(onFailed)
@@ -305,6 +306,7 @@ fun PluginWebView(
                 view.wantedVisible = visible
                 view.visibility = if (visible) android.view.View.VISIBLE else android.view.View.INVISIBLE
                 if (view.settings.textZoom != textZoom) view.settings.textZoom = textZoom
+                view.outerOverscroll(overscroll)
                 val client = view.webViewClient as ProxyAuthClient
                 client.proxy = proxy
                 if (proxy == null || proxyReady == proxy) client.navigate(view, url, reload)
@@ -347,6 +349,11 @@ private class ThemedPluginWebView(
     override fun dispatchTouchEvent(event: MotionEvent): Boolean {
         controller.touchObserver?.invoke(event)
         return super.dispatchTouchEvent(event)
+    }
+
+    /** 整页的网页不要外层的回弹：内容再短也能把整页连同它固定的顶栏拉出去一截。页面里自己的滚动容器照旧；面板里的页不动。 */
+    fun outerOverscroll(allowed: Boolean) {
+        if (!allowed) overScrollMode = View.OVER_SCROLL_NEVER
     }
 
     fun disposePage() {

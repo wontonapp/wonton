@@ -3,7 +3,7 @@ import XCTest
 /// 整页的网页框从状态栏下沿开始，顶上不放壳的控件（ADR-0095），不要后端：假数据里的 Corner 应用整页打开一张本机网页，
 /// 顶上、底下各一条固定的栏，右上角一个固定的按钮（`ui_fake_room.rs` 的 `CORNER`，照 Immich、Syncthing 的样子摆）。
 /// 按钮紧贴状态栏下面、点得到，上面没有胶囊；滚下去、切后台回来以后一样；底下那条栏没被挤出屏幕；
-/// 自己写了 `viewport-fit=cover` 的那一份不会让两次；状态栏那一条跟着页面的颜色。
+/// 自己写了 `viewport-fit=cover` 的那一份不会让两次；状态栏那一条跟着页面顶上实际显示的颜色，不跟它声明的 `theme-color`。
 ///
 ///     apps/ios/scripts/ui-test.sh <模拟器 UDID> test -only-testing:WontonUITests/PageInsetsUITests
 ///
@@ -89,14 +89,26 @@ final class PageInsetsUITests: XCTestCase {
         assertStripContinuesBar("页面声明了 theme-color")
         let declared = stripColor
 
-        tap(pageButton("Fixture recolor"), "换 theme-color 的按钮")
-        XCTAssertTrue(waitStrip(leaves: declared), "页面换了 theme-color，顶条还是原来的颜色 \(declared)")
-        assertStripContinuesBar("页面换了 theme-color")
+        // 声明的 theme-color 换成和顶栏不一样的浅色：顶条跟顶栏，不跟声明。等够脚本和 WebKit 各自报一轮再看。
+        tap(pageButton("Fixture mismatch"), "把 theme-color 换成和顶栏不同的按钮")
+        Thread.sleep(forTimeInterval: 1.5)
+        XCTAssertTrue(Self.close(stripColor, declared), "theme-color 换成了别的颜色、顶栏没变，顶条却从 \(declared) 变成了 \(stripColor)")
+        assertStripContinuesBar("theme-color 和顶栏不同")
+
+        tap(pageButton("Fixture recolor"), "换顶栏颜色的按钮")
+        XCTAssertTrue(waitStrip(leaves: declared), "页面换了顶栏的颜色，顶条还是原来的颜色 \(declared)")
+        assertStripContinuesBar("页面换了顶栏的颜色")
 
         let recolored = stripColor
         tap(pageButton("Fixture unthemed"), "去掉 theme-color 的按钮")
         XCTAssertTrue(waitStrip(leaves: recolored), "页面去掉了 theme-color，顶条还是原来的颜色 \(recolored)")
-        assertStripContinuesBar("页面没声明 theme-color，用它的背景色")
+        assertStripContinuesBar("页面没声明 theme-color，顶栏是背景色")
+
+        let plain = stripColor
+        tap(pageButton("Fixture veil"), "给顶栏盖一层半透明的按钮")
+        XCTAssertTrue(waitStrip(leaves: plain), "顶栏上盖了半透明的一层，顶条还是原来的颜色 \(plain)")
+        assertStripContinuesBar("半透明的一层盖在顶栏上")
+        shot("top-color")
     }
 
     func testPublicPageKeepsTheCapsuleAboveTheWebFrame() {

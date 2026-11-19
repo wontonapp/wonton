@@ -109,6 +109,8 @@ final class TabWebSession: NSObject {
     @ObservationIgnored private var backObservation: NSKeyValueObservation?
     /// 页面自己的顶栏颜色：整页的网页框上面让出来的那一条照它涂（`PageTopStrip`）。
     var topColor: UIColor?
+    /// 取色脚本最近一次报的颜色；没报或报了“没有”时是 nil，`topColor` 退回 WebKit 给的（见 `observeTopColor`）。
+    @ObservationIgnored var reportedTopColor: UIColor?
     @ObservationIgnored var topColorObservations: [NSKeyValueObservation] = []
     @ObservationIgnored private let dataStore: WKWebsiteDataStore
     /// 这份会话的网页在放媒体：开始或停止时经 [`PageMediaActive`] 上报核心。
@@ -176,6 +178,7 @@ final class TabWebSession: NSObject {
             // 插件页换曲时在新元素上自动播放，等不到用户手势；页面本来就是主人打开的（同 Android）。
             configuration.mediaTypesRequiringUserActionForPlayback = []
         }
+        installTopColorChannel(configuration.userContentController)
         // 和 Safari 一样，页面写了 user-scalable=no 或 maximum-scale 也能双指缩放；
         // 配合 focusZoomScript 的 maximum-scale=1，只拦住聚焦输入框时的自动放大。
         configuration.ignoresViewportScaleLimits = true
@@ -204,8 +207,12 @@ final class TabWebSession: NSObject {
             Task { @MainActor in self?.canGoBack = self?.webView?.canGoBack ?? false }
         }
         switch placed {
-        case .page, .content: observeTopColor(of: view)
-        // 面板里的页面不让出顶条，不用跟。
+        case .page, .content:
+            observeTopColor(of: view)
+            // 整页不要外层的回弹：WKWebView 内容再短也能整页拉出橡皮筋，网页连同它固定的顶栏一起晃。
+            // 页面里自己的滚动容器照旧。
+            view.scrollView.bounces = false
+        // 面板里的页面不让出顶条，不用跟；回弹也不动，滚到头接着拉的手势挂在它的滚动视图上（`PanelPagePull`）。
         case .panel: break
         }
     }
@@ -246,6 +253,7 @@ final class TabWebSession: NSObject {
             controller.addUserScript(WKUserScript(
                 source: Self.focusZoomScript, injectionTime: .atDocumentEnd, forMainFrameOnly: true
             ))
+            if reportsTopColor { controller.addUserScript(topColorUserScript()) }
             documentScript = script
         }
     }
@@ -344,8 +352,7 @@ final class TabWebSession: NSObject {
         widgetChannel.stop()
         setMediaPlaying(false)
         backObservation = nil
-        topColorObservations = []
-        topColor = nil
+        removeTopColorChannel()
         webView?.stopLoading()
         webView?.navigationDelegate = nil
         webView?.uiDelegate = nil
@@ -403,7 +410,7 @@ struct TabWebView: UIViewRepresentable {
 }
 
 @MainActor
-private final class WeakTabMessageHandler: NSObject, WKScriptMessageHandler {
+final class WeakTabMessageHandler: NSObject, WKScriptMessageHandler {
     weak var session: TabWebSession?
 
     init(_ session: TabWebSession) { self.session = session }

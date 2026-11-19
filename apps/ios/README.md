@@ -57,7 +57,9 @@ WebContent 进程终止后重建 WebView，恢复当前地址，重新加载期�
 （从认证页跳回插件时的落点、认证页自己）不重放，回插件入口（`TabReloadTarget.swift`）。
 关闭目标由核心决定。网页框、安全区和出口见 [ADR-0095](../../docs/adr/0095-no-tab-bar.md)：整页的网页框从状态栏下沿
 开始，顶上不放壳的控件，出口是左边缘右滑，第一次打开时引导一次（`PageExitHint.swift`）；状态栏那一条涂
-WebKit 给的页面颜色（`themeColor`，没有就是 `underPageBackgroundColor`）。不取网页的像素，不注入 `viewport-fit=cover`。
+页面最顶上实际显示的颜色（核心的取色脚本 `pageColorScript` 报上来；公网网页不注入脚本，用 WebKit 给的 `themeColor`，
+没有就是 `underPageBackgroundColor`）。整页和内容窗口的网页视图关掉外层回弹（`scrollView.bounces`），面板里的不关。
+不取网页的像素，不注入 `viewport-fit=cover`。
 公网网页和内容窗口留着胶囊，网页框从胶囊那一行下面开始；面板里的页面用 `obscuredContentInsets` 让开面板的上下两条。
 重新加载、我来操作、钉到面板、详情在“我的应用”的长按菜单里（`SidebarAppMenu.swift`）。
 
