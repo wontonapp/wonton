@@ -1,12 +1,14 @@
 use super::*;
 
-async fn bind_runtime(manager: &PluginManager, provider: &str) {
+const POWER: &str = "x-acme.power";
+
+async fn bind_bot(manager: &PluginManager, provider: &str) {
     manager
         .set_capability_binding(
             &id("app.test"),
             Some("default"),
             ConsumerCapabilityChoice {
-                capability: "agent_acp".into(),
+                capability: POWER.into(),
                 provider: Some(provider.into()),
             },
             Some("default"),
@@ -16,39 +18,37 @@ async fn bind_runtime(manager: &PluginManager, provider: &str) {
         .unwrap();
 }
 
-async fn runtime_replacement(confirmed_bot: bool) -> (Bed, PluginManager) {
+async fn bot_service_replacement(confirmed_bot: bool) -> (Bed, PluginManager) {
     let bed = Bed::start().await;
     let manager = bed.manager();
-    let runtime = bot_provider("agent_acp").replace("      KEY: ${WONTON_AGENT_ACP_KEY}", "");
-    install(&manager, &runtime).await;
+    let provider = bot_service_provider(POWER);
+    install(&manager, &provider).await;
     install(
         &manager,
-        &runtime.replace("id: app.provider", "id: app.other"),
+        &provider.replace("id: app.provider", "id: app.other"),
     )
     .await;
-    let source = consumer("agent_acp")
-        .replace("      KEY: ${WONTON_AGENT_ACP_KEY}", "")
-        .replace("  wants:", "  requires:");
+    let source = consumer(POWER).replace("  wants:", "  requires:");
     install(&manager, &source).await;
-    select(&manager, "agent_acp", None, Some("app.other")).await;
-    select(&manager, "agent_acp", None, Some("app.provider")).await;
+    select(&manager, POWER, None, Some("app.other")).await;
+    select(&manager, POWER, None, Some("app.provider")).await;
     if confirmed_bot {
-        bind_runtime(&manager, "app.other").await;
+        bind_bot(&manager, "app.other").await;
     }
-    bind_runtime(&manager, "app.provider").await;
+    bind_bot(&manager, "app.provider").await;
     (bed, manager)
 }
 
 #[tokio::test]
-async fn last_runtime_removal_refuses_a_replacement_with_only_plugin_approval() {
-    let (_bed, manager) = runtime_replacement(false).await;
+async fn last_bot_removal_refuses_a_replacement_with_only_plugin_approval() {
+    let (_bed, manager) = bot_service_replacement(false).await;
     let error = manager
         .remove_bot(&id("app.provider"), "default", true)
         .await
         .unwrap_err();
     assert_eq!(error.kind(), "in_use");
     assert_eq!(
-        route(&manager, "agent_acp", Some(&bot("default"))).await,
+        route(&manager, POWER, Some(&bot("default"))).await,
         id("app.provider")
     );
     assert_eq!(
@@ -58,19 +58,14 @@ async fn last_runtime_removal_refuses_a_replacement_with_only_plugin_approval() 
 }
 
 #[tokio::test]
-async fn last_runtime_removal_persists_an_effective_confirmed_bot_replacement() {
-    let (bed, manager) = runtime_replacement(true).await;
+async fn last_bot_removal_persists_an_effective_confirmed_bot_replacement() {
+    let (bed, manager) = bot_service_replacement(true).await;
     manager
         .remove_bot(&id("app.provider"), "default", true)
         .await
         .unwrap();
     let route = manager
-        .capability_route(
-            &id("app.test"),
-            "agent_acp",
-            &langs(),
-            Some(&bot("default")),
-        )
+        .capability_route(&id("app.test"), POWER, &langs(), Some(&bot("default")))
         .await
         .unwrap();
     assert_eq!(route.provider, id("app.other"));
@@ -82,9 +77,9 @@ async fn last_runtime_removal_persists_an_effective_confirmed_bot_replacement() 
         })
     );
     let state = bed.connections();
-    assert_eq!(state["selected"]["app.test"]["agent_acp"], "app.other");
+    assert_eq!(state["selected"]["app.test"][POWER], "app.other");
     assert_eq!(
-        state["selected"]["app.test/default"]["agent_acp"],
+        state["selected"]["app.test/default"][POWER],
         json!({"kind":"bot","plugin_id":"app.other","bot":"default"})
     );
 }
