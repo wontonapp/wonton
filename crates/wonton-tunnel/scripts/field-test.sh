@@ -37,7 +37,7 @@ up() {
   client="$(client_bin)"
   client_id="$("$client" --key "$state/client.key" id)"
   ssh "$host" mkdir -p wonton-field-test/src
-  # 按各级 .gitignore 排除被忽略的文件，本地密钥和数据（如 deploy/dev/agent/.env、.secrets/）不传到远端。
+  # 按各级 .gitignore 排除被忽略的文件，本地密钥和数据（如 .env、.secrets/）不传到远端。
   rsync -az --delete --exclude .git --filter=':- .gitignore' "$repo/" "$host:wonton-field-test/src/"
   output="$(ssh "$host" bash -s -- "$hours" "$client_id" "$port" "${WONTON_CARGO_MIRROR:-}" <<'REMOTE'
 set -euo pipefail

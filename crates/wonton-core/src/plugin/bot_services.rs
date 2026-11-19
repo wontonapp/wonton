@@ -28,7 +28,7 @@ pub struct BotVars {
     /// 这个 Bot 自己的能力连接变量；不继承插件级确认和凭据。
     pub dependencies: BTreeMap<String, String>,
     /// 这个 Bot 的 AI 动手级别（`WONTON_BOT_AI_LEVEL`，ADR-0088 第 8 节）：私人 Bot 是归属人角色的，
-    /// 共享 Bot 是能用人里最低的。Agent 插件和桥凭它锁模式。
+    /// 共享 Bot 是能用人里最低的。Agent 插件凭它锁模式。
     pub ai_level: AiLevel,
     /// 归属人“AI 动手”是只读的私人 Bot：共享文件夹挂载一律只读（ADR-0088 第 5 节第 1 层），
     /// 插件自己声明了写权限的也一样。共享 Bot 没有归属人，总是 false。

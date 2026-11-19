@@ -110,7 +110,7 @@ pub(super) fn turn_sender(
             TurnSender::Unknown
         });
     }
-    // 旧接入方没有每轮请求头：先按它报的会话找那一轮，找不到就看这个 Bot 进行中的轮次。
+    // 没带请求头的 Bot 插件（如只报调用链的第三方 Bot）：先按报的会话找那一轮，找不到再看进行中的轮次。
     let bot = bot_ref(caller)?;
     let turns = bus.agent_chains()?.ledger().live_bridge_turns(&bot);
     if let (Some(session), Some(chain)) = (caller.session.as_deref(), caller.chain.as_deref())
