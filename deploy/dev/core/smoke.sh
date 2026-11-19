@@ -446,28 +446,16 @@ esac
 # 工具往返加慢模型会先超过 90 秒的静默窗口）：
 # $1 输出文件，$2 话。
 ask_hermes() { probe_in_hermes_room "$1" --wait 300 --settle 180 --text "$2"; }
-# 核心和主人的通知房间里最新的一张确认卡片（编辑过的以最新内容为准），输出“ID 状态”。
+# 确认表里最新的一张卡片（卡片不进 Matrix 房间），输出“ID 状态”：有等回答的取最急的那张，否则取最近结束的。
 latest_card() {
-  local room
-  room="$(direct_rooms "@wonton-core:$WONTON_DEV_DOMAIN" | tail -1)"
-  [[ -n "$room" ]] || return 0
-  owner_api "/rooms/$room/messages?dir=b&limit=30" | python3 -c 'import json, sys
-field = "app.wonton.confirmation"
-edits, cards = {}, []
-for event in json.load(sys.stdin).get("chunk", []):
-    content = event.get("content", {})
-    relation = content.get("m.relates_to", {})
-    if relation.get("rel_type") == "m.replace":
-        edits.setdefault(relation["event_id"], content.get("m.new_content", {}).get(field))
-    elif field in content:
-        cards.append((event["event_id"], content[field]))
+  t -sS -H "Authorization: Bearer $access" "$core_url/_wonton/api/confirmations" | python3 -c 'import json, sys
+d = json.load(sys.stdin)
+cards = d.get("confirmations") or d.get("finished") or []
 if cards:
-    event, card = cards[0]
-    card = edits.get(event) or card
-    print(card["id"], card["state"]["type"])'
+    print(cards[0]["id"], cards[0]["state"]["type"])'
 }
 answer() { "$@" -sS -o /dev/null -w '%{http_code}' -X POST -H 'content-type: application/json' -d '{"answer": "approve"}'; }
-# 等 Wonton 房间里出现待确认的卡片，输出卡片 ID。
+# 等确认表里出现待确认的卡片，输出卡片 ID。
 pending_card() {
   local card=""
   for _ in $(seq 240); do
@@ -487,9 +475,9 @@ for _ in $(seq 240); do
   [[ "$card" == *" pending" ]] && break
   sleep 1
 done
-[[ "$card" == *" pending" ]] || fail "Wonton 房间里没有出现待确认的卡片（$card）：$(cat "$asked")"
+[[ "$card" == *" pending" ]] || fail "确认表里没有出现待确认的卡片（$card）：$(cat "$asked")"
 card_id="${card%% *}"
-ok "Hermes 发起安装，核心在 Wonton 房间里发了确认卡片，还没有装"
+ok "Hermes 发起安装，核心在确认表里发了卡片，还没有装"
 expect "插件还没装" "$(plugin_state app.wonton.files)" absent
 confirm_url="$core_url/_wonton/confirmations/$card_id"
 # 按 IP 打核心接口必须带域名 Host：IP 只回局域网状态页，API 一律 404（防 DNS 重绑定，dev.sh 头部有完整说明）。
