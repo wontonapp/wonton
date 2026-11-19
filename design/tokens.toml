@@ -63,6 +63,8 @@ quoteBar = 2
 bubbleTail = 6
 # 群聊里别人组尾气泡旁边的头像（ADR-0109，估计值）。
 messageAvatar = 34
+# “/”命令列表最高这么高，再多就在里面滚（ADR-0109，估计值）。
+commandMenu = 240
 
 [ratio]
 pluginIconRadius = 0.2237

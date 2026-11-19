@@ -121,6 +121,7 @@ Telegram 自己也让用户换主题色，形状和位置才是“像 Telegram�
 | `motion.jumpHighlight` | 1000 | 跳到原消息后高亮淡出 |
 | `motion.datePillHold` | 1000 | 停止滚动后日期胶囊停留 |
 | `ratio.composerLines` | 6 | 输入框最多长到几行 |
+| `size.commandMenu` | 240 | “/”命令列表最高这么高，再多就在里面滚 |
 
 `gesture.timeReveal` 随左滑看时间删掉。
 
