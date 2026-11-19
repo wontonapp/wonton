@@ -88,17 +88,17 @@ fn provider_manifest(dependency: &str, provides: &str) -> String {
     )
 }
 
-/// ADR-0061 第 9 节：提供 agent_acp 的插件可以 requires/wants 同一个能力（按名字比，不写死某个能力）。
+/// ADR-0061 第 9 节：提供方可以 requires/wants 自己提供的同一个能力（按名字比，不写死某个能力）。
 #[test]
 fn a_provider_may_declare_the_capability_it_provides() {
-    let provides = "    agent_acp: {service: qbittorrent, port: 8080}";
+    let provides = "    x-acme.relay: {service: qbittorrent, port: 8080}";
     PluginPackage::parse(
-        &provider_manifest("  wants: [agent_acp]\n", provides),
+        &provider_manifest("  wants: [x-acme.relay]\n", provides),
         &super::langs(),
     )
     .unwrap();
     PluginPackage::parse(
-        &provider_manifest("  requires: [agent_acp]\n", provides),
+        &provider_manifest("  requires: [x-acme.relay]\n", provides),
         &super::langs(),
     )
     .unwrap();

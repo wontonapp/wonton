@@ -29,7 +29,6 @@ mod routing;
 pub(in crate::plugin) use bot_cleanup::BotRemovalRecovery;
 pub(crate) use install::DependencyInstall;
 mod lifecycle;
-mod provider_token;
 mod rollback;
 mod selection;
 mod store;
