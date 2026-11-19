@@ -28,4 +28,6 @@
     <!-- Light hint at the top of a call page when the connection only goes through the public relay; the call still works. No arguments. -->
     <string name="tab_call_relay_hint">只連上了公共中繼，畫面可能卡頓。</string>
     <string name="tab_back_to_chat">回聊天</string>
+    <!-- 關掉這條引導、以後不再出現的按鈕。無參數;短標籤。 -->
+    <string name="tab_exit_hint_got_it">知道了</string>
 </resources>

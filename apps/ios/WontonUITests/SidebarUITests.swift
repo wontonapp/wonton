@@ -39,6 +39,27 @@ final class SidebarUITests: XCTestCase {
         assertMyAppsVisible(screenshot: "sidebar-edge-swipe-open")
     }
 
+    /// 整页的应用页顶上不放壳的控件（ADR-0095）：页面的操作在“我的应用”的长按菜单里。重新加载会把这一页打开。
+    func testMyAppLongPressOffersPageActions() {
+        guard let row = UITestSidebar.row(app, labels: [], containing: "Budget") else {
+            return XCTFail("我的应用里没有 Budget\n\(app.debugDescription)")
+        }
+        row.press(forDuration: 1.2)
+        let reload = app.buttons["Reload"].firstMatch
+        XCTAssertTrue(reload.waitForExistence(timeout: 5), "长按菜单里没有重新加载\n\(app.debugDescription)")
+        XCTAssertTrue(app.buttons["View Details"].firstMatch.exists, "长按菜单里没有详情\n\(app.debugDescription)")
+        let menu = XCTAttachment(screenshot: XCUIScreen.main.screenshot())
+        menu.name = "my-app-menu"
+        menu.lifetime = .keepAlways
+        add(menu)
+
+        reload.tap()
+        let sidebar = app.buttons.matching(UITestSidebar.button).firstMatch
+        let opened = XCTNSPredicateExpectation(predicate: NSPredicate(format: "hittable == false"), object: sidebar)
+        XCTAssertEqual(XCTWaiter.wait(for: [opened], timeout: 8), .completed, "点重新加载没打开这一页\n\(app.debugDescription)")
+        XCTAssertEqual(app.buttons.matching(identifier: "pageClose").count, 0, "整页上还有胶囊")
+    }
+
     private func assertMyAppsVisible(screenshot name: String) {
         let myApps = app.staticTexts["My Apps"].firstMatch
         XCTAssertTrue(myApps.waitForExistence(timeout: 10), "侧边栏没有显示我的应用")

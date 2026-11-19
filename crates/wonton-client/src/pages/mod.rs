@@ -27,6 +27,7 @@ use crate::scope::reuse;
 use wonton_l10n::l10n;
 
 pub(crate) mod bridge;
+pub(crate) mod color;
 pub(crate) mod media;
 pub(crate) mod media_permission;
 

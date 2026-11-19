@@ -1,7 +1,7 @@
 import XCTest
 
 /// 房间的通话入口（ADR-0096），不要后端（`WONTON_UI_FAKE` 的假数据：`ui_fake.rs` 里有人在通话的群聊）：
-/// 聊天列表那一行标着通话中；进房间顶栏有入口，点了全屏打开 widget 页，页上有出口和中继提示，关掉回到房间；
+/// 聊天列表那一行标着通话中；进房间顶栏有入口，点了全屏打开 widget 页，页上有中继提示，左边缘右滑回到房间；
 /// 没装 widget 的房间没有入口。
 ///
 ///     apps/ios/scripts/ui-test.sh <模拟器 UDID> test -only-testing:WontonUITests/CallEntryUITests
@@ -35,15 +35,19 @@ final class CallEntryUITests: XCTestCase {
         shot("room")
 
         tap(button("roomCallActive"), "顶栏的通话入口")
-        XCTAssertTrue(waitHittable(button("pageClose")), "widget 页没有点得到的出口\n\(app.debugDescription)")
         XCTAssertTrue(
             app.descendants(matching: .any)["callRelayHint"].waitForExistence(timeout: 5),
             "widget 页上没有中继提示\n\(app.debugDescription)"
         )
         shot("widget-page")
 
-        tap(button("pageClose"), "widget 页的出口")
-        XCTAssertTrue(waitHittable(button("roomCallActive")), "关掉 widget 页没回到房间\n\(app.debugDescription)")
+        XCTAssertNil(hittable(button("roomCallActive")), "widget 页没盖住房间\n\(app.debugDescription)")
+        // 整页的出口是左边缘右滑（ADR-0095）；推入的转场走完系统才认返回手势。
+        Thread.sleep(forTimeInterval: 1)
+        app.coordinate(withNormalizedOffset: CGVector(dx: 0.005, dy: 0.5))
+            .press(forDuration: 0.05, thenDragTo: app.coordinate(withNormalizedOffset: CGVector(dx: 0.85, dy: 0.5)),
+                   withVelocity: .default, thenHoldForDuration: 0.2)
+        XCTAssertTrue(waitHittable(button("roomCallActive")), "左边缘右滑没从 widget 页回到房间\n\(app.debugDescription)")
     }
 
     func testRoomWithoutWidgetHasNoEntry() {

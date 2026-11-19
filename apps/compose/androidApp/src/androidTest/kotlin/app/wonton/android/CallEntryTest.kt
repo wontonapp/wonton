@@ -2,6 +2,7 @@ package app.wonton.android
 
 import android.Manifest
 import android.os.Build
+import android.view.KeyEvent
 import androidx.compose.ui.test.assertCountEquals
 import androidx.compose.ui.test.assertIsDisplayed
 import androidx.compose.ui.test.junit4.createAndroidComposeRule
@@ -11,6 +12,7 @@ import androidx.compose.ui.test.onNodeWithTag
 import androidx.compose.ui.test.onNodeWithText
 import androidx.compose.ui.test.performClick
 import androidx.test.ext.junit.runners.AndroidJUnit4
+import androidx.test.platform.app.InstrumentationRegistry
 import androidx.test.rule.GrantPermissionRule
 import app.wonton.ui.R
 import org.junit.Rule
@@ -21,7 +23,7 @@ import org.junit.runner.RunWith
 
 /**
  * 房间的通话入口（ADR-0096），只用 Debug 的假核心（`ui_fake.rs` 里有人在通话的群聊 Family）：聊天列表那一行标着通话中；
- * 进房间顶栏有入口，点了全屏打开 widget 页，页上有出口和中继提示，关掉回到房间；没装 widget 的房间没有入口。
+ * 进房间顶栏有入口，点了全屏打开 widget 页，页上有中继提示、没有壳的按钮，系统返回回到房间；没装 widget 的房间没有入口。
  * 假核心没有隧道，widget 网页本身加载不出来；真通话在开发栈上走。
  */
 @RunWith(AndroidJUnit4::class)
@@ -44,18 +46,17 @@ class CallEntryTest {
     }
 
     @Test
-    fun testEntryOpensWidgetPageAndExitReturnsToTheRoom() {
+    fun testEntryOpensWidgetPageAndBackReturnsToTheRoom() {
         compose.onNodeWithText("Family").performClick()
         waitForTag("room-call-active")
         compose.onNodeWithTag("room-call-active").performClick()
 
-        val close = compose.activity.getString(R.string.tab_page_close)
-        compose.waitUntil(WAIT_MS) {
-            runCatching { compose.onNodeWithContentDescription(close).assertIsDisplayed() }.isSuccess
-        }
+        waitForTag("page-hint")
         compose.onNodeWithTag("page-hint").assertIsDisplayed()
+        // 整页应用上没有壳的按钮，出口是系统返回（ADR-0095）。
+        compose.onNodeWithContentDescription(compose.activity.getString(R.string.tab_page_close)).assertDoesNotExist()
 
-        compose.onNodeWithContentDescription(close).performClick()
+        InstrumentationRegistry.getInstrumentation().sendKeyDownUpSync(KeyEvent.KEYCODE_BACK)
         waitForTag("room-call-active")
         compose.onNodeWithTag("room-call-active").assertIsDisplayed()
     }

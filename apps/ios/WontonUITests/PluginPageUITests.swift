@@ -1,7 +1,7 @@
 import XCTest
 
-/// 整页插件页的出口（ADR-0095，盲测 P0）：从侧边栏“我的应用”打开应用，胶囊一直在、切后台回来还在、点了回聊天；
-/// 左边缘右滑回聊天；页面中间的横滑归网页，不返回。
+/// 整页插件页的出口（ADR-0095，盲测 P0）：从侧边栏“我的应用”打开应用，顶上没有胶囊，网页框从状态栏下沿开始；
+/// 往下滚、切后台回来页面还在；左边缘右滑回聊天，两次都行；页面中间的横滑归网页，不返回。
 ///
 /// 要连装好了这些应用的开发栈：外部传 `PAIRING_CODE`（见 ChatPanelUITests），没有就跳过。没装的应用那一条直接失败。
 final class PluginPageUITests: XCTestCase {
@@ -46,35 +46,31 @@ final class PluginPageUITests: XCTestCase {
         try launch(arguments: arguments)
         open(name)
         XCTAssertTrue(app.webViews.firstMatch.waitForExistence(timeout: 60), "\(name) 的网页没出来")
-        // 胶囊以前 3 秒没碰就藏起来：等过这段时间还得在、点得到。
-        Thread.sleep(forTimeInterval: 5)
-        assertCapsule("\(name) 打开后")
+        assertPage("\(name) 打开后")
         shot("\(name)-01-open")
 
-        // 盲测第二轮：页面往下滚以后原来的顶栏收起，就再没有出口。滚过之后胶囊还得在。
+        // 盲测第二轮：页面往下滚以后原来的顶栏收起，就再没有出口。滚过之后左边缘右滑还得管用（下面走）。
         drag(from: CGVector(dx: 0.5, dy: 0.75), to: CGVector(dx: 0.5, dy: 0.25))
-        assertCapsule("\(name) 页面往下滚后")
+        assertPage("\(name) 页面往下滚后")
 
         // 页面中间的横滑是网页自己的，不能把页面关掉。
         drag(from: CGVector(dx: 0.3, dy: 0.6), to: CGVector(dx: 0.9, dy: 0.6))
-        assertCapsule("\(name) 页面中间横滑后")
+        assertPage("\(name) 页面中间横滑后")
 
         XCUIDevice.shared.press(.home)
         _ = app.wait(for: .runningBackgroundSuspended, timeout: 5)
         app.activate()
         XCTAssertTrue(app.wait(for: .runningForeground, timeout: 10), "没切回来")
-        assertCapsule("\(name) 切后台再回来")
+        assertPage("\(name) 切后台再回来")
         shot("\(name)-02-after-home")
-        capsule.tap()
-        XCTAssertTrue(waitGone(capsule), "\(name) 点胶囊关闭后页面还在")
-        XCTAssertTrue(UITestSidebar.waitForMain(app, timeout: 10), "\(name) 关闭后没回到聊天")
+        swipeBack()
+        XCTAssertTrue(UITestSidebar.waitForMain(app, timeout: 10), "\(name) 左边缘右滑后没回到聊天")
         shot("\(name)-03-closed")
 
         open(name)
-        XCTAssertTrue(capsule.waitForExistence(timeout: 30), "\(name) 第二次打开没有胶囊")
-        drag(from: CGVector(dx: 0.005, dy: 0.5), to: CGVector(dx: 0.85, dy: 0.5))
-        XCTAssertTrue(waitGone(capsule), "\(name) 左边缘右滑没返回")
-        XCTAssertTrue(UITestSidebar.waitForMain(app, timeout: 10), "\(name) 左边缘右滑后没回到聊天")
+        XCTAssertTrue(app.webViews.firstMatch.waitForExistence(timeout: 30), "\(name) 第二次打开网页没出来")
+        swipeBack()
+        XCTAssertTrue(UITestSidebar.waitForMain(app, timeout: 10), "\(name) 第二次左边缘右滑后没回到聊天")
         shot("\(name)-04-edge-back")
     }
 
@@ -86,9 +82,21 @@ final class PluginPageUITests: XCTestCase {
         row.tap()
     }
 
-    private func assertCapsule(_ when: String) {
-        XCTAssertTrue(capsule.waitForExistence(timeout: 5), "\(when)没有胶囊\n\(app.debugDescription)")
-        XCTAssertTrue(capsule.isHittable && app.frame.contains(capsule.frame), "\(when)胶囊被挤出屏幕或点不到")
+    /// 页面还开着，顶上没有胶囊：网页框从状态栏下沿开始，页面自己固定在顶上的按钮不被压住。
+    private func assertPage(_ when: String) {
+        let web = app.webViews.firstMatch
+        XCTAssertTrue(web.waitForExistence(timeout: 5), "\(when)页面不在了\n\(app.debugDescription)")
+        XCTAssertFalse(capsule.exists, "\(when)整页上还有胶囊")
+        XCTAssertFalse(app.buttons.matching(UITestSidebar.button).firstMatch.isHittable, "\(when)回到了聊天")
+        XCTAssertTrue(web.frame.minY >= 40 && web.frame.minY <= 70, "\(when)网页框的顶边不在状态栏下沿：\(web.frame)")
+    }
+
+    /// 推入的转场走完系统才认返回手势。
+    private func swipeBack() {
+        Thread.sleep(forTimeInterval: 1)
+        app.coordinate(withNormalizedOffset: CGVector(dx: 0.005, dy: 0.5))
+            .press(forDuration: 0.05, thenDragTo: app.coordinate(withNormalizedOffset: CGVector(dx: 0.85, dy: 0.5)),
+                   withVelocity: .default, thenHoldForDuration: 0.2)
     }
 
     private func drag(from start: CGVector, to end: CGVector) {
@@ -97,8 +105,6 @@ final class PluginPageUITests: XCTestCase {
                    withVelocity: .fast, thenHoldForDuration: 0)
     }
 
-    /// 按标识认胶囊的退出，不按“关闭”这个名字：聊天页的提示条（如“输入恢复密钥”）的关闭也叫这个名字，
-    /// 页面关掉回到聊天页以后按名字找会找到它，误报“页面还在”。
     private var capsule: XCUIElement {
         app.buttons.matching(identifier: "pageClose").firstMatch
     }

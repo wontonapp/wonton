@@ -140,11 +140,13 @@ internal fun PanelPage(
             onContinue = { loginAcknowledged.value = true }, cancel = { panel.move(PanelLevel.CLOSED) })
         PanelStatusOverlay(state, page, tab, supported, crossOriginBlocked, inset, public, onDetails)
         if (panel.level == PanelLevel.FULL && current) {
-            PluginPageChrome(tab, tabs, safe, 0.dp, shortStatus(page), capsule, state.controller, takeover,
-                onClose = { panel.move(PanelLevel.CLOSED) },
-                onReload = { tabs.send(Action.Pages(PageAction.ReloadTab(place))) },
-                onDetails = onDetails,
-                onEditPanel = { panel.editing = true })
+            PluginPageChrome(safe, 0.dp, shortStatus(page), takeover) {
+                PluginPageCapsule(tab, tabs, capsule, state.controller, takeover,
+                    onClose = { panel.move(PanelLevel.CLOSED) },
+                    onReload = { tabs.send(Action.Pages(PageAction.ReloadTab(place))) },
+                    onDetails = onDetails,
+                    onEditPanel = { panel.editing = true })
+            }
         }
     }
     DisposableEffect(current) { onDispose { if (current) takeover?.end() } }

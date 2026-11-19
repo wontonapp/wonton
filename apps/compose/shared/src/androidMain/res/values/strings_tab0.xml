@@ -28,4 +28,6 @@
     <string name="tab_exit_fullscreen">Exit fullscreen</string>
     <!-- Fullscreen capsule menu item that opens the app's detail page. -->
     <string name="tab_menu_details">App details</string>
+    <!-- First-time overlay on a full-page app: how to leave it. No arguments. -->
+    <string name="tab_exit_hint">Swipe in from the edge of the screen or press Back to return to Wonton</string>
 </resources>

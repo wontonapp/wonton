@@ -1,7 +1,7 @@
 import SwiftUI
 import WontonClient
 
-/// 插件页右上角的胶囊：整页上一直在，是看得见的出口（ADR-0095）。
+/// 网页右上角的胶囊：聊天页下拉面板（ADR-0052）、公网网页和内容窗口上的出口。别的整页不放（见 `TabPageView.hasCapsule`）。
 struct TabPageCapsule: View {
     let page: TabPage
     let tab: TabRef
@@ -17,9 +17,8 @@ struct TabPageCapsule: View {
     /// 关掉这一页（面板外）。
     let close: () -> Void
     @Environment(\.wontonColors) private var colors
-    @Environment(\.wontonBarStatus) private var status
 
-    /// 胶囊那一行的高度。整页的网页把状态栏加这一行当作被挡住的一条让开（ADR-0095“铺满”）。
+    /// 胶囊那一行的高度。带胶囊的整页，网页框从状态栏加这一行下面开始。
     static var rowHeight: CGFloat { WontonTheme.size.target }
 
     var body: some View {
@@ -36,18 +35,7 @@ struct TabPageCapsule: View {
             }
             .frame(height: Self.rowHeight)
             // 胶囊占着右边：连接原因单独一行，短句也不许挤成省略号（#149）。
-            if let line = status.line {
-                line.padding(WontonTheme.spacing.s12)
-                    .background(.regularMaterial, in: RoundedRectangle(cornerRadius: WontonTheme.radii.control))
-            } else if let sentence = status.subtitle {
-                Text(sentence)
-                    .wontonText(WontonTheme.typography.body)
-                    .foregroundStyle(Color(colors.textPrimary))
-                    .fixedSize(horizontal: false, vertical: true)
-                    .frame(maxWidth: .infinity, alignment: .leading)
-                    .padding(WontonTheme.spacing.s12)
-                    .background(.regularMaterial, in: RoundedRectangle(cornerRadius: WontonTheme.radii.control))
-            }
+            PageStatusLine()
         }
     }
 
