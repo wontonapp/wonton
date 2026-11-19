@@ -261,7 +261,6 @@ plugin-install-prv-permission-needs-egress = egress.proxy権限にはprovides.eg
 plugin-install-prv-egress-needs-network = provides.egress_proxyにはnetwork.egress権限の申請が必要です
 plugin-install-prv-egress-port = provides.egress_proxy.portを0にはできません
 plugin-install-prv-empty = providesには少なくとも1つの能力の宣言が必要です
-plugin-install-prv-models-system-only = provides.modelsを宣言できるのはkind: systemのアプリだけです
 plugin-install-prv-models-port = provides.models.portを0にはできません
 plugin-install-prv-models-apis-path = provides.models.apisのパスは/で始まる必要があります
 plugin-install-prv-models-default-model = provides.models.default_modelを空にはできません

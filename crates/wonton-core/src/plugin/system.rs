@@ -1,4 +1,4 @@
-//! 系统插件（`kind: system`，如模型网关）由安装器预装，API 装不了。核心启动时从 `WONTON_SYSTEM_PLUGINS` 目录装上
+//! 系统插件（`kind: system`）由安装器预装，API 装不了。核心启动时从 `WONTON_SYSTEM_PLUGINS` 目录装上
 //! 还没装的系统插件，装不上时怎样重试见 [`super::preinstall`]。已经装着的照常由 [`PluginManager::restore`] 核对，
 //! 这里不重装；目录里的版本比装着的新时升级它（见 [`super::upgrade`]）。
 //!

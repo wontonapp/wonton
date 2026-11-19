@@ -218,7 +218,7 @@ impl PluginManager {
                     && entry
                         .listed
                         .as_ref()
-                        .is_some_and(|l| super::model_health::needs_default_model(&l.manifest));
+                        .is_some_and(|l| super::models::uses_models(&l.manifest));
                 Ok((self.view(id, entry), probe))
             }
             Err(error) => {

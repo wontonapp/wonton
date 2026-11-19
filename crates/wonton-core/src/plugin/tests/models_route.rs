@@ -524,7 +524,7 @@ async fn a_restarted_core_probes_once_then_uses_only_catalogs() {
 }
 
 #[tokio::test]
-async fn subscription_agent_without_models_permission_is_left_alone() {
+async fn agent_without_models_permission_is_left_alone() {
     let state = Arc::new(Mutex::new(RouteReply::default()));
     let bed = bed_with_route(state.clone()).await;
     let source = package(
@@ -532,6 +532,21 @@ async fn subscription_agent_without_models_permission_is_left_alone() {
         "  agent: {protocol: matrix}\n  permissions: [matrix.bot]",
     )
     .replace("kind: app", "kind: agent");
+    // 默认路由缺模型时，没申请 models 的 Agent 的安装预览也不提“先接模型”：它用自己的模型接入。
+    let parsed = PluginPackage::parse(&source, &langs()).unwrap();
+    let preview = bed
+        .manager
+        .preview_install(&parsed, &langs())
+        .await
+        .unwrap();
+    assert!(
+        !preview
+            .notices
+            .iter()
+            .any(|n| n.text.contains("Connect a model provider")),
+        "{:?}",
+        preview.notices
+    );
     bed.manager
         .install(&source, &[Permission::MatrixBot], langs())
         .await
@@ -542,7 +557,7 @@ async fn subscription_agent_without_models_permission_is_left_alone() {
         Some(PluginStatus::Running)
     ));
     bed.manager.watch_containers().await;
-    // 订阅账号直连的 Agent 不受网关影响：不探测、没有提示、状态照常。
+    // 不经网关的 Agent 不受网关影响：不探测、没有提示、状态照常。
     assert_eq!(state.lock().unwrap().completions, 0);
     let detail = bed
         .manager

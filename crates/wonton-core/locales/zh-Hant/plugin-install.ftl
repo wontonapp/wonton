@@ -261,7 +261,6 @@ plugin-install-prv-permission-needs-egress = egress.proxy 權限必須宣告 pro
 plugin-install-prv-egress-needs-network = provides.egress_proxy 必須申請 network.egress 權限
 plugin-install-prv-egress-port = provides.egress_proxy.port 不能為 0
 plugin-install-prv-empty = provides 至少要宣告一項能力
-plugin-install-prv-models-system-only = 只有 kind: system 的應用程式能宣告 provides.models
 plugin-install-prv-models-port = provides.models.port 不能為 0
 plugin-install-prv-models-apis-path = provides.models.apis 的路徑必須以 / 開頭
 plugin-install-prv-models-default-model = provides.models.default_model 不能為空
