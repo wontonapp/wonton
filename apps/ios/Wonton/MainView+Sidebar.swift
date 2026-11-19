@@ -25,7 +25,12 @@ extension MainView {
         case .newChat:
             pages.open(.chat)
             chat.path = [.startChat]
-        case let .failedApp(id):
+        case let .reload(tab):
+            // 核心只重新加载栈里的页面：先打开，打开被拒了就只报那一条。
+            if pages.send(.pages(action: .openPage(tab: tab))) {
+                pages.send(.pages(action: .reloadTab(page: .page(tab: tab))))
+            }
+        case let .pluginDetails(id):
             openApps()
             appsPath.append(PluginRoute.installed(id: id))
         case let .app(app):

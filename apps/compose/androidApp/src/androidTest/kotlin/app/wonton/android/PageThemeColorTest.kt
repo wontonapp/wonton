@@ -6,13 +6,17 @@ import android.Manifest
 import android.os.Build
 import android.webkit.WebView
 import androidx.activity.compose.setContent
+import androidx.compose.foundation.layout.Column
+import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.setValue
+import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.test.junit4.createAndroidComposeRule
 import androidx.compose.ui.test.onNodeWithTag
 import androidx.compose.ui.unit.dp
+import androidx.compose.ui.viewinterop.AndroidView
 import androidx.test.ext.junit.runners.AndroidJUnit4
 import androidx.test.platform.app.InstrumentationRegistry
 import androidx.test.rule.GrantPermissionRule
@@ -29,9 +33,10 @@ import org.junit.rules.TestRule
 import org.junit.runner.RunWith
 
 /**
- * 整页网页上面让出来的那一条跟页面的颜色（ADR-0095“铺满”）。假核心没有隧道，整页网页加载不出来，这里给一个真 WebView
- * 装上取色的脚本和通道（[PageThemeColor]），加载一张本机写的网页，看顶条（[PageTopStrip]）画出来的颜色：
- * 页面声明的 `theme-color`（带 `media` 的按深浅色挑）、换掉声明、去掉声明后的背景色、都没有时的 App 底色。
+ * 整页网页上面让出来的那一条跟页面最顶上实际显示的颜色（ADR-0095“铺满”）。假核心没有隧道，整页网页加载不出来，这里给一个真
+ * WebView 装上核心的取色脚本和通道（[PageThemeColor]），加载一张本机写的网页，看顶条（[PageTopStrip]）画出来的颜色：
+ * 顶栏的颜色（不是页面声明的那个浅色 `theme-color`）、半透明的一层盖上去后的合成色、顶上什么都没有时的背景色、
+ * 背景也没有时声明的 `theme-color`（带 `media` 的按深浅色挑），都没有时的 App 底色。
  */
 @RunWith(AndroidJUnit4::class)
 class PageThemeColorTest {
@@ -57,34 +62,46 @@ class PageThemeColorTest {
     }
 
     @Test
-    fun stripFollowsThePageColor() {
+    fun stripFollowsWhatThePageShowsAtTheTop() {
         // 带 media 的那一条不匹配：结果不跟着设备的深浅色变。
         load(PAGE.replace("(prefers-color-scheme: dark)", "not all"))
-        awaitStrip("页面声明的 theme-color", Color(0xFF2A6F97))
+        awaitStrip("theme-color 是浅色、固定的顶栏是深色：跟顶栏", Color(0xFF1F3A5F))
 
-        run("document.querySelector('meta[name=theme-color]:not([media])').content = 'rgb(157, 78, 221)'")
-        awaitStrip("页面换了 theme-color", Color(0xFF9D4EDD))
+        run(
+            "document.body.insertAdjacentHTML('beforeend', '<div id=veil style=\"position:fixed;top:0;left:0;right:0;" +
+                "height:48px;background:rgba(255,255,255,0.5)\"></div>')",
+        )
+        awaitStrip("半透明的一层盖在顶栏上：合成出来的颜色", Color(0xFF8F9DAF))
 
-        run("document.querySelectorAll('meta[name=theme-color]').forEach(meta => meta.remove())")
-        awaitStrip("去掉声明后用 body 的背景色", Color(0xFF17324D))
-
-        run("document.body.style.background = 'transparent'")
-        awaitStrip("body 透明时用 html 的背景色", Color(0xFF0B132B))
+        run("document.getElementById('veil').remove(); document.getElementById('bar').remove()")
+        awaitStrip("顶上没有东西时是 html 的背景色（html 自己有背景，body 的不铺到画布上）", Color(0xFF0B132B))
 
         run("document.documentElement.style.background = 'transparent'")
+        awaitStrip("html 透明时 body 的背景色铺满画布", Color(0xFF17324D))
+
+        run("document.body.style.background = 'transparent'")
+        awaitStrip("顶上什么都没涂时用声明的 theme-color", Color(0xFF90CAF9))
+
+        run("document.querySelectorAll('meta[name=theme-color]').forEach(meta => meta.remove())")
         awaitStrip("页面没有可用的颜色时是 App 底色", canvas)
     }
 
     @Test
     fun declaredColorIsPickedByMedia() {
-        load(PAGE.replace("(prefers-color-scheme: dark)", "all"))
+        load(BARE.replace("(prefers-color-scheme: dark)", "all"))
         awaitStrip("media 匹配的那一条 theme-color", Color(0xFF1B4965))
     }
 
     @Test
-    fun invalidDeclarationFallsBackToBackground() {
-        load(PAGE.replace("#2a6f97", "not-a-color").replace("#1b4965", "rgba(0, 0, 0, 0.5)"))
-        awaitStrip("声明写错或半透明时用 body 的背景色", Color(0xFF17324D))
+    fun invalidDeclarationIsNotUsed() {
+        // 带 media 的那一条改成一定匹配，半透明的那个颜色才真的被读到。
+        val invalid = BARE.replace("(prefers-color-scheme: dark)", "all")
+            .replace("#90caf9", "not-a-color").replace("#1b4965", "rgba(0, 0, 0, 0.5)")
+        // 先等页面出来，免得把加载前的 App 底色当成结果。
+        load(invalid.replace("<body>", "<body style=\"background: #17324d\">"))
+        awaitStrip("页面出来了", Color(0xFF17324D))
+        run("document.body.style.background = 'transparent'")
+        awaitStrip("声明写错或半透明时不用它，是 App 底色", canvas)
     }
 
     private fun load(html: String) {
@@ -95,7 +112,13 @@ class PageThemeColorTest {
             web = WebView(compose.activity).apply { settings.javaScriptEnabled = true }
             PageThemeColor(web) { reported = it }.update(setOf(ORIGIN))
             compose.activity.setContent {
-                WontonTheme(appearance) { PageTopStrip(reported, 96.dp) }
+                WontonTheme(appearance) {
+                    // 网页要真的排在屏幕上：取色脚本按视口顶上的一点找元素，没有大小的 WebView 里什么都点不到。
+                    Column {
+                        PageTopStrip(reported, 96.dp)
+                        AndroidView(factory = { web }, modifier = Modifier.fillMaxSize())
+                    }
+                }
             }
             web.loadDataWithBaseURL("$ORIGIN/", html, "text/html", "utf-8", null)
         }
@@ -130,12 +153,21 @@ class PageThemeColorTest {
     private companion object {
         const val WAIT_MS = 10_000L
         const val ORIGIN = "https://corner.example"
+        const val HEAD = """<meta name="theme-color" media="(prefers-color-scheme: dark)" content="#1b4965">
+            <meta name="theme-color" content="#90caf9">"""
         val PAGE = """
             <!doctype html>
             <html style="background: #0b132b"><head>
-            <meta name="theme-color" media="(prefers-color-scheme: dark)" content="#1b4965">
-            <meta name="theme-color" content="#2a6f97">
-            </head><body style="background: #17324d">Fixture</body></html>
+            $HEAD
+            </head><body style="margin: 0; background: #17324d">
+            <div id="bar" style="position: fixed; top: 0; left: 0; right: 0; height: 48px; background: #1f3a5f">Fixture</div>
+            </body></html>
+        """.trimIndent()
+        val BARE = """
+            <!doctype html>
+            <html><head>
+            $HEAD
+            </head><body>Fixture</body></html>
         """.trimIndent()
     }
 }

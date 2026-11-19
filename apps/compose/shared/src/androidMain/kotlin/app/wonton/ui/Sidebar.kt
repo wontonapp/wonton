@@ -125,6 +125,9 @@ internal sealed interface SidebarDestination {
     data object NewChat : SidebarDestination
 
     data class Plugin(val entry: PluginEntry) : SidebarDestination
+
+    /** 插件的详情页（“我的应用”长按菜单）。 */
+    data class Details(val pluginId: String) : SidebarDestination
 }
 
 /** 侧边栏的跟手手势：位移和速度都在这里；松手按位置和速度决定开还是弹回。 */

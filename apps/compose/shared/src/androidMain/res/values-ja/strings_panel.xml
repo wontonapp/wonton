@@ -10,4 +10,6 @@
     <string name="panel_public_unsupported">この端末の WebView は公開ウェブページとプラグインのページの保存領域を分けられないため、ここでは開けません</string>
     <string name="panel_remove">削除</string>
     <string name="panel_url">URL を入力</string>
+    <!-- マイアプリの行の長押しメニュー項目:ページをチャットのパネルに入れる。引数なし。 -->
+    <string name="panel_pin">パネルに固定</string>
 </resources>

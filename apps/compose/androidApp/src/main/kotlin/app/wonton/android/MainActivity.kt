@@ -22,6 +22,7 @@ import app.wonton.protocol.HomeAction
 import app.wonton.protocol.PluginsViewModel
 import app.wonton.ui.LocalNotificationPermission
 import app.wonton.ui.NotificationPermission
+import app.wonton.ui.PageExitHintPrefs
 import app.wonton.ui.ShareIntake
 import app.wonton.ui.StartupFailure
 import app.wonton.ui.WontonApp
@@ -36,6 +37,9 @@ import kotlinx.coroutines.launch
 import java.io.File
 
 internal const val UI_FAKE_EXTRA = "wonton_ui_fake"
+
+/** Debug 才认：当作整页应用的返回引导已经看过，界面测试和冒烟脚本不用每次先点掉它。 */
+internal const val UI_PAGE_HINT_SEEN_EXTRA = "wonton_ui_page_hint_seen"
 
 open class MainActivity : AppCompatActivity() {
     private val requests = IncomingRequests()
@@ -69,6 +73,9 @@ open class MainActivity : AppCompatActivity() {
             return
         }
         val devWebUrl = if (debuggable) intent.getStringExtra("wonton_open_web") else null
+        if (debuggable && intent.getBooleanExtra(UI_PAGE_HINT_SEEN_EXTRA, false)) {
+            PageExitHintPrefs.of(this).seen = true
+        }
         notificationPermission = NotificationPermission(this)
         PushRegistration(this, core, notificationPermission).start()
         keepConnectionService(core)

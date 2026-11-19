@@ -15,6 +15,7 @@ mod files_support;
 mod friends;
 mod home;
 mod matrix_login;
+mod page_color;
 mod pages;
 mod pairing;
 mod peers;

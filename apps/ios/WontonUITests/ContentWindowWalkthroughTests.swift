@@ -102,7 +102,8 @@ final class ContentWindowWalkthroughTests: XCTestCase {
         XCTAssertTrue(page.waitForExistence(timeout: 10), app.debugDescription)
         page.tap()
         XCTAssertTrue(app.webViews.firstMatch.waitForExistence(timeout: 90), app.debugDescription)
-        button(["更多", "More"]).tap()
+        // 整页顶上没有壳的菜单（ADR-0095）：“在新窗口打开”在“我的应用”这一行的长按菜单里。
+        page.press(forDuration: 1.2)
         button(["在新窗口打开", "Open in New Window"]).tap()
         XCTAssertTrue(waitUntil { self.app.webViews.count >= 2 }, app.debugDescription)
         shot("content-plugin-two-windows")

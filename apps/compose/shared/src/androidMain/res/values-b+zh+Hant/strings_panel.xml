@@ -10,4 +10,6 @@
     <string name="panel_public_unsupported">這台裝置的 WebView 分不開公開網頁和插件頁面的儲存，開不了公開網頁</string>
     <string name="panel_remove">移除</string>
     <string name="panel_url">填寫網址</string>
+    <!-- 「我的應用程式」一列長按選單項:把頁面放進聊天頁的面板。無參數。 -->
+    <string name="panel_pin">釘到面板</string>
 </resources>

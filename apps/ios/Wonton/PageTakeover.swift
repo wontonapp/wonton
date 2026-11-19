@@ -22,6 +22,8 @@ struct PageTakeover {
 
 struct TakeoverButton: View {
     let takeover: PageTakeover
+    /// 发出“开始”之后接着做的事：侧边栏里开始的，要把这一页打开，主人才操作得到。
+    var started: () -> Void = {}
 
     var body: some View {
         switch takeover.state {
@@ -30,7 +32,10 @@ struct TakeoverButton: View {
         case .starting:
             Button(.Takeover.takeoverStart) {}.disabled(true)
         case nil, .notStarted, .lost:
-            Button(.Takeover.takeoverStart, action: takeover.start)
+            Button(.Takeover.takeoverStart) {
+                takeover.start()
+                started()
+            }
         }
     }
 }

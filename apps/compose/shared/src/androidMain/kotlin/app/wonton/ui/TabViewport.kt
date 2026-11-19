@@ -20,6 +20,7 @@ import androidx.compose.ui.unit.Dp
 import app.wonton.client.TabEnvironment
 import app.wonton.client.TabPlatform
 import app.wonton.client.TabSafeArea
+import app.wonton.protocol.TabRef
 import app.wonton.ui.design.WontonTheme
 import java.util.TimeZone
 
@@ -44,35 +45,42 @@ internal fun tabEnvironment(top: Dp, bottom: Dp, safe: PaddingValues, edge: Bool
     )
 }
 
-/** [webTop] 是整页网页的顶边到屏幕顶的距离：状态栏加胶囊那一行（[pageCapsuleRow]）。 */
+/** [webTop] 是整页网页的顶边到屏幕顶的距离；[capsule] 说这一页右上角有没有胶囊（[pageKeepsCapsule]）。 */
 internal class TabViewport(
     val safe: PaddingValues, val chromeTop: Dp, val webTop: Dp, val bottom: Dp, val environment: TabEnvironment,
+    val capsule: Boolean = false,
 )
 
 /**
- * 胶囊那一行占的高度（上下各留一格）。整页的网页从这一行下面开始排：胶囊浮在网页右上角时，
- * 现成应用固定在右上角的按钮（Immich 的头像、Actual 的菜单）压在它底下点不到（ADR-0095“铺满”）。
+ * 整页里只有公网网页留着胶囊：它的来源和关闭属于“来源”类提示，不能省。应用页不挂任何壳的控件，
+ * 页面固定在顶上的按钮（Syncthing 的下拉、Immich 的头像）紧贴状态栏，出口是系统返回（ADR-0095）。
+ */
+internal fun pageKeepsCapsule(tab: TabRef): Boolean = tab is TabRef.Url
+
+/**
+ * 胶囊那一行占的高度（上下各留一格）。有胶囊的整页从这一行下面开始排：胶囊浮在网页右上角时会压住网页自己的按钮。
  * Android 的 WebView 没有“这一条被挡住了”的接口（iOS 26 的 `obscuredContentInsets`），只能由网页框让。
  */
 @Composable
 internal fun pageCapsuleRow(): Dp = WontonTheme.size.smallButton + WontonTheme.spacing.s8 * 2
 
 /**
- * 整页:网页从状态栏和胶囊那一行下面开始排(状态栏区域的点击被系统吃掉,页面够不着,见 [pageEnvironment];
- * 胶囊那一行见 [pageCapsuleRow]);胶囊和状态浮层仍排在系统安全区下。键盘弹出时底部安全区报 0(键盘盖住了导航条);
+ * 整页:网页从状态栏下沿开始排(状态栏区域的点击被系统吃掉,页面够不着,见 [pageEnvironment]),有胶囊的页再让出
+ * 胶囊那一行([pageCapsuleRow]);状态浮层排在系统安全区下。键盘弹出时底部安全区报 0(键盘盖住了导航条);
  * 离开栈顶的页保留最后一次的值,不跟着别的页重排。
  */
 @Composable
-internal fun tabViewport(active: Boolean, safe: PaddingValues = tabSafeInsets()): TabViewport {
+internal fun tabViewport(
+    active: Boolean, safe: PaddingValues = tabSafeInsets(), capsule: Boolean = false,
+): TabViewport {
     val keyboard = WindowInsets.ime.getBottom(LocalDensity.current) > 0
     var retainedBottom by remember { mutableStateOf(safe.calculateBottomPadding()) }
     SideEffect {
         if (active) retainedBottom = if (keyboard) 0.dp else safe.calculateBottomPadding()
     }
     val chromeTop = safe.calculateTopPadding()
-    return TabViewport(
-        safe, chromeTop, chromeTop + pageCapsuleRow(), retainedBottom, pageEnvironment(safe, retainedBottom),
-    )
+    val webTop = if (capsule) chromeTop + pageCapsuleRow() else chromeTop
+    return TabViewport(safe, chromeTop, webTop, retainedBottom, pageEnvironment(safe, retainedBottom), capsule)
 }
 
 /**

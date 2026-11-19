@@ -201,6 +201,7 @@ setInterval(report, 500);
 /// 整页的那张网页。`{viewport}` 换成有没有 `viewport-fit=cover`；`#probe` 写着是哪一份、页面自己量到的安全区和视口高度，
 /// 界面测试失败时带进报错里。页面比屏幕长，滚下去以后固定的栏还在原位。
 /// `recolor` 换掉声明的 `theme-color` 和顶栏的颜色；给 `null` 就去掉声明，顶栏改成和 `body` 的背景一样。
+/// `mismatch` 只把声明的 `theme-color` 换成和顶栏不同的浅色（Navidrome 就是这样）；`veil` 给顶栏盖一层半透明的。
 const CORNER: &str = r##"<!doctype html>
 <html><head><meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1{viewport}">
@@ -219,7 +220,9 @@ html, body { margin: 0; background: #17324d; color: #fff; font: 17px system-ui; 
 <button id="menu" aria-label="Fixture corner" onclick="this.setAttribute('aria-label', 'Fixture corner tapped')">≡</button>
 <div id="body"><p id="probe">Fixture probe</p><a href="/corner-cover">Fixture cover</a>
 <button onclick="recolor('#9d4edd')">Fixture recolor</button>
-<button onclick="recolor(null)">Fixture unthemed</button></div>
+<button onclick="recolor(null)">Fixture unthemed</button>
+<button onclick="mismatch()">Fixture mismatch</button>
+<button onclick="veil()">Fixture veil</button></div>
 <div id="foot">Fixture foot</div>
 <script>
 function recolor(color) {
@@ -227,6 +230,14 @@ function recolor(color) {
     if (color) { meta.content = color; } else { meta.remove(); }
   }
   document.getElementById('bar').style.background = color || '#17324d';
+}
+function mismatch() {
+  for (const meta of document.querySelectorAll('meta[name=theme-color]')) meta.content = '#90caf9';
+}
+function veil() {
+  const veil = document.createElement('div');
+  veil.style.cssText = 'position:fixed;top:0;left:0;right:0;height:48px;background:rgba(255,255,255,0.5)';
+  document.body.appendChild(veil);
 }
 function probe() {
   const box = document.createElement('div');

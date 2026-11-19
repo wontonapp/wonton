@@ -45,4 +45,6 @@
     <string name="tab_call_relay_hint">Connected only through the public relay. Video may stutter.</string>
     <!-- Button on the page that stays in the app after handing the app to the browser: back to the chat. No arguments; short label. -->
     <string name="tab_back_to_chat">Back to chat</string>
+    <!-- Button that closes that overlay for good. No arguments; short label. -->
+    <string name="tab_exit_hint_got_it">Got it</string>
 </resources>

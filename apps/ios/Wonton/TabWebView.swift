@@ -107,8 +107,10 @@ final class TabWebSession: NSObject {
     @ObservationIgnored private(set) var parked = false
     @ObservationIgnored var missedFinish = false
     @ObservationIgnored private var backObservation: NSKeyValueObservation?
-    /// 页面自己的顶栏颜色，只在网页框让出顶上一条的系统上跟（`PageTopInset.framesWebView`）。
+    /// 页面自己的顶栏颜色：整页的网页框上面让出来的那一条照它涂（`PageTopStrip`）。
     var topColor: UIColor?
+    /// 取色脚本最近一次报的颜色；没报或报了“没有”时是 nil，`topColor` 退回 WebKit 给的（见 `observeTopColor`）。
+    @ObservationIgnored var reportedTopColor: UIColor?
     @ObservationIgnored var topColorObservations: [NSKeyValueObservation] = []
     @ObservationIgnored private let dataStore: WKWebsiteDataStore
     /// 这份会话的网页在放媒体：开始或停止时经 [`PageMediaActive`] 上报核心。
@@ -176,6 +178,7 @@ final class TabWebSession: NSObject {
             // 插件页换曲时在新元素上自动播放，等不到用户手势；页面本来就是主人打开的（同 Android）。
             configuration.mediaTypesRequiringUserActionForPlayback = []
         }
+        installTopColorChannel(configuration.userContentController)
         // 和 Safari 一样，页面写了 user-scalable=no 或 maximum-scale 也能双指缩放；
         // 配合 focusZoomScript 的 maximum-scale=1，只拦住聚焦输入框时的自动放大。
         configuration.ignoresViewportScaleLimits = true
@@ -183,7 +186,7 @@ final class TabWebSession: NSObject {
         // 加载出来之前透明，露出 App 底色，不闪白；加载完改成不透明（见 didFinish）。
         view.isOpaque = false
         view.scrollView.contentInsetAdjustmentBehavior = .never
-        // 网页自己的前进后退手势也是左边缘右滑，会抢系统的返回；关掉，网页历史走胶囊菜单的后退。
+        // 网页自己的前进后退手势也是左边缘右滑，会抢系统的返回；关掉，网页历史交给网页自己的界面。
         view.allowsBackForwardNavigationGestures = false
         view.navigationDelegate = self
         if bridged {
@@ -203,7 +206,15 @@ final class TabWebSession: NSObject {
         backObservation = view.observe(\.canGoBack, options: [.initial, .new]) { [weak self] _, _ in
             Task { @MainActor in self?.canGoBack = self?.webView?.canGoBack ?? false }
         }
-        if PageTopInset.framesWebView, case .page = placed { observeTopColor(of: view) }
+        switch placed {
+        case .page, .content:
+            observeTopColor(of: view)
+            // 整页不要外层的回弹：WKWebView 内容再短也能整页拉出橡皮筋，网页连同它固定的顶栏一起晃。
+            // 页面里自己的滚动容器照旧。
+            view.scrollView.bounces = false
+        // 面板里的页面不让出顶条，不用跟；回弹也不动，滚到头接着拉的手势挂在它的滚动视图上（`PanelPagePull`）。
+        case .panel: break
+        }
     }
 
     private func configure(_ view: WKWebView) throws {
@@ -242,6 +253,7 @@ final class TabWebSession: NSObject {
             controller.addUserScript(WKUserScript(
                 source: Self.focusZoomScript, injectionTime: .atDocumentEnd, forMainFrameOnly: true
             ))
+            if reportsTopColor { controller.addUserScript(topColorUserScript()) }
             documentScript = script
         }
     }
@@ -340,8 +352,7 @@ final class TabWebSession: NSObject {
         widgetChannel.stop()
         setMediaPlaying(false)
         backObservation = nil
-        topColorObservations = []
-        topColor = nil
+        removeTopColorChannel()
         webView?.stopLoading()
         webView?.navigationDelegate = nil
         webView?.uiDelegate = nil
@@ -383,8 +394,8 @@ extension TabWebSession {
 
 struct TabWebView: UIViewRepresentable {
     let webView: WKWebView
-    /// 浮在网页上面、挡住它的上下两条：整页是状态栏加胶囊那一行（ADR-0095），面板里是面板的布局（ADR-0052）。
-    /// 页面照样画在后面，但固定定位的元素和滚动的终点让开。iOS 26 之前没有这个接口，见 `PageTopInset`。
+    /// 浮在网页上面、挡住它的上下两条：面板里的页面照面板的布局给（ADR-0052），整页的没有。
+    /// 页面照样画在后面，但固定定位的元素和滚动的终点让开。iOS 26 之前没有这个接口，面板里的页面不让。
     let obscured: UIEdgeInsets
 
     func makeUIView(context: Context) -> WKWebView {
@@ -399,7 +410,7 @@ struct TabWebView: UIViewRepresentable {
 }
 
 @MainActor
-private final class WeakTabMessageHandler: NSObject, WKScriptMessageHandler {
+final class WeakTabMessageHandler: NSObject, WKScriptMessageHandler {
     weak var session: TabWebSession?
 
     init(_ session: TabWebSession) { self.session = session }

@@ -17,7 +17,6 @@ import androidx.compose.foundation.layout.wrapContentSize
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material3.DropdownMenu
-import androidx.compose.material3.DropdownMenuItem
 import androidx.compose.material3.Icon
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
@@ -35,10 +34,6 @@ import androidx.compose.ui.semantics.contentDescription
 import androidx.compose.ui.semantics.semantics
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
-import app.wonton.protocol.PageAction
-import app.wonton.protocol.Action
-import app.wonton.protocol.InstalledPlugin
-import app.wonton.protocol.MyAppRef
 import app.wonton.protocol.SidebarApp
 import app.wonton.protocol.SidebarOpen
 import app.wonton.protocol.TabRef
@@ -56,7 +51,7 @@ private val BADGE_PAD = 7.dp
 /** 侧边栏一行的高：44（iOS 原型也是）。 */
 private val ROW_HEIGHT = 44.dp
 
-/** "我的应用"的一行：插件图标加名字，行尾红点核心算好；长按加进或移出。 */
+/** "我的应用"的一行：插件图标加名字，行尾红点核心算好；长按出这一页的菜单（[MyAppMenuItems]）。 */
 @OptIn(ExperimentalFoundationApi::class)
 @Composable
 internal fun SidebarAppRow(
@@ -89,35 +84,10 @@ internal fun SidebarAppRow(
             }
         },
         icon = { PluginIconImage(app.icon, ROW_ICON, plugins) },
-        menu = plugin?.tabChoices?.takeIf { it.isNotEmpty() }?.let {
-            { onDismiss -> MyAppMenuItems(plugin, pages, onDismiss) }
+        menu = MyAppMenu(app, plugin, inBrowser, pages, onGo).takeIf { it.hasItems }?.let { menu ->
+            { onDismiss -> MyAppMenuItems(menu, onDismiss) }
         },
     )
-}
-
-/** 长按菜单：每个页面一项，没加进的加进"我的应用"，加进了的移出。 */
-@Composable
-private fun MyAppMenuItems(plugin: InstalledPlugin, pages: PagesState, onDismiss: () -> Unit) {
-    plugin.tabChoices.forEach { choice ->
-        val mine = pages.plugins.viewModel.sidebar.apps.any { it.tab == choice.tab }
-        if (mine) {
-            DropdownMenuItem(
-                text = { Text(stringResource(R.string.myapp_remove)) },
-                onClick = {
-                    onDismiss()
-                    pages.send(Action.Pages(PageAction.RemoveMyApp(MyAppRef.Page(choice.tab))))
-                },
-            )
-        } else {
-            DropdownMenuItem(
-                text = { Text(stringResource(R.string.myapp_add)) },
-                onClick = {
-                    onDismiss()
-                    pages.send(Action.Pages(PageAction.AddMyApp(MyAppRef.Page(choice.tab), null, null)))
-                },
-            )
-        }
-    }
 }
 
 /** 侧边栏的一行：图标、文字，选中一块圆角底色；行尾是红点或数字角标。 */

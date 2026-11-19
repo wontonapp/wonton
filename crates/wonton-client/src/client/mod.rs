@@ -44,6 +44,7 @@ mod confirmations;
 mod dispatch;
 mod limits;
 mod media;
+mod page_color;
 mod pages;
 mod plugin_detail;
 mod push_route;

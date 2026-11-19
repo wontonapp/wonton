@@ -61,11 +61,17 @@ final class PluginMediaUITests: XCTestCase {
         XCTAssertTrue(waitGone(prompt.title), "答完弹窗还在\n\(app.debugDescription)")
 
         // 重载页面再要一次：决定已按插件记下，壳的确认和系统框都不再出（本地等待 ≤10 秒）。
-        let more = app.buttons.matching(NSPredicate(format: "label IN %@", ["More", "更多", "その他"])).firstMatch
-        XCTAssertTrue(more.waitForExistence(timeout: 10), "胶囊上没有菜单\n\(app.debugDescription)")
-        more.tap()
+        // 整页顶上没有壳的菜单（ADR-0095）：左边缘右滑回聊天，在“我的应用”里长按这一行重新加载，它会把这一页再打开。
+        Thread.sleep(forTimeInterval: 1)
+        app.coordinate(withNormalizedOffset: CGVector(dx: 0.005, dy: 0.5))
+            .press(forDuration: 0.05, thenDragTo: app.coordinate(withNormalizedOffset: CGVector(dx: 0.85, dy: 0.5)),
+                   withVelocity: .default, thenHoldForDuration: 0.2)
+        guard let row = UITestSidebar.row(app, labels: [], containing: "Navidrome", timeout: 30) else {
+            return XCTFail("“我的应用”里没有 Navidrome，没法重新加载\n\(app.debugDescription)")
+        }
+        row.press(forDuration: 1.2)
         let reload = app.buttons.matching(NSPredicate(format: "label IN %@", ["Reload", "重新加载", "再読み込み"])).firstMatch
-        XCTAssertTrue(reload.waitForExistence(timeout: 10), "菜单里没有重新加载\n\(app.debugDescription)")
+        XCTAssertTrue(reload.waitForExistence(timeout: 10), "长按菜单里没有重新加载\n\(app.debugDescription)")
         reload.tap()
         XCTAssertTrue(app.webViews.firstMatch.waitForExistence(timeout: 30), "重载后网页没出来")
         XCTAssertFalse(prompt.title.waitForExistence(timeout: 8), "重载后又出了壳的确认：决定没被记住")
