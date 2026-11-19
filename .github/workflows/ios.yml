@@ -78,7 +78,9 @@ jobs:
   build:
     name: 模拟器构建
     runs-on: xcode-27
-    timeout-minutes: 45
+    # 编 Rust 核心在托管 runner 上波动很大：2026-11-19 同样命中缓存，这一步 15–30 分钟，整个作业 28–45 分钟，
+    # 45 分钟时常被超时取消、日志里没有错误。公开仓库的 macOS 分钟不花钱，放宽到 70 分钟。
+    timeout-minutes: 70
     env:
       XCODEGEN_VERSION: "2.46.0"
       # 参考图绑定这台模拟器和这个系统版本：改了就整体重录（打 record-snapshots 标签）。系统版本取 Xcode 27.1 支持的，
