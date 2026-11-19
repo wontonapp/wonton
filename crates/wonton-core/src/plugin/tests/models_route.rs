@@ -104,6 +104,15 @@ async fn gateway_with_route(keys: Keys, state: RouteState) -> u16 {
     port
 }
 
+/// 一个随便什么请求都 200 的本地服务，给网页入口的健康检查用；端口由内核分配，不跟别的服务撞。
+async fn ok_server() -> u16 {
+    let app = Router::new().route("/", get(|| async { "ok" }));
+    let listener = TcpListener::bind("127.0.0.1:0").await.unwrap();
+    let port = listener.local_addr().unwrap().port();
+    tokio::spawn(async move { axum::serve(listener, app).await.unwrap() });
+    port
+}
+
 fn provider(port: u16) -> PluginPackage {
     let source = format!(
         "services:\n  magpie:\n    image: magpie\nx-wonton:\n  spec: '0.4'\n  id: system.models\n  version: 1.0.0\n  \
@@ -262,8 +271,9 @@ async fn model_settings_falls_back_to_the_default_bot_page_without_a_gateway() {
     manager.set_default_bot_plugin(Some(bot.clone()));
     assert!(manager.model_settings(&langs()).await.is_err());
 
+    let port = ok_server().await;
     manager
-        .install_package(agent_with_web(8080), &[Permission::MatrixBot], langs())
+        .install_package(agent_with_web(port), &[Permission::MatrixBot], langs())
         .await
         .unwrap();
     let settings = manager.model_settings(&langs()).await.unwrap();
