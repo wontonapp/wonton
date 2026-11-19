@@ -100,7 +100,8 @@ private struct ChoiceButton: View {
             WontonIcon.warningCircleFill.view(size: WontonTheme.size.iconTiny)
                 .foregroundStyle(Color(colors.danger))
         case .idle, .other:
-            if option.chosen { WontonIcon.check.view(size: WontonTheme.size.iconTiny) }
+            // 选中只靠重点色的底：半格宽里再加一个勾，“approve once”这样的字就放不下了。
+            EmptyView()
         }
     }
 }
@@ -140,8 +141,6 @@ struct ChoicesWidthReserve: View {
                         ZStack {
                             ForEach(row, id: \.key) { option in ChoiceLabel(option: option) }
                         }
-                        // 选中后字后面多一个勾，也留出它的位置。
-                        .padding(.trailing, WontonTheme.size.iconTiny + WontonTheme.spacing.s4)
                         .padding(.horizontal, WontonTheme.spacing.s8)
                     }
                 }
