@@ -1,6 +1,6 @@
 # ADR-0110 同一个人的多个 Bot 默认共用他的一个 Hermes 容器，也可单独运行；Bot 由核心统一管理
 
-- 状态：提议（2026-11-20），取舍见“已定”
+- 状态：已接受（主人 2026-11-20 定运行方式和个数，其余按推荐批），取舍见“已定”
 - 修订：[ADR-0108](0108-hermes-default-kernel.md) 第 1 节“私人 Bot 之间保持独立容器”；[ADR-0045](0045-family-members.md) 的“每个 Bot 一组容器”、
   私人 Bot 的命名、“名单变了核心重建这个 Bot 的服务”和 `WONTON_MATRIX_ALLOWED_USERS` 的注入方式；[ADR-0044](0044-bot-profile-and-status-avatars.md)
   按插件改资料的接口（改成按 Bot），资料加简介和角色两项
