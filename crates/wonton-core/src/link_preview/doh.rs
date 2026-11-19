@@ -16,7 +16,7 @@ use wonton_protocol::LinkPreviewFailure;
 
 use super::Failure;
 use super::connect::Net;
-use super::fetch::{Connection, USER_AGENT};
+use super::fetch::{Connection, user_agent};
 
 /// 一条 DNS 响应报文的上限：TCP 上的 DNS 报文最长 64 KiB。
 const MAX_RESPONSE: usize = 1 << 16;
@@ -138,7 +138,7 @@ async fn exchange(
     let guard = Connection::spawn(connection);
     let request = Request::post(path(server))
         .header(header::HOST, authority(server))
-        .header(header::USER_AGENT, USER_AGENT)
+        .header(header::USER_AGENT, user_agent())
         .header(header::CONTENT_TYPE, HeaderValue::from_static(CONTENT_TYPE))
         .header(header::ACCEPT, HeaderValue::from_static(CONTENT_TYPE))
         .body(Full::new(payload))

@@ -115,6 +115,19 @@ fn page(gateway: &Gateway, code: Option<&(PairingCode, u64)>, langs: &Languages)
     )
 }
 
+/// 发版写版本号；开发版没有版本号，如实写“开发版”和提交号，不写成像正式版的号码。
+fn core_status() -> String {
+    use crate::build_info::{COMMIT, RELEASE, short_commit};
+    match (RELEASE, COMMIT) {
+        (Some(version), _) => format!("核心：运行中（版本 {}）", pages::escape(version)),
+        (None, Some(commit)) => format!(
+            "核心：运行中（开发版，提交 {}）",
+            pages::escape(short_commit(commit))
+        ),
+        (None, None) => "核心：运行中（开发版）".to_owned(),
+    }
+}
+
 /// 只给数字和就绪与否：局域网里谁都打得开这个页面，不列出主人装了哪些插件。随核心附带的插件每台主机都有，没在运行
 /// 时逐个写明在装还是出了什么错（比如拉不下镜像）。
 fn status_items(gateway: &Gateway, langs: &Languages) -> String {
@@ -129,10 +142,7 @@ fn status_items(gateway: &Gateway, langs: &Languages) -> String {
         .filter(|p| matches!(p.status, PluginStatus::Degraded { .. }))
         .count();
     let mut items = vec![
-        format!(
-            "核心：运行中（版本 {}）",
-            pages::escape(env!("CARGO_PKG_VERSION"))
-        ),
+        core_status(),
         format!("Matrix：{}", ready(gateway.matrix.is_some())),
         format!("单点登录：{}", ready(gateway.hydra.is_some())),
         format!("应用：{running} 个运行中"),
