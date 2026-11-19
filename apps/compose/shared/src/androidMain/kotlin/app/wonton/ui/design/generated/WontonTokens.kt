@@ -68,6 +68,7 @@ object WontonSize {
     val hairline = 1.dp
     val quoteBar = 2.dp
     val bubbleTail = 6.dp
+    val messageAvatar = 34.dp
 }
 
 object WontonRatio {
