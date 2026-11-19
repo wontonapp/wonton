@@ -85,6 +85,12 @@ pub(super) fn timeline(room_id: &str) -> TimelineUpdate {
         } else {
             Some(Vec::new())
         },
+        typing: Vec::new(),
+        commands: Vec::new(),
+        commands_omitted: 0,
+        focus: None,
+        jump: wonton_protocol::JumpState::Idle,
+        back_to: None,
     }
 }
 
@@ -149,6 +155,9 @@ fn item(index: usize) -> TimelineItem {
                 group: None,
                 receipt: None,
                 starts_time_group: false,
+                run: wonton_protocol::MessageRun::Alone,
+                status: None,
+                choices: None,
             },
         },
     }

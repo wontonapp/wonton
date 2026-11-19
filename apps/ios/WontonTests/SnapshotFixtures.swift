@@ -192,7 +192,7 @@ enum SnapshotFixtures {
                 ])
             ], files: []),
             edited: false, readBy: readBy, reply: nil, sideChat: nil, preview: nil, actions: [.copy(text: text)],
-            receipt: receipt, startsTimeGroup: startsTimeGroup
+            receipt: receipt, startsTimeGroup: startsTimeGroup, run: .alone
         )))
     }
 

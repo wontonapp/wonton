@@ -279,6 +279,12 @@ impl Outbox {
                 widgets,
                 call_active,
                 room_bots,
+                typing: Vec::new(),
+                commands: Vec::new(),
+                commands_omitted: 0,
+                focus: None,
+                jump: wonton_protocol::JumpState::Idle,
+                back_to: None,
             })
             .map_err(|_| ())
     }
@@ -388,6 +394,9 @@ mod tests {
                     group: None,
                     receipt: None,
                     starts_time_group: false,
+                    run: wonton_protocol::MessageRun::Alone,
+                    status: None,
+                    choices: None,
                 },
             },
         };
@@ -481,6 +490,9 @@ mod tests {
                     group: None,
                     receipt: None,
                     starts_time_group: false,
+                    run: wonton_protocol::MessageRun::Alone,
+                    status: None,
+                    choices: None,
                 },
             },
         };
