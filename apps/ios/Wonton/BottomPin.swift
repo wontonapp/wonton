@@ -197,6 +197,10 @@ struct ScrollDebug: View {
             Text(verbatim: pin.snapshot)
                 .accessibilityIdentifier("roomScroll")
                 .allowsHitTesting(false)
+                // 小到看不见：垫在玻璃和材质底下时，再淡的字也会被透出来。
+                .font(.system(size: 1))
+                .lineLimit(1)
+                .frame(width: 1, height: 1)
                 .opacity(0.02)
         }
     }

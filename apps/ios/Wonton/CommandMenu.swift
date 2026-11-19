@@ -1,7 +1,7 @@
 import SwiftUI
 import WontonClient
 
-/// “/”命令列表（ADR-0054、ADR-0109 第 7 节）：弹在输入框上方，一行一条命令（名字和说明），点一条就发出去。
+/// “/”命令列表（ADR-0054、ADR-0109 第 7 节）：浮在输入框上方的一张玻璃卡片，一行一条命令（Bot 头像、名字和说明），点一条就发出去。
 /// 敲“/”弹出和点“菜单”按钮打开的是同一张；列哪些由输入栏定，这里只画。
 struct CommandMenu: View {
     let commands: [RoomCommand]
@@ -9,6 +9,8 @@ struct CommandMenu: View {
     let omitted: Int
     /// 房间里有几个 Bot 时，每条命令旁写是谁的。
     let showsBot: Bool
+    /// 这条命令是哪个 Bot 的，画它的头像；头像怎么取由聊天页给。
+    let avatar: (RoomCommand) -> AnyView
     let choose: (RoomCommand) -> Void
     @Environment(\.wontonColors) private var colors
 
@@ -21,8 +23,15 @@ struct CommandMenu: View {
         .frame(maxHeight: WontonTheme.size.commandMenu)
         // 不加这一句，上面的高度上限会被当成固定高度，三条命令也占满一整块。
         .fixedSize(horizontal: false, vertical: true)
+        .padding(.vertical, WontonTheme.spacing.s4)
+        .clipShape(shape)
+        .chatGlass(in: shape)
         .accessibilityElement(children: .contain)
         .accessibilityIdentifier("commandMenu")
+    }
+
+    private var shape: RoundedRectangle {
+        RoundedRectangle(cornerRadius: WontonTheme.size.chatControl / 2, style: .continuous)
     }
 
     private var rows: some View {
@@ -41,7 +50,7 @@ struct CommandMenu: View {
                     .wontonText(WontonTheme.typography.caption)
                     .foregroundStyle(Color(colors.textSecondary))
                     .frame(maxWidth: .infinity, alignment: .leading)
-                    .padding(.horizontal, WontonTheme.spacing.pageInset)
+                    .padding(.horizontal, WontonTheme.spacing.s12)
                     .padding(.vertical, WontonTheme.spacing.s8)
             }
         }
@@ -49,8 +58,11 @@ struct CommandMenu: View {
 
     private func row(_ command: RoomCommand) -> some View {
         HStack(spacing: WontonTheme.spacing.s12) {
+            avatar(command)
+                .frame(width: WontonTheme.size.commandAvatar, height: WontonTheme.size.commandAvatar)
+                .accessibilityHidden(true)
             Text(verbatim: "/\(command.name)")
-                .wontonText(WontonTheme.typography.body)
+                .wontonText(WontonTheme.typography.message)
                 .fontWeight(.medium)
                 .foregroundStyle(Color(colors.textPrimary))
                 .lineLimit(1)
@@ -67,8 +79,8 @@ struct CommandMenu: View {
                     .lineLimit(1)
             }
         }
-        .padding(.horizontal, WontonTheme.spacing.pageInset)
-        .frame(minHeight: WontonTheme.size.target)
+        .padding(.horizontal, WontonTheme.spacing.s12)
+        .frame(minHeight: WontonTheme.size.chatControl)
         .contentShape(Rectangle())
     }
 }

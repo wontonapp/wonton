@@ -35,14 +35,14 @@ struct OutgoingRow: View {
                 }
                 if !message.body.isEmpty {
                     Text(message.body)
-                        .wontonText(WontonTheme.typography.body)
+                        .wontonText(WontonTheme.typography.message)
                         .foregroundStyle(Color(colors.textOnAccentFill))
                 }
                 footer
             }
             .padding(.horizontal, WontonTheme.spacing.s12)
             .padding(.vertical, WontonTheme.spacing.s8)
-            .accentFill(shape)
+            .background(shape.fill(Color(colors.accentFill)))
         }
         .accessibilityIdentifier("outgoingMessage")
     }

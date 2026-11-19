@@ -17,6 +17,8 @@ struct ReplyQuoteView: View {
     let core: ClientCore
     /// 画在自己气泡里时用气泡的文字颜色。
     let ink: Color
+    /// 竖条和名字的颜色（ADR-0109 第 8 节）：重点色，画在自己气泡里时用气泡上的那一档。
+    let accent: Color
     /// 输入框上方的那一份带叉、撑满一行；消息里的不带，按内容收缩，垫一层淡淡的底色。
     var cancel: (() -> Void)?
     /// 点了这条引用、核心还在往前翻页找原消息（ADR-0109 第 4 节）。
@@ -26,10 +28,8 @@ struct ReplyQuoteView: View {
         if cancel == nil {
             row
                 .padding(.trailing, WontonTheme.spacing.s8)
-                .background(
-                    RoundedRectangle(cornerRadius: WontonTheme.radii.bubbleJoined)
-                        .fill(ink.opacity(WontonTheme.ratio.codeFill))
-                )
+                .background(accent.opacity(WontonTheme.ratio.codeFill))
+                .clipShape(RoundedRectangle(cornerRadius: WontonTheme.radii.bubbleJoined - 2))
         } else {
             row
         }
@@ -37,9 +37,16 @@ struct ReplyQuoteView: View {
 
     private var row: some View {
         HStack(spacing: WontonTheme.spacing.s8) {
-            Capsule()
-                .fill(ink.opacity(WontonTheme.ratio.secondaryContent))
-                .frame(width: WontonTheme.size.quoteBar, height: WontonTheme.size.chip)
+            if cancel != nil {
+                Image(systemName: "arrowshape.turn.up.left")
+                    .foregroundStyle(accent)
+                    .accessibilityHidden(true)
+            }
+            // 消息里的竖条贴着引用块的左边、上下到头；输入框上方的是一枚短胶囊。
+            Rectangle()
+                .fill(accent)
+                .frame(width: WontonTheme.size.quoteBar + 1, height: cancel == nil ? nil : WontonTheme.size.chip)
+                .clipShape(RoundedRectangle(cornerRadius: cancel == nil ? 0 : WontonTheme.size.quoteBar))
                 .accessibilityHidden(true)
             Group {
                 switch quote {
@@ -59,7 +66,7 @@ struct ReplyQuoteView: View {
                 Spacer(minLength: 0)
                 Button(action: cancel) {
                     WontonIcon.close.view(size: WontonTheme.size.iconTiny)
-                        .foregroundStyle(ink)
+                        .foregroundStyle(ink.opacity(WontonTheme.ratio.secondaryContent))
                         .frame(width: WontonTheme.size.smallButton, height: WontonTheme.size.smallButton)
                         .contentShape(Rectangle())
                 }
@@ -73,13 +80,14 @@ struct ReplyQuoteView: View {
     private func content(_ message: QuotedMessage) -> some View {
         VStack(alignment: .leading, spacing: 0) {
             Text(message.senderName)
-                .wontonText(WontonTheme.typography.caption)
-                .opacity(WontonTheme.ratio.secondaryContent)
+                .wontonText(WontonTheme.typography.senderName)
+                .foregroundStyle(accent)
+                .lineLimit(1)
             switch message.content {
             case let .text(text):
                 Text(text)
                     .wontonText(WontonTheme.typography.supporting)
-                    .lineLimit(2)
+                    .lineLimit(1)
             case let .image(thumbnail):
                 QuotedThumbnail(media: thumbnail, core: core)
                     .padding(.top, WontonTheme.spacing.s4)

@@ -61,6 +61,7 @@ private struct ChoiceButton: View {
     let shape: UnevenRoundedRectangle
     let action: () -> Void
     @Environment(\.wontonColors) private var colors
+    @Environment(\.chatPalette) private var palette
 
     /// 能点：这组在等我选，而且这一个不在发。发送失败的能再点。
     private var canAnswer: Bool { state == .open && option.send != .sending }
@@ -73,16 +74,11 @@ private struct ChoiceButton: View {
                 ChoiceLabel(option: option)
                 progress
             }
-            .foregroundStyle(Color(option.chosen ? colors.textOnAccentFill : colors.textPrimary))
+            // 没选的是半透明的入气泡色、重点色的字；选中的换成重点色的实底（ADR-0109 第 8 节）。
+            .foregroundStyle(Color(option.chosen ? colors.textOnAccentFill : colors.accentInk))
             .padding(.horizontal, WontonTheme.spacing.s8)
-            .frame(maxWidth: .infinity, minHeight: WontonTheme.size.target)
-            .background {
-                if option.chosen {
-                    Color.clear.accentFill(shape)
-                } else {
-                    shape.fill(Color(colors.surfaceSubtle))
-                }
-            }
+            .frame(maxWidth: .infinity, minHeight: WontonTheme.size.choiceButton)
+            .background(shape.fill(option.chosen ? Color(colors.accentFill) : palette.choiceFill))
             .opacity(isPassedOver ? WontonTheme.ratio.secondaryContent : 1)
             .contentShape(Rectangle())
         }
@@ -124,7 +120,7 @@ private struct ChoiceLabel: View {
                 Text(label).lineLimit(1)
             }
         }
-        .wontonText(WontonTheme.typography.supporting)
+        .wontonText(WontonTheme.typography.choice)
     }
 }
 
@@ -170,15 +166,18 @@ extension VerticalAlignment {
 
 /// 气泡和挂在它正下方的东西（选项按钮）：第一个子视图是气泡，其余的和它同宽，依次排在下面。
 ///
-/// 气泡最宽占给这一列的宽度的 `ratio.bubbleWidth`，短消息按内容收缩（ADR-0109 第 2 节）。上限在布局里算，
+/// 气泡最宽到对面留出 `spacing.bubbleOpposite`（从屏幕边算起），短消息按内容收缩（ADR-0109 第 8 节）。上限在布局里算，
 /// 不从外面量好了传进来：量好再传要排两遍，第二遍行高一变，进房间摆好的落点就偏了。
 struct BubbleColumn: Layout {
     var spacing: CGFloat = WontonTheme.spacing.s4
 
+    /// 这一行两边已经各让出 `spacing.bubbleEdge`，对面还要再留这么多。
+    private static let reserve = WontonTheme.spacing.bubbleOpposite - WontonTheme.spacing.bubbleEdge * 2
+
     func sizeThatFits(proposal: ProposedViewSize, subviews: Subviews, cache: inout ()) -> CGSize {
         guard let bubble = subviews.first else { return .zero }
         let size = bubble.sizeThatFits(ProposedViewSize(
-            width: proposal.width.map { $0 * WontonTheme.ratio.bubbleWidth }, height: proposal.height
+            width: proposal.width.map { max(0, $0 - Self.reserve) }, height: proposal.height
         ))
         let below = subviews.dropFirst().reduce(CGFloat.zero) { height, view in
             height + spacing + view.sizeThatFits(ProposedViewSize(width: size.width, height: nil)).height

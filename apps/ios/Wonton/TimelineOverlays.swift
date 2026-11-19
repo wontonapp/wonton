@@ -7,20 +7,19 @@ struct DatePill: View {
     /// 浮在消息上面的那一枚垫系统材质，列表里的垫浅色底。
     var floats = false
     @Environment(\.wontonColors) private var colors
+    @Environment(\.chatPalette) private var palette
 
     var body: some View {
-        Text(TimelineRow.date(timestampMs), format: .dateTime.year().month().day())
-            .wontonText(WontonTheme.typography.caption)
-            .foregroundStyle(Color(floats ? colors.textPrimary : colors.textSecondary))
-            .padding(.horizontal, WontonTheme.spacing.s12)
-            .padding(.vertical, WontonTheme.spacing.s4)
-            .background {
-                if floats {
-                    Capsule().fill(.regularMaterial)
-                } else {
-                    Capsule().fill(Color(colors.surfaceSubtle))
-                }
-            }
+        let label = Text(TimelineRow.date(timestampMs), format: .dateTime.year().month().day())
+            .wontonText(WontonTheme.typography.datePill)
+            .padding(.horizontal, WontonTheme.spacing.s8)
+            .frame(minHeight: WontonTheme.size.datePill)
+        // 浮着的那一枚是玻璃（ADR-0107），列表里的是内容：半透明的底、白字。
+        if floats {
+            label.foregroundStyle(Color(colors.textPrimary)).chatGlass(in: Capsule())
+        } else {
+            label.foregroundStyle(palette.serviceInk).background(palette.serviceFill, in: Capsule())
+        }
     }
 }
 
@@ -35,7 +34,7 @@ struct FloatingDatePill: View {
         ZStack {
             if pin.isScrolling, let timestampMs {
                 DatePill(timestampMs: timestampMs, floats: true)
-                    .padding(.top, WontonTheme.spacing.s8)
+                    .padding(.top, WontonTheme.spacing.s4)
                     .transition(.opacity)
                     .accessibilityIdentifier("timelineFloatingDate")
             }
@@ -57,7 +56,7 @@ struct JumpHighlight: View {
 
     var body: some View {
         Color(colors.accentInk)
-            .opacity(isLit ? WontonTheme.ratio.scrim : 0)
+            .opacity(isLit ? WontonTheme.ratio.jumpHighlight : 0)
             .task(id: trigger) {
                 guard trigger != nil else { return }
                 isLit = true
@@ -78,7 +77,7 @@ struct JumpMissingHint: View {
             .foregroundStyle(Color(colors.textPrimary))
             .padding(.horizontal, WontonTheme.spacing.s16)
             .padding(.vertical, WontonTheme.spacing.s8)
-            .background(.regularMaterial, in: Capsule())
+            .chatGlass(in: Capsule())
             .padding(.bottom, WontonTheme.spacing.s16)
             .accessibilityIdentifier("timelineJumpUnavailable")
     }
@@ -89,21 +88,31 @@ struct JumpMissingHint: View {
 struct ScrollToBottomButton: View {
     let count: Int
     let action: () -> Void
+    @Environment(\.wontonColors) private var colors
 
     var body: some View {
         Button(action: action) {
-            VStack(spacing: WontonTheme.spacing.s4) {
-                if count > 0 {
-                    Text(count > Self.badgeMax ? "\(Self.badgeMax)+" : String(count))
-                        .font(.caption.weight(.semibold))
-                        .padding(.horizontal, WontonTheme.spacing.s8)
-                        .padding(.vertical, WontonTheme.spacing.s4 / 2)
-                        .background(.thinMaterial, in: Capsule())
+            Image(systemName: "chevron.down")
+                .fontWeight(.medium)
+                .foregroundStyle(Color(colors.textPrimary))
+                .frame(width: WontonTheme.size.chatControl, height: WontonTheme.size.chatControl)
+                .chatGlass(in: Circle(), interactive: true)
+                // 数字骑在圆钮的上沿：重点色的实底，和玻璃分得开。
+                .overlay(alignment: .top) {
+                    if count > 0 {
+                        Text(count > Self.badgeMax ? "\(Self.badgeMax)+" : String(count))
+                            .wontonText(WontonTheme.typography.messageMeta)
+                            .fontWeight(.semibold)
+                            .foregroundStyle(Color(colors.canvas))
+                            .padding(.horizontal, WontonTheme.spacing.s4 + 2)
+                            .frame(minWidth: WontonTheme.size.iconSmall, minHeight: WontonTheme.size.iconSmall)
+                            .background(Color(colors.accentInk), in: Capsule())
+                            .fixedSize()
+                            .offset(y: -WontonTheme.size.iconSmall / 2)
+                    }
                 }
-                Image(systemName: "arrow.down")
-                    .frame(width: WontonTheme.size.target, height: WontonTheme.size.target)
-                    .background(.regularMaterial, in: Circle())
-            }
+                .frame(width: WontonTheme.size.target, height: WontonTheme.size.target)
+                .contentShape(Rectangle())
         }
         .buttonStyle(.plain)
         .accessibilityLabel(
@@ -112,8 +121,8 @@ struct ScrollToBottomButton: View {
                 : String(localized: .Chat.roomScrollToBottom)
         )
         .accessibilityIdentifier("timelineDown")
-        .padding(.trailing, WontonTheme.spacing.s16)
-        .padding(.bottom, WontonTheme.spacing.s16)
+        .padding(.trailing, WontonTheme.spacing.chatFloatInset - 2)
+        .padding(.bottom, WontonTheme.spacing.s8)
     }
 
     /// 数字超过这个数就写“99+”。
@@ -123,14 +132,16 @@ struct ScrollToBottomButton: View {
 /// 群聊里组尾气泡旁的头像：没有头像图片的人画名字的第一个字。
 struct SenderInitial: View {
     let name: String
+    var size = WontonTheme.size.messageAvatar
     @Environment(\.wontonColors) private var colors
 
     var body: some View {
+        // 重点色的实底：压在聊天背景和玻璃上都分得清。
         Text(name.prefix(1).uppercased())
-            .wontonText(WontonTheme.typography.supporting)
-            .foregroundStyle(Color(colors.textPrimary))
-            .frame(width: WontonTheme.size.messageAvatar, height: WontonTheme.size.messageAvatar)
-            .background(Circle().fill(Color(colors.surfaceSubtle)))
+            .wontonText(WontonTheme.typography.senderName)
+            .foregroundStyle(Color(colors.canvas))
+            .frame(width: size, height: size)
+            .background(Circle().fill(Color(colors.accentInk)))
             .accessibilityHidden(true)
     }
 }

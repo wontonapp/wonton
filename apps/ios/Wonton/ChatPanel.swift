@@ -570,12 +570,20 @@ struct RoomPanelHost<Content: View>: View {
 
 /// 顶栏打开面板的按钮：动作来自包着这一页的面板宿主；没有面板的地方（旁聊页、iPad 的详情栏）不显示。
 struct PanelEntryButton: View {
+    /// 聊天房间的顶栏里是浮着的玻璃圆钮（ADR-0109 第 8 节），聊天列表的顶栏里是普通图标按钮。
+    var floats = false
     @Environment(\.chatPanelOpen) private var open
 
     var body: some View {
         if let open {
-            WontonIconButton(icon: .home, label: TabText.openPanel, action: open)
-                .accessibilityIdentifier("panelOpen")
+            Group {
+                if floats {
+                    ChatGlassButton(icon: .home, label: TabText.openPanel, action: open)
+                } else {
+                    WontonIconButton(icon: .home, label: TabText.openPanel, action: open)
+                }
+            }
+            .accessibilityIdentifier("panelOpen")
         }
     }
 }

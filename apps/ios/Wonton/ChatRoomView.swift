@@ -93,18 +93,14 @@ private extension ChatRoomView {
                         bots: model.viewModel.bots,
                         core: model.core,
                         plugins: plugins
-                    ) { bot in
-                        profileBot = bot
-                        showsBotProfile = true
-                    }
+                    ) { openProfile($0) }
                 }
             }
             .frame(maxWidth: .infinity)
-            .background(.ultraThinMaterial)
+            .floatingChatCard()
         }
         .safeAreaInset(edge: .bottom, spacing: 0) {
             roomBottomBar
-                .background(.ultraThinMaterial, ignoresSafeAreaEdges: .bottom)
         }
         .modifier(RoomPresentations(presenter: presenter))
         .wontonSheet(isPresented: $showingConfirmations,
@@ -150,27 +146,24 @@ private extension ChatRoomView {
             title: bot?.name ?? title,
             avatar: barAvatar,
             typing: typingText,
+            openProfile: profileAction,
             sideChatTitle: threadRoot == nil ? nil : timeline.sideChat?.title ?? String(localized: .Chat.sideChat),
             close: threadRoot == nil ? nil : { model.closeSideChat(in: roomId) }
         ) {
             // 面板跟着主对话（ADR-0093）：旁聊页没有房间的面板，也没有这里的按钮。
             if threadRoot == nil {
-                PanelEntryButton()
+                PanelEntryButton(floats: true)
             }
             // 房间里装着的 widget（通话）：点了全屏打开，关掉回到这里（ADR-0096）。旁聊页没有。
             if threadRoot == nil, !timeline.widgets.isEmpty {
                 RoomCallEntry(widgets: timeline.widgets, active: timeline.callActive) { pages.open($0.tab) }
+                    .frame(minWidth: WontonTheme.size.chatControl)
+                    .frame(height: WontonTheme.size.chatControl)
+                    .chatGlass(in: Capsule(), interactive: true)
             }
-            // 和 Bot 的私聊：顶栏进它的资料页（ADR-0044）。
-            if let bot {
-                WontonIconButton(icon: .info, label: String(localized: .BotProfile0.botProfileTitle)) {
-                    profileBot = bot.bot
-                    showsBotProfile = true
-                }
-                .accessibilityIdentifier("roomBotProfile")
-            }
+            // 和 Bot 的私聊：点顶栏的头像或标题进它的资料页（ADR-0044、ADR-0109 第 8 节），不另放按钮。
             if supportsSideChats {
-                WontonIconButton(icon: .compose, label: String(localized: .Chat.sideChatNew)) {
+                ChatGlassButton(icon: .compose, label: String(localized: .Chat.sideChatNew)) {
                     model.composingSideChat = roomId
                 }
             } else {
@@ -222,17 +215,18 @@ private extension ChatRoomView {
     }
 
     private var roomBottomBar: some View {
-        VStack(spacing: 0) {
-            if let notice = timeline.notice {
-                KeyNoticeBanner(notice: notice)
-            }
-            TransfersStrip(roomId: roomId)
-            RoomConfirmationBanner(cards: timeline.confirmations) {
-                selectedConfirmation = nil
-                showingConfirmations = true
-            }
-            if !isReadOnly {
-                if threadRoot == nil, onboarding.viewModel.defaultBotVisibility == .visible,
+        VStack(spacing: WontonTheme.spacing.s4) {
+            // 输入栏上方的几条提示收在一张浮着的玻璃卡片里；一条都没有时卡片没有高度，不画。
+            VStack(spacing: 0) {
+                if let notice = timeline.notice {
+                    KeyNoticeBanner(notice: notice)
+                }
+                TransfersStrip(roomId: roomId)
+                RoomConfirmationBanner(cards: timeline.confirmations) {
+                    selectedConfirmation = nil
+                    showingConfirmations = true
+                }
+                if !isReadOnly, threadRoot == nil, onboarding.viewModel.defaultBotVisibility == .visible,
                    let bot = onboarding.viewModel.defaultBotUserId,
                    model.viewModel.rooms.first(where: { $0.roomId == roomId })?.directUserId == bot,
                    !onboarding.viewModel.chatPrompts.isEmpty {
@@ -240,9 +234,14 @@ private extension ChatRoomView {
                         model.appendDraft($0, to: target)
                     }
                 }
+            }
+            .frame(maxWidth: .infinity)
+            .floatingChatCard()
+            if !isReadOnly {
                 ComposerView(
                     model: model, composer: composer, pin: pin,
-                    commands: timeline.commands, commandsOmitted: Int(timeline.commandsOmitted)
+                    commands: timeline.commands, commandsOmitted: Int(timeline.commandsOmitted),
+                    commandAvatar: { commandAvatar($0) }
                 )
             }
         }
@@ -428,7 +427,7 @@ private extension ChatRoomView {
         }
         .onDisappear { visibleRows.removeValue(forKey: item.id) }
         .timelineListRow(
-            top: item.gapAbove, bottom: item.gapBelow,
+            top: item.gapAbove, bottom: item.gapBelow, side: item.sideInset,
             highlight: jump.flash?.itemId == item.id ? jump.flash?.revision : nil
         )
         .modifier(ReplyDrag(quote: item.replyQuote()) { quote in
@@ -575,12 +574,34 @@ private extension ChatRoomView {
         return model.viewModel.bots.first { $0.userId == directId }
     }
 
+    /// 顶栏右边的圆头像：和聊天列表那一行是同一个（Bot 头像、应用图标或名字的第一个字）。
     var barAvatar: AnyView? {
+        guard let row = model.viewModel.rooms.first(where: { $0.roomId == roomId }) else { return nil }
+        return AnyView(RoomAvatar(row: row, model: model, plugins: plugins, size: WontonTheme.size.chatControl))
+    }
+
+    /// 点顶栏的头像或标题：和 Bot 的私聊进它的资料页（ADR-0044），别的房间没有资料页。
+    var profileAction: (() -> Void)? {
         guard let bot else { return nil }
+        return { openProfile(bot.bot) }
+    }
+
+    func openProfile(_ bot: BotRef) {
+        profileBot = bot
+        showsBotProfile = true
+    }
+
+    /// 命令列表里每条命令旁的头像：这条命令是哪个 Bot 的就画谁；不是已装应用的 Bot 画名字的第一个字。
+    func commandAvatar(_ command: RoomCommand) -> AnyView {
+        let size = WontonTheme.size.commandAvatar
+        guard let bot = model.viewModel.bots.first(where: { $0.userId == command.botUserId }) else {
+            return AnyView(SenderInitial(name: command.botName, size: size))
+        }
         let plugin = plugins.viewModel.installed?.plugins.first { $0.id == bot.bot.pluginId }
-        return AnyView(BotAvatarView(
-            bot: bot, pluginIcon: plugin?.icon, core: model.core, model: plugins, size: WontonTheme.size.avatar
-        ).accessibilityIdentifier("roomTopBarAvatar"))
+        return AnyView(
+            BotAvatarView(bot: bot, pluginIcon: plugin?.icon, core: model.core, model: plugins, size: size)
+                .clipShape(Circle())
+        )
     }
 
     /// 顶栏状态行的“正在输入…”（ADR-0109 第 7 节）：私聊不写名字，群里写第一个人，多人时加“和另外 N 人”。
@@ -621,6 +642,12 @@ private extension TimelineItem {
         return WontonTheme.spacing.runGap / 2
     }
 
+    /// 气泡那一行贴近屏幕边（ADR-0109 第 8 节），其余的行照页面的边距。
+    var sideInset: CGFloat {
+        if case .message = content { return WontonTheme.spacing.bubbleEdge }
+        return WontonTheme.spacing.pageInset
+    }
+
     /// 这条和紧跟着的 `next` 之间能不能不留衬垫贴成一摞：同一次发送（ADR-0094 的组标记）里挨着的两张照片，
     /// `next` 不带引用、这条不带说明。
     func flushesWith(next: TimelineItem) -> Bool {
@@ -655,7 +682,7 @@ private extension TimelineItem {
 private extension View {
     func timelineListRow(
         top: CGFloat = WontonTheme.spacing.groupGap / 2, bottom: CGFloat = WontonTheme.spacing.groupGap / 2,
-        highlight: Int? = nil
+        side: CGFloat = WontonTheme.spacing.pageInset, highlight: Int? = nil
     ) -> some View {
         // 默认样式的按钮放在 List 的行里，点这一行任何地方都会触发。
         buttonStyle(.borderless)
@@ -663,10 +690,18 @@ private extension View {
             .listRowBackground(JumpHighlight(trigger: highlight))
             .listRowInsets(EdgeInsets(
                 top: top,
-                leading: WontonTheme.spacing.pageInset,
+                leading: side,
                 bottom: bottom,
-                trailing: WontonTheme.spacing.pageInset
+                trailing: side
             ))
+    }
+
+    /// 顶栏下面、输入栏上面那几条提示的底：一张浮在消息上的玻璃卡片（ADR-0107）。
+    func floatingChatCard() -> some View {
+        let shape = RoundedRectangle(cornerRadius: WontonTheme.radii.card, style: .continuous)
+        return clipShape(shape)
+            .chatGlass(in: shape)
+            .padding(.horizontal, WontonTheme.spacing.chatFloatInset)
     }
 }
 

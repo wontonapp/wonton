@@ -31,6 +31,7 @@ struct TimelineRow: View {
     /// 进旁聊（参数是根的事件 ID）：旁聊卡片和结果行都用它（ADR-0093）。
     var onOpenSideChat: (String) -> Void = { _ in }
     @Environment(\.wontonColors) private var colors
+    @Environment(\.chatPalette) private var palette
 
     var body: some View {
         switch item.content {
@@ -95,11 +96,15 @@ struct TimelineRow: View {
         Rectangle().fill(Color(colors.separator)).frame(height: WontonTheme.size.hairline)
     }
 
+    /// 说明行和日期胶囊一个样：压在聊天背景上的半透明胶囊（ADR-0109 第 8 节）。
     private func note(_ text: Text) -> some View {
         text
-            .wontonText(WontonTheme.typography.caption)
-            .foregroundStyle(Color(colors.textSecondary))
+            .wontonText(WontonTheme.typography.datePill)
+            .foregroundStyle(palette.serviceInk)
             .multilineTextAlignment(.center)
+            .padding(.horizontal, WontonTheme.spacing.s8)
+            .padding(.vertical, WontonTheme.spacing.s4)
+            .background(palette.serviceFill, in: RoundedRectangle(cornerRadius: WontonTheme.radii.bubbleJoined + 3))
             .frame(maxWidth: .infinity)
     }
 
@@ -134,6 +139,7 @@ private struct MessageBubble: View {
     let avatar: ((TimelineMessage) -> AnyView)?
     @State private var isChoosingFailed = false
     @Environment(\.wontonColors) private var colors
+    @Environment(\.chatPalette) private var palette
 
     /// 长按菜单底部的发送时间：完整日期加时间，隔了天也对得上（Telegram 长按同样显示）。
     private var sentAt: String {
@@ -243,16 +249,13 @@ private struct MessageBubble: View {
         // 发送者一侧让出尾巴那条边（见 MessageBubbleShape）。
         let tail = WontonTheme.size.bubbleTail
         let body = quoted
-            .padding(.leading, WontonTheme.spacing.s12 + (message.isOwn ? 0 : tail))
-            .padding(.trailing, WontonTheme.spacing.s12 + (message.isOwn ? tail : 0))
+            .padding(.leading, WontonTheme.spacing.bubbleInsetX + (message.isOwn ? 0 : tail))
+            .padding(.trailing, WontonTheme.spacing.bubbleInsetX + (message.isOwn ? tail : 0))
             // 同一次发送里贴着的照片不留上下衬垫，贴成一摞（ADR-0094）。
-            .padding(.top, flushesPrevious ? 0 : WontonTheme.spacing.s8)
-            .padding(.bottom, flushesNext ? 0 : WontonTheme.spacing.s8)
-        if message.isOwn {
-            body.accentFill(shape)
-        } else {
-            body.background(shape.fill(Color(colors.surfaceSubtle)))
-        }
+            .padding(.top, flushesPrevious ? 0 : WontonTheme.spacing.bubbleInsetY)
+            .padding(.bottom, flushesNext ? 0 : WontonTheme.spacing.bubbleInsetY)
+        // 气泡是内容：纯色、不透明，不描边、不叠颗粒，也不铺玻璃（ADR-0107、ADR-0109 第 8 节）。
+        body.background(shape.fill(message.isOwn ? Color(colors.accentFill) : palette.incoming))
     }
 
     /// 群聊里组首气泡顶部写发送者的名字；回复别人时，正文上方画被引用的原消息（ADR-0073），点它跳到原消息。
@@ -263,8 +266,7 @@ private struct MessageBubble: View {
             VStack(alignment: .leading, spacing: WontonTheme.spacing.s4) {
                 if showsSender, !message.isOwn {
                     Text(message.senderName)
-                        .wontonText(WontonTheme.typography.caption)
-                        .fontWeight(.semibold)
+                        .wontonText(WontonTheme.typography.senderName)
                         .foregroundStyle(Color(colors.accentInk))
                         .lineLimit(1)
                 }
@@ -272,7 +274,11 @@ private struct MessageBubble: View {
                     Button {
                         jump(quote.eventId)
                     } label: {
-                        ReplyQuoteView(quote: quote, core: core, ink: textColor, isLoading: isJumping)
+                        ReplyQuoteView(
+                            quote: quote, core: core, ink: textColor,
+                            accent: Color(message.isOwn ? colors.accentInkOnFill : colors.accentInk),
+                            isLoading: isJumping
+                        )
                             .contentShape(Rectangle())
                     }
                     .buttonStyle(.plain)
@@ -297,7 +303,7 @@ private struct MessageBubble: View {
             }
         } else {
             // Grid：气泡和最宽的一行一样宽，正文靠左、时间靠右。VStack 做不到，撑满又会把短消息的气泡也撑满。
-            Grid(alignment: .leading, verticalSpacing: WontonTheme.spacing.s4) {
+            Grid(alignment: .leading, verticalSpacing: WontonTheme.spacing.s4 / 2) {
                 styled(reserve: nil)
                 MessageMeta(message: message).gridCellAnchor(.trailing)
             }
@@ -306,7 +312,7 @@ private struct MessageBubble: View {
 
     private func styled(reserve: String?) -> some View {
         content(reserve: reserve)
-            .wontonText(WontonTheme.typography.body)
+            .wontonText(WontonTheme.typography.message)
             .foregroundStyle(textColor)
     }
 

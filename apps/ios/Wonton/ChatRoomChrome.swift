@@ -109,35 +109,33 @@ struct RoomAiLine: View {
     }
 }
 
-/// 主对话和旁聊页的顶栏（ADR-0093 §6）：主对话带 Bot 头像和开旁聊的按钮；旁聊页的标题是旁聊的标题，还没
-/// 到就先叫“旁聊”，不写状态行、没有头像和按钮。
+/// 主对话和旁聊页的顶栏（ADR-0093 §6）：主对话是 `ChatRoomBar`（返回、标题胶囊、房间入口和头像）；旁聊页的标题是
+/// 旁聊的标题，还没到就先叫“旁聊”，不写状态行、没有头像和按钮。两页的背景都是聊天背景。
 struct RoomTopBar<Trailing: View>: ViewModifier {
     let title: String
     let avatar: AnyView?
     /// 有人正在输入时状态行写的字（ADR-0109 第 7 节）；没人输入为空。
     var typing: String?
+    /// 点头像或标题去的资料页；没有的房间为空。
+    var openProfile: (() -> Void)?
     /// 旁聊页的标题；主对话为空。
     let sideChatTitle: String?
     /// 旁聊页返回键的动作：收起旁聊，不动导航栈。
     let close: (() -> Void)?
     @ViewBuilder let trailing: () -> Trailing
-    @Environment(\.wontonColors) private var colors
 
     func body(content: Content) -> some View {
         content.wontonTopBar {
-            Group {
-                if let sideChatTitle {
-                    WontonPushedBar(title: sideChatTitle, showsStatus: true, onClose: close) { EmptyView() }
-                } else {
-                    WontonPushedBar(
-                        title: title, showsStatus: true, showsStatusLine: true, avatar: avatar, activity: typing,
-                        trailing: trailing
-                    )
-                }
+            if let sideChatTitle {
+                WontonPushedBar(title: sideChatTitle, showsStatus: true, onClose: close) { EmptyView() }
+                    .background(.regularMaterial, ignoresSafeAreaEdges: .top)
+            } else {
+                // 不垫底：返回、标题、头像各是一块玻璃，消息从它们下面滚过去（ADR-0107）。
+                ChatRoomBar(title: title, avatar: avatar, typing: typing, openProfile: openProfile, trailing: trailing)
+                    .background { ChatEdgeFade(edge: .top).ignoresSafeArea(edges: .top) }
             }
-            .background(.regularMaterial, ignoresSafeAreaEdges: .top)
         }
         .toolbar(.hidden, for: .navigationBar)
-        .background(Color(colors.canvas).ignoresSafeArea())
+        .background(ChatWallpaper())
     }
 }

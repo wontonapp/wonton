@@ -20,7 +20,7 @@ struct MessageMeta: View {
             .accessibilityHidden(textIsSpoken)
             status
         }
-        .wontonText(WontonTheme.typography.caption)
+        .wontonText(WontonTheme.typography.messageMeta)
         .imageScale(.small)
         .foregroundStyle(ink)
         .lineLimit(1)
@@ -54,7 +54,7 @@ struct MessageMeta: View {
                         .accessibilityLabel(Text(.Message2.messageDelivered))
                         .accessibilityIdentifier("messageStatusSent")
                 case .read:
-                    HStack(spacing: -WontonTheme.spacing.s8) {
+                    HStack(spacing: -WontonTheme.spacing.s8 + 1) {
                         Image(systemName: "checkmark")
                         Image(systemName: "checkmark")
                     }
@@ -76,9 +76,9 @@ struct MessageMeta: View {
         parts.append(TimelineRow.time(message.timestampMs))
         if message.isOwn { parts.append(String(repeating: "\u{00A0}", count: iconReserve)) }
         let glued = parts.joined(separator: "\u{00A0}").replacingOccurrences(of: " ", with: "\u{00A0}")
-        return " \u{00A0}\u{00A0}" + glued
+        return " \u{00A0}" + glued
     }
 
     /// 两个勾大约占几个不折行空格的宽（小号字里一个空格约四分之一个字宽）。
-    private static let iconReserve = 8
+    private static let iconReserve = 5
 }
