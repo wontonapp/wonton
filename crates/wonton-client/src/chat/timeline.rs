@@ -32,9 +32,9 @@ pub struct TimelineSubscription {
     cancelled: watch::Sender<bool>,
     scroll: watch::Sender<TimelineScroll>,
     opening: std::sync::Mutex<Option<super::target::TimelineOpening>>,
-    /// 假数据入口的订阅没有转发任务：发送端留在这里（不读它），通道不关，壳就不会以为房间没了。
+    /// 假数据入口的订阅没有转发任务：壳报告的位置交给假房间，假房间再推一批（它也拿着发送端，通道不关）。
     #[cfg(feature = "ui-fake")]
-    _seeded: Option<mpsc::UnboundedSender<TimelineUpdate>>,
+    on_scroll: Option<Box<dyn Fn(TimelineScroll) + Send + Sync>>,
 }
 
 /// 一个房间的时间线订阅要用的部件：房间、能显示的卡片和各路账号数据。[`TimelineSubscription::start`] 一次带走。
@@ -116,22 +116,22 @@ impl TimelineSubscription {
             scroll,
             opening: std::sync::Mutex::new(Some(opening)),
             #[cfg(feature = "ui-fake")]
-            _seeded: None,
+            on_scroll: None,
         })
     }
 
-    /// 假数据入口（`ClientCore::new_ui_fake`）的时间线：只有 `first` 这一批，之后一直等到取消。
+    /// 假数据入口（`ClientCore::new_ui_fake`）的时间线：批次由假房间推进 `updates`，壳报告的位置交给 `on_scroll`。
     #[cfg(feature = "ui-fake")]
-    pub(crate) fn seeded(first: TimelineUpdate) -> Arc<Self> {
-        let (sender, receiver) = mpsc::unbounded_channel();
-        // 接收端就在下面，发不出去只会是它已经释放。
-        let _ = sender.send(first);
+    pub(crate) fn seeded(
+        updates: mpsc::UnboundedReceiver<TimelineUpdate>,
+        on_scroll: Box<dyn Fn(TimelineScroll) + Send + Sync>,
+    ) -> Arc<Self> {
         Arc::new(Self {
-            updates: Mutex::new(receiver),
+            updates: Mutex::new(updates),
             cancelled: watch::Sender::new(false),
             scroll: watch::Sender::new(TimelineScroll::Away),
             opening: std::sync::Mutex::new(None),
-            _seeded: Some(sender),
+            on_scroll: Some(on_scroll),
         })
     }
 
@@ -162,6 +162,10 @@ impl TimelineSubscription {
     /// 跨过底部时发一次，下一批更新里带重新算过的位置和新消息数。
     pub fn set_scroll(&self, scroll: TimelineScroll) {
         self.scroll.send_replace(scroll);
+        #[cfg(feature = "ui-fake")]
+        if let Some(on_scroll) = &self.on_scroll {
+            on_scroll(scroll);
+        }
     }
 
     /// 取消订阅，语义同 `HomeSubscription::cancel`（Swift 的 Task 取消不会传到 Rust）。

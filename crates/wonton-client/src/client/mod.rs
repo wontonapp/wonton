@@ -66,6 +66,8 @@ mod ui_fake_failed_install;
 mod ui_fake_plugin_detail;
 #[cfg(feature = "ui-fake")]
 mod ui_fake_room;
+#[cfg(feature = "ui-fake")]
+mod ui_fake_timeline;
 mod widget;
 
 /// 客户端核心的入口。原生壳在启动时创建一个实例并一直持有。
@@ -107,6 +109,9 @@ pub struct ClientCore {
     /// 测试用的假数据入口（`new_ui_fake`）开着：操作不落到作用域，ViewModel 保持塞进去的假数据。
     #[cfg(feature = "ui-fake")]
     ui_fake: AtomicBool,
+    /// 假数据入口里打开着的房间时间线，壳的操作按房间找到它再推一批。
+    #[cfg(feature = "ui-fake")]
+    ui_fake_timelines: ui_fake_timeline::FakeTimelines,
 }
 
 #[uniffi::export]
@@ -271,12 +276,10 @@ impl ClientCore {
         &self,
         target: TimelineTarget,
     ) -> Result<Arc<TimelineSubscription>, CoreError> {
-        // 假数据入口（`new_ui_fake`）没有后端：时间线也是写死的一批。
+        // 假数据入口（`new_ui_fake`）没有后端：时间线是写死的，只对界面测试约定的操作再推一批。
         #[cfg(feature = "ui-fake")]
         if self.ui_fake.load(Ordering::SeqCst) {
-            return Ok(TimelineSubscription::seeded(ui_fake_room::timeline(
-                &target.room_id,
-            )));
+            return Ok(self.ui_fake_timelines.subscribe(&target.room_id));
         }
         let scope = self.scope();
         let chat = scope.chat.clone();
@@ -744,6 +747,8 @@ impl ClientCore {
             share_in,
             #[cfg(feature = "ui-fake")]
             ui_fake: AtomicBool::new(false),
+            #[cfg(feature = "ui-fake")]
+            ui_fake_timelines: ui_fake_timeline::FakeTimelines::default(),
         });
         let switch: std::sync::Weak<Self> = Arc::downgrade(&core);
         core.matrix_login.bind(switch);
