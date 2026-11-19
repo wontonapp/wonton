@@ -60,6 +60,7 @@ enum WontonSize {
     static let hairline: CGFloat = 1
     static let quoteBar: CGFloat = 2
     static let bubbleTail: CGFloat = 6
+    static let messageAvatar: CGFloat = 34
 }
 
 enum WontonRatio {

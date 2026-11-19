@@ -265,6 +265,7 @@ fn timeline_message(
         run: wonton_protocol::MessageRun::Alone,
         status: None,
         choices: None,
+        sender_avatar: None,
     }
 }
 

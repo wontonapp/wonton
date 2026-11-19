@@ -319,6 +319,11 @@ pub struct TimelineMessage {
     #[serde(default, skip_serializing_if = "Option::is_none")]
     #[cfg_attr(feature = "uniffi", uniffi(default = None))]
     pub choices: Option<crate::MessageChoices>,
+    /// 发送者的头像图片（ADR-0109 第 2 节）：群聊里别人组尾（`run` 为 `Last` 或 `Alone`）旁边画。
+    /// 发送者没设头像时为空，壳画名字首字的圆。
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    #[cfg_attr(feature = "uniffi", uniffi(default = None))]
+    pub sender_avatar: Option<MediaHandle>,
 }
 
 /// 自己发的消息下面那行小字写什么。
@@ -994,6 +999,9 @@ mod tests {
                         },
                     }],
                     state: crate::ChoicesState::Answered,
+                }),
+                sender_avatar: Some(MediaHandle {
+                    token: "avatar".into(),
                 }),
             },
         }

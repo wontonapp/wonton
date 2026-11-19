@@ -158,6 +158,7 @@ fn item(index: usize) -> TimelineItem {
                 run: wonton_protocol::MessageRun::Alone,
                 status: None,
                 choices: None,
+                sender_avatar: None,
             },
         },
     }
