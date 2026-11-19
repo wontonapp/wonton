@@ -191,7 +191,16 @@ ok "链不再显示在跑"
 wait "$asking" || true
 # 命令要跑满 90 秒才建文件：从看到它在跑算起过了这么久还没有，才说明它没跑完，不是还没到点。
 sleep "$((started + 95 - $(date +%s) > 0 ? started + 95 - $(date +%s) : 0))"
-expect "命令没有跑完" "$(docker exec "$hermes" sh -c "test -e '$done_file' && echo 跑完了 || echo 没跑完")" 没跑完
+marker_state() { docker exec "$hermes" sh -c "test -e '$done_file' && echo 跑完了 || echo 没跑完"; }
+# 探针掉登录会重发一次；停了的链不再挂回去，重发按会话另开一条链、把同一条命令再跑一遍，
+# 文件由重发那一轮建，90 秒从那一刻才起算。
+retried="$(comm -13 <(printf '%s\n' "$before" | sort) <(chain_ids | grep -vxF "$chain" | sort) | head -1)"
+if [[ -n $retried ]]; then
+  for _ in $(seq 60); do [[ "$(marker_state)" == 跑完了 ]] && break; sleep 2; done
+  expect "重发那一轮的命令跑完了" "$(marker_state)" 跑完了
+else
+  expect "命令没有跑完" "$(marker_state)" 没跑完
+fi
 talk_to_hermes "$said" "用一句话回答：1 加 1 等于几？" || fail "停链以后 Hermes 不回话了：$(cat "$said")"
 grep '^第' "$said" | sed 's/^/   · /'
 ok "停链以后主人再说一句，Hermes 照常回答"
