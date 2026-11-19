@@ -61,11 +61,7 @@ final class ChatTelegramUITests: XCTestCase {
         reveal(approve)
         XCTAssertTrue(approve.isEnabled && deny.isEnabled, "还没选，按钮就点不了")
         XCTAssertFalse(approve.isSelected || deny.isSelected, "还没选，就有按钮是选中的")
-        // 浮动日期只在滚动时盖在消息上，停下后淡出，不压着字（ADR-0109 第 4 节）。
-        let floatingDate = app.descendants(matching: .any)["timelineFloatingDate"]
-        XCTAssertTrue(floatingDate.waitForNonExistence(timeout: 5), "停止滚动后浮动日期没淡出")
-        // 无障碍树里先没了，淡出的动画还要一会儿；截图等它画完。
-        Thread.sleep(forTimeInterval: 1)
+        waitForFloatingDateToFade()
         shot("choices-open")
         approve.tap()
         XCTAssertTrue(wait(5) { approve.isSelected }, "点了的选项没变成选中")
@@ -103,7 +99,53 @@ final class ChatTelegramUITests: XCTestCase {
     func testTopBarShowsTyping() {
         enter(Self.directRoom)
         XCTAssertTrue(app.staticTexts["barActivity"].waitForExistence(timeout: 5), "顶栏没有正在输入\n\(app.debugDescription)")
+        waitForFloatingDateToFade()
         shot("direct")
+    }
+
+    /// 输入框空着时没有发送键，打了字才出现；“菜单”胶囊一直在。
+    func testSendButtonAppearsWithText() {
+        enter(Self.directRoom)
+        let field = app.textViews["Message"]
+        XCTAssertFalse(app.buttons["composerSend"].exists, "输入框空着就有发送键")
+        XCTAssertTrue(app.buttons["composerCommands"].exists, "Bot 有命令，输入栏没有“菜单”")
+        field.tap()
+        waitForFloatingDateToFade()
+        shot("composer-empty")
+        field.typeText("Hello")
+        XCTAssertTrue(app.buttons["composerSend"].waitForExistence(timeout: 5), "打了字没有发送键")
+        XCTAssertTrue(app.buttons["composerCommands"].exists, "打了字“菜单”没了")
+        shot("composer-text")
+    }
+
+    /// 长按一条消息出系统菜单（ADR-0029），点“回复”进入回复状态。
+    func testLongPressShowsMenu() {
+        enter(Self.directRoom)
+        waitForFloatingDateToFade()
+        message(3).press(forDuration: 1.2)
+        let reply = app.buttons["messageReply"]
+        XCTAssertTrue(reply.waitForExistence(timeout: 5), "长按没出菜单\n\(app.debugDescription)")
+        // 菜单弹出的动画还要一会儿；截图等它画完。
+        Thread.sleep(forTimeInterval: 1)
+        shot("context-menu")
+        reply.tap()
+        XCTAssertTrue(app.buttons["replyCancel"].waitForExistence(timeout: 5), "点了“回复”没进入回复状态")
+    }
+
+    /// 深色模式下的私聊和群聊：只留截图给人看，断言时间线照常出来。
+    func testDarkAppearance() {
+        app.terminate()
+        XCUIDevice.shared.appearance = .dark
+        addTeardownBlock { XCUIDevice.shared.appearance = .light }
+        app.launch()
+        enter(Self.directRoom)
+        waitForFloatingDateToFade()
+        shot("direct-dark")
+        app.terminate()
+        app.launch()
+        enter(Self.groupRoom)
+        waitForFloatingDateToFade()
+        shot("group-dark")
     }
 
     /// 群聊里别人的组尾旁边有头像，私聊里没有。
@@ -119,11 +161,13 @@ final class ChatTelegramUITests: XCTestCase {
         for _ in 0..<3 { dragDown() }
         XCTAssertTrue(wait(5) { first.exists && first.frame.minY >= aiLine.frame.maxY },
                       "第一条气泡被 AI 那一行盖住\n\(app.debugDescription)")
-        // 停下以后浮动日期淡出，不再压着第一条气泡（ADR-0109 第 4 节）。
-        let floatingDate = app.descendants(matching: .any)["timelineFloatingDate"]
-        XCTAssertTrue(floatingDate.waitForNonExistence(timeout: 5), "停止滚动后浮动日期没淡出")
-        // 无障碍树里先没了，淡出的动画还要一会儿；截图等它画完。
-        Thread.sleep(forTimeInterval: 1)
+        waitForFloatingDateToFade()
+        shot("group-top")
+        // 再进一次，停在最新一条：群聊平常的样子。
+        app.terminate()
+        app.launch()
+        enter(Self.groupRoom)
+        waitForFloatingDateToFade()
         shot("group")
         app.terminate()
         app.launch()
@@ -132,6 +176,14 @@ final class ChatTelegramUITests: XCTestCase {
     }
 
     // MARK: 助手
+
+    /// 浮动日期只在滚动时盖在消息上，停下后淡出，不压着字（ADR-0109 第 4 节）。
+    private func waitForFloatingDateToFade(file: StaticString = #filePath, line: UInt = #line) {
+        let floatingDate = app.descendants(matching: .any)["timelineFloatingDate"]
+        XCTAssertTrue(floatingDate.waitForNonExistence(timeout: 5), "停止滚动后浮动日期没淡出", file: file, line: line)
+        // 无障碍树里先没了，淡出的动画还要一会儿；截图等它画完。
+        Thread.sleep(forTimeInterval: 1)
+    }
 
     private func enter(_ room: String) {
         tap(app.buttons[room])
