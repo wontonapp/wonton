@@ -38,7 +38,7 @@ Telegram 自己也让用户换主题色，形状和位置才是“像 Telegram�
 - 组内间距收紧，组与组之间留大间距。组内贴近发送者一侧的角改成小圆角，只有组首的外上角、组尾的外下角是大圆角；尾巴只画在组尾，
   自己的在右下，别人的在左下。
 - 群聊里发送者名字只在组首气泡顶部出现，头像只在组尾旁边出现，底边和气泡底边对齐（核心给 `sender_avatar`，没有图片时壳画名字首字的圆）；自己的消息和私聊里没有名字和头像。
-- 最大宽度约为可用宽度的 80%，短消息按内容收缩。
+- 最大宽度是屏宽减 36（第 8 节），短消息按内容收缩。
 
 ### 3. 时间、勾和“已编辑”
 
@@ -66,7 +66,7 @@ Telegram 自己也让用户换主题色，形状和位置才是“像 Telegram�
 
 ### 6. 输入框
 
-左边回形针，中间输入框随内容长高到 6 行（估计值）后内部滚动，右边发送键只在有字或有附件时出现。Bot 有命令时，回形针左边多一个“菜单”按钮。
+左边回形针，中间输入框随内容长高到 6 行（估计值）后内部滚动，右边发送键只在有字或有附件时出现。Bot 有命令时，回形针左边多一个写着“菜单”的胶囊按钮。
 麦克风等语音消息做了再加：做不到的按钮不画。回复时输入框上方是回复条：竖色条、“回复 某某”、原文一行摘要、右侧关闭。
 
 ### 7. Bot 私聊
@@ -103,27 +103,73 @@ Telegram 自己也让用户换主题色，形状和位置才是“像 Telegram�
 - 流式回复：Bot 写完再发一整条。以后要做，先实测两个 Hermes Bot 在同一房间的表现（另一个 Hermes 跳过编辑，只收到第一版）。
 - 停止生成的按钮接核心已有的停链（[ADR-0061](0061-agent-runtime-and-frontends.md) 第 10 节），不在本篇。
 
-### 8. 令牌
+### 8. 视觉规格
 
-`design/tokens.toml` 改成 Telegram 的形状和手感，下表是估计值：没法在真机 Telegram 上量，取的是行业通行值。量过之后改令牌，在这里写明量的版本。
+目标是 iOS 26 上的 Telegram，也就是用了 Liquid Glass 的那一版，同时要现代、有 Wonton 自己的样子。分两层：
+
+- **内容层**（气泡、选项按钮、日期胶囊、背景）：数值取自 Telegram iOS 的开源代码（`TelegramMessenger/Telegram-iOS` 的 `master`，
+  2026-11-20 读的），只取数值和规则，形状和绘制自己写，不拷它的代码、图标和壁纸。
+- **浮层**（顶栏、输入栏、命令列表、浮动日期、“向下”、顶栏下和输入栏上的提示）：照 [ADR-0107](0107-ios-liquid-glass.md) 用 Liquid Glass，
+  iOS 17–18 降级成 `Material`。气泡是内容，纯色、不透明，不铺玻璃。
+
+没法装 Telegram 并排量，所以玻璃那一层的尺寸（44 的圆钮、8 的边距）是照 Apple 的 Liquid Glass 说明和 Telegram 更新说明的描述定的估计值。
+
+#### 气泡和列表
+
+| 项 | 取值 | 出处（Telegram-iOS 里的路径，或说明） |
+| --- | --- | --- |
+| 大圆角 `radii.bubble` | 16 | `TelegramUIPreferences/Sources/PresentationThemeSettings.swift` 的 `mainRadius` |
+| 组内小圆角 `radii.bubbleJoined` | 8 | 同上，`auxiliaryRadius` |
+| 尾巴 `size.bubbleTail` / `size.bubbleTailRise` | 伸出 6，从底边往上占 9 | `TelegramPresentationData/Sources/ChatMessageBubbleImages.swift`：伸出 6，下缘是半高约 8.5 的椭圆弧，上缘内凹。只在组尾画 |
+| 正文离气泡边 `spacing.bubbleInsetX` / `bubbleInsetY` | 左右 11，上下 6 | `ChatMessageItemCommon.swift` 的 `text.bubbleInsets`（上 6⅓、下 5⅔、左右 11） |
+| 气泡离屏幕边 `spacing.bubbleEdge` | 4 | 同上，`edgeInset` 3，加气泡图自己的 1 |
+| 最大宽度 `spacing.bubbleOpposite` | 屏宽减 36（含尾巴那条边）；群聊里再减头像 | 同上，`maximumWidthFill` 的 `compactInset`。取代原来按比例的 `ratio.bubbleWidth`（Android 改完前留着） |
+| 组内、组间 `spacing.runGap` / `groupGap` | 2 / 6 | 同上，`mergedSpacing` 0、`defaultSpacing` 2⅓，加气泡图上下各 1 的留白；组间按官方截图量的约 6 |
+| 群聊头像 `size.messageAvatar` | 34，离气泡 4 | 同上，`avatarInset` 34 + 4 |
+| 正文 `typography.message` | 16 / 行高 21 | Telegram 默认 17（`ChatPresentationData.swift` 的 `baseDisplaySize`）、行高约 22。Wonton 的界面字体比 SF 宽，16 时每个字的宽度和它的 17 相当 |
+| 时间和勾 `typography.messageMeta` | 11，气泡右下角，和末行同排 | `ChatMessageDateAndStatusNode.swift`：字号是正文的 11/17 |
+| 名字 `typography.senderName` | 14 半粗，重点色 | 估计值 |
+| 入气泡 | 浅色 `surface`（白），深色 `surfaceSubtle` | `DefaultDayPresentationTheme.swift` 入气泡 `#FFFFFF`；`DefaultDarkPresentationTheme.swift` 入气泡 `#1D1D1D`、背景近黑 |
+| 出气泡 | `accentFill` 纯色，字 `textOnAccentFill`，时间和勾 `accentInkOnFill` | Telegram 的出气泡跟主题的重点色走；不描边、不叠颗粒 |
+| 选项按钮 `size.choiceButton` / `typography.choice` | 高 42，间距 4，字 15 中粗、居中；上角 8，最下一行靠外的角 16；和气泡等宽 | `ChatMessageActionButtonsNode.swift`：高 42、字 16 中粗、角用气泡的两档圆角。字取 15：半格宽里要放得下“approve once” |
+| 日期胶囊、说明行的底 `ratio.serviceFill` / `serviceFillDark` | 浅色盖黑 32%，深色盖白 16%，白字 | 浅色主题无壁纸时是 `#596E89` 35%，白字；深色是 `#1F1F1F` 实底 |
+| 选项按钮的底和字 | 入气泡色透 30% 背景，字用 `accentInk`；选中的是 `accentFill` 实底 | Telegram 是和日期胶囊一样的半透明深色底、白字。这里没照：灰底白字在浅色背景上对比度不够，也显得脏 |
+| 日期胶囊 `size.datePill` / `typography.datePill` | 高 22，字 13 中粗 | `ChatMessageDateHeader.swift`：高 22、字是正文的 13/17 |
+| 跳转高亮 `ratio.jumpHighlight` | 重点色 20% | 估计值 |
+| 背景 `ratio.wallTint` / `wallPattern` | 底色上盖 16% 重点色（深色只盖三成），再铺 14% 重点色的细线图案 | Telegram 默认是带图案的壁纸。图案是自己画的几何小件（圆、十字、波浪、三角、方、馄饨、括弧、三点），不用它的素材 |
+
+#### 顶栏
+
+- 左：返回的玻璃圆钮。Telegram 在这里带未读数；核心没有“别的房间未读总数”这一项，不画数字。
+- 中：一枚玻璃胶囊，名字 17 半粗（`typography.barTitle`），下面一行 13 的状态（`typography.barStatus`）：有人输入时写“正在输入…”（重点色），
+  否则写连接状态，都没有就只剩名字（`ChatTitleView.swift`：标题 17 半粗、副标题 13，垫玻璃）。居中；两边的东西太宽时退到两边之间居中。
+- 右：圆头像，直径 `size.chatControl`（44）。点头像或标题进对方的资料页：原来的“i”按钮去掉，入口并到这里（[ADR-0044](0044-bot-profile-and-status-avatars.md) 的资料页不变）。
+- “打开面板”按钮（[ADR-0052](0052-chat-pull-panel.md) 要求它留在房间顶栏、看得见、读屏能操作）、通话入口（[ADR-0096](0096-calls-matrixrtc-widget.md)）、
+  开旁聊（[ADR-0093](0093-side-chats.md)）排在头像左边，都是同样大小的玻璃圆钮。
+- 栏本身不垫实底，后面只有一段朝消息方向淡出的材质，消息从玻璃下面滚过去时慢慢糊掉；输入栏后面也一样。顶栏下面那几条提示（群里的 AI、Agent 状态、旁聊说明）收在一张玻璃卡片里。
+
+#### 输入栏
+
+- 从左到右：“菜单”胶囊（Bot 有命令时才有）、回形针圆钮、输入框、发送圆钮（有字或有附件才出现）。各是一块玻璃，高 `size.chatControl`（44），
+  离屏幕边 `spacing.chatFloatInset`（8）；`ChatTextInputPanelNode.swift` 里菜单按钮也是垫玻璃的胶囊。
+- “菜单”和发送是重点色的玻璃（`accentInk` 上色，字和图标用 `canvas`）。输入框里有字时“菜单”收成只剩图标，把宽度让给输入框。
+- 回复条和附件区收在输入框那一块玻璃里：回复图标、重点色竖条、名字（重点色）、一行摘要、关闭。
+- 命令列表是输入栏上方的一张玻璃卡片，每行：Bot 圆头像（`size.commandAvatar`，28）、“/命令”、说明；按内容高，最多 `size.commandMenu`。
+- 没有语音消息和表情面板，所以不画麦克风和表情按钮。
+
+#### 其余令牌
 
 | 令牌 | 取值 | 用在哪 |
 | --- | --- | --- |
-| `radii.bubble` | 17 | 气泡的大圆角 |
-| `radii.bubbleJoined` | 6 | 组内贴近发送者一侧的小圆角 |
-| `size.bubbleTail` | 6 | 尾巴伸出气泡的宽度 |
-| `size.messageAvatar` | 34 | 群聊组尾旁边的头像 |
-| `spacing.runGap` | 2 | 组内两条之间 |
-| `spacing.groupGap` | 8 | 组与组之间 |
-| `ratio.bubbleWidth` | 0.8 | 气泡最大宽度占可用宽度 |
-| `gesture.replyTrigger` | 64 | 左滑过这么远算回复 |
-| `gesture.replyMax` | 88 | 左滑最多拖这么远 |
-| `motion.jumpHighlight` | 1000 | 跳到原消息后高亮淡出 |
-| `motion.datePillHold` | 1000 | 停止滚动后日期胶囊停留 |
-| `ratio.composerLines` | 6 | 输入框最多长到几行 |
-| `size.commandMenu` | 240 | “/”命令列表最高这么高，再多就在里面滚 |
+| `gesture.replyTrigger` | 64 | 左滑过这么远算回复（估计值） |
+| `gesture.replyMax` | 88 | 左滑最多拖这么远（估计值） |
+| `motion.jumpHighlight` | 1000 | 跳到原消息后高亮淡出（估计值） |
+| `motion.datePillHold` | 1000 | 停止滚动后日期胶囊停留（估计值） |
+| `ratio.composerLines` | 6 | 输入框最多长到几行（Telegram 按可用高度算，最多 12 行） |
+| `size.commandMenu` | 240 | “/”命令列表最高这么高，再多就在里面滚（估计值） |
 
-`gesture.timeReveal` 随左滑看时间删掉。
+`gesture.timeReveal` 随左滑看时间删掉。聊天背景、入气泡、半透明底这几样颜色由壳拿 ADR-0026 的令牌按上面的浓度叠出来（`ChatPalette`）；
+核心的 `ThemeColors` 加上这几项以后改成直接读。
 
 ## 理由
 
@@ -143,7 +189,8 @@ Telegram 自己也让用户换主题色，形状和位置才是“像 Telegram�
 
 ## 代价与待验证项
 
-- Telegram 的数值是估计值，没在真机 Telegram 上量；主人并排对照后再调令牌。
+- 内容层的数值读自 Telegram iOS 的源码，玻璃那一层和标了“估计值”的没在真机 Telegram 上量；主人并排对照后再调令牌。
+- 共用令牌（圆角、间距）改了值，Android 跟着变；新加的聊天令牌 Android 还没用上，`ratio.bubbleWidth` 只剩 Android 在用。
 - 选项规则会误认 Bot 出于别的原因给自己消息加的表情；Hermes 的中文提示里拒绝的表情写成“❎”，而它实际放的是“❌”，这个按钮只画表情、没有文字。
 - 命令表是状态事件，回应的 `m.relates_to` 也是明文：加密房间里服务器能看到命令名和点了哪个表情。自家服务器，风险小。
 - Bot 要有在房间里写状态事件的权限；没有时这个房间没有菜单，由插件如实提示。
