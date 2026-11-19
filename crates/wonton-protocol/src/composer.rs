@@ -108,7 +108,7 @@ pub struct OutgoingMessage {
     pub state: SendState,
 }
 
-/// 一次发送里的几条事件带的分组标记（`app.wonton.batch`，ADR-0094 第 3 节）。时间线里由核心解析好给壳；发送端和接收端（ACP 桥）
+/// 一次发送里的几条事件带的分组标记（`app.wonton.batch`，ADR-0094 第 3 节）。时间线里由核心解析好给壳；发送端和接收端（Bot 插件）
 /// 都用这里的格式和校验。
 #[derive(Clone, Debug, PartialEq, Eq, Hash, Serialize, Deserialize)]
 #[cfg_attr(feature = "uniffi", derive(uniffi::Record))]
@@ -184,7 +184,7 @@ mod tests {
         map
     }
 
-    /// 契约：标记的线上格式（ADR-0094 第 3 节），ACP 桥按它收齐一组。
+    /// 契约：标记的线上格式（ADR-0094 第 3 节），Bot 插件按它收齐一组。
     #[test]
     fn the_marker_round_trips_through_event_content() {
         let group = MessageGroup {

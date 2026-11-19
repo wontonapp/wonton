@@ -112,7 +112,7 @@ pub(super) fn turn_sender(
     }
     // 没带请求头的 Bot 插件（如只报调用链的第三方 Bot）：先按报的会话找那一轮，找不到再看进行中的轮次。
     let bot = bot_ref(caller)?;
-    let turns = bus.agent_chains()?.ledger().live_bridge_turns(&bot);
+    let turns = bus.agent_chains()?.ledger().live_turns(&bot);
     if let (Some(session), Some(chain)) = (caller.session.as_deref(), caller.chain.as_deref())
         && let Some(turn) = turns
             .iter()

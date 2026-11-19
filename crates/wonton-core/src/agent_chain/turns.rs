@@ -1,16 +1,16 @@
-//! 桥的一轮怎么落到链上（ADR-0061 第 10 节，第 8 块的叫回在这接）：续到已有链还是开新链、
+//! Bot 插件的一轮怎么落到链上（ADR-0061 第 10 节，第 8 块的叫回在这接）：续到已有链还是开新链、
 //! 记轮数、登记会话。检查和记账在 `layers`、`budget`，这里只管顺序和登记。
 
 use wonton_protocol::{AgentChainStatus, BotRef, ChainTurnGrant, ConfirmationOrigin};
 
 use super::store;
-use super::{ChainLedgerError, ChainSessionSource, LedgerState, SessionEntry};
+use super::{ChainLedgerError, LedgerState, SessionEntry};
 use super::{budget, layers, stop};
 
-/// 桥的一轮续到已有的链：检查（已停、到上限）→ 记轮数（到轮数上限的那一下就地翻转）→
-/// 登记桥会话。被拒的轮不登记会话，但翻转要提交——"再给一份"靠它。
+/// 一轮续到已有的链：检查（已停、到上限）→ 记轮数（到轮数上限的那一下就地翻转）→
+/// 登记会话。被拒的轮不登记会话，但翻转要提交——"再给一份"靠它。
 /// 被点名的 Bot 不在链上时用点名者的层进链（不加层，轮数照记）。
-pub(super) fn continue_bridge_round(
+pub(super) fn continue_round(
     state: &mut LedgerState,
     chain_id: &str,
     bot: &BotRef,
@@ -26,11 +26,11 @@ pub(super) fn continue_bridge_round(
         layers::reject_if_closed(chain).map_err(ChainLedgerError::Rejected)?;
         let layer = match state.sessions.get(session) {
             Some(entry) if entry.chain == chain_id && entry.bot == *bot => entry.layer,
-            _ => layers::bridge_layer(chain, bot, mentioner).map_err(ChainLedgerError::Rejected)?,
+            _ => layers::turn_layer(chain, bot, mentioner).map_err(ChainLedgerError::Rejected)?,
         };
         (layer, layers::layer_of(chain, bot).is_none())
     };
-    // 同一桥会话的重复 start（响应丢了重试）：幂等重发，不重复记轮。
+    // 同一会话的重复 start（响应丢了重试）：幂等重发，不重复记轮。
     if let Some(existing) = state.sessions.get(session)
         && existing.chain == chain_id
         && existing.bot == *bot
@@ -42,10 +42,6 @@ pub(super) fn continue_bridge_round(
         });
     }
     state.dirty = true;
-    let parents = match state.sessions.get(session) {
-        Some(entry) if entry.chain == chain_id && entry.bot == *bot => entry.path.parents.clone(),
-        _ => super::ancestry::callers(state, chain_id, mentioner, None),
-    };
     {
         let chain = state.chains.get_mut(chain_id).expect("链刚查过");
         budget::count_round(chain, &mut state.events).map_err(ChainLedgerError::Rejected)?;
@@ -67,7 +63,6 @@ pub(super) fn continue_bridge_round(
             layer,
         },
         Some(sender),
-        parents,
     )?;
     stop::bump_activity(state, chain_id);
     Ok(ChainTurnGrant {
@@ -125,7 +120,6 @@ pub(super) fn open_chain(
             layer,
         },
         sender.as_deref(),
-        Vec::new(),
     )?;
     stop::bump_activity(state, &chain_id);
     Ok(ChainTurnGrant {
@@ -141,20 +135,12 @@ fn bind_session(
     session: &str,
     first: store::ChainBotEntry,
     sender: Option<&str>,
-    parents: Vec<std::sync::Arc<super::ancestry::SessionPath>>,
 ) -> Result<(), ChainLedgerError> {
     let store::ChainBotEntry { bot, layer } = first;
     let entry = SessionEntry {
         chain: chain_id.to_owned(),
         bot: bot.clone(),
         layer,
-        source: ChainSessionSource::Bridge,
-        path: std::sync::Arc::new(super::ancestry::SessionPath {
-            bot: bot.clone(),
-            layer,
-            parents,
-        }),
-        connection: false,
         sender: sender.map(str::to_owned),
         live: true,
     };

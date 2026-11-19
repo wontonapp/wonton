@@ -1,4 +1,4 @@
-//! App 的调用链页面（ADR-0061 第 10 节）：链列表（长轮询）、停链、改上限、改使用方并发。
+//! App 的调用链页面（ADR-0061 第 10 节）：链列表（长轮询）、停链、改上限。
 //! 和设备认人的管理接口同一道门；列出来的每一条都只给它该看的人——链代表的人和链上各 Bot 的归属人。
 //!
 //! 状态之外的一切（谁的链、能停不能停）都在这里按记录判断，账本只管账。
@@ -12,10 +12,7 @@ use axum::response::{IntoResponse, Response};
 use axum::{Extension, Json};
 use hyper::{HeaderMap, StatusCode};
 use serde::Deserialize;
-use wonton_protocol::{
-    AGENT_CHAINS_WAIT_SECS, AgentChainRow, AgentConcurrency, AgentSettingsViewModel, ChainLimits,
-    DEFAULT_CONSUMER_AGENT_CONCURRENCY,
-};
+use wonton_protocol::{AGENT_CHAINS_WAIT_SECS, AgentChainRow, AgentSettingsViewModel, ChainLimits};
 
 use super::api::{error_response, requester};
 use super::{Gateway, TunnelPeer, permissions};
@@ -140,7 +137,7 @@ pub(super) async fn stop(
     }
 }
 
-/// `GET /_wonton/api/agent/settings`：上限和每个使用方的并发。
+/// `GET /_wonton/api/agent/settings`：上限。
 pub(super) async fn settings(
     State(gateway): State<Arc<Gateway>>,
     peer: Option<Extension<TunnelPeer>>,
@@ -193,51 +190,4 @@ pub(super) async fn set_limits(
     }
     chains.ledger().set_default_limits(limits);
     Json(AgentSettingsViewModel { limits }).into_response()
-}
-
-/// `PUT /_wonton/api/agent/consumers/{id}/concurrency`：改一个使用方的并发，只有主人能改。
-pub(super) async fn set_concurrency(
-    State(gateway): State<Arc<Gateway>>,
-    peer: Option<Extension<TunnelPeer>>,
-    headers: HeaderMap,
-    Path(plugin): Path<String>,
-    body: Bytes,
-) -> Response {
-    if let Some(denied) =
-        permissions::require(&gateway, peer, &headers, PermissionItem::ServerSettings)
-    {
-        return denied;
-    }
-    let Some(chains) = &gateway.agent_chains else {
-        return unavailable(&super::api::languages(&headers));
-    };
-    let request: AgentConcurrency = match serde_json::from_slice(&body) {
-        Ok(request) => request,
-        Err(e) => {
-            return error_response(
-                StatusCode::BAD_REQUEST,
-                "invalid_input",
-                &format!("请求体不是并发数：{e}"),
-            );
-        }
-    };
-    if request.concurrency == 0 {
-        return error_response(StatusCode::BAD_REQUEST, "invalid_input", "并发不能是 0");
-    }
-    if let Err(e) = chains
-        .settings()
-        .set_concurrency(&plugin, request.concurrency)
-    {
-        return super::agent_chains::ledger_error(e);
-    }
-    Json(AgentConcurrency {
-        concurrency: chains.settings().concurrency(&plugin),
-    })
-    .into_response()
-}
-
-/// 没设过的并发按默认值显示（现在的链列表页面用不到，给设置页面的第 10 块留的入口）。
-#[allow(dead_code)]
-pub(super) fn default_concurrency() -> u32 {
-    DEFAULT_CONSUMER_AGENT_CONCURRENCY
 }

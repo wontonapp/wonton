@@ -95,7 +95,7 @@ fn start_turn(ledger: &Chains, bot: &BotRef, sender: &str, session: &str) {
     };
     let sender = sender.to_owned();
     ledger
-        .start_bridge_turn(bot.clone(), report, None, sender)
+        .start_turn(bot.clone(), report, None, sender)
         .unwrap();
 }
 

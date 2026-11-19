@@ -1,11 +1,11 @@
-//! `POST /agent/chains`：桥每轮开始、结束都在这里报（ADR-0061 第 10 节，接口在 `wonton-protocol` 的
+//! `POST /agent/chains`：Bot 插件每轮开始、结束都在这里报（ADR-0061 第 10 节，接口在 `wonton-protocol` 的
 //! `agent_chain`）。门和 `/agent/permissions` 一样在 [`super::mcp`] 后面，另外验 Bot 的 Matrix 令牌
 //! （ADR-0083 第 5 节）：总线令牌 Agent 自己也拿得到，只认来源地址不够。
 //!
 //! 说话人必须是这个 Bot 听的人（ADR-0045 的名单：归属人和已成立的联系人，同归属人的另一个 Bot 也算），
 //! 否则 403 `permission_denied`；说话人是 Bot 时这一轮靠唤醒标签接回原链（第 8 块）。
 //!
-//! 这里也放着链的服务：账本、出箱、设置和 `agent_acp` 的取消接口（第 5 块接上）。
+//! 这里也放着链的服务：账本、出箱和设置。
 
 use std::sync::Arc;
 
@@ -77,7 +77,7 @@ impl AgentChains {
         chain: &str,
     ) -> Result<crate::agent_chain::ChainStopOutcome, ChainLedgerError> {
         let outcome = self.ledger.stop(chain)?;
-        for session in &outcome.bridge {
+        for session in &outcome.turns {
             // CancelTurn 不落盘，push 不会失败；失败了也只是这条取消发不出，链已经停了。
             if let Err(error) = self.outbox.push(
                 &session.bot,
@@ -154,7 +154,7 @@ fn keeper_of(plugins: &crate::plugin::PluginManager, bot_user_id: &str) -> Strin
         .unwrap_or_default()
 }
 
-/// 桥报一轮（开始、结束）。
+/// Bot 插件报一轮（开始、结束）。
 pub(super) async fn report(gateway: &Gateway, caller: &Caller, req: Request) -> Response {
     let Some(chains) = &gateway.agent_chains else {
         return error_response(
@@ -170,7 +170,7 @@ pub(super) async fn report(gateway: &Gateway, caller: &Caller, req: Request) -> 
         plugin_id: caller.id.to_string(),
         bot: bot.bot.clone(),
     }) else {
-        return refused("这个插件没有 Bot 记录；调用链由桥按 Bot 报");
+        return refused("这个插件没有 Bot 记录；调用链按 Bot 报");
     };
     let Ok(plugin_id) = PluginId::parse(&bot.plugin_id) else {
         return refused("插件 ID 认不出来");
@@ -233,7 +233,7 @@ pub(super) async fn report(gateway: &Gateway, caller: &Caller, req: Request) -> 
             };
             match chains
                 .ledger()
-                .start_bridge_turn(bot, report, mentioner, chain_user)
+                .start_turn(bot, report, mentioner, chain_user)
             {
                 Ok(grant) => axum::Json(grant).into_response(),
                 Err(error) => ledger_error(error),
@@ -272,7 +272,6 @@ pub(super) fn ledger_error(error: ChainLedgerError) -> Response {
                 rejection.clone(),
             ),
             ChainError::Stopped => (StatusCode::CONFLICT, "stopped", rejection.clone()),
-            ChainError::Busy => (StatusCode::TOO_MANY_REQUESTS, "busy", rejection.clone()),
             ChainError::PermissionDenied => (
                 StatusCode::FORBIDDEN,
                 "permission_denied",
@@ -283,13 +282,13 @@ pub(super) fn ledger_error(error: ChainLedgerError) -> Response {
             }
             ChainError::Other => (StatusCode::BAD_REQUEST, "other", rejection.clone()),
         },
-        ChainLedgerError::UnknownChain(_) | ChainLedgerError::UnknownSession(_) => {
+        ChainLedgerError::UnknownChain(_) => {
             (StatusCode::NOT_FOUND, "not_found", ChainError::Other)
         }
         ChainLedgerError::NotAtLimit { .. } => {
             (StatusCode::CONFLICT, "invalid_input", ChainError::Other)
         }
-        ChainLedgerError::SessionsLive { .. } | ChainLedgerError::Invalid(_) => {
+        ChainLedgerError::Invalid(_) => {
             (StatusCode::BAD_REQUEST, "invalid_input", ChainError::Other)
         }
         ChainLedgerError::UnknownCard(_) => (StatusCode::NOT_FOUND, "not_found", ChainError::Other),

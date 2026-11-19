@@ -1,8 +1,8 @@
 //! 出箱（ADR-0061 第 9 节）：核心把批准的消息和要取消的轮次放进 `GET` [`AGENT_OUTBOX_PATH`]，
-//! 前端（桥）长轮询取走，做完按 [`OutboxReceipt`] 回报。路径和 `/agent/permissions` 同一道门，
+//! Bot 插件长轮询取走，做完按 [`OutboxReceipt`] 回报。路径和 `/agent/permissions` 同一道门，
 //! 只有总线令牌的请求被拒。
 //!
-//! 这里的项都由核心产出、前端消费：不认识的项落到 [`OutboxKind::Other`]，前端照实回报并跳过，
+//! 这里的项都由核心产出、Bot 插件消费：不认识的项落到 [`OutboxKind::Other`]，照实回报并跳过，
 //! 不猜怎么执行。
 //!
 //! 核心工具 [`SEND_MESSAGE_TOOL`] 批准后的正文也走这里投递。
@@ -37,15 +37,15 @@ pub enum OutboxKind {
     /// 把正文以 Bot 的身份发进和收件人的私聊（ADR-0061 第 9 节）：主人已经批准了
     /// [`crate::ConfirmationCategory::SendMessage`] 那张卡片。
     Message { recipient: String, body: String },
-    /// 这条链的这个会话的一轮被停链取消了：前端对它发 `session/cancel`（ADR-0061 第 10 节），
+    /// 这条链的这个会话的一轮被停链取消了：Bot 插件对它发 `session/cancel`（ADR-0061 第 10 节），
     /// 同会话别的待答请求一并回 `cancelled`，然后回报结果。
     CancelTurn { chain: String, session: String },
-    /// 比前端新的核心给的未知项。
+    /// 比 Bot 插件新的核心给的未知项。
     #[serde(other)]
     Other,
 }
 
-/// 前端对取走的一项的回报，路径同 [`AGENT_OUTBOX_PATH`]。
+/// Bot 插件对取走的一项的回报，路径同 [`AGENT_OUTBOX_PATH`]。
 #[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize)]
 pub struct OutboxReceipt {
     /// 回报的是哪个 [`OutboxItem::id`]。
@@ -70,7 +70,7 @@ pub enum OutboxResult {
 pub enum OutboxFailure {
     /// 没有和收件人的私聊；建私聊要 ADR-0083 的房间表，现在先这样报。
     NoRoom,
-    /// 比核心方新的前端给的未知原因。
+    /// 比核心方新的 Bot 插件给的未知原因。
     #[serde(other)]
     Other,
 }
@@ -156,7 +156,7 @@ mod tests {
         );
     }
 
-    /// 契约：不认识的项和原因落到 `Other`，核心比前端新时前端不猜怎么执行。
+    /// 契约：不认识的项和原因落到 `Other`，核心比 Bot 插件新时插件不猜怎么执行。
     #[test]
     fn unknown_kinds_fall_back_to_other() {
         assert_eq!(

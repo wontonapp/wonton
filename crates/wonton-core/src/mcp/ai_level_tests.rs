@@ -107,7 +107,7 @@ fn start_turn(ledger: &Chains, bot: &BotRef, sender: &str, session: &str) {
         event_id: format!("$event-{session}:test"),
     };
     ledger
-        .start_bridge_turn(bot.clone(), report, None, sender.to_owned())
+        .start_turn(bot.clone(), report, None, sender.to_owned())
         .unwrap();
 }
 
