@@ -62,7 +62,7 @@ probe_as_mom() {
   jwt="$(m -X POST "$core_url/_wonton/matrix/login-token" | json token)" || return 1
   docker run --rm --network "container:$core" "$echo_image" probe --homeserver "$matrix_url" \
     --proxy "http://$mom_credential@127.0.0.1:18009" --login-token "$jwt" --room "$mom_room" --bot "$hermes_user" \
-    --reply any "$@" >"$out" 2>&1
+    --device-id "$mom_probe_device" --reply any "$@" >"$out" 2>&1
 }
 mom_pair() {
   docker run --rm --network "container:$core" -v "$mom_key:/tmp/mom.key" --entrypoint tunnel-client "$phone_image" \
@@ -70,8 +70,44 @@ mom_pair() {
 }
 # 妈妈作为家人加入，Hermes 加她为联系人：主人邀请（给 AI 只读的角色）、她的手机扫码、主人同意、她第一次登录 Matrix、
 # 主人发联系人请求、她进 Hermes 发来的私聊；等 Hermes 按新的名单重建、过健康检查。定下 mom_room、mom_credential、mom_access。
+# SMOKE_ONLY 对着保留下来的栈跑时妈妈已经在了：跳过邀请和配对，只把她的手机起起来、复用已有的私聊房间。
 family_join() {
   local roles role code request contacts_url state invited
+  : "${matrix_url:=http://matrix.$WONTON_DEV_DOMAIN:$WONTON_DEV_PORT}"
+  contacts_url="$core_url/_wonton/api/bots/com.nousresearch.hermes/default/contacts"
+  mom_key="$WONTON_DEV_DATA/phonekeys/mom.key"
+  if t "$core_url/_wonton/api/members" | grep -q '"username": *"mom"'; then
+    docker rm -f "$mom_phone" >/dev/null 2>&1 || true
+    docker run -d --name "$mom_phone" --network "container:$core" -v "$mom_key:/tmp/phone.key" --entrypoint tunnel-client \
+      "$phone_image" --key /tmp/phone.key proxy --auth --domain "$WONTON_DEV_DOMAIN" --server "$server_id" \
+      --addr "127.0.0.1:$WONTON_DEV_TUNNEL_PORT" --listen 127.0.0.1:18009 >/dev/null
+    for _ in $(seq 30); do
+      docker logs "$mom_phone" 2>/dev/null | grep '^本地代理' >/dev/null && break
+      sleep 1
+    done
+    mom_credential="$(docker logs "$mom_phone" 2>/dev/null | sed -n 's/^会话凭据：//p')"
+    [[ -n "$mom_credential" ]] || fail "妈妈的手机没有启动：$(docker logs "$mom_phone" 2>&1)"
+    mom_access="$(docker run --rm --network "container:$core" "$echo_image" probe --homeserver "$matrix_url" \
+      --proxy "http://$mom_credential@127.0.0.1:18009" --login-token "$(m -X POST "$core_url/_wonton/matrix/login-token" | json token)" \
+      --room "$hermes_room" --bot "$hermes_user" --token-only 1 | sed -n 's/^令牌 //p')"
+    [[ -n "$mom_access" ]] || fail "妈妈登录不了 Matrix"
+    t -sS -o /dev/null -X POST -H 'content-type: application/json' -d "{\"user_id\": \"$(mxid mom)\", \"kind\": \"person\"}" \
+      "$contacts_url"
+    # 上一次对着这个栈跑到了配对、没走到进房间时，房间里只有邀请：先找已进的，找不到就收下邀请进房间。
+    mom_room=""
+    for _ in $(seq 12); do
+      mom_room="$(mom_api '/sync?timeout=10000' | python3 -c 'import json, sys
+print("\n".join(json.load(sys.stdin).get("rooms", {}).get("join", {})))')"
+      [[ -n "$mom_room" ]] && break
+    done
+    if [[ -z "$mom_room" ]]; then
+      mom_room="$(mom_api '/sync?timeout=0' | python3 -c 'import json, sys
+print("\n".join(json.load(sys.stdin).get("rooms", {}).get("invite", {})))')"
+      [[ -z "$mom_room" ]] || mom_api "/join/$(python3 -c 'import sys, urllib.parse; print(urllib.parse.quote(sys.argv[1]))' "$mom_room")" \
+        -X POST -H 'content-type: application/json' -d '{}' >/dev/null
+    fi
+    [[ -n "$mom_room" && "$mom_room" != *$'\n'* ]] || fail "妈妈的私聊房间没找到：$mom_room"
+  else
   roles="$(t "$core_url/_wonton/api/roles")"
   role="$(python3 -c 'import json, sys
 print(next(r["id"] for r in json.load(sys.stdin)["roles"] if r["permissions"]["ai"] == "read_only"))' <<<"$roles")" ||
@@ -81,7 +117,6 @@ print(next(r["id"] for r in json.load(sys.stdin)["roles"] if r["permissions"]["a
     "$core_url/_wonton/api/members")" 201
   code="$(t -X POST -H 'content-type: application/json' -d "{\"direct_addrs\": [\"127.0.0.1:$WONTON_DEV_TUNNEL_PORT\"]}" \
     "$core_url/_wonton/api/members/mom/pairing-code" | json code)"
-  mom_key="$WONTON_DEV_DATA/phonekeys/mom.key"
   docker run --rm -v "$WONTON_DEV_DATA/phonekeys:/k" --entrypoint sh "$phone_image" -c "tunnel-client --key /k/mom.key id" >/dev/null
   expect "妈妈的手机扫码，等管理员同意" "$(mom_pair "$code" | json outcome)" pending
   request="$(t "$core_url/_wonton/api/members/join-requests" | python3 -c 'import json, sys
@@ -104,7 +139,6 @@ print(next(r["id"] for r in json.load(sys.stdin)["requests"] if r["username"] ==
     --proxy "http://$mom_credential@127.0.0.1:18009" --login-token "$(m -X POST "$core_url/_wonton/matrix/login-token" | json token)" \
     --room "$hermes_room" --bot "$hermes_user" --token-only 1 | sed -n 's/^令牌 //p')"
   [[ -n "$mom_access" ]] || fail "妈妈登录不了 Matrix"
-  contacts_url="$core_url/_wonton/api/bots/com.nousresearch.hermes/default/contacts"
   t -sS -o /dev/null -X POST -H 'content-type: application/json' -d "{\"user_id\": \"$(mxid mom)\", \"kind\": \"person\"}" \
     "$contacts_url"
   for _ in $(seq 60); do
@@ -117,6 +151,7 @@ print("\n".join(json.load(sys.stdin).get("rooms", {}).get("invite", {})))')"
   mom_room="$invited"
   mom_api "/join/$(python3 -c 'import sys, urllib.parse; print(urllib.parse.quote(sys.argv[1]))' "$mom_room")" \
     -X POST -H 'content-type: application/json' -d '{}' >/dev/null
+  fi
   for _ in $(seq 120); do
     state="$(t "$contacts_url" | python3 -c 'import json, sys
 print(next((c["state"] for c in json.load(sys.stdin)["contacts"] if c["user_id"] == sys.argv[1]), "absent"))' "$(mxid mom)")"

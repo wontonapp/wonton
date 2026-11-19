@@ -41,7 +41,7 @@ use crate::PREFIX;
 const WAIT: Duration = Duration::from_secs(60);
 
 /// 认得的参数。
-const FLAGS: [&str; 16] = [
+const FLAGS: [&str; 17] = [
     "homeserver",
     "proxy",
     "login-token",
@@ -58,6 +58,7 @@ const FLAGS: [&str; 16] = [
     "mention",
     "redacted",
     "token-only",
+    "device-id",
 ];
 
 #[derive(Clone, Copy, PartialEq, Eq)]
@@ -93,6 +94,8 @@ struct Options {
     redacted: Option<Duration>,
     /// 只登录并打印访问令牌，不进房间。
     token_only: bool,
+    /// 复用这个设备 ID 登录：同一步里重试沿用同一台设备，对方已经认得的设备不用重新发现。
+    device_id: Option<String>,
 }
 
 impl Options {
@@ -167,6 +170,7 @@ impl Options {
                 .transpose()?
                 .map(Duration::from_secs),
             token_only: one("token-only").is_some(),
+            device_id: one("device-id"),
         })
     }
 }
@@ -179,13 +183,15 @@ pub async fn run(args: &[String]) -> anyhow::Result<()> {
     }
     let client = builder.build().await.context("建 Matrix 客户端")?;
     let data = JsonObject::from_iter([("token".to_owned(), options.token.clone().into())]);
-    client
+    let mut login = client
         .matrix_auth()
         .login_custom("org.matrix.login.jwt", data)
         .context("登录请求不对")?
-        .initial_device_display_name("Wonton 冒烟")
-        .await
-        .context("用登录令牌登录")?;
+        .initial_device_display_name("Wonton 冒烟");
+    if let Some(device_id) = &options.device_id {
+        login = login.device_id(device_id);
+    }
+    login.await.context("用登录令牌登录")?;
     if options.token_only {
         // 不注销：调用方要拿这个令牌接着调接口。
         let token = client.access_token().context("登录后没有访问令牌")?;
