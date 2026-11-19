@@ -58,10 +58,8 @@ impl PluginManager {
         let mut replacement = package.manifest.clone();
         let bot_services = super::super::bot_services::bot_services(&package.manifest);
         if let Some(provides) = replacement.provides.as_mut() {
-            provides.capabilities.retain(|capability, spec| {
-                capability != crate::plugin::capabilities::AGENT_ACP.name
-                    && package.manifest.bots.is_some()
-                    && !bot_services.contains(spec.service.as_str())
+            provides.capabilities.retain(|_, spec| {
+                package.manifest.bots.is_some() && !bot_services.contains(spec.service.as_str())
             });
         }
         let state = self.dependencies.load()?;
@@ -160,14 +158,9 @@ impl PluginManager {
             {
                 continue;
             }
-            if let Some(bot) = &c.provider_bot {
-                if (provider.id == retiring.0.id && bot == retiring.1)
-                    || self.capability_caller_bot(&provider.id, bot)?.is_none()
-                {
-                    continue;
-                }
-            } else if capability == crate::plugin::capabilities::AGENT_ACP.name
-                && (caller.is_some() || self.active_capability_bots(&provider.id)?.is_empty())
+            if let Some(bot) = &c.provider_bot
+                && ((provider.id == retiring.0.id && bot == retiring.1)
+                    || self.capability_caller_bot(&provider.id, bot)?.is_none())
             {
                 continue;
             }
@@ -293,10 +286,6 @@ impl PluginManager {
                     state.connections.push(connection);
                 }
             }
-            state.handoff_consents.retain(|consent| {
-                !(consent.from.plugin_id == plugin.as_str() && consent.from.bot == bot)
-                    && !(consent.target.plugin_id == plugin.as_str() && consent.target.bot == bot)
-            });
         })
     }
 

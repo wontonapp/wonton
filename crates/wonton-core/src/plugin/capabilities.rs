@@ -128,16 +128,6 @@ pub const PERSONAL_DATA: Capability = Capability {
     hosted: None,
 };
 
-/// Agent 运行时（ADR-0061）：前端和编排器经它指挥已装的 Agent，Agent 之间也能互相交接。
-/// 和出网代理一样不声明凭据；提供方可以同时 `wants`/`requires` 这个能力（ADR-0061 第 9 节）。
-pub const AGENT_ACP: Capability = Capability {
-    name: "agent_acp",
-    interface: "ACP over WebSocket（/acp），走通用转发，核心注入来源身份",
-    credentials: Credentials::None,
-    high_privilege: true,
-    hosted: None,
-};
-
 /// 远端 MCP（ADR-0066 第 3 节）：核心不直接外连，交给提供这个能力的连接器；没有包内目录，提供方不写 `mount`。
 pub const REMOTE_MCP: Capability = Capability {
     name: "remote_mcp",
@@ -169,10 +159,6 @@ pub const MATRIX_RTC_PREFIX: &str = "/_wonton/matrix-rtc";
 /// 注入给 [`MATRIX_RTC`] 提供方的 Matrix 服务器名（填 lk-jwt-service 的 `LIVEKIT_FULL_ACCESS_HOMESERVERS`）。
 pub const MATRIX_SERVER_NAME_VAR: &str = "WONTON_MATRIX_SERVER_NAME";
 
-/// 注入给 [`AGENT_ACP`] 提供方网关服务的提供方令牌（ADR-0061 第 3 节），和使用方的
-/// [`var_url`]（`WONTON_AGENT_ACP_URL`）成对；核心不再终结 ACP WebSocket 后，令牌只发给提供方，不再由核心验证。
-pub const AGENT_ACP_TOKEN_VAR: &str = "WONTON_AGENT_ACP_TOKEN";
-
 /// 没有使用方声明的能力：核心或网关自己用，不能写在 requires/wants 里。
 pub fn has_no_consumer(name: &str) -> bool {
     name == EGRESS_PROXY.name || name == MATRIX_RTC.name
@@ -189,7 +175,6 @@ pub const ALL: &[Capability] = &[
     REMOTE_MCP,
     MATRIX_RTC,
     PERSONAL_DATA,
-    AGENT_ACP,
 ];
 
 pub fn lookup(name: &str) -> Option<&'static Capability> {

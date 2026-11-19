@@ -116,10 +116,6 @@ const TABLE: &[(SpecVersion, Added)] = &[
     (V0_14, Added::Permission("devices.disk")),
     (V0_15, Added::Field(&["remote_mcp"])),
     (V0_15, Added::AutomaticWebuiHealth),
-    (V0_15, Added::Field(&["provides", "agent_acp"])),
-    (V0_15, Added::ValueAt(&["requires"], "agent_acp")),
-    (V0_15, Added::ValueAt(&["wants"], "agent_acp")),
-    (V0_15, Added::Variable("WONTON_AGENT_ACP_URL")),
     (V0_15, Added::Variable("WONTON_BOT_AI_LEVEL")),
 ];
 
@@ -214,9 +210,7 @@ fn places(
             .into_iter()
             .flat_map(|provides| provides.iter())
             .filter(|(name, value)| {
-                // `agent_acp` 有自己的 0.15 行，不按通用能力的 0.11 报。
-                !matches!(name.as_str(), "models" | "egress_proxy" | "agent_acp")
-                    && !value.is_null()
+                !matches!(name.as_str(), "models" | "egress_proxy") && !value.is_null()
             })
             .map(|(name, _)| format!("x-wonton.provides.{name}"))
             .collect(),
@@ -320,14 +314,8 @@ fn walk_at(
     found: &mut Vec<String>,
 ) {
     let Some((key, rest)) = path.split_first() else {
-        // `wanted` 也认数组里的成员（`requires: [agent_acp]` 的下限写在数组上）。
         let matched = match wanted {
-            Some(wanted) => {
-                value.as_str() == Some(wanted)
-                    || value
-                        .as_array()
-                        .is_some_and(|items| items.iter().any(|item| item.as_str() == Some(wanted)))
-            }
+            Some(wanted) => value.as_str() == Some(wanted),
             None => !value.is_null(),
         };
         if matched {

@@ -101,6 +101,11 @@ fn bot_provider(capability: &str) -> String {
     )
 }
 
+/// 能力由每个 Bot 一份的 `bot` 服务提供。
+fn bot_service_provider(capability: &str) -> String {
+    bot_provider(capability).replace("{service: shared,", "{service: bot,")
+}
+
 fn credential_bot_provider(capability: &str) -> String {
     bot_provider(capability).replace(
         "port: 8080}",
@@ -352,13 +357,13 @@ async fn deleting_a_bound_provider_bot_requires_new_high_privilege_confirmation(
     assert_eq!(route(&manager, capability, None).await, id("app.provider"));
 }
 
+/// 能力由 Bot 服务提供时，退掉最后一个 Bot 就没有提供方了：有使用方 requires 它就拦下。
 #[tokio::test]
-async fn removing_the_last_runtime_bot_is_refused_while_a_consumer_requires_it() {
+async fn removing_the_last_bot_is_refused_while_a_consumer_requires_its_bot_service() {
     let bed = Bed::start().await;
     let manager = bed.manager();
-    let capability = "agent_acp";
-    let provider = bot_provider(capability).replace("      KEY: ${WONTON_AGENT_ACP_KEY}", "");
-    install(&manager, &provider).await;
+    let capability = "x-acme.power";
+    install(&manager, &bot_service_provider(capability)).await;
     install(
         &manager,
         &super::capability_deps_install::consumer("requires", capability),

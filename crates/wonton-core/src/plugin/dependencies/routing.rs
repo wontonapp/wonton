@@ -5,7 +5,6 @@ use super::{
     PluginStatus, State, chosen, connection, connection_to, declarations, high,
     selected_binding_bot, service,
 };
-use crate::plugin::capabilities::AGENT_ACP;
 
 impl PluginManager {
     pub(crate) fn capability_caller_bot(
@@ -55,22 +54,7 @@ impl PluginManager {
                 .map(Some)
                 .ok_or_else(|| self.missing_capability_bot(provider, name, langs));
         }
-        if capability != AGENT_ACP.name || bot.is_none() {
-            return Ok(None);
-        }
-        let mut bots = self.active_capability_bots(provider)?;
-        match bots.len() {
-            1 => Ok(bots.pop()),
-            _ => Err(InstallError::UpstreamUnavailable(crate::l10n::text(
-                langs,
-                if bots.is_empty() {
-                    "gateway-agent-acp-no-bot"
-                } else {
-                    "gateway-agent-acp-multi-bot"
-                },
-                &[("provider", provider.as_str().into())],
-            ))),
-        }
+        Ok(None)
     }
 
     pub(super) fn missing_capability_bot(

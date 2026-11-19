@@ -546,36 +546,6 @@ fn settings_need_spec_0_12() {
     assert!(problems(&document("0.12", manifest, plain())).is_empty());
 }
 
-/// 规范 0.15 的 `agent_acp`：`provides` 里的声明不按通用能力的 0.11 报，只报 0.15；
-/// `requires`/`wants` 认数组里的成员；别的通用能力照旧 0.11。
-#[test]
-fn agent_acp_needs_spec_0_15() {
-    let provides = json!({"provides": {"agent_acp": {"service": "web", "port": 8080}}});
-    let found = problems(&document("0.10", provides.clone(), plain()));
-    assert_eq!(found.len(), 1, "{found:?}");
-    assert!(
-        found[0].contains("x-wonton.provides.agent_acp"),
-        "{found:?}"
-    );
-    assert!(found[0].contains("spec \"0.15\""), "{found:?}");
-    assert!(problems(&document("0.15", provides, plain())).is_empty());
-    for field in ["requires", "wants"] {
-        let manifest = json!({field: ["agent_acp"]});
-        let found = problems(&document("0.14", manifest.clone(), plain()));
-        assert_eq!(found.len(), 1, "{field}: {found:?}");
-        assert!(
-            found[0].contains(&format!("x-wonton.{field}: agent_acp")),
-            "{found:?}"
-        );
-        assert!(problems(&document("0.15", manifest, plain())).is_empty());
-    }
-    let other = json!({
-        "requires": ["torrent_client"],
-        "provides": {"torrent_client": {"service": "web", "port": 8080}}
-    });
-    assert!(problems(&document("0.11", other, plain())).is_empty());
-}
-
 /// 表里一行的名字，照规范“各版本新增的字段”的措辞起，好对着抄。
 fn label(added: &Added) -> String {
     let path = |path: &[&str]| {
@@ -690,10 +660,6 @@ const EXPECTED: &[(&str, &str)] = &[
     // 0.15
     ("0.15", "x-wonton.remote_mcp"),
     ("0.15", "无健康检查的 webui 服务由核心代探测"),
-    ("0.15", "x-wonton.provides.agent_acp"),
-    ("0.15", "x-wonton.requires: agent_acp"),
-    ("0.15", "x-wonton.wants: agent_acp"),
-    ("0.15", "variable WONTON_AGENT_ACP_URL"),
     ("0.15", "variable WONTON_BOT_AI_LEVEL"),
 ];
 
