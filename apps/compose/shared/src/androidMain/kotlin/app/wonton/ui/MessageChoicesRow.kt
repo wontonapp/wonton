@@ -23,7 +23,7 @@ import app.wonton.ui.design.WontonTheme
 /**
  * 消息下面的选项按钮（ADR-0109）：两个一行、单独一个占满整行，跟气泡一样宽。选项还开着时点了就把 key 交给核心；
  * 回答过以后选中的那项一直高亮、其余变灰；这条不是问我的就不能点。点过还没答上的转圈，答不上时红字给原因、可以再点。
- * 按钮上先画核心给的 key（表情），再画它的说明；没有说明时只画 key。
+ * 按钮上先画核心给的 key（表情），再画它的说明；没有说明时只画 key。两者同一行居中，放不下省略。
  */
 /** 一行两个。 */
 private const val PAIR = 2
@@ -70,6 +70,8 @@ private fun RowScope.ChoiceButton(
             null
         },
         modifier = modifier.testTag("choice-${choice.key}"),
+        // 表情和字并排居中、单行省略：两个并排的窄按钮里折行会把 key 和说明拆开。
+        centered = true,
         blocked = blocked,
         trailing = if (send is ChoiceSend.Sending) {
             {

@@ -12,7 +12,7 @@ use wonton_protocol::{
     TimelineDiff, TimelineFocus, TimelineItem, TimelineScroll, TimelineUpdate,
 };
 
-use super::ui_fake_room::{FIRST_AT_MS, ITEMS, OWNER, text_message, timeline};
+use super::ui_fake_room::{ITEMS, OWNER, at_ms, text_message, timeline};
 use crate::chat::{Runs, TimelineSubscription};
 
 /// 打开着的假房间，按房间 ID 找；同一房间再订阅时换成新的那份。
@@ -236,7 +236,7 @@ impl FakeTimeline {
         let mut message = text_message(
             &format!("ui-fake-sent-{index}"),
             OWNER,
-            FIRST_AT_MS + index as u64 * 60_000,
+            at_ms(index),
             &[body.to_owned()],
         );
         message.status = Some(MessageStatus::Sent);

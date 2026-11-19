@@ -555,37 +555,47 @@ private fun Conversation(
     val barInset = LocalWontonTopInset.current
     val panelVisible = LocalChatPanel.current?.visible == true
     val bottomInsets = if (panelVisible) WindowInsets.ime else WindowInsets.ime.union(WindowInsets.navigationBars)
+    val menuOpen = commandQuery(draft.text, timeline.commands).isNotEmpty()
     BoxWithConstraints(Modifier.fillMaxSize().windowInsetsPadding(bottomInsets)) {
-        CompositionLocalProvider(
-            LocalWontonBottomInset provides with(density) { composerHeight.toDp() },
-            LocalWontonTopInset provides barInset + with(density) { headerHeight.toDp() },
-        ) {
-            val failure = timeline.failure
-            if (failure != null) {
-                Box(Modifier.fillMaxSize().padding(top = LocalWontonTopInset.current)) {
-                    ProblemView(failure) { timeline.attempt++ }
+        Column(Modifier.fillMaxSize()) {
+            // 状态行自己占一行，占多高时间线就让开多高，不浮在气泡上；气泡只从它的下沿下面消失。
+            Column(
+                Modifier.fillMaxWidth().roomBackdrop(backdrop, top = true).padding(top = barInset)
+                    .onSizeChanged { headerHeight = it.height }
+                    .testTag("room-header"),
+            ) {
+                AgentPluginStatusBanner(plugin, title, onAction)
+                timeline.sideChat?.let { SideChatHeaderLine(it.state) }
+                if (sideChats.unsupportedHint) NoSideChatsHint()
+                // 群里能用的 AI；私聊不显示，Bot 本来就在顶栏（ADR-0044）。
+                if (!isDirect && target.threadRoot == null) {
+                    RoomAiLine(roomAi, plugins, onOpenBotProfile)
                 }
-            } else {
-                TimelineList(
-                    core, target, sideChats, timeline, composer?.outgoing.orEmpty(),
-                    showsSender = !isDirect,
-                    onAction = onAction,
-                    onOpenMenu = onOpenMenu,
-                    onReply = { message -> message.replyAction?.let { draft.replyTo(it.message) } },
-                    modifier = Modifier.fillMaxSize().recordRoomBackdrop(backdrop),
-                )
             }
-        }
-        Column(
-            Modifier.fillMaxWidth().padding(top = barInset).onSizeChanged { headerHeight = it.height }
-                .testTag("room-header"),
-        ) {
-            AgentPluginStatusBanner(plugin, title, onAction)
-            timeline.sideChat?.let { SideChatHeaderLine(it.state) }
-            if (sideChats.unsupportedHint) NoSideChatsHint()
-            // 群里能用的 AI；私聊不显示，Bot 本来就在顶栏（ADR-0044）。
-            if (!isDirect && target.threadRoot == null) {
-                RoomAiLine(roomAi, plugins, onOpenBotProfile)
+            Box(Modifier.weight(1f).fillMaxWidth()) {
+                CompositionLocalProvider(
+                    LocalWontonBottomInset provides with(density) { composerHeight.toDp() },
+                    // 时间线从状态行下面开始，只有顶栏还压在上面。
+                    LocalWontonTopInset provides barInset,
+                ) {
+                    val failure = timeline.failure
+                    if (failure != null) {
+                        Box(Modifier.fillMaxSize().padding(top = barInset)) {
+                            ProblemView(failure) { timeline.attempt++ }
+                        }
+                    } else {
+                        TimelineList(
+                            core, target, sideChats, timeline, composer?.outgoing.orEmpty(),
+                            showsSender = !isDirect,
+                            onAction = onAction,
+                            onOpenMenu = onOpenMenu,
+                            onReply = { message -> message.replyAction?.let { draft.replyTo(it.message) } },
+                            modifier = Modifier.fillMaxSize().recordRoomBackdrop(backdrop),
+                            menuOpen = menuOpen,
+                            headerHeight = with(density) { headerHeight.toDp() },
+                        )
+                    }
+                }
             }
         }
         Column(
@@ -593,11 +603,11 @@ private fun Conversation(
                 .roomBackdrop(backdrop, top = false)
                 .testTag("composer-block")
                 .onSizeChanged { composerHeight = it.height }
-                // 键盘、确认卡片一起把输入区顶高时别高过剩下的地方，超出让上面几行先缩。
-                .heightIn(max = maxHeight),
+                // 键盘、确认卡片一起把输入区顶高时别高过剩下的地方，也别盖住顶栏，超出让上面几行先缩。
+                .heightIn(max = maxHeight - with(density) { headerHeight.toDp() }),
         ) {
-            // 输入框以上的几行先缩、在里头滚，输入框本身始终露着。
-            Column(Modifier.weight(1f, fill = false).verticalScroll(rememberScrollState())) {
+            // 输入框以上的几行先缩、在里头滚，输入框本身始终露着；块本身只到内容高，不留空档。
+            Column(Modifier.fillMaxWidth().verticalScroll(rememberScrollState())) {
                 timeline.notice?.let { KeyNoticeRow(it, onOpenBackup) }
                 TransfersStrip(target.roomId, core)
                 RoomConfirmationRow(timeline.confirmations) { timeline.openedConfirmation = it }

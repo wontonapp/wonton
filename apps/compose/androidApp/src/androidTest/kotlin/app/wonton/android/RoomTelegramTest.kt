@@ -15,6 +15,7 @@ import androidx.compose.ui.test.assertIsNotEnabled
 import androidx.compose.ui.test.assertIsSelected
 import androidx.compose.ui.test.hasAnyAncestor
 import androidx.compose.ui.test.hasSetTextAction
+import androidx.compose.ui.semantics.SemanticsNode
 import androidx.compose.ui.test.hasTestTag
 import androidx.compose.ui.test.isDisplayed
 import androidx.compose.ui.test.junit4.createAndroidComposeRule
@@ -42,6 +43,7 @@ import app.wonton.ui.R
 import app.wonton.ui.send
 import java.io.File
 import java.io.FileOutputStream
+import kotlin.math.abs
 import org.junit.Assert.assertNull
 import org.junit.Before
 import org.junit.Rule
@@ -113,12 +115,14 @@ class RoomTelegramTest {
         compose.onNodeWithContentDescription(string(R.string.composer_commands)).performClick()
         compose.onNodeWithTag("command-help").assertIsDisplayed()
         compose.onNodeWithTag("command-model").assertIsDisplayed()
+        settleKeyboard()
         screenshot("command-menu")
         compose.onNodeWithTag("command-new").performClick()
         compose.waitUntil(10_000) {
             compose.onAllNodesWithText("/new", substring = true, useUnmergedTree = true)
                 .fetchSemanticsNodes().isNotEmpty()
         }
+        settleKeyboard()
         screenshot("command-sent")
     }
 
@@ -136,6 +140,15 @@ class RoomTelegramTest {
         ).fetchSemanticsNode().boundsInRoot.width
         val bubbleWidth = bubble(22).fetchSemanticsNode().boundsInRoot.width
         check(rowWidth <= bubbleWidth + 0.5f) { "按钮行比气泡宽：$rowWidth > $bubbleWidth" }
+        // 表情和字在同一行：两个按钮一样高，说明不比同行的表情高多少（折行会翻倍）。
+        val heights = listOf(approve, deny).map { it.fetchSemanticsNode().boundsInRoot.height }
+        check(abs(heights[0] - heights[1]) <= 1f) { "两个按钮不一样高：$heights" }
+        val emoji = compose.onAllNodesWithText("✅", useUnmergedTree = true).fetchSemanticsNodes().single()
+        val label = compose.onAllNodesWithText("approve once", useUnmergedTree = true).fetchSemanticsNodes().single()
+        check(label.boundsInRoot.height <= emoji.boundsInRoot.height * 1.5f) {
+            "说明折行了：${label.boundsInRoot.height} > ${emoji.boundsInRoot.height}"
+        }
+        check(label.boundsInRoot.top < approve.fetchSemanticsNode().boundsInRoot.bottom)
         screenshot("choices")
         approve.performClick()
         compose.waitUntil(10_000) { !deny.isEnabled() }
@@ -212,6 +225,30 @@ class RoomTelegramTest {
         compose.waitUntil(10_000) { !pillVisible() }
     }
 
+    @Test
+    fun daySeparatorOwnsARowBetweenDays() {
+        // 第 11 条比上一条早一天：跨日的那条上方是一行固定的日期，它自己占一行。
+        // 分隔行贴着跨日的那两条，翻到附近才进屏幕；两边各翻几条，撞上为止。
+        var separators = emptyList<SemanticsNode>()
+        var seen = ""
+        for (index in listOf(10, 9, 11, 8, 12, 13)) {
+            scrollTo(index)
+            compose.waitForIdle()
+            separators = compose.onAllNodes(hasTestTag("day-separator"), useUnmergedTree = true)
+                .fetchSemanticsNodes()
+            seen += "$index:${separators.size} "
+            if (separators.isNotEmpty()) break
+        }
+        check(separators.isNotEmpty()) { "没画日期分隔：$seen" }
+        val bubbles = compose.onAllNodes(hasTestTag("bubble"), useUnmergedTree = true).fetchSemanticsNodes()
+        for (separator in separators) {
+            val mark = separator.boundsInRoot
+            check(bubbles.none { it.boundsInRoot.overlaps(mark) }) { "气泡压在日期分隔上：$mark" }
+            check(bubbles.any { it.boundsInRoot.bottom <= mark.top + 1f }) { "日期分隔上面没有更早的气泡：$mark" }
+            check(bubbles.any { it.boundsInRoot.top >= mark.bottom - 1f }) { "日期分隔下面没有更新的气泡：$mark" }
+        }
+    }
+
     /** 回到房间列表再进群；用例都在同一个活动里连着跑。 */
     private fun openFamily() {
         compose.onNodeWithContentDescription(string(R.string.design_back)).performClick()
@@ -222,6 +259,13 @@ class RoomTelegramTest {
     private fun avatars() =
         compose.onAllNodes(hasTestTag("sender-avatar"), useUnmergedTree = true).fetchSemanticsNodes()
 
+    /** 键盘动画比布局慢一拍，等表面画上来再截，不然截到的还是刚才那一帧。 */
+    private fun settleKeyboard() {
+        compose.waitUntil(10_000) { imeHeight() > 0 }
+        compose.waitForIdle()
+        Thread.sleep(300)
+    }
+
     private fun pillVisible() = compose.onAllNodes(hasTestTag("date-pill"), useUnmergedTree = true)
         .fetchSemanticsNodes().isNotEmpty()
 
@@ -230,8 +274,7 @@ class RoomTelegramTest {
         val statusBar = statusBarHeight()
         compose.onNodeWithContentDescription(string(R.string.composer_commands)).performClick()
         compose.waitUntil(10_000) { compose.onAllNodes(hasTestTag("command-help")).fetchSemanticsNodes().isNotEmpty() }
-        compose.waitUntil(10_000) { imeHeight() > 0 }
-        screenshot("command-menu")
+        settleKeyboard()
         // 键盘起来以后顶栏原地不动，输入框压在键盘上沿，时间线还在。
         // 顶栏的盒子从窗口顶起，看它里面的标题：标题还在状态栏下面就是没被顶走。
         val title = compose.onAllNodesWithText("Echo", useUnmergedTree = true)
@@ -241,9 +284,32 @@ class RoomTelegramTest {
         check(bar.bottom >= statusBar) { "顶栏整条被顶走：${bar.bottom} < $statusBar" }
         val input = compose.onAllNodes(hasSetTextAction()).fetchSemanticsNodes().single().boundsInRoot
         val keyboardTop = compose.activity.window.decorView.height - imeHeight()
-        check(input.bottom <= keyboardTop + 1f) { "输入框没压在键盘上沿：${input.bottom} > $keyboardTop" }
-        check(input.bottom >= keyboardTop - 40f) { "输入框被顶离键盘：${input.bottom} < $keyboardTop" }
+        // 输入区整条贴着键盘上沿，输入框在它最下沿（自己留了一点内边距）。
+        val block = compose.onNodeWithTag("composer-block").fetchSemanticsNode().boundsInRoot
+        val gap = keyboardTop - block.bottom
+        check(abs(gap) <= 2f) { "输入区没贴着键盘上沿：差 $gap" }
+        check(input.bottom <= block.bottom + 0.5f) { "输入框掉出输入区：${input.bottom} > ${block.bottom}" }
+        // 命令多的时候输入区顶到顶栏下沿为止，顶栏本身不能被它盖住。
+        val header = compose.onNodeWithTag("room-header").fetchSemanticsNode().boundsInRoot
+        check(block.top >= header.bottom - 1f) { "输入区盖住顶栏：${block.top} < ${header.bottom}" }
         check(compose.onNodeWithTag("room-timeline").fetchSemanticsNode().boundsInRoot.height > 0f)
+        // 菜单盖住输入框上方，“向下”钮和菜单叠在状态栏边，菜单开着时不画它。
+        compose.onNodeWithContentDescription(string(R.string.room_scroll_to_bottom)).assertIsNotDisplayed()
+        screenshot("command-menu")
+    }
+
+    @Test
+    fun pluginStatusRowCoversNoBubble() {
+        // 群里 Bot 掉线的那行（假房间里是 Hermes）自己占一条，时间线让开它，气泡不压在它上面。
+        openFamily()
+        compose.onNodeWithText("Hermes", useUnmergedTree = true).assertIsDisplayed()
+        val header = compose.onNodeWithTag("room-header").fetchSemanticsNode().boundsInRoot
+        val bubbles = compose.onAllNodes(hasTestTag("bubble"), useUnmergedTree = true).fetchSemanticsNodes()
+        check(bubbles.isNotEmpty())
+        for (bubble in bubbles) {
+            val box = bubble.boundsInRoot
+            check(!box.overlaps(header)) { "气泡压在状态行上：$box vs $header" }
+        }
     }
 
     /** 这条消息的中心在时间线视口里。跳转过后 `isDisplayed` 会因为列表项没 placed 而恒假。 */
@@ -285,6 +351,8 @@ class RoomTelegramTest {
         compose.activity.window.decorView.rootWindowInsets.getInsets(WindowInsets.Type.ime()).bottom
 
     private fun screenshot(name: String) {
+        // 滚过以后浮动日期胶囊还在，等它淡出再拍，不然截到的是它盖在字上的样子；失败现场可能已经停了，等不到也照拍。
+        runCatching { compose.waitUntil(5_000) { !pillVisible() } }
         val directory = File(instrumentation.targetContext.getExternalFilesDir(null), "telegram")
         check(directory.isDirectory || directory.mkdirs())
         val image = requireNotNull(instrumentation.uiAutomation.takeScreenshot())

@@ -173,7 +173,7 @@ fun Composer(
 }
 
 /** 草稿以“/”开头且还没打空格时按名字前缀过滤命令（ADR-0109）；打完空格就算普通消息，菜单收起。 */
-private fun commandQuery(draft: String, commands: List<RoomCommand>): List<RoomCommand> {
+internal fun commandQuery(draft: String, commands: List<RoomCommand>): List<RoomCommand> {
     val query = draft.removePrefix("/").takeIf { draft.startsWith("/") && it.none(Char::isWhitespace) }
     return commands.filter { query != null && it.name.startsWith(query, ignoreCase = true) }
 }

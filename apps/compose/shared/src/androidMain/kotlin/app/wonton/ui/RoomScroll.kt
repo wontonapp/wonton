@@ -189,10 +189,11 @@ internal fun ScrollToBottomButton(
     listState: LazyListState,
     onAction: (Action) -> Unit,
     modifier: Modifier,
+    hidden: Boolean = false,
 ) {
     val scope = rememberCoroutineScope()
     AnimatedVisibility(
-        visible = timeline.viewport is TimelineViewport.Away,
+        visible = !hidden && timeline.viewport is TimelineViewport.Away,
         enter = fadeIn() + scaleIn(initialScale = BUTTON_APPEAR_SCALE),
         exit = fadeOut() + scaleOut(targetScale = BUTTON_APPEAR_SCALE),
         modifier = modifier,

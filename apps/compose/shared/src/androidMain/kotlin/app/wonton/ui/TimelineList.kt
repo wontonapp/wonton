@@ -5,6 +5,7 @@ import androidx.compose.animation.fadeIn
 import androidx.compose.animation.fadeOut
 import androidx.compose.foundation.background
 import androidx.compose.foundation.layout.Arrangement
+import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.PaddingValues
 import androidx.compose.foundation.layout.Spacer
@@ -33,6 +34,7 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.geometry.Rect
 import androidx.compose.ui.platform.testTag
 import androidx.compose.ui.res.stringResource
+import androidx.compose.ui.unit.Dp
 import androidx.compose.ui.unit.dp
 import app.wonton.client.ClientCore
 import app.wonton.protocol.Action
@@ -73,6 +75,8 @@ internal fun TimelineList(
     onOpenMenu: (TimelineItem, TimelineMessage, Rect) -> Unit,
     onReply: (TimelineMessage) -> Unit,
     modifier: Modifier,
+    menuOpen: Boolean = false,
+    headerHeight: Dp = 0.dp,
 ) {
     val listState = rememberLazyListState()
     ScrollEffects(listState, timeline, target, sideChats.covered, onAction)
@@ -97,6 +101,8 @@ internal fun TimelineList(
             ),
             verticalArrangement = Arrangement.spacedBy(WontonTheme.spacing.runGap),
         ) {
+            // 每次列表内容重建都重算；用 remember 记在函数体里时，条目晚到的那次重排看不到新日期。
+            val dayMarks = dayMarksFor(newestFirst)
             // 倒着排：最后点发送的那条在最下面。
             items(outgoing.asReversed(), key = { it.id }) { message ->
                 Box(Modifier.padding(top = WontonTheme.spacing.groupGap - WontonTheme.spacing.runGap)) {
@@ -104,23 +110,28 @@ internal fun TimelineList(
                 }
             }
             itemsIndexed(newestFirst, key = { _, item -> item.id }) { index, item ->
+                val day = dayMarks.getOrNull(index)
                 // 做完了又没什么可写的 Agent 状态行不占地方。
                 if (item.isBlankAgentRun) return@itemsIndexed
-                // 倒着排：下标大的是更早的一条。
-                TimelineRow(
-                    item,
-                    previous = newestFirst.getOrNull(index + 1),
-                    next = newestFirst.getOrNull(index - 1),
-                    core = core,
-                    target = target,
-                    showsSender = showsSender,
-                    timeline = timeline,
-                    sideChats = sideChats,
-                    onAction = onAction,
-                    onOpenMenu = onOpenMenu,
-                    onReply = onReply,
-                    openCard = openCard,
-                )
+                Column {
+                    // 跨日的那条上方放一行固定的日期：它自己占一行，不和气泡重叠。
+                    day?.let { label -> DaySeparator(label) }
+                    // 倒着排：下标大的是更早的一条。
+                    TimelineRow(
+                        item,
+                        previous = newestFirst.getOrNull(index + 1),
+                        next = newestFirst.getOrNull(index - 1),
+                        core = core,
+                        target = target,
+                        showsSender = showsSender,
+                        timeline = timeline,
+                        sideChats = sideChats,
+                        onAction = onAction,
+                        onOpenMenu = onOpenMenu,
+                        onReply = onReply,
+                        openCard = openCard,
+                    )
+                }
             }
             // 顶栏空出的这段也要能滚：放进 contentPadding 时，倒排的列表翻到最早一条会把这段吃掉，
             // 第一条正好压在顶栏底下。做成一格列表项，翻到头时它停在顶栏下面。
@@ -135,7 +146,14 @@ internal fun TimelineList(
         DatePill(
             pill.held && pill.text != null,
             pill.text.orEmpty(),
-            Modifier.align(Alignment.TopCenter).padding(top = LocalWontonTopInset.current + WontonTheme.spacing.s4),
+            Modifier.align(Alignment.TopCenter).padding(
+                // 有状态行时列表已经让开了它，胶囊只躲顶栏那一层；没有状态行时躲顶栏本身。
+                top = if (headerHeight > 0.dp) {
+                    WontonTheme.spacing.s4
+                } else {
+                    LocalWontonTopInset.current + WontonTheme.spacing.s4
+                },
+            ),
         )
         // 跳转找不到那条消息时轻轻说一声，列表不动。
         DatePill(
@@ -148,7 +166,8 @@ internal fun TimelineList(
             target,
             listState,
             onAction,
-            Modifier
+            hidden = menuOpen,
+            modifier = Modifier
                 .align(Alignment.BottomEnd)
                 // 输入框压在时间线底部，按钮不跟着抬就被挡在它后面（点下去打到的是输入框）。
                 .padding(
@@ -267,6 +286,27 @@ private fun TimelineRow(
             flushesPrevious = previous?.flushesWith(next = item) == true,
             flushesNext = item.flushesWith(next = next),
         )
+    }
+}
+
+/** 每个下标上方要不要来一行日期；跨日的那条才有。日期顺着更早的那条继承，旁注类的条目自己没时间。 */
+private fun dayMarksFor(items: List<TimelineItem>): Array<String?> {
+    val marks = arrayOfNulls<String>(items.size)
+    var newer: String? = null
+    for (index in items.indices) {
+        val own = items[index].timestampMs?.let(::dateLabel) ?: newer
+        // 和更新的一条不是同一天：这条自己起一组，分隔行画在它上面。
+        if (own != null && own != newer) marks[index] = own
+        newer = own
+    }
+    return marks
+}
+
+/** 日期分隔：一行居中、自己占高度。 */
+@Composable
+private fun DaySeparator(label: String) {
+    Box(Modifier.fillMaxWidth().testTag("day-separator"), contentAlignment = Alignment.Center) {
+        Text(label, style = WontonTheme.typography.caption, color = WontonTheme.colors.textSecondary.toColor())
     }
 }
 

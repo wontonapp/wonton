@@ -22,6 +22,8 @@ import androidx.compose.ui.semantics.Role
 import androidx.compose.ui.semantics.disabled
 import androidx.compose.ui.semantics.selected
 import androidx.compose.ui.semantics.semantics
+import androidx.compose.ui.text.style.TextAlign
+import androidx.compose.ui.text.style.TextOverflow
 import app.wonton.ui.icons.Check
 import app.wonton.ui.icons.WontonIcon
 
@@ -36,6 +38,7 @@ fun StepOptionRow(
     multiple: Boolean = false,
     leading: @Composable () -> Unit = {},
     trailing: @Composable () -> Unit = {},
+    centered: Boolean = false,
 ) {
     val colors = WontonTheme.colors
     val shape = RoundedCornerShape(WontonTheme.radii.control)
@@ -51,16 +54,24 @@ fun StepOptionRow(
             Modifier.weight(1f).heightIn(min = WontonTheme.size.target)
                 .optionSelection(selected, onSelect, blocked, multiple)
                 .padding(WontonTheme.spacing.s12),
-            horizontalArrangement = Arrangement.spacedBy(WontonTheme.spacing.s12),
+            horizontalArrangement = if (centered) Arrangement.Center else Arrangement.spacedBy(WontonTheme.spacing.s12),
             verticalAlignment = Alignment.CenterVertically,
         ) {
             leading()
             Column(
-                Modifier.weight(1f),
+                if (centered) Modifier else Modifier.weight(1f),
                 verticalArrangement = Arrangement.spacedBy(WontonTheme.spacing.s4),
             ) {
                 val textColor = if (selected) colors.textOnAccentFill else colors.textPrimary
-                Text(title, style = WontonTheme.typography.body, color = textColor.toColor())
+                // 挤在一行的窄按钮（消息下的选项）：表情和字一起居中，放不下就省略号，不折行。
+                Text(
+                    title,
+                    style = WontonTheme.typography.body,
+                    color = textColor.toColor(),
+                    maxLines = if (centered) 1 else Int.MAX_VALUE,
+                    overflow = if (centered) TextOverflow.Ellipsis else TextOverflow.Clip,
+                    textAlign = if (centered) TextAlign.Center else TextAlign.Start,
+                )
                 description?.let {
                     Text(
                         it,
