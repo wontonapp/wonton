@@ -61,6 +61,8 @@ hairline = 1
 quoteBar = 2
 # 气泡尾巴伸出气泡的宽度（ADR-0109，估计值）。
 bubbleTail = 6
+# 群聊里别人组尾气泡旁边的头像（ADR-0109，估计值）。
+messageAvatar = 34
 
 [ratio]
 pluginIconRadius = 0.2237
