@@ -26,7 +26,7 @@ services:
       target: dev
       # 经 Docker 主机上的代理构建时，dev.sh 自己构建这个镜像（见 build_image）。
       args:
-        WONTON_BUILD_COMMIT: ${WONTON_BUILD_COMMIT:-unknown}
+        WONTON_BUILD_COMMIT: ${WONTON_BUILD_COMMIT:-}
         # cargo 不认空值，没设 WONTON_DEV_BUILD_JOBS 时按 CPU 数（default）。
         CARGO_BUILD_JOBS: ${WONTON_DEV_BUILD_JOBS:-default}
     image: wonton-core:${WONTON_CORE_IMAGE_TAG:-dev}

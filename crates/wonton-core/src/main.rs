@@ -166,9 +166,9 @@ mod pair_command;
 mod plugin_command;
 mod push_listener;
 mod sharing_start;
+use wonton_core::build_info;
 
-/// 构建它的提交号：开发镜像构建时由 `deploy/dev/core/dev.sh` 传入，直接 `cargo build` 时没有。
-const BUILD_COMMIT: &str = match option_env!("WONTON_BUILD_COMMIT") {
+const BUILD_COMMIT: &str = match build_info::COMMIT {
     Some(commit) => commit,
     None => "unknown",
 };
@@ -217,7 +217,7 @@ async fn run() -> ExitCode {
             lifecycle_commands::manual_rollback(&std::env::args().skip(2).collect::<Vec<_>>()).await
         }
         Some("--version") => {
-            println!("wonton-core {} ({BUILD_COMMIT})", env!("CARGO_PKG_VERSION"));
+            println!("wonton-core {} ({BUILD_COMMIT})", build_info::version());
             Ok(())
         }
         Some(other) => Err(anyhow::anyhow!(
@@ -304,7 +304,7 @@ fn owner_token(cfg: &Config) -> anyhow::Result<String> {
 
 #[allow(clippy::too_many_lines)] // 启动顺序就是一串有先后的接线，拆开会把顺序藏进多个函数。
 async fn serve() -> anyhow::Result<()> {
-    tracing::info!(commit = %BUILD_COMMIT, "核心启动");
+    tracing::info!(version = build_info::version(), commit = %BUILD_COMMIT, "核心启动");
     let cfg = Config::from_env()?.lock_owner()?;
     tracing::info!(owner = %cfg.username, "主人的用户名已核对");
     let owner = OwnerStore::open(&cfg.core_state_dir())?;
