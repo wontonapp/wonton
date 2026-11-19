@@ -20,6 +20,7 @@ mod bot_records;
 mod bot_typing;
 mod bot_web;
 mod bots;
+mod choices;
 mod confirmation;
 mod connect;
 mod contacts;

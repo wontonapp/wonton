@@ -172,6 +172,10 @@ mod tests {
                 reply: None,
                 group: None,
                 can_redact: false,
+                reactions: Vec::new(),
+                is_direct: false,
+                mentions_me: false,
+                sender_avatar: None,
             })),
         }
     }

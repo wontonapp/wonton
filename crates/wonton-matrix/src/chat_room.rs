@@ -29,6 +29,7 @@ use tokio::{
     sync::{Notify, broadcast::error::RecvError, watch},
     task::JoinHandle,
 };
+use wonton_protocol::{ChoiceSend, ChoicesState};
 
 use crate::{
     Error, Message, Result,
@@ -371,29 +372,59 @@ impl ChatRoom {
         Ok(())
     }
 
-    /// 以反应回答 Bot 的提问（MSC4564 的 `choices`，ADR-0082）：对状态消息发 `m.annotation` 反应，
-    /// `item_id` 是它的 [`TimelineEntry::id`]，`key` 是选项的键。只对现在还是状态消息、还带这个选项的
-    /// 条目发；条目不在时间线里或选项没有了报 `InvalidInput`。发送者是不是 Bot 由调用方判断。
+    /// 回答一条消息的选项（ADR-0109 第 7 节）：以本账号加选项那个表情，不往聊天里发消息。发送者自己先放的
+    /// 表情就是选项；私聊或提到了本账号的才能答，答过一条后其余不能再答。还在发或发失败的先撤掉再发。
+    ///
+    /// 也回答 MSC4564 的状态消息（ADR-0082），它的选项在状态对象里、不靠表情。
+    /// 条目不在时间线里、选项没有了、不是问我的、已经答过时报 `InvalidInput`。
     pub async fn answer_agent_choice(&self, item_id: &str, key: &str) -> Result<()> {
         let timeline = self.timeline().await;
         let items = timeline.items().await;
         let item = items
             .iter()
             .find(|item| item.unique_id().0 == item_id)
-            .and_then(|item| item.as_event())
-            .ok_or_else(|| Error::InvalidInput("状态行不在时间线里".to_owned()))?;
+            .ok_or_else(|| Error::InvalidInput("这条消息不在时间线里".to_owned()))?;
+        let event = item
+            .as_event()
+            .ok_or_else(|| Error::InvalidInput("这条不是消息".to_owned()))?;
         let names = self.names.borrow().clone();
-        let status = message(item, &names)
-            .and_then(|message| message.agent_run)
-            .ok_or_else(|| Error::InvalidInput("这条不是 Agent 状态消息".to_owned()))?;
-        if !status.choices.iter().any(|choice| choice.key == key) {
-            return Err(Error::InvalidInput("这个选项没有了".to_owned()));
+        let message =
+            message(event, &names).ok_or_else(|| Error::InvalidInput("这条不是消息".to_owned()))?;
+        let status_choice = message
+            .agent_run
+            .as_ref()
+            .is_some_and(|status| status.choices.iter().any(|choice| choice.key == key));
+        let mut retry = false;
+        if !status_choice {
+            let choices = message
+                .choices()
+                .ok_or_else(|| Error::InvalidInput("这条没有选项".to_owned()))?;
+            let option = choices
+                .options
+                .iter()
+                .find(|option| option.key == key)
+                .ok_or_else(|| Error::InvalidInput("这个选项没有了".to_owned()))?;
+            match choices.state {
+                ChoicesState::Answered => {
+                    return Err(Error::InvalidInput("这条已经答过了".to_owned()));
+                }
+                ChoicesState::Open => {}
+                ChoicesState::NotForMe => {
+                    return Err(Error::InvalidInput("这条不是问我的".to_owned()));
+                }
+                ChoicesState::Other => {}
+            }
+            retry = matches!(option.send, ChoiceSend::Failed { .. });
         }
-        let event_id = item
+        let event_id = event
             .event_id()
             .map(ToOwned::to_owned)
-            .ok_or_else(|| Error::InvalidInput("状态消息还没发出去".to_owned()))?;
+            .ok_or_else(|| Error::InvalidInput("这条还没发出去".to_owned()))?;
         ensure_recipient_devices(&self.room).await?;
+        if retry {
+            // 不能只靠 toggle：失败的回显还在时会走“撤掉”那一支，正好把要重发的删掉。
+            timeline.toggle_reaction(&event.identifier(), key).await?;
+        }
         timeline
             .send(ReactionEventContent::new(Annotation::new(event_id, key.to_owned())).into())
             .await?;
@@ -751,6 +782,15 @@ async fn local_member_names(room: &Room) -> MemberNames {
     };
     let power = room.power_levels_or_default().await;
     let own = room.own_user_id();
+    let direct = members.len() == 2;
+    let avatars = members
+        .iter()
+        .filter_map(|member| {
+            member
+                .avatar_url()
+                .map(|url| (member.user_id().to_owned(), url.to_string()))
+        })
+        .collect();
     MemberNames::new(
         members
             .into_iter()
@@ -759,7 +799,10 @@ async fn local_member_names(room: &Room) -> MemberNames {
                 (member.user_id().to_owned(), name)
             })
             .collect::<HashMap<_, _>>(),
+        own.to_owned(),
+        direct,
     )
+    .with_avatars(avatars)
     .with_redaction(RedactionPower {
         own: power.user_can_redact_own_event(own),
         others: power.user_can_redact_event_of_other(own),

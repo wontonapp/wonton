@@ -224,6 +224,7 @@ mod tests {
                     run: MessageRun::Alone,
                     status: None,
                     choices: None,
+                    sender_avatar: None,
                 },
             },
         }

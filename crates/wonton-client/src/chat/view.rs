@@ -220,6 +220,8 @@ fn timeline_message(
     bots: &BotsView,
 ) -> TimelineMessage {
     let side_chat = bots.side_chats().card_of(&message);
+    let choices = super::choices::choices(&message);
+    let sender_avatar = message.sender_avatar.as_deref().and_then(avatar_handle);
     // 卡片不再是时间线里的消息（ADR-0016）：旧的核心发的卡片和别的消息一样按正文显示，这里没有特殊处理。
     // 预览只给文字消息：事件里带的直接用，没有的用核心取回的缓存（还在取的下一批带上）。
     let preview = super::previews::message_preview(&message, links, previews);
@@ -254,8 +256,19 @@ fn timeline_message(
         receipt: mark.receipt,
         starts_time_group: mark.starts_time_group,
         run: wonton_protocol::MessageRun::Alone,
-        choices: None,
-        sender_avatar: None,
+        choices,
+        sender_avatar,
+    }
+}
+
+/// 发送者头像的句柄；地址无效时记一条 warning，界面按没有头像画。
+fn avatar_handle(url: &str) -> Option<MediaHandle> {
+    match wonton_matrix::media_token(url) {
+        Ok(token) => Some(MediaHandle { token }),
+        Err(error) => {
+            tracing::warn!(%error, "Invalid sender avatar MXC");
+            None
+        }
     }
 }
 
@@ -553,6 +566,10 @@ mod tests {
                 reply: None,
                 group: None,
                 can_redact: true,
+                reactions: Vec::new(),
+                is_direct: false,
+                mentions_me: false,
+                sender_avatar: None,
             })),
         }
     }
