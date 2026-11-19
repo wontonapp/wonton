@@ -3,7 +3,8 @@
 - 状态：已接受（2026-11-07）。“高权限能力”一节 2026-11-07 补充；“使用方怎么用变量”“共享凭据”“连接变了就重建使用方”三节和 `tcp` 能力
   2026-11-12 补充（主人定：*arr 共享凭据，`mqtt` 进能力表并由核心按使用方做四层中继，连接变了自动重建使用方、高权限的先确认）；
   `personal_data` 能力 2026-11-12 补充（ADR-0098）；路由和确认记录加使用方的 Bot 这一维 2026-11-13 补充
-  （[ADR-0061](0061-agent-runtime-and-frontends.md) 第 4 节）
+  （[ADR-0061](0061-agent-runtime-and-frontends.md) 第 4 节）；`agent_acp` 能力和 Agent 交接（`wonton__hand_off`、`handoff_consents`）
+  随 ACP 桥被 [ADR-0108](0108-hermes-default-kernel.md) 删除（主人 2026-11-15），文中拿它们举的例子只作历史
 
 ## 背景
 

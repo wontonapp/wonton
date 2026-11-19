@@ -127,7 +127,7 @@ ADR-0045 定了“每人一个账号、Bot 有归属人”，按 `96763a20` 的�
 
 ### 5. AI 动手
 
-谁让 Bot 做的事，按谁的角色封顶。“谁让的”照 ADR-0083：私人 Bot 是归属人；共享 Bot 和群里，按桥报的进行中轮次里级别最低的人算；
+谁让 Bot 做的事，按谁的角色封顶。“谁让的”照 ADR-0083：私人 Bot 是归属人；共享 Bot 和群里，按 Agent 插件报的进行中轮次里级别最低的人算（ACP 桥已随 ADR-0108 删除）；
 认不清的按这个 Bot 在这个房间听的人里级别最低的算。ADR-0083 的档位再在这个上限之内取。
 
 | 工具 | 只读 | 删除要管理员批 | 改动自己确认 |
@@ -184,8 +184,8 @@ ADR-0045“已定”第 2 条不变，不因为角色改变。
 | 网页经 OIDC 登录 | `sub`、`preferred_username` 照旧是用户名；`groups` 一律有 `user`，是管理员时加 `plugin_admin` 和清单的 `admin_groups` |
 | 网页经 `sso: proxy` | `{user}`、`{name}` 照旧；`{role}` 是 `admin` 或 `user` |
 | 总线的 `tools/call` | `_meta` 的 `app.wonton/user`（ADR-0045）加 `app.wonton/capabilities`（如 `["plugin_admin"]`）；按第 6 节决定带不带 |
-| ACP 运行时（ADR-0061） | `X-Wonton-User` 照旧，加 `X-Wonton-Capabilities` |
-| Bot 的容器 | 新变量 `WONTON_BOT_AI_LEVEL`：归属人的“AI 动手”级别，共享 Bot 取用它的人里最低的。Agent 插件和桥凭它锁模式 |
+| ~~ACP 运行时（ADR-0061）~~ | ~~`X-Wonton-User` 照旧，加 `X-Wonton-Capabilities`~~（ACP 运行时和桥已随 ADR-0108 删除） |
+| Bot 的容器 | 新变量 `WONTON_BOT_AI_LEVEL`：归属人的“AI 动手”级别，共享 Bot 取用它的人里最低的。Agent 插件凭它锁模式 |
 
 - 清单的 `webui.oidc.owner_groups` 改名 `admin_groups`：是这个应用的管理员时加进 `groups` 的应用自己的组名（Grafana 的 `admin` 之类）。
 - **只认“管理员”和“普通用户”的应用**（Immich 读 `immich_role`）：清单写 `webui.oidc.role_claim`（声明名，加管理员和普通用户各对应的值），
@@ -288,4 +288,4 @@ ADR-0045“已定”第 2 条不变，不因为角色改变。
 - [ADR-0083](0083-bot-contacts-and-group-chat.md)：房间表、档位、轮次报告、卡片的“替谁”。
 - [ADR-0050](0050-cross-server-chat.md)：请求和同意的做法。
 - [ADR-0016](0016-mcp-bus-and-confirmations.md)、[ADR-0024](0024-confirmation-scope.md)、[ADR-0036](0036-plugin-privileges.md)：卡片、放宽、高权限的级别。
-- [ADR-0061](0061-agent-runtime-and-frontends.md)：ACP 运行时的身份头。
+- [ADR-0061](0061-agent-runtime-and-frontends.md)：ACP 运行时的身份头（已随 ADR-0108 删除）。

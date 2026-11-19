@@ -3,6 +3,8 @@
 - 状态：提议（2026-11-12）。取舍由主人定（见“已定”）
 - 取代：[ADR-0011](0011-security-model.md) “已定”里的“永远不给 Bot 宿主的 shell 和 Docker”；改写 [ADR-0036](0036-plugin-privileges.md) 的“两条不变”和“最高级插件的工具不能放宽”；
   补充 [ADR-0024](0024-confirmation-scope.md) 的判定顺序和 [ADR-0035](0035-acp-bridge.md) 的权限请求
+- 由 [ADR-0108](0108-hermes-default-kernel.md) 修订（主人 2026-11-15）：ACP 桥已删除，文中桥发权限请求、按会话写来源请求头的说法只作历史；
+  “ACP 权限请求”读作经 `/agent/permissions` 发来的 Agent 权限请求，代答 `allow_once` 的规则不变
 
 ## 背景
 
@@ -55,15 +57,15 @@ Bot 装插件的两步卡片、ACP 权限请求都经过它）。危险模式的
 - “我来操作”（ADR-0024）照常先停住 Bot 的调用，它不是确认，是免得 Bot 和主人抢同一个页面。
 - 工具看不看得到、调不调得了（插件的 `mcp.tools`、按 Bot 的范围和单独关掉，ADR-0066）照旧，危险模式只管问不问。
 - 不切 Agent 的 bypass、yolo、full-access，不改 Agent 镜像的设置（ADR-0035 的“最严格模式”不变）。Agent 照常发权限请求，由核心代答。
-- 桥不感知危险模式。它照常把权限请求交给核心，收到的回答和主人点了 `allow_once` 一样。
+- Agent 一侧不感知危险模式。它照常把权限请求交给核心，收到的回答和主人点了 `allow_once` 一样。
 
 ### 3. 怎么认出“主人私聊里的消息”
 
 用核心已有的来源会话（ADR-0016 第 2 步），只加一条更严的要求：
 
 - **来源从哪来。** MCP 调用是 `params._meta["app.wonton/origin"]`，或固定请求头 `wonton-origin-room`、`wonton-origin-thread`，两样都有时 `_meta` 为准；
-  ACP 权限请求是请求里的 `origin` 字段（`wonton-protocol` 的 `confirmation_origin`、`agent_permission`）。ACP 桥在 `session/new` 时按会话放请求头，
-  一个房间一个 ACP 会话，所以头和房间一一对应。
+  ACP 权限请求是请求里的 `origin` 字段（`wonton-protocol` 的 `confirmation_origin`、`agent_permission`）。~~ACP 桥在 `session/new` 时按会话放请求头，
+  一个房间一个 ACP 会话，所以头和房间一一对应。~~（桥已随 ADR-0108 删除）
 - **算私聊的条件。** 来源是 Agent 一侧报的、核心按 ADR-0016 核对过的；房间里已加入的成员恰好是这个 Bot 和主人两个（以 Bot 的身份查 `joined_members`，
   每次判定时查，不用缓存）。私聊里的话题也算。
 - **不算的。** 没报来源、核对不上、查不了，按 ADR-0016 落到 Bot 主房间的，**不算**：落到主房间只决定卡片显示在哪，不能证明消息来自私聊。
@@ -141,7 +143,7 @@ Bot 装插件的两步卡片、ACP 权限请求都经过它）。危险模式的
   `PUT`、`DELETE /_wonton/api/danger/sudo-password`，`GET /_wonton/api/danger`。不认识的类别落到 `Other`。**动接口，先合。**
 - 插件规范（wonton-docs）：新权限 `host.sudo`，最高级，只能和 `privileged`、`host.pid` 一起声明；文件路径、出现条件、取消时结束进程组。
   规范仓库的 PR 在核心 PR 合并后再合。
-- ACP 桥、`/agent/permissions` 的接口不变。
+- `/agent/permissions` 的接口不变。
 
 ## 理由
 
@@ -199,7 +201,7 @@ Bot 装插件的两步卡片、ACP 权限请求都经过它）。危险模式的
 3. **只对主人私聊里的消息生效。** 群里、好友、别的 Bot 的消息照常弹卡片。
 4. **只有主人能开**（家人账号那边也是这么定的），一个 Bot 一个开关，默认关。
 5. **先不做**：时长分档、结束汇总、底线名单；电脑上的 Agent（ADR-0081）先不给。
-6. **判定只在核心一处。** ACP 的权限请求由核心代答“允许一次”，桥不感知危险模式。
+6. **判定只在核心一处。** ACP 的权限请求由核心代答“允许一次”，桥不感知危险模式（桥已随 ADR-0108 删除，代答规则对 `/agent/permissions` 照旧）。
 
 这几条推翻了 ADR-0011 “已定”里主人 2026-11-04 定的“永远不给 Bot 宿主的 shell 和 Docker”。宿主 shell 现在经宿主终端插件给，危险模式关着时每次发卡片；
 Docker 仍不直接给 Bot，宿主账号在 `docker` 组里时等于给了，提示里写明。
