@@ -59,6 +59,8 @@ mod tool_policy;
 #[cfg(feature = "ui-fake")]
 mod ui_fake;
 #[cfg(feature = "ui-fake")]
+mod ui_fake_agent_stop;
+#[cfg(feature = "ui-fake")]
 mod ui_fake_devices;
 #[cfg(feature = "ui-fake")]
 mod ui_fake_failed_install;

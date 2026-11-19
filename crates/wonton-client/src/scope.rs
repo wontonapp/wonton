@@ -71,6 +71,8 @@ pub(crate) struct Views {
     pub(crate) confirmations: watch::Sender<ConfirmationsViewModel>,
     pub(crate) plugins: watch::Sender<PluginsViewModel>,
     pub(crate) agent_chains: watch::Sender<AgentChainsViewModel>,
+    /// 聊天里停止控件的请求进展，和链列表合起来算 `RoomAgentStop`。
+    pub(crate) agent_stops: watch::Sender<crate::agent_chains::room_stop::Attempts>,
     pub(crate) pages: watch::Sender<PagesViewModel>,
     pub(crate) transfers: watch::Sender<TransfersViewModel>,
     pub(crate) onboarding: watch::Sender<OnboardingViewModel>,
@@ -88,6 +90,7 @@ impl Views {
             confirmations: scope.chat.confirmations_sender(),
             plugins: scope.plugins.sender(),
             agent_chains: scope.agent_chains.sender(),
+            agent_stops: scope.agent_chains.stops_sender(),
             pages: scope.pages.sender(),
             transfers: scope.files.sender(),
             onboarding: scope.onboarding.sender(),
@@ -287,6 +290,7 @@ impl Scope {
                 views.map(|v| v.agent_chains.clone()),
                 AgentChainsViewModel::default(),
             ),
+            reuse(views.map(|v| v.agent_stops.clone()), Default::default()),
         );
         #[cfg(feature = "test-hooks")]
         let card_success_hook = Arc::new(crate::test_hooks::CardSuccessHook::new());

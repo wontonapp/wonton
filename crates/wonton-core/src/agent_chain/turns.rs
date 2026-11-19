@@ -53,6 +53,10 @@ pub(super) fn continue_bridge_round(
         if new_bot {
             layers::admit_bot(chain, bot, layer);
         }
+        // 点名把做完的链叫回来：又有一轮在跑，回到列表。
+        if chain.status == AgentChainStatus::Ended {
+            chain.status = AgentChainStatus::Running;
+        }
     }
     bind_session(
         state,

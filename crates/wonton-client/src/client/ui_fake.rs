@@ -125,6 +125,7 @@ impl ClientCore {
                 current.confirmations.borrow().clone(),
             )),
             agent_chains: watch::Sender::new(current.agent_chains.borrow().clone()),
+            agent_stops: watch::Sender::default(),
         };
         drop(current);
         self.servers.seed_ui_fake(fake_servers());

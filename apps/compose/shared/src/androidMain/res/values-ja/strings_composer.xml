@@ -24,4 +24,16 @@
     <string name="composer_attachment_rejected">自宅のサーバーがこのアップロードを拒否しました。</string>
     <string name="composer_attachment_upstream">自宅のサーバーでエラーが起きました。</string>
     <string name="composer_attachment_local_storage">このスマートフォンの空き容量が足りません。</string>
+    <!-- Round button in the chat composer while the bot is working on a turn: stops that turn. Also its screen-reader label. -->
+    <string name="composer_stop">停止</string>
+    <!-- Screen-reader label of the composer's stop button while the stop request is on its way; the button shows a spinner. -->
+    <string name="composer_stopping">停止中</string>
+    <!-- One-line note above the chat composer right after the home server confirmed the bot's turn was stopped. -->
+    <string name="composer_stopped">停止しました</string>
+    <!-- One-line note above the chat composer: the home server did not stop the bot's turn. The stop button stays for another try. -->
+    <string name="composer_stop_failed">停止できませんでした。もう一度お試しください。</string>
+    <!-- One-line note above the chat composer: this person isn't allowed to stop this bot's turn. -->
+    <string name="composer_stop_forbidden">これを停止する権限がありません。</string>
+    <!-- One-line note above the chat composer: the stop request may not have reached the home server, so it is unknown whether the bot's turn stopped. The stop button stays for another try. -->
+    <string name="composer_stop_uncertain">自宅サーバに接続できず、停止できたか分かりません。もう一度お試しください。</string>
 </resources>

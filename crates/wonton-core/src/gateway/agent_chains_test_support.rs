@@ -327,6 +327,18 @@ impl Home {
         response.map(Body::new)
     }
 
+    /// 桥报一轮结束（成功、取消、出错都这么报）。
+    pub(crate) async fn end_turn(&self, bot: Bot, session: &str) {
+        let body = json!({"phase": "end", "session": session});
+        let response = self
+            .app
+            .clone()
+            .oneshot(self.bot_request(bot.bus(), Some(bot.matrix()), body))
+            .await
+            .unwrap();
+        assert_eq!(response.status(), StatusCode::OK);
+    }
+
     pub(crate) async fn grant(
         &self,
         bot: Bot,

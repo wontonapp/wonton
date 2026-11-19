@@ -175,9 +175,16 @@ async fn stopping_a_running_chain_shows_it_stopped() {
     };
 
     let mut view = view;
-    apply_row(&mut view, row);
+    apply_row(&mut view, row.clone());
     assert_eq!(view.chains[0].status, AgentChainStatus::Stopped);
     assert_eq!(view.revision, 1);
+
+    // 长轮询已经把它拿走（停下前恰好报了 End），停的回执仍要把它显示出来。
+    view.chains.clear();
+    apply_row(&mut view, row);
+    assert_eq!(view.chains.len(), 1);
+    assert_eq!(view.chains[0].chain, "c-1");
+    assert_eq!(view.chains[0].status, AgentChainStatus::Stopped);
 }
 
 /// 行为：比壳新的核心给出的不认识的状态落到 Other，整份列表照常交出去。
