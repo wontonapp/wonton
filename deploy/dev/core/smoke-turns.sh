@@ -237,7 +237,7 @@ card_id="$(pending_card)" || fail "Hermes 发私聊没有发确认卡片：$(cat
 chain="$(new_chain "$before" "$(mxid owner)" "$hermes_room")" || fail "链列表里没有这一轮：$(chains)"
 expect "卡片等着时主人停掉这一轮" "$(stop_chain "$chain")" stopped
 for _ in $(seq 30); do [[ "$(latest_card)" != "$card_id pending" ]] && break; sleep 1; done
-[[ "$(latest_card)" != "$card_id pending" ]] || fail "停链以后卡片还在等主人回答"
+[[ "$(latest_card)" != "$card_id pending" ]] || fail "停链以后卡片还在等主人回答（停的链 $chain，卡片 $card_id，链列表：$(chains)；发消息的审计：$(docker exec "$core" sh -c "grep '\"send_message\"' '$WONTON_DEV_DATA/core/audit.jsonl' | tail -3")）"
 ok "停链以后卡片撤回了（$(latest_card)）"
 [[ "$(answer_with approve "$card_id")" != 200 ]] || fail "撤回的卡片还能批准"
 ok "撤回的卡片批准不了"
