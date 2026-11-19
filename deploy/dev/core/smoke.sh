@@ -332,9 +332,11 @@ for _ in $(seq 900); do [[ "$(plugin_state com.nousresearch.hermes)" == running 
 [[ "$(plugin_state com.nousresearch.hermes)" == running ]] ||
   fail "核心没有装好 Hermes：$("$dev" list | grep -F com.nousresearch.hermes || echo absent)"
 ok "核心在后台装好了 Hermes，没有手动安装"
-hermes_user="@hermes:$WONTON_DEV_DOMAIN"
 hermes_env() { docker inspect "$hermes" --format '{{range .Config.Env}}{{println .}}{{end}}' | sed -n "s/^$1=//p"; }
-expect "Hermes 是一个 Bot" "$(hermes_env MATRIX_USER_ID)" "$hermes_user"
+# Tuwunel 的库是 volume、跨栈留着，前几轮的 @hermes 可能还在，核心加 -2 之类的后缀。
+hermes_user="$(hermes_env MATRIX_USER_ID)"
+[[ "$hermes_user" == @hermes*"$WONTON_DEV_DOMAIN" ]] || fail "Hermes 的账号不对：$hermes_user"
+ok "Hermes 是一个 Bot：$hermes_user"
 hermes_room="$(direct_rooms "$hermes_user")"
 [[ "$hermes_room" == '!'* && "$hermes_room" != *$'\n'* ]] ||
   fail "主人的 m.direct 里应有一个和 Hermes 的私聊：$hermes_room"
