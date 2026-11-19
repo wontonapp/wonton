@@ -142,7 +142,7 @@ curl --noproxy '' -x http://127.0.0.1:18008 -U wonton:<密码> -H 'content-type:
 `WONTON_DEV_DEFAULT_PLUGINS= dev.sh up` 起核心。声明了 `models` 的插件经 `models.wonton.internal` 访问 magpie，凭据由
 核心签发。“模型设置”网页（`http://ai-usemagpie-magpie.wonton.localhost:18480/`）由网关代登录：登录过核心的浏览器和
 已配对设备直接打开，不用输 magpie 的网页密钥。也可以用 magpie 的命令行配置 provider，比如指向开发机上已在运行的
-magpie（同 `deploy/dev/agent`）；上游地址别写 `http://host.docker.internal:3425`——核心不给插件容器加 host-gateway（有意的
+magpie；上游地址别写 `http://host.docker.internal:3425`——核心不给插件容器加 host-gateway（有意的
 隔离），Linux 上这个名字解析不了。用[端到端冒烟](#端到端冒烟)一节的 socat 中继（`WONTON_SMOKE_MODEL_RELAY` 指向只监听
 回环的 magpie），宿主防火墙要放行插件网段到中继端口（13425）。加了 provider，默认路由组 `wonton-default` 自动有了它的
 模型（ADR-0008）。
@@ -287,7 +287,7 @@ DOCKER_HOST=ssh://$DEV_HOST deploy/dev/core/smoke.sh  # 远端 Linux 主机
 核心重启后插件恢复，卸掉的 Hermes 不会被装回来；卸载后容器、网络、卷、应用数据和 OIDC 客户端都没有残留。
 结束时清理全部资源，`KEEP=1` 保留现场。Hermes 一步要真实模型：开发机上要有在运行的 magpie，模型名经
 `WONTON_SMOKE_MODEL` 传入（magpie 里一个能对话的模型；`/v1/models` 里的 id 带 provider 前缀，冒烟在交给
-插件前会去掉了它），冒烟里的 magpie 经 `host.docker.internal:3425` 用它（同 `deploy/dev/agent`），
+插件前会去掉了它），冒烟里的 magpie 经 `host.docker.internal:3425` 用它，
 不读取开发机 magpie 的配置和密钥。
 
 远端主机拉不到 Docker Hub 时，先把镜像从本机传过去（以 amd64 主机为例），传完删掉本机的 amd64 副本。核心镜像的 Rust、

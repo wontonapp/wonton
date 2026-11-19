@@ -85,7 +85,7 @@ pub use agent_chain::{
     ChainLimits, ChainRefusal, ChainSpend, ChainTurnGrant, ChainTurnReport,
     DEFAULT_CONSUMER_AGENT_CONCURRENCY, SESSION_HEADER, WONTON_BOT_HEADER, WONTON_MAX_DEPTH_HEADER,
     WONTON_MAX_ROUNDS_HEADER, WONTON_MAX_TOKENS_HEADER, WONTON_ON_BEHALF_OF_HEADER,
-    WONTON_USER_HEADER, agent_chain_stop_path, agent_consumer_concurrency_path,
+    agent_chain_stop_path, agent_consumer_concurrency_path,
 };
 pub use agent_outbox::{
     OutboxFailure, OutboxItem, OutboxKind, OutboxReceipt, OutboxResult, SEND_MESSAGE_TOOL,
@@ -258,7 +258,8 @@ pub use personal_data::{
     LocationScope, OsPermissionState, PERSONAL_DATA_CAPABILITY, PERSONAL_DATA_STATUS_TOOL,
     PersonalDataBotGrant, PersonalDataCategory, PersonalDataFailure, PersonalDataProblem,
     PersonalDataRead, PersonalDataType, PersonalDataTypeRow, PersonalDataViewModel, QUERY_PATH,
-    RetentionPolicy, RetentionSetting, SleepStage, WriteAccepted, data_path, query_path,
+    RetentionPolicy, RetentionSetting, SleepStage, WONTON_USER_HEADER, WriteAccepted, data_path,
+    query_path,
 };
 pub use plugin::LanClient;
 pub use plugin::StoreLoadState;
