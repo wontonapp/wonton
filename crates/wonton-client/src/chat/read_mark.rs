@@ -22,6 +22,8 @@ pub(super) struct ReadMark {
     delivered_id: Option<String>,
     /// 上方写时间的那些条。
     time_groups: HashSet<String>,
+    /// 别人读到了的自己的消息：读到位置和它之前的、发出去了的那些（ADR-0109 第 3 节的双勾）。
+    read_ids: HashSet<String>,
 }
 
 /// 一条消息身上的标记。
@@ -30,6 +32,8 @@ pub(super) struct EntryMark {
     pub(super) readers: Vec<String>,
     pub(super) receipt: Option<MessageReceipt>,
     pub(super) starts_time_group: bool,
+    /// 自己的这条已经有别人读到。
+    pub(super) read: bool,
 }
 
 impl ReadMark {
@@ -43,8 +47,13 @@ impl ReadMark {
             }
             _ => None,
         });
+        let read_ids = entry_id
+            .as_ref()
+            .map(|read| own_sent_through(entries, read))
+            .unwrap_or_default();
         Self {
             delivered_id: last_sent.filter(|id| Some(id) != entry_id.as_ref()),
+            read_ids,
             entry_id,
             readers,
             time_groups: time_groups(entries),
@@ -68,6 +77,7 @@ impl ReadMark {
                 None
             },
             starts_time_group: self.time_groups.contains(entry_id),
+            read: self.read_ids.contains(entry_id),
         }
     }
 }
@@ -87,6 +97,23 @@ fn read_position(entries: &Vector<TimelineEntry>) -> (Option<String>, Vec<String
         }
     }
     (None, Vec::new())
+}
+
+/// 从头到 `through`（含）为止自己发出去了的消息。
+fn own_sent_through(entries: &Vector<TimelineEntry>, through: &str) -> HashSet<String> {
+    let mut found = HashSet::new();
+    for entry in entries {
+        if let EntryKind::Message(message) = &entry.kind
+            && message.is_own
+            && matches!(message.status, SendStatus::Sent)
+        {
+            found.insert(entry.id.clone());
+        }
+        if entry.id == through {
+            break;
+        }
+    }
+    found
 }
 
 /// 上方写时间的那些条：和上一条消息隔了 [`TIME_GROUP_GAP_MS`] 以上的。日期分隔线后面第一条不算，分隔线带着它的
@@ -221,6 +248,25 @@ mod tests {
                 ("c".to_owned(), MessageReceipt::Delivered)
             ]
         );
+    }
+
+    /// ADR-0109：读到位置和它之前自己发出去的都画双勾，之后的单勾；别人的不画。
+    #[test]
+    fn everything_up_to_the_read_position_is_read() {
+        let entries: Vector<TimelineEntry> = vec![
+            message("a", true, &[]),
+            message("b", false, &[]),
+            message("c", true, &["Bot"]),
+            message("d", true, &[]),
+        ]
+        .into_iter()
+        .collect();
+        let mark = ReadMark::of(&entries);
+        let read: Vec<bool> = ["a", "b", "c", "d"]
+            .iter()
+            .map(|id| mark.of_entry(id).read)
+            .collect();
+        assert_eq!(read, vec![true, false, true, false]);
     }
 
     #[test]

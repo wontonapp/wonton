@@ -15,9 +15,9 @@ use wonton_matrix::{
 };
 use wonton_protocol::{
     ChatFailure, ChatLayout, CoreError, DeviceVerification, EncryptionStatus, FileAttachment,
-    FileLinks, ImageCaption, ImageContent, KeyNotice, MediaHandle, MessageContent, MessageSummary,
-    QuotedMessage, RecoveryStatus, RichBlock, RoomMembership, RoomPreview, RoomRow, SendState,
-    TimelineContent, TimelineDiff, TimelineItem, TimelineMessage, extract_file_links,
+    FileLinks, ImageCaption, ImageContent, KeyNotice, MediaHandle, MessageContent, MessageStatus,
+    MessageSummary, QuotedMessage, RecoveryStatus, RichBlock, RoomMembership, RoomPreview, RoomRow,
+    SendState, TimelineContent, TimelineDiff, TimelineItem, TimelineMessage, extract_file_links,
 };
 
 use crate::l10n::{CATALOG, language};
@@ -234,39 +234,53 @@ fn timeline_message(
             content: quoted_content(&body),
         }
     });
+    let send_state = send_state(message.status);
     TimelineMessage {
         event_id,
         sender_id,
         sender_name: message.sender_name,
         is_own: message.is_own,
         timestamp_ms: message.timestamp_ms,
-        send_state: match message.status {
-            SendStatus::Sending { progress } => SendState::Sending {
-                progress: progress.and_then(|p| {
-                    (p.total > 0).then(|| (p.current.min(p.total) as f64 / p.total as f64) as f32)
-                }),
-            },
-            SendStatus::Sent => SendState::Sent,
-            SendStatus::Failed { error, recoverable } => SendState::Failed {
-                message: error,
-                recoverable,
-            },
-        },
         edited: message.edited,
         reply: message.reply.map(|reply| reply_quote(reply, links)),
         side_chat,
         preview,
         actions,
         body,
+        status: own_status(message.is_own, &send_state, mark.read),
+        send_state,
         read_by: mark.readers,
         group: message.group,
         receipt: mark.receipt,
         starts_time_group: mark.starts_time_group,
         run: wonton_protocol::MessageRun::Alone,
-        status: None,
         choices: None,
         sender_avatar: None,
     }
+}
+
+fn send_state(status: SendStatus) -> SendState {
+    match status {
+        SendStatus::Sending { progress } => SendState::Sending {
+            progress: progress.and_then(|p| {
+                (p.total > 0).then(|| (p.current.min(p.total) as f64 / p.total as f64) as f32)
+            }),
+        },
+        SendStatus::Sent => SendState::Sent,
+        SendStatus::Failed { error, recoverable } => SendState::Failed {
+            message: error,
+            recoverable,
+        },
+    }
+}
+
+/// 自己发出去的消息：有人读过画双勾，否则单勾（ADR-0109 第 3 节）。在发和失败的由 `send_state` 画。
+fn own_status(is_own: bool, send_state: &SendState, read: bool) -> Option<MessageStatus> {
+    (is_own && matches!(send_state, SendState::Sent)).then_some(if read {
+        MessageStatus::Read
+    } else {
+        MessageStatus::Sent
+    })
 }
 
 pub(super) fn message_content(
