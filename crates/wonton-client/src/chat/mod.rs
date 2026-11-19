@@ -43,6 +43,7 @@ mod read_mark;
 pub(crate) mod recovery;
 mod reply;
 mod rich;
+mod room_commands;
 mod room_link;
 mod room_rows;
 mod room_typing;
