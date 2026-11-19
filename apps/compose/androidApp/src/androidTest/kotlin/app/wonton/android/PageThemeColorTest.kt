@@ -74,12 +74,12 @@ class PageThemeColorTest {
         awaitStrip("半透明的一层盖在顶栏上：合成出来的颜色", Color(0xFF8F9DAF))
 
         run("document.getElementById('veil').remove(); document.getElementById('bar').remove()")
-        awaitStrip("顶上没有东西时是 body 的背景色", Color(0xFF17324D))
-
-        run("document.body.style.background = 'transparent'")
-        awaitStrip("body 透明时是 html 的背景色", Color(0xFF0B132B))
+        awaitStrip("顶上没有东西时是 html 的背景色（html 自己有背景，body 的不铺到画布上）", Color(0xFF0B132B))
 
         run("document.documentElement.style.background = 'transparent'")
+        awaitStrip("html 透明时 body 的背景色铺满画布", Color(0xFF17324D))
+
+        run("document.body.style.background = 'transparent'")
         awaitStrip("顶上什么都没涂时用声明的 theme-color", Color(0xFF90CAF9))
 
         run("document.querySelectorAll('meta[name=theme-color]').forEach(meta => meta.remove())")
@@ -94,7 +94,9 @@ class PageThemeColorTest {
 
     @Test
     fun invalidDeclarationIsNotUsed() {
-        val invalid = BARE.replace("#90caf9", "not-a-color").replace("#1b4965", "rgba(0, 0, 0, 0.5)")
+        // 带 media 的那一条改成一定匹配，半透明的那个颜色才真的被读到。
+        val invalid = BARE.replace("(prefers-color-scheme: dark)", "all")
+            .replace("#90caf9", "not-a-color").replace("#1b4965", "rgba(0, 0, 0, 0.5)")
         // 先等页面出来，免得把加载前的 App 底色当成结果。
         load(invalid.replace("<body>", "<body style=\"background: #17324d\">"))
         awaitStrip("页面出来了", Color(0xFF17324D))

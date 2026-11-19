@@ -198,7 +198,7 @@ internal fun PageWebView(
         },
         onOpenLink = openLink, onRendererGone = state::loadStarted, onLoadStarted = state::loadStarted,
         visible = visible, textZoom = (LocalDensity.current.fontScale * 100).roundToInt(),
-        profileName = profile, overscroll = false,
+        profileName = profile, fullPage = true,
     )
 }
 

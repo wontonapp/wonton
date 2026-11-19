@@ -4,35 +4,50 @@ import assert from 'node:assert/strict';
 
 // 没有浏览器：页面只剩“视口顶上一点叠着哪些元素、各自的计算样式”，脚本读到的就是这些。
 const element = (backgroundColor, opacity = '1', parentElement = null) =>
-  ({ style: { backgroundColor, opacity }, parentElement });
+  ({ style: { backgroundColor, opacity }, parentElement, getRootNode: () => null });
 
 function page(script) {
   const messages = [];
-  const timers = [];
+  const timers = new Map();
+  const listeners = {};
+  let timerId = 0;
   const html = element('rgba(0, 0, 0, 0)');
   const body = element('rgba(0, 0, 0, 0)', '1', html);
-  const state = { stack: () => [body, html], themes: [], html, body, messages };
+  const state = { stack: () => [body, html], themes: [], html, body, messages, watched: [] };
   const document = {
     documentElement: html, body,
     elementsFromPoint: x => state.stack(x),
     querySelectorAll: () => state.themes.map(content => ({ getAttribute: name => (name === 'content' ? content : null) })),
     createElement: () => ({ getContext: () => null }),
-    addEventListener() {},
+    addEventListener: (name, run) => (listeners[name] ||= []).push(run),
   };
   const context = vm.createContext({
     document, innerWidth: 400,
     getComputedStyle: target => target.style,
     matchMedia: () => ({ matches: false, addEventListener() {} }),
-    MutationObserver: class { constructor(changed) { state.changed = changed; } observe() {} },
+    MutationObserver: class {
+      constructor(changed) { state.changed = changed; }
+      observe(root) { state.watched.push(root); }
+    },
     CSS: { supports: () => true },
-    setTimeout: run => timers.push(run),
-    addEventListener() {},
+    setTimeout: run => { timers.set(++timerId, run); return timerId; },
+    clearTimeout: id => timers.delete(id),
+    addEventListener: (name, run) => (listeners[name] ||= []).push(run),
     wontonPageColor: { postMessage: message => messages.push(message) },
   });
   context.window = context;
   context.top = context;
   vm.runInContext(script, context);
-  state.settle = () => { state.changed(); while (timers.length) timers.shift()(); return messages.at(-1); };
+  const drain = () => {
+    while (timers.size) {
+      const [id, run] = timers.entries().next().value;
+      timers.delete(id);
+      run();
+    }
+  };
+  state.fire = (name, event = {}) => { for (const run of listeners[name] || []) run(event); drain(); return messages.at(-1); };
+  state.settle = () => { state.changed(); drain(); return messages.at(-1); };
+  state.document = document;
   return state;
 }
 
@@ -78,11 +93,41 @@ for await (const line of lines) {
   view.stack = () => [view.html];
   assert.equal(view.settle(), '#17324d');
 
-  // 顶上什么都没涂：用声明的 theme-color（半透明的不算）；连它也没有就报空串。
+  // 顶上什么都没涂：页面加载完之前不用声明的 theme-color（单页应用的顶栏这时还没画出来），报空串；
+  // 加载完以后用它（半透明的不算）；连它也没有就报空串。
   view = page(script);
   view.themes = ['rgba(0, 0, 0, 0.5)', 'rgb(42, 111, 151)'];
-  assert.equal(view.settle(), '#2a6f97');
+  assert.equal(view.settle(), '');
+  assert.equal(view.fire('load'), '#2a6f97');
   view.themes = [];
   assert.equal(view.settle(), '');
+
+  // 顶栏在 shadow root 里：进去取，里面的变动也盯着；宿主半透明时里面的一起算。
+  view = page(script);
+  const host = element('rgba(0, 0, 0, 0)', '0.5', view.body);
+  const shadow = { host, elementsFromPoint: () => [inside, host, view.body, view.html] };
+  const inside = { ...element('rgb(255, 255, 255)'), parentNode: shadow, getRootNode: () => shadow };
+  host.shadowRoot = shadow;
+  view.body.style.backgroundColor = 'rgb(31, 58, 95)';
+  view.stack = () => [host, view.body, view.html];
+  assert.equal(view.settle(), '#8f9daf');
+  assert.ok(view.watched.includes(shadow));
+
+  // 从前进后退缓存里回来：颜色没变也重报一遍，普通的 pageshow 不重报。
+  const before = view.messages.length;
+  view.fire('pageshow', { persisted: false });
+  assert.equal(view.messages.length, before);
+  assert.equal(view.fire('pageshow', { persisted: true }), '#8f9daf');
+  assert.equal(view.messages.length, before + 1);
+
+  // 加载完以后还隐藏着的页不算，显示出来马上补报。
+  view.document.hidden = true;
+  view.document.readyState = 'complete';
+  view.body.style.backgroundColor = 'rgb(23, 50, 77)';
+  view.stack = () => [view.body, view.html];
+  view.settle();
+  assert.equal(view.messages.length, before + 1);
+  view.document.hidden = false;
+  assert.equal(view.fire('visibilitychange'), '#17324d');
 }
 console.log(JSON.stringify({ passed: true }));

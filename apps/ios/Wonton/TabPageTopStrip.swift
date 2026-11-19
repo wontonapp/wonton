@@ -17,10 +17,11 @@ struct PageTopStrip: View {
 }
 
 extension TabWebSession {
-    /// 这一条的颜色：核心的取色脚本报上来的“页面最顶上实际显示的颜色”（`ClientCore.pageColorScript`，两端共用）。
-    /// 脚本没报的时候用 WebKit 给的，照 Safari 的读法：页面声明的 `theme-color`，没声明就是 `html`、`body` 的背景色，
-    /// 都没有时是网页视图自己的底色（我们设成了 App 底色）。没报的情况：公网网页不注入脚本（ADR-0052）、页面还没出来、
-    /// 页面顶上没有读得出的颜色。WebKit 的两个属性都能 KVO。
+    /// 这一条的颜色：核心的取色脚本报上来的“页面最顶上实际显示的颜色”（`ClientCore.pageColorScript`，两端共用），
+    /// 脚本没报或报了没有可用的颜色时是 App 底色。注入了脚本的页不拿 WebKit 的 `themeColor` 垫：单页应用画出顶栏之前
+    /// 它就是页面声明的那个颜色，和顶栏对不上时顶条会先闪一下它（脚本为此在页面加载完之前不报声明的颜色）。
+    /// 公网网页不注入脚本（ADR-0052），用 WebKit 给的，照 Safari 的读法：页面声明的 `theme-color`，没声明就是 `html`、
+    /// `body` 的背景色，都没有时是网页视图自己的底色（我们设成了 App 底色）。WebKit 的两个属性都能 KVO。
     func observeTopColor(of view: WKWebView) {
         topColorObservations = [
             view.observe(\.themeColor, options: [.initial]) { [weak self] _, _ in
@@ -34,7 +35,7 @@ extension TabWebSession {
 
     private func readTopColor() {
         guard let webView else { return }
-        topColor = reportedTopColor ?? webView.themeColor ?? webView.underPageBackgroundColor
+        topColor = reportsTopColor ? reportedTopColor : webView.themeColor ?? webView.underPageBackgroundColor
     }
 
     /// 取色脚本给谁注入：让出顶条的整页和内容窗口，公网网页除外（它没有注入脚本，ADR-0052）。
