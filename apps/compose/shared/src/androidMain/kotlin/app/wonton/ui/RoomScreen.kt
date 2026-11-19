@@ -1,8 +1,11 @@
 package app.wonton.ui
 
 import androidx.compose.foundation.clickable
+import androidx.compose.foundation.rememberScrollState
+import androidx.compose.foundation.verticalScroll
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
+import androidx.compose.foundation.layout.BoxWithConstraints
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.WindowInsets
@@ -552,7 +555,7 @@ private fun Conversation(
     val barInset = LocalWontonTopInset.current
     val panelVisible = LocalChatPanel.current?.visible == true
     val bottomInsets = if (panelVisible) WindowInsets.ime else WindowInsets.ime.union(WindowInsets.navigationBars)
-    Box(Modifier.fillMaxSize().windowInsetsPadding(bottomInsets)) {
+    BoxWithConstraints(Modifier.fillMaxSize().windowInsetsPadding(bottomInsets)) {
         CompositionLocalProvider(
             LocalWontonBottomInset provides with(density) { composerHeight.toDp() },
             LocalWontonTopInset provides barInset + with(density) { headerHeight.toDp() },
@@ -573,7 +576,10 @@ private fun Conversation(
                 )
             }
         }
-        Column(Modifier.fillMaxWidth().padding(top = barInset).onSizeChanged { headerHeight = it.height }) {
+        Column(
+            Modifier.fillMaxWidth().padding(top = barInset).onSizeChanged { headerHeight = it.height }
+                .testTag("room-header"),
+        ) {
             AgentPluginStatusBanner(plugin, title, onAction)
             timeline.sideChat?.let { SideChatHeaderLine(it.state) }
             if (sideChats.unsupportedHint) NoSideChatsHint()
@@ -585,11 +591,17 @@ private fun Conversation(
         Column(
             Modifier.align(Alignment.BottomCenter).fillMaxWidth()
                 .roomBackdrop(backdrop, top = false)
-                .onSizeChanged { composerHeight = it.height },
+                .testTag("composer-block")
+                .onSizeChanged { composerHeight = it.height }
+                // 键盘、确认卡片一起把输入区顶高时别高过剩下的地方，超出让上面几行先缩。
+                .heightIn(max = maxHeight),
         ) {
-            timeline.notice?.let { KeyNoticeRow(it, onOpenBackup) }
-            TransfersStrip(target.roomId, core)
-            RoomConfirmationRow(timeline.confirmations) { timeline.openedConfirmation = it }
+            // 输入框以上的几行先缩、在里头滚，输入框本身始终露着。
+            Column(Modifier.weight(1f, fill = false).verticalScroll(rememberScrollState())) {
+                timeline.notice?.let { KeyNoticeRow(it, onOpenBackup) }
+                TransfersStrip(target.roomId, core)
+                RoomConfirmationRow(timeline.confirmations) { timeline.openedConfirmation = it }
+            }
             if (!isReadOnly) {
                 Composer(
                     target = target,

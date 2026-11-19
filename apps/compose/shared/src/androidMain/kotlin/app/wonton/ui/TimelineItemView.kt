@@ -84,7 +84,8 @@ import java.text.DateFormat
 import java.util.Date
 
 /**
- * `showsSender`：私聊里对方是谁看标题就知道，不在每条消息上重复名字。`joinsPrevious`、`joinsNext`：这一条在它那一组里
+ * `showsSender`：私聊里对方是谁看标题就知道，不在每条消息上重复名字；群里只在一次连发的第一条上写名字，
+ * 别人那条连发的尾条气泡旁边画头像（`isGroup` 是群里，头像跟组尾走）。`joinsPrevious`、`joinsNext`：这一条在它那一组里
  * 排第几（`run`），决定相接的角、尾巴画不画。`focused`、`emphasize`：列表刚滚到这一条，`emphasize` 时背景闪一下。
  * `onRetry`、`onCancel` 处理发送失败的这一条，`onCardAction` 是确认卡片上的操作。
  * `onOpenAgentCard` 打开这张等回答的卡片，`onAnswerAgentChoice` 回答 Bot 自己的提问（ADR-0082）。
@@ -134,6 +135,7 @@ fun TimelineItemView(
                 MessageBubble(
                     content.message,
                     core,
+                    showsSender,
                     showsSender && !joinsPrevious,
                     joinsPrevious,
                     joinsNext,
@@ -202,6 +204,7 @@ private fun CenteredNote(text: String) {
 private fun MessageBubble(
     message: TimelineMessage,
     core: ClientCore,
+    isGroup: Boolean,
     showsSender: Boolean,
     joinsPrevious: Boolean,
     joinsNext: Boolean,
@@ -242,9 +245,7 @@ private fun MessageBubble(
         horizontalAlignment = if (isOwn) Alignment.End else Alignment.Start,
         verticalArrangement = Arrangement.spacedBy(WontonTheme.spacing.s4),
     ) {
-        if (showsSender && !isOwn) {
-            Text(message.senderName, style = WontonTheme.typography.caption, color = colors.textSecondary.toColor())
-        }
+        if (showsSender && !isOwn) SenderNameLine(message.senderName)
         BoxWithConstraints(Modifier.fillMaxWidth()) {
             val bubbleWidth = maxWidth * WontonTheme.ratio.bubbleWidth
             // 右侧的箭头位置留在气泡的宽度之外，气泡本身还是最宽 80%。
@@ -253,20 +254,22 @@ private fun MessageBubble(
                 Modifier.fillMaxWidth().then(pressable),
                 contentAlignment = if (isOwn) Alignment.CenterEnd else Alignment.CenterStart,
             ) {
-                Column(Modifier.widthIn(max = rowWidth)) {
+                // 有选项时这一列按气泡的自然宽度和按钮行撑开，按钮跟着列宽走、不越过气泡（ADR-0109 第 7 节）。
+                Column(columnWrap(message.choices != null).widthIn(max = rowWidth)) {
+                    // 群聊里别人的气泡左边先留出头像那一格，没有组尾头像的照样留，一组里的气泡起点才齐。
+                    val avatarColumn = isGroup && !isOwn
                     Row(
                         Modifier.fillMaxWidth(),
                         verticalAlignment = Alignment.Bottom,
-                        horizontalArrangement = if (isOwn) {
-                            Arrangement.spacedBy(WontonTheme.spacing.s4, Alignment.End)
-                        } else {
-                            Arrangement.spacedBy(WontonTheme.spacing.s4, Alignment.Start)
-                        },
+                        horizontalArrangement = rowArrangement(isOwn),
                     ) {
+                        if (avatarColumn) SenderAvatarCell(message, core, joinsNext)
                         val bubble: @Composable () -> Unit = {
                             BubbleSurface(
                                 message, core, joinsPrevious, joinsNext,
-                                swipe.modifier.onGloballyPositioned { bounds = it.boundsInRoot() },
+                                Modifier.fillMaxWidth()
+                                    .then(swipe.modifier)
+                                    .onGloballyPositioned { bounds = it.boundsInRoot() },
                                 onCardAction,
                                 onLongPress = openMenu.takeIf { showsMenu },
                                 onJumpQuote = onJumpQuote,
@@ -277,7 +280,7 @@ private fun MessageBubble(
                         (message.sendState as? SendState.Failed)?.let { failed ->
                             FailedMark(failed, onRetry, onCancel)
                         }
-                        Box(Modifier.widthIn(max = bubbleWidth)) { bubble() }
+                        Box(bubbleWrap(message.choices != null, bubbleWidth).testTag("bubble")) { bubble() }
                         SwipeHint(swipe)
                     }
                     message.choices?.let { choices ->

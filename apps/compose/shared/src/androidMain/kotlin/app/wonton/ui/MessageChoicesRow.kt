@@ -9,6 +9,7 @@ import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.material3.CircularProgressIndicator
+import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.platform.testTag
@@ -22,7 +23,7 @@ import app.wonton.ui.design.WontonTheme
 /**
  * 消息下面的选项按钮（ADR-0109）：两个一行、单独一个占满整行，跟气泡一样宽。选项还开着时点了就把 key 交给核心；
  * 回答过以后选中的那项一直高亮、其余变灰；这条不是问我的就不能点。点过还没答上的转圈，答不上时红字给原因、可以再点。
- * 按钮上写核心给的 key 和它的说明，两者都没有时退回 key 本身。
+ * 按钮上先画核心给的 key（表情），再画它的说明；没有说明时只画 key。
  */
 /** 一行两个。 */
 private const val PAIR = 2
@@ -30,7 +31,7 @@ private const val PAIR = 2
 @Composable
 internal fun MessageChoicesRow(choices: MessageChoices, onAnswer: (String) -> Unit) {
     Column(
-        Modifier.fillMaxWidth().padding(top = WontonTheme.spacing.s4),
+        Modifier.fillMaxWidth().padding(top = WontonTheme.spacing.s4).testTag("choices-row"),
         verticalArrangement = Arrangement.spacedBy(WontonTheme.spacing.s4),
     ) {
         choices.options.chunked(PAIR).forEach { pair ->
@@ -57,6 +58,11 @@ private fun RowScope.ChoiceButton(
     val blocked = (send as? ChoiceSend.Failed)?.message
     StepOptionRow(
         title = choice.label ?: choice.key,
+        leading = if (choice.label == null) {
+            {}
+        } else {
+            { Text(choice.key, style = WontonTheme.typography.body) }
+        },
         selected = choice.chosen,
         onSelect = if (open) {
             { onAnswer(choice.key) }

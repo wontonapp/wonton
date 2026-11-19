@@ -7,6 +7,8 @@ import androidx.compose.foundation.background
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.PaddingValues
+import androidx.compose.foundation.layout.Spacer
+import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.padding
@@ -20,11 +22,11 @@ import androidx.compose.material3.CircularProgressIndicator
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
+import androidx.compose.runtime.snapshotFlow
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
-import androidx.compose.runtime.snapshotFlow
 import androidx.compose.runtime.withFrameNanos
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
@@ -79,6 +81,7 @@ internal fun TimelineList(
     val newestFirst = timeline.items.asReversed()
     val openCard: (String) -> Unit = { cardId -> timeline.openedConfirmation = cardId }
     val pill = rememberDatePill(listState, newestFirst)
+    val inset = LocalWontonTopInset.current
     PaginateOnTop(listState, timeline, target, onAction)
     Box(modifier) {
         LazyColumn(
@@ -89,7 +92,7 @@ internal fun TimelineList(
             contentPadding = PaddingValues(
                 start = WontonTheme.spacing.pageInset,
                 end = WontonTheme.spacing.pageInset,
-                top = LocalWontonTopInset.current + WontonTheme.spacing.s8,
+                top = 0.dp,
                 bottom = LocalWontonBottomInset.current + WontonTheme.spacing.s8,
             ),
             verticalArrangement = Arrangement.spacedBy(WontonTheme.spacing.runGap),
@@ -119,6 +122,9 @@ internal fun TimelineList(
                     openCard = openCard,
                 )
             }
+            // 顶栏空出的这段也要能滚：放进 contentPadding 时，倒排的列表翻到最早一条会把这段吃掉，
+            // 第一条正好压在顶栏底下。做成一格列表项，翻到头时它停在顶栏下面。
+            item(key = "top-gap") { Spacer(Modifier.height(inset + WontonTheme.spacing.s8)) }
             if (timeline.backPagination != BackPagination.REACHED_START) {
                 // 列表还空时转圈是第 0 项。它的键不能和有消息时一样：列表按键记位置，消息进来后会跟着转圈跳到最早的一条。
                 item(key = if (newestFirst.isEmpty()) "loading" else "paginating") {
@@ -267,7 +273,7 @@ private fun TimelineRow(
 /** 浮在列表上的小胶囊（日期、跳转失败的提示）。 */
 @Composable
 private fun DatePill(visible: Boolean, text: String, modifier: Modifier) {
-    AnimatedVisibility(visible, modifier, fadeIn(), fadeOut()) {
+    AnimatedVisibility(visible, modifier.testTag("date-pill"), fadeIn(), fadeOut()) {
         Text(
             text,
             Modifier

@@ -47,6 +47,7 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.focus.FocusRequester
 import androidx.compose.ui.focus.focusRequester
 import androidx.compose.ui.graphics.SolidColor
+import androidx.compose.ui.platform.LocalConfiguration
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.semantics.Role
@@ -74,6 +75,7 @@ import app.wonton.ui.icons.Attach
 import app.wonton.ui.icons.Code
 import app.wonton.ui.icons.Image
 import app.wonton.ui.icons.Send
+import app.wonton.ui.icons.List
 import app.wonton.ui.icons.WontonIcon
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.launch
@@ -155,6 +157,7 @@ fun Composer(
     )
     AgentStopNotice(agentStop)
     ComposerBar(
+        target = target,
         draft = draft,
         commands = commands,
         agentStop = agentStop,
@@ -164,6 +167,7 @@ fun Composer(
         attach = attach,
         send = send,
         dropCommand = dropCommand,
+        onAction = onAction,
     )
     attach.chooser()
 }
@@ -195,17 +199,25 @@ private fun ComposerStack(
     val shown = commandQuery(draft, commands)
     ComposerTray(attachments, roomId, core, onAction)
     if (shown.isNotEmpty()) {
-        ComposerCommands(shown, commandsOmitted) { command ->
-            onAction(Action.Timeline(TimelineAction.SendText(target, command.text, reply?.eventId)))
-            onSent()
+        // 键盘把可用的地方压小以后菜单跟着缩，别把输入框和顶栏一起挤走。
+        val menuMax = (LocalConfiguration.current.screenHeightDp * TRAY_HEIGHT_SHARE).dp
+        Box(Modifier.heightIn(max = menuMax)) {
+            ComposerCommands(shown, commandsOmitted) { command ->
+                onAction(Action.Timeline(TimelineAction.SendText(target, command.text, reply?.eventId)))
+                onSent()
+            }
         }
     }
 }
+
+/** 命令菜单最多占整块屏幕的这个比例，键盘弹出后菜单会自己缩。 */
+private const val TRAY_HEIGHT_SHARE = 0.2f
 
 /** 输入框这一行：命令菜单、回形针、输入框和发送键。 */
 @OptIn(ExperimentalFoundationApi::class)
 @Composable
 private fun ComposerBar(
+    target: TimelineTarget,
     draft: String,
     commands: List<RoomCommand>,
     agentStop: RoomAgentStop,
@@ -215,6 +227,7 @@ private fun ComposerBar(
     attach: Attachments,
     send: (String) -> Unit,
     dropCommand: String?,
+    onAction: (Action) -> Unit,
 ) {
     val spacing = WontonTheme.spacing
     val size = WontonTheme.size

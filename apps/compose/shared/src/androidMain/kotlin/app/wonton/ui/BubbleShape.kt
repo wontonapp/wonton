@@ -3,17 +3,24 @@ package app.wonton.ui
 import androidx.compose.foundation.shape.GenericShape
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.remember
+import androidx.compose.foundation.layout.Arrangement
+import androidx.compose.foundation.layout.IntrinsicSize
+import androidx.compose.foundation.layout.width
+import androidx.compose.foundation.layout.widthIn
+import androidx.compose.ui.Alignment
+import androidx.compose.ui.Modifier
 import androidx.compose.ui.geometry.CornerRadius
 import androidx.compose.ui.geometry.Rect
 import androidx.compose.ui.geometry.RoundRect
 import androidx.compose.ui.graphics.Path
 import androidx.compose.ui.graphics.Shape
 import androidx.compose.ui.platform.LocalDensity
+import androidx.compose.ui.unit.Dp
 import app.wonton.ui.design.WontonTheme
 
 /**
  * 气泡的轮廓：贴近发送者一侧的角在组内收小，组首的上角、组尾的下角保持大圆角。组尾在发送者一侧带一条尾巴，
- * 尾巴占 [WontonTheme.size.bubbleTail] 的宽度，形状把这段宽度让出来。
+ * 尾巴占 [WontonTheme.size.bubbleTail] 的宽度；组内没有尾巴的也让出这段宽度，一组里的气泡起点才对得齐。
  */
 @Composable
 internal fun bubbleShape(isOwn: Boolean, joinsPrevious: Boolean, joinsNext: Boolean): Shape {
@@ -30,9 +37,8 @@ internal fun bubbleShape(isOwn: Boolean, joinsPrevious: Boolean, joinsNext: Bool
         val corner = if (tailed) 0f else senderPx
         val (start, end) = if (isOwn) senderPx to fullPx else fullPx to senderPx
         GenericShape { size, _ ->
-            val tailWidth = if (tailed) tailPx else 0f
-            val left = if (isOwn) 0f else tailWidth
-            val right = size.width - if (isOwn) tailWidth else 0f
+            val left = if (isOwn) 0f else tailPx
+            val right = size.width - if (isOwn) tailPx else 0f
             addRoundRect(
                 RoundRect(
                     Rect(left, 0f, right, size.height),
@@ -57,3 +63,18 @@ private fun Path.tailPath(isOwn: Boolean, left: Float, right: Float, bottom: Flo
     lineTo(base, bottom)
     close()
 }
+
+/** 有选项的那条按内容撑开到按钮行那么宽。 */
+internal fun columnWrap(hasChoices: Boolean) = if (hasChoices) Modifier.width(IntrinsicSize.Max) else Modifier
+
+/** 自己的消息靠右，别人的靠左。 */
+internal fun rowArrangement(isOwn: Boolean) =
+    if (isOwn) {
+        Arrangement.spacedBy(WontonTheme.spacing.s4, Alignment.End)
+    } else {
+        Arrangement.spacedBy(WontonTheme.spacing.s4, Alignment.Start)
+    }
+
+/** 有选项时气泡跟着整列走满，按钮行才不会比气泡宽；其余情况继续限宽。 */
+internal fun bubbleWrap(hasChoices: Boolean, bubbleWidth: Dp) =
+    if (hasChoices) Modifier else Modifier.widthIn(max = bubbleWidth)
