@@ -110,9 +110,9 @@ private struct ComposerTextField: UIViewRepresentable {
     }
 }
 
-/// 接住系统“粘贴”的文本视图。一到六行，到顶再打字就滚动，和原 `TextField(axis: .vertical)` 一样。
+/// 接住系统“粘贴”的文本视图。随内容长高到 `ratio.composerLines` 行，到顶再打字就在里面滚动（ADR-0109 第 6 节）。
 final class ComposerTextView: UITextView {
-    static let maxLines = 6
+    static let maxLines = Int(WontonTheme.ratio.composerLines)
     static let maxScreenShare: CGFloat = 0.25
 
     var onPasteImage: (([NSItemProvider]) -> Void)?
