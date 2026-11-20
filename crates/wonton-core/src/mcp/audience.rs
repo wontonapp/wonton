@@ -105,6 +105,7 @@ impl Bus {
 
     /// 这次调用的封顶（ADR-0088 第 5 节、ADR-0083 第 5 节）：报了说话人按这个人算；没报时按进行中的轮次里
     /// 级别最低的人算；两样都没有（[`Self::speaker_missing`]）按只读。没有 Bot 的工具插件按主人的自动化算。
+    /// 说话人本身是本机 Bot 的账号时按它那轮所在链的发起人算（ADR-0061 第 10 节）。
     ///
     /// 说不出替谁办事时不按 Bot 归属人或共享 Bot 的能用人算：插件取不到身份不带头、开链失败没报上轮次，
     /// 这一轮就会拿到归属人（主人的 Bot 就是主人）的权限，等于身份升级。按只读失败即停，Agent 照实转告。
@@ -117,8 +118,14 @@ impl Bus {
         };
         if let Some(sender) = &caller.sender {
             return match sender {
-                TurnSender::Local(user_id) => localpart(user_id)
-                    .map_or(AiLevel::ReadOnly, |username| self.person_ai(username)),
+                TurnSender::Local(user_id) => {
+                    if self.plugins.bot_by_user(user_id).is_some() {
+                        self.bot_speaker_ai(caller, user_id)
+                    } else {
+                        localpart(user_id)
+                            .map_or(AiLevel::ReadOnly, |username| self.person_ai(username))
+                    }
+                }
                 TurnSender::Unknown => AiLevel::ReadOnly,
             };
         }
@@ -141,6 +148,40 @@ impl Bus {
                 AiLevel::ReadOnly
             }
         }
+    }
+
+    /// 说话的人本身是本机 Bot 的账号（Bot 之间传话）：按它那一轮所在链的发起人算。先看这次调用认下的链，
+    /// 认不下时看它其余的进行中轮次，几轮分不清时取最严。找不到链、链代表认不出时按只读。
+    fn bot_speaker_ai(&self, caller: &Caller, sender: &str) -> AiLevel {
+        let Some(chains) = self.agent_chains.get() else {
+            return AiLevel::ReadOnly;
+        };
+        let ledger = chains.ledger();
+        let Some(bot) = caller.bot.as_ref().map(|identity| BotRef {
+            plugin_id: caller.id.to_string(),
+            bot: identity.bot.clone(),
+        }) else {
+            return AiLevel::ReadOnly;
+        };
+        let turns: Vec<_> = ledger
+            .live_turns(&bot)
+            .into_iter()
+            .filter(|turn| turn.sender == sender)
+            .collect();
+        let picked: Vec<_> = match caller.chain.as_deref() {
+            Some(chain) if turns.iter().any(|turn| turn.chain == chain) => {
+                turns.iter().filter(|turn| turn.chain == chain).collect()
+            }
+            _ => turns.iter().collect(),
+        };
+        picked
+            .into_iter()
+            .filter_map(|turn| ledger.chain_user(&turn.chain))
+            .map(|user| {
+                localpart(&user).map_or(AiLevel::ReadOnly, |username| self.person_ai(username))
+            })
+            .reduce(lower)
+            .unwrap_or(AiLevel::ReadOnly)
     }
 
     /// 进行中的轮次各自代表的级别。说话的人认不出时按最严，不用链代表的人替代（ChainSessionInfo 的 `sender`

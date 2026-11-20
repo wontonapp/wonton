@@ -374,6 +374,11 @@ impl Chains {
         self.read(|state| wake::chain_for_wake(state, bot, room, thread))
     }
 
+    /// 这条链代表的人（最早说话的那个人）：说话人本身是 Bot 账号时，封顶按他的级别算。
+    pub fn chain_user(&self, chain_id: &str) -> Option<String> {
+        self.read(|state| state.chains.get(chain_id).map(|chain| chain.user.clone()))
+    }
+
     /// 按会话找链。
     pub fn session_chain(&self, session: &str) -> Option<ChainSessionInfo> {
         self.read(|state| {
