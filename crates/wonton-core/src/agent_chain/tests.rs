@@ -170,44 +170,6 @@ fn rounds_stop_at_the_limit_and_a_new_grant_reopens_it() {
     assert_eq!(h.events.lock().expect("事件锁").len(), 2, "再到上限是新的");
 }
 
-/// token 累计过 200 万：`limit_reached/Cost`；按 Bot 分账加起来等于链的总数。
-#[test]
-fn cost_limits_hit_on_cumulative_tokens_with_per_bot_accounts() {
-    let h = harness();
-    let (a, b) = (bot("app.a", "owner"), bot("app.b", "owner"));
-    let chain = start(&h, &a, "s-a", "@alex", "$e1").expect("开链").chain;
-    join(&h, &chain, &a, &b, "s-b", "$wake-b").expect("B 进链");
-
-    h.chains
-        .record_tokens(&chain, &a, 1_900_000, None)
-        .expect("记账");
-    h.chains
-        .record_tokens(&chain, &b, 500_000, Some(0.5))
-        .expect("记账");
-    assert_eq!(
-        *h.events.lock().expect("事件锁"),
-        vec![ChainLimitEvent {
-            chain: chain.clone(),
-            kind: ChainLimitKind::Cost
-        }]
-    );
-    let row = h.chains.row(&chain).expect("链在");
-    assert_eq!(row.status, AgentChainStatus::LimitReached);
-    assert_eq!(
-        row.spend,
-        ChainSpend::ViaGateway {
-            tokens: 2_400_000,
-            amount: Some(0.5)
-        }
-    );
-    let accounts = h.chains.spend_by_bot(&chain).expect("分账");
-    let total: u64 = accounts.iter().map(|(_, tokens)| tokens).sum();
-    assert_eq!(total, 2_400_000);
-    // 到了上限之后只记账，"用到上限"不再发。
-    h.chains.record_tokens(&chain, &b, 1, None).expect("记账");
-    assert_eq!(h.events.lock().expect("事件锁").len(), 1);
-}
-
 /// 停链交出链上活的轮次和待答的卡片；之后用这条链的消息开轮、进链都是 `stopped`。
 /// 停是幂等的：再停一次不重复交出已经交过的，但停以后才挂上的卡片照样交出去。
 /// 停链交出链上活的轮次和待答的卡片；之后用这条链的消息开轮、进链都是 `stopped`。

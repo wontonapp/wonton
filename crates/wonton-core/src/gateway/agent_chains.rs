@@ -326,7 +326,6 @@ fn refusal_detail(error: &ChainLedgerError) -> String {
             ChainError::LimitReached { kind } => match kind {
                 ChainLimitKind::Depth => "链到层数上限了".to_owned(),
                 ChainLimitKind::Rounds => "链到轮数上限了".to_owned(),
-                ChainLimitKind::Cost => "链到花费上限了".to_owned(),
                 ChainLimitKind::Other => "链到上限了".to_owned(),
             },
             ChainError::Stopped => "链被人停了".to_owned(),
