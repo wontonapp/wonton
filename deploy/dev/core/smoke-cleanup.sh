@@ -29,8 +29,8 @@ remove_container() { remove "容器 $1" docker rm -f "$1"; }
 cleanup() {
   local status=$?
   [[ -z "${events_pid:-}" ]] || kill "$events_pid" 2>/dev/null || true
-  # 一次性网关凭据按建 key 时记下的 id 删（失败退出也删，KEEP 也删）；没建过（id 为空）就什么都不做。
-  [[ -z "${host_model_key_id:-}" ]] || magpie gateway-key remove "$host_model_key_id" >/dev/null 2>&1 || true
+  # 写进 Hermes 数据目录的模型 key：KEEP 留现场时也删掉，失败退出也删。
+  [[ -z "${hermes_model_configured:-}" ]] || forget_hermes_model_key
   if [[ "${KEEP:-}" == 1 ]]; then
     echo "保留现场：项目 $core，数据目录 $WONTON_DEV_DATA（清理：WONTON_DEV_PROJECT=$core WONTON_DEV_DATA=$WONTON_DEV_DATA $dev reset）"
     return

@@ -27,6 +27,7 @@ pub(crate) fn plugin_engine(cfg: &Config) -> anyhow::Result<Engine> {
     Ok(Engine::connect()?.with_network_pool(cfg.plugin_network_pool, detector))
 }
 
+/// 在后台预装（要拉镜像、等健康，不挡着网关启动），顺序见 [`PluginManager::preinstall_bundled`]。
 pub(crate) fn preinstall(
     cfg: &Config,
     manager: Arc<PluginManager>,
@@ -46,19 +47,9 @@ pub(crate) fn preinstall(
     let backoff = Backoff::default();
     tokio::spawn(async move {
         upgrades.wait_released().await;
-        if let Some(dir) = system
-            && let Err(e) = manager.ensure_system(&dir, backoff).await
-        {
-            tracing::error!(error = %e, "预装系统插件失败");
-        }
-        for (plugin, error) in manager.reconcile_models().await {
-            tracing::error!(%plugin, %error, "模型网关凭据对账失败");
-        }
-        if let Some(dir) = defaults
-            && let Err(e) = manager.ensure_defaults(&dir, backoff).await
-        {
-            tracing::error!(error = %e, "预装默认插件失败");
-        }
+        manager
+            .preinstall_bundled(system.as_deref(), defaults.as_deref(), backoff)
+            .await;
     });
     Ok(())
 }

@@ -5,7 +5,7 @@ use wonton_protocol::{InstallRequest, PluginScope, SecretValues};
 use super::{InstallError, Languages, PluginManager, generic, service};
 use crate::l10n;
 use crate::plugin::installation::InstallDecision;
-use crate::plugin::manifest::{ManifestExt, PluginKind};
+use crate::plugin::manifest::ManifestExt;
 use crate::plugin::package::PluginPackage;
 use crate::plugin::secrets::Secrets;
 use crate::plugin::store::OpenedBy;
@@ -203,13 +203,6 @@ impl PluginManager {
             return Err(InstallError::Changed(l10n::text(
                 langs,
                 "plugin-capability-plan-changed",
-                &[],
-            )));
-        }
-        if manifest.kind == PluginKind::System {
-            return Err(InstallError::Unsupported(l10n::text(
-                langs,
-                "install-system-preinstalled",
                 &[],
             )));
         }
