@@ -110,7 +110,8 @@ impl PluginManager {
         }
         if let Some(recovery) = &record.lifecycle.recovery {
             let observable = recovery.stage == wonton_protocol::PluginRecoveryStage::Reconciling
-                && recovery.category == "unhealthy"
+                // 容器没起来、或者健康门等超时：记下的都是容器当时的样子，现在跑起来了就是过时了。
+                && matches!(recovery.category.as_str(), "unhealthy" | "health_timeout")
                 && !checked.has_missing()
                 && matches!(checked.ready(&langs), Ok(ContainersState::Running(_)));
             if !observable {

@@ -72,6 +72,16 @@
         }
       }
     },
+    "problem.plugin.healthTimeout.title": {
+      "comment": "The app was still not ready at the install health deadline.",
+      "extractionState": "manual",
+      "localizations": {
+        "en": { "stringUnit": { "state": "translated", "value": "The app is not ready yet" } },
+        "zh-Hans": { "stringUnit": { "state": "translated", "value": "应用还没就绪" } },
+        "zh-Hant": { "stringUnit": { "state": "translated", "value": "應用程式還沒就緒" } },
+        "ja": { "stringUnit": { "state": "translated", "value": "アプリはまだ準備できていません" } }
+      }
+    },
     "problem.plugin.invalid.title": {
       "comment": "Problem title: the app's package is broken.",
       "extractionState": "manual",

@@ -11,6 +11,7 @@ use tokio::time::sleep;
 
 use super::super::fake_docker::FakeDocker;
 use super::super::health::{Target, wait_for};
+use super::super::health_gate::Wait;
 use super::super::names::container_name;
 use super::super::render::{RenderError, dry_run};
 use super::super::{Health, PluginPackage, PluginStatus, PluginView};
@@ -223,14 +224,20 @@ async fn timeout_also_names_the_failing_probes() {
         }),
     );
     docker.set_output(&app, 0, "插件日志：还在初始化", "");
-    let deadline = tokio::time::Instant::now() + Duration::from_millis(100);
+    let started = tokio::time::Instant::now();
+    let budget = Duration::from_millis(100);
+    let wait = Wait {
+        at: started + budget,
+        budget,
+        started,
+    };
     let error = wait_for(
         &engine,
         &crate::http::HttpClient::new(),
         &app,
         Target::Ready,
         None,
-        deadline,
+        wait,
         &Languages::default(),
     )
     .await
