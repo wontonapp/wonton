@@ -255,6 +255,9 @@ private extension ChatRoomView {
                     commands: timeline.commands, commandsOmitted: Int(timeline.commandsOmitted),
                     commandAvatar: { commandAvatar($0) }
                 )
+                .onGeometryChange(for: CGFloat.self) { $0.frame(in: .global).minY } action: { top in
+                    pin.noteComposer(top: top)
+                }
             }
         }
     }

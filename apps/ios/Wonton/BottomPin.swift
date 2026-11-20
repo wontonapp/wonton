@@ -53,6 +53,8 @@ final class BottomPin {
     func attach(_ scrollView: UIScrollView) {
         guard scrollView !== self.scrollView else { return }
         self.scrollView = scrollView
+        // 新列表的内边距是干净的，补过的那笔跟着作废，下一帧按新输入框位置重算。
+        insetRepair = 0
         observations = [
             scrollView.observe(\.contentSize) { [weak self] _, _ in
                 MainActor.assumeIsolated { self?.stick() }
@@ -71,6 +73,7 @@ final class BottomPin {
                 }
             }
         ]
+        repairInset()
         stick()
         // 内容可能在注册观察之前就整套排好了（有缓存历史的房间一进就满）：注册后再没有 contentSize
         // 变化，上面那次 stick 量到的是注册前的高度。补一次异步 stick，等这一帧排完再贴底；落点摆放
@@ -108,6 +111,38 @@ final class BottomPin {
             restoreOffset()
         }
     }
+
+    /// 输入框顶在窗口里的 y；没有输入框时是无穷大。
+    private var composerTop = CGFloat.greatestFiniteMagnitude
+    /// 已经补进列表下内边距的那一段。
+    private var insetRepair: CGFloat = 0
+
+    /// 键盘弹着时 `safeAreaInset` 只留下键盘自己的内边距，输入框抬起来压在列表上，最后一条就藏在它后面
+    /// （iOS 26.5 模拟器实测：列表可见底停在键盘上沿，输入框上沿比它高 160）。差额当场补进列表的下内边距，
+    /// 输入框缩回去再撤掉。用不含这笔修补的内边距算，否则补完下一帧又会把补的撤回去。
+    func noteComposer(top: CGFloat?) {
+        let next = top ?? .greatestFiniteMagnitude
+        guard next != composerTop else { return }
+        composerTop = next
+        repairInset()
+    }
+
+    private func repairInset() {
+        guard let scrollView else { return }
+        let visible = scrollView.convert(
+            CGPoint(x: 0, y: scrollView.bounds.maxY - scrollView.adjustedContentInset.bottom + insetRepair),
+            to: nil
+        ).y
+        let shortfall = max(0, visible - composerTop)
+        let delta = shortfall - insetRepair
+        guard abs(delta) > 0.5 else { return }
+        insetRepair = shortfall
+        var inset = scrollView.contentInset
+        inset.bottom += delta
+        scrollView.contentInset = inset
+        stick()
+    }
+
 
     /// 走查用：贴底状态和滚动的实际位置。界面上看不见，放进无障碍树给 UI 测试读。
     var snapshot: String {
