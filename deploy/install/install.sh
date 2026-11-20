@@ -1,5 +1,6 @@
 #!/bin/sh
-# 云吞的一行安装：在装好 Docker 的 Linux 主机上用 root 执行，例如 `curl -fsSL <地址>/install.sh | sudo sh`。
+# 云吞的一行安装：在装好 Docker 的 Linux 主机上用 root 执行，例如
+# `curl -fsSL https://raw.githubusercontent.com/wontonapp/wonton-install/main/install.sh | sudo sh`。
 #
 # 再执行一次就是升级或修复：拉核心镜像的最新版本，密钥和数据都沿用，compose 文件按新的核心镜像重写。可调的环境变量：
 #
@@ -15,7 +16,8 @@
 #   WONTON_MATRIX_NAME_MODE=none  高级：不要名字，只与同类已配对云吞通信；以后互通必须重装聊天数据。
 #   WONTON_CLIENT_SERVICE、WONTON_CLIENT_INVITE_FILE  送的名字的服务地址和邀请码文件。
 #   送名字缺这些配置时安装会停，并给出“不要名字”“用自己的域名”两条带安装命令的路。
-#   WONTON_ACME_DIRECTORY、WONTON_ACME_ACCEPT_TERMS  证书服务地址及是否明确接受其条款。
+#   WONTON_ACME_DIRECTORY、WONTON_ACME_ACCEPT_TERMS  证书服务地址及是否明确接受其条款。地址默认 Let's Encrypt
+#                       正式地址；条款默认不在装机时同意，由主人在 App 勾选后核心才联系 CA。
 #   WONTON_*_CA_FILE、WONTON_ACME_RESOLVERS  测试 CA 与开发 DNS，证书验证不会关闭。
 #   WONTON_OWNER_NAME   用户名，同时是 Matrix 用户名和插件里的账号，只能用小写字母、数字、_ 和 -，以字母开头，
 #                       最长 32 个字符，装好后不能改（默认 owner）
@@ -457,6 +459,15 @@ manual_rollback() {
     die "退回失败，看上面的错误。备份还在数据目录的 core/upgrade/backup 里"
 }
 
+# 不用名字的安装没有 entry/settings.json，运行时的 ACME 目录只能从环境读（核心 clients/domain.rs 的 acme()）：
+# 没给就用 Let's Encrypt 正式地址，重跑沿用上次记下的。订户协议在那里不读环境，由主人在 App 勾选，勾之前核心不联系 CA。
+default_acme_directory='https://acme-v02.api.letsencrypt.org/directory'
+
+acme_directory() {
+  printenv WONTON_ACME_DIRECTORY 2>/dev/null ||
+    sed -n 's/^WONTON_ACME_DIRECTORY=//p' "$temporary" | tail -n 1
+}
+
 # 文件凭据只复制到私有安装目录，不把凭据值放到命令行。
 # 重跑（升级、修复）时没再给的变量沿用上次的记录和副本：保存的入口配置继续引用这些文件，状态查询和续期要读。
 # 空值也当作没给：这些输入装好后已固定在 entry/settings.json，重跑不能靠清空取消。
@@ -469,6 +480,10 @@ temporary="$output.tmp"
 : >"$temporary"
 chmod 600 "$temporary"
 [ ! -f "$output" ] || cat "$output" >"$temporary"
+if [ "${WONTON_MATRIX_NAME_MODE:-given}" = none ]; then
+  directory=$(acme_directory)
+  record_entry_env WONTON_ACME_DIRECTORY "${directory:-$default_acme_directory}"
+fi
 for key in WONTON_MATRIX_SERVER_NAME WONTON_MATRIX_NAME_MODE WONTON_CLIENT_SERVICE \
   WONTON_ACME_DIRECTORY WONTON_ACME_RESOLVERS WONTON_ACME_EMAIL WONTON_ACME_ACCEPT_TERMS \
   WONTON_ACME_NETWORK WONTON_ACME_PROPAGATION_DISABLE_ANS WONTON_ACME_DNS_PROVIDER WONTON_ENTRY_CERTIFICATE; do
@@ -501,11 +516,8 @@ record_entry_env() {
 
 # 送名字要的家名服务、邀请码和证书输入缺了：给两条能直接抄的路，不写死内部地址。
 entry_missing() {
-  # 不要名字的安装没有 settings.json，ACME 坐标只能靠环境留到运行时。
+  # 不要名字的安装没有 settings.json：ACME 目录有默认值、条款到 App 里勾，装机不缺东西。
   if [ "${WONTON_MATRIX_NAME_MODE:-given}" = none ]; then
-    for key in WONTON_ACME_DIRECTORY WONTON_ACME_ACCEPT_TERMS; do
-      [ -n "$(printenv "$key" || true)" ] || return 0
-    done
     return 1
   fi
   [ -n "${WONTON_MATRIX_SERVER_NAME:-}" ] && return 1
@@ -518,21 +530,20 @@ entry_missing() {
 
 init_failed() {
   if [ "${WONTON_MATRIX_NAME_MODE:-given}" = none ]; then
-    if entry_missing; then
-      cat >&2 <<'EOF'
-“不要名字”的安装要 ACME 坐标，否则运行时签不出证书（ADR-0089 第 3 节）。带上这两项再执行：
-  WONTON_ACME_DIRECTORY=https://<ACME 目录> WONTON_ACME_ACCEPT_TERMS=true
+    cat >&2 <<'EOF'
+“不要名字”的安装证书用 Let's Encrypt 正式地址，要用别的 CA 就在原来的命令上带：
+  WONTON_ACME_DIRECTORY=https://<ACME 目录>
 （测试或内部 CA 还可以给 WONTON_ACME_CA_FILE、WONTON_ACME_RESOLVERS、WONTON_ACME_EMAIL。）
+按上面的错误改了再执行一次。
 EOF
-      exit 1
-    fi
+    exit 1
   elif entry_missing; then
     cat >&2 <<'EOF'
 还没有服务器名，送名字要的配置（家名服务、邀请码、证书）也不全。两条路选一条，在原来的安装命令上带一个变量：
   1) 不要名字（以后不能改；要和外面的 Matrix 互通得清空聊天数据重装）：
-     curl -fsSL <安装地址>/install.sh | sudo WONTON_MATRIX_NAME_MODE=none sh
+     curl -fsSL https://raw.githubusercontent.com/wontonapp/wonton-install/main/install.sh | sudo WONTON_MATRIX_NAME_MODE=none sh
   2) 用自己的域名（证书怎么做见安装说明的“服务器名和证书”一节）：
-     curl -fsSL <安装地址>/install.sh | sudo WONTON_MATRIX_SERVER_NAME=chat.example.com sh
+     curl -fsSL https://raw.githubusercontent.com/wontonapp/wonton-install/main/install.sh | sudo WONTON_MATRIX_SERVER_NAME=chat.example.com sh
 EOF
   else
     echo "设置不对：按上面的错误改了再执行一次" >&2

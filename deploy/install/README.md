@@ -1,7 +1,16 @@
 # 正式安装
 
-在装好 Docker Engine 28 以上的 Linux 主机（amd64、arm64）上用 root 执行 `install.sh`，装好核心、身份提供方
-（Ory Hydra）和 Matrix 服务器（Tuwunel）；核心启动后在后台自己装上系统插件（模型网关 magpie），再装一次默认 Agent
+在装好 Docker Engine 28 以上的 Linux 主机（amd64、arm64）上用 root 执行公开仓库里的脚本，装好核心、身份提供方
+（Ory Hydra）和 Matrix 服务器（Tuwunel）：
+
+```sh
+curl -fsSL https://raw.githubusercontent.com/wontonapp/wonton-install/main/install.sh | sudo sh
+```
+
+脚本副本放在公开仓库 [`wontonapp/wonton-install`](https://github.com/wontonapp/wonton-install)（主仓库私有），
+那份副本对应的提交记在本目录的 `public-copy`，两边不一样 CI 会失败，见[公开仓库里的副本](#公开仓库里的副本)。
+
+装好核心后在后台自己装上系统插件（模型网关 magpie），再装一次默认 Agent
 Hermes（ADR-0007），授予它 `models`、`matrix.bot`、`tools`、`network.egress`。装好后浏览器用主机的
 IP 打开 `http://<IP>:8480/`，是局域网状态页：运行状态，以及还没有设备时的首次配对二维码。
 
@@ -38,13 +47,14 @@ Mailpit 收取 `notify` 插件发给主人和已加入家人的内部邮件（[A
 
 ```sh
 # 不要名字：以后不能改；要和外面的 Matrix 互通得清空聊天数据重装
-curl -fsSL <安装地址>/install.sh | sudo WONTON_MATRIX_NAME_MODE=none sh
+curl -fsSL https://raw.githubusercontent.com/wontonapp/wonton-install/main/install.sh | sudo WONTON_MATRIX_NAME_MODE=none sh
 # 用自己的域名：证书按下表准备
-curl -fsSL <安装地址>/install.sh | sudo WONTON_MATRIX_SERVER_NAME=chat.example.com sh
+curl -fsSL https://raw.githubusercontent.com/wontonapp/wonton-install/main/install.sh | sudo WONTON_MATRIX_SERVER_NAME=chat.example.com sh
 ```
 
 先配置服务、邀请码和证书输入，
-`init` 完成注册和证书准备后才启动 Tuwunel；缺配置、注册或签证书失败就停止。家名服务没有内置的公共默认地址，ACME 也没有默认 CA。
+`init` 完成注册和证书准备后才启动 Tuwunel；缺配置、注册或签证书失败就停止。家名服务没有内置的公共默认地址；
+证书服务默认 Let's Encrypt 正式地址，订户协议不在这条命令里同意，由主人在 App 里勾选，勾选之前核心不联系 CA（ADR-0089）。
 开发只用[本地 entry-cloud](../dev/entry-cloud/) 的 Pebble、DNS 和 `.test` 名字，并显式信任测试 CA。
 
 | 输入 | 用途 |
@@ -53,8 +63,8 @@ curl -fsSL <安装地址>/install.sh | sudo WONTON_MATRIX_SERVER_NAME=chat.examp
 | `WONTON_CLIENT_INVITE_FILE` | 存放邀请码的文件，读取后去掉首尾空白；不把邀请码本身放进环境变量或命令行 |
 | `WONTON_CLIENT_CA_FILE` | 家名服务的 PEM CA 文件；使用测试或私有 CA 时提供，未给时用系统信任 |
 | `WONTON_FRP_CA_FILE` | frps 的 PEM CA 文件；送名字时必填，用于校验连接器到中继的 TLS 证书 |
-| `WONTON_ACME_DIRECTORY` | 显式指定 ACME directory 的 HTTPS URL；使用 ACME 签证书时必填 |
-| `WONTON_ACME_ACCEPT_TERMS=true` | 运营者明确接受所选 CA 的条款后才设置；ACME 模式缺少此确认就停止 |
+| `WONTON_ACME_DIRECTORY` | ACME directory 的 HTTPS URL；默认 Let's Encrypt 正式地址，换测试或内部 CA 时才填 |
+| `WONTON_ACME_ACCEPT_TERMS=true` | 装机时就代替主人同意所选 CA 的条款；不给就在 App 里勾选，勾选前核心不签证书 |
 | `WONTON_ACME_CA_FILE` | ACME 和 acme-dns 使用的 PEM CA 文件；测试 CA 显式传入，不关闭 TLS 验证 |
 | `WONTON_ACME_RESOLVERS` | 可选 DNS 解析器，逗号分隔的 IP 或 IP:端口（端口可省略，默认 53），每项首尾空白忽略，例如 `192.0.2.10,198.51.100.10:5353`；安装容器、挑战记录和 CAA 查询都经它 |
 | `WONTON_ACME_EMAIL` | 可选 ACME 账号联系邮箱 |
@@ -127,7 +137,7 @@ ACME 为服务器名本身、`*.<服务器名>` 和 `*.lan.<服务器名>` 签�
 退回旧版本时带上它的 digest，之后照样跟渠道。有当时升级留下的备份就恢复核心数据和安装目录，备份之后写的数据会丢，要在终端里确认一次：
 
 ```bash
-curl -fsSL <安装脚本地址> | sudo WONTON_CORE_PIN=sha256:… sh
+curl -fsSL https://raw.githubusercontent.com/wontonapp/wonton-install/main/install.sh | sudo WONTON_CORE_PIN=sha256:… sh
 ```
 
 ## 拉不到镜像
@@ -152,6 +162,18 @@ curl -fsSL <安装脚本地址> | sudo WONTON_CORE_PIN=sha256:… sh
 配了代理时，链接预览经代理用 DoH 解析域名，服务器默认 `https://1.1.1.1/dns-query`，要换就设 `WONTON_DOH_URL`（ADR-0065）。
 
 拉镜像不走这个代理，走 Docker 守护进程自己的配置，见上一节。
+
+## 公开仓库里的副本
+
+公开仓库里的 `install.sh` 是本目录这份的原样副本，只从主仓库往那边拷，那边不直接改。公开仓库的 `README.md`
+是给用户看的短说明，单独维护，跟着改。
+
+- `deploy/install/public-copy` 记着这份副本对应的公开仓库提交。比对只认这个提交，CI 不去拉公开仓库的最新版，
+  免得被网络卡住；内容对不上就失败，`scripts/install/check-public-copy.sh` 就是这一步，`lint` 工作流每次都跑。
+- 改了 `install.sh` 之后在公开仓库的克隆里执行 `scripts/install/sync-public.sh <克隆目录>`：拷过去、提交、推一个分支，
+  再把新提交写进 `public-copy`。然后在公开仓库开草稿 PR，两个 PR 一起转 ready，先合公开仓库那个。
+  公开仓库一合，所有人拉到的就是它，所以只在核心发版时合。
+- 公开仓库里只有这两份文件，别的（ADR、源码、compose）都只在主仓库，那边的说明里不放相对链接。
 
 ## 在本机测
 
