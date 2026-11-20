@@ -462,11 +462,15 @@ async fn probe_timeout_unreachable() {
     })
     .await;
     let mut config = config();
-    config.probe_timeout = Duration::from_millis(150);
+    config.probe_timeout = PROBE_BUDGET;
     let started = Instant::now();
     let result = probe(&remote.url, config, "none", json!({})).await;
     assert_eq!(result["outcome"], "unreachable");
-    assert!(started.elapsed() < Duration::from_secs(2));
+    assert!(
+        started.elapsed() < PROBE_LIMIT,
+        "took {:?}",
+        started.elapsed()
+    );
 }
 
 #[tokio::test]
@@ -493,24 +497,25 @@ async fn probe_deadline_covers_response_body() {
 
 #[tokio::test]
 async fn probe_deadline_is_shared_by_all_handshake_steps() {
-    // Each step is slow enough that only a budget shared by all of them lets the
-    // whole handshake run: initialize, initialized, then tools/list hangs.
+    // Each step on its own fits the budget; only their sum does not. A per-step
+    // budget would send all three handshake requests, a shared one stops after
+    // the initialized notification, before tools/list.
     let remote = Server::remote(Options {
-        delay_all: Duration::from_millis(250),
+        delay_all: Duration::from_secs(1),
         hanging_tools_body: true,
         ..Options::default()
     })
     .await;
     let mut config = config();
-    config.probe_timeout = PROBE_BUDGET + Duration::from_millis(500);
+    config.probe_timeout = Duration::from_millis(1_700);
     let result = probe(&remote.url, config, "none", json!({})).await;
     assert_eq!(result["outcome"], "unreachable");
-    let requests = remote.requests();
-    let methods: Vec<_> = requests.iter().map(|request| &request.method).collect();
-    assert_eq!(
-        methods,
-        [&Method::POST, &Method::POST, &Method::POST, &Method::DELETE]
-    );
+    let methods: Vec<_> = remote
+        .requests()
+        .iter()
+        .map(|request| request.method.clone())
+        .collect();
+    assert_eq!(methods, [Method::POST, Method::POST, Method::DELETE]);
 }
 
 #[tokio::test]
