@@ -8,7 +8,7 @@ use wonton_protocol::{ConnectionCheck, ConnectionNotice, DeviceNetwork, HomeFail
 const GRACE: Duration = Duration::from_secs(2);
 /// 断开这么久才说“好像离线了”。和 iroh 连接级的空闲时限对齐：30 秒还连不上，多半不是路径在切换。
 pub(super) const LONG_OUTAGE: Duration = Duration::from_secs(30);
-/// 中继掉线这么久才算连不上。iroh 1.4.1 实测：家里的服务器不通时，模拟器上每隔几十秒掉线几秒就回来，不等一等，
+/// 中继掉线这么久才算连不上。iroh 1.4.1 实测，1.4.2 未重测：家里的服务器不通时，模拟器上每隔几十秒掉线几秒就回来，不等一等，
 /// “好像离线了”和“连不上”会来回跳。
 const RELAY_GRACE: Duration = Duration::from_secs(10);
 /// 手动重试至少显示一秒，最长只显示一个诊断窗口；没结果也要重新给出下一步。
