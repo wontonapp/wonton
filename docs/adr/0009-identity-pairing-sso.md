@@ -366,9 +366,11 @@ Tuwunel 成为核心管理的组件，上面的接口按设计工作。验证版
 
 ## 验证结果（M1，Bot 账号）
 
-声明了 `matrix.bot` 的插件由核心代 Bot 登录、建主房间，规则见插件规范的“Matrix Bot”。验证版本：Tuwunel v1.9.4、
-matrix-sdk 0.19.1。可复跑：`deploy/dev/core/smoke.sh`（“回声 Bot”一步）；分配、沿用、回滚和清理的各种情况在
-假 Tuwunel 上测（`cargo test -p wonton-core bot`），假 Tuwunel 的行为按下面的实测写。
+声明了 `matrix.bot` 的插件由核心代 Bot 登录、和主人建主房间，规则见插件规范的“Matrix Bot”。验证版本：Tuwunel v1.9.4、
+matrix-sdk 0.19.1；主房间的建房、邀请、退出和撤回另在 v2.0.0 上复跑（见下面“重装后是谁把 Bot 拉进主房间”）。可复跑：`deploy/dev/core/smoke.sh`（“回声 Bot”一步）；分配、沿用、回滚和清理的各种情况在
+假 Tuwunel 上测（`cargo test -p wonton-core bot`），假 Tuwunel 的行为按下面的实测写。重装后是谁把 Bot 拉进主房间、
+撤回能不能踢掉房主只能在真实 Tuwunel 上看（`cargo test -p wonton-core --lib matrix::bot_docker_tests -- --ignored`）：
+假 Tuwunel 不模拟 `additional_creators` 和房主语义。
 
 - Tuwunel 的管理接口（一次性容器里逐个调过）：
   - 吊销设备（`DELETE /_synapse/admin/v2/users/{user}/devices/{device}`）后，令牌立即得到 401 `M_UNKNOWN_TOKEN`；
@@ -378,14 +380,23 @@ matrix-sdk 0.19.1。可复跑：`deploy/dev/core/smoke.sh`（“回声 Bot”一
   - 查账号在不在：`GET /_synapse/admin/v2/users/{user}` 对已有的账号（包括停用的、没有设备的）回 200 和
     `deactivated` 等字段，不存在回 404 `M_NOT_FOUND`；`/_synapse/admin/v1/whois` 对不存在的用户也回 200，不能用。
     JWT 登录对已有的账号是直接登录进去，所以分配 Bot 用户名时先查，已有的一律跳过，只有插件记录在案的 Bot 能沿用。
-- 主房间：`createRoom` 用 `trusted_private_chat`，`initial_state` 里带 `m.room.encryption`，建出来就是加密房间。
-  Tuwunel 默认建房间版本 12：建房的人权限最高，写进 power_levels 的 `users` 就回 400 `M_INVALID_PARAM`；这个预设把建房时
-  邀请的人也算作建房的人（`additional_creators`），建房的人踢不动这样的人（403）。所以建房时不邀请，用
-  `power_level_content_override` 只给主人 100，房间版本写明 12：版本 11 里这个 `users` 整个换掉默认值，Bot 只剩 0，
-  建房失败。成员状态（`/state/m.room.member/{用户}`）对从没进过的人回 404 `M_NOT_FOUND`，注册没注册都一样；邀请后
-  是 `invite`，踢掉后是 `leave`。Bot 退出后查成员回 403 `M_FORBIDDEN`。由 Bot 建，插件装好后才交给主人：
-  核心用 JWT 临时登录主人的一台设备，Bot 邀请主人，主人加入房间、写入自己的 `m.direct`（没写过时读出来是 404
-  `M_NOT_FOUND`），再退出登录，这台设备随之删除。主人在 App 里直接看到和 Bot 的私聊，不用接受邀请。
+- 主房间：由主人建、主人邀请 Bot、Bot 接受。邀请必须来自主人——插件适配器按注入的允许名单
+  （归属人和联系人）收邀请，Bot 自己不在名单里，由 Bot 邀请自己会被适配器当成陌生人丢掉。建房和邀请都跑在
+  主人的会话里（JWT 临时登录），邀请单独调：建房之后的独立邀请让 `hand_over` 不用分辨房间里的邀请是建房时带来的
+  还是后来补的。建房用 `trusted_private_chat`，`initial_state` 里带 `m.room.encryption`，建出来就是加密房间；
+  权限上两人都是建房的人（`creation_content.additional_creators` 带上 Bot），各自自带 100；建房的人不能写进
+  `power_level_content_override.users`（400，`M_INVALID_PARAM: creator user IDs are not allowed in the users field`），
+  所以两人都不写。建房的人也踢不动另一个建房的人（Bot 踢主人回 403），撤回时改成主人自己退出房间，结果同样是
+  `leave`。房间版本写明 12：`additional_creators` 从版本 12 才有，写低了 Bot 不是建房的人。成员状态
+  （`/state/m.room.member/{用户}`）对从没进过的人回 404 `M_NOT_FOUND`，注册没注册都一样；邀请后是 `invite`，
+  踢掉后是 `leave`。Bot 退出后查成员回 403 `M_FORBIDDEN`，所以成员状态一律用 Bot 的会话读（它在房间里），
+  主人退出过时用他的会话读不稳。
+  房间建好、主人还在里面时就出现在主人的聊天列表里：列表是服务器给的全部没退出的房间，不看 `m.direct`，
+  所以注册、邀请、Bot 接受之后主人马上退出，房间从列表里消失。插件装好、健康检查通过后 `hand_over` 才用 JWT 临时
+  登录主人的一台设备，把主人请回房间、把房间写进双方的 `m.direct`（没写过时读出来是 404 `M_NOT_FOUND`），再退出
+  登录。主人在 App 里直接看到和 Bot 的私聊，不用接受邀请；安装在交付之前失败时列表里不留一条没人应答的私聊
+  （撤回重试时 `m.direct` 也一起去掉）。
+  已知代价：两人都是建房的人，App 也没有“移出成员”的入口，主人想结束这段私聊只能自己退出房间。
 - 端到端（`smoke.sh`）：回声 Bot 只凭注入的令牌恢复会话（`whoami` 取设备 ID），经 `matrix.wonton.internal` 同步，
   安装时就过了健康检查。主人的一台新设备经隧道和手机的本地代理登录，在主房间里发加密消息，一两秒内收到 Bot 的
   加密回声：matrix-sdk 默认把房间密钥发给房间里的所有设备，不要求先验证。
