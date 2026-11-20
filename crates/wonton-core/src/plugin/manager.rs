@@ -4,6 +4,7 @@
 use std::collections::{BTreeMap, BTreeSet};
 use std::net::IpAddr;
 use std::path::PathBuf;
+use std::sync::atomic::Ordering;
 use std::sync::{Arc, RwLock};
 use std::time::{SystemTime, UNIX_EPOCH};
 
@@ -137,9 +138,25 @@ pub struct PluginManager {
     /// Bot 已成立的联系人（ADR-0045），注入 `WONTON_MATRIX_ALLOWED_USERS` 时加在归属人后面。见
     /// [`super::contacts`]。
     pub(super) contact_source: std::sync::OnceLock<super::contacts::ContactSource>,
+    /// 正在恢复已装插件的层数（核心刚起来、网关已经在接连接），见 [`Self::restoring_guard`]。
+    restoring: std::sync::atomic::AtomicUsize,
+    /// 各插件的 Bot 最后一次同步成功的时间，见 [`Self::note_bot_sync`]。
+    bot_syncs: RwLock<BTreeMap<PluginId, tokio::time::Instant>>,
+}
+
+/// 恢复期间的标记，落地时清掉（出错、panic 也一样）。
+pub(crate) struct Restoring<'a>(&'a PluginManager);
+
+impl Drop for Restoring<'_> {
+    fn drop(&mut self) {
+        self.0.restoring.fetch_sub(1, Ordering::AcqRel);
+    }
 }
 
 pub(super) use super::grant::{check_permissions, supported};
+
+/// Bot 的长轮询最长挂 30 秒：超过这么久没有一次成功的同步，就是停了，不是正好在等消息。
+const STALLED_SYNC_SECS: u64 = 120;
 
 pub(crate) fn now_secs() -> u64 {
     SystemTime::now()
@@ -226,6 +243,8 @@ impl PluginManager {
             person_members: std::sync::OnceLock::new(),
             person_roles: RwLock::new(Arc::new(crate::roles::Roles::initial())),
             contact_source: std::sync::OnceLock::new(),
+            restoring: std::sync::atomic::AtomicUsize::new(0),
+            bot_syncs: RwLock::new(BTreeMap::new()),
         }
     }
 
@@ -301,6 +320,12 @@ impl PluginManager {
     /// 来源地址落在哪个已安装插件的网络里（见 [`super::sources`]）。
     pub fn source(&self, ip: IpAddr) -> Option<Source> {
         self.sources.find(ip)
+    }
+
+    /// 测试用：摘掉一个插件的来源，模拟它还没轮到恢复、来源没登记。
+    #[cfg(test)]
+    pub(crate) fn forget_source(&self, id: &PluginId) {
+        self.sources.remove(id);
     }
 
     /// 模型网关现在的状态：没装、装了没在运行（或者网关服务不可用）、可用。
@@ -549,12 +574,55 @@ impl PluginManager {
         }
     }
 
+    /// 恢复期间为真：网关据此把 Bot 的请求答成可重试的 503，不答 403（上游适配器见 403 就停同步）。
+    ///
+    /// 数层数而不是一个位：两段恢复叠在一起时，先结束的那段不能把还在进行的那段说成恢复了。
+    pub(crate) fn restoring(&self) -> bool {
+        self.restoring.load(Ordering::Acquire) > 0
+    }
+
+    /// 从现在起 [`Self::restoring`] 为真，落地时清掉。
+    pub(crate) fn restoring_guard(&self) -> Restoring<'_> {
+        self.restoring.fetch_add(1, Ordering::AcqRel);
+        Restoring(self)
+    }
+
+    /// 这个插件的 Bot 刚同步成功过一次。
+    ///
+    /// 记的是时间不是“健康”：Bot 走了长轮询，进程活着、健康检查说 connected 都可能只是状态文件的残影，
+    /// 只有还经核心同步才算真的收得到消息（见 [`Self::stalled_bot_sync`]）。
+    pub(crate) fn note_bot_sync(&self, id: &PluginId) {
+        self.bot_syncs
+            .write()
+            .expect("Bot 同步时间的锁中毒")
+            .insert(id.clone(), tokio::time::Instant::now());
+    }
+
+    /// 这个插件的 Bot 多久没同步了（秒），超过 [`STALLED_SYNC_SECS`] 才算停了。从没同步过的给 `None`：
+    /// 不用长轮询的 Bot 插件不该被这条检查报异常。
+    pub(crate) fn stalled_bot_sync(&self, id: &PluginId) -> Option<u64> {
+        let syncs = self.bot_syncs.read().expect("Bot 同步时间的锁中毒");
+        let age = syncs.get(id)?.elapsed().as_secs();
+        (age > STALLED_SYNC_SECS).then_some(age)
+    }
+
+    /// 这个插件换了一份新实例（安装、启动、恢复重建、卸载）：上一次实例的同步时间不再说明问题。
+    ///
+    /// 不重置的话，停用超过两分钟的插件一启动就会被 [`Self::check_bot_sync`] 判成异常，Bot 还没来得及同步。
+    pub(crate) fn forget_bot_sync(&self, id: &PluginId) {
+        self.bot_syncs
+            .write()
+            .expect("Bot 同步时间的锁中毒")
+            .remove(id);
+    }
+
     /// 核心启动时：按记录恢复插件状态，把 OIDC 客户端同步到身份提供方。
     /// 单个插件恢复失败（包括它的记录损坏）只把它标为异常，不影响核心和其他插件启动。
     ///
     /// 这里是一个插件接一个插件串行的：漂移重建只等 `install_timeout`，不让一个起不来的慢插件把排在后面
     /// 的所有插件拖住几十分钟（见 [`super::health_gate::Gate`]）。超时保留续建账本，后台按间隔重试。
     pub async fn restore(&self) -> Result<(), InstallError> {
+        let _restoring = self.restoring_guard();
         let langs = self.owner_languages();
         self.prune_orphaned_bot_web().await?;
         let files = self.store.load_all()?;
@@ -583,6 +651,7 @@ impl PluginManager {
                                     None,
                                 ),
                             );
+                            self.forget_bot_sync(&file.id);
                             priority
                         }
                         Err(_) => 2,

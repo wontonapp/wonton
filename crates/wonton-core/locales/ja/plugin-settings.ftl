@@ -330,6 +330,7 @@ plugin-settings-bot-device-name = Wontonアプリ{ $id }（ボット{ $bot }）
 plugin-settings-bot-account-deactivated = ボットのアカウント{ $user }は停止済みです。データを削除してこのアプリをアンインストールし、再インストールすると新しいアカウントが割り当てられます
 plugin-settings-bot-device-record-missing = ボット{ $bot }のデバイスの記録がありません。アプリを再インストールしてください（データは削除しなくてかまいません）
 plugin-settings-bot-device-revoked = ボット{ $user }のデバイスが取り消されたため、アプリが持っているMatrixトークンは無効になりました。アプリを再インストールすると（データは削除しなくてかまいません）再発行されます
+plugin-settings-bot-sync-stalled = ボットは{ $seconds }秒のあいだコア経由でメッセージを受け取っていません。プロセスが動いて健康に見えても届いていません。アプリを再起動してください。直らなければ再インストールしてください（データは削除しなくてかまいません）
 
 # ── LAN検出・送信コンテナ・ストアインデックスの補足（lan/detect.rs、docker_limits.rs、egress、storefront）──
 

@@ -97,6 +97,7 @@ gateway-devices-no-addresses = トンネルがまだリレーに接続してお�
 # モデルゲートウェイ。
 gateway-models-permission = アプリ{ $id }はmodels権限を申請していません
 gateway-plugin-network-only = このアドレスは、プラグインネットワーク内のアプリ専用です
+gateway-restoring = コアがまだアプリを起動しているところです。少し待ってやり直してください
 gateway-models-down = モデルゲートウェイが起動していません
 
 # セットアップ。

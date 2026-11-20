@@ -80,6 +80,15 @@ pub(crate) fn error_response(status: StatusCode, kind: &'static str, message: &s
     response
 }
 
+/// 可重试的拒绝带上 `Retry-After`：说清隔多久再来。Hermes 0.22.7 的同步固定 5 秒重试一次
+/// （`adapter.py` 的 `asyncio.sleep(5)`），不读这个头；MCP 客户端按状态码分类后自己退避。值取 5 和它对得上。
+pub(crate) fn retry_later(mut response: Response) -> Response {
+    response
+        .headers_mut()
+        .insert(hyper::header::RETRY_AFTER, HeaderValue::from_static("5"));
+    response
+}
+
 pub(crate) fn install_error(error: &InstallError) -> Response {
     if let InstallError::InUse { message, plugins } = error {
         let body = json!({"error": {"kind": "in_use", "message": message, "plugins": plugins}});

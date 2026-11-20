@@ -97,6 +97,7 @@ gateway-devices-no-addresses = 隧道還沒連上中繼，請求裡也沒給直�
 # 模型閘道。
 gateway-models-permission = 應用程式 { $id } 沒有申請 models 權限
 gateway-plugin-network-only = 這個位址只給外掛程式網路裡的應用程式用
+gateway-restoring = 核心還在恢復應用程式，稍後重試
 gateway-models-down = 模型閘道沒有在執行
 
 # 初始設定。
