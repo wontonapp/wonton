@@ -17,15 +17,44 @@ struct ReplyQuoteView: View {
     let core: ClientCore
     /// 画在自己气泡里时用气泡的文字颜色。
     let ink: Color
-    /// 输入框上方的那一份带叉，消息里的不带。
+    /// 竖条和名字的颜色（ADR-0109 第 8 节）：重点色，画在自己气泡里时用气泡上的那一档。
+    let accent: Color
+    /// 输入框上方的那一份带叉、撑满一行；消息里的不带，按内容收缩，垫一层淡淡的底色。
     var cancel: (() -> Void)?
+    /// 点了这条引用、核心还在往前翻页找原消息（ADR-0109 第 4 节）。
+    var isLoading = false
 
     var body: some View {
+        if cancel == nil {
+            // 竖条画成盖在左边的一层，跟着内容的高度走。它不能是一个自己会伸缩的视图：气泡多出高度时会全被它吃掉，
+            // 引用块就撑得老高（2026-11-20 真机实测）。
+            row
+                .padding(.leading, WontonTheme.size.quoteBar + 1 + WontonTheme.spacing.s8)
+                .padding(.trailing, WontonTheme.spacing.s8)
+                .padding(.vertical, WontonTheme.spacing.s4 / 2)
+                .background(accent.opacity(WontonTheme.ratio.codeFill))
+                .overlay(alignment: .leading) {
+                    Rectangle().fill(accent).frame(width: WontonTheme.size.quoteBar + 1).accessibilityHidden(true)
+                }
+                .clipShape(RoundedRectangle(cornerRadius: WontonTheme.radii.bubbleJoined - 2))
+        } else {
+            row
+        }
+    }
+
+    private var row: some View {
         HStack(spacing: WontonTheme.spacing.s8) {
-            Capsule()
-                .fill(ink.opacity(WontonTheme.ratio.secondaryContent))
-                .frame(width: WontonTheme.size.quoteBar, height: WontonTheme.size.chip)
-                .accessibilityHidden(true)
+            if cancel != nil {
+                Image(systemName: "arrowshape.turn.up.left")
+                    .foregroundStyle(accent)
+                    .accessibilityHidden(true)
+            }
+            if cancel != nil {
+                Capsule()
+                    .fill(accent)
+                    .frame(width: WontonTheme.size.quoteBar + 1, height: WontonTheme.size.chip)
+                    .accessibilityHidden(true)
+            }
             Group {
                 switch quote {
                 case let .ready(message):
@@ -36,11 +65,15 @@ struct ReplyQuoteView: View {
                     line(Text(.Message2.messageQuoteUnavailable))
                 }
             }
-            Spacer(minLength: 0)
+            if isLoading {
+                ProgressView().controlSize(.small)
+                    .accessibilityIdentifier("messageQuoteLoading")
+            }
             if let cancel {
+                Spacer(minLength: 0)
                 Button(action: cancel) {
                     WontonIcon.close.view(size: WontonTheme.size.iconTiny)
-                        .foregroundStyle(ink)
+                        .foregroundStyle(ink.opacity(WontonTheme.ratio.secondaryContent))
                         .frame(width: WontonTheme.size.smallButton, height: WontonTheme.size.smallButton)
                         .contentShape(Rectangle())
                 }
@@ -54,13 +87,15 @@ struct ReplyQuoteView: View {
     private func content(_ message: QuotedMessage) -> some View {
         VStack(alignment: .leading, spacing: 0) {
             Text(message.senderName)
-                .wontonText(WontonTheme.typography.caption)
-                .opacity(WontonTheme.ratio.secondaryContent)
+                .wontonText(WontonTheme.typography.senderName)
+                .foregroundStyle(accent)
+                .lineLimit(1)
             switch message.content {
             case let .text(text):
-                Text(text)
+                // 摘要：原文的换行并成空格，消息里最多两行，输入框上方一行。
+                Text(text.split(whereSeparator: \.isNewline).joined(separator: " "))
                     .wontonText(WontonTheme.typography.supporting)
-                    .lineLimit(2)
+                    .lineLimit(cancel == nil ? 2 : 1)
             case let .image(thumbnail):
                 QuotedThumbnail(media: thumbnail, core: core)
                     .padding(.top, WontonTheme.spacing.s4)
@@ -73,7 +108,7 @@ struct ReplyQuoteView: View {
             }
         }
         .foregroundStyle(ink)
-        .frame(maxWidth: .infinity, alignment: .leading)
+        .frame(maxWidth: cancel == nil ? nil : .infinity, alignment: .leading)
     }
 
     private func line(_ text: Text) -> some View {

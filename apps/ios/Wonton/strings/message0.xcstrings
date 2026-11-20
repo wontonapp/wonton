@@ -331,6 +331,36 @@
           }
         }
       }
+    },
+    "message.choiceFailed": {
+      "comment": "Shown under a message's option buttons when the tapped option could not be sent. Tapping the option again retries.",
+      "extractionState": "manual",
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Couldn't send your choice. Tap it to try again."
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "没发出去，再点一次重试"
+          }
+        },
+        "zh-Hant": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "沒送出去，再點一次重試"
+          }
+        },
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "送信できませんでした。もう一度タップしてください"
+          }
+        }
+      }
     }
   }
 }

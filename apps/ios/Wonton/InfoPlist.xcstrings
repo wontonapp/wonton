@@ -62,6 +62,36 @@
         }
       }
     },
+    "NSPhotoLibraryUsageDescription": {
+      "comment": "System permission prompt for reading the photo library, shown the first time the attachment sheet shows the photo grid.",
+      "extractionState": "manual",
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Wonton shows your recent photos so you can pick the ones to send."
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "云吞显示你最近的照片，方便你选要发的那几张。"
+          }
+        },
+        "zh-Hant": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "雲吞會顯示你最近的照片，方便你選要傳的那幾張。"
+          }
+        },
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Wontonは送る写真を選べるよう、最近の写真を表示します。"
+          }
+        }
+      }
+    },
     "NSPhotoLibraryAddUsageDescription": {
       "comment": "System permission prompt for adding to the photo library, shown the first time a chat photo is saved.",
       "extractionState": "manual",

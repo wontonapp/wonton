@@ -64,6 +64,8 @@ struct ChatPanelHost<Content: View>: View {
     let select: (TabRef) -> Void
     let remove: (TabRef) -> Void
     let move: (TabRef, Int) -> Void
+    /// 宿主外面要打开面板时把这个数加一（房间的入口在 Bot 资料页，资料页不在宿主里面）。
+    var openRequest = 0
     @ViewBuilder let content: () -> Content
     @State private var level = PanelLevel.closed
     @State private var drag: CGFloat = 0
@@ -104,6 +106,7 @@ struct ChatPanelHost<Content: View>: View {
             }
             .environment(\.chatPanelOpen, openPanel)
         }
+        .onChange(of: openRequest) { openPanel() }
         .onGeometryChange(for: CGFloat.self) { $0.safeAreaInsets.top } action: { safeTop = $0 }
         .onGeometryChange(for: CGFloat.self) {
             $0.size.height + $0.safeAreaInsets.top + $0.safeAreaInsets.bottom
@@ -546,6 +549,8 @@ struct RoomPanelHost<Content: View>: View {
     let roomId: String
     let panel: [PanelItem]
     let selected: TabRef?
+    /// 每加一，面板打开一次（见 `ChatPanelHost.openRequest`）。
+    var openRequest = 0
     @ViewBuilder let content: () -> Content
     @Environment(\.panelDeps) private var deps
 
@@ -560,6 +565,7 @@ struct RoomPanelHost<Content: View>: View {
                 select: { deps.pages.send(.pages(action: .selectPanelPage(scope: scope, tab: $0))) },
                 remove: { deps.pages.send(.pages(action: .removePanelPage(scope: scope, tab: $0))) },
                 move: { deps.pages.send(.pages(action: .movePanelPage(scope: scope, tab: $0, index: UInt32($1)))) },
+                openRequest: openRequest,
                 content: { content() }
             )
         } else {
@@ -568,7 +574,8 @@ struct RoomPanelHost<Content: View>: View {
     }
 }
 
-/// 顶栏打开面板的按钮：动作来自包着这一页的面板宿主；没有面板的地方（旁聊页、iPad 的详情栏）不显示。
+/// 主聊天页顶栏打开面板的按钮：动作来自包着这一页的面板宿主；没有面板的地方（iPad 的详情栏）不显示。
+/// 房间的入口不在顶栏，在 Bot 资料页（ADR-0052）。
 struct PanelEntryButton: View {
     @Environment(\.chatPanelOpen) private var open
 

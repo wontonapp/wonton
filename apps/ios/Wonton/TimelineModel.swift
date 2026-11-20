@@ -29,6 +29,17 @@ final class TimelineModel {
     /// 群里在场的 AI（本账号认识的 Bot 的 Matrix 用户 ID）；私聊不算。nil 是成员名单还没取全、
     /// 在场的算不准，别下“群里没有 AI”的结论；空列表才是确定没有。
     private(set) var roomBots: [String]?
+    /// 正在输入的人的显示名，不含自己（ADR-0109）。
+    private(set) var typing: [String] = []
+    /// 房间里各 Bot 的斜杠命令和被截掉的条数（ADR-0054、ADR-0109）：空的时候没有“菜单”按钮，敲“/”也不弹列表。
+    private(set) var commands: [RoomCommand] = []
+    private(set) var commandsOmitted: UInt32 = 0
+    /// 跳到原消息的进展和“向下”按钮先回到的那一条（ADR-0109 第 4 节）。
+    private(set) var jump: JumpState = .idle
+    private(set) var backTo: String?
+    /// 核心要壳滚到的那一条；每来一次 `focusRevision` 加一，视图按它滚。
+    private(set) var focus: TimelineFocus?
+    private(set) var focusRevision = 0
     private(set) var failure: Problem?
     /// 打不开时点“重试”加一，视图按它重新订阅。
     var attempt = 0
@@ -78,7 +89,8 @@ final class TimelineModel {
     }
 
     private func apply(_ update: TimelineUpdate, pin: BottomPin) {
-        if !prepends(update.diffs) { pin.prepareForUpdate() }
+        // 这一批要滚到别处时不保留更新前的位置：保留会把跳转拉回去。
+        if update.focus == nil, !prepends(update.diffs) { pin.prepareForUpdate() }
         if update.scrollToBottom { pin.pin() }
         for diff in update.diffs {
             apply(diff)
@@ -93,6 +105,15 @@ final class TimelineModel {
         widgets = update.widgets
         callActive = update.callActive
         roomBots = update.roomBots
+        typing = update.typing
+        commands = update.commands
+        commandsOmitted = update.commandsOmitted
+        jump = update.jump
+        backTo = update.backTo
+        if let focus = update.focus {
+            self.focus = focus
+            focusRevision += 1
+        }
         if let anchor = update.anchor { self.anchor = anchor }
         if isLoaded { pin.stick() }
         isLoaded = true

@@ -377,6 +377,8 @@ struct WontonPushedBar<Trailing: View>: View {
     var glassControls = false
     /// 标题旁的头像（Bot 聊天的顶栏，ADR-0044）。
     var avatar: AnyView?
+    /// 标题下面临时换上的一行（聊天页的“正在输入…”，ADR-0109）：有它就不写连接状态。
+    var activity: String?
     /// 返回键的动作；不传时退出当前导航层。盖在别的页面上的旁聊页（ADR-0093）用它收起自己，不动导航栈。
     var onClose: (() -> Void)?
     @ViewBuilder let trailing: Trailing
@@ -399,7 +401,13 @@ struct WontonPushedBar<Trailing: View>: View {
                             .lineLimit(1)
                             .accessibilityAddTraits(.isHeader)
                     }
-                    if showsStatus || showsStatusLine, line == nil, let subtitle = status.subtitle {
+                    if let activity {
+                        Text(activity)
+                            .wontonText(WontonTheme.typography.caption)
+                            .foregroundStyle(Color(colors.accentInk))
+                            .lineLimit(1)
+                            .accessibilityIdentifier("barActivity")
+                    } else if showsStatus || showsStatusLine, line == nil, let subtitle = status.subtitle {
                         Text(subtitle)
                             .wontonText(WontonTheme.typography.caption)
                             .foregroundStyle(Color(colors.textSecondary))
