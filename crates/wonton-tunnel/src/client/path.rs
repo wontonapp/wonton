@@ -49,3 +49,7 @@ impl PathInfo {
         }
     }
 }
+
+#[cfg(test)]
+#[path = "path_tests.rs"]
+mod path_tests;
