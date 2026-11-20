@@ -248,3 +248,65 @@ async fn a_reply_stays_in_the_draft_until_it_is_sent() {
     until_composer(&phone, &first, None).await;
     until_draft(&phone, &second, Some("另一间")).await;
 }
+
+/// 先进编辑态、由核心存下原草稿；取消后原草稿回来，不会被被编辑的正文顶掉（ADR-0109 第 10 节）。
+#[tokio::test(flavor = "multi_thread")]
+#[ignore = "需要 Docker，用 --include-ignored 运行"]
+async fn cancelling_an_edit_brings_the_previous_draft_back() {
+    let dir = tempfile::tempdir().unwrap();
+    let phone = Phone::open(dir.path());
+    let home = Home::start(&[phone.device_id()]).await;
+    phone.connect(&home);
+    phone.signed_in().await;
+    let bot = home.bot("hermes", "Hermes").await;
+    let room_id = join_group_room(&phone, &bot, "Group").await;
+    let room = room_id.to_string();
+    let mut timeline = Timeline::open(&phone, &room).await;
+    let target = TimelineTarget {
+        room_id: room.clone(),
+        thread_root: None,
+    };
+
+    phone
+        .dispatch(Action::Timeline {
+            action: TimelineAction::SendText {
+                target: target.clone(),
+                body: "old".to_owned(),
+                reply_to: None,
+                mentions: vec![],
+            },
+        })
+        .unwrap();
+    let (item_id, _) = timeline
+        .until("自己的消息发出去", |item| {
+            text_message(item, "old").filter(|(_, message)| message.event_id.is_some())
+        })
+        .await;
+
+    phone
+        .dispatch(Action::Timeline {
+            action: TimelineAction::SetDraft {
+                target: target.clone(),
+                body: "hello".to_owned(),
+                reply_to: None,
+            },
+        })
+        .unwrap();
+    until_draft(&phone, &room, Some("hello")).await;
+
+    phone
+        .dispatch(Action::Timeline {
+            action: TimelineAction::StartEdit {
+                target: target.clone(),
+                item_id,
+            },
+        })
+        .unwrap();
+    until_draft(&phone, &room, Some("old")).await;
+    phone
+        .dispatch(Action::Timeline {
+            action: TimelineAction::CancelEdit { target },
+        })
+        .unwrap();
+    until_draft(&phone, &room, Some("hello")).await;
+}
