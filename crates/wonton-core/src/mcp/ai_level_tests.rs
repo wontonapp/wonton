@@ -27,13 +27,25 @@ const ARCHIVE: &str = "app-example-notes__archive";
 const DELETE: &str = "app-example-notes__delete";
 const SAVE: &str = "wonton__save_file";
 
-fn caller(name: &str, keeper: BotKeeper) -> Caller {
+pub(super) fn caller(name: &str, keeper: BotKeeper) -> Caller {
     Caller::for_bot(
         PluginId::parse(AGENT).unwrap(),
         None,
         name.to_owned(),
         keeper,
     )
+}
+
+/// alice 的私人 Bot，这一轮是 alice 自己在说（请求头核对过）。
+fn alice_speaking() -> Caller {
+    let mut alice = caller(
+        "alice-bot",
+        BotKeeper::User {
+            username: "alice".into(),
+        },
+    );
+    alice.sender = Some(super::TurnSender::Local("@alice:wonton.localhost".into()));
+    alice
 }
 
 fn permissions(ai: AiLevel, shared_bots: bool) -> Permissions {
@@ -45,7 +57,7 @@ fn permissions(ai: AiLevel, shared_bots: bool) -> Permissions {
     }
 }
 
-fn role(s: &Setup, name: &str, ai: AiLevel, shared_bots: bool) -> String {
+pub(super) fn role(s: &Setup, name: &str, ai: AiLevel, shared_bots: bool) -> String {
     s.bus
         .people
         .get()
@@ -59,7 +71,7 @@ fn role(s: &Setup, name: &str, ai: AiLevel, shared_bots: bool) -> String {
         .id
 }
 
-fn member(s: &Setup, username: &str, role_id: &str) {
+pub(super) fn member(s: &Setup, username: &str, role_id: &str) {
     s.members
         .invite(MemberRecord {
             role_id: role_id.to_owned(),
@@ -68,7 +80,7 @@ fn member(s: &Setup, username: &str, role_id: &str) {
         .unwrap();
 }
 
-async fn notes() -> Setup {
+pub(super) async fn notes() -> Setup {
     setup(Engine::unreachable_for_test(), Duration::from_secs(30)).await
 }
 
@@ -83,7 +95,7 @@ async fn save_setup() -> (Setup, Fixture, PathBuf) {
     (s, fixture, outbox)
 }
 
-async fn names(s: &Setup, caller: &Caller) -> Vec<String> {
+pub(super) async fn names(s: &Setup, caller: &Caller) -> Vec<String> {
     s.bus
         .tools(caller)
         .await
@@ -92,13 +104,13 @@ async fn names(s: &Setup, caller: &Caller) -> Vec<String> {
         .collect()
 }
 
-fn attach_ledger(s: &Setup) -> Arc<Chains> {
+pub(super) fn attach_ledger(s: &Setup) -> Arc<Chains> {
     let chains = AgentChains::for_test(s.dir.path()).unwrap();
     s.bus.attach_agent_chains(chains);
     s.bus.agent_chains().unwrap().ledger().clone()
 }
 
-fn start_turn(ledger: &Chains, bot: &BotRef, sender: &str, session: &str) {
+pub(super) fn start_turn(ledger: &Chains, bot: &BotRef, sender: &str, session: &str) {
     let report = ChainTurnReport::Start {
         session: session.to_owned(),
         room: format!("!room-{session}:test"),
@@ -130,12 +142,7 @@ async fn read_only_private_bot_lists_only_read_tools_and_rejects_writes() {
     let s = notes().await;
     let read_only = role(&s, "只读", AiLevel::ReadOnly, false);
     member(&s, "alice", &read_only);
-    let alice = caller(
-        "alice-bot",
-        BotKeeper::User {
-            username: "alice".into(),
-        },
-    );
+    let alice = alice_speaking();
 
     let listed = names(&s, &alice).await;
     assert!(listed.contains(&SEARCH.to_owned()), "{listed:?}");
@@ -154,12 +161,7 @@ async fn admin_approves_deletes_routes_mutations_and_deletes_differently() {
     let s = notes().await;
     let admin_approves = role(&s, "需管理员批删除", AiLevel::AdminApprovesDeletes, false);
     member(&s, "alice", &admin_approves);
-    let alice = caller(
-        "alice-bot",
-        BotKeeper::User {
-            username: "alice".into(),
-        },
-    );
+    let alice = alice_speaking();
 
     let archive_call = s.spawn_as(&alice, ARCHIVE, json!({"name": "archive"}));
     let archive_card = wait_card(&s, Some("alice")).await;
@@ -192,12 +194,7 @@ async fn self_confirms_unannotated_delete_is_a_keeper_card_with_window() {
     let s = notes().await;
     let self_confirms = role(&s, "自己确认", AiLevel::SelfConfirms, false);
     member(&s, "alice", &self_confirms);
-    let alice = caller(
-        "alice-bot",
-        BotKeeper::User {
-            username: "alice".into(),
-        },
-    );
+    let alice = alice_speaking();
 
     let call = s.spawn_as(&alice, DELETE, json!({"name": "delete"}));
     let card = wait_card(&s, Some("alice")).await;
@@ -264,38 +261,6 @@ async fn unknown_sender_is_read_only() {
 }
 
 #[tokio::test]
-async fn no_live_turn_fallback_uses_keeper_or_shared_bot_users() {
-    let s = notes().await;
-    let read_only = role(&s, "只读", AiLevel::ReadOnly, true);
-    let self_confirms = role(&s, "自己确认", AiLevel::SelfConfirms, true);
-    member(&s, "alice", &read_only);
-    member(&s, "bob", &self_confirms);
-
-    let private = caller(
-        "alice-bot",
-        BotKeeper::User {
-            username: "bob".into(),
-        },
-    );
-    let private_call = s.spawn_as(&private, ARCHIVE, json!({"name": "private"}));
-    let private_card = wait_card(&s, Some("bob")).await;
-    assert_eq!(private_card.audience, wonton_protocol::CardAudience::Keeper);
-    assert!(
-        private_card
-            .choices
-            .iter()
-            .any(|choice| choice.answer == wonton_protocol::Answer::AllowWindow)
-    );
-    s.answer(&private_card.id, wonton_protocol::Answer::Reject)
-        .unwrap();
-    assert!(failed(&private_call.await.unwrap()));
-
-    let shared = caller("household", BotKeeper::Household);
-    let denied = s.call_as(&shared, ARCHIVE, json!({"name": "shared"})).await;
-    assert_eq!(failure_kind(&denied), Some("permission_denied"));
-}
-
-#[tokio::test]
 async fn unresolvable_keeper_or_sender_is_strictest() {
     let s = notes().await;
     let unknown = caller(
@@ -324,12 +289,7 @@ async fn admin_approves_deletes_save_file_card_goes_to_admins() {
     fs::write(outbox.join("a.mp3"), "A").unwrap();
     let admin_approves = role(&s, "需管理员批删除", AiLevel::AdminApprovesDeletes, false);
     member(&s, "alice", &admin_approves);
-    let alice = caller(
-        "alice-bot",
-        BotKeeper::User {
-            username: "alice".into(),
-        },
-    );
+    let alice = alice_speaking();
     let call = s.spawn_as(&alice, SAVE, json!({"files": ["a.mp3"], "share": "music"}));
     let card = wait_card(&s, None).await;
     assert_eq!(card.audience, wonton_protocol::CardAudience::Admins);

@@ -31,7 +31,8 @@ pub struct Caller {
     /// 会话不是这个 Bot 的就当没带，审计里记一行。
     pub chain: Option<String>,
     /// 这轮消息的说话人（`X-Wonton-On-Behalf-Of` 或已报的轮次）。本机人给完整 MXID（联系人门要看服务器），
-    /// 认不出的（含远端好友）是 [`TurnSender::Unknown`]；请求头和轮次都没有是 `None`，按 Bot 归属人算。
+    /// 认不出的（含远端好友）是 [`TurnSender::Unknown`]；请求头和轮次都没有是 `None`，表示说不出替谁办事，
+    /// 封顶按只读（[`Bus::ai_cap`]）。`None` 不能当成 Bot 归属人：缺头就拿到归属人的权限，等于身份升级。
     pub sender: Option<TurnSender>,
     /// 核对过归属的会话；权限卡片按它找状态，不以房间或链 ID 代替。
     pub session: Option<String>,
@@ -120,7 +121,8 @@ pub(super) fn turn_sender(
     {
         return Some(local_sender(bus, &turn.sender));
     }
-    // 并发的几轮分不清是哪一轮时取封顶最严的那轮，和没报说话人时的算法一致。
+    // 并发的几轮分不清是哪一轮时取封顶最严的那轮，和没报说话人时的算法一致。一轮都没有时返回 `None`，
+    // 由封顶按只读算，不回落到归属人。
     let mut lowest: Option<(wonton_protocol::AiLevel, TurnSender)> = None;
     for turn in turns {
         let sender = local_sender(bus, &turn.sender);
