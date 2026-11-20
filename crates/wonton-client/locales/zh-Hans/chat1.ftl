@@ -96,3 +96,4 @@ chat-draft-read-interrupted = 草稿的读取被打断了
 
 chat-choice-send-failed = 没发出去：连不上家里服务器。（{ $error }）
 chat-op-agent-answer-failed = 回答选项失败：{ $error }
+chat-op-edit-failed = 编辑消息失败：{ $error }

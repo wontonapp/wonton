@@ -26,6 +26,7 @@ mod connect;
 mod contacts;
 mod display_name;
 mod draft;
+mod edit;
 mod follow_home;
 mod forward;
 mod handoff;
@@ -542,17 +543,16 @@ impl ChatLink {
                     .jump_back();
                 Ok(())
             }
+            action @ (TimelineAction::StartEdit { .. }
+            | TimelineAction::CancelEdit { .. }
+            | TimelineAction::EditMessage { .. }
+            | TimelineAction::SetTyping { .. }) => self.editing_action(action),
             // 附件区的操作由 `ClientCore::dispatch` 交给附件区（ADR-0094），不会到这里。
             TimelineAction::SendComposer { .. }
             | TimelineAction::RemoveAttachment { .. }
             | TimelineAction::RetryAttachment { .. }
             | TimelineAction::RetryOutgoing { .. }
-            | TimelineAction::CancelOutgoing { .. }
-            // 编辑和正在输入先只在接口里（下一条 PR 才连核心）。
-            | TimelineAction::StartEdit { .. }
-            | TimelineAction::CancelEdit { .. }
-            | TimelineAction::EditMessage { .. }
-            | TimelineAction::SetTyping { .. } => {
+            | TimelineAction::CancelOutgoing { .. } => {
                 Err(invalid(&l10n!(CATALOG, language(), "chat-invalid-action")))
             }
         }

@@ -1,7 +1,10 @@
 //! 顶栏的“正在输入”（ADR-0109 §7）：跟着房间里别人的正在输入状态走，某人发了消息就马上把他去掉，
-//! 不等 Matrix 的 30 秒超时。
+//! 不等 Matrix 的 30 秒超时；[`Reporter`] 反过来把本账号正在输入发给房间。
 
-use std::sync::{Arc, Mutex};
+use std::{
+    sync::{Arc, Mutex, Weak},
+    time::{Duration, Instant},
+};
 
 use futures_util::StreamExt;
 use tokio::runtime::Handle;
@@ -135,3 +138,99 @@ impl Typing {
 #[cfg(test)]
 #[path = "room_typing_tests.rs"]
 mod room_typing_tests;
+
+/// 本账号往房间发的“正在输入”（ADR-0109 第 7 节）：壳每次报告输入都发一回，最快 4 秒续一次；
+/// 5 秒没有动静或者发出去一条消息就停。订阅释放后任务自己结束。
+pub(super) struct Reporter {
+    room: Weak<ChatRoom>,
+    runtime: Handle,
+    state: Mutex<ReporterState>,
+}
+
+struct ReporterState {
+    active: bool,
+    /// 上一次告诉服务器“在输入”的时间；空着表示服务器那边没开。
+    reported: Option<Instant>,
+    /// 每接手一次新的输入就加一；到点的任务只认自己那一次。
+    generation: u64,
+}
+
+/// 连续输入时续一回的间隔：小于 5 秒的自动停，别让顶栏闪。
+const REFRESH: Duration = Duration::from_secs(4);
+/// 多久没有新输入就自动停。
+const EXPIRE: Duration = Duration::from_secs(5);
+
+impl Reporter {
+    pub(super) fn new(runtime: &Handle, room: &Arc<ChatRoom>) -> Arc<Self> {
+        Arc::new(Self {
+            room: Arc::downgrade(room),
+            runtime: runtime.clone(),
+            state: Mutex::new(ReporterState {
+                active: false,
+                reported: None,
+                generation: 0,
+            }),
+        })
+    }
+
+    /// 壳报告输入或停下。
+    pub(super) fn set(self: &Arc<Self>, typing: bool) {
+        let Some(room) = self.room.upgrade() else {
+            return;
+        };
+        let (report, generation) = {
+            let mut state = lock(&self.state);
+            state.generation += 1;
+            if !typing {
+                state.active = false;
+                (state.reported.take().is_some(), state.generation)
+            } else {
+                state.active = true;
+                let due = state.reported.is_none_or(|at| at.elapsed() >= REFRESH);
+                if due {
+                    state.reported = Some(Instant::now());
+                }
+                (due, state.generation)
+            }
+        };
+        if report {
+            self.spawn_report(room, typing);
+        }
+        if typing && report {
+            let me = Arc::downgrade(self);
+            self.runtime.spawn(async move {
+                tokio::time::sleep(EXPIRE).await;
+                let Some(me) = me.upgrade() else { return };
+                let Some(room) = me.room.upgrade() else {
+                    return;
+                };
+                let expired = {
+                    let mut state = lock(&me.state);
+                    if !state.active || state.generation != generation {
+                        false
+                    } else {
+                        state.active = false;
+                        state.reported = None;
+                        true
+                    }
+                };
+                if expired {
+                    me.spawn_report(room, false);
+                }
+            });
+        }
+    }
+
+    /// 发出去一条消息了，停下。
+    pub(super) fn stop(self: &Arc<Self>) {
+        self.set(false);
+    }
+
+    fn spawn_report(&self, room: Arc<ChatRoom>, typing: bool) {
+        self.runtime.spawn(async move {
+            if let Err(error) = room.typing_notice(typing).await {
+                tracing::debug!(%error, typing, "正在输入没发出去");
+            }
+        });
+    }
+}
