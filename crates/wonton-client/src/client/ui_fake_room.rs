@@ -62,11 +62,19 @@ pub(super) fn corner() -> Option<(TabRef, TabPage)> {
 /// 房间的第一批：全部条目，落点在第三条。之后的批次由 `ui_fake_timeline` 按壳的操作推。
 /// 通话中的那个群聊（`ui_fake::CALL_ROOM_ID`）另带顶栏的 widget 入口和“通话中”。
 /// Echo 一直在输入，带三条命令（ADR-0109 的命令表和正在输入）。
+/// 跨日的地方像核心一样先放一条日期分隔：最顶上那条（自己占一天）和 `DAY_BREAK_INDEX` 前各一条。
 pub(super) fn timeline(room_id: &str) -> TimelineUpdate {
     let in_call = room_id == super::ui_fake::CALL_ROOM_ID;
-    let items: Vec<TimelineItem> = (0..ITEMS).map(item).collect();
+    let mut items: Vec<TimelineItem> = Vec::with_capacity(ITEMS + 2);
+    items.push(divider(TOP_INDEX));
+    for index in 0..ITEMS {
+        if index == DAY_BREAK_INDEX {
+            items.push(divider(index));
+        }
+        items.push(item(index));
+    }
     TimelineUpdate {
-        anchor: Some(items[2].id.clone()),
+        anchor: Some("ui-fake-2".into()),
         diffs: vec![TimelineDiff::Reset { items }],
         back_pagination: BackPagination::ReachedStart,
         viewport: TimelineViewport::Away { new_messages: 0 },
@@ -257,6 +265,16 @@ const PHOTO_COLORS: [[u8; 3]; 4] = [
     [90, 160, 70],
     [150, 60, 120],
 ];
+
+/// 日期分隔：核心在跨日处发的虚拟条目，时间取那一天的第一条消息（`index` 就是它）。
+fn divider(index: usize) -> TimelineItem {
+    TimelineItem {
+        id: format!("ui-fake-day-{index}"),
+        content: TimelineContent::DateDivider {
+            timestamp_ms: at_ms(index),
+        },
+    }
+}
 
 /// 这一条消息的正文：几类固定样本，其余是一句普通的话或一条长回复，最后一条补上找底用的那句话。
 fn paragraphs(index: usize, last: bool) -> Vec<String> {
@@ -900,12 +918,13 @@ mod tests {
         let [TimelineDiff::Reset { items }] = update.diffs.as_slice() else {
             panic!("the first batch must be a reset");
         };
-        assert_eq!(items.len(), ITEMS);
+        assert_eq!(items.len(), ITEMS + 2);
         assert_ne!(
             update.anchor.as_deref(),
             items.last().map(|item| item.id.as_str())
         );
-        let TimelineContent::Message { message } = &items[ITEMS - 1].content else {
+        let Some(TimelineContent::Message { message }) = items.last().map(|item| &item.content)
+        else {
             panic!("the last item must be a message");
         };
         let MessageContent::Text { blocks, .. } = &message.body else {
