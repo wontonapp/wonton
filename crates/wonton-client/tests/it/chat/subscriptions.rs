@@ -55,10 +55,7 @@ async fn wait_for_sync<R>(what: &str, home: &Home, mut check: impl FnMut() -> Op
 /// 前的样子，见 [`super::stale_join`]），再重启一次用没改写的应答把状态补回来。两次重启都靠
 /// `M_UNKNOWN_POS`；在飞的长轮询用另一个房间的一条消息结束，不动这个房间的时间线。
 async fn flicker(phone: &Phone, home: &Home, poke_room: &ChatRoom, room_id: &str, label: &str) {
-    home.report_join_as_invited(StaleJoin {
-        room_id: room_id.to_owned(),
-        user_id: OWNER.to_owned(),
-    });
+    home.report_join_as_invited(StaleJoin::new(room_id.to_owned(), OWNER));
     home.expire_room_list_sync();
     poke_room
         .send_text("戳一下长轮询", &[])
