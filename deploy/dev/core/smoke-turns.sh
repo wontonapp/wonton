@@ -12,7 +12,7 @@ chains() {
 for row in json.load(sys.stdin)["chains"]:
     print(row["chain"], row["user"], row["origin"]["room_id"], row["status"])'
 }
-chain_ids() { chains | awk '{ printf "%s ", $1 }'; }
+chain_ids() { chains | awk '{ print $1 }'; }
 # 等列表里出现一条不在 $1（已有的链 ID）里、代表 $2、从房间 $3 开始的链，输出链 ID。
 new_chain() {
   local found
@@ -194,7 +194,12 @@ sleep "$((started + 95 - $(date +%s) > 0 ? started + 95 - $(date +%s) : 0))"
 marker_state() { docker exec "$hermes" sh -c "test -e '$done_file' && echo 跑完了 || echo 没跑完"; }
 # 探针掉登录会重发一次；停了的链不再挂回去，重发按会话另开一条链、把同一条命令再跑一遍。
 # 同一轮里"它有没有再跑命令"看不出确定性，重发过就只记一笔，"文件没建" 由没重发的运行断言。
-retried="$(comm -13 <(printf '%s\n' "$before" | sort) <(chain_ids | grep -vxF "$chain" | sort) | head -1)"
+retried=""
+for _ in $(seq 60); do
+  retried="$(comm -13 <(printf '%s\n' "$before" | sort) <(chain_ids | grep -vxF "$chain" | sort) | head -1)"
+  [[ -n $retried ]] && break
+  sleep 2
+done
 if [[ -n $retried ]]; then
   for _ in $(seq 60); do [[ "$(marker_state)" == 跑完了 ]] && break; sleep 2; done
   ok "重发那一轮又跑了一遍同一条命令（$(marker_state)），文件没建与否不论"
