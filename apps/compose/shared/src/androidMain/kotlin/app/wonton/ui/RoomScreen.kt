@@ -427,10 +427,15 @@ private fun RoomOverlays(
             rooms = rooms.filter { it.forwardTarget(target.roomId) },
             bots = bots,
             plugins = plugins,
-            // 核心一次只发一个房间：挨个发，发完打开第一个选中的。
-            onSend = { rows ->
-                rows.forEach { onAction(Action.Timeline(TimelineAction.ForwardMessage(target, itemId, it.roomId))) }
-                rows.firstOrNull()?.let { onOpenRoom(it.roomId) }
+            // 核心一次只发一个房间：挨个发，每个房间先附言再原消息；只选了一个才跟过去，选几个留在原房间。
+            onSend = { rows, note ->
+                rows.forEach { row ->
+                    if (note.isNotEmpty()) {
+                        onAction(Action.Timeline(TimelineAction.SendText(TimelineTarget(row.roomId, null), note, null)))
+                    }
+                    onAction(Action.Timeline(TimelineAction.ForwardMessage(target, itemId, row.roomId)))
+                }
+                if (rows.size == 1) onOpenRoom(rows.first().roomId)
             },
             onDismiss = { onForward(null) },
         )
@@ -553,7 +558,8 @@ private fun Conversation(
     val barInset = LocalWontonTopInset.current
     val panelVisible = LocalChatPanel.current?.visible == true
     val bottomInsets = if (panelVisible) WindowInsets.ime else WindowInsets.ime.union(WindowInsets.navigationBars)
-    val menuOpen = commandQuery(draft.text, timeline.commands).isNotEmpty()
+    // 命令列表开着没有由输入区说了算（菜单键在它里面），这里只要知道，好把“向下”钮收起来。
+    var commandMenuShown by remember { mutableStateOf(false) }
     BoxWithConstraints(Modifier.fillMaxSize().windowInsetsPadding(bottomInsets)) {
         Column(Modifier.fillMaxSize()) {
             // 状态行自己占一行，占多高时间线就让开多高，不浮在气泡上；气泡只从它的下沿下面消失。
@@ -589,7 +595,7 @@ private fun Conversation(
                             onOpenMenu = onOpenMenu,
                             onReply = { message -> message.replyAction?.let { draft.replyTo(it.message) } },
                             modifier = Modifier.fillMaxSize().recordRoomBackdrop(backdrop),
-                            menuOpen = menuOpen,
+                            menuOpen = commandMenuShown,
                             headerHeight = with(density) { headerHeight.toDp() },
                         )
                     }
@@ -620,6 +626,8 @@ private fun Conversation(
                     core = core,
                     onDraftChange = draft::change,
                     onSent = draft::sent,
+                    onCommandSent = { draft.sent(keepBody = true) },
+                    onCommandListShown = { commandMenuShown = it },
                     onReplyCancel = draft::stopReplying,
                     onAction = onAction,
                     onReject = onReject,

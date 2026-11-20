@@ -311,6 +311,10 @@ impl ClientCore {
         room_id: String,
         body: String,
     ) -> Result<String, CoreError> {
+        #[cfg(feature = "ui-fake")]
+        if self.ui_fake.load(Ordering::SeqCst) {
+            return Ok(ui_fake::new_thread_root());
+        }
         let scope = self.scope();
         let chat = scope.chat.clone();
         scope
