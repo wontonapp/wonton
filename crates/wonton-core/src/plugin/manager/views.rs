@@ -221,6 +221,69 @@ impl PluginManager {
         Ok(self.client_views()?.into_iter().find(|view| view.id == *id))
     }
 
+    /// 清单声明的 `credentials`（插件没装、不是这个模式时为空）。
+    pub(crate) fn credentials_auth(
+        &self,
+        id: &PluginId,
+    ) -> Option<wonton_protocol::manifest::CredentialsAuth> {
+        let plugins = self.plugins.read().expect("插件表锁中毒");
+        let http = plugins
+            .get(id)?
+            .listed
+            .as_ref()?
+            .manifest
+            .clients
+            .as_ref()?
+            .http
+            .as_ref()?;
+        http.auth.credentials.clone()
+    }
+
+    /// 现在能不能跑凭据命令：插件在运行、`clients.http` 的服务在跑，而且确实用 `credentials`。
+    pub(crate) fn credential_target(
+        &self,
+        id: &PluginId,
+    ) -> Option<crate::clients::credentials::CredentialTarget> {
+        let plugins = self.plugins.read().expect("插件表锁中毒");
+        let entry = plugins.get(id)?;
+        if !matches!(
+            entry.status,
+            PluginStatus::Running | PluginStatus::Degraded { .. }
+        ) {
+            return None;
+        }
+        let http = entry
+            .listed
+            .as_ref()?
+            .manifest
+            .clients
+            .as_ref()?
+            .http
+            .as_ref()?;
+        if !entry.serving.contains(&http.service) {
+            return None;
+        }
+        let credentials = http.auth.credentials.clone()?;
+        let service = credentials.service.as_deref().unwrap_or(&http.service);
+        if !entry.serving.contains(service) {
+            return None;
+        }
+        Some(crate::clients::credentials::CredentialTarget {
+            container: self.cfg.instance.container(&id.slug(), service),
+            credentials,
+        })
+    }
+
+    /// `credentials` 的入口能不能开：成功发过一次密码才真；不用这个模式的插件不受限。
+    pub(crate) fn credentials_ready(&self, id: &PluginId) -> bool {
+        if self.credentials_auth(id).is_none() {
+            return true;
+        }
+        self.client_passwords
+            .as_ref()
+            .is_some_and(|store| store.issued(id.as_str()))
+    }
+
     pub fn gateway_auth_headers(
         &self,
         id: &PluginId,

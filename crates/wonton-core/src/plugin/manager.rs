@@ -106,6 +106,11 @@ pub struct PluginManager {
     pub(super) failed_installs: RwLock<BTreeMap<PluginId, super::install_failure::FailedInstall>>,
     pub(super) dependencies: super::dependencies::Dependencies,
     pub(crate) client_passwords: Option<Arc<crate::clients::passwords::PasswordStore>>,
+    /// 跑应用的凭据命令；生产是 Docker，测试换成按队列给结果的假实现。
+    pub(crate) credential_exec: RwLock<Arc<dyn crate::clients::credentials::CredentialExec>>,
+    /// 每个插件一把异步锁：并发的启动/安装对账串行跑，第二个先看到第一个的结果。
+    pub(crate) credential_locks:
+        std::sync::Mutex<std::collections::BTreeMap<PluginId, Arc<tokio::sync::Mutex<()>>>>,
     /// 插件表每变一次加一：MCP 总线据此刷新工具列表（见 [`Self::changes`]）。
     changes: tokio::sync::watch::Sender<u64>,
     pub(crate) activity: Arc<crate::bot_activity::BotActivity>,
@@ -200,8 +205,13 @@ impl PluginManager {
         let client_passwords = crate::clients::passwords::PasswordStore::open(&cfg.data_dir)
             .map(Arc::new)
             .ok();
+        let credential_exec: Arc<dyn crate::clients::credentials::CredentialExec> = Arc::new(
+            crate::clients::credentials::EngineExec::new(Arc::new(engine.clone())),
+        );
         Self {
             client_passwords,
+            credential_exec: RwLock::new(credential_exec),
+            credential_locks: Default::default(),
             engine,
             store,
             http,

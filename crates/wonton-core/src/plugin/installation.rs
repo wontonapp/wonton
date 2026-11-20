@@ -240,6 +240,8 @@ impl PluginManager {
                     return Err(self.install_rollback_error(error, failures, langs));
                 }
                 self.changed();
+                // 装好立即补共享密码并落盘；失败只留待完成，插件已经装好。
+                self.reconcile_credentials(&manifest.id).await;
                 Ok((view, undo))
             }
             Err(error) => Err(error),
