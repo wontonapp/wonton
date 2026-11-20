@@ -29,6 +29,12 @@ use crate::config::MatrixConfig;
 
 pub const SECRET: &str = "shared-secret";
 pub const SERVER: &str = "test";
+/// 假服务器建的管理房间和它的别名：管理员注册后由服务器邀请进去（Tuwunel 的 `make_user_admin`）。
+pub const ADMIN_ROOM_ID: &str = "!admins:test";
+pub const ADMIN_ROOM_ALIAS: &str = "#admins:test";
+
+/// Tuwunel 自己的服务器用户，管理房间的成员。
+const SERVER_USER: &str = "conduit";
 
 #[derive(Default)]
 pub struct User {
@@ -56,6 +62,8 @@ pub struct Tuwunel {
     /// 访问令牌 → （用户，设备）。
     pub tokens: BTreeMap<String, (String, String)>,
     pub rooms: BTreeMap<String, Room>,
+    /// 管理房间的房间号，`start()` 建好。
+    pub admin_room: String,
     pub room_state: BTreeMap<String, rooms::RoomState>,
     /// 上传的文件：（类型，内容）。
     pub media: Vec<(String, Vec<u8>)>,
@@ -153,9 +161,15 @@ fn auth(state: &Tuwunel, headers: &HeaderMap) -> Result<(String, String), Reply>
         .ok_or_else(|| error(StatusCode::UNAUTHORIZED, "M_UNKNOWN_TOKEN"))
 }
 
+/// 管理员以管理房间的成员身份为准（Tuwunel 的 `user_is_admin`），`admin` 标记只是注册时的门槛。
 fn admin(state: &Tuwunel, headers: &HeaderMap) -> Result<(), Reply> {
     let (user, _) = auth(state, headers)?;
-    if state.users.get(&user).is_some_and(|u| u.admin) {
+    if state.users.get(&user).is_some_and(|entry| entry.admin)
+        && state
+            .rooms
+            .get(&state.admin_room)
+            .is_some_and(|room| room.members.contains(&user))
+    {
         Ok(())
     } else {
         Err(error(StatusCode::FORBIDDEN, "M_FORBIDDEN"))
@@ -196,6 +210,14 @@ async fn register(State(fake): State<Fake>, Json(body): Json<Value>) -> Reply {
             ..User::default()
         },
     );
+    // 管理员由服务器邀请进管理房间（`make_user_admin`），自己再 join。
+    let admin_room = state.admin_room.clone();
+    state
+        .rooms
+        .get_mut(&admin_room)
+        .expect("假服务器建了管理房间")
+        .invited
+        .insert(user.clone());
     state.registrations += 1;
     let (device, token) = state.issue(&user);
     ok(json!({"user_id": user, "device_id": device, "access_token": token}))
@@ -500,6 +522,16 @@ async fn membership(
     }))
 }
 
+/// 房间别名解析：只有管理房间的别名。
+async fn directory_room(State(fake): State<Fake>, Path(alias): Path<String>) -> Reply {
+    let state = fake.state();
+    if alias == ADMIN_ROOM_ALIAS {
+        ok(json!({"room_id": state.admin_room, "servers": [SERVER]}))
+    } else {
+        error(StatusCode::NOT_FOUND, "M_NOT_FOUND")
+    }
+}
+
 /// 不在房间里时发不了。
 async fn send_message(
     State(fake): State<Fake>,
@@ -681,15 +713,46 @@ async fn put_direct(
     }))
 }
 
-/// 起一个假 Tuwunel，返回它和一份指向它的配置（签发私钥是新生成的）。
-pub async fn start() -> (Fake, MatrixConfig) {
+/// 像 Tuwunel 的 `fresh()` 一样先建管理房间和服务器用户；注册成管理员的账号由 `make_user_admin` 邀请。
+fn seed_admin_room(state: &mut Tuwunel) {
+    state.admin_room = ADMIN_ROOM_ID.to_owned();
+    state.rooms.insert(
+        ADMIN_ROOM_ID.to_owned(),
+        Room {
+            members: BTreeSet::from([format!("@{SERVER_USER}:{SERVER}")]),
+            ..Room::default()
+        },
+    );
+    // 管理房间是服务器建的，状态事件的发送者也是服务器用户；读房间状态的接口要求有这条。
+    state.room_state.insert(
+        ADMIN_ROOM_ID.to_owned(),
+        rooms::RoomState {
+            creator: format!("@{SERVER_USER}:{SERVER}"),
+            events: BTreeMap::new(),
+        },
+    );
+}
+
+/// 空状态的假服务器和一张新签发密钥的私钥 PEM。
+fn new_fake() -> (Fake, String) {
     let pair = Ed25519KeyPair::generate().unwrap();
     let der = pair.to_pkcs8().unwrap();
     let public = pair.public_key().as_der().unwrap();
+    let key = format!(
+        "-----BEGIN PRIVATE KEY-----\n{}\n-----END PRIVATE KEY-----\n",
+        STANDARD.encode(der.as_ref())
+    );
     let fake = Fake {
         state: Arc::default(),
         key: Arc::new(DecodingKey::from_ed_der(public.as_ref())),
     };
+    (fake, key)
+}
+
+/// 起一个假 Tuwunel，返回它和一份指向它的配置（签发私钥是新生成的）。
+pub async fn start() -> (Fake, MatrixConfig) {
+    let (fake, jwt_key) = new_fake();
+    seed_admin_room(&mut fake.state());
     let client = "/_matrix/client/v3";
     let app = Router::new()
         .route(
@@ -712,6 +775,10 @@ pub async fn start() -> (Fake, MatrixConfig) {
         )
         .route("/_synapse/admin/v1/deactivate/{user}", post(deactivate))
         .route(&format!("{client}/login"), post(login))
+        .route(
+            &format!("{client}/directory/room/{{alias}}"),
+            get(directory_room),
+        )
         .route(&format!("{client}/logout"), post(logout))
         .route(&format!("{client}/account/whoami"), get(whoami))
         .route(&format!("{client}/sync"), get(sync))
@@ -774,11 +841,10 @@ pub async fn start() -> (Fake, MatrixConfig) {
     let listener = TcpListener::bind("127.0.0.1:0").await.unwrap();
     let addr = listener.local_addr().unwrap();
     tokio::spawn(async move { axum::serve(listener, app).await.unwrap() });
-    let body = STANDARD.encode(der.as_ref());
     let config = MatrixConfig {
         url: format!("http://{addr}"),
         server_name: SERVER.into(),
-        jwt_key: format!("-----BEGIN PRIVATE KEY-----\n{body}\n-----END PRIVATE KEY-----\n"),
+        jwt_key,
         registration_secret: SECRET.into(),
     };
     (fake, config)

@@ -11,6 +11,7 @@ use std::collections::HashMap;
 use std::fmt;
 use std::os::unix::fs::MetadataExt;
 use std::path::{Path, PathBuf};
+use std::time::Duration;
 
 use bollard::models::{
     ContainerCreateBody, EndpointIpamConfig, EndpointSettings, HostConfig, HostConfigLogConfig,
@@ -33,6 +34,11 @@ pub const ENTRY_EDGE_ALIAS: &str = "entry-edge.wonton.internal";
 pub const ENTRY_CLIENTS_ALIAS: &str = "entry.wonton.internal";
 pub const CONNECTOR_ALIAS: &str = "connector.wonton.internal";
 
+/// 入口 HAProxy 主进程的管理地址：只有核心和入口在 `clients` 网络上，这个端口不出那个网络。
+pub const ENTRY_RELOAD_ADDR: &str = "entry.wonton.internal:8404";
+/// 连接器的管理地址（连接器在 `relay` 和 `edge` 上）。
+pub const CONNECTOR_RELOAD_ADDR: &str = "connector.wonton.internal:8404";
+
 /// 连接器把公网 TCP 转发接进入口的端口（路由器和自建 frps 都用）。
 const CONNECTOR_PORT: u32 = 8443;
 
@@ -46,6 +52,8 @@ pub enum EntryError {
     NetworkMissing(String),
     /// 入口容器不唯一，热加载不知道该发给谁。
     NotOneEntry(usize),
+    /// 入口 HAProxy 的主进程没接受新配置，带着它的启动日志。
+    Reload(String),
     Docker(EngineError),
 }
 
@@ -55,6 +63,7 @@ impl EntryError {
         match self {
             Self::CoreNotInContainer | Self::NetworkMissing(_) => "core_not_in_container",
             Self::NameTaken(_) | Self::NotOneEntry(_) => "conflict",
+            Self::Reload(_) => "upstream_error",
             Self::Docker(EngineError::PortTaken(_)) => "conflict",
             Self::Docker(EngineError::Rejected { .. }) => "invalid_input",
             Self::Docker(EngineError::NotFound(_)) => "not_found",
@@ -88,6 +97,7 @@ impl fmt::Display for EntryError {
                 "{}：找到 {count} 个入口容器，热加载不知道发给谁",
                 self.category()
             ),
+            Self::Reload(logs) => write!(f, "{}：入口拒绝了新配置：{logs}", self.category()),
             Self::Docker(error) => write!(f, "{}：{error}", self.category()),
         }
     }
@@ -224,8 +234,11 @@ impl EntryContainers {
         Ok(())
     }
 
-    /// 证书续期后让 HAProxy 热加载配置（`USR2`：已升级的连接不断，实测）。
-    pub async fn reload(&self) -> Result<(), EntryError> {
+    /// 让入口的 HAProxy 主进程软重载：它带着同一个配置起一个新进程，起得来才换掉旧的，已升级的连接不断。
+    ///
+    /// 不经 Docker 的 kill 接口：发过信号的容器会被记成手动停过，Docker 重启后 `unless-stopped` 不再拉起
+    /// （ADR-0111）。`addr` 是入口的管理地址，测试里换成临时端口。
+    pub async fn reload(&self, addr: &str) -> Result<(), EntryError> {
         let found = self
             .engine
             .labeled(LABEL_MANAGED_BY, "core", |labels| {
@@ -234,10 +247,7 @@ impl EntryContainers {
             })
             .await?;
         match found.containers.as_slice() {
-            [name] => {
-                self.engine.kill_container(name, "SIGUSR2").await?;
-                Ok(())
-            }
+            [_] => reload_haproxy(addr).await,
             other => Err(EntryError::NotOneEntry(other.len())),
         }
     }
@@ -517,6 +527,8 @@ impl EntryContainers {
                         .collect(),
                 ),
                 labels: Some(self.labels(component)),
+                // Docker 重启时停容器用它。不写就跟镜像的 StopSignal 走，镜像改了可能来不及排空连接。
+                stop_signal: Some("SIGTERM".to_owned()),
                 exposed_ports: (!ports.is_empty())
                     .then(|| ports.iter().map(|(key, _)| key.clone()).collect()),
                 networking_config: Some(NetworkingConfig {
@@ -527,7 +539,7 @@ impl EntryContainers {
                     network_mode: Some(primary),
                     dns: (!resolvers.is_empty()).then_some(resolvers),
                     restart_policy: Some(RestartPolicy {
-                        name: Some(RestartPolicyNameEnum::UNLESS_STOPPED),
+                        name: Some(RestartPolicyNameEnum::ALWAYS),
                         ..Default::default()
                     }),
                     cap_drop: Some(vec!["ALL".to_owned()]),
@@ -581,7 +593,7 @@ impl EntryContainers {
                 ),
                 None => (
                     crate::entry_compose::HAPROXY_IMAGE,
-                    haproxy_command("/config/connector.cfg"),
+                    haproxy_command("/config/connector.cfg", CONNECTOR_RELOAD_ADDR),
                     mounts(&entry, &[("connector.cfg", "/config/connector.cfg")]),
                     // 路由器把公网端口转到宿主，连接器在宿主上收。
                     vec![(format!("{CONNECTOR_PORT}/tcp"), self.host_binding())],
@@ -590,7 +602,7 @@ impl EntryContainers {
         } else {
             (
                 crate::entry_compose::HAPROXY_IMAGE,
-                haproxy_command("/config/haproxy.cfg"),
+                haproxy_command("/config/haproxy.cfg", ENTRY_RELOAD_ADDR),
                 mounts(
                     &entry,
                     &[("haproxy.cfg", "/config/haproxy.cfg"), ("certs", "/certs")],
@@ -735,10 +747,69 @@ fn mounts(entry: &Path, names: &[(&str, &str)]) -> Vec<String> {
         .collect()
 }
 
-fn haproxy_command(config: &str) -> Vec<String> {
-    ["haproxy", "-W", "-db", "-f", config]
+/// `-S` 开主进程的管理端口，热加载走它；`-W` 是主从模式，新配置起不来时旧进程照常跑。
+fn haproxy_command(config: &str, reload_addr: &str) -> Vec<String> {
+    ["haproxy", "-W", "-db", "-f", config, "-S", reload_addr]
         .map(str::to_owned)
         .to_vec()
+}
+
+/// 连入口的主进程管理端口发 `reload`，等它回 `Success=1`。
+///
+/// 主进程可能还没起来（刚对账过、容器在重启）：连不上就重试到 5 秒。`Success=0` 后面是新的启动日志，
+/// 原样带回错误里，主人看到的不是一句"热加载失败"。
+pub async fn reload_haproxy(addr: &str) -> Result<(), EntryError> {
+    use tokio::io::{AsyncReadExt, AsyncWriteExt};
+    use tokio::net::TcpStream;
+
+    let mut last = None;
+    let mut stream = None;
+    for _ in 0..20 {
+        match TcpStream::connect(addr).await {
+            Ok(found) => {
+                stream = Some(found);
+                break;
+            }
+            Err(error) => last = Some(error),
+        }
+        tokio::time::sleep(Duration::from_millis(250)).await;
+    }
+    let Some(mut stream) = stream else {
+        return Err(EntryError::Reload(format!(
+            "连不上 {addr}：{}",
+            last.map_or_else(|| "没有尝试".to_owned(), |error| error.to_string())
+        )));
+    };
+    stream
+        .write_all(b"reload\n")
+        .await
+        .map_err(|error| EntryError::Reload(format!("发不出 reload：{error}")))?;
+    // 回应可能分几段到：读到关连接或 10 秒为止，失败时的启动日志也这样收全。
+    let deadline = tokio::time::Instant::now() + Duration::from_secs(10);
+    let mut reply = Vec::new();
+    loop {
+        let mut buffer = [0u8; 4096];
+        match tokio::time::timeout_at(deadline, stream.read(&mut buffer)).await {
+            Err(_) if reply.is_empty() => {
+                return Err(EntryError::Reload("主进程 10 秒没有回应".to_owned()));
+            }
+            Err(_) | Ok(Ok(0)) | Ok(Err(_)) => break,
+            Ok(Ok(n)) => {
+                reply.extend_from_slice(&buffer[..n]);
+                if reply.windows(9).any(|w| w == b"Success=1") {
+                    break;
+                }
+            }
+        }
+    }
+    let reply = String::from_utf8_lossy(&reply);
+    if reply.contains("Success=1") {
+        Ok(())
+    } else if let Some((_, logs)) = reply.split_once("Success=0\n--\n") {
+        Err(EntryError::Reload(logs.trim().to_owned()))
+    } else {
+        Err(EntryError::Reload(reply.trim().to_owned()))
+    }
 }
 
 struct Networks {

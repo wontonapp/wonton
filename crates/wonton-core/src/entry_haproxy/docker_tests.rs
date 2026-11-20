@@ -1,4 +1,4 @@
-//! 真 HAProxy（[`super::super::entry_compose::HAPROXY_IMAGE`]）跑渲染结果：先用 `-c` 校验三种模型，
+//! 真 HAProxy（[`HAPROXY_IMAGE`]）跑渲染结果：先用 `-c` 校验三种模型，
 //! 再起一个入口、两个连接器和一个假后端，验证对上一条条的实测行为。
 
 use std::path::Path;
@@ -8,14 +8,11 @@ use std::time::{Duration, Instant};
 use super::Model;
 use super::model::Trust;
 use super::render::render;
+use crate::entry_compose::HAPROXY_IMAGE;
 use crate::plugin::docker::Engine;
 use crate::plugin::names::LABEL_INSTANCE;
 use crate::test_docker::{Names, ensure_image};
 
-/// 和 `entry_compose::HAPROXY_IMAGE` 相同；`scripts/mirror-test-images.sh` 只认本文件里的字面量，
-/// 两边由 [`image_matches_the_entry_image`] 锁住。
-const IMAGE: &str =
-    "haproxy:3.2.8-alpine@sha256:8c6b55d891584afded3ab1b91063a703ecc8ff2481302b691773648ffa806226";
 /// 客户端容器用的 curl（Apache-2.0）。宿主 curl 经 PROXY 声明的来源永远是网桥地址，
 /// 分不出「另一个来源」，封禁按来源隔离要两个固定地址的客户端。
 const CURL: &str = "curlimages/curl:8.11.1@sha256:c1fe1679c34d9784c1b0d1e5f62ac0a79fca01fb6377cdd33e90473c6f9f9a69";
@@ -338,7 +335,7 @@ impl Chain {
         let dir = tempfile::tempdir().unwrap();
         let certs = dir.path().join("certs");
         let engine = connected_engine();
-        let image = ensure_image(&engine, &wonton_test_images::image(IMAGE)).await;
+        let image = ensure_image(&engine, &wonton_test_images::image(HAPROXY_IMAGE)).await;
         let image_curl = ensure_image(&engine, &wonton_test_images::image(CURL)).await;
         let mut names = Names::new();
         let setup = setup_network(&mut names);
@@ -448,7 +445,10 @@ fn check_model(trust: Trust) {
     let dir = tempfile::tempdir().unwrap();
     let engine = connected_engine();
     let runtime = tokio::runtime::Runtime::new().unwrap();
-    let image = runtime.block_on(ensure_image(&engine, &wonton_test_images::image(IMAGE)));
+    let image = runtime.block_on(ensure_image(
+        &engine,
+        &wonton_test_images::image(HAPROXY_IMAGE),
+    ));
     let mut names = Names::new();
     let network = names.oneshot_network("check");
     let (subnet4, subnet6) = subnets(names.name());
@@ -510,11 +510,6 @@ fn check_model(trust: Trust) {
     let (ok, text) = docker(&command);
     assert!(ok, "docker {command:?} 失败：{text}");
     assert!(!text.contains("[ALERT]"), "{text}");
-}
-
-#[test]
-fn image_matches_the_entry_image() {
-    assert_eq!(IMAGE, crate::entry_compose::HAPROXY_IMAGE);
 }
 
 #[test]
