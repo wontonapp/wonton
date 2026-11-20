@@ -29,7 +29,6 @@ import androidx.compose.ui.test.onRoot
 import androidx.compose.ui.test.performClick
 import androidx.compose.ui.test.performTouchInput
 import androidx.compose.ui.test.swipe
-import androidx.compose.ui.test.swipeWithVelocity
 import androidx.test.ext.junit.runners.AndroidJUnit4
 import androidx.test.platform.app.InstrumentationRegistry
 import androidx.test.rule.GrantPermissionRule
@@ -41,6 +40,7 @@ import app.wonton.ui.design.WontonTheme
 import app.wonton.ui.send
 import java.io.File
 import java.io.FileOutputStream
+import kotlin.math.abs
 import org.junit.Assert.assertNull
 import org.junit.Assert.assertTrue
 import org.junit.Before
@@ -52,8 +52,8 @@ import org.junit.rules.TestWatcher
 import org.junit.runner.Description
 import org.junit.runner.RunWith
 
-/** 快甩的注入末速（dp/s），取 flickVelocity 的两倍多，离门槛够远。 */
-private const val FLICK_VELOCITY = 2_000f
+/** 手写快甩的事件间隔（毫秒）：步长按速度算，间隔固定，速度才只由步长决定。 */
+private const val FLICK_STEP_MILLIS = 16L
 
 /** 假核心给固定页面，本机 HTTP fixture 验证翻页；空面板另用真实开发栈走查。 */
 @RunWith(AndroidJUnit4::class)
@@ -247,7 +247,7 @@ class RoomPanelGestureTest {
 
     /**
      * 面板换级照 ADR-0052 的门槛：走够 pushDistance / pullDistance，或者够 flickDistance 又够快；
-     * 都不够就弹回原级、不算有意的拉。注入的距离和速度都绕着这两个门槛取。
+     * 都不够就弹回原级、不算有意的拉。注入的距离绕着门槛取，速度取 flickVelocity 的两倍。
      */
     @Test
     fun roomPanelChangesLevelOnlyPastDistanceOrFlick() {
@@ -255,17 +255,20 @@ class RoomPanelGestureTest {
         val push = WontonTheme.gesture.pushDistance * density
         val pull = WontonTheme.gesture.pullDistance * density
         val flick = WontonTheme.gesture.flickDistance * density
-        // 注入的拖动先被 dragSlop 吃掉一截，门槛两边各留 24dp 的余量。
+        // 注入的拖动先被系统的 touch slop 吃掉一截，门槛两边各留 24dp 的余量。
         fun below(threshold: Float) = threshold - 24f * density
         fun above(threshold: Float) = threshold + 32f * density
+        // 末速取 flickVelocity 的两倍；距离至少比 flickDistance 多一截，并按三步的行程（速度 × 3 帧）补够。
+        val flickVelocity = WontonTheme.gesture.flickVelocity * 2f
+        val flickDistance = maxOf(above(flick), flickVelocity * 0.05f)
 
         openPanelFromProfile()
         awaitFullPlayer()
         // 整页时往下慢拖，差一截 pullDistance：弹回整页。
         dragPanelTop(below(pull), 600)
         closePage.assertIsDisplayed()
-        // 快甩够 flickDistance、够快，距离还差一半也判成有意的拉：回到第 1 级。
-        dragPanelTop(above(flick), 40, FLICK_VELOCITY)
+        // 快甩够 flickDistance、够快，距离不到 pullDistance 也判成有意的拉：回到第 1 级。
+        dragPanelTop(flickDistance, 0, flickVelocity)
         closeStrip.assertIsDisplayed()
         closePage.assertDoesNotExist()
         // 第 1 级往上、往下各差一截门槛：都弹回第 1 级。
@@ -273,6 +276,10 @@ class RoomPanelGestureTest {
         closeStrip.assertIsDisplayed()
         dragStrip(below(pull), 600)
         closeStrip.assertIsDisplayed()
+        // 第 1 级快甩够 flickDistance、够快也到整页，回来不靠距离门槛。
+        dragStrip(-flickDistance, 0, flickVelocity)
+        awaitFull()
+        pressBack()
         // 慢拖走够 pushDistance 到整页，走够 pullDistance 合上：距离够就不看速度。
         dragStrip(-above(push), 600)
         awaitFull()
@@ -361,7 +368,11 @@ class RoomPanelGestureTest {
         compose.waitForIdle()
     }
 
-    /** `velocity`（dp/s）为空时是匀速慢拖，给了就按这个末速甩出去。 */
+    /**
+     * `velocity`（dp/s）为空时匀速慢拖 `durationMillis`；给了就按这个速度手写快甩。
+     * `swipeWithVelocity` 的末速受「不超过两倍平均速度、时长不少于 40ms」限制，短距离甩不到令牌速度。
+     * 注入事件按帧（16ms）走一步，至少三步：拖动越过系统 slop 后还要剩三步，速度才量得出来。
+     */
     private fun TouchInjectionScope.swipeFrom(
         start: Offset,
         distance: Float,
@@ -369,12 +380,20 @@ class RoomPanelGestureTest {
         velocity: Float?,
         density: Float,
     ) {
-        val end = start + Offset(0f, distance)
         if (velocity == null) {
-            swipe(start, end, durationMillis)
-        } else {
-            swipeWithVelocity(start, end, velocity * density, durationMillis)
+            swipe(start, start + Offset(0f, distance), durationMillis)
+            return
         }
+        val stepPx = velocity * density * FLICK_STEP_MILLIS / 1_000f
+        val steps = (abs(distance) / stepPx).toInt().coerceAtLeast(3)
+        val step = distance / steps
+        down(start)
+        repeat(steps) { index ->
+            advanceEventTime(FLICK_STEP_MILLIS)
+            moveTo(start + Offset(0f, step * (index + 1)))
+        }
+        advanceEventTime(FLICK_STEP_MILLIS)
+        up()
     }
 
     /** 面板和资料页叠在房间上面，返回一下退一层；退到面板和资料页都收了为止。 */

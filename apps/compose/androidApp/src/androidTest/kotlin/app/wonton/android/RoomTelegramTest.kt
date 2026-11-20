@@ -222,6 +222,9 @@ class RoomTelegramTest {
                 "时间压在第 $index 条的字上：$box 与 $hit；气泡 $bubble；" +
                     nodes.joinToString(" | ") { "${it.boundsInRoot} '${layoutOf(it)!!.layoutInput.text.text}'" }
             }
+            // 时间得压在正文的最后一行上（占位也算这一行）；占位没了、脚注被挤到新的一行就不算。
+            val lastLine = lineBoxes(tailNode, 0).last()
+            check(box.top < lastLine.bottom) { "时间没落在第 $index 条的最后一行：$box 与 $lastLine" }
         }
     }
 
