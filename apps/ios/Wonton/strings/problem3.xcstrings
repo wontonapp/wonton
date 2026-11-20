@@ -62,6 +62,36 @@
         }
       }
     },
+    "problem.invalidInput.nextStep": {
+      "comment": "Next step under the invalid-input problem; the core's own reason goes into Details.",
+      "extractionState": "manual",
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Check the input and try again."
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "检查输入后重试。"
+          }
+        },
+        "zh-Hant": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "檢查輸入後再試。"
+          }
+        },
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "入力を確認して、もう一度お試しください。"
+          }
+        }
+      }
+    },
     "problem.plugin.changed.title": {
       "comment": "Problem title: the app changed after the owner approved the install.",
       "extractionState": "manual",

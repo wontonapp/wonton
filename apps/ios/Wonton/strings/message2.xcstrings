@@ -459,7 +459,7 @@
         "en": {
           "stringUnit": {
             "state": "translated",
-            "value": "Send failed, retrying automatically"
+            "value": "Not sent, retrying"
           }
         },
         "zh-Hans": {

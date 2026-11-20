@@ -339,7 +339,7 @@
         "en": {
           "stringUnit": {
             "state": "translated",
-            "value": "Send failed: %@"
+            "value": "Not sent: %@"
           }
         },
         "zh-Hans": {
