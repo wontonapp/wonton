@@ -1,3 +1,4 @@
+import Photos
 import PhotosUI
 import SwiftUI
 import WontonClient
@@ -33,6 +34,8 @@ struct ComposerView: View {
     @State private var isChoosingAttachment = false
     @State private var isPickingPhoto = false
     @State private var isPickingFiles = false
+    /// 附件面板收起以后接着开哪个系统选择器：两张系统面板不能叠着开。
+    @State private var afterAttach: AfterAttach?
     /// 点“菜单”按钮打开的命令列表；敲“/”弹出的那一张不看它。
     @State private var showsCommands = false
     @FocusState private var isFocused: Bool
@@ -57,7 +60,8 @@ struct ComposerView: View {
                     ComposerMenuButton(showsTitle: isEmpty) { showsCommands.toggle() }
                 }
                 ChatGlassButton(icon: .attach, label: String(localized: .Composer.composerAttach)) {
-                    isChoosingAttachment = true
+                    // 附件区满了就不开面板，说一声最多几个。
+                    if hasRoom() { isChoosingAttachment = true }
                 }
                 .accessibilityIdentifier("composerAttach")
                 field
@@ -92,7 +96,19 @@ struct ComposerView: View {
             // 外面发来的文字只进主对话（ADR-0093）：旁聊是主人主动开的，不接外面的文字。
             if !isSideChat { model.acceptPendingDraft(in: composer.target) }
         }
-        .wontonActionSheet(isPresented: $isChoosingAttachment, actions: attachActions())
+        .sheet(isPresented: $isChoosingAttachment, onDismiss: continueAfterAttach) {
+            AttachSheet(
+                limit: composer.remaining, allowsFiles: !isSideChat,
+                pick: { assets in
+                    isChoosingAttachment = false
+                    Task { await add(assets) }
+                },
+                chooseFiles: { leaveAttach(for: .files) },
+                openSystemPicker: { leaveAttach(for: .photos) }
+            )
+            .presentationDetents([.medium, .large])
+            .presentationDragIndicator(.visible)
+        }
         // 选几张都只进附件区，不发；最多选到附件区放满。0 在系统选择器里是不限，所以至少给 1，满了根本不打开。
         .photosPicker(
             isPresented: $isPickingPhoto, selection: $photos,
@@ -178,19 +194,38 @@ struct ComposerView: View {
         return false
     }
 
-    /// 附件菜单：旁聊里只有图片，发不了文件（ADR-0093）。
-    private func attachActions() -> [WontonSheetAction] {
-        var actions = [
-            WontonSheetAction(title: String(localized: .Composer.composerPhoto), icon: .image) {
-                if hasRoom() { isPickingPhoto = true }
-            }
-        ]
-        if !isSideChat {
-            actions.append(WontonSheetAction(title: String(localized: .Composer.composerFile), icon: .attach) {
-                if hasRoom() { isPickingFiles = true }
-            })
+    private enum AfterAttach { case files, photos }
+
+    private func leaveAttach(for next: AfterAttach) {
+        afterAttach = next
+        isChoosingAttachment = false
+    }
+
+    private func continueAfterAttach() {
+        switch afterAttach {
+        case .files: isPickingFiles = true
+        case .photos: isPickingPhoto = true
+        case nil: break
         }
-        return actions
+        afterAttach = nil
+    }
+
+    /// 附件面板里选好的照片：取原图的字节，和粘贴进来的图走同一条路，进附件区；旁聊里直接发（ADR-0093）。
+    private func add(_ assets: [PHAsset]) async {
+        for asset in assets {
+            guard let (data, type) = await PhotoLibrary.data(asset) else {
+                model.rejection = Problem(
+                    title: String(localized: .Photo.photoUnreadable),
+                    nextStep: String(localized: .Photo.photoTryAnother)
+                )
+                continue
+            }
+            if isSideChat {
+                await composer.sendImage(data, type, replyTo: model.replies[draftKey]?.eventId)
+            } else {
+                await composer.addImage(data, type)
+            }
+        }
     }
 
     /// 粘贴的图转码后进附件区；旁聊里直接发（ADR-0093）。

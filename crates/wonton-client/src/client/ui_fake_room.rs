@@ -253,6 +253,7 @@ pub(super) fn text_message(
                     content: QuotedContent::Text { text: body.clone() },
                 },
             },
+            MessageAction::Forward,
         ],
         event_id: Some(event_id),
         sender_id: sender.into(),

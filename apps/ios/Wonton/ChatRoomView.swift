@@ -120,11 +120,18 @@ private extension ChatRoomView {
         }
         .wontonSheet(isPresented: $pickingForwardRoom,
             title: String(localized: .Message0.messageForwardTitle)) { close in
-            ForwardRoomSheet(model: model, plugins: plugins, rooms: forwardRooms) { room in
+            ForwardRoomSheet(model: model, plugins: plugins, rooms: forwardRooms) { targets in
                 close {
                     guard let item = forwarding else { return }
-                    model.forward(item, from: roomId, to: room.roomId)
                     forwarding = nil
+                    // 只发给一个会话时跟过去看（原来的行为）；发给几个就留在这里，每个会话各发一次。
+                    if targets.count == 1, let only = targets.first {
+                        model.forward(item, from: roomId, to: only.roomId)
+                    } else {
+                        for room in targets {
+                            sendTimeline(.forwardMessage(target: target, itemId: item, toRoomId: room.roomId))
+                        }
+                    }
                 }
             }
         }

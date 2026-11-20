@@ -692,6 +692,36 @@
         }
       }
     },
+    "composer.photoAccessDenied": {
+      "comment": "Shown in the attachment sheet when photo library access is denied, above the Open Settings button.",
+      "extractionState": "manual",
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Wonton has no access to your photos. Allow it in Settings to pick photos here."
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "云吞没有访问照片的权限。在设置里允许后，就能在这里选照片。"
+          }
+        },
+        "zh-Hant": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "雲吞沒有取用照片的權限。在設定裡允許後，就能在這裡選照片。"
+          }
+        },
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Wontonに写真へのアクセス権がありません。設定で許可すると、ここで写真を選べます。"
+          }
+        }
+      }
+    },
     "composer.commands": {
       "comment": "Text and screen-reader label of the capsule button left of the attach button in the chat composer: opens the list of the bot's slash commands.",
       "extractionState": "manual",

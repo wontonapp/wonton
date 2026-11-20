@@ -157,6 +157,97 @@ final class ChatTelegramUITests: XCTestCase {
         XCTAssertTrue(app.otherElements["chatPanel"].waitForExistence(timeout: 5), "资料页的按钮没有打开面板\n\(app.debugDescription)")
     }
 
+    /// 回形针打开附件面板：相册的照片网格能点选几张，底下有“文件”；选了出现“完成”，点了面板收起。
+    func testAttachSheetShowsPhotoGridAndSelects() {
+        enter(Self.directRoom)
+        tap(app.buttons["composerAttach"])
+        // 第一次打开网格系统会问相册权限。
+        // 系统弹窗跟着模拟器的语言走，不认字：三个按钮里中间那个是“允许完全访问”。
+        let springboard = XCUIApplication(bundleIdentifier: "com.apple.springboard")
+        let allow = springboard.alerts.buttons.element(boundBy: 1)
+        let first = app.buttons["attachPhoto.0"]
+        let second = app.buttons["attachPhoto.1"]
+        if allow.waitForExistence(timeout: 10) { allow.tap() }
+        XCTAssertTrue(first.waitForExistence(timeout: 15), "附件面板里没有照片\n\(app.debugDescription)")
+        XCTAssertTrue(app.buttons["attachFiles"].exists, "附件面板里没有“文件”")
+        XCTAssertFalse(app.buttons["attachDone"].exists, "还没选就有“完成”")
+        first.tap()
+        second.tap()
+        XCTAssertTrue(wait(5) { first.isSelected && second.isSelected }, "点了的照片没变成选中")
+        XCTAssertTrue(app.buttons["attachDone"].waitForExistence(timeout: 5), "选了照片没有“完成”")
+        shot("attach-sheet")
+        app.buttons["attachDone"].tap()
+        XCTAssertTrue(first.waitForNonExistence(timeout: 5), "点了“完成”面板没收起")
+    }
+
+    /// 转发：面板顶上能搜，会话能选几个，选了才出现发送。
+    func testForwardSheetSearchesAndSelectsSeveral() {
+        enter(Self.directRoom)
+        waitForFloatingDateToFade()
+        message(3).press(forDuration: 1.2)
+        let forward = app.buttons["messageForward"]
+        XCTAssertTrue(forward.waitForExistence(timeout: 5), "长按菜单里没有“转发”")
+        forward.tap()
+        XCTAssertTrue(app.textFields["forwardSearch"].waitForExistence(timeout: 5), "转发面板没有搜索框")
+        let rooms = app.buttons.matching(NSPredicate(format: "identifier BEGINSWITH %@", "forward-"))
+        XCTAssertGreaterThanOrEqual(rooms.count, 2, "转发面板里的会话不到两个")
+        XCTAssertFalse(app.buttons["forwardSend"].exists, "还没选就有发送")
+        rooms.element(boundBy: 0).tap()
+        rooms.element(boundBy: 1).tap()
+        XCTAssertTrue(app.buttons["forwardSend"].waitForExistence(timeout: 5), "选了会话没有发送")
+        shot("forward-sheet")
+        app.buttons["forwardSend"].tap()
+        XCTAssertTrue(app.textFields["forwardSearch"].waitForNonExistence(timeout: 5), "发送以后面板没收起")
+    }
+
+    /// 引用块只有名字加一两行摘要那么高，不跟着气泡撑开。
+    func testQuoteBlockHugsItsContent() {
+        enter(Self.directRoom)
+        let quote = app.buttons["messageQuote.ui-fake-20"]
+        tap(app.buttons["timelineDown"])
+        reveal(quote)
+        waitForFloatingDateToFade()
+        shot("long-reply")
+        XCTAssertLessThanOrEqual(quote.frame.height, Self.quoteMaxHeight, "引用块太高：\(quote.frame)")
+    }
+
+    /// 长消息每一段都完整显示，不按行数截断；时间只落在最后一段的末行，不压着别的字。
+    func testLongReplyShowsEveryLineAndTimeStaysClear() {
+        enter(Self.directRoom)
+        tap(app.buttons["timelineDown"])
+        reveal(app.buttons["messageQuote.ui-fake-20"])
+        let paragraphs = Self.longReplyParagraphs.map { text(startingWith: $0.prefix) }
+        for (paragraph, expected) in zip(paragraphs, Self.longReplyParagraphs) {
+            XCTAssertTrue(paragraph.waitForExistence(timeout: 5), "找不到“\(expected.prefix)”这一段")
+            // 一个汉字宽不超过正文字号：这一段至少要这么多行。被截断的段行数不够。
+            let lines = (CGFloat(expected.hanCount) * Self.hanWidth / paragraph.frame.width).rounded(.up)
+            XCTAssertGreaterThanOrEqual(
+                paragraph.frame.height, lines * Self.lineHeight - 2,
+                "“\(expected.prefix)”这一段被截断：\(paragraph.frame)，至少要 \(lines) 行"
+            )
+        }
+        let last = paragraphs[paragraphs.count - 1].frame
+        let metas = app.descendants(matching: .any).matching(identifier: "messageMeta").allElementsBoundByIndex
+            .map { $0.frame }.filter { $0.intersects(last) }
+        XCTAssertEqual(metas.count, 1, "最后一段上应该正好有一处时间：\(metas)")
+        for meta in metas {
+            XCTAssertGreaterThanOrEqual(meta.minY, last.maxY - Self.lineHeight * 1.5, "时间不在最后一段的末行：\(meta) \(last)")
+            for paragraph in paragraphs.dropLast() {
+                XCTAssertFalse(meta.intersects(paragraph.frame), "时间压在前面的段上：\(meta) \(paragraph.frame)")
+            }
+        }
+    }
+
+    /// 假房间第 20 条（核心的 `ui_fake_text/long_reply.txt`）每段开头几个字和汉字个数的下限。
+    private static let longReplyParagraphs: [(prefix: String, hanCount: Int)] = [
+        ("没有出问题", 20), ("拖得久的原因", 80), ("有一件我确实做不到的事", 50), ("你在 App 里打开", 40)
+    ]
+    /// 默认字号下正文的字宽下限和行高（`typography.message` 是 16 / 21，字宽留一点余量）。
+    private static let hanWidth: CGFloat = 15
+    private static let lineHeight: CGFloat = 21
+    /// 引用块最高：名字一行（18）加摘要两行（各 20），再留一点余量。
+    private static let quoteMaxHeight: CGFloat = 64
+
     /// 群聊里别人的组尾旁边有头像，私聊里没有。
     func testGroupShowsSenderAvatarAndDirectDoesNot() {
         enter(Self.groupRoom)
