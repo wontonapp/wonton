@@ -36,7 +36,6 @@
     <string name="timeline_edited">已編輯</string>
     <string name="timeline_sending">已儲存，等待送達</string>
     <string name="timeline_send_failed_retrying">傳送失敗，會自動重試</string>
-    <string name="timeline_send_failed">傳送失敗：%1$s</string>
     <string name="timeline_resend">重新傳送</string>
     <string name="timeline_undecryptable">無法解密：這支裝置還沒有這則訊息的金鑰</string>
     <string name="timeline_undecryptable_notice">這台裝置讀不了先前的加密訊息。</string>

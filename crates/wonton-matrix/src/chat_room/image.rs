@@ -2,7 +2,7 @@
 
 use matrix_sdk::{
     attachment::{AttachmentInfo, BaseImageInfo, Thumbnail},
-    ruma::{EventId, UInt},
+    ruma::{EventId, UInt, events::room::message::TextMessageEventContent},
 };
 use matrix_sdk_ui::timeline::{AttachmentConfig, AttachmentSource};
 use mime::Mime;
@@ -16,21 +16,28 @@ impl ChatRoom {
     /// [`Message::status`](crate::Message::status)。
     ///
     /// 比服务器上传上限（`m.upload.size`）大的图片按输入非法当场拒绝，错误里写出图片大小和上限，不进队列：进了队列，
-    /// 上传被服务器拒收后会停在队首，挡住这个房间之后的消息。
-    pub async fn send_image(&self, image: ImageUpload) -> Result<()> {
-        self.send_image_with(image, None).await
+    /// 上传被服务器拒收后会停在队首，挡住这个房间之后的消息。`caption` 是图片下面那句说明，写进事件的 `body`。
+    pub async fn send_image(&self, image: ImageUpload, caption: Option<&str>) -> Result<()> {
+        self.send_image_with(image, caption, None).await
     }
 
     /// 用一张图片回复一条消息，其余同 [`Self::send_image`]。被回复的事件不在这个房间里时返回
     /// [`Error::InvalidInput`]。
-    pub async fn send_image_reply(&self, image: ImageUpload, in_reply_to: &EventId) -> Result<()> {
+    pub async fn send_image_reply(
+        &self,
+        image: ImageUpload,
+        caption: Option<&str>,
+        in_reply_to: &EventId,
+    ) -> Result<()> {
         self.check_reply_target(in_reply_to).await?;
-        self.send_image_with(image, Some(in_reply_to)).await
+        self.send_image_with(image, caption, Some(in_reply_to))
+            .await
     }
 
     async fn send_image_with(
         &self,
         image: ImageUpload,
+        caption: Option<&str>,
         in_reply_to: Option<&EventId>,
     ) -> Result<()> {
         let mime_type: Mime = image.mime_type.parse().map_err(|_| {
@@ -52,6 +59,7 @@ impl ChatRoom {
             info: Some(AttachmentInfo::Image(info)),
             thumbnail,
             in_reply_to: in_reply_to.map(ToOwned::to_owned),
+            caption: caption.map(|caption| TextMessageEventContent::plain(caption.to_owned())),
             ..Default::default()
         };
         let source = AttachmentSource::Data {

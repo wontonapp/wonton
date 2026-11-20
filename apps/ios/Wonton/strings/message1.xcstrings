@@ -392,36 +392,6 @@
         }
       }
     },
-    "message.sendFailed": {
-      "comment": "Send state that needs a decision. Argument: the core's reason.",
-      "extractionState": "manual",
-      "localizations": {
-        "en": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "Not sent: %@"
-          }
-        },
-        "zh-Hans": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "发送失败：%@"
-          }
-        },
-        "zh-Hant": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "傳送失敗：%@"
-          }
-        },
-        "ja": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "送信に失敗しました：%@"
-          }
-        }
-      }
-    },
     "message.resend": {
       "comment": "Menu item on a failed message.",
       "extractionState": "manual",

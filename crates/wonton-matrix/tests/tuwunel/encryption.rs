@@ -218,7 +218,7 @@ async fn encrypted_direct_chat_still_decrypts_after_restart() {
         }),
     };
     alice_room
-        .send_image(photo.clone())
+        .send_image(photo.clone(), None)
         .await
         .expect("发加密图片");
 

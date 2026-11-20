@@ -78,7 +78,10 @@ async fn replies_quote_the_original_on_both_sides() {
     let room = room_id.to_string();
     let bot_room = bot.open_room(&room_id).await.expect("Bot 打开私聊");
     bot_room.send_text("原话", &[]).await.expect("Bot 发文字");
-    bot_room.send_image(test_image()).await.expect("Bot 发图片");
+    bot_room
+        .send_image(test_image(), None)
+        .await
+        .expect("Bot 发图片");
     let mut timeline = Timeline::open(&phone, &room).await;
     let (_, original) = timeline
         .until("收到原话", |item| text_message(item, "原话"))

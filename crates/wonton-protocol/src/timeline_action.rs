@@ -45,7 +45,11 @@ pub enum TimelineAction {
     },
     /// 发送图片。上传和发送的进展、`reply_to` 同 [`TimelineAction::SendText`]。
     ///
+<<<<<<< HEAD
     /// `caption` 是图片下面带的一段话。旁聊里贴图（ADR-0109 第 9 节）用它把输入框里已经打的字一起发出去，
+=======
+    /// `caption` 是图片下面带的一段话。旁聊里贴图（ADR-0109 第 9 节）用它把输入框里已经打的字一起发出去，
+>>>>>>> c93937ac6 (feat(chat): 编辑与发送状态按 Telegram 收口)
     /// 发完清掉草稿；主时间线有附件区，贴图走 [`TimelineAction::SendComposer`]。
     SendImage {
         target: TimelineTarget,
@@ -86,9 +90,16 @@ pub enum TimelineAction {
         target: TimelineTarget,
         item_id: String,
     },
+<<<<<<< HEAD
     /// 进入编辑态（ADR-0109 第 9 节）：只能编辑菜单里有 [`MessageAction::Edit`](crate::MessageAction::Edit) 的消息。
+=======
+    /// 进入编辑态（ADR-0109 第 9 节）：只能编辑菜单里有 [`MessageAction::Edit`](crate::MessageAction::Edit) 的消息。
+>>>>>>> c93937ac6 (feat(chat): 编辑与发送状态按 Telegram 收口)
     /// 核心把现在的草稿（正文和回复对象）存下来，换成正被编辑的那条的正文，记进
-    /// [`TimelineUpdate::editing`](crate::TimelineUpdate::editing)。已经在编辑别的消息时直接换过去，不叠加。
+    /// [`TimelineUpdate::editing`](crate::TimelineUpdate::editing)；壳收到它之后才填输入框、光标放末尾、画编辑条。
+    /// 已经在编辑别的消息时直接换过去，不叠加。
+    ///
+    /// 取消（[`TimelineAction::CancelEdit`]）后壳用 [`ClientCore::draft`](crate::ClientCore::draft) 重读核心恢复的草稿。
     StartEdit {
         target: TimelineTarget,
         item_id: String,
@@ -96,7 +107,11 @@ pub enum TimelineAction {
     /// 退出编辑态、不发这条修改：恢复进入编辑态之前的草稿（正文和回复对象）。没在编辑时什么也不做。
     CancelEdit { target: TimelineTarget },
     /// 确认这次修改（[`TimelineAction::StartEdit`] 之后），矩阵上发到 `event_id`（现在这条），正文换成 `body`（空正文
+<<<<<<< HEAD
     /// 返回 `InvalidInput`）。发出去的事件在所有人那里整条替换成新正文（ADR-0109 第 9 节）；成功后清掉编辑态、草稿
+=======
+    /// 返回 `InvalidInput`）。发出去的事件在所有人那里整条替换成新正文（ADR-0109 第 9 节）；成功后清掉编辑态、草稿
+>>>>>>> c93937ac6 (feat(chat): 编辑与发送状态按 Telegram 收口)
     /// 换回进入编辑态之前的，失败时编辑态留着、失败原因进 `ChatViewModel::problem`。新正文按
     /// ADR-0054 的 Markdown 记成格式化正文。
     EditMessage {
