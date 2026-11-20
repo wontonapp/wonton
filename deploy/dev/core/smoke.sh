@@ -98,6 +98,9 @@ hermes_models() {
   docker exec "$hermes" sh -c 'curl -fsS --max-time 30 -H "Authorization: Bearer $WONTON_MODEL_API_KEY" "$WONTON_MODEL_BASE_URL/models"' |
     python3 -c 'import json, sys; print(" ".join(sorted(m["id"] for m in json.load(sys.stdin)["data"])))'
 }
+plugin_state() {
+  "$dev" list | awk -v id="$1" '$1 == id { print $2; found = 1 } END { if (!found) print "absent" }'
+}
 probe_in_hermes_room() {
   local out="$1" jwt rc=0 attempt
   shift
@@ -189,6 +192,50 @@ expect "核心容器健康" "$(docker inspect -f '{{.State.Health.Status}}' "$co
 expect "网关应答（$core_url）" "$(b -o /dev/null -w '%{http_code}' "$core_url/_wonton/health")" 200
 
 fi
+# 对着保留下来的栈分段跑时，上一次结束已经删掉了探测容器：每段都补一个浏览器和手机。
+[[ -n "${SMOKE_ONLY:-}" ]] && start_browser
+# 分段跑用栈上现成的客户端镜像，不再排一次 cargo 名额。
+if [[ -z "${SMOKE_ONLY:-}" ]] || [[ -z "$(docker images -q "$phone_image")" ]]; then
+  build --target tunnel-client --build-arg WONTON_BUILD_COMMIT -t "$phone_image" -f "$here/Dockerfile" "$repo"
+fi
+server_id="$("$dev" tunnel | json endpoint_id)"
+# 手机：隧道客户端示例跑在核心的网络命名空间里，经回环地址直连隧道入口，本地代理在 127.0.0.1:18008，
+# 和 App 一样只接受带本次会话凭据的请求。私钥放在数据目录：重启手机进程（模拟 App 回前台触发重连，
+# 隧道客户端被拒后按 ADR-0032 等 retry_now，不自动重拨）后还是同一个设备。客户端对已存在的空文件不生成
+# 私钥，所以先用一次性容器把它生成出来。
+phone_key="$WONTON_DEV_DATA/phonekeys/phone.key"
+[[ -s "$phone_key" ]] || docker run --rm -v "$WONTON_DEV_DATA/phonekeys:/k" --entrypoint sh "$phone_image" \
+  -c "tunnel-client --key /k/phone.key id" >/dev/null
+start_phone() {
+  docker rm -f "$phone" >/dev/null 2>&1 || true
+  docker run -d --name "$phone" --network "container:$core" -v "$phone_key:/tmp/phone.key" --entrypoint sh "$phone_image" -c \
+    "tunnel-client --key /tmp/phone.key id && exec tunnel-client --key /tmp/phone.key proxy --auth \
+     --domain $WONTON_DEV_DOMAIN --server $server_id --addr 127.0.0.1:$WONTON_DEV_TUNNEL_PORT \
+     --listen 127.0.0.1:18008" >/dev/null
+  for _ in $(seq 30); do
+    # 不用 grep -q：它匹配就退出，docker logs 会吃 SIGPIPE，pipefail 下会杀掉整个脚本。
+    # 代理的连接是第一次请求时才建的；这里只等它的监听出来。
+    docker logs "$phone" 2>/dev/null | grep '^本地代理' >/dev/null && break
+    sleep 1
+  done
+  docker logs "$phone" 2>/dev/null | grep -q '^本地代理' || fail "手机没起来：$(docker logs "$phone" 2>&1 | tail -3)"
+  credential="$(docker logs "$phone" 2>/dev/null | sed -n 's/^会话凭据：//p')"
+}
+start_phone
+device_id="$(docker logs "$phone" 2>/dev/null | sed -n '1p')"
+[[ "$device_id" =~ ^[0-9a-f]{64}$ && -n "$credential" ]] || fail "手机没有启动：$(docker logs "$phone" 2>&1)"
+# SMOKE_ONLY 直接跑某一步时没走过 start_phone，凭据从探测手机上现读。
+credential="${credential:-$(docker logs "$phone" 2>/dev/null | sed -n 's/^会话凭据：//p' | tail -1)}"
+# 同理，Hermes 的账号、私聊房间和主人的 Matrix 访问令牌在 hermes、matrix 两步里取，分段跑时要现查。
+if [[ -z "${access:-}" ]]; then
+  matrix_url="${matrix_url:-http://matrix.$WONTON_DEV_DOMAIN:$WONTON_DEV_PORT}"
+  login="$(t -X POST "$core_url/_wonton/matrix/login-token")"
+  body="$(python3 -c 'import json, sys
+print(json.dumps({"type": sys.argv[1], "token": sys.argv[2], "initial_device_display_name": "wonton smoke"}))' \
+    "$(json login_type <<<"$login")" "$(json token <<<"$login")")"
+  access="$(t -X POST -H 'content-type: application/json' --data-binary "$body" \
+    "$matrix_url/_matrix/client/v3/login" | json access_token)"
+fi
 if step install "一条命令安装 Grafana 示例插件"; then
 started=$(date +%s)
 installed="$("$dev" install "$repo/plugins/examples/grafana" --yes 2>/dev/null)"
@@ -241,9 +288,6 @@ printf '%s' "$("$dev" token)" |
 
 fi
 if step models "模型网关（models）：核心预装 magpie，给使用方签发只属于它的凭据，经 models.wonton.internal 转发"; then
-plugin_state() {
-  "$dev" list | awk -v id="$1" '$1 == id { print $2; found = 1 } END { if (!found) print "absent" }'
-}
 for _ in $(seq 180); do [[ "$(plugin_state ai.usemagpie.magpie)" == running ]] && break; sleep 1; done
 expect "核心在后台预装了模型网关" "$(plugin_state ai.usemagpie.magpie)" running
 client_file="$(mktemp)"
@@ -311,31 +355,6 @@ docker rm -f "$fake_upstream" >/dev/null
 
 fi
 if step tunnel "已配对设备经隧道打开插件：不用登录，直接是主人"; then
-build --target tunnel-client --build-arg WONTON_BUILD_COMMIT -t "$phone_image" -f "$here/Dockerfile" "$repo"
-server_id="$("$dev" tunnel | json endpoint_id)"
-# 手机：隧道客户端示例跑在核心的网络命名空间里，经回环地址直连隧道入口，本地代理在 127.0.0.1:18008，
-# 和 App 一样只接受带本次会话凭据的请求。私钥放在数据目录：重启手机进程（模拟 App 回前台触发重连，
-# 隧道客户端被拒后按 ADR-0032 等 retry_now，不自动重拨）后还是同一个设备。客户端对已存在的空文件不生成
-# 私钥，所以先用一次性容器把它生成出来。
-phone_key="$WONTON_DEV_DATA/phonekeys/phone.key"
-[[ -s "$phone_key" ]] || docker run --rm -v "$WONTON_DEV_DATA/phonekeys:/k" --entrypoint sh "$phone_image" \
-  -c "tunnel-client --key /k/phone.key id" >/dev/null
-start_phone() {
-  docker rm -f "$phone" >/dev/null 2>&1 || true
-  docker run -d --name "$phone" --network "container:$core" -v "$phone_key:/tmp/phone.key" --entrypoint sh "$phone_image" -c \
-    "tunnel-client --key /tmp/phone.key id && exec tunnel-client --key /tmp/phone.key proxy --auth \
-     --domain $WONTON_DEV_DOMAIN --server $server_id --addr 127.0.0.1:$WONTON_DEV_TUNNEL_PORT \
-     --listen 127.0.0.1:18008" >/dev/null
-  for _ in $(seq 30); do
-    # 不用 grep -q：它匹配就退出，docker logs 会吃 SIGPIPE，pipefail 下会杀掉整个脚本。
-    docker logs "$phone" 2>/dev/null | grep '^本地代理' >/dev/null && break
-    sleep 1
-  done
-  credential="$(docker logs "$phone" 2>/dev/null | sed -n 's/^会话凭据：//p')"
-}
-start_phone
-device_id="$(docker logs "$phone" 2>/dev/null | sed -n '1p')"
-[[ "$device_id" =~ ^[0-9a-f]{64}$ && -n "$credential" ]] || fail "手机没有启动：$(docker logs "$phone" 2>&1)"
 expect "家里服务器以外的地址不进隧道" \
   "$(t -o /dev/null -w '%{http_code}' http://cdn.example.com/app.js)" 403
 expect "同机其他程序不带会话凭据，被本地代理拒绝" \
@@ -557,6 +576,9 @@ fi
 # 停链、出箱和说话人（ADR-0061 第 10 节）：smoke-turns.sh。放在 files 之前：files 一步最后卸载 Hermes。
 # shellcheck source=deploy/dev/core/smoke-turns.sh
 source "$here/smoke-turns.sh"
+seed_smoke_only
+hermes_user="${hermes_user:-}"
+hermes_room="${hermes_room:-}"
 if step files "Bot 存文件（ADR-0027）：主人按路径批准一次，Hermes 就能往里存，Navidrome 看得到"; then
 navidrome_src="$(mktemp -d)"
 git clone -q --depth 1 --branch v0.1.1 -c advice.detachedHead=false https://github.com/geraldpeng6/wonton-plugin-navidrome "$navidrome_src"

@@ -7,12 +7,18 @@
 marker() { printf 'smoke-%s-%s' "$1" "$(head -c 6 /dev/urandom | od -An -tx1 | tr -d ' \n')"; }
 mxid() { printf '@%s:%s' "$1" "$WONTON_DEV_DOMAIN"; }
 # App 的链列表（只列在跑的和到上限的），一行一条：链 ID、代表的人、起点房间、状态。
+# 探针刚重启时隧道可能还没连上，代理回一句纯文本；等到能解析的列表再往下。
 chains() {
-  t "$core_url/_wonton/api/agent/chains" | python3 -c 'import json, sys
+  local body="" tries="${1:-30}"
+  for _ in $(seq "$tries"); do
+    body="$(t "$core_url/_wonton/api/agent/chains" 2>/dev/null)" && [[ $body == \{* ]] && break
+    sleep 1
+  done
+  python3 -c 'import json, sys
 for row in json.load(sys.stdin)["chains"]:
-    print(row["chain"], row["user"], row["origin"]["room_id"], row["status"])'
+    print(row["chain"], row["user"], row["origin"]["room_id"], row["status"])' <<<"$body"
 }
-chain_ids() { chains | awk '{ print $1 }'; }
+chain_ids() { chains "${1:-30}" | awk '{ print $1 }'; }
 # 等列表里出现一条不在 $1（已有的链 ID）里、代表 $2、从房间 $3 开始的链，输出链 ID。
 new_chain() {
   local found
@@ -25,6 +31,31 @@ new_chain() {
   return 1
 }
 stop_chain() { t -X POST "$core_url/_wonton/api/agent/chains/$1/stop" | json status; }
+# 分段跑对着保留下来的栈时，前面几步的变量都没有：凭据、Hermes 的账号和私聊、主人的 Matrix 令牌现查一次。
+# 放在这里而不是加载时：它要用 start_phone 起出来的凭据，也要用上面的 chains。
+seed_smoke_only() {
+  # 房间先看链的记录（核心一侧，不用 Matrix 令牌），再看主人的 m.direct，最后看 Hermes 的日志。
+  if [[ -z "${hermes_room:-}" ]]; then
+    # 手机重起过，上一轮的会话 Cookie 还留在罐里，会让 Matrix 请求按旧会话认人（M_UNKNOWN_TOKEN）。
+    docker exec "$browser" rm -f /tmp/phone-jar || true
+    hermes_user="$(hermes_env MATRIX_USER_ID)"
+    hermes_room="$(chains 200 | awk -v user="$hermes_user" '$2 == user { room = $3 } END { print room }')"
+    direct_body=""
+    for _ in $(seq 5); do
+      [[ -n "$hermes_room" ]] && break
+      direct_body="$(owner_api "/user/@owner:$WONTON_DEV_DOMAIN/account_data/m.direct")"
+      hermes_room="$(python3 -c 'import json, sys
+  print("\n".join(json.load(sys.stdin).get(sys.argv[1], [])))' "$hermes_user" <<<"$direct_body" 2>/dev/null || true)"
+      [[ -n "$hermes_room" ]] && break
+      sleep 2
+    done
+    [[ -n "$hermes_room" ]] ||
+      hermes_room="$(docker logs "$hermes" 2>&1 | grep -o '![A-Za-z0-9_-]\{10,\}' | tail -1)"
+    [[ -n "$hermes_room" ]] || hermes_room="$(hermes_env MATRIX_HOME_ROOM)"
+    [[ -n "$hermes_room" ]] ||
+      fail "查不到和 $hermes_user 的私聊：链 $(chains 20)；m.direct $direct_body"
+  fi
+}
 # 失败时附上的证据：Hermes 报链、取出箱的日志。
 hermes_chain_log() { docker logs "$hermes" 2>&1 | grep -E '调用链|出箱|chain|outbox' | tail -5 || true; }
 # Hermes 容器里命令行正好是 `sleep <秒数>` 的进程有几个（终端工具起的）。
@@ -82,10 +113,11 @@ family_join() {
     docker run -d --name "$mom_phone" --network "container:$core" -v "$mom_key:/tmp/phone.key" --entrypoint tunnel-client \
       "$phone_image" --key /tmp/phone.key proxy --auth --domain "$WONTON_DEV_DOMAIN" --server "$server_id" \
       --addr "127.0.0.1:$WONTON_DEV_TUNNEL_PORT" --listen 127.0.0.1:18009 >/dev/null
-    for _ in $(seq 30); do
+    for _ in $(seq 60); do
       docker logs "$mom_phone" 2>/dev/null | grep '^本地代理' >/dev/null && break
       sleep 1
     done
+    docker logs "$mom_phone" 2>/dev/null | grep -q '^本地代理' || fail "妈妈的手机没起来：$(docker logs "$mom_phone" 2>&1 | tail -3)"
     mom_credential="$(docker logs "$mom_phone" 2>/dev/null | sed -n 's/^会话凭据：//p')"
     [[ -n "$mom_credential" ]] || fail "妈妈的手机没有启动：$(docker logs "$mom_phone" 2>&1)"
     mom_access="$(docker run --rm --network "container:$core" "$echo_image" probe --homeserver "$matrix_url" \
@@ -128,7 +160,7 @@ print(next(r["id"] for r in json.load(sys.stdin)["requests"] if r["username"] ==
   docker run -d --name "$mom_phone" --network "container:$core" -v "$mom_key:/tmp/phone.key" --entrypoint tunnel-client \
     "$phone_image" --key /tmp/phone.key proxy --auth --domain "$WONTON_DEV_DOMAIN" --server "$server_id" \
     --addr "127.0.0.1:$WONTON_DEV_TUNNEL_PORT" --listen 127.0.0.1:18009 >/dev/null
-  for _ in $(seq 30); do
+  for _ in $(seq 60); do
     docker logs "$mom_phone" 2>/dev/null | grep '^本地代理' >/dev/null && break
     sleep 1
   done
@@ -196,12 +228,15 @@ marker_state() { docker exec "$hermes" sh -c "test -e '$done_file' && echo 跑�
 # 同一轮里"它有没有再跑命令"看不出确定性，重发过就只记一笔，"文件没建" 由没重发的运行断言。
 retried=""
 for _ in $(seq 60); do
-  retried="$(comm -13 <(printf '%s\n' "$before" | sort) <(chain_ids | grep -vxF "$chain" | sort) | head -1)"
+  # 探针被服务器丢过会重新配对，凭据跟着换；每轮重读，别拿旧的去问。
+  credential="$(docker logs "$phone" 2>/dev/null | sed -n 's/^会话凭据：//p' | tail -1)"
+  retried="$(comm -13 <(printf '%s\n' "$before" | sort) <(chain_ids 3 | grep -vxF "$chain" | sort) | head -1)"
+  # 重发时探针正在重连，隧道可能整段都答不了，链列表看不到；文件建出来同样是重发跑完的信号。
+  [[ -z $retried && "$(marker_state)" == 跑完了 ]] && retried=跑完了
   [[ -n $retried ]] && break
   sleep 2
 done
 if [[ -n $retried ]]; then
-  for _ in $(seq 60); do [[ "$(marker_state)" == 跑完了 ]] && break; sleep 2; done
   ok "重发那一轮又跑了一遍同一条命令（$(marker_state)），文件没建与否不论"
 else
   expect "命令没有跑完" "$(marker_state)" 没跑完
