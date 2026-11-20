@@ -1,4 +1,4 @@
-use super::*;
+use super::support::*;
 use wonton_protocol::{Permissions, RoleTemplate};
 
 #[tokio::test]

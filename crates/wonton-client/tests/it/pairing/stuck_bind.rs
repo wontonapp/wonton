@@ -7,7 +7,7 @@ use wonton_client::{HomeStatus, PairingFailure, PairingStatus};
 use wonton_tunnel::pair::PairingCode;
 use wonton_tunnel::relays::{Relay, RelayToken};
 
-use super::{Home, Phone};
+use super::support::{Home, Phone};
 use crate::home::support::Gate;
 
 /// 测试里的每一段时限，取短的免得等满生产的三段 30 秒；用不上的那一道取得比整个测试还长。
@@ -98,7 +98,7 @@ async fn the_watchdog_fails_a_stuck_pairing_and_leaves_a_newer_one_alone() {
 
     // 放行以后旧的几次也做完了交换，它们迟到的结果不算数，新的一次照常配上、连通。
     gate.open();
-    let view = phone.wait_for(super::paired).await;
+    let view = phone.wait_for(super::support::paired).await;
     assert_eq!(
         view.server_id,
         Some(home_side.server.endpoint().id().to_string())
