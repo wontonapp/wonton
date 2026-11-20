@@ -289,6 +289,16 @@ impl Home {
         .await
     }
 
+    /// Bot 的长轮询同步。
+    pub(super) async fn bot_sync(&self) -> (StatusCode, HeaderMap, Value) {
+        self.bot(
+            Method::GET,
+            "/_matrix/client/v3/sync?timeout=0",
+            Value::Null,
+        )
+        .await
+    }
+
     /// Bot 在房间里说一句话。
     pub(super) async fn bot_says(&self, room: &str, txn: &str) -> (StatusCode, HeaderMap, Value) {
         self.bot(

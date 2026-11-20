@@ -76,6 +76,8 @@ pub struct Tuwunel {
     pub refuse_profile: bool,
     pub refuse_avatar_write: bool,
     pub refuse_logout: bool,
+    /// 为真时 `whoami` 报 500：令牌验不了不是因为令牌坏了（Tuwunel 不可用、核心重启中）。
+    pub refuse_whoami: bool,
     /// 写过几次显示名。
     pub display_name_writes: usize,
     /// 全局账号数据：（用户，事件类型）→ 内容。
@@ -213,10 +215,18 @@ async fn login(State(fake): State<Fake>, Json(body): Json<Value>) -> Reply {
 
 async fn whoami(State(fake): State<Fake>, headers: HeaderMap) -> Reply {
     let state = fake.state();
+    if state.refuse_whoami {
+        return error(StatusCode::INTERNAL_SERVER_ERROR, "M_UNKNOWN");
+    }
     reply(
         auth(&state, &headers)
             .map(|(user, device)| ok(json!({"user_id": user, "device_id": device}))),
     )
+}
+
+async fn sync(State(fake): State<Fake>, headers: HeaderMap) -> Reply {
+    let state = fake.state();
+    reply(auth(&state, &headers).map(|_| ok(json!({"next_batch": "n1", "rooms": {}}))))
 }
 
 async fn logout(State(fake): State<Fake>, headers: HeaderMap) -> Reply {
@@ -704,6 +714,7 @@ pub async fn start() -> (Fake, MatrixConfig) {
         .route(&format!("{client}/login"), post(login))
         .route(&format!("{client}/logout"), post(logout))
         .route(&format!("{client}/account/whoami"), get(whoami))
+        .route(&format!("{client}/sync"), get(sync))
         .route(
             &format!("{client}/profile/{{user}}/{{field}}"),
             get(get_profile).put(set_profile).delete(delete_profile),
