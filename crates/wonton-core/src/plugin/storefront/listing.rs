@@ -13,7 +13,7 @@ use super::super::host_facts::HostFacts;
 use super::super::install_error::InstallError;
 use super::super::languages::Languages;
 use super::super::manager::{PluginManager, supported};
-use super::super::manifest::{Manifest, PluginKind};
+use super::super::manifest::Manifest;
 use super::super::package::PluginPackage;
 use super::super::package_files::normalize;
 use super::super::views::{
@@ -375,15 +375,8 @@ fn requested_permissions(m: &Manifest, langs: &Languages) -> Vec<wonton_protocol
         .collect()
 }
 
-/// 这台主机上装不了的原因：系统插件、核心不支持的权限、不满足的要求。查不出来的要求不拦。
+/// 这台主机上装不了的原因：核心不支持的权限、不满足的要求。查不出来的要求不拦。
 fn blocked(m: &Manifest, facts: &HostFacts, langs: &Languages) -> Option<String> {
-    if m.kind == PluginKind::System {
-        return Some(crate::l10n::text(
-            langs,
-            "plugin-settings-store-system-app",
-            &[],
-        ));
-    }
     if let Some(p) = m.permissions.iter().find(|p| !supported(p)) {
         return Some(crate::l10n::text(
             langs,

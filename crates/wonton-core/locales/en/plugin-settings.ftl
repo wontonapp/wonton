@@ -178,7 +178,6 @@ plugin-settings-store-source-plugin-missing = Index { $provider } has no { $id }
 plugin-settings-store-community-partial = Some couldn't be read: { $missing }
 plugin-settings-store-community-page-failed = Page { $page } of the search results ({ $error })
 plugin-settings-store-community-unavailable = Can't fetch community apps: { $error }
-plugin-settings-store-system-app = System apps only come preinstalled with the home server
 plugin-settings-store-permission-unsupported = The home server doesn't support the { $permission } permission yet
 plugin-settings-store-index-newer = The index format is { $format }; this version of the home server only understands { $supported }. Update the home server to use the new index
 plugin-settings-store-index-invalid = Can't read the index: { $error }

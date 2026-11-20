@@ -1,2 +1,2 @@
 # category name source commit package-digest
-default hermes github:wontonapp/wonton-plugin-hermes@v0.7.6 87082d51bb5ceab203a89d94da3fa93fecd540c8 sha256:85f2a50c3a8d3405d72ed339cd49caeef01c931d8ee3ceabb2b5305095825e4f
+default hermes github:wontonapp/wonton-plugin-hermes@v0.8.0 1799bb756a792184873a63aeac9402233ac2eee2 sha256:10e89ff30ffd38f9aa5df9803c15b99d2cb2646f1d0f7dfde4f73514aeaf7698

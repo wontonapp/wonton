@@ -15,7 +15,8 @@ dev_guard_check wonton-dev-store
 # Agent 只收 Hermes：别的 Agent 插件还是 `agent.protocol: acp` 的旧清单，核心按新协议读不懂，等它们改完再加回来。
 plugins=(
   geraldpeng6/wonton-plugin-files@v0.2.2
-  wontonapp/wonton-plugin-hermes@v0.6.6
+  wontonapp/wonton-plugin-hermes@v0.8.0
+  geraldpeng6/wonton-plugin-magpie@v0.6.4
   geraldpeng6/wonton-plugin-immich@v0.2.0
   geraldpeng6/wonton-plugin-navidrome@v0.1.1
   geraldpeng6/wonton-plugin-paperless-ngx@v0.1.2
