@@ -604,35 +604,96 @@ impl Inner {
     }
 
     /// 服务端回应了这条连接：确认本设备被接受。
+    ///
+    /// 回应可能是迟到的：服务端已经在这之前关掉了这条连接（吊销设备、换了 endpoint），回复却照样能读出来。
+    /// 这条连接上只有这里写“已连接”，再写一次就把刚记下的断开原因盖回去，门禁只看状态，见不到断开就不再重连，
+    /// 要等下一条请求撞上死连接才会再动（#254）。所以这里先看关闭原因：对端关的按原因如实报断，本机自己关的
+    /// 留给关它的一方写。
+    #[track_caller]
     fn confirm(&self, conn_id: usize) {
-        if !self.is_current(conn_id) {
+        let Some(conn) = self.current_conn(conn_id) else {
+            tracing::debug!(
+                conn_id,
+                caller = %std::panic::Location::caller(),
+                "dropped a stale confirm"
+            );
             return;
-        }
+        };
         *lock(&self.confirmed) = Some(conn_id);
         lock(&self.pacing).reset();
         let mut stats = lock(&self.stats);
         stats.last_confirmed = Some(SystemTime::now());
         stats.failed_dials = 0;
         drop(stats);
-        self.set_status(TunnelStatus::Connected);
+        let status = match conn.close_reason() {
+            None => TunnelStatus::Connected,
+            Some(ConnectionError::LocallyClosed) => return,
+            Some(reason) => {
+                tracing::debug!(
+                    conn_id,
+                    caller = %std::panic::Location::caller(),
+                    ?reason,
+                    "confirm on a closed connection"
+                );
+                TunnelStatus::Disconnected(from_connection_error(&reason))
+            }
+        };
+        self.set_status(status);
+    }
+
+    /// 当前连接还是 `conn_id` 时把它取出来。
+    fn current_conn(&self, conn_id: usize) -> Option<Connection> {
+        let attempt = lock(&self.attempt).clone()?;
+        match attempt.outcome() {
+            Some(Ok(conn)) if conn.stable_id() == conn_id => Some(conn),
+            _ => None,
+        }
+    }
+
+    /// 当前连接已经被对端关掉、可状态还写着“已连接”时，按关闭原因补记一次断开。
+    ///
+    /// 状态停在“已连接”、门禁却拿不到连接时，定时检查一失败就会被“要主人处理”的闸门挡住，没人再写断开（#254）。
+    fn report_closed(self: &Arc<Self>) {
+        let Some(attempt) = lock(&self.attempt).clone() else {
+            return;
+        };
+        let Some(Ok(conn)) = attempt.outcome() else {
+            return;
+        };
+        let reason = conn
+            .close_reason()
+            .filter(|reason| !matches!(reason, ConnectionError::LocallyClosed));
+        if let Some(reason) = reason {
+            self.mark(
+                conn.stable_id(),
+                TunnelStatus::Disconnected(from_connection_error(&reason)),
+            );
+        }
     }
 
     fn is_current(&self, conn_id: usize) -> bool {
-        let attempt = lock(&self.attempt).clone();
-        attempt.is_some_and(
-            |attempt| matches!(attempt.outcome(), Some(Ok(conn)) if conn.stable_id() == conn_id),
-        )
+        self.current_conn(conn_id).is_some()
     }
 
     /// 只有 `conn_id` 仍是当前连接时才更新状态，避免旧连接的事件覆盖新连接的状态。
+    #[track_caller]
     fn mark(&self, conn_id: usize, status: TunnelStatus) {
         if self.is_current(conn_id) {
             self.set_status(status);
+        } else {
+            tracing::debug!(
+                conn_id,
+                to = ?status,
+                caller = %std::panic::Location::caller(),
+                "dropped a stale status"
+            );
         }
     }
 
     /// 更新状态；客户端关闭后状态固定为 `Closed`。
+    #[track_caller]
     fn set_status(&self, status: TunnelStatus) {
+        let caller = std::panic::Location::caller();
         self.status.send_if_modified(|current| {
             if *current == TunnelStatus::Closed || *current == status {
                 return false;
@@ -644,6 +705,7 @@ impl Inner {
             if let TunnelStatus::Disconnected(err) = &status {
                 stats.last_failure = Some(err.clone());
             }
+            tracing::debug!(from = ?*current, to = ?status, %caller, "tunnel status");
             *current = status;
             true
         });
@@ -665,8 +727,10 @@ fn watch_close(inner: Weak<Inner>, conn: &Connection) {
     let conn_id = conn.stable_id();
     tokio::spawn(async move {
         let Some(closed) = closed.await else {
+            tracing::debug!(conn_id, "watch_close: closed without a reason");
             return;
         };
+        tracing::debug!(conn_id, reason = ?closed.reason, "watch_close: connection closed");
         let Some(inner) = inner.upgrade() else {
             return;
         };

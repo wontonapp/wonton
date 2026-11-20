@@ -115,6 +115,7 @@ async fn chat_is_idle_open_page_polls_and_background_pauses_until_foreground() {
 
 #[tokio::test]
 async fn a_panel_instance_polls_but_a_disconnected_page_does_not_request_or_redial() {
+    crate::chat::support::init_test_logging();
     let rig = Rig::new().await;
     let home = FakeHome::start(vec![rig.device()]).await;
     let mut plugin = web_plugin(
@@ -165,8 +166,16 @@ async fn a_panel_instance_polls_but_a_disconnected_page_does_not_request_or_redi
 
     home.allowed.revoke(&rig.device());
     let deadline = Instant::now() + Duration::from_secs(20);
+    let mut statuses = Vec::new();
     while !matches!(rig.app.home().status, HomeStatus::Disconnected { .. }) {
-        assert!(Instant::now() < deadline, "连接没有断开");
+        let view = rig.app.home();
+        if statuses.last() != Some(&view.status) {
+            statuses.push(view.status.clone());
+        }
+        assert!(
+            Instant::now() < deadline,
+            "连接没有断开，状态：{statuses:?}\n{view:?}"
+        );
         tokio::time::sleep(Duration::from_millis(20)).await;
     }
     // 重新授权后如错误轮询触发重拨，将能真正连上，不能被拒绝响应掩盖。
