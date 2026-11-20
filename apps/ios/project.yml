@@ -93,6 +93,7 @@ targets:
         NSCameraUsageDescription: Wonton uses the camera to scan the pairing QR code from your home server.
         # 插件网页要麦克风时弹（ADR-0033）；各语言版本在 InfoPlist.xcstrings。
         NSMicrophoneUsageDescription: Wonton uses the microphone for voice input on app pages.
+        NSPhotoLibraryUsageDescription: Wonton shows your recent photos so you can pick the ones to send.
         NSPhotoLibraryAddUsageDescription: Wonton saves photos from your chats to your photo library.
         # 没有这一句，LocalAuthentication 不用面容 ID，直接要设备密码（App 锁、看恢复密钥，ADR-0102）。
         NSFaceIDUsageDescription: Wonton uses Face ID to unlock the app and to confirm it's you before showing your recovery key.

@@ -29,11 +29,8 @@ struct ComposerField: View {
             placeholder: String(localized: .Composer.composerMessage)
         )
         .fixedSize(horizontal: false, vertical: true)
-        .frame(minHeight: WontonTheme.size.composerField)
-        .background {
-            RoundedRectangle(cornerRadius: WontonTheme.radii.composerField)
-                .fill(Color(colors.surfaceSubtle).opacity(WontonTheme.ratio.secondaryContent))
-        }
+        // 底是输入栏那一层玻璃（见 ComposerView），这里不再垫颜色。
+        .frame(minHeight: WontonTheme.size.chatControl)
     }
 }
 
@@ -110,9 +107,9 @@ private struct ComposerTextField: UIViewRepresentable {
     }
 }
 
-/// 接住系统“粘贴”的文本视图。一到六行，到顶再打字就滚动，和原 `TextField(axis: .vertical)` 一样。
+/// 接住系统“粘贴”的文本视图。随内容长高到 `ratio.composerLines` 行，到顶再打字就在里面滚动（ADR-0109 第 6 节）。
 final class ComposerTextView: UITextView {
-    static let maxLines = 6
+    static let maxLines = Int(WontonTheme.ratio.composerLines)
     static let maxScreenShare: CGFloat = 0.25
 
     var onPasteImage: (([NSItemProvider]) -> Void)?
@@ -154,7 +151,7 @@ final class ComposerTextView: UITextView {
     let placeholderLabel = UILabel()
     private var placeholderTop: NSLayoutConstraint!
     private var contentLine: CGFloat = WontonTheme.typography.body.line
-    private var fittedHeight: CGFloat = WontonTheme.size.composerField
+    private var fittedHeight: CGFloat = WontonTheme.size.chatControl
     /// 设 `text` 会把 `typingAttributes` 重置成默认段落，存一份随时恢复。
     private var typingStyle: [NSAttributedString.Key: Any] = [:]
 
@@ -230,7 +227,7 @@ final class ComposerTextView: UITextView {
         fitHeight()
     }
 
-    /// 按内容定高：一行时居中垫空（最小高度 `size.composerField`），到 `maxLines` 行封顶改滚动。
+    /// 按内容定高：一行时居中垫空（最小高度 `size.chatControl`），到 `maxLines` 行封顶改滚动。
     func fitHeight() {
         let content = contentHeight(width: bounds.width)
         let box = boxHeight(content: content)
@@ -255,7 +252,7 @@ final class ComposerTextView: UITextView {
         let lines = contentLine * CGFloat(Self.maxLines) + WontonTheme.spacing.s8 * 2
         let screen = (window?.windowScene?.screen.bounds.height).map { $0 * Self.maxScreenShare } ?? lines
         return max(
-            WontonTheme.size.composerField,
+            WontonTheme.size.chatControl,
             min(content + WontonTheme.spacing.s8 * 2, lines, screen)
         )
     }
