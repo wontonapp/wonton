@@ -1,6 +1,5 @@
-use std::time::Duration;
-
 use axum::http::{Method, StatusCode};
+
 use serde_json::json;
 
 use super::probe_support::{Options, Server, config, initialize, probe, simple};
@@ -207,7 +206,7 @@ async fn probe_ping_reply_uses_the_shared_handshake_deadline() {
     })
     .await;
     let mut config = config();
-    config.probe_timeout = Duration::from_millis(150);
+    config.probe_timeout = super::PROBE_BUDGET;
     let result = probe(&remote.url, config, "none", json!({})).await;
     assert_eq!(result["outcome"], "unreachable", "{result}");
     let requests = remote.requests();
