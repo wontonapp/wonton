@@ -182,7 +182,7 @@ pub use family::{
     BotKeeper, BotRef, FAMILY_ROOM_EVENT, GATEWAY_REFUSAL_HEADER, GatewayRefusal,
     HOP_LIMIT_ERRCODE, ME_PATH, MEMBER_PAIRING_CODE_TTL_SECS, MEMBERS_PATH, MY_PRIVATE_BOT_PATH,
     Me, Member, MemberInvite, MemberList, MemberPairingCode, MemberRemoval, MemberStatus,
-    NewSharedBot, OwnPrivateBotResponse, OwnPrivateBotResult, PrivateBotIdentity,
+    MyAvatarProblem, NewSharedBot, OwnPrivateBotResponse, OwnPrivateBotResult, PrivateBotIdentity,
     PrivateBotRoomProblem, Role, SHARED_BOTS_PATH, TOOL_CALL_USER_META, member_pairing_code_path,
     member_removal_path,
 };

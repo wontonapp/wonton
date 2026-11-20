@@ -157,17 +157,27 @@ pub struct AvatarMedia {
     pub poster: Option<String>,
 }
 
-/// 头像文件的种类，壳按它选播放方式。
-#[derive(Clone, Copy, Debug, PartialEq, Eq, Serialize, Deserialize)]
+/// 头像文件的种类，壳按它选播放方式。不认识的取值按 [`Still`](Self::Still) 处理：旧 App 至少显示一帧图。
+#[derive(Clone, Copy, Debug, Default, PartialEq, Eq, Serialize, Deserialize)]
 #[cfg_attr(feature = "uniffi", derive(uniffi::Enum))]
 #[serde(rename_all = "snake_case")]
 pub enum AvatarKind {
     /// PNG、JPEG、静态 WebP。
+    #[default]
     Still,
     /// GIF、动图 WebP。
     Animated,
     /// MP4（H.264），静音循环。
     Video,
+}
+
+/// `kind` 是为以后加动图补的字段：旧核心不给，新核心以后可能给不认识的取值，都不能让整个头像解析失败。
+fn avatar_kind<'de, D: serde::Deserializer<'de>>(deserializer: D) -> Result<AvatarKind, D::Error> {
+    Ok(match String::deserialize(deserializer)?.as_str() {
+        "animated" => AvatarKind::Animated,
+        "video" => AvatarKind::Video,
+        _ => AvatarKind::Still,
+    })
 }
 
 /// [`BOT_ACTIVITY_PATH`] 的响应：核心看得到的事实，合成状态在客户端核心。
@@ -318,6 +328,8 @@ pub struct StateAvatar {
 #[cfg_attr(feature = "uniffi", derive(uniffi::Record))]
 pub struct AvatarImage {
     pub media: MediaHandle,
+    /// 不认识的取值按静态图处理（见 `avatar_kind`）。
+    #[serde(default, deserialize_with = "avatar_kind")]
     pub kind: AvatarKind,
     /// 静态头像（`avatar_url`）不知道宽高，为空。
     pub width: Option<u32>,
@@ -326,7 +338,7 @@ pub struct AvatarImage {
     pub poster: Option<MediaHandle>,
 }
 
-/// 主人在 App 里选好的头像文件，壳已经按 [`MAX_AVATAR_EDGE`] 等裁好、转好。
+/// 在 App 里选好的头像文件，壳已经按 [`MAX_AVATAR_EDGE`] 等裁好、转好。
 #[derive(Clone, PartialEq, Eq, Serialize, Deserialize)]
 #[cfg_attr(feature = "uniffi", derive(uniffi::Record))]
 pub struct AvatarUpload {
