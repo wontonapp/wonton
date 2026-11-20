@@ -33,6 +33,18 @@ struct Service {
     environment: BTreeMap<String, serde_json::Value>,
     #[serde(default)]
     volumes: Vec<String>,
+    restart: Option<String>,
+    stop_signal: Option<String>,
+}
+
+/// 核心经 Docker 的 kill 接口给 Tuwunel 发 SIGUSR1。Docker 把发过信号的容器记成手动停过：unless-stopped 时守护进程
+/// 重启后不再拉起它；没写停止信号时任何信号还会停掉重启管理器，之后崩了也不拉起。
+#[test]
+fn tuwunel_comes_back_after_docker_restarts_even_when_signalled() {
+    let compose: Compose = serde_saphyr::from_str(super::COMPOSE).unwrap();
+    let tuwunel = compose.services.tuwunel;
+    assert_eq!(tuwunel.restart.as_deref(), Some("always"));
+    assert_eq!(tuwunel.stop_signal.as_deref(), Some("SIGTERM"));
 }
 
 #[test]
