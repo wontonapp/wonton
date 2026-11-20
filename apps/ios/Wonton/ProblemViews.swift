@@ -166,9 +166,17 @@ extension ChatFailure {
                 detail: detail
             )
         case .notReady:
-            return Problem(title: String(localized: .Problem0.problemNotReadyTitle), nextStep: detail)
+            return Problem(
+                title: String(localized: .Problem0.problemNotReadyTitle),
+                nextStep: String(localized: .Problem2.problemUpstreamNextStep),
+                detail: detail
+            )
         case .invalidInput:
-            return Problem(title: String(localized: .Problem2.problemInvalidInputTitle), nextStep: detail)
+            return Problem(
+                title: String(localized: .Problem2.problemInvalidInputTitle),
+                nextStep: String(localized: .Problem3.problemInvalidInputNextStep),
+                detail: detail
+            )
         case .other:
             return Problem(
                 title: String(localized: .Problem1.problemGenericTitle),

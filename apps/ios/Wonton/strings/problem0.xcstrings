@@ -13,7 +13,7 @@
       }
     },
     "problem.notReady.title": {
-      "comment": "Problem title when the core says the action can't run yet; the core's own reason is shown as the next step.",
+      "comment": "Problem title when the core says the action can't run yet; the core's own reason goes into Details.",
       "extractionState": "manual",
       "localizations": {
         "en": {
