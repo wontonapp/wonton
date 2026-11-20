@@ -9,6 +9,7 @@ use std::time::Duration;
 use wonton_protocol::PluginDesiredState;
 
 use super::health_gate::Gate;
+use super::languages::Languages;
 use super::manager::{Deployed, Entry, Health, InstallError, PluginManager, PluginStatus};
 use super::manifest::PluginId;
 use super::package::PluginPackage;
@@ -153,6 +154,9 @@ impl PluginManager {
                     .await?;
             }
             Ok(ContainersState::Running(_)) => {
+                if !self.retry_model_reconcile(id, &token, &langs).await? {
+                    return Ok(());
+                }
                 // recover 里走的是重建/启动整条链，future 大，Box::pin 切断栈深度（见 #434）。
                 Box::pin(self.recover(id, &package, &record, capability_recovered, &token)).await?;
                 // 容器刚恢复，和刚启动一样补一轮一次性探测（见 model_health 的计费节奏）。
@@ -179,6 +183,32 @@ impl PluginManager {
             Err(e) => return Err(e),
         }
         Ok(())
+    }
+
+    /// 对账失败过、容器却还好的插件：只把记下的凭据重试一遍，别为一次超时跑整条重建链。
+    /// 成功返回 `true` 交给调用方恢复；还失败就把新原因写回异常、返回 `false`，下一轮再来（#643）。
+    async fn retry_model_reconcile(
+        &self,
+        id: &PluginId,
+        token: &Arc<()>,
+        langs: &Languages,
+    ) -> Result<bool, InstallError> {
+        if !self.model_reconcile_failed(id) {
+            return Ok(true);
+        }
+        match self.retry_model_keys(id, langs).await {
+            Ok(()) => Ok(true),
+            Err(error) => {
+                self.saw_unavailable(
+                    id,
+                    token,
+                    PluginStatus::Degraded {
+                        reason: super::models::reconcile_failed(langs, &error.to_string()),
+                    },
+                );
+                Ok(false)
+            }
+        }
     }
 
     fn watch_token(&self, id: &PluginId) -> Option<Arc<()>> {
