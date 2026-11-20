@@ -80,7 +80,7 @@ async fn typing_shows_the_bot_and_clears_when_it_sends() {
     .await;
     assert_eq!(update.typing, ["Hermes"]);
 
-    bot_room.send_text("我来了").await.expect("Bot 发文字");
+    bot_room.send_text("我来了", &[]).await.expect("Bot 发文字");
     until_update(&mut timeline, "发消息后清掉正在输入", |update| {
         update.typing.is_empty()
     })
@@ -245,7 +245,10 @@ async fn jumping_to_a_missing_message_ends_unavailable() {
     let room_id = join_group_room(&phone, &bot, "Group").await;
     let room = room_id.to_string();
     let bot_room = bot.open_room(&room_id).await.expect("Bot 打开群聊");
-    bot_room.send_text("只有这一条").await.expect("Bot 发文字");
+    bot_room
+        .send_text("只有这一条", &[])
+        .await
+        .expect("Bot 发文字");
     let mut timeline = Timeline::open(&phone, &room).await;
     let item = timeline
         .until("等到那一条", |item| match &item.content {

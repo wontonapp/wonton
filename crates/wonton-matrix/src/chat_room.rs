@@ -11,7 +11,7 @@ use matrix_sdk::{
     Room, RoomMemberships,
     event_cache::PaginationStatus,
     ruma::{
-        EventId, OwnedEventId, RoomId, UserId,
+        EventId, OwnedEventId, OwnedUserId, RoomId, UserId,
         api::client::receipt::create_receipt::v3::ReceiptType,
         api::client::state::get_state_events,
         events::{
@@ -96,6 +96,15 @@ pub struct MissedEvent {
     pub id: OwnedEventId,
     /// 从第一次看到它缺席到现在过了多久（本机单调时钟）。
     pub absent: Duration,
+}
+
+/// @ 列表里的一个在场成员。
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub struct MentionMember {
+    pub user_id: String,
+    pub display_name: String,
+    /// 头像的 `mxc://`。
+    pub avatar: Option<String>,
 }
 
 /// 一个已打开的房间。
@@ -260,14 +269,30 @@ impl ChatRoom {
         self.room.room_id()
     }
 
-    /// 发送文字。消息先以本地回显出现在时间线里，发送结果见 [`Message::status`]。
-    pub async fn send_text(&self, body: &str) -> Result<()> {
+    /// 发送文字，`mentions` 是输入框里选中的人（写进 `m.mentions` 和正文的胶囊，见 [`Self::mention_content`]）。
+    /// 消息先以本地回显出现在时间线里，发送结果见 [`Message::status`]。
+    pub async fn send_text(&self, body: &str, mentions: &[String]) -> Result<()> {
         ensure_recipient_devices(&self.room).await?;
-        self.timeline()
-            .await
-            .send(RoomMessageEventContent::text_plain(body).into())
-            .await?;
+        let names = self.names();
+        let users = crate::mentions::selected(mentions, &names);
+        let content = self.mention_content(body, &users);
+        self.timeline().await.send(content.into()).await?;
         Ok(())
+    }
+
+    /// 现在这份成员和显示名。
+    pub(crate) fn names(&self) -> Arc<MemberNames> {
+        self.names.borrow().clone()
+    }
+
+    /// 文字事件：`users` 是过滤过的被提及者，写进 `m.mentions` 和正文的胶囊。
+    pub(crate) fn mention_content(
+        &self,
+        body: &str,
+        users: &[OwnedUserId],
+    ) -> RoomMessageEventContent {
+        let names = self.names();
+        crate::mentions::content(body, users, &names)
     }
 
     /// 发送文字，事件内容里带上额外字段（链接预览的 `com.beeper.linkpreviews`，ADR-0065）。其余同
@@ -275,15 +300,16 @@ impl ChatRoom {
     pub async fn send_text_with_extra(
         &self,
         body: &str,
+        mentions: &[String],
         extra: serde_json::Map<String, serde_json::Value>,
     ) -> Result<()> {
         ensure_recipient_devices(&self.room).await?;
+        let names = self.names();
+        let users = crate::mentions::selected(mentions, &names);
+        let content = self.mention_content(body, &users);
         self.timeline()
             .await
-            .send_with_extra_content(
-                RoomMessageEventContent::text_plain(body).into(),
-                Some(extra),
-            )
+            .send_with_extra_content(content.into(), Some(extra))
             .await?;
         Ok(())
     }
@@ -361,6 +387,29 @@ impl ChatRoom {
     /// 成员名单有没有从服务器取全；取 [`Self::member_user_ids`] 前先看这个，没取全时名单可能缺人。
     pub fn are_members_synced(&self) -> bool {
         self.room.are_members_synced()
+    }
+
+    /// 输入框 @ 列表的成员：在场的人（不含自己），带显示名和头像的 `mxc://`。私聊为空。
+    pub fn mention_members(&self) -> Vec<MentionMember> {
+        let names = self.names.borrow();
+        if names.direct() {
+            return Vec::new();
+        }
+        names
+            .members()
+            .filter(|(user, _)| !names.is_own(user))
+            .map(|(user, name)| MentionMember {
+                user_id: user.to_string(),
+                display_name: name.to_owned(),
+                avatar: names.avatar(user).map(str::to_owned),
+            })
+            .collect()
+    }
+
+    /// 成员或显示名变了（@ 列表跟着补发）。
+    pub async fn member_names_changed(&self) {
+        let mut names = self.names.clone();
+        let _ = names.changed().await;
     }
 
     /// 撤回一条消息：理由随撤回事件发给服务器，房间里的人都能看到；撤回不能撤销。
@@ -772,7 +821,7 @@ async fn refresh_member_names(
 
 /// 本机已有的已加入成员的显示名，以及本账号的撤回权限。成员读不到时记一条警告，“谁已读”显示账号名，不影响聊天；
 /// 权限读不到时按房间的默认权限算（SDK 的 `power_levels_or_default`），服务器才是最后的判断。
-async fn local_member_names(room: &Room) -> MemberNames {
+pub(crate) async fn local_member_names(room: &Room) -> MemberNames {
     let members = match room.members_no_sync(RoomMemberships::JOIN).await {
         Ok(members) => members,
         Err(error) => {

@@ -70,7 +70,10 @@ async fn a_bot_reply_is_pushed_through_the_proxy_and_decrypted_by_the_woken_phon
     phone.stop_sync().await;
     drop(phone);
     let bot_room = bot.open_room(&room_id).await.expect("Bot 打开私聊");
-    bot_room.send_text("你的快递到了").await.expect("Bot 回复");
+    bot_room
+        .send_text("你的快递到了", &[])
+        .await
+        .expect("Bot 回复");
 
     let pushed = gateway
         .wait_for("推送网关收到加密消息的通知", |r| {
@@ -110,7 +113,7 @@ async fn a_bot_reply_is_pushed_through_the_proxy_and_decrypted_by_the_woken_phon
     // 推送网关说这个 pushkey 不再有效（设备被吊销）：Tuwunel 删掉 pusher。
     gateway.reject(&pushkey);
     let before = gateway.received().len();
-    bot_room.send_text("第二条").await.expect("Bot 再回复");
+    bot_room.send_text("第二条", &[]).await.expect("Bot 再回复");
     gateway
         .wait_for("推送网关收到第二条", |r| {
             is_encrypted_message(r, &pushkey) && gateway_index(&gateway, r) >= before

@@ -47,7 +47,10 @@ async fn exchanging(server: &TestServer) -> Exchange {
     owner.start_sync().await.expect("主人同步");
     let room_id = chat::direct_chat(&owner, &bot, true).await;
     let owner_room = owner.open_room(&room_id).await.expect("主人打开私聊");
-    owner_room.send_text("第一条").await.expect("主人发消息");
+    owner_room
+        .send_text("第一条", &[])
+        .await
+        .expect("主人发消息");
     let bot_room = bot.open_room(&room_id).await.expect("Bot 打开私聊");
     eventually(
         "Bot 解开第一条",
@@ -140,7 +143,9 @@ async fn a_bot_with_a_lost_store_stays_deaf_until_reinstalled() {
     .await;
 
     // 它自己还能发：新出站会话，主人解得开。
-    room.send_text("重启后的回声").await.expect("Bot 发消息");
+    room.send_text("重启后的回声", &[])
+        .await
+        .expect("Bot 发消息");
     let owner_room = owner.open_room(&room_id).await.expect("主人打开私聊");
     eventually(
         "主人解开重启后的回声",
@@ -156,7 +161,7 @@ async fn a_bot_with_a_lost_store_stays_deaf_until_reinstalled() {
 
     // 但主人再发的它解不开：旧出站会话的房间密钥只在丢掉的 store 里，不会重发给"同一台设备"。
     let before = now_ms();
-    owner_room.send_text("第二条").await.expect("主人再发");
+    owner_room.send_text("第二条", &[]).await.expect("主人再发");
     assert!(
         owner_message_seen("Bot 解不开主人的新消息", &room, &owner_user, before).await,
         "Bot 应该解不开主人的新消息"
@@ -172,7 +177,7 @@ async fn a_bot_with_a_lost_store_stays_deaf_until_reinstalled() {
         .open_room(&room_id)
         .await
         .expect("探针打开私聊")
-        .send_text("探针发的")
+        .send_text("探针发的", &[])
         .await
         .expect("探针发消息");
     assert!(
@@ -189,7 +194,7 @@ async fn a_bot_with_a_lost_store_stays_deaf_until_reinstalled() {
     assert_ne!(fresh.device_id(), bot_device, "重装后应该是一台新设备");
     fresh.start_sync().await.expect("重装后同步");
     let fresh_room = fresh.open_room(&room_id).await.expect("重装后打开私聊");
-    owner_room.send_text("第三条").await.expect("主人再发");
+    owner_room.send_text("第三条", &[]).await.expect("主人再发");
     eventually(
         "重装后的 Bot 解开主人的新消息",
         fresh_room.message_updates().await,

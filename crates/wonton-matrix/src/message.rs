@@ -287,11 +287,24 @@ impl MemberNames {
         self.names.keys().map(|user| user.to_string()).collect()
     }
 
+    /// 在场成员，连同给他们设的头像（`mxc://`）。
+    pub(crate) fn members(&self) -> impl Iterator<Item = (&OwnedUserId, &String)> {
+        self.names.iter()
+    }
+
+    pub(crate) fn contains(&self, user: &UserId) -> bool {
+        self.names.contains_key(user)
+    }
+
+    pub(crate) fn is_own(&self, user: &UserId) -> bool {
+        self.own.as_deref() == Some(user)
+    }
+
     pub(crate) fn name(&self, user: &UserId) -> String {
         self.get(user).to_owned()
     }
 
-    fn avatar(&self, user: &UserId) -> Option<&str> {
+    pub(crate) fn avatar(&self, user: &UserId) -> Option<&str> {
         self.avatars.get(user).map(String::as_str)
     }
 

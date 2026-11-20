@@ -24,7 +24,8 @@ use tokio::sync::{Notify, watch};
 use tokio::task::JoinHandle;
 use wonton_l10n::l10n;
 use wonton_protocol::{
-    AttachmentState, ComposerViewModel, CoreError, ImageUpload, RoomTransfers, UploadSource,
+    AttachmentState, ComposerMention, ComposerViewModel, CoreError, ImageUpload, RoomTransfers,
+    UploadSource,
 };
 
 use crate::l10n::{CATALOG, language};
@@ -50,6 +51,15 @@ struct Inner {
     senders: HashMap<String, Arc<Notify>>,
     /// 正在交给发送队列的待发消息：这时候不能取消，交出去的那几条已经在 SDK 手里。
     handing: HashSet<String>,
+    /// @ 列表的候选，按房间；由聊天那边跟着成员和 Bot 名单补。
+    mentions: HashMap<String, Vec<ComposerMention>>,
+}
+
+impl Inner {
+    fn view(&self, room: &str) -> ComposerViewModel {
+        self.state
+            .view(room, self.mentions.get(room).map_or(&[], Vec::as_slice))
+    }
 }
 
 fn invalid(reason: String) -> CoreError {
@@ -161,7 +171,7 @@ impl ComposerLink {
 
     pub(crate) fn subscribe(&self, room: &str) -> watch::Receiver<ComposerViewModel> {
         let mut inner = self.lock();
-        let view = inner.state.view(room);
+        let view = inner.view(room);
         inner
             .views
             .entry(room.to_owned())
@@ -198,13 +208,27 @@ impl ComposerLink {
 
     fn publish(inner: &Inner, room: &str) {
         if let Some(sender) = inner.views.get(room) {
-            let view = inner.state.view(room);
+            let view = inner.view(room);
             sender.send_if_modified(|current| {
                 let changed = *current != view;
                 *current = view;
                 changed
             });
         }
+    }
+
+    /// 换掉一个房间的 @ 候选；和现有的不一样才推给壳。不存盘，重启后由聊天那边重新算。
+    pub(crate) fn set_mentions(&self, room: &str, candidates: Vec<ComposerMention>) {
+        let mut inner = self.lock();
+        if inner.mentions.get(room) == Some(&candidates) {
+            return;
+        }
+        if candidates.is_empty() {
+            inner.mentions.remove(room);
+        } else {
+            inner.mentions.insert(room.to_owned(), candidates);
+        }
+        Self::publish(&inner, room);
     }
 
     /// 改状态、存盘、推给壳。主人的操作要知道存没存上，返回存盘的结果。
@@ -458,6 +482,7 @@ impl ComposerLink {
         room: &str,
         body: &str,
         reply_to: Option<String>,
+        mentions: &[String],
     ) -> Result<(), CoreError> {
         let has_failed = {
             let inner = self.lock();
@@ -480,6 +505,7 @@ impl ComposerLink {
                 id: format!("outgoing-{group}"),
                 group,
                 body: body.trim().to_owned(),
+                mentions: mentions.to_vec(),
                 reply_to,
                 prepared_reply: None,
                 items: std::mem::take(&mut room.tray),
@@ -513,6 +539,7 @@ impl ComposerLink {
                     id: format!("outgoing-{group}"),
                     group,
                     body: body.trim().to_owned(),
+                    mentions: Vec::new(),
                     reply_to: None,
                     prepared_reply: Some(reply),
                     items: Vec::new(),

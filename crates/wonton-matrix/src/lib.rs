@@ -24,6 +24,7 @@ mod group;
 mod layout;
 mod login;
 mod media;
+mod mentions;
 mod message;
 mod panels;
 pub mod platform_tls;
@@ -47,7 +48,8 @@ mod widget;
 
 pub use agent_run::AgentRunStatus;
 pub use chat_room::{
-    BackPaginationStatus, ChatRoom, ImageThumbnail, ImageUpload, MISSED_GRACE, MissedEvent,
+    BackPaginationStatus, ChatRoom, ImageThumbnail, ImageUpload, MISSED_GRACE, MentionMember,
+    MissedEvent,
 };
 pub use encryption::{EncryptionState, Recovery, Verification};
 pub use error::{Error, Result};

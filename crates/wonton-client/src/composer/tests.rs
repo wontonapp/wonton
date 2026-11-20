@@ -297,7 +297,7 @@ async fn photos_and_text_go_out_as_one_group_only_after_every_photo_is_up() {
     until("两张都在传", || s.fake.upload_calls() == 2).await;
     assert_eq!(view(&s).attachments.len(), 2);
 
-    s.link.send(ROOM, "哪张好看", None).unwrap();
+    s.link.send(ROOM, "哪张好看", None, &[]).unwrap();
     let pending = view(&s);
     assert!(pending.attachments.is_empty(), "附件区清空了");
     assert_eq!(pending.outgoing.len(), 1, "马上出现一条待发消息");
@@ -363,7 +363,7 @@ async fn files_are_granted_before_the_text_with_their_links_goes_out() {
     })
     .await;
     s.link
-        .send(ROOM, "看看这个", Some("$event:example.org".into()))
+        .send(ROOM, "看看这个", Some("$event:example.org".into()), &[])
         .unwrap();
 
     s.fake.finish("p.jpg", Ok(uploaded("p.jpg", true)));
@@ -383,7 +383,10 @@ async fn files_are_granted_before_the_text_with_their_links_goes_out() {
         groups[0].parts,
         [
             image(uploaded("p.jpg", true), None),
-            Part::Text(format!("看看这个\n\n{}", file.link())),
+            Part::Text {
+                body: format!("看看这个\n\n{}", file.link()),
+                mentions: Vec::new()
+            },
         ],
         "有文件时字和链接在最后一条，照片不带说明文字"
     );
@@ -406,7 +409,7 @@ async fn the_transfer_strip_leaves_out_the_trays_own_uploads() {
     })
     .await;
     settle().await;
-    s.link.send(ROOM, "", None).unwrap();
+    s.link.send(ROOM, "", None, &[]).unwrap();
     s.link
         .add_file(ROOM, file_source("c.pdf"), "c.pdf".into(), None)
         .unwrap();
@@ -437,7 +440,7 @@ async fn the_transfer_strip_leaves_out_the_trays_own_uploads() {
 async fn a_failed_photo_turns_the_message_red_and_retry_sends_it() {
     let s = setup();
     let id = s.link.add_image(ROOM, photo("big.jpg")).unwrap();
-    s.link.send(ROOM, "", None).unwrap();
+    s.link.send(ROOM, "", None, &[]).unwrap();
     until("在传", || s.fake.upload_calls() == 1).await;
     s.fake.finish(
         "big.jpg",
@@ -487,8 +490,8 @@ async fn a_failed_photo_turns_the_message_red_and_retry_sends_it() {
 async fn later_messages_wait_for_the_one_in_front() {
     let s = setup();
     s.link.add_image(ROOM, photo("a.jpg")).unwrap();
-    s.link.send(ROOM, "第一条", None).unwrap();
-    s.link.send(ROOM, "第二条", None).unwrap();
+    s.link.send(ROOM, "第一条", None, &[]).unwrap();
+    s.link.send(ROOM, "第二条", None, &[]).unwrap();
     until("在传", || s.fake.upload_calls() == 1).await;
     settle().await;
     assert_eq!(s.fake.groups(), 0, "只有字的也排在前面那条后面");
@@ -501,7 +504,13 @@ async fn later_messages_wait_for_the_one_in_front() {
         groups[0].parts,
         [image(uploaded("a.jpg", true), Some("第一条"))]
     );
-    assert_eq!(groups[1].parts, [Part::Text("第二条".into())]);
+    assert_eq!(
+        groups[1].parts,
+        [Part::Text {
+            body: "第二条".into(),
+            mentions: Vec::new()
+        }]
+    );
     assert_eq!(groups[1].group_id, None, "只有字的不带分组标记");
 }
 
@@ -512,8 +521,8 @@ async fn cancelling_drops_the_whole_message_and_lets_the_next_go() {
     s.link
         .add_file(ROOM, file_source("b.pdf"), "b.pdf".into(), None)
         .unwrap();
-    s.link.send(ROOM, "不要了", None).unwrap();
-    s.link.send(ROOM, "这条要", None).unwrap();
+    s.link.send(ROOM, "不要了", None, &[]).unwrap();
+    s.link.send(ROOM, "这条要", None, &[]).unwrap();
     until("在传", || s.fake.upload_calls() == 1).await;
     until("文件在传", || {
         s.fake.transfers.borrow().active.len() == 1
@@ -526,7 +535,10 @@ async fn cancelling_drops_the_whole_message_and_lets_the_next_go() {
     until("后面那条交出去了", || s.fake.groups() == 1).await;
     assert_eq!(
         s.fake.groups.lock().unwrap()[0].parts,
-        [Part::Text("这条要".into())]
+        [Part::Text {
+            body: "这条要".into(),
+            mentions: Vec::new()
+        }]
     );
     assert!(
         s.fake
@@ -573,7 +585,7 @@ async fn uploads_pause_offline_and_resume_when_back() {
 async fn the_tray_and_pending_messages_survive_a_restart() {
     let s = setup();
     s.link.add_image(ROOM, photo("a.jpg")).unwrap();
-    s.link.send(ROOM, "重启后发", None).unwrap();
+    s.link.send(ROOM, "重启后发", None, &[]).unwrap();
     s.link.add_image(ROOM, photo("b.jpg")).unwrap();
     until("在传", || s.fake.upload_calls() == 2).await;
 
@@ -609,7 +621,7 @@ async fn a_plain_photo_is_uploaded_again_when_the_room_became_encrypted() {
     .await;
 
     *s.fake.encrypted.lock().unwrap() = true;
-    s.link.send(ROOM, "", None).unwrap();
+    s.link.send(ROOM, "", None, &[]).unwrap();
     until("加密重传", || s.fake.upload_calls() == 2).await;
     settle().await;
     assert_eq!(s.fake.groups(), 0, "不把明文照片发进加密房间");
@@ -628,7 +640,7 @@ async fn a_handover_cut_short_continues_where_it_stopped() {
     s.link.add_image(ROOM, photo("b.jpg")).unwrap();
     until("在传", || s.fake.upload_calls() == 2).await;
     *s.fake.cut_after.lock().unwrap() = Some(1);
-    s.link.send(ROOM, "两张", None).unwrap();
+    s.link.send(ROOM, "两张", None, &[]).unwrap();
     s.fake.finish("a.jpg", Ok(uploaded("a.jpg", true)));
     s.fake.finish("b.jpg", Ok(uploaded("b.jpg", true)));
     until("交了两次", || s.fake.groups() == 2).await;
@@ -642,7 +654,7 @@ async fn a_handover_cut_short_continues_where_it_stopped() {
 async fn sending_and_adding_refuse_what_cannot_go_out() {
     let s = setup();
     assert!(matches!(
-        s.link.send(ROOM, "  ", None),
+        s.link.send(ROOM, "  ", None, &[]),
         Err(CoreError::InvalidInput { .. })
     ));
     let mut not_image = photo("a.pdf");
@@ -684,14 +696,14 @@ async fn sending_and_adding_refuse_what_cannot_go_out() {
     .await;
     assert!(
         matches!(
-            s.link.send(ROOM, "发", None),
+            s.link.send(ROOM, "发", None, &[]),
             Err(CoreError::InvalidInput { .. })
         ),
         "附件区里有失败的不让发"
     );
     let failed = view(&s).attachments[0].id.clone();
     s.link.remove(ROOM, &failed).unwrap();
-    s.link.send(ROOM, "发", None).unwrap();
+    s.link.send(ROOM, "发", None, &[]).unwrap();
     assert_eq!(view(&s).outgoing[0].attachments.len(), 9);
 }
 

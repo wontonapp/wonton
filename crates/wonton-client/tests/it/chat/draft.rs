@@ -172,7 +172,10 @@ async fn a_reply_stays_in_the_draft_until_it_is_sent() {
         join_group_room(&phone, &bot, "Second").await.to_string(),
     );
     let bot_room = bot.open_room(&first_id).await.expect("Bot 打开群聊");
-    bot_room.send_text("要回复的话").await.expect("Bot 发文字");
+    bot_room
+        .send_text("要回复的话", &[])
+        .await
+        .expect("Bot 发文字");
     let mut timeline = Timeline::open(&phone, &first).await;
     let (_, original) = timeline
         .until("收到要回复的话", |item| {
