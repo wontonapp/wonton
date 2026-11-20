@@ -336,7 +336,7 @@ impl<'a> Session<'a> {
         }
     }
 
-    async fn remove_direct(&self, other: &str, room: &str) -> Result<(), MatrixError> {
+    pub(super) async fn remove_direct(&self, other: &str, room: &str) -> Result<(), MatrixError> {
         let path = format!(
             "/_matrix/client/v3/user/{}/account_data/m.direct",
             encode(&self.user_id)

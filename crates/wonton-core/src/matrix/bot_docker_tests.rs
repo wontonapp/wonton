@@ -9,7 +9,7 @@ use aws_lc_rs::signature::{Ed25519KeyPair, KeyPair};
 use base64::Engine as _;
 use base64::engine::general_purpose::STANDARD;
 
-use super::{BotSpec, Matrix, Session};
+use super::{BotAccount, BotSpec, Matrix, ProvisionedBot, Session};
 use crate::config::MatrixConfig;
 use crate::http::HttpClient;
 use crate::plugin::languages::Languages;
@@ -97,6 +97,26 @@ fn spec<'a>(localpart: &'a str, taken: &'a BTreeSet<String>) -> BotSpec<'a> {
     }
 }
 
+/// Bot 视角 `rooms.invite` 里这个房间的那条 `m.room.member`（邀请）。
+async fn invite_member(bot: &Session<'_>, room: &str) -> serde_json::Value {
+    let value = bot
+        .json(
+            hyper::Method::GET,
+            "/_matrix/client/v3/sync?timeout=0&set_presence=offline",
+            None,
+            "同步",
+        )
+        .await
+        .unwrap();
+    value["rooms"]["invite"][room]["invite_state"]["events"]
+        .as_array()
+        .into_iter()
+        .flatten()
+        .find(|event| event["type"] == "m.room.member")
+        .cloned()
+        .expect("房间里留着 Bot 待接受的邀请")
+}
+
 /// 房间的全部状态事件。
 async fn state_events(bot: &Session<'_>, room: &str) -> Vec<serde_json::Value> {
     let path = format!(
@@ -108,6 +128,40 @@ async fn state_events(bot: &Session<'_>, room: &str) -> Vec<serde_json::Value> {
         .await
         .unwrap();
     value.as_array().cloned().unwrap_or_default()
+}
+
+/// 第二次安装按 `prepare_bot` 建房那几步直接做，停在邀请上：这条用例要钉的是「邀请是谁发的」，
+/// `provision_bot` 一路做到 Bot 已经进房就只剩成员状态了。
+async fn second_install(matrix: &Matrix) -> ProvisionedBot {
+    let login = matrix.login("hermes-2", "重装").await.unwrap();
+    let bot = Session::new(&matrix.api, &login.user_id, &login.access_token);
+    let owner_login = matrix.login("owner", "重装").await.unwrap();
+    let owner = Session::new(&matrix.api, &owner_login.user_id, &owner_login.access_token);
+    let room = owner
+        .create_bot_home(&owner_login.user_id, bot.user_id())
+        .await
+        .unwrap();
+    owner.invite(&room, bot.user_id()).await.unwrap();
+    let invite = invite_member(&bot, &room).await;
+    assert_eq!(
+        invite["sender"], owner_login.user_id,
+        "Bot 收到的邀请得是主人发的：{invite:#?}"
+    );
+    assert_ne!(invite["sender"], bot.user_id(), "不是自己邀请自己");
+    bot.join(&room).await.unwrap();
+    owner
+        .leave_room(&room, &Languages::default())
+        .await
+        .unwrap();
+    ProvisionedBot {
+        account: BotAccount {
+            user_id: login.user_id.clone(),
+            home_room: room,
+        },
+        device_id: login.device_id,
+        access_token: login.access_token,
+        owner: owner_login.user_id,
+    }
 }
 
 /// 房间状态里每个成员状态的发送人。
@@ -150,16 +204,20 @@ async fn a_reinstalled_bot_is_invited_by_someone_other_than_itself() {
         .await
         .unwrap();
     matrix.deactivate(&first.account.user_id).await.unwrap();
-    let second = matrix.provision_bot(&spec("hermes", &taken)).await.unwrap();
+    let second = second_install(&matrix).await;
     assert_eq!(second.account.user_id, "@hermes-2:wonton.localhost");
     assert_ne!(
         second.account.home_room, first.account.home_room,
         "卸载删掉的账号的房间不能再交出去，重装是新房间"
     );
-    matrix
-        .hand_over("owner", &second, &Languages::default())
-        .await
-        .unwrap();
+    // 主人在建房之后退出了（不在房间里），交付时得把他请回来。
+    assert!(
+        matrix
+            .hand_over("owner", &second, &Languages::default())
+            .await
+            .unwrap(),
+        "交出没交过的房间"
+    );
     let bot = Session::new(&matrix.api, &second.account.user_id, &second.access_token);
     let senders = member_senders(&bot, &second.account.home_room).await;
     let own = senders
@@ -172,7 +230,7 @@ async fn a_reinstalled_bot_is_invited_by_someone_other_than_itself() {
         "Bot 在主房间里只有一条自己的成员状态：{senders:#?}"
     );
     assert_eq!(own[0].2, "join", "重装后 Bot 在主房间里：{senders:#?}");
-    // 加入事件的发送人永远是进房的人，所以看不出发的是谁；建房事件才说明是谁的邀请。
+    // 进房之后加入事件的发送人永远是 Bot 自己；上面那条邀请事件才是邀请人的证据，这里看房间本身的形状。
     let state = state_events(&bot, &second.account.home_room).await;
     let create = state
         .iter()

@@ -165,13 +165,14 @@ impl Matrix {
             }
         }
         let owner = self.user_id(spec.owner);
+        let handed_over = self.handed_over(spec, &bot).await?;
         if let Some(previous) = spec.previous
             && !previous.home_room.is_empty()
-            && reusable(&bot, &previous.home_room, &owner).await?
+            && reusable(&bot, &previous.home_room, &owner, handed_over).await?
         {
             return Ok(previous.home_room.clone());
         }
-        if let Some(room) = bot.recover_bot_home(&owner).await? {
+        if let Some(room) = bot.recover_bot_home(&owner, handed_over).await? {
             return Ok(room);
         }
         self.create_bot_home(&bot, spec.owner, &owner).await
@@ -189,12 +190,16 @@ impl Matrix {
             let room = me.create_bot_home(owner_user, bot.user_id()).await?;
             me.invite(&room, bot.user_id()).await?;
             bot.join(&room).await?;
+            // 主人一退出，房间就不在主人的聊天列表里了（列表只要没退出的房间），交出去（`hand_over`）才回来：
+            // 装不上、没交付的私聊不该留在那里。
+            me.leave_room(&room, &Languages::default()).await?;
             Ok(room)
         })
         .await
     }
 
-    /// 把主房间交给主人：房间记进双方的 `m.direct`。房间建好时主人就已经在里面（房主）。已经交出过（重装）时
+    /// 把主房间交给主人：把主人请进房间，房间记进双方的 `m.direct`。主人建房后已经退出（见
+    /// [`Matrix::create_bot_home`]），旧版本的房间里主人可能还没被邀请，按成员状态补上；已经交出过（重装）时
     /// 什么也不做，返回 false。中途失败时撤回（[`Self::withdraw`]）再返回错误。
     pub async fn hand_over(
         &self,
@@ -210,10 +215,11 @@ impl Matrix {
                 if me.has_direct(&bot.account.user_id, room).await? {
                     return Ok(false);
                 }
-                match me.membership(room, &bot.owner).await?.as_deref() {
+                // 成员状态用 Bot 的会话读：主人退出过就未必还能读房间状态。旧版本建的房间主人可能还没被邀请，
+                // 建房后退出和这些一样，邀请一次。
+                match session.membership(room, &bot.owner).await?.as_deref() {
                     Some("join") => {}
                     Some("invite") => me.join(room).await?,
-                    // 旧版本建的房间主人可能还没被邀请。
                     _ => {
                         session.invite(room, &bot.owner).await?;
                         me.join(room).await?;
@@ -247,12 +253,22 @@ impl Matrix {
     ) -> Result<(), MatrixError> {
         let session = Session::new(&self.api, &bot.account.user_id, &bot.access_token);
         let room = &bot.account.home_room;
-        if session.membership(room, &bot.owner).await?.is_some() {
-            let owner = localpart(&bot.owner)?;
-            self.as_owner(owner, async |me| me.leave_room(room, langs).await)
-                .await?;
-        }
-        session.leave_room(room, langs).await
+        let owner = localpart(&bot.owner)?;
+        self.as_owner(owner, async |me: &Session<'_>| {
+            // 成员状态用 Bot 的会话读：主人退出过就未必还能读房间状态（重试撤回时他已经不在里面）。
+            if matches!(
+                session.membership(room, &bot.owner).await?.as_deref(),
+                Some("join" | "invite")
+            ) {
+                me.leave_room(room, langs).await?;
+            }
+            // `m.direct` 是交出去的标记：撤回了就一起去掉，重试时不会再当成交过。
+            me.remove_direct(&bot.account.user_id, room).await?;
+            Ok(())
+        })
+        .await?;
+        session.retire_direct(&bot.owner, room).await;
+        Ok(())
     }
 
     /// 代主人加入房间，并写进主人的 `m.direct`。
@@ -269,6 +285,24 @@ impl Matrix {
         .await
     }
 
+    /// 上次的主房间交出去过没有：主人的 `m.direct` 是交完才写的标记，主人退出过的房间只有没交出去的才还能用。
+    async fn handed_over(
+        &self,
+        spec: &BotSpec<'_>,
+        bot: &Session<'_>,
+    ) -> Result<bool, MatrixError> {
+        match spec.previous {
+            Some(previous) if !previous.home_room.is_empty() => {
+                let bot_user = bot.user_id();
+                self.as_owner(spec.owner, async |me: &Session<'_>| {
+                    me.has_direct(bot_user, &previous.home_room).await
+                })
+                .await
+            }
+            _ => Ok(false),
+        }
+    }
+
     /// 用 JWT 临时登录主人的一台设备做 `work`，做完就退出登录，这台设备随之删除。
     async fn as_owner<T>(
         &self,
@@ -283,12 +317,15 @@ impl Matrix {
     }
 }
 
-/// 上次的主房间能不能接着用：Bot 还在里面，主人也没退出（交没交给过主人都沿用；旧版本的房间里主人可能还没被邀请）。
-/// 主人退出过就不用了，不往没人看的房间里发。Bot 已经不在房间里时 Tuwunel 回 `M_FORBIDDEN`。
+/// 上次的主房间能不能接着用：Bot 在里面，主人还在里面、还等着接受邀请，或者建房后刚退出。退出过的是不是主人自己
+/// 结束的私聊看 `handed_over`：交出过（`m.direct` 里有）就不再用，没交出过是建房后的正常状态（见
+/// [`Matrix::create_bot_home`]）。捡回（[`Session::recover_bot_home`]）传同一个值。Bot 已经不在房间里时 Tuwunel 回
+/// `M_FORBIDDEN`。
 pub(super) async fn reusable(
     bot: &Session<'_>,
     room: &str,
     owner: &str,
+    handed_over: bool,
 ) -> Result<bool, MatrixError> {
     let members = match bot.joined_members(room).await {
         Ok(members) => members,
@@ -301,8 +338,11 @@ pub(super) async fn reusable(
     if members.iter().any(|m| m == owner) {
         return Ok(true);
     }
-    let owner = bot.membership(room, owner).await?;
-    Ok(matches!(owner.as_deref(), None | Some("invite")))
+    match bot.membership(room, owner).await?.as_deref() {
+        None | Some("invite") => Ok(true),
+        Some("leave") => Ok(!handed_over),
+        Some(_) => Ok(false),
+    }
 }
 
 /// `@名字:服务器` 里的名字。

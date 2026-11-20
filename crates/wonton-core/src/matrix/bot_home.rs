@@ -1,8 +1,11 @@
 //! 主房间由主人建、由主人邀请 Bot 进来：插件适配器按“邀请人在允许名单里”收邀请，Bot 自己不在名单里，
 //! 由 Bot 建（进房的事件发送人是它自己）就会被适配器当成陌生人丢掉。主人当房主，撤回时 Bot 踢不动他
 //! （两个建房人之间也踢不动，Tuwunel 回 403），所以把 Bot 也写进 `additional_creators`，撤回时由主人自己退。
+//! Bot 接受邀请后主人马上退出：房间从主人的聊天列表里消失，交付（`hand_over`）时再请回来。
 //!
-//! 建房时写的一个标记让重试能捡回响应丢掉的那次建房。
+//! 建房时写的一个标记让重试能捡回上次建了一半的主房间。能捡回的是 Bot 已经进来的那一段（建房、邀请、Bot
+//! 加入都做完了，后面的设置或交付崩了）；`createRoom` 的响应丢掉时 Bot 还没被邀请，房间只留在主人的
+//! `joined_rooms` 里，捡不回来。
 
 use hyper::Method;
 use serde_json::json;
@@ -14,10 +17,12 @@ const MARKER: &str = "app.wonton.bot_home";
 
 impl Session<'_> {
     /// 捡回上次建了一半的主房间：有标记、主人对得上、房间还能用。标记的发送人是建房的人（主人），
-    /// 旧版本留下的房间标记是 Bot 自己，两种都认。
+    /// 旧版本留下的房间标记是 Bot 自己，两种都认。`handed_over` 同 [`reusable`](super::bot::reusable)：主人退出过的
+    /// 房间只有没交出去过才捡。
     pub(super) async fn recover_bot_home(
         &self,
         owner: &str,
+        handed_over: bool,
     ) -> Result<Option<String>, MatrixError> {
         let rooms = self
             .json(
@@ -44,7 +49,7 @@ impl Session<'_> {
                     && (event["sender"] == self.user_id() || event["sender"] == owner)
                     && event["content"]["owner"] == owner
             });
-            if marked && super::bot::reusable(self, room, owner).await? {
+            if marked && super::bot::reusable(self, room, owner, handed_over).await? {
                 if found.is_some() {
                     return Err(MatrixError::Invalid(
                         "multiple bot home reservations".into(),
