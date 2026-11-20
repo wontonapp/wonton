@@ -298,6 +298,7 @@ async fn forwarded_messages_arrive_as_they_were() {
             },
             item_id: item_id.to_owned(),
             to_room_id: to.to_owned(),
+            comment: None,
         },
     };
     let nowhere = phone.dispatch(forward(&text_item, "!nowhere:wonton.localhost"));

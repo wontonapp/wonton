@@ -76,6 +76,7 @@ impl FakeTimelines {
             target,
             item_id,
             to_room_id,
+            comment: _,
         } = &action
         {
             self.forward(&target.room_id, item_id, to_room_id);
@@ -472,6 +473,7 @@ mod tests {
             target: target(),
             item_id: "ui-fake-11".into(),
             to_room_id: "!ui-fake-call:home.example".into(),
+            comment: None,
         });
         let far = fakes.subscribe("!ui-fake-call:home.example");
         let first = next(&far).await;
