@@ -1,7 +1,7 @@
 import SwiftUI
 import WontonClient
 
-/// 转发选会话（ADR-0073、ADR-0109 第 8 节）：顶上搜索，下面是带头像的会话，能选几个；选了以后底下出现发送。
+/// 转发选会话（ADR-0073、ADR-0109 第 9 节）：顶上搜索，下面是带头像的会话，能选几个；选了以后底下出现发送。
 /// 用聊天列表已经有的房间，只列已加入、能写的；按名字找在壳里做，只是在这张已经给了的名单里筛。
 struct ForwardRoomSheet: View {
     let model: ChatModel
