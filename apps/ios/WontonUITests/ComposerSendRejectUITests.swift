@@ -25,12 +25,12 @@ final class ComposerSendRejectUITests: XCTestCase {
     func testRejectedSendKeepsDraftReplyAndAttachment() {
         tap(app.buttons[Self.directRoom])
         XCTAssertTrue(message(3).waitForExistence(timeout: 10), "时间线没出来\n\(app.debugDescription)")
-        addFailedAttachment()
         startReply()
         let field = app.textViews["Message"]
         field.tap()
         field.typeText(Self.draft)
-        tap(app.buttons["composerSend"])
+        // 草稿和回复对象先摆好：面板改了以后，选照片的那一下就是发送。
+        if !addFailedAttachment() { tap(app.buttons["composerSend"]) }
 
         let reason = app.staticTexts["An attachment didn't upload. Retry or remove it first."]
         XCTAssertTrue(reason.waitForExistence(timeout: 5), "被拒了没有说原因\n\(app.debugDescription)")
@@ -40,7 +40,7 @@ final class ComposerSendRejectUITests: XCTestCase {
         XCTAssertTrue(app.buttons["composerAttachmentFailed"].exists, "被拒以后附件没了")
         XCTAssertFalse(text(Self.draft).exists, "被拒了消息还是发了")
 
-        tap(app.buttons["OK"])
+        tap(app.buttons["dialogOk"])
         XCTAssertTrue(reason.waitForNonExistence(timeout: 5), "点了“好”，说明没收起")
         screenshot("kept")
         // 删掉失败的附件再发：这次核心收下，输入框和回复条才清。
@@ -52,21 +52,77 @@ final class ComposerSendRejectUITests: XCTestCase {
         XCTAssertTrue(text(Self.draft).waitForExistence(timeout: 5), "收下以后时间线上没有这条")
     }
 
+    /// 附件区里有传不上去的图时点一条命令：命令走发送键同一个口（附件区非空就是 `sendComposer`），
+    /// 被核心拒掉、弹出原因；点掉以后附件区还在。
+    func testCommandWithFailedAttachmentIsRejected() {
+        tap(app.buttons[Self.directRoom])
+        XCTAssertTrue(message(3).waitForExistence(timeout: 10), "时间线没出来\n\(app.debugDescription)")
+        _ = addFailedAttachment()
+        dismissRejection()
+        tap(app.buttons["composerCommands"])
+        tap(app.buttons["command.help"])
+
+        XCTAssertTrue(
+            text("An attachment didn't upload").waitForExistence(timeout: 5),
+            "被拒没说原因\n\(app.debugDescription)"
+        )
+        screenshot("commandRejected")
+        dismissRejection()
+        tap(app.buttons["composerCommands"])
+        XCTAssertFalse(text("/help").exists, "命令没被拦下，还是发出去了")
+        XCTAssertTrue(app.buttons["composerAttachmentFailed"].exists, "命令被拒附件没了")
+    }
+
+    /// 附件传不上去时点命令：命令没发出去，草稿、回复条和命令列表都留着，处理完附件再点。
+    func testRejectedCommandKeepsDraftReplyAndMenu() {
+        tap(app.buttons[Self.directRoom])
+        XCTAssertTrue(message(3).waitForExistence(timeout: 10), "时间线没出来\n\(app.debugDescription)")
+        startReply()
+        let field = app.textViews["Message"]
+        tap(field)
+        field.typeText(Self.draft)
+        _ = addFailedAttachment()
+        dismissRejection()
+        tap(app.buttons["composerCommands"])
+        tap(app.buttons["command.model"])
+        XCTAssertTrue(
+            text("An attachment didn't upload").waitForExistence(timeout: 5),
+            "被拒没说原因\n\(app.debugDescription)"
+        )
+        XCTAssertEqual(field.value as? String, Self.draft, "被拒把草稿清掉了")
+        XCTAssertTrue(app.buttons["replyCancel"].exists, "被拒把回复条撤了")
+        XCTAssertTrue(app.buttons["command.model"].exists, "被拒把命令列表收起来了")
+        screenshot("commandRejected")
+    }
+
     // MARK: 助手
 
-    /// 回形针里选第一张相册照片，等它被假数据标成上传失败。
-    private func addFailedAttachment() {
+    /// 附件面板底下是发送键时，选完照片会自动发一次、被拒、弹出说明：有就点掉。
+    private func dismissRejection() {
+        let ok = app.buttons["dialogOk"]
+        if ok.waitForExistence(timeout: 2) { ok.tap() }
+    }
+
+    /// 面板里选第一张相册照片，让它被假数据标成上传失败。面板底下是发送键时（附件面板改版以后），
+    /// 选完就跟着草稿一起发出去——返回真，调用方不用再点发送；只有“完成”的旧面板返回假。
+    private func addFailedAttachment() -> Bool {
         tap(app.buttons["composerAttach"])
         let springboard = XCUIApplication(bundleIdentifier: "com.apple.springboard")
         let allow = springboard.alerts.buttons.element(boundBy: 1)
-        let first = app.buttons["attachPhoto.0"]
         if allow.waitForExistence(timeout: 10) { allow.tap() }
-        tap(first)
-        tap(app.buttons["attachDone"])
+        tap(app.buttons["attachPhoto.0"])
+        let sendPicked = app.buttons["attachSend"]
+        let sends = sendPicked.waitForExistence(timeout: 2)
+        if sends {
+            tap(sendPicked)
+        } else {
+            tap(app.buttons["attachDone"])
+        }
         XCTAssertTrue(
             app.buttons["composerAttachmentFailed"].waitForExistence(timeout: 15),
             "附件没被标成上传失败\n\(app.debugDescription)"
         )
+        return sends
     }
 
     /// 左滑一条消息进入回复。

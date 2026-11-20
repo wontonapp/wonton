@@ -212,6 +212,8 @@ final class ChatModel {
     }
 
     /// 操作被核心收下返回真；被拒时原因弹出来，返回假。
+    /// “被拒”只是 `dispatch` 当场拒绝：核心收下之后在发送队列里失败（附件传不上去等），这里照样返回真，
+    /// 由发送队列自己报错、重试，调用方这时清掉草稿和回复对象。
     @discardableResult
     func send(_ action: Action) -> Bool {
         do {

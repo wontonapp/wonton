@@ -289,6 +289,16 @@ fn view(setup: &Setup) -> ComposerViewModel {
     setup.view.borrow().clone()
 }
 
+fn attachment(setup: &Setup, id: &str) -> AttachmentState {
+    view(setup)
+        .attachments
+        .iter()
+        .find(|item| item.id == id)
+        .expect("附件还在")
+        .state
+        .clone()
+}
+
 #[tokio::test(flavor = "multi_thread")]
 async fn photos_and_text_go_out_as_one_group_only_after_every_photo_is_up() {
     let s = setup();
@@ -483,6 +493,56 @@ async fn a_failed_photo_turns_the_message_red_and_retry_sends_it() {
         s.fake.groups.lock().unwrap()[0].parts,
         [image(uploaded("big.jpg", true), None)],
         "没有字就没有说明文字"
+    );
+}
+
+/// 失败是等主人处理的稳定态：迟到的进度和等联网都不能把它盖回上传中（否则发送按钮就不再被拦）；
+/// 重试（`restart`）才把它改成上传中，之后照常收进度。
+#[tokio::test(flavor = "multi_thread")]
+async fn a_failed_attachment_ignores_progress_and_offline_until_restart() {
+    let s = setup();
+    let id = s.link.add_image(ROOM, photo("big.jpg")).unwrap();
+    s.link.fail_for_test(ROOM, &id).unwrap();
+    until("标红", || {
+        matches!(attachment(&s, &id), AttachmentState::Failed { .. })
+    })
+    .await;
+
+    s.link.show(
+        ROOM,
+        &id,
+        AttachmentState::Uploading {
+            progress: Some(0.4),
+        },
+    );
+    assert!(
+        matches!(attachment(&s, &id), AttachmentState::Failed { .. }),
+        "迟到的进度把失败盖回去了"
+    );
+    s.link.show(ROOM, &id, AttachmentState::Paused);
+    assert!(
+        matches!(attachment(&s, &id), AttachmentState::Failed { .. }),
+        "等联网把失败盖回去了"
+    );
+
+    s.link.restart(ROOM, &id);
+    until("重试后回到上传中", || {
+        matches!(attachment(&s, &id), AttachmentState::Uploading { .. })
+    })
+    .await;
+    s.link.show(
+        ROOM,
+        &id,
+        AttachmentState::Uploading {
+            progress: Some(0.5),
+        },
+    );
+    assert_eq!(
+        attachment(&s, &id),
+        AttachmentState::Uploading {
+            progress: Some(0.5),
+        },
+        "重试后的进度没收下"
     );
 }
 
