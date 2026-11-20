@@ -2,14 +2,18 @@ package app.wonton.ui
 
 import android.app.Application
 import android.content.Context
+import android.content.Intent
 import androidx.core.content.FileProvider
 import androidx.test.core.app.ApplicationProvider
 import androidx.test.ext.junit.runners.AndroidJUnit4
 import java.io.File
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertNotNull
+import org.junit.Assert.assertNull
+import org.junit.Assert.assertTrue
 import org.junit.Test
 import org.junit.runner.RunWith
+import org.robolectric.Shadows.shadowOf
 import org.robolectric.annotation.Config
 
 /**
@@ -37,6 +41,19 @@ class FileHandoffTest {
         val download = write("servers", "1", "downloads", "abc123", "账单.pdf")
         val uri = FileProvider.getUriForFile(context, "${context.packageName}.files", download)
         assertEquals("content", uri.scheme)
+
+        assertNull(openWithSystem(context, download.absolutePath, "application/pdf"))
+        val view = shadowOf(context as Application).nextStartedActivity
+        assertEquals(Intent.ACTION_VIEW, view.action)
+        assertEquals(uri, view.data)
+        assertTrue(view.flags and Intent.FLAG_GRANT_READ_URI_PERMISSION != 0)
+
+        assertNull(shareWithSystem(context, download.absolutePath, "application/pdf"))
+        val chooser = shadowOf(context as Application).nextStartedActivity
+        assertEquals(Intent.ACTION_CHOOSER, chooser.action)
+        val send = chooser.getParcelableExtra<Intent>(Intent.EXTRA_INTENT)!!
+        assertEquals(Intent.ACTION_SEND, send.action)
+        assertEquals(uri, send.getParcelableExtra(Intent.EXTRA_STREAM))
 
         // files/ 根没放开，交给系统的失败要变成提示，不能崩。
         val outside = write("secret.txt")
