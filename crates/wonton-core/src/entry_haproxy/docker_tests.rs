@@ -15,7 +15,7 @@ use crate::test_docker::{Names, ensure_image};
 /// 和 `entry_compose::HAPROXY_IMAGE` 相同；`scripts/mirror-test-images.sh` 只认本文件里的字面量，
 /// 两边由 [`image_matches_the_entry_image`] 锁住。
 const IMAGE: &str =
-    "haproxy:3.2.8-alpine@sha256:8c6b55d891584afded3ab1b91063a703ecc8ff2481302b691773648ffa806226";
+    "haproxy:3.4@sha256:2d4b1f47a36ad0bc7425adf3fea6079023ae2ce3a964c2a084f454645d6be223";
 /// 客户端容器用的 curl（Apache-2.0）。宿主 curl 经 PROXY 声明的来源永远是网桥地址，
 /// 分不出「另一个来源」，封禁按来源隔离要两个固定地址的客户端。
 const CURL: &str = "curlimages/curl:8.11.1@sha256:c1fe1679c34d9784c1b0d1e5f62ac0a79fca01fb6377cdd33e90473c6f9f9a69";

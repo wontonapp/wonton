@@ -27,17 +27,18 @@ async fn the_admin_account_is_registered_once_and_its_token_kept_private() {
     let mode = std::fs::metadata(&saved).unwrap().permissions().mode() & 0o777;
     assert_eq!(mode, 0o600);
     assert_eq!(first.admin_user_id(), "@wonton-core:test");
+    // 两次注册：管理账号和发管理房间命令的 `wonton-reload`。
 
-    // 核心重启：令牌还有效就沿用，不再注册。
+    // 核心重启：令牌还有效就沿用，不再注册；热加载账号用 JWT 登录，也不注册。
     let again = connect(&dir, &config).await;
     assert_eq!(again.admin_token, first.admin_token);
-    assert_eq!(fake.state().registrations, 1);
+    assert_eq!(fake.state().registrations, 2);
 
     // 令牌失效（比如 Tuwunel 吊销了它）：账号已经在了，用核心签的 JWT 登录拿新令牌。
     fake.state().tokens.clear();
     let relogged = connect(&dir, &config).await;
     assert_ne!(relogged.admin_token, first.admin_token);
-    assert_eq!(fake.state().registrations, 1);
+    assert_eq!(fake.state().registrations, 2);
     let kept = std::fs::read_to_string(&saved).unwrap();
     assert_eq!(kept, relogged.admin_token);
 }

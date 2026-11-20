@@ -1,10 +1,14 @@
 //! 入口容器和连接器的期望状态：按设置建、删，安全选项逐项锁住。
 
 use std::collections::HashMap;
+use std::time::Duration;
 
 use serde_json::{Value, json};
 
-use super::{ENTRY_CLIENTS_ALIAS, ENTRY_EDGE_ALIAS, EntryContainers, EntryError};
+use super::{
+    CONNECTOR_RELOAD_ADDR, ENTRY_CLIENTS_ALIAS, ENTRY_EDGE_ALIAS, ENTRY_RELOAD_ADDR,
+    EntryContainers, EntryError,
+};
 use crate::entry_compose::HAPROXY_IMAGE;
 use crate::entry_runtime::FRPC_IMAGE;
 use crate::entry_settings::EntrySettings;
@@ -117,12 +121,28 @@ async fn federation_settings_create_entry_and_connector() {
     assert_eq!(entry["Image"], HAPROXY_IMAGE);
     assert_eq!(
         entry["Cmd"],
-        json!(["haproxy", "-W", "-db", "-f", "/config/haproxy.cfg"])
+        json!([
+            "haproxy",
+            "-W",
+            "-db",
+            "-f",
+            "/config/haproxy.cfg",
+            "-S",
+            ENTRY_RELOAD_ADDR
+        ])
     );
     assert_eq!(connector["Image"], HAPROXY_IMAGE);
     assert_eq!(
         connector["Cmd"],
-        json!(["haproxy", "-W", "-db", "-f", "/config/connector.cfg"])
+        json!([
+            "haproxy",
+            "-W",
+            "-db",
+            "-f",
+            "/config/connector.cfg",
+            "-S",
+            CONNECTOR_RELOAD_ADDR
+        ])
     );
     // 入口在 edge 和 clients 上，连接器在 edge 和 relay 上。
     let edge = format!("{PROJECT}_edge");
@@ -189,7 +209,9 @@ async fn containers_have_security_options() {
         );
         assert_eq!(host["LogConfig"]["Config"]["max-size"], "10m");
         assert_eq!(host["LogConfig"]["Config"]["max-file"], "3");
-        assert_eq!(host["RestartPolicy"]["Name"], "unless-stopped");
+        // Docker 重启后要自己回来：核心发过信号的容器会被记成手动停过，`unless-stopped` 不再拉起。
+        assert_eq!(host["RestartPolicy"]["Name"], "always");
+        assert_eq!(created["StopSignal"], "SIGTERM");
     }
     // 连接器不在 core 网络上；入口也不在。
     let core = format!("{PROJECT}_core");
@@ -280,15 +302,62 @@ async fn router_forwarding_publishes_the_host_port() {
     );
 }
 
-/// 证书续期后发 `USR2` 给入口容器：按组件标签找，不看 compose 服务名。
+/// 假 HAProxy 主进程的管理端口：收一条命令，回一段固定回应，返回命令原文。
+async fn master_cli(reply: &'static str) -> (String, tokio::task::JoinHandle<String>) {
+    use tokio::io::{AsyncReadExt, AsyncWriteExt};
+    let listener = tokio_listener().await;
+    let addr = listener.local_addr().unwrap().to_string();
+    let handle = tokio::spawn(async move {
+        let (mut socket, _) = listener.accept().await.unwrap();
+        let mut command = Vec::new();
+        loop {
+            let mut byte = [0u8; 1];
+            socket.read_exact(&mut byte).await.unwrap();
+            command.push(byte[0]);
+            if byte[0] == b'\n' {
+                break;
+            }
+        }
+        socket.write_all(reply.as_bytes()).await.unwrap();
+        String::from_utf8(command).unwrap()
+    });
+    (addr, handle)
+}
+
+async fn tokio_listener() -> tokio::net::TcpListener {
+    tokio::net::TcpListener::bind("127.0.0.1:0").await.unwrap()
+}
+
+/// 证书续期后向入口 HAProxy 的主进程发 `reload`：按组件标签找，不经 Docker 的 kill 接口。
 #[tokio::test]
-async fn reload_signals_the_entry_container() {
+async fn reload_asks_the_entry_to_soft_reload() {
+    let (addr, seen) = master_cli("Success=1\n").await;
     let rig = Rig::new().await;
     rig.reconcile(Some(&settings())).await.unwrap();
-    rig.containers.reload().await.unwrap();
-    let kills = rig.writes_for("/kill");
-    assert_eq!(kills.len(), 1, "{kills:?}");
-    assert!(kills[0].contains("wonton-entry"), "{kills:?}");
+    rig.containers.reload(&addr).await.unwrap();
+    let seen = tokio::time::timeout(Duration::from_secs(5), seen)
+        .await
+        .expect("没有连管理端口")
+        .unwrap();
+    assert_eq!(seen, "reload\n");
+    assert!(
+        rig.writes_for("/kill").is_empty(),
+        "{:?}",
+        rig.docker.writes()
+    );
+}
+
+/// 新配置没起来：`Success=0` 后面跟着启动日志，原样报出来。
+#[tokio::test]
+async fn reload_reports_the_startup_logs_of_a_failed_reload() {
+    let (addr, _seen) =
+        master_cli("Success=0\n--\n[ALERT] (49) : config : missing timeouts for proxy 'public'.\n")
+            .await;
+    let rig = Rig::new().await;
+    rig.reconcile(Some(&settings())).await.unwrap();
+    let error = rig.containers.reload(&addr).await.unwrap_err();
+    let text = error.to_string();
+    assert!(text.contains("missing timeouts"), "{text}");
 }
 
 /// 同名容器是别人建的：不动它，如实报冲突。

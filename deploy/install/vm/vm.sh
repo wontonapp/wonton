@@ -143,10 +143,15 @@ up() {
   in_container _prepare "$(vm_proxy)" "$docker_version"
   port=$(pick_port)
   echo "$port" >"$(port_file)"
-  docker run -d --name "$name" --label "$prefix=1" --init --device /dev/kvm \
+  if ! docker run -d --name "$name" --label "$prefix=1" --init --device /dev/kvm \
     --group-add "$(stat -c %g /dev/kvm)" -u "$(id -u):$(id -g)" \
     --network host --cpus 4 --memory 10g -v "$dir:/work" -v "$here:/vm:ro" \
-    "$image" sh /vm/vm.sh _qemu "$port" >/dev/null
+    "$image" sh /vm/vm.sh _qemu "$port" >/dev/null; then
+    # 起不来时容器可能留着，删掉再报：下一次 up 不用先手工 down。
+    docker rm -f "$name" >/dev/null 2>&1 || true
+    rm -f "$(port_file)"
+    die "qemu 容器起不来，看上面的报错"
+  fi
   echo "虚拟机起来了，ssh 转发在 127.0.0.1:$port；等 cloud-init 装 Docker"
   tries=0
   until vm_ssh true 2>/dev/null; do
@@ -177,8 +182,11 @@ cmd=${1:-}
 case "$cmd" in
   up) up ;;
   ssh) if [ -t 0 ]; then vm_ssh -t "$@"; else vm_ssh "$@"; fi ;;
-  cp) scp -q -i "$dir/$name-key" -P "$(ssh_port)" -o StrictHostKeyChecking=no \
-    -o UserKnownHostsFile=/dev/null "$1" "wonton@127.0.0.1:$2" ;;
+  cp)
+    [ $# -ge 2 ] || die "用法：vm.sh cp <本地文件> <虚拟机里的路径>"
+    scp -q -i "$dir/$name-key" -P "$(ssh_port)" -o StrictHostKeyChecking=no \
+      -o UserKnownHostsFile=/dev/null "$1" "wonton@127.0.0.1:$2"
+    ;;
   status) docker ps -a --filter "name=^$name\$" --format '{{.Names}} {{.Status}}'
     echo "ssh 端口：$(ssh_port)" ;;
   down) down ;;
