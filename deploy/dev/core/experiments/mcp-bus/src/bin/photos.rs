@@ -24,7 +24,10 @@ struct Photos;
 #[tool_router(server_handler)]
 impl Photos {
     #[tool(description = "按内容搜索照片")]
-    fn search_photos(&self, Parameters(SearchRequest { query }): Parameters<SearchRequest>) -> String {
+    fn search_photos(
+        &self,
+        Parameters(SearchRequest { query }): Parameters<SearchRequest>,
+    ) -> String {
         serde_json::json!([{"id": "p1", "caption": format!("{query}（示例）")}]).to_string()
     }
 
@@ -36,10 +39,13 @@ impl Photos {
 
 #[tokio::main]
 async fn main() -> anyhow::Result<()> {
-    let addr = std::env::args().nth(1).unwrap_or_else(|| "0.0.0.0:8101".into());
+    let addr = std::env::args()
+        .nth(1)
+        .unwrap_or_else(|| "0.0.0.0:8101".into());
     // 实验环境里容器经 host.docker.internal 访问它，放开 Host 校验。
     let config = StreamableHttpServerConfig::default().disable_allowed_hosts();
-    let service = StreamableHttpService::new(|| Ok(Photos), LocalSessionManager::default().into(), config);
+    let service =
+        StreamableHttpService::new(|| Ok(Photos), LocalSessionManager::default().into(), config);
     let router = axum::Router::new().nest_service("/mcp", service);
     let listener = tokio::net::TcpListener::bind(&addr).await?;
     eprintln!("photos MCP 服务器：http://{addr}/mcp");

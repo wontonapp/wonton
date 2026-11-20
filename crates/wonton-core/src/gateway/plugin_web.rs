@@ -229,14 +229,19 @@ async fn bot_request(
     }
     let origin = gateway.public.origin(host);
     if !isolation::credentials_allowed(req.method(), req.headers(), &origin) {
-        return bot_web::failure(wonton_protocol::BotWebFailure::Unauthenticated, &langs);
+        return request_guards::unauthenticated(gateway, host, &req, false);
     }
     let person = if let Some(peer) = req.extensions().get().copied() {
         gateway.device_person(Some(peer))
     } else {
         gateway.plugin_person(host, &req)
+    }
+    // 名单里已经移除的人连同旧 Cookie 按未登录处理，和普通插件网页同一段：浏览器导航送去登录，其余仍是 401。
+    .filter(|person| bot_web::active_person(gateway, person));
+    let Some(person) = person else {
+        return request_guards::unauthenticated(gateway, host, &req, true);
     };
-    if let Err(response) = bot_web::authorize(gateway, bot, person.as_ref(), &langs) {
+    if let Err(response) = bot_web::authorize(gateway, bot, Some(&person), &langs) {
         return *response;
     }
     let (route, _) = match gateway.plugins.bot_web_target(bot) {
@@ -247,15 +252,8 @@ async fn bot_request(
     let Some(upstream) = route.upstream.as_ref() else {
         return bot_web::failure(wonton_protocol::BotWebFailure::NotReady, &langs);
     };
-    if let Some(person) = &person
-        && let Err(response) = proxy_sso::attach_credentials(
-            gateway,
-            &route,
-            person,
-            req.headers_mut(),
-            &langs,
-            format,
-        )
+    if let Err(response) =
+        proxy_sso::attach_credentials(gateway, &route, &person, req.headers_mut(), &langs, format)
     {
         return *response;
     }
