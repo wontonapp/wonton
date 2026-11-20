@@ -34,7 +34,7 @@ use rig::{
     CONNECT_BACKSTOP, Canned, IMAGE, Rig, WAIT, core_error, installed, item, listing, preview,
     running,
 };
-use wonton_protocol::{SecretInput, SecretString};
+use wonton_protocol::{AvatarUpload, MyAvatarProblem, SecretInput, SecretString};
 
 /// 兜底预算，不是节奏：按生产常数推导——三次成功读取最坏 3 × (3s 间隔 + 30s 读取限时) = 99s，
 /// 之后 settle 自己在最后一次成功读取 120s 后转不确定（UNREACHABLE_LIMIT），合计 219s；取 240s。
@@ -400,6 +400,24 @@ async fn saving_the_profile_sends_it_and_keeps_the_reason_it_was_refused() {
     let sent = rig.core.seen(&Method::PUT, PROFILE);
     assert!(sent[1].body.contains("me@example.com"), "{}", sent[1].body);
     assert!(!sent[1].from_page);
+}
+
+#[tokio::test]
+async fn changing_your_avatar_says_so_until_it_is_wired_up() {
+    let rig = Rig::new().await;
+    let upload = AvatarUpload {
+        mime_type: "image/jpeg".to_owned(),
+        data: vec![1, 2, 3],
+        poster: None,
+    };
+    assert_eq!(
+        rig.app.set_my_avatar(upload).await.unwrap_err(),
+        MyAvatarProblem::NotReady
+    );
+    assert_eq!(
+        rig.app.clear_my_avatar().await.unwrap_err(),
+        MyAvatarProblem::NotReady
+    );
 }
 
 #[tokio::test]

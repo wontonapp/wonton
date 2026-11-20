@@ -57,6 +57,9 @@ mod tests {
             Action::Plugins {
                 action: PluginAction::RefreshPlugins,
             },
+            Action::Family {
+                action: FamilyAction::RefreshRoles,
+            },
         ];
 
         assert_eq!(
@@ -72,6 +75,10 @@ mod tests {
                 "domain": "settings",
                 "action": {"type": "set_languages", "languages": ["zh-Hans", "en"]}
             })
+        );
+        assert_eq!(
+            serde_json::to_value(&actions[3]).unwrap(),
+            json!({"domain": "family", "action": {"type": "refresh_roles"}})
         );
         assert!(
             serde_json::from_value::<Action>(json!({

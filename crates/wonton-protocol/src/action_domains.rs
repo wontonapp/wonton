@@ -544,7 +544,8 @@ pub enum BotContactAction {
     RemoveBotContact { bot: BotRef, user_id: String },
 }
 
-/// 家庭成员角色操作。
+/// 家庭成员角色的操作。自己的头像不走动作：资料页本来就 await 地读写 `me()`、`saveMe`，
+/// 头像也一样由 `set_my_avatar` 这类直接返回 `Me` 的调用做，失败原因由 [`MyAvatarProblem`](crate::MyAvatarProblem) 分类。
 #[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize)]
 #[cfg_attr(feature = "uniffi", derive(uniffi::Enum))]
 #[serde(tag = "type", rename_all = "snake_case")]
