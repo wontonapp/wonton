@@ -138,13 +138,14 @@ fn a_broken_path_setting_file_reads_as_off() {
 /// 开关两种取值下都能真的绑起来：装上选路器不能把绑定本身弄坏。
 #[tokio::test]
 async fn the_endpoint_binds_with_the_path_switch_off_and_on() {
-    let (dir, home, _method_rx) = paused_home().await;
+    let (_dir, home, _method_rx) = paused_home().await;
     let deadline = Duration::from_secs(10);
     let off = home
         .bind_endpoint(&[], 1, crate::l10n::language(), deadline)
         .await;
     assert!(off.is_ok(), "关着能绑：{:?}", off.err());
-    path_settings::set_exclude_fake_ip(dir.path(), true).unwrap();
+    home.set_fake_ip_exclusion(true).unwrap();
+    assert!(home.fake_ip_exclusion.load(Ordering::SeqCst), "缓存已打开");
     let on = home
         .bind_endpoint(&[], 1, crate::l10n::language(), deadline)
         .await;
