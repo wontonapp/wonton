@@ -113,10 +113,10 @@ async fn ok_server() -> u16 {
     port
 }
 
-fn provider(port: u16) -> PluginPackage {
+fn provider(port: u16, kind: &str) -> PluginPackage {
     let source = format!(
         "services:\n  magpie:\n    image: magpie\nx-wonton:\n  spec: '0.4'\n  id: system.models\n  version: 1.0.0\n  \
-         kind: system\n  title: {{zh: 模型, en: Models}}\n  description: {{zh: 模型, en: Models}}\n  \
+         kind: {kind}\n  title: {{zh: 模型, en: Models}}\n  description: {{zh: 模型, en: Models}}\n  \
          provides:\n    models:\n      service: magpie\n      port: {port}\n      \
          apis: {{openai: /v1, anthropic: /}}\n      default_model: group/default\n      credentials:\n        \
          issue: [sh, /wonton/credentials.sh, issue, '{{name}}']\n        \
@@ -187,7 +187,7 @@ async fn bed_with(route: Option<RouteState>) -> Bed {
         let port = gateway_with_route(keys, state).await;
         manager
             .install_checked(
-                provider(port),
+                provider(port, "system"),
                 &[],
                 &[],
                 false,
@@ -288,7 +288,36 @@ async fn a_system_provider_installs_with_the_user_path_and_can_be_uninstalled() 
     let keys = Keys::default();
     bed.docker.on_exec(credential_script(keys.clone()));
     let port = gateway_with_route(keys.clone(), Arc::new(Mutex::new(RouteReply::default()))).await;
-    let provider = provider(port);
+    let provider = provider(port, "system");
+    let provider_id = provider.manifest.id.clone();
+    bed.manager
+        .install(&provider.source, &[], langs())
+        .await
+        .unwrap();
+    bed.install_consumer().await;
+    let env = env_of_container(&bed.docker, &container_name("app-test", "web"));
+    assert_eq!(env["BASE"], "http://models.wonton.internal:8080/v1");
+    assert_eq!(env["MODEL"], "group/default");
+    assert_eq!(keys.lock().unwrap()["app.test"], env["KEY"]);
+
+    bed.manager
+        .uninstall(&Bed::consumer_id(), false, &langs())
+        .await
+        .unwrap();
+    bed.manager
+        .uninstall(&provider_id, false, &langs())
+        .await
+        .unwrap();
+    assert!(bed.manager.list().is_empty());
+}
+
+#[tokio::test]
+async fn an_app_provider_installs_through_the_manager_and_serves_consumers() {
+    let bed = bed_with(None).await;
+    let keys = Keys::default();
+    bed.docker.on_exec(credential_script(keys.clone()));
+    let port = gateway_with_route(keys.clone(), Arc::new(Mutex::new(RouteReply::default()))).await;
+    let provider = provider(port, "app");
     let provider_id = provider.manifest.id.clone();
     bed.manager
         .install(&provider.source, &[], langs())
