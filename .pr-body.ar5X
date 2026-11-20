@@ -1,0 +1,30 @@
+## 改了什么、为什么
+
+ADR-0109 第 8 节的三件事接到核心和两端壳（协议在 #802，本 PR 基于它）：
+
+- 编辑自己的文字消息：消息菜单的「编辑」只在是自己的文字、没被撤回时出现；核心用 `m.replace` 在原事件上改，成功后恢复进入编辑前的草稿和回复对象，失败把原文放回输入框。
+- 编辑条：顶部显示原文摘要和 ×，打字预填原文，发送键变成 ✓，附件钮禁掉（只改文字）；编辑时核心把正文和旧草稿一起存进订阅状态，壳从 `editing` 更新里进出编辑态。
+- 正在输入：壳打第一个字报 `SetTyping{true}`、清空报 `false`、发送成功即停；核心按订阅 4 秒刷新一次、5 秒自动停，`m.typing` 发不出去只记调试日志。
+- 状态行选项：别人已经点过的那项，`chosen` 标出来、再点报「这条已经答过了」，壳把答过的那项画成选中态、不再可点。
+
+Matrix 层：`ChatRoom::edit_message`、`answer_agent_choice` 的已答判断、`mark_answers` 按反应把选项对回 `chosen`。
+
+## 验证
+
+- `cargo check` / `cargo clippy -p wonton-client -p wonton-matrix --all-targets -- -D warnings`：零错零警告。
+- `cargo test -p wonton-client chat::`：142 passed。
+- `cargo test -p wonton-matrix message::`：7 passed。
+- `cargo test -p wonton-matrix --test tuwunel --no-run`：编过。
+- `cargo fmt --check`、`bash scripts/check-file-size.sh`、`bash scripts/check-conflict-markers.sh`、`python3 scripts/check-ui-text.py`：全过。
+- Android：`nice -n 19 ~/wonton-dev/android-build.sh`（detekt + 单测 + assembleDebug）BUILD SUCCESSFUL。
+
+## 没做的和原因
+
+- `crates/wonton-matrix/tests/tuwunel/messaging.rs` 的编辑用例标了 `#[ignore]`，本机没 Docker，留给 CI。
+- iOS 在本机没有 Swift 工具链，只核对了类型与目录 JSON，SwiftLint 和模拟器构建交给 CI。
+- 编辑只改文字：附件在编辑时禁用，改附件留给以后。
+
+## 底座的问题
+
+- `MessageAction::Edit` 只带正文，没带消息 id；壳要用菜单里那条的 `item_id` 再发 `StartEdit`。菜单数据由 `menus` 保留，壳刷新晚了会报「这条已经不可操作」——够用，但要改别的动作就得再猜。
+- matrix-sdk 的 `EditedContent` 只从 `matrix_sdk::room::edit` 的私有模块导出，`Timeline::edit` 的签名在文档里查不到，只能翻源码。
