@@ -32,7 +32,7 @@ async fn a_cancelled_empty_request_can_arrive_after_its_subscribed_replacement()
     let bot_room = bot.open_room(&room_id).await.unwrap();
     home.hold_next_unsubscribed_sync_recording();
     bot_room
-        .send_text("start the next long poll")
+        .send_text("start the next long poll", &[])
         .await
         .unwrap();
     let old = home.held_sync_request().await;

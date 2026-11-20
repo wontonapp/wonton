@@ -60,7 +60,10 @@ async fn wait_for_body(
 
 /// Alice 发根消息，返回它的房间和事件 ID。
 async fn send_root(alice: &ChatRoom, alice_id: &UserId, bob_room: &ChatRoom) -> OwnedEventId {
-    alice.send_text("根消息").await.expect("Alice 发根消息");
+    alice
+        .send_text("根消息", &[])
+        .await
+        .expect("Alice 发根消息");
     let (root_id, root_thread) = wait_for_body(
         bob_room,
         "Bob 读到根消息",

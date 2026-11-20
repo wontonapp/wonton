@@ -713,7 +713,7 @@ async fn wait_for_sync(session: &MatrixSession, mut done: impl FnMut(&SyncStatus
 }
 
 async fn send(room: &ChatRoom, text: &str) {
-    room.send_text(text).await.expect("放进发送队列");
+    room.send_text(text, &[]).await.expect("放进发送队列");
 }
 
 /// 发一张 2×2 的 PNG，带缩略图。

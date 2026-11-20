@@ -80,7 +80,7 @@ async fn a_new_address_for_the_same_server_keeps_the_session() {
     // 旧地址已经不通，所以手机只能经新地址收到这条消息；预览能显示正文，说明房间密钥也在。
     home.move_tunnel().await;
     bot_room
-        .send_text("换了地址之后发的")
+        .send_text("换了地址之后发的", &[])
         .await
         .expect("Bot 发消息");
     phone.connect(&home);

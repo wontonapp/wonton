@@ -780,3 +780,24 @@ mod tests {
         let _ = std::fs::remove_dir_all(&dir);
     }
 }
+
+/// 假群聊输入框的 @ 候选：一个 Bot、一个人；私聊里不给。
+pub(super) fn mention_candidates(room_id: &str) -> Vec<wonton_protocol::ComposerMention> {
+    if room_id != CALL_ROOM_ID {
+        return Vec::new();
+    }
+    [
+        ("@hermes:home.example", "Hermes", true),
+        ("@tom:home.example", "Tom", false),
+    ]
+    .into_iter()
+    .map(
+        |(user_id, display_name, is_bot)| wonton_protocol::ComposerMention {
+            user_id: user_id.to_owned(),
+            display_name: display_name.to_owned(),
+            avatar: None,
+            is_bot,
+        },
+    )
+    .collect()
+}

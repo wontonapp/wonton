@@ -81,6 +81,7 @@ impl ComposerLink {
                     id: outgoing_id.clone(),
                     group,
                     body: body.trim().to_owned(),
+                    mentions: Vec::new(),
                     reply_to: None,
                     prepared_reply: None,
                     items: built,

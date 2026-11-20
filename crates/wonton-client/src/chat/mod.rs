@@ -34,6 +34,7 @@ mod jump;
 mod layout;
 mod links;
 mod login;
+pub(crate) mod mentions;
 mod menu;
 mod onboarding;
 mod ops;
@@ -61,6 +62,7 @@ mod util;
 mod verification;
 mod view;
 
+use std::collections::HashSet;
 use std::path::Path;
 use std::sync::atomic::AtomicBool;
 use std::sync::{Arc, Mutex};
@@ -171,6 +173,8 @@ pub(crate) struct ChatLink {
     handoff_armed: AtomicBool,
     relogin: connect::Relogin,
     external: bool,
+    /// 已经有人在跟的房间，输入框的 @ 列表跟着成员和 Bot 补发，一个房间只跟一次。
+    mentions_watched: Mutex<HashSet<String>>,
 }
 
 /// 卡片变成成功时就地调用（插件 ID），在卡片的情况发出去之前：ViewModel 里卡片“已经不用回答”时，补不补取已经定了。
@@ -355,6 +359,7 @@ impl ChatLink {
             handoff_armed: AtomicBool::new(false),
             relogin: connect::Relogin::default(),
             external,
+            mentions_watched: Mutex::new(HashSet::new()),
         });
         runtime.spawn(draft::write_drafts(Arc::downgrade(&chat), draft_receiver));
         if external {
@@ -455,8 +460,14 @@ impl ChatLink {
                 target,
                 body,
                 reply_to,
+                mentions,
                 ..
-            } => self.send_text(&TimelineKey::parse(&target)?, &body, reply_to.as_deref()),
+            } => self.send_text(
+                &TimelineKey::parse(&target)?,
+                &body,
+                reply_to.as_deref(),
+                &mentions,
+            ),
             TimelineAction::SendImage {
                 target,
                 image,

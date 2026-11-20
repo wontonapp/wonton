@@ -162,7 +162,10 @@ async fn a_reply_typed_in_the_notification_reaches_the_room() {
     let bot = home.bot("hermes", "Hermes").await;
     let room_id = accept_the_bots_invite(&home, &phone, &bot).await;
     let bot_room = bot.open_room(&room_id).await.expect("Bot 打开私聊");
-    bot_room.send_text("你的快递到了").await.expect("Bot 发送");
+    bot_room
+        .send_text("你的快递到了", &[])
+        .await
+        .expect("Bot 发送");
     let original_id = bot_receives(&bot_room, "原消息有服务器 ID", |message| {
         (message.body == MessageBody::Text("你的快递到了".into()))
             .then(|| message.event_id.clone())

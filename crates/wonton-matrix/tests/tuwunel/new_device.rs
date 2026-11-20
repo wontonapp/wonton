@@ -28,7 +28,10 @@ async fn a_device_that_logs_in_later_decrypts_the_next_bot_message() {
 
     // 和桥一样，Bot 一直跟着这个房间。
     let bot_room = bot.watch_room(&room_id).await.expect("Bot 跟着房间");
-    bot_room.send_text("第一条").await.expect("Bot 发第一条");
+    bot_room
+        .send_text("第一条", &[])
+        .await
+        .expect("Bot 发第一条");
     let owner_room = owner.open_room(&room_id).await.expect("主人打开房间");
     wait_for_decrypted(&owner_room, "主人的手机解开第一条", "第一条").await;
 
@@ -36,7 +39,10 @@ async fn a_device_that_logs_in_later_decrypts_the_next_bot_message() {
     new_device.start_sync().await.expect("新设备开始同步");
     wait_until_bot_knows(&bot, &new_device).await;
 
-    bot_room.send_text("第二条").await.expect("Bot 发第二条");
+    bot_room
+        .send_text("第二条", &[])
+        .await
+        .expect("Bot 发第二条");
     let new_room = new_device
         .open_room(&room_id)
         .await
@@ -86,7 +92,7 @@ async fn raw_status_queued_edits_and_answers_reach_every_new_device() {
             .expect("Bot 编辑状态消息");
         wait_for_notice(&device_room, "新设备解开队列编辑", "在写回复").await;
         bot_room
-            .send_text(&format!("答 {round}"))
+            .send_text(&format!("答 {round}"), &[])
             .await
             .expect("Bot 发答案");
         wait_for_notice(&device_room, "新设备解开答案", &format!("答 {round}")).await;

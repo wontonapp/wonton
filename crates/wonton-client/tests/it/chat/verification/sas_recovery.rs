@@ -27,7 +27,7 @@ async fn sas_recovers_open_history_in_place_and_survives_restart() {
     let bot_room = bot.open_room(&room_id).await.unwrap();
     let mut first_timeline = Timeline::open(&devices.first, room_id.as_str()).await;
     for body in HISTORY {
-        bot_room.send_text(body).await.unwrap();
+        bot_room.send_text(body, &[]).await.unwrap();
         first_timeline
             .until("第一台手机读到加密历史", |item| {
                 message_text(item).filter(|text| *text == body).map(|_| ())

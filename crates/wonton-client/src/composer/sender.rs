@@ -68,12 +68,19 @@ pub(super) fn parts(outgoing: &Outgoing) -> Vec<Part> {
         }
     }
     let body = outgoing.body.trim();
+    let mentions = outgoing.mentions.clone();
     if !files.is_empty() {
-        parts.push(Part::Text(files_message_body(body, &files)));
+        parts.push(Part::Text {
+            body: files_message_body(body, &files),
+            mentions,
+        });
     } else if let Some(Part::Image { caption, .. }) = parts.last_mut() {
         *caption = (!body.is_empty()).then(|| body.to_owned());
     } else {
-        parts.push(Part::Text(body.to_owned()));
+        parts.push(Part::Text {
+            body: body.to_owned(),
+            mentions,
+        });
     }
     parts
 }

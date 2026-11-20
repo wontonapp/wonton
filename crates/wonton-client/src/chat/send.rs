@@ -33,12 +33,14 @@ impl ChatLink {
         key: &TimelineKey,
         body: &str,
         reply_to: Option<&str>,
+        mentions: &[String],
     ) -> Result<(), CoreError> {
         let body = body.trim().to_owned();
         if body.is_empty() {
             return Err(invalid(&l10n!(CATALOG, language(), "chat-empty-message")));
         }
         let reply_to = reply_target(reply_to)?;
+        let mentions = mentions.to_vec();
         let chat = self.clone();
         let sent = self.sent.clone();
         self.send_target(key.room_id.as_str())?;
@@ -58,12 +60,15 @@ impl ChatLink {
                 };
                 match &reply_to {
                     Some(event_id) => match extra {
-                        Some(extra) => room.send_reply_with_extra(&body, event_id, extra).await?,
-                        None => room.send_reply(&body, event_id).await?,
+                        Some(extra) => {
+                            room.send_reply_with_extra(&body, &mentions, event_id, extra)
+                                .await?
+                        }
+                        None => room.send_reply(&body, &mentions, event_id).await?,
                     },
                     None => match extra {
-                        Some(extra) => room.send_text_with_extra(&body, extra).await?,
-                        None => room.send_text(&body).await?,
+                        Some(extra) => room.send_text_with_extra(&body, &mentions, extra).await?,
+                        None => room.send_text(&body, &mentions).await?,
                     },
                 }
                 // 发出去了，草稿（连同回复对象）留着没用了；发送途中又打的字不算。

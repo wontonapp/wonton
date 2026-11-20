@@ -126,7 +126,7 @@ async fn echo_deduplication_after_a_cache_reset_keeps_the_other_message() {
     // 发送挂住：本地回显先落在时间线里，响应还回不来。
     let sending = tokio::spawn({
         let chat = chat.clone();
-        async move { chat.send_text("mine").await }
+        async move { chat.send_text("mine", &[]).await }
     });
     let mut updates = chat.message_updates().await;
     eventually("本地回显出现", &mut updates, |messages| {

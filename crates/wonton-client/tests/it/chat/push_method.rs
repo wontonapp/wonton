@@ -29,7 +29,7 @@ async fn own_message_is_not_notified(phone: &Phone, bot_room: &ChatRoom, room_id
             },
         })
         .unwrap();
-    bot_room.send_text("收到").await.expect("Bot 再发一条");
+    bot_room.send_text("收到", &[]).await.expect("Bot 再发一条");
     let mine = phone
         .wait_chat("第二条该通知的消息", |view| {
             view.background_notifications
@@ -267,7 +267,7 @@ async fn background_messages_are_collected_and_cleared_on_foreground() {
         })
         .unwrap();
     let bot_room = bot.open_room(&room_id).await.expect("Bot 打开私聊");
-    bot_room.send_text("在吗").await.expect("Bot 发消息");
+    bot_room.send_text("在吗", &[]).await.expect("Bot 发消息");
     // 先等这条从同步到了手机上（房间预览里出现），这里只可能由那次后台同步写进来；通知要在这个基础上再取一次
     // 消息才生成，两件事分开等，通知那一步迟迟不来时不会再被同步本身的耗时吃掉预算。
     phone
@@ -324,7 +324,7 @@ async fn background_messages_are_collected_and_cleared_on_foreground() {
             action: wonton_protocol::HomeAction::AppBackgrounded,
         })
         .unwrap();
-    bot_room.send_text("还在").await.expect("Bot 再发一条");
+    bot_room.send_text("还在", &[]).await.expect("Bot 再发一条");
     phone
         .wait_chat("重新开始收集", |view| {
             view.background_notifications
@@ -377,7 +377,7 @@ async fn a_late_room_key_replaces_the_unavailable_background_notification() {
         .unwrap();
     hold.hold(true);
     let bot_room = bot.open_room(&room_id).await.expect("Bot 打开私聊");
-    bot_room.send_text("在吗").await.expect("Bot 发消息");
+    bot_room.send_text("在吗", &[]).await.expect("Bot 发消息");
 
     let event_id = phone
         .wait_chat("解不开的占位先到", |view| {

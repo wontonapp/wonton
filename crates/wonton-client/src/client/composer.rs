@@ -46,8 +46,9 @@ impl ClientCore {
                 target,
                 body,
                 reply_to,
+                mentions,
                 ..
-            } => composer.send(&composer_room(&target)?, &body, reply_to),
+            } => composer.send(&composer_room(&target)?, &body, reply_to, &mentions),
             TimelineAction::RemoveAttachment {
                 target,
                 attachment_id,
@@ -81,6 +82,16 @@ impl ClientCore {
         target: TimelineTarget,
     ) -> Result<Arc<ComposerSubscription>, CoreError> {
         let room_id = composer_room(&target)?;
+        #[cfg(feature = "ui-fake")]
+        if self.ui_fake.load(std::sync::atomic::Ordering::SeqCst) {
+            self.scope()
+                .composer
+                .set_mentions(&room_id, super::ui_fake::mention_candidates(&room_id));
+        } else {
+            crate::chat::mentions::watch(&self.scope(), &room_id);
+        }
+        #[cfg(not(feature = "ui-fake"))]
+        crate::chat::mentions::watch(&self.scope(), &room_id);
         let receiver = self.scope().composer.subscribe(&room_id);
         Ok(Arc::new(ComposerSubscription::new(receiver)))
     }

@@ -64,7 +64,7 @@ impl FakeTimelines {
             } => fake.jump_to(&event_id, from_item_id),
             TimelineAction::JumpBack { .. } => fake.jump_back(),
             TimelineAction::SetTimelineScroll { scroll, .. } => fake.scrolled(scroll),
-            TimelineAction::SendText { body, .. } => fake.send_text(&body),
+            TimelineAction::SendText { body, .. } => fake.send_text(&body, &[]),
             _ => {}
         }
     }
