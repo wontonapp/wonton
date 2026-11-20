@@ -7,11 +7,68 @@ import WontonClient
 
 @testable import Wonton
 
-/// 界面截图回归：真实界面配固定数据，在同一台模拟器、同一个系统版本上逐像素比较。
-/// 参考图绑定工作流里的模拟器型号和系统版本，外观、语言、时区由 `SnapshotFixtures` 钉住；
-/// 换了模拟器或系统，打 `record-snapshots` 标签整体重录。
+/// 界面截图回归：真实界面配固定数据，在同一型号的模拟器、同一个系统版本上逐像素比较。
+/// 参考图绑定模拟器型号标识和系统版本，外观、语言、时区由 `SnapshotFixtures` 钉住；别的型号或系统上
+/// 字体、圆角、系统栏的画法都不一样，不拿像素硬比：本机跳过、CI 上失败（见 `setUp`）。
+/// 换了型号或系统，打 `record-snapshots` 标签整体重录。
 @MainActor
 final class SnapshotTests: XCTestCase {
+
+    /// 参考图是在哪个型号的模拟器、哪个系统版本上录的。CI 用 `TEST_RUNNER_SNAPSHOT_MODEL`、
+    /// `TEST_RUNNER_SNAPSHOT_OS` 把工作流的 `SIMULATOR_MODEL`、`SIMULATOR_OS` 交给测试进程
+    /// （xcodebuild 只把 `TEST_RUNNER_` 开头的变量交给模拟器里的 App），工作流是唯一来源。
+    /// 型号是 `SIMULATOR_MODEL_IDENTIFIER` 的取值，`iPhone18,3` 就是 iPhone 17。
+    /// 本机没有这两个变量时用下面同一组值，标准运行时上照样能比；改参考图要打 record-snapshots 重录。
+    private enum ReferenceSimulator {
+        private static let environment = ProcessInfo.processInfo.environment
+        static let model = environment["SNAPSHOT_MODEL"] ?? "iPhone18,3"
+        static let osVersion = environment["SNAPSHOT_OS"] ?? "27.0"
+        /// CI 上设 `TEST_RUNNER_SNAPSHOT_ENFORCE=1`：不符就失败而不是跳过，免得工作流和参考图漂开之后 CI 一路绿。
+        static let enforced = environment["SNAPSHOT_ENFORCE"] == "1"
+    }
+
+    /// 型号或运行时不符：本机整类跳过、CI 上整类失败，原因里写清参考组合和当前组合。
+    override func setUp() async throws {
+        let environment = ProcessInfo.processInfo.environment
+        if ReferenceSimulator.enforced,
+           environment["SNAPSHOT_MODEL"] == nil || environment["SNAPSHOT_OS"] == nil {
+            throw ReferenceRuntimeMismatch("CI 上没收到 TEST_RUNNER_SNAPSHOT_MODEL/TEST_RUNNER_SNAPSHOT_OS，"
+                + "参考运行时没交给测试进程。")
+        }
+        let model = environment["SIMULATOR_MODEL_IDENTIFIER"] ?? "不在模拟器里"
+        let version = UIDevice.current.systemVersion
+        let simulator = environment["SIMULATOR_DEVICE_NAME"].map { "（模拟器 \($0)）" } ?? ""
+        guard model == ReferenceSimulator.model, Self.majorMinor(version) == ReferenceSimulator.osVersion else {
+            throw Self.skipOrFail(
+                "参考图是在 \(ReferenceSimulator.model)/iOS \(ReferenceSimulator.osVersion) 上录的，"
+                    + "当前是 \(model)/iOS \(version)\(simulator)，像素比对没有意义；"
+                    + "在标准运行时上跑，或用 record-snapshots 标签重录。"
+            )
+        }
+    }
+
+    /// 本机没有 CI 的信号就跳过，CI 上（`TEST_RUNNER_SNAPSHOT_ENFORCE=1`）失败。
+    private static func skipOrFail(_ message: String) -> Error {
+        if ReferenceSimulator.enforced {
+            return ReferenceRuntimeMismatch(message)
+        }
+        return XCTSkip(message)
+    }
+
+    /// 从上到下写的错因，XCTest 原样打进日志。
+    private struct ReferenceRuntimeMismatch: Error, CustomStringConvertible {
+        let description: String
+
+        init(_ description: String) {
+            self.description = description
+        }
+    }
+
+    /// 只比主次版本：补丁版本不动渲染，参考图不用跟着 x.y.z 的三个数字走。
+    private static func majorMinor(_ version: String) -> String {
+        version.split(separator: ".").prefix(2).joined(separator: ".")
+    }
+
     /// 模拟器的尺寸档、外观和字号在录制和比较时都要一样，否则布局和颜色对不上。
     private static let traits = UITraitCollection(traitsFrom: [
         UITraitCollection(displayScale: 3),
