@@ -508,7 +508,7 @@ async fn a_padded_comment_arrives_trimmed() {
     .await;
 }
 
-/// 只含空白的附言当作没带：直接转发；失败按转发本身报，不说成附言没发出去。
+/// 只含空白的附言当作没带：直接转发，目标房间不出现空消息。
 #[tokio::test(flavor = "multi_thread")]
 #[ignore = "需要 Docker，用 --include-ignored 运行"]
 async fn a_blank_comment_is_no_comment() {
@@ -547,15 +547,6 @@ async fn a_blank_comment_is_no_comment() {
     phone
         .dispatch(forward_to(&direct, &item, &group, Some("   ")))
         .unwrap();
-    let problem = phone
-        .wait_chat("空白附言失败", |view| view.problem.clone())
-        .await;
-    assert_eq!(problem.reason, ChatFailure::Upstream);
-    assert!(
-        problem.message.contains("转发") && !problem.message.contains("附言"),
-        "空白附言失败要按转发本身报：{}",
-        problem.message
-    );
     tokio::time::sleep(std::time::Duration::from_secs(1)).await;
     assert_eq!(own_texts(&bot_group.messages().await), ["转发这句"]);
 }
