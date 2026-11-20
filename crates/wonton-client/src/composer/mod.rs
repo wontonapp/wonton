@@ -53,6 +53,8 @@ struct Inner {
     handing: HashSet<String>,
     /// @ 列表的候选，按房间；由聊天那边跟着成员和 Bot 名单补。
     mentions: HashMap<String, Vec<ComposerMention>>,
+    /// 假数据入口（`ui-fake`）下，下次放进附件区的东西要标成上传失败的房间。
+    fail_next: HashSet<String>,
 }
 
 impl Inner {
@@ -300,7 +302,18 @@ impl ComposerLink {
             self.disk.forget(&id);
             return Err(error);
         }
-        self.start_worker(room, &id);
+        if self.lock().fail_next.remove(room) {
+            self.show(
+                room,
+                &id,
+                AttachmentState::Failed {
+                    reason: AttachmentFailure::Upstream,
+                    message: "ui-fake: upload failed on purpose".into(),
+                },
+            );
+        } else {
+            self.start_worker(room, &id);
+        }
         Ok(id)
     }
 
@@ -496,6 +509,12 @@ impl ComposerLink {
                 .iter()
                 .any(|item| matches!(item.state, AttachmentState::Failed { .. }))
         })
+    }
+
+    /// 假数据入口（`ui-fake`）：下一条放进附件区的东西直接标成上传失败。
+    /// 相册面板选完就发，没有机会在中间把它标红。
+    pub(crate) fn fail_next_for_test(&self, room: &str) {
+        self.lock().fail_next.insert(room.to_owned());
     }
 
     /// 假数据入口（`ui-fake`）没有真上传，界面测试靠它把附件标成上传失败，走到被拒的分支。

@@ -14,6 +14,7 @@ import androidx.compose.ui.semantics.SemanticsActions
 import androidx.compose.ui.semantics.SemanticsProperties
 import androidx.compose.ui.semantics.getOrNull
 import androidx.compose.ui.test.SemanticsMatcher
+import kotlinx.coroutines.runBlocking
 import androidx.compose.ui.test.SemanticsNodeInteraction
 import androidx.compose.ui.test.assertCountEquals
 import androidx.compose.ui.test.assertIsDisplayed
@@ -31,7 +32,6 @@ import androidx.compose.ui.test.hasTestTag
 import androidx.compose.ui.test.longClick
 import androidx.compose.ui.test.hasText
 import androidx.compose.ui.test.isDisplayed
-import kotlinx.coroutines.runBlocking
 import androidx.compose.ui.test.junit4.createAndroidComposeRule
 import androidx.compose.ui.test.onNodeWithContentDescription
 import androidx.compose.ui.test.onAllNodesWithTag
@@ -53,7 +53,6 @@ import android.view.WindowInsets
 import androidx.test.ext.junit.runners.AndroidJUnit4
 import androidx.test.platform.app.InstrumentationRegistry
 import androidx.test.rule.GrantPermissionRule
-import app.wonton.client.ClientCore
 import app.wonton.protocol.Action
 import app.wonton.protocol.PageAction
 import app.wonton.protocol.TabRef
@@ -251,6 +250,7 @@ class RoomTelegramTest {
      */
     @Test
     fun attachSheetSendsPhotosWithNote() {
+        val core = (compose.activity.application as WontonApplication).core.getOrThrow()
         ensureAlbumPhotos()
         clearTray()
         compose.onNodeWithContentDescription(string(R.string.composer_attach)).performClick()
@@ -268,7 +268,9 @@ class RoomTelegramTest {
         sheetSend("attach-send").performClick()
         compose.waitUntil(10_000) { compose.onAllNodes(hasTestTag("attach-send")).fetchSemanticsNodes().isEmpty() }
         runCatching { compose.onNodeWithContentDescription(string(R.string.room_scroll_to_bottom)).performClick() }
-        compose.waitUntil(10_000) { compose.onAllNodes(hasText("两张都发")).fetchSemanticsNodes().isNotEmpty() }
+        compose.waitUntil(10_000) { compose.onAllNodes(hasText("两张都发", substring = true)).fetchSemanticsNodes().isNotEmpty() }
+        val vm = runBlocking { core.subscribeComposer(TimelineTarget(ECHO_ROOM, null)).use { it.next()!! } }
+        check(vm.attachments.isEmpty()) { "附件区还剩 ${vm.attachments.size} 条" }
         screenshot("attach-sent")
         check(trayTiles() == 0) { "附件区里还剩着照片" }
         compose.onNode(hasSetTextAction()).assertIsDisplayed()
@@ -283,6 +285,8 @@ class RoomTelegramTest {
         val core = (compose.activity.application as WontonApplication).core.getOrThrow()
         ensureAlbumPhotos()
         clearTray()
+        // 面板选完就发，先在核心那边定好：下一张进附件区的照片上传失败。
+        core.failNextAttachmentForTest(TimelineTarget(ECHO_ROOM, null))
         compose.onNodeWithContentDescription(string(R.string.composer_attach)).performClick()
         compose.waitUntil(10_000) { compose.onAllNodes(hasTestTag("album-photo")).fetchSemanticsNodes().isNotEmpty() }
         compose.onAllNodes(hasTestTag("album-photo"))[0].performClick()
@@ -290,7 +294,7 @@ class RoomTelegramTest {
         sheetSend("attach-send").performClick()
         compose.waitUntil(10_000) { compose.onAllNodes(hasTestTag("attach-send")).fetchSemanticsNodes().isEmpty() }
         compose.waitUntil(10_000) { trayTiles() == 1 }
-        // 回一条，再把附件标成上传失败。
+        // 回一条，附件已经在附件区里标成失败了。
         scrollTo(15)
         item(15).performTouchInput {
             val middle = height / 2f
@@ -298,8 +302,6 @@ class RoomTelegramTest {
         }
         compose.onNodeWithContentDescription(string(R.string.message_reply_cancel)).assertIsDisplayed()
         compose.onNode(hasSetTextAction()).performTextInput("先发这句")
-        core.failAttachmentForTest(TimelineTarget(ECHO_ROOM, null), trayFirstId(core))
-        compose.waitForIdle()
         compose.onNodeWithContentDescription(string(R.string.composer_send)).performClick()
         compose.waitUntil(10_000) {
             compose.onAllNodes(hasText("Retry or remove it first", substring = true)).fetchSemanticsNodes().isNotEmpty()
@@ -331,6 +333,9 @@ class RoomTelegramTest {
         compose.onNode(hasTestTag("forward-row") and hasText("Notes")).performClick()
         compose.onNode(hasSetTextAction() and hasAnyAncestor(hasTestTag("forward-send")))
             .performTextInput("都看一下")
+        val typed = compose.onNode(hasSetTextAction() and hasAnyAncestor(hasTestTag("forward-send")))
+            .fetchSemanticsNode().config.getOrNull(SemanticsProperties.EditableText)?.text
+        check(typed?.contains("都看一下") == true) { "输入框里是 $typed" }
         screenshot("forward-sheet")
         sheetSend("forward-send").performClick()
         // 勾了两个：留在原房间，两条消息都在，谁也没跳走。
@@ -345,13 +350,13 @@ class RoomTelegramTest {
         // 到了聊天列表，依次进 Family 和 Notes，两边都得有附言和转发来的那条。
         compose.onNodeWithText("Family").performClick()
         compose.waitUntil(10_000) { forwardedInto("Family", "ui-fake-forwarded-24") }
-        check(compose.onAllNodes(hasText("都看一下")).fetchSemanticsNodes().isNotEmpty()) { "Family 没收到附言" }
+        check(compose.onAllNodes(hasText("都看一下", substring = true)).fetchSemanticsNodes().isNotEmpty()) { "Family 没收到附言" }
         compose.onNodeWithContentDescription(string(R.string.design_back)).performClick()
         compose.waitForIdle()
         if (hasBack()) compose.onNodeWithContentDescription(string(R.string.design_back)).performClick()
         compose.onNodeWithText("Notes").performClick()
         compose.waitUntil(10_000) { forwardedInto("Notes", "ui-fake-forwarded-24") }
-        check(compose.onAllNodes(hasText("都看一下")).fetchSemanticsNodes().isNotEmpty()) { "Notes 没收到附言" }
+        check(compose.onAllNodes(hasText("都看一下", substring = true)).fetchSemanticsNodes().isNotEmpty()) { "Notes 没收到附言" }
     }
 
     /** 只勾一个时发完跟过去：那个房间打开，附言和转发都在。 */
@@ -389,14 +394,6 @@ class RoomTelegramTest {
         }
         return open && seen()
     }
-
-    private fun trayIds(core: ClientCore): List<String> = runBlocking {
-        core.subscribeComposer(TimelineTarget(ECHO_ROOM, null)).use { sub ->
-            sub.next()!!.attachments.map { it.id }
-        }
-    }
-
-    private fun trayFirstId(core: ClientCore): String = trayIds(core).first()
 
     /**
      * 把附件区里留着的附件一个个拿掉：一排照片会横着滚，先把行滚回开头再点第一个拿掉的按钮，

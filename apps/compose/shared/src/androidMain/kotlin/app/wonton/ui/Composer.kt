@@ -2,6 +2,7 @@ package app.wonton.ui
 
 import androidx.activity.compose.rememberLauncherForActivityResult
 import androidx.activity.result.contract.ActivityResultContracts.OpenMultipleDocuments
+import android.content.Context
 import android.net.Uri
 import androidx.compose.animation.AnimatedVisibility
 import androidx.compose.animation.core.tween
@@ -304,18 +305,11 @@ private fun rememberAttachments(
     var choosing by rememberSaveable { mutableStateOf(false) }
     // 粘贴的回调只登记一次：回复对象换了也要发给现在的那条。
     val currentSendImage by rememberUpdatedState(sendImage)
+    // 粘贴进来的照片：旁聊里直接发，主对话里放进附件区；第一张不行就停。
     val addPhotos = { uris: List<Uri> ->
+        val send = currentSendImage
         scope.launch {
-            // 按选的顺序放：发出去也是这个顺序。
-            uris.forEach { uri ->
-                PhotoUpload.make(context, uri).fold(
-                    onSuccess = { upload ->
-                        val send = currentSendImage
-                        if (send != null) send(upload) else addImage(core, roomId, upload)?.let(onReject)
-                    },
-                    onFailure = { failure -> onReject(Problem(photoUnreadable, photoTryAnother, failure.message)) },
-                )
-            }
+            sendPickedPhotos(context, uris, send, photoUnreadable, photoTryAnother, core, roomId)?.let(onReject)
         }
         Unit
     }
@@ -325,36 +319,22 @@ private fun rememberAttachments(
     val sendPhotos = { uris: List<Uri>, note: String ->
         val send = currentSendImage
         scope.launch {
-            var failed: Problem? = null
-            // 按选的顺序发：一条发不出去就停下，后面的留着不再发。
-            for (uri in uris) {
-                failed = PhotoUpload.make(context, uri).fold(
-                    onSuccess = { upload ->
-                        if (send != null) {
-                            send(upload)
-                            null
-                        } else {
-                            addImage(core, roomId, upload)
-                        }
-                    },
-                    onFailure = { failure -> Problem(photoUnreadable, photoTryAnother, failure.message) },
-                )
-                if (failed != null) break
-            }
+            val failed = sendPickedPhotos(context, uris, send, photoUnreadable, photoTryAnother, core, roomId)
             choosing = false
             if (failed != null) {
                 onReject(failed)
             } else if (send != null) {
+                // 旁聊没有附件区：附言单独一条，接在照片后面。
                 if (note.isNotBlank()) {
                     core.send(Action.Timeline(TimelineAction.SendText(target, note, null)))?.let(onReject)
                 }
             } else {
                 val action = Action.Timeline(TimelineAction.SendComposer(target, note, reply?.eventId))
                 val problem = core.send(action)
-                if (problem == null) {
-                    if (reply != null) onReplyCancel()
-                } else {
+                if (problem != null) {
                     onReject(problem)
+                } else if (reply != null) {
+                    onReplyCancel()
                 }
             }
         }
@@ -508,3 +488,26 @@ private fun sendAction(target: TimelineTarget, text: String, reply: ReplyQuote?,
             TimelineAction.SendText(target, text, reply?.eventId)
         },
     )
+
+/**
+ * 选好的照片按选的顺序逐张处理：旁聊里直接发，主对话里放进附件区。
+ * 第一张放不进去就停下，返回那条原因，后面的不再处理。
+ */
+private suspend fun sendPickedPhotos(
+    context: Context,
+    uris: List<Uri>,
+    send: ((ImageUpload) -> Unit)?,
+    unreadable: String,
+    tryAnother: String,
+    core: ClientCore,
+    roomId: String,
+): Problem? {
+    for (uri in uris) {
+        val problem = PhotoUpload.make(context, uri).fold(
+            onSuccess = { upload -> if (send != null) { send(upload); null } else addImage(core, roomId, upload) },
+            onFailure = { failure -> Problem(unreadable, tryAnother, failure.message) },
+        )
+        if (problem != null) return problem
+    }
+    return null
+}
