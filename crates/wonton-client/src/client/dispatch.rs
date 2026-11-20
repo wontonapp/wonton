@@ -28,6 +28,14 @@ impl ClientCore {
                     Ok(())
                 }
                 Action::Plugins { action } => self.dispatch_ui_fake_plugins(action),
+                Action::Timeline { action } => {
+                    self.dispatch_ui_fake_timeline(action);
+                    Ok(())
+                }
+                Action::Agent { action } => {
+                    self.dispatch_ui_fake_agent(action);
+                    Ok(())
+                }
                 _ => Ok(()),
             };
         }
@@ -358,6 +366,10 @@ impl ClientCore {
     }
 
     fn agent_action(&self, scope: &Scope, action: AgentAction) -> Result<(), CoreError> {
+        if let AgentAction::StopTurns { target } = action {
+            self.stop_turns(scope, target);
+            return Ok(());
+        }
         let (core_url, proxy) = super::agent_chains::connection(scope)?;
         let view = self.views().agent_chains.clone();
         view.send_if_modified(|model| model.action_failure.take().is_some());

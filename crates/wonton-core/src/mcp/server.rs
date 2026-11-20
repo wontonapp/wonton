@@ -13,7 +13,7 @@ use rmcp::service::{NotificationContext, RequestContext, RoleServer, Subscriptio
 use super::Bus;
 use crate::plugin::PluginId;
 use crate::plugin::manifest::LocalizedText;
-use wonton_protocol::{BotKeeper, ConfirmationOrigin, ORIGIN_META_KEY};
+use wonton_protocol::{AgentChainStatus, BotKeeper, ConfirmationOrigin, ORIGIN_META_KEY};
 
 /// 调用总线的插件：网关按来源地址认出它（同模型网关），放进请求扩展。
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -110,9 +110,9 @@ pub(super) fn turn_sender(
             TurnSender::Unknown
         });
     }
-    // 旧接入方没有每轮请求头：先按它报的会话找那一轮，找不到就看这个 Bot 进行中的轮次。
+    // 没带请求头的 Bot 插件（如只报调用链的第三方 Bot）：先按报的会话找那一轮，找不到再看进行中的轮次。
     let bot = bot_ref(caller)?;
-    let turns = bus.agent_chains()?.ledger().live_bridge_turns(&bot);
+    let turns = bus.agent_chains()?.ledger().live_turns(&bot);
     if let (Some(session), Some(chain)) = (caller.session.as_deref(), caller.chain.as_deref())
         && let Some(turn) = turns
             .iter()
@@ -186,7 +186,9 @@ struct ForeignSession<'a> {
 }
 
 /// `wonton-session` 只在账本确认归属后采用；会话与链必须来自同一条登记。
-fn chain_session(
+/// 链停了、会话也不在跑时算没有链：停链只撤走当时挂着的卡片，之后的工具调用再挂上去
+/// 就没人撤了（卡片一直等人答），所以从这里就断开。
+pub(super) fn chain_session(
     bus: &Bus,
     caller: &Caller,
     headers: Option<&hyper::HeaderMap>,
@@ -202,7 +204,21 @@ fn chain_session(
         bot: bot.bot.clone(),
     });
     if own.as_ref() == Some(&info.bot) {
-        return Some((info.chain, session.to_owned()));
+        let stopped = chains
+            .ledger()
+            .row(&info.chain)
+            .is_some_and(|row| row.status == AgentChainStatus::Stopped && !info.live);
+        if !stopped {
+            return Some((info.chain, session.to_owned()));
+        }
+        bus.audit.record(&ForeignSession {
+            caller: caller.id.as_str(),
+            event: "stopped_session",
+            session,
+            bot: &info.bot.bot,
+            chain: &info.chain,
+        });
+        return None;
     }
     bus.audit.record(&ForeignSession {
         caller: caller.id.as_str(),
@@ -276,6 +292,16 @@ impl ServerHandler for Handler {
         if let Some((chain, session)) = chain_session(&self.bus, &caller, headers) {
             caller.chain = Some(chain);
             caller.session = Some(session);
+        }
+        if caller.chain.is_none() && caller.bot.is_some() {
+            tracing::debug!(
+                tool = %request.name,
+                header = headers
+                    .and_then(|headers| headers.get(wonton_protocol::SESSION_HEADER))
+                    .and_then(|value| value.to_str().ok())
+                    .unwrap_or("-"),
+                "会话没带链"
+            );
         }
         caller.sender = turn_sender(&self.bus, &caller, headers);
         caller.ai_level = Some(self.bus.ai_cap(&caller));

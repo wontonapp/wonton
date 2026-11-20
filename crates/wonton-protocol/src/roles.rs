@@ -57,10 +57,10 @@ pub const PERMISSION_REQUIRED: &str = "permission_required";
 /// 和 [`crate::TOOL_CALL_USER_META`] 一起带，不带人时也不带它。
 pub const TOOL_CALL_CAPABILITIES_META: &str = "app.wonton/capabilities";
 
-/// 核心转给 ACP 运行时的请求头：[`Capability`] 的列表，逗号分隔。前端自己带的同名头丢掉。
+/// 网关代登录转给插件网页的请求头：[`Capability`] 的列表，逗号分隔。页面自己带的同名头丢掉。
 pub const CAPABILITIES_HEADER: &str = "x-wonton-capabilities";
 
-/// Bot 容器里的环境变量：归属人的 [`AiLevel`]；共享 Bot 取用它的人里最低的。Agent 插件和桥凭它锁模式。
+/// Bot 容器里的环境变量：归属人的 [`AiLevel`]；共享 Bot 取用它的人里最低的。Bot 插件凭它锁模式。
 pub const BOT_AI_LEVEL_ENV: &str = "WONTON_BOT_AI_LEVEL";
 
 /// OIDC 的 `groups` 里每个人都有的组。

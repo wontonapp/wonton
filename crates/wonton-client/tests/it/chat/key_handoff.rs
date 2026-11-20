@@ -527,7 +527,7 @@ async fn cancelling_keeps_the_handoff_until_the_owner_has_no_other_device() {
 /// 账号里只有这一台设备：不交接，从没出现过交接页。
 #[tokio::test(flavor = "multi_thread")]
 #[ignore = "需要 Docker，用 --include-ignored 运行"]
-async fn the_first_phone_of_an_account_does_not_hand_off() {
+async fn the_first_phone_of_an_account_skips_the_key_handoff() {
     let dir = tempfile::tempdir().unwrap();
     let phone = Phone::open(dir.path());
     let home = Home::start(&[phone.device_id()]).await;

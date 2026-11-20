@@ -123,6 +123,19 @@ pub enum TimelineAction {
         target: TimelineTarget,
         outgoing_id: String,
     },
+    /// 点了气泡里的引用：跳到原消息（ADR-0109）。`event_id` 是引用里原消息的事件 ID，`from_item_id` 是被点的那条
+    /// （[`TimelineItem::id`](crate::TimelineItem::id)），核心把它压进返回栈（[`TimelineUpdate::back_to`](crate::TimelineUpdate::back_to)）。
+    /// 原消息已加载时下一批就带 [`TimelineUpdate::focus`](crate::TimelineUpdate::focus)；没加载时核心往前翻页，进展在
+    /// [`TimelineUpdate::jump`](crate::TimelineUpdate::jump)。要先订阅这条时间线。
+    JumpToMessage {
+        target: TimelineTarget,
+        event_id: String,
+        from_item_id: String,
+    },
+    /// “向下”按钮在有 [`TimelineUpdate::back_to`](crate::TimelineUpdate::back_to) 时发：核心弹出栈顶，下一批的
+    /// [`TimelineUpdate::focus`](crate::TimelineUpdate::focus) 是它。那一条已经不在列表里了（撤回、被裁掉）时继续弹，
+    /// 栈空了就回到底部（[`TimelineUpdate::scroll_to_bottom`](crate::TimelineUpdate::scroll_to_bottom)）。
+    JumpBack { target: TimelineTarget },
     /// 去掉发送框当前的链接预览（ADR-0065）。行为细节在 `ClientCore::draft` 的返回和
     /// [`LinkPreviewState`](crate::LinkPreviewState) 上：这条草稿不再出预览，第一个链接换成别的或草稿发出去就作废。
     /// 旁聊的输入框也有链接预览，预览状态和主时间线的分开。

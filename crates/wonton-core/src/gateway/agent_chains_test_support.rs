@@ -48,7 +48,7 @@ pub(crate) const MATRIX_ALICE3: &str = "matrix-alice3";
 
 pub(crate) const MANIFEST: &str = "name: agent
 services:
-  bridge:
+  bot:
     image: example/agent
 x-wonton:
   spec: '0.4'
@@ -58,7 +58,7 @@ x-wonton:
   title: {zh: Agent, en: Agent}
   description: {zh: Agent, en: Agent}
   permissions: [matrix.bot, tools]
-  bots: {services: [bridge]}
+  bots: {services: [bot]}
 ";
 
 pub(crate) struct Home {
@@ -327,6 +327,18 @@ impl Home {
         response.map(Body::new)
     }
 
+    /// 桥报一轮结束（成功、取消、出错都这么报）。
+    pub(crate) async fn end_turn(&self, bot: Bot, session: &str) {
+        let body = json!({"phase": "end", "session": session});
+        let response = self
+            .app
+            .clone()
+            .oneshot(self.bot_request(bot.bus(), Some(bot.matrix()), body))
+            .await
+            .unwrap();
+        assert_eq!(response.status(), StatusCode::OK);
+    }
+
     pub(crate) async fn grant(
         &self,
         bot: Bot,
@@ -415,6 +427,7 @@ impl Home {
 #[derive(Clone, Copy)]
 pub(crate) enum Bot {
     Alice,
+    Alice2,
     Alice3,
     Bob,
 }
@@ -423,6 +436,7 @@ impl Bot {
     pub(crate) fn bus(self) -> &'static str {
         match self {
             Self::Alice => BUS_ALICE,
+            Self::Alice2 => "bus-alice2",
             Self::Alice3 => "bus-alice3",
             Self::Bob => BUS_BOB,
         }
@@ -431,6 +445,7 @@ impl Bot {
     pub(crate) fn matrix(self) -> &'static str {
         match self {
             Self::Alice => MATRIX_ALICE,
+            Self::Alice2 => MATRIX_ALICE2,
             Self::Alice3 => MATRIX_ALICE3,
             Self::Bob => MATRIX_BOB,
         }

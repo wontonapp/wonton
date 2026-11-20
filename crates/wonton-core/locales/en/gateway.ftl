@@ -186,7 +186,6 @@ gateway-agent-acp-no-bot = {$provider} has no usable bot yet; set up a bot first
 gateway-agent-acp-multi-bot = {$provider} has several bots; pick one on its detail page first
 gateway-agent-acp-token-missing = {$provider} has no provider token yet; reinstall it to get one
 gateway-agent-acp-provider-unreachable = The agent runtime did not take over this connection: {$detail}
-gateway-agent-acp-busy = This app already has the maximum number of concurrent agent connections; try again later
 
 gateway-install-rejected = An administrator declined; the { $action } was not done
 gateway-install-expired = No administrator answered in time; the { $action } was not done

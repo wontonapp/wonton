@@ -262,6 +262,10 @@ fn timeline_message(
         group: message.group,
         receipt: mark.receipt,
         starts_time_group: mark.starts_time_group,
+        run: wonton_protocol::MessageRun::Alone,
+        status: None,
+        choices: None,
+        sender_avatar: None,
     }
 }
 

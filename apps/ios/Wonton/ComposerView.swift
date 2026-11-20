@@ -41,6 +41,7 @@ struct ComposerView: View {
                 .padding(.top, WontonTheme.spacing.s8)
             }
             ComposerTray(composer: composer)
+            AgentStopNotice(state: composer.agentStop)
             HStack(alignment: .bottom, spacing: 0) {
                 WontonIconButton(icon: .attach, label: String(localized: .Composer.composerAttach)) {
                     isChoosingAttachment = true
@@ -53,12 +54,21 @@ struct ComposerView: View {
                     onSend: send
                 )
                     .padding(.vertical, (WontonTheme.size.target - WontonTheme.size.composerField) / 2)
-                SendButton(action: send)
-                    .disabled(isEmpty)
-                    .opacity(isEmpty ? WontonTheme.ratio.secondaryContent : 1)
+                // Bot 在跑时停止钮占发送钮的位置；已经打了字就两个都在，接着发和停下都够得着。
+                let stops = AgentStopButton.isShown(composer.agentStop)
+                if stops {
+                    AgentStopButton(state: composer.agentStop, action: composer.stopAgent)
+                }
+                if !stops || !isEmpty {
+                    SendButton(action: send)
+                        .disabled(isEmpty)
+                        .opacity(isEmpty ? WontonTheme.ratio.secondaryContent : 1)
+                }
             }
             .padding(WontonTheme.spacing.s4)
         }
+        // 停止钮的状态跟着输入栏订阅：聊天页不用知道它。
+        .task(id: draftKey) { await composer.observeAgentStop() }
         // 点了回复就把光标放进输入框。
         .onChange(of: model.replyFocusRevision) {
             if model.replies[draftKey] != nil { isFocused = true }

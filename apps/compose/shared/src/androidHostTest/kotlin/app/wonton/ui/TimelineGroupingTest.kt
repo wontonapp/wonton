@@ -5,6 +5,7 @@ import app.wonton.protocol.ImageContent
 import app.wonton.protocol.MediaHandle
 import app.wonton.protocol.MessageContent
 import app.wonton.protocol.MessageGroup
+import app.wonton.protocol.MessageRun
 import app.wonton.protocol.SendState
 import app.wonton.protocol.TimelineContent
 import app.wonton.protocol.TimelineItem
@@ -88,6 +89,7 @@ class TimelineGroupingTest {
         preview = null,
         actions = emptyList(),
         group = MessageGroup("00000000000000000000000000000000", index, 2u),
+        run = MessageRun.ALONE,
     )
 
     private fun TimelineMessage.row() = TimelineItem(group?.index.toString(), TimelineContent.Message(this))

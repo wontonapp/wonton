@@ -396,11 +396,6 @@ impl PluginManager {
             state
                 .connections
                 .retain(|c| c.consumer != id.as_str() && c.provider != id.as_str());
-            state.handoff_consents.retain(|consent| {
-                !removing.iter().any(|id| {
-                    id.as_str() == consent.from.plugin_id || id.as_str() == consent.target.plugin_id
-                })
-            });
             state.selected.retain(|scope, _| {
                 scope != id.as_str()
                     && !scope
@@ -424,14 +419,6 @@ impl PluginManager {
                 }
             }
             state.defaults.retain(|_, id| !id.is_empty());
-            state
-                .provider_tokens
-                .retain(|key, _| !key.ends_with(&format!("/{id}")));
-            for removed in removing {
-                state
-                    .provider_tokens
-                    .retain(|key, _| !key.ends_with(&format!("/{removed}")));
-            }
         })
     }
 
@@ -490,15 +477,6 @@ impl PluginManager {
                 }
             }
             state.defaults.retain(|_, id| !id.is_empty());
-            // 只删这个插件不再提供的能力的令牌；别的提供方的令牌不动。
-            state
-                .provider_tokens
-                .retain(|key, _| match key.split_once('/') {
-                    Some((capability, provider)) => {
-                        provider != manifest.id.as_str() || service(manifest, capability).is_some()
-                    }
-                    None => true,
-                });
             for (consumer, capability) in &affected {
                 if let Some(provider) = providers.iter().find(|p| {
                     service(&p.listed.manifest, capability).is_some()

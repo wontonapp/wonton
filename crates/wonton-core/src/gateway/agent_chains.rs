@@ -1,11 +1,11 @@
-//! `POST /agent/chains`：桥每轮开始、结束都在这里报（ADR-0061 第 10 节，接口在 `wonton-protocol` 的
+//! `POST /agent/chains`：Bot 插件每轮开始、结束都在这里报（ADR-0061 第 10 节，接口在 `wonton-protocol` 的
 //! `agent_chain`）。门和 `/agent/permissions` 一样在 [`super::mcp`] 后面，另外验 Bot 的 Matrix 令牌
 //! （ADR-0083 第 5 节）：总线令牌 Agent 自己也拿得到，只认来源地址不够。
 //!
 //! 说话人必须是这个 Bot 听的人（ADR-0045 的名单：归属人和已成立的联系人，同归属人的另一个 Bot 也算），
 //! 否则 403 `permission_denied`；说话人是 Bot 时这一轮靠唤醒标签接回原链（第 8 块）。
 //!
-//! 这里也放着链的服务：账本、出箱、设置和 `agent_acp` 的取消接口（第 5 块接上）。
+//! 这里也放着链的服务：账本、出箱和设置。
 
 use std::sync::Arc;
 
@@ -13,7 +13,9 @@ use axum::body::to_bytes;
 use axum::extract::Request;
 use axum::response::{IntoResponse, Response};
 use hyper::{Method, StatusCode};
-use wonton_protocol::{BOT_TOKEN_HEADER, BotRef, ChainError, ChainTurnReport};
+use wonton_protocol::{
+    BOT_TOKEN_HEADER, BotRef, ChainError, ChainLimitKind, ChainRefusal, ChainTurnReport,
+};
 
 use super::Gateway;
 use super::api::error_response;
@@ -23,6 +25,9 @@ use crate::agent_chain::{ChainLedgerError, Chains};
 use crate::agent_outbox::Outbox;
 use crate::mcp::Caller;
 use crate::plugin::PluginId;
+
+/// 拒绝的说明文字放在这个响应头里，和 `refused` 用同一个：调用方按 `X-Wonton-Detail` 取。
+pub(super) const DETAIL_HEADER: &str = "X-Wonton-Detail";
 
 /// 请求体的上限：一轮的报告就是几个 ID，再大是调用方的错。
 const MAX_BODY: usize = 64 * 1024;
@@ -77,7 +82,7 @@ impl AgentChains {
         chain: &str,
     ) -> Result<crate::agent_chain::ChainStopOutcome, ChainLedgerError> {
         let outcome = self.ledger.stop(chain)?;
-        for session in &outcome.bridge {
+        for session in &outcome.turns {
             // CancelTurn 不落盘，push 不会失败；失败了也只是这条取消发不出，链已经停了。
             if let Err(error) = self.outbox.push(
                 &session.bot,
@@ -154,7 +159,7 @@ fn keeper_of(plugins: &crate::plugin::PluginManager, bot_user_id: &str) -> Strin
         .unwrap_or_default()
 }
 
-/// 桥报一轮（开始、结束）。
+/// Bot 插件报一轮（开始、结束）。
 pub(super) async fn report(gateway: &Gateway, caller: &Caller, req: Request) -> Response {
     let Some(chains) = &gateway.agent_chains else {
         return error_response(
@@ -170,7 +175,7 @@ pub(super) async fn report(gateway: &Gateway, caller: &Caller, req: Request) -> 
         plugin_id: caller.id.to_string(),
         bot: bot.bot.clone(),
     }) else {
-        return refused("这个插件没有 Bot 记录；调用链由桥按 Bot 报");
+        return refused("这个插件没有 Bot 记录；调用链按 Bot 报");
     };
     let Ok(plugin_id) = PluginId::parse(&bot.plugin_id) else {
         return refused("插件 ID 认不出来");
@@ -233,7 +238,7 @@ pub(super) async fn report(gateway: &Gateway, caller: &Caller, req: Request) -> 
             };
             match chains
                 .ledger()
-                .start_bridge_turn(bot, report, mentioner, chain_user)
+                .start_turn(bot, report, mentioner, chain_user)
             {
                 Ok(grant) => axum::Json(grant).into_response(),
                 Err(error) => ledger_error(error),
@@ -256,7 +261,7 @@ fn refused(message: &str) -> Response {
     if !message.is_empty() {
         tracing::info!(%message, "调用链报告被拒");
         if let Ok(value) = hyper::header::HeaderValue::from_str(message) {
-            response.headers_mut().insert("X-Wonton-Detail", value);
+            response.headers_mut().insert(DETAIL_HEADER, value);
         }
     }
     response
@@ -272,7 +277,6 @@ pub(super) fn ledger_error(error: ChainLedgerError) -> Response {
                 rejection.clone(),
             ),
             ChainError::Stopped => (StatusCode::CONFLICT, "stopped", rejection.clone()),
-            ChainError::Busy => (StatusCode::TOO_MANY_REQUESTS, "busy", rejection.clone()),
             ChainError::PermissionDenied => (
                 StatusCode::FORBIDDEN,
                 "permission_denied",
@@ -283,13 +287,13 @@ pub(super) fn ledger_error(error: ChainLedgerError) -> Response {
             }
             ChainError::Other => (StatusCode::BAD_REQUEST, "other", rejection.clone()),
         },
-        ChainLedgerError::UnknownChain(_) | ChainLedgerError::UnknownSession(_) => {
+        ChainLedgerError::UnknownChain(_) => {
             (StatusCode::NOT_FOUND, "not_found", ChainError::Other)
         }
-        ChainLedgerError::AlreadyEnded { .. } | ChainLedgerError::NotAtLimit { .. } => {
+        ChainLedgerError::NotAtLimit { .. } => {
             (StatusCode::CONFLICT, "invalid_input", ChainError::Other)
         }
-        ChainLedgerError::SessionsLive { .. } | ChainLedgerError::Invalid(_) => {
+        ChainLedgerError::Invalid(_) => {
             (StatusCode::BAD_REQUEST, "invalid_input", ChainError::Other)
         }
         ChainLedgerError::UnknownCard(_) => (StatusCode::NOT_FOUND, "not_found", ChainError::Other),
@@ -301,13 +305,41 @@ pub(super) fn ledger_error(error: ChainLedgerError) -> Response {
             ChainError::Other,
         ),
     };
+    let detail = refusal_detail(&error);
     tracing::warn!(%error, "调用链报告没做成");
     let mut response = (status, axum::Json(wire)).into_response();
     response.headers_mut().insert(
         super::pages::ERROR_HEADER,
         hyper::header::HeaderValue::from_static(kind),
     );
+    if let Ok(value) = hyper::header::HeaderValue::from_str(&detail) {
+        response.headers_mut().insert(DETAIL_HEADER, value);
+    }
     response
+}
+
+/// 拒绝的说明文字：写进 [`DETAIL_HEADER`] 给调用方看（App 的“链”面板、Bot 插件给说话人的那句话）。
+/// 类别已经说明不了一切，比如同样的 `invalid_input` 既可能是绕圈，也可能是这一轮的会话还挂在别的链上。
+fn refusal_detail(error: &ChainLedgerError) -> String {
+    match error {
+        ChainLedgerError::Rejected(rejection) => match rejection {
+            ChainError::LimitReached { kind } => match kind {
+                ChainLimitKind::Depth => "链到层数上限了".to_owned(),
+                ChainLimitKind::Rounds => "链到轮数上限了".to_owned(),
+                ChainLimitKind::Cost => "链到花费上限了".to_owned(),
+                ChainLimitKind::Other => "链到上限了".to_owned(),
+            },
+            ChainError::Stopped => "链被人停了".to_owned(),
+            ChainError::PermissionDenied => "说话人不是这个 Bot 听的人".to_owned(),
+            ChainError::InvalidInput { refusal } => match refusal {
+                ChainRefusal::SelfCall => "目标就是发起的 Bot 自己".to_owned(),
+                ChainRefusal::Loop => "目标已经在这个会话的上级".to_owned(),
+                ChainRefusal::Other => "输入不对".to_owned(),
+            },
+            ChainError::Other => "别的原因".to_owned(),
+        },
+        other => other.to_string(),
+    }
 }
 
 /// 上限事件到账本的回调：发上限卡片（第 3 块）。回调同步，卡片在后台任务里等回答。
