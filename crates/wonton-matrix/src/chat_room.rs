@@ -10,6 +10,7 @@ use futures_util::{Stream, StreamExt, future, stream};
 use matrix_sdk::{
     Room, RoomMemberships,
     event_cache::PaginationStatus,
+    room::edit::EditedContent,
     ruma::{
         EventId, OwnedEventId, OwnedUserId, RoomId, UserId,
         api::client::receipt::create_receipt::v3::ReceiptType,
@@ -23,7 +24,7 @@ use matrix_sdk::{
 };
 use matrix_sdk_ui::{
     eyeball_im::{Vector, VectorDiff},
-    timeline::{EventTimelineItem, Timeline, TimelineItem},
+    timeline::{EventTimelineItem, Timeline, TimelineEventItemId, TimelineItem},
 };
 use tokio::{
     sync::{Notify, broadcast::error::RecvError, watch},
@@ -295,6 +296,22 @@ impl ChatRoom {
         crate::mentions::content(body, users, &names)
     }
 
+    /// 编辑一条自己发过的文字消息（ADR-0109 第 8 节）：在原来那条事件上发 `m.replace`，所有人那里整条换成新正文，
+    /// 时间不变、多“已编辑”。条目不在时间线里、不是消息、不是自己能编辑的报 [`Error::InvalidInput`]；发不出去报
+    /// [`Error::Upstream`]。
+    pub async fn edit_message(&self, event_id: &EventId, body: &str) -> Result<()> {
+        ensure_recipient_devices(&self.room).await?;
+        let item_id = TimelineEventItemId::EventId(event_id.to_owned());
+        self.timeline()
+            .await
+            .edit(
+                &item_id,
+                EditedContent::RoomMessage(RoomMessageEventContent::text_plain(body).into()),
+            )
+            .await?;
+        Ok(())
+    }
+
     /// 发送文字，事件内容里带上额外字段（链接预览的 `com.beeper.linkpreviews`，ADR-0065）。其余同
     /// [`Self::send_text`]。
     pub async fn send_text_with_extra(
@@ -442,9 +459,14 @@ impl ChatRoom {
         let status_choice = message
             .agent_run
             .as_ref()
-            .is_some_and(|status| status.choices.iter().any(|choice| choice.key == key));
-        let mut retry = false;
-        if !status_choice {
+            .and_then(|status| status.choices.iter().find(|choice| choice.key == key));
+        let retry;
+        if let Some(choice) = status_choice {
+            if choice.chosen {
+                return Err(Error::InvalidInput("这条已经答过了".to_owned()));
+            }
+            retry = matches!(choice.send, ChoiceSend::Failed { .. });
+        } else {
             let choices = message
                 .choices()
                 .ok_or_else(|| Error::InvalidInput("这条没有选项".to_owned()))?;
