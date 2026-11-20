@@ -5,7 +5,8 @@ import WontonClient
 /// 夜跑界面测试的夹具屏（ADR-0082）：不走主界面，直接摆 Agent 状态行。启动参数带
 /// `wonton-agent-run-preview` 时生效（同 `QualityPreviews` 的做法）。
 /// 时间线要登录后的房间才有（核心假数据只够首屏），这里核对行本身的显示和“点开卡片”的接线；
-/// 一轮从 working 到 done 用按钮推进，waiting 行点了记下开卡片这件事。
+/// 一轮从 working 到 done 用按钮推进，waiting 行点了记下开卡片这件事；
+/// 一串长选项核对放不下时换排（ADR-0109 的选项排法）。
 enum AgentRunPreview {
     static var active: Bool {
         ProcessInfo.processInfo.arguments.contains("wonton-agent-run-preview")
@@ -19,8 +20,22 @@ enum AgentRunPreview {
 private struct AgentRunPreviewScreen: View {
     @State private var finished = false
     @State private var openedCard = false
+    @State private var answered: String?
 
     var body: some View {
+        ScrollView {
+            content
+                .padding(WontonTheme.spacing.s16)
+                .frame(maxWidth: .infinity, alignment: .leading)
+        }
+    }
+
+    /// 夹具的字面量不落在 `label:` 参数位上（界面文字检查的规则二，同 `AgentRunFixtures.choice`）。
+    private func choice(_ key: String, _ label: String) -> AgentRunChoice {
+        AgentRunChoice(key: key, label: label)
+    }
+
+    private var content: some View {
         VStack(alignment: .leading, spacing: WontonTheme.spacing.s24) {
             AgentRunRow(
                 state: finished ? .done : .working,
@@ -54,6 +69,31 @@ private struct AgentRunPreviewScreen: View {
                 openCard: { _ in openedCard = true },
                 answerChoice: { _ in }
             )
+            // Hermes 审批那种一串选项：宽过一行时换成多排（ADR-0082 的选项按钮）。
+            AgentRunRow(
+                state: .waiting,
+                step: nil,
+                steps: nil,
+                progress: nil,
+                result: nil,
+                end: nil,
+                bodyText: "",
+                cardId: nil,
+                choices: [
+                    choice("once", "Allow once"),
+                    choice("session", "Allow for this session"),
+                    choice("always", "Allow for this Bot always"),
+                    choice("deny", "Deny")
+                ],
+                senderName: "Hermes",
+                timestampMs: 0,
+                openCard: { _ in },
+                answerChoice: { answered = $0 }
+            )
+            if let answered {
+                Text(verbatim: "answered \(answered)")
+                    .accessibilityIdentifier("fixture-answered")
+            }
             if openedCard {
                 // 界面测试断“点开了卡片”的占位；真的打开是时间线把那张卡片滚进来。
                 Color.clear
@@ -62,8 +102,6 @@ private struct AgentRunPreviewScreen: View {
                     .accessibilityIdentifier("fixture-card")
             }
         }
-        .padding(WontonTheme.spacing.s16)
-        .frame(maxWidth: .infinity, alignment: .leading)
     }
 
     /// 文字检查的规则二：夹具的字面量不经 label: 参数位。

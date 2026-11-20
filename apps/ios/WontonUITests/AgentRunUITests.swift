@@ -27,7 +27,8 @@ final class AgentRunUITests: XCTestCase {
             "完成后不该还显示已等待"
         )
 
-        let waiting = app.descendants(matching: .any)["agentRun-waiting"]
+        // 夹具里还有一行带选项的 waiting，点卡片那行取第一行。
+        let waiting = app.descendants(matching: .any)["agentRun-waiting"].firstMatch
         XCTAssertTrue(waiting.waitForExistence(timeout: 5), "夹具屏没有等确认的状态行")
         waiting.tap()
         XCTAssertTrue(
