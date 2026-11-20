@@ -45,12 +45,37 @@ class TimelineGroupingTest {
     }
 
     @Test
-    fun differentSenderOrInterveningTimestampSeparatesImages() {
+    fun differentSenderSeparatesImages() {
         val first = message(image())
         val next = message(image(), 1u)
 
         assertFalse(first.row().flushesWith(next.copy(senderId = "@other:example.org").row()))
-        assertFalse(first.row().flushesWith(next.copy(startsTimeGroup = true).row()))
+    }
+
+    @Test
+    fun runJoinsOnlyInsideOneGroup() {
+        val first = message(image(), run = MessageRun.FIRST)
+        val middle = message(image(), 1u, run = MessageRun.MIDDLE)
+        val last = message(image(), 2u, run = MessageRun.LAST)
+
+        assertTrue(middle.row().joins(first.row()))
+        assertTrue(last.row().joins(middle.row()))
+        assertFalse(first.row().joins(null))
+        // 组首接在组首后面、组中接在自己后面都不算接着。
+        assertFalse(first.row().joins(first.row()))
+        assertFalse(last.row().joins(last.row()))
+    }
+
+    @Test
+    fun aloneOrOtherNeverJoin() {
+        val first = message(image(), run = MessageRun.FIRST)
+        val other = message(image(), 1u, run = MessageRun.OTHER)
+
+        assertFalse(message(image(), 1u).row().joins(first.row()))
+        assertFalse(other.row().joins(first.row()))
+        assertFalse(message(image(), 2u, run = MessageRun.LAST).row().joins(other.row()))
+        val stranger = message(image(), 2u, run = MessageRun.LAST).copy(senderId = "@other:example.org")
+        assertFalse(stranger.row().joins(first.row()))
     }
 
     @Test
@@ -74,7 +99,7 @@ class TimelineGroupingTest {
         ),
     )
 
-    private fun message(body: MessageContent, index: UInt = 0u) = TimelineMessage(
+    private fun message(body: MessageContent, index: UInt = 0u, run: MessageRun = MessageRun.ALONE) = TimelineMessage(
         eventId = null,
         senderId = "@sender:example.org",
         senderName = "Sender",
@@ -89,7 +114,7 @@ class TimelineGroupingTest {
         preview = null,
         actions = emptyList(),
         group = MessageGroup("00000000000000000000000000000000", index, 2u),
-        run = MessageRun.ALONE,
+        run = run,
     )
 
     private fun TimelineMessage.row() = TimelineItem(group?.index.toString(), TimelineContent.Message(this))

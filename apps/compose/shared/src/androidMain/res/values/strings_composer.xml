@@ -47,4 +47,8 @@
     <string name="composer_stop_forbidden">You don\'t have permission to stop this.</string>
     <!-- One-line note above the chat composer: the stop request may not have reached the home server, so it is unknown whether the bot's turn stopped. The stop button stays for another try. -->
     <string name="composer_stop_uncertain">Couldn\'t reach your home server, so it\'s unclear whether it stopped. You can try again.</string>
+    <!-- Icon button left of the attachment button in the composer: opens the Bot command menu. Also its screen-reader label. -->
+    <string name="composer_commands">Commands</string>
+    <!-- Footer of the command menu: how many commands a Bot has beyond the listed ones. Argument: the count. -->
+    <string name="composer_commands_more">%1$d more commands not listed</string>
 </resources>

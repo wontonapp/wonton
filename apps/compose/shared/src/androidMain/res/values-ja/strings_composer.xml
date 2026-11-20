@@ -36,4 +36,8 @@
     <string name="composer_stop_forbidden">これを停止する権限がありません。</string>
     <!-- One-line note above the chat composer: the stop request may not have reached the home server, so it is unknown whether the bot's turn stopped. The stop button stays for another try. -->
     <string name="composer_stop_uncertain">自宅サーバに接続できず、停止できたか分かりません。もう一度お試しください。</string>
+    <!-- 入力欄のクリップの左にあるアイコンボタン：Bot のコマンド一覧を開く。読み上げラベルも兼ねる。 -->
+    <string name="composer_commands">コマンド</string>
+    <!-- コマンド一覧の末尾：一覧に出ていない件数。引数：件数。 -->
+    <string name="composer_commands_more">ほか %1$d 件のコマンドは表示していません</string>
 </resources>

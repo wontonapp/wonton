@@ -35,8 +35,6 @@
     <string name="timeline_start">以上是聊天的開頭</string>
     <string name="timeline_edited">已編輯</string>
     <string name="timeline_sending">已儲存，等待送達</string>
-    <string name="timeline_read">已讀</string>
-    <string name="timeline_delivered">已送達</string>
     <string name="timeline_send_failed_retrying">傳送失敗，會自動重試</string>
     <string name="timeline_send_failed">傳送失敗：%1$s</string>
     <string name="timeline_resend">重新傳送</string>
@@ -152,4 +150,12 @@
     <string name="room_call_active">通話中</string>
     <!-- One-line hint at the top of a group room that has none of your AIs in it; mentioning an AI there won't get an answer. No arguments. -->
     <string name="room_no_ai">這個群裡還沒有 AI</string>
+    <!-- 私聊裡對方正在輸入時的狀態列。無參數。 -->
+    <string name="timeline_typing">正在輸入…</string>
+    <!-- 群組裡一個人正在輸入時的狀態列。參數：名字。 -->
+    <string name="timeline_typing_group">%1$s 正在輸入…</string>
+    <!-- 群組裡幾個人正在輸入時的狀態列。參數：第一個名字和另外幾人。 -->
+    <string name="timeline_typing_more">%1$s 和另外 %2$d 人正在輸入…</string>
+    <!-- 跳轉的原訊息找不到時的輕提示。無參數。 -->
+    <string name="timeline_jump_unavailable">這則訊息找不到了</string>
 </resources>

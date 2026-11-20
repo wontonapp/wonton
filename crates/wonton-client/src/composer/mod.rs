@@ -288,6 +288,34 @@ impl ComposerLink {
         self.add(room, item)
     }
 
+    /// 假数据入口（`ui-fake`）没有登录，照样放进附件区：只跳过「房间能发」的检查，上传由 worker 照常等联网。
+    #[cfg(feature = "ui-fake")]
+    pub(crate) fn add_image_offline(
+        self: &Arc<Self>,
+        room: &str,
+        image: ImageUpload,
+    ) -> Result<String, CoreError> {
+        check_image_type(&image)?;
+        self.check_room_has_space(room)?;
+        let item = self.image_item(image)?;
+        self.add(room, item)
+    }
+
+    /// 同 [`add_image_offline`](Self::add_image_offline)，文件那侧。
+    #[cfg(feature = "ui-fake")]
+    pub(crate) fn add_file_offline(
+        self: &Arc<Self>,
+        room: &str,
+        source: UploadSource,
+        name: String,
+        mime_type: Option<String>,
+    ) -> Result<String, CoreError> {
+        check_file_name(&name)?;
+        self.check_room_has_space(room)?;
+        let item = file_item(source, name, mime_type);
+        self.add(room, item)
+    }
+
     pub(crate) fn add_file(
         self: &Arc<Self>,
         room: &str,
