@@ -629,13 +629,14 @@ impl Inner {
             None => TunnelStatus::Connected,
             Some(ConnectionError::LocallyClosed) => return,
             Some(reason) => {
+                let error = from_connection_error(&reason);
                 tracing::debug!(
                     conn_id,
                     caller = %std::panic::Location::caller(),
-                    ?reason,
+                    code = error.code(),
                     "confirm on a closed connection"
                 );
-                TunnelStatus::Disconnected(from_connection_error(&reason))
+                TunnelStatus::Disconnected(error)
             }
         };
         self.set_status(status);
@@ -683,7 +684,7 @@ impl Inner {
         } else {
             tracing::debug!(
                 conn_id,
-                to = ?status,
+                to = %status_brief(&status),
                 caller = %std::panic::Location::caller(),
                 "dropped a stale status"
             );
@@ -705,10 +706,23 @@ impl Inner {
             if let TunnelStatus::Disconnected(err) = &status {
                 stats.last_failure = Some(err.clone());
             }
-            tracing::debug!(from = ?*current, to = ?status, %caller, "tunnel status");
+            tracing::debug!(
+                from = %status_brief(current),
+                to = %status_brief(&status),
+                %caller,
+                "tunnel status"
+            );
             *current = status;
             true
         });
+    }
+}
+
+/// 状态日志只写错误码：断开原因的字节里可能带一次性令牌，不能原样进日志。
+fn status_brief(status: &TunnelStatus) -> String {
+    match status {
+        TunnelStatus::Disconnected(err) => format!("Disconnected({})", err.code()),
+        other => format!("{other:?}"),
     }
 }
 
@@ -730,7 +744,6 @@ fn watch_close(inner: Weak<Inner>, conn: &Connection) {
             tracing::debug!(conn_id, "watch_close: closed without a reason");
             return;
         };
-        tracing::debug!(conn_id, reason = ?closed.reason, "watch_close: connection closed");
         let Some(inner) = inner.upgrade() else {
             return;
         };
@@ -739,6 +752,7 @@ fn watch_close(inner: Weak<Inner>, conn: &Connection) {
             return;
         }
         let err = from_connection_error(&closed.reason);
+        tracing::debug!(conn_id, code = err.code(), "watch_close: connection closed");
         let server = lock(&inner.server).id.fmt_short();
         info!(%server, code = err.code(), "隧道连接已断开");
         let confirmed = *lock(&inner.confirmed) == Some(conn_id);
