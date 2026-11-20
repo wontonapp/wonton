@@ -25,6 +25,8 @@ dev="$here/dev.sh"
 
 # shellcheck source=deploy/dev/core/smoke-lib.sh
 source "$here/smoke-lib.sh"
+# shellcheck source=deploy/dev/core/dev-guard.sh
+source "$here/dev-guard.sh"
 
 # 带实例名：下面的清理只动这个实例的插件，同一台 Docker 上别的核心不受影响。冒烟一次只跑一个。
 # 只有 SMOKE_ONLY 对着已有的栈跑时才认外面给的项目、实例、域名和数据目录。
@@ -36,6 +38,7 @@ export WONTON_DEV_PROJECT="${WONTON_DEV_PROJECT:-wonton-smoke}" WONTON_DEV_INSTA
 export WONTON_DEV_PORT="${WONTON_DEV_PORT:-18481}"
 export WONTON_DEV_TUNNEL_PORT="${WONTON_DEV_TUNNEL_PORT:-18483}"
 export WONTON_DEV_DOMAIN="${WONTON_DEV_DOMAIN:-wonton.localhost}" WONTON_DEV_DATA="${WONTON_DEV_DATA:-/tmp/wonton-smoke}"
+if [[ -z "${SMOKE_ONLY:-}" ]]; then dev_guard_check "$WONTON_DEV_PROJECT"; fi
 # 核心镜像和隧道客户端镜像用同一个提交号构建，共用 Dockerfile 里的编译阶段。
 WONTON_BUILD_COMMIT="$("$dev" commit)"
 export WONTON_BUILD_COMMIT

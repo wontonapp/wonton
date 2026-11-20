@@ -19,8 +19,11 @@ done
 [[ "$(openssl version)" == OpenSSL\ [3-9]* ]] || fail '需要 OpenSSL 3+'
 [[ -n "${WONTON_DEV_CORE_SUBNET:-}" ]] || fail '先经 stack-slot.sh acquire -- 运行，见 README'
 case "${DOCKER_HOST:-}" in ssh://* | tcp://*) fail '仅支持本机 Docker；请在目标主机运行' ;; esac
+# shellcheck source=deploy/dev/core/dev-guard.sh
+source "$here/dev-guard.sh"
 # An explicit project lets the caller register the exact stack with stack-slot.
 export WONTON_DEV_PROJECT="${WONTON_DEV_PROJECT:-wonton-mailbox-$(date +%s)-$$}"
+dev_guard_check "$WONTON_DEV_PROJECT"
 [[ "$WONTON_DEV_PROJECT" =~ ^wonton-mailbox-[a-z0-9-]+$ ]] || fail '项目名须为 wonton-mailbox-<唯一后缀>'
 export WONTON_DEV_INSTANCE="mb$(openssl rand -hex 6)"
 export WONTON_DEV_PORT="${WONTON_DEV_PORT:-18561}"
