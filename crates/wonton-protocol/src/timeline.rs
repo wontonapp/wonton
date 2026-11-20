@@ -378,16 +378,41 @@ pub enum SendState {
         progress: Option<f32>,
     },
     Sent,
-    /// 发送失败，`message` 是原因。没发出去的都可以取消（[`TimelineAction::CancelSend`](crate::TimelineAction::CancelSend)）。
+    /// 发送失败。没发出去的都可以取消（[`TimelineAction::CancelSend`](crate::TimelineAction::CancelSend)）。
     ///
     /// - `recoverable` 为真：连接出了问题（连不上、超时、服务器暂时出错）。核心隔一段时间自动重发，连续失败时间隔
     ///   逐渐拉长，直到发出去；也可以马上重发（[`TimelineAction::RetrySend`](crate::TimelineAction::RetrySend)）。
     /// - 为假：服务器拒收（比如太大、没有权限）。核心不自动重发，同一房间之后发的消息都排在它后面，直到主人重发或者
     ///   取消这一条。
     Failed {
-        message: String,
+        /// 哪一类失败。说法在壳里（第 8 节），按它写一句话。
+        failure: SendFailure,
+        /// 详情：SDK 或家里服务器给的原文，可能带英文。放在失败面板里给愿意看的人，`None` 表示没有。
+        details: Option<String>,
         recoverable: bool,
     },
+}
+
+/// 发送失败的类别。说法在壳里，原文在 [`SendState::Failed::details`]。
+#[derive(Clone, Copy, Debug, PartialEq, Eq, Serialize, Deserialize)]
+#[cfg_attr(feature = "uniffi", derive(uniffi::Enum))]
+#[serde(rename_all = "snake_case")]
+pub enum SendFailure {
+    /// 连不上：网络断了、隧道没通、超时。
+    Offline,
+    /// 太大：超过家里服务器的上传上限。
+    TooLarge,
+    /// 这个格式发不了。
+    UnsupportedType,
+    /// 要回复的那条不在了。
+    ReplyTarget,
+    /// 家里服务器拒收：没有权限、不在房间里、被屏蔽。
+    Rejected,
+    /// 家里的服务器出错。
+    Upstream,
+    /// 别的：更老的核心，或者更新的核心给出的类别。
+    #[serde(other)]
+    Other,
 }
 
 /// 消息内容。
@@ -730,7 +755,8 @@ mod tests {
                         message(
                             text_with_file(),
                             SendState::Failed {
-                                message: "网络断开".into(),
+                                failure: SendFailure::Offline,
+                                details: None,
                                 recoverable: true,
                             },
                         ),

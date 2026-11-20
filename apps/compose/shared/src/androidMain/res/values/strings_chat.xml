@@ -190,4 +190,11 @@
     <string name="timeline_typing_more">%1$s and %2$d more are typing…</string>
     <!-- Light hint when the jumped-to message can't be found. No arguments. -->
     <string name="timeline_jump_unavailable">That message isn\'t here anymore</string>
+    <string name="timeline_send_failure_offline">Not connected</string>
+    <string name="timeline_send_failure_too_large">Too large, send it as a file</string>
+    <string name="timeline_send_failure_unsupported_type">This format can\'t be sent</string>
+    <string name="timeline_send_failure_reply_target">The quoted message is gone</string>
+    <string name="timeline_send_failure_rejected">Your server refused it</string>
+    <string name="timeline_send_failure_upstream">Server problem</string>
+    <string name="timeline_send_failed_other">Send failed</string>
 </resources>

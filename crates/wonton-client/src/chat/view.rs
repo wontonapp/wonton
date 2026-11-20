@@ -281,7 +281,8 @@ fn send_state(status: SendStatus) -> SendState {
         },
         SendStatus::Sent => SendState::Sent,
         SendStatus::Failed { error, recoverable } => SendState::Failed {
-            message: error,
+            failure: wonton_protocol::SendFailure::Other,
+            details: Some(error),
             recoverable,
         },
     }
