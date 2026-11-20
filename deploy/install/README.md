@@ -168,15 +168,20 @@ curl -fsSL https://raw.githubusercontent.com/wontonapp/wonton-install/main/insta
 公开仓库里的 `install.sh` 是本目录这份的原样副本，只从主仓库往那边拷，那边不直接改。公开仓库的 `README.md`
 是给用户看的短说明，单独维护，跟着改。
 
-- `deploy/install/public-copy` 两行：第一行是公开仓库 main 上的提交（用户装到的副本），第二行是主仓库里同样内容的提交。
-  `scripts/install/check-public-copy.sh` 在 `lint` 里每次都跑，比对这两处的内容，并确认第一行在公开仓库 main 上
-  （同步分支合了就被删，分支上的提交迟早不可达）。只在改了 `install.sh` 却没更新 `public-copy` 时才红。
-- 改了 `install.sh` 之后在公开仓库的克隆里执行 `scripts/install/sync-public.sh <克隆目录>`：它先确认公开 main 和主仓库
-  这份内容一致，再拷过去、推一个分支，把两行换成公开 main 和主仓库 HEAD。然后在公开仓库开草稿 PR，先合它。
-  公开仓库一合，所有人拉到的就是它，所以只在核心发版时合。
-- 同步 PR 挂着时公开 main 还是旧内容。`public-copy` 记的是两份出处，不是“公开已经有新内容”，这段时间 lint 不红。
-  公开 PR 合了之后在克隆里 `git switch main && git pull`，用同一个克隆再跑一次 `sync-public.sh`（内容相同，只换第一行
-  和第二行），这个单独提交就是合并后的 pin 更新。
+- `deploy/install/public-copy` 三行：第一行是公开仓库 main 上的提交（用户装到的副本），第二行是主仓库里含这份内容的提交，
+  第三行是 `install.sh` 的 blob（`git hash-object deploy/install/install.sh`）。`scripts/install/check-public-copy.sh`
+  在 `lint` 里每次都跑：第三行要等于工作树这份的 hash，第一行那份要跟它逐字节相同；还会确认第一行在公开仓库 main 上
+  （同步分支合了就被删，分支上的提交迟早不可达）、第二行在仓库里且有这份内容。第二行的提交本地取不到没关系，检查经 API 读。
+  本地跑要带 token：`GH_TOKEN=$(gh auth token) bash scripts/install/check-public-copy.sh`。
+- 顺序只能这样，因为检查比的就是公开 main 上的内容：
+  1. 改 `install.sh`，提交。
+  2. 在公开仓库的克隆里执行 `scripts/install/sync-public.sh <克隆目录>`：它把这个文件拷过去、推一个同步分支，把三行写成
+     公开 main、这次提交和这份内容的 blob。把改动连同 `public-copy` 提交，然后在公开仓库开草稿 PR。
+  3. 公开 PR 合了之后，同一个克隆 `git switch main && git pull`，再跑一次 `sync-public.sh`：内容相同，不推分支，只把第一行
+     换成合并后的 main 提交。把这个改动提交上去，主仓库的 PR 这时才绿。
+  4. 合主仓库的 PR。第二行到这时仍是分支上的提交，PR 合掉之后它也还在仓库里，够检查用。
+- 同步 PR 挂着的时候公开 main 还是旧内容，主仓库的 PR 一路是红的（公开那份和它记的内容对不上），这是对的。公开仓库一合，
+  所有人拉到的就是它，所以只在核心发版时合，前后顺序就是上面这个。
 - 公开仓库里只有这两份文件，别的（ADR、源码、compose）都只在主仓库，那边的说明里不放相对链接。
 
 ## 在本机测

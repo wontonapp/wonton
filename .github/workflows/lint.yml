@@ -28,7 +28,10 @@ jobs:
       - name: ADR 的文件名和标题编号一致、不重号
         run: python3 scripts/adr-index.py --check
       # 公开仓库里的 install.sh 是用户的唯一安装入口，只能从主仓库同步过去；对不上就红，见 deploy/install/README.md。
+      # 检出只有两个提交，第二行记的提交本地没有，检查经 API 读主仓库那份文件，所以要带 token。
       - name: 公开仓库的 install.sh 和主仓库一致
+        env:
+          GH_TOKEN: ${{ github.token }}
         run: bash scripts/install/check-public-copy.sh
       - name: 装 gitleaks（版本和 sha256 固定）
         run: |
