@@ -256,6 +256,9 @@ private extension ChatRoomView {
                     commandAvatar: { commandAvatar($0) },
                     jumpToReply: { replyJump($0) }
                 )
+                .onGeometryChange(for: CGFloat.self) { $0.frame(in: .global).minY } action: { top in
+                    pin.noteComposer(top: top)
+                }
             }
         }
     }
