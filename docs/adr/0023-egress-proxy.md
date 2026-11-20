@@ -91,6 +91,7 @@ Docker 的健康检查和容器共用环境变量，没有单独的设置。busy
 
 - **镜像自带的 `HEALTHCHECK` 同样改写**：compose 没写 `test` 时从镜像取。`interval`、`timeout`、`start_period`、`start_interval`、`retries` 原样带上，compose 写了的以 compose 为准。`NONE` 不改。
 - 这些都写成渲染层的行为测试。实测过的写法见“验证结果”。
+- Agent 生成应用的模板（`plugin-guide/assets`）用 `CMD wget` 配 `-T 3` 写健康检查，交给改写加 `-Y off`，照抄就是对的。
 - 这只管健康检查；入口脚本里用 busybox wget 访问内部地址的，作者自己加 `-Y off`，插件规范写明。
 
 ### 不认代理变量的程序
