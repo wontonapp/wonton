@@ -500,7 +500,9 @@ impl SendLimiter {
             Ok(user_id) => user_id,
             // 401 是令牌不认了（吊销、停用、过期）；403 是 Tuwunel 认得请求、不认这个身份（账号被停用）——
             // 都是重试也一样，上游拿到的都是永久的 403。其余（连不上、5xx、应答不成样子）可能一问就好。
-            Err(MatrixError::Rejected { status, .. }) if matches!(status, 401 | 403) => {
+            Err(MatrixError::Rejected {
+                status: 401 | 403, ..
+            }) => {
                 return Identity::Unknown;
             }
             Err(error) => {
