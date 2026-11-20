@@ -32,6 +32,11 @@ export WONTON_DEV_DATA="/tmp/wonton-onboarding-smoke-$(date +%s)-$$"
 export WONTON_DEV_DEFAULT_PLUGINS=''
 # 出网代理（ADR-0023）：模型网关的上游经出口容器走。要不要设见文件头的说明。
 export WONTON_EGRESS_PROXY="${WONTON_SMOKE_EGRESS_PROXY:-}"
+# 这个脚本的密钥放在检出目录（不带进正式安装的状态目录）；dev.sh 在 source 时就按它定好变量。
+export WONTON_DEV_SECRETS="$here/.secrets"
+# core 网络由 dev.sh 建和删（网络在 compose 文件里是 external，见 dev.sh 的 ensure_core_network）。
+# shellcheck source=deploy/dev/core/dev.sh
+source "$here/dev.sh"
 dev_guard_check "$WONTON_DEV_PROJECT"
 WONTON_BUILD_COMMIT="$("$dev" commit)"
 export WONTON_BUILD_COMMIT
@@ -88,7 +93,9 @@ json_len() { python3 -c 'import json,sys; print(len(json.load(sys.stdin)))'; }
 cleanup() {
   local status=$?
   if [[ "${KEEP:-}" == 1 ]]; then
-    echo "保留现场：项目 $core，数据目录 $WONTON_DEV_DATA（清理：WONTON_DEV_PROJECT=$core WONTON_DEV_DATA=$WONTON_DEV_DATA docker compose -p $core -f $here/compose.yaml down -v --remove-orphans）"
+    echo "保留现场：项目 $core，数据目录 $WONTON_DEV_DATA"
+    echo "清理：WONTON_DEV_PROJECT=$core WONTON_DEV_DATA=$WONTON_DEV_DATA docker compose -p $core -f $here/compose.yaml down -v --remove-orphans"
+    echo "     docker ps -aq --filter label=wonton.instance=$WONTON_DEV_INSTANCE | xargs docker rm -f >/dev/null; docker network rm ${core}_core"
     return
   fi
   # 先停出口容器：它挂在每个出网插件的网络里，不摘掉，插件网络删不掉。
@@ -100,6 +107,8 @@ cleanup() {
     for resource in $(docker ps -aq --filter "label=wonton.plugin=$id" --filter "label=wonton.instance=$WONTON_DEV_INSTANCE"); do docker rm -f "$resource" >/dev/null 2>&1 || true; done
   done
   docker compose -p "$core" -f "$here/compose.yaml" down -v --remove-orphans >/dev/null 2>&1 || true
+  # 删不掉时 remove_core_network 已经在标准错误上说了原因，清理流程接着走完。
+  remove_core_network || true
   for id in "${plugins[@]}"; do
     for resource in $(docker network ls -q --filter "label=wonton.plugin=$id" --filter "label=wonton.instance=$WONTON_DEV_INSTANCE"); do docker network rm "$resource" >/dev/null 2>&1 || true; done
     for resource in $(docker volume ls -q --filter "label=wonton.plugin=$id" --filter "label=wonton.instance=$WONTON_DEV_INSTANCE"); do docker volume rm "$resource" >/dev/null 2>&1 || true; done
@@ -242,21 +251,11 @@ step "构建核心镜像（版本号 $core_version，满足索引的 min_core）
   -t "$core_image" -f "$here/Dockerfile" "$repo" >/dev/null
 ok "镜像 $core_image"
 
-step "准备 Hydra 和 Matrix 的密钥（这个脚本自己用检出目录的 .secrets，没有才生成；dev.sh 的密钥在状态目录，互不相干）"
-secrets="$here/.secrets"
-mkdir -p "$secrets" && chmod 700 "$secrets"
-if [[ ! -s "$secrets/hydra-system-secret" ]]; then
-  od -An -N32 -tx1 /dev/urandom | tr -d ' \n' >"$secrets/hydra-system-secret"
-fi
-export WONTON_DEV_HYDRA_SECRET="$(cat "$secrets/hydra-system-secret")"
-if [[ ! -s "$secrets/matrix-jwt.pem" ]]; then
-  (umask 077 && openssl genpkey -algorithm ed25519 -out "$secrets/matrix-jwt.pem")
-  openssl pkey -in "$secrets/matrix-jwt.pem" -pubout -out "$secrets/matrix-jwt.pub.pem"
-  od -An -N32 -tx1 /dev/urandom | tr -d ' \n' >"$secrets/matrix-shared-secret"
-fi
-export WONTON_DEV_MATRIX_JWT_KEY="$(cat "$secrets/matrix-jwt.pem")"
-export WONTON_DEV_MATRIX_JWT_PUBLIC_KEY="$(cat "$secrets/matrix-jwt.pub.pem")"
-export WONTON_DEV_MATRIX_SECRET="$(cat "$secrets/matrix-shared-secret")"
+step "准备 Hydra 和 Matrix 的密钥（这个脚本照旧用检出目录的 .secrets，密钥由 dev.sh 的准备函数生成）"
+mkdir -p "$WONTON_DEV_SECRETS"
+ensure_secret
+ensure_matrix_secrets
+ensure_dev_federation
 mkdir -p "$WONTON_DEV_DATA"
 cat >"$WONTON_DEV_DATA/compose-override.yaml" <<YAML
 services:
@@ -269,6 +268,7 @@ services:
 YAML
 
 step "启动核心（项目 $core，端口 $WONTON_DEV_PORT）"
+ensure_core_network
 docker compose -p "$core" -f "$here/compose.yaml" -f "$WONTON_DEV_DATA/compose-override.yaml" \
   up -d --no-build --wait >/dev/null
 token="$(docker exec "$core" cat "$WONTON_DEV_DATA/core/owner-token")"

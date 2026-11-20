@@ -147,9 +147,34 @@ class DevGuardTest(unittest.TestCase):
         sibling = self.tmp / "opt/wonton2"
         sibling.mkdir()
         self.assertEqual(self.shell(GUARD, ["wonton-dev-core"], cwd=sibling).returncode, 0)
+        # 读不进去的正式安装目录（本机真装的那份是 root 700）不能让别的目录全被判成“在里面”。
+        locked = self.tmp / "opt/locked"
+        locked.mkdir()
+        locked.chmod(0o000)
+        self.addCleanup(locked.chmod, 0o700)
+        result = self.shell(GUARD, ["wonton-dev-core"], cwd=sibling, env={"WONTON_INSTALL_DIR": str(locked)})
+        self.assertEqual(result.returncode, 0, result.stderr)
         # 查不到 Docker 时不误伤：脚本本来就跑不起来，守卫不该再挡一层。
         broken = self.shell(GUARD, ["wonton-dev-core"], env={"FAKE_DOCKER_FAIL": "1"})
         self.assertEqual(broken.returncode, 0, broken.stderr)
+
+    def test_install_dir_spellings_find_the_same_directory(self):
+        # 正式安装目录可能是 root 700：cd 进不去。相对路径、带 ..、符号链接都得先规范化成真路径再比，
+        # 否则三道判据全落空、守卫放行。
+        wrapper = self.tmp / "enter-locked.sh"
+        wrapper.write_text('#!/usr/bin/env bash\ncd "$1" || exit 99\nchmod 000 "$2"\nshift 2\nexec "$@"\n')
+        wrapper.chmod(0o755)
+        deeper = self.install / "sub"
+        deeper.mkdir()
+        link = self.tmp / "sym"
+        link.symlink_to(self.install)
+        self.addCleanup(self.install.chmod, 0o700)
+        for spelling in ("..", f"{self.install}/sub/..", str(link)):
+            with self.subTest(install_dir=spelling):
+                self.install.chmod(0o700)
+                result = self.shell(wrapper, [str(deeper), str(self.install), GUARD, "wonton-dev-core"],
+                                    env={"WONTON_INSTALL_DIR": spelling})
+                self.refused(result, os.path.realpath(self.install))
 
     def test_scripts_refuse(self):
         label = f"{self.install}\t{self.install}/compose.yaml"
