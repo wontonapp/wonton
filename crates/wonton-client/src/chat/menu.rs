@@ -25,7 +25,6 @@ pub(super) fn message_actions(
     event_id: Option<&str>,
     is_own: bool,
     can_redact: bool,
-    is_own: bool,
     quote: impl FnOnce(String) -> QuotedMessage,
 ) -> Vec<MessageAction> {
     let mut actions = Vec::new();
@@ -370,7 +369,7 @@ mod tests {
             sender_name: "Bot".to_owned(),
             content: QuotedContent::Other,
         };
-        message_actions(body, event_id, can_redact, is_own, quote)
+        message_actions(body, event_id, is_own, can_redact, quote)
             .iter()
             .map(|action| match action {
                 MessageAction::Copy { .. } => "copy",
@@ -401,11 +400,11 @@ mod tests {
         );
         assert_eq!(
             kinds(&text(), Some("$a"), false, true),
-            ["reply", "copy", "edit", "forward", "redact"]
+            ["reply", "copy", "edit", "forward"]
         );
         assert_eq!(
             kinds(&text(), Some("$a"), true, false),
-            ["reply", "copy", "edit", "forward"]
+            ["reply", "copy", "forward", "redact"]
         );
         assert_eq!(
             kinds(&text(), Some("$a"), true, true),
