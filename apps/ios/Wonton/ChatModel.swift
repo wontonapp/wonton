@@ -45,10 +45,10 @@ final class ChatModel {
     /// 新建聊天选的 AI 不支持旁聊、打开的是主对话的房间（ADR-0093 §7）。
     var noSideChatsRoom: String?
     /// 刚发起了和这个用户的私聊，房间出现后打开。
-    fileprivate var awaitedPeer: String?
+    var awaitedPeer: String?
     /// 链接要打开的房间；还需要加入或等同步。
-    fileprivate var awaitedRoom: String?
-    @ObservationIgnored fileprivate var awaitedFrom = AppTab.chat
+    var awaitedRoom: String?
+    @ObservationIgnored var awaitedFrom = AppTab.chat
     /// 发起私聊在后台失败了，原因显示在聊天页，主界面要切过去。
     var openingFailed = false
     /// 主人在交接页点了“稍后”（ADR-0087）：先收起交接页，聊天列表顶上的提醒再打开。只在这次运行里记着。
@@ -318,7 +318,7 @@ final class ChatModel {
         openAwaitedChat()
     }
 
-    fileprivate func show(_ roomId: String, from origin: AppTab) {
+    func show(_ roomId: String, from origin: AppTab) {
         if origin == .chat {
             path = [.room(roomId)]
         } else {

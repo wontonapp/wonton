@@ -2,6 +2,36 @@
   "sourceLanguage": "en",
   "version": "1.0",
   "strings": {
+    "message.choiceFailed": {
+      "comment": "Shown under a message's option buttons when the tapped option could not be sent. Tapping the option again retries.",
+      "extractionState": "manual",
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Couldn't send your choice. Tap it to try again."
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "没发出去，再点一次重试"
+          }
+        },
+        "zh-Hant": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "沒送出去，再點一次重試"
+          }
+        },
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "送信できませんでした。もう一度タップしてください"
+          }
+        }
+      }
+    },
     "message.clipLabel": {
       "comment": "Label of the clipboard entry when a message is copied. Rarely shown, but must not fall back to another language. Android only.",
       "extractionState": "manual",
@@ -242,6 +272,36 @@
         }
       }
     },
+    "message.sendFailure.rejected": {
+      "comment": "Send failed because the server refused the message.",
+      "extractionState": "manual",
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Your server refused it"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "服务器不收"
+          }
+        },
+        "zh-Hant": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "伺服器不收"
+          }
+        },
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "サーバーに拒否されました"
+          }
+        }
+      }
+    },
     "message.summaryFiles": {
       "comment": "Placeholder for a message that only has file links, in the chat list preview and in notifications.",
       "extractionState": "manual",
@@ -302,36 +362,6 @@
         }
       }
     },
-    "message.summaryUndecryptable": {
-      "comment": "Placeholder for a message this device can't decrypt yet.",
-      "extractionState": "manual",
-      "localizations": {
-        "en": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "[Encrypted message]"
-          }
-        },
-        "zh-Hans": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "[加密消息]"
-          }
-        },
-        "zh-Hant": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "[加密訊息]"
-          }
-        },
-        "ja": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "[暗号化されたメッセージ]"
-          }
-        }
-      }
-    },
     "message.summaryRedacted": {
       "comment": "Placeholder for a message the sender deleted.",
       "extractionState": "manual",
@@ -362,62 +392,32 @@
         }
       }
     },
-    "message.sendFailure.rejected": {
-      "comment": "Send failed because the server refused the message.",
+    "message.summaryUndecryptable": {
+      "comment": "Placeholder for a message this device can't decrypt yet.",
       "extractionState": "manual",
       "localizations": {
         "en": {
           "stringUnit": {
             "state": "translated",
-            "value": "Your server refused it"
+            "value": "[Encrypted message]"
           }
         },
         "zh-Hans": {
           "stringUnit": {
             "state": "translated",
-            "value": "服务器不收"
+            "value": "[加密消息]"
           }
         },
         "zh-Hant": {
           "stringUnit": {
             "state": "translated",
-            "value": "伺服器不收"
+            "value": "[加密訊息]"
           }
         },
         "ja": {
           "stringUnit": {
             "state": "translated",
-            "value": "サーバーに拒否されました"
-          }
-        }
-      }
-    },
-    "message.choiceFailed": {
-      "comment": "Shown under a message's option buttons when the tapped option could not be sent. Tapping the option again retries.",
-      "extractionState": "manual",
-      "localizations": {
-        "en": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "Couldn't send your choice. Tap it to try again."
-          }
-        },
-        "zh-Hans": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "没发出去，再点一次重试"
-          }
-        },
-        "zh-Hant": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "沒送出去，再點一次重試"
-          }
-        },
-        "ja": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "送信できませんでした。もう一度タップしてください"
+            "value": "[暗号化されたメッセージ]"
           }
         }
       }

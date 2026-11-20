@@ -221,9 +221,9 @@ private struct MessageBubble: View {
             .accessibilityIdentifier("messageReply")
         case .edit:
             Button {
-                edit(message.id)
+                edit(itemId)
             } label: {
-                Label { Text(.Message2.messageEdit) } icon: { Image(systemName: "pencil") }
+                Label { Text(.Message0.messageEdit) } icon: { Image(systemName: "pencil") }
             }
             .accessibilityIdentifier("messageEdit")
         case .forward:
