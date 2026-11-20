@@ -1,5 +1,7 @@
 //! 正在输入、命令表和跳到原消息（ADR-0109 §4、§7）。
 
+use std::time::Duration;
+
 use serde_json::json;
 use wonton_client::{Action, MessageContent, TimelineContent, TimelineScroll, TimelineUpdate};
 use wonton_matrix::{MatrixSession, OwnedRoomId, UserId};
@@ -73,11 +75,25 @@ async fn typing_shows_the_bot_and_clears_when_it_sends() {
     let mut timeline = Timeline::open(&phone, &room).await;
     let bot_room = bot.open_room(&room_id).await.expect("Bot 打开群聊");
 
-    typing(&home.matrix.url, &bot, &room, true).await;
-    let update = until_update(&mut timeline, "收到正在输入", |update| {
-        update.typing.iter().any(|name| name == "Hermes")
-    })
-    .await;
+    // 正在输入是一次性的 ephemeral 事件，房间刚打开时可能还没接上流：重报直到看见。
+    let mut attempts = 0;
+    let update = loop {
+        attempts += 1;
+        typing(&home.matrix.url, &bot, &room, true).await;
+        let seen = tokio::time::timeout(Duration::from_secs(5), async {
+            loop {
+                let update = timeline.next().await;
+                if update.typing.iter().any(|name| name == "Hermes") {
+                    return update;
+                }
+            }
+        })
+        .await;
+        if let Ok(update) = seen {
+            break update;
+        }
+        assert!(attempts < 12, "重报 {attempts} 次正在输入都没收到");
+    };
     assert_eq!(update.typing, ["Hermes"]);
 
     bot_room.send_text("我来了", &[]).await.expect("Bot 发文字");

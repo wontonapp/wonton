@@ -1,6 +1,10 @@
 //! 服务器发来的同步把刚加入的房间标成“受邀”：时间线里有加入事件，`required_state` 里本人却还是邀请。
 //! Tuwunel 先让新事件对同步可见、再更新房间当前状态，这中间的一次同步就是这样（CI 上实测）。模拟核心保持
 //! 这种错标，测试看到改写送达后清除，让客户端通过重新订阅拿回真实状态。
+//!
+//! 加入事件只在一个应答里送达一次：改写要等到它的那条应答，会话里别的连接或者重启前的请求先把它吃掉，
+//! 之后再怎么重启都不会带回它（CI 上因此连红）。所以应答里已经没有了加入事件时，按房间成员现场造一条
+//! 邀请来改写，改写只看房间在不在应答里，不看加入事件是否还在。
 
 use std::time::{Duration, Instant};
 
@@ -202,7 +206,35 @@ fn report_as_invited(json: &mut Value, stale: &StaleJoin) -> bool {
                 && event["unsigned"]["prev_content"]["membership"] == "invite"
         })
     }) else {
-        return false;
+        // 加入事件已经被别的应答吃掉：房间还在列表里就照常改错标，邀请现场造。
+        // 成员事件只影响行的成员状态，不碰时间线。
+        let inviter = room["required_state"]
+            .as_array()
+            .into_iter()
+            .flatten()
+            .chain(room["timeline"].as_array().into_iter().flatten())
+            .filter(|event| event["type"] == "m.room.member")
+            .find_map(|event| {
+                let sender = event["sender"].as_str()?;
+                (sender != stale.user_id).then_some(sender)
+            })
+            .unwrap_or(stale.user_id.as_str());
+        let invite = serde_json::json!({
+            "type": "m.room.member",
+            "state_key": stale.user_id,
+            "event_id": "$stale-invite",
+            "sender": inviter,
+            "content": {"membership": "invite"},
+        });
+        let required = room
+            .as_object_mut()
+            .unwrap()
+            .entry("required_state")
+            .or_insert_with(|| Value::Array(Vec::new()));
+        let required = required.as_array_mut().unwrap();
+        required.retain(|event| !is_own_member(event));
+        required.push(invite);
+        return true;
     };
     let mut invite = join.clone();
     invite["content"] = join["unsigned"]["prev_content"].clone();
