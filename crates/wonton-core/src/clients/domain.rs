@@ -84,14 +84,14 @@ pub struct Saved {
 pub struct Domain {
     install_dir: PathBuf,
     data_dir: PathBuf,
-    engine: Engine,
+    pub(crate) engine: Engine,
     /// 核心的实例名：入口容器按组件标签找时用它限定自己这套，别热加载别家的入口。
     instance: Instance,
     notices: Option<Arc<NoticeRoom>>,
     /// 串行化签发；同时来两次就排队，后一次用最新的设置。
     issuance: Mutex<()>,
     /// 已经排队的签发数；大于零时证书状态是 `issuing`。
-    pending: AtomicUsize,
+    pub(crate) pending: AtomicUsize,
     /// 设置文件的读写锁，签发不占着它。
     writes: Mutex<()>,
     /// CAA 结果的短缓存（后缀加账号为键，60 秒）：设置页刷新别每次都等 DNS。
@@ -663,6 +663,20 @@ impl Domain {
 
 fn invalid(error: anyhow::Error) -> DomainError {
     DomainError::Invalid(format!("{error:#}"))
+}
+
+/// 域名设置文件里的后缀（还没配就是 None）。入口对账按它判断有没有要服务的名字；
+/// 文件名和格式由这个模块管，别处不重复解析。
+pub(crate) fn stored_suffix(install_dir: &Path) -> Result<Option<String>> {
+    let path = install_dir.join(DOMAIN_FILE);
+    match std::fs::read(&path) {
+        Ok(bytes) => {
+            let store: Store = serde_json::from_slice(&bytes).with_context(|| "读不了域名设置")?;
+            Ok(store.suffix)
+        }
+        Err(error) if error.kind() == std::io::ErrorKind::NotFound => Ok(None),
+        Err(error) => Err(error).with_context(|| format!("读取 {}", path.display())),
+    }
 }
 
 fn now_ms() -> u64 {

@@ -19,6 +19,7 @@ use bollard::models::{
 
 use crate::entry_haproxy::{CONNECTOR_ADDRESS, ENTRY_EDGE_ADDRESS};
 use crate::entry_settings::EntrySettings;
+use crate::home_service::Registration;
 use crate::plugin::compose::PullPolicy;
 use crate::plugin::core_address::Endpoint;
 use crate::plugin::docker::{Engine, EngineError};
@@ -46,6 +47,8 @@ pub enum EntryError {
     NetworkMissing(String),
     /// 入口容器不唯一，热加载不知道该发给谁。
     NotOneEntry(usize),
+    /// 域名设置读不了：不知道要不要入口，这一轮什么都不删。
+    Settings(String),
     Docker(EngineError),
 }
 
@@ -55,6 +58,7 @@ impl EntryError {
         match self {
             Self::CoreNotInContainer | Self::NetworkMissing(_) => "core_not_in_container",
             Self::NameTaken(_) | Self::NotOneEntry(_) => "conflict",
+            Self::Settings(_) => "invalid_input",
             Self::Docker(EngineError::PortTaken(_)) => "conflict",
             Self::Docker(EngineError::Rejected { .. }) => "invalid_input",
             Self::Docker(EngineError::NotFound(_)) => "not_found",
@@ -88,6 +92,7 @@ impl fmt::Display for EntryError {
                 "{}：找到 {count} 个入口容器，热加载不知道发给谁",
                 self.category()
             ),
+            Self::Settings(error) => write!(f, "{}：{error}", self.category()),
             Self::Docker(error) => write!(f, "{}：{error}", self.category()),
         }
     }
@@ -108,6 +113,45 @@ struct Side {
     body: ContainerCreateBody,
     /// 接进的网络、固定地址、别名和网关优先级。
     endpoints: Vec<(String, Endpoint)>,
+}
+
+/// 一轮对账要服务的东西：名字来自设置文件（有名字的装法）或 App 里配的自己的域名（“不要名字”的装法），
+/// 连同渲染配置要用的家名服务和解析器。设置文件那一份带着家名服务，入口对账不该自己再读一遍设置。
+struct Target {
+    domain: String,
+    registration: Option<Registration>,
+    resolvers: Vec<String>,
+}
+
+impl Target {
+    /// 有设置文件就按设置；没有就看域名设置文件里有没有后缀。
+    /// 名字和证书都在才有东西可服务，证书还没签出来时先不建，等签发后的下一轮对账。
+    fn resolve(
+        install_dir: &Path,
+        settings: Option<&EntrySettings>,
+    ) -> Result<Option<Self>, EntryError> {
+        let found = match settings {
+            Some(settings) => Some((
+                settings.domain.clone(),
+                settings.registration.clone(),
+                settings.acme_resolvers.clone(),
+            )),
+            None => crate::clients::domain::stored_suffix(install_dir)
+                .map_err(|error| EntryError::Settings(format!("{error:#}")))?
+                .map(|suffix| (suffix, None, Vec::new())),
+        };
+        let Some((domain, registration, resolvers)) = found else {
+            return Ok(None);
+        };
+        Ok(install_dir
+            .join("entry/certs/site.pem")
+            .is_file()
+            .then_some(Self {
+                domain,
+                registration,
+                resolvers,
+            }))
+    }
 }
 
 pub struct EntryContainers {
@@ -156,25 +200,28 @@ impl EntryContainers {
         &self.data_dir
     }
 
-    /// 有联邦或者任何一个打开的入口就要入口容器；有连接器设置就要连接器。
+    /// 有联邦或者任何一个打开的入口就要入口容器；有入口就要连接器。
     ///
-    /// `settings` 只在有名字时装机写下，那时 `is_private` 一定是假，所以这里目前恒开；入口的开关（ADR-0021）要等设置里
-    /// 有开关以后才可能关掉它。连接器同样：家名服务（frpc）和路由器转发（发布端口的 HAProxy）现在都随设置存在，
-    /// ADR-0090 的总开关接上后再由设置决定。
-    fn wanted(settings: &EntrySettings) -> (bool, bool) {
-        let federation = !crate::matrix::federation_config::is_private(&settings.domain);
+    /// 入口的开关（ADR-0021）和 ADR-0090 的总开关要等设置里有开关以后才可能关掉它；
+    /// 连接器的两种做法（frpc / 路由器转发）按设置里的家名服务选。
+    fn wanted(target: &Target) -> (bool, bool) {
+        let federation = !crate::matrix::federation_config::is_private(&target.domain);
         (federation, true)
     }
 
     /// 按设置对账：缺的建、多的删、镜像换了重建、网络没接上就接上。文件由 `wonton-core init`（或改了开关的
     /// 操作）先写好，这里只读。
+    ///
+    /// 要不要入口看的是实际有没有要服务的名字和证书，不是设置文件在不在：“不要名字”的安装没有设置文件，
+    /// 主人在 App 里配的自己的域名写在 `entry/domain.json`，一样要有入口、一样要续期。
     pub async fn reconcile(&self, settings: Option<&EntrySettings>) -> Result<(), EntryError> {
-        let (entry, connector) = match settings {
-            Some(settings) => Self::wanted(settings),
+        let target = Target::resolve(&self.install_dir, settings)?;
+        let (entry, connector) = match &target {
+            Some(target) => Self::wanted(target),
             None => (false, false),
         };
         let Some(core) = &self.core_container else {
-            // 没有设置、也没有容器网络：开发时跑在宿主上，什么都不用做。
+            // 没有要服务的名字、也没有容器网络：开发时跑在宿主上，什么都不用做。
             return if entry || connector {
                 Err(EntryError::CoreNotInContainer)
             } else {
@@ -194,11 +241,11 @@ impl EntryContainers {
                 resolved = Some(self.networks(core).await?);
             }
             let (project, networks) = resolved.as_ref().expect("网络刚取过");
-            let settings = settings.expect("要有设置才可能有容器");
+            let target = target.as_ref().expect("要建容器就有目标");
             if networks.connector != CONNECTOR_ADDRESS {
-                self.rewrite_config(settings, &networks.connector)?;
+                self.rewrite_config(target, &networks.connector)?;
             }
-            let side = self.side(component, networks, settings)?;
+            let side = self.side(component, networks, target)?;
             self.ensure(&side, project).await?;
         }
         Ok(())
@@ -458,13 +505,13 @@ impl EntryContainers {
         &self,
         component: &'static str,
         networks: &Networks,
-        settings: &EntrySettings,
+        target: &Target,
     ) -> Result<Side, EntryError> {
-        let (image, command, binds, ports) = self.spec(component, settings)?;
+        let (image, command, binds, ports) = self.spec(component, target)?;
         // 入口和连接器要解析的正是主人给的解析器认识的名字（中继、ACME）：compose 时代是核心和 lego 用这些解析器，
         // 容器自己的解析器跟着来，不然只能靠宿主的。
         let resolvers =
-            crate::entry_settings::resolver_ips(&settings.acme_resolvers).map_err(|error| {
+            crate::entry_settings::resolver_ips(&target.resolvers).map_err(|error| {
                 EntryError::Docker(EngineError::Rejected {
                     context: "解析入口的 DNS 解析器".to_owned(),
                     message: error.to_string(),
@@ -554,7 +601,7 @@ impl EntryContainers {
     fn spec(
         &self,
         component: &str,
-        settings: &EntrySettings,
+        target: &Target,
     ) -> Result<
         (
             &'static str,
@@ -566,7 +613,7 @@ impl EntryContainers {
     > {
         let entry = self.install_dir.join("entry");
         Ok(if component == CONNECTOR_COMPONENT {
-            match &settings.registration {
+            match &target.registration {
                 Some(_) => (
                     crate::entry_runtime::FRPC_IMAGE,
                     vec!["-c".to_owned(), "/config/frpc.json".to_owned()],
@@ -601,9 +648,9 @@ impl EntryContainers {
     }
 
     /// `edge` 的网段和装机时不一样：按实际地址重写入口配置（连接器地址写在 TLS 前端的对端条件里）。
-    fn rewrite_config(&self, settings: &EntrySettings, connector: &str) -> Result<(), EntryError> {
+    fn rewrite_config(&self, target: &Target, connector: &str) -> Result<(), EntryError> {
         let mut model =
-            crate::entry_haproxy::Model::federation_only(&settings.domain, &settings.domain);
+            crate::entry_haproxy::Model::federation_only(&target.domain, &target.domain);
         model.connectors = vec![connector.to_owned()];
         crate::entry_compose::write_model(&self.install_dir, &model).map_err(|error| {
             EntryError::Docker(EngineError::Rejected {

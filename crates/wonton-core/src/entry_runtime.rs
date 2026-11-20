@@ -107,8 +107,11 @@ async fn trusted_entry(State(authority): State<String>, req: Request, next: Next
     next.run(req).await
 }
 
-/// 对账按退避间隔跑，家名和证书按小时跑；续期由 [`crate::clients::domain::Domain`] 发布证书，
+/// 对账按退避间隔跑，家名按小时、证书按天跑；续期由 [`crate::clients::domain::Domain`] 发布证书，
 /// 入口容器在不在由对账判断（读不到设置按"不确定"，不删在跑的容器）。
+///
+/// 续期不看设置文件在不在：条款、后缀和服务商的门禁在 `Domain::ready` 里，所以“不要名字”的安装
+/// （没有设置文件）每小时也照样走到续期。
 pub fn spawn(
     containers: EntryContainers,
     domain: Arc<crate::clients::domain::Domain>,
@@ -132,20 +135,21 @@ pub fn spawn(
                 }
                 _ = hourly.tick() => {
                     match EntrySettings::load(containers.install_dir()) {
+                        // 家名只有送名字的安装才有。
                         Ok(Some(settings)) => {
                             check_home(&settings, containers.data_dir(), &notices, &mut previous).await;
-                            if hours % 24 == 0 {
-                                domain.renew_if_configured();
-                            }
-                            hours += 1;
                         }
-                        // 没有设置就没有家名和证书可查；读不了是不确定，记下来别无声跳过。
-                        Ok(None) => continue,
+                        // 没有设置文件照样有证书要续期（“不要名字”的安装）。
+                        Ok(None) => {}
+                        // 读不了是不确定：家名这一小时跳过，续期照常（它自己读设置）。
                         Err(error) => {
-                            tracing::warn!(%error, "入口设置读不了，这一小时跳过家名检查和证书续期");
-                            continue;
+                            tracing::warn!(%error, "入口设置读不了，这一小时跳过家名检查");
                         }
                     }
+                    if hours % 24 == 0 {
+                        domain.renew_if_configured();
+                    }
+                    hours += 1;
                 }
             }
         }
@@ -264,3 +268,7 @@ async fn notify(notices: &Option<Arc<NoticeRoom>>, id: &str, args: &[(&str, &str
         tracing::error!(%error, "入口状态通知失败");
     }
 }
+
+#[cfg(test)]
+#[path = "entry_runtime_tests.rs"]
+mod entry_runtime_tests;

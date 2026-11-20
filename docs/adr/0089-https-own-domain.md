@@ -60,6 +60,9 @@ App 的“HTTPS 和域名”设置页列出服务商，**默认推 deSEC**，其
   设置页只能换 DNS 服务商和凭据。
 - **装机时选了“不要名字”的**（`WONTON_MATRIX_NAME_MODE=none`）：设置页能另填一个后缀，只给入口用，不开联邦，Matrix 服务器名不变。
   后缀能改；改了以后第三方 App 都要重填，App 改前写明。这样 M1 的用户不用重装就能打开 HTTPS。
+  这种装法没有 `entry/settings.json`，入口和续期都不看这个文件：主人在 App 里存了后缀、证书签出来，入口容器就在
+  （看 `entry/domain.json` 和已发布的 `site.pem`）；续期循环每小时醒一次、每 24 小时整点排一次签发，`Domain::ready` 查条款、后缀和服务商，
+  条款没勾之前不联系 CA。装机路径的 `issue_now` 在没有设置文件时也不跑，第一张证书由 App 的保存触发。
 - **送的名字**（家名服务）在 M2，见 ADR-0021、ADR-0051。装机脚本的“自己的域名”同样接受上面的预设（`WONTON_ACME_DNS_PROVIDER=desec`）。
 
 ### 4. 主人自己加的 DNS 记录
