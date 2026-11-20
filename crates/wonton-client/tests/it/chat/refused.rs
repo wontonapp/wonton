@@ -120,6 +120,7 @@ async fn a_refused_message_stays_on_the_message_and_keeps_the_login() {
                 },
                 body: "发不出去".to_owned(),
                 reply_to: None,
+                mentions: vec![],
             },
         })
         .unwrap();

@@ -46,6 +46,7 @@ impl ClientCore {
                 target,
                 body,
                 reply_to,
+                ..
             } => composer.send(&composer_room(&target)?, &body, reply_to),
             TimelineAction::RemoveAttachment {
                 target,

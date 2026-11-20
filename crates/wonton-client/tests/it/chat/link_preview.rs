@@ -156,6 +156,7 @@ fn send_text(room: String, body: String) -> Action {
             },
             body,
             reply_to: None,
+            mentions: vec![],
         },
     }
 }

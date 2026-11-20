@@ -138,6 +138,7 @@ async fn the_menu_follows_power_and_a_redaction_reaches_both_sides() {
             },
             body: body.to_owned(),
             reply_to: None,
+            mentions: vec![],
         },
     };
     phone.dispatch(send("主人说的话")).unwrap();
@@ -222,6 +223,7 @@ async fn rejected_echo_only_copies(phone: &Phone, timeline: &mut Timeline, room:
                 },
                 body: too_long.clone(),
                 reply_to: None,
+                mentions: vec![],
             },
         })
         .unwrap();
@@ -343,6 +345,7 @@ async fn reply_to_another_room_is_invalid(phone: &Phone, room: &str, elsewhere: 
                 },
                 body: "引用别的房间".to_owned(),
                 reply_to: Some(elsewhere),
+                mentions: vec![],
             },
         })
         .unwrap();
