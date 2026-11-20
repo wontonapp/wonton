@@ -19,8 +19,13 @@ git -C "$target" add install.sh
 if git -C "$target" diff --cached --quiet; then
   echo "公开仓库已经是这份内容，只更新 public-copy"
 else
-  branch="sync/$(git -C "$root" rev-parse --short HEAD)"
-  git -C "$target" switch --quiet -C "$branch"
+  # 同一个 PR 里改几轮都推进原来的 sync 分支，不另开分支。
+  branch=$(git -C "$target" rev-parse --abbrev-ref HEAD)
+  case "$branch" in
+    sync/*) ;;
+    *) branch="sync/$(git -C "$root" rev-parse --short HEAD)"
+       git -C "$target" switch --quiet -C "$branch" ;;
+  esac
   git -C "$target" commit --quiet -m "sync: 主仓库 $(git -C "$root" rev-parse --short HEAD) 的安装脚本"
   git -C "$target" push --quiet -u origin "$branch"
   echo "已推到公开仓库的分支 $branch"

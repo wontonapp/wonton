@@ -54,7 +54,7 @@ curl -fsSL https://raw.githubusercontent.com/wontonapp/wonton-install/main/insta
 
 先配置服务、邀请码和证书输入，
 `init` 完成注册和证书准备后才启动 Tuwunel；缺配置、注册或签证书失败就停止。家名服务没有内置的公共默认地址；
-证书服务默认 Let's Encrypt 正式地址，订户协议不在这条命令里同意，由主人在 App 里勾选，勾选之前核心不联系 CA（ADR-0089）。
+“不要名字”的安装证书用 Let's Encrypt 正式地址，订户协议不在这条命令里同意，由主人在 App 里勾选，勾选之前核心不联系 CA（ADR-0089）。
 开发只用[本地 entry-cloud](../dev/entry-cloud/) 的 Pebble、DNS 和 `.test` 名字，并显式信任测试 CA。
 
 | 输入 | 用途 |
@@ -63,7 +63,7 @@ curl -fsSL https://raw.githubusercontent.com/wontonapp/wonton-install/main/insta
 | `WONTON_CLIENT_INVITE_FILE` | 存放邀请码的文件，读取后去掉首尾空白；不把邀请码本身放进环境变量或命令行 |
 | `WONTON_CLIENT_CA_FILE` | 家名服务的 PEM CA 文件；使用测试或私有 CA 时提供，未给时用系统信任 |
 | `WONTON_FRP_CA_FILE` | frps 的 PEM CA 文件；送名字时必填，用于校验连接器到中继的 TLS 证书 |
-| `WONTON_ACME_DIRECTORY` | ACME directory 的 HTTPS URL；默认 Let's Encrypt 正式地址，换测试或内部 CA 时才填 |
+| `WONTON_ACME_DIRECTORY` | ACME directory 的 HTTPS URL；不要名字的安装默认 Let's Encrypt 正式地址，送名字和用自己的域名时必填 |
 | `WONTON_ACME_ACCEPT_TERMS=true` | 装机时就代替主人同意所选 CA 的条款；不给就在 App 里勾选，勾选前核心不签证书 |
 | `WONTON_ACME_CA_FILE` | ACME 和 acme-dns 使用的 PEM CA 文件；测试 CA 显式传入，不关闭 TLS 验证 |
 | `WONTON_ACME_RESOLVERS` | 可选 DNS 解析器，逗号分隔的 IP 或 IP:端口（端口可省略，默认 53），每项首尾空白忽略，例如 `192.0.2.10,198.51.100.10:5353`；安装容器、挑战记录和 CAA 查询都经它 |

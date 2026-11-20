@@ -16,8 +16,8 @@
 #   WONTON_MATRIX_NAME_MODE=none  高级：不要名字，只与同类已配对云吞通信；以后互通必须重装聊天数据。
 #   WONTON_CLIENT_SERVICE、WONTON_CLIENT_INVITE_FILE  送的名字的服务地址和邀请码文件。
 #   送名字缺这些配置时安装会停，并给出“不要名字”“用自己的域名”两条带安装命令的路。
-#   WONTON_ACME_DIRECTORY、WONTON_ACME_ACCEPT_TERMS  证书服务地址及是否明确接受其条款。地址默认 Let's Encrypt
-#                       正式地址；条款默认不在装机时同意，由主人在 App 勾选后核心才联系 CA。
+#   WONTON_ACME_DIRECTORY、WONTON_ACME_ACCEPT_TERMS  证书服务地址及是否明确接受其条款。不要名字的安装地址默认
+#                       Let's Encrypt 正式地址、条款到 App 里勾（勾之前核心不联系 CA）；送名字和用自己的域名时都要给。
 #   WONTON_*_CA_FILE、WONTON_ACME_RESOLVERS  测试 CA 与开发 DNS，证书验证不会关闭。
 #   WONTON_OWNER_NAME   用户名，同时是 Matrix 用户名和插件里的账号，只能用小写字母、数字、_ 和 -，以字母开头，
 #                       最长 32 个字符，装好后不能改（默认 owner）
