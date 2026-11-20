@@ -117,7 +117,7 @@
     <!-- 附件面板：底下的切換，把手機相簿列成照片格狀。 -->
     <string name="attach_album">相簿</string>
     <!-- 附件面板：把選中的照片放進待發的按鈕。參數：張數。 -->
-    <string name="attach_add">加入 %1$d</string>
+    <string name="sheet_note_hint">新增附言</string>
     <!-- 附件面板：相簿裡還沒有照片。 -->
     <string name="attach_album_empty">相簿裡沒有照片</string>
     <!-- 附件面板：沒給相簿權限。 -->

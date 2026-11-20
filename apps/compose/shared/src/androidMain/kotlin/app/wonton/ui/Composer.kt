@@ -116,7 +116,7 @@ fun Composer(
     val viaTray = attachments.isNotEmpty() || composer?.outgoing.orEmpty().isNotEmpty()
     val roomId = target.roomId
     val inSideChat = target.threadRoot != null
-    // 旁聊里照片不进附件区，选好就发；回复跟着这张照片发出去。核心没收下就都留着，原因给出去。
+    // 旁聊里的照片都不进附件区，选好就发；回复跟着这张照片发出去。核心没收下就都留着，原因给出去。
     val sendImage = if (inSideChat) {
         { upload: ImageUpload ->
             val problem = core.send(Action.Timeline(TimelineAction.SendImage(target, upload, reply?.eventId)))
@@ -129,7 +129,7 @@ fun Composer(
     } else {
         null
     }
-    val attach = rememberAttachments(roomId, composer, core, onReject, sendImage)
+    val attach = rememberAttachments(target, composer, core, onReject, onReplyCancel, reply, sendImage)
     val isEmpty = draft.isBlank() && attachments.isEmpty()
     val focusRequester = remember { FocusRequester() }
     LaunchedEffect(focusToken) { if (focusToken > 0) focusRequester.requestFocus() }
@@ -284,12 +284,15 @@ private class Attachments(
 @OptIn(ExperimentalFoundationApi::class)
 @Composable
 private fun rememberAttachments(
-    roomId: String,
+    target: TimelineTarget,
     composer: ComposerViewModel?,
     core: ClientCore,
     onReject: (Problem) -> Unit,
+    onReplyCancel: () -> Unit,
+    reply: ReplyQuote?,
     sendImage: ((ImageUpload) -> Unit)?,
 ): Attachments {
+    val roomId = target.roomId
     val context = LocalContext.current
     val scope = rememberCoroutineScope()
     // 字符串资源在协程里取不到，弹窗前先取好。
@@ -312,6 +315,47 @@ private fun rememberAttachments(
                     },
                     onFailure = { failure -> onReject(Problem(photoUnreadable, photoTryAnother, failure.message)) },
                 )
+            }
+        }
+        Unit
+    }
+    // 相册里选好后附言和照片一起发（照 Telegram）：旁聊没有附件区，照片照旧选好就发，附言跟着当一句话发出去；
+    // 主对话里照片先进附件区，全部到位再发一条带附言的消息。发不了时附件留在附件区、面板收起，主人改完再发；
+    // 照片进附件区失败则面板留着，原因说出去。
+    val sendPhotos = { uris: List<Uri>, note: String ->
+        val send = currentSendImage
+        scope.launch {
+            var failed: Problem? = null
+            // 按选的顺序发：一条发不出去就停下，后面的留着不再发。
+            for (uri in uris) {
+                failed = PhotoUpload.make(context, uri).fold(
+                    onSuccess = { upload ->
+                        if (send != null) {
+                            send(upload)
+                            null
+                        } else {
+                            addImage(core, roomId, upload)
+                        }
+                    },
+                    onFailure = { failure -> Problem(photoUnreadable, photoTryAnother, failure.message) },
+                )
+                if (failed != null) break
+            }
+            choosing = false
+            if (failed != null) {
+                onReject(failed)
+            } else if (send != null) {
+                if (note.isNotBlank()) {
+                    core.send(Action.Timeline(TimelineAction.SendText(target, note, null)))?.let(onReject)
+                }
+            } else {
+                val action = Action.Timeline(TimelineAction.SendComposer(target, note, reply?.eventId))
+                val problem = core.send(action)
+                if (problem == null) {
+                    if (reply != null) onReplyCancel()
+                } else {
+                    onReject(problem)
+                }
             }
         }
         Unit
@@ -345,7 +389,7 @@ private fun rememberAttachments(
                 AttachmentSheet(
                     remaining = remaining,
                     allowFiles = sendImage == null,
-                    onPhotos = { uris -> whenRoom { addPhotos(uris) } },
+                    onSend = sendPhotos,
                     onFiles = { whenRoom { pickFiles.launch(arrayOf("*/*")) } },
                     onDismiss = { choosing = false },
                 )

@@ -427,10 +427,15 @@ private fun RoomOverlays(
             rooms = rooms.filter { it.forwardTarget(target.roomId) },
             bots = bots,
             plugins = plugins,
-            // 核心一次只发一个房间：挨个发，发完打开第一个选中的。
-            onSend = { rows ->
-                rows.forEach { onAction(Action.Timeline(TimelineAction.ForwardMessage(target, itemId, it.roomId))) }
-                rows.firstOrNull()?.let { onOpenRoom(it.roomId) }
+            // 核心一次只发一个房间：挨个发，每个房间先附言再原消息；只选了一个才跟过去，选几个留在原房间。
+            onSend = { rows, note ->
+                rows.forEach { row ->
+                    if (note.isNotEmpty()) {
+                        onAction(Action.Timeline(TimelineAction.SendText(TimelineTarget(row.roomId, null), note, null)))
+                    }
+                    onAction(Action.Timeline(TimelineAction.ForwardMessage(target, itemId, row.roomId)))
+                }
+                if (rows.size == 1) onOpenRoom(rows.first().roomId)
             },
             onDismiss = { onForward(null) },
         )

@@ -518,6 +518,15 @@ impl ComposerLink {
         Ok(())
     }
 
+    /// 假数据入口（`ui-fake`）没有真的发送和上传，界面测试靠它把附件区清空，和真发送一样。
+    pub(crate) fn clear_for_test(&self, room: &str) {
+        self.record(room, |state| {
+            if let Some(room) = state.rooms.get_mut(room) {
+                room.tray.clear();
+            }
+        });
+    }
+
     pub(crate) fn send(
         self: &Arc<Self>,
         room: &str,

@@ -98,6 +98,7 @@ private const val QUOTED_TEXT = "🚗\n好久了，有什么问题吗？"
  * 只用 Debug 的假核心和它固定的房间，不连家里的服务器。
  */
 private const val ECHO_ROOM = "!ui-fake:home.example"
+private const val ECHO_NAME = "Echo"
 
 /** 附件区最多放这么多个，清空时够用。 */
 private const val MAX_TRAY_ITEMS = 12
@@ -244,12 +245,12 @@ class RoomTelegramTest {
     }
 
     /**
-     * 回形针打开相册网格，点两张、加入，两个附件进附件区，输入框还能打字。
-     * 相册里没有照片时先放两张进去；假房间和假核心照旧，照片只在本机相册里。
-     * 附件区存在盘上、进程之间留着：先把剩下的拿掉，再看这次加进去的两张。
+     * 回形针打开相册网格，点两张以后底下换成附言条，写了附言点发送：面板收起、附件区不留东西，
+     * 时间线里出现带这张附言的消息。相册里没有照片时先放两张进去；照片只在本机相册里。
+     * 附件区存在盘上、进程之间留着：先把剩下的拿掉。
      */
     @Test
-    fun attachSheetPutsPickedPhotosIntoTray() {
+    fun attachSheetSendsPhotosWithNote() {
         ensureAlbumPhotos()
         clearTray()
         compose.onNodeWithContentDescription(string(R.string.composer_attach)).performClick()
@@ -257,9 +258,19 @@ class RoomTelegramTest {
         compose.waitUntil(10_000) { compose.onAllNodes(hasTestTag("album-photo")).fetchSemanticsNodes().size >= 2 }
         compose.onAllNodes(hasTestTag("album-photo"))[0].performClick()
         compose.onAllNodes(hasTestTag("album-photo"))[1].performClick()
+        compose.waitUntil(10_000) { compose.onAllNodes(hasTestTag("attach-send")).fetchSemanticsNodes().isNotEmpty() }
+        val field = compose.onNode(hasSetTextAction() and hasAnyAncestor(hasTestTag("attach-send")))
+        field.performTextInput("两张都发")
+        compose.waitForIdle()
+        val shown = compose.onAllNodes(hasText("两张都发", substring = true)).fetchSemanticsNodes().size
+        check(shown > 0) { "输入框里没进去：${field.fetchSemanticsNode().config}" }
         screenshot("attach-sheet")
-        compose.onNodeWithTag("attach-add").performClick()
-        compose.waitUntil(10_000) { trayTiles() == 2 }
+        sheetSend("attach-send").performClick()
+        compose.waitUntil(10_000) { compose.onAllNodes(hasTestTag("attach-send")).fetchSemanticsNodes().isEmpty() }
+        runCatching { compose.onNodeWithContentDescription(string(R.string.room_scroll_to_bottom)).performClick() }
+        compose.waitUntil(10_000) { compose.onAllNodes(hasText("两张都发")).fetchSemanticsNodes().isNotEmpty() }
+        screenshot("attach-sent")
+        check(trayTiles() == 0) { "附件区里还剩着照片" }
         compose.onNode(hasSetTextAction()).assertIsDisplayed()
     }
 
@@ -275,7 +286,9 @@ class RoomTelegramTest {
         compose.onNodeWithContentDescription(string(R.string.composer_attach)).performClick()
         compose.waitUntil(10_000) { compose.onAllNodes(hasTestTag("album-photo")).fetchSemanticsNodes().isNotEmpty() }
         compose.onAllNodes(hasTestTag("album-photo"))[0].performClick()
-        compose.onNodeWithTag("attach-add").performClick()
+        compose.waitUntil(10_000) { compose.onAllNodes(hasTestTag("attach-send")).fetchSemanticsNodes().isNotEmpty() }
+        sheetSend("attach-send").performClick()
+        compose.waitUntil(10_000) { compose.onAllNodes(hasTestTag("attach-send")).fetchSemanticsNodes().isEmpty() }
         compose.waitUntil(10_000) { trayTiles() == 1 }
         // 回一条，再把附件标成上传失败。
         scrollTo(15)
@@ -297,11 +310,11 @@ class RoomTelegramTest {
     }
 
     /**
-     * 转发面板：搜索能收窄列表，勾上两个房间后一起发出去，两边的房间里都多一条红色的同文消息。
-     * 发完停在第一个选中的房间。
+     * 转发面板：搜索能收窄列表，勾上两个房间、写上附言后一起发出去。每个房间都先到附言，
+     * 再到红色的同文消息；勾了好几个就留在原房间。
      */
     @Test
-    fun forwardPickerSendsToEveryTarget() {
+    fun forwardPickerSendsNoteBeforeMessageToEveryTarget() {
         // 12 是长条，气泡比整屏还高，按正中会落到屏幕外；换它上面那条一句话的 11。
         scrollTo(11)
         item(11).performScrollTo()
@@ -309,27 +322,56 @@ class RoomTelegramTest {
         compose.onNodeWithText(string(R.string.message_forward)).performClick()
         compose.waitForIdle()
         compose.waitUntil(10_000) { forwardRows() == 2 }
-        compose.onNodeWithTag("forward-send").assertIsNotEnabled()
+        sheetSend("forward-send").assertIsNotEnabled()
         compose.onNodeWithTag("forward-search").performTextInput("Fam")
         compose.waitUntil(10_000) { forwardRows() == 1 }
         compose.onNode(hasTestTag("forward-row") and hasText("Family")).performClick()
         compose.onNodeWithTag("forward-search").performTextClearance()
         compose.waitUntil(10_000) { forwardRows() == 2 }
         compose.onNode(hasTestTag("forward-row") and hasText("Notes")).performClick()
+        compose.onNode(hasSetTextAction() and hasAnyAncestor(hasTestTag("forward-send")))
+            .performTextInput("都看一下")
         screenshot("forward-sheet")
-        compose.onNodeWithTag("forward-send").performClick()
-        compose.waitUntil(10_000) { forwardedInto("Family", "ui-fake-forwarded-24") }
-        screenshot("forward-sent")
-        // 回聊天列表，再进 Notes 看另一份也到了。
+        sheetSend("forward-send").performClick()
+        // 勾了两个：留在原房间，两条消息都在，谁也没跳走。
+        compose.waitForIdle()
+        check(
+            compose.onAllNodes(hasText(ECHO_NAME) and hasAnyAncestor(hasTestTag("room-bar")))
+                .fetchSemanticsNodes().isNotEmpty(),
+        ) { "原房间跳走了" }
         compose.onNodeWithContentDescription(string(R.string.design_back)).performClick()
         compose.waitForIdle()
         if (hasBack()) compose.onNodeWithContentDescription(string(R.string.design_back)).performClick()
-        // 到了聊天列表，点 Notes 那条。
+        // 到了聊天列表，依次进 Family 和 Notes，两边都得有附言和转发来的那条。
+        compose.onNodeWithText("Family").performClick()
+        compose.waitUntil(10_000) { forwardedInto("Family", "ui-fake-forwarded-24") }
+        check(compose.onAllNodes(hasText("都看一下")).fetchSemanticsNodes().isNotEmpty()) { "Family 没收到附言" }
+        compose.onNodeWithContentDescription(string(R.string.design_back)).performClick()
+        compose.waitForIdle()
+        if (hasBack()) compose.onNodeWithContentDescription(string(R.string.design_back)).performClick()
         compose.onNodeWithText("Notes").performClick()
         compose.waitUntil(10_000) { forwardedInto("Notes", "ui-fake-forwarded-24") }
+        check(compose.onAllNodes(hasText("都看一下")).fetchSemanticsNodes().isNotEmpty()) { "Notes 没收到附言" }
+    }
+
+    /** 只勾一个时发完跟过去：那个房间打开，附言和转发都在。 */
+    @Test
+    fun forwardToSingleTargetOpensIt() {
+        scrollTo(11)
+        item(11).performScrollTo()
+        bubble(11).performTouchInput { longClick() }
+        compose.onNodeWithText(string(R.string.message_forward)).performClick()
+        compose.waitUntil(10_000) { forwardRows() == 2 }
+        compose.onNode(hasTestTag("forward-row") and hasText("Family")).performClick()
+        sheetSend("forward-send").performClick()
+        compose.waitUntil(10_000) { forwardedInto("Family", "ui-fake-forwarded-24") }
     }
 
     private fun forwardRows() = compose.onAllNodes(hasTestTag("forward-row")).fetchSemanticsNodes().size
+
+    /** 面板附言条上的发送键：输入框底下那个，和房间里被面板挡住的发送键区分开。 */
+    private fun sheetSend(tag: String) =
+        compose.onNode(hasContentDescription(string(R.string.composer_send)) and hasAnyAncestor(hasTestTag(tag)))
 
     private fun hasBack() =
         compose.onAllNodes(hasContentDescription(string(R.string.design_back))).fetchSemanticsNodes().isNotEmpty()
