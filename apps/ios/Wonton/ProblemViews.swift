@@ -103,8 +103,8 @@ extension PluginFailure {
             )
         case .egressProxyWaiting:
             categorizedProblem(
-                .Problem3.problemPluginEgressProxyWaitingTitle,
-                .Problem1.problemPluginEgressProxyWaitingNextStep,
+                .Problem1.problemPluginEgressProxyWaitingTitle,
+                .Problem2.problemPluginEgressProxyWaitingNextStep,
                 detail
             )
         case .protocol:
