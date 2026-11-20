@@ -559,7 +559,7 @@ mod tests {
         for diff in sent.diffs {
             crate::chat::apply_diff(&mut items, diff);
         }
-        assert_eq!(items.len(), ITEMS + 1);
+        assert_eq!(items.len(), ITEMS + 3);
         let last = message(&items, &items.last().unwrap().id.clone());
         assert!(last.is_own);
         assert_eq!(last.run, MessageRun::Last);
@@ -592,7 +592,7 @@ mod tests {
         for diff in first.diffs {
             crate::chat::apply_diff(&mut items, diff);
         }
-        assert_eq!(items.len(), ITEMS + 1);
+        assert_eq!(items.len(), ITEMS + 3);
         let forwarded = message(&items, &format!("ui-fake-forwarded-{ITEMS}"));
         let MessageContent::Text { body, .. } = &forwarded.body else {
             panic!("转发的是文字");
@@ -631,8 +631,8 @@ mod tests {
         for diff in first.diffs {
             crate::chat::apply_diff(&mut items, diff);
         }
-        assert_eq!(items.len(), ITEMS + 4);
-        let bodies: Vec<String> = items[ITEMS..]
+        assert_eq!(items.len(), ITEMS + 6);
+        let bodies: Vec<String> = items[ITEMS + 2..]
             .iter()
             .map(|item| {
                 let TimelineContent::Message { message } = &item.content else {

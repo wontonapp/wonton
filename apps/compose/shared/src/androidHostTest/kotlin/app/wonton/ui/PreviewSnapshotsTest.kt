@@ -34,6 +34,9 @@ class PreviewSnapshotsTest {
     fun chatFailure() = paparazzi.snapshot { ChatFailurePreview() }
 
     @Test
+    fun dayBreak() = paparazzi.snapshot { DayBreakPreview() }
+
+    @Test
     fun agentDegraded() = paparazzi.snapshot { AgentDegradedPreview() }
 
     @Test

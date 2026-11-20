@@ -299,11 +299,11 @@ private fun TimelineRow(
 }
 
 /**
- * 每个下标上方要不要来一行日期；跨日的那条才有。列表是倒排的（下标 0 贴着底部），屏幕上往下是越来越新：
+ * 每个下标上方要不要来一行日期；跨日的那条才有。列表是倒排的（下标 0 贴着底部），屏幕上往下是越来越新。
  * 一条和它正上方那条不是同一天（或者它就在最顶上、上面没有消息）时，分隔画在它上面、写它自己的日期，
- * 也就是它下面那条消息的日期。
+ * 也就是它下面那条消息的日期。跨日的日期由核心的分隔条目自己写，这里只兜底没有分隔条目的边界。
  */
-private fun dayMarksFor(items: List<TimelineItem>): Array<String?> {
+internal fun dayMarksFor(items: List<TimelineItem>): Array<String?> {
     // 没有时间的旁注跟着下面（更新）的那条算同一天，下标越小越新。
     val days = arrayOfNulls<String>(items.size)
     var newer: String? = null
@@ -314,14 +314,16 @@ private fun dayMarksFor(items: List<TimelineItem>): Array<String?> {
     val marks = arrayOfNulls<String>(items.size)
     for (index in items.indices) {
         val day = days[index]
-        if (day != null && day != days.getOrNull(index + 1)) marks[index] = day
+        if (day == null || day == days.getOrNull(index + 1)) continue
+        if (items[index].content is TimelineContent.DateDivider) continue
+        marks[index] = day
     }
     return marks
 }
 
 /** 日期分隔：一行居中、自己占高度。 */
 @Composable
-private fun DaySeparator(label: String) {
+internal fun DaySeparator(label: String) {
     Box(Modifier.fillMaxWidth().testTag("day-separator"), contentAlignment = Alignment.Center) {
         Text(label, style = WontonTheme.typography.caption, color = WontonTheme.colors.textSecondary.toColor())
     }
@@ -349,7 +351,7 @@ private fun DatePill(visible: Boolean, text: String, modifier: Modifier) {
 private const val PILL_ALPHA = 0.9f
 
 /** 最上面那条的日期，胶囊里写这个。 */
-private fun dateLabel(timestampMs: Long): String =
+internal fun dateLabel(timestampMs: Long): String =
     DateFormat.getDateInstance(DateFormat.MEDIUM).format(Date(timestampMs))
 
 /** 这条的发送时间；旁注类的条目没有。 */
