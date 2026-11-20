@@ -332,6 +332,36 @@
         }
       }
     },
+    "message.sendFailure.rejected": {
+      "comment": "Send failed because the server refused the message.",
+      "extractionState": "manual",
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Your server refused it"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "服务器不收"
+          }
+        },
+        "zh-Hant": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "伺服器不收"
+          }
+        },
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "サーバーに拒否されました"
+          }
+        }
+      }
+    },
     "message.choiceFailed": {
       "comment": "Shown under a message's option buttons when the tapped option could not be sent. Tapping the option again retries.",
       "extractionState": "manual",
