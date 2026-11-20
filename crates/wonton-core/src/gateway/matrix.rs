@@ -165,48 +165,8 @@ pub async fn bot_request(gateway: &Gateway, req: Request) -> Response {
             "核心正在恢复插件，稍后重试",
         ));
     }
-    // 令牌认 Bot：令牌是谁，必须且只是这个插件记录在案的 Bot。
-    let token = req
-        .headers()
-        .get(hyper::header::AUTHORIZATION)
-        .and_then(|v| v.to_str().ok())
-        .and_then(|v| v.strip_prefix("Bearer "));
-    let Some(token) = token else {
-        return matrix_error(
-            StatusCode::FORBIDDEN,
-            "M_FORBIDDEN",
-            "unauthenticated",
-            "Bot 的请求要带它的 Matrix 访问令牌",
-        );
-    };
-    match gateway.bot_identity(token).await {
-        Identity::Bot(user) if gateway.plugins.is_bot_user(&source.id, &user) => {}
-        Identity::Bot(user) => {
-            tracing::warn!(plugin = %source.id, bot = %user, "插件拿别的 Bot 的令牌转发请求");
-            return matrix_error(
-                StatusCode::FORBIDDEN,
-                "M_FORBIDDEN",
-                "unauthenticated",
-                "这个令牌不是这个插件自己的 Bot 的",
-            );
-        }
-        Identity::Unknown => {
-            return matrix_error(
-                StatusCode::FORBIDDEN,
-                "M_FORBIDDEN",
-                "unauthenticated",
-                "认不出这个访问令牌是谁",
-            );
-        }
-        // 问不到不等于令牌失效：Tuwunel 一起在重启、网络没通都会到这里。
-        Identity::Unavailable => {
-            return retry_later(matrix_error(
-                StatusCode::SERVICE_UNAVAILABLE,
-                "M_UNKNOWN",
-                "unavailable",
-                "问不到 Tuwunel 这个令牌是谁，稍后重试",
-            ));
-        }
+    if let Err(refused) = check_bot_token(gateway, &source, req.headers()).await {
+        return *refused;
     }
     // Bot 只能注册指向推送代理的 pusher，见 `pushers`。
     let req = if pushers::is_pushers_set(req.method(), req.uri().path()) {
@@ -248,6 +208,52 @@ pub async fn bot_request(gateway: &Gateway, req: Request) -> Response {
     match pending {
         Some(pending) => chain_mentions::after_send(gateway, pending, response).await,
         None => response,
+    }
+}
+
+/// 令牌是谁，必须且只是这个插件记录在案的 Bot。真认不出（whoami 401）与问不到（Tuwunel 没连上、5xx）分开答：
+/// 只有前者是永久错误。
+async fn check_bot_token(
+    gateway: &Gateway,
+    source: &super::super::plugin::sources::Source,
+    headers: &hyper::HeaderMap,
+) -> Result<(), Box<Response>> {
+    let token = headers
+        .get(hyper::header::AUTHORIZATION)
+        .and_then(|v| v.to_str().ok())
+        .and_then(|v| v.strip_prefix("Bearer "));
+    let Some(token) = token else {
+        return Err(Box::new(matrix_error(
+            StatusCode::FORBIDDEN,
+            "M_FORBIDDEN",
+            "unauthenticated",
+            "Bot 的请求要带它的 Matrix 访问令牌",
+        )));
+    };
+    match gateway.bot_identity(token).await {
+        Identity::Bot(user) if gateway.plugins.is_bot_user(&source.id, &user) => Ok(()),
+        Identity::Bot(user) => {
+            tracing::warn!(plugin = %source.id, bot = %user, "插件拿别的 Bot 的令牌转发请求");
+            Err(Box::new(matrix_error(
+                StatusCode::FORBIDDEN,
+                "M_FORBIDDEN",
+                "unauthenticated",
+                "这个令牌不是这个插件自己的 Bot 的",
+            )))
+        }
+        Identity::Unknown => Err(Box::new(matrix_error(
+            StatusCode::FORBIDDEN,
+            "M_FORBIDDEN",
+            "unauthenticated",
+            "认不出这个访问令牌是谁",
+        ))),
+        // 问不到不等于令牌失效：Tuwunel 一起在重启、网络没通都会到这里。
+        Identity::Unavailable => Err(Box::new(retry_later(matrix_error(
+            StatusCode::SERVICE_UNAVAILABLE,
+            "M_UNKNOWN",
+            "unavailable",
+            "问不到 Tuwunel 这个令牌是谁，稍后重试",
+        )))),
     }
 }
 
