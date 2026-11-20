@@ -62,7 +62,7 @@ mod util;
 mod verification;
 mod view;
 
-use std::collections::HashSet;
+use std::collections::{HashMap, HashSet};
 use std::path::Path;
 use std::sync::atomic::AtomicBool;
 use std::sync::{Arc, Mutex};
@@ -75,7 +75,9 @@ use tokio::runtime::Handle;
 use tokio::sync::{mpsc, watch};
 use tokio::task::JoinHandle;
 use wonton_l10n::l10n;
-use wonton_matrix::{ChatRoom, Error, MatrixSession, OwnedRoomId, OwnedUserId, SyncStatus, UserId};
+use wonton_matrix::{
+    ChatRoom, Error, MatrixSession, OwnedRoomId, OwnedUserId, SendOutcome, SyncStatus, UserId,
+};
 use wonton_protocol::{
     CORE_LOCALPART, ChatAccount, ChatAction, ChatFailure, ChatSync, ChatViewModel,
     ConfirmationView, ConfirmationsViewModel, CoreError, DeviceVerification, EncryptionStatus,
@@ -166,6 +168,8 @@ pub(crate) struct ChatLink {
     draft_writes: mpsc::UnboundedSender<DraftWrite>,
     /// 链接预览的按网址缓存和点掉的记录（ADR-0065），发送框和时间线共用。
     previews: previews::Previews,
+    /// 每个目标房间还在等服务器确认的上一条文字：转发等它有了结果才发（见 `forward_message`）。
+    forward_orders: Mutex<HashMap<String, watch::Sender<Option<SendOutcome>>>>,
     /// App 在后台：保持连接下同步到的该通知的消息收集进 `background_notifications`。
     background: AtomicBool,
     verification: Mutex<Option<verification::Control>>,
@@ -354,6 +358,7 @@ impl ChatLink {
             lock_screen,
             draft_writes,
             previews: previews::Previews::new(),
+            forward_orders: Mutex::default(),
             background: AtomicBool::new(false),
             verification: Mutex::new(None),
             handoff_armed: AtomicBool::new(false),

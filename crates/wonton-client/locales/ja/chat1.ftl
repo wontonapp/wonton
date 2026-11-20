@@ -68,6 +68,8 @@ chat-message-action-unavailable = このメッセージにはその操作がで�
 
 # 転送先のルームが存在しないか、まだ参加していないときに表示。
 chat-forward-target-not-joined = 転送先のルームにまだ参加していません
+chat-forward-comment-failed = コメントを送れなかったので、転送していません：{ $error }
+chat-forward-comment-lost = 送信が終わりませんでした
 
 # バックグラウンドのチャット操作が失敗したときの問題表示です。$error はMatrix SDKまたは自宅サーバーの元のエラーです。
 chat-op-ask-agent-failed = デフォルトのエージェントに質問できませんでした：{ $error }

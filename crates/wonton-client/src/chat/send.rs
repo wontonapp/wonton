@@ -2,8 +2,9 @@
 
 use std::sync::Arc;
 
+use tokio::sync::watch;
 use wonton_l10n::l10n;
-use wonton_matrix::OwnedEventId;
+use wonton_matrix::{Error, OwnedEventId, SendOutcome};
 use wonton_protocol::{ChatAccount, CoreError, ImageUpload};
 
 use super::draft::DraftWrite;
@@ -46,36 +47,59 @@ impl ChatLink {
         self.send_target(key.room_id.as_str())?;
         let key = key.clone();
         let sent_room = key.room_id.to_string();
+        // 先登记再放后台：转发紧跟着发时，它的任务可能比这条先跑，不能让它看不见附言还在路上。
+        let order = watch::channel::<Option<SendOutcome>>(None).0;
+        self.forward_orders
+            .lock()
+            .unwrap()
+            .insert(key.room_id.to_string(), order.clone());
         self.spawn_op_with_success(
             "chat-op-send-text-failed",
             async move {
-                let room = chat.room(&key).await?;
-                // 预览的图片传不上去时不挡消息：正文照发，原因报出来（取不到的类别发送框里已经显示过）。
-                let extra = match chat.preview_extra(&room, &key.room_id, &body).await {
-                    Ok(extra) => extra,
-                    Err(error) => {
-                        chat.report_op_failure("chat-op-send-preview-failed", &error);
-                        None
-                    }
-                };
-                match &reply_to {
-                    Some(event_id) => match extra {
-                        Some(extra) => {
-                            room.send_reply_with_extra(&body, &mentions, event_id, extra)
-                                .await?
+                let result: Result<(), Error> = async {
+                    let room = chat.room(&key).await?;
+                    // 预览的图片传不上去时不挡消息：正文照发，原因报出来（取不到的类别发送框里已经显示过）。
+                    let extra = match chat.preview_extra(&room, &key.room_id, &body).await {
+                        Ok(extra) => extra,
+                        Err(error) => {
+                            chat.report_op_failure("chat-op-send-preview-failed", &error);
+                            None
                         }
-                        None => room.send_reply(&body, &mentions, event_id).await?,
-                    },
-                    None => match extra {
-                        Some(extra) => room.send_text_with_extra(&body, &mentions, extra).await?,
-                        None => room.send_text(&body, &mentions).await?,
-                    },
+                    };
+                    let updates = room.send_updates();
+                    let sent = match &reply_to {
+                        Some(event_id) => match extra {
+                            Some(extra) => {
+                                room.send_reply_with_extra(&body, &mentions, event_id, extra)
+                                    .await?
+                            }
+                            None => room.send_reply(&body, &mentions, event_id).await?,
+                        },
+                        None => match extra {
+                            Some(extra) => {
+                                room.send_text_with_extra(&body, &mentions, extra).await?
+                            }
+                            None => room.send_text(&body, &mentions).await?,
+                        },
+                    };
+                    // 发出去了，草稿（连同回复对象）留着没用了；发送途中又打的字不算。
+                    // 点掉的预览记录跟着作废：下次打同样的链接重新出预览。
+                    chat.previews.forget(&key.room_id);
+                    chat.enqueue_draft(DraftWrite::Forget(key, body));
+                    // 服务器给了结果才放行排在后面的转发；可恢复的错会一直等到重发成功。
+                    let watcher = room.clone();
+                    let resolved = order.clone();
+                    chat.runtime.spawn(async move {
+                        resolved.send_replace(Some(watcher.wait_outcome(updates, sent).await));
+                    });
+                    Ok(())
                 }
-                // 发出去了，草稿（连同回复对象）留着没用了；发送途中又打的字不算。
-                // 点掉的预览记录跟着作废：下次打同样的链接重新出预览。
-                chat.previews.forget(&key.room_id);
-                chat.enqueue_draft(DraftWrite::Forget(key, body));
-                Ok(())
+                .await;
+                // 没进队列就失败的（房间还没恢复、组回复失败），直接让转发知道，不必等出结果。
+                if let Err(error) = &result {
+                    order.send_replace(Some(SendOutcome::Failed(error.to_string())));
+                }
+                result
             },
             move || onboarding::record_sent(&sent, sent_room),
         );

@@ -49,7 +49,7 @@ mod widget;
 pub use agent_run::AgentRunStatus;
 pub use chat_room::{
     BackPaginationStatus, ChatRoom, ImageThumbnail, ImageUpload, MISSED_GRACE, MentionMember,
-    MissedEvent,
+    MissedEvent, SendOutcome,
 };
 pub use encryption::{EncryptionState, Recovery, Verification};
 pub use error::{Error, Result};

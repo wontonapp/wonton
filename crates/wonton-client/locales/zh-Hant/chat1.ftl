@@ -68,6 +68,8 @@ chat-message-action-unavailable = 這則訊息不能這樣操作
 
 # 轉傳的目標聊天室不存在或還沒加入時顯示。
 chat-forward-target-not-joined = 還沒有加入要轉傳到的聊天室
+chat-forward-comment-failed = 附言沒發出去，轉傳先不發：{ $error }
+chat-forward-comment-lost = 傳送一直沒有結果
 
 # 背景聊天操作失敗的訊息，放進問題提示；$error 是 Matrix SDK 或家用伺服器的原始錯誤。
 chat-op-ask-agent-failed = 無法詢問預設 Agent：{ $error }
