@@ -143,7 +143,6 @@ final class BottomPin {
         stick()
     }
 
-
     /// 走查用：贴底状态和滚动的实际位置。界面上看不见，放进无障碍树给 UI 测试读。
     var snapshot: String {
         let view = scrollView
