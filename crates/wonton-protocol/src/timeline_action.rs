@@ -276,13 +276,13 @@ mod tests {
                 },
                 serde_json::json!({
                     "type": "start_edit",
-                    "target": {"room_id": "!room:home.example"},
+                    "target": {"room_id": "!a:home.example"},
                     "item_id": "item-1",
                 }),
             ),
             (
                 TimelineAction::CancelEdit { target: target() },
-                serde_json::json!({"type": "cancel_edit", "target": {"room_id": "!room:home.example"}}),
+                serde_json::json!({"type": "cancel_edit", "target": {"room_id": "!a:home.example"}}),
             ),
             (
                 TimelineAction::EditMessage {
@@ -292,7 +292,7 @@ mod tests {
                 },
                 serde_json::json!({
                     "type": "edit_message",
-                    "target": {"room_id": "!room:home.example"},
+                    "target": {"room_id": "!a:home.example"},
                     "event_id": "$event",
                     "body": "改过的话",
                 }),
@@ -304,7 +304,7 @@ mod tests {
                 },
                 serde_json::json!({
                     "type": "set_typing",
-                    "target": {"room_id": "!room:home.example"},
+                    "target": {"room_id": "!a:home.example"},
                     "typing": true,
                 }),
             ),

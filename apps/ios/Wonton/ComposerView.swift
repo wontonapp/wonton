@@ -125,9 +125,9 @@ struct ComposerView: View {
         .onChange(of: photos) { _, items in
             guard !items.isEmpty else { return }
             photos = []
-            // 旁聊里照片不进附件区，转码好直接发（ADR-0093）；回复对象跟着第一张发出去的照片走。
+            // 旁聊里照片不进附件区，转码好直接发（ADR-0093）；输入框里的字当说明一起发，回复对象跟着第一张照片走。
             if isSideChat {
-                Task { await composer.sendPhotos(items, replyTo: model.replies[draftKey]?.eventId) }
+                Task { await sendPhotos(items) }
             } else {
                 Task { await composer.addPhotos(items) }
             }
@@ -246,7 +246,7 @@ struct ComposerView: View {
             return
         }
         if isSideChat {
-            await composer.sendImage(data, type, replyTo: model.replies[draftKey]?.eventId)
+            await sendImage(data, type)
         } else {
             await composer.addImage(data, type)
         }
@@ -263,6 +263,22 @@ struct ComposerView: View {
             return
         }
         composer.addFiles(urls)
+    }
+
+    /// 旁聊里发一张照片，输入框里的字当说明一起发；发出去了才清输入框（转码失败时字留着）。
+    private func sendImage(_ data: Data, _ type: UTType?) async {
+        let caption = draft.wrappedValue.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard await composer.sendImage(data, type, caption: caption, replyTo: model.replies[draftKey]?.eventId)
+        else { return }
+        draft.wrappedValue = ""
+    }
+
+    /// 旁聊里一次发几张：说明跟第一张走，发出去了才清输入框。
+    private func sendPhotos(_ items: [PhotosPickerItem]) async {
+        let sent = await composer.sendPhotos(
+            items, caption: draft.wrappedValue, replyTo: model.replies[draftKey]?.eventId
+        )
+        if sent { draft.wrappedValue = "" }
     }
 
     private func send() {
