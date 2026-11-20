@@ -264,6 +264,39 @@ class RoomTelegramTest {
     }
 
     /**
+     * 附件区里有一张没传上去的照片时点发送：核心拒收，字、附件和回复对象都得留着，原因说出来。
+     * 现在发送一律当成功，字丢了、回复也收了。
+     */
+    @Test
+    fun rejectedSendKeepsDraftAndReply() {
+        val core = (compose.activity.application as WontonApplication).core.getOrThrow()
+        ensureAlbumPhotos()
+        clearTray()
+        compose.onNodeWithContentDescription(string(R.string.composer_attach)).performClick()
+        compose.waitUntil(10_000) { compose.onAllNodes(hasTestTag("album-photo")).fetchSemanticsNodes().isNotEmpty() }
+        compose.onAllNodes(hasTestTag("album-photo"))[0].performClick()
+        compose.onNodeWithTag("attach-add").performClick()
+        compose.waitUntil(10_000) { trayTiles() == 1 }
+        // 回一条，再把附件标成上传失败。
+        scrollTo(15)
+        item(15).performTouchInput {
+            val middle = height / 2f
+            swipe(Offset(width * 0.8f, middle), Offset(width * 0.3f, middle), durationMillis = 300)
+        }
+        compose.onNodeWithContentDescription(string(R.string.message_reply_cancel)).assertIsDisplayed()
+        compose.onNode(hasSetTextAction()).performTextInput("先发这句")
+        core.failAttachmentForTest(TimelineTarget(ECHO_ROOM, null), trayFirstId(core))
+        compose.waitForIdle()
+        compose.onNodeWithContentDescription(string(R.string.composer_send)).performClick()
+        compose.waitUntil(10_000) {
+            compose.onAllNodes(hasText("Retry or remove it first", substring = true)).fetchSemanticsNodes().isNotEmpty()
+        }
+        compose.onNode(hasText("先发这句")).assertIsDisplayed()
+        check(trayTiles() == 1) { "附件被吃掉了" }
+        compose.onNodeWithContentDescription(string(R.string.message_reply_cancel)).assertIsDisplayed()
+    }
+
+    /**
      * 转发面板：搜索能收窄列表，勾上两个房间后一起发出去，两边的房间里都多一条红色的同文消息。
      * 发完停在第一个选中的房间。
      */
