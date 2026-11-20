@@ -178,3 +178,8 @@ amd64 用 `orb create --arch amd64 …` 和 `docker buildx build --platform linu
 
 安装脚本会把镜像写成仓库 digest，本机 `docker build` 出来的镜像要带仓库 digest（containerd 镜像存储会带；经典存储不带，
 得先推到一个 registry 再拉）。没有时脚本停下并说明，不会退回写标签。
+
+## 发版前演练
+
+发版前在 [vm/](vm/README.md) 的 amd64 虚拟机里按正式方式重装一遍，再用 `vm/docker-restart-check.sh` 重启 Docker
+守护进程（主人 apt 升级 docker-ce 时就会这样）：Compose 项目里的服务都要自己回来，核心不再反复重启。

@@ -141,7 +141,7 @@ ADR-0045 的“跨机（M3）留的位置”已经定了方向：Matrix 联邦�
 - `[[global.proxy.by_domain]]`：`url` 是核心的代理，`include` 为空（所有域名：服务器名可以是安装时指定的任意名字），
   `exclude` 推送代理 `push.wonton.internal`。Tuwunel 的其他出站因此也只能到配对过的服务器。
 - `allowed_remote_server_names_experimental`：`peers.json` 里的服务器名，转义成正则；没有配对时是一个谁也匹配不上的式子。
-- 改名单：原地重写配置文件，向 Tuwunel 发 `SIGUSR1`，不用重启。
+- 改名单：原地重写配置文件，向 Tuwunel 发 `SIGUSR1`，不用重启。Docker 把经 kill 接口发过信号的容器记成手动停过，`unless-stopped` 的容器在守护进程重启后不再拉起，所以 Tuwunel 用 `restart: always` 并写明 `stop_signal`（原因见 `deploy/install/compose.yaml`）。
 - 网关照旧不转发 `/_matrix/federation/` 和 `/_matrix/key/`：联邦只经 iroh 进来。
 
 ### 信任落在哪

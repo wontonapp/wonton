@@ -280,7 +280,9 @@ services:
   tuwunel:
     labels: *owner-labels
     image: ghcr.io/matrix-construct/tuwunel:v2.0.0
-    restart: unless-stopped
+    # 核心发 SIGUSR1 热加载，unless-stopped 的容器挨过信号后 Docker 重启就不再拉起，见 deploy/install/compose.yaml。
+    restart: always
+    stop_signal: SIGTERM
     stop_grace_period: 5m
     environment:
       <<: *no-proxy
