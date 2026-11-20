@@ -28,6 +28,9 @@ pub(super) fn detail(
     route: &PluginDetailRoute,
     installed: Option<InstalledPlugin>,
 ) -> Option<PluginDetail> {
+    if let Some(detail) = super::ui_fake_store::detail(route) {
+        return Some(detail);
+    }
     let PluginDetailRoute::Installed { id } = route else {
         return None;
     };
@@ -65,7 +68,12 @@ fn budget(installed: Option<InstalledPlugin>) -> PluginDetail {
     detail
 }
 
-fn app(id: &str, title: &str, summary: &str, installed: Option<InstalledPlugin>) -> PluginDetail {
+pub(super) fn app(
+    id: &str,
+    title: &str,
+    summary: &str,
+    installed: Option<InstalledPlugin>,
+) -> PluginDetail {
     PluginDetail {
         source: None,
         id: id.into(),
