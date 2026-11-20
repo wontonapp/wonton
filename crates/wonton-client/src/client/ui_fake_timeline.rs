@@ -77,11 +77,19 @@ impl FakeTimelines {
     /// 时间线上的操作。没订阅的房间、约定以外的操作不理，转发的副本和发出去的字除外。
     pub(super) fn timeline_action(&self, action: TimelineAction) {
         match &action {
+            // 附言先落进目标房间再转发，和真核心等附言被确认后才转发的顺序一致。
             TimelineAction::ForwardMessage {
                 target,
                 item_id,
                 to_room_id,
+                comment,
             } => {
+                if let Some(comment) = comment.as_deref().filter(|c| !c.trim().is_empty()) {
+                    match self.get(to_room_id) {
+                        Some(fake) => fake.send_text(comment, &[]),
+                        None => self.park(to_room_id, comment),
+                    }
+                }
                 self.forward(&target.room_id, item_id, to_room_id);
                 return;
             }
@@ -574,6 +582,7 @@ mod tests {
             target: target(),
             item_id: "ui-fake-11".into(),
             to_room_id: "!ui-fake-call:home.example".into(),
+            comment: None,
         });
         let far = fakes.subscribe("!ui-fake-call:home.example");
         let first = next(&far).await;
