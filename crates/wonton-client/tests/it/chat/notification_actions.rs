@@ -287,6 +287,7 @@ async fn prepare_notification_composer(phone: &Phone, target: &TimelineTarget) -
                 target: target.clone(),
                 body: String::new(),
                 reply_to: None,
+                mentions: vec![],
             },
         })
         .unwrap();

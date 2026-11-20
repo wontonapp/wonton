@@ -643,6 +643,7 @@ async fn the_notice_room_is_read_only_and_other_chats_are_not() {
                 },
                 body: "你好".to_owned(),
                 reply_to: None,
+                mentions: vec![],
             },
         })
     };

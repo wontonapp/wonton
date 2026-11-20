@@ -65,6 +65,7 @@ async fn the_senders_avatar_travels_with_the_message() {
                 },
                 body: "主人发的".to_owned(),
                 reply_to: None,
+                mentions: vec![],
             },
         })
         .unwrap();

@@ -455,6 +455,7 @@ impl ChatLink {
                 target,
                 body,
                 reply_to,
+                ..
             } => self.send_text(&TimelineKey::parse(&target)?, &body, reply_to.as_deref()),
             TimelineAction::SendImage {
                 target,
