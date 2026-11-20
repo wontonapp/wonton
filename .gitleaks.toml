@@ -38,3 +38,9 @@ description = "测试里的本地 Hydra 地址带占位用户名密码（user:se
 condition = "AND"
 paths = ['''^crates/wonton-core/src/config_tests\.rs$''']
 regexes = ['''user:secret@hydra''']
+
+[[allowlists]]
+description = "matrix 的 Tuwunel 测试夹具：PEM 只写空头（运行时现生成密钥），后面紧跟 Rust 转义的 \\n；真 PEM 头后面是换行加 base64，不会命中"
+condition = "AND"
+paths = ['''^crates/wonton-core/src/matrix/(bot|invite_filter)_docker_tests\.rs$''', '''^crates/wonton-core/src/matrix/profile_tuwunel_tests\.rs$''']
+regexes = ['''-----BEGIN PRIVATE KEY-----\\n''']

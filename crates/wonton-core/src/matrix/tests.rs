@@ -123,13 +123,19 @@ async fn a_bot_gets_an_account_a_device_and_an_encrypted_room_it_hands_to_the_ow
                 .as_deref()
                 .is_some_and(|u| u.starts_with("mxc://"))
         );
-        // 主房间：加密的房间，插件装好之前只有 Bot 在里面，主人那边什么都没有。
+        // 主房间：主人建的加密房间，Bot 是主人邀请进来的。交付前主人那边还没有私聊记录。
         let room = &state.rooms[&home];
         assert!(room.encrypted, "主房间要加密");
-        assert_eq!(room.members, BTreeSet::from(["@echo:test".to_owned()]));
-        assert!(room.invited.is_empty(), "插件装好之前不邀请主人");
+        assert_eq!(
+            room.members,
+            BTreeSet::from(["@echo:test".to_owned(), "@owner:test".to_owned()])
+        );
+        assert!(room.invited.is_empty(), "邀请已经被 Bot 接受");
+        assert_eq!(state.room_state[&home].creator, "@owner:test");
         assert_eq!(profile.direct, None);
-        assert!(!state.users.contains_key("@owner:test"));
+        assert_eq!(state.user("@owner:test").direct, None);
+        // 建房间用的主人设备已经退出。
+        assert!(state.devices("@owner:test").is_empty());
     }
 
     // 插件装好后交给主人：主人在里面，双方的 m.direct 都记着它。
@@ -245,7 +251,7 @@ async fn a_home_room_never_handed_to_the_owner_is_kept_for_the_next_install() {
     let dir = tempfile::tempdir().unwrap();
     let matrix = connect(&dir, &config).await;
     let taken = BTreeSet::new();
-    // 上次安装在交给主人之前就失败了：房间里只有 Bot。
+    // 上次安装在交给主人之前就失败了：房间建好了但没写进主人的 m.direct。
     let first = matrix.provision_bot(&spec("echo", &taken)).await.unwrap();
     let previous = first.account.clone();
     let again = matrix
@@ -256,7 +262,7 @@ async fn a_home_room_never_handed_to_the_owner_is_kept_for_the_next_install() {
         .await
         .unwrap();
     assert_eq!(again.account, first.account, "重试不另建房间");
-    // 交到一半：主人只收到了邀请。
+    // 交到一半：主人被重新邀请过一次。
     fake.state()
         .rooms
         .get_mut(&first.account.home_room)
