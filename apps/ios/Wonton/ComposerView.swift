@@ -45,6 +45,13 @@ struct ComposerView: View {
     @FocusState private var isFocused: Bool
     @Environment(\.wontonColors) private var colors
 
+    private var bottomFade: some View {
+        ChatEdgeFade(edge: .bottom, fade: WontonTheme.spacing.s32)
+            .padding(.top, -WontonTheme.spacing.s24)
+            .padding(.horizontal, -WontonTheme.spacing.s4)
+            .padding(.bottom, -WontonTheme.size.detailIcon)
+    }
+
     var body: some View {
         let isEmpty = draft.wrappedValue.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty
             && composer.attachments.isEmpty
@@ -80,12 +87,7 @@ struct ComposerView: View {
             }
             .chatGlassCluster()
             // 渐隐从输入栏上方一点开始，一直垫到屏幕底（伸出去的部分在屏幕外或键盘后面）。
-            .background {
-                ChatEdgeFade(edge: .bottom, fade: WontonTheme.spacing.s32)
-                    .padding(.top, -WontonTheme.spacing.s24)
-                    .padding(.horizontal, -WontonTheme.spacing.s4)
-                    .padding(.bottom, -WontonTheme.size.detailIcon)
-            }
+            .background { bottomFade }
         }
         .padding(.horizontal, WontonTheme.spacing.s4)
         .padding(.bottom, WontonTheme.spacing.s4)
@@ -132,7 +134,7 @@ struct ComposerView: View {
             if isSideChat {
                 Task { await sendPhotos(items) }
             } else {
-                Task { await composer.addPhotos(items) }
+                Task { await sendPhotos(items) }
             }
         }
         .fileImporter(isPresented: $isPickingFiles, allowedContentTypes: [.item], allowsMultipleSelection: true) {
@@ -249,7 +251,7 @@ struct ComposerView: View {
                 continue
             }
             if isSideChat {
-                await composer.sendImage(data, type, replyTo: model.replies[draftKey]?.eventId)
+                await sendImage(data, type)
             } else {
                 await composer.addImage(data, type)
             }
@@ -356,10 +358,10 @@ private struct EditNotice: View {
                 .foregroundStyle(Color(colors.textSecondary))
             VStack(alignment: .leading, spacing: 0) {
                 Text(.Composer.composerEditing)
-                    .font(WontonTheme.font.caption)
+                    .font(WontonTheme.typography.caption)
                     .foregroundStyle(Color(colors.textSecondary))
                 Text(summary)
-                    .font(WontonTheme.font.caption)
+                    .font(WontonTheme.typography.caption)
                     .foregroundStyle(Color(colors.textSecondary))
                     .lineLimit(1)
             }

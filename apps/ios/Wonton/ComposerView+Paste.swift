@@ -40,7 +40,7 @@ extension ComposerView {
     }
 
     /// 旁聊里一次发几张：说明跟第一张走，发出去了才清输入框。
-    private func sendPhotos(_ items: [PhotosPickerItem]) async {
+    func sendPhotos(_ items: [PhotosPickerItem]) async {
         let sent = await composer.sendPhotos(
             items, caption: draft.wrappedValue, replyTo: model.replies[draftKey]?.eventId
         )
