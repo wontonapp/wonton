@@ -268,6 +268,7 @@ final class ChatTelegramUITests: XCTestCase {
         XCTAssertEqual(comment.value as? String, "Fixture forward comment", "附言没打进附言框")
         tap(app.buttons["forwardSend"])
         // 附言在目标房间没打开时排着，打开那条才发出去。
+        XCTAssertTrue(app.buttons["forwardSend"].waitForNonExistence(timeout: 5), "转发面板没收起")
         tap(app.buttons["Back"])
         XCTAssertTrue(app.buttons["!ui-fake-notes:home.example"].waitForExistence(timeout: 10), "没回到会话列表")
         enter("!ui-fake-notes:home.example")
@@ -312,10 +313,9 @@ final class ChatTelegramUITests: XCTestCase {
         app.launch()
         enter(Self.directRoom)
         tap(app.buttons["timelineDown"])
-        // 卡片挂在最后一条消息下面，先跳到底，翻不到再往回找。
+        // 卡片挂在中间偏下的一条消息下面，底下又被附件提示盖住：往上、往下都试，直到它整个露在提示上面。
         let card = app.buttons["sideChatCard"]
-        XCTAssertTrue(card.waitForExistence(timeout: 10), "没有旁聊卡片\n\(app.debugDescription)")
-        reveal(card)
+        XCTAssertTrue(revealClearOfHint(card), "翻不到露出来的旁聊卡片\n\(app.debugDescription)")
         tap(card)
         XCTAssertTrue(card.waitForNonExistence(timeout: 5), "点了卡片没进旁聊\n\(app.debugDescription)")
         XCTAssertTrue(element("sideChatAttachHint").waitForExistence(timeout: 5), "旁聊里没有附件提示")
@@ -525,6 +525,21 @@ final class ChatTelegramUITests: XCTestCase {
         return node.frame.minY > top && node.frame.maxY < bottom
     }
 
+    /// 翻到露在附件提示上面的位置：卡片在提示底下就往上挪，在提示上面更远处就往下找。
+    private func revealClearOfHint(_ node: XCUIElement) -> Bool {
+        for _ in 0..<60 {
+            if node.exists {
+                let cover = [element("sideChatAttachHint"), element("composerTray")].filter { $0.exists }.map { $0.frame.minY }
+                let bottom = min(app.textViews["Message"].frame.minY, cover.min() ?? .infinity)
+                if node.frame.maxY < bottom, node.isHittable { return true }
+                dragUp()
+            } else {
+                dragDown()
+            }
+        }
+        return false
+    }
+
     /// 从底部一段一段往回翻，直到这个元素整个在可见区里。
     private func reveal(_ element: XCUIElement, file: StaticString = #filePath, line: UInt = #line) {
         for _ in 0..<60 {
@@ -542,6 +557,13 @@ final class ChatTelegramUITests: XCTestCase {
             if (field.value(forKey: "hasKeyboardFocus") as? Bool) == true { return }
         }
         XCTFail("输入框一直没拿到键盘焦点\n\(app.debugDescription)", file: file, line: line)
+    }
+
+    /// 往新的一头翻一段。
+    private func dragUp() {
+        let start = app.coordinate(withNormalizedOffset: CGVector(dx: 0.5, dy: 0.6))
+        start.press(forDuration: 0.05, thenDragTo: app.coordinate(withNormalizedOffset: CGVector(dx: 0.5, dy: 0.35)),
+                    withVelocity: .default, thenHoldForDuration: 0.2)
     }
 
     /// 往回翻一段。慢拖、松手前停一下：不带惯性，不会一下翻过头。
