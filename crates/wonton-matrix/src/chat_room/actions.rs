@@ -15,7 +15,7 @@ use matrix_sdk::deserialized_responses::TimelineEvent;
 use matrix_sdk::ruma::events::Mentions;
 
 use super::{ChatRoom, ensure_recipient_devices};
-use crate::{Error, MatrixSession, Result, reply::load_event};
+use crate::{Error, MatrixSession, Result, SendOutcome, reply::load_event};
 
 /// 事件是谁发的；解析不了的消息类事件返回 `None`。
 fn sender(event: &TimelineEvent) -> Option<matrix_sdk::ruma::OwnedUserId> {
@@ -156,12 +156,31 @@ impl ChatRoom {
 
 impl MatrixSession {
     /// 把 `from` 里的一条消息照原样发到已加入的房间 `to`：经那个房间的发送队列，本地回显出现在它的时间线里，发送结果
-    /// 也在那里。不打开 `to`，不动 Sliding Sync 的房间订阅。
-    pub async fn forward(&self, from: &ChatRoom, event_id: &EventId, to: &RoomId) -> Result<()> {
+    /// 也在那里。有 `comment` 时先在 `to` 里发附言，服务器收下才转发；附言不可恢复地失败就不转发，原因进错误。
+    /// 不打开 `to`，不动 Sliding Sync 的房间订阅。
+    pub async fn forward(
+        &self,
+        from: &ChatRoom,
+        event_id: &EventId,
+        to: &RoomId,
+        comment: Option<&str>,
+    ) -> Result<()> {
         let content = from.forward_content(event_id).await?;
-        let room = self.joined(to)?;
-        ensure_recipient_devices(&room).await?;
-        room.send_queue()
+        let room = ChatRoom::open(self.joined(to)?).await?;
+        ensure_recipient_devices(&room.room).await?;
+        if let Some(comment) = comment.filter(|comment| !comment.trim().is_empty()) {
+            let (_, updates) = room.send_updates().await?;
+            let handle = room
+                .send_text(comment, &[])
+                .await
+                .map_err(|error| Error::Upstream(format!("附言进不了发送队列：{error}")))?;
+            match room.wait_outcome(updates, handle).await {
+                SendOutcome::Sent => {}
+                SendOutcome::Failed(failure) => return Err(Error::CommentNotSent(failure)),
+            }
+        }
+        room.room
+            .send_queue()
             .send(content.into())
             .await
             .map_err(|error| Error::Upstream(format!("转发进不了发送队列：{error}")))?;

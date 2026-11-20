@@ -1,5 +1,6 @@
 //! 按原因区分的错误（AGENTS.md：失败即停，错误必须区分原因）。
 
+use crate::SendFailure;
 use matrix_sdk::{
     HttpError, RefreshTokenError,
     ruma::api::error::{Error as ApiError, ErrorBody},
@@ -47,6 +48,10 @@ pub enum Error {
     /// 服务器或 SDK 出错。
     #[error("Matrix 服务出错：{0}")]
     Upstream(String),
+
+    /// 转发的附言没发出去，转发也没发。
+    #[error("{0}")]
+    CommentNotSent(SendFailure),
 
     /// 输入非法。
     #[error("输入非法：{0}")]
