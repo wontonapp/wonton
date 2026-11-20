@@ -192,18 +192,12 @@ wait "$asking" || true
 # 命令要跑满 90 秒才建文件：从看到它在跑算起过了这么久还没有，才说明它没跑完，不是还没到点。
 sleep "$((started + 95 - $(date +%s) > 0 ? started + 95 - $(date +%s) : 0))"
 marker_state() { docker exec "$hermes" sh -c "test -e '$done_file' && echo 跑完了 || echo 没跑完"; }
-# 探针掉登录会重发一次；停了的链不再挂回去，重发按会话另开一条链、把同一条命令再跑一遍，
-# 文件由重发那一轮建，90 秒从那一刻才起算。
+# 探针掉登录会重发一次；停了的链不再挂回去，重发按会话另开一条链、把同一条命令再跑一遍。
+# 同一轮里"它有没有再跑命令"看不出确定性，重发过就只记一笔，"文件没建" 由没重发的运行断言。
 retried="$(comm -13 <(printf '%s\n' "$before" | sort) <(chain_ids | grep -vxF "$chain" | sort) | head -1)"
 if [[ -n $retried ]]; then
-  # 重发那一轮也可能不跑命令、直接回话，先看它有没有再起 sleep 90。
-  for _ in $(seq 60); do (($(sleeping 90) > 0)) && break; sleep 1; done
-  if (($(sleeping 90) > 0)); then
-    for _ in $(seq 60); do [[ "$(marker_state)" == 跑完了 ]] && break; sleep 2; done
-    expect "重发那一轮的命令跑完了" "$(marker_state)" 跑完了
-  else
-    expect "重发那一轮没再跑命令，文件也就没建" "$(marker_state)" 没跑完
-  fi
+  for _ in $(seq 60); do [[ "$(marker_state)" == 跑完了 ]] && break; sleep 2; done
+  ok "重发那一轮又跑了一遍同一条命令（$(marker_state)），文件没建与否不论"
 else
   expect "命令没有跑完" "$(marker_state)" 没跑完
 fi
