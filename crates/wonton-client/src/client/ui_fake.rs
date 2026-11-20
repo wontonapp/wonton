@@ -80,6 +80,9 @@ impl ClientCore {
     pub fn new_ui_fake(data_dir: String) -> Result<Arc<Self>, CoreError> {
         let core = Self::new(data_dir)?;
         core.ui_fake.store(true, Ordering::SeqCst);
+        if let Some(runtime) = core.scope().handle() {
+            core.ui_fake_timelines.set_runtime(runtime);
+        }
         core.seed_ui_fake();
         Ok(core)
     }

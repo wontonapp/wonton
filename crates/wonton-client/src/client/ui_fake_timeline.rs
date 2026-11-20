@@ -2,18 +2,26 @@
 //! 发“/”命令时，假房间照 ADR-0109 再推一批。第一批的条目在 `ui_fake_room.rs`。
 //!
 //! 不是核心的实现：没有翻页、没有回执，只认测试约定的那几个操作。组内位置用核心的真规则（[`Runs`]）补。
+//!
+//! 走查“回到底部”上的未读数字：壳报告翻走以后，后台陆续来三条（[`ARRIVALS`]），回到底部清掉。
 
 use std::collections::HashMap;
 use std::sync::{Arc, Mutex, Weak};
+use std::time::Duration;
 
+use tokio::runtime::Handle;
 use tokio::sync::mpsc;
 use wonton_protocol::{
     ChatAction, ChoicesState, JumpState, MessageContent, MessageStatus, TimelineAction,
     TimelineContent, TimelineDiff, TimelineFocus, TimelineItem, TimelineScroll, TimelineUpdate,
+    TimelineViewport,
 };
 
 use super::ui_fake_room::{ITEMS, OWNER, at_ms, text_message, timeline};
 use crate::chat::{Runs, TimelineSubscription};
+
+/// 走查里翻走后后台陆续来的三条。
+const ARRIVALS: [&str; 3] = ["First arrival", "Second arrival", "Third arrival"];
 
 /// 打开着的假房间，按房间 ID 找；同一房间再订阅时换成新的那份。
 #[derive(Default)]
@@ -21,6 +29,8 @@ pub(super) struct FakeTimelines {
     open: Mutex<HashMap<String, Weak<FakeTimeline>>>,
     /// 转发、发字去到了还没打开的房间：房间打开时补进第一批。
     forwarded: Mutex<HashMap<String, Vec<String>>>,
+    /// 核心的运行时要靠它起后台来的那几条；壳调进来时线程上没有 Tokio 上下文。
+    runtime: Mutex<Option<Handle>>,
 }
 
 impl FakeTimelines {
@@ -35,7 +45,7 @@ impl FakeTimelines {
                     .get(room_id)
                     .cloned()
                     .unwrap_or_default();
-                let fake = Arc::new(FakeTimeline::fresh(room_id, &pending));
+                let fake = Arc::new(FakeTimeline::fresh(room_id, &pending, self.runtime()));
                 lock(&self.open).insert(room_id.to_owned(), Arc::downgrade(&fake));
                 fake
             }
@@ -45,7 +55,32 @@ impl FakeTimelines {
         let mut first = fake.lock().base.clone();
         fake.push(&mut first);
         let scrolled = fake.clone();
-        TimelineSubscription::seeded(receiver, Box::new(move |scroll| scrolled.scrolled(scroll)))
+        let status_fake = Arc::downgrade(&fake);
+        let status = Box::new(move || match status_fake.upgrade() {
+            Some(fake) => {
+                let senders = lock(&fake.senders).len();
+                let state = fake.lock();
+                format!(
+                    "senders={senders} away={} bursting={}",
+                    state.away, state.bursting
+                )
+            }
+            None => "fake gone".into(),
+        });
+        TimelineSubscription::seeded(
+            receiver,
+            Box::new(move |scroll| scrolled.scrolled(scroll)),
+            status,
+        )
+    }
+
+    pub(super) fn set_runtime(&self, runtime: Handle) {
+        *lock(&self.runtime) = Some(runtime);
+    }
+
+    /// 没设过时（测试里就在运行时的线程上）取当前上下文。
+    fn runtime(&self) -> Handle {
+        lock(&self.runtime).clone().unwrap_or_else(Handle::current)
     }
 
     /// 留着等房间打开：跟转发共用一条，谁先来谁先显示。
@@ -154,6 +189,8 @@ impl FakeTimelines {
 struct FakeTimeline {
     /// 订着这个房间的每一份（主对话、旁聊）；订阅者全没了才随房间一起丢。
     senders: Mutex<Vec<mpsc::UnboundedSender<TimelineUpdate>>>,
+    /// 壳报位置时在 Swift 线程上，没有 Tokio 上下文，后台的三条要用建订阅时留的句柄排。
+    runtime: Handle,
     state: Mutex<State>,
 }
 
@@ -167,19 +204,32 @@ struct State {
     back: Vec<String>,
     /// 发过几条，给新消息编号。
     sent: usize,
+    /// 壳停在别处（翻进了历史）。
+    away: bool,
+    /// 翻走以后来了几条：只给 `new_messages` 计数。
+    arriving: usize,
+    /// 陆续来的一共几条：给消息编号。
+    arrived: usize,
+    /// 一轮还没排完。
+    bursting: bool,
 }
 
 impl FakeTimeline {
     /// 一份新的假时间线：第一批带上停在门外等着进来的字（`pending`）。
-    fn fresh(room_id: &str, pending: &[String]) -> Self {
+    fn fresh(room_id: &str, pending: &[String], runtime: Handle) -> Self {
         let fake = FakeTimeline {
             senders: Mutex::new(Vec::new()),
+            runtime,
             state: Mutex::new(State {
                 base: timeline(room_id),
                 runs: Runs::default(),
                 items: Vec::new(),
                 back: Vec::new(),
                 sent: 0,
+                away: false,
+                arriving: 0,
+                arrived: 0,
+                bursting: false,
             }),
         };
         if !pending.is_empty() {
@@ -201,11 +251,6 @@ impl FakeTimeline {
             crate::chat::apply_diff(&mut state.items, diff);
         }
         update.back_to = state.back.last().cloned();
-        eprintln!(
-            "FAKE push senders={} diffs={}",
-            lock(&self.senders).len(),
-            update.diffs.len()
-        );
         lock(&self.senders).retain(|sender| sender.send(update.clone()).is_ok());
     }
 
@@ -269,14 +314,89 @@ impl FakeTimeline {
         });
     }
 
-    fn scrolled(&self, scroll: TimelineScroll) {
-        if scroll == TimelineScroll::Bottom {
-            self.lock().back.clear();
-        }
-        self.batch(|update| {
-            if scroll == TimelineScroll::Bottom {
-                update.viewport = wonton_protocol::TimelineViewport::Bottom;
+    fn scrolled(self: &Arc<Self>, scroll: TimelineScroll) {
+        match scroll {
+            TimelineScroll::Bottom => {
+                let mut state = self.lock();
+                state.back.clear();
+                state.away = false;
+                state.arriving = 0;
             }
+            TimelineScroll::Away => {
+                let first = {
+                    let mut state = self.lock();
+                    !std::mem::replace(&mut state.away, true)
+                };
+                if first {
+                    self.start_arrivals();
+                }
+            }
+        }
+        if scroll == TimelineScroll::Bottom {
+            self.batch(|update| {
+                update.viewport = TimelineViewport::Bottom;
+            });
+        }
+    }
+
+    /// 翻走以后后台陆续来三条，走查用：数字一条条涨，回到底部清掉，再翻走再排一轮。
+    /// `WONTON_UI_FAKE_ARRIVALS` 改条数（看 99+ 角标要上百条），多于三条时挤在一秒多里来完。
+    fn start_arrivals(self: &Arc<Self>) {
+        let (total, pause) = {
+            let mut state = self.lock();
+            if std::mem::replace(&mut state.bursting, true) {
+                return;
+            }
+            let total = std::env::var("WONTON_UI_FAKE_ARRIVALS")
+                .ok()
+                .and_then(|value| value.parse::<usize>().ok())
+                .filter(|total| *total > 0)
+                .unwrap_or(ARRIVALS.len());
+            (total, if total > ARRIVALS.len() { 120 } else { 700 })
+        };
+        let fake = Arc::downgrade(self);
+        self.runtime.spawn(async move {
+            for index in 0..total {
+                tokio::time::sleep(Duration::from_millis(pause)).await;
+                let Some(fake) = fake.upgrade() else { return };
+                fake.arrive(ARRIVALS[index % ARRIVALS.len()]);
+            }
+            if let Some(fake) = fake.upgrade() {
+                fake.lock().bursting = false;
+            }
+        });
+    }
+
+    /// 后台来的一条（回声 Bot 发的）：翻走时算新消息，贴底时直接到底。
+    fn arrive(&self, body: &str) {
+        let (id, index, viewport) = {
+            let mut state = self.lock();
+            state.arrived += 1;
+            let id = format!("ui-fake-arrived-{}", state.arrived);
+            let index = ITEMS + 100 + state.arrived;
+            let viewport = if state.away {
+                state.arriving += 1;
+                TimelineViewport::Away {
+                    new_messages: state.arriving as u32,
+                }
+            } else {
+                TimelineViewport::Bottom
+            };
+            (id, index, viewport)
+        };
+        let message = text_message(
+            &id,
+            super::ui_fake_room::ECHO,
+            at_ms(index),
+            &[body.to_owned()],
+        );
+        let item = TimelineItem {
+            id,
+            content: TimelineContent::Message { message },
+        };
+        self.batch(|update| {
+            update.diffs = vec![TimelineDiff::PushBack { item }];
+            update.viewport = viewport;
         });
     }
 
@@ -435,6 +555,115 @@ mod tests {
         assert!(!next(&second).await.diffs.is_empty());
         assert!(!next(&first).await.diffs.is_empty());
         // 后订的那份订阅时会给先订的那份也推一批，这里已经收过；两边的通道都没断。
+    }
+
+    /// 翻走以后后台陆续来三条，数字跟着涨；回到底部清掉，再翻走重新从 1 数起。
+    #[tokio::test(start_paused = true)]
+    async fn arrivals_count_only_while_away() {
+        let fakes = FakeTimelines::default();
+        let subscription = fakes.subscribe(ROOM);
+        let _ = next(&subscription).await;
+
+        subscription.set_scroll(TimelineScroll::Away);
+        for expected in 1..=3 {
+            let update = next(&subscription).await;
+            assert_eq!(
+                update.viewport,
+                TimelineViewport::Away {
+                    new_messages: expected
+                }
+            );
+            assert!(!update.scroll_to_bottom, "来消息不该把壳拉到底");
+        }
+
+        subscription.set_scroll(TimelineScroll::Bottom);
+        assert_eq!(next(&subscription).await.viewport, TimelineViewport::Bottom);
+
+        subscription.set_scroll(TimelineScroll::Away);
+        assert_eq!(
+            next(&subscription).await.viewport,
+            TimelineViewport::Away { new_messages: 1 }
+        );
+    }
+
+    /// 壳在 Swift 线程上报位置，那里没有 Tokio 上下文；后台的三条也得排得起来（排不起来会在壳里 panic）。
+    #[tokio::test(start_paused = true)]
+    async fn scroll_from_a_thread_without_runtime_still_starts_arrivals() {
+        let fakes = FakeTimelines::default();
+        let subscription = fakes.subscribe(ROOM);
+        let _ = next(&subscription).await;
+
+        let reported = subscription.clone();
+        std::thread::spawn(move || reported.set_scroll(TimelineScroll::Away))
+            .join()
+            .unwrap();
+
+        assert_eq!(
+            next(&subscription).await.viewport,
+            TimelineViewport::Away { new_messages: 1 }
+        );
+    }
+
+    /// 壳订阅走的是 Swift 线程，那里没有 Tokio 上下文：起后台那几条用的必须是核心的运行时而非当前上下文。
+    #[test]
+    fn subscribe_from_a_thread_without_runtime_still_fills_the_first_batch() {
+        let runtime = tokio::runtime::Builder::new_current_thread()
+            .enable_all()
+            .build()
+            .unwrap();
+        let fakes = Arc::new(FakeTimelines::default());
+        fakes.set_runtime(runtime.handle().clone());
+
+        let subscribing = fakes.clone();
+        let subscription = std::thread::spawn(move || subscribing.subscribe(ROOM))
+            .join()
+            .unwrap();
+
+        runtime.block_on(async {
+            let first = tokio::time::timeout(Duration::from_secs(2), subscription.next())
+                .await
+                .expect("第一批该马上到")
+                .expect("假房间一直开着");
+            assert!(!first.diffs.is_empty());
+        });
+    }
+
+    /// 壳里的 `reportPosition` 每动一下几何就往这报：从外面线程连报一串，订阅不能被自己报没了。
+    #[tokio::test]
+    async fn shell_position_reports_from_a_foreign_thread_keep_the_subscription_alive() {
+        let dir = tempfile::tempdir().unwrap();
+        let core =
+            crate::client::ClientCore::new_ui_fake(dir.path().to_string_lossy().into_owned())
+                .unwrap();
+        let subscription = core.subscribe_timeline(target()).await.unwrap();
+        let _ = tokio::time::timeout(std::time::Duration::from_secs(2), subscription.next()).await;
+
+        let reported = subscription.clone();
+        std::thread::spawn(move || {
+            for _ in 0..40 {
+                reported.set_scroll(TimelineScroll::Away);
+                reported.set_scroll(TimelineScroll::Bottom);
+            }
+            reported.set_scroll(TimelineScroll::Away);
+        })
+        .join()
+        .unwrap();
+
+        // 连报一大串以后订阅还活着，最后那条「翻走」还能收到后台来的一条。
+        let mut saw_bottom = false;
+        let update = loop {
+            let update =
+                tokio::time::timeout(std::time::Duration::from_secs(2), subscription.next())
+                    .await
+                    .expect("订阅自己断了");
+            let update = update.expect("订阅自己断了");
+            match update.viewport {
+                TimelineViewport::Away { new_messages } => break new_messages,
+                TimelineViewport::Bottom => saw_bottom = true,
+            }
+        };
+        assert!(saw_bottom, "中间的到底批次该到");
+        assert_eq!(update, 1);
     }
 
     /// 走壳用的入口订阅一条时间线：第一批之后不该自己结束（壳那边一结束就当房间没了、把页收起来）。

@@ -13,6 +13,8 @@ struct ChatRoomView: View {
     @State private var presenter: RoomPresenter
     @State private var pin = BottomPin()
     @State private var isKeyboardVisible = false
+    @State private var overlayBottom: CGFloat = 0
+    @State private var composerHeight: CGFloat = 0
     @State private var pageAnchor: String?
     @SceneStorage private var savedAnchor: String
     @State private var visibleRows: [String: CGFloat] = [:]
@@ -60,7 +62,9 @@ struct ChatRoomView: View {
                     #if DEBUG
                         .overlay(alignment: .topLeading) {
                             ScrollDebug(
-                                pin: pin,
+                                pin: pin, keyboard: isKeyboardVisible,
+                                overlayBottom: overlayBottom, composerHeight: composerHeight,
+                                viewport: String(describing: timeline.viewport),
                                 extra: "sub=\(timeline.debugSubscribes) up=\(timeline.debugUpdates)"
                                     + " n=\(timeline.items.count)"
                                     + " end=\(timeline.debugEnded) closed=\(model.debugClosed)"
@@ -187,6 +191,7 @@ private extension ChatRoomView {
         .task(id: model.draftKey(target)) { await model.loadDraft(target) }
         .task(id: model.draftKey(target)) { await composer.observe() }
         .task(id: timeline.attempt) {
+            walkLog.notice("task start attempt=\(timeline.attempt, privacy: .public)")
             if await timeline.observe(pin: pin) {
                 if threadRoot != nil {
                     // 旁聊没了：只收起旁聊，主对话还在。
@@ -199,6 +204,7 @@ private extension ChatRoomView {
             }
         }
         .onDisappear {
+            walkLog.notice("room disappear")
             if threadRoot == nil {
                 // 房间关了，开着的旁聊跟着关（换房间、路径被换掉时没有别的收口）。
                 model.sideChats[roomId] = nil
@@ -251,6 +257,7 @@ private extension ChatRoomView {
                 }
             }
         }
+        .onGeometryChange(for: CGFloat.self) { $0.size.height } action: { composerHeight = $0 }
     }
 
     /// 这条时间线：主对话或一个旁聊（ADR-0093）。
@@ -376,13 +383,26 @@ private extension ChatRoomView {
             }
             // 停在别处时的“向下”：数字是离开底部后到的消息数（ADR-0071）。跳过原消息的先回到跳之前那一条，
             // 栈空了才到底（ADR-0109 第 4 节）。
+            // 列表按整屏排、把键盘算进 inset，叠层却按整屏底边对齐：按钮要抬过 inset 才不被输入栏盖住。
             .overlay(alignment: .bottomTrailing) {
-                if case let .away(newMessages) = timeline.viewport {
-                    ScrollToBottomButton(count: Int(newMessages)) {
-                        if timeline.backTo != nil {
-                            sendTimeline(.jumpBack(target: target))
-                        } else {
-                            pin.pin()
+                GeometryReader { _ in
+                    ZStack(alignment: .bottomTrailing) {
+                        Color.clear
+                            .onGeometryChange(for: CGFloat.self) { $0.frame(in: .global).maxY } action: {
+                                overlayBottom = $0
+                            }
+                        if case let .away(newMessages) = timeline.viewport {
+                            let lift = isKeyboardVisible ? composerHeight + WontonTheme.spacing.s8 : 0
+                            ScrollToBottomButton(count: Int(newMessages), lift: lift) {
+                                if timeline.backTo != nil {
+                                    sendTimeline(.jumpBack(target: target))
+                                } else {
+                                    pin.scrollToBottom()
+                                    // 核心可能已经算成离开了底部，而壳这边早就被追消息的更新重新贴住：
+                                    // 只靠 isPinned 的变化就报不上去，按钮会一直挂着。点它就是到了底。
+                                    reportPosition(true)
+                                }
+                            }
                         }
                     }
                 }
@@ -575,7 +595,7 @@ private extension ChatRoomView {
                 reportPosition(false)
             }
         } else {
-            pin.pin()
+            pin.scrollToBottom()
             placed = true
             reportPosition(true)
         }

@@ -1,11 +1,14 @@
 import XCTest
 
+// swiftlint:disable type_body_length
+
 /// 聊天面板按钮（ADR-0052）的走屏：空面板第 1 级、有页面第 2 级、展开后换级与胶囊退出。
 ///
 /// 默认用 `WONTON_UI_FAKE` 的假数据，夜跑带了配对码也一样：房间里的用例不依赖开发栈装没装 Bot。
 /// 要真插件页的用例连开发栈，外部传 `PAIRING_CODE`（`deploy/dev/core/dev.sh pair <地址>` 打出的配对码），
 /// App 启动时交给核心配对（`WontonApp` 的 `WONTON_DEV_PAIRING_CODE`）；没给码时这几条跳过。
 final class ChatPanelUITests: XCTestCase {
+    // swiftlint:enable type_body_length
     private var app: XCUIApplication!
 
     override func setUpWithError() throws {
@@ -244,6 +247,71 @@ final class ChatPanelUITests: XCTestCase {
         XCTAssertLessThanOrEqual(visibleBottom(state), Double(field.frame.minY + 1),
                                  "Last-message viewport extends under the composer: \(now)")
     }
+
+    /// 回到底部按钮（ADR-0071）：翻进历史就出现，只有箭头时命中区不小于 48 的点按门槛；
+    /// 后台消息把数字顶上去时也是同一块命中区，点一下平滑回到底部、按钮消失。
+    func testScrollToBottomButtonMeetsTarget() throws {
+        try launch()
+        guard let field = enterFakeRoom(stayAway: true) else {
+            return XCTFail("没进假房间")
+        }
+        XCTAssertTrue(scrollUpInRoom(), "翻走以后没有回到底部按钮：\(buttonLabels()) \(scrollState())")
+        guard let button = anyBottomButton(timeout: 10) else {
+            return XCTFail("翻走以后没有回到底部按钮：\(buttonLabels()) \(scrollState())\n\(app.debugDescription)")
+        }
+        XCTAssertGreaterThanOrEqual(button.frame.width, 47.5, "命中区宽 \(button.frame.width) 不到 48")
+        XCTAssertGreaterThanOrEqual(button.frame.height, 47.5, "命中区高 \(button.frame.height) 不到 48")
+        shot("31-scroll-button")
+        guard let counted = countedBottomButton(3, timeout: 10) else {
+            return XCTFail("翻走以后数字没到 3：\(buttonLabels())")
+        }
+        XCTAssertGreaterThanOrEqual(counted.frame.height, 47.5, "带数字时命中区高 \(counted.frame.height) 不到 48")
+        shot("32-scroll-button-count")
+        field.tap()
+        field.typeText(String(repeating: "scroll target sample: long message. ", count: 10))
+        let send = app.buttons["composerSend"]
+        XCTAssertTrue(send.waitForExistence(timeout: 5), "打了字没有发送键")
+        send.tap()
+        XCTAssertTrue(waitGone(send, timeout: 3), "发送键没消失，消息没发出去：\(scrollState())")
+        XCTAssertTrue(waitGone(counted), "自己发消息以后没回到底部")
+        // 发完以后又贴着底：再翻进历史，按钮还得回来。先等键盘和贴底动画停住。
+        Thread.sleep(forTimeInterval: 1)
+        XCTAssertTrue(scrollUpInRoom(times: 3), "发送后拖不上去：kb=\(app.keyboards.count) \(scrollState())")
+        guard let again = anyBottomButton(timeout: 10) else {
+            return XCTFail("发完再翻走没有回到底部按钮：\(buttonLabels()) \(scrollState())\n\(app.debugDescription)")
+        }
+        again.coordinate(withNormalizedOffset: CGVector(dx: 0.5, dy: 0.5)).tap()
+        // 点过的那个句柄会一直报存在（XCUIElement 缓存），要另起查询数还剩几个。
+        var left = -1
+        for _ in 0..<20 {
+            left = app.buttons.matching(identifier: "timelineDown").count
+            if left == 0 { break }
+            usleep(200_000)
+        }
+        XCTAssertEqual(left, 0, "点过以后按钮还在：\(scrollState())")
+        let state = scrollState()
+        XCTAssertTrue(state.contains("pin=true") && isAtBottom(state), "点了没有回到底部：\(state)")
+        shot("33-scroll-button-bottom")
+    }
+
+    /// 未读上百：名字报真实条数，角标只画 99+（ADR-0071）。
+    func testBottomBadgeShows99Plus() throws {
+        try launch(environment: ["WONTON_UI_FAKE_ARRIVALS": "100"])
+        guard enterFakeRoom(stayAway: true) != nil else {
+            return XCTFail("没进假房间")
+        }
+        guard anyBottomButton(timeout: 10) != nil || scrollUpInRoom() else {
+            return XCTFail("翻走以后没有回到底部按钮：\(buttonLabels()) \(scrollState())")
+        }
+        guard let button = anyBottomButton(timeout: 10) else {
+            return XCTFail("翻走以后没有回到底部按钮：\(buttonLabels()) \(scrollState())")
+        }
+        let deadline = Date().addingTimeInterval(30)
+        while Date() < deadline, !button.label.contains("100") { usleep(300_000) }
+        XCTAssertTrue(button.label.contains("100"), "名字没报真实条数：\(button.label)")
+        XCTAssertTrue(button.staticTexts["99+"].firstMatch.waitForExistence(timeout: 5), "角标没有写成 99+")
+        shot("34-scroll-button-99plus")
+    }
 }
 
 extension ChatPanelUITests {
@@ -252,7 +320,8 @@ extension ChatPanelUITests {
 
     /// 整套前置。要真后端的用例传 `needsStack: true`：没有 `PAIRING_CODE` 就跳过，有就配上真开发栈。
     /// 其余用例一律用假数据（`WONTON_UI_FAKE`），夜跑带了配对码也不连后端：房间里的用例不该依赖开发栈装没装 Bot。
-    private func launch(arguments: [String] = [], needsStack: Bool = false) throws {
+    private func launch(arguments: [String] = [], needsStack: Bool = false,
+                        environment: [String: String] = [:]) throws {
         app = XCUIApplication()
         app.launchArguments += arguments
         if needsStack {
@@ -268,6 +337,7 @@ extension ChatPanelUITests {
             // 交接走没走完也看测试探针，否则 `settleKeyHandoff` 要白等满超时。
             UITestBackend.enableStateProbe(to: app)
         }
+        app.launchEnvironment.merge(environment) { _, new in new }
 
         app.launch()
         if needsStack {
@@ -402,6 +472,83 @@ extension ChatPanelUITests {
             tapped = true
             button.tap()
             _ = waitGone(button, timeout: 5)
+        }
+    }
+
+    /// 进假房间（核心 `ui_fake.rs` 的 Echo）；`stayAway` 为真时停在落点上、不回到底部。
+    private func enterFakeRoom(stayAway: Bool = false) -> XCUIElement? {
+        let row = app.buttons["chatRoom.!ui-fake:home.example"]
+        guard row.waitForExistence(timeout: 20), row.isHittable else { return nil }
+        row.tap()
+        guard waitInRoom(timeout: 10) else { return nil }
+        if !stayAway { goToBottom() }
+        return composer(timeout: 3)
+    }
+
+    /// 房间顶栏的头像只在房间里出现，和收发框一起齐了才算进去。
+    private func waitInRoom(timeout: TimeInterval) -> Bool {
+        let end = Date().addingTimeInterval(timeout)
+        while Date() < end {
+            if app.buttons["roomTopBarAvatar"].exists, composer(timeout: 0.2) != nil { return true }
+            usleep(300_000)
+        }
+        return false
+    }
+
+    /// 在消息区正中往上拖，直到回到底部按钮真的出现：拖完贴底会自己吸回去，只看「刚才离开过」会被吸回的瞬间骗过。
+    @discardableResult
+    private func scrollUpInRoom(times: Int = 3) -> Bool {
+        let list = app.collectionViews.firstMatch
+        for _ in 0..<2 where app.keyboards.firstMatch.exists {
+            list.swipeDown(velocity: .slow)
+            usleep(600_000)
+        }
+        for _ in 0..<times {
+            let start = list.coordinate(withNormalizedOffset: CGVector(dx: 0.5, dy: 0.45))
+            start.press(forDuration: 0.05,
+                        thenDragTo: list.coordinate(withNormalizedOffset: CGVector(dx: 0.5, dy: 0.03)),
+                        withVelocity: .slow, thenHoldForDuration: 0.8)
+            usleep(600_000)
+            if anyBottomButton(timeout: 0) != nil { return true }
+            list.swipeUp(velocity: .slow)
+            usleep(600_000)
+            if anyBottomButton(timeout: 0) != nil { return true }
+        }
+        return anyBottomButton(timeout: 1) != nil
+    }
+
+    private static let bottomCountPrefixes = ["Back to bottom,", "回到底部，", "一番下へ戻る、", "回到底部,"]
+
+    /// 失败时把界面上的按钮标签都列出来。
+    private func buttonLabels() -> [String] {
+        (0..<app.buttons.count).map { app.buttons.element(boundBy: $0).label }
+    }
+
+    /// 带不带数字都是同一个按钮：数字版的标签是「回到底部，3」。
+    private func anyBottomButton(timeout: TimeInterval) -> XCUIElement? {
+        let labels = ["Back to bottom", "回到底部", "一番下へ戻る"]
+        let deadline = Date().addingTimeInterval(timeout)
+        while true {
+            for label in labels {
+                let button = app.buttons.matching(NSPredicate(format: "label BEGINSWITH %@", label)).firstMatch
+                if button.exists { return button }
+            }
+            if Date() >= deadline { return nil }
+            _ = app.wait(for: .runningForeground, timeout: 0.3)
+        }
+    }
+
+    /// 数字等于 `count` 的那版：用能自己重算的查询，取到的是按当前标签绑定的元素。
+    private func countedBottomButton(_ count: Int, timeout: TimeInterval) -> XCUIElement? {
+        let matches = Self.bottomCountPrefixes.map { prefix in
+            NSPredicate(format: "label BEGINSWITH %@ AND label CONTAINS %@", prefix, "\(count)")
+        }
+        let query = app.buttons.matching(NSCompoundPredicate(orPredicateWithSubpredicates: matches))
+        let deadline = Date().addingTimeInterval(timeout)
+        while true {
+            if query.firstMatch.exists { return query.firstMatch }
+            if Date() >= deadline { return nil }
+            _ = app.wait(for: .runningForeground, timeout: 0.3)
         }
     }
 

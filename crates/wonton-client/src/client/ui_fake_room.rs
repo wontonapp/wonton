@@ -120,7 +120,7 @@ fn commands() -> Vec<RoomCommand> {
 
 pub(super) const ITEMS: usize = 25;
 pub(super) const OWNER: &str = "@owner:home.example";
-const ECHO: &str = "@echo:home.example";
+pub(super) const ECHO: &str = "@echo:home.example";
 /// 最早一条的时间；下标每大一条晚一分钟（下标大 = 屏幕上更靠下 = 更晚）。
 const FIRST_AT_MS: u64 = 1_792_000_000_000;
 /// 从这条起（更靠下的那一段）再往后一天：列表里要有一段跨日，日期分隔那一行才有得看。

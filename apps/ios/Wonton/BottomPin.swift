@@ -11,6 +11,8 @@ import Observation
 final class BottomPin {
     /// 停在离底部这么近也算贴着，不用主人滑到分毫不差。
     private static let slack: CGFloat = 20
+    /// 回到底部按钮滚动过去的时长。
+    private static let animationDuration: TimeInterval = 0.3
 
     private weak var scrollView: UIScrollView?
     private(set) var isPinned = true
@@ -21,8 +23,15 @@ final class BottomPin {
     /// 主人在滚（拖着或惯性滑着）；停下后再过 `motion.datePillHold` 才变回假，浮动的日期胶囊按它显隐（ADR-0109 第 4 节）。
     private(set) var isScrolling = false
     @ObservationIgnored private var scrollEnd: DispatchWorkItem?
+    /// 回到底部的动画在跑：期间自己引起的位移不交给 holdAtBottom 改写，免得一跳到底。
+    private var animating = false
 
     var viewportHeight: CGFloat { scrollView?.bounds.height ?? 0 }
+    /// 可见区底边的屏幕 y：键盘和输入栏都算进 inset 之后的位置。
+    var visibleBottom: CGFloat {
+        guard let view = scrollView else { return 0 }
+        return view.convert(CGPoint(x: 0, y: view.bounds.maxY - view.adjustedContentInset.bottom), to: nil).y
+    }
     /// 主人的手指正拖着列表，或者松手后还在滑。
     var isTouched: Bool { scrollView.map { $0.isDragging || $0.isDecelerating } ?? false }
 
@@ -91,6 +100,20 @@ final class BottomPin {
         DispatchQueue.main.asyncAfter(deadline: .now() + WontonTheme.motion.datePillHold, execute: end)
     }
 
+    /// 回到底部按钮：平滑滚过去，途中收到的 contentSize 变化不会被自己的位移当成翻走。
+    func scrollToBottom() {
+        isPinned = true
+        heldOffset = nil
+        guard let scrollView = scrollView else { return }
+        animating = true
+        UIView.animate(withDuration: Self.animationDuration, animations: {
+            scrollView.contentOffset.y = scrollView.bottomOffset
+        }, completion: { [weak self] _ in
+            self?.animating = false
+            self?.stick()
+        })
+    }
+
     /// 主人发了东西：不管翻到哪，回到底部看结果。
     func pin() {
         isPinned = true
@@ -104,7 +127,7 @@ final class BottomPin {
     }
 
     func stick() {
-        guard let scrollView, !scrollView.isDragging, !scrollView.isDecelerating else { return }
+        guard !animating, let scrollView, !scrollView.isDragging, !scrollView.isDecelerating else { return }
         if isPinned {
             scrollView.contentOffset.y = scrollView.bottomOffset
         } else {
@@ -146,9 +169,7 @@ final class BottomPin {
     /// 走查用：贴底状态和滚动的实际位置。界面上看不见，放进无障碍树给 UI 测试读。
     var snapshot: String {
         let view = scrollView
-        let visibleBottom = view.map {
-            $0.convert(CGPoint(x: 0, y: $0.bounds.maxY - $0.adjustedContentInset.bottom), to: nil).y
-        } ?? -1
+        let visibleBottom = view == nil ? -1 : visibleBottom
         return "pin=\(isPinned) y=\(view?.contentOffset.y ?? -1) bottom=\(view?.bottomOffset ?? -1)"
             + " visibleBottom=\(visibleBottom)"
     }
@@ -157,13 +178,13 @@ final class BottomPin {
     /// 内容高度也不再变，等不到下一次 stick（iOS 26.5 模拟器实测，在 stick 之后固定等两轮再拉也赶不上它）。所以贴底时
     /// 不是主人手势带来的位移一律拉回底部；放到下一轮，不在 KVO 回调里改正在观察的属性。
     private func holdAtBottom() {
-        guard !settling, let scrollView,
+        guard !animating, !settling, let scrollView,
               scrollView.bottomOffset - scrollView.contentOffset.y > Self.slack else { return }
         settling = true
         DispatchQueue.main.async { [weak self] in
             guard let self else { return }
             self.settling = false
-            guard self.isPinned, let scrollView = self.scrollView,
+            guard self.isPinned, !self.animating, let scrollView = self.scrollView,
                   !scrollView.isDragging, !scrollView.isDecelerating else { return }
             scrollView.contentOffset.y = scrollView.bottomOffset
         }
@@ -224,13 +245,18 @@ struct EnclosingScrollView: UIViewRepresentable {
 /// 走查用：看不见的一行，写着 `BottomPin` 的贴底状态，UI 测试按标识读它。只在 Debug 包里挂。
 struct ScrollDebug: View {
     let pin: BottomPin
+    let keyboard: Bool
+    let overlayBottom: CGFloat
+    let composerHeight: CGFloat
+    let viewport: String
     /// 走查用的额外一段（订阅次数、收到的批数），跟在自述后面。
     var extra = ""
 
     var body: some View {
         // 滚动位置不是可观察的状态：只在房间重画时取一次的话，测试读到的是上一次重画时的位置。
         TimelineView(.periodic(from: .now, by: 0.25)) { _ in
-            Text(verbatim: extra.isEmpty ? pin.snapshot : "\(pin.snapshot) \(extra)")
+            let tail = " kb=\(keyboard) ov=\(Int(overlayBottom)) ch=\(Int(composerHeight)) vp=\(viewport)"
+            Text(verbatim: extra.isEmpty ? pin.snapshot + tail : "\(pin.snapshot)\(tail) \(extra)")
                 .accessibilityIdentifier("roomScroll")
                 .allowsHitTesting(false)
                 // 小到看不见：垫在玻璃和材质底下时，再淡的字也会被透出来。

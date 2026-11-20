@@ -87,6 +87,8 @@ struct JumpMissingHint: View {
 /// 点了去哪由调用方定：有跳之前的位置先回那里，没有才到底。
 struct ScrollToBottomButton: View {
     let count: Int
+    /// 键盘和输入栏盖住的高度，按钮抬过它。
+    var lift: CGFloat = 0
     let action: () -> Void
     @Environment(\.wontonColors) private var colors
 
@@ -123,6 +125,7 @@ struct ScrollToBottomButton: View {
         .accessibilityIdentifier("timelineDown")
         .padding(.trailing, WontonTheme.spacing.chatFloatInset - 2)
         .padding(.bottom, WontonTheme.spacing.s8)
+        .offset(y: -lift)
     }
 
     /// 数字超过这个数就写“99+”。
