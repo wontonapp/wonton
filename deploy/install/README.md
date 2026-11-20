@@ -64,7 +64,7 @@ curl -fsSL https://raw.githubusercontent.com/wontonapp/wonton-install/main/insta
 | `WONTON_CLIENT_CA_FILE` | 家名服务的 PEM CA 文件；使用测试或私有 CA 时提供，未给时用系统信任 |
 | `WONTON_FRP_CA_FILE` | frps 的 PEM CA 文件；送名字时必填，用于校验连接器到中继的 TLS 证书 |
 | `WONTON_ACME_DIRECTORY` | ACME directory 的 HTTPS URL；不要名字的安装默认 Let's Encrypt 正式地址，送名字和用自己的域名时必填 |
-| `WONTON_ACME_ACCEPT_TERMS=true` | 装机时就代替主人同意所选 CA 的条款；不给就在 App 里勾选，勾选前核心不签证书 |
+| `WONTON_ACME_ACCEPT_TERMS=true` | 装机时就代替主人同意所选 CA 的条款。不要名字的安装可以不给，给了也没用：核心从 `entry/settings.json` 读，这种装法没有这个文件，条款到 App 里勾。送名字和用自己的域名时必填，缺了安装停下 |
 | `WONTON_ACME_CA_FILE` | ACME 和 acme-dns 使用的 PEM CA 文件；测试 CA 显式传入，不关闭 TLS 验证 |
 | `WONTON_ACME_RESOLVERS` | 可选 DNS 解析器，逗号分隔的 IP 或 IP:端口（端口可省略，默认 53），每项首尾空白忽略，例如 `192.0.2.10,198.51.100.10:5353`；安装容器、挑战记录和 CAA 查询都经它 |
 | `WONTON_ACME_EMAIL` | 可选 ACME 账号联系邮箱 |
@@ -168,11 +168,15 @@ curl -fsSL https://raw.githubusercontent.com/wontonapp/wonton-install/main/insta
 公开仓库里的 `install.sh` 是本目录这份的原样副本，只从主仓库往那边拷，那边不直接改。公开仓库的 `README.md`
 是给用户看的短说明，单独维护，跟着改。
 
-- `deploy/install/public-copy` 记着这份副本对应的公开仓库提交。比对只认这个提交，CI 不去拉公开仓库的最新版，
-  免得被网络卡住；内容对不上就失败，`scripts/install/check-public-copy.sh` 就是这一步，`lint` 工作流每次都跑。
-- 改了 `install.sh` 之后在公开仓库的克隆里执行 `scripts/install/sync-public.sh <克隆目录>`：拷过去、提交、推一个分支，
-  再把新提交写进 `public-copy`。然后在公开仓库开草稿 PR，两个 PR 一起转 ready，先合公开仓库那个。
+- `deploy/install/public-copy` 两行：第一行是公开仓库 main 上的提交（用户装到的副本），第二行是主仓库里同样内容的提交。
+  `scripts/install/check-public-copy.sh` 在 `lint` 里每次都跑，比对这两处的内容，并确认第一行在公开仓库 main 上
+  （同步分支合了就被删，分支上的提交迟早不可达）。只在改了 `install.sh` 却没更新 `public-copy` 时才红。
+- 改了 `install.sh` 之后在公开仓库的克隆里执行 `scripts/install/sync-public.sh <克隆目录>`：它先确认公开 main 和主仓库
+  这份内容一致，再拷过去、推一个分支，把两行换成公开 main 和主仓库 HEAD。然后在公开仓库开草稿 PR，先合它。
   公开仓库一合，所有人拉到的就是它，所以只在核心发版时合。
+- 同步 PR 挂着时公开 main 还是旧内容。`public-copy` 记的是两份出处，不是“公开已经有新内容”，这段时间 lint 不红。
+  公开 PR 合了之后在克隆里 `git switch main && git pull`，用同一个克隆再跑一次 `sync-public.sh`（内容相同，只换第一行
+  和第二行），这个单独提交就是合并后的 pin 更新。
 - 公开仓库里只有这两份文件，别的（ADR、源码、compose）都只在主仓库，那边的说明里不放相对链接。
 
 ## 在本机测

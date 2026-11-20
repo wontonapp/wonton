@@ -22,21 +22,20 @@
 #   WONTON_OWNER_NAME   用户名，同时是 Matrix 用户名和插件里的账号，只能用小写字母、数字、_ 和 -，以字母开头，
 #                       最长 32 个字符，装好后不能改（默认 owner）
 #   TZ                  时区，IANA 时区名，如 Asia/Shanghai（默认宿主的时区，读不到时是 UTC）
-#   WONTON_LAN_ADDRESSES  插件的局域网端口只开在这些私有地址上，逗号分隔（默认不设：核心自动选，主人在 App 里改；
-#                       ADR-0019）。设成空就取消
-#   WONTON_ANNOUNCE_ADDRESSES  告诉手机去连的私有地址，逗号分隔，每项可以带前缀（192.168.1.20/24）；端口改绑 0.0.0.0。
+#   WONTON_LAN_ADDRESSES  插件的局域网端口只开在这些私有地址上，逗号分隔（默认不设：核心自动选，主人在 App 里改）。设成空就取消
+#   WONTON_ANNOUNCE_ADDRESSES  告诉手机去连的私有地址，逗号分隔，每项可以带前缀（192.0.2.20/24）；端口改绑 0.0.0.0。
 #                       桌面虚拟机（Docker Desktop、OrbStack、WSL2、Lima）里的启动器用它。默认不设，设成空就取消
-#   WONTON_RELAYS      中继表（ADR-0048）：档位用 ; 分开、前面的档优先，同档用 , 分开；令牌写在地址的
+#   WONTON_RELAYS      中继表：档位用 ; 分开、前面的档优先，同档用 , 分开；令牌写在地址的
 #                       userinfo（https://TOKEN@host），n0 代表 iroh 内置的 n0 公共中继。默认不设：用 n0。
 #                       设成空就取消，回到 n0
 #   WONTON_DOH_URL       配了出网代理时，链接预览经代理解析域名用的 DoH 服务器，默认 https://1.1.1.1/dns-query
 #   WONTON_EGRESS_PROXY  出网插件和核心经这个代理访问外网，http://、https:// 或 socks5://，可以带用户名和密码，特殊字符写成
-#                       百分号编码。测不通时安装失败。默认不设：第一次安装时检测一次，主人在 App 里改（ADR-0023）。设成空就取消
+#                       百分号编码。测不通时安装失败。默认不设：第一次安装时检测一次，主人在 App 里改。设成空就取消
 #   WONTON_PLUGIN_NETWORK_POOL  插件网络使用的私有 IPv4 地址段（默认 10.213.0.0/16），核心从中分配 /26
 #   WONTON_INSTALL_TIMEOUT_SECS  装插件时等容器就绪的下限秒数（默认 300）。插件按 healthcheck 的 start_period
 #                       自己放宽等待，一般不用设
 #   WONTON_PULL=never   不拉核心镜像，用本机已有的（测试用）
-#   WONTON_CORE_PIN     手动退回到这个 digest（sha256:…），之后照样跟渠道（ADR-0025）。有当时升级留下的备份就恢复核心
+#   WONTON_CORE_PIN     手动退回到这个 digest（sha256:…），之后照样跟渠道。有当时升级留下的备份就恢复核心
 #                       数据和安装目录
 #   WONTON_RESTORE_VOLUMES=1  退回不可逆的版本时，同时恢复备份里的卷
 #
@@ -248,7 +247,7 @@ else
   }
   rm -f "$pull_err"
 fi
-# 能写成 digest 就写 digest：升级、回滚都按它（ADR-0012）。给了 digest 的照写；给了标签的从拉下来的镜像的
+# 能写成 digest 就写 digest：升级、回滚都按它。给了 digest 的照写；给了标签的从拉下来的镜像的
 # RepoDigests 里取同一个仓库的那条，读不到就停下，不退回写标签：标签跟着渠道移走，回滚起到的就不是这一版。
 if [ -n "$pin" ]; then
   pinned=$pull_image
@@ -269,7 +268,7 @@ else
   esac
 fi
 
-# 系统服务都由核心镜像里的 compose 操作，和一键升级同一个（ADR-0025）：宿主不用装 compose 插件，读不到宿主的
+# 系统服务都由核心镜像里的 compose 操作，和一键升级同一个：宿主不用装 compose 插件，读不到宿主的
 # ~/.docker/config.json，两条路建出的容器一样。容器里没有调用者的 WONTON_*，.env 不会被盖住。
 compose() {
   docker run --rm --network none -v /var/run/docker.sock:/var/run/docker.sock -v "$install_dir:$install_dir" \
@@ -306,7 +305,7 @@ setup_plugin_slice() {
   plugin_slice=wonton_plugins.slice
 }
 
-# 下面几个函数处理出网代理（ADR-0023 的“代理地址从哪里来”）。
+# 下面几个函数处理出网代理。
 
 # 打印时不带用户名和密码。
 masked_proxy() {
@@ -624,7 +623,7 @@ EOF
   if [ -n "$record_detected" ]; then
     echo "WONTON_EGRESS_PROXY_DETECTED=$egress_detected" >>"$env_file.tmp"
   fi
-  # ACME 坐标要活到运行时（ADR-0089 第 3 节）：none 模式没有 settings.json，核心只认环境和设置。
+  # ACME 坐标要活到运行时：none 模式没有 settings.json，核心只认环境和设置。
   # 值从 init.env 取：复制进来的 CA 在里面的路径已经改成私有安装目录下的那份。
   for key in WONTON_ACME_DIRECTORY WONTON_ACME_RESOLVERS WONTON_ACME_EMAIL \
     WONTON_ACME_ACCEPT_TERMS WONTON_ACME_NETWORK WONTON_ACME_CA_FILE \

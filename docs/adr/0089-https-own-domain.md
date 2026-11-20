@@ -63,8 +63,7 @@ App 的“HTTPS 和域名”设置页列出服务商，**默认推 deSEC**，其
   这种装法没有 `entry/settings.json`，ACME 目录只能从环境读（`clients/domain.rs` 的 `acme()`），所以装机脚本给它一个默认值：
   Let's Encrypt 正式地址 `https://acme-v02.api.letsencrypt.org/directory`，换测试或内部 CA 才需要 `WONTON_ACME_DIRECTORY`。
   默认值不会在主人同意条款之前联系 CA：签发入口先查 `terms_accepted` 和已配好的后缀（`Domain::ready`），装机没有设置文件、
-  条款也没有环境初值，两样都要等 App 保存域名时一起给出；启动后的续期循环和保存都走这个检查，`init` 的 `issue_now` 在没有
-  设置文件时也不跑。
+  条款也没有环境初值，两样都要等 App 保存域名时一起给出；`save` 先查这个条件，`init` 在没有设置文件时也不签。
 - **送的名字**（家名服务）在 M2，见 ADR-0021、ADR-0051。装机脚本的“自己的域名”同样接受上面的预设（`WONTON_ACME_DNS_PROVIDER=desec`）。
 
 ### 4. 主人自己加的 DNS 记录
