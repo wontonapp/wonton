@@ -24,52 +24,33 @@ struct StoreView: View {
                 ProblemRow(problem: rejection.problem) { model.refreshStore(force: true) }
                     .padding(WontonTheme.spacing.pageInset)
             }
-            ScrollView {
-                LazyVStack(alignment: .leading, spacing: 0) {
-                    ForEach(model.viewModel.tasks, id: \.id) { task in
-                        TaskRow(model: model, task: task, review: {
-                            confirmation = model.reconfirmation(for: task)
-                        }, checkInstalled: { goToInstalledApps() })
-                        .padding(.horizontal, WontonTheme.spacing.pageInset)
-                        .padding(.vertical, WontonTheme.spacing.s8)
+            GeometryReader { geometry in
+                VStack(spacing: 0) {
+                    if let batch = model.viewModel.updateBatch {
+                        StoreUpdateAllResults(
+                            model: model, batch: batch,
+                            maximumHeight: geometry.size.height * 0.45,
+                            review: { confirmation = model.reconfirmation(for: $0) },
+                            checkInstalled: goToInstalledApps
+                        )
                     }
-                    if let store = model.viewModel.store {
-                        if case let .failed(problem) = model.viewModel.storeLoad {
-                            ProblemRow(problem: problem.problem) {
-                                model.refreshStore(force: true)
-                            }
-                            .padding(WontonTheme.spacing.pageInset)
-                        }
-                        if query.isEmpty {
-                            listing(store)
-                        } else {
-                            results
-                        }
-                    }
+                    catalog
                 }
             }
-            .scrollDismissesKeyboard(.immediately)
-            .overlay {
-                if model.viewModel.store == nil { placeholder }
-            }
-            .refreshable { model.refreshStore(force: true) }
         }
         .wontonPushedScreen(String(localized: .Store.storeTitle), showsStatusLine: true, usesSystemToolbar: true) {
             HStack(spacing: 0) {
-                if model.viewModel.updatable.count > 0 {
+                if !isUpdatingAll, model.viewModel.updatable.count > 0 {
                     UpdateAllButton(count: model.viewModel.updatable.count) { showsUpdateAll = true }
                 }
                 WontonIconButton(icon: .add, label: String(localized: .Store.storeAddSource)) { isAddingSource = true }
             }
         }
         .fullScreenCover(item: $confirmation) { InstallConfirmView(model: model, confirmation: $0) }
-        .confirmationDialog(
-            String(localized: .Store.storeUpdateAllTitle(count: model.viewModel.updatable.count)),
-            isPresented: $showsUpdateAll,
-            titleVisibility: .visible
-        ) {
-            Button(String(localized: .Store.storeUpdateAll)) { model.send(.plugins(action: .upgradeAll)) }
-            Button(String(localized: .Common.commonCancel), role: .cancel) {}
+        .sheet(isPresented: $showsUpdateAll) {
+            StoreUpdateAllConfirmation(model: model, apps: model.viewModel.updatable) {
+                showsUpdateAll = false
+            }
         }
         .fullScreenCover(isPresented: $isAddingSource, onDismiss: {
             confirmation = chosen
@@ -80,7 +61,51 @@ struct StoreView: View {
         .task { model.refreshStore(force: false) }
     }
 
-    /// 没有商店内容时，只在核心正在请求时显示骨架。
+    private var isUpdatingAll: Bool { model.viewModel.updateBatch?.finished == false }
+
+    private var otherTasks: [PluginTask] {
+        let batchTasks = model.viewModel.updateBatch?.items.compactMap { item -> PluginTask? in
+            if case let .task(task) = item.state { return task }
+            return nil
+        } ?? []
+        return model.viewModel.tasks.filter { !batchTasks.contains($0) }
+    }
+}
+
+extension StoreView {
+    private var catalog: some View {
+        ScrollView {
+            LazyVStack(alignment: .leading, spacing: 0) {
+                ForEach(otherTasks, id: \.id) { task in
+                    TaskRow(model: model, task: task, review: {
+                        confirmation = model.reconfirmation(for: task)
+                    }, checkInstalled: { goToInstalledApps() })
+                    .padding(.horizontal, WontonTheme.spacing.pageInset)
+                    .padding(.vertical, WontonTheme.spacing.s8)
+                }
+                if let store = model.viewModel.store {
+                    if case let .failed(problem) = model.viewModel.storeLoad {
+                        ProblemRow(problem: problem.problem) {
+                            model.refreshStore(force: true)
+                        }
+                        .padding(WontonTheme.spacing.pageInset)
+                    }
+                    if query.isEmpty {
+                        listing(store)
+                    } else {
+                        results
+                    }
+                }
+            }
+        }
+        .scrollDismissesKeyboard(.immediately)
+        .overlay {
+            if model.viewModel.store == nil { placeholder }
+        }
+        .refreshable { model.refreshStore(force: true) }
+    }
+
+    /// 还没取到商店：取不到的原因和下一步，或者正在取。
     @ViewBuilder private var placeholder: some View {
         switch model.viewModel.storeLoad {
         case .notRequested:
@@ -239,12 +264,13 @@ struct StoreView: View {
                 model.send(.plugins(action: .installNow(source: item.source)))
             }
         }
-        if version != item.version {
+        let installed = model.viewModel.installed?.plugins.first { $0.id == item.id }
+        if version != item.version, installed?.source != nil {
+            // 本地装的（没有来源）核心升不了，不给“更新”：点了只会报“应用没找到”。
             return .get(title: String(localized: .Store.storeUpdate)) {
                 model.send(.plugins(action: .upgradeNow(pluginId: item.id)))
             }
         }
-        let installed = model.viewModel.installed?.plugins.first { $0.id == item.id }
         guard let entry = installed?.entries.first else { return .hidden }
         return .get(title: String(localized: .Store.storeOpen)) { open(entry) }
     }

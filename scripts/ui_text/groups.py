@@ -48,6 +48,7 @@ PREFIXES: Dict[str, str] = {
     "plugin": "plugin",
     "pluginsources": "pluginSources",
     "store": "store",
+    "storebatch": "storeBatch",
     "registry": "plugins",
     "registrymirror": "registryMirror",
     "tool": "plugins",
@@ -152,6 +153,7 @@ GROUP_OF["share"] = "peers"
 GROUP_OF["contacts"] = "peers"
 GROUP_OF["handoff"] = "peers"
 GROUP_OF["matrixlogin"] = "peers"
+GROUP_OF["storebatch"] = "plugins"
 
 # 各平台的默认文件（common 的基准文件）。
 BASE_FILE = {"ios": "Localizable.xcstrings", "android": "strings.xml", "fluent": "common.ftl"}

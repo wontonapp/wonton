@@ -282,6 +282,10 @@ impl ClientCore {
             PluginAction::InstallNow { source } => scope.plugins.install_now(source),
             PluginAction::UpgradeNow { plugin_id } => scope.plugins.upgrade_now(plugin_id),
             PluginAction::UpgradeAll => scope.plugins.upgrade_all(),
+            PluginAction::ReviewStoreUpdate { plugin_id } => {
+                scope.plugins.review_store_update(&plugin_id)
+            }
+            PluginAction::DismissStoreUpdates => scope.plugins.dismiss_store_updates(),
             PluginAction::DismissStoreConfirmation => {
                 scope.plugins.dismiss_confirmation();
                 Ok(())
