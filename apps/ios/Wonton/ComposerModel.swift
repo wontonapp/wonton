@@ -95,12 +95,25 @@ final class ComposerModel {
         let target = target
         do {
             // 核心把字节写进本机的附件区目录，也放到后台。
-            _ = try await Task.detached(priority: .userInitiated) {
+            let id = try await Task.detached(priority: .userInitiated) {
                 try core.addImageAttachment(target: target, image: upload)
             }.value
+            failForTestIfAsked(id)
         } catch {
             reject(error.problem)
         }
+    }
+
+    /// UI 测试的假数据入口没有真上传：要测“发送被拒”时，让放进来的附件立刻变成上传失败。
+    private func failForTestIfAsked(_ attachmentId: String) {
+        #if DEBUG
+        guard ProcessInfo.processInfo.environment["WONTON_UI_TEST_FAIL_ATTACHMENT"] != nil else { return }
+        do {
+            try core.failAttachmentForTest(target: target, attachmentId: attachmentId)
+        } catch {
+            reject(error.problem)
+        }
+        #endif
     }
 
     /// 旁聊里粘贴的图：转码好直接发进那个旁聊，不进附件区（附件区只有主对话有，ADR-0093）。
@@ -108,7 +121,9 @@ final class ComposerModel {
     @discardableResult
     func sendImage(_ data: Data, _ type: UTType?, replyTo: String?) async -> Bool {
         guard let upload = await transcode(data, type) else { return false }
-        chat.send(.timeline(action: .sendImage(target: target, image: upload, replyTo: replyTo)))
+        guard chat.send(.timeline(action: .sendImage(target: target, image: upload, replyTo: replyTo))) else {
+            return false
+        }
         if replyTo != nil { chat.cancelReply(in: target) }
         return true
     }
@@ -151,12 +166,13 @@ final class ComposerModel {
 
     /// 输入框的字和附件区作为一次发送。附件区空着、前面也没有待发消息时照旧直接发字：不进待发消息，不闪一下。
     /// 前面有待发消息时字也排在它后面，不抢到前面去。
-    func send(_ body: String, replyTo: String?) {
+    /// 被核心收下返回真。被拒时字、附件和回复对象都留在原地，原因由 `chat.rejection` 弹出来。
+    @discardableResult
+    func send(_ body: String, replyTo: String?) -> Bool {
         if attachments.isEmpty, outgoing.isEmpty {
-            chat.send(.timeline(action: .sendText(target: target, body: body, replyTo: replyTo)))
-        } else {
-            chat.send(.timeline(action: .sendComposer(target: target, body: body, replyTo: replyTo)))
+            return chat.send(.timeline(action: .sendText(target: target, body: body, replyTo: replyTo)))
         }
+        return chat.send(.timeline(action: .sendComposer(target: target, body: body, replyTo: replyTo)))
     }
 
     func remove(_ attachment: ComposerAttachment) {
