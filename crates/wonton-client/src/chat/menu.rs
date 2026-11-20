@@ -297,6 +297,7 @@ impl Outbox {
                 focus: self.live.jumps.take_focus(),
                 jump: self.live.jumps.state(),
                 back_to: self.live.jumps.back(),
+                editing: None,
             })
             .map_err(|_| ())
     }
@@ -350,6 +351,7 @@ mod tests {
             .map(|action| match action {
                 MessageAction::Copy { .. } => "copy",
                 MessageAction::Reply { .. } => "reply",
+                MessageAction::Edit { .. } => "edit",
                 MessageAction::Forward => "forward",
                 MessageAction::Redact => "redact",
             })
