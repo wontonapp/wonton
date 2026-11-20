@@ -27,7 +27,7 @@ futures-util = "0.3.34"
 getrandom = "0.4.3"
 # MIT OR Apache-2.0。HTTP 连接与代理隧道阶段的类型化错误。
 hyper-util = "0.1.21"
-iroh = "1.4.2"
+iroh = "1.4.1"
 # MIT OR Apache-2.0。网络 CIDR。
 ipnet = "2.12.2"
 jsonwebtoken = { version = "11.1.0", default-features = false, features = ["use_pem", "aws_lc_rs"] }
