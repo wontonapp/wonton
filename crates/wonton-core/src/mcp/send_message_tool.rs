@@ -18,6 +18,7 @@ use super::Refusal;
 use super::audience::Subject;
 use super::audit::{Basis, Decision, Grounds};
 use super::cards::{Draft, line};
+use super::confirm::CANCELLED;
 use super::{
     Bus, Caller, Outcome, ToolFailure, TurnSender, core_tools, with_confirmation, with_failure,
 };
@@ -179,12 +180,19 @@ async fn ask_and_enqueue(
         Ok(opened) => opened,
         Err(refusal) => return bus.refused(&caller, &name, &args, &refusal, None),
     };
-    // 卡片认到这条链：链被停时随停撤回（等的人拿到 cancelled，不入队）。
-    if let Some(chain) = &caller.chain
-        && let Some(chains) = bus.agent_chains()
-        && let Err(error) = chains.ledger().bind_card(chain, &card.id)
-    {
-        tracing::warn!(%error, card = %card.id, chain, "发消息卡片没能认到链上");
+    // 卡片认到这条链：链被停时随停撤回（等的人拿到 chain_stopped，不入队）。
+    match chain_for_card(&bus, &caller) {
+        Some(chain) => {
+            if let Some(chains) = bus.agent_chains()
+                && let Err(error) = chains.ledger().bind_card(&chain, &card.id)
+            {
+                tracing::warn!(%error, card = %card.id, %chain, "发消息卡片没能认到链上");
+            }
+        }
+        None => tracing::warn!(
+            card = %card.id,
+            "调用没带链、也认不出这一轮，卡片不入链：停链撤回不了它"
+        ),
     }
     match bus.confirmations().deliver(&card, answered).await {
         Ok(chosen)
@@ -218,7 +226,11 @@ async fn ask_and_enqueue(
                 .await;
             with_confirmation(outcome.result, "card")
         }
-        // 拒绝时卡片状态已经发布过（[`Confirmations::deliver`]）。
+        // 拒绝时卡片状态已经发布过（[`Confirmations::deliver`]）；链被停撤回来的等待报“已取消”，
+        // 模型才知道不是主人拒的。
+        Ok(chosen) if chosen.choice_id.as_deref() == Some(CANCELLED) => {
+            bus.refused(&caller, &name, &args, &Refusal::Cancelled, None)
+        }
         Ok(_) => bus.refused(&caller, &name, &args, &Refusal::Rejected, None),
         Err(refusal) => bus.refused(&caller, &name, &args, &refusal, None),
     }
@@ -237,6 +249,21 @@ fn resolve_recipient(bus: &Bus, recipient: &str) -> Option<String> {
         .and_then(|friends| friends.find_username(recipient))
         .filter(|record| record.status == FriendStatus::Active)
         .map(|record| display_name_of(record.display_name.as_deref(), recipient))
+}
+
+/// 卡片认到哪条链：调用头报了这一轮就用它；没报时按这个 Bot 最近活着的那一轮认，没有活轮次就不认。
+fn chain_for_card(bus: &Bus, caller: &Caller) -> Option<String> {
+    if let Some(chain) = &caller.chain {
+        return Some(chain.clone());
+    }
+    let sender = match &caller.sender {
+        Some(TurnSender::Local(sender)) => Some(sender.as_str()),
+        _ => None,
+    };
+    let bot = caller.bot.as_ref()?;
+    bus.agent_chains()?
+        .ledger()
+        .live_turn_chain(caller.id.as_str(), &bot.bot, sender)
 }
 
 /// 卡片上显示的名字：资料里的显示名，没填就用户名。

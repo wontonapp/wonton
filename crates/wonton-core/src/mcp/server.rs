@@ -186,7 +186,7 @@ struct ForeignSession<'a> {
 }
 
 /// `wonton-session` 只在账本确认归属后采用；会话与链必须来自同一条登记。
-fn chain_session(
+pub(super) fn chain_session(
     bus: &Bus,
     caller: &Caller,
     headers: Option<&hyper::HeaderMap>,
