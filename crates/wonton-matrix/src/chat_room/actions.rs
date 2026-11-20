@@ -156,8 +156,8 @@ impl ChatRoom {
 
 impl MatrixSession {
     /// 把 `from` 里的一条消息照原样发到已加入的房间 `to`：经那个房间的发送队列，本地回显出现在它的时间线里，发送结果
-    /// 也在那里。有 `comment` 时先在 `to` 里发附言，服务器收下才转发；附言不可恢复地失败就不转发，原因进错误。
-    /// 不打开 `to`，不动 Sliding Sync 的房间订阅。
+    /// 也在那里。有 `comment` 时先在 `to` 里发附言，服务器收下才转发；只含空白的附言等于没带。附言不可恢复地失败就
+    /// 不转发，原因进错误。不打开 `to`，不动 Sliding Sync 的房间订阅。
     pub async fn forward(
         &self,
         from: &ChatRoom,
