@@ -89,6 +89,22 @@ class RoomPanelGestureTest {
         openButton.assertIsDisplayed()
     }
 
+    /** 房间顶栏没有房子按钮，入口在 Bot 资料页。 */
+    @Test
+    fun panelOpensFromTheBotProfile() {
+        compose.onNodeWithText("Echo").performClick()
+        compose.waitUntil(10_000) { compose.onAllNodes(hasSetTextAction()).fetchSemanticsNodes().size == 1 }
+        openButton.assertDoesNotExist()
+        compose.onNodeWithTag("bot-profile-open").performClick()
+        compose.onNodeWithTag("bot-profile").assertIsDisplayed()
+        openButton.assertIsDisplayed()
+        screenshot("bot-profile")
+        openButton.performClick()
+        awaitFull()
+        closeStrip.assertIsNotDisplayed()
+        screenshot("panel-from-profile")
+    }
+
     @Test
     fun mainButtonOpensFullAndKeepsPagingAndEdgeClose() {
         canvasSwipe(0.5f, 0.7f, 0.5f, 0.25f)
@@ -193,8 +209,10 @@ class RoomPanelGestureTest {
         assertRoomClosed(closedBottom)
         pull(64f * density, 40)
         assertRoomClosed(closedBottom)
+        compose.onNodeWithTag("bot-profile-open").performClick()
+        compose.onNodeWithTag("bot-profile").assertIsDisplayed()
         openButton.performTouchInput { click() }
-        closePage.assertIsDisplayed()
+        awaitFull()
         pageAssertions.awaitPlayer()
         screenshot("room-button-full")
         pressBack()
@@ -202,13 +220,15 @@ class RoomPanelGestureTest {
         closePage.assertDoesNotExist()
         compose.waitUntil(10_000) { pageAssertions.playerVisible() }
         screenshot("room-back-peek")
-        pressBack()
+        backToRoom()
         assertRoomClosed(closedBottom)
         compose.onNodeWithText("Echo").assertIsDisplayed()
+        compose.onNodeWithTag("bot-profile-open").performClick()
         openButton.performTouchInput { click() }
-        closePage.assertIsDisplayed()
+        awaitFull()
         pressBack()
         closeStrip.performTouchInput { click() }
+        backToRoom()
         assertRoomClosed(closedBottom)
         screenshot("room-strip-closed")
         pressBack()
@@ -265,14 +285,34 @@ class RoomPanelGestureTest {
         compose.waitForIdle()
     }
 
+    /** 面板和资料页叠在房间上面，返回一下退一层；退到面板和资料页都收了为止。 */
+    private fun backToRoom() {
+        var left = 4
+        while (left > 0 && layeredOverRoom()) {
+            pressBack()
+            compose.waitForIdle()
+            left--
+        }
+    }
+
+    private fun layeredOverRoom(): Boolean =
+        closePage.isDisplayed() || closeStrip.isDisplayed() || compose.onNodeWithTag("bot-profile").isDisplayed()
+
+    /** 面板展开是动画，关掉的页面按钮晚一点才有。 */
+    private fun awaitFull() {
+        compose.waitUntil(10_000) { closePage.isDisplayed() }
+        closePage.assertIsDisplayed()
+    }
+
     private fun assertRoomClosed(originalBottom: Float) {
         val composer = compose.onNode(hasSetTextAction())
         composer.assertIsDisplayed()
-        assertTrue("Closed panel must leave the composer in place",
-            kotlin.math.abs(composer.fetchSemanticsNode().boundsInWindow.bottom - originalBottom) < 3f)
+        compose.waitUntil(10_000) {
+            kotlin.math.abs(composer.fetchSemanticsNode().boundsInWindow.bottom - originalBottom) < 3f
+        }
         closePage.assertDoesNotExist()
         closeStrip.assertIsNotDisplayed()
-        openButton.assertIsDisplayed()
+        openButton.assertDoesNotExist()
     }
 
     private fun screenshot(name: String) {

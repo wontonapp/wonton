@@ -290,9 +290,9 @@ class RoomTelegramTest {
         check(fixtureDate(aboveIndex) != fixtureDate(belowIndex)) {
             "同一天（第 $aboveIndex / $belowIndex 条）的气泡之间夹了日期分隔"
         }
-        check(fixtureDate(aboveIndex) < fixtureDate(belowIndex)) {
-            "分隔上面（第 $aboveIndex 条 ${above!!.boundsInRoot}）比下面（第 $belowIndex 条 ${below.boundsInRoot}）晚，分隔 $mark；${bubbles.map { fixtureIndexOf(it) }}"
-        }
+        val order = "分隔上面第 $aboveIndex 条 ${above!!.boundsInRoot}，" +
+            "下面第 $belowIndex 条 ${below.boundsInRoot}，分隔 $mark"
+        check(fixtureDate(aboveIndex) < fixtureDate(belowIndex)) { "上面的日期不早于下面：$order" }
     }
 
     /** 同一天相邻的两条之间没有分隔。 */
@@ -301,15 +301,18 @@ class RoomTelegramTest {
             .fetchSemanticsNodes().sortedBy { it.boundsInRoot.top }
         val separators = compose.onAllNodes(hasTestTag("day-separator"), useUnmergedTree = true)
             .fetchSemanticsNodes()
-        for ((above, below) in bubbles.zipWithNext()) {
-            val aboveIndex = fixtureIndexOf(above) ?: continue
-            val belowIndex = fixtureIndexOf(below) ?: continue
-            if (fixtureDate(aboveIndex) != fixtureDate(belowIndex)) continue
+        val sameDay = bubbles.zipWithNext().filter { (above, below) ->
+            val a = fixtureIndexOf(above)
+            val b = fixtureIndexOf(below)
+            a != null && b != null && fixtureDate(a) == fixtureDate(b)
+        }
+        for ((above, below) in sameDay) {
             val between = separators.filter {
                 it.boundsInRoot.top >= above.boundsInRoot.bottom - 1f &&
                     it.boundsInRoot.bottom <= below.boundsInRoot.top + 1f
             }
-            check(between.isEmpty()) { "同一天的第 $aboveIndex / $belowIndex 条之间夹了日期分隔" }
+            val pair = "${fixtureIndexOf(above)} / ${fixtureIndexOf(below)}"
+            check(between.isEmpty()) { "同一天的第 $pair 条之间夹了日期分隔" }
         }
     }
 

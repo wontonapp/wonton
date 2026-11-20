@@ -463,8 +463,8 @@ private fun RoomPanelEffects(timeline: TimelineState, draft: RoomDraft) {
 }
 
 /**
- * 顶栏。和 Bot 的私聊显示 Bot 的状态头像和名字（ADR-0044），名字下面常空着，有人正在输入时写那一行（ADR-0109）；
- * 支持旁聊的房间带开旁聊的按钮。
+ * 顶栏。和 Bot 的私聊显示 Bot 的状态头像和名字（ADR-0044），名字下面常空着，有人正在输入时写那一行（ADR-0109），
+ * 群聊的标题居中；支持旁聊的房间带开旁聊的按钮。面板的入口不在这里，在 Bot 资料页。
  * 旁聊页的标题是旁聊的标题（ADR-0093），状态在顶栏下面一行。
  * 房间里装着 widget（通话）时带它的入口：点了全屏打开 widget 页，关掉回到这个房间（ADR-0096）。
  */
@@ -492,21 +492,14 @@ private fun RoomBar(
     } else {
         null
     }
-    val panel = LocalChatPanel.current
     WontonPushedBar(
         barTitle,
         onClose,
         showsStatus = true,
         showsStatusLine = true,
         avatar = barAvatar,
+        centeredTitle = !isDirect,
         actions = {
-            if (panel != null) {
-                WontonIconButton(
-                    WontonIcon.Home,
-                    stringResource(R.string.panel_open),
-                    { panel.move(PanelLevel.FULL) },
-                )
-            }
             RoomCallEntry(call, onOpenWidget)
             if (isDirect && bot != null) {
                 Box(Modifier.testTag("bot-profile-open")) {
