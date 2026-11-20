@@ -27,6 +27,9 @@ jobs:
       # ADR 多半是只改文档的 PR，不能挂在结构门禁后面（那些步骤只改文档时跳过）。
       - name: ADR 的文件名和标题编号一致、不重号
         run: python3 scripts/adr-index.py --check
+      # 公开仓库里的 install.sh 是用户的唯一安装入口，只能从主仓库同步过去；对不上就红，见 deploy/install/README.md。
+      - name: 公开仓库的 install.sh 和主仓库一致
+        run: bash scripts/install/check-public-copy.sh
       - name: 装 gitleaks（版本和 sha256 固定）
         run: |
           curl -fsSL --retry 3 -o gitleaks.tar.gz \
