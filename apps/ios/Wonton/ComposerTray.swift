@@ -134,6 +134,7 @@ struct AttachmentTile: View {
             }
             .buttonStyle(.plain)
             .accessibilityLabel(Text(.Composer.composerAttachmentFailed))
+            .accessibilityIdentifier("composerAttachmentFailed")
         }
     }
 }

@@ -248,12 +248,16 @@ impl ComposerLink {
         }
     }
 
-    /// 只推给壳不存盘：上传进度变得很频繁，重启后反正从头算。
+    /// 只推给壳不存盘：上传进度变得很频繁，重启后反正从头算。失败是等主人处理的稳定态，进度和等联网不能把它盖掉
+    /// （重试走 [`restart`](Self::restart)，先把状态改成上传中再起 worker）。
     fn show(&self, room: &str, id: &str, state: AttachmentState) {
         let mut inner = self.lock();
         let Some(item) = inner.state.item_mut(room, id) else {
             return;
         };
+        if matches!(item.state, AttachmentState::Failed { .. }) {
+            return;
+        }
         item.state = state;
         Self::publish(&inner, room);
     }

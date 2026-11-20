@@ -17,14 +17,15 @@ use crate::l10n::{CATALOG, language};
 
 #[uniffi::export]
 impl ClientCore {
-    /// 假数据入口下照走真逻辑的时间线操作：拿掉附件只动本机的附件区，和真核心一样。
+    /// 假数据入口下照走真逻辑的时间线操作：拿掉附件只动本机的附件区，发送照样要过核心的检查。
     fn dispatch_ui_fake_composer(&self, action: &TimelineAction) -> Result<(), CoreError> {
         match action {
             TimelineAction::RemoveAttachment { .. } => {
                 self.composer_action(&self.scope(), action.clone())
             }
-            // 假数据入口下发送不落到真核心，附件失败时的拒绝在这里照样生效。
-            TimelineAction::SendComposer { target, .. } => {
+            // 假数据没有真上传，附件区的失败由 `fail_attachment_for_test` 写。
+            TimelineAction::SendText { target, .. }
+            | TimelineAction::SendComposer { target, .. } => {
                 self.scope().composer.reject_if_failed(&target.room_id)
             }
             _ => Ok(()),
@@ -43,11 +44,12 @@ impl ClientCore {
                     Ok(())
                 }
                 Action::Plugins { action } => self.dispatch_ui_fake_plugins(action),
-                // 假时间线（跳转、发字）和停止钮的假运行段都要看到同一个操作。
+                // 假时间线（跳转、发字）和停止钮的假运行段都要看到同一个操作；被拒的不开假链。
                 Action::Timeline { action } => {
                     self.ui_fake_timelines.timeline_action(action.clone());
-                    self.dispatch_ui_fake_timeline(action.clone());
-                    self.dispatch_ui_fake_composer(&action)
+                    self.dispatch_ui_fake_composer(&action)?;
+                    self.dispatch_ui_fake_timeline(action);
+                    Ok(())
                 }
                 Action::Agent { action } => {
                     self.dispatch_ui_fake_agent(action);
