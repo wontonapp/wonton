@@ -86,6 +86,8 @@ class RoomPanelGestureTest {
         val core = (compose.activity.application as WontonApplication).core.getOrThrow()
         assertNull(core.send(Action.Pages(PageAction.OpenPage(TabRef.Chat))))
         fixture.reset()
+        // 上一个类留下的页面还要一帧才收掉，等根页真的画出来再断言。
+        compose.waitUntil(10_000) { openButton.isDisplayed() }
         openButton.assertIsDisplayed()
     }
 

@@ -1,10 +1,7 @@
 package app.wonton.ui
 
 import androidx.activity.compose.rememberLauncherForActivityResult
-import androidx.activity.result.PickVisualMediaRequest
 import androidx.activity.result.contract.ActivityResultContracts.OpenMultipleDocuments
-import androidx.activity.result.contract.ActivityResultContracts.PickMultipleVisualMedia
-import androidx.activity.result.contract.ActivityResultContracts.PickVisualMedia
 import android.net.Uri
 import androidx.compose.animation.AnimatedVisibility
 import androidx.compose.animation.core.tween
@@ -66,9 +63,7 @@ import app.wonton.protocol.RoomAgentStop
 import app.wonton.protocol.RoomCommand
 import app.wonton.protocol.TimelineAction
 import app.wonton.protocol.TimelineTarget
-import app.wonton.ui.design.WontonActionSheet
 import app.wonton.ui.design.WontonIconButton
-import app.wonton.ui.design.WontonSheetAction
 import app.wonton.ui.design.WontonTheme
 import app.wonton.ui.design.toColor
 import app.wonton.ui.icons.Attach
@@ -322,10 +317,6 @@ private fun rememberAttachments(
             uris.forEach { uri -> core.attachFile(context, uri, roomId)?.let(onReject) }
         }
     }
-    val pickPhoto = rememberLauncherForActivityResult(PickVisualMedia()) { uri -> uri?.let { addPhotos(listOf(it)) } }
-    // 系统多选的上限要大于 1，契约换了上限才重新登记。
-    val multiple = remember(remaining) { PickMultipleVisualMedia(remaining.coerceAtLeast(2)) }
-    val pickPhotos = rememberLauncherForActivityResult(multiple) { uris -> addPhotos(uris.take(remaining)) }
     val pickFiles = rememberLauncherForActivityResult(OpenMultipleDocuments(), addFiles)
     val pasteListener = remember(roomId) {
         pasteContentListener(
@@ -339,22 +330,15 @@ private fun rememberAttachments(
         if (composer != null && remaining == 0) onReject(Problem(trayFull)) else open()
     }
     return Attachments(
-        choose = { choosing = true },
+        choose = { whenRoom { choosing = true } },
         pasteListener = pasteListener,
         chooser = {
             if (choosing) {
-                WontonActionSheet(
-                    actions = listOfNotNull(
-                        WontonSheetAction(stringResource(R.string.composer_photo), WontonIcon.Image) {
-                            whenRoom {
-                                val request = PickVisualMediaRequest(PickVisualMedia.ImageOnly)
-                                if (remaining > 1) pickPhotos.launch(request) else pickPhoto.launch(request)
-                            }
-                        },
-                        WontonSheetAction(stringResource(R.string.composer_file), WontonIcon.Attach) {
-                            whenRoom { pickFiles.launch(arrayOf("*/*")) }
-                        }.takeIf { sendImage == null },
-                    ),
+                AttachmentSheet(
+                    remaining = remaining,
+                    allowFiles = sendImage == null,
+                    onPhotos = { uris -> whenRoom { addPhotos(uris) } },
+                    onFiles = { whenRoom { pickFiles.launch(arrayOf("*/*")) } },
                     onDismiss = { choosing = false },
                 )
             }

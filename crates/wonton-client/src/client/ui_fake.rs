@@ -35,6 +35,8 @@ use super::ClientCore;
 const ROOM_ID: &str = "!ui-fake:home.example";
 /// 有人在通话的群聊：列表这一行和顶栏都标“通话中”，顶栏有 [`CALL_PLUGIN`] 的 widget 入口。
 pub(super) const CALL_ROOM_ID: &str = "!ui-fake-call:home.example";
+/// 没人说话的群，转发时多一个去处。
+const NOTES_ROOM_ID: &str = "!ui-fake-notes:home.example";
 /// 声明了 `matrix_widget` 的假插件；没有隧道，它的 widget 页停在加载中。
 const CALL_PLUGIN: &str = "app.example.call";
 
@@ -292,6 +294,65 @@ fn fake_servers() -> ServersViewModel {
     }
 }
 
+/// 假聊天列表：私聊、通话中的群、没人说话只给转发用的群。
+fn fake_rooms() -> Vec<RoomRow> {
+    vec![
+        RoomRow {
+            room_id: ROOM_ID.into(),
+            name: "Echo".into(),
+            is_direct: true,
+            direct_user_id: Some("@echo:home.example".into()),
+            plugin: None,
+            is_encrypted: true,
+            is_read_only: false,
+            membership: RoomMembership::Joined,
+            preview: Some(RoomPreview {
+                sender_name: "Echo".into(),
+                is_own: false,
+                body: MessageSummary::Text {
+                    text: "Fake message from the UI test fixture".into(),
+                },
+                timestamp_ms: 1_792_000_000_000,
+            }),
+            unread_count: 1,
+            side_chats: false,
+            layout: ChatLayout::default(),
+            call_active: false,
+        },
+        RoomRow {
+            room_id: CALL_ROOM_ID.into(),
+            name: "Family".into(),
+            is_direct: false,
+            direct_user_id: None,
+            plugin: None,
+            is_encrypted: true,
+            is_read_only: false,
+            membership: RoomMembership::Joined,
+            preview: None,
+            unread_count: 0,
+            side_chats: false,
+            layout: ChatLayout::default(),
+            call_active: true,
+        },
+        // 转发要能一次挑好几个房间，列表里多放一个没人说话的群。
+        RoomRow {
+            room_id: NOTES_ROOM_ID.into(),
+            name: "Notes".into(),
+            is_direct: false,
+            direct_user_id: None,
+            plugin: None,
+            is_encrypted: true,
+            is_read_only: false,
+            membership: RoomMembership::Joined,
+            preview: None,
+            unread_count: 0,
+            side_chats: false,
+            layout: ChatLayout::default(),
+            call_active: false,
+        },
+    ]
+}
+
 fn fake_chat(mut chat: ChatViewModel) -> ChatViewModel {
     chat.account = ChatAccount::SignedIn {
         user_id: "@owner:home.example".into(),
@@ -312,43 +373,7 @@ fn fake_chat(mut chat: ChatViewModel) -> ChatViewModel {
     // 和真核心同一份推导，备份页在假核心下也按真值表显示。
     crate::chat::recovery::refresh(&mut chat.encryption);
     chat.installing_bots.clear();
-    chat.rooms = vec![RoomRow {
-        room_id: ROOM_ID.into(),
-        name: "Echo".into(),
-        is_direct: true,
-        direct_user_id: Some("@echo:home.example".into()),
-        plugin: None,
-        is_encrypted: true,
-        is_read_only: false,
-        membership: RoomMembership::Joined,
-        preview: Some(RoomPreview {
-            sender_name: "Echo".into(),
-            is_own: false,
-            body: MessageSummary::Text {
-                text: "Fake message from the UI test fixture".into(),
-            },
-            timestamp_ms: 1_792_000_000_000,
-        }),
-        unread_count: 1,
-        side_chats: false,
-        layout: ChatLayout::default(),
-        call_active: false,
-    }];
-    chat.rooms.push(RoomRow {
-        room_id: CALL_ROOM_ID.into(),
-        name: "Family".into(),
-        is_direct: false,
-        direct_user_id: None,
-        plugin: None,
-        is_encrypted: true,
-        is_read_only: false,
-        membership: RoomMembership::Joined,
-        preview: None,
-        unread_count: 0,
-        side_chats: false,
-        layout: ChatLayout::default(),
-        call_active: true,
-    });
+    chat.rooms = fake_rooms();
     chat.problem = None;
     chat.push = PushStatus::NoEndpoint;
     chat.pending_confirmations.clear();
@@ -532,7 +557,9 @@ fn fake_onboarding(mut onboarding: OnboardingViewModel) -> OnboardingViewModel {
 mod tests {
     use super::*;
     use crate::client::ui_fake_plugin_detail;
-    use wonton_protocol::{Action, PageAction};
+    use wonton_protocol::{
+        Action, ComposerViewModel, ImageUpload, PageAction, TimelineAction, TimelineTarget,
+    };
 
     /// 假数据塞进了各订阅、操作不落到作用域：漏填字段或写坏类型在这里就炸。
     #[test]
@@ -572,6 +599,59 @@ mod tests {
             .is_ok()
         );
         assert_eq!(core.pages().root, TabRef::Chat);
+        let _ = std::fs::remove_dir_all(&dir);
+    }
+
+    async fn tray(core: &ClientCore) -> ComposerViewModel {
+        let target = TimelineTarget {
+            room_id: ROOM_ID.into(),
+            thread_root: None,
+        };
+        let subscription = core.subscribe_composer(target).unwrap();
+        subscription.next().await.unwrap()
+    }
+
+    /// 附件区在假数据入口下也按真逻辑加、拿：界面测试靠它走完相册加附件的路。
+    #[tokio::test]
+    async fn attachments_go_in_and_out_offline() {
+        let dir = std::env::temp_dir().join(format!("wonton-ui-fake-tray-{}", std::process::id()));
+        let _ = std::fs::remove_dir_all(&dir);
+        let core = ClientCore::new_ui_fake(dir.to_string_lossy().into_owned()).unwrap();
+        let target = TimelineTarget {
+            room_id: ROOM_ID.into(),
+            thread_root: None,
+        };
+        let photo = || ImageUpload {
+            filename: "photo.png".into(),
+            mime_type: "image/png".into(),
+            data: vec![1, 2, 3],
+            width: Some(4),
+            height: Some(3),
+            thumbnail: None,
+        };
+        let first = core.add_image_attachment(target.clone(), photo()).unwrap();
+        let second = core.add_image_attachment(target.clone(), photo()).unwrap();
+        assert_eq!(tray(&core).await.attachments.len(), 2);
+        core.dispatch(Action::Timeline {
+            action: TimelineAction::RemoveAttachment {
+                target: target.clone(),
+                attachment_id: first.clone(),
+            },
+        })
+        .unwrap();
+        let view = tray(&core).await;
+        assert_eq!(view.attachments.len(), 1);
+        assert_eq!(view.attachments[0].id, second);
+        // 拿掉的再拿一次才算找不到。
+        assert!(
+            core.dispatch(Action::Timeline {
+                action: TimelineAction::RemoveAttachment {
+                    target,
+                    attachment_id: first,
+                },
+            })
+            .is_err()
+        );
         let _ = std::fs::remove_dir_all(&dir);
     }
 

@@ -1,9 +1,16 @@
 package app.wonton.android
 
 import android.Manifest
+import android.content.ContentValues
 import android.graphics.Bitmap
+import android.os.Environment
+import android.provider.MediaStore
 import android.os.Build
+import android.text.StaticLayout
+import android.text.TextPaint
 import androidx.compose.ui.geometry.Offset
+import androidx.compose.ui.geometry.Rect
+import androidx.compose.ui.semantics.SemanticsActions
 import androidx.compose.ui.semantics.SemanticsProperties
 import androidx.compose.ui.semantics.getOrNull
 import androidx.compose.ui.test.SemanticsMatcher
@@ -15,11 +22,16 @@ import androidx.compose.ui.test.assertIsNotDisplayed
 import androidx.compose.ui.test.assertIsNotEnabled
 import androidx.compose.ui.test.assertIsSelected
 import androidx.compose.ui.test.hasAnyAncestor
+import androidx.compose.ui.test.hasContentDescription
 import androidx.compose.ui.test.hasSetTextAction
 import androidx.compose.ui.semantics.SemanticsNode
+import androidx.compose.ui.text.TextLayoutResult
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.test.hasTestTag
+import androidx.compose.ui.test.longClick
+import androidx.compose.ui.test.hasText
 import androidx.compose.ui.test.isDisplayed
+import kotlinx.coroutines.runBlocking
 import androidx.compose.ui.test.junit4.createAndroidComposeRule
 import androidx.compose.ui.test.onNodeWithContentDescription
 import androidx.compose.ui.test.onAllNodesWithTag
@@ -28,7 +40,10 @@ import androidx.compose.ui.test.onAllNodesWithText
 import androidx.compose.ui.test.onNodeWithText
 import androidx.compose.ui.test.onRoot
 import androidx.compose.ui.test.performClick
+import androidx.compose.ui.test.performTextClearance
+import androidx.compose.ui.test.performTextInput
 import androidx.compose.ui.test.performScrollTo
+import androidx.compose.ui.test.performScrollToIndex
 import androidx.compose.ui.test.performScrollToKey
 import androidx.compose.ui.test.swipeDown
 import androidx.compose.ui.test.swipeUp
@@ -38,9 +53,13 @@ import android.view.WindowInsets
 import androidx.test.ext.junit.runners.AndroidJUnit4
 import androidx.test.platform.app.InstrumentationRegistry
 import androidx.test.rule.GrantPermissionRule
+import app.wonton.client.ClientCore
 import app.wonton.protocol.Action
 import app.wonton.protocol.PageAction
 import app.wonton.protocol.TabRef
+import app.wonton.protocol.ImageUpload
+import app.wonton.protocol.TimelineAction
+import app.wonton.protocol.TimelineTarget
 import app.wonton.ui.R
 import app.wonton.ui.send
 import java.io.File
@@ -58,16 +77,37 @@ import org.junit.rules.TestWatcher
 import org.junit.runner.Description
 import org.junit.runner.RunWith
 
+/** 假房间里引用别人的那条（`ui_fake_room.rs` 的 `QUOTED_INDEX`）。 */
+private const val QUOTED = 19
+/** 引用上一条的长中文回复（`ui_fake_room.rs` 的 `LONG_REPLY_INDEX`）。 */
+private const val LONG_REPLY = 20
+/** 长回复的四段，和假数据一样按空行分段。 */
+private val LONG_REPLY_PARAGRAPHS = listOf(
+    "没有出问题，插件现在是 running、health 是 healthy、网页返回 200，刚才又确认了一次。",
+    "拖得久的原因是我在反复调整页面：每改一次就得重启一次后端才能看到新内容，所以来回花了不少时间。" +
+        "这一段故意写得长一些，在手机上会折成好几行，用来看最后几个字会不会被省略号吃掉。",
+    "有一件我确实做不到的事：部署后的容器我从这边连不上（内部域名和 8480 端口在这个环境里不可达，也没有 docker 权限），" +
+        "所以只能请你帮忙看一眼。",
+    "你在 App 里打开「系统」看一眼：数字有在跳、环跟着动，就没问题了。要是空白或者一直转圈，把截图发我，我再接着查。",
+)
+/** 第 19 条引用内容的原文。 */
+private const val QUOTED_TEXT = "🚗\n好久了，有什么问题吗？"
+
 /**
  * Telegram 样式的聊天页（ADR-0109）：左滑回复、点引用跳转和“向下”回去、命令菜单、选项按钮。
  * 只用 Debug 的假核心和它固定的房间，不连家里的服务器。
  */
+private const val ECHO_ROOM = "!ui-fake:home.example"
+
+/** 附件区最多放这么多个，清空时够用。 */
+private const val MAX_TRAY_ITEMS = 12
+
 @RunWith(AndroidJUnit4::class)
 class RoomTelegramTest {
     private val compose = createAndroidComposeRule<UiFakeMainActivity>()
     private val instrumentation = InstrumentationRegistry.getInstrumentation()
     private val permissions: TestRule = if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.TIRAMISU) {
-        GrantPermissionRule.grant(Manifest.permission.POST_NOTIFICATIONS)
+        GrantPermissionRule.grant(Manifest.permission.POST_NOTIFICATIONS, Manifest.permission.READ_MEDIA_IMAGES)
     } else {
         GrantPermissionRule.grant()
     }
@@ -112,6 +152,229 @@ class RoomTelegramTest {
         compose.onNodeWithContentDescription(string(R.string.room_scroll_to_bottom)).performClick()
         compose.waitUntil(10_000) { visible(21) }
         screenshot("jump-back")
+    }
+
+    @Test
+    fun quoteBlockHugsItsContent() {
+        scrollTo(LONG_REPLY)
+        item(LONG_REPLY).performScrollTo()
+        val quote = compose.onNode(
+            hasTestTag("quote") and hasAnyAncestor(hasTestTag("item-ui-fake-$LONG_REPLY")),
+            useUnmergedTree = true,
+        )
+        val box = quote.fetchSemanticsNode().boundsInRoot
+        val name = compose.onNode(
+            hasText("Owner") and hasAnyAncestor(hasTestTag("quote")) and
+                hasAnyAncestor(hasTestTag("item-ui-fake-$LONG_REPLY")),
+            useUnmergedTree = true,
+        ).fetchSemanticsNode().boundsInRoot
+        val summary = compose.onNode(
+            hasText(QUOTED_TEXT.trim()) and hasAnyAncestor(hasTestTag("quote")) and
+                hasAnyAncestor(hasTestTag("item-ui-fake-$LONG_REPLY")),
+            useUnmergedTree = true,
+        ).fetchSemanticsNode().boundsInRoot
+        val slack = with(compose.density) { 12.dp.toPx() }
+        // 引用块只占名字加内容本身那么高：内容就是两行，多出来的就是被拉高的。
+        check(summary.bottom >= name.bottom) { "引用块的正文跑到名字上面：${summary.bottom} < ${name.bottom}" }
+        check(box.height <= name.height + summary.height + slack) {
+            "引用块被拉高：${box.height} > 名字 ${name.height} + 内容 ${summary.height} + $slack"
+        }
+        check(box.bottom - summary.bottom <= slack) { "引用块底下多出 ${box.bottom - summary.bottom}" }
+    }
+
+    @Test
+    fun timeNeverCoversMessageText() {
+        scrollTo(LONG_REPLY)
+        item(LONG_REPLY).performScrollTo()
+        fun timeNode(index: Int) = compose.onAllNodes(
+            hasTestTag("messageTime") and hasAnyAncestor(hasTestTag("item-ui-fake-$index")),
+            useUnmergedTree = true,
+        ).fetchSemanticsNodes().singleOrNull()
+        for (index in 18..23) {
+            // 一条一条滚进来：离屏的条目语义在、框是空的。
+            scrollTo(index)
+            compose.waitForIdle()
+            var time = timeNode(index)
+            if (time != null && time.boundsInRoot.width == 0f) {
+                compose.onNodeWithTag("room-timeline").performTouchInput { swipeUp() }
+                compose.waitForIdle()
+                time = timeNode(index)
+            }
+            if (time == null || time.boundsInRoot.width == 0f) continue
+            val box = time.boundsInRoot
+            val bubble = bubble(index).fetchSemanticsNode().boundsInRoot
+            check(bubble.contains(box.topLeft) && bubble.contains(box.bottomRight - Offset(1f, 1f))) {
+                "时间跑出气泡：$box 不在 $bubble"
+            }
+            val nodes = bodyNodes(index).sortedBy { it.boundsInRoot.top }
+            // 末尾那段透明占位从最后一个普通空格开始，藏在它后面的字不算正文；卡片条目的末节点是按钮，不带占位。
+            val tail = layoutOf(nodes.last())!!.layoutInput.text.text
+            val keep = if (tail.endsWith('\u00A0')) tail.lastIndexOf(' ') else tail.length
+            val lines = nodes.flatMap { lineBoxes(it, if (it === nodes.last()) tail.length - keep else 0) }
+            check(lines.isNotEmpty()) { "第 $index 条没有正文行框：'$tail'" }
+            val hit = lines.firstOrNull { it.overlaps(box) }
+            check(hit == null) {
+                "时间压在第 $index 条的字上：$box 与 $hit；气泡 $bubble；" +
+                    nodes.joinToString(" | ") { "${it.boundsInRoot} '${layoutOf(it)!!.layoutInput.text.text}'" }
+            }
+        }
+    }
+
+    @Test
+    fun longReplyKeepsEveryParagraphWhole() {
+        scrollTo(LONG_REPLY)
+        item(LONG_REPLY).performScrollTo()
+        val nodes = bodyNodes(LONG_REPLY).sortedBy { it.boundsInRoot.top }
+        check(nodes.size == LONG_REPLY_PARAGRAPHS.size) { "段落少了：${nodes.size} 段" }
+        for ((node, expected) in nodes.zip(LONG_REPLY_PARAGRAPHS)) {
+            val layout = layoutOf(node) ?: continue
+            val drawn = layout.layoutInput.text.text
+            check(drawn.startsWith(expected)) { "这一段的文字对不上：'$drawn'" }
+            // 语义里要留着最后一句，读屏和复制拿到的都是全文。
+            check(drawn.contains(expected.takeLast(6))) { "这一段少了结尾：'${drawn.takeLast(12)}'" }
+            // 换行数按同样的宽度重新排一遍；少一行就是被截断了。
+            val paint = TextPaint().apply {
+                textSize = with(compose.density) { layout.layoutInput.style.fontSize.toPx() }
+            }
+            val needs = StaticLayout.Builder.obtain(expected, 0, expected.length, paint, node.size.width)
+                .build().lineCount
+            check(layout.lineCount >= needs - 1) { "这一段被截断：画了 ${layout.lineCount} 行，要 $needs 行" }
+        }
+        screenshot("long-reply")
+    }
+
+    /**
+     * 回形针打开相册网格，点两张、加入，两个附件进附件区，输入框还能打字。
+     * 相册里没有照片时先放两张进去；假房间和假核心照旧，照片只在本机相册里。
+     * 附件区存在盘上、进程之间留着：先把剩下的拿掉，再看这次加进去的两张。
+     */
+    @Test
+    fun attachSheetPutsPickedPhotosIntoTray() {
+        ensureAlbumPhotos()
+        clearTray()
+        compose.onNodeWithContentDescription(string(R.string.composer_attach)).performClick()
+        compose.waitUntil(10_000) { compose.onAllNodes(hasTestTag("album-grid")).fetchSemanticsNodes().size == 1 }
+        compose.waitUntil(10_000) { compose.onAllNodes(hasTestTag("album-photo")).fetchSemanticsNodes().size >= 2 }
+        compose.onAllNodes(hasTestTag("album-photo"))[0].performClick()
+        compose.onAllNodes(hasTestTag("album-photo"))[1].performClick()
+        screenshot("attach-sheet")
+        compose.onNodeWithTag("attach-add").performClick()
+        compose.waitUntil(10_000) { trayTiles() == 2 }
+        compose.onNode(hasSetTextAction()).assertIsDisplayed()
+    }
+
+    /**
+     * 转发面板：搜索能收窄列表，勾上两个房间后一起发出去，两边的房间里都多一条红色的同文消息。
+     * 发完停在第一个选中的房间。
+     */
+    @Test
+    fun forwardPickerSendsToEveryTarget() {
+        // 12 是长条，气泡比整屏还高，按正中会落到屏幕外；换它上面那条一句话的 11。
+        scrollTo(11)
+        item(11).performScrollTo()
+        bubble(11).performTouchInput { longClick() }
+        compose.onNodeWithText(string(R.string.message_forward)).performClick()
+        compose.waitForIdle()
+        compose.waitUntil(10_000) { forwardRows() == 2 }
+        compose.onNodeWithTag("forward-send").assertIsNotEnabled()
+        compose.onNodeWithTag("forward-search").performTextInput("Fam")
+        compose.waitUntil(10_000) { forwardRows() == 1 }
+        compose.onNode(hasTestTag("forward-row") and hasText("Family")).performClick()
+        compose.onNodeWithTag("forward-search").performTextClearance()
+        compose.waitUntil(10_000) { forwardRows() == 2 }
+        compose.onNode(hasTestTag("forward-row") and hasText("Notes")).performClick()
+        screenshot("forward-sheet")
+        compose.onNodeWithTag("forward-send").performClick()
+        compose.waitUntil(10_000) { forwardedInto("Family", "ui-fake-forwarded-24") }
+        screenshot("forward-sent")
+        // 回聊天列表，再进 Notes 看另一份也到了。
+        compose.onNodeWithContentDescription(string(R.string.design_back)).performClick()
+        compose.waitForIdle()
+        if (hasBack()) compose.onNodeWithContentDescription(string(R.string.design_back)).performClick()
+        // 到了聊天列表，点 Notes 那条。
+        compose.onNodeWithText("Notes").performClick()
+        compose.waitUntil(10_000) { forwardedInto("Notes", "ui-fake-forwarded-24") }
+    }
+
+    private fun forwardRows() = compose.onAllNodes(hasTestTag("forward-row")).fetchSemanticsNodes().size
+
+    private fun hasBack() =
+        compose.onAllNodes(hasContentDescription(string(R.string.design_back))).fetchSemanticsNodes().isNotEmpty()
+
+    /** 房间打开了（顶栏是它的名字），并且时间线里有那条转发来的。房间刚开时落在老消息中间，点“向下”回最新。 */
+    private fun forwardedInto(room: String, id: String): Boolean {
+        val bar = compose.onAllNodes(
+            hasText(room) and hasAnyAncestor(hasTestTag("room-bar")),
+            useUnmergedTree = true,
+        ).fetchSemanticsNodes()
+        val open = bar.isNotEmpty()
+        fun seen() = compose.onAllNodes(hasTestTag("item-$id")).fetchSemanticsNodes().isNotEmpty()
+        if (open && !seen()) {
+            runCatching { compose.onNodeWithContentDescription(string(R.string.room_scroll_to_bottom)).performClick() }
+        }
+        return open && seen()
+    }
+
+    private fun trayIds(core: ClientCore): List<String> = runBlocking {
+        core.subscribeComposer(TimelineTarget(ECHO_ROOM, null)).use { sub ->
+            sub.next()!!.attachments.map { it.id }
+        }
+    }
+
+    private fun trayFirstId(core: ClientCore): String = trayIds(core).first()
+
+    /**
+     * 把附件区里留着的附件一个个拿掉：一排照片会横着滚，先把行滚回开头再点第一个拿掉的按钮，
+     * 否则点到的是滚出屏幕的格子。
+     */
+    private fun clearTray() {
+        val prefix = string(R.string.composer_attachment_remove).substringBefore('%')
+        val removes = SemanticsMatcher("拿掉附件") { node ->
+            node.config.getOrNull(SemanticsProperties.ContentDescription).orEmpty().any { it.startsWith(prefix) }
+        }
+        repeat(MAX_TRAY_ITEMS) {
+            if (compose.onAllNodes(removes, useUnmergedTree = true).fetchSemanticsNodes().isEmpty()) return
+            compose.onNodeWithTag("composerTray").performScrollToIndex(0)
+            compose.waitForIdle()
+            compose.onAllNodes(removes, useUnmergedTree = true)[0].performClick()
+            compose.waitForIdle()
+        }
+        check(compose.onAllNodes(removes, useUnmergedTree = true).fetchSemanticsNodes().isEmpty()) {
+            "附件区没清空"
+        }
+    }
+
+    private fun trayTiles(): Int = compose.onAllNodes(
+        SemanticsMatcher("附件区里的照片") { node ->
+            node.config.getOrNull(SemanticsProperties.ContentDescription).orEmpty()
+                .any { it == "photo.png" || it == "photo.jpg" }
+        },
+        useUnmergedTree = true,
+    ).fetchSemanticsNodes().size
+
+    /** 相册里照片不够两张时先放两张真照片进去，够了两张就不再加，多跑几次也不堆。 */
+    private fun ensureAlbumPhotos() {
+        val resolver = instrumentation.targetContext.contentResolver
+        val collection = MediaStore.Images.Media.EXTERNAL_CONTENT_URI
+        val existing = resolver.query(collection, arrayOf(MediaStore.Images.Media._ID), null, null, null)
+            ?.use { it.count } ?: 0
+        repeat((2 - existing).coerceAtLeast(0)) { index ->
+            val values = ContentValues().apply {
+                put(MediaStore.Images.Media.DISPLAY_NAME, "pick-$index.png")
+                put(MediaStore.Images.Media.MIME_TYPE, "image/png")
+                put(MediaStore.Images.Media.RELATIVE_PATH, Environment.DIRECTORY_PICTURES)
+                put(MediaStore.Images.Media.IS_PENDING, 1)
+            }
+            val uri = resolver.insert(collection, values) ?: error("相册里放不进照片")
+            resolver.openOutputStream(uri)?.use { out ->
+                Bitmap.createBitmap(320, 320, Bitmap.Config.ARGB_8888)
+                    .apply { eraseColor(if (index % 2 == 0) 0xFF8A6E4B.toInt() else 0xFF3F5F4F.toInt()) }
+                    .compress(Bitmap.CompressFormat.PNG, 100, out)
+            }
+            values.clear()
+            values.put(MediaStore.Images.Media.IS_PENDING, 0)
+            resolver.update(uri, values, null, null)
+        }
     }
 
     @Test
@@ -420,11 +683,59 @@ class RoomTelegramTest {
     )
 
     /** 列表倒着排，按 key 滚过去；条目还没组合出来，`performScrollTo` 找不到。 */
-    private fun scrollTo(index: Int) = compose.onNodeWithTag("room-timeline").performScrollToKey("ui-fake-$index")
+    private fun scrollTo(index: Int) {
+        // 时间线是发完再组合的：列表里一条都没有时按 key 滚会报找不到。
+        compose.waitUntil(10_000) {
+            compose.onAllNodes(SemanticsMatcher("时间线条目") { node ->
+                node.config.getOrNull(SemanticsProperties.TestTag)?.startsWith("item-ui-fake-") == true
+            }, useUnmergedTree = true).fetchSemanticsNodes().isNotEmpty()
+        }
+        compose.onNodeWithTag("room-timeline").performScrollToKey("ui-fake-$index")
+    }
 
     /** 有 `Disabled` 语义就不算能用。 */
     private fun SemanticsNodeInteraction.isEnabled(): Boolean =
         SemanticsProperties.Disabled !in fetchSemanticsNode().config
+
+    private fun layoutOf(node: SemanticsNode): TextLayoutResult? {
+        val action = node.config.getOrNull(SemanticsActions.GetTextLayoutResult)?.action ?: return null
+        val results = mutableListOf<TextLayoutResult>()
+        return if (action.invoke(results)) results.firstOrNull() else null
+    }
+
+    /** 这条消息的正文文字节点，跳过引用块和脚注。 */
+    private fun bodyNodes(index: Int): List<SemanticsNode> = compose.onAllNodes(
+        hasAnyAncestor(hasTestTag("item-ui-fake-$index")) and
+            SemanticsMatcher.keyIsDefined(SemanticsActions.GetTextLayoutResult) and
+            !hasAnyAncestor(hasTestTag("quote")) and
+            !hasTestTag("messageTime"),
+        useUnmergedTree = true,
+    ).fetchSemanticsNodes()
+
+    /** 节点的每个字行占的框，`reserve` 个字符是末尾的透明占位，不算正文。 */
+    private fun lineBoxes(node: SemanticsNode, reserve: Int): List<Rect> {
+        val layout = layoutOf(node) ?: return emptyList()
+        val origin = node.boundsInRoot.topLeft
+        val length = layout.layoutInput.text.length
+        val cut = (length - reserve).coerceAtLeast(0)
+        return (0 until layout.lineCount).mapNotNull { line ->
+            var box: Rect? = null
+            for (index in layout.getLineStart(line) until minOf(layout.getLineEnd(line), cut)) {
+                val glyph = layout.getBoundingBox(index)
+                if (glyph.width <= 0f) continue
+                box = box?.expandTo(glyph) ?: glyph
+            }
+            box?.translate(origin)
+        }
+    }
+
+    /** 两个框并成一个，包住两边。 */
+    private fun Rect.expandTo(other: Rect) = Rect(
+        minOf(left, other.left),
+        minOf(top, other.top),
+        maxOf(right, other.right),
+        maxOf(bottom, other.bottom),
+    )
 
     /** 选项的选中和停用语义在内层那行，标签在外层，按祖先找；选中与否两种状态都有 `Selected`。 */
     private fun choice(key: String) = compose.onNode(

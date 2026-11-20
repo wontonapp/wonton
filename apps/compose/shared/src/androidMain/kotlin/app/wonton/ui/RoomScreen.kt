@@ -352,8 +352,8 @@ private fun RoomScreen(
                 }
             }
             RoomOverlays(
-                menu, forward = forwarding, redacting = redacting, target = target, rooms = rooms,
-                timeline = timeline, draft = draft, visible = visible, core = core,
+                menu, forward = forwarding, redacting = redacting, target = target, rooms = rooms, bots = bots,
+                plugins = plugins, timeline = timeline, draft = draft, visible = visible, core = core,
                 onAction = onAction, onOpenRoom = onOpenRoom,
                 onMenuDismiss = { menu = null },
                 onForward = { forwarding = it },
@@ -398,6 +398,8 @@ private fun RoomOverlays(
     redacting: MessageMenuTarget?,
     target: TimelineTarget,
     rooms: List<RoomRow>,
+    bots: List<BotView>,
+    plugins: PluginsState,
     timeline: TimelineState,
     draft: RoomDraft,
     visible: Rect,
@@ -423,9 +425,12 @@ private fun RoomOverlays(
     forward?.let { itemId ->
         ForwardSheet(
             rooms = rooms.filter { it.forwardTarget(target.roomId) },
-            onPick = { row ->
-                onAction(Action.Timeline(TimelineAction.ForwardMessage(target, itemId, row.roomId)))
-                onOpenRoom(row.roomId)
+            bots = bots,
+            plugins = plugins,
+            // 核心一次只发一个房间：挨个发，发完打开第一个选中的。
+            onSend = { rows ->
+                rows.forEach { onAction(Action.Timeline(TimelineAction.ForwardMessage(target, itemId, it.roomId))) }
+                rows.firstOrNull()?.let { onOpenRoom(it.roomId) }
             },
             onDismiss = { onForward(null) },
         )

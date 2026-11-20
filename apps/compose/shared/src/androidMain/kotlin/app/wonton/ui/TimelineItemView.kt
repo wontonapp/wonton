@@ -318,20 +318,28 @@ fun BubbleSurface(
     }
     // 尾巴占掉的那一边让出宽度，文字不压在尾巴上。
     val tail = (if (joinsNext) 0.dp else WontonTheme.size.bubbleTail)
-    // 同一次发送里贴着的照片不留上下衬垫，贴成一摞（ADR-0094）。
+    val reserve = footerReserve(message, LocalContext.current.resources)
+    // 同一次发送里贴着的照片不留上下衬垫，贴成一摞（ADR-0094）。脚注压着的最后一行自带行高，底下少留一点，
+    // 脚注才整个落在那行里、不会顶到上一行字的下缘。
+    val bottom = when {
+        flushesNext -> 0.dp
+        reserve != null -> WontonTheme.spacing.s4
+        else -> WontonTheme.spacing.s8
+    }
     val padded = modifier.then(fill)
         .padding(start = if (isOwn) 0.dp else tail)
         .padding(end = if (isOwn) tail else 0.dp)
         .padding(horizontal = WontonTheme.spacing.s12)
         .padding(top = if (flushesPrevious) 0.dp else WontonTheme.spacing.s8)
-        .padding(bottom = if (flushesNext) 0.dp else WontonTheme.spacing.s8)
+        .padding(bottom = bottom)
     val content = if (isOwn) colors.textOnAccentFill else colors.textPrimary
-    val reserve = footerReserve(message, LocalContext.current.resources)
     // 纯图片没有文字行，时间压在图上的胶囊里；有说明文字的图片把它放进最后一行说明。
     val overImage = message.body is MessageContent.Image && (message.body as MessageContent.Image).image.caption == null
     val styledBody: @Composable () -> Unit = {
         Column(verticalArrangement = Arrangement.spacedBy(WontonTheme.spacing.s4)) {
-            message.reply?.let { QuotedMessageRow(it, core, onTint = content.toColor(), onClick = onJumpQuote) }
+            message.reply?.let {
+                QuotedMessageRow(it, core, Modifier.testTag("quote"), onTint = content.toColor(), onClick = onJumpQuote)
+            }
             CompositionLocalProvider(
                 LocalContentColor provides content.toColor(),
                 LocalTextStyle provides WontonTheme.typography.body,
@@ -364,8 +372,9 @@ private fun messageTime(message: TimelineMessage): String =
     DateFormat.getTimeInstance(DateFormat.SHORT).format(Date(message.timestampMs.toLong()))
 
 /**
- * 脚注能压在最后一行上时，给它留的透明文字。文件卡片和代码块、表格以及纯图片后面没有文字行，脚注单独占一行；
- * 时间一直在脚注里，所以占位里总要留出时间的那一段。开头是普通空格：不能和前一个词连着折行。
+ * 脚注能压在最后一行上时，给它留的透明文字，宽度要和真实脚注一样：编辑标记、时间、回执一个不少，
+ * 少一段脚注就会压到正文上。文件卡片和代码块、表格以及纯图片后面没有文字行，脚注单独占一行。
+ * 开头是普通空格：不能和前一个词连着折行。
  */
 private fun footerReserve(message: TimelineMessage, resources: Resources): String? {
     val body = when (val content = message.body) {
@@ -381,10 +390,12 @@ private fun footerReserve(message: TimelineMessage, resources: Resources): Strin
     if (!inlineLast || !files.isNullOrEmpty()) return null
     val edited = if (message.edited) resources.getString(R.string.timeline_edited) else ""
     val parts = buildList {
-        add(messageTime(message))
-        // 时间后面还有一个勾或者钟表的位置，按一个字宽留。
-        add("\u00A0")
         if (edited.isNotEmpty()) add(edited)
+        add(messageTime(message))
+        // 回执图标是 14dp，一个字宽不够；不折行空格按 6 个留，字体放大缩小时两边等比。
+        if (message.isOwn && (message.status == MessageStatus.SENT || message.status == MessageStatus.READ)) {
+            add("\u00A0".repeat(6))
+        }
     }
     // 开头留一个普通空格：不能和前一个词连着折行；中间的空格换成不折行，脚注才不会被拆开。
     return " " + parts.joinToString("  ").replace(' ', '\u00A0')
