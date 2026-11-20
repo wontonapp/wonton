@@ -76,17 +76,26 @@ def _model_configured() -> bool:
     try:
         from hermes_cli.config import load_config_readonly
 
-        model = (load_config_readonly() or {}).get("model")
+        config = load_config_readonly() or {}
+        model = config.get("model")
     except Exception:
         logger.warning("读 config.yaml 里的模型失败，交给 Hermes 照常处理", exc_info=True)
         return True
+    provider = model.get("provider") if isinstance(model, dict) else None
     if isinstance(model, dict):
         model = model.get("default") or model.get("model")
     if not isinstance(model, str) or not model.strip():
         return False
-    # 升级上来的配置留着上一版写的 `${WONTON_MODEL_DEFAULT}`：核心不再注入这些变量，Hermes 展开不了就原样留着，
-    # 请求会打到字面地址。当作没配，让提示带主人去网页重设。
-    return "${" not in model
+    # 升级上来的配置留着上一版写的占位符：核心不再注入这些变量，Hermes 展开不了就原样留着，请求会打到字面地址。
+    # 当作没配，让提示带主人去网页重设。选中的服务商地址也可能是占位符（只把模型改成真值时）：
+    if "${" in model:
+        return False
+    providers = config.get("providers")
+    if isinstance(provider, str) and provider.startswith("custom:") and isinstance(providers, dict):
+        api = providers.get(provider.removeprefix("custom:"))
+        if isinstance(api, dict) and "${" in str(api.get("api", "")):
+            return False
+    return True
 
 
 def send_files_context(**_):
