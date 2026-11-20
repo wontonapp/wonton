@@ -562,8 +562,8 @@ async fn only_plugin_networks_with_the_tools_permission_get_in() {
     );
 }
 
-/// 核心还在恢复、来源还没登记：和网关的 Bot 门一样答可重试的 503，不答 403。上游的 MCP 客户端试几次 403 就整轮
-/// 停下、等一个不相干的重连请求，核心恢复完了它也不会自己回来。
+/// 核心还在恢复、来源还没登记：和网关的 Bot 门一样答可重试的 503，不答 403。上游按状态码分永久和暂时
+/// （`_classify_mcp_failure`），403 会把它打进 auth park，一 park 就是 300 秒一次的自探；同一个来源恢复后再来才答 403。
 #[tokio::test]
 async fn an_unregistered_source_while_restoring_is_retryable() {
     let home = start(None).await;

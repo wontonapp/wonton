@@ -31,9 +31,22 @@
    `plugin-settings-bot-sync-stalled`）。
 
 不改上游适配器（[ADR-0108](0108-hermes-default-kernel.md)）：`/health/detailed` 的 connected 语义留给上游。
-MCP 这条也不用改插件：503 是 transient，走上游自己的重试梯队（`mcp_tool.py` 的 `_MAX_RECONNECT_RETRIES = 5`、退避
-1 秒起翻倍，上限 60 秒），梯队用完 park 之后 `_park` 的 300 秒自探会再起来，最迟 5 分钟自己接回；`/mcp refresh` 或
-一次重连请求会立刻叫醒它。
+MCP 不改上游，但插件补一次唤醒，理由见下。
+
+## 上游 MCP 的重试和 park（v0.22.7 源码实测）
+
+- `_classify_mcp_failure`（`mcp_tool_errors.py:177`）只把 401、403、非 MCP 端点、坏 URL、ENOENT 当永久；其余都是 transient。
+  503 因此不进 auth park。
+- 但 transient 一样会 park：没连上过的握手失败走 `_on_initial_connect_error`（3 次，1、2、4 秒），连过之后的断开走
+  `_on_transport_error`（`_MAX_RECONNECT_RETRIES = 5`，1 秒起翻倍到 60 秒）。梯队用完进 `_park`：注销工具、等信号。
+- park 住的服务器只有两条路醒来：外部 `_reconnect_event.set()`（`/mcp refresh`、OAuth 恢复、`ensure_healthy`、
+  回收 stdio 的首次调用），或者 `_PARKED_RETRY_INTERVAL = 300` 秒到点后自己探一次（`_park`，`mcp_tool.py:243`）。
+- **`tools/list_changed` 不唤醒 park 住的服务器**：处理器（`mcp_tool_health.py:100`）只记一行、排一个刷新，而 `_refresh_tools`
+  在 `session is None` 时直接返回。194 日志里“发通知后 9 秒 revived”是那次重连的会话在 keepalive 里被认定健康
+  （`_mark_session_proven`）打的，不是通知本身叫醒的。
+
+所以核心恢复慢过重试梯队时，工具会一直停到那 300 秒。插件在每条进来的消息上（`pre_gateway_dispatch`）对 `_park_reason`
+非空的服务器发一次 `_reconnect_event`，主人说下一句话就接回，不用等 5 分钟；没 park 的不动，也不阻塞这一轮。
 
 ## 理由
 
@@ -49,5 +62,5 @@ MCP 这条也不用改插件：503 是 transient，走上游自己的重试梯�
 - 120 秒对 `sync` 超时较长的插件会误报；上游约定是 30 秒。
 - 上一条只覆盖 Bot 经核心的同步；Agent 走别的收消息方式时不受这条保护。
 - MCP 的 park 自探间隔是上游写死的 300 秒：核心恢复慢于重试梯队（约 30 秒）时，工具最迟 5 分钟后才回来，这期间
-  状态同样是 `Degraded`。要更快得让插件在同步恢复后主动请求重连（上游的 `_signal_reconnect_and_wait`），留待冒烟观察。
+  状态同样是 `Degraded`。插件现在在下一句话时叫醒它，不说话就一直 park。
 - 这条检查只看得见“活过、后来停了”的同步：核心重启前同步就已经死掉的，重启后没有记录，这里报不出来。
