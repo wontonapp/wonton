@@ -45,7 +45,7 @@ description: 写一个 Wonton 插件，装到主人的服务器上，让主人�
 
 - **`configs` 的属主：** `user` 写 `${PUID}:${PGID}` 时按插值后的数字算，默认模式 `0644`，所有用户都能读、属主能写。不用另写 `uid`、`gid`。
 - **环境变量里的 `on`/`off`：** `environment` 里裸写会被 YAML 当成布尔（容器拿到 `true`），要的就是这两个字就加引号。
-- **健康检查和代理：** 只有 `wget` 和 shell 的写法由核心改写成不走代理。`python3 -c` 不改写，用 `urllib.request.build_opener(urllib.request.ProxyHandler({}))` 自己绕开，见 `assets/backend`。
+- **健康检查和代理：** 用 `wget` 或 shell（`sh -c`）写，配了代理时核心会把它改成不走代理，`assets/` 的两个例子都这样写。镜像里没有 `wget` 才用别的，比如 `python3 -c`：那样核心不改写，要像 `urllib.request.build_opener(urllib.request.ProxyHandler({}))` 一样自己绕开。例子的 `wget` 是 alpine 镜像里 busybox 带的，换成 Debian/Ubuntu 这类 slim 镜像要自己装（`apt-get install -y wget`）或改用 `python3 -c`；`wget` 对非 2xx 退非 0，检查的路径要能返回 2xx，会被网关拦成 401 的路径改用 `webui.health` 指到不鉴权的地址。
 - **核心网页探测：** 不经网关、不携带主人的身份，2xx–4xx 算活，5xx、连接失败和超时算失败；每 30 秒巡检，请求超时 5 秒。安装要等健康，失败回滚；运行时失败显示为 `Degraded`。`disable: true`、`test: [NONE]` 或空 `test` 不算有效 compose 健康检查。
 - **没有登录的页面：** `sso: none` 又不做登录是可以的，所有请求先经网关校验主人的会话，别人打不开。不要自己加默认密码。
 - **出网：** 要访问外部地址就申请 `network.egress`，这个权限同时能访问主人的局域网，主人确认时看得到。用户填的地址不用替他拦，但不要把抓回来的内容不转义就放进页面。

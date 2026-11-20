@@ -43,6 +43,8 @@ mod github;
 mod gpu;
 mod gpu_images;
 mod gpu_vendor;
+mod guide_backend_health;
+mod guide_backend_health_docker;
 mod health;
 mod health_gate;
 mod host_check;

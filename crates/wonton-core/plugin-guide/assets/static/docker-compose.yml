@@ -7,7 +7,7 @@ services:
       - source: page
         target: /usr/share/nginx/html/index.html
     healthcheck:
-      test: ["CMD", "wget", "-q", "--spider", "http://127.0.0.1/"]
+      test: ["CMD", "wget", "-q", "-T", "3", "--spider", "http://127.0.0.1/"]
       interval: 30s
       timeout: 5s
       start_period: 10s
