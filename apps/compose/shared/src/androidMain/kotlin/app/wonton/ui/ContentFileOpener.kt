@@ -1,5 +1,6 @@
 package app.wonton.ui
 
+import android.app.Activity
 import android.content.ActivityNotFoundException
 import android.content.Context
 import android.content.Intent
@@ -81,6 +82,8 @@ fun openWithSystem(context: Context, path: String, mimeType: String?): Problem? 
     val intent = Intent(Intent.ACTION_VIEW)
         .setDataAndType(uri, type ?: context.contentResolver.getType(uri) ?: "*/*")
         .addFlags(Intent.FLAG_GRANT_READ_URI_PERMISSION)
+    // 非 Activity 的 Context（如 application）起 Activity 要 NEW_TASK。
+    if (context !is Activity) intent.addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
     return try {
         context.startActivity(intent)
         null
@@ -100,6 +103,12 @@ fun shareWithSystem(context: Context, path: String, mimeType: String? = null): P
         .setType(mimeType ?: context.contentResolver.getType(uri) ?: "*/*")
         .putExtra(Intent.EXTRA_STREAM, uri)
         .addFlags(Intent.FLAG_GRANT_READ_URI_PERMISSION)
-    context.startActivity(Intent.createChooser(send, null))
-    return null
+    val chooser = Intent.createChooser(send, null)
+    if (context !is Activity) chooser.addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
+    return try {
+        context.startActivity(chooser)
+        null
+    } catch (_: ActivityNotFoundException) {
+        Problem(context.getString(R.string.file_no_app_opens_it))
+    }
 }
