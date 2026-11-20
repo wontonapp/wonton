@@ -25,12 +25,12 @@ final class ComposerSendRejectUITests: XCTestCase {
     func testRejectedSendKeepsDraftReplyAndAttachment() {
         tap(app.buttons[Self.directRoom])
         XCTAssertTrue(message(3).waitForExistence(timeout: 10), "时间线没出来\n\(app.debugDescription)")
-        addFailedAttachment()
         startReply()
         let field = app.textViews["Message"]
         field.tap()
         field.typeText(Self.draft)
-        tap(app.buttons["composerSend"])
+        // 草稿和回复对象先摆好：选照片的那一下就是发送。
+        addFailedAttachment()
 
         let reason = app.staticTexts["An attachment didn't upload. Retry or remove it first."]
         XCTAssertTrue(reason.waitForExistence(timeout: 5), "被拒了没有说原因\n\(app.debugDescription)")
@@ -40,7 +40,7 @@ final class ComposerSendRejectUITests: XCTestCase {
         XCTAssertTrue(app.buttons["composerAttachmentFailed"].exists, "被拒以后附件没了")
         XCTAssertFalse(text(Self.draft).exists, "被拒了消息还是发了")
 
-        tap(app.buttons["OK"])
+        tap(app.buttons["dialogOk"])
         XCTAssertTrue(reason.waitForNonExistence(timeout: 5), "点了“好”，说明没收起")
         screenshot("kept")
         // 删掉失败的附件再发：这次核心收下，输入框和回复条才清。
@@ -50,6 +50,23 @@ final class ComposerSendRejectUITests: XCTestCase {
         XCTAssertTrue(wait(5) { (field.value as? String ?? "").isEmpty }, "收下以后输入框没清空")
         XCTAssertTrue(app.buttons["replyCancel"].waitForNonExistence(timeout: 5), "收下以后回复条没收起")
         XCTAssertTrue(text(Self.draft).waitForExistence(timeout: 5), "收下以后时间线上没有这条")
+    }
+
+    /// 附件区里有传不上去的图时点一条命令：真核心的 `send_text` 不看附件区，照样发得出去，也不弹原因。
+    func testCommandSendsWhileAttachmentFailed() {
+        tap(app.buttons[Self.directRoom])
+        XCTAssertTrue(message(3).waitForExistence(timeout: 10), "时间线没出来\n\(app.debugDescription)")
+        addFailedAttachment()
+        tap(app.buttons["composerCommands"])
+        tap(app.buttons["command.help"])
+
+        XCTAssertFalse(
+            app.staticTexts["An attachment didn't upload. Retry or remove it first."].waitForExistence(timeout: 3),
+            "命令被附件区拦下了\n\(app.debugDescription)"
+        )
+        XCTAssertTrue(app.staticTexts["/help"].waitForExistence(timeout: 5), "命令没发出去\n\(app.debugDescription)")
+        XCTAssertTrue(app.buttons["composerAttachmentFailed"].exists, "命令发出去附件没了")
+        screenshot("commandSent")
     }
 
     // MARK: 助手
