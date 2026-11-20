@@ -98,3 +98,6 @@ chat-avatar-cache-hash-collision = Two avatars in the cache have the same hash.
 chat-draft-clear-failed = Clearing the sent draft failed: { $error }
 
 chat-draft-read-interrupted = Loading the draft was interrupted
+
+chat-choice-send-failed = Not sent: the home server can't be reached. ({ $error })
+chat-op-agent-answer-failed = Can't answer the option: { $error }

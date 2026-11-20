@@ -52,6 +52,20 @@ impl MatrixSession {
         let room = self.client.create_room(request).await?;
         Ok(room.room_id().to_owned())
     }
+
+    /// 邀请一个人进已加入的房间。
+    pub async fn invite_user(
+        &self,
+        room_id: &matrix_sdk::ruma::RoomId,
+        peer: &matrix_sdk::ruma::UserId,
+    ) -> Result<()> {
+        let room = self
+            .client
+            .get_room(room_id)
+            .ok_or_else(|| crate::Error::InvalidInput("房间没在列表里".to_owned()))?;
+        room.invite_user_by_id(peer).await?;
+        Ok(())
+    }
 }
 
 /// 本地开发环境的配置和镜像，测试用同一份。

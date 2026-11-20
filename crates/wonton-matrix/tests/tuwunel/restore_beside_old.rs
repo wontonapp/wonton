@@ -94,7 +94,7 @@ async fn history_in_backup(server: &TestServer, owner: &str) -> (OwnedRoomId, St
     bot.start_sync().await.expect("Bot 同步");
     let room_id = crate::chat::direct_chat(&first, &bot, true).await;
     let bot_room = bot.open_room(&room_id).await.expect("Bot 打开私聊");
-    bot_room.send_text(HISTORY).await.expect("Bot 发消息");
+    bot_room.send_text(HISTORY, &[]).await.expect("Bot 发消息");
     let room = first.open_room(&room_id).await.expect("第一台打开私聊");
     wait_for_history(&room, "第一台解开历史").await;
     // 恢复密钥在备份上传完以后才返回。

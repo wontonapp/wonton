@@ -1,12 +1,11 @@
-//! 步骤导航：后退逐步保留选择；早于进度的步骤从第一步进、走完不进；Agent 步要选能装的；
-//! 核心没有引导状态就没有步骤。
+//! 步骤导航：后退逐步保留选择；早于进度的步骤从第一步进、走完不进；核心没有引导状态就没有步骤。
 
 use axum::http::Method;
 use wonton_client::{Action, OnboardingStep};
 
 use super::super::rig::Rig;
 use super::{
-    MODEL_SETTINGS, ONBOARDING, PROFILE, act, assert_nothing_saved, at, edit, flow_rig, invalid,
+    MODEL_SETTINGS, ONBOARDING, PROFILE, act, assert_nothing_saved, at, flow_rig, invalid,
     onboarding, walk_to_review, with_photos,
 };
 
@@ -16,9 +15,8 @@ async fn navigation_walks_back_through_every_step_keeping_choices() {
     let review = walk_to_review(&rig).await;
     assert!(!review.review.items.is_empty());
     for (step, position) in [
-        (OnboardingStep::Apps, 4),
-        (OnboardingStep::Model, 3),
-        (OnboardingStep::Agent, 2),
+        (OnboardingStep::Apps, 3),
+        (OnboardingStep::Model, 2),
         (OnboardingStep::Profile, 1),
     ] {
         act(
@@ -29,10 +27,9 @@ async fn navigation_walks_back_through_every_step_keeping_choices() {
         );
         let view = at(&rig, step).await;
         let nav = view.nav.unwrap();
-        assert_eq!((nav.position, nav.total), (position, 5));
+        assert_eq!((nav.position, nav.total), (position, 4));
         assert!(view.review.items.is_empty());
         assert!(view.needs[0].selected);
-        assert!(view.agents[0].selected);
         assert!(view.model.choice.is_some());
         assert_eq!(view.profile.display_name, " 云吞 ");
     }
@@ -61,7 +58,7 @@ async fn navigation_walks_back_through_every_step_keeping_choices() {
 
 #[tokio::test]
 async fn earlier_server_steps_start_from_the_first_and_finished_does_not_enter() {
-    for step in ["agent", "model", "apps"] {
+    for step in ["model", "apps"] {
         let rig = flow_rig(onboarding(step)).await;
         assert_eq!(rig.app.onboarding().step, Some(OnboardingStep::Profile));
     }
@@ -87,36 +84,6 @@ async fn earlier_server_steps_start_from_the_first_and_finished_does_not_enter()
         &other,
         Action::Onboarding {
             action: wonton_protocol::OnboardingAction::SkipOnboardingStep,
-        },
-    );
-}
-
-#[tokio::test]
-async fn agent_navigation_needs_an_installable_selection() {
-    let mut state = onboarding("profile");
-    state["agents"][0]["blocked"] = serde_json::json!("Unavailable on this host");
-    let rig = flow_rig(state).await;
-    edit(&rig, "云吞", "");
-    act(
-        &rig,
-        Action::Onboarding {
-            action: wonton_protocol::OnboardingAction::ContinueOnboarding,
-        },
-    );
-    let view = at(&rig, OnboardingStep::Agent).await;
-    assert!(!view.nav.unwrap().can_next);
-    invalid(
-        &rig,
-        Action::Onboarding {
-            action: wonton_protocol::OnboardingAction::ContinueOnboarding,
-        },
-    );
-    invalid(
-        &rig,
-        Action::Onboarding {
-            action: wonton_protocol::OnboardingAction::ChooseOnboardingAgent {
-                id: "agent.one".to_owned(),
-            },
         },
     );
 }

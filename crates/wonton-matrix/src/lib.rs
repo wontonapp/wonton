@@ -24,6 +24,7 @@ mod group;
 mod layout;
 mod login;
 mod media;
+mod mentions;
 mod message;
 mod panels;
 pub mod platform_tls;
@@ -47,7 +48,8 @@ mod widget;
 
 pub use agent_run::AgentRunStatus;
 pub use chat_room::{
-    BackPaginationStatus, ChatRoom, ImageThumbnail, ImageUpload, MISSED_GRACE, MissedEvent,
+    BackPaginationStatus, ChatRoom, ImageThumbnail, ImageUpload, MISSED_GRACE, MentionMember,
+    MissedEvent,
 };
 pub use encryption::{EncryptionState, Recovery, Verification};
 pub use error::{Error, Result};
@@ -56,12 +58,15 @@ pub use group::{GroupPart, PreparedReply, UploadedImage};
 pub use layout::{CHAT_LAYOUT_EVENT, ChatLayoutContent};
 pub use login::{LoginError, OidcClient, OidcStart, PendingLogin};
 pub use matrix_sdk::ruma::{
-    DeviceId, EventId, OwnedDeviceId, OwnedEventId, OwnedRoomId, OwnedServerName, OwnedUserId,
-    RoomId, ServerName, UserId, events::relation::RelationType,
+    DeviceId, EventId, OwnedDeviceId, OwnedEventId, OwnedMxcUri, OwnedRoomId, OwnedServerName,
+    OwnedUserId, RoomId, ServerName, UserId, events::relation::RelationType,
 };
 pub use matrix_sdk_ui::eyeball_im::{Vector, VectorDiff};
 pub use media::{PreviewImageSource, encrypted_media_token, media_token};
-pub use message::{FileContent, ImageContent, Message, MessageBody, SendStatus, UploadProgress};
+pub use message::{
+    FileContent, ImageContent, Message, MessageBody, OwnReaction, Reaction, SendStatus,
+    UploadProgress,
+};
 pub use panels::{LAYOUT_EVENT, LayoutContent, ROOM_PANEL_EVENT, RoomPanelContent};
 pub use profile::UserProfile;
 pub use push::{BackgroundNotification, Notification, PusherConfig};

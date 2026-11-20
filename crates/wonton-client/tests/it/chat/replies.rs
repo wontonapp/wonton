@@ -77,7 +77,7 @@ async fn replies_quote_the_original_on_both_sides() {
     let room_id = accept_the_bots_invite(&home, &phone, &bot).await;
     let room = room_id.to_string();
     let bot_room = bot.open_room(&room_id).await.expect("Bot 打开私聊");
-    bot_room.send_text("原话").await.expect("Bot 发文字");
+    bot_room.send_text("原话", &[]).await.expect("Bot 发文字");
     bot_room.send_image(test_image()).await.expect("Bot 发图片");
     let mut timeline = Timeline::open(&phone, &room).await;
     let (_, original) = timeline
@@ -133,6 +133,7 @@ async fn text_reply_quotes_the_original(
                 },
                 body: "回一句".to_owned(),
                 reply_to: Some(quote.event_id.clone()),
+                mentions: vec![],
             },
         })
         .unwrap();
@@ -251,12 +252,12 @@ async fn a_quote_out_of_reach_loads_and_follows_a_redaction() {
     // 原话和回复之间隔着比同步（房间订阅 20 条）和一页翻页（30 条）都多的消息：回复先到，原话不在本地。
     for count in 0..45 {
         bot_room
-            .send_text(&format!("中间第 {count} 句"))
+            .send_text(&format!("中间第 {count} 句"), &[])
             .await
             .expect("Bot 发中间的话");
     }
     bot_room
-        .send_reply("回复很早的那句", &early)
+        .send_reply("回复很早的那句", &[], &early)
         .await
         .expect("Bot 回复");
     bot_receives(&bot_room, "Bot 的回复发出去", |m| {

@@ -184,7 +184,7 @@ pub(super) async fn set_limits(
             );
         }
     };
-    if limits.max_depth == 0 || limits.max_rounds == 0 || limits.max_tokens == 0 {
+    if limits.max_depth == 0 || limits.max_rounds == 0 {
         return error_response(StatusCode::BAD_REQUEST, "invalid_input", "上限不能是 0");
     }
     if let Err(e) = chains.settings().set_limits(limits) {

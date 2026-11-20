@@ -2,96 +2,6 @@
   "sourceLanguage": "en",
   "version": "1.0",
   "strings": {
-    "onboarding.keep": {
-      "comment": "Button that keeps the agent that a new one replaces.",
-      "extractionState": "manual",
-      "localizations": {
-        "en": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "Keep"
-          }
-        },
-        "zh-Hans": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "保留"
-          }
-        },
-        "zh-Hant": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "保留"
-          }
-        },
-        "ja": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "残す"
-          }
-        }
-      }
-    },
-    "onboarding.model.custom": {
-      "comment": "Row title: type a model provider by hand instead of picking a recommended one.",
-      "extractionState": "manual",
-      "localizations": {
-        "en": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "Custom"
-          }
-        },
-        "zh-Hans": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "自定义"
-          }
-        },
-        "zh-Hant": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "自訂"
-          }
-        },
-        "ja": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "カスタム"
-          }
-        }
-      }
-    },
-    "onboarding.model.more": {
-      "comment": "Button that expands the list of less common model providers.",
-      "extractionState": "manual",
-      "localizations": {
-        "en": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "More Providers"
-          }
-        },
-        "zh-Hans": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "更多服务商"
-          }
-        },
-        "zh-Hant": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "更多供應商"
-          }
-        },
-        "ja": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "その他のプロバイダ"
-          }
-        }
-      }
-    },
     "onboarding.model.openSettings": {
       "comment": "Button that opens the model gateway's settings page.",
       "extractionState": "manual",
@@ -118,66 +28,6 @@
           "stringUnit": {
             "state": "translated",
             "value": "モデル設定を開く"
-          }
-        }
-      }
-    },
-    "onboarding.model.test": {
-      "comment": "Button that checks the typed API key against the model provider.",
-      "extractionState": "manual",
-      "localizations": {
-        "en": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "Test"
-          }
-        },
-        "zh-Hans": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "测试"
-          }
-        },
-        "zh-Hant": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "測試"
-          }
-        },
-        "ja": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "テスト"
-          }
-        }
-      }
-    },
-    "onboarding.model.useLogin": {
-      "comment": "Row title: sign in to a model provider with an account. The argument is the login's name (like \"ChatGPT account\").",
-      "extractionState": "manual",
-      "localizations": {
-        "en": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "Use %@"
-          }
-        },
-        "zh-Hans": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "用%@"
-          }
-        },
-        "zh-Hant": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "用%@"
-          }
-        },
-        "ja": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "%@を使用"
           }
         }
       }
@@ -332,36 +182,6 @@
         }
       }
     },
-    "onboarding.review.setDefault": {
-      "comment": "Row description in the review step: the item is set as the default agent.",
-      "extractionState": "manual",
-      "localizations": {
-        "en": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "Set as Default"
-          }
-        },
-        "zh-Hans": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "设为默认"
-          }
-        },
-        "zh-Hant": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "設為預設"
-          }
-        },
-        "ja": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "デフォルトに設定"
-          }
-        }
-      }
-    },
     "onboarding.review.uncertain": {
       "comment": "Problem title in the review step: it's unknown whether the app installed. The reason is in the collapsed details.",
       "extractionState": "manual",
@@ -448,66 +268,6 @@
           "stringUnit": {
             "state": "translated",
             "value": "アプリをインストールしたら、タブバーに追加できます。"
-          }
-        }
-      }
-    },
-    "onboarding.agentPlaceholder": {
-      "comment": "Placeholder of a field that takes the agent's name.",
-      "extractionState": "manual",
-      "localizations": {
-        "en": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "Agent name"
-          }
-        },
-        "zh-Hans": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "Agent 名称"
-          }
-        },
-        "zh-Hant": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "Agent 名稱"
-          }
-        },
-        "ja": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "エージェント名"
-          }
-        }
-      }
-    },
-    "onboarding.review.sectionAgent": {
-      "comment": "Kind label of the default agent row in the review step.",
-      "extractionState": "manual",
-      "localizations": {
-        "en": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "Assistant"
-          }
-        },
-        "zh-Hans": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "助手"
-          }
-        },
-        "zh-Hant": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "助手"
-          }
-        },
-        "ja": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "アシスタント"
           }
         }
       }

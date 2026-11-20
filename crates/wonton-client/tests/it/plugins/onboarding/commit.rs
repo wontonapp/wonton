@@ -1,4 +1,4 @@
-//! 最后一页点完成：保存资料和“走完了”，再在后台装 Agent 和应用；模型由网页自己保存。
+//! 最后一页点完成：保存资料和“走完了”，再在后台装应用；模型由网页自己保存。
 
 use axum::http::Method;
 use wonton_client::{
@@ -9,8 +9,8 @@ use wonton_client::{
 
 use super::super::rig::{Canned, Rig, core_error, preview};
 use super::{
-    INSTALL, MODEL_SETTINGS, ONBOARDING, PREVIEW, PROFILE, act, at, edit, flow_rig,
-    installed_onboarding, invalid, model_settings, onboarding, walk_to_review, with_photos,
+    INSTALL, MODEL_SETTINGS, ONBOARDING, PREVIEW, PROFILE, act, at, edit, flow_rig, invalid,
+    model_settings, onboarding, walk_to_review, with_photos,
 };
 
 fn body(rig: &Rig, method: &Method, path: &str) -> Vec<serde_json::Value> {
@@ -78,10 +78,9 @@ async fn finish_saves_every_choice_then_installs_in_the_background() {
     assert!(body(&rig, &Method::PUT, MODEL_SETTINGS).is_empty());
     let finished = body(&rig, &Method::PUT, ONBOARDING);
     assert_eq!(finished.len(), 1);
-    assert_eq!(finished[0]["step"], "finished");
-    assert_eq!(finished[0]["primary_agent"], "agent.one");
+    assert_eq!(finished[0], serde_json::json!({"step": "finished"}));
     assert!(position(&rig, &Method::PUT, PROFILE) < position(&rig, &Method::PUT, ONBOARDING));
-    assert_eq!(rig.core.seen(&Method::POST, INSTALL).len(), 2);
+    assert_eq!(rig.core.seen(&Method::POST, INSTALL).len(), 1);
     invalid(
         &rig,
         Action::Onboarding {
@@ -101,7 +100,7 @@ async fn finish_saves_every_choice_then_installs_in_the_background() {
 #[tokio::test]
 async fn skipping_every_step_only_marks_onboarding_finished() {
     let rig = flow_rig(with_photos(onboarding("profile"))).await;
-    for _ in 0..4 {
+    for _ in 0..3 {
         act(
             &rig,
             Action::Onboarding {
@@ -115,11 +114,10 @@ async fn skipping_every_step_only_marks_onboarding_finished() {
         kinds,
         [
             OnboardingReviewKind::Profile,
-            OnboardingReviewKind::Agent,
             OnboardingReviewKind::Model,
             OnboardingReviewKind::App
         ],
-        "四类各一行，跳过的标不变"
+        "三类各一行，跳过的标不变"
     );
     assert!(
         review
@@ -140,15 +138,14 @@ async fn skipping_every_step_only_marks_onboarding_finished() {
     let finished = body(&rig, &Method::PUT, ONBOARDING);
     assert_eq!(finished.len(), 1);
     assert_eq!(finished[0]["step"], "finished");
-    assert!(finished[0]["primary_agent"].is_null());
     assert!(rig.core.seen(&Method::PUT, PROFILE).is_empty());
     assert!(rig.core.seen(&Method::POST, INSTALL).is_empty());
 }
 
-/// 已经走完引导的服务器，重看从第一步开始：装着两个 Agent（默认 agent.two）、资料和模型设置都取到了。
+/// 已经走完引导的服务器，重看从第一步开始：资料和模型设置都取到了。
 async fn revisit_rig() -> Rig {
     let rig = Rig::new().await;
-    rig.core.set_onboarding(installed_onboarding());
+    rig.core.set_onboarding(onboarding("finished"));
     rig.core.set_owner(Some("云吞"), Some("me@example.com"));
     rig.core.set_model_settings(model_settings(true));
     rig.connected().await;
@@ -166,7 +163,7 @@ async fn revisit_rig() -> Rig {
 #[tokio::test]
 async fn finishing_an_untouched_revisit_changes_nothing() {
     let rig = revisit_rig().await;
-    for _ in 0..4 {
+    for _ in 0..3 {
         act(
             &rig,
             Action::Onboarding {
@@ -190,7 +187,6 @@ async fn finishing_an_untouched_revisit_changes_nothing() {
     let finished = body(&rig, &Method::PUT, ONBOARDING);
     assert_eq!(finished.len(), 1);
     assert_eq!(finished[0]["step"], "finished");
-    assert!(finished[0]["primary_agent"].is_null(), "默认 Agent 没动");
     act(
         &rig,
         Action::Onboarding {
@@ -201,115 +197,9 @@ async fn finishing_an_untouched_revisit_changes_nothing() {
 }
 
 #[tokio::test]
-async fn finishing_a_revisit_saves_only_the_changed_agent() {
-    let rig = revisit_rig().await;
-    act(
-        &rig,
-        Action::Onboarding {
-            action: wonton_protocol::OnboardingAction::ContinueOnboarding,
-        },
-    );
-    act(
-        &rig,
-        Action::Onboarding {
-            action: wonton_protocol::OnboardingAction::ChooseOnboardingAgent {
-                id: "agent.one".to_owned(),
-            },
-        },
-    );
-    for _ in 0..3 {
-        act(
-            &rig,
-            Action::Onboarding {
-                action: wonton_protocol::OnboardingAction::ContinueOnboarding,
-            },
-        );
-    }
-    let review = at(&rig, OnboardingStep::Review).await;
-    let agent = review
-        .review
-        .items
-        .iter()
-        .find(|item| item.kind == OnboardingReviewKind::Agent)
-        .expect("有 Agent 一行");
-    assert_eq!(agent.detail, Some(OnboardingReviewDetail::SetAsDefault));
-    assert_eq!(agent.titles, ["Agent One"]);
-    act(
-        &rig,
-        Action::Onboarding {
-            action: wonton_protocol::OnboardingAction::ContinueOnboarding,
-        },
-    );
-    settled(&rig).await;
-    assert!(rig.core.seen(&Method::PUT, PROFILE).is_empty());
-    assert!(rig.core.seen(&Method::PUT, MODEL_SETTINGS).is_empty());
-    assert!(rig.core.seen(&Method::POST, INSTALL).is_empty());
-    let finished = body(&rig, &Method::PUT, ONBOARDING);
-    assert_eq!(finished[0]["primary_agent"], "agent.one");
-    act(
-        &rig,
-        Action::Onboarding {
-            action: wonton_protocol::OnboardingAction::ContinueOnboarding,
-        },
-    );
-    // 设置里的“默认 Agent”跟着显示新的当前值。
-    let done = at(&rig, OnboardingStep::Finished).await;
-    assert!(
-        done.agents
-            .iter()
-            .find(|agent| agent.id == "agent.one")
-            .unwrap()
-            .selected
-    );
-}
-
-#[tokio::test]
-async fn skipping_the_agent_step_in_a_revisit_keeps_the_current_default() {
-    let rig = revisit_rig().await;
-    act(
-        &rig,
-        Action::Onboarding {
-            action: wonton_protocol::OnboardingAction::SkipOnboardingStep,
-        },
-    );
-    at(&rig, OnboardingStep::Agent).await;
-    assert!(
-        !rig.app.onboarding().agents[0].selected,
-        "跳过后流程里没有选中项"
-    );
-    for _ in 0..4 {
-        act(
-            &rig,
-            Action::Onboarding {
-                action: wonton_protocol::OnboardingAction::ContinueOnboarding,
-            },
-        );
-    }
-    settled(&rig).await;
-    let finished = body(&rig, &Method::PUT, ONBOARDING);
-    assert!(finished[0]["primary_agent"].is_null(), "不清掉现在的默认");
-    act(
-        &rig,
-        Action::Onboarding {
-            action: wonton_protocol::OnboardingAction::ContinueOnboarding,
-        },
-    );
-    let done = at(&rig, OnboardingStep::Finished).await;
-    assert!(
-        done.agents
-            .iter()
-            .find(|agent| agent.id == "agent.two")
-            .unwrap()
-            .selected,
-        "设置里的“默认 Agent”还是当前那个"
-    );
-}
-
-#[tokio::test]
 async fn a_failed_install_keeps_its_reason_while_the_others_finish() {
     let rig = flow_rig(with_photos(onboarding("profile"))).await;
     walk_to_review(&rig).await;
-    // 两个安装请求哪个先到不一定，先到的那个失败。
     rig.core.answer(
         Method::POST,
         INSTALL,
@@ -354,7 +244,7 @@ async fn a_failed_install_keeps_its_reason_while_the_others_finish() {
     );
     rig.wait_onboarding(|view| state(view, &id) == OnboardingItemState::Done)
         .await;
-    assert_eq!(rig.core.seen(&Method::POST, INSTALL).len(), 3);
+    assert_eq!(rig.core.seen(&Method::POST, INSTALL).len(), 2);
 }
 
 #[tokio::test]
@@ -404,7 +294,7 @@ fn needs_email() -> Canned {
     Canned(200, serde_json::to_string(&preview).unwrap())
 }
 
-/// 只要照片：Agent 跳过，最后一页只有一个预览请求，预设的回应不会被别的用掉。
+/// 只要照片：模型跳过，最后一页只有一个预览请求。
 async fn photos_only(rig: &Rig, email: &str) -> OnboardingViewModel {
     rig.core.answer(Method::POST, PREVIEW, needs_email());
     edit(rig, "云吞", email);
@@ -414,13 +304,7 @@ async fn photos_only(rig: &Rig, email: &str) -> OnboardingViewModel {
             action: wonton_protocol::OnboardingAction::ContinueOnboarding,
         },
     );
-    at(rig, OnboardingStep::Agent).await;
-    act(
-        rig,
-        Action::Onboarding {
-            action: wonton_protocol::OnboardingAction::SkipOnboardingStep,
-        },
-    );
+    at(rig, OnboardingStep::Model).await;
     act(
         rig,
         Action::Onboarding {
@@ -496,7 +380,7 @@ async fn a_failed_preview_blocks_finish_until_it_is_retried() {
         .items
         .iter()
         .find(|item| matches!(item.state, OnboardingItemState::Failed { .. }))
-        .expect("一个预览失败")
+        .expect("预览失败")
         .id
         .clone();
     assert!(!view.nav.unwrap().can_next);

@@ -45,6 +45,8 @@ pub struct LocalUpdate {
 pub enum ProfileError {
     #[error("not_found: 插件没有安装或没有 Bot")]
     NotFound,
+    #[error("invalid_input: 插件里没有名为 {0:?} 的 Bot")]
+    UnknownBot(String),
     #[error("invalid_input: {0}")]
     InvalidInput(String),
     #[error("invalid_input: Bot 名字不符合规则（{0:?}）")]
@@ -63,7 +65,7 @@ impl ProfileError {
     pub fn kind(&self) -> &'static str {
         match self {
             Self::NotFound => "not_found",
-            Self::InvalidInput(_) | Self::Name(_) => "invalid_input",
+            Self::InvalidInput(_) | Self::UnknownBot(_) | Self::Name(_) => "invalid_input",
             Self::Media(_) => "media_rejected",
             Self::MatrixUnavailable(_) => "matrix_unavailable",
             Self::Storage(_) => "storage",
@@ -126,11 +128,21 @@ impl PluginManager {
         self.profiles.revisions.clone()
     }
 
-    pub(super) fn profile_lock(&self, id: &PluginId) -> Arc<tokio::sync::Mutex<EditWindow>> {
-        self.profiles.lock(id)
+    pub(super) fn profile_lock(
+        &self,
+        id: &PluginId,
+        bot: &str,
+    ) -> Arc<tokio::sync::Mutex<EditWindow>> {
+        self.profiles.lock(id, bot)
     }
 
-    fn profile_bot(&self, id: &PluginId) -> Result<(&Matrix, String), ProfileError> {
+    /// 资料所属的 Bot：`Some` 是点名要的那个 Bot，记录里没有就报错；`None` 是主人的资料页，
+    /// 取默认 Bot，没有默认时取记录里的第一个（Bot 接口的兜底只在这里）。
+    fn profile_bot(
+        &self,
+        id: &PluginId,
+        bot: Option<&str>,
+    ) -> Result<(&Matrix, String, String), ProfileError> {
         let has_bot = self
             .plugins
             .read()
@@ -151,18 +163,23 @@ impl PluginManager {
             .bots()
             .load(id)
             .map_err(|e| ProfileError::Storage(e.to_string()))?;
-        // 资料按 Bot 的接口在别的任务里；现在默认 Bot 没有（或插件没记录）就报没找到。
-        let record = bots
-            .bots
-            .get(super::bot_services::DEFAULT_BOT)
-            .or_else(|| bots.bots.values().next())
-            .ok_or(ProfileError::NotFound)?;
+        let (bot, record) = match bot {
+            Some(bot) => bots
+                .bots
+                .get_key_value(bot)
+                .ok_or_else(|| ProfileError::UnknownBot(bot.to_owned()))?,
+            None => bots
+                .bots
+                .get_key_value(super::bot_services::DEFAULT_BOT)
+                .or_else(|| bots.bots.iter().next())
+                .ok_or(ProfileError::NotFound)?,
+        };
         let user = record.account.user_id.clone();
         let matrix = self
             .matrix
             .as_deref()
             .ok_or_else(|| ProfileError::MatrixUnavailable("核心没有接入 Matrix".to_owned()))?;
-        Ok((matrix, user))
+        Ok((matrix, user, bot.clone()))
     }
 
     fn profile_name(&self, name: Option<String>) -> Result<Option<String>, ProfileError> {
@@ -186,10 +203,14 @@ impl PluginManager {
         Ok(Some(name.to_owned()))
     }
 
-    pub async fn bot_profile(&self, id: &PluginId) -> Result<Profile, ProfileError> {
-        let lock = self.profile_lock(id);
+    pub async fn bot_profile(
+        &self,
+        id: &PluginId,
+        bot: Option<&str>,
+    ) -> Result<Profile, ProfileError> {
+        let (matrix, user, bot) = self.profile_bot(id, bot)?;
+        let lock = self.profile_lock(id, &bot);
         let _editing = lock.lock().await;
-        let (matrix, user) = self.profile_bot(id)?;
         Ok(matrix.as_bot(&user, read).await?)
     }
 
@@ -198,9 +219,9 @@ impl PluginManager {
         id: &PluginId,
         update: BotProfileUpdate,
     ) -> Result<BotProfileUpdated, ProfileError> {
-        let lock = self.profile_lock(id);
+        let (matrix, user, bot) = self.profile_bot(id, None)?;
+        let lock = self.profile_lock(id, &bot);
         let _editing = lock.lock().await;
-        let (matrix, user) = self.profile_bot(id)?;
         ensure_change(
             update.name.is_some(),
             update.avatar.is_some(),
@@ -229,11 +250,12 @@ impl PluginManager {
     pub async fn set_bot_profile(
         &self,
         id: &PluginId,
+        bot: Option<&str>,
         update: LocalUpdate,
     ) -> Result<Profile, ProfileError> {
-        let lock = self.profile_lock(id);
+        let (matrix, user, bot) = self.profile_bot(id, bot)?;
+        let lock = self.profile_lock(id, &bot);
         let mut editing = lock.lock().await;
-        let (matrix, user) = self.profile_bot(id)?;
         ensure_change(
             update.name.is_some(),
             update.avatar.is_some(),

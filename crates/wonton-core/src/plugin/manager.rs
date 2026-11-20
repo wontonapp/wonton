@@ -111,6 +111,8 @@ pub struct PluginManager {
     pub(crate) clients: Arc<crate::clients::state::State>,
     /// 随核心附带的插件（预装目录里的插件包），见 [`super::preinstall`]。
     pub(super) bundled: RwLock<BTreeSet<PluginId>>,
+    /// 默认 Bot 插件，见 [`Self::default_bot_plugin`]。
+    pub(super) default_bot_plugin: RwLock<Option<PluginId>>,
     /// 局域网端口开在哪里，见 [`super::lan`]。
     pub(super) lan: Lan,
     /// 出网插件走哪个代理，见 [`super::egress`]。
@@ -209,6 +211,7 @@ impl PluginManager {
             clients,
             activity: Arc::default(),
             bundled: RwLock::new(BTreeSet::new()),
+            default_bot_plugin: RwLock::new(None),
             lan,
             egress: Egress::default(),
             host_name: tokio::sync::OnceCell::new(),

@@ -9,15 +9,18 @@ mod ask_agent;
 mod bot_profile;
 pub mod bot_profile_support;
 mod card_plugin_refresh;
+mod choices;
 mod concurrent_timelines;
 mod confirmation;
 mod device_name;
 mod draft;
 mod file_link;
+mod jumps;
 mod key_handoff;
 mod key_upload_order;
 mod layout;
 mod link_preview;
+mod mentions;
 mod message_actions;
 mod notification_actions;
 mod onboarding;
@@ -32,6 +35,7 @@ mod relogin;
 mod replies;
 mod resume;
 mod send;
+mod sender_avatar;
 mod server_switch;
 mod side_chat;
 mod stale_join;
@@ -352,7 +356,10 @@ async fn accept_the_bots_invite(home: &Home, phone: &Phone, bot: &MatrixSession)
 /// 收发文字和图片：时间线按增量更新，图片凭句柄取到解密后的原图。
 async fn chat_with_the_bot(phone: &Phone, bot: &MatrixSession, room_id: &OwnedRoomId) {
     let bot_room = bot.open_room(room_id).await.expect("Bot 打开私聊");
-    bot_room.send_text("你好，主人").await.expect("Bot 发文字");
+    bot_room
+        .send_text("你好，主人", &[])
+        .await
+        .expect("Bot 发文字");
     let mut timeline = Timeline::open(phone, room_id.as_str()).await;
     timeline
         .until(
@@ -370,6 +377,7 @@ async fn chat_with_the_bot(phone: &Phone, bot: &MatrixSession, room_id: &OwnedRo
                 },
                 body: "  你好，Hermes  ".to_owned(),
                 reply_to: None,
+                mentions: vec![],
             },
         })
         .unwrap();

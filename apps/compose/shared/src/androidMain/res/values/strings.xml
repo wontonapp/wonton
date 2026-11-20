@@ -125,4 +125,16 @@
     <string name="owner_secrets_problem_not_ready">This key isn\'t ready yet. Try again after the app finishes starting.</string>
     <string name="owner_secrets_problem_protocol">Wonton couldn\'t read the server\'s response. Update Wonton or your home server and try again.</string>
     <string name="owner_secrets_problem_other">Couldn\'t load the keys. Try again.</string>
+    <!-- Attachment sheet: bottom tab that shows the phone's album as a photo grid. -->
+    <string name="attach_album">Album</string>
+    <!-- Attachment sheet: button that puts the picked photos into the message. Argument: how many. -->
+    <string name="attach_add">Add %1$d</string>
+    <!-- Attachment sheet: the album has no photos. -->
+    <string name="attach_album_empty">No photos in your album</string>
+    <!-- Attachment sheet: the album permission was denied. -->
+    <string name="attach_permission_denied">Can\'t see the photos in your album.</string>
+    <!-- Attachment sheet: button under the denied note that opens this app\'s settings page. -->
+    <string name="attach_open_settings">Open Settings</string>
+    <!-- Screen-reader label of the check on a picked album photo. -->
+    <string name="attach_selected">Picked</string>
 </resources>

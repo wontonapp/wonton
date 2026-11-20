@@ -114,3 +114,5 @@ chat-window-ended =
                *[other] 放行時段已結束，放行了 { $count } 次。
             }
     }
+
+chat-choice-send-failed-rejected = 沒發出去：家裡伺服器拒收。（{ $error }）

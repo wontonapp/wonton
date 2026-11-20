@@ -549,7 +549,6 @@ mod tests {
             "format": 1,
             "plugins": [],
             "onboarding": {
-                "agents": ["com.example.agent"],
                 "needs": [{
                     "id": "photos",
                     "title": {"zh": "备份照片", "en": "Back up photos"},
@@ -561,7 +560,6 @@ mod tests {
 
         let index = Index::parse(json.as_bytes(), &Languages::default()).unwrap();
         let onboarding = index.onboarding.unwrap();
-        assert_eq!(onboarding.agents, ["com.example.agent"]);
         assert_eq!(onboarding.needs[0].plugins, ["app.example.photos"]);
         assert_eq!(index.onboarding_problem, None);
     }
@@ -595,7 +593,7 @@ mod tests {
         let json = r#"{
             "format": 1,
             "plugins": [],
-            "onboarding": {"agents": "not a list"}
+            "onboarding": {"needs": "not a list"}
         }"#;
 
         let index = Index::parse(json.as_bytes(), &Languages::default()).unwrap();
@@ -608,7 +606,7 @@ mod tests {
         let json = br#"{
             "format": 1,
             "plugins": [],
-            "onboarding": {"agents": [], "prompts": []}
+            "onboarding": {"prompts": []}
         }"#;
 
         let index = Index::parse(json, &Languages::default()).unwrap();

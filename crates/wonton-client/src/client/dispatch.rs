@@ -17,6 +17,20 @@ use crate::l10n::{CATALOG, language};
 
 #[uniffi::export]
 impl ClientCore {
+    /// 假数据入口下照走真逻辑的时间线操作：拿掉附件只动本机的附件区，和真核心一样。
+    fn dispatch_ui_fake_composer(&self, action: &TimelineAction) -> Result<(), CoreError> {
+        match action {
+            TimelineAction::RemoveAttachment { .. } => {
+                self.composer_action(&self.scope(), action.clone())
+            }
+            // 假数据入口下发送不落到真核心，附件失败时的拒绝在这里照样生效。
+            TimelineAction::SendComposer { target, .. } => {
+                self.scope().composer.reject_if_failed(&target.room_id)
+            }
+            _ => Ok(()),
+        }
+    }
+
     /// 处理一个操作。领域子枚举只在这里解包，运行时仍只有一个入口。
     pub fn dispatch(&self, action: Action) -> Result<(), CoreError> {
         #[cfg(feature = "ui-fake")]
@@ -24,13 +38,16 @@ impl ClientCore {
             return match action {
                 Action::Pages { action } => self.dispatch_ui_fake(action),
                 Action::Chat { action } => {
+                    self.ui_fake_timelines.chat_action(&action);
                     self.dispatch_ui_fake_chat(action);
                     Ok(())
                 }
                 Action::Plugins { action } => self.dispatch_ui_fake_plugins(action),
+                // 假时间线（跳转、发字）和停止钮的假运行段都要看到同一个操作。
                 Action::Timeline { action } => {
-                    self.dispatch_ui_fake_timeline(action);
-                    Ok(())
+                    self.ui_fake_timelines.timeline_action(action.clone());
+                    self.dispatch_ui_fake_timeline(action.clone());
+                    self.dispatch_ui_fake_composer(&action)
                 }
                 Action::Agent { action } => {
                     self.dispatch_ui_fake_agent(action);
@@ -138,7 +155,7 @@ impl ClientCore {
                 }
                 let onboarding = scope.onboarding.view();
                 let bot = match (
-                    onboarding.primary_bot_user_id,
+                    onboarding.default_bot_user_id,
                     onboarding.default_bot_visibility,
                 ) {
                     (Some(bot), Some(DefaultBotVisibility::Visible)) => bot,

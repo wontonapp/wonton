@@ -93,3 +93,6 @@ chat-avatar-cache-hash-collision = 頭像快取的雜湊值衝突
 chat-draft-clear-failed = 清掉已發出的草稿失敗：{ $error }
 
 chat-draft-read-interrupted = 草稿的讀取被打斷了
+
+chat-choice-send-failed = 沒發出去：連不上家裡伺服器。（{ $error }）
+chat-op-agent-answer-failed = 回答選項失敗：{ $error }

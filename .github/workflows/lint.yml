@@ -35,7 +35,11 @@ jobs:
           tar -xzf gitleaks.tar.gz gitleaks
       - name: 扫描这次带进来的提交
         # HEAD^1..HEAD 恰好是这次带进来的提交的合并差异；main 每次 squash 合并推一个提交。
-        run: ./gitleaks git --log-opts="HEAD^1..HEAD" --config .gitleaks.toml --redact --no-banner
+        # 失败时把命中打进日志：只报「leaks found: 1」时本地复现不出来，看不出是哪个文件/规则。
+        run: |
+          ./gitleaks git --log-opts="HEAD^1..HEAD" --config .gitleaks.toml --redact --no-banner \
+            --report-format json --report-path "$RUNNER_TEMP/leaks.json" || {
+            cat "$RUNNER_TEMP/leaks.json"; exit 1; }
       - name: 行为测试：扫得出也挡得住
         run: PATH="$PWD:$PATH" bash scripts/test-gitleaks.sh
       # 改了协议的 PR，main 在分支切出之后又改过协议就挡下：两边各自按旧协议写，合起来才坏，各自的 CI 看不出来。

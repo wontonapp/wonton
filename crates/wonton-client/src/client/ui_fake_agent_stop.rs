@@ -4,8 +4,8 @@
 use std::time::Duration;
 
 use wonton_protocol::{
-    AgentAction, AgentChainBot, AgentChainRow, AgentChainStatus, BotRef, ChainSpend,
-    ConfirmationOrigin, CoreError, TimelineAction,
+    AgentAction, AgentChainBot, AgentChainRow, AgentChainStatus, BotRef, ConfirmationOrigin,
+    CoreError, TimelineAction,
 };
 
 use super::ClientCore;
@@ -63,7 +63,6 @@ impl ClientCore {
                     layer: 1,
                 }],
                 rounds: 1,
-                spend: ChainSpend::Unknown,
                 status: AgentChainStatus::Running,
                 can_stop: true,
                 live: true,

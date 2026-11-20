@@ -15,6 +15,7 @@ use wonton_protocol::{
     TimelineViewport,
 };
 
+use super::jump::Live;
 use super::{ChatLink, TimelineKey, invalid, lock, rich};
 use crate::l10n::{CATALOG, language};
 
@@ -168,7 +169,8 @@ fn is_own_message(item: &TimelineItem) -> bool {
 }
 
 /// 时间线订阅发增量的出口：发给壳之前先应用到菜单上，再带上房间面板的当前视图（ADR-0052）、加密入口、
-/// 显示在这个房间的确认卡片（ADR-0016），以及顶栏的 widget 入口和有没有人在通话（ADR-0096）。
+/// 显示在这个房间的确认卡片（ADR-0016），以及顶栏的 widget 入口和有没有人在通话（ADR-0096）、正在输入和
+/// 跳转的进展（ADR-0109）。
 pub(super) struct Outbox {
     sender: mpsc::UnboundedSender<TimelineUpdate>,
     menus: Arc<Mutex<Menus>>,
@@ -178,9 +180,14 @@ pub(super) struct Outbox {
     confirmations: watch::Receiver<Arc<Vec<ConfirmationView>>>,
     /// 旁聊订阅的头部（ADR-0093 §5）：每批都带上现在的；主对话是空的。
     side_chat: Mutex<Option<wonton_protocol::SideChatCard>>,
+    /// 壳那边的列表，给每条消息填组内位置（ADR-0109）。
+    runs: Mutex<super::Runs>,
+    /// 正在输入、命令表和跳转的栈（ADR-0109 §4、§7）。
+    pub(super) live: Arc<Live>,
 }
 
 impl Outbox {
+    #[allow(clippy::too_many_arguments)] // 一批要用的部件就是这些，再包一层结构体只是把参数搬个家。
     pub(super) fn new(
         sender: mpsc::UnboundedSender<TimelineUpdate>,
         menus: Arc<Mutex<Menus>>,
@@ -188,6 +195,7 @@ impl Outbox {
         chat: watch::Receiver<ChatViewModel>,
         room_id: OwnedRoomId,
         confirmations: watch::Receiver<Arc<Vec<ConfirmationView>>>,
+        live: Arc<Live>,
     ) -> Self {
         Self {
             sender,
@@ -197,6 +205,8 @@ impl Outbox {
             room_id,
             confirmations,
             side_chat: Mutex::new(None),
+            runs: Mutex::default(),
+            live,
         }
     }
 
@@ -241,14 +251,15 @@ impl Outbox {
     pub(super) fn send(
         &self,
         entries: &Vector<TimelineEntry>,
-        diffs: Vec<TimelineDiff>,
+        mut diffs: Vec<TimelineDiff>,
         back_pagination: BackPagination,
         viewport: TimelineViewport,
         anchor: Option<String>,
         call_active: bool,
         room_bots: Option<Vec<String>>,
     ) -> Result<(), ()> {
-        let scroll_to_bottom = lock(&self.menus).apply(&diffs);
+        lock(&self.runs).apply(&mut diffs);
+        let scroll_to_bottom = lock(&self.menus).apply(&diffs) || self.live.jumps.take_bottom();
         let room_view = self
             .room_view
             .borrow()
@@ -264,6 +275,7 @@ impl Outbox {
         };
         let key_notice = self.key_notice(entries);
         let confirmations = self.confirmations();
+        let (commands, omitted) = self.live.tables.values();
         self.sender
             .send(TimelineUpdate {
                 diffs,
@@ -279,12 +291,12 @@ impl Outbox {
                 widgets,
                 call_active,
                 room_bots,
-                typing: Vec::new(),
-                commands: Vec::new(),
-                commands_omitted: 0,
-                focus: None,
-                jump: wonton_protocol::JumpState::Idle,
-                back_to: None,
+                typing: self.live.typing.names(),
+                commands,
+                commands_omitted: omitted,
+                focus: self.live.jumps.take_focus(),
+                jump: self.live.jumps.state(),
+                back_to: self.live.jumps.back(),
             })
             .map_err(|_| ())
     }
@@ -470,6 +482,7 @@ mod tests {
             chat,
             OwnedRoomId::try_from("!room:example.com").unwrap(),
             confirmations,
+            crate::chat::jump::seeded(),
         );
         let item = |id: &str, own: bool| TimelineItem {
             id: id.to_owned(),

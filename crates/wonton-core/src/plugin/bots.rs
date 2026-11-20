@@ -374,7 +374,7 @@ impl PluginManager {
             return Err(error.into());
         }
         self.changed();
-        self.initialize_default_avatars(package, &provisioned)
+        self.initialize_default_avatars(package, bot, &provisioned)
             .await?;
         Ok(provisioned)
     }

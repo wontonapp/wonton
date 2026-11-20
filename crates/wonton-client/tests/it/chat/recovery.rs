@@ -79,7 +79,7 @@ async fn a_second_device_keeps_the_existing_backup_and_recovers_with_the_first_d
     bot.open_room(&room_id)
         .await
         .expect("Bot 打开私聊")
-        .send_text(HISTORY)
+        .send_text(HISTORY, &[])
         .await
         .expect("Bot 发消息");
     drop(first);

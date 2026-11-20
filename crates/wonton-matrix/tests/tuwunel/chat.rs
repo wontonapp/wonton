@@ -25,13 +25,13 @@ async fn room_list_shows_names_previews_and_unread_counts() {
 
     let room_id = direct_chat(&alice, &bob, false).await;
     let alice_room = alice.open_room(&room_id).await.expect("Alice 打开私聊");
-    alice_room.send_text("第一条").await.expect("发第一条");
+    alice_room.send_text("第一条", &[]).await.expect("发第一条");
     // 列表的同步每个房间只带最新一条，未读数是 SDK 按看到的事件算的：两条落在同一次同步里只算一条（CI 上实测）。
     wait_for_room(&bob, "Bob 看到第一条", &room_id, |row| {
         matches!(&row.latest, Some(latest) if latest.body == MessageBody::Text("第一条".into()))
     })
     .await;
-    alice_room.send_text("第二条").await.expect("发第二条");
+    alice_room.send_text("第二条", &[]).await.expect("发第二条");
 
     // Bob 的列表里，私聊以对方的名字出现，带着最新一条的预览和两条未读。加入邀请时把房间记进
     // `m.direct`，经同步回来后才标为私聊。
@@ -85,7 +85,7 @@ async fn room_list_shows_names_previews_and_unread_counts() {
 
     // 已读位置也跟着移到了第二条：Alice 再发一条，Bob 开着的时间线在它前面显示已读位置；Bob 再标为已读，已读
     // 位置移到最后，不再显示。
-    alice_room.send_text("第三条").await.expect("发第三条");
+    alice_room.send_text("第三条", &[]).await.expect("发第三条");
     eventually(
         "Bob 看到第三条前面的已读位置",
         entry_snapshots(&bob_room).await,
@@ -125,7 +125,7 @@ async fn timeline_increments_rebuild_the_timeline_and_paginate_to_the_start() {
     const COUNT: usize = 60;
     for i in 0..COUNT {
         alice_room
-            .send_text(&format!("消息 {i}"))
+            .send_text(&format!("消息 {i}"), &[])
             .await
             .expect("发消息");
     }
@@ -209,7 +209,10 @@ async fn synced_rooms_open_from_the_local_store_when_the_server_hangs() {
     bob.start_sync().await.expect("Bob 开始同步");
     let room_id = direct_chat(&alice, &bob, false).await;
     let alice_room = alice.open_room(&room_id).await.expect("Alice 打开私聊");
-    alice_room.send_text("断网也能看到").await.expect("发消息");
+    alice_room
+        .send_text("断网也能看到", &[])
+        .await
+        .expect("发消息");
     // Bob 只经房间列表同步到了这条消息，还没打开过这个房间，成员也还没拉过。
     wait_for_room(&bob, "Bob 的列表里有这条消息", &room_id, |row| {
         matches!(&row.latest, Some(latest) if latest.body == MessageBody::Text("断网也能看到".into()))
@@ -325,7 +328,7 @@ async fn joining_before_the_invite_syncs_returns_after_joined() {
     bob.join_room(&room_id).await.expect("加入私聊");
     let room = bob.open_room(&room_id).await.expect("加入返回后立即打开");
     syncing.await.expect("同步任务").expect("Bob 开始同步");
-    room.send_text("进来了")
+    room.send_text("进来了", &[])
         .await
         .expect("加入返回后立即发消息");
 }

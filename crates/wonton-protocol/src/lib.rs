@@ -83,7 +83,7 @@ pub use agent_chain::{
     AGENT_OUTBOX_PATH, AGENT_OUTBOX_WAIT_SECS, AGENT_SETTINGS_PATH, AgentAction,
     AgentActionFailure, AgentChainBot, AgentChainRow, AgentChainStatus, AgentChainsViewModel,
     AgentSettingsViewModel, BOT_TOKEN_HEADER, ChainError, ChainLimitKind, ChainLimits,
-    ChainRefusal, ChainSpend, ChainTurnGrant, ChainTurnReport, SESSION_HEADER, WONTON_BOT_HEADER,
+    ChainRefusal, ChainTurnGrant, ChainTurnReport, SESSION_HEADER, WONTON_BOT_HEADER,
     WONTON_ON_BEHALF_OF_HEADER, agent_chain_stop_path,
 };
 pub use agent_outbox::{
@@ -148,8 +148,8 @@ pub use clients::{
     clients_status_path, dns_providers_path,
 };
 pub use composer::{
-    AttachmentFailure, AttachmentKind, AttachmentState, ComposerAttachment, ComposerViewModel,
-    MessageGroup, OutgoingMessage,
+    AttachmentFailure, AttachmentKind, AttachmentState, ComposerAttachment, ComposerMention,
+    ComposerViewModel, MessageGroup, OutgoingMessage,
 };
 pub use confirmation::{
     Answer, CARD_FIELD, CORE_LOCALPART, CardAudience, CardChoice, CardLine, ConfirmationAnswer,
@@ -219,13 +219,12 @@ pub use matrix_login::{
 pub use message_choice::{ChoiceSend, ChoicesState, MessageChoice, MessageChoices};
 pub use message_layout::{MessageRun, MessageStatus};
 pub use onboarding::{
-    AgentLogin, MODEL_SETTINGS_PATH, ModelSettings, ModelSettingsFailure, ModelSettingsPage,
-    ModelSettingsProblem, ONBOARDING_PATH, Onboarding, OnboardingAgent, OnboardingAgentRow,
-    OnboardingCommit, OnboardingItemProblem, OnboardingItemState, OnboardingModelChoice,
-    OnboardingModelStep, OnboardingNeed, OnboardingNeedRow, OnboardingProfileStep,
-    OnboardingReview, OnboardingReviewDetail, OnboardingReviewItem, OnboardingReviewKind,
-    OnboardingStep, OnboardingTip, OnboardingTips, OnboardingTooOld, OnboardingUpdate,
-    OnboardingViewModel, ReplacedAgent, StepNav,
+    DefaultBotPlugin, MODEL_SETTINGS_PATH, ModelSettings, ModelSettingsFailure, ModelSettingsPage,
+    ModelSettingsProblem, ONBOARDING_PATH, Onboarding, OnboardingCommit, OnboardingItemProblem,
+    OnboardingItemState, OnboardingModelChoice, OnboardingModelStep, OnboardingNeed,
+    OnboardingNeedRow, OnboardingProfileStep, OnboardingReview, OnboardingReviewDetail,
+    OnboardingReviewItem, OnboardingReviewKind, OnboardingStep, OnboardingTip, OnboardingTips,
+    OnboardingTooOld, OnboardingUpdate, OnboardingViewModel, StepNav,
 };
 pub use owner::{
     MAX_DISPLAY_NAME_CHARS, OwnerProfile, OwnerProfileUpdate, ProfileProblem, check_display_name,

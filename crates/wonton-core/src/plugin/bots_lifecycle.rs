@@ -331,7 +331,8 @@ impl PluginManager {
                 ));
             }
             // 默认头像只补不覆盖（ADR-0044）：升级换包后补上没设置过的。
-            self.fill_default_avatars(package, &matrix.user_id).await?;
+            self.fill_default_avatars(package, super::bot_services::DEFAULT_BOT, &matrix.user_id)
+                .await?;
             ctx.matrix = Some(matrix);
             ctx.mcp_url = runtime.mcp_url.clone();
             ctx.capabilities.extend(runtime.dependencies.clone());

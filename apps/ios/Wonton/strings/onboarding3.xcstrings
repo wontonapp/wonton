@@ -32,36 +32,6 @@
         }
       }
     },
-    "onboarding.model.form.apiKey": {
-      "comment": "Label of the password field for the provider's API key.",
-      "extractionState": "manual",
-      "localizations": {
-        "en": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "API Key"
-          }
-        },
-        "zh-Hans": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "API key"
-          }
-        },
-        "zh-Hant": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "API 金鑰"
-          }
-        },
-        "ja": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "APIキー"
-          }
-        }
-      }
-    },
     "onboarding.problem.model.providerUnreachable.next": {
       "comment": "Line under the problem title: check the provider before retrying.",
       "extractionState": "manual",
@@ -178,36 +148,6 @@
           "stringUnit": {
             "state": "translated",
             "value": "おすすめを利用できません"
-          }
-        }
-      }
-    },
-    "onboarding.replacedAgent.title": {
-      "comment": "Dialog title when a new agent replaces an installed one. The argument is the old agent's name.",
-      "extractionState": "manual",
-      "localizations": {
-        "en": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "Uninstall “%@”?"
-          }
-        },
-        "zh-Hans": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "要卸掉“%@”吗？"
-          }
-        },
-        "zh-Hant": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "要解除安裝「%@」嗎？"
-          }
-        },
-        "ja": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "「%@」をアンインストールしますか？"
           }
         }
       }

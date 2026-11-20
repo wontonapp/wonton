@@ -569,7 +569,7 @@ async fn follow_plugins(
     }
 }
 
-fn handle(url: &str) -> Option<MediaHandle> {
+pub(super) fn handle(url: &str) -> Option<MediaHandle> {
     match wonton_matrix::media_token(url) {
         Ok(token) => Some(MediaHandle { token }),
         Err(error) => {

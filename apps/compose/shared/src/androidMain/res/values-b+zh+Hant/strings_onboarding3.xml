@@ -1,15 +1,7 @@
 <?xml version="1.0" encoding="utf-8"?>
 <resources>
-    <!-- Problem title in setup when no agent can be chosen. -->
-    <string name="onboarding_agent_empty">沒有可選的助手，可以重新整理再試。</string>
-    <!-- Notice when tapping "Get API key" found no browser to open the link. -->
-    <string name="onboarding_model_no_browser">沒有瀏覽器能開啟這個連結，請安裝或啟用瀏覽器後再試。</string>
     <!-- Button that opens the model gateway's settings page. -->
     <string name="onboarding_model_open_settings">開啟模型設定</string>
-    <!-- Button that checks the typed API key against the model provider. -->
-    <string name="onboarding_model_test">測試</string>
-    <!-- Row title: sign in to a model provider with an account. Argument: the login's name (like "ChatGPT account"). -->
-    <string name="onboarding_model_use_login">用%1$s</string>
     <!-- Problem title in setup: the provider rejected the API key. -->
     <string name="onboarding_problem_model_key_rejected">供應商拒絕了這個 API 金鑰，請修改後重新測試。</string>
     <!-- Problem title in setup: the provider's address can't be reached. -->

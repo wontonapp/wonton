@@ -35,8 +35,6 @@
     <string name="timeline_start">チャットの最初です</string>
     <string name="timeline_edited">編集済み</string>
     <string name="timeline_sending">保存済み、未配信</string>
-    <string name="timeline_read">既読</string>
-    <string name="timeline_delivered">配信済み</string>
     <string name="timeline_send_failed_retrying">送信できませんでした。自動で再試行します</string>
     <string name="timeline_send_failed">送信できませんでした：%1$s</string>
     <string name="timeline_resend">再送信</string>
@@ -152,4 +150,12 @@
     <string name="room_call_active">通話中</string>
     <!-- One-line hint at the top of a group room that has none of your AIs in it; mentioning an AI there won't get an answer. No arguments. -->
     <string name="room_no_ai">このグループにはまだ AI がいません</string>
+    <!-- ダイレクトチャットで相手が入力中のときの状態行。引数なし。 -->
+    <string name="timeline_typing">入力中…</string>
+    <!-- グループで 1 人が入力中のときの状態行。引数：名前。 -->
+    <string name="timeline_typing_group">%1$s さんが入力中…</string>
+    <!-- グループで複数人が入力中のときの状態行。引数：最初の名前とほかの人数。 -->
+    <string name="timeline_typing_more">%1$s さんとほか %2$d 人が入力中…</string>
+    <!-- ジャンプ先のメッセージが見つからないときの軽いヒント。引数なし。 -->
+    <string name="timeline_jump_unavailable">そのメッセージはもうありません</string>
 </resources>

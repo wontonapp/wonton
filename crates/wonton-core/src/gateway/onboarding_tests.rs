@@ -25,12 +25,8 @@ x-wonton:
   kind: agent
   title: {zh: 示例 Agent, en: Example Agent}
   description: {zh: 示例 Agent, en: Example agent}
-  agent:
-    protocol: acp
-    login:
-      - id: chatgpt
-        title: {zh: ChatGPT 账号, en: ChatGPT account}
-  permissions: [network.egress]
+  agent: {protocol: matrix}
+  permissions: [matrix.bot]
 "#;
 
 const PHOTOS_COMPOSE: &str = r#"services:
@@ -55,13 +51,18 @@ x-wonton:
   kind: agent
   title: {zh: 另一个 Agent, en: Another Agent}
   description: {zh: 另一个 Agent, en: Another agent}
-  agent: {protocol: acp}
-  permissions: []
+  agent: {protocol: matrix}
+  permissions: [matrix.bot]
 "#;
 
 fn write_catalog(dir: &Path) -> PluginPackage {
     let agent =
         PluginPackage::parse(AGENT_COMPOSE, &Languages::from_header(Some("zh-Hans"))).unwrap();
+    let extra = PluginPackage::parse(
+        EXTRA_AGENT_COMPOSE,
+        &Languages::from_header(Some("zh-Hans")),
+    )
+    .unwrap();
     let photos =
         PluginPackage::parse(PHOTOS_COMPOSE, &Languages::from_header(Some("zh-Hans"))).unwrap();
     IndexEntry::of(&agent, "github:example/agent", &"a".repeat(40))
@@ -75,8 +76,9 @@ fn write_catalog(dir: &Path) -> PluginPackage {
 
     let path = dir.join("index.json");
     let mut index: Value = serde_json::from_slice(&fs::read(&path).unwrap()).unwrap();
+    // 商店删掉 `agents` 键之前它还在索引里：核心不读它，有也不影响。
     index["onboarding"] = json!({
-        "agents": ["com.example.agent"],
+        "agents": [extra.manifest.id.as_str()],
         "needs": [{
             "id": "photos",
             "title": {"zh": "备份照片", "en": "Back up photos"},
@@ -107,17 +109,12 @@ async fn onboarding_get_put_persists_and_validates_requests() {
         },
     )
     .await;
-    let extra = PluginPackage::parse(
-        EXTRA_AGENT_COMPOSE,
-        &Languages::from_header(Some("zh-Hans")),
-    )
-    .unwrap();
-    let agent_id = agent.manifest.id.clone();
     h.manager
         .register_for_test(agent.manifest.clone(), PluginStatus::Running, None);
     h.manager
-        .register_for_test(extra.manifest.clone(), PluginStatus::Running, None);
-    h.manager.bot_for_test(&agent_id, "@agent:example.com");
+        .set_default_bot_plugin(Some(agent.manifest.id.clone()));
+    h.manager
+        .bot_for_test(&agent.manifest.id, "@agent:example.com");
 
     assert_eq!(
         h.get(CORE, ONBOARDING_PATH, &[]).await.status,
@@ -126,15 +123,12 @@ async fn onboarding_get_put_persists_and_validates_requests() {
     let initial = h.get(CORE, ONBOARDING_PATH, &auth()).await;
     assert_eq!(initial.status, StatusCode::OK, "{}", initial.text());
     let initial = initial.json();
-    assert_eq!(initial["agents"][0]["id"], "com.example.agent");
-    assert_eq!(initial["agents"][1]["id"], "com.example.extra");
-    assert_eq!(initial["agents"].as_array().unwrap().len(), 2);
-    assert_eq!(initial["agents"][0]["logins"][0]["id"], "chatgpt");
+    assert_eq!(initial["step"], "profile");
+    assert_eq!(initial["default_bot_plugin"]["id"], "com.example.agent");
     assert!(
-        initial["agents"][0]["bot_user_id"].is_null(),
+        initial["default_bot_plugin"]["bot_user_id"].is_null(),
         "没接 Matrix 时调用者身份不可核实，Bot 身份不投影"
     );
-    assert_eq!(initial["agents"][0]["status"]["state"], "running");
     assert_eq!(
         initial["needs"][0]["plugins"][0]["id"],
         "app.example.photos"
@@ -152,7 +146,7 @@ async fn onboarding_get_put_persists_and_validates_requests() {
             CORE,
             ONBOARDING_PATH,
             &cross_site,
-            Body::from(r#"{"step":"apps"}"#),
+            Body::from(r#"{"step":"finished"}"#),
         )
         .await;
     assert_eq!(rejected.status, StatusCode::FORBIDDEN);
@@ -166,23 +160,15 @@ async fn onboarding_get_put_persists_and_validates_requests() {
             CORE,
             ONBOARDING_PATH,
             &headers,
-            Body::from(
-                json!({
-                    "step": "finished",
-                    "primary_agent": "com.example.agent",
-                    "replaced_agent_asked": true
-                })
-                .to_string(),
-            ),
+            Body::from(r#"{"step":"finished"}"#),
         )
         .await;
     assert_eq!(updated.status, StatusCode::OK, "{}", updated.text());
     let updated = updated.json();
     assert_eq!(updated["step"], "finished");
-    assert_eq!(updated["primary_agent"], "com.example.agent");
-    assert_eq!(updated["replaced_agent_asked"], true);
+    assert_eq!(updated["default_bot_plugin"]["id"], "com.example.agent");
 
-    let partial = h
+    let restarted = h
         .send(
             Method::PUT,
             CORE,
@@ -192,11 +178,41 @@ async fn onboarding_get_put_persists_and_validates_requests() {
         )
         .await
         .json();
-    assert_eq!(partial["step"], "profile");
-    assert_eq!(partial["primary_agent"], "com.example.agent");
-    assert_eq!(partial["replaced_agent_asked"], true);
+    assert_eq!(restarted["step"], "profile");
 
     assert_invalid_updates(&h, &headers).await;
+}
+
+#[tokio::test]
+async fn the_default_bot_plugin_comes_from_the_default_install_not_the_catalog() {
+    let index = tempfile::tempdir().unwrap();
+    let agent = write_catalog(index.path());
+    let h = Harness::start_with_store(
+        None,
+        StoreConfig {
+            index_dir: Some(index.path().to_owned()),
+            community: false,
+        },
+    )
+    .await;
+    let extra = PluginPackage::parse(
+        EXTRA_AGENT_COMPOSE,
+        &Languages::from_header(Some("zh-Hans")),
+    )
+    .unwrap();
+    // 商店推荐的、已经装着的另一个 Agent 都不算默认：默认只看默认安装。
+    h.manager
+        .register_for_test(extra.manifest.clone(), PluginStatus::Running, None);
+    let view = h.get(CORE, ONBOARDING_PATH, &auth()).await.json();
+    assert!(view["default_bot_plugin"].is_null(), "{view}");
+    assert!(view.get("agents").is_none(), "{view}");
+
+    // 主人卸掉了默认安装的 Agent：仍是它，如实显示它的 Bot 不在。
+    h.manager
+        .set_default_bot_plugin(Some(agent.manifest.id.clone()));
+    let view = h.get(CORE, ONBOARDING_PATH, &auth()).await.json();
+    assert_eq!(view["default_bot_plugin"]["id"], "com.example.agent");
+    assert_eq!(view["default_bot_plugin"]["visibility"], "absent");
 }
 
 #[tokio::test]
@@ -215,6 +231,8 @@ async fn onboarding_hides_other_peoples_private_bot_from_a_family_admin() {
     let (app, _matrix_state) = app_with_contact_facts(&h).await;
     h.manager
         .register_for_test(agent.manifest.clone(), PluginStatus::Running, None);
+    h.manager
+        .set_default_bot_plugin(Some(agent.manifest.id.clone()));
     h.manager.bot_for_test(&agent.manifest.id, OWNER_BOT);
     h.members
         .invite(MemberRecord {
@@ -248,7 +266,7 @@ async fn onboarding_hides_other_peoples_private_bot_from_a_family_admin() {
             assert_eq!(
                 reply
                     .json()
-                    .pointer("/agents/0/bot_user_id")
+                    .pointer("/default_bot_plugin/bot_user_id")
                     .and_then(Value::as_str),
                 allowed.then_some(OWNER_BOT),
             );
@@ -260,12 +278,7 @@ async fn onboarding_hides_other_peoples_private_bot_from_a_family_admin() {
 }
 
 async fn assert_invalid_updates(h: &Harness, headers: &[(&str, &str); 2]) {
-    for body in [
-        r#"{"step":"other"}"#,
-        r#"{"step":"apps"}"#,
-        r#"{"primary_agent":"com.example.missing"}"#,
-        r#"not-json"#,
-    ] {
+    for body in [r#"{"step":"other"}"#, r#"{"step":"apps"}"#, r#"not-json"#] {
         let reply = h
             .send(
                 Method::PUT,
@@ -299,6 +312,8 @@ async fn onboarding_keeps_state_when_the_catalog_becomes_unavailable() {
     .await;
     h.manager
         .register_for_test(agent.manifest.clone(), PluginStatus::Running, None);
+    h.manager
+        .set_default_bot_plugin(Some(agent.manifest.id.clone()));
     let headers = [
         ("authorization", "Bearer test-owner-token"),
         ("content-type", "application/json"),
@@ -309,7 +324,7 @@ async fn onboarding_keeps_state_when_the_catalog_becomes_unavailable() {
             CORE,
             ONBOARDING_PATH,
             &headers,
-            Body::from(r#"{"step":"finished","primary_agent":"com.example.agent"}"#),
+            Body::from(r#"{"step":"finished"}"#),
         )
         .await;
     assert_eq!(update.status, StatusCode::OK, "{}", update.text());
@@ -325,7 +340,7 @@ async fn onboarding_keeps_state_when_the_catalog_becomes_unavailable() {
     assert_eq!(response.status, StatusCode::OK, "{}", response.text());
     let view = response.json();
     assert_eq!(view["step"], "finished");
-    assert_eq!(view["primary_agent"], "com.example.agent");
+    assert_eq!(view["default_bot_plugin"]["id"], "com.example.agent");
     assert_eq!(view["catalog_problem"]["reason"], "upstream");
     assert_eq!(view["needs"], json!([]));
     assert_eq!(view["prompts"], json!([]));

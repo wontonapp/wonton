@@ -46,7 +46,7 @@ impl Phone {
             home: watch::Sender::new(home),
             chat: watch::Sender::new(chat),
             onboarding: watch::Sender::new(OnboardingViewModel {
-                primary_bot_user_id: Some(AGENT.into()),
+                default_bot_user_id: Some(AGENT.into()),
                 ..OnboardingViewModel::default()
             }),
             plugins: watch::Sender::new(PluginsViewModel::default()),

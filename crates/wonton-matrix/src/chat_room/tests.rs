@@ -27,6 +27,10 @@ async fn cached_items() -> (Client, Vector<Arc<TimelineItem>>) {
                 "type": "m.room.member", "state_key": "@owner:example.org",
                 "event_id": "$owner", "sender": "@owner:example.org", "origin_server_ts": 2,
                 "content": {"membership": "join"}
+            }, {
+                "type": "m.room.member", "state_key": BOT,
+                "event_id": "$bot", "sender": BOT, "origin_server_ts": 2,
+                "content": {"membership": "join"}
             }]},
             "timeline": {"limited": false, "prev_batch": "zero", "events": [{
                 "type": "m.room.message", "event_id": "$message", "sender": BOT,
@@ -90,10 +94,11 @@ async fn synced_items(response: serde_json::Value) -> (Client, Vector<Arc<Timeli
 }
 
 fn named(name: &str) -> Arc<MemberNames> {
-    Arc::new(MemberNames::new(HashMap::from([(
-        BOT.parse().unwrap(),
-        name.to_owned(),
-    )])))
+    Arc::new(MemberNames::new(
+        HashMap::from([(BOT.parse().unwrap(), name.to_owned())]),
+        "@owner:example.org".parse().unwrap(),
+        true,
+    ))
 }
 
 fn only_message(items: &Vector<TimelineEntry>) -> &Message {
@@ -111,7 +116,8 @@ fn only_message(items: &Vector<TimelineEntry>) -> &Message {
 #[tokio::test]
 async fn a_late_member_name_updates_displayed_messages_without_another_sdk_event() {
     let (_client, items) = cached_items().await;
-    let (names, receiver) = watch::channel(Arc::new(MemberNames::default()));
+    // 成员资料先到齐（两人私聊）：消息按已有资料起，改名只换名字，其他字段不变。
+    let (names, receiver) = watch::channel(named("bot"));
     let (current, updates) = named_entries(items, stream::pending(), receiver);
     let mut current: Vector<_> = current.into_iter().collect();
     let original = only_message(&current).clone();
@@ -145,7 +151,8 @@ async fn a_late_member_name_updates_displayed_messages_without_another_sdk_event
 #[tokio::test]
 async fn member_updates_keep_the_indices_of_queued_timeline_changes() {
     let (_client, items) = cached_items().await;
-    let (names, receiver) = watch::channel(Arc::new(MemberNames::default()));
+    // 成员资料先到齐（两人私聊）：消息按已有资料起，改名只换名字，其他字段不变。
+    let (names, receiver) = watch::channel(named("bot"));
     let (sender, diffs) = tokio::sync::mpsc::unbounded_channel();
     let diffs = stream::unfold(diffs, |mut receiver| async move {
         receiver.recv().await.map(|batch| (batch, receiver))

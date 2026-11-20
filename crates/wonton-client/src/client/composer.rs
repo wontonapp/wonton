@@ -46,7 +46,9 @@ impl ClientCore {
                 target,
                 body,
                 reply_to,
-            } => composer.send(&composer_room(&target)?, &body, reply_to),
+                mentions,
+                ..
+            } => composer.send(&composer_room(&target)?, &body, reply_to, &mentions),
             TimelineAction::RemoveAttachment {
                 target,
                 attachment_id,
@@ -80,6 +82,16 @@ impl ClientCore {
         target: TimelineTarget,
     ) -> Result<Arc<ComposerSubscription>, CoreError> {
         let room_id = composer_room(&target)?;
+        #[cfg(feature = "ui-fake")]
+        if self.ui_fake.load(std::sync::atomic::Ordering::SeqCst) {
+            self.scope()
+                .composer
+                .set_mentions(&room_id, super::ui_fake::mention_candidates(&room_id));
+        } else {
+            crate::chat::mentions::watch(&self.scope(), &room_id);
+        }
+        #[cfg(not(feature = "ui-fake"))]
+        crate::chat::mentions::watch(&self.scope(), &room_id);
         let receiver = self.scope().composer.subscribe(&room_id);
         Ok(Arc::new(ComposerSubscription::new(receiver)))
     }
@@ -94,6 +106,10 @@ impl ClientCore {
         image: ImageUpload,
     ) -> Result<String, CoreError> {
         let room_id = composer_room(&target)?;
+        #[cfg(feature = "ui-fake")]
+        if self.ui_fake.load(std::sync::atomic::Ordering::SeqCst) {
+            return self.scope().composer.add_image_offline(&room_id, image);
+        }
         self.scope().composer.add_image(&room_id, image)
     }
 
@@ -107,6 +123,13 @@ impl ClientCore {
         mime_type: Option<String>,
     ) -> Result<String, CoreError> {
         let room_id = composer_room(&target)?;
+        #[cfg(feature = "ui-fake")]
+        if self.ui_fake.load(std::sync::atomic::Ordering::SeqCst) {
+            return self
+                .scope()
+                .composer
+                .add_file_offline(&room_id, source, name, mime_type);
+        }
         self.scope()
             .composer
             .add_file(&room_id, source, name, mime_type)
@@ -128,5 +151,18 @@ impl ClientCore {
                     .expect("reading a composer thumbnail does not panic")
             })
             .await
+    }
+
+    /// 假数据入口（`ui-fake`）用：把附件区里的一张标成上传失败，界面上马上看到失败的样子。
+    /// 不在假数据入口、或者附件区里没有这个附件时返回 `InvalidInput`，旁聊返回 `NotReady`。
+    pub fn fail_attachment_for_test(
+        &self,
+        target: TimelineTarget,
+        attachment_id: String,
+    ) -> Result<(), CoreError> {
+        let room_id = composer_room(&target)?;
+        self.scope()
+            .composer
+            .fail_for_test(&room_id, &attachment_id)
     }
 }

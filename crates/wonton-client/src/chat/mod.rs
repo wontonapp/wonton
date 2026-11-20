@@ -20,6 +20,7 @@ mod bot_records;
 mod bot_typing;
 mod bot_web;
 mod bots;
+mod choices;
 mod confirmation;
 mod connect;
 mod contacts;
@@ -29,9 +30,11 @@ mod follow_home;
 mod forward;
 mod handoff;
 mod installs;
+mod jump;
 mod layout;
 mod links;
 mod login;
+pub(crate) mod mentions;
 mod menu;
 mod onboarding;
 mod ops;
@@ -42,8 +45,11 @@ mod read_mark;
 pub(crate) mod recovery;
 mod reply;
 mod rich;
+mod room_commands;
 mod room_link;
 mod room_rows;
+mod room_typing;
+mod runs;
 mod send;
 mod session;
 mod side_chat;
@@ -56,6 +62,7 @@ mod util;
 mod verification;
 mod view;
 
+use std::collections::HashSet;
 use std::path::Path;
 use std::sync::atomic::AtomicBool;
 use std::sync::{Arc, Mutex};
@@ -80,6 +87,9 @@ pub use bots::bot_current_avatar;
 pub(crate) use confirmation::fetch_card;
 pub(crate) use links::{LinkTargets, matrix_target};
 pub(crate) use login::proxy_url;
+pub(crate) use runs::Runs;
+#[cfg(feature = "ui-fake")]
+pub(crate) use runs::apply_diff;
 pub use timeline::{TimelineSource, TimelineSubscription};
 pub(crate) use view::{failure, summary, unread_total};
 
@@ -132,7 +142,7 @@ pub(crate) struct ChatLink {
     /// 正在重置恢复。途中 SDK 会报“未设置”，不能覆盖“处理中”或触发自动开启。
     resetting_recovery: AtomicBool,
     /// 主人的默认 Agent 在 Matrix 上的用户 ID，聊天列表里它的房间排第一。
-    primary_bot: Arc<Mutex<Option<String>>>,
+    default_bot: Arc<Mutex<Option<String>>>,
     /// 房间列表的基准顺序，显示时把默认 Agent 的房间提到最前。
     room_order: Arc<onboarding::RoomOrder>,
     /// 发过消息的房间，引导提示用。
@@ -163,6 +173,8 @@ pub(crate) struct ChatLink {
     handoff_armed: AtomicBool,
     relogin: connect::Relogin,
     external: bool,
+    /// 已经有人在跟的房间，输入框的 @ 列表跟着成员和 Bot 补发，一个房间只跟一次。
+    mentions_watched: Mutex<HashSet<String>>,
 }
 
 /// 卡片变成成功时就地调用（插件 ID），在卡片的情况发出去之前：ViewModel 里卡片“已经不用回答”时，补不补取已经定了。
@@ -328,7 +340,7 @@ impl ChatLink {
             retry_confirmations: Arc::new(tokio::sync::Notify::new()),
             card_success,
             resetting_recovery: AtomicBool::default(),
-            primary_bot: Arc::new(Mutex::new(None)),
+            default_bot: Arc::new(Mutex::new(None)),
             room_order: Arc::new(onboarding::RoomOrder::new()),
             sent: watch::Sender::new(Vec::new()),
             display_name: Mutex::new(None),
@@ -347,6 +359,7 @@ impl ChatLink {
             handoff_armed: AtomicBool::new(false),
             relogin: connect::Relogin::default(),
             external,
+            mentions_watched: Mutex::new(HashSet::new()),
         });
         runtime.spawn(draft::write_drafts(Arc::downgrade(&chat), draft_receiver));
         if external {
@@ -447,7 +460,14 @@ impl ChatLink {
                 target,
                 body,
                 reply_to,
-            } => self.send_text(&TimelineKey::parse(&target)?, &body, reply_to.as_deref()),
+                mentions,
+                ..
+            } => self.send_text(
+                &TimelineKey::parse(&target)?,
+                &body,
+                reply_to.as_deref(),
+                &mentions,
+            ),
             TimelineAction::SendImage {
                 target,
                 image,
@@ -501,9 +521,20 @@ impl ChatLink {
                 self.dismiss_preview(TimelineKey::parse(&target)?);
                 Ok(())
             }
-            // 跳转由下一个 PR 接上（ADR-0109）。
-            TimelineAction::JumpToMessage { .. } | TimelineAction::JumpBack { .. } => {
-                Err(invalid(&l10n!(CATALOG, language(), "chat-invalid-action")))
+            // 跳转的两步只动订阅里的状态：找到就发焦点、找不到就往前翻页（ADR-0109 §4）。
+            TimelineAction::JumpToMessage {
+                target,
+                event_id,
+                from_item_id,
+            } => {
+                let subscription = self.subscription(&TimelineKey::parse(&target)?)?;
+                subscription.jump_to(&event_id, &from_item_id);
+                Ok(())
+            }
+            TimelineAction::JumpBack { target } => {
+                self.subscription(&TimelineKey::parse(&target)?)?
+                    .jump_back();
+                Ok(())
             }
             // 附件区的操作由 `ClientCore::dispatch` 交给附件区（ADR-0094），不会到这里。
             TimelineAction::SendComposer { .. }
@@ -596,6 +627,7 @@ impl ChatLink {
                 chat: self.view.subscribe(),
                 support,
                 bots: self.bots.clone(),
+                session,
             },
             opening,
         );
@@ -615,16 +647,15 @@ impl ChatLink {
         key: &TimelineKey,
         scroll: TimelineScroll,
     ) -> Result<(), CoreError> {
-        let subscription = lock(&self.open)
+        self.subscription(key)?.set_scroll(scroll);
+        Ok(())
+    }
+
+    fn subscription(&self, key: &TimelineKey) -> Result<Arc<TimelineSubscription>, CoreError> {
+        lock(&self.open)
             .get(key)
-            .and_then(|open| open.subscription.upgrade());
-        match subscription {
-            Some(subscription) => {
-                subscription.set_scroll(scroll);
-                Ok(())
-            }
-            None => Err(target::not_subscribed(key)),
-        }
+            .and_then(|open| open.subscription.upgrade())
+            .ok_or_else(|| target::not_subscribed(key))
     }
 
     /// 凭句柄下载媒体原文件（加密附件在本机解密）。

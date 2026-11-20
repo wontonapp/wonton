@@ -101,7 +101,6 @@ gateway-models-down = The model gateway isn't running
 
 # Onboarding.
 gateway-onboarding-invalid-step = step must be profile or finished, not { $step }
-gateway-onboarding-invalid-agent = primary_agent isn't an optional agent: { $agent }
 gateway-onboarding-index-missing = The official index has no onboarding list
 
 # Core one-click update.

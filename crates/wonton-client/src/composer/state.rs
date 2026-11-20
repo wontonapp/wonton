@@ -4,8 +4,8 @@ use std::collections::BTreeMap;
 
 use serde::{Deserialize, Serialize};
 use wonton_protocol::{
-    AttachmentKind, AttachmentState, ComposerAttachment, ComposerViewModel, FileId,
-    OutgoingMessage, SendState, TimelineTarget, UploadSource,
+    AttachmentKind, AttachmentState, ComposerAttachment, ComposerMention, ComposerViewModel,
+    FileId, OutgoingMessage, SendState, TimelineTarget, UploadSource,
 };
 
 use super::uplink::Uploaded;
@@ -68,6 +68,9 @@ pub(crate) struct Outgoing {
     /// 分组标记里的 `id`。
     pub(crate) group: String,
     pub(crate) body: String,
+    /// 发送时选中的 @ 的人。
+    #[serde(default)]
+    pub(crate) mentions: Vec<String>,
     pub(crate) reply_to: Option<String>,
     pub(crate) prepared_reply: Option<wonton_matrix::PreparedReply>,
     pub(crate) items: Vec<Item>,
@@ -152,7 +155,7 @@ impl Outgoing {
 }
 
 impl State {
-    pub(crate) fn view(&self, room_id: &str) -> ComposerViewModel {
+    pub(crate) fn view(&self, room_id: &str, candidates: &[ComposerMention]) -> ComposerViewModel {
         let room = self.rooms.get(room_id);
         ComposerViewModel {
             target: TimelineTarget {
@@ -166,6 +169,7 @@ impl State {
                 .map(|room| room.outgoing.iter().map(Outgoing::view).collect())
                 .unwrap_or_default(),
             max_attachments: u32::try_from(MAX_ATTACHMENTS).expect("a small constant"),
+            mention_candidates: candidates.to_vec(),
         }
     }
 

@@ -3,7 +3,6 @@
     <string name="settings_profile">プロフィール</string>
     <string name="settings_appearance">外観</string>
     <string name="settings_nav_bar">ナビゲーションバー</string>
-    <string name="settings_default_agent">デフォルトのアシスタント</string>
     <string name="settings_about">Wontonについて</string>
     <string name="settings_version">バージョン</string>
     <string name="settings_toolbar">設定</string>

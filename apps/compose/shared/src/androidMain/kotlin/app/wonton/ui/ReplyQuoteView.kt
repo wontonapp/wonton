@@ -2,6 +2,7 @@ package app.wonton.ui
 
 import androidx.compose.foundation.Image
 import androidx.compose.foundation.background
+import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
@@ -22,6 +23,7 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.layout.ContentScale
 import androidx.compose.ui.res.stringResource
+import androidx.compose.ui.semantics.Role
 import androidx.compose.ui.text.font.FontStyle
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
@@ -45,14 +47,24 @@ val ReplyQuote.eventId: String
 
 /**
  * 消息上方引用的原消息（ADR-0073 第 2 节）：按类别画，不自己摘要。`onTint` 是自己的气泡里的前景色，`null` 用正文的墨色。
+ * `onClick` 拿到引用那条的事件 ID，点了跳过去（ADR-0109）。
  */
 @Composable
-fun QuotedMessageRow(quote: ReplyQuote, core: ClientCore, modifier: Modifier = Modifier, onTint: Color? = null) {
+fun QuotedMessageRow(
+    quote: ReplyQuote,
+    core: ClientCore,
+    modifier: Modifier = Modifier,
+    onTint: Color? = null,
+    onClick: (String) -> Unit = {},
+) {
     val colors = WontonTheme.colors
     val name = onTint ?: colors.textPrimary.toColor()
     val secondary = (onTint ?: colors.textSecondary.toColor()).copy(alpha = WontonTheme.ratio.secondaryContent)
     Row(
-        modifier.fillMaxWidth().height(IntrinsicSize.Min),
+        modifier.fillMaxWidth().height(IntrinsicSize.Min)
+            .clickable(enabled = quote is ReplyQuote.Ready, role = Role.Button) {
+                (quote as? ReplyQuote.Ready)?.let { onClick(it.message.eventId) }
+            },
         horizontalArrangement = Arrangement.spacedBy(WontonTheme.spacing.s8),
     ) {
         Box(Modifier.width(WontonTheme.size.quoteBar).fillMaxHeight().background(secondary, RoundedCornerShape(1.dp)))

@@ -28,6 +28,15 @@ impl PluginManager {
     pub(in crate::plugin) async fn rollback(&self, undo: Undo, langs: &Languages) -> Vec<String> {
         let mut failures = Vec::new();
         self.rollback_containers(&undo, langs, &mut failures).await;
+        // create 超时又始终没核实到结果的容器不删（见 `super::start` 的 settle_timed_out_create），
+        // 但失败记录要如实说：回滚没完成，清除时才走 teardown 按标签清。
+        for name in &undo.uncertain_containers {
+            failures.push(l10n::text(
+                langs,
+                "plugin-install-rollback-create-uncertain",
+                &[("name", name.as_str().into())],
+            ));
+        }
         self.rollback_bot_and_models(&undo, langs, &mut failures)
             .await;
         self.rollback_clients_and_volumes(&undo, langs, &mut failures)

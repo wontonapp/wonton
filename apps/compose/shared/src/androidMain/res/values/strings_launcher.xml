@@ -1,7 +1,5 @@
 <?xml version="1.0" encoding="utf-8"?>
 <resources>
-    <!-- Title of the default agent picker, opened from Settings. -->
-    <string name="launcher_default_agent">Default assistant</string>
     <!-- Shown on the launcher when no apps are installed yet. -->
     <string name="launcher_empty">No apps yet</string>
     <!-- Button under it that opens the Store. -->

@@ -24,6 +24,10 @@
     <string name="composer_attachment_rejected">家裡的伺服器拒收了這個附件。</string>
     <string name="composer_attachment_upstream">家裡的伺服器出錯了。</string>
     <string name="composer_attachment_local_storage">手機上存不下了。</string>
+    <!-- 輸入欄裡迴紋針左邊的圖示按鈕：開啟 Bot 命令選單。也是讀屏標籤。 -->
+    <string name="composer_commands">指令</string>
+    <!-- 命令選單末尾：某個 Bot 還有幾條沒有列出。參數：條數。 -->
+    <string name="composer_commands_more">還有 %1$d 條指令沒列出</string>
     <!-- Round button in the chat composer while the bot is working on a turn: stops that turn. Also its screen-reader label. -->
     <string name="composer_stop">停止</string>
     <!-- Screen-reader label of the composer's stop button while the stop request is on its way; the button shows a spinner. -->
@@ -35,5 +39,5 @@
     <!-- One-line note above the chat composer: this person isn't allowed to stop this bot's turn. -->
     <string name="composer_stop_forbidden">你沒有權限停下這一輪。</string>
     <!-- One-line note above the chat composer: the stop request may not have reached the home server, so it is unknown whether the bot's turn stopped. The stop button stays for another try. -->
-    <string name="composer_stop_uncertain">沒連上家用伺服器，不確定停下沒有。可以再試一次。</string>
+    <string name="composer_stop_uncertain">沒連上家裡的伺服器，不確定停下沒有。可以再試一次。</string>
 </resources>

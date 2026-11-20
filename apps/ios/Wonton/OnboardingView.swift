@@ -75,10 +75,6 @@ struct OnboardingView: View {
                     } else {
                         OnboardingProfileStepView(profile: view.profile, send: model.send)
                     }
-                case .agent:
-                    OnboardingAgentStep(agents: view.agents) {
-                        model.send(.onboarding(action: .chooseOnboardingAgent(id: $0)))
-                    }
                 case .model:
                     OnboardingModelStepView(step: view.model, send: model.send,
                                             openGateway: openGateway,
@@ -114,7 +110,6 @@ private extension OnboardingStep {
     var title: String {
         switch self {
         case .profile: String(localized: .Onboarding4.onboardingStepProfile)
-        case .agent: String(localized: .Onboarding1.onboardingStepAgent)
         case .model: String(localized: .Onboarding1.onboardingStepModel)
         case .apps: String(localized: .Onboarding0.onboardingStepApps)
         case .review: String(localized: .Onboarding3.onboardingStepReview)

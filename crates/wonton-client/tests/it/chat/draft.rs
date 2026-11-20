@@ -116,6 +116,7 @@ async fn drafts_stay_per_room_and_survive_a_restart() {
                 },
                 body: "第一间第 19 个字".to_owned(),
                 reply_to: None,
+                mentions: vec![],
             },
         })
         .unwrap();
@@ -141,6 +142,7 @@ async fn drafts_stay_per_room_and_survive_a_restart() {
                 },
                 body: "再发一句".to_owned(),
                 reply_to: None,
+                mentions: vec![],
             },
         })
         .unwrap();
@@ -170,7 +172,10 @@ async fn a_reply_stays_in_the_draft_until_it_is_sent() {
         join_group_room(&phone, &bot, "Second").await.to_string(),
     );
     let bot_room = bot.open_room(&first_id).await.expect("Bot 打开群聊");
-    bot_room.send_text("要回复的话").await.expect("Bot 发文字");
+    bot_room
+        .send_text("要回复的话", &[])
+        .await
+        .expect("Bot 发文字");
     let mut timeline = Timeline::open(&phone, &first).await;
     let (_, original) = timeline
         .until("收到要回复的话", |item| {
@@ -231,6 +236,7 @@ async fn a_reply_stays_in_the_draft_until_it_is_sent() {
                 },
                 body: "草稿正文".to_owned(),
                 reply_to: Some(quote.event_id.clone()),
+                mentions: vec![],
             },
         })
         .unwrap();

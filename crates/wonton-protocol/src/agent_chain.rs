@@ -1,4 +1,4 @@
-//! 调用链（ADR-0061 第 10 节）：一句话引出的所有 Agent 会话是一条链，链上记身份、层数、轮数和花费。
+//! 调用链（ADR-0061 第 10 节）：一句话引出的所有 Agent 会话是一条链，链上记身份、层数和轮数。
 //!
 //! Bot 插件每轮开始时 `POST` [`AGENT_CHAINS_PATH`]，请求体是 [`ChainTurnReport`]，拿到 [`ChainTurnGrant`] 才
 //! 发给 Agent；被拒时拿到 [`ChainError`]。说话人用 [`WONTON_ON_BEHALF_OF_HEADER`] 报到 MCP 请求上。
@@ -87,7 +87,7 @@ pub struct ChainTurnGrant {
 #[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(tag = "type", rename_all = "snake_case")]
 pub enum ChainError {
-    /// 到上限了：层数、轮数或花费。给一份新的要链代表的人和链上各 Bot 的归属人都同意（上限卡片）。
+    /// 到上限了：层数或轮数。给一份新的要链代表的人和链上各 Bot 的归属人都同意（上限卡片）。
     LimitReached { kind: ChainLimitKind },
     /// 链被人停了；要接着做，人重新说一句开一条新链。
     Stopped,
@@ -108,10 +108,8 @@ pub enum ChainError {
 pub enum ChainLimitKind {
     /// 第 4 层起核心拒绝（默认最多 3 层）；层从点名者继承后链上全是第 1 层，不再触发。
     Depth,
-    /// 链上所有会话的 `session/prompt` 加起来到了上限。
+    /// 链上所有轮次加起来到了上限。
     Rounds,
-    /// 链上经模型网关的用量到了上限。
-    Cost,
     /// 比调用方新的核心给的未知上限。
     #[serde(other)]
     Other,
@@ -138,10 +136,8 @@ pub enum ChainRefusal {
 pub struct ChainLimits {
     /// 最多几层：A→B→C 是 3 层。层从点名者继承，账本不再按它拒绝。
     pub max_depth: u32,
-    /// 链上所有会话的 `session/prompt` 加起来最多多少轮。
+    /// 链上所有轮次加起来最多多少轮。
     pub max_rounds: u32,
-    /// 链上经模型网关的用量最多多少 token。
-    pub max_tokens: u64,
 }
 
 impl Default for ChainLimits {
@@ -149,7 +145,6 @@ impl Default for ChainLimits {
         Self {
             max_depth: 3,
             max_rounds: 50,
-            max_tokens: 2_000_000,
         }
     }
 }
@@ -170,23 +165,6 @@ pub enum AgentChainStatus {
     /// 比壳新的核心给的未知状态。
     #[serde(other)]
     Other,
-}
-
-/// 链的花费（ADR-0061 第 10 节）：只有经模型网关的用量记得到链上。
-#[derive(Clone, Copy, Debug, PartialEq, Serialize, Deserialize)]
-#[cfg_attr(feature = "uniffi", derive(uniffi::Enum))]
-#[serde(tag = "type", rename_all = "snake_case")]
-pub enum ChainSpend {
-    /// 经模型网关记账：累计 token；网关有价格时带金额，币种由网关定，壳原样显示。
-    ViaGateway {
-        tokens: u64,
-        #[serde(default, skip_serializing_if = "Option::is_none")]
-        amount: Option<f64>,
-    },
-    /// 记不上：网关没报用量、认不出是哪个 Bot，不猜。
-    Unknown,
-    /// 用官方登录的 Agent 不经网关（ADR-0061 第 10 节），花费只受轮数上限管。
-    NotViaGateway,
 }
 
 /// 链上的一个 Bot 和它的层。
@@ -210,9 +188,8 @@ pub struct AgentChainRow {
     pub origin: ConfirmationOrigin,
     /// 链上的 Bot，按层排。
     pub bots: Vec<AgentChainBot>,
-    /// 链上所有会话的 `session/prompt` 总数。
+    /// 链上所有轮次的总数。
     pub rounds: u32,
-    pub spend: ChainSpend,
     pub status: AgentChainStatus,
     /// 链代表的人和链上各 Bot 的归属人能停（[`AgentAction::StopChain`]）；别人看不到这一行。
     pub can_stop: bool,
@@ -249,7 +226,7 @@ pub enum AgentAction {
     /// 停下这条时间线里 Bot 正在跑的轮次：客户端核心把从这里开始、还有轮次在跑的链都停掉，进展和结果
     /// 在 [`RoomAgentStop`](crate::RoomAgentStop) 里，不进 [`AgentChainsViewModel::action_failure`]。
     StopTurns { target: crate::TimelineTarget },
-    /// 改设置“Agent”一页的上限（层数、轮数、花费），只有主人能改，别的设备返回 `Unauthorized`。
+    /// 改设置“Agent”一页的上限（层数、轮数），只有主人能改，别的设备返回 `Unauthorized`。
     SetAgentLimits { limits: ChainLimits },
 }
 
@@ -261,7 +238,7 @@ pub struct AgentActionFailure {
     pub error: crate::CoreError,
 }
 
-/// 设置“Agent”一页（ADR-0061 第 10 节）：层数、轮数、花费上限，只有主人能改。
+/// 设置“Agent”一页（ADR-0061 第 10 节）：层数、轮数上限，只有主人能改。
 #[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize)]
 #[cfg_attr(feature = "uniffi", derive(uniffi::Record))]
 pub struct AgentSettingsViewModel {
@@ -382,10 +359,9 @@ mod tests {
         let limits = ChainLimits::default();
         assert_eq!(limits.max_depth, 3);
         assert_eq!(limits.max_rounds, 50);
-        assert_eq!(limits.max_tokens, 2_000_000);
         assert_eq!(
             serde_json::from_value::<ChainLimits>(json!({
-                "max_depth": 3, "max_rounds": 50, "max_tokens": 2000000
+                "max_depth": 3, "max_rounds": 50
             }))
             .unwrap(),
             limits
@@ -393,7 +369,7 @@ mod tests {
         let settings = AgentSettingsViewModel { limits };
         assert_eq!(
             serde_json::from_value::<AgentSettingsViewModel>(json!({
-                "limits": {"max_depth": 3, "max_rounds": 50, "max_tokens": 2000000}
+                "limits": {"max_depth": 3, "max_rounds": 50}
             }))
             .unwrap(),
             settings
@@ -429,14 +405,13 @@ mod tests {
             limits: ChainLimits {
                 max_depth: 5,
                 max_rounds: 100,
-                max_tokens: 4_000_000,
             },
         };
         assert_eq!(
             json!(limits),
             json!({
                 "type": "set_agent_limits",
-                "limits": {"max_depth": 5, "max_rounds": 100, "max_tokens": 4000000},
+                "limits": {"max_depth": 5, "max_rounds": 100},
             })
         );
         assert_eq!(
@@ -445,7 +420,7 @@ mod tests {
         );
     }
 
-    /// 契约：花费三种都照实显示；不认识的状态落到 `Other`。
+    /// 契约：行原样往返；不认识的状态落到 `Other`。
     #[test]
     fn rows_round_trip_and_unknown_states_fall_back() {
         let row = AgentChainRow {
@@ -472,10 +447,6 @@ mod tests {
                 },
             ],
             rounds: 7,
-            spend: ChainSpend::ViaGateway {
-                tokens: 12_345,
-                amount: Some(0.02),
-            },
             status: AgentChainStatus::Running,
             can_stop: true,
             live: true,
@@ -484,12 +455,6 @@ mod tests {
             serde_json::from_value::<AgentChainRow>(json!(row)).unwrap(),
             row
         );
-        let mut no_price = row.clone();
-        no_price.spend = ChainSpend::ViaGateway {
-            tokens: 12_345,
-            amount: None,
-        };
-        assert!(json!(no_price).get("amount").is_none());
         assert_eq!(
             serde_json::from_value::<AgentChainStatus>(json!("limit_reached")).unwrap(),
             AgentChainStatus::LimitReached
@@ -497,22 +462,6 @@ mod tests {
         assert_eq!(
             serde_json::from_value::<AgentChainStatus>(json!("waking")).unwrap(),
             AgentChainStatus::Other
-        );
-        assert_eq!(
-            serde_json::from_value::<ChainSpend>(json!({"type": "unknown"})).unwrap(),
-            ChainSpend::Unknown
-        );
-        assert_eq!(
-            serde_json::from_value::<ChainSpend>(json!({"type": "not_via_gateway"})).unwrap(),
-            ChainSpend::NotViaGateway
-        );
-        assert_eq!(
-            serde_json::from_value::<ChainSpend>(json!({"type": "via_gateway", "tokens": 5}))
-                .unwrap(),
-            ChainSpend::ViaGateway {
-                tokens: 5,
-                amount: None,
-            }
         );
     }
 }

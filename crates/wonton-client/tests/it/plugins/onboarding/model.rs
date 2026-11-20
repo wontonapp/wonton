@@ -1,12 +1,11 @@
-//! 模型设置步：网页还没配好就不算已配置；账号登录也是一种选择；取不到时可重试或跳过。
+//! 模型设置步：网页还没配好就不算已配置；取不到时可重试或跳过。
 
 use axum::http::Method;
 use wonton_client::{Action, ModelSettingsFailure, OnboardingModelChoice, OnboardingStep};
 
 use super::super::rig::{Canned, core_error};
 use super::{
-    MODEL_SETTINGS, act, assert_nothing_saved, at, configure_gateway, edit, flow_rig, invalid,
-    onboarding,
+    MODEL_SETTINGS, act, assert_nothing_saved, at, configure_gateway, flow_rig, invalid, onboarding,
 };
 
 #[tokio::test]
@@ -16,12 +15,6 @@ async fn model_settings_page_does_not_claim_models_are_configured() {
         &rig,
         Action::Onboarding {
             action: wonton_protocol::OnboardingAction::SkipOnboardingStep,
-        },
-    );
-    act(
-        &rig,
-        Action::Onboarding {
-            action: wonton_protocol::OnboardingAction::ContinueOnboarding,
         },
     );
     let before = at(&rig, OnboardingStep::Model).await;
@@ -59,53 +52,8 @@ async fn model_settings_page_does_not_claim_models_are_configured() {
 }
 
 #[tokio::test]
-async fn an_account_login_is_a_model_choice() {
-    let mut state = onboarding("profile");
-    state["agents"][0]["logins"] = serde_json::json!([{"id": "account", "title": "Account"}]);
-    let rig = flow_rig(state).await;
-    edit(&rig, "云吞", "");
-    act(
-        &rig,
-        Action::Onboarding {
-            action: wonton_protocol::OnboardingAction::ContinueOnboarding,
-        },
-    );
-    act(
-        &rig,
-        Action::Onboarding {
-            action: wonton_protocol::OnboardingAction::ContinueOnboarding,
-        },
-    );
-    let view = at(&rig, OnboardingStep::Model).await;
-    assert!(!view.nav.unwrap().can_next);
-    assert_eq!(view.model.logins[0].id, "account");
-    act(
-        &rig,
-        Action::Onboarding {
-            action: wonton_protocol::OnboardingAction::ChooseModelLogin {
-                id: "account".to_owned(),
-            },
-        },
-    );
-    assert!(rig.app.onboarding().nav.unwrap().can_next);
-    act(
-        &rig,
-        Action::Onboarding {
-            action: wonton_protocol::OnboardingAction::ContinueOnboarding,
-        },
-    );
-    at(&rig, OnboardingStep::Apps).await;
-}
-
-#[tokio::test]
 async fn unavailable_model_settings_can_be_retried_or_skipped() {
     let rig = flow_rig(onboarding("profile")).await;
-    act(
-        &rig,
-        Action::Onboarding {
-            action: wonton_protocol::OnboardingAction::SkipOnboardingStep,
-        },
-    );
     act(
         &rig,
         Action::Onboarding {

@@ -24,7 +24,8 @@ use tokio::sync::{Notify, watch};
 use tokio::task::JoinHandle;
 use wonton_l10n::l10n;
 use wonton_protocol::{
-    AttachmentState, ComposerViewModel, CoreError, ImageUpload, RoomTransfers, UploadSource,
+    AttachmentFailure, AttachmentState, ComposerMention, ComposerViewModel, CoreError, ImageUpload,
+    RoomTransfers, UploadSource,
 };
 
 use crate::l10n::{CATALOG, language};
@@ -50,6 +51,15 @@ struct Inner {
     senders: HashMap<String, Arc<Notify>>,
     /// 正在交给发送队列的待发消息：这时候不能取消，交出去的那几条已经在 SDK 手里。
     handing: HashSet<String>,
+    /// @ 列表的候选，按房间；由聊天那边跟着成员和 Bot 名单补。
+    mentions: HashMap<String, Vec<ComposerMention>>,
+}
+
+impl Inner {
+    fn view(&self, room: &str) -> ComposerViewModel {
+        self.state
+            .view(room, self.mentions.get(room).map_or(&[], Vec::as_slice))
+    }
 }
 
 fn invalid(reason: String) -> CoreError {
@@ -161,7 +171,7 @@ impl ComposerLink {
 
     pub(crate) fn subscribe(&self, room: &str) -> watch::Receiver<ComposerViewModel> {
         let mut inner = self.lock();
-        let view = inner.state.view(room);
+        let view = inner.view(room);
         inner
             .views
             .entry(room.to_owned())
@@ -198,13 +208,27 @@ impl ComposerLink {
 
     fn publish(inner: &Inner, room: &str) {
         if let Some(sender) = inner.views.get(room) {
-            let view = inner.state.view(room);
+            let view = inner.view(room);
             sender.send_if_modified(|current| {
                 let changed = *current != view;
                 *current = view;
                 changed
             });
         }
+    }
+
+    /// 换掉一个房间的 @ 候选；和现有的不一样才推给壳。不存盘，重启后由聊天那边重新算。
+    pub(crate) fn set_mentions(&self, room: &str, candidates: Vec<ComposerMention>) {
+        let mut inner = self.lock();
+        if inner.mentions.get(room) == Some(&candidates) {
+            return;
+        }
+        if candidates.is_empty() {
+            inner.mentions.remove(room);
+        } else {
+            inner.mentions.insert(room.to_owned(), candidates);
+        }
+        Self::publish(&inner, room);
     }
 
     /// 改状态、存盘、推给壳。主人的操作要知道存没存上，返回存盘的结果。
@@ -285,6 +309,34 @@ impl ComposerLink {
         self.uplink.check_send(room, None)?;
         self.check_room_has_space(room)?;
         let item = self.image_item(image)?;
+        self.add(room, item)
+    }
+
+    /// 假数据入口（`ui-fake`）没有登录，照样放进附件区：只跳过「房间能发」的检查，上传由 worker 照常等联网。
+    #[cfg(feature = "ui-fake")]
+    pub(crate) fn add_image_offline(
+        self: &Arc<Self>,
+        room: &str,
+        image: ImageUpload,
+    ) -> Result<String, CoreError> {
+        check_image_type(&image)?;
+        self.check_room_has_space(room)?;
+        let item = self.image_item(image)?;
+        self.add(room, item)
+    }
+
+    /// 同 [`add_image_offline`](Self::add_image_offline)，文件那侧。
+    #[cfg(feature = "ui-fake")]
+    pub(crate) fn add_file_offline(
+        self: &Arc<Self>,
+        room: &str,
+        source: UploadSource,
+        name: String,
+        mime_type: Option<String>,
+    ) -> Result<String, CoreError> {
+        check_file_name(&name)?;
+        self.check_room_has_space(room)?;
+        let item = file_item(source, name, mime_type);
         self.add(room, item)
     }
 
@@ -425,25 +477,58 @@ impl ComposerLink {
         }
     }
 
+    /// 附件区里有一张没传上去的照片或文件时，点发送会被拒：重试和删都在附件区里，这里只给原因。
+    pub(crate) fn reject_if_failed(&self, room: &str) -> Result<(), CoreError> {
+        if self.has_failed(room) {
+            return Err(invalid(l10n!(CATALOG, language(), "composer-has-failed")));
+        }
+        Ok(())
+    }
+
+    fn has_failed(&self, room: &str) -> bool {
+        let inner = self.lock();
+        inner.state.rooms.get(room).is_some_and(|room| {
+            room.tray
+                .iter()
+                .any(|item| matches!(item.state, AttachmentState::Failed { .. }))
+        })
+    }
+
+    /// 假数据入口（`ui-fake`）没有真上传，界面测试靠它把附件标成上传失败，走到被拒的分支。
+    pub(crate) fn fail_for_test(&self, room: &str, id: &str) -> Result<(), CoreError> {
+        let found = {
+            let inner = self.lock();
+            inner.state.item(room, id).is_some()
+        };
+        if !found {
+            return Err(attachment_not_found());
+        }
+        self.record(room, |state| {
+            if let Some(item) = state.item_mut(room, id) {
+                item.state = AttachmentState::Failed {
+                    reason: AttachmentFailure::Upstream,
+                    message: "ui-fake: upload failed on purpose".into(),
+                };
+            }
+        });
+        Ok(())
+    }
+
     pub(crate) fn send(
         self: &Arc<Self>,
         room: &str,
         body: &str,
         reply_to: Option<String>,
+        mentions: &[String],
     ) -> Result<(), CoreError> {
-        let has_failed = {
+        {
             let inner = self.lock();
             let tray = inner.state.rooms.get(room).map(|room| room.tray.as_slice());
-            let tray = tray.unwrap_or_default();
-            if body.trim().is_empty() && tray.is_empty() {
+            if body.trim().is_empty() && tray.unwrap_or_default().is_empty() {
                 return Err(invalid(l10n!(CATALOG, language(), "chat-empty-message")));
             }
-            tray.iter()
-                .any(|item| matches!(item.state, AttachmentState::Failed { .. }))
-        };
-        if has_failed {
-            return Err(invalid(l10n!(CATALOG, language(), "composer-has-failed")));
         }
+        self.reject_if_failed(room)?;
         self.uplink.check_send(room, reply_to.as_deref())?;
         let ((), saved) = self.change(room, |state| {
             let room = state.rooms.entry(room.to_owned()).or_default();
@@ -452,6 +537,7 @@ impl ComposerLink {
                 id: format!("outgoing-{group}"),
                 group,
                 body: body.trim().to_owned(),
+                mentions: mentions.to_vec(),
                 reply_to,
                 prepared_reply: None,
                 items: std::mem::take(&mut room.tray),
@@ -485,6 +571,7 @@ impl ComposerLink {
                     id: format!("outgoing-{group}"),
                     group,
                     body: body.trim().to_owned(),
+                    mentions: Vec::new(),
                     reply_to: None,
                     prepared_reply: Some(reply),
                     items: Vec::new(),

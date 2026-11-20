@@ -152,6 +152,7 @@ async fn a_round_with_edits_is_one_agent_run_following_the_latest_edit() {
                 },
                 body: "帮我查天气".to_owned(),
                 reply_to: None,
+                mentions: vec![],
             },
         })
         .unwrap();

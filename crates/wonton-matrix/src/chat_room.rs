@@ -11,7 +11,7 @@ use matrix_sdk::{
     Room, RoomMemberships,
     event_cache::PaginationStatus,
     ruma::{
-        EventId, OwnedEventId, RoomId, UserId,
+        EventId, OwnedEventId, OwnedUserId, RoomId, UserId,
         api::client::receipt::create_receipt::v3::ReceiptType,
         api::client::state::get_state_events,
         events::{
@@ -29,6 +29,7 @@ use tokio::{
     sync::{Notify, broadcast::error::RecvError, watch},
     task::JoinHandle,
 };
+use wonton_protocol::{ChoiceSend, ChoicesState};
 
 use crate::{
     Error, Message, Result,
@@ -95,6 +96,15 @@ pub struct MissedEvent {
     pub id: OwnedEventId,
     /// 从第一次看到它缺席到现在过了多久（本机单调时钟）。
     pub absent: Duration,
+}
+
+/// @ 列表里的一个在场成员。
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub struct MentionMember {
+    pub user_id: String,
+    pub display_name: String,
+    /// 头像的 `mxc://`。
+    pub avatar: Option<String>,
 }
 
 /// 一个已打开的房间。
@@ -259,14 +269,30 @@ impl ChatRoom {
         self.room.room_id()
     }
 
-    /// 发送文字。消息先以本地回显出现在时间线里，发送结果见 [`Message::status`]。
-    pub async fn send_text(&self, body: &str) -> Result<()> {
+    /// 发送文字，`mentions` 是输入框里选中的人（写进 `m.mentions` 和正文的胶囊，见 [`Self::mention_content`]）。
+    /// 消息先以本地回显出现在时间线里，发送结果见 [`Message::status`]。
+    pub async fn send_text(&self, body: &str, mentions: &[String]) -> Result<()> {
         ensure_recipient_devices(&self.room).await?;
-        self.timeline()
-            .await
-            .send(RoomMessageEventContent::text_plain(body).into())
-            .await?;
+        let names = self.names();
+        let users = crate::mentions::selected(mentions, &names);
+        let content = self.mention_content(body, &users);
+        self.timeline().await.send(content.into()).await?;
         Ok(())
+    }
+
+    /// 现在这份成员和显示名。
+    pub(crate) fn names(&self) -> Arc<MemberNames> {
+        self.names.borrow().clone()
+    }
+
+    /// 文字事件：`users` 是过滤过的被提及者，写进 `m.mentions` 和正文的胶囊。
+    pub(crate) fn mention_content(
+        &self,
+        body: &str,
+        users: &[OwnedUserId],
+    ) -> RoomMessageEventContent {
+        let names = self.names();
+        crate::mentions::content(body, users, &names)
     }
 
     /// 发送文字，事件内容里带上额外字段（链接预览的 `com.beeper.linkpreviews`，ADR-0065）。其余同
@@ -274,15 +300,16 @@ impl ChatRoom {
     pub async fn send_text_with_extra(
         &self,
         body: &str,
+        mentions: &[String],
         extra: serde_json::Map<String, serde_json::Value>,
     ) -> Result<()> {
         ensure_recipient_devices(&self.room).await?;
+        let names = self.names();
+        let users = crate::mentions::selected(mentions, &names);
+        let content = self.mention_content(body, &users);
         self.timeline()
             .await
-            .send_with_extra_content(
-                RoomMessageEventContent::text_plain(body).into(),
-                Some(extra),
-            )
+            .send_with_extra_content(content.into(), Some(extra))
             .await?;
         Ok(())
     }
@@ -362,6 +389,29 @@ impl ChatRoom {
         self.room.are_members_synced()
     }
 
+    /// 输入框 @ 列表的成员：在场的人（不含自己），带显示名和头像的 `mxc://`。私聊为空。
+    pub fn mention_members(&self) -> Vec<MentionMember> {
+        let names = self.names.borrow();
+        if names.direct() {
+            return Vec::new();
+        }
+        names
+            .members()
+            .filter(|(user, _)| !names.is_own(user))
+            .map(|(user, name)| MentionMember {
+                user_id: user.to_string(),
+                display_name: name.to_owned(),
+                avatar: names.avatar(user).map(str::to_owned),
+            })
+            .collect()
+    }
+
+    /// 成员或显示名变了（@ 列表跟着补发）。
+    pub async fn member_names_changed(&self) {
+        let mut names = self.names.clone();
+        let _ = names.changed().await;
+    }
+
     /// 撤回一条消息：理由随撤回事件发给服务器，房间里的人都能看到；撤回不能撤销。
     pub async fn redact(&self, event_id: &str, reason: &str) -> Result<()> {
         let event_id: OwnedEventId = event_id
@@ -371,29 +421,59 @@ impl ChatRoom {
         Ok(())
     }
 
-    /// 以反应回答 Bot 的提问（MSC4564 的 `choices`，ADR-0082）：对状态消息发 `m.annotation` 反应，
-    /// `item_id` 是它的 [`TimelineEntry::id`]，`key` 是选项的键。只对现在还是状态消息、还带这个选项的
-    /// 条目发；条目不在时间线里或选项没有了报 `InvalidInput`。发送者是不是 Bot 由调用方判断。
+    /// 回答一条消息的选项（ADR-0109 第 7 节）：以本账号加选项那个表情，不往聊天里发消息。发送者自己先放的
+    /// 表情就是选项；私聊或提到了本账号的才能答，答过一条后其余不能再答。还在发或发失败的先撤掉再发。
+    ///
+    /// 也回答 MSC4564 的状态消息（ADR-0082），它的选项在状态对象里、不靠表情。
+    /// 条目不在时间线里、选项没有了、不是问我的、已经答过时报 `InvalidInput`。
     pub async fn answer_agent_choice(&self, item_id: &str, key: &str) -> Result<()> {
         let timeline = self.timeline().await;
         let items = timeline.items().await;
         let item = items
             .iter()
             .find(|item| item.unique_id().0 == item_id)
-            .and_then(|item| item.as_event())
-            .ok_or_else(|| Error::InvalidInput("状态行不在时间线里".to_owned()))?;
+            .ok_or_else(|| Error::InvalidInput("这条消息不在时间线里".to_owned()))?;
+        let event = item
+            .as_event()
+            .ok_or_else(|| Error::InvalidInput("这条不是消息".to_owned()))?;
         let names = self.names.borrow().clone();
-        let status = message(item, &names)
-            .and_then(|message| message.agent_run)
-            .ok_or_else(|| Error::InvalidInput("这条不是 Agent 状态消息".to_owned()))?;
-        if !status.choices.iter().any(|choice| choice.key == key) {
-            return Err(Error::InvalidInput("这个选项没有了".to_owned()));
+        let message =
+            message(event, &names).ok_or_else(|| Error::InvalidInput("这条不是消息".to_owned()))?;
+        let status_choice = message
+            .agent_run
+            .as_ref()
+            .is_some_and(|status| status.choices.iter().any(|choice| choice.key == key));
+        let mut retry = false;
+        if !status_choice {
+            let choices = message
+                .choices()
+                .ok_or_else(|| Error::InvalidInput("这条没有选项".to_owned()))?;
+            let option = choices
+                .options
+                .iter()
+                .find(|option| option.key == key)
+                .ok_or_else(|| Error::InvalidInput("这个选项没有了".to_owned()))?;
+            match choices.state {
+                ChoicesState::Answered => {
+                    return Err(Error::InvalidInput("这条已经答过了".to_owned()));
+                }
+                ChoicesState::Open => {}
+                ChoicesState::NotForMe => {
+                    return Err(Error::InvalidInput("这条不是问我的".to_owned()));
+                }
+                ChoicesState::Other => {}
+            }
+            retry = matches!(option.send, ChoiceSend::Failed { .. });
         }
-        let event_id = item
+        let event_id = event
             .event_id()
             .map(ToOwned::to_owned)
-            .ok_or_else(|| Error::InvalidInput("状态消息还没发出去".to_owned()))?;
+            .ok_or_else(|| Error::InvalidInput("这条还没发出去".to_owned()))?;
         ensure_recipient_devices(&self.room).await?;
+        if retry {
+            // 不能只靠 toggle：失败的回显还在时会走“撤掉”那一支，正好把要重发的删掉。
+            timeline.toggle_reaction(&event.identifier(), key).await?;
+        }
         timeline
             .send(ReactionEventContent::new(Annotation::new(event_id, key.to_owned())).into())
             .await?;
@@ -741,7 +821,7 @@ async fn refresh_member_names(
 
 /// 本机已有的已加入成员的显示名，以及本账号的撤回权限。成员读不到时记一条警告，“谁已读”显示账号名，不影响聊天；
 /// 权限读不到时按房间的默认权限算（SDK 的 `power_levels_or_default`），服务器才是最后的判断。
-async fn local_member_names(room: &Room) -> MemberNames {
+pub(crate) async fn local_member_names(room: &Room) -> MemberNames {
     let members = match room.members_no_sync(RoomMemberships::JOIN).await {
         Ok(members) => members,
         Err(error) => {
@@ -751,6 +831,15 @@ async fn local_member_names(room: &Room) -> MemberNames {
     };
     let power = room.power_levels_or_default().await;
     let own = room.own_user_id();
+    let direct = members.len() == 2;
+    let avatars = members
+        .iter()
+        .filter_map(|member| {
+            member
+                .avatar_url()
+                .map(|url| (member.user_id().to_owned(), url.to_string()))
+        })
+        .collect();
     MemberNames::new(
         members
             .into_iter()
@@ -759,7 +848,10 @@ async fn local_member_names(room: &Room) -> MemberNames {
                 (member.user_id().to_owned(), name)
             })
             .collect::<HashMap<_, _>>(),
+        own.to_owned(),
+        direct,
     )
+    .with_avatars(avatars)
     .with_redaction(RedactionPower {
         own: power.user_can_redact_own_event(own),
         others: power.user_can_redact_event_of_other(own),
@@ -771,6 +863,7 @@ mod actions;
 mod bootstrap_tests;
 mod focus;
 mod image;
+mod names;
 pub(crate) use image::check_upload_size;
 mod pagination_status;
 mod raw;
