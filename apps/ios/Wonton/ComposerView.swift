@@ -106,7 +106,7 @@ struct ComposerView: View {
         }
         .sheet(isPresented: $isChoosingAttachment, onDismiss: continueAfterAttach) {
             AttachSheet(
-                limit: composer.remaining, allowsFiles: !isSideChat,
+                limit: composer.photoRoom, allowsFiles: !isSideChat,
                 pick: { assets in
                     isChoosingAttachment = false
                     Task { await add(assets) }
@@ -117,17 +117,19 @@ struct ComposerView: View {
             .presentationDetents([.medium, .large])
             .presentationDragIndicator(.visible)
         }
-        // 选几张都只进附件区，不发；最多选到附件区放满。0 在系统选择器里是不限，所以至少给 1，满了根本不打开。
+        // 相册最多选到还能带的张数：主对话是附件区的余量，旁聊是一次能发的张数。0 在系统选择器里是不限，所以至少给 1，满了根本不打开。
         .photosPicker(
             isPresented: $isPickingPhoto, selection: $photos,
-            maxSelectionCount: max(composer.remaining, 1), selectionBehavior: .ordered, matching: .images
+            maxSelectionCount: max(composer.photoRoom, 1), selectionBehavior: .ordered, matching: .images
         )
         .onChange(of: photos) { _, items in
             guard !items.isEmpty else { return }
             photos = []
             // 旁聊里照片不进附件区，转码好直接发（ADR-0093）；回复对象跟着第一张发出去的照片走。
             if isSideChat {
-                Task { await composer.sendPhotos(items, replyTo: model.replies[draftKey]?.eventId) }
+                // 选择器本身按张数挡过；这里再切一刀，多出来的不让撑破上限。
+                let room = Array(items.prefix(composer.photoRoom))
+                Task { await composer.sendPhotos(room, replyTo: model.replies[draftKey]?.eventId) }
             } else {
                 Task { await composer.addPhotos(items) }
             }
@@ -202,8 +204,8 @@ struct ComposerView: View {
 
     /// 附件区满了就不开选择器，说一声最多几个。
     private func hasRoom() -> Bool {
-        guard composer.remaining == 0 else { return true }
-        model.rejection = Problem(title: String(localized: .Composer.composerTrayFull(Int(composer.maxAttachments))))
+        guard composer.photoRoom == 0 else { return true }
+        model.rejection = Problem(title: String(localized: .Composer.composerTrayFull(composer.photoLimit)))
         return false
     }
 
