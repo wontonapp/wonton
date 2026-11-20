@@ -386,7 +386,10 @@ async fn chat_with_the_bot(phone: &Phone, bot: &MatrixSession, room_id: &OwnedRo
     })
     .await;
 
-    bot_room.send_image(test_image()).await.expect("Bot 发图片");
+    bot_room
+        .send_image(test_image(), None)
+        .await
+        .expect("Bot 发图片");
     let image = timeline.until("收到 Bot 的图片", bots_image).await;
     let bytes = phone.load_media(image.media).await.expect("取图片");
     assert_eq!(bytes, PNG, "取到的图片和原图不一致");

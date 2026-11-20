@@ -43,8 +43,6 @@
     <string name="timeline_sending">Saved, not delivered yet</string>
     <!-- Footer label of a message that failed but retries by itself. No arguments. -->
     <string name="timeline_send_failed_retrying">Not sent, retrying</string>
-    <!-- Footer label of a message that failed for good. Argument: the core's reason. -->
-    <string name="timeline_send_failed">Not sent: %1$s</string>
     <!-- Action that sends a failed message again. No arguments; short label. -->
     <string name="timeline_resend">Send again</string>
     <!-- Body placeholder of a message this device can't decrypt. No arguments. -->

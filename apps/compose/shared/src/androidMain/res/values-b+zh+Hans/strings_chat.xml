@@ -36,7 +36,6 @@
     <string name="timeline_edited">已编辑</string>
     <string name="timeline_sending">已保存，等待送达</string>
     <string name="timeline_send_failed_retrying">发送失败，会自动重试</string>
-    <string name="timeline_send_failed">发送失败：%1$s</string>
     <string name="timeline_resend">重发</string>
     <string name="timeline_undecryptable">无法解密：本设备还没有这条消息的密钥</string>
     <string name="timeline_undecryptable_notice">这台设备读不了之前的加密消息。</string>

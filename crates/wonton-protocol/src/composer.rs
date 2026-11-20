@@ -129,7 +129,7 @@ pub struct OutgoingMessage {
     /// 点发送的时间，Unix 毫秒。
     pub timestamp_ms: u64,
     /// `Sending` 的 `progress` 是全部附件合起来的比例。有附件传不上去、授权没成时是 `Failed`（`recoverable` 为假），
-    /// 原因在 `message` 里，失败的附件也标着 [`AttachmentState::Failed`]。
+    /// 类别在 `failure` 里，原文在 `details` 里，失败的附件也标着 [`AttachmentState::Failed`]。
     pub state: SendState,
 }
 
