@@ -95,6 +95,10 @@ pub struct TimelineUpdate {
     /// 回到这里，为空时才滚到底。壳报告回到底部（[`TimelineScroll::Bottom`]）后核心清空。
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub back_to: Option<String>,
+    /// 壳最近一次报的跳转序号（[`TimelineAction::RegisterFocusRevision`](crate::TimelineAction::RegisterFocusRevision)）；
+    /// 核心没收到过为 0。壳按它重滚同一条原消息。
+    #[serde(default)]
+    pub focus_revision: u32,
 }
 
 /// 解不开的消息旁边的入口，壳按它写按钮。
@@ -769,6 +773,7 @@ mod tests {
             }),
             jump: crate::JumpState::Loading,
             back_to: Some("5".into()),
+            focus_revision: 3,
         };
         assert_eq!(round_trip(&update), update);
         assert!(
@@ -829,15 +834,19 @@ mod tests {
             focus: None,
             jump: crate::JumpState::Idle,
             back_to: None,
+            focus_revision: 0,
         };
         let mut value = serde_json::to_value(empty()).unwrap();
         value.as_object_mut().unwrap().remove("key_notice");
         value.as_object_mut().unwrap().remove("room_bots");
         value.as_object_mut().unwrap().remove("jump");
+        value.as_object_mut().unwrap().remove("focus_revision");
         let update: TimelineUpdate = serde_json::from_value(value).unwrap();
         assert_eq!(update.key_notice, None);
         // 没有这一字段的旧核心发来的一批照旧收下，在场的 AI 落到“不确定”。
         assert_eq!(update.room_bots, None);
+        // 旧核心不带跳转序号，按 0 算。
+        assert_eq!(update.focus_revision, 0);
     }
 
     fn text_with_file() -> MessageContent {

@@ -72,6 +72,14 @@ class RoomDraft(
         save()
     }
 
+    /** 命令点了菜单就算发完：草稿留着接着改，回复条收掉（ADR-0109）。 */
+    fun commandSent(text: String) {
+        body.value = text
+        quoted.value = null
+        touched = true
+        save()
+    }
+
     private fun save() = onAction(
         Action.Timeline(
             TimelineAction.SetDraft(target, body.value, quoted.value?.eventId),

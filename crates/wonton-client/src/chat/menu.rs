@@ -297,6 +297,7 @@ impl Outbox {
                 focus: self.live.jumps.take_focus(),
                 jump: self.live.jumps.state(),
                 back_to: self.live.jumps.back(),
+                focus_revision: self.live.jumps.revision(),
             })
             .map_err(|_| ())
     }

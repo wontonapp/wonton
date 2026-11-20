@@ -146,6 +146,13 @@ pub enum TimelineAction {
     /// [`TimelineUpdate::focus`](crate::TimelineUpdate::focus) 是它。那一条已经不在列表里了（撤回、被裁掉）时继续弹，
     /// 栈空了就回到底部（[`TimelineUpdate::scroll_to_bottom`](crate::TimelineUpdate::scroll_to_bottom)）。
     JumpBack { target: TimelineTarget },
+    /// 壳每次发起跳转前报一个只增的序号，和 [`TimelineAction::JumpToMessage`](crate::TimelineAction::JumpToMessage)
+    /// 一前一后发。核心把它放在 [`TimelineUpdate::focus_revision`](crate::TimelineUpdate::focus_revision) 里：
+    /// 同一条原消息连点两下时，落点和上一次一样，壳靠序号也知道要重新滚。还在找的时候先报序号，会停下上一次的翻页。
+    RegisterFocusRevision {
+        target: TimelineTarget,
+        revision: u32,
+    },
     /// 去掉发送框当前的链接预览（ADR-0065）。行为细节在 `ClientCore::draft` 的返回和
     /// [`LinkPreviewState`](crate::LinkPreviewState) 上：这条草稿不再出预览，第一个链接换成别的或草稿发出去就作废。
     /// 旁聊的输入框也有链接预览，预览状态和主时间线的分开。

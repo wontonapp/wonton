@@ -1,6 +1,7 @@
 package app.wonton.ui
 
 import android.content.res.Resources
+import androidx.annotation.VisibleForTesting
 import androidx.compose.animation.core.Animatable
 import androidx.compose.animation.core.tween
 import androidx.compose.foundation.background
@@ -50,7 +51,6 @@ import androidx.compose.ui.platform.LocalHapticFeedback
 import androidx.compose.ui.platform.testTag
 import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.semantics.Role
-import androidx.compose.ui.semantics.clearAndSetSemantics
 import androidx.compose.ui.semantics.contentDescription
 import androidx.compose.ui.semantics.semantics
 import androidx.compose.ui.semantics.stateDescription
@@ -109,6 +109,7 @@ fun TimelineItemView(
     onOpenSideChat: (String) -> Unit,
     onJumpQuote: (String) -> Unit,
     onAnswerChoice: (String) -> Unit,
+    jumpQuote: String? = null,
     focused: Boolean = false,
     emphasize: Boolean = false,
     flushesPrevious: Boolean = false,
@@ -149,6 +150,7 @@ fun TimelineItemView(
                     onAnswerChoice,
                     flushesPrevious,
                     flushesNext,
+                    jumpQuote,
                 )
             }
             is TimelineContent.Notice -> CenteredNote(content.text)
@@ -218,34 +220,40 @@ private fun MessageBubble(
     onAnswerChoice: (String) -> Unit,
     flushesPrevious: Boolean = false,
     flushesNext: Boolean = false,
+    jumpQuote: String? = null,
 ) {
     val colors = WontonTheme.colors
     val isOwn = message.isOwn
     val gutter = WontonTheme.spacing.s48
     var bounds by remember { mutableStateOf(Rect.Zero) }
     val haptics = LocalHapticFeedback.current
-    val showsMenu = message.actions.isNotEmpty()
     val swipe = rememberSwipeToReply(message.replyAction != null) { onReply(message) }
     val openMenu = {
         haptics.performHapticFeedback(androidx.compose.ui.hapticfeedback.HapticFeedbackType.LongPress)
         onOpenMenu(message, bounds)
     }
     val time = messageTime(message)
-    // 点一下开菜单；菜单里没有这一条的操作时什么也不做。时间一直画在气泡里，读屏照样念得到。
-    val pressable = Modifier
-        .semantics { stateDescription = time }
-        .combinedClickable(
-            interactionSource = null,
-            indication = null,
-            onLongClick = openMenu.takeIf { showsMenu },
-            onClick = { if (showsMenu) openMenu() },
-        )
+    // 图片和文件自己认点（看图、打开文件），菜单手势交给它们，免得一下点出两样；别的正文点一下、长按都开菜单——
+    // 菜单里至少写着发送时间，没有别的操作也值得看。确认卡片里的按钮、输入框照常自己认点，卡片其余地方走外层。
+    val bodyOwnsPress = message.body is MessageContent.Image || message.body is MessageContent.File
+    // 时间常驻在气泡里，读屏照样念得到；回执和“已编辑”由脚注自己的节点念。
+    val pressable = Modifier.semantics { stateDescription = time }.then(
+        if (bodyOwnsPress) {
+            Modifier
+        } else {
+            Modifier.combinedClickable(
+                interactionSource = null,
+                indication = null,
+                onLongClick = openMenu,
+                onClick = { openMenu() },
+            )
+        },
+    )
     Column(
         Modifier.fillMaxWidth().padding(start = if (isOwn) gutter else 0.dp, end = if (isOwn) 0.dp else gutter),
         horizontalAlignment = if (isOwn) Alignment.End else Alignment.Start,
         verticalArrangement = Arrangement.spacedBy(WontonTheme.spacing.s4),
     ) {
-        if (showsSender && !isOwn) SenderNameLine(message.senderName)
         BoxWithConstraints(Modifier.fillMaxWidth()) {
             val bubbleWidth = maxWidth * WontonTheme.ratio.bubbleWidth
             // 右侧的箭头位置留在气泡的宽度之外，气泡本身还是最宽 80%。
@@ -271,10 +279,12 @@ private fun MessageBubble(
                                     .then(swipe.modifier)
                                     .onGloballyPositioned { bounds = it.boundsInRoot() },
                                 onCardAction,
-                                onLongPress = openMenu.takeIf { showsMenu },
+                                onLongPress = openMenu,
                                 onJumpQuote = onJumpQuote,
                                 flushesPrevious = flushesPrevious,
                                 flushesNext = flushesNext,
+                                jumpQuote = jumpQuote,
+                                showsSender = showsSender,
                             )
                         }
                         (message.sendState as? SendState.Failed)?.let { failed ->
@@ -307,6 +317,8 @@ fun BubbleSurface(
     onJumpQuote: (String) -> Unit = {},
     flushesPrevious: Boolean = false,
     flushesNext: Boolean = false,
+    jumpQuote: String? = null,
+    showsSender: Boolean = false,
 ) {
     val colors = WontonTheme.colors
     val isOwn = message.isOwn
@@ -337,8 +349,16 @@ fun BubbleSurface(
     val overImage = message.body is MessageContent.Image && (message.body as MessageContent.Image).image.caption == null
     val styledBody: @Composable () -> Unit = {
         Column(verticalArrangement = Arrangement.spacedBy(WontonTheme.spacing.s4)) {
-            message.reply?.let {
-                QuotedMessageRow(it, core, Modifier.testTag("quote"), onTint = content.toColor(), onClick = onJumpQuote)
+            // 名字在气泡里、正文上面，和正文左对齐；长名字跟着气泡截断。
+            if (showsSender && !isOwn) SenderNameLine(message.senderName, Modifier.testTag("senderName"))
+            message.reply?.let { quote ->
+                val loading = jumpQuote == quote.eventId
+                QuotedMessageRow(
+                    quote, core, Modifier.testTag("quote"),
+                    onTint = content.toColor(),
+                    loading = loading,
+                    onClick = onJumpQuote,
+                )
             }
             CompositionLocalProvider(
                 LocalContentColor provides content.toColor(),
@@ -352,8 +372,7 @@ fun BubbleSurface(
         // 正文末尾有一段和脚注等宽的透明占位，脚注压在它上面。放不下时占位自己换行，脚注就落在新的一行。
         Box(padded) {
             styledBody()
-            // 占位文字已经念过一遍了。
-            MessageFooter(message, Modifier.align(Alignment.BottomEnd).clearAndSetSemantics {})
+            MessageFooter(message, Modifier.align(Alignment.BottomEnd))
         }
     } else if (overImage) {
         Box(padded) {
@@ -376,7 +395,8 @@ private fun messageTime(message: TimelineMessage): String =
  * 少一段脚注就会压到正文上。文件卡片和代码块、表格以及纯图片后面没有文字行，脚注单独占一行。
  * 开头是普通空格：不能和前一个词连着折行。
  */
-private fun footerReserve(message: TimelineMessage, resources: Resources): String? {
+@VisibleForTesting
+internal fun footerReserve(message: TimelineMessage, resources: Resources): String? {
     val body = when (val content = message.body) {
         is MessageContent.Text -> content.blocks
         is MessageContent.Image -> content.image.caption?.blocks
@@ -393,12 +413,13 @@ private fun footerReserve(message: TimelineMessage, resources: Resources): Strin
         if (edited.isNotEmpty()) add(edited)
         add(messageTime(message))
         // 回执图标是 14dp，一个字宽不够；不折行空格按 6 个留，字体放大缩小时两边等比。
+        // `TimelineFooterReserveTest` 锁着这 6 个空格和它的排布，改脚注时一起改。
         if (message.isOwn && (message.status == MessageStatus.SENT || message.status == MessageStatus.READ)) {
             add("\u00A0".repeat(6))
         }
     }
     // 开头留一个普通空格：不能和前一个词连着折行；中间的空格换成不折行，脚注才不会被拆开。
-    return " " + parts.joinToString("  ").replace(' ', '\u00A0')
+    return " " + parts.joinToString("\u00A0\u00A0")
 }
 
 /**
@@ -411,13 +432,19 @@ private fun MessageFooter(message: TimelineMessage, modifier: Modifier) {
     val style = WontonTheme.typography.caption
     val color = (if (message.isOwn) colors.accentInkOnFill else colors.textSecondary).toColor()
     Row(modifier, horizontalArrangement = Arrangement.spacedBy(WontonTheme.spacing.s4)) {
-        if (message.edited) Text(stringResource(R.string.timeline_edited), style = style, color = color)
+        if (message.edited) {
+            Text(
+                stringResource(R.string.timeline_edited),
+                Modifier.testTag("messageEdited"),
+                style = style,
+                color = color,
+            )
+        }
         // 还在发的时间换成一个钟表，发出去以后照常写时间。
         if (message.sendState is SendState.Sending) {
             Icon(
                 WontonIcon.Clock,
-                // 装饰：时间在气泡的语义里。
-                contentDescription = null,
+                contentDescription = stringResource(R.string.message_sending),
                 modifier = Modifier.size(WontonTheme.size.iconTiny).alpha(FOOTER_ICON_ALPHA),
                 tint = color,
             )
@@ -440,10 +467,13 @@ private fun ReceiptMark(status: MessageStatus?, color: Color) {
         MessageStatus.READ -> WontonIcon.Checks
         else -> return
     }
+    // 到这一步只剩送达和已读两种。
+    val description = stringResource(
+        if (status == MessageStatus.READ) R.string.message_read else R.string.message_delivered,
+    )
     Icon(
         icon,
-        // 装饰：电话里的回执语义由消息本身给不出，但时间已经念到了。
-        contentDescription = null,
+        contentDescription = description,
         modifier = Modifier.size(WontonTheme.size.iconTiny),
         tint = color,
     )
@@ -471,7 +501,7 @@ private fun MessageBody(
     sendState: SendState,
     trailingReserve: String?,
     onCardAction: (Action) -> Unit,
-    onLongPress: (() -> Unit)? = null,
+    onLongPress: (() -> Unit)?,
 ) {
     when (body) {
         is MessageContent.Text -> TextMessageBody(body.blocks, body.files, core, trailingReserve)

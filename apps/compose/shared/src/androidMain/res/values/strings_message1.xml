@@ -11,4 +11,6 @@
     <string name="message_forward_search">Search chats</string>
     <!-- Result line when the search in the forward sheet matches no room. Android only. -->
     <string name="message_forward_no_match">No chat by that name</string>
+    <!-- Read-out state of an own message the server has. No arguments. -->
+    <string name="message_delivered">Delivered</string>
 </resources>

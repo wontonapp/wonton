@@ -35,6 +35,7 @@ impl FakeTimelines {
                 items: Vec::new(),
                 back: Vec::new(),
                 sent: 0,
+                revision: 0,
             }),
         });
         let mut first = fake.lock().base.clone();
@@ -83,6 +84,7 @@ impl FakeTimelines {
         }
         let room_id = match &action {
             TimelineAction::JumpToMessage { target, .. }
+            | TimelineAction::RegisterFocusRevision { target, .. }
             | TimelineAction::JumpBack { target }
             | TimelineAction::SetTimelineScroll { target, .. }
             | TimelineAction::SendText { target, .. } => target.room_id.clone(),
@@ -98,6 +100,9 @@ impl FakeTimelines {
                 ..
             } => fake.jump_to(&event_id, from_item_id),
             TimelineAction::JumpBack { .. } => fake.jump_back(),
+            TimelineAction::RegisterFocusRevision { revision, .. } => {
+                fake.register_revision(revision)
+            }
             TimelineAction::SetTimelineScroll { scroll, .. } => fake.scrolled(scroll),
             TimelineAction::SendText { body, .. } => fake.send_text(&body, &[]),
             _ => {}
@@ -135,6 +140,8 @@ struct State {
     back: Vec<String>,
     /// 发过几条，给新消息编号。
     sent: usize,
+    /// 壳报的跳转序号，每批原样带回。
+    revision: u32,
 }
 
 impl FakeTimeline {
@@ -161,10 +168,27 @@ impl FakeTimeline {
             ..self.lock().base.clone()
         };
         change(&mut update);
+        update.focus_revision = self.lock().revision;
         self.push(&mut update);
     }
 
-    fn jump_to(&self, event_id: &str, from_item_id: String) {
+    fn register_revision(&self, revision: u32) {
+        self.lock().revision = revision;
+    }
+
+    /// 找不到原消息时先报加载，停一会儿再说找不到（真核心这时在往前翻页）。期间壳又报了新序号就作废这一跳。
+    fn give_up_later(self: &Arc<Self>, revision: u32) {
+        let this = Arc::clone(self);
+        std::thread::spawn(move || {
+            std::thread::sleep(std::time::Duration::from_millis(700));
+            if this.lock().revision != revision {
+                return;
+            }
+            this.batch(|update| update.jump = JumpState::Unavailable);
+        });
+    }
+
+    fn jump_to(self: &Arc<Self>, event_id: &str, from_item_id: String) {
         let target = self
             .lock()
             .items
@@ -178,7 +202,9 @@ impl FakeTimeline {
                 _ => None,
             });
         let Some(item_id) = target else {
-            self.batch(|update| update.jump = JumpState::Unavailable);
+            let revision = self.lock().revision;
+            self.batch(|update| update.jump = JumpState::Loading);
+            self.give_up_later(revision);
             return;
         };
         self.lock().back.push(from_item_id);
@@ -480,7 +506,7 @@ mod tests {
             crate::chat::apply_diff(&mut items, diff);
         }
         assert_eq!(items.len(), ITEMS + 1);
-        let forwarded = message(&items, "ui-fake-forwarded-24");
+        let forwarded = message(&items, "ui-fake-forwarded-27");
         let MessageContent::Text { body, .. } = &forwarded.body else {
             panic!("转发的是文字");
         };

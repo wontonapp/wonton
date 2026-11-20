@@ -38,10 +38,16 @@ struct Inner {
     focus: Option<TimelineFocus>,
     /// 到底了：这一批滚到底，栈也随之清空。
     bottom: bool,
+    /// 壳最近报的跳转序号，原样带回 [`wonton_protocol::TimelineUpdate::focus_revision`]。
+    revision: u32,
 }
 
 enum Request {
-    Jump { event: String, from: String },
+    Jump {
+        event: String,
+        from: String,
+        revision: u32,
+    },
     Back,
 }
 
@@ -82,12 +88,33 @@ impl Jumps {
         std::mem::take(&mut lock(&self.inner).bottom)
     }
 
-    pub(super) fn request(&self, event_id: String, from_item_id: String) {
+    /// 壳报的跳转序号：先记下，还在找的上一次原消息作废，这一次从头找。
+    pub(super) fn register_revision(&self, revision: u32) {
+        {
+            let mut inner = lock(&self.inner);
+            inner.revision = revision;
+            if inner.wanted.take().is_none() {
+                return;
+            }
+            inner.state = JumpState::Idle;
+            // 旧落点作废，别让壳拿它先滚一次。
+            inner.focus = None;
+        }
+        self.abort();
+        self.wake();
+    }
+
+    pub(super) fn revision(&self) -> u32 {
+        lock(&self.inner).revision
+    }
+
+    pub(super) fn request(&self, event_id: String, from_item_id: String, revision: u32) {
         {
             let mut inner = lock(&self.inner);
             inner.request = Some(Request::Jump {
                 event: event_id,
                 from: from_item_id,
+                revision,
             });
             inner.focus = None;
             inner.bottom = false;
@@ -126,9 +153,14 @@ impl Jumps {
         let request = lock(&self.inner).request.take();
         match request {
             None => {}
-            Some(Request::Jump { event, from }) => match find(entries, &event) {
+            Some(Request::Jump {
+                event,
+                from,
+                revision,
+            }) => match find(entries, &event) {
                 Some(item_id) => {
                     let mut inner = lock(&self.inner);
+                    inner.revision = revision;
                     inner.back.push(from);
                     inner.focus = Some(TimelineFocus {
                         item_id,
@@ -298,10 +330,24 @@ fn find(entries: &Vector<TimelineEntry>, event_id: &str) -> Option<String> {
 
 impl TimelineSubscription {
     /// 跳到原消息：有就下一批给焦点，没有就往前翻页。
-    pub(super) fn jump_to(&self, event_id: &str, from_item_id: &str) {
+    pub(super) fn jump_to(&self, event_id: &str, from_item_id: &str, revision: u32) {
         if let Some(live) = lock(&self.live).as_ref() {
             live.jumps
-                .request(event_id.to_owned(), from_item_id.to_owned());
+                .request(event_id.to_owned(), from_item_id.to_owned(), revision);
+        }
+    }
+
+    /// 当前报过的跳转序号。
+    pub(super) fn jumps_revision(&self) -> u32 {
+        lock(&self.live)
+            .as_ref()
+            .map_or(0, |live| live.jumps.revision())
+    }
+
+    /// 壳报的跳转序号（[`wonton_protocol::TimelineAction::RegisterFocusRevision`]）。
+    pub(super) fn register_focus_revision(&self, revision: u32) {
+        if let Some(live) = lock(&self.live).as_ref() {
+            live.jumps.register_revision(revision);
         }
     }
 

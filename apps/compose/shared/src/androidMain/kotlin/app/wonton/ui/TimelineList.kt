@@ -25,6 +25,7 @@ import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.snapshotFlow
 import androidx.compose.runtime.getValue
+import androidx.compose.runtime.mutableIntStateOf
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
@@ -85,6 +86,8 @@ internal fun TimelineList(
     val newestFirst = timeline.items.asReversed()
     val openCard: (String) -> Unit = { cardId -> timeline.openedConfirmation = cardId }
     val pill = rememberDatePill(listState, newestFirst)
+    val landing = remember { JumpLandingState() }
+    LandingHint(timeline, landing)
     val inset = LocalWontonTopInset.current
     PaginateOnTop(listState, timeline, target, onAction)
     Box(modifier) {
@@ -155,11 +158,13 @@ internal fun TimelineList(
                 },
             ),
         )
-        // 跳转找不到那条消息时轻轻说一声，列表不动。
+        // 找不到原消息时轻轻说一声，两秒后自己收；胶囊不接指针（没挂点击），压着的条目照样点得到。
         DatePill(
-            timeline.jump == JumpState.UNAVAILABLE,
+            landing.shows,
             stringResource(R.string.timeline_jump_unavailable),
-            Modifier.align(Alignment.BottomCenter).padding(bottom = WontonTheme.spacing.s8),
+            Modifier.align(Alignment.BottomCenter)
+                .padding(bottom = LocalWontonBottomInset.current + WontonTheme.spacing.s8),
+            tag = "jump-hint",
         )
         ScrollToBottomButton(
             timeline,
@@ -201,6 +206,30 @@ private fun PaginateOnTop(
             .distinctUntilChanged()
             .filter { it }
             .collect { onAction(Action.Timeline(TimelineAction.PaginateBackwards(target))) }
+    }
+}
+
+/** 跳转找不到原消息时的那句提示：触发时显示，两秒后自己收掉，不用点。 */
+private class JumpLandingState {
+    var missing by mutableIntStateOf(0)
+    var shows by mutableStateOf(false)
+}
+
+@Composable
+private fun LandingHint(timeline: TimelineState, landing: JumpLandingState) {
+    // 一跳就收掉上一次的提示，别压在列表上挡第二下。
+    LaunchedEffect(timeline.jump) {
+        when (timeline.jump) {
+            JumpState.LOADING, JumpState.UNAVAILABLE -> landing.shows = false
+            JumpState.IDLE, JumpState.OTHER -> {}
+        }
+        if (timeline.jump == JumpState.UNAVAILABLE) landing.missing++
+    }
+    LaunchedEffect(landing.missing) {
+        if (landing.missing == 0) return@LaunchedEffect
+        landing.shows = true
+        delay(WontonTheme.motion.jumpHighlight.toLong() + WontonTheme.motion.datePillHold.toLong())
+        landing.shows = false
     }
 }
 
@@ -275,14 +304,13 @@ private fun TimelineRow(
                 onAction(Action.Chat(ChatAction.AnswerAgentChoice(target.roomId, item.id, key)))
             },
             onOpenSideChat = sideChats.onOpen,
-            onJumpQuote = { eventId ->
-                onAction(Action.Timeline(TimelineAction.JumpToMessage(target, eventId, item.id)))
-            },
+            onJumpQuote = { eventId -> timeline.jumpTo(eventId, item.id, target, onAction) },
             onAnswerChoice = { key ->
                 onAction(Action.Chat(ChatAction.AnswerAgentChoice(target.roomId, item.id, key)))
             },
             focused = timeline.focus?.itemId == item.id,
             emphasize = timeline.focus?.highlight == true,
+            jumpQuote = timeline.jumpQuote,
             flushesPrevious = previous?.flushesWith(next = item) == true,
             flushesNext = item.flushesWith(next = next),
         )
@@ -320,11 +348,12 @@ private fun DaySeparator(label: String) {
 
 /** 浮在列表上的小胶囊（日期、跳转失败的提示）。 */
 @Composable
-private fun DatePill(visible: Boolean, text: String, modifier: Modifier) {
-    AnimatedVisibility(visible, modifier.testTag("date-pill"), fadeIn(), fadeOut()) {
+private fun DatePill(visible: Boolean, text: String, modifier: Modifier, tag: String = "date-pill") {
+    AnimatedVisibility(visible, enter = fadeIn(), exit = fadeOut()) {
         Text(
             text,
-            Modifier
+            modifier
+                .testTag(tag)
                 .background(
                     WontonTheme.colors.surfaceSubtle.toColor().copy(alpha = PILL_ALPHA),
                     RoundedCornerShape(WontonTheme.radii.pill),

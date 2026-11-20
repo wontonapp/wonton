@@ -318,7 +318,7 @@ class RoomTelegramTest {
         compose.onNode(hasTestTag("forward-row") and hasText("Notes")).performClick()
         screenshot("forward-sheet")
         compose.onNodeWithTag("forward-send").performClick()
-        compose.waitUntil(10_000) { forwardedInto("Family", "ui-fake-forwarded-24") }
+        compose.waitUntil(10_000) { forwardedInto("Family", "ui-fake-forwarded-27") }
         screenshot("forward-sent")
         // 回聊天列表，再进 Notes 看另一份也到了。
         compose.onNodeWithContentDescription(string(R.string.design_back)).performClick()
@@ -326,7 +326,7 @@ class RoomTelegramTest {
         if (hasBack()) compose.onNodeWithContentDescription(string(R.string.design_back)).performClick()
         // 到了聊天列表，点 Notes 那条。
         compose.onNodeWithText("Notes").performClick()
-        compose.waitUntil(10_000) { forwardedInto("Notes", "ui-fake-forwarded-24") }
+        compose.waitUntil(10_000) { forwardedInto("Notes", "ui-fake-forwarded-27") }
     }
 
     private fun forwardRows() = compose.onAllNodes(hasTestTag("forward-row")).fetchSemanticsNodes().size
@@ -412,6 +412,8 @@ class RoomTelegramTest {
 
     @Test
     fun commandMenuListsBotCommandsAndSends() {
+        // 前面的用例可能把附件标成了上传失败，发送（含点命令）会被拒；这里不测附件，先清掉。
+        clearTray()
         compose.onNodeWithContentDescription(string(R.string.composer_commands)).performClick()
         compose.onNodeWithTag("command-help").assertIsDisplayed()
         compose.onNodeWithTag("command-model").assertIsDisplayed()
@@ -500,17 +502,17 @@ class RoomTelegramTest {
     @Test
     fun groupTopKeepsFirstBubbleBelowTheBar() {
         openFamily()
-        // 23 是最早的一条，翻到最上面就是它。
-        scrollTo(23)
+        // 26 是最早的一条（长名字），翻到最上面就是它。
+        scrollTo(26)
         repeat(3) {
             compose.onNodeWithTag("room-timeline").performTouchInput {
                 swipe(Offset(centerX, centerY * 0.3f), Offset(centerX, centerY * 1.9f), durationMillis = 400)
             }
             compose.waitForIdle()
         }
-        bubble(23).assertIsDisplayed()
+        bubble(26).assertIsDisplayed()
         // 最早那条气泡的顶边还在顶栏下面，没被顶栏拿走。
-        val first = bubble(23).fetchSemanticsNode().boundsInRoot
+        val first = bubble(26).fetchSemanticsNode().boundsInRoot
         // 顶栏和它下面那行（群里的 AI 等）都不能压在第一条上。
         val bar = compose.onNodeWithTag("room-bar").fetchSemanticsNode().boundsInRoot.bottom
         val header = compose.onNodeWithTag("room-header").fetchSemanticsNode().boundsInRoot.bottom

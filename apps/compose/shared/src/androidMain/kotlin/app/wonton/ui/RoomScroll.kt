@@ -32,7 +32,6 @@ import androidx.compose.ui.unit.dp
 import app.wonton.protocol.Action
 import app.wonton.protocol.BackPagination
 import app.wonton.protocol.TimelineAction
-import app.wonton.protocol.TimelineFocus
 import app.wonton.protocol.TimelineItem
 import app.wonton.protocol.TimelineScroll
 import app.wonton.protocol.TimelineTarget
@@ -90,33 +89,55 @@ internal fun ScrollEffects(
     // 进房间的落点摆好之前：不跟随、不报方向、不标已读（ADR-0071）。时间线清空重建后闸门重开，按新落点重摆。
     val placed = remember(timeline.clears) { mutableStateOf(false) }
     val following = remember(target) { mutableStateOf(true) }
-    JumpToFocus(listState, timeline.focus, newestFirst, target, onAction) { following.value = false }
+    JumpToFocus(listState, timeline, newestFirst, target, onAction, onLanded = { timeline.jumpQuote = null }) {
+        following.value = false
+    }
     PlaceAtAnchor(listState, timeline, newestFirst, target, placed, following, onAction)
     ReportAtBottom(listState, timeline, target, covered, placed, following, onAction)
 }
 
-/** 跳转落到的位置：滚到中间，停在不跟随的位置，让“返回”按钮出来。 */
+/**
+ * 跳转落到的位置：滚到中间，停在不跟随的位置，让“返回”按钮出来。
+ * 按键的不只是落点，还有核心每次跳转加一的序号：同一条原消息连点两下也要重新滚一次。
+ * 先画一帧再动手，装转圈的那一帧里落在旧位置上的点击，滚到的还是这一次的落点。
+ */
 @Composable
 private fun JumpToFocus(
     listState: LazyListState,
-    focus: TimelineFocus?,
+    timeline: TimelineState,
     newestFirst: List<TimelineItem>,
     target: TimelineTarget,
     onAction: (Action) -> Unit,
+    onLanded: () -> Unit,
     stopFollowing: () -> Unit,
 ) {
-    LaunchedEffect(focus) {
-        val id = focus?.itemId ?: return@LaunchedEffect
-        val index = newestFirst.indexOfFirst { it.id == id }
-        if (index < 0) return@LaunchedEffect
+    LaunchedEffect(timeline.focus, timeline.focusRevision) {
+        val id = timeline.focus?.itemId ?: return@LaunchedEffect
         stopFollowing()
-        listState.scrollToItem(index)
         withFrameNanos { }
-        val item = listState.layoutInfo.visibleItemsInfo.firstOrNull { it.index == index } ?: return@LaunchedEffect
-        listState.scrollToItem(index, (listState.layoutInfo.viewportSize.height - item.size) / 2)
-        if (!listState.isAtBottom()) onAction(scrollAction(target, TimelineScroll.AWAY))
+        val index = newestFirst.indexOfFirst { it.id == id }
+        if (index >= 0) {
+            listState.scrollToItem(index)
+            // 条目刚变可见时可能还没量出高度，等它进布局再居中；超过几帧就别再等。
+            var item = listState.layoutInfo.visibleItemsInfo.firstOrNull { it.index == index }
+            var waited = 0
+            while (item == null && waited < CENTER_FRAMES) {
+                withFrameNanos { }
+                item = listState.layoutInfo.visibleItemsInfo.firstOrNull { it.index == index }
+                waited++
+            }
+            if (item != null) {
+                // 反序列表里正偏移是往上滚过条目：长的往中间挪要正数，短的往回补要负数。
+                listState.scrollToItem(index, (item.size - listState.layoutInfo.viewportSize.height) / 2)
+                if (!listState.isAtBottom()) onAction(scrollAction(target, TimelineScroll.AWAY))
+            }
+        }
+        onLanded()
     }
 }
+
+/** 落点居中前最多等几帧，等条目量出高度。 */
+private const val CENTER_FRAMES = 5
 
 /** 时间线变了：头一次摆落点，之后跟着新消息到底（ADR-0071）。 */
 @Composable
