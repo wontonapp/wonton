@@ -339,8 +339,16 @@ extension ChatPanelUITests {
     private func openPanel() {
         let button = app.buttons.matching(identifier: "panelOpen").allElementsBoundByIndex
             .first { $0.exists && $0.isHittable }
-        guard let button else { return XCTFail("没有可达的面板入口按钮\n\(app.debugDescription)") }
-        button.tap()
+        if let button { return button.tap() }
+        // 房间里的入口在 Bot 资料页（ADR-0052）：点顶栏头像进资料页，再点“打开面板”。
+        let avatar = app.buttons["roomTopBarAvatar"]
+        guard avatar.exists, avatar.isHittable else {
+            return XCTFail("没有可达的面板入口按钮\n\(app.debugDescription)")
+        }
+        avatar.tap()
+        let entry = app.buttons["botProfilePanelOpen"]
+        XCTAssertTrue(entry.waitForExistence(timeout: 5), "Bot 资料页没有打开面板的按钮\n\(app.debugDescription)")
+        entry.tap()
     }
 
     /// 进 Bot 的房间，返回输入框。新配对的设备走完引导直接落在主 Bot 的房间里，这时不用再从列表点进去。

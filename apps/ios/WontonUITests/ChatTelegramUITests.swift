@@ -148,6 +148,15 @@ final class ChatTelegramUITests: XCTestCase {
         shot("group-dark")
     }
 
+    /// 房间顶栏没有“打开面板”的按钮；点头像进 Bot 资料页，从那里打开这个房间的面板（ADR-0052）。
+    func testPanelOpensFromBotProfile() {
+        enter(Self.directRoom)
+        XCTAssertFalse(app.buttons["panelOpen"].exists, "房间顶栏还有打开面板的按钮")
+        tap(app.buttons["roomTopBarAvatar"])
+        tap(app.buttons["botProfilePanelOpen"])
+        XCTAssertTrue(app.otherElements["chatPanel"].waitForExistence(timeout: 5), "资料页的按钮没有打开面板\n\(app.debugDescription)")
+    }
+
     /// 群聊里别人的组尾旁边有头像，私聊里没有。
     func testGroupShowsSenderAvatarAndDirectDoesNot() {
         enter(Self.groupRoom)

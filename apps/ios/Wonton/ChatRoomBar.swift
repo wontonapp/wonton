@@ -3,7 +3,7 @@ import WontonClient
 
 /// 主对话的顶栏（ADR-0109 第 8 节）：左边返回，中间一枚胶囊写名字和状态行（“正在输入…”也在这里），右边圆头像；
 /// 几样都是浮在消息上的玻璃（ADR-0107），栏本身不垫底，消息从下面滚过去。
-/// 点头像或标题进对方的资料页；面板、通话、旁聊这些房间入口排在头像左边（ADR-0052 要求面板入口留在顶栏）。
+/// 点头像或标题进对方的资料页；通话、旁聊这两个房间入口排在头像左边。面板的入口在资料页里（ADR-0052）。
 struct ChatRoomBar<Trailing: View>: View {
     let title: String
     let avatar: AnyView?
@@ -63,7 +63,7 @@ struct ChatRoomBar<Trailing: View>: View {
                     .lineLimit(1)
             }
         }
-        .padding(.horizontal, WontonTheme.spacing.s16)
+        .padding(.horizontal, WontonTheme.spacing.s12)
         .frame(minHeight: WontonTheme.size.chatControl)
         .chatGlass(in: Capsule(), interactive: openProfile != nil)
         .contentShape(Capsule())
@@ -91,9 +91,13 @@ struct ChatRoomBar<Trailing: View>: View {
     }
 }
 
-/// 顶栏的三段：左、中、右。中间那一段在整条栏里居中；两边的东西太宽、居中放不下时，退到两边之间的空里居中。
+/// 顶栏的三段：左、中、右。中间那一段在整条栏里居中，两边的东西宽了就收窄（字截断）；窄到 `minimum` 还放不下，
+/// 才退到两边之间的空里居中。
 private struct ChatBarLayout: Layout {
     var spacing: CGFloat = WontonTheme.spacing.s4
+
+    /// 居中时标题胶囊至少这么宽。
+    private static let minimum = WontonTheme.size.chatControl * 2
 
     func sizeThatFits(proposal: ProposedViewSize, subviews: Subviews, cache: inout ()) -> CGSize {
         let sizes = subviews.map { $0.sizeThatFits(.unspecified) }
@@ -114,10 +118,9 @@ private struct ChatBarLayout: Layout {
         let gap = max(0, bounds.width - leading.width - trailing.width - spacing * 2)
         let balanced = max(0, bounds.width - max(leading.width, trailing.width) * 2 - spacing * 2)
         let ideal = subviews[1].sizeThatFits(.unspecified).width
-        let width = min(ideal, gap)
-        let center = ideal <= balanced
-            ? bounds.midX
-            : bounds.minX + leading.width + spacing + gap / 2
+        let centered = min(ideal, balanced) >= min(ideal, Self.minimum)
+        let width = min(ideal, centered ? balanced : gap)
+        let center = centered ? bounds.midX : bounds.minX + leading.width + spacing + gap / 2
         subviews[1].place(
             at: CGPoint(x: center, y: bounds.midY), anchor: .center,
             proposal: ProposedViewSize(width: width, height: bounds.height)
