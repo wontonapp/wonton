@@ -50,6 +50,10 @@ pub struct DevicePayload {
     /// 新的联系人请求（ADR-0045）：不对应房间里的消息，`room_id`、`event_id` 为空。
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub contact_request: Option<wonton_protocol::ContactRequestPush>,
+    /// 推送的类别（ADR-0047 的类别）：`confirmation` 是等你回答的确认卡片，卡片标题在发送者位上。
+    /// 现在只有客户端核心直推的确认卡片带它（那边的 PR 定数据），消息类推送不带，App 按普通消息显示。
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub category: Option<String>,
 }
 
 impl Notification {
@@ -64,6 +68,7 @@ impl Notification {
             room_name: self.room_name.clone(),
             prio: self.prio.clone(),
             contact_request: None,
+            category: None,
         })
     }
 
@@ -95,6 +100,7 @@ mod tests {
             room_name: None,
             prio: Some("high".into()),
             contact_request: None,
+            category: None,
         };
         assert_eq!(
             serde_json::to_value(&payload).unwrap(),

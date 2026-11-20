@@ -39,14 +39,21 @@ targets:
       # 系统入口（ADR-0100）：快照解码、链接和 OpenIntent 与小组件扩展共用；App 进程里由 SystemEntryModel
       # 订阅核心刷新 WidgetKit 时间线和 Spotlight。
       - SystemEntry
+      # 推送密钥和通知扩展共用（两边都要读写共享钥匙串）。
+      - WontonPushExtension/PushKeys.swift
     dependencies:
       - package: WontonClient
       - target: ShareExtension
       - target: WidgetExtension
+      # 通知服务扩展：推送在本机解开（ADR-0003 的“设计：加密推送”），加进 App 才会被嵌进包里。
+      - target: WontonPushExtension
     # 数据目录在 App Group 的容器里，分享扩展才放得进收件目录（ADR-0097）。
+    # 推送密钥放在和通知扩展共享的钥匙串里，经 App Group 共享（ADR-0003 的“设备的推送密钥”）。
+    # aps-environment 真机注册远程通知要用；模拟器不检查，等 Apple 开发者账号到位后自然生效。
     entitlements:
       path: Wonton/Wonton.entitlements
       properties:
+        aps-environment: development
         com.apple.security.application-groups:
           - group.$(WONTON_BUNDLE_ID)
     # 版本号靠生成工程时写出的 Version.xcconfig（或 xcodebuild 显式传参）。两源皆空时 Release 会落到
@@ -102,6 +109,9 @@ targets:
           UIImageName: LaunchGlyph
           UIImageRespectsSafeAreaInsets: false
         WontonAppGroup: group.$(WONTON_BUNDLE_ID)
+        # 推送中继的地址（ADR-0003 的“渠道”）：中继为我们运营，是 App 构建配置，不是核心下发。
+        # 没有配置时 App 如实显示“推送还没开通”，不假装已开启。
+        WontonPushRelay: ""
     settings:
       base:
         PRODUCT_BUNDLE_IDENTIFIER: $(WONTON_BUNDLE_ID)
@@ -185,11 +195,37 @@ targets:
         SWIFT_EMIT_LOC_STRINGS: NO
         TARGETED_DEVICE_FAMILY: "1"
 
+  WontonPushExtension:
+    type: app-extension
+    platform: iOS
+    sources:
+      - WontonPushExtension
+    info:
+      path: WontonPushExtension/Info.plist
+      properties:
+        NSExtension:
+          NSExtensionPointIdentifier: com.apple.usernotifications.service
+          NSExtensionPrincipalClass: $(PRODUCT_MODULE_NAME).NotificationService
+    entitlements:
+      path: WontonPushExtension/WontonPushExtension.entitlements
+      properties:
+        com.apple.security.application-groups:
+          - group.$(WONTON_BUNDLE_ID)
+    settings:
+      base:
+        PRODUCT_BUNDLE_IDENTIFIER: $(WONTON_BUNDLE_ID).push
+        GENERATE_INFOPLIST_FILE: YES
+        STRING_CATALOG_GENERATE_SYMBOLS: YES
+        SWIFT_EMIT_LOC_STRINGS: NO
+        TARGETED_DEVICE_FAMILY: "1"
+
   WontonTests:
     type: bundle.unit-test
     platform: iOS
     sources:
       - WontonTests
+      # 通知扩展的 RFC 8291 解密单测直接编译这份共享代码（扩展和测试目标各编一份，不进主 App）。
+      - WontonPushExtension/WontonPush.swift
     dependencies:
       - target: Wonton
       - package: WontonClient

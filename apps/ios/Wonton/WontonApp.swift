@@ -7,6 +7,7 @@ import WontonClient
 @main
 struct WontonApp: App {
     @UIApplicationDelegateAdaptor(FullscreenOrientation.self) private var orientation
+    @Environment(\.scenePhase) private var scenePhase
     /// 整个 App 只有一个核心实例，状态都在它里面。
     @State private var launch: Launch
 
@@ -51,6 +52,11 @@ struct WontonApp: App {
                     guard let identifier = activity.userInfo?[CSSearchableItemActivityIdentifier] as? String,
                           let url = URL(string: identifier) else { return }
                     navigation.receive(url)
+                }
+                .onChange(of: scenePhase, initial: false) { old, phase in
+                    // 扩展切回 App 要赶在网页恢复后的第一个请求之前挪到目标服务器。离开后台就发，不等 .active
+                    // （实测晚约 0.4 秒）。核心的前后台和网络变化由 AppActivity 负责。
+                    if old == .background, phase != .background { navigation.push.foregrounded() }
                 }
             case let .failed(reason):
                 WontonThemeRoot(appearance: defaultAppearance()) {

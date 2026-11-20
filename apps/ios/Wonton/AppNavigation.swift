@@ -13,6 +13,8 @@ final class AppNavigation {
     let home: HomeModel
     let plugins: PluginsModel
     let pages: PagesModel
+    /// 推送：登记和通知点开的跳转都在这里（ADR-0003 的“设计：加密推送”）。
+    let push: PushModel
     let onboarding: OnboardingModel
     let shareIn: ShareInModel
     private(set) var presentationRevision = 0
@@ -28,6 +30,7 @@ final class AppNavigation {
         self.home = home
         self.plugins = plugins
         pages = PagesModel(core: chat.core)
+        push = PushModel(core: chat.core)
         onboarding = OnboardingModel(core: chat.core)
         shareIn = ShareInModel(core: chat.core)
         Self.shared = self
@@ -161,6 +164,48 @@ final class AppNavigation {
             opensSettings = true
             presentationRevision += 1
         }
+    }
+
+    /// 点开推送通知：通知来自哪台服务器就切到哪台（ADR-0042 的“推送带上服务器 ID”），进了聊天页打开那个房间。
+    /// 切不过去（服务器已从手机上移除、或者连不上）时如实说，不假装打开了。
+    func openPushRoom(server: String?, roomId: String) {
+        request { navigation in
+            guard try await navigation.navigationReady() else { return }
+            if let server, !(await navigation.switchPushServer(server)) { return }
+            try navigation.select(.chat)
+            // 没有来源会话的卡片（核心自己发起的，ADR-0016）room_id 为空：落在会话列表，待确认的卡片就在那里。
+            if !roomId.isEmpty { navigation.chat.openRoom(id: roomId) }
+        }
+    }
+
+    /// 切到通知来自的那台服务器并等它连上；已在这台就直接过。连不上时已把原因写进 `pages.rejection`。
+    private func switchPushServer(_ server: String) async -> Bool {
+        // 通知里的 server 是 endpoint ID；已连着的记录在 `home.serverId` 里（配对票据里的 endpoint ID，同一个东西）。
+        if home.viewModel.serverId == server { return true }
+        guard let slot = chat.core.pushServerSlot(server: server) else {
+            pages.rejection = Problem(title: String(localized: .Servers.serversNotificationUnreachable), detail: server)
+            return false
+        }
+        do {
+            try chat.core.dispatch(action: .home(action: .switchServer(id: slot)))
+        } catch {
+            pages.rejection = error.problem
+            return false
+        }
+        // 等切完：连上了就进房间，连不上（自动重试也失败）如实说。
+        var settled = false
+        for await home in chat.core.subscribeHome().updates() where home.serverId == server {
+            if case .connected = home.status {
+                settled = true
+            }
+            if case let .disconnected(_, message) = home.status {
+                pages.rejection = Problem(
+                    title: String(localized: .Servers.serversNotificationUnreachable), detail: message
+                )
+            }
+            if settled || pages.rejection != nil { break }
+        }
+        return settled && pages.rejection == nil
     }
 
     /// 链接要求进“其他服务器”。取走标记，调用方去改导航路径。

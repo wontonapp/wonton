@@ -188,6 +188,12 @@ impl ClientCore {
             Route::Removed => Err(removed()),
         }
     }
+
+    /// 通知里的 `server`（ADR-0003：发推送的服务器的 endpoint ID）对应本机哪个槽位，点开通知好换到那台
+    /// （ADR-0042）。推送来自已经从手机上移除的服务器时为空。
+    pub fn push_server_slot(&self, server: String) -> Option<String> {
+        self.servers.slot_of(&server)
+    }
 }
 
 impl ClientCore {
