@@ -30,6 +30,10 @@ impl PluginsLink {
                 self.refresh_roles();
                 return Ok(());
             }
+            // 头像按人走，实现和角色不在一个文件里；`dispatch` 已经先分走，这里留着让 match 穷尽。
+            FamilyAction::SetMyAvatar { .. } | FamilyAction::ClearMyAvatar => {
+                return self.dispatch_my_avatar(action);
+            }
             FamilyAction::CreateRole { draft } => Request::Create(draft),
             FamilyAction::UpdateRole { role_id, draft } => Request::Update(role_id, draft),
             FamilyAction::DeleteRole { role_id } => Request::Delete(role_id),

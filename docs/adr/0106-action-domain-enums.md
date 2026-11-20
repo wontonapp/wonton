@@ -89,7 +89,7 @@ Agent 动作由同步 `dispatch` 发起后在后台完成：即时连接错误�
 | `PageAction` | `OpenPage`、`ClosePage`、`AddMyApp`、`RemoveMyApp`、`MoveMyApp`、`SetAutoAddApps`、`RetryMyAppSync`、`AddPanelPage`、`RemovePanelPage`、`MovePanelPage`、`SelectPanelPage`、`SetBotPinConsent`、`PinCurrentPage`、`ReloadTab`、`TabLoadFailed`、`TabLoadSucceeded`、`DismissUninstalledTabs` |
 | `PeerAction` | `RefreshPeers`、`ShowPeerCode`、`HidePeerCode`、`ResetPeerCode`、`ScanPeerCode`、`ApprovePeerRequest`、`RejectPeerRequest`、`UnrejectPeerRequest`、`RemovePeer` |
 | `BotContactAction` | `RefreshBotContacts`、`RequestBotContact`、`RequestPersonContact`、`ApproveBotContact`、`RejectBotContact`、`RemoveBotContact` |
-| `FamilyAction` | `RefreshRoles`、`CreateRole`、`UpdateRole`、`DeleteRole`、`SetDefaultRole`、`AssignMemberRole`、`AssignFriendRole` |
+| `FamilyAction` | `SetMyAvatar`、`ClearMyAvatar`、`RefreshRoles`、`CreateRole`、`UpdateRole`、`DeleteRole`、`SetDefaultRole`、`AssignMemberRole`、`AssignFriendRole` |
 | `FriendsAction` | `RefreshFriends`、`AddFriend`、`ApproveFriendRequest`、`RejectFriendRequest`、`CancelFriendRequest`、`RemoveFriend`、`BlockFriend`、`UnblockFriend`、`SaveFriendGroup`、`RemoveFriendGroup`、`SetFriendGroups` |
 | `SharingAction` | `CreatePluginShare`、`UpdatePluginShare`、`RevokePluginShare`、`RefreshSharedApps`、`OpenSharedApp` |
 | `AgentAction` | `StopChain`、`SetAgentLimits`（由原独立 `AgentChainAction` 改名并纳入 `Action::Agent`） |

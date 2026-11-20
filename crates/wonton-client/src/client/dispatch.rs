@@ -5,8 +5,8 @@ use std::sync::atomic::Ordering;
 
 use wonton_l10n::l10n;
 use wonton_protocol::{
-    Action, AgentAction, BotAction, ChatAction, DefaultBotVisibility, DeviceNetwork, HomeAction,
-    HomeStatus, PageAction, PluginAction, PushAction, SessionAction, SettingsAction,
+    Action, AgentAction, BotAction, ChatAction, DefaultBotVisibility, DeviceNetwork, FamilyAction,
+    HomeAction, HomeStatus, PageAction, PluginAction, PushAction, SessionAction, SettingsAction,
     TimelineAction,
 };
 
@@ -73,7 +73,12 @@ impl ClientCore {
             Action::Pages { action } => self.page_action(&scope, action),
             Action::Peers { action } => scope.peers.dispatch(action),
             Action::BotContacts { action } => scope.bot_contacts.dispatch(action),
-            Action::Family { action } => scope.plugins.dispatch_roles(action),
+            Action::Family { action } => match action {
+                FamilyAction::SetMyAvatar { .. } | FamilyAction::ClearMyAvatar => {
+                    scope.plugins.dispatch_my_avatar(action)
+                }
+                action => scope.plugins.dispatch_roles(action),
+            },
             Action::Friends { action } => scope.friends.dispatch(action),
             Action::Sharing { action } => self.dispatch_sharing(&scope, action),
             Action::Timeline { action } => self.timeline_action(&scope, action),

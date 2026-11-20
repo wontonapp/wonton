@@ -550,6 +550,7 @@ impl Gateway {
                 permissions: None,
                 display_name: profile.display_name,
                 email: profile.email,
+                avatar: None,
             })
         } else {
             let record = self
@@ -577,6 +578,7 @@ impl Gateway {
                 role_id: Some(record.role_id),
                 display_name: Some(record.display_name),
                 email: record.email,
+                avatar: None,
             })
         }
     }

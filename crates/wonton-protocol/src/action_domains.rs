@@ -544,11 +544,17 @@ pub enum BotContactAction {
     RemoveBotContact { bot: BotRef, user_id: String },
 }
 
-/// 家庭成员角色操作。
+/// 自己的资料和家庭成员角色操作。
 #[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize)]
 #[cfg_attr(feature = "uniffi", derive(uniffi::Enum))]
 #[serde(tag = "type", rename_all = "snake_case")]
 pub enum FamilyAction {
+    /// 换自己的头像：文件由壳按 [`MAX_AVATAR_EDGE`](crate::MAX_AVATAR_EDGE)、[`MAX_AVATAR_BYTES`](crate::MAX_AVATAR_BYTES)
+    /// 裁好、压好，核心按文件头检查后传到 Matrix 的媒体库，再把 `mxc://` 写进自己的资料 `avatar_url`。资料只放静态图，
+    /// 格式或尺寸不行时返回 `InvalidInput`。家人和主人一样能用。
+    SetMyAvatar { upload: crate::AvatarUpload },
+    /// 清掉自己的头像；壳显示名字首字母。
+    ClearMyAvatar,
     /// 取全部角色和默认邀请角色；只有主人能用。
     RefreshRoles,
     /// 新建角色，名字和权限项见 [`RoleDraft`](crate::RoleDraft)；成功后进角色列表。

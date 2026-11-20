@@ -403,6 +403,24 @@ async fn saving_the_profile_sends_it_and_keeps_the_reason_it_was_refused() {
 }
 
 #[tokio::test]
+async fn changing_your_avatar_says_so_until_it_is_wired_up() {
+    let rig = Rig::new().await;
+    for action in [
+        wonton_protocol::FamilyAction::SetMyAvatar {
+            upload: wonton_protocol::AvatarUpload {
+                mime_type: "image/jpeg".to_owned(),
+                data: vec![1, 2, 3],
+                poster: None,
+            },
+        },
+        wonton_protocol::FamilyAction::ClearMyAvatar,
+    ] {
+        let error = rig.app.dispatch(Action::Family { action }).unwrap_err();
+        assert!(matches!(error, CoreError::NotReady { .. }), "{error:?}");
+    }
+}
+
+#[tokio::test]
 async fn failures_keep_their_reason() {
     let rig = Rig::new().await;
     rig.connected().await;

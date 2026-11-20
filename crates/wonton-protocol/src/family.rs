@@ -10,7 +10,7 @@
 
 use serde::{Deserialize, Serialize};
 
-use crate::Permissions;
+use crate::{AvatarImage, Permissions};
 
 /// `GET`：[`Me`]。`PUT`：请求体 [`OwnerProfileUpdate`](crate::OwnerProfileUpdate)，改自己的资料，规则同 ADR-0030，返回 [`Me`]。
 pub const ME_PATH: &str = "/_wonton/api/me";
@@ -76,6 +76,9 @@ pub struct Me {
     pub display_name: Option<String>,
     /// 还没填时为空。
     pub email: Option<String>,
+    /// 自己的头像，是 Matrix 资料里的 `avatar_url`；没设时为空，壳显示名字首字母。
+    #[serde(default)]
+    pub avatar: Option<AvatarImage>,
 }
 
 /// 一个人的身份种类，网关按它分主人、家人和好友；能做什么不看它，看角色（ADR-0088）。
@@ -303,7 +306,7 @@ mod tests {
     use serde_json::json;
 
     use super::*;
-    use crate::Gate;
+    use crate::{AvatarKind, Gate};
 
     #[test]
     fn conflicting_private_bot_room_facts_are_not_accepted() {
@@ -373,6 +376,7 @@ mod tests {
             "permissions": null,
             "display_name": null,
             "email": null,
+            "avatar": null,
         });
         let me: Me = serde_json::from_value(owner.clone()).unwrap();
         assert_eq!(serde_json::to_value(&me).unwrap(), owner);
@@ -400,6 +404,7 @@ mod tests {
             },
             "display_name": "爱丽丝",
             "email": null,
+            "avatar": null,
         });
         let me: Me = serde_json::from_value(member.clone()).unwrap();
         assert_eq!(
@@ -415,7 +420,7 @@ mod tests {
             "user_id": "@alice:x.wonton.internal",
             "username": "alice",
             "is_owner": false,
-            "avatar": "ignored",
+            "pronouns": "ignored",
         }))
         .unwrap();
         assert_eq!(me.role_id, None);
@@ -428,6 +433,51 @@ mod tests {
             serde_json::from_value::<BotKeeper>(json!({"type": "team"})).unwrap(),
             BotKeeper::Other
         );
+    }
+
+    #[test]
+    fn an_me_without_an_avatar_is_fine() {
+        let me: Me = serde_json::from_value(json!({
+            "user_id": "@alice:x.wonton.internal",
+            "username": "alice",
+            "is_owner": false,
+        }))
+        .unwrap();
+        assert_eq!(me.avatar, None);
+    }
+
+    #[test]
+    fn me_carries_the_avatar_as_a_media_handle() {
+        let mut me = json!({
+            "user_id": "@alice:x.wonton.internal",
+            "username": "alice",
+            "is_owner": false,
+            "role_id": null,
+            "role_name": null,
+            "permissions": null,
+            "display_name": null,
+            "email": null,
+            "avatar": {
+                "media": {"token": r#"{"Plain":"mxc://x.wonton.internal/abc"}"#},
+                "kind": "still",
+                "width": null,
+                "height": null,
+                "poster": null,
+            },
+        });
+        let parsed: Me = serde_json::from_value(me.clone()).unwrap();
+        let avatar = parsed.avatar.as_ref().unwrap();
+        assert_eq!(avatar.kind, AvatarKind::Still);
+        assert_eq!(
+            avatar.media.token,
+            r#"{"Plain":"mxc://x.wonton.internal/abc"}"#
+        );
+        assert_eq!(avatar.width, None);
+        assert_eq!(serde_json::to_value(&parsed).unwrap(), me);
+
+        me["avatar"] = json!(null);
+        let cleared: Me = serde_json::from_value(me).unwrap();
+        assert_eq!(cleared.avatar, None);
     }
 
     #[test]

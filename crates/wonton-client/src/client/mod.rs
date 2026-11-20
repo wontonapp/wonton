@@ -387,6 +387,7 @@ impl ClientCore {
                 permissions: None,
                 display_name: Some("Owner".into()),
                 email: None,
+                avatar: None,
             });
         }
         let scope = self.scope();
