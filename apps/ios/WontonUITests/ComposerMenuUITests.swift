@@ -10,6 +10,8 @@ final class ComposerMenuUITests: XCTestCase {
 
     private static let directRoom = "chatRoom.!ui-fake:home.example"
     private static let draft = "send the log first"
+    /// 引用摘要两行的高度下限（`typography.supporting` 是 14 / 20，一行放不下第二行的话就算少了）。
+    private static let secondLineMinHeight: CGFloat = 34
 
     override func setUpWithError() throws {
         continueAfterFailure = false
@@ -67,6 +69,20 @@ final class ComposerMenuUITests: XCTestCase {
         XCTAssertTrue(app.buttons["replyCancel"].exists, "跳走把回复撤了")
     }
 
+    /// 引用的摘要留两行：首行只是一个表情时，第二行也看得见引用的原文（ADR-0109 第 6 节）。
+    func testReplyBarKeepsSecondSummaryLine() {
+        enter()
+        let quoted = app.buttons["messageQuote.ui-fake-20"]
+        reveal(quoted)
+        let emoji = original("🚗")
+        reveal(emoji)
+        startReply(on: emoji)
+        let reply = app.buttons["replyQuoteJump"]
+        let summary = reply.staticTexts.matching(NSPredicate(format: "label CONTAINS %@", "好久了")).firstMatch
+        XCTAssertTrue(summary.waitForExistence(timeout: 5), "回复条里没有引用的原文\n\(app.debugDescription)")
+        XCTAssertGreaterThanOrEqual(summary.frame.height, Self.secondLineMinHeight, "摘要只剩一行：\(summary.frame)")
+    }
+
     // MARK: 助手
 
     private func enter() {
@@ -74,9 +90,9 @@ final class ComposerMenuUITests: XCTestCase {
         XCTAssertTrue(text("Fixture message 3").waitForExistence(timeout: 10), "时间线没出来\n\(app.debugDescription)")
     }
 
-    /// 左滑一条消息进入回复。
-    private func startReply() {
-        let start = text("Fixture message 3").coordinate(withNormalizedOffset: CGVector(dx: 0.5, dy: 0.5))
+    /// 左滑一条消息进入回复；默认拖第 3 条那段字。
+    private func startReply(on message: XCUIElement? = nil) {
+        let start = (message ?? text("Fixture message 3")).coordinate(withNormalizedOffset: CGVector(dx: 0.5, dy: 0.5))
         start.press(
             forDuration: 0.05, thenDragTo: start.withOffset(CGVector(dx: -160, dy: 0)),
             withVelocity: .default, thenHoldForDuration: 0.1
@@ -88,8 +104,49 @@ final class ComposerMenuUITests: XCTestCase {
         tap(app.buttons["composerCommands"])
     }
 
+    /// 正文以某段字开头的第一个文本，引用里的同一段字不算。
+    private func original(_ prefix: String, file: StaticString = #filePath, line: UInt = #line) -> XCUIElement {
+        let quotes = app.buttons.matching(NSPredicate(format: "identifier BEGINSWITH %@", "messageQuote."))
+            .allElementsBoundByIndex
+        let matches = app.staticTexts.matching(NSPredicate(format: "label BEGINSWITH %@", prefix))
+            .allElementsBoundByIndex
+        guard let original = matches.first(where: { text in
+            !quotes.contains { $0.exists && $0.frame.contains(CGPoint(x: text.frame.midX, y: text.frame.midY)) }
+        }) else {
+            XCTFail("引用以外找不到以“\(prefix)”开头的正文\n\(app.debugDescription)", file: file, line: line)
+            return text(prefix)
+        }
+        return original
+    }
+
     private func text(_ prefix: String) -> XCUIElement {
         app.staticTexts.matching(NSPredicate(format: "label BEGINSWITH %@", prefix)).firstMatch
+    }
+
+    /// 从底部一段一段往回翻，直到这个元素整个在可见区里。
+    private func reveal(_ element: XCUIElement, file: StaticString = #filePath, line: UInt = #line) {
+        for _ in 0..<60 {
+            if inView(element) { return }
+            dragDown()
+        }
+        XCTFail("往回翻了 60 段也没找到 \(element)\n\(app.debugDescription)", file: file, line: line)
+    }
+
+    /// 往回翻一段。慢拖、松手前停一下：不带惯性，不会一下翻过头。
+    private func dragDown() {
+        let start = app.coordinate(withNormalizedOffset: CGVector(dx: 0.5, dy: 0.35))
+        start.press(
+            forDuration: 0.05, thenDragTo: app.coordinate(withNormalizedOffset: CGVector(dx: 0.5, dy: 0.6)),
+            withVelocity: .default, thenHoldForDuration: 0.1
+        )
+    }
+
+    /// 整个落在顶栏和输入框之间。
+    private func inView(_ element: XCUIElement) -> Bool {
+        guard element.exists, element.isHittable else { return false }
+        let top = app.staticTexts["barActivity"].frame.maxY
+        let bottom = app.textViews["Message"].frame.minY
+        return element.frame.minY > top && element.frame.maxY < bottom
     }
 
     private func tap(_ element: XCUIElement, file: StaticString = #filePath, line: UInt = #line) {

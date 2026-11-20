@@ -103,10 +103,10 @@ struct ReplyQuoteView: View {
                 .lineLimit(1)
             switch message.content {
             case let .text(text):
-                // 摘要：原文的换行并成空格，消息里最多两行，输入框上方一行。
-                Text(text.split(whereSeparator: \.isNewline).joined(separator: " "))
+                // 摘要照原文的换行排、最多两行：首行只有一个表情时，第二行也看得见原本的话（ADR-0109 第 6 节）。
+                Text(text)
                     .wontonText(WontonTheme.typography.supporting)
-                    .lineLimit(cancel == nil ? 2 : 1)
+                    .lineLimit(2)
             case let .image(thumbnail):
                 QuotedThumbnail(media: thumbnail, core: core)
                     .padding(.top, WontonTheme.spacing.s4)
