@@ -57,6 +57,7 @@ cleanup() {
     docker rm -f "$resource" >/dev/null 2>&1 || failed=1
   done
   if (( started )); then compose down --volumes --remove-orphans >/dev/null 2>&1 || failed=1; fi
+  remove_core_network
   for resource in $(docker network ls -q --filter "label=wonton.instance=$WONTON_DEV_INSTANCE"); do
     docker network rm "$resource" >/dev/null 2>&1 || failed=1
   done
@@ -102,15 +103,11 @@ services:
       WONTON_STORE_COMMUNITY: "off"
     volumes:
       - $work/index:/wonton-capability-index
-networks:
-  core:
-    ipam:
-      config:
-        - subnet: $WONTON_DEV_CORE_SUBNET
 EOF
 # Fixture packages/index are real local files; index-entry is from the tested image.
 python3 "$here/smoke-capabilities.py" prepare "$work"
 started=1
+ensure_core_network
 compose up -d --no-build --wait >"$work/up.log" 2>&1 || fail 'Compose 启动或健康检查失败'
 docker run -d --name "$probe" --network "container:$core" --entrypoint python3 \
   "$python_image" -c 'import time; time.sleep(3600)' >/dev/null

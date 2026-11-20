@@ -7,7 +7,9 @@
 
 dev_guard_dir() {
   local dir="${WONTON_INSTALL_DIR:-/opt/wonton}"
-  [[ ! -d "$dir" ]] || dir="$(cd -P "$dir" && pwd)"
+  # 正式安装目录可能是 root 700（1k 上的 /opt/wonton）：cd 不进去时按写着的路径比，别让 dir 变空、前缀成 /
+  # 把所有目录都判成“在正式安装目录里”。
+  [[ ! -d "$dir" ]] || dir="$(cd -P "$dir" 2>/dev/null && pwd)" || dir="${WONTON_INSTALL_DIR:-/opt/wonton}"
   printf '%s/\n' "${dir%/}"
 }
 

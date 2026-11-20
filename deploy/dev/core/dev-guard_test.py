@@ -147,6 +147,13 @@ class DevGuardTest(unittest.TestCase):
         sibling = self.tmp / "opt/wonton2"
         sibling.mkdir()
         self.assertEqual(self.shell(GUARD, ["wonton-dev-core"], cwd=sibling).returncode, 0)
+        # 读不进去的正式安装目录（本机真装的那份是 root 700）不能让别的目录全被判成“在里面”。
+        locked = self.tmp / "opt/locked"
+        locked.mkdir()
+        locked.chmod(0o000)
+        self.addCleanup(locked.chmod, 0o700)
+        result = self.shell(GUARD, ["wonton-dev-core"], cwd=sibling, env={"WONTON_INSTALL_DIR": str(locked)})
+        self.assertEqual(result.returncode, 0, result.stderr)
         # 查不到 Docker 时不误伤：脚本本来就跑不起来，守卫不该再挡一层。
         broken = self.shell(GUARD, ["wonton-dev-core"], env={"FAKE_DOCKER_FAIL": "1"})
         self.assertEqual(broken.returncode, 0, broken.stderr)

@@ -51,8 +51,8 @@
 # WONTON_DEV_OWNER_PROFILE（设成 off 时不替你填资料，测还没填的情形用）、
 # WONTON_DEV_LAN_ADDRESSES（插件的局域网端口只开在这些地址上，即核心的 WONTON_LAN_ADDRESSES；默认核心自动选）、
 # WONTON_DEV_ANNOUNCE_ADDRESSES（告诉手机去连的地址，即核心的 WONTON_ANNOUNCE_ADDRESSES，可以带前缀；设了就绑 0.0.0.0）、
-# WONTON_DEV_CORE_SUBNET（核心网络用这个子网，如 10.214.1.0/24；不设由 Docker 从默认地址池分。默认池只有约 30 个网络，
-# 几套开发栈共用一台 Docker 时会用光；设了就要在这套栈的整个生命里一直设着，换了值 compose 会要求重建网络）、
+# WONTON_DEV_CORE_SUBNET（用这个子网建 core 网络，如 10.214.1.0/24；不设由 Docker 从默认地址池分。默认池只有约 30 个网络，
+# 几套开发栈共用一台 Docker 时会用光。网络已经在了就沿用它的子网，要换得先 down）、
 # WONTON_TASK、WONTON_TTL（打在这套栈容器上的 com.wonton.task、com.wonton.ttl 标签：归哪个任务、到期时刻 ISO 8601；
 # 共用开发机的回收脚本按它们认主，没设时不打值）。
 # 所有 HTTP 请求都在一个与核心共享网络的 curl 容器里发出，所以 DOCKER_HOST 指向远端主机时同样可用。
@@ -213,17 +213,46 @@ EOF2
   chmod 644 "$path"
 }
 
+# core 网络由这里建、由这里删，compose 里声明成 external 只在起栈时把容器接上去。
+# compose 自己管时，渲染出来的网络配置和现有的有一处不同（子网换过、这次没设）就删了重建；
+# 重建后它把已经跑着的系统服务接回去时不带别名（2026-11-20 实测），hydra.wonton.internal 这些名字就丢了，
+# 核心再也解析不到，一直重试（#187）。网络归脚本以后 compose 只接容器，不再动它。
+core_network() { printf '%s_core' "$WONTON_DEV_PROJECT"; }
+
+# compose 靠这两个标签认网络：project 是它自己的，network 必须是 core（核心按同样的标签认自己的网络）。
+ensure_core_network() {
+  local network project subnet
+  network="$(core_network)"
+  if docker network inspect "$network" >/dev/null 2>&1; then
+    project="$(docker network inspect -f '{{index .Labels "com.docker.compose.project"}}' "$network")"
+    if [[ -n $project && $project != "$WONTON_DEV_PROJECT" ]]; then
+      die "网络 $network 已经在了，却属于 compose 项目 $project：换一个项目名，或先把那套拆掉"
+    fi
+    # 已经在了就沿用，不重建：换子网要拆整栈，起栈时再换只会让别名再丢一遍。
+    subnet="$(docker network inspect -f '{{range .IPAM.Config}}{{.Subnet}}{{end}}' "$network")"
+    if [[ -n ${WONTON_DEV_CORE_SUBNET:-} && -n $subnet && $subnet != "$WONTON_DEV_CORE_SUBNET" ]]; then
+      echo "dev.sh：网络 $network 已经在了，子网是 $subnet，沿用（要换成 $WONTON_DEV_CORE_SUBNET 先 down）" >&2
+    fi
+    return 0
+  fi
+  local -a flags=(--label "com.docker.compose.project=$WONTON_DEV_PROJECT" --label com.docker.compose.network=core)
+  [[ -z ${WONTON_DEV_CORE_SUBNET:-} ]] || flags+=(--subnet "$WONTON_DEV_CORE_SUBNET")
+  docker network create "${flags[@]}" "$network" >/dev/null
+}
+
+remove_core_network() {
+  local network
+  network="$(core_network)"
+  docker network inspect "$network" >/dev/null 2>&1 || return 0
+  docker network rm "$network" >/dev/null ||
+    echo "dev.sh：网络 $network 删不掉（还有容器接着？），下次 up 会沿用" >&2
+}
+
 compose() {
   ensure_secret
   ensure_matrix_secrets
   ensure_dev_federation
-  local files=(-f "$here/compose.yaml")
-  if [[ -n ${WONTON_DEV_CORE_SUBNET:-} ]]; then
-    local override="$secrets/$WONTON_DEV_PROJECT.subnet.yaml"
-    printf 'networks:\n  core:\n    ipam:\n      config:\n        - subnet: %s\n' "$WONTON_DEV_CORE_SUBNET" >"$override"
-    files+=(-f "$override")
-  fi
-  docker compose "${files[@]}" "$@"
+  docker compose -f "$here/compose.yaml" "$@"
 }
 
 
@@ -719,6 +748,7 @@ case "${1:-}" in
     mkdir -p "$WONTON_DEV_RELAY" || die "建不了中继套接字目录 $WONTON_DEV_RELAY，换一个短的（WONTON_DEV_RELAY）"
     export WONTON_BUILD_COMMIT="${WONTON_BUILD_COMMIT:-$(build_commit)}"
     mkdir -p "$here/.data" && printf '%s' "$WONTON_DEV_PORT" > "$here/.data/dev-port"
+    ensure_core_network
     if [[ -n "${WONTON_DEV_BUILD_PROXY:-}" ]]; then
       build_image -q --target dev --build-arg WONTON_BUILD_COMMIT -t "wonton-core:${WONTON_CORE_IMAGE_TAG:-dev}" -f "$here/Dockerfile" "$repo" >/dev/null
       compose up -d --wait
@@ -750,6 +780,7 @@ case "${1:-}" in
     fi
     remove_entry_components
     compose down
+    remove_core_network
     # 中继套接字跟着栈走，栈拆了就没用了。
     rm -rf -- "$WONTON_DEV_RELAY"
     # 核心退出时不停插件容器，compose down 也管不到它们，这里按实例标签清；默认项目分不出来，只提示。
@@ -763,6 +794,7 @@ case "${1:-}" in
     dev_guard_check "$core"
     remove_entry_components
     compose down --volumes
+    remove_core_network
     rm -rf -- "$WONTON_DEV_RELAY"
     if [[ -n "$WONTON_DEV_INSTANCE" ]]; then
       remove_instance_resources
