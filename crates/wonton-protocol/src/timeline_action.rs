@@ -52,12 +52,19 @@ pub enum TimelineAction {
     },
     /// 把一条消息转发到另一个房间（ADR-0073）：照原样再发一条，不带“转发自”，加密附件不重新上传。`item_id` 同
     /// [`TimelineAction::RetrySend`]，只能转发菜单里有 [`MessageAction::Forward`](crate::MessageAction::Forward) 的消息。
-    /// 进展在目标房间的时间线里（本地回显、发送状态），壳随后打开目标房间。目标是 `to_room_id` 的主时间线，
-    /// 不往旁聊里转发。
+    /// 有 `comment` 时核心先在同一目标房间发这条附言，等服务器确认后才转发；壳只派发这一个动作，不另发
+    /// [`TimelineAction::SendText`]。附言不可恢复地失败就不转发，失败经
+    /// [`CoreError::Upstream`](crate::CoreError::Upstream) 进 `problem`。不带附言时直接转发。进展在目标房间的时间线里
+    /// （本地回显、发送状态），壳随后打开目标房间。目标是 `to_room_id` 的主时间线，不往旁聊里转发。
     ForwardMessage {
         target: TimelineTarget,
         item_id: String,
         to_room_id: String,
+        /// 转发附言；`None` 只转发。只含空白的附言由核心当作没有附言（直接转发），壳不用自己判断。
+        /// 旧形状（JSON）不带 `comment` 按没有附言处理；旧壳经 UniFFI 不传它时取默认值 `None`。
+        #[serde(default)]
+        #[cfg_attr(feature = "uniffi", uniffi(default = None))]
+        comment: Option<String>,
     },
     /// 撤回一条已经发出去的消息（Matrix 的 redaction），所有人那里都变成 [`MessageContent::Redacted`](crate::MessageContent::Redacted)。
     /// 只能撤回菜单里有 [`MessageAction::Redact`](crate::MessageAction::Redact) 的消息；还没发出去的用
@@ -197,6 +204,38 @@ mod tests {
         .unwrap();
         assert!(
             matches!(again, TimelineAction::SendComposer { mentions, .. } if mentions.is_empty())
+        );
+    }
+
+    /// 旧壳转发时不带 `comment`，按没有附言处理；带了就原样到核心。
+    #[test]
+    fn forward_comment_is_optional_and_round_trips() {
+        let old: TimelineAction = serde_json::from_value(json!({
+            "type": "forward_message",
+            "target": target(),
+            "item_id": "$a",
+            "to_room_id": "!b:home.example",
+        }))
+        .unwrap();
+        assert!(matches!(
+            old,
+            TimelineAction::ForwardMessage { comment: None, .. }
+        ));
+
+        let action = TimelineAction::ForwardMessage {
+            target: TimelineTarget {
+                room_id: "!a:home.example".into(),
+                thread_root: None,
+            },
+            item_id: "$a".into(),
+            to_room_id: "!b:home.example".into(),
+            comment: Some("看这个".into()),
+        };
+        let json = serde_json::to_value(&action).unwrap();
+        assert_eq!(json["comment"], "看这个");
+        assert_eq!(
+            serde_json::from_value::<TimelineAction>(json).unwrap(),
+            action
         );
     }
 }

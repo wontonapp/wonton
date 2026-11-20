@@ -76,11 +76,19 @@ impl FakeTimelines {
     /// 时间线上的操作。没订阅的房间、约定以外的操作不理，转发的副本和发出去的字除外。
     pub(super) fn timeline_action(&self, action: TimelineAction) {
         match &action {
+            // 附言先落进目标房间再转发，和真核心等附言被确认后才转发的顺序一致。
             TimelineAction::ForwardMessage {
                 target,
                 item_id,
                 to_room_id,
+                comment,
             } => {
+                if let Some(comment) = comment.as_deref().filter(|c| !c.trim().is_empty()) {
+                    match self.get(to_room_id) {
+                        Some(fake) => fake.send_text(comment, &[]),
+                        None => self.park(to_room_id, comment),
+                    }
+                }
                 self.forward(&target.room_id, item_id, to_room_id);
                 return;
             }
@@ -485,6 +493,7 @@ mod tests {
             target: target(),
             item_id: "ui-fake-11".into(),
             to_room_id: "!ui-fake-call:home.example".into(),
+            comment: None,
         });
         let far = fakes.subscribe("!ui-fake-call:home.example");
         let first = next(&far).await;
@@ -522,6 +531,7 @@ mod tests {
                 target: target(),
                 item_id: "ui-fake-11".into(),
                 to_room_id: far_id.into(),
+                comment: None,
             });
         }
         let far = fakes.subscribe(far_id);
@@ -551,6 +561,51 @@ mod tests {
                 "再转一条",
                 "Fixture message 11"
             ]
+        );
+    }
+
+    /// 转发带附言：附言排在转发的副本前面；只含空白的附言不落。
+    #[tokio::test]
+    async fn forward_comment_lands_before_the_copy_and_blank_is_dropped() {
+        let fakes = FakeTimelines::default();
+        let echo = fakes.subscribe(ROOM);
+        let _first = next(&echo).await;
+        let far_id = "!ui-fake-call:home.example";
+        for comment in [
+            Some("看这条"),
+            Some(
+                "  
+",
+            ),
+        ] {
+            fakes.timeline_action(TimelineAction::ForwardMessage {
+                target: target(),
+                item_id: "ui-fake-11".into(),
+                to_room_id: far_id.into(),
+                comment: comment.map(Into::into),
+            });
+        }
+        let far = fakes.subscribe(far_id);
+        let first = next(&far).await;
+        let mut items = Vec::new();
+        for diff in first.diffs {
+            crate::chat::apply_diff(&mut items, diff);
+        }
+        let bodies: Vec<String> = items[ITEMS..]
+            .iter()
+            .map(|item| {
+                let TimelineContent::Message { message } = &item.content else {
+                    panic!("补进来的都是消息");
+                };
+                let MessageContent::Text { body, .. } = &message.body else {
+                    panic!("补进来的都是文字");
+                };
+                body.clone()
+            })
+            .collect();
+        assert_eq!(
+            bodies,
+            ["看这条", "Fixture message 11", "Fixture message 11"]
         );
     }
 }
