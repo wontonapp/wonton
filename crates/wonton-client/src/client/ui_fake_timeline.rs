@@ -19,7 +19,7 @@ use crate::chat::{Runs, TimelineSubscription};
 #[derive(Default)]
 pub(super) struct FakeTimelines {
     open: Mutex<HashMap<String, Weak<FakeTimeline>>>,
-    /// 转发进了还没打开的房间：房间打开时补进第一批。
+    /// 转发、发字去到了还没打开的房间：房间打开时补进第一批。
     forwarded: Mutex<HashMap<String, Vec<String>>>,
 }
 
@@ -47,6 +47,14 @@ impl FakeTimelines {
         TimelineSubscription::seeded(receiver, Box::new(move |scroll| scrolled.scrolled(scroll)))
     }
 
+    /// 留着等房间打开：跟转发共用一条，谁先来谁先显示。
+    fn park(&self, room: &str, body: &str) {
+        lock(&self.forwarded)
+            .entry(room.to_owned())
+            .or_default()
+            .push(body.to_owned());
+    }
+
     fn get(&self, room_id: &str) -> Option<Arc<FakeTimeline>> {
         lock(&self.open).get(room_id).and_then(Weak::upgrade)
     }
@@ -61,31 +69,37 @@ impl FakeTimelines {
                 let diffs = destination.receive(vec![body]);
                 destination.batch(|update| update.diffs = diffs);
             }
-            None => {
-                lock(&self.forwarded)
-                    .entry(to.to_owned())
-                    .or_default()
-                    .push(body);
-            }
+            None => self.park(to, &body),
         }
     }
 
-    /// 时间线上的操作。没订阅的房间、约定以外的操作不理。
+    /// 时间线上的操作。没订阅的房间、约定以外的操作不理，转发的副本和发出去的字除外。
     pub(super) fn timeline_action(&self, action: TimelineAction) {
-        if let TimelineAction::ForwardMessage {
-            target,
-            item_id,
-            to_room_id,
-        } = &action
-        {
-            self.forward(&target.room_id, item_id, to_room_id);
-            return;
+        match &action {
+            TimelineAction::ForwardMessage {
+                target,
+                item_id,
+                to_room_id,
+            } => {
+                self.forward(&target.room_id, item_id, to_room_id);
+                return;
+            }
+            // 转发面板、相册面板一次发给好几个房间：没开着的先留着，打开时再补进去。
+            TimelineAction::SendText {
+                target,
+                body,
+                mentions,
+                ..
+            } => match self.get(&target.room_id) {
+                Some(fake) => fake.send_text(body, mentions),
+                None => self.park(&target.room_id, body),
+            },
+            _ => {}
         }
         let room_id = match &action {
             TimelineAction::JumpToMessage { target, .. }
             | TimelineAction::JumpBack { target }
-            | TimelineAction::SetTimelineScroll { target, .. }
-            | TimelineAction::SendText { target, .. } => target.room_id.clone(),
+            | TimelineAction::SetTimelineScroll { target, .. } => target.room_id.clone(),
             _ => return,
         };
         let Some(fake) = self.get(&room_id) else {
@@ -99,7 +113,6 @@ impl FakeTimelines {
             } => fake.jump_to(&event_id, from_item_id),
             TimelineAction::JumpBack { .. } => fake.jump_back(),
             TimelineAction::SetTimelineScroll { scroll, .. } => fake.scrolled(scroll),
-            TimelineAction::SendText { body, .. } => fake.send_text(&body, &[]),
             _ => {}
         }
     }
@@ -485,5 +498,59 @@ mod tests {
             panic!("转发的是文字");
         };
         assert_eq!(body, "Fixture message 11");
+    }
+
+    /// 发给没开的房间的一句话：等它打开时补进第一批，排在跟着转发的那条前面。
+    #[tokio::test]
+    async fn sent_text_reaches_an_unopened_room() {
+        let fakes = FakeTimelines::default();
+        let echo = fakes.subscribe(ROOM);
+        let _first = next(&echo).await;
+        let far_id = "!ui-fake-call:home.example";
+        let far_target = TimelineTarget {
+            room_id: far_id.into(),
+            thread_root: None,
+        };
+        for body in ["先说一句", "再转一条"] {
+            fakes.timeline_action(TimelineAction::SendText {
+                target: far_target.clone(),
+                body: body.into(),
+                reply_to: None,
+                mentions: vec![],
+            });
+            fakes.timeline_action(TimelineAction::ForwardMessage {
+                target: target(),
+                item_id: "ui-fake-11".into(),
+                to_room_id: far_id.into(),
+            });
+        }
+        let far = fakes.subscribe(far_id);
+        let first = next(&far).await;
+        let mut items = Vec::new();
+        for diff in first.diffs {
+            crate::chat::apply_diff(&mut items, diff);
+        }
+        assert_eq!(items.len(), ITEMS + 4);
+        let bodies: Vec<String> = items[ITEMS..]
+            .iter()
+            .map(|item| {
+                let TimelineContent::Message { message } = &item.content else {
+                    panic!("补进来的都是消息");
+                };
+                let MessageContent::Text { body, .. } = &message.body else {
+                    panic!("补进来的都是文字");
+                };
+                body.clone()
+            })
+            .collect();
+        assert_eq!(
+            bodies,
+            [
+                "先说一句",
+                "Fixture message 11",
+                "再转一条",
+                "Fixture message 11"
+            ]
+        );
     }
 }

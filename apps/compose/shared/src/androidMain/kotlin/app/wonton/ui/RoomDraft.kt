@@ -64,9 +64,9 @@ class RoomDraft(
         save()
     }
 
-    /** 字和附件发出去了：草稿整个清掉，别让回复对象留下来。 */
-    fun sent() {
-        body.value = ""
+    /** 字和附件发出去了：草稿整个清掉，别让回复对象留下来。命令不动已经打了一半的字（`keepBody`）。 */
+    fun sent(keepBody: Boolean = false) {
+        if (!keepBody) body.value = ""
         quoted.value = null
         touched = true
         save()

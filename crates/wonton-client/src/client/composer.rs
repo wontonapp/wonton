@@ -153,6 +153,14 @@ impl ClientCore {
             .await
     }
 
+    /// 假数据入口（`ui-fake`）用：下一条进附件区的东西直接标成上传失败。
+    /// 相册面板选完就发，没有机会在中间把某一张标红。
+    pub fn fail_next_attachment_for_test(&self, target: TimelineTarget) -> Result<(), CoreError> {
+        let room_id = composer_room(&target)?;
+        self.scope().composer.fail_next_for_test(&room_id);
+        Ok(())
+    }
+
     /// 假数据入口（`ui-fake`）用：把附件区里的一张标成上传失败，界面上马上看到失败的样子。
     /// 不在假数据入口、或者附件区里没有这个附件时返回 `InvalidInput`，旁聊返回 `NotReady`。
     pub fn fail_attachment_for_test(

@@ -117,7 +117,7 @@
     <!-- 添付シート：下端のタブ。端末のアルバムを写真グリッドで開く。 -->
     <string name="attach_album">アルバム</string>
     <!-- 添付シート：選んだ写真を送る前に加えるボタン。引数：枚数。 -->
-    <string name="attach_add">%1$d枚を追加</string>
+    <string name="sheet_note_hint">ひとこと添える</string>
     <!-- 添付シート：アルバムに写真がない。 -->
     <string name="attach_album_empty">アルバムに写真がありません</string>
     <!-- 添付シート：アルバムの権限が拒否された。 -->

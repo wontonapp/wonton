@@ -86,6 +86,8 @@ private fun CommandRow(command: RoomCommand, showsBot: Boolean, onClick: () -> U
             Row(horizontalArrangement = Arrangement.spacedBy(WontonTheme.spacing.s8)) {
                 Text(
                     "/${command.name}",
+                    // 名字先占剩下的宽度再接提示；名字短就不拉伸，提示紧跟着。
+                    Modifier.weight(1f, fill = false),
                     style = WontonTheme.typography.body,
                     color = colors.textPrimary.toColor(),
                     maxLines = 1,
