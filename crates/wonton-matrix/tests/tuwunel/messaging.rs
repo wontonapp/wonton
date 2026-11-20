@@ -380,3 +380,44 @@ pub fn image_named(message: &Message, filename: &str) -> Option<ImageContent> {
         _ => None,
     }
 }
+
+#[tokio::test]
+#[ignore = "需要 Docker，用 --include-ignored 运行"]
+async fn an_edit_replaces_the_message() {
+    let server = TestServer::start().await;
+    let alice = server.login(&unique("alice"), "Alice 的手机").await;
+    let bob = server.login(&unique("bob"), "Bob 的手机").await;
+    alice.start_sync().await.expect("Alice 开始同步");
+    bob.start_sync().await.expect("Bob 开始同步");
+
+    let room_id = alice
+        .create_direct_chat(bob.user_id(), false)
+        .await
+        .expect("Alice 建私聊");
+    eventually("Bob 收到邀请", bob.rooms().await.unwrap(), |rooms| {
+        rooms
+            .iter()
+            .find(|room| room.room_id == room_id && room.membership == Membership::Invited)
+            .map(|_| ())
+    })
+    .await;
+    bob.join_room(&room_id).await.expect("Bob 加入私聊");
+    let alice_room = alice.open_room(&room_id).await.expect("Alice 打开私聊");
+    let bob_room = bob.open_room(&room_id).await.expect("Bob 打开私聊");
+
+    alice_room
+        .send_text("原文", &[])
+        .await
+        .expect("Alice 发文字");
+    let sent = wait_for_text(&alice_room, "Alice 的文字已送达", alice.user_id(), "原文").await;
+    wait_for_text(&bob_room, "Bob 收到文字", alice.user_id(), "原文").await;
+    let event_id = sent.event_id.clone().expect("文字有事件 ID");
+
+    alice_room
+        .edit_message(&event_id, "改过的")
+        .await
+        .expect("Alice 编辑");
+    let edited = wait_for_text(&bob_room, "Bob 收到修改", alice.user_id(), "改过的").await;
+    assert!(edited.edited);
+    assert_eq!(edited.event_id.as_ref(), Some(&event_id));
+}
