@@ -293,6 +293,16 @@ impl ServerHandler for Handler {
             caller.chain = Some(chain);
             caller.session = Some(session);
         }
+        if caller.chain.is_none() && caller.bot.is_some() {
+            tracing::debug!(
+                tool = %request.name,
+                header = headers
+                    .and_then(|headers| headers.get(wonton_protocol::SESSION_HEADER))
+                    .and_then(|value| value.to_str().ok())
+                    .unwrap_or("-"),
+                "会话没带链"
+            );
+        }
         caller.sender = turn_sender(&self.bus, &caller, headers);
         caller.ai_level = Some(self.bus.ai_cap(&caller));
         caller.request_id = Some(ctx.id.clone());
