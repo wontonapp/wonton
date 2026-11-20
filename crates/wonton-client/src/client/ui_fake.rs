@@ -16,7 +16,9 @@
 //! 要用这些的测试仍然连开发栈（见 `apps/ios/WontonUITests/UITestBackend.swift`）。
 
 use std::sync::Arc;
+use std::sync::atomic::AtomicUsize;
 use std::sync::atomic::Ordering;
+
 use tokio::sync::watch;
 
 use wonton_protocol::{
@@ -31,6 +33,12 @@ use wonton_protocol::{
 };
 
 use super::ClientCore;
+
+/// 假旁聊的根事件 ID：每开一间新旁聊给一个新号，测试靠它认这一间。
+pub(super) fn new_thread_root() -> String {
+    static NEXT: AtomicUsize = AtomicUsize::new(0);
+    format!("$ui-fake-thread-{}", NEXT.fetch_add(1, Ordering::SeqCst))
+}
 
 const ROOM_ID: &str = "!ui-fake:home.example";
 /// 有人在通话的群聊：列表这一行和顶栏都标“通话中”，顶栏有 [`CALL_PLUGIN`] 的 widget 入口。
@@ -315,7 +323,7 @@ fn fake_rooms() -> Vec<RoomRow> {
                 timestamp_ms: 1_792_000_000_000,
             }),
             unread_count: 1,
-            side_chats: false,
+            side_chats: true,
             layout: ChatLayout::default(),
             call_active: false,
         },

@@ -24,7 +24,9 @@ impl ClientCore {
                 self.composer_action(&self.scope(), action.clone())
             }
             // 假数据没有真上传，附件区的失败由 `fail_attachment_for_test` 写；被拒就中止，不往假时间线补。
-            TimelineAction::SendText { target, .. } => self.scope().composer.reject_if_failed(&target.room_id),
+            TimelineAction::SendText { target, .. } => {
+                self.scope().composer.reject_if_failed(&target.room_id)
+            }
             // 过了拒绝才有附言：补进假时间线、清附件区，返回 Ok 让外层继续开假链。
             TimelineAction::SendComposer { target, body, .. } => {
                 #[cfg(not(feature = "ui-fake"))]

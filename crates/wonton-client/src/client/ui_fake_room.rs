@@ -102,6 +102,8 @@ fn commands() -> Vec<RoomCommand> {
         ("help", "Show help", None),
         ("model", "Switch model", Some("model name")),
         ("new", "Start over", None),
+        ("photo album", "Pick from an album", None),
+        ("summarize-everything-in-this-thread", "Long summary", None),
     ]
     .into_iter()
     .map(|(name, description, hint)| RoomCommand {

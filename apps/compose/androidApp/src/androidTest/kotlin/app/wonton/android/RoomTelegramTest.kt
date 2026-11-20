@@ -16,6 +16,7 @@ import androidx.compose.ui.semantics.getOrNull
 import androidx.compose.ui.test.SemanticsMatcher
 import kotlinx.coroutines.runBlocking
 import androidx.compose.ui.test.SemanticsNodeInteraction
+import androidx.compose.ui.test.assert
 import androidx.compose.ui.test.assertCountEquals
 import androidx.compose.ui.test.assertIsDisplayed
 import androidx.compose.ui.test.assertIsEnabled
@@ -266,9 +267,13 @@ class RoomTelegramTest {
         check(shown > 0) { "输入框里没进去：${field.fetchSemanticsNode().config}" }
         screenshot("attach-sheet")
         sheetSend("attach-send").performClick()
-        compose.waitUntil(10_000) { compose.onAllNodes(hasTestTag("attach-send")).fetchSemanticsNodes().isEmpty() }
+        compose.waitUntil(10_000) {
+            compose.onAllNodes(hasTestTag("attach-send")).fetchSemanticsNodes().isEmpty()
+        }
         runCatching { compose.onNodeWithContentDescription(string(R.string.room_scroll_to_bottom)).performClick() }
-        compose.waitUntil(10_000) { compose.onAllNodes(hasText("两张都发", substring = true)).fetchSemanticsNodes().isNotEmpty() }
+        compose.waitUntil(10_000) {
+            compose.onAllNodes(hasText("两张都发", substring = true)).fetchSemanticsNodes().isNotEmpty()
+        }
         val vm = runBlocking { core.subscribeComposer(TimelineTarget(ECHO_ROOM, null)).use { it.next()!! } }
         check(vm.attachments.isEmpty()) { "附件区还剩 ${vm.attachments.size} 条" }
         screenshot("attach-sent")
@@ -292,7 +297,9 @@ class RoomTelegramTest {
         compose.onAllNodes(hasTestTag("album-photo"))[0].performClick()
         compose.waitUntil(10_000) { compose.onAllNodes(hasTestTag("attach-send")).fetchSemanticsNodes().isNotEmpty() }
         sheetSend("attach-send").performClick()
-        compose.waitUntil(10_000) { compose.onAllNodes(hasTestTag("attach-send")).fetchSemanticsNodes().isEmpty() }
+        compose.waitUntil(10_000) {
+            compose.onAllNodes(hasTestTag("attach-send")).fetchSemanticsNodes().isEmpty()
+        }
         compose.waitUntil(10_000) { trayTiles() == 1 }
         // 回一条，附件已经在附件区里标成失败了。
         scrollTo(15)
@@ -350,13 +357,17 @@ class RoomTelegramTest {
         // 到了聊天列表，依次进 Family 和 Notes，两边都得有附言和转发来的那条。
         compose.onNodeWithText("Family").performClick()
         compose.waitUntil(10_000) { forwardedInto("Family", "ui-fake-forwarded-24") }
-        check(compose.onAllNodes(hasText("都看一下", substring = true)).fetchSemanticsNodes().isNotEmpty()) { "Family 没收到附言" }
+        check(compose.onAllNodes(hasText("都看一下", substring = true)).fetchSemanticsNodes().isNotEmpty()) {
+            "Family 没收到附言"
+        }
         compose.onNodeWithContentDescription(string(R.string.design_back)).performClick()
         compose.waitForIdle()
         if (hasBack()) compose.onNodeWithContentDescription(string(R.string.design_back)).performClick()
         compose.onNodeWithText("Notes").performClick()
         compose.waitUntil(10_000) { forwardedInto("Notes", "ui-fake-forwarded-24") }
-        check(compose.onAllNodes(hasText("都看一下", substring = true)).fetchSemanticsNodes().isNotEmpty()) { "Notes 没收到附言" }
+        check(compose.onAllNodes(hasText("都看一下", substring = true)).fetchSemanticsNodes().isNotEmpty()) {
+            "Notes 没收到附言"
+        }
     }
 
     /** 只勾一个时发完跟过去：那个房间打开，附言和转发都在。 */
@@ -464,6 +475,84 @@ class RoomTelegramTest {
         settleKeyboard()
         screenshot("command-sent")
     }
+
+    @Test
+    fun commandMenuKeepsDraftAndBackOnlyClosesList() {
+        val field = compose.onNode(hasSetTextAction())
+        field.performTextInput("先说一句")
+        compose.onNodeWithContentDescription(string(R.string.composer_commands)).performClick()
+        compose.waitUntil(10_000) { compose.onAllNodes(hasTestTag("command-help")).fetchSemanticsNodes().isNotEmpty() }
+        field.assert(hasText("先说一句"))
+        // 点一条命令：照常发出去，打了一半的字还在。
+        compose.onNodeWithTag("command-new").performClick()
+        compose.waitForIdle()
+        field.assert(hasText("先说一句"))
+        check(compose.onAllNodes(hasTestTag("command-help")).fetchSemanticsNodes().isEmpty()) { "发完命令列表还开着" }
+        compose.waitUntil(10_000) {
+            compose.onAllNodesWithText("/new", substring = true, useUnmergedTree = true)
+                .fetchSemanticsNodes().isNotEmpty()
+        }
+        // 再开列表，按返回只收列表，人还在房间里。
+        compose.onNodeWithContentDescription(string(R.string.composer_commands)).performClick()
+        compose.waitUntil(10_000) { compose.onAllNodes(hasTestTag("command-help")).fetchSemanticsNodes().isNotEmpty() }
+        compose.runOnUiThread { compose.activity.onBackPressedDispatcher.onBackPressed() }
+        compose.waitForIdle()
+        check(compose.onAllNodes(hasTestTag("command-help")).fetchSemanticsNodes().isEmpty()) { "返回键没收起命令列表" }
+        check(
+            compose.onAllNodes(hasText(ECHO_NAME) and hasAnyAncestor(hasTestTag("room-bar")))
+                .fetchSemanticsNodes().isNotEmpty(),
+        ) { "返回键把房间关了" }
+    }
+
+    @Test
+    fun commandFilterTakesNamesWithSpaces() {
+        val field = compose.onNode(hasSetTextAction())
+        field.performTextInput("/photo")
+        compose.waitUntil(10_000) {
+            compose.onAllNodes(hasTestTag("command-photo album")).fetchSemanticsNodes().isNotEmpty()
+        }
+        check(compose.onAllNodes(hasTestTag("command-help")).fetchSemanticsNodes().isEmpty()) {
+            "带空格的名字没过滤掉别的命令"
+        }
+        // 空格后面接着打，还在这个名字里，列表不消失。
+        field.performTextInput(" a")
+        compose.waitForIdle()
+        compose.onNodeWithTag("command-photo album").assertIsDisplayed()
+        field.performTextClearance()
+        field.performTextInput("/summarize-everything")
+        compose.waitUntil(10_000) {
+            compose.onAllNodes(hasTestTag("command-summarize-everything-in-this-thread"))
+                .fetchSemanticsNodes().isNotEmpty()
+        }
+        // 长名字整条都在，不被挤没。
+        compose.onNodeWithTag("command-summarize-everything-in-this-thread").assertIsDisplayed()
+        compose.onNodeWithText("/summarize-everything-in-this-thread").assertIsDisplayed()
+    }
+
+    @Test
+    fun sideChatAlbumTakesSeveralPhotos() {
+        compose.onNodeWithContentDescription(string(R.string.side_chat_new)).performClick()
+        compose.waitUntil(10_000) { compose.onAllNodes(hasSetTextAction()).fetchSemanticsNodes().size == 2 }
+        compose.onNodeWithTag("side-chat-field").performTextInput("旁聊开场")
+        compose.onNodeWithText(string(R.string.composer_send)).performClick()
+        // 进了旁聊：顶栏换成旁聊那条，“新旁聊”钮没了，只剩输入框。
+        compose.waitUntil(10_000) {
+            compose.onAllNodes(hasContentDescription(string(R.string.side_chat_new))).fetchSemanticsNodes().isEmpty() &&
+                compose.onAllNodes(hasSetTextAction()).fetchSemanticsNodes().size == 1
+        }
+        compose.onNodeWithContentDescription(string(R.string.composer_attach)).performClick()
+        compose.waitUntil(10_000) { photos().fetchSemanticsNodes().size >= 3 }
+        photos()[0].performClick()
+        compose.waitForIdle()
+        // 旁聊没有附件区，但一摞能选好几张：选了一张，后面的照样点得动。
+        photos()[1].assertIsEnabled().performClick()
+        compose.waitForIdle()
+        photos()[0].assertIsSelected()
+        photos()[1].assertIsSelected()
+        compose.onNodeWithTag("attach-send").assertIsEnabled()
+    }
+
+    private fun photos() = compose.onAllNodes(hasTestTag("album-photo"))
 
     @Test
     fun choiceAnswerSelectsItAndDisablesTheOther() {
