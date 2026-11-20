@@ -253,7 +253,8 @@ private extension ChatRoomView {
                 ComposerView(
                     model: model, composer: composer, pin: pin,
                     commands: timeline.commands, commandsOmitted: Int(timeline.commandsOmitted),
-                    commandAvatar: { commandAvatar($0) }
+                    commandAvatar: { commandAvatar($0) },
+                    jumpToReply: { replyJump($0) }
                 )
             }
         }
@@ -522,6 +523,14 @@ private extension ChatRoomView {
 }
 
 private extension ChatRoomView {
+
+    /// 点输入框上方的引用：和点气泡里的引用一样交给核心跳（ADR-0109 第 4 节）。返回栈记在主人眼下最靠下的一条，
+    /// “向下”先回这里。
+    func replyJump(_ eventId: String) {
+        guard let from = visibleRows.max(by: { $0.value < $1.value })?.key ?? timeline.items.last?.id else { return }
+        jump.from = from
+        sendTimeline(.jumpToMessage(target: target, eventId: eventId, fromItemId: from))
+    }
 
     /// 摆进房间的落点（ADR-0071）：落点不是最新一条就停在它上面，落点行在视野顶部；没有落点或落点就是最新
     /// 一条，维持贴底。摆好（或决定贴底）后放开标已读的闸门。
