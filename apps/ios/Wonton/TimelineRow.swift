@@ -342,7 +342,7 @@ private struct MessageBubble: View {
         if case let .failed(failure, details, recoverable) = message.sendState {
             let title = recoverable
                 ? String(localized: .Message2.messageSendFailedRetrying)
-                : details
+                : details ?? String(localized: failure.text)
             Button {
                 isChoosingFailed = true
             } label: {
