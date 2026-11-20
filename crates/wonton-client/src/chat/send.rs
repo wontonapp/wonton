@@ -62,13 +62,17 @@ impl ChatLink {
                     Some(event_id) => match extra {
                         Some(extra) => {
                             room.send_reply_with_extra(&body, &mentions, event_id, extra)
-                                .await?
+                                .await?;
                         }
                         None => room.send_reply(&body, &mentions, event_id).await?,
                     },
                     None => match extra {
-                        Some(extra) => room.send_text_with_extra(&body, &mentions, extra).await?,
-                        None => room.send_text(&body, &mentions).await?,
+                        Some(extra) => {
+                            room.send_text_with_extra(&body, &mentions, extra).await?;
+                        }
+                        None => {
+                            room.send_text(&body, &mentions).await?;
+                        }
                     },
                 }
                 // 发出去了，草稿（连同回复对象）留着没用了；发送途中又打的字不算。

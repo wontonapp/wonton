@@ -517,8 +517,13 @@ impl ChatLink {
                 target,
                 item_id,
                 to_room_id,
-                comment: _,
-            } => self.forward_message(&TimelineKey::parse(&target)?, &item_id, &to_room_id),
+                comment,
+            } => self.forward_message(
+                &TimelineKey::parse(&target)?,
+                &item_id,
+                &to_room_id,
+                comment.as_deref(),
+            ),
             TimelineAction::RedactMessage { target, item_id } => {
                 self.redact_message(&TimelineKey::parse(&target)?, &item_id)
             }

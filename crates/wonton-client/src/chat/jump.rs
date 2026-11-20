@@ -276,7 +276,7 @@ fn reason(error: &wonton_matrix::Error) -> &'static str {
         Error::Unauthorized { .. } => "unauthorized",
         Error::Forbidden { .. } => "forbidden",
         Error::NotReady(_) => "not-ready",
-        Error::Upstream(_) => "upstream",
+        Error::Upstream(_) | Error::CommentNotSent(_) => "upstream",
         Error::InvalidInput(_) => "invalid-input",
     }
 }
