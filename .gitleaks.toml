@@ -38,3 +38,9 @@ description = "测试里的本地 Hydra 地址带占位用户名密码（user:se
 condition = "AND"
 paths = ['''^crates/wonton-core/src/config_tests\.rs$''']
 regexes = ['''user:secret@hydra''']
+
+[[allowlists]]
+description = "index.json 的 files 是插件包内文件的 sha256，文件名带 credentials 的（credentials.sh）会被 generic-api-key 当成密钥；上报的值就是 64 位小写十六进制摘要，只放行这个形状"
+condition = "AND"
+paths = ['''^deploy/dev/core/store/index\.json$''']
+regexes = ['''^[0-9a-f]{64}$''']
