@@ -234,12 +234,36 @@ class RoomTelegramTest {
     }
 
     @Test
-    fun daySeparatorOwnsARowBetweenDays() {
-        // 第 10 条是早一天那组的最后一条：倒排下它是那天最新的一条，分隔行就在它上面。
-        // 分隔行翻到附近才进屏幕；两边各翻几条，撞上为止。
+    fun daySeparatorRidesAboveTheFirstOfADay() {
+        // 第 11 条是后一天的第一条：分隔夹在它和上面第 10 条之间，写它的日期。分隔翻到附近才进屏幕，撞上为止。
+        val (separators, bubbles) = scrollToFirstSeparator()
+        for (separator in separators) separatorIsAboveTheOneItNames(separator, bubbles)
+        noSeparatorBetweenTheSameDay()
+        // 屏幕上往下是越来越新：分隔自上而下的日期严格变晚。
+        val dates = separators.sortedBy { it.boundsInRoot.top }
+            .map { checkNotNull(DateFormat.getDateInstance(DateFormat.MEDIUM).parse(texts(it))) }
+        for (position in 1 until dates.size) {
+            check(dates[position].after(dates[position - 1])) { "日期没随消息往下变晚：$dates" }
+        }
+        // 列表最顶上那条的上面也有分隔，写它自己的日期。
+        scrollTo(0)
+        val firstOfList = bubble(0).fetchSemanticsNode()
+        val aboveFirst = compose.onAllNodes(hasTestTag("day-separator"), useUnmergedTree = true)
+            .fetchSemanticsNodes()
+            .lastOrNull { it.boundsInRoot.bottom <= firstOfList.boundsInRoot.top + 1f }
+        checkNotNull(aboveFirst) { "列表最顶上那条的上面没有日期分隔" }
+        check(texts(aboveFirst) == fixtureDate(0)) { "最顶上的分隔不是第一条的日期：${texts(aboveFirst)}" }
+        // 这条分隔和它两边的消息一起进画面，留一张给人看。
+        scrollTo(11)
+        compose.waitUntil(10_000) { visible(10) && visible(11) }
+        screenshot("day-separator")
+    }
+
+    /** 翻到有分隔的地方，返回分隔和气泡（按屏幕从上到下）。 */
+    private fun scrollToFirstSeparator(): Pair<List<SemanticsNode>, List<SemanticsNode>> {
         var separators = emptyList<SemanticsNode>()
         var seen = ""
-        for (index in listOf(10, 9, 11, 8, 12, 13)) {
+        for (index in listOf(11, 12, 10, 13, 9)) {
             scrollTo(index)
             compose.waitForIdle()
             separators = compose.onAllNodes(hasTestTag("day-separator"), useUnmergedTree = true)
@@ -248,28 +272,57 @@ class RoomTelegramTest {
             if (separators.isNotEmpty()) break
         }
         check(separators.isNotEmpty()) { "没画日期分隔：$seen" }
-        val bubbles = compose.onAllNodes(hasTestTag("bubble"), useUnmergedTree = true).fetchSemanticsNodes()
-        for (separator in separators) {
-            val mark = separator.boundsInRoot
-            check(bubbles.none { it.boundsInRoot.overlaps(mark) }) { "气泡压在日期分隔上：$mark" }
-            check(bubbles.any { it.boundsInRoot.bottom <= mark.top + 1f }) { "日期分隔上面没有更早的气泡：$mark" }
-            // 分隔行写的是它下面第一条消息那天的日期。
-            val below = bubbles.filter { it.boundsInRoot.top >= mark.bottom - 1f }.minByOrNull { it.boundsInRoot.top }
-            checkNotNull(below) { "日期分隔下面没有更新的气泡：$mark" }
-            val belowText = texts(below)
-            val index = Regex("Fixture message (\\d+)").find(belowText)?.groupValues?.get(1)?.toInt()
-            checkNotNull(index) { "认不出日期分隔下面的气泡：$belowText" }
-            val shown = texts(separator)
-            check(shown == fixtureDate(index)) { "日期分隔不是下面那条的日期：$shown vs ${fixtureDate(index)}（第 $index 条）" }
+        return separators to compose.onAllNodes(hasTestTag("bubble"), useUnmergedTree = true)
+            .fetchSemanticsNodes().sortedBy { it.boundsInRoot.top }
+    }
+
+    /** 分隔夹在前一天最后一条和后一天第一条之间：下面紧挨的那条是它写的这一天，上面那条是更早的一天。 */
+    private fun separatorIsAboveTheOneItNames(separator: SemanticsNode, bubbles: List<SemanticsNode>) {
+        val mark = separator.boundsInRoot
+        check(bubbles.none { it.boundsInRoot.overlaps(mark) }) { "气泡压在日期分隔上：$mark" }
+        val below = bubbles.firstOrNull { it.boundsInRoot.top >= mark.bottom - 1f }
+        val belowIndex = checkNotNull(below?.let(::fixtureIndexOf)) { "日期分隔下面认不出气泡：$mark" }
+        check(texts(separator) == fixtureDate(belowIndex)) {
+            "日期分隔不是它下面那条的日期：${texts(separator)} vs ${fixtureDate(belowIndex)}（第 $belowIndex 条）"
         }
-        // 倒排：越往下日期越早。
-        val dates = separators.sortedBy { it.boundsInRoot.top }
-            .map {
-                DateFormat.getDateInstance(DateFormat.MEDIUM).parse(texts(it))
+        val above = bubbles.lastOrNull { it.boundsInRoot.bottom <= mark.top + 1f }
+        val aboveIndex = above?.let(::fixtureIndexOf) ?: return
+        check(fixtureDate(aboveIndex) != fixtureDate(belowIndex)) {
+            "同一天（第 $aboveIndex / $belowIndex 条）的气泡之间夹了日期分隔"
+        }
+        check(fixtureDate(aboveIndex) < fixtureDate(belowIndex)) {
+            "分隔上面（第 $aboveIndex 条 ${above!!.boundsInRoot}）比下面（第 $belowIndex 条 ${below.boundsInRoot}）晚，分隔 $mark；${bubbles.map { fixtureIndexOf(it) }}"
+        }
+    }
+
+    /** 同一天相邻的两条之间没有分隔。 */
+    private fun noSeparatorBetweenTheSameDay() {
+        val bubbles = compose.onAllNodes(hasTestTag("bubble"), useUnmergedTree = true)
+            .fetchSemanticsNodes().sortedBy { it.boundsInRoot.top }
+        val separators = compose.onAllNodes(hasTestTag("day-separator"), useUnmergedTree = true)
+            .fetchSemanticsNodes()
+        for ((above, below) in bubbles.zipWithNext()) {
+            val aboveIndex = fixtureIndexOf(above) ?: continue
+            val belowIndex = fixtureIndexOf(below) ?: continue
+            if (fixtureDate(aboveIndex) != fixtureDate(belowIndex)) continue
+            val between = separators.filter {
+                it.boundsInRoot.top >= above.boundsInRoot.bottom - 1f &&
+                    it.boundsInRoot.bottom <= below.boundsInRoot.top + 1f
             }
-        for (position in 1 until dates.size) {
-            check(dates[position].before(dates[position - 1])) { "日期没随消息往下走：$dates" }
+            check(between.isEmpty()) { "同一天的第 $aboveIndex / $belowIndex 条之间夹了日期分隔" }
         }
+    }
+
+    /** 气泡所在消息的序号：按外层条目的标签认，引用的文字里也会出现“Fixture message N”。 */
+    private fun fixtureIndexOf(bubble: SemanticsNode): Int? {
+        val items = compose.onAllNodes(
+            SemanticsMatcher("是消息条目") {
+                it.config.getOrNull(SemanticsProperties.TestTag)?.startsWith("item-ui-fake-") == true
+            },
+            useUnmergedTree = true,
+        ).fetchSemanticsNodes()
+        val owner = items.firstOrNull { it.boundsInRoot.contains(bubble.boundsInRoot.center) }
+        return owner?.config?.getOrNull(SemanticsProperties.TestTag)?.removePrefix("item-ui-fake-")?.toInt()
     }
 
     /** 节点自己和它下面所有子孙的文字；气泡的标题挂在子节点上。 */
@@ -277,9 +330,11 @@ class RoomTelegramTest {
         node.config.getOrNull(SemanticsProperties.Text).orEmpty().joinToString() +
             node.children.joinToString("") { texts(it) }
 
-    /** 假数据第 `index` 条的日期：0..=10 在前一天，11 起在后一天，每条隔一分钟（同 `ui_fake_room.rs`）。 */
+    /** 假数据第 `index` 条的日期：第 0 条早两天，11 起是后一天，其余同一天，每条隔一分钟（同 `ui_fake_room.rs`）。 */
     private fun fixtureDate(index: Int): String {
-        val at = 1_792_000_000_000L + index * 60_000L + if (index >= 11) 86_400_000L else 0L
+        val at = 1_792_000_000_000L + index * 60_000L +
+            if (index >= 11) 86_400_000L else 0L -
+            if (index == 0) 172_800_000L else 0L
         return DateFormat.getDateInstance(DateFormat.MEDIUM).format(Date(at))
     }
 

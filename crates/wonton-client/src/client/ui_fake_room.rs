@@ -118,15 +118,20 @@ fn commands() -> Vec<RoomCommand> {
 pub(super) const ITEMS: usize = 24;
 pub(super) const OWNER: &str = "@owner:home.example";
 const ECHO: &str = "@echo:home.example";
-/// 第一条的时间；之后每条隔一分钟。
+/// 最早一条的时间；下标每大一条晚一分钟（下标大 = 屏幕上更靠下 = 更晚）。
 const FIRST_AT_MS: u64 = 1_792_000_000_000;
-/// 从这条起往后挪一天：列表里要有一段跨日，日期分隔那一行才有得看。
+/// 从这条起（更靠下的那一段）再往后一天：列表里要有一段跨日，日期分隔那一行才有得看。
 const DAY_BREAK_INDEX: usize = 11;
 const DAY_MS: u64 = 86_400_000;
+/// 最顶上那条（下标 0）再往前两天，单独占一天：列表最顶上也要有一条日期分隔。
+const TOP_INDEX: usize = 0;
+const TOP_DAYS_BACK: u64 = 2 * DAY_MS;
 
-/// 第 `index` 条的发送时间。除了跨日那一段，其余都隔一分钟；时间随下标只增不减。
+/// 第 `index` 条的发送时间。相邻两条隔一分钟，时间随下标只增不减；第 11 条起是后一天，最顶上的第 0 条再早两天。
 pub(super) fn at_ms(index: usize) -> u64 {
-    FIRST_AT_MS + index as u64 * 60_000 + if index >= DAY_BREAK_INDEX { DAY_MS } else { 0 }
+    let later = if index >= DAY_BREAK_INDEX { DAY_MS } else { 0 };
+    let earliest = if index == TOP_INDEX { TOP_DAYS_BACK } else { 0 };
+    FIRST_AT_MS + index as u64 * 60_000 + later - earliest
 }
 
 /// 回复第 5 条的那条（自己发的）；它和之前自己的消息 Echo 都读到了，之后的没有。

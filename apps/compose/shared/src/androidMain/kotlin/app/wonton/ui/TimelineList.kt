@@ -289,16 +289,23 @@ private fun TimelineRow(
     }
 }
 
-/** 每个下标上方要不要来一行日期；跨日的那条才有。日期顺着更早的那条继承，旁注类的条目自己没时间。 */
+/**
+ * 每个下标上方要不要来一行日期；跨日的那条才有。列表是倒排的（下标 0 贴着底部），屏幕上往下是越来越新：
+ * 一条和它正上方那条不是同一天（或者它就在最顶上、上面没有消息）时，分隔画在它上面、写它自己的日期，
+ * 也就是它下面那条消息的日期。
+ */
 private fun dayMarksFor(items: List<TimelineItem>): Array<String?> {
-    val marks = arrayOfNulls<String>(items.size)
+    // 没有时间的旁注跟着下面（更新）的那条算同一天，下标越小越新。
+    val days = arrayOfNulls<String>(items.size)
     var newer: String? = null
     for (index in items.indices) {
-        val own = items[index].timestampMs?.let(::dateLabel) ?: newer
-        // 倒排下上面是更新的一条：这条比它早一天（或者它是最新的一条），就由这条起一组，
-        // 分隔行画在这条上面、写这条自己的日期，也就是它下面那些消息的日期。
-        if (own != null && own != newer) marks[index] = own
-        newer = own
+        newer = items[index].timestampMs?.let(::dateLabel) ?: newer
+        days[index] = newer
+    }
+    val marks = arrayOfNulls<String>(items.size)
+    for (index in items.indices) {
+        val day = days[index]
+        if (day != null && day != days.getOrNull(index + 1)) marks[index] = day
     }
     return marks
 }
