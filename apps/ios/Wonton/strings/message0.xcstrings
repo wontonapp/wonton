@@ -62,6 +62,36 @@
         }
       }
     },
+    "message.edit": {
+      "comment": "Message menu item: change the text of your own message.",
+      "extractionState": "manual",
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Edit"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "编辑"
+          }
+        },
+        "zh-Hant": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "編輯"
+          }
+        },
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "編集"
+          }
+        }
+      }
+    },
     "message.forwardEmpty": {
       "comment": "Shown in the room picker when there is no room to forward to.",
       "extractionState": "manual",
