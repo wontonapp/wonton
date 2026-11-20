@@ -127,6 +127,8 @@ struct Resources {
     remove_error: Option<(String, String)>,
     /// 按容器名让 inspect（`GET /containers/{name}/json`）一直报错。
     inspect_error: Option<(String, String)>,
+    kill_error: Option<(String, String)>,
+    signals: BTreeMap<String, u32>,
     /// 网络名 → 最近一次把容器接入它的请求（`EndpointConfig.Aliases` 等）。
     connections: BTreeMap<String, Value>,
     /// 每个网络最近一次主动接入（`connect`）的别名；创建时带的端点不算。
@@ -403,6 +405,10 @@ impl FakeDocker {
     /// 让这个容器的 inspect（`GET /containers/{name}/json`）一直报这个错；`None` 恢复。
     pub fn fail_inspect(&self, container: &str, message: Option<&str>) {
         self.lock().inspect_error = message.map(|m| (container.to_owned(), m.to_owned()));
+    }
+
+    pub fn fail_next_kill(&self, container: &str, message: &str) {
+        self.lock().kill_error = Some((container.to_owned(), message.to_owned()));
     }
 
     pub fn fail_remove(&self, container: &str, message: Option<&str>) {

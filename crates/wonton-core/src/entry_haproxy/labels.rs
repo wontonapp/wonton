@@ -101,13 +101,33 @@ impl crate::plugin::PluginManager {
         &self,
         id: &PluginId,
     ) -> Result<Option<String>, crate::plugin::InstallError> {
-        let taken: Vec<String> = self
+        let retained = self.store().retained_entry_labels()?;
+        let mut taken: Vec<String> = self
             .store()
             .load_all()?
             .into_iter()
-            .filter_map(|file| file.record.ok()?.entry_label)
+            .filter(|file| file.id != *id)
+            .map(|file| file.record.map(|record| record.entry_label))
+            .collect::<Result<Vec<_>, _>>()?
+            .into_iter()
+            .flatten()
             .collect();
-        let existing = self.store().load(id)?.and_then(|record| record.entry_label);
+        taken.extend(
+            retained
+                .iter()
+                .filter(|(key, _)| key.as_str() != id.as_str())
+                .map(|(_, value)| value.clone()),
+        );
+        let existing = self
+            .store()
+            .load(id)?
+            .and_then(|record| record.entry_label)
+            .or_else(|| retained.get(id.as_str()).cloned());
+        if existing.as_ref().is_some_and(|label| taken.contains(label)) {
+            return Err(crate::plugin::InstallError::Invalid(
+                "保留的入口标签与其他插件冲突".to_owned(),
+            ));
+        }
         ensure(existing.as_deref(), id, &taken)
             .map(Some)
             .map_err(crate::plugin::InstallError::Invalid)

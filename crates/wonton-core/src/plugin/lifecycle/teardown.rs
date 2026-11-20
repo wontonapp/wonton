@@ -104,6 +104,15 @@ impl PluginManager {
             report.data_removed = true;
         }
         self.remove_hosted(id, purge, langs)?;
+        if purge {
+            self.store.retain_entry_label(id, None)?;
+        } else if let Ok(Some(label)) = self
+            .store
+            .load(id)
+            .map(|record| record.and_then(|record| record.entry_label))
+        {
+            self.store.retain_entry_label(id, Some(&label))?;
+        }
         self.store.save_grants().clear(id)?;
         self.store.remove(id)?;
         let left = self.own_resources(id).await?;

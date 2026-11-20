@@ -193,3 +193,13 @@ gateway-install-card-device = Device handed to it: { $device }
 gateway-install-card-secret = Secret filled in by the request: { $title }
 gateway-install-card-setting = Setting filled in by the request: { $title } = { $value }
 gateway-install-changed = The permissions, devices or settings of { $id } changed after the card was sent, so it was not upgraded. Please ask again.
+clients-switch-container = The core is not running in a container, so the entry network is unavailable
+clients-switch-domain = Configure a domain and a valid certificate before opening this entry
+clients-switch-lan = LAN access is unavailable because the LAN forwarder is not ready
+clients-switch-setup = Complete the app's initial registration on its website first
+clients-switch-app-unavailable = The app is not running, so its setup cannot be checked
+clients-switch-credentials = The app has not issued a password successfully
+clients-switch-ingress = No public entry type is configured
+clients-switch-kind = The entry must be lan or public
+clients-switch-uninstalled = The client app has been uninstalled
+clients-switch-failed = Could not apply the client entry setting: { $error }

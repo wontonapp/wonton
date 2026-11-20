@@ -451,37 +451,7 @@ impl PluginManager {
             return self.clear_failed_install(id, purge, langs).await;
         }
         self.check_uninstall_dependencies(removing, approve_connections, langs)?;
-        let _changing = self.egress.changing.lock().await;
-        if self.egress_config()?.source == wonton_protocol::EgressProxySource::Plugin
-            && self.egress_provider(langs)?.id == *id
-        {
-            return Err(InstallError::Conflict(l10n::text(
-                langs,
-                "plugin-install-conflict-egress-proxy-in-use",
-                &[],
-            )));
-        }
-        {
-            let mut plugins = self.plugins.write().expect("插件表锁中毒");
-            let entry = plugins
-                .get_mut(id)
-                .ok_or_else(|| InstallError::not_installed(langs, id))?;
-            if let Some(e) = busy(id, &entry.status, langs) {
-                return Err(e);
-            }
-            if self.lan.is_rebuilding(id) {
-                return Err(InstallError::Conflict(l10n::text(
-                    langs,
-                    "plugin-install-conflict-lan-rebuilding",
-                    &[("id", id.to_string().into())],
-                )));
-            }
-            // 分享线（revoke_plugin_shares）的语义：卸载时撤销别人对本插件的分享，main 的卸载也在这做。
-            self.revoke_plugin_shares(id)?;
-            entry.status = PluginStatus::Uninstalling;
-            entry.checked_at = now_secs();
-        }
-        drop(_changing);
+        self.begin_uninstall(id, langs).await?;
         self.changed();
         tracing::info!(plugin = %id, operation = "uninstall", phase = "start", purge, "插件卸载开始");
         let removed = async {
@@ -529,5 +499,82 @@ impl PluginManager {
                 Err(e)
             }
         }
+    }
+    async fn begin_uninstall(&self, id: &PluginId, langs: &Languages) -> Result<(), InstallError> {
+        let _changing = self.egress.changing.lock().await;
+        if self.egress_config()?.source == wonton_protocol::EgressProxySource::Plugin
+            && self.egress_provider(langs)?.id == *id
+        {
+            return Err(InstallError::Conflict(l10n::text(
+                langs,
+                "plugin-install-conflict-egress-proxy-in-use",
+                &[],
+            )));
+        }
+        let gateway = self.clients_gateway();
+        let _clients = match &gateway {
+            Some(gateway) => Some(gateway.clients_apply.lock().await),
+            None => None,
+        };
+        let _pass = self.lan.pass.lock().await;
+        {
+            let plugins = self.plugins.read().expect("插件表锁中毒");
+            let entry = plugins
+                .get(id)
+                .ok_or_else(|| InstallError::not_installed(langs, id))?;
+            if let Some(error) = busy(id, &entry.status, langs) {
+                return Err(error);
+            }
+            if self.lan.is_rebuilding(id) {
+                return Err(InstallError::Conflict(l10n::text(
+                    langs,
+                    "plugin-install-conflict-lan-rebuilding",
+                    &[("id", id.to_string().into())],
+                )));
+            }
+        }
+        if let Some(gateway) = &gateway {
+            crate::clients::apply::close_for_uninstall(gateway, id)
+                .await
+                .map_err(|error| InstallError::UpstreamUnavailable(error.message))?;
+        } else {
+            // 记录坏了的插件也要能卸，读到不行就按没有入口继续（只记一条），不把卸载一直挡在这里。
+            match self.store.load(id) {
+                Ok(Some(record)) if record.clients_entries.lan || record.clients_entries.public => {
+                    return Err(InstallError::UpstreamUnavailable(
+                        "入口控制未接入，无法确认插件入口已关闭".to_owned(),
+                    ));
+                }
+                Ok(_) => {}
+                Err(error) => {
+                    tracing::warn!(plugin = %id, %error, "插件记录读不了，按没有入口继续卸载");
+                }
+            }
+        }
+        {
+            let mut plugins = self.plugins.write().expect("插件表锁中毒");
+            let entry = plugins
+                .get_mut(id)
+                .ok_or_else(|| InstallError::not_installed(langs, id))?;
+            if let Some(e) = busy(id, &entry.status, langs) {
+                return Err(e);
+            }
+            if self.lan.is_rebuilding(id) {
+                return Err(InstallError::Conflict(l10n::text(
+                    langs,
+                    "plugin-install-conflict-lan-rebuilding",
+                    &[("id", id.to_string().into())],
+                )));
+            }
+            // 分享线（revoke_plugin_shares）的语义：卸载时撤销别人对本插件的分享，main 的卸载也在这做。
+            self.revoke_plugin_shares(id)?;
+            entry.status = PluginStatus::Uninstalling;
+            entry.checked_at = now_secs();
+        }
+        // 完成入口关闭后记录不可再由开关改变（插件已标为 Uninstalling）。
+        drop(_pass);
+        drop(_clients);
+        drop(_changing);
+        Ok(())
     }
 }

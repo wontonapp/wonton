@@ -104,6 +104,26 @@ impl PluginManager {
         self.store.load(id).ok().flatten()
     }
 
+    /// 精确停在替换容器后的记录读取与 metadata 写回之间，不持有记录锁。
+    #[cfg(test)]
+    pub(crate) fn hold_recovery_metadata_for_test(
+        &self,
+        id: &PluginId,
+    ) -> (
+        tokio::sync::oneshot::Receiver<InstalledRecord>,
+        tokio::sync::oneshot::Sender<()>,
+    ) {
+        let (read, snapshot) = tokio::sync::oneshot::channel();
+        let (resume, wait) = tokio::sync::oneshot::channel();
+        *self.recovery_metadata_hold.lock().unwrap() =
+            Some(super::recovery_replace::MetadataHold {
+                id: id.clone(),
+                read,
+                resume: wait,
+            });
+        (snapshot, resume)
+    }
+
     /// 测试用：该插件当前部署代是否记着一次完成的 setup 检查。
     #[cfg(test)]
     pub(crate) fn setup_done_cached_for_test(&self, id: &PluginId) -> bool {

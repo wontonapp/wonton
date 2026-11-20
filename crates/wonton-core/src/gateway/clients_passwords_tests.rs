@@ -34,7 +34,16 @@ struct Home {
 }
 
 async fn home() -> Home {
+    home_with_password_file(None).await
+}
+
+async fn home_with_password_file(contents: Option<&str>) -> Home {
     let dir = tempfile::tempdir().unwrap();
+    if let Some(contents) = contents {
+        let path = dir.path().join(crate::clients::passwords::FILE_NAME);
+        std::fs::create_dir_all(path.parent().unwrap()).unwrap();
+        std::fs::write(path, contents).unwrap();
+    }
     let public = PublicUrls {
         scheme: "http".into(),
         base_domain: CORE.into(),
@@ -66,6 +75,17 @@ async fn home() -> Home {
         lifecycle,
         ImageWorker::in_process(),
     ));
+    let source = format!(
+        "services:\n  app:\n    image: example/app:1\nx-wonton:\n  spec: '0.14'\n  id: {PLUGIN}\n  version: 1.0.0\n  kind: app\n  title: {{en: Test}}\n  description: {{en: Test}}\n  permissions: [network.clients]\n  clients:\n    http:\n      service: app\n      port: 8080\n      auth:\n        gateway:\n          headers: {{X-Remote-User: '{{user}}'}}\n"
+    );
+    let manifest = crate::plugin::PluginPackage::manifest_of(&source, &Default::default()).unwrap();
+    manager.register_for_test(manifest, crate::plugin::PluginStatus::Running, None);
+    manager.clients_entry_for_test(
+        &crate::plugin::PluginId::parse(PLUGIN).unwrap(),
+        "gw",
+        false,
+        false,
+    );
     let (tunnel, members) = loopback_tunnel(dir.path()).await;
     let audit = Audit::new(dir.path().join("audit.jsonl"));
     let gateway = Arc::new(
@@ -99,6 +119,23 @@ impl Home {
             .uri(path)
             .header("host", format!("{CORE}:18480"))
             .header("x-wonton-clients", "1")
+    }
+
+    async fn as_owner(
+        &self,
+        device: iroh::EndpointId,
+        method: Method,
+        path: &str,
+        body: &str,
+    ) -> Reply {
+        self.send(
+            self.request(method, path)
+                .extension(TunnelPeer(device))
+                .header(CONTENT_TYPE, "application/json")
+                .body(Body::from(body.to_owned()))
+                .unwrap(),
+        )
+        .await
     }
 
     fn audit_lines(&self) -> Vec<Value> {
@@ -243,4 +280,119 @@ async fn device_revoke_revokes_its_passwords() {
             .unwrap()
             .is_some()
     );
+}
+
+#[tokio::test]
+async fn created_passwords_are_discoverable_and_revocable_from_the_list() {
+    let h = home().await;
+    let device = SecretKey::generate().public();
+    h.gateway
+        .tunnel
+        .devices
+        .add_if(device, Some("Phone".into()), None, |_| true)
+        .unwrap();
+    let created = h
+        .as_owner(
+            device,
+            Method::POST,
+            &wonton_protocol::clients_passwords_path(PLUGIN),
+            r#"{"label":"Calendar"}"#,
+        )
+        .await;
+    assert_eq!(created.status, StatusCode::CREATED);
+    let value = created.json()["password"].as_str().unwrap().to_owned();
+    let listed = h
+        .as_owner(device, Method::GET, &wonton_protocol::clients_path(), "")
+        .await;
+    assert_eq!(listed.status, StatusCode::OK, "{}", listed.text());
+    assert!(!listed.text().contains(&value));
+    let body = listed.json();
+    let passwords = body[0]["passwords"].as_array().unwrap();
+    assert_eq!(passwords.len(), 1);
+    assert_eq!(passwords[0]["label"], "Calendar");
+    assert_eq!(passwords[0]["created_by_device"], "Phone");
+    assert!(passwords[0].get("value").is_none());
+    assert!(passwords[0].get("password").is_none());
+    let path = wonton_protocol::clients_password_path(PLUGIN, passwords[0]["id"].as_str().unwrap());
+    let read = h.as_owner(device, Method::GET, &path, "").await;
+    assert_eq!(read.json()["password"], value);
+    let viewed = h
+        .as_owner(device, Method::GET, &wonton_protocol::clients_path(), "")
+        .await;
+    assert_eq!(
+        viewed.json()[0]["passwords"][0]["last_viewed_by"],
+        json!(["Phone"])
+    );
+    let revoked = h.as_owner(device, Method::DELETE, &path, "").await;
+    assert_eq!(revoked.status, StatusCode::OK);
+    let listed = h
+        .as_owner(device, Method::GET, &wonton_protocol::clients_path(), "")
+        .await;
+    assert_eq!(listed.json()[0]["passwords"], json!([]));
+    assert!(
+        h.gateway
+            .plugins
+            .client_passwords
+            .as_ref()
+            .unwrap()
+            .authenticate(PLUGIN, &value)
+            .unwrap()
+            .is_none()
+    );
+}
+
+#[tokio::test]
+async fn list_reports_corrupt_password_storage_instead_of_an_empty_list() {
+    let h = home_with_password_file(Some("invalid json")).await;
+    let reply = h
+        .send(
+            h.request(Method::GET, &wonton_protocol::clients_path())
+                .header(AUTHORIZATION, format!("Bearer {TOKEN}"))
+                .body(Body::empty())
+                .unwrap(),
+        )
+        .await;
+    assert_eq!(reply.status, StatusCode::SERVICE_UNAVAILABLE);
+    assert_eq!(reply.error_kind(), Some("plugin_unavailable"));
+}
+
+#[tokio::test]
+async fn restored_password_summaries_keep_creation_and_view_order_and_pending_state() {
+    let older = SecretKey::generate().public();
+    let newer = SecretKey::generate().public();
+    let contents = json!({"plugins": {(PLUGIN): [
+        {"id": "pw-9", "label": "First", "value": "not-in-list-first",
+         "created_by_device": "Tablet", "viewed_by": {(older.to_string()): 1, (newer.to_string()): 2}, "pending": true},
+        {"id": "pw-2", "label": "Second", "value": "not-in-list-second"}
+    ]}}).to_string();
+    let h = home_with_password_file(Some(&contents)).await;
+    for (id, name) in [(older, "Older"), (newer, "Newer")] {
+        h.gateway
+            .tunnel
+            .devices
+            .add_if(id, Some(name.into()), None, |_| true)
+            .unwrap();
+    }
+    let reply = h
+        .send(
+            h.request(Method::GET, &wonton_protocol::clients_path())
+                .header(AUTHORIZATION, format!("Bearer {TOKEN}"))
+                .body(Body::empty())
+                .unwrap(),
+        )
+        .await;
+    assert_eq!(reply.status, StatusCode::OK, "{}", reply.text());
+    let body = reply.json();
+    let passwords = body[0]["passwords"].as_array().unwrap();
+    assert_eq!(
+        passwords
+            .iter()
+            .map(|entry| entry["id"].as_str().unwrap())
+            .collect::<Vec<_>>(),
+        ["pw-9", "pw-2"]
+    );
+    assert_eq!(passwords[0]["last_viewed_by"], json!(["Newer", "Older"]));
+    assert_eq!(passwords[0]["pending"], "revoke");
+    assert!(passwords[1]["pending"].is_null());
+    assert!(!reply.text().contains("not-in-list"));
 }
