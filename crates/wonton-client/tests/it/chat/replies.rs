@@ -173,6 +173,7 @@ async fn image_reply_quotes_the_original(
     phone
         .dispatch(Action::Timeline {
             action: TimelineAction::SendImage {
+                caption: None,
                 target: TimelineTarget {
                     room_id: bot_room.room_id().to_string(),
                     thread_root: None,
