@@ -25,6 +25,9 @@ use crate::tunnel::Tunnel;
 use crate::{friends::Friends, shares::Shares};
 use wonton_protocol::role_path;
 
+#[path = "friend_gate_repair_tests.rs"]
+mod friend_gate_repair_tests;
+
 const MATRIX_HOST: &str = "matrix.wonton.localhost";
 const KID_TOKEN: &str = "kid-matrix-token";
 const REMOTE: &str = "@bob:remote.example.org";

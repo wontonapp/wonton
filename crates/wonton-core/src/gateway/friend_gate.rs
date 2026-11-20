@@ -204,8 +204,23 @@ fn hold(
     tokio::spawn(async move {
         let response = match bus.ask_plugin_admin(identity, draft).await {
             Ok(_ticket) => {
-                let req = Request::from_parts(parts, Body::from(bytes));
-                deliver_client_request(&gateway, req).await
+                let _sync = gateway.member_sync.lock().await;
+                if gateway.device_person(peer).as_ref() != Some(&person)
+                    || !matches!(
+                        gateway.permissions(&person).add_friends,
+                        Gate::Allow | Gate::AskAdmin
+                    )
+                {
+                    matrix_error(
+                        StatusCode::FORBIDDEN,
+                        "M_FORBIDDEN",
+                        "permission_denied",
+                        "成员或设备已失去加好友的权限",
+                    )
+                } else {
+                    let req = Request::from_parts(parts, Body::from(bytes));
+                    deliver_client_request(&gateway, req).await
+                }
             }
             Err(Refusal::Rejected) => matrix_error(
                 StatusCode::FORBIDDEN,
