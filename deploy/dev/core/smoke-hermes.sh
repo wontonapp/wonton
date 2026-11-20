@@ -48,8 +48,7 @@ expect_model_reply() {
   local reply
   reply="$(hermes_reply "$1")"
   [[ -n "$reply" ]] || fail "第 $2 轮没有回复：$(cat "$1")"
-  ! { grep -q Keys <<<"$reply" && grep -q Models <<<"$reply"; } ||
-    fail "配上模型后 Hermes 不该再提示去设置模型：$reply"
+  grep -q Keys <<<"$reply" && fail "配上模型后 Hermes 还在提示去设置模型：$reply"
   ok "第 $2 轮是模型的回答"
 }
 

@@ -16,7 +16,7 @@ use super::super::manifest::Permission;
 use super::super::names::container_name;
 use super::super::{PluginId, PluginManager, PluginPackage, PluginStatus};
 use super::manager::manager_with;
-use super::{langs, package};
+use super::{env_of_container, langs, package};
 
 type Keys = Arc<Mutex<BTreeMap<String, String>>>;
 
@@ -280,6 +280,35 @@ async fn model_settings_falls_back_to_the_default_bot_page_without_a_gateway() {
     assert_eq!(settings.plugin_id, bot.as_str());
     assert!(settings.web_url.is_some());
     assert!(!settings.has_configured_models);
+}
+
+#[tokio::test]
+async fn a_system_provider_installs_with_the_user_path_and_can_be_uninstalled() {
+    let bed = bed_with(None).await;
+    let keys = Keys::default();
+    bed.docker.on_exec(credential_script(keys.clone()));
+    let port = gateway_with_route(keys.clone(), Arc::new(Mutex::new(RouteReply::default()))).await;
+    let provider = provider(port);
+    let provider_id = provider.manifest.id.clone();
+    bed.manager
+        .install(&provider.source, &[], langs())
+        .await
+        .unwrap();
+    bed.install_consumer().await;
+    let env = env_of_container(&bed.docker, &container_name("app-test", "web"));
+    assert_eq!(env["BASE"], "http://models.wonton.internal:8080/v1");
+    assert_eq!(env["MODEL"], "group/default");
+    assert_eq!(keys.lock().unwrap()["app.test"], env["KEY"]);
+
+    bed.manager
+        .uninstall(&Bed::consumer_id(), false, &langs())
+        .await
+        .unwrap();
+    bed.manager
+        .uninstall(&provider_id, false, &langs())
+        .await
+        .unwrap();
+    assert!(bed.manager.list().is_empty());
 }
 
 #[tokio::test]

@@ -300,7 +300,6 @@ impl PluginManager {
             .iter()
             .filter(|provider| {
                 target.is_some_and(|consumer| selected_uses(&consumer.manifest, &provider.id))
-                    && provider.listed.manifest.kind != super::PluginKind::System
                     && !consumers.iter().any(|consumer| {
                         consumer.manifest.id != *id
                             && selected_uses(&consumer.manifest, &provider.id)

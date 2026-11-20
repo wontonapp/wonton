@@ -500,7 +500,7 @@ async fn docker_outage_is_reported_and_leaves_nothing_behind() {
             .await
             .unwrap_err()
             .kind(),
-        "unsupported"
+        "docker_unavailable"
     );
     let id = super::super::PluginId::parse("app.whoami").unwrap();
     assert_eq!(

@@ -1,6 +1,7 @@
 #!/usr/bin/env bash
 # M0 端到端冒烟：一条命令装好示例插件 → 健康检查通过 → 未登录的请求被拒 →
-# 像浏览器一样经核心网关打开插件并自动登录 → 核心不预装模型网关，申请 models 的插件照样装得上 →
+# 像浏览器一样经核心网关打开插件并自动登录 → 核心不预装模型网关，申请 models 的插件照样装得上，请求报网关不可用，
+# 装上后转发、停掉报 503 →
 # 已配对设备经隧道打开插件，直接是主人 → 经隧道登录 Matrix，和回声 Bot 加密收发 →
 # 核心自己装好的默认 Agent Hermes 就绪后出现在主人的私聊里：没选模型时提示去它自己的网页设置，用它自带的供应商接入
 # 配上模型后和主人加密对话两轮 → 核心重启后恢复、不装回卸掉的 Hermes → 卸载干净。
@@ -59,9 +60,10 @@ hermes_network="wonton-$WONTON_DEV_INSTANCE--com-nousresearch-hermes"
 grafana="$grafana_network--grafana"
 echo_bot="wonton-$WONTON_DEV_INSTANCE--agent-echo--bot"
 model_client="wonton-$WONTON_DEV_INSTANCE--app-model-client--client"
+magpie="wonton-$WONTON_DEV_INSTANCE--ai-usemagpie-magpie--magpie"
 # Hermes 声明了 bots（x-wonton.bots），gateway 是 Bot 服务：容器按 Bot 一份。
 hermes="$hermes_network--gateway--default"
-plugins=(app.grafana app.whoami agent.echo app.model-client com.nousresearch.hermes app.wonton.files org.navidrome.navidrome)
+plugins=(app.grafana app.whoami agent.echo app.model-client ai.usemagpie.magpie com.nousresearch.hermes app.wonton.files org.navidrome.navidrome)
 
 # shellcheck source=deploy/dev/core/smoke-cleanup.sh
 source "$here/smoke-cleanup.sh"
@@ -154,7 +156,7 @@ printf '%s' "$("$dev" token)" |
   python3 "$here/smoke-oidc.py" "$browser" "$grafana" "$core_url" "$grafana_url"
 
 fi
-if step models "不预装模型网关：申请 models 的插件照样装得上，没有网关时拿到的是空变量"; then
+if step models "不预装模型网关：申请 models 的插件照样装得上；没有网关时请求报网关不可用"; then
 expect "核心没有预装模型网关" "$(plugin_state ai.usemagpie.magpie)" absent
 client_file="$(mktemp)"
 cat >"$client_file" <<'YAML'
@@ -180,6 +182,36 @@ rm -f "$client_file"
 expect "没有网关时使用方照样装好" "$(json status.state <<<"$installed")" running
 client_env() { docker inspect "$model_client" --format '{{range .Config.Env}}{{println .}}{{end}}' | sed -n "s/^$1=//p"; }
 expect "没有网关时模型变量是空的" "$(client_env BASE)|$(client_env KEY)|$(client_env MODEL)" "||"
+request_models() {
+  docker exec "$model_client" curl -sS -o /tmp/models.json -w '%{http_code}' http://models.wonton.internal/v1/models
+}
+expect "没有网关：核心报网关不可用" "$(request_models)" 503
+expect "错误类别" "$(docker exec "$model_client" cat /tmp/models.json | json error.kind)" models_unavailable
+# 从开发索引里把网关按包装一遍：核心现在接受 kind: system，网页和凭据都由核心照常创出来。
+magpie_dir="$(mktemp -d)"
+python3 - "$here/store/index.json" "$here/store/blobs" "$magpie_dir" <<'PY'
+import json
+import pathlib
+import re
+import sys
+
+index, blobs, out = map(pathlib.Path, sys.argv[1:])
+entries = json.loads((index / "index.json").read_text())["plugins"]
+entry = next(e for e in entries if re.search(r"^\s+id:\s*ai\.usemagpie\.magpie\s*$", e["compose"], re.M))
+(out / "docker-compose.yml").write_text(entry["compose"])
+for path, digest in entry["files"].items():
+    (out / path).parent.mkdir(parents=True, exist_ok=True)
+    (out / path).write_bytes((blobs / digest).read_bytes())
+PY
+installed="$("$dev" install "$magpie_dir" --yes 2>/dev/null)" || fail "模型网关安装失败：$installed"
+rm -rf "$magpie_dir"
+for _ in $(seq 180); do [[ "$(plugin_state ai.usemagpie.magpie)" == running ]] && break; sleep 1; done
+expect "从商店装上了模型网关" "$(plugin_state ai.usemagpie.magpie)" running
+expect "有网关：模型列表转给网关" "$(request_models)" 200
+docker stop "$magpie" >/dev/null
+expect "网关没启动：核心报网关不可用" "$(request_models)" 503
+expect "错误类别" "$(docker exec "$model_client" cat /tmp/models.json | json error.kind)" models_unavailable
+expect "卸载模型网关" "$("$dev" uninstall ai.usemagpie.magpie --purge | json data_removed)" true
 expect "卸载使用方" "$("$dev" uninstall app.model-client --purge | json data_removed)" true
 
 fi

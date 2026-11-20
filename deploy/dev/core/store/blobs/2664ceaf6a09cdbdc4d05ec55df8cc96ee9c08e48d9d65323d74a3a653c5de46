@@ -1,0 +1,21 @@
+gateway:
+  model:
+    usage_switch_provider: "To change your model service, open Apps → All-Purpose Bot (Hermes) → Models."
+  errors:
+    connection_unknown: "I couldn't connect to your chosen AI service; try again later or check the connection in Apps → All-Purpose Bot (Hermes) → Models."
+    unreachable: "Your chosen AI service isn't reachable; check that it's running and its address is correct in Apps → All-Purpose Bot (Hermes) → Models."
+    connection_interrupted: "The connection to your AI service was interrupted before the reply finished; try again later."
+    auth_failed: "Your AI service didn't accept the sign-in details; check them in Apps → All-Purpose Bot (Hermes) → Keys before trying again."
+    provider_kept_failing: "Your chosen AI service keeps failing; try again later or choose another service in Apps → All-Purpose Bot (Hermes) → Models."
+    rate_limited: "Your AI service is receiving too many requests; wait a moment before trying again."
+    usage_limit_resets: "Your AI service has reached its usage limit; try again in {window} or choose another service in Apps → All-Purpose Bot (Hermes) → Models."
+    bad_request: "Your AI service rejected this request; try rephrasing your message or choose another service in Apps → All-Purpose Bot (Hermes) → Models."
+    no_credentials: "I couldn't sign in to your chosen AI service, so this message wasn't processed; check the sign-in details in Apps → All-Purpose Bot (Hermes) → Keys."
+    hint_auth: " Your AI service didn't accept the sign-in details; check them in Apps → All-Purpose Bot (Hermes) → Keys."
+    hint_quota: " Your AI service has no credit or usage allowance left; check your account on its website or choose another service in Apps → All-Purpose Bot (Hermes) → Models."
+    hint_overloaded: " Your AI service is temporarily busy; wait a moment before trying again."
+    hint_rate_limited: " Your AI service is receiving too many requests; wait a moment before trying again."
+    hint_usage_limit_resets: " Your AI service has reached its usage limit; try again in about {hours} hours."
+    hint_usage_limit: " Your AI service has reached its usage limit; wait for it to reset or choose another service in Apps → All-Purpose Bot (Hermes) → Models."
+    hint_rejected: " Your AI service rejected this request; try rephrasing your message."
+    generic_failed_with_hint: "I couldn't finish this reply.{hint}"

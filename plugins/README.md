@@ -13,7 +13,8 @@
 
 默认 Agent [Hermes](https://github.com/wontonapp/wonton-plugin-hermes) 只在首次启动时安装，主人卸载后不再装回；
 模型用它自带的供应商接入。模型网关 [magpie](https://github.com/geraldpeng6/wonton-plugin-magpie) 是商店里的普通插件，
-不预装（ADR-0108）。系统插件和默认插件各装各的，系统插件一直装不上也不挡默认插件。
+不预装（ADR-0108）。系统插件和默认插件各装各的，系统插件一直装不上也不挡默认插件；系统插件（`kind: system`，只给
+官方）现在也不限于预装，从商店装和卸载都走普通流程。
 核心镜像构建时运行 `wonton-core plugin fetch-locked plugins/system.lock <目标目录>`，只取插件包文件，核对提交与
 ADR-0017 定义的包摘要；包随镜像发布，首次启动不从 GitHub 取包。
 
