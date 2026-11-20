@@ -302,7 +302,10 @@ plugin-settings-store-index-fetch-failed = The official index could not be fetch
 # ── Health checks (health.rs) ──────────────────────────────────────────────
 
 plugin-settings-health-timeout = The container { $container } did not become ready within the deadline (last state: { $state })
-plugin-settings-health-unhealthy = The container { $container } failed its health check
+plugin-settings-health-timeout-unhealthy = The health check of container { $container } never recovered before the deadline ({ $waited } of waiting, last state: { $state })
+plugin-settings-waited-seconds = { $amount } s
+plugin-settings-waited-minutes = { $amount } min
+plugin-settings-waited-hours = { $amount } h
 plugin-settings-health-exited = The container { $container } has exited (exit code { $code })
 plugin-settings-health-no-healthcheck = The container { $container } is required to be service_healthy but has no health check configured
 plugin-settings-health-webui-timeout = The web entry { $url } did not respond within the deadline: { $last_error }

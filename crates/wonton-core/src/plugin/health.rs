@@ -31,8 +31,6 @@ pub enum HealthError {
     #[error("{0}")]
     Timeout(String),
     #[error("{0}")]
-    Unhealthy(String),
-    #[error("{0}")]
     Exited(String),
     #[error("{0}")]
     NoHealthcheck(String),
@@ -67,10 +65,13 @@ pub enum Readiness {
 
 enum Observation {
     Done(Readiness),
-    /// 还没到目标：状态描述和最近几次探针的结果（超时报告用）。
+    /// 还没到目标：状态描述、最近几次探针的结果和是否被判成不健康（超时报告用）。
     Waiting {
         state: String,
         probes: Vec<Probe>,
+        /// Docker 已判成 `unhealthy`。判成不健康以后还会自己恢复（慢机器上的冷启动、一时卡住的数据库），
+        /// 所以先继续等，到期限再按这个原因报错。
+        unhealthy: bool,
     },
 }
 
@@ -84,8 +85,9 @@ pub(super) async fn wait_for(
     langs: &Languages,
 ) -> Result<Readiness, HealthError> {
     let mut running_since: Option<Instant> = None;
+    let started = Instant::now();
     loop {
-        let (state, probes) = match observe(
+        let (state, probes, unhealthy) = match observe(
             engine,
             http,
             container,
@@ -97,17 +99,17 @@ pub(super) async fn wait_for(
         .await
         {
             Ok(Observation::Done(readiness)) => return Ok(readiness),
-            Ok(Observation::Waiting { state, probes }) => (state, probes),
+            Ok(Observation::Waiting {
+                state,
+                probes,
+                unhealthy,
+            }) => (state, probes, unhealthy),
             Err(failure) => return Err(failure_error(engine, container, failure, langs).await),
         };
         if Instant::now() >= deadline {
             let logs = traced(container, engine.logs_tail(container, LOG_LINES).await);
             return Err(HealthError::Timeout(with_log_tail(
-                crate::l10n::text(
-                    langs,
-                    "plugin-settings-health-timeout",
-                    &[("container", container.into()), ("state", state.into())],
-                ),
+                timeout_text(langs, container, &state, unhealthy, started.elapsed()),
                 probe_block(&probes, langs),
                 &logs,
                 langs,
@@ -118,7 +120,7 @@ pub(super) async fn wait_for(
 }
 
 /// 一起等一组 `depends_on`：每一轮把还没满足的都看一遍，任何一个失败就立即报它（容器名、退出码、日志），
-/// 不再等其余依赖到超时。超时报第一个还没满足的。
+/// 不再等其余依赖到超时。超时先报已经判成不健康的那个，没有才报第一个还没满足的。
 pub(super) async fn wait_for_all(
     engine: &Engine,
     http: &HttpClient,
@@ -134,8 +136,10 @@ pub(super) async fn wait_for_all(
             condition: *condition,
             state: String::new(),
             probes: Vec::new(),
+            unhealthy: false,
         })
         .collect();
+    let started = Instant::now();
     while !pending.is_empty() {
         let mut index = 0;
         while index < pending.len() {
@@ -158,9 +162,14 @@ pub(super) async fn wait_for_all(
                 Ok(Observation::Done(_)) => {
                     pending.remove(index);
                 }
-                Ok(Observation::Waiting { state, probes }) => {
+                Ok(Observation::Waiting {
+                    state,
+                    probes,
+                    unhealthy,
+                }) => {
                     dep.state = state;
                     dep.probes = probes;
+                    dep.unhealthy = unhealthy;
                     index += 1;
                 }
                 Err(failure) => return Err(failure_error(engine, dep.name, failure, langs).await),
@@ -170,16 +179,20 @@ pub(super) async fn wait_for_all(
             return Ok(());
         }
         if Instant::now() >= deadline {
-            let dep = pending.swap_remove(0);
+            // 有容器已经判成不健康时先报它：其余容器可能只是还在启动。
+            let index = pending
+                .iter()
+                .position(|dep| dep.unhealthy)
+                .unwrap_or_default();
+            let dep = pending.swap_remove(index);
             let logs = traced(dep.name, engine.logs_tail(dep.name, LOG_LINES).await);
             return Err(HealthError::Timeout(with_log_tail(
-                crate::l10n::text(
+                timeout_text(
                     langs,
-                    "plugin-settings-health-timeout",
-                    &[
-                        ("container", dep.name.into()),
-                        ("state", dep.state.clone().into()),
-                    ],
+                    dep.name,
+                    &dep.state,
+                    dep.unhealthy,
+                    started.elapsed(),
                 ),
                 probe_block(&dep.probes, langs),
                 &logs,
@@ -197,6 +210,47 @@ struct Pending<'a> {
     condition: DependCondition,
     state: String,
     probes: Vec<Probe>,
+    unhealthy: bool,
+}
+
+/// 等到期限还没就绪的说明：判过不健康的说出病名和等了多久，其余照旧说没就绪。
+fn timeout_text(
+    langs: &Languages,
+    container: &str,
+    state: &str,
+    unhealthy: bool,
+    waited: Duration,
+) -> String {
+    let name = ("container", container.into());
+    if unhealthy {
+        return l10n::text(
+            langs,
+            "plugin-settings-health-timeout-unhealthy",
+            &[
+                name,
+                ("state", state.into()),
+                ("waited", waited_text(langs, waited).into()),
+            ],
+        );
+    }
+    l10n::text(
+        langs,
+        "plugin-settings-health-timeout",
+        &[name, ("state", state.into())],
+    )
+}
+
+/// 等了多久：向上取整，说人话。
+fn waited_text(langs: &Languages, waited: Duration) -> String {
+    let secs = waited.as_secs();
+    let (key, amount) = if secs < 60 {
+        ("plugin-settings-waited-seconds", secs)
+    } else if secs < 3600 {
+        ("plugin-settings-waited-minutes", secs.div_ceil(60))
+    } else {
+        ("plugin-settings-waited-hours", secs.div_ceil(3600))
+    };
+    l10n::text(langs, key, &[("amount", amount.to_string().into())])
 }
 
 /// 失败变成报错：附上容器最近的日志，让人不用去查 Docker 就能看出原因。
@@ -207,19 +261,6 @@ async fn failure_error(
     langs: &Languages,
 ) -> HealthError {
     match failure {
-        Failure::Unhealthy(probes) => {
-            let logs = traced(container, engine.logs_tail(container, LOG_LINES).await);
-            HealthError::Unhealthy(with_log_tail(
-                crate::l10n::text(
-                    langs,
-                    "plugin-settings-health-unhealthy",
-                    &[("container", container.into())],
-                ),
-                probe_block(&probes, langs),
-                &logs,
-                langs,
-            ))
-        }
         Failure::Exited(code) => {
             let logs = traced(container, engine.logs_tail(container, LOG_LINES).await);
             HealthError::Exited(with_log_tail(
@@ -256,7 +297,6 @@ fn with_log_tail(head: String, probes: String, logs: &str, langs: &Languages) ->
 }
 
 enum Failure {
-    Unhealthy(Vec<Probe>),
     Exited(i64),
     Other(HealthError),
 }
@@ -496,6 +536,7 @@ fn verdict(
             _ => Ok(Observation::Waiting {
                 state: label,
                 probes,
+                unhealthy: health == Some(HealthStatusEnum::UNHEALTHY),
             }),
         };
     }
@@ -505,8 +546,13 @@ fn verdict(
     ) {
         return Err(Failure::Exited(exit_code));
     }
+    // 判成不健康不等于没救：慢主机上的数据库冷启动也会先探针全失败再恢复，继续等到期限。
     if health == Some(HealthStatusEnum::UNHEALTHY) {
-        return Err(Failure::Unhealthy(probes));
+        return Ok(Observation::Waiting {
+            state: label,
+            probes,
+            unhealthy: true,
+        });
     }
     let running = status == ContainerStateStatusEnum::RUNNING;
     if let Some((request, outcome)) = webui {
@@ -515,10 +561,12 @@ fn verdict(
             Ok(code) => Ok(Observation::Waiting {
                 state: format!("{label} / {request} → HTTP {code}"),
                 probes,
+                unhealthy: false,
             }),
             Err(e) => Ok(Observation::Waiting {
                 state: format!("{label} / {request} → {e}"),
                 probes,
+                unhealthy: false,
             }),
         };
     }
@@ -540,6 +588,7 @@ fn verdict(
                 Ok(Observation::Waiting {
                     state: label,
                     probes,
+                    unhealthy: false,
                 })
             }
         }
@@ -551,6 +600,7 @@ fn verdict(
                 Ok(Observation::Waiting {
                     state: label,
                     probes,
+                    unhealthy: false,
                 })
             }
         }
@@ -559,6 +609,7 @@ fn verdict(
             Ok(Observation::Waiting {
                 state: label,
                 probes,
+                unhealthy: false,
             })
         }
     }
@@ -667,5 +718,29 @@ pub async fn wait_webui(
             )));
         }
         sleep(POLL).await;
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use std::time::Duration;
+
+    use super::waited_text;
+    use crate::plugin::languages::Languages;
+
+    fn zh() -> Languages {
+        Languages::from_header(Some("zh-Hans"))
+    }
+
+    #[test]
+    fn the_wait_is_rounded_up_in_readable_units() {
+        assert_eq!(waited_text(&zh(), Duration::from_secs(5)), "5 秒");
+        assert_eq!(waited_text(&zh(), Duration::from_secs(61)), "2 分钟");
+        assert_eq!(waited_text(&zh(), Duration::from_secs(59 * 60)), "59 分钟");
+        assert_eq!(waited_text(&zh(), Duration::from_secs(3601)), "2 小时");
+        let en = Languages::from_header(Some("en"));
+        assert_eq!(waited_text(&en, Duration::from_secs(5)), "5 s");
+        assert_eq!(waited_text(&en, Duration::from_secs(61)), "2 min");
+        assert_eq!(waited_text(&en, Duration::from_secs(61 * 60)), "2 h");
     }
 }

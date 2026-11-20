@@ -302,7 +302,10 @@ plugin-settings-store-index-fetch-failed = 取不到官方索引：{ $error }
 # ── 健康检查（health.rs）───────────────────────────────────────────────────
 
 plugin-settings-health-timeout = 容器 { $container } 在期限内没有就绪（最后状态：{ $state }）
-plugin-settings-health-unhealthy = 容器 { $container } 健康检查失败
+plugin-settings-health-timeout-unhealthy = 容器 { $container } 健康检查一直失败，等到期限（{ $waited }）仍未恢复（最后状态：{ $state }）
+plugin-settings-waited-seconds = { $amount } 秒
+plugin-settings-waited-minutes = { $amount } 分钟
+plugin-settings-waited-hours = { $amount } 小时
 plugin-settings-health-exited = 容器 { $container } 已退出（退出码 { $code }）
 plugin-settings-health-no-healthcheck = 容器 { $container } 被要求 service_healthy，但没有配置健康检查
 plugin-settings-health-webui-timeout = 网页入口 { $url } 在期限内没有响应：{ $last_error }

@@ -194,7 +194,8 @@ async fn install_failure_names_the_failing_probes() {
         }),
     );
     docker.set_output(&app, 0, "插件日志：数据库迁移失败", "");
-    let m = manager_with(engine, &dir);
+    let mut m = manager_with(engine, &dir);
+    m.cfg.install_timeout = Duration::ZERO;
     let error = m
         .install(&with_init(""), &[], super::langs())
         .await
@@ -255,7 +256,8 @@ async fn probe_output_is_trimmed_and_truncated() {
             "Health": {"Status": "unhealthy", "Log": [{"ExitCode": 1, "Output": output}]},
         }),
     );
-    let m = manager_with(engine, &dir);
+    let mut m = manager_with(engine, &dir);
+    m.cfg.install_timeout = Duration::ZERO;
     let error = m
         .install(&with_init(""), &[], super::langs())
         .await
@@ -285,7 +287,8 @@ async fn ansi_sequences_are_stripped_entirely() {
                        "Log": [{"ExitCode": 1, "Output": "\u{1b}[31mred\u{1b}[0m"}]},
         }),
     );
-    let m = manager_with(engine, &dir);
+    let mut m = manager_with(engine, &dir);
+    m.cfg.install_timeout = Duration::ZERO;
     let error = m
         .install(&with_init(""), &[], super::langs())
         .await
@@ -308,7 +311,8 @@ async fn failures_without_probe_log_read_as_before() {
         json!({"Status": "running", "Running": true, "Health": {"Status": "unhealthy"}}),
     );
     docker.set_output(&app, 0, "插件日志：只写了一半", "");
-    let m = manager_with(engine, &dir);
+    let mut m = manager_with(engine, &dir);
+    m.cfg.install_timeout = Duration::ZERO;
     let error = m
         .install(&with_init(""), &[], super::langs())
         .await
@@ -431,7 +435,8 @@ async fn a_failed_install_carries_the_whole_log_not_just_the_last_lines() {
             .join("\n"),
     );
     docker.set_state(&init, exited(1));
-    let m = manager_with(engine, &dir);
+    let mut m = manager_with(engine, &dir);
+    m.cfg.install_timeout = Duration::ZERO;
     let error = m
         .install(&with_init(""), &[], super::langs())
         .await
@@ -439,4 +444,81 @@ async fn a_failed_install_carries_the_whole_log_not_just_the_last_lines() {
     let message = error.to_string();
     assert!(message.contains("line 1\n"), "{message}");
     assert!(message.contains("line 150"), "{message}");
+}
+
+// 健康检查判成失败不等于没救：慢主机上的数据库冷启动会先探针全失败再恢复，安装要继续等，
+// 不能一看到 unhealthy 就回滚（盲测 immich-db-start-timeout，核心 84f4092a3）。
+#[tokio::test(start_paused = true)]
+async fn an_unhealthy_container_that_recovers_is_not_failed_early() {
+    let (docker, engine) = FakeDocker::start().await;
+    let engine = engine.with_request_limit_for_test(Duration::from_secs(2 * 60 * 60));
+    let dir = tempfile::tempdir().unwrap();
+    let app = container_name("app-test", "app");
+    docker.set_state(&container_name("app-test", "init"), exited(0));
+    docker.set_state(
+        &app,
+        json!({
+            "Status": "running", "Running": true,
+            "Health": {"Status": "unhealthy", "Log": [{"ExitCode": 1, "Output": "no response"}]},
+        }),
+    );
+    let mut m = manager_with(engine, &dir);
+    m.cfg.install_timeout = crate::config::DEFAULT_INSTALL_TIMEOUT;
+    let m = std::sync::Arc::new(m);
+    let install = {
+        let m = m.clone();
+        let compose = with_init("");
+        tokio::spawn(async move { m.install(&compose, &[], super::langs()).await })
+    };
+    for _ in 0..5 {
+        tokio::time::advance(Duration::from_secs(60)).await;
+        assert!(!install.is_finished(), "判成不健康也要继续等到期限");
+    }
+    docker.set_state(
+        &app,
+        json!({"Status": "running", "Running": true, "Health": {"Status": "healthy"}}),
+    );
+    tokio::time::advance(Duration::from_secs(1)).await;
+    let view = install.await.unwrap().unwrap();
+    assert_eq!(
+        (view.status, view.health),
+        (PluginStatus::Running, Some(Health::Healthy))
+    );
+}
+
+#[tokio::test(start_paused = true)]
+async fn a_pending_container_that_stays_unhealthy_is_named_when_the_deadline_expires() {
+    let (docker, engine) = FakeDocker::start().await;
+    let dir = tempfile::tempdir().unwrap();
+    let db = container_name("app-test", "db");
+    docker.set_state(
+        &db,
+        json!({
+            "Status": "running", "Running": true,
+            "Health": {"Status": "unhealthy", "Log": [{"ExitCode": 1, "Output": "no response"}]},
+        }),
+    );
+    docker.set_state(
+        &container_name("app-test", "app"),
+        json!({"Status": "running", "Running": true, "Health": {"Status": "starting"}}),
+    );
+    let mut m = manager_with(engine, &dir);
+    m.cfg.install_timeout = Duration::ZERO;
+    let compose = package(
+        "  db:\n    image: postgres\n    healthcheck: {test: ['CMD', 'pg_isready']}\n  \
+         app:\n    image: nginx\n    depends_on:\n      db: {condition: service_healthy}\n",
+        "  permissions: []",
+    );
+    let error = m
+        .install(&compose, &[], super::langs())
+        .await
+        .unwrap_err()
+        .to_string();
+    assert!(error.contains(&db), "{error}");
+    assert!(error.contains("no response"), "{error}");
+    assert!(error.contains("never recovered"), "{error}");
+    assert!(
+        !error.contains(&container_name("app-test", "app")),
+        "报的是不健康的依赖，不是还在启动的容器：{error}"
+    );
 }

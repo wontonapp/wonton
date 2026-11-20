@@ -302,7 +302,10 @@ plugin-settings-store-index-fetch-failed = 公式インデックスを取得で�
 # ── ヘルスチェック（health.rs）───────────────────────────────────────────
 
 plugin-settings-health-timeout = コンテナ{ $container }が制限時間内に準備できませんでした（最後の状態：{ $state }）
-plugin-settings-health-unhealthy = コンテナ{ $container }のヘルスチェックが失敗しました
+plugin-settings-health-timeout-unhealthy = コンテナ{ $container }のヘルスチェックが{ $waited }待っても回復しませんでした（最後の状態：{ $state }）
+plugin-settings-waited-seconds = { $amount } 秒
+plugin-settings-waited-minutes = { $amount } 分
+plugin-settings-waited-hours = { $amount } 時間
 plugin-settings-health-exited = コンテナ{ $container }が終了しました（終了コード{ $code }）
 plugin-settings-health-no-healthcheck = コンテナ{ $container }はservice_healthyが求められていますが、ヘルスチェックが設定されていません
 plugin-settings-health-webui-timeout = Webページの入り口{ $url }が制限時間内に応答しませんでした：{ $last_error }
