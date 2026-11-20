@@ -462,6 +462,31 @@ async fn onboarding_keeps_a_cached_catalog_when_the_official_source_breaks() {
 }
 
 #[tokio::test]
+async fn store_details_show_the_first_time_steps_in_the_requested_language() {
+    use super::super::languages::Languages;
+
+    let index = tempfile::tempdir().unwrap();
+    let mut source = compose("1.0.0", "nginx").replace("spec: '0.4'", "spec: '0.11'");
+    source.push_str(
+        "  setup: {zh: \"用 admin 登录后改密码\", en: \"Sign in as admin, then change the password\"}\n",
+    );
+    write_index(index.path(), &source, ICON);
+    let bed = bed(index.path(), false).await;
+    let cases = [
+        ("zh-Hans", "用 admin 登录后改密码"),
+        ("en-US", "Sign in as admin, then change the password"),
+    ];
+    for (language, expected) in cases {
+        let detail = bed
+            .m
+            .store_plugin("github:acme/hello", &Languages::from_header(Some(language)))
+            .await
+            .unwrap();
+        assert_eq!(detail.setup.as_deref(), Some(expected));
+    }
+}
+
+#[tokio::test]
 async fn store_details_warn_about_isolation_before_install_in_the_requested_language() {
     use super::super::languages::Languages;
 

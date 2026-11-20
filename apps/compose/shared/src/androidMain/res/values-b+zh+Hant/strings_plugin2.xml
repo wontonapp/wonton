@@ -40,4 +40,5 @@
     <string name="plugin_screenshot">截圖</string>
     <!-- Row in the install/upgrade confirmation and on the app's detail page: what the app's web page may do when opened inside a chat room, for the capabilities that never touch message content. No arguments. -->
     <string name="plugin_widget_normal">在房間裡開啟時，它的網頁能讀寫通話狀態這類不含聊天內容的資訊，並向通話服務證明是你本人。</string>
+    <string name="plugin_setup_title">第一次開啟</string>
 </resources>
