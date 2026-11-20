@@ -2931,6 +2931,11 @@ pub struct SendHandle {
 }
 
 impl SendHandle {
+    /// The transaction id of the queued request.
+    pub fn transaction_id(&self) -> &TransactionId {
+        &self.transaction_id
+    }
+
     /// Creates a new [`SendHandle`].
     #[cfg(test)]
     pub(crate) fn new(
