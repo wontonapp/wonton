@@ -9,6 +9,9 @@ here="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 repo="$(cd "$here/../../../.." && pwd)"
 # 引导清单跟着 wonton-store 的这个提交，不跟 main。要换引导时改这里。
 store_commit=ee59c022fab39fbf1415945c53cd556b82321429
+# shellcheck source=deploy/dev/core/dev-guard.sh
+source "$here/../dev-guard.sh"
+dev_guard_check wonton-dev-store
 # Agent 只收 Hermes：别的 Agent 插件还是 `agent.protocol: acp` 的旧清单，核心按新协议读不懂，等它们改完再加回来。
 plugins=(
   geraldpeng6/wonton-plugin-files@v0.2.2

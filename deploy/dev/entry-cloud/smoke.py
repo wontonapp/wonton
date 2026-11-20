@@ -17,7 +17,7 @@ import tempfile
 import tomllib
 from urllib.parse import quote
 
-from smoke_support import HERE, REPO, SLOT, RUNTIME_IMAGE, Home, curl, free_port, run, wait_for
+from smoke_support import HERE, REPO, SLOT, RUNTIME_IMAGE, Home, curl, free_port, guard, run, wait_for
 
 
 def account(home, username):
@@ -169,6 +169,7 @@ def main():
     home_binary = Path(os.environ["WONTON_HOME_BINARY"]).resolve()
     core_image = os.environ.get("WONTON_ENTRY_CORE_IMAGE", "wonton-core:e2e-main")
     assert binary.is_file() and home_binary.is_file()
+    guard("wonton-fr-entry")
     env = dict(os.environ, COMPOSE_PROJECT_NAME="wonton-fr-entry", WONTON_HOME_ZONE="homes.test",
                WONTON_HOME_BINARY=str(home_binary), WONTON_HOME_RUNTIME_IMAGE=os.environ.get("WONTON_HOME_RUNTIME_IMAGE", RUNTIME_IMAGE))
     for key in ["API", "RELAY", "DNS", "AUTH", "PEBBLE", "PEBBLE_MANAGEMENT"]:
