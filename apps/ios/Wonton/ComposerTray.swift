@@ -211,12 +211,12 @@ extension SendFailure {
     var text: LocalizedStringResource {
         switch self {
         case .offline: .Message1.messageSendFailureOffline
-        case .tooLarge: .Message1.messageSendFailureTooLarge
-        case .unsupportedType: .Message1.messageSendFailureUnsupportedType
+        case .tooLarge: .Message2.messageSendFailureTooLarge
+        case .unsupportedType: .Message2.messageSendFailureUnsupportedType
         case .replyTarget: .Message1.messageSendFailureReplyTarget
-        case .rejected: .Message1.messageSendFailureRejected
-        case .upstream: .Message1.messageSendFailureUpstream
-        case .other: .Message1.messageSendFailureOther
+        case .rejected: .Message0.messageSendFailureRejected
+        case .upstream: .Message2.messageSendFailureUpstream
+        case .other: .Message2.messageSendFailureOther
         }
     }
 }
