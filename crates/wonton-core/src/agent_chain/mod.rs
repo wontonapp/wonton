@@ -374,6 +374,29 @@ impl Chains {
         self.read(|state| wake::chain_for_wake(state, bot, room, thread))
     }
 
+    /// 这个 Bot 眼下活着的那一轮在哪条链上：报出的说话人对得上的候选里挑最近开始的那一轮。
+    ///
+    /// 工具调用自己不带链、也没带会话头（插件没认出这一轮）时靠它把卡片认到链上。挑最近一轮不是硬保证：
+    /// 同时开着两轮、报的又是同一个人时分不开，卡片可能认到另一条链，停那条链会把它撤回、这一轮要发再说一句。
+    /// 没有活着的轮次就不认——猜错比不认更糟，停链会撤回别人的卡片。
+    pub fn live_turn_chain(&self, plugin: &str, bot: &str, sender: Option<&str>) -> Option<String> {
+        self.read(|state| {
+            state
+                .sessions
+                .values()
+                .filter(|entry| entry.live && entry.bot.plugin_id == plugin && entry.bot.bot == bot)
+                .filter(|entry| sender.is_none_or(|sender| entry.sender.as_deref() == Some(sender)))
+                .max_by_key(|entry| {
+                    state
+                        .activity
+                        .get(&entry.chain)
+                        .copied()
+                        .unwrap_or_default()
+                })
+                .map(|entry| entry.chain.clone())
+        })
+    }
+
     /// 按会话找链。
     pub fn session_chain(&self, session: &str) -> Option<ChainSessionInfo> {
         self.read(|state| {
