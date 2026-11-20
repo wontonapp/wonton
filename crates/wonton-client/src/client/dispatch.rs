@@ -23,6 +23,10 @@ impl ClientCore {
             TimelineAction::RemoveAttachment { .. } => {
                 self.composer_action(&self.scope(), action.clone())
             }
+            // 假数据入口下发送不落到真核心，附件失败时的拒绝在这里照样生效。
+            TimelineAction::SendComposer { target, .. } => {
+                self.scope().composer.reject_if_failed(&target.room_id)
+            }
             _ => Ok(()),
         }
     }

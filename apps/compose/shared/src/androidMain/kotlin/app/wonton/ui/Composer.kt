@@ -116,11 +116,15 @@ fun Composer(
     val viaTray = attachments.isNotEmpty() || composer?.outgoing.orEmpty().isNotEmpty()
     val roomId = target.roomId
     val inSideChat = target.threadRoot != null
-    // 旁聊里照片不进附件区，选好就发；回复跟着这张照片发出去。
+    // 旁聊里照片不进附件区，选好就发；回复跟着这张照片发出去。核心没收下就都留着，原因给出去。
     val sendImage = if (inSideChat) {
         { upload: ImageUpload ->
-            onAction(Action.Timeline(TimelineAction.SendImage(target, upload, reply?.eventId)))
-            if (reply != null) onReplyCancel()
+            val problem = core.send(Action.Timeline(TimelineAction.SendImage(target, upload, reply?.eventId)))
+            if (problem != null) {
+                onReject(problem)
+            } else if (reply != null) {
+                onReplyCancel()
+            }
         }
     } else {
         null
@@ -129,9 +133,10 @@ fun Composer(
     val isEmpty = draft.isBlank() && attachments.isEmpty()
     val focusRequester = remember { FocusRequester() }
     LaunchedEffect(focusToken) { if (focusToken > 0) focusRequester.requestFocus() }
+    // 核心收下了才清草稿、收回复：被拒（附件没传上去、房间不能发）时字和回复都留着等主人改。
     val send = { text: String ->
-        onAction(sendAction(target, text, reply, viaTray))
-        onSent()
+        val problem = core.send(sendAction(target, text, reply, viaTray))
+        if (problem == null) onSent() else onReject(problem)
     }
     val agentStop by produceState<RoomAgentStop>(RoomAgentStop.Idle, core, target) {
         core.agentStopUpdates(target).collect { value = it }
@@ -149,6 +154,7 @@ fun Composer(
         commandsOmitted = commandsOmitted,
         target = target,
         onSent = onSent,
+        onReject = onReject,
     )
     AgentStopNotice(agentStop)
     ComposerBar(
@@ -188,6 +194,7 @@ private fun ComposerStack(
     commandsOmitted: Int,
     target: TimelineTarget,
     onSent: () -> Unit,
+    onReject: (Problem) -> Unit,
 ) {
     if (!inSideChat) OnboardingChatPrompts(roomId)
     if (reply != null) ComposerReply(reply, core, onReplyCancel)
@@ -198,8 +205,9 @@ private fun ComposerStack(
         val menuMax = (LocalConfiguration.current.screenHeightDp * TRAY_HEIGHT_SHARE).dp
         Box(Modifier.heightIn(max = menuMax)) {
             ComposerCommands(shown, commandsOmitted) { command ->
-                onAction(Action.Timeline(TimelineAction.SendText(target, command.text, reply?.eventId)))
-                onSent()
+                val action = Action.Timeline(TimelineAction.SendText(target, command.text, reply?.eventId))
+                val problem = core.send(action)
+                if (problem == null) onSent() else onReject(problem)
             }
         }
     }
