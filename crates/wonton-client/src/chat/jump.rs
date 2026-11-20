@@ -6,7 +6,7 @@ use std::sync::{Arc, Mutex};
 use tokio::runtime::Handle;
 use tokio::sync::watch;
 use tokio::task::AbortHandle;
-use wonton_matrix::{ChatRoom, EntryKind, OwnedRoomId, TimelineEntry, Vector};
+use wonton_matrix::{ChatRoom, EntryKind, OwnedEventId, OwnedRoomId, TimelineEntry, Vector};
 use wonton_protocol::{JumpState, TimelineFocus, TimelineScroll};
 
 use super::PAGE;
@@ -316,8 +316,65 @@ impl TimelineSubscription {
 /// 转发循环要用的、按订阅建一次的状态。
 pub(super) struct Live {
     pub(super) typing: Arc<super::room_typing::Typing>,
+    /// 往房间报告本账号正在输入；假数据入口没有。
+    pub(super) reporter: Option<Arc<super::room_typing::Reporter>>,
+    /// 这个订阅的编辑态（ADR-0109 第 8 节）：正在编辑哪一条、进入编辑态之前的草稿。
+    pub(super) editing: std::sync::Mutex<Option<Editing>>,
+    /// 编辑态变了：转发任务据此发一批（每批都带上当前的）。
+    pub(super) edit_changed: watch::Sender<u64>,
+    /// 上一次送出去时的版本。
+    pub(super) edit_sent: std::sync::Mutex<u64>,
     pub(super) tables: Arc<super::room_commands::Tables>,
     pub(super) jumps: Arc<Jumps>,
+}
+
+/// 正在编辑的一条消息和它之前的草稿：取消或发成功后原样恢复。
+pub(super) struct Editing {
+    pub(super) item_id: String,
+    pub(super) event_id: OwnedEventId,
+    pub(super) body: String,
+    pub(super) previous: wonton_matrix::Draft,
+}
+
+impl Editing {
+    /// 编辑条上的一行摘要：空白收成一个空格，最多 120 个字。
+    pub(super) fn summary(&self) -> String {
+        let collapsed = self.body.split_whitespace().collect::<Vec<_>>().join(" ");
+        let mut summary: String = collapsed.chars().take(120).collect();
+        if summary.chars().count() < collapsed.chars().count() {
+            summary.push('…');
+        }
+        summary
+    }
+}
+
+impl Live {
+    /// 当前的编辑态（改过的话给壳带上）。
+    pub(super) fn editing(&self) -> Option<wonton_protocol::ComposerEdit> {
+        let editing = lock(&self.editing);
+        let editing = editing.as_ref()?;
+        Some(wonton_protocol::ComposerEdit {
+            item_id: editing.item_id.clone(),
+            event_id: editing.event_id.to_string(),
+            summary: editing.summary(),
+        })
+    }
+
+    /// 编辑态换了：唤醒转发任务。
+    pub(super) fn edit_changed(&self) {
+        self.edit_changed.send_modify(|version| *version += 1);
+    }
+
+    /// 有没有刚变过、还没发出去的编辑态。一样的版本不重复发。
+    pub(super) fn take_edit_changed(&self) -> bool {
+        let version = *self.edit_changed.borrow();
+        let mut sent = lock(&self.edit_sent);
+        if *sent == version {
+            return false;
+        }
+        *sent = version;
+        true
+    }
 }
 
 /// 测试用：不起订阅和任务的状态。
@@ -325,6 +382,10 @@ pub(super) struct Live {
 pub(super) fn seeded() -> Arc<Live> {
     Arc::new(Live {
         typing: super::room_typing::Typing::seeded(&[]),
+        reporter: None,
+        editing: std::sync::Mutex::new(None),
+        edit_changed: watch::channel(0).0,
+        edit_sent: std::sync::Mutex::new(0),
         tables: super::room_commands::Tables::new(
             OwnedRoomId::try_from("!room:home.example").unwrap(),
         ),
@@ -336,6 +397,10 @@ pub(super) fn seeded() -> Arc<Live> {
 pub(super) fn live(runtime: &Handle, room: &Arc<ChatRoom>, room_id: OwnedRoomId) -> Arc<Live> {
     Arc::new(Live {
         typing: super::room_typing::Typing::spawn(runtime, room),
+        reporter: Some(super::room_typing::Reporter::new(runtime, room)),
+        editing: std::sync::Mutex::new(None),
+        edit_changed: watch::channel(0).0,
+        edit_sent: std::sync::Mutex::new(0),
         tables: super::room_commands::Tables::new(room_id),
         jumps: Jumps::new(),
     })

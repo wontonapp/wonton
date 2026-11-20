@@ -310,6 +310,7 @@ async fn forward(
         let mut diffs = std::pin::pin!(diffs);
         // 正在输入、命令表和跳转请求（ADR-0109）。
         let mut typing_changes = live.typing.subscribe();
+        let mut edit_changes = live.edit_changed.subscribe();
         let mut table_changes = live.tables.subscribe();
         let mut jump_changes = live.jumps.pending();
         // 重建期间挂上的跳转请求收不到那次唤醒，订阅之后先补一步。
@@ -488,6 +489,15 @@ async fn forward(
                     }
                     // 一样的名单不重复发。
                     if !live.typing.take_changed() {
+                        continue;
+                    }
+                    Batch::Sent(send(sender, &entries, Vec::new(), &mut view, None), false)
+                }
+                changed = edit_changes.changed() => {
+                    if changed.is_err() {
+                        return;
+                    }
+                    if !live.take_edit_changed() {
                         continue;
                     }
                     Batch::Sent(send(sender, &entries, Vec::new(), &mut view, None), false)

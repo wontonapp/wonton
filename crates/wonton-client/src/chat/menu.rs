@@ -23,6 +23,7 @@ use crate::l10n::{CATALOG, language};
 pub(super) fn message_actions(
     body: &MessageContent,
     event_id: Option<&str>,
+    is_own: bool,
     can_redact: bool,
     quote: impl FnOnce(String) -> QuotedMessage,
 ) -> Vec<MessageAction> {
@@ -53,6 +54,13 @@ pub(super) fn message_actions(
         actions.push(MessageAction::Reply {
             message: quote(event_id.to_owned()),
         });
+    }
+    // 自己的、发出去的文字消息才给编辑（ADR-0109 第 8 节）；改过的还能再改。
+    if is_own
+        && let MessageContent::Text { body: text, .. } = body
+        && !redacted
+    {
+        actions.push(MessageAction::Edit { text: text.clone() });
     }
     if matches!(
         body,
@@ -148,6 +156,16 @@ impl Menus {
             }
         }
         own_arrived
+    }
+
+    /// 能编辑的那个条目的事件 ID 和现在的正文。
+    pub(super) fn edit(&self, item_id: &str) -> Option<(String, String)> {
+        let entry = self.items.iter().find(|entry| entry.id == item_id)?;
+        let text = entry.actions.iter().find_map(|action| match action {
+            MessageAction::Edit { text } => Some(text.clone()),
+            _ => None,
+        })?;
+        Some((entry.event_id.as_deref()?.parse().ok()?, text))
     }
 
     /// 菜单里有 `wanted` 这一项的那条消息的事件 ID。
@@ -297,7 +315,7 @@ impl Outbox {
                 focus: self.live.jumps.take_focus(),
                 jump: self.live.jumps.state(),
                 back_to: self.live.jumps.back(),
-                editing: None,
+                editing: self.live.editing(),
             })
             .map_err(|_| ())
     }
@@ -339,14 +357,19 @@ mod tests {
     use super::*;
     use wonton_protocol::QuotedContent;
 
-    fn kinds(body: &MessageContent, event_id: Option<&str>, can_redact: bool) -> Vec<&'static str> {
+    fn kinds(
+        body: &MessageContent,
+        event_id: Option<&str>,
+        own: bool,
+        can_redact: bool,
+    ) -> Vec<&'static str> {
         let quote = |event_id| QuotedMessage {
             event_id,
             sender_id: "@bot:x".to_owned(),
             sender_name: "Bot".to_owned(),
             content: QuotedContent::Other,
         };
-        message_actions(body, event_id, can_redact, quote)
+        message_actions(body, event_id, own, can_redact, quote)
             .iter()
             .map(|action| match action {
                 MessageAction::Copy { .. } => "copy",
@@ -366,21 +389,30 @@ mod tests {
         }
     }
 
-    /// 行为：菜单按 ADR-0073 的顺序和规则给；本地回显只能复制，已撤回的什么都没有，撤回看权限。
+    /// 行为：菜单按 ADR-0073 的顺序和规则给；本地回显只能复制，已撤回的什么都没有，撤回看权限，
+    /// 编辑只给自己的文字消息（ADR-0109 第 8 节）。
     #[test]
     fn the_menu_follows_send_state_content_and_power() {
-        assert_eq!(kinds(&text(), None, true), ["copy"]);
+        assert_eq!(kinds(&text(), None, true, true), ["copy"]);
         assert_eq!(
-            kinds(&text(), Some("$a"), false),
+            kinds(&text(), Some("$a"), false, false),
             ["copy", "reply", "forward"]
         );
         assert_eq!(
-            kinds(&text(), Some("$a"), true),
+            kinds(&text(), Some("$a"), false, true),
             ["copy", "reply", "forward", "redact"]
         );
-        assert!(kinds(&MessageContent::Redacted, Some("$a"), true).is_empty());
         assert_eq!(
-            kinds(&MessageContent::Undecryptable, Some("$a"), true),
+            kinds(&text(), Some("$a"), true, true),
+            ["copy", "reply", "edit", "forward", "redact"]
+        );
+        assert_eq!(
+            kinds(&text(), Some("$a"), true, false),
+            ["copy", "reply", "edit", "forward"]
+        );
+        assert!(kinds(&MessageContent::Redacted, Some("$a"), true, true).is_empty());
+        assert_eq!(
+            kinds(&MessageContent::Undecryptable, Some("$a"), true, true),
             ["reply", "redact"]
         );
     }

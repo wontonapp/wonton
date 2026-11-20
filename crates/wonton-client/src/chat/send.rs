@@ -74,6 +74,7 @@ impl ChatLink {
                 // 发出去了，草稿（连同回复对象）留着没用了；发送途中又打的字不算。
                 // 点掉的预览记录跟着作废：下次打同样的链接重新出预览。
                 chat.previews.forget(&key.room_id);
+                chat.stop_typing(&key);
                 chat.enqueue_draft(DraftWrite::Forget(key, body));
                 Ok(())
             },
@@ -200,10 +201,11 @@ impl ChatLink {
                     Some(event_id) => {
                         room.send_image_reply(upload, &event_id).await?;
                         // 图片不带输入框里的字，草稿的正文留着，回复对象用掉了。
-                        chat.enqueue_draft(DraftWrite::ForgetReply(key, event_id));
+                        chat.enqueue_draft(DraftWrite::ForgetReply(key.clone(), event_id));
                     }
                     None => room.send_image(upload).await?,
                 }
+                chat.stop_typing(&key);
                 Ok(())
             },
             move || onboarding::record_sent(&sent, sent_room),
