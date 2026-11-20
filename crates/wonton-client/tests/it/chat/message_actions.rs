@@ -290,7 +290,7 @@ async fn forwarded_messages_arrive_as_they_were() {
         .await;
     assert!(text.actions.contains(&MessageAction::Forward));
 
-    let forward = |item_id: &str, to: &str| Action::Timeline {
+    let forward = |item_id: &str, to: &str, comment: Option<&str>| Action::Timeline {
         action: TimelineAction::ForwardMessage {
             target: TimelineTarget {
                 room_id: direct.to_string(),
@@ -298,17 +298,19 @@ async fn forwarded_messages_arrive_as_they_were() {
             },
             item_id: item_id.to_owned(),
             to_room_id: to.to_owned(),
-            comment: None,
+            comment: comment.map(str::to_owned),
         },
     };
-    let nowhere = phone.dispatch(forward(&text_item, "!nowhere:wonton.localhost"));
+    let nowhere = phone.dispatch(forward(&text_item, "!nowhere:wonton.localhost", None));
     assert!(
         matches!(nowhere, Err(CoreError::InvalidInput { .. })),
         "{nowhere:?}"
     );
-    phone.dispatch(forward(&text_item, group.as_str())).unwrap();
     phone
-        .dispatch(forward(&image_item, group.as_str()))
+        .dispatch(forward(&text_item, group.as_str(), None))
+        .unwrap();
+    phone
+        .dispatch(forward(&image_item, group.as_str(), None))
         .unwrap();
 
     let bot_group = bot.open_room(&group).await.expect("Bot 打开群聊");
@@ -339,6 +341,131 @@ async fn forwarded_messages_arrive_as_they_were() {
     assert_eq!(bytes, PNG);
 
     reply_to_another_room_is_invalid(&phone, group.as_str(), text.event_id.unwrap()).await;
+}
+
+/// 附言还没被服务器收下时转发不发；恢复后对方先收到附言、再收到转发的原消息。
+#[tokio::test(flavor = "multi_thread")]
+#[ignore = "需要 Docker，用 --include-ignored 运行"]
+async fn a_forward_waits_for_its_comment() {
+    let dir = tempfile::tempdir().unwrap();
+    let phone = Phone::open(dir.path());
+    let home = Home::start(&[phone.device_id()]).await;
+    phone.connect(&home);
+    phone.signed_in().await;
+    let bot = home.bot("hermes", "Hermes").await;
+    let direct = accept_the_bots_invite(&home, &phone, &bot).await;
+    let group = join_group_room(&phone, &bot, "Group").await;
+    let bot_direct = bot.open_room(&direct).await.expect("Bot 打开私聊");
+    bot_direct
+        .send_text("转发这句", &[])
+        .await
+        .expect("Bot 发文字");
+    let mut timeline = Timeline::open(&phone, direct.as_str()).await;
+    let (item, _) = timeline
+        .until("收到要转发的文字", |item| {
+            text_message(item, "转发这句")
+        })
+        .await;
+
+    let bot_group = bot.open_room(&group).await.expect("Bot 打开群聊");
+    home.set_matrix_down(true);
+    phone
+        .dispatch(Action::Timeline {
+            action: TimelineAction::ForwardMessage {
+                target: TimelineTarget {
+                    room_id: direct.to_string(),
+                    thread_root: None,
+                },
+                item_id: item,
+                to_room_id: group.to_string(),
+                comment: Some("看这个".to_owned()),
+            },
+        })
+        .unwrap();
+    tokio::time::sleep(std::time::Duration::from_secs(1)).await;
+    let early = bot_group.messages().await;
+    assert!(
+        !early
+            .iter()
+            .any(|message| matches!(&message.body, MessageBody::Text(text) if text == "看这个")),
+        "附言还没发出去，转发先到了"
+    );
+
+    home.set_matrix_down(false);
+    eventually(
+        "群里先收到附言、再收到转发的文字",
+        bot_group.message_updates().await,
+        |messages| {
+            let texts: Vec<&str> = messages
+                .iter()
+                .filter(|message| message.sender.as_str() == OWNER)
+                .filter_map(|message| match &message.body {
+                    MessageBody::Text(text) => Some(text.as_str()),
+                    _ => None,
+                })
+                .collect();
+            (texts == ["看这个", "转发这句"]).then_some(())
+        },
+    )
+    .await;
+}
+
+/// 附言被拒：转发不发，原因进 `problem`，对方只收到失败的那条附言。
+#[tokio::test(flavor = "multi_thread")]
+#[ignore = "需要 Docker，用 --include-ignored 运行"]
+async fn a_rejected_comment_stops_the_forward() {
+    let dir = tempfile::tempdir().unwrap();
+    let phone = Phone::open(dir.path());
+    let home = Home::start(&[phone.device_id()]).await;
+    phone.connect(&home);
+    phone.signed_in().await;
+    let bot = home.bot("hermes", "Hermes").await;
+    let direct = accept_the_bots_invite(&home, &phone, &bot).await;
+    let group = join_group_room(&phone, &bot, "Group").await;
+    let bot_direct = bot.open_room(&direct).await.expect("Bot 打开私聊");
+    bot_direct
+        .send_text("转发这句", &[])
+        .await
+        .expect("Bot 发文字");
+    let mut timeline = Timeline::open(&phone, direct.as_str()).await;
+    let (item, _) = timeline
+        .until("收到要转发的文字", |item| {
+            text_message(item, "转发这句")
+        })
+        .await;
+    home.refuse_matrix("send/m.room.message", 403, "M_FORBIDDEN");
+    phone
+        .dispatch(Action::Timeline {
+            action: TimelineAction::ForwardMessage {
+                target: TimelineTarget {
+                    room_id: direct.to_string(),
+                    thread_root: None,
+                },
+                item_id: item,
+                to_room_id: group.to_string(),
+                comment: Some("看这个".to_owned()),
+            },
+        })
+        .unwrap();
+    let problem = phone
+        .wait_chat("附言被拒", |view| {
+            view.problem
+                .as_ref()
+                .filter(|problem| problem.message.contains("comment_rejected"))
+                .cloned()
+        })
+        .await;
+    assert_eq!(problem.reason, ChatFailure::Upstream);
+
+    let bot_group = bot.open_room(&group).await.expect("Bot 打开群聊");
+    tokio::time::sleep(std::time::Duration::from_secs(1)).await;
+    let messages = bot_group.messages().await;
+    assert!(
+        !messages.iter().any(|message| {
+            matches!(&message.body, MessageBody::Text(text) if text == "转发这句")
+        }),
+        "附言失败后不应该转发：{messages:?}"
+    );
 }
 
 /// 回复的消息不在这个房间里：发不出去，按输入非法进 `problem`。
