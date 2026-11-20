@@ -21,9 +21,9 @@ struct ComposerView: View {
     var jumpToReply: (String) -> Void = { _ in }
     private var roomId: String { composer.roomId }
     /// 附件区只有主对话有（ADR-0093）：旁聊里字和照片直接发，不给选文件，粘贴文件提示去主对话发。
-    fileprivate var isSideChat: Bool { composer.threadRoot != nil }
-    fileprivate var draftKey: String { model.draftKey(composer.target) }
-    fileprivate var draft: Binding<String> {
+    var isSideChat: Bool { composer.threadRoot != nil }
+    var draftKey: String { model.draftKey(composer.target) }
+    var draft: Binding<String> {
         Binding(
             get: { model.drafts[draftKey, default: ""] },
             set: {
