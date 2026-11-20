@@ -244,7 +244,7 @@ async fn a_paired_phone_gets_the_keys_from_the_add_device_page_without_the_recov
     let bot_room = bot.open_room(&room_id).await.unwrap();
     let mut old_timeline = Timeline::open(&old, room_id.as_str()).await;
     for body in HISTORY {
-        bot_room.send_text(body).await.unwrap();
+        bot_room.send_text(body, &[]).await.unwrap();
         old_timeline
             .until("旧手机读到加密历史", |item| {
                 message_text(&item.content)
@@ -604,7 +604,7 @@ async fn phone_with_undecryptable_history() -> (
     let bot_room = bot.open_room(&room_id).await.unwrap();
     let mut old_timeline = Timeline::open(&old, room_id.as_str()).await;
     for body in HISTORY {
-        bot_room.send_text(body).await.unwrap();
+        bot_room.send_text(body, &[]).await.unwrap();
         old_timeline
             .until("旧手机读到加密历史", |item| {
                 message_text(&item.content)
@@ -698,7 +698,7 @@ async fn an_undecryptable_timeline_settles_instead_of_flooding_the_shell() {
 
     // 空闲不是不动了：新消息到了照样送到。
     bot_room
-        .send_text("after the undecryptable history")
+        .send_text("after the undecryptable history", &[])
         .await
         .unwrap();
     let deadline = Instant::now() + WAIT;

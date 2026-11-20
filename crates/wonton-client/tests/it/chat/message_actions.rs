@@ -126,7 +126,10 @@ async fn the_menu_follows_power_and_a_redaction_reaches_both_sides() {
     let room_id = join_group_room(&phone, &bot, "Group").await;
     let room = room_id.to_string();
     let bot_room = bot.open_room(&room_id).await.expect("Bot 打开群聊");
-    bot_room.send_text("Bot 说的话").await.expect("Bot 发文字");
+    bot_room
+        .send_text("Bot 说的话", &[])
+        .await
+        .expect("Bot 发文字");
     let mut timeline = Timeline::open(&phone, &room).await;
 
     rejected_echo_only_copies(&phone, &mut timeline, &room).await;
@@ -262,7 +265,10 @@ async fn forwarded_messages_arrive_as_they_were() {
     let direct = accept_the_bots_invite(&home, &phone, &bot).await;
     let group = join_group_room(&phone, &bot, "Group").await;
     let bot_direct = bot.open_room(&direct).await.expect("Bot 打开私聊");
-    bot_direct.send_text("转发这句").await.expect("Bot 发文字");
+    bot_direct
+        .send_text("转发这句", &[])
+        .await
+        .expect("Bot 发文字");
     bot_direct
         .send_image(super::test_image())
         .await

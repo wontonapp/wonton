@@ -61,7 +61,7 @@ async fn flicker(phone: &Phone, home: &Home, poke_room: &ChatRoom, room_id: &str
     });
     home.expire_room_list_sync();
     poke_room
-        .send_text("戳一下长轮询")
+        .send_text("戳一下长轮询", &[])
         .await
         .expect("戳一下同步");
     // 注入要等真正被消费（`room_list_sync_expired`）再继续：arm 落在在飞长轮询窗口可能丢失，等消费确认重启才确定发生。
@@ -90,7 +90,10 @@ async fn flicker(phone: &Phone, home: &Home, poke_room: &ChatRoom, room_id: &str
     // 错标已经看到：停止改写，下一次重启的应答照原样转发，房间回到已加入。
     home.clear_join_report_as_invited();
     home.expire_room_list_sync();
-    poke_room.send_text("再戳一下").await.expect("再戳一下同步");
+    poke_room
+        .send_text("再戳一下", &[])
+        .await
+        .expect("再戳一下同步");
     wait_for_sync("房间列表恢复已经触发", home, || {
         home.room_list_sync_expired().then_some(())
     })
@@ -170,11 +173,11 @@ async fn a_sync_restart_reapplies_the_open_rooms_subscription() {
     let room_id = joined_direct_chat(&phone, &bot).await;
     let bot_room = bot.open_room(&room_id).await.expect("Bot 打开私聊");
     bot_room
-        .send_text("重启前的第一条")
+        .send_text("重启前的第一条", &[])
         .await
         .expect("发第一条");
     bot_room
-        .send_text("重启前的第二条")
+        .send_text("重启前的第二条", &[])
         .await
         .expect("发第二条");
     let mut timeline = Timeline::open(&phone, room_id.as_str()).await;
@@ -190,7 +193,7 @@ async fn a_sync_restart_reapplies_the_open_rooms_subscription() {
         .unwrap_or(0);
     home.expire_room_list_sync();
     bot_room
-        .send_text("戳一下长轮询")
+        .send_text("戳一下长轮询", &[])
         .await
         .expect("戳一下同步");
     // 叫醒等退避的重启，不等间隔。
@@ -221,7 +224,7 @@ async fn a_sync_restart_reapplies_the_open_rooms_subscription() {
     .await;
 
     bot_room
-        .send_text("重启后 Bot 发的")
+        .send_text("重启后 Bot 发的", &[])
         .await
         .expect("Bot 重启后发消息");
     timeline

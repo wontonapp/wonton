@@ -41,7 +41,10 @@ pub(crate) enum Part {
         uploaded: Uploaded,
         caption: Option<String>,
     },
-    Text(String),
+    Text {
+        body: String,
+        mentions: Vec<String>,
+    },
     Reply(wonton_matrix::PreparedReply),
 }
 
@@ -49,7 +52,16 @@ pub(crate) enum Part {
 impl PartialEq for Part {
     fn eq(&self, other: &Self) -> bool {
         match (self, other) {
-            (Self::Text(left), Self::Text(right)) => left == right,
+            (
+                Self::Text {
+                    body: left,
+                    mentions: left_mentions,
+                },
+                Self::Text {
+                    body: right,
+                    mentions: right_mentions,
+                },
+            ) => left == right && left_mentions == right_mentions,
             (
                 Self::Image {
                     uploaded: left,
@@ -304,7 +316,7 @@ impl Uplink for LiveUplink {
 
 fn group_part(part: Part) -> Result<GroupPart, UplinkError> {
     Ok(match part {
-        Part::Text(body) => GroupPart::Text { body },
+        Part::Text { body, mentions } => GroupPart::Text { body, mentions },
         Part::Reply(reply) => GroupPart::Reply(reply),
         Part::Image { uploaded, caption } => GroupPart::Image {
             image: serde_json::from_value::<UploadedImage>(uploaded.handle).map_err(|error| {

@@ -199,7 +199,7 @@ async fn encrypted_direct_chat_still_decrypts_after_restart() {
 
     let alice_room = alice.open_room(&room_id).await.expect("Alice 打开私聊");
     alice_room
-        .send_text("只有你能看到")
+        .send_text("只有你能看到", &[])
         .await
         .expect("发加密文字");
     let thumbnail = random_bytes(8 * 1024);
