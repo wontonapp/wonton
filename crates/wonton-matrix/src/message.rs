@@ -365,6 +365,10 @@ pub(crate) fn message(event: &EventTimelineItem, names: &MemberNames) -> Option<
     let mentions_me = names
         .own()
         .is_some_and(|own| mentions.iter().any(|user| user.as_str() == own.as_str()));
+    let reactions = reactions(event, names);
+    // 状态行上的选项也靠自己的表情表示选没选、在发还是没发出去（ADR-0109 第 7 节），和自己发的选项键对上。
+    let mut agent_run = raw.as_ref().and_then(agent_run::parse);
+    mark_answers(&mut agent_run, &reactions);
     Some(Message {
         event_id: event.event_id().map(ToOwned::to_owned),
         sender: event.sender().to_owned(),
@@ -376,7 +380,7 @@ pub(crate) fn message(event: &EventTimelineItem, names: &MemberNames) -> Option<
         custom: raw.as_ref().map(custom_fields).unwrap_or_default(),
         mentions,
         sender_avatar: names.avatar(event.sender()).map(ToOwned::to_owned),
-        agent_run: raw.as_ref().and_then(agent_run::parse),
+        agent_run,
         group,
         thread_root: msglike.thread_root.clone(),
         thread_replies: msglike
@@ -390,7 +394,7 @@ pub(crate) fn message(event: &EventTimelineItem, names: &MemberNames) -> Option<
             .as_ref()
             .map(|details| reply_to(details, names)),
         can_redact: names.can_redact(event),
-        reactions: reactions(event, names),
+        reactions,
         is_direct: names.direct(),
         mentions_me,
     })
@@ -515,6 +519,27 @@ fn reactions(event: &EventTimelineItem, names: &MemberNames) -> Vec<Reaction> {
             }
         })
         .collect()
+}
+
+/// 状态行上每个选项自己那个表情现在是什么样：我放上去了就是选了，还在发或没发出去照实带上（ADR-0109 第 7 节）。
+fn mark_answers(agent_run: &mut Option<crate::agent_run::AgentRunStatus>, reactions: &[Reaction]) {
+    let Some(status) = agent_run else { return };
+    for choice in &mut status.choices {
+        match reactions
+            .iter()
+            .find(|reaction| reaction.key == choice.key)
+            .and_then(|reaction| reaction.own.as_ref())
+        {
+            Some(OwnReaction::Sent) => choice.chosen = true,
+            Some(OwnReaction::Sending) => choice.send = ChoiceSend::Sending,
+            Some(OwnReaction::Failed { error, .. }) => {
+                choice.send = ChoiceSend::Failed {
+                    message: error.clone(),
+                };
+            }
+            None => {}
+        }
+    }
 }
 
 fn status(state: Option<&EventSendState>) -> SendStatus {
@@ -684,6 +709,44 @@ mod tests {
             mentions_me: false,
             sender_avatar: None,
         }
+    }
+
+    #[test]
+    fn a_status_choice_shows_its_own_reaction() {
+        let raw = content(json!({
+            "body": "批一下",
+            "m.agent": {
+                "v": 1,
+                "state": "waiting",
+                "choices": [
+                    {"key": "✅", "label": "批准"},
+                    {"key": "❌", "label": "拒绝"},
+                    {"key": "🕓", "label": "等等"}
+                ]
+            }
+        }));
+        let mut agent_run = agent_run::parse(&raw);
+        let reactions = [
+            Reaction {
+                key: "✅".to_owned(),
+                senders: Vec::new(),
+                own: Some(OwnReaction::Sent),
+            },
+            Reaction {
+                key: "❌".to_owned(),
+                senders: Vec::new(),
+                own: Some(OwnReaction::Failed {
+                    error: "连不上".to_owned(),
+                    recoverable: true,
+                }),
+            },
+        ];
+        mark_answers(&mut agent_run, &reactions);
+        let status = agent_run.expect("状态对象");
+        assert!(status.choices[0].chosen);
+        assert!(matches!(status.choices[1].send, ChoiceSend::Failed { .. }));
+        assert!(!status.choices[2].chosen);
+        assert_eq!(status.choices[2].send, ChoiceSend::Idle);
     }
 
     #[test]
