@@ -328,6 +328,7 @@ impl PluginManager {
             Entry::new(listed.clone(), PluginStatus::Installing, None),
         );
         drop(plugins);
+        self.forget_bot_sync(&manifest.id);
         self.changed();
         Ok(())
     }
@@ -492,6 +493,7 @@ impl PluginManager {
             Ok(report) => {
                 self.clear_oom(id);
                 self.lan.clear_degraded(id);
+                self.forget_bot_sync(id);
                 self.plugins.write().expect("插件表锁中毒").remove(id);
                 self.tool_policy().forget_plugin(id.as_str());
                 self.remove_capability_records(id, removing, approve_connections, langs)

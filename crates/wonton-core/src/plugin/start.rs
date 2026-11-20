@@ -333,6 +333,7 @@ impl PluginManager {
         };
         if let ContainersState::Stopped = state {
             self.set(id, PluginStatus::Installing, None);
+            self.forget_bot_sync(id);
             // 网络被删了（开发栈 down、Docker 数据丢了）就先按安装的规格重建，核对才能把核心接回去。
             self.ensure_network(&package.manifest).await?;
             // 复用恢复核对，先把核心接回网络；依赖核心内部别名的服务才能启动。

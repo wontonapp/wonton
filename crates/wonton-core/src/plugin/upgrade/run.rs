@@ -246,6 +246,7 @@ impl PluginManager {
                 );
                 *entry = Entry::running(listed, deployed);
                 self.lan.clear_degraded(id);
+                self.forget_bot_sync(id);
                 self.upgrades.forget(id);
                 tracing::info!(plugin = %id, version = %package.manifest.version, "插件升级完成");
                 Ok(())
@@ -258,6 +259,7 @@ impl PluginManager {
             }
             Outcome::RolledBack(listed, deployed, e) => {
                 *entry = Entry::running(listed, deployed);
+                self.forget_bot_sync(id);
                 tracing::warn!(plugin = %id, error = %e, "插件升级失败，已退回旧版本");
                 Err(e)
             }
