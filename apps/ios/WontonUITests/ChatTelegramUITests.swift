@@ -267,6 +267,10 @@ final class ChatTelegramUITests: XCTestCase {
         comment.typeText("Fixture forward comment")
         XCTAssertEqual(comment.value as? String, "Fixture forward comment", "附言没打进附言框")
         tap(app.buttons["forwardSend"])
+        // 附言在目标房间没打开时排着，打开那条才发出去。
+        tap(app.buttons["Back"])
+        XCTAssertTrue(app.buttons["!ui-fake-notes:home.example"].waitForExistence(timeout: 10), "没回到会话列表")
+        enter("!ui-fake-notes:home.example")
         let arrived = text(startingWith: "Fixture forward comment")
         XCTAssertTrue(arrived.waitForExistence(timeout: 10), "附言没进目标房间\n\(app.debugDescription)")
         // 目标房间本来就有一条“Fixture message 3”，转发过来的那条是第二条。
@@ -307,11 +311,13 @@ final class ChatTelegramUITests: XCTestCase {
         app.launchEnvironment["WONTON_UI_FAIL_SEND"] = "1"
         app.launch()
         enter(Self.directRoom)
-        waitForFloatingDateToFade()
-        // 卡片挂在中间偏下的一条消息上：往回翻到它露出来。
-        reveal(app.buttons["sideChatCard"])
-        tap(app.buttons["sideChatCard"])
-        XCTAssertTrue(app.buttons["sideChatCard"].waitForNonExistence(timeout: 5), "点了卡片没进旁聊\n\(app.debugDescription)")
+        tap(app.buttons["timelineDown"])
+        // 卡片挂在最后一条消息下面，先跳到底，翻不到再往回找。
+        let card = app.buttons["sideChatCard"]
+        XCTAssertTrue(card.waitForExistence(timeout: 10), "没有旁聊卡片\n\(app.debugDescription)")
+        reveal(card)
+        tap(card)
+        XCTAssertTrue(card.waitForNonExistence(timeout: 5), "点了卡片没进旁聊\n\(app.debugDescription)")
         XCTAssertTrue(element("sideChatAttachHint").waitForExistence(timeout: 5), "旁聊里没有附件提示")
         shot("side-chat-hint")
         darkShot("side-chat-hint-dark")
