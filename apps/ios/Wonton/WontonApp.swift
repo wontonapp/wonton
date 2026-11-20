@@ -7,6 +7,7 @@ import WontonClient
 @main
 struct WontonApp: App {
     @UIApplicationDelegateAdaptor(FullscreenOrientation.self) private var orientation
+    @Environment(\.scenePhase) private var scenePhase
     /// 整个 App 只有一个核心实例，状态都在它里面。
     @State private var launch: Launch
 

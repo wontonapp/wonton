@@ -193,43 +193,39 @@ final class AppNavigation {
     func openPushRoom(server: String?, roomId: String) {
         request { navigation in
             guard try await navigation.navigationReady() else { return }
-            if let server {
-                // 通知里的 server 是 endpoint ID；就是当前这台就不用换。已连着的记录在 `home.serverId`
-                // 里（配对票据里的 endpoint ID，和推送里的同一个东西）。
-                if navigation.home.viewModel.serverId != server {
-                    guard let slot = navigation.chat.core.pushServerSlot(server: server) else {
-                        navigation.pages.rejection = Problem(
-                            title: String(localized: .serversNotificationUnreachable), detail: server
-                        )
-                        return
-                    }
-                    do {
-                        try navigation.chat.core.dispatch(action: .switchServer(id: slot))
-                    } catch {
-                        navigation.pages.rejection = error.problem
-                        return
-                    }
-                    // 等切完：连上了就进房间，连不上（自动重试也失败）如实说。
-                    var settled = false
-                    for await home in navigation.chat.core.subscribeHome().updates()
-                    where home.serverId == server {
-                        if case .connected = home.status {
-                            settled = true
-                        }
-                        if case let .disconnected(_, message) = home.status {
-                            navigation.pages.rejection = Problem(
-                                title: String(localized: .serversNotificationUnreachable), detail: message
-                            )
-                        }
-                        if settled || navigation.pages.rejection != nil { break }
-                    }
-                    guard settled, navigation.pages.rejection == nil else { return }
-                }
-            }
+            if let server, !(await navigation.switchPushServer(server)) { return }
             try navigation.select(.chat)
             // 没有来源会话的卡片（核心自己发起的，ADR-0016）room_id 为空：落在会话列表，待确认的卡片就在那里。
             if !roomId.isEmpty { navigation.chat.openRoom(id: roomId) }
         }
+    }
+
+    /// 切到通知来自的那台服务器并等它连上；已在这台就直接过。连不上时已把原因写进 `pages.rejection`。
+    private func switchPushServer(_ server: String) async -> Bool {
+        // 通知里的 server 是 endpoint ID；已连着的记录在 `home.serverId` 里（配对票据里的 endpoint ID，同一个东西）。
+        if home.viewModel.serverId == server { return true }
+        guard let slot = chat.core.pushServerSlot(server: server) else {
+            pages.rejection = Problem(title: String(localized: .Servers.notificationUnreachable), detail: server)
+            return false
+        }
+        do {
+            try chat.core.dispatch(action: .home(action: .switchServer(id: slot)))
+        } catch {
+            pages.rejection = error.problem
+            return false
+        }
+        // 等切完：连上了就进房间，连不上（自动重试也失败）如实说。
+        var settled = false
+        for await home in chat.core.subscribeHome().updates() where home.serverId == server {
+            if case .connected = home.status {
+                settled = true
+            }
+            if case let .disconnected(_, message) = home.status {
+                pages.rejection = Problem(title: String(localized: .Servers.notificationUnreachable), detail: message)
+            }
+            if settled || pages.rejection != nil { break }
+        }
+        return settled && pages.rejection == nil
     }
 
     /// 链接要求进“其他服务器”。取走标记，调用方去改导航路径。

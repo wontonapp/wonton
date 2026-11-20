@@ -31,7 +31,7 @@ struct NotificationSettingsView: View {
                     .buttonStyle(.plain)
                     WontonSeparator()
                     // 收新消息的方式 iOS 只有系统推送（ADR-0003），没有 Android 那个保持连接的开关。
-                    WontonRow(title: String(localized: .notificationPush), value: line)
+                    WontonRow(title: String(localized: .Settings.notificationPush), value: line)
                 }
                 if let detail {
                     ProblemDetail(text: detail)
@@ -63,20 +63,20 @@ struct NotificationSettingsView: View {
     private var line: String {
         switch status {
         case .registered:
-            String(localized: .pushStatusRegistered)
+            String(localized: .Settings.pushStatusRegistered)
         case .registering:
-            String(localized: .pushStatusRegistering)
+            String(localized: .Settings.pushStatusRegistering)
         case .noEndpoint:
-            String(localized: .pushStatusNotSet)
+            String(localized: .Settings.pushStatusNotSet)
         case .unavailable:
-            push.unavailability?.line ?? String(localized: .pushStatusUnavailable)
+            push.unavailability?.line ?? String(localized: .Settings.pushStatusUnavailable)
         case let .failed(reason, _):
             switch reason {
-            case .transportUnavailable: String(localized: .pushStatusFailedTransport)
-            case .unauthorized: String(localized: .pushStatusFailedUnauthorized)
-            case .upstream: String(localized: .pushStatusFailedUpstream)
-            case .notReady: String(localized: .pushStatusFailedNotReady)
-            case .invalidInput: String(localized: .pushStatusFailedInvalidInput)
+            case .transportUnavailable: String(localized: .Settings.pushStatusFailedTransport)
+            case .unauthorized: String(localized: .Settings.pushStatusFailedUnauthorized)
+            case .upstream: String(localized: .Settings.pushStatusFailedUpstream)
+            case .notReady: String(localized: .Settings.pushStatusFailedNotReady)
+            case .invalidInput: String(localized: .Settings.pushStatusFailedInvalidInput)
             }
         }
     }

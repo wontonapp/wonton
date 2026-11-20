@@ -32,13 +32,13 @@ final class PushModel: NSObject, UNUserNotificationCenterDelegate {
         var line: String {
             switch self {
             case .permission:
-                String(localized: .pushNoPermission)
+                String(localized: .Settings.pushNoPermission)
             case .noRelay, .apns:
-                String(localized: .pushNoService)
+                String(localized: .Settings.pushNoService)
             case .relayUnreachable:
-                String(localized: .pushRelayUnreachable)
+                String(localized: .Settings.pushRelayUnreachable)
             case .core:
-                String(localized: .pushRegisterRejected)
+                String(localized: .Settings.pushRegisterRejected)
             }
         }
 
@@ -46,7 +46,7 @@ final class PushModel: NSObject, UNUserNotificationCenterDelegate {
         var message: String {
             switch self {
             case .noRelay:
-                String(localized: .pushNoRelayDetail)
+                String(localized: .Settings.pushNoRelayDetail)
             case let .apns(error), let .relayUnreachable(error), let .core(error):
                 error
             case .permission:
@@ -93,11 +93,9 @@ final class PushModel: NSObject, UNUserNotificationCenterDelegate {
         #endif
         // 权限框不能盖住配对页：等配好对再要（同 Android）。
         var paired = false
-        for await home in core.subscribeHome().updates() {
-            if home.status != .notConfigured {
-                paired = true
-                break
-            }
+        for await home in core.subscribeHome().updates() where home.status != .notConfigured {
+            paired = true
+            break
         }
         guard paired else { return }
         // iOS 只有系统推送：收新消息的方式存成本机的“壳给推送地址”，复用 UnifiedPush 取值
@@ -187,7 +185,7 @@ final class PushModel: NSObject, UNUserNotificationCenterDelegate {
         request.timeoutInterval = 15
         request.setValue("application/json", forHTTPHeaderField: "Content-Type")
         request.httpBody = try JSONSerialization.data(withJSONObject: [
-            "token": token.map { String(format: "%02x", $0) }.joined(),
+            "token": token.map { String(format: "%02x", $0) }.joined()
         ])
         let (data, response) = try await URLSession.shared.data(for: request)
         guard let http = response as? HTTPURLResponse, http.statusCode == 200,
@@ -212,7 +210,9 @@ final class PushModel: NSObject, UNUserNotificationCenterDelegate {
     }
 
     /// 点开通知：扩展解开的 payload 里带着服务器和房间，跳转交给导航（和 Android 点通知同一个去向）。
-    nonisolated func userNotificationCenter(_ center: UNUserNotificationCenter, didReceive response: UNNotificationResponse) {
+    nonisolated func userNotificationCenter(
+        _ center: UNUserNotificationCenter, didReceive response: UNNotificationResponse
+    ) {
         let userInfo = response.notification.request.content.userInfo
         guard let roomId = userInfo["room_id"] as? String else { return }
         let server = userInfo["server"] as? String
