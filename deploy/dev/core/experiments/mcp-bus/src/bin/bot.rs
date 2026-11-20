@@ -18,15 +18,18 @@ async fn main() -> anyhow::Result<()> {
     };
     let url = std::env::var("MCP_URL").unwrap_or_else(|_| "http://127.0.0.1:8100/mcp".into());
     let config = StreamableHttpClientTransportConfig::with_uri(url).auth_header(token.clone());
-    let client = ClientConfig::new(ClientCapabilities::default(), Implementation::new("bot", "0"))
-        .serve_with_lifecycle(
-            StreamableHttpClientTransport::from_config(config),
-            ClientLifecycleMode::Auto {
-                preferred_versions: vec![ProtocolVersion::V_2026_07_28],
-                legacy_version: Some(ProtocolVersion::V_2025_11_25),
-            },
-        )
-        .await?;
+    let client = ClientConfig::new(
+        ClientCapabilities::default(),
+        Implementation::new("bot", "0"),
+    )
+    .serve_with_lifecycle(
+        StreamableHttpClientTransport::from_config(config),
+        ClientLifecycleMode::Auto {
+            preferred_versions: vec![ProtocolVersion::V_2026_07_28],
+            legacy_version: Some(ProtocolVersion::V_2025_11_25),
+        },
+    )
+    .await?;
     match (action.as_str(), rest) {
         ("list", _) => {
             let tools = client.list_tools(None).await?;
@@ -34,7 +37,8 @@ async fn main() -> anyhow::Result<()> {
             println!("{}", serde_json::to_string(&names)?);
         }
         ("call", [tool, arguments]) => {
-            let arguments: serde_json::Map<String, serde_json::Value> = serde_json::from_str(arguments)?;
+            let arguments: serde_json::Map<String, serde_json::Value> =
+                serde_json::from_str(arguments)?;
             let params = CallToolRequestParams::new(tool.clone()).with_arguments(arguments);
             match client.call_tool(params).await {
                 Ok(result) => println!("{}", serde_json::to_string(&result)?),

@@ -45,7 +45,9 @@ pub async fn start(
     if let Some(response) = super::bot_web::source_denied(&gateway, &req) {
         return response;
     }
-    let person = super::bot_web::core_person(&gateway, &req);
+    // 名单里已经移除的人，旧的核心会话按没有身份处理，后面的 login_redirect 会重新走登录。
+    let person = super::bot_web::core_person(&gateway, &req)
+        .filter(|person| super::bot_web::active_person(&gateway, person));
     let langs = api::languages(req.headers());
     let format = pages::Format::of(req.headers());
     let Ok(target) = url::Url::parse(&query.to) else {
@@ -98,6 +100,15 @@ struct RedeemQuery {
     to: String,
 }
 
+/// 浏览器带着一个已经不能用的身份回来：回到 SSO 重新登录。兑换发生在网页域名上，登录页在核心域名。
+fn back_to_sso(gateway: &Gateway, host: &str, path: &str) -> Response {
+    let to = format!("{}{path}", gateway.public.origin(host));
+    let query = url::form_urlencoded::Serializer::new(String::new())
+        .append_pair("to", &to)
+        .finish();
+    Redirect::to(&format!("{}/_wonton/sso?{query}", gateway.core_origin())).into_response()
+}
+
 /// `GET <slug>.<base>/_wonton/session?code=..&to=..`：兑换交接码，设置本域名的插件会话。
 pub fn redeem(gateway: &Gateway, host: &str, req: &Request) -> Response {
     if let Some(response) = super::bot_web::source_denied(gateway, req) {
@@ -123,14 +134,17 @@ pub fn redeem(gateway: &Gateway, host: &str, req: &Request) -> Response {
             format,
         );
     };
+    // 只允许跳到本域名内的路径，防止开放重定向。
+    let to =
+        same_origin_path(&gateway.public.origin(host), &query.to).unwrap_or_else(|| "/".to_owned());
+    if !super::bot_web::active_person(gateway, &person) {
+        return back_to_sso(gateway, host, &to);
+    }
     if let HostKind::Plugin(label) = gateway.public.classify(host)
         && let Err(response) = super::bot_web::sso_target(gateway, &label, req, Some(&person))
     {
         return *response;
     }
-    // 只允许跳到本域名内的路径，防止开放重定向。
-    let to =
-        same_origin_path(&gateway.public.origin(host), &query.to).unwrap_or_else(|| "/".to_owned());
     let sid = gateway.sessions.create_app(&person, host);
     let cookie = set_cookie(APP_COOKIE, &sid, APP_TTL, gateway.secure_cookies());
     with_cookie(Redirect::to(&to).into_response(), cookie)
