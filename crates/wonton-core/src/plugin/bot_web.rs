@@ -147,7 +147,7 @@ impl PluginManager {
         &self,
         manifest: &Manifest,
         name: &str,
-        deadline: tokio::time::Instant,
+        wait: super::health_gate::Wait,
     ) -> Result<(), InstallError> {
         if !has_bot_web(manifest) {
             return Ok(());
@@ -168,7 +168,8 @@ impl PluginManager {
             &self.http,
             &Endpoint::Tcp(address),
             &web.path,
-            deadline,
+            &container,
+            wait,
             &self.owner_languages(),
         )
         .await?;
