@@ -245,7 +245,7 @@ struct CachedUser {
 pub(crate) enum Identity {
     /// Tuwunel 说这是某个用户。
     Bot(String),
-    /// Tuwunel 说令牌不认（401）：吊销、轮换过了，重试也没用。
+    /// Tuwunel 说令牌不认（401、403）：吊销、轮换过了，或账号被停用，重试也没用。
     Unknown,
     /// 问不到 Tuwunel（连不上、5xx、核心还没接上 Matrix）。
     Unavailable,
@@ -498,10 +498,9 @@ impl SendLimiter {
         }
         let user_id = match matrix.whoami(token).await {
             Ok(user_id) => user_id,
-            // 401 是令牌不认了（吊销、停用、过期）；其余（连不上、5xx、应答不成样子）都可能一问就好。
-            Err(MatrixError::Rejected { status, .. })
-                if status == StatusCode::UNAUTHORIZED.as_u16() =>
-            {
+            // 401 是令牌不认了（吊销、停用、过期）；403 是 Tuwunel 认得请求、不认这个身份（账号被停用）——
+            // 都是重试也一样，上游拿到的都是永久的 403。其余（连不上、5xx、应答不成样子）可能一问就好。
+            Err(MatrixError::Rejected { status, .. }) if matches!(status, 401 | 403) => {
                 return Identity::Unknown;
             }
             Err(error) => {

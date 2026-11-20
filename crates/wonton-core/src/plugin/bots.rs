@@ -620,7 +620,7 @@ impl PluginManager {
     }
 
     /// Bot 经核心的同步停了就报异常：容器活着、上游的健康检查也还报 connected，只有这里看得出来它收不到消息。
-    pub(super) fn check_bot_sync(&self, id: &PluginId) -> Result<(), InstallError> {
+    pub(crate) fn check_bot_sync(&self, id: &PluginId) -> Result<(), InstallError> {
         let Some(age) = self.stalled_bot_sync(id) else {
             return Ok(());
         };

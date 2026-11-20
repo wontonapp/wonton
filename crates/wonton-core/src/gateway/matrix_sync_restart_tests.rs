@@ -30,6 +30,42 @@ async fn sync_while_plugins_are_restoring_is_retryable() {
 }
 
 #[tokio::test]
+async fn sync_before_the_source_is_registered_is_retryable() {
+    let h = Home::start(SendLimits::default()).await;
+    // 来源是每个插件轮到它恢复时才登记的，排在后面的 Bot 的请求先落到网关：这时还认不出来源。
+    h.plugins
+        .forget_source(&crate::plugin::PluginId::parse("app.echo").unwrap());
+    let restoring = h.plugins.restoring_guard();
+
+    let (status, headers, body) = h.bot_sync().await;
+    assert_eq!(status, StatusCode::SERVICE_UNAVAILABLE, "{body}");
+    assert_eq!(headers["retry-after"].to_str().unwrap(), "5");
+
+    drop(restoring);
+    let (status, _, body) = h.bot_sync().await;
+    assert_eq!(
+        status,
+        StatusCode::FORBIDDEN,
+        "恢复完还认不出才是真的错：{body}"
+    );
+}
+
+#[tokio::test]
+async fn overlapping_restores_stay_restoring_until_the_last_one_ends() {
+    let h = Home::start(SendLimits::default()).await;
+    let first = h.plugins.restoring_guard();
+    let second = h.plugins.restoring_guard();
+    drop(first);
+    assert_eq!(
+        h.bot_sync().await.0,
+        StatusCode::SERVICE_UNAVAILABLE,
+        "还有一段没恢复完"
+    );
+    drop(second);
+    assert_eq!(h.bot_sync().await.0, StatusCode::OK);
+}
+
+#[tokio::test]
 async fn sync_while_tuwunel_cannot_be_asked_is_retryable() {
     let h = Home::start(SendLimits::default()).await;
     h.fake.state().refuse_whoami = true;
@@ -69,7 +105,34 @@ async fn a_successful_sync_marks_the_plugin_live_until_it_goes_quiet() {
         Some(121),
         "两分钟没同步就是停了"
     );
+    let err = h.plugins.check_bot_sync(&id).unwrap_err();
+    assert!(
+        err.to_string().contains("121"),
+        "报错要说清多久没同步：{err}"
+    );
 
     assert_eq!(h.bot_sync().await.0, StatusCode::OK);
     assert_eq!(h.plugins.stalled_bot_sync(&id), None);
+    assert!(h.plugins.check_bot_sync(&id).is_ok());
+}
+
+/// 停用一阵再启动、重装，旧实例的同步时间不能算到新实例头上。
+#[tokio::test(start_paused = true)]
+async fn a_new_instance_starts_counting_from_now() {
+    let h = Home::start(SendLimits::default()).await;
+    let id = crate::plugin::PluginId::parse("app.echo").unwrap();
+    assert_eq!(h.bot_sync().await.0, StatusCode::OK);
+    tokio::time::advance(std::time::Duration::from_secs(125)).await;
+    assert!(h.plugins.check_bot_sync(&id).is_err(), "先确认旧时间会误报");
+
+    h.plugins.forget_bot_sync(&id);
+    assert_eq!(h.plugins.stalled_bot_sync(&id), None);
+    assert!(h.plugins.check_bot_sync(&id).is_ok(), "新实例不该被判异常");
+
+    // 一次都还没同步过就不催；同步上来之后照常从那一刻计时。
+    tokio::time::advance(std::time::Duration::from_secs(121)).await;
+    assert!(h.plugins.check_bot_sync(&id).is_ok());
+    assert_eq!(h.bot_sync().await.0, StatusCode::OK);
+    tokio::time::advance(std::time::Duration::from_secs(121)).await;
+    assert!(h.plugins.check_bot_sync(&id).is_err());
 }

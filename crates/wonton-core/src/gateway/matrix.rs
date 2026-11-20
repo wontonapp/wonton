@@ -142,6 +142,16 @@ pub async fn bot_request(gateway: &Gateway, req: Request) -> Response {
             );
         }
         None => {
+            // 恢复时来源还没登记（每个插件是轮到它恢复才登记），排在后面的 Bot 的请求会先落在这里：
+            // 这时候一样是可重试的，答 403 上游就停了同步。
+            if gateway.plugins.restoring() {
+                return super::api::retry_later(matrix_error(
+                    StatusCode::SERVICE_UNAVAILABLE,
+                    "M_UNKNOWN",
+                    "restoring",
+                    "核心正在恢复插件，稍后重试",
+                ));
+            }
             return matrix_error(
                 StatusCode::FORBIDDEN,
                 "M_FORBIDDEN",
@@ -158,7 +168,7 @@ pub async fn bot_request(gateway: &Gateway, req: Request) -> Response {
     // 核心刚起来、插件还在恢复：来源要等恢复才登记，Tuwunel 也可能还没就绪。这时的令牌本身没错，
     // 答 503 让适配器重试（`bot_user_of_token` 只会给 403，上游把她当永久错误停掉同步）。
     if gateway.plugins.restoring() {
-        return retry_later(matrix_error(
+        return super::api::retry_later(matrix_error(
             StatusCode::SERVICE_UNAVAILABLE,
             "M_UNKNOWN",
             "restoring",
@@ -248,7 +258,7 @@ async fn check_bot_token(
             "认不出这个访问令牌是谁",
         ))),
         // 问不到不等于令牌失效：Tuwunel 一起在重启、网络没通都会到这里。
-        Identity::Unavailable => Err(Box::new(retry_later(matrix_error(
+        Identity::Unavailable => Err(Box::new(super::api::retry_later(matrix_error(
             StatusCode::SERVICE_UNAVAILABLE,
             "M_UNKNOWN",
             "unavailable",
@@ -256,9 +266,6 @@ async fn check_bot_token(
         )))),
     }
 }
-
-/// 核心恢复不过来时的重试间隔（秒）；上游自己的退避也是 5 秒。
-const RETRY_AFTER_SECS: &str = "5";
 
 /// 长轮询同步：上游的 `sync` 循环（`/_matrix/client/v3/sync?since=…&timeout=30000`）。
 fn is_sync_request(method: &Method, path: &str) -> bool {
@@ -370,15 +377,6 @@ pub(super) fn percent_decode(segment: &str) -> Vec<u8> {
         }
     }
     out
-}
-
-/// 可重试的拒绝带上 `Retry-After`：同步是长轮询，说清隔多久再来，上游按它退避而不是自己拍一个。
-fn retry_later(mut response: Response) -> Response {
-    response.headers_mut().insert(
-        hyper::header::RETRY_AFTER,
-        HeaderValue::from_static(RETRY_AFTER_SECS),
-    );
-    response
 }
 
 pub(crate) fn matrix_error(

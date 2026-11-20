@@ -138,8 +138,8 @@ pub struct PluginManager {
     /// Bot 已成立的联系人（ADR-0045），注入 `WONTON_MATRIX_ALLOWED_USERS` 时加在归属人后面。见
     /// [`super::contacts`]。
     pub(super) contact_source: std::sync::OnceLock<super::contacts::ContactSource>,
-    /// 正在恢复已装插件（核心刚起来、网关已经在接连接），见 [`Self::restoring_guard`]。
-    restoring: std::sync::atomic::AtomicBool,
+    /// 正在恢复已装插件的层数（核心刚起来、网关已经在接连接），见 [`Self::restoring_guard`]。
+    restoring: std::sync::atomic::AtomicUsize,
     /// 各插件的 Bot 最后一次同步成功的时间，见 [`Self::note_bot_sync`]。
     bot_syncs: RwLock<BTreeMap<PluginId, tokio::time::Instant>>,
 }
@@ -149,7 +149,7 @@ pub(crate) struct Restoring<'a>(&'a PluginManager);
 
 impl Drop for Restoring<'_> {
     fn drop(&mut self) {
-        self.0.restoring.store(false, Ordering::Release);
+        self.0.restoring.fetch_sub(1, Ordering::AcqRel);
     }
 }
 
@@ -243,7 +243,7 @@ impl PluginManager {
             person_members: std::sync::OnceLock::new(),
             person_roles: RwLock::new(Arc::new(crate::roles::Roles::initial())),
             contact_source: std::sync::OnceLock::new(),
-            restoring: std::sync::atomic::AtomicBool::new(false),
+            restoring: std::sync::atomic::AtomicUsize::new(0),
             bot_syncs: RwLock::new(BTreeMap::new()),
         }
     }
@@ -320,6 +320,12 @@ impl PluginManager {
     /// 来源地址落在哪个已安装插件的网络里（见 [`super::sources`]）。
     pub fn source(&self, ip: IpAddr) -> Option<Source> {
         self.sources.find(ip)
+    }
+
+    /// 测试用：摘掉一个插件的来源，模拟它还没轮到恢复、来源没登记。
+    #[cfg(test)]
+    pub(crate) fn forget_source(&self, id: &PluginId) {
+        self.sources.remove(id);
     }
 
     /// 模型网关现在的状态：没装、装了没在运行（或者网关服务不可用）、可用。
@@ -569,13 +575,15 @@ impl PluginManager {
     }
 
     /// 恢复期间为真：网关据此把 Bot 的请求答成可重试的 503，不答 403（上游适配器见 403 就停同步）。
+    ///
+    /// 数层数而不是一个位：两段恢复叠在一起时，先结束的那段不能把还在进行的那段说成恢复了。
     pub(crate) fn restoring(&self) -> bool {
-        self.restoring.load(Ordering::Acquire)
+        self.restoring.load(Ordering::Acquire) > 0
     }
 
     /// 从现在起 [`Self::restoring`] 为真，落地时清掉。
     pub(crate) fn restoring_guard(&self) -> Restoring<'_> {
-        self.restoring.store(true, Ordering::Release);
+        self.restoring.fetch_add(1, Ordering::AcqRel);
         Restoring(self)
     }
 
@@ -596,6 +604,16 @@ impl PluginManager {
         let syncs = self.bot_syncs.read().expect("Bot 同步时间的锁中毒");
         let age = syncs.get(id)?.elapsed().as_secs();
         (age > STALLED_SYNC_SECS).then_some(age)
+    }
+
+    /// 这个插件换了一份新实例（安装、启动、恢复重建、卸载）：上一次实例的同步时间不再说明问题。
+    ///
+    /// 不重置的话，停用超过两分钟的插件一启动就会被 [`Self::check_bot_sync`] 判成异常，Bot 还没来得及同步。
+    pub(crate) fn forget_bot_sync(&self, id: &PluginId) {
+        self.bot_syncs
+            .write()
+            .expect("Bot 同步时间的锁中毒")
+            .remove(id);
     }
 
     /// 核心启动时：按记录恢复插件状态，把 OIDC 客户端同步到身份提供方。
@@ -633,6 +651,7 @@ impl PluginManager {
                                     None,
                                 ),
                             );
+                            self.forget_bot_sync(&file.id);
                             priority
                         }
                         Err(_) => 2,
