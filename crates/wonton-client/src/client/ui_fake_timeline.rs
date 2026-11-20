@@ -15,6 +15,7 @@ use tokio::sync::mpsc;
 use wonton_protocol::{
     ChatAction, ChoicesState, JumpState, MessageContent, MessageStatus, TimelineAction,
     TimelineContent, TimelineDiff, TimelineFocus, TimelineItem, TimelineScroll, TimelineUpdate,
+    TimelineViewport,
 };
 
 use super::ui_fake_room::{ITEMS, OWNER, at_ms, text_message, timeline};
@@ -50,6 +51,7 @@ impl FakeTimelines {
             handle: self.handle.clone(),
             away: AtomicBool::new(false),
             arriving: AtomicU32::new(0),
+            arrived: AtomicU32::new(0),
             bursting: AtomicBool::new(false),
             state: Mutex::new(State {
                 base: timeline(room_id),
@@ -159,9 +161,12 @@ struct FakeTimeline {
     sender: mpsc::UnboundedSender<TimelineUpdate>,
     handle: Option<Handle>,
     state: Mutex<State>,
-    /// 壳离开了底部：`arriving` 记着后台来过的条数，它是按钮上的数字；`bursting` 是那轮“来三条”还排着。
+    /// 壳离开了底部：`arriving` 记着这一轮后台来过的条数，它是按钮上的数字、回到底部清零；
+    /// `arrived` 只管消息 id，一直往上加（清零后第二轮不能和第一轮撞 id，壳那边按 id 当行键）；
+    /// `bursting` 是那轮“来三条”还排着。
     away: AtomicBool,
     arriving: AtomicU32,
+    arrived: AtomicU32,
     bursting: AtomicBool,
 }
 
@@ -302,12 +307,12 @@ impl FakeTimeline {
 
     /// 后台来的一条（回声 Bot 发的）。
     fn arrive(&self, body: &str) {
-        let index = self.arriving.fetch_add(1, Ordering::SeqCst) + 1;
-        let id = format!("ui-fake-arrived-{index}");
+        let seq = self.arrived.fetch_add(1, Ordering::SeqCst) + 1;
+        let id = format!("ui-fake-arrived-{seq}");
         let message = text_message(
             &id,
             super::ui_fake_room::ECHO,
-            at_ms(ITEMS + 100 + index as usize),
+            at_ms(ITEMS + 100 + seq as usize),
             &[body.to_owned()],
         );
         let item = TimelineItem {
@@ -315,11 +320,12 @@ impl FakeTimeline {
             content: TimelineContent::Message { message },
         };
         let viewport = if self.away.load(Ordering::SeqCst) {
-            wonton_protocol::TimelineViewport::Away {
+            let index = self.arriving.fetch_add(1, Ordering::SeqCst) + 1;
+            TimelineViewport::Away {
                 new_messages: index,
             }
         } else {
-            wonton_protocol::TimelineViewport::Bottom
+            TimelineViewport::Bottom
         };
         self.batch(|update| {
             update.diffs = vec![TimelineDiff::PushBack { item }];
@@ -441,6 +447,8 @@ fn lock<T>(mutex: &Mutex<T>) -> std::sync::MutexGuard<'_, T> {
 
 #[cfg(test)]
 mod tests {
+    use std::collections::HashSet;
+
     use super::*;
     use wonton_protocol::{MessageRun, TimelineTarget, TimelineViewport};
 
@@ -651,6 +659,7 @@ mod tests {
         let subscription = fakes.subscribe(ROOM);
         let _first = next(&subscription).await;
         subscription.set_scroll(TimelineScroll::Away);
+        let mut ids = Vec::new();
         for count in 1..=3 {
             let arrival = next(&subscription).await;
             assert_eq!(
@@ -659,26 +668,43 @@ mod tests {
                     new_messages: count
                 }
             );
-            let Some(item) = arrival.diffs.iter().find_map(|diff| match diff {
-                TimelineDiff::PushBack { item } => Some(item),
-                _ => None,
-            }) else {
-                panic!("新消息接在末尾：{:?}", arrival.diffs);
-            };
+            let item = pushed(&arrival);
             let TimelineContent::Message { message } = &item.content else {
                 panic!("{} 是消息", item.id);
             };
             assert!(!message.is_own);
             assert_eq!(message.status, None);
+            ids.push(item.id.clone());
         }
         subscription.set_scroll(TimelineScroll::Bottom);
         wait_bottom(&subscription).await;
         subscription.set_scroll(TimelineScroll::Away);
         let again = next(&subscription).await;
-        assert_eq!(
-            again.viewport,
-            TimelineViewport::Away { new_messages: 1 }
-        );
+        assert_eq!(again.viewport, TimelineViewport::Away { new_messages: 1 });
+        ids.push(pushed(&again).id.clone());
+        // 一轮没跑完就回到底部：剩下的条算在底部，数字清零；再翻走又从 1 重数。
+        subscription.set_scroll(TimelineScroll::Bottom);
+        wait_bottom(&subscription).await;
+        wait_bottom(&subscription).await;
+        subscription.set_scroll(TimelineScroll::Away);
+        let third = next(&subscription).await;
+        assert_eq!(third.viewport, TimelineViewport::Away { new_messages: 1 });
+        ids.push(pushed(&third).id.clone());
+        // 两轮下来 id 两两不同：壳按 id 当行键，重了 LazyColumn 会崩。
+        let unique: HashSet<&String> = ids.iter().collect();
+        assert_eq!(unique.len(), ids.len(), "id 撞了：{ids:?}");
+    }
+
+    /// 这一批里接在末尾的那条。
+    fn pushed(update: &TimelineUpdate) -> &TimelineItem {
+        update
+            .diffs
+            .iter()
+            .find_map(|diff| match diff {
+                TimelineDiff::PushBack { item } => Some(item),
+                _ => None,
+            })
+            .unwrap_or_else(|| panic!("新消息接在末尾：{:?}", update.diffs))
     }
 
     /// 回到底部让数字清零的那一批。
@@ -690,5 +716,4 @@ mod tests {
             }
         }
     }
-
 }

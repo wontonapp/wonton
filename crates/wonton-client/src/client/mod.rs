@@ -770,7 +770,7 @@ impl ClientCore {
             ui_fake: AtomicBool::new(false),
             #[cfg(feature = "ui-fake")]
             ui_fake_timelines: ui_fake_timeline::FakeTimelines::new(
-                scope.handle().expect("作用域刚建好"),
+                scope.handle().expect("the scope was just built"),
             ),
         });
         let switch: std::sync::Weak<Self> = Arc::downgrade(&core);
