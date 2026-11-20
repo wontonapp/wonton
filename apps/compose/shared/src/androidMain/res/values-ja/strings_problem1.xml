@@ -5,9 +5,9 @@
     <!-- Next step under the refused problem: the sign-in is fine; the server refused this one action. -->
     <string name="problem_forbidden_next_step">ログインは有効です。権限がないか、相手にブロックされているか、相手のサーバーがまだ自宅サーバーとつながっていない可能性があります。</string>
     <!-- Next step: check the proxy on the home server, or change the address in the internet proxy settings. -->
-    <string name="problem_plugin_egress_proxy_unavailable_next_step">自宅サーバー上のプロキシを確認するか、プロキシ設定でアドレスを変えてから、もう一度お試しください。</string>
+    <string name="problem_plugin_egress_proxy_unavailable_next_step">プロキシアプリのインストールページでログを確認するか、インターネットプロキシ設定を確認してから、もう一度お試しください。</string>
     <!-- Problem title: the app can't reach the internet through the internet proxy. -->
-    <string name="problem_plugin_egress_proxy_unavailable_title">プロキシに接続できません</string>
+    <string name="problem_plugin_egress_proxy_unavailable_title">プロキシが使えません</string>
     <!-- Problem title: the app and the home server versions don't match. -->
     <string name="problem_plugin_protocol_title">Wontonと自宅サーバーのバージョンが合っていません</string>
     <!-- Next step: uninstall the app (its data can be kept) and install it again. -->

@@ -683,6 +683,7 @@ pub(crate) fn to_core_error(problem: PluginProblem) -> CoreError {
         | PluginFailure::LanUnavailable
         | PluginFailure::LanPortTaken
         | PluginFailure::EgressProxyUnavailable
+        | PluginFailure::EgressProxyWaiting
         | PluginFailure::CoreUpgrading
         // 服务还在起，现在做不了，缓过来再试就能过（#682）。
         | PluginFailure::TimedOut

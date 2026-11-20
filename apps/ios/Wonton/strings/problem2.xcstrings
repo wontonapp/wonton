@@ -112,6 +112,36 @@
         }
       }
     },
+    "problem.plugin.egressProxyWaiting.nextStep": {
+      "comment": "Next step: wait, it is retried automatically; open the proxy app's install page if it stays stuck.",
+      "extractionState": "manual",
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Nothing to do; it is retried automatically. If it stays stuck, look at the proxy app's logs on its install page."
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "等它起来就行，会自动重试；一直不动，去代理插件的安装页看日志。"
+          }
+        },
+        "zh-Hant": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "等它起來就行，會自動重試；一直不動，去代理應用程式的安裝頁看記錄檔。"
+          }
+        },
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "そのまま待てば自動で再試行します。進まない場合は、プロキシアプリのインストールページでログを確認してください。"
+          }
+        }
+      }
+    },
     "problem.plugin.lanPortTaken.nextStep": {
       "comment": "Next step: stop the container or program using this port, then try again.",
       "extractionState": "manual",
