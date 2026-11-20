@@ -528,7 +528,13 @@ impl ChatLink {
                 from_item_id,
             } => {
                 let subscription = self.subscription(&TimelineKey::parse(&target)?)?;
-                subscription.jump_to(&event_id, &from_item_id);
+                let revision = subscription.jumps_revision();
+                subscription.jump_to(&event_id, &from_item_id, revision);
+                Ok(())
+            }
+            TimelineAction::RegisterFocusRevision { target, revision } => {
+                self.subscription(&TimelineKey::parse(&target)?)?
+                    .register_focus_revision(revision);
                 Ok(())
             }
             TimelineAction::JumpBack { target } => {

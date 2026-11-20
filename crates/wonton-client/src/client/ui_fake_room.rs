@@ -94,6 +94,7 @@ pub(super) fn timeline(room_id: &str) -> TimelineUpdate {
         focus: None,
         jump: wonton_protocol::JumpState::Idle,
         back_to: None,
+        focus_revision: 0,
     }
 }
 
@@ -115,9 +116,10 @@ fn commands() -> Vec<RoomCommand> {
     .collect()
 }
 
-pub(super) const ITEMS: usize = 24;
+pub(super) const ITEMS: usize = 27;
 pub(super) const OWNER: &str = "@owner:home.example";
 const ECHO: &str = "@echo:home.example";
+const LONG_NAME: &str = "@long-named-echo:home.example";
 /// 最早一条的时间；下标每大一条晚一分钟（下标大 = 屏幕上更靠下 = 更晚）。
 const FIRST_AT_MS: u64 = 1_792_000_000_000;
 /// 从这条起（更靠下的那一段）再往后一天：列表里要有一段跨日，日期分隔那一行才有得看。
@@ -142,6 +144,12 @@ pub(super) const CHOICES_INDEX: usize = 22;
 pub(super) const QUOTED_INDEX: usize = 19;
 /// 引用上一条的长中文回复：几段长短不一，有的末行写满，用来查时间戳和正文重叠、长段被截断。
 pub(super) const LONG_REPLY_INDEX: usize = 20;
+/// 引用一条不在房间里的消息：跳到它要翻到房间开头，最后给“找不到”。
+pub(super) const MISSING_QUOTE_INDEX: usize = 24;
+/// 名字很长的发送者：群聊里名字只许占一行。
+pub(super) const LONG_NAME_INDEX: usize = 26;
+/// 删除的消息：菜单里没有任何动作，只剩发送时间；顺便看读屏念不念“已编辑”。
+pub(super) const REDACTED_INDEX: usize = 25;
 // 中文假数据放在数据文件里：它是界面测试的输入，不是界面文字，界面文字检查（ADR-0043）只管源码里的字符串。
 const QUOTED_TEXT: &str = include_str!("ui_fake_text/quoted.txt");
 const LONG_REPLY: &str = include_str!("ui_fake_text/long_reply.txt");
@@ -152,8 +160,8 @@ const TALL_PARAGRAPHS: usize = 60;
 const LAST_LINE: &str = "Fixture last line";
 
 fn item(index: usize) -> TimelineItem {
-    // 8..=10 都算 Echo 的，凑一组连发的消息给并排的气泡做样子，其余一左一右轮流。
-    let own = index % 2 == 1 && !(8..=10).contains(&index);
+    // 8..=10 都算 Echo 的，凑一组连发的消息给并排的气泡做样子，其余一左一右轮流；26 号换成名字很长的别人。
+    let own = index % 2 == 1 && !(8..=10).contains(&index) && index != LONG_NAME_INDEX;
     let last = index + 1 == ITEMS;
     let mut paragraphs = if index == CHOICES_INDEX {
         vec![
@@ -168,6 +176,8 @@ fn item(index: usize) -> TimelineItem {
             .split("\n\n")
             .map(Into::into)
             .collect()
+    } else if index == REDACTED_INDEX {
+        vec![format!("Fixture message {index}")]
     } else if last || index.is_multiple_of(TALL_EVERY) {
         (0..TALL_PARAGRAPHS)
             .map(|line| format!("Fixture message {index}, paragraph {line}: a long reply keeps going for a while."))
@@ -180,10 +190,24 @@ fn item(index: usize) -> TimelineItem {
     }
     let mut message = text_message(
         &format!("ui-fake-{index}"),
-        if own { OWNER } else { ECHO },
+        if own {
+            OWNER
+        } else if index == LONG_NAME_INDEX {
+            LONG_NAME
+        } else {
+            ECHO
+        },
         at_ms(index),
         &paragraphs,
     );
+    if index == LONG_NAME_INDEX {
+        message.sender_name = "Echo the group bot with a really long account name".into();
+    }
+    if index == REDACTED_INDEX {
+        message.body = MessageContent::Redacted;
+        message.actions.clear();
+        message.edited = true;
+    }
     let status = if index <= REPLY_INDEX {
         MessageStatus::Read
     } else {
@@ -212,6 +236,11 @@ fn item(index: usize) -> TimelineItem {
                     text: QUOTED_TEXT.trim_end().into(),
                 },
             },
+        });
+    }
+    if index == MISSING_QUOTE_INDEX {
+        message.reply = Some(ReplyQuote::Unavailable {
+            event_id: "$ui-fake-missing".into(),
         });
     }
     if index == CHOICES_INDEX {

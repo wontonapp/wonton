@@ -59,7 +59,7 @@ fun MessageImage(
         Modifier.widthIn(max = WontonTheme.size.messageImage)
             .aspectRatio(image.ratio())
             .clip(RoundedCornerShape(WontonTheme.radii.control))
-            // 点开看图；长按给消息菜单（图片盖满气泡，菜单的手势要从这里来）。
+            // 点开看图；长按给消息菜单（照片盖满气泡，菜单的手势要从这里来）。
             .combinedClickable(onClick = { showingViewer = true }, onLongClick = { onLongPress?.invoke() }),
         contentAlignment = Alignment.Center,
     ) {

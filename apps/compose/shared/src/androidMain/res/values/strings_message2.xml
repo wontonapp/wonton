@@ -25,4 +25,6 @@
     <string name="message_image_permission_denied">Android denied access. Check this app\'s permissions in Settings and try again.</string>
     <string name="message_link_share_failed">Couldn\'t share this link</string>
     <string name="message_link_no_handler">Install an app that can open this type of link, then try again.</string>
+    <!-- Read-out state of an own message still on its way to the server. No arguments. -->
+    <string name="message_sending">Sending</string>
 </resources>

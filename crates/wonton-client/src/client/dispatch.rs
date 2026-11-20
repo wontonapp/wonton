@@ -55,6 +55,8 @@ impl ClientCore {
                     self.dispatch_ui_fake_agent(action);
                     Ok(())
                 }
+                // 外观和语言全在本机，假数据下也要照实落盘，否则设置页点了没反应。
+                Action::Settings { action } => self.settings_action(&self.scope(), action),
                 _ => Ok(()),
             };
         }

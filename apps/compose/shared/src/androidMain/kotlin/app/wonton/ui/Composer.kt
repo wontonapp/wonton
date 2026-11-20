@@ -85,7 +85,7 @@ import kotlinx.coroutines.withContext
  * 文件上传只认房间，旁聊里不给选文件。
  *
  * [commands] 是各 Bot 的斜杠命令（ADR-0054）：输入“/”时按名字前缀在输入框上方列出来，点一条就把 [RoomCommand.text]
- * 原样发出去。[dropCommand] 非空时发的是它（草稿整句就是一条完整命令，正文里的空行不算），否则发草稿。
+ * 原样发出去，发出去后草稿留着这条命令、只收回复条（ADR-0109）。[dropCommand] 非空时发的是它（草稿整句就是一条完整命令，正文里的空行不算），否则发草稿。
  */
 @OptIn(ExperimentalFoundationApi::class)
 @Composable
@@ -98,7 +98,9 @@ fun Composer(
     core: ClientCore,
     onDraftChange: (String) -> Unit,
     onSent: () -> Unit,
+    onCommandSent: (String) -> Unit,
     onReplyCancel: () -> Unit,
+    onQuoteJump: (String) -> Unit,
     onAction: (Action) -> Unit,
     onReject: (Problem) -> Unit,
     commands: List<RoomCommand> = emptyList(),
@@ -138,6 +140,15 @@ fun Composer(
         val problem = core.send(sendAction(target, text, reply, viaTray))
         if (problem == null) onSent() else onReject(problem)
     }
+    // 点完命令菜单就没了；把焦点要回输入框，键盘别跟着菜单一起收（草稿还在，主人可以接着打）。
+    // 点完命令把焦点要回输入框：菜单项自己在点的时候会抢焦点，等这一轮重组收完（菜单收掉、草稿已换）再要，
+    // 键盘才不会跟着菜单一起收（草稿还在，主人可以接着打）。
+    var refocus by remember { mutableStateOf(0) }
+    LaunchedEffect(refocus) { if (refocus > 0) focusRequester.requestFocus() }
+    val commandSent: (String) -> Unit = { text ->
+        onCommandSent(text)
+        refocus++
+    }
     val agentStop by produceState<RoomAgentStop>(RoomAgentStop.Idle, core, target) {
         core.agentStopUpdates(target).collect { value = it }
     }
@@ -153,7 +164,8 @@ fun Composer(
         commands = commands,
         commandsOmitted = commandsOmitted,
         target = target,
-        onSent = onSent,
+        onCommandSent = commandSent,
+        onQuoteJump = onQuoteJump,
         onReject = onReject,
     )
     AgentStopNotice(agentStop)
@@ -193,11 +205,12 @@ private fun ComposerStack(
     commands: List<RoomCommand>,
     commandsOmitted: Int,
     target: TimelineTarget,
-    onSent: () -> Unit,
+    onCommandSent: (String) -> Unit,
+    onQuoteJump: (String) -> Unit,
     onReject: (Problem) -> Unit,
 ) {
     if (!inSideChat) OnboardingChatPrompts(roomId)
-    if (reply != null) ComposerReply(reply, core, onReplyCancel)
+    if (reply != null) ComposerReply(reply, core, onReplyCancel, onQuoteJump)
     val shown = commandQuery(draft, commands)
     ComposerTray(attachments, roomId, core, onAction)
     if (shown.isNotEmpty()) {
@@ -207,7 +220,7 @@ private fun ComposerStack(
             ComposerCommands(shown, commandsOmitted) { command ->
                 val action = Action.Timeline(TimelineAction.SendText(target, command.text, reply?.eventId))
                 val problem = core.send(action)
-                if (problem == null) onSent() else onReject(problem)
+                if (problem == null) onCommandSent(command.text) else onReject(problem)
             }
         }
     }

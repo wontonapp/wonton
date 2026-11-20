@@ -15,7 +15,6 @@ import androidx.compose.foundation.layout.heightIn
 import androidx.compose.foundation.layout.ime
 import androidx.compose.foundation.layout.navigationBars
 import androidx.compose.foundation.layout.padding
-import androidx.compose.foundation.layout.safeDrawing
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.union
 import androidx.compose.foundation.layout.windowInsetsPadding
@@ -40,8 +39,6 @@ import androidx.compose.ui.draw.blur
 import androidx.compose.ui.layout.onSizeChanged
 import androidx.compose.ui.geometry.Rect
 import androidx.compose.ui.platform.LocalDensity
-import androidx.compose.ui.platform.LocalLayoutDirection
-import androidx.compose.ui.platform.LocalWindowInfo
 import androidx.compose.ui.platform.testTag
 import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.semantics.Role
@@ -95,6 +92,23 @@ import kotlinx.coroutines.flow.filter
 
 private const val TAG = "RoomScreen"
 
+/**
+ * 跳到引用的那条原消息。正在跳的途中再点不派第二次；落到原消息才停。
+ * 先把本次跳转的序号报给核心，同一条原消息连点两下，核心也当成新的一次。
+ */
+internal fun TimelineState.jumpTo(
+    eventId: String,
+    fromId: String,
+    target: TimelineTarget,
+    onAction: (Action) -> Unit,
+) {
+    if (jumpQuote != null) return
+    jumpQuote = eventId
+    jumpSeq++
+    onAction(Action.Timeline(TimelineAction.RegisterFocusRevision(target, jumpSeq.toUInt())))
+    onAction(Action.Timeline(TimelineAction.JumpToMessage(target, eventId, fromId)))
+}
+
 internal class TimelineState {
     val items = mutableStateListOf<TimelineItem>()
     var backPagination by mutableStateOf(BackPagination.IDLE)
@@ -142,6 +156,12 @@ internal class TimelineState {
     var focus by mutableStateOf<TimelineFocus?>(null)
     /** 跳转的进展（ADR-0109）：加载中原消息时在引用上转圈，找不到时轻提示。 */
     var jump by mutableStateOf(JumpState.IDLE)
+    /** 正在跳的那条引用（原消息的事件 ID）；只在加载中非空，落地或失败就收掉。 */
+    var jumpQuote by mutableStateOf<String?>(null)
+    /** 壳报给核心的跳转序号，每发起一次加一。 */
+    var jumpSeq by mutableIntStateOf(0)
+    /** 核心收下的跳转序号：同一条引用连点两下，落点一样也要重新滚。 */
+    var focusRevision by mutableIntStateOf(0)
     /** 跳之前那一条（栈顶）：留着时“向下”按钮先退回到它。 */
     var backTo by mutableStateOf<String?>(null)
     /** 正在输入的其他人（显示名），顶栏状态行用。 */
@@ -215,6 +235,9 @@ internal fun RoomRoute(
                 timeline.roomBots = update.roomBots
                 timeline.focus = update.focus
                 timeline.jump = update.jump
+                // 找不到就收转圈；落地由列表滚完那一下收，滚之前第二下仍算重复点。
+                if (update.jump == JumpState.UNAVAILABLE) timeline.jumpQuote = null
+                timeline.focusRevision = update.focusRevision.toInt()
                 timeline.backTo = update.backTo
                 timeline.typing = update.typing
                 timeline.commands = update.commands
@@ -274,22 +297,6 @@ internal fun RoomRoute(
 
 /** 长按的是哪条消息，它的气泡在屏幕上的位置。 */
 private class MessageMenuTarget(val itemId: String, val message: TimelineMessage, val bubble: Rect)
-
-@Composable
-private fun messageMenuBounds(): Rect {
-    // 菜单能画在哪儿：窗口减去系统栏和键盘。弹层是另一个窗口，在里面拿不到这些，在这里算好传进去。
-    // 横屏时导航栏或挖孔在侧边，左右也要让。
-    val windowSize = LocalWindowInfo.current.containerSize
-    val density = LocalDensity.current
-    val safe = WindowInsets.safeDrawing
-    val direction = LocalLayoutDirection.current
-    return Rect(
-        safe.getLeft(density, direction).toFloat(),
-        safe.getTop(density).toFloat(),
-        (windowSize.width - safe.getRight(density, direction)).toFloat(),
-        (windowSize.height - safe.getBottom(density)).toFloat(),
-    )
-}
 
 @Composable
 private fun RoomScreen(
@@ -620,7 +627,15 @@ private fun Conversation(
                     core = core,
                     onDraftChange = draft::change,
                     onSent = draft::sent,
+                    onCommandSent = draft::commandSent,
                     onReplyCancel = draft::stopReplying,
+                    onQuoteJump = { eventId ->
+                        // 回去的落点是这条原消息在列表里的条目；没加载就退回事件 ID，回来时跳过它。
+                        val from = timeline.items.firstOrNull {
+                            (it.content as? TimelineContent.Message)?.message?.eventId == eventId
+                        }?.id ?: eventId
+                        timeline.jumpTo(eventId, from, target, onAction)
+                    },
                     onAction = onAction,
                     onReject = onReject,
                     commands = timeline.commands,
