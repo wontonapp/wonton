@@ -68,8 +68,12 @@ impl Bus {
     }
 
     async fn audit(&self, bot: &str, tool: &str, decision: &str, detail: serde_json::Value) {
-        let ts = SystemTime::now().duration_since(UNIX_EPOCH).unwrap().as_secs();
-        let line = json!({"ts": ts, "bot": bot, "tool": tool, "decision": decision, "detail": detail});
+        let ts = SystemTime::now()
+            .duration_since(UNIX_EPOCH)
+            .unwrap()
+            .as_secs();
+        let line =
+            json!({"ts": ts, "bot": bot, "tool": tool, "decision": decision, "detail": detail});
         let mut file = self.audit.lock().await;
         let _ = file.write_all(format!("{line}\n").as_bytes()).await;
         let _ = file.flush().await;
@@ -78,12 +82,27 @@ impl Bus {
 
     /// 挂起敏感调用，直到主人确认或超时（产品里是聊天中的确认卡片）。
     async fn confirm(&self, bot: &Bot, tool: &str) -> bool {
-        let id = format!("{:x}", SystemTime::now().duration_since(UNIX_EPOCH).unwrap().as_nanos());
+        let id = format!(
+            "{:x}",
+            SystemTime::now()
+                .duration_since(UNIX_EPOCH)
+                .unwrap()
+                .as_nanos()
+        );
         let (tx, rx) = oneshot::channel();
         self.pending.lock().await.insert(id.clone(), tx);
-        self.audit(bot.name, tool, "awaiting_confirmation", json!({"approval": id})).await;
+        self.audit(
+            bot.name,
+            tool,
+            "awaiting_confirmation",
+            json!({"approval": id}),
+        )
+        .await;
         eprintln!("等待主人确认：curl -X POST 'http://127.0.0.1:8100/approvals/{id}?approve=true'");
-        let approved = matches!(tokio::time::timeout(Duration::from_secs(120), rx).await, Ok(Ok(true)));
+        let approved = matches!(
+            tokio::time::timeout(Duration::from_secs(120), rx).await,
+            Ok(Ok(true))
+        );
         self.pending.lock().await.remove(&id);
         approved
     }
@@ -128,11 +147,16 @@ impl ServerHandler for Bus {
         let args = json!(request.arguments);
         if !bot.allow.contains(&tool.as_str()) {
             self.audit(bot.name, &tool, "denied", args).await;
-            return Err(ErrorData::invalid_request(format!("{} 无权调用 {tool}", bot.name), None));
+            return Err(ErrorData::invalid_request(
+                format!("{} 无权调用 {tool}", bot.name),
+                None,
+            ));
         }
         if SENSITIVE.contains(&tool.as_str()) && !self.confirm(&bot, &tool).await {
             self.audit(bot.name, &tool, "rejected_by_owner", args).await;
-            return Ok(CallToolResult::error(vec![ContentBlock::text("主人没有确认这次操作")]).into());
+            return Ok(
+                CallToolResult::error(vec![ContentBlock::text("主人没有确认这次操作")]).into(),
+            );
         }
         let mut forwarded = request.clone();
         forwarded.name = tool.trim_start_matches(PREFIX).to_owned().into();
@@ -141,7 +165,11 @@ impl ServerHandler for Bus {
             .call_tool(forwarded)
             .await
             .map_err(|e| ErrorData::internal_error(format!("插件调用失败：{e}"), None))?;
-        let decision = if result.is_error == Some(true) { "failed" } else { "ok" };
+        let decision = if result.is_error == Some(true) {
+            "failed"
+        } else {
+            "ok"
+        };
         self.audit(bot.name, &tool, decision, args).await;
         Ok(result.into())
     }
@@ -181,7 +209,11 @@ async fn main() -> anyhow::Result<()> {
         upstream: client.peer().clone(),
         pending: Arc::default(),
         audit: Arc::new(Mutex::new(
-            tokio::fs::OpenOptions::new().create(true).append(true).open("audit.jsonl").await?,
+            tokio::fs::OpenOptions::new()
+                .create(true)
+                .append(true)
+                .open("audit.jsonl")
+                .await?,
         )),
     };
     let pending = bus.pending.clone();
