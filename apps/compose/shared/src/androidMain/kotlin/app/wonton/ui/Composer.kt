@@ -123,12 +123,17 @@ fun Composer(
     // 旁聊里照片不进附件区，选好就发；输入框里的字只当第一张的说明，回复跟着这张照片发出去。
     val sendImage = if (inSideChat) {
         { upload: ImageUpload, caption: String? ->
-            onAction(
-                Action.Timeline(
-                    TimelineAction.SendImage(target, upload, caption = caption, replyTo = reply?.eventId),
-                ),
-            )
-            if (caption != null) onSent() else if (reply != null) onReplyCancel()
+            val problem =
+                core.send(
+                    Action.Timeline(
+                        TimelineAction.SendImage(target, upload, caption = caption, replyTo = reply?.eventId),
+                    ),
+                )
+            if (problem == null) {
+                if (caption != null) onSent() else if (reply != null) onReplyCancel()
+            } else {
+                onReject(problem)
+            }
         }
     } else {
         null

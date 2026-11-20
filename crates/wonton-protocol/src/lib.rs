@@ -57,6 +57,7 @@ mod registry_mirror;
 mod reply;
 mod roles;
 mod secret;
+mod send_state;
 mod server_version;
 mod servers;
 mod session;
@@ -320,6 +321,7 @@ pub use roles::{
     join_request_reject_path, member_role_path, plugin_audience_path, role_path,
 };
 pub use secret::SecretString;
+pub use send_state::{SendFailure, SendState};
 pub use server_version::{is_older, minimum_server_version};
 pub use servers::{ServerKind, ServerName, ServerRow, ServersViewModel};
 pub use session::{SessionListViewModel, SessionRow};
@@ -347,8 +349,8 @@ pub use sidebar::{SidebarApp, SidebarBadge, SidebarOpen, SidebarViewModel};
 pub use timeline::{
     BackPagination, FileAttachment, ImageCaption, ImageContent, KeyNotice, MatrixTarget,
     MediaHandle, MessageAction, MessageContent, MessageReceipt, RichBlock, RichBlockKind, RichLink,
-    RichLinkKind, RichSpan, SendFailure, SendState, TimelineContent, TimelineDiff, TimelineItem,
-    TimelineMessage, TimelineScroll, TimelineUpdate, TimelineViewport,
+    RichLinkKind, RichSpan, TimelineContent, TimelineDiff, TimelineItem, TimelineMessage,
+    TimelineScroll, TimelineUpdate, TimelineViewport,
 };
 pub use timeline_action::{TimelineAction, TimelineTarget};
 pub use timeline_jump::{JumpState, TimelineFocus};
