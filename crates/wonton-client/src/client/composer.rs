@@ -95,6 +95,10 @@ impl ClientCore {
         image: ImageUpload,
     ) -> Result<String, CoreError> {
         let room_id = composer_room(&target)?;
+        #[cfg(feature = "ui-fake")]
+        if self.ui_fake.load(std::sync::atomic::Ordering::SeqCst) {
+            return self.scope().composer.add_image_offline(&room_id, image);
+        }
         self.scope().composer.add_image(&room_id, image)
     }
 
@@ -108,6 +112,13 @@ impl ClientCore {
         mime_type: Option<String>,
     ) -> Result<String, CoreError> {
         let room_id = composer_room(&target)?;
+        #[cfg(feature = "ui-fake")]
+        if self.ui_fake.load(std::sync::atomic::Ordering::SeqCst) {
+            return self
+                .scope()
+                .composer
+                .add_file_offline(&room_id, source, name, mime_type);
+        }
         self.scope()
             .composer
             .add_file(&room_id, source, name, mime_type)

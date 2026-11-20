@@ -41,10 +41,6 @@
     <string name="timeline_edited">Edited</string>
     <!-- Footer label of a message saved on this device but not yet confirmed delivered by the server (queued or in flight). No arguments. -->
     <string name="timeline_sending">Saved, not delivered yet</string>
-    <!-- Small line under your own message that the others have read. No arguments. -->
-    <string name="timeline_read">Read</string>
-    <!-- Small line under your own latest message: the server has it, nobody has read it yet. No arguments. -->
-    <string name="timeline_delivered">Delivered</string>
     <!-- Footer label of a message that failed but retries by itself. No arguments. -->
     <string name="timeline_send_failed_retrying">Not sent, retrying</string>
     <!-- Footer label of a message that failed for good. Argument: the core's reason. -->
@@ -186,4 +182,12 @@
     <string name="room_call_active">In call</string>
     <!-- One-line hint at the top of a group room that has none of your AIs in it; mentioning an AI there won\'t get an answer. No arguments. -->
     <string name="room_no_ai">No AI in this group yet</string>
+    <!-- Status line while someone else is typing in a direct chat. No arguments. -->
+    <string name="timeline_typing">Typing…</string>
+    <!-- Status line while one other person is typing in a group. Argument: their name. -->
+    <string name="timeline_typing_group">%1$s is typing…</string>
+    <!-- Status line while several others are typing in a group. Arguments: the first name and how many others. -->
+    <string name="timeline_typing_more">%1$s and %2$d more are typing…</string>
+    <!-- Light hint when the jumped-to message can't be found. No arguments. -->
+    <string name="timeline_jump_unavailable">That message isn\'t here anymore</string>
 </resources>

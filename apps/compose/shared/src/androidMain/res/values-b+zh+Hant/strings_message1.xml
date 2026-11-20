@@ -6,4 +6,8 @@
     <string name="message_quote_undecryptable">加密訊息</string>
     <string name="message_summary_undecryptable">[加密訊息]</string>
     <string name="message_link_browser">在瀏覽器中開啟</string>
+    <!-- Search field above the room list that picks where a message is forwarded to. Android only. -->
+    <string name="message_forward_search">搜尋聊天</string>
+    <!-- Result line when the search in the forward sheet matches no room. Android only. -->
+    <string name="message_forward_no_match">沒有叫這個的聊天</string>
 </resources>

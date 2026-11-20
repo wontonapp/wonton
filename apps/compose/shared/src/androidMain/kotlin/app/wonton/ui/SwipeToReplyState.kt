@@ -3,6 +3,7 @@ package app.wonton.ui
 import androidx.compose.animation.core.Animatable
 import androidx.compose.animation.core.spring
 import androidx.compose.foundation.gestures.detectHorizontalDragGestures
+import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.material3.Icon
@@ -20,7 +21,6 @@ import androidx.compose.ui.hapticfeedback.HapticFeedbackType
 import androidx.compose.ui.input.pointer.pointerInput
 import androidx.compose.ui.platform.LocalDensity
 import androidx.compose.ui.platform.LocalHapticFeedback
-import androidx.compose.ui.unit.dp
 import app.wonton.ui.design.WontonTheme
 import app.wonton.ui.design.toColor
 import app.wonton.ui.icons.Reply
@@ -28,15 +28,9 @@ import app.wonton.ui.icons.WontonIcon
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.Job
 
-/** 右滑多远算回复：过了这里松手就进回复状态，也在这里给一次触感。 */
-private val THRESHOLD = 40.dp
-
-/** 跟着手指最多移多远。 */
-private val MAX = 72.dp
-
 /**
- * 右滑回复（ADR-0073 第 3 节）：只有菜单里有 `Reply` 的消息滑得动，过阈值松手进回复。
- * 气泡跟着手指挪，[offset] 给气泡画位移，[modifier] 挂在气泡那一层上。
+ * 左滑回复（ADR-0109）：只有菜单里有 `Reply` 的消息滑得动，过阈值松手进回复。方向照 Telegram，往屏幕里侧滑。
+ * 气泡跟着手指挪，[offset] 是负数，给气泡画位移，[modifier] 挂在气泡那一层上。
  */
 class SwipeToReplyState(
     val enabled: Boolean,
@@ -66,9 +60,9 @@ class SwipeToReplyState(
                     onDragEnd = { finish(armed) },
                     onDragCancel = { finish(false) },
                     onHorizontalDrag = { change, drag ->
-                        if (offset.floatValue > 0f || drag > 0f) change.consume()
-                        offset.floatValue = (offset.floatValue + drag).coerceIn(0f, max)
-                        armed = offset.floatValue >= threshold
+                        if (offset.floatValue < 0f || drag < 0f) change.consume()
+                        offset.floatValue = (offset.floatValue + drag).coerceIn(-max, 0f)
+                        armed = -offset.floatValue >= threshold
                         if (armed && !crossedThreshold) {
                             crossedThreshold = true
                             haptics.performHapticFeedback(HapticFeedbackType.TextHandleMove)
@@ -100,28 +94,32 @@ fun rememberSwipeToReply(enabled: Boolean, onReply: () -> Unit): SwipeToReplySta
             haptics = haptics,
             onReply = { current() },
             scope = scope,
-            threshold = with(density) { THRESHOLD.toPx() },
-            max = with(density) { MAX.toPx() },
+            threshold = WontonTheme.gesture.replyTrigger * density.density,
+            max = WontonTheme.gesture.replyMax * density.density,
         )
     }
 }
 
-/** 右滑时露在前面的箭头，越靠近阈值越清楚。位置跟着气泡走。 */
+/**
+ * 气泡右侧给箭头留的位置，一直占着，滑不滑都不挤动别的东西。箭头自己跟着手指往左走，
+ * 越滑越清楚，松手回弹就淡回去。
+ */
 @Composable
 fun SwipeHint(swipe: SwipeToReplyState) {
     val offset = swipe.offset.value
-    if (!swipe.enabled || offset <= 0f) return
     val icon = with(LocalDensity.current) { WontonTheme.size.iconSmall.toPx() }
-    val gap = with(LocalDensity.current) { WontonTheme.spacing.s8.toPx() }
-    Icon(
-        WontonIcon.Reply,
-        // 装饰：跟手的临时箭头，松手就看结果。
-        contentDescription = null,
-        modifier = Modifier
-            .padding(start = WontonTheme.spacing.s8)
-            .graphicsLayer { translationX = offset - icon - gap }
-            .size(WontonTheme.size.iconSmall)
-            .alpha((offset / icon).coerceIn(0f, 1f)),
-        tint = WontonTheme.colors.textSecondary.toColor(),
-    )
+    Box(Modifier.padding(end = WontonTheme.spacing.s8).size(WontonTheme.size.iconSmall)) {
+        if (swipe.enabled) {
+            Icon(
+                WontonIcon.Reply,
+                // 装饰：跟手的临时箭头，松手就看结果。
+                contentDescription = null,
+                modifier = Modifier
+                    .graphicsLayer { translationX = offset }
+                    .size(WontonTheme.size.iconSmall)
+                    .alpha((-offset / icon).coerceIn(0f, 1f)),
+                tint = WontonTheme.colors.textSecondary.toColor(),
+            )
+        }
+    }
 }

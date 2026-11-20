@@ -7,4 +7,8 @@
     <!-- Placeholder for a message this device can't decrypt yet. -->
     <string name="message_summary_undecryptable">[Encrypted message]</string>
     <string name="message_link_browser">Open in browser</string>
+    <!-- Search field above the room list that picks where a message is forwarded to. Android only. -->
+    <string name="message_forward_search">Search chats</string>
+    <!-- Result line when the search in the forward sheet matches no room. Android only. -->
+    <string name="message_forward_no_match">No chat by that name</string>
 </resources>

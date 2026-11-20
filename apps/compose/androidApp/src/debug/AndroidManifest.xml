@@ -14,7 +14,8 @@
             android:name=".UiFakeMainActivity"
             android:configChanges="orientation|screenSize|screenLayout|smallestScreenSize|keyboardHidden|uiMode"
             android:launchMode="singleTop"
-            android:exported="false" />
+            android:windowSoftInputMode="adjustNothing"
+            android:exported="true" />
 
         <!-- #847 的界面走查页。 -->
         <activity

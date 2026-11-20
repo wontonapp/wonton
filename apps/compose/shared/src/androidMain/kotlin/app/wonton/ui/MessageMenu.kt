@@ -105,7 +105,7 @@ fun MessageMenu(
                 content = {
                     // 预览不接受操作，读屏也不再念一遍。
                     Box(Modifier.width(width).clearAndSetSemantics {}) {
-                        BubbleSurface(message, core, false, false, Modifier, {}, {}, {})
+                        BubbleSurface(message, core, false, false, Modifier, {})
                     }
                     MenuSurface(message, onReply, onForward, onRedact, onDismiss)
                 },
