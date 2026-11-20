@@ -311,7 +311,11 @@ async fn a_root_that_fails_to_send_leaves_no_side_chat() {
     setup.home.fail_sends(false);
 
     // 之后照常聊天；房间里没有旁聊卡，第一句话也没发出去。
-    setup.bot_room.send_text("还在").await.expect("Bot 发文字");
+    setup
+        .bot_room
+        .send_text("还在", &[])
+        .await
+        .expect("Bot 发文字");
     main.until_items("收到 Bot 的消息", |items| {
         has_text(items, "还在").then_some(())
     })

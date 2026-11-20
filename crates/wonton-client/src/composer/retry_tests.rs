@@ -29,9 +29,9 @@ async fn interrupted_file() -> (Setup, String) {
         .add_file(ROOM, file_source("report.pdf"), "report.pdf".into(), None)
         .unwrap();
     s.link
-        .send(ROOM, "看看这个", Some("$event:example.org".into()))
+        .send(ROOM, "看看这个", Some("$event:example.org".into()), &[])
         .unwrap();
-    s.link.send(ROOM, "下一条", None).unwrap();
+    s.link.send(ROOM, "下一条", None, &[]).unwrap();
     until("两项开始上传", || {
         s.fake.upload_calls() == 1 && s.fake.transfers.borrow().active.len() == 1
     })
@@ -125,13 +125,22 @@ async fn retrying_an_interrupted_file_sends_its_text_once_before_later_messages(
         groups[0].parts,
         [
             image(uploaded("ready.jpg", true), None),
-            Part::Text(format!("看看这个\n\n{}", file.link()))
+            Part::Text {
+                body: format!("看看这个\n\n{}", file.link()),
+                mentions: Vec::new()
+            }
         ]
     );
     assert_eq!(groups[0].reply_to.as_deref(), Some("$event:example.org"));
     assert_eq!(groups[0].skip, 0);
     assert!(groups[0].group_id.is_some());
-    assert_eq!(groups[1].parts, [Part::Text("下一条".into())]);
+    assert_eq!(
+        groups[1].parts,
+        [Part::Text {
+            body: "下一条".into(),
+            mentions: Vec::new()
+        }]
+    );
     assert_eq!(groups[1].group_id, None);
 }
 
@@ -140,7 +149,7 @@ async fn individually_retried_attachments_still_wait_for_every_failed_item() {
     let s = setup();
     let first = s.link.add_image(ROOM, photo("a.jpg")).unwrap();
     let second = s.link.add_image(ROOM, photo("b.jpg")).unwrap();
-    s.link.send(ROOM, "两张", None).unwrap();
+    s.link.send(ROOM, "两张", None, &[]).unwrap();
     until("两张在传", || s.fake.upload_calls() == 2).await;
     for name in ["a.jpg", "b.jpg"] {
         s.fake.finish(
@@ -214,7 +223,7 @@ async fn individually_retried_attachments_still_wait_for_every_failed_item() {
 async fn retrying_a_tray_attachment_does_not_release_another_failed_message() {
     let s = setup();
     s.link.add_image(ROOM, photo("outgoing.jpg")).unwrap();
-    s.link.send(ROOM, "仍在等待", None).unwrap();
+    s.link.send(ROOM, "仍在等待", None, &[]).unwrap();
     let tray = s.link.add_image(ROOM, photo("tray.jpg")).unwrap();
     until("两张在传", || s.fake.upload_calls() == 2).await;
     for name in ["outgoing.jpg", "tray.jpg"] {
@@ -249,7 +258,7 @@ async fn retrying_a_tray_attachment_does_not_release_another_failed_message() {
     assert_eq!(s.fake.groups(), 0);
     s.link.cancel_outgoing(ROOM, &outgoing.id).unwrap();
     assert_eq!(s.fake.groups(), 0, "附件区不会自动发送");
-    s.link.send(ROOM, "新消息", None).unwrap();
+    s.link.send(ROOM, "新消息", None, &[]).unwrap();
     until("明确发送后交出", || view(&s).outgoing.is_empty()).await;
     let groups = s.fake.groups.lock().unwrap();
     assert_eq!(groups.len(), 1);

@@ -45,7 +45,10 @@ impl Chat {
     }
 
     async fn bot_says(&self, body: &str) {
-        self.bot_room.send_text(body).await.expect("Bot 发消息");
+        self.bot_room
+            .send_text(body, &[])
+            .await
+            .expect("Bot 发消息");
     }
     async fn next_message(
         &self,

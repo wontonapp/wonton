@@ -11,8 +11,25 @@ use matrix_sdk::{
     },
 };
 
+use matrix_sdk::deserialized_responses::TimelineEvent;
+use matrix_sdk::ruma::events::Mentions;
+
 use super::{ChatRoom, ensure_recipient_devices};
 use crate::{Error, MatrixSession, Result, reply::load_event};
+
+/// 事件是谁发的；解析不了的消息类事件返回 `None`。
+fn sender(event: &TimelineEvent) -> Option<matrix_sdk::ruma::OwnedUserId> {
+    match event.raw().deserialize().ok()? {
+        matrix_sdk::ruma::events::AnySyncTimelineEvent::MessageLike(event) => {
+            Some(event.sender().to_owned())
+        }
+        _ => None,
+    }
+}
+
+fn mentions_of(users: &[matrix_sdk::ruma::OwnedUserId]) -> Mentions {
+    Mentions::with_user_ids(users.iter().cloned())
+}
 
 impl ChatRoom {
     /// 时间线里这条回复引用的原消息不在本地时，向服务器取（SDK 的 `fetch_details_for_event`），结果随时间线的增量来。
@@ -33,15 +50,57 @@ impl ChatRoom {
 
     /// 回复一条消息：发一条带 `m.in_reply_to` 的文字，其余同 [`Self::send_text`]。被回复的事件不在这个房间里时返回
     /// [`Error::InvalidInput`]。
-    pub async fn send_reply(&self, body: &str, in_reply_to: &EventId) -> Result<()> {
-        self.check_reply_target(in_reply_to).await?;
+    pub async fn send_reply(
+        &self,
+        body: &str,
+        mentions: &[String],
+        in_reply_to: &EventId,
+    ) -> Result<()> {
+        self.send_mentions_reply(body, mentions, in_reply_to, None)
+            .await
+    }
+
+    /// 回复和 [`Self::mention_content`](super::ChatRoom::mention_content) 一样带上选中的人和胶囊；被回复的人
+    /// 也算叫到，一起写进 `m.mentions`。
+    async fn send_mentions_reply(
+        &self,
+        body: &str,
+        mentions: &[String],
+        in_reply_to: &EventId,
+        extra: Option<serde_json::Map<String, serde_json::Value>>,
+    ) -> Result<()> {
+        let quoted = self.check_reply_target(in_reply_to).await?;
         ensure_recipient_devices(&self.room).await?;
+        let names = self.names();
+        let mut users = crate::mentions::selected(mentions, &names);
+        if let Some(sender) = sender(&quoted)
+            && !names.is_own(&sender)
+            && names.contains(&sender)
+            && !users.contains(&sender)
+        {
+            users.push(sender);
+        }
+        let content = self.mention_content(body, &users);
+        let reply = Reply {
+            event_id: in_reply_to.to_owned(),
+            enforce_thread: EnforceThread::MaybeThreaded,
+            // 被回复的人这里自己加减过，不让 SDK 再按配置决定。
+            add_mentions: AddMentions::No,
+        };
+        let mut content = self
+            .room
+            .make_reply_event(
+                RoomMessageEventContentWithoutRelation::new(content.msgtype),
+                reply,
+            )
+            .await
+            .map_err(|error| Error::Upstream(format!("组回复失败：{error}")))?;
+        if !users.is_empty() {
+            content = content.add_mentions(mentions_of(&users));
+        }
         self.timeline()
             .await
-            .send_reply(
-                RoomMessageEventContentWithoutRelation::text_plain(body),
-                in_reply_to.to_owned(),
-            )
+            .send_with_extra_content(content.into(), extra)
             .await?;
         Ok(())
     }
@@ -51,36 +110,18 @@ impl ChatRoom {
     pub async fn send_reply_with_extra(
         &self,
         body: &str,
+        mentions: &[String],
         in_reply_to: &EventId,
         extra: serde_json::Map<String, serde_json::Value>,
     ) -> Result<()> {
-        self.check_reply_target(in_reply_to).await?;
-        ensure_recipient_devices(&self.room).await?;
-        // 时间线的 `send_reply` 不收额外字段，这里自己组回复事件：不强制开话题、提及对方，和它推断出的一样。
-        let reply = Reply {
-            event_id: in_reply_to.to_owned(),
-            enforce_thread: EnforceThread::MaybeThreaded,
-            add_mentions: AddMentions::Yes,
-        };
-        let content = self
-            .room
-            .make_reply_event(
-                RoomMessageEventContentWithoutRelation::text_plain(body),
-                reply,
-            )
+        self.send_mentions_reply(body, mentions, in_reply_to, Some(extra))
             .await
-            .map_err(|error| Error::Upstream(format!("组回复失败：{error}")))?;
-        self.timeline()
-            .await
-            .send_with_extra_content(content.into(), Some(extra))
-            .await?;
-        Ok(())
     }
 
     /// 被回复的事件在这个房间里，否则返回 [`Error::InvalidInput`]。SDK 组回复时取不到原事件只报一个笼统的错，
     /// 分不出是输入不对还是连不上，所以先自己取一次（本机有就不走网络）。
-    pub(super) async fn check_reply_target(&self, in_reply_to: &EventId) -> Result<()> {
-        load_event(&self.room, in_reply_to).await.map(drop)
+    pub(super) async fn check_reply_target(&self, in_reply_to: &EventId) -> Result<TimelineEvent> {
+        load_event(&self.room, in_reply_to).await
     }
 
     /// 撤回一条消息（Matrix 的 redaction），不带理由。直接发给服务器，不走发送队列：结果当场知道，没权限、连不上

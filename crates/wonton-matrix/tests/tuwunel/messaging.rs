@@ -43,7 +43,7 @@ async fn two_accounts_exchange_text_and_images() {
     let bob_room = bob.open_room(&room_id).await.expect("Bob 打开私聊");
 
     alice_room
-        .send_text("你好，Bob")
+        .send_text("你好，Bob", &[])
         .await
         .expect("Alice 发文字");
     let received = wait_for_text(&bob_room, "Bob 收到文字", alice.user_id(), "你好，Bob").await;
@@ -58,7 +58,7 @@ async fn two_accounts_exchange_text_and_images() {
     assert!(sent.is_own);
     assert_eq!(sent.event_id, received.event_id);
 
-    bob_room.send_text("收到 👌").await.expect("Bob 回复");
+    bob_room.send_text("收到 👌", &[]).await.expect("Bob 回复");
     wait_for_text(&alice_room, "Alice 收到回复", bob.user_id(), "收到 👌").await;
 
     let photo = ImageUpload {
@@ -247,7 +247,7 @@ async fn redacted_message_shows_as_redacted_to_both_sides() {
     let bob_room = bob.open_room(&room_id).await.expect("Bob 打开私聊");
 
     alice_room
-        .send_text("授权码 code-42")
+        .send_text("授权码 code-42", &[])
         .await
         .expect("Alice 发文字");
     let sent = wait_for_text(
@@ -304,7 +304,7 @@ async fn a_missing_cached_event_is_reported_only_after_the_grace_and_then_rebuil
     let bob_room = bob.open_room(&room_id).await.expect("Bob 打开私聊");
 
     alice_room
-        .send_text("会缺席的一条")
+        .send_text("会缺席的一条", &[])
         .await
         .expect("Alice 发文字");
     wait_for_text(&bob_room, "Bob 收到", alice.user_id(), "会缺席的一条").await;
@@ -338,7 +338,7 @@ async fn a_missing_cached_event_is_reported_only_after_the_grace_and_then_rebuil
 
     // 宽限内就进了时间线的，过了宽限也不再报。
     alice_room
-        .send_text("按时到的")
+        .send_text("按时到的", &[])
         .await
         .expect("Alice 再发一条");
     wait_for_text(&bob_room, "Bob 收到第二条", alice.user_id(), "按时到的").await;

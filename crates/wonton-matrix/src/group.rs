@@ -75,8 +75,8 @@ pub enum GroupPart {
         image: UploadedImage,
         caption: Option<String>,
     },
-    /// 一条纯文本。
-    Text { body: String },
+    /// 一条纯文本，`mentions` 是输入框里选中的人。
+    Text { body: String, mentions: Vec<String> },
     /// 通知回复：关系已在入队前核对，重启后原样交给同一个发送队列。
     Reply(PreparedReply),
 }
@@ -157,6 +157,7 @@ impl MatrixSession {
         handed: impl Fn(usize),
     ) -> Result<()> {
         let room = self.joined(room_id)?;
+        let names = super::chat_room::local_member_names(&room).await;
         let count = u32::try_from(parts.len()).unwrap_or(u32::MAX);
         let mut contents = Vec::with_capacity(parts.len());
         for (index, part) in parts.into_iter().enumerate() {
@@ -164,7 +165,8 @@ impl MatrixSession {
             let content = match part {
                 GroupPart::Reply(reply) => *reply.0,
                 part => {
-                    let content = RoomMessageEventContentWithoutRelation::new(msgtype(part));
+                    let content =
+                        RoomMessageEventContentWithoutRelation::new(msgtype(part, &names));
                     match reply_to.filter(|_| last) {
                         Some(event_id) => room
                             .make_reply_event(
@@ -271,9 +273,12 @@ async fn cache(client: &Client, source: &MediaSource, data: Vec<u8>) {
     }
 }
 
-fn msgtype(part: GroupPart) -> MessageType {
+fn msgtype(part: GroupPart, names: &crate::message::MemberNames) -> MessageType {
     match part {
-        GroupPart::Text { body } => MessageType::text_plain(body),
+        GroupPart::Text { body, mentions } => {
+            let users = super::mentions::selected(&mentions, names);
+            super::mentions::content(&body, &users, names).msgtype
+        }
         GroupPart::Image { image, caption } => MessageType::Image(image_content(image, caption)),
         GroupPart::Reply(reply) => reply.0.msgtype,
     }
@@ -311,7 +316,9 @@ fn image_content(image: UploadedImage, caption: Option<String>) -> ImageMessageE
 
 #[cfg(test)]
 mod tests {
-    use matrix_sdk::ruma::{events::room::message::RoomMessageEventContent, mxc_uri};
+    use matrix_sdk::ruma::{
+        events::room::message::RoomMessageEventContent, mxc_uri, owned_user_id,
+    };
     use serde_json::Value;
 
     use super::*;
@@ -338,13 +345,24 @@ mod tests {
         serde_json::to_value(RoomMessageEventContent::new(msgtype)).unwrap()
     }
 
+    fn names() -> crate::message::MemberNames {
+        crate::message::MemberNames::new(
+            [(owned_user_id!("@hermes:home.example"), "Hermes".to_owned())].into(),
+            owned_user_id!("@me:home.example"),
+            false,
+        )
+    }
+
     /// 契约：说明文字按 Matrix v1.10 放（ADR-0094 第 2 节），别的客户端和 Hermes 都读得到。
     #[test]
     fn a_caption_is_the_body_and_the_name_moves_to_filename() {
-        let content = json_of(msgtype(GroupPart::Image {
-            image: image(true),
-            caption: Some("哪张好看".into()),
-        }));
+        let content = json_of(msgtype(
+            GroupPart::Image {
+                image: image(true),
+                caption: Some("哪张好看".into()),
+            },
+            &names(),
+        ));
         assert_eq!(content["msgtype"], "m.image");
         assert_eq!(content["body"], "哪张好看");
         assert_eq!(content["filename"], "cat.jpg");
@@ -352,10 +370,13 @@ mod tests {
         assert_eq!(content["info"]["thumbnail_url"], "mxc://home.example/thumb");
         assert_eq!(content["info"]["w"], 640);
 
-        let content = json_of(msgtype(GroupPart::Image {
-            image: image(false),
-            caption: Some("  ".into()),
-        }));
+        let content = json_of(msgtype(
+            GroupPart::Image {
+                image: image(false),
+                caption: Some("  ".into()),
+            },
+            &names(),
+        ));
         assert_eq!(content["body"], "cat.jpg");
         assert_eq!(content.get("filename"), None);
     }

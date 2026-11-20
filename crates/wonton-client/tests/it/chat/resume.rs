@@ -48,7 +48,7 @@ impl Chat {
     /// 断开期间两边各发一条。
     async fn both_send(&self) {
         self.bot_room
-            .send_text("断开时 Bot 发的")
+            .send_text("断开时 Bot 发的", &[])
             .await
             .expect("Bot 发消息");
         self.phone
@@ -179,7 +179,7 @@ async fn the_chat_recovers_when_the_tunnel_comes_back() {
 async fn edits_reactions_and_redactions_do_not_rebuild_the_timeline() {
     let mut chat = Chat::open().await;
     chat.bot_room
-        .send_text("流式的第一版")
+        .send_text("流式的第一版", &[])
         .await
         .expect("Bot 发消息");
     chat.timeline
@@ -243,13 +243,16 @@ async fn edits_reactions_and_redactions_do_not_rebuild_the_timeline() {
 #[ignore = "需要 Docker，用 --include-ignored 运行"]
 async fn an_open_room_gets_its_earlier_messages_back_after_the_sync_starts_over() {
     let mut chat = Chat::open().await;
-    chat.bot_room.send_text("之前的").await.expect("Bot 发消息");
+    chat.bot_room
+        .send_text("之前的", &[])
+        .await
+        .expect("Bot 发消息");
     chat.timeline
         .until("之前的", |item| text(item, "之前的"))
         .await;
 
     chat.bot_room
-        .send_text("同一批的")
+        .send_text("同一批的", &[])
         .await
         .expect("Bot 发消息");
     chat.timeline
@@ -291,7 +294,10 @@ async fn an_open_room_gets_its_earlier_messages_back_after_the_sync_starts_over(
         tokio::time::sleep(Duration::from_millis(50)).await;
     }
     chat.timeline.until_cleared().await;
-    chat.bot_room.send_text("之后的").await.expect("Bot 发消息");
+    chat.bot_room
+        .send_text("之后的", &[])
+        .await
+        .expect("Bot 发消息");
 
     // 重建已经发生，前面的消息只可能靠往回翻补回来。
     chat.timeline

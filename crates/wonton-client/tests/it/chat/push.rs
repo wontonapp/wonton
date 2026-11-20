@@ -97,7 +97,8 @@ async fn a_bot_reply_wakes_a_killed_app_and_shows_the_decrypted_text() {
     // App 被杀，Bot 这时回复：房间密钥经 to-device 发给手机，手机还没收到。
     drop(phone);
     let bot_room = bot.open_room(&room_id).await.expect("Bot 打开私聊");
-    bot_room.send_text("你的快递到了").await.expect("Bot 回复");
+    let sent = bot_room.send_text("你的快递到了", &[]).await;
+    sent.expect("Bot 回复");
     let pushed = home
         .push
         .wait_for("推送代理收到 Bot 回复的通知", |received| {
@@ -275,7 +276,8 @@ async fn a_push_from_a_server_you_are_not_on_is_fetched_from_that_server() {
     phone.wait_chat("B 上推送已登记", registered).await;
 
     let bot_room = bot.open_room(&room_id).await.expect("Bot 打开私聊");
-    bot_room.send_text("A 上的新消息").await.expect("Bot 回复");
+    let sent = bot_room.send_text("A 上的新消息", &[]).await;
+    sent.expect("Bot 回复");
     let pushed = a
         .push
         .wait_for("A 的推送代理收到通知", |received| {

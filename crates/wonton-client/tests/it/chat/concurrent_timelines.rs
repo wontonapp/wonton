@@ -1,6 +1,7 @@
 //! Independent conversation subscriptions use the real Matrix fixture, without native windows.
 
 use wonton_client::{Action, TimelineScroll, TimelineViewport};
+use wonton_matrix::ChatRoom;
 use wonton_protocol::{PanelScope, TimelineAction, TimelineTarget};
 
 use super::support::{Home, Phone, Timeline};
@@ -24,8 +25,8 @@ async fn concurrent_rooms_and_duplicate_subscriptions_keep_receiving_after_cance
     let mut first = Timeline::open(&phone, first_id.as_str()).await;
     let mut duplicate = Timeline::open(&phone, first_id.as_str()).await;
     let mut second = Timeline::open(&phone, second_id.as_str()).await;
-    first_room.send_text("first live").await.unwrap();
-    second_room.send_text("second live").await.unwrap();
+    send(&first_room, "first live").await;
+    send(&second_room, "second live").await;
     first
         .until("first room updates", |item| text(item, "first live"))
         .await;
@@ -37,7 +38,7 @@ async fn concurrent_rooms_and_duplicate_subscriptions_keep_receiving_after_cance
         .await;
     first.report_scroll(TimelineScroll::Away).await;
     duplicate.report_scroll(TimelineScroll::Bottom).await;
-    first_room.send_text("independent scroll").await.unwrap();
+    send(&first_room, "independent scroll").await;
     first
         .until("away window receives", |item| {
             text(item, "independent scroll")
@@ -69,19 +70,13 @@ async fn concurrent_rooms_and_duplicate_subscriptions_keep_receiving_after_cance
     .await;
     duplicate.cancel();
     assert!(duplicate.is_closed().await);
-    first_room
-        .send_text("after duplicate closes")
-        .await
-        .unwrap();
+    send(&first_room, "after duplicate closes").await;
     first
         .until("remaining window receives", |item| {
             text(item, "after duplicate closes")
         })
         .await;
-    second_room
-        .send_text("other room still live")
-        .await
-        .unwrap();
+    send(&second_room, "other room still live").await;
     second
         .until("other room not revoked", |item| {
             text(item, "other room still live")
@@ -92,7 +87,7 @@ async fn concurrent_rooms_and_duplicate_subscriptions_keep_receiving_after_cance
     assert!(first.is_closed().await);
     assert!(second.is_closed().await);
     let mut reopened = Timeline::open(&phone, first_id.as_str()).await;
-    first_room.send_text("fresh subscription").await.unwrap();
+    send(&first_room, "fresh subscription").await;
     reopened
         .until("reopened room receives", |item| {
             text(item, "fresh subscription")
@@ -183,4 +178,8 @@ async fn independent_panels(
         .await
         .expect("each room receives only its own panel");
     }
+}
+
+async fn send(room: &ChatRoom, text: &str) {
+    room.send_text(text, &[]).await.unwrap();
 }
