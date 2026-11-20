@@ -398,6 +398,7 @@ async fn chat_with_the_bot(phone: &Phone, bot: &MatrixSession, room_id: &OwnedRo
     phone
         .dispatch(Action::Timeline {
             action: TimelineAction::SendImage {
+                caption: None,
                 target: TimelineTarget {
                     room_id: room_id.to_string(),
                     thread_root: None,

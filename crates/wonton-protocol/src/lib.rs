@@ -312,7 +312,7 @@ pub use registry_mirror::{
     RegistryMirrorTests, RegistryMirrorUpdate, RegistryMirrorViewModel, RegistryProbe,
     RegistryProblem,
 };
-pub use reply::{ComposerDraft, QuotedContent, QuotedMessage, ReplyQuote};
+pub use reply::{ComposerDraft, ComposerEdit, QuotedContent, QuotedMessage, ReplyQuote};
 pub use roles::{
     AdminScope, AiLevel, AppScope, BOT_AI_LEVEL_ENV, CAPABILITIES_HEADER, Capability,
     DEFAULT_INVITE_ROLE_PATH, Gate, JOIN_REQUESTS_PATH, JoinOutcome, JoinRequest, JoinRequestList,

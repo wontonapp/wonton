@@ -95,6 +95,10 @@ pub struct TimelineUpdate {
     /// 回到这里，为空时才滚到底。壳报告回到底部（[`TimelineScroll::Bottom`]）后核心清空。
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub back_to: Option<String>,
+    /// 输入框正在编辑哪条（ADR-0109 第 9 节），每一批都带当前值。有值时输入框上方画一条“编辑消息”和原文摘要、
+    /// 带取消，发送键变成确认；正文由壳从 [`MessageAction::Edit`] 的 `text` 预填，原草稿在取消后由核心恢复。
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub editing: Option<crate::ComposerEdit>,
 }
 
 /// 解不开的消息旁边的入口，壳按它写按钮。
@@ -340,7 +344,7 @@ pub enum MessageReceipt {
     Other,
 }
 
-/// 长按消息的菜单里的一项。
+/// 长按消息的菜单里的一项，按 Telegram 的菜单顺序。
 #[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize)]
 #[cfg_attr(feature = "uniffi", derive(uniffi::Enum))]
 #[serde(tag = "type", rename_all = "snake_case")]
@@ -350,6 +354,11 @@ pub enum MessageAction {
     /// 回复这条：壳把 `message` 画在输入框上方，发送时把它的事件 ID 作为 `reply_to` 交回，并用
     /// [`TimelineAction::SetDraft`](crate::TimelineAction::SetDraft) 记进草稿。有这一项时壳也允许左滑这条消息来回复（ADR-0109）。
     Reply { message: QuotedMessage },
+    /// 编辑这条（ADR-0109 第 9 节）：壳把 `text` 预填进输入框，再发 [`TimelineAction::StartEdit`](crate::TimelineAction::StartEdit)
+    /// 让核心进入编辑态，输入框上方画编辑条；确认时发 [`TimelineAction::EditMessage`](crate::TimelineAction::EditMessage)。
+    ///
+    /// 只在有事件 ID、自己发的、没撤回的文字消息上有。
+    Edit { text: String },
     /// 转发到另一个房间（[`TimelineAction::ForwardMessage`](crate::TimelineAction::ForwardMessage)），壳先让主人选房间。
     Forward,
     /// 撤回（[`TimelineAction::RedactMessage`](crate::TimelineAction::RedactMessage)）：所有人那里都会变成“已撤回”，壳先请主人确认。
@@ -586,7 +595,8 @@ mod tests {
 
     use super::*;
     use crate::{
-        Answer, CardChoice, CardLine, ChatFailure, ChatProblem, ConfirmationCard, ConfirmationState,
+        Answer, CardChoice, CardLine, ChatFailure, ChatProblem, ComposerEdit, ConfirmationCard,
+        ConfirmationState,
     };
 
     /// 条目列表的样例，从下面的往返测试里挪出来，函数保持在门禁行数内。
@@ -651,6 +661,8 @@ mod tests {
                     choices: vec![AgentRunChoice {
                         key: "allow".into(),
                         label: "继续".into(),
+                        chosen: true,
+                        send: crate::ChoiceSend::Sending,
                     }],
                     sender_name: "Hermes".into(),
                     timestamp_ms: 1_793_000_000_000,
@@ -769,11 +781,58 @@ mod tests {
             }),
             jump: crate::JumpState::Loading,
             back_to: Some("5".into()),
+            editing: Some(ComposerEdit {
+                item_id: "3".into(),
+                event_id: "$event".into(),
+                summary: "原来的话".into(),
+            }),
         };
         assert_eq!(round_trip(&update), update);
+        let value = serde_json::to_value(&update).unwrap();
+        assert_eq!(value["editing"]["item_id"], "3");
+        assert_eq!(value["editing"]["summary"], "原来的话");
         assert!(
             !format!("{update:?}").contains("mxc://"),
             "Debug 不能输出媒体句柄"
+        );
+    }
+
+    /// 契约：没在编辑时 `editing` 是 null，老核心不写这个字段时也照样解析成没在编辑。
+    #[test]
+    fn editing_is_null_until_somebody_starts_an_edit() {
+        let mut update = TimelineUpdate {
+            diffs: Vec::new(),
+            back_pagination: BackPagination::ReachedStart,
+            viewport: TimelineViewport::Bottom,
+            scroll_to_bottom: false,
+            anchor: None,
+            panel: Vec::new(),
+            panel_selected: None,
+            key_notice: None,
+            confirmations: Vec::new(),
+            side_chat: None,
+            widgets: Vec::new(),
+            call_active: false,
+            room_bots: None,
+            typing: Vec::new(),
+            commands: Vec::new(),
+            commands_omitted: 0,
+            focus: None,
+            jump: crate::JumpState::Idle,
+            back_to: None,
+            editing: None,
+        };
+        let mut value = serde_json::to_value(&update).unwrap();
+        assert_eq!(value["editing"], serde_json::Value::Null);
+        assert_eq!(
+            serde_json::from_value::<TimelineUpdate>(value.clone()).unwrap(),
+            update
+        );
+        value.as_object_mut().unwrap().remove("editing");
+        update.editing = None;
+        assert_eq!(
+            serde_json::from_value::<TimelineUpdate>(value).unwrap(),
+            update
         );
     }
 
@@ -829,6 +888,7 @@ mod tests {
             focus: None,
             jump: crate::JumpState::Idle,
             back_to: None,
+            editing: None,
         };
         let mut value = serde_json::to_value(empty()).unwrap();
         value.as_object_mut().unwrap().remove("key_notice");
@@ -919,6 +979,20 @@ mod tests {
         }
         let state: SendState = serde_json::from_str(r#"{"type":"sending"}"#).unwrap();
         assert_eq!(state, SendState::Sending { progress: None });
+    }
+
+    /// 契约：编辑菜单项带着被编辑消息的原文往返，壳靠它预填输入框。
+    #[test]
+    fn edit_action_carries_the_original_text() {
+        let action = MessageAction::Edit {
+            text: "原来的话".into(),
+        };
+        let json = serde_json::json!({"type": "edit", "text": "原来的话"});
+        assert_eq!(serde_json::to_value(&action).unwrap(), json);
+        assert_eq!(
+            serde_json::from_value::<MessageAction>(json).unwrap(),
+            action
+        );
     }
 
     /// 契约：每个链接类别都能经 JSON 往返，壳收到的类别和地址都还在。

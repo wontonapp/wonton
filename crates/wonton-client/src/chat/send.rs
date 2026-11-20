@@ -160,6 +160,7 @@ impl ChatLink {
         self: &Arc<Self>,
         key: &TimelineKey,
         image: ImageUpload,
+        _caption: Option<&str>,
         reply_to: Option<&str>,
     ) -> Result<(), CoreError> {
         if !image.mime_type.starts_with("image/") {

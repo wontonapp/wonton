@@ -93,6 +93,7 @@ pub(super) fn kinds(actions: &[MessageAction]) -> Vec<&'static str> {
         .map(|action| match action {
             MessageAction::Copy { .. } => "copy",
             MessageAction::Reply { .. } => "reply",
+            MessageAction::Edit { .. } => "edit",
             MessageAction::Forward => "forward",
             MessageAction::Redact => "redact",
         })

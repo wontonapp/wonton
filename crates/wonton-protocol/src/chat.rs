@@ -651,6 +651,7 @@ mod tests {
                         room_id: "!a:home.example".into(),
                         thread_root: None,
                     },
+                    caption: None,
                     image: image.clone(),
                     reply_to: None,
                 },

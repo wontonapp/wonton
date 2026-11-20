@@ -471,8 +471,14 @@ impl ChatLink {
             TimelineAction::SendImage {
                 target,
                 image,
+                caption,
                 reply_to,
-            } => self.send_image(&TimelineKey::parse(&target)?, image, reply_to.as_deref()),
+            } => self.send_image(
+                &TimelineKey::parse(&target)?,
+                image,
+                caption.as_deref(),
+                reply_to.as_deref(),
+            ),
             TimelineAction::ForwardMessage {
                 target,
                 item_id,
@@ -542,7 +548,12 @@ impl ChatLink {
             | TimelineAction::RemoveAttachment { .. }
             | TimelineAction::RetryAttachment { .. }
             | TimelineAction::RetryOutgoing { .. }
-            | TimelineAction::CancelOutgoing { .. } => {
+            | TimelineAction::CancelOutgoing { .. }
+            // 编辑和正在输入先只在接口里（下一条 PR 才连核心）。
+            | TimelineAction::StartEdit { .. }
+            | TimelineAction::CancelEdit { .. }
+            | TimelineAction::EditMessage { .. }
+            | TimelineAction::SetTyping { .. } => {
                 Err(invalid(&l10n!(CATALOG, language(), "chat-invalid-action")))
             }
         }
