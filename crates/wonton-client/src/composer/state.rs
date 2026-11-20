@@ -127,7 +127,8 @@ impl Outgoing {
     fn view(&self) -> OutgoingMessage {
         let state = match &self.failure {
             Some(message) => SendState::Failed {
-                message: message.clone(),
+                failure: wonton_protocol::SendFailure::Other,
+                details: Some(message.clone()),
                 recoverable: false,
             },
             None => SendState::Sending {

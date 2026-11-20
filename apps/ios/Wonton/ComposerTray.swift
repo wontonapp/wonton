@@ -196,10 +196,27 @@ extension AttachmentFailure {
         case .tooLarge: .Composer.composerAttachmentTooLarge
         case .sourceUnavailable: .Composer.composerAttachmentSourceUnavailable
         case .storageFull: .Composer.composerAttachmentStorageFull
+        case .unsupportedType: .Composer.composerAttachmentUnsupportedType
+        case .replyTarget: .Composer.composerAttachmentReplyTarget
         case .rejected: .Composer.composerAttachmentRejected
         case .upstream: .Composer.composerAttachmentUpstream
         case .localStorage: .Composer.composerAttachmentLocalStorage
         case .other: .Composer.composerAttachmentFailed
+        }
+    }
+}
+
+extension SendFailure {
+    /// 类别由核心给，说法在壳里；英文原文在 `SendState.Failed.details`，放进面板的标题。
+    var text: LocalizedStringResource {
+        switch self {
+        case .offline: .Message1.messageSendFailureOffline
+        case .tooLarge: .Message1.messageSendFailureTooLarge
+        case .unsupportedType: .Message1.messageSendFailureUnsupportedType
+        case .replyTarget: .Message1.messageSendFailureReplyTarget
+        case .rejected: .Message1.messageSendFailureRejected
+        case .upstream: .Message1.messageSendFailureUpstream
+        case .other: .Message1.messageSendFailureOther
         }
     }
 }
