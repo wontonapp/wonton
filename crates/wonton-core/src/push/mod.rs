@@ -151,6 +151,7 @@ impl Push {
             room_name: None,
             prio: None,
             contact_request: Some(request),
+            category: None,
         };
         let plaintext = serde_json::to_vec(&payload).expect("推送内容总能序列化");
         for device in self.devices_of(user) {
