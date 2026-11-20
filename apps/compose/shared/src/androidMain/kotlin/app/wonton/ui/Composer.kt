@@ -116,20 +116,25 @@ fun Composer(
     val viaTray = attachments.isNotEmpty() || composer?.outgoing.orEmpty().isNotEmpty()
     val roomId = target.roomId
     val inSideChat = target.threadRoot != null
-    // 旁聊里照片不进附件区，选好就发；回复跟着这张照片发出去。核心没收下就都留着，原因给出去。
+    // 旁聊里照片不进附件区，选好就发；输入框里的字只当第一张的说明，回复跟着这张照片发出去。
     val sendImage = if (inSideChat) {
-        { upload: ImageUpload ->
-            val problem = core.send(Action.Timeline(TimelineAction.SendImage(target, upload, reply?.eventId)))
-            if (problem != null) {
+        { upload: ImageUpload, caption: String? ->
+            val problem =
+                core.send(
+                    Action.Timeline(
+                        TimelineAction.SendImage(target, upload, caption = caption, replyTo = reply?.eventId),
+                    ),
+                )
+            if (problem == null) {
+                if (caption != null) onSent() else if (reply != null) onReplyCancel()
+            } else {
                 onReject(problem)
-            } else if (reply != null) {
-                onReplyCancel()
             }
         }
     } else {
         null
     }
-    val attach = rememberAttachments(roomId, composer, core, onReject, sendImage)
+    val attach = rememberAttachments(roomId, composer, core, onReject, sendImage, draft)
     val isEmpty = draft.isBlank() && attachments.isEmpty()
     val focusRequester = remember { FocusRequester() }
     LaunchedEffect(focusToken) { if (focusToken > 0) focusRequester.requestFocus() }
@@ -288,7 +293,8 @@ private fun rememberAttachments(
     composer: ComposerViewModel?,
     core: ClientCore,
     onReject: (Problem) -> Unit,
-    sendImage: ((ImageUpload) -> Unit)?,
+    sendImage: ((ImageUpload, caption: String?) -> Unit)?,
+    draft: String,
 ): Attachments {
     val context = LocalContext.current
     val scope = rememberCoroutineScope()
@@ -303,12 +309,19 @@ private fun rememberAttachments(
     val currentSendImage by rememberUpdatedState(sendImage)
     val addPhotos = { uris: List<Uri> ->
         scope.launch {
+            // 输入框里的字只当第一张发出去的照片的说明（跟 Telegram 一样）。
+            var caption = draft.trim().takeIf { it.isNotEmpty() }
             // 按选的顺序放：发出去也是这个顺序。
             uris.forEach { uri ->
                 PhotoUpload.make(context, uri).fold(
                     onSuccess = { upload ->
                         val send = currentSendImage
-                        if (send != null) send(upload) else addImage(core, roomId, upload)?.let(onReject)
+                        if (send != null) {
+                            send(upload, caption)
+                            caption = null
+                        } else {
+                            addImage(core, roomId, upload)?.let(onReject)
+                        }
                     },
                     onFailure = { failure -> onReject(Problem(photoUnreadable, photoTryAnother, failure.message)) },
                 )

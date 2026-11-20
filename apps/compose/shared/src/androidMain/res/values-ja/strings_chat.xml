@@ -36,7 +36,6 @@
     <string name="timeline_edited">編集済み</string>
     <string name="timeline_sending">保存済み、未配信</string>
     <string name="timeline_send_failed_retrying">送信できませんでした。自動で再試行します</string>
-    <string name="timeline_send_failed">送信できませんでした：%1$s</string>
     <string name="timeline_resend">再送信</string>
     <string name="timeline_undecryptable">復号できません：このデバイスにこのメッセージの鍵がありません</string>
     <string name="timeline_undecryptable_notice">このデバイスでは以前の暗号化メッセージを読めません。</string>
@@ -158,4 +157,11 @@
     <string name="timeline_typing_more">%1$s さんとほか %2$d 人が入力中…</string>
     <!-- ジャンプ先のメッセージが見つからないときの軽いヒント。引数なし。 -->
     <string name="timeline_jump_unavailable">そのメッセージはもうありません</string>
+    <string name="timeline_send_failure_offline">接続できません</string>
+    <string name="timeline_send_failure_too_large">大きすぎます。ファイルで送ってください</string>
+    <string name="timeline_send_failure_unsupported_type">この形式は送れません</string>
+    <string name="timeline_send_failure_reply_target">返信元のメッセージがありません</string>
+    <string name="timeline_send_failure_rejected">サーバーに拒否されました</string>
+    <string name="timeline_send_failure_upstream">サーバーの問題</string>
+    <string name="timeline_send_failed_other">送信できませんでした</string>
 </resources>

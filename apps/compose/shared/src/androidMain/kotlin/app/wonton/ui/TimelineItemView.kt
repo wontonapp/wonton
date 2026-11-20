@@ -464,6 +464,18 @@ private fun TimeCapsule(message: TimelineMessage, modifier: Modifier) {
     }
 }
 
+/** 这一条是不是它那一组的最后一条：组尾才画尾巴。 */
+internal val TimelineItem.endsRun: Boolean
+    get() = message?.let { it.run == MessageRun.ALONE || it.run == MessageRun.LAST } == true
+
+/** 气泡后面闪光的不透明度，只在跳转落到这一条时用。 */
+private const val FLASH_ALPHA = 0.16f
+
+/** 脚注里钟表的轻重：和正文的墨色有区分。 */
+private const val FOOTER_ICON_ALPHA = 0.7f
+
+/** 图片上时间胶囊的底色。 */
+private val TIME_CAPSULE_BG = Color.Black.copy(alpha = 0.45f)
 @Composable
 private fun MessageBody(
     body: MessageContent,
@@ -504,15 +516,3 @@ private fun MessageBody(
 val TimelineMessage.replyAction: MessageAction.Reply?
     get() = actions.firstOrNull { it is MessageAction.Reply } as? MessageAction.Reply
 
-/** 这一条是不是它那一组的最后一条：组尾才画尾巴。 */
-internal val TimelineItem.endsRun: Boolean
-    get() = message?.let { it.run == MessageRun.ALONE || it.run == MessageRun.LAST } == true
-
-/** 气泡后面闪光的不透明度，只在跳转落到这一条时用。 */
-private const val FLASH_ALPHA = 0.16f
-
-/** 脚注里钟表的轻重：和正文的墨色有区分。 */
-private const val FOOTER_ICON_ALPHA = 0.7f
-
-/** 图片上时间胶囊的底色。 */
-private val TIME_CAPSULE_BG = Color.Black.copy(alpha = 0.45f)

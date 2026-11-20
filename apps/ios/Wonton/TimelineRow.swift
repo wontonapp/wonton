@@ -177,7 +177,7 @@ private struct MessageBubble: View {
                         .contentShape(.contextMenuPreview, shape)
                         .contextMenu {
                             ForEach(Array(message.actions.enumerated()), id: \.offset) { _, action in
-                                menuItem(action)
+                                if case .edit = action {} else { menuItem(action) }
                             }
                             Section {
                                 Text(.Message1.messageSentAt(sentAt))
@@ -217,6 +217,8 @@ private struct MessageBubble: View {
                 Label { Text(.Message0.messageReply) } icon: { Image(systemName: "arrowshape.turn.up.left") }
             }
             .accessibilityIdentifier("messageReply")
+        case .edit:
+            EmptyView()
         case .forward:
             Button {
                 forward()
@@ -337,10 +339,10 @@ private struct MessageBubble: View {
 
     /// 发送失败：气泡旁的红色感叹号，点它重发或删除；原因写在面板的标题上。
     @ViewBuilder private var failedBadge: some View {
-        if case let .failed(reason, recoverable) = message.sendState {
+        if case let .failed(failure, details, recoverable) = message.sendState {
             let title = recoverable
                 ? String(localized: .Message2.messageSendFailedRetrying)
-                : String(localized: .Message1.messageSendFailed(reason))
+                : details ?? String(localized: failure.text)
             Button {
                 isChoosingFailed = true
             } label: {

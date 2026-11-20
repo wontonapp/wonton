@@ -40,4 +40,6 @@
     <string name="composer_stop_forbidden">你沒有權限停下這一輪。</string>
     <!-- One-line note above the chat composer: the stop request may not have reached the home server, so it is unknown whether the bot's turn stopped. The stop button stays for another try. -->
     <string name="composer_stop_uncertain">沒連上家裡的伺服器，不確定停下沒有。可以再試一次。</string>
+    <string name="composer_attachment_unsupported_type">這個格式傳不上去</string>
+    <string name="composer_attachment_reply_target">要回覆的那則不在了，去掉回覆</string>
 </resources>

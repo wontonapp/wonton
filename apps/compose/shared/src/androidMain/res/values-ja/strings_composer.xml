@@ -40,4 +40,6 @@
     <string name="composer_commands">コマンド</string>
     <!-- コマンド一覧の末尾：一覧に出ていない件数。引数：件数。 -->
     <string name="composer_commands_more">ほか %1$d 件のコマンドは表示していません</string>
+    <string name="composer_attachment_unsupported_type">この形式はアップロードできません</string>
+    <string name="composer_attachment_reply_target">返信元がありません。返信を外してください</string>
 </resources>
