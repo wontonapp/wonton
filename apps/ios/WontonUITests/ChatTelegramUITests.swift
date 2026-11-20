@@ -514,7 +514,7 @@ final class ChatTelegramUITests: XCTestCase {
         // 有人在打字的提示占着顶栏那一行时量它的下沿，没有人打字就量顶栏头像的下沿。
         let activity = app.staticTexts["barActivity"]
         let top = activity.exists ? activity.frame.maxY : app.buttons["roomTopBarAvatar"].frame.maxY
-        let cover = [element("sideChatAttachHint"), element("composerTray")].filter(\.exists).map(\.frame.minY)
+        let cover = [element("sideChatAttachHint"), element("composerTray")].filter { $0.exists }.map { $0.frame.minY }
         let bottom = min(app.textViews["Message"].frame.minY, cover.min() ?? .infinity)
         return node.frame.minY > top && node.frame.maxY < bottom
     }
