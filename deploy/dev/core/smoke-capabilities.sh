@@ -14,7 +14,10 @@ done
 [[ -n "${WONTON_DEV_CORE_SUBNET:-}" ]] || fail '先经 stack-slot.sh acquire -- 运行，见 README'
 [[ "$(openssl version)" == OpenSSL\ [3-9]* ]] || fail '需要 OpenSSL 3+'
 case "${DOCKER_HOST:-}" in ssh://* | tcp://*) fail '仅支持目标主机的本机 Docker' ;; esac
+# shellcheck source=deploy/dev/core/dev-guard.sh
+source "$here/dev-guard.sh"
 export WONTON_DEV_PROJECT="${WONTON_DEV_PROJECT:-wonton-capability-$(date +%s)-$$}"
+dev_guard_check "$WONTON_DEV_PROJECT"
 [[ "$WONTON_DEV_PROJECT" =~ ^wonton-capability-[a-z0-9-]+$ ]] || fail '项目名须为 wonton-capability-<唯一后缀>'
 export WONTON_DEV_INSTANCE="cp$(openssl rand -hex 6)"
 export WONTON_DEV_PORT="${WONTON_DEV_PORT:-18571}"

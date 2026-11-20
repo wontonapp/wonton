@@ -40,6 +40,7 @@ python3 deploy/dev/core/instance-label_test.py
 python3 deploy/dev/core/dev_test.py
 python3 deploy/dev/core/port-preflight_test.py
 python3 deploy/dev/core/smoke-lib_test.py
+python3 deploy/dev/core/dev-guard_test.py
 python3 scripts/check-ui-text.py
 python3 scripts/check-dev-compose-ports.py
 bash scripts/check-conflict-markers.sh

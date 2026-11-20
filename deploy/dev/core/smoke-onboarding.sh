@@ -18,6 +18,8 @@ set -euo pipefail
 here="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 repo="$(cd "$here/../../.." && pwd)"
 dev="$here/dev.sh"
+# shellcheck source=deploy/dev/core/dev-guard.sh
+source "$here/dev-guard.sh"
 
 export WONTON_DEV_PROJECT=wonton-onboarding-smoke
 # 带实例名：清理只动这个实例的资源。冒烟一次只跑一个。
@@ -30,6 +32,7 @@ export WONTON_DEV_DATA="/tmp/wonton-onboarding-smoke-$(date +%s)-$$"
 export WONTON_DEV_DEFAULT_PLUGINS=''
 # 出网代理（ADR-0023）：模型网关的上游经出口容器走。要不要设见文件头的说明。
 export WONTON_EGRESS_PROXY="${WONTON_SMOKE_EGRESS_PROXY:-}"
+dev_guard_check "$WONTON_DEV_PROJECT"
 WONTON_BUILD_COMMIT="$("$dev" commit)"
 export WONTON_BUILD_COMMIT
 core="$WONTON_DEV_PROJECT"

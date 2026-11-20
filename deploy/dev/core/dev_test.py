@@ -129,6 +129,8 @@ class DevScriptTest(unittest.TestCase):
         core = self.temp / "deploy/dev/core"
         core.mkdir(parents=True)
         shutil.copy(DEV_SH, core / "dev.sh")
+        # dev.sh 会 source 同目录的这两份（守卫和诊断），副本树里也要有。
+        shutil.copy(HERE / "dev-guard.sh", core / "dev-guard.sh")
         shutil.copy(HERE / "diag.sh", core / "diag.sh")
         return core
 

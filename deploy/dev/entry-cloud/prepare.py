@@ -7,9 +7,11 @@ from pathlib import Path
 import re
 import secrets
 import subprocess
+import sys
 
 ROOT = Path(__file__).resolve().parent
 RUNTIME = ROOT / ".runtime"
+GUARD = ROOT.parent / "core/dev-guard.sh"
 
 
 def write(relative, text, mode=0o644):
@@ -213,6 +215,10 @@ def settings():
         raise SystemExit("WONTON_HOME_ZONE must be a lowercase .test DNS zone")
     if not re.fullmatch(r"[a-z0-9][a-z0-9_-]*", values["COMPOSE_PROJECT_NAME"]):
         raise SystemExit("Invalid Compose project name")
+    guarded = subprocess.run(["bash", str(GUARD), values["COMPOSE_PROJECT_NAME"]], capture_output=True, text=True)
+    if guarded.returncode:
+        sys.stderr.write(guarded.stderr)
+        raise SystemExit(guarded.returncode)
     values.setdefault("WONTON_ENTRY_NETWORK", values["COMPOSE_PROJECT_NAME"] + "-entry")
     if not re.fullmatch(r"[a-zA-Z0-9][a-zA-Z0-9_.-]*", values["WONTON_ENTRY_NETWORK"]):
         raise SystemExit("Invalid Docker network name")

@@ -23,6 +23,15 @@ REPO = HERE.parents[2]
 SLOT = Path.home() / "wonton-dev/stack-slot.sh"
 RUNTIME_IMAGE = "public.ecr.aws/docker/library/debian:trixie-slim@sha256:f6b08b09a05725f9431502d3b5714f5c4576e82c1a84fa1debe0c24a7e0c3ec4"
 CURL_IMAGE = "curlimages/curl:8.16.0@sha256:463eaf6072688fe96ac64fa623fe73e1dbe25d8ad6c34404a669ad3ce1f104b6"
+GUARD = HERE.parent / "core/dev-guard.sh"
+
+
+def guard(project):
+    """旁有正式安装的栈占着这个名字或目录时停下，别拿它的栈当自己的冒烟对象。"""
+    result = subprocess.run(["bash", str(GUARD), project], capture_output=True, text=True)
+    if result.returncode:
+        sys.stderr.write(result.stderr)
+        raise SystemExit(result.returncode)
 
 
 def run(*args, input=None, env=None, check=True, timeout=180):

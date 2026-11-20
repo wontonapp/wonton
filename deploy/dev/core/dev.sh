@@ -63,6 +63,9 @@ set -euo pipefail
 here="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 repo="$(cd "$here/../../.." && pwd)"
 # 本检出（这个 deploy/dev/core）在跑的 compose 项目：compose 自己会打 working_dir 标签，拿它反查。
+# shellcheck source=deploy/dev/core/dev-guard.sh
+. "$here/dev-guard.sh"
+
 detect_project() {
   docker ps -a --filter "label=com.docker.compose.project.working_dir=$here" \
     --format '{{.Label "com.docker.compose.project"}}' 2>/dev/null | sort -u
@@ -709,6 +712,7 @@ case "${1:-}" in
       (( ${#pending[@]} )) || pending=(share-smoke)
       exec bash "$0" "${pending[@]}" "${@:2}"
     fi
+    dev_guard_check "$core"
     # 端口冲突在构建之前查出来：compose 要到绑定时才报，那时已经构建完了。
     "$here/port-preflight.sh" "$core" "$WONTON_DEV_PORT" "$WONTON_DEV_TUNNEL_PORT" || exit 1
     case "${DOCKER_HOST:-}" in ssh://* | tcp://*) ;; *) mkdir -p "$WONTON_DEV_DATA" ;; esac
@@ -727,6 +731,7 @@ case "${1:-}" in
   commit) build_commit ;;
   build) build_image "${@:2}" ;;
   down)
+    dev_guard_check "$core"
     # 项目名没对上（没带环境变量、检出里又是别的实例）就拆默认项目其实拆的是别人的栈：先认本检出在跑的项目。
     # 项目名是自动认的、又认成了默认名：默认名全机共用，可能正是别的检出的栈（kh-walk 事故）。不许拆，除非显式指定。
     if [[ ${WONTON_DEV_PROJECT_AUTO:-} == 1 && $core == wonton-dev-core ]]; then
@@ -755,6 +760,7 @@ case "${1:-}" in
     fi
     ;;
   reset)
+    dev_guard_check "$core"
     remove_entry_components
     compose down --volumes
     rm -rf -- "$WONTON_DEV_RELAY"
