@@ -17,6 +17,8 @@ struct ComposerView: View {
     var commandsOmitted = 0
     /// 命令列表里每条命令旁的 Bot 头像。
     var commandAvatar: (RoomCommand) -> AnyView = { _ in AnyView(EmptyView()) }
+    /// 点回复条里的引用，跳到原消息（ADR-0109 第 4 节）。
+    var jumpToReply: (String) -> Void = { _ in }
     private var roomId: String { composer.roomId }
     /// 附件区只有主对话有（ADR-0093）：旁聊里字和照片直接发，不给选文件，粘贴文件提示去主对话发。
     private var isSideChat: Bool { composer.threadRoot != nil }
@@ -38,6 +40,8 @@ struct ComposerView: View {
     @State private var afterAttach: AfterAttach?
     /// 点“菜单”按钮打开的命令列表；敲“/”弹出的那一张不看它。
     @State private var showsCommands = false
+    /// 点了命令以后输入框里的“/…”原样留着；字还是这一句时列表不再按它弹，动一下字就恢复。
+    @State private var sentSlash = ""
     @FocusState private var isFocused: Bool
     @Environment(\.wontonColors) private var colors
 
@@ -87,6 +91,10 @@ struct ComposerView: View {
         // 打了别的字，“菜单”按钮打开的列表就收起；敲“/”弹的那张跟着字过滤。
         .onChange(of: draft.wrappedValue) { _, text in
             if !text.isEmpty { showsCommands = false }
+        }
+        // 翻时间线时列表收起，把列表让出来（ADR-0109 第 7 节）。
+        .onChange(of: pin.isScrolling) { _, scrolling in
+            if scrolling { showsCommands = false }
         }
         // 点了回复就把光标放进输入框。
         .onChange(of: model.replyFocusRevision) {
@@ -144,7 +152,8 @@ struct ComposerView: View {
             if let reply = model.replies[draftKey] {
                 ReplyQuoteView(
                     quote: reply, core: model.core, ink: Color(colors.textPrimary), accent: Color(colors.accentInk),
-                    cancel: { model.cancelReply(in: composer.target) }
+                    cancel: { model.cancelReply(in: composer.target) },
+                    jump: { jumpToReply(reply.eventId) }
                 )
                 .padding(.leading, WontonTheme.spacing.s12)
                 .padding(.trailing, WontonTheme.spacing.s4)
@@ -167,6 +176,7 @@ struct ComposerView: View {
     /// 输入框开头敲了“/”时，“/”后面的字：命令列表按它做前缀过滤。没敲“/”或者已经换行了为空。
     private var commandQuery: String? {
         let text = draft.wrappedValue
+        guard text != sentSlash else { return nil }
         guard text.hasPrefix("/"), !text.contains(where: \.isNewline) else { return nil }
         return String(text.dropFirst())
     }
@@ -179,11 +189,14 @@ struct ComposerView: View {
         return showsCommands ? commands : []
     }
 
-    /// 点了一条命令：直接发出核心给的那句，不用再按发送（ADR-0109 第 7 节）。
+    /// 点了一条命令：直接发出核心给的那句，不用再按发送（ADR-0109 第 7 节）。输入框里的草稿是主人正在写的，
+    /// 发完留着；回复对象跟着命令发出去，发出去才收起。
     private func run(_ command: RoomCommand) {
         pin.pin()
-        model.send(.timeline(action: .sendText(target: composer.target, body: command.text, replyTo: nil)))
-        draft.wrappedValue = ""
+        sentSlash = draft.wrappedValue
+        model.send(.timeline(action: .sendText(
+            target: composer.target, body: command.text, replyTo: model.replies[draftKey]?.eventId)))
+        model.cancelReply(in: composer.target)
         showsCommands = false
     }
 

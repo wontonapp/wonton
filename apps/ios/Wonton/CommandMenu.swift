@@ -67,6 +67,13 @@ struct CommandMenu: View {
                 .foregroundStyle(Color(colors.textPrimary))
                 .lineLimit(1)
                 .layoutPriority(1)
+            // 参数提示跟在名字后面（ADR-0109 第 7 节）。
+            if let hint = command.hint {
+                Text(verbatim: hint)
+                    .wontonText(WontonTheme.typography.caption)
+                    .foregroundStyle(Color(colors.textSecondary))
+                    .lineLimit(1)
+            }
             Text(command.description)
                 .wontonText(WontonTheme.typography.supporting)
                 .foregroundStyle(Color(colors.textSecondary))

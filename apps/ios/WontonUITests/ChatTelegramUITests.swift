@@ -70,7 +70,7 @@ final class ChatTelegramUITests: XCTestCase {
         shot("choices-answered")
     }
 
-    /// 输入框开头敲“/”弹出命令列表，按前缀过滤；点一条直接发出去，输入框清空；“菜单”按钮打开同一张列表。
+    /// 输入框开头敲“/”弹出命令列表，按前缀过滤；点一条直接发出去，输入框里的草稿留着、列表收起；“菜单”按钮打开同一张列表。
     func testSlashOpensCommandMenuAndTapSends() {
         enter(Self.directRoom)
         let field = app.textViews["Message"]
@@ -89,7 +89,7 @@ final class ChatTelegramUITests: XCTestCase {
         tap(commands[0])
         XCTAssertTrue(text(startingWith: "/help").waitForExistence(timeout: 5), "点了命令，时间线末尾没有这条消息")
         XCTAssertTrue(commands[0].waitForNonExistence(timeout: 5), "发出去以后列表没收起")
-        XCTAssertFalse(app.buttons["composerSend"].exists, "发出去以后输入框没清空")
+        XCTAssertEqual(field.value as? String, "/", "发出去以后输入框里的草稿没了")
 
         tap(app.buttons["composerCommands"])
         XCTAssertTrue(commands[2].waitForExistence(timeout: 5), "“菜单”按钮没打开命令列表")

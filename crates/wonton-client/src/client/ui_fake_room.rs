@@ -99,17 +99,17 @@ pub(super) fn timeline(room_id: &str) -> TimelineUpdate {
 
 fn commands() -> Vec<RoomCommand> {
     [
-        ("help", "Show help"),
-        ("model", "Switch model"),
-        ("new", "Start over"),
+        ("help", "Show help", None),
+        ("model", "Switch model", Some("model name")),
+        ("new", "Start over", None),
     ]
     .into_iter()
-    .map(|(name, description)| RoomCommand {
+    .map(|(name, description, hint)| RoomCommand {
         bot_user_id: ECHO.into(),
         bot_name: "Echo".into(),
         name: name.into(),
         description: description.into(),
-        hint: None,
+        hint: hint.map(Into::into),
         text: format!("/{name}"),
     })
     .collect()

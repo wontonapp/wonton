@@ -23,6 +23,8 @@ struct ReplyQuoteView: View {
     var cancel: (() -> Void)?
     /// 点了这条引用、核心还在往前翻页找原消息（ADR-0109 第 4 节）。
     var isLoading = false
+    /// 点了引用跳回原消息（ADR-0109 第 4 节）；只有输入框上方那一份给。
+    var jump: (() -> Void)?
 
     var body: some View {
         if cancel == nil {
@@ -55,15 +57,13 @@ struct ReplyQuoteView: View {
                     .frame(width: WontonTheme.size.quoteBar + 1, height: WontonTheme.size.chip)
                     .accessibilityHidden(true)
             }
-            Group {
-                switch quote {
-                case let .ready(message):
-                    content(message)
-                case .loading:
-                    ProgressView().controlSize(.small)
-                case .unavailable:
-                    line(Text(.Message2.messageQuoteUnavailable))
-                }
+            if let jump {
+                // 点引用本身跳回原消息（ADR-0109 第 4 节），叉还在右边、各管各的。
+                Button(action: jump, label: { quoteContent })
+                    .buttonStyle(.plain)
+                    .accessibilityIdentifier("replyQuoteJump")
+            } else {
+                quoteContent
             }
             if isLoading {
                 ProgressView().controlSize(.small)
@@ -81,6 +81,17 @@ struct ReplyQuoteView: View {
                 .accessibilityLabel(Text(.Message2.messageReplyCancel))
                 .accessibilityIdentifier("replyCancel")
             }
+        }
+    }
+
+    @ViewBuilder private var quoteContent: some View {
+        switch quote {
+        case let .ready(message):
+            content(message)
+        case .loading:
+            ProgressView().controlSize(.small)
+        case .unavailable:
+            line(Text(.Message2.messageQuoteUnavailable))
         }
     }
 
