@@ -152,4 +152,17 @@ impl ClientCore {
             })
             .await
     }
+
+    /// 假数据入口（`ui-fake`）用：把附件区里的一张标成上传失败，界面上马上看到失败的样子。
+    /// 不在假数据入口、或者附件区里没有这个附件时返回 `InvalidInput`，旁聊返回 `NotReady`。
+    pub fn fail_attachment_for_test(
+        &self,
+        target: TimelineTarget,
+        attachment_id: String,
+    ) -> Result<(), CoreError> {
+        let room_id = composer_room(&target)?;
+        self.scope()
+            .composer
+            .fail_for_test(&room_id, &attachment_id)
+    }
 }
