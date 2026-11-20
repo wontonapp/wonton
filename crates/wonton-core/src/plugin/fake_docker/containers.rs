@@ -81,6 +81,18 @@ pub(super) fn containers(
             docker.states.remove(*name);
             gone(docker.containers.remove(*name).is_some())
         }
+        (&Method::GET, [name, "json"])
+            if docker
+                .inspect_error
+                .as_ref()
+                .is_some_and(|(target, _)| target == name) =>
+        {
+            let (_, message) = docker.inspect_error.as_ref().unwrap();
+            json_reply(
+                StatusCode::INTERNAL_SERVER_ERROR,
+                json!({"message": message}),
+            )
+        }
         (&Method::GET, [name, "json"]) if exists(name) => inspect_container(docker, name),
         (&Method::POST, [name, "wait"]) if exists(name) => {
             let code = docker.outputs.get(*name).map_or(0, |o| o.0);
