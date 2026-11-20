@@ -148,6 +148,32 @@ final class ChatTelegramUITests: XCTestCase {
         shot("group-dark")
     }
 
+    /// 点主对话里的旁聊卡片进去：上面盖的是这间旁聊的对话，不是退回聊天列表。
+    func testSideChatOpens() {
+        enter(Self.directRoom)
+        waitForFloatingDateToFade()
+        openSideChat()
+        XCTAssertTrue(text(startingWith: "Fixture side 3").exists, "旁聊里没有最后一条回复")
+        XCTAssertTrue(app.buttons["barBack"].exists, "旁聊顶栏没有返回")
+        shot("side-chat")
+    }
+
+    /// 旁聊的附件面板只有相册：没有“文件”那一项，照片照常出得来。
+    func testSideChatAttachShowsPhotosOnly() {
+        enter(Self.directRoom)
+        waitForFloatingDateToFade()
+        openSideChat()
+        // 主对话被盖住时它的输入栏还在无障碍树里：要上面那间旁聊的那个。
+        let attaches = app.buttons.matching(identifier: "composerAttach").allElementsBoundByIndex
+        tap(attaches.first(where: { $0.isHittable }) ?? attaches[0])
+        let springboard = XCUIApplication(bundleIdentifier: "com.apple.springboard")
+        let allow = springboard.alerts.buttons.element(boundBy: 1)
+        if allow.waitForExistence(timeout: 10) { allow.tap() }
+        XCTAssertTrue(app.buttons["attachPhoto.0"].waitForExistence(timeout: 15), "旁聊的附件面板里没有照片\n\(app.debugDescription)")
+        XCTAssertFalse(app.buttons["attachFiles"].exists, "旁聊的附件面板里还有“文件”")
+        shot("side-chat-attach")
+    }
+
     /// 房间顶栏没有“打开面板”的按钮；点头像进 Bot 资料页，从那里打开这个房间的面板（ADR-0052）。
     func testPanelOpensFromBotProfile() {
         enter(Self.directRoom)
@@ -329,6 +355,33 @@ final class ChatTelegramUITests: XCTestCase {
         let start = app.coordinate(withNormalizedOffset: CGVector(dx: 0.5, dy: 0.35))
         start.press(forDuration: 0.05, thenDragTo: app.coordinate(withNormalizedOffset: CGVector(dx: 0.5, dy: 0.6)),
                     withVelocity: .default, thenHoldForDuration: 0.2)
+    }
+
+    /// 往后翻一段（往新消息那边），和 `dragDown` 相反。
+    private func dragUp() {
+        let start = app.coordinate(withNormalizedOffset: CGVector(dx: 0.5, dy: 0.6))
+        start.press(forDuration: 0.05, thenDragTo: app.coordinate(withNormalizedOffset: CGVector(dx: 0.5, dy: 0.3)),
+                    withVelocity: .default, thenHoldForDuration: 0.2)
+    }
+
+    /// 往新消息那边翻，直到这个元素整个在可见区里。
+    private func revealAfter(_ element: XCUIElement, file: StaticString = #filePath, line: UInt = #line) {
+        for _ in 0..<40 {
+            if inView(element) { return }
+            dragUp()
+        }
+        XCTFail("往后翻了 40 段也没找到 \(element)\n\(app.debugDescription)", file: file, line: line)
+    }
+
+    /// 点主对话里的旁聊卡片进去。翻到卡片后按当时的位置现算坐标：画布里的元素缓存下来的 frame 会过期。
+    private func openSideChat(file: StaticString = #filePath, line: UInt = #line) {
+        let card = app.buttons["sideChatCard.$ui-fake-5"]
+        revealAfter(card, file: file, line: line)
+        let f = card.frame
+        app.coordinate(withNormalizedOffset: .zero).withOffset(CGVector(dx: f.midX, dy: f.midY)).tap()
+        guard wait(10, until: { text(startingWith: "Fixture side ").exists }) else {
+            return XCTFail("点了旁聊卡片没进旁聊\n\(app.debugDescription)", file: file, line: line)
+        }
     }
 
     private func tap(_ element: XCUIElement, file: StaticString = #filePath, line: UInt = #line) {

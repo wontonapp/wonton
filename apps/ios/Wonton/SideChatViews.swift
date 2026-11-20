@@ -31,18 +31,23 @@ struct SideChatCover<Main: View>: View {
     var body: some View {
         let root = model.sideChats[roomId]
         let covered = root != nil
-        ZStack {
-            main()
-                .opacity(covered ? 0 : 1)
-                .allowsHitTesting(!covered)
-                .accessibilityHidden(covered)
-                .navigationBarBackButtonHidden(covered)
-            if let root {
-                NavigationStack {
-                    ChatRoomView(model: model, plugins: plugins, roomId: roomId, threadRoot: root, title: title)
+        // 盖层单开一张全屏页，不塞进房间自己的布局：房间被压进的 NavigationStack 里再套一层栈，内层在 ZStack 里
+        // 量不出高度，整页变空（iOS 26 模拟器实测，空的 `NavigationStack { Text }` 也一样）。
+        main()
+            .opacity(covered ? 0 : 1)
+            .allowsHitTesting(!covered)
+            .accessibilityHidden(covered)
+            .navigationBarBackButtonHidden(covered)
+            .fullScreenCover(isPresented: Binding(
+                get: { root != nil },
+                set: { if !$0 { model.closeSideChat(in: roomId) } }
+            )) {
+                if let root = model.sideChats[roomId] {
+                    NavigationStack {
+                        ChatRoomView(model: model, plugins: plugins, roomId: roomId, threadRoot: root, title: title)
+                    }
                 }
             }
-        }
     }
 }
 
@@ -123,6 +128,7 @@ struct SideChatCardView: View {
             .contentShape(RoundedRectangle(cornerRadius: WontonTheme.radii.card))
         }
         .buttonStyle(.plain)
+        .accessibilityIdentifier("sideChatCard.\(card.rootEventId)")
     }
 
     /// 数字超过 99 就写“99+”。

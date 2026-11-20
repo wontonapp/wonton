@@ -440,6 +440,7 @@ struct WontonPushedBar<Trailing: View>: View {
                 WontonIconButton(icon: icon, label: iconLabel) {
                     if let onClose { onClose() } else { dismiss() }
                 }
+                .accessibilityIdentifier("barBack")
             }
             Spacer(minLength: 0)
             trailing
