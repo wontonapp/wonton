@@ -124,6 +124,13 @@ pub(super) const FIRST_AT_MS: u64 = 1_792_000_000_000;
 pub(super) const REPLY_INDEX: usize = 21;
 /// Echo 带两个选项的那条。
 pub(super) const CHOICES_INDEX: usize = 22;
+/// 一条“表情 + 一行字”的短消息，下一条长中文回复引用它：引用块要只有名字加一两行高。
+pub(super) const QUOTED_INDEX: usize = 19;
+/// 引用上一条的长中文回复：几段长短不一，有的末行写满，用来查时间戳和正文重叠、长段被截断。
+pub(super) const LONG_REPLY_INDEX: usize = 20;
+// 中文假数据放在数据文件里：它是界面测试的输入，不是界面文字，界面文字检查（ADR-0043）只管源码里的字符串。
+const QUOTED_TEXT: &str = include_str!("ui_fake_text/quoted.txt");
+const LONG_REPLY: &str = include_str!("ui_fake_text/long_reply.txt");
 /// 每隔几条来一条比屏幕高的；最后一条也是。
 const TALL_EVERY: usize = 4;
 const TALL_PARAGRAPHS: usize = 60;
@@ -138,6 +145,14 @@ fn item(index: usize) -> TimelineItem {
             "Fixture approval".into(),
             "✅ = approve once\n❌ = deny".into(),
         ]
+    } else if index == QUOTED_INDEX {
+        vec![QUOTED_TEXT.trim_end().into()]
+    } else if index == LONG_REPLY_INDEX {
+        LONG_REPLY
+            .trim_end()
+            .split("\n\n")
+            .map(Into::into)
+            .collect()
     } else if last || index.is_multiple_of(TALL_EVERY) {
         (0..TALL_PARAGRAPHS)
             .map(|line| format!("Fixture message {index}, paragraph {line}: a long reply keeps going for a while."))
@@ -168,6 +183,18 @@ fn item(index: usize) -> TimelineItem {
                 sender_name: "Owner".into(),
                 content: QuotedContent::Text {
                     text: "Fixture message 5".into(),
+                },
+            },
+        });
+    }
+    if index == LONG_REPLY_INDEX {
+        message.reply = Some(ReplyQuote::Ready {
+            message: QuotedMessage {
+                event_id: format!("$ui-fake-{QUOTED_INDEX}"),
+                sender_id: OWNER.into(),
+                sender_name: "Owner".into(),
+                content: QuotedContent::Text {
+                    text: QUOTED_TEXT.trim_end().into(),
                 },
             },
         });
