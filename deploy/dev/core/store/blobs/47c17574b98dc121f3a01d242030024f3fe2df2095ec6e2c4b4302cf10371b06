@@ -6,14 +6,14 @@
 旁聊的引号沿用 ACP 桥的话题文字（四种语言都用「」，见 wonton-acp-bridge 的 locales/*/topics.ftl）。
 """
 NO_MODEL = {
-    "en": "No model is set up yet: open Apps → All-Purpose Bot (Hermes), add your AI provider's API key or sign in "
-    "under Keys, pick a model under Models, then message me again.",
-    "zh-Hans": "还没有设置模型：请打开「应用 → AI 管家（Hermes）」，在 Keys 页填模型服务商的 API key 或登录订阅，"
+    "en": "No model is set up yet: open Apps → All-Purpose Bot (Hermes), add an AI provider under Keys (fill in its "
+    "API key or sign in), pick a model under Models, then message me again.",
+    "zh-Hans": "还没有设置模型：请打开「应用 → AI 管家（Hermes）」，在 Keys 页新加一个模型服务商、填它的 API key 或登录订阅，"
     "再在 Models 页选一个模型，然后再给我发消息。",
-    "zh-Hant": "還沒有設定模型：請打開「應用程式 → AI 管家（Hermes）」，在 Keys 頁填入模型供應商的 API 金鑰或登入訂閱，"
+    "zh-Hant": "還沒有設定模型：請打開「應用程式 → AI 管家（Hermes）」，在 Keys 頁新增一個模型供應商、填入它的 API 金鑰或登入訂閱，"
     "再在 Models 頁選一個模型，然後再傳訊息給我。",
-    "ja": "モデルがまだ設定されていません。「アプリ → All-Purpose Bot (Hermes)」を開き、Keys で AI サービスの API キーを"
-    "入力するかサブスクリプションでログインし、Models でモデルを選んでから、もう一度送ってください。",
+    "ja": "モデルがまだ設定されていません。「アプリ → All-Purpose Bot (Hermes)」を開き、Keys で AI サービスを新しく追加し"
+    "（API キーを入力するかサブスクリプションでログイン）、Models でモデルを選んでから、もう一度送ってください。",
 }
 
 # 旁聊结果行的 body（旁聊约定的样例：旁聊「标题」：已完成）。state 用英文码进结构化字段，
