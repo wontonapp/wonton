@@ -32,7 +32,7 @@ private struct AgentRunPreviewScreen: View {
 
     /// 夹具的字面量不落在 `label:` 参数位上（界面文字检查的规则二，同 `AgentRunFixtures.choice`）。
     private func choice(_ key: String, _ label: String) -> AgentRunChoice {
-        AgentRunChoice(key: key, label: label)
+        AgentRunChoice(key: key, label: label, chosen: false, send: .idle)
     }
 
     private var content: some View {
