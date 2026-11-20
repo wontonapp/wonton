@@ -70,7 +70,7 @@ impl PluginManager {
             if let Err(error) = self
                 .connect_capability(&manifest.id, provider, capability, langs, Some(&caller))
                 .await
-                && (manifest.requires.contains(capability)
+                && (super::requires(manifest, capability)
                     || matches!(error, InstallError::Storage(_)))
             {
                 return Err(error);
@@ -94,7 +94,7 @@ impl PluginManager {
             .load(consumer)?
             .ok_or_else(|| InstallError::not_installed(langs, consumer))?;
         let package = crate::plugin::upgrade::installed_package(&record, langs)?;
-        if !declarations(&package.manifest).any(|name| name == &choice.capability)
+        if !declarations(&package.manifest).any(|name| name == choice.capability.as_str())
             || (provider_bot.is_some() && choice.provider.is_none())
             || choice.provider.as_deref() == Some(consumer.as_str())
         {
@@ -126,7 +126,7 @@ impl PluginManager {
             &choice.capability,
             caller.as_ref(),
         );
-        if (selected.is_none() && package.manifest.requires.contains(&choice.capability))
+        if (selected.is_none() && super::requires(&package.manifest, &choice.capability))
             || choice
                 .provider
                 .as_deref()

@@ -129,6 +129,7 @@ pub fn default_bot_plugin_in(dir: &Path) -> Result<Option<PluginId>, InstallErro
 fn retryable(e: &InstallError) -> bool {
     match e {
         InstallError::Invalid(_)
+        | InstallError::RemoteInvalid { .. }
         | InstallError::PermissionNotGranted(_)
         | InstallError::Unsupported(_)
         | InstallError::UnsupportedRuntime(_)
@@ -156,6 +157,8 @@ fn retryable(e: &InstallError) -> bool {
         | InstallError::MatrixUnavailable(_)
         | InstallError::ModelsUnavailable(_)
         | InstallError::UpstreamUnavailable(_)
+        | InstallError::RemoteUnavailable(_)
+        | InstallError::RemoteError(_)
         // 宿主刚启动时 DHCP 可能还没拿到地址。
         | InstallError::LanUnavailable(_)
         // 代理可能还没起来。

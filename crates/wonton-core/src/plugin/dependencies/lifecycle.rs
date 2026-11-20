@@ -14,7 +14,7 @@ impl PluginManager {
         let providers = self.capability_providers();
         let state = self.dependencies.load()?;
         for capability in declarations(manifest) {
-            let required = manifest.requires.contains(capability);
+            let required = super::requires(manifest, capability);
             let Some(provider) = chosen(&state, &providers, &manifest.id, capability, None) else {
                 if required {
                     return Err(InstallError::Conflict(
@@ -49,7 +49,7 @@ impl PluginManager {
         let providers = self.capability_providers();
         for capability in declarations(manifest) {
             let Some(id) = targets.get(capability) else {
-                if manifest.requires.contains(capability) {
+                if super::requires(manifest, capability) {
                     return Err(InstallError::Conflict(
                         self.capability_missing_other(manifest, capability, langs),
                     ));
@@ -76,7 +76,7 @@ impl PluginManager {
                         .entry(manifest.id.to_string())
                         .or_default()
                         .insert(
-                            capability.clone(),
+                            capability.to_owned(),
                             super::binding::Binding::Plugin(id.clone()),
                         );
                 }
@@ -97,10 +97,7 @@ impl PluginManager {
             .await
         {
             Err(error)
-                if manifest
-                    .requires
-                    .iter()
-                    .any(|required| required == capability)
+                if super::requires(manifest, capability)
                     || matches!(error, InstallError::Storage(_)) =>
             {
                 Err(error)
@@ -203,7 +200,7 @@ impl PluginManager {
                     .connect_capability(&manifest.id, provider, capability, langs, None)
                     .await
                 && (manifest.id != installed.id
-                    || manifest.requires.contains(capability)
+                    || super::requires(manifest, capability)
                     || matches!(error, InstallError::Storage(_)))
             {
                 failure = Some(match failure {
@@ -433,6 +430,10 @@ impl PluginManager {
             return Ok(());
         }
         let package = super::super::upgrade::installed_package(&record, langs)?;
+        if super::super::install_hosted::is_containerless(&package.manifest) {
+            self.changed();
+            return Ok(());
+        }
         let lan = self.lan_grant(&package, record.lan_webui, langs).await?;
         let mut ctx = self.rebuild_context(&package, &record, lan, None).await?;
         self.fill_bot_vars(&package, &mut ctx, langs).await?;
@@ -483,7 +484,7 @@ impl PluginManager {
                         category: PluginHintCategory::DependencyStopped,
                         detail: Some(error.to_string()),
                         provider: None,
-                        capability: Some(capability.clone()),
+                        capability: Some(capability.to_owned()),
                     })
                     .collect();
             }
@@ -509,6 +510,14 @@ impl PluginManager {
         hints
     }
 
+    /// 托管能力由提供方的入口直接伺候，不立连接；提供方在跑、声明了这个服务就算到位。
+    fn hosted_serving(provider: &Provider, capability: &str) -> bool {
+        crate::plugin::capabilities::lookup(capability).is_some_and(|c| c.hosted.is_some())
+            && (provider.status == PluginStatus::Running
+                || service(&provider.listed.manifest, capability)
+                    .is_some_and(|spec| provider.serving.contains(&spec.service)))
+    }
+
     fn capability_dependency_hint(
         &self,
         state: &State,
@@ -520,13 +529,14 @@ impl PluginManager {
     ) -> Option<PluginHint> {
         let (category, detail) = match provider {
             None => (
-                if manifest.requires.iter().any(|name| name == capability) {
+                if super::requires(manifest, capability) {
                     PluginHintCategory::DependencyStopped
                 } else {
                     PluginHintCategory::WantsUnsatisfied
                 },
                 None,
             ),
+            Some(provider) if Self::hosted_serving(provider, capability) => return None,
             Some(provider) => match self.capability_dependency_connection(
                 state,
                 &manifest.id,
@@ -607,7 +617,7 @@ impl PluginManager {
             .find(|hint| {
                 hint.capability
                     .as_ref()
-                    .is_some_and(|capability| manifest.requires.contains(capability))
+                    .is_some_and(|capability| super::requires(manifest, capability))
             })
             .map(|hint| {
                 hint.detail.unwrap_or_else(|| match hint.provider {
@@ -635,7 +645,7 @@ impl PluginManager {
         let state = self.dependencies.load()?;
         let bots = self.active_capability_bots(&manifest.id)?;
         let mut checked = BTreeMap::<usize, (bool, BTreeSet<&str>)>::new();
-        for capability in manifest.requires.iter().filter(|c| super::generic(c)) {
+        for capability in super::required(manifest).filter(|c| super::generic(c)) {
             for bot in std::iter::once(None).chain(bots.iter().map(Some)) {
                 let provider = chosen(&state, &providers, &manifest.id, capability, bot)
                     .ok_or_else(|| {
@@ -643,16 +653,17 @@ impl PluginManager {
                             self.capability_missing_other(manifest, capability, langs),
                         )
                     })?;
-                if self
-                    .capability_dependency_connection(
-                        &state,
-                        &manifest.id,
-                        provider,
-                        capability,
-                        bot,
-                        langs,
-                    )?
-                    .is_none()
+                if !Self::hosted_serving(provider, capability)
+                    && self
+                        .capability_dependency_connection(
+                            &state,
+                            &manifest.id,
+                            provider,
+                            capability,
+                            bot,
+                            langs,
+                        )?
+                        .is_none()
                 {
                     return Err(InstallError::Conflict(
                         self.capability_missing(capability, langs),
@@ -663,7 +674,7 @@ impl PluginManager {
                     .position(|p| p.id == provider.id)
                     .expect("选中的提供方来自同一列表");
                 let (started, capabilities) = checked.entry(index).or_default();
-                if capabilities.insert(capability.as_str()) {
+                if capabilities.insert(capability) {
                     providers[index] = self
                         .start_required_capability_provider(
                             &providers[index],

@@ -60,15 +60,44 @@ struct Provider {
     serving: BTreeSet<String>,
 }
 
+/// 插件声明由自己提供的服务名（托管能力由核心转给它的入口，不需要容器）。
+pub(crate) fn declared_services(manifest: &Manifest) -> BTreeSet<String> {
+    manifest
+        .provides
+        .iter()
+        .flat_map(|provides| {
+            provides
+                .capabilities
+                .values()
+                .map(|spec| spec.service.clone())
+        })
+        .collect()
+}
+
 pub(crate) fn generic(name: &str) -> bool {
     name != capabilities::MODELS.name && !capabilities::has_no_consumer(name)
 }
 
-pub(crate) fn declarations(manifest: &Manifest) -> impl Iterator<Item = &String> {
+pub(crate) fn required(manifest: &Manifest) -> impl Iterator<Item = &str> {
+    let implicit = capabilities::ALL.iter().find_map(|capability| {
+        capability.hosted.and_then(|hosted| {
+            (hosted.runtime == Some(manifest.runtime)).then_some(capability.name)
+        })
+    });
     manifest
         .requires
         .iter()
-        .chain(&manifest.wants)
+        .map(String::as_str)
+        .chain(implicit.filter(|name| !manifest.requires.iter().any(|explicit| explicit == name)))
+}
+
+fn requires(manifest: &Manifest, capability: &str) -> bool {
+    required(manifest).any(|name| name == capability)
+}
+
+pub(crate) fn declarations(manifest: &Manifest) -> impl Iterator<Item = &str> {
+    required(manifest)
+        .chain(manifest.wants.iter().map(String::as_str))
         .filter(|name| generic(name))
 }
 
@@ -300,7 +329,7 @@ impl PluginManager {
         let selected = state.selected.get(scope.as_ref());
         Ok(declarations(manifest)
             .map(|capability| ConsumerCapabilitySetting {
-                capability: capability.clone(),
+                capability: capability.to_owned(),
                 third_party: capabilities::is_third_party(capability),
                 // 选提供方时排除自己（ADR-0061 第 9 节）。
                 providers: providers

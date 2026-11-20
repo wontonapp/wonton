@@ -24,6 +24,7 @@ use std::time::Duration;
 
 use anyhow::{Context, bail};
 use tracing_subscriber::EnvFilter;
+use tracing_subscriber::{layer::SubscriberExt, util::SubscriberInitExt};
 use wonton_core::agent_chain::Chains;
 use wonton_core::agent_chain::settings::AgentSettings;
 use wonton_core::agent_outbox::Outbox;
@@ -194,6 +195,8 @@ async fn run() -> ExitCode {
         .with_env_filter(
             EnvFilter::try_from_default_env().unwrap_or_else(|_| EnvFilter::new("info")),
         )
+        .finish()
+        .with(wonton_core::mcp::SdkDiagnostics)
         .init();
     let command = std::env::args().nth(1);
     if command.as_deref() == Some("plugin") {

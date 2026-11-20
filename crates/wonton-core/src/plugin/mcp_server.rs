@@ -6,7 +6,7 @@ use std::time::Duration;
 use super::manifest::{DEFAULT_TOOL_TOTAL_SECONDS, LocalizedText, McpEndpoint, PluginId};
 use super::proxy_auth::McpHeaders;
 
-/// 在运行、声明了 `mcp` 的插件：MCP 总线连它的地址。
+/// 总线连接的插件端点：容器的服务，或远端 MCP 的连接器。
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct McpServer {
     pub id: PluginId,
@@ -15,7 +15,7 @@ pub struct McpServer {
     pub url: String,
     /// 宿主网络里经 unix 套接字连。
     pub socket: Option<PathBuf>,
-    /// 发往上游的每个请求都带上的头（`mcp.headers` 按插件密钥解析好的）。
+    /// 发往端点的凭据与配置头；`Debug` 不打印值。
     pub headers: McpHeaders,
     pub tool_limits: ToolLimits,
     /// 清单只提供这些工具（上游的原名，允许列表）；不写时全部提供。

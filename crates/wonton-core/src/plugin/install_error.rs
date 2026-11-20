@@ -21,6 +21,15 @@ use crate::plugin::languages::Languages;
 pub enum InstallError {
     #[error("{0}")]
     Invalid(String),
+    #[error("{message}")]
+    RemoteInvalid {
+        message: String,
+        secrets: Vec<String>,
+    },
+    #[error("{0}")]
+    RemoteUnavailable(String),
+    #[error("{0}")]
+    RemoteError(String),
     #[error("{0}")]
     PermissionNotGranted(String),
     #[error("{0}")]
@@ -111,7 +120,9 @@ impl InstallError {
     /// 机器可读的错误类别。
     pub fn kind(&self) -> &'static str {
         match self {
-            Self::Invalid(_) => "invalid_input",
+            Self::Invalid(_) | Self::RemoteInvalid { .. } => "invalid_input",
+            Self::RemoteUnavailable(_) => "remote_unavailable",
+            Self::RemoteError(_) => "remote_error",
             Self::PermissionNotGranted(_) => "permission_denied",
             Self::Unsupported(_) | Self::UnsupportedRuntime(_) => "unsupported",
             Self::Conflict(_) | Self::NameTaken(_) => "conflict",
@@ -165,6 +176,12 @@ impl InstallError {
         };
         match self {
             Self::Invalid(m) => Self::Invalid(add(m)),
+            Self::RemoteInvalid { message, secrets } => Self::RemoteInvalid {
+                message: add(message),
+                secrets,
+            },
+            Self::RemoteUnavailable(m) => Self::RemoteUnavailable(add(m)),
+            Self::RemoteError(m) => Self::RemoteError(add(m)),
             Self::PermissionNotGranted(list) => Self::PermissionNotGranted(list),
             Self::Unsupported(m) => Self::Unsupported(add(m)),
             Self::UnsupportedRuntime(m) => Self::UnsupportedRuntime(add(m)),

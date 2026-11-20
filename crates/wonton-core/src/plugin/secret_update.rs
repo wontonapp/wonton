@@ -33,13 +33,15 @@ impl PluginManager {
         .await
     }
 
-    async fn set_secret_input_inner(
+    pub(super) async fn set_secret_input_inner(
         &self,
         id: &PluginId,
         name: &str,
         value: Option<&str>,
         langs: &Languages,
     ) -> Result<PluginDetail, InstallError> {
+        // 与升级的暂存、probe、提交/回滚串行；锁顺序固定为 changing → lan.pass。
+        let _changing = self.dependencies.changing.lock().await;
         let _pass = self.lan.pass.lock().await;
         let listed = self.listed(id)?;
         let record = self
@@ -56,6 +58,10 @@ impl PluginManager {
                 .judged_detail(id, langs)
                 .await
                 .ok_or_else(|| not_installed(id));
+        }
+        if package.manifest.remote_mcp.is_some() {
+            super::remote_config::Config::resolve(&package.manifest, &stored, langs)
+                .map_err(InstallError::Invalid)?;
         }
         if !self.begin_rebuild(id) {
             return Err(InstallError::Conflict(format!(
@@ -129,6 +135,9 @@ impl PluginManager {
         name: &str,
         langs: &Languages,
     ) -> Result<(), InstallError> {
+        if super::install_hosted::is_containerless(&package.manifest) {
+            return Ok(());
+        }
         let variable = secrets::secret_var(name);
         let plan = self.addresses_for(listed, record.lan_webui, langs).await?;
         let addresses: Vec<_> = plan.bind.iter().map(|bound| bound.ip).collect();

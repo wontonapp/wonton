@@ -399,6 +399,7 @@ async fn network_mode_upgrade_recreates_the_target_and_every_sidecar() {
             false,
             &[],
             Default::default(),
+            &Default::default(),
         )
         .await
         .unwrap();

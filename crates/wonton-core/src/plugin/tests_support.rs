@@ -44,7 +44,9 @@ impl PluginManager {
         } else {
             PluginStatus::Stopped
         };
-        let mut entry = Entry::new(Listed::of_manifest(manifest), status, None);
+        let mut entry = Entry::new(Listed::of_manifest(manifest.clone()), status, None);
+        // 不经 Docker：运行中的提供方把自己声明的服务都当成在提供，和真的起来了对得上。
+        serve_declared(&mut entry, &manifest);
         if let Some(upstream) = upstream {
             entry
                 .hosted
@@ -54,6 +56,17 @@ impl PluginManager {
             .write()
             .expect("插件表锁中毒")
             .insert(id, entry);
+    }
+
+    /// 测试用：插件表里每项的 id 和状态（看谁把谁标成了异常）。
+    #[cfg(test)]
+    pub(crate) fn statuses_for_test(&self) -> Vec<(String, PluginStatus)> {
+        self.plugins
+            .read()
+            .expect("插件表锁中毒")
+            .iter()
+            .map(|(id, entry)| (id.to_string(), entry.status.clone()))
+            .collect()
     }
 
     /// 测试用：给登记过的插件设客户端入口的开关和标签。开关和标签都存插件记录（ADR-0021），

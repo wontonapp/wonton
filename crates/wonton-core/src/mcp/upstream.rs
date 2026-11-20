@@ -354,6 +354,7 @@ impl Upstreams {
             BoundedHttp {
                 http,
                 limit: self.message_limit,
+                diagnostics: super::diagnostics::Diagnostics::new(server.headers.error_redaction()),
             },
             config,
         );

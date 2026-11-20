@@ -472,6 +472,7 @@ async fn upgrading_away_the_optional_one_drops_the_mount() {
         false,
         &[],
         Default::default(),
+        &Default::default(),
     )
     .await
     .unwrap();
@@ -498,6 +499,7 @@ async fn a_kept_upgrade_drops_an_option_the_new_version_removed() {
         false,
         &[],
         Default::default(),
+        &Default::default(),
     )
     .await
     .unwrap();
@@ -518,6 +520,7 @@ async fn a_kept_upgrade_grants_an_option_the_new_version_requires() {
         false,
         &[],
         Default::default(),
+        &Default::default(),
     )
     .await
     .unwrap();
@@ -574,6 +577,7 @@ async fn an_old_app_grant_records_only_the_required_permissions() {
         false,
         &[],
         Default::default(),
+        &Default::default(),
     )
     .await
     .unwrap();
@@ -600,6 +604,7 @@ async fn opening_an_option_an_old_app_recorded_as_granted_counts_from_now() {
         false,
         &[],
         Default::default(),
+        &Default::default(),
     )
     .await
     .unwrap();

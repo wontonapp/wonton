@@ -1,0 +1,10 @@
+remote-mcp-runtime-mismatch = remote_mcp 只能與 runtime: remote_mcp 一起使用。
+remote-mcp-required = runtime: remote_mcp 必須填寫 remote_mcp.url。
+remote-mcp-field-forbidden = 遠端 MCP 沒有容器，用不上 { $field }。
+remote-mcp-input-only = 遠端 MCP 的密鑰 { $name } 必須宣告為 input。
+remote-mcp-url-invalid = remote_mcp.url 必須是 HTTPS 位址並使用多段網域名稱，不能是 IP、localhost，不能帶使用者名稱密碼、片段或空白。密鑰預留位置只能寫在路徑和查詢參數裡。
+remote-mcp-url-dot-segment = remote_mcp.url 的路徑不能包含 . 或 .. 區段，替換密鑰後也不能形成這些區段。請更換密鑰或位址，避免這些路徑區段。
+remote-mcp-headers-required = remote_mcp.auth: header 必須至少填寫一項 remote_mcp.headers。
+remote-mcp-headers-auth = 只有 auth: header 可以填寫 remote_mcp.headers。
+remote-mcp-oauth-secrets = remote_mcp.auth: oauth 不能宣告 secrets。
+remote-mcp-header-value-invalid = 遠端 MCP 的請求標頭含有 HTTP 請求標頭不能傳送的字元。

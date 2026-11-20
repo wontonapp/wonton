@@ -38,3 +38,9 @@ description = "测试里的本地 Hydra 地址带占位用户名密码（user:se
 condition = "AND"
 paths = ['''^crates/wonton-core/src/config_tests\.rs$''']
 regexes = ['''user:secret@hydra''']
+
+[[allowlists]]
+description = "远程 MCP 契约测试里故意写成 Stripe 样式的假 token（测重叠脱敏用），不是凭据"
+condition = "AND"
+paths = ['''^crates/wonton-core/src/plugin/tests/remote_mcp_contract/overlap\.rs$''']
+regexes = ['''sk_live_abc123private999''']
