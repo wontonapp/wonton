@@ -509,15 +509,14 @@ final class ChatTelegramUITests: XCTestCase {
 
     /// 整个落在顶栏和输入框之间。列表垫在半透明的顶栏下面，那里的元素 `isHittable` 也是真，点下去点到的是顶栏；
     /// 输入框上面的附件区和旁聊提示一样盖住列表。
-    private func inView(_ element: XCUIElement) -> Bool {
-        guard element.exists, element.isHittable else { return false }
+    private func inView(_ node: XCUIElement) -> Bool {
+        guard node.exists, node.isHittable else { return false }
         // 有人在打字的提示占着顶栏那一行时量它的下沿，没有人打字就量顶栏头像的下沿。
         let activity = app.staticTexts["barActivity"]
         let top = activity.exists ? activity.frame.maxY : app.buttons["roomTopBarAvatar"].frame.maxY
-        let cover = [element("sideChatAttachHint"), element("composerTray")]
-            .filter(\.exists).map(\.frame.minY)
+        let cover = [element("sideChatAttachHint"), element("composerTray")].filter(\.exists).map(\.frame.minY)
         let bottom = min(app.textViews["Message"].frame.minY, cover.min() ?? .infinity)
-        return element.frame.minY > top && element.frame.maxY < bottom
+        return node.frame.minY > top && node.frame.maxY < bottom
     }
 
     /// 从底部一段一段往回翻，直到这个元素整个在可见区里。
@@ -533,7 +532,8 @@ final class ChatTelegramUITests: XCTestCase {
     private func focus(_ field: XCUIElement, file: StaticString = #filePath, line: UInt = #line) {
         for _ in 0..<5 {
             field.tap()
-            if field.hasKeyboardFocus { return }
+            // XCUITest 没有公开的焦点 API，`hasKeyboardFocus` 走 KVC 读。
+            if (field.value(forKey: "hasKeyboardFocus") as? Bool) == true { return }
         }
         XCTFail("输入框一直没拿到键盘焦点\n\(app.debugDescription)", file: file, line: line)
     }
