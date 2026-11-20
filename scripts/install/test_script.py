@@ -315,6 +315,23 @@ class InstallTest(unittest.TestCase):
         self.assertEqual(result.returncode, 0, result.stderr)
         self.assertEqual(self.env()["WONTON_ACME_DIRECTORY"], "https://pebble.test/dir")
 
+    def test_rerun_without_the_name_mode_keeps_a_nameless_install_going(self):
+        # 升级就是再跑一次（README 的“退回”命令只带 digest），不给任何入口变量：init 容器经 --env-file 读到记下的
+        # 模式和证书坐标，none 安装不会退回去要名字要的东西。
+        self.digests["ghcr.io/wontonapp/wonton-core:stable"] = [
+            "ghcr.io/wontonapp/wonton-core@sha256:" + "7" * 64
+        ]
+        result = self.run_install(entry=False, WONTON_MATRIX_NAME_MODE="none")
+        self.assertEqual(result.returncode, 0, result.stderr)
+
+        result = self.run_install(entry=False)
+
+        self.assertEqual(result.returncode, 0, result.stderr)
+        self.assertEqual(
+            self.env()["WONTON_ACME_DIRECTORY"],
+            "https://acme-v02.api.letsencrypt.org/directory",
+        )
+
     def test_readme_install_command_matches_the_script_default_image(self):
         # 公开文档指向的仓库和脚本默认镜像必须是同一个命名空间：issue #143 就是一边换了一边没换。
         readme = (SCRIPT.parent / "README.md").read_text()
