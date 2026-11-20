@@ -27,3 +27,12 @@ struct ComposerSendSlot: View {
         .animation(.easeOut(duration: WontonTheme.motion.feedback), value: showsSlot)
     }
 }
+
+private struct SendButton: View {
+    let action: () -> Void
+
+    var body: some View {
+        ChatGlassButton(icon: .send, label: String(localized: .Composer.composerSend), prominent: true, action: action)
+            .accessibilityIdentifier("composerSend")
+    }
+}

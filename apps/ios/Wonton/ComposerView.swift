@@ -316,15 +316,6 @@ struct ComposerView: View {
     }
 }
 
-private struct SendButton: View {
-    let action: () -> Void
-
-    var body: some View {
-        ChatGlassButton(icon: .send, label: String(localized: .Composer.composerSend), prominent: true, action: action)
-            .accessibilityIdentifier("composerSend")
-    }
-}
-
 /// Bot 有命令时输入栏最左边的“菜单”胶囊（ADR-0109 第 6 节）：重点色的玻璃，图标加字；输入框里有字时收成只剩图标，
 /// 把宽度让给输入框。
 private struct ComposerMenuButton: View {
