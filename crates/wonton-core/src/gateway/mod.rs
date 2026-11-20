@@ -156,7 +156,8 @@ pub struct TunnelPeer(pub EndpointId);
 /// 绕过网关的直连可以伪造。方向与 `X-Wonton-On-Behalf-Of` 相反（那个是插件发给核心）。
 pub(super) const WEB_USER_HEADER: &str = "X-Wonton-Web-User";
 
-/// 本地用户的 Matrix 用户 ID。配置里还没有 Matrix 时按公开域名拼，和登录后算出来的一致。
+/// 本地用户的 Matrix 用户 ID。配置里还没有 Matrix 时按公开域名拼：`public.base_domain` 和 Matrix 的
+/// `server_name` 同出一个配置项，拼出来的和 `Matrix::user_id` 同形。
 pub(super) fn matrix_user_id(gateway: &Gateway, username: &str) -> String {
     match &gateway.matrix {
         Some(matrix) => matrix.user_id(username),

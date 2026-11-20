@@ -87,13 +87,14 @@ fn seen_headers(seen: &Seen, path: &str, name: &str) -> Vec<String> {
         .iter()
         .filter(|(seen_path, _)| seen_path == path)
         .flat_map(|(_, headers)| headers)
-        .filter(|(key, _)| key == name)
+        .filter(|(key, _)| key.eq_ignore_ascii_case(name))
         .map(|(_, value)| value.clone())
         .collect()
 }
 
+/// 客户端伪造的两条同名头：值都不是核心认的人。
 fn forged() -> [(&'static str, &'static str); 2] {
-    [("x-wonton-web-user", FORGED), ("X-Wonton-Web-User", "eve")]
+    [(WEB_USER_HEADER, FORGED), (WEB_USER_HEADER, "eve")]
 }
 
 /// 把普通插件页换成记录请求的上游。
@@ -132,10 +133,7 @@ async fn a_forged_header_is_replaced_on_a_plugin_page() {
     let reply = h.get(PLUGIN, "/hello", &headers).await;
     assert_eq!(reply.status, StatusCode::OK, "{}", reply.text());
     // 客户端那两条都剥掉，上游只能看到核心写的那一条。
-    assert_eq!(
-        seen_headers(&seen, "/hello", "x-wonton-web-user"),
-        [OWNER_ID]
-    );
+    assert_eq!(seen_headers(&seen, "/hello", WEB_USER_HEADER), [OWNER_ID]);
 }
 
 #[tokio::test]
@@ -148,10 +146,7 @@ async fn a_forged_header_is_replaced_on_a_bot_page() {
     headers.push(("cookie", session.as_str()));
     let reply = h.get(&host, "/panel", &headers).await;
     assert_eq!(reply.status, StatusCode::OK, "{}", reply.text());
-    assert_eq!(
-        seen_headers(&seen, "/panel", "x-wonton-web-user"),
-        [OWNER_ID]
-    );
+    assert_eq!(seen_headers(&seen, "/panel", WEB_USER_HEADER), [OWNER_ID]);
 }
 
 #[tokio::test]
@@ -172,7 +167,7 @@ async fn a_family_member_with_the_app_open_gets_her_id_on_a_plugin_page() {
     )
     .await;
     assert_eq!(reply.status, StatusCode::OK, "{}", reply.text());
-    assert_eq!(seen_headers(&seen, "/hello", "x-wonton-web-user"), [MIA_ID]);
+    assert_eq!(seen_headers(&seen, "/hello", WEB_USER_HEADER), [MIA_ID]);
 }
 
 #[tokio::test]
@@ -193,7 +188,7 @@ async fn a_family_member_with_the_app_open_gets_her_id_on_a_bot_page() {
     )
     .await;
     assert_eq!(reply.status, StatusCode::OK, "{}", reply.text());
-    assert_eq!(seen_headers(&seen, "/panel", "x-wonton-web-user"), [MIA_ID]);
+    assert_eq!(seen_headers(&seen, "/panel", WEB_USER_HEADER), [MIA_ID]);
 }
 
 fn bot_ref() -> wonton_protocol::BotRef {
@@ -220,7 +215,7 @@ async fn a_family_member_without_the_app_never_reaches_the_plugin() {
             hyper::Method::GET,
             target,
             path,
-            &[("x-wonton-web-user", FORGED)],
+            &[(WEB_USER_HEADER, FORGED)],
             "",
         )
         .await;
@@ -242,10 +237,10 @@ async fn the_plugins_own_network_gets_no_header() {
     h.manager
         .register_source_for_test("app.whoami", "127.0.0.0/8", vec![]);
     let reply = h
-        .get(PLUGIN, "/internal", &[("x-wonton-web-user", FORGED)])
+        .get(PLUGIN, "/internal", &[(WEB_USER_HEADER, FORGED)])
         .await;
     assert_eq!(reply.status, StatusCode::OK, "{}", reply.text());
-    assert!(seen_headers(&seen, "/internal", "x-wonton-web-user").is_empty());
+    assert!(seen_headers(&seen, "/internal", WEB_USER_HEADER).is_empty());
 }
 
 #[tokio::test]
@@ -259,13 +254,13 @@ async fn an_oidc_callback_gets_no_header() {
             "/cb",
             &[
                 ("content-type", "application/x-www-form-urlencoded"),
-                ("x-wonton-web-user", FORGED),
+                (WEB_USER_HEADER, FORGED),
             ],
             axum::body::Body::from("code=fixture-code&state=fixture-state"),
         )
         .await;
     assert_eq!(reply.status, StatusCode::OK, "{}", reply.text());
-    assert!(seen_headers(&seen, "/cb", "x-wonton-web-user").is_empty());
+    assert!(seen_headers(&seen, "/cb", WEB_USER_HEADER).is_empty());
 }
 
 #[tokio::test]
@@ -277,9 +272,10 @@ async fn a_websocket_upgrade_carries_the_header() {
     let (listener, addr) = bind().await;
     serve(listener, h.app.clone()).await;
     let mut stream = TcpStream::connect(addr).await.unwrap();
+    let name = WEB_USER_HEADER;
     let request = format!(
         "GET /ws HTTP/1.1\r\nHost: {host}\r\nCookie: {session}\r\n\
-         Connection: Upgrade\r\nUpgrade: echo\r\nx-wonton-web-user: {FORGED}\r\n\r\n"
+         Connection: Upgrade\r\nUpgrade: echo\r\n{name}: {FORGED}\r\n\r\n"
     );
     stream.write_all(request.as_bytes()).await.unwrap();
     let mut head = Vec::new();
@@ -299,7 +295,7 @@ async fn a_websocket_upgrade_carries_the_header() {
         "{}",
         String::from_utf8_lossy(&head)
     );
-    assert_eq!(seen_headers(&seen, "/ws", "x-wonton-web-user"), [OWNER_ID]);
+    assert_eq!(seen_headers(&seen, "/ws", WEB_USER_HEADER), [OWNER_ID]);
 }
 
 /// 上游回显收到的头（`headers` 是名字到值的表）。
@@ -311,11 +307,12 @@ async fn the_owner_id_is_visible_in_the_forwarded_body() {
         .get(
             PLUGIN,
             "/hello",
-            &[("cookie", &session), ("x-wonton-web-user", FORGED)],
+            &[("cookie", &session), (WEB_USER_HEADER, FORGED)],
         )
         .await;
     assert_eq!(reply.status, StatusCode::OK);
-    assert_eq!(reply.json()["headers"]["x-wonton-web-user"], OWNER_ID);
+    let key = WEB_USER_HEADER.to_ascii_lowercase();
+    assert_eq!(reply.json()["headers"][key.as_str()], OWNER_ID);
 }
 
 #[tokio::test]
@@ -327,9 +324,11 @@ async fn the_header_is_not_confused_with_the_proxy_sign_in_name() {
     assert_eq!(reply.status, StatusCode::OK);
     let headers = &reply.json()["headers"];
     assert!(headers.get("remote-user").is_none());
-    assert_eq!(headers["x-wonton-web-user"], OWNER_ID);
+    let key = WEB_USER_HEADER.to_ascii_lowercase();
+    assert_eq!(headers[key.as_str()], OWNER_ID);
 }
 
+/// 唯一一处钉拼写的地方：它是跨仓库的协议名，别处的伪造和断言都用常量。
 #[tokio::test]
 async fn the_header_constant_matches_the_spec_spelling() {
     assert_eq!(WEB_USER_HEADER, "X-Wonton-Web-User");
