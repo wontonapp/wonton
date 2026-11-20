@@ -114,4 +114,16 @@
     <string name="owner_secrets_problem_not_ready">這項金鑰尚未準備好。請等應用程式啟動完成後重試。</string>
     <string name="owner_secrets_problem_protocol">雲吞無法讀取伺服器的回覆。請更新雲吞或家裡的伺服器後重試。</string>
     <string name="owner_secrets_problem_other">無法載入金鑰。請重試。</string>
+    <!-- 附件面板：底下的切換，把手機相簿列成照片格狀。 -->
+    <string name="attach_album">相簿</string>
+    <!-- 附件面板：把選中的照片放進待發的按鈕。參數：張數。 -->
+    <string name="attach_add">加入 %1$d</string>
+    <!-- 附件面板：相簿裡還沒有照片。 -->
+    <string name="attach_album_empty">相簿裡沒有照片</string>
+    <!-- 附件面板：沒給相簿權限。 -->
+    <string name="attach_permission_denied">看不到相簿裡的照片。</string>
+    <!-- 附件面板：沒給權限時，去打開本 App 設定頁的按鈕。 -->
+    <string name="attach_open_settings">去設定</string>
+    <!-- 相簿裡選中一張照片後，勾上的讀屏標籤。 -->
+    <string name="attach_selected">已選</string>
 </resources>

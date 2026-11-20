@@ -17,11 +17,10 @@ import androidx.compose.material3.Icon
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
-import androidx.compose.runtime.getValue
+import androidx.compose.runtime.MutableState
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.rememberCoroutineScope
-import androidx.compose.runtime.setValue
 import androidx.compose.runtime.snapshotFlow
 import androidx.compose.runtime.withFrameNanos
 import androidx.compose.ui.Alignment
@@ -33,6 +32,7 @@ import androidx.compose.ui.unit.dp
 import app.wonton.protocol.Action
 import app.wonton.protocol.BackPagination
 import app.wonton.protocol.TimelineAction
+import app.wonton.protocol.TimelineFocus
 import app.wonton.protocol.TimelineItem
 import app.wonton.protocol.TimelineScroll
 import app.wonton.protocol.TimelineTarget
@@ -41,61 +41,6 @@ import app.wonton.ui.design.WontonTheme
 import app.wonton.ui.design.toColor
 import kotlinx.coroutines.flow.distinctUntilChanged
 import kotlinx.coroutines.launch
-
-/// 进房间的落点、新消息的跟随、滚动方向的报告、只在底部标已读（ADR-0071、#159）。`covered`：旁聊页盖在这条主对话
-/// 上面，主对话看不见，不标已读（ADR-0093）。
-@Composable
-internal fun ScrollEffects(
-    listState: LazyListState,
-    timeline: TimelineState,
-    target: TimelineTarget,
-    covered: Boolean,
-    onAction: (Action) -> Unit,
-) {
-    // 倒着排：第 0 项是最新的一条，贴着底部。
-    val newestFirst = timeline.items.asReversed()
-    val newest = timeline.items.lastOrNull()?.id
-    var following by remember(target) { mutableStateOf(true) }
-    // 进房间的落点摆好之前：不跟随、不报方向、不标已读（ADR-0071）。时间线清空重建后闸门重开，按新落点重摆。
-    var placed by remember(timeline.clears) { mutableStateOf(false) }
-    LaunchedEffect(timeline.revision, timeline.clears) {
-        if (newest == null) return@LaunchedEffect
-        withFrameNanos { }
-        if (!placed) {
-            following = placeAnchor(listState, newestFirst, timeline, target, newest, onAction)
-        } else if (timeline.bottomRequest != 0 && timeline.bottomRequest != timeline.handledBottomRequest) {
-            listState.scrollToItem(0)
-        } else if (following && !listState.isScrollInProgress) {
-            listState.scrollToItem(0)
-        }
-        timeline.handledBottomRequest = timeline.bottomRequest
-        placed = true
-    }
-    // 滚动跨过底部时报告方向（ADR-0071），核心按它算位置和新消息数；摆落点前不报。
-    LaunchedEffect(target, covered) {
-        snapshotFlow {
-            Triple(placed, listState.isAtBottom(), timeline.items.lastOrNull()?.id)
-        }.distinctUntilChanged().collect { (ready, atBottom, latest) ->
-            if (ready) {
-                // 非手势的插入和行变高不能被当成主人翻走；真正的滚动在交互观察里报告。
-                if (atBottom) {
-                    following = true
-                    onAction(scrollAction(target, TimelineScroll.BOTTOM))
-                    if (latest != null && !covered) onAction(markReadAction(target))
-                }
-            }
-        }
-    }
-    LaunchedEffect(target) {
-        snapshotFlow { listState.isScrollInProgress to listState.isAtBottom() }
-            .distinctUntilChanged().collect { (scrolling, atBottom) ->
-                if (placed && scrolling && !atBottom) {
-                    following = false
-                    onAction(scrollAction(target, TimelineScroll.AWAY))
-                }
-            }
-    }
-}
 
 /// 进房间停在上次看的位置（ADR-0071）：落点行先贴到底边，量出它的高度，再把它顶到视野顶部，它后面的新消息
 /// 接着往下排。落点不在这一页里或没给，停在最新一条。落点不是最新一条，就是停在别处：报 Away，核心把按钮和
@@ -130,6 +75,112 @@ private suspend fun placeAnchor(
     return atLatest || anchor == newest
 }
 
+/// 进房间的落点、新消息的跟随、滚动方向的报告、只在底部标已读（ADR-0071、#159）。`covered`：旁聊页盖在这条主对话
+/// 上面，主对话看不见，不标已读（ADR-0093）。
+@Composable
+internal fun ScrollEffects(
+    listState: LazyListState,
+    timeline: TimelineState,
+    target: TimelineTarget,
+    covered: Boolean,
+    onAction: (Action) -> Unit,
+) {
+    // 倒着排：第 0 项是最新的一条，贴着底部。
+    val newestFirst = timeline.items.asReversed()
+    // 进房间的落点摆好之前：不跟随、不报方向、不标已读（ADR-0071）。时间线清空重建后闸门重开，按新落点重摆。
+    val placed = remember(timeline.clears) { mutableStateOf(false) }
+    val following = remember(target) { mutableStateOf(true) }
+    JumpToFocus(listState, timeline.focus, newestFirst, target, onAction) { following.value = false }
+    PlaceAtAnchor(listState, timeline, newestFirst, target, placed, following, onAction)
+    ReportAtBottom(listState, timeline, target, covered, placed, following, onAction)
+}
+
+/** 跳转落到的位置：滚到中间，停在不跟随的位置，让“返回”按钮出来。 */
+@Composable
+private fun JumpToFocus(
+    listState: LazyListState,
+    focus: TimelineFocus?,
+    newestFirst: List<TimelineItem>,
+    target: TimelineTarget,
+    onAction: (Action) -> Unit,
+    stopFollowing: () -> Unit,
+) {
+    LaunchedEffect(focus) {
+        val id = focus?.itemId ?: return@LaunchedEffect
+        val index = newestFirst.indexOfFirst { it.id == id }
+        if (index < 0) return@LaunchedEffect
+        stopFollowing()
+        listState.scrollToItem(index)
+        withFrameNanos { }
+        val item = listState.layoutInfo.visibleItemsInfo.firstOrNull { it.index == index } ?: return@LaunchedEffect
+        listState.scrollToItem(index, (listState.layoutInfo.viewportSize.height - item.size) / 2)
+        if (!listState.isAtBottom()) onAction(scrollAction(target, TimelineScroll.AWAY))
+    }
+}
+
+/** 时间线变了：头一次摆落点，之后跟着新消息到底（ADR-0071）。 */
+@Composable
+private fun PlaceAtAnchor(
+    listState: LazyListState,
+    timeline: TimelineState,
+    newestFirst: List<TimelineItem>,
+    target: TimelineTarget,
+    placed: MutableState<Boolean>,
+    following: MutableState<Boolean>,
+    onAction: (Action) -> Unit,
+) {
+    val newest = timeline.items.lastOrNull()?.id
+    LaunchedEffect(timeline.revision, timeline.clears) {
+        if (newest == null) return@LaunchedEffect
+        withFrameNanos { }
+        if (!placed.value) {
+            following.value = placeAnchor(listState, newestFirst, timeline, target, newest, onAction)
+        } else if (timeline.bottomRequest != 0 && timeline.bottomRequest != timeline.handledBottomRequest) {
+            listState.scrollToItem(0)
+        } else if (following.value && !listState.isScrollInProgress) {
+            listState.scrollToItem(0)
+        }
+        timeline.handledBottomRequest = timeline.bottomRequest
+        placed.value = true
+    }
+}
+
+/**
+ * 滚动跨过底部时报告方向（ADR-0071），核心按它算位置和新消息数；摆落点前不报。
+ * 非手势的插入和行变高不能被当成主人翻走；真正的滚动在交互观察里报告。
+ */
+@Composable
+private fun ReportAtBottom(
+    listState: LazyListState,
+    timeline: TimelineState,
+    target: TimelineTarget,
+    covered: Boolean,
+    placed: MutableState<Boolean>,
+    following: MutableState<Boolean>,
+    onAction: (Action) -> Unit,
+) {
+    LaunchedEffect(target, covered) {
+        snapshotFlow {
+            Triple(placed.value, listState.isAtBottom(), timeline.items.lastOrNull()?.id)
+        }.distinctUntilChanged().collect { (ready, atBottom, latest) ->
+            if (ready && atBottom) {
+                following.value = true
+                onAction(scrollAction(target, TimelineScroll.BOTTOM))
+                if (latest != null && !covered) onAction(markReadAction(target))
+            }
+        }
+    }
+    LaunchedEffect(target) {
+        snapshotFlow { listState.isScrollInProgress to listState.isAtBottom() }
+            .distinctUntilChanged().collect { (scrolling, atBottom) ->
+                if (placed.value && scrolling && !atBottom) {
+                    following.value = false
+                    onAction(scrollAction(target, TimelineScroll.AWAY))
+                }
+            }
+    }
+}
+
 /** 停在别处时的“回到底部”：数字是离开底部后到的消息数（ADR-0071），没有就不写数字。 */
 @Composable
 internal fun ScrollToBottomButton(
@@ -138,10 +189,11 @@ internal fun ScrollToBottomButton(
     listState: LazyListState,
     onAction: (Action) -> Unit,
     modifier: Modifier,
+    hidden: Boolean = false,
 ) {
     val scope = rememberCoroutineScope()
     AnimatedVisibility(
-        visible = timeline.viewport is TimelineViewport.Away,
+        visible = !hidden && timeline.viewport is TimelineViewport.Away,
         enter = fadeIn() + scaleIn(initialScale = BUTTON_APPEAR_SCALE),
         exit = fadeOut() + scaleOut(targetScale = BUTTON_APPEAR_SCALE),
         modifier = modifier,
@@ -155,10 +207,15 @@ internal fun ScrollToBottomButton(
         }
         FloatingActionButton(
             onClick = {
-                scope.launch {
-                    listState.animateScrollToItem(0)
-                    onAction(scrollAction(target, TimelineScroll.BOTTOM))
-                    onAction(markReadAction(target))
+                // 跳转过去还没看回去过：先退回跳走的那条，退到没得退了才回最新的一条。
+                if (timeline.backTo != null) {
+                    onAction(Action.Timeline(TimelineAction.JumpBack(target)))
+                } else {
+                    scope.launch {
+                        listState.animateScrollToItem(0)
+                        onAction(scrollAction(target, TimelineScroll.BOTTOM))
+                        onAction(markReadAction(target))
+                    }
                 }
             },
             modifier = Modifier

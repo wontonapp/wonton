@@ -29,6 +29,7 @@ import androidx.compose.ui.graphics.layer.drawLayer
 import androidx.compose.ui.graphics.rememberGraphicsLayer
 import androidx.compose.ui.layout.onGloballyPositioned
 import androidx.compose.ui.layout.onSizeChanged
+import androidx.compose.ui.platform.testTag
 import androidx.compose.ui.layout.positionInRoot
 import androidx.compose.ui.platform.LocalDensity
 import app.wonton.ui.design.LocalWontonTopInset
@@ -67,11 +68,8 @@ internal fun Modifier.roomBackdrop(backdrop: RoomBackdrop, top: Boolean): Modifi
     var origin by remember { mutableStateOf(Offset.Zero) }
     val radius = with(LocalDensity.current) { WontonTheme.size.menuBlur.toPx() }
     val canvas = WontonTheme.colors.canvas.toColor()
-    // API 29/30 have no RenderEffect: retain the readable translucent gradient, not simulated blur.
+    // API 29/30 have no RenderEffect: the opaque fill alone still separates the input bar from the bubbles.
     val supportsBlur = Build.VERSION.SDK_INT >= Build.VERSION_CODES.S
-    val strong = canvas.copy(alpha = if (supportsBlur) 0.90f else 0.96f)
-    val weak = canvas.copy(alpha = if (supportsBlur) 0.64f else 0.85f)
-    val gradient = Brush.verticalGradient(listOf(weak, strong))
     val effect = remember(radius) { BlurEffect(radius, radius, TileMode.Clamp) }
     val materialPaint = remember { Paint() }
     val edgeMask = remember {
@@ -93,7 +91,8 @@ internal fun Modifier.roomBackdrop(backdrop: RoomBackdrop, top: Boolean): Modifi
             }
             clipRect { drawLayer(replay) }
         }
-        drawRect(gradient)
+        // 不透明的表面色：气泡从下面滚过去时不在输入框里透字（ADR-0109）。
+        drawRect(canvas)
         drawRect(edgeMask, blendMode = BlendMode.DstIn)
         drawCanvas.restore()
         drawContent()
@@ -113,6 +112,8 @@ internal fun RoomSurface(
         CompositionLocalProvider(LocalWontonTopInset provides with(density) { barHeight.toDp() }) {
             content(backdrop)
         }
-        Box(Modifier.roomBackdrop(backdrop, top = true).onSizeChanged { barHeight = it.height }) { bar() }
+        Box(
+            Modifier.roomBackdrop(backdrop, top = true).onSizeChanged { barHeight = it.height }.testTag("room-bar"),
+        ) { bar() }
     }
 }

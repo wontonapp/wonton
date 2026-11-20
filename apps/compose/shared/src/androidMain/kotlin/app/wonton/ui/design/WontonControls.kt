@@ -22,6 +22,7 @@ import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.text.BasicTextField
 import androidx.compose.foundation.text.KeyboardActions
 import androidx.compose.foundation.text.KeyboardOptions
+import androidx.compose.material3.CenterAlignedTopAppBar
 import androidx.compose.material3.ExperimentalMaterial3Api
 import androidx.compose.material3.Icon
 import androidx.compose.material3.Text
@@ -292,6 +293,7 @@ val LocalWontonBarStatus = compositionLocalOf { WontonBarStatus() }
 /**
  * 进入下一层的 Material 标题栏：返回在前，标题靠左，操作在后。
  *
+ * `centeredTitle` 把标题挪到正中（群聊用它，两边不放头像）；带 `avatar` 的标题只能在左边。
  * `showsStatus` 把连接状态放进副标题；`showsStatusLine` 给内容全靠连接的页面：长时间连不上时换成标题下面那一行，带下一步，
  * 不然页面只会一直转圈。`avatar` 放在标题前（和 Bot 私聊的房间用它显示状态头像，ADR-0044）。
  */
@@ -305,44 +307,56 @@ fun WontonPushedBar(
     showsStatus: Boolean = false,
     showsStatusLine: Boolean = false,
     avatar: (@Composable () -> Unit)? = null,
+    centeredTitle: Boolean = false,
     actions: @Composable RowScope.() -> Unit = {},
 ) {
     val status = LocalWontonBarStatus.current
     val line = status.line.takeIf { showsStatusLine }
     val subtitle = status.subtitle.takeIf { (showsStatus || showsStatusLine) && line == null }
-    Column(Modifier.fillMaxWidth()) {
-        TopAppBar(
-            title = {
-                Row(
-                    verticalAlignment = Alignment.CenterVertically,
-                    horizontalArrangement = Arrangement.spacedBy(WontonTheme.spacing.s12),
-                ) {
-                    avatar?.invoke()
-                    Column {
-                        Text(
-                            title,
-                            Modifier.semantics { heading() },
-                            style = WontonTheme.typography.itemTitle,
-                            color = WontonTheme.colors.textPrimary.toColor(),
-                            maxLines = 1,
-                            overflow = TextOverflow.Ellipsis,
-                        )
-                        subtitle?.let {
-                            Text(
-                                it,
-                                style = WontonTheme.typography.caption,
-                                color = WontonTheme.colors.textSecondary.toColor(),
-                                maxLines = 1,
-                                overflow = TextOverflow.Ellipsis,
-                            )
-                        }
-                    }
+    val titleSlot: @Composable () -> Unit = {
+        Row(
+            verticalAlignment = Alignment.CenterVertically,
+            horizontalArrangement = Arrangement.spacedBy(WontonTheme.spacing.s12),
+        ) {
+            avatar?.invoke()
+            Column {
+                Text(
+                    title,
+                    Modifier.semantics { heading() },
+                    style = WontonTheme.typography.itemTitle,
+                    color = WontonTheme.colors.textPrimary.toColor(),
+                    maxLines = 1,
+                    overflow = TextOverflow.Ellipsis,
+                )
+                subtitle?.let {
+                    Text(
+                        it,
+                        style = WontonTheme.typography.caption,
+                        color = WontonTheme.colors.textSecondary.toColor(),
+                        maxLines = 1,
+                        overflow = TextOverflow.Ellipsis,
+                    )
                 }
-            },
-            navigationIcon = { WontonIconButton(icon, iconLabel, onBack) },
-            actions = actions,
-            colors = TopAppBarDefaults.topAppBarColors(containerColor = Color.Transparent),
-        )
+            }
+        }
+    }
+    val colors = TopAppBarDefaults.topAppBarColors(containerColor = Color.Transparent)
+    Column(Modifier.fillMaxWidth()) {
+        if (centeredTitle) {
+            CenterAlignedTopAppBar(
+                title = titleSlot,
+                navigationIcon = { WontonIconButton(icon, iconLabel, onBack) },
+                actions = actions,
+                colors = colors,
+            )
+        } else {
+            TopAppBar(
+                title = titleSlot,
+                navigationIcon = { WontonIconButton(icon, iconLabel, onBack) },
+                actions = actions,
+                colors = colors,
+            )
+        }
         line?.let {
             Box(
                 Modifier.padding(horizontal = WontonTheme.spacing.pageInset)

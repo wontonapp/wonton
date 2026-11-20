@@ -8,16 +8,20 @@ use std::sync::{Arc, Mutex, Weak};
 
 use tokio::sync::mpsc;
 use wonton_protocol::{
-    ChatAction, ChoicesState, JumpState, MessageStatus, TimelineAction, TimelineContent,
-    TimelineDiff, TimelineFocus, TimelineItem, TimelineScroll, TimelineUpdate,
+    ChatAction, ChoicesState, JumpState, MessageContent, MessageStatus, TimelineAction,
+    TimelineContent, TimelineDiff, TimelineFocus, TimelineItem, TimelineScroll, TimelineUpdate,
 };
 
-use super::ui_fake_room::{FIRST_AT_MS, ITEMS, OWNER, text_message, timeline};
+use super::ui_fake_room::{ITEMS, OWNER, at_ms, text_message, timeline};
 use crate::chat::{Runs, TimelineSubscription};
 
 /// 打开着的假房间，按房间 ID 找；同一房间再订阅时换成新的那份。
 #[derive(Default)]
-pub(super) struct FakeTimelines(Mutex<HashMap<String, Weak<FakeTimeline>>>);
+pub(super) struct FakeTimelines {
+    open: Mutex<HashMap<String, Weak<FakeTimeline>>>,
+    /// 转发进了还没打开的房间：房间打开时补进第一批。
+    forwarded: Mutex<HashMap<String, Vec<String>>>,
+}
 
 impl FakeTimelines {
     /// 订阅一个假房间：先推第一批。
@@ -34,18 +38,49 @@ impl FakeTimelines {
             }),
         });
         let mut first = fake.lock().base.clone();
+        let pending = lock(&self.forwarded).remove(room_id).unwrap_or_default();
+        // 没人转发进这个房间时也要留着第一批自己的 Reset：换成空 diffs 时间线就空了。
+        first.diffs.extend(fake.receive(pending));
         fake.push(&mut first);
-        lock(&self.0).insert(room_id.to_owned(), Arc::downgrade(&fake));
+        lock(&self.open).insert(room_id.to_owned(), Arc::downgrade(&fake));
         let scrolled = fake.clone();
         TimelineSubscription::seeded(receiver, Box::new(move |scroll| scrolled.scrolled(scroll)))
     }
 
     fn get(&self, room_id: &str) -> Option<Arc<FakeTimeline>> {
-        lock(&self.0).get(room_id).and_then(Weak::upgrade)
+        lock(&self.open).get(room_id).and_then(Weak::upgrade)
+    }
+
+    /// 转发的副本：去的地方开着就马上推过去，没开就留着等它打开。只转发文字，别的照抄不了。
+    fn forward(&self, from: &str, item_id: &str, to: &str) {
+        let Some(body) = self.get(from).and_then(|room| room.text_of(item_id)) else {
+            return;
+        };
+        match self.get(to) {
+            Some(destination) => {
+                let diffs = destination.receive(vec![body]);
+                destination.batch(|update| update.diffs = diffs);
+            }
+            None => {
+                lock(&self.forwarded)
+                    .entry(to.to_owned())
+                    .or_default()
+                    .push(body);
+            }
+        }
     }
 
     /// 时间线上的操作。没订阅的房间、约定以外的操作不理。
     pub(super) fn timeline_action(&self, action: TimelineAction) {
+        if let TimelineAction::ForwardMessage {
+            target,
+            item_id,
+            to_room_id,
+        } = &action
+        {
+            self.forward(&target.room_id, item_id, to_room_id);
+            return;
+        }
         let room_id = match &action {
             TimelineAction::JumpToMessage { target, .. }
             | TimelineAction::JumpBack { target }
@@ -189,6 +224,49 @@ impl FakeTimeline {
         });
     }
 
+    /// 这条消息的文字，没有就 `None`。
+    /// 一条文字消息的正文。先看后来推的，再看第一批：转发的常常是刚打开房间时的那几条。
+    fn text_of(&self, item_id: &str) -> Option<String> {
+        let state = self.lock();
+        let base = state.base.diffs.iter().find_map(|diff| match diff {
+            TimelineDiff::Reset { items } => Some(items.as_slice()),
+            _ => None,
+        });
+        let item = state
+            .items
+            .iter()
+            .chain(base.into_iter().flatten())
+            .find(|item| item.id == item_id)?;
+        let TimelineContent::Message { message } = &item.content else {
+            return None;
+        };
+        match &message.body {
+            MessageContent::Text { body, .. } => Some(body.clone()),
+            _ => None,
+        }
+    }
+
+    /// 转发过来的一批接在末尾，返回要推的条目。
+    fn receive(&self, bodies: Vec<String>) -> Vec<TimelineDiff> {
+        let mut state = self.lock();
+        bodies
+            .into_iter()
+            .map(|body| {
+                state.sent += 1;
+                let index = ITEMS - 1 + state.sent;
+                let id = format!("ui-fake-forwarded-{index}");
+                let mut message = text_message(&id, OWNER, at_ms(index), &[body]);
+                message.status = Some(MessageStatus::Sent);
+                TimelineDiff::PushBack {
+                    item: TimelineItem {
+                        id,
+                        content: TimelineContent::Message { message },
+                    },
+                }
+            })
+            .collect()
+    }
+
     fn answer(&self, item_id: &str, key: &str) {
         let answered = {
             let state = self.lock();
@@ -236,7 +314,7 @@ impl FakeTimeline {
         let mut message = text_message(
             &format!("ui-fake-sent-{index}"),
             OWNER,
-            FIRST_AT_MS + index as u64 * 60_000,
+            at_ms(index),
             &[body.to_owned()],
         );
         message.status = Some(MessageStatus::Sent);
@@ -373,5 +451,38 @@ mod tests {
         assert!(last.is_own);
         assert_eq!(last.run, MessageRun::Last);
         assert_eq!(message(&items, "ui-fake-23").run, MessageRun::First);
+    }
+
+    /// 转发一条老消息到没开的房间：等那个房间打开时补进第一批。老消息在第一千里，不在 `items` 里。
+    #[tokio::test]
+    async fn forwarding_reaches_an_unopened_room() {
+        let fakes = FakeTimelines::default();
+        let echo = fakes.subscribe(ROOM);
+        let _first = next(&echo).await;
+        assert_eq!(
+            fakes
+                .get(ROOM)
+                .expect("Echo 开着")
+                .text_of("ui-fake-11")
+                .as_deref(),
+            Some("Fixture message 11")
+        );
+        fakes.timeline_action(TimelineAction::ForwardMessage {
+            target: target(),
+            item_id: "ui-fake-11".into(),
+            to_room_id: "!ui-fake-call:home.example".into(),
+        });
+        let far = fakes.subscribe("!ui-fake-call:home.example");
+        let first = next(&far).await;
+        let mut items = Vec::new();
+        for diff in first.diffs {
+            crate::chat::apply_diff(&mut items, diff);
+        }
+        assert_eq!(items.len(), ITEMS + 1);
+        let forwarded = message(&items, "ui-fake-forwarded-24");
+        let MessageContent::Text { body, .. } = &forwarded.body else {
+            panic!("转发的是文字");
+        };
+        assert_eq!(body, "Fixture message 11");
     }
 }
