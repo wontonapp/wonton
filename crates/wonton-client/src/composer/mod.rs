@@ -24,8 +24,8 @@ use tokio::sync::{Notify, watch};
 use tokio::task::JoinHandle;
 use wonton_l10n::l10n;
 use wonton_protocol::{
-    AttachmentState, ComposerMention, ComposerViewModel, CoreError, ImageUpload, RoomTransfers,
-    UploadSource,
+    AttachmentFailure, AttachmentState, ComposerMention, ComposerViewModel, CoreError, ImageUpload,
+    RoomTransfers, UploadSource,
 };
 
 use crate::l10n::{CATALOG, language};
@@ -477,6 +477,43 @@ impl ComposerLink {
         }
     }
 
+    /// 附件区里有一张没传上去的照片或文件时，点发送会被拒：重试和删都在附件区里，这里只给原因。
+    pub(crate) fn reject_if_failed(&self, room: &str) -> Result<(), CoreError> {
+        if self.has_failed(room) {
+            return Err(invalid(l10n!(CATALOG, language(), "composer-has-failed")));
+        }
+        Ok(())
+    }
+
+    fn has_failed(&self, room: &str) -> bool {
+        let inner = self.lock();
+        inner.state.rooms.get(room).is_some_and(|room| {
+            room.tray
+                .iter()
+                .any(|item| matches!(item.state, AttachmentState::Failed { .. }))
+        })
+    }
+
+    /// 假数据入口（`ui-fake`）没有真上传，界面测试靠它把附件标成上传失败，走到被拒的分支。
+    pub(crate) fn fail_for_test(&self, room: &str, id: &str) -> Result<(), CoreError> {
+        let found = {
+            let inner = self.lock();
+            inner.state.item(room, id).is_some()
+        };
+        if !found {
+            return Err(attachment_not_found());
+        }
+        self.record(room, |state| {
+            if let Some(item) = state.item_mut(room, id) {
+                item.state = AttachmentState::Failed {
+                    reason: AttachmentFailure::Upstream,
+                    message: "ui-fake: upload failed on purpose".into(),
+                };
+            }
+        });
+        Ok(())
+    }
+
     pub(crate) fn send(
         self: &Arc<Self>,
         room: &str,
@@ -484,19 +521,14 @@ impl ComposerLink {
         reply_to: Option<String>,
         mentions: &[String],
     ) -> Result<(), CoreError> {
-        let has_failed = {
+        {
             let inner = self.lock();
             let tray = inner.state.rooms.get(room).map(|room| room.tray.as_slice());
-            let tray = tray.unwrap_or_default();
-            if body.trim().is_empty() && tray.is_empty() {
+            if body.trim().is_empty() && tray.unwrap_or_default().is_empty() {
                 return Err(invalid(l10n!(CATALOG, language(), "chat-empty-message")));
             }
-            tray.iter()
-                .any(|item| matches!(item.state, AttachmentState::Failed { .. }))
-        };
-        if has_failed {
-            return Err(invalid(l10n!(CATALOG, language(), "composer-has-failed")));
         }
+        self.reject_if_failed(room)?;
         self.uplink.check_send(room, reply_to.as_deref())?;
         let ((), saved) = self.change(room, |state| {
             let room = state.rooms.entry(room.to_owned()).or_default();
