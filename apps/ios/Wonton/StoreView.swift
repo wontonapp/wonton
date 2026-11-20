@@ -37,10 +37,6 @@ struct StoreView: View {
                     catalog
                 }
             }
-                    }
-                    catalog
-                }
-            }
         }
         .wontonPushedScreen(String(localized: .Store.storeTitle), showsStatusLine: true, usesSystemToolbar: true) {
             HStack(spacing: 0) {
@@ -75,6 +71,9 @@ struct StoreView: View {
         return model.viewModel.tasks.filter { !batchTasks.contains($0) }
     }
 
+}
+
+extension StoreView {
     private var catalog: some View {
         ScrollView {
             LazyVStack(alignment: .leading, spacing: 0) {
