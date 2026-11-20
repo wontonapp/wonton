@@ -270,8 +270,9 @@ final class ChatTelegramUITests: XCTestCase {
         // 附言在目标房间没打开时排着，打开那条才发出去。
         XCTAssertTrue(app.buttons["forwardSend"].waitForNonExistence(timeout: 5), "转发面板没收起")
         tap(app.buttons["Back"])
-        XCTAssertTrue(app.buttons["!ui-fake-notes:home.example"].waitForExistence(timeout: 10), "没回到会话列表")
-        enter("!ui-fake-notes:home.example")
+        XCTAssertTrue(app.buttons["chatRoom.!ui-fake-notes:home.example"].waitForExistence(timeout: 10),
+                      "没回到会话列表\n\(app.debugDescription)")
+        enter("chatRoom.!ui-fake-notes:home.example")
         let arrived = text(startingWith: "Fixture forward comment")
         XCTAssertTrue(arrived.waitForExistence(timeout: 10), "附言没进目标房间\n\(app.debugDescription)")
         // 目标房间本来就有一条“Fixture message 3”，转发过来的那条是第二条。
@@ -318,7 +319,8 @@ final class ChatTelegramUITests: XCTestCase {
         XCTAssertTrue(revealClearOfHint(card), "翻不到露出来的旁聊卡片\n\(app.debugDescription)")
         tap(card)
         XCTAssertTrue(card.waitForNonExistence(timeout: 5), "点了卡片没进旁聊\n\(app.debugDescription)")
-        XCTAssertTrue(element("sideChatAttachHint").waitForExistence(timeout: 5), "旁聊里没有附件提示")
+        XCTAssertTrue(element("sideChatAttachHint").waitForExistence(timeout: 5),
+                      "旁聊里没有附件提示（还在房间里：\(app.buttons["Back"].exists)）\n\(app.debugDescription)")
         shot("side-chat-hint")
         darkShot("side-chat-hint-dark")
         startReply(at: 3)
@@ -527,14 +529,20 @@ final class ChatTelegramUITests: XCTestCase {
 
     /// 翻到露在附件提示上面的位置：卡片在提示底下就往上挪，在提示上面更远处就往下找。
     private func revealClearOfHint(_ node: XCUIElement) -> Bool {
+        let activity = app.staticTexts["barActivity"]
         for _ in 0..<60 {
-            if node.exists {
-                let cover = [element("sideChatAttachHint"), element("composerTray")].filter { $0.exists }.map { $0.frame.minY }
-                let bottom = min(app.textViews["Message"].frame.minY, cover.min() ?? .infinity)
-                if node.frame.maxY < bottom, node.isHittable { return true }
-                dragUp()
-            } else {
+            guard node.exists else {
                 dragDown()
+                continue
+            }
+            let top = activity.exists ? activity.frame.maxY : app.buttons["roomTopBarAvatar"].frame.maxY
+            let cover = [element("sideChatAttachHint"), element("composerTray")].filter { $0.exists }.map { $0.frame.minY }
+            let bottom = min(app.textViews["Message"].frame.minY, cover.min() ?? .infinity)
+            if node.frame.minY > top, node.frame.maxY < bottom, node.isHittable { return true }
+            if node.frame.maxY <= top {
+                dragDown()
+            } else {
+                dragUp()
             }
         }
         return false
@@ -559,10 +567,10 @@ final class ChatTelegramUITests: XCTestCase {
         XCTFail("输入框一直没拿到键盘焦点\n\(app.debugDescription)", file: file, line: line)
     }
 
-    /// 往新的一头翻一段。
+    /// 往新的一头挪一小段：从提示上面起手，挪 110 点，不会把整屏翻过头。
     private func dragUp() {
-        let start = app.coordinate(withNormalizedOffset: CGVector(dx: 0.5, dy: 0.6))
-        start.press(forDuration: 0.05, thenDragTo: app.coordinate(withNormalizedOffset: CGVector(dx: 0.5, dy: 0.35)),
+        let start = app.coordinate(withNormalizedOffset: CGVector(dx: 0.5, dy: 0.55))
+        start.press(forDuration: 0.05, thenDragTo: app.coordinate(withNormalizedOffset: CGVector(dx: 0.5, dy: 0.42)),
                     withVelocity: .default, thenHoldForDuration: 0.2)
     }
 
