@@ -535,14 +535,19 @@ impl PluginManager {
             crate::clients::apply::close_for_uninstall(gateway, id)
                 .await
                 .map_err(|error| InstallError::UpstreamUnavailable(error.message))?;
-        } else if self
-            .store
-            .load(id)?
-            .is_some_and(|record| record.clients_entries.lan || record.clients_entries.public)
-        {
-            return Err(InstallError::UpstreamUnavailable(
-                "入口控制未接入，无法确认插件入口已关闭".to_owned(),
-            ));
+        } else {
+            // 记录坏了的插件也要能卸，读到不行就按没有入口继续（只记一条），不把卸载一直挡在这里。
+            match self.store.load(id) {
+                Ok(Some(record)) if record.clients_entries.lan || record.clients_entries.public => {
+                    return Err(InstallError::UpstreamUnavailable(
+                        "入口控制未接入，无法确认插件入口已关闭".to_owned(),
+                    ));
+                }
+                Ok(_) => {}
+                Err(error) => {
+                    tracing::warn!(plugin = %id, %error, "插件记录读不了，按没有入口继续卸载");
+                }
+            }
         }
         {
             let mut plugins = self.plugins.write().expect("插件表锁中毒");

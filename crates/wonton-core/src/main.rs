@@ -407,7 +407,7 @@ fn open_gateway(
     entry: Option<wonton_core::entry_containers::EntryContainers>,
     agent_chains: Arc<AgentChains>,
 ) -> Arc<Gateway> {
-    Arc::new(
+    let gateway = Arc::new(
         Gateway::new(
             cfg.public.clone(),
             owner,
@@ -441,9 +441,6 @@ fn open_gateway(
         .with_clients(clients)
         .with_entry(entry),
     );
-    if let Some(mcp) = &gateway.mcp {
-        mcp.bus.attach_handoff_gateway(Arc::downgrade(&gateway));
-    }
     gateway
 }
 

@@ -410,7 +410,6 @@ impl FakeDocker {
     pub fn fail_next_kill(&self, container: &str, message: &str) {
         self.lock().kill_error = Some((container.to_owned(), message.to_owned()));
     }
-    }
 
     pub fn fail_remove(&self, container: &str, message: Option<&str>) {
         self.lock().remove_error =
