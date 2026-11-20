@@ -616,7 +616,19 @@ impl PluginManager {
                 )));
             }
         }
-        Ok(())
+        self.check_bot_sync(&manifest.id)
+    }
+
+    /// Bot 经核心的同步停了就报异常：容器活着、上游的健康检查也还报 connected，只有这里看得出来它收不到消息。
+    pub(super) fn check_bot_sync(&self, id: &PluginId) -> Result<(), InstallError> {
+        let Some(age) = self.stalled_bot_sync(id) else {
+            return Ok(());
+        };
+        Err(InstallError::Unhealthy(crate::l10n::text(
+            &self.owner_languages(),
+            "plugin-settings-bot-sync-stalled",
+            &[("seconds", age.to_string().into())],
+        )))
     }
 
     /// 这个房间里的 Bot 的名字（Matrix 用户名）。M1 的 Bot 只在自己的主房间里，核心不在别的房间里，也查不了成员。

@@ -330,6 +330,7 @@ plugin-settings-bot-device-name = Wonton app { $id } (bot { $bot })
 plugin-settings-bot-account-deactivated = The bot account { $user } has been deactivated: uninstall this app choosing to delete its data and reinstall, and a new account will be assigned
 plugin-settings-bot-device-record-missing = There is no device record for bot { $bot }: reinstall the app (you can keep its data)
 plugin-settings-bot-device-revoked = The bot { $user }'s device has been revoked, so the Matrix token the app holds no longer works: reinstall it (you can keep its data) to get a new one
+plugin-settings-bot-sync-stalled = The bot has not received messages through the core for { $seconds } seconds: it can still be running and healthy while nothing arrives. Restart the app; if that does not help, reinstall it (you can keep its data)
 
 # ── LAN detection, the egress container and the store index (lan/detect.rs, docker_limits.rs, egress, storefront) ──
 

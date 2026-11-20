@@ -145,6 +145,11 @@ impl PluginManager {
             Ok(ContainersState::Running(health))
                 if self.status_of(id) == Some(PluginStatus::Running) =>
             {
+                // 容器健康不等于 Bot 还收得到消息：上游把健康状态写在文件里，同步循环死了也不会变。
+                if let Err(InstallError::Unhealthy(reason)) = self.check_bot_sync(id) {
+                    self.saw_unavailable(id, &token, PluginStatus::Degraded { reason });
+                    return Ok(());
+                }
                 if !record.relays.is_empty() {
                     self.ensure_relays(&package.manifest, &record).await?;
                 }
