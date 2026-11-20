@@ -23,6 +23,9 @@ pub struct PluginDetail {
     pub summary: String,
     /// 详细介绍：纯文本，空行分段；作者没写时为空。
     pub about: Option<String>,
+    /// 第一次打开要做什么，来自清单的 `x-wonton.setup`：装之前就能看到，装好后也留着；作者没写时为空。
+    #[serde(default)]
+    pub setup: Option<String>,
     pub icon: Option<PluginIcon>,
     /// 截图，按作者给的顺序；取不到的图片显示占位。
     pub screenshots: Vec<PluginImage>,

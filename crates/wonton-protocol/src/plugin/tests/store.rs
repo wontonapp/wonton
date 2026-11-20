@@ -44,6 +44,14 @@ fn store_items_without_high_permissions_default_to_no_tag() {
     assert!(!item.high_permissions);
 }
 
+#[test]
+fn old_details_without_setup_still_parse() {
+    let mut old = serde_json::to_value(detail()).unwrap();
+    old.as_object_mut().unwrap().remove("setup");
+    let parsed: PluginDetail = serde_json::from_value(old).unwrap();
+    assert_eq!(parsed.setup, None);
+}
+
 /// 契约：一键装/升的操作、安装请求和升级报价的 JSON 写法；旧 App 读得懂新 App 加的字段。
 #[test]
 fn one_tap_requests_round_trip() {

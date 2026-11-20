@@ -72,6 +72,7 @@ fn app(id: &str, title: &str, summary: &str, installed: Option<InstalledPlugin>)
         title: title.into(),
         summary: summary.into(),
         about: None,
+        setup: None,
         icon: None,
         screenshots: Vec::new(),
         tags: Vec::new(),
@@ -126,6 +127,7 @@ fn hub(installed: Option<InstalledPlugin>) -> PluginDetail {
         installed,
     );
     detail.has_web = true;
+    detail.setup = Some("Sign in as admin, then change the password.".into());
     detail.problems = vec![PluginProblem {
         reason: PluginFailure::DeviceUnavailable,
         message: GONE.into(),

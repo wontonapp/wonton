@@ -191,6 +191,7 @@ impl PluginManager {
             title: langs.pick_owned(&m.title),
             summary: langs.pick_owned(&m.description),
             about: m.about.as_ref().map(|t| langs.pick_owned(t)),
+            setup: m.setup.as_ref().map(|t| langs.pick_owned(t)),
             icon: icon.map(|i| i.paths()),
             screenshots: Vec::new(),
             tags: langs.pick_tags(&m.tags),
