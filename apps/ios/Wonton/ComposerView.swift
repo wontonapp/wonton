@@ -316,34 +316,6 @@ struct ComposerView: View {
     }
 }
 
-/// 输入框右边“发送键那一格”：有字或有附件才出现发送键（ADR-0109 第 6 节），空着时不画东西；照片的字节还在取时这一格转圈。
-/// 单独一个视图：别的按钮要占这一格（比如 Agent 在跑时的“停止”）就换在这里，不动输入框的布局。
-struct ComposerSendSlot: View {
-    let canSend: Bool
-    /// 附件的字节还在取：这一格换成转圈，等待期间还能接着打字。
-    let isSending: Bool
-    let send: () -> Void
-    @Environment(\.accessibilityReduceMotion) private var reduceMotion
-
-    private var showsSlot: Bool { canSend || isSending }
-
-    var body: some View {
-        ZStack {
-            if isSending {
-                ProgressView()
-                    .frame(width: WontonTheme.size.chatControl, height: WontonTheme.size.chatControl)
-                    .accessibilityIdentifier("composerSending")
-            } else if canSend {
-                SendButton(action: send)
-                    .transition(reduceMotion ? .opacity : .scale.combined(with: .opacity))
-            }
-        }
-        // 空着时这一格不占宽，输入框一直伸到右边。
-        .padding(.leading, showsSlot ? 0 : -WontonTheme.spacing.s4)
-        .animation(.easeOut(duration: WontonTheme.motion.feedback), value: showsSlot)
-    }
-}
-
 private struct SendButton: View {
     let action: () -> Void
 
