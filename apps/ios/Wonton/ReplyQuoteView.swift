@@ -26,9 +26,16 @@ struct ReplyQuoteView: View {
 
     var body: some View {
         if cancel == nil {
+            // 竖条画成盖在左边的一层，跟着内容的高度走。它不能是一个自己会伸缩的视图：气泡多出高度时会全被它吃掉，
+            // 引用块就撑得老高（2026-11-20 真机实测）。
             row
+                .padding(.leading, WontonTheme.size.quoteBar + 1 + WontonTheme.spacing.s8)
                 .padding(.trailing, WontonTheme.spacing.s8)
+                .padding(.vertical, WontonTheme.spacing.s4 / 2)
                 .background(accent.opacity(WontonTheme.ratio.codeFill))
+                .overlay(alignment: .leading) {
+                    Rectangle().fill(accent).frame(width: WontonTheme.size.quoteBar + 1).accessibilityHidden(true)
+                }
                 .clipShape(RoundedRectangle(cornerRadius: WontonTheme.radii.bubbleJoined - 2))
         } else {
             row
@@ -42,12 +49,12 @@ struct ReplyQuoteView: View {
                     .foregroundStyle(accent)
                     .accessibilityHidden(true)
             }
-            // 消息里的竖条贴着引用块的左边、上下到头；输入框上方的是一枚短胶囊。
-            Rectangle()
-                .fill(accent)
-                .frame(width: WontonTheme.size.quoteBar + 1, height: cancel == nil ? nil : WontonTheme.size.chip)
-                .clipShape(RoundedRectangle(cornerRadius: cancel == nil ? 0 : WontonTheme.size.quoteBar))
-                .accessibilityHidden(true)
+            if cancel != nil {
+                Capsule()
+                    .fill(accent)
+                    .frame(width: WontonTheme.size.quoteBar + 1, height: WontonTheme.size.chip)
+                    .accessibilityHidden(true)
+            }
             Group {
                 switch quote {
                 case let .ready(message):
@@ -85,9 +92,10 @@ struct ReplyQuoteView: View {
                 .lineLimit(1)
             switch message.content {
             case let .text(text):
-                Text(text)
+                // 摘要：原文的换行并成空格，消息里最多两行，输入框上方一行。
+                Text(text.split(whereSeparator: \.isNewline).joined(separator: " "))
                     .wontonText(WontonTheme.typography.supporting)
-                    .lineLimit(1)
+                    .lineLimit(cancel == nil ? 2 : 1)
             case let .image(thumbnail):
                 QuotedThumbnail(media: thumbnail, core: core)
                     .padding(.top, WontonTheme.spacing.s4)

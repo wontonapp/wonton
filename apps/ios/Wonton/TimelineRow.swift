@@ -289,6 +289,9 @@ private struct MessageBubble: View {
                 laidOut
             }
         }
+        // 气泡按内容的高度排，不接受别人给的高度：给矮了正文会被截成“…”，给高了里面能伸缩的东西会被撑开
+        // （2026-11-20 真机上长消息每段被截断、引用块撑到九行高）。
+        .fixedSize(horizontal: false, vertical: true)
     }
 
     /// 时间常驻气泡右下角（ADR-0109 第 3 节）：放得下和末行同排，放不下另起一行；纯图片压在图片右下角。

@@ -30,6 +30,10 @@ struct MessageMeta: View {
         .background {
             if onMedia { Capsule().fill(Color.black.opacity(WontonTheme.ratio.scrim)) }
         }
+        #if DEBUG
+        // 走查用：时间的字在无障碍树里是藏起来的（正文已经念过），界面测试靠这个看不见的记号量它的位置。只在 Debug 包里挂。
+        .overlay { Color.clear.accessibilityElement().accessibilityIdentifier("messageMeta") }
+        #endif
     }
 
     private var ink: Color {
@@ -76,9 +80,9 @@ struct MessageMeta: View {
         parts.append(TimelineRow.time(message.timestampMs))
         if message.isOwn { parts.append(String(repeating: "\u{00A0}", count: iconReserve)) }
         let glued = parts.joined(separator: "\u{00A0}").replacingOccurrences(of: " ", with: "\u{00A0}")
-        return " \u{00A0}" + glued
+        return " \u{00A0}\u{00A0}" + glued
     }
 
     /// 两个勾大约占几个不折行空格的宽（小号字里一个空格约四分之一个字宽）。
-    private static let iconReserve = 5
+    private static let iconReserve = 8
 }
