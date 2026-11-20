@@ -3,8 +3,8 @@
 # 函数里用到的 $browser、$core、$credential 等变量由 smoke.sh 定，调用时才取值。
 # 步骤名的顺序就是 smoke.sh 里的执行顺序；SMOKE_UNTIL、SMOKE_ONLY 的用法见 smoke.sh 开头。
 
-smoke_steps=(preflight core install isolation unauth sso models tunnel matrix echo hermes mcp files model-page revoke whoami
-  restart uninstall)
+smoke_steps=(preflight core install isolation unauth sso models tunnel matrix echo hermes mcp stop outbox speaker files
+  model-page revoke whoami restart uninstall)
 
 ok() { printf '   ✓ %s\n' "$*"; }
 fail() {

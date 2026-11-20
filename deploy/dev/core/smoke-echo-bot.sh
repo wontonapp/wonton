@@ -15,7 +15,9 @@ bot_env() { docker inspect "$echo_bot" --format '{{range .Config.Env}}{{println 
 install_echo
 bot_user="$(bot_env WONTON_MATRIX_USER_ID)"
 bot_token="$(bot_env WONTON_MATRIX_ACCESS_TOKEN)"
-expect "Bot 有自己的账号" "$bot_user" "@echo:$WONTON_DEV_DOMAIN"
+# Tuwunel 的库是 volume、跨栈留着，前几轮的 @echo 可能还在，核心按 bot.rs 的 reserve_bot_account 加 -2 后缀。
+[[ "$bot_user" == @echo*"$WONTON_DEV_DOMAIN" ]] || fail "Bot 的账号不对：$bot_user"
+ok "Bot 有自己的账号：$bot_user"
 expect "Bot 经核心在插件网络里的别名访问 Matrix" \
   "$(bot_env WONTON_MATRIX_HOMESERVER)" "http://matrix.wonton.internal:$WONTON_DEV_PORT"
 expect "Bot 的显示名" "$(owner_api "/profile/$bot_user/displayname" | json displayname)" 回声

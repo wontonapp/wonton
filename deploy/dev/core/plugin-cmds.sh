@@ -43,12 +43,33 @@ secret_header() {
   hdrs+=(-H "Wonton-Plugin-Secrets: $(python3 -c 'import base64,json,sys;print(base64.urlsafe_b64encode(json.dumps(json.loads(sys.argv[1])).encode()).decode().rstrip("="))' "$2")")
 }
 
+# 插件装着没有：安装接口对已装的插件报错退出，复跑时改走升级（换容器，不吊销 Bot 的设备）。
+plugin_installed() {
+  api GET /_wonton/api/plugins | python3 -c 'import json, sys
+sys.exit(0 if any(p["id"] == sys.argv[1] for p in json.load(sys.stdin)["plugins"]) else 3)' "$1"
+}
+
 install() {
-  local file="$1" yes="${2:-}" secrets="${3:-}" type preview answer
+  local file="$1" yes="${2:-}" secrets="${3:-}" type preview answer out
   local -a headers statuses
   [[ -e "$file" ]] || die "找不到插件包：$file"
   type="$(package_type "$file")"
   preview="$(preview_package "$file")" || die "预览失败：$preview"
+  # 已装过的插件，安装预览就是 blocked（already installed）：先取 ID，装了就走升级。
+  PLUGIN_ID="$(json_field id <<<"$preview")"
+  if plugin_installed "$PLUGIN_ID"; then
+    echo "$PLUGIN_ID 已经装过，改走升级" >&2
+    out="$(upgrade "$file" "$yes" "$secrets" 2>&1)" || {
+      if grep -q 'nothing to update' <<<"$out"; then
+        echo "$PLUGIN_ID 已经是这个版本，不用动" >&2
+        return 0
+      fi
+      printf '%s\n' "$out" >&2
+      return 1
+    }
+    printf '%s\n' "$out"
+    return 0
+  fi
   preview_read "$preview"
   if [[ "$yes" != "--yes" ]]; then
     read -r -p "确认安装？[y/N] " answer

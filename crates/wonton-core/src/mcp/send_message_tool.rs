@@ -179,6 +179,16 @@ async fn ask_and_enqueue(
         Ok(opened) => opened,
         Err(refusal) => return bus.refused(&caller, &name, &args, &refusal, None),
     };
+    tracing::debug!(
+        card = %card.id,
+        caller = caller.sender.as_ref().map_or("-", |who| match who {
+            TurnSender::Local(id) => id.as_str(),
+            TurnSender::Unknown => "?",
+        }),
+        chain = caller.chain.as_deref().unwrap_or("-"),
+        session = caller.session.as_deref().unwrap_or("-"),
+        "发出的私聊卡片挂在谁和哪条链上"
+    );
     // 卡片认到这条链：链被停时随停撤回（等的人拿到 cancelled，不入队）。
     if let Some(chain) = &caller.chain
         && let Some(chains) = bus.agent_chains()

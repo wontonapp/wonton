@@ -3,7 +3,8 @@
 # 像浏览器一样经核心网关打开插件并自动登录 → 核心预装模型网关，使用方拿到自己的凭据 →
 # 已配对设备经隧道打开插件，直接是主人 → 经隧道登录 Matrix，和回声 Bot 加密收发 →
 # 核心自己装好的默认 Agent Hermes 就绪后出现在主人的私聊里：没有模型时提示去“模型设置”，加了 provider 后经模型网关和
-# 主人加密对话两轮 → 网关代登录打开“模型设置”网页 → 核心重启后恢复、不装回卸掉的 Hermes → 卸载干净。
+# 主人加密对话两轮 → 停链打断 Hermes 正在跑的一轮；批准的私聊经出箱发到家人手里；核心按说话人请求头认人 →
+# 网关代登录打开“模型设置”网页 → 核心重启后恢复、不装回卸掉的 Hermes → 卸载干净。
 # Hermes 一步要真实模型：开发机上要有在运行的 magpie。冒烟的 magpie 容器直连宿主 3425，
 # 凭据是冒烟自己新建的一次性网关凭据：限定到这次的模型，退出时按建 key 时记下的 id 删掉
 # （失败退出也删），凭据不进日志、不写进仓库。
@@ -42,8 +43,17 @@ export WONTON_BUILD_COMMIT
 core="$WONTON_DEV_PROJECT"
 browser="$WONTON_DEV_PROJECT-browser"
 phone="$WONTON_DEV_PROJECT-phone"
+# 家人（妈妈）的手机，停链、出箱、说话人几步用。
+mom_phone="$WONTON_DEV_PROJECT-mom"
 phone_image="wonton-tunnel-client:dev"
 echo_image="wonton-echo-bot:dev"
+# 探针设备：加密库和登录状态存在数据目录里，跨步骤、跨续跑都是同一台设备，对方的设备表里一直是它。
+# 每次冒烟换数据目录，也就换新设备；同一个 ID 换新密钥时对方的 SDK 会报签名密钥变了，所以固定 ID 只和数据目录一起用。
+probe_device="wonton-smoke-probe"
+mom_probe_device="wonton-smoke-mom-probe"
+probe_store="$WONTON_DEV_DATA/probe-store"
+mom_probe_store="$WONTON_DEV_DATA/mom-probe-store"
+mkdir -p "$probe_store" "$mom_probe_store"
 curl_image="curlimages/curl:8.23.0"
 busybox_image="public.ecr.aws/docker/library/busybox:1.37"
 core_url="http://$WONTON_DEV_DOMAIN:$WONTON_DEV_PORT"
@@ -60,6 +70,8 @@ magpie="$magpie_network--magpie"
 model_client="wonton-$WONTON_DEV_INSTANCE--app-model-client--client"
 # Hermes 声明了 bots（x-wonton.bots），gateway 是 Bot 服务：容器按 Bot 一份。
 hermes="$hermes_network--gateway--default"
+# 排在 matrix 步骤外面：SMOKE_ONLY 跳过那一步时后面也要用。
+hermes_env() { docker inspect "$hermes" --format '{{range .Config.Env}}{{println .}}{{end}}' | sed -n "s/^$1=//p"; }
 plugins=(app.grafana app.whoami agent.echo ai.usemagpie.magpie app.model-client com.nousresearch.hermes app.wonton.files org.navidrome.navidrome)
 
 # shellcheck source=deploy/dev/core/smoke-cleanup.sh
@@ -76,6 +88,81 @@ if reaches hermes; then
   model="${WONTON_SMOKE_MODEL:?未设 WONTON_SMOKE_MODEL：Hermes 一步要真实模型，填开发机 magpie 里能对话的模型名}"
 fi
 
+# 各步骤体里用到的接口封装：排在步骤外面，SMOKE_ONLY 跳过前一步时后面也要用。
+owner_api() { t -H "Authorization: Bearer $access" "$matrix_url/_matrix/client/v3$1"; }
+direct_rooms() {
+  owner_api "/user/@owner:$WONTON_DEV_DOMAIN/account_data/m.direct" |
+    python3 -c 'import json, sys; print("\n".join(json.load(sys.stdin).get(sys.argv[1], [])))' "$1"
+}
+hermes_models() {
+  docker exec "$hermes" sh -c 'curl -fsS --max-time 30 -H "Authorization: Bearer $WONTON_MODEL_API_KEY" "$WONTON_MODEL_BASE_URL/models"' |
+    python3 -c 'import json, sys; print(" ".join(sorted(m["id"] for m in json.load(sys.stdin)["data"])))'
+}
+plugin_state() {
+  "$dev" list | awk -v id="$1" '$1 == id { print $2; found = 1 } END { if (!found) print "absent" }'
+}
+probe_in_hermes_room() {
+  local out="$1" jwt rc=0 attempt
+  shift
+  for attempt in 1 2 3; do
+    rc=0
+    (( attempt == 1 )) || echo '   · 探针设备被服务器丢了，用同一台重试' >&2
+    jwt="$(t -X POST "$core_url/_wonton/matrix/login-token" | json token)" || return 1
+    docker run --rm --network "container:$core" -v "$probe_store:/probe" "$echo_image" probe \
+      --homeserver "$matrix_url" --proxy "http://$credential@127.0.0.1:18008" --login-token "$jwt" \
+      --room "$hermes_room" --bot "$hermes_user" --device-id "$probe_device" --store /probe \
+      --reply any "$@" >"$out" 2>&1 || rc=$?
+    # 有一句正常回复就算过：探针偶尔把 404 当空回复、退出码还是 0。
+    if (( rc == 0 )) && grep -q '收到加密的回复：' "$out"; then return 0; fi
+    # 不是 404 的失败（含探针自己的报错）不再重来。
+    if ! grep -q M_NOT_FOUND "$out"; then return "$rc"; fi
+  done
+  return 1
+}
+talk_to_hermes() { probe_in_hermes_room "$1" --wait 180 --text "$2"; }
+ask_hermes() { probe_in_hermes_room "$1" --wait 300 --settle 180 --text "$2"; }
+latest_card() {
+  t -sS -H "Authorization: Bearer $access" "$core_url/_wonton/api/confirmations" | python3 -c 'import json, sys
+d = json.load(sys.stdin)
+cards = d.get("confirmations") or d.get("finished") or []
+if cards:
+    print(cards[0]["id"], cards[0]["state"]["type"])'
+}
+answer() { "$@" -sS -o /dev/null -w '%{http_code}' -X POST -H 'content-type: application/json' -d '{"answer": "approve"}'; }
+pending_card() {
+  local card=""
+  for _ in $(seq 240); do
+    card="$(latest_card)"
+    [[ "$card" == *" pending" ]] && { echo "${card%% *}"; return 0; }
+    sleep 1
+  done
+  return 1
+}
+answer_with() { t -sS -o /dev/null -w '%{http_code}' -X POST -H 'content-type: application/json' -d "{\"answer\": \"$1\"}" "$core_url/_wonton/confirmations/$2"; }
+audited() {
+  python3 -c 'import json, re, sys
+lines = [json.loads(line) for line in sys.stdin if line.strip()]
+sys.exit(not any(re.fullmatch(sys.argv[1], l["tool"]) and l["decision"] == sys.argv[2] for l in lines))' "$1" "$2" <<<"$audit"
+}
+song_task() {
+  if [[ -n "${WONTON_SMOKE_SONG_URL:-}" ]]; then
+    printf '下载 %s 保存成 %s' "$WONTON_SMOKE_SONG_URL" "$1"
+  else
+    printf '用 Python 标准库的 wave 模块生成一个 1 秒的静音 WAV 文件 %s' "$1"
+  fi
+}
+save_grants() {
+  t "$core_url/_wonton/api/plugins/com.nousresearch.hermes" | python3 -c 'import json, sys; print(" ".join(json.load(sys.stdin)["save_grants"]))'
+}
+upstream_off() { [[ "$(docker exec "$magpie" magpie providers)" == *'switched off'* ]]; }
+anon() { curl_in "$browser" --noproxy '*' -sS "$@"; }
+page_post() { b -D - -H "Origin: $1" -H 'content-type: application/json' -d '{"id":"upstream"}' "$magpie_url/api/provider/$2"; }
+from_whoami() {
+  docker run --rm --network "$whoami_network" "$curl_image" --noproxy '*' \
+    --max-time "$SMOKE_WEB_MAX_TIME" --connect-timeout "$SMOKE_CONNECT_TIMEOUT" -sS -o /dev/null -D - \
+    -H "Host: $1:$WONTON_DEV_PORT" "http://$core:$WONTON_DEV_PORT$2"
+}
+
 if step preflight "预检"; then
 docker version --format '   Docker {{.Server.Version}} {{.Server.Os}}/{{.Server.Arch}}'
 for id in "${plugins[@]}"; do
@@ -85,7 +172,7 @@ ok "没有残留的示例插件资源"
 fi
 # 对着已有的栈跑时不拆栈，只删自己起的探针容器。
 if [[ -n "${SMOKE_ONLY:-}" ]]; then
-  trap '[[ -z "${events_pid:-}" ]] || kill "$events_pid" 2>/dev/null; docker rm -f "$browser" "$phone" >/dev/null 2>&1 || true' EXIT
+  trap '[[ -z "${events_pid:-}" ]] || kill "$events_pid" 2>/dev/null; docker rm -f "$browser" "$phone" "$mom_phone" >/dev/null 2>&1 || true' EXIT
 else trap cleanup EXIT; fi
 
 if step core "启动核心和身份提供方（项目 $core，端口 $WONTON_DEV_PORT）"; then
@@ -94,11 +181,60 @@ hermes_events="$(mktemp)"
 docker events --filter "container=$hermes" --filter event=health_status --format '{{.TimeNano}} {{.Action}}' \
   >"$hermes_events" 2>/dev/null &
 events_pid=$!
-if [[ -z "${SMOKE_ONLY:-}" ]]; then "$dev" up >/dev/null || build_failed "核心启动失败"; fi
+# 每次全新跑都换一个新核心，但身份提供方的卷不跟数据目录走：上一个栈留下的 @mom 会让家人那步的邀请撞重名，
+# 换掉它才和「新数据目录 = 新核心」一致。
+if [[ -z "${SMOKE_ONLY:-}" ]]; then
+  if docker volume ls -q | grep -qx "${core}_tuwunel"; then docker volume rm "${core}_tuwunel" >/dev/null; fi
+  "$dev" up >/dev/null || build_failed "核心启动失败"
+fi
 start_browser
 expect "核心容器健康" "$(docker inspect -f '{{.State.Health.Status}}' "$core")" healthy
 expect "网关应答（$core_url）" "$(b -o /dev/null -w '%{http_code}' "$core_url/_wonton/health")" 200
 
+fi
+# 对着保留下来的栈分段跑时，上一次结束已经删掉了探测容器：每段都补一个浏览器和手机。
+[[ -n "${SMOKE_ONLY:-}" ]] && start_browser
+# 分段跑用栈上现成的客户端镜像，不再排一次 cargo 名额。
+if [[ -z "${SMOKE_ONLY:-}" ]] || [[ -z "$(docker images -q "$phone_image")" ]]; then
+  build --target tunnel-client --build-arg WONTON_BUILD_COMMIT -t "$phone_image" -f "$here/Dockerfile" "$repo"
+fi
+server_id="$("$dev" tunnel | json endpoint_id)"
+# 手机：隧道客户端示例跑在核心的网络命名空间里，经回环地址直连隧道入口，本地代理在 127.0.0.1:18008，
+# 和 App 一样只接受带本次会话凭据的请求。私钥放在数据目录：重启手机进程（模拟 App 回前台触发重连，
+# 隧道客户端被拒后按 ADR-0032 等 retry_now，不自动重拨）后还是同一个设备。客户端对已存在的空文件不生成
+# 私钥，所以先用一次性容器把它生成出来。
+phone_key="$WONTON_DEV_DATA/phonekeys/phone.key"
+[[ -s "$phone_key" ]] || docker run --rm -v "$WONTON_DEV_DATA/phonekeys:/k" --entrypoint sh "$phone_image" \
+  -c "tunnel-client --key /k/phone.key id" >/dev/null
+start_phone() {
+  docker rm -f "$phone" >/dev/null 2>&1 || true
+  docker run -d --name "$phone" --network "container:$core" -v "$phone_key:/tmp/phone.key" --entrypoint sh "$phone_image" -c \
+    "tunnel-client --key /tmp/phone.key id && exec tunnel-client --key /tmp/phone.key proxy --auth \
+     --domain $WONTON_DEV_DOMAIN --server $server_id --addr 127.0.0.1:$WONTON_DEV_TUNNEL_PORT \
+     --listen 127.0.0.1:18008" >/dev/null
+  for _ in $(seq 30); do
+    # 不用 grep -q：它匹配就退出，docker logs 会吃 SIGPIPE，pipefail 下会杀掉整个脚本。
+    # 代理的连接是第一次请求时才建的；这里只等它的监听出来。
+    docker logs "$phone" 2>/dev/null | grep '^本地代理' >/dev/null && break
+    sleep 1
+  done
+  docker logs "$phone" 2>/dev/null | grep -q '^本地代理' || fail "手机没起来：$(docker logs "$phone" 2>&1 | tail -3)"
+  credential="$(docker logs "$phone" 2>/dev/null | sed -n 's/^会话凭据：//p')"
+}
+start_phone
+device_id="$(docker logs "$phone" 2>/dev/null | sed -n '1p')"
+[[ "$device_id" =~ ^[0-9a-f]{64}$ && -n "$credential" ]] || fail "手机没有启动：$(docker logs "$phone" 2>&1)"
+# SMOKE_ONLY 直接跑某一步时没走过 start_phone，凭据从探测手机上现读。
+credential="${credential:-$(docker logs "$phone" 2>/dev/null | sed -n 's/^会话凭据：//p' | tail -1)}"
+# 同理，Hermes 的账号、私聊房间和主人的 Matrix 访问令牌在 hermes、matrix 两步里取，分段跑时要现查。
+if [[ -z "${access:-}" ]]; then
+  matrix_url="${matrix_url:-http://matrix.$WONTON_DEV_DOMAIN:$WONTON_DEV_PORT}"
+  login="$(t -X POST "$core_url/_wonton/matrix/login-token")"
+  body="$(python3 -c 'import json, sys
+print(json.dumps({"type": sys.argv[1], "token": sys.argv[2], "initial_device_display_name": "wonton smoke"}))' \
+    "$(json login_type <<<"$login")" "$(json token <<<"$login")")"
+  access="$(t -X POST -H 'content-type: application/json' --data-binary "$body" \
+    "$matrix_url/_matrix/client/v3/login" | json access_token)"
 fi
 if step install "一条命令安装 Grafana 示例插件"; then
 started=$(date +%s)
@@ -152,9 +288,6 @@ printf '%s' "$("$dev" token)" |
 
 fi
 if step models "模型网关（models）：核心预装 magpie，给使用方签发只属于它的凭据，经 models.wonton.internal 转发"; then
-plugin_state() {
-  "$dev" list | awk -v id="$1" '$1 == id { print $2; found = 1 } END { if (!found) print "absent" }'
-}
 for _ in $(seq 180); do [[ "$(plugin_state ai.usemagpie.magpie)" == running ]] && break; sleep 1; done
 expect "核心在后台预装了模型网关" "$(plugin_state ai.usemagpie.magpie)" running
 client_file="$(mktemp)"
@@ -222,31 +355,6 @@ docker rm -f "$fake_upstream" >/dev/null
 
 fi
 if step tunnel "已配对设备经隧道打开插件：不用登录，直接是主人"; then
-build --target tunnel-client --build-arg WONTON_BUILD_COMMIT -t "$phone_image" -f "$here/Dockerfile" "$repo"
-server_id="$("$dev" tunnel | json endpoint_id)"
-# 手机：隧道客户端示例跑在核心的网络命名空间里，经回环地址直连隧道入口，本地代理在 127.0.0.1:18008，
-# 和 App 一样只接受带本次会话凭据的请求。私钥放在数据目录：重启手机进程（模拟 App 回前台触发重连，
-# 隧道客户端被拒后按 ADR-0032 等 retry_now，不自动重拨）后还是同一个设备。客户端对已存在的空文件不生成
-# 私钥，所以先用一次性容器把它生成出来。
-phone_key="$WONTON_DEV_DATA/phonekeys/phone.key"
-[[ -s "$phone_key" ]] || docker run --rm -v "$WONTON_DEV_DATA/phonekeys:/k" --entrypoint sh "$phone_image" \
-  -c "tunnel-client --key /k/phone.key id" >/dev/null
-start_phone() {
-  docker rm -f "$phone" >/dev/null 2>&1 || true
-  docker run -d --name "$phone" --network "container:$core" -v "$phone_key:/tmp/phone.key" --entrypoint sh "$phone_image" -c \
-    "tunnel-client --key /tmp/phone.key id && exec tunnel-client --key /tmp/phone.key proxy --auth \
-     --domain $WONTON_DEV_DOMAIN --server $server_id --addr 127.0.0.1:$WONTON_DEV_TUNNEL_PORT \
-     --listen 127.0.0.1:18008" >/dev/null
-  for _ in $(seq 30); do
-    # 不用 grep -q：它匹配就退出，docker logs 会吃 SIGPIPE，pipefail 下会杀掉整个脚本。
-    docker logs "$phone" 2>/dev/null | grep '^本地代理' >/dev/null && break
-    sleep 1
-  done
-  credential="$(docker logs "$phone" 2>/dev/null | sed -n 's/^会话凭据：//p')"
-}
-start_phone
-device_id="$(docker logs "$phone" 2>/dev/null | sed -n '1p')"
-[[ "$device_id" =~ ^[0-9a-f]{64}$ && -n "$credential" ]] || fail "手机没有启动：$(docker logs "$phone" 2>&1)"
 expect "家里服务器以外的地址不进隧道" \
   "$(t -o /dev/null -w '%{http_code}' http://cdn.example.com/app.js)" 403
 expect "同机其他程序不带会话凭据，被本地代理拒绝" \
@@ -299,12 +407,7 @@ access="$(t -X POST -H 'content-type: application/json' --data-binary "$body" \
 expect "经 matrix.<基础域名> 登录 Tuwunel，设备属于主人" \
   "$(t -H "Authorization: Bearer $access" "$matrix_url/_matrix/client/v3/account/whoami" | json user_id)" \
   "@owner:$WONTON_DEV_DOMAIN"
-owner_api() { t -H "Authorization: Bearer $access" "$matrix_url/_matrix/client/v3$1"; }
 # 主人 m.direct 里和这个用户的私聊，一行一个。
-direct_rooms() {
-  owner_api "/user/@owner:$WONTON_DEV_DOMAIN/account_data/m.direct" |
-    python3 -c 'import json, sys; print("\n".join(json.load(sys.stdin).get(sys.argv[1], [])))' "$1"
-}
 expect "局域网浏览器（有核心会话）拿不到登录令牌" \
   "$(b -o /dev/null -w '%{http_code}' -X POST "$core_url/_wonton/matrix/login-token")" 401
 expect "局域网进不了 Matrix" "$(b -o /dev/null -w '%{http_code}' "$matrix_url/_matrix/client/versions")" 403
@@ -318,7 +421,7 @@ reply="$(t -o /dev/null -D - -H "Authorization: Bearer $access" \
 ok "会话 ID 带 %2F 的密钥备份请求转给了 Tuwunel（HTTP $(head -1 <<<"$reply" | cut -d' ' -f2)）"
 
 # 回声 Bot 的安装、加密收发、crypto store 丢失与重装恢复：smoke-echo-bot.sh。
-shellcheck source=deploy/dev/core/smoke-echo-bot.sh
+# shellcheck source=deploy/dev/core/smoke-echo-bot.sh
 source "$here/smoke-echo-bot.sh"
 
 fi
@@ -329,9 +432,10 @@ for _ in $(seq 900); do [[ "$(plugin_state com.nousresearch.hermes)" == running 
 [[ "$(plugin_state com.nousresearch.hermes)" == running ]] ||
   fail "核心没有装好 Hermes：$("$dev" list | grep -F com.nousresearch.hermes || echo absent)"
 ok "核心在后台装好了 Hermes，没有手动安装"
-hermes_user="@hermes:$WONTON_DEV_DOMAIN"
-hermes_env() { docker inspect "$hermes" --format '{{range .Config.Env}}{{println .}}{{end}}' | sed -n "s/^$1=//p"; }
-expect "Hermes 是一个 Bot" "$(hermes_env MATRIX_USER_ID)" "$hermes_user"
+# Tuwunel 的库是 volume、跨栈留着，前几轮的 @hermes 可能还在，核心加 -2 之类的后缀。
+hermes_user="$(hermes_env MATRIX_USER_ID)"
+[[ "$hermes_user" == @hermes*"$WONTON_DEV_DOMAIN" ]] || fail "Hermes 的账号不对：$hermes_user"
+ok "Hermes 是一个 Bot：$hermes_user"
 hermes_room="$(direct_rooms "$hermes_user")"
 [[ "$hermes_room" == '!'* && "$hermes_room" != *$'\n'* ]] ||
   fail "主人的 m.direct 里应有一个和 Hermes 的私聊：$hermes_room"
@@ -352,31 +456,9 @@ after_ms=$((joined_ms - ready_ns / 1000000))
 ok "Hermes 就绪后 $(printf '%d.%03d' $((after_ms / 1000)) $((after_ms % 1000))) 秒，私聊出现（主人加入了它）"
 expect "Hermes 的凭据以它的 Bot 命名" "$(gateway_keys)" com.nousresearch.hermes/default
 # Hermes 用它的凭据经核心问网关有哪些模型，和它的提示插件看到的一样。
-hermes_models() {
-  docker exec "$hermes" sh -c 'curl -fsS --max-time 30 -H "Authorization: Bearer $WONTON_MODEL_API_KEY" "$WONTON_MODEL_BASE_URL/models"' |
-    python3 -c 'import json, sys; print(" ".join(sorted(m["id"] for m in json.load(sys.stdin)["data"])))'
-}
 expect "还没有 provider：网关里一个模型也没有" "$(hermes_models)" ""
 # 主人的一台新设备经隧道在私聊里发话，收 Hermes 的回答：$1 输出文件，其余是探针参数。
 # 新设备偶发 404 M_NOT_FOUND（登录后服务器说没见过这台设备）：这种失败换一台新设备重发一次，不重发已发过的旧消息。
-probe_in_hermes_room() {
-  local out="$1" jwt rc=0 attempt
-  shift
-  for attempt in 1 2 3; do
-    rc=0
-    (( attempt == 1 )) || echo '   · 探针设备被服务器丢了，换一台重来' >&2
-    jwt="$(t -X POST "$core_url/_wonton/matrix/login-token" | json token)" || return 1
-    docker run --rm --network "container:$core" "$echo_image" probe --homeserver "$matrix_url" \
-      --proxy "http://$credential@127.0.0.1:18008" --login-token "$jwt" --room "$hermes_room" --bot "$hermes_user" \
-      --reply any "$@" >"$out" 2>&1 || rc=$?
-    # 有一句正常回复就算过：探针偶尔把 404 当空回复、退出码还是 0。
-    if (( rc == 0 )) && grep -q '收到加密的回复：' "$out"; then return 0; fi
-    # 不是 404 的失败（含探针自己的报错）不再重来。
-    if ! grep -q M_NOT_FOUND "$out"; then return "$rc"; fi
-  done
-  return 1
-}
-talk_to_hermes() { probe_in_hermes_room "$1" --wait 180 --text "$2"; }
 # 回复和用量的断言在 smoke-hermes.sh 里。
 # shellcheck source=deploy/dev/core/smoke-hermes.sh
 source "$here/smoke-hermes.sh"
@@ -442,28 +524,8 @@ esac
 # 经隧道在和 Hermes 的私聊里说一句话，收它的回答，直到它 180 秒不再说话（它先说一句再去调要等确认的工具，
 # 工具往返加慢模型会先超过 90 秒的静默窗口）：
 # $1 输出文件，$2 话。
-ask_hermes() { probe_in_hermes_room "$1" --wait 300 --settle 180 --text "$2"; }
-# 核心和主人的通知房间里最新的一张确认卡片（编辑过的以最新内容为准），输出“ID 状态”。
-latest_card() {
-  local room
-  room="$(direct_rooms "@wonton-core:$WONTON_DEV_DOMAIN" | tail -1)"
-  [[ -n "$room" ]] || return 0
-  owner_api "/rooms/$room/messages?dir=b&limit=30" | python3 -c 'import json, sys
-field = "app.wonton.confirmation"
-edits, cards = {}, []
-for event in json.load(sys.stdin).get("chunk", []):
-    content = event.get("content", {})
-    relation = content.get("m.relates_to", {})
-    if relation.get("rel_type") == "m.replace":
-        edits.setdefault(relation["event_id"], content.get("m.new_content", {}).get(field))
-    elif field in content:
-        cards.append((event["event_id"], content[field]))
-if cards:
-    event, card = cards[0]
-    card = edits.get(event) or card
-    print(card["id"], card["state"]["type"])'
-}
-answer() { "$@" -sS -o /dev/null -w '%{http_code}' -X POST -H 'content-type: application/json' -d '{"answer": "approve"}'; }
+# 确认表里最新的一张卡片（卡片不进 Matrix 房间），输出“ID 状态”：有等回答的取最急的那张，否则取最近结束的。
+# 等确认表里出现待确认的卡片，输出卡片 ID。
 asked="$(mktemp)"
 ask_hermes "$asked" "帮我装一下官方插件里的“文件搜索”。" &
 asking=$!
@@ -473,9 +535,9 @@ for _ in $(seq 240); do
   [[ "$card" == *" pending" ]] && break
   sleep 1
 done
-[[ "$card" == *" pending" ]] || fail "Wonton 房间里没有出现待确认的卡片（$card）：$(cat "$asked")"
+[[ "$card" == *" pending" ]] || fail "确认表里没有出现待确认的卡片（$card）：$(cat "$asked")"
 card_id="${card%% *}"
-ok "Hermes 发起安装，核心在 Wonton 房间里发了确认卡片，还没有装"
+ok "Hermes 发起安装，核心在确认表里发了卡片，还没有装"
 expect "插件还没装" "$(plugin_state app.wonton.files)" absent
 confirm_url="$core_url/_wonton/confirmations/$card_id"
 # 按 IP 打核心接口必须带域名 Host：IP 只回局域网状态页，API 一律 404（防 DNS 重绑定，dev.sh 头部有完整说明）。
@@ -503,11 +565,6 @@ ask_hermes "$asked" "把这个报税表文件发给我。" || fail "Hermes 没�
 grep '^第' "$asked" | sed 's/^/   · /'
 audit="$(docker exec "$core" cat "$WONTON_DEV_DATA/core/audit.jsonl")"
 # 审计里有没有一行：工具名匹配 $1（正则），决定是 $2。
-audited() {
-  python3 -c 'import json, re, sys
-lines = [json.loads(line) for line in sys.stdin if line.strip()]
-sys.exit(not any(re.fullmatch(sys.argv[1], l["tool"]) and l["decision"] == sys.argv[2] for l in lines))' "$1" "$2" <<<"$audit"
-}
 audited wonton__install_plugin approved || fail "审计里没有主人确认的安装：$audit"
 audited 'app-wonton-files__[a-z_]+' allowed || fail "审计里没有找文件：$audit"
 audited wonton__share_file allowed || fail "审计里没有分享文件：$audit"
@@ -516,6 +573,12 @@ grep -q 'wonton://file/' "$asked" || fail "Hermes 的回答里没有文件链接
 ok "Hermes 发出了文件链接，App 显示成文件卡片"
 
 fi
+# 停链、出箱和说话人（ADR-0061 第 10 节）：smoke-turns.sh。放在 files 之前：files 一步最后卸载 Hermes。
+# shellcheck source=deploy/dev/core/smoke-turns.sh
+source "$here/smoke-turns.sh"
+seed_smoke_only
+hermes_user="${hermes_user:-}"
+hermes_room="${hermes_room:-}"
 if step files "Bot 存文件（ADR-0027）：主人按路径批准一次，Hermes 就能往里存，Navidrome 看得到"; then
 navidrome_src="$(mktemp -d)"
 git clone -q --depth 1 --branch v0.1.1 -c advice.detachedHead=false https://github.com/geraldpeng6/wonton-plugin-navidrome "$navidrome_src"
@@ -525,29 +588,8 @@ expect "Navidrome 装好了" "$(plugin_state org.navidrome.navidrome)" running
 shares="$WONTON_DEV_DATA/shares"
 outbox="$WONTON_DEV_DATA/apps/$(tr . - <<<com.nousresearch.hermes)/outbox"
 # WONTON_SMOKE_SONG_URL：换成真的下载一首歌，经 Hermes 出网。默认由它自己生成，不依赖外面的服务。
-song_task() {
-  if [[ -n "${WONTON_SMOKE_SONG_URL:-}" ]]; then
-    printf '下载 %s 保存成 %s' "$WONTON_SMOKE_SONG_URL" "$1"
-  else
-    printf '用 Python 标准库的 wave 模块生成一个 1 秒的静音 WAV 文件 %s' "$1"
-  fi
-}
 song_ext=wav
 if [[ -n "${WONTON_SMOKE_SONG_URL:-}" ]]; then song_ext="${WONTON_SMOKE_SONG_URL##*.}"; fi
-# 等 Wonton 房间里出现待确认的卡片，输出卡片 ID。
-pending_card() {
-  local card=""
-  for _ in $(seq 240); do
-    card="$(latest_card)"
-    [[ "$card" == *" pending" ]] && { echo "${card%% *}"; return 0; }
-    sleep 1
-  done
-  return 1
-}
-answer_with() { t -sS -o /dev/null -w '%{http_code}' -X POST -H 'content-type: application/json' -d "{\"answer\": \"$1\"}" "$core_url/_wonton/confirmations/$2"; }
-save_grants() {
-  t "$core_url/_wonton/api/plugins/com.nousresearch.hermes" | python3 -c 'import json, sys; print(" ".join(json.load(sys.stdin)["save_grants"]))'
-}
 ask_hermes "$asked" "$(song_task "smoke-a.$song_ext")，放在 outbox 目录里，然后存进共享文件夹 music 的子目录 冒烟。" &
 asking=$!
 card_id="$(pending_card)" || fail "存文件没有发确认卡片：$(cat "$asked")"
@@ -602,9 +644,7 @@ magpie_url="http://ai-usemagpie-magpie.$WONTON_DEV_DOMAIN:$WONTON_DEV_PORT"
 # 核心生成、注入 magpie 容器的网页密钥，只用来检查它没有出现在任何响应和 Cookie 罐里。
 web_key="$(docker inspect "$magpie" --format '{{range .Config.Env}}{{println .}}{{end}}' | sed -n 's/^MAGPIE_WEB_KEY=//p')"
 [[ "$web_key" =~ ^[0-9a-f]{64}$ ]] || fail "magpie 没有拿到核心生成的网页密钥"
-upstream_off() { [[ "$(docker exec "$magpie" magpie providers)" == *'switched off'* ]]; }
 # 没有任何 Cookie 的浏览器。
-anon() { curl_in "$browser" --noproxy '*' -sS "$@"; }
 reply="$(anon -o /dev/null -w '%{http_code} %{redirect_url}' -H 'Accept: text/html' "$magpie_url/")"
 expect "没登录：打开页面跳到核心登录" "${reply%% *}" 303
 [[ "${reply#* }" == "$core_url/_wonton/sso?to="* ]] || fail "跳转地址不对：${reply#* }"
@@ -619,7 +659,6 @@ seen+="$reply"
 grep -q '"id":"upstream"' <<<"$reply" || fail "网页上没有命令行配置的上游：$reply"
 ok "网页上看得到命令行配置的上游"
 # 网页里的修改和它的 fetch 一样带 Origin：同源的放行，别的插件网页发来的按没登录处理，不转发。
-page_post() { b -D - -H "Origin: $1" -H 'content-type: application/json' -d '{"id":"upstream"}' "$magpie_url/api/provider/$2"; }
 reply="$(page_post "$grafana_url" off)"
 expect "别的插件的网页发来的修改被拒" "$(head -1 <<<"$reply" | cut -d' ' -f2)" 401
 ! upstream_off || fail "跨站请求改动了 magpie 的设置"
@@ -660,11 +699,6 @@ grep -qi "^X-Forwarded-Host: app-whoami.$WONTON_DEV_DOMAIN:$WONTON_DEV_PORT" <<<
 ! grep -q '6.6.6.6' <<<"$echoed" || fail "伪造的 X-Forwarded-For 被转发：$echoed"
 ok "插件收到转发头，收不到网关 Cookie 和伪造的转发头"
 # 从 whoami 的插件网络里冒充 Bot 和模型网关的使用方：网关按来源地址认出插件，它两项权限都没申请。
-from_whoami() {
-  docker run --rm --network "$whoami_network" "$curl_image" --noproxy '*' \
-    --max-time "$SMOKE_WEB_MAX_TIME" --connect-timeout "$SMOKE_CONNECT_TIMEOUT" -sS -o /dev/null -D - \
-    -H "Host: $1:$WONTON_DEV_PORT" "http://$core:$WONTON_DEV_PORT$2"
-}
 for internal in "matrix.wonton.internal /_matrix/client/versions" "models.wonton.internal /v1/models" "mcp.wonton.internal /mcp"; do
   read -r host path <<<"$internal"
   denied="$(from_whoami "$host" "$path")"
