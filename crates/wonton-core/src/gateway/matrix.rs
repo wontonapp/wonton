@@ -302,6 +302,7 @@ async fn forward_client_api(gateway: &Gateway, req: Request) -> Response {
         );
     };
     let fwd = proxy::Forwarded {
+        web_user: None,
         client: client_addr(&req),
         scheme: &gateway.public.scheme,
     };

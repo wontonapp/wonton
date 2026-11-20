@@ -103,6 +103,7 @@ async fn forward(
         headers.insert(DEVICE_HEADER, device);
     }
     let fwd = proxy::Forwarded {
+        web_user: None,
         client: client_addr(&req),
         scheme: &gateway.public.scheme,
     };

@@ -204,6 +204,7 @@ async fn forward_to_plugin(
     // 关开关断的是这个入口已有的连接：守卫从这进转发层，已升级的连接立即断。
     req.extensions_mut().insert(cancel);
     let forwarded = proxy::Forwarded {
+        web_user: None,
         client,
         scheme: "https",
     };

@@ -12,6 +12,7 @@ use hyper_util::rt::TokioIo;
 use tokio::net::UnixStream;
 use tokio::sync::watch;
 
+use super::WEB_USER_HEADER;
 use super::pages;
 use super::session::{is_reserved_cookie, strip_cookies};
 use crate::http::{
@@ -45,6 +46,7 @@ const UNTRUSTED: &[&str] = &[
     "x-forwarded-proto",
     "x-forwarded-port",
     "x-real-ip",
+    WEB_USER_HEADER,
 ];
 
 /// 转发目标：内网地址或 unix 套接字，以及出错时给用户看的名称。
@@ -56,6 +58,8 @@ pub struct Target<'a> {
 pub struct Forwarded<'a> {
     pub client: Option<SocketAddr>,
     pub scheme: &'a str,
+    /// 插件网页的打开者（ADR-0045 第 6 节），`Build` 时覆盖客户端带的同名头。
+    pub web_user: Option<&'a str>,
 }
 
 /// 转发途中可以撤销的访问：share 收回和客户端入口的开关关闭
@@ -348,6 +352,11 @@ fn build_outbound(
     for name in UNTRUSTED {
         parts.headers.remove(*name);
     }
+    if let Some(id) = fwd.web_user
+        && let Ok(value) = HeaderValue::from_str(id)
+    {
+        parts.headers.insert(WEB_USER_HEADER, value);
+    }
     if let Some(client) = fwd.client
         && let Ok(ip) = HeaderValue::from_str(&client.ip().to_string())
     {
@@ -568,6 +577,7 @@ mod tests {
                                 },
                                 request.map(Body::new),
                                 Forwarded {
+                                    web_user: None,
                                     client: None,
                                     scheme: "http",
                                 },
@@ -628,6 +638,7 @@ mod tests {
             .body(Body::empty())
             .unwrap();
         let forwarded = Forwarded {
+            web_user: None,
             client: None,
             scheme: "http",
         };
@@ -691,6 +702,7 @@ mod tests {
             },
             request,
             Forwarded {
+                web_user: None,
                 client: None,
                 scheme: "http",
             },
