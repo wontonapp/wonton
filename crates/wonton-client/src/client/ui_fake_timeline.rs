@@ -531,6 +531,7 @@ mod tests {
                 target: target(),
                 item_id: "ui-fake-11".into(),
                 to_room_id: far_id.into(),
+                comment: None,
             });
         }
         let far = fakes.subscribe(far_id);
@@ -560,6 +561,51 @@ mod tests {
                 "再转一条",
                 "Fixture message 11"
             ]
+        );
+    }
+
+    /// 转发带附言：附言排在转发的副本前面；只含空白的附言不落。
+    #[tokio::test]
+    async fn forward_comment_lands_before_the_copy_and_blank_is_dropped() {
+        let fakes = FakeTimelines::default();
+        let echo = fakes.subscribe(ROOM);
+        let _first = next(&echo).await;
+        let far_id = "!ui-fake-call:home.example";
+        for comment in [
+            Some("看这条"),
+            Some(
+                "  
+",
+            ),
+        ] {
+            fakes.timeline_action(TimelineAction::ForwardMessage {
+                target: target(),
+                item_id: "ui-fake-11".into(),
+                to_room_id: far_id.into(),
+                comment: comment.map(Into::into),
+            });
+        }
+        let far = fakes.subscribe(far_id);
+        let first = next(&far).await;
+        let mut items = Vec::new();
+        for diff in first.diffs {
+            crate::chat::apply_diff(&mut items, diff);
+        }
+        let bodies: Vec<String> = items[ITEMS..]
+            .iter()
+            .map(|item| {
+                let TimelineContent::Message { message } = &item.content else {
+                    panic!("补进来的都是消息");
+                };
+                let MessageContent::Text { body, .. } = &message.body else {
+                    panic!("补进来的都是文字");
+                };
+                body.clone()
+            })
+            .collect();
+        assert_eq!(
+            bodies,
+            ["看这条", "Fixture message 11", "Fixture message 11"]
         );
     }
 }
