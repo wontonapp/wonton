@@ -15,9 +15,9 @@ use std::sync::LazyLock;
 use wonton_protocol::{
     BackPagination, ChoiceSend, ChoicesState, MessageAction, MessageChoice, MessageChoices,
     MessageContent, MessageStatus, PanelItem, PanelSource, QuotedContent, QuotedMessage,
-    ReplyQuote, RichBlock, RichBlockKind, RichSpan, RoomCommand, SendState, TabIcon, TabLayout,
-    TabPage, TabRef, TabState, TimelineContent, TimelineDiff, TimelineItem, TimelineMessage,
-    TimelineUpdate, TimelineViewport,
+    ReplyQuote, RichBlock, RichBlockKind, RichSpan, RoomCommand, SendState, SideChatCard,
+    SideChatState, TabIcon, TabLayout, TabPage, TabRef, TabState, TimelineContent, TimelineDiff,
+    TimelineItem, TimelineMessage, TimelineUpdate, TimelineViewport,
 };
 
 /// 主面板和房间面板里放的那一页。本机端口占不上时没有这一页。
@@ -97,6 +97,43 @@ pub(super) fn timeline(room_id: &str) -> TimelineUpdate {
     }
 }
 
+/// 挂在 [`SIDE_ROOT_INDEX`] 那条消息上的旁聊卡片。
+pub(super) fn side_card() -> SideChatCard {
+    SideChatCard {
+        root_event_id: format!("$ui-fake-{SIDE_ROOT_INDEX}"),
+        title: "Fixture side chat".into(),
+        reply_count: SIDE_ITEMS as u64,
+        unread_count: 0,
+        state: SideChatState::Open,
+    }
+}
+
+/// 旁聊里的一批：几条短回复，最底下一条是落点，顶上是这个旁聊的标题和状态。
+pub(super) fn side_timeline(room_id: &str) -> TimelineUpdate {
+    let items: Vec<TimelineItem> = (0..SIDE_ITEMS)
+        .map(|index| {
+            let own = index % 2 == 1;
+            let message = text_message(
+                &format!("side-{index}"),
+                if own { OWNER } else { ECHO },
+                FIRST_AT_MS + index as u64 * 60_000,
+                &[format!("Fixture side {index}")],
+            );
+            TimelineItem {
+                id: format!("side-{index}"),
+                content: TimelineContent::Message { message },
+            }
+        })
+        .collect();
+    let mut update = timeline(room_id);
+    update.anchor = items.last().map(|item| item.id.clone());
+    update.viewport = TimelineViewport::Bottom;
+    update.diffs = vec![TimelineDiff::Reset { items }];
+    update.side_chat = Some(side_card());
+    update.typing = Vec::new();
+    update
+}
+
 fn commands() -> Vec<RoomCommand> {
     [
         ("help", "Show help"),
@@ -145,6 +182,10 @@ pub(super) const LONG_REPLY_INDEX: usize = 20;
 // 中文假数据放在数据文件里：它是界面测试的输入，不是界面文字，界面文字检查（ADR-0043）只管源码里的字符串。
 const QUOTED_TEXT: &str = include_str!("ui_fake_text/quoted.txt");
 const LONG_REPLY: &str = include_str!("ui_fake_text/long_reply.txt");
+/// 带旁聊卡片的那条：点了进那个旁聊。
+pub(super) const SIDE_ROOT_INDEX: usize = 5;
+/// 旁聊里的条数。
+const SIDE_ITEMS: usize = 4;
 /// 每隔几条来一条比屏幕高的；最后一条也是。
 const TALL_EVERY: usize = 4;
 const TALL_PARAGRAPHS: usize = 60;
@@ -213,6 +254,9 @@ fn item(index: usize) -> TimelineItem {
                 },
             },
         });
+    }
+    if index == SIDE_ROOT_INDEX {
+        message.side_chat = Some(side_card());
     }
     if index == CHOICES_INDEX {
         message.choices = Some(MessageChoices {

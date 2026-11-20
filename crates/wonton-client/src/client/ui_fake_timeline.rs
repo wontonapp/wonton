@@ -9,28 +9,42 @@ use std::sync::{Arc, Mutex, Weak};
 use tokio::sync::mpsc;
 use wonton_protocol::{
     ChatAction, ChoicesState, JumpState, MessageContent, MessageStatus, TimelineAction,
-    TimelineContent, TimelineDiff, TimelineFocus, TimelineItem, TimelineScroll, TimelineUpdate,
+    TimelineContent, TimelineDiff, TimelineFocus, TimelineItem, TimelineScroll, TimelineTarget,
+    TimelineUpdate,
 };
 
-use super::ui_fake_room::{ITEMS, OWNER, at_ms, text_message, timeline};
+use super::ui_fake_room::{ITEMS, OWNER, at_ms, side_timeline, text_message, timeline};
+
 use crate::chat::{Runs, TimelineSubscription};
 
-/// 打开着的假房间，按房间 ID 找；同一房间再订阅时换成新的那份。
+/// 一条时间线的键：房间加上旁聊根。同一个目标再订阅时换成新的那份。
+type Key = (String, Option<String>);
+
+fn key_of(target: &TimelineTarget) -> Key {
+    (target.room_id.clone(), target.thread_root.clone())
+}
+
+/// 开着的假时间线，按目标和旁聊根找。
 #[derive(Default)]
 pub(super) struct FakeTimelines {
-    open: Mutex<HashMap<String, Weak<FakeTimeline>>>,
+    open: Mutex<HashMap<Key, Weak<FakeTimeline>>>,
     /// 转发进了还没打开的房间：房间打开时补进第一批。
     forwarded: Mutex<HashMap<String, Vec<String>>>,
 }
 
 impl FakeTimelines {
-    /// 订阅一个假房间：先推第一批。
-    pub(super) fn subscribe(&self, room_id: &str) -> Arc<TimelineSubscription> {
+    /// 订阅一个假房间：先推第一批。旁聊的根是那条主对话里的消息 ID。
+    pub(super) fn subscribe(&self, target: &TimelineTarget) -> Arc<TimelineSubscription> {
         let (sender, receiver) = mpsc::unbounded_channel();
+        let first_batch = if target.thread_root.is_some() {
+            side_timeline(&target.room_id)
+        } else {
+            timeline(&target.room_id)
+        };
         let fake = Arc::new(FakeTimeline {
             sender,
             state: Mutex::new(State {
-                base: timeline(room_id),
+                base: first_batch,
                 runs: Runs::default(),
                 items: Vec::new(),
                 back: Vec::new(),
@@ -38,23 +52,30 @@ impl FakeTimelines {
             }),
         });
         let mut first = fake.lock().base.clone();
-        let pending = lock(&self.forwarded).remove(room_id).unwrap_or_default();
+        let pending = lock(&self.forwarded)
+            .remove(&target.room_id)
+            .unwrap_or_default();
         // 没人转发进这个房间时也要留着第一批自己的 Reset：换成空 diffs 时间线就空了。
         first.diffs.extend(fake.receive(pending));
         fake.push(&mut first);
-        lock(&self.open).insert(room_id.to_owned(), Arc::downgrade(&fake));
+        lock(&self.open).insert(key_of(target), Arc::downgrade(&fake));
         let scrolled = fake.clone();
         TimelineSubscription::seeded(receiver, Box::new(move |scroll| scrolled.scrolled(scroll)))
     }
 
-    fn get(&self, room_id: &str) -> Option<Arc<FakeTimeline>> {
-        lock(&self.open).get(room_id).and_then(Weak::upgrade)
+    fn get(&self, target: &TimelineTarget) -> Option<Arc<FakeTimeline>> {
+        lock(&self.open)
+            .get(&key_of(target))
+            .and_then(Weak::upgrade)
     }
-
     /// 转发的副本：去的地方开着就马上推过去，没开就留着等它打开。只转发文字，别的照抄不了。
-    fn forward(&self, from: &str, item_id: &str, to: &str) {
+    fn forward(&self, from: &TimelineTarget, item_id: &str, to_room_id: &str) {
         let Some(body) = self.get(from).and_then(|room| room.text_of(item_id)) else {
             return;
+        };
+        let to = &TimelineTarget {
+            room_id: to_room_id.to_owned(),
+            thread_root: None,
         };
         match self.get(to) {
             Some(destination) => {
@@ -63,7 +84,7 @@ impl FakeTimelines {
             }
             None => {
                 lock(&self.forwarded)
-                    .entry(to.to_owned())
+                    .entry(to.room_id.clone())
                     .or_default()
                     .push(body);
             }
@@ -78,17 +99,17 @@ impl FakeTimelines {
             to_room_id,
         } = &action
         {
-            self.forward(&target.room_id, item_id, to_room_id);
+            self.forward(target, item_id, to_room_id);
             return;
         }
-        let room_id = match &action {
+        let target = match &action {
             TimelineAction::JumpToMessage { target, .. }
             | TimelineAction::JumpBack { target }
             | TimelineAction::SetTimelineScroll { target, .. }
-            | TimelineAction::SendText { target, .. } => target.room_id.clone(),
+            | TimelineAction::SendText { target, .. } => target,
             _ => return,
         };
-        let Some(fake) = self.get(&room_id) else {
+        let Some(fake) = self.get(target) else {
             return;
         };
         match action {
@@ -114,7 +135,11 @@ impl FakeTimelines {
         else {
             return;
         };
-        if let Some(fake) = self.get(room_id) {
+        let target = TimelineTarget {
+            room_id: room_id.clone(),
+            thread_root: None,
+        };
+        if let Some(fake) = self.get(&target) {
             fake.answer(item_id, key);
         }
     }
