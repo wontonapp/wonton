@@ -260,7 +260,8 @@ struct ComposerView: View {
         guard !draft.wrappedValue.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty
             || !composer.attachments.isEmpty else { return }
         pin.pin()
-        composer.send(draft.wrappedValue, replyTo: model.replies[draftKey]?.eventId)
+        // 被核心拒收时字、附件和回复对象都留着，改完再发；收下了才清。
+        guard composer.send(draft.wrappedValue, replyTo: model.replies[draftKey]?.eventId) else { return }
         draft.wrappedValue = ""
         model.cancelReply(in: composer.target)
     }

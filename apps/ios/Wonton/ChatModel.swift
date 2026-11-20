@@ -211,11 +211,15 @@ final class ChatModel {
         viewModel.rooms.first { $0.roomId == roomId }?.name ?? roomId
     }
 
-    func send(_ action: Action) {
+    /// 操作被核心收下返回真；被拒时原因弹出来，返回假。
+    @discardableResult
+    func send(_ action: Action) -> Bool {
         do {
             try core.dispatch(action: action)
+            return true
         } catch {
             rejection = error.problem
+            return false
         }
     }
 
