@@ -166,9 +166,15 @@ fn auth(state: &Tuwunel, headers: &HeaderMap) -> Result<(String, String), Reply>
         .ok_or_else(|| error(StatusCode::UNAUTHORIZED, "M_UNKNOWN_TOKEN"))
 }
 
+/// 管理员以管理房间的成员身份为准（Tuwunel 的 `user_is_admin`），`admin` 标记只是注册时的门槛。
 fn admin(state: &Tuwunel, headers: &HeaderMap) -> Result<(), Reply> {
     let (user, _) = auth(state, headers)?;
-    if state.users.get(&user).is_some_and(|u| u.admin) {
+    if state.users.get(&user).is_some_and(|entry| entry.admin)
+        && state
+            .rooms
+            .get(&state.admin_room)
+            .is_some_and(|room| room.members.contains(&user))
+    {
         Ok(())
     } else {
         Err(error(StatusCode::FORBIDDEN, "M_FORBIDDEN"))
@@ -712,26 +718,46 @@ async fn put_direct(
     }))
 }
 
-/// 起一个假 Tuwunel，返回它和一份指向它的配置（签发私钥是新生成的）。
-pub async fn start() -> (Fake, MatrixConfig) {
+/// 像 Tuwunel 的 `fresh()` 一样先建管理房间和服务器用户；注册成管理员的账号由 `make_user_admin` 邀请。
+fn seed_admin_room(state: &mut Tuwunel) {
+    state.admin_room = ADMIN_ROOM_ID.to_owned();
+    state.rooms.insert(
+        ADMIN_ROOM_ID.to_owned(),
+        Room {
+            members: BTreeSet::from([format!("@{SERVER_USER}:{SERVER}")]),
+            ..Room::default()
+        },
+    );
+    // 管理房间是服务器建的，状态事件的发送者也是服务器用户；读房间状态的接口要求有这条。
+    state.room_state.insert(
+        ADMIN_ROOM_ID.to_owned(),
+        rooms::RoomState {
+            creator: format!("@{SERVER_USER}:{SERVER}"),
+            events: BTreeMap::new(),
+        },
+    );
+}
+
+/// 空状态的假服务器和一张新签发密钥的私钥 PEM。
+fn new_fake() -> (Fake, String) {
     let pair = Ed25519KeyPair::generate().unwrap();
     let der = pair.to_pkcs8().unwrap();
     let public = pair.public_key().as_der().unwrap();
+    let key = format!(
+        "-----BEGIN PRIVATE KEY-----\n{}\n-----END PRIVATE KEY-----\n",
+        STANDARD.encode(der.as_ref())
+    );
     let fake = Fake {
         state: Arc::default(),
         key: Arc::new(DecodingKey::from_ed_der(public.as_ref())),
     };
-    {
-        let mut state = fake.state();
-        state.admin_room = ADMIN_ROOM_ID.to_owned();
-        state.rooms.insert(
-            ADMIN_ROOM_ID.to_owned(),
-            Room {
-                members: BTreeSet::from([format!("@{SERVER_USER}:{SERVER}")]),
-                ..Room::default()
-            },
-        );
-    }
+    (fake, key)
+}
+
+/// 起一个假 Tuwunel，返回它和一份指向它的配置（签发私钥是新生成的）。
+pub async fn start() -> (Fake, MatrixConfig) {
+    let (fake, jwt_key) = new_fake();
+    seed_admin_room(&mut fake.state());
     let client = "/_matrix/client/v3";
     let app = Router::new()
         .route(
@@ -820,11 +846,10 @@ pub async fn start() -> (Fake, MatrixConfig) {
     let listener = TcpListener::bind("127.0.0.1:0").await.unwrap();
     let addr = listener.local_addr().unwrap();
     tokio::spawn(async move { axum::serve(listener, app).await.unwrap() });
-    let body = STANDARD.encode(der.as_ref());
     let config = MatrixConfig {
         url: format!("http://{addr}"),
         server_name: SERVER.into(),
-        jwt_key: format!("-----BEGIN PRIVATE KEY-----\n{body}\n-----END PRIVATE KEY-----\n"),
+        jwt_key,
         registration_secret: SECRET.into(),
     };
     (fake, config)

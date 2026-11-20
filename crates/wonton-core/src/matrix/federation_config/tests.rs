@@ -187,9 +187,12 @@ fn cluster_config(server_name: &str, peers: &[&str], registration_secret: &str) 
              allow_federation = true\ntrusted_servers = []\nip_range_denylist = []\n\
              allow_registration = false\n\
              registration_shared_secret = \"{registration_secret}\"\n\
-             admin_room = true\n\
+             create_admin_room = true\n\
              allow_invalid_tls_certificates = true\n\
              allowed_remote_server_names_experimental = [{list}]\n\
+             \n[global.jwt]\nenable = true\nformat = \"EDDSA\"\nalgorithm = \"EdDSA\"\n\
+             require_exp = true\nregister_user = true\nissuer = [\"wonton-core\"]\n\
+             audience = [\"tuwunel\"]\n\
              \n[global.tls]\n\
              certs = \"/etc/tuwunel/tls/tls.crt\"\n\
              key = \"/etc/tuwunel/tls/tls.key\"\n\
@@ -277,23 +280,6 @@ async fn register_user_on(
         registration_secret,
         user,
         false,
-    )
-    .await
-}
-
-async fn register_admin_on(
-    cluster: &Cluster,
-    index: usize,
-    user: &str,
-    registration_secret: &str,
-) -> Account {
-    let server = &cluster.servers[index];
-    register_user(
-        &HttpClient::new(),
-        &server.address,
-        registration_secret,
-        user,
-        true,
     )
     .await
 }
@@ -468,73 +454,17 @@ impl Cluster {
         }
     }
 
-    /// 经管理房间命令热加载：注册（或登录）核心那个热加载管理员，进管理房间发命令。
+    /// 经管理房间命令热加载：走产品里同一个 `Matrix::connect`，核心的管理账号自己加入后发命令。
     async fn reload(&self, index: usize, registration_secret: &str) {
-        let server = &self.servers[index];
-        let account = register_admin_on(self, index, "wonton-reload", registration_secret).await;
-        let http = HttpClient::new();
-        let alias = format!("#admins:{}", server.server_name);
-        let (_, value) = http
-            .request_json(
-                Method::GET,
-                &format!(
-                    "{}/_matrix/client/v3/directory/room/{}",
-                    server.address,
-                    crate::matrix::api::encode(&alias)
-                ),
-                Some(&account.token),
-                &[],
-                RequestBody::Empty,
-                WAIT,
-            )
-            .await
-            .expect("解析管理房间");
-        let room = value["room_id"].as_str().expect("有管理房间号").to_owned();
-        let membership = format!(
-            "{}/_matrix/client/v3/rooms/{room}/members/{}",
-            server.address, account.user_id
-        );
-        let (_, value) = http
-            .request_json(
-                Method::GET,
-                &membership,
-                Some(&account.token),
-                &[],
-                RequestBody::Empty,
-                WAIT,
-            )
-            .await
-            .expect("读管理房间成员身份");
-        if value["membership"] != "join" {
-            http.request_json(
-                Method::POST,
-                &format!("{}/_matrix/client/v3/rooms/{room}/join", server.address),
-                Some(&account.token),
-                &[],
-                RequestBody::Empty,
-                WAIT,
-            )
-            .await
-            .expect("进管理房间");
-        }
-        let (status, value) = http
-            .request_json(
-                Method::PUT,
-                &format!(
-                    "{}/_matrix/client/v3/rooms/{room}/send/m.room.message/reload",
-                    server.address
-                ),
-                Some(&account.token),
-                &[],
-                RequestBody::Json(&serde_json::json!({
-                    "msgtype": "m.text",
-                    "body": "!admin server reload-config"
-                })),
-                WAIT,
-            )
-            .await
-            .expect("发重载命令");
-        assert_eq!(status, StatusCode::OK, "{value}");
+        let state = tempfile::tempdir().unwrap();
+        let matrix = Matrix::connect(
+            &self.matrix_config(index, registration_secret),
+            state.path(),
+            HttpClient::new(),
+        )
+        .await
+        .expect("核心连上 Tuwunel");
+        matrix.reload_config().await.expect("热加载命令被接受");
     }
 }
 

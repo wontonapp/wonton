@@ -1,7 +1,7 @@
 # 重装演练虚拟机
 
 发版前在一台干净的 Ubuntu 虚拟机里按正式方式装一遍，跑演练检查。宿主是任意一台 amd64 Linux，要有 Docker 和
-`/dev/kvm`，不要 sudo。当前用户要在 `docker`、`kvm` 组里：写 Docker 要用前者，qemu 容器拿 `/dev/kvm` 要用后者。
+`/dev/kvm`，不要 sudo。当前用户要在 `docker` 组里；`kvm` 组不用进，`/dev/kvm` 的组号由 `vm.sh` 带进容器。
 
 - qemu 跑在普通容器里：只加 `--device /dev/kvm`，不加特权、不挂 docker.sock、不加 capability；容器 `--cpus 4 --memory 10g`，
   虚拟机 4 核 8 GB、40 GB 磁盘（qcow2 叠加层，底是只读的 cloud image）。

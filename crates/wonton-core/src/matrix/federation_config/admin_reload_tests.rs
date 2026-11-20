@@ -10,8 +10,8 @@ use crate::matrix::fake::{self, Fake};
 
 const RELOAD_COMMAND: &str = "!admin server reload-config";
 
-/// 接到假 Tuwunel 上的一份联邦配置。
-async fn config() -> (FederationConfig, Fake, tempfile::TempDir) {
+/// 接到假 Tuwunel 上的一份联邦配置。安装目录要活着：`FederationConfig` 只存路径。
+async fn config() -> (FederationConfig, Fake, tempfile::TempDir, tempfile::TempDir) {
     let (fake, matrix_config) = fake::start().await;
     let state = tempfile::tempdir().unwrap();
     let matrix = Matrix::connect(&matrix_config, state.path(), HttpClient::new())
@@ -25,13 +25,13 @@ async fn config() -> (FederationConfig, Fake, tempfile::TempDir) {
         notice: None,
         server_name: matrix_config.server_name,
     };
-    (config, fake, state)
+    (config, fake, state, install)
 }
 
-/// 用管理账号进 `#admins:<server>` 发命令：管理房间由服务器建，核心只是被邀请，先加入。
+/// 核心的管理账号被邀请进 `#admins:<server>`，连上时已经加入，之后在那里发命令。
 #[tokio::test]
 async fn reload_is_an_admin_room_command() {
-    let (config, fake, _state) = config().await;
+    let (config, fake, _state, _install) = config().await;
     config
         .apply_inner(&BTreeSet::new(), &BTreeSet::new())
         .await
@@ -45,23 +45,25 @@ async fn reload_is_an_admin_room_command() {
         .collect();
     assert_eq!(sent.len(), 1, "{:?}", state.sent);
     assert_eq!(sent[0].0, fake::ADMIN_ROOM_ID);
+    // 只有核心的管理账号，没有为热加载另注册的账号。
+    assert_eq!(state.registrations, 1);
     assert!(
         state.rooms[fake::ADMIN_ROOM_ID]
             .members
-            .contains(&"@wonton-reload:test".to_owned())
+            .contains("@wonton-core:test")
     );
 }
 
 /// 管理账号被踢出管理房间：文件照写，结果如实报成热加载失败。
 #[tokio::test]
 async fn a_missing_admin_membership_is_a_reload_failure() {
-    let (config, fake, _state) = config().await;
+    let (config, fake, _state, _install) = config().await;
     fake.state()
         .rooms
         .get_mut(fake::ADMIN_ROOM_ID)
         .unwrap()
         .members
-        .remove("@wonton-reload:test");
+        .remove("@wonton-core:test");
     let failure = config
         .apply_inner(&BTreeSet::new(), &BTreeSet::new())
         .await

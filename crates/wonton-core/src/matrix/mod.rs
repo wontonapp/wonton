@@ -37,18 +37,13 @@ use issuer::Issuer;
 /// 等 Tuwunel 就绪的上限：升级后首次启动可能在迁移数据库。
 const READY_TIMEOUT: Duration = Duration::from_secs(90);
 
-/// 发管理房间命令的隐藏账号；`#admins` 只收管理员，它注册时带 `admin: true`。
-const RELOAD_LOCALPART: &str = "wonton-reload";
-/// 管理房间命令用它登录：设备名固定，便于在 Tuwunel 的设备列表里认出来（设备号仍由服务器分配）。
-const RELOAD_DEVICE: &str = "Wonton 核心（热加载）";
-
+/// 管理房间收 `!admin` 命令：核心的管理账号注册时带 `admin: true`，服务器把它邀请进 `#admins`，
+/// 热加载就用这个账号发，不再另开管理员。
 pub struct Matrix {
     api: Api,
     server_name: String,
     issuer: Issuer,
     admin_token: String,
-    /// 管理房间里的设备，管理房间命令用它发。
-    reload_login: Login,
 }
 
 impl Matrix {
@@ -69,20 +64,10 @@ impl Matrix {
             server_name: config.server_name.clone(),
             issuer,
             admin_token,
-            reload_login: Login {
-                user_id: String::new(),
-                access_token: String::new(),
-                device_id: String::new(),
-            },
         };
+        matrix.ensure_admin_room().await?;
         matrix.check_admin().await?;
-        let reload_login = matrix
-            .ensure_reload_account(&config.registration_secret)
-            .await?;
-        Ok(Self {
-            reload_login,
-            ..matrix
-        })
+        Ok(matrix)
     }
 
     pub fn server_name(&self) -> &str {
@@ -140,13 +125,13 @@ impl Matrix {
             .ok_or_else(|| MatrixError::Invalid("whoami 没有返回 user_id".to_owned()))
     }
 
-    /// 让 Tuwunel 重读配置：在管理房间发 `!admin server reload-config`（与 SIGUSR1 走同一条 `reload` 路径）。
+    /// 让 Tuwunel 重读配置：用核心的管理账号在管理房间发 `!admin server reload-config`（与 SIGUSR1 走同一条
+    /// `reload` 路径）。
     ///
-    /// 管理房间由服务器建、核心的管理账号只是被邀请，第一条命令前先加入。Docker 的 kill 接口发信号会把容器
-    /// 记成手动停过，Docker 重启后 `unless-stopped` 不再拉起（ADR-0111）。
+    /// Docker 的 kill 接口发信号会把容器记成手动停过，Docker 重启后 `unless-stopped` 不再拉起（ADR-0111）。
     pub(crate) async fn reload_config(&self) -> Result<(), MatrixError> {
         let room = self.admin_room().await?;
-        self.session(&self.reload_login)
+        self.core_session()
             .send_message(
                 &room,
                 &json!({"msgtype": "m.text", "body": "!admin server reload-config"}),
@@ -175,26 +160,12 @@ impl Matrix {
             .ok_or_else(|| MatrixError::Invalid("管理房间别名没有解析出房间号".to_owned()))
     }
 
-    /// 热加载账号：首次注册（服务器把管理员邀请进管理房间），之后只用 JWT 登录。
+    /// 管理房间由服务器在空库首次启动时建好，注册为管理员的账号会收到邀请：进房间才能发命令。
     ///
-    /// 先用注册接口探存在：JWT 登录对不存在的用户会自动建号，但不会邀请进管理房间。
-    async fn ensure_reload_account(&self, registration_secret: &str) -> Result<Login, MatrixError> {
-        if let Err(error) = admin::register(&self.api, registration_secret, RELOAD_LOCALPART).await
-            && error.errcode() != "M_USER_IN_USE"
-        {
-            return Err(error);
-        }
-        let login = self.login(RELOAD_LOCALPART, RELOAD_DEVICE).await?;
+    /// 加入是幂等的；还没被邀请（或已被踢出）时这里报错，核心不带着不能热加载的状态启动。
+    async fn ensure_admin_room(&self) -> Result<(), MatrixError> {
         let room = self.admin_room().await?;
-        let session = self.session(&login);
-        let joined = session
-            .membership(&room, &login.user_id)
-            .await?
-            .is_some_and(|state| state == "join");
-        if !joined {
-            session.join(&room).await?;
-        }
-        Ok(login)
+        self.core_session().join(&room).await
     }
 
     /// 以核心的管理账号调客户端接口。

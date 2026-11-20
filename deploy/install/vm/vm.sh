@@ -156,10 +156,10 @@ up() {
   tries=0
   until vm_ssh true 2>/dev/null; do
     tries=$((tries + 1))
-    [ "$tries" -lt 60 ] || die "5 分钟内 ssh 不通，看 $dir/$name-console.log"
+    [ "$tries" -lt 60 ] || die "5 分钟内 ssh 不通，看 $dir/$name-console.log；容器还留着，排完用 vm.sh down"
     sleep 5
   done
-  vm_ssh sudo cloud-init status --wait --long || die "cloud-init 没装好，看 vm.sh ssh sudo cat /var/log/cloud-init-output.log"
+  vm_ssh sudo cloud-init status --wait --long || die "cloud-init 没装好，看 vm.sh ssh sudo cat /var/log/cloud-init-output.log；容器还留着，排完用 vm.sh down"
   vm_ssh docker --version
 }
 

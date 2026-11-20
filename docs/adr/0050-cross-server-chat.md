@@ -27,7 +27,7 @@ ADR-0045 的“跨机（M3）留的位置”已经定了方向：Matrix 联邦�
 
 | 事项 | 结果 |
 | --- | --- |
-| 名单制联邦 `allowed_remote_server_names_experimental` | 可行。名单外出站、入站都是 403。名单是正则（点要转义），标了可热加载：原地重写配置文件加 `SIGUSR1` 秒级生效，不用重启。配置文件是 bind mount 时不能用 `sed -i`（换了 inode，容器读不到） |
+| 名单制联邦 `allowed_remote_server_names_experimental` | 可行。名单外出站、入站都是 403。名单是正则（点要转义），标了可热加载：原地重写配置文件后用管理房间命令让 Tuwunel 重读（ADR-0111），秒级生效，不用重启。配置文件是 bind mount 时不能用 `sed -i`（换了 inode，容器读不到） |
 | 不查 DNS 固定对方地址 | Tuwunel 没有静态解析配置。`/etc/hosts` 有效（hickory 会读），Docker 网络别名也有效，出站代理（`proxy`）也有效（见“验证”）。伪造 `.well-known` 自己就要先解析对方的名字，不能单独用 |
 | TLS | 官方镜像带 `direct_tls`，`[global.tls]` 挂自签证书即可。`.wonton.internal` 拿不到公共证书，Tuwunel 又只认内置的 Mozilla 根，所以发送方必须开隐藏选项 `allow_invalid_tls_certificates = true`（只管出站） |
 | 签名密钥 | `trusted_servers = []`（默认是 `["matrix.org"]`）时只向对方直取 `/_matrix/key/v2/server`，不碰公共 notary。没有预置对方公钥的配置或命令。对方换整套密钥，联邦自动恢复，旧密钥按 ID 留着，旧事件照样能验 |
