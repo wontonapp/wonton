@@ -132,7 +132,7 @@ final class ChatTelegramUITests: XCTestCase {
         XCTAssertTrue(app.buttons["replyCancel"].waitForExistence(timeout: 5), "点了“回复”没进入回复状态")
     }
 
-    /// 深色模式下的私聊和群聊：只留截图给人看，断言时间线照常出来。
+    /// 深色模式下的私聊、旁聊和群聊：只留截图给人看，断言时间线照常出来。
     func testDarkAppearance() {
         app.terminate()
         XCUIDevice.shared.appearance = .dark
@@ -141,6 +141,13 @@ final class ChatTelegramUITests: XCTestCase {
         enter(Self.directRoom)
         waitForFloatingDateToFade()
         shot("direct-dark")
+        openSideChat()
+        shot("side-chat-dark")
+        let photo = openSideAttach()
+        shot("side-chat-attach-dark")
+        for index in 0..<3 { app.buttons["attachPhoto.\(index)"].tap() }
+        XCTAssertTrue(wait(5) { photo.isSelected }, "深色下旁聊的相册选不上照片")
+        shot("side-chat-multi-dark")
         app.terminate()
         app.launch()
         enter(Self.groupRoom)
