@@ -101,7 +101,7 @@ final class PushModel: NSObject, UNUserNotificationCenterDelegate {
         // iOS 只有系统推送：收新消息的方式存成本机的“壳给推送地址”，复用 UnifiedPush 取值
         // （ADR-0003：iOS 不显示这个选项；核心拒绝保持连接下登记地址）。
         do {
-            try core.dispatch(action: .setPushMethod(method: .unifiedPush))
+            try core.dispatch(action: .push(action: .setPushMethod(method: .unifiedPush)))
         } catch {
             setUnavailable(.core(String(describing: error)))
             return
@@ -153,9 +153,9 @@ final class PushModel: NSObject, UNUserNotificationCenterDelegate {
             return
         }
         do {
-            try core.dispatch(action: .setPushEndpoint(
+            try core.dispatch(action: .push(action: .setPushEndpoint(
                 endpoint: PushEndpoint(url: endpoint, p256dh: keys.p256dh, auth: keys.auth)
-            ))
+            )))
         } catch {
             setUnavailable(.core(String(describing: error)))
             return
@@ -165,7 +165,7 @@ final class PushModel: NSObject, UNUserNotificationCenterDelegate {
 
     private func setUnavailable(_ reason: Unavailability) {
         unavailability = reason
-        try? core.dispatch(action: .pushUnavailable(message: reason.message))
+        try? core.dispatch(action: .push(action: .pushUnavailable(message: reason.message)))
     }
 
     /// 中继的地址，构建配置；空着就是推送还没开通。
