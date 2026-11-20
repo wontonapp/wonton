@@ -104,7 +104,8 @@ impl PluginManager {
         {
             // 超时只说明没等到回答，结果不确定：Docker 可能建出了本次的容器，也可能回的是
             // 409 之类的失败而回答丢了。等它落下来、核对归属（同启动前的 check_ownership）
-            // 才记账，别人的同名容器不记账，回滚不去动它；没等到的删除容忍 404。
+            // 才记账，别人的同名容器不记账，回滚不去动它；窗口里始终没看到的，把「是否已创建
+            // 不确定」记进失败（issue #764），删除容忍 404。
             if matches!(error, EngineError::TimedOut(_)) {
                 let plugin = plan.labels.get(LABEL_PLUGIN).map(String::as_str);
                 self.settle_timed_out_create(undo, &container.name, plugin)
@@ -125,7 +126,8 @@ impl PluginManager {
 
     /// 创建请求超时后，Docker 可能还在建这个容器：等它出现，核对归属（这套核心的实例标签加
     /// LABEL_PLUGIN 指向本插件，同启动前的 check_ownership）才记进回滚账本；别人的同名容器
-    /// 不记账，回滚不去动它。到窗口尽头还没出现就照常回滚，删除容忍容器不存在。
+    /// 不记账，回滚不去动它。窗口里 inspect 一直报错、到尽头也没看到确切结果的，容器是否已
+    /// 创建不确定：记进 [`Undo::uncertain_containers`]，回滚不删它，但失败如实记「回滚未完成」。
     async fn settle_timed_out_create(&self, undo: &mut Undo, name: &str, plugin: Option<&str>) {
         let until = Instant::now() + CREATE_SETTLE;
         while Instant::now() < until {
@@ -145,6 +147,16 @@ impl PluginManager {
                 return;
             }
             tokio::time::sleep(CREATE_SETTLE_STEP).await;
+        }
+        // 窗口走完也没看到确切结果（inspect 一直报错）：容器是否建出来了不确定。不记账——
+        // 删错别人的同名容器不可挽回；但把不确定如实写进失败，回滚不能报完成，清除时走
+        // teardown 按标签清（issue #764）。
+        if !undo
+            .uncertain_containers
+            .iter()
+            .any(|recorded| recorded == name)
+        {
+            undo.uncertain_containers.push(name.to_owned());
         }
     }
 }

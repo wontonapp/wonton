@@ -27,6 +27,7 @@ plugin-install-not-agent-written = { $id } wasn't written by an agent, so it has
 
 plugin-install-rollback-item = { $what }: { $error }
 plugin-install-rollback-unfinished = Couldn't finish rolling back, there may be leftovers: { $failures }
+plugin-install-rollback-create-uncertain = it is not known whether container { $name } was created
 plugin-install-rb-container = container { $name }
 plugin-install-rb-home-room = your main room { $room }
 plugin-install-rb-bot-device = device of bot { $bot }
