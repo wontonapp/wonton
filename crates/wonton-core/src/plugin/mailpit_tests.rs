@@ -133,6 +133,28 @@ async fn notify_install_restore_rebuild_and_uninstall_manage_smtp_endpoint() {
 }
 
 #[tokio::test]
+async fn uninstall_tolerates_mailpit_being_removed_mid_detach() {
+    let (docker, engine) = FakeDocker::start().await;
+    let dir = tempfile::tempdir().unwrap();
+    compose(&engine, "core", "home", "core").await;
+    compose(&engine, "mail", "home", "mailpit").await;
+    let manager = manager(engine, &dir);
+    let langs = crate::plugin::languages::Languages::from_header(Some("en"));
+    manager
+        .install(source(), &[Permission::Notify], langs.clone())
+        .await
+        .unwrap();
+    let network = "wonton-app-test";
+    // Compose 正在换掉 Mailpit：旧容器标了删除，卸载时断开被 Docker 拒绝。
+    docker.mark_removing("mail");
+    manager
+        .uninstall(&PluginId::parse("app.test").unwrap(), false, &langs)
+        .await
+        .unwrap();
+    assert!(!docker.networks().contains(&network.to_owned()));
+}
+
+#[tokio::test]
 async fn failed_install_detaches_mailpit_before_rolling_back_network() {
     let (docker, engine) = FakeDocker::start().await;
     let dir = tempfile::tempdir().unwrap();

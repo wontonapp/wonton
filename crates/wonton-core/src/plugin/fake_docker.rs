@@ -103,6 +103,8 @@ struct Resources {
     created: BTreeMap<String, Value>,
     /// 容器名 → 被创建过的次数：重建会计数，断言“容器（别的 Bot 的）没被动过”用。
     creation_count: BTreeMap<String, u32>,
+    /// 标了删除、删除还没做完的容器：接出网络被 Docker 拒绝，拒绝时端点连同容器一起没。
+    removing: BTreeSet<String>,
     /// 网络名 → 标签。
     networks: BTreeMap<String, Labels>,
     /// 网络名 → 创建时的请求（`Internal`、`Options` 等）。
@@ -381,6 +383,11 @@ impl FakeDocker {
         for endpoints in docker.endpoints.values_mut() {
             endpoints.remove(container);
         }
+    }
+
+    /// 容器被标了删除（`docker rm` 或 Compose 换容器）：端点还在，断开被 Docker 拒绝，随后容器连同端点一起没。
+    pub fn mark_removing(&self, container: &str) {
+        self.lock().removing.insert(container.to_owned());
     }
 
     pub fn fail_stops(&self, message: Option<&str>) {
