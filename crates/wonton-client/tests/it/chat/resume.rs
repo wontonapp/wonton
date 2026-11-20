@@ -60,6 +60,7 @@ impl Chat {
                     },
                     body: "断开时主人发的".to_owned(),
                     reply_to: None,
+                    mentions: vec![],
                 },
             })
             .unwrap();

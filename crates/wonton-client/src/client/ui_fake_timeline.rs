@@ -361,6 +361,7 @@ mod tests {
             target: target(),
             body: "/help".into(),
             reply_to: None,
+            mentions: vec![],
         });
         let sent = next(&subscription).await;
         assert!(sent.scroll_to_bottom);

@@ -116,6 +116,7 @@ async fn drafts_stay_per_room_and_survive_a_restart() {
                 },
                 body: "第一间第 19 个字".to_owned(),
                 reply_to: None,
+                mentions: vec![],
             },
         })
         .unwrap();
@@ -141,6 +142,7 @@ async fn drafts_stay_per_room_and_survive_a_restart() {
                 },
                 body: "再发一句".to_owned(),
                 reply_to: None,
+                mentions: vec![],
             },
         })
         .unwrap();
@@ -231,6 +233,7 @@ async fn a_reply_stays_in_the_draft_until_it_is_sent() {
                 },
                 body: "草稿正文".to_owned(),
                 reply_to: Some(quote.event_id.clone()),
+                mentions: vec![],
             },
         })
         .unwrap();
