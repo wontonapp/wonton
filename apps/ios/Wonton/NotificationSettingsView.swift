@@ -74,9 +74,11 @@ struct NotificationSettingsView: View {
             switch reason {
             case .transportUnavailable: String(localized: .Settings.pushStatusFailedTransport)
             case .unauthorized: String(localized: .Settings.pushStatusFailedUnauthorized)
+            case .forbidden: String(localized: .Settings.pushStatusFailedForbidden)
             case .upstream: String(localized: .Settings.pushStatusFailedUpstream)
             case .notReady: String(localized: .Settings.pushStatusFailedNotReady)
             case .invalidInput: String(localized: .Settings.pushStatusFailedInvalidInput)
+            case .other: String(localized: .Settings.pushStatusFailedUpstream)
             }
         }
     }

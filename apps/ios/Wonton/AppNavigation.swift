@@ -205,7 +205,7 @@ final class AppNavigation {
         // 通知里的 server 是 endpoint ID；已连着的记录在 `home.serverId` 里（配对票据里的 endpoint ID，同一个东西）。
         if home.viewModel.serverId == server { return true }
         guard let slot = chat.core.pushServerSlot(server: server) else {
-            pages.rejection = Problem(title: String(localized: .Servers.notificationUnreachable), detail: server)
+            pages.rejection = Problem(title: String(localized: .Servers.serversNotificationUnreachable), detail: server)
             return false
         }
         do {
@@ -221,7 +221,9 @@ final class AppNavigation {
                 settled = true
             }
             if case let .disconnected(_, message) = home.status {
-                pages.rejection = Problem(title: String(localized: .Servers.notificationUnreachable), detail: message)
+                pages.rejection = Problem(
+                    title: String(localized: .Servers.serversNotificationUnreachable), detail: message
+                )
             }
             if settled || pages.rejection != nil { break }
         }
