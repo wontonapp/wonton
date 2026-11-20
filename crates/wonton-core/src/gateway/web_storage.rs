@@ -32,9 +32,10 @@ pub(super) async fn forward(
     hosted_route: &HostedRoute,
     mut req: Request,
     origin: &str,
+    web_user: Option<&str>,
     langs: &Languages,
-    format: pages::Format,
 ) -> Response {
+    let format = pages::Format::of(req.headers());
     let Some(storage) = &hosted_route.storage else {
         return pages::error(
             StatusCode::NOT_FOUND,
@@ -74,10 +75,11 @@ pub(super) async fn forward(
     *req.uri_mut() = uri;
     hosted::mark(req.headers_mut(), route.id.as_str());
     let client = client_addr(&req);
-    let mut response = match hosted::send(gateway, route, upstream, req, client, langs).await {
-        Ok(response) => response,
-        Err(error) => return error.response(route.id.as_str(), langs, format),
-    };
+    let mut response =
+        match hosted::send(gateway, route, upstream, req, client, web_user, langs).await {
+            Ok(response) => response,
+            Err(error) => return error.response(route.id.as_str(), langs, format),
+        };
     isolation::sanitize_set_cookies(response.headers_mut());
     // 存进去的文件也在插件的源上：网页的 CSP 照样盖上，存一个 HTML 再打开它也连不出声明以外的地方。
     hosted::seal(&mut response, hosted_route, route.cross_origin_isolated);

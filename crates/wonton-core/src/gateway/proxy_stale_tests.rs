@@ -32,6 +32,7 @@ async fn forward(
         },
         request,
         Forwarded {
+            web_user: None,
             client: None,
             scheme: "http",
         },

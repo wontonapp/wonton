@@ -19,31 +19,31 @@ use crate::plugin::languages::Languages;
 use crate::plugin::upstreams::Endpoint;
 use crate::plugin::{PluginId, PluginPackage, PluginStatus};
 
-fn bot(name: &str) -> BotRef {
+pub(super) fn bot(name: &str) -> BotRef {
     BotRef {
         plugin_id: "app.whoami".into(),
         bot: name.into(),
     }
 }
 
-fn host(name: &str) -> String {
+pub(super) fn host(name: &str) -> String {
     format!("{}.{}", bot_web_label(&bot(name)), CORE)
 }
 
-fn source() -> String {
+pub(super) fn source() -> String {
     WHOAMI.replace("  icon: icon.svg\n", "")
         .replace("  permissions: []", "  permissions: [matrix.bot]\n  bots: {services: [web]}")
         .replace("    port: 8000", "    port: 8000\n    path: /panel?mode=bot\n    cross_origin_isolated: true\n    sso: oidc\n    oidc:\n      redirect_paths: [/cb]\n      admin_groups: [admin]")
 }
 
-fn record(h: &Harness, family: bool, compose: &str) {
+pub(super) fn record(h: &Harness, family: bool, compose: &str) {
     std::fs::write(h.data_dir.join("plugins/app.whoami.json"), json!({
         "id": "app.whoami", "version": "0.1.0", "source": compose.replace("  icon: icon.svg\n", ""),
         "granted_permissions": ["matrix.bot"], "installed_at": 1, "family": family,
     }).to_string()).unwrap();
 }
 
-async fn setup(h: &Harness) -> Arc<AtomicUsize> {
+pub(super) async fn setup(h: &Harness) -> Arc<AtomicUsize> {
     let compose = source();
     record(h, false, &compose);
     h.manager.register_for_test(
@@ -94,7 +94,7 @@ async fn setup(h: &Harness) -> Arc<AtomicUsize> {
     other_hits
 }
 
-fn member(h: &Harness) -> iroh::EndpointId {
+pub(super) fn member(h: &Harness) -> iroh::EndpointId {
     h.members
         .invite(MemberRecord {
             username: "mia".into(),
@@ -118,7 +118,7 @@ fn member(h: &Harness) -> iroh::EndpointId {
 }
 
 /// #518 起可见性按角色 open_apps 算：给默认邀请角色开放这个插件，family 标记不再管事。
-fn open_whoami(h: &Harness) {
+pub(super) fn open_whoami(h: &Harness) {
     let draft = wonton_protocol::RoleDraft {
         name: "朋友".into(),
         permissions: wonton_protocol::Permissions {

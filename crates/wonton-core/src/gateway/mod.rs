@@ -151,6 +151,19 @@ pub use session::{APP_COOKIE, CORE_COOKIE};
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub struct TunnelPeer(pub EndpointId);
 
+/// 网关转给插件网页时的“打开者”，值是 Matrix 用户 ID（ADR-0045 第 6 节）。插件网页拿它当说话人：
+/// 上游自己的会话认不出走进来的是谁。只由网关写，客户端带的一律剥掉；插件把端口曝到宿主上时
+/// 绕过网关的直连可以伪造。方向与 `X-Wonton-On-Behalf-Of` 相反（那个是插件发给核心）。
+pub(super) const WEB_USER_HEADER: &str = "X-Wonton-Web-User";
+
+/// 本地用户的 Matrix 用户 ID。配置里还没有 Matrix 时按公开域名拼，和登录后算出来的一致。
+pub(super) fn matrix_user_id(gateway: &Gateway, username: &str) -> String {
+    match &gateway.matrix {
+        Some(matrix) => matrix.user_id(username),
+        None => format!("@{username}:{}", gateway.public.base_domain),
+    }
+}
+
 /// 网关认出的人（ADR-0045）：经隧道的已配对设备看设备记录里的人，局域网浏览器的核心会话是主人。
 /// 认人只看隧道身份对应的设备记录，不读请求里的任何字段。
 #[derive(Clone, Debug, PartialEq, Eq)]
@@ -842,3 +855,5 @@ mod tunnel_tests;
 mod tusd_tests;
 #[cfg(test)]
 mod upload_settings_tests;
+#[cfg(test)]
+mod web_user_tests;
