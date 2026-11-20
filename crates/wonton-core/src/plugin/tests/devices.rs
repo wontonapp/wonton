@@ -644,6 +644,7 @@ async fn switching_disk_type_changes_only_the_disk_service_and_its_risk() {
             false,
             &nvme,
             Default::default(),
+            &Default::default(),
         )
         .await
         .unwrap();
@@ -668,6 +669,7 @@ async fn switching_disk_type_changes_only_the_disk_service_and_its_risk() {
             false,
             &sata,
             Default::default(),
+            &Default::default(),
         )
         .await
         .unwrap();

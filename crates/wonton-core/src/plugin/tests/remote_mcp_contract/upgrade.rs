@@ -25,7 +25,12 @@ async fn request(bed: &Bed, token: &str) -> UpgradeRequest {
 async fn request_package(bed: &Bed, package: PluginPackage, token: &str) -> UpgradeRequest {
     let preview = bed
         .manager
-        .preview_upgrade(&id(REMOTE), UpgradeTo::Upload(Box::new(package)), &langs())
+        .preview_upgrade(
+            &id(REMOTE),
+            UpgradeTo::Upload(Box::new(package)),
+            None,
+            &langs(),
+        )
         .await
         .unwrap();
     serde_json::from_value(json!({

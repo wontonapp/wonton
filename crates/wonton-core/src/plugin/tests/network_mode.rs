@@ -395,10 +395,11 @@ async fn network_mode_upgrade_recreates_the_target_and_every_sidecar() {
         .upgrade_checked(
             next,
             &[],
-        &UpgradeSwitches::Requested(Vec::new()),
-        false,
-        &[],
-        Default::default(),
+            &UpgradeSwitches::Requested(Vec::new()),
+            false,
+            &[],
+            Default::default(),
+            &Default::default(),
         )
         .await
         .unwrap();

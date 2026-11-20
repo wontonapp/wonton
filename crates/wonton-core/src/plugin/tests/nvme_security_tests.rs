@@ -73,6 +73,7 @@ async fn legacy_nvme_rebuild_does_not_gain_admin_before_an_upgrade() {
             false,
             &[],
             Default::default(),
+            &Default::default(),
         )
         .await
         .unwrap();
@@ -145,6 +146,7 @@ async fn nvme_replacement_after_sata_choice_cannot_add_admin() {
                     false,
                     &[],
                     Default::default(),
+                    &Default::default(),
                 )
                 .await
                 .unwrap_err()
