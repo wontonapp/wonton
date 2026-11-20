@@ -34,6 +34,10 @@ struct ComposerView: View {
     }
     @State private var photos: [PhotosPickerItem] = []
     @State private var isChoosingAttachment = false
+    /// 旁聊里输入栏上那句“附件只能在主对话里发”：默认露出来，关掉不再打扰。
+    @State private var showsSideChatHint = true
+    /// 附件的字节还在取（比如 iCloud 原图）：发送键那一格换成转圈，画面上看得出点到了。
+    @State private var isSendingAttachment = false
     @State private var isPickingPhoto = false
     @State private var isPickingFiles = false
     /// 附件面板收起以后接着开哪个系统选择器：两张系统面板不能叠着开。
@@ -59,13 +63,21 @@ struct ComposerView: View {
                 .padding(.horizontal, WontonTheme.spacing.chatFloatInset - WontonTheme.spacing.s4)
             }
             AgentStopNotice(state: composer.agentStop)
+            if isSideChat && showsSideChatHint {
+                SideChatAttachHint(
+                    openMain: { model.closeSideChat(in: composer.target.roomId) },
+                    close: { showsSideChatHint = false }
+                )
+                .padding(.horizontal, WontonTheme.spacing.chatFloatInset - WontonTheme.spacing.s4)
+                .transition(.opacity)
+            }
             HStack(alignment: .bottom, spacing: WontonTheme.spacing.s4) {
                 if !commands.isEmpty {
                     ComposerMenuButton(showsTitle: isEmpty) { showsCommands.toggle() }
                 }
                 ChatGlassButton(icon: .attach, label: String(localized: .Composer.composerAttach)) {
-                    // 附件区满了就不开面板，说一声最多几个。
-                    if hasRoom() { isChoosingAttachment = true }
+                    // 旁聊没有附件区，点了把那句话露出来；主对话里附件区满了就不开面板，说一声最多几个。
+                    if isSideChat { showsSideChatHint = true } else if hasRoom() { isChoosingAttachment = true }
                 }
                 .accessibilityIdentifier("composerAttach")
                 field
@@ -73,7 +85,7 @@ struct ComposerView: View {
                 if AgentStopButton.isShown(composer.agentStop) {
                     AgentStopButton(state: composer.agentStop, action: composer.stopAgent)
                 }
-                ComposerSendSlot(canSend: !isEmpty, send: send)
+                ComposerSendSlot(canSend: !isEmpty, isSending: isSendingAttachment, send: send)
             }
             .chatGlassCluster()
             // 渐隐从输入栏上方一点开始，一直垫到屏幕底（伸出去的部分在屏幕外或键盘后面）。
@@ -225,11 +237,16 @@ struct ComposerView: View {
 
     /// 附件面板里选好照片点了发送：照片和附言（就是草稿）作为一次发出去（ADR-0109 第 8 节）。主对话里照片先进附件区，
     /// 再和发送键走同一条路（`SendComposer`），附件区里原有的附件也一起走；旁聊没有附件区，照片一张张直接发，附言跟在后面
-    /// （ADR-0093）。发出去了才清草稿，被拒时附言留在输入框里。
+    /// （ADR-0093）。取字节的这段时间（比如 iCloud 原图下不下来）发送键那一格转圈；发出去了、草稿也还是派出时那句才清，
+    /// 被拒或者等的功夫又打了字都留着，回复对象跟着草稿留。
     private func sendPicked(_ assets: [PHAsset]) async {
         pin.pin()
-        let caption = draft.wrappedValue.trimmingCharacters(in: .whitespacesAndNewlines)
+        isSendingAttachment = true
+        defer { isSendingAttachment = false }
+        let original = draft.wrappedValue
+        let caption = original.trimmingCharacters(in: .whitespacesAndNewlines)
         var replyTo = model.replies[draftKey]?.eventId
+        var allSent = true
         for asset in assets {
             guard let (data, type) = await PhotoLibrary.data(asset) else {
                 model.rejection = Problem(
@@ -242,8 +259,12 @@ struct ComposerView: View {
                 await composer.addImage(data, type)
             } else if await composer.sendImage(data, type, replyTo: replyTo) {
                 replyTo = nil
+            } else {
+                allSent = false
             }
         }
+        // 旁聊里的附言跟着照片走：有一张没发出去就先不单发附言，留着下次和草稿一起发。
+        guard allSent else { return }
         let action: TimelineAction? = if !isSideChat {
             .sendComposer(target: composer.target, body: caption, replyTo: replyTo)
         } else if !caption.isEmpty {
@@ -251,14 +272,8 @@ struct ComposerView: View {
         } else {
             nil
         }
-        guard let action else { return }
-        do {
-            try model.core.dispatch(action: .timeline(action: action))
-        } catch {
-            model.rejection = error.problem
-            return
-        }
-        draft.wrappedValue = ""
+        guard let action, model.send(.timeline(action: action)) else { return }
+        if draft.wrappedValue == original { draft.wrappedValue = "" }
         model.cancelReply(in: composer.target)
     }
 
@@ -294,30 +309,38 @@ struct ComposerView: View {
         guard !draft.wrappedValue.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty
             || !composer.attachments.isEmpty else { return }
         pin.pin()
-        // 被核心拒收时字、附件和回复对象都留着，改完再发；收下了才清。
+        // 旁聊没有附件区，附件区空着时 `send` 走的就是直接发字。被核心拒收时字、附件和回复对象都留着，改完再发。
         guard composer.send(draft.wrappedValue, replyTo: model.replies[draftKey]?.eventId) else { return }
         draft.wrappedValue = ""
         model.cancelReply(in: composer.target)
     }
 }
 
-/// 输入框右边“发送键那一格”：有字或有附件才出现发送键（ADR-0109 第 6 节），空着时不画东西。
+/// 输入框右边“发送键那一格”：有字或有附件才出现发送键（ADR-0109 第 6 节），空着时不画东西；照片的字节还在取时这一格转圈。
 /// 单独一个视图：别的按钮要占这一格（比如 Agent 在跑时的“停止”）就换在这里，不动输入框的布局。
 struct ComposerSendSlot: View {
     let canSend: Bool
+    /// 附件的字节还在取：这一格换成转圈，等待期间还能接着打字。
+    let isSending: Bool
     let send: () -> Void
     @Environment(\.accessibilityReduceMotion) private var reduceMotion
 
+    private var showsSlot: Bool { canSend || isSending }
+
     var body: some View {
         ZStack {
-            if canSend {
+            if isSending {
+                ProgressView()
+                    .frame(width: WontonTheme.size.chatControl, height: WontonTheme.size.chatControl)
+                    .accessibilityIdentifier("composerSending")
+            } else if canSend {
                 SendButton(action: send)
                     .transition(reduceMotion ? .opacity : .scale.combined(with: .opacity))
             }
         }
         // 空着时这一格不占宽，输入框一直伸到右边。
-        .padding(.leading, canSend ? 0 : -WontonTheme.spacing.s4)
-        .animation(.easeOut(duration: WontonTheme.motion.feedback), value: canSend)
+        .padding(.leading, showsSlot ? 0 : -WontonTheme.spacing.s4)
+        .animation(.easeOut(duration: WontonTheme.motion.feedback), value: showsSlot)
     }
 }
 

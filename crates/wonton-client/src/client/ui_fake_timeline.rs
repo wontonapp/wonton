@@ -103,6 +103,15 @@ impl FakeTimelines {
             _ => return,
         };
         let Some(fake) = self.get(&room_id) else {
+            // 转发连同附言常常发往还没打开的房间：留着，等它打开时和转发的消息一起补进第一批。
+            if let TimelineAction::SendText { body, .. } = &action
+                && !body.is_empty()
+            {
+                lock(&self.forwarded)
+                    .entry(room_id)
+                    .or_default()
+                    .push(body.clone());
+            }
             return;
         };
         match action {

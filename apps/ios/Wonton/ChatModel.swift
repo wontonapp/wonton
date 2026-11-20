@@ -202,7 +202,7 @@ final class ChatModel {
         viewModel.rooms.first { $0.roomId == roomId }?.name ?? roomId
     }
 
-    /// 操作被核心收下返回真；被拒时原因弹出来，返回假。
+    /// 操作被核心收下返回真；被拒时原因弹出来，返回假。要保住草稿和回复对象的调用方看这个结果。
     @discardableResult
     func send(_ action: Action) -> Bool {
         do {

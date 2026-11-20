@@ -117,7 +117,7 @@ final class ComposerModel {
     }
 
     /// 旁聊里粘贴的图：转码好直接发进那个旁聊，不进附件区（附件区只有主对话有，ADR-0093）。
-    /// 回复对象跟着这张照片发出去。发出去返回真，转码失败弹原因返回假。
+    /// 回复对象跟着这张照片发出去。发出去返回真；转码失败、核心拒绝都弹原因返回假，回复对象留着。
     @discardableResult
     func sendImage(_ data: Data, _ type: UTType?, replyTo: String?) async -> Bool {
         guard let upload = await transcode(data, type) else { return false }

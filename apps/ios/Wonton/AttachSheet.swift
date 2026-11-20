@@ -4,7 +4,7 @@ import UniformTypeIdentifiers
 import WontonClient
 
 /// 回形针打开的附件面板（ADR-0109 第 9 节）：上面是相册里最近的照片，点一下选中、再点取消，能选几张看附件区还剩几格；
-/// 底下浮着一排玻璃的切换，只列做得到的：相册、文件。选了照片，那一排换成附言框和发送键，照片和附言作为一次发出去。
+/// 底下浮着一排玻璃的切换，只列做得到的：相册、文件，整块到面板底、能滚。选了照片，那一排换成附言框和发送键，照片和附言作为一次发出去。
 /// 相册权限到这里才问；没给就如实说，配去设置的按钮，系统的照片选择器不要权限，也留一个入口。
 struct AttachSheet: View {
     /// 这次最多还能选几张。
@@ -97,6 +97,8 @@ struct AttachSheet: View {
             CaptionSendBar(
                 placeholder: String(localized: .Photo.photoCaption), text: $caption, count: selected.count,
                 cancel: { selected = [] },
+                // 选了照片就能发；只打了附言没选照片时这一条不出现，写了照片或字任一个就能发。
+                canSend: !caption.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty || !selected.isEmpty,
                 send: { send(selected.compactMap { id in assets.first { $0.localIdentifier == id } }) },
                 id: "attach"
             )
@@ -126,7 +128,7 @@ struct AttachSheet: View {
                 Text(title).wontonText(WontonTheme.typography.caption).fontWeight(.medium).lineLimit(1)
             }
             .foregroundStyle(Color(isCurrent ? colors.accentInk : colors.textPrimary))
-            .frame(width: WontonTheme.size.attachTab, height: WontonTheme.size.target + WontonTheme.spacing.s4)
+            .frame(width: WontonTheme.size.attachTab, height: WontonTheme.size.attachTab)
             .background {
                 if isCurrent {
                     Capsule().fill(Color(colors.accentInk).opacity(WontonTheme.ratio.tabHighlight))
@@ -217,7 +219,11 @@ enum PhotoLibrary {
     }
 
     /// 原图的字节和类型；取不到（比如 iCloud 上的原图下不来）为空。
+    /// `WONTON_UI_PHOTO_DELAY_MS`：界面测试把取字节拖慢，好看到等待中的样子。
     static func data(_ asset: PHAsset) async -> (Data, UTType?)? {
+        if let delay = ProcessInfo.processInfo.environment["WONTON_UI_PHOTO_DELAY_MS"].flatMap(Int.init) {
+            try? await Task.sleep(for: .milliseconds(delay))
+        }
         let options = PHImageRequestOptions()
         options.deliveryMode = .highQualityFormat
         options.isNetworkAccessAllowed = true

@@ -8,6 +8,8 @@ struct CaptionSendBar: View {
     let count: Int
     /// 有的话最左边多一个关闭钮：不发了，回到选之前。
     var cancel: (() -> Void)?
+    /// 现在能不能发；不给就随时能发（转发只要求选了会话）。
+    var canSend: Bool?
     let send: () -> Void
     /// 附言框、发送键、关闭钮的无障碍标识前缀，如 `attach` 得到 `attachCaption`、`attachSend`、`attachCancel`。
     let id: String
@@ -22,6 +24,8 @@ struct CaptionSendBar: View {
             field
             ChatGlassButton(icon: .send, label: sendLabel, prominent: true, action: send)
                 .overlay(alignment: .topTrailing) { badge }
+                .opacity(canSend == false ? WontonTheme.ratio.secondaryContent : 1)
+                .disabled(canSend == false)
                 .accessibilityIdentifier("\(id)Send")
         }
         // 不放进一个玻璃容器：容器里的玻璃会盖住压在发送键上的角标。
