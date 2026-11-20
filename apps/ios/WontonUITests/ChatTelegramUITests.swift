@@ -174,6 +174,34 @@ final class ChatTelegramUITests: XCTestCase {
         shot("side-chat-attach")
     }
 
+    /// 旁聊的相册点得动：照片不是灰的，选一张出现“完成”，点了面板收起。
+    func testSideChatPhotoGridUsable() {
+        enter(Self.directRoom)
+        waitForFloatingDateToFade()
+        openSideChat()
+        let first = openSideAttach()
+        XCTAssertTrue(first.isEnabled, "旁聊里照片点不了，上限还是 0 个")
+        first.tap()
+        XCTAssertTrue(app.buttons["attachDone"].waitForExistence(timeout: 5), "旁聊里选了照片没有“完成”")
+        XCTAssertTrue(first.isSelected, "点了的照片没变成选中")
+        app.buttons["attachDone"].tap()
+        XCTAssertTrue(first.waitForNonExistence(timeout: 5), "点了“完成”面板没收起")
+    }
+
+    /// 旁聊一次能选好几张：三张都在一张面板里选上，不用开三次。
+    func testSideChatPicksSeveralPhotosAtOnce() {
+        enter(Self.directRoom)
+        waitForFloatingDateToFade()
+        openSideChat()
+        XCTAssertTrue(openSideAttach().isEnabled, "旁聊里照片点不了，上限还是 0 个")
+        let photos = (0..<3).map { app.buttons["attachPhoto.\($0)"] }
+        XCTAssertTrue(photos[2].waitForExistence(timeout: 15), "旁聊的附件面板里没有三张照片\n\(app.debugDescription)")
+        for photo in photos { photo.tap() }
+        XCTAssertTrue(wait(5) { photos.allSatisfy { $0.isSelected } }, "一张面板里选不上三张")
+        XCTAssertTrue(app.buttons["attachDone"].exists, "选了三张没有“完成”")
+        shot("side-chat-multi")
+    }
+
     /// 房间顶栏没有“打开面板”的按钮；点头像进 Bot 资料页，从那里打开这个房间的面板（ADR-0052）。
     func testPanelOpensFromBotProfile() {
         enter(Self.directRoom)
@@ -371,6 +399,21 @@ final class ChatTelegramUITests: XCTestCase {
             dragUp()
         }
         XCTFail("往后翻了 40 段也没找到 \(element)\n\(app.debugDescription)", file: file, line: line)
+    }
+
+    /// 旁聊里打开附件面板，等相册网格出来，返回第一张照片。主对话被盖住时它的输入栏还在无障碍树里，要上面那间的按钮。
+    private func openSideAttach(file: StaticString = #filePath, line: UInt = #line) -> XCUIElement {
+        let attaches = app.buttons.matching(identifier: "composerAttach").allElementsBoundByIndex
+        tap(attaches.first(where: { $0.isHittable }) ?? attaches[0], file: file, line: line)
+        let springboard = XCUIApplication(bundleIdentifier: "com.apple.springboard")
+        let allow = springboard.alerts.buttons.element(boundBy: 1)
+        let first = app.buttons["attachPhoto.0"]
+        if allow.waitForExistence(timeout: 10) { allow.tap() }
+        guard first.waitForExistence(timeout: 15) else {
+            XCTFail("旁聊的附件面板里没有照片\n\(app.debugDescription)", file: file, line: line)
+            return first
+        }
+        return first
     }
 
     /// 点主对话里的旁聊卡片进去。翻到卡片后按当时的位置现算坐标：画布里的元素缓存下来的 frame 会过期。
