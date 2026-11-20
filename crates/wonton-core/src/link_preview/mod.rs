@@ -2,7 +2,8 @@
 //!
 //! 只有网关上主人和家人的设备能调（`gateway::link_preview`）。出网走主人配的出网代理，没配就直连；配了代理时域名经代理用 DoH
 //! 解析（[`doh`]），否则用本地解析。不许去内网和本机地址（[`target`]），用检查过的 IP 去连（[`connect`]）。结果按网址缓存（[`cache`]），没命中缓存的才按设备限速（[`limit`]）：
-//! 打开一个链接很多的聊天时，读缓存不该被拦。
+//! 打开一个链接很多的聊天时，读缓存不该被拦。同一个网址同时只取一次（[`Flight`]），后来的请求等那一次的结果，
+//! 不再自己取、也不占额度。
 
 mod cache;
 pub(crate) mod connect;
@@ -12,13 +13,16 @@ mod html;
 mod limit;
 mod target;
 
+use std::collections::HashMap;
 use std::io::Cursor;
 use std::path::PathBuf;
-use std::sync::Arc;
+use std::sync::atomic::{AtomicBool, Ordering};
+use std::sync::{Arc, Mutex};
 use std::time::Duration;
 
 use hyper::body::Bytes;
 use hyper::header::{self, HeaderMap};
+use tokio::sync::watch;
 use url::Url;
 use wonton_protocol::{LinkPreview, LinkPreviewFailure, LinkPreviewImage};
 
@@ -48,6 +52,72 @@ impl Failure {
     }
 }
 
+/// 正在取的一个网址：第一次请求把结果放进来，等着的请求各自取走一份。
+struct Flight {
+    result: watch::Sender<Option<Result<LinkPreview, Failure>>>,
+}
+
+impl Flight {
+    fn new() -> Self {
+        Self {
+            result: watch::channel(None).0,
+        }
+    }
+
+    async fn wait(&self) -> Result<LinkPreview, Failure> {
+        let mut results = self.result.subscribe();
+        let seen = results.wait_for(Option::is_some).await;
+        match seen {
+            Ok(result) => (*result).clone().expect("等到时有结果"),
+            Err(_) => Err(Failure::new(
+                LinkPreviewFailure::Other,
+                "取页的请求没等完就没了",
+            )),
+        }
+    }
+
+    fn finish(&self, result: Result<LinkPreview, Failure>) {
+        self.result.send_replace(Some(result));
+    }
+}
+
+/// 第一个请求占着这个网址：正常结束时放结果，中途被打断（连接断了、请求被取消）时给等着的请求一个失败，
+/// 不让它们一直等。
+struct Leader<'a> {
+    previews: &'a LinkPreviews,
+    key: String,
+    finished: AtomicBool,
+}
+
+impl<'a> Leader<'a> {
+    fn new(previews: &'a LinkPreviews, key: String) -> Self {
+        Self {
+            previews,
+            key,
+            finished: AtomicBool::new(false),
+        }
+    }
+
+    fn finish(&self, result: Result<LinkPreview, Failure>) {
+        if self.finished.swap(true, Ordering::SeqCst) {
+            return;
+        }
+        let flight = self.previews.flights.lock().unwrap().remove(&self.key);
+        if let Some(flight) = flight {
+            flight.finish(result);
+        }
+    }
+}
+
+impl Drop for Leader<'_> {
+    fn drop(&mut self) {
+        self.finish(Err(Failure::new(
+            LinkPreviewFailure::Other,
+            "取页的请求被打断了",
+        )));
+    }
+}
+
 /// 各项上限，数值见 ADR-0065。测试换成小的。
 #[derive(Debug, Clone)]
 pub(crate) struct Limits {
@@ -73,6 +143,8 @@ pub(crate) struct LinkPreviews {
     limits: Limits,
     cache: Arc<cache::Cache>,
     rate: limit::RateLimit,
+    /// 正在取的网址：同一个网址后来的请求在这里等。
+    flights: Mutex<HashMap<String, Arc<Flight>>>,
 }
 
 impl LinkPreviews {
@@ -87,6 +159,7 @@ impl LinkPreviews {
             cache: Arc::new(cache::Cache::new(dir, now)),
             net,
             limits,
+            flights: Mutex::new(HashMap::new()),
         }
     }
 
@@ -97,8 +170,14 @@ impl LinkPreviews {
         if let Some(cached) = self.cache.get(&key) {
             return cached;
         }
+        let leader = match self.claim(&key) {
+            Some(flight) => return flight.wait().await,
+            None => Leader::new(self, key.clone()),
+        };
         if !self.rate.take(device) {
-            return Err(Failure::new(LinkPreviewFailure::TooManyRequests, device));
+            let refusal = Err(Failure::new(LinkPreviewFailure::TooManyRequests, device));
+            leader.finish(refusal.clone());
+            return refusal;
         }
         let timeout = self.limits.timeout;
         let fetched = tokio::time::timeout(timeout, self.fetch(url, &key))
@@ -119,7 +198,20 @@ impl LinkPreviews {
         if let Err(e) = written.await {
             tracing::warn!(error = %e, "链接预览写缓存的任务没有跑完");
         }
+        leader.finish(result.clone());
         result
+    }
+
+    /// 这个网址已经有请求在取时给出那一个，否则登记自己并回 `None`。
+    fn claim(&self, key: &str) -> Option<Arc<Flight>> {
+        let mut flights = self.flights.lock().unwrap();
+        match flights.get(key) {
+            Some(flight) => Some(flight.clone()),
+            None => {
+                flights.insert(key.to_owned(), Arc::new(Flight::new()));
+                None
+            }
+        }
     }
 
     /// 预览图片，过期或没有时是 `None`。
