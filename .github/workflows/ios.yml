@@ -85,6 +85,7 @@ jobs:
       XCODEGEN_VERSION: "2.46.0"
       # 参考图绑定这台模拟器和这个系统版本：改了就整体重录（打 record-snapshots 标签）。系统版本取 Xcode 27.1 支持的，
       # 设备取装机列表里的普通 iPhone。模拟器名字带空格，走变量拼进 -destination。
+      # SnapshotTests 的 ReferenceSimulator 是同一组值，不符就 XCTSkip；改了要一起改。
       SIMULATOR_NAME: iPhone 17
       SIMULATOR_OS: "27.0"
       # 截图测试并行会同时开好几个窗口、失败时也不好定位，单台模拟器顺序跑；日期按 UTC、en_US 排版，参考图才可复现。

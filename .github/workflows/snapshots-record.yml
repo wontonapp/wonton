@@ -39,6 +39,7 @@ jobs:
     env:
       XCODEGEN_VERSION: "2.46.0"
       # 参考图绑定这台模拟器和这个系统版本：改了要整体重录。设备取装机列表里的普通 iPhone。
+      # SnapshotTests 的 ReferenceSimulator 是同一组值，只改这里的话录制会整类跳过，三处一起改。
       SIMULATOR_NAME: iPhone 17
       SIMULATOR_OS: "27.0"
       # 日期按 UTC、en_US 排版，参考图才可复现。录制模式由 `WontonSnapshots` scheme 的环境变量打开：

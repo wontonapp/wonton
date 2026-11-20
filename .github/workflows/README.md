@@ -115,7 +115,9 @@ PR 合并前只等快检查：格式、Clippy、detekt、SwiftLint、行数门�
 不编。参考图在 `apps/ios/WontonTests/__Snapshots__/`，直接进 git，不用 LFS。
 
 - 参考图绑定那台模拟器和系统版本，外观、语言（en、US）和时区（UTC）钉在 scheme 和测试里。换了模拟器或系统
-  要整体重录，只换图不换参数会一直红。
+  要整体重录，只换图不换参数会一直红。在别的模拟器或系统上跑时 `SnapshotTests` 按测试里的 `ReferenceSimulator`
+  常量核对，不符就整类 XCTSkip 并把参考图组合和当前组合写进跳过原因，不拿像素硬比；常量和工作流的
+  `SIMULATOR_NAME`、`SIMULATOR_OS` 是同一组值，三处一起改。
 - 每个用例默认 10 秒、最多 60 秒，失败不自动重试。
 - 录制模式靠 scheme 的环境变量切：`Wonton` 是 `SNAPSHOT_TESTING_RECORD=never`（只比较，缺一张参考图也直接红，
   不在 CI 里悄悄补图），`WontonSnapshots` 是 `all`。xcodebuild 步骤的 `env` 传不进模拟器里跑的 App，只有 scheme

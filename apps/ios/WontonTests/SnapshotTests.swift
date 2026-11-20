@@ -9,9 +9,38 @@ import WontonClient
 
 /// 界面截图回归：真实界面配固定数据，在同一台模拟器、同一个系统版本上逐像素比较。
 /// 参考图绑定工作流里的模拟器型号和系统版本，外观、语言、时区由 `SnapshotFixtures` 钉住；
+/// 别的模拟器或系统上字体、圆角、系统栏的画法都不一样，`setUp` 里整类 XCTSkip，不拿像素硬比。
 /// 换了模拟器或系统，打 `record-snapshots` 标签整体重录。
 @MainActor
 final class SnapshotTests: XCTestCase {
+
+    /// 参考图是在哪台模拟器、哪个系统版本上录的，和 `ios.yml`、`snapshots-record.yml` 的
+    /// `SIMULATOR_NAME`、`SIMULATOR_OS` 是同一组值（CI 日志实测：Xcode 27.1、iPhone 17 / iOS 27.0）。
+    /// 改了要打 record-snapshots 整体重录，三处一起改。
+    private enum ReferenceSimulator {
+        static let name = "iPhone 17"
+        static let osVersion = "27.0"
+    }
+
+    /// 运行时和机型不对就整类跳过：跳过原因里写清参考图录在什么上、当前是什么。
+    /// 拿不到模拟器型号时（真机、环境里没有 `SIMULATOR_DEVICE_NAME`）也跳过，不当成标准运行时。
+    override func setUp() async throws {
+        let device = ProcessInfo.processInfo.environment["SIMULATOR_DEVICE_NAME"] ?? UIDevice.current.name
+        let version = UIDevice.current.systemVersion
+        let reference = "\(ReferenceSimulator.name)/iOS \(ReferenceSimulator.osVersion)"
+        guard device == ReferenceSimulator.name, Self.majorMinor(version) == ReferenceSimulator.osVersion else {
+            throw XCTSkip(
+                "参考图是在 \(reference) 上录的，当前是 \(device)/iOS \(version)，像素比对没有意义；"
+                    + "在标准运行时上跑，或用 record-snapshots 标签重录。"
+            )
+        }
+    }
+
+    /// 只比主次版本：补丁版本不动渲染，参考图不用跟着 x.y.z 的三个数字走。
+    private static func majorMinor(_ version: String) -> String {
+        version.split(separator: ".").prefix(2).joined(separator: ".")
+    }
+
     /// 模拟器的尺寸档、外观和字号在录制和比较时都要一样，否则布局和颜色对不上。
     private static let traits = UITraitCollection(traitsFrom: [
         UITraitCollection(displayScale: 3),
