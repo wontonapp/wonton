@@ -180,3 +180,35 @@ async fn a_declared_install_deadline_extends_the_wait_without_a_start_period() {
     assert_eq!(error.kind(), "unhealthy", "{error}");
     assert!(error.to_string().contains("app-test--app"), "{error}");
 }
+
+#[tokio::test(start_paused = true)]
+async fn starting_after_a_long_stop_counts_sync_from_now() {
+    let (docker, engine) = FakeDocker::start().await;
+    let engine = engine.with_request_limit_for_test(Duration::from_secs(2 * 60 * 60));
+    let dir = tempfile::tempdir().unwrap();
+    let app = container_name("app-test", "app");
+    docker.set_state(&app, healthy());
+    docker.set_start_state(&app, healthy());
+    let m = Arc::new(manager_with(engine, &dir));
+    let installed = m
+        .install(
+            &compose_with("{test: ['CMD', 'true']}"),
+            &[],
+            super::langs(),
+        )
+        .await
+        .unwrap();
+    m.note_bot_sync(&installed.id);
+    // 停用两分多钟：旧时间已经过了 120 秒的门槛。
+    docker.set_state(&app, stopped());
+    m.stop_detached(installed.id.clone()).await.unwrap();
+    tokio::time::advance(Duration::from_secs(125)).await;
+    assert!(
+        m.check_bot_sync(&installed.id).is_err(),
+        "先确认旧时间会误报"
+    );
+    // 再启动：新实例从头计时，Bot 还没同步也不能判异常。
+    let view = m.start_detached(installed.id.clone()).await.unwrap();
+    assert_eq!(view.status, PluginStatus::Running);
+    assert!(m.check_bot_sync(&installed.id).is_ok(), "新实例从头计时");
+}

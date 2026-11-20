@@ -478,7 +478,7 @@ impl SendLimiter {
         }
     }
 
-    /// 同 [`Self::user_id`]，但分开“令牌确实失效”（Tuwunel 认了，`whoami` 给了 401）和“问不到”
+    /// 同 [`Self::user_id`]，但分开“令牌确实失效”（Tuwunel 认了，`whoami` 给了 401 或 403）和“问不到”
     /// （连不上、500、没接 Matrix）：前者是永久的，后者换个时间再来就有。
     pub(crate) async fn identify(
         &self,

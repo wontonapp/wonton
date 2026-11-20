@@ -221,8 +221,8 @@ pub async fn bot_request(gateway: &Gateway, req: Request) -> Response {
     }
 }
 
-/// 令牌是谁，必须且只是这个插件记录在案的 Bot。真认不出（whoami 401）与问不到（Tuwunel 没连上、5xx）分开答：
-/// 只有前者是永久错误。
+/// 令牌是谁，必须且只是这个插件记录在案的 Bot。真认不出（whoami 401/403）与问不到（Tuwunel 没连上、5xx）
+/// 分开答：只有前者是永久错误。
 async fn check_bot_token(
     gateway: &Gateway,
     source: &super::super::plugin::sources::Source,
