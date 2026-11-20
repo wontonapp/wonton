@@ -341,6 +341,10 @@ fn older_app_install_defaults() {
         json!("egress_proxy_unavailable")
     );
     assert_eq!(
+        serde_json::to_value(PluginFailure::EgressProxyWaiting).unwrap(),
+        json!("egress_proxy_waiting")
+    );
+    assert_eq!(
         serde_json::to_value(PluginFailure::DeviceUnavailable).unwrap(),
         json!("device_unavailable")
     );

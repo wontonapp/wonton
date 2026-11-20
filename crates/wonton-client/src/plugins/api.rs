@@ -683,6 +683,7 @@ pub(crate) fn to_core_error(problem: PluginProblem) -> CoreError {
         | PluginFailure::LanUnavailable
         | PluginFailure::LanPortTaken
         | PluginFailure::EgressProxyUnavailable
+        | PluginFailure::EgressProxyWaiting
         | PluginFailure::CoreUpgrading
         // 记录不可用：现在做不了。壳按类别出「重新安装」的下一步（#198 的核心行为、#230 的 iOS 壳）。
         | PluginFailure::RecordUnusable => CoreError::NotReady { reason },

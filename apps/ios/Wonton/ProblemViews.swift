@@ -101,6 +101,12 @@ extension PluginFailure {
                 .Problem1.problemPluginEgressProxyUnavailableNextStep,
                 detail
             )
+        case .egressProxyWaiting:
+            categorizedProblem(
+                .Problem3.problemPluginEgressProxyWaitingTitle,
+                .Problem1.problemPluginEgressProxyWaitingNextStep,
+                detail
+            )
         case .protocol:
             categorizedProblem(
                 .Problem0.problemPluginProtocolTitle,

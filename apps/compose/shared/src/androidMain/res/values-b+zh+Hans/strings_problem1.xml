@@ -5,9 +5,9 @@
     <!-- Next step under the refused problem: the sign-in is fine; the server refused this one action. -->
     <string name="problem_forbidden_next_step">登录没有问题。可能是没有权限、对方屏蔽了你，或者对方的服务器还不能和家里的服务器互通。</string>
     <!-- Next step: check the proxy on the home server, or change the address in the internet proxy settings. -->
-    <string name="problem_plugin_egress_proxy_unavailable_next_step">检查家里服务器上的代理，或者在出网代理设置里改地址后再试。</string>
+    <string name="problem_plugin_egress_proxy_unavailable_next_step">去代理插件的安装页查看日志，或者检查出网代理设置后再试。</string>
     <!-- Problem title: the app can't reach the internet through the internet proxy. -->
-    <string name="problem_plugin_egress_proxy_unavailable_title">代理连不上</string>
+    <string name="problem_plugin_egress_proxy_unavailable_title">代理用不了</string>
     <!-- Problem title: the app and the home server versions don't match. -->
     <string name="problem_plugin_protocol_title">App 和家里的服务器版本对不上</string>
     <!-- Next step: uninstall the app (its data can be kept) and install it again. -->

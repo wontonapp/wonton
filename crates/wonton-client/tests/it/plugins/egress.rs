@@ -276,6 +276,40 @@ async fn a_refused_save_says_why_and_the_next_confirmation_uses_the_new_list() {
     );
 }
 
+/// 出口插件还没就绪是单独的类别：壳说“在等”，不说“代理用不了”。
+#[tokio::test]
+async fn a_waiting_save_failure_has_its_own_kind() {
+    let rig = Rig::new().await;
+    opened(&rig, &unset()).await;
+    rig.core.answer(
+        Method::PUT,
+        PATH,
+        core_error(422, "egress_proxy_waiting", "出口容器还在起"),
+    );
+    rig.core.answer(Method::GET, PATH, ok(&unset()));
+    rig.app
+        .dispatch(Action::Plugins {
+            action: wonton_protocol::PluginAction::SaveEgressProxy {
+                address: "http://192.0.2.1:1".to_owned(),
+                direct_cidrs: String::new(),
+                use_plugin: false,
+            },
+        })
+        .unwrap();
+    rig.app
+        .dispatch(Action::Plugins {
+            action: wonton_protocol::PluginAction::ConfirmEgressProxy,
+        })
+        .unwrap();
+    let view = rig
+        .wait_for(|view| view.egress.save_problem.is_some())
+        .await;
+    assert_eq!(
+        view.egress.save_problem.unwrap().reason,
+        PluginFailure::EgressProxyWaiting
+    );
+}
+
 #[tokio::test]
 async fn a_blocking_failure_and_an_uncertain_one_read_differently() {
     let rig = Rig::new().await;
@@ -308,6 +342,29 @@ async fn a_blocking_failure_and_an_uncertain_one_read_differently() {
         })
     );
     assert!(current.address_locked, "地址来自环境变量，这里改不了");
+}
+
+/// 代理插件还没就绪（还在装、出口容器还在起）：是不确定，不是坏（#681）。
+#[tokio::test]
+async fn a_plugin_that_is_not_ready_yet_is_uncertain() {
+    let rig = Rig::new().await;
+    let current = opened(
+        &rig,
+        &EgressProxySettings {
+            plugin_path: probed(Some(EgressProblem {
+                reason: EgressFailure::Waiting,
+                message: "出口容器还在起".to_owned(),
+            })),
+            ..configured()
+        },
+    )
+    .await;
+    assert_eq!(
+        current.plugin_path,
+        Some(EgressPathState::Uncertain {
+            message: "出口容器还在起".to_owned()
+        })
+    );
 }
 
 /// 核心先给上次的结果、在后台再测（ADR-0023），新结果不用主人刷新就到。

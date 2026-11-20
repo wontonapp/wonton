@@ -5,9 +5,9 @@
     <!-- Next step under the refused problem: the sign-in is fine; the server refused this one action. -->
     <string name="problem_forbidden_next_step">You\'re still signed in. You may not have permission for this, they may have blocked you, or their server can\'t reach yours yet.</string>
     <!-- Next step: check the proxy on the home server, or change the address in the internet proxy settings. -->
-    <string name="problem_plugin_egress_proxy_unavailable_next_step">Check the proxy on your home server, or change the address in the Internet proxy settings.</string>
+    <string name="problem_plugin_egress_proxy_unavailable_next_step">Look at the proxy app\'s logs on its install page, or check the Internet proxy settings and try again.</string>
     <!-- Problem title: the app can't reach the internet through the internet proxy. -->
-    <string name="problem_plugin_egress_proxy_unavailable_title">Can\'t reach the proxy</string>
+    <string name="problem_plugin_egress_proxy_unavailable_title">The proxy is broken</string>
     <!-- Problem title: the app and the home server versions don't match. -->
     <string name="problem_plugin_protocol_title">Wonton and your home server aren\'t compatible</string>
     <!-- Next step: uninstall the app (its data can be kept) and install it again. -->

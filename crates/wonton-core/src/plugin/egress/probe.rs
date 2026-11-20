@@ -92,6 +92,13 @@ fn relay_failed(message: String) -> EgressProblem {
     }
 }
 
+fn waiting(message: String) -> EgressProblem {
+    EgressProblem {
+        reason: EgressFailure::Waiting,
+        message,
+    }
+}
+
 /// 这个结果挡不挡安装。只看到一个网站不通，不等于插件要连的地方都不通，所以 `upstream_failed` 不挡。
 pub(crate) fn blocks(problem: &EgressProblem) -> bool {
     problem.reason != EgressFailure::UpstreamFailed
@@ -105,6 +112,11 @@ pub(in crate::plugin) fn fresh(probe: &EgressProbe) -> bool {
 impl PluginManager {
     /// 探测两条路径，记下结果，结论变了写日志。请求带得来语言时按它写，后台按主人的语言写（ADR-0043）。
     pub async fn probe_egress(&self, langs: &Languages) -> Result<(), InstallError> {
+        let before = self
+            .egress
+            .plugin_path()
+            .and_then(|probe| probe.problem)
+            .map(|problem| problem.reason);
         let config = self.egress_config()?;
         let Some(proxy) = &config.url else {
             self.egress.record_probes(None, None);
@@ -125,6 +137,8 @@ impl PluginManager {
         let probed_at_ms = now_ms();
         if let Some(problem) = &plugin {
             tracing::warn!(reason = ?problem.reason, message = %problem.message, "插件经代理出不去");
+        } else if let Some(reason) = before {
+            tracing::info!(?reason, "经代理出网恢复");
         }
         self.egress.record_probes(
             Some(EgressProbe {
@@ -147,20 +161,42 @@ impl PluginManager {
         let name = self.cfg.instance.egress();
         // 每次都核对：出口容器可能被删了，核心换了容器后也要重新接上它的网络。
         match self.reconcile_relay().await {
-            Err(
-                e @ (InstallError::ImagePull(_)
-                | InstallError::Docker(_)
-                | InstallError::DockerTimedOut(_)),
-            ) => {
+            // 镜像已经拉完了：这意味着 registry 拒了、tag 不存在，重试也还是它。
+            Err(e @ InstallError::ImagePull(_)) => {
+                return Ok(Some(relay_failed(l10n::text(
+                    langs,
+                    "plugin-settings-egress-relay-image",
+                    &[("error", e.to_string().into())],
+                ))));
+            }
+            // Docker 没在时限内回话：可能只是镜像还没拉下来。
+            Err(e @ InstallError::DockerTimedOut(_)) => {
+                return Ok(Some(waiting(l10n::text(
+                    langs,
+                    "plugin-settings-egress-relay-slow",
+                    &[("error", e.to_string().into())],
+                ))));
+            }
+            Err(e @ InstallError::Docker(_)) => {
                 return Ok(Some(relay_failed(e.to_string())));
             }
             result => result?,
         }
-        let Some(address) = self.engine.endpoint_address(&name, &name).await? else {
-            return Ok(Some(relay_failed(l10n::text(
+        let created = self.engine.inspect_container(&name).await?;
+        if created.is_some_and(|info| info.state.and_then(|s| s.running) != Some(true)) {
+            // 核对没报错、这里却没在跑：核对会重新把它起来。
+            return Ok(Some(waiting(l10n::text(
                 langs,
-                "plugin-settings-egress-relay-not-running",
+                "plugin-settings-egress-relay-restarting",
                 &[],
+            ))));
+        }
+        let Some(address) = self.engine.endpoint_address(&name, &name).await? else {
+            // 容器刚建、刚起：还没接上网络。
+            return Ok(Some(waiting(l10n::text(
+                langs,
+                "plugin-settings-egress-relay-starting",
+                &[("container", name.clone().into())],
             ))));
         };
         let relay = format!("http://{address}:3128");

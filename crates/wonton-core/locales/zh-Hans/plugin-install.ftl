@@ -518,8 +518,9 @@ plugin-install-img-worker-host-exited = 处理图片的助手退出了：{ $erro
 plugin-install-img-worker-host-not-ready = 处理图片的助手没有就绪：{ $error }
 plugin-install-img-worker-host-protocol = 处理图片的助手用的协议版本是 { $got }，核心是 { $want }
 
-## 预装（启动时随服务器带的包）失败的原因。
+## 预装（启动时随服务器带的包）进行不下去的原因。
 plugin-install-preinstall-retrying = 预装失败（已试 { $attempts } 次，稍后自动重试）
+plugin-install-preinstall-waiting = 代理还没就绪（会自动重试）
 plugin-install-preinstall-failed = 预装失败
 
 # ── 能力依赖（capabilities.rs，ADR-0053）──────────────────────────────────
