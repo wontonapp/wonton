@@ -313,8 +313,6 @@ private fun LazyListScope.section(
     unreadable("section:$titleRes", content.unreadable)
 }
 
-
-
 /** 商店里的一个插件：点开看详情，行尾的按钮安装、更新或打开。 */
 @Composable
 private fun StoreRow(item: StoreItem, plugins: PluginsState, navigation: PluginNavigation) {
