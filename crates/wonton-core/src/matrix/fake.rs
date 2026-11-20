@@ -29,6 +29,12 @@ use crate::config::MatrixConfig;
 
 pub const SECRET: &str = "shared-secret";
 pub const SERVER: &str = "test";
+/// 假服务器建的管理房间和它的别名：管理员注册后由服务器邀请进去（Tuwunel 的 `make_user_admin`）。
+pub const ADMIN_ROOM_ID: &str = "!admins:test";
+pub const ADMIN_ROOM_ALIAS: &str = "#admins:test";
+
+/// Tuwunel 自己的服务器用户，管理房间的成员。
+const SERVER_USER: &str = "conduit";
 
 #[derive(Default)]
 pub struct User {
@@ -56,6 +62,8 @@ pub struct Tuwunel {
     /// 访问令牌 → （用户，设备）。
     pub tokens: BTreeMap<String, (String, String)>,
     pub rooms: BTreeMap<String, Room>,
+    /// 管理房间的房间号，`start()` 建好。
+    pub admin_room: String,
     pub room_state: BTreeMap<String, rooms::RoomState>,
     /// 上传的文件：（类型，内容）。
     pub media: Vec<(String, Vec<u8>)>,
@@ -201,6 +209,14 @@ async fn register(State(fake): State<Fake>, Json(body): Json<Value>) -> Reply {
             ..User::default()
         },
     );
+    // 管理员由服务器邀请进管理房间（`make_user_admin`），自己再 join。
+    let admin_room = state.admin_room.clone();
+    state
+        .rooms
+        .get_mut(&admin_room)
+        .expect("假服务器建了管理房间")
+        .invited
+        .insert(user.clone());
     state.registrations += 1;
     let (device, token) = state.issue(&user);
     ok(json!({"user_id": user, "device_id": device, "access_token": token}))
@@ -505,6 +521,16 @@ async fn membership(
     }))
 }
 
+/// 房间别名解析：只有管理房间的别名。
+async fn directory_room(State(fake): State<Fake>, Path(alias): Path<String>) -> Reply {
+    let state = fake.state();
+    if alias == ADMIN_ROOM_ALIAS {
+        ok(json!({"room_id": state.admin_room, "servers": [SERVER]}))
+    } else {
+        error(StatusCode::NOT_FOUND, "M_NOT_FOUND")
+    }
+}
+
 /// 不在房间里时发不了。
 async fn send_message(
     State(fake): State<Fake>,
@@ -695,6 +721,17 @@ pub async fn start() -> (Fake, MatrixConfig) {
         state: Arc::default(),
         key: Arc::new(DecodingKey::from_ed_der(public.as_ref())),
     };
+    {
+        let mut state = fake.state();
+        state.admin_room = ADMIN_ROOM_ID.to_owned();
+        state.rooms.insert(
+            ADMIN_ROOM_ID.to_owned(),
+            Room {
+                members: BTreeSet::from([format!("@{SERVER_USER}:{SERVER}")]),
+                ..Room::default()
+            },
+        );
+    }
     let client = "/_matrix/client/v3";
     let app = Router::new()
         .route(
@@ -717,6 +754,10 @@ pub async fn start() -> (Fake, MatrixConfig) {
         )
         .route("/_synapse/admin/v1/deactivate/{user}", post(deactivate))
         .route(&format!("{client}/login"), post(login))
+        .route(
+            &format!("{client}/directory/room/{{alias}}"),
+            get(directory_room),
+        )
         .route(&format!("{client}/logout"), post(logout))
         .route(&format!("{client}/account/whoami"), get(whoami))
         .route(&format!("{client}/sync"), get(sync))

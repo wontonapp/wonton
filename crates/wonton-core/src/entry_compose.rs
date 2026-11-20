@@ -9,7 +9,7 @@ use serde_json::{Value, json};
 use crate::entry_settings::EntrySettings;
 
 pub const HAPROXY_IMAGE: &str =
-    "haproxy:3.2.8-alpine@sha256:8c6b55d891584afded3ab1b91063a703ecc8ff2481302b691773648ffa806226";
+    "haproxy:3.4@sha256:2d4b1f47a36ad0bc7425adf3fea6079023ae2ce3a964c2a084f454645d6be223";
 
 pub fn render(
     base: &str,

@@ -96,12 +96,13 @@ ACME 为服务器名本身、`*.<服务器名>` 和 `*.lan.<服务器名>` 签�
 送的名字会先把 ACME 账号 URI 绑定到家名服务的 CAA，并查询生效后才下单。备份时保留整个 `entry/` 和 `entry-input/`，不要单独删私钥或账号文件。
 
 核心启动时和此后每 24 小时使用 `entry/settings.json` 保存的 directory、条款确认、网络、CA、DNS 解析器及 provider/凭据输入调用证书流程，
-成功后原子发布 `entry/certs/site.pem`，给入口容器发 `SIGUSR2` 热加载。签发失败保留原证书并通知主人；热加载失败也单独通知。
+成功后原子发布 `entry/certs/site.pem`，在入口 HAProxy 的主进程管理端口上发 `reload`（ADR-0111）。签发失败保留原证书并通知主人；
+热加载失败也单独通知。
 `init` 发现已有 `site.pem` 就沿用，重新执行安装不会重新选择证书配置。
 
 外部证书的 `site.pem` 必须包含证书链和对应的 PEM 私钥，覆盖入口所用的服务器名；Wonton 不替它续期。
-主人负责在到期前更新此文件，保持入口容器可读的所有者和权限，并执行
-`docker kill -s SIGUSR2 wonton-entry` 热加载。
+主人负责在到期前更新此文件，保持入口容器可读的所有者和权限，再让入口重读。镜像没有 shell，人工入口仍是发信号：
+`docker kill -s SIGUSR2 wonton-entry`。信号会让容器被记成手动停过，重启策略是 `always`，Docker 重启后照样回来。
 
 入口容器（`wonton-entry`）和连接器（`wonton-connector`）不在 Compose 里：核心按 `entry/settings.json` 启动时和此后每隔一阵
 经 Docker API 对账建、删它们，改了 `.env` 里的发布地址或端口会重建。升级到带这个行为的核心后第一次启动会自动按已有设置

@@ -277,6 +277,8 @@ login_with_password = false
 new_user_displayname_suffix = ""
 # 核心用它注册自己的管理账号（Synapse 兼容的管理接口）。
 registration_shared_secret = "{registration_secret}"
+# 服务器建 `#admins:<server>` 管理房间；核心的热加载在房间里发 `!admin server reload-config`（ADR-0111）。
+admin_room = true
 # 私用名拿不到公共证书，仅封闭配对模式保留此例外（ADR-0051）；有名字但还没配入口的也不放宽。
 allow_invalid_tls_certificates = {private}
 

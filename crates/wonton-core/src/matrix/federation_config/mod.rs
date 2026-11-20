@@ -1,6 +1,6 @@
 //! 联邦配对代理范围、私用名的允许名单和整机黑名单一起生成、热加载。
 //!
-//! 单文件 bind mount 钉住 inode：原地写完并落盘后才向 Tuwunel 发 SIGUSR1。
+//! 单文件 bind mount 钉住 inode：原地写完并落盘后才让 Tuwunel 重读（管理房间命令，不经 Docker 的信号）。
 //! 有名字的服务器只把配对目标交给 CONNECT 代理，其余由 Tuwunel 直接发现和连接。
 
 use std::collections::BTreeSet;
@@ -10,9 +10,10 @@ use std::sync::Arc;
 use anyhow::Context;
 use tokio::sync::watch;
 
-use super::NoticeRoom;
-use crate::plugin::docker::{Engine, LabeledResources};
+use super::{Matrix, NoticeRoom};
 
+#[cfg(test)]
+mod admin_reload_tests;
 mod blocks;
 pub use blocks::FederationBlocks;
 mod routing;
@@ -33,39 +34,33 @@ pub(crate) use files::{allowlist_toml, blocks_toml};
 /// 网络别名和 `WONTON_FEDERATION_LISTEN` 用的是同一个值，一起改。
 pub(crate) const PROXY_ADDR: &str = "federation-proxy.wonton.internal:8448";
 
-/// Compose 项目里 Tuwunel 容器的服务名标签。
-const SERVICE_LABEL: &str = "com.docker.compose.service";
-
 /// 盯着配对名单，变了就把 Tuwunel 的配置跟上来。
 pub struct FederationConfig {
-    engine: Engine,
+    /// 发给 Tuwunel 的重读命令走它。
+    matrix: Arc<Matrix>,
     /// 安装目录，`secrets/tuwunel/wonton-fed.toml` 由这里重写。
     install_dir: PathBuf,
-    /// 核心自己的容器名，用它找同一个 Compose 项目里的 Tuwunel。
-    core_container: Option<String>,
     notice: Option<Arc<NoticeRoom>>,
     server_name: String,
 }
 
 impl FederationConfig {
-    /// 宿主上直接跑核心时（没有安装目录或容器名）什么都不做：联邦只在正式安装里生效。
+    /// 宿主上直接跑核心时（没有安装目录或 Matrix）什么都不做：联邦只在正式安装里生效。
     pub fn spawn(
-        engine: Engine,
+        matrix: Option<Arc<Matrix>>,
         install_dir: Option<PathBuf>,
-        core_container: Option<String>,
         notice: Option<Arc<NoticeRoom>>,
         mut peers: watch::Receiver<BTreeSet<String>>,
         server_name: String,
         blocks: Arc<FederationBlocks>,
     ) {
-        let (Some(install_dir), Some(core_container)) = (install_dir, core_container) else {
-            tracing::debug!("没有安装目录或核心容器名，联邦名单交给 Tuwunel 的安装配置");
+        let (Some(matrix), Some(install_dir)) = (matrix, install_dir) else {
+            tracing::debug!("没有安装目录或 Matrix，联邦名单交给 Tuwunel 的安装配置");
             return;
         };
         let config = Arc::new(Self {
-            engine,
+            matrix,
             install_dir,
-            core_container: Some(core_container),
             notice,
             server_name,
         });
@@ -115,52 +110,13 @@ impl FederationConfig {
         )
         .await
         .map_err(Failure::of(FailureKind::Write))?;
-        // SIGUSR1 无条件发：热加载是幂等的，也补上上次核心死在“写完文件、信号没发出去”之间的可能。
-        let container = self
-            .tuwunel_container()
-            .await
-            .map_err(Failure::of(FailureKind::Reload))?;
-        self.engine
-            .kill_container(&container, "SIGUSR1")
+        // 重读无条件发：热加载是幂等的，也补上上次核心死在“写完文件、命令没发出去”之间的可能。
+        self.matrix
+            .reload_config()
             .await
             .map_err(|error| Failure::of(FailureKind::Reload)(error.into()))?;
-        tracing::info!(%container, "联邦名单已重写并热加载");
+        tracing::info!("联邦名单已重写并热加载");
         Ok(())
-    }
-
-    /// Tuwunel 的容器名：核心自己的 Compose 项目里服务名为 `tuwunel` 的那个。
-    async fn tuwunel_container(&self) -> anyhow::Result<String> {
-        const PROJECT: &str = "com.docker.compose.project";
-        let container = self
-            .core_container
-            .clone()
-            .ok_or_else(|| anyhow::anyhow!("不知道核心自己的容器名"))?;
-        let info = self
-            .engine
-            .inspect_container(&container)
-            .await?
-            .ok_or_else(|| anyhow::anyhow!("容器 {container} 不存在"))?;
-        let project = info
-            .config
-            .and_then(|config| config.labels)
-            .and_then(|labels| labels.get(PROJECT).cloned())
-            .filter(|project| !project.is_empty())
-            .ok_or_else(|| anyhow::anyhow!("容器 {container} 没有 Compose 项目标签"))?;
-        let LabeledResources { containers, .. } = self
-            .engine
-            .labeled(PROJECT, &project, |labels| {
-                labels
-                    .get(SERVICE_LABEL)
-                    .is_some_and(|service| service == "tuwunel")
-            })
-            .await?;
-        match containers.as_slice() {
-            [name] => Ok(name.clone()),
-            other => Err(anyhow::anyhow!(
-                "Compose 项目 {project} 里应有 1 个 tuwunel 容器，找到 {} 个：{other:?}",
-                other.len()
-            )),
-        }
     }
 
     /// 主人只看到类别；路径和原始错误在核心日志里（AGENTS.md“界面设计”，ADR-0043）。

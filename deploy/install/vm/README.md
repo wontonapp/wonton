@@ -1,7 +1,7 @@
 # 重装演练虚拟机
 
 发版前在一台干净的 Ubuntu 虚拟机里按正式方式装一遍，跑演练检查。宿主是任意一台 amd64 Linux，要有 Docker 和
-`/dev/kvm`（当前用户在 `docker`、`kvm` 组里），不要 sudo。
+`/dev/kvm`，不要 sudo。当前用户要在 `docker`、`kvm` 组里：写 Docker 要用前者，qemu 容器拿 `/dev/kvm` 要用后者。
 
 - qemu 跑在普通容器里：只加 `--device /dev/kvm`，不加特权、不挂 docker.sock、不加 capability；容器 `--cpus 4 --memory 10g`，
   虚拟机 4 核 8 GB、40 GB 磁盘（qcow2 叠加层，底是只读的 cloud image）。
@@ -51,8 +51,9 @@ vm.sh ssh 'sudo env HTTPS_PROXY=http://10.0.2.2:7892 WONTON_MATRIX_NAME_MODE=non
 
 ## 演练检查
 
-`docker-restart-check.sh`：重启 Docker 守护进程后，Compose 项目 `wonton` 里原来在跑的服务都要回到 running（有健康检查的要
-healthy），核心之后 150 秒内不再重启。不通过时打印每个服务的状态和 Docker 记下的 `HasBeenManuallyStopped`。
+`docker-restart-check.sh`：重启 Docker 守护进程后，Compose 项目 `wonton` 里原来在跑的服务和核心自己建的入口、连接器
+容器都要回到 running（有健康检查的要 healthy），150 秒内没有容器重启，退出码都是 0。不通过时打印每个容器的状态和
+Docker 记下的 `HasBeenManuallyStopped`。
 
 ```sh
 vm.sh cp deploy/install/vm/docker-restart-check.sh check.sh
