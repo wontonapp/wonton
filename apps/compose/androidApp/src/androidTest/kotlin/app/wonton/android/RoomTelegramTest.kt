@@ -10,6 +10,7 @@ import android.text.StaticLayout
 import android.text.TextPaint
 import androidx.compose.ui.geometry.Offset
 import androidx.compose.ui.geometry.Rect
+import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.semantics.SemanticsActions
 import androidx.compose.ui.semantics.SemanticsProperties
 import androidx.compose.ui.semantics.getOrNull
@@ -207,10 +208,14 @@ class RoomTelegramTest {
                 "时间跑出气泡：$box 不在 $bubble"
             }
             val nodes = bodyNodes(index).sortedBy { it.boundsInRoot.top }
-            // 末尾那段透明占位从最后一个普通空格开始，藏在它后面的字不算正文；卡片条目的末节点是按钮，不带占位。
-            val tail = layoutOf(nodes.last())!!.layoutInput.text.text
-            val keep = if (tail.endsWith('\u00A0')) tail.lastIndexOf(' ') else tail.length
-            val lines = nodes.flatMap { lineBoxes(it, if (it === nodes.last()) tail.length - keep else 0) }
+            val tailNode = nodes.last()
+            val layout = layoutOf(tailNode)!!
+            val tail = layout.layoutInput.text.text
+            // 末尾那段透明占位是单独一段透明色的样式接在最后一块字后面，从它的起点切开就不算正文；
+            // 卡片条目的末节点是按钮，不带占位。不按空格或 NBSP 认：时间里有普通空格，回执才是 NBSP。
+            val keep = layout.layoutInput.text.spanStyles.firstOrNull { it.item.color == Color.Transparent }
+                ?.start ?: tail.length
+            val lines = nodes.flatMap { lineBoxes(it, if (it === tailNode) tail.length - keep else 0) }
             check(lines.isNotEmpty()) { "第 $index 条没有正文行框：'$tail'" }
             val hit = lines.firstOrNull { it.overlaps(box) }
             check(hit == null) {
