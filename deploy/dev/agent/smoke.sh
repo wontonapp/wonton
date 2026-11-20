@@ -28,7 +28,7 @@ temp_key_name="smoke-temp"
 reply_timeout="${SMOKE_REPLY_TIMEOUT:-180}"
 failures=0
 # 临时网关凭据：签发前 magpie 里已有的同名凭据的 id，以及“已经开始签发”的标志。
-temp_key_before=""
+temp_key_before=""  # gitleaks:allow（generic-api-key 把下一行的赋值当成了值）
 temp_key_issuing=0
 
 get_var() { sed -n "s/^$2=//p" "$1" | tail -n 1; }
