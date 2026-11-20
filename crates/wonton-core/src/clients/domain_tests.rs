@@ -602,3 +602,51 @@ async fn queued_issue_runs_even_after_last_error_changed() {
         "last_error 变化不该误杀排队的签发"
     );
 }
+
+/// 续期循环和保存走同一道门：没勾订户协议之前绝不联系 CA，哪怕域名和凭据都齐了。
+/// “不要名字”的安装没有设置文件、条款没有环境初值，这条就是它的唯一保险。
+#[tokio::test]
+async fn renewal_waits_for_the_terms_before_contacting_the_ca() {
+    use std::sync::atomic::Ordering;
+    unsafe { std::env::set_var("WONTON_ACME_DIRECTORY", "https://pebble.test:14000/dir") };
+    let dir = tempfile::tempdir().unwrap();
+    let clients = domain(dir.path());
+    let settle = async || {
+        for _ in 0..20_000 {
+            if clients.pending.load(Ordering::SeqCst) == 0 {
+                return;
+            }
+            tokio::task::yield_now().await;
+        }
+        panic!("签发没在限定的轮数里结束");
+    };
+    // 什么都没有：一轮续期不起任何容器。
+    clients.renew_if_configured();
+    settle().await;
+    assert_eq!(clients.pending.load(Ordering::SeqCst), 0);
+    assert!(clients.engine.recorded_creations().is_empty());
+    // 域名、服务商、凭据都有，只差条款：还是不联系 CA。
+    clients
+        .apply(|store| {
+            store.suffix = Some("home.example.test".into());
+            store.provider = Some("httpreq".into());
+            store.credentials = [("HTTPREQ_ENDPOINT".into(), "x".into())].into();
+            Ok(())
+        })
+        .await
+        .unwrap();
+    clients.renew_if_configured();
+    settle().await;
+    assert!(clients.engine.recorded_creations().is_empty());
+    // 勾了条款：下一轮续期排到签发，签发在假 Docker 上起 lego 容器时失败。
+    clients
+        .apply(|store| {
+            store.terms_accepted = true;
+            Ok(())
+        })
+        .await
+        .unwrap();
+    clients.renew_if_configured();
+    settle().await;
+    assert!(!clients.engine.recorded_creations().is_empty());
+}

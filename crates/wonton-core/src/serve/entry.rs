@@ -49,7 +49,8 @@ pub(crate) async fn start_entry_runtime(
         cfg.core_container.clone(),
     );
     // 读不了设置（JSON 坏、解析器非法）是"不确定"：不按"无设置"删掉在跑的入口容器，交给运行循环
-    // 带退避重试；只有确实没有设置（Ok(None)）才按"不要"对账。
+    // 带退避重试。Ok(None) 不代表不要入口：“不要名字”的安装本来就没有设置文件，对账按 App 里配的
+    // 域名和证书决定。
     match wonton_core::entry_settings::EntrySettings::load(dir) {
         Err(error) => {
             tracing::warn!(%error, "入口设置读不了，现有入口容器不动，运行循环会带退避重试");
