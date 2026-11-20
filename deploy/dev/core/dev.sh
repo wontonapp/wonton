@@ -237,15 +237,54 @@ ensure_core_network() {
   fi
   local -a flags=(--label "com.docker.compose.project=$WONTON_DEV_PROJECT" --label com.docker.compose.network=core)
   [[ -z ${WONTON_DEV_CORE_SUBNET:-} ]] || flags+=(--subnet "$WONTON_DEV_CORE_SUBNET")
-  docker network create "${flags[@]}" "$network" >/dev/null
+  # 输出先接住：子网撞上别的网络时 Docker 只说“Pool overlaps”，得自己找出撞的是哪张网。
+  local out
+  if ! out="$(docker network create "${flags[@]}" "$network" 2>&1)"; then
+    [[ $out == *overlaps* ]] || die "建不了网络 $network：$out"
+    local -a clash=()
+    [[ -z ${WONTON_DEV_CORE_SUBNET:-} ]] || while read -r name; do clash+=("$name"); done < <(overlapping_networks "$WONTON_DEV_CORE_SUBNET")
+    if (( ${#clash[@]} )); then
+      # ${clash[*]} 用空格连起来，不再补尾空格（多张网撞上时也这么列）。
+      die "子网 $WONTON_DEV_CORE_SUBNET 和网络 ${clash[*]}撞了：给这套栈换一个子网（WONTON_DEV_CORE_SUBNET=…）再 up，或先把那套 down"
+    fi
+    if [[ -n ${WONTON_DEV_CORE_SUBNET:-} ]]; then
+      die "子网 $WONTON_DEV_CORE_SUBNET 撞上了别的网络（Docker：$out）：换一个子网（WONTON_DEV_CORE_SUBNET=…），或先把占着它的那套 down"
+    fi
+    die "Docker 的默认地址池没有空位了（Docker：$out）：用 WONTON_DEV_CORE_SUBNET=10.214.N.0/24 指定一个没人用的子网再 up；占着地址池的那几套先 down 也行"
+  fi
 }
 
+# 有哪些网络的子网和给的那个重叠：撞子网时要报名字。
+overlapping_networks() {
+  local want="$1" name subnet found
+  for name in $(docker network ls --format '{{.Name}}'); do
+    subnet="$(docker network inspect -f '{{range .IPAM.Config}}{{.Subnet}} {{end}}' "$name" 2>/dev/null)" || continue
+    for found in $subnet; do
+      subnets_overlap "$want" "$found" && printf '%s（%s）\n' "$name" "$found"
+    done
+  done
+}
+
+subnets_overlap() {
+  python3 - "$1" "$2" <<'EOF'
+import ipaddress, sys
+try:
+    a = ipaddress.ip_network(sys.argv[1], strict=False)
+    b = ipaddress.ip_network(sys.argv[2], strict=False)
+except ValueError:
+    sys.exit(1)
+sys.exit(0 if a.overlaps(b) else 1)
+EOF
+}
+
+# 删不掉要让调用方知道（失败即停）：插件容器还接在上面时 Docker 拒删，报了拆完就是假话。
 remove_core_network() {
   local network
   network="$(core_network)"
   docker network inspect "$network" >/dev/null 2>&1 || return 0
-  docker network rm "$network" >/dev/null ||
-    echo "dev.sh：网络 $network 删不掉（还有容器接着？），下次 up 会沿用" >&2
+  docker network rm "$network" >/dev/null && return 0
+  echo "dev.sh：删不掉网络 $network：还有容器接在上面（没有实例名的项目，down 不删插件容器）。删掉这些容器后再 down，或 docker network rm $network" >&2
+  return 1
 }
 
 compose() {
@@ -780,21 +819,21 @@ case "${1:-}" in
     fi
     remove_entry_components
     compose down
-    remove_core_network
     # 中继套接字跟着栈走，栈拆了就没用了。
     rm -rf -- "$WONTON_DEV_RELAY"
     # 核心退出时不停插件容器，compose down 也管不到它们，这里按实例标签清；默认项目分不出来，只提示。
+    # 插件容器挂在 core 网络上，删完它们网络才删得掉：网络放在最后，删不掉时由它让 down 返回非零。
     if [[ -n "$WONTON_DEV_INSTANCE" ]]; then
       remove_instance_resources
     else
       note_plugin_leftovers
     fi
+    remove_core_network
     ;;
   reset)
     dev_guard_check "$core"
     remove_entry_components
     compose down --volumes
-    remove_core_network
     rm -rf -- "$WONTON_DEV_RELAY"
     if [[ -n "$WONTON_DEV_INSTANCE" ]]; then
       remove_instance_resources
@@ -808,6 +847,8 @@ case "${1:-}" in
       wipe_data
     fi
     reset_secrets
+    # 数据和密钥都清了，网络最后删：还有容器接着时删不掉，由它让 reset 返回非零，别报拆完了。
+    remove_core_network
     echo
     if [[ "${2:-}" == --keep-tunnel-identity ]]; then
       echo "隧道身份和设备登记保留（core/tunnel-key、core/devices.json）：endpoint ID 不变，已配对的设备不用重新配对（家人设备的用户名记录随核心数据删了）。"

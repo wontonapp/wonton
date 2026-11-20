@@ -44,6 +44,7 @@ plugin="wonton-$WONTON_DEV_INSTANCE--app-mailbox-smoke--sender"
 python_image=python:3.13.9-alpine3.22@sha256:e5fa639e49b85986c4481e28faa2564b45aa8021413f31026c3856e5911618b1
 started=0
 # core 网络由 dev.sh 建和删（网络在 compose 文件里是 external，见 dev.sh 的 ensure_core_network）。
+# shellcheck source=deploy/dev/core/dev.sh
 source "$here/dev.sh"
 compose() { docker compose -f "$here/compose.yaml" -f "$work/override.yaml" "$@"; }
 cleanup() {

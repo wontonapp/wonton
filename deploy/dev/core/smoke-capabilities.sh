@@ -28,6 +28,7 @@ export WONTON_DEV_DATA="$work/data" WONTON_DEV_SECRETS="$work/secrets"
 export WONTON_DEV_DEFAULT_PLUGINS= WONTON_DEV_OWNER_PROFILE=off
 unset WONTON_OWNER_NAME WONTON_EGRESS_PROXY WONTON_EGRESS_PROXY_DETECTED
 # Only definitions: dev.sh returns when sourced. Keep its TLS/federation preparation.
+# shellcheck source=deploy/dev/core/dev.sh
 source "$here/dev.sh"
 python_image=python:3.13.9-alpine3.22@sha256:e5fa639e49b85986c4481e28faa2564b45aa8021413f31026c3856e5911618b1
 export WONTON_CAPABILITY_PYTHON_IMAGE="$python_image"
@@ -57,7 +58,7 @@ cleanup() {
     docker rm -f "$resource" >/dev/null 2>&1 || failed=1
   done
   if (( started )); then compose down --volumes --remove-orphans >/dev/null 2>&1 || failed=1; fi
-  remove_core_network
+  remove_core_network || failed=1
   for resource in $(docker network ls -q --filter "label=wonton.instance=$WONTON_DEV_INSTANCE"); do
     docker network rm "$resource" >/dev/null 2>&1 || failed=1
   done

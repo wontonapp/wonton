@@ -6,10 +6,10 @@
 # shellcheck shell=bash
 
 dev_guard_dir() {
-  local dir="${WONTON_INSTALL_DIR:-/opt/wonton}"
-  # 正式安装目录可能是 root 700（1k 上的 /opt/wonton）：cd 不进去时按写着的路径比，别让 dir 变空、前缀成 /
-  # 把所有目录都判成“在正式安装目录里”。
-  [[ ! -d "$dir" ]] || dir="$(cd -P "$dir" 2>/dev/null && pwd)" || dir="${WONTON_INSTALL_DIR:-/opt/wonton}"
+  local dir="${WONTON_INSTALL_DIR:-/opt/wonton}" real
+  # 正式安装目录可能是 root 700（1k 上的 /opt/wonton）：cd 不进去。先规范化成真路径再比前缀，相对路径、带 ..
+  # 和符号链接都落回同一处；realpath -m 不用目录存在、也不用读得进去。
+  if real="$(realpath -m -- "$dir" 2>/dev/null)" && [[ -n "$real" ]]; then dir="$real"; fi
   printf '%s/\n' "${dir%/}"
 }
 
