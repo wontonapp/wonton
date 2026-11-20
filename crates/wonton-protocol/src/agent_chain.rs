@@ -17,7 +17,7 @@ pub const AGENT_CHAINS_PATH: &str = "/agent/chains";
 pub const AGENT_OUTBOX_PATH: &str = "/agent/outbox";
 
 /// 每轮消息的说话人（MXID）：Bot 插件调用工具时带上。核心只在这个 Bot 听的人里采用，否则按只读、
-/// 联系人门按远端；没带时从已报的轮次取，轮次也没有才按 Bot 归属人算。
+/// 联系人门按远端；没带时从已报的轮次取，轮次也没有就按只读，不按 Bot 归属人。
 pub const WONTON_ON_BEHALF_OF_HEADER: &str = "X-Wonton-On-Behalf-Of";
 
 /// 核心注入的请求头：链上目标 Bot 是哪一个，网关按它起对应的 Agent 进程。

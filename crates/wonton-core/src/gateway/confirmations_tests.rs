@@ -21,11 +21,38 @@ use crate::plugin::{Permission, PluginId};
 
 const BOT_TOKEN: &str = "token-hermes";
 
-/// 一台连着总线的 Bot（私人 Bot，归属人是主人）。
+/// 一台连着总线的 Bot（私人 Bot，归属人是主人），这时正在回主人的一轮。没说替谁办事的调用按只读，开不出卡片；
+/// 总线没接 Matrix，请求头认不出归属人，所以报一条主人说话的进行中轮次。
 async fn home_with_bot() -> (Home, RunningService<RoleClient, ClientConfig>) {
     let home = crate::gateway::mcp_tests::start(Some(vec![Permission::Tools])).await;
+    let agent_id = PluginId::parse("com.example.agent").unwrap();
+    let bus = &home.gateway.mcp.as_ref().unwrap().bus;
+    bus.attach_people(
+        "test".into(),
+        home.members.clone(),
+        home.gateway.roles.clone(),
+    );
+    let chains_dir = home.manager.app_data_dir(&agent_id).join("chains-test");
+    std::fs::create_dir_all(&chains_dir).unwrap();
+    let chains = crate::gateway::agent_chains::AgentChains::for_test(&chains_dir).unwrap();
+    bus.attach_agent_chains(chains.clone());
+    let owner_turn = wonton_protocol::ChainTurnReport::Start {
+        session: "owner-turn".to_owned(),
+        room: "!owner-turn:test".to_owned(),
+        thread: None,
+        sender: "@owner:test".to_owned(),
+        event_id: "$owner-turn:test".to_owned(),
+    };
+    let bot = wonton_protocol::BotRef {
+        plugin_id: agent_id.to_string(),
+        bot: "hermes".to_owned(),
+    };
+    chains
+        .ledger()
+        .start_turn(bot, owner_turn, None, "@owner:test".to_owned())
+        .unwrap();
     home.manager.bot_records_for_test(
-        &PluginId::parse("com.example.agent").unwrap(),
+        &agent_id,
         &[(
             "hermes",
             "@agent-hermes:test",

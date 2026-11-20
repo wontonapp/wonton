@@ -78,10 +78,7 @@ pub(super) async fn save(
             caller,
             &name,
             &value,
-            &ToolFailure::new(
-                "permission_denied",
-                "这次的 AI 动手级别是只读，不能把文件存进共享文件夹，没有执行",
-            ),
+            &bus.read_only_refusal(caller, "不能把文件存进共享文件夹"),
         );
     }
     let (bus, caller) = (bus.clone(), caller.clone());

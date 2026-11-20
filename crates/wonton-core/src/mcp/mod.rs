@@ -584,10 +584,7 @@ impl Bus {
         let cap = self.ai_cap(caller);
         let tool_level = risky::classify(definition);
         if risky::capped(cap, tool_level) {
-            return Err(ToolFailure::new(
-                "permission_denied",
-                "这次的 AI 动手级别是只读，这个工具会改或删数据，没有执行",
-            ));
+            return Err(self.read_only_refusal(caller, "这个工具会改或删数据"));
         }
         let highest = self.plugins.requires_root_confirmation(&server.id);
         let subject = if cap == AiLevel::AdminApprovesDeletes && tool_level == AiLevel::SelfConfirms
@@ -826,6 +823,8 @@ mod help_tests;
 mod highest_tool_tests;
 #[cfg(test)]
 mod install_gate_tests;
+#[cfg(test)]
+mod missing_sender_tests;
 #[cfg(test)]
 mod optional_permission_tests;
 #[cfg(test)]
