@@ -9,23 +9,32 @@ use super::super::manifest::Permission;
 use super::super::package::PluginPackage;
 use super::super::render::{dry_run_context, render};
 
-fn template() -> PluginPackage {
-    let dir = Path::new(env!("CARGO_MANIFEST_DIR")).join("plugin-guide/assets/backend");
+fn example(name: &str) -> PluginPackage {
+    let dir = Path::new(env!("CARGO_MANIFEST_DIR"))
+        .join("plugin-guide/assets")
+        .join(name);
     PluginPackage::load_dir(&dir, &super::langs()).unwrap()
 }
 
-/// 模板里 `app` 服务的健康检查，原样。
-fn app_healthcheck() -> Healthcheck {
-    let package = template();
-    let vars = super::super::vars::injected_vars(&package.manifest, &dry_run_context(&package));
+fn template() -> PluginPackage {
+    example("backend")
+}
+
+fn healthcheck(package: &PluginPackage, service: &str) -> Healthcheck {
+    let vars = super::super::vars::injected_vars(&package.manifest, &dry_run_context(package));
     let mut used = BTreeMap::new();
     let services = package
         .services(|_| &vars, &mut used, &super::langs())
         .unwrap();
-    services["app"]
+    services[service]
         .healthcheck
         .clone()
         .expect("模板写了健康检查")
+}
+
+/// 模板里 `app` 服务的健康检查，原样。
+fn app_healthcheck() -> Healthcheck {
+    healthcheck(&template(), "app")
 }
 
 fn test_of(check: &Healthcheck) -> Vec<String> {
@@ -65,6 +74,19 @@ fn the_backend_example_keeps_the_start_and_interval_settings() {
     assert_eq!(check.timeout.as_deref(), Some("5s"));
     assert_eq!(check.start_period.as_deref(), Some("10s"));
     assert_eq!(check.start_interval.as_deref(), Some("1s"));
+}
+
+/// 两个例子的探针都自带超时：`SIGSTOP` 这类卡住只靠 compose 的 `timeout` 要等满 5 秒，
+/// `-T 3` 让 wget 自己先退。
+#[test]
+fn both_examples_bound_the_probe_themselves() {
+    for (dir, service) in [("backend", "app"), ("static", "web")] {
+        let test = test_of(&healthcheck(&example(dir), service));
+        assert!(
+            test.windows(2).any(|pair| pair == ["-T", "3"]),
+            "{dir}: {test:?}"
+        );
+    }
 }
 
 /// 配了代理时渲染出的容器用改写后的探针，模板回归成 `python3 -c` 时这里跟着红。

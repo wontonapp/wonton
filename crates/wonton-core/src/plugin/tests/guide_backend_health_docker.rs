@@ -4,6 +4,7 @@ use std::path::Path;
 use std::sync::{Arc, Mutex};
 use std::time::{Duration, Instant};
 
+use bollard::exec::{CreateExecOptions, StartExecOptions};
 use bollard::models::HealthStatusEnum;
 use wonton_protocol::EgressProxyUpdate;
 
@@ -40,6 +41,33 @@ async fn health(engine: &Engine, container: &str) -> Option<HealthStatusEnum> {
     info.state
         .and_then(|state| state.health)
         .and_then(|h| h.status)
+}
+
+/// 给容器里跑 `pattern` 的进程发信号。模板带 `init: true`，PID 1 是 docker-init，
+/// 冻结它不影响应用；信号又只能从容器外面发（PID 1 收不到容器里发的）。
+async fn signal_process(engine: &Engine, container: &str, pattern: &str, signal: &str) {
+    let exec = engine
+        .docker
+        .create_exec(
+            container,
+            CreateExecOptions {
+                cmd: Some(vec!["pkill", signal, "-f", pattern]),
+                ..Default::default()
+            },
+        )
+        .await
+        .unwrap();
+    engine
+        .docker
+        .start_exec(
+            &exec.id,
+            Some(StartExecOptions {
+                detach: true,
+                ..Default::default()
+            }),
+        )
+        .await
+        .unwrap();
 }
 
 async fn wait_for(engine: &Engine, container: &str, want: HealthStatusEnum, deadline: Duration) {
@@ -117,9 +145,20 @@ async fn the_backend_example_probes_without_python_and_follows_the_service() {
     )
     .await;
 
-    // 服务挂掉：安装完成后 interval 是 30s，连续失败到 retries 次才判 unhealthy。
-    // 用 daemon 发 SIGKILL：容器里的 PID 1 没有 TERM 处理器，进程内 pkill 杀不掉。
-    engine.kill_container(&container, "SIGKILL").await.unwrap();
+    // 服务卡住：进程和监听 socket 都还在，wget 连上后读超时（-T 3）才算失败。
+    // 容器一退出 dockerd 就自己把健康状态改成 unhealthy、不跑探针，所以先冻结进程再等。
+    signal_process(&engine, &container, "/app/server.py", "-STOP").await;
+    let state = engine
+        .inspect_container(&container)
+        .await
+        .unwrap()
+        .unwrap()
+        .state
+        .and_then(|state| state.status);
+    assert!(
+        format!("{state:?}").to_lowercase().contains("running"),
+        "{state:?}"
+    );
     wait_for(
         &engine,
         &container,
@@ -127,6 +166,10 @@ async fn the_backend_example_probes_without_python_and_follows_the_service() {
         Duration::from_secs(150),
     )
     .await;
+    // 停住的进程收 SIGKILL 会直接没，回头再杀 docker-init，容器才退得了。exec 是 detached 的，等它落下。
+    signal_process(&engine, &container, "/app/server.py", "-KILL").await;
+    tokio::time::sleep(Duration::from_secs(1)).await;
+    engine.kill_container(&container, "SIGKILL").await.unwrap();
 
     manager
         .uninstall(
