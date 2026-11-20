@@ -169,6 +169,10 @@ class DevGuardTest(unittest.TestCase):
             ("entry-cloud/prepare.py", [], None, {"FAKE_PS_LABELS": label}, str(self.install)),
             ("entry-cloud/smoke.py", [], None, {"FAKE_PS_LABELS": label}, str(self.install)),
             ("entry-cloud/upgrade-smoke.py", [], None, {"FAKE_PS_LABELS": label}, str(self.install)),
+            # Tuwunel 开发栈的项目名写死在 compose.yaml，只能被当前目录这条判据挡住。
+            ("matrix/dev.sh", ["up"], None, {}, "当前目录", self.install),
+            ("matrix/dev.sh", ["down"], None, {}, "当前目录", self.install),
+            ("matrix/dev.sh", ["reset"], None, {}, "当前目录", self.install),
         ]
         for relative, args, project, env, reason, *cwd in cases:
             with self.subTest(script=relative, args=args):
