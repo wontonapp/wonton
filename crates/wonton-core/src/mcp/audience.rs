@@ -103,17 +103,11 @@ impl Bus {
         )
     }
 
-    /// 共享 Bot 没有进行中的轮次时的封顶：能用人（角色“用共享 Bot”为“能”）里最低的级别，主人算在内。
-    pub(crate) fn shared_bot_ai(&self) -> AiLevel {
-        crate::ai_level::shared_bot_ai(
-            self.people
-                .get()
-                .map(|people| (&*people.members, &*people.roles)),
-        )
-    }
-
-    /// 这次调用的封顶（ADR-0088 第 5 节、ADR-0083 第 5 节）：有进行中的轮次时按轮次里级别最低的人算，
-    /// 没有时私人 Bot 按归属人、共享 Bot 按能用人里最低的。没有 Bot 的工具插件按主人的自动化算。
+    /// 这次调用的封顶（ADR-0088 第 5 节、ADR-0083 第 5 节）：报了说话人按这个人算；没报时按进行中的轮次里
+    /// 级别最低的人算；两样都没有（[`Self::speaker_missing`]）按只读。没有 Bot 的工具插件按主人的自动化算。
+    ///
+    /// 说不出替谁办事时不按 Bot 归属人或共享 Bot 的能用人算：插件取不到身份不带头、开链失败没报上轮次，
+    /// 这一轮就会拿到归属人（主人的 Bot 就是主人）的权限，等于身份升级。按只读失败即停，Agent 照实转告。
     pub(crate) fn ai_cap(&self, caller: &Caller) -> AiLevel {
         if let Some(level) = caller.ai_level {
             return strict_ai(level);
@@ -129,19 +123,15 @@ impl Bus {
             };
         }
         match &bot.keeper {
-            BotKeeper::User { username } => {
+            BotKeeper::User { .. } | BotKeeper::Household => {
                 let turns = self.live_turn_ais(caller);
-                match turns.into_iter().reduce(lower) {
-                    Some(lowest) => lowest,
-                    None => self.person_ai(username),
-                }
-            }
-            BotKeeper::Household => {
-                let turns = self.live_turn_ais(caller);
-                match turns.into_iter().reduce(lower) {
-                    Some(lowest) => lowest,
-                    None => self.shared_bot_ai(),
-                }
+                turns.into_iter().reduce(lower).unwrap_or_else(|| {
+                    tracing::warn!(
+                        plugin = caller.id.as_str(),
+                        "这次调用没说替谁办事（没带说话人请求头，也没有进行中的轮次），AI 动手按只读封顶"
+                    );
+                    AiLevel::ReadOnly
+                })
             }
             BotKeeper::Other => {
                 tracing::warn!(
@@ -188,6 +178,21 @@ impl Bus {
                 })
             })
             .collect()
+    }
+
+    /// 有 Bot 记录的调用方说不出这次替谁办事：没报说话人，这个 Bot 也没有进行中的轮次。
+    pub(super) fn speaker_missing(&self, caller: &Caller) -> bool {
+        caller.bot.is_some() && caller.sender.is_none() && self.live_turn_ais(caller).is_empty()
+    }
+
+    /// 封顶只读时的拒绝（权限缺失）。说不出替谁办事的写明这一点，Agent 能照实转告，不当成角色不够。
+    pub(super) fn read_only_refusal(&self, caller: &Caller, refused: &str) -> super::ToolFailure {
+        let why = if self.speaker_missing(caller) {
+            "这次调用没说替谁办事（没带说话人请求头，也没有进行中的轮次），AI 动手按只读"
+        } else {
+            "这次的 AI 动手级别是只读"
+        };
+        super::ToolFailure::new("permission_denied", format!("{why}，{refused}，没有执行"))
     }
 
     fn person_ai_option(&self, username: &str) -> Option<AiLevel> {
