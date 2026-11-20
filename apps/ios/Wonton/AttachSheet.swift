@@ -4,14 +4,16 @@ import UniformTypeIdentifiers
 import WontonClient
 
 /// 回形针打开的附件面板（ADR-0109 第 8 节）：上面是相册里最近的照片，点一下选中、再点取消，能选几张看附件区还剩几格；
-/// 底下一排切换，只列做得到的：照片、文件。选好的交给输入栏，照旧先进附件区（ADR-0094），旁聊里直接发（ADR-0093）。
+/// 底下浮着一排玻璃的切换，只列做得到的：相册、文件。选了照片，那一排换成附言框和发送键，照片和附言作为一次发出去。
 /// 相册权限到这里才问；没给就如实说，配去设置的按钮，系统的照片选择器不要权限，也留一个入口。
 struct AttachSheet: View {
     /// 这次最多还能选几张。
     let limit: Int
     /// 旁聊里发不了文件（ADR-0093）。
     let allowsFiles: Bool
-    let pick: ([PHAsset]) -> Void
+    /// 附言就是输入框的草稿：输入框里打了字再开面板，字跟着照片一起发；不发收起面板，字还在输入框里。
+    @Binding var caption: String
+    let send: ([PHAsset]) -> Void
     let chooseFiles: () -> Void
     let openSystemPicker: () -> Void
     @State private var access = PHPhotoLibrary.authorizationStatus(for: .readWrite)
@@ -20,7 +22,7 @@ struct AttachSheet: View {
     @Environment(\.wontonColors) private var colors
 
     var body: some View {
-        VStack(spacing: 0) {
+        Group {
             switch access {
             case .authorized, .limited:
                 grid
@@ -29,9 +31,11 @@ struct AttachSheet: View {
             default:
                 ProgressView().frame(maxWidth: .infinity, maxHeight: .infinity)
             }
-            bottomBar
         }
+        // 底下那一条浮在网格上，照片从它下面滚过去。
+        .safeAreaInset(edge: .bottom, spacing: 0) { bottomBar }
         .background(Color(colors.canvas).ignoresSafeArea())
+        .animation(.easeOut(duration: WontonTheme.motion.state), value: selected.isEmpty)
         .task {
             if access == .notDetermined {
                 access = await PHPhotoLibrary.requestAuthorization(for: .readWrite)
@@ -85,39 +89,50 @@ struct AttachSheet: View {
         .accessibilityIdentifier("attachDenied")
     }
 
-    /// 选了照片时是“完成”，没选时是那一排切换。
+    /// 没选照片时是那一排切换，选了换成附言框和发送键。
     @ViewBuilder private var bottomBar: some View {
         if selected.isEmpty {
-            HStack(spacing: 0) {
-                tab(.image, String(localized: .Composer.composerPhoto), isCurrent: true) {}
-                if allowsFiles {
-                    tab(.attach, String(localized: .Composer.composerFile), isCurrent: false, action: chooseFiles)
-                        .accessibilityIdentifier("attachFiles")
-                }
-            }
-            .padding(.top, WontonTheme.spacing.s8)
+            tabs.transition(.opacity)
         } else {
-            Button {
-                pick(selected.compactMap { id in assets.first { $0.localIdentifier == id } })
-            } label: {
-                Text(verbatim: "\(String(localized: .Common.commonDone)) (\(selected.count))")
-            }
-            .buttonStyle(WontonButtonStyle(kind: .primary))
-            .padding(.horizontal, WontonTheme.spacing.pageInset)
-            .padding(.vertical, WontonTheme.spacing.s8)
-            .accessibilityIdentifier("attachDone")
+            CaptionSendBar(
+                placeholder: String(localized: .Photo.photoCaption), text: $caption, count: selected.count,
+                cancel: { selected = [] },
+                send: { send(selected.compactMap { id in assets.first { $0.localIdentifier == id } }) },
+                id: "attach"
+            )
+            .transition(.opacity)
         }
+    }
+
+    /// 一块玻璃胶囊，里面每项图标在上、短字在下，当前一项垫一层淡的重点色。
+    private var tabs: some View {
+        HStack(spacing: 0) {
+            tab(.imageFill, String(localized: .Composer.composerPhoto), isCurrent: true) {}
+                .accessibilityIdentifier("attachPhotos")
+            if allowsFiles {
+                tab(.file, String(localized: .Composer.composerFile), isCurrent: false, action: chooseFiles)
+                    .accessibilityIdentifier("attachFiles")
+            }
+        }
+        .padding(WontonTheme.spacing.s4)
+        .chatGlass(in: Capsule())
+        .padding(.bottom, WontonTheme.spacing.s8)
     }
 
     private func tab(_ icon: WontonIcon, _ title: String, isCurrent: Bool, action: @escaping () -> Void) -> some View {
         Button(action: action) {
             VStack(spacing: WontonTheme.spacing.s4) {
                 icon.view()
-                Text(title).wontonText(WontonTheme.typography.caption).lineLimit(1)
+                Text(title).wontonText(WontonTheme.typography.caption).fontWeight(.medium).lineLimit(1)
             }
-            .foregroundStyle(Color(isCurrent ? colors.accentInk : colors.textSecondary))
-            .frame(maxWidth: .infinity, minHeight: WontonTheme.size.target)
-            .contentShape(Rectangle())
+            .foregroundStyle(Color(isCurrent ? colors.accentInk : colors.textPrimary))
+            .frame(width: WontonTheme.size.attachTab, height: WontonTheme.size.target + WontonTheme.spacing.s4)
+            .background {
+                if isCurrent {
+                    Capsule().fill(Color(colors.accentInk).opacity(WontonTheme.ratio.tabHighlight))
+                }
+            }
+            .contentShape(Capsule())
         }
         .buttonStyle(.plain)
         .accessibilityAddTraits(isCurrent ? .isSelected : [])
