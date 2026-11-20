@@ -8,13 +8,13 @@ use std::sync::{Arc, Mutex, RwLock};
 use tokio::sync::watch;
 use wonton_l10n::l10n;
 use wonton_protocol::{
-    AddedSource, AppLockTimeout, AppLockViewModel, AppearanceViewModel, ChatContact, ChatViewModel,
-    ComposerDraft, CoreError, FileCard, FileCardActions, FileFailure, FileId, FileInfo,
-    FileOperation, FileProblem, FriendsViewModel, HomeViewModel, InstallPreview, LanChoice,
-    LanSettings, Me, MediaHandle, OnboardingViewModel, OwnerProfileUpdate, PagesViewModel,
-    PeersViewModel, PluginDetail, PluginImage, PluginsViewModel, RoomTransfers, SecretString,
-    ServersViewModel, SessionListViewModel, SettingsViewModel, StoreItem, TimelineTarget,
-    TransfersViewModel,
+    AddedSource, AppLockTimeout, AppLockViewModel, AppearanceViewModel, AvatarUpload, ChatContact,
+    ChatViewModel, ComposerDraft, CoreError, FileCard, FileCardActions, FileFailure, FileId,
+    FileInfo, FileOperation, FileProblem, FriendsViewModel, HomeViewModel, InstallPreview,
+    LanChoice, LanSettings, Me, MediaHandle, MyAvatarProblem, OnboardingViewModel,
+    OwnerProfileUpdate, PagesViewModel, PeersViewModel, PluginDetail, PluginImage,
+    PluginsViewModel, RoomTransfers, SecretString, ServersViewModel, SessionListViewModel,
+    SettingsViewModel, StoreItem, TimelineTarget, TransfersViewModel,
 };
 
 use crate::app_lock::AppLockLink;
@@ -407,6 +407,20 @@ impl ClientCore {
             scope.chat.set_owner_display_name(name);
         }
         Ok(saved)
+    }
+
+    /// 换自己的头像：文件由壳按 [`max_avatar_edge`](Self::max_avatar_edge)、[`max_avatar_bytes`](Self::max_avatar_bytes)
+    /// 裁好、压好，核心按文件头检查后传到 Matrix 的媒体库，再把 `mxc://` 写进自己的资料 `avatar_url`。资料只放静态图。
+    /// 成功返回新的 [`Me`]，壳不用再取一次；家人和主人一样能用。上传和写 `avatar_url` 还没接上之前报
+    /// [`MyAvatarProblem::NotReady`]，不安静地吞掉。
+    pub async fn set_my_avatar(&self, upload: AvatarUpload) -> Result<Me, MyAvatarProblem> {
+        let _ = upload;
+        Err(MyAvatarProblem::NotReady)
+    }
+
+    /// 清掉自己的头像，壳显示名字首字母。本来就没有头像时也算成功：清两次的结果一样。
+    pub async fn clear_my_avatar(&self) -> Result<Me, MyAvatarProblem> {
+        Err(MyAvatarProblem::NotReady)
     }
 
     /// 升级前的预览：升到已安装列表里提示的版本。

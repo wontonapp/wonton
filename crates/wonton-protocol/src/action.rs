@@ -58,16 +58,7 @@ mod tests {
                 action: PluginAction::RefreshPlugins,
             },
             Action::Family {
-                action: FamilyAction::SetMyAvatar {
-                    upload: crate::AvatarUpload {
-                        mime_type: "image/jpeg".into(),
-                        data: vec![1, 2],
-                        poster: None,
-                    },
-                },
-            },
-            Action::Family {
-                action: FamilyAction::ClearMyAvatar,
+                action: FamilyAction::RefreshRoles,
             },
         ];
 
@@ -87,17 +78,7 @@ mod tests {
         );
         assert_eq!(
             serde_json::to_value(&actions[3]).unwrap(),
-            json!({
-                "domain": "family",
-                "action": {
-                    "type": "set_my_avatar",
-                    "upload": {"mime_type": "image/jpeg", "data": [1, 2], "poster": null}
-                }
-            })
-        );
-        assert_eq!(
-            serde_json::to_value(&actions[4]).unwrap(),
-            json!({"domain": "family", "action": {"type": "clear_my_avatar"}})
+            json!({"domain": "family", "action": {"type": "refresh_roles"}})
         );
         assert!(
             serde_json::from_value::<Action>(json!({

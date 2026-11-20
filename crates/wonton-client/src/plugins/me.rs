@@ -3,7 +3,7 @@
 use wonton_l10n::l10n;
 use wonton_matrix::{MatrixSession, RoomId, UserId};
 use wonton_protocol::{
-    BotRef, CoreError, FamilyAction, MY_PRIVATE_BOT_PATH, Me, OwnBotFailure, OwnBotProblem,
+    BotRef, CoreError, MY_PRIVATE_BOT_PATH, Me, OwnBotFailure, OwnBotProblem,
     OwnPrivateBotResponse, OwnPrivateBotResult, OwnPrivateBotView, OwnerProfileUpdate,
     PluginFailure,
 };
@@ -41,21 +41,6 @@ impl PluginsLink {
         api.put(&PATH, &update, READ_TIMEOUT)
             .await
             .map_err(to_core_error)
-    }
-
-    /// 自己的头像：壳传裁好、压好的文件，成功后的 `Me` 由下一次取资料带出来。协议先接住，上传和写 `avatar_url`
-    /// 还没接上时明确报还不支持，不安静地吞掉。
-    pub(crate) fn dispatch_my_avatar(&self, action: FamilyAction) -> Result<(), CoreError> {
-        match action {
-            FamilyAction::SetMyAvatar { .. } | FamilyAction::ClearMyAvatar => {
-                Err(CoreError::NotReady {
-                    reason: "This core cannot change your avatar yet".to_owned(),
-                })
-            }
-            _ => Err(CoreError::InvalidInput {
-                reason: "not a profile avatar action".to_owned(),
-            }),
-        }
     }
 }
 

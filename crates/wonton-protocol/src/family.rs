@@ -81,6 +81,28 @@ pub struct Me {
     pub avatar: Option<AvatarImage>,
 }
 
+/// 改自己的头像失败的原因。壳按它写文字、决定要不要让这个人再选一次文件。
+#[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize, thiserror::Error)]
+#[cfg_attr(feature = "uniffi", derive(uniffi::Error), uniffi::export(Display))]
+#[serde(tag = "type", rename_all = "snake_case")]
+pub enum MyAvatarProblem {
+    /// 这个核心还改不了头像（上传、写 `avatar_url` 还没接上），升级核心或 App 后可用。
+    #[error("this core cannot change your avatar yet")]
+    NotReady,
+    /// 文件不行；原因由核心按文件头和尺寸查出来。
+    #[error("the avatar file was rejected: {:?}", .problem)]
+    MediaRejected { problem: crate::AvatarMediaProblem },
+    /// 连不上家里的服务器。
+    #[error("cannot reach the home server: {reason}")]
+    TransportUnavailable { reason: String },
+    /// 家里的服务器或 Matrix 出错。
+    #[error("the home server or Matrix failed: {reason}")]
+    Upstream { reason: String },
+    #[serde(other)]
+    #[error("unknown avatar problem")]
+    Other,
+}
+
 /// 一个人的身份种类，网关按它分主人、家人和好友；能做什么不看它，看角色（ADR-0088）。
 /// 主人和家人在 [`Me::is_owner`] 和 [`Me::role_id`] 上表达，好友只在插件分享里出现。
 #[derive(Clone, Copy, Debug, PartialEq, Eq, Serialize, Deserialize)]
@@ -458,7 +480,7 @@ mod tests {
             "display_name": null,
             "email": null,
             "avatar": {
-                "media": {"token": r#"{"Plain":"mxc://x.wonton.internal/abc"}"#},
+                "media": {"token": r#"{"url":"mxc://x.wonton.internal/abc"}"#},
                 "kind": "still",
                 "width": null,
                 "height": null,
@@ -470,7 +492,7 @@ mod tests {
         assert_eq!(avatar.kind, AvatarKind::Still);
         assert_eq!(
             avatar.media.token,
-            r#"{"Plain":"mxc://x.wonton.internal/abc"}"#
+            r#"{"url":"mxc://x.wonton.internal/abc"}"#
         );
         assert_eq!(avatar.width, None);
         assert_eq!(serde_json::to_value(&parsed).unwrap(), me);
@@ -478,6 +500,57 @@ mod tests {
         me["avatar"] = json!(null);
         let cleared: Me = serde_json::from_value(me).unwrap();
         assert_eq!(cleared.avatar, None);
+    }
+
+    #[test]
+    fn an_avatar_kind_the_core_does_not_know_shows_as_a_still_image() {
+        let avatar = |kind: serde_json::Value| {
+            serde_json::from_value::<AvatarImage>(json!({
+                "media": {"token": r#"{"url":"mxc://x.wonton.internal/abc"}"#},
+                "kind": kind,
+                "width": null,
+                "height": null,
+                "poster": null,
+            }))
+        };
+        assert_eq!(avatar(json!("still")).unwrap().kind, AvatarKind::Still);
+        assert_eq!(avatar(json!("hologram")).unwrap().kind, AvatarKind::Still);
+        let mut missing = json!({
+            "media": {"token": r#"{"url":"mxc://x.wonton.internal/abc"}"#},
+            "width": null,
+            "height": null,
+            "poster": null,
+        });
+        assert_eq!(
+            serde_json::from_value::<AvatarImage>(missing.clone())
+                .unwrap()
+                .kind,
+            AvatarKind::Still
+        );
+        missing["kind"] = json!("video");
+        assert_eq!(
+            serde_json::from_value::<AvatarImage>(missing).unwrap().kind,
+            AvatarKind::Video
+        );
+    }
+
+    #[test]
+    fn an_avatar_refusal_keeps_its_category() {
+        let rejected = MyAvatarProblem::MediaRejected {
+            problem: crate::AvatarMediaProblem::TooLarge,
+        };
+        assert_eq!(
+            serde_json::to_value(&rejected).unwrap(),
+            json!({"type": "media_rejected", "problem": "too_large"})
+        );
+        assert_eq!(
+            serde_json::to_value(MyAvatarProblem::NotReady).unwrap(),
+            json!({"type": "not_ready"})
+        );
+        assert_eq!(
+            serde_json::from_value::<MyAvatarProblem>(json!({"type": "quota"})).unwrap(),
+            MyAvatarProblem::Other
+        );
     }
 
     #[test]
