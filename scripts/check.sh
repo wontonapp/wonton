@@ -37,6 +37,7 @@ python3 -m unittest discover -q -s scripts/install -t scripts
 python3 -m unittest discover -q -s scripts/dev_ports -t scripts
 python3 -m unittest discover -q -s scripts/shell_parity -t scripts
 python3 deploy/dev/core/instance-label_test.py
+python3 deploy/dev/core/core-network_test.py
 python3 deploy/dev/core/dev_test.py
 python3 deploy/dev/core/port-preflight_test.py
 python3 deploy/dev/core/smoke-lib_test.py

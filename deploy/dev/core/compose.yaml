@@ -326,7 +326,11 @@ services:
       start_interval: 1s
 
 networks:
+  # 网络由 dev.sh 建、由它删：compose 自己管时，渲染出来的配置和现有的对不上就删了重建，
+  # 重建后接回去的容器没有别名，`hydra.wonton.internal` 这类名字就丢了（#187）。
   core:
+    external: true
+    name: ${WONTON_DEV_PROJECT:-wonton-dev-core}_core
 
 volumes:
   hydra:
