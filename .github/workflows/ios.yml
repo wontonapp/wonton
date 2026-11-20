@@ -83,9 +83,12 @@ jobs:
     timeout-minutes: 70
     env:
       XCODEGEN_VERSION: "2.46.0"
-      # 参考图绑定这台模拟器和这个系统版本：改了就整体重录（打 record-snapshots 标签）。系统版本取 Xcode 27.1 支持的，
-      # 设备取装机列表里的普通 iPhone。模拟器名字带空格，走变量拼进 -destination。
+      # 参考图绑定这个型号的模拟器和这个系统版本，改了就整体重录（打 record-snapshots 标签）：系统版本取
+      # Xcode 27.1 支持的，设备取装机列表里的普通 iPhone。模拟器名字带空格，走变量拼进 -destination。
+      # `SIMULATOR_MODEL` 是型号标识（SIMULATOR_MODEL_IDENTIFIER），iPhone18,3 就是 iPhone 17；测试按它和
+      # 系统版本核对，不符就在 CI 上失败。测试步骤把这两个值和 enforce 开关交给测试进程。
       SIMULATOR_NAME: iPhone 17
+      SIMULATOR_MODEL: "iPhone18,3"
       SIMULATOR_OS: "27.0"
       # 截图测试并行会同时开好几个窗口、失败时也不好定位，单台模拟器顺序跑；日期按 UTC、en_US 排版，参考图才可复现。
       TZ: UTC
@@ -155,6 +158,10 @@ jobs:
       # 录制模式由 scheme 的环境变量切（`Wonton` 是 never）：只比较、缺图也报错，不在 CI 里悄悄补图；
       # 重录在 snapshots-record.yml。每个用例 10 秒够渲染，卡住最多 60 秒；失败不加自动重试，先把原因查清。
       - name: 单元测试和截图测试
+        env:
+          TEST_RUNNER_SNAPSHOT_MODEL: ${{ env.SIMULATOR_MODEL }}
+          TEST_RUNNER_SNAPSHOT_OS: ${{ env.SIMULATOR_OS }}
+          TEST_RUNNER_SNAPSHOT_ENFORCE: "1"
         run: |
           xcodebuild test-without-building \
             -project apps/ios/Wonton.xcodeproj \
