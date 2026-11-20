@@ -30,11 +30,18 @@ pub enum TimelineAction {
     ///
     /// `reply_to` 是被回复消息的事件 ID（[`MessageAction::Reply`](crate::MessageAction::Reply) 里的），发出的是对它的
     /// 回复；那条消息不在这个房间里时返回 `InvalidInput`。
+    ///
+    /// `mentions` 是主人在输入框的“@”列表里选中的人（完整的 Matrix 用户 ID）：核心写进 `m.mentions.user_ids`，
+    /// `formatted_body` 里按正文里的 `@显示名` 放胶囊，被回复的人在回复时也会加进来。只认选中的人，不从正文按
+    /// 显示名猜（ADR-0083）。不是房间成员的、重复的忽略。
     SendText {
         target: TimelineTarget,
         body: String,
         #[cfg_attr(feature = "uniffi", uniffi(default = None))]
         reply_to: Option<String>,
+        #[serde(default)]
+        #[cfg_attr(feature = "uniffi", uniffi(default))]
+        mentions: Vec<String>,
     },
     /// 发送图片。上传和发送的进展、`reply_to` 同 [`TimelineAction::SendText`]。
     SendImage {
@@ -93,13 +100,16 @@ pub enum TimelineAction {
     },
     /// 把输入框的字和附件区的附件作为一次发送发出（ADR-0094）：马上变成一条待发消息
     /// （[`ComposerViewModel::outgoing`](crate::ComposerViewModel::outgoing)），附件区和草稿清空；附件全部传完、文件授权给
-    /// 房间后，才按顺序把这一组事件交给 Matrix。`reply_to` 同 [`TimelineAction::SendText`]。字和附件都没有、附件区里有
-    /// 失败的附件时返回 `InvalidInput`。
+    /// 房间后，才按顺序把这一组事件交给 Matrix。`reply_to`、`mentions` 同 [`TimelineAction::SendText`]。字和附件都没有、
+    /// 附件区里有失败的附件时返回 `InvalidInput`。
     SendComposer {
         target: TimelineTarget,
         body: String,
         #[cfg_attr(feature = "uniffi", uniffi(default = None))]
         reply_to: Option<String>,
+        #[serde(default)]
+        #[cfg_attr(feature = "uniffi", uniffi(default))]
+        mentions: Vec<String>,
     },
     /// 从附件区删掉一个附件，停下它的上传。已经传上去的照片留在服务器上，文件由家里的服务器到期清掉。附件区里没有它时
     /// 返回 `InvalidInput`。
@@ -140,4 +150,53 @@ pub enum TimelineAction {
     /// [`LinkPreviewState`](crate::LinkPreviewState) 上：这条草稿不再出预览，第一个链接换成别的或草稿发出去就作废。
     /// 旁聊的输入框也有链接预览，预览状态和主时间线的分开。
     DismissLinkPreview { target: TimelineTarget },
+}
+
+#[cfg(test)]
+mod tests {
+    use serde_json::{Value, json};
+
+    use super::*;
+
+    fn target() -> Value {
+        json!({"room_id": "!a:home.example"})
+    }
+
+    /// 契约：旧壳不带 `mentions` 时按没选人处理；带上时原样到核心。
+    #[test]
+    fn send_actions_mentions_are_optional_and_round_trip() {
+        let old: TimelineAction = serde_json::from_value(json!({
+            "type": "send_text",
+            "target": target(),
+            "body": "在吗",
+        }))
+        .unwrap();
+        assert!(matches!(old, TimelineAction::SendText { mentions, .. } if mentions.is_empty()));
+
+        let action = TimelineAction::SendComposer {
+            target: TimelineTarget {
+                room_id: "!a:home.example".into(),
+                thread_root: None,
+            },
+            body: "@Hermes你好".into(),
+            reply_to: None,
+            mentions: vec!["@hermes:home.example".into()],
+        };
+        let json = serde_json::to_value(&action).unwrap();
+        assert_eq!(json["mentions"], json!(["@hermes:home.example"]));
+        assert_eq!(
+            serde_json::from_value::<TimelineAction>(json).unwrap(),
+            action
+        );
+
+        let again: TimelineAction = serde_json::from_value(json!({
+            "type": "send_composer",
+            "target": target(),
+            "body": "x",
+        }))
+        .unwrap();
+        assert!(
+            matches!(again, TimelineAction::SendComposer { mentions, .. } if mentions.is_empty())
+        );
+    }
 }

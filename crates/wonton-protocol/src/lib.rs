@@ -148,8 +148,8 @@ pub use clients::{
     clients_status_path, dns_providers_path,
 };
 pub use composer::{
-    AttachmentFailure, AttachmentKind, AttachmentState, ComposerAttachment, ComposerViewModel,
-    MessageGroup, OutgoingMessage,
+    AttachmentFailure, AttachmentKind, AttachmentState, ComposerAttachment, ComposerMention,
+    ComposerViewModel, MessageGroup, OutgoingMessage,
 };
 pub use confirmation::{
     Answer, CARD_FIELD, CORE_LOCALPART, CardAudience, CardChoice, CardLine, ConfirmationAnswer,

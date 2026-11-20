@@ -166,6 +166,7 @@ impl State {
                 .map(|room| room.outgoing.iter().map(Outgoing::view).collect())
                 .unwrap_or_default(),
             max_attachments: u32::try_from(MAX_ATTACHMENTS).expect("a small constant"),
+            mention_candidates: Vec::new(),
         }
     }
 

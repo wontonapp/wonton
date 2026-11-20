@@ -133,6 +133,7 @@ async fn text_reply_quotes_the_original(
                 },
                 body: "回一句".to_owned(),
                 reply_to: Some(quote.event_id.clone()),
+                mentions: vec![],
             },
         })
         .unwrap();

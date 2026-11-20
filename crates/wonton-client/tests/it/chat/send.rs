@@ -34,6 +34,7 @@ async fn the_owner_cancels_a_rejected_message_and_the_next_one_goes_out() {
                 },
                 body: too_long.clone(),
                 reply_to: None,
+                mentions: vec![],
             },
         })
         .unwrap();
@@ -61,6 +62,7 @@ async fn the_owner_cancels_a_rejected_message_and_the_next_one_goes_out() {
                 },
                 body: "排在后面的".to_owned(),
                 reply_to: None,
+                mentions: vec![],
             },
         })
         .unwrap();

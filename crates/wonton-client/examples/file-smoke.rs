@@ -314,6 +314,7 @@ impl<'a> Chat<'a> {
                     },
                     body: text.to_owned(),
                     reply_to: None,
+                    mentions: vec![],
                 },
             })
             .map_err(|e| format!("发不出去：{e}"))

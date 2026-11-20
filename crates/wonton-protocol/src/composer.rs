@@ -20,6 +20,27 @@ pub struct ComposerViewModel {
     pub outgoing: Vec<OutgoingMessage>,
     /// 附件区最多放几个，壳据此限制系统选择器能选几个。
     pub max_attachments: u32,
+    /// 输入“@”弹出的候选：房间里在场的成员，Bot 在前，不含本账号；私聊里为空。成员变了跟着变（ADR-0083）。
+    #[serde(default)]
+    #[cfg_attr(feature = "uniffi", uniffi(default))]
+    pub mention_candidates: Vec<ComposerMention>,
+}
+
+/// “@”候选里的一个人。壳选中后往正文里插一个胶囊，发送时把他的用户 ID 放进
+/// [`TimelineAction::SendText::mentions`](crate::TimelineAction::SendText)。
+#[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize)]
+#[cfg_attr(feature = "uniffi", derive(uniffi::Record))]
+pub struct ComposerMention {
+    /// 完整的 Matrix 用户 ID，选中后原样交回。
+    pub user_id: String,
+    /// 显示名；空的时候壳画用户 ID。
+    pub display_name: String,
+    /// 头像，经 `ClientCore::load_media` 取；没有时为空，壳画首字母。
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    #[cfg_attr(feature = "uniffi", uniffi(default = None))]
+    pub avatar: Option<crate::MediaHandle>,
+    /// 是 Bot：排在列表前面，壳在名字旁标出来。
+    pub is_bot: bool,
 }
 
 /// 附件区里的一项，或者待发消息里的一个附件。
@@ -263,6 +284,12 @@ mod tests {
                 },
             }],
             max_attachments: 10,
+            mention_candidates: vec![ComposerMention {
+                user_id: "@hermes:home.example".into(),
+                display_name: "Hermes".into(),
+                avatar: Some(crate::MediaHandle { token: "m1".into() }),
+                is_bot: true,
+            }],
         };
         let json = serde_json::to_string(&view).unwrap();
         assert_eq!(
@@ -273,5 +300,18 @@ mod tests {
             serde_json::from_value::<AttachmentFailure>(json!("from_the_future")).unwrap(),
             AttachmentFailure::Other
         );
+    }
+
+    /// 契约：旧核心的输入框 ViewModel 没有候选列表，按空列表取。
+    #[test]
+    fn composer_view_without_mention_candidates_reads_as_empty() {
+        let view: ComposerViewModel = serde_json::from_value(json!({
+            "target": {"room_id": "!a:home.example"},
+            "attachments": [],
+            "outgoing": [],
+            "max_attachments": 10,
+        }))
+        .unwrap();
+        assert!(view.mention_candidates.is_empty());
     }
 }

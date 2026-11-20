@@ -373,6 +373,7 @@ async fn chat_with_the_bot(phone: &Phone, bot: &MatrixSession, room_id: &OwnedRo
                 },
                 body: "  你好，Hermes  ".to_owned(),
                 reply_to: None,
+                mentions: vec![],
             },
         })
         .unwrap();

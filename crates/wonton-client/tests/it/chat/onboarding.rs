@@ -55,6 +55,7 @@ async fn sending_to_the_bot_hides_the_prompts_and_records_the_room() {
                 },
                 body: "你好".to_owned(),
                 reply_to: None,
+                mentions: vec![],
             },
         })
         .unwrap();
@@ -146,6 +147,7 @@ async fn prompts_used_reaches_the_disk_before_the_room_is_published_as_sent() {
                 },
                 body: "你好".to_owned(),
                 reply_to: None,
+                mentions: vec![],
             },
         })
         .unwrap();
