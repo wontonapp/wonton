@@ -3,20 +3,22 @@
 
 use hyper::HeaderMap;
 use hyper::header::HeaderName;
-use serde_json::json;
-use wonton_protocol::{AiLevel, BotKeeper, BotRef};
+use serde_json::{Value, json};
+use wonton_protocol::{AiLevel, Answer, BotKeeper, BotRef, ConfirmationCategory};
 
 use super::ai_level_tests::{attach_ledger, caller, member, names, notes, role, start_turn};
 use super::server::turn_sender;
 use super::test_setup::Setup;
-use super::tests::text;
+use super::tests::{failed, text};
 use super::tool_failure_tests::failure_kind;
 use super::{Caller, TurnSender};
+use crate::plugin::PluginId;
 
 const AGENT: &str = "com.example.agent";
 const SEARCH: &str = "app-example-notes__search";
 const ARCHIVE: &str = "app-example-notes__archive";
 const SAVE: &str = "wonton__save_file";
+const SEND: &str = "wonton__send_message";
 const ALICE: &str = "@alice:wonton.localhost";
 
 /// 和 MCP 服务器处理每个请求一样：按请求头和轮次认说话人，再算这次的封顶。
@@ -134,4 +136,60 @@ async fn live_turns_without_header_use_the_lowest_turn() {
 
     // 没经过请求头解析、直接构造的调用方（`sender` 为空）也按进行中的轮次算。
     assert_eq!(s.bus.ai_cap(&household()), AiLevel::AdminApprovesDeletes);
+}
+
+/// `wonton__send_message` 不按说话人封顶（归属人自己说话才放宽时段）：缺说话人时每条都发卡，没有“本次都放行”。
+#[tokio::test]
+async fn send_message_without_sender_asks_the_keeper_every_time() {
+    let s = home().await;
+    attach_ledger(&s);
+    let id = PluginId::parse(AGENT).unwrap();
+    s.manager.bot_records_for_test(
+        &id,
+        &[(
+            "alice-bot",
+            "@alice-bot:wonton.localhost",
+            BotKeeper::User {
+                username: "alice".into(),
+            },
+            "token",
+        )],
+    );
+    let read_only = role(&s, "只读", AiLevel::ReadOnly, false);
+    member(&s, "mom", &read_only);
+    let me = resolved(&s, &private_bot(), None);
+    assert_eq!(me.sender, None);
+    assert_eq!(me.ai_level, Some(AiLevel::ReadOnly));
+
+    for (n, body) in ["第一条", "第二条"].into_iter().enumerate() {
+        let call = s.spawn_as(&me, SEND, json!({"recipient": "mom", "body": body}));
+        let card = s.cards.wait_for(n + 1).await;
+        assert_eq!(
+            card.category,
+            Some(ConfirmationCategory::SendMessage {
+                recipient: "mom".into(),
+                body: body.into(),
+            })
+        );
+        s.answer(&card.id, Answer::AllowWindow).unwrap();
+        let result = call.await.unwrap();
+        assert!(!failed(&result), "{result:?}");
+        assert_eq!(
+            confirmation_text(&result).as_deref(),
+            Some("card"),
+            "第 {} 条照样发卡，不走时段",
+            n + 1
+        );
+    }
+    assert_eq!(s.cards.posted.lock().unwrap().len(), 2, "两条各一张");
+}
+
+fn confirmation_text(result: &rmcp::model::CallToolResult) -> Option<String> {
+    result
+        .meta
+        .as_ref()?
+        .0
+        .get("app.wonton/confirmation")
+        .and_then(Value::as_str)
+        .map(str::to_owned)
 }

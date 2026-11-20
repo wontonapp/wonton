@@ -258,11 +258,19 @@ async fn unknown_sender_is_read_only() {
     let listed = names(&s, &shared).await;
     assert!(listed.contains(&SEARCH.to_owned()), "{listed:?}");
     assert!(!listed.contains(&ARCHIVE.to_owned()), "{listed:?}");
+
+    // 说话人报出来了、只是认不出：说明写级别不够，不写“没说替谁办事”。
+    let denied = s.call_as(&shared, ARCHIVE, json!({"name": "a"})).await;
+    assert_eq!(failure_kind(&denied), Some("permission_denied"));
+    let why = text(&denied);
+    assert!(why.contains("级别是只读"), "{why}");
+    assert!(!why.contains("没说替谁办事"), "{why}");
 }
 
 #[tokio::test]
 async fn unresolvable_keeper_or_sender_is_strictest() {
     let s = notes().await;
+    // 归属人查不到：直接构造的调用方不说替谁办事，先被缺说话人的只读兜住，`person_ai` 认不出人那条分支不再单独到这里。
     let unknown = caller(
         "unknown-bot",
         BotKeeper::User {
@@ -271,7 +279,9 @@ async fn unresolvable_keeper_or_sender_is_strictest() {
     );
     let denied = s.call_as(&unknown, ARCHIVE, json!({"name": "a"})).await;
     assert_eq!(failure_kind(&denied), Some("permission_denied"));
+    assert_eq!(s.bus.ai_cap(&unknown), AiLevel::ReadOnly);
 
+    // 说话人认得出是这个 Bot 的轮次、但人查不到：按最严，不按最松。
     let shared = caller("household", BotKeeper::Household);
     let bot = BotRef {
         plugin_id: AGENT.into(),
