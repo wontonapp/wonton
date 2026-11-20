@@ -1,6 +1,6 @@
 name: android
 
-# detekt、单元测试、Debug 构建和界面参考图比对。PR 上由 gate.yml 按改动范围调用（合并门槛，范围写在那边的
+# detekt、单元测试、Debug 构建、界面参考图比对和 Release APK 体积门禁。PR 上由 gate.yml 按改动范围调用（合并门槛，范围写在那边的
 # changes 里），不自己挂 pull_request；每天定时、手动触发时自己跑全量。
 on:
   workflow_call:
@@ -16,6 +16,8 @@ concurrency:
 env:
   CARGO_INCREMENTAL: "0"
   CARGO_PROFILE_DEV_DEBUG: line-tables-only
+  # Release 的符号要能还原到行：崩溃分析只靠它，剥掉的是打包进 APK 的那份。
+  CARGO_PROFILE_RELEASE_DEBUG: line-tables-only
 
 permissions:
   contents: read
@@ -70,3 +72,48 @@ jobs:
       - name: 编译设备测试（androidTest）
         working-directory: apps/compose
         run: ./gradlew :androidApp:assembleDebugAndroidTest
+
+  release-size:
+    name: Release APK 体积
+    runs-on: ubuntu-24.04
+    timeout-minutes: 45
+    steps:
+      - uses: actions/checkout@fbc6f3992d24b796d5a048ff273f7fcc4a7b6c09 # v5
+        with:
+          persist-credentials: false
+      - uses: actions/setup-java@b6effb05e454b25005698d916606bdc6ffcbf961 # v5
+        with:
+          distribution: temurin
+          java-version: "21"
+      - name: 安装 rust-toolchain.toml 指定的工具链和 Android target
+        run: |
+          rustup toolchain install
+          rustup target add aarch64-linux-android
+      - uses: taiki-e/install-action@cfdb7ed4ccc7c7dce37759eae89dc5674b469b39 # v2
+        with:
+          tool: cargo-ndk@4.1.2
+      - uses: Swatinem/rust-cache@d1527c8f67ef9af357290475d4af4b0fab8f12e0 # v2
+        with:
+          # 和 build 作业同一个 key：cache.yml 的 Android 作业在 main 上编好 release 核心，这里只增量链接。
+          shared-key: rust-android
+          save-if: false
+      - uses: gradle/actions/setup-gradle@0723195856401067f7a2779048b490ace7a47d7c # v5.0.2
+      - name: 编手机架构的 Release APK
+        working-directory: apps/compose
+        run: ./gradlew --no-daemon :androidApp:assembleRelease -Pwonton.rustProfile=release -PwontonVersion=0.0.0
+      # 上限是修后大小 +15%：留得下正常的依赖和代码增长，挡得住符号没剥、R8 没开、多打进一个 ABI 这类成倍的回退。
+      - name: 检查体积
+        run: bash scripts/check-apk-size.sh apps/compose/androidApp/build/outputs/apk/release/androidApp-release-unsigned.apk
+        env:
+          WONTON_MAX_APK_MB: "53"
+      # 超大或崩了也要拿到符号，才查得出为什么。
+      - name: 保留符号和映射表
+        if: always()
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4.6.2
+        with:
+          name: android-release-symbols-${{ github.run_attempt }}
+          path: |
+            apps/compose/shared/build/outputs/native-symbols
+            apps/compose/androidApp/build/outputs/mapping/release
+          retention-days: 30
+          if-no-files-found: ignore
