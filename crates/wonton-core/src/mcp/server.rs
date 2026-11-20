@@ -110,9 +110,9 @@ pub(super) fn turn_sender(
             TurnSender::Unknown
         });
     }
-    // 旧接入方没有每轮请求头：先按它报的会话找那一轮，找不到就看这个 Bot 进行中的轮次。
+    // 没带请求头的 Bot 插件（如只报调用链的第三方 Bot）：先按报的会话找那一轮，找不到再看进行中的轮次。
     let bot = bot_ref(caller)?;
-    let turns = bus.agent_chains()?.ledger().live_bridge_turns(&bot);
+    let turns = bus.agent_chains()?.ledger().live_turns(&bot);
     if let (Some(session), Some(chain)) = (caller.session.as_deref(), caller.chain.as_deref())
         && let Some(turn) = turns
             .iter()
@@ -235,7 +235,10 @@ impl ServerHandler for Handler {
             .enable_tool_list_changed()
             .build();
         ServerConfig::new(capabilities)
-            .with_server_info(Implementation::new("wonton-core", env!("CARGO_PKG_VERSION")))
+            .with_server_info(Implementation::new(
+                "wonton-core",
+                crate::build_info::version(),
+            ))
             .with_instructions(
                 "Wonton 家里服务器的工具：核心自己的（wonton__ 开头，管理插件）和已装插件的（<插件>__<工具>）。\
                  安装、卸载等工具要主人在 Wonton App 里确认，调用会一直等到主人回答；wonton__set_profile 只改自己的资料，不用确认。\

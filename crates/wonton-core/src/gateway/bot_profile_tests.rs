@@ -164,7 +164,7 @@ async fn changing_one_state_preserves_other_and_unknown_keys_and_clear_keeps_fie
         .0,
         StatusCode::OK
     );
-    let profile = h.bed.manager.bot_profile(&h.bed.id).await.unwrap();
+    let profile = h.bed.manager.bot_profile(&h.bed.id, None).await.unwrap();
     assert_eq!(profile.avatars.states["idle"], media);
     assert_eq!(profile.avatars.states["future_state"], media);
     assert_eq!(profile.avatars.states["working"], media);
@@ -177,7 +177,7 @@ async fn changing_one_state_preserves_other_and_unknown_keys_and_clear_keeps_fie
         .0,
         StatusCode::OK
     );
-    let profile = h.bed.manager.bot_profile(&h.bed.id).await.unwrap();
+    let profile = h.bed.manager.bot_profile(&h.bed.id, None).await.unwrap();
     assert_eq!(
         profile.avatars.states.keys().collect::<Vec<_>>(),
         ["future_state"]
@@ -319,7 +319,7 @@ async fn owner_profile_edit_crosses_the_real_tunnel_and_local_proxy() {
     assert_eq!(
         h.bed
             .manager
-            .bot_profile(&id)
+            .bot_profile(&id, None)
             .await
             .unwrap()
             .name

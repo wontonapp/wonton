@@ -95,9 +95,7 @@ private extension OnboardingReviewDetail {
     var line: String {
         switch self {
         case let .email(email): email
-        case .setAsDefault: String(localized: .Onboarding5.onboardingReviewSetDefault)
         case .keepCurrent: String(localized: .Onboarding2.onboardingReviewKeepCurrent)
-        case .signInAfterSetup: String(localized: .Onboarding1.onboardingReviewSignInAfterSetup)
         case .unchanged: String(localized: .Onboarding4.onboardingReviewUnchanged)
         }
     }
@@ -108,7 +106,6 @@ private extension OnboardingReviewKind {
     var section: String {
         switch self {
         case .profile: String(localized: .Onboarding0.onboardingReviewSectionProfile)
-        case .agent: String(localized: .Onboarding5.onboardingReviewSectionAgent)
         case .model: String(localized: .Onboarding3.onboardingReviewSectionModel)
         case .app: String(localized: .Onboarding0.onboardingReviewSectionApps)
         }

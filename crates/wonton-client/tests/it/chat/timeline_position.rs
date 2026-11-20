@@ -212,6 +212,7 @@ async fn an_own_message_requests_the_bottom_while_reading_history() {
                 target: chat.target(),
                 body: "回到底部看自己发的".into(),
                 reply_to: None,
+                mentions: vec![],
             },
         })
         .unwrap();

@@ -1,4 +1,3 @@
-onboarding-steps-not-agent-step = Setup isn't on the agent step.
 
 onboarding-steps-not-apps-step = Setup isn't on the apps step.
 

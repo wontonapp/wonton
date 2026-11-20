@@ -8,6 +8,10 @@ extension TabWebSession: WKNavigationDelegate {
             receiveMedia(message, view: view)
             return
         }
+        if message.name == "wontonPageColor" {
+            receiveTopColor(message, view: view)
+            return
+        }
         // 关掉后保活着的页面不在核心的栈里：桥的请求不转给核心（见 `parked`）。媒体状态照常上报，在上面。
         guard !parked, let body = message.body as? String else { return }
         let origin = Self.originString(message.frameInfo.securityOrigin)

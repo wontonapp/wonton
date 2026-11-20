@@ -17,4 +17,6 @@
     <string name="tab_exit_fullscreen">退出全屏</string>
     <!-- 全屏胶囊菜单项:打开应用的详情页。 -->
     <string name="tab_menu_details">插件详情</string>
+    <!-- 第一次打开整页应用时的引导:怎么离开。无参数。 -->
+    <string name="tab_exit_hint">从屏幕边缘向内滑或按返回键，回到云吞</string>
 </resources>

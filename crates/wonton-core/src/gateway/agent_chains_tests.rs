@@ -1,4 +1,4 @@
-//! `POST /agent/chains`、出箱和 App 的链接口（任务卡第 3 块）。真的走网关：桥从插件网络带总线令牌、Bot 的
+//! `POST /agent/chains`、出箱和 App 的链接口（任务卡第 3 块）。真的走网关：Bot 插件从插件网络带总线令牌、Bot 的
 //! Matrix 令牌报轮次，App 经隧道停链、看列表，卡片从确认表读。架子在 [`super::agent_chains_test_support`]。
 //!
 //! 假 Tuwunel 只用来认 Bot 的 Matrix 令牌（`whoami`）和拼用户 ID；不装插件、不跑 Agent。
@@ -20,7 +20,7 @@ use super::ERROR_HEADER;
 use super::agent_chains_test_support::*;
 
 #[tokio::test]
-async fn a_bridge_start_gets_a_chain_and_the_next_sentence_another() {
+async fn a_start_gets_a_chain_and_the_next_sentence_another() {
     let home = start().await;
     let first = home.grant(Bot::Alice, "s-1", "@alice:test", "$e1").await;
     // 本轮结束才能报下一轮（会话上一轮还没报 end 是调用方的错）。
@@ -46,7 +46,7 @@ async fn the_speaker_and_the_bot_token_are_checked() {
     assert!(
         home.chains
             .ledger()
-            .live_bridge_turns(&bot_ref("alice"))
+            .live_turns(&bot_ref("alice"))
             .is_empty()
     );
 
@@ -105,43 +105,54 @@ async fn the_speaker_and_the_bot_token_are_checked() {
     assert_eq!(grant["layer"], 1, "叫回沿用原层");
 }
 
+/// 直接在账本上报一轮（跳过网关的说话人核验）：`event` 先挂到 `chain` 上，这一轮接回这条链。
+fn ledger_turn(
+    home: &Home,
+    chain: &str,
+    bot: &str,
+    session: &str,
+    sender: &str,
+    event: &str,
+    mentioner: Option<&str>,
+) {
+    home.chains.ledger().bind_event(event, chain).unwrap();
+    home.chains
+        .ledger()
+        .start_turn(
+            bot_ref(bot),
+            wonton_protocol::ChainTurnReport::Start {
+                session: session.into(),
+                room: "!home:test".into(),
+                thread: None,
+                sender: sender.into(),
+                event_id: event.into(),
+            },
+            mentioner.map(bot_ref),
+            "@alice:test".into(),
+        )
+        .unwrap();
+}
+
 /// 第 51 次 Start 拿到 `limit_reached`；链代表的人和两个 Bot 的归属人各一张卡片（同一人一张），
 /// 全部放开后 Start 通过。
 #[tokio::test]
 async fn the_round_limit_sends_one_card_per_person_and_grants_after_all_agree() {
     let home = start().await;
     let chain = home.grant(Bot::Alice, "s-1", "@alice:test", "$e1").await;
-    // alice 的链上再加 bob 的 Bot（用交接接口登记会话）。
-    let bob = bot_ref("bob");
-    home.chains
-        .ledger()
-        .register_session(
-            &chain,
-            "s-bob",
-            bob.clone(),
-            Some(&bot_ref("alice")),
-            crate::agent_chain::ChainSessionSource::HandOff,
-        )
-        .unwrap();
-    for round in 2..=50 {
+    // alice 的 Bot 点名 bob 的 Bot：bob 的 Bot 凭唤醒标签报 start，进 alice 的链（第 2 轮）。
+    ledger_turn(
+        &home,
+        &chain,
+        "bob",
+        "s-bob",
+        BOT_ALICE,
+        "$e-bob",
+        Some("alice"),
+    );
+    for round in 3..=50 {
         home.chains.ledger().end_session("s-1");
         let event = format!("$e{round}");
-        home.chains.ledger().bind_event(&event, &chain).unwrap();
-        home.chains
-            .ledger()
-            .start_bridge_turn(
-                bot_ref("alice"),
-                wonton_protocol::ChainTurnReport::Start {
-                    session: "s-1".into(),
-                    room: "!home:test".into(),
-                    thread: None,
-                    sender: "@alice:test".into(),
-                    event_id: event,
-                },
-                None,
-                "@alice:test".into(),
-            )
-            .unwrap();
+        ledger_turn(&home, &chain, "alice", "s-1", "@alice:test", &event, None);
     }
     home.chains.ledger().end_session("s-1");
     home.chains.ledger().bind_event("$e51", &chain).unwrap();
@@ -221,17 +232,6 @@ async fn the_round_limit_sends_one_card_per_person_and_grants_after_all_agree() 
 async fn the_app_stop_cancels_the_turn_and_withdraws_cards() {
     let home = start().await;
     let chain = home.grant(Bot::Alice, "s-1", "@alice:test", "$e1").await;
-    // 旧版经 agent_acp 建的会话：账本照样收。
-    home.chains
-        .ledger()
-        .register_session(
-            &chain,
-            "s-acp",
-            bot_ref("bob"),
-            Some(&bot_ref("alice")),
-            crate::agent_chain::ChainSessionSource::AgentAcp,
-        )
-        .unwrap();
     // 链上挂一张还在等的权限卡片。
     let permission = json!({
         "tool_call_id": "call-1",
@@ -348,6 +348,54 @@ async fn a_family_member_cannot_see_or_stop_someone_elses_chain() {
         )
         .await;
     assert_eq!(status, StatusCode::FORBIDDEN);
+}
+
+/// 列表如实说链在不在跑：一轮在跑时列出、算在跑；最后一轮报 end 后从列表里下去、链记成做完；
+/// 点名叫回来又回到列表；用户这时才按停止钮，链改成 `stopped`，回给 App 的行也不在跑。
+#[tokio::test]
+async fn the_list_stops_showing_a_chain_once_its_last_round_ends() {
+    let home = start().await;
+    let chain = home.grant(Bot::Alice, "s-1", "@alice:test", "$e1").await;
+    let rows = home.chains(home.alice_peer).await;
+    assert_eq!(rows.len(), 1);
+    assert_eq!(rows[0]["status"], "running");
+    assert_eq!(rows[0]["live"], true);
+
+    home.end_turn(Bot::Alice, "s-1").await;
+    assert!(
+        home.chains(home.alice_peer).await.is_empty(),
+        "最后一轮结束，列表里不该还有它"
+    );
+    assert_eq!(
+        home.chains.ledger().row(&chain).unwrap().status,
+        wonton_protocol::AgentChainStatus::Ended
+    );
+
+    // 点名叫回同一条链：又有一轮在跑，重新进列表。
+    home.chains.ledger().bind_event("$e2", &chain).unwrap();
+    assert_eq!(
+        home.grant(Bot::Alice, "s-1", "@alice:test", "$e2").await,
+        chain
+    );
+    let rows = home.chains(home.alice_peer).await;
+    assert_eq!(rows.len(), 1);
+    assert_eq!(rows[0]["chain"], chain.as_str());
+    assert_eq!(rows[0]["live"], true);
+
+    // 轮次刚报完 end 就按停止钮：照样停得成，回的行是 stopped、不再算在跑。
+    home.end_turn(Bot::Alice, "s-1").await;
+    let (status, body) = home
+        .app_call(
+            Method::POST,
+            &wonton_protocol::agent_chain_stop_path(&chain),
+            home.alice_peer,
+            Value::Null,
+        )
+        .await;
+    assert_eq!(status, StatusCode::OK, "{body}");
+    assert_eq!(body["status"], "stopped");
+    assert_eq!(body["live"], false);
+    assert!(home.chains(home.alice_peer).await.is_empty());
 }
 
 /// 出箱回报：取过的项回报成功；没取过的报 404。

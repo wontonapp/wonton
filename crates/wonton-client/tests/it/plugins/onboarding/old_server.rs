@@ -49,10 +49,10 @@ async fn an_old_server_hides_the_profile_step_and_reports_server_too_old() {
     let rig = rig_with(Some(version("0.1.0-beta.4"))).await;
     // 资料回 404 时服务器报的版本比接口要的旧：整步不显示，不报问题，步数里也不占一号。
     let view = rig
-        .wait_onboarding(|view| !view.loading && view.step == Some(OnboardingStep::Agent))
+        .wait_onboarding(|view| !view.loading && view.step == Some(OnboardingStep::Model))
         .await;
     assert!(view.problem.is_none(), "{view:?}");
-    assert_eq!(view.nav.map(|nav| (nav.position, nav.total)), Some((1, 4)));
+    assert_eq!(view.nav.map(|nav| (nav.position, nav.total)), Some((1, 3)));
 
     // 直接调用的接口也归这一类，带上要的版本。
     let Err(error) = rig.app.me().await else {
@@ -106,14 +106,8 @@ async fn a_server_without_a_version_is_not_judged_old() {
     );
 }
 
-/// 资料那步被藏起来了：从 Agent 一路走到最后一页。
+/// 资料那步被藏起来了：从模型一路走到最后一页。
 async fn walk_to_review_without_profile(rig: &Rig) -> OnboardingViewModel {
-    act(
-        rig,
-        Action::Onboarding {
-            action: wonton_protocol::OnboardingAction::ContinueOnboarding,
-        },
-    );
     at(rig, OnboardingStep::Model).await;
     configure_gateway(rig).await;
     act(
@@ -143,7 +137,7 @@ async fn walk_to_review_without_profile(rig: &Rig) -> OnboardingViewModel {
 #[tokio::test]
 async fn finishing_on_an_old_server_skips_the_hidden_profile() {
     let rig = rig_with(Some(version("0.1.0-beta.4"))).await;
-    rig.wait_onboarding(|view| !view.loading && view.step == Some(OnboardingStep::Agent))
+    rig.wait_onboarding(|view| !view.loading && view.step == Some(OnboardingStep::Model))
         .await;
     // 资料这一步看不到了：往上走时不占一步，点完成时也不去存它。
     walk_to_review_without_profile(&rig).await;

@@ -17,4 +17,6 @@
     <string name="tab_exit_fullscreen">退出全螢幕</string>
     <!-- 全屏膠囊選單項:打開應用的詳情頁。 -->
     <string name="tab_menu_details">插件詳情</string>
+    <!-- 第一次打開整頁應用程式時的引導:怎麼離開。無參數。 -->
+    <string name="tab_exit_hint">從螢幕邊緣向內滑或按返回鍵，回到雲吞</string>
 </resources>

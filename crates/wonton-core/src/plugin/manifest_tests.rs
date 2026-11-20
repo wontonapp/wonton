@@ -70,66 +70,6 @@ fn webui_rejects_unknown_account_models_and_the_removed_friends_flag() {
 }
 
 #[test]
-fn agent_login_defaults_to_empty_and_requires_egress() {
-    let base = r#"{
-        "spec": "0.6",
-        "id": "com.example.agent",
-        "version": "1.0.0",
-        "kind": "agent",
-        "title": {"zh": "代理", "en": "Agent"},
-        "description": {"zh": "描述", "en": "Description"},
-        "agent": {"protocol": "acp"},
-        "permissions": []
-    }"#;
-    let manifest: Manifest = serde_json::from_str(base).unwrap();
-    assert!(manifest.agent.unwrap().login.is_empty());
-
-    let login = base.replace(
-        "\"agent\": {\"protocol\": \"acp\"}",
-        "\"agent\": {\"protocol\": \"acp\", \"login\": [{\"id\": \"chatgpt\", \"title\": {\"zh\": \"账号\", \"en\": \"Account\"}}]}",
-    );
-    let error = serde_json::from_str::<Manifest>(&login)
-        .unwrap()
-        .validate(&Languages::default())
-        .unwrap_err();
-    assert!(error.to_string().contains("network.egress"), "{error}");
-}
-
-#[test]
-fn agent_login_ids_are_valid_and_unique() {
-    let base = r#"{
-        "spec": "0.6",
-        "id": "com.example.agent",
-        "version": "1.0.0",
-        "kind": "agent",
-        "title": {"zh": "代理", "en": "Agent"},
-        "description": {"zh": "描述", "en": "Description"},
-        "agent": {"protocol": "acp", "login": LOGIN},
-        "permissions": ["network.egress"]
-    }"#;
-    for login in [
-        r#"[{"id":"bad.id","title":{"zh":"账号","en":"Account"}}]"#,
-        r#"[{"id":"chatgpt","title":{"zh":"账号","en":"Account"}},{"id":"chatgpt","title":{"zh":"另一个","en":"Another"}}]"#,
-    ] {
-        let error = serde_json::from_str::<Manifest>(&base.replace("LOGIN", login))
-            .unwrap()
-            .validate(&Languages::default())
-            .unwrap_err();
-        assert!(error.to_string().contains("agent.login"), "{error}");
-    }
-    let valid = base.replace(
-        "LOGIN",
-        r#"[{"id":"chatgpt","title":{"zh":"账号","en":"Account"}}]"#,
-    );
-    assert!(
-        serde_json::from_str::<Manifest>(&valid)
-            .unwrap()
-            .validate(&Languages::default())
-            .is_ok()
-    );
-}
-
-#[test]
 fn bot_avatars_accept_exactly_the_four_activity_keys() {
     let base = serde_json::json!({
         "spec": "0.6", "id": "com.example.bot", "version": "1.0.0", "kind": "agent",
@@ -300,4 +240,37 @@ fn the_install_deadline_is_optional_and_bounded() {
             "{error}"
         );
     }
+}
+
+#[test]
+fn agent_protocol_takes_matrix_only_and_rejects_acp_as_unsupported() {
+    let manifest = |protocol: &str| -> Manifest {
+        serde_json::from_value(serde_json::json!({
+            "spec": "0.6", "id": "com.example.agent", "version": "1.0.0", "kind": "agent",
+            "title": {"zh": "代理", "en": "Agent"},
+            "description": {"zh": "描述", "en": "Description"},
+            "permissions": ["matrix.bot"],
+            "agent": {"protocol": protocol}
+        }))
+        .unwrap()
+    };
+    manifest("matrix").validate(&Languages::default()).unwrap();
+    assert!(matches!(
+        manifest("acp").validate(&Languages::default()),
+        Err(ManifestError::UnsupportedAgentProtocol { protocol }) if protocol == "acp"
+    ));
+}
+
+#[test]
+fn agent_protocol_matrix_still_requires_the_matrix_bot_permission() {
+    let manifest: Manifest = serde_json::from_value(serde_json::json!({
+        "spec": "0.6", "id": "com.example.agent", "version": "1.0.0", "kind": "agent",
+        "title": {"zh": "代理", "en": "Agent"},
+        "description": {"zh": "描述", "en": "Description"},
+        "permissions": [],
+        "agent": {"protocol": "matrix"}
+    }))
+    .unwrap();
+    let error = manifest.validate(&Languages::default()).unwrap_err();
+    assert!(error.to_string().contains("matrix.bot"), "{error}");
 }

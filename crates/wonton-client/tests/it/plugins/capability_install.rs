@@ -366,7 +366,7 @@ async fn the_provider_notice_stays_prominent_when_the_high_privilege_capability_
     let mut consumer = consumer_preview();
     let mut plain = requires("indexer");
     plain.providers[0].high_privilege = false;
-    consumer.missing_requires = vec![plain, requires("agent_acp")];
+    consumer.missing_requires = vec![plain, requires("x-acme.runner")];
     answer_previews(&rig, &consumer, &provider_preview());
 
     let shown = rig
@@ -387,5 +387,5 @@ async fn the_provider_notice_stays_prominent_when_the_high_privilege_capability_
         .expect("确认页要写明会一起装提供方");
     assert!(line.emphasis, "第二个能力是高权限时这一行仍要醒目");
     assert!(line.text.contains("indexer"), "{line:?}");
-    assert!(line.text.contains("agent_acp"), "{line:?}");
+    assert!(line.text.contains("x-acme.runner"), "{line:?}");
 }

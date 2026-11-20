@@ -8,9 +8,7 @@ use serde_json::json;
 use tokio::io::AsyncReadExt;
 use tokio::io::AsyncWriteExt;
 use tokio::net::{TcpListener, TcpStream};
-use wonton_protocol::{
-    AgentAction, AgentChainStatus, ChainLimits, ChainSpend, CoreError, ProxySettings,
-};
+use wonton_protocol::{AgentAction, AgentChainStatus, ChainLimits, CoreError, ProxySettings};
 
 use super::actions::{self, Effect, perform};
 use super::{apply_row, fetch_list};
@@ -107,14 +105,13 @@ fn content_length(head: &str) -> Option<usize> {
         .and_then(|(_, value)| value.trim().parse().ok())
 }
 
-fn chain_row(status: &str, spend: Value) -> Value {
+fn chain_row(status: &str) -> Value {
     json!({
         "chain": "c-1",
         "user": "@alex:home.example",
         "origin": {"room_id": "!r:home.example", "thread_id": null},
         "bots": [{"bot": {"plugin_id": "app.orchestrator", "bot": "owner"}, "layer": 1}],
         "rounds": 2,
-        "spend": spend,
         "status": status,
         "can_stop": true,
     })
@@ -142,17 +139,14 @@ async fn stopping_a_running_chain_shows_it_stopped() {
             "GET",
             "/_wonton/api/agent/chains",
             200,
-            chains_view(chain_row(
-                "running",
-                json!({"type": "via_gateway", "tokens": 12}),
-            )),
+            chains_view(chain_row("running")),
             &[],
         ),
         step(
             "POST",
             "/_wonton/api/agent/chains/c-1/stop",
             200,
-            chain_row("stopped", json!({"type": "via_gateway", "tokens": 12})),
+            chain_row("stopped"),
             &[],
         ),
     ])
@@ -175,9 +169,16 @@ async fn stopping_a_running_chain_shows_it_stopped() {
     };
 
     let mut view = view;
-    apply_row(&mut view, row);
+    apply_row(&mut view, row.clone());
     assert_eq!(view.chains[0].status, AgentChainStatus::Stopped);
     assert_eq!(view.revision, 1);
+
+    // 长轮询已经把它拿走（停下前恰好报了 End），停的回执仍要把它显示出来。
+    view.chains.clear();
+    apply_row(&mut view, row);
+    assert_eq!(view.chains.len(), 1);
+    assert_eq!(view.chains[0].chain, "c-1");
+    assert_eq!(view.chains[0].status, AgentChainStatus::Stopped);
 }
 
 /// 行为：比壳新的核心给出的不认识的状态落到 Other，整份列表照常交出去。
@@ -187,27 +188,12 @@ async fn an_unknown_status_falls_back_to_other() {
         "GET",
         "/_wonton/api/agent/chains",
         200,
-        chains_view(chain_row("waking", json!({"type": "unknown"}))),
+        chains_view(chain_row("waking")),
         &[],
     )])
     .await;
     let view = fetch(&core, &proxy, None).await;
     assert_eq!(view.chains[0].status, AgentChainStatus::Other);
-}
-
-/// 行为：花费记不上时核心给 unknown，列表里就是 Unknown。
-#[tokio::test]
-async fn spend_the_core_could_not_record_is_unknown() {
-    let (core, proxy) = serve(vec![step(
-        "GET",
-        "/_wonton/api/agent/chains",
-        200,
-        chains_view(chain_row("running", json!({"type": "unknown"}))),
-        &[],
-    )])
-    .await;
-    let view = fetch(&core, &proxy, None).await;
-    assert_eq!(view.chains[0].spend, ChainSpend::Unknown);
 }
 
 /// 行为：停别人的链被核心拒绝（403）时，动作带类别失败，手里的列表不动。
@@ -218,7 +204,7 @@ async fn a_forbidden_stop_fails_with_a_category() {
             "GET",
             "/_wonton/api/agent/chains",
             200,
-            chains_view(chain_row("running", json!({"type": "unknown"}))),
+            chains_view(chain_row("running")),
             &[],
         ),
         step(
@@ -256,7 +242,7 @@ async fn setting_agent_limits_sends_them_and_reads_the_new_settings() {
         "PUT",
         "/_wonton/api/agent/limits",
         200,
-        json!({"limits": {"max_depth": 5, "max_rounds": 100, "max_tokens": 4000000}}),
+        json!({"limits": {"max_depth": 5, "max_rounds": 100}}),
         &["\"max_depth\":5"],
     )])
     .await;
@@ -267,32 +253,7 @@ async fn setting_agent_limits_sends_them_and_reads_the_new_settings() {
             limits: ChainLimits {
                 max_depth: 5,
                 max_rounds: 100,
-                max_tokens: 4_000_000,
             },
-        },
-    )
-    .await
-    .unwrap();
-    assert!(matches!(effect, Effect::Done));
-}
-
-/// 行为：改使用方并发把插件 ID 和数字发给核心，回应里的数值解析得回来。
-#[tokio::test]
-async fn setting_consumer_concurrency_sends_the_plugin_and_the_number() {
-    let (core, proxy) = serve(vec![step(
-        "PUT",
-        "/_wonton/api/agent/consumers/app.orchestrator/concurrency",
-        200,
-        json!({"concurrency": 8}),
-        &["\"concurrency\":8"],
-    )])
-    .await;
-    let effect = perform(
-        &core,
-        &proxy,
-        &AgentAction::SetConsumerAgentConcurrency {
-            plugin_id: "app.orchestrator".to_owned(),
-            concurrency: 8,
         },
     )
     .await
@@ -307,7 +268,7 @@ async fn agent_settings_reads_the_current_limits() {
         "GET",
         "/_wonton/api/agent/settings",
         200,
-        json!({"limits": {"max_depth": 3, "max_rounds": 50, "max_tokens": 2000000}}),
+        json!({"limits": {"max_depth": 3, "max_rounds": 50}}),
         &[],
     )])
     .await;

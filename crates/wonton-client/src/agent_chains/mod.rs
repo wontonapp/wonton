@@ -2,7 +2,7 @@
 //! 链交给壳。和确认列表一样的做法：跟着家里的连接走，连不上时留上次的列表、退避后接着轮询。取列表失败的
 //! 原因只进日志，动作失败则写入 [`AgentChainsViewModel::action_failure`]。
 //!
-//! 动作（停链、改上限、改并发）在 [`actions`]，壳经 `ClientCore::dispatch` 发送。
+//! 动作（停链、改上限）在 [`actions`]，壳经 `ClientCore::dispatch` 发送。聊天里的停止控件在 [`room_stop`]。
 
 use std::sync::Arc;
 use std::time::Duration;
@@ -18,6 +18,7 @@ use wonton_protocol::{
 use crate::home::HomeLink;
 
 pub(crate) mod actions;
+pub(crate) mod room_stop;
 
 #[cfg(test)]
 #[path = "agent_chains_tests.rs"]
@@ -34,6 +35,7 @@ const BACKOFF_MAX: Duration = Duration::from_secs(30);
 pub(crate) struct AgentChainsLink {
     home: Arc<HomeLink>,
     view: watch::Sender<AgentChainsViewModel>,
+    stops: watch::Sender<room_stop::Attempts>,
 }
 
 impl AgentChainsLink {
@@ -41,10 +43,12 @@ impl AgentChainsLink {
         handle: Handle,
         home: Arc<HomeLink>,
         view: watch::Sender<AgentChainsViewModel>,
+        stops: watch::Sender<room_stop::Attempts>,
     ) -> Arc<Self> {
         let link = Arc::new(Self {
             home: home.clone(),
             view,
+            stops,
         });
         // 连接的 watch 接收端归这个任务自己：`changed()` 要可变借，任务里独占（同确认列表的跟随者）。
         handle.spawn(follow(link.clone(), home.subscribe()));
@@ -53,6 +57,10 @@ impl AgentChainsLink {
 
     pub(crate) fn sender(&self) -> watch::Sender<AgentChainsViewModel> {
         self.view.clone()
+    }
+
+    pub(crate) fn stops_sender(&self) -> watch::Sender<room_stop::Attempts> {
+        self.stops.clone()
     }
 }
 
@@ -151,7 +159,8 @@ pub(super) async fn fetch_list(
 }
 
 /// 停链成功后核心把停后的整行给回来：就地换进列表，壳马上看到停了。版本不动：下一次长轮询带着旧
-/// `after` 也会等到新版本，带回整表。
+/// `after` 也会等到新版本，带回整表。列表长轮询可能已经把这一行拿走了（停下前恰好报了 End），
+/// 这时插到最前——刚停的链就是最近活动的。
 pub(crate) fn apply_row(view: &mut AgentChainsViewModel, row: AgentChainRow) {
     if let Some(slot) = view
         .chains
@@ -159,6 +168,8 @@ pub(crate) fn apply_row(view: &mut AgentChainsViewModel, row: AgentChainRow) {
         .find(|existing| existing.chain == row.chain)
     {
         *slot = row;
+    } else {
+        view.chains.insert(0, row);
     }
 }
 

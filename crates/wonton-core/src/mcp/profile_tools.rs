@@ -113,17 +113,18 @@ pub(super) async fn call(
 async fn run(bus: &Bus, caller: &Caller, which: &str, args: JsonObject) -> CallToolResult {
     let name = naming::join(naming::CORE, which);
     let value = Value::Object(args.clone());
-    let result = if which == GET {
-        if args.is_empty() {
-            bus.plugins.bot_profile(&caller.id).await.map_err(problem)
-        } else {
-            Err(ToolFailure::new(
-                "invalid_input",
-                "invalid_input: get_profile takes no arguments; it only reads your own bot",
-            ))
-        }
-    } else {
-        set(bus, caller, &args).await
+    let result = match caller_bot(caller) {
+        Err(failure) => Err(failure),
+        Ok(bot) if which != GET => set(bus, caller, bot, &args).await,
+        Ok(_) if !args.is_empty() => Err(ToolFailure::new(
+            "invalid_input",
+            "invalid_input: get_profile takes no arguments; it only reads your own bot",
+        )),
+        Ok(bot) => bus
+            .plugins
+            .bot_profile(&caller.id, Some(bot))
+            .await
+            .map_err(problem),
     };
     match result {
         Ok(profile) => {
@@ -142,11 +143,23 @@ async fn run(bus: &Bus, caller: &Caller, which: &str, args: JsonObject) -> CallT
     }
 }
 
+/// 令牌认出的 Bot：没有记录的工具插件没有自己的资料。
+fn caller_bot(caller: &Caller) -> Result<&str, ToolFailure> {
+    caller
+        .bot
+        .as_ref()
+        .map(|bot| bot.bot.as_str())
+        .ok_or_else(|| problem(ProfileError::NotFound))
+}
+
 fn problem(error: ProfileError) -> ToolFailure {
     // 这两个的文字按 Bot 面向的英文写，限流的还带机器可读的秒数；别的用错误自己的文字（开头就是类别）。
     let message = match &error {
         ProfileError::NotFound => {
             "not_found: the app is not installed or has no bot of its own".to_owned()
+        }
+        ProfileError::UnknownBot(bot) => {
+            format!("invalid_input: no bot named {bot:?} in this app")
         }
         ProfileError::RateLimited { retry_after_secs } => {
             format!(
@@ -158,7 +171,12 @@ fn problem(error: ProfileError) -> ToolFailure {
     ToolFailure::new(error.kind(), message)
 }
 
-async fn set(bus: &Bus, caller: &Caller, args: &JsonObject) -> Result<Profile, ToolFailure> {
+async fn set(
+    bus: &Bus,
+    caller: &Caller,
+    bot: &str,
+    args: &JsonObject,
+) -> Result<Profile, ToolFailure> {
     let args = parse(args)?;
     let mut paths = BTreeMap::new();
     for path in args
@@ -205,6 +223,7 @@ async fn set(bus: &Bus, caller: &Caller, args: &JsonObject) -> Result<Profile, T
         .plugins
         .set_bot_profile(
             &caller.id,
+            Some(bot),
             LocalUpdate {
                 name: args.name,
                 avatar,

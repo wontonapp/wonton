@@ -37,7 +37,9 @@ fn egress_manifest_system_and_agent_can_provide_proxy() {
         &super::langs(),
     )
     .unwrap();
-    let agent = source.replace("kind: app", "kind: agent\n  agent: {protocol: acp}");
+    let agent = source
+        .replace("permissions: [", "permissions: [matrix.bot, ")
+        .replace("kind: app", "kind: agent\n  agent: {protocol: matrix}");
     PluginPackage::parse(&agent, &super::langs()).unwrap();
 }
 

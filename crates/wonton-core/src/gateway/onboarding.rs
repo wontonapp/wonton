@@ -2,7 +2,7 @@
 
 use wonton_protocol::PermissionItem;
 
-use std::collections::{BTreeMap, BTreeSet};
+use std::collections::BTreeMap;
 use std::path::PathBuf;
 use std::sync::Arc;
 
@@ -14,33 +14,26 @@ use hyper::{HeaderMap, StatusCode};
 use serde::{Deserialize, Serialize};
 use tokio::sync::Mutex;
 use wonton_protocol::{
-    AgentLogin, Onboarding, OnboardingAgent, OnboardingNeed, OnboardingStep, OnboardingUpdate,
-    PluginKind, StoreFailure, StoreItem, StoreProblem,
+    DefaultBotPlugin, Onboarding, OnboardingNeed, OnboardingStep, OnboardingUpdate, StoreFailure,
+    StoreItem, StoreProblem,
 };
 
 use super::{Gateway, TunnelPeer, api, permissions};
 use crate::l10n;
 use crate::plugin::InstallError;
 use crate::plugin::languages::Languages;
-use crate::plugin::manifest::PluginId;
 use crate::plugin::store::{StoreError, create_private_dir, read_json, write_json};
-use crate::plugin::storefront::index::Index;
 use crate::plugin::storefront::onboarding::OnboardingCatalog;
-use crate::plugin::views::agent_login_options;
 
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 struct StoredState {
     step: OnboardingStep,
-    primary_agent: Option<String>,
-    replaced_agent_asked: bool,
 }
 
 impl Default for StoredState {
     fn default() -> Self {
         Self {
             step: OnboardingStep::Profile,
-            primary_agent: None,
-            replaced_agent_asked: false,
         }
     }
 }
@@ -64,10 +57,6 @@ impl OnboardingState {
         self.load_locked()
     }
 
-    pub(crate) async fn primary_agent(&self) -> Result<Option<String>, InstallError> {
-        Ok(self.load().await?.primary_agent)
-    }
-
     fn load_locked(&self) -> Result<StoredState, InstallError> {
         read_json(&self.path)
             .map_err(storage)
@@ -77,7 +66,6 @@ impl OnboardingState {
     async fn update(
         &self,
         update: &OnboardingUpdate,
-        agent_ids: &BTreeSet<String>,
         langs: &Languages,
     ) -> Result<StoredState, InstallError> {
         let _guard = self.lock.lock().await;
@@ -92,19 +80,6 @@ impl OnboardingState {
                 )));
             }
             state.step = step;
-        }
-        if let Some(primary) = &update.primary_agent {
-            if !agent_ids.contains(primary) {
-                return Err(InstallError::Invalid(l10n::text(
-                    langs,
-                    "gateway-onboarding-invalid-agent",
-                    &[("agent", primary.as_str().into())],
-                )));
-            }
-            state.primary_agent = Some(primary.clone());
-        }
-        if let Some(asked) = update.replaced_agent_asked {
-            state.replaced_agent_asked = asked;
         }
         create_private_dir(self.path.parent().expect("onboarding state parent"))
             .map_err(storage)?;
@@ -146,8 +121,6 @@ pub(crate) async fn get(
     match state {
         Ok(state) => {
             view.step = state.step;
-            view.primary_agent = state.primary_agent;
-            view.replaced_agent_asked = state.replaced_agent_asked;
             if let Err(response) = super::bot_projection::onboarding(
                 &gateway,
                 peer.map(|Extension(peer)| peer),
@@ -190,8 +163,7 @@ pub(crate) async fn put(
     };
     let langs = api::languages(&headers);
     let mut view = projection(&gateway, &langs).await;
-    let agent_ids = view.agents.iter().map(|agent| agent.id.clone()).collect();
-    let state = gateway.onboarding.update(&update, &agent_ids, &langs).await;
+    let state = gateway.onboarding.update(&update, &langs).await;
     if let Err(denied) = api::current_permitted_requester(
         &gateway,
         peer,
@@ -216,8 +188,6 @@ pub(crate) async fn put(
     }
     Json(Onboarding {
         step: state.step,
-        primary_agent: state.primary_agent,
-        replaced_agent_asked: state.replaced_agent_asked,
         ..view
     })
     .into_response()
@@ -229,12 +199,6 @@ async fn projection(gateway: &Gateway, langs: &Languages) -> Onboarding {
         .into_iter()
         .map(|item| (item.id.clone(), item))
         .collect();
-    let installed = gateway.plugins.installed(langs).plugins;
-    let installed_by_id: BTreeMap<_, _> = installed
-        .into_iter()
-        .map(|plugin| (plugin.id.clone(), plugin))
-        .collect();
-
     let catalog_problem = match index.onboarding_problem.as_ref() {
         Some(details) => Some(StoreProblem {
             reason: StoreFailure::InvalidIndex,
@@ -251,103 +215,23 @@ async fn projection(gateway: &Gateway, langs: &Languages) -> Onboarding {
     } else {
         catalog_problem
     };
-    let agents = onboarding_agents(
-        gateway,
-        langs,
-        &index,
-        catalog,
-        &item_by_id,
-        &installed_by_id,
-    );
-
     let (needs, prompts) = catalog
         .map(|catalog| catalog_content(catalog, &item_by_id, langs))
         .unwrap_or_default();
     Onboarding {
         step: OnboardingStep::Profile,
-        primary_agent: None,
-        replaced_agent_asked: false,
-        agents,
+        default_bot_plugin: gateway
+            .plugins
+            .default_bot_plugin()
+            .map(|id| DefaultBotPlugin {
+                id: id.to_string(),
+                bot_user_id: None,
+                visibility: None,
+            }),
         needs,
         prompts,
         catalog_problem,
     }
-}
-
-fn onboarding_agents(
-    gateway: &Gateway,
-    langs: &Languages,
-    index: &Index,
-    catalog: Option<&OnboardingCatalog>,
-    items: &BTreeMap<String, StoreItem>,
-    installed: &BTreeMap<String, wonton_protocol::InstalledPlugin>,
-) -> Vec<OnboardingAgent> {
-    let mut agents = Vec::new();
-    let mut seen = BTreeSet::new();
-    if let Some(catalog) = catalog {
-        for id in &catalog.agents {
-            let Some(item) = items.get(id) else {
-                tracing::warn!(plugin = %id, "官方 onboarding agent 不在插件清单中，跳过");
-                continue;
-            };
-            if item.kind != PluginKind::Agent {
-                tracing::warn!(plugin = %id, "官方 onboarding agent 不是 agent，跳过");
-                continue;
-            }
-            let installed = installed.get(id);
-            if installed.is_some_and(|plugin| plugin.kind != PluginKind::Agent) {
-                tracing::warn!(plugin = %id, "官方 onboarding agent 不是已安装的 agent，跳过");
-                continue;
-            }
-            if !seen.insert(id.clone()) {
-                continue;
-            }
-            let logins = installed
-                .map(|_| installed_logins(gateway, langs, id))
-                .unwrap_or_else(|| catalog_agent_logins(index, id, langs));
-            agents.push(match installed {
-                Some(plugin) => agent_with_logins(item, plugin, logins),
-                None => agent(item, logins),
-            });
-        }
-    }
-    for plugin in installed.values() {
-        if plugin.kind != PluginKind::Agent || !seen.insert(plugin.id.clone()) {
-            continue;
-        }
-        let logins = installed_logins(gateway, langs, &plugin.id);
-        let agent = match items.get(&plugin.id) {
-            Some(item) => agent_with_logins(item, plugin, logins),
-            None => OnboardingAgent {
-                id: plugin.id.clone(),
-                title: plugin.title.clone(),
-                source: None,
-                status: Some(plugin.status.clone()),
-                bot_user_id: plugin.bot_user_id.clone(),
-                default_bot_visibility: plugin.default_bot_visibility,
-                logins,
-                blocked: None,
-            },
-        };
-        agents.push(agent);
-    }
-    agents
-}
-
-fn catalog_agent_logins(index: &Index, id: &str, langs: &Languages) -> Vec<AgentLogin> {
-    index
-        .plugins
-        .iter()
-        .find(|listed| listed.manifest.id.as_str() == id)
-        .and_then(|listed| listed.manifest.agent.as_ref())
-        .map(|agent| agent_login_options(agent, langs))
-        .unwrap_or_default()
-}
-fn installed_logins(gateway: &Gateway, langs: &Languages, id: &str) -> Vec<AgentLogin> {
-    PluginId::parse(id)
-        .ok()
-        .map(|id| gateway.plugins.agent_logins(&id, langs))
-        .unwrap_or_default()
 }
 
 fn catalog_content(
@@ -382,36 +266,6 @@ fn catalog_content(
     (needs, prompts)
 }
 
-fn agent(item: &StoreItem, logins: Vec<AgentLogin>) -> OnboardingAgent {
-    OnboardingAgent {
-        id: item.id.clone(),
-        title: item.title.clone(),
-        source: Some(item.source.clone()),
-        status: None,
-        bot_user_id: None,
-        default_bot_visibility: None,
-        logins,
-        blocked: item.blocked.clone(),
-    }
-}
-
-fn agent_with_logins(
-    item: &StoreItem,
-    installed: &wonton_protocol::InstalledPlugin,
-    logins: Vec<AgentLogin>,
-) -> OnboardingAgent {
-    OnboardingAgent {
-        id: item.id.clone(),
-        title: item.title.clone(),
-        source: Some(item.source.clone()),
-        status: Some(installed.status.clone()),
-        bot_user_id: installed.bot_user_id.clone(),
-        default_bot_visibility: installed.default_bot_visibility,
-        logins,
-        blocked: item.blocked.clone(),
-    }
-}
-
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -423,22 +277,11 @@ mod tests {
         let state = OnboardingState::new(dir.path().to_owned());
         let initial = state.load().await.unwrap();
         assert_eq!(initial.step, OnboardingStep::Profile);
-        assert_eq!(initial.primary_agent, None);
-        assert!(!initial.replaced_agent_asked);
 
         let update = OnboardingUpdate {
             step: Some(OnboardingStep::Finished),
-            primary_agent: Some("com.example.agent".to_owned()),
-            replaced_agent_asked: Some(true),
         };
-        let saved = state
-            .update(
-                &update,
-                &["com.example.agent".to_owned()].into_iter().collect(),
-                &Languages::default(),
-            )
-            .await
-            .unwrap();
+        let saved = state.update(&update, &Languages::default()).await.unwrap();
         assert_eq!(saved.step, OnboardingStep::Finished);
         assert_eq!(state.load().await.unwrap(), saved);
     }

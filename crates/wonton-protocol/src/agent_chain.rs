@@ -1,6 +1,6 @@
-//! 调用链（ADR-0061 第 10 节）：一句话引出的所有 Agent 会话是一条链，链上记身份、层数、轮数和花费。
+//! 调用链（ADR-0061 第 10 节）：一句话引出的所有 Agent 会话是一条链，链上记身份、层数和轮数。
 //!
-//! Bot 前端每轮开始时 `POST` [`AGENT_CHAINS_PATH`]，请求体是 [`ChainTurnReport`]，拿到 [`ChainTurnGrant`] 才
+//! Bot 插件每轮开始时 `POST` [`AGENT_CHAINS_PATH`]，请求体是 [`ChainTurnReport`]，拿到 [`ChainTurnGrant`] 才
 //! 发给 Agent；被拒时拿到 [`ChainError`]。说话人用 [`WONTON_ON_BEHALF_OF_HEADER`] 报到 MCP 请求上。
 //! 链代表的人和链上各 Bot 的归属人随时能停整条链；停了之后的一切新请求都是
 //! [`ChainError::Stopped`]。
@@ -9,41 +9,25 @@ use serde::{Deserialize, Serialize};
 
 use crate::{BotRef, ConfirmationOrigin};
 
-/// 桥每轮开始和结束报告的接口路径（`POST`，和 [`AGENT_PERMISSION_PATH`](crate::AGENT_PERMISSION_PATH) 同一道门）。
+/// Bot 插件每轮开始和结束报告的接口路径（`POST`，和 [`AGENT_PERMISSION_PATH`](crate::AGENT_PERMISSION_PATH) 同一道门）。
 pub const AGENT_CHAINS_PATH: &str = "/agent/chains";
 
-/// 前端取批准的消息和要取消的轮次的接口路径（`GET`，长轮询，最多 [`AGENT_OUTBOX_WAIT_SECS`] 秒，和 [`AGENT_PERMISSION_PATH`](crate::AGENT_PERMISSION_PATH)
+/// Bot 插件取批准的消息和要取消的轮次的接口路径（`GET`，长轮询，最多 [`AGENT_OUTBOX_WAIT_SECS`] 秒，和 [`AGENT_PERMISSION_PATH`](crate::AGENT_PERMISSION_PATH)
 /// 同一道门），回报见 [`crate::OutboxReceipt`]。
 pub const AGENT_OUTBOX_PATH: &str = "/agent/outbox";
 
-/// 核心注入的请求头：这条连接替谁说话。运行时只认这个 Bot 听的人。
-pub const WONTON_USER_HEADER: &str = "X-Wonton-User";
-
-/// 每轮消息的说话人（MXID）：前端调用工具时带上。核心只在这个 Bot 听的人里采用，否则按只读、
+/// 每轮消息的说话人（MXID）：Bot 插件调用工具时带上。核心只在这个 Bot 听的人里采用，否则按只读、
 /// 联系人门按远端；没带时从已报的轮次取，轮次也没有才按 Bot 归属人算。
 pub const WONTON_ON_BEHALF_OF_HEADER: &str = "X-Wonton-On-Behalf-Of";
 
 /// 核心注入的请求头：链上目标 Bot 是哪一个，网关按它起对应的 Agent 进程。
 pub const WONTON_BOT_HEADER: &str = "X-Wonton-Bot";
 
-/// 上限头：链的层数上限（ADR-0061 第 10 节）。旧桥转发时注入；ACP 桥删除后暂无注入方，
-/// 接入方按链的 `limits` 自己封顶。
-pub const WONTON_MAX_DEPTH_HEADER: &str = "X-Wonton-Max-Depth";
-
-/// 上限头：链的轮数上限（同上，暂无注入方）。
-pub const WONTON_MAX_ROUNDS_HEADER: &str = "X-Wonton-Max-Rounds";
-
-/// 上限头：链的花费上限（token，同上，暂无注入方）。
-pub const WONTON_MAX_TOKENS_HEADER: &str = "X-Wonton-Max-Tokens";
-
-/// 桥在 `session/new` 给 Wonton MCP 的请求头里放的会话 ID（ADR-0061 第 10 节），核心按它找到当前这一轮的链。
+/// Bot 插件给 Wonton MCP 的请求头里放的会话 ID（ADR-0061 第 10 节），核心按它找到当前这一轮的链。
 /// 和 [`ORIGIN_ROOM_HEADER`](crate::ORIGIN_ROOM_HEADER)、[`ORIGIN_THREAD_HEADER`](crate::ORIGIN_THREAD_HEADER) 并列。
 pub const SESSION_HEADER: &str = "wonton-session";
 
-/// 每个使用方同时开着的 `agent_acp` 连接数默认上限（ADR-0061 第 10 节）；满了返回 [`ChainError::Busy`]。
-pub const DEFAULT_CONSUMER_AGENT_CONCURRENCY: u32 = 4;
-
-/// 桥证明“这一轮是哪个 Bot 在报”的请求头（ADR-0083 第 5 节）：值是这个 Bot 的 Matrix 访问令牌。总线令牌 Agent
+/// Bot 插件证明“这一轮是哪个 Bot 在报”的请求头（ADR-0083 第 5 节）：值是这个 Bot 的 Matrix 访问令牌。总线令牌 Agent
 /// 自己也拿得到，只认来源地址和它不够。
 pub const BOT_TOKEN_HEADER: &str = "X-Wonton-Bot-Token";
 
@@ -67,25 +51,13 @@ pub const AGENT_LIMITS_PATH: &str = "/_wonton/api/agent/limits";
 /// 设置“Agent”一页的当前值（[`AgentSettingsViewModel`]）。
 pub const AGENT_SETTINGS_PATH: &str = "/_wonton/api/agent/settings";
 
-/// 改一个使用方同时能开的 `agent_acp` 连接数（`PUT`，请求体[`AgentConcurrency`]），只有主人能改。
-pub fn agent_consumer_concurrency_path(plugin_id: &str) -> String {
-    format!("/_wonton/api/agent/consumers/{plugin_id}/concurrency")
-}
-
-/// [`agent_consumer_concurrency_path`] 的请求体。
-#[derive(Clone, Copy, Debug, PartialEq, Eq, Serialize, Deserialize)]
-#[cfg_attr(feature = "uniffi", derive(uniffi::Record))]
-pub struct AgentConcurrency {
-    pub concurrency: u32,
-}
-
 /// [`AGENT_CHAINS_PATH`] 的请求体。
 #[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(tag = "phase", rename_all = "snake_case")]
 pub enum ChainTurnReport {
     /// 一轮开始：拿到 [`ChainTurnGrant`] 才发 `session/prompt`。
     Start {
-        /// ACP 会话 ID；同一会话的下一句话再报 Start 是另一条链。
+        /// Bot 插件自己的会话 ID；同一会话的下一句话再报 Start 是另一条链。
         session: String,
         /// 说话人在哪个房间。
         room: String,
@@ -115,16 +87,14 @@ pub struct ChainTurnGrant {
 #[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(tag = "type", rename_all = "snake_case")]
 pub enum ChainError {
-    /// 到上限了：层数、轮数或花费。给一份新的要链代表的人和链上各 Bot 的归属人都同意（上限卡片）。
+    /// 到上限了：层数或轮数。给一份新的要链代表的人和链上各 Bot 的归属人都同意（上限卡片）。
     LimitReached { kind: ChainLimitKind },
     /// 链被人停了；要接着做，人重新说一句开一条新链。
     Stopped,
-    /// 这个使用方同时开着的连接数满了（ADR-0061 第 10 节）。
-    Busy,
     /// 说话人不是这个 Bot 听的人，或目标 Bot 不听链代表的人。
     PermissionDenied,
-    /// 自调（目标 Bot 就是发起的 Bot）或绕圈（目标在调用方会话的祖先路径上）。绕圈不归 [`ChainError::LimitReached`]，
-    /// 不能用“再给一份”放开（ADR-0061 第 10 节）。
+    /// 这一轮不能进链（[`ChainRefusal`]）：被点名的 Bot 报 start 时点名者不在链上。
+    /// 不归 [`ChainError::LimitReached`]，不能用“再给一份”放开（ADR-0061 第 10 节）。
     InvalidInput { refusal: ChainRefusal },
     /// 比调用方新的核心给的未知类别。
     #[serde(other)]
@@ -136,18 +106,17 @@ pub enum ChainError {
 #[cfg_attr(feature = "uniffi", derive(uniffi::Enum))]
 #[serde(rename_all = "snake_case")]
 pub enum ChainLimitKind {
-    /// 第 4 层起核心拒绝（默认最多 3 层）。
+    /// 第 4 层起核心拒绝（默认最多 3 层）；层从点名者继承后链上全是第 1 层，不再触发。
     Depth,
-    /// 链上所有会话的 `session/prompt` 加起来到了上限。
+    /// 链上所有轮次加起来到了上限。
     Rounds,
-    /// 链上经模型网关的用量到了上限。
-    Cost,
     /// 比调用方新的核心给的未知上限。
     #[serde(other)]
     Other,
 }
 
-/// [`ChainError::InvalidInput`] 的原因。
+/// [`ChainError::InvalidInput`] 的原因。账本只按唤醒标签找链、不记祖先路径，核心只返回 `Other`；
+/// `SelfCall`、`Loop` 是调用方自己判断时用的取值。
 #[derive(Clone, Copy, Debug, PartialEq, Eq, Serialize, Deserialize)]
 #[cfg_attr(feature = "uniffi", derive(uniffi::Enum))]
 #[serde(rename_all = "snake_case")]
@@ -161,17 +130,14 @@ pub enum ChainRefusal {
     Other,
 }
 
-/// 链的上限（ADR-0061 第 10 节）：核心转发时放在 [`WONTON_MAX_DEPTH_HEADER`] 等头里给网关，
-/// 设置里只有主人能改（[`AgentAction::SetAgentLimits`]）。
+/// 链的上限（ADR-0061 第 10 节）：设置里只有主人能改（[`AgentAction::SetAgentLimits`]）。
 #[derive(Clone, Copy, Debug, PartialEq, Eq, Serialize, Deserialize)]
 #[cfg_attr(feature = "uniffi", derive(uniffi::Record))]
 pub struct ChainLimits {
-    /// 最多几层：A→B→C 是 3 层，再往下派被拒。
+    /// 最多几层：A→B→C 是 3 层。层从点名者继承，账本不再按它拒绝。
     pub max_depth: u32,
-    /// 链上所有会话的 `session/prompt` 加起来最多多少轮。
+    /// 链上所有轮次加起来最多多少轮。
     pub max_rounds: u32,
-    /// 链上经模型网关的用量最多多少 token。
-    pub max_tokens: u64,
 }
 
 impl Default for ChainLimits {
@@ -179,7 +145,6 @@ impl Default for ChainLimits {
         Self {
             max_depth: 3,
             max_rounds: 50,
-            max_tokens: 2_000_000,
         }
     }
 }
@@ -189,32 +154,17 @@ impl Default for ChainLimits {
 #[cfg_attr(feature = "uniffi", derive(uniffi::Enum))]
 #[serde(rename_all = "snake_case")]
 pub enum AgentChainStatus {
+    /// 有轮次在跑，或刚被“再给一份”放开、等下一轮。
     Running,
     Stopped,
     /// 到了上限，等上限卡片的回答。
     LimitReached,
-    /// 做完了，或核心重启后连接都断了（ADR-0061 第 2 节）。
+    /// 做完了：最后一轮报了结束，或核心重启后连接都断了（ADR-0061 第 2 节）。在 App 的
+    /// 进行中列表里不出现；点名叫回会把它叫回 `Running`，停它则变成 `Stopped`。
     Ended,
     /// 比壳新的核心给的未知状态。
     #[serde(other)]
     Other,
-}
-
-/// 链的花费（ADR-0061 第 10 节）：只有经模型网关的用量记得到链上。
-#[derive(Clone, Copy, Debug, PartialEq, Serialize, Deserialize)]
-#[cfg_attr(feature = "uniffi", derive(uniffi::Enum))]
-#[serde(tag = "type", rename_all = "snake_case")]
-pub enum ChainSpend {
-    /// 经模型网关记账：累计 token；网关有价格时带金额，币种由网关定，壳原样显示。
-    ViaGateway {
-        tokens: u64,
-        #[serde(default, skip_serializing_if = "Option::is_none")]
-        amount: Option<f64>,
-    },
-    /// 记不上：网关没报用量、认不出是哪个 Bot，不猜。
-    Unknown,
-    /// 用官方登录的 Agent 不经网关（ADR-0061 第 10 节），花费只受轮数上限管。
-    NotViaGateway,
 }
 
 /// 链上的一个 Bot 和它的层。
@@ -238,12 +188,16 @@ pub struct AgentChainRow {
     pub origin: ConfirmationOrigin,
     /// 链上的 Bot，按层排。
     pub bots: Vec<AgentChainBot>,
-    /// 链上所有会话的 `session/prompt` 总数。
+    /// 链上所有轮次的总数。
     pub rounds: u32,
-    pub spend: ChainSpend,
     pub status: AgentChainStatus,
     /// 链代表的人和链上各 Bot 的归属人能停（[`AgentAction::StopChain`]）；别人看不到这一行。
     pub can_stop: bool,
+    /// 链上有轮次在跑（Bot 报了开始、没报结束，链也没停）：这时停链才打断得到正在做的事。
+    /// 比客户端旧的核心不带这个键，按没有在跑算。
+    #[serde(default)]
+    #[cfg_attr(feature = "uniffi", uniffi(default = false))]
+    pub live: bool,
 }
 
 /// App 的 Agent 链列表（ADR-0061 第 10 节）。
@@ -266,13 +220,14 @@ pub struct AgentChainsViewModel {
 #[serde(tag = "type", rename_all = "snake_case")]
 pub enum AgentAction {
     /// 停下整条链：链代表的人和链上各 Bot 的归属人可以，别的设备返回 `Unauthorized`。停下的链不再接
-    /// 新的轮次和请求；链列表里那一行的状态变成 [`AgentChainStatus::Stopped`]。
+    /// 新的轮次和请求；链列表里那一行的状态变成 [`AgentChainStatus::Stopped`]。轮次刚好报完结束、
+    /// 链已经记成做完时也停得成（同样变成 `Stopped`，回给 App 的也是这一行）。
     StopChain { chain: String },
-    /// 改设置“Agent”一页的上限（层数、轮数、花费），只有主人能改，别的设备返回 `Unauthorized`。
+    /// 停下这条时间线里 Bot 正在跑的轮次：客户端核心把从这里开始、还有轮次在跑的链都停掉，进展和结果
+    /// 在 [`RoomAgentStop`](crate::RoomAgentStop) 里，不进 [`AgentChainsViewModel::action_failure`]。
+    StopTurns { target: crate::TimelineTarget },
+    /// 改设置“Agent”一页的上限（层数、轮数），只有主人能改，别的设备返回 `Unauthorized`。
     SetAgentLimits { limits: ChainLimits },
-    /// 改一个使用方（插件）同时能开多少条 `agent_acp` 连接（ADR-0061 第 10 节），只有主人能改。满了再连的
-    /// 拿到 [`ChainError::Busy`]。
-    SetConsumerAgentConcurrency { plugin_id: String, concurrency: u32 },
 }
 
 /// Agent 动作的失败及其分类。
@@ -283,7 +238,7 @@ pub struct AgentActionFailure {
     pub error: crate::CoreError,
 }
 
-/// 设置“Agent”一页（ADR-0061 第 10 节）：层数、轮数、花费上限，只有主人能改。
+/// 设置“Agent”一页（ADR-0061 第 10 节）：层数、轮数上限，只有主人能改。
 #[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize)]
 #[cfg_attr(feature = "uniffi", derive(uniffi::Record))]
 pub struct AgentSettingsViewModel {
@@ -365,7 +320,7 @@ mod tests {
         );
     }
 
-    /// 契约：错误带各自的原因，不认识的类别落到 `Other`，核心比桥新时桥照样解析。
+    /// 契约：错误带各自的原因，不认识的类别落到 `Other`，核心比 Bot 插件新时插件照样解析。
     #[test]
     fn errors_carry_their_kind_and_fall_back_to_other() {
         let depth = ChainError::LimitReached {
@@ -386,10 +341,6 @@ mod tests {
                 kind: ChainLimitKind::Other,
             }
         );
-        assert_eq!(
-            serde_json::from_value::<ChainError>(json!({"type": "busy"})).unwrap(),
-            ChainError::Busy
-        );
         let refusal = ChainError::InvalidInput {
             refusal: ChainRefusal::Loop,
         };
@@ -408,10 +359,9 @@ mod tests {
         let limits = ChainLimits::default();
         assert_eq!(limits.max_depth, 3);
         assert_eq!(limits.max_rounds, 50);
-        assert_eq!(limits.max_tokens, 2_000_000);
         assert_eq!(
             serde_json::from_value::<ChainLimits>(json!({
-                "max_depth": 3, "max_rounds": 50, "max_tokens": 2000000
+                "max_depth": 3, "max_rounds": 50
             }))
             .unwrap(),
             limits
@@ -419,7 +369,7 @@ mod tests {
         let settings = AgentSettingsViewModel { limits };
         assert_eq!(
             serde_json::from_value::<AgentSettingsViewModel>(json!({
-                "limits": {"max_depth": 3, "max_rounds": 50, "max_tokens": 2000000}
+                "limits": {"max_depth": 3, "max_rounds": 50}
             }))
             .unwrap(),
             settings
@@ -437,43 +387,40 @@ mod tests {
             serde_json::from_value::<AgentAction>(json!(stop)).unwrap(),
             stop
         );
+        let turns = AgentAction::StopTurns {
+            target: crate::TimelineTarget {
+                room_id: "!r:home.example".into(),
+                thread_root: None,
+            },
+        };
+        assert_eq!(
+            json!(turns),
+            json!({"type": "stop_turns", "target": {"room_id": "!r:home.example"}})
+        );
+        assert_eq!(
+            serde_json::from_value::<AgentAction>(json!(turns)).unwrap(),
+            turns
+        );
         let limits = AgentAction::SetAgentLimits {
             limits: ChainLimits {
                 max_depth: 5,
                 max_rounds: 100,
-                max_tokens: 4_000_000,
             },
         };
         assert_eq!(
             json!(limits),
             json!({
                 "type": "set_agent_limits",
-                "limits": {"max_depth": 5, "max_rounds": 100, "max_tokens": 4000000},
+                "limits": {"max_depth": 5, "max_rounds": 100},
             })
         );
         assert_eq!(
             serde_json::from_value::<AgentAction>(json!(limits)).unwrap(),
             limits
         );
-        let concurrency = AgentAction::SetConsumerAgentConcurrency {
-            plugin_id: "app.orchestrator".into(),
-            concurrency: 8,
-        };
-        assert_eq!(
-            json!(concurrency),
-            json!({
-                "type": "set_consumer_agent_concurrency",
-                "plugin_id": "app.orchestrator",
-                "concurrency": 8,
-            })
-        );
-        assert_eq!(
-            serde_json::from_value::<AgentAction>(json!(concurrency)).unwrap(),
-            concurrency
-        );
     }
 
-    /// 契约：花费三种都照实显示；不认识的状态落到 `Other`。
+    /// 契约：行原样往返；不认识的状态落到 `Other`。
     #[test]
     fn rows_round_trip_and_unknown_states_fall_back() {
         let row = AgentChainRow {
@@ -500,23 +447,14 @@ mod tests {
                 },
             ],
             rounds: 7,
-            spend: ChainSpend::ViaGateway {
-                tokens: 12_345,
-                amount: Some(0.02),
-            },
             status: AgentChainStatus::Running,
             can_stop: true,
+            live: true,
         };
         assert_eq!(
             serde_json::from_value::<AgentChainRow>(json!(row)).unwrap(),
             row
         );
-        let mut no_price = row.clone();
-        no_price.spend = ChainSpend::ViaGateway {
-            tokens: 12_345,
-            amount: None,
-        };
-        assert!(json!(no_price).get("amount").is_none());
         assert_eq!(
             serde_json::from_value::<AgentChainStatus>(json!("limit_reached")).unwrap(),
             AgentChainStatus::LimitReached
@@ -524,22 +462,6 @@ mod tests {
         assert_eq!(
             serde_json::from_value::<AgentChainStatus>(json!("waking")).unwrap(),
             AgentChainStatus::Other
-        );
-        assert_eq!(
-            serde_json::from_value::<ChainSpend>(json!({"type": "unknown"})).unwrap(),
-            ChainSpend::Unknown
-        );
-        assert_eq!(
-            serde_json::from_value::<ChainSpend>(json!({"type": "not_via_gateway"})).unwrap(),
-            ChainSpend::NotViaGateway
-        );
-        assert_eq!(
-            serde_json::from_value::<ChainSpend>(json!({"type": "via_gateway", "tokens": 5}))
-                .unwrap(),
-            ChainSpend::ViaGateway {
-                tokens: 5,
-                amount: None,
-            }
         );
     }
 }

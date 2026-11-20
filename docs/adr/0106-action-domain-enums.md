@@ -69,7 +69,7 @@ pub enum Action {
 | 插件网页媒体权限详情页开关 | `PluginAction` | `SetPluginMediaPermission` 经统一 `Action::Plugins` 入口处理，取代 `ClientCore::set_plugin_media_permission` |
 | 重看引导退出 | `OnboardingAction` | `CloseOnboarding` 经统一 `Action::Onboarding` 入口处理，取代 `ClientCore::close_onboarding` |
 | 通知锁屏内容开关 | `SettingsAction` | `SetLockScreenContent` 经统一 `Action::Settings` 入口处理，取代 `ClientCore::set_lock_screen_content` |
-| Agent 链操作 | `AgentAction` | `StopChain`、`SetAgentLimits`、`SetConsumerAgentConcurrency` 经 `Action::Agent` 入口处理，取代独立 `AgentChainAction`/`dispatch_agent_chain` |
+| Agent 链操作 | `AgentAction` | `StopChain`、`SetAgentLimits` 经 `Action::Agent` 入口处理，取代独立 `AgentChainAction`/`dispatch_agent_chain` |
 
 Agent 动作由同步 `dispatch` 发起后在后台完成：即时连接错误直接返回，服务器拒绝或请求失败写入 `AgentChainsViewModel.action_failure`，保留动作和 `CoreError` 分类；下一次发起动作时清除。链列表轮询不能覆盖动作失败。
 
@@ -84,7 +84,7 @@ Agent 动作由同步 `dispatch` 发起后在后台完成：即时连接错误�
 | `PushAction` | `SetPushEndpoint`、`PushUnavailable`、`SetPushMethod` |
 | `PluginAction` | `RefreshPlugins`、`ListOwnerSecrets`、`ShowOwnerSecret`、`HideOwnerSecret`、`DismissOwnerSecrets`、`StartPlugin`、`SetPortMapping`、`RefreshStore`、`InstallPlugin`、`UpgradePlugin`、`UninstallPlugin`、`SetPluginAudience`、`DismissPluginTask`、`InstallNow`、`UpgradeNow`、`UpgradeAll`、`DismissStoreConfirmation`、`StartTakeover`、`EndTakeover`、`RefreshEgressProxy`、`SaveEgressProxy`、`ConfirmEgressProxy`、`DismissEgressConfirmation`、`RefreshRegistryMirror`、`SaveRegistryMirror`、`TestRegistryMirrors`、`RefreshCoreUpgrade`、`StartCoreUpgrade`、`CancelCoreUpgrade`、`SkipCoreUpgrade`、`SetPluginMediaPermission` |
 | `SettingsAction` | `SetLanguages`、`SetAccentColor`、`SetThemeMode`、`SetTextSize`、`SetFont`、`SetLockScreenContent` |
-| `OnboardingAction` | `RefreshOnboarding`、`RestartOnboarding`、`ChooseOnboardingAgent`、`ContinueOnboarding`、`SkipOnboardingStep`、`BackOnboardingStep`、`ToggleOnboardingNeed`、`EditOnboardingProfile`、`UseCurrentModel`、`ChooseModelLogin`、`RetryOnboardingItem`、`SetPrimaryAgent`、`DismissReplacedAgentOffer`、`DismissOnboardingTip`、`CloseOnboarding` |
+| `OnboardingAction` | `RefreshOnboarding`、`RestartOnboarding`、`ContinueOnboarding`、`SkipOnboardingStep`、`BackOnboardingStep`、`ToggleOnboardingNeed`、`EditOnboardingProfile`、`UseCurrentModel`、`RetryOnboardingItem`、`DismissOnboardingTip`、`CloseOnboarding` |
 | `FileAction` | `UploadFile`、`DownloadFile`、`CancelTransfer`、`DismissTransfer`、`ResendFileLink`、`DeleteFile`、`SendFileToDevices`、`GrantFileToRoom`、`DismissFileProblem` |
 | `PageAction` | `OpenPage`、`ClosePage`、`AddMyApp`、`RemoveMyApp`、`MoveMyApp`、`SetAutoAddApps`、`RetryMyAppSync`、`AddPanelPage`、`RemovePanelPage`、`MovePanelPage`、`SelectPanelPage`、`SetBotPinConsent`、`PinCurrentPage`、`ReloadTab`、`TabLoadFailed`、`TabLoadSucceeded`、`DismissUninstalledTabs` |
 | `PeerAction` | `RefreshPeers`、`ShowPeerCode`、`HidePeerCode`、`ResetPeerCode`、`ScanPeerCode`、`ApprovePeerRequest`、`RejectPeerRequest`、`UnrejectPeerRequest`、`RemovePeer` |
@@ -92,7 +92,7 @@ Agent 动作由同步 `dispatch` 发起后在后台完成：即时连接错误�
 | `FamilyAction` | `RefreshRoles`、`CreateRole`、`UpdateRole`、`DeleteRole`、`SetDefaultRole`、`AssignMemberRole`、`AssignFriendRole` |
 | `FriendsAction` | `RefreshFriends`、`AddFriend`、`ApproveFriendRequest`、`RejectFriendRequest`、`CancelFriendRequest`、`RemoveFriend`、`BlockFriend`、`UnblockFriend`、`SaveFriendGroup`、`RemoveFriendGroup`、`SetFriendGroups` |
 | `SharingAction` | `CreatePluginShare`、`UpdatePluginShare`、`RevokePluginShare`、`RefreshSharedApps`、`OpenSharedApp` |
-| `AgentAction` | `StopChain`、`SetAgentLimits`、`SetConsumerAgentConcurrency`（由原独立 `AgentChainAction` 改名并纳入 `Action::Agent`） |
+| `AgentAction` | `StopChain`、`SetAgentLimits`（由原独立 `AgentChainAction` 改名并纳入 `Action::Agent`） |
 
 `SetPluginAudience` 归入 `PluginAction`。详情页需要等待保存并取回更新后的详情，因此保留请求–应答方法，参数直接传插件 ID 和授权，不解包顶层 `Action`。
 

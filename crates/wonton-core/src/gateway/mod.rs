@@ -233,7 +233,7 @@ pub struct Gateway {
     /// 自己的域名和证书（ADR-0089）；核心没跑在装好的容器里时是空。
     pub(crate) domain: Option<Arc<crate::clients::domain::Domain>>,
     sessions: session::SessionStore,
-    /// 调用链（ADR-0061 第 10 节）：账本、出箱、设置和 `agent_acp` 的取消方，见 [`agent_chains::AgentChains`]。
+    /// 调用链（ADR-0061 第 10 节）：账本、出箱和设置，见 [`agent_chains::AgentChains`]。
     pub(crate) agent_chains: Option<Arc<agent_chains::AgentChains>>,
 }
 impl Gateway {

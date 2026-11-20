@@ -169,9 +169,8 @@ chat-hop-limit-kept-by-other = 相手が止めておくを選んだため、停�
 # Chain limit card (ADR-0061 §10).
 chat-chain-limit-title = この呼び出しの連鎖が上限に達しました
 chat-chain-limit-title-rounds = この連鎖は往復の上限に達しました
-chat-chain-limit-title-cost = この連鎖は利用量の上限に達しました
 chat-chain-limit-bots = この連鎖のボット：{ $bots }
-chat-chain-limit-what = 「もう 1 回分」で往復と利用量の上限を 1 回分ずつ増やします。「止めておく」で連鎖ごと止まり、続けるにはもう一度話しかけてください。
+chat-chain-limit-what = 「もう 1 回分」で往復の上限を 1 回分増やします。「止めておく」で連鎖ごと止まり、続けるにはもう一度話しかけてください。
 chat-chain-limit-grant = もう 1 回分
 chat-chain-limit-stop = 止めておく
 chat-chain-stopped-card = 連鎖が止まったため、このカードは無効です
@@ -179,7 +178,3 @@ chat-chain-stopped-card = 連鎖が止まったため、このカードは無効
 # メッセージ送信カード（ADR-0061 §9）：$recipient は受信者、$bot は送信するボット。
 chat-send-message-title = { $recipient } にメッセージを送る
 chat-send-message-queued = 承認済み。{ $bot } の送信を待っています
-
-chat-handoff-title = { $from } → { $bot }
-chat-handoff-risk = このボットは対象の実行環境でコマンドの実行、ファイルの変更、ログイン情報や別の会話を含むすべての読み取りができます。
-chat-handoff-started = 引き継ぎました。対象のボットが処理中です

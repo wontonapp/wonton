@@ -63,8 +63,8 @@ Bot 资料里多一个 [MSC4133](https://github.com/matrix-org/matrix-spec-propo
 | 插件在运行、健康检查过了 | 核心的插件状态和健康检查 | 核心管容器 |
 | 有模型请求在进行 | 核心的模型网关入口（`models.wonton.internal`），按来源认出插件 | 经 magpie 的模型请求都过核心 |
 | 有工具调用在进行 | 核心的 MCP 总线 | Agent 的 Wonton 工具都过总线 |
-| 有确认卡片在等主人 | 核心的确认表（MCP 工具的卡片和 ACP 桥的 `/agent/permissions`） | 卡片都由核心发 |
-| Bot 在它的私聊里“正在输入” | Matrix 的 `m.typing`，App 自己的同步里就有 | Hermes v0.22.5 每轮发（30 秒，轮末清掉），ACP 桥每轮发 |
+| 有确认卡片在等主人 | 核心的确认表（MCP 工具的卡片和 Agent 经 `/agent/permissions` 请求的卡片） | 卡片都由核心发 |
+| Bot 在它的私聊里“正在输入” | Matrix 的 `m.typing`，App 自己的同步里就有 | Hermes v0.22.5 每轮发（30 秒，轮末清掉） |
 
 客户端核心合成 `BotActivity`，壳只管按它显示：
 
@@ -79,8 +79,7 @@ Bot 资料里多一个 [MSC4133](https://github.com/matrix-org/matrix-spec-propo
   头像（AGENTS.md 的“失败即停”）。
 - 防抖：从 `working`、`waiting` 回到 `idle` 要先安静 2 秒，一个状态至少显示 1.5 秒；`offline` 立即生效。Agent 在两次模型
   请求之间跑自己的命令时，模型请求是断续的，没有防抖头像会来回跳。
-- 没有“完成”“等子任务”：ACP 桥不声明子 Agent 能力，子 Agent 的工作只是根会话里的工具调用（ADR-0007 的验证结果），Hermes
-  也不报告子任务，拿不到就不编。
+- 没有“完成”“等子任务”：Hermes 不报告子任务（已删的 ACP 桥也不声明子 Agent 能力，见 ADR-0007 的验证结果），拿不到就不编。
 - 和 Muse 的对应：启动、连接中 → `offline`；工作中、做东西 → `working`；待机 → `idle`。`waiting` 是主人要做的事，Muse 没有确认卡片。
 - 状态是一个 Bot 的，不分房间：模型请求和工具调用核心分不出是为哪个房间。M1 的 Bot 只在自己的主房间里。
 - 顶栏和列表都不写状态文字，只看头像。

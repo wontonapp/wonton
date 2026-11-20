@@ -35,6 +35,7 @@ import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
+import androidx.compose.runtime.produceState
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.runtime.rememberUpdatedState
@@ -54,10 +55,12 @@ import androidx.compose.ui.semantics.semantics
 import androidx.compose.ui.unit.dp
 import app.wonton.client.ClientCore
 import app.wonton.protocol.Action
+import app.wonton.protocol.AgentAction
 import app.wonton.protocol.ComposerViewModel
 import app.wonton.protocol.CoreException
 import app.wonton.protocol.ImageUpload
 import app.wonton.protocol.ReplyQuote
+import app.wonton.protocol.RoomAgentStop
 import app.wonton.protocol.TimelineAction
 import app.wonton.protocol.TimelineTarget
 import app.wonton.ui.design.WontonActionSheet
@@ -131,6 +134,10 @@ fun Composer(
     if (!inSideChat) OnboardingChatPrompts(roomId)
     if (reply != null) ComposerReply(reply, core, onReplyCancel)
     ComposerTray(attachments, roomId, core, onAction)
+    val agentStop by produceState<RoomAgentStop>(RoomAgentStop.Idle, core, target) {
+        core.agentStopUpdates(target).collect { value = it }
+    }
+    AgentStopNotice(agentStop)
     Row(Modifier.fillMaxWidth().padding(spacing.s4), verticalAlignment = Alignment.Bottom) {
         WontonIconButton(WontonIcon.Attach, stringResource(R.string.composer_attach), attach.choose)
         ComposerField(
@@ -141,8 +148,12 @@ fun Composer(
             modifier = Modifier.weight(1f)
                 .focusRequester(focusRequester)
                 .padding(vertical = (size.target - size.composerField) / 2)
-                .padding(end = if (isEmpty) spacing.s12 else 0.dp),
+                .padding(end = if (isEmpty && !agentStop.showsButton) spacing.s12 else 0.dp),
         )
+        // Bot 在跑时停止钮在发送钮的位置；已经打了字就两个都在，接着发和停下都够得着。
+        if (agentStop.showsButton) {
+            AgentStopButton(agentStop) { onAction(Action.Agent(AgentAction.StopTurns(target))) }
+        }
         val motion = tween<Float>(WontonTheme.motion.feedback)
         AnimatedVisibility(
             visible = !isEmpty,

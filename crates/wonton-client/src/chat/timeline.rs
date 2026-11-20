@@ -15,6 +15,7 @@ use wonton_protocol::{
 };
 
 use super::agent_run::BotsView;
+use super::jump::Live;
 use super::links::LinkTargets;
 use super::menu::{Menus, Outbox};
 use super::previews::Previews;
@@ -31,10 +32,12 @@ pub struct TimelineSubscription {
     updates: Mutex<mpsc::UnboundedReceiver<TimelineUpdate>>,
     cancelled: watch::Sender<bool>,
     scroll: watch::Sender<TimelineScroll>,
+    /// 按订阅建一次的正在输入、命令表和跳转状态（ADR-0109）；假数据入口没有，壳的操作由假房间推。
+    pub(super) live: std::sync::Mutex<Option<Arc<Live>>>,
     opening: std::sync::Mutex<Option<super::target::TimelineOpening>>,
-    /// 假数据入口的订阅没有转发任务：发送端留在这里（不读它），通道不关，壳就不会以为房间没了。
+    /// 假数据入口的订阅没有转发任务：壳报告的位置交给假房间，假房间再推一批（它也拿着发送端，通道不关）。
     #[cfg(feature = "ui-fake")]
-    _seeded: Option<mpsc::UnboundedSender<TimelineUpdate>>,
+    on_scroll: Option<Box<dyn Fn(TimelineScroll) + Send + Sync>>,
 }
 
 /// 一个房间的时间线订阅要用的部件：房间、能显示的卡片和各路账号数据。[`TimelineSubscription::start`] 一次带走。
@@ -53,6 +56,8 @@ pub struct TimelineSource {
     pub support: Arc<Support>,
     /// Bot 名单的账本：「就绪」看已安装表和第一份活动报告都到了没有（[`super::bots::Bots::ready`]）。
     pub(super) bots: Arc<super::bots::Bots>,
+    /// 取房间状态用（命令表）。
+    pub session: Arc<wonton_matrix::MatrixSession>,
 }
 
 impl TimelineSubscription {
@@ -77,11 +82,14 @@ impl TimelineSubscription {
             chat,
             support,
             bots: ledger,
+            session,
         } = source;
         let (sender, receiver) = mpsc::unbounded_channel();
         let (cancelled, mut stop) = watch::channel(false);
         // 落点摆好并由壳确认之前，不能把首屏量出来的默认位置当成已经读到底。
         let (scroll, mut scrolled) = watch::channel(TimelineScroll::Away);
+        let live = super::jump::live(runtime, &room, room_id.clone());
+        let watched = live.clone();
         runtime.spawn(async move {
             let outbox = Outbox::new(
                 sender,
@@ -92,6 +100,7 @@ impl TimelineSubscription {
                 // 只读快照用的克隆。等变化必须用下面交给 `forward` 的那个接收者：克隆带着克隆那一刻的
                 // 已读位置，每轮新克隆一个去等 `changed()` 会立刻返回，订阅就空转着一批接一批往外发。
                 confirmations.clone(),
+                watched.clone(),
             );
             tokio::select! {
                 () = forward(
@@ -105,6 +114,8 @@ impl TimelineSubscription {
                     confirmations,
                     &support,
                     &ledger,
+                    &watched,
+                    &session,
                 ) => {}
                 () = outbox.closed() => {}
                 _ = stop.wait_for(|cancelled| *cancelled) => {}
@@ -114,24 +125,26 @@ impl TimelineSubscription {
             updates: Mutex::new(receiver),
             cancelled,
             scroll,
+            live: std::sync::Mutex::new(Some(live)),
             opening: std::sync::Mutex::new(Some(opening)),
             #[cfg(feature = "ui-fake")]
-            _seeded: None,
+            on_scroll: None,
         })
     }
 
-    /// 假数据入口（`ClientCore::new_ui_fake`）的时间线：只有 `first` 这一批，之后一直等到取消。
+    /// 假数据入口（`ClientCore::new_ui_fake`）的时间线：批次由假房间推进 `updates`，壳报告的位置交给 `on_scroll`。
     #[cfg(feature = "ui-fake")]
-    pub(crate) fn seeded(first: TimelineUpdate) -> Arc<Self> {
-        let (sender, receiver) = mpsc::unbounded_channel();
-        // 接收端就在下面，发不出去只会是它已经释放。
-        let _ = sender.send(first);
+    pub(crate) fn seeded(
+        updates: mpsc::UnboundedReceiver<TimelineUpdate>,
+        on_scroll: Box<dyn Fn(TimelineScroll) + Send + Sync>,
+    ) -> Arc<Self> {
         Arc::new(Self {
-            updates: Mutex::new(receiver),
+            updates: Mutex::new(updates),
             cancelled: watch::Sender::new(false),
             scroll: watch::Sender::new(TimelineScroll::Away),
+            live: std::sync::Mutex::new(None),
             opening: std::sync::Mutex::new(None),
-            _seeded: Some(sender),
+            on_scroll: Some(on_scroll),
         })
     }
 
@@ -161,7 +174,14 @@ impl TimelineSubscription {
     /// 壳直接向本订阅报告列表位置；同一目标的其他订阅不受影响。
     /// 跨过底部时发一次，下一批更新里带重新算过的位置和新消息数。
     pub fn set_scroll(&self, scroll: TimelineScroll) {
+        if let Some(live) = super::lock(&self.live).as_ref() {
+            live.jumps.scrolled(scroll);
+        }
         self.scroll.send_replace(scroll);
+        #[cfg(feature = "ui-fake")]
+        if let Some(on_scroll) = &self.on_scroll {
+            on_scroll(scroll);
+        }
     }
 
     /// 取消订阅，语义同 `HomeSubscription::cancel`（Swift 的 Task 取消不会传到 Rust）。
@@ -251,7 +271,10 @@ async fn forward(
     mut confirmations: watch::Receiver<Arc<Vec<ConfirmationView>>>,
     support: &Support,
     ledger: &super::bots::Bots,
+    live: &Live,
+    session: &Arc<wonton_matrix::MatrixSession>,
 ) {
+    let runtime = Handle::current();
     let mut rebuilt_for: Option<wonton_matrix::OwnedEventId> = None;
     'outer: loop {
         // 换了时间线，SDK 里取过的引用也跟着没了，重新取。
@@ -285,6 +308,13 @@ async fn forward(
         // 预览落定了就醒一次：把落定网址所在的条目重发。
         let mut preview_versions = previews.subscribe();
         let mut diffs = std::pin::pin!(diffs);
+        // 正在输入、命令表和跳转请求（ADR-0109）。
+        let mut typing_changes = live.typing.subscribe();
+        let mut table_changes = live.tables.subscribe();
+        let mut jump_changes = live.jumps.pending();
+        // 重建期间挂上的跳转请求收不到那次唤醒，订阅之后先补一步。
+        live.jumps.tick(&runtime, room, &entries);
+        live.tables.refresh(&runtime, session);
         // 插件装、卸以后，同一段文字里的插件网址类别会变，要重算。
         let mut plugin_changes = plugins.subscribe();
         // 未读数在同步之后才重新数，比带消息的那一批晚；跟着房间信息重算，按钮上的数字才不会停在旧数上。
@@ -323,6 +353,8 @@ async fn forward(
                         }
                         // 旁聊的未读、状态（“没收到结果”按时间到）、头部也按秒重算。
                         None => {
+                            // 命令表不在同步的必需状态里，收到新表不会叫醒这里：按秒对一次表（内部限了间隔）。
+                            live.tables.refresh(&runtime, session);
                             // 成员进出不产生时间线条目，在场的 AI 按秒对一次表：变了补发一批空的。
                             if view.bots_changed() {
                                 Batch::Sent(
@@ -450,6 +482,32 @@ async fn forward(
                     }
                     Batch::Sent(send(sender, &entries, diffs, &mut view, None), false)
                 }
+                changed = typing_changes.changed() => {
+                    if changed.is_err() {
+                        return;
+                    }
+                    // 一样的名单不重复发。
+                    if !live.typing.take_changed() {
+                        continue;
+                    }
+                    Batch::Sent(send(sender, &entries, Vec::new(), &mut view, None), false)
+                }
+                changed = table_changes.changed() => {
+                    if changed.is_err() {
+                        return;
+                    }
+                    if !live.tables.take_changed() {
+                        continue;
+                    }
+                    Batch::Sent(send(sender, &entries, Vec::new(), &mut view, None), false)
+                }
+                changed = jump_changes.changed() => {
+                    if changed.is_err() {
+                        return;
+                    }
+                    live.jumps.tick(&runtime, room, &entries);
+                    Batch::Sent(send(sender, &entries, Vec::new(), &mut view, None), false)
+                }
             };
             match settle(sent, room, &entries, sender, &mut view).await {
                 Next::End => return,
@@ -568,10 +626,21 @@ fn apply(
     }
     let links = LinkTargets::of(&plugins.view());
     let mut out = Vec::new();
+    let mut arrived = Vec::new();
     for diff in batch {
+        match &diff {
+            VectorDiff::Insert { value, .. } | VectorDiff::Set { value, .. } => {
+                if let EntryKind::Message(message) = &value.kind {
+                    arrived.push(message.sender.to_string());
+                }
+            }
+            _ => {}
+        }
         out.push(timeline_diff(diff.clone(), read, &links, bots, previews));
         diff.apply(entries);
     }
+    // 发消息的人不用再等 30 秒的正在输入超时。
+    sender.live.typing.forget(&arrived);
     out.extend(move_read_mark(entries, read, &links, bots, previews));
     // 对账不放在每批之后：它会读一遍整个缓存，批多一点就把时间线的更新通道挤到跟不上（15 秒一次都嫌多）。
     Batch::Sent(send(sender, entries, out, view, None), false)
@@ -809,6 +878,8 @@ fn send(
     view: &mut View,
     anchor: Option<String>,
 ) -> Result<(), ()> {
+    // 要跳的原消息可能刚随这一批进来。
+    sender.live.jumps.progress(entries);
     view.sent_unread = view.unread;
     view.notice = sender.key_notice(entries);
     view.sent_call = view.call;

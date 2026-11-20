@@ -1,10 +1,9 @@
 //! Agent 调用链账本（ADR-0061 第 10 节，第 2 块）：一句话引出的所有 Agent 会话是一条链，
-//! 链上记身份、层数、轮数和花费，随时能停整条链。纯逻辑，不接 HTTP、桥和 MCP 工具
+//! 链上记身份、层数和轮数，随时能停整条链。纯逻辑，不接 HTTP、Bot 插件和 MCP 工具
 //! （第 3、6、7 块经这里的公开方法接）；发起人权限、房间表判断（#248）也归它们。
 //! 线上类别（[`ChainError`] 等）用 wonton-protocol 已有的；账本自己的类型
-//! （来源、会话信息、停链结果、上限事件）只在核心内部第 2/3/6/8 块之间用，不上线。
+//! （会话信息、停链结果、上限事件）只在核心内部第 2/3/6/8 块之间用，不上线。
 
-mod ancestry;
 mod budget;
 mod layers;
 pub mod settings;
@@ -23,19 +22,8 @@ use tokio::sync::watch;
 
 use wonton_protocol::{
     AgentChainBot, AgentChainRow, AgentChainStatus, AgentChainsViewModel, BotRef, ChainError,
-    ChainLimitKind, ChainLimits, ChainSpend, ChainTurnGrant, ChainTurnReport, ConfirmationOrigin,
+    ChainLimitKind, ChainLimits, ChainTurnGrant, ChainTurnReport, ConfirmationOrigin,
 };
-
-/// 会话是桥的一轮还是 ACP/交接会话：分停止时要取消的会话，也决定能否重复登记。
-#[derive(Clone, Copy, Debug, PartialEq, Eq)]
-pub enum ChainSessionSource {
-    /// 桥报来的一轮（`POST /agent/chains` 的 start）。
-    Bridge,
-    /// `agent_acp` 的一条连接。
-    AgentAcp,
-    /// 交接进来的会话。
-    HandOff,
-}
 
 /// 账本里一个会话的登记：会话 ID → 链、Bot、层。
 #[derive(Clone, Debug, PartialEq, Eq)]
@@ -50,24 +38,22 @@ pub struct ChainSessionInfo {
     pub live: bool,
 }
 
-/// 这个 Bot 当前进行中的桥轮次（Go 联邦线 #353 用）：一条链上还活着的一轮和说话人。
+/// 这个 Bot 当前进行中的轮次（Go 联邦线 #353 用）：一条链上还活着的一轮和说话人。
 #[derive(Clone, Debug, PartialEq, Eq)]
-pub struct LiveBridgeTurn {
+pub struct LiveTurn {
     pub chain: String,
     pub session: String,
     pub sender: String,
 }
 
-/// 停链的交出项：要取消的活会话按来源分，加上带这条链、还没答的卡片（要撤回）。
+/// 停链的交出项：要取消的活轮次，加上带这条链、还没答的卡片（要撤回）。
 #[derive(Clone, Debug, Default, PartialEq, Eq)]
 pub struct ChainStopOutcome {
-    pub bridge: Vec<ChainSessionInfo>,
-    pub agent_acp: Vec<ChainSessionInfo>,
-    pub hand_off: Vec<ChainSessionInfo>,
+    pub turns: Vec<ChainSessionInfo>,
     pub cards: Vec<String>,
 }
 
-/// 链到上限的那一下（轮数或花费）。每次进入 `limit_reached` 恰好发出一次；
+/// 链到上限的那一下（轮数）。每次进入 `limit_reached` 恰好发出一次；
 /// 层数不算——层数超了只拒那一跳，不翻链的状态，也没有"再给一份"。
 #[derive(Clone, Debug, PartialEq, Eq)]
 pub struct ChainLimitEvent {
@@ -75,7 +61,7 @@ pub struct ChainLimitEvent {
     pub kind: ChainLimitKind,
 }
 
-/// 账本操作的错误。桥和网关要回给调用方的拒绝包在 [`ChainLedgerError::Rejected`]（线上类别
+/// 账本操作的错误。网关要回给 Bot 插件的拒绝包在 [`ChainLedgerError::Rejected`]（线上类别
 /// 原样透传）；其余是账本自己的状态错误和落盘失败。
 #[derive(Debug, thiserror::Error)]
 pub enum ChainLedgerError {
@@ -83,16 +69,10 @@ pub enum ChainLedgerError {
     Rejected(ChainError),
     #[error("链 {0} 不存在")]
     UnknownChain(String),
-    #[error("会话 {0} 没有登记在账本里")]
-    UnknownSession(String),
     #[error("卡片 {0} 没有登记在账本里")]
     UnknownCard(String),
-    #[error("链 {chain} 已经结束，不能再停")]
-    AlreadyEnded { chain: String },
     #[error("链 {chain} 不在 limit_reached，给不了新的一份")]
     NotAtLimit { chain: String },
-    #[error("链 {chain} 还有活着的会话，不能记成做完")]
-    SessionsLive { chain: String },
     #[error("{0}")]
     Invalid(String),
     #[error("链账本损坏：{path}: {message}")]
@@ -113,11 +93,7 @@ struct SessionEntry {
     chain: String,
     bot: BotRef,
     layer: u32,
-    source: ChainSessionSource,
-    path: Arc<ancestry::SessionPath>,
-    /// Preissued connection identity, not an executing caller session.
-    connection: bool,
-    /// 这一轮说话的人；ACP 连接没有。
+    /// 这一轮说话的人。
     sender: Option<String>,
     live: bool,
 }
@@ -220,9 +196,9 @@ impl Chains {
         self.bump_revision();
     }
 
-    /// 这个 Bot 当前进行中的桥轮次（还没 End、链没停）：联邦线按它算这个 Bot 此刻在跟谁说话。
+    /// 这个 Bot 当前进行中的轮次（还没 End、链没停）：联邦线按它算这个 Bot 此刻在跟谁说话。
     /// 说话人是登记时报的，链代表的人可能更早。
-    pub fn live_bridge_turns(&self, bot: &BotRef) -> Vec<LiveBridgeTurn> {
+    pub fn live_turns(&self, bot: &BotRef) -> Vec<LiveTurn> {
         let mut turns = self.read(|state| {
             state
                 .sessions
@@ -238,7 +214,7 @@ impl Chains {
                         })
                 })
                 .filter_map(|(session, entry)| {
-                    Some(LiveBridgeTurn {
+                    Some(LiveTurn {
                         chain: entry.chain.clone(),
                         session: session.clone(),
                         sender: entry.sender.clone()?,
@@ -250,12 +226,12 @@ impl Chains {
         turns
     }
 
-    /// 桥的一轮开始（`POST /agent/chains` 的 start 报告）：按触发消息的唤醒标签沿用原链，
+    /// Bot 插件的一轮开始（`POST /agent/chains` 的 start 报告）：按触发消息的唤醒标签沿用原链，
     /// 沿用不上就开新链（发起的 Bot 记在第 1 层）。拿到 [`ChainTurnGrant`] 才发 prompt，
     /// 轮数在拿到的那一刻记。说话人是不是这个 Bot 听的人归第 3 块核，账本只记。
     /// `mentioner` 是说话人是链上 Bot 时的那个 Bot（第 8 块：被点名的 Bot 用它的层进链）；
     /// `chain_user` 是链代表的人——说话的人，或点名 Bot 的归属人。
-    pub fn start_bridge_turn(
+    pub fn start_turn(
         &self,
         bot: BotRef,
         report: ChainTurnReport,
@@ -271,7 +247,7 @@ impl Chains {
         } = report
         else {
             return Err(ChainLedgerError::Invalid(
-                "start_bridge_turn 只收 start 报告；end 走 end_session".into(),
+                "start_turn 只收 start 报告；end 走 end_session".into(),
             ));
         };
         self.mutate(|state| {
@@ -280,7 +256,7 @@ impl Chains {
                 thread_id: thread,
             };
             match wake::lookup(state, &event_id) {
-                Some(chain_id) => turns::continue_bridge_round(
+                Some(chain_id) => turns::continue_round(
                     state,
                     &chain_id,
                     &bot,
@@ -300,67 +276,44 @@ impl Chains {
         })
     }
 
-    /// 一轮结束（桥的 end 报告、网关侧会话完结）。End 对被拒的轮也会报，
-    /// 没登记的会话静默忽略；不改链的状态。
+    /// 一轮结束（Bot 插件的 end 报告、网关侧会话完结）。End 对被拒的轮也会报，
+    /// 没登记的会话静默忽略。
+    ///
+    /// 最后一轮结束说明这条链上没有在跑的轮次了：没到上限的链记成 `Ended`，从 App 的列表里下去；
+    /// 点名叫它会回到 `Running`（见 `turns`），停下来的链仍能停下来。到上限的留 `LimitReached`
+    /// 等卡片回答，“再给一份”靠它找链。
     pub fn end_session(&self, session: &str) {
         let mut state = self.state.lock().expect("agent chain ledger lock poisoned");
-        if let Some(entry) = state.sessions.get_mut(session) {
-            entry.live = false;
+        let Some(entry) = state.sessions.get_mut(session) else {
+            return;
+        };
+        if !std::mem::take(&mut entry.live) {
+            return;
         }
+        let chain_id = entry.chain.clone();
+        if state
+            .sessions
+            .values()
+            .any(|other| other.live && other.chain == chain_id)
+        {
+            return;
+        }
+        if let Some(chain) = state.chains.get_mut(&chain_id)
+            && chain.status == AgentChainStatus::Running
+        {
+            chain.status = AgentChainStatus::Ended;
+        }
+        // 列表这一行不再算在跑：App 靠版本变化收起停止钮。
+        self.bump_revision();
     }
 
-    /// 记一个 `session/prompt`（`agent_acp` 和交接会话的轮数；桥的轮数在 start 里记）。
-    /// 已停或已到上限的链先于会话死活被拒：停链之后开轮拿到 `stopped`。
-    pub fn begin_round(&self, session: &str) -> Result<(), ChainLedgerError> {
-        self.mutate(|state| {
-            let chain_id = state
-                .sessions
-                .get(session)
-                .ok_or_else(|| ChainLedgerError::UnknownSession(session.to_owned()))?
-                .chain
-                .clone();
-            let chain = state.chains.get_mut(&chain_id).expect("会话的链一定登记过");
-            layers::reject_if_closed(chain).map_err(ChainLedgerError::Rejected)?;
-            if !state.sessions.get(session).expect("刚查过").live {
-                return Err(ChainLedgerError::Invalid(format!(
-                    "会话 {session} 已经结束"
-                )));
-            }
-            state.dirty = true;
-            budget::count_round(chain, &mut state.events).map_err(ChainLedgerError::Rejected)
-        })
-    }
-
-    /// 记模型网关报来的用量（按 Bot 分账，链合计同时加）。到花费上限的那一下把链置
-    /// `LimitReached` 并发一次"用到上限"（见 [`Chains::on_limit_event`]）；
-    /// 已停或已到上限的链只记账，不再翻转。
-    pub fn record_tokens(
-        &self,
-        chain_id: &str,
-        bot: &BotRef,
-        tokens: u64,
-        amount: Option<f64>,
-    ) -> Result<(), ChainLedgerError> {
-        self.mutate(|state| {
-            {
-                let chain = state
-                    .chains
-                    .get_mut(chain_id)
-                    .ok_or_else(|| ChainLedgerError::UnknownChain(chain_id.to_owned()))?;
-                budget::record_tokens(chain, bot, tokens, amount, &mut state.events);
-            }
-            state.dirty = true;
-            Ok(())
-        })
-    }
-
-    /// 停整条链：置 `Stopped`，交出链上活的会话（按来源分）和待答的卡片，
-    /// 之后一切新登记都是 `stopped`。已停的链再停返回空结果（幂等）；做完的链不能停。
+    /// 停整条链：置 `Stopped`，交出链上活的轮次和待答的卡片，
+    /// 之后一切新登记都是 `stopped`。停是幂等的；做完的链也停（用户按下停止钮时最后一轮可能刚报了 End）。
     pub fn stop(&self, chain_id: &str) -> Result<ChainStopOutcome, ChainLedgerError> {
         self.mutate(|state| stop::stop(state, chain_id))
     }
 
-    /// "再给一份"（上限卡片的按钮）：轮数、花费上限各加一份默认值，回到 `Running`。
+    /// "再给一份"（上限卡片的按钮）：轮数上限加一份默认值，回到 `Running`。
     /// 只对 `limit_reached` 的链有效；层数和绕圈不在此列。
     pub fn grant_another(&self, chain_id: &str) -> Result<(), ChainLedgerError> {
         self.mutate(|state| {
@@ -375,34 +328,6 @@ impl Chains {
             }
             budget::grant_another(chain);
             state.dirty = true;
-            Ok(())
-        })
-    }
-
-    /// 把链记成做完（"做完了"的判断归第 3/8 块，账本只收显式标记）。
-    /// 还有活会话时拒绝——做完的链不该有没取消的会话。摘掉这条链的唤醒标签。
-    pub fn end_chain(&self, chain_id: &str) -> Result<(), ChainLedgerError> {
-        self.mutate(|state| {
-            if state
-                .sessions
-                .values()
-                .any(|entry| entry.chain == chain_id && entry.live)
-            {
-                return Err(ChainLedgerError::SessionsLive {
-                    chain: chain_id.to_owned(),
-                });
-            }
-            let chain = state
-                .chains
-                .get_mut(chain_id)
-                .ok_or_else(|| ChainLedgerError::UnknownChain(chain_id.to_owned()))?;
-            if chain.status == AgentChainStatus::Ended {
-                return Err(ChainLedgerError::Invalid(format!("链 {chain_id} 已经结束")));
-            }
-            chain.status = AgentChainStatus::Ended;
-            chain.limit_kind = None;
-            state.dirty = true;
-            wake::drop_chain(state, chain_id);
             Ok(())
         })
     }
@@ -443,11 +368,6 @@ impl Chains {
         wake::bind(&mut state, event_id, chain_id)
     }
 
-    /// 按消息事件找链（点名叫回沿用原链，第 8 块用）。
-    pub fn chain_for_event(&self, event_id: &str) -> Option<String> {
-        self.read(|state| wake::lookup(state, event_id))
-    }
-
     /// 链上 Bot 的这条消息挂回哪条链（第 8 块在 Bot 发消息的转发路上查）：
     /// 按 Bot、房间、话题找它当时活的链。
     pub fn chain_for_wake(&self, bot: &BotRef, room: &str, thread: Option<&str>) -> Option<String> {
@@ -468,39 +388,8 @@ impl Chains {
         })
     }
 
-    /// 链上登记过的全部会话（含已结束的，`live` 区分）。
-    pub fn chain_sessions(&self, chain_id: &str) -> Vec<ChainSessionInfo> {
-        self.read(|state| {
-            state
-                .sessions
-                .iter()
-                .filter(|(_, entry)| entry.chain == chain_id)
-                .map(|(session, entry)| ChainSessionInfo {
-                    session: session.clone(),
-                    chain: entry.chain.clone(),
-                    bot: entry.bot.clone(),
-                    layer: entry.layer,
-                    sender: entry.sender.clone(),
-                    live: entry.live,
-                })
-                .collect()
-        })
-    }
-
-    /// 链的按 Bot 分账，各项相加等于链的总 token。
-    pub fn spend_by_bot(&self, chain_id: &str) -> Option<Vec<(BotRef, u64)>> {
-        self.read(|state| {
-            state.chains.get(chain_id).map(|chain| {
-                chain
-                    .spend_by_bot
-                    .iter()
-                    .map(|entry| (entry.bot.clone(), entry.tokens))
-                    .collect()
-            })
-        })
-    }
-
-    /// App 的链列表：没结束的按最近活动排；停了和做完的不进列表，留给详情（[`Chains::row`]）。
+    /// App 的链列表：还在跑的（`Running`、到上限等回答的 `LimitReached`）按最近活动排。
+    /// 链上最后那轮报了 End 就记成 `Ended`、从这里下去，停了和做完的留给详情（[`Chains::row`]）。
     /// `can_stop` 恒为真——哪些人看得见、能停（链代表和各 Bot 的归属人）由第 3 块按归属过滤。
     pub fn view(&self) -> AgentChainsViewModel {
         let revision = *self.revision.borrow();
@@ -516,7 +405,7 @@ impl Chains {
                 })
                 .map(|chain| {
                     let tick = state.activity.get(&chain.chain).copied().unwrap_or(0);
-                    (tick, build_row(chain))
+                    (tick, build_row(state, chain))
                 })
                 .collect();
             rows.sort_by_key(|(tick, _)| std::cmp::Reverse(*tick));
@@ -533,7 +422,12 @@ impl Chains {
 
     /// 单条链（任意状态，App 的链详情用）。
     pub fn row(&self, chain_id: &str) -> Option<AgentChainRow> {
-        self.read(|state| state.chains.get(chain_id).map(build_row))
+        self.read(|state| {
+            state
+                .chains
+                .get(chain_id)
+                .map(|chain| build_row(state, chain))
+        })
     }
 
     /// 落盘类操作：克隆状态 → 改 → 有落盘改动就原子写盘 → 写成功才提交到内存。
@@ -594,8 +488,17 @@ impl LedgerState {
     }
 }
 
-fn build_row(chain: &store::StoredChain) -> AgentChainRow {
+fn build_row(state: &LedgerState, chain: &store::StoredChain) -> AgentChainRow {
+    let open = !matches!(
+        chain.status,
+        AgentChainStatus::Stopped | AgentChainStatus::Ended
+    );
     AgentChainRow {
+        live: open
+            && state
+                .sessions
+                .values()
+                .any(|entry| entry.live && entry.chain == chain.chain),
         chain: chain.chain.clone(),
         user: chain.user.clone(),
         origin: chain.origin.clone(),
@@ -608,14 +511,6 @@ fn build_row(chain: &store::StoredChain) -> AgentChainRow {
             })
             .collect(),
         rounds: chain.rounds,
-        spend: if chain.tokens > 0 {
-            ChainSpend::ViaGateway {
-                tokens: chain.tokens,
-                amount: chain.amount,
-            }
-        } else {
-            ChainSpend::Unknown
-        },
         status: chain.status,
         can_stop: true,
     }

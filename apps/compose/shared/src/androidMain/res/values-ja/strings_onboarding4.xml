@@ -16,6 +16,4 @@
     <string name="onboarding_problem_store_disabled">おすすめの提供元が無効になっています。スキップできます。</string>
     <!-- Kind label above a review row: the apps that will be installed. -->
     <string name="onboarding_review_section_apps">アプリ</string>
-    <!-- Button that uninstalls the agent that a new one replaces. -->
-    <string name="onboarding_uninstall">アンインストール</string>
 </resources>

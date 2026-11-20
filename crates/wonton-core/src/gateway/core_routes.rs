@@ -496,10 +496,6 @@ fn chain_routes() -> Router<Arc<Gateway>> {
             wonton_protocol::AGENT_LIMITS_PATH,
             put(super::agent_chains_api::set_limits).layer(DefaultBodyLimit::max(4 << 10)),
         )
-        .route(
-            &wonton_protocol::agent_consumer_concurrency_path("{id}"),
-            put(super::agent_chains_api::set_concurrency).layer(DefaultBodyLimit::max(4 << 10)),
-        )
 }
 
 /// 插件网页和核心同站，能让浏览器带着核心会话向核心发表单或 `fetch`（比如替主人退出登录）。所以改状态的

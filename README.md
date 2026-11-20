@@ -11,7 +11,7 @@ Agent 通过工具调用它们；有网页界面的插件，在 App 里像小程
 - **随处可达**：App 内置 iroh 点对点隧道，用蜂窝网络也能直连家里，不需要公网 IP、端口转发或系统 VPN。
 - **真正的 IM**：基于自托管 Matrix，多端同步、家人群聊、离线推送都是现成的。
 - **万物皆插件**：插件就是一个带 `x-wonton` 扩展字段的 `docker-compose.yml`。
-- **Agent 可替换**：默认 Hermes，也可以换成 Codex、Claude Code 等支持 Matrix 或 ACP 的 Agent。
+- **Agent 可替换**：默认 Hermes，其他 Agent 由作者按插件规范做成插件。
 
 ## 文档
 

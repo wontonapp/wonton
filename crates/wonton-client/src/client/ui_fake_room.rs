@@ -13,9 +13,11 @@ use std::net::{Ipv4Addr, TcpListener, TcpStream};
 use std::sync::LazyLock;
 
 use wonton_protocol::{
-    BackPagination, MessageContent, PanelItem, PanelSource, RichBlock, RichBlockKind, RichSpan,
-    SendState, TabIcon, TabLayout, TabPage, TabRef, TabState, TimelineContent, TimelineDiff,
-    TimelineItem, TimelineMessage, TimelineUpdate, TimelineViewport,
+    BackPagination, ChoiceSend, ChoicesState, MessageAction, MessageChoice, MessageChoices,
+    MessageContent, MessageStatus, PanelItem, PanelSource, QuotedContent, QuotedMessage,
+    ReplyQuote, RichBlock, RichBlockKind, RichSpan, RoomCommand, SendState, TabIcon, TabLayout,
+    TabPage, TabRef, TabState, TimelineContent, TimelineDiff, TimelineItem, TimelineMessage,
+    TimelineUpdate, TimelineViewport,
 };
 
 /// 主面板和房间面板里放的那一页。本机端口占不上时没有这一页。
@@ -56,8 +58,9 @@ pub(super) fn corner() -> Option<(TabRef, TabPage)> {
     Some((TabRef::Url { url }, page))
 }
 
-/// 房间的第一批：全部条目，落点在第三条。之后没有别的批次。
+/// 房间的第一批：全部条目，落点在第三条。之后的批次由 `ui_fake_timeline` 按壳的操作推。
 /// 通话中的那个群聊（`ui_fake::CALL_ROOM_ID`）另带顶栏的 widget 入口和“通话中”。
+/// Echo 一直在输入，带三条命令（ADR-0109 的命令表和正在输入）。
 pub(super) fn timeline(room_id: &str) -> TimelineUpdate {
     let in_call = room_id == super::ui_fake::CALL_ROOM_ID;
     let items: Vec<TimelineItem> = (0..ITEMS).map(item).collect();
@@ -85,10 +88,49 @@ pub(super) fn timeline(room_id: &str) -> TimelineUpdate {
         } else {
             Some(Vec::new())
         },
+        typing: vec!["Echo".into()],
+        commands: commands(),
+        commands_omitted: 0,
+        focus: None,
+        jump: wonton_protocol::JumpState::Idle,
+        back_to: None,
     }
 }
 
-const ITEMS: usize = 24;
+fn commands() -> Vec<RoomCommand> {
+    [
+        ("help", "Show help"),
+        ("model", "Switch model"),
+        ("new", "Start over"),
+    ]
+    .into_iter()
+    .map(|(name, description)| RoomCommand {
+        bot_user_id: ECHO.into(),
+        bot_name: "Echo".into(),
+        name: name.into(),
+        description: description.into(),
+        hint: None,
+        text: format!("/{name}"),
+    })
+    .collect()
+}
+
+pub(super) const ITEMS: usize = 24;
+pub(super) const OWNER: &str = "@owner:home.example";
+const ECHO: &str = "@echo:home.example";
+/// 第一条的时间；之后每条隔一分钟。
+pub(super) const FIRST_AT_MS: u64 = 1_792_000_000_000;
+/// 回复第 5 条的那条（自己发的）；它和之前自己的消息 Echo 都读到了，之后的没有。
+pub(super) const REPLY_INDEX: usize = 21;
+/// Echo 带两个选项的那条。
+pub(super) const CHOICES_INDEX: usize = 22;
+/// 一条“表情 + 一行字”的短消息，下一条长中文回复引用它：引用块要只有名字加一两行高。
+pub(super) const QUOTED_INDEX: usize = 19;
+/// 引用上一条的长中文回复：几段长短不一，有的末行写满，用来查时间戳和正文重叠、长段被截断。
+pub(super) const LONG_REPLY_INDEX: usize = 20;
+// 中文假数据放在数据文件里：它是界面测试的输入，不是界面文字，界面文字检查（ADR-0043）只管源码里的字符串。
+const QUOTED_TEXT: &str = include_str!("ui_fake_text/quoted.txt");
+const LONG_REPLY: &str = include_str!("ui_fake_text/long_reply.txt");
 /// 每隔几条来一条比屏幕高的；最后一条也是。
 const TALL_EVERY: usize = 4;
 const TALL_PARAGRAPHS: usize = 60;
@@ -98,7 +140,20 @@ const LAST_LINE: &str = "Fixture last line";
 fn item(index: usize) -> TimelineItem {
     let own = index % 2 == 1;
     let last = index + 1 == ITEMS;
-    let mut paragraphs = if last || index.is_multiple_of(TALL_EVERY) {
+    let mut paragraphs = if index == CHOICES_INDEX {
+        vec![
+            "Fixture approval".into(),
+            "✅ = approve once\n❌ = deny".into(),
+        ]
+    } else if index == QUOTED_INDEX {
+        vec![QUOTED_TEXT.trim_end().into()]
+    } else if index == LONG_REPLY_INDEX {
+        LONG_REPLY
+            .trim_end()
+            .split("\n\n")
+            .map(Into::into)
+            .collect()
+    } else if last || index.is_multiple_of(TALL_EVERY) {
         (0..TALL_PARAGRAPHS)
             .map(|line| format!("Fixture message {index}, paragraph {line}: a long reply keeps going for a while."))
             .collect()
@@ -108,6 +163,70 @@ fn item(index: usize) -> TimelineItem {
     if last {
         paragraphs.push(LAST_LINE.into());
     }
+    let mut message = text_message(
+        &format!("ui-fake-{index}"),
+        if own { OWNER } else { ECHO },
+        FIRST_AT_MS + index as u64 * 60_000,
+        &paragraphs,
+    );
+    let status = if index <= REPLY_INDEX {
+        MessageStatus::Read
+    } else {
+        MessageStatus::Sent
+    };
+    message.status = own.then_some(status);
+    if index == REPLY_INDEX {
+        message.reply = Some(ReplyQuote::Ready {
+            message: QuotedMessage {
+                event_id: "$ui-fake-5".into(),
+                sender_id: OWNER.into(),
+                sender_name: "Owner".into(),
+                content: QuotedContent::Text {
+                    text: "Fixture message 5".into(),
+                },
+            },
+        });
+    }
+    if index == LONG_REPLY_INDEX {
+        message.reply = Some(ReplyQuote::Ready {
+            message: QuotedMessage {
+                event_id: format!("$ui-fake-{QUOTED_INDEX}"),
+                sender_id: OWNER.into(),
+                sender_name: "Owner".into(),
+                content: QuotedContent::Text {
+                    text: QUOTED_TEXT.trim_end().into(),
+                },
+            },
+        });
+    }
+    if index == CHOICES_INDEX {
+        message.choices = Some(MessageChoices {
+            options: [("✅", "approve once"), ("❌", "deny")]
+                .into_iter()
+                .map(|(key, label)| MessageChoice {
+                    key: key.into(),
+                    label: Some(label.into()),
+                    chosen: false,
+                    send: ChoiceSend::Idle,
+                })
+                .collect(),
+            state: ChoicesState::Open,
+        });
+    }
+    TimelineItem {
+        id: format!("ui-fake-{index}"),
+        content: TimelineContent::Message { message },
+    }
+}
+
+/// 一条发出去了的文字消息，段落之间空一行；菜单里有复制和回复（左滑回复要有回复）。组内位置和勾由调用方定。
+pub(super) fn text_message(
+    id: &str,
+    sender: &str,
+    timestamp_ms: u64,
+    paragraphs: &[String],
+) -> TimelineMessage {
+    let own = sender == OWNER;
     let blocks = paragraphs
         .iter()
         .map(|text| RichBlock {
@@ -120,37 +239,44 @@ fn item(index: usize) -> TimelineItem {
             }],
         })
         .collect();
-    TimelineItem {
-        id: format!("ui-fake-{index}"),
-        content: TimelineContent::Message {
-            message: TimelineMessage {
-                event_id: Some(format!("$ui-fake-{index}")),
-                sender_id: if own {
-                    "@owner:home.example"
-                } else {
-                    "@echo:home.example"
-                }
-                .into(),
-                sender_name: if own { "Owner" } else { "Echo" }.into(),
-                is_own: own,
-                timestamp_ms: 1_792_000_000_000 + index as u64 * 60_000,
-                send_state: SendState::Sent,
-                body: MessageContent::Text {
-                    body: paragraphs.join("\n\n"),
-                    blocks,
-                    files: Vec::new(),
+    let body = paragraphs.join("\n\n");
+    let event_id = format!("${id}");
+    let sender_name = if own { "Owner" } else { "Echo" };
+    TimelineMessage {
+        actions: vec![
+            MessageAction::Copy { text: body.clone() },
+            MessageAction::Reply {
+                message: QuotedMessage {
+                    event_id: event_id.clone(),
+                    sender_id: sender.into(),
+                    sender_name: sender_name.into(),
+                    content: QuotedContent::Text { text: body.clone() },
                 },
-                edited: false,
-                read_by: Vec::new(),
-                reply: None,
-                side_chat: None,
-                preview: None,
-                actions: Vec::new(),
-                group: None,
-                receipt: None,
-                starts_time_group: false,
             },
+        ],
+        event_id: Some(event_id),
+        sender_id: sender.into(),
+        sender_name: sender_name.into(),
+        is_own: own,
+        timestamp_ms,
+        send_state: SendState::Sent,
+        body: MessageContent::Text {
+            body,
+            blocks,
+            files: Vec::new(),
         },
+        edited: false,
+        read_by: Vec::new(),
+        reply: None,
+        side_chat: None,
+        preview: None,
+        group: None,
+        receipt: None,
+        starts_time_group: false,
+        run: wonton_protocol::MessageRun::Alone,
+        status: None,
+        choices: None,
+        sender_avatar: None,
     }
 }
 
@@ -201,6 +327,7 @@ setInterval(report, 500);
 /// 整页的那张网页。`{viewport}` 换成有没有 `viewport-fit=cover`；`#probe` 写着是哪一份、页面自己量到的安全区和视口高度，
 /// 界面测试失败时带进报错里。页面比屏幕长，滚下去以后固定的栏还在原位。
 /// `recolor` 换掉声明的 `theme-color` 和顶栏的颜色；给 `null` 就去掉声明，顶栏改成和 `body` 的背景一样。
+/// `mismatch` 只把声明的 `theme-color` 换成和顶栏不同的浅色（Navidrome 就是这样）；`veil` 给顶栏盖一层半透明的。
 const CORNER: &str = r##"<!doctype html>
 <html><head><meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1{viewport}">
@@ -219,7 +346,9 @@ html, body { margin: 0; background: #17324d; color: #fff; font: 17px system-ui; 
 <button id="menu" aria-label="Fixture corner" onclick="this.setAttribute('aria-label', 'Fixture corner tapped')">≡</button>
 <div id="body"><p id="probe">Fixture probe</p><a href="/corner-cover">Fixture cover</a>
 <button onclick="recolor('#9d4edd')">Fixture recolor</button>
-<button onclick="recolor(null)">Fixture unthemed</button></div>
+<button onclick="recolor(null)">Fixture unthemed</button>
+<button onclick="mismatch()">Fixture mismatch</button>
+<button onclick="veil()">Fixture veil</button></div>
 <div id="foot">Fixture foot</div>
 <script>
 function recolor(color) {
@@ -227,6 +356,14 @@ function recolor(color) {
     if (color) { meta.content = color; } else { meta.remove(); }
   }
   document.getElementById('bar').style.background = color || '#17324d';
+}
+function mismatch() {
+  for (const meta of document.querySelectorAll('meta[name=theme-color]')) meta.content = '#90caf9';
+}
+function veil() {
+  const veil = document.createElement('div');
+  veil.style.cssText = 'position:fixed;top:0;left:0;right:0;height:48px;background:rgba(255,255,255,0.5)';
+  document.body.appendChild(veil);
 }
 function probe() {
   const box = document.createElement('div');

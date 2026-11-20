@@ -43,11 +43,13 @@ jobs:
       - uses: actions/checkout@fbc6f3992d24b796d5a048ff273f7fcc4a7b6c09 # v5
         with:
           persist-credentials: false
-      - name: 镜像仓库与基础镜像
+      - name: 版本、镜像仓库与基础镜像
         id: meta
         run: |
           mirror="ghcr.io/${GITHUB_REPOSITORY_OWNER,,}/test-images"
           {
+            # 版本号不带 v，和 manifest 的 tag、协议里 CoreVersion.version 的写法一致。
+            echo "version=${GITHUB_REF_NAME#v}"
             echo "image=ghcr.io/${GITHUB_REPOSITORY_OWNER,,}/wonton-core"
             echo "rust=$mirror/rust:1.99.1-slim-trixie"
             echo "debian=$mirror/debian:trixie-slim"
@@ -60,9 +62,10 @@ jobs:
         with:
           platforms: ${{ matrix.platform }}
           file: deploy/dev/core/Dockerfile
-          version: ${{ github.ref_name }}
+          version: ${{ steps.meta.outputs.version }}
           extra-build-args: |-
             WONTON_BUILD_COMMIT=${{ github.sha }}
+            WONTON_VERSION=${{ steps.meta.outputs.version }}
             RUST_IMAGE=${{ steps.meta.outputs.rust }}
             DEBIAN_IMAGE=${{ steps.meta.outputs.debian }}
             COMPOSE_IMAGE=${{ steps.meta.outputs.compose }}

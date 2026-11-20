@@ -17,6 +17,4 @@
     <string name="onboarding_problem_store_disabled">The recommendation source is off. You can skip.</string>
     <!-- Kind label above a review row: the apps that will be installed. -->
     <string name="onboarding_review_section_apps">Apps</string>
-    <!-- Button that uninstalls the agent that a new one replaces. -->
-    <string name="onboarding_uninstall">Uninstall</string>
 </resources>

@@ -27,20 +27,9 @@ struct OnboardingModelStepView: View {
                     send(.onboarding(action: .useCurrentModel))
                 }
             }
-            ForEach(step.logins, id: \.id) { login in
-                StepOptionRow(title: String(localized: .Onboarding5.onboardingModelUseLogin(login.title)),
-                              isSelected: isLoginSelected(login.id)) {
-                    send(.onboarding(action: .chooseModelLogin(id: login.id)))
-                }
-            }
         }
         .onChange(of: step.problem) { _, problem in
             if problem != nil { revealProblem("onboarding-model-problem") }
         }
-    }
-
-    private func isLoginSelected(_ id: String) -> Bool {
-        if case let .login(selected, _) = step.choice { return selected == id }
-        return false
     }
 }

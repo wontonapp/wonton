@@ -1,7 +1,8 @@
 import SwiftUI
 import WontonClient
 
-/// 整页的插件网页：铺满、右上角胶囊；聊天页下拉面板里的那份用 `panel` 传布局。
+/// 整页的插件网页：网页框从状态栏下沿开始，顶上不放壳的控件，出口是左边缘右滑（ADR-0095）；
+/// 聊天页下拉面板里的那份用 `panel` 传布局。
 struct TabPageView: View {
     let pages: PagesModel
     let home: HomeModel
@@ -28,6 +29,7 @@ struct TabPageView: View {
     @State private var seenReady = false
     @State private var disclosedURL: String?
     @State private var disclosedProxy: ProxySettings?
+    @State private var showsExitHint = !PageExitHintMemory.current.seen
     @Environment(\.colorScheme) private var colorScheme
     @Environment(\.wontonColors) private var colors
     @Environment(\.wontonBarStatus) private var status
@@ -137,6 +139,12 @@ struct TabPageView: View {
                     .ignoresSafeArea(.container)
                 }
                 chrome(safe: safe)
+                if showsExitHint, !hasCapsule {
+                    PageExitHint {
+                        PageExitHintMemory.current.remember()
+                        showsExitHint = false
+                    }
+                }
             }
             .background { Color(colors.canvas).ignoresSafeArea(.container) }
             .background {
@@ -156,27 +164,36 @@ struct TabPageView: View {
         }
     }
 
+    /// 浮在网页上面的那几条：没有要说的时候顶上什么都不浮，页面自己的顶栏露在状态栏下面。
     @ViewBuilder private func chrome(safe: EdgeInsets) -> some View {
+        let side = EdgeInsets(
+            top: 0, leading: safe.leading + WontonTheme.spacing.s8,
+            bottom: 0, trailing: safe.trailing + WontonTheme.spacing.s8
+        )
         VStack(spacing: 0) {
-            TabPageCapsule(
-                page: page, tab: tab, placed: placed, pages: pages, session: session, takeover: takeover,
-                details: { showsDetails = true },
-                shown: capsuleAllowed, panel: panel,
-                close: close ?? { pages.send(.pages(action: .closePage)) }
-            )
-            // 面板里按网页框的顶边放：房间的面板第 1 级从屏幕中间开始，那里没有状态栏要让。
-            .padding(.top, panel?.insetTop ?? safe.top)
-            .padding(.leading, safe.leading + WontonTheme.spacing.s8)
-            .padding(.trailing, safe.trailing + WontonTheme.spacing.s8)
+            if hasCapsule {
+                TabPageCapsule(
+                    page: page, tab: tab, placed: placed, pages: pages, session: session, takeover: takeover,
+                    details: { showsDetails = true },
+                    shown: capsuleAllowed, panel: panel,
+                    close: close ?? { pages.send(.pages(action: .closePage)) }
+                )
+                // 面板里按网页框的顶边放：房间的面板第 1 级从屏幕中间开始，那里没有状态栏要让。
+                .padding(.top, panel?.insetTop ?? safe.top)
+                .padding(side)
+            } else {
+                // 状态栏那一条空着，下面几条从它的下沿排起。
+                Color.clear.frame(height: safe.top).allowsHitTesting(false)
+                if hasStatusLine {
+                    PageStatusLine().padding(.top, WontonTheme.spacing.s8).padding(side)
+                }
+            }
             if panel == nil, !pendingCards.isEmpty {
                 PendingCardBanner(cards: pendingCards, open: openCardRoom)
             }
             if let takeover { TakeoverNotice(takeover: takeover) }
             if callRelayed {
-                CallRelayHint()
-                    .padding(.top, WontonTheme.spacing.s8)
-                    .padding(.leading, safe.leading + WontonTheme.spacing.s8)
-                    .padding(.trailing, safe.trailing + WontonTheme.spacing.s8)
+                CallRelayHint().padding(.top, WontonTheme.spacing.s8).padding(side)
             }
             Spacer(minLength: 0)
         }
@@ -324,24 +341,38 @@ private extension TabPageView {
         return PageTakeover(pluginId: pluginId, current: plugins.viewModel.takeover, send: plugins.send)
     }
 
-    /// 网页被浮在上面的东西挡住的上下两条。整页铺满整个屏幕（ADR-0095），顶上是状态栏加胶囊那一行：
-    /// 页面的背景照样画到屏幕顶，固定在顶上的按钮和滚动到头的位置让到胶囊下面，不然压在胶囊底下点不到。
-    /// 面板里的页面照面板的布局让出上下两条（ADR-0052）。网页框自己让开的系统上（`framedTop`）没有被挡住的。
-    private func obscured(safe: EdgeInsets) -> UIEdgeInsets {
-        if let panel {
-            return UIEdgeInsets(top: panel.insetTop, left: 0, bottom: panel.insetBottom, right: 0)
+    /// 胶囊只留给三处：聊天页的下拉面板（ADR-0052）；公网网页，来源域名是来源提示，不能省；内容窗口，
+    /// 那里没有导航栈的左边缘右滑，关闭只能靠它。别的整页不放：页面自己固定在顶上的按钮会被它压住。
+    private var hasCapsule: Bool {
+        if panel != nil { return true }
+        if case .content = placed { return true }
+        if case .url = tab {
+            #if DEBUG
+            if TabWebSession.urlAsAppPage { return false }
+            #endif
+            return true
         }
-        if PageTopInset.framesWebView { return .zero }
-        return UIEdgeInsets(top: safe.top + TabPageCapsule.rowHeight, left: 0, bottom: 0, right: 0)
+        return false
     }
 
-    /// 整页的网页框顶边到屏幕顶的距离：iOS 26 之前是状态栏加胶囊那一行（见 `PageTopInset`），之后是 0。
+    private var hasStatusLine: Bool { pageStatus.line != nil || pageStatus.subtitle != nil }
+
+    /// 网页被浮在上面的东西挡住的上下两条：只有面板里的页面有，照面板的布局让（ADR-0052）。
+    /// 整页的网页框自己让开顶上那一条（`framedTop`），没有被挡住的。
+    private func obscured(safe: EdgeInsets) -> UIEdgeInsets {
+        guard let panel else { return .zero }
+        return UIEdgeInsets(top: panel.insetTop, left: 0, bottom: panel.insetBottom, right: 0)
+    }
+
+    /// 整页的网页框顶边到屏幕顶的距离：状态栏，有胶囊的再加胶囊那一行。让出来的这一条由 `PageTopStrip`
+    /// 涂页面的颜色。不用 `obscuredContentInsets` 把网页铺到屏幕顶：现成应用固定在顶上的按钮会顶进状态栏、
+    /// 压在胶囊底下，滚动回弹时还会被藏住；按钮点得到比背景铺到顶要紧。
     private func framedTop(safe: EdgeInsets) -> CGFloat {
-        guard panel == nil, PageTopInset.framesWebView else { return 0 }
-        return safe.top + TabPageCapsule.rowHeight
+        guard panel == nil else { return 0 }
+        return safe.top + (hasCapsule ? TabPageCapsule.rowHeight : 0)
     }
 
-    /// 整页的顶上一条壳已经替页面让开了（`obscured` 或 `framedTop`），桥的 `--wonton-inset-top` 和
+    /// 整页的顶上一条壳已经替页面让开了（`framedTop`），桥的 `--wonton-inset-top` 和
     /// `safeAreaInsets.top` 报 0：照实给的话，按桥适配过的页面会再让一次。
     private func inputs(safe: EdgeInsets) -> TabWebInputs {
         let bottom = panel?.insetBottom ?? 0

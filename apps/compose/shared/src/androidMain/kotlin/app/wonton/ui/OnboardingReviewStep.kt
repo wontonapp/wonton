@@ -56,7 +56,7 @@ private fun ReviewItemHeading(item: OnboardingReviewItem, plugins: PluginsState)
         horizontalArrangement = Arrangement.spacedBy(WontonTheme.spacing.s12),
         verticalAlignment = Alignment.CenterVertically,
     ) {
-        if (item.kind == OnboardingReviewKind.AGENT || item.kind == OnboardingReviewKind.APP) {
+        if (item.kind == OnboardingReviewKind.APP) {
             PluginIconImage(item.icon, WontonTheme.size.taskIcon, plugins)
         }
         Column(Modifier.weight(1f), verticalArrangement = Arrangement.spacedBy(WontonTheme.spacing.s4)) {
@@ -82,7 +82,6 @@ private fun ReviewItemHeading(item: OnboardingReviewItem, plugins: PluginsState)
 @Composable
 private fun OnboardingReviewKind.section(): String = when (this) {
     OnboardingReviewKind.PROFILE -> stringResource(R.string.onboarding_review_section_profile)
-    OnboardingReviewKind.AGENT -> stringResource(R.string.onboarding_review_section_agent)
     OnboardingReviewKind.MODEL -> stringResource(R.string.onboarding_review_section_model)
     OnboardingReviewKind.APP -> stringResource(R.string.onboarding_review_section_apps)
 }
@@ -124,9 +123,7 @@ private fun ReviewItemState(state: OnboardingItemState, retry: () -> Unit) {
 @Composable
 private fun OnboardingReviewDetail.line(): String = when (this) {
     is OnboardingReviewDetail.Email -> email
-    is OnboardingReviewDetail.SetAsDefault -> stringResource(R.string.onboarding_review_set_default)
     is OnboardingReviewDetail.KeepCurrent -> stringResource(R.string.onboarding_review_keep_current)
-    is OnboardingReviewDetail.SignInAfterSetup -> stringResource(R.string.onboarding_review_sign_in_after_setup)
     is OnboardingReviewDetail.Unchanged -> stringResource(R.string.onboarding_review_unchanged)
 }
 

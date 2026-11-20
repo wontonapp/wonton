@@ -112,7 +112,7 @@ impl Bus {
         )
     }
 
-    /// 这次调用的封顶（ADR-0088 第 5 节、ADR-0083 第 5 节）：有进行中的桥轮次时按轮次里级别最低的人算，
+    /// 这次调用的封顶（ADR-0088 第 5 节、ADR-0083 第 5 节）：有进行中的轮次时按轮次里级别最低的人算，
     /// 没有时私人 Bot 按归属人、共享 Bot 按能用人里最低的。没有 Bot 的工具插件按主人的自动化算。
     pub(crate) fn ai_cap(&self, caller: &Caller) -> AiLevel {
         if let Some(level) = caller.ai_level {
@@ -153,7 +153,7 @@ impl Bus {
         }
     }
 
-    /// 进行中的桥轮次各自代表的级别。说话的人认不出时按最严，不用链代表的人替代（ChainSessionInfo 的 `sender`
+    /// 进行中的轮次各自代表的级别。说话的人认不出时按最严，不用链代表的人替代（ChainSessionInfo 的 `sender`
     /// 是这条轮次的说话人；认不清时不能按更松的链身份放行）。
     fn live_turn_ais(&self, caller: &Caller) -> Vec<AiLevel> {
         let Some(chains) = self.agent_chains.get() else {
@@ -167,7 +167,7 @@ impl Bus {
             return Vec::new();
         };
         ledger
-            .live_bridge_turns(&bot)
+            .live_turns(&bot)
             .into_iter()
             .map(|turn| {
                 let Some(username) = localpart(&turn.sender) else {

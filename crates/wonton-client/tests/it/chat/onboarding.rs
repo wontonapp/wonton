@@ -20,18 +20,11 @@ async fn sending_to_the_bot_hides_the_prompts_and_records_the_room() {
     let home = Home::start(&[phone.device_id()]).await;
     home.set_onboarding(json!({
         "step": "finished",
-        "primary_agent": "hermes",
-        "replaced_agent_asked": true,
-        "agents": [{
+        "default_bot_plugin": {
             "id": "hermes",
-            "title": "Hermes",
-            "source": null,
-            "status": {"state": "running", "health": "healthy"},
             "bot_user_id": "@hermes:wonton.localhost",
-            "default_bot_visibility": "visible",
-            "logins": [],
-            "blocked": null
-        }],
+            "visibility": "visible"
+        },
         "needs": [],
         "prompts": ["问我能做什么"],
         "catalog_problem": null
@@ -62,6 +55,7 @@ async fn sending_to_the_bot_hides_the_prompts_and_records_the_room() {
                 },
                 body: "你好".to_owned(),
                 reply_to: None,
+                mentions: vec![],
             },
         })
         .unwrap();
@@ -100,18 +94,11 @@ async fn prompts_used_reaches_the_disk_before_the_room_is_published_as_sent() {
     let home = Home::start(&[phone.device_id()]).await;
     home.set_onboarding(json!({
         "step": "finished",
-        "primary_agent": "hermes",
-        "replaced_agent_asked": true,
-        "agents": [{
+        "default_bot_plugin": {
             "id": "hermes",
-            "title": "Hermes",
-            "source": null,
-            "status": {"state": "running", "health": "healthy"},
             "bot_user_id": "@hermes:wonton.localhost",
-            "default_bot_visibility": "visible",
-            "logins": [],
-            "blocked": null
-        }],
+            "visibility": "visible"
+        },
         "needs": [],
         "prompts": ["问我能做什么"],
         "catalog_problem": null
@@ -160,6 +147,7 @@ async fn prompts_used_reaches_the_disk_before_the_room_is_published_as_sent() {
                 },
                 body: "你好".to_owned(),
                 reply_to: None,
+                mentions: vec![],
             },
         })
         .unwrap();

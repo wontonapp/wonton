@@ -65,7 +65,7 @@ MCP 没有视频内容类型，结果块只有 text、image、audio、resource_l
 
 ## 考虑过的做法
 
-- **给路径（工作区、共享收件箱）。** Agent 能自己 `pdftotext`、`ffmpeg`，但核心不知道 Agent 容器里挂的是哪个目录（ADR-0020 已经写过“挂载点是插件自己定的”，所以它不用容器路径作引用），得先定挂载约定；还要复制文件、管过期。ACP 桥那边已经在用这条路（附件落工作区给 `resource_link`，`crates/wonton-acp-bridge/src/bridge/attachments.rs:6-10`），缺的正是 MCP 这一侧。
+- **给路径（工作区、共享收件箱）。** Agent 能自己 `pdftotext`、`ffmpeg`，但核心不知道 Agent 容器里挂的是哪个目录（ADR-0020 已经写过“挂载点是插件自己定的”，所以它不用容器路径作引用），得先定挂载约定；还要复制文件、管过期。当时 ACP 桥那边已经在用这条路（附件落工作区给 `resource_link`；桥已随 ADR-0108 删除），缺的正是 MCP 这一侧。
 - **返回嵌入 resource（blob）或 `resource_link`。** `resource_link` 要有 `resources/read` 才活得下去，核心没声明这个能力。嵌入 blob 在 Hermes 上会被解码写进它的文档缓存、回一句“用 read_file 或终端读”（上游 `tools/mcp_tool_content.py`），绕回给路径，还要多花三分之一的体积；有的客户端还会把这类块整块丢掉（strands-agents/harness-sdk#535）。
 - **PDF 转图给 image 块。** 模型看得见表格和版式，但要渲染器（pdfium、MuPDF），MuPDF 是 AGPL 链不进来，pdfium 要另带一个原生库。文字够用，留作以后。
 - **关键帧。** 要 ffmpeg，见上。

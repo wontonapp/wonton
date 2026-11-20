@@ -28,12 +28,6 @@ paths = ['''^deploy/dev/core/dev\.sh$''']
 regexes = ['''\$\{WONTON_DEV_PUID:-1000\}:\$\{WONTON_DEV_PGID:-1000\}''']
 
 [[allowlists]]
-description = "smoke.sh 的状态开关变量（值只有 0 和 1），不是凭据"
-condition = "AND"
-paths = ['''^deploy/dev/agent/smoke\.sh$''']
-regexes = ['''temp_key_issuing=0''']
-
-[[allowlists]]
 description = "WebSocket 握手用 RFC 6455 文中的示例 nonce（\"the sample nonce\" 的 base64），不是凭据（分享冒烟与网关能力测试）"
 condition = "AND"
 paths = ['''^crates/wonton-core/examples/fr_share_smoke/wire\.rs$''', '''^crates/wonton-core/src/gateway/capabilities_tests\.rs$''']

@@ -24,10 +24,21 @@ impl ClientCore {
             return match action {
                 Action::Pages { action } => self.dispatch_ui_fake(action),
                 Action::Chat { action } => {
+                    self.ui_fake_timelines.chat_action(&action);
                     self.dispatch_ui_fake_chat(action);
                     Ok(())
                 }
+                // 假时间线（跳转、发字）和停止钮的假运行段都要看到同一个操作。
+                Action::Timeline { action } => {
+                    self.ui_fake_timelines.timeline_action(action.clone());
+                    self.dispatch_ui_fake_timeline(action);
+                    Ok(())
+                }
                 Action::Plugins { action } => self.dispatch_ui_fake_plugins(action),
+                Action::Agent { action } => {
+                    self.dispatch_ui_fake_agent(action);
+                    Ok(())
+                }
                 _ => Ok(()),
             };
         }
@@ -130,7 +141,7 @@ impl ClientCore {
                 }
                 let onboarding = scope.onboarding.view();
                 let bot = match (
-                    onboarding.primary_bot_user_id,
+                    onboarding.default_bot_user_id,
                     onboarding.default_bot_visibility,
                 ) {
                     (Some(bot), Some(DefaultBotVisibility::Visible)) => bot,
@@ -358,6 +369,10 @@ impl ClientCore {
     }
 
     fn agent_action(&self, scope: &Scope, action: AgentAction) -> Result<(), CoreError> {
+        if let AgentAction::StopTurns { target } = action {
+            self.stop_turns(scope, target);
+            return Ok(());
+        }
         let (core_url, proxy) = super::agent_chains::connection(scope)?;
         let view = self.views().agent_chains.clone();
         view.send_if_modified(|model| model.action_failure.take().is_some());

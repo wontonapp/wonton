@@ -232,6 +232,7 @@ fun PluginWebView(
     textZoom: Int = 100,
     publicPage: Boolean = false,
     profileName: String? = null,
+    fullPage: Boolean = false,
 ) {
     val loaded by rememberUpdatedState(onLoaded)
     val failed by rememberUpdatedState(onFailed)
@@ -295,6 +296,7 @@ fun PluginWebView(
                 if (!view.rendererGone) view.destroy()
             },
             update = { view ->
+                view.fullPage = fullPage
                 if (!publicPage) {
                     view.updateBridge(allowedOrigins, documentStartScript) { origin, main, message ->
                         bridge(origin, main, message)
@@ -349,6 +351,16 @@ private class ThemedPluginWebView(
         return super.dispatchTouchEvent(event)
     }
 
+    /**
+     * 整页（上面让出状态栏那一条的页）。它不要外层的回弹：内容再短也能把整页连同它固定的顶栏拉出去一截，页面里自己的
+     * 滚动容器照旧。取色脚本也只给它装：面板和引导页没有那一条，装了只是白算。
+     */
+    var fullPage = false
+        set(value) {
+            field = value
+            if (value) overScrollMode = View.OVER_SCROLL_NEVER
+        }
+
     fun disposePage() {
         if (disposed) return
         disposed = true
@@ -366,7 +378,7 @@ private class ThemedPluginWebView(
         require(WebViewFeature.isFeatureSupported(WebViewFeature.WEB_MESSAGE_LISTENER))
         require(WebViewFeature.isFeatureSupported(WebViewFeature.DOCUMENT_START_SCRIPT))
         pageMedia.update(origins)
-        pageColor.update(origins)
+        if (fullPage) pageColor.update(origins)
         val originsChanged = bridgeOrigins != origins
         if (originsChanged) {
             if (bridgeOrigins != null) WebViewCompat.removeWebMessageListener(this, "wontonBridge")

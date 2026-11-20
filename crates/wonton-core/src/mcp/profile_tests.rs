@@ -9,6 +9,7 @@ use serde_json::{Value, json};
 use wonton_protocol::{BotActivity, MAX_AVATAR_BYTES};
 
 use super::Bus;
+use super::Caller;
 use super::audit::Audit;
 use super::test_setup::{NOTES, Setup, manager, setup};
 use super::tests::{failed, text};
@@ -16,9 +17,11 @@ use crate::files::share_fs::saving::Outgoing;
 use crate::http::HttpClient;
 use crate::matrix::Matrix;
 use crate::matrix::fake::{self, Fake, User};
+use crate::plugin::bot_services::DEFAULT_BOT;
 use crate::plugin::docker::Engine;
 use crate::plugin::languages::Languages;
 use crate::plugin::{PluginId, PluginPackage, PluginStatus};
+use wonton_protocol::BotKeeper;
 
 const GET: &str = "wonton__get_profile";
 const SET: &str = "wonton__set_profile";
@@ -61,6 +64,14 @@ impl Bed {
             manager.bot_for_test(&id, user);
             fake.state().users.insert(user.to_owned(), User::default());
         }
+        s.caller = Caller::for_bot(
+            s.caller.id.clone(),
+            None,
+            DEFAULT_BOT.to_owned(),
+            BotKeeper::User {
+                username: "owner".to_owned(),
+            },
+        );
         s.bus = Bus::new(
             manager.clone(),
             s.bus.confirmations.clone(),
@@ -223,11 +234,11 @@ async fn successful_avatar_writes_consume_only_used_files_and_preserve_other_sta
     assert!(!b.outbox.join("portrait.bin").exists());
     assert!(!b.outbox.join("same.bin").exists());
     assert!(b.outbox.join("unused.png").exists());
-    let before = b.s.manager.bot_profile(&b.s.caller.id).await.unwrap();
+    let before = b.s.manager.bot_profile(&b.s.caller.id, None).await.unwrap();
     assert_eq!(before.avatars.states["working"].mimetype, "image/gif");
     let profile = b.value(SET, json!({"avatars": {"idle": null}})).await;
     assert_eq!(profile["avatars"], json!(["working", "waiting"]));
-    let after = b.s.manager.bot_profile(&b.s.caller.id).await.unwrap();
+    let after = b.s.manager.bot_profile(&b.s.caller.id, None).await.unwrap();
     assert_eq!(
         after.avatars.states["working"],
         before.avatars.states["working"]
@@ -404,7 +415,7 @@ async fn only_explicitly_populated_known_states_are_reported() {
     let b = Bed::new().await;
     b.offer("idle.png", PNG);
     b.value(SET, json!({"avatars": {"idle": "idle.png"}})).await;
-    let profile = b.s.manager.bot_profile(&b.s.caller.id).await.unwrap();
+    let profile = b.s.manager.bot_profile(&b.s.caller.id, None).await.unwrap();
     assert!(profile.avatars.for_state(BotActivity::Offline).is_some());
     assert_eq!(b.value(GET, json!({})).await["avatars"], json!(["idle"]));
 }
@@ -423,4 +434,77 @@ fn outbox_media_reads_stop_one_byte_after_the_fixed_protocol_limit() {
     let data = outgoing.read_bounded(MAX_AVATAR_BYTES + 1).unwrap();
     assert_eq!(data[0].1.len() as u64, MAX_AVATAR_BYTES + 1);
     assert!(outbox.join("large").exists());
+}
+
+fn caller_by_token(b: &Bed, token: &str) -> Caller {
+    let (bot, keeper) =
+        b.s.manager
+            .bot_by_token(&b.s.caller.id, token)
+            .expect("令牌应认出 Bot");
+    Caller::for_bot(b.s.caller.id.clone(), None, bot, keeper)
+}
+
+#[tokio::test]
+async fn tokens_name_the_bot_and_an_unknown_bot_never_touches_the_default_one() {
+    let b = Bed::new().await;
+    let second = "@own-second:test";
+    b.matrix
+        .state()
+        .users
+        .insert(second.to_owned(), User::default());
+    let keeper = BotKeeper::User {
+        username: "owner".to_owned(),
+    };
+    b.s.manager.bot_records_for_test(
+        &b.s.caller.id,
+        &[
+            (DEFAULT_BOT, OWN, keeper.clone(), "default-token"),
+            ("second", second, keeper, "second-token"),
+        ],
+    );
+    let first = caller_by_token(&b, "default-token");
+    let other = caller_by_token(&b, "second-token");
+    assert_ne!(
+        first.bot.as_ref().unwrap().bot,
+        other.bot.as_ref().unwrap().bot
+    );
+
+    let written = b.s.call_as(&other, SET, json!({"name": "另一个"})).await;
+    assert!(!failed(&written), "{written:?}");
+    assert_eq!(
+        b.matrix.state().user(second).display_name.as_deref(),
+        Some("另一个")
+    );
+    assert_eq!(b.matrix.state().user(OWN).display_name, None);
+    let profile: Value =
+        serde_json::from_str(&text(&b.s.call_as(&first, GET, json!({})).await)).unwrap();
+    assert_eq!(profile["name"], Value::Null);
+
+    // 令牌认不出 Bot 时，两个工具都不落到默认 Bot。
+    assert!(
+        b.s.manager
+            .bot_by_token(&b.s.caller.id, "no-such-token")
+            .is_none()
+    );
+    let ghost = Caller::for_bot(
+        b.s.caller.id.clone(),
+        None,
+        "ghost".to_owned(),
+        BotKeeper::User {
+            username: "owner".to_owned(),
+        },
+    );
+    for (tool, args) in [(GET, json!({})), (SET, json!({"name": "别动"}))] {
+        let result = b.s.call_as(&ghost, tool, args).await;
+        assert!(failed(&result), "{result:?}");
+        let message = text(&result);
+        assert!(message.starts_with("invalid_input:"), "{message}");
+        assert!(message.contains("ghost"), "{message}");
+    }
+    assert_eq!(b.matrix.state().user(OWN).display_name, None);
+    assert_eq!(
+        b.matrix.state().user(second).display_name.as_deref(),
+        Some("另一个")
+    );
+    b.no_cards();
 }

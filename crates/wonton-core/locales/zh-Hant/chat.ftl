@@ -161,12 +161,11 @@ chat-choice-hop-limit-stay = 先停著
 chat-hop-limit-resumed = 已繼續
 chat-hop-limit-kept-by-other = 另一方選了先停著，房間還停著
 
-# 鏈上限卡片（ADR-0061 第 10 節）：「再給一份」把輪數和花費各加一份預設值，「先停著」停下整條鏈。
+# 鏈上限卡片（ADR-0061 第 10 節）：「再給一份」把輪數加一份預設值，「先停著」停下整條鏈。
 chat-chain-limit-title = 這條鏈用到上限了
 chat-chain-limit-title-rounds = 這條鏈的輪數用完了
-chat-chain-limit-title-cost = 這條鏈的花費用完了
 chat-chain-limit-bots = 鏈上的 Bot：{ $bots }
-chat-chain-limit-what = 「再給一份」把輪數和花費各加一份預設上限。「先停著」停下整條鏈，要接著做人重新說一句。
+chat-chain-limit-what = 「再給一份」把輪數加一份預設上限。「先停著」停下整條鏈，要接著做人重新說一句。
 chat-chain-limit-grant = 再給一份
 chat-chain-limit-stop = 先停著
 chat-chain-stopped-card = 鏈被停了，這張卡片作廢
@@ -174,7 +173,3 @@ chat-chain-stopped-card = 鏈被停了，這張卡片作廢
 # 傳訊卡片（ADR-0061 第 9 節）：$recipient 是收件人，$bot 是傳訊的 Bot。
 chat-send-message-title = 向 { $recipient } 傳送訊息
 chat-send-message-queued = 已核准，等 { $bot } 傳送
-
-chat-handoff-title = { $from } → { $bot }
-chat-handoff-risk = 這個 Bot 能透過目標執行環境執行命令、改檔案，也能讀出裡面的任何東西，包括登入憑證和別的對話。
-chat-handoff-started = 已交接，目標 Bot 正在處理

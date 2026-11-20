@@ -25,7 +25,6 @@ async fn stop_chain_dispatch_updates_the_subscribed_list() {
             "origin": {"room_id": "!r:home.example", "thread_id": null},
             "bots": [{"bot": {"plugin_id": "app.orchestrator", "bot": "owner"}, "layer": 1}],
             "rounds": 2,
-            "spend": {"type": "unknown"},
             "status": status,
             "can_stop": true,
         })

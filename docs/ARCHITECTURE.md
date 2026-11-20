@@ -150,7 +150,7 @@ Matrix 邀请流程只在对方同意后调用存储 API；本机账号分配须
 
 服务器比 App 旧时，引导不整页报错：某个接口回 404、而服务器报的版本比这个接口要的旧（`minimum_server_version`），客户端核心归成“服务器太旧”，这一步整步不显示、完成时也不做它；连引导接口都没有时整段不出现，只留一条升级服务器的提示。服务器不旧却回 404 的照旧按原类别报。服务器版本从核心升级状态的 `current.version` 取，取不到就不判旧。
 
-默认助手只用 Hermes，引导不再要求选择内核或安装 Magpie。资料、应用推荐、安装权限和本地帮助的职责沿用 ADR-0034；内核选择、经桥订阅登录和固定 Magpie 模型页面的规则由 [ADR-0108](adr/0108-hermes-default-kernel.md) 取代。
+默认助手只用 Hermes，引导不再要求选择内核、Agent 或安装 Magpie：默认 Bot 由默认插件目录里唯一的 Agent 插件重建，模型页只有“沿用当前模型”和打开上游设置页。资料、应用推荐、安装权限和本地帮助的职责沿用 ADR-0034；内核选择、经桥订阅登录和固定 Magpie 模型页面的规则由 [ADR-0108](adr/0108-hermes-default-kernel.md) 取代。
 
 模型接入使用 Hermes 自带供应商与其原生登录、配置能力，不另建 Wonton provider 或登录适配。未配置、登录失效、上游失败和可用必须区分，不能以打开过页面代替真实模型可用；本篇不决定引导顺序、导航或控件。
 
@@ -227,7 +227,7 @@ Bot 页复用既有页面容器、桥、媒体和 `--wonton-*`，不另造壳层
 装、卸、升级、停止时才回 503 并写明原因。核心重启后核对也是逐个服务算的：一个容器没起来不影响别的服务的入口，
 MCP 服务和模型网关同一条规则，局域网端口本来就直连各自的容器。
 
-插件网页能固定到底栏，也能全屏（只留一个胶囊），主题令牌由 App 注入，页面和 App 之间用 MCP Apps 的方法名。Agent 能写插件
+插件网页整页打开，网页框从状态栏下沿开始、壳不放控件，左边缘右滑或系统返回退出（ADR-0095），主题令牌由 App 注入，页面和 App 之间用 MCP Apps 的方法名。Agent 能写插件
 并经总线装上，走和上传相同的校验和确认。设计见 [ADR-0033](adr/0033-plugin-tabs.md)。
 
 ### 第三方 App、局域网端口和出网
@@ -323,7 +323,7 @@ Bot 用 `wonton__get_profile`、`wonton__set_profile` 读写自己的资料，�
 
 - Bot = 一个 Matrix 身份 + 一个驱动它的 Agent 插件。核心分配身份、权限与受管工具，不承载 Agent 循环或供应商适配；模型网关是按声明使用的通用能力，不是默认 Hermes 的模型前置。
 - 名字、静态头像和状态头像组以 Matrix 资料为准；主人经隧道接口修改，Agent 可经自身 Matrix 身份或核心工具修改。清单只初始化新账号的名字和静态头像，状态头像只补不存在的字段。核心写入共用 `PluginManager::profile_revisions()` 的版本表，见 [ADR-0044](adr/0044-bot-profile-and-status-avatars.md)。
-- 唯一默认内核为 Hermes，使用其原生 Matrix、MCP 和供应商接入。调用 Codex、Claude Code 等走 Hermes 自带 ACP 委派，不再建设 Wonton ACP 桥、`agent_acp` 网关或逐家登录与模式适配；OpenClaw 只作替换备选，不同时维护两套默认体验（[ADR-0108](adr/0108-hermes-default-kernel.md)）。
+- 唯一默认内核为 Hermes，使用其原生 Matrix、MCP 和供应商接入。调用 Codex、Claude Code 等走 Hermes 自带 ACP 委派，不再建设 Wonton ACP 桥、`agent_acp` 网关或逐家登录与模式适配；OpenClaw 只作替换备选，不同时维护两套默认体验；其他 Agent 插件由作者按插件规范自己做，只走社区来源，不进官方索引（[ADR-0108](adr/0108-hermes-default-kernel.md)）。
 - 原生委派不自动创建另一个 Wonton Bot，也不继承另一个 Bot 的身份或权限。任务、透明记忆、晨报与提醒复用 Hermes 既有能力；App 的具体交互不在本篇固定。旧 ACP 专用资产与通用底座的拆分边界见 ADR-0108。
 - Hermes 插件仅做 Compose、配置、环境变量与最少胶水，原样使用按版本和摘要固定的上游官方镜像，不改源码、不打补丁；升级更新版本并运行真实冒烟，不把文档决定当实现验收。
 - 每个家人有自己的账号、私人 Bot 和私人空间，主人可以建共享 Bot 拉进家庭群；同机的 Bot 之间经联系人互发消息，网关限频率和跳数。见 [ADR-0045](adr/0045-family-members.md)。

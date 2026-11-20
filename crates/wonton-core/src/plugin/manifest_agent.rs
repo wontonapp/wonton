@@ -1,8 +1,8 @@
-//! 插件清单里的 Agent 协议、账号登录声明与校验。
+//! 插件清单里的 Agent 协议声明与校验。
 
-use super::manifest::{Manifest, ManifestError, Permission, PluginKind, is_label, require_locales};
+use super::manifest::{Manifest, ManifestError, PluginKind};
 
-pub use wonton_protocol::manifest::{AgentLogin, AgentProtocol, AgentSpec};
+pub use wonton_protocol::manifest::{AgentProtocol, AgentSpec};
 
 pub(super) fn validate(manifest: &Manifest) -> Result<(), ManifestError> {
     if manifest.kind == PluginKind::Agent && manifest.agent.is_none() {
@@ -13,6 +13,11 @@ pub(super) fn validate(manifest: &Manifest) -> Result<(), ManifestError> {
     let Some(agent) = &manifest.agent else {
         return Ok(());
     };
+    if agent.protocol == AgentProtocol::Acp {
+        return Err(ManifestError::UnsupportedAgentProtocol {
+            protocol: "acp".to_owned(),
+        });
+    }
     if let Some(skills) = &agent.skills {
         if manifest.kind != PluginKind::Agent {
             return Err(ManifestError::Invalid(
@@ -20,27 +25,6 @@ pub(super) fn validate(manifest: &Manifest) -> Result<(), ManifestError> {
             ));
         }
         validate_mount("agent.skills.mount", &skills.mount)?;
-    }
-    let mut seen = std::collections::BTreeSet::new();
-    for login in &agent.login {
-        if !is_label(&login.id) {
-            return Err(ManifestError::Invalid(format!(
-                "agent.login id `{}` is invalid",
-                login.id
-            )));
-        }
-        if !seen.insert(&login.id) {
-            return Err(ManifestError::Invalid(format!(
-                "agent.login id `{}` is duplicated",
-                login.id
-            )));
-        }
-        require_locales("agent.login.title", &login.title)?;
-    }
-    if !agent.login.is_empty() && !manifest.permissions.contains(&Permission::NetworkEgress) {
-        return Err(ManifestError::Invalid(
-            "agent.login requires the network.egress permission".to_owned(),
-        ));
     }
     Ok(())
 }

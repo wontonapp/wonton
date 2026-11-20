@@ -2,6 +2,8 @@
 
 - 状态：提议（2026-11-05 接受后重新打开）。主人决定 M1 不做 Agent 的问题卡片（见“问题卡片 M1 不做”）；其余取舍由主人确认（见“已定”）；2026-11-13 按 [ADR-0034](0034-onboarding-and-help.md) 修订引导模型配置的入口和保存边界
 - 补充：[ADR-0016](0016-mcp-bus-and-confirmations.md)（卡片和回答的接口）、[ADR-0034](0034-onboarding-and-help.md)（引导的外观）、[ADR-0035](0035-acp-bridge.md)（`elicitation/create`）、[ADR-0036](0036-plugin-privileges.md)（最高级“多点一步”的做法）
+- 由 [ADR-0108](0108-hermes-default-kernel.md) 修订（主人 2026-11-15）：ACP 桥已删除，文中桥处理 `elicitation/create`、给桥用的 `POST /agent/questions`
+  和对各家 ACP 适配器的估算只作历史
 
 ## 背景
 
@@ -31,7 +33,7 @@
 **主人 2026-11-05 决定：Agent 发的问题卡片 M1 先不做。** Agent 要问主人时用文字：
 
 - **Hermes：** 用它默认的 `clarify`，在 Matrix 上是带编号的文字，主人回一条消息当答案。
-- **ACP 桥：** 表单模式的 `elicitation/create` 照旧回 `decline`，Agent 在聊天里打字问。
+- ~~**ACP 桥：** 表单模式的 `elicitation/create` 照旧回 `decline`，Agent 在聊天里打字问。~~（桥已随 ADR-0108 删除）
 - **OpenClaw 这类改不了 Matrix 层的 Agent：** 用它自带的文字提问。
 
 两个方案都没选：核心代发的明文卡片，主人不接受，因为题目和答案会以明文存在加密房间里；Agent 自己发加密卡片可行（见“验证结果”），但主人看过代价后选了 M1 不做。代价是每种自带 Matrix 层的 Agent 都要单独适配，核心没法审计和限流，Hermes 升级时插件可能要跟着改。
@@ -270,7 +272,7 @@ POST /_wonton/confirmations/{id}
 #### 其他 Agent 怎么接
 
 - **Hermes：** 它的插件配置关掉 `clarify`，模型就只有这一种问法，不会一会儿卡片一会儿编号文字。
-- **ACP Agent：** 桥说的不是 MCP，所以和 `/agent/permissions` 一样，给一个 `POST /agent/questions`，请求和结果与工具相同。桥把 ACP 表单模式的 `elicitation/create` 转过去，不再一律 `decline`：枚举是单选，枚举数组是多选，字符串是输入框，布尔是两个选项；转不了的回 `decline`。URL 模式照旧（ADR-0035）。
+- **ACP Agent**（桥已随 ADR-0108 删除，只作历史）**：** 桥说的不是 MCP，所以和 `/agent/permissions` 一样，给一个 `POST /agent/questions`，请求和结果与工具相同。桥把 ACP 表单模式的 `elicitation/create` 转过去，不再一律 `decline`：枚举是单选，枚举数组是多选，字符串是输入框，布尔是两个选项；转不了的回 `decline`。URL 模式照旧（ADR-0035）。
 - **插件自己发 elicitation：** 不做。核心连插件时不声明这个能力，要做时映射规则同上。
 
 ### 一次操作几项确认

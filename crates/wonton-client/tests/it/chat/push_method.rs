@@ -25,6 +25,7 @@ async fn own_message_is_not_notified(phone: &Phone, bot_room: &ChatRoom, room_id
                 },
                 body: "这是我自己说的".to_owned(),
                 reply_to: None,
+                mentions: vec![],
             },
         })
         .unwrap();

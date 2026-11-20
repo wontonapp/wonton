@@ -3,6 +3,8 @@
 - 状态：已接受（主人 2026-11-15 第 1–7 条决定）
 - 取代：[ADR-0007](0007-agents-and-bots.md) 的多内核接入、ACP 桥及默认安装的模型网关前置；[ADR-0035](0035-acp-bridge.md) 的自建 Matrix↔ACP 桥；[ADR-0061](0061-agent-runtime-and-frontends.md) 的多运行时、多前端、`agent_acp` 网关和跨内核委派路线。不取代 Bot 身份、核心确认和受控发送等底座约束。
 - 修订：[ADR-0008](0008-model-gateway-magpie.md)、[ADR-0055](0055-model-gateway-optional.md) 的 Magpie 系统插件与 Agent 模型入口规则；[ADR-0034](0034-onboarding-and-help.md) 的选内核、模型设置和经桥订阅登录；[ADR-0079](0079-agent-plugins-monorepo.md) 的逐家 ACP 适配；[ADR-0081](0081-local-agent-host.md) 的电脑 ACP 运行时路线；[ADR-0084](0084-agent-own-web.md) 的多内核接入前提。
+- 2026-11-19 补充（主人定，见第 6 节）：取代 [ADR-0059](0059-team-ops-plugins.md) 的编排器插件路线，并随 ACP 桥取代 [ADR-0058](0058-agent-side-sessions.md) 在桥里实现的部分；修订 [ADR-0015](0015-small-components-standard-interfaces.md) 的组件间标准接口（去掉 ACP），以及 ADR-0016、0038、0044、0053、0070、0082、0083、0088、0091、0093、0094 里由 ACP 桥或交接承担的部分和 ADR-0066 里其他官方 Agent 插件的技能挂载。
+- 第 1 节“私人 Bot 之间保持独立容器”被 [ADR-0110](0110-one-hermes-container-per-person.md) 部分修订（提议）：同一个人的多个私人 Bot 默认共用他自己的一个 Hermes 容器，也可单独运行。
 
 ## 背景与主人原话
 
@@ -73,6 +75,12 @@ Hermes 的供应商密钥与登录态按上游支持方式保存在对应 Bot �
 - **Agent 容器内自身工具**：终端、文件及被委派程序按上游审批，明确其可读取本 Bot 数据、历史和凭据的风险。不是所有容器内命令都转成核心确认卡片，也不能宣传“所有动作都由核心逐步审批”。
 - **身份与来源**：核心核对实际 Bot、发起人及来源会话；来自文件、网页、其他 Bot 或工具的内容不是主人授权。认不清发起人时不能套用归属人的自动放行。
 - **受控发送**：`wonton__send_message` 的收件人范围、收件人与全文确认、来源身份、主人已设的放宽范围和真实投递回报保留。Hermes 的普通回复或裸发送工具不能充当这条受控发送路径；取消、拒绝不发送，未获真实投递结果不报告送达。
+
+### 6. 其他 Agent 插件（2026-11-19 补充）
+
+- 官方维护的其他 Agent 插件下架并归档仓库：`wonton-agents` 合仓里的 Agent、ZCode、agent-orchestrator 和 OpenClaw，不再维护。
+- 其他 Agent 由作者按插件规范做成插件，只走社区来源（[ADR-0031](0031-plugin-sources.md)），不进官方索引，不标“已审核”。核心对它们和 Hermes 用同一份合同。
+- ACP 不再是组件之间的标准接口，只用于 Hermes 内部的委派（第 3 节、[ADR-0015](0015-small-components-standard-interfaces.md)）。
 
 ## 删除与保留边界
 

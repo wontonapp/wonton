@@ -5,7 +5,7 @@
 
 ## 背景
 
-国内主机直连不了 ghcr.io，比 Docker Hub 还彻底：官方索引里我们自己的插件镜像、ACP 桥镜像，以及 immich、paperless-ngx、
+国内主机直连不了 ghcr.io，比 Docker Hub 还彻底：官方索引里我们自己的插件镜像，以及 immich、paperless-ngx、
 open-webui、karakeep 的上游镜像都在 ghcr。quay.io 上是 minio、node-exporter 这类常用的上游。ADR-0040 只加速
 `docker.io`，这些镜像照旧直连，装到一半卡在拉镜像。
 
@@ -27,7 +27,7 @@ ghcr 的路径，整次安装就失败，明明名单里别的站还活着。
 ```
 
 - 只认这三个仓库；别的仓库（localhost、自建 registry、gitlab）照旧直连，没有名单。
-- 一维列表不再兼容：这是第一个外部用户之前，按 [AGENTS.md](../AGENTS.md) 的约定直接改。上线顺序是核心先合、索引后合：
+- 一维列表不再兼容：这是第一个外部用户之前，按 [AGENTS.md](../../AGENTS.md) 的约定直接改。上线顺序是核心先合、索引后合：
   新核心读到旧索引时整份名单读不懂，设置页显示一条问题、地址只能手填，插件照旧装得上；反过来旧核心读到新索引也是
   “读不懂一条问题”。索引的 `registry_mirrors` 读不懂只作废这一份名单，不让整个索引读不了（`plugin check-index` 的路不变）。
 - **设置里的开关总控**：关掉加速时 ghcr、quay 的名单也不用，全部直连；打开时三类仓库都按名单走，Docker Hub 用主人选的那个站排在最前面。

@@ -361,7 +361,7 @@ impl Upstreams {
         // supergateway 4.2.1 转 stdio 时收到 server/discover 就断开、不回应（实测），客户端会一直等下去。
         let info = ClientConfig::new(
             ClientCapabilities::default(),
-            Implementation::new("wonton-core", env!("CARGO_PKG_VERSION")),
+            Implementation::new("wonton-core", crate::build_info::version()),
         )
         .with_protocol_version(ProtocolVersion::V_2025_11_25);
         let lifecycle = ClientLifecycleMode::Initialize;

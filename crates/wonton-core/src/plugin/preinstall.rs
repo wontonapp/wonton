@@ -102,6 +102,29 @@ pub(super) fn packages_in(dir: &Path) -> Result<Vec<PluginPackage>, InstallError
     Ok(dirs.iter().filter_map(load).collect())
 }
 
+/// 默认插件目录里的 Agent 插件，就是默认 Bot 插件（见 [`PluginManager::default_bot_plugin`]）。目录里没有
+/// Agent 时为空；有不止一个时报错：哪个算默认定不下来，不按目录顺序猜。
+pub fn default_bot_plugin_in(dir: &Path) -> Result<Option<PluginId>, InstallError> {
+    let agents: Vec<PluginId> = packages_in(dir)?
+        .into_iter()
+        .filter(|package| package.manifest.kind == PluginKind::Agent)
+        .map(|package| package.manifest.id)
+        .collect();
+    match agents.as_slice() {
+        [] => Ok(None),
+        [agent] => Ok(Some(agent.clone())),
+        _ => Err(InstallError::Invalid(format!(
+            "默认插件目录 {} 里有多个 Agent 插件（{}），定不了默认 Bot 插件",
+            dir.display(),
+            agents
+                .iter()
+                .map(PluginId::as_str)
+                .collect::<Vec<_>>()
+                .join("、")
+        ))),
+    }
+}
+
 /// 换个时间再试可能就好了的错误。插件包本身的问题重试也一样；已存在说明别人在装或在处理它。
 fn retryable(e: &InstallError) -> bool {
     match e {
@@ -153,6 +176,19 @@ impl PluginManager {
         let ids = packages.iter().map(|p| p.manifest.id.clone());
         self.bundled.write().expect("插件表锁中毒").extend(ids);
         Ok(packages)
+    }
+
+    /// 默认 Bot 插件：默认安装里的 Agent 插件（[`default_bot_plugin_in`]）。家人的私人 Bot 装在它上面，“问 Bot”和
+    /// 聊天列表置顶找它的默认 Bot。主人卸掉它以后仍是它：私人 Bot 如实报未安装，不改用别的已装 Agent。
+    pub fn default_bot_plugin(&self) -> Option<PluginId> {
+        self.default_bot_plugin
+            .read()
+            .expect("插件表锁中毒")
+            .clone()
+    }
+
+    pub fn set_default_bot_plugin(&self, id: Option<PluginId>) {
+        *self.default_bot_plugin.write().expect("插件表锁中毒") = id;
     }
 
     /// 随核心附带、没在运行的插件：在装、出了错或在卸载。

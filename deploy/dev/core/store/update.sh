@@ -1,6 +1,6 @@
 #!/usr/bin/env bash
 # 重新生成开发索引（index.json 和 blobs/）：按下面列的 tag 取每个插件仓库，用 `wonton-core plugin index-entry` 写进来，
-# onboarding 段取自 wonton-store 的固定提交，和公开商店的引导一致。校验不过时不写出索引。
+# onboarding 段取自 wonton-store 的固定提交，和公开商店的引导一致（`agents` 去掉，默认助手由默认安装的 Agent 插件决定）。校验不过时不写出索引。
 #
 #   deploy/dev/core/store/update.sh
 set -euo pipefail
@@ -9,15 +9,10 @@ here="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 repo="$(cd "$here/../../../.." && pwd)"
 # 引导清单跟着 wonton-store 的这个提交，不跟 main。要换引导时改这里。
 store_commit=ee59c022fab39fbf1415945c53cd556b82321429
+# Agent 只收 Hermes：别的 Agent 插件还是 `agent.protocol: acp` 的旧清单，核心按新协议读不懂，等它们改完再加回来。
 plugins=(
   geraldpeng6/wonton-plugin-files@v0.2.2
   wontonapp/wonton-plugin-hermes@v0.6.6
-  wontonapp/wonton-plugin-openclaw@v0.1.4
-  geraldpeng6/wonton-plugin-omp@v0.1.3
-  geraldpeng6/wonton-plugin-codex@v0.1.4
-  geraldpeng6/wonton-plugin-claude-code@v0.1.2
-  geraldpeng6/wonton-plugin-codebuddy@v0.1.0
-  geraldpeng6/wonton-plugin-zcode@v0.1.1
   geraldpeng6/wonton-plugin-immich@v0.2.0
   geraldpeng6/wonton-plugin-navidrome@v0.1.1
   geraldpeng6/wonton-plugin-paperless-ngx@v0.1.2
@@ -58,6 +53,7 @@ index_dir, onboarding_path, manifests_dir = map(Path, sys.argv[1:])
 index_path = index_dir / "index.json"
 index = json.loads(index_path.read_text(encoding="utf-8"))
 onboarding = json.loads(onboarding_path.read_text(encoding="utf-8"))
+onboarding.pop("agents", None)
 kinds = {
     manifest["id"]: manifest["kind"]
     for manifest in (
@@ -65,11 +61,6 @@ kinds = {
         for path in sorted(manifests_dir.glob("*.json"))
     )
 }
-for plugin_id in onboarding["agents"]:
-    if plugin_id not in kinds:
-        sys.exit(f"onboarding.agents 的插件不在索引里：{plugin_id}")
-    if kinds[plugin_id] != "agent":
-        sys.exit(f"onboarding.agents 的插件不是 kind: agent：{plugin_id}")
 for need in onboarding["needs"]:
     for plugin_id in need["plugins"]:
         if plugin_id not in kinds:

@@ -240,7 +240,9 @@ struct SidebarPanel: View {
                 } action: {
                     openDestination(.app(app))
                 }
-                .contextMenu { myAppMenu(app) }
+                .contextMenu {
+                    SidebarAppMenu(app: app, plugins: plugins, pages: pages, navigate: openDestination)
+                }
             }
         }
         ForEach(failed, id: \.id) { plugin in
@@ -251,7 +253,7 @@ struct SidebarPanel: View {
             ) {
                 PluginIconView(icon: plugin.icon, size: 28, model: plugins)
             } action: {
-                openDestination(.failedApp(plugin.id))
+                openDestination(.pluginDetails(plugin.id))
             }
         }
         if pages.viewModel.syncStale {
@@ -274,28 +276,6 @@ struct SidebarPanel: View {
     private func selected(_ app: SidebarApp) -> Bool {
         guard case let .page(tab) = app.open else { return false }
         return tab == current
-    }
-
-    /// 长按：这一插件的每一页，加进或移出“我的应用”。
-    @ViewBuilder private func myAppMenu(_ app: SidebarApp) -> some View {
-        if case let .page(tab) = app.open { ContentWindowButton(target: .tab(tab: tab)) }
-        let plugin = plugins.viewModel.installed?.plugins.first { $0.id == app.pluginId }
-        let mine = sidebar.apps.compactMap(\.tab)
-        ForEach(plugin?.tabChoices ?? []) { choice in
-            let added = mine.contains(choice.tab)
-            Button {
-                if added {
-                    pages.send(.pages(action: .removeMyApp(app: .page(tab: choice.tab))))
-                } else {
-                    pages.send(.pages(action: .addMyApp(app: .page(tab: choice.tab), title: nil, index: nil)))
-                }
-            } label: {
-                Label(
-                    added ? TabText.removeFromMyApps : TabText.addToMyApps,
-                    systemImage: added ? "minus.circle" : "plus.circle"
-                )
-            }
-        }
     }
 
     private var footer: some View {
@@ -358,7 +338,9 @@ enum SidebarDestination {
     case settings
     case newChat
     case app(SidebarApp)
-    case failedApp(String)
+    /// 打开这一页并让它重新加载。
+    case reload(TabRef)
+    case pluginDetails(String)
 }
 
 /// 行尾各个独立状态的来源，分开画。

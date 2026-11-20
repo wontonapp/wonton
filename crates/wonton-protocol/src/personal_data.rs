@@ -3,7 +3,7 @@
 //! 数据在手机上，存在存储提供方插件里；核心只判定授权，经这条能力契约存、查、删，不认得某个具体插件。
 //! 提供方不直接给 Agent 注册工具，Agent 只经核心的 MCP 工具（[`PERSONAL_DATA_STATUS_TOOL`] 这一组）读。
 //!
-//! 契约的每个请求都带 [`crate::WONTON_USER_HEADER`]：数据属于谁（数据主体）。提供方按人分开存，授权不在这里判定。
+//! 契约的每个请求都带 [`WONTON_USER_HEADER`]：数据属于谁（数据主体）。提供方按人分开存，授权不在这里判定。
 //! 失败时回 4xx/5xx，响应体是 [`PersonalDataProblem`]：这个提供方不存这类数据用
 //! [`PersonalDataFailure::NotSupported`]，提供方自己出错用 [`PersonalDataFailure::ProviderUnavailable`]，
 //! 请求写法不对也归后者、原始原因写进 `message`。
@@ -17,6 +17,9 @@ use crate::BotRef;
 /// 核心认识的能力名（ADR-0053 的能力表、ADR-0098 第 5 节）。核心按它找存储提供方，不认插件 ID。
 /// 核心没有这项时，清单里写它的插件装不上，要先升级核心。
 pub const PERSONAL_DATA_CAPABILITY: &str = "personal_data";
+
+/// 核心发往存储提供方的每个请求都带的请求头：数据属于谁（MXID）。
+pub const WONTON_USER_HEADER: &str = "X-Wonton-User";
 
 /// `POST`：一个位置点，请求体是 [`LocationPoint`]（OwnTracks 的 `_type: location` 写法），回 [`WriteAccepted`]。
 pub const LOCATION_PATH: &str = "/location";

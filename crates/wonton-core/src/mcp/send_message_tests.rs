@@ -322,7 +322,7 @@ fn chain_caller(send: &Send, session: &str, sender: &str) -> Caller {
     let grant = send
         .chains
         .ledger()
-        .start_bridge_turn(
+        .start_turn(
             bot_ref(),
             ChainTurnReport::Start {
                 session: session.into(),

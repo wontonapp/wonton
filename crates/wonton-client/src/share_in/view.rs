@@ -9,7 +9,7 @@ use wonton_protocol::{
 pub(super) fn destinations(
     paired: bool,
     chat: &ChatViewModel,
-    primary_bot: Option<&str>,
+    default_bot: Option<&str>,
     last_room: Option<&str>,
 ) -> ShareInDestinations {
     if !paired {
@@ -38,7 +38,7 @@ pub(super) fn destinations(
         .filter(|room_id| has(room_id))
         .map(str::to_owned)
         .or_else(|| {
-            let bot = primary_bot?;
+            let bot = default_bot?;
             rooms
                 .iter()
                 .find(|room| room.is_direct && room.direct_user_id.as_deref() == Some(bot))

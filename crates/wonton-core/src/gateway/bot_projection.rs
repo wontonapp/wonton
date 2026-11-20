@@ -246,16 +246,17 @@ pub(super) fn onboarding(
     expected: &Person,
     view: &mut Onboarding,
 ) -> Result<(), Box<Response>> {
-    for agent in &mut view.agents {
-        let id = plugin_id(&agent.id)?;
-        let (user_id, visibility) = if agent.status.is_some() {
-            identity(gateway, peer, headers, expected, &id)?
-        } else {
-            (None, DefaultBotVisibility::Absent)
-        };
-        agent.bot_user_id = user_id;
-        agent.default_bot_visibility = Some(visibility);
-    }
+    let Some(default) = view.default_bot_plugin.as_mut() else {
+        return Ok(());
+    };
+    let id = plugin_id(&default.id)?;
+    let (user_id, visibility) = if gateway.plugins.is_installed(&id) {
+        identity(gateway, peer, headers, expected, &id)?
+    } else {
+        (None, DefaultBotVisibility::Absent)
+    };
+    default.bot_user_id = user_id;
+    default.visibility = Some(visibility);
     Ok(())
 }
 

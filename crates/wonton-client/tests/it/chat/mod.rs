@@ -9,11 +9,13 @@ mod ask_agent;
 mod bot_profile;
 pub mod bot_profile_support;
 mod card_plugin_refresh;
+mod choices;
 mod concurrent_timelines;
 mod confirmation;
 mod device_name;
 mod draft;
 mod file_link;
+mod jumps;
 mod key_handoff;
 mod key_upload_order;
 mod layout;
@@ -32,6 +34,7 @@ mod relogin;
 mod replies;
 mod resume;
 mod send;
+mod sender_avatar;
 mod server_switch;
 mod side_chat;
 mod stale_join;
@@ -370,6 +373,7 @@ async fn chat_with_the_bot(phone: &Phone, bot: &MatrixSession, room_id: &OwnedRo
                 },
                 body: "  你好，Hermes  ".to_owned(),
                 reply_to: None,
+                mentions: vec![],
             },
         })
         .unwrap();

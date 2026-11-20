@@ -167,6 +167,10 @@ fn message(id: &str, body: &str, custom: Value, replies: Option<u64>) -> Message
         group: None,
         agent_run: None,
         can_redact: false,
+        reactions: Vec::new(),
+        is_direct: false,
+        mentions_me: false,
+        sender_avatar: None,
     }
 }
 

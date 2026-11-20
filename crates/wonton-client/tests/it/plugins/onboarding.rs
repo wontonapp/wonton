@@ -14,7 +14,6 @@ mod local_records;
 mod model;
 mod navigation;
 mod old_server;
-mod primary_agent;
 mod profile;
 mod refresh;
 mod revisit;
@@ -28,18 +27,11 @@ const INSTALL: &str = "/_wonton/api/plugins";
 fn onboarding(step: &str) -> serde_json::Value {
     serde_json::json!({
         "step": step,
-        "primary_agent": null,
-        "replaced_agent_asked": false,
-        "agents": [{
+        "default_bot_plugin": {
             "id": "agent.one",
-            "title": "Agent One",
-            "source": "github:owner/agent.one",
-            "status": null,
             "bot_user_id": "@agent:home",
-            "default_bot_visibility": "visible",
-            "logins": [],
-            "blocked": null
-        }],
+            "visibility": "visible"
+        },
         "needs": [],
         "prompts": ["问我能做什么"],
         "catalog_problem": null
@@ -125,16 +117,9 @@ fn assert_nothing_saved(rig: &Rig) {
     }
 }
 
-/// 名字、默认 Agent、网页已保存的模型配置、选上照片，走到最后一页且预览都取到。
+/// 名字、网页已保存的模型配置、选上照片，走到最后一页且预览都取到。
 async fn walk_to_review(rig: &Rig) -> OnboardingViewModel {
     edit(rig, " 云吞 ", "");
-    act(
-        rig,
-        Action::Onboarding {
-            action: wonton_protocol::OnboardingAction::ContinueOnboarding,
-        },
-    );
-    at(rig, OnboardingStep::Agent).await;
     act(
         rig,
         Action::Onboarding {
@@ -175,34 +160,6 @@ async fn walk_to_review(rig: &Rig) -> OnboardingViewModel {
     .await
 }
 
-fn installed_onboarding() -> serde_json::Value {
-    let mut value = onboarding("finished");
-    value["primary_agent"] = serde_json::json!("agent.two");
-    value["agents"] = serde_json::json!([
-        {
-            "id": "agent.one",
-            "title": "Agent One",
-            "source": "github:owner/agent.one",
-            "status": {"state": "running", "health": "healthy"},
-            "bot_user_id": "@one:home",
-            "default_bot_visibility": "visible",
-            "logins": [],
-            "blocked": null
-        },
-        {
-            "id": "agent.two",
-            "title": "Agent Two",
-            "source": "github:owner/agent.two",
-            "status": {"state": "running", "health": "healthy"},
-            "bot_user_id": "@two:home",
-            "default_bot_visibility": "visible",
-            "logins": [],
-            "blocked": null
-        }
-    ]);
-    value
-}
-
 /// 轮询等请求到达假核心，20ms 一拍。不能用 yield_now 忙等：忙等的测试任务和假核心、
 /// 隧道服务端共用测试线程，高负载下会把请求链饿死（#836）。
 async fn wait_requests(rig: &Rig, method: Method, path: &str, count: usize) {
@@ -225,22 +182,21 @@ async fn every_step_only_records_its_choice_until_finish() {
         kinds,
         [
             OnboardingReviewKind::Profile,
-            OnboardingReviewKind::Agent,
             OnboardingReviewKind::Model,
             OnboardingReviewKind::App
         ]
     );
     assert_eq!(review.review.items[0].titles, ["云吞"]);
     assert_eq!(
-        review.review.items[2].detail,
+        review.review.items[1].detail,
         Some(OnboardingReviewDetail::KeepCurrent)
     );
-    assert!(!review.review.items[3].permissions.is_empty());
+    assert!(!review.review.items[2].permissions.is_empty());
     assert_eq!(
         review.nav,
         Some(StepNav {
-            position: 5,
-            total: 5,
+            position: 4,
+            total: 4,
             can_back: true,
             can_skip: false,
             can_next: true,

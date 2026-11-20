@@ -1,4 +1,4 @@
-//! 链的动作：停链、改上限、改使用方并发（ADR-0061 第 10 节）。请求走本地代理，核心凭隧道身份认出这台
+//! 链的动作：停链、改上限（ADR-0061 第 10 节）。请求走本地代理，核心凭隧道身份认出这台
 //! 已配对设备；动作不重试，异步失败按 [`CoreError`] 的类别发布到链列表。
 
 use std::time::Duration;
@@ -9,16 +9,15 @@ use serde::de::DeserializeOwned;
 use url::Url;
 use wonton_l10n::l10n;
 use wonton_protocol::{
-    AGENT_LIMITS_PATH, AGENT_SETTINGS_PATH, AgentAction, AgentChainRow, AgentConcurrency,
-    AgentSettingsViewModel, CoreError, ProxySettings, agent_chain_stop_path,
-    agent_consumer_concurrency_path,
+    AGENT_LIMITS_PATH, AGENT_SETTINGS_PATH, AgentAction, AgentChainRow, AgentSettingsViewModel,
+    CoreError, ProxySettings, agent_chain_stop_path,
 };
 
 use crate::l10n::{CATALOG, language};
 
 use super::{client, exchange};
 
-/// 动作的整个请求最多等这么久：停链、改上限、改并发都是核心马上回的快操作。
+/// 动作的整个请求最多等这么久：停链、改上限都是核心马上回的快操作。
 const ACTION_TIMEOUT: Duration = Duration::from_secs(30);
 
 /// 一个动作做完的局部效果：停链成功时核心把停后的整行给回来，就地换进列表；其余动作核心只确认。
@@ -48,19 +47,8 @@ pub(crate) async fn perform(
             let _: AgentSettingsViewModel = parse(status, &response)?;
             Ok(Effect::Done)
         }
-        AgentAction::SetConsumerAgentConcurrency {
-            plugin_id,
-            concurrency,
-        } => {
-            let url = url(core_url, &agent_consumer_concurrency_path(plugin_id));
-            let body = serde_json::to_vec(&AgentConcurrency {
-                concurrency: *concurrency,
-            })
-            .expect("the concurrency always serializes to JSON");
-            let (status, response) = send(&client, Method::PUT, url, Some(body)).await?;
-            let _: AgentConcurrency = parse(status, &response)?;
-            Ok(Effect::Done)
-        }
+        // 分派时已经拆成逐条 `StopChain`（见 `room_stop`），到不了这里。
+        AgentAction::StopTurns { .. } => Ok(Effect::Done),
     }
 }
 

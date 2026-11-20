@@ -46,7 +46,7 @@ pub(crate) async fn serve(
             listener.tap_io(|_| {}),
             app.into_make_service_with_connect_info::<SocketAddr>(),
         )
-        .with_graceful_shutdown(super::shutdown())
+        .with_graceful_shutdown(crate::serve::shutdown())
         .await
         .context("网关异常退出")
     };
@@ -58,7 +58,7 @@ pub(crate) async fn serve(
             listener,
             app.into_make_service_with_connect_info::<SocketAddr>(),
         )
-        .with_graceful_shutdown(super::shutdown())
+        .with_graceful_shutdown(crate::serve::shutdown())
         .await
         .context("推送监听异常退出")
     };
@@ -70,7 +70,7 @@ pub(crate) async fn serve(
             listener,
             app.into_make_service_with_connect_info::<SocketAddr>(),
         )
-        .with_graceful_shutdown(super::shutdown())
+        .with_graceful_shutdown(crate::serve::shutdown())
         .await
         .context("联邦入口监听异常退出")
     };
@@ -82,7 +82,7 @@ pub(crate) async fn serve(
             listener,
             app.into_make_service_with_connect_info::<AliasPeer>(),
         )
-        .with_graceful_shutdown(super::shutdown())
+        .with_graceful_shutdown(crate::serve::shutdown())
         .await
         .context("matrix_rtc 别名监听异常退出")
     };

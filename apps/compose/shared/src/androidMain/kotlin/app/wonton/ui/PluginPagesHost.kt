@@ -67,6 +67,8 @@ internal fun PluginPagesHost(
             )
         }
     }
+    // 没有胶囊的整页只剩系统返回一个出口，第一次打开时教一次（[PageExitHint]）。
+    if (active != null && active in openTabs && !pageKeepsCapsule(active)) PageExitHint()
 }
 
 /** 刚关掉的页（最旧的在前）；只在栈变化时算一次，不是快照状态。 */
@@ -99,7 +101,7 @@ private fun PluginPageContainer(
     val awaitingLogin = access.disclosure && !loginAcknowledged
     val connection = sharedPageConnection(tab, pages, home)
     val state = remember { WebPageState(PlacedTab.Page(tab), pages) }
-    val viewport = tabViewport(active)
+    val viewport = tabViewport(active, capsule = pageKeepsCapsule(tab))
     val environment = viewport.environment
     state.park(parked)
     LaunchedEffect(parked) {
@@ -116,7 +118,7 @@ private fun PluginPageContainer(
         onDetails, onDraft, openLink, admitted = access.allowed && !awaitingLogin, disclosure = disclosure)
 }
 
-/** 胶囊上方的一条短状态:连接提示由壳给,升级中由这里说。 */
+/** 页面顶上浮的一条短状态:连接提示由壳给,升级中由这里说。 */
 @Composable
 internal fun shortStatus(page: TabPage): String? =
     LocalWontonBarStatus.current.title
@@ -196,7 +198,7 @@ internal fun PageWebView(
         },
         onOpenLink = openLink, onRendererGone = state::loadStarted, onLoadStarted = state::loadStarted,
         visible = visible, textZoom = (LocalDensity.current.fontScale * 100).roundToInt(),
-        profileName = profile,
+        profileName = profile, fullPage = true,
     )
 }
 

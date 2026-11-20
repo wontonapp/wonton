@@ -115,12 +115,15 @@ pub enum ChatAction {
     StartDirectChat {
         user_id: String,
     },
-    /// 把一句话发给默认 Agent（Siri、快捷指令的“问 Bot”）：和它的私聊还没有就先建。壳随后按
-    /// [`OnboardingViewModel::primary_bot_user_id`](crate::OnboardingViewModel::primary_bot_user_id) 打开这个私聊。
+    /// 把一句话发给默认 Bot（Siri、快捷指令的“问 Bot”）：和它的私聊还没有就先建。壳随后按
+    /// [`OnboardingViewModel::default_bot_user_id`](crate::OnboardingViewModel::default_bot_user_id) 打开这个私聊。
     AskAgent {
         text: String,
     },
-    /// 以反应回答 Bot 的提问。
+    /// 点了消息下的选项按钮（[`MessageChoice`](crate::MessageChoice)，ADR-0109）或 AgentRun 的选项：以本人身份给 `item_id`
+    /// 那条加 `key` 这个表情（`m.annotation`），不往聊天里发消息。进展在那个选项的 [`ChoiceSend`](crate::ChoiceSend)；
+    /// 失败了再发一次就是重发。这组选项不能点（[`ChoicesState`](crate::ChoicesState) 不是 `Open`）或没有这个 `key` 时
+    /// 返回 `InvalidInput`。
     AnswerAgentChoice {
         room_id: String,
         item_id: String,
@@ -356,11 +359,9 @@ pub enum OnboardingAction {
     RefreshOnboarding,
     /// 主人在设置里选了重看：从头走一遍。网页已保存的模型修改不属于引导草稿。
     RestartOnboarding,
-    /// 选中一个 Agent（[`OnboardingAgentRow::id`](crate::OnboardingAgentRow::id)）。没装的点完成时安装。
-    ChooseOnboardingAgent { id: String },
     /// 记下这一步的选择，到下一步。最后一页上是“完成”：一起执行所有选择；执行完了再发一次是离开引导。
     ContinueOnboarding,
-    /// 跳过这一步，不算做完：没接模型时 Agent 的私聊照常说明要接模型。
+    /// 跳过这一步，不算做完：没接模型时默认 Bot 的私聊照常说明要接模型。
     SkipOnboardingStep,
     /// 回到上一步，记下的选择还在。
     BackOnboardingStep,
@@ -370,14 +371,8 @@ pub enum OnboardingAction {
     EditOnboardingProfile { display_name: String, email: String },
     /// 选用模型网关里已经接好的模型（[`OnboardingModelChoice::Current`](crate::OnboardingModelChoice::Current)）。
     UseCurrentModel,
-    /// 选用 Agent 官方程序的账号登录（[`AgentLogin::id`](crate::AgentLogin::id)）。
-    ChooseModelLogin { id: String },
     /// 最后一页上重试失败的一项（[`OnboardingReviewItem::id`](crate::OnboardingReviewItem::id)）。
     RetryOnboardingItem { id: String },
-    /// 在设置里改默认 Agent。
-    SetPrimaryAgent { id: String },
-    /// 主人回答了要不要卸掉被换下来的 Agent，不再问。
-    DismissReplacedAgentOffer,
     /// 这条提示看过了，这台设备不再显示。
     DismissOnboardingTip { tip: OnboardingTip },
     /// 退出从设置重看的引导并丢弃未保存的选择；未在重看时无效果。

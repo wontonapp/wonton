@@ -125,7 +125,7 @@ internal class AppNavigation(val pages: PagesState, val chat: ChatNavigation, va
             }
             AppLink.AgentChat -> {
                 pages.send(Action.Pages(PageAction.OpenPage(TabRef.Chat)))
-                val peer = onboarding.primaryBotUserId
+                val peer = onboarding.defaultBotUserId
                 pages.plugins.reject(
                     if (onboarding.defaultBotVisibility != DefaultBotVisibility.VISIBLE || peer.isNullOrEmpty()) {
                         val reason = if (
@@ -174,6 +174,7 @@ internal class AppNavigation(val pages: PagesState, val chat: ChatNavigation, va
             SidebarDestination.Settings -> settings()
             SidebarDestination.NewChat -> selectChatList(startingChat = true)
             is SidebarDestination.Plugin -> plugins.open(destination.entry)
+            is SidebarDestination.Details -> detail(destination.pluginId)
         }
     }
 

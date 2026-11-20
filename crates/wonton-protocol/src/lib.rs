@@ -14,6 +14,7 @@ mod agent_chain;
 mod agent_outbox;
 mod agent_permission;
 mod agent_run;
+mod agent_stop;
 mod app_lock;
 mod appearance;
 mod bot_commands;
@@ -39,6 +40,8 @@ mod link;
 mod link_preview;
 pub mod manifest;
 mod matrix_login;
+mod message_choice;
+mod message_layout;
 mod onboarding;
 mod owner;
 mod pages;
@@ -65,6 +68,7 @@ mod side_chat;
 mod sidebar;
 mod timeline;
 mod timeline_action;
+mod timeline_jump;
 mod verification;
 mod widget;
 
@@ -78,11 +82,9 @@ pub use agent_chain::{
     AGENT_CHAINS_API_PATH, AGENT_CHAINS_PATH, AGENT_CHAINS_WAIT_SECS, AGENT_LIMITS_PATH,
     AGENT_OUTBOX_PATH, AGENT_OUTBOX_WAIT_SECS, AGENT_SETTINGS_PATH, AgentAction,
     AgentActionFailure, AgentChainBot, AgentChainRow, AgentChainStatus, AgentChainsViewModel,
-    AgentConcurrency, AgentSettingsViewModel, BOT_TOKEN_HEADER, ChainError, ChainLimitKind,
-    ChainLimits, ChainRefusal, ChainSpend, ChainTurnGrant, ChainTurnReport,
-    DEFAULT_CONSUMER_AGENT_CONCURRENCY, SESSION_HEADER, WONTON_BOT_HEADER, WONTON_MAX_DEPTH_HEADER,
-    WONTON_MAX_ROUNDS_HEADER, WONTON_MAX_TOKENS_HEADER, WONTON_ON_BEHALF_OF_HEADER,
-    WONTON_USER_HEADER, agent_chain_stop_path, agent_consumer_concurrency_path,
+    AgentSettingsViewModel, BOT_TOKEN_HEADER, ChainError, ChainLimitKind, ChainLimits,
+    ChainRefusal, ChainTurnGrant, ChainTurnReport, SESSION_HEADER, WONTON_BOT_HEADER,
+    WONTON_ON_BEHALF_OF_HEADER, agent_chain_stop_path,
 };
 pub use agent_outbox::{
     OutboxFailure, OutboxItem, OutboxKind, OutboxReceipt, OutboxResult, SEND_MESSAGE_TOOL,
@@ -93,13 +95,14 @@ pub use agent_permission::{
     AgentPermissionOutcome, AgentPermissionRequest,
 };
 pub use agent_run::{AgentRunChoice, AgentRunEnd, AgentRunState};
+pub use agent_stop::RoomAgentStop;
 pub use app_lock::{AppLockTimeout, AppLockViewModel};
 pub use appearance::{
     AppearanceProblem, AppearanceViewModel, FontStyle, Rgb, TextSize, ThemeColors, ThemeMode,
 };
 pub use bot_commands::{
     BOT_COMMANDS_EVENT, BotCommand, BotCommands, MAX_BOT_COMMANDS, MAX_BOT_COMMANDS_BYTES,
-    MAX_COMMAND_DESCRIPTION_CHARS, MAX_COMMAND_HINT_CHARS, MAX_COMMAND_NAME_CHARS,
+    MAX_COMMAND_DESCRIPTION_CHARS, MAX_COMMAND_HINT_CHARS, MAX_COMMAND_NAME_CHARS, RoomCommand,
 };
 pub use bot_contacts::{
     BOT_CONTACT_CREATE_KEY, BotContact, BotContactFailure, BotContacts, BotContactsState,
@@ -145,8 +148,8 @@ pub use clients::{
     clients_status_path, dns_providers_path,
 };
 pub use composer::{
-    AttachmentFailure, AttachmentKind, AttachmentState, ComposerAttachment, ComposerViewModel,
-    MessageGroup, OutgoingMessage,
+    AttachmentFailure, AttachmentKind, AttachmentState, ComposerAttachment, ComposerMention,
+    ComposerViewModel, MessageGroup, OutgoingMessage,
 };
 pub use confirmation::{
     Answer, CARD_FIELD, CORE_LOCALPART, CardAudience, CardChoice, CardLine, ConfirmationAnswer,
@@ -213,14 +216,15 @@ pub use matrix_login::{
     MatrixAccount, MatrixLoginFailure, MatrixLoginMethod, MatrixLoginState, MatrixLoginViewModel,
     MatrixOidcCallback, MatrixOidcLogin, MatrixPasswordLogin,
 };
+pub use message_choice::{ChoiceSend, ChoicesState, MessageChoice, MessageChoices};
+pub use message_layout::{MessageRun, MessageStatus};
 pub use onboarding::{
-    AgentLogin, MODEL_SETTINGS_PATH, ModelSettings, ModelSettingsFailure, ModelSettingsPage,
-    ModelSettingsProblem, ONBOARDING_PATH, Onboarding, OnboardingAgent, OnboardingAgentRow,
-    OnboardingCommit, OnboardingItemProblem, OnboardingItemState, OnboardingModelChoice,
-    OnboardingModelStep, OnboardingNeed, OnboardingNeedRow, OnboardingProfileStep,
-    OnboardingReview, OnboardingReviewDetail, OnboardingReviewItem, OnboardingReviewKind,
-    OnboardingStep, OnboardingTip, OnboardingTips, OnboardingTooOld, OnboardingUpdate,
-    OnboardingViewModel, ReplacedAgent, StepNav,
+    DefaultBotPlugin, MODEL_SETTINGS_PATH, ModelSettings, ModelSettingsFailure, ModelSettingsPage,
+    ModelSettingsProblem, ONBOARDING_PATH, Onboarding, OnboardingCommit, OnboardingItemProblem,
+    OnboardingItemState, OnboardingModelChoice, OnboardingModelStep, OnboardingNeed,
+    OnboardingNeedRow, OnboardingProfileStep, OnboardingReview, OnboardingReviewDetail,
+    OnboardingReviewItem, OnboardingReviewKind, OnboardingStep, OnboardingTip, OnboardingTips,
+    OnboardingTooOld, OnboardingUpdate, OnboardingViewModel, StepNav,
 };
 pub use owner::{
     MAX_DISPLAY_NAME_CHARS, OwnerProfile, OwnerProfileUpdate, ProfileProblem, check_display_name,
@@ -253,7 +257,8 @@ pub use personal_data::{
     LocationScope, OsPermissionState, PERSONAL_DATA_CAPABILITY, PERSONAL_DATA_STATUS_TOOL,
     PersonalDataBotGrant, PersonalDataCategory, PersonalDataFailure, PersonalDataProblem,
     PersonalDataRead, PersonalDataType, PersonalDataTypeRow, PersonalDataViewModel, QUERY_PATH,
-    RetentionPolicy, RetentionSetting, SleepStage, WriteAccepted, data_path, query_path,
+    RetentionPolicy, RetentionSetting, SleepStage, WONTON_USER_HEADER, WriteAccepted, data_path,
+    query_path,
 };
 pub use plugin::LanClient;
 pub use plugin::StoreLoadState;
@@ -346,6 +351,7 @@ pub use timeline::{
     TimelineMessage, TimelineScroll, TimelineUpdate, TimelineViewport,
 };
 pub use timeline_action::{TimelineAction, TimelineTarget};
+pub use timeline_jump::{JumpState, TimelineFocus};
 pub use verification::{
     KeyHandoff, VerificationCancel, VerificationEmoji, VerificationFlow, VerificationStage,
 };
