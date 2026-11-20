@@ -27,18 +27,23 @@ async fn the_admin_account_is_registered_once_and_its_token_kept_private() {
     let mode = std::fs::metadata(&saved).unwrap().permissions().mode() & 0o777;
     assert_eq!(mode, 0o600);
     assert_eq!(first.admin_user_id(), "@wonton-core:test");
-    // 两次注册：管理账号和发管理房间命令的 `wonton-reload`。
+    // 管理账号被服务器邀请进管理房间；核心连上就加入，热加载用这个账号发命令。
+    assert!(
+        fake.state().rooms[super::fake::ADMIN_ROOM_ID]
+            .members
+            .contains("@wonton-core:test")
+    );
 
-    // 核心重启：令牌还有效就沿用，不再注册；热加载账号用 JWT 登录，也不注册。
+    // 核心重启：令牌还有效就沿用，不再注册；管理房间已经进去了，也不再有写请求。
     let again = connect(&dir, &config).await;
     assert_eq!(again.admin_token, first.admin_token);
-    assert_eq!(fake.state().registrations, 2);
+    assert_eq!(fake.state().registrations, 1);
 
     // 令牌失效（比如 Tuwunel 吊销了它）：账号已经在了，用核心签的 JWT 登录拿新令牌。
     fake.state().tokens.clear();
     let relogged = connect(&dir, &config).await;
     assert_ne!(relogged.admin_token, first.admin_token);
-    assert_eq!(fake.state().registrations, 2);
+    assert_eq!(fake.state().registrations, 1);
     let kept = std::fs::read_to_string(&saved).unwrap();
     assert_eq!(kept, relogged.admin_token);
 }
@@ -57,7 +62,7 @@ async fn a_wrong_shared_secret_is_refused_by_tuwunel() {
 
 #[tokio::test]
 async fn an_account_that_is_not_a_server_admin_stops_the_core() {
-    // 管理账号的用户名先被 JWT 登录建成了普通账号：注册报 M_USER_IN_USE，登录能拿到令牌，但调不了管理接口。
+    // 管理账号的用户名先被 JWT 登录建成了普通账号：注册报 M_USER_IN_USE，登录能拿到令牌，但没被邀请进管理房间。
     let (fake, config) = start().await;
     fake.state()
         .users
@@ -67,7 +72,6 @@ async fn an_account_that_is_not_a_server_admin_stops_the_core() {
         panic!("管理账号不是服务器管理员时核心不能启动");
     };
     assert_eq!(error.errcode(), "M_FORBIDDEN", "{error}");
-    assert!(error.to_string().contains("服务器管理员"), "{error}");
 }
 
 fn spec<'a>(localpart: &'a str, taken: &'a BTreeSet<String>) -> BotSpec<'a> {
@@ -199,7 +203,14 @@ async fn reinstalling_keeps_the_account_and_home_room_unless_the_owner_left_it()
         .unwrap();
     assert_eq!(again.account, first.account, "沿用账号和主房间");
     assert_ne!(again.device_id, first.device_id, "每次安装一台新设备");
-    assert_eq!(fake.state().rooms.len(), 1);
+    assert_eq!(
+        fake.state()
+            .rooms
+            .keys()
+            .filter(|id| id.as_str() != super::fake::ADMIN_ROOM_ID)
+            .count(),
+        1
+    );
     assert_eq!(
         fake.state().user("@echo:test").display_name.as_deref(),
         Some("主人改过的名字")
@@ -272,7 +283,14 @@ async fn a_home_room_never_handed_to_the_owner_is_kept_for_the_next_install() {
         .await
         .unwrap();
     assert_eq!(third.account, first.account);
-    assert_eq!(fake.state().rooms.len(), 1);
+    assert_eq!(
+        fake.state()
+            .rooms
+            .keys()
+            .filter(|id| id.as_str() != super::fake::ADMIN_ROOM_ID)
+            .count(),
+        1
+    );
     assert!(
         matrix
             .hand_over("owner", &third, &Languages::default())

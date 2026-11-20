@@ -183,7 +183,7 @@ services:
       retries: 30
 
   api:
-    image: haproxy:3.2.8-alpine@sha256:8c6b55d891584afded3ab1b91063a703ecc8ff2481302b691773648ffa806226
+    image: haproxy:3.4-alpine@sha256:8aa6458a9d22a8364a2d2ee9ce93de0cc4a2789e3cf63f0b44adc972863724d7
     user: "0:0"
     volumes:
       - ./.runtime/api:/usr/local/etc/haproxy:ro

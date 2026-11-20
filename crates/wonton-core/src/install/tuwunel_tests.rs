@@ -37,8 +37,9 @@ struct Service {
     stop_signal: Option<String>,
 }
 
-/// 还在发信号的容器要在 Docker 重启后回来：compose 写死 `restart: always` 和停止信号 `SIGTERM`。
-/// Docker 把发过信号的容器记成手动停过：unless-stopped 时守护进程重启后不再拉起它；没写停止信号时任何信号还会停掉重启管理器，之后崩了也不拉起。
+/// Docker 重启、容器崩溃都要自己回来：compose 写死 `restart: always` 和停止信号 `SIGTERM`。
+/// `unless-stopped` 会被历史上任何一次非停止 kill 记成手动停过，守护进程重启后不再拉起；没写停止信号时信号还会停掉
+/// 重启管理器，之后容器崩了也不拉起。
 #[test]
 fn tuwunel_comes_back_after_docker_restarts_even_when_signalled() {
     let compose: Compose = serde_saphyr::from_str(super::COMPOSE).unwrap();

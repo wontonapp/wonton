@@ -47,8 +47,8 @@ report() {
       echo "$container missing"
       continue
     fi
-    manual=$(sed -n 's/.*"HasBeenManuallyStopped":\([a-z]*\).*/\1/p' "$root/containers/$id/config.v2.json")
-    docker inspect -f "$container {{.State.Status}} health={{if .State.Health}}{{.State.Health.Status}}{{else}}none{{end}} exit={{.State.ExitCode}} restarts={{.RestartCount}} started={{.State.StartedAt}} policy={{.HostConfig.RestartPolicy.Name}} stop_signal={{.Config.StopSignal}} manually_stopped=$manual" "$id"
+    manual=$(sed -n 's/.*"HasBeenManuallyStopped":\([a-z]*\).*/\1/p' "$root/containers/$id/config.v2.json" 2>/dev/null) || manual=missing
+    docker inspect -f "$container {{.State.Status}} health={{if .State.Health}}{{.State.Health.Status}}{{else}}none{{end}} exit={{.State.ExitCode}} restarts={{.RestartCount}} started={{.State.StartedAt}} policy={{.HostConfig.RestartPolicy.Name}} stop_signal={{.Config.StopSignal}} manually_stopped=$manual" "$id" || echo "$container inspect 失败"
   done
 }
 
@@ -66,9 +66,6 @@ for container in $containers; do
 done
 say "重启前在跑：$(echo "$containers" | tr '\n' ' ')"
 report
-before=$(for container in $containers; do
-  docker inspect -f '{{.Name}} {{.RestartCount}} {{.State.StartedAt}}' "$container"
-done)
 
 case "$mode" in
   restart) say "systemctl restart docker"; systemctl restart docker ;;
@@ -91,17 +88,23 @@ for container in $containers; do
 done
 say "都回来了，再看 $settle 秒有没有人重启"
 
+# 快照在都回来之后取：Docker 起容器时会重置 StartedAt，拿重启前的 StartedAt 比必然不等；之后它一变就是又重启过。
+# RestartCount 同理会被守护进程清零，只看前后两份快照是否相同。
+snapshot() {
+  for container in $containers; do
+    docker inspect -f '{{.Name}} {{.Id}} {{.State.Status}} {{.RestartCount}} {{.State.StartedAt}} {{.State.ExitCode}}' "$container" 2>/dev/null || echo "$container missing"
+  done
+}
+recovered=$(snapshot)
 sleep "$settle"
 for container in $containers; do
   ready "$container" || fail "$container 回来后又掉了（退出码 $(docker inspect -f '{{.State.ExitCode}}' "$container" 2>/dev/null || echo missing)）"
 done
+now=$(snapshot)
+[ "$recovered" = "$now" ] || fail "$settle 秒里有容器重启过（${recovered} → ${now}）"
 for container in $containers; do
   exit_code=$(docker inspect -f '{{.State.ExitCode}}' "$container")
   [ "$exit_code" = 0 ] || fail "$container 退出码是 $exit_code"
 done
-after=$(for container in $containers; do
-  docker inspect -f '{{.Name}} {{.RestartCount}} {{.State.StartedAt}}' "$container"
-done)
-[ "$before" = "$after" ] || fail "$settle 秒里有容器重启过"
 say "通过"
 report
