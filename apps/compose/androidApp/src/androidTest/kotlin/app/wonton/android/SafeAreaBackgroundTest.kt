@@ -140,12 +140,14 @@ class SafeAreaBackgroundTest {
             // Left margin is clear of cards, sidebar rows and the shifted main-page shadow.
             val gutter = (bitmap.width * 0.01f).toInt().coerceAtLeast(1)
             assertPatch(bitmap, expected, gutter, gutter + 2, bitmap.height / 2, bitmap.height / 2 + 3, name)
-            // Avoid clock/icons/cutout and the centered navigation handle; cover a band, not one lucky pixel.
-            val left = bitmap.width * 22 / 100
-            val right = bitmap.width * 30 / 100
-            assertPatch(bitmap, expected, left, right, insets.top / 4, insets.top * 3 / 4, "$name status")
+            // SystemUI draws over both bars, so a width fraction can land on it: the clock and notification
+            // icons reach past 30% on a 320dp-wide screen and the gesture handle sits in the middle. The
+            // page's `spacing.pageInset` (16dp) stays empty on every page, so sample the bars just inside
+            // it, clear of the rounded corners, and let [assertPatch] skip any cutout.
+            val edge = (10 * compose.activity.resources.displayMetrics.density).toInt()
+            assertPatch(bitmap, expected, edge, edge + 3, insets.top / 4, insets.top * 3 / 4, "$name status")
             assertPatch(
-                bitmap, expected, left, right,
+                bitmap, expected, edge, edge + 3,
                 bitmap.height - insets.bottom * 3 / 4, bitmap.height - insets.bottom / 4, "$name navigation",
             )
         } finally {
