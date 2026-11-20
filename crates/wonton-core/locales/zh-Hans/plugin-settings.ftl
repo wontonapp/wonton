@@ -330,6 +330,7 @@ plugin-settings-bot-device-name = Wonton 应用 { $id }（{ $bot }）
 plugin-settings-bot-account-deactivated = Bot 账号 { $user } 已停用：选择删除数据卸载这个应用后重装，会分配新账号
 plugin-settings-bot-device-record-missing = 没有 Bot { $bot } 的设备记录：重装应用（可以不删数据）
 plugin-settings-bot-device-revoked = Bot { $user } 的设备已被吊销，应用拿着的 Matrix 令牌失效了：重装应用（可以不删数据）重新签发
+plugin-settings-bot-sync-stalled = Bot 已经 { $seconds } 秒没经核心收到消息了：它可能还在运行、健康检查也说正常，但消息进不来。重启应用；还不行就重装（可以不删数据）
 
 # ── 局域网检测、出网容器和商店索引的补充（lan/detect.rs、docker_limits.rs、egress、storefront）──
 

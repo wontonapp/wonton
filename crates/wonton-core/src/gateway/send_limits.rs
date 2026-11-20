@@ -36,7 +36,7 @@ use wonton_protocol::{GATEWAY_REFUSAL_HEADER, GatewayRefusal, HOP_LIMIT_ERRCODE}
 
 use super::matrix::{matrix_error, percent_decode};
 use super::pages;
-use crate::matrix::Matrix;
+use crate::matrix::{Matrix, MatrixError};
 
 /// 数得上的发送事件类型：只有这三种算 Bot 在说话。
 const COUNTED_TYPES: [&str; 3] = ["m.room.message", "m.room.encrypted", "m.sticker"];
@@ -238,6 +238,17 @@ impl RoomRun {
 struct CachedUser {
     user_id: String,
     last_used: u64,
+}
+
+/// 访问令牌认得的结果。
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub(crate) enum Identity {
+    /// Tuwunel 说这是某个用户。
+    Bot(String),
+    /// Tuwunel 说令牌不认（401、403）：吊销、轮换过了，或账号被停用，重试也没用。
+    Unknown,
+    /// 问不到 Tuwunel（连不上、5xx、核心还没接上 Matrix）。
+    Unavailable,
 }
 
 #[derive(Default)]
@@ -461,19 +472,44 @@ impl SendLimiter {
         hash: [u8; 32],
         matrix: Option<&Matrix>,
     ) -> Option<String> {
-        let matrix = matrix?;
+        match self.identify(token, hash, matrix).await {
+            Identity::Bot(user) => Some(user),
+            Identity::Unknown | Identity::Unavailable => None,
+        }
+    }
+
+    /// 同 [`Self::user_id`]，但分开“令牌确实失效”（Tuwunel 认了，`whoami` 给了 401 或 403）和“问不到”
+    /// （连不上、500、没接 Matrix）：前者是永久的，后者换个时间再来就有。
+    pub(crate) async fn identify(
+        &self,
+        token: &str,
+        hash: [u8; 32],
+        matrix: Option<&Matrix>,
+    ) -> Identity {
+        let Some(matrix) = matrix else {
+            return Identity::Unavailable;
+        };
         {
             let mut state = self.state.lock().expect("发送限制的锁");
             if let Some(cached) = state.users.get_mut(&hash) {
                 cached.last_used = (self.now)();
-                return Some(cached.user_id.clone());
+                return Identity::Bot(cached.user_id.clone());
             }
         }
-        let user_id = matrix
-            .whoami(token)
-            .await
-            .inspect_err(|error| tracing::warn!(error = %error, "辨认 Bot 的访问令牌失败"))
-            .ok()?;
+        let user_id = match matrix.whoami(token).await {
+            Ok(user_id) => user_id,
+            // 401 是令牌不认了（吊销、停用、过期）；403 是 Tuwunel 认得请求、不认这个身份（账号被停用）——
+            // 都是重试也一样，上游拿到的都是永久的 403。其余（连不上、5xx、应答不成样子）可能一问就好。
+            Err(MatrixError::Rejected {
+                status: 401 | 403, ..
+            }) => {
+                return Identity::Unknown;
+            }
+            Err(error) => {
+                tracing::warn!(error = %error, "辨认 Bot 的访问令牌失败");
+                return Identity::Unavailable;
+            }
+        };
         self.state.lock().expect("发送限制的锁").users.insert(
             hash,
             CachedUser {
@@ -481,7 +517,7 @@ impl SendLimiter {
                 last_used: (self.now)(),
             },
         );
-        Some(user_id)
+        Identity::Bot(user_id)
     }
 }
 

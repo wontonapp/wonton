@@ -103,6 +103,7 @@ mod web_storage;
 pub use entry::router as entry_router;
 pub use push::router as push_router;
 pub(crate) use request_guards::{same_origin_path, with_cookie};
+pub(crate) use send_limits::Identity;
 pub use send_limits::{SendLimiter, SendLimits};
 mod session;
 mod settings_api;
@@ -419,8 +420,16 @@ impl Gateway {
     /// 访问令牌是谁（Matrix 用户 ID）：`whoami`，按令牌的哈希缓存（和发送限制共用一份，见
     /// [`send_limits::SendLimiter`]）。没接入 Matrix 或认不出时是 `None`。
     pub(crate) async fn bot_user_of_token(&self, token: &str) -> Option<String> {
+        match self.bot_identity(token).await {
+            Identity::Bot(user) => Some(user),
+            Identity::Unknown | Identity::Unavailable => None,
+        }
+    }
+
+    /// 同 [`Self::bot_user_of_token`]，但分得开令牌失效和问不到 Tuwunel。
+    pub(crate) async fn bot_identity(&self, token: &str) -> Identity {
         self.send_limits
-            .user_id(
+            .identify(
                 token,
                 send_limits::token_hash(token),
                 self.matrix.as_deref(),
@@ -794,6 +803,8 @@ mod matrix_invite_filter_tests;
 mod matrix_rtc_docker_tests;
 #[cfg(test)]
 mod matrix_rtc_tests;
+#[cfg(test)]
+mod matrix_sync_restart_tests;
 #[cfg(test)]
 mod mcp_takeover_tests;
 #[cfg(test)]

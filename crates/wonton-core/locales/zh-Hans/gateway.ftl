@@ -97,6 +97,7 @@ gateway-devices-no-addresses = 隧道还没连上中继，请求里也没给直�
 # 模型网关。
 gateway-models-permission = 应用 { $id } 没有申请 models 权限
 gateway-plugin-network-only = 这个地址只给插件网络里的应用用
+gateway-restoring = 核心还在恢复应用，稍后重试
 gateway-models-down = 模型网关没在运行
 
 # 引导。

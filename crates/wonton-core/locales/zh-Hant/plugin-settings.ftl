@@ -330,6 +330,7 @@ plugin-settings-bot-device-name = Wonton 應用程式 { $id }（{ $bot }）
 plugin-settings-bot-account-deactivated = Bot 帳號 { $user } 已停用：選擇刪除資料解除安裝這個應用程式後重裝，會分配新帳號
 plugin-settings-bot-device-record-missing = 沒有 Bot { $bot } 的裝置記錄：重裝應用程式（可以不刪資料）
 plugin-settings-bot-device-revoked = Bot { $user } 的裝置已被吊銷，應用程式拿著的 Matrix 權杖失效了：重裝應用程式（可以不刪資料）重新簽發
+plugin-settings-bot-sync-stalled = Bot 已經 { $seconds } 秒沒經核心收到訊息了：它可能還在執行、健康檢查也說正常，但訊息進不來。重新啟動應用程式；還不行就重裝（可以不刪資料）
 
 # ── 區網偵測、出口容器和商店索引的補充（lan/detect.rs、docker_limits.rs、egress、storefront）──
 
