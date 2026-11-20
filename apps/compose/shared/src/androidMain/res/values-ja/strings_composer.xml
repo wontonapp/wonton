@@ -42,4 +42,7 @@
     <string name="composer_commands_more">ほか %1$d 件のコマンドは表示していません</string>
     <string name="composer_attachment_unsupported_type">この形式はアップロードできません</string>
     <string name="composer_attachment_reply_target">返信元がありません。返信を外してください</string>
+    <string name="composer_edit_cancel">編集をやめる</string>
+    <string name="composer_edit_send">保存</string>
+    <string name="composer_editing">メッセージを編集中</string>
 </resources>

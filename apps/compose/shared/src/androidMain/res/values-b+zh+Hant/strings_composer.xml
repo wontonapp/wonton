@@ -42,4 +42,7 @@
     <string name="composer_stop_uncertain">沒連上家裡的伺服器，不確定停下沒有。可以再試一次。</string>
     <string name="composer_attachment_unsupported_type">這個格式傳不上去</string>
     <string name="composer_attachment_reply_target">要回覆的那則不在了，去掉回覆</string>
+    <string name="composer_edit_cancel">放棄編輯</string>
+    <string name="composer_edit_send">儲存</string>
+    <string name="composer_editing">正在編輯訊息</string>
 </resources>

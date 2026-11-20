@@ -132,6 +132,21 @@ final class ChatModel {
         draftStore.restore(stored, in: draftKey(target))
     }
 
+    /// 正在输入（ADR-0109 第 6 节）：核心自己节流；只是提示，失败不挡发送。
+    func sendTyping(_ typing: Bool, in target: TimelineTarget) {
+        send(.timeline(action: .setTyping(target: target, typing: typing)))
+    }
+
+    /// 发出编辑；成功后核心自己把原草稿和回复对象放回去，壳等编辑态清掉再读草稿。
+    func editMessage(_ body: String, edit: ComposerEdit, in target: TimelineTarget) {
+        send(.timeline(action: .editMessage(target: target, eventId: edit.eventId, body: body)))
+    }
+
+    /// 放弃编辑（编辑条上的 ×）：核心恢复原草稿。
+    func cancelEdit(in target: TimelineTarget) {
+        send(.timeline(action: .cancelEdit(target: target)))
+    }
+
     /// 每次写草稿都带上正在回复的那条，不带核心会把存着的回复对象清掉。
     func saveDraft(_ target: TimelineTarget) {
         let key = draftKey(target)

@@ -116,10 +116,16 @@ fun WontonButton(
 
 /** 图标按钮：图形 24，命中区 48。 */
 @Composable
-fun WontonIconButton(icon: ImageVector, label: String, onClick: () -> Unit, tint: Color? = null) {
+fun WontonIconButton(
+    icon: ImageVector,
+    label: String,
+    onClick: () -> Unit,
+    tint: Color? = null,
+    enabled: Boolean = true,
+) {
     Box(
         Modifier.size(WontonTheme.size.target)
-            .clickable(role = Role.Button, onClick = onClick)
+            .clickable(enabled = enabled, role = Role.Button, onClick = onClick)
             .semantics { contentDescription = label },
         contentAlignment = Alignment.Center,
     ) {
@@ -128,7 +134,8 @@ fun WontonIconButton(icon: ImageVector, label: String, onClick: () -> Unit, tint
             // 装饰：外层 WontonIconButton 已经带了名字。
             contentDescription = null,
             modifier = Modifier.size(WontonTheme.size.icon),
-            tint = tint ?: WontonTheme.colors.textPrimary.toColor(),
+            tint = tint ?: (if (enabled) WontonTheme.colors.textPrimary else WontonTheme.colors.textSecondary)
+                .toColor(),
         )
     }
 }
