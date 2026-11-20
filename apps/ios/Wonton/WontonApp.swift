@@ -51,14 +51,10 @@ struct WontonApp: App {
                           let url = URL(string: identifier) else { return }
                     navigation.receive(url)
                 }
-                .onChange(of: scenePhase) { old, phase in
-                    // 挂起期间服务端可能已经放弃了连接、网络也可能变了，让核心检查并重连。离开后台就发，不等
-                    // .active（实测晚约 0.4 秒）：核心要赶在网页恢复后的第一个请求之前开始检查。
-                    if old == .background, phase != .background {
-                        home.send(.appForegrounded)
-                        navigation.push.foregrounded()
-                    }
-                    if phase == .background { home.send(.appBackgrounded) }
+                .onChange(of: scenePhase, initial: false) { old, phase in
+                    // 扩展切回 App 要赶在网页恢复后的第一个请求之前挪到目标服务器。离开后台就发，不等 .active
+                    // （实测晚约 0.4 秒）。核心的前后台和网络变化由 AppActivity 负责。
+                    if old == .background, phase != .background { navigation.push.foregrounded() }
                 }
             case let .failed(reason):
                 WontonThemeRoot(appearance: defaultAppearance()) {
