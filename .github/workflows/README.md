@@ -114,10 +114,12 @@ PR 合并前只等快检查：格式、Clippy、detekt、SwiftLint、行数门�
 （pointfreeco/swift-snapshot-testing，MIT，钉版本，只进测试目标不链接 App）。UI 测试在夜跑里跑，这个作业
 不编。参考图在 `apps/ios/WontonTests/__Snapshots__/`，直接进 git，不用 LFS。
 
-- 参考图绑定那台模拟器和系统版本，外观、语言（en、US）和时区（UTC）钉在 scheme 和测试里。换了模拟器或系统
-  要整体重录，只换图不换参数会一直红。在别的模拟器或系统上跑时 `SnapshotTests` 按测试里的 `ReferenceSimulator`
-  常量核对，不符就整类 XCTSkip 并把参考图组合和当前组合写进跳过原因，不拿像素硬比；常量和工作流的
-  `SIMULATOR_NAME`、`SIMULATOR_OS` 是同一组值，三处一起改。
+- 参考图绑定型号标识（`SIMULATOR_MODEL`，即测试进程里的 `SIMULATOR_MODEL_IDENTIFIER`）和系统版本，外观、
+  语言（en、US）和时区（UTC）钉在 scheme 和测试里。换了型号或系统要整体重录，只换图不换参数会一直红。
+  工作流是参考运行时的唯一来源：测试步骤用 `TEST_RUNNER_SNAPSHOT_MODEL`、`TEST_RUNNER_SNAPSHOT_OS` 把它交给
+  测试进程（xcodebuild 只转发 `TEST_RUNNER_` 前缀），再加 `TEST_RUNNER_SNAPSHOT_ENFORCE=1`。测试按型号和
+  系统版本核对，不符就整类失败，变量没交到也失败，不会出现改了工作流没人知道、CI 一路绿的情况。本机没有
+  这些变量时只跳过，跳过原因里写清参考组合和当前组合。
 - 每个用例默认 10 秒、最多 60 秒，失败不自动重试。
 - 录制模式靠 scheme 的环境变量切：`Wonton` 是 `SNAPSHOT_TESTING_RECORD=never`（只比较，缺一张参考图也直接红，
   不在 CI 里悄悄补图），`WontonSnapshots` 是 `all`。xcodebuild 步骤的 `env` 传不进模拟器里跑的 App，只有 scheme
@@ -125,7 +127,8 @@ PR 合并前只等快检查：格式、Clippy、detekt、SwiftLint、行数门�
 - 比较失败时“失败时存测试结果包”一步把 `.xcresult` 存成产物，保留 7 天；新图和差异图是里面的附注。
 - 重录在 `snapshots-record.yml`：在 PR 上打 `record-snapshots` 标签（草稿 PR 的事件不跑日常作业，但重录作业
   照跑）。作业用 `WontonSnapshots` scheme 把参考图全部重画，提交回分支并摘掉标签。录制那一轮本身是红的
-  （每录一张报一条“Automatically recorded snapshot”），以提交回去的图为准；它不算必需检查。
+  （每录一张报一条“Automatically recorded snapshot”），以提交回去的图为准；它不算必需检查。录完逐个核对
+  现有参考图都出了“已录制”：运行时不对或一张没录就失败，不提交、不摘标签，留着看日志后重打。
 - 重录推回之后：`GITHUB_TOKEN` 推的提交照常触发 `pull_request`，但仓库要求外部贡献者的运行先批准
   （`all_external_contributors`），github-actions[bot] 也算外部，`gate` 停在 `action_required`、
   分支头上没有必需检查。`snapshots-record.yml` 末尾的 `checks` 作业用同一个令牌批准这次运行；分支头已经
