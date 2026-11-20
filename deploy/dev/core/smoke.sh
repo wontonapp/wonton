@@ -178,7 +178,12 @@ hermes_events="$(mktemp)"
 docker events --filter "container=$hermes" --filter event=health_status --format '{{.TimeNano}} {{.Action}}' \
   >"$hermes_events" 2>/dev/null &
 events_pid=$!
-if [[ -z "${SMOKE_ONLY:-}" ]]; then "$dev" up >/dev/null || build_failed "核心启动失败"; fi
+# 每次全新跑都换一个新核心，但身份提供方的卷不跟数据目录走：上一个栈留下的 @mom 会让家人那步的邀请撞重名，
+# 换掉它才和「新数据目录 = 新核心」一致。
+if [[ -z "${SMOKE_ONLY:-}" ]]; then
+  if docker volume ls -q | grep -qx "${core}_tuwunel"; then docker volume rm "${core}_tuwunel" >/dev/null; fi
+  "$dev" up >/dev/null || build_failed "核心启动失败"
+fi
 start_browser
 expect "核心容器健康" "$(docker inspect -f '{{.State.Health.Status}}' "$core")" healthy
 expect "网关应答（$core_url）" "$(b -o /dev/null -w '%{http_code}' "$core_url/_wonton/health")" 200
