@@ -27,6 +27,107 @@ final class FriendCodeUITests: XCTestCase {
         shot("my-code")
     }
 
+    /// 【一次性走查，随 req-blind3-friend-qr-share，不进 PR】“我的二维码”的系统分享：出保存/复制图片项，
+    /// 保存到相册不崩、能回面板、能取消。期望链接落 runner 沙盒固定文件（宿主只经 light 取这一个文件进私有比对），
+    /// 图片内容在宿主机上解码比对；系统项/取消/权限框按设备语言配中英标签，权限框只点一次 Allow/允许。
+    func testShareMyCodeQR() throws {
+        openAddFriend()
+        tapButton("My QR Code", timeout: 40)
+        let link = app.staticTexts["friends-my-link"]
+        XCTAssertTrue(link.waitForExistence(timeout: 10), "QR_SHARE_LINK_MISSING")
+        let expectedLink = link.label
+        // 落盘前只做布尔断言，不把载荷放进失败消息。
+        XCTAssertFalse(expectedLink.isEmpty, "QR_EXPECTED_LINK_EMPTY")
+        XCTAssertTrue(expectedLink.hasPrefix("https://matrix.to/#/@"), "QR_EXPECTED_LINK_PREFIX")
+        // 固定文件名、无结尾换行；内容只进 runner 沙盒和宿主私有管道，不进附件、命令参数或日志。
+        let expectedURL = FileManager.default
+            .urls(for: .documentDirectory, in: .userDomainMask)[0]
+            .appendingPathComponent("qr-expected-link.txt")
+        XCTAssertTrue(
+            FileManager.default.createFile(atPath: expectedURL.path, contents: Data(expectedLink.utf8)),
+            "QR_EXPECTED_WRITE_FAILED"
+        )
+        XCTAssertTrue(app.images["My QR Code"].exists, "没有二维码")
+        let share = app.buttons["friends-my-share"]
+        XCTAssertTrue(share.waitForExistence(timeout: 10), "没有分享入口")
+        shot("share-panel")
+        share.tap()
+        // iOS 26 分享表的活动项是 Cell（attempt2 AX 树：Cell identifier 'actionGroupCell' label 'Save Image'），按设备语言配中英标签。
+        guard let save = waitCell(["Save Image", "存储图像"], timeout: 10) else {
+            return XCTFail("QR_SHARE_SAVE_CELL_UNAVAILABLE")
+        }
+        shot("share-sheet")
+        save.tap()
+        // 全新模拟器第一次保存必弹相册加权限：等面板回归或 Allow/允许，alert 只点一次；弹两个或没有 Allow 都算失败。
+        var allowedOnce = false
+        var saved = false
+        let deadline = Date().addingTimeInterval(10)
+        while Date() < deadline {
+            if qrPanelBack(expectedLink) { saved = true; break }
+            if app.alerts.firstMatch.exists {
+                guard let allow = ["Allow", "允许"].map({ app.alerts.buttons[$0].firstMatch })
+                    .first(where: { $0.exists && $0.isHittable }) else { break }
+                if allowedOnce { break }
+                allow.tap()
+                allowedOnce = true
+            }
+            _ = app.wait(for: .runningForeground, timeout: 1)
+        }
+        XCTAssertTrue(saved, "QR_SHARE_SAVE_RETURN_FAILED")
+        shot("after-save")
+        share.tap()
+        // iOS 26 分享表 AX 里没有 Cancel/取消 Button（1116 04:3x 定点实测，10s 轮询无果）：
+        // 先按原断言轮询 2s，没有就按系统手势下滑关闭——Save Image Cell 存在（本轮 t=15.36 实证）就滑 Cell，否则滑 app 根。
+        if let cancel = waitButton(["Cancel", "取消"], timeout: 2), cancel.isEnabled, cancel.isHittable {
+            cancel.tap()
+        } else {
+            let sheetItem = app.cells["Save Image"].firstMatch
+            (sheetItem.exists ? sheetItem : app).swipeDown(velocity: .fast)
+        }
+        // 下滑后分享表要真的关掉：≤5s 内 Save Image Cell 消失，否则仍算取消不可用。
+        let sheetGoneDeadline = Date().addingTimeInterval(5)
+        repeat {
+            if !app.cells["Save Image"].firstMatch.exists { break }
+            _ = app.wait(for: .runningForeground, timeout: 1)
+        } while Date() < sheetGoneDeadline
+        guard !app.cells["Save Image"].firstMatch.exists else {
+            return XCTFail("QR_SHARE_CANCEL_UNAVAILABLE")
+        }
+        XCTAssertTrue(waitForQRPanel(expectedLink), "QR_SHARE_CANCEL_RETURN_FAILED")
+        shot("after-cancel")
+    }
+
+    private func waitForQRPanel(_ expectedLink: String) -> Bool {
+        let deadline = Date().addingTimeInterval(10)
+        repeat {
+            if qrPanelBack(expectedLink) { return true }
+            _ = app.wait(for: .runningForeground, timeout: 1)
+        } while Date() < deadline
+        return false
+    }
+
+    /// 保存/取消后面板要原样回来：链接没变，分享入口仍在、可点。
+    private func qrPanelBack(_ expectedLink: String) -> Bool {
+        let link = app.staticTexts["friends-my-link"]
+        let share = app.buttons["friends-my-share"]
+        return app.state == .runningForeground
+            && link.exists && link.isHittable && link.label == expectedLink
+            && share.exists && share.isEnabled && share.isHittable
+    }
+
+    /// 系统分享表的活动项按设备语言可能是英文或中文，逐个标签找（app 内标签仍英文单值）。
+    private func waitCell(_ labels: [String], timeout: TimeInterval) -> XCUIElement? {
+        let deadline = Date().addingTimeInterval(timeout)
+        repeat {
+            for label in labels {
+                let cell = app.cells[label].firstMatch
+                if cell.exists && cell.isHittable && cell.isEnabled { return cell }
+            }
+            _ = app.wait(for: .runningForeground, timeout: 1)
+        } while Date() < deadline
+        return nil
+    }
+
     func testPastedLinkSendsRequest() throws {
         let peer = try peerId()
         openAddFriend()
@@ -121,11 +222,12 @@ final class FriendCodeUITests: XCTestCase {
                 settings.tap()
                 return true
             }
-            if let skip = ["Later", "Skip", "Done", "Next"]
+            if let skip = ["Later", "Skip", "Done", "Next", "Go to Chat"]
                 .map({ app.buttons[$0].firstMatch })
                 .first(where: { $0.exists && $0.isHittable && $0.isEnabled }) {
                 skip.tap()
             } else {
+                _ = UITestBackend.skipKeyHandoff(app)
                 let sidebar = app.buttons["Sidebar"].firstMatch
                 if sidebar.exists && sidebar.isHittable && Date().timeIntervalSince(sidebarTapped) > 6 {
                     sidebar.tap()
