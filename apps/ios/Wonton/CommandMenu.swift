@@ -61,24 +61,28 @@ struct CommandMenu: View {
             avatar(command)
                 .frame(width: WontonTheme.size.commandAvatar, height: WontonTheme.size.commandAvatar)
                 .accessibilityHidden(true)
-            Text(verbatim: "/\(command.name)")
-                .wontonText(WontonTheme.typography.message)
-                .fontWeight(.medium)
-                .foregroundStyle(Color(colors.textPrimary))
-                .lineLimit(1)
-                .layoutPriority(1)
-            // 参数提示跟在名字后面（ADR-0109 第 7 节）。
-            if let hint = command.hint {
-                Text(verbatim: hint)
-                    .wontonText(WontonTheme.typography.caption)
+            // 名字和参数提示一行，说明在下一行，和 Android 的排法一致（ADR-0109 第 7 节）。
+            VStack(alignment: .leading, spacing: WontonTheme.spacing.s4) {
+                HStack(spacing: WontonTheme.spacing.s8) {
+                    Text(verbatim: "/\(command.name)")
+                        .wontonText(WontonTheme.typography.message)
+                        .fontWeight(.medium)
+                        .foregroundStyle(Color(colors.textPrimary))
+                        .lineLimit(1)
+                        .layoutPriority(1)
+                    if let hint = command.hint {
+                        Text(verbatim: hint)
+                            .wontonText(WontonTheme.typography.caption)
+                            .foregroundStyle(Color(colors.textSecondary))
+                            .lineLimit(1)
+                    }
+                }
+                Text(command.description)
+                    .wontonText(WontonTheme.typography.supporting)
                     .foregroundStyle(Color(colors.textSecondary))
-                    .lineLimit(1)
+                    .lineLimit(2)
             }
-            Text(command.description)
-                .wontonText(WontonTheme.typography.supporting)
-                .foregroundStyle(Color(colors.textSecondary))
-                .lineLimit(1)
-            Spacer(minLength: 0)
+            .frame(maxWidth: .infinity, alignment: .leading)
             if showsBot {
                 Text(command.botName)
                     .wontonText(WontonTheme.typography.caption)
