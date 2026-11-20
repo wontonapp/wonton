@@ -68,6 +68,8 @@ chat-message-action-unavailable = 这条消息不能这样操作
 
 # 转发的目标房间不存在或还没加入时显示。
 chat-forward-target-not-joined = 还没有加入要转发到的房间
+chat-forward-comment-failed = 附言没发出去，转发先不发：{ $error }
+chat-forward-comment-lost = 发送一直没有结果
 
 # 后台聊天操作失败的话，放进问题提示里；$error 是 Matrix SDK 或家里的服务器的原始错误。
 chat-op-ask-agent-failed = 问默认 Agent 失败：{ $error }

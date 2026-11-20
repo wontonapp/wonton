@@ -52,6 +52,8 @@ pub enum TimelineAction {
     },
     /// 把一条消息转发到另一个房间（ADR-0073）：照原样再发一条，不带“转发自”，加密附件不重新上传。`item_id` 同
     /// [`TimelineAction::RetrySend`]，只能转发菜单里有 [`MessageAction::Forward`](crate::MessageAction::Forward) 的消息。
+    /// 壳在<｜begin▁of▁sentence｜>#m前先往目标房间发的一条附言（[`TimelineAction::SendText`](crate::TimelineAction::SendText)）算这次转发的一部分：
+    /// 核心等它被服务器收下才转发；它不可恢复地失败时转发不发，失败进 `problem`。
     /// 进展在目标房间的时间线里（本地回显、发送状态），壳随后打开目标房间。目标是 `to_room_id` 的主时间线，
     /// 不往旁聊里转发。
     ForwardMessage {

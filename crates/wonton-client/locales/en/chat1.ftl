@@ -72,6 +72,8 @@ chat-message-action-unavailable = You can't do that with this message.
 
 # Shown when the room to forward to doesn't exist or hasn't been joined.
 chat-forward-target-not-joined = You haven't joined the room you're forwarding to.
+chat-forward-comment-failed = The comment wasn't sent, so nothing was forwarded: { $error }
+chat-forward-comment-lost = the send never finished
 
 # Chat operations that failed in the background. Shown as the problem message;
 # $error is the Matrix SDK's or the home server's original error.

@@ -270,14 +270,15 @@ impl ChatRoom {
     }
 
     /// 发送文字，`mentions` 是输入框里选中的人（写进 `m.mentions` 和正文的胶囊，见 [`Self::mention_content`]）。
-    /// 消息先以本地回显出现在时间线里，发送结果见 [`Message::status`]。
-    pub async fn send_text(&self, body: &str, mentions: &[String]) -> Result<()> {
+    /// 消息先以本地回显出现在时间线里，发送结果见 [`Message::status`]；返回的句柄能等结果
+    /// （[`Self::wait_outcome`]）。
+    pub async fn send_text(&self, body: &str, mentions: &[String]) -> Result<SendHandle> {
         ensure_recipient_devices(&self.room).await?;
         let names = self.names();
         let users = crate::mentions::selected(mentions, &names);
         let content = self.mention_content(body, &users);
-        self.timeline().await.send(content.into()).await?;
-        Ok(())
+        let sent = self.timeline().await.send(content.into()).await?;
+        Ok(sent)
     }
 
     /// 现在这份成员和显示名。
@@ -302,16 +303,17 @@ impl ChatRoom {
         body: &str,
         mentions: &[String],
         extra: serde_json::Map<String, serde_json::Value>,
-    ) -> Result<()> {
+    ) -> Result<SendHandle> {
         ensure_recipient_devices(&self.room).await?;
         let names = self.names();
         let users = crate::mentions::selected(mentions, &names);
         let content = self.mention_content(body, &users);
-        self.timeline()
+        let sent = self
+            .timeline()
             .await
             .send_with_extra_content(content.into(), Some(extra))
             .await?;
-        Ok(())
+        Ok(sent)
     }
 
     /// 发一个房间状态事件；`state_key` 为空串时是房间级状态。内容原样发，不需要 ruma 认识事件类型。
@@ -861,6 +863,8 @@ pub(crate) async fn local_member_names(room: &Room) -> MemberNames {
 mod actions;
 #[cfg(test)]
 mod bootstrap_tests;
+mod confirmation;
+pub use confirmation::SendOutcome;
 mod focus;
 mod image;
 mod names;

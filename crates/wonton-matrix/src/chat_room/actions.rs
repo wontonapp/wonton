@@ -9,6 +9,7 @@ use matrix_sdk::{
             RoomMessageEventContentWithoutRelation,
         },
     },
+    send_queue::SendHandle,
 };
 
 use matrix_sdk::deserialized_responses::TimelineEvent;
@@ -55,7 +56,7 @@ impl ChatRoom {
         body: &str,
         mentions: &[String],
         in_reply_to: &EventId,
-    ) -> Result<()> {
+    ) -> Result<SendHandle> {
         self.send_mentions_reply(body, mentions, in_reply_to, None)
             .await
     }
@@ -68,7 +69,7 @@ impl ChatRoom {
         mentions: &[String],
         in_reply_to: &EventId,
         extra: Option<serde_json::Map<String, serde_json::Value>>,
-    ) -> Result<()> {
+    ) -> Result<SendHandle> {
         let quoted = self.check_reply_target(in_reply_to).await?;
         ensure_recipient_devices(&self.room).await?;
         let names = self.names();
@@ -98,11 +99,12 @@ impl ChatRoom {
         if !users.is_empty() {
             content = content.add_mentions(mentions_of(&users));
         }
-        self.timeline()
+        let sent = self
+            .timeline()
             .await
             .send_with_extra_content(content.into(), extra)
             .await?;
-        Ok(())
+        Ok(sent)
     }
 
     /// 回复一条消息，事件内容里带上额外字段（链接预览的 `com.beeper.linkpreviews`，ADR-0065）。其余同
@@ -113,7 +115,7 @@ impl ChatRoom {
         mentions: &[String],
         in_reply_to: &EventId,
         extra: serde_json::Map<String, serde_json::Value>,
-    ) -> Result<()> {
+    ) -> Result<SendHandle> {
         self.send_mentions_reply(body, mentions, in_reply_to, Some(extra))
             .await
     }
