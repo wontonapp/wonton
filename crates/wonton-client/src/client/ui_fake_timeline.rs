@@ -227,7 +227,8 @@ impl FakeTimeline {
     }
 
     /// 自己发的一条接在末尾，比上一条晚一分钟（和上一条自己的消息连成一组）。
-    fn send_text(&self, body: &str) {
+    /// 提及的用户不画胶囊：假数据里没有成员表，胶囊的样式由真实房间里看。
+    fn send_text(&self, body: &str, _mentions: &[String]) {
         let index = {
             let mut state = self.lock();
             state.sent += 1;
