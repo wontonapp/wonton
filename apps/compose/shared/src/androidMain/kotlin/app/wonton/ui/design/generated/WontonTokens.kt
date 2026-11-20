@@ -81,6 +81,7 @@ object WontonSize {
     val commandAvatar = 28.dp
     val messageAvatar = 34.dp
     val commandMenu = 240.dp
+    val attachTab = 76.dp
 }
 
 object WontonRatio {
@@ -95,6 +96,7 @@ object WontonRatio {
     val serviceFill = 0.32f
     val serviceFillDark = 0.16f
     val jumpHighlight = 0.2f
+    val tabHighlight = 0.14f
 }
 
 object WontonGesture {

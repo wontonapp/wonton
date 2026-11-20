@@ -141,6 +141,15 @@ final class ChatTelegramUITests: XCTestCase {
         enter(Self.directRoom)
         waitForFloatingDateToFade()
         shot("direct-dark")
+        let (first, second) = openAttachSheet()
+        _ = selectTwo(first, second)
+        shot("attach-selected-dark")
+        app.terminate()
+        app.launch()
+        enter(Self.directRoom)
+        openForwardSheet()
+        selectTwoRooms()
+        shot("forward-sheet-dark")
         app.terminate()
         app.launch()
         enter(Self.groupRoom)
@@ -157,46 +166,45 @@ final class ChatTelegramUITests: XCTestCase {
         XCTAssertTrue(app.otherElements["chatPanel"].waitForExistence(timeout: 5), "资料页的按钮没有打开面板\n\(app.debugDescription)")
     }
 
-    /// 回形针打开附件面板：相册的照片网格能点选几张，底下有“文件”；选了出现“完成”，点了面板收起。
-    func testAttachSheetShowsPhotoGridAndSelects() {
+    /// 回形针打开附件面板：相册的照片网格能点选几张，底下浮着一排切换，私聊里有相册和文件；选了照片那一排换成附言框和
+    /// 发送键，关掉回到那一排；写了附言点发送，面板收起。
+    func testAttachSheetTabsThenCaptionAndSend() {
         enter(Self.directRoom)
-        tap(app.buttons["composerAttach"])
-        // 第一次打开网格系统会问相册权限。
-        // 系统弹窗跟着模拟器的语言走，不认字：三个按钮里中间那个是“允许完全访问”。
-        let springboard = XCUIApplication(bundleIdentifier: "com.apple.springboard")
-        let allow = springboard.alerts.buttons.element(boundBy: 1)
-        let first = app.buttons["attachPhoto.0"]
-        let second = app.buttons["attachPhoto.1"]
-        if allow.waitForExistence(timeout: 10) { allow.tap() }
-        XCTAssertTrue(first.waitForExistence(timeout: 15), "附件面板里没有照片\n\(app.debugDescription)")
-        XCTAssertTrue(app.buttons["attachFiles"].exists, "附件面板里没有“文件”")
-        XCTAssertFalse(app.buttons["attachDone"].exists, "还没选就有“完成”")
-        first.tap()
-        second.tap()
-        XCTAssertTrue(wait(5) { first.isSelected && second.isSelected }, "点了的照片没变成选中")
-        XCTAssertTrue(app.buttons["attachDone"].waitForExistence(timeout: 5), "选了照片没有“完成”")
+        let (first, second) = openAttachSheet()
+        XCTAssertTrue(app.buttons["attachPhotos"].exists, "附件面板底下没有“相册”")
+        XCTAssertTrue(app.buttons["attachFiles"].exists, "私聊的附件面板底下没有“文件”")
+        XCTAssertFalse(app.buttons["attachSend"].exists, "还没选就有发送键")
         shot("attach-sheet")
-        app.buttons["attachDone"].tap()
-        XCTAssertTrue(first.waitForNonExistence(timeout: 5), "点了“完成”面板没收起")
+        let send = selectTwo(first, second)
+        XCTAssertFalse(app.buttons["attachFiles"].exists, "选了照片，那一排切换还在")
+        shot("attach-selected")
+        tap(app.buttons["attachCancel"])
+        XCTAssertTrue(app.buttons["attachFiles"].waitForExistence(timeout: 5), "取消选择没回到那一排切换")
+        XCTAssertFalse(first.isSelected || second.isSelected, "取消选择后照片还是选中的")
+        first.tap()
+        let caption = element("attachCaption")
+        tap(caption)
+        caption.typeText("Fixture caption")
+        XCTAssertTrue(wait(5) { send.isHittable }, "键盘弹起后发送键点不到")
+        send.tap()
+        XCTAssertTrue(first.waitForNonExistence(timeout: 5), "点了发送面板没收起")
     }
 
-    /// 转发：面板顶上能搜，会话能选几个，选了才出现发送。
-    func testForwardSheetSearchesAndSelectsSeveral() {
+    /// 转发：面板顶上能搜，会话能选几个；选了以后附言框和发送键贴着面板底、点得到，写了附言点发送面板收起。
+    func testForwardSheetSelectsSeveralAndSendsWithComment() {
         enter(Self.directRoom)
-        waitForFloatingDateToFade()
-        message(3).press(forDuration: 1.2)
-        let forward = app.buttons["messageForward"]
-        XCTAssertTrue(forward.waitForExistence(timeout: 5), "长按菜单里没有“转发”")
-        forward.tap()
-        XCTAssertTrue(app.textFields["forwardSearch"].waitForExistence(timeout: 5), "转发面板没有搜索框")
-        let rooms = app.buttons.matching(NSPredicate(format: "identifier BEGINSWITH %@", "forward-"))
-        XCTAssertGreaterThanOrEqual(rooms.count, 2, "转发面板里的会话不到两个")
-        XCTAssertFalse(app.buttons["forwardSend"].exists, "还没选就有发送")
-        rooms.element(boundBy: 0).tap()
-        rooms.element(boundBy: 1).tap()
-        XCTAssertTrue(app.buttons["forwardSend"].waitForExistence(timeout: 5), "选了会话没有发送")
+        openForwardSheet()
+        let send = app.buttons["forwardSend"]
+        XCTAssertFalse(send.exists, "还没选就有发送键")
+        selectTwoRooms()
+        XCTAssertTrue(wait(5) { send.exists && send.isHittable }, "选了会话，发送键不在屏幕内\n\(app.debugDescription)")
+        let comment = element("forwardCaption")
+        XCTAssertTrue(wait(5) { comment.exists && comment.isHittable }, "选了会话，附言框不在屏幕内\n\(app.debugDescription)")
+        comment.tap()
+        comment.typeText("Fixture comment")
+        XCTAssertTrue(wait(5) { send.isHittable }, "键盘弹起后发送键点不到")
         shot("forward-sheet")
-        app.buttons["forwardSend"].tap()
+        send.tap()
         XCTAssertTrue(app.textFields["forwardSearch"].waitForNonExistence(timeout: 5), "发送以后面板没收起")
     }
 
@@ -276,6 +284,58 @@ final class ChatTelegramUITests: XCTestCase {
     }
 
     // MARK: 助手
+
+    /// 点回形针打开附件面板，等相册网格出来，给回前两张照片。
+    private func openAttachSheet(file: StaticString = #filePath, line: UInt = #line) -> (XCUIElement, XCUIElement) {
+        tap(app.buttons["composerAttach"], file: file, line: line)
+        // 第一次打开网格系统会问相册权限。
+        // 系统弹窗跟着模拟器的语言走，不认字：三个按钮里中间那个是“允许完全访问”。
+        let springboard = XCUIApplication(bundleIdentifier: "com.apple.springboard")
+        let allow = springboard.alerts.buttons.element(boundBy: 1)
+        let first = app.buttons["attachPhoto.0"]
+        if allow.waitForExistence(timeout: 3) { allow.tap() }
+        XCTAssertTrue(first.waitForExistence(timeout: 15), "附件面板里没有照片\n\(app.debugDescription)", file: file, line: line)
+        // 面板升上来的动画还要一会儿；截图等它画完。
+        Thread.sleep(forTimeInterval: 1)
+        return (first, app.buttons["attachPhoto.1"])
+    }
+
+    /// 选两张照片，等附言框和发送键出来，给回发送键。
+    private func selectTwo(_ first: XCUIElement, _ second: XCUIElement) -> XCUIElement {
+        first.tap()
+        second.tap()
+        XCTAssertTrue(wait(5) { first.isSelected && second.isSelected }, "点了的照片没变成选中")
+        let send = app.buttons["attachSend"]
+        XCTAssertTrue(wait(5) { send.exists && send.isHittable }, "选了照片没有发送键\n\(app.debugDescription)")
+        XCTAssertTrue(element("attachCaption").exists, "选了照片没有附言框")
+        Thread.sleep(forTimeInterval: 0.5)
+        return send
+    }
+
+    /// 长按一条消息点“转发”，等转发面板出来。
+    private func openForwardSheet() {
+        waitForFloatingDateToFade()
+        message(3).press(forDuration: 1.2)
+        let forward = app.buttons["messageForward"]
+        XCTAssertTrue(forward.waitForExistence(timeout: 5), "长按菜单里没有“转发”")
+        forward.tap()
+        XCTAssertTrue(app.textFields["forwardSearch"].waitForExistence(timeout: 5), "转发面板没有搜索框")
+    }
+
+    /// 在转发面板里选前两个会话。
+    private func selectTwoRooms() {
+        let rooms = app.buttons.matching(NSPredicate(format: "identifier BEGINSWITH %@", "forward-"))
+        XCTAssertGreaterThanOrEqual(rooms.count, 2, "转发面板里的会话不到两个")
+        rooms.element(boundBy: 0).tap()
+        rooms.element(boundBy: 1).tap()
+        XCTAssertTrue(app.buttons["forwardSend"].waitForExistence(timeout: 5), "选了会话没有发送键")
+        Thread.sleep(forTimeInterval: 0.5)
+    }
+
+    /// 按无障碍标识找，不管它是哪种控件（多行的输入框在无障碍树里是 textView）。
+    private func element(_ identifier: String) -> XCUIElement {
+        app.descendants(matching: .any).matching(identifier: identifier).firstMatch
+    }
 
     /// 浮动日期只在滚动时盖在消息上，停下后淡出，不压着字（ADR-0109 第 4 节）。
     private func waitForFloatingDateToFade(file: StaticString = #filePath, line: UInt = #line) {

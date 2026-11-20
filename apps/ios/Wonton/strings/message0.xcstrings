@@ -361,6 +361,36 @@
           }
         }
       }
+    },
+    "message.forwardComment": {
+      "comment": "Placeholder of the comment field at the bottom of the forward sheet once chats are selected; the comment is sent to each chat above the forwarded message.",
+      "extractionState": "manual",
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Add a comment…"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "添加附言…"
+          }
+        },
+        "zh-Hant": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "新增附言…"
+          }
+        },
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "コメントを追加…"
+          }
+        }
+      }
     }
   }
 }

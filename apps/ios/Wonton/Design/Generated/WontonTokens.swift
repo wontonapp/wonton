@@ -73,6 +73,7 @@ enum WontonSize {
     static let commandAvatar: CGFloat = 28
     static let messageAvatar: CGFloat = 34
     static let commandMenu: CGFloat = 240
+    static let attachTab: CGFloat = 76
 }
 
 enum WontonRatio {
@@ -87,6 +88,7 @@ enum WontonRatio {
     static let serviceFill: CGFloat = 0.32
     static let serviceFillDark: CGFloat = 0.16
     static let jumpHighlight: CGFloat = 0.2
+    static let tabHighlight: CGFloat = 0.14
 }
 
 enum WontonGesture {
