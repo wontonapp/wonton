@@ -70,7 +70,6 @@ struct StoreView: View {
         } ?? []
         return model.viewModel.tasks.filter { !batchTasks.contains($0) }
     }
-
 }
 
 extension StoreView {
