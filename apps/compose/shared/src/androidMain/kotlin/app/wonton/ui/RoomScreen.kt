@@ -52,6 +52,7 @@ import app.wonton.protocol.BackPagination
 import app.wonton.protocol.BotView
 import app.wonton.protocol.BotRef
 import app.wonton.protocol.ComposerViewModel
+import app.wonton.protocol.ComposerEdit
 import app.wonton.protocol.CoreException
 import app.wonton.protocol.ConfirmationView
 import app.wonton.protocol.JumpState
@@ -150,6 +151,8 @@ internal class TimelineState {
     var commands by mutableStateOf<List<RoomCommand>>(emptyList())
     /** 命令表被截掉的条数。 */
     var commandsOmitted by mutableIntStateOf(0)
+    /** 正在编辑的旧消息（ADR-0109 第 8 节），核心每一批带上。 */
+    var editing by mutableStateOf<ComposerEdit?>(null)
 
     fun apply(diff: TimelineDiff) {
         when (diff) {
@@ -219,6 +222,7 @@ internal fun RoomRoute(
                 timeline.typing = update.typing
                 timeline.commands = update.commands
                 timeline.commandsOmitted = update.commandsOmitted.toInt()
+                timeline.editing = update.editing
                 if (update.scrollToBottom) timeline.bottomRequest++
                 timeline.revision++
                 timeline.loaded = true
@@ -319,7 +323,7 @@ private fun RoomScreen(
     val visible = messageMenuBounds()
     val roomId = target.roomId
     val draft = rememberRoomDraft(core, target, onAction)
-    RoomPanelEffects(timeline, draft)
+    RoomDraftEffects(timeline, draft, core, target)
     // 转发、撤回都要时间线条目的 id，菜单开着的那条。
     var forwarding by remember { mutableStateOf<String?>(null) }
     var redacting by remember { mutableStateOf<MessageMenuTarget?>(null) }
@@ -417,6 +421,7 @@ private fun RoomOverlays(
             visible = visible,
             core = core,
             onReply = draft::replyTo,
+            onEdit = { onAction(Action.Timeline(TimelineAction.StartEdit(target, opened.itemId))) },
             onForward = { onForward(opened.itemId) },
             onRedact = { onRedact(opened) },
             onDismiss = onMenuDismiss,
@@ -451,20 +456,6 @@ private fun RoomOverlays(
         onDismiss = { timeline.openedConfirmation = null },
         onAction = onAction,
     )
-}
-
-@Composable
-private fun RoomPanelEffects(timeline: TimelineState, draft: RoomDraft) {
-    val panel = LocalChatPanel.current
-    val panelPages = timeline.panel
-    val panelSelected = timeline.panelSelected
-    SideEffect {
-        panel?.feed(panelPages, panelSelected)
-    }
-    DisposableEffect(panel, draft) {
-        panel?.draftSink = { text -> draft.change(if (draft.text.isBlank()) text else "${draft.text}\n$text") }
-        onDispose { panel?.draftSink = null }
-    }
 }
 
 /**
@@ -621,6 +612,8 @@ private fun Conversation(
                     onDraftChange = draft::change,
                     onSent = draft::sent,
                     onReplyCancel = draft::stopReplying,
+                    editing = timeline.editing,
+                    onEditCancel = { onAction(Action.Timeline(TimelineAction.CancelEdit(target))) },
                     onAction = onAction,
                     onReject = onReject,
                     commands = timeline.commands,

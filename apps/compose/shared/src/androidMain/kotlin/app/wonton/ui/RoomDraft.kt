@@ -13,6 +13,8 @@ import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.runtime.setValue
 import app.wonton.client.ClientCore
 import app.wonton.protocol.Action
+import app.wonton.protocol.ComposerDraft
+import app.wonton.protocol.ComposerEdit
 import app.wonton.protocol.QuotedMessage
 import app.wonton.protocol.ReplyQuote
 import app.wonton.protocol.TimelineAction
@@ -42,13 +44,36 @@ class RoomDraft(
     val reply: ReplyQuote?
         get() = quoted.value
 
+    /** 正在编辑的旧消息（ADR-0109 第 8 节）；编辑时发送键变确认，取消恢复原草稿。 */
+    var editing by mutableStateOf<ComposerEdit?>(null)
+
     /** 开始回复时加一，输入框按它拿回光标。 */
     var focusToken by focus
 
     fun change(value: String) {
+        val wasEmpty = body.value.isBlank()
         body.value = value
         touched = true
         save()
+        // 正在输入（ADR-0109 第 6 节）：只在空和不满之间换时才报，核心自己还会节流。
+        if (editing == null && wasEmpty != value.isBlank()) {
+            onAction(Action.Timeline(TimelineAction.SetTyping(target, value.isNotBlank())))
+        }
+    }
+
+    /** 核心让进编辑态：草稿换成原正文，光标放回去。 */
+    fun beginEdit(edit: ComposerEdit, previous: String?) {
+        editing = edit
+        body.value = previous.orEmpty()
+        focusToken++
+    }
+
+    /** 编辑结束（发出去了或放弃了）：核心已经恢复原草稿，换回来。 */
+    fun endEdit(stored: ComposerDraft?) {
+        editing = null
+        body.value = stored?.body.orEmpty()
+        quoted.value = stored?.reply
+        touched = false
     }
 
     fun replyTo(message: QuotedMessage) {
@@ -66,6 +91,7 @@ class RoomDraft(
 
     /** 字和附件发出去了：草稿整个清掉，别让回复对象留下来。 */
     fun sent() {
+        onAction(Action.Timeline(TimelineAction.SetTyping(target, false)))
         body.value = ""
         quoted.value = null
         touched = true

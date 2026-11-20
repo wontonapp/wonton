@@ -195,6 +195,13 @@ private extension ChatRoomView {
         // 留着标签栏时，键盘弹出后输入框和发送按钮被盖在键盘下面（iOS 26.5 模拟器实测）。
         .toolbar(.hidden, for: .tabBar)
         .task(id: model.draftKey(target)) { await model.loadDraft(target) }
+        .onAppear {
+            timeline.onEditing = { previous, edit in
+                composer.edit = edit
+                guard previous?.eventId != edit?.eventId else { return }
+                Task { await model.loadDraft(target) }
+            }
+        }
         .task(id: model.draftKey(target)) { await composer.observe() }
         .task(id: timeline.attempt) {
             if await timeline.observe(pin: pin) {
@@ -403,6 +410,9 @@ private extension ChatRoomView {
             cancel: { sendTimeline(.cancelSend(target: target, itemId: item.id)) },
             cardAction: { model.send($0) },
             reply: { model.startReply(.ready(message: $0), in: target) },
+            edit: { key in
+                sendTimeline(.startEdit(target: target, itemId: key))
+            },
             forward: {
                 forwarding = item.id
                 pickingForwardRoom = true

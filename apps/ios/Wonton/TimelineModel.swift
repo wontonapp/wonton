@@ -41,6 +41,10 @@ final class TimelineModel {
     private(set) var focus: TimelineFocus?
     private(set) var focusRevision = 0
     private(set) var failure: Problem?
+    /// 正在编辑的旧消息（ADR-0109 第 8 节）：核心每一批带上，壳照着画编辑条。
+    private(set) var editing: ComposerEdit?
+    /// 编辑态变了（旧, 新）：开始和结束都要从核心重读草稿。
+    var onEditing: ((ComposerEdit?, ComposerEdit?) -> Void)?
     /// 打不开时点“重试”加一，视图按它重新订阅。
     var attempt = 0
 
@@ -113,6 +117,11 @@ final class TimelineModel {
         if let focus = update.focus {
             self.focus = focus
             focusRevision += 1
+        }
+        if update.editing?.eventId != editing?.eventId {
+            let previous = editing
+            editing = update.editing
+            onEditing?(previous, update.editing)
         }
         if let anchor = update.anchor { self.anchor = anchor }
         if isLoaded { pin.stick() }

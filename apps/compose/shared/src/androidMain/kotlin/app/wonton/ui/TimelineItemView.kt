@@ -515,4 +515,3 @@ private fun MessageBody(
 /** 这条消息的回复项，自带引用；菜单里没有就是空。 */
 val TimelineMessage.replyAction: MessageAction.Reply?
     get() = actions.firstOrNull { it is MessageAction.Reply } as? MessageAction.Reply
-

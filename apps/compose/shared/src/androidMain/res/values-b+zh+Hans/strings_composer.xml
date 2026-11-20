@@ -42,4 +42,7 @@
     <string name="composer_commands_more">还有 %1$d 条命令没列出</string>
     <string name="composer_attachment_unsupported_type">这个格式传不上去</string>
     <string name="composer_attachment_reply_target">要回复的那条不在了，去掉回复</string>
+    <string name="composer_edit_cancel">放弃编辑</string>
+    <string name="composer_edit_send">保存</string>
+    <string name="composer_editing">正在编辑消息</string>
 </resources>
