@@ -97,6 +97,7 @@ gateway-devices-no-addresses = The tunnel isn't connected to a relay yet and the
 # Model gateway.
 gateway-models-permission = The app { $id } hasn't requested models permission
 gateway-plugin-network-only = This address is only for apps on the plugin network
+gateway-restoring = The core is still starting the apps, try again shortly
 gateway-models-down = The model gateway isn't running
 
 # Onboarding.

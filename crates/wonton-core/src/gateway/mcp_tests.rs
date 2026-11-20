@@ -562,6 +562,23 @@ async fn only_plugin_networks_with_the_tools_permission_get_in() {
     );
 }
 
+/// 核心还在恢复、来源还没登记：和网关的 Bot 门一样答可重试的 503，不答 403。上游的 MCP 客户端试几次 403 就整轮
+/// 停下、等一个不相干的重连请求，核心恢复完了它也不会自己回来。
+#[tokio::test]
+async fn an_unregistered_source_while_restoring_is_retryable() {
+    let home = start(None).await;
+    let restoring = home.manager.restoring_guard();
+    let response = post_from_plugin_network(&home, "/mcp").await;
+    assert_eq!(response.status(), StatusCode::SERVICE_UNAVAILABLE);
+    assert_eq!(
+        response.headers()[header::RETRY_AFTER],
+        HeaderValue::from_static("5")
+    );
+    drop(restoring);
+    let response = post_from_plugin_network(&home, "/mcp").await;
+    assert_eq!(response.status(), StatusCode::FORBIDDEN);
+}
+
 /// MCP 总线的文字按主人的语言写（ADR-0043）：Agent 的调用没有请求头，用 owner_languages；
 /// 期望值由目录格式化出来比，ja 和 en 要真的不同。
 #[tokio::test]
