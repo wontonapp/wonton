@@ -17,6 +17,7 @@
 mod agent_run;
 mod call;
 mod chat_room;
+mod confirmation;
 mod encryption;
 mod error;
 mod friends;
@@ -51,6 +52,7 @@ pub use chat_room::{
     BackPaginationStatus, ChatRoom, ImageThumbnail, ImageUpload, MISSED_GRACE, MentionMember,
     MissedEvent,
 };
+pub use confirmation::{SendFailure, SendOutcome};
 pub use encryption::{EncryptionState, Recovery, Verification};
 pub use error::{Error, Result};
 pub use friends::{Blocked, FRIEND_CREATE_KEY, FriendChat, FriendInvite};
@@ -61,6 +63,7 @@ pub use matrix_sdk::ruma::{
     DeviceId, EventId, OwnedDeviceId, OwnedEventId, OwnedMxcUri, OwnedRoomId, OwnedServerName,
     OwnedUserId, RoomId, ServerName, UserId, events::relation::RelationType,
 };
+pub use matrix_sdk::send_queue::SendHandle;
 pub use matrix_sdk_ui::eyeball_im::{Vector, VectorDiff};
 pub use media::{PreviewImageSource, encrypted_media_token, media_token};
 pub use message::{

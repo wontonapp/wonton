@@ -271,13 +271,12 @@ impl ChatRoom {
 
     /// 发送文字，`mentions` 是输入框里选中的人（写进 `m.mentions` 和正文的胶囊，见 [`Self::mention_content`]）。
     /// 消息先以本地回显出现在时间线里，发送结果见 [`Message::status`]。
-    pub async fn send_text(&self, body: &str, mentions: &[String]) -> Result<()> {
+    pub async fn send_text(&self, body: &str, mentions: &[String]) -> Result<SendHandle> {
         ensure_recipient_devices(&self.room).await?;
         let names = self.names();
         let users = crate::mentions::selected(mentions, &names);
         let content = self.mention_content(body, &users);
-        self.timeline().await.send(content.into()).await?;
-        Ok(())
+        Ok(self.timeline().await.send(content.into()).await?)
     }
 
     /// 现在这份成员和显示名。
