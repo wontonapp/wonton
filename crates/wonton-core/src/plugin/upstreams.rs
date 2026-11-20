@@ -8,10 +8,9 @@ use std::path::{Path, PathBuf};
 
 use std::time::Duration;
 
-use tokio::time::Instant;
-
 use super::PluginId;
 use super::health;
+use super::health_gate::Wait;
 use super::host_relay::{HostRelay, Purpose};
 use super::languages::Languages;
 use super::manager::{InstallError, PluginManager, PluginStatus};
@@ -466,7 +465,7 @@ impl PluginManager {
         manifest: &Manifest,
         network: &str,
         secrets: &mut Secrets,
-        deadline: Instant,
+        wait: Wait,
         langs: &Languages,
     ) -> Result<(Option<Endpoint>, Option<ModelsRoute>, Option<McpTarget>), InstallError> {
         if super::secrets::collect(
@@ -494,11 +493,15 @@ impl PluginManager {
             langs,
         )?;
         if let (Some(upstream), Some(webui)) = (&upstream, &manifest.webui) {
-            health::wait_webui(&self.http, upstream, &webui.path, deadline, langs).await?;
+            let container = self
+                .cfg
+                .instance
+                .container(&manifest.id.slug(), &webui.service);
+            health::wait_webui(&self.http, upstream, &webui.path, &container, wait, langs).await?;
         }
         if super::bot_web_registry::has_bot_web(manifest) {
             for bot in self.store.bots().load(&manifest.id)?.bots.keys() {
-                self.wait_bot_web(manifest, bot, deadline).await?;
+                self.wait_bot_web(manifest, bot, wait).await?;
             }
         }
         Ok((upstream, models, mcp))

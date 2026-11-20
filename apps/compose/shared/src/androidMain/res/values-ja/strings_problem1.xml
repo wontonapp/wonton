@@ -28,4 +28,5 @@
     <string name="problem_unauthorized_title">自宅サーバーがこのデバイスを認識していません</string>
     <!-- Next step under the server-error problem. Also used for other problems that only say to try later. -->
     <string name="problem_upstream_next_step">しばらくしてからもう一度お試しください。</string>
+    <string name="problem_plugin_health_timeout_next_step">制限時間になってもサービスはまだ準備できていませんでした。ホストが空いてからインストールをやり直せば通るのが普通です。ずっと 5xx を返すならサービス自身の不調かもしれません。詳細に、どのサービスをどれだけ待ったか、最後の状態と最近のプローブが出ます。</string>
 </resources>

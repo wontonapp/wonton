@@ -97,6 +97,7 @@ pub(crate) fn failure_kind(kind: Option<&str>, status: u16) -> PluginFailure {
         Some("core_upgrading") => PluginFailure::CoreUpgrading,
         Some("settings_invalid") => PluginFailure::SettingsInvalid,
         Some("settings_schema_invalid") => PluginFailure::SettingsSchemaInvalid,
+        Some("health_timeout" | "docker_timed_out") => PluginFailure::TimedOut,
         Some(_) if status >= 500 => PluginFailure::Upstream,
         Some(_) => PluginFailure::Protocol,
         None => match status {

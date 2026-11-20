@@ -684,6 +684,8 @@ pub(crate) fn to_core_error(problem: PluginProblem) -> CoreError {
         | PluginFailure::LanPortTaken
         | PluginFailure::EgressProxyUnavailable
         | PluginFailure::CoreUpgrading
+        // 服务还在起，现在做不了，缓过来再试就能过（#682）。
+        | PluginFailure::TimedOut
         // 记录不可用：现在做不了。壳按类别出「重新安装」的下一步（#198 的核心行为、#230 的 iOS 壳）。
         | PluginFailure::RecordUnusable => CoreError::NotReady { reason },
         PluginFailure::SourceUnavailable | PluginFailure::Upstream | PluginFailure::Protocol => {

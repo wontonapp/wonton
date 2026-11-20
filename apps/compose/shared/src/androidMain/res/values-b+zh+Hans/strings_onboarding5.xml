@@ -20,4 +20,5 @@
     <string name="onboarding_step_apps">选应用</string>
     <!-- Card title at the top of the profile step in setup. -->
     <string name="onboarding_step_profile">你的资料</string>
+    <string name="onboarding_problem_plugin_health_timeout">服务还没就绪，等主机缓过来后再试。</string>
 </resources>
