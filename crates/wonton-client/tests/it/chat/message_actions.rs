@@ -6,7 +6,7 @@ use wonton_client::{
     TimelineItem, TimelineMessage,
 };
 use wonton_matrix::testkit::eventually;
-use wonton_matrix::{ChatRoom, MatrixSession, MessageBody, OwnedRoomId, OwnedUserId};
+use wonton_matrix::{ChatRoom, MatrixSession, Message, MessageBody, OwnedRoomId, OwnedUserId};
 use wonton_protocol::MessageAction;
 use wonton_protocol::{TimelineAction, TimelineTarget};
 
@@ -470,6 +470,121 @@ async fn a_rejected_comment_stops_the_forward() {
         }),
         "附言失败后不应该转发：{messages:?}"
     );
+}
+
+/// 附言首尾的空白去掉再发。
+#[tokio::test(flavor = "multi_thread")]
+#[ignore = "需要 Docker，用 --include-ignored 运行"]
+async fn a_padded_comment_arrives_trimmed() {
+    let dir = tempfile::tempdir().unwrap();
+    let phone = Phone::open(dir.path());
+    let home = Home::start(&[phone.device_id()]).await;
+    phone.connect(&home);
+    phone.signed_in().await;
+    let bot = home.bot("hermes", "Hermes").await;
+    let direct = accept_the_bots_invite(&home, &phone, &bot).await;
+    let group = join_group_room(&phone, &bot, "Group").await;
+    let bot_direct = bot.open_room(&direct).await.expect("Bot 打开私聊");
+    bot_direct
+        .send_text("转发这句", &[])
+        .await
+        .expect("Bot 发文字");
+    let mut timeline = Timeline::open(&phone, direct.as_str()).await;
+    let (item, _) = timeline
+        .until("收到要转发的文字", |item| {
+            text_message(item, "转发这句")
+        })
+        .await;
+
+    phone
+        .dispatch(forward_to(&direct, &item, &group, Some("  看这个  ")))
+        .unwrap();
+    let bot_group = bot.open_room(&group).await.expect("Bot 打开群聊");
+    eventually(
+        "附言去掉首尾空白",
+        bot_group.message_updates().await,
+        |messages| (own_texts(messages) == ["看这个", "转发这句"]).then_some(()),
+    )
+    .await;
+}
+
+/// 只含空白的附言当作没带：直接转发；失败按转发本身报，不说成附言没发出去。
+#[tokio::test(flavor = "multi_thread")]
+#[ignore = "需要 Docker，用 --include-ignored 运行"]
+async fn a_blank_comment_is_no_comment() {
+    let dir = tempfile::tempdir().unwrap();
+    let phone = Phone::open(dir.path());
+    let home = Home::start(&[phone.device_id()]).await;
+    phone.connect(&home);
+    phone.signed_in().await;
+    let bot = home.bot("hermes", "Hermes").await;
+    let direct = accept_the_bots_invite(&home, &phone, &bot).await;
+    let group = join_group_room(&phone, &bot, "Group").await;
+    let bot_direct = bot.open_room(&direct).await.expect("Bot 打开私聊");
+    bot_direct
+        .send_text("转发这句", &[])
+        .await
+        .expect("Bot 发文字");
+    let mut timeline = Timeline::open(&phone, direct.as_str()).await;
+    let (item, _) = timeline
+        .until("收到要转发的文字", |item| {
+            text_message(item, "转发这句")
+        })
+        .await;
+    let bot_group = bot.open_room(&group).await.expect("Bot 打开群聊");
+
+    phone
+        .dispatch(forward_to(&direct, &item, &group, Some(" \n ")))
+        .unwrap();
+    eventually(
+        "空白附言直接转发",
+        bot_group.message_updates().await,
+        |messages| (own_texts(messages) == ["转发这句"]).then_some(()),
+    )
+    .await;
+
+    home.refuse_matrix("send/m.room.message", 403, "M_FORBIDDEN");
+    phone
+        .dispatch(forward_to(&direct, &item, &group, Some("   ")))
+        .unwrap();
+    let problem = phone
+        .wait_chat("空白附言失败", |view| view.problem.clone())
+        .await;
+    assert_eq!(problem.reason, ChatFailure::Upstream);
+    assert!(
+        problem.message.contains("转发") && !problem.message.contains("附言"),
+        "空白附言失败要按转发本身报：{}",
+        problem.message
+    );
+    tokio::time::sleep(std::time::Duration::from_secs(1)).await;
+    assert_eq!(own_texts(&bot_group.messages().await), ["转发这句"]);
+}
+
+/// 转发 `item` 到 `to`，带一条 `comment`。
+fn forward_to(from: &OwnedRoomId, item: &str, to: &OwnedRoomId, comment: Option<&str>) -> Action {
+    Action::Timeline {
+        action: TimelineAction::ForwardMessage {
+            target: TimelineTarget {
+                room_id: from.to_string(),
+                thread_root: None,
+            },
+            item_id: item.to_owned(),
+            to_room_id: to.to_string(),
+            comment: comment.map(str::to_owned),
+        },
+    }
+}
+
+/// 房间里的文字内容。
+fn own_texts(messages: &[Message]) -> Vec<String> {
+    messages
+        .iter()
+        .filter(|message| message.sender.as_str() == OWNER)
+        .filter_map(|message| match &message.body {
+            MessageBody::Text(text) => Some(text.clone()),
+            _ => None,
+        })
+        .collect()
 }
 
 /// 回复的消息不在这个房间里：发不出去，按输入非法进 `problem`。

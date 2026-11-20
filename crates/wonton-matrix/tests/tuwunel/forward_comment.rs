@@ -1,10 +1,13 @@
 //! 转发带附言时等附言有结果再发：附言被服务器收下才转发，被拒就不转发、如实失败。
 
+use std::future::Future;
 use std::time::Duration;
 
+use matrix_sdk::send_queue::RoomSendQueueUpdate;
+use tokio::sync::broadcast;
 use wonton_matrix::{
     ChatRoom, EntryKind, Error, MatrixSession, Message, MessageBody, OwnedEventId, OwnedRoomId,
-    SendOutcome, SendStatus, StoreConfig,
+    SendFailure, SendOutcome, SendStatus, StoreConfig,
 };
 
 use crate::chat::{direct_chat, entry_snapshots, is_text};
@@ -30,19 +33,24 @@ async fn a_forward_goes_out_after_the_comment_it_carries() {
         let room = chat.alice_room.clone();
         let session = chat.alice.clone();
         let target = chat.room_id.clone();
+        let source = source_id.clone();
         tokio::spawn(async move {
             session
-                .forward(&room, &source_id, &target, Some("附言"))
+                .forward(&room, &source, &target, Some("附言"))
                 .await
                 .expect("附言收下后才转发");
         })
     };
 
-    // 断着网，附言还没结果，转发不能先到。
-    let early = messages(&chat.bob_room).await;
+    // 断着网，附言还没结果：目标房间里只有附言的本地回显，转发连回显都还没有。
+    waiting_echo(&chat.alice_room, "附言").await;
+    tokio::time::sleep(Duration::from_millis(300)).await;
+    let early = messages(&chat.alice_room).await;
     assert!(
-        !early.iter().any(|message| is_text(message, "附言")),
-        "附言还没发出去，转发先到了"
+        !early.iter().any(|message| {
+            is_text(message, "原消息") && message.event_id.as_ref() != Some(&source_id)
+        }),
+        "附言还没发出去，转发先进了队列"
     );
 
     chat.relay.restore();
@@ -52,6 +60,72 @@ async fn a_forward_goes_out_after_the_comment_it_carries() {
     .await;
     forwarding.await.expect("转发任务");
     receives_in_order(&chat.bob_room, &["原消息", "附言", "原消息"]).await;
+}
+
+/// 只含空白的附言当作没带：直接转发，目标房间不出现空消息。
+#[tokio::test]
+#[ignore = "需要 Docker，用 --include-ignored 运行"]
+async fn a_blank_comment_is_no_comment() {
+    let chat = Chat::open().await;
+    let _source = chat
+        .alice_room
+        .send_text("原消息", &[])
+        .await
+        .expect("放进发送队列");
+    let source_id = entry_id(&chat.alice_room, "原消息", |message| {
+        matches!(message.status, SendStatus::Sent) && is_text(message, "原消息")
+    })
+    .await;
+
+    chat.alice
+        .forward(&chat.alice_room, &source_id, &chat.room_id, Some(" \n "))
+        .await
+        .expect("空白附言不影响转发");
+    receives_in_order(&chat.bob_room, &["原消息", "原消息"]).await;
+}
+
+/// 接收端已经关掉（`Closed`）时按队列里的当下状态给结果：还在队里就当没发出去，已经出队就当收下了，都不挂住。
+#[tokio::test]
+#[ignore = "需要 Docker，用 --include-ignored 运行"]
+async fn a_closed_receiver_still_resolves_the_comment() {
+    let chat = Chat::open().await;
+
+    // 还在排队：回显在队列里，没有结果，按“不会再发”返回。
+    chat.relay.cut();
+    let handle = chat
+        .alice_room
+        .send_text("排队中", &[])
+        .await
+        .expect("放进发送队列");
+    waiting_echo(&chat.alice_room, "排队中").await;
+    let (sender, _) = broadcast::channel::<RoomSendQueueUpdate>(1);
+    let closed = sender.subscribe();
+    drop(sender);
+    let outcome = tokio_timeout(chat.alice_room.wait_outcome(closed, handle)).await;
+    assert_eq!(
+        outcome,
+        SendOutcome::Failed(SendFailure::QueueStopped),
+        "排队的消息在队列关掉时要报没发出去，不能挂着"
+    );
+
+    // 已经出队：算收下。
+    chat.relay.restore();
+    let sent = chat
+        .alice_room
+        .send_text("已发出", &[])
+        .await
+        .expect("放进发送队列");
+    let _ = entry_id(&chat.alice_room, "已发出", |message| {
+        matches!(message.status, SendStatus::Sent) && is_text(message, "已发出")
+    })
+    .await;
+    let (sender, _) = broadcast::channel::<RoomSendQueueUpdate>(1);
+    let closed = sender.subscribe();
+    drop(sender);
+    assert_eq!(
+        tokio_timeout(chat.alice_room.wait_outcome(closed, sent)).await,
+        SendOutcome::Sent
+    );
 }
 
 /// 附言被拒（不可恢复）：转发不发，对方只收到原消息。
@@ -229,6 +303,20 @@ async fn entry_id(
     .await
 }
 
+/// 等自己的某条消息出现在队列里：本地回显还没有事件 ID，`entry_id` 等不到。
+async fn waiting_echo(room: &ChatRoom, text: &str) {
+    eventually(text, entry_snapshots(room).await, |entries| {
+        entries
+            .iter()
+            .any(|entry| match &entry.kind {
+                EntryKind::Message(message) => queued(message) && is_text(message, text),
+                _ => false,
+            })
+            .then_some(())
+    })
+    .await
+}
+
 async fn status(room: &ChatRoom, text: &str) -> SendStatus {
     eventually(
         "等这条消息的状态",
@@ -266,4 +354,23 @@ fn label(message: &Message) -> String {
         MessageBody::Text(text) => text.clone(),
         other => format!("{other:?}"),
     }
+}
+
+/// 等结果，挂住就算失败。
+async fn tokio_timeout<F: Future>(future: F) -> F::Output {
+    tokio::time::timeout(Duration::from_secs(10), future)
+        .await
+        .expect("10 秒内出结果")
+}
+
+/// 还排在队列里没出结果：等发送，或者暂时失败等着自动重试。
+fn queued(message: &Message) -> bool {
+    matches!(
+        message.status,
+        SendStatus::Sending { .. }
+            | SendStatus::Failed {
+                recoverable: true,
+                ..
+            }
+    )
 }
