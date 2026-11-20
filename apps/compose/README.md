@@ -55,6 +55,10 @@ SDK 位置写在 `apps/compose/local.properties`（`sdk.dir=...`，不提交）�
 WONTON_VERSION=0.2.4 ./gradlew :androidApp:assembleRelease
 ```
 
+Release 包剥掉 `.so` 的符号表。原样的符号留在 `shared/build/outputs/native-symbols/<ABI>/`，R8 的映射表在
+`androidApp/build/outputs/mapping/release/mapping.txt`：崩溃栈要还原成函数名和行号就靠这两个，发版和 CI 把它们跟
+APK 一起存下来。它们不进仓库，也别删上一次的。
+
 Gradle 也认 `-PwontonVersion=0.2.4`（透传给同一脚本；远程构建通道只透传它）。在自己带 tag 的检出上不传时
 取最近的发版 tag；都拿不到时 Debug 构建用 `0.0.0 (0)`。构建号由版本号算出（`major*1000000 + minor*1000 +
 patch`），覆盖安装要求它不降。

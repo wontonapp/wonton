@@ -170,6 +170,34 @@ android {
         }
     }
 
+    buildTypes {
+        release {
+            // 直装包要小：R8 删掉没人用的类和成员，顺带缩资源。反射入口的 keep 规则在 proguard-rules.pro。
+            isMinifyEnabled = true
+            isShrinkResources = true
+            proguardFiles(getDefaultProguardFile("proguard-android-optimize.txt"), "proguard-rules.pro")
+        }
+    }
+
+    packaging {
+        resources {
+            // 只有 META-INF 里的许可证和版本文件，运行时用不到。
+            excludes += setOf(
+                "META-INF/LICENSE*",
+                "META-INF/NOTICE*",
+                "META-INF/AL2.0",
+                "META-INF/LGPL2.1",
+                "META-INF/*.version",
+                "META-INF/*.kotlin_module",
+            )
+        }
+        // 压缩 .so：默认按 4 KB 对齐、不压缩存进 APK，几个大 .so 就让包大一截；压缩后安装时解出来，
+        // 装完占的磁盘一样多。
+        jniLibs {
+            useLegacyPackaging = true
+        }
+    }
+
     testOptions {
         execution = "ANDROIDX_TEST_ORCHESTRATOR"
         unitTests.isIncludeAndroidResources = true

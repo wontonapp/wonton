@@ -30,6 +30,10 @@ abstract class BuildRustCore : Exec() {
     @get:OutputDirectory
     abstract val kotlinDir: DirectoryProperty
 
+    /** 剥离符号表之前的 .so，留给崩溃分析用；不进 APK。 */
+    @get:OutputDirectory
+    abstract val symbolsDir: DirectoryProperty
+
     /** 每个 ABI 一个 .so，产物只有这些；目录本身仍要声明，AGP 拿它当生成的 jniLibs 源目录。 */
     @get:OutputFiles
     abstract val libraries: ConfigurableFileCollection
@@ -39,6 +43,7 @@ abstract class BuildRustCore : Exec() {
             listOf(
                 jniLibsDir.get().asFile.path,
                 kotlinDir.get().asFile.path,
+                symbolsDir.get().asFile.path,
                 rustProfile.get(),
                 minSdk.get().toString(),
                 uiFake.get(),
@@ -58,6 +63,7 @@ val buildRustCore = tasks.register<BuildRustCore>("buildRustCore") {
     minSdk.set(libs.versions.android.minSdk.map { it.toInt() })
     abis.set(providers.gradleProperty("wonton.abis").map { value -> value.split(" ").filter { it.isNotBlank() } })
     kotlinDir.set(layout.buildDirectory.dir("generated/uniffi/kotlin"))
+    symbolsDir.set(layout.buildDirectory.dir("outputs/native-symbols"))
     val script = rootDir.resolve("scripts/build-core.sh")
     executable = script.path
     libraries.from(
@@ -75,6 +81,9 @@ val buildRustCore = tasks.register<BuildRustCore>("buildRustCore") {
     inputs.files(fileTree(repoRoot.resolve(".cargo")))
     inputs.dir(repoRoot.resolve("crates"))
     inputs.dir(repoRoot.resolve("vendor"))
+    // 这两个环境变量决定 .so 里带不带调试信息，CI 设了；默认不算任务输入，切换后 Gradle 会判 UP-TO-DATE 拿旧的。
+    inputs.property("devDebug", providers.environmentVariable("CARGO_PROFILE_DEV_DEBUG").orElse(""))
+    inputs.property("releaseDebug", providers.environmentVariable("CARGO_PROFILE_RELEASE_DEBUG").orElse(""))
 }
 
 kotlin {
