@@ -93,6 +93,7 @@ PREFIXES: Dict[str, str] = {
     "egress": "egress",
     "notification": "settings",
     "push": "settings",
+    "path": "settings",
     "shortcuts": "shortcuts",
     "shortcut": "settings",
     # common
@@ -141,7 +142,7 @@ GROUP_OF: Dict[str, str] = {
         "onboarding": "onboarding pairing joining install home homestatus launcher",
         "plugins": "plugin pluginsources store registry registrymirror tool toolpolicy tab tabs files file viewer photo preview secret sidebar sessions scope takeover port mapping portmapping",
         "peers": "peers friends invite servers connection verification lanclient lanwebui qr qrscanner camera ownerprofile keepalive share contacts handoff matrixlogin",
-        "settings": "settings appearance applock egress notification push shortcuts shortcut",
+        "settings": "settings appearance applock egress notification push path shortcuts shortcut",
         "common": "common problem core coreupgrade design app language startup page pin unpin",
     }.items()
     for prefix in prefixes.split()

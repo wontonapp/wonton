@@ -2,6 +2,10 @@
 # $path is the settings file's path, $reason is the original I/O error.
 push-method-write-failed = Can't write the push method settings file { $path }: { $reason }
 
+# The fake-IP path setting (crates/wonton-client/src/home/path_settings.rs).
+# $path is the settings file's path, $reason is the original I/O error.
+path-settings-write-failed = Can't write the path settings file { $path }: { $reason }
+
 # Push registration (crates/wonton-client/src/push/{mod,registration,notification}.rs):
 # details of refused endpoints, failed registrations and notifications that
 # couldn't show the message. The notification bodies and placeholders

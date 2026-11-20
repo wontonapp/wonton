@@ -7,7 +7,7 @@ use iroh::{Endpoint, RelayMode};
 use wonton_l10n::{Lang, l10n};
 use wonton_tunnel::relays::{Relay, RelayTable, relay_map};
 
-use super::{HomeLink, Network};
+use super::{HomeLink, Network, path_settings};
 use crate::l10n::CATALOG;
 
 /// 一次绑定没有成：失败带给人看的原因；超时由调用方按自己的场景说。
@@ -105,6 +105,13 @@ impl HomeLink {
                 .ca_tls_config(iroh::tls::CaTlsConfig::insecure_skip_verify()),
             (Network::DirectOnly, _) => Endpoint::builder(presets::Minimal),
         };
+        // 开关关着（默认）就不装选路器，走 iroh 自己的默认选路，和打开这个功能之前一模一样。
+        let builder =
+            match wonton_tunnel::path_selector(path_settings::exclude_fake_ip(self.storage.root()))
+            {
+                Some(selector) => builder.path_selector(selector),
+                None => builder,
+            };
         let transport = QuicTransportConfig::builder()
             .enable_segmentation_offload(false)
             .build();

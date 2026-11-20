@@ -14,6 +14,7 @@ mod invite;
 mod link;
 mod pairing;
 mod pairing_code;
+pub(crate) mod path_settings;
 mod quality;
 mod rebuild;
 mod refresh;
