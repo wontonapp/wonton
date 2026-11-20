@@ -2,6 +2,66 @@
   "sourceLanguage": "en",
   "version": "1.0",
   "strings": {
+    "composer.attachment.unsupportedType": {
+      "comment": "Attachment failed because the server doesn't know the file type.",
+      "extractionState": "manual",
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "This format can't be uploaded"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "这个格式传不上去"
+          }
+        },
+        "zh-Hant": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "這個格式傳不上去"
+          }
+        },
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "この形式はアップロードできません"
+          }
+        }
+      }
+    },
+    "composer.attachment.replyTarget": {
+      "comment": "Attachment failed because the message being replied to is gone.",
+      "extractionState": "manual",
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "The quoted message is gone, drop the reply"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "要回复的那条不在了，去掉回复"
+          }
+        },
+        "zh-Hant": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "要回覆的那則不在了，去掉回覆"
+          }
+        },
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "返信元がありません。返信を外してください"
+          }
+        }
+      }
+    },
     "composer.attach": {
       "comment": "Icon button at the left of the chat composer: opens the attachment menu (photo or file). Also its screen-reader label.",
       "extractionState": "manual",

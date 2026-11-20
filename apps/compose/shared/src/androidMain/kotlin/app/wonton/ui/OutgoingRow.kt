@@ -134,7 +134,7 @@ private fun OutgoingFooter(message: OutgoingMessage, roomId: String, onAction: (
                     tint = colors.textOnAccentFill.toColor(),
                 )
                 Text(
-                    stringResource(R.string.timeline_send_failed, state.message),
+                    stringResource(state.failure.text),
                     style = style,
                     color = colors.textOnAccentFill.toColor(),
                 )
@@ -163,6 +163,6 @@ private fun OutgoingFooter(message: OutgoingMessage, roomId: String, onAction: (
     if (actions.isEmpty()) {
         choosing = false
     } else {
-        WontonActionSheet(actions, { choosing = false })
+        WontonActionSheet(actions, { choosing = false }, title = (message.state as? SendState.Failed)?.details)
     }
 }

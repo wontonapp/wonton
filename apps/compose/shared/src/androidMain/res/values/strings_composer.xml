@@ -51,4 +51,6 @@
     <string name="composer_commands">Commands</string>
     <!-- Footer of the command menu: how many commands a Bot has beyond the listed ones. Argument: the count. -->
     <string name="composer_commands_more">%1$d more commands not listed</string>
+    <string name="composer_attachment_unsupported_type">This format can\'t be uploaded</string>
+    <string name="composer_attachment_reply_target">The quoted message is gone, drop the reply</string>
 </resources>
