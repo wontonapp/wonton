@@ -1,7 +1,7 @@
 import SwiftUI
 import WontonClient
 
-/// 消息下面的选项按钮（ADR-0109 第 7 节）：每行两个、等分宽度，单出来的一个占满一行。
+/// 消息下面的选项按钮（ADR-0109 第 8 节）：每行两个、等分宽度，单出来的一个占满一行。
 /// 表情和文字原样画核心给的，壳不认任何表情的意思；能不能点、选了哪个也只看核心给的状态。
 struct MessageChoicesView: View {
     let choices: MessageChoices
@@ -74,7 +74,7 @@ private struct ChoiceButton: View {
                 ChoiceLabel(option: option)
                 progress
             }
-            // 没选的是半透明的入气泡色、重点色的字；选中的换成重点色的实底（ADR-0109 第 8 节）。
+            // 没选的是半透明的入气泡色、重点色的字；选中的换成重点色的实底（ADR-0109 第 9 节）。
             .foregroundStyle(Color(option.chosen ? colors.textOnAccentFill : colors.accentInk))
             .padding(.horizontal, WontonTheme.spacing.s8)
             .frame(maxWidth: .infinity, minHeight: WontonTheme.size.choiceButton)
@@ -166,7 +166,7 @@ extension VerticalAlignment {
 
 /// 气泡和挂在它正下方的东西（选项按钮）：第一个子视图是气泡，其余的和它同宽，依次排在下面。
 ///
-/// 气泡最宽到对面留出 `spacing.bubbleOpposite`（从屏幕边算起），短消息按内容收缩（ADR-0109 第 8 节）。上限在布局里算，
+/// 气泡最宽到对面留出 `spacing.bubbleOpposite`（从屏幕边算起），短消息按内容收缩（ADR-0109 第 9 节）。上限在布局里算，
 /// 不从外面量好了传进来：量好再传要排两遍，第二遍行高一变，进房间摆好的落点就偏了。
 struct BubbleColumn: Layout {
     var spacing: CGFloat = WontonTheme.spacing.s4

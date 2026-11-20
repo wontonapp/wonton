@@ -1,7 +1,7 @@
 import SwiftUI
 import WontonClient
 
-/// 聊天页压在背景上的几样颜色（ADR-0109 第 8 节）。都由 ADR-0026 的令牌叠出来，壳不另算色值：
+/// 聊天页压在背景上的几样颜色（ADR-0109 第 9 节）。都由 ADR-0026 的令牌叠出来，壳不另算色值：
 /// 核心的 `ThemeColors` 里没有聊天背景这几项，补进核心之前先在这里按固定浓度叠。
 struct ChatPalette {
     let colors: ThemeColors
@@ -34,7 +34,7 @@ extension EnvironmentValues {
     var chatPalette: ChatPalette { ChatPalette(colors: wontonColors, isDark: colorScheme == .dark) }
 }
 
-/// 聊天背景（ADR-0109 第 8 节）：底色盖一层淡淡的重点色，上面铺一层细线图案。图案是这里自己画的几何小件，
+/// 聊天背景（ADR-0109 第 9 节）：底色盖一层淡淡的重点色，上面铺一层细线图案。图案是这里自己画的几何小件，
 /// 不用任何现成的壁纸素材。
 struct ChatWallpaper: View {
     @Environment(\.chatPalette) private var palette

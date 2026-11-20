@@ -28,14 +28,14 @@ final class ApiErrorsUITests: XCTestCase {
         // 一张“详情”给一个类别，点开才露出原文。
         let toggles = app.buttons.matching(NSPredicate(format: "label == 'Details'"))
         XCTAssertEqual(toggles.count, 2, "每张出错页都该有一个默认收起的详情\n\(app.debugDescription)")
-        toggles.element(boundBy: 0).tap()
+        try tapVisible(toggles.element(boundBy: 0), in: app)
         XCTAssertTrue(
             app.staticTexts[details["problemFixture-notReady"]!].waitForExistence(timeout: 5),
             "点开详情没有露出核心原文"
         )
         // 另一张不受影响，仍是收起的。
         XCTAssertFalse(app.staticTexts[details["problemFixture-invalidInput"]!].exists, "两张详情连到了一起")
-        toggles.element(boundBy: 1).tap()
+        try tapVisible(toggles.element(boundBy: 1), in: app)
         XCTAssertTrue(
             app.staticTexts[details["problemFixture-invalidInput"]!].waitForExistence(timeout: 5),
             "第二张详情点不开"
@@ -55,6 +55,16 @@ final class ApiErrorsUITests: XCTestCase {
             "夹具屏没有出错页"
         )
         add(shot(named: "problem-details-collapsed"))
+    }
+
+    /// 第二张出错页在下面，点之前先滚到能点，免得点到屏幕外。
+    private func tapVisible(_ element: XCUIElement, in app: XCUIApplication) throws {
+        XCTAssertTrue(element.waitForExistence(timeout: 5), "找不到详情按钮")
+        for _ in 0..<3 where !element.isHittable {
+            app.swipeUp()
+        }
+        XCTAssertTrue(element.isHittable, "详情按钮滚不出来")
+        element.tap()
     }
 
     private func shot(named name: String) -> XCTAttachment {

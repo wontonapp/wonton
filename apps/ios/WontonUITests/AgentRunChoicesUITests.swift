@@ -21,7 +21,7 @@ final class AgentRunChoicesUITests: XCTestCase {
         let window = app.windows.element(boundBy: 0).frame
         for button in buttons {
             XCTAssertTrue(
-                window.contains(button.frame),
+                button.frame.minX >= window.minX && button.frame.maxX <= window.maxX,
                 "选项 \(button.identifier) 挤出屏幕：\(button.frame) 不在 \(window) 里"
             )
         }
@@ -36,12 +36,60 @@ final class AgentRunChoicesUITests: XCTestCase {
             XCTAssertEqual(widths.count, 1, "同一排的宽度不相等（\(y)）：\(widths)")
         }
 
-        // 点一下照常发出作答。
+        // 点一下照常发出作答（大字号下可能在屏下方，先滚过来）。
         let session = app.buttons["agentRun-choice-session"]
+        try scrollTo(session, in: app)
         session.tap()
         XCTAssertTrue(app.staticTexts["answered session"].waitForExistence(timeout: 5), "点了选项没有作答")
 
         add(shot(named: "agent-run-choices"))
+    }
+
+    /// 最窄的屏（iPhone SE）配最大辅助字号：仍然两个一排、同排等宽，横着放不竖排、不挤出去。
+    /// 跑在这台模拟器上时要先把系统字号调成最大（`xcrun simctl ui … content_size accessibility-extra-extra-extra-large`）。
+    func testChoicesOnNarrowScreenAtLargestType() throws {
+        continueAfterFailure = false
+        let app = XCUIApplication()
+        app.launchArguments += ["-AppleLanguages", "(en)", "-AppleLocale", "en_US", "wonton-agent-run-preview"]
+        app.launch()
+
+        let first = app.buttons["agentRun-choice-once"]
+        XCTAssertTrue(first.waitForExistence(timeout: 10), "夹具屏没有选项行\n\(app.debugDescription)")
+        let buttons = keys.map { app.buttons["agentRun-choice-\($0)"] }
+        for button in buttons {
+            XCTAssertTrue(button.exists, "缺一个选项")
+        }
+
+        let window = app.windows.element(boundBy: 0).frame
+        for button in buttons {
+            XCTAssertTrue(
+                button.frame.minX >= window.minX && button.frame.maxX <= window.maxX,
+                "选项 \(button.identifier) 挤出屏幕：\(button.frame) 不在 \(window) 里"
+            )
+            XCTAssertLessThan(button.frame.height, button.frame.width, "\(button.identifier) 被压成竖排：\(button.frame)")
+        }
+        let rows = Dictionary(grouping: buttons, by: { $0.frame.minY })
+        XCTAssertEqual(rows.count, 2, "四个选项在窄屏上不是两排：\(buttons.map { $0.frame })")
+        for (y, row) in rows {
+            XCTAssertEqual(row.count, 2, "一排不是两个（\(y)）")
+            let widths = Set(row.map { $0.frame.width.rounded() })
+            XCTAssertEqual(widths.count, 1, "同一排的宽度不相等（\(y)）：\(widths)")
+        }
+
+        // 最窄屏上也点得到最后一个；滚过去之后顺手把两排都留在图里。
+        let deny = app.buttons["agentRun-choice-deny"]
+        try scrollTo(deny, in: app)
+        add(shot(named: "agent-run-choices-se"))
+        deny.tap()
+        XCTAssertTrue(app.staticTexts["answered deny"].waitForExistence(timeout: 5), "窄屏上点不到选项")
+    }
+
+    /// 窄屏或大字号下选项可能在屏外，点之前先滚过来。
+    private func scrollTo(_ element: XCUIElement, in app: XCUIApplication) throws {
+        for _ in 0..<4 where !element.isHittable {
+            app.swipeUp()
+        }
+        XCTAssertTrue(element.isHittable, "\(element.identifier) 滚不出来")
     }
 
     private func shot(named name: String) -> XCTAttachment {
