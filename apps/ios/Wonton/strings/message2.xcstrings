@@ -303,31 +303,31 @@
       }
     },
     "message.sending": {
-      "comment": "Marker on a message that's still uploading.",
+      "comment": "Footer label of a message saved on this device but not yet confirmed delivered by the server (queued or in flight).",
       "extractionState": "manual",
       "localizations": {
         "en": {
           "stringUnit": {
             "state": "translated",
-            "value": "Sending"
+            "value": "Saved, not delivered yet"
           }
         },
         "zh-Hans": {
           "stringUnit": {
             "state": "translated",
-            "value": "发送中"
+            "value": "已保存，等待送达"
           }
         },
         "zh-Hant": {
           "stringUnit": {
             "state": "translated",
-            "value": "傳送中"
+            "value": "已儲存，等待送達"
           }
         },
         "ja": {
           "stringUnit": {
             "state": "translated",
-            "value": "送信中"
+            "value": "保存済み、未配信"
           }
         }
       }
