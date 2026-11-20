@@ -18,7 +18,6 @@ struct ChatRoomView: View {
     @State private var visibleRows: [String: CGFloat] = [:]
     /// 正在选转发目标的条目、正在确认撤回的条目。
     @State private var forwarding: String?
-    @State private var pickingForwardRoom = false
     @State private var redactItem: String?
     @State private var showingRedact = false
     @State private var showingConfirmations = false
@@ -118,23 +117,7 @@ private extension ChatRoomView {
             .environment(pages)
             .environment(plugins)
         }
-        .wontonSheet(isPresented: $pickingForwardRoom,
-            title: String(localized: .Message0.messageForwardTitle)) { close in
-            ForwardRoomSheet(model: model, plugins: plugins, rooms: forwardRooms) { targets in
-                close {
-                    guard let item = forwarding else { return }
-                    forwarding = nil
-                    // 只发给一个会话时跟过去看（原来的行为）；发给几个就留在这里，每个会话各发一次。
-                    if targets.count == 1, let only = targets.first {
-                        model.forward(item, from: roomId, to: only.roomId)
-                    } else {
-                        for room in targets {
-                            sendTimeline(.forwardMessage(target: target, itemId: item, toRoomId: room.roomId))
-                        }
-                    }
-                }
-            }
-        }
+        .forwardSheet(item: $forwarding, model: model, plugins: plugins, from: target)
         .navigationDestination(isPresented: $showsBotProfile) {
             if let profileBot {
                 BotProfileView(chat: model, plugins: plugins, botRef: profileBot, openPanel: openPanelFromProfile)
@@ -407,10 +390,7 @@ private extension ChatRoomView {
             cancel: { sendTimeline(.cancelSend(target: target, itemId: item.id)) },
             cardAction: { model.send($0) },
             reply: { model.startReply(.ready(message: $0), in: target) },
-            forward: {
-                forwarding = item.id
-                pickingForwardRoom = true
-            },
+            forward: { forwarding = item.id },
             redact: {
                 redactItem = item.id
                 showingRedact = true
@@ -646,11 +626,6 @@ private extension ChatRoomView {
         return others == 0
             ? String(localized: .Chat.roomTypingOne(first))
             : String(localized: .Chat.roomTypingMany(first, others))
-    }
-
-    /// 可以转发到的房间：已加入、能写。
-    var forwardRooms: [RoomRow] {
-        model.viewModel.rooms.filter { $0.membership == .joined && !$0.isReadOnly }
     }
 
     var isReadOnly: Bool {

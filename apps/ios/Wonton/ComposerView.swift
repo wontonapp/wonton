@@ -106,10 +106,10 @@ struct ComposerView: View {
         }
         .sheet(isPresented: $isChoosingAttachment, onDismiss: continueAfterAttach) {
             AttachSheet(
-                limit: composer.remaining, allowsFiles: !isSideChat,
-                pick: { assets in
+                limit: composer.remaining, allowsFiles: !isSideChat, caption: draft,
+                send: { assets in
                     isChoosingAttachment = false
-                    Task { await add(assets) }
+                    Task { await sendPicked(assets) }
                 },
                 chooseFiles: { leaveAttach(for: .files) },
                 openSystemPicker: { leaveAttach(for: .photos) }
@@ -223,8 +223,13 @@ struct ComposerView: View {
         afterAttach = nil
     }
 
-    /// 附件面板里选好的照片：取原图的字节，和粘贴进来的图走同一条路，进附件区；旁聊里直接发（ADR-0093）。
-    private func add(_ assets: [PHAsset]) async {
+    /// 附件面板里选好照片点了发送：照片和附言（就是草稿）作为一次发出去（ADR-0109 第 8 节）。主对话里照片先进附件区，
+    /// 再和发送键走同一条路（`SendComposer`），附件区里原有的附件也一起走；旁聊没有附件区，照片一张张直接发，附言跟在后面
+    /// （ADR-0093）。发出去了才清草稿，被拒时附言留在输入框里。
+    private func sendPicked(_ assets: [PHAsset]) async {
+        pin.pin()
+        let caption = draft.wrappedValue.trimmingCharacters(in: .whitespacesAndNewlines)
+        var replyTo = model.replies[draftKey]?.eventId
         for asset in assets {
             guard let (data, type) = await PhotoLibrary.data(asset) else {
                 model.rejection = Problem(
@@ -233,12 +238,28 @@ struct ComposerView: View {
                 )
                 continue
             }
-            if isSideChat {
-                await composer.sendImage(data, type, replyTo: model.replies[draftKey]?.eventId)
-            } else {
+            if !isSideChat {
                 await composer.addImage(data, type)
+            } else if await composer.sendImage(data, type, replyTo: replyTo) {
+                replyTo = nil
             }
         }
+        let action: TimelineAction? = if !isSideChat {
+            .sendComposer(target: composer.target, body: caption, replyTo: replyTo)
+        } else if !caption.isEmpty {
+            .sendText(target: composer.target, body: caption, replyTo: replyTo)
+        } else {
+            nil
+        }
+        guard let action else { return }
+        do {
+            try model.core.dispatch(action: .timeline(action: action))
+        } catch {
+            model.rejection = error.problem
+            return
+        }
+        draft.wrappedValue = ""
+        model.cancelReply(in: composer.target)
     }
 
     /// 粘贴的图转码后进附件区；旁聊里直接发（ADR-0093）。

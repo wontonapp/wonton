@@ -81,6 +81,8 @@ commandAvatar = 28
 messageAvatar = 34
 # “/”命令列表最高这么高，再多就在里面滚（ADR-0109，估计值）。
 commandMenu = 240
+# 附件面板底下那排切换里一项的宽（ADR-0109，估计值）。
+attachTab = 76
 
 [ratio]
 pluginIconRadius = 0.2237
@@ -98,6 +100,8 @@ serviceFill = 0.32
 serviceFillDark = 0.16
 # 跳到原消息后整行闪的重点色浓度。
 jumpHighlight = 0.2
+# 附件面板那排切换里当前一项垫的重点色浓度（ADR-0109，估计值）。
+tabHighlight = 0.14
 
 [typography]
 screenTitle = { size = 28, line = 34, weight = "bold", relativeTo = "title" }

@@ -154,15 +154,6 @@ final class ChatModel {
         saveDraft(target)
     }
 
-    /// 转发到另一个房间，随后打开它。
-    func forward(_ itemId: String, from roomId: String, to target: String) {
-        send(.timeline(action: TimelineAction.forwardMessage(
-            target: TimelineTarget(roomId: roomId, threadRoot: nil),
-            itemId: itemId, toRoomId: target
-        )))
-        openRoom(target)
-    }
-
     /// 换了房间还在同一页：从应用页打开的就留在应用页，否则留在聊天页。
     func openRoom(_ roomId: String) {
         if let visiting {
