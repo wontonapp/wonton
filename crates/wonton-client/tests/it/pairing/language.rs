@@ -5,7 +5,7 @@ use wonton_client::{Action, PairingFailure, PairingStatus};
 use wonton_protocol::{JoinOutcome, Permissions, RoleDef, RoleTemplate, SettingsAction};
 use wonton_tunnel::pair::RejectReason;
 
-use super::{Home, Phone};
+use super::support::{Home, Phone};
 use crate::home::support::Gate;
 
 struct AutoGate(Gate);
@@ -89,7 +89,7 @@ async fn assert_replaced_scope_does_not_overwrite_pairing_failure() {
     let b = Home::start().await;
     set_language(&phone, "en");
     phone.pair(&a.code(None)).unwrap();
-    phone.wait_for(super::paired).await;
+    phone.wait_for(super::support::paired).await;
     tokio::time::timeout(Duration::from_secs(30), async {
         let servers = phone.subscribe_servers();
         while let Some(view) = servers.next().await {
