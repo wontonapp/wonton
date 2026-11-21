@@ -141,7 +141,14 @@ if [[ -z "${WONTON_DEV_DATA:-}" ]]; then
 fi
 export WONTON_DEV_DATA
 # 宿主网络中继的套接字目录：`sun_path` 只有 108 字节，检出目录再深也不能用它，放在短的运行目录里，按实例分开。
-export WONTON_DEV_RELAY="${WONTON_DEV_RELAY:-${XDG_RUNTIME_DIR:-/run/user/$(id -u)}/wonton-dev/$WONTON_DEV_INSTANCE}"
+# 分流机上 /run/user/<uid>/wonton-dev 可能是 root 建的、写不进去（sshd 也不建 session），那种情况退回 /tmp。
+if [[ -z "${WONTON_DEV_RELAY:-}" ]]; then
+  WONTON_DEV_RELAY="${XDG_RUNTIME_DIR:-/run/user/$(id -u)}/wonton-dev/$WONTON_DEV_INSTANCE"
+  if ! mkdir -p "$WONTON_DEV_RELAY" 2>/dev/null; then
+    WONTON_DEV_RELAY="/tmp/wonton-dev/relay-$WONTON_DEV_INSTANCE"
+  fi
+fi
+export WONTON_DEV_RELAY
 core="$WONTON_DEV_PROJECT"
 base_url="http://$WONTON_DEV_DOMAIN:$WONTON_DEV_PORT"
 # 核心给插件容器、网络和卷打的标签（crates/wonton-core/src/plugin/names.rs）。实例标签只有设了实例名的核心才打，
