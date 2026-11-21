@@ -6,10 +6,11 @@ use std::sync::Arc;
 
 use axum::http::Method;
 use wonton_client::{
-    Action, ClientCore, CoreUpgradeBreakingPlugin, CoreUpgradeBreakingReason, CoreUpgradeCheck,
-    CoreUpgradeCompat, CoreUpgradeCompatCategory, CoreUpgradeFailure, CoreUpgradeOffer,
-    CoreUpgradePhase, CoreUpgradeProblem, CoreUpgradeRun, CoreUpgradeRunState, CoreUpgradeStage,
-    CoreUpgradeStatus, CoreUpgradeTarget, CoreVersion, HomeStatus, PluginsViewModel, SettingsEntry,
+    Action, ClientCore, CoreError, CoreUpgradeBreakingPlugin, CoreUpgradeBreakingReason,
+    CoreUpgradeCheck, CoreUpgradeCompat, CoreUpgradeCompatCategory, CoreUpgradeFailure,
+    CoreUpgradeOffer, CoreUpgradePhase, CoreUpgradeProblem, CoreUpgradeRun, CoreUpgradeRunState,
+    CoreUpgradeStage, CoreUpgradeStatus, CoreUpgradeTarget, CoreVersion, HomeStatus,
+    PluginsViewModel, SettingsEntry,
 };
 
 use super::rig::{Canned, Rig, WAIT, core_error};
@@ -94,6 +95,29 @@ fn unreachable(rig: &Rig) {
         .answer_always(Method::GET, PATH, Canned(502, String::new()));
     rig.core
         .answer_always(Method::POST, CHECK_PATH, Canned(502, String::new()));
+}
+
+fn start(rig: &Rig, digest: &str) -> Result<(), CoreError> {
+    rig.app.dispatch(Action::Plugins {
+        action: wonton_protocol::PluginAction::StartCoreUpgrade {
+            digest: digest.to_owned(),
+        },
+    })
+}
+
+fn cancel(rig: &Rig) -> Result<(), CoreError> {
+    rig.app.dispatch(Action::Plugins {
+        action: wonton_protocol::PluginAction::CancelCoreUpgrade,
+    })
+}
+
+/// 等核心真的收到第 `count` 个请求：dispatch 只把请求交给任务，到核心之前要时间。
+async fn sent(rig: &Rig, method: &Method, path: &str, count: usize) {
+    let deadline = tokio::time::Instant::now() + WAIT;
+    while rig.core.seen(method, path).len() < count {
+        assert!(tokio::time::Instant::now() < deadline, "请求没到核心");
+        tokio::time::sleep(std::time::Duration::from_millis(10)).await;
+    }
 }
 
 async fn stage(app: &Arc<ClientCore>, wanted: Wanted) -> PluginsViewModel {
@@ -582,4 +606,395 @@ async fn a_new_version_marks_the_server_setting_and_the_settings_tab_until_skipp
         assert!(tokio::time::Instant::now() < deadline, "{:?}", marked(&rig));
         tokio::time::sleep(std::time::Duration::from_millis(20)).await;
     }
+}
+
+/// 发起到拉镜像阶段：这时才能取消。
+async fn start_pulling(rig: &Rig) {
+    let pulling = in_progress(CoreUpgradePhase::Pulling, 600);
+    reports(rig, &pulling);
+    rig.core.answer(Method::POST, PATH, ok(&pulling));
+    start(rig, NEW).unwrap();
+    rig.wait_for(|view| {
+        matches!(
+            view.core_upgrade.stage,
+            CoreUpgradeStage::InProgress {
+                can_cancel: true,
+                ..
+            }
+        )
+    })
+    .await;
+}
+
+#[tokio::test]
+async fn a_second_start_while_the_first_is_in_flight_is_refused_and_only_one_goes_out() {
+    let rig = Rig::new().await;
+    reports(&rig, &idle(offer(NEW)));
+    rig.connected().await;
+    rig.wait_for(|view| view.core_upgrade.offer.is_some()).await;
+    let held = rig.core.hold(Method::POST, PATH);
+
+    start(&rig, NEW).unwrap();
+    let view = rig
+        .wait_for(|view| view.core_upgrade.stage == CoreUpgradeStage::Requesting)
+        .await;
+    assert_eq!(view.core_upgrade.offer, None, "发起中不能再发起");
+
+    sent(&rig, &Method::POST, PATH, 1).await;
+    assert!(matches!(start(&rig, NEW), Err(CoreError::NotReady { .. })));
+    assert_eq!(rig.core.seen(&Method::POST, PATH).len(), 1);
+
+    let pulling = in_progress(CoreUpgradePhase::Pulling, 600);
+    reports(&rig, &pulling);
+    rig.core.answer(Method::POST, PATH, ok(&pulling));
+    rig.core.release(Method::POST, PATH);
+    rig.wait_for(|view| matches!(view.core_upgrade.stage, CoreUpgradeStage::InProgress { .. }))
+        .await;
+
+    assert!(matches!(start(&rig, NEW), Err(CoreError::NotReady { .. })));
+    assert_eq!(
+        rig.core.seen(&Method::POST, PATH).len(),
+        1,
+        "重复点击不再发请求"
+    );
+    drop(held);
+}
+
+#[tokio::test]
+async fn cancel_is_refused_outside_pulling_and_twice_in_a_row() {
+    let rig = Rig::new().await;
+    reports(&rig, &idle(offer(NEW)));
+    rig.connected().await;
+    rig.wait_for(|view| view.core_upgrade.offer.is_some()).await;
+
+    assert!(matches!(cancel(&rig), Err(CoreError::NotReady { .. })));
+
+    start_pulling(&rig).await;
+
+    let switching = in_progress(CoreUpgradePhase::Switching, 600);
+    reports(&rig, &switching);
+    rig.app
+        .dispatch(Action::Plugins {
+            action: wonton_protocol::PluginAction::RefreshCoreUpgrade { manual: false },
+        })
+        .unwrap();
+    rig.wait_for(|view| {
+        matches!(
+            view.core_upgrade.stage,
+            CoreUpgradeStage::InProgress {
+                can_cancel: false,
+                ..
+            }
+        )
+    })
+    .await;
+    assert!(matches!(cancel(&rig), Err(CoreError::NotReady { .. })));
+    assert_eq!(rig.core.seen(&Method::DELETE, PATH).len(), 0);
+
+    let held = rig.core.hold(Method::DELETE, PATH);
+    reports(&rig, &in_progress(CoreUpgradePhase::Pulling, 600));
+    rig.app
+        .dispatch(Action::Plugins {
+            action: wonton_protocol::PluginAction::RefreshCoreUpgrade { manual: false },
+        })
+        .unwrap();
+    rig.wait_for(|view| {
+        matches!(
+            view.core_upgrade.stage,
+            CoreUpgradeStage::InProgress {
+                can_cancel: true,
+                ..
+            }
+        )
+    })
+    .await;
+    cancel(&rig).unwrap();
+    rig.wait_for(|view| {
+        matches!(
+            view.core_upgrade.stage,
+            CoreUpgradeStage::InProgress {
+                can_cancel: false,
+                ..
+            }
+        )
+    })
+    .await;
+    sent(&rig, &Method::DELETE, PATH, 1).await;
+    assert!(matches!(cancel(&rig), Err(CoreError::NotReady { .. })));
+    assert_eq!(rig.core.seen(&Method::DELETE, PATH).len(), 1);
+
+    rig.core.answer(
+        Method::DELETE,
+        PATH,
+        ok(&run(CoreUpgradeRunState::Canceled)),
+    );
+    rig.core.release(Method::DELETE, PATH);
+    rig.wait_for(|view| view.core_upgrade.stage == CoreUpgradeStage::Canceled)
+        .await;
+    drop(held);
+}
+
+#[tokio::test]
+async fn a_lost_cancel_keeps_the_button_so_it_can_be_retried() {
+    let rig = Rig::new().await;
+    reports(&rig, &idle(offer(NEW)));
+    rig.connected().await;
+    rig.wait_for(|view| view.core_upgrade.offer.is_some()).await;
+    start_pulling(&rig).await;
+
+    rig.core
+        .answer_always(Method::DELETE, PATH, Canned(502, String::new()));
+    cancel(&rig).unwrap();
+    let view = rig
+        .wait_for(|view| {
+            view.core_upgrade
+                .problem
+                .as_ref()
+                .is_some_and(|problem| problem.reason == CoreUpgradeFailure::TransportUnavailable)
+        })
+        .await;
+    assert!(
+        matches!(
+            view.core_upgrade.stage,
+            CoreUpgradeStage::InProgress {
+                can_cancel: true,
+                ..
+            }
+        ),
+        "没发出去的取消要能再点一次"
+    );
+
+    rig.core.answer_always(
+        Method::DELETE,
+        PATH,
+        ok(&run(CoreUpgradeRunState::Canceled)),
+    );
+    cancel(&rig).unwrap();
+    let view = rig
+        .wait_for(|view| view.core_upgrade.stage == CoreUpgradeStage::Canceled)
+        .await;
+    assert_eq!(view.core_upgrade.problem, None);
+}
+
+#[tokio::test]
+async fn a_start_whose_answer_was_lost_is_uncertain_when_the_core_did_not_start_it() {
+    let rig = Rig::new().await;
+    reports(&rig, &idle(offer(NEW)));
+    rig.connected().await;
+    rig.wait_for(|view| view.core_upgrade.offer.is_some()).await;
+
+    rig.core
+        .answer_always(Method::POST, PATH, Canned(502, String::new()));
+    start(&rig, NEW).unwrap();
+    let view = rig
+        .wait_for(|view| view.core_upgrade.problem.is_some())
+        .await;
+    assert_eq!(view.core_upgrade.stage, CoreUpgradeStage::Idle);
+    assert_eq!(
+        view.core_upgrade.problem.unwrap().reason,
+        CoreUpgradeFailure::TransportUnavailable
+    );
+    // 核心说没开始：不算已经在升级，能再发。
+    start(&rig, NEW).unwrap();
+}
+
+#[tokio::test]
+async fn a_start_whose_answer_was_lost_is_running_when_the_core_reports_it() {
+    let rig = Rig::new().await;
+    reports(&rig, &idle(offer(NEW)));
+    rig.connected().await;
+    rig.wait_for(|view| view.core_upgrade.offer.is_some()).await;
+
+    rig.core
+        .answer_always(Method::POST, PATH, Canned(502, String::new()));
+    reports(&rig, &in_progress(CoreUpgradePhase::Pulling, 600));
+    start(&rig, NEW).unwrap();
+    let view = rig
+        .wait_for(|view| {
+            matches!(
+                view.core_upgrade.stage,
+                CoreUpgradeStage::InProgress {
+                    can_cancel: true,
+                    ..
+                }
+            )
+        })
+        .await;
+    assert_eq!(view.core_upgrade.problem, None, "核心说在跑就不报发起失败");
+}
+
+/// 把本机记下的升级记录改一处再写回去。
+fn edit_saved(rig: &Rig, edit: impl FnOnce(&mut serde_json::Value)) {
+    let path = rig.data_dir().join("core-upgrade.json");
+    let mut saved: serde_json::Value =
+        serde_json::from_slice(&std::fs::read(&path).unwrap()).unwrap();
+    edit(&mut saved);
+    std::fs::write(&path, serde_json::to_vec(&saved).unwrap()).unwrap();
+}
+
+/// 跑出一次升级中并等记录写进本机。
+async fn saved_upgrade(rig: &Rig) {
+    reports(rig, &in_progress(CoreUpgradePhase::Starting, 600));
+    rig.connected().await;
+    stage(&rig.app, |stage| {
+        matches!(stage, CoreUpgradeStage::InProgress { .. })
+    })
+    .await;
+}
+
+#[tokio::test]
+async fn a_record_whose_limit_passed_opens_uncertain_without_waiting() {
+    let mut rig = Rig::new().await;
+    saved_upgrade(&rig).await;
+    edit_saved(&rig, |saved| saved["watching"]["deadline_ms"] = 1.into());
+
+    rig.reopen();
+    let view = rig.app.plugins().core_upgrade;
+    let CoreUpgradeStage::Uncertain { problem } = &view.stage else {
+        panic!("{:?}", view.stage);
+    };
+    assert_eq!(problem.reason, CoreUpgradeFailure::TimedOut);
+    assert!(view.status.is_some(), "最后看到的状态还在");
+}
+
+#[tokio::test]
+async fn a_record_for_another_server_is_ignored() {
+    let mut rig = Rig::new().await;
+    saved_upgrade(&rig).await;
+    edit_saved(&rig, |saved| saved["server"] = "another-server".into());
+
+    rig.reopen();
+    let view = rig.app.plugins().core_upgrade;
+    assert_eq!(view.stage, CoreUpgradeStage::Idle);
+    assert!(view.status.is_none());
+}
+
+/// 每个会新失效的原因类别都有自己的行，原值留在行里。
+#[tokio::test]
+async fn every_compat_reason_category_gets_its_own_line() {
+    let rig = Rig::new().await;
+    let mut check = idle(offer(NEW));
+    let CoreUpgradeCheck::Ready { offer } = &mut check.check else {
+        panic!("{check:?}");
+    };
+    offer.compat = CoreUpgradeCompat::Breaking {
+        plugins: vec![CoreUpgradeBreakingPlugin {
+            id: "app.immich.photos".into(),
+            reasons: vec![
+                CoreUpgradeBreakingReason {
+                    category: CoreUpgradeCompatCategory::SpecUnsupported,
+                    raw: "0.13".into(),
+                },
+                CoreUpgradeBreakingReason {
+                    category: CoreUpgradeCompatCategory::UnknownFeature,
+                    raw: "x-wonton.tabs".into(),
+                },
+                CoreUpgradeBreakingReason {
+                    category: CoreUpgradeCompatCategory::CapabilityMissing,
+                    raw: "camera.deep".into(),
+                },
+                CoreUpgradeBreakingReason {
+                    category: CoreUpgradeCompatCategory::Other,
+                    raw: "custom".into(),
+                },
+                CoreUpgradeBreakingReason {
+                    category: CoreUpgradeCompatCategory::Other,
+                    raw: String::new(),
+                },
+            ],
+        }],
+    };
+    reports(&rig, &check);
+    rig.connected().await;
+    let view = rig
+        .wait_for(|view| {
+            view.core_upgrade
+                .compat_details
+                .first()
+                .is_some_and(|detail| detail.lines.len() == 5)
+        })
+        .await;
+    let lines = &view.core_upgrade.compat_details[0].lines;
+    let unique: std::collections::HashSet<&String> = lines.iter().collect();
+    assert_eq!(unique.len(), 5, "{lines:?}");
+    let joined = lines.join("\n");
+    for raw in ["0.13", "x-wonton.tabs", "camera.deep", "custom"] {
+        assert!(joined.contains(raw), "{raw} 原值不在详情里：{lines:?}");
+    }
+}
+
+/// 盯着升级时服务器出错（不是断连）：要报出来；断连则只由阶段说，不报问题。
+#[tokio::test]
+async fn a_server_error_while_watching_is_reported_unlike_a_dropped_connection() {
+    let rig = Rig::new().await;
+    let switching = in_progress(CoreUpgradePhase::Switching, 600);
+    reports(&rig, &switching);
+    rig.connected().await;
+    stage(&rig.app, |stage| {
+        matches!(stage, CoreUpgradeStage::InProgress { .. })
+    })
+    .await;
+
+    rig.core
+        .answer_always(Method::GET, PATH, Canned(500, String::new()));
+    rig.core
+        .answer_always(Method::POST, CHECK_PATH, Canned(500, String::new()));
+    rig.app
+        .dispatch(Action::Plugins {
+            action: wonton_protocol::PluginAction::RefreshCoreUpgrade { manual: false },
+        })
+        .unwrap();
+    let view = rig
+        .wait_for(|view| {
+            view.core_upgrade.stage == CoreUpgradeStage::Reconnecting
+                && view.core_upgrade.problem.is_some()
+        })
+        .await;
+    assert_eq!(
+        view.core_upgrade.problem.unwrap().reason,
+        CoreUpgradeFailure::Upstream
+    );
+}
+
+#[tokio::test]
+async fn an_upgrade_that_failed_can_be_started_again() {
+    let rig = Rig::new().await;
+    reports(&rig, &idle(offer(NEW)));
+    rig.connected().await;
+    rig.wait_for(|view| view.core_upgrade.offer.is_some()).await;
+
+    let failed = run(CoreUpgradeRunState::Failed {
+        problem: problem(CoreUpgradeFailure::NoSpace),
+    });
+    reports(&rig, &failed);
+    rig.core.answer(Method::POST, PATH, ok(&failed));
+    start(&rig, NEW).unwrap();
+    let view = rig
+        .wait_for(|view| matches!(view.core_upgrade.stage, CoreUpgradeStage::Failed { .. }))
+        .await;
+    assert!(view.core_upgrade.offer.is_some(), "失败后还能再试");
+
+    let pulling = in_progress(CoreUpgradePhase::Pulling, 600);
+    reports(&rig, &pulling);
+    rig.core.answer(Method::POST, PATH, ok(&pulling));
+    start(&rig, NEW).unwrap();
+    let view = rig
+        .wait_for(|view| {
+            matches!(
+                view.core_upgrade.stage,
+                CoreUpgradeStage::InProgress {
+                    can_cancel: true,
+                    ..
+                }
+            )
+        })
+        .await;
+    assert_eq!(
+        view.core_upgrade.stage,
+        CoreUpgradeStage::InProgress {
+            phase: CoreUpgradePhase::Pulling,
+            can_cancel: true
+        }
+    );
+    assert_eq!(rig.core.seen(&Method::POST, PATH).len(), 2);
 }
