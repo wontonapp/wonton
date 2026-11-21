@@ -77,6 +77,10 @@ pub fn render(
     // 连接器只经这张普通桥接出网。
     compose["networks"]["relay"] = json!({});
     let Some(settings) = settings else {
+        // 没有入口：联邦流直接落到 Tuwunel 的 8448（私用名有自签的 TLS；有名字没入口时它只有明文，
+        // 对端会停在 TLS 握手，配好入口重新安装才换成入口的 8449）。
+        compose["services"]["core"]["environment"]["WONTON_MATRIX_FEDERATION_ADDR"] =
+            json!("tuwunel.wonton.internal:8448");
         return Ok(serde_json::to_string_pretty(&compose)?);
     };
     // 配了解析器时核心和 lego 都用它：入口的 ACME 目录、acme-dns 和 CAA 都靠这些名字。
