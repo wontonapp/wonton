@@ -16,6 +16,7 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.tooling.preview.Preview
 import androidx.compose.ui.unit.dp
 import app.wonton.protocol.MessageContent
+import app.wonton.protocol.MessageRun
 import app.wonton.protocol.SendState
 import app.wonton.protocol.TimelineContent
 import app.wonton.protocol.TimelineItem
@@ -27,7 +28,7 @@ import java.util.Date
 
 /**
  * 跨天那里的固定假数据：前一天最后两条、一条日期分隔条目、后一天头两条，新到旧排（列表就是这么排的）。
- * 空白没有核心可用，消息气泡只画文字和时间，日期行用界面自己的 [DividerLabel] 和 [DaySeparator]。
+ * 空白没有核心可用，消息气泡只画文字和时间，日期行用界面自己的 [DatePill] 和 [DaySeparator]。
  */
 private const val DAY_A = 1_793_520_000_000L
 private const val DAY_B = DAY_A + 86_400_000L
@@ -50,7 +51,7 @@ private fun message(id: String, text: String, at: Long, own: Boolean) = Timeline
             preview = null,
             actions = emptyList(),
             group = null,
-            run = null,
+            run = MessageRun.ALONE,
         ),
     ),
 )
@@ -93,7 +94,7 @@ private fun DayBreakRows() {
 @Composable
 private fun DayBreakRow(item: TimelineItem) {
     if (item.content is TimelineContent.DateDivider) {
-        DividerLabel(((item.content as TimelineContent.DateDivider).timestampMs).toLong())
+        DaySeparator(dateLabel(((item.content as TimelineContent.DateDivider).timestampMs).toLong()))
         return
     }
     val message = (item.content as TimelineContent.Message).message
@@ -111,7 +112,7 @@ private fun DayBreakRow(item: TimelineItem) {
                 .padding(horizontal = WontonTheme.spacing.s12, vertical = WontonTheme.spacing.s8),
         ) {
             Text(
-                (message.body as MessageContent.Text).text,
+                (message.body as MessageContent.Text).body,
                 style = WontonTheme.typography.body,
                 color = ink.toColor(),
             )

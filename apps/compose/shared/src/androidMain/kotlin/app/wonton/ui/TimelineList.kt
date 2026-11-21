@@ -1,9 +1,5 @@
 package app.wonton.ui
 
-import androidx.compose.animation.AnimatedVisibility
-import androidx.compose.animation.fadeIn
-import androidx.compose.animation.fadeOut
-import androidx.compose.foundation.background
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Box
@@ -18,9 +14,7 @@ import androidx.compose.foundation.lazy.LazyListState
 import androidx.compose.foundation.lazy.items
 import androidx.compose.foundation.lazy.itemsIndexed
 import androidx.compose.foundation.lazy.rememberLazyListState
-import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material3.CircularProgressIndicator
-import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.snapshotFlow
@@ -51,9 +45,6 @@ import app.wonton.protocol.TimelineTarget
 import app.wonton.ui.design.LocalWontonBottomInset
 import app.wonton.ui.design.LocalWontonTopInset
 import app.wonton.ui.design.WontonTheme
-import app.wonton.ui.design.toColor
-import java.text.DateFormat
-import java.util.Date
 import kotlinx.coroutines.Job
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.flow.distinctUntilChanged
@@ -155,7 +146,7 @@ internal fun TimelineList(
                 }
             }
         }
-        DatePill(
+        FloatingDatePill(
             pill.held && pill.text != null,
             pill.text.orEmpty(),
             Modifier.align(Alignment.TopCenter).padding(
@@ -168,7 +159,7 @@ internal fun TimelineList(
             ),
         )
         // 跳转找不到那条消息时轻轻说一声，列表不动。
-        DatePill(
+        FloatingDatePill(
             timeline.jump == JumpState.UNAVAILABLE,
             stringResource(R.string.timeline_jump_unavailable),
             Modifier.align(Alignment.BottomCenter).padding(bottom = WontonTheme.spacing.s8),
@@ -306,7 +297,8 @@ private fun TimelineRow(
 /**
  * 每个下标上方要不要来一行日期；跨日的那条才有。列表是倒排的（下标 0 贴着底部），屏幕上往下是越来越新。
  * 一条和它正上方那条不是同一天（或者它就在最顶上、上面没有消息）时，分隔画在它上面、写它自己的日期，
- * 也就是它下面那条消息的日期。跨日的日期由核心的分隔条目自己写，这里只兜底没有分隔条目的边界。
+ * 也就是它下面那条消息的日期。跨日的日期由核心的分隔条目写，这里只兜底没有分隔条目的边界：
+ * 分隔条目自己不再叠一行，紧挨在它下面（更新的一侧）的那条也不叠。
  */
 internal fun dayMarksFor(items: List<TimelineItem>): Array<String?> {
     // 没有时间的旁注跟着下面（更新）的那条算同一天，下标越小越新。
@@ -320,7 +312,6 @@ internal fun dayMarksFor(items: List<TimelineItem>): Array<String?> {
     for (index in items.indices) {
         val day = days[index]
         if (day == null || day == days.getOrNull(index + 1)) continue
-        if (items[index].content is TimelineContent.DateDivider) continue
         marks[index] = day
     }
     return marks
@@ -330,34 +321,9 @@ internal fun dayMarksFor(items: List<TimelineItem>): Array<String?> {
 @Composable
 internal fun DaySeparator(label: String) {
     Box(Modifier.fillMaxWidth().testTag("day-separator"), contentAlignment = Alignment.Center) {
-        Text(label, style = WontonTheme.typography.caption, color = WontonTheme.colors.textSecondary.toColor())
+        DatePill(label)
     }
 }
-
-/** 浮在列表上的小胶囊（日期、跳转失败的提示）。 */
-@Composable
-private fun DatePill(visible: Boolean, text: String, modifier: Modifier) {
-    AnimatedVisibility(visible, modifier.testTag("date-pill"), fadeIn(), fadeOut()) {
-        Text(
-            text,
-            Modifier
-                .background(
-                    WontonTheme.colors.surfaceSubtle.toColor().copy(alpha = PILL_ALPHA),
-                    RoundedCornerShape(WontonTheme.radii.pill),
-                )
-                .padding(horizontal = WontonTheme.spacing.s12, vertical = WontonTheme.spacing.s4),
-            style = WontonTheme.typography.caption,
-            color = WontonTheme.colors.textSecondary.toColor(),
-        )
-    }
-}
-
-/** 浮在最上面的日期胶囊的半透明底。 */
-private const val PILL_ALPHA = 0.9f
-
-/** 最上面那条的日期，胶囊里写这个。 */
-internal fun dateLabel(timestampMs: Long): String =
-    DateFormat.getDateInstance(DateFormat.MEDIUM).format(Date(timestampMs))
 
 /** 这条的发送时间；旁注类的条目没有。 */
 private val TimelineItem.timestampMs: Long?
