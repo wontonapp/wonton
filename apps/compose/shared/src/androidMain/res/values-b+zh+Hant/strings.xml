@@ -116,7 +116,7 @@
     <string name="owner_secrets_problem_other">無法載入金鑰。請重試。</string>
     <!-- 附件面板：底下的切換，把手機相簿列成照片格狀。 -->
     <string name="attach_album">相簿</string>
-    <!-- 附件面板：把選中的照片放進待發的按鈕。參數：張數。 -->
+    <!-- 附件面板：選中照片後底下的附言輸入框，附言隨照片一起發出去。 -->
     <string name="sheet_note_hint">新增附言</string>
     <!-- 附件面板：相簿裡還沒有照片。 -->
     <string name="attach_album_empty">相簿裡沒有照片</string>
