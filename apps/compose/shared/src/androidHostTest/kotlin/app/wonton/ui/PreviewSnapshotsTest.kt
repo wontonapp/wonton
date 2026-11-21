@@ -37,6 +37,9 @@ class PreviewSnapshotsTest {
     fun dayBreak() = paparazzi.snapshot { DayBreakPreview() }
 
     @Test
+    fun dayBreakDark() = paparazzi.snapshot { DayBreakDarkPreview() }
+
+    @Test
     fun agentDegraded() = paparazzi.snapshot { AgentDegradedPreview() }
 
     @Test

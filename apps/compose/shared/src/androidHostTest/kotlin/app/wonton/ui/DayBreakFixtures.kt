@@ -13,6 +13,7 @@ import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.platform.testTag
 import androidx.compose.ui.tooling.preview.Preview
 import androidx.compose.ui.unit.dp
 import app.wonton.protocol.MessageContent
@@ -69,6 +70,15 @@ internal fun DayBreakPreview() {
     }
 }
 
+/** 深色下同一处：胶囊的底和字跟着换，仍只有一行。 */
+@Preview(name = "跨天一行日期（深色）", locale = "en", widthDp = 390, heightDp = 300)
+@Composable
+internal fun DayBreakDarkPreview() {
+    PreviewFrame(dark = true) {
+        DayBreakRows()
+    }
+}
+
 @Composable
 private fun DayBreakRows() {
     val items = listOf(
@@ -85,7 +95,7 @@ private fun DayBreakRows() {
     ) {
         // 列表新到旧，画的时候倒过来才是从上到下越来越新的样子。
         for (index in items.indices.reversed()) {
-            marks[index]?.let { label -> DaySeparator(label) }
+            marks[index]?.let { label -> DaySeparator(label, Modifier.testTag("day-separator")) }
             DayBreakRow(items[index])
         }
     }
@@ -94,7 +104,10 @@ private fun DayBreakRows() {
 @Composable
 private fun DayBreakRow(item: TimelineItem) {
     if (item.content is TimelineContent.DateDivider) {
-        DaySeparator(dateLabel(((item.content as TimelineContent.DateDivider).timestampMs).toLong()))
+        DaySeparator(
+            dateLabel(((item.content as TimelineContent.DateDivider).timestampMs).toLong()),
+            Modifier.testTag("day-divider"),
+        )
         return
     }
     val message = (item.content as TimelineContent.Message).message

@@ -28,10 +28,10 @@ class TimelineDayMarksTest {
 
     @Test
     fun noteWithoutTimestampFollowsTheStateAroundIt() {
-        val items = listOf(dividerAt(DAY_B), note("Agent 改了个名字"), messageAt(DAY_A))
+        val items = listOf(messageAt(DAY_B), note("Agent 改了个名字"), dividerAt(DAY_B), messageAt(DAY_A))
 
-        // 旁注没有时间，跟着更新（下标更小）的分隔条目算同一天；那一行由分隔写，旁注不再叠。
-        assertEquals(listOf(null, null, dateLabel(DAY_A)), dayMarksFor(items).toList())
+        // 旁注没有时间，跟着更新（下标更小）的那条算同一天；那一天的分界由分隔条目写，旁注不再叠。
+        assertEquals(listOf(null, null, null, dateLabel(DAY_A)), dayMarksFor(items).toList())
     }
 
     @Test
