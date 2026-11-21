@@ -191,8 +191,8 @@ android {
                 "META-INF/*.kotlin_module",
             )
         }
-        // 压缩 .so：默认按 4 KB 对齐、不压缩存进 APK，几个大 .so 就让包大一截；压缩后安装时解出来，
-        // 装完占的磁盘一样多。
+        // 压缩 .so：默认按 4 KB 对齐、不压缩存进 APK，几个大 .so 就让包大一截。打开后安装时解出来，
+        // 下载量按压缩后算；代价是设备上要多占解压出的 .so（arm64 约 110 MB），不打开则直接映射 APK 里的副本。
         jniLibs {
             useLegacyPackaging = true
         }

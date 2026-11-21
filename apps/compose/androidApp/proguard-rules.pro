@@ -8,6 +8,14 @@
 -keep class * extends com.sun.jna.Structure { *; }
 -keep class * implements com.sun.jna.Callback { *; }
 
+# WorkManager 把排队的工作（推送动作的 PushActionWorker）按类名写进数据库，之后按类名反射 new；
+# 入队时只给了类型，R8 会把没人直接 new 的构造删掉。按继承保留构造，类名跟着构造一起留下。
+-keep class * extends androidx.work.ListenableWorker { <init>(...); }
+
+# Room 按类名（<库类>_Impl）找生成的实现再反射 new 无参构造，WorkManager 的数据库在进程一起来就初始化，
+# 被改名或删构造就直接起不来。生成的实现都继承 RoomDatabase，按继承保留，构造留着。
+-keep class * extends androidx.room.RoomDatabase { <init>(); }
+
 # Rust 的 rustls-platform-verifier 用 JNI 按类名、方法名、字段名调这几种类（见
 # rustls-platform-verifier 的 src/verification/android.rs）。
 -keep class org.rustls.platformverifier.** { *; }

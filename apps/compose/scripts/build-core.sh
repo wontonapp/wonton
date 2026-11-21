@@ -70,8 +70,13 @@ cargo ndk "${target_args[@]}" --platform "$min_sdk" -o "$jni_dir" \
 strip_bin=""
 ndk="${ANDROID_NDK_HOME:-${ANDROID_NDK_ROOT:-}}"
 if [ -z "$ndk" ]; then
-  # 和 cargo-ndk 一样：没显式指 NDK 就用 SDK 里最高的那个。
-  ndk=$(ls -d "${ANDROID_HOME:-$ANDROID_SDK_ROOT}"/ndk/* 2>/dev/null | sort -V | tail -n 1)
+  # 和 cargo-ndk 一样：没显式指 NDK 就用 SDK 里最高的那个。：没显式指 NDK 就用 SDK 里最高的那个。
+  sdk="${ANDROID_HOME:-${ANDROID_SDK_ROOT:-}}"
+  if [ -z "$sdk" ]; then
+    echo "看不出 Android SDK 在哪：没设 ANDROID_HOME 或 ANDROID_SDK_ROOT" >&2
+    exit 1
+  fi
+  ndk=$(ls -d "$sdk"/ndk/* 2>/dev/null | sort -V | tail -n 1)
 fi
 for strip_candidate in "$ndk"/toolchains/llvm/prebuilt/*/bin/llvm-strip; do
   if [ -x "$strip_candidate" ]; then strip_bin="$strip_candidate"; break; fi
