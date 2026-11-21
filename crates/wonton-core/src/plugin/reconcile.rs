@@ -411,6 +411,7 @@ impl PluginManager {
             manifest,
             &self.bot_names(&manifest.id),
             &mut secrets,
+            secrets::CollectMissing::Skip,
             &self.owner_languages(),
         )
         .await?

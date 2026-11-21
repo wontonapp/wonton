@@ -333,6 +333,8 @@ plugin-settings-secret-not-text = The app's key { $name } isn't text
 plugin-settings-secret-invalid = App key { $name }: { $path } in container { $container } { $reason }
 plugin-settings-secret-not-regular = is not a regular file
 plugin-settings-secret-too-big = is larger than 64 KiB
+plugin-settings-secret-not-collected = was never written (the service should write it before install finishes; check collect.path)
+plugin-settings-secret-no-container = is not running (the service didn't start, or collect.service is wrong)
 
 # ── The app's bot (bots.rs) ────────────────────────────────────────────────
 

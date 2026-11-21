@@ -104,6 +104,7 @@ mod static_web_storage;
 mod stopped;
 mod stopped_docker;
 mod store;
+mod store_install;
 mod store_refresh;
 mod tabs;
 mod tunnel_ports;

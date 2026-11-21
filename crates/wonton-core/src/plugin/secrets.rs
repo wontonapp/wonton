@@ -164,8 +164,17 @@ pub enum CollectError {
     Invalid(String),
 }
 
-/// 从插件的容器里收存 `collect` 项，返回有没有变化。文件还不存在时跳过，下次启动时再收；核心不修改、
-/// 不删除插件里的这个文件，也不把它注入回去。`collect.service` 是 Bot 服务时按 Bot 各收一份，
+/// 收存时文件还没写下怎么办。
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub enum CollectMissing {
+    /// 重启路径：插件可能还没写到这一步，下次启动再收。
+    Skip,
+    /// 安装/升级路径：一次性容器都已经跑完，写下才算数，没写下就报错。
+    Fail,
+}
+
+/// 从插件的容器里收存 `collect` 项，返回有没有变化。核心不修改、不删除插件里的这个文件，也不把它注入
+/// 回去；文件还没写下时按 [`CollectMissing`] 处理。`collect.service` 是 Bot 服务时按 Bot 各收一份，
 /// 记成 [`collect_key`]；全插件一份的照旧一份。
 pub async fn collect(
     engine: &Engine,
@@ -173,6 +182,7 @@ pub async fn collect(
     manifest: &Manifest,
     bots: &[String],
     secrets: &mut Secrets,
+    missing: CollectMissing,
     langs: &Languages,
 ) -> Result<bool, CollectError> {
     let slug = manifest.id.slug();
@@ -191,6 +201,7 @@ pub async fn collect(
                     &collect_key(name, bot),
                     name,
                     secrets,
+                    missing,
                     langs,
                 )
                 .await?;
@@ -203,6 +214,7 @@ pub async fn collect(
                 name,
                 name,
                 secrets,
+                missing,
                 langs,
             )
             .await?;
@@ -216,6 +228,7 @@ pub(super) fn collect_key(name: &str, bot: &str) -> String {
     format!("{name}@{bot}")
 }
 
+#[allow(clippy::too_many_arguments)] // 容器、路径、密钥名、没收下怎么办都由调用方给，再包一层只是搬参数。
 async fn collect_one(
     engine: &Engine,
     container: &str,
@@ -223,6 +236,7 @@ async fn collect_one(
     key: &str,
     name: &str,
     secrets: &mut Secrets,
+    missing: CollectMissing,
     langs: &Languages,
 ) -> Result<bool, CollectError> {
     let invalid = |reason: &str| {
@@ -237,7 +251,10 @@ async fn collect_one(
             ],
         ))
     };
-    // 容器不在（Bot 刚加、正在重建，或者停着）：和文件没写下一样，等它起来再收。
+    let unwritten = |reason: &str| match missing {
+        CollectMissing::Fail => Err(invalid(reason)),
+        CollectMissing::Skip => Ok(false),
+    };
     match engine.read_file(container, path, MAX_COLLECT_BYTES).await {
         Ok(ContainerFile::Regular(data)) => {
             if secrets.get(key) != Some(&data) {
@@ -246,7 +263,12 @@ async fn collect_one(
             }
         }
         Ok(ContainerFile::Missing) => {
-            tracing::info!(secret = %name, container, "插件还没有写下要收存的密钥，下次启动时再收");
+            tracing::info!(secret = %name, container, "插件还没有写下要收存的密钥");
+            return unwritten(&crate::l10n::text(
+                langs,
+                "plugin-settings-secret-not-collected",
+                &[],
+            ));
         }
         Ok(ContainerFile::NotRegular) => {
             return Err(invalid(&crate::l10n::text(
@@ -263,7 +285,12 @@ async fn collect_one(
             )));
         }
         Err(EngineError::NotFound(_)) => {
-            tracing::info!(secret = %name, container, "容器不在，等它起来再收存");
+            tracing::info!(secret = %name, container, "容器不在，收存不了这个密钥");
+            return unwritten(&crate::l10n::text(
+                langs,
+                "plugin-settings-secret-no-container",
+                &[],
+            ));
         }
         Err(e) => return Err(e.into()),
     }

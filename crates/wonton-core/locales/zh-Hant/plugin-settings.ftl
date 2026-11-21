@@ -333,6 +333,8 @@ plugin-settings-secret-not-text = 應用程式密鑰 { $name } 不是文字
 plugin-settings-secret-invalid = 應用程式密鑰 { $name }：容器 { $container } 裡的 { $path } { $reason }
 plugin-settings-secret-not-regular = 不是一般檔案
 plugin-settings-secret-too-big = 超過 64 KiB
+plugin-settings-secret-not-collected = 沒有寫下來（服務應當在裝完之前寫下它，檢查 collect.path）
+plugin-settings-secret-no-container = 不在（服務沒起來，或者 collect.service 寫錯了）
 
 # ── 應用程式的 Bot（bots.rs）───────────────────────────────────────────────────
 
