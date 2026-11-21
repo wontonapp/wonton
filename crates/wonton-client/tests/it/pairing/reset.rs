@@ -1,6 +1,6 @@
 //! A reset changes identity, not merely the address: pair the new identity without reusing A's data.
 
-use super::*;
+use super::support::*;
 use wonton_client::{ConnectionNotice, ServerName};
 
 async fn paired(phone: &Phone, home: &Home) {

@@ -6,7 +6,7 @@ use wonton_client::{CoreError, PairingFailure, PairingStatus};
 use wonton_tunnel::pair::{PairingCode, PairingSecret, SECRET_LEN};
 use wonton_tunnel::relays::{Relay, RelayToken};
 
-use super::{Home, Phone};
+use super::support::{Home, Phone};
 
 #[test]
 fn invalid_pairing_input_and_server_rejection_keep_diagnostics_secret_safe() {
