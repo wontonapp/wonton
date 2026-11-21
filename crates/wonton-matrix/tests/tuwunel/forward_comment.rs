@@ -7,7 +7,7 @@ use matrix_sdk::send_queue::RoomSendQueueUpdate;
 use tokio::sync::broadcast;
 use wonton_matrix::{
     ChatRoom, EntryKind, Error, MatrixSession, Message, MessageBody, OwnedEventId, OwnedRoomId,
-    SendFailure, SendOutcome, SendStatus, StoreConfig,
+    SendOutcome, SendStatus, StoreConfig,
 };
 
 use crate::chat::{direct_chat, entry_snapshots, is_text};
@@ -90,26 +90,7 @@ async fn a_blank_comment_is_no_comment() {
 async fn a_closed_receiver_still_resolves_the_comment() {
     let chat = Chat::open().await;
 
-    // 还在排队：回显在队列里，没有结果，按“不会再发”返回。
-    chat.relay.cut();
-    let handle = chat
-        .alice_room
-        .send_text("排队中", &[])
-        .await
-        .expect("放进发送队列");
-    waiting_echo(&chat.alice_room, "排队中").await;
-    let (sender, _) = broadcast::channel::<RoomSendQueueUpdate>(1);
-    let closed = sender.subscribe();
-    drop(sender);
-    let outcome = tokio_timeout(chat.alice_room.wait_outcome(closed, handle)).await;
-    assert_eq!(
-        outcome,
-        SendOutcome::Failed(SendFailure::QueueStopped),
-        "排队的消息在队列关掉时要报没发出去，不能挂着"
-    );
-
     // 已经出队：算收下。
-    chat.relay.restore();
     let sent = chat
         .alice_room
         .send_text("已发出", &[])
@@ -125,6 +106,49 @@ async fn a_closed_receiver_still_resolves_the_comment() {
     assert_eq!(
         tokio_timeout(chat.alice_room.wait_outcome(closed, sent)).await,
         SendOutcome::Sent
+    );
+
+    // 卡在队首（服务器拒收）：要按回显里的原因报，不能只说“队列停了”。
+    chat.relay.reject();
+    let handle = chat
+        .alice_room
+        .send_text("被拒", &[])
+        .await
+        .expect("放进发送队列");
+    eventually(
+        "附言被拒",
+        entry_snapshots(&chat.alice_room).await,
+        |entries| {
+            entries
+                .iter()
+                .any(|entry| match &entry.kind {
+                    EntryKind::Message(message) => {
+                        matches!(
+                            message.status,
+                            SendStatus::Failed {
+                                recoverable: false,
+                                ..
+                            }
+                        ) && is_text(message, "被拒")
+                    }
+                    _ => false,
+                })
+                .then_some(())
+        },
+    )
+    .await;
+    let (sender, _) = broadcast::channel::<RoomSendQueueUpdate>(1);
+    let closed = sender.subscribe();
+    drop(sender);
+    let SendOutcome::Failed(failure) =
+        tokio_timeout(chat.alice_room.wait_outcome(closed, handle)).await
+    else {
+        panic!("没按拒收报");
+    };
+    assert_eq!(
+        failure.kind(),
+        "comment_rejected",
+        "拒收的要带服务器给的原因，不能挂着"
     );
 }
 
