@@ -2,6 +2,10 @@
 # $path は設定ファイルのパス、$reason は元の入出力エラーです。
 push-method-write-failed = 通知方式の設定ファイル{ $path }に書き込めません：{ $reason }
 
+# 代理 TUN の偽アドレスを経路選択から外す設定（crates/wonton-client/src/home/path_settings.rs）。
+# $path は設定ファイルのパス、$reason は元の入出力エラーです。
+path-settings-write-failed = 経路選択の設定ファイル{ $path }に書き込めません：{ $reason }
+
 # プッシュ通知（crates/wonton-client/src/push/{mod,registration,notification}.rs）：拒否されたエンドポイント、失敗した登録、メッセージを取得できなかった場合の詳細情報。
 # 通知の本文とプレースホルダー（不明な送信者、招待、[ファイル]など）はまだここにはありません。
 # $reason は元のエラーの詳細です。

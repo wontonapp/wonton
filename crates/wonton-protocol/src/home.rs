@@ -264,7 +264,7 @@ pub struct HomePath {
     pub relay: bool,
     /// 中继是 n0 公共中继（带宽不够传画面）；直连或自建中继为假。
     pub public_relay: bool,
-    /// 直连的对端是局域网地址。
+    /// 直连的对端是局域网地址；经代理 TUN 的假地址（198.18.0.0/15）也算。
     pub lan: bool,
     /// 往返时间估计，毫秒。
     pub rtt_ms: u32,

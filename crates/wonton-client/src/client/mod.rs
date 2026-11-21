@@ -21,7 +21,7 @@ use crate::app_lock::AppLockLink;
 use crate::appearance::AppearanceLink;
 use crate::chat::TimelineSubscription;
 use crate::files::FileOpener;
-use crate::home::Network;
+use crate::home::{Network, path_settings};
 use crate::l10n::{CATALOG, language};
 use crate::scope::{Scope, Views, Visits};
 use crate::servers::ServerList;
@@ -154,6 +154,19 @@ impl ClientCore {
     /// 壳的系统验证通过后调用，幂等。
     pub fn unlock_app(&self) {
         self.app_lock.unlock();
+    }
+
+    /// 打开后选路优先真直连和中继，把代理 TUN 的假地址（198.18.0.0/15）放到最后，只在别无他路时走它。
+    /// 存在本机、所有服务器共用，写不了时返回 `Storage`；改动立刻重建 endpoint 生效。
+    pub fn set_fake_ip_exclusion(&self, enabled: bool) -> Result<(), CoreError> {
+        path_settings::set_exclude_fake_ip(&self.root, enabled)?;
+        self.scope().home.reapply_path_setting();
+        Ok(())
+    }
+
+    /// 代理的假地址是否排除出选路，默认关。
+    pub fn fake_ip_exclusion(&self) -> bool {
+        path_settings::exclude_fake_ip(&self.root)
     }
 
     /// 当前的外观（用户的设置和颜色令牌），用于首帧渲染。
