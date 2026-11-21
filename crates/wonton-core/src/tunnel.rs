@@ -4,16 +4,25 @@
 //! [`TunnelPeer`] 放进请求扩展，网关据此认出主人的设备。只有这里会放入 `TunnelPeer`：局域网的 TCP
 //! 请求里没有它，客户端也没法用请求头伪造。
 
+use std::any::Any;
 use std::collections::BTreeSet;
+use std::io;
 use std::net::{IpAddr, Ipv4Addr, Ipv6Addr, SocketAddr, SocketAddrV4, SocketAddrV6};
+use std::panic::AssertUnwindSafe;
 use std::path::Path;
+use std::pin::Pin;
 use std::str::FromStr;
 use std::sync::Arc;
+use std::sync::atomic::{AtomicBool, Ordering};
+use std::task::{Context, Poll};
+use std::time::Duration;
 
-use anyhow::Context;
+use anyhow::Context as _;
 use axum::Router;
 use axum::body::Body;
-use hyper::body::Incoming;
+use futures_util::FutureExt;
+use hyper::StatusCode;
+use hyper::body::{Body as HttpBody, Bytes, Frame, Incoming, SizeHint};
 use hyper::server::conn::http1;
 use hyper::service::service_fn;
 use hyper_util::rt::TokioIo;
@@ -21,8 +30,10 @@ use iroh::endpoint::presets;
 use iroh::tls::CaTlsConfig;
 use iroh::{Endpoint, RelayMode, RelayUrl, SecretKey, Watcher};
 use rustls_pki_types::{CertificateDer, pem::PemObject};
+use tokio::io::{AsyncRead, AsyncReadExt, AsyncWrite, AsyncWriteExt, ReadBuf};
 use tokio::sync::watch;
 use tokio::task::{JoinHandle, JoinSet};
+use tokio::time::timeout;
 use tower::ServiceExt;
 use wonton_tunnel::pair::PairProtocol;
 use wonton_tunnel::relays::{FALLBACK_AFTER, Relay, RelayTable};
@@ -328,20 +339,285 @@ async fn serve(mut listener: TunnelListener, app: Router) {
     }
 }
 
+/// 收尾时排空读半边最多等这么久：等客户端把剩下的数据读走、把自己的 FIN 发完，超时就丢。
+const CLOSE_DRAIN: Duration = Duration::from_secs(2);
+
+/// 隧道流交给 hyper 的共享句柄：hyper 升级时拿走的 IO 也指向它，收尾时要能拿回读写两个半边。
+/// 读写在 poll 里用 `try_lock`，收尾时才跨 await 握锁；tokio 的锁柄是 `Send`，任务能进 `JoinSet`。
+#[derive(Clone)]
+struct SharedIo(Arc<tokio::sync::Mutex<PeerStream>>);
+
+impl SharedIo {
+    fn new(stream: PeerStream) -> Self {
+        Self(Arc::new(tokio::sync::Mutex::new(stream)))
+    }
+
+    async fn lock(&self) -> tokio::sync::MutexGuard<'_, PeerStream> {
+        self.0.lock().await
+    }
+}
+
+impl AsyncRead for SharedIo {
+    fn poll_read(
+        self: Pin<&mut Self>,
+        cx: &mut Context<'_>,
+        buf: &mut ReadBuf<'_>,
+    ) -> Poll<io::Result<()>> {
+        let mut stream = match self.get_mut().0.try_lock() {
+            Ok(stream) => stream,
+            Err(_) => {
+                cx.waker().wake_by_ref();
+                return Poll::Pending;
+            }
+        };
+        Pin::new(&mut *stream).poll_read(cx, buf)
+    }
+}
+
+impl AsyncWrite for SharedIo {
+    fn poll_write(
+        self: Pin<&mut Self>,
+        cx: &mut Context<'_>,
+        buf: &[u8],
+    ) -> Poll<io::Result<usize>> {
+        let mut stream = match self.get_mut().0.try_lock() {
+            Ok(stream) => stream,
+            Err(_) => {
+                cx.waker().wake_by_ref();
+                return Poll::Pending;
+            }
+        };
+        Pin::new(&mut *stream).poll_write(cx, buf)
+    }
+
+    fn poll_flush(self: Pin<&mut Self>, cx: &mut Context<'_>) -> Poll<io::Result<()>> {
+        let mut stream = match self.get_mut().0.try_lock() {
+            Ok(stream) => stream,
+            Err(_) => {
+                cx.waker().wake_by_ref();
+                return Poll::Pending;
+            }
+        };
+        Pin::new(&mut *stream).poll_flush(cx)
+    }
+
+    fn poll_shutdown(self: Pin<&mut Self>, cx: &mut Context<'_>) -> Poll<io::Result<()>> {
+        let mut stream = match self.get_mut().0.try_lock() {
+            Ok(stream) => stream,
+            Err(_) => {
+                cx.waker().wake_by_ref();
+                return Poll::Pending;
+            }
+        };
+        Pin::new(&mut *stream).poll_shutdown(cx)
+    }
+}
+
+/// 请求体的在途标记：收到请求体置真，收完置假。握手和空闲都是假。
+struct InFlightBody {
+    inner: Incoming,
+    in_flight: Arc<AtomicBool>,
+}
+
+impl hyper::body::Body for InFlightBody {
+    type Data = Bytes;
+    type Error = hyper::Error;
+
+    fn poll_frame(
+        self: Pin<&mut Self>,
+        cx: &mut Context<'_>,
+    ) -> Poll<Option<Result<Frame<Bytes>, hyper::Error>>> {
+        let this = self.get_mut();
+        this.in_flight.store(true, Ordering::Relaxed);
+        let polled = HttpBody::poll_frame(Pin::new(&mut this.inner), cx);
+        if matches!(polled, Poll::Ready(None)) || this.inner.is_end_stream() {
+            this.in_flight.store(false, Ordering::Relaxed);
+        }
+        polled
+    }
+
+    fn is_end_stream(&self) -> bool {
+        self.inner.is_end_stream()
+    }
+
+    fn size_hint(&self) -> SizeHint {
+        self.inner.size_hint()
+    }
+}
+
+/// 响应体出错留个记号：hyper 只把它包成自己的错误，走到收尾时已经分不出是网关的响应体坏了。
+struct FailedBody {
+    inner: Body,
+    failed: Arc<AtomicBool>,
+}
+
+impl hyper::body::Body for FailedBody {
+    type Data = Bytes;
+    type Error = axum::Error;
+
+    fn poll_frame(
+        self: Pin<&mut Self>,
+        cx: &mut Context<'_>,
+    ) -> Poll<Option<Result<Frame<Bytes>, axum::Error>>> {
+        let this = self.get_mut();
+        let polled = HttpBody::poll_frame(Pin::new(&mut this.inner), cx);
+        if matches!(polled, Poll::Ready(Some(Err(_)))) {
+            this.failed.store(true, Ordering::Relaxed);
+        }
+        polled
+    }
+
+    fn is_end_stream(&self) -> bool {
+        self.inner.is_end_stream()
+    }
+
+    fn size_hint(&self) -> SizeHint {
+        self.inner.size_hint()
+    }
+}
+
+/// 异常收尾的侧别和类别，进 ERROR 日志：只按 hyper 给得出的事实分，分不出就写未知。
+fn classify(err: &hyper::Error, response_body_failed: bool) -> (&'static str, &'static str) {
+    if response_body_failed {
+        return ("upstream", "broken_body");
+    }
+    if err.is_parse() {
+        return ("device", "malformed");
+    }
+    if err.is_incomplete_message() {
+        return ("device", "incomplete");
+    }
+    if err.is_body_write_aborted() {
+        return ("device", "request_body_aborted");
+    }
+    if err.is_canceled() || err.is_closed() {
+        return ("device", "cancelled");
+    }
+    if err.is_shutdown() {
+        return ("write", "write_failed");
+    }
+    if err.is_timeout() {
+        return ("device", "timeout");
+    }
+    match io_kind(err) {
+        Some(
+            io::ErrorKind::BrokenPipe
+            | io::ErrorKind::ConnectionAborted
+            | io::ErrorKind::ConnectionReset
+            | io::ErrorKind::NotConnected,
+        ) => ("write", "write_failed"),
+        Some(io::ErrorKind::UnexpectedEof) => ("device", "incomplete"),
+        _ => ("unknown", "other"),
+    }
+}
+
+fn io_kind(err: &hyper::Error) -> Option<io::ErrorKind> {
+    let mut source = std::error::Error::source(err);
+    while let Some(cause) = source {
+        if let Some(io) = cause.downcast_ref::<io::Error>() {
+            return Some(io.kind());
+        }
+        source = cause.source();
+    }
+    None
+}
+
+fn panic_text(payload: &(dyn Any + Send)) -> String {
+    payload
+        .downcast_ref::<&str>()
+        .map(|text| (*text).to_owned())
+        .or_else(|| payload.downcast_ref::<String>().cloned())
+        .unwrap_or_else(|| "（panic 内容认不出）".to_owned())
+}
 /// 用网关服务一条隧道流（一条设备本地代理收到的 TCP 连接），支持 keep-alive 和 WebSocket 等协议升级。
+///
+/// 异常结束时不能直接丢弃流：`PeerStream` 没有 shutdown 就 Drop 会复位，客户端下一次读拿到复位，
+/// 代理在状态字节前收到就回 502（#5）。所以先 shutdown 写半边让客户端读到 EOF；有在途请求时再排空
+/// 读半边，让客户端把自己的 FIN 发完。升级后的读写还在处理器的任务里，这里不收尾，仍交给 Drop。
 async fn serve_stream(stream: PeerStream, app: Router) {
-    let peer = TunnelPeer(stream.remote_id());
+    let device = stream.remote_id();
+    let io = SharedIo::new(stream);
+    let in_flight = Arc::new(AtomicBool::new(false));
+    let body_failed = Arc::new(AtomicBool::new(false));
+    let upgraded = Arc::new(AtomicBool::new(false));
+    let service_in_flight = in_flight.clone();
+    let service_body_failed = body_failed.clone();
+    let service_upgraded = upgraded.clone();
     let service = service_fn(move |req: hyper::Request<Incoming>| {
-        let mut req = req.map(Body::new);
-        req.extensions_mut().insert(peer);
-        app.clone().oneshot(req)
+        let app = app.clone();
+        let in_flight = service_in_flight.clone();
+        let body_failed = service_body_failed.clone();
+        let upgraded = service_upgraded.clone();
+        async move {
+            let mut req = req.map(|body| {
+                Body::new(InFlightBody {
+                    inner: body,
+                    in_flight,
+                })
+            });
+            req.extensions_mut().insert(TunnelPeer(device));
+            let response = app.oneshot(req).await;
+            if let Ok(response) = &response
+                && response.status() == StatusCode::SWITCHING_PROTOCOLS
+            {
+                upgraded.store(true, Ordering::Relaxed);
+            }
+            response.map(|response| {
+                response.map(|body| {
+                    Body::new(FailedBody {
+                        inner: body,
+                        failed: body_failed,
+                    })
+                })
+            })
+        }
     });
     let served = http1::Builder::new()
-        .serve_connection(TokioIo::new(stream), service)
-        .with_upgrades()
+        .serve_connection(TokioIo::new(io.clone()), service)
+        .with_upgrades();
+    let outcome = AssertUnwindSafe(served).catch_unwind().await;
+
+    if upgraded.load(Ordering::Relaxed) {
+        tracing::debug!(device = %device.fmt_short(), "隧道连接升级结束");
+        return;
+    }
+    let (side, category, is_panic, detail) = match &outcome {
+        Ok(Ok(())) => ("gateway", "closed", false, "连接正常结束".to_owned()),
+        Ok(Err(err)) => {
+            let (side, category) = classify(err, body_failed.load(Ordering::Relaxed));
+            (side, category, false, err.to_string())
+        }
+        Err(payload) => ("upstream", "panic", true, panic_text(payload.as_ref())),
+    };
+    if category == "closed" {
+        tracing::debug!(device = %device.fmt_short(), "隧道上的 HTTP 连接结束");
+    } else {
+        tracing::error!(
+            event = "tunnel_stream_aborted",
+            device = %device.fmt_short(),
+            side = %side,
+            is_panic,
+            category = %category,
+            detail = %detail,
+            "隧道上的 HTTP 连接异常结束"
+        );
+    }
+
+    let mut stream = io.lock().await;
+    let _ = AsyncWriteExt::shutdown(&mut *stream).await;
+    if in_flight.load(Ordering::Relaxed) {
+        let drained = timeout(CLOSE_DRAIN, async {
+            let mut buf = [0u8; 4096];
+            while let Ok(read) = AsyncReadExt::read(&mut *stream, &mut buf).await {
+                if read == 0 {
+                    break;
+                }
+            }
+        })
         .await;
-    if let Err(err) = served {
-        tracing::debug!(device = %peer.0.fmt_short(), "隧道上的 HTTP 连接异常结束：{err}");
+        if drained.is_err() {
+            tracing::debug!(device = %device.fmt_short(), "隧道对端没在 {CLOSE_DRAIN:?} 内读完");
+        }
     }
 }
 
