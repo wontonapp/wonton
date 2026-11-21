@@ -550,15 +550,3 @@ private struct WontonCanvas: ViewModifier {
         content.background(Color(colors.canvas).ignoresSafeArea())
     }
 }
-
-/// 隐藏系统导航栏后，SwiftUI 默认会失去边缘返回手势（ADR-0026），这里还给它。
-extension UINavigationController: @retroactive UIGestureRecognizerDelegate {
-    override open func viewDidLoad() {
-        super.viewDidLoad()
-        interactivePopGestureRecognizer?.delegate = self
-    }
-
-    public func gestureRecognizerShouldBegin(_ gestureRecognizer: UIGestureRecognizer) -> Bool {
-        viewControllers.count > 1
-    }
-}
