@@ -213,31 +213,31 @@
       }
     },
     "problem.plugin.egressProxyUnavailable.title": {
-      "comment": "Problem title: the app can't reach the internet through the internet proxy.",
+      "comment": "Problem title: the internet proxy is not working.",
       "extractionState": "manual",
       "localizations": {
         "en": {
           "stringUnit": {
             "state": "translated",
-            "value": "Can't reach the proxy"
+            "value": "The proxy is broken"
           }
         },
         "zh-Hans": {
           "stringUnit": {
             "state": "translated",
-            "value": "代理连不上"
+            "value": "代理用不了"
           }
         },
         "zh-Hant": {
           "stringUnit": {
             "state": "translated",
-            "value": "連不上代理伺服器"
+            "value": "代理用不了"
           }
         },
         "ja": {
           "stringUnit": {
             "state": "translated",
-            "value": "プロキシに接続できません"
+            "value": "プロキシが使えません"
           }
         }
       }

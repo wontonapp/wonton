@@ -205,6 +205,11 @@ fun PluginFailure.problem(detail: String?): Problem = when (this) {
         nextStepRes = R.string.problem_plugin_egress_proxy_unavailable_next_step,
         detail = detail,
     )
+    PluginFailure.EGRESS_PROXY_WAITING -> Problem(
+        titleRes = R.string.problem_plugin_egress_proxy_waiting_title,
+        nextStepRes = R.string.problem_plugin_egress_proxy_waiting_next_step,
+        detail = detail,
+    )
     PluginFailure.RECORD_UNUSABLE -> Problem(
         titleRes = R.string.problem_plugin_record_unusable_title,
         nextStepRes = R.string.problem_plugin_record_unusable_next_step,

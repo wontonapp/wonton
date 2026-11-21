@@ -6,6 +6,7 @@
     <!-- Problem title: the device the app should run on isn't available. -->
     <string name="problem_plugin_device_unavailable_title">選擇的裝置無法使用</string>
     <!-- Problem title: the home server can't read this app's install record. -->
+    <string name="problem_plugin_egress_proxy_waiting_title">代理還沒就緒</string>
     <string name="problem_plugin_record_unusable_title">應用程式的安裝記錄不可用</string>
     <!-- Problem title: the app's information can't be fetched from its source right now. -->
     <string name="problem_plugin_source_unavailable_title">暫時無法取得應用程式的資訊</string>

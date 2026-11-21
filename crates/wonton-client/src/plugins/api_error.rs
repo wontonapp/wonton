@@ -94,6 +94,7 @@ pub(crate) fn failure_kind(kind: Option<&str>, status: u16) -> PluginFailure {
         Some("lan_unavailable") => PluginFailure::LanUnavailable,
         Some("port_taken") => PluginFailure::LanPortTaken,
         Some("egress_proxy_unavailable") => PluginFailure::EgressProxyUnavailable,
+        Some("egress_proxy_waiting") => PluginFailure::EgressProxyWaiting,
         Some("core_upgrading") => PluginFailure::CoreUpgrading,
         Some("settings_invalid") => PluginFailure::SettingsInvalid,
         Some("settings_schema_invalid") => PluginFailure::SettingsSchemaInvalid,
