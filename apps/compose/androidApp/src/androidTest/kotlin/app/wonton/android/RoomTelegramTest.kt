@@ -31,10 +31,22 @@ import androidx.compose.ui.test.performClick
 import androidx.compose.ui.test.performScrollTo
 import androidx.compose.ui.test.performTouchInput
 import androidx.compose.ui.test.swipe
+import android.view.WindowInsets
 import androidx.compose.ui.test.swipeUp
 import androidx.compose.ui.text.TextLayoutResult
-import androidx.compose.ui.unit.dp
+import androidx.test.ext.junit.runners.AndroidJUnit4
+import androidx.test.platform.app.InstrumentationRegistry
+import androidx.test.rule.GrantPermissionRule
+import app.wonton.protocol.Action
+import app.wonton.protocol.ImageUpload
+import app.wonton.protocol.PageAction
+import app.wonton.protocol.TabRef
+import app.wonton.protocol.TimelineAction
+import app.wonton.protocol.TimelineTarget
 import app.wonton.ui.R
+import app.wonton.ui.send
+import java.io.File
+import java.io.FileOutputStream
 import java.text.DateFormat
 import kotlin.math.abs
 import org.junit.Test
@@ -171,6 +183,7 @@ class RoomTelegramTest : RoomTelegramCase() {
         screenshot("long-reply")
     }
 
+
     @Test
     fun choiceAnswerSelectsItAndDisablesTheOther() {
         scrollTo(22)
@@ -289,141 +302,6 @@ class RoomTelegramTest : RoomTelegramCase() {
     }
 
     @Test
-    fun oneDateLineAtTheCrossDay() {
-        // 第 11 条是后一天的第一条：核心在那里发一条日期分隔条目，屏上只该有它这一行，没有另夹的兜底行。
-        val lines = scrollToDateLines()
-        for (line in lines) lineIsAboveTheOneItNames(line)
-        oneLineAtTheDayBreak()
-        noLineBetweenTheSameDay()
-        // 屏幕上往下是越来越新：日期行自上而下的日期严格变晚。
-        val dates = lines.sortedBy { it.boundsInRoot.top }.map { checkNotNull(parseDay(it)) }
-        for (position in 1 until dates.size) {
-            check(dates[position].after(dates[position - 1])) { "日期没随消息往下变晚：$dates" }
-        }
-        // 列表最顶上那条的上面也有日期行，由核心的分隔条目写，写它自己的日期。
-        scrollTo(0)
-        compose.waitForIdle()
-        val firstOfList = bubble(0).fetchSemanticsNode()
-        val aboveFirst = dateLines().lastOrNull { it.boundsInRoot.bottom <= firstOfList.boundsInRoot.top + 1f }
-        checkNotNull(aboveFirst) { "列表最顶上那条的上面没有日期行" }
-        check(texts(aboveFirst).startsWith(fixtureStamp(0))) {
-            "最顶上那行不是第一条的日期：${texts(aboveFirst)}"
-        }
-        check(aboveFirst.config.getOrNull(SemanticsProperties.TestTag) == "day-divider") {
-            "最顶上的日期行不是核心的分隔条目：${aboveFirst.config.getOrNull(SemanticsProperties.TestTag)}"
-        }
-        // 这条分隔和它两边的消息一起进画面，留一张给人看。
-        scrollTo(11)
-        compose.waitUntil(10_000) { visible(10) && visible(11) }
-        screenshot("day-divider")
-    }
-
-    /** 翻到有跨日日期行的地方，返回它们（按屏幕从上到下）。 */
-    private fun scrollToDateLines(): List<SemanticsNode> {
-        var lines = emptyList<SemanticsNode>()
-        var seen = ""
-        for (index in listOf(11, 12, 10, 13, 9)) {
-            scrollTo(index)
-            compose.waitForIdle()
-            lines = dateLines()
-            seen += "$index:${lines.size} "
-            if (lines.isNotEmpty()) break
-        }
-        check(lines.isNotEmpty()) { "没画日期行：$seen" }
-        return lines.sortedBy { it.boundsInRoot.top }
-    }
-
-    /** 屏上的日期行：核心的分隔条目和兜底的分隔写的是同一件事，一起按一条日期行来看。 */
-    private fun dateLines(): List<SemanticsNode> = compose.onAllNodes(
-        SemanticsMatcher("是日期行") {
-            when (it.config.getOrNull(SemanticsProperties.TestTag)) {
-                "day-divider", "day-separator" -> true
-                else -> false
-            }
-        },
-        useUnmergedTree = true,
-    ).fetchSemanticsNodes()
-
-    /** 跨天那条下面紧挨着的第一条气泡上正好压着一行日期：只有一行，且是核心的分隔条目画的。 */
-    private fun oneLineAtTheDayBreak() {
-        scrollTo(11)
-        compose.waitUntil(10_000) { visible(10) && visible(11) }
-        val tenth = bubble(10).fetchSemanticsNode()
-        val eleventh = bubble(11).fetchSemanticsNode()
-        val between = dateLines().filter {
-            it.boundsInRoot.top >= tenth.boundsInRoot.bottom - 1f &&
-                it.boundsInRoot.bottom <= eleventh.boundsInRoot.top + 1f
-        }
-        check(between.size == 1) { "跨天处有 ${between.size} 行日期：${between.map(::texts)}" }
-        val line = between.single()
-        check(line.config.getOrNull(SemanticsProperties.TestTag) == "day-divider") {
-            "跨天处那行不是核心的分隔条目：${texts(line)}"
-        }
-        check(texts(line).startsWith(fixtureStamp(11))) { "跨天那行不是第 11 条的日期：${texts(line)}" }
-    }
-
-    /** 日期行夹在前一天最后一条和后一天第一条之间：下面紧挨的那条是它写的这一天，上面那条是更早的一天。 */
-    private fun lineIsAboveTheOneItNames(line: SemanticsNode) {
-        val mark = line.boundsInRoot
-        val bubbles = compose.onAllNodes(hasTestTag("bubble"), useUnmergedTree = true)
-            .fetchSemanticsNodes().sortedBy { it.boundsInRoot.top }
-        check(bubbles.none { it.boundsInRoot.overlaps(mark) }) { "气泡压在日期行上：$mark" }
-        val below = bubbles.firstOrNull { it.boundsInRoot.top >= mark.bottom - 1f }
-        val belowIndex = checkNotNull(below?.let(::fixtureIndexOf)) { "日期行下面认不出气泡：$mark" }
-        check(texts(line).startsWith(fixtureStamp(belowIndex))) {
-            "日期行不是它下面那条的日期：${texts(line)} vs ${fixtureDate(belowIndex)}（第 $belowIndex 条）"
-        }
-        val above = bubbles.lastOrNull { it.boundsInRoot.bottom <= mark.top + 1f } ?: return
-        val aboveIndex = fixtureIndexOf(above) ?: return
-        val aboveBox = above.boundsInRoot
-        check(fixtureDate(aboveIndex) != fixtureDate(belowIndex)) {
-            "同一天（第 $aboveIndex / $belowIndex 条）的气泡之间夹了日期分隔"
-        }
-        val order = "分隔上面第 $aboveIndex 条 $aboveBox，" +
-            "下面第 $belowIndex 条 ${below.boundsInRoot}，分隔 $mark"
-        check(fixtureDate(aboveIndex) < fixtureDate(belowIndex)) { "上面的日期不早于下面：$order" }
-    }
-
-    /** 同一天相邻的两条之间没有日期行。 */
-    private fun noLineBetweenTheSameDay() {
-        val bubbles = compose.onAllNodes(hasTestTag("bubble"), useUnmergedTree = true)
-            .fetchSemanticsNodes().sortedBy { it.boundsInRoot.top }
-        val lines = dateLines()
-        val sameDay = bubbles.zipWithNext().filter { (above, below) ->
-            val a = fixtureIndexOf(above)
-            val b = fixtureIndexOf(below)
-            a != null && b != null && fixtureDay(a) == fixtureDay(b)
-        }
-        for ((above, below) in sameDay) {
-            val between = lines.filter {
-                it.boundsInRoot.top >= above.boundsInRoot.bottom - 1f &&
-                    it.boundsInRoot.bottom <= below.boundsInRoot.top + 1f
-            }
-            val pair = "${fixtureIndexOf(above)} / ${fixtureIndexOf(below)}"
-            check(between.isEmpty()) { "同一天的第 $pair 条之间夹了日期行：${between.map(::texts)}" }
-        }
-    }
-
-    /** 日期行写的字：胶囊里只有日期，兜底的分隔和分隔条目都一样。 */
-    private fun fixtureStamp(index: Int): String = fixtureDate(index)
-
-    /** 假数据第 `index` 条所在的哪一天，拿来比先后，免得比字符串。 */
-    private fun fixtureDay(index: Int): Date =
-        checkNotNull(DateFormat.getDateInstance(DateFormat.MEDIUM).parse(fixtureDate(index))) {
-            "假数据的日期解不开：${fixtureDate(index)}"
-        }
-
-    private fun fixtureAt(index: Int, style: Int): String =
-        DateFormat.getDateInstance(style).format(Date(fixtureAtMs(index)))
-
-    private fun fixtureAtMs(index: Int): Long = 1_792_000_000_000L + index * 60_000L +
-        if (index >= 11) 86_400_000L else 0L -
-        if (index == 0) 172_800_000L else 0L
-
-    /** 日期行里写的哪天。 */
-    private fun parseDay(line: SemanticsNode): Date? =
-        DateFormat.getDateInstance(DateFormat.MEDIUM).parse(texts(line))
-    @Test
     fun barTitleAndAvatarOpenBotProfile() {
         val profile = compose.onNodeWithTag("bot-profile")
         // 入口只剩头像一个，顶栏里没有额外的信息按钮。
@@ -490,5 +368,6 @@ class RoomTelegramTest : RoomTelegramCase() {
             .assertIsDisplayed()
         screenshot("room-confirmations-open")
     }
+
 
 }

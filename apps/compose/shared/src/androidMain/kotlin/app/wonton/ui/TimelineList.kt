@@ -115,7 +115,7 @@ internal fun TimelineList(
                 if (item.isBlankAgentRun) return@itemsIndexed
                 Column {
                     // 跨日的那条上方放一行固定的日期：它自己占一行，不和气泡重叠。
-                    day?.let { label -> DaySeparator(label) }
+                    day?.let { label -> DaySeparator(label, Modifier.testTag("day-separator")) }
                     // 倒着排：下标大的是更早的一条。
                     TimelineRow(
                         item,
@@ -297,8 +297,7 @@ private fun TimelineRow(
 /**
  * 每个下标上方要不要来一行日期；跨日的那条才有。列表是倒排的（下标 0 贴着底部），屏幕上往下是越来越新。
  * 一条和它正上方那条不是同一天（或者它就在最顶上、上面没有消息）时，分隔画在它上面、写它自己的日期，
- * 也就是它下面那条消息的日期。跨日的日期由核心的分隔条目写，这里只兜底没有分隔条目的边界：
- * 分隔条目自己不再叠一行，紧挨在它下面（更新的一侧）的那条也不叠。
+ * 也就是它下面那条消息的日期。跨日的日期由核心的分隔条目写，这里只兜底没有分隔条目的边界。
  */
 internal fun dayMarksFor(items: List<TimelineItem>): Array<String?> {
     // 没有时间的旁注跟着下面（更新）的那条算同一天，下标越小越新。
@@ -312,24 +311,24 @@ internal fun dayMarksFor(items: List<TimelineItem>): Array<String?> {
     for (index in items.indices) {
         val day = days[index]
         if (day == null || day == days.getOrNull(index + 1)) continue
+        if (items[index].content is TimelineContent.DateDivider) continue
         marks[index] = day
     }
     return marks
 }
 
-/** 日期分隔：一行居中、自己占高度。 */
+/** 日期分隔：一行居中、自己占高度；是核心的分隔条目还是兜底，由调用方给标签。 */
 @Composable
-internal fun DaySeparator(label: String) {
-    Box(Modifier.fillMaxWidth().testTag("day-separator"), contentAlignment = Alignment.Center) {
-        DatePill(label)
-    }
+internal fun DaySeparator(label: String, modifier: Modifier = Modifier) {
+    Box(modifier.fillMaxWidth(), contentAlignment = Alignment.Center) { DatePill(label) }
 }
 
-/** 这条的发送时间；旁注类的条目没有。 */
+/** 这条的发送时间；没有时间的旁注为空，分隔条目写的是那一天的起点。 */
 private val TimelineItem.timestampMs: Long?
     get() = when (val body = content) {
         is TimelineContent.Message -> body.message.timestampMs.toLong()
         is TimelineContent.AgentRun -> body.timestampMs.toLong()
+        is TimelineContent.DateDivider -> body.timestampMs.toLong()
         else -> null
     }
 
