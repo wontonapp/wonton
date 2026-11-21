@@ -188,6 +188,11 @@ Tuwunel 直连核心在 `core` 网络上的推送专用监听，与正式安装�
 依赖和步骤写在脚本开头。插件作者看好友打开自己的插件时插件拿到什么身份，用
 `dev.sh friend <插件包目录或 compose 文件>`（做法和限制见 `friend-probe.sh` 开头）。
 
+跨服务器好友聊天（ADR-0050 的加密私聊、ADR-0090 的公网总开关）是 `deploy/dev/core/smoke-federation.sh`：不走隔离夹具，
+起两套真开发栈（各要一个名额），两台核心经 iroh 配对，两个真实的客户端核心互相发加密消息，中间把对方的核心暂停，
+验证恢复后补到并解出明文。每步打 PASS/FAIL，主分支上还没做完的平台缺口会如实变红；步骤见驱动
+`crates/wonton-client/examples/cross_server_chat_e2e.rs` 开头的注释。
+
 ### MatrixRTC 通话冒烟（ADR-0096）
 
 `call-e2e.sh` 尝试在两台 Android 设备／模拟器上打开 Element Call widget 并采集 WebRTC 统计；录屏和 CDP 数据保存在仓库外的 `~/wonton-dev/research/call-e2e/`。脚本尚未完成真实通话验证，结果不能代替对三种路径、双向媒体、挂断和 delayed leave 的现场验收。
