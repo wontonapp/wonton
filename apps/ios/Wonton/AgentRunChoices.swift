@@ -1,7 +1,7 @@
 import SwiftUI
 import WontonClient
 
-/// 状态行上的一串待回答选项（ADR-0082）：一排最多两个，放不下就换排，每排等分宽度，
+/// 状态行上的一串待回答选项（ADR-0082）：一排最多两个，多出来的换到下一排，每排等分宽度，
 /// 照 Telegram 的内联键盘（ADR-0109 第 8 节）。一排只有一个时铺满整排；比自己那一格还长的字截断。
 struct AgentRunChoices: View {
     let choices: [AgentRunChoice]

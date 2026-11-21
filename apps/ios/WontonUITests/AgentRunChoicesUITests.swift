@@ -1,9 +1,11 @@
 import XCTest
 
-/// Agent 状态行的一串选项（ADR-0082）：一排放不下时换成多排、每排等分宽度，照 Telegram 的内联键盘，
+/// Agent 状态行的一串选项（ADR-0082）：多出来的换到下一排、每排等分宽度，照 Telegram 的内联键盘，
 /// 任何一个都不挤出屏幕，字也不竖着堆。用夹具屏（`wonton-agent-run-preview`），不需要后端。
 final class AgentRunChoicesUITests: XCTestCase {
     private let keys = ["once", "session", "always", "deny"]
+    /// 和 `AgentRunPreview.narrowWidth` 一致：最窄 iPhone 的屏宽。
+    private let narrowWidth: CGFloat = 320
 
     func testChoicesWrapIntoEqualRows() throws {
         continueAfterFailure = false
@@ -22,11 +24,11 @@ final class AgentRunChoicesUITests: XCTestCase {
         for button in buttons {
             XCTAssertTrue(
                 button.frame.minX >= window.minX && button.frame.maxX <= window.maxX,
-                "选项 \(button.identifier) 挤出屏幕：\(button.frame) 不在 \(window) 里"
+                "选项 \(button.identifier) 横向挤出屏幕：\(button.frame) 超出 \(window)"
             )
         }
 
-        // 每排等分：同一排的高度一致、宽度一致；放不下就得有第二排。
+        // 每排等分：同一排的高度一致、宽度一致；四个选项按个数排成两排。
         let rows = Dictionary(grouping: buttons, by: { $0.frame.minY })
         XCTAssertGreaterThan(rows.count, 1, "四个长选项都在一排：\(buttons.map { $0.frame })")
         for (y, row) in rows {
@@ -45,12 +47,17 @@ final class AgentRunChoicesUITests: XCTestCase {
         add(shot(named: "agent-run-choices"))
     }
 
-    /// 最窄的屏（iPhone SE）配最大辅助字号：仍然两个一排、同排等宽，横着放不竖排、不挤出去。
-    /// 跑在这台模拟器上时要先把系统字号调成最大（`xcrun simctl ui … content_size accessibility-extra-extra-extra-large`）。
+    /// 最窄的屏配最大辅助字号：仍然两个一排、同排等宽，横着放不挤出去、不竖排。
+    /// 设备条件自己带着走：启动参数把字号调到最大、把夹具收窄成最窄 iPhone 的屏宽，不靠人在外面准备。
     func testChoicesOnNarrowScreenAtLargestType() throws {
         continueAfterFailure = false
         let app = XCUIApplication()
-        app.launchArguments += ["-AppleLanguages", "(en)", "-AppleLocale", "en_US", "wonton-agent-run-preview"]
+        app.launchArguments += [
+            "-AppleLanguages", "(en)",
+            "-AppleLocale", "en_US",
+            "-UIPreferredContentSizeCategoryName", "UICTContentSizeCategoryAccessibilityXXXL",
+            "wonton-agent-run-preview", "wonton-agent-run-preview-narrow"
+        ]
         app.launch()
 
         let first = app.buttons["agentRun-choice-once"]
@@ -63,8 +70,8 @@ final class AgentRunChoicesUITests: XCTestCase {
         let window = app.windows.element(boundBy: 0).frame
         for button in buttons {
             XCTAssertTrue(
-                button.frame.minX >= window.minX && button.frame.maxX <= window.maxX,
-                "选项 \(button.identifier) 挤出屏幕：\(button.frame) 不在 \(window) 里"
+                button.frame.minX >= window.minX && button.frame.maxX <= window.minX + narrowWidth + 1,
+                "选项 \(button.identifier) 横向挤出屏幕：\(button.frame) 超出 \(window)"
             )
             XCTAssertLessThan(button.frame.height, button.frame.width, "\(button.identifier) 被压成竖排：\(button.frame)")
         }
