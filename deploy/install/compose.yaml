@@ -289,7 +289,8 @@ services:
       # 只挂 Tuwunel 自己的文件：`secrets/` 根上还有核心的 `matrix-jwt.pem`、`hydra-secret`/`hydra.env`，
       # 联邦容器读不到才对（ADR-0051）。整目录一次挂完，不用在只读目录里再建挂载点。
       - ${WONTON_INSTALL_DIR}/secrets/tuwunel:/etc/tuwunel:ro
-    # 不发布任何端口；公网联邦经过隔离入口容器和核心的专用监听。
+    # 不发布任何端口：有入口时公网联邦经过隔离入口容器（TLS 在那里终止）和核心的专用监听；没有入口时
+    # 只有内部的 8008/8448，对端经 iroh 投进来的流落在 8448（ADR-0090）。
     networks:
       core:
         aliases: [tuwunel.wonton.internal]
