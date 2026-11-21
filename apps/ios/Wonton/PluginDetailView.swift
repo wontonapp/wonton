@@ -156,7 +156,7 @@ struct PluginDetailView: View {
                     }
                     if let setup = detail.setup {
                         VStack(alignment: .leading, spacing: WontonTheme.spacing.s8) {
-                            Text(.Plugin1.pluginSetupTitle)
+                            Text(.Plugin3.pluginSetupTitle)
                                 .wontonText(WontonTheme.typography.sectionTitle)
                                 .foregroundStyle(Color(colors.textPrimary))
                             Text(setup)

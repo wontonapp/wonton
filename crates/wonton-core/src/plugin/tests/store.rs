@@ -484,6 +484,29 @@ async fn store_details_show_the_first_time_steps_in_the_requested_language() {
             .unwrap();
         assert_eq!(detail.setup.as_deref(), Some(expected));
     }
+
+    // 装着的版本带步骤、商店里的新版本没有、还换了链接：详情页保留步骤，链接用商店的。
+    let installable = source.replace("  icon: icon.svg\n", "");
+    let installed = format!("{installable}  homepage: https://old.example\n");
+    bed.m
+        .install(&installed, &[], Languages::from_header(Some("zh-Hans")))
+        .await
+        .unwrap();
+    let newer = format!(
+        "{}  homepage: https://new.example\n",
+        compose("1.1.0", "nginx").replace("spec: '0.4'", "spec: '0.11'")
+    );
+    write_index(index.path(), &newer, ICON);
+    let detail = bed
+        .m
+        .store_plugin(
+            "github:acme/hello",
+            &Languages::from_header(Some("zh-Hans")),
+        )
+        .await
+        .unwrap();
+    assert_eq!(detail.setup.as_deref(), Some("用 admin 登录后改密码"));
+    assert_eq!(detail.homepage.as_deref(), Some("https://new.example"));
 }
 
 #[tokio::test]
