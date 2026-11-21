@@ -56,6 +56,7 @@ mod family_private;
 mod family_room;
 mod files;
 mod friend_gate;
+mod friend_requests;
 mod friends;
 mod friends_wiring;
 mod health;
@@ -241,6 +242,8 @@ pub struct Gateway {
     pub upgrades: Option<Arc<crate::upgrade::service::Upgrades>>,
     pub peers: Option<Arc<crate::peers::Peers>>,
     pub(crate) friends: Option<Arc<Friends>>,
+    /// 公网上外人交的加好友请求（ADR-0088 第 98 行），只存内存。
+    pub(crate) friend_requests: friend_requests::Requests,
     /// Bot 的联系人（ADR-0045、ADR-0050）；没接 Matrix 的核心没有。
     contacts: Option<Arc<crate::contacts::Contacts>>,
     pub(crate) federation_blocks: Option<Arc<FederationBlocks>>,
@@ -327,6 +330,7 @@ impl Gateway {
             upgrades: None,
             peers: None,
             friends: None,
+            friend_requests: friend_requests::Requests::default(),
             contacts: None,
             federation_blocks: None,
             sharing: None,

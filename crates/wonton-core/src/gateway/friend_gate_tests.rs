@@ -25,13 +25,24 @@ use crate::tunnel::Tunnel;
 use crate::{friends::Friends, shares::Shares};
 use wonton_protocol::role_path;
 
+#[path = "friend_gate_approval_tests.rs"]
+mod approval_tests;
+#[path = "friend_gate_repair_tests.rs"]
+mod friend_gate_repair_tests;
+#[path = "friend_requests_tests.rs"]
+mod friend_requests_tests;
+
 const MATRIX_HOST: &str = "matrix.wonton.localhost";
 const KID_TOKEN: &str = "kid-matrix-token";
 const REMOTE: &str = "@bob:remote.example.org";
 const LOCAL: &str = "@owner:test";
+/// 第二个家外的人：批准一个不该顺带放过他。
+const OTHER: &str = "@carol:other.example.org";
 
 struct Rig {
     app: axum::Router,
+    /// 公网入口（server_name 的 `Host`）：加好友请求的落地页在这里。
+    entry: axum::Router,
     fake: crate::matrix::fake::Fake,
     tunnel: Tunnel,
     members: Arc<crate::members::Members>,
@@ -44,6 +55,11 @@ struct Rig {
 }
 
 async fn start() -> Rig {
+    start_with(std::time::Duration::from_secs(60)).await
+}
+
+/// 同 [`start`]，卡片等多久由调用方定（过期用例要短）。
+async fn start_with(card_ttl: std::time::Duration) -> Rig {
     let dir = tempfile::tempdir().unwrap();
     let (fake, config) = crate::matrix::fake::start().await;
     let matrix = crate::matrix::Matrix::connect(&config, dir.path(), HttpClient::new())
@@ -81,27 +97,12 @@ async fn start() -> Rig {
         ImageWorker::in_process(),
     ));
     let (tunnel, members) = loopback_tunnel(dir.path()).await;
-    let roles = Arc::new(Roles::open(dir.path().join("roles.json")).unwrap());
-    let friends = Arc::new(Friends::open(dir.path().join("friends.json")).unwrap());
-    let shares = Arc::new(
-        Shares::open(
-            dir.path().join("shares.json"),
-            friends.clone(),
-            roles.clone(),
-        )
-        .unwrap(),
-    );
-    let identity = Arc::new(IdentityVerifier::new(Arc::new(|_| None)).unwrap());
-    let sharing = Arc::new(crate::gateway::sharing::Sharing::new(
-        friends.clone(),
-        shares,
-        identity,
-    ));
+    let (roles, friends, sharing) = people_stores(dir.path());
     let bus = crate::mcp::Bus::new(
         manager.clone(),
         Arc::new(crate::mcp::Confirmations::new(
             Arc::new(crate::mcp::test_support::Cards::default()),
-            std::time::Duration::from_secs(60),
+            card_ttl,
         )),
         Arc::new(crate::mcp::audit::Audit::new(
             dir.path().join("audit.jsonl"),
@@ -132,17 +133,40 @@ async fn start() -> Rig {
         .devices
         .add_if(owner_device, None, None, |_| true)
         .unwrap();
+    let gateway = Arc::new(gateway);
     Rig {
-        app: super::router(Arc::new(gateway)),
+        app: super::router(gateway.clone()),
+        entry: super::entry_router(gateway),
         fake,
         tunnel,
         members,
         roles,
         friends,
-        manager: manager.clone(),
+        manager,
         owner_device,
         _dir: dir,
     }
+}
+
+/// 角色、好友、分享三个存储；分享的可见范围跟着好友和角色走。
+fn people_stores(
+    dir: &std::path::Path,
+) -> (
+    Arc<Roles>,
+    Arc<Friends>,
+    Arc<crate::gateway::sharing::Sharing>,
+) {
+    let roles = Arc::new(Roles::open(dir.join("roles.json")).unwrap());
+    let friends = Arc::new(Friends::open(dir.join("friends.json")).unwrap());
+    let shares =
+        Arc::new(Shares::open(dir.join("shares.json"), friends.clone(), roles.clone()).unwrap());
+    let identity = Arc::new(IdentityVerifier::new(Arc::new(|_| None)).unwrap());
+    let sharing = Arc::new(crate::gateway::sharing::Sharing::new(
+        friends.clone(),
+        shares,
+        identity,
+    ));
+    (roles, friends, sharing)
 }
 
 impl Rig {
@@ -241,6 +265,93 @@ impl Rig {
         assert_eq!(status, StatusCode::OK, "{body}");
     }
 
+    /// 等管理员列表里攒到 `count` 张卡片。
+    async fn wait_cards(&self, count: usize) {
+        for _ in 0..50 {
+            let (_, cards) = self
+                .owner(Method::GET, "/_wonton/api/confirmations", Value::Null)
+                .await;
+            if cards["confirmations"]
+                .as_array()
+                .is_some_and(|list| list.len() >= count)
+            {
+                return;
+            }
+            tokio::time::sleep(std::time::Duration::from_millis(100)).await;
+        }
+        panic!("卡片没有攒到 {count} 张");
+    }
+
+    /// 公网入口上的请求：`Host` 是服务器名，没有隧道身份。
+    async fn public(&self, method: Method, path: &str) -> (StatusCode, String) {
+        let request = hyper::Request::builder()
+            .method(method)
+            .uri(path)
+            .header(header::HOST, crate::matrix::fake::SERVER)
+            .body(Body::empty())
+            .unwrap();
+        let response = self.entry.clone().oneshot(request).await.unwrap();
+        let status = response.status();
+        let bytes = axum::body::to_bytes(response.into_body(), usize::MAX)
+            .await
+            .unwrap();
+        (status, String::from_utf8_lossy(&bytes).into_owned())
+    }
+
+    /// 公网入口上表单的 POST。
+    async fn submit(&self, fields: &[(&str, &str)]) -> (StatusCode, String) {
+        let body = fields
+            .iter()
+            .map(|(key, value)| format!("{key}={}", urlencode(value)))
+            .collect::<Vec<_>>()
+            .join("&");
+        let request = hyper::Request::builder()
+            .method(Method::POST)
+            .uri("/_wonton/friend-request")
+            .header(header::HOST, crate::matrix::fake::SERVER)
+            .header(header::CONTENT_TYPE, "application/x-www-form-urlencoded")
+            .body(Body::from(body))
+            .unwrap();
+        let response = self.entry.clone().oneshot(request).await.unwrap();
+        let status = response.status();
+        let bytes = axum::body::to_bytes(response.into_body(), usize::MAX)
+            .await
+            .unwrap();
+        (status, String::from_utf8_lossy(&bytes).into_owned())
+    }
+
+    /// 成员账号数据里的邀请过滤。
+    fn filter(&self, user: &str) -> Option<Value> {
+        self.fake
+            .state()
+            .account_data
+            .get(&(
+                user.to_owned(),
+                wonton_protocol::INVITE_FILTER_EVENT.to_owned(),
+            ))
+            .cloned()
+    }
+
+    /// 账号数据里没有放过的人。
+    fn no_allowance(&self, user: &str) -> bool {
+        let filter = self.filter(user);
+        filter
+            .as_ref()
+            .and_then(|filter| filter["allowed_users"].as_array())
+            .is_none_or(|list| list.is_empty())
+    }
+
+    /// 往成员账号数据里塞已有的过滤内容（模拟他自己客户端写过的屏蔽）。
+    fn set_filter(&self, user: &str, content: Value) {
+        self.fake.state().account_data.insert(
+            (
+                user.to_owned(),
+                wonton_protocol::INVITE_FILTER_EVENT.to_owned(),
+            ),
+            content,
+        );
+    }
+
     /// 改“朋友”角色的“能打开哪些应用”。
     async fn set_open_apps(&self, plugin_ids: &[&str]) {
         let (status, body) = self
@@ -285,6 +396,19 @@ impl Rig {
         assert_eq!(status, StatusCode::OK, "{friends}");
         friends["friends"][0].clone()
     }
+}
+
+/// 表单值的百分号编码（`@`、`:` 这类都要转义）。
+fn urlencode(value: &str) -> String {
+    value
+        .bytes()
+        .map(|byte| match byte {
+            b'A'..=b'Z' | b'a'..=b'z' | b'0'..=b'9' | b'-' | b'.' | b'_' | b'*' => {
+                (byte as char).to_string()
+            }
+            other => format!("%{other:02X}"),
+        })
+        .collect()
 }
 
 fn create_room(invitees: &[&str]) -> Value {

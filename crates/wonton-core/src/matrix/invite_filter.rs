@@ -5,6 +5,10 @@
 //! 登录的）一出生就是过滤着的；“加好友”要管理员批或不能的成员，核心把名单改成“本服务器的照常、家外的一律
 //! 挡住”，角色放开时再把自己写的两份名单拿掉，成员自己写的（个人屏蔽）原样保留。
 //!
+//! 管理员批准过的外人记在 `allowed_users`（[`Matrix::allow_invitees`]）：这是核心写的第四份内容，角色放开时
+//! 不拿掉，回到受限角色照样生效，同一个人不用再批一次。Tuwunel 的求值顺序里 `allowed_users` 在个人屏蔽之前，
+//! 所以批准过的人连成员自己的 `blocked_users` 也挡不住，解屏蔽不是批准的前提。
+//!
 //! 事件类型用不稳定名：Tuwunel 只在这个名称上读名单（`org.matrix.msc4155.invite_permission_config` 的六份
 //! 名单，Tuwunel v2.0.0 `src/service/users/invite_filter.rs` 的 `LISTS_TYPE`），稳定的
 //! `m.invite_permission_config` 只认 MSC4380 的一刀切 `default_action`。六份名单的求值顺序是
@@ -106,8 +110,45 @@ fn wanted_content(stored: Option<&Value>, restricted: bool, server: &str) -> Opt
     }
 }
 
+/// 批准过的人合进现有内容：核心要的三样照写，名单里追加，别的原样保留。
+/// 已经在名单里的不重复加；账号还没有账号数据时从受限内容起步。
+fn approved_from(existing: Option<&Value>, server: &str, users: &[String]) -> Value {
+    let mut merged = existing.map_or_else(
+        || restricted_content(server),
+        |existing| restricted_from(existing, server),
+    );
+    let mut allowed: Vec<String> = list_of(&merged, "allowed_users")
+        .into_iter()
+        .map(str::to_owned)
+        .collect();
+    for user in users {
+        if !allowed.iter().any(|present| present == user) {
+            allowed.push(user.clone());
+        }
+    }
+    merged["allowed_users"] = json!(allowed);
+    merged
+}
+
 impl Matrix {
-    /// 发登录令牌前对齐邀请过滤：账号还没有就建号（登录即建号）并写上这个角色该有的内容；
+    /// 管理员批准了这些人：记进账号的 `allowed_users`，之后他们发来的邀请就是放行的。
+    /// 要在这个成员还在管理员批的状态下调用（角色放开的不用记）；账号还没有就顺带建号。
+    pub async fn allow_invitees(
+        &self,
+        localpart: &str,
+        users: &[String],
+    ) -> Result<(), MatrixError> {
+        if users.is_empty() {
+            return Ok(());
+        }
+        let server = self.server_name.clone();
+        let users = users.to_vec();
+        self.login_write(localpart, move |stored| {
+            Ok(Some(approved_from(stored.as_ref(), &server, &users)))
+        })
+        .await
+    }
+
     /// 已有的按“加好友”项改。写不进去就不发令牌，账号不能带着没过滤的状态上线。
     pub async fn ensure_invite_filter(
         &self,
@@ -261,6 +302,37 @@ mod tests {
             wanted_content(Some(&member_wrote), false, "home.test"),
             None,
             "核心没写过的内容不动"
+        );
+    }
+
+    #[test]
+    fn approval_appends_to_the_allow_list_and_keeps_blocks() {
+        let existing =
+            json!({"enabled": true, "blocked_users": ["@spam:x"], "allowed_users": ["@a:x"]});
+        assert_eq!(
+            approved_from(
+                Some(&existing),
+                "home.test",
+                &["@b:y".to_owned(), "@a:x".to_owned()]
+            ),
+            json!({
+                "enabled": true,
+                "blocked_users": ["@spam:x"],
+                "allowed_users": ["@a:x", "@b:y"],
+                "allowed_servers": ["home.test"],
+                "blocked_servers": ["*"],
+            }),
+            "已经在名单里的不重复加，个人屏蔽不动"
+        );
+    }
+
+    #[test]
+    fn relaxation_keeps_approvals() {
+        let approved = approved_from(None, "home.test", &["@b:y".to_owned()]);
+        assert_eq!(
+            relaxed_from(&approved, "home.test"),
+            Some(json!({"enabled": true, "allowed_users": ["@b:y"]})),
+            "角色放开时批准过的人留着"
         );
     }
 }
