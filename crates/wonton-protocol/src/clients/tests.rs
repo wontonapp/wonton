@@ -191,6 +191,7 @@ fn clients_settings() -> ClientsSettingsViewModel {
         state: ClientsState::Ready,
         public_access: PublicAccess { enabled: true },
         public_reach: PublicReach::Reachable,
+        gates: Some(gates()),
         ingress: Some(ingress()),
         domain: Some(domain()),
         can_enable: true,
