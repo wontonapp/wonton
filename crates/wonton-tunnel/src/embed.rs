@@ -56,7 +56,8 @@ pub struct PeerStream {
 }
 
 impl PeerStream {
-    pub(crate) fn new(remote: EndpointId, send: SendStream, recv: RecvStream) -> Self {
+    /// 包一条已经接受的流：嵌入方自己接流（例如自己的 accept 循环、测试夹具）而不是经 [`TunnelListener`] 时用。
+    pub fn new(remote: EndpointId, send: SendStream, recv: RecvStream) -> Self {
         Self {
             remote,
             send,

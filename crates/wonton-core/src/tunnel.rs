@@ -346,6 +346,10 @@ async fn serve_stream(stream: PeerStream, app: Router) {
 }
 
 #[cfg(test)]
+#[path = "tunnel_close_tests.rs"]
+mod tunnel_close_tests;
+
+#[cfg(test)]
 mod tests {
     use std::time::Duration;
 
