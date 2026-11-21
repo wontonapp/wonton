@@ -7,8 +7,9 @@
 
 dev_guard_dir() {
   local dir="${WONTON_INSTALL_DIR:-/opt/wonton}" real
-  # 正式安装目录可能是 root 700（1k 上的 /opt/wonton）：cd 不进去。先规范化成真路径再比前缀，相对路径、带 ..
-  # 和符号链接都落回同一处；realpath -m 不用目录存在、也不用读得进去。
+  # 正式安装目录可能是 root 700（主机上的 /opt/wonton），cd 不进去。先规范化成真路径再比前缀，相对路径、带 ..
+  # 和符号链接都落回同一处；realpath -m 不用目录存在、也不用读得进去。解析不了（如符号链接自环）就按配置的路径比：
+  # 过去 `cd` 失败把路径置成空串，判据成了根目录，每个目录都被当成“在正式安装目录里”。
   if real="$(realpath -m -- "$dir" 2>/dev/null)" && [[ -n "$real" ]]; then dir="$real"; fi
   printf '%s/\n' "${dir%/}"
 }

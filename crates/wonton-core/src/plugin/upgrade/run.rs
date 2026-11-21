@@ -414,7 +414,14 @@ impl PluginManager {
         ))
         .await?;
         let (upstream, models, mcp) = self
-            .deploy_upstreams(manifest, &network, &mut secrets, deadline, &langs)
+            .deploy_upstreams(
+                manifest,
+                &network,
+                &mut secrets,
+                super::super::secrets::CollectMissing::Fail,
+                deadline,
+                &langs,
+            )
             .await?;
         let firewalled = self
             .host_webui_firewalled(manifest, &plan.relays, &network)

@@ -1,0 +1,132 @@
+# AutoBangumi：按 RSS 自动追番，网页经云吞网关访问（sso: none，应用自己的登录）；
+# RSS 刷新、元数据和海报要出网；下载器经 torrent_client 能力（qBittorrent Web API）连接，
+# 文件在下载器侧，硬链接到媒体库时需要读 downloads、写 media。
+services:
+  # 一次性服务：首次启动前把下载器地址写进配置（仅当配置还不存在且能力地址已注入）。
+  # 不写时 AB 用出厂默认配置，首次打开网页会走它自己的设置向导。
+  seed:
+    image: ghcr.io/estrellaxd/auto_bangumi:4.0.0@sha256:d2e2955b5e4caf345b4325db7bee150e861afaae5911181e5bd5646ddbcb66be
+    entrypoint: ["/bin/sh", "/seed.sh"]
+    environment:
+      # requires torrent_client 注入的使用方地址；能力未注入时（依赖尚未支持）留空跳过。
+      WONTON_TORRENT_CLIENT_URL: ${WONTON_TORRENT_CLIENT_URL:-}
+    volumes:
+      - ${WONTON_APP_DATA}/config:/app/config
+    configs:
+      - source: seed
+        target: /seed.sh
+    network_mode: none
+    restart: "no"
+
+  autobangumi:
+    image: ghcr.io/estrellaxd/auto_bangumi:4.0.0@sha256:d2e2955b5e4caf345b4325db7bee150e861afaae5911181e5bd5646ddbcb66be
+    depends_on:
+      seed:
+        condition: service_completed_successfully
+    environment:
+      TZ: ${TZ}
+      PUID: ${PUID}
+      PGID: ${PGID}
+    volumes:
+      - ${WONTON_APP_DATA}/config:/app/config
+      - ${WONTON_APP_DATA}/data:/app/data
+      # 硬链接到媒体库：读下载文件（改名经下载器 API，不写这里），写媒体库给 Jellyfin 看。
+      - ${WONTON_SHARE_DOWNLOADS}:/downloads:ro
+      - ${WONTON_SHARE_MEDIA}:/media
+    stop_grace_period: 30s
+    healthcheck:
+      # /health 免鉴权且总返回 200，断言 body 里的 db_ok 才是真查过数据库。
+      test: ["CMD", "python", "-c", "import json,urllib.request as u; r=json.load(u.build_opener(u.ProxyHandler({})).open('http://127.0.0.1:7892/health', timeout=3)); assert r['db_ok']"]
+      interval: 30s
+      timeout: 5s
+      retries: 3
+      start_period: 60s
+      start_interval: 2s
+
+  # 一次性服务：给核心的 MCP 总线签发 AB 的 MCP 令牌（AB 的 /mcp 只认令牌，
+  # mcp_whitelist 默认拒绝一切 IP 访问）。令牌存应用数据库，容器重建仍有效；
+  # 已有有效令牌就复用，不重复签发。
+  mcp-token:
+    image: curlimages/curl:8.23.0@sha256:3fb7e13e5d179a845c97d78204f3f1064d1907037f26a3ebf91710571151fd93
+    entrypoint: ["/bin/sh", "/init.sh"]
+    user: "${PUID}:${PGID}"
+    volumes:
+      - ${WONTON_APP_DATA}/mcp:/bridge
+    configs:
+      - source: mcp_init
+        target: /init.sh
+    depends_on:
+      autobangumi:
+        condition: service_healthy
+    restart: "no"
+
+configs:
+  seed:
+    file: config/seed.sh
+  mcp_init:
+    file: config/mcp-token.sh
+
+x-wonton:
+  spec: "0.13"
+  id: org.autobangumi.autobangumi
+  version: 0.1.0
+  kind: app
+  title: { zh: 自动追番（AutoBangumi）, en: Anime Auto-Downloader (AutoBangumi) }
+  description:
+    zh: 像订追剧日历一样自动追新番：番剧一更新就自动下载、改好名字放进媒体库
+    en: Follows new anime for you — each new episode is downloaded, renamed and filed into your media library automatically
+  icon: icon.svg
+  notices: [NOTICE]
+  screenshots: [screenshots/home.png]
+  author: { name: geraldpeng6, url: https://github.com/geraldpeng6 }
+  homepage: https://www.autobangumi.org
+  # 应用（AutoBangumi）的许可证；插件包自己的许可证写在仓库的 LICENSE 里。
+  license: MIT
+  tags:
+    zh: [下载, 追番, 动漫]
+    en: [Downloads, Anime]
+  about:
+    zh: |
+      把想看的番加进来，之后不用管：到了更新时间自动从 RSS 抓种子、交给下载工具下载，改好名字放进媒体库文件夹。
+
+      第一次打开用账号 admin、密码 adminadmin 登录，登录后请马上在设置里改密码。装了下载工具（qBittorrent）插件的话，下载器已经配好，直接粘贴蜜柑计划的 RSS 链接就能用。在设置的插件页可以打开「硬链接到媒体库」，整理好的剧集会以硬链接放进媒体库共享文件夹（Jellyfin 直接能看），下载目录继续做种不受影响。
+
+      机器人能查追番列表、搜番、订阅和退订、看下载进度。追番需要访问外网（RSS、番剧资料和海报），家里断网时它会把失败如实标出来。
+    en: |
+      Add a show once and leave it: AutoBangumi grabs new episodes from RSS at air time, sends them to your download app, and renames and files them into your media library folder.
+
+      Sign in the first time with admin / adminadmin and change the password right away in settings. With the qBittorrent plugin installed the downloader is already configured — paste your Mikan RSS link and you are done. In Settings → Plugins you can enable "Hardlink to media library": finished episodes are hardlinked into the media shared folder (Jellyfin picks them up) while the download directory keeps seeding.
+
+      A bot can list your subscriptions, search anime, subscribe or unsubscribe, and check download progress. Needs internet access for RSS, anime metadata and posters; failures are reported honestly when offline.
+  release_notes:
+    zh: 首个版本：RSS 自动追番、自动改名整理，qBittorrent 插件装上即配好，机器人可查列表、订阅和看进度。
+    en: First release with RSS anime auto-downloading and renaming; the downloader is pre-configured when the qBittorrent plugin is installed, and the bot can list, subscribe and track progress.
+  setup:
+    zh: 第一次打开用 admin / adminadmin 登录并马上改密码，然后粘贴你的蜜柑计划 RSS 链接。
+    en: Sign in with admin / adminadmin, change the password, then paste your Mikan RSS link.
+  webui:
+    service: autobangumi
+    port: 7892
+    sso: none
+  mcp:
+    service: autobangumi
+    port: 7892
+    path: /mcp
+    transport: streamable-http
+    headers:
+      Authorization: Bearer {secret:mcp_token}
+  secrets:
+    mcp_token:
+      collect: { service: mcp-token, path: /bridge/token }
+  requires: [torrent_client]
+  permissions:
+    # RSS 刷新、TMDB/Bangumi 元数据和海报要出网。
+    - network.egress
+    # 硬链接到媒体库：读下载目录里的文件。
+    - storage.share.downloads:read
+    # 硬链接要写进媒体库共享文件夹。
+    - storage.share.media:write
+  requirements:
+    arch: [amd64, arm64]
+    # 上游没写最低内存；Python 单进程，按本机空闲实测取整。
+    memory: 256M
