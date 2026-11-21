@@ -257,6 +257,8 @@ impl Domain {
         Ok(DomainSettings {
             suffix: fixed.clone().or(store.suffix.clone()),
             suffix_editable: fixed.is_none(),
+            home: None,
+            tail: None,
             provider: store.provider.clone(),
             credentials_set: store.has_credentials(),
             terms_accepted: store.terms_accepted,

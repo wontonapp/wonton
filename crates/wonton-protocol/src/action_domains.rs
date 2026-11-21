@@ -2,10 +2,10 @@ use serde::{Deserialize, Serialize};
 
 use crate::{
     Answer, AvatarUpload, BotActivity, BotRef, ChatLayoutChoice, ChatLayoutTarget, DeviceNetwork,
-    FileId, FontStyle, FriendBlockScope, FriendBlockTarget, InstallPreview, MatrixOidcCallback,
-    MatrixOidcLogin, MatrixPasswordLogin, NotificationCategory, OnboardingTip, PluginAudience,
-    PushEndpoint, PushMethod, Rgb, SecretString, ShareGrantUpdate, TabRef, TextSize, ThemeMode,
-    UploadSource,
+    EntryKind, FileId, FontStyle, FriendBlockScope, FriendBlockTarget, InstallPreview,
+    MatrixOidcCallback, MatrixOidcLogin, MatrixPasswordLogin, NotificationCategory, OnboardingTip,
+    PluginAudience, PushEndpoint, PushMethod, PutDomainRequest, PutIngressRequest, Rgb,
+    SecretString, ShareGrantUpdate, TabRef, TextSize, ThemeMode, UploadSource,
 };
 
 /// 会话列表的操作。
@@ -643,4 +643,39 @@ pub enum SharingAction {
         owner_user_id: String,
         plugin_id: String,
     },
+}
+
+/// 公网访问、入口和访客链接的操作（ADR-0021、ADR-0089、ADR-0090）。
+#[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize)]
+#[cfg_attr(feature = "uniffi", derive(uniffi::Enum))]
+#[serde(tag = "type", rename_all = "snake_case")]
+pub enum ClientsAction {
+    /// 取客户端入口列表（`GET` [`clients_path`](crate::clients_path)），结果在
+    /// [`ClientsViewModel::plugins`](crate::ClientsViewModel::plugins)。
+    Refresh,
+    /// 开或关一个入口（`PUT` [`clients_entry_path`](crate::clients_entry_path)）；`kind` 是哪个入口。
+    SetEntry {
+        id: String,
+        kind: EntryKind,
+        enabled: bool,
+    },
+    /// 保存后缀、服务商和凭据（`PUT` [`clients_domain_path`](crate::clients_domain_path)）。
+    SaveDomain { request: PutDomainRequest },
+    /// 换公网入口（`PUT` [`clients_ingress_path`](crate::clients_ingress_path)）；旧连接器先撤掉。
+    SaveIngress { request: PutIngressRequest },
+    /// 公网访问总开关（`PUT` [`clients_public_access_path`](crate::clients_public_access_path)）。
+    SetPublicAccess { enabled: bool },
+    /// 取一个应用的访客链接（`GET` [`clients_guests_path`](crate::clients_guests_path)）。
+    RefreshGuests { id: String },
+    /// 新建一条访客链接（`POST` [`clients_guests_path`](crate::clients_guests_path)）。
+    CreateGuest {
+        id: String,
+        label: String,
+        ttl_seconds: u32,
+        path: Option<String>,
+    },
+    /// 收回一条访客链接（`DELETE` [`clients_guest_path`](crate::clients_guest_path)）；下一个请求就失效。
+    RevokeGuest { id: String, guest: String },
+    /// 取入口、证书、闸门和自检（`GET` [`clients_status_path`](crate::clients_status_path)）。
+    RefreshStatus,
 }

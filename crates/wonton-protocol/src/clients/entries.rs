@@ -9,7 +9,8 @@ use super::passwords::PasswordSummary;
 #[cfg_attr(feature = "uniffi", derive(uniffi::Record))]
 pub struct PublicRules {
     pub mode: PublicRuleMode,
-    /// 清单里的原文，每条以 `/` 开头；放行的按前缀匹配，挡掉的按完整路径匹配。
+    /// 清单里的原文，每条以 `/` 开头。放行和挡掉都按整段前缀、不分大小写匹配：`/share` 管到 `/share` 和
+    /// `/share/...`，管不到 `/sharex`。
     pub paths: Vec<String>,
 }
 

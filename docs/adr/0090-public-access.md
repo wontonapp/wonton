@@ -66,7 +66,8 @@ Home Assistant 的教训：cloudhook 关了 Remote UI 还开着、单个关掉�
 
 照 Umbrel 给 n8n 的做法，不另造组件：
 
-- 插件用 `clients.http` + `auth: app` + `public.allow` 列出回调路径，公网上只有这几条能到应用；其余路径只在局域网入口和 App 里能用。
+- 插件用 `clients.http` + `auth: app` + `public.allow` 列出回调路径（按整段前缀匹配，和 `public.deny` 一样），公网上只有这几条能到应用；
+  其余路径只在局域网入口和 App 里能用。
   n8n 的例子：
 
   ```yaml
@@ -133,12 +134,14 @@ Halo 这类就是 `clients.http` + `auth: app` + `public.deny` 挡掉后台和�
 | 方法 | 路径 | 说明 |
 | --- | --- | --- |
 | GET、PUT | `/_wonton/clients/domain` | 后缀、DNS 服务商和凭据（只写不读）、订户协议的勾选（ADR-0089） |
-| GET、PUT | `/_wonton/clients/ingress` | 入口的种类和它的设置（只写不读的令牌）；总开关 |
+| GET、PUT | `/_wonton/clients/ingress` | 入口的种类和它的设置（只写不读的令牌） |
+| PUT | `/_wonton/clients/public-access` | 总开关，请求体 `{"enabled": true}`；关掉时三道闸门逐一执行 |
 | GET、POST | `/_wonton/clients/{id}/guests` | 列出、新建访客链接，请求体 `{"label", "ttl_seconds", "path"}`，`ttl_seconds` 超过 7 天回 400 `invalid_input` |
 | GET、DELETE | `/_wonton/clients/{id}/guests/{链接 id}` | 取地址（记审计）；收回 |
 | GET | `/_wonton/clients/status` | ADR-0021 已有，加上：入口种类、总开关和三道闸门各自的状态、当前公开的应用、路径和访客链接 |
 
-新错误类别：`entry_closed`（409，入口没开）、`ingress_unavailable`（503，连接器起不来或连不上，附详情）、`public_access_off`（409，总开关关着）。
+新错误类别：`entry_closed`（入口没开：访客接口回 409；入口页面上是 403 的“链接已失效或不对”，页面正文不是 API）、
+`ingress_unavailable`（503，连接器起不来或连不上，附详情）、`public_access_off`（409，总开关关着）。
 其余用 ADR-0021 的。
 
 ### 8. 契约、提供方、消费方和契约测试
