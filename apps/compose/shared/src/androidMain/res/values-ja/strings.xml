@@ -116,7 +116,7 @@
     <string name="owner_secrets_problem_other">キーを読み込めませんでした。もう一度お試しください。</string>
     <!-- 添付シート：下端のタブ。端末のアルバムを写真グリッドで開く。 -->
     <string name="attach_album">アルバム</string>
-    <!-- 添付シート：選んだ写真を送る前に加えるボタン。引数：枚数。 -->
+    <!-- 添付シート：写真を選ぶと下に出るひとこと欄。写真と一緒に送信される。 -->
     <string name="sheet_note_hint">ひとこと添える</string>
     <!-- 添付シート：アルバムに写真がない。 -->
     <string name="attach_album_empty">アルバムに写真がありません</string>
