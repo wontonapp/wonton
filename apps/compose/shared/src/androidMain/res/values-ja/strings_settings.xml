@@ -4,6 +4,11 @@
     <string name="settings_appearance">外観</string>
     <string name="settings_nav_bar">ナビゲーションバー</string>
     <string name="settings_about">Wontonについて</string>
+    <string name="settings_privacy">プライバシー</string>
+    <string name="settings_licenses">オープンソースライセンス</string>
+    <string name="settings_licenses_value">%1$d 件</string>
+    <string name="settings_licenses_problem">アプリ内のライセンス一覧を読めませんでした。</string>
+    <string name="settings_licenses_text">全文</string>
     <string name="settings_version">バージョン</string>
     <string name="settings_toolbar">設定</string>
     <string name="settings_toolbar_update">設定、新しいバージョンあり</string>

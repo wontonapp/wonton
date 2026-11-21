@@ -23,6 +23,7 @@ import app.wonton.protocol.OnboardingAction
 import app.wonton.protocol.AppearanceViewModel
 import app.wonton.protocol.ChatViewModel
 import app.wonton.protocol.HomeViewModel
+import app.wonton.protocol.LicenseGroup
 import app.wonton.protocol.ServerName
 import app.wonton.protocol.SettingsEntry
 import app.wonton.protocol.SettingsViewModel
@@ -57,8 +58,13 @@ fun SettingsPage(
     LaunchedEffect(core) { core.send(Action.Friends(FriendsAction.RefreshFriends)) }
     val back = { onSubpage(subpage.parent()) }
     val version = appVersion()
+    val licenses = rememberLicenses(core)
+    var openedLicense by remember { mutableStateOf<LicenseGroup?>(null) }
     var rejection by remember { mutableStateOf<Problem?>(null) }
-    BackHandler(enabled = subpage != SettingsSubpage.MAIN, onBack = back)
+    BackHandler(enabled = subpage != SettingsSubpage.MAIN) {
+        // 在许可全文里先回列表，再按一次才离开关于页。
+        if (openedLicense != null) openedLicense = null else back()
+    }
     when (subpage) {
         SettingsSubpage.MY_APPS -> MyAppsSettingsScreen(back, open, checkInstalled)
         SettingsSubpage.BACKUP -> ChatBackupScreen(
@@ -75,7 +81,16 @@ fun SettingsPage(
         }
         SettingsSubpage.NOTIFICATIONS -> NotificationSettingsScreen(core, settings, back)
         SettingsSubpage.APP_LOCK -> AppLockSettingsScreen(core, appLock, back)
-        SettingsSubpage.ABOUT -> AboutPage(version, back)
+        SettingsSubpage.ABOUT -> AboutPage(
+            version, licenses, onBack = back,
+            onOpenPrivacy = { onSubpage(SettingsSubpage.PRIVACY) },
+            onOpenLicenses = { openedLicense = null; onSubpage(SettingsSubpage.LICENSES) },
+        )
+        SettingsSubpage.PRIVACY -> PrivacyPage(core, back)
+        SettingsSubpage.LICENSES -> when (val license = openedLicense) {
+            null -> LicensesPage(licenses, onOpen = { openedLicense = it }, back)
+            else -> LicenseTextPage(license, back = { openedLicense = null })
+        }
         SettingsSubpage.PEERS -> PeersPage(core, back, peersOpenRequests, onPeersOpenRequestsHandled)
         SettingsSubpage.FRIENDS -> FriendsPage(core, back)
         SettingsSubpage.MAIN -> WontonScreen(bar = {
@@ -186,11 +201,36 @@ private fun SettingsEntryRow(
 }
 
 @Composable
-private fun AboutPage(version: String, onBack: () -> Unit) {
+private fun AboutPage(
+    version: String,
+    licenses: LicensesLoad,
+    onBack: () -> Unit,
+    onOpenPrivacy: () -> Unit,
+    onOpenLicenses: () -> Unit,
+) {
     WontonScreen(bar = { WontonPushedBar(stringResource(R.string.settings_about), onBack) }) {
-        Column(Modifier.fillMaxSize().verticalScroll(rememberScrollState())
-            .wontonContentPadding().padding(WontonTheme.spacing.pageInset)) {
+        Column(
+            Modifier.fillMaxSize().verticalScroll(rememberScrollState())
+                .wontonContentPadding().padding(WontonTheme.spacing.pageInset),
+            verticalArrangement = Arrangement.spacedBy(WontonTheme.spacing.sectionGap),
+        ) {
             WontonGroup { WontonRow(stringResource(R.string.settings_version), version) }
+            WontonGroup {
+                WontonRow(
+                    stringResource(R.string.settings_privacy),
+                    showsForward = true,
+                    onClick = onOpenPrivacy,
+                )
+                WontonSeparator()
+                WontonRow(
+                    stringResource(R.string.settings_licenses),
+                    (licenses.result?.getOrNull())?.licenses?.size?.let {
+                        stringResource(R.string.settings_licenses_value, it)
+                    },
+                    showsForward = true,
+                    onClick = onOpenLicenses,
+                )
+            }
         }
     }
 }

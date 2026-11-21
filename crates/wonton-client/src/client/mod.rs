@@ -10,10 +10,11 @@ use wonton_protocol::{
     AddedSource, AppLockTimeout, AppLockViewModel, AppearanceViewModel, AvatarUpload, ChatContact,
     ChatViewModel, ComposerDraft, CoreError, FileCard, FileCardActions, FileFailure, FileId,
     FileInfo, FileOperation, FileProblem, FriendsViewModel, HomeViewModel, InstallPreview,
-    LanChoice, LanSettings, Me, MediaHandle, MyAvatarProblem, OnboardingViewModel,
-    OwnerProfileUpdate, PagesViewModel, PeersViewModel, PluginDetail, PluginImage,
-    PluginsViewModel, RoomTransfers, SecretString, ServersViewModel, SessionListViewModel,
-    SettingsViewModel, StoreItem, TimelineTarget, TransfersViewModel,
+    LanChoice, LanSettings, LicensesViewModel, Me, MediaHandle, MyAvatarProblem,
+    OnboardingViewModel, OwnerProfileUpdate, PagesViewModel, PeersViewModel, PluginDetail,
+    PluginImage, PluginsViewModel, PrivacyViewModel, RoomTransfers, SecretString,
+    ServersViewModel, SessionListViewModel, SettingsViewModel, StoreItem, TimelineTarget,
+    TransfersViewModel,
 };
 
 use crate::app_lock::AppLockLink;
@@ -197,6 +198,16 @@ impl ClientCore {
     /// 当前的设置首页，用于首帧渲染。
     pub fn settings(&self) -> SettingsViewModel {
         self.views().settings.borrow().clone()
+    }
+
+    /// 关于页里的隐私说明，按当前语言返回。
+    pub fn privacy(&self) -> PrivacyViewModel {
+        crate::about::privacy()
+    }
+
+    /// 关于页里的开源许可：`licenses_json` 是 App 资源里构建时生成的清单，解析不了时返回 `InvalidInput`。
+    pub fn licenses(&self, licenses_json: String) -> Result<LicensesViewModel, CoreError> {
+        crate::about::licenses(&licenses_json)
     }
 
     /// 订阅设置首页，语义同 [`subscribe_session_list`](Self::subscribe_session_list)。

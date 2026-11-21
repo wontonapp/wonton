@@ -8,6 +8,7 @@
 #[cfg(feature = "uniffi")]
 uniffi::setup_scaffolding!();
 
+mod about;
 mod action;
 mod action_domains;
 mod agent_chain;
@@ -72,6 +73,9 @@ mod timeline_jump;
 mod verification;
 mod widget;
 
+pub use about::{
+    LicenseComponent, LicenseGroup, LicensesViewModel, PrivacySection, PrivacyViewModel,
+};
 pub use action::Action;
 pub use action_domains::{
     BotAction, BotContactAction, ChatAction, ClientsAction, FamilyAction, FileAction,

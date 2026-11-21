@@ -4,6 +4,11 @@
     <string name="settings_appearance">外觀</string>
     <string name="settings_nav_bar">底部導覽列</string>
     <string name="settings_about">關於</string>
+    <string name="settings_privacy">隱私</string>
+    <string name="settings_licenses">開源授權</string>
+    <string name="settings_licenses_value">%1$d 項授權</string>
+    <string name="settings_licenses_problem">讀不到 App 裡的授權清單。</string>
+    <string name="settings_licenses_text">全文</string>
     <string name="settings_version">版本</string>
     <string name="settings_toolbar">設定</string>
     <string name="settings_toolbar_update">設定，有新版本</string>

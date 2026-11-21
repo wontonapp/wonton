@@ -8,7 +8,15 @@
     <string name="settings_nav_bar">Navigation bar</string>
     <!-- Settings row and page title for the version and licenses. No arguments. -->
     <string name="settings_about">About</string>
+    <!-- Settings row and page title for the privacy statement. No arguments. -->
+    <string name="settings_privacy">Privacy</string>
+    <!-- Settings row and page title for the bundled open source license list. No arguments. -->
+    <string name="settings_licenses">Open source licenses</string>
+    <!-- Value of the licenses row: how many components the list covers. Argument: the count. -->
+    <string name="settings_licenses_value">%1$d licenses</string>
     <!-- Row on the About page and value label of the version. No arguments. -->
+    <string name="settings_licenses_problem">Couldn't read the license list from the app bundle.</string>
+    <string name="settings_licenses_text">Full text</string>
     <string name="settings_version">Version</string>
     <!-- Settings row title that restarts the setup steps. No arguments. -->
     <string name="settings_show_setup_again">Watch setup again</string>
