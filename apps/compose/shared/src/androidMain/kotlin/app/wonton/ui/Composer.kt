@@ -147,13 +147,11 @@ fun Composer(
     }
     // 命令列表由“/”或菜单键打开，菜单键本身不动草稿；返回键先收列表。
     var menuOpen by rememberSaveable { mutableStateOf(false) }
-    val query = commandQuery(draft, commands)
-    LaunchedEffect(draft) {
-        if (!draft.startsWith("/")) menuOpen = false else if (query.isNotEmpty()) menuOpen = true
-    }
-    // 草稿没以“/”开头时菜单键给整张表；以“/”开头时只给匹配的那几条。
-    val shown = if (draft.startsWith("/")) query else commands
-    val listShown = menuOpen && shown.isNotEmpty()
+    // 刚点出去的那句：草稿还是它时不再按它弹列表，动一个字才恢复。
+    var sentSlash by rememberSaveable { mutableStateOf("") }
+    LaunchedEffect(draft) { menuOpen = commandMenuAfterEdit(menuOpen, draft) }
+    val shown = commandList(draft, menuOpen, sentSlash, commands)
+    val listShown = shown.isNotEmpty()
     LaunchedEffect(listShown) { onCommandListShown(listShown) }
     BackHandler(enabled = listShown) { menuOpen = false }
     ComposerStack(
@@ -170,7 +168,10 @@ fun Composer(
         onCommandSent = onCommandSent,
         onReject = onReject,
         listShown = listShown,
-        onPicked = { menuOpen = false },
+        onPicked = {
+            menuOpen = false
+            sentSlash = draft
+        },
     )
     AgentStopNotice(agentStop)
     ComposerBar(
@@ -188,13 +189,6 @@ fun Composer(
         onMenu = { menuOpen = !menuOpen },
     )
     attach.chooser()
-}
-
-/** 草稿以“/”开头时按名字前缀过滤命令（ADR-0109）：名字里可以有空格，打完一条命令再打参数就不匹配了。 */
-internal fun commandQuery(draft: String, commands: List<RoomCommand>): List<RoomCommand> {
-    if (!draft.startsWith("/")) return emptyList()
-    val query = draft.removePrefix("/")
-    return commands.filter { it.name.startsWith(query, ignoreCase = true) }
 }
 
 /** 输入框上方跟着草稿变的那一摞：引导、回复、附件区和命令菜单。 */
