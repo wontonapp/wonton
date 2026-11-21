@@ -377,7 +377,7 @@ impl Bus {
         }
     }
 
-    /// 请冻结收件人确认，等到回答或者过期。
+    /// 请冻结收件人确认，等到回答或者过期。卡片认到调用头里的链，停链时随停撤回。
     pub(super) async fn ask_for(
         &self,
         caller: &Caller,
@@ -385,7 +385,14 @@ impl Bus {
         draft: Draft,
     ) -> Result<Ticket, Refusal> {
         let audience = self.audience(caller, subject).await;
-        self.confirmations.ask_as(&caller.id, draft, audience).await
+        let (card, answered) = self.confirmations.open_as(&caller.id, draft, audience)?;
+        // 停链抢在开卡片和绑卡片之间时，停链那一遍已经收不到这张卡片了：绑上之后回查，是停的就当场撤回。
+        if super::chain_card::bind_card(self, caller, None, &card.id, "工具卡片")
+            == super::chain_card::Bound::Withdrawn
+        {
+            return Err(Refusal::Cancelled);
+        }
+        self.confirmations.wait(card, answered).await
     }
 
     /// Bot 的主房间是它和归属人的私聊（共享 Bot 是和主人的）：收件人是这个人时，主房间就是两边都在的房间。

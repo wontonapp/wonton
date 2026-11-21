@@ -374,7 +374,9 @@ async fn a_call_header_picks_its_own_turn_among_two() {
     let card = send.s.cards.wait_for(1).await;
     send.s.bus.stop_chain(&chain).await.unwrap();
 
-    assert!(failed(&asking.await.unwrap()));
+    let result = asking.await.unwrap();
+    assert!(failed(&result));
+    assert_eq!(failure_kind(&result).as_deref(), Some("chain_stopped"));
     assert!(matches!(
         send.s.bus.confirmations().card(&card.id).unwrap().state,
         ConfirmationState::Failed { .. }
@@ -425,4 +427,67 @@ fn session_header_chain(send: &Send, caller: &Caller, session: &str) -> (String,
     headers.insert(wonton_protocol::SESSION_HEADER, session.parse().unwrap());
     super::server::chain_session(&send.s.bus, caller, Some(&headers))
         .expect("调用头里的会话认得出来")
+}
+
+/// 卡片开出来、认到链之后，停链抢在绑卡之前插进来：绑上就要立刻撤回，批准不再生效。
+#[tokio::test]
+async fn a_card_bound_after_the_stop_is_withdrawn() {
+    let send = send_setup().await;
+    send.s.members.invite(member("mom", "妈妈")).unwrap();
+    let caller = chain_caller(&send, "sess-owner", "@owner:wonton.localhost");
+    let chain = caller.chain.clone().unwrap();
+    let mut bare = caller.clone();
+    bare.chain = None;
+    bare.session = None;
+    // 复刻 ask_and_enqueue 的空隙：开卡片 → 认链 →（停链插进来）→ 绑卡。
+    let draft = super::Draft {
+        title: "发给妈妈".into(),
+        lines: vec![super::cards::line("停了再说")],
+        choices: vec![wonton_protocol::CardChoice {
+            answer: Answer::Approve,
+            label: "批准".into(),
+            choice_id: None,
+        }],
+        scope: None,
+        plugin_id: Some(ID.into()),
+        secret_inputs: Vec::new(),
+        settings: None,
+        category: None,
+        permissions: Vec::new(),
+        devices: Vec::new(),
+    };
+    let (card, _answered) = send
+        .s
+        .bus
+        .confirmations()
+        .open_as(&bare.id, draft, super::Audience::default())
+        .unwrap();
+    let resolved = send.chains.ledger().live_turn_chain(
+        bare.id.as_str(),
+        "main",
+        Some("@owner:wonton.localhost"),
+    );
+    assert_eq!(resolved.as_deref(), Some(chain.as_str()), "先认到了这一轮");
+    let stop = send.s.bus.stop_chain(&chain).await.unwrap();
+    assert!(stop.cards.is_empty(), "停链时这张卡片还没绑上");
+
+    // 停链之后才轮到绑卡：绑上立刻撤回，不等 deliver。
+    assert_eq!(
+        super::chain_card::bind_card(&send.s.bus, &bare, Some(&chain), &card.id, "发消息卡片"),
+        super::chain_card::Bound::Withdrawn,
+        "停链后绑上的卡片要当场撤回"
+    );
+    let state = send.s.bus.confirmations().card(&card.id).unwrap().state;
+    assert!(
+        matches!(state, ConfirmationState::Failed { .. }),
+        "卡片撤回成结果：{state:?}"
+    );
+    // 批准不再生效。
+    assert!(matches!(
+        send.s
+            .bus
+            .confirmations()
+            .answer(&card.id, Answer::Approve, None),
+        Err(super::AnswerError::AlreadyAnswered)
+    ));
 }

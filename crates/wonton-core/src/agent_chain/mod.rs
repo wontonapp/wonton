@@ -332,7 +332,12 @@ impl Chains {
         })
     }
 
-    /// 登记一张带这条链的卡片（权限卡片、上限卡片），停链时随活会话一起交出撤回。
+    /// 链现在的状态；没有这条链时是 `None`。绑卡之后回查一眼，不必拼整行。
+    pub fn status(&self, chain_id: &str) -> Option<AgentChainStatus> {
+        self.read(|state| state.chains.get(chain_id).map(|chain| chain.status))
+    }
+
+    /// 登记一张带这条链的卡片（发消息卡片、权限卡片、上限卡片、插件工具卡片），停链时随活会话一起交出撤回。
     pub fn bind_card(&self, chain_id: &str, card_id: &str) -> Result<(), ChainLedgerError> {
         let mut state = self.state.lock().expect("agent chain ledger lock poisoned");
         if !state.chains.contains_key(chain_id) {
@@ -376,6 +381,7 @@ impl Chains {
 
     /// 这个 Bot 眼下活着的那一轮在哪条链上：报出的说话人对得上的候选里挑最近开始的那一轮。
     ///
+    /// 说话人认不出（远端好友之类）时不按人过滤，任何活轮次都算候选。
     /// 工具调用自己不带链、也没带会话头（插件没认出这一轮）时靠它把卡片认到链上。挑最近一轮不是硬保证：
     /// 同时开着两轮、报的又是同一个人时分不开，卡片可能认到另一条链，停那条链会把它撤回、这一轮要发再说一句。
     /// 没有活着的轮次就不认——猜错比不认更糟，停链会撤回别人的卡片。

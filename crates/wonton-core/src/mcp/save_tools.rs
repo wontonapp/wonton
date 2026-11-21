@@ -8,9 +8,10 @@ use wonton_protocol::{AiLevel, Answer, ConfirmationState, FileFailure};
 
 use super::audience::Subject;
 use super::audit::{Basis, Decision, Record};
+use super::chain_card::{Bound, bind_card};
 use super::core_tools::tool;
 use super::file_tools::decision;
-use super::{Bus, Caller, Outcome, ToolFailure, cards, naming, with_failure};
+use super::{Audience, Bus, Caller, Outcome, Refusal, ToolFailure, cards, naming, with_failure};
 use crate::bot_activity::Guard;
 use crate::files::Failure;
 use crate::files::share_fs::saving::{SaveTarget, Staged};
@@ -120,11 +121,20 @@ async fn run(bus: &Arc<Bus>, caller: &Caller, args: JsonObject, activity: Guard)
     let draft = cards::save_file(&caller.name, &staged.files, &target, &langs);
     drop(activity);
     // 封顶“删除要管理员批”时存共享文件夹的卡片发管理员（ADR-0088 第 5 节）；其余照 ADR-0027 发主人。
-    let ticket = match if bus.ai_cap(caller) == AiLevel::AdminApprovesDeletes {
-        bus.ask_for(caller, Subject::ToolDelete, draft).await
+    let audience = if bus.ai_cap(caller) == AiLevel::AdminApprovesDeletes {
+        bus.audience(caller, Subject::ToolDelete).await
     } else {
-        bus.confirmations.ask(&caller.id, draft).await
-    } {
+        Audience::default()
+    };
+    let (card, answered) = match bus.confirmations.open_as(&caller.id, draft, audience) {
+        Ok(opened) => opened,
+        Err(refusal) => return bus.refused(caller, &name, &value, &refusal, None),
+    };
+    // 卡片认到调用头里的链：停链时随停撤回。
+    if bind_card(bus, caller, None, &card.id, "工具卡片") == Bound::Withdrawn {
+        return bus.refused(caller, &name, &value, &Refusal::Cancelled, None);
+    }
+    let ticket = match bus.confirmations.wait(card, answered).await {
         Ok(ticket) => ticket,
         Err(refusal) => return bus.refused(caller, &name, &value, &refusal, None),
     };
