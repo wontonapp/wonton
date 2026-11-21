@@ -222,6 +222,12 @@ pub(super) const TABLE_INDEX: usize = 23;
 pub(super) const QUOTED_INDEX: usize = 19;
 /// 引用上一条的长中文回复：几段长短不一，有的末行写满，用来查时间戳和正文重叠、长段被截断。
 pub(super) const LONG_REPLY_INDEX: usize = 20;
+/// 引用一条不在房间里的消息：跳到它要翻到房间开头，最后给“找不到”。
+pub(super) const MISSING_QUOTE_INDEX: usize = 18;
+/// 名字很长的发送者：群聊里名字只许占一行。
+pub(super) const LONG_NAME_INDEX: usize = 22;
+/// 删除的消息：菜单里没有任何动作，只剩发送时间；顺便看读屏念不念“已编辑”。
+pub(super) const REDACTED_INDEX: usize = 17;
 /// 一条只有 `wonton://` 链接的消息，带查询和结尾斜杠：点它要剥掉后就地打开“其他服务器”。
 pub(super) const APP_LINK_INDEX: usize = 6;
 /// 认不得的 `wonton:` 链接（单斜杠写法）：点它要提示一句，不开白页。
@@ -249,6 +255,8 @@ const TALL_EVERY: usize = 4;
 const TALL_PARAGRAPHS: usize = 60;
 /// 最后一条消息的最后一段：UI 测试按它找真正的底。
 const LAST_LINE: &str = "Fixture last line";
+/// 第 22 条的发送者名字，长到一行放不下。
+const LONG_NAME: &str = "Echo the group bot with a really long account name";
 /// 最后一条是自己刚发、还没送达的：待发脚注“已保存，等待送达”和时钟由它验。
 const SENDING_INDEX: usize = ITEMS - 1;
 
@@ -342,6 +350,11 @@ fn decorate(index: usize, own: bool, message: &mut TimelineMessage) {
     if let Some(reply) = quote(index) {
         message.reply = Some(reply);
     }
+    if index == MISSING_QUOTE_INDEX {
+        message.reply = Some(ReplyQuote::Unavailable {
+            event_id: "$ui-fake-missing".into(),
+        });
+    }
     if index == CHOICES_INDEX {
         message.choices = Some(choices());
     }
@@ -412,6 +425,14 @@ fn item(index: usize) -> TimelineItem {
         && let MessageContent::Text { blocks, .. } = &mut message.body
     {
         blocks.push(table());
+    }
+    if index == LONG_NAME_INDEX {
+        message.sender_name = LONG_NAME.into();
+    }
+    if index == REDACTED_INDEX {
+        message.body = MessageContent::Redacted;
+        message.actions.clear();
+        message.edited = true;
     }
     decorate(index, own, &mut message);
     TimelineItem {

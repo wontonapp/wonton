@@ -16,5 +16,6 @@
     <string name="message_choice_failed">Couldn\'t send your choice. Tap it to try again.</string>
     <!-- Title of the bar above the input while editing a message. Android only. -->
     <string name="message_edit_title">Editing message</string>
-
+    <!-- Read-out state of an own message the server has. No arguments. -->
+    <string name="message_delivered">Delivered</string>
 </resources>

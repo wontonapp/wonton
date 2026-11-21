@@ -166,16 +166,6 @@ impl Menus {
         }
         entry.event_id.as_deref()?.parse().ok()
     }
-
-    /// 菜单里有 `Edit` 的那条消息的事件 ID 和现在的正文。
-    fn edit_of(&self, item_id: &str) -> Option<(OwnedEventId, String)> {
-        let entry = self.items.iter().find(|entry| entry.id == item_id)?;
-        let text = entry.actions.iter().find_map(|action| match action {
-            MessageAction::Edit { text } => Some(text.clone()),
-            _ => None,
-        })?;
-        Some((entry.event_id.as_deref()?.parse().ok()?, text))
-    }
 }
 
 fn is_own_message(item: &TimelineItem) -> bool {
@@ -311,7 +301,8 @@ impl Outbox {
                 focus: self.live.jumps.take_focus(),
                 jump: self.live.jumps.state(),
                 back_to: self.live.jumps.back(),
-                editing: self.live.edit.card(),
+                editing: None,
+                focus_revision: self.live.jumps.revision(),
             })
             .map_err(|_| ())
     }
@@ -339,29 +330,6 @@ impl ChatLink {
             .filter_map(|timeline| timeline.menus.upgrade())
             .find_map(|menus| lock(&menus).event_with(item_id, &wanted));
         event_id.ok_or_else(|| {
-            invalid(&l10n!(
-                CATALOG,
-                language(),
-                "chat-message-action-unavailable"
-            ))
-        })
-    }
-
-    /// 这条消息的编辑目标和正文；房间没订阅是未就绪，菜单里没有编辑是输入非法。
-    pub(super) fn menu_edit(
-        &self,
-        key: &TimelineKey,
-        item_id: &str,
-    ) -> Result<(OwnedEventId, String), CoreError> {
-        let open = lock(&self.open);
-        if open.get(key).is_none() {
-            return Err(super::target::not_subscribed(key));
-        }
-        let found = open
-            .matching(key)
-            .filter_map(|timeline| timeline.menus.upgrade())
-            .find_map(|menus| lock(&menus).edit_of(item_id));
-        found.ok_or_else(|| {
             invalid(&l10n!(
                 CATALOG,
                 language(),

@@ -14,5 +14,5 @@
     <string name="message_choice_failed">没发出去，再点一次重试</string>
     <!-- Title of the bar above the input while editing a message. Android only. -->
     <string name="message_edit_title">编辑消息</string>
-
+    <string name="message_delivered">已送达</string>
 </resources>

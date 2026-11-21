@@ -27,6 +27,9 @@ fn key_of(target: &TimelineTarget) -> Key {
     (target.room_id.clone(), target.thread_root.clone())
 }
 
+/// 假核心找不到原消息时多久放弃。调大一点，测试才能靠“第二下有没有重新派”把时序分开。
+const GIVE_UP: std::time::Duration = std::time::Duration::from_millis(2_000);
+
 /// 开着的假时间线，按目标和旁聊根找。
 #[derive(Default)]
 pub(super) struct FakeTimelines {
@@ -158,6 +161,7 @@ impl FakeTimelines {
         }
         let target = match &action {
             TimelineAction::JumpToMessage { target, .. }
+            | TimelineAction::RegisterFocusRevision { target, .. }
             | TimelineAction::JumpBack { target }
             | TimelineAction::StartEdit { target, .. }
             | TimelineAction::CancelEdit { target }
@@ -187,6 +191,9 @@ impl FakeTimelines {
                 ..
             } => fake.jump_to(&event_id, from_item_id),
             TimelineAction::JumpBack { .. } => fake.jump_back(),
+            TimelineAction::RegisterFocusRevision { revision, .. } => {
+                fake.register_revision(revision)
+            }
             TimelineAction::SetTimelineScroll { scroll, .. } => fake.scrolled(scroll),
             // 只发了照片、没写附言时正文是空的，假时间线不画空的一行。
             TimelineAction::SendText { body, mentions, .. } if !body.is_empty() => {
@@ -267,6 +274,8 @@ fn restore_after_edit(draft: &mut Saved, editing: &Editing) {
     if draft.body.trim() == editing.text.trim() {
         *draft = editing.saved.clone();
     }
+    /// 壳报的跳转序号，每批原样带回。
+    revision: u32,
 }
 
 impl FakeTimeline {
@@ -282,6 +291,7 @@ impl FakeTimeline {
                 draft: Saved::default(),
                 editing: None,
                 sent: 0,
+                revision: 0,
             }),
         };
         if !pending.is_empty() {
@@ -323,10 +333,28 @@ impl FakeTimeline {
             ..self.lock().base.clone()
         };
         change(&mut update);
+        update.focus_revision = self.lock().revision;
         self.push(&mut update);
     }
 
-    fn jump_to(&self, event_id: &str, from_item_id: String) {
+    fn register_revision(&self, revision: u32) {
+        self.lock().revision = revision;
+    }
+
+    /// 找不到原消息时先报加载，停一会儿再说找不到（真核心这时在往前翻页）。期间壳又报了新序号就作废这一跳。
+    /// 假核心找不到原消息时多久放弃。壳里“加载中/放弃”的时序只能靠它，测试也按它算等待上限。
+    fn give_up_later(self: &Arc<Self>, revision: u32) {
+        let this = Arc::clone(self);
+        std::thread::spawn(move || {
+            std::thread::sleep(GIVE_UP);
+            if this.lock().revision != revision {
+                return;
+            }
+            this.batch(|update| update.jump = JumpState::Unavailable);
+        });
+    }
+
+    fn jump_to(self: &Arc<Self>, event_id: &str, from_item_id: String) {
         let target = self
             .lock()
             .items
@@ -340,7 +368,9 @@ impl FakeTimeline {
                 _ => None,
             });
         let Some(item_id) = target else {
-            self.batch(|update| update.jump = JumpState::Unavailable);
+            let revision = self.lock().revision;
+            self.batch(|update| update.jump = JumpState::Loading);
+            self.give_up_later(revision);
             return;
         };
         self.lock().back.push(from_item_id);
@@ -690,6 +720,7 @@ mod tests {
     use std::time::Duration;
 
     use super::*;
+
     use wonton_protocol::{MessageRun, TimelineTarget};
 
     const ROOM: &str = "!ui-fake:home.example";
@@ -1011,8 +1042,8 @@ mod tests {
         let last = message(&items, &items.last().unwrap().id.clone());
         assert!(last.is_own);
         assert_eq!(last.run, MessageRun::Last);
-        // 23 和后面还没送达的 24 都是自己发的，同属一组。
-        assert_eq!(message(&items, "ui-fake-23").run, MessageRun::First);
+        // 26 和后面刚发出去的 27 都是自己发的，同属一组。
+        assert_eq!(message(&items, "ui-fake-26").run, MessageRun::First);
     }
 
     /// 旁聊是按根消息开的另一份时间线：第一批是旁聊那四条，发出去的照片只落在旁聊里。

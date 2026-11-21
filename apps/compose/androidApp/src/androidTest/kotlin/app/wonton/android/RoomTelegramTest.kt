@@ -31,22 +31,10 @@ import androidx.compose.ui.test.performClick
 import androidx.compose.ui.test.performScrollTo
 import androidx.compose.ui.test.performTouchInput
 import androidx.compose.ui.test.swipe
-import android.view.WindowInsets
 import androidx.compose.ui.test.swipeUp
 import androidx.compose.ui.text.TextLayoutResult
-import androidx.test.ext.junit.runners.AndroidJUnit4
-import androidx.test.platform.app.InstrumentationRegistry
-import androidx.test.rule.GrantPermissionRule
-import app.wonton.protocol.Action
-import app.wonton.protocol.ImageUpload
-import app.wonton.protocol.PageAction
-import app.wonton.protocol.TabRef
-import app.wonton.protocol.TimelineAction
-import app.wonton.protocol.TimelineTarget
+import androidx.compose.ui.unit.dp
 import app.wonton.ui.R
-import app.wonton.ui.send
-import java.io.File
-import java.io.FileOutputStream
 import java.text.DateFormat
 import kotlin.math.abs
 import org.junit.Test
@@ -140,13 +128,15 @@ class RoomTelegramTest : RoomTelegramCase() {
                 "时间跑出气泡：$box 不在 $bubble"
             }
             val nodes = bodyNodes(index).sortedBy { it.boundsInRoot.top }
-            val tailNode = nodes.last()
+            // 末尾可能接着旁聊卡片，它不带占位：从后往前找最后一段带透明占位的正文。
+            fun reserveOf(node: SemanticsNode) = layoutOf(node)?.layoutInput?.text?.spanStyles
+                ?.firstOrNull { it.item.color == Color.Transparent }
+            val tailNode = nodes.lastOrNull { reserveOf(it) != null } ?: nodes.last()
             val layout = layoutOf(tailNode)!!
             val tail = layout.layoutInput.text.text
-            // 末尾那段透明占位是单独一段透明色的样式接在最后一块字后面，从它的起点切开就不算正文；
-            // 卡片条目的末节点是按钮，不带占位。不按空格或 NBSP 认：时间里有普通空格，回执才是 NBSP。
-            val keep = layout.layoutInput.text.spanStyles.firstOrNull { it.item.color == Color.Transparent }
-                ?.start ?: tail.length
+            // 末尾那段透明占位是单独一段透明色的样式接在最后一块字后面，从它的起点切开就不算正文。
+            // 不按空格或 NBSP 认：时间里有普通空格，回执才是 NBSP。
+            val keep = reserveOf(tailNode)?.start ?: tail.length
             val lines = nodes.flatMap { lineBoxes(it, if (it === tailNode) tail.length - keep else 0) }
             check(lines.isNotEmpty()) { "第 $index 条没有正文行框：'$tail'" }
             val hit = lines.firstOrNull { it.overlaps(box) }
@@ -183,6 +173,325 @@ class RoomTelegramTest : RoomTelegramCase() {
         screenshot("long-reply")
     }
 
+    /**
+     * 回形针打开相册网格，点两张以后底下换成附言条，写了附言点发送：面板收起、附件区不留东西，
+     * 时间线里出现带这张附言的消息。相册里没有照片时先放两张进去；照片只在本机相册里。
+     * 附件区存在盘上、进程之间留着：先把剩下的拿掉。
+     */
+    @Test
+    fun attachSheetSendsPhotosWithNote() {
+        val core = (compose.activity.application as WontonApplication).core.getOrThrow()
+        ensureAlbumPhotos()
+        clearTray()
+        compose.onNodeWithContentDescription(string(R.string.composer_attach)).performClick()
+        compose.waitUntil(10_000) { compose.onAllNodes(hasTestTag("album-grid")).fetchSemanticsNodes().size == 1 }
+        compose.waitUntil(10_000) { compose.onAllNodes(hasTestTag("album-photo")).fetchSemanticsNodes().size >= 2 }
+        compose.onAllNodes(hasTestTag("album-photo"))[0].performClick()
+        compose.onAllNodes(hasTestTag("album-photo"))[1].performClick()
+        compose.waitUntil(10_000) { compose.onAllNodes(hasTestTag("attach-send")).fetchSemanticsNodes().isNotEmpty() }
+        val field = compose.onNode(hasSetTextAction() and hasAnyAncestor(hasTestTag("attach-send")))
+        field.performTextInput("两张都发")
+        compose.waitForIdle()
+        val shown = compose.onAllNodes(hasText("两张都发", substring = true)).fetchSemanticsNodes().size
+        check(shown > 0) { "输入框里没进去：${field.fetchSemanticsNode().config}" }
+        screenshot("attach-sheet")
+        sheetSend("attach-send").performClick()
+        compose.waitUntil(10_000) {
+            compose.onAllNodes(hasTestTag("attach-send")).fetchSemanticsNodes().isEmpty()
+        }
+        runCatching { compose.onNodeWithContentDescription(string(R.string.room_scroll_to_bottom)).performClick() }
+        compose.waitUntil(10_000) {
+            compose.onAllNodes(hasText("两张都发", substring = true)).fetchSemanticsNodes().isNotEmpty()
+        }
+        val vm = runBlocking { core.subscribeComposer(TimelineTarget(ECHO_ROOM, null)).use { it.next()!! } }
+        check(vm.attachments.isEmpty()) { "附件区还剩 ${vm.attachments.size} 条" }
+        screenshot("attach-sent")
+        check(trayTiles() == 0) { "附件区里还剩着照片" }
+        compose.onNode(hasSetTextAction()).assertIsDisplayed()
+    }
+
+    /**
+     * 附件区里有一张没传上去的照片时点发送：核心拒收，字、附件和回复对象都得留着，原因说出来。
+     * 现在发送一律当成功，字丢了、回复也收了。
+     */
+    @Test
+    fun rejectedSendKeepsDraftAndReply() {
+        val core = (compose.activity.application as WontonApplication).core.getOrThrow()
+        ensureAlbumPhotos()
+        clearTray()
+        // 面板选完就发，先在核心那边定好：下一张进附件区的照片上传失败。
+        core.failNextAttachmentForTest(TimelineTarget(ECHO_ROOM, null))
+        compose.onNodeWithContentDescription(string(R.string.composer_attach)).performClick()
+        compose.waitUntil(10_000) { compose.onAllNodes(hasTestTag("album-photo")).fetchSemanticsNodes().isNotEmpty() }
+        compose.onAllNodes(hasTestTag("album-photo"))[0].performClick()
+        compose.waitUntil(10_000) { compose.onAllNodes(hasTestTag("attach-send")).fetchSemanticsNodes().isNotEmpty() }
+        sheetSend("attach-send").performClick()
+        compose.waitUntil(10_000) {
+            compose.onAllNodes(hasTestTag("attach-send")).fetchSemanticsNodes().isEmpty()
+        }
+        compose.waitUntil(10_000) { trayTiles() == 1 }
+        // 回一条，附件已经在附件区里标成失败了。
+        scrollTo(15)
+        item(15).performTouchInput {
+            val middle = height / 2f
+            swipe(Offset(width * 0.8f, middle), Offset(width * 0.3f, middle), durationMillis = 300)
+        }
+        compose.onNodeWithContentDescription(string(R.string.message_reply_cancel)).assertIsDisplayed()
+        compose.onNode(hasSetTextAction()).performTextInput("先发这句")
+        compose.onNodeWithContentDescription(string(R.string.composer_send)).performClick()
+        // 原因现在收在默认收起的“详情”里，展开再看。
+        compose.waitUntil(10_000) {
+            compose.onAllNodes(hasText(string(R.string.common_details))).fetchSemanticsNodes().isNotEmpty()
+        }
+        compose.onNodeWithText(string(R.string.common_details)).performClick()
+        compose.waitUntil(10_000) {
+            compose.onAllNodes(hasText("Retry or remove it first", substring = true)).fetchSemanticsNodes().isNotEmpty()
+        }
+        compose.onNode(hasText("先发这句")).assertIsDisplayed()
+        check(trayTiles() == 1) { "附件被吃掉了" }
+        compose.onNodeWithContentDescription(string(R.string.message_reply_cancel)).assertIsDisplayed()
+    }
+
+    /**
+     * 转发面板：搜索能收窄列表，勾上两个房间、写上附言后一起发出去。每个房间都先到附言，
+     * 再到红色的同文消息；勾了好几个就留在原房间。
+     */
+    @Test
+    fun forwardPickerSendsNoteBeforeMessageToEveryTarget() {
+        // 12 是长条，气泡比整屏还高，按正中会落到屏幕外；换它上面那条一句话的 11。
+        scrollTo(11)
+        item(11).performScrollTo()
+        bubble(11).performTouchInput { longClick() }
+        compose.onNodeWithText(string(R.string.message_forward)).performClick()
+        compose.waitForIdle()
+        compose.waitUntil(10_000) { forwardRows() == 2 }
+        sheetSend("forward-send").assertIsNotEnabled()
+        compose.onNodeWithTag("forward-search").performTextInput("Fam")
+        compose.waitUntil(10_000) { forwardRows() == 1 }
+        compose.onNode(hasTestTag("forward-row") and hasText("Family")).performClick()
+        compose.onNodeWithTag("forward-search").performTextClearance()
+        compose.waitUntil(10_000) { forwardRows() == 2 }
+        compose.onNode(hasTestTag("forward-row") and hasText("Notes")).performClick()
+        compose.onNode(hasSetTextAction() and hasAnyAncestor(hasTestTag("forward-send")))
+            .performTextInput("都看一下")
+        val typed = compose.onNode(hasSetTextAction() and hasAnyAncestor(hasTestTag("forward-send")))
+            .fetchSemanticsNode().config.getOrNull(SemanticsProperties.EditableText)?.text
+        check(typed?.contains("都看一下") == true) { "输入框里是 $typed" }
+        screenshot("forward-sheet")
+        sheetSend("forward-send").performClick()
+        // 勾了两个：留在原房间，两条消息都在，谁也没跳走。
+        compose.waitForIdle()
+        check(
+            compose.onAllNodes(hasText(ECHO_NAME) and hasAnyAncestor(hasTestTag("room-bar")))
+                .fetchSemanticsNodes().isNotEmpty(),
+        ) { "原房间跳走了" }
+        screenshot("forward-sent")
+        compose.onNodeWithContentDescription(string(R.string.design_back)).performClick()
+        compose.waitForIdle()
+        if (hasBack()) compose.onNodeWithContentDescription(string(R.string.design_back)).performClick()
+        // 到了聊天列表，依次进 Family 和 Notes，两边都得有附言和转发来的那条。
+        compose.onNodeWithText("Family").performClick()
+        compose.waitUntil(10_000) { forwardedInto("Family", "ui-fake-forwarded-1") }
+        check(compose.onAllNodes(hasText("都看一下", substring = true)).fetchSemanticsNodes().isNotEmpty()) {
+            "Family 没收到附言"
+        }
+        compose.onNodeWithContentDescription(string(R.string.design_back)).performClick()
+        compose.waitForIdle()
+        if (hasBack()) compose.onNodeWithContentDescription(string(R.string.design_back)).performClick()
+        compose.onNodeWithText("Notes").performClick()
+        compose.waitUntil(10_000) { forwardedInto("Notes", "ui-fake-forwarded-1") }
+        check(compose.onAllNodes(hasText("都看一下", substring = true)).fetchSemanticsNodes().isNotEmpty()) {
+            "Notes 没收到附言"
+        }
+    }
+
+    /** 只勾一个时发完跟过去：那个房间打开，附言和转发都在。 */
+    @Test
+    fun forwardToSingleTargetOpensIt() {
+        scrollTo(11)
+        item(11).performScrollTo()
+        bubble(11).performTouchInput { longClick() }
+        compose.onNodeWithText(string(R.string.message_forward)).performClick()
+        compose.waitUntil(10_000) { forwardRows() == 2 }
+        compose.onNode(hasTestTag("forward-row") and hasText("Family")).performClick()
+        sheetSend("forward-send").performClick()
+        compose.waitUntil(10_000) { forwardedInto("Family", "ui-fake-forwarded-1") }
+    }
+
+    private fun forwardRows() = compose.onAllNodes(hasTestTag("forward-row")).fetchSemanticsNodes().size
+
+    /** 面板附言条上的发送键：输入框底下那个，和房间里被面板挡住的发送键区分开。 */
+    private fun sheetSend(tag: String) =
+        compose.onNode(hasContentDescription(string(R.string.composer_send)) and hasAnyAncestor(hasTestTag(tag)))
+
+    private fun hasBack() =
+        compose.onAllNodes(hasContentDescription(string(R.string.design_back))).fetchSemanticsNodes().isNotEmpty()
+
+    /** 房间打开了（顶栏是它的名字），并且时间线里有那条转发来的。房间刚开时落在老消息中间，点“向下”回最新。 */
+    private fun forwardedInto(room: String, id: String): Boolean {
+        val bar = compose.onAllNodes(
+            hasText(room) and hasAnyAncestor(hasTestTag("room-bar")),
+            useUnmergedTree = true,
+        ).fetchSemanticsNodes()
+        val open = bar.isNotEmpty()
+        fun seen() = compose.onAllNodes(hasTestTag("item-$id")).fetchSemanticsNodes().isNotEmpty()
+        if (open && !seen()) {
+            runCatching { compose.onNodeWithContentDescription(string(R.string.room_scroll_to_bottom)).performClick() }
+        }
+        return open && seen()
+    }
+
+    /**
+     * 把附件区里留着的附件一个个拿掉：一排照片会横着滚，先把行滚回开头再点第一个拿掉的按钮，
+     * 否则点到的是滚出屏幕的格子。
+     */
+    private fun clearTray() {
+        val prefix = string(R.string.composer_attachment_remove).substringBefore('%')
+        val removes = SemanticsMatcher("拿掉附件") { node ->
+            node.config.getOrNull(SemanticsProperties.ContentDescription).orEmpty().any { it.startsWith(prefix) }
+        }
+        repeat(MAX_TRAY_ITEMS) {
+            if (compose.onAllNodes(removes, useUnmergedTree = true).fetchSemanticsNodes().isEmpty()) return
+            compose.onNodeWithTag("composerTray").performScrollToIndex(0)
+            compose.waitForIdle()
+            compose.onAllNodes(removes, useUnmergedTree = true)[0].performClick()
+            compose.waitForIdle()
+        }
+        check(compose.onAllNodes(removes, useUnmergedTree = true).fetchSemanticsNodes().isEmpty()) {
+            "附件区没清空"
+        }
+    }
+
+    private fun trayTiles(): Int = compose.onAllNodes(
+        SemanticsMatcher("附件区里的照片") { node ->
+            node.config.getOrNull(SemanticsProperties.ContentDescription).orEmpty()
+                .any { it == "photo.png" || it == "photo.jpg" }
+        },
+        useUnmergedTree = true,
+    ).fetchSemanticsNodes().size
+
+    /** 相册里照片不够两张时先放两张真照片进去，够了两张就不再加，多跑几次也不堆。 */
+    private fun ensureAlbumPhotos() {
+        val resolver = instrumentation.targetContext.contentResolver
+        val collection = MediaStore.Images.Media.EXTERNAL_CONTENT_URI
+        val existing = resolver.query(collection, arrayOf(MediaStore.Images.Media._ID), null, null, null)
+            ?.use { it.count } ?: 0
+        repeat((2 - existing).coerceAtLeast(0)) { index ->
+            val values = ContentValues().apply {
+                put(MediaStore.Images.Media.DISPLAY_NAME, "pick-$index.png")
+                put(MediaStore.Images.Media.MIME_TYPE, "image/png")
+                put(MediaStore.Images.Media.RELATIVE_PATH, Environment.DIRECTORY_PICTURES)
+                put(MediaStore.Images.Media.IS_PENDING, 1)
+            }
+            val uri = resolver.insert(collection, values) ?: error("相册里放不进照片")
+            resolver.openOutputStream(uri)?.use { out ->
+                Bitmap.createBitmap(320, 320, Bitmap.Config.ARGB_8888)
+                    .apply { eraseColor(if (index % 2 == 0) 0xFF8A6E4B.toInt() else 0xFF3F5F4F.toInt()) }
+                    .compress(Bitmap.CompressFormat.PNG, 100, out)
+            }
+            values.clear()
+            values.put(MediaStore.Images.Media.IS_PENDING, 0)
+            resolver.update(uri, values, null, null)
+        }
+    }
+
+    @Test
+    fun commandMenuListsBotCommandsAndSends() {
+        // 别的用例可能留着一张发不出去的附件，发命令会被它挡住。
+        clearTray()
+        compose.onNodeWithContentDescription(string(R.string.composer_commands)).performClick()
+        compose.onNodeWithTag("command-help").assertIsDisplayed()
+        compose.onNodeWithTag("command-model").assertIsDisplayed()
+        settleKeyboard()
+        screenshot("command-menu")
+        compose.onNodeWithTag("command-new").performClick()
+        compose.waitUntil(10_000) {
+            compose.onAllNodesWithText("/new", substring = true, useUnmergedTree = true)
+                .fetchSemanticsNodes().isNotEmpty()
+        }
+        settleKeyboard()
+        screenshot("command-sent")
+    }
+
+    @Test
+    fun commandMenuKeepsDraftAndBackOnlyClosesList() {
+        val field = compose.onNode(hasSetTextAction())
+        field.performTextInput("先说一句")
+        compose.onNodeWithContentDescription(string(R.string.composer_commands)).performClick()
+        compose.waitUntil(10_000) { compose.onAllNodes(hasTestTag("command-help")).fetchSemanticsNodes().isNotEmpty() }
+        field.assert(hasText("先说一句"))
+        // 点一条命令：照常发出去，打了一半的字还在。
+        compose.onNodeWithTag("command-new").performClick()
+        compose.waitForIdle()
+        field.assert(hasText("先说一句"))
+        check(compose.onAllNodes(hasTestTag("command-help")).fetchSemanticsNodes().isEmpty()) { "发完命令列表还开着" }
+        compose.waitUntil(10_000) {
+            compose.onAllNodesWithText("/new", substring = true, useUnmergedTree = true)
+                .fetchSemanticsNodes().isNotEmpty()
+        }
+        // 再开列表，按返回只收列表，人还在房间里。
+        compose.onNodeWithContentDescription(string(R.string.composer_commands)).performClick()
+        compose.waitUntil(10_000) { compose.onAllNodes(hasTestTag("command-help")).fetchSemanticsNodes().isNotEmpty() }
+        compose.runOnUiThread { compose.activity.onBackPressedDispatcher.onBackPressed() }
+        compose.waitForIdle()
+        check(compose.onAllNodes(hasTestTag("command-help")).fetchSemanticsNodes().isEmpty()) { "返回键没收起命令列表" }
+        check(
+            compose.onAllNodes(hasText(ECHO_NAME) and hasAnyAncestor(hasTestTag("room-bar")))
+                .fetchSemanticsNodes().isNotEmpty(),
+        ) { "返回键把房间关了" }
+    }
+
+    @Test
+    fun commandFilterTakesNamesWithSpaces() {
+        val field = compose.onNode(hasSetTextAction())
+        field.performTextInput("/photo")
+        compose.waitUntil(10_000) {
+            compose.onAllNodes(hasTestTag("command-photo album")).fetchSemanticsNodes().isNotEmpty()
+        }
+        check(compose.onAllNodes(hasTestTag("command-help")).fetchSemanticsNodes().isEmpty()) {
+            "带空格的名字没过滤掉别的命令"
+        }
+        // 空格后面接着打，还在这个名字里，列表不消失。
+        field.performTextInput(" a")
+        compose.waitForIdle()
+        compose.onNodeWithTag("command-photo album").assertIsDisplayed()
+        field.performTextClearance()
+        field.performTextInput("/summarize-everything")
+        compose.waitUntil(10_000) {
+            compose.onAllNodes(hasTestTag("command-summarize-everything-in-this-thread"))
+                .fetchSemanticsNodes().isNotEmpty()
+        }
+        // 长名字整条都在，不被挤没。
+        compose.onNodeWithTag("command-summarize-everything-in-this-thread").assertIsDisplayed()
+        compose.onNodeWithText("/summarize-everything-in-this-thread").assertIsDisplayed()
+    }
+
+    @Test
+    fun sideChatAlbumTakesSeveralPhotos() {
+        // 相册里至少要有两张可选；干净的模拟器相册是空的，自己补。
+        ensureAlbumPhotos()
+        compose.onNodeWithContentDescription(string(R.string.side_chat_new)).performClick()
+        compose.waitUntil(10_000) { compose.onAllNodes(hasSetTextAction()).fetchSemanticsNodes().size == 2 }
+        compose.onNodeWithTag("side-chat-field").performTextInput("旁聊开场")
+        compose.onNodeWithText(string(R.string.composer_send)).performClick()
+        // 进了旁聊：顶栏换成旁聊那条，“新旁聊”钮没了，只剩输入框。
+        compose.waitUntil(10_000) {
+            compose.onAllNodes(hasContentDescription(string(R.string.side_chat_new))).fetchSemanticsNodes().isEmpty() &&
+                compose.onAllNodes(hasSetTextAction()).fetchSemanticsNodes().size == 1
+        }
+        compose.onNodeWithContentDescription(string(R.string.composer_attach)).performClick()
+        compose.waitUntil(10_000) { photos().fetchSemanticsNodes().size >= 2 }
+        photos()[0].performClick()
+        compose.waitForIdle()
+        // 旁聊没有附件区，但一摞能选好几张：选了一张，后面的照样点得动。
+        photos()[1].assertIsEnabled().performClick()
+        compose.waitForIdle()
+        photos()[0].assertIsSelected()
+        photos()[1].assertIsSelected()
+        compose.onNodeWithTag("attach-send").assertIsEnabled()
+    }
+
+    private fun photos() = compose.onAllNodes(hasTestTag("album-photo"))
 
     @Test
     fun choiceAnswerSelectsItAndDisablesTheOther() {
@@ -299,6 +608,90 @@ class RoomTelegramTest : RoomTelegramCase() {
         compose.waitUntil(5_000) { pillVisible() }
         // 停下 motion.datePillHold（1 秒）后淡出，等不到就是没淡出。
         compose.waitUntil(10_000) { !pillVisible() }
+    }
+
+    @Test
+    fun daySeparatorRidesAboveTheFirstOfADay() {
+        // 第 11 条是后一天的第一条：分隔夹在它和上面第 10 条之间，写它的日期。分隔翻到附近才进屏幕，撞上为止。
+        val (separators, bubbles) = scrollToFirstSeparator()
+        for (separator in separators) separatorIsAboveTheOneItNames(separator, bubbles)
+        noSeparatorBetweenTheSameDay()
+        // 屏幕上往下是越来越新：分隔自上而下的日期严格变晚。
+        val dates = separators.sortedBy { it.boundsInRoot.top }
+            .map { checkNotNull(DateFormat.getDateInstance(DateFormat.MEDIUM).parse(texts(it))) }
+        for (position in 1 until dates.size) {
+            check(dates[position].after(dates[position - 1])) { "日期没随消息往下变晚：$dates" }
+        }
+        // 列表最顶上那条的上面也有分隔，写它自己的日期。
+        scrollTo(0)
+        val firstOfList = bubble(0).fetchSemanticsNode()
+        val aboveFirst = compose.onAllNodes(hasTestTag("day-separator"), useUnmergedTree = true)
+            .fetchSemanticsNodes()
+            .lastOrNull { it.boundsInRoot.bottom <= firstOfList.boundsInRoot.top + 1f }
+        checkNotNull(aboveFirst) { "列表最顶上那条的上面没有日期分隔" }
+        check(texts(aboveFirst) == fixtureDate(0)) { "最顶上的分隔不是第一条的日期：${texts(aboveFirst)}" }
+        // 这条分隔和它两边的消息一起进画面，留一张给人看。
+        scrollTo(11)
+        compose.waitUntil(10_000) { visible(10) && visible(11) }
+        screenshot("day-separator")
+    }
+
+    /** 翻到有分隔的地方，返回分隔和气泡（按屏幕从上到下）。 */
+    private fun scrollToFirstSeparator(): Pair<List<SemanticsNode>, List<SemanticsNode>> {
+        var separators = emptyList<SemanticsNode>()
+        var seen = ""
+        for (index in listOf(11, 12, 10, 13, 9)) {
+            scrollTo(index)
+            compose.waitForIdle()
+            separators = compose.onAllNodes(hasTestTag("day-separator"), useUnmergedTree = true)
+                .fetchSemanticsNodes()
+            seen += "$index:${separators.size} "
+            if (separators.isNotEmpty()) break
+        }
+        check(separators.isNotEmpty()) { "没画日期分隔：$seen" }
+        return separators to compose.onAllNodes(hasTestTag("bubble"), useUnmergedTree = true)
+            .fetchSemanticsNodes().sortedBy { it.boundsInRoot.top }
+    }
+
+    /** 分隔夹在前一天最后一条和后一天第一条之间：下面紧挨的那条是它写的这一天，上面那条是更早的一天。 */
+    private fun separatorIsAboveTheOneItNames(separator: SemanticsNode, bubbles: List<SemanticsNode>) {
+        val mark = separator.boundsInRoot
+        check(bubbles.none { it.boundsInRoot.overlaps(mark) }) { "气泡压在日期分隔上：$mark" }
+        val below = bubbles.firstOrNull { it.boundsInRoot.top >= mark.bottom - 1f }
+        val belowIndex = checkNotNull(below?.let(::fixtureIndexOf)) { "日期分隔下面认不出气泡：$mark" }
+        check(texts(separator) == fixtureDate(belowIndex)) {
+            "日期分隔不是它下面那条的日期：${texts(separator)} vs ${fixtureDate(belowIndex)}（第 $belowIndex 条）"
+        }
+        val above = bubbles.lastOrNull { it.boundsInRoot.bottom <= mark.top + 1f } ?: return
+        val aboveIndex = fixtureIndexOf(above) ?: return
+        val aboveBox = above.boundsInRoot
+        check(fixtureDate(aboveIndex) != fixtureDate(belowIndex)) {
+            "同一天（第 $aboveIndex / $belowIndex 条）的气泡之间夹了日期分隔"
+        }
+        val order = "分隔上面第 $aboveIndex 条 $aboveBox，" +
+            "下面第 $belowIndex 条 ${below.boundsInRoot}，分隔 $mark"
+        check(fixtureDate(aboveIndex) < fixtureDate(belowIndex)) { "上面的日期不早于下面：$order" }
+    }
+
+    /** 同一天相邻的两条之间没有分隔。 */
+    private fun noSeparatorBetweenTheSameDay() {
+        val bubbles = compose.onAllNodes(hasTestTag("bubble"), useUnmergedTree = true)
+            .fetchSemanticsNodes().sortedBy { it.boundsInRoot.top }
+        val separators = compose.onAllNodes(hasTestTag("day-separator"), useUnmergedTree = true)
+            .fetchSemanticsNodes()
+        val sameDay = bubbles.zipWithNext().filter { (above, below) ->
+            val a = fixtureIndexOf(above)
+            val b = fixtureIndexOf(below)
+            a != null && b != null && fixtureDate(a) == fixtureDate(b)
+        }
+        for ((above, below) in sameDay) {
+            val between = separators.filter {
+                it.boundsInRoot.top >= above.boundsInRoot.bottom - 1f &&
+                    it.boundsInRoot.bottom <= below.boundsInRoot.top + 1f
+            }
+            val pair = "${fixtureIndexOf(above)} / ${fixtureIndexOf(below)}"
+            check(between.isEmpty()) { "同一天的第 $pair 条之间夹了日期分隔" }
+        }
     }
 
     @Test
