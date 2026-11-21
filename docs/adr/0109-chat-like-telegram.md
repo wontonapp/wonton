@@ -211,8 +211,8 @@ Telegram 自己也让用户换主题色，形状和位置才是“像 Telegram�
 | `motion.datePillHold` | 1000 | 停止滚动后日期胶囊停留（估计值） |
 | `ratio.composerLines` | 6 | 输入框最多长到几行（Telegram 按可用高度算，最多 12 行） |
 | `size.commandMenu` | 240 | “/”命令列表最高这么高，再多就在里面滚（估计值） |
-| `size.attachTab` | 76 | 附件面板底下切换排每一项的高度 |
-| `ratio.tabHighlight` | 0.16 | 切换排选中项底色的浓度 |
+| `size.attachTab` | 76 | 附件面板底下切换排每一项的边长 |
+| `ratio.tabHighlight` | 0.14 | 切换排选中项底色的浓度 |
 
 `gesture.timeReveal` 随左滑看时间删掉。聊天背景、入气泡、半透明底这几样颜色由壳拿 ADR-0026 的令牌按上面的浓度叠出来（`ChatPalette`）；
 核心的 `ThemeColors` 加上这几项以后改成直接读。
