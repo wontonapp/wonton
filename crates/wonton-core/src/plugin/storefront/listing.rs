@@ -191,7 +191,12 @@ impl PluginManager {
             title: langs.pick_owned(&m.title),
             summary: langs.pick_owned(&m.description),
             about: m.about.as_ref().map(|t| langs.pick_owned(t)),
-            setup: m.setup.as_ref().map(|t| langs.pick_owned(t)),
+            // 装着的版本还带步骤、商店里改成不带时，详情页别把原步骤弄丢。
+            setup: m.setup.as_ref().map(|t| langs.pick_owned(t)).or_else(|| {
+                installed_detail
+                    .as_mut()
+                    .and_then(|detail| detail.setup.take())
+            }),
             icon: icon.map(|i| i.paths()),
             screenshots: Vec::new(),
             tags: langs.pick_tags(&m.tags),
