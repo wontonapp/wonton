@@ -8905,6 +8905,7 @@ dependencies = [
  "tracing",
  "tracing-subscriber",
  "unicode-properties",
+ "unicode-segmentation",
  "url",
  "web-push-native",
  "wonton-client",
