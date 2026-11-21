@@ -157,9 +157,32 @@ fn guest_link() -> GuestLink {
     }
 }
 
+fn password() -> ClientsPassword {
+    ClientsPassword {
+        plugin_id: "app.immich.photos".into(),
+        password: Some("pw1".into()),
+        value: Some(PasswordValue {
+            username: "owner".into(),
+            password: SecretString::new("SECRET"),
+        }),
+        problem: None,
+    }
+}
+
+fn provider_preset() -> DnsProviderPreset {
+    DnsProviderPreset {
+        code: "desec".into(),
+        name: "deSEC".into(),
+        credential_vars: vec!["DESEC_TOKEN".into()],
+        signup_url: Some("https://desec.example.test".into()),
+        recommended: true,
+    }
+}
+
 fn clients_view() -> ClientsViewModel {
     ClientsViewModel {
         state: ClientsState::Ready,
+        core_in_container: true,
         plugins: vec![plugin()],
         domain: Some(domain()),
         ingress: Some(ingress()),
@@ -168,6 +191,9 @@ fn clients_view() -> ClientsViewModel {
         self_probe: ProbeResult::ConnectorDown,
         public_now: status().public_now,
         public_reach: PublicReach::PublicAccessOff,
+        bans: status().bans,
+        pending: status().pending,
+        password: Some(password()),
         guests: vec![ClientsGuests {
             plugin_id: "app.scribble".into(),
             links: vec![guest_link()],
@@ -189,13 +215,19 @@ fn clients_view() -> ClientsViewModel {
 fn clients_settings() -> ClientsSettingsViewModel {
     ClientsSettingsViewModel {
         state: ClientsState::Ready,
+        core_in_container: true,
         public_access: PublicAccess { enabled: true },
         public_reach: PublicReach::Reachable,
+        gates: Some(gates()),
         ingress: Some(ingress()),
         domain: Some(domain()),
+        providers: Some(vec![provider_preset()]),
+        providers_problem: None,
         can_enable: true,
         open_apps: 1,
         closing: status().public_now,
+        bans: status().bans,
+        pending: status().pending,
         saving: false,
         problem: None,
     }
@@ -237,6 +269,7 @@ fn every_response_round_trips() {
         },
     );
     round_trip(serde_json::to_value(status()).unwrap(), status());
+    round_trip(serde_json::to_value(password()).unwrap(), password());
 }
 
 #[test]
@@ -247,6 +280,11 @@ fn clients_actions_round_trip_inside_actions() {
             id: "app.immich.photos".into(),
             kind: EntryKind::Public,
             enabled: true,
+        },
+        ClientsAction::SetEntry {
+            id: "app.immich.photos".into(),
+            kind: EntryKind::Other,
+            enabled: false,
         },
         ClientsAction::SaveDomain {
             request: PutDomainRequest {
@@ -272,11 +310,33 @@ fn clients_actions_round_trip_inside_actions() {
             ttl_seconds: GUEST_TTL_DEFAULT,
             path: Some("/room".into()),
         },
+        ClientsAction::GetGuest {
+            id: "app.scribble".into(),
+            guest: "g1".into(),
+        },
         ClientsAction::RevokeGuest {
             id: "app.scribble".into(),
             guest: "g1".into(),
         },
         ClientsAction::RefreshStatus,
+        ClientsAction::CreatePassword {
+            id: "app.immich.photos".into(),
+            request: NewPasswordRequest {
+                label: "家里的 iPad".into(),
+            },
+        },
+        ClientsAction::GetPassword {
+            id: "app.immich.photos".into(),
+            password: "pw1".into(),
+        },
+        ClientsAction::RevokePassword {
+            id: "app.immich.photos".into(),
+            password: "pw1".into(),
+        },
+        ClientsAction::Unban {
+            source: "2001:db8::/64".into(),
+        },
+        ClientsAction::DnsProviders,
     ];
 
     for action in actions {
@@ -317,13 +377,38 @@ fn clients_actions_use_the_clients_domain_and_type_tags() {
 }
 
 #[test]
-fn our_relay_ingress_has_no_fields_on_the_wire() {
+fn our_relay_ingress_is_not_seen_as_other() {
+    round_trip(json!("our_relay"), IngressKind::OurRelay);
+    parses_as_other::<IngressKind>(json!("another"));
+    round_trip(json!("other"), IngressKind::Other);
     let request = PutIngressRequest::OurRelay {};
     assert_eq!(
         serde_json::to_value(&request).unwrap(),
         json!({"kind": "our_relay"})
     );
     round_trip(json!({"kind": "our_relay"}), request);
+}
+
+#[test]
+fn unknown_entry_kind_inside_set_entry_is_other() {
+    let action: Action = serde_json::from_value(json!({
+        "domain": "clients",
+        "action": {
+            "type": "set_entry", "id": "app.immich.photos",
+            "kind": {"kind": "future"}, "enabled": false,
+        },
+    }))
+    .unwrap();
+    assert_eq!(
+        action,
+        Action::Clients {
+            action: ClientsAction::SetEntry {
+                id: "app.immich.photos".into(),
+                kind: EntryKind::Other,
+                enabled: false,
+            },
+        }
+    );
 }
 
 #[test]
