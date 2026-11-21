@@ -1,10 +1,10 @@
 use tokio::sync::{Mutex, watch};
 use wonton_protocol::{
     AgentChainsViewModel, AppLockViewModel, AppearanceViewModel, BotContactsViewModel,
-    ChatViewModel, ComposerViewModel, ConfirmationsViewModel, FriendsViewModel, HomeViewModel,
-    OnboardingViewModel, PagesViewModel, PeersViewModel, PluginsViewModel, RoomAgentStop,
-    ServersViewModel, SessionListViewModel, SettingsViewModel, TimelineTarget, TransfersViewModel,
-    WidgetSnapshot,
+    ChatViewModel, ComposerViewModel, ConfirmationsViewModel, FamilyViewModel, FriendsViewModel,
+    HomeViewModel, OnboardingViewModel, PagesViewModel, PeersViewModel, PluginsViewModel,
+    RoomAgentStop, ServersViewModel, SessionListViewModel, SettingsViewModel, TimelineTarget,
+    TransfersViewModel, WidgetSnapshot,
 };
 
 use crate::agent_chains::room_stop::{self, Attempts};
@@ -502,6 +502,33 @@ impl FriendsSubscription {
     /// 等待下一份 ViewModel，语义同 [`SessionListSubscription::next`]。
     pub async fn next(&self) -> Option<FriendsViewModel> {
         self.updates.next(FriendsViewModel::clone).await
+    }
+
+    /// 取消订阅，语义同 [`SessionListSubscription::cancel`]。
+    pub fn cancel(&self) {
+        self.updates.cancel();
+    }
+}
+
+/// 成员页（ADR-0088）的订阅，用法同 [`SessionListSubscription`]。
+#[derive(uniffi::Object)]
+pub struct FamilySubscription {
+    updates: Updates<FamilyViewModel>,
+}
+
+impl FamilySubscription {
+    pub(crate) fn new(receiver: watch::Receiver<FamilyViewModel>) -> Self {
+        Self {
+            updates: Updates::new(receiver),
+        }
+    }
+}
+
+#[uniffi::export]
+impl FamilySubscription {
+    /// 等待下一份 ViewModel，语义同 [`SessionListSubscription::next`]。
+    pub async fn next(&self) -> Option<FamilyViewModel> {
+        self.updates.next(FamilyViewModel::clone).await
     }
 
     /// 取消订阅，语义同 [`SessionListSubscription::cancel`]。

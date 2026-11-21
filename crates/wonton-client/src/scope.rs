@@ -10,7 +10,8 @@ use std::sync::Arc;
 use tokio::sync::watch;
 use wonton_protocol::{
     AgentChainsViewModel, BotContactsViewModel, ChatViewModel, ConfirmationsViewModel, CoreError,
-    FriendsViewModel, HomeViewModel, MyAvatarProblem, OnboardingViewModel, PagesViewModel,
+    FamilyViewModel, FriendsViewModel, HomeViewModel, MyAvatarProblem, OnboardingViewModel,
+    PagesViewModel,
     PeersViewModel, PluginsViewModel, ServersViewModel, SettingsViewModel, TransfersViewModel,
 };
 
@@ -19,6 +20,7 @@ use crate::app_lock::AppLockLink;
 use crate::bot_contacts::BotContactsLink;
 use crate::chat::{CardSuccess, ChatLink};
 use crate::composer::{ComposerLink, uplink::LiveUplink};
+use crate::family::FamilyLink;
 use crate::files::FilesLink;
 use crate::friends::FriendsLink;
 use crate::home::{HomeLink, Network, Storage};
@@ -50,6 +52,7 @@ pub(crate) struct Scope {
     pub(crate) onboarding: Arc<OnboardingLink>,
     pub(crate) peers: Arc<PeersLink>,
     pub(crate) friends: Arc<FriendsLink>,
+    pub(crate) family: Arc<FamilyLink>,
     pub(crate) bot_contacts: Arc<BotContactsLink>,
     pub(crate) settings: SettingsLink,
     pub(crate) shared_apps: Arc<crate::sharing::SharedAppsLink>,
@@ -78,6 +81,7 @@ pub(crate) struct Views {
     pub(crate) onboarding: watch::Sender<OnboardingViewModel>,
     pub(crate) peers: watch::Sender<PeersViewModel>,
     pub(crate) friends: watch::Sender<FriendsViewModel>,
+    pub(crate) family: watch::Sender<FamilyViewModel>,
     pub(crate) bot_contacts: watch::Sender<BotContactsViewModel>,
     pub(crate) settings: watch::Sender<SettingsViewModel>,
 }
@@ -96,6 +100,7 @@ impl Views {
             onboarding: scope.onboarding.sender(),
             peers: scope.peers.sender(),
             friends: scope.friends.sender(),
+            family: scope.family.sender(),
             bot_contacts: scope.bot_contacts.sender(),
             settings: scope.settings.sender(),
         }
@@ -206,7 +211,15 @@ fn people_links(
     shared: &Shared<'_>,
     servers: watch::Receiver<ServersViewModel>,
     chat: &Arc<ChatLink>,
-) -> Result<(Arc<PeersLink>, Arc<FriendsLink>, SettingsLink), CoreError> {
+) -> Result<
+    (
+        Arc<PeersLink>,
+        Arc<FriendsLink>,
+        Arc<FamilyLink>,
+        SettingsLink,
+    ),
+    CoreError,
+> {
     let Shared {
         slot: _,
         handle,
@@ -226,6 +239,12 @@ fn people_links(
         dir,
         views.map(|v| v.friends.clone()),
     )?;
+    let family = FamilyLink::new(
+        handle.clone(),
+        home.clone(),
+        plugins.clone(),
+        views.map(|v| v.family.clone()),
+    );
     let settings = SettingsLink::new(
         handle,
         home.subscribe(),
@@ -233,13 +252,14 @@ fn people_links(
         plugins.subscribe(),
         peers.subscribe(),
         friends.subscribe(),
+        family.subscribe(),
         servers,
         push_method.subscribe(),
         app_lock.subscribe(),
         lock_screen.subscribe(),
         views.map(|v| v.settings.clone()),
     );
-    Ok((peers, friends, settings))
+    Ok((peers, friends, family, settings))
 }
 
 impl Scope {
@@ -362,8 +382,9 @@ impl Scope {
             onboarding: links.onboarding,
             peers: people.0,
             friends: people.1,
+            family: people.2,
             bot_contacts,
-            settings: people.2,
+            settings: people.3,
             shared_apps,
             browser,
             #[cfg(feature = "test-hooks")]

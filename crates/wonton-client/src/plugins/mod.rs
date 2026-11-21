@@ -15,7 +15,6 @@ mod now;
 mod owner_secrets;
 mod polling;
 mod registry_mirror;
-mod roles;
 mod settings;
 mod sharing;
 mod start;
@@ -333,7 +332,6 @@ impl PluginsLink {
             link.home.retry_if_rejected().await;
             link.spawn_installed();
             link.spawn_storage();
-            link.spawn_roles();
         });
     }
 

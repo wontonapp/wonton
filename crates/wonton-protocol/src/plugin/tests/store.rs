@@ -128,7 +128,6 @@ fn sidebar_view_model_round_trip() {
     };
     let view_model = PluginsViewModel {
         installed: Some(installed),
-        roles: Default::default(),
         store: Some(store()),
         store_load: StoreLoadState::Ready,
         refreshing: true,
