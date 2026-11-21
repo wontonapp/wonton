@@ -683,7 +683,7 @@ class RoomTelegramTest {
         val firstOfList = bubble(0).fetchSemanticsNode()
         val aboveFirst = dateLines().lastOrNull { it.boundsInRoot.bottom <= firstOfList.boundsInRoot.top + 1f }
         checkNotNull(aboveFirst) { "列表最顶上那条的上面没有日期行" }
-        check(texts(aboveFirst).startsWith(fixtureStamp(aboveFirst, 0))) {
+        check(texts(aboveFirst).startsWith(fixtureStamp(0))) {
             "最顶上那行不是第一条的日期：${texts(aboveFirst)}"
         }
         check(aboveFirst.config.getOrNull(SemanticsProperties.TestTag) == "day-divider") {
@@ -736,7 +736,7 @@ class RoomTelegramTest {
         check(line.config.getOrNull(SemanticsProperties.TestTag) == "day-divider") {
             "跨天处那行不是核心的分隔条目：${texts(line)}"
         }
-        check(texts(line).startsWith(fixtureStamp(line, 11))) { "跨天那行不是第 11 条的日期：${texts(line)}" }
+        check(texts(line).startsWith(fixtureStamp(11))) { "跨天那行不是第 11 条的日期：${texts(line)}" }
     }
 
     /** 日期行夹在前一天最后一条和后一天第一条之间：下面紧挨的那条是它写的这一天，上面那条是更早的一天。 */
@@ -747,7 +747,7 @@ class RoomTelegramTest {
         check(bubbles.none { it.boundsInRoot.overlaps(mark) }) { "气泡压在日期行上：$mark" }
         val below = bubbles.firstOrNull { it.boundsInRoot.top >= mark.bottom - 1f }
         val belowIndex = checkNotNull(below?.let(::fixtureIndexOf)) { "日期行下面认不出气泡：$mark" }
-        check(texts(line).startsWith(fixtureStamp(line, belowIndex))) {
+        check(texts(line).startsWith(fixtureStamp(belowIndex))) {
             "日期行不是它下面那条的日期：${texts(line)} vs ${fixtureDate(belowIndex)}（第 $belowIndex 条）"
         }
         val above = bubbles.lastOrNull { it.boundsInRoot.bottom <= mark.top + 1f }
@@ -800,14 +800,8 @@ class RoomTelegramTest {
     /** 假数据第 `index` 条的日期：第 0 条早两天，11 起是后一天，其余同一天，每条隔一分钟（同 `ui_fake_room.rs`）。 */
     private fun fixtureDate(index: Int): String = fixtureAt(index, DateFormat.MEDIUM)
 
-    /** 日期行写的字：兜底的分隔只写日期；分隔条目写日期和时间，时间按短的写。 */
-    private fun fixtureStamp(line: SemanticsNode, index: Int): String =
-        if (line.config.getOrNull(SemanticsProperties.TestTag) == "day-divider") {
-            DateFormat.getDateTimeInstance(DateFormat.FULL, DateFormat.SHORT)
-                .format(Date(fixtureAtMs(index)))
-        } else {
-            fixtureDate(index)
-        }
+    /** 日期行写的字：胶囊里只有日期，兜底的分隔和分隔条目都一样。 */
+    private fun fixtureStamp(index: Int): String = fixtureDate(index)
 
     /** 假数据第 `index` 条所在的哪一天，拿来比先后，免得比字符串。 */
     private fun fixtureDay(index: Int): Date =
@@ -822,13 +816,9 @@ class RoomTelegramTest {
         if (index >= 11) 86_400_000L else 0L -
         if (index == 0) 172_800_000L else 0L
 
-    /** 日期行里写的哪天：分隔条目那行带着时刻，按它的格式解，兜底的分隔只有日期。 */
+    /** 日期行里写的哪天。 */
     private fun parseDay(line: SemanticsNode): Date? =
-        if (line.config.getOrNull(SemanticsProperties.TestTag) == "day-divider") {
-            DateFormat.getDateTimeInstance(DateFormat.FULL, DateFormat.SHORT).parse(texts(line))
-        } else {
-            DateFormat.getDateInstance(DateFormat.MEDIUM).parse(texts(line))
-        }
+        DateFormat.getDateInstance(DateFormat.MEDIUM).parse(texts(line))
 
     /** 回到房间列表再进群；用例都在同一个活动里连着跑。 */
     private fun openFamily() {

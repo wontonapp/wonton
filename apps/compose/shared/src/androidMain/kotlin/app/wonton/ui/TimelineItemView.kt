@@ -161,8 +161,8 @@ fun TimelineItemView(
                     ?.let { stringResource(R.string.timeline_profile_rename, it, content.name) }
                     ?: stringResource(R.string.timeline_profile_avatar, content.name),
             )
-            is TimelineContent.DateDivider -> Box(Modifier.testTag("day-divider")) {
-                DividerLabel(content.timestampMs.toLong())
+            is TimelineContent.DateDivider -> Box(Modifier.fillMaxWidth()) {
+                DaySeparator(dateLabel(content.timestampMs.toLong()))
             }
             TimelineContent.ReadMarker -> Row(
                 verticalAlignment = Alignment.CenterVertically,
@@ -190,14 +190,6 @@ fun TimelineItemView(
 @Composable
 private fun RowScope.NoteEdge() {
     Box(Modifier.weight(1f).height(WontonTheme.size.hairline).background(WontonTheme.colors.separator.toColor()))
-}
-
-/** 分隔条目自己写的那一行：日期和时间，两边都按系统格式。 */
-@Composable
-internal fun DividerLabel(timestampMs: Long) {
-    CenteredNote(
-        DateFormat.getDateTimeInstance(DateFormat.FULL, DateFormat.SHORT).format(Date(timestampMs)),
-    )
 }
 
 @Composable
