@@ -358,10 +358,10 @@ private struct EditNotice: View {
                 .foregroundStyle(Color(colors.textSecondary))
             VStack(alignment: .leading, spacing: 0) {
                 Text(.Composer.composerEditing)
-                    .font(WontonTheme.typography.caption)
+                    .wontonText(WontonTheme.typography.caption)
                     .foregroundStyle(Color(colors.textSecondary))
                 Text(summary)
-                    .font(WontonTheme.typography.caption)
+                    .wontonText(WontonTheme.typography.caption)
                     .foregroundStyle(Color(colors.textSecondary))
                     .lineLimit(1)
             }

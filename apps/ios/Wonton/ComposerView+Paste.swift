@@ -32,7 +32,7 @@ extension ComposerView {
     }
 
     /// 旁聊里发一张照片，输入框里的字当说明一起发；发出去了才清输入框（转码失败时字留着）。
-    private func sendImage(_ data: Data, _ type: UTType?) async {
+    func sendImage(_ data: Data, _ type: UTType?) async {
         let caption = draft.wrappedValue.trimmingCharacters(in: .whitespacesAndNewlines)
         guard await composer.sendImage(data, type, caption: caption, replyTo: model.replies[draftKey]?.eventId)
         else { return }
