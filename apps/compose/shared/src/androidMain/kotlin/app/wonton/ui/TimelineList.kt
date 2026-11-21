@@ -77,10 +77,15 @@ internal fun TimelineList(
     modifier: Modifier,
     menuOpen: Boolean = false,
     headerHeight: Dp = 0.dp,
+    onScroll: () -> Unit = {},
 ) {
     val listState = rememberLazyListState()
     ScrollEffects(listState, timeline, target, sideChats.covered, onAction)
     FollowNewItems(listState, outgoing)
+    // 翻时间线时先把命令列表收起来（ADR-0109 第 7 节），列表让出来。
+    LaunchedEffect(listState) {
+        snapshotFlow { listState.isScrollInProgress }.filter { it }.collect { onScroll() }
+    }
     // 倒着排：第 0 项是最新的一条，贴着底部。
     val newestFirst = timeline.items.asReversed()
     val openCard: (String) -> Unit = { cardId -> timeline.openedConfirmation = cardId }

@@ -8,8 +8,9 @@ use std::sync::{Arc, Mutex, Weak};
 
 use tokio::sync::mpsc;
 use wonton_protocol::{
-    ChatAction, ChoicesState, JumpState, MessageContent, MessageStatus, TimelineAction,
-    TimelineContent, TimelineDiff, TimelineFocus, TimelineItem, TimelineScroll, TimelineUpdate,
+    ChatAction, ChoicesState, JumpState, MessageContent, MessageStatus, QuotedContent,
+    QuotedMessage, ReplyQuote, TimelineAction, TimelineContent, TimelineDiff, TimelineFocus,
+    TimelineItem, TimelineScroll, TimelineUpdate,
 };
 
 use super::ui_fake_room::{ITEMS, OWNER, at_ms, text_message, timeline};
@@ -94,6 +95,14 @@ impl FakeTimelines {
                 Some(fake) => fake.send_text(body, mentions),
                 None => self.park(&target.room_id, body),
             },
+            // 假数据没有真上传：照片也补一条，回复对象照原样带上，界面测试才看得见第一张带没带回复。
+            TimelineAction::SendImage {
+                target, reply_to, ..
+            } => {
+                if let Some(fake) = self.get(&target.room_id) {
+                    fake.sent_photo(reply_to.as_deref());
+                }
+            }
             _ => {}
         }
         let room_id = match &action {
@@ -314,6 +323,37 @@ impl FakeTimeline {
                 index: u32::try_from(index).unwrap_or(u32::MAX),
                 item,
             }];
+        });
+    }
+
+    /// 假数据收下一张照片：补一条写着 photo 的文字，回复对象原样带上。真上传和媒体句柄不管。
+    fn sent_photo(&self, reply_to: Option<&str>) {
+        let index = {
+            let mut state = self.lock();
+            state.sent += 1;
+            ITEMS - 1 + state.sent
+        };
+        let id = format!("ui-fake-photo-{index}");
+        let mut message = text_message(&id, OWNER, at_ms(index), &["photo".to_owned()]);
+        message.status = Some(MessageStatus::Sent);
+        message.reply = reply_to.and_then(|event| {
+            let text = self.text_of(event.trim_start_matches('$'))?;
+            Some(ReplyQuote::Ready {
+                message: QuotedMessage {
+                    event_id: event.to_owned(),
+                    sender_id: OWNER.into(),
+                    sender_name: "Owner".into(),
+                    content: QuotedContent::Text { text },
+                },
+            })
+        });
+        let item = TimelineItem {
+            id,
+            content: TimelineContent::Message { message },
+        };
+        self.batch(|update| {
+            update.diffs = vec![TimelineDiff::PushBack { item }];
+            update.scroll_to_bottom = true;
         });
     }
 

@@ -61,10 +61,10 @@ impl ClientCore {
                     Ok(())
                 }
                 Action::Plugins { action } => self.dispatch_ui_fake_plugins(action),
-                // 假时间线（跳转、发字）和停止钮的假运行段都要看到同一个操作；被拒的不开假链。
+                // 先过附件区的检查：被拒的不进假时间线，也不开假链。收下了才记假时间线（发附言的顺带补一条）。
                 Action::Timeline { action } => {
-                    self.ui_fake_timelines.timeline_action(action.clone());
                     self.dispatch_ui_fake_composer(&action)?;
+                    self.ui_fake_timelines.timeline_action(action.clone());
                     self.dispatch_ui_fake_timeline(action);
                     Ok(())
                 }

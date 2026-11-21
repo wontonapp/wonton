@@ -39,19 +39,18 @@ import app.wonton.ui.icons.Check
 import app.wonton.ui.icons.WontonIcon
 
 /**
- * 转发先选房间：上面搜，中间挨个勾，底下写附言再发。列的是聊天列表里已经加入、能发的房间，勾几个就发给几个。
- * 附言先于原消息发进每个选中的房间。
+ * 转发先选房间：上面搜，中间挨个勾，底下是发给几个的发送键。列的是聊天列表里已经加入、能发的房间，勾几个就发给几个。
+ * 转发不带附言：附言要等核心的 `ForwardMessage.comment`（见 ADR-0109）。
  */
 @Composable
 fun ForwardSheet(
     rooms: List<RoomRow>,
     bots: List<BotView>,
     plugins: PluginsState,
-    onSend: (List<RoomRow>, String) -> Unit,
+    onSend: (List<RoomRow>) -> Unit,
     onDismiss: () -> Unit,
 ) {
     var query by remember { mutableStateOf("") }
-    var note by remember { mutableStateOf("") }
     val picked = remember { mutableStateListOf<String>() }
     val needle = query.trim()
     val shown = remember(rooms, needle) { rooms.filter { it.name.contains(needle, ignoreCase = true) } }
@@ -79,17 +78,17 @@ fun ForwardSheet(
                 }
             }
         }
-        // 附言条自己带 imePadding，键盘弹起时跟着上来。
+        // 发送条自己带 imePadding，键盘弹起时跟着上来。
         SheetSendBar(
-            note,
-            { note = it },
-            picked.size,
-            stringResource(R.string.sheet_note_hint),
+            note = null,
+            onNoteChange = {},
+            count = picked.size,
+            hint = stringResource(R.string.sheet_note_hint),
             onSend = {
                 val sending = rooms.filter { it.roomId in picked }
-                close { onSend(sending, note.trim()) }
+                close { onSend(sending) }
             },
-            modifier = Modifier.testTag("forward-send"),
+            sendTag = "forward-send",
         )
     }
 }
