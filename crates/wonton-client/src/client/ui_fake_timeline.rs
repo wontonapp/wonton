@@ -24,25 +24,23 @@ pub(super) struct FakeTimelines {
 }
 
 impl FakeTimelines {
-    /// 订阅一个假房间：先推第一批。
+    /// 订阅一个假房间：先给这个订阅者推第一批。房间已经开着就共用同一份状态，主对话和盖在上面的旁聊各订一份。
     pub(super) fn subscribe(&self, room_id: &str) -> Arc<TimelineSubscription> {
         let (sender, receiver) = mpsc::unbounded_channel();
-        let fake = Arc::new(FakeTimeline {
-            sender,
-            state: Mutex::new(State {
-                base: timeline(room_id),
-                runs: Runs::default(),
-                items: Vec::new(),
-                back: Vec::new(),
-                sent: 0,
-            }),
-        });
+        let fake = match self.get(room_id) {
+            Some(fake) => fake,
+            None => {
+                let fake = Arc::new(FakeTimeline::fresh(room_id));
+                lock(&self.open).insert(room_id.to_owned(), Arc::downgrade(&fake));
+                fake
+            }
+        };
         let mut first = fake.lock().base.clone();
         let pending = lock(&self.forwarded).remove(room_id).unwrap_or_default();
         // 没人转发进这个房间时也要留着第一批自己的 Reset：换成空 diffs 时间线就空了。
         first.diffs.extend(fake.receive(pending));
         fake.push(&mut first);
-        lock(&self.open).insert(room_id.to_owned(), Arc::downgrade(&fake));
+        lock(&fake.senders).push(sender);
         let scrolled = fake.clone();
         TimelineSubscription::seeded(receiver, Box::new(move |scroll| scrolled.scrolled(scroll)))
     }
@@ -143,7 +141,8 @@ impl FakeTimelines {
 }
 
 struct FakeTimeline {
-    sender: mpsc::UnboundedSender<TimelineUpdate>,
+    /// 订着这个房间的每一份（主对话、旁聊）；订阅者全没了才随房间一起丢。
+    senders: Mutex<Vec<mpsc::UnboundedSender<TimelineUpdate>>>,
     state: Mutex<State>,
 }
 
@@ -160,6 +159,19 @@ struct State {
 }
 
 impl FakeTimeline {
+    fn fresh(room_id: &str) -> Self {
+        FakeTimeline {
+            senders: Mutex::new(Vec::new()),
+            state: Mutex::new(State {
+                base: timeline(room_id),
+                runs: Runs::default(),
+                items: Vec::new(),
+                back: Vec::new(),
+                sent: 0,
+            }),
+        }
+    }
+
     fn lock(&self) -> std::sync::MutexGuard<'_, State> {
         lock(&self.state)
     }
@@ -172,7 +184,7 @@ impl FakeTimeline {
             crate::chat::apply_diff(&mut state.items, diff);
         }
         update.back_to = state.back.last().cloned();
-        let _ = self.sender.send(update.clone());
+        lock(&self.senders).retain(|sender| sender.send(update.clone()).is_ok());
     }
 
     /// 一批空的：只带外壳状态，加上 `change` 改的字段。

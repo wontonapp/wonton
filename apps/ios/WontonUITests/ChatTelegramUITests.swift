@@ -495,7 +495,7 @@ final class ChatTelegramUITests: XCTestCase {
 
     private func enter(_ room: String) {
         tap(app.buttons[room])
-        XCTAssertTrue(message(3).waitForExistence(timeout: 10), "时间线没出来\n\(app.debugDescription)")
+        XCTAssertTrue(app.textViews["Message"].waitForExistence(timeout: 10), "房间没打开\n\(app.debugDescription)")
     }
 
     /// 假房间的第几条消息（正文是 “Fixture message N”）。
