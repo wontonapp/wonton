@@ -123,3 +123,47 @@ async fn installing_an_app_that_opens_ports_asks_even_with_allow_all() {
             .all(|p| p.id.as_str() != "app.example.nas")
     );
 }
+
+/// 停链抢在卡片开出来之后：这张插件工具卡片随停链撤回，点它不再执行。
+#[tokio::test]
+async fn stopping_the_chain_withdraws_a_plugin_tool_card() {
+    let s = setup_notes().await;
+    let chains = crate::gateway::agent_chains::AgentChains::for_test(s.dir.path()).unwrap();
+    s.bus.attach_agent_chains(chains.clone());
+    let mut caller = s.caller.clone();
+    caller.bot = Some(super::server::BotIdentity {
+        bot: "main".into(),
+        keeper: wonton_protocol::BotKeeper::User {
+            username: "owner".into(),
+        },
+    });
+    let grant = chains
+        .ledger()
+        .start_turn(
+            wonton_protocol::BotRef {
+                plugin_id: caller.id.to_string(),
+                bot: "main".into(),
+            },
+            wonton_protocol::ChainTurnReport::Start {
+                session: "sess-1".into(),
+                room: "!room:wonton.localhost".into(),
+                thread: None,
+                sender: "@owner:wonton.localhost".into(),
+                event_id: "$turn".into(),
+            },
+            None,
+            "@owner:wonton.localhost".into(),
+        )
+        .unwrap();
+    caller.chain = Some(grant.chain.clone());
+    let call = s.spawn_as(&caller, PURGE, json!({"name": "a"}));
+    let card = s.cards.wait_for(1).await;
+    s.bus.stop_chain(&grant.chain).await.unwrap();
+    let result = call.await.unwrap();
+    assert!(failed(&result), "停链后点卡片不再执行");
+    assert!(matches!(
+        s.bus.confirmations().card(&card.id).unwrap().state,
+        ConfirmationState::Failed { .. }
+    ));
+    assert!(s.notes.deleted.lock().unwrap().is_empty(), "工具没跑");
+}
