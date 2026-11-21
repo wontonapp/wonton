@@ -472,14 +472,18 @@ impl PluginManager {
         network: &str,
         secrets: &mut Secrets,
         wait: Wait,
+        missing: super::secrets::CollectMissing,
         langs: &Languages,
     ) -> Result<(Option<Endpoint>, Option<ModelsRoute>, Option<McpTarget>), InstallError> {
+        // 安装和升级到这里时一次性容器都已经退出（`start_containers` 等过）：它们该写下的密钥这会儿
+        // 必须收到，不然 MCP 头填不出来。重启路径还在这一步收，没写下的下次再说。
         if super::secrets::collect(
             &self.engine,
             &self.cfg.instance,
             manifest,
             &self.bot_names(&manifest.id),
             secrets,
+            missing,
             langs,
         )
         .await?
