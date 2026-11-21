@@ -9,4 +9,5 @@ link-preview-timeout = サイトから { $detail } 以内に応答がありま�
 link-preview-not-html = リンク先はWebページではありません：{ $detail }
 link-preview-no-preview = ページにタイトル・説明・画像がありません：{ $detail }
 link-preview-too-many-requests = このデバイスからのプレビュー取得が多すぎます。1 分後にもう一度お試しください
+link-preview-interrupted = プレビューを読み込めませんでした。もう一度お試しください
 link-preview-image-gone = プレビュー画像の期限が切れました。プレビューをもう一度取得してください

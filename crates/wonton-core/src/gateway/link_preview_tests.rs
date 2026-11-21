@@ -441,4 +441,70 @@ async fn the_same_url_is_only_fetched_once_at_a_time() {
     assert_eq!(first.status, StatusCode::OK, "{}", first.text());
     assert_eq!(second.status, StatusCode::OK, "{}", second.text());
     assert_eq!(world.hits_of("/slow"), 1, "同一个网址同时取了两次");
+    // 等待的那台没有花自己的额度：额度只有 1 次，它还能再取另一个网址。
+    let reply = send_as(
+        &app,
+        Some(tablet),
+        Method::GET,
+        CORE,
+        &preview_path("http://site.test/other"),
+        &[],
+        "",
+    )
+    .await;
+    assert_eq!(reply.status, StatusCode::OK, "{}", reply.text());
+    assert_eq!(world.hits_of("/other"), 1);
+}
+
+/// 领头那台自己的额度用完了，等着的这台还没花过，应该拿它自己的额度再走一次。
+#[tokio::test]
+async fn a_waiter_out_of_its_own_quota_still_gets_the_card() {
+    let limits = Limits {
+        per_minute: 1,
+        ..Limits::default()
+    };
+    let (h, app, world) = setup(limits).await;
+    let phone = SecretKey::generate().public();
+    let tablet = SecretKey::generate().public();
+    h.tunnel.devices.add(phone, None).unwrap();
+    h.tunnel.devices.add(tablet, None).unwrap();
+    // 手机先把这一分钟的额度用光。
+    let spent = send_as(
+        &app,
+        Some(phone),
+        Method::GET,
+        CORE,
+        &preview_path("http://site.test/other"),
+        &[],
+        "",
+    )
+    .await;
+    assert_eq!(spent.status, StatusCode::OK, "{}", spent.text());
+    let path = preview_path("http://site.test/slow");
+    let (first, second) = tokio::join!(
+        send_as(&app, Some(phone), Method::GET, CORE, &path, &[], ""),
+        send_as(&app, Some(tablet), Method::GET, CORE, &path, &[], ""),
+    );
+    assert_eq!(
+        first.status,
+        StatusCode::TOO_MANY_REQUESTS,
+        "{}",
+        first.text()
+    );
+    assert_eq!(
+        second.status,
+        StatusCode::OK,
+        "平板还有额度，不该替手机吃那个 429：{}",
+        second.text()
+    );
+    assert_eq!(world.hits_of("/slow"), 1);
+}
+
+/// 被打断的是我们自己的请求，文案不该说成对方网站出错。
+#[test]
+fn an_interrupted_preview_is_not_blamed_on_the_site() {
+    let (status, kind, message) = super::failure_message(LinkPreviewFailure::Other);
+    assert_eq!(status, StatusCode::INTERNAL_SERVER_ERROR);
+    assert_eq!(kind, "other");
+    assert_eq!(message, "link-preview-interrupted");
 }

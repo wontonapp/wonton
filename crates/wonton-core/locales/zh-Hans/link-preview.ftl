@@ -9,4 +9,5 @@ link-preview-timeout = 对方网站 { $detail } 内没有回应
 link-preview-not-html = 链接不是网页：{ $detail }
 link-preview-no-preview = 网页里没有标题、摘要和图片：{ $detail }
 link-preview-too-many-requests = 这台设备取预览太频繁，过一分钟再试
+link-preview-interrupted = 预览没取完，请重试
 link-preview-image-gone = 预览图片已经过期，重新取一次预览
