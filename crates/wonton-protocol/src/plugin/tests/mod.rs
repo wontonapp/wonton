@@ -289,6 +289,7 @@ fn detail() -> PluginDetail {
         installable: true,
         install_gate: crate::Gate::Allow,
         about: Some("第一段\n\n第二段".into()),
+        setup: Some("用 admin 登录后改密码".into()),
         icon: Some(icon("ab")),
         screenshots: vec![PluginImage {
             path: "/_wonton/api/images/ef/screenshot.jpg".into(),

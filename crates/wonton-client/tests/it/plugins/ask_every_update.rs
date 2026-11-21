@@ -15,6 +15,7 @@ fn detail(ask: bool) -> Canned {
         title: "标题 app.agent.notes".to_owned(),
         summary: String::new(),
         about: None,
+        setup: None,
         icon: None,
         screenshots: Vec::new(),
         tags: Vec::new(),
