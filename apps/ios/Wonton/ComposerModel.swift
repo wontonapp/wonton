@@ -13,6 +13,8 @@ final class ComposerModel {
     private(set) var viewModel: ComposerViewModel?
     /// 这条时间线的停止控件（ADR-0061 第 10 节）：核心算好的样子，壳只照着画。
     private(set) var agentStop: RoomAgentStop = .idle
+    /// 正在编辑的旧消息（ADR-0109 第 8 节）；编辑时发送键变确认，× 恢复原草稿。核心给，壳照着画。
+    var edit: ComposerEdit?
     let roomId: String
     /// 旁聊根的事件 ID；空是房间的主时间线（ADR-0093）。
     let threadRoot: String?

@@ -53,4 +53,7 @@
     <string name="composer_commands_more">%1$d more commands not listed</string>
     <string name="composer_attachment_unsupported_type">This format can\'t be uploaded</string>
     <string name="composer_attachment_reply_target">The quoted message is gone, drop the reply</string>
+    <string name="composer_edit_cancel">Stop editing</string>
+    <string name="composer_edit_send">Save</string>
+    <string name="composer_editing">Editing message</string>
 </resources>

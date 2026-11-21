@@ -16,6 +16,7 @@ struct TimelineRow: View {
     let cardAction: (Action) -> Void
     /// 进入回复状态，引用由核心随菜单给。
     let reply: (QuotedMessage) -> Void
+    let edit: (String) -> Void
     let forward: () -> Void
     let redact: () -> Void
     /// Agent 在等回答的卡片就在这个房间：滚到那张卡片（ADR-0082）。
@@ -42,7 +43,7 @@ struct TimelineRow: View {
                 showsSender: showsSender && message.run.startsRun,
                 flushesPrevious: flushesPrevious, flushesNext: flushesNext,
                 retry: retry, cancel: cancel,
-                cardAction: cardAction, reply: reply, forward: forward, redact: redact,
+                cardAction: cardAction, reply: reply, edit: edit, forward: forward, redact: redact,
                 openSideChat: onOpenSideChat, answerChoice: answerChoice,
                 jump: jump, isJumping: isJumping, avatar: message.isOwn ? nil : avatar
             )
@@ -128,6 +129,7 @@ private struct MessageBubble: View {
     let cancel: () -> Void
     let cardAction: (Action) -> Void
     let reply: (QuotedMessage) -> Void
+    let edit: (String) -> Void
     let forward: () -> Void
     let redact: () -> Void
     /// 挂在这条消息上的旁聊卡片点了就进那个旁聊（ADR-0093）。
@@ -218,7 +220,12 @@ private struct MessageBubble: View {
             }
             .accessibilityIdentifier("messageReply")
         case .edit:
-            EmptyView()
+            Button {
+                edit(itemId)
+            } label: {
+                Label { Text(.Message0.messageEdit) } icon: { Image(systemName: "pencil") }
+            }
+            .accessibilityIdentifier("messageEdit")
         case .forward:
             Button {
                 forward()

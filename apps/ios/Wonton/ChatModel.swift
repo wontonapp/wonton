@@ -45,10 +45,10 @@ final class ChatModel {
     /// 新建聊天选的 AI 不支持旁聊、打开的是主对话的房间（ADR-0093 §7）。
     var noSideChatsRoom: String?
     /// 刚发起了和这个用户的私聊，房间出现后打开。
-    private var awaitedPeer: String?
+    var awaitedPeer: String?
     /// 链接要打开的房间；还需要加入或等同步。
-    private var awaitedRoom: String?
-    @ObservationIgnored private var awaitedFrom = AppTab.chat
+    var awaitedRoom: String?
+    @ObservationIgnored var awaitedFrom = AppTab.chat
     /// 发起私聊在后台失败了，原因显示在聊天页，主界面要切过去。
     var openingFailed = false
     /// 主人在交接页点了“稍后”（ADR-0087）：先收起交接页，聊天列表顶上的提醒再打开。只在这次运行里记着。
@@ -130,6 +130,21 @@ final class ChatModel {
         }
         guard server == core.servers().servers.first(where: \.current)?.id else { return }
         draftStore.restore(stored, in: draftKey(target))
+    }
+
+    /// 正在输入（ADR-0109 第 6 节）：核心自己节流；只是提示，失败不挡发送。
+    func sendTyping(_ typing: Bool, in target: TimelineTarget) {
+        send(.timeline(action: .setTyping(target: target, typing: typing)))
+    }
+
+    /// 发出编辑；成功后核心自己把原草稿和回复对象放回去，壳等编辑态清掉再读草稿。
+    func editMessage(_ body: String, edit: ComposerEdit, in target: TimelineTarget) {
+        send(.timeline(action: .editMessage(target: target, eventId: edit.eventId, body: body)))
+    }
+
+    /// 放弃编辑（编辑条上的 ×）：核心恢复原草稿。
+    func cancelEdit(in target: TimelineTarget) {
+        send(.timeline(action: .cancelEdit(target: target)))
     }
 
     /// 每次写草稿都带上正在回复的那条，不带核心会把存着的回复对象清掉。
@@ -303,32 +318,11 @@ final class ChatModel {
         openAwaitedChat()
     }
 
-    private func show(_ roomId: String, from origin: AppTab) {
+    func show(_ roomId: String, from origin: AppTab) {
         if origin == .chat {
             path = [.room(roomId)]
         } else {
             visiting = VisitingRoom(tab: origin, roomId: roomId)
-        }
-    }
-
-    private func openAwaitedChat() {
-        if let room = awaitedRoom {
-            if viewModel.rooms.contains(where: { $0.roomId == room && $0.membership == .joined }) {
-                awaitedRoom = nil
-                path = [.room(room)]
-            } else if viewModel.problem != nil {
-                awaitedRoom = nil
-                openingFailed = true
-            }
-            return
-        }
-        guard let peer = awaitedPeer else { return }
-        if let room = viewModel.rooms.first(where: { $0.directUserId == peer && $0.membership == .joined }) {
-            awaitedPeer = nil
-            show(room.roomId, from: awaitedFrom)
-        } else if viewModel.problem != nil {
-            awaitedPeer = nil
-            openingFailed = true
         }
     }
 }

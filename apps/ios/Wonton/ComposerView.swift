@@ -21,9 +21,9 @@ struct ComposerView: View {
     var jumpToReply: (String) -> Void = { _ in }
     private var roomId: String { composer.roomId }
     /// 附件区只有主对话有（ADR-0093）：旁聊里字和照片直接发，不给选文件，粘贴文件提示去主对话发。
-    private var isSideChat: Bool { composer.threadRoot != nil }
-    private var draftKey: String { model.draftKey(composer.target) }
-    private var draft: Binding<String> {
+    var isSideChat: Bool { composer.threadRoot != nil }
+    var draftKey: String { model.draftKey(composer.target) }
+    var draft: Binding<String> {
         Binding(
             get: { model.drafts[draftKey, default: ""] },
             set: {
@@ -44,6 +44,13 @@ struct ComposerView: View {
     @State private var sentSlash = ""
     @FocusState private var isFocused: Bool
     @Environment(\.wontonColors) private var colors
+
+    private var bottomFade: some View {
+        ChatEdgeFade(edge: .bottom, fade: WontonTheme.spacing.s32)
+            .padding(.top, -WontonTheme.spacing.s24)
+            .padding(.horizontal, -WontonTheme.spacing.s4)
+            .padding(.bottom, -WontonTheme.size.detailIcon)
+    }
 
     var body: some View {
         let isEmpty = draft.wrappedValue.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty
@@ -68,21 +75,19 @@ struct ComposerView: View {
                     if hasRoom() { isChoosingAttachment = true }
                 }
                 .accessibilityIdentifier("composerAttach")
+                // 编辑只改文字，附件区不动（ADR-0109 第 8 节）。
+                .disabled(composer.edit != nil)
+                .opacity(composer.edit == nil ? 1 : WontonTheme.ratio.secondaryContent)
                 field
                 // Bot 在跑时停止钮排在发送钮前面；没字时发送钮不出，只剩停止钮。
                 if AgentStopButton.isShown(composer.agentStop) {
                     AgentStopButton(state: composer.agentStop, action: composer.stopAgent)
                 }
-                ComposerSendSlot(canSend: !isEmpty, send: send)
+                ComposerSendSlot(canSend: !isEmpty, editing: composer.edit != nil, send: send)
             }
             .chatGlassCluster()
             // 渐隐从输入栏上方一点开始，一直垫到屏幕底（伸出去的部分在屏幕外或键盘后面）。
-            .background {
-                ChatEdgeFade(edge: .bottom, fade: WontonTheme.spacing.s32)
-                    .padding(.top, -WontonTheme.spacing.s24)
-                    .padding(.horizontal, -WontonTheme.spacing.s4)
-                    .padding(.bottom, -WontonTheme.size.detailIcon)
-            }
+            .background { bottomFade }
         }
         .padding(.horizontal, WontonTheme.spacing.s4)
         .padding(.bottom, WontonTheme.spacing.s4)
@@ -129,7 +134,7 @@ struct ComposerView: View {
             if isSideChat {
                 Task { await sendPhotos(items) }
             } else {
-                Task { await composer.addPhotos(items) }
+                Task { await sendPhotos(items) }
             }
         }
         .fileImporter(isPresented: $isPickingFiles, allowedContentTypes: [.item], allowsMultipleSelection: true) {
@@ -149,7 +154,12 @@ struct ComposerView: View {
     private var field: some View {
         let shape = RoundedRectangle(cornerRadius: WontonTheme.size.chatControl / 2, style: .continuous)
         return VStack(spacing: 0) {
-            if let reply = model.replies[draftKey] {
+            if let edit = composer.edit {
+                EditNotice(summary: edit.summary) { model.cancelEdit(in: composer.target) }
+                    .padding(.horizontal, WontonTheme.spacing.s12)
+                    .padding(.trailing, WontonTheme.spacing.s4)
+                    .padding(.top, WontonTheme.spacing.s8)
+            } else if let reply = model.replies[draftKey] {
                 ReplyQuoteView(
                     quote: reply, core: model.core, ink: Color(colors.textPrimary), accent: Color(colors.accentInk),
                     cancel: { model.cancelReply(in: composer.target) },
@@ -167,6 +177,13 @@ struct ComposerView: View {
                 onPasteFiles: { pasteFiles($0) },
                 onSend: send
             )
+            // 正在输入（ADR-0109 第 6 节）：核心自己节流，这里每个字都照实报。
+            .onChange(of: draft.wrappedValue) { _, value in
+                model.sendTyping(
+                    !value.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty,
+                    in: composer.target
+                )
+            }
         }
         .clipShape(shape)
         .chatGlass(in: shape)
@@ -234,61 +251,23 @@ struct ComposerView: View {
                 continue
             }
             if isSideChat {
-                await composer.sendImage(data, type, replyTo: model.replies[draftKey]?.eventId)
+                await sendImage(data, type)
             } else {
                 await composer.addImage(data, type)
             }
         }
     }
 
-    /// 粘贴的图转码后进附件区；旁聊里直接发（ADR-0093）。
-    private func pasteImage(from providers: [NSItemProvider]) async {
-        guard let (data, type) = await ComposerPaste.image(from: providers) else {
-            model.rejection = Problem(
-                title: String(localized: .Photo.photoUnreadable), nextStep: String(localized: .Photo.photoTryAnother)
-            )
-            return
-        }
-        if isSideChat {
-            await sendImage(data, type)
-        } else {
-            await composer.addImage(data, type)
-        }
-    }
-
-    private func pasteFiles(_ urls: [URL]) {
-        // 文件上传只认房间：旁聊里粘贴文件提示去主对话发（ADR-0093）。
-        if isSideChat {
-            model.rejection = Problem(title: String(localized: .Chat.sideChatNoFiles))
-            return
-        }
-        guard !urls.isEmpty, urls.allSatisfy(\.isFileURL) else {
-            model.rejection = Problem(title: String(localized: .Composer.composerChooseFailed))
-            return
-        }
-        composer.addFiles(urls)
-    }
-
-    /// 旁聊里发一张照片，输入框里的字当说明一起发；发出去了才清输入框（转码失败时字留着）。
-    private func sendImage(_ data: Data, _ type: UTType?) async {
-        let caption = draft.wrappedValue.trimmingCharacters(in: .whitespacesAndNewlines)
-        guard await composer.sendImage(data, type, caption: caption, replyTo: model.replies[draftKey]?.eventId)
-        else { return }
-        draft.wrappedValue = ""
-    }
-
-    /// 旁聊里一次发几张：说明跟第一张走，发出去了才清输入框。
-    private func sendPhotos(_ items: [PhotosPickerItem]) async {
-        let sent = await composer.sendPhotos(
-            items, caption: draft.wrappedValue, replyTo: model.replies[draftKey]?.eventId
-        )
-        if sent { draft.wrappedValue = "" }
-    }
-
     private func send() {
         guard !draft.wrappedValue.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty
             || !composer.attachments.isEmpty else { return }
         pin.pin()
+        model.sendTyping(false, in: composer.target)
+        if let edit = composer.edit {
+            // 核心成功后自己把原草稿和回复对象放回去，编辑条跟着从更新里消失。
+            model.editMessage(draft.wrappedValue, edit: edit, in: composer.target)
+            return
+        }
         // 被核心拒收时字、附件和回复对象都留着，改完再发；收下了才清。
         guard composer.send(draft.wrappedValue, replyTo: model.replies[draftKey]?.eventId) else { return }
         draft.wrappedValue = ""
@@ -300,13 +279,14 @@ struct ComposerView: View {
 /// 单独一个视图：别的按钮要占这一格（比如 Agent 在跑时的“停止”）就换在这里，不动输入框的布局。
 struct ComposerSendSlot: View {
     let canSend: Bool
+    var editing = false
     let send: () -> Void
     @Environment(\.accessibilityReduceMotion) private var reduceMotion
 
     var body: some View {
         ZStack {
             if canSend {
-                SendButton(action: send)
+                SendButton(action: send, editing: editing)
                     .transition(reduceMotion ? .opacity : .scale.combined(with: .opacity))
             }
         }
@@ -318,10 +298,15 @@ struct ComposerSendSlot: View {
 
 private struct SendButton: View {
     let action: () -> Void
+    var editing = false
 
     var body: some View {
-        ChatGlassButton(icon: .send, label: String(localized: .Composer.composerSend), prominent: true, action: action)
-            .accessibilityIdentifier("composerSend")
+        ChatGlassButton(
+            icon: editing ? .check : .send,
+            label: String(localized: editing ? .Composer.composerEditSend : .Composer.composerSend),
+            prominent: true, action: action
+        )
+        .accessibilityIdentifier(editing ? "composerEditSend" : "composerSend")
     }
 }
 
@@ -358,5 +343,30 @@ private struct ComposerMenuButton: View {
         .animation(
             .easeOut(duration: reduceMotion ? WontonTheme.motion.reduced : WontonTheme.motion.state), value: showsTitle
         )
+    }
+}
+
+/// 编辑条：说明在改哪条、一行摘要，× 放弃并恢复原草稿（ADR-0109 第 8 节）。
+private struct EditNotice: View {
+    let summary: String
+    let cancel: () -> Void
+    @Environment(\.wontonColors) private var colors
+
+    var body: some View {
+        HStack(spacing: WontonTheme.spacing.s8) {
+            Image(systemName: "pencil")
+                .foregroundStyle(Color(colors.textSecondary))
+            VStack(alignment: .leading, spacing: 0) {
+                Text(.Composer.composerEditing)
+                    .wontonText(WontonTheme.typography.caption)
+                    .foregroundStyle(Color(colors.textSecondary))
+                Text(summary)
+                    .wontonText(WontonTheme.typography.caption)
+                    .foregroundStyle(Color(colors.textSecondary))
+                    .lineLimit(1)
+            }
+            Spacer(minLength: 0)
+            WontonIconButton(icon: .close, label: String(localized: .Composer.composerEditCancel), action: cancel)
+        }
     }
 }

@@ -15,6 +15,7 @@ import androidx.compose.foundation.clickable
 import androidx.compose.foundation.content.ReceiveContentListener
 import androidx.compose.foundation.content.contentReceiver
 import androidx.compose.foundation.layout.Box
+import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.heightIn
@@ -50,6 +51,7 @@ import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.semantics.Role
 import androidx.compose.ui.semantics.contentDescription
 import androidx.compose.ui.semantics.semantics
+import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import app.wonton.client.ClientCore
 import app.wonton.protocol.Action
@@ -60,6 +62,7 @@ import app.wonton.protocol.CoreException
 import app.wonton.protocol.ImageUpload
 import app.wonton.protocol.ReplyQuote
 import app.wonton.protocol.RoomAgentStop
+import app.wonton.protocol.ComposerEdit
 import app.wonton.protocol.RoomCommand
 import app.wonton.protocol.TimelineAction
 import app.wonton.protocol.TimelineTarget
@@ -72,6 +75,9 @@ import app.wonton.ui.icons.Image
 import app.wonton.ui.icons.Send
 import app.wonton.ui.icons.List
 import app.wonton.ui.icons.WontonIcon
+import app.wonton.ui.icons.Close
+import app.wonton.ui.icons.Check
+import app.wonton.ui.icons.Compose
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
@@ -99,6 +105,8 @@ fun Composer(
     onDraftChange: (String) -> Unit,
     onSent: () -> Unit,
     onReplyCancel: () -> Unit,
+    editing: ComposerEdit?,
+    onEditCancel: () -> Unit,
     onAction: (Action) -> Unit,
     onReject: (Problem) -> Unit,
     commands: List<RoomCommand> = emptyList(),
@@ -117,23 +125,7 @@ fun Composer(
     val roomId = target.roomId
     val inSideChat = target.threadRoot != null
     // 旁聊里照片不进附件区，选好就发；输入框里的字只当第一张的说明，回复跟着这张照片发出去。
-    val sendImage = if (inSideChat) {
-        { upload: ImageUpload, caption: String? ->
-            val problem =
-                core.send(
-                    Action.Timeline(
-                        TimelineAction.SendImage(target, upload, caption = caption, replyTo = reply?.eventId),
-                    ),
-                )
-            if (problem == null) {
-                if (caption != null) onSent() else if (reply != null) onReplyCancel()
-            } else {
-                onReject(problem)
-            }
-        }
-    } else {
-        null
-    }
+    val sendImage = sideChatSendImage(inSideChat, target, reply, core, onSent, onReplyCancel, onReject)
     val attach = rememberAttachments(roomId, composer, core, onReject, sendImage, draft)
     val isEmpty = draft.isBlank() && attachments.isEmpty()
     val focusRequester = remember { FocusRequester() }
@@ -150,6 +142,8 @@ fun Composer(
         inSideChat = inSideChat,
         roomId = roomId,
         reply = reply,
+        editing = editing,
+        onEditCancel = onEditCancel,
         core = core,
         onReplyCancel = onReplyCancel,
         attachments = attachments,
@@ -168,6 +162,7 @@ fun Composer(
         commands = commands,
         agentStop = agentStop,
         isEmpty = isEmpty,
+        editing = editing != null,
         focusRequester = focusRequester,
         onDraftChange = onDraftChange,
         attach = attach,
@@ -192,6 +187,8 @@ private fun ComposerStack(
     reply: ReplyQuote?,
     core: ClientCore,
     onReplyCancel: () -> Unit,
+    editing: ComposerEdit?,
+    onEditCancel: () -> Unit,
     attachments: List<ComposerAttachment>,
     onAction: (Action) -> Unit,
     draft: String,
@@ -202,8 +199,12 @@ private fun ComposerStack(
     onReject: (Problem) -> Unit,
 ) {
     if (!inSideChat) OnboardingChatPrompts(roomId)
-    if (reply != null) ComposerReply(reply, core, onReplyCancel)
-    val shown = commandQuery(draft, commands)
+    if (editing != null) {
+        ComposerEditNotice(editing.summary, onEditCancel)
+    } else if (reply != null) {
+        ComposerReply(reply, core, onReplyCancel)
+    }
+    val shown = if (editing == null) commandQuery(draft, commands) else emptyList()
     ComposerTray(attachments, roomId, core, onAction)
     if (shown.isNotEmpty()) {
         // 键盘把可用的地方压小以后菜单跟着缩，别把输入框和顶栏一起挤走。
@@ -230,6 +231,7 @@ private fun ComposerBar(
     commands: List<RoomCommand>,
     agentStop: RoomAgentStop,
     isEmpty: Boolean,
+    editing: Boolean,
     focusRequester: FocusRequester,
     onDraftChange: (String) -> Unit,
     attach: Attachments,
@@ -252,7 +254,13 @@ private fun ComposerBar(
                 },
             )
         }
-        WontonIconButton(WontonIcon.Attach, stringResource(R.string.composer_attach), attach.choose)
+        // 编辑只改文字，附件区不动（ADR-0109 第 8 节）。
+        WontonIconButton(
+            WontonIcon.Attach,
+            stringResource(R.string.composer_attach),
+            attach.choose,
+            enabled = !editing,
+        )
         ComposerField(
             draft,
             onDraftChange,
@@ -273,8 +281,29 @@ private fun ComposerBar(
             enter = scaleIn(motion) + fadeIn(motion),
             exit = scaleOut(motion) + fadeOut(motion),
         ) {
-            SendButton { send(dropCommand ?: draft) }
+            SendButton(editing) { send(dropCommand ?: draft) }
         }
+    }
+}
+
+/** 编辑时确认发到原消息；平时按原来的发送（附件区、回复一起走）。 */
+private fun submit(
+    editing: ComposerEdit?,
+    target: TimelineTarget,
+    text: String,
+    reply: ReplyQuote?,
+    viaTray: Boolean,
+    core: ClientCore,
+    onAction: (Action) -> Unit,
+    onSent: () -> Unit,
+    onReject: (Problem) -> Unit,
+) {
+    if (editing != null) {
+        // 核心成功后自己把原草稿和回复对象放回去，编辑条跟着从更新里消失。
+        onAction(Action.Timeline(TimelineAction.EditMessage(target, editing.eventId, text)))
+    } else {
+        val problem = core.send(sendAction(target, text, reply, viaTray))
+        if (problem == null) onSent() else onReject(problem)
     }
 }
 
@@ -441,9 +470,9 @@ private fun ComposerField(
 }
 
 @Composable
-private fun SendButton(onClick: () -> Unit) {
+private fun SendButton(editing: Boolean, onClick: () -> Unit) {
     val colors = WontonTheme.colors
-    val sendLabel = stringResource(R.string.composer_send)
+    val sendLabel = stringResource(if (editing) R.string.composer_edit_send else R.string.composer_send)
     Box(
         Modifier.size(WontonTheme.size.target)
             .clickable(role = Role.Button, onClick = onClick)
@@ -455,7 +484,7 @@ private fun SendButton(onClick: () -> Unit) {
             contentAlignment = Alignment.Center,
         ) {
             Icon(
-                WontonIcon.Send,
+                if (editing) WontonIcon.Check else WontonIcon.Send,
                 // 装饰：外层的可点区域已经带了“发送”。
                 contentDescription = null,
                 modifier = Modifier.size(WontonTheme.size.iconSmall),
@@ -477,3 +506,27 @@ private fun sendAction(target: TimelineTarget, text: String, reply: ReplyQuote?,
             TimelineAction.SendText(target, text, reply?.eventId)
         },
     )
+
+/// 旁聊里的照片选好就发，输入框里的字只当说明；主对话返回 null，由附件区接管。
+private fun sideChatSendImage(
+    inSideChat: Boolean,
+    target: TimelineTarget,
+    reply: ReplyQuote?,
+    core: ClientCore,
+    onSent: () -> Unit,
+    onReplyCancel: () -> Unit,
+    onReject: (Problem) -> Unit,
+): ((ImageUpload, String?) -> Unit)? {
+    if (!inSideChat) return null
+    return { upload, caption ->
+        val problem =
+            core.send(
+                Action.Timeline(TimelineAction.SendImage(target, upload, caption = caption, replyTo = reply?.eventId)),
+            )
+        if (problem == null) {
+            if (caption != null) onSent() else if (reply != null) onReplyCancel()
+        } else {
+            onReject(problem)
+        }
+    }
+}
