@@ -340,6 +340,7 @@ fn fake_rooms() -> Vec<RoomRow> {
             is_direct: true,
             direct_user_id: Some("@echo:home.example".into()),
             plugin: None,
+            bot_chat: None,
             is_encrypted: true,
             is_read_only: false,
             membership: RoomMembership::Joined,
@@ -363,6 +364,7 @@ fn fake_rooms() -> Vec<RoomRow> {
             is_direct: false,
             direct_user_id: None,
             plugin: None,
+            bot_chat: None,
             is_encrypted: true,
             is_read_only: false,
             membership: RoomMembership::Joined,
@@ -385,6 +387,7 @@ fn fake_rooms() -> Vec<RoomRow> {
                 start: None,
                 can_start: false,
             }),
+            bot_chat: None,
             is_encrypted: true,
             is_read_only: false,
             membership: RoomMembership::Joined,
@@ -427,6 +430,7 @@ fn fake_chat(mut chat: ChatViewModel) -> ChatViewModel {
     chat.bots = vec![
         BotView {
             user_id: "@echo:home.example".into(),
+            availability: Default::default(),
             bot: BotRef {
                 plugin_id: "app.example.echo".into(),
                 bot: "echo".into(),
@@ -445,6 +449,7 @@ fn fake_chat(mut chat: ChatViewModel) -> ChatViewModel {
         },
         BotView {
             user_id: "@hermes:home.example".into(),
+            availability: Default::default(),
             bot: BotRef {
                 plugin_id: "app.example.hermes".into(),
                 bot: "hermes".into(),

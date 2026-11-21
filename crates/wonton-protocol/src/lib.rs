@@ -119,7 +119,8 @@ pub use bot_contacts::{
 pub use bot_profile::{
     AVATARS_FIELD, AccessSource, AvatarChange, AvatarImage, AvatarKind, AvatarMedia,
     AvatarMediaProblem, AvatarUpload, BOT_ACTIVITY_PATH, BOT_ACTIVITY_WAIT_SECS, BotActivity,
-    BotActivityFacts, BotActivityReport, BotNameProblem, BotPluginAccess, BotPluginAccessUpdate,
+    BotActivityFacts, BotActivityReport, BotChatAvailability, BotChatUnavailable, BotNameProblem,
+    BotPluginAccess, BotPluginAccessUpdate,
     BotProfileFailure, BotProfileProblem, BotProfileUpdate, BotProfileUpdated, BotView,
     DefaultBotVisibility, MAX_AVATAR_BYTES, MAX_AVATAR_DURATION_MS, MAX_AVATAR_EDGE,
     MAX_BOT_NAME_CHARS, StateAvatar, StateAvatars, bot_plugin_access_path, bot_profile_path,

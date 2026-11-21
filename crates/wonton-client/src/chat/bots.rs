@@ -403,6 +403,7 @@ impl Bots {
                     .unwrap_or_else(|| BotView {
                         chat: Default::default(),
                         user_id: user.clone(),
+                        availability: Default::default(),
                         bot: BotRef {
                             plugin_id: plugin.id.clone(),
                             bot: "default".into(),
@@ -442,6 +443,9 @@ impl Bots {
                             .find(|facts| facts.plugin_id == plugin.id && facts.user_id == *user)
                     })
                     .cloned();
+                if let Some(facts) = record.facts.as_ref() {
+                    bot.availability = facts.chat;
+                }
                 local.records.insert(key, record);
                 views.push(bot);
             }
@@ -666,6 +670,7 @@ mod tests {
     fn view(activity: Option<BotActivity>, states: &[(&str, BotActivity)]) -> BotView {
         BotView {
             chat: Default::default(),
+            availability: Default::default(),
             user_id: "@bot:home".into(),
             bot: BotRef {
                 plugin_id: "app.bot".into(),

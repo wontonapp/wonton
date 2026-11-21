@@ -380,6 +380,11 @@ pub struct RoomRow {
     #[serde(default, skip_serializing_if = "Option::is_none")]
     #[cfg_attr(feature = "uniffi", uniffi(default = None))]
     pub plugin: Option<crate::RoomPlugin>,
+    /// 私聊对方是 Bot 时当前人能不能聊（[`crate::BotChatAvailability`]）；不是 Bot 的私聊为空。
+    /// 不可用时房间和历史都留着，壳禁用输入并写原因。
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    #[cfg_attr(feature = "uniffi", uniffi(default = None))]
+    pub bot_chat: Option<crate::BotChatAvailability>,
     /// 是否开了端到端加密。
     pub is_encrypted: bool,
     /// 只读的房间（和核心账号的通知私聊）：没有人读这里的消息，壳不显示输入框，发文字和图片会被拒绝。
@@ -564,6 +569,7 @@ mod tests {
                 is_direct: true,
                 direct_user_id: Some("@hermes:home.example".into()),
                 plugin: None,
+                bot_chat: None,
                 is_encrypted: true,
                 is_read_only: false,
                 membership: RoomMembership::Invited,

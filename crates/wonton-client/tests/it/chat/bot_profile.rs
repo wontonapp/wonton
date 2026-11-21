@@ -124,6 +124,7 @@ fn facts(bot: &MatrixSession) -> BotActivityFacts {
         plugin_id: PLUGIN.to_owned(),
         bot: Some("default".into()),
         user_id: bot.user_id().to_string(),
+        chat: BotChatAvailability::Available,
         running: true,
         model_requests: 0,
         tool_calls: 0,

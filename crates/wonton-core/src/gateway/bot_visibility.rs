@@ -3,7 +3,10 @@
 
 use hyper::HeaderMap;
 use ruma_common::UserId;
-use wonton_protocol::{BotRef, MemberStatus};
+use wonton_protocol::{
+    BotChatAvailability, BotChatUnavailable, BotKeeper, BotRef, ContactState, DefaultBotVisibility,
+    MemberStatus,
+};
 
 use super::{Gateway, Person, TunnelPeer, api, isolation};
 use crate::contacts::PersonContactRecordRead;
@@ -69,7 +72,100 @@ pub(super) fn bot_identity_and_contact_facts(
     })
 }
 
-fn caller_facts(gateway: &Gateway, peer: Option<TunnelPeer>, headers: &HeaderMap) -> CallerFacts {
+/// 按原始事实判断当前请求者能不能和这个 Bot 聊天：本人的、共享 Bot（主人或角色允许）和已成立的联系人能用；
+/// 别人的私人 Bot 分“没授权”和“授权已撤”；读不明时未知。角色和成员记录要和调用人的当前身份一致，
+/// 不一致只说明快照变了，不当作能用。
+pub(super) fn chat_availability(
+    gateway: &Gateway,
+    facts: &BotIdentityAndContactFacts,
+) -> BotChatAvailability {
+    let CallerFacts::Known {
+        person,
+        user_id: Some(user_id),
+        ..
+    } = &facts.caller
+    else {
+        return BotChatAvailability::Unknown;
+    };
+    if <&UserId>::try_from(user_id.as_str()).is_err() {
+        return BotChatAvailability::Unknown;
+    }
+    let shared_bots = if person.is_owner() {
+        true
+    } else {
+        let Some(member) = gateway.members.get(&person.username) else {
+            return BotChatAvailability::Unknown;
+        };
+        if member.status != MemberStatus::Joined || member.user_id.as_str() != user_id.as_str() {
+            return BotChatAvailability::Unknown;
+        }
+        let Some(role) = gateway.roles.get(&member.role_id) else {
+            return BotChatAvailability::Unknown;
+        };
+        role.permissions.shared_bots
+    };
+    let (contact_active, contact_absent) = match &facts.contact {
+        PersonContactFacts::Record(PersonContactRecordRead::Person {
+            state: ContactState::Active,
+            ..
+        }) => (true, false),
+        PersonContactFacts::Record(
+            PersonContactRecordRead::Missing
+            | PersonContactRecordRead::Person {
+                state: ContactState::Pending | ContactState::Declined | ContactState::NotFound,
+                ..
+            },
+        ) => (false, true),
+        _ => (false, false),
+    };
+    let Some(record) = facts.bot.as_ref() else {
+        return BotChatAvailability::Unknown;
+    };
+    let own = matches!(&record.listing.keeper, BotKeeper::User { username } if username == &person.username);
+    let shared = record.listing.keeper == BotKeeper::Household;
+    if own || shared && shared_bots || contact_active {
+        return BotChatAvailability::Available;
+    }
+    match record.listing.keeper {
+        BotKeeper::User { .. } if contact_absent => BotChatAvailability::Unavailable {
+            reason: BotChatUnavailable::GrantNotActive,
+        },
+        BotKeeper::User { .. } => BotChatAvailability::Unavailable {
+            reason: BotChatUnavailable::OtherPrivateBot,
+        },
+        _ => BotChatAvailability::Unknown,
+    }
+}
+
+/// 同 [`chat_availability`]，但重新读一次事实；调用人已经变了（换人、注销、设备被撤）时未知。
+pub(super) fn chat_availability_of(
+    gateway: &Gateway,
+    peer: Option<TunnelPeer>,
+    headers: &HeaderMap,
+    bot: &BotRef,
+    caller: &CallerFacts,
+) -> Result<BotChatAvailability, StoreError> {
+    let facts = bot_identity_and_contact_facts(gateway, peer, headers, bot)?;
+    if &facts.caller != caller {
+        return Ok(BotChatAvailability::Unknown);
+    }
+    Ok(chat_availability(gateway, &facts))
+}
+
+/// 按归属和联系人给默认 Bot 的身份可见性：能用才披露身份；确定没有授权时按没有，其余未知。
+pub(super) fn visibility(availability: BotChatAvailability) -> DefaultBotVisibility {
+    match availability {
+        BotChatAvailability::Available => DefaultBotVisibility::Visible,
+        BotChatAvailability::Unavailable { .. } => DefaultBotVisibility::Absent,
+        BotChatAvailability::Unknown => DefaultBotVisibility::Unknown,
+    }
+}
+
+pub(super) fn caller_facts(
+    gateway: &Gateway,
+    peer: Option<TunnelPeer>,
+    headers: &HeaderMap,
+) -> CallerFacts {
     // requester 会记语言；事实读取只复用它的纯令牌校验，不触发写入。
     let (person, source) = if api::has_owner_token(gateway, headers) {
         (
@@ -258,6 +354,50 @@ mod tests {
         json!({
             (format!("{}/{}", bot.plugin_id, bot.bot)): {"bot": bot, "contacts": contacts}
         })
+    }
+
+    #[tokio::test]
+    async fn a_person_contact_grant_toggles_chat_availability() {
+        let mut fixture = Fixture::new().await;
+        let mia = fixture.member("mia", "@mia:test");
+        let bot = bot("default");
+        fixture.seed(&[(
+            "default",
+            "@private:test",
+            BotKeeper::User {
+                username: "owner".into(),
+            },
+            "!home:test",
+        )]);
+        let facts = fixture.facts(Some(mia), &bot);
+        assert_eq!(
+            chat_availability(&fixture.gateway, &facts),
+            BotChatAvailability::Unavailable {
+                reason: BotChatUnavailable::OtherPrivateBot
+            }
+        );
+
+        fixture.contacts(contact_rows(
+            &bot,
+            json!({"@mia:test": {"kind": "person", "state": "active", "updated_at_ms": 1}}),
+        ));
+        let facts = fixture.facts(Some(mia), &bot);
+        assert_eq!(
+            chat_availability(&fixture.gateway, &facts),
+            BotChatAvailability::Available
+        );
+
+        fixture.contacts(contact_rows(
+            &bot,
+            json!({"@mia:test": {"kind": "person", "state": "declined", "updated_at_ms": 2}}),
+        ));
+        let facts = fixture.facts(Some(mia), &bot);
+        assert_eq!(
+            chat_availability(&fixture.gateway, &facts),
+            BotChatAvailability::Unavailable {
+                reason: BotChatUnavailable::GrantNotActive
+            }
+        );
     }
 
     #[tokio::test]

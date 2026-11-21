@@ -147,6 +147,7 @@ fn facts(bot: Option<&str>, user_id: &str) -> BotActivityFacts {
         plugin_id: "app.bot".into(),
         bot: bot.map(str::to_owned),
         user_id: user_id.into(),
+        chat: BotChatAvailability::Available,
         running: true,
         model_requests: 0,
         tool_calls: 0,
