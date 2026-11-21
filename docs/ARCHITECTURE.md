@@ -121,6 +121,10 @@ iPad 内容窗口共享进程内的 `ClientCore`，不复制主页面栈。每�
 `PlacedTab::Content` 复用页面解析、权限与桥，加载状态与主栈同页共享，WebView 和场景滚动位置各自独立。
 端口自动映射取主页面与内容页的可见集合，最后一个页面关闭才释放；应用前后台与网络变化由进程级监听上报。
 
+主界面是首页、Agent、应用三个平级根页，下面一条三项底栏加钉住的应用（[ADR-0115](adr/0115-home-and-agent-debut.md)）。当前页、底栏的
+项和顺序、钉选状态都在客户端核心的 `PagesViewModel` 与 `MainTabsViewModel` 里，壳按它画；应用页压栈后不画底栏。首页的卡片由核心从
+确认（`PendingConfirmation`）、会话未读、插件健康事实汇总并排序，晨报等 Hermes 的产出接入前留空不放假数据。
+
 账号槽位既可以是配对的 Wonton，也可以是外部 Matrix 账号；导航条目和应用页操作由客户端核心给出，
 壳不按槽位种类自行隐藏。好友身份、插件分享和 OpenID 连接的边界见 [ADR-0051](adr/0051-friends-and-plugin-sharing.md)；
 其接口契约在 `wonton-protocol` 的 `friends`、`sharing`、`share_transport`、`matrix_login` 模块。
