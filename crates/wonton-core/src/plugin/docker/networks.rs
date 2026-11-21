@@ -190,16 +190,24 @@ impl Engine {
     /// 等端点从网络上消失：删除是异步的，端点可能还在几秒。查不动（传输抖）当没消失接着等，
     /// 等满 5 秒还在就放行，紧接着的删网络会给出真实原因。
     async fn wait_endpoint_gone(&self, network: &str, container: &str) {
+        const TIMEOUT: Duration = Duration::from_secs(5);
+        const POLL: Duration = Duration::from_millis(100);
         // 抖动不动 endpoint_seen：它是最后一次看到的结果，不是这一轮查得查不得。
         let mut endpoint_seen = false;
         let mut last_error = None;
-        for _ in 0..50 {
+        let deadline = tokio::time::Instant::now() + TIMEOUT;
+        loop {
             match self.endpoint(container, network).await {
                 Ok(None) => return,
                 Ok(Some(_)) => endpoint_seen = true,
                 Err(error) => last_error = Some(error.to_string()),
             }
-            tokio::time::sleep(Duration::from_millis(100)).await;
+            // 总时长按 deadline 算，最后一轮只睡剩下的那一截，不因整轮 sleep 超出。
+            let left = deadline.saturating_duration_since(tokio::time::Instant::now());
+            if left.is_zero() {
+                break;
+            }
+            tokio::time::sleep(left.min(POLL)).await;
         }
         tracing::warn!(
             network,

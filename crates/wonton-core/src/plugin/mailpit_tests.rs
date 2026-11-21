@@ -145,13 +145,29 @@ async fn uninstall_tolerates_mailpit_being_removed_mid_detach() {
         .await
         .unwrap();
     let network = "wonton-app-test";
-    // Compose 正在换掉 Mailpit：旧容器标了删除，卸载时断开被 Docker 拒绝。
-    docker.mark_removing("mail");
+    // Compose 正在换掉 Mailpit：旧容器标了删除，卸载时断开被 Docker 拒绝；再被 inspect 两次之后
+    // 容器连同端点才没（删网络要等端点消失）。
+    docker.mark_removing("mail", 2);
+    let inspects = docker.inspect_count("mail");
     manager
         .uninstall(&PluginId::parse("app.test").unwrap(), false, &langs)
         .await
         .unwrap();
     assert!(!docker.networks().contains(&network.to_owned()));
+    let writes = docker.writes();
+    let disconnect = writes
+        .iter()
+        .rposition(|call| call == "POST /networks/wonton-app-test/disconnect")
+        .unwrap();
+    let remove = writes
+        .iter()
+        .rposition(|call| call == "DELETE /networks/wonton-app-test")
+        .unwrap();
+    assert!(disconnect < remove);
+    // 断开之后确实等过：端点没掉之后才删的网络。
+    assert!(docker.inspect_count("mail") >= inspects + 2);
+    assert!(docker.removed_at("mail").unwrap() <= remove);
+    assert!(!docker.containers().contains(&"mail".into()));
 }
 
 #[tokio::test]

@@ -54,18 +54,13 @@ fn reject_overlap(docker: &mut Resources, body: &Value) -> Option<Response> {
 }
 
 /// `/networks...` 的端点。
-/// `connect` / `disconnect`：接上时记端点（优先级、别名），断开时移掉。
+/// `connect` / `disconnect`：接上时记端点（优先级、别名），断开时移掉；标了删除的容器（`mark_removing`）
+/// 端点照旧留着、接出先被拒，等 inspect 次数用完后才连同端点一起没。
 fn connect(docker: &mut Resources, name: &str, action: &str, body: &Value) -> Response {
     let found = docker.networks.contains_key(name);
     let container = body["Container"].as_str().unwrap_or_default().to_owned();
-    // Docker 原话（Engine 29）：删除中的容器端点还在，但接出被拒，随后容器连同端点一起没。
-    if docker.removing.remove(&container) {
-        for endpoints in docker.endpoints.values_mut() {
-            endpoints.remove(&container);
-        }
-        docker.containers.remove(&container);
-        docker.states.remove(&container);
-        docker.created.remove(&container);
+    // Docker 原话（Engine 29）：删除中的容器端点还在，但接出被拒，容器过一会儿才连同端点一起没。
+    if docker.removing.contains_key(&container) {
         let message = format!(
             "Container {container} is marked for removal and cannot be connected or disconnected to the network"
         );
