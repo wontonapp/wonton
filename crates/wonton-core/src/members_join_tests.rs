@@ -195,7 +195,7 @@ fn failed_writes_never_publish_a_request_or_register_a_device() {
 }
 
 #[test]
-fn rejection_is_reported_once_and_reissuing_voids_the_claim() {
+fn rejection_is_reported_once_and_voiding_keeps_the_request() {
     let dir = tempfile::tempdir().unwrap();
     let path = dir.path().join("members.json");
     let members = Members::open(&path).unwrap();
@@ -221,19 +221,21 @@ fn rejection_is_reported_once_and_reissuing_voids_the_claim() {
             .unwrap(),
         JoinCheck::CodeUsed
     );
+    // 换码以后旧码还是“码已用过”，已经提交的请求却还留着。
     let fresh = members.issue_pairing_code("alice").unwrap();
     assert_eq!(
         members
             .request_join(code.secret.expose(), endpoint, "旧码", &devices)
             .unwrap(),
-        JoinCheck::Unknown
+        JoinCheck::CodeUsed
     );
     members
         .request_join(fresh.secret.expose(), endpoint, "手机", &devices)
         .unwrap();
     let old_id = members.join_requests()[0].id.clone();
     members.void_pairing_code("alice").unwrap();
-    assert!(members.join_requests().is_empty());
-    assert!(members.approve_join(&old_id, &devices).is_err());
-    assert!(!devices.contains(&endpoint));
+    assert_eq!(members.join_requests()[0].id, old_id);
+    members.approve_join(&old_id, &devices).unwrap();
+    assert!(devices.contains(&endpoint));
+    assert_eq!(members.get("alice").unwrap().status, MemberStatus::Joined);
 }
