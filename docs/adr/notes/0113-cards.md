@@ -37,22 +37,23 @@
 | 编号 | 目标 | 改哪 | 依赖 | 大小 | 先红后绿的行为测试 | 并行 |
 | --- | --- | --- | --- | --- | --- | --- |
 | M17 | `Action::Media`、`subscribe_media`/`subscribe_playback`、`player_state`；任务/会话本地服务以服务器为准对齐 | `crates/wonton-client/src/media/mod.rs`、`action.rs` | M1–M4 | L | 重连后本地偏离的偏移被服务器值覆盖；退订后不再收片 | 与 M18 并行 |
-| M18 | 上传执行：分片、`HEAD` 查偏移、偏移不符重开上传 | `client/media/upload.rs` | M11、M17 | L | 中途断网→重连从偏移续；偏移对不上→新 `upload_id` 从头 | 与 M17 并行不同文件 |
-| M19 | 下载执行：`.part` 加 `Range`/`If-Range`，206 缺失或 ETag 变则从 0 | `client/media/download.rs` | M17 | L | 断后续传不重下已得字节；ETag 变则丢弃 `.part` 从头 | 与 M18 并行 |
+| M18 | 上传执行：分片、`HEAD` 查偏移、偏移不符重开上传 | `client/media/upload.rs` | M11、M17、M46 | L | 中途断网→重连从偏移续；偏移对不上→新 `upload_id` 从头 | 与 M17 并行不同文件 |
+| M19 | 下载执行：`.part` 加 `Range`/`If-Range`，206 缺失或 ETag 变则从 0 | `client/media/download.rs` | M17、M46 | L | 断后续传不重下已得字节；ETag 变则丢弃 `.part` 从头 | 与 M18 并行 |
 | M20 | 播放执行：把 `PlaybackViewModel` 翻成播放器回调与 `MediaAction`；5 秒及 pause/seek/stop 上报 | `client/media/player_bridge.rs` | M17 | L | 播放位置推进→上报节流；`taken_over`→停声并报最后位置 | 靠 M17 |
 | M21 | `ViewModel` 翻成视图模型：任务进度、状态文案、失败原因带重试按钮 | `client/media/view.rs` | M17 | M | 六类不退避错误各出各自文案与正确按钮（无重试/带重试） | 与 M17 并行 |
 | M22 | 页面媒体会话收口为 renderer：Android 的 `PageMediaOwner` 与 iOS 的 `PageMediaActive` 改成由播放服务统一持有，网页只报“在放什么”；Android 的 `PageMediaService` 被 M33 吸收 | `client/pages/media/mod.rs`、`PageMediaOwner.kt`、`PageMediaActive.swift` | M17、M20、M33 | L | 第三方页的 `navigator.mediaSession` 不被抢；页面关掉会话不死 | 靠 M20 |
-| M23 | `_meta` 键 `app.wonton/device`/`speaker` 写入与发出 | `client/meta.rs` | M1–M4 | S | 请求带两个键；设备标识稳定不随重启变 | 与 M17 并行 |
+| M23 | 请求头 `X-Wonton-Device` 的写入（说话人 `speakers` 归 0114，不在这张卡） | 客户端请求层 | M1–M4 | S | 每个请求都带；标识稳定不随重启变 | 与 M17 并行 |
 
-第 3 批另有三张（回环、Profile、桥）：
+第 3 批另有四张（字节路由在服务器核、依赖 M11；回环、Profile 在客户端核；桥要等两壳的播放器）：
 
 | 编号 | 目标 | 改哪 | 依赖 | 大小 | 先红后绿的行为测试 | 并行 |
 | --- | --- | --- | --- | --- | --- | --- |
-| M43 | 媒体回环：照 `files/stream.rs` 起本机随机令牌回环，播放器与上传下载只连它 | `client/media/loopback.rs` | M17 | L | 无令牌 401；`Range` 转发后被 `If-Range` 成 206；关闭后端口释放 | 与 M17 并行 |
+| M43 | 媒体回环：照 `files/stream.rs` 起本机随机令牌回环，播放器与上传下载只连它 | `client/media/loopback.rs` | M17、M46 | L | 无令牌 401；`Range` 转发后被 `If-Range` 成 206；关闭后端口释放 | 与 M17 并行 |
+| M46 | 服务器字节路由：`/tasks/{id}/uploads/{item}`、`/tasks/{id}/items/{item}/content`、`/sessions/{id}/stream` 三条透传，带 `Range` 与 `X-Wonton-User` | `crates/wonton-core/src/gateway/media.rs` | M11、M17 | L | `Range` 原样透传回 206；令牌过期 401；上传偏移 409 带当前偏移 | 与 M17 并行 |
 | M44 | `DeviceProfile` 组装：从壳上报的编解码支持拼出来，按人按设备缓存 | `client/media/profile.rs` | M17 | S | 缺能力时不发空数组；换设备各自的 Profile 不串 | 与 M17 并行 |
-| M45 | 插件页“播这条”桥：`ui/initialize` 报 `media.play` 能力位、页面 RPC 拉起宿主播放器，成功回 `started` 并让页面 `pause()` | `pages/bridge`、`pages/media`、两壳 | M06、M30、M31 | L | 老壳不报能力位时页面不显示按钮；回包失败页面继续自己放 | 靠 M30/M31 |
+| M45 | 插件页“播这条”桥：`ui/initialize` 报 `media.play` 能力位、页面 RPC 拉起宿主播放器，成功回 `started` 并让页面 `pause()` | `pages/bridge`、`pages/media`、两壳 | M6、M30、M31 | L | 老壳不报能力位时页面不显示按钮；回包失败页面继续自己放 | 靠 M30/M31 |
 
-并行小结：第 1 批（主仓）一个 PR 全进，M6 单独一个 wonton-docs PR。第 2 批 M7 先合，之后 M8 M9 M13 M16 可同时，M10 M11 M12 M14 M15 再上。第 3 批 M17 M18 M19 M21 M23 M43 M44 可同时，M20 靠 M17 且与 M43/M44 一起，M22、M45 靠 M20 与 M33。所有壳卡等 M14 合入后再开，见后半。
+并行小结：第 1 批（主仓）一个 PR 全进，M6 单独一个 wonton-docs PR。第 2 批 M7 先合，之后 M8 M9 M13 M16 可同时，M10 M11 M12 M14 M15 再上。第 3 批 M17 M46 M21 M23 M43 M44 可同时，M18 M19 靠 M46，M20 靠 M17 且与 M43/M44 一起，M22、M45 靠 M20 与 M33。所有壳卡等 M14 合入后再开，见后半。
 
 ## 第 4 批：两端壳（iOS、Android）
 

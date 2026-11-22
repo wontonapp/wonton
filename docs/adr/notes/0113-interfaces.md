@@ -55,7 +55,7 @@ pub type DeviceId = String;
 
 #[derive(Serialize, Deserialize, Debug, Clone, Copy, PartialEq)]
 #[serde(rename_all = "snake_case")]
-pub enum TaskKind { Upload, Download, Playback }
+pub enum TaskKind { Upload, Download }
 
 
 
@@ -90,16 +90,21 @@ pub struct MediaFailure {
 #[derive(Serialize, Deserialize, Debug, Clone, Copy, PartialEq)]
 #[serde(rename_all = "snake_case")]
 pub enum MediaFailureCode {
+    LocalSourceUnavailable,
+    LocalPermissionDenied,
+    LocalStorageFull,
+    LocalIo,
+    TransportUnavailable,
+    Protocol,
     AuthenticationRequired,
     PermissionDenied,
     UnsupportedByDevice,
     RateLimited,
     MediaGone,
-    Network,
-    Server,
-    StorageFull,
+    PluginUnavailable,
+    UpstreamError,
+    ServerStorageFull,
     SuspendedBySystem,
-    DeviceNoResponse,
 }
 
 /// 一条长任务。三类共用；`target` 与 `progress.unit` 各自成立。
@@ -115,6 +120,8 @@ pub struct Task {
     pub retry_count: u8,
     pub retry_of: Option<TaskId>,
     pub created_at: Timestamp,
+    /// 只在上传里有；逐项失败原文
+    pub partial_failures: Vec<FailedItem>,
 }
 
 #[derive(Serialize, Deserialize, Debug, Clone)]
@@ -122,17 +129,26 @@ pub struct Task {
 pub enum TaskTarget {
     Upload(Vec<UploadItem>), // 一批文件；相册备份 = 一个任务 + N 个 item
     Download(MediaItemRef),
-    Playback(MediaItemRef),
 }
 
 /// 上传的一项：路径、大小、校验和、拍摄时间，都是提供方要的。
 #[derive(Serialize, Deserialize, Debug, Clone)]
 pub struct UploadItem {
+    pub item_id: String,
     pub path: String,
     pub size: u64,
     pub checksum: Option<String>,
     pub taken_at: Option<Timestamp>,
+    pub state: ItemState,
 }
+
+/// 逐项状态；`Partial` 由这里聚出来，不靠猜。
+#[derive(Serialize, Deserialize, Debug, Clone)]
+#[serde(rename_all = "snake_case", tag = "state")]
+pub enum ItemState { Queued, Running, Done, Skipped, Failed(MediaFailure) }
+
+#[derive(Serialize, Deserialize, Debug, Clone)]
+pub struct FailedItem { pub item_id: String, pub path: String, pub failure: MediaFailure }
 
 #[derive(Serialize, Deserialize, Debug, Clone, Copy)]
 pub struct Progress { pub done: u64, pub total: Option<u64>, pub unit: ProgressUnit }
@@ -169,7 +185,8 @@ pub struct PlaybackRequest {
 #[derive(Serialize, Deserialize, Debug, Clone)]
 pub struct PlaybackPlan {
     pub session: String,
-    pub stream: ProviderStream,
+    pub stream: ProviderStream, // 提供方原址，核心改写成自己的路由
+    pub segments: Vec<Segment>,
     pub audio: Vec<MediaTrack>,
     pub subtitles: Vec<MediaTrack>,
     pub seekable: bool,
@@ -186,6 +203,14 @@ pub struct MediaTrack { pub index: u16, pub language: String, pub label: Option<
 #[derive(Serialize, Deserialize, Debug, Clone, Copy, PartialEq)]
 #[serde(rename_all = "snake_case")]
 pub enum TrackKind { Audio, Subtitle }
+
+/// 章节、片头片尾。
+#[derive(Serialize, Deserialize, Debug, Clone)]
+pub struct Segment { pub kind: SegmentKind, pub start_ms: u64, pub end_ms: u64 }
+
+#[derive(Serialize, Deserialize, Debug, Clone, Copy, PartialEq)]
+#[serde(rename_all = "snake_case")]
+pub enum SegmentKind { Chapter, Intro, Outro }
 
 #[derive(Serialize, Deserialize, Debug, Clone)]
 pub struct PlaybackSession {
@@ -211,7 +236,8 @@ pub struct TaskOptions {
     /// 相册范围（可选）；只传相册不传 items 时由设备枚举
     pub albums: Vec<String>,
     /// 同时在跑几项，1–4
-    pub concurrency: u8,
+    #[serde(default = "one")]
+    pub concurrency: u8, // 1–4
     /// 立即备份：忽略 wifi/充电条件一次
     pub force_now: bool,
 }
@@ -254,7 +280,20 @@ pub struct DeviceCommand { pub command_id: Uuid, pub seq: u64, pub body: MediaAc
 pub struct MediaViewModel { pub tasks: Vec<TaskView>, pub quota: QuotaView }
 
 #[derive(Serialize, Deserialize, Debug, Clone)]
-pub struct TaskView { pub id: TaskId, pub kind: TaskKind, pub title: String, pub state: TaskState, pub progress: Progress, pub failure: Option<MediaFailure> }
+pub struct TaskView {
+    pub id: TaskId,
+    pub kind: TaskKind,
+    pub title: String,
+    pub state: TaskState,
+    pub progress: Progress,
+    pub failure: Option<MediaFailure>,
+    /// 逐项条目（一次最多 100 条，多的用 cursor 翻）
+    pub items: Vec<ItemView>,
+    pub items_cursor: Option<String>,
+}
+
+#[derive(Serialize, Deserialize, Debug, Clone)]
+pub struct ItemView { pub item_id: String, pub name: String, pub state: ItemState }
 
 /// 两本账各一项，壳才知道去清哪边
 #[derive(Serialize, Deserialize, Debug, Clone)]
@@ -273,8 +312,9 @@ pub struct PlaybackViewModel { pub session: PlaybackSession, pub queue: Queue, p
 | 字段 | 值 |
 | --- | --- |
 | 能力名 | `"media_source"`（`wonton-protocol::media::MEDIA_CAPABILITY`） |
-| `credentials` | `Required`，且必须有 `issue`/`revoke` 两条命令（`capabilities.rs:52`、`provides.rs:67-73`） |
-| `interface` | `"http"`，`hosted: "plugin"`（`capabilities.rs:14-31`，缺一即清单非法） |
+| `credentials` | `Required`（能力表这一侧）；对清单侧的要求是 `credentials` 必须有 `issue`/`revoke`（`capabilities.rs:52`、`provides.rs:67-73`） |
+| `interface` | 一句契约描述（能力表字段，不是清单字段） |
+| `hosted` | `None`（`personal_data` 也是 `None`；`HostedForm` 只给核心托管的 static_web/remote_mcp） |
 | 高权限 | 否 |
 | 核心侧 | 使用方客户端 `plugin/media_source.rs` |
 | 契约测试 | 两个假提供方，照 `plugin/tests/personal_data_contract/mod.rs:1-10` |
@@ -306,7 +346,7 @@ pub enum MediaKind { Photo, Video, Audio }
 pub enum MediaOperation { Upload, Download, Playback, List }
 ```
 
-校验：`media_source` 出现时 `operations`、`kinds` 都不许空，`credentials.required` 必须有 `issue` 与 `revoke`；`service` 必须在本插件 `services` 里。`spec_floor.rs` 登记用到这些字段的最低 `spec`。
+校验：`media_source` 出现时 `operations`、`kinds` 都不许空，`credentials` 必须有 `issue` 与 `revoke`（清单形状是 `{issue, revoke}`，没有 `required` 键）；`service` 必须在本插件 `services` 里。`spec_floor.rs` 登记用到这些字段的最低 `spec`。
 
 ## `plugin-spec.md` 要补的章节（只加不改）
 
@@ -343,6 +383,9 @@ pub enum MediaOperation { Upload, Download, Playback, List }
 | `/queue` | `GET` | 无（query: `person`） | `Queue` |
 | `/queue` | `POST` | `QueueOp{revision, op}` | `Queue`；`revision` 不相等回 `409` + 当前 `Queue` |
 | `/queue` | `PUT` | 整条 `Queue`（核心推给提供方的 `savePlayQueue` 翻法，带 `position`） | `204` |
+| `/tasks/{id}/uploads/{item}` | `POST`/`PATCH` | 原始字节；转发提供方 `POST /uploads`、`PATCH /uploads/{upload_id}` |
+| `/tasks/{id}/items/{item}/content` | `GET` | 原始字节；转发 `/items/{id}/download`，`Range` 原样 |
+| `/sessions/{id}/stream` | `GET` | 原始字节；转发 plan 的流地址 |
 | `/sessions/{id}/cast-url` | `POST` | `{target: "airplay"\|"cast"}` | `{url, expires_at}`（绑 LAN 的一次性绝对地址） |
 | `/commands` | `GET` | 无（query: `device`, `after: seq`） | 长轮询；`{commands: Vec<DeviceCommand>}`，超时 `204` |
 | `/commands/{id}/ack` | `POST` | `{seq, ok, failure?}` | `204`（幂等） |
@@ -386,7 +429,7 @@ pub fn media_loopback(&self) -> String;
 | `wonton__media_queue` | `{op: QueueOp\|read, revision?}` | `Queue` |
 | `wonton__media_sessions` | `{person?}` | 这个人的全部设备与会话能力 |
 | `wonton__media_task` | `{task, op: pause\|resume\|cancel\|retry}` | `Task` |
-| `wonton__media_delete` | `{device, items}` | `204` |
+| `wonton__media_delete` | `{device, items: Vec<MediaItemRef>}` | `204` |
 
 `person` 只能填本轮 `speakers` 里的人；共享 Bot 省略则取唯一说话人，多人必填。
 
