@@ -65,6 +65,29 @@ struct FriendsView: View {
         }
     }
 
+    /// 空页：正在取就转圈；取到了就是一句话加加好友；取失败整页说明原因。
+    @ViewBuilder private var emptyState: some View {
+        switch model.viewModel.state {
+        case .loading:
+            LoadingView()
+        case .ready:
+            ScrollView {
+                VStack(spacing: WontonTheme.spacing.s12) {
+                    if model.viewModel.publicAccessOff {
+                        publicAccessNotice
+                            .padding(.horizontal, WontonTheme.spacing.pageInset)
+                            .padding(.top, WontonTheme.spacing.s12)
+                    }
+                    FriendsEmpty { showsAdd = true }
+                }
+            }
+        case let .failed(problem):
+            ProblemView(problem: friendsProblem(problem), retry: retry)
+        case .other:
+            ScrollView { FriendsEmpty { showsAdd = true } }
+        }
+    }
+
     /// 公网访问总开关关着：如实挂一条（ADR-0090 第 2 节），别的服务器上的好友暂时联系不到这台。
     @ViewBuilder private var publicAccessRow: some View {
         if model.viewModel.publicAccessOff {
@@ -218,29 +241,6 @@ private extension FriendsView {
             isError: false,
             lines: [String(localized: .Friends3.friendsStatusPublicAccessOffDetail)]
         )
-    }
-
-    /// 空页：正在取就转圈；取到了就是一句话加加好友；取失败整页说明原因。
-    @ViewBuilder private var emptyState: some View {
-        switch model.viewModel.state {
-        case .loading:
-            LoadingView()
-        case .ready:
-            ScrollView {
-                VStack(spacing: WontonTheme.spacing.s12) {
-                    if model.viewModel.publicAccessOff {
-                        publicAccessNotice
-                            .padding(.horizontal, WontonTheme.spacing.pageInset)
-                            .padding(.top, WontonTheme.spacing.s12)
-                    }
-                    FriendsEmpty { showsAdd = true }
-                }
-            }
-        case let .failed(problem):
-            ProblemView(problem: friendsProblem(problem), retry: retry)
-        case .other:
-            ScrollView { FriendsEmpty { showsAdd = true } }
-        }
     }
 
     private var normalizedUserId: String {

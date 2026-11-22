@@ -22,12 +22,11 @@ import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.text.input.KeyboardType
 import app.wonton.client.ClientCore
 import app.wonton.protocol.Action
-import app.wonton.protocol.FriendsAction
 import app.wonton.protocol.FriendBlockScope
 import app.wonton.protocol.FriendBlockTarget
 import app.wonton.protocol.FriendRow
+import app.wonton.protocol.FriendsAction
 import app.wonton.protocol.FriendsState
-import app.wonton.protocol.FriendsViewModel
 import app.wonton.ui.design.WontonActionSheet
 import app.wonton.ui.design.WontonButton
 import app.wonton.ui.design.WontonButtonKind
@@ -136,7 +135,7 @@ private fun FriendScanPage(onBack: () -> Unit, onSubmit: (String) -> Unit) {
 
 /** 公网访问总开关关着：如实挂一条（ADR-0090 第 2 节），列表态和空页共用。 */
 @Composable
-internal fun FriendPublicAccessNotice(friends: FriendsViewModel) {
+internal fun FriendPublicAccessNotice(friends: app.wonton.protocol.FriendsViewModel) {
     if (!friends.publicAccessOff) return
     WontonNotice(
         icon = WontonIcon.Info,
@@ -215,8 +214,7 @@ private fun FriendOverlays(
                     send(
                         Action.Friends(
                             FriendsAction.BlockFriend(
-                                FriendBlockTarget.User(row.userId),
-                                FriendBlockScope.INVITATIONS,
+                                FriendBlockTarget.User(row.userId), FriendBlockScope.INVITATIONS,
                             ),
                         ),
                     )

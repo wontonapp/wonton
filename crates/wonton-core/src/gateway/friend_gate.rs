@@ -214,6 +214,8 @@ fn invite_card(langs: &Languages, inviter: &str, invities: &[String]) -> Draft {
         secret_inputs: Vec::new(),
         settings: None,
         category: None,
+        permissions: Vec::new(),
+        devices: Vec::new(),
     }
 }
 

@@ -49,6 +49,7 @@ pub(super) fn respond(core: &super::Core, head: &str, body: &[u8]) -> Option<(u1
         state.friends.push(json!({
             "user_id": user,
             "display_name": body["display_name"],
+            "role_id": "friend",
             "shared_plugins": [],
             "last_opened_share_at_ms": null,
         }));

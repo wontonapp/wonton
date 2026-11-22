@@ -108,7 +108,6 @@ impl FriendsLink {
             FriendsAction::RemoveFriend { user_id } => self.remove(user_id),
             FriendsAction::BlockFriend { target, scope } => self.block(target, scope),
             FriendsAction::UnblockFriend { target, scope } => self.unblock(target, scope),
-            _ => return Err(invalid("friends-invalid-action")),
         }
         Ok(())
     }
