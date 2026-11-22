@@ -52,16 +52,12 @@ pub enum TimelineAction {
     },
     /// 把一条消息转发到另一个房间（ADR-0073）：照原样再发一条，不带“转发自”，加密附件不重新上传。`item_id` 同
     /// [`TimelineAction::RetrySend`]，只能转发菜单里有 [`MessageAction::Forward`](crate::MessageAction::Forward) 的消息。
-    /// 有 `comment` 时核心先在同一目标房间发这条附言，等服务器确认后才转发；壳只派发这一个动作，不另发
-    /// [`TimelineAction::SendText`]。附言不可恢复地失败就不转发，失败经
-    /// [`CoreError::Upstream`](crate::CoreError::Upstream) 进 `problem`。不带附言时直接转发。进展在目标房间的时间线里
-    /// （本地回显、发送状态），壳随后打开目标房间。目标是 `to_room_id` 的主时间线，不往旁聊里转发。
+    /// 带 `comment` 时附言在同一目标房间先发、服务器确认后才转发（ADR-0073 第 4 节），壳只派发这一个动作。
     ForwardMessage {
         target: TimelineTarget,
         item_id: String,
         to_room_id: String,
-        /// 转发附言；`None` 只转发。只含空白的附言由核心当作没有附言（直接转发），壳不用自己判断。
-        /// 旧形状（JSON）不带 `comment` 按没有附言处理；旧壳经 UniFFI 不传它时取默认值 `None`。
+        /// 转发附言；`None` 只转发，只含空白也当作没有。旧 JSON/旧壳不带时按没有附言处理。
         #[serde(default)]
         #[cfg_attr(feature = "uniffi", uniffi(default = None))]
         comment: Option<String>,

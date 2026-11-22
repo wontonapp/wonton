@@ -653,48 +653,52 @@ mod tests {
         );
     }
 
-    /// 转发带附言：附言排在转发的副本前面；只含空白的附言不落。
+    /// 转发带附言：附言排在转发的副本前面；只含空白的附言不落。目标房间没开和先开着都一样。
     #[tokio::test]
     async fn forward_comment_lands_before_the_copy_and_blank_is_dropped() {
-        let fakes = FakeTimelines::default();
-        let echo = fakes.subscribe(ROOM);
-        let _first = next(&echo).await;
         let far_id = "!ui-fake-call:home.example";
-        for comment in [
-            Some("看这条"),
-            Some(
-                "  
-",
-            ),
-        ] {
-            fakes.timeline_action(TimelineAction::ForwardMessage {
-                target: target(),
-                item_id: "ui-fake-11".into(),
-                to_room_id: far_id.into(),
-                comment: comment.map(Into::into),
-            });
+        let mut landed = Vec::new();
+        for opened_first in [false, true] {
+            let fakes = FakeTimelines::default();
+            let echo = fakes.subscribe(ROOM);
+            let _first = next(&echo).await;
+            let opened = opened_first.then(|| fakes.subscribe(far_id));
+            if let Some(far) = &opened {
+                let _first = next(far).await;
+            }
+            for comment in [Some("看这条".into()), Some("  \n".into())] {
+                fakes.timeline_action(TimelineAction::ForwardMessage {
+                    target: target(),
+                    item_id: "ui-fake-11".into(),
+                    to_room_id: far_id.into(),
+                    comment,
+                });
+            }
+            let far = opened.unwrap_or_else(|| fakes.subscribe(far_id));
+            let mut bodies = Vec::new();
+            // 一条附言一条、一份副本一条；到齐就停，多出来的（空白落了）由下面的断言报出来。
+            while bodies.len() < 3 {
+                for diff in next(&far).await.diffs {
+                    let TimelineDiff::PushBack { item } = diff else {
+                        continue;
+                    };
+                    let TimelineContent::Message { message } = item.content else {
+                        panic!("补进来的都是消息");
+                    };
+                    let MessageContent::Text { body, .. } = message.body else {
+                        panic!("补进来的都是文字");
+                    };
+                    bodies.push(body);
+                }
+            }
+            landed.push((opened_first, bodies));
         }
-        let far = fakes.subscribe(far_id);
-        let first = next(&far).await;
-        let mut items = Vec::new();
-        for diff in first.diffs {
-            crate::chat::apply_diff(&mut items, diff);
+        for (opened_first, bodies) in landed {
+            assert_eq!(
+                bodies,
+                ["看这条", "Fixture message 11", "Fixture message 11"],
+                "目标房间先开着：{opened_first}"
+            );
         }
-        let bodies: Vec<String> = items[ITEMS..]
-            .iter()
-            .map(|item| {
-                let TimelineContent::Message { message } = &item.content else {
-                    panic!("补进来的都是消息");
-                };
-                let MessageContent::Text { body, .. } = &message.body else {
-                    panic!("补进来的都是文字");
-                };
-                body.clone()
-            })
-            .collect();
-        assert_eq!(
-            bodies,
-            ["看这条", "Fixture message 11", "Fixture message 11"]
-        );
     }
 }
