@@ -531,6 +531,7 @@ plugin-capability-no-consumer = { $capability } has no consumer declaration and 
 plugin-capability-duplicate = capability { $capability } is listed twice in { $field }
 plugin-capability-in-both-lists = capability { $capability } cannot be in both requires and wants
 plugin-capability-provider-requires = { $capability } is not provided by this plugin: a provider can only require capabilities it provides itself
+plugin-capability-models-in-requires = models is optional: write wants: [models] instead of requires
 plugin-capability-port-zero = provides.{ $capability }.port must not be 0
 plugin-capability-credentials-required = provides.{ $capability } must declare credentials: each consumer gets a credential of its own
 plugin-capability-credentials-forbidden = provides.{ $capability } must not declare credentials: this capability serves only requests forwarded by the core

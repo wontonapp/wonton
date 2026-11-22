@@ -551,7 +551,8 @@ impl PluginManager {
     ) {
         let id = PluginId::parse(id).unwrap();
         let subnet = super::sources::Subnet::parse(subnet).unwrap();
-        self.sources.insert(&id, vec![subnet], permissions);
+        let models = permissions.contains(&Permission::Models);
+        self.sources.insert(&id, vec![subnet], permissions, models);
     }
 
     pub(super) fn set(
