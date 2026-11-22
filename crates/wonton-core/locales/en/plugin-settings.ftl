@@ -302,7 +302,8 @@ plugin-settings-store-index-fetch-failed = The official index could not be fetch
 # ── Health checks (health.rs) ──────────────────────────────────────────────
 
 plugin-settings-health-container = container { $container }
-plugin-settings-health-timeout = { $waiting } waited { $waited } s of { $budget } s and { $pending } never became ready (last state of { $waiting }: { $state })
+plugin-settings-health-state = last state of { $container }: { $state }
+plugin-settings-health-timeout = { $waiting } waited { $waited } s of { $budget } s and { $pending } never became ready ({ $states })
 plugin-settings-health-timeout-next = Next step: for a service that declares a health check the deadline already stretches past its start period and retry window (without one it is the install deadline itself), so retrying once the host has calmed down usually works. A service answering 5xx all along may be up but failing on its own; see the probes and logs below.
 plugin-settings-health-target = the service
 plugin-settings-health-list-separator = { ", " }

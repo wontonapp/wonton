@@ -6,6 +6,7 @@ use tokio::time::Instant;
 use wonton_protocol::InstallStage;
 
 use super::super::health_gate::Wait;
+use super::super::install_failure::RetryInstall;
 use super::super::languages::Languages;
 use super::super::manager::{Deployed, InstallError, PluginManager};
 use super::super::manifest::{Manifest, Permission};
@@ -30,6 +31,7 @@ impl PluginManager {
         enabled: &[EnabledPermission],
         grants: Grants,
         settings: std::collections::BTreeMap<String, serde_json::Value>,
+        retry: Option<&RetryInstall>,
         langs: &Languages,
     ) -> Result<(Deployed, Undo), InstallError> {
         let _allocating = self.bot_allocation.lock().await;
@@ -55,7 +57,14 @@ impl PluginManager {
                     cleanup_result = "pending", "Plugin installation failed; starting rollback");
                 undo.keep_bot_data();
                 let failures = self.rollback(undo, langs).await;
-                self.installation_failed(id, &error, stage, failures.clone(), None, langs);
+                self.installation_failed(
+                    id,
+                    &error,
+                    stage,
+                    failures.clone(),
+                    retry.cloned(),
+                    langs,
+                );
                 Err(self.install_rollback_error(error, failures, langs))
             }
         }

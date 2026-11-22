@@ -302,7 +302,8 @@ plugin-settings-store-index-fetch-failed = 取不到官方索引：{ $error }
 # ── 健康檢查（health.rs）───────────────────────────────────────────────────
 
 plugin-settings-health-container = 容器 { $container }
-plugin-settings-health-timeout = { $waiting } 等了 { $waited } 秒（時限 { $budget } 秒）還沒等來 { $pending } 就緒（{ $waiting } 最後狀態：{ $state }）
+plugin-settings-health-state = { $container } 最後狀態：{ $state }
+plugin-settings-health-timeout = { $waiting } 等了 { $waited } 秒（時限 { $budget } 秒）還沒等來 { $pending } 就緒（{ $states }）
 plugin-settings-health-timeout-next = 下一步：時限對宣告了健康檢查的服務已經放寬到啟動寬限加它自己的重試窗，沒宣告的就是安裝期限；主機空下來後重試安裝通常能過。服務一直回 5xx 則可能是它自己起得來但報錯，看下面的探針和日誌。
 plugin-settings-health-target = 服務
 plugin-settings-health-list-separator = 、

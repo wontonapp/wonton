@@ -116,7 +116,7 @@ pub(super) async fn wait_for(
                     ),
                     pending,
                     waited(wait.started),
-                    state,
+                    last_state(langs, container, &state),
                 ),
                 probe_block(&probes, langs),
                 &logs,
@@ -181,9 +181,19 @@ pub(super) async fn wait_for_all(
             return Ok(());
         }
         if Instant::now() >= wait.at {
-            // 报最先还在等的那一个（位置稳定），其余还没满足的一起点名。
+            // 每个还没就绪的依赖各带一条它自己最后的状态，别把某个依赖的状态标成等它的容器的。
             let first = &pending[0];
-            let names: Vec<String> = pending.iter().map(|dep| dep.name.to_owned()).collect();
+            let separator = crate::l10n::text(langs, "plugin-settings-health-list-separator", &[]);
+            let names = pending
+                .iter()
+                .map(|dep| dep.name.to_owned())
+                .collect::<Vec<String>>()
+                .join(&*separator);
+            let states = pending
+                .iter()
+                .map(|dep| last_state(langs, dep.name, &dep.state))
+                .collect::<Vec<String>>()
+                .join(&separator);
             let logs = traced(first.name, engine.logs_tail(first.name, LOG_LINES).await);
             return Err(HealthError::Timeout(with_log_tail(
                 timeout_head(
@@ -194,13 +204,9 @@ pub(super) async fn wait_for_all(
                         "plugin-settings-health-container",
                         &[("container", waiting.into())],
                     ),
-                    names.join(&crate::l10n::text(
-                        langs,
-                        "plugin-settings-health-list-separator",
-                        &[],
-                    )),
+                    names,
                     waited(wait.started),
-                    first.state.clone(),
+                    states,
                 ),
                 probe_block(&first.probes, langs),
                 &logs,
@@ -225,14 +231,23 @@ fn waited(started: Instant) -> String {
     Instant::now().duration_since(started).as_secs().to_string()
 }
 
-/// 超时的第一段：谁在等、等谁、时限、已经等了多久、最后看到的状态，再一句下一步。
+/// 最后看到的状态带上是谁的：单个目标只有等待的那个容器，多依赖时每个依赖各一条。
+fn last_state(langs: &Languages, container: &str, state: &str) -> String {
+    crate::l10n::text(
+        langs,
+        "plugin-settings-health-state",
+        &[("container", container.into()), ("state", state.into())],
+    )
+}
+
+/// 超时的第一段：谁在等、等谁、时限、已经等了多久、每个待就绪依赖最后看到的状态，再一句下一步。
 fn timeout_head(
     langs: &Languages,
     wait: Wait,
     waiting: String,
     pending: String,
     waited: String,
-    state: String,
+    states: String,
 ) -> String {
     format!(
         "{}\n{}",
@@ -244,7 +259,7 @@ fn timeout_head(
                 ("pending", pending.into()),
                 ("waited", waited.into()),
                 ("budget", wait.budget.as_secs().to_string().into()),
-                ("state", state.into()),
+                ("states", states.into()),
             ],
         ),
         crate::l10n::text(langs, "plugin-settings-health-timeout-next", &[]),

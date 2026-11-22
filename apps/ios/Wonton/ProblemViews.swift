@@ -115,8 +115,8 @@ extension PluginFailure {
             categorizedProblem(.Problem3.problemPluginServerTooOldTitle, .Problem0.problemUpgradeServerNextStep, detail)
         case .timedOut:
             categorizedProblem(
-                .Problem0.problemPluginHealthTimeoutTitle,
-                .Problem1.problemPluginHealthTimeoutNextStep,
+                .Problem2.problemPluginHealthTimeoutTitle,
+                .Problem0.problemPluginHealthTimeoutNextStep,
                 detail)
         // 比这个壳新的类别：先按服务器出错说。
         default: categorizedProblem(.Problem2.problemUpstreamTitle, .Problem2.problemUpstreamNextStep, detail)

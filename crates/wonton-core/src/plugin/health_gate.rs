@@ -1,6 +1,6 @@
-//! 等健康门的时限：装不动 300 秒的插件（大模型类要装载几分钟）按它声明的 `start_period` 放宽，
-//! 其余照旧用配置的安装时限。安装、启动、升级、局域网重建和加 Bot 用同一条规则；开机恢复和容器监视
-//! 是串行核对的，用固定的安装时限（见 [`Gate`]）。
+//! 等健康门的时限：装不动 300 秒的插件（大模型类要装载几分钟）按它声明的 `start_period` 和健康检查
+//! 自己的判定窗放宽，其余照旧用配置的安装时限。安装、启动、升级、局域网重建和加 Bot 用同一条规则；
+//! 开机恢复和容器监视是串行核对的，用固定的安装时限（见 [`Gate`]）。
 
 use std::time::Duration;
 
@@ -60,8 +60,8 @@ impl Gate {
 
 /// 插件的等待时限：渲染计划（已经过 `rewrite_image_healthchecks`，镜像自带的 healthcheck 也算）里各
 /// 容器自己的判定窗（`start_period + interval × retries`）的最大值、或最长 `start_period` 加余量，
-/// 取大的；下限 `install_timeout`，上限 max(60 分钟, `install_timeout`)。没有容器写 `start_period`
-/// 时就是 `install_timeout`。
+/// 取大的；下限 `install_timeout`，上限 max(60 分钟, `install_timeout`)。没写 `start_period` 的检查只
+/// 按自己的判定窗参与，不加余量。
 pub(super) fn deadline(plan: &Deployment, install_timeout: Duration, now: Instant) -> Wait {
     deadline_from_configs(
         plan.containers.iter().map(|c| c.body.healthcheck.as_ref()),
@@ -79,21 +79,19 @@ pub(super) fn deadline_from_configs<'a>(
     let mut longest = Duration::ZERO;
     let mut window = Duration::ZERO;
     for check in configs.into_iter().flatten() {
-        let Some(period) = start_period(check) else {
-            continue;
-        };
+        let period = start_period(check).unwrap_or_default();
         longest = longest.max(period);
         window = window.max(period + retry_window(check));
     }
-    if longest.is_zero() {
-        return Wait {
-            at: now + install_timeout,
-            budget: install_timeout,
-            started: now,
-        };
-    }
+    // 没写 `start_period` 时 `longest` 为 0，5 分钟的余量不加；检查自己的判定窗照样计入，
+    // 否则 `{interval: 60s, retries: 10}` 这种要在 Docker 判不健康前 10 分钟就放弃了。
+    let retined = if longest.is_zero() {
+        Duration::ZERO
+    } else {
+        longest + START_PERIOD_MARGIN
+    };
     // 声明得比上限还长时按上限等；`install_timeout` 配得比 60 分钟长时以它为准。
-    let budget = (longest + START_PERIOD_MARGIN)
+    let budget = retined
         .max(window)
         .clamp(install_timeout, MAX_WAIT.max(install_timeout));
     Wait {
@@ -130,12 +128,15 @@ mod tests {
 
     /// `start_period` 以秒给出，`interval` 和 `retries` 用调用方给的。
     fn limit(start_period: Option<i64>, interval: Option<i64>, retries: Option<i64>) -> Duration {
-        let check = start_period.map(|start_period| HealthConfig {
-            start_period: Some(start_period * 1_000_000_000),
-            interval: interval.map(|seconds| seconds * 1_000_000_000),
-            retries,
-            ..Default::default()
-        });
+        let check =
+            (start_period.is_some() || interval.is_some() || retries.is_some()).then(|| {
+                HealthConfig {
+                    start_period: start_period.map(|seconds| seconds * 1_000_000_000),
+                    interval: interval.map(|seconds| seconds * 1_000_000_000),
+                    retries,
+                    ..Default::default()
+                }
+            });
         deadline_from_configs([check.as_ref()], Duration::from_secs(300), Instant::now()).budget
     }
 
@@ -181,6 +182,12 @@ mod tests {
     fn the_health_checks_own_retry_window_is_covered() {
         // 2m + 5m 的余量比 2m + 30s × 20 = 12m 短，必须取 12m，否则还在 Docker 的判定窗里。
         assert_eq!(limit(Some(2 * 60), Some(30), Some(20)), 12 * 60 * SEC);
+    }
+
+    #[test]
+    fn a_retry_window_without_a_start_period_still_counts() {
+        // interval 60s × retries 10：Docker 10 分钟才判不健康，默认的 300 秒不能先放弃。
+        assert_eq!(limit(None, Some(60), Some(10)), 10 * 60 * SEC);
     }
 
     #[test]

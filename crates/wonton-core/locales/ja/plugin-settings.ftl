@@ -302,7 +302,8 @@ plugin-settings-store-index-fetch-failed = 公式インデックスを取得で�
 # ── ヘルスチェック（health.rs）───────────────────────────────────────────
 
 plugin-settings-health-container = コンテナ{ $container }
-plugin-settings-health-timeout = { $waiting }は{ $waited }秒待っても（制限{ $budget }秒）{ $pending }が準備できません（{ $waiting }の最後の状態：{ $state }）
+plugin-settings-health-state = { $container }の最後の状態：{ $state }
+plugin-settings-health-timeout = { $waiting }は{ $waited }秒待っても（制限{ $budget }秒）{ $pending }が準備できません（{ $states }）
 plugin-settings-health-timeout-next = 次の一手：ヘルスチェックを宣言したサービスには、制限時間を起動猶予とそれ自身のリトライ期間まで広げてあります（宣言が無ければインストール期限そのもの）。ホストが空いてからインストールをやり直せば通るのが普通です。ずっと 5xx を返すならサービス自身の不調かもしれません。下のプローブとログを見てください。
 plugin-settings-health-target = サービス
 plugin-settings-health-list-separator = 、

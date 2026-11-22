@@ -1,4 +1,4 @@
-//! 等健康门的时限：按各服务 `healthcheck.start_period` 的最大值放宽（下限 `install_timeout`，上限
+//! 等健康门的时限：按各服务 `healthcheck.start_period` 与判定窗的最大值放宽（下限 `install_timeout`，上限
 //! 60 分钟），安装和重新启动同一条规则。
 
 use std::sync::Arc;
@@ -133,6 +133,9 @@ async fn the_timeout_names_every_pending_dependency() {
     let message = error.to_string();
     assert!(message.contains(&db), "{message}");
     assert!(message.contains(&cache), "{message}");
+    // 状态各自跟着自己的容器名，别把某个依赖的状态标成等它的容器的。
+    assert!(message.contains(&format!("{db}: ")), "{message}");
+    assert!(message.contains(&format!("{cache}: ")), "{message}");
     assert_eq!(error.kind(), "health_timeout", "{message}");
 }
 
