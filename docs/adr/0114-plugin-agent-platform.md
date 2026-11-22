@@ -117,15 +117,15 @@ Navidrome 要每人一个用户，都不是“发一个口令就够”的形状�
 
 - 核心在转给插件的 `tools/call` 的 `_meta` 里加两项：
 
-  - `app.wonton/spekers`：本轮这条消息实际说话的家人用户名，去重，按第一次出现排序，最多 8 个。认不出来不带。
+  - `app.wonton/speakers`：本轮这条消息实际说话的家人用户名，去重，按第一次出现排序，最多 8 个。认不出来不带。
   - `app.wonton/room_people`：这个报的来源房间的现有成员里，既能打开这个插件、又能用这个 Bot 的人，同样去重排序。
     只有来源房间经核心核对过（`audience::reported_origin` 认下了，Bot 和说话人都在房间里）才带。
 
-- `app.wonton/user`（`crates/wonton-protocol/src/family.rs:50`）改成：私人 Bot 是归属人；共享 Bot 且 `spekers` 恰好一个
+- `app.wonton/user`（`crates/wonton-protocol/src/family.rs:50`）改成：私人 Bot 是归属人；共享 Bot 且 `speakers` 恰好一个
   人才带那一个；其余不带（和现在一样）。共享 Bot 多人同轮时不猜谁为主。
-- 这三项都只是提示：确认口径、AI 级别、放行时段仍由核心按 `ai_cap`、`audience` 算，插件不能拿 `spekers` 当授权。
+- 这三项都只是提示：确认口径、AI 级别、放行时段仍由核心按 `ai_cap`、`audience` 算，插件不能拿 `speakers` 当授权。
   插件用 `app.wonton/capabilities` 和核心的级别判断动手幅度。
-- 插件侧：一个工具只要有一个可选参数就按人写时，模型从 `spekers` 里取值填 `person`；只一个人时插件可以直接当默认。
+- 插件侧：一个工具只要有一个可选参数就按人写时，模型从 `speakers` 里取值填 `person`；只一个人时插件可以直接当默认。
   卡片抬头写“替 X”，多人时写“替 X、Y”。
 - 不认识 `_meta` 的插件什么都不受影响：字段都可选，缺失时按“家里共用”处理（和现在一样）。
 
@@ -417,7 +417,7 @@ MCP 订阅只收 `tools_list_changed`（`crates/wonton-core/src/mcp/server.rs:29
 
 ## 验证计划
 
-接口 PR 只改类型和文档，至少带：模板校验（缺参、超长、坏占位符）、`spekers` 的排序去重和 `user` 的三条规则、深链前缀越权、
+接口 PR 只改类型和文档，至少带：模板校验（缺参、超长、坏占位符）、`speakers` 的排序去重和 `user` 的三条规则、深链前缀越权、
 `to` 的收件人校验、`inbox` 路径和文件名的非法用例、`Accessor::Room` 的序列化往返。
 
 实现卡按项各带一条先红后绿的行为测试，端到端落在 194 开发栈：真装一个插件，走安装→授权家人→群里单人说话→Agent 调工具→
