@@ -15,8 +15,13 @@ import androidx.compose.ui.test.performTextReplacement
 import androidx.test.ext.junit.runners.AndroidJUnit4
 import androidx.test.platform.app.InstrumentationRegistry
 import androidx.test.rule.GrantPermissionRule
+import app.wonton.protocol.Action
+import app.wonton.protocol.HomeAction
+import app.wonton.protocol.HomeStatus
+import app.wonton.ui.send
 import org.junit.After
 import org.junit.Assert.assertEquals
+import org.junit.Assert.assertFalse
 import org.junit.Assert.assertTrue
 import org.junit.Rule
 import org.junit.Test
@@ -58,14 +63,22 @@ class PairingDraftTest {
 
     @Test
     fun typedDeviceNameSurvivesExit() {
+        val core = (compose.activity.application as WontonApplication).core.getOrThrow()
+        // 真核心没配对时首屏就是根配对页。进程里先跑过假核心的类时核心换不过来（`core` 一个进程一个），
+        // 这时退回“添加服务器”页继续验草稿；两条路的返回语义不同：根页交给系统退出，添加页退一层。
+        val rootScreen = core.home().status is HomeStatus.NotConfigured
+        if (!rootScreen) {
+            core.send(Action.Home(HomeAction.AddServer))
+            compose.waitUntil(timeoutMillis = 5_000) { core.servers().adding }
+        }
         awaitPairingForm()
         nameField().performScrollTo().performTextReplacement("kitchen-ipad")
         assertEquals("kitchen-ipad", prefs().getString("device_name", null))
 
         compose.runOnUiThread { compose.activity.onBackPressedDispatcher.onBackPressed() }
 
-        // 首屏交给系统：退出 App；草稿在退出前就落了。
-        assertTrue(compose.activity.isFinishing)
+        // 根配对页交给系统退出；草稿在离开前就落了。
+        if (rootScreen) assertTrue(compose.activity.isFinishing) else assertFalse(compose.activity.isFinishing)
         assertEquals("kitchen-ipad", prefs().getString("device_name", null))
     }
 

@@ -21,6 +21,7 @@ import app.wonton.protocol.HomeAction
 import app.wonton.ui.send
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertFalse
+import org.junit.Assume.assumeTrue
 import org.junit.After
 import org.junit.Rule
 import org.junit.Test
@@ -52,6 +53,8 @@ class PairingDraftSettingsTest {
     @Test
     fun backFromAddServerKeepsDraft() {
         val core = (compose.activity.application as WontonApplication).core.getOrThrow()
+        // 进程里先跑过真核心的类时核心换不过来：真核心没配对、核心拒绝“添加服务器”，这一页打不开。
+        assumeTrue("进程里先起了真核心，假核心没生效", core.servers().servers.isNotEmpty())
         core.send(Action.Home(HomeAction.AddServer))
         // 首屏本来也是配对页（同一批输入框），要等 adding 真的翻过来，才算进的是“添加服务器”这一页。
         compose.waitUntil(timeoutMillis = 5_000) { core.servers().adding }
