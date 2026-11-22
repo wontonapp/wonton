@@ -18,7 +18,11 @@ import androidx.compose.foundation.layout.heightIn
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.statusBarsPadding
-import androidx.compose.foundation.layout.width
+import androidx.compose.foundation.layout.systemBars
+import androidx.compose.foundation.layout.WindowInsets
+import androidx.compose.foundation.layout.WindowInsetsSides
+import androidx.compose.foundation.layout.only
+import androidx.compose.foundation.layout.windowInsetsPadding
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.text.BasicTextField
 import androidx.compose.foundation.text.KeyboardActions
@@ -44,6 +48,11 @@ import androidx.compose.ui.graphics.TileMode
 import androidx.compose.ui.graphics.asImageBitmap
 import androidx.compose.ui.graphics.drawOutline
 import androidx.compose.ui.graphics.vector.ImageVector
+import androidx.compose.ui.layout.Layout
+import androidx.compose.ui.layout.Measurable
+import androidx.compose.ui.layout.MeasurePolicy
+import androidx.compose.ui.layout.MeasureResult
+import androidx.compose.ui.layout.MeasureScope
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.semantics.Role
@@ -51,9 +60,13 @@ import androidx.compose.ui.semantics.contentDescription
 import androidx.compose.ui.semantics.heading
 import androidx.compose.ui.semantics.paneTitle
 import androidx.compose.ui.semantics.semantics
+import androidx.compose.ui.semantics.isTraversalGroup
 import androidx.compose.ui.text.TextStyle
 import androidx.compose.ui.text.input.VisualTransformation
 import androidx.compose.ui.text.style.TextOverflow
+import androidx.compose.ui.unit.Constraints
+import androidx.compose.ui.unit.Dp
+import androidx.compose.ui.unit.dp
 import app.wonton.ui.R
 import app.wonton.ui.LocalWontonOpenSidebar
 import app.wonton.ui.SidebarMenuButton
@@ -333,44 +346,36 @@ fun WontonPushedBar(
             }
         }
     }
-    // 居中时两边各留一个命中区，标题才真在正中；有头像就把头像塞进正中那盒，别再占左边。
-    val balanced = centeredTitle && actions != null
+    // 居中沿用 M3 的做法：标题对整栏居中，再按两侧量到的宽度夹紧（先左后右），
+    // 不能用 weight 盒加固定占位，否则 actions 的宽度一变标题就偏。
+    val minHeight = WontonTheme.size.target + WontonTheme.spacing.s16
     Column(
         Modifier.fillMaxWidth()
-            .statusBarsPadding().semantics { paneTitle = title },
+            .windowInsetsPadding(
+                WindowInsets.systemBars.only(WindowInsetsSides.Top + WindowInsetsSides.Horizontal),
+            )
+            .semantics {
+                isTraversalGroup = true
+                paneTitle = title
+            },
     ) {
-        Row(
-            // M3 的栏高 64dp；用令牌拼出来，不写死在调用点上。
-            Modifier.fillMaxWidth().heightIn(min = WontonTheme.size.target + WontonTheme.spacing.s16)
-                .padding(horizontal = WontonTheme.spacing.pageInset),
-            verticalAlignment = Alignment.CenterVertically,
-            horizontalArrangement = Arrangement.spacedBy(WontonTheme.spacing.s12),
-        ) {
-            WontonIconButton(icon, iconLabel, onBack)
-            if (balanced && avatar != null) Spacer(Modifier.width(WontonTheme.size.target))
-            if (centeredTitle) {
-                Box(Modifier.weight(1f), contentAlignment = Alignment.Center) {
-                    Row(
-                        verticalAlignment = Alignment.CenterVertically,
-                        horizontalArrangement = Arrangement.spacedBy(WontonTheme.spacing.s12),
-                    ) {
-                        avatar?.invoke()
-                        titleSlot()
-                    }
-                }
-            } else {
+        Layout(
+            content = {
+                WontonIconButton(icon, iconLabel, onBack)
                 Row(
-                    Modifier.weight(1f),
                     verticalAlignment = Alignment.CenterVertically,
                     horizontalArrangement = Arrangement.spacedBy(WontonTheme.spacing.s12),
                 ) {
                     avatar?.invoke()
                     titleSlot()
                 }
-            }
-            if (balanced) Spacer(Modifier.width(WontonTheme.size.target))
-            actions?.invoke(this)
-        }
+                Row { actions?.invoke(this) }
+            },
+            // M3 的栏高 64dp；用令牌拼出来，不写死在调用点上。
+            modifier = Modifier.fillMaxWidth().heightIn(min = minHeight)
+                .padding(horizontal = WontonTheme.spacing.pageInset),
+            measurePolicy = PushedBarMeasurePolicy(minHeight, 4.dp, WontonTheme.spacing.s12, centeredTitle),
+        )
         line?.let {
             Box(
                 Modifier.padding(horizontal = WontonTheme.spacing.pageInset)
@@ -380,3 +385,43 @@ fun WontonPushedBar(
     }
 }
 
+
+/** WontonPushedBar 的量和摆：M3 `placeTopAppBar` 的居中，再按两侧实测宽度夹紧（先左后右）。 */
+private class PushedBarMeasurePolicy(
+    private val minBarHeight: Dp,
+    private val titleInset: Dp,
+    private val gap: Dp,
+    private val centeredTitle: Boolean,
+) : MeasurePolicy {
+    override fun MeasureScope.measure(measurables: List<Measurable>, constraints: Constraints): MeasureResult {
+        val loose = Constraints(
+            minWidth = 0,
+            maxWidth = constraints.maxWidth,
+            minHeight = 0,
+            maxHeight = constraints.maxHeight,
+        )
+        val back = measurables[0].measure(loose)
+        val trailing = measurables[2].measure(loose)
+        val titleLimit = if (constraints.maxWidth == Constraints.Infinity) constraints.maxWidth
+        else (constraints.maxWidth - back.width - trailing.width).coerceAtLeast(0)
+        val title = measurables[1].measure(
+            Constraints(minWidth = 0, maxWidth = titleLimit, minHeight = 0, maxHeight = constraints.maxHeight),
+        )
+        val contentHeight = maxOf(minBarHeight.roundToPx(), back.height, title.height, trailing.height)
+        val barHeight = if (constraints.maxHeight == Constraints.Infinity) contentHeight
+        else contentHeight.coerceAtMost(constraints.maxHeight)
+        // 和原来 Row 的间距一致：返回键与标题、标题与 actions 各 12dp；标题最左至少是 M3 的 4dp 内缩。
+        val gapPx = gap.roundToPx()
+        val start = maxOf(titleInset.roundToPx(), back.width) + gapPx
+        val end = trailing.width + gapPx
+        var titleX = if (centeredTitle) (constraints.maxWidth - title.width) / 2 else 0
+        if (titleX < start) titleX = start
+        val rightmost = constraints.maxWidth - end - title.width
+        if (titleX > rightmost) titleX = rightmost
+        return layout(constraints.maxWidth, barHeight) {
+            back.placeRelative(0, (barHeight - back.height) / 2)
+            title.placeRelative(titleX, (barHeight - title.height) / 2)
+            trailing.placeRelative(constraints.maxWidth - trailing.width, (barHeight - trailing.height) / 2)
+        }
+    }
+}

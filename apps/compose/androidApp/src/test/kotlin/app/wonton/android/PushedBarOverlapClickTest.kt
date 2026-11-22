@@ -38,9 +38,12 @@ import androidx.test.core.app.ApplicationProvider
 import androidx.test.ext.junit.runners.AndroidJUnit4
 import app.wonton.ui.R
 import app.wonton.ui.design.WontonPushedBar
+import app.wonton.ui.design.WontonIconButton
 import app.wonton.ui.design.WontonScreen
 import app.wonton.ui.design.WontonTheme
 import app.wonton.ui.design.wontonContentPadding
+import app.wonton.ui.icons.Home
+import app.wonton.ui.icons.WontonIcon
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertTrue
 import org.junit.Rule
@@ -130,21 +133,61 @@ class PushedBarOverlapClickTest {
         compose.runOnIdle { assertEquals("栏下的行没收到点击", 2, clicks) }
     }
 
-    /** 栏自己的东西还在：标题是读屏的标题，返回是可点的按钮。 */
+    /** 栏自己的东西还在：标题是读屏的标题，返回是 48dp 的可点按钮，栏高保持 M3 的 64dp。 */
     @Test
-    fun theBarKeepsItsHeadingAndBackButton() {
+    fun theBarKeepsItsHeadingBackButtonAndHeight() {
         var backs = 0
         compose.setContent {
             WontonTheme(testAppearance()) {
-                Box(Modifier.fillMaxSize()) {
+                Box(Modifier.testTag("bar")) {
                     WontonPushedBar(title = "外观", onBack = { backs++ })
                 }
             }
         }
         compose.onNodeWithText("外观").assert(isHeading())
-        compose.onNodeWithContentDescription(context.getString(R.string.design_back))
+        val bar = compose.onNodeWithTag("bar").getUnclippedBoundsInRoot()
+        assertEquals("栏高要和 M3 的单行栏一致", 64.0, bar.height.value.toDouble(), 0.5)
+        val back = compose.onNodeWithContentDescription(context.getString(R.string.design_back))
             .assert(SemanticsMatcher.expectValue(SemanticsProperties.Role, Role.Button))
+            .getUnclippedBoundsInRoot()
+        assertEquals("返回键的命中区是 48dp", 48.0, back.width.value.toDouble(), 0.5)
+        assertEquals(48.0, back.height.value.toDouble(), 0.5)
         compose.onNodeWithContentDescription(context.getString(R.string.design_back)).performClick()
         compose.runOnIdle { assertEquals(1, backs) }
+    }
+
+    @Test
+    fun centeredTitleSitsOnTheBarCenterWithActions() {
+        compose.setContent {
+            WontonTheme(testAppearance()) {
+                Box(Modifier.testTag("bar")) {
+                    WontonPushedBar(
+                        title = "外观", onBack = {}, centeredTitle = true,
+                        actions = { WontonIconButton(WontonIcon.Home, "home", {}) },
+                    )
+                }
+            }
+        }
+        assertTitleIsCenteredOnTheBar()
+    }
+
+    @Test
+    fun centeredTitleSitsOnTheBarCenterWithoutActions() {
+        compose.setContent {
+            WontonTheme(testAppearance()) {
+                Box(Modifier.testTag("bar")) {
+                    WontonPushedBar(title = "外观", onBack = {}, centeredTitle = true)
+                }
+            }
+        }
+        assertTitleIsCenteredOnTheBar()
+    }
+
+    /** 标题中心要对准栏中心（M3 的夹紧只在压到两边时才生效），且整条在栏内。 */
+    private fun assertTitleIsCenteredOnTheBar() {
+        val bar = compose.onNodeWithTag("bar").getUnclippedBoundsInRoot()
+        val title = compose.onNodeWithText("外观").getUnclippedBoundsInRoot()
+        assertEquals((bar.left.value + bar.right.value) / 2, (title.left.value + title.right.value) / 2, 0.5)
+        assertTrue("标题要整条在栏内", title.left >= bar.left && title.right <= bar.right)
     }
 }
