@@ -218,7 +218,7 @@ YunoHost、Sandstorm 给免费子域名但要求公网 IP；Home Assistant Cloud
 | ADR-0009“Matrix 的服务器名”、`wonton-core` 的 `install.rs` | 默认随机生成 `<24 位>.wonton.internal` | 安装时向家名服务注册，用 `<家>.<域名>`；高级选项填自己的域名或不要名字 |
 | ADR-0021 | 家名只给第三方 App 的入口用，云端部分排在 M2；证书是 `*.<家>.<域名>` | 家名同时是 Matrix 服务器名，安装时就要注册；证书加上 `<家>.<域名>` 本身；中继多转这个名字（联邦），算进这个家的配额 |
 | ADR-0050“联邦流量”、`matrix/federation_config` | `allowed_remote_server_names_experimental` 只写配对过的服务器 | 填了域名的服务器不写这个名单（开放），黑名单写 `forbidden_remote_server_names` |
-| 同上，`install.rs` 和 `deploy/dev/matrix/federation.toml` | 自签证书、`allow_invalid_tls_certificates = true`（对所有出站请求都生效） | 有名字模式设为 `false`，用有效证书；经 iroh 进来的联邦流也交给入口容器，用同一张证书。有名字但还没配入口的安装既不自签也不放宽验证：Tuwunel 只留明文，联邦请求停在 TLS 握手，配好入口重新安装才通（[ADR-0090](0090-public-access.md) 的公网访问默认关）。私用名安装 2026-11-22 起也改成核心终结 TLS、不自签、不开 `true`（[ADR-0112](0112-peer-cert-pinning.md)） |
+| 同上，`install.rs` 和 `deploy/dev/matrix/federation.toml` | 自签证书、`allow_invalid_tls_certificates = true`（对所有出站请求都生效） | 有名字模式设为 `false`，用有效证书；经 iroh 进来的联邦流也交给入口容器，用同一张证书。有名字但还没配入口的安装既不自签也不放宽验证：Tuwunel 只留明文，由核心在隧道两端终结 TLS（[ADR-0112](0112-peer-cert-pinning.md)），配对过的就能通；配好入口重新安装后改走 8449、按公共根校验（[ADR-0090](0090-public-access.md) 的公网访问默认关）。私用名安装 2026-11-22 起也改成核心终结 TLS、不自签、不开 `true`（[ADR-0112](0112-peer-cert-pinning.md)） |
 | 同上 | `trusted_servers = []`，只向对方直取签名密钥 | 保留，或按需加 matrix.org 作公证服务器 |
 | ADR-0050“联邦流量”的转发组件（`wonton-tunnel` 的 `federation`） | 不认识的 SNI、不在名单里的服务器出站直接断开 | 配对过的照旧走 iroh；其余不经转发组件，Tuwunel 直接走公网 |
 | 核心的地址映射（hosts） | 配对过的服务器名指向转发组件 | 照旧，只放配对过的 |
