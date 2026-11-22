@@ -80,10 +80,14 @@ struct RawLicense {
 
 /// 解析清单：一个许可一组，组里是按名字排序的组件。清单里没有组件用到的许可不出现。
 pub(crate) fn licenses(json: &str) -> Result<LicensesViewModel, CoreError> {
-    let raw: RawLicenses = serde_json::from_str(json)
-        .map_err(|error| invalid(format!("许可清单解析失败：{error}")))?;
+    let raw: RawLicenses = serde_json::from_str(json).map_err(|error| {
+        invalid(l10n::text(
+            "licenses-parse-failed",
+            &[("error", error.to_string().into())],
+        ))
+    })?;
     if raw.components.is_empty() {
-        return Err(invalid("许可清单里一个组件都没有".to_owned()));
+        return Err(invalid(l10n::text("licenses-empty", &[])));
     }
     let mut licenses: Vec<LicenseGroup> = Vec::new();
     for (id, license) in &raw.licenses {
@@ -100,7 +104,10 @@ pub(crate) fn licenses(json: &str) -> Result<LicensesViewModel, CoreError> {
             continue;
         }
         if license.text.trim().is_empty() {
-            return Err(invalid(format!("许可 {id} 没有全文")));
+            return Err(invalid(l10n::text(
+                "licenses-no-text",
+                &[("id", id.into())],
+            )));
         }
         components.sort_by_key(|component| component.name.to_lowercase());
         licenses.push(LicenseGroup {
@@ -111,7 +118,7 @@ pub(crate) fn licenses(json: &str) -> Result<LicensesViewModel, CoreError> {
         });
     }
     if licenses.is_empty() {
-        return Err(invalid("许可清单里没有可显示的许可".to_owned()));
+        return Err(invalid(l10n::text("licenses-none-to-show", &[])));
     }
     licenses.sort_by_key(|license| license.name.to_lowercase());
     Ok(LicensesViewModel { licenses })

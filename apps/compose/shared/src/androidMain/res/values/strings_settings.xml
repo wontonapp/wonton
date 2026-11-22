@@ -15,7 +15,7 @@
     <!-- Value of the licenses row: how many components the list covers. Argument: the count. -->
     <string name="settings_licenses_value">%1$d licenses</string>
     <!-- Row on the About page and value label of the version. No arguments. -->
-    <string name="settings_licenses_problem">Couldn't read the license list from the app bundle.</string>
+    <string name="settings_licenses_problem">Couldn\'t read the license list from the app bundle.</string>
     <string name="settings_licenses_text">Full text</string>
     <string name="settings_version">Version</string>
     <!-- Settings row title that restarts the setup steps. No arguments. -->

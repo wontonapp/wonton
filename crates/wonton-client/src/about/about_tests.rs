@@ -52,19 +52,28 @@ fn drops_licenses_no_component_uses() {
 fn rejects_license_without_text() {
     let json = catalog().replace("MIT text", " ");
     let error = licenses(&json).expect_err("没有全文要报错");
-    assert!(error.to_string().contains("MIT 没有全文"), "{error}");
+    assert!(
+        matches!(error, CoreError::InvalidInput { ref reason } if !reason.is_empty()),
+        "{error}"
+    );
 }
 
 #[test]
 fn rejects_a_list_without_components() {
     let error = licenses(r#"{"components": [], "licenses": {}}"#).expect_err("空清单要报错");
-    assert!(error.to_string().contains("一个组件都没有"), "{error}");
+    assert!(
+        matches!(error, CoreError::InvalidInput { ref reason } if !reason.is_empty()),
+        "{error}"
+    );
 }
 
 #[test]
 fn rejects_broken_json() {
     let error = licenses("{").expect_err("解析失败要报错");
-    assert!(error.to_string().contains("解析失败"), "{error}");
+    assert!(
+        matches!(error, CoreError::InvalidInput { ref reason } if !reason.is_empty()),
+        "{error}"
+    );
 }
 
 #[test]
