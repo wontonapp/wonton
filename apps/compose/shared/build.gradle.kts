@@ -54,10 +54,22 @@ abstract class BuildRustCore : Exec() {
 
 val repoRoot = rootDir.resolve("../..").normalize()
 
+// 命令行上直接跑 Release 变体的任务（assembleRelease、installRelease…）时默认用 release 核心：debug 核心带着整份
+// 符号表，不带 -Pwonton.rustProfile=release 就把它打进 Release 包里，体积门禁会被骗过去。一次调用只编一个变体，
+// 所以只看任务名、不看变体图；assemble、build 这类不分变体的仍按 debug。
+val defaultRustProfile = if (
+    gradle.startParameter.taskRequests
+        .flatMap { request -> request.args }
+        .any { arg -> arg.split(' ', ':').any { part -> part.contains("Release") } }
+) "release" else "debug"
+
 val buildRustCore = tasks.register<BuildRustCore>("buildRustCore") {
     group = "build"
     description = "用 cargo-ndk 编译 Rust 客户端核心，并生成 UniFFI Kotlin 绑定"
-    rustProfile.set(providers.gradleProperty("wonton.rustProfile"))
+    // 显式传的值优先，没传就用上面按任务名推出来的。值在配置期定成字符串：在 provider 的 lambda 里读脚本里的
+    // 属性，配置缓存会因“Gradle script object 不能序列化”存不进去。
+    val requestedRustProfile = providers.gradleProperty("wonton.rustProfile").orNull?.trim()
+    rustProfile.set(if (requestedRustProfile.isNullOrEmpty()) defaultRustProfile else requestedRustProfile)
     // 假数据入口默认按构建类型开关（Debug 带、Release 不带）；夜跑用 -Pwonton.uiFake=1 显式带上。
     uiFake.set(providers.gradleProperty("wonton.uiFake").orElse("auto"))
     minSdk.set(libs.versions.android.minSdk.map { it.toInt() })

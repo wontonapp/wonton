@@ -62,8 +62,8 @@ PR 合并前只等快检查：格式、Clippy、detekt、SwiftLint、行数门�
   被调用方互相等待。
 - `cache.yml` 不取消进行中的运行，否则 main 忙时缓存几乎写不回去；并发组按作业分，同一作业只跑一个、只留最新一个等着。
 - 合并进 main 不重跑快检查（规则集不要求 PR 先追上 `main`，两个各自绿的 PR 合在一起才出的错靠下面的定时兜底）；
-  `push` 到 main 跑 `gate`（只有 lint）、`rust-docker` 和 `ios`（改到各自的路径时）、main-image，`cache.yml` 用和 PR 作业一样的 key
-  把编译缓存编一遍存下来（只编不跑）。每天定时（`schedule`，02:00 起错开）把 Rust、Docker、Android、iOS
+  `push` 到 main 跑 `gate`（只有 lint）、`rust-docker`、`ios` 和 `android-size`（改到各自路径时）、main-image，`cache.yml` 用和 PR 作业一样的 key
+  把编译缓存编一遍存下来（只编不跑）。每天定时（`schedule`，02:00 起错开）把 Rust、Docker、Android、iOS 和体积门禁
   全量跑一遍兜底。
 - 打标签（`labeled`）不进 `ios.yml`、`android.yml`：那会用一次标签事件重跑整轮日常作业，而且跳过的那轮会把之前
   失败的必需检查盖成“通过”。重录统一走 `snapshots-record.yml`，只在标签是 `record-snapshots` 时跑一个作业，
@@ -101,9 +101,15 @@ PR 合并前只等快检查：格式、Clippy、detekt、SwiftLint、行数门�
 - 标签用完就摘：GitHub 不会给已经贴着的标签再发一次 `labeled`，留着就发不出下一轮重录。摘标签是单独一步、
   只看标签（外部 PR 也摘），不跟着提交步骤的成败走。
 
+## Release APK 体积（`android-size.yml`）
+
+`release-size` 要在 ubuntu 上编一份 release 核心，冷缓存十几分钟，比 PR 要等的快检查慢，所以不在 `gate` 里：
+只按 `push` 到 main 的 android 路径、每天定时和手动触发。它出 arm64 Release 包并跑 `scripts/check-apk-size.sh`
+（上限 53 MB），失败时把符号和 R8 映射表传成产物、留 14 天；成功不传（mapping.txt 一百多 MB，每次都存太占产物存储）。
+
 ## 汇总作业的条件
 
-`rust.yml`、`ios.yml`、`android.yml` 的定时和手动运行不经过 `gate`，没有改动范围，全量运行。`gate` 里重作业的 `if`
+`rust.yml`、`ios.yml`、`android.yml`、`android-size.yml` 的定时和手动运行不经过 `gate`，没有改动范围，全量运行。`gate` 里重作业的 `if`
 以 `!cancelled()` 开头、再看开关；汇总用 `always()`，判断成功、跳过或失败都照常报告。范围判断失败会让汇总
 变红，不会伪装成没改动。
 
@@ -159,7 +165,7 @@ PR 合并前只等快检查：格式、Clippy、detekt、SwiftLint、行数门�
 - 所有 `actions/checkout` 都带 `persist-credentials: false`，不在工作区留 git 凭据。
 - 第三方 action 固定到提交 SHA（行尾注释写版本号）；SwiftLint、XcodeGen、gitleaks、crane、actionlint
   这类下载的二进制都校验 sha256。
-- 不用 `pull_request_target`；artifact 只留测试输出，保留 7 天（夜跑的截图、录屏为查失败留 14 天）。
+- 不用 `pull_request_target`；artifact 只留测试输出，保留 7 天（夜跑的截图、录屏为查失败留 14 天，体积门禁失败时的符号和映射表也是 14 天）。
 
 ## 界面测试夜跑（`nightly-ui.yml`）
 

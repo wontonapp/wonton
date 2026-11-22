@@ -42,8 +42,8 @@ SDK 位置写在 `apps/compose/local.properties`（`sdk.dir=...`，不提交）�
 ./gradlew :androidApp:assembleDebug
 ```
 
-默认只编译 `arm64-v8a`（真机和 Apple 芯片上的模拟器）。要别的 ABI 或 release 构建，用
-`-Pwonton.abis="arm64-v8a x86_64"`、`-Pwonton.rustProfile=release`。
+默认只编译 `arm64-v8a`（真机和 Apple 芯片上的模拟器）。要别的 ABI 用 `-Pwonton.abis="arm64-v8a x86_64"`。
+`assembleRelease` 这类 Release 变体的任务默认用 release 核心；`-Pwonton.rustProfile` 只在要强制某一种时传。
 
 ### 版本号
 
@@ -55,9 +55,10 @@ SDK 位置写在 `apps/compose/local.properties`（`sdk.dir=...`，不提交）�
 WONTON_VERSION=0.2.4 ./gradlew :androidApp:assembleRelease
 ```
 
-Release 包剥掉 `.so` 的符号表。原样的符号留在 `shared/build/outputs/native-symbols/<ABI>/`，R8 的映射表在
-`androidApp/build/outputs/mapping/release/mapping.txt`：崩溃栈要还原成函数名和行号就靠这两个，发版和 CI 把它们跟
-APK 一起存下来。它们不进仓库，也别删上一次的。
+Release 包剥掉 `.so` 的符号表，安装时解压（`useLegacyPackaging`：下载量按压缩后算，设备上多占解压出的 `.so`）。
+原样的符号留在 `shared/build/outputs/native-symbols/<ABI>/`，R8 的映射表在
+`androidApp/build/outputs/mapping/release/mapping.txt`：崩溃栈要还原成函数名和行号就靠这两个。它们不进仓库，也别删上一次的。
+CI 的体积作业（`android-size.yml`）只在失败时传这两个（mapping.txt 一百多 MB，每次都存太占产物存储）。
 
 Gradle 也认 `-PwontonVersion=0.2.4`（透传给同一脚本；远程构建通道只透传它）。在自己带 tag 的检出上不传时
 取最近的发版 tag；都拿不到时 Debug 构建用 `0.0.0 (0)`。构建号由版本号算出（`major*1000000 + minor*1000 +
