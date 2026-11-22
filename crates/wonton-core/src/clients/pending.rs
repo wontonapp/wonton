@@ -4,14 +4,20 @@
 //! 再对账其余的。对账绝不把已经被待换值取代的旧值再发一遍。
 
 use std::collections::BTreeSet;
+use std::sync::Arc;
+use std::time::Duration;
+
+use super::credentials::{CredentialError, Verify};
+use super::passwords::{self, PasswordError, PasswordStore, Snapshot, State};
 
 use wonton_protocol::PendingOp;
 use wonton_protocol::manifest::CredentialsAuth;
 
-use super::credentials::{CredentialError, Verify};
-use super::passwords::{self, PasswordError, PasswordStore, Snapshot, State};
 use crate::l10n;
 use crate::plugin::PluginId;
+
+/// 待完成的凭据操作多久重试一次（ADR-0021「吊销不能丢」）。
+const RETRY_INTERVAL: Duration = Duration::from_secs(30);
 
 /// 新建密码的结果：还没发成的记录也已落盘，值照旧给主人。
 #[derive(Debug)]
@@ -34,13 +40,13 @@ pub(crate) enum Issue {
     },
 }
 
-/// 吊销/换值的三种结果。
+/// 吊销/换值的结果；成功时带上刚落的操作（响应头要标出来）。
 #[derive(Debug)]
 pub(crate) enum Settle {
     /// 执行完了（吊销的已删除、换值的已生效）。
-    Done,
-    /// 插件没在跑，留在待完成等启动重试。
-    Deferred,
+    Done(PendingOp),
+    /// 插件没在跑，留在待完成等启动或后台重试。
+    Deferred(PendingOp),
     /// 失败或超时，留在待完成等下次。
     Failed(CredentialError),
 }
@@ -56,7 +62,6 @@ pub(crate) struct DeviceRevokeReport {
 #[derive(Debug)]
 pub(crate) enum IssueError {
     Store,
-    NotCredentials,
     SharedExists,
     Password(PasswordError),
 }
@@ -78,10 +83,15 @@ impl crate::plugin::PluginManager {
         let Some(store) = &self.client_passwords else {
             return Err(IssueError::Store);
         };
-        let Some(credentials) = self.credentials_auth(plugin) else {
-            return Err(IssueError::NotCredentials);
-        };
         let _serial = self.credential_lock(plugin).await;
+        let Some(credentials) = self.credentials_auth(plugin) else {
+            // 网关验证（C16）没有命令：值直接落盘就能用。
+            let created = store.create(plugin.as_str(), label, device)?;
+            return Ok(Issue::Done(Issued {
+                id: created.id,
+                value: created.value,
+            }));
+        };
         let created = if credentials.per_client {
             if credentials.generates {
                 store.create_generated_pending(plugin.as_str(), label, device)?
@@ -112,7 +122,12 @@ impl crate::plugin::PluginManager {
             .await;
         match outcome {
             Ok(generated) => {
-                store.finish_rotate(plugin.as_str(), &created.id, generated)?;
+                store.finish_rotate(
+                    plugin.as_str(),
+                    &created.id,
+                    generated,
+                    credentials.ends_sessions,
+                )?;
                 store.mark_issued(plugin.as_str())?;
                 let value = store.snapshot(plugin.as_str(), &created.id)?.value;
                 Ok(Issue::Done(Issued {
@@ -138,7 +153,7 @@ impl crate::plugin::PluginManager {
         let snapshot = store.snapshot(plugin.as_str(), id)?;
         let Some(credentials) = self.credentials_auth(plugin) else {
             store.revoke(plugin.as_str(), id)?;
-            return Ok(Settle::Done);
+            return Ok(Settle::Done(PendingOp::Revoke));
         };
         if credentials.per_client {
             self.revoke_record(plugin, &snapshot, credentials.ends_sessions)
@@ -159,9 +174,9 @@ impl crate::plugin::PluginManager {
         match self.revoke_password(plugin, snapshot).await {
             Ok(()) => {
                 store.finish_revoke(plugin.as_str(), &snapshot.id, ends_sessions)?;
-                Ok(Settle::Done)
+                Ok(Settle::Done(PendingOp::Revoke))
             }
-            Err(CredentialError::Unavailable) => Ok(Settle::Deferred),
+            Err(CredentialError::Unavailable) => Ok(Settle::Deferred(PendingOp::Revoke)),
             Err(error) => Ok(Settle::Failed(error)),
         }
     }
@@ -181,19 +196,24 @@ impl crate::plugin::PluginManager {
             .await
         {
             Ok(generated) => {
-                store.finish_rotate(plugin.as_str(), &snapshot.id, generated)?;
+                store.finish_rotate(
+                    plugin.as_str(),
+                    &snapshot.id,
+                    generated,
+                    credentials.ends_sessions,
+                )?;
                 store.mark_issued(plugin.as_str())?;
-                Ok(Settle::Done)
+                Ok(Settle::Done(PendingOp::Rotate))
             }
-            Err(CredentialError::Unavailable) => Ok(Settle::Deferred),
+            Err(CredentialError::Unavailable) => Ok(Settle::Deferred(PendingOp::Rotate)),
             Err(error) => Ok(Settle::Failed(error)),
         }
     }
 
     /// 设备吊销：这台设备建过或看过的密码跟着走。
     ///
-    /// `per_client: false` 的共享密码默认换值（别台设备继续用新值）；`keep_shared` 时
-    /// 不跑命令、直接删记录（清单里共享模式本来就不写 `revoke`），下次启动再补发。
+    /// `per_client: false` 的共享密码默认换值（别台设备继续用新值）；`keep_shared` 时原样留着，
+    /// 别的设备的老值照旧能用、连接也不断，下次启动只按对账重发同一个值。
     /// `ends_sessions: false` 的插件登录没结束，单独列出。没被这台设备碰过的不动。
     pub(crate) async fn revoke_passwords_for_device(
         &self,
@@ -228,15 +248,14 @@ impl crate::plugin::PluginManager {
                 self.revoke_record(&parsed, &snapshot, credentials.ends_sessions)
                     .await
             } else if keep_shared {
-                // 只吊销、不换值：共享模式没有 revoke 命令，直接删记录；下次启动再补一条。
-                store.revoke(&plugin, &id)?;
-                Ok(Settle::Done)
+                // 共享模式没有 revoke 命令：记录和值都留着，不动守卫。
+                Ok(Settle::Done(PendingOp::Rotate))
             } else {
                 self.rotate_record(&parsed, &snapshot, &credentials).await
             };
             match settle {
-                Ok(Settle::Done) => {}
-                Ok(Settle::Deferred | Settle::Failed(_)) => {
+                Ok(Settle::Done(_)) => {}
+                Ok(Settle::Deferred(_) | Settle::Failed(_)) => {
                     pending.insert(plugin.clone());
                 }
                 Err(error) => return Err(error),
@@ -284,7 +303,12 @@ impl crate::plugin::PluginManager {
         };
         match outcome {
             Ok(generated) => {
-                if let Err(error) = store.finish_rotate(plugin.as_str(), &snapshot.id, generated) {
+                if let Err(error) = store.finish_rotate(
+                    plugin.as_str(),
+                    &snapshot.id,
+                    generated,
+                    credentials.ends_sessions,
+                ) {
                     tracing::warn!(plugin = %plugin, "记下换值失败：{error}");
                 } else if let Err(error) = store.mark_issued(plugin.as_str()) {
                     tracing::warn!(plugin = %plugin, "记下发过密码失败：{error}");
@@ -318,30 +342,7 @@ impl crate::plugin::PluginManager {
                 Err(error) => tracing::warn!(plugin = %plugin, "写共享密码失败：{error}"),
             }
         }
-        // 待完成的只重试它自己：待换的绝不重发被取代的旧值，待吊销的绝不重新签发。
-        for snapshot in store.snapshots(plugin.as_str()) {
-            match snapshot.state {
-                State::PendingRevoke => {
-                    if let Err(error) = self
-                        .revoke_record(plugin, &snapshot, credentials.ends_sessions)
-                        .await
-                    {
-                        tracing::warn!(plugin = %plugin, "重试吊销失败：{error}");
-                    }
-                }
-                State::PendingRotate { ref next } => {
-                    self.retry_pending_rotate(
-                        plugin,
-                        store,
-                        &snapshot,
-                        &credentials,
-                        next.as_deref(),
-                    )
-                    .await
-                }
-                State::Ready => {}
-            }
-        }
+        self.retry_pendings(plugin, store, &credentials).await;
         // 再对账已落地的值：有 verify 先验，无效或没有 verify 才重新发；未知先不动。
         for snapshot in store.snapshots(plugin.as_str()) {
             if snapshot.state != State::Ready {
@@ -371,7 +372,7 @@ impl crate::plugin::PluginManager {
                 match outcome {
                     Ok(generated) => {
                         if let Err(error) =
-                            store.finish_rotate(plugin.as_str(), &snapshot.id, generated)
+                            store.finish_rotate(plugin.as_str(), &snapshot.id, generated, false)
                         {
                             tracing::warn!(plugin = %plugin, "记下重新生成的值失败：{error}");
                             continue;
@@ -394,6 +395,80 @@ impl crate::plugin::PluginManager {
                 Err(error) => tracing::warn!(plugin = %plugin, "对账密码失败：{}", error.detail()),
             }
         }
+    }
+    /// 重试某个插件所有没完成的操作：待吊销只重试吊销，待换只重试换值。调用方持锁。
+    async fn retry_pendings(
+        &self,
+        plugin: &PluginId,
+        store: &PasswordStore,
+        credentials: &CredentialsAuth,
+    ) {
+        for snapshot in store.snapshots(plugin.as_str()) {
+            match snapshot.state {
+                State::PendingRevoke => {
+                    if let Err(error) = self
+                        .revoke_record(plugin, &snapshot, credentials.ends_sessions)
+                        .await
+                    {
+                        tracing::warn!(plugin = %plugin, "重试吊销失败：{error}");
+                    }
+                }
+                State::PendingRotate { ref next } => {
+                    self.retry_pending_rotate(
+                        plugin,
+                        store,
+                        &snapshot,
+                        credentials,
+                        next.as_deref(),
+                    )
+                    .await
+                }
+                State::Ready => {}
+            }
+        }
+    }
+
+    /// 后台重试一个插件：正被别的操作占着就跳过，下一轮再来。
+    pub(crate) async fn retry_pending_credentials(&self, plugin: &PluginId) {
+        let Some(store) = &self.client_passwords else {
+            return;
+        };
+        let Some(credentials) = self.credentials_auth(plugin) else {
+            return;
+        };
+        let Some(_serial) = self.try_credential_lock(plugin) else {
+            return;
+        };
+        self.retry_pendings(plugin, store, &credentials).await;
+    }
+
+    /// ADR-0021「吊销不能丢」的隔一段重试：插件一直运行时，失败或超时的不等到下次启动。
+    /// 拿到锁才跑，起一次操作就占着锁，下一轮撞上直接跳过。
+    fn try_credential_lock(&self, plugin: &PluginId) -> Option<tokio::sync::OwnedMutexGuard<()>> {
+        let lock = self
+            .credential_locks
+            .lock()
+            .expect("credential lock table poisoned")
+            .entry(plugin.clone())
+            .or_default()
+            .clone();
+        lock.try_lock_owned().ok()
+    }
+
+    /// 每隔 [`RETRY_INTERVAL`] 扫一遍还没完成的凭据操作，每个插件一条任务。
+    pub fn spawn_credential_watch(self: &Arc<Self>) {
+        let this = self.clone();
+        tokio::spawn(async move {
+            let mut ticks = tokio::time::interval(RETRY_INTERVAL);
+            ticks.set_missed_tick_behavior(tokio::time::MissedTickBehavior::Delay);
+            loop {
+                ticks.tick().await;
+                for id in this.plugins_with_pending_credentials() {
+                    let this = this.clone();
+                    tokio::spawn(async move { this.retry_pending_credentials(&id).await });
+                }
+            }
+        });
     }
 
     /// 给状态用的待完成操作；值另外取。

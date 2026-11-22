@@ -16,6 +16,9 @@ pub(crate) const FILE_NAME: &str = "clients/passwords.json";
 /// `per_client: false` 的唯一一条密码的记录 ID。
 pub(crate) const SHARED_ID: &str = "shared";
 
+/// 没经设备取值（主人令牌）时记的“设备”。
+pub(crate) const OWNER_TOKEN: &str = "owner_token";
+
 const TOKEN_ALPHABET: &[u8; 32] = b"abcdefghijklmnopqrstuvwxyz234567";
 
 /// 一条密码在应用里的样子：已经换好，或者还有吊销/换值没完成。
@@ -288,7 +291,7 @@ impl PasswordStore {
             .ok_or(PasswordError::NotFound)?;
         record
             .viewed_by
-            .insert(device.unwrap_or("owner_token").to_owned(), now_ms());
+            .insert(device.unwrap_or(OWNER_TOKEN).to_owned(), now_ms());
         let value = record.value.clone();
         self.save_locked(&state)?;
         Ok(value)
@@ -485,11 +488,13 @@ impl PasswordStore {
     }
 
     /// 换值执行成功：待换的新值生效（应用自己生成时用 `generated`），状态回到已落地。
+    /// `ends_sessions` 时置守卫断开已升级的连接；新连接用新值换一个新守卫。
     pub(crate) fn finish_rotate(
         &self,
         plugin: &str,
         id: &str,
         generated: Option<String>,
+        ends_sessions: bool,
     ) -> Result<(), PasswordError> {
         let mut state = self.state.lock().expect("client password lock poisoned");
         let record = find_mut(&mut state, plugin, id)?;
@@ -500,9 +505,24 @@ impl PasswordStore {
             record.value = value;
         }
         record.state = State::Ready;
-        self.save_locked(&state)
+        self.save_locked(&state)?;
+        if ends_sessions {
+            self.end_sessions(plugin, id);
+        }
+        Ok(())
     }
 
+    /// 断掉这条密码已经升级的连接，下一个请求重新建守卫。
+    fn end_sessions(&self, plugin: &str, id: &str) {
+        let sender = self
+            .guards
+            .lock()
+            .expect("client password guard lock poisoned")
+            .remove(&(plugin.to_owned(), id.to_owned()));
+        if let Some(sender) = sender {
+            sender.send_replace(true);
+        }
+    }
     /// 网关验证的密码没有命令：一步落盘、置守卫、删除。
     pub fn revoke(&self, plugin: &str, id: &str) -> Result<(), PasswordError> {
         self.begin_revoke(plugin, id)?;
@@ -717,7 +737,9 @@ mod tests {
                 .unwrap()
                 .is_some()
         );
-        store.finish_rotate("app.demo", &created.id, None).unwrap();
+        store
+            .finish_rotate("app.demo", &created.id, None, false)
+            .unwrap();
         assert_eq!(
             store.snapshot("app.demo", &created.id).unwrap().value,
             "next"

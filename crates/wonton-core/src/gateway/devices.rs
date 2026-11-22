@@ -6,7 +6,7 @@
 //! | GET | `/_wonton/api/tunnel` | 服务端的 endpoint ID、中继表、直连地址和基础域名，客户端据此连接；经隧道的已配对设备也能调（App 连上后跟着服务器的地址走，ADR-0032） |
 //! | GET | `/_wonton/api/devices` | 已登记的设备：主人的令牌和设备看所有人的，家人的设备看自己的 |
 //! | POST | `/_wonton/api/devices` | 请求体 `{"endpoint_id": "…"}`，登记一台设备，只认主人令牌 |
-//! | DELETE | `/_wonton/api/devices/{endpoint_id}` | 吊销，立即断开它的隧道连接；家人的设备只能吊销自己的 |
+//! | DELETE | `/_wonton/api/devices/{endpoint_id}` | 吊销，立即断开它的隧道连接；请求体可选 `{"keep_shared_passwords": true}`，家人的设备只能吊销自己的 |
 //! | POST | `/_wonton/api/pairing-codes` | 发一个配对码，请求体可选 `{"direct_addrs": ["192.168.1.2:18482"]}`；经隧道的已配对设备也能调（App 里的“添加设备”），码归这台设备的人 |
 //! | POST | `/_wonton/api/pairing-codes/first` | 首次配对码，和状态页上的是同一个；已经有设备时 409 `paired`。请求体同上 |
 
@@ -16,6 +16,7 @@ use std::net::SocketAddr;
 use std::str::FromStr;
 use std::sync::Arc;
 
+use axum::body::Bytes;
 use axum::extract::{Path, State};
 use axum::response::{IntoResponse, Response};
 use axum::{Extension, Json};
@@ -142,7 +143,7 @@ pub async fn remove(
     peer: Option<Extension<TunnelPeer>>,
     headers: HeaderMap,
     Path(id): Path<String>,
-    body: Option<Json<RevokeDeviceRequest>>,
+    body: Bytes,
 ) -> Response {
     if let Some(denied) = plugin_denied(&gateway, peer, &headers) {
         return denied;
@@ -169,9 +170,10 @@ pub async fn remove(
     {
         return error_response(StatusCode::FORBIDDEN, "not_yours", "这不是你的设备");
     }
-    let keep_shared = body
-        .map(|Json(request)| request.keep_shared_passwords)
-        .unwrap_or(false);
+    let keep_shared = match keep_shared_flag(&body, &langs) {
+        Ok(keep) => keep,
+        Err(response) => return response,
+    };
     match revoke_device(&gateway, &id, keep_shared).await {
         Ok((true, report)) => Json(json!({
             "endpoint_id": id,
@@ -187,6 +189,24 @@ pub async fn remove(
         ),
         Err(e) => storage_error(&e),
     }
+}
+
+/// 吊销设备的请求体可省略：空 body 和 `null` 都当没传（ADR-0021 的“吊销设备”）。
+/// axum 的 `Option<Json<…>>` 在带 `Content-Type: application/json` 的空 body 上整条拒绝，所以自己解析。
+// 错误响应直接回给 HTTP 层，和这个文件的其他处理函数一样，不另包一层。
+#[allow(clippy::result_large_err)]
+fn keep_shared_flag(body: &Bytes, langs: &Languages) -> Result<bool, Response> {
+    if body.iter().all(u8::is_ascii_whitespace) {
+        return Ok(false);
+    }
+    let request: Option<RevokeDeviceRequest> = serde_json::from_slice(body).map_err(|_| {
+        error_response(
+            StatusCode::BAD_REQUEST,
+            "invalid_input",
+            &l10n::text(langs, "gateway-devices-invalid-body", &[]),
+        )
+    })?;
+    Ok(request.is_some_and(|request| request.keep_shared_passwords))
 }
 
 fn parse_id(text: &str) -> Option<EndpointId> {

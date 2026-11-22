@@ -167,4 +167,5 @@ pub(super) fn spawn_plugin_monitors(
     manager.spawn_device_watch();
     manager.spawn_mailpit_watch();
     manager.spawn_clients_setup_watch(notices);
+    manager.spawn_credential_watch();
 }

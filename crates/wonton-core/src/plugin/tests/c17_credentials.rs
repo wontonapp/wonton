@@ -395,8 +395,9 @@ async fn shared_password_rotated_on_device_revoke_unless_kept() {
     assert_eq!(rotated.state, State::Ready);
     assert_ne!(rotated.value, issued.value);
 
-    // keep_shared：只删记录、不跑命令，下次启动再补。
+    // keep_shared：记录和值都留着、不跑命令，别的设备继续用老值。
     store.read("app.test", "shared", Some("device-a")).unwrap();
+    let kept_value = store.snapshot("app.test", "shared").unwrap().value;
     let before = home.script.calls().len();
     let kept_report = home
         .manager
@@ -404,7 +405,15 @@ async fn shared_password_rotated_on_device_revoke_unless_kept() {
         .await
         .unwrap();
     assert_eq!(home.script.calls().len(), before);
-    assert!(store.snapshot("app.test", "shared").is_err());
+    let kept = store.snapshot("app.test", "shared").unwrap();
+    assert_eq!(kept.value, kept_value);
+    assert_eq!(kept.state, State::Ready);
+    // 重启后对账重发同一个值，不再换。
+    home.manager.reconcile_credentials(&home.id).await;
+    assert_eq!(
+        store.snapshot("app.test", "shared").unwrap().value,
+        kept_value
+    );
     // 登录没结束的应用仍要列出来。
     assert_eq!(kept_report.ends_sessions_false, ["app.test"]);
     assert!(kept_report.pending_revokes.is_empty());
@@ -724,5 +733,52 @@ async fn generated_reconcile_without_rotate_keeps_pending_on_timeout() {
             .authenticate("app.test", &issued.value)
             .unwrap()
             .is_some()
+    );
+}
+
+#[tokio::test]
+async fn shared_rotate_with_ends_sessions_drops_connections() {
+    let auth = "          per_client: false\n          ends_sessions: true\n          rotate: [pw, rotate, '{name}']\n          issue: [pw, issue, '{name}']\n";
+    let home = home(auth).await.unwrap();
+    let store = store(&home);
+    let old = store.snapshot("app.test", "shared").unwrap().value;
+    let mut receiver = store.authenticate("app.test", &old).unwrap().unwrap();
+    assert!(!*receiver.borrow());
+    home.script.push([Step::Ok(0, "", "")]);
+    let settled = home
+        .manager
+        .settle_password(&home.id, "shared")
+        .await
+        .unwrap();
+    assert!(matches!(settled, Settle::Done(_)));
+    assert!(*receiver.borrow_and_update());
+    // 新连接用新值建一个新守卫，不会被上一次的置位带走。
+    let new = store.snapshot("app.test", "shared").unwrap().value;
+    let fresh = store.authenticate("app.test", &new).unwrap().unwrap();
+    assert!(!*fresh.borrow());
+}
+
+#[tokio::test]
+async fn pending_retry_runs_without_a_start() {
+    let home = home(PER_CLIENT).await.unwrap();
+    home.script.push([Step::Ok(0, "", "")]);
+    let Issue::Done(issued) = home
+        .manager
+        .issue_new(&home.id, "手机", None)
+        .await
+        .unwrap()
+    else {
+        panic!("先发出去");
+    };
+    let store = store(&home);
+    store
+        .begin_rotate("app.test", &issued.id, Some("next".into()))
+        .unwrap();
+    let before = home.script.calls().len();
+    home.manager.retry_pending_credentials(&home.id).await;
+    assert_eq!(home.script.ops()[before..], ["issue"]);
+    assert_eq!(
+        store.snapshot("app.test", &issued.id).unwrap().value,
+        "next"
     );
 }
