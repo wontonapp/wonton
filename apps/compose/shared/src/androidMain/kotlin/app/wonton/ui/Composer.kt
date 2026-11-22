@@ -373,9 +373,10 @@ private fun rememberAttachments(
                 onReject(failed)
             } else if (send == null) {
                 val problem = core.send(Action.Timeline(TimelineAction.SendComposer(target, note, reply?.eventId)))
-                if (problem != null) onReject(problem) else if (reply != null) onReplyCanсel()
+                if (problem != null) onReject(problem) else if (reply != null) onReplyCancel()
             }
         }
+        Unit
     }
     val noFiles = Problem(titleRes = R.string.side_chat_no_files)
     val addFiles = { uris: List<Uri> ->
@@ -533,7 +534,7 @@ private fun sendAction(target: TimelineTarget, text: String, reply: ReplyQuote?,
 private suspend fun sendPickedPhotos(
     context: Context,
     uris: List<Uri>,
-    send: ((ImageUpload) -> Unit)?,
+    send: ((ImageUpload, String?) -> Unit)?,
     unreadable: String,
     tryAnother: String,
     core: ClientCore,
@@ -551,6 +552,7 @@ private suspend fun sendPickedPhotos(
                 } else {
                     addImage(core, roomId, upload)
                 }
+                null
             },
             onFailure = { failure -> Problem(unreadable, tryAnother, failure.message) },
         )
