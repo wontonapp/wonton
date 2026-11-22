@@ -136,7 +136,7 @@ pub(crate) fn install_error(error: &InstallError) -> Response {
         | InstallError::ImagesUnavailable(_)
         | InstallError::SourceUnavailable(_) => StatusCode::SERVICE_UNAVAILABLE,
         InstallError::UpstreamUnavailable(_) => StatusCode::BAD_GATEWAY,
-        InstallError::DockerTimedOut(_) => StatusCode::GATEWAY_TIMEOUT,
+        InstallError::DockerTimedOut(_) | InstallError::TimedOut(_) => StatusCode::GATEWAY_TIMEOUT,
         InstallError::Docker(_) | InstallError::ImagePull(_) | InstallError::Unhealthy(_) => {
             StatusCode::BAD_GATEWAY
         }

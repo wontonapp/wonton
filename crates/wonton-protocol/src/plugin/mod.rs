@@ -607,6 +607,8 @@ pub enum PluginFailure {
     RemoteError,
     /// 家里的服务器上出错了：Docker、身份提供方、Matrix、模型网关没就绪，或者插件没通过健康检查。
     Upstream,
+    /// 等到健康门的时限，服务还在启动：不是探针判失败，宿主空下来后重试通常就过（issue #682）。
+    TimedOut,
     /// 设置值没通过 Schema（ADR-0077），明细在 [`PluginProblem::settings`]。
     SettingsInvalid,
     /// 插件包的设置 Schema 自己不合格（ADR-0077），明细在 [`PluginProblem::settings`]。
