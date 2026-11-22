@@ -5,12 +5,14 @@ check-public-copy.sh 的 fixture 用 `git clone --depth 2` 造，和 CI 的检�
 """
 
 import http.server
+import json
 import os
 import shutil
 import subprocess
 import tempfile
 import threading
 import unittest
+import urllib.parse
 from pathlib import Path
 
 HERE = Path(__file__).resolve().parent
@@ -48,9 +50,12 @@ class FakeApi:
     def __init__(self):
         self.pin_status = "ahead"
         self.commit_exists = True
+        self.pending_exists = True
         self.limited = False
         self.public = b""
         self.source = b""
+        self.pending = b""
+        self.pulls = []
         api = self
 
         class Handler(http.server.BaseHTTPRequestHandler):
@@ -58,15 +63,21 @@ class FakeApi:
                 pass
 
             def do_GET(self):
+                url = urllib.parse.urlparse(self.path)
                 if api.limited:
                     return self.reply(403, b'{"message": "API rate limit exceeded"}')
-                if "/compare/" in self.path:
+                if "/compare/" in url.path:
                     return self.reply(200, ('{"status": "%s"}' % api.pin_status).encode())
-                if "/wonton-install/contents/install.sh" in self.path:
-                    return self.reply(200, api.public)
-                if "/wonton/contents/" in self.path:
+                if url.path.endswith("/pulls"):
+                    return self.reply(200, json.dumps(api.pulls).encode())
+                if "/wonton-install/commits/" in url.path:
+                    return self.reply(200 if api.pending_exists else 404, b'{"sha": "p"}')
+                if "/wonton-install/contents/install.sh" in url.path:
+                    ref = urllib.parse.parse_qs(url.query).get("ref", ["main"])[0]
+                    return self.reply(200, api.pending if ref != "main" else api.public)
+                if "/wonton/contents/" in url.path:
                     return self.reply(200, api.source)
-                if "/wonton/commits/" in self.path:
+                if "/wonton/commits/" in url.path:
                     return self.reply(200 if api.commit_exists else 404, b"{}")
                 return self.reply(404, b"{}")
 
@@ -117,10 +128,12 @@ class Fixture(unittest.TestCase):
         git("config", "user.email", "t@example.invalid", cwd=repo)
         return repo
 
-    def pin_file(self, pin, source, blob=None):
+    def pin_file(self, pin, source, blob=None, pending=None):
         if blob is None:
             blob = git("hash-object", MAIN_PATH, cwd=self.repo)
-        lines = [pin, source] + ([blob] if blob else [])
+        lines = [pin, source, blob]
+        if pending is not None:
+            lines.append(pending)
         write(self.repo / "deploy/install/public-copy", "\n".join(lines) + "\n")
 
     def matching(self):
@@ -129,6 +142,16 @@ class Fixture(unittest.TestCase):
         self.api.public = content
         self.api.source = content
         self.pin_file("1" * 40, git("rev-parse", "HEAD", cwd=self.repo))
+
+    def waiting_public_pr(self, pending="p" * 40, content=None):
+        """第四行记一条待合分支，默认内容和工作树一致、有开着的公开 PR。"""
+        if content is None:
+            content = (self.repo / MAIN_PATH).read_bytes()
+        self.api.pending = content
+        self.api.pulls = [{"state": "open", "number": 2, "head": {"sha": pending}}]
+        lines = (self.repo / "deploy/install/public-copy").read_text().splitlines()
+        self.pin_file(lines[0], lines[1], lines[2], pending)
+        return pending
 
     def check(self, token=True):
         env = os.environ | {"WONTON_GITHUB_API": self.api.url}
@@ -191,13 +214,68 @@ class CheckTest(Fixture):
         self.assertEqual(done.returncode, 1)
         self.assertIn("不在公开仓库 main 上", done.stderr)
 
-    def test_public_content_that_differs_is_red_with_a_diff(self):
+    def test_public_content_that_differs_and_no_pending_line_is_red_with_a_diff(self):
         self.matching()
         self.api.public = b"v1\n"
         done = self.check()
         self.assertEqual(done.returncode, 1)
         self.assertIn("-v1", done.stderr)
         self.assertIn("+v3", done.stderr)
+        self.assertIn("sync-public.sh", done.stderr)
+
+    def test_an_open_public_pr_keeps_the_check_green_while_main_is_old(self):
+        self.matching()
+        self.api.public = b"v1\n"
+        pending = self.waiting_public_pr()
+        done = self.check()
+        self.assertEqual(done.returncode, 0, done.stderr)
+        self.assertIn("公开 PR #2", done.stderr)
+        self.assertIn(pending, done.stderr)
+
+    def test_a_closed_public_pr_is_red(self):
+        self.matching()
+        self.api.public = b"v1\n"
+        pending = self.waiting_public_pr()
+        self.api.pulls = [{"state": "closed", "number": 2, "head": {"sha": pending}}]
+        done = self.check()
+        self.assertEqual(done.returncode, 1)
+        self.assertIn("没有开着的公开 PR", done.stderr)
+
+    def test_a_public_pr_on_another_commit_is_red(self):
+        self.matching()
+        self.api.public = b"v1\n"
+        self.waiting_public_pr()
+        self.api.pulls = [{"state": "open", "number": 2, "head": {"sha": "q" * 40}}]
+        done = self.check()
+        self.assertEqual(done.returncode, 1)
+        self.assertIn("没有开着的公开 PR", done.stderr)
+
+    def test_a_pending_branch_with_other_content_is_red(self):
+        self.matching()
+        self.api.public = b"v1\n"
+        self.waiting_public_pr(content=b"v2\n")
+        done = self.check()
+        self.assertEqual(done.returncode, 1)
+        self.assertIn("待合分支", done.stderr)
+        self.assertIn("不一样", done.stderr)
+
+    def test_a_missing_pending_commit_is_red(self):
+        self.matching()
+        self.api.public = b"v1\n"
+        self.waiting_public_pr()
+        self.api.pending_exists = False
+        done = self.check()
+        self.assertEqual(done.returncode, 1)
+        self.assertIn("取不到", done.stderr)
+
+    def test_a_stale_pending_line_is_green_once_main_has_the_content(self):
+        self.matching()
+        self.waiting_public_pr()
+        self.api.pulls = []
+        done = self.check()
+        self.assertEqual(done.returncode, 0, done.stderr)
+        self.assertIn("第四行", done.stderr)
+        self.assertIn("sync-public.sh", done.stderr)
 
 
 class SyncTest(Fixture):
@@ -242,11 +320,25 @@ class SyncTest(Fixture):
         self.assertEqual(done.returncode, 0, done.stderr)
         self.assertEqual(self.lines()[1], head)
         self.assertEqual(self.lines()[2], git("hash-object", MAIN_PATH, cwd=self.repo))
+        self.assertEqual(self.lines()[3], git("rev-parse", "HEAD", cwd=self.clone))
+        self.assertEqual(len(self.lines()), 4)
         self.assertIn("public-copy", git("status", "--porcelain", cwd=self.repo))
         self.assertEqual(
             (self.clone / "install.sh").read_bytes(), (self.repo / MAIN_PATH).read_bytes()
         )
         self.assertTrue(git("branch", "--list", "sync/*", cwd=self.clone))
+
+    def test_rerunning_sync_on_the_sync_branch_keeps_the_pending_line(self):
+        write(self.repo / MAIN_PATH, "v4\n")
+        git("commit", "-q", "-am", "v4", cwd=self.repo)
+        self.assertEqual(self.sync().returncode, 0)
+        pending = self.lines()[3]
+        self.assertEqual(pending, git("rev-parse", "HEAD", cwd=self.clone))
+        before = git("rev-list", "--count", "HEAD", cwd=self.clone)
+        done = self.sync()
+        self.assertEqual(done.returncode, 0, done.stderr)
+        self.assertEqual(self.lines()[3], pending)
+        self.assertEqual(git("rev-list", "--count", "HEAD", cwd=self.clone), before)
 
     def test_sync_refuses_an_uncommitted_install_sh(self):
         before = (self.repo / "deploy/install/public-copy").read_bytes()
@@ -268,7 +360,10 @@ class SyncTest(Fixture):
         done = self.sync()
         self.assertEqual(done.returncode, 0, done.stderr)
         self.assertEqual(self.lines()[0], merged)
-        self.assertEqual(len(self.lines()), 3)
+        self.assertEqual(len(self.lines()), 4)
+        self.assertEqual(self.lines()[3], "")
+        # 第四行是空的：公开 main 已经有这份内容，不用再等公开 PR。
+        self.assertNotIn("公开 PR", done.stderr)
         self.api.public = (self.repo / MAIN_PATH).read_bytes()
         # 主仓库的 PR 这时才能绿：公开 main 的内容、检查记的提交都和这份一致。
         self.api.source = (self.repo / MAIN_PATH).read_bytes()
@@ -278,8 +373,9 @@ class SyncTest(Fixture):
 
 
 class ReadmeTest(unittest.TestCase):
-    def test_the_readme_describes_the_third_line(self):
+    def test_the_readme_describes_the_pending_line(self):
         text = (ROOT / "deploy/install/README.md").read_text()
-        self.assertIn("三行", text)
+        self.assertIn("四行", text)
+        self.assertIn("待合", text)
         self.assertIn("git hash-object", text)
         self.assertIn("check-public-copy.sh", text)
