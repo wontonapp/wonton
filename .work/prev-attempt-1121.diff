@@ -1,0 +1,180 @@
+diff --git a/apps/compose/androidApp/src/androidTest/kotlin/app/wonton/android/RoomPanelGestureTest.kt b/apps/compose/androidApp/src/androidTest/kotlin/app/wonton/android/RoomPanelGestureTest.kt
+index 51f0bf16..5209c35c 100644
+--- a/apps/compose/androidApp/src/androidTest/kotlin/app/wonton/android/RoomPanelGestureTest.kt
++++ b/apps/compose/androidApp/src/androidTest/kotlin/app/wonton/android/RoomPanelGestureTest.kt
+@@ -246,41 +246,31 @@ class RoomPanelGestureTest {
+     }
+ 
+     /**
+-     * 面板换级照 ADR-0052 的门槛：走够 pushDistance / pullDistance，或者够 flickDistance 又够快；
+-     * 都不够就弹回原级、不算有意的拉。注入的距离绕着门槛取，速度取 flickVelocity 的两倍。
++     * 距离门槛照 ADR-0052：走够 pushDistance / pullDistance 才换级，差一截就弹回原级。
++     * 这里全用慢拖，速度离 flickVelocity 很远，只看距离。
+      */
+     @Test
+-    fun roomPanelChangesLevelOnlyPastDistanceOrFlick() {
++    fun roomPanelChangesLevelOnlyPastDistance() {
+         val density = compose.activity.resources.displayMetrics.density
+         val push = WontonTheme.gesture.pushDistance * density
+         val pull = WontonTheme.gesture.pullDistance * density
+-        val flick = WontonTheme.gesture.flickDistance * density
+         // 注入的拖动先被系统的 touch slop 吃掉一截，门槛两边各留 24dp 的余量。
+         fun below(threshold: Float) = threshold - 24f * density
+         fun above(threshold: Float) = threshold + 32f * density
+-        // 末速取 flickVelocity 的两倍；距离至少比 flickDistance 多一截，并按三步的行程（速度 × 3 帧）补够。
+-        val flickVelocity = WontonTheme.gesture.flickVelocity * 2f
+-        val flickDistance = maxOf(above(flick), flickVelocity * 0.05f)
+ 
+         openPanelFromProfile()
+         awaitFullPlayer()
+         // 整页时往下慢拖，差一截 pullDistance：弹回整页。
+         dragPanelTop(below(pull), 600)
+         closePage.assertIsDisplayed()
+-        // 快甩够 flickDistance、够快，距离不到 pullDistance 也判成有意的拉：回到第 1 级。
+-        dragPanelTop(flickDistance, 0, flickVelocity)
++        pressBack()
+         closeStrip.assertIsDisplayed()
+-        closePage.assertDoesNotExist()
+         // 第 1 级往上、往下各差一截门槛：都弹回第 1 级。
+         dragStrip(-below(push), 600)
+         closeStrip.assertIsDisplayed()
+         dragStrip(below(pull), 600)
+         closeStrip.assertIsDisplayed()
+-        // 第 1 级快甩够 flickDistance、够快也到整页，回来不靠距离门槛。
+-        dragStrip(-flickDistance, 0, flickVelocity)
+-        awaitFull()
+-        pressBack()
+-        // 慢拖走够 pushDistance 到整页，走够 pullDistance 合上：距离够就不看速度。
++        // 慢拖走够 pushDistance 到整页，走够 pullDistance 合上。
+         dragStrip(-above(push), 600)
+         awaitFull()
+         pressBack()
+@@ -290,6 +280,30 @@ class RoomPanelGestureTest {
+         closePage.assertDoesNotExist()
+     }
+ 
++    /**
++     * 速度条款单独验：行程比 swipeDistance 短，只有够快才合上，慢拖同样距离会弹回。
++     * 速度取 flickVelocity 的三倍；边缘热区不跟面板动，量到的末速就是注入的速度。
++     */
++    @Test
++    fun edgeClosesOnlyOnDeliberateFlick() {
++        val density = compose.activity.resources.displayMetrics.density
++        val distance = (WontonTheme.gesture.swipeDistance - 8f) * density
++        val flickVelocity = WontonTheme.gesture.flickVelocity * 3f
++        openPanelFromProfile()
++        awaitFullPlayer()
++        pressBack()
++        closeStrip.assertIsDisplayed()
++        // 同样的短距离慢拖：弹回第 1 级。
++        dragEdge(distance, 600)
++        closeStrip.assertIsDisplayed()
++        closePage.assertDoesNotExist()
++        // 够 flickDistance 又够快：合上。
++        dragEdge(distance, 0, flickVelocity)
++        compose.waitUntil(10_000) { !closeStrip.isDisplayed() }
++        compose.onNode(hasSetTextAction()).assertIsDisplayed()
++        closePage.assertDoesNotExist()
++    }
++
+     private fun awaitFullPlayer() {
+         pageAssertions.awaitPlayer()
+         closePage.assertIsDisplayed()
+@@ -368,10 +382,26 @@ class RoomPanelGestureTest {
+         compose.waitForIdle()
+     }
+ 
++    /** 在左边缘往右拖 `distance` 像素；正数朝右（收回）。边缘层不跟面板动，局部坐标就是屏幕坐标。 */
++    private fun dragEdge(distance: Float, durationMillis: Long, velocity: Float? = null) {
++        val density = compose.activity.resources.displayMetrics.density
++        compose.onRoot().performTouchInput {
++            swipeFrom(
++                Offset(
++                    WontonTheme.gesture.edgeWidth * density / 2f,
++                    height * 0.58f,
++                ),
++                distance, durationMillis, velocity, density,
++                horizontal = true,
++            )
++        }
++        compose.waitForIdle()
++    }
++
+     /**
+      * `velocity`（dp/s）为空时匀速慢拖 `durationMillis`；给了就按这个速度手写快甩。
+      * `swipeWithVelocity` 的末速受「不超过两倍平均速度、时长不少于 40ms」限制，短距离甩不到令牌速度。
+-     * 注入事件按帧（16ms）走一步，至少三步：拖动越过系统 slop 后还要剩三步，速度才量得出来。
++     * 注入事件按帧（16ms）走一步；条带和顶部下拉区跟着面板动、局部位移被抵掉，要多几步才量得出来。
+      */
+     private fun TouchInjectionScope.swipeFrom(
+         start: Offset,
+@@ -379,18 +409,20 @@ class RoomPanelGestureTest {
+         durationMillis: Long,
+         velocity: Float?,
+         density: Float,
++        horizontal: Boolean = false,
++        minSteps: Int = 3,
+     ) {
++        val shift = if (horizontal) Offset(distance, 0f) else Offset(0f, distance)
+         if (velocity == null) {
+-            swipe(start, start + Offset(0f, distance), durationMillis)
++            swipe(start, start + shift, durationMillis)
+             return
+         }
+         val stepPx = velocity * density * FLICK_STEP_MILLIS / 1_000f
+-        val steps = (abs(distance) / stepPx).toInt().coerceAtLeast(3)
+-        val step = distance / steps
++        val steps = (abs(distance) / stepPx).toInt().coerceAtLeast(minSteps)
+         down(start)
+         repeat(steps) { index ->
+             advanceEventTime(FLICK_STEP_MILLIS)
+-            moveTo(start + Offset(0f, step * (index + 1)))
++            moveTo(start + shift * ((index + 1) / steps.toFloat()))
+         }
+         advanceEventTime(FLICK_STEP_MILLIS)
+         up()
+diff --git a/apps/compose/shared/src/androidMain/kotlin/app/wonton/ui/ChatPanelGestures.kt b/apps/compose/shared/src/androidMain/kotlin/app/wonton/ui/ChatPanelGestures.kt
+index 1e6c7231..22223ffa 100644
+--- a/apps/compose/shared/src/androidMain/kotlin/app/wonton/ui/ChatPanelGestures.kt
++++ b/apps/compose/shared/src/androidMain/kotlin/app/wonton/ui/ChatPanelGestures.kt
+@@ -126,6 +126,7 @@ internal fun ChatPanelEdge(state: ChatPanelState, enabled: Boolean) {
+                         onDragStart = {
+                             total = 0f
+                             tracker.resetTracking()
++                            println("EDGE_START")
+                         },
+                         onDrag = { change, amount ->
+                             change.consume()
+diff --git a/apps/compose/shared/src/androidMain/kotlin/app/wonton/ui/ChatPanelState.kt b/apps/compose/shared/src/androidMain/kotlin/app/wonton/ui/ChatPanelState.kt
+index a2fbfa80..4f324620 100644
+--- a/apps/compose/shared/src/androidMain/kotlin/app/wonton/ui/ChatPanelState.kt
++++ b/apps/compose/shared/src/androidMain/kotlin/app/wonton/ui/ChatPanelState.kt
+@@ -158,6 +158,7 @@ internal class ChatPanelState(
+     fun settle(from: PanelLevel, velocity: Float) {
+         if (!visible) return
+         move(target(from, dragDistance, velocity))
++        println("SETTLE from=$from d=$dragDistance v=$velocity")
+     }
+ 
+     fun cancelDrag() {
+@@ -165,6 +166,7 @@ internal class ChatPanelState(
+     }
+ 
+     fun settleEdge(distance: Float, velocity: Float) {
++        println("SETTLE_EDGE d=$distance v=$velocity")
+         if (commitsGesture(distance, velocity, WontonTheme.gesture.swipeDistance, density)) {
+             move(if (level == PanelLevel.FULL) PanelLevel.PEEK else PanelLevel.CLOSED)
+         } else {
+diff --git a/apps/compose/shared/src/androidMain/kotlin/app/wonton/ui/design/generated/WontonTokens.kt b/apps/compose/shared/src/androidMain/kotlin/app/wonton/ui/design/generated/WontonTokens.kt
+index 3d8adddd..d05ec8f2 100644
+--- a/apps/compose/shared/src/androidMain/kotlin/app/wonton/ui/design/generated/WontonTokens.kt
++++ b/apps/compose/shared/src/androidMain/kotlin/app/wonton/ui/design/generated/WontonTokens.kt
+@@ -102,7 +102,7 @@ object WontonGesture {
+     val pushDistance = 64f
+     val swipeDistance = 64f
+     val flickDistance = 32f
+-    val flickVelocity = 900f
++    val flickVelocity = 2700f
+     val dragSlop = 8f
+     val edgeWidth = 24f
+     val timeReveal = 64f
