@@ -16,7 +16,7 @@
 ## 1. 协议：`member_accounts` 清单字段与校验
 
 - 目标：清单能声明四条建号命令，坏字段在校验期报错。
-- 改哪：新文件 `member_accounts.rs`；`manifest/mod.rs` 加字段；`manifest/permission.rs` 的“要有 `files` 权限”规则；
+- 改哪：新文件 `member_accounts.rs`；`manifest/mod.rs` 加字段；
   `plugin-spec.md` 新节，`wonton-docs` 同批；四条命令都是绝对路径，`status` 可选。
 - 依赖：无。
 - 大小：M。

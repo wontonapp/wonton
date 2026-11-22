@@ -328,17 +328,17 @@ MCP 订阅只收 `tools_list_changed`（`crates/wonton-core/src/mcp/server.rs:29
 - **“核对过”写死成一个函数**（`audience::verify_room(id, bot, 说话人…)`）：Bot 和每个说话人都在 `joined_members` 里才算；
   它只回答“是不是这个房间的人”，不给确认卡用（确认卡的 `checked_origin` 照旧单独走）。
 - **降级要能操作**：旧核心读到 `Accessor::Room` 会让整条记录反序列化失败（`record.rs:28-64` 的 `try_from`），所以
-  ①`spec_floor` 把用到 `result_scope`、`member_accounts`、`inbox` 的最低 `spec` 抬上去，旧核心按版本号拒装并提示升级；
+  ①`spec_floor` 把用到 `member_accounts`（写了 `status` 才登记）、`inbox`、`events`、`files` 的最低 `spec` 抬上去，旧核心按版本号拒装并提示升级（`tools/list` 与结果里的 `_meta` 不受它管，旧核心忽略即回退 `keeper`）；
   ②给一条降级脚本（卡 11）：把记录文本里的 `room:<id>` 换成登记它的 `bot:<id>`，改不了就删那条并记日志；升级说明写清什么时候跑、会丢哪些授权；
   “降回旧核心时读不出的那条”按 keeper 处理；
-  ③`plugin check` 对声明了这三项却低于门槛的清单当场失败。
+  ③`plugin check` 对声明了这些却低于门槛的清单当场失败。
 - 工具结果 `_meta` 加 `app.wonton/result_scope: "room" | "keeper"`。房间核对过时**也默认 `keeper`**。要开房间可见，插件得在 `tools/list` 的对应工具 `_meta` 里写
 `app.wonton/room_results: true`（工具级、缺省 false、坏值算 false 并记一条警告）；只有声明了、且来源房间经 `verify_room` 核过，才按 `room`；插件写 `keeper` 就退回现在的行为
   （Bot 和归属人）。私聊里没有房间，一律 `keeper`。
 - 反向：家人在房间里发出的附件，核心在发出时把同一个房间的 `Room` 挂到记录上；Bot 在自己这一轮的来源房间（同样核对过）能读。
 - App 的附件面板标出来源：“这个房间可见”或“只有你”，作者能把它改成更窄的 `keeper`。给人看的复制/下载不额外要权限，
   但拿到的仍是编号，编号本身不再等于授权。
-- 房间里的人后来被踢出、或房间被删：实时判定自然失效；同一条记录如果还有归属人，归属人照旧能开。
+- 房间里的人后来被踢出、或房间被删：最迟 60 秒后失效；同一条记录如果还有归属人，归属人照旧能开。
 
 **没选的方案。**
 
