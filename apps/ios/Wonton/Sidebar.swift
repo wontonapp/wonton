@@ -80,6 +80,10 @@ struct SidebarContainer<Main: View, Panel: View>: View {
         return min(max((base + drag) / width, 0), 1)
     }
 
+    /// 打开时可以拖着关；关着时只在根页面（`edgeSwipe`）拖。下面的 simultaneousGesture 对子视图也生效，
+    /// 不这样拦，推进页里的边缘右滑会同时拉开侧边栏。
+    private var dragAllowed: Bool { isOpen || edgeSwipe }
+
     /// 露出来的那一条：盖一层淡暗色，点一下收起。
     @ViewBuilder private func scrim(_ progress: CGFloat) -> some View {
         if progress > 0 {
@@ -94,8 +98,9 @@ struct SidebarContainer<Main: View, Panel: View>: View {
     /// 跟手：松开时按位置和速度决定打开还是弹回去。
     private func dragGesture() -> some Gesture {
         DragGesture(minimumDistance: WontonTheme.gesture.dragSlop, coordinateSpace: .global)
-            .updating($gestureActive) { _, active, _ in active = true }
+            .updating($gestureActive) { _, active, _ in active = dragAllowed }
             .onChanged { value in
+                guard dragAllowed else { return }
                 guard abs(value.translation.width) > abs(value.translation.height) || isDragging else { return }
                 isDragging = true
                 drag = value.translation.width

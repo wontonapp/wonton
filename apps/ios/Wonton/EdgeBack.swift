@@ -6,15 +6,58 @@ import UIKit
 /// 免得两条手势在不同宽度上各认一半。关掉以后 SwiftUI 换页时会把它重开，所以一开就再关回去。
 nonisolated(unsafe) private var edgeBackKey: UInt8 = 0
 nonisolated(unsafe) private var edgeBackWatchKey: UInt8 = 0
+nonisolated(unsafe) private var edgeBackDelegateKey: UInt8 = 0
+private final class EdgeBackDelegateBox: NSObject {
+    weak var delegate: UINavigationControllerDelegate?
+}
 
 extension UINavigationController: @retroactive UINavigationControllerDelegate {
-    /// 自绘边缘手势正在拖时，交给它驱动转场；别的返回（返回键、代码弹栈）照旧用系统动画。
+    /// 自绘边缘手势正在拖时，交给它驱动转场；别的调用一律转给 SwiftUI 原来那个 delegate，
+    /// 顶掉它会让返回键和路径同步失灵。
     public func navigationController(
         _ navigationController: UINavigationController,
         interactionControllerFor animationController: UIViewControllerAnimatedTransitioning
     ) -> UIViewControllerInteractiveTransitioning? {
-        guard let back = edgeBack, back.isInteractive else { return nil }
-        return back.transition
+        if let back = edgeBack, back.isInteractive { return back.transition }
+        return forwardedDelegate?.navigationController?(
+            navigationController, interactionControllerFor: animationController
+        )
+    }
+
+    public func navigationController(
+        _ navigationController: UINavigationController,
+        animationControllerFor operation: UINavigationController.Operation,
+        from fromVC: UIViewController, to toVC: UIViewController
+    ) -> UIViewControllerAnimatedTransitioning? {
+        forwardedDelegate?.navigationController?(
+            navigationController, animationControllerFor: operation, from: fromVC, to: toVC
+        )
+    }
+
+    public func navigationController(
+        _ navigationController: UINavigationController, willShow viewController: UIViewController, animated: Bool
+    ) {
+        forwardedDelegate?.navigationController?(navigationController, willShow: viewController, animated: animated)
+    }
+
+    public func navigationController(
+        _ navigationController: UINavigationController, didShow viewController: UIViewController, animated: Bool
+    ) {
+        forwardedDelegate?.navigationController?(navigationController, didShow: viewController, animated: animated)
+    }
+
+    public func navigationControllerSupportedInterfaceOrientations(
+        _ navigationController: UINavigationController
+    ) -> UIInterfaceOrientationMask {
+        forwardedDelegate?.navigationControllerSupportedInterfaceOrientations?(navigationController)
+            ?? navigationController.topViewController?.supportedInterfaceOrientations ?? .all
+    }
+
+    public func navigationControllerPreferredInterfaceOrientationForPresentation(
+        _ navigationController: UINavigationController
+    ) -> UIInterfaceOrientation {
+        forwardedDelegate?.navigationControllerPreferredInterfaceOrientationForPresentation?(navigationController)
+            ?? .portrait
     }
 
     override open func viewDidLoad() {
@@ -37,6 +80,21 @@ extension UINavigationController: @retroactive UINavigationControllerDelegate {
         objc_getAssociatedObject(self, &edgeBackKey) as? EdgeBack
     }
 
+    private var forwardedDelegate: UINavigationControllerDelegate? {
+        get { (objc_getAssociatedObject(self, &edgeBackDelegateKey) as? EdgeBackDelegateBox)?.delegate }
+        set {
+            let box = objc_getAssociatedObject(self, &edgeBackDelegateKey) as? EdgeBackDelegateBox
+                ?? {
+                    let created = EdgeBackDelegateBox()
+                    objc_setAssociatedObject(
+                        self, &edgeBackDelegateKey, created, .OBJC_ASSOCIATION_RETAIN_NONATOMIC
+                    )
+                    return created
+                }()
+            box.delegate = newValue
+        }
+    }
+
     /// 装好边缘手势，并保住“系统那条关着、整片右滑先等它”的不变量。可以反复调。
     func installEdgeBack() {
         guard let system = interactivePopGestureRecognizer else { return }
@@ -44,6 +102,10 @@ extension UINavigationController: @retroactive UINavigationControllerDelegate {
             let back = EdgeBack(navigation: self)
             view.addGestureRecognizer(back.pan)
             objc_setAssociatedObject(self, &edgeBackKey, back, .OBJC_ASSOCIATION_RETAIN_NONATOMIC)
+        }
+        if delegate !== self {
+            forwardedDelegate = delegate
+            delegate = self
         }
         if system.isEnabled { system.isEnabled = false }
         if #available(iOS 26, *), let back = edgeBack,
@@ -60,7 +122,7 @@ extension UINavigationController: @retroactive UINavigationControllerDelegate {
             MainActor.assumeIsolated {
                 guard let self, gesture.isEnabled else { return }
                 gesture.isEnabled = false
-                NSLog("EDGE 系统手势又被打开，关回去")
+                NSLog("EDGE system gesture re-enabled, disabled again")
                 self.installEdgeBack()
             }
         }
@@ -75,7 +137,7 @@ final class EdgeBack: NSObject, UIGestureRecognizerDelegate {
 
     private(set) weak var navigation: UINavigationController?
     let pan = UIPanGestureRecognizer()
-    let transition = UIPercentDrivenInteractiveTransition()
+    var transition = UIPercentDrivenInteractiveTransition()
     private(set) var isInteractive = false
     var waitsForContent = false
     /// 方向还没定：竖直的先走就让给滚动。
@@ -93,7 +155,14 @@ final class EdgeBack: NSObject, UIGestureRecognizerDelegate {
     func gestureRecognizerShouldBegin(_ gesture: UIGestureRecognizer) -> Bool {
         guard let navigation, navigation.viewControllers.count > 1,
               navigation.transitionCoordinator?.isAnimated != true else { return false }
-        return gesture.location(in: navigation.view).x <= Self.edge
+        // shouldBegin 是过了阈值才问，现场的 location 已经在起手点右边；减去已拖距离还原落点。
+        // 导航视图为盖住安全区会向左右探出去，左缘为负；屏幕上的左缘是 0，分栏时才是列自己的左边。
+        let origin = max(0, navigation.view.convert(.zero, to: nil).x)
+        let start = gesture.location(in: nil).x - pan.translation(in: navigation.view).x - origin
+        let velocity = pan.velocity(in: navigation.view)
+        NSLog("EDGE shouldBegin start=%.1f v=(%.0f,%.0f)", start, velocity.x, velocity.y)
+        guard velocity.x > 0, abs(velocity.x) > abs(velocity.y) else { return false }
+        return start <= Self.edge
     }
 
     func gestureRecognizer(
@@ -109,6 +178,7 @@ final class EdgeBack: NSObject, UIGestureRecognizerDelegate {
             decided = false
             gaveUp = false
             isInteractive = false
+            transition = UIPercentDrivenInteractiveTransition()
         case .changed:
             if !decided {
                 if abs(move.x) < 6, abs(move.y) < 6 { return }
@@ -117,9 +187,9 @@ final class EdgeBack: NSObject, UIGestureRecognizerDelegate {
                     gaveUp = true
                     return
                 }
-                NSLog("EDGE 自绘手势接管 x=\(move.x)")
-                _ = navigation.popViewController(animated: true)
+                NSLog("EDGE custom edge gesture took over x=\(move.x)")
                 isInteractive = true
+                _ = navigation.popViewController(animated: true)
             }
             guard isInteractive, !gaveUp else { return }
             transition.update(min(1, max(0, move.x / width)))
