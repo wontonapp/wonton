@@ -1,6 +1,5 @@
 package app.wonton.ui
 
-import androidx.activity.compose.BackHandler
 import androidx.compose.foundation.ExperimentalFoundationApi
 import androidx.compose.foundation.combinedClickable
 import androidx.compose.foundation.clickable
@@ -37,7 +36,6 @@ import androidx.compose.ui.semantics.semantics
 import app.wonton.protocol.HomeAction
 import app.wonton.protocol.Action
 import app.wonton.protocol.HomeViewModel
-import app.wonton.protocol.PairingStatus
 import app.wonton.protocol.ServerName
 import app.wonton.protocol.ServerRow
 import app.wonton.protocol.ServersViewModel
@@ -163,19 +161,14 @@ private fun RenameServerDialog(server: ServerRow, send: (Action) -> Unit, dismis
 @Composable
 internal fun AddServerPairing(plugins: PluginsState, home: HomeViewModel) {
     val cancel = { plugins.send(Action.Home(HomeAction.CancelAddServer)) }
-    val back = {
-        if (home.pairing is PairingStatus.Failed) plugins.send(Action.Home(HomeAction.DismissPairingFailure))
-        cancel()
-    }
-    BackHandler(onBack = back)
     WontonScreen(bar = {
         TopAppBar(
             title = { Text(stringResource(R.string.servers_add_title), style = WontonTheme.typography.itemTitle) },
-            navigationIcon = { TextButton(onClick = back) { Text(stringResource(R.string.common_cancel)) } },
+            navigationIcon = { TextButton(onClick = cancel) { Text(stringResource(R.string.common_cancel)) } },
             colors = TopAppBarDefaults.topAppBarColors(containerColor = WontonTheme.colors.canvas.toColor()),
         )
     }) {
-        PairingScreen(plugins.core, home.pairing, onBack = cancel)
+        PairingScreen(plugins.core, home.pairing, onLeave = cancel)
     }
 }
 

@@ -49,6 +49,16 @@ impl ClientCore {
         }
     }
 
+    /// 假数据下的服务器开关：设置里“添加服务器”换成配对页，取消退出。
+    #[cfg_attr(not(feature = "ui-fake"), allow(dead_code))]
+    fn dispatch_ui_fake_home(&self, action: HomeAction) {
+        match action {
+            HomeAction::AddServer => self.servers.set_adding_for_fake(true),
+            HomeAction::CancelAddServer => self.servers.set_adding_for_fake(false),
+            _ => {}
+        }
+    }
+
     /// 处理一个操作。领域子枚举只在这里解包，运行时仍只有一个入口。
     pub fn dispatch(&self, action: Action) -> Result<(), CoreError> {
         #[cfg(feature = "ui-fake")]
@@ -66,6 +76,10 @@ impl ClientCore {
                     self.ui_fake_timelines.timeline_action(action.clone());
                     self.dispatch_ui_fake_composer(&action)?;
                     self.dispatch_ui_fake_timeline(action);
+                    Ok(())
+                }
+                Action::Home { action } => {
+                    self.dispatch_ui_fake_home(action);
                     Ok(())
                 }
                 Action::Agent { action } => {

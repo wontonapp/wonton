@@ -136,9 +136,9 @@ impl ClientCore {
             peers: watch::Sender::new(current.peers.borrow().clone()),
             friends: watch::Sender::new(current.friends.borrow().clone()),
             bot_contacts: watch::Sender::new(current.bot_contacts.borrow().clone()),
-            // 假数据下设置页是静态的这一份：真设置页的构建循环订阅着被丢弃的旧接收器，开起来会停在
+            // 假数据下设置页带着当前值：真设置页的构建循环订阅着被丢弃的旧接收器，开起来会停在
             // 未配对的状态，设置里的“添加设备”走不通。
-            settings: watch::Sender::new(fake_settings()),
+            settings: watch::Sender::new(fake_settings(current.settings.borrow().clone())),
             confirmations: watch::Sender::new(super::ui_fake_devices::confirmations(
                 current.confirmations.borrow().clone(),
             )),
@@ -310,6 +310,28 @@ fn fake_servers() -> ServersViewModel {
         adding: false,
         matrix_login: None,
     }
+}
+
+/// 假数据里已经配上了一台“家里”的服务器：设置页照配对后那样先给资料和服务器入口，
+/// 添加服务器和“重新配对”都在服务器页里。
+fn fake_settings(mut settings: SettingsViewModel) -> SettingsViewModel {
+    let mut paired = vec![
+        SettingsSection {
+            entries: vec![SettingsEntry::Profile],
+        },
+        SettingsSection {
+            entries: vec![SettingsEntry::Server {
+                name: Some(ServerName::Named {
+                    name: "Home".into(),
+                }),
+                status: HomeStatus::Connected,
+                upgrade: false,
+            }],
+        },
+    ];
+    paired.append(&mut settings.sections);
+    settings.sections = paired;
+    settings
 }
 
 /// 假聊天列表：私聊、通话中的群、没人说话只给转发用的群。
