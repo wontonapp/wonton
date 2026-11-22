@@ -318,7 +318,7 @@ async fn thumbnail(
     let langs = languages(&headers);
     let jpeg = async {
         let parsed = parse_id(&id, &langs)?;
-        let record = caller.files.authorize(&parsed, &caller.who, &langs)?;
+        let record = caller.files.authorize(&parsed, &caller.who, &langs).await?;
         caller.files.thumbnail(&record, &langs).await
     };
     respond(jpeg.await.map(|jpeg| {
@@ -386,7 +386,7 @@ async fn content(
     };
     let served = async {
         let parsed = parse_id(&id, &langs)?;
-        let record = caller.files.authorize(&parsed, &caller.who, &langs)?;
+        let record = caller.files.authorize(&parsed, &caller.who, &langs).await?;
         let content = caller.files.content(&record, request, &langs).await?;
         let (mut response, range) = match content {
             Content::File(opened) => local_file(opened, &method, &headers, &langs).await,

@@ -558,6 +558,9 @@ async fn joined_members(
     Path(room): Path<String>,
 ) -> Reply {
     let state = fake.state();
+    if state.refuse_room_reads {
+        return reply(Err(error(StatusCode::INTERNAL_SERVER_ERROR, "M_UNKNOWN")));
+    }
     reply(auth(&state, &headers).and_then(|(user, _)| {
         let room = state
             .rooms

@@ -5,8 +5,10 @@
 //!
 //! | 访问者 | 不在范围里 | 编号过期 |
 //! | --- | --- | --- |
-//! | 主人（已配对的设备） | `not_shared` | `file_unknown` |
+//! | 主人、分享进的那个房间当前的成员（已配对的设备） | `not_shared` | `file_unknown` |
 //! | Bot | `file_unknown` | `file_expired` |
+//!
+//! 房间成员每次访问都向 Matrix 核对；核对不到时回 `service_unavailable`，不按没权限算。
 
 mod bot;
 pub mod content;
@@ -325,8 +327,9 @@ impl Files {
         self.audit.record(event);
     }
 
-    /// 查编号并核对访问范围，见模块说明里的表。
-    pub fn authorize(
+    /// 查编号并核对访问范围，见模块说明里的表。分享进房间的文件（`rooms`），主人和当前还在房间里的家人也能看：
+    /// 房间成员向 Matrix 核对；核对不到时如实报错，不默认放行。
+    pub async fn authorize(
         &self,
         id: &FileId,
         who: &Accessor,
@@ -337,16 +340,31 @@ impl Files {
         match self.registry.get(id, now_secs()) {
             Lookup::Found(record) if record.access.contains(who) => Ok(record),
             Lookup::Found(_) if bot => Err(Failure::unknown(langs)),
-            Lookup::Found(_) => Err(Failure::new(
-                FileFailure::NotShared,
-                l10n::text(langs, "files-not-shared", &[]),
-            )),
+            Lookup::Found(record) => self.room_member(record, who, langs).await,
             Lookup::Expired(record) if bot && record.access.contains(who) => Err(Failure::new(
                 FileFailure::FileExpired,
                 l10n::text(langs, "files-share-expired", &[]),
             )),
             Lookup::Expired(_) | Lookup::Unknown => Err(Failure::unknown(langs)),
         }
+    }
+
+    async fn room_member(
+        &self,
+        record: FileRecord,
+        who: &Accessor,
+        langs: &Languages,
+    ) -> Result<FileRecord, Failure> {
+        if !record.rooms.is_empty()
+            && !matches!(who, Accessor::Bot(_))
+            && self.host.member_of_any_room(who, &record.rooms).await?
+        {
+            return Ok(record);
+        }
+        Err(Failure::new(
+            FileFailure::NotShared,
+            l10n::text(langs, "files-not-shared", &[]),
+        ))
     }
 
     /// 文件信息。大小看当前的文件：主人改了文档，卡片显示当前的大小。
@@ -356,7 +374,7 @@ impl Files {
         who: &Accessor,
         langs: &Languages,
     ) -> Result<FileInfo, Failure> {
-        let record = self.authorize(id, who, langs)?;
+        let record = self.authorize(id, who, langs).await?;
         let size = match &record.origin {
             Origin::Share { reference } | Origin::Upload { reference, .. } => Some(
                 self.open_origin(&record.origin, reference.clone(), langs)
