@@ -134,4 +134,5 @@
     <string name="core_upgrade_upgrading_to">%1$sにアップデート中</string>
     <!-- Device verification (ADR-0046): confirm a new device with an already-verified one. -->
     <string name="common_ok">OK</string>
+    <string name="common_back_exit_hint">もう一度戻るを押すと Wonton を終了します</string>
 </resources>

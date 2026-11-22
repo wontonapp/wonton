@@ -222,7 +222,6 @@ tabs-widget-not-declared = このアプリはルームの中では開けませ�
 tabs-widget-not-pinnable = ルームの中で開いたアプリはピン留めできません。
 
 tabs-view-not-a-page = ここで開けるのはアプリのページだけです。
-tabs-view-no-page-open = 開いているアプリのページはありません。
 
 # 出错页默认收起的"详情"（ADR-0032）：核心按 App 语言写，错误码收在里面。
 tabs-load-details-transport = 自宅サーバに接続できるようになると、ページは自動で再読み込みします。
