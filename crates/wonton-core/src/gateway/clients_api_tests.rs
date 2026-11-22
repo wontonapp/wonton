@@ -72,13 +72,22 @@ impl Rig {
     }
 
     async fn switch(&self, kind: &str, enabled: bool) -> crate::gateway::tests::Reply {
+        self.switch_id(&self.id, kind, enabled).await
+    }
+
+    async fn switch_id(
+        &self,
+        id: &PluginId,
+        kind: &str,
+        enabled: bool,
+    ) -> crate::gateway::tests::Reply {
         let bearer = format!("Bearer {TOKEN}");
         send_as(
             &self.app,
             None,
             Method::PUT,
             CORE,
-            &wonton_protocol::clients_entry_path(self.id.as_str(), kind),
+            &wonton_protocol::clients_entry_path(id.as_str(), kind),
             &[
                 ("authorization", &bearer),
                 ("x-wonton-clients", "1"),

@@ -431,11 +431,16 @@ async fn a_broken_record_degrades_only_its_own_plugin() {
             if b == "app.broken" && g == "app.good"),
         "{states:?}"
     );
+    // 坏记录不挡别的插件安装，也不参与标签防撞名。
+    m.install_package(example("whoami"), &[], super::langs())
+        .await
+        .unwrap();
+    assert_eq!(m.list().len(), 3);
     // 主人能卸载这个异常的插件，它的记录文件随之删除。
     let id = PluginId::parse("app.broken").unwrap();
     m.uninstall(&id, false, &super::langs()).await.unwrap();
     assert!(!broken.exists());
-    assert_eq!(m.list().len(), 1);
+    assert_eq!(m.list().len(), 2);
 }
 
 #[tokio::test]

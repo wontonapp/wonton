@@ -39,9 +39,12 @@ async fn suffix(gateway: &Gateway) -> Result<Option<String>, apply::ApplyError> 
             .view()
             .await
             .map(|view| view.suffix)
-            .map_err(|error| apply::ApplyError {
-                failure: ClientsFailure::IngressUnavailable,
-                message: format!("{error:#}"),
+            .map_err(|error| {
+                apply::keyed(
+                    ClientsFailure::IngressUnavailable,
+                    "clients-switch-domain-read",
+                    vec![("error", format!("{error:#}"))],
+                )
             }),
         None => Ok(None),
     }
@@ -55,7 +58,10 @@ async fn list(State(gateway): State<Arc<Gateway>>, headers: HeaderMap) -> Respon
     };
     let clients = match gateway.plugins.client_plugins() {
         Ok(clients) => clients,
-        Err(error) => return failure(ClientsFailure::PluginUnavailable, &error),
+        Err(message) => {
+            let error = apply::error(ClientsFailure::PluginUnavailable, message);
+            return failure(error.failure, &error.localized_message(&langs));
+        }
     };
     let mut views = Vec::with_capacity(clients.len());
     for client in clients {
@@ -90,7 +96,10 @@ async fn set_entry(
     };
     let client = match gateway.plugins.client_plugins() {
         Ok(clients) => clients.into_iter().find(|client| client.id == id),
-        Err(error) => return failure(ClientsFailure::PluginUnavailable, &error),
+        Err(message) => {
+            let error = apply::error(ClientsFailure::PluginUnavailable, message);
+            return failure(error.failure, &error.localized_message(&langs));
+        }
     };
     let Some(client) = client else {
         return failure(
@@ -132,22 +141,29 @@ async fn client_view(
         .plugins
         .store()
         .load(&client.id)
-        .map_err(|error| apply::ApplyError {
-            failure: ClientsFailure::PluginUnavailable,
-            message: format!("读取客户端入口记录 {}: {error}", client.id),
+        .map_err(|error| {
+            apply::keyed(
+                ClientsFailure::PluginUnavailable,
+                "clients-switch-record-read",
+                vec![
+                    ("plugin", client.id.to_string()),
+                    ("error", error.to_string()),
+                ],
+            )
         })?
-        .ok_or_else(|| apply::ApplyError {
-            failure: ClientsFailure::PluginUnavailable,
-            message: "clients-switch-uninstalled".to_owned(),
+        .ok_or_else(|| {
+            apply::error(
+                ClientsFailure::PluginUnavailable,
+                "clients-switch-uninstalled",
+            )
         })?;
-    let label = client
-        .record
-        .entry_label
-        .as_deref()
-        .ok_or_else(|| apply::ApplyError {
-            failure: ClientsFailure::PluginUnavailable,
-            message: format!("客户端插件 {} 没有入口标签", client.id),
-        })?;
+    let label = client.record.entry_label.as_deref().ok_or_else(|| {
+        apply::keyed(
+            ClientsFailure::PluginUnavailable,
+            "clients-switch-no-label",
+            vec![("plugin", client.id.to_string())],
+        )
+    })?;
     let lan_url = suffix.and_then(|suffix| {
         client
             .record
@@ -184,9 +200,11 @@ fn password_summaries(
     if client.auth == ClientAuthKind::App {
         return Ok(Vec::new());
     }
-    let unavailable = || apply::ApplyError {
-        failure: ClientsFailure::PluginUnavailable,
-        message: crate::l10n::text(langs, "clients-passwords-unavailable", &[]),
+    let unavailable = || {
+        apply::error(
+            ClientsFailure::PluginUnavailable,
+            crate::l10n::text(langs, "clients-passwords-unavailable", &[]),
+        )
     };
     let store = gateway
         .plugins

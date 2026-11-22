@@ -12,27 +12,69 @@ use wonton_protocol::{CertificateState, ClientsFailure, EntryBlock};
 
 pub(crate) struct ApplyError {
     pub failure: ClientsFailure,
+    /// 语言包里的键（`clients-switch-` 开头），或只有服务器知道的细节。
     pub message: String,
+    /// 键的变量；细节为空。
+    args: Vec<(&'static str, String)>,
+    /// 出错后的补充（回滚失败这类），整节拼在后面。
+    notes: Vec<(&'static str, ApplyError)>,
 }
 
 impl ApplyError {
+    /// 本模块自己的固定文案都是键。管理器不带语言，它给的细节只有中文，
+    /// 所以套进 `clients-switch-failed`，细节仍看得懂。
     pub(crate) fn localized_message(&self, langs: &crate::plugin::languages::Languages) -> String {
-        if self.message.starts_with("clients-switch-") {
-            crate::l10n::text(langs, &self.message, &[])
+        let args: Vec<(&str, wonton_l10n::Arg<'_>)> = self
+            .args
+            .iter()
+            .map(|(name, value)| (*name, value.as_str().into()))
+            .collect();
+        let mut text = if self.message.starts_with("clients-switch-") {
+            crate::l10n::text(langs, &self.message, &args)
         } else {
             crate::l10n::text(
                 langs,
                 "clients-switch-failed",
-                &[("error", self.message.clone().into())],
+                &[("error", self.message.as_str().into())],
             )
+        };
+        for (key, cause) in &self.notes {
+            let detail = cause.localized_message(langs);
+            text.push(' ');
+            text.push_str(&crate::l10n::text(
+                langs,
+                key,
+                &[("error", detail.as_str().into())],
+            ));
         }
+        text
+    }
+
+    /// 在整句后面追加一节，类别不变。
+    fn note(&mut self, key: &'static str, cause: ApplyError) {
+        self.notes.push((key, cause));
     }
 }
 
-fn error(failure: ClientsFailure, message: impl Into<String>) -> ApplyError {
+pub(crate) fn error(failure: ClientsFailure, message: impl Into<String>) -> ApplyError {
     ApplyError {
         failure,
         message: message.into(),
+        args: Vec::new(),
+        notes: Vec::new(),
+    }
+}
+
+pub(crate) fn keyed(
+    failure: ClientsFailure,
+    key: &'static str,
+    args: Vec<(&'static str, String)>,
+) -> ApplyError {
+    ApplyError {
+        failure,
+        message: key.to_owned(),
+        args,
+        notes: Vec::new(),
     }
 }
 
@@ -56,9 +98,7 @@ pub(crate) async fn set_entry(
         if let Err(message) = gateway.plugins.update_client_entry(id, kind, true) {
             let mut failure = error(ClientsFailure::PluginUnavailable, message);
             if let Err(rollback) = apply_model(gateway, None).await {
-                failure
-                    .message
-                    .push_str(&format!("；回滚入口配置失败：{}", rollback.message));
+                failure.note("clients-switch-rollback-entry", rollback);
             }
             return Err(failure);
         }
@@ -69,9 +109,10 @@ pub(crate) async fn set_entry(
             .map_err(|message| error(ClientsFailure::PluginUnavailable, message))?;
         if let Err(mut failure) = apply_model(gateway, None).await {
             if let Err(rollback) = gateway.plugins.restore_client_entry(&old) {
-                failure
-                    .message
-                    .push_str(&format!("；回滚开关失败：{rollback}"));
+                failure.note(
+                    "clients-switch-rollback-switch",
+                    error(ClientsFailure::PluginUnavailable, rollback),
+                );
             }
             return Err(failure);
         }
@@ -95,9 +136,10 @@ pub(crate) async fn block_reason(
     let domain_ready = match &gateway.domain {
         Some(domain) => {
             let view = domain.view().await.map_err(|cause| {
-                error(
+                keyed(
                     ClientsFailure::PluginUnavailable,
-                    format!("读取域名和证书状态失败：{cause:#}"),
+                    "clients-switch-domain-read",
+                    vec![("error", format!("{cause:#}"))],
                 )
             })?;
             view.suffix.is_some() && certificate_ready(&view.certificate)
@@ -120,9 +162,10 @@ pub(crate) async fn block_reason(
         .route(&client.id.slug(), "/")
         .and_then(|route| route.clients)
         .ok_or_else(|| {
-            error(
+            keyed(
                 ClientsFailure::PluginUnavailable,
-                format!("客户端插件 {} 的入口不可用", client.id),
+                "clients-switch-no-route",
+                vec![("plugin", client.id.to_string())],
             )
         })?;
     if http.http.auth.app.is_some() {
@@ -136,13 +179,14 @@ pub(crate) async fn block_reason(
             SetupCheck::Unavailable => {
                 return Err(error(
                     ClientsFailure::PluginUnavailable,
-                    "应用没有运行，无法检查首次注册状态",
+                    "clients-switch-app-unavailable",
                 ));
             }
             SetupCheck::Undetermined(cause) => {
-                return Err(error(
+                return Err(keyed(
                     ClientsFailure::PluginUnavailable,
-                    format!("检查应用首次注册状态失败：{cause}"),
+                    "clients-switch-setup-check",
+                    vec![("error", cause.to_string())],
                 ));
             }
         }
@@ -170,6 +214,15 @@ pub(crate) async fn close_for_uninstall(
         .into_iter()
         .find(|client| client.id == *id)
     else {
+        // 记录读不出的客户端不会出现在列表里；它的路由可能还在 crt-list 上，照样重算一遍。
+        if gateway
+            .plugins
+            .route(&id.slug(), "/")
+            .and_then(|route| route.clients)
+            .is_some()
+        {
+            apply_model(gateway, None).await?;
+        }
         return Ok(());
     };
     if !client.record.clients_entries.lan && !client.record.clients_entries.public {
@@ -185,9 +238,8 @@ pub(crate) async fn close_for_uninstall(
     };
     if let Err(mut failure) = result {
         if let Err(cause) = gateway.plugins.restore_client_entry(&old) {
-            failure
-                .message
-                .push_str(&format!("；回滚开关失败：{cause}"));
+            let rollback = error(ClientsFailure::PluginUnavailable, cause);
+            failure.note("clients-switch-rollback-switch", rollback);
         }
         return Err(failure);
     }
@@ -212,7 +264,7 @@ pub async fn reconcile(gateway: &Gateway) -> Result<(), String> {
     }
     apply_model(gateway, None)
         .await
-        .map_err(|error| error.message)
+        .map_err(|error| error.localized_message(&crate::plugin::languages::Languages::default()))
 }
 
 fn find_client(gateway: &Gateway, id: &PluginId) -> Result<ClientPlugin, ApplyError> {
@@ -224,9 +276,10 @@ fn find_client(gateway: &Gateway, id: &PluginId) -> Result<ClientPlugin, ApplyEr
         .into_iter()
         .find(|client| client.id == *id && client.http)
         .ok_or_else(|| {
-            error(
+            keyed(
                 ClientsFailure::PluginUnavailable,
-                format!("客户端插件 {id} 没有安装或没有声明入口"),
+                "clients-switch-not-found",
+                vec![("plugin", id.to_string())],
             )
         })
 }
@@ -254,9 +307,10 @@ async fn check_can_open(
         .as_ref()
         .ok_or_else(|| error(ClientsFailure::Conflict, "clients-switch-domain"))?;
     let view = domain.view().await.map_err(|cause| {
-        error(
+        keyed(
             ClientsFailure::PluginUnavailable,
-            format!("读取域名和证书状态失败：{cause:#}"),
+            "clients-switch-domain-read",
+            vec![("error", format!("{cause:#}"))],
         )
     })?;
     if view.suffix.is_none() || !certificate_ready(&view.certificate) {
@@ -272,15 +326,17 @@ async fn check_can_open(
         .route(&client.id.slug(), "/")
         .and_then(|route| route.clients)
         .ok_or_else(|| {
-            error(
+            keyed(
                 ClientsFailure::PluginUnavailable,
-                format!("客户端插件 {} 没有可用的 HTTP 入口", client.id),
+                "clients-switch-no-route",
+                vec![("plugin", client.id.to_string())],
             )
         })?;
     if route.upstream.is_none() {
-        return Err(error(
+        return Err(keyed(
             ClientsFailure::PluginUnavailable,
-            format!("客户端插件 {} 的服务没有运行", client.id),
+            "clients-switch-service-down",
+            vec![("plugin", client.id.to_string())],
         ));
     }
     if route.http.auth.app.is_some() {
@@ -301,9 +357,10 @@ async fn check_can_open(
             }
             SetupCheck::Undetermined(cause) => {
                 tracing::error!(plugin = %client.id, %cause, "检查客户端应用首次注册状态失败");
-                return Err(error(
+                return Err(keyed(
                     ClientsFailure::PluginUnavailable,
-                    format!("检查应用首次注册状态失败：{cause}"),
+                    "clients-switch-setup-check",
+                    vec![("error", cause.to_string())],
                 ));
             }
         }
@@ -334,19 +391,20 @@ async fn apply_model(
     let Some(entry) = gateway.entry.as_ref() else {
         return Err(error(
             ClientsFailure::CoreNotInContainer,
-            "core_not_in_container：核心没有入口容器控制，无法确认配置",
+            "clients-switch-container",
         ));
     };
     let settings = EntrySettings::load(entry.install_dir()).map_err(|cause| {
-        error(
+        keyed(
             ClientsFailure::IngressUnavailable,
-            format!("读取入口设置失败：{cause:#}"),
+            "clients-switch-settings-read",
+            vec![("error", format!("{cause:#}"))],
         )
     })?;
     let Some(settings) = settings else {
         return Err(error(
             ClientsFailure::IngressUnavailable,
-            "入口设置不存在，无法确认并应用入口模型",
+            "clients-switch-settings-missing",
         ));
     };
     let (public, lan) = labels(gateway, opening)?;
@@ -354,9 +412,10 @@ async fn apply_model(
         .apply_clients_model(&settings, gateway.public_access_enabled(), public, lan)
         .await
         .map_err(|cause| {
-            error(
+            keyed(
                 ClientsFailure::IngressUnavailable,
-                format!("入口配置写入或重载失败：{cause}"),
+                "clients-switch-apply",
+                vec![("error", cause.to_string())],
             )
         })
 }
@@ -369,17 +428,21 @@ fn labels(
     let mut assigned = BTreeSet::new();
     let mut lan = BTreeSet::new();
     for file in gateway.plugins.store().load_all().map_err(|cause| {
-        error(
+        keyed(
             ClientsFailure::PluginUnavailable,
-            format!("读取插件记录失败：{cause}"),
+            "clients-switch-records-read",
+            vec![("error", format!("{cause}"))],
         )
     })? {
-        let mut record = file.record.map_err(|cause| {
-            error(
-                ClientsFailure::PluginUnavailable,
-                format!("读取插件记录失败：{cause}"),
-            )
-        })?;
+        // 坏记录只少它自己的路由；不能让它挡住别的插件的开关和对账。打开的那条
+        // 记录坏了的话，前面的 find_client 已经报过错。
+        let mut record = match file.record {
+            Ok(record) => record,
+            Err(error) => {
+                tracing::warn!(plugin = %file.id, %error, "插件记录读不了，重算入口时跳过");
+                continue;
+            }
+        };
         if let Some((id, kind)) = opening
             && *id == file.id
         {
@@ -392,15 +455,17 @@ fn labels(
             continue;
         }
         let label = record.entry_label.ok_or_else(|| {
-            error(
+            keyed(
                 ClientsFailure::PluginUnavailable,
-                format!("客户端插件 {} 没有入口标签", file.id),
+                "clients-switch-no-label",
+                vec![("plugin", file.id.to_string())],
             )
         })?;
         if !assigned.insert(label.clone()) {
-            return Err(error(
+            return Err(keyed(
                 ClientsFailure::PluginUnavailable,
-                format!("入口标签 {label} 冲突"),
+                "clients-switch-label-conflict",
+                vec![("label", label.clone())],
             ));
         }
         if record.clients_entries.public {

@@ -38,7 +38,11 @@ impl PluginManager {
                 Ok(Some(record)) => record,
                 Ok(None) if matches!(entry.status, PluginStatus::Installing) => continue,
                 Ok(None) => return Err(format!("客户端入口插件 {id} 没有安装记录")),
-                Err(error) => return Err(format!("读取客户端入口记录 {id}: {error}")),
+                // 坏记录只降级它自己：列表和开关跳过它，别的插件照常用。
+                Err(error) => {
+                    tracing::warn!(plugin = %id, %error, "客户端入口记录读不了，跳过");
+                    continue;
+                }
             };
             let (http, auth, username, public_rules) = match clients.http.as_ref() {
                 Some(http) => {

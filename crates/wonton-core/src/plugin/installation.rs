@@ -534,7 +534,9 @@ impl PluginManager {
         if let Some(gateway) = &gateway {
             crate::clients::apply::close_for_uninstall(gateway, id)
                 .await
-                .map_err(|error| InstallError::UpstreamUnavailable(error.message))?;
+                .map_err(|error| {
+                    InstallError::UpstreamUnavailable(error.localized_message(langs))
+                })?;
         } else {
             // 记录坏了的插件也要能卸，读到不行就按没有入口继续（只记一条），不把卸载一直挡在这里。
             match self.store.load(id) {

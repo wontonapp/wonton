@@ -186,9 +186,14 @@ impl PluginManager {
             Storefront::new(github.clone(), StoreConfig::default(), store.index_cache());
         let dependencies = super::dependencies::Dependencies::open(store.capabilities_path());
         let clients = Arc::new(crate::clients::state::State::new(&store));
-        let client_passwords = crate::clients::passwords::PasswordStore::open(&cfg.data_dir)
-            .map(Arc::new)
-            .ok();
+        let client_passwords = match crate::clients::passwords::PasswordStore::open(&cfg.data_dir) {
+            Ok(passwords) => Some(Arc::new(passwords)),
+            // 打开失败时客户端列表和开关都会报密码库不可用；留下原因，不然只能看到那句报错。
+            Err(error) => {
+                tracing::error!(%error, "客户端密码库打开失败");
+                None
+            }
+        };
         Self {
             client_passwords,
             engine,

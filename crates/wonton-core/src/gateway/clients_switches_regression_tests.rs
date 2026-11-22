@@ -2,7 +2,34 @@ use super::*;
 use crate::clients::state::Kind;
 use crate::gateway::tests::Reply;
 use crate::plugin::Permission;
-use std::time::Duration;
+use std::{fs, time::Duration};
+
+fn record_path(h: &Harness, id: &PluginId) -> std::path::PathBuf {
+    h.data_dir.join("plugins").join(format!("{id}.json"))
+}
+
+/// 第二个客户端插件：和 `register` 一样登记，换一个 id 和标签。
+fn register_second(h: &Harness) -> PluginId {
+    let source = CLIENT_APP.replace("io.wonton.test.client", "io.wonton.test.second");
+    let manifest = PluginPackage::manifest_of(&source, &Languages::default()).unwrap();
+    let http = manifest.clients.as_ref().unwrap().http.clone().unwrap();
+    let id = manifest.id.clone();
+    h.manager
+        .register_for_test(manifest, PluginStatus::Running, None);
+    h.manager
+        .clients_route_for_test(&id, http, Some(h.upstream.to_string()));
+    h.manager
+        .clients_entry_for_test(&id, "second", false, false);
+    let mut record = h.manager.record_for_test(&id).unwrap();
+    record.source = source;
+    record.granted_permissions = vec![Permission::NetworkClients];
+    h.docker.add_image_container(
+        &Instance::default().container(&id.slug(), "app"),
+        "example/app:1",
+    );
+    h.manager.store().save(&record).unwrap();
+    id
+}
 
 impl Rig {
     async fn list(&self) -> Reply {
@@ -286,4 +313,70 @@ async fn rollback_metadata_keeps_entry_closed_after_successful_put() {
     assert!(!rig.crt_list("public").contains("client.home.example.test"));
     assert!(*revoked.borrow());
     assert_eq!(rig.entry_request().await.status, StatusCode::FORBIDDEN);
+}
+
+#[tokio::test]
+async fn broken_record_client_can_be_uninstalled() {
+    let rig = Rig::start(true, true, true).await;
+    assert_eq!(rig.switch("public", true).await.status, StatusCode::OK);
+    fs::write(record_path(&rig.h, &rig.id), "{\"id\": ").unwrap();
+    rig.h
+        .manager
+        .uninstall(&rig.id, false, &Languages::default())
+        .await
+        .unwrap();
+    assert!(!record_path(&rig.h, &rig.id).exists());
+    assert!(!rig.crt_list("public").contains("client.home.example.test"));
+}
+
+#[tokio::test]
+async fn broken_record_does_not_block_switching_another_client() {
+    let rig = Rig::start(true, true, true).await;
+    let other = register_second(&rig.h);
+    fs::write(record_path(&rig.h, &rig.id), "{\"id\": ").unwrap();
+
+    let listed = rig.list().await;
+    assert_eq!(listed.status, StatusCode::OK, "{}", listed.text());
+    assert_eq!(listed.json().as_array().unwrap().len(), 1);
+    assert_eq!(listed.json()[0]["id"], other.as_str());
+
+    assert_eq!(
+        rig.switch_id(&other, "public", true).await.status,
+        StatusCode::OK
+    );
+    assert!(rig.crt_list("public").contains("second.home.example.test"));
+    assert_eq!(
+        rig.switch_id(&other, "public", false).await.status,
+        StatusCode::OK
+    );
+    assert!(!rig.crt_list("public").contains("second.home.example.test"));
+
+    rig.h
+        .manager
+        .uninstall(&other, false, &Languages::default())
+        .await
+        .unwrap();
+    assert!(!record_path(&rig.h, &other).exists());
+    assert!(record_path(&rig.h, &rig.id).exists());
+}
+
+#[tokio::test]
+async fn missing_client_record_blocks_uninstalling_another_client() {
+    let rig = Rig::start(true, true, true).await;
+    let other = register_second(&rig.h);
+    assert_eq!(rig.switch("public", true).await.status, StatusCode::OK);
+    rig.h.manager.store().remove(&other).unwrap();
+
+    let error = rig
+        .h
+        .manager
+        .uninstall(&rig.id, false, &Languages::default())
+        .await
+        .unwrap_err();
+    assert!(
+        matches!(error, crate::plugin::InstallError::UpstreamUnavailable(_)),
+        "{error:?}"
+    );
+    assert_eq!(error.kind(), "upstream_unavailable");
+    assert!(record_path(&rig.h, &rig.id).exists());
 }
