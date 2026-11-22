@@ -420,6 +420,9 @@ private struct PairingProgress: View {
                 }
             }
             .accessibilityIdentifier("pairing-connecting")
+        // 加入别人家的码在等批准：加入页由成员那一张卡补上，这里先不画。
+        case .joinPending:
+            EmptyView()
         case let .failed(reason, message, diagnostic):
             WontonNotice(
                 icon: .warning,
@@ -468,7 +471,6 @@ private struct PairingProgress: View {
         case .expired: String(localized: .Pairing.pairingFailureExpired)
         case .used: String(localized: .Scan.pairingScanUsed)
         case .closed: String(localized: .Pairing.pairingFailureClosed)
-        case .pendingApproval: String(localized: .Pairing.pairingFailurePending)
         case .joinRejected: String(localized: .Joining.joiningFailureRejected)
         case .codeUsed: String(localized: .Joining.joiningFailureCodeUsed)
         case .transportUnavailable: String(localized: .Pairing.pairingFailureTransport)
@@ -482,7 +484,6 @@ private struct PairingProgress: View {
         switch reason {
         case .rejected, .expired, .used: String(localized: .Pairing.pairingNextStepNewCode)
         case .closed: String(localized: .Pairing.pairingNextStepClosed)
-        case .pendingApproval: String(localized: .Pairing.pairingNextStepPending)
         case .joinRejected, .codeUsed: String(localized: .Joining.joiningNextStepInvite)
         case .transportUnavailable: String(localized: .Pairing.pairingHintTransport)
         case .protocol: String(localized: .Pairing.pairingHintProtocol)
@@ -490,8 +491,8 @@ private struct PairingProgress: View {
         }
     }
 
-    /// 连不上和服务器出错可能是暂时的，同一个码可以再试；等批的在同意后重试同一个码。其余原因要换码或者更新。
+    /// 连不上和服务器出错可能是暂时的，同一个码可以再试；其余原因要换码或者更新。
     private static func canRetrySameCode(_ reason: PairingFailure) -> Bool {
-        reason == .transportUnavailable || reason == .upstream || reason == .pendingApproval
+        reason == .transportUnavailable || reason == .upstream
     }
 }
