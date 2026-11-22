@@ -12,7 +12,7 @@ use wonton_protocol::{
 
 use crate::l10n;
 
-/// 隐私说明的骨架：标题的消息 id 和它下面的段落，文案在 `locales/<语言>/privacy.ftl`。
+/// 隐私说明的骨架：标题的消息 id 和它下面的段落，文案在 `locales/<语言>/settings.ftl` 的 `privacy-*`。
 ///
 /// 只写代码里核实过的事（ADR-0003 的推送中继只见密文、ADR-0004 的直连与中继、核心取链接预览）；
 /// 改了对应的行为要一起改这里。
