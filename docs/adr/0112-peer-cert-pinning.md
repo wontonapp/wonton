@@ -9,17 +9,17 @@
 
 没配公网入口的安装盘上没有能验证的证书。对端一律拨 https，ClientHello 落到明文 HTTP 上（ADR-0090、C3），所以这类云吞连经 iroh 配对的朋友也聊不了。
 
-Tuwunel v2.0.0 出站联邦用 reqwest + rustls + 平台根，只有一个全局的 `[global.network.discovery].allow_invalid_signed_tls_certificates`（v1 的旧键是 legacy 别名），没有按服务器钉证书或单独信任根的能力（调研 `tasks/people-fed-certpin-research`）。Matrix 规范允许服务器覆盖可信根。
+Tuwunel v2.0.0 出站联邦用 reqwest + rustls + 平台根，只有一个全局的 `[global.network.http].allow_invalid_tls_certificates`（v1 是 `[global].allow_invalid_tls_certificates`，键名相同、路径变了），没有按服务器钉证书或单独信任根的能力（调研 `tasks/people-fed-certpin-research`）。Matrix 规范允许服务器覆盖可信根。
 
 ## 决策
 
 ### 1. 入口仍是首选，没入口的云吞也能和配对过的朋友聊
 
-公网入口有能验证的证书，优先。没入口时不对公网开 8448、也不自签“公共证书”；配对过的云吞走 iroh 隧道，由核心按配对表校验。朋友以外的人和公网服务器照旧连不上。
+公网入口有能验证的证书，优先。没入口时不对公网开 8448、也不自签“公共证书”（8448 变回网络内的明文监听，暴露面只在核心网络里）；配对过的云吞走 iroh 隧道，由核心按配对表校验。朋友以外的人和公网服务器照旧连不上。
 
 ### 2. 核心在隧道两端终结 TLS
 
-链路本来就是“本机 Tuwunel → CONNECT → 核心 → iroh → 对方核心 → 对方 Tuwunel”，明文流两头都在核心手里。出站时核心对本机 Tuwunel 当 TLS 服务端，对对方当客户端；入站反过来。两段握手都通过才转发，Tuwunel 只和核心说话，不改 Tuwunel 源码。
+没入口时链路是“本机 Tuwunel → CONNECT → 核心 → iroh → 对方核心 → 对方 Tuwunel”，明文流两头都在核心手里。出站时核心对本机 Tuwunel 当 TLS 服务端，对对方当客户端；入站反过来。两段握手都通过才转发，Tuwunel 只和核心说话，不改 Tuwunel 源码。
 
 ### 3. 钉对方的叶子证书，对外出示的也是自签叶
 
@@ -77,7 +77,7 @@ C 最省事，但全局放宽一旦进 Tuwunel 就不分服务器；B 只在配�
 
 ## 新能力检查单
 
-- 契约：`PeerMessage::Certificate`、`PeerRecord.peer_entry`（protocol 层，带 serde default）。
+- 契约：`PeerMessage::Certificate`、`PeerRecord.peer_entry`（core 的配对记录，带 serde default）。
 - 提供方：`wonton-tunnel` 的 `federation/{outbound,server}.rs`；消费方：`wonton-core` 的 peers 与安装。
 - 契约测试：pin 不匹配、SPKI 不符、名字不符各自失败；入口切换期两边都放行。
 
