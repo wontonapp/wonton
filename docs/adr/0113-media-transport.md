@@ -90,7 +90,7 @@ Plex 客户端只接自己的服务器；Synology 的客户端只接自家 NAS�
 1. 客户端核在本机起回环 HTTP（照 `files/stream.rs:1-8` 的随机令牌），播放器、上传器只连 `127.0.0.1`。
 2. 客户端核把请求经设备隧道发给核心网关 `/_wonton/api/media/…`，凭证是设备隧道身份（ADR-0004、ADR-0009）；`X-Wonton-User` 由核心按设备归属的人填，能力凭据由核心从提供方签的那把取，两者都不进壳。
 3. 核心按能力别名转发给提供方，字节**流式透传、不落盘**；`Range`、`If-Range`、`Content-Range` 原样过。客户端只认三条核心路由，路径里带任务/会话和 item，核心按它查到提供方：
-   `POST|PATCH /_wonton/api/media/tasks/{id}/uploads/{item}`（转发 `POST /uploads`、`PATCH /uploads/{upload_id}`）、
+   `POST|PATCH /_wonton/api/media/tasks/{id}/uploads/{item}`（`{item}` 是 `item_id`；POST 无体、核心用任务里的 `UploadItem` 补体建上传并记住 `upload_id` 映射，PATCH 按映射续写，两者都回当前 `upload_offset`）、
    `GET /_wonton/api/media/tasks/{id}/items/{item}/content`（转发 `/items/{id}/download`）、
    `GET /_wonton/api/media/sessions/{id}/stream`（转发 plan 的流地址）。
 4. AirPlay/Chromecast 这类“接收端是另一台设备”的场景，核心另签发一个绑 LAN 地址的一次性绝对 URL（带短期令牌、只对被投的那一项有效）；回连不成立就退回局域网直连，外网未验证。
@@ -111,7 +111,7 @@ Plex 客户端只接自己的服务器；Synology 的客户端只接自家 NAS�
 
 ### 3. 长任务的统一模型：三类共用一套骨架，差异逐项写明
 
-三类长任务：`Upload`（相册备份、收件）、`Download`（离线）、`PlaybackSession`（含队列）。共用下面这套骨架，字段和状态机只有一份（`wonton-protocol` 的 `media` 模块），三类只在标“差异”的地方分叉。
+两类长任务：`Upload`（相册备份、收件）、`Download`（离线）；播放会话有自己的一套（第 4 节）。共用下面这套骨架，字段和状态机只有一份（`wonton-protocol` 的 `media` 模块），三类只在标“差异”的地方分叉。
 
 **身份与任务号。** 每个任务带 `(person, device, task_id)`。`person` 是本机家人（ADR-0045/0088 的账号），`device` 是设备标识。设备走隧道时核心已按隧道 peer 认出设备（不需要另发 `_meta`）；HTTP 请求里显式带 `X-Wonton-Device`，供同一个人两台设备时区分。任务号由服务器核发，客户端核只引用。凭据一律按人取（第 6 节），不按设备。
 
@@ -173,9 +173,9 @@ Queued → Preparing → Running ⇄ Paused{reason} / WaitingNetwork / WaitingPo
 
 **事实源在服务器核。** 队列、当前位置、当前会话的设备归属存在 `crates/wonton-core`，壳不持有可写的副本，只渲染核心下发的 `PlaybackViewModel` 并出声、出画。理由：换设备要接着放、Agent 要问“在听什么”并遥控、重装不能丢（第 1 节结论 1）。驱动播放器的字节与解码留在客户端核与壳；核心只把字节原样中转，不缓冲、不落盘。
 
-- 起播请求带 `person`、`item`、`device`、`DeviceProfile`、从上次 `position_ms` 起的起点，以及初始音轨/字幕选择（都可省）；核心据此向提供方要 `PlaybackPlan`，把 plan 与 `session.id` 一起回给客户端核。plan 的 `session` 由**提供方**发（上游会话号），和核心的 `PlaybackSession.id` 是两套，映射只存在核心。
-- 提供方回的 `stream` 是提供方地址，核心立刻改写成核心的字节路由（提供方原址留在 `plan.origin_stream` 给投屏用），客户端只连核心；
-- 计划里带音轨和字幕轨两份 `MediaTrack` 列表，`ControlOp` 有 `SetAudio`/`SetSubtitle`（字幕可 `None`）；可 seek 范围以 plan 的 `seekable` 与 `duration` 为准。
+- 起播请求带 `person`、`item`、`device`、`DeviceProfile`、从上次 `position_ms` 起的起点，以及初始音轨/字幕选择 `audio`/`subtitle`（都可省，省了就由提供方按设备档挑）；核心据此向提供方要 `PlaybackPlan`，把 plan 与 `session.id` 一起回给客户端核。plan 的 `session` 由**提供方**发（上游会话号），和核心的 `PlaybackSession.id` 是两套，映射只存在核心。
+- `plan.stream` 是给客户端的核心路由（由核心在返回前填好），提供方原址放在 `plan.origin_stream`，只给 `cast-url` 用，客户端不读它；
+- 计划里带音轨和字幕轨两份 `MediaTrack` 列表，`ControlOp` 有 `SetAudio`/`SetSubtitle`（字幕可 `None`）：这两个由核心**重新向提供方要 plan** 再下发，新 plan 到位前客户端继续用旧轨，失败保留旧轨并报错；可 seek 范围以 plan 的 `seekable` 与 `duration` 为准。
 - 队列改动（入队、插队、移除、跳转、清空、模式切换）都带本次读到的 `revision`，并在成功时把整条队列用 `PUT /queue` 推给提供方（`savePlayQueue` 的翻法），需要时带 `position` 与 `mode`；核心比对不相等就回 `409 stale_revision` 连同当前队列快照，客户端重新拉一次再重放操作。选 409 不选“服务端自动合并”：Agent 与两台手机同时改队列时自动合并会出谁也预料不到的次序，宁可让调用方重试。
 - **一人同时只有一个活动会话。** 另一台设备发 `play` 时走接管：旧设备收到 `media.session.taken_over` 事件，壳停声、上报最后位置、转入只读。选“一人多活动会话”就得回答“锁屏上显示哪一个、scrobble 记给谁”，第一版不值得。
 - 位置上报：播放中每 5 秒一次，另外在 pause/seek/stop 各报一次；核心按会话节流后再转给提供方（Subsonic `scrobble`、Jellyfin `Sessions/Playing/Progress`）。节流放在核心不放在壳，免得每个壳各写一份、重试风暴直接打到插件。位置就是本会话的断点恢复点，恢复时以最近一次上报为准，不重头。
@@ -295,7 +295,7 @@ Agent（Hermes，家里服务器上）与壳走同一条核心 API，不给 Agen
 | `POST /playback/{session}/progress` | 报进度 | 体带位置毫秒与墙钟；提供方按上游约定写（scrobble、`Sessions/Playing/Progress`） |
 | `PUT /playback/{session}/queue` | 存队列 | 体带 `entries`、`position`、`mode`；幂等，成功 204；提供方不支持的队列字段忽略 |
 | `POST /playback/{session}/stopped` | 结束 | 带最终位置与原因 |
-| `GET /items/{id}/segments` | 章节/片头片尾 | 回 `segments`（类型、起点、终点）；没有就 404 |
+| `GET /items/{id}/segments` | 章节/片头片尾 | 回 `segments`（类型、起点、终点）；没有就 404。plan 里带了就以 plan 为准，起播后新抓到的以新抓的为准 |
 | `GET /items/{id}/download` | 下离线 | 支持 `Range`/`If-Range`，回 206 与 `Content-Range` |
 | `POST /revoke` | 收回 | 体只带 `name`；提供方只注销上游凭据、停掉上游会话（任务表在核心，核心自己取消任务、结束会话） |
 
@@ -305,7 +305,7 @@ Agent（Hermes，家里服务器上）与壳走同一条核心 API，不给 Agen
 
 ## 失败类别
 
-码分五组：本地、传输、协议、上游、平台。前三组来自 `FileFailure` 原样保留，后两组是新加的；`device_no_response` 只出现在工具结果里，不是任务的失败。
+码分五组：本地、传输、协议、上游、平台。前三组来自 `FileFailure` 原样保留，后两组是新加的；`device_no_response` 不是任务的失败，只在工具结果里：工具的失败体单独带它（`{code:"device_no_response", reasons:[…]}`），不进 `Failed`。
 
 | 类别 | 何时出现 | 壳怎么显示 | 退避 |
 | --- | --- | --- | --- |
@@ -323,7 +323,7 @@ Agent（Hermes，家里服务器上）与壳走同一条核心 API，不给 Agen
 | `plugin_unavailable` | 插件没装/没起来 | “插件没在跑”，带重试 | 1/2/4 秒，最多三次 |
 | `upstream_error` | 上游 5xx | “服务器出错”，带重试 | 同传输 |
 | `server_storage_full` | 服务器空间不足 | “家里硬盘满了”，列占用 | 不退避 |
-| `suspended_by_system` | 平台暂停（iOS 挂起、Android 配额到） | 进 `Paused{reason}`，不报错 | 恢复时从断点续 |
+| `suspended_by_system` | 平台暂停（iOS 挂起、Android 配额到） | 进 `Paused{reason}`，不报错；它只在 `Paused` 里用，不进 `Failed` | 恢复时从断点续 |
 
 退避用完标 `Failed`，不藏也不无限重试；手动重试重置计数。
 

@@ -107,7 +107,7 @@ pub enum MediaFailureCode {
     SuspendedBySystem,
 }
 
-/// 一条长任务。三类共用；`target` 与 `progress.unit` 各自成立。
+/// 一条长任务。上传与下载共用；`target` 与 `progress.unit` 各自成立。
 #[derive(Serialize, Deserialize, Debug, Clone)]
 pub struct Task {
     pub id: TaskId,
@@ -175,6 +175,8 @@ pub enum QueueMode { Sequential, Shuffle, RepeatAll, RepeatOne }
 pub struct PlaybackRequest {
     /// 从上次位置起播；0 表示从头
     pub position_ms: u64,
+    pub audio: Option<u16>,
+    pub subtitle: Option<u16>,
     pub item: MediaItemRef,
     pub device: DeviceId,
     pub person: Person,
@@ -185,7 +187,10 @@ pub struct PlaybackRequest {
 #[derive(Serialize, Deserialize, Debug, Clone)]
 pub struct PlaybackPlan {
     pub session: String,
-    pub stream: ProviderStream, // 提供方原址，核心改写成自己的路由
+    /// 核心填好，客户端只读这个
+    pub stream: ProviderStream,
+    /// 提供方原址，只给 cast-url 用
+    pub origin_stream: Option<ProviderStream>,
     pub segments: Vec<Segment>,
     pub audio: Vec<MediaTrack>,
     pub subtitles: Vec<MediaTrack>,
@@ -229,6 +234,8 @@ pub struct PlaybackSession {
 pub struct TaskCreate { kind: TaskKind, person: Person, device: DeviceId, target: TaskTarget, options: TaskOptions }
 
 #[derive(Serialize, Deserialize, Debug, Clone, Default)]
+fn one() -> u8 { 1 }
+
 pub struct TaskOptions {
     pub wifi_only: bool,
     pub charging_only: bool,
@@ -237,7 +244,7 @@ pub struct TaskOptions {
     pub albums: Vec<String>,
     /// 同时在跑几项，1–4
     #[serde(default = "one")]
-    pub concurrency: u8, // 1–4
+    pub concurrency: u8, // 1–4，缺省 1
     /// 立即备份：忽略 wifi/充电条件一次
     pub force_now: bool,
 }
@@ -354,8 +361,8 @@ pub enum MediaOperation { Upload, Download, Playback, List }
 | --- | --- |
 | “能力”表加 `media_source` 一行 | 名字、传输 HTTP、凭据 Required、非高权限、操作自报 |
 | 新节“媒体源：清单声明” | `provides.capabilities.media_source` 形状，`service`/`operations`/`kinds`/`credentials` 逐字段说明 |
-| 新节“媒体源：路径” | 正文“媒体源契约”表那 11 行原样搬进去，含 `X-Wonton-User` 语义 |
-| 新节“媒体源：错误信封” | `MediaFailure{code,message,retry_after?}`，码就是正文失败类别表第一列的十个 |
+| 新节“媒体源：路径” | 正文“媒体源契约”表那 14 行原样搬进去，含 `X-Wonton-User` 语义 |
+| 新节“媒体源：错误信封” | `MediaFailure{code,message,retry_after?}`，码就是正文失败类别表第一列的十五个 |
 | 新节“媒体源：适配器进程” | 边车容器或插件主体内的一段都行，按 `service` 连 |
 | 新节“媒体源：契约测试” | 两个假提供方的跑法，指向 `plugin/tests/media_source_contract/` |
 
@@ -369,7 +376,7 @@ pub enum MediaOperation { Upload, Download, Playback, List }
 | --- | --- | --- | --- |
 | `/tasks` | `POST` | `TaskCreate{kind, person, device, target, options}` | `Task` |
 | `/tasks` | `GET` | 无（query: `person?`, `kind?`, `state?`） | `{tasks: Vec<Task>, cursor?}` |
-| `/tasks/{id}` | `GET` | 无 | `Task` |
+| `/tasks/{id}` | `GET` | 无 | `Task`（上传的每项带当前 `upload_offset`，重连后靠它续） |
 | `/tasks/{id}/pause` | `POST` | `{reason: PauseReason}` | `Task` |
 | `/tasks/{id}/resume` | `POST` | 无 | `Task` |
 | `/tasks/{id}/cancel` | `POST` | 无 | `Task` |
@@ -383,12 +390,15 @@ pub enum MediaOperation { Upload, Download, Playback, List }
 | `/queue` | `GET` | 无（query: `person`） | `Queue` |
 | `/queue` | `POST` | `QueueOp{revision, op}` | `Queue`；`revision` 不相等回 `409` + 当前 `Queue` |
 | `/queue` | `PUT` | 整条 `Queue`（核心推给提供方的 `savePlayQueue` 翻法，带 `position`） | `204` |
-| `/tasks/{id}/uploads/{item}` | `POST`/`PATCH` | 原始字节；转发提供方 `POST /uploads`、`PATCH /uploads/{upload_id}` |
-| `/tasks/{id}/items/{item}/content` | `GET` | 原始字节；转发 `/items/{id}/download`，`Range` 原样 |
-| `/sessions/{id}/stream` | `GET` | 原始字节；转发 plan 的流地址 |
+| `/tasks/{id}/uploads/{item}` | `POST` | 无体；核心从任务的 `UploadItem` 补体转发 `POST /uploads` | `{upload_offset}` |
+| `/tasks/{id}/uploads/{item}` | `PATCH` | 从偏移起的字节，带 `Content-Range`；核心按 `(task,item)` 查 `upload_id` 转发 | `{upload_offset}`；偏移不符 409 带当前偏移 |
+| `/tasks/{id}/items/{item}/content` | `GET` | 原始字节，`Range` 原样 | 字节流（206/200） |
+| `/sessions/{id}/stream` | `GET` | 原始字节 | 字节流（206/200） |
 | `/sessions/{id}/cast-url` | `POST` | `{target: "airplay"\|"cast"}` | `{url, expires_at}`（绑 LAN 的一次性绝对地址） |
 | `/commands` | `GET` | 无（query: `device`, `after: seq`） | 长轮询；`{commands: Vec<DeviceCommand>}`，超时 `204` |
 | `/commands/{id}/ack` | `POST` | `{seq, ok, failure?}` | `204`（幂等） |
+
+`{item}` 是 `UploadItem.item_id`；`(task,item) → upload_id` 的映射只在核心，客户端不记。
 
 命令体是 `DeviceCommand` 与 `MediaAction`，类型定义在上面 `media/view.rs` 一处，这里不重复。
 

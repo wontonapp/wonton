@@ -12,7 +12,7 @@
 | --- | --- | --- | --- | --- | --- | --- |
 | M1 | `mkdir wonton-protocol/src/media/`：`MEDIA_CAPABILITY`、`WONTON_USER_HEADER`、提供方路径常量、失败码字面量 | `crates/wonton-protocol/src/media/mod.rs`、`lib.rs` 加 `pub mod media;` | — | S | 单测断言常量值不被误改、五条路径拼接结果 | 可并行（M1–M4 同一 PR，按文件分） |
 | M2 | 定义 `MediaKind`/`MediaOperation`/`MediaItemRef`/`DeviceProfile`/`PlaybackPlan` | 同 `media/mod.rs`，`serde` derive | M1 | M | 序列化往返；未知 `kind` 反序列化不 panic（AGENTS.md 向前兼容） | 同 M1 |
-| M3 | 定义 `Task`/`TaskState`/`TaskKind`/`MediaFailure`/`MediaFailureCode`，状态机转移用 `TryFrom` | `media/task.rs` | M1 | M | 合法转移全过、非法转移（终态→`Running`）报错；六类不退避错误不进退避分支 | 与 M2 并行，靠 M1 |
+| M3 | 定义 `Task`/`TaskState`/`TaskKind`/`MediaFailure`/`MediaFailureCode`，状态机转移用 `TryFrom` | `media/task.rs` | M1 | M | 合法转移全过、非法转移（终态→`Running`）报错；表里标不退避的每一类都不进退避分支 | 与 M2 并行，靠 M1 |
 | M4 | 定义 `Queue{revision}`/`PlaybackSession`/`MediaViewModel`/`PlaybackViewModel`/`MediaAction` | `media/session.rs`、`media/view.rs` | M1、M3 | M | `Queue` 的 `revision` 单调；`MediaAction` 未知变体不 panic | 与 M2 并行 |
 | M5 | 能力表加 `media_source`（`Credentials::Required`，非高权限），清单 `provides.media_source` 结构 | `crates/wonton-core/src/plugin/capabilities.rs`、`crates/wonton-protocol/src/manifest/provides.rs` | M1 | S | 能力表快照断言存在与凭据策略；清单反序列化缺字段报错 | 与 M2–M4 并行 |
 | M6 | `plugin-spec.md` 补 `media_source` 契约、错误信封、`provides.capabilities.media_source` 字段与示例 | `wonton-docs/plugin-spec.md`（**另一个仓、另一个 PR**） | M1–M5 | M | `plugin check` 用规范里的样例清单能过 | 不并行（要等接口类型定稿） |
@@ -37,7 +37,7 @@
 | 编号 | 目标 | 改哪 | 依赖 | 大小 | 先红后绿的行为测试 | 并行 |
 | --- | --- | --- | --- | --- | --- | --- |
 | M17 | `Action::Media`、`subscribe_media`/`subscribe_playback`、`player_state`；任务/会话本地服务以服务器为准对齐 | `crates/wonton-client/src/media/mod.rs`、`action.rs` | M1–M4 | L | 重连后本地偏离的偏移被服务器值覆盖；退订后不再收片 | 与 M18 并行 |
-| M18 | 上传执行：分片、`HEAD` 查偏移、偏移不符重开上传 | `client/media/upload.rs` | M11、M17、M46 | L | 中途断网→重连从偏移续；偏移对不上→新 `upload_id` 从头 | 与 M17 并行不同文件 |
+| M18 | 上传执行：分片、`HEAD` 查偏移、偏移不符重开上传 | `client/media/upload.rs` | M17、M46 | L | 中途断网→重连从偏移续；偏移对不上→新 `upload_id` 从头 | 与 M17 并行不同文件 |
 | M19 | 下载执行：`.part` 加 `Range`/`If-Range`，206 缺失或 ETag 变则从 0 | `client/media/download.rs` | M17、M46 | L | 断后续传不重下已得字节；ETag 变则丢弃 `.part` 从头 | 与 M18 并行 |
 | M20 | 播放执行：把 `PlaybackViewModel` 翻成播放器回调与 `MediaAction`；5 秒及 pause/seek/stop 上报 | `client/media/player_bridge.rs` | M17 | L | 播放位置推进→上报节流；`taken_over`→停声并报最后位置 | 靠 M17 |
 | M21 | `ViewModel` 翻成视图模型：任务进度、状态文案、失败原因带重试按钮 | `client/media/view.rs` | M17 | M | 六类不退避错误各出各自文案与正确按钮（无重试/带重试） | 与 M17 并行 |
@@ -49,7 +49,7 @@
 | 编号 | 目标 | 改哪 | 依赖 | 大小 | 先红后绿的行为测试 | 并行 |
 | --- | --- | --- | --- | --- | --- | --- |
 | M43 | 媒体回环：照 `files/stream.rs` 起本机随机令牌回环，播放器与上传下载只连它 | `client/media/loopback.rs` | M17、M46 | L | 无令牌 401；`Range` 转发后被 `If-Range` 成 206；关闭后端口释放 | 与 M17 并行 |
-| M46 | 服务器字节路由：`/tasks/{id}/uploads/{item}`、`/tasks/{id}/items/{item}/content`、`/sessions/{id}/stream` 三条透传，带 `Range` 与 `X-Wonton-User` | `crates/wonton-core/src/gateway/media.rs` | M11、M17 | L | `Range` 原样透传回 206；令牌过期 401；上传偏移 409 带当前偏移 | 与 M17 并行 |
+| M46 | 服务器字节路由：上传建立/续写、取内容、取流四条透传（路径见接口清单），`{item}` 是 `item_id`，`upload_id` 映射只在核心 | `crates/wonton-core/src/gateway/media.rs` | M11 | L | POST 由核心补体并记映射；PATCH 按映射续写；偏移 409 带当前偏移；`Range` 回 206 | 排在 M11 之后；与 M13 同文件，先说好先后 |
 | M44 | `DeviceProfile` 组装：从壳上报的编解码支持拼出来，按人按设备缓存 | `client/media/profile.rs` | M17 | S | 缺能力时不发空数组；换设备各自的 Profile 不串 | 与 M17 并行 |
 | M45 | 插件页“播这条”桥：`ui/initialize` 报 `media.play` 能力位、页面 RPC 拉起宿主播放器，成功回 `started` 并让页面 `pause()` | `pages/bridge`、`pages/media`、两壳 | M6、M30、M31 | L | 老壳不报能力位时页面不显示按钮；回包失败页面继续自己放 | 靠 M30/M31 |
 
