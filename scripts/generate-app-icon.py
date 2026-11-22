@@ -1,5 +1,6 @@
 #!/usr/bin/env python3
-"""从 design/app-icon/ 生成两端的 App 图标和启动屏资源。用 macOS 上的 Chrome 无头模式渲染 SVG。"""
+"""从 design/app-icon/ 生成启动屏资源。用 macOS 上的 Chrome 无头模式渲染 SVG。App 图标由
+scripts/make-app-icon.py 从 design/app-icon/mascot/ 出，两边各管各的输出。"""
 
 import json
 import re
@@ -21,22 +22,10 @@ SVG_NS = "{http://www.w3.org/2000/svg}"
 XML_BANNER = "<!-- 由 scripts/generate-app-icon.py 从 design/app-icon/ 生成，不要手改。 -->\n"
 XCASSETS_INFO = {"info": {"author": "xcode", "version": 1}}
 DARK = [{"appearance": "luminosity", "value": "dark"}]
-TINTED = [{"appearance": "luminosity", "value": "tinted"}]
-
-# Xcode “All Sizes” 下 iOS 的全部槽位（点数，倍数）。Xcode 27.2 实测：只要单独放了一个小尺寸，
-# actool 就不再从 1024 缩放出其他尺寸进 Assets.car，所以要放全。
-IOS_SIZES = [
-    ("20", 2), ("20", 3), ("29", 2), ("29", 3), ("38", 2), ("38", 3), ("40", 2), ("40", 3),
-    ("60", 2), ("60", 3), ("64", 2), ("64", 3), ("68", 2), ("76", 2), ("83.5", 2),
-]
-# 设置、Spotlight、通知这几处用加粗母版；60pt 起是主屏尺寸，用原字重。
-SMALL_MAX_POINTS = 40.0
 
 # 启动屏字形在 iOS 上的边长（pt）。
 LAUNCH_POINTS = 120
-# 两个缩放系数都是源 SVG 单位到 108 视口。含描边的字形外接圆半径约 148 个单位，0.2 时半径 29.6，
-# 在自适应图标 66dp 的安全区（半径 33）内。启动屏的画布按 288dp 显示，0.17 对应字高约 120dp，和 iOS 接近。
-ANDROID_ICON_SCALE = 0.2
+# 源 SVG 单位到 108 视口的缩放。启动屏的画布按 288dp 显示，0.17 对应字高约 120dp，和 iOS 接近。
 ANDROID_LAUNCH_SCALE = 0.17
 
 
@@ -134,40 +123,6 @@ def replace_dir(path):
     path.mkdir(parents=True)
 
 
-def ios_app_icon(main, small):
-    directory = XCASSETS / "AppIcon.appiconset"
-    replace_dir(directory)
-    variants = [
-        ("light", None, lambda m: (m.paper, m.ink)),
-        ("dark", DARK, lambda m: (m.ink, m.paper)),
-        # 着色版本由系统按亮度上色，要求是灰度图。
-        ("tinted", TINTED, lambda _: ("#000000", "#ffffff")),
-    ]
-    slots = [(points, scale, float(points) * scale) for points, scale in IOS_SIZES]
-    images = []
-    for name, appearances, colors in variants:
-        extra = {"appearances": appearances} if appearances else {}
-        for points, scale, pixels in slots:
-            master = small if float(points) <= SMALL_MAX_POINTS else main
-            filename = f"{name}-{points}@{scale}x.png"
-            side = int(pixels)
-            render(master.icon_svg(side, *colors(master)), side, directory / filename)
-            images.append(
-                {
-                    **extra,
-                    "filename": filename,
-                    "idiom": "universal",
-                    "platform": "ios",
-                    "scale": f"{scale}x",
-                    "size": f"{points}x{points}",
-                }
-            )
-        filename = f"{name}-1024.png"
-        render(main.icon_svg(1024, *colors(main)), 1024, directory / filename)
-        images.append({**extra, "filename": filename, "idiom": "universal", "platform": "ios", "size": "1024x1024"})
-    write_json(directory / "Contents.json", {"images": images, **XCASSETS_INFO})
-
-
 def color_components(value):
     red, green, blue = value[1:3], value[3:5], value[5:7]
     return {
@@ -241,17 +196,10 @@ def write_text(path, content):
 
 
 def android(main):
-    # 启动屏的颜色随深色模式翻转；图标不翻，桌面上的图标不该跟着系统外观变。
+    # 启动屏的颜色随深色模式翻转；App 图标不翻，桌面上的图标不该跟着系统外观变。
     write_text(
         RES / "values/app_icon_colors.xml",
-        android_colors(
-            [
-                ("app_icon_background", main.paper),
-                ("app_icon_ink", main.ink),
-                ("launch_background", main.paper),
-                ("launch_glyph", main.ink),
-            ]
-        ),
+        android_colors([("launch_background", main.paper), ("launch_glyph", main.ink)]),
     )
     write_text(
         RES / "values-night/app_icon_colors.xml",
@@ -260,23 +208,8 @@ def android(main):
     write_text(RES / "values/app_icon_bools.xml", android_bool("true"))
     write_text(RES / "values-night/app_icon_bools.xml", android_bool("false"))
     write_text(
-        RES / "drawable/ic_launcher_foreground.xml",
-        android_glyph(main, ANDROID_ICON_SCALE, "@color/app_icon_ink"),
-    )
-    write_text(
         RES / "drawable/launch_glyph.xml",
         android_glyph(main, ANDROID_LAUNCH_SCALE, "@color/launch_glyph"),
-    )
-    # 系统给 monochrome 上色时只看透明度，直接用前景层，不多放一份字形。
-    write_text(
-        RES / "mipmap-anydpi/ic_launcher.xml",
-        '<?xml version="1.0" encoding="utf-8"?>\n'
-        + XML_BANNER
-        + '<adaptive-icon xmlns:android="http://schemas.android.com/apk/res/android">\n'
-        '    <background android:drawable="@color/app_icon_background" />\n'
-        '    <foreground android:drawable="@drawable/ic_launcher_foreground" />\n'
-        '    <monochrome android:drawable="@drawable/ic_launcher_foreground" />\n'
-        "</adaptive-icon>\n",
     )
 
 
@@ -284,11 +217,9 @@ def main():
     if not Path(CHROME).exists():
         sys.exit(f"找不到 Chrome：{CHROME}")
     master = load_master("icon.svg")
-    small = load_master("icon-small.svg")
-    ios_app_icon(master, small)
     ios_launch(master)
     android(master)
-    print("App 图标和启动屏资源已生成")
+    print("启动屏资源已生成")
 
 
 if __name__ == "__main__":
