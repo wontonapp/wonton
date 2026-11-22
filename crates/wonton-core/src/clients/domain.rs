@@ -384,7 +384,18 @@ impl Domain {
 
     /// 准入条件够了就排一次签发；续期循环和保存都走这里。
     fn spawn_issue(self: &Arc<Self>) {
-        let Ok(store) = self.effective() else { return };
+        let store = match self.effective() {
+            Ok(store) => store,
+            Err(error) => {
+                tracing::warn!(%error, "域名设置读不了，这一轮跳过续期");
+                let text = format!("{error:#}");
+                let this = self.clone();
+                tokio::spawn(async move {
+                    this.notify("entry-domain-unreadable", &text).await;
+                });
+                return;
+            }
+        };
         if !self.ready(&store) {
             return;
         }

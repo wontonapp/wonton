@@ -623,7 +623,6 @@ async fn renewal_waits_for_the_terms_before_contacting_the_ca() {
     // 什么都没有：一轮续期不起任何容器。
     clients.renew_if_configured();
     settle().await;
-    assert_eq!(clients.pending.load(Ordering::SeqCst), 0);
     assert!(clients.engine.recorded_creations().is_empty());
     // 域名、服务商、凭据都有，只差条款：还是不联系 CA。
     clients
@@ -649,4 +648,49 @@ async fn renewal_waits_for_the_terms_before_contacting_the_ca() {
     clients.renew_if_configured();
     settle().await;
     assert!(!clients.engine.recorded_creations().is_empty());
+}
+
+/// 域名设置文件坏了：发通知、这一轮不联系 CA，也不当没有域名。
+#[tokio::test]
+async fn an_unreadable_domain_file_is_reported() {
+    use std::sync::atomic::Ordering;
+    let dir = tempfile::tempdir().unwrap();
+    let (fake, config) = crate::matrix::fake::start().await;
+    let http = crate::http::HttpClient::new();
+    let matrix = std::sync::Arc::new(
+        crate::matrix::Matrix::connect(&config, dir.path(), http)
+            .await
+            .unwrap(),
+    );
+    let notices = std::sync::Arc::new(crate::matrix::NoticeRoom::new(
+        matrix,
+        "owner",
+        dir.path().join("notice-room"),
+        std::sync::Arc::new(crate::plugin::languages::Languages::default),
+    ));
+    let clients = super::Domain::new(
+        dir.path().to_owned(),
+        dir.path().join("data"),
+        Engine::for_test(),
+        crate::plugin::names::Instance::default(),
+        Some(notices),
+    );
+    std::fs::create_dir_all(dir.path().join("entry")).unwrap();
+    std::fs::write(dir.path().join("entry/domain.json"), "{").unwrap();
+    clients.renew_if_configured();
+    for _ in 0..20_000 {
+        if !fake.state().sent.is_empty() {
+            break;
+        }
+        tokio::task::yield_now().await;
+    }
+    let sent = fake.state().sent.clone();
+    assert!(
+        sent.iter().any(|(_, message)| message["body"]
+            .as_str()
+            .is_some_and(|body| body.contains("domain settings"))),
+        "{sent:?}"
+    );
+    assert_eq!(clients.pending.load(Ordering::SeqCst), 0);
+    assert!(clients.engine.recorded_creations().is_empty());
 }

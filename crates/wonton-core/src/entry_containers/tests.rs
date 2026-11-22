@@ -12,6 +12,7 @@ use super::{
     EntryContainers, EntryError,
 };
 use crate::entry_compose::HAPROXY_IMAGE;
+use crate::entry_haproxy::CONNECTOR_ADDRESS;
 use crate::entry_runtime::FRPC_IMAGE;
 use crate::entry_settings::EntrySettings;
 use crate::plugin::fake_docker::FakeDocker;
@@ -47,6 +48,30 @@ fn app_domain(rig: &Rig, suffix: &str) {
         serde_json::to_vec(&json!({"suffix": suffix, "terms_accepted": true})).unwrap(),
     )
     .unwrap();
+}
+
+/// 发布一张覆盖这些名字的证书，和签发成功落盘的 `site.pem` 一样。
+fn publish_cert(rig: &Rig, names: &[&str]) {
+    let names: Vec<String> = names.iter().map(|name| (*name).to_owned()).collect();
+    let cert = rcgen::generate_simple_self_signed(names).unwrap();
+    std::fs::write(rig.dir.path().join("entry/certs/site.pem"), cert.cert.pem()).unwrap();
+}
+
+/// 命令行 `-f /config/<文件>` 指到的宿主文件：容器里的 `/config` 就是 `entry/`。
+fn command_file(rig: &Rig, container: &str) -> std::path::PathBuf {
+    let created = rig.created(container);
+    let path = created["Cmd"].as_array().unwrap().last().unwrap();
+    let name = path.as_str().unwrap().strip_prefix("/config/").unwrap();
+    rig.dir.path().join("entry").join(name)
+}
+
+/// 容器挂进去的每个源路径都得真的在：缺了 Docker 会在宿主侧建成目录，haproxy 起不来。
+fn assert_mounts_exist(rig: &Rig, container: &str) {
+    let created = rig.created(container);
+    for bind in created["HostConfig"]["Binds"].as_array().unwrap() {
+        let source = bind.as_str().unwrap().split(':').next().unwrap();
+        assert!(std::path::Path::new(source).exists(), "{source} 不在");
+    }
 }
 
 fn config(rig: &Rig) -> String {
@@ -276,6 +301,83 @@ async fn app_domain_without_settings_creates_entry_and_connector() {
     );
 }
 
+/// 全新安装时 `edge` 就是默认网段，算出来的连接器地址和装机时写的一样：配置不能因此不写。
+/// 缺文件时 Docker 会在宿主侧把这些路径建成目录，haproxy 在参数解析阶段就退出 1（复审 878 第 1 条）。
+/// 对账必须把目录换回文件。
+#[tokio::test]
+async fn the_default_edge_subnet_still_gets_the_whole_entry_config() {
+    let rig = Rig::new().await;
+    rig.docker.pin_subnet(
+        &format!("{PROJECT}_edge"),
+        crate::entry_haproxy::EDGE_SUBNET,
+    );
+    app_domain(&rig, "home.example.test");
+    // 旧版没写文件就建了容器：挂载源已经被 Docker 建成了目录。
+    for name in [
+        "entry/haproxy.cfg",
+        "entry/certs/public.crt-list",
+        "entry/certs/lan.crt-list",
+        "entry/connector.cfg",
+    ] {
+        std::fs::create_dir_all(rig.dir.path().join(name)).unwrap();
+    }
+    rig.reconcile(None).await.unwrap();
+    let config = config(&rig);
+    assert!(!config.is_empty(), "默认网段下入口配置没写出来");
+    assert!(
+        config.contains(&format!("src {CONNECTOR_ADDRESS}")),
+        "{config}"
+    );
+    assert!(
+        std::fs::read_to_string(rig.dir.path().join("entry/certs/public.crt-list"))
+            .unwrap()
+            .contains("home.example.test")
+    );
+    assert!(rig.dir.path().join("entry/certs/lan.crt-list").is_file());
+    let connector_config = command_file(&rig, "wonton-connector");
+    assert!(
+        connector_config.is_file(),
+        "{} 不在",
+        connector_config.display()
+    );
+    for container in ["wonton-entry", "wonton-connector"] {
+        assert_mounts_exist(&rig, container);
+    }
+}
+
+/// 换了后缀但新证书还没发布：入口继续按旧证书里的名字服务，新证书发布后的下一轮才换、才 reload。
+#[tokio::test]
+async fn a_changed_domain_keeps_the_published_certificate_untill_a_new_one_exists() {
+    let rig = Rig::new().await;
+    publish_cert(&rig, &["old.example.test", "probe.old.example.test"]);
+    app_domain(&rig, "old.example.test");
+    rig.reconcile(None).await.unwrap();
+    assert!(config(&rig).contains("old.example.test"));
+    let reloads = rig.writes_for("/kill").len();
+    app_domain(&rig, "new.example.test");
+    rig.reconcile(None).await.unwrap();
+    assert!(
+        config(&rig).contains("old.example.test"),
+        "{}",
+        config(&rig)
+    );
+    assert!(
+        !config(&rig).contains("new.example.test"),
+        "{}",
+        config(&rig)
+    );
+    assert_eq!(
+        rig.writes_for("/kill").len(),
+        reloads,
+        "名字没换不该 reload"
+    );
+    publish_cert(&rig, &["new.example.test", "probe.new.example.test"]);
+    rig.reconcile(None).await.unwrap();
+    assert!(config(&rig).contains("new.example.test"));
+    assert!(!config(&rig).contains("old.example.test"));
+    assert_eq!(rig.writes_for("/kill").len(), reloads + 1);
+}
+
 /// 重复对账不重建：每轮都删了再建会让公网入口一直断。
 #[tokio::test]
 async fn app_domain_without_settings_is_idempotent() {
@@ -329,6 +431,9 @@ async fn settings_win_over_the_app_domain() {
     let rig = Rig::new().await;
     let mut settings = settings();
     settings.registration = Some(federation_registration());
+    let ca = rig.dir.path().join("relay-ca.pem");
+    std::fs::write(&ca, "ca").unwrap();
+    settings.relay_ca = Some(ca);
     app_domain(&rig, "other.example.test");
     rig.reconcile(Some(&settings)).await.unwrap();
     assert_eq!(rig.created("wonton-connector")["Image"], FRPC_IMAGE);
@@ -364,6 +469,9 @@ async fn federation_registration_uses_the_relay_connector() {
     let rig = Rig::new().await;
     let mut settings = settings();
     settings.registration = Some(federation_registration());
+    let ca = rig.dir.path().join("relay-ca.pem");
+    std::fs::write(&ca, "ca").unwrap();
+    settings.relay_ca = Some(ca);
     rig.reconcile(Some(&settings)).await.unwrap();
     let created = rig.created("wonton-connector");
     assert_eq!(created["Image"], FRPC_IMAGE);

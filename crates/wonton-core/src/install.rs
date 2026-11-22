@@ -350,9 +350,13 @@ pub(crate) fn write_private(path: &Path, text: &str) -> anyhow::Result<()> {
     write_file(path, text, 0o600)
 }
 
-/// 先写临时文件再改名：中途失败不会留下写了一半的文件。
+/// 先删掉挡路的目录（旧版对账没写文件就建了容器，Docker 把缺的挂载源建成了目录，改名盖不过目录），
+/// 再写临时文件、改名：中途失败不会留下写了一半的文件。
 fn write_file(path: &Path, text: &str, mode: u32) -> anyhow::Result<()> {
     let tmp = path.with_extension("tmp");
+    if path.is_dir() {
+        fs::remove_dir_all(path).with_context(|| format!("替换目录 {}", path.display()))?;
+    }
     let mut file = fs::OpenOptions::new()
         .write(true)
         .create(true)

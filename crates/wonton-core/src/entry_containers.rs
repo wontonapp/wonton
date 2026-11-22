@@ -133,6 +133,8 @@ struct Side {
 struct Target {
     domain: String,
     registration: Option<Registration>,
+    /// 校验 frps 证书用的 CA（有家名服务时才用）。
+    relay_ca: Option<PathBuf>,
     resolvers: Vec<String>,
 }
 
@@ -147,13 +149,14 @@ impl Target {
             Some(settings) => Some((
                 settings.domain.clone(),
                 settings.registration.clone(),
+                settings.relay_ca.clone(),
                 settings.acme_resolvers.clone(),
             )),
             None => crate::clients::domain::stored_suffix(install_dir)
                 .map_err(|error| EntryError::Settings(format!("{error:#}")))?
-                .map(|suffix| (suffix, None, Vec::new())),
+                .map(|suffix| (suffix, None, None, Vec::new())),
         };
-        let Some((domain, registration, resolvers)) = found else {
+        let Some((domain, registration, relay_ca, resolvers)) = found else {
             return Ok(None);
         };
         Ok(install_dir
@@ -162,6 +165,7 @@ impl Target {
             .then_some(Self {
                 domain,
                 registration,
+                relay_ca,
                 resolvers,
             }))
     }
@@ -322,8 +326,8 @@ impl EntryContainers {
         (federation, true)
     }
 
-    /// 按设置对账：缺的建、多的删、镜像换了重建、网络没接上就接上。文件由 `wonton-core init`（或改了开关的
-    /// 操作）先写好，这里只读。
+    /// 按目标对账：配置按实际网段和已发布的证书写，缺的容器建、多的删、镜像换了重建、网络没接上就接上，
+    /// 配置变了才让入口重读。
     ///
     /// 要不要入口看的是实际有没有要服务的名字和证书，不是设置文件在不在：“不要名字”的安装没有设置文件，
     /// 主人在 App 里配的自己的域名写在 `entry/domain.json`，一样要有入口、一样要续期。
@@ -335,37 +339,35 @@ impl EntryContainers {
 
     async fn reconcile_inner(&self, settings: Option<&EntrySettings>) -> Result<(), EntryError> {
         let target = Target::resolve(&self.install_dir, settings)?;
-        let (entry, connector) = match &target {
-            Some(target) => Self::wanted(target),
-            None => (false, false),
+        let Some(target) = &target else {
+            // 没有要服务的名字和证书：两个容器都删掉，不去动网络。
+            for component in [ENTRY_COMPONENT, CONNECTOR_COMPONENT] {
+                self.engine.remove_container(&self.name(component)).await?;
+            }
+            return Ok(());
         };
         let Some(core) = &self.core_container else {
-            // 没有要服务的名字、也没有容器网络：开发时跑在宿主上，什么都不用做。
-            return if entry || connector {
-                Err(EntryError::CoreNotInContainer)
-            } else {
-                Ok(())
-            };
+            // 要入口、又跑在宿主上：没有 compose 给的那些网络。
+            return Err(EntryError::CoreNotInContainer);
         };
-        let mut resolved = None;
-        let sides: [(bool, &'static str); 2] =
-            [(entry, ENTRY_COMPONENT), (connector, CONNECTOR_COMPONENT)];
-        for (wanted, component) in sides {
-            let name = self.name(component);
+        let (project, networks) = self.networks(core).await?;
+        let changed = self.write_config(target, &networks.connector)?;
+        let existed = self
+            .engine
+            .inspect_container(&self.name(ENTRY_COMPONENT))
+            .await?
+            .is_some();
+        let (entry, connector) = Self::wanted(target);
+        for (wanted, component) in [(entry, ENTRY_COMPONENT), (connector, CONNECTOR_COMPONENT)] {
             if !wanted {
-                self.engine.remove_container(&name).await?;
+                self.engine.remove_container(&self.name(component)).await?;
                 continue;
             }
-            if resolved.is_none() {
-                resolved = Some(self.networks(core).await?);
-            }
-            let (project, networks) = resolved.as_ref().expect("网络刚取过");
-            let target = target.as_ref().expect("要建容器就有目标");
-            if networks.connector != CONNECTOR_ADDRESS {
-                self.rewrite_config(target, &networks.connector)?;
-            }
-            let side = self.side(component, networks, target)?;
-            self.ensure(&side, project).await?;
+            let side = self.side(component, &networks, target)?;
+            self.ensure(&side, &project).await?;
+        }
+        if changed && existed && entry {
+            self.reload().await?;
         }
         Ok(())
     }
@@ -757,19 +759,27 @@ impl EntryContainers {
         })
     }
 
-    /// `edge` 的网段和装机时不一样：按实际地址重写入口配置（连接器地址写在 TLS 前端的对端条件里）。
-    fn rewrite_config(&self, target: &Target, connector: &str) -> Result<(), EntryError> {
-        let mut model =
-            crate::entry_haproxy::Model::federation_only(&target.domain, &target.domain);
-        model.connectors = vec![connector.to_owned()];
-        crate::entry_compose::write_model(&self.install_dir, &model).map_err(|error| {
+    /// 按已发布的证书写入口配置：证书还不认识新后缀时继续服务旧名字（少一次入口断开），
+    /// 新证书发布后的下一轮对账才换。返回配置有没有变。
+    fn write_config(&self, target: &Target, connector: &str) -> Result<bool, EntryError> {
+        let names = crate::entry_certificate::published_names(
+            &self.install_dir.join("entry/certs/site.pem"),
+        );
+        let domain = crate::entry_certificate::served_suffix(&names, &target.domain);
+        crate::entry_compose::sync(
+            &self.install_dir,
+            &crate::entry_compose::Config {
+                domain: &domain,
+                connector,
+                registration: target.registration.as_ref(),
+                relay_ca: target.relay_ca.as_deref(),
+            },
+        )
+        .map_err(|error| {
             EntryError::Docker(EngineError::Rejected {
-                context: "重写入口配置".to_owned(),
+                context: "写入口配置".to_owned(),
                 message: error.to_string(),
             })
-        })?;
-        crate::entry_compose::prepare_permissions(&self.install_dir).map_err(|error| {
-            EntryError::Docker(EngineError::NotFound(format!("入口文件权限：{error}")))
         })
     }
 

@@ -135,13 +135,15 @@ fn registered_settings(dir: &std::path::Path) {
         "username": "test", "password": "test", "subdomain": "lan",
         "fulldomain": "lan.auth.example.test"
     });
+    let ca = dir.join("relay-ca.pem");
+    std::fs::write(&ca, "ca").unwrap();
     settings(
         dir,
         json!({
             "domain": "home.example.test",
             "service_url": null,
             "service_ca": null,
-            "relay_ca": null,
+            "relay_ca": ca,
             "registration": {
                 "home": "home", "domain": "home.example.test", "frp_token": "test",
                 "acme_dns": credentials, "lan_acme_dns": lan,

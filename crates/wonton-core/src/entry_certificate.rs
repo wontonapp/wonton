@@ -1,5 +1,6 @@
 //! Entry certificates: the core keeps the leaf key; lego receives only its CSR.
 
+use std::io::Cursor;
 use std::path::{Path, PathBuf};
 use std::sync::Arc;
 
@@ -314,4 +315,59 @@ fn regular_file(path: &Path) -> Result<Vec<u8>> {
         path.display()
     );
     std::fs::read(path).with_context(|| format!("read {}", path.display()))
+}
+
+/// 已发布证书里要服务的名字（叶证书的 DNS SAN，转小写）。自己拼的链条可能把 CA 放前面，CA 的
+/// SAN 不算；读不了当没有。
+pub(crate) fn published_names(path: &Path) -> Vec<String> {
+    let Ok(pem) = std::fs::read(path) else {
+        return Vec::new();
+    };
+    let mut names = Vec::new();
+    for der in rustls_pemfile::certs(&mut Cursor::new(pem)).flatten() {
+        let Ok((_, certificate)) = x509_parser::parse_x509_certificate(&der) else {
+            continue;
+        };
+        let ca = certificate
+            .basic_constraints()
+            .ok()
+            .flatten()
+            .is_some_and(|constraints| constraints.value.ca);
+        if ca {
+            continue;
+        }
+        let Some(names_extension) = certificate.subject_alternative_name().ok().flatten() else {
+            continue;
+        };
+        for name in &names_extension.value.general_names {
+            if let x509_parser::extensions::GeneralName::DNSName(name) = name {
+                names.push(name.to_ascii_lowercase());
+            }
+        }
+    }
+    names
+}
+
+/// 证书里的名字是否覆盖这个后缀：相等，或者是它下面的标签（`probe.home.example.test`）。
+/// DNS 名字不分大小写。
+fn covers(names: &[String], suffix: &str) -> bool {
+    let suffix = suffix.to_ascii_lowercase();
+    names.iter().any(|name| {
+        let name = name.to_ascii_lowercase();
+        name == suffix || name.ends_with(&format!(".{suffix}"))
+    })
+}
+
+/// 入口实际服务的后缀。证书还没换到新名字时继续服务旧名字（取最短的非通配符名字），
+/// 新证书发布后的下一轮对账才换；证书里一个名字都没有时按设置里的后缀。
+pub(crate) fn served_suffix(names: &[String], wanted: &str) -> String {
+    if names.is_empty() || covers(names, wanted) {
+        return wanted.to_owned();
+    }
+    names
+        .iter()
+        .filter(|name| !name.starts_with("*."))
+        .min_by_key(|name| name.len())
+        .cloned()
+        .unwrap_or_else(|| wanted.to_owned())
 }
