@@ -323,7 +323,7 @@ MCP 订阅只收 `tools_list_changed`（`crates/wonton-core/src/mcp/server.rs:29
 
 - `Accessor` 加 `Room(房间内部 ID)`（存本地 ID，不是别名的 `!xxx:server`，别名可改）。加的时候核的是 Bot 与**每个说话人**（`verify_room`），
   报的来源没核过就不加；人读的时候另核一次那个**读的人**在不在房间里。
-- 鉴权时按当下的成员算，不拍快照：查 `joined_members` 现算这个人在不在房间。查的结果按房间缓存 60 秒（连 `verify_room` 一起），
+- 鉴权时按当下的成员算，不拍快照：查 `joined_members` 现算这个人在不在房间。缓存的是该房间的 `joined_members` 列表 60 秒（人在不在每次在这份列表上查，列表本身可能旧 60 秒），
   所以退了的人在 60 秒内还能读到，超过就失去；记录本身的 24 小时过期规则不变。
 - **“核对过”写死成一个函数**（`audience::verify_room(id, bot, 说话人…)`）：Bot 和每个说话人都在 `joined_members` 里才算；
   它只回答“是不是这个房间的人”，不给确认卡用（确认卡的 `checked_origin` 照旧单独走）。

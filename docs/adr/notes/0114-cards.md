@@ -20,9 +20,8 @@
   `plugin-spec.md` 新节，`wonton-docs` 同批；四条命令都是绝对路径，`status` 可选。
 - 依赖：无。
 - 大小：M。
-- 先红：`manifest_member_accounts_service_must_exist`、`commands_must_be_absolute` 两个测试，各自断言 `Manifest::validate` 的具体错误码；
-  `status` 缺省不影响清单通过。
-- 后绿：三处校验都实现；字段序列化往返不丢。
+- 先红：`manifest_member_accounts_service_must_exist`、`commands_must_be_absolute` 两个测试，各自断言 `Manifest::validate` 的具体错误码。
+- 后绿：两处校验都实现；字段序列化往返不丢；`status` 可选、缺省不影响通过。
 - 并行：能，和 2、3 之外的任何协议卡并行；2 等它。
 
 ## 2. 核心：按人建号的时机、重放和回收

@@ -35,6 +35,8 @@ pub struct MemberCommands {
 命令的标准输入与凭据输出（同文件）。退出码 `0` 成功、`2` 输入非法、`3` 只给 `credential` 表示凭据失效：
 
 ```rust
+pub struct MemberStatus { pub users: Vec<String> }
+
 pub struct MemberInput { pub user: String, #[serde(default)] pub admin: bool }
 pub struct MemberTarget { pub user: String }
 
@@ -45,7 +47,8 @@ pub enum MemberCredential {
 }
 ```
 
-校验：`service` 在 `services` 里；三条命令以 `/` 开头；`webui.service` 不必相同。
+校验：`service` 在 `services` 里；`add`/`remove`/`credential` 必须以 `/` 开头，`status` 若有同样；`webui.service` 不必相同。
+`status` 的输出是一条 JSON：`{"users": ["<用户名>", …]}`，含已停用的账号、不含插件自己的管理员。
 另有 `status: Option<String>`（可选，一条 JSON 列出已建账号）。对账只在安装完成、容器重建后跑一次、以及每天一次；补建前先看这人还在不在成员里，
   刚被移除的不会被补回来；补建失败进重试。
 
@@ -74,8 +77,8 @@ pub struct InboxSpec {
 
 - 新文件 `crates/wonton-protocol/src/event.rs`。
 - 在 `manifest/permission.rs` 的 `Permission` 加 `Events`（`events`）与 `Files`（`files`）；`Files` 是 `inbox` 的前置。
-- `spec_floor.rs` 按实际用到的字段与权限逐条登记（`Added::Permission`、`Added::Field`）：`member_accounts`、`inbox`、`inbox.scan`、
-  `member_accounts.status`、`events`、`files`、`room_results`、`result_scope`（旧核心 `deny_unknown_fields` 会拒装，靠版本号提示升级）。
+- `spec_floor.rs` 按清单里实际用到的字段与权限逐条登记（`Added::Permission`、`Added::Field`）：`member_accounts`（含 `status`）、`inbox`、
+  `inbox.scan`、`events`、`files`；`tools/list` 与结果里的 `_meta` 不受 `spec_floor` 管，旧核心忽略即回退 `keeper`（旧核心 `deny_unknown_fields` 会拒装，靠版本号提示升级）。
 - 插件网络别名：`events.wonton.internal`；注入变量：`WONTON_EVENTS_URL`。
 
 `POST` 的请求体和 202 回体（新类型在 `event.rs`）：
@@ -150,7 +153,8 @@ pub const TOOL_CARD_META: &str = "app.wonton/card";                 // tools/lis
 pub const TOOL_FILES_META: &str = "app.wonton/files";               // [String]，1..=4
 pub const TOOL_CARD_RESULT_META: &str = "app.wonton/card_result";   // 结果
 pub const TOOL_DEEP_LINK_META: &str = "app.wonton/deep_link";       // 结果
-pub const TOOL_RESULT_SCOPE_META: &str = "app.wonton/result_scope"; // "room" | "keeper"，默认 keeper；插件没在 tools/list 里声明支持就不开门
+pub const TOOL_ROOM_RESULTS_META: &str = "app.wonton/room_results";  // tools/list，bool，缺省 false
+pub const TOOL_RESULT_SCOPE_META: &str = "app.wonton/result_scope"; // 结果：room | keeper，缺省 keeper
 ```
 
 类型：
@@ -194,18 +198,17 @@ pub enum Accessor {
 }
 ```
 
-破坏点：`Display`/`TryFrom<String>` 的穷尽匹配；磁盘上已有的记录本身能读（旧分支不变），但**用新核心写过的记录旧核心读不了**
-（`TryFrom` 报未知前缀）。降级要连同记录一起回滚，写进升级说明。
-
-`Gateway` 的鉴权要新加一条：`Accessor::Room(id)` 用请求方的 Matrix 身份实时查 `joined_members`。房间 ID 只存本地 ID。
+破坏点：`Display`/`FromStr` 的穷尽匹配（serde 走 `FromStr`）。旧记录能读；**带 `room:` 的记录旧核心读不了**。
+核对、缓存、降级脚本、加 `Room` 时核谁、读的时候核谁，全见 ADR-0114 第 7 节与卡 11，这里只留类型与序列化。
 
 ## 7. `wonton-docs`（公开规范，同批）
 
 - “权限”表加 `events` 一行；注入变量表加 `WONTON_EVENTS_URL`；网络别名表加 `events.wonton.internal`。
-- 新节“家人账号”写 `member_accounts`、三条命令、JSON、退出码、`lan.client` 按人、Jellyfin 用 Quick Connect。
+- 新节“家人账号”写 `member_accounts`、四条命令、JSON、退出码、`status` 输出形状、`lan.client` 按人、Jellyfin 用 Quick Connect。
 - 权限表加 `files`，和 `events` 一起进安装预览、商店元数据与四种语言。
 - 新节“收件箱”写 `inbox`、`scan`、`app.wonton/files`、`inbox:` 前缀、24 小时清理、`source_unavailable`。
-- `tools/list` 一节写 `app.wonton/room_results: true`；结果 `_meta` 一节写 `result_scope` 的取值。
+- `tools/list` 一节写 `card`、`files`、`room_results`；`tools/call` 一节写 `speakers`、`room_people`；结果一节写 `result_scope`、`card_result`、`deep_link`。
+  `room_results` 坏值只在 `plugin check` 与 `tools/list` 校验时记警告，运行期按 false。
 - “通知”一节加 `to`、`link`，把“家人不收”改成按 `to`。
 - `tools/list` 一节加 `card`、`files` 两个 `_meta`；`tools/call` 一节加 `speakers`、`room_people`、`result_scope`；
   结果一节加 `card_result`、`deep_link`。
