@@ -6,11 +6,19 @@ import WontonClient
 /// `wonton-agent-run-preview` 时生效（同 `QualityPreviews` 的做法）。
 /// 时间线要登录后的房间才有（核心假数据只够首屏），这里核对行本身的显示和“点开卡片”的接线；
 /// 一轮从 working 到 done 用按钮推进，waiting 行点了记下开卡片这件事；
-/// 一串长选项核对放不下时换排（ADR-0109 的选项排法）。
+/// 一串长选项核对多出来的换到下一排（ADR-0109 的选项排法）。
 enum AgentRunPreview {
     static var active: Bool {
         ProcessInfo.processInfo.arguments.contains("wonton-agent-run-preview")
     }
+
+    /// 启动参数再加 `wonton-agent-run-preview-narrow` 时把夹具收窄成最窄 iPhone 的屏宽：
+    /// CI 用大屏机器，窄屏排法要自己造出宽度来。
+    static var narrow: Bool {
+        ProcessInfo.processInfo.arguments.contains("wonton-agent-run-preview-narrow")
+    }
+
+    static let narrowWidth: CGFloat = 320
 
     static var root: some View {
         AgentRunPreviewScreen()
@@ -26,7 +34,7 @@ private struct AgentRunPreviewScreen: View {
         ScrollView {
             content
                 .padding(WontonTheme.spacing.s16)
-                .frame(maxWidth: .infinity, alignment: .leading)
+                .frame(maxWidth: AgentRunPreview.narrow ? AgentRunPreview.narrowWidth : .infinity, alignment: .leading)
         }
     }
 

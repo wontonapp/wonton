@@ -1,4 +1,4 @@
-//! 正在输入、命令表和跳到原消息（ADR-0109 §4、§7）。
+//! 正在输入、命令表和跳到原消息（ADR-0109 §4、§8）。
 
 use serde_json::json;
 use wonton_client::{Action, MessageContent, TimelineContent, TimelineScroll, TimelineUpdate};
