@@ -306,7 +306,10 @@ private fun NativeTab(
             onConnection = { nav.settings(SettingsSubpage.SERVER) }, settingsUpgrade = settings.serverUpgrade,
             onSettings = { nav.settings() },
         )
-        else -> ChatRoute(pages.core, nav.chat, pages.plugins, nav.plugins) { nav.openApps(HomePage.LAUNCHER) }
+        else -> ChatRoute(
+            pages.core, nav.chat, pages.plugins, nav.plugins,
+            onAppLink = { nav.openLink(it, pages.core.onboarding()) },
+        ) { nav.openApps(HomePage.LAUNCHER) }
     }
 }
 

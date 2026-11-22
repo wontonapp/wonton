@@ -47,6 +47,11 @@ final class AppNavigation {
 
     func receive(_ url: URL) {
         guard let link = parseAppLink(url: url.absoluteString) else { return }
+        handle(link)
+    }
+
+    /// 链接已经由核心解析过：分享和页面各有入口，其余交给请求队列（冷启动时等导航就绪）。
+    private func handle(_ link: AppLink) {
         // 分享扩展打开 App（ADR-0097）：没配对、引导没走完也认领，分享页自己引导去配对。
         if case let .share(token) = link {
             shareIn.claim(token)
@@ -81,10 +86,17 @@ final class AppNavigation {
         }
     }
 
-    /// 聊天里的一条链接：类别由核心判断，壳只按类别开（ADR-0065）。外部和认不出的地址用 Safari 在 App 内打开，
-    /// 插件进插件页，matrix.to 在 App 里跳用户或房间，邮件和电话交给系统。
+    /// 聊天里的一条链接：类别由核心判断，壳只按类别开（ADR-0065）。`wonton://` 交给上面的 App 链接表就地打开
+    /// （ADR-0041），认不得的提示一句；外部地址用 Safari 在 App 内打开，插件进插件页，matrix.to 在 App 里跳
+    /// 用户或房间，邮件和电话交给系统。
     func openLink(_ link: RichLink) {
         switch link.kind {
+        case .other where link.url.hasPrefix("wonton://"):
+            guard let appLink = parseAppLink(url: link.url) else {
+                pages.rejection = Problem(title: String(localized: .Message1.messageLinkUpdateApp))
+                return
+            }
+            handle(appLink)
         case .external, .other:
             guard let url = URL(string: link.url) else { return }
             safari = SafariTarget(url: url)

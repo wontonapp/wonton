@@ -15,9 +15,9 @@ use std::sync::LazyLock;
 use wonton_protocol::{
     BackPagination, ChoiceSend, ChoicesState, MessageAction, MessageChoice, MessageChoices,
     MessageContent, MessageStatus, PanelItem, PanelSource, QuotedContent, QuotedMessage,
-    ReplyQuote, RichBlock, RichBlockKind, RichSpan, RoomCommand, SendState, SideChatCard,
-    SideChatState, TabIcon, TabLayout, TabPage, TabRef, TabState, TimelineContent, TimelineDiff,
-    TimelineItem, TimelineMessage, TimelineUpdate, TimelineViewport,
+    ReplyQuote, RichBlock, RichBlockKind, RichLink, RichLinkKind, RichSpan, RoomCommand, SendState,
+    TabIcon, TabLayout, TabPage, TabRef, TabState, TimelineContent, TimelineDiff, TimelineItem,
+    TimelineMessage, TimelineUpdate, TimelineViewport,
 };
 
 /// 主面板和房间面板里放的那一页。本机端口占不上时没有这一页。
@@ -146,6 +146,12 @@ pub(super) const QUOTED_INDEX: usize = 19;
 pub(super) const SIDE_CHAT_INDEX: usize = 21;
 /// 引用上一条的长中文回复：几段长短不一，有的末行写满，用来查时间戳和正文重叠、长段被截断。
 pub(super) const LONG_REPLY_INDEX: usize = 20;
+/// 一条只有 `wonton://` 链接的消息：点它要就地打开“其他服务器”。
+pub(super) const APP_LINK_INDEX: usize = 6;
+/// 认不得的 `wonton://` 链接：点它要提示一句，不开白页。
+pub(super) const UNKNOWN_APP_LINK_INDEX: usize = 7;
+pub(super) const APP_LINK: &str = "wonton://settings/peers";
+pub(super) const UNKNOWN_APP_LINK: &str = "wonton://tab/from-the-future";
 // 中文假数据放在数据文件里：它是界面测试的输入，不是界面文字，界面文字检查（ADR-0043）只管源码里的字符串。
 const QUOTED_TEXT: &str = include_str!("ui_fake_text/quoted.txt");
 const LONG_REPLY: &str = include_str!("ui_fake_text/long_reply.txt");
@@ -166,6 +172,10 @@ fn item(index: usize) -> TimelineItem {
             "Fixture approval".into(),
             "✅ = approve once\n❌ = deny".into(),
         ]
+    } else if index == APP_LINK_INDEX {
+        vec![APP_LINK.into()]
+    } else if index == UNKNOWN_APP_LINK_INDEX {
+        vec![UNKNOWN_APP_LINK.into()]
     } else if index == QUOTED_INDEX {
         vec![QUOTED_TEXT.trim_end().into()]
     } else if index == LONG_REPLY_INDEX {
@@ -190,6 +200,14 @@ fn item(index: usize) -> TimelineItem {
         at_ms(index),
         &paragraphs,
     );
+    if index == APP_LINK_INDEX || index == UNKNOWN_APP_LINK_INDEX {
+        if let MessageContent::Text { blocks, .. } = &mut message.body {
+            blocks[0].spans[0].link = Some(RichLink {
+                url: paragraphs[0].clone(),
+                kind: RichLinkKind::Other,
+            });
+        }
+    }
     let status = if index <= REPLY_INDEX {
         MessageStatus::Read
     } else {
