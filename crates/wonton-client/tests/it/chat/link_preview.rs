@@ -389,6 +389,39 @@ async fn a_message_without_a_preview_is_fetched_once_and_deduplicated() {
 
 #[tokio::test(flavor = "multi_thread")]
 #[ignore = "需要 Docker，用 --include-ignored 运行"]
+async fn the_same_draft_bytes_ask_the_core_only_once() {
+    let dir = tempfile::tempdir().unwrap();
+    let phone = Phone::open(dir.path());
+    let home = Home::start(&[phone.device_id()]).await;
+    phone.connect(&home);
+    phone.signed_in().await;
+    let bot = home.bot("hermes", "Hermes").await;
+    let room_id = join_group_room(&phone, &bot, "草稿去重").await;
+    let room = room_id.to_string();
+    let url = "https://example.com/a";
+    home.set_link_preview(url, 200, preview_body(url, "第一个", Some("img")));
+    home.set_link_preview_image("img", "image/png", PNG);
+    let body = format!("看看 {url}");
+    let want = ready_card(url, "第一个", "img");
+
+    // 同一份草稿（字节没变）打三次，每次都读回：第一次取，后面命中，不再问核心。
+    for _ in 0..3 {
+        phone.dispatch(set_draft(&room, body.clone())).unwrap();
+        let draft = phone
+            .draft(TimelineTarget {
+                room_id: room.clone(),
+                thread_root: None,
+            })
+            .await
+            .unwrap()
+            .expect("草稿应该在");
+        assert_eq!(draft.preview, Some(want.clone()));
+    }
+    assert_eq!(home.link_preview_requests(), 1, "同一份草稿重复取了");
+}
+
+#[tokio::test(flavor = "multi_thread")]
+#[ignore = "需要 Docker，用 --include-ignored 运行"]
 async fn a_failed_preview_shows_the_category_and_no_card() {
     let dir = tempfile::tempdir().unwrap();
     let phone = Phone::open(dir.path());
