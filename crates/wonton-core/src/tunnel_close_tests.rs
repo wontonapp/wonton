@@ -11,7 +11,13 @@ use std::{
     time::Duration,
 };
 
-use axum::{Router, body::Body, routing::get};
+use axum::{
+    Router,
+    body::Body,
+    extract::State,
+    routing::{get, post},
+};
+use http_body_util::BodyExt;
 use hyper::{
     Response,
     body::{Bytes, Frame},
@@ -20,10 +26,10 @@ use iroh::{
     Endpoint, SecretKey,
     endpoint::{Connection, ReadError, RecvStream, SendStream, presets},
 };
-use tokio::{task::JoinHandle, time::timeout};
+use tokio::{sync::Notify, task::JoinHandle, time::timeout};
 use wonton_tunnel::{PeerStream, wire::ALPN};
 
-use super::serve_stream;
+use super::{CLOSE_DRAIN, serve_stream};
 
 const WAIT: Duration = Duration::from_secs(5);
 
@@ -73,7 +79,7 @@ async fn a_broken_response_body_ends_the_stream_with_a_clean_fin() {
     assert_eq!(logs.matches("tunnel_stream_aborted").count(), 1, "{logs}");
     assert!(logs.contains("side=upstream"), "{logs}");
     assert!(logs.contains("is_panic=false"), "{logs}");
-    assert!(logs.contains("category=broken_body"), "{logs}");
+    assert!(logs.contains("category=response_body_aborted"), "{logs}");
     stream.finish().await;
 }
 
@@ -113,8 +119,70 @@ async fn a_second_request_on_a_broken_keep_alive_stream_is_not_swallowed() {
     redialed.finish().await;
 }
 
+/// 请求体还在途（handler 读过一帧、`Content-Length` 没发完）时出错：先给客户端 FIN，再排空读半边。
+/// 对端不发完也不复位，排空得在 `CLOSE_DRAIN` 上限收尾，任务不能一直挂着。
+#[tokio::test(start_paused = true)]
+async fn an_in_flight_request_body_is_drained_until_the_close_bound() {
+    let (logs, _scope) = capture();
+    let probed = Arc::new(Notify::new());
+    let mut stream = connect(app_with(probed.clone())).await;
+
+    stream.send.write_all(&upload_head()).await.unwrap();
+    stream.send.write_all(&[b'x'; 10]).await.unwrap();
+    timeout(WAIT, probed.notified())
+        .await
+        .expect("handler 没读请求体");
+
+    let (bytes, end) = stream.read_all().await;
+    let text = String::from_utf8_lossy(&bytes);
+    assert!(
+        text.starts_with("HTTP/1.1 200"),
+        "200 头没到：{text:?}（结束：{end:?}）"
+    );
+    assert!(text.contains("first"), "出错前那一块没到：{text:?}");
+    assert!(end.is_ok(), "读到复位而不是 EOF：{end:?}；已收到 {text:?}");
+
+    // 请求体还差 90 字节、对端也没发 FIN：任务必须停在排空读半边上。
+    tokio::time::sleep(CLOSE_DRAIN / 2).await;
+    assert!(!stream.task.is_finished(), "有在途请求却没排空就结束了");
+    tokio::time::sleep(CLOSE_DRAIN / 2 + Duration::from_millis(100)).await;
+    assert!(stream.task.is_finished(), "过了上限还在排空");
+
+    let logs = logs.text();
+    assert!(logs.contains("没在 2s 内读完"), "{logs}");
+    stream.finish().await;
+}
+
+/// 排空途中对端复位：读半边报错，排空立即收尾，不必等满上限。
+#[tokio::test(start_paused = true)]
+async fn a_peer_reset_ends_the_drain_early() {
+    let (logs, _scope) = capture();
+    let probed = Arc::new(Notify::new());
+    let mut stream = connect(app_with(probed.clone())).await;
+
+    stream.send.write_all(&upload_head()).await.unwrap();
+    stream.send.write_all(&[b'x'; 10]).await.unwrap();
+    timeout(WAIT, probed.notified())
+        .await
+        .expect("handler 没读请求体");
+
+    let (_, end) = stream.read_all().await;
+    assert!(end.is_ok(), "读到复位而不是 EOF：{end:?}");
+    tokio::time::sleep(CLOSE_DRAIN / 2).await;
+    assert!(!stream.task.is_finished(), "有在途请求却没排空就结束了");
+
+    stream.send.reset(0u32.into()).unwrap();
+    tokio::time::sleep(Duration::from_millis(1)).await;
+    assert!(stream.task.is_finished(), "对端复位之后还在排空");
+
+    let logs = logs.text();
+    assert!(!logs.contains("没在"), "复位了却等到上限：{logs}");
+    stream.finish().await;
+}
+
 #[tokio::test]
 async fn two_requests_share_one_keep_alive_stream() {
+    let (logs, _scope) = capture();
     let mut stream = connect(app()).await;
 
     for _ in 0..2 {
@@ -127,10 +195,19 @@ async fn two_requests_share_one_keep_alive_stream() {
     stream.send.finish().ok();
     let (_, end) = stream.read_all().await;
     assert!(end.is_ok(), "客户端收尾后服务端也没给 EOF：{end:?}");
+
+    let logs = logs.text();
+    assert!(logs.contains("隧道上的 HTTP 连接结束"), "{logs}");
+    assert!(logs.contains("side=downstream"), "{logs}");
+    assert!(logs.contains("category=closed"), "{logs}");
     stream.finish().await;
 }
 
 fn app() -> Router {
+    app_with(Arc::new(Notify::new()))
+}
+
+fn app_with(probed: Arc<Notify>) -> Router {
     Router::new()
         .route("/b", get(|| async { "second" }))
         .route(
@@ -141,10 +218,24 @@ fn app() -> Router {
             "/broken-body",
             get(|| async { Response::new(Body::new(HalfBody::new(End::Error))) }),
         )
+        .route("/upload", post(upload))
+        .with_state(probed)
+}
+
+/// 读一帧请求体、通知测试（在途标记已置真），然后让响应体出错。
+async fn upload(State(probed): State<Arc<Notify>>, body: Body) -> Response<Body> {
+    let mut body = body;
+    assert!(body.frame().await.is_some(), "请求体一帧都没有");
+    probed.notify_one();
+    Response::new(Body::new(HalfBody::new(End::Error)))
 }
 
 fn request(path: &str) -> Vec<u8> {
     format!("GET {path} HTTP/1.1\r\nHost: gateway\r\n\r\n").into_bytes()
+}
+
+fn upload_head() -> Vec<u8> {
+    b"POST /upload HTTP/1.1\r\nHost: gateway\r\nContent-Length: 100\r\n\r\n".to_vec()
 }
 
 /// 响应体写到一半怎么结束。
@@ -333,6 +424,7 @@ fn capture() -> (Logs, tracing::subscriber::DefaultGuard) {
     let subscriber = tracing_subscriber::fmt()
         .with_writer(logs.clone())
         .with_ansi(false)
+        .with_max_level(tracing::Level::DEBUG)
         .finish();
     let guard = tracing::subscriber::set_default(subscriber);
     tracing::error!("capture-probe");
