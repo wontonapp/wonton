@@ -18,7 +18,6 @@ struct ChatRoomView: View {
     @State private var visibleRows: [String: CGFloat] = [:]
     /// 正在选转发目标的条目、正在确认撤回的条目。
     @State private var forwarding: String?
-    @State private var pickingForwardRoom = false
     @State private var redactItem: String?
     @State private var showingRedact = false
     @State private var showingConfirmations = false
@@ -59,7 +58,14 @@ struct ChatRoomView: View {
                 ) {
                     roomContent
                     #if DEBUG
-                        .overlay(alignment: .topLeading) { ScrollDebug(pin: pin) }
+                        .overlay(alignment: .topLeading) {
+                            ScrollDebug(
+                                pin: pin,
+                                extra: "sub=\(timeline.debugSubscribes) up=\(timeline.debugUpdates)"
+                                    + " n=\(timeline.items.count)"
+                                    + " end=\(timeline.debugEnded) closed=\(model.debugClosed)"
+                            )
+                        }
                     #endif
                 }
             }
@@ -118,23 +124,7 @@ private extension ChatRoomView {
             .environment(pages)
             .environment(plugins)
         }
-        .wontonSheet(isPresented: $pickingForwardRoom,
-            title: String(localized: .Message0.messageForwardTitle)) { close in
-            ForwardRoomSheet(model: model, plugins: plugins, rooms: forwardRooms) { targets in
-                close {
-                    guard let item = forwarding else { return }
-                    forwarding = nil
-                    // 只发给一个会话时跟过去看（原来的行为）；发给几个就留在这里，每个会话各发一次。
-                    if targets.count == 1, let only = targets.first {
-                        model.forward(item, from: roomId, to: only.roomId)
-                    } else {
-                        for room in targets {
-                            sendTimeline(.forwardMessage(target: target, itemId: item, toRoomId: room.roomId))
-                        }
-                    }
-                }
-            }
-        }
+        .forwardSheet(item: $forwarding, model: model, plugins: plugins, from: target)
         .navigationDestination(isPresented: $showsBotProfile) {
             if let profileBot {
                 BotProfileView(chat: model, plugins: plugins, botRef: profileBot, openPanel: openPanelFromProfile)
@@ -156,14 +146,14 @@ private extension ChatRoomView {
         .environment(presenter)
         // 开新旁聊的面板（ADR-0093 §6）。
         .modifier(NewSideChatSheet(model: model, roomId: roomId))
-        // 盖层见 body 里的 SideChatCover：这里不另做系统呈现，免得和收起的“开新旁聊”面板撞在同一个呈现时机上。
+        // 盖层见 body 里的 SideChatCover（一张系统全屏页）；“开新旁聊”面板收起和它抬起来会落在同一个呈现时机上。
         .modifier(RoomTopBar(
             title: bot?.name ?? title,
             avatar: barAvatar,
             typing: typingText,
             openProfile: profileAction,
             sideChatTitle: threadRoot == nil ? nil : timeline.sideChat?.title ?? String(localized: .Chat.sideChat),
-            close: threadRoot == nil ? nil : { model.closeSideChat(in: roomId) }
+            close: threadRoot == nil ? nil : { model.closeSideChat(in: roomId, why: "bar") }
         ) {
             // 面板跟着主对话（ADR-0093）：旁聊页没有房间的面板，也没有这里的按钮。
             // 房间里装着的 widget（通话）：点了全屏打开，关掉回到这里（ADR-0096）。旁聊页没有。
@@ -200,7 +190,7 @@ private extension ChatRoomView {
             if await timeline.observe(pin: pin) {
                 if threadRoot != nil {
                     // 旁聊没了：只收起旁聊，主对话还在。
-                    model.closeSideChat(in: roomId)
+                    model.closeSideChat(in: roomId, why: "ended")
                 } else if !isContentRoot {
                     model.path = []
                     model.visiting = nil
@@ -217,7 +207,7 @@ private extension ChatRoomView {
                 }
             } else if model.sideChats[roomId] == threadRoot {
                 // 旁聊页收起时同步关掉：改回主对话就不再算“旁聊开着”。
-                model.closeSideChat(in: roomId)
+                model.closeSideChat(in: roomId, why: "gone")
             }
         }
         .onChange(of: covered) { _, isCovered in
@@ -407,10 +397,7 @@ private extension ChatRoomView {
             cancel: { sendTimeline(.cancelSend(target: target, itemId: item.id)) },
             cardAction: { model.send($0) },
             reply: { model.startReply(.ready(message: $0), in: target) },
-            forward: {
-                forwarding = item.id
-                pickingForwardRoom = true
-            },
+            forward: { forwarding = item.id },
             redact: {
                 redactItem = item.id
                 showingRedact = true
@@ -646,11 +633,6 @@ private extension ChatRoomView {
         return others == 0
             ? String(localized: .Chat.roomTypingOne(first))
             : String(localized: .Chat.roomTypingMany(first, others))
-    }
-
-    /// 可以转发到的房间：已加入、能写。
-    var forwardRooms: [RoomRow] {
-        model.viewModel.rooms.filter { $0.membership == .joined && !$0.isReadOnly }
     }
 
     var isReadOnly: Bool {

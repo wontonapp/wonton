@@ -781,6 +781,66 @@
           }
         }
       }
+    },
+    "composer.attachOnlyMain": {
+      "comment": "Shown above the composer in a side chat: attachments can't be added there. ADR-0093, ADR-0109 §8.",
+      "extractionState": "manual",
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Attachments can only be sent in the main chat."
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "附件只能在主对话里发。"
+          }
+        },
+        "zh-Hant": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "附件只能在主對話裡傳送。"
+          }
+        },
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "添付はメインのチャットでのみ送れます。"
+          }
+        }
+      }
+    },
+    "composer.openMainChat": {
+      "comment": "Button on that hint: leaves the side chat and opens the main chat.",
+      "extractionState": "manual",
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Open the main chat"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "打开主对话"
+          }
+        },
+        "zh-Hant": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "打開主對話"
+          }
+        },
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "メインのチャットを開く"
+          }
+        }
+      }
     }
   }
 }

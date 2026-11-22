@@ -15,9 +15,9 @@ use std::sync::LazyLock;
 use wonton_protocol::{
     BackPagination, ChoiceSend, ChoicesState, MessageAction, MessageChoice, MessageChoices,
     MessageContent, MessageStatus, PanelItem, PanelSource, QuotedContent, QuotedMessage,
-    ReplyQuote, RichBlock, RichBlockKind, RichSpan, RoomCommand, SendState, TabIcon, TabLayout,
-    TabPage, TabRef, TabState, TimelineContent, TimelineDiff, TimelineItem, TimelineMessage,
-    TimelineUpdate, TimelineViewport,
+    ReplyQuote, RichBlock, RichBlockKind, RichSpan, RoomCommand, SendState, SideChatCard,
+    SideChatState, TabIcon, TabLayout, TabPage, TabRef, TabState, TimelineContent, TimelineDiff,
+    TimelineItem, TimelineMessage, TimelineUpdate, TimelineViewport,
 };
 
 /// 主面板和房间面板里放的那一页。本机端口占不上时没有这一页。
@@ -142,6 +142,8 @@ pub(super) const REPLY_INDEX: usize = 21;
 pub(super) const CHOICES_INDEX: usize = 22;
 /// 一条“表情 + 一行字”的短消息，下一条长中文回复引用它：引用块要只有名字加一两行高。
 pub(super) const QUOTED_INDEX: usize = 19;
+/// 挂着旁聊卡片的那条（靠近底部，不撑高）：点卡片进旁聊（ADR-0093）。
+pub(super) const SIDE_CHAT_INDEX: usize = 21;
 /// 引用上一条的长中文回复：几段长短不一，有的末行写满，用来查时间戳和正文重叠、长段被截断。
 pub(super) const LONG_REPLY_INDEX: usize = 20;
 // 中文假数据放在数据文件里：它是界面测试的输入，不是界面文字，界面文字检查（ADR-0043）只管源码里的字符串。
@@ -233,6 +235,15 @@ fn item(index: usize) -> TimelineItem {
                 })
                 .collect(),
             state: ChoicesState::Open,
+        });
+    }
+    if index == SIDE_CHAT_INDEX {
+        message.side_chat = Some(SideChatCard {
+            root_event_id: message.event_id.clone().unwrap_or_default(),
+            title: "Fixture side chat".into(),
+            reply_count: 1,
+            unread_count: 0,
+            state: SideChatState::Open,
         });
     }
     TimelineItem {
