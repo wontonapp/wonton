@@ -15,9 +15,9 @@
 //! 媒体、商店列表和别的操作后的新状态不在里面，
 //! 要用这些的测试仍然连开发栈（见 `apps/ios/WontonUITests/UITestBackend.swift`）。
 
+use std::sync::Arc;
 use std::sync::atomic::AtomicUsize;
 use std::sync::atomic::Ordering;
-use std::sync::Arc;
 use std::time::{SystemTime, UNIX_EPOCH};
 
 use tokio::sync::watch;
@@ -626,16 +626,18 @@ mod tests {
         assert_eq!(core.pages().root, TabRef::Chat);
         assert_eq!(core.onboarding().step, Some(OnboardingStep::Finished));
         // 操作不落到作用域。
-        assert!(core
-            .dispatch(Action::Pages {
+        assert!(
+            core.dispatch(Action::Pages {
                 action: PageAction::OpenPage { tab: TabRef::Apps },
             })
-            .is_ok());
-        assert!(core
-            .dispatch(Action::Plugins {
+            .is_ok()
+        );
+        assert!(
+            core.dispatch(Action::Plugins {
                 action: wonton_protocol::PluginAction::RefreshPlugins
             })
-            .is_ok());
+            .is_ok()
+        );
         assert_eq!(core.pages().root, TabRef::Chat);
         let _ = std::fs::remove_dir_all(&dir);
     }
@@ -681,14 +683,15 @@ mod tests {
         assert_eq!(view.attachments.len(), 1);
         assert_eq!(view.attachments[0].id, second);
         // 拿掉的再拿一次才算找不到。
-        assert!(core
-            .dispatch(Action::Timeline {
+        assert!(
+            core.dispatch(Action::Timeline {
                 action: TimelineAction::RemoveAttachment {
                     target,
                     attachment_id: first,
                 },
             })
-            .is_err());
+            .is_err()
+        );
         let _ = std::fs::remove_dir_all(&dir);
     }
 
