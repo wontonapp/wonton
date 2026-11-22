@@ -14,12 +14,12 @@
 
 ## 链上三步
 
-1. **#831 修复（基本做完，差全套结果和截图）**
+1. **#831 修复（代码和全套都绿，差看截图和推送）**
    - 复审 1-11 全部落地：`ForwardSend.swift` 补 `Foundation`；被拒不清草稿/回复（`ComposerModel.send`/`sendImage` 返回 Bool）；等照片期间的打字按“草稿是否还是派发时那句”保留；发送键转圈；无附件也能发；`size.attachTab`/`ratio.tabHighlight` 0.14；`AttachSheet` 取消说明；权限等待 10 秒；`attach-tabs-dark` 深色图；旁聊提示（`sideChatAttachHint`，四语言）；ADR-0093/0109 对应句子。
    - 额外修了三个真 bug：旧的侧聊盖层（`NavigationStack` 塞 `ZStack`，iOS 26 空白且自己收起）换成 `fullScreenCover(item:)` + `@State shown`；失败提示从标签页那层的全局 `wontonDialog` 改成输入栏上方的 `ComposerRejection`（两者抢呈现会把盖层挤掉，日志实证 `side chat closed why=gone`）；假数据把“停在门外的转发内容”写进每一份新订阅的第一批（壳为同一次进门会建两次订阅）。
    - 两条红用例现在单独跑都绿：侧聊那条见 `.walk/probe13.log`，前向那条见 `.walk/probe22.log`（`test-exit=0`）。
    - SwiftLint 0（`.walk/1122-195354.swiftlint.log`）。
-   - **没做**：全套五个测试类还没出结果（`green1` 在 mini 排队，见下）、截图没逐张看、没推、没转 ready。
+   - **全套已绿**（`.walk/green1.log`：34 条 0 失败，`test-exit=0`；lint 0、深色那条 0，截图已导出成 `.walk/shots-1122-203512/` 与 `dark/`）。没做的只剩：截图逐张看、推、转 ready。
 2. **#859（代码做完，卡在 #831 合并）**
    - r2 条目 1/3/4/5/6/7/8/9/10 已落地（`&TimelineTarget` + 旁聊 Rust 用例；`fullScreenCover(item:)` 那份其实已经挪进 #831；新开旁聊挪到面板 `afterDismiss`；`SendImage` 假回显 + 三条断言；`barBack` 点了再断言；ADR 写明只有 iOS 十张；提交顺序假数据在前；`remaining` 注释；helper 去重）。
    - 本机 `cargo clippy -p wonton-client --all-targets --features ui-fake --locked -- -D warnings` 过（`.walk` 里没留日志，重跑一次即可）。CI 原来红在这条和 `nextest`,本地已修好、未推。
@@ -36,11 +36,11 @@
 
 ## 正在跑的
 
-- mini 上 `nohup … chat-ios-831.test.sh`，日志 `.walk/green1.log`，`tests.env` 是五个类全套。mindir `/Users/jiale/wonton-dev/chat-ios-831`。跑完的结果和截图在 `.walk/green1.log` 和 minidir 的 `.walk/shots-<stamp>/`（浅色 `shots-<stamp>/`、深色 `shots-<stamp>/dark/`）。跑完要 `xcrun simctl shutdown chat-ios-831`。
+- 没有在跑的了；`green1` 已结束（34 条 0 失败）。截图在 minidir `/Users/jiale/wonton-dev/chat-ios-831/.walk/shots-1122-203512/`（深色在 `dark/`）。记得 `xcrun simctl shutdown chat-ios-831`。
 
 ## 剩下步骤
 
-1. 看 `green1` 结果；红了修到绿；逐张看浅/深截图（附件切换排、选中、被拒、转发、旁聊提示/被拒）。
+1. 逐张看浅/深截图（附件切换排、选中、被拒、转发、旁聊提示/被拒），红绿和全套都已绿。
 2. `git push --force-with-lease` 推 #831，`gh pr ready 831`；PR 正文用 `.walk/pr831.md`（`gh pr edit --body-file` 后用 `gh pr view` 核一遍），**不要把截图传到公开地方以外**。
 3. 等 #837 + 转发附言的核心 PR 合进 main 后再做单次派发（`comment`），否则保留 `SendText`+`ForwardMessage` 两个动作。
 4. #831 合并后：`chat-ios-859` rebase 到含 #831 的 main，解冲突（`ComposerView` 附件面板 `limit:` 留 `composer.photoRoom`、用 #831 的 `send:`；`SideChatCover` 取 main 的；测试 `attachDone` → `attachSend`；ADR 把“旁聊开不出面板”那句删掉、十张限制并进 #831 的句子），跑它自己的全套 + 截图，`--force-with-lease` 推、`gh pr ready 859`。
