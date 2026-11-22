@@ -12,7 +12,10 @@ import json
 import sys
 from pathlib import Path
 
-from PIL import Image, ImageDraw, ImageFilter, ImageOps
+try:
+    from PIL import Image, ImageDraw, ImageFilter, ImageOps
+except ImportError:
+    sys.exit("要 Pillow：python3 -m pip install pillow")
 
 ROOT = Path(__file__).resolve().parent.parent
 DESIGN = ROOT / "design/app-icon/mascot"
@@ -43,7 +46,7 @@ ANDROID_FILL = 0.52
 ANDROID_SIDE = 432
 # 单色版里视为“五官”的亮度上限，和挖空处的最小面积（像素）。
 FACE_DARK = 110
-FACE_MIN_AREA = 40
+FACE_MIN_AREA = 150
 
 
 def gradient(size, top, bottom):
@@ -55,7 +58,10 @@ def gradient(size, top, bottom):
 
 
 def character():
-    image = Image.open(DESIGN / "cutout.png").convert("RGBA")
+    source = Image.open(DESIGN / "cutout.png")
+    if source.mode != "RGBA" or source.getchannel("A").getextrema()[0] == 255:
+        sys.exit("design/app-icon/mascot/cutout.png 要是带透明边的 RGBA 抠图，没有 alpha 会把整张画布带进来")
+    image = source.convert("RGBA")
     return image.crop(image.split()[-1].getbbox())
 
 
@@ -181,7 +187,7 @@ def ios_app_icon():
         for points, scale in IOS_SIZES:
             side = round(float(points) * scale)
             filename = f"{name}-{points}@{scale}x.png"
-            full.resize((side, side), Image.LANCZOS).save(directory / filename)
+            full.resize((side, side), Image.LANCZOS).save(directory / filename, optimize=True)
             images.append(
                 {
                     **extra,
@@ -193,7 +199,7 @@ def ios_app_icon():
                 }
             )
         filename = f"{name}-1024.png"
-        full.save(directory / filename)
+        full.save(directory / filename, optimize=True)
         images.append({**extra, "filename": filename, "idiom": "universal", "platform": "ios", "size": "1024x1024"})
     write_json(directory / "Contents.json", {"images": images, **XCASSETS_INFO})
 
@@ -252,10 +258,6 @@ def android_adaptive_icon():
 
 
 def main():
-    try:
-        import PIL  # noqa: F401
-    except ImportError:
-        sys.exit("要 Pillow：python3 -m pip install pillow")
     ios_app_icon()
     android()
     print("App 图标已生成")

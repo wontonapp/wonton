@@ -34,19 +34,11 @@ class Master:
     """一份母版 SVG 里的字形和摆放。"""
 
     path: str
-    scale: float
     center_x: float
     center_y: float
     stroke_width: float
     paper: str
     ink: str
-
-    def icon_svg(self, side, background, foreground):
-        return (
-            f'<svg xmlns="http://www.w3.org/2000/svg" width="{side}" height="{side}" viewBox="0 0 1024 1024">'
-            f'<rect width="1024" height="1024" fill="{background}"/>'
-            f'<g transform="{self._placement(512, self.scale)}">{self._glyph(foreground)}</g></svg>'
-        )
 
     def glyph_svg(self, side, foreground):
         """紧贴字形的透明底 SVG：字形撑满画布，留一个描边的余量。"""
@@ -82,7 +74,6 @@ def load_master(name):
         sys.exit(f"{name} 的字形和 yun-oracle.svg 不一致")
     return Master(
         path=upstream,
-        scale=float(matched[1]),
         center_x=float(matched[2]),
         center_y=float(matched[3]),
         stroke_width=float(glyph.get("stroke-width")),
