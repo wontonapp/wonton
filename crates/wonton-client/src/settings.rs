@@ -411,8 +411,10 @@ mod tests {
     #[test]
     fn the_members_entry_needs_the_permission_and_counts_people() {
         let view = |access: FamilyAccess, members: u32, requests: u32| {
-            let mut family = FamilyViewModel::default();
-            family.access = access;
+            let mut family = FamilyViewModel {
+                access,
+                ..FamilyViewModel::default()
+            };
             family.members.members = (0..members)
                 .map(|index| MemberRow {
                     username: format!("m{index}"),

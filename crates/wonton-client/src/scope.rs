@@ -207,19 +207,19 @@ fn chat_links(
     })
 }
 
+/// 好友、成员和设置这几条链接一起建，名字只在这里拼一次。
+type PeopleLinks = (
+    Arc<PeersLink>,
+    Arc<FriendsLink>,
+    Arc<FamilyLink>,
+    SettingsLink,
+);
+
 fn people_links(
     shared: &Shared<'_>,
     servers: watch::Receiver<ServersViewModel>,
     chat: &Arc<ChatLink>,
-) -> Result<
-    (
-        Arc<PeersLink>,
-        Arc<FriendsLink>,
-        Arc<FamilyLink>,
-        SettingsLink,
-    ),
-    CoreError,
-> {
+) -> Result<PeopleLinks, CoreError> {
     let Shared {
         slot: _,
         handle,

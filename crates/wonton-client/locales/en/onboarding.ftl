@@ -62,9 +62,6 @@ home-pairing-setup-failed = The device paired, but its connection couldn't be se
 # Readable pairing details. $reason is localized; elapsed is total time, stage is the limit for each exchange stage, both in seconds.
 home-pairing-failed-detail = { $reason } Total elapsed: { $elapsed_seconds } seconds. Each pairing exchange stage has a { $stage_seconds }-second limit.
 
-home-pairing-joining-pending = This is a joining code: waiting for an admin to approve.
-home-pairing-joining-pending-role = This is a joining code: waiting for an admin to approve. Once approved, you join as { $role }.
-
 # Failure categories without underlying error text; raw details stay in Diagnostics.
 home-failure-transport = The connection to your home server couldn't be established or was interrupted. Check both networks and try again.
 home-failure-unauthorized = Your home server rejected this device. Pair it again from an authorized device or the server.

@@ -243,7 +243,14 @@ async fn a_member_without_the_permission_gets_no_actions_and_no_error_fuss() {
     );
     assert!(view.roles.problem.is_none(), "角色读不到不算失败");
 
-    // 管理员邀请不填角色，拿默认角色。
+    // 管理员能管成员但不能选角色：邀请只带名字，角色由核心给默认值。
+    rig.core.family.manager();
+    refresh(&rig);
+    let view = family(&rig, "管理员", |view| view.access.manages_members()).await;
+    assert!(!view.access.is_owner);
+    assert!(!view.access.chooses_role());
+    assert!(view.members.problem.is_none());
+
     invite(&rig, "来客", Some("child"));
     let view = family(&rig, "管理员邀请", |view| view.invite.is_some()).await;
     assert_eq!(view.invite.unwrap().display_name, "来客");

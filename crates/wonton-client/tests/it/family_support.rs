@@ -13,6 +13,9 @@ use wonton_protocol::{
     RoleTemplate,
 };
 
+/// 一个注定失败的请求的回应：状态、类别、响应体；没类别时按裸状态和响应体回。
+type ForcedFailure = (u16, Option<String>, String);
+
 #[derive(Default)]
 pub struct FamilyFake {
     me: Mutex<Option<serde_json::Value>>,
@@ -23,7 +26,7 @@ pub struct FamilyFake {
     codes: Mutex<HashMap<String, String>>,
     issued: Mutex<u64>,
     /// 下一个请求注定失败的接口和回应（状态、类别、响应体）。
-    failures: Mutex<HashMap<(Method, String), (u16, Option<String>, String)>>,
+    failures: Mutex<HashMap<(Method, String), ForcedFailure>>,
 }
 
 fn member(username: &str, role_id: &str, status: MemberStatus) -> Member {
@@ -73,6 +76,26 @@ impl FamilyFake {
                 "role_name": "朋友",
                 "display_name": "Bob",
                 "permissions": Permissions::strictest(),
+            }),
+            None,
+        );
+    }
+
+    /// 能管成员、但不是主人的管理员。
+    pub fn manager(&self) {
+        let permissions = Permissions {
+            manage_members: true,
+            ..Permissions::strictest()
+        };
+        self.set_me(
+            serde_json::json!({
+                "user_id": "@bob:wonton.localhost",
+                "username": "bob",
+                "is_owner": false,
+                "role_id": "admin",
+                "role_name": "管理员",
+                "display_name": "Bob",
+                "permissions": permissions,
             }),
             None,
         );
@@ -194,40 +217,11 @@ fn decode(path: &str) -> String {
 }
 /// 这个请求归成员接口时回一份回应；不归时 `None`。
 pub fn respond(fake: &FamilyFake, method: &Method, path: &str, body: &[u8]) -> Option<Response> {
-    if let Some((status, kind, body)) = fake
-        .failures
-        .lock()
-        .unwrap()
-        .remove(&(method.clone(), path.to_owned()))
-    {
-        return Some(match kind {
-            Some(kind) => error(status, &kind, &body),
-            None => (StatusCode::from_u16(status).unwrap(), body).into_response(),
-        });
+    if let Some(reply) = forced(fake, method, path) {
+        return Some(reply);
     }
-    let (owner, managing) = match fake.me.lock().unwrap().as_ref() {
-        Some(me) => (
-            me["is_owner"].as_bool() == Some(true),
-            me["is_owner"].as_bool() == Some(true)
-                || me["permissions"]["manage_members"].as_bool() == Some(true),
-        ),
-        None => (true, true),
-    };
-    let members_path = path.starts_with("/_wonton/api/members");
-    let roles_path =
-        path.starts_with("/_wonton/api/roles") || path.starts_with("/_wonton/api/friends/");
-    let denied = |kind: &str| {
-        Some(error(
-            403,
-            "permission_required",
-            &format!("{{\"missing\":\"{kind}\"}}"),
-        ))
-    };
-    if members_path && !managing && !path.ends_with("/me") {
-        return denied("manage_members");
-    }
-    if roles_path && !owner {
-        return denied("owner");
+    if let Some(denied) = permission(fake, path) {
+        return Some(denied);
     }
     let decoded = decode(path);
     let segments: Vec<&str> = decoded
@@ -236,104 +230,188 @@ pub fn respond(fake: &FamilyFake, method: &Method, path: &str, body: &[u8]) -> O
         .split('/')
         .filter(|segment| !segment.is_empty())
         .collect();
-    match (method, segments.as_slice()) {
-        (&Method::GET, ["me"]) => fake.me.lock().unwrap().as_ref().map(json),
+    match segments.first().copied() {
+        Some("me") if method == Method::GET => fake.me.lock().unwrap().as_ref().map(json),
+        Some("members") => member_reply(fake, method, &segments, body),
+        Some("roles") => role_reply(fake, method, &segments, body),
+        _ => None,
+    }
+}
+
+/// 测试塞进来的失败比真实处理优先。
+fn forced(fake: &FamilyFake, method: &Method, path: &str) -> Option<Response> {
+    let (status, kind, body) = fake
+        .failures
+        .lock()
+        .unwrap()
+        .remove(&(method.clone(), path.to_owned()))?;
+    Some(match kind {
+        Some(kind) => error(status, &kind, &body),
+        None => (StatusCode::from_u16(status).unwrap(), body).into_response(),
+    })
+}
+
+/// 权限不够时回 403，带上缺的项：成员接口要“管理成员”，角色接口只有主人能进。
+fn permission(fake: &FamilyFake, path: &str) -> Option<Response> {
+    let me = fake.me.lock().unwrap();
+    let (owner, managing) = match me.as_ref() {
+        Some(me) => (
+            me["is_owner"].as_bool() == Some(true),
+            me["is_owner"].as_bool() == Some(true)
+                || me["permissions"]["manage_members"].as_bool() == Some(true),
+        ),
+        None => (true, true),
+    };
+    let denied = |kind: &str| {
+        Some(error(
+            403,
+            "permission_required",
+            &format!("{{\"missing\":\"{kind}\"}}"),
+        ))
+    };
+    if path.starts_with("/_wonton/api/members") && !managing && !path.ends_with("/me") {
+        return denied("manage_members");
+    }
+    if (path.starts_with("/_wonton/api/roles") || path.starts_with("/_wonton/api/friends/"))
+        && !owner
+    {
+        return denied("owner");
+    }
+    None
+}
+
+/// 成员接口：成员列表、邀请、码、移除、改角色和加入请求。
+fn member_reply(
+    fake: &FamilyFake,
+    method: &Method,
+    segments: &[&str],
+    body: &[u8],
+) -> Option<Response> {
+    match (method, segments) {
         (&Method::GET, ["members"]) => Some(json(MemberList {
             members: fake.members.lock().unwrap().clone(),
         })),
-        (&Method::POST, ["members"]) => {
-            let invite: MemberInvite = serde_json::from_slice(body).ok()?;
-            let role_id = invite
-                .role_id
-                .clone()
-                .unwrap_or_else(|| fake.default_invite_role.lock().unwrap().clone());
-            let username = invite
-                .username
-                .clone()
-                .unwrap_or_else(|| invite.display_name.clone());
-            let created = Member {
-                display_name: invite.display_name,
-                status: MemberStatus::Invited,
-                ..member(&username, &role_id, MemberStatus::Invited)
-            };
-            fake.members.lock().unwrap().push(created.clone());
-            Some(
-                (
-                    StatusCode::CREATED,
-                    serde_json::to_string(&created).unwrap(),
-                )
-                    .into_response(),
-            )
-        }
-        (&Method::POST, ["members", username, "pairing-code"]) => {
-            let mut members = fake.members.lock().unwrap();
-            let found = members
-                .iter_mut()
-                .find(|member| member.username == *username && invited(member))?;
-            let expires_at_ms = u64::MAX;
-            found.pairing_code_expires_at_ms = Some(expires_at_ms);
-            let mut issued = fake.issued.lock().unwrap();
-            *issued += 1;
-            let code = format!("wonton://pair/{username}?n={issued}");
-            fake.codes
-                .lock()
-                .unwrap()
-                .insert((*username).to_owned(), code.clone());
-            Some(json(MemberPairingCode {
-                code,
-                expires_at_ms,
-            }))
-        }
-        (&Method::DELETE, ["members", username, "pairing-code"]) => {
-            fake.codes.lock().unwrap().remove(*username);
-            fake.members
-                .lock()
-                .unwrap()
-                .iter_mut()
-                .find(|member| member.username == *username)
-                .map(|member| member.pairing_code_expires_at_ms = None);
-            Some(StatusCode::NO_CONTENT.into_response())
-        }
-        (&Method::POST, ["members", username, "remove"]) => {
-            let removal: MemberRemoval = serde_json::from_slice(body).ok()?;
-            let _ = removal;
-            let mut members = fake.members.lock().unwrap();
-            let found = members
-                .iter_mut()
-                .find(|member| member.username == *username)?;
-            found.status = MemberStatus::Removed;
-            fake.codes.lock().unwrap().remove(*username);
-            Some(json(found.clone()))
-        }
-        (&Method::PUT, ["members", username, "role"]) => {
-            let assignment: RoleAssignment = serde_json::from_slice(body).ok()?;
-            {
-                let mut members = fake.members.lock().unwrap();
-                let found = members
-                    .iter_mut()
-                    .find(|member| member.username == *username)?;
-                found.role_id = assignment.role_id;
-            }
-            Some(json(list(fake)))
-        }
+        (&Method::POST, ["members"]) => Some(invite(fake, body)),
         (&Method::GET, ["members", "join-requests"]) => Some(json(JoinRequestList {
             requests: fake.requests.lock().unwrap().clone(),
         })),
-        (&Method::POST, ["members", "join-requests", id, decision]) => {
-            let mut requests = fake.requests.lock().unwrap();
-            let index = requests.iter().position(|request| request.id == *id)?;
-            let request = requests.remove(index);
-            if *decision == "approve" {
-                let mut members = fake.members.lock().unwrap();
-                let found = members
-                    .iter_mut()
-                    .find(|member| member.username == request.username)?;
-                found.status = MemberStatus::Joined;
-            } else {
-                fake.codes.lock().unwrap().remove(&request.username);
-            }
-            Some(StatusCode::NO_CONTENT.into_response())
-        }
+        (&Method::POST, ["members", "join-requests", id, decision]) => decide(fake, id, decision),
+        (&Method::POST, ["members", username, "pairing-code"]) => issue(fake, username),
+        (&Method::DELETE, ["members", username, "pairing-code"]) => revoke(fake, username),
+        (&Method::POST, ["members", username, "remove"]) => remove(fake, username, body),
+        (&Method::PUT, ["members", username, "role"]) => assign(fake, username, body),
+        _ => None,
+    }
+}
+
+/// 邀请：没带角色时用默认邀请角色。
+fn invite(fake: &FamilyFake, body: &[u8]) -> Response {
+    let invite: MemberInvite = serde_json::from_slice(body).unwrap();
+    let role_id = invite
+        .role_id
+        .clone()
+        .unwrap_or_else(|| fake.default_invite_role.lock().unwrap().clone());
+    let username = invite
+        .username
+        .clone()
+        .unwrap_or_else(|| invite.display_name.clone());
+    let created = Member {
+        display_name: invite.display_name,
+        status: MemberStatus::Invited,
+        ..member(&username, &role_id, MemberStatus::Invited)
+    };
+    fake.members.lock().unwrap().push(created.clone());
+    (
+        StatusCode::CREATED,
+        serde_json::to_string(&created).unwrap(),
+    )
+        .into_response()
+}
+
+/// 给被邀请的人一个码。
+fn issue(fake: &FamilyFake, username: &str) -> Option<Response> {
+    let mut members = fake.members.lock().unwrap();
+    let found = members
+        .iter_mut()
+        .find(|member| member.username == username && invited(member))?;
+    let expires_at_ms = u64::MAX;
+    found.pairing_code_expires_at_ms = Some(expires_at_ms);
+    let mut issued = fake.issued.lock().unwrap();
+    *issued += 1;
+    let code = format!("wonton://pair/{username}?n={issued}");
+    fake.codes
+        .lock()
+        .unwrap()
+        .insert(username.to_owned(), code.clone());
+    Some(json(MemberPairingCode {
+        code,
+        expires_at_ms,
+    }))
+}
+
+/// 作废这个人的码，成员行上的过期时间也清掉。
+fn revoke(fake: &FamilyFake, username: &str) -> Option<Response> {
+    fake.codes.lock().unwrap().remove(username);
+    if let Some(member) = fake
+        .members
+        .lock()
+        .unwrap()
+        .iter_mut()
+        .find(|member| member.username == username)
+    {
+        member.pairing_code_expires_at_ms = None;
+    }
+    Some(StatusCode::NO_CONTENT.into_response())
+}
+
+/// 移除：成员状态改掉、码作废，回新的成员行。
+fn remove(fake: &FamilyFake, username: &str, body: &[u8]) -> Option<Response> {
+    serde_json::from_slice::<MemberRemoval>(body).ok()?;
+    let mut members = fake.members.lock().unwrap();
+    let found = members
+        .iter_mut()
+        .find(|member| member.username == username)?;
+    found.status = MemberStatus::Removed;
+    fake.codes.lock().unwrap().remove(username);
+    Some(json(found.clone()))
+}
+
+/// 换角色：改完回整份角色列表。
+fn assign(fake: &FamilyFake, username: &str, body: &[u8]) -> Option<Response> {
+    let assignment: RoleAssignment = serde_json::from_slice(body).ok()?;
+    let mut members = fake.members.lock().unwrap();
+    let found = members
+        .iter_mut()
+        .find(|member| member.username == username)?;
+    found.role_id = assignment.role_id;
+    Some(json(list(fake)))
+}
+
+/// 同意或拒绝一条加入请求：同意把人改成已加入，拒绝连同码作废。
+fn decide(fake: &FamilyFake, id: &str, decision: &str) -> Option<Response> {
+    let mut requests = fake.requests.lock().unwrap();
+    let index = requests.iter().position(|request| request.id == id)?;
+    let request = requests.remove(index);
+    if decision == "approve" {
+        let mut members = fake.members.lock().unwrap();
+        let found = members
+            .iter_mut()
+            .find(|member| member.username == request.username)?;
+        found.status = MemberStatus::Joined;
+    } else {
+        fake.codes.lock().unwrap().remove(&request.username);
+    }
+    Some(StatusCode::NO_CONTENT.into_response())
+}
+
+/// 角色接口：写操作只有主人能进，列表里带默认邀请角色。
+fn role_reply(
+    fake: &FamilyFake,
+    method: &Method,
+    segments: &[&str],
+    body: &[u8],
+) -> Option<Response> {
+    match (method, segments) {
         (&Method::GET, ["roles"]) => Some(json(list(fake))),
         (&Method::POST, ["roles"]) => {
             let draft: RoleDraft = serde_json::from_slice(body).ok()?;
