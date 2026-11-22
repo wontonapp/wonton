@@ -147,6 +147,8 @@ iroh = { workspace = true, features = ["test-utils"] }
 tempfile = { workspace = true }
 # MIT OR Apache-2.0。按 TOML 语义验证 Tuwunel 的联邦配置。
 toml = "1.1"
+# MIT。排空上限的测试用暂停的时钟推进时间，不真等 2 秒。
+tokio = { workspace = true, features = ["test-util"] }
 # MIT。测试里和 Tuwunel 的 WebSocket 客户端对话（核心生产代码用不到）。
 tokio-websockets = { version = "0.13.3", default-features = false, features = ["server"] }
 
