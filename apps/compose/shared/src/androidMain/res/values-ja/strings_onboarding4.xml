@@ -15,5 +15,5 @@
     <!-- Problem title in setup: the recommendation source is turned off. -->
     <string name="onboarding_problem_store_disabled">おすすめの提供元が無効になっています。スキップできます。</string>
     <!-- Kind label above a review row: the apps that will be installed. -->
-    <string name="onboarding_review_section_apps">アプリ</string>
+    <string name="onboarding_review_section_apps">インストールするアプリ</string>
 </resources>
