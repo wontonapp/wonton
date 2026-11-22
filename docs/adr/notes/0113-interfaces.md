@@ -2,37 +2,39 @@
 
 只改接口的 PR 的全部改动。**全部只加不改**，没有破坏性项；ADR 正文列了为什么不上破坏性改动（#585 的收口在壳内）。字段级照 ADR-0113 第 3、4 节，类型用 Rust 写。
 
+所有要过壳的类型都照 `file/mod.rs:291-320` 的写法加 `#[cfg_attr(feature = "uniffi", derive(uniffi::Record))]`（枚举加 `uniffi::Enum`）；下面为了可读没有逐条重复。
+
 模块位置：`crates/wonton-protocol/src/media/`，`lib.rs` 加 `pub mod media;`，按职责分 `mod.rs`（常量与入口类型）、`task.rs`、`session.rs`、`view.rs`。
 
 ## `media/mod.rs`
 
 ```rust
-/// 能力名，插件清单 `provides.media_source` 与能力表共用这一串。
+/// 能力名，插件清单 `provides.capabilities.media_source` 与能力表共用这一串。
 pub const MEDIA_CAPABILITY: &str = "media_source";
-/// 每个请求都带；值是本机用户名（ADR-0088 的按人身份）。
-pub const WONTON_USER_HEADER: &str = "X-Wonton-User";
+/// 复用 `personal_data` 已有的那一个（`personal_data.rs:22`），不另定义。
+pub use crate::personal_data::WONTON_USER_HEADER;
+/// 同一个人两台设备时区分；不打用户表。
+pub const WONTON_DEVICE_HEADER: &str = "X-Wonton-Device";
 
 pub const PATH_CAPABILITIES: &str = "/_wonton/capabilities";
 pub const PATH_UPLOADS: &str = "/uploads";
 pub const PATH_PLAYBACK: &str = "/playback";
 pub const PATH_ITEMS: &str = "/items";
 
-#[derive(Serialize, Deserialize, Debug, Clone, Copy, PartialEq)]
-#[serde(rename_all = "snake_case")]
-pub enum MediaKind { Photo, Video, Audio }
-
-/// 提供方自报能做的事；核心据它关掉不支持的按钮，不拿它当能力协商。
-#[derive(Serialize, Deserialize, Debug, Clone, Copy, PartialEq)]
-#[serde(rename_all = "snake_case")]
-pub enum MediaOperation { Upload, Download, Playback, List }
-
-/// 一条媒体条目的不变量，提供方内部 id 与呈给用户的字段分开。
+/// 一条媒体条目的不变量；原生页要的展示字段全在这里，提供方内部 id 只回传给提供方。
 #[derive(Serialize, Deserialize, Debug, Clone, PartialEq)]
 pub struct MediaItemRef {
-    pub id: String,          // 提供方内部 id，只回传给提供方
+    pub id: String,
     pub kind: MediaKind,
     pub title: String,
+    pub artist: Option<String>,
+    pub album: Option<String>,
+    pub artwork_url: Option<String>,
     pub duration_ms: Option<u64>,
+    pub series: Option<String>,
+    pub index: Option<u32>,
+    pub played: bool,
+    pub starred: bool,
 }
 
 /// 设备能力档：少数说死要比整套更好维护（编解码、HDR、最大码率）。
@@ -118,9 +120,18 @@ pub struct Task {
 #[derive(Serialize, Deserialize, Debug, Clone)]
 #[serde(rename_all = "snake_case", tag = "kind")]
 pub enum TaskTarget {
-    Upload(String),          // 条目相对路径，归提供方解释
+    Upload(Vec<UploadItem>), // 一批文件；相册备份 = 一个任务 + N 个 item
     Download(MediaItemRef),
     Playback(MediaItemRef),
+}
+
+/// 上传的一项：路径、大小、校验和、拍摄时间，都是提供方要的。
+#[derive(Serialize, Deserialize, Debug, Clone)]
+pub struct UploadItem {
+    pub path: String,
+    pub size: u64,
+    pub checksum: Option<String>,
+    pub taken_at: Option<Timestamp>,
 }
 
 #[derive(Serialize, Deserialize, Debug, Clone, Copy)]
@@ -138,22 +149,31 @@ pub type Revision = u64;
 
 /// 队列自带 revision；所有改动带读到的 revision，不等就 409。
 #[derive(Serialize, Deserialize, Debug, Clone)]
-pub struct Queue { pub revision: Revision, pub entries: Vec<MediaItemRef>, pub cursor: Option<usize> }
+pub struct Queue { pub revision: Revision, pub entries: Vec<MediaItemRef>, pub cursor: Option<usize>, pub mode: QueueMode, pub sleep_at_ms: Option<u64> }
+
+#[derive(Serialize, Deserialize, Debug, Clone, Copy, PartialEq)]
+#[serde(rename_all = "snake_case")]
+pub enum QueueMode { Sequential, Shuffle, RepeatAll, RepeatOne }
 
 #[derive(Serialize, Deserialize, Debug, Clone)]
 pub struct PlaybackRequest {
+    /// 从上次位置起播；0 表示从头
+    pub position_ms: u64,
     pub item: MediaItemRef,
     pub device: DeviceId,
+    pub person: Person,
     pub profile: DeviceProfile,
 }
 
-/// 提供方给的核心可播计划：直连或转码流，以及过期时间。
+/// 提供方给的核心可播计划。`session` 是上游会话号，和核心的 `PlaybackSessionId` 是两套，映射只在核心。
 #[derive(Serialize, Deserialize, Debug, Clone)]
 pub struct PlaybackPlan {
-    pub session: PlaybackSessionId,
+    pub session: String,
     pub stream: ProviderStream,
     pub audio: Vec<MediaTrack>,
+    pub subtitles: Vec<MediaTrack>,
     pub seekable: bool,
+    pub duration_ms: u64,
     pub expires_at: Timestamp,
 }
 
@@ -161,7 +181,11 @@ pub struct PlaybackPlan {
 pub enum ProviderStream { Direct(String), Transcoded(String) }
 
 #[derive(Serialize, Deserialize, Debug, Clone)]
-pub struct MediaTrack { pub index: u16, pub language: String, pub label: Option<String> }
+pub struct MediaTrack { pub index: u16, pub language: String, pub label: Option<String>, pub kind: TrackKind, pub selected: bool }
+
+#[derive(Serialize, Deserialize, Debug, Clone, Copy, PartialEq)]
+#[serde(rename_all = "snake_case")]
+pub enum TrackKind { Audio, Subtitle }
 
 #[derive(Serialize, Deserialize, Debug, Clone)]
 pub struct PlaybackSession {
@@ -171,6 +195,8 @@ pub struct PlaybackSession {
     pub item: MediaItemRef,
     pub state: TaskState,
     pub position_ms: u64,
+    /// 起播时带回的 plan；过期由核心重取
+    pub plan: Option<PlaybackPlan>,
 }
 
 /// 建任务用的入参：`options` 是各轴自己的开关（只在传输、只在充电、转码率上限）。
@@ -178,14 +204,24 @@ pub struct PlaybackSession {
 pub struct TaskCreate { kind: TaskKind, person: Person, device: DeviceId, target: TaskTarget, options: TaskOptions }
 
 #[derive(Serialize, Deserialize, Debug, Clone, Default)]
-pub struct TaskOptions { pub wifi_only: bool, pub charging_only: bool, pub max_bitrate: Option<u32> }
+pub struct TaskOptions {
+    pub wifi_only: bool,
+    pub charging_only: bool,
+    pub max_bitrate: Option<u32>,
+    /// 相册范围（可选）；只传相册不传 items 时由设备枚举
+    pub albums: Vec<String>,
+    /// 同时在跑几项，1–4
+    pub concurrency: u8,
+    /// 立即备份：忽略 wifi/充电条件一次
+    pub force_now: bool,
+}
 
 ## `media/view.rs`
 
 ```rust
 #[derive(Serialize, Deserialize, Debug, Clone)]
 #[serde(rename_all = "snake_case")]
-pub enum ControlOp { Play, Pause, Resume, SeekMs(u64), Next, Prev, Volume(u8) }
+pub enum ControlOp { Play, Pause, Resume, SeekMs(u64), Next, Prev, Volume(u8), SetAudio(u16), SetSubtitle(Option<u16>) }
 
 #[derive(Serialize, Deserialize, Debug, Clone)]
 #[serde(rename_all = "snake_case")]
@@ -193,7 +229,7 @@ pub enum StopReason { User, Agent, TakenOver, Finished, Error }
 
 #[derive(Serialize, Deserialize, Debug, Clone)]
 #[serde(rename_all = "snake_case", tag = "op")]
-pub enum QueueOp { Read, Enqueue { at: Option<usize>, item: MediaItemRef }, Remove { index: usize }, Jump { index: usize }, Clear }
+pub enum QueueOp { Read, Enqueue { at: Option<usize>, item: MediaItemRef }, Remove { index: usize }, Jump { index: usize }, Clear, SetMode(QueueMode) }
 
 #[derive(Serialize, Deserialize, Debug, Clone)]
 pub struct DoneItem { pub item: MediaItemRef, pub local_path: Option<String> }
@@ -220,71 +256,67 @@ pub struct MediaViewModel { pub tasks: Vec<TaskView>, pub quota: QuotaView }
 #[derive(Serialize, Deserialize, Debug, Clone)]
 pub struct TaskView { pub id: TaskId, pub kind: TaskKind, pub title: String, pub state: TaskState, pub progress: Progress, pub failure: Option<MediaFailure> }
 
+/// 两本账各一项，壳才知道去清哪边
 #[derive(Serialize, Deserialize, Debug, Clone)]
-pub struct QuotaView { pub used_bytes: u64, pub limit_bytes: Option<u64> }
+pub struct QuotaView { pub provider_upload: QuotaEntry, pub device_offline: QuotaEntry }
+
+#[derive(Serialize, Deserialize, Debug, Clone)]
+pub struct QuotaEntry { pub used: u64, pub limit: Option<u64> }
 
 #[derive(Serialize, Deserialize, Debug, Clone)]
 pub struct PlaybackViewModel { pub session: PlaybackSession, pub queue: Queue, pub plan: Option<PlaybackPlan> }
 
 ## 能力表 `media_source`（只加不改）
 
-在 `crates/wonton-core/src/plugin/capabilities.rs:120-128` 那行 `personal_data` 旁边加一行，形状照它：
+在 `crates/wonton-core/src/plugin/capabilities.rs:120-128` 那行 `personal_data` 旁边加一行。**走 `provides.capabilities` 这张表，不开专用顶级字段**——选路、凭据、安装确认、`spec_floor` 都复用现成机制。
 
-| 字段 | 值 | 与 `personal_data` 同不同 |
-| --- | --- | --- |
-| 能力名 | `"media_source"`（`wonton-protocol::media::MEDIA_CAPABILITY`） | 同（核心定名字） |
-| `Credentials` | `Required` | 同 |
-| 高权限 | 否 | 同 |
-| 提供方要求 | 提供方对使用方（核心）签一把能力凭据；每个请求带 `X-Wonton-User` | 同 |
-| 核心侧 | 有使用方客户端（`plugin/media_source.rs`） | 同 |
-| 契约测试 | 两个假提供方，照 `plugin/tests/personal_data_contract/mod.rs:1-10` | 同（用例不同，见 ADR 正文“契约测试”段） |
-| 操作集 | 由 `GET /_wonton/capabilities` 自报，核心据它关掉不支持的按钮 | 新 |
+| 字段 | 值 |
+| --- | --- |
+| 能力名 | `"media_source"`（`wonton-protocol::media::MEDIA_CAPABILITY`） |
+| `credentials` | `Required`，且必须有 `issue`/`revoke` 两条命令（`capabilities.rs:52`、`provides.rs:67-73`） |
+| `interface` | `"http"`，`hosted: "plugin"`（`capabilities.rs:14-31`，缺一即清单非法） |
+| 高权限 | 否 |
+| 核心侧 | 使用方客户端 `plugin/media_source.rs` |
+| 契约测试 | 两个假提供方，照 `plugin/tests/personal_data_contract/mod.rs:1-10` |
 
-标“只加不改”：能力表是常量表，加一行不影响既有能力。
+与 `jellyfin` 能力并存：`jellyfin` 给 Seerr 之类窄用途，`media_source` 管播放与传输，同一个插件可以两样都提供，Seerr 不迁。
 
-## 清单 `provides.media_source`（只加不改）
+## 清单 `provides.capabilities.media_source`（只加不改）
 
-`crates/wonton-protocol/src/manifest/provides.rs:21-31` 的 `provides` 加一个可选字段；没有它就等于这个插件不是媒体源。
+在现有的 `ProviderService`（`crates/wonton-protocol/src/manifest/provides.rs:16-31`）上加两个可选数组，取值受枚举约束：
 
 ```rust
-// wonton-protocol/src/manifest/provides.rs，加在 Provides 里
-#[serde(default, skip_serializing_if = "Option::is_none")]
-pub media_source: Option<MediaSourceDecl>,
+// provides.rs，ProviderService 内
+/// 自报能做的操作；核心仍以 /_wonton/capabilities 为准，这里给安装预检
+#[serde(default, skip_serializing_if = "Vec::is_empty")]
+pub operations: Vec<MediaOperation>,
+/// 自报的内容种类
+#[serde(default, skip_serializing_if = "Vec::is_empty")]
+pub kinds: Vec<MediaKind>,
 ```
 
 ```rust
-// wonton-protocol/src/manifest/media_source.rs
-#[derive(Deserialize, Serialize, Debug, Clone)]
-#[serde(deny_unknown_fields)]
-pub struct MediaSourceDecl {
-    /// 适配器在插件内的端口；核心按插件地址 + 这个端口连
-    pub service: String,
-    pub port: u16,
-    /// 自报的操作集；核心仍以 /_wonton/capabilities 为准，这里只是安装时预检
-    pub operations: Vec<MediaOperation>,
-    /// 自报的内容种类
-    pub kinds: Vec<MediaKind>,
-    /// 凭据怎么来；第一版只有 "required"
-    pub credentials: MediaCredentials,
-}
-
-// wonton-protocol/src/media/mod.rs
-pub enum MediaOperation { Upload, Download, Playback, List }
+// wonton-protocol/src/media/mod.rs（枚举只在这里定义一次，别处引用）
+#[derive(Serialize, Deserialize, Debug, Clone, Copy, PartialEq, Eq, Hash)]
+#[serde(rename_all = "snake_case")]
 pub enum MediaKind { Photo, Video, Audio }
-pub enum MediaCredentials { Required }
+
+#[derive(Serialize, Deserialize, Debug, Clone, Copy, PartialEq, Eq, Hash)]
+#[serde(rename_all = "snake_case")]
+pub enum MediaOperation { Upload, Download, Playback, List }
 ```
 
-校验照 `plugin/capabilities.rs` 的既有做法：`operations` 空、`kinds` 空、端口 0 都算清单非法。
+校验：`media_source` 出现时 `operations`、`kinds` 都不许空，`credentials.required` 必须有 `issue` 与 `revoke`；`service` 必须在本插件 `services` 里。`spec_floor.rs` 登记用到这些字段的最低 `spec`。
 
 ## `plugin-spec.md` 要补的章节（只加不改）
 
 | 章节 | 写什么 |
 | --- | --- |
 | “能力”表加 `media_source` 一行 | 名字、传输 HTTP、凭据 Required、非高权限、操作自报 |
-| 新节“媒体源：清单声明” | 上面那个 JSON 形状，逐字段必填/选填 |
+| 新节“媒体源：清单声明” | `provides.capabilities.media_source` 形状，`service`/`operations`/`kinds`/`credentials` 逐字段说明 |
 | 新节“媒体源：路径” | 正文“媒体源契约”表那 11 行原样搬进去，含 `X-Wonton-User` 语义 |
 | 新节“媒体源：错误信封” | `MediaFailure{code,message,retry_after?}`，码就是正文失败类别表第一列的十个 |
-| 新节“媒体源：适配器进程” | 边车容器或页内端口二选一，端口写进 `provides.media_source.port` |
+| 新节“媒体源：适配器进程” | 边车容器或插件主体内的一段都行，按 `service` 连 |
 | 新节“媒体源：契约测试” | 两个假提供方的跑法，指向 `plugin/tests/media_source_contract/` |
 
 `:1577-1700` 那段现有的能力写法当模板，不改旧句。
@@ -302,7 +334,7 @@ pub enum MediaCredentials { Required }
 | `/tasks/{id}/resume` | `POST` | 无 | `Task` |
 | `/tasks/{id}/cancel` | `POST` | 无 | `Task` |
 | `/tasks/{id}/retry` | `POST` | 无（终态才允许，设 `retry_of`） | `Task` |
-| `/sessions` | `POST` | `PlaybackRequest{person, device, item, profile}` | `PlaybackSession`（返回时已含 `PlaybackPlan`） |
+| `/sessions` | `POST` | `PlaybackRequest`（含 `position_ms`、`person`、`device`、`profile`） | `PlaybackSession`（`plan` 已填） |
 | `/sessions` | `GET` | 无（query: `person?`） | `{sessions: Vec<PlaybackSession>}` |
 | `/sessions/{id}` | `GET` | 无 | `PlaybackSession` |
 | `/sessions/{id}/control` | `POST` | `MediaAction` | `PlaybackSession` |
@@ -310,20 +342,14 @@ pub enum MediaCredentials { Required }
 | `/sessions/{id}/stop` | `POST` | `{position_ms, reason}` | `204` |
 | `/queue` | `GET` | 无（query: `person`） | `Queue` |
 | `/queue` | `POST` | `QueueOp{revision, op}` | `Queue`；`revision` 不相等回 `409` + 当前 `Queue` |
-| `/streams/{session}` | `GET` | 无 | `302` 到回环令牌流地址（照 `stream.rs:1-8`） |
+| `/queue` | `PUT` | 整条 `Queue`（核心推给提供方的 `savePlayQueue` 翻法，带 `position`） | `204` |
+| `/sessions/{id}/cast-url` | `POST` | `{target: "airplay"\|"cast"}` | `{url, expires_at}`（绑 LAN 的一次性绝对地址） |
 | `/commands` | `GET` | 无（query: `device`, `after: seq`） | 长轮询；`{commands: Vec<DeviceCommand>}`，超时 `204` |
 | `/commands/{id}/ack` | `POST` | `{seq, ok, failure?}` | `204`（幂等） |
 
-设备命令体：
+命令体是 `DeviceCommand` 与 `MediaAction`，类型定义在上面 `media/view.rs` 一处，这里不重复。
 
-```rust
-pub struct DeviceCommand { pub command_id: Uuid, pub seq: u64, pub body: MediaAction }
-pub enum MediaAction {
-    StartUpload { task: TaskId }, StartDownload { task: TaskId },
-    Play { session: PlaybackSessionId }, Control { session: PlaybackSessionId, ctl: ControlOp },
-    Stop { session: PlaybackSessionId, reason: StopReason },
-}
-```
+`/streams` 不在服务端 API 里：是客户端核本机的回环（见 ADR 正文第 2 节）。服务端只给 `POST /sessions/{id}/cast-url`，回一个绑 LAN 的一次性绝对地址。
 
 ## 客户端核导出（只加不改）
 
@@ -334,36 +360,41 @@ pub enum Action { /* …既有… */ , Media(MediaAction) }
 pub fn subscribe_media(&self, cb: Callback<MediaViewModel>);
 pub fn subscribe_playback(&self, cb: Callback<PlaybackViewModel>);
 pub fn player_state(&self) -> PlayerState; // Playing/Paused/Buffering/Stopped + position
+/// 本机回环前缀（播放器与上传/下载只连这里），带随机令牌
+pub fn media_loopback(&self) -> String;
 ```
 
 `MediaViewModel` / `PlaybackViewModel` 的字段进 `wonton-protocol::media`，形状照 `file/mod.rs:291-320` 的 ViewModel 写法；`player_state` 只在壳里用，不进协议。
 
-## `_meta` 键（只加不改）
+## 头与 `_meta`（只加不改）
 
-| 键 | 方向 | 值 |
+| 名 | 方向 | 值 |
 | --- | --- | --- |
-| `app.wonton/device` | 壳 → 核心 | 设备稳定标识 |
-| `app.wonton/speaker` | 核心 → 插件 | 本轮说话人（引用 ADR-0114 第 2 项，不在这里定字段） |
-
-`X-Wonton-User` 是头，不是 `_meta` 键。
+| `X-Wonton-User`（头） | 核心 → 提供方 | 任务或会话的主人（复用 `personal_data` 的那个常量） |
+| `X-Wonton-Device`（头） | 客户端核 → 核心 | 设备标识；同一个人两台设备时区分 |
+| `app.wonton/speakers`（`_meta`） | 核心 → 插件 | 本轮说话人数组，定义在 ADR-0114 第 2 项，这里只引用 |
 
 ## MCP 工具与参数（只加不改）
 
 | 工具 | 参数 | 返回 |
 | --- | --- | --- |
-| `wonton__media_status` | `{kind?}` | 任务与会话列表，带进度与失败原因 |
+| `wonton__media_status` | `{kind?, person?}` | 任务与会话列表，带进度与失败原因 |
 | `wonton__backup_now` | `{device?, kinds?}` | `Task` |
 | `wonton__media_download` | `{device, item, kind}` | `Task` |
-| `wonton__media_play` | `{device?, item, kind}` | `PlaybackSession` |
+| `wonton__media_play` | `{device?, item, kind, person?}` | `PlaybackSession` |
 | `wonton__media_control` | `{session, ctl: ControlOp}` | `PlaybackSession` |
 | `wonton__media_queue` | `{op: QueueOp\|read, revision?}` | `Queue` |
-| `wonton__media_sessions` | 无 | 这个人的全部设备与会话能力 |
+| `wonton__media_sessions` | `{person?}` | 这个人的全部设备与会话能力 |
+| `wonton__media_task` | `{task, op: pause\|resume\|cancel\|retry}` | `Task` |
+| `wonton__media_delete` | `{device, items}` | `204` |
+
+`person` 只能填本轮 `speakers` 里的人；共享 Bot 省略则取唯一说话人，多人必填。
 
 ## 事件名与载荷（只加不改）
 
 | 事件 | 载荷 |
 | --- | --- |
-| `media.task.progress` | `{task, done, total, unit}` |
+| `media.task.progress`（只在线的推，不进队列） | `{task, done, total, unit}` |
 | `media.task.done` | `{task, files?: Vec<DoneItem>}` |
 | `media.task.failed` | `{task, failure: MediaFailure}` |
 | `media.playback.started` | `{session, device, item}` |
@@ -377,6 +408,7 @@ pub fn player_state(&self) -> PlayerState; // Playing/Paused/Buffering/Stopped +
 - 不发 `media_source` 之外的任何能力，不改 `personal_data` 契约。
 - 不写核心侧使用方实现（`plugin/media_source.rs`）、不写假提供方与契约测试（下一张卡）。
 - 不改 `PageMediaOwner.kt:42-53` / `PageMediaActive.swift`，网页 `<audio>` 的收口归实现卡（M22）。
+- 不改 `jellyfin` 能力与 Seerr。
 - 不填离线下载配额默认值。
 - 不动 `plugin-spec.md` 里除上表五节之外的任何章；不碰 `provides` 以外的清单字段。
 - 事件载荷里不重复 ADR-0114 的说话人/通知/深链字段，只引用。

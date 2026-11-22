@@ -1,6 +1,7 @@
 # ADR-0113 媒体与传输：长任务由核心持有，插件经媒体源能力提供内容
 
 - 状态：提议（2026-11-21），影音相册线起草，插件底座线复审后合并
+- 取代 [ADR-0014](0014-reserved-capabilities.md) 的“Subsonic 原生音乐页”一节（主人 2026-11-21 定回原生）；补充 [ADR-0005](0005-native-clients-thick-core.md)（跨设备长任务的事实源在服务器核）
 - 关联：[ADR-0005](0005-native-clients-thick-core.md)（厚核心薄壳）、[ADR-0015](0015-small-components-standard-interfaces.md)（小部件、标准接口）、
   [ADR-0016](0016-mcp-bus-and-confirmations.md)（MCP 总线与确认）、[ADR-0020](0020-file-service.md)（文件服务）、
   [ADR-0024](0024-confirmation-scope.md)（每次都问的三类）、[ADR-0032](0032-connection-quality.md)（连接恢复）、[ADR-0033](0033-plugin-tabs.md)（插件页面）、
@@ -41,6 +42,8 @@
 
 Plex 客户端只接自己的服务器；Synology 的客户端只接自家 NAS；Infuse 是单体，把 SMB/NFS/WebDAV/Emby/Jellyfin/Plex 都编进客户端。
 三家都靠客户端内置协议客户端接多种源，没有插件生态可照搬；能接多少种源由发版决定。
+出处：Plex 的官方客户端与服务器文档、Synology Photos 与 DS video 的支持来源页、Infuse 的支持文件系统列表（均为官方文档）。
+许可证：Jellyfin 服务端 GPL-2.0、Navidrome GPL-3.0、Immich AGPL-3.0，都是独立容器，不链接进我们的二进制；本文与适配器只按它们的官方 API 文档与 OpenAPI 设计，不读也不抄它们的客户端源码（Navidrome 网页是 GPL-3、Jellyfin/Immich 的 App 各有自己的许可证）。适配器自己只引入 MIT/Apache 的库。
 
 ## 决策
 
@@ -58,7 +61,7 @@ Plex 客户端只接自己的服务器；Synology 的客户端只接自家 NAS�
 
 - 要活过重装和换设备。任务和队列在服务器上，重装 App、换手机后重新配对就接上；放客户端核则卸载即失，跨设备队列没有落点（主人 11-21 定的“在客厅那台继续放”要求这个）。
 - Agent 要看得见、插得上手。Hermes 在服务器上，读进度、暂停、改队列都直接打服务器核（第 5 节），不必等某台手机醒着。
-- 字节不能多绕。上传的字节从手机直接进插件，播放的字节从插件直接进手机的播放器；服务器核只过状态和命令，不过媒体流（唯一例外是第 4 节的 Chromecast，第一轮先不做）。
+- 字节不能多绕，但手机进不了插件网段。上传、播放、下载的字节都由手机上的客户端核经设备隧道发到核心网关，核心按能力别名转给提供方；**核心只中转、不缓冲**，不落盘也不解码。路径、每一跳的鉴权与头见第 2 节的“字节路径”。
 - 不违反 ADR-0005：厚核心说的是“状态、逻辑、网络放客户端核，壳薄”，指的是单机内的分工；ADR-0005 没有说状态必须只活在单机上。服务器核本来就有插件管理、网关、推送、总线、授权（`AGENTS.md` 产品边界），长任务的跨设备事实源属于“总线与授权”这一侧。
 - 先例是 ADR-0098 第 5 节：存储放插件，核心只是使用方，核心不因为“要存东西”就变厚。这里同理——媒体内容和字节都在提供方，服务器核只持状态。
 
@@ -70,12 +73,26 @@ Plex 客户端只接自己的服务器；Synology 的客户端只接自家 NAS�
 
 ### 2. 插件协议：核心定义 `media_source` 能力，插件出薄适配容器
 
-核心定义一种能力 `media_source`（HTTP 传输，非高权限，凭据 `Credentials::Required`），插件当**提供方**，核心当**使用方**。每个要接媒体的插件出一个薄适配容器，把上游接口翻成这套能力；核心不认识 Immich、Subsonic、Jellyfin 的名字。
+核心定义一种能力 `media_source`，插件当**提供方**，核心当**使用方**。每个要接媒体的插件出一个薄适配容器，把上游接口翻成这套能力；**服务器核**不认识 Immich、Subsonic、Jellyfin 的名字（例外的读路径见下）。
 
-- 能力契约的形状照 `personal_data` 的现成样板（`crates/wonton-core/src/plugin/capabilities.rs:120-128`：核心定能力名、提供方对使用方签凭据、核心侧有客户端；`plugin/tests/personal_data_contract/mod.rs:1-10`：两个假提供方跑同一组用例）。契约测试同样要两个假提供方——一个像相册（只能上传）、一个像点播（只能拉流）——证明核心对两者用同一套代码。
-- 提供方声明的操作集：`upload`（开始/查偏移/写分片/收尾/放弃）、`download`（带 `Range` 的取字节）、`playback`（要一个播放计划、报进度、报停止）、`list`（分页列条目，给 Agent 找内容用）。一个提供方可以只实现其中几样，清单里声明。
+**它就走 `provides.capabilities` 那张表，不开专用顶级字段。** 选路（`is_provided`/`is_self_provided`/`dependencies::service`）、凭据签发与校验、安装确认、`spec_floor` 全都复用现成机制，只在 `ProviderService` 上加两个可选数组 `operations`、`kinds`、并在现有 `credentials` 块里写 `issue`/`revoke` 命令。理由：加同名顶级字段会被当成“没提供”（`capabilities.rs` 的选路只读 `provides.capabilities`），且 `Credentials::Required` 在代码里的意思是“提供方必须声明凭据命令”（`capabilities.rs:52`、`provides.rs:67-73`），没有命令就发不出凭据。
+
+- 形状照 `personal_data` 的现成样板（`crates/wonton-core/src/plugin/capabilities.rs:120-128`、`plugin/tests/personal_data_contract/mod.rs:1-10`）。契约测试两个假提供方——一个像相册（只能上传）、一个像点播（只能拉流）——证明核心对两者用同一套代码。
+- `operations` 取值 `upload`（开始/查偏移/写分片/收尾/放弃）、`download`（带 `Range` 的取字节）、`playback`（要播放计划、报进度、报停止）、`list`（分页列条目，给 Agent 找内容）；`kinds` 取值 `photo`/`video`/`audio`。一个提供方可以只声明几样。
+- 清单要 `interface: "http"`、`hosted: "plugin"`、`credentials: required` 和 `credentials` 的 `issue`/`revoke`，缺一个都是清单非法（`capabilities.rs:14-31`）。
+- **和已有 `jellyfin` 能力并存，不合并。** `jellyfin` 是给 Seerr 这类“在 Jellyfin 里建请求/读库”的插件用的窄能力（`capabilities.rs:85-91`），`media_source` 是给播放与传输用的宽契约。同一个 Jellyfin 插件可以两样都提供，凭据各发各的；Seerr 不迁。写进规范：两者互不替代。
+- **读路径的例外（音乐）。** OpenSubsonic 是开放标准，艺人、专辑、歌单、流派、搜索、歌词、收藏、评分、历史这类只读浏览由客户端核直讲，不经 `list`（`list` 只给 Agent 找内容用，字段少、翻不出原生页）。客户端核因此链一个 MIT/Apache 的 `opensusonic` 库，这是往核心里放第三方协议库，ADR-0015 第 4 条要求写明：只放这一个、只放 OpenSubsonic，音源是标准接口不随插件变；出声的流、scrobble、断点、队列仍走 `media_source`。
 - 适配器里没有业务逻辑：Immich 的 `POST /assets` 加 `bulk-upload-check` 翻成 `upload`；Subsonic/OpenSubsonic 的 `stream`/`scrobble`/`savePlayQueue` 翻成 `playback` 与队列快照；Jellyfin 的 `PlaybackInfo`/`Sessions/Playing*`/`MediaSegments` 翻成 `playback` 与章节。适配器只做字段映射、错误码归一、上游凭据注入（第 6 节），不做重试、不做队列、不存状态。
 - 上游凭据由适配器自己从插件数据卷取，核心只给“这是谁”（`X-Wonton-User` 头）。核心不存上游密码，只存“哪个人对应提供方的哪把能力凭据”。
+
+**字节路径（每一跳都写死）。** 能力别名只在插件网段里（`plugin-spec.md:1625-1627`），手机连不到，所以：
+
+1. 客户端核在本机起回环 HTTP（照 `files/stream.rs:1-8` 的随机令牌），播放器、上传器只连 `127.0.0.1`。
+2. 客户端核把请求经设备隧道发给核心网关 `/_wonton/api/media/…`，凭证是设备隧道身份（ADR-0088）；`X-Wonton-User` 由核心按设备归属的人填，能力凭据由核心从提供方签的那把取，两者都不进壳。
+3. 核心按能力别名转发给提供方，字节**流式透传、不落盘**；`Range`、`If-Range`、`Content-Range` 原样过。
+4. AirPlay/Chromecast 这类“接收端是另一台设备”的场景，核心另签发一个绑 LAN 地址的一次性绝对 URL（带短期令牌、只对被投的那一项有效）；回连不成立就退回局域网直连，外网未验证。
+
+回环（`/streams`）属于客户端核的导出，不在服务端 API 里；服务端只发“给我一个能投出去的地址”的工具/接口。
 - 适配器是**独立可替换的组件**，可以是一个只跑翻译的边车容器，也可以是插件主体里的一段；对核心是同一份 HTTP 契约。换掉 Immich 的适配器，核心一行不改。
 
 理由：ADR-0015 要求核心不为具体插件开特例。三家都不是 Wonton 定的接口，Immich 和 Jellyfin 也没有开放标准（OpenSubsonic 算一个，但它只盖住音乐）。核心内置三家客户端意味着第三方插件要等核心发版；能力加适配器则新源自己带适配器进来。
@@ -93,7 +110,7 @@ Plex 客户端只接自己的服务器；Synology 的客户端只接自家 NAS�
 
 三类长任务：`Upload`（相册备份、收件）、`Download`（离线）、`PlaybackSession`（含队列）。共用下面这套骨架，字段和状态机只有一份（`wonton-protocol` 的 `media` 模块），三类只在标“差异”的地方分叉。
 
-**身份与任务号。** 每个任务带 `(person, device, task_id)`。`person` 是本机家人（ADR-0045/0088 的账号），`device` 是这台手机的稳定标识（`_meta` 的 `app.wonton/device`）。任务号由服务器核发，客户端核只引用。凭据一律按人取（第 6 节），不按设备。
+**身份与任务号。** 每个任务带 `(person, device, task_id)`。`person` 是本机家人（ADR-0045/0088 的账号），`device` 是设备标识。设备走隧道时核心已按隧道 peer 认出设备（不需要另发 `_meta`）；HTTP 请求里显式带 `X-Wonton-Device`，供同一个人两台设备时区分。任务号由服务器核发，客户端核只引用。凭据一律按人取（第 6 节），不按设备。
 
 **状态机。** 一份，三类共用：
 
@@ -104,7 +121,7 @@ Queued → Preparing → Running ⇄ Paused{reason} / WaitingNetwork / WaitingPo
 
 - `Paused{reason}` 是用户或 Agent 主动暂停，带原因（`user`、`agent`、`low_battery`…）。
 - `WaitingNetwork`/`WaitingPower` 是系统条件不满足，条件恢复自动回 `Running`，不算用户暂停。
-- `Partial` 只给上传：一部分文件成了、一部分永久失败，逐项列失败原因。
+- `Partial` 只给上传，且上传的目标是一**批**：一个备份任务带 `items: Vec<UploadItem>`（相对路径、大小、校验和、拍摄时间），逐项有 `Queued/Running/Done/Failed{failure}/Skipped`；失败项进任务的 `partial_failures`，全成 `Done`、全败 `Failed`、部分成 `Partial`。相册备份就是“一次备份 = 一个任务 + N 个 item”，不拆成几百个任务。
 - 终态不可逆；再跑就是新任务（`retry_of` 指向父任务）。
 
 **进度。** 统一 `{done, total, unit}`，`unit` 是 `bytes` 或 `items`；播放会话额外带 `position`、`duration`。客户端核限制上报频率：传输每 1 秒或每 256 KiB 一次，播放每 5 秒和 pause/seek/stop 时一次；服务器核再节流后给视图和 Agent。
@@ -119,11 +136,11 @@ Queued → Preparing → Running ⇄ Paused{reason} / WaitingNetwork / WaitingPo
 
 **重试与退避。** 只对“可能自己好”的失败重试：1/2/4/8/16/32/60 秒，最多 6 次，之后转 `Failed`。权限错、格式不支持、空间不足不退避，直接失败。每个任务独立计时，不在全局排一个队。
 
-**失败分类。** 在 `wonton-protocol/src/file/mod.rs:97-142` 的现有分类上增 `AuthenticationRequired`、`UnsupportedByDevice`、`RateLimited`、`MediaGone`，复用现有的网络/磁盘/取消类。失败即停，不藏错误：状态转 `Failed{failure}`，失败原文和类别都进视图与事件（`media.task.failed`），Agent 能看到完整原因。
+**失败分类。** 以 `wonton-protocol/src/file/mod.rs:97-142` 的 `FileFailure` 为底，**保留它的本地、传输、协议、上游四组**（`local_source_unavailable`、`local_permission_denied`、`local_storage_full`、`local_io`、`transport_unavailable`、`protocol`、`plugin_unavailable`、`upstream_error`），再加 `AuthenticationRequired`、`UnsupportedByDevice`、`RateLimited`、`MediaGone`、`ServerStorageFull`。服务端空间不足和手机空间不足分成两个码，壳才知道该去清哪边；`device_no_response` 只出现在工具结果里，不进任务失败枚举。失败即停，不藏错误：状态转 `Failed{failure}`，失败原文和类别都进视图与事件（`media.task.failed`），Agent 能看到完整原因。
 
-**配额与清理。** 服务器核记两个账本：每个提供方的上传总量上限（按人）和每台设备的离线下载占用上限（按人按设备）。超限在 `Preparing` 就拒，带当前用量和上限。离线文件的清理只由用户或 Agent 显式发起；App 在系统存储告急时只提示，不自行删。
+**配额与清理。** 服务器核记两个账本：每个提供方的上传总量上限（按人）和每台设备的离线下载占用上限（按人按设备）。超限在 `Preparing` 就拒；拒的回执和 `QuotaView` 都分两项（`provider_upload`、`device_offline`），各带自己的 `used`/`limit`，壳据此出“去清服务器”还是“去清手机”。离线文件的清理只由用户或 Agent 显式发起；App 在系统存储告急时只提示，不自行删。
 
-**后台限制。** iOS 的传输走 `URLSession` 后台会话，交给系统传，被杀也继续；一次处理任务用 `BGTaskScheduler`，跑多久由系统定；只有 `audio` 一项后台模式（`apps/ios/project.yml:69`），跑传输要另加 `fetch`/`processing`。Android 传输走 `WorkManager` 加 `dataSync` 前台服务，一天总时长 6 小时（[FGS 超时](https://developer.android.com/develop/background-work/services/fgs/timeout)）；超过 6 小时的任务（大库首次备份）必须分批，批与批之间落回 `WaitingPower` 或 `Queued`。
+**后台限制。** iOS 的传输走 `URLSession` 后台会话：它不需要声明后台模式，系统在自己事件里把 App 拉起来并交回结果；只有批量枚举相册、整理这类不跑完会被打断的活才用 `BGProcessingTask`，那才要加 `processing`（现在只有 `audio`，`apps/ios/project.yml:69`）。`PHPhotoLibrary` 给的是内存数据，后台会话只能用文件，客户端核先落临时分片文件，传完删；空间不足先算再落。Android 传输走 `WorkManager` 加 `dataSync` 前台服务，一天总时长 6 小时（[FGS 超时](https://developer.android.com/develop/background-work/services/fgs/timeout)）；超过 6 小时的任务（大库首次备份）必须分批，批与批之间落回 `WaitingPower` 或 `Queued`。
 
 **多设备。** 一人可以有多台设备，每台各跑各的传输任务，互不影响；**播放会话一人同时只有一个**，新设备开就是接管（第 4 节）。下载任务的配额按设备算，同一部片在两台设备上各占一份。
 
@@ -149,17 +166,20 @@ Queued → Preparing → Running ⇄ Paused{reason} / WaitingNetwork / WaitingPo
 
 ### 4. 播放会话：会话与队列在服务器核，壳只放
 
-播放会话和备份、下载同属第 3 节的统一长任务模型：同样的身份、任务号、状态机、失败分类、配额与多设备规则。本节只写它多出来的部分。
+播放会话借用第 3 节的骨架（同一份人员/设备、状态、失败分类），但**不落任务表**：它有自己的表、自己的 `PlaybackSession` 与 `PlaybackViewModel`，`TaskKind` 不带 `Playback`。这样“任务列表”里不会同时出现一条任务和一条会话。
 
 **事实源在服务器核。** 队列、当前位置、当前会话的设备归属存在 `crates/wonton-core`，壳不持有可写的副本，只渲染核心下发的 `PlaybackViewModel` 并出声、出画。理由：换设备要接着放、Agent 要问“在听什么”并遥控、重装不能丢（第 1 节结论 1）。驱动播放器的字节与解码留在客户端核与壳，核心不碰媒体流。
 
-- 队列操作（入队、插队、移除、跳转、清空）都带本次读到的 `revision`；核心比对不相等就回 `409 stale_revision` 连同当前队列快照，客户端重新拉一次再重放操作。选 409 不选“服务端自动合并”：Agent 与两台手机同时改队列时自动合并会出谁也预料不到的次序，宁可让调用方重试。
+- 起播请求带 `person`、`item`、`device`、`DeviceProfile`、以及从上次 `position_ms` 起的起点；核心据此向提供方要 `PlaybackPlan`，把 plan 与 `session.id` 一起回给客户端核。plan 的 `session` 由**提供方**发（上游会话号），和核心的 `PlaybackSession.id` 是两套，映射只存在核心。
+- 计划里带音轨和字幕轨两份 `MediaTrack` 列表，`ControlOp` 有 `SetAudio`/`SetSubtitle`（字幕可 `None`）；可 seek 范围以 plan 的 `seekable` 与 `duration` 为准。
+- 队列改动（入队、插队、移除、跳转、清空、模式切换）都带本次读到的 `revision`，并在成功时把整条队列用 `PUT /queue` 推给提供方（`savePlayQueue` 的翻法），需要时带 `position` 与 `mode`；核心比对不相等就回 `409 stale_revision` 连同当前队列快照，客户端重新拉一次再重放操作。选 409 不选“服务端自动合并”：Agent 与两台手机同时改队列时自动合并会出谁也预料不到的次序，宁可让调用方重试。
 - **一人同时只有一个活动会话。** 另一台设备发 `play` 时走接管：旧设备收到 `media.session.taken_over` 事件，壳停声、上报最后位置、转入只读。选“一人多活动会话”就得回答“锁屏上显示哪一个、scrobble 记给谁”，第一版不值得。
 - 位置上报：播放中每 5 秒一次，另外在 pause/seek/stop 各报一次；核心按会话节流后再转给提供方（Subsonic `scrobble`、Jellyfin `Sessions/Playing/Progress`）。节流放在核心不放在壳，免得每个壳各写一份、重试风暴直接打到插件。位置就是本会话的断点恢复点，恢复时以最近一次上报为准，不重头。
-- 锁屏、通知栏、耳机按键由壳接系统：Android 走 `MediaSessionService`，iOS 走 `MPNowPlayingInfoCenter` + `MPRemoteCommandCenter`，壳把按键翻成第 3 节的 `MediaAction` 回给核心。控制逻辑不在壳里重复实现。
+- 锁屏、通知栏、耳机按键由壳接系统：Android **只保留一个** `MediaSessionService`，现有的 `PageMediaService` 被新的播放服务吸收、页面媒体降为它的一个 renderer；iOS 走 `MPNowPlayingInfoCenter` + `MPRemoteCommandCenter`，壳把按键翻成第 3 节的 `MediaAction` 回给核心。控制逻辑不在壳里重复实现。
 - 画中画（PiP）两端壳各做一份，核心只保证进 PiP、出 PiP 不会停会话。
 - 投屏分两轮：AirPlay 第一轮（系统播放器自带，壳把播放器指向核心签发的流地址）；Chromecast 第二轮，**接收端要能访问核心签的流地址，局域网可用，外网要公网入口，未验证**。投屏时扬声器在接收端，壳只报位置，不解除本地会话。
 - 车机不在第一轮：CarPlay 要单独授权项，Android Auto 要 `MediaLibraryService`，工作量各自是一张 L。先做到“配对、锁屏、耳机可用”，车机列在最后一批。
+- **取代 ADR-0014 的“Subsonic 原生音乐页”一节**（那里写着“不做原生音乐页”）；ADR-0005 的“状态都在客户端核”由本篇按第 1 节补一条：跨设备的离线长任务与播放会话事实源在服务器核，其余仍按 0005。
 - 与 #585 的关系是收编，不是并存，也不是删：网页 `<audio>` 的媒体会话降为一种 renderer。`PageMediaOwner.kt:42-53` 的单弱引用改成由客户端核统一收口，网页只上报“这一页在放什么”。第三方插件页继续走这条路；音乐原生页落地后，网页 renderer 只给还用 `<audio>` 的页留着。
 
 没选的做法：
@@ -175,17 +195,20 @@ Agent（Hermes，家里服务器上）与壳走同一条核心 API，不给 Agen
 
 | 工具 | 做什么 | 发不发确认卡 |
 | --- | --- | --- |
-| `wonton__media_status` | 查某个人或自己的任务与播放会话、进度、失败原因 | 不发（只读，ADR-0024 第 2 步的“不敏感”） |
+| `wonton__media_status` | `{person?}`：查某个人或自己的任务与播放会话、进度、失败原因 | 不发（只读，ADR-0024 第 2 步的“不敏感”） |
 | `wonton__backup_now` | 让指定设备立即跑一次备份 | 发，发给本人 |
 | `wonton__media_download` | 给某设备排一个离线下载 | 发，发给本人 |
 | `wonton__media_play` | 在某人正在用的设备上开播或接管 | 不发（可撤，坏了再点一次） |
 | `wonton__media_control` | pause/resume/seek/next/prev/音量 | 不发 |
 | `wonton__media_queue` | 读队、入队、跳转 | 不发（可撤） |
-| `wonton__media_sessions` | 列出这个人所有设备的会话与能力 | 不发 |
+| `wonton__media_sessions` | `{person?}`：列出这个人所有设备的会话与能力 | 不发 |
+| `wonton__media_task` | `{task, op: pause\|resume\|cancel\|retry}` | 不发（可撤） |
+| `wonton__media_delete` | 删某台的离线文件 | 发（删除类） |
 
 - 删离线文件、停别人（非说话人本人）的会话，按 ADR-0024 的删除类走，发卡片。
-- 每张卡片、结果卡的模板与深链全部引用 ADR-0114 的第 5 项（卡片模板）与第 6 项（深链），本篇不重写。
-- 工具作用于“这个 Bot 的数据主体”；参数里带 `person` 只允许指数据主体本人，问别人由权限裁定（ADR-0114 第 1 项）。
+- `person` 只能填本轮 `app.wonton/speakers` 里的人（ADR-0114 第 2 项）；共享 Bot 里省略就取唯一的说话人，多人时必填。
+- 每张卡片、结果卡的模板与深链全部引用 ADR-0114 的第 5 项（卡片模板）与第 6 项（深链），本篇不重写；身份取 `speakers` 见第 2 项。
+- 工具作用于“这个 Bot 的数据主体”；共享 Bot 按上一条取说话人；私人 Bot 忽略 `person`（只能是本人）。日志与卡片都记“替谁”。
 
 **到设备的命令通道。** 核心不直连手机，设备拉：
 
@@ -195,7 +218,12 @@ Agent（Hermes，家里服务器上）与壳走同一条核心 API，不给 Agen
 
 命令是幂等的（同一个 `command_id` 重放无副作用）；设备按 `seq` 单调回执，核心顺手清掉旧命令。
 
-事件名：`media.task.{progress,done,failed}`、`media.playback.{started,finished}`、`media.session.taken_over`。事件投递、按人通知、叫醒空闲 Agent 全引用 ADR-0114 的第 3 项（事件与唤醒）与第 4 项（按人通知），只说“说话人从哪来”见第 2 项，深链见第 6 项。
+事件分两路：
+
+- **进度只推在线订阅**（长轮询/推送的当前订阅者），最新值覆盖旧值，不进队列——1 秒一次的进队会把终态冲掉。
+- `media.task.done`/`media.task.failed`/`media.playback.finished`/`media.session.taken_over` 走 ADR-0114 第 3 项的事件队列（带 `dedupe_key`），按人投递、能唤醒 Agent。
+
+事件的“发送方”是核心本身：0114 的队列按发件插件限流（每插件 10 条/分），核心事件不受插件限流；`DeliveredEvent.plugin_id` 记提供方插件（有就记，队列的收件人是这个人而不是插件）。按人通知见 0114 第 4 项，说话人见第 2 项，深链见第 6 项。
 
 没选的做法：
 - Agent 直发推送、自己记设备状态：多一套状态，和壳看到的不一致。
@@ -235,6 +263,14 @@ Agent（Hermes，家里服务器上）与壳走同一条核心 API，不给 Agen
 - 不做直播与 DLNA/UPnP；
 - 不做声学推荐（推荐归各块的 Agent 工具）；
 - 第一轮不做 Chromecast（第二轮）与车机（最后一批）；AirPlay 第一轮做但只做壳自带能力，不扩展。
+
+### 8. 兼容与迁移
+
+- 全程只加不改，但**新字段会让旧核心拒装**：`Provides` 与 `Manifest` 都是 `deny_unknown_fields`，`media_source` 要升 `spec` 到新值并在 `spec_floor.rs` 登记，旧核心按版本号拒装并提示升级，不是静默忽略。
+- 新 App + 旧核心：新 App 看不到 `Action::Media` 的订阅，音乐、影视原生页退到插件网页；只有壳的改动，不崩。
+- 旧 App + 新核心：新协议字段不认识，任务页照旧，原生页在旧 App 里不出现（ADR-0095 的“不认识的按钮不显示”）。
+- #585 的网页媒体会话在收编期间保持可用，直到音乐原生页与第三方页的 renderer 都验过（见“待验证”）。
+- `FileFailure` 的码只增不改；服务端空间不足改用新码，旧壳落到通用文案。
 
 ## 媒体源契约
 

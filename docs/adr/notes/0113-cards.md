@@ -15,7 +15,7 @@
 | M3 | 定义 `Task`/`TaskState`/`TaskKind`/`MediaFailure`/`MediaFailureCode`，状态机转移用 `TryFrom` | `media/task.rs` | M1 | M | 合法转移全过、非法转移（终态→`Running`）报错；六类不退避错误不进退避分支 | 与 M2 并行，靠 M1 |
 | M4 | 定义 `Queue{revision}`/`PlaybackSession`/`MediaViewModel`/`PlaybackViewModel`/`MediaAction` | `media/session.rs`、`media/view.rs` | M1、M3 | M | `Queue` 的 `revision` 单调；`MediaAction` 未知变体不 panic | 与 M2 并行 |
 | M5 | 能力表加 `media_source`（`Credentials::Required`，非高权限），清单 `provides.media_source` 结构 | `crates/wonton-core/src/plugin/capabilities.rs`、`crates/wonton-protocol/src/manifest/provides.rs` | M1 | S | 能力表快照断言存在与凭据策略；清单反序列化缺字段报错 | 与 M2–M4 并行 |
-| M6 | `plugin-spec.md` 补 `media_source` 契约、错误信封、`provides.media_source` 字段与示例 | `wonton-docs/plugin-spec.md` | M1–M5 | M | `cargo test -p wonton-docs` 的规范样例校验通过 | 不并行（要等接口类型定稿） |
+| M6 | `plugin-spec.md` 补 `media_source` 契约、错误信封、`provides.capabilities.media_source` 字段与示例 | `wonton-docs/plugin-spec.md`（**另一个仓、另一个 PR**） | M1–M5 | M | `plugin check` 用规范里的样例清单能过 | 不并行（要等接口类型定稿） |
 
 ## 第 2 批：服务器核（任务与会话的事实源）
 
@@ -41,10 +41,18 @@
 | M19 | 下载执行：`.part` 加 `Range`/`If-Range`，206 缺失或 ETag 变则从 0 | `client/media/download.rs` | M17 | L | 断后续传不重下已得字节；ETag 变则丢弃 `.part` 从头 | 与 M18 并行 |
 | M20 | 播放执行：把 `PlaybackViewModel` 翻成播放器回调与 `MediaAction`；5 秒及 pause/seek/stop 上报 | `client/media/player_bridge.rs` | M17 | L | 播放位置推进→上报节流；`taken_over`→停声并报最后位置 | 靠 M17 |
 | M21 | `ViewModel` 翻成视图模型：任务进度、状态文案、失败原因带重试按钮 | `client/media/view.rs` | M17 | M | 六类不退避错误各出各自文案与正确按钮（无重试/带重试） | 与 M17 并行 |
-| M22 | 把 #585 的 `PageMediaOwner` 单弱引用收口为 renderer，网页只报“在放什么” | `client/pages/media/mod.rs` | M17、M20 | L | 第三方页的 `navigator.mediaSession` 不被抢；页面死会话不死 | 靠 M20 |
+| M22 | 页面媒体会话收口为 renderer：Android 的 `PageMediaOwner` 与 iOS 的 `PageMediaActive` 改成由播放服务统一持有，网页只报“在放什么”；Android 的 `PageMediaService` 被 M33 吸收 | `client/pages/media/mod.rs`、`PageMediaOwner.kt`、`PageMediaActive.swift` | M17、M20、M33 | L | 第三方页的 `navigator.mediaSession` 不被抢；页面关掉会话不死 | 靠 M20 |
 | M23 | `_meta` 键 `app.wonton/device`/`speaker` 写入与发出 | `client/meta.rs` | M1–M4 | S | 请求带两个键；设备标识稳定不随重启变 | 与 M17 并行 |
 
-并行小结：第 1 批一个 PR 全进（M6 最后）。第 2 批 M7 M8 M9 M13 M16 可同时开工，M10 M15 靠前两个，M11–M12–M14 串成一线。第 3 批 M17 M18 M19 M21 M23 可同时，M20 靠 M17，M22 靠 M20。所有壳卡等 M14 合入后再开，见后半。
+第 3 批另有三张（回环、Profile、桥）：
+
+| 编号 | 目标 | 改哪 | 依赖 | 大小 | 先红后绿的行为测试 | 并行 |
+| --- | --- | --- | --- | --- | --- | --- |
+| M43 | 媒体回环：照 `files/stream.rs` 起本机随机令牌回环，播放器与上传下载只连它 | `client/media/loopback.rs` | M17 | L | 无令牌 401；`Range` 转发后被 `If-Range` 成 206；关闭后端口释放 | 与 M17 并行 |
+| M44 | `DeviceProfile` 组装：从壳上报的编解码支持拼出来，按人按设备缓存 | `client/media/profile.rs` | M17 | S | 缺能力时不发空数组；换设备各自的 Profile 不串 | 与 M17 并行 |
+| M45 | 插件页“播这条”桥：`ui/initialize` 报 `media.play` 能力位、页面 RPC 拉起宿主播放器，成功回 `started` 并让页面 `pause()` | `pages/bridge`、`pages/media`、两壳 | M06、M30、M31 | L | 老壳不报能力位时页面不显示按钮；回包失败页面继续自己放 | 靠 M30/M31 |
+
+并行小结：第 1 批（主仓）一个 PR 全进，M6 单独一个 wonton-docs PR。第 2 批 M7 先合，之后 M8 M9 M13 M16 可同时，M10 M11 M12 M14 M15 再上。第 3 批 M17 M18 M19 M21 M23 M43 M44 可同时，M20 靠 M17 且与 M43/M44 一起，M22、M45 靠 M20 与 M33。所有壳卡等 M14 合入后再开，见后半。
 
 ## 第 4 批：两端壳（iOS、Android）
 
@@ -56,8 +64,8 @@
 | M25 | Android 上传执行：`MediaStore` 取增量、`WorkManager` + `dataSync` 前台服务按 M18 分片 | `apps/compose/androidApp/.../media/UploadWorker.kt`、`AndroidManifest.xml` 加 FGS 类型 | M18、M23 | L | 断言 FGS 在 `onTimeout` 中止并落 `WaitingPower`；重启从偏移续 | 与 M24 并行 |
 | M26 | iOS 下载执行：`URLSession` 后台下载到 `.part`，完成后改名，`Range` 续 | `apps/ios/Wonton/Media/Download.swift` | M19、M23 | M | 断网重连不重下已得字节；ETag 变则丢 `.part` 从头 | 与 M25 并行 |
 | M27 | Android 下载执行：`WorkManager` + `Range` 续到 `.part` | `.../media/DownloadWorker.kt` | M19、M23 | M | 同上；系统配额到→`Paused{reason=suspended_by_system}` | 与 M26 并行 |
-| M28 | 备份设置页：开关、只在充电+Wi-Fi、选相册、当前用量与上限 | `apps/ios/Wonton/Media/BackupSettings.swift`、`.../media/BackupSettings.kt` | M21、M16 | M | 关开关→任务转 `Paused{user}`；改条件立即生效；超限显示用量与清理入口 | 截图：设置页深/浅，含超限态 |
-| M29 | 离线下载页：列表、进度、暂停/继续、删除、占用合计 | 两端 `Media/OfflinePage.*` | M21、M16、M26 | M | 删一项→配额回；`storage_full` 出清理入口；`unsupported_by_device` 出转码按钮 | 截图：列表页、失败行、删除确认，深/浅 |
+| M28 | 备份设置页：开关、只在充电+Wi-Fi、选相册、当前用量与上限 | `apps/ios/Wonton/Media/BackupSettings.swift`、`.../media/BackupSettings.kt` | M24、M25、M16 | M | 关开关→任务转 `Paused{user}`；改条件立即生效；超限显示用量与清理入口 | 截图：设置页深/浅，含超限态 |
+| M29 | 离线下载页：列表、进度、暂停/继续、删除、占用合计 | 两端 `Media/OfflinePage.*` | M16、M26、M27 | M | 删一项→配额回；`storage_full` 出清理入口；`unsupported_by_device` 出转码按钮 | 截图：列表页、失败行、删除确认，深/浅 |
 | M30 | iOS 原生播放：`AVPlayer`、`AVAudioSession`、`PlaybackViewModel` 驱动、seek 范围 | `apps/ios/Wonton/Media/Player.swift` | M20、M22 | XL | 注入假播放器断言位置上报节流与 `taken_over` 停声报位 | 与 M31 并行 |
 | M31 | Android 原生播放：Media3 `ExoPlayer` | `.../media/Player.kt` | M20、M22 | XL | 同上 | 与 M30 并行 |
 | M32 | iOS 锁屏与耳机：`MPNowPlayingInfoCenter` + `MPRemoteCommandCenter`，按键翻 `MediaAction` | `apps/ios/Wonton/Media/NowPlaying.swift` | M30 | M | 按键回调只发 `MediaAction`，不本地改状态 | 截图：锁屏、控制中心 |
@@ -77,7 +85,7 @@
 | M39 | Subsonic/OpenSubsonic 适配：`playback` 翻 `stream`/`scrobble`/`savePlayQueue`，`download` 翻 `Range` | `wonton-plugin-...`（音乐插件仓）`media_adapter` | M1–M6 | L | `savePlayQueue` 失败不改会话态；`Range` 不支持回 206 或完整 | 可并行 |
 | M40 | Jellyfin 适配：`playback` 翻 `PlaybackInfo`/`Session/Playing*`/`MediaSegments`，`list` 翻查库 | `wonton-plugin-jellyfin`（已有） | M1–M6 | L | 假 Jellyfin 回过期 `PlaybackPlan`→`media_gone` 不退避 | 可并行 |
 | M41 | 三适配器的契约测试合入核：两个假提供方各以适配器为壳跑 M12 同一组用例 | `plugin/tests/media_source_contract/` | M12、M38、M39、M40 | L | 同一用例三适配器结果一致：重试次数、断点续 | 靠 M38–M40 |
-| M42 | 端到端验收：真机从相册备份 20 张→在核看到进度→断网续→播一首、锁屏控→下 1 集、开飞行模式续→Agent 调 `wonton__media_status` 读得到 | 验收脚本 + `notes/adr0113-verify.md` | M24–M36、M41 | L | 每步断言事件与 ViewModel；失败项入“待验证” | 串行，最后一张 |
+| M42 | 端到端验收：真机从相册备份 20 张→在核看到进度→断网续→播一首、锁屏控→下 1 集、开飞行模式续→Agent 调 `wonton__media_status` 读得到 | 验收脚本 + `notes/adr0113-verify.md` | M14、M24–M36、M41、M45 | L | 每步断言事件与 ViewModel；失败项入“待验证” | 串行，最后一张 |
 
 ## 关键路径与并行分组
 
@@ -87,7 +95,7 @@
 
 | 组 | 卡 | 约束 |
 | --- | --- | --- |
-| A 服务端 | M7、M8、M9、M13、M16 | 同批内不同文件；M10、M11、M12、M14、M15 靠 A 前半 |
+| A 服务端 | M7 先，然后 M8、M9、M13、M16 | 同批内不同文件；M10、M11、M12、M14、M15 再上 |
 | B 客户端核 | M17、M18、M19、M21、M23 | 不碰同一文件；M20 靠 M17，M22 靠 M20 |
 | C 适配器 | M38、M39、M40 | 各在一仓，互不依赖；M41 在 C 全完开 |
 | D 壳 | M24–M27、M28–M29、M30–M31、M32–M33、M35–M36 | iOS 与 Android 同题并排；界面类 M28、M29、M34 待 M21 |
