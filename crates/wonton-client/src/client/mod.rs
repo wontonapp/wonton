@@ -1,7 +1,6 @@
 use std::path::PathBuf;
 #[cfg(feature = "ui-fake")]
 use std::sync::RwLockReadGuard;
-#[cfg(feature = "ui-fake")]
 use std::sync::atomic::{AtomicBool, Ordering};
 use std::sync::{Arc, Mutex, RwLock};
 
@@ -21,7 +20,7 @@ use crate::app_lock::AppLockLink;
 use crate::appearance::AppearanceLink;
 use crate::chat::TimelineSubscription;
 use crate::files::FileOpener;
-use crate::home::Network;
+use crate::home::{Network, path_settings};
 use crate::l10n::{CATALOG, language};
 use crate::scope::{Scope, Views, Visits};
 use crate::servers::ServerList;
@@ -85,6 +84,8 @@ pub struct ClientCore {
     appearance: AppearanceLink,
     servers: Arc<ServerList>,
     root: PathBuf,
+    /// 代理 TUN 的假地址是否排除出选路，读页和 bind 都读这个缓存，不读盘；文件仍是真相。
+    fake_ip_exclusion: AtomicBool,
     network: Network,
     scope: RwLock<Arc<Scope>>,
     /// 壳订阅的 ViewModel 发送端。有假数据入口时整组换成独立的发送端，包一层锁；没有这个 feature 时保持
@@ -154,6 +155,19 @@ impl ClientCore {
     /// 壳的系统验证通过后调用，幂等。
     pub fn unlock_app(&self) {
         self.app_lock.unlock();
+    }
+
+    /// 打开后选路优先真直连和中继，把代理 TUN 的假地址（198.18.0.0/15）放到最后，只在别无他路时走它。
+    /// 存在本机、所有服务器共用，写不了时返回 `Storage`；改动立刻重建 endpoint 生效。
+    pub fn set_fake_ip_exclusion(&self, enabled: bool) -> Result<(), CoreError> {
+        self.scope().home.set_fake_ip_exclusion(enabled)?;
+        self.fake_ip_exclusion.store(enabled, Ordering::SeqCst);
+        Ok(())
+    }
+
+    /// 代理的假地址是否排除出选路，默认关。
+    pub fn fake_ip_exclusion(&self) -> bool {
+        self.fake_ip_exclusion.load(Ordering::SeqCst)
     }
 
     /// 当前的外观（用户的设置和颜色令牌），用于首帧渲染。
@@ -745,6 +759,7 @@ impl ClientCore {
         );
         let servers_for_login = servers.clone();
         let share_in = Arc::new(crate::share_in::ShareInLink::new(&root));
+        let fake_ip_exclusion = path_settings::exclude_fake_ip(&root);
         let core = Arc::new(Self {
             state: watch::Sender::new(SessionStore::default()),
             app_lock,
@@ -758,6 +773,7 @@ impl ClientCore {
             servers,
             root,
             network,
+            fake_ip_exclusion: AtomicBool::new(fake_ip_exclusion),
             replay: Mutex::default(),
             switching,
             #[cfg(feature = "test-hooks")]

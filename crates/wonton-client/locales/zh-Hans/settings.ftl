@@ -2,6 +2,10 @@
 # $path 是设置文件的路径，$reason 是原始的读写错误。
 push-method-write-failed = 写不了推送方式设置文件 { $path }：{ $reason }
 
+# 代理 TUN 的假地址排除出选路的设置（crates/wonton-client/src/home/path_settings.rs）。
+# $path 是设置文件的路径，$reason 是原始的读写错误。
+path-settings-write-failed = 写不了选路设置文件 { $path }：{ $reason }
+
 # 推送（crates/wonton-client/src/push/{mod,registration,notification}.rs）：被拒绝的地址、失败的登记和没能取回消息的详情。
 # 通知的正文和占位（未知的发送者、邀请你加入、[文件]……）还不在这里。
 # $reason 是原始错误详情。

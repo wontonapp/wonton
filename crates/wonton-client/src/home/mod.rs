@@ -14,6 +14,7 @@ mod invite;
 mod link;
 mod pairing;
 mod pairing_code;
+pub(crate) mod path_settings;
 mod quality;
 mod rebuild;
 mod refresh;
@@ -97,6 +98,8 @@ pub(crate) struct HomeLink {
     page_media: AtomicBool,
     /// 收新消息的方式是保持连接（ADR-0003）：壳的前台服务让进程和隧道在后台活着，核心不停探测和自动重连。
     keep_connection: AtomicBool,
+    /// 代理 TUN 的假地址是否排除出选路，绑定的时候读这个缓存，不读盘（文件仍是真相，换作用域时重建）。
+    fake_ip_exclusion: AtomicBool,
     /// 媒体停下后延迟释放保活的任务，重新播放时取消。
     media_release: std::sync::Mutex<Option<tokio::task::JoinHandle<()>>>,
     /// 每次媒体状态变化加一。释放任务醒来后只认自己那次，被后来的播放抢先时不覆盖。
@@ -163,6 +166,7 @@ impl HomeLink {
                 just_recovered: false,
             },
         );
+        let fake_ip_exclusion = path_settings::exclude_fake_ip(storage.root());
         let home = Arc::new(Self {
             runtime,
             hub,
@@ -181,6 +185,7 @@ impl HomeLink {
             background: watch::Sender::new(false),
             app_backgrounded: AtomicBool::new(false),
             page_media: AtomicBool::new(false),
+            fake_ip_exclusion: AtomicBool::new(fake_ip_exclusion),
             keep_connection: AtomicBool::new(false),
             media_release: std::sync::Mutex::new(None),
             media_generation: AtomicU64::new(0),

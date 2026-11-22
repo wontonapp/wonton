@@ -47,8 +47,8 @@ pub mod wire;
 pub use allowlist::Allowlist;
 pub use blocking::off_workers;
 pub use client::{
-    DIAL_DEADLINE, PathInfo, PathKind, SuspendClock, TunnelClient, TunnelStats, TunnelStatus,
-    TunnelStreamStats,
+    DIAL_DEADLINE, PathInfo, PathKind, PreferRealPaths, SuspendClock, TunnelClient, TunnelStats,
+    TunnelStatus, TunnelStreamStats, is_fake_ip, path_selector,
 };
 pub use credential::{ProxyAccess, ProxyCredential};
 pub use embed::{PeerStream, TunnelListener};
