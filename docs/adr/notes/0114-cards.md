@@ -15,13 +15,13 @@
 
 ## 1. 协议：`member_accounts` 清单字段与校验
 
-- 目标：清单能声明三条建号命令，坏字段在校验期报错。
+- 目标：清单能声明四条建号命令，坏字段在校验期报错。
 - 改哪：新文件 `member_accounts.rs`；`manifest/mod.rs` 加字段；`manifest/permission.rs` 的“要有 `files` 权限”规则；
-  `plugin-spec.md` 新节，`wonton-docs` 同批。
+  `plugin-spec.md` 新节，`wonton-docs` 同批；四条命令都是绝对路径，`status` 可选。
 - 依赖：无。
 - 大小：M。
-- 先红：`manifest_member_accounts_service_must_exist`、`commands_must_be_absolute`、`requires_files_permission`
-  三个测试，各自断言 `Manifest::validate` 的具体错误码。
+- 先红：`manifest_member_accounts_service_must_exist`、`commands_must_be_absolute` 两个测试，各自断言 `Manifest::validate` 的具体错误码；
+  `status` 缺省不影响清单通过。
 - 后绿：三处校验都实现；字段序列化往返不丢。
 - 并行：能，和 2、3 之外的任何协议卡并行；2 等它。
 
@@ -34,7 +34,7 @@
 - 大小：L。
 - 先红：`install_calls_add_for_each_member_with_access`、`revoke_calls_remove`、
   `add_failure_marks_pending_and_retries`、`credential_exit_3_marks_reset`。
-- 后绿：按上述行为实现；`add` 幂等，重复安装不重复建。
+- 后绿：按上述行为实现；`add` 幂等，重复安装不重复建；对账只三处触发（安装、容器重建、每天），补建前看成员还在不在。
 - 并行：不能，等 1 合入；和其它核心卡（6、11、12）可并行，但要分配不同的文件。
 
 ## 3. 客户端账号按人（破坏性）
@@ -126,11 +126,14 @@
 
 ## 11. 核心：按房间可见的文件
 
-- 目标：房间核对过的结果对在房成员可读，退了立即失效。
-- 改哪：`files/record.rs` 的 `Accessor::Room`、`files/bot.rs` 的登记与 `for_bot`、`gateway/files.rs` 的鉴权、结果 `result_scope`。
+- 目标：声明了 `room_results` 且房间核对过的结果对在房成员可读；没声明一律 `keeper`。
+- 改哪：`files/record.rs` 的 `Accessor::Room`、`files/bot.rs` 的登记与 `for_bot`、`gateway/files.rs` 的鉴权、结果 `result_scope`、
+  `audience::verify_room`（含 60 秒缓存）。
 - 依赖：无。
 - 大小：L。
-- 先红：`room_member_reads_room_result`、`outsider_403`、`left_member_loses_access`、`default_scope_room_only_when_verified`。
+- 先红：`undeclared_defaults_to_keeper`、`declared_and_verified_gets_room`、`room_member_reads_room_result`、`outsider_403`、
+  `left_member_loses_access_after_cache`。
+- 附：一条升/降级脚本与用例——`room:` 记录被降级后改成 `bot:`，改不了就删并记日志。
 - 后绿：按 ADR 第 7 节；`keeper` 保持旧行为。
 - 并行：能，和协议卡不同文件。
 

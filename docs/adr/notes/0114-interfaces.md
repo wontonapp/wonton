@@ -26,6 +26,8 @@ pub struct MemberAccounts {
 pub struct MemberCommands {
     pub add: String,
     pub remove: String,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub status: Option<String>,
     pub credential: String,
 }
 ```
@@ -44,7 +46,8 @@ pub enum MemberCredential {
 ```
 
 校验：`service` 在 `services` 里；三条命令以 `/` 开头；`webui.service` 不必相同。
-另有 `status` 命令（可选，一条 JSON 列出已建账号，核心用它跑对账，补漏掉的 `add`）。
+另有 `status: Option<String>`（可选，一条 JSON 列出已建账号）。对账只在安装完成、容器重建后跑一次、以及每天一次；补建前先看这人还在不在成员里，
+  刚被移除的不会被补回来；补建失败进重试。
 
 运行约束：每条命令 30 秒超时，stdout 4 KiB、stderr 8 KiB 截断；退出码 0 成功、2 输入非法、3 只对 `credential` 有意义（凭据失效，重放 `add`），
 其它算失败并进待重试。
@@ -71,7 +74,8 @@ pub struct InboxSpec {
 
 - 新文件 `crates/wonton-protocol/src/event.rs`。
 - 在 `manifest/permission.rs` 的 `Permission` 加 `Events`（`events`）与 `Files`（`files`）；`Files` 是 `inbox` 的前置。
-- `spec_floor.rs` 登记 `member_accounts`、`inbox`、`events`、`result_scope` 用到的最低 `spec`（旧核心 `deny_unknown_fields` 会拒装，靠版本号提示升级）。
+- `spec_floor.rs` 按实际用到的字段与权限逐条登记（`Added::Permission`、`Added::Field`）：`member_accounts`、`inbox`、`inbox.scan`、
+  `member_accounts.status`、`events`、`files`、`room_results`、`result_scope`（旧核心 `deny_unknown_fields` 会拒装，靠版本号提示升级）。
 - 插件网络别名：`events.wonton.internal`；注入变量：`WONTON_EVENTS_URL`。
 
 `POST` 的请求体和 202 回体（新类型在 `event.rs`）：
@@ -108,9 +112,9 @@ pub struct AckQuery { pub ids: Vec<String> }
 pub struct AckResult { pub acked: usize }
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 pub struct DeliveredEvent {
-    pub id: String, pub plugin_id: String, pub kind: String, pub person: Option<String>,
+    pub id: String, pub plugin_id: Option<String>, pub kind: String, pub person: Option<String>,
     pub title: String, pub body: Option<String>, pub link: Option<String>, pub path: Option<String>,
-    /// 原文事件数据；只在 `wonton__events` 回，投递单里不带
+    /// 原文事件数据；不进聊天消息正文，只在 `wonton__events` 的工具结果里回
     pub data: Option<serde_json::Value>,
     /// 原文被截断过
     pub truncated: bool,
@@ -199,7 +203,9 @@ pub enum Accessor {
 
 - “权限”表加 `events` 一行；注入变量表加 `WONTON_EVENTS_URL`；网络别名表加 `events.wonton.internal`。
 - 新节“家人账号”写 `member_accounts`、三条命令、JSON、退出码、`lan.client` 按人、Jellyfin 用 Quick Connect。
-- 新节“收件箱”写 `inbox`、`app.wonton/files`、`inbox:` 前缀、24 小时清理、`source_unavailable`。
+- 权限表加 `files`，和 `events` 一起进安装预览、商店元数据与四种语言。
+- 新节“收件箱”写 `inbox`、`scan`、`app.wonton/files`、`inbox:` 前缀、24 小时清理、`source_unavailable`。
+- `tools/list` 一节写 `app.wonton/room_results: true`；结果 `_meta` 一节写 `result_scope` 的取值。
 - “通知”一节加 `to`、`link`，把“家人不收”改成按 `to`。
 - `tools/list` 一节加 `card`、`files` 两个 `_meta`；`tools/call` 一节加 `speakers`、`room_people`、`result_scope`；
   结果一节加 `card_result`、`deep_link`。

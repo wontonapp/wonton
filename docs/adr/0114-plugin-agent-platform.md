@@ -321,16 +321,19 @@ MCP 订阅只收 `tools_list_changed`（`crates/wonton-core/src/mcp/server.rs:29
 
 **设计。**
 
-- `Accessor` 加 `Room(房间内部 ID)`（存本地 ID，不是别名的 `!xxx:server`，别名可改）。在来源房间经核对过（`reported_origin` 认下、
-  Bot 和归属人都在房间里）时随记录加；报的来源没核对过就不加。
-- 鉴权时按**当下**的成员算，不拍快照：会查 `joined_members` 现算这个人在不在房间，在就能读，退了就失去。记录本身的 24 小时过期规则不变。
-- **“核对过”写死成一个函数**（`audience::verify_room(id, bot, 说话人…)`）：Bot 和每个说话人都在 `joined_members` 里才算，
-  结果按房间缓存 60 秒；它只回答“是不是这个房间的人”，不给确认卡用（确认卡的 `checked_origin` 照旧单独走）。
+- `Accessor` 加 `Room(房间内部 ID)`（存本地 ID，不是别名的 `!xxx:server`，别名可改）。加的时候核的是 Bot 与**每个说话人**（`verify_room`），
+  报的来源没核过就不加；人读的时候另核一次那个**读的人**在不在房间里。
+- 鉴权时按当下的成员算，不拍快照：查 `joined_members` 现算这个人在不在房间。查的结果按房间缓存 60 秒（连 `verify_room` 一起），
+  所以退了的人在 60 秒内还能读到，超过就失去；记录本身的 24 小时过期规则不变。
+- **“核对过”写死成一个函数**（`audience::verify_room(id, bot, 说话人…)`）：Bot 和每个说话人都在 `joined_members` 里才算；
+  它只回答“是不是这个房间的人”，不给确认卡用（确认卡的 `checked_origin` 照旧单独走）。
 - **降级要能操作**：旧核心读到 `Accessor::Room` 会让整条记录反序列化失败（`record.rs:28-64` 的 `try_from`），所以
   ①`spec_floor` 把用到 `result_scope`、`member_accounts`、`inbox` 的最低 `spec` 抬上去，旧核心按版本号拒装并提示升级；
-  ②升级说明写“旧核心上的记录里可能带 `room:…`，升上来读不出的那条按 `keeper` 重新登记”，卡里给一条清理脚本；
+  ②给一条降级脚本（卡 11）：把记录文本里的 `room:<id>` 换成登记它的 `bot:<id>`，改不了就删那条并记日志；升级说明写清什么时候跑、会丢哪些授权；
+  “降回旧核心时读不出的那条”按 keeper 处理；
   ③`plugin check` 对声明了这三项却低于门槛的清单当场失败。
-- 工具结果 `_meta` 加 `app.wonton/result_scope: "room" | "keeper"`。房间核对过时**也默认 `keeper`**，插件在 `tools/list` 的 `_meta` 里声明支持后才按 `room`；插件写 `keeper` 就退回现在的行为
+- 工具结果 `_meta` 加 `app.wonton/result_scope: "room" | "keeper"`。房间核对过时**也默认 `keeper`**。要开房间可见，插件得在 `tools/list` 的对应工具 `_meta` 里写
+`app.wonton/room_results: true`（工具级、缺省 false、坏值算 false 并记一条警告）；只有声明了、且来源房间经 `verify_room` 核过，才按 `room`；插件写 `keeper` 就退回现在的行为
   （Bot 和归属人）。私聊里没有房间，一律 `keeper`。
 - 反向：家人在房间里发出的附件，核心在发出时把同一个房间的 `Room` 挂到记录上；Bot 在自己这一轮的来源房间（同样核对过）能读。
 - App 的附件面板标出来源：“这个房间可见”或“只有你”，作者能把它改成更窄的 `keeper`。给人看的复制/下载不额外要权限，
@@ -412,7 +415,8 @@ MCP 订阅只收 `tools_list_changed`（`crates/wonton-core/src/mcp/server.rs:29
 
 ## 兼容与迁移
 
-- 加字段一律可选，但 `Manifest`/`Provides` 都是 `deny_unknown_fields`：**旧核心会按 `spec` 版本拒装并提示升级**，不是静默忽略。
+- 加字段一律可选，但 `Manifest` 是 `deny_unknown_fields`（`Provides` 是 flatten map，新键会落进 `capabilities` 再被 `ProviderService` 拒）：
+  **旧核心会按 `spec` 版本拒装并提示升级**，不是静默忽略。
   用到新字段的清单要升 `spec` 并在 `spec_floor.rs` 登记；`plugin check` 当场拦低位清单。
 - 旧插件在新核心上行为不变：通知仍到主人、结果仍 `keeper`（插件没在 `tools/list` 里声明支持 `room` 就不开门）、参数仍传编号。
 - 唯一要迁的一次：`lan.client` 的口令表从（插件, 标签）改成（插件, 标签, 人）。旧值升级时复制给主人一份并标“待重设”，
