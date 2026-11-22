@@ -234,7 +234,7 @@ struct ComposerView: View {
                 continue
             }
             if isSideChat {
-                await composer.sendImage(data, type, replyTo: model.replies[draftKey]?.eventId)
+                await sendImage(data, type)
             } else {
                 await composer.addImage(data, type)
             }
