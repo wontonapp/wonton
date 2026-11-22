@@ -73,7 +73,7 @@ final class ChatTelegramUITests: XCTestCase {
     /// 输入框开头敲“/”弹出命令列表，按前缀过滤；点一条直接发出去，输入框里的草稿留着、列表收起；“菜单”按钮打开同一张列表。
     func testSlashOpensCommandMenuAndTapSends() {
         enter(Self.directRoom)
-        let field = app.textViews["Message"]
+        let field = input
         let commands = ["help", "model", "new"].map { app.buttons["command.\($0)"] }
         XCTAssertFalse(commands[0].exists, "没敲“/”就有命令列表")
         focus(field)
@@ -106,7 +106,7 @@ final class ChatTelegramUITests: XCTestCase {
     /// 输入框空着时没有发送键，打了字才出现；“菜单”胶囊一直在。
     func testSendButtonAppearsWithText() {
         enter(Self.directRoom)
-        let field = app.textViews["Message"]
+        let field = input
         XCTAssertFalse(app.buttons["composerSend"].exists, "输入框空着就有发送键")
         XCTAssertTrue(app.buttons["composerCommands"].exists, "Bot 有命令，输入栏没有“菜单”")
         field.tap()
@@ -247,7 +247,7 @@ final class ChatTelegramUITests: XCTestCase {
         send.tap()
         XCTAssertTrue(first.waitForNonExistence(timeout: 5), "点了发送面板没收起")
         XCTAssertTrue(element("composerTray").waitForExistence(timeout: 5), "被拒以后附件区里的照片没了")
-        XCTAssertEqual(app.textViews["Message"].value as? String, "Fixture kept caption", "被拒以后附言被清掉了")
+        XCTAssertEqual(input.value as? String, "Fixture kept caption", "被拒以后附言被清掉了")
         XCTAssertTrue(app.buttons["replyCancel"].exists, "被拒以后回复对象没了")
         shot("attach-rejected")
         darkShot("attach-rejected-dark")
@@ -300,7 +300,7 @@ final class ChatTelegramUITests: XCTestCase {
         send.tap()
         XCTAssertTrue(first.waitForNonExistence(timeout: 5), "点了发送面板没收起")
         XCTAssertTrue(element("composerSending").waitForExistence(timeout: 5), "取照片的时候没有“正在发送”")
-        let field = app.textViews["Message"]
+        let field = input
         focus(field)
         field.typeText("typed while sending")
         XCTAssertTrue(element("composerSending").waitForNonExistence(timeout: 20), "照片发完了“正在发送”还在")
@@ -313,18 +313,18 @@ final class ChatTelegramUITests: XCTestCase {
         app.launchEnvironment["WONTON_UI_FAIL_SEND"] = "1"
         app.launch()
         enter(Self.directRoom)
-        tap(app.buttons["timelineDown"])
+        // 房间可能停在顶上、也可能已经贴底；贴底时没有“向下”。
+        if app.buttons["timelineDown"].exists { tap(app.buttons["timelineDown"]) }
         // 卡片挂在中间偏下的一条消息下面，底下又被附件提示盖住：往上、往下都试，直到它整个露在提示上面。
         let card = app.buttons["sideChatCard"]
         XCTAssertTrue(revealClearOfHint(card), "翻不到露出来的旁聊卡片\n\(app.debugDescription)")
         tap(card)
-        XCTAssertTrue(card.waitForNonExistence(timeout: 5), "点了卡片没进旁聊\n\(app.debugDescription)")
-        XCTAssertTrue(element("sideChatAttachHint").waitForExistence(timeout: 5),
-                      "旁聊里没有附件提示（还在房间里：\(app.buttons["Back"].exists)）\n\(app.debugDescription)")
+        // 假数据里旁聊和主对话共用同一份时间线，卡片在盖层里也还在；靠提示认出已经进了旁聊。
+        XCTAssertTrue(element("sideChatAttachHint").waitForExistence(timeout: 10), "点了卡片没进旁聊\n\(app.debugDescription)")
         shot("side-chat-hint")
         darkShot("side-chat-hint-dark")
         startReply(at: 3)
-        let field = app.textViews["Message"]
+        let field = input
         focus(field)
         field.typeText("Fixture side draft")
         tap(app.buttons["composerSend"])
@@ -495,7 +495,10 @@ final class ChatTelegramUITests: XCTestCase {
 
     private func enter(_ room: String) {
         tap(app.buttons[room])
-        XCTAssertTrue(app.textViews["Message"].waitForExistence(timeout: 10), "房间没打开\n\(app.debugDescription)")
+        // 房间停在顶上还是贴底由落点和贴底决定：等到任意一条假消息就是时间线到了。
+        let any = app.staticTexts.matching(NSPredicate(format: "label BEGINSWITH %@", "Fixture ")).firstMatch
+        XCTAssertTrue(any.waitForExistence(timeout: 20), "时间线没出来\n\(app.debugDescription)")
+        XCTAssertTrue(input.exists, "房间打开了，输入框没出来")
     }
 
     /// 假房间的第几条消息（正文是 “Fixture message N”）。
@@ -515,29 +518,34 @@ final class ChatTelegramUITests: XCTestCase {
         app.staticTexts.matching(NSPredicate(format: "label BEGINSWITH %@", prefix)).firstMatch
     }
 
+    /// 输入框。盖层开着时主对话那份也在无障碍树里，取第一份。
+    private var input: XCUIElement { app.textViews["Message"].firstMatch }
+
+    /// 列表可见区的上下沿：顶栏那一刻（有人打字时量提示的下沿）到输入框那一刻（上面有提示、附件区时量它们的上沿）。
+    private func visibleBounds() -> (top: CGFloat, bottom: CGFloat) {
+        let activity = app.staticTexts["barActivity"].firstMatch
+        let top = activity.exists ? activity.frame.maxY : app.buttons["roomTopBarAvatar"].firstMatch.frame.maxY
+        let cover = [element("sideChatAttachHint"), element("composerTray")].filter { $0.exists }.map { $0.frame.minY }
+        let bottom = min(input.frame.minY, cover.min() ?? .infinity)
+        return (top, bottom)
+    }
+
     /// 整个落在顶栏和输入框之间。列表垫在半透明的顶栏下面，那里的元素 `isHittable` 也是真，点下去点到的是顶栏；
     /// 输入框上面的附件区和旁聊提示一样盖住列表。
     private func inView(_ node: XCUIElement) -> Bool {
         guard node.exists, node.isHittable else { return false }
-        // 有人在打字的提示占着顶栏那一行时量它的下沿，没有人打字就量顶栏头像的下沿。
-        let activity = app.staticTexts["barActivity"]
-        let top = activity.exists ? activity.frame.maxY : app.buttons["roomTopBarAvatar"].frame.maxY
-        let cover = [element("sideChatAttachHint"), element("composerTray")].filter { $0.exists }.map { $0.frame.minY }
-        let bottom = min(app.textViews["Message"].frame.minY, cover.min() ?? .infinity)
+        let (top, bottom) = visibleBounds()
         return node.frame.minY > top && node.frame.maxY < bottom
     }
 
     /// 翻到露在附件提示上面的位置：卡片在提示底下就往上挪，在提示上面更远处就往下找。
     private func revealClearOfHint(_ node: XCUIElement) -> Bool {
-        let activity = app.staticTexts["barActivity"]
         for _ in 0..<60 {
             guard node.exists else {
                 dragDown()
                 continue
             }
-            let top = activity.exists ? activity.frame.maxY : app.buttons["roomTopBarAvatar"].frame.maxY
-            let cover = [element("sideChatAttachHint"), element("composerTray")].filter { $0.exists }.map { $0.frame.minY }
-            let bottom = min(app.textViews["Message"].frame.minY, cover.min() ?? .infinity)
+            let (top, bottom) = visibleBounds()
             if node.frame.minY > top, node.frame.maxY < bottom, node.isHittable { return true }
             if node.frame.maxY <= top {
                 dragDown()

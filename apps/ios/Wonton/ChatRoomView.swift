@@ -58,7 +58,13 @@ struct ChatRoomView: View {
                 ) {
                     roomContent
                     #if DEBUG
-                        .overlay(alignment: .topLeading) { ScrollDebug(pin: pin) }
+                        .overlay(alignment: .topLeading) {
+                            ScrollDebug(
+                                pin: pin,
+                                extra: "sub=\(timeline.debugSubscribes) up=\(timeline.debugUpdates)"
+                                    + " n=\(timeline.items.count) end=\(timeline.debugEnded)"
+                            )
+                        }
                     #endif
                 }
             }
@@ -139,7 +145,7 @@ private extension ChatRoomView {
         .environment(presenter)
         // 开新旁聊的面板（ADR-0093 §6）。
         .modifier(NewSideChatSheet(model: model, roomId: roomId))
-        // 盖层见 body 里的 SideChatCover：这里不另做系统呈现，免得和收起的“开新旁聊”面板撞在同一个呈现时机上。
+        // 盖层见 body 里的 SideChatCover（一张系统全屏页）；“开新旁聊”面板收起和它抬起来会落在同一个呈现时机上。
         .modifier(RoomTopBar(
             title: bot?.name ?? title,
             avatar: barAvatar,

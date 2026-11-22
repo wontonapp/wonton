@@ -35,12 +35,14 @@ impl FakeTimelines {
                 fake
             }
         };
+        // 先挂上这一份的通道，第一批才发得到它。
+        eprintln!("FAKE");
+        lock(&fake.senders).push(sender);
         let mut first = fake.lock().base.clone();
         let pending = lock(&self.forwarded).remove(room_id).unwrap_or_default();
         // 没人转发进这个房间时也要留着第一批自己的 Reset：换成空 diffs 时间线就空了。
         first.diffs.extend(fake.receive(pending));
         fake.push(&mut first);
-        lock(&fake.senders).push(sender);
         let scrolled = fake.clone();
         TimelineSubscription::seeded(receiver, Box::new(move |scroll| scrolled.scrolled(scroll)))
     }
@@ -184,6 +186,11 @@ impl FakeTimeline {
             crate::chat::apply_diff(&mut state.items, diff);
         }
         update.back_to = state.back.last().cloned();
+        eprintln!(
+            "FAKE push senders={} diffs={}",
+            lock(&self.senders).len(),
+            update.diffs.len()
+        );
         lock(&self.senders).retain(|sender| sender.send(update.clone()).is_ok());
     }
 
@@ -386,6 +393,60 @@ mod tests {
 
     async fn next(subscription: &TimelineSubscription) -> TimelineUpdate {
         subscription.next().await.expect("假房间一直开着")
+    }
+
+    /// 同一个房间能同时订两份（主对话和盖在上面的旁聊）：两份都拿到整条时间线，发出去的字两份都收得到，
+    /// 谁先订着谁也不会被挤掉。
+    #[tokio::test]
+    async fn two_subscriptions_share_one_room() {
+        let fakes = FakeTimelines::default();
+        let first = fakes.subscribe(ROOM);
+        let _ = next(&first).await;
+        let second = fakes.subscribe(ROOM);
+        let batch = next(&second).await;
+        let [TimelineDiff::Reset { items }] = batch.diffs.as_slice() else {
+            panic!("后订的那份也拿到整条时间线");
+        };
+        assert_eq!(items.len(), ITEMS);
+
+        fakes.timeline_action(TimelineAction::SendText {
+            target: target(),
+            body: "Fixture both".into(),
+            reply_to: None,
+            mentions: Vec::new(),
+        });
+        assert!(!next(&second).await.diffs.is_empty());
+        assert!(!next(&first).await.diffs.is_empty());
+        // 后订的那份订阅时会给先订的那份也推一批，这里已经收过；两边的通道都没断。
+    }
+
+    /// 走壳用的入口订阅一条时间线：第一批之后不该自己结束（壳那边一结束就当房间没了、把页收起来）。
+    #[tokio::test]
+    async fn a_subscription_does_not_end_by_itself() {
+        let dir = tempfile::tempdir().unwrap();
+        let core =
+            crate::client::ClientCore::new_ui_fake(dir.path().to_string_lossy().into_owned())
+                .unwrap();
+        let subscription = core.subscribe_timeline(target()).await.unwrap();
+        let first =
+            tokio::time::timeout(std::time::Duration::from_secs(2), subscription.next()).await;
+        assert!(matches!(first, Ok(Some(_))), "第一批该马上到");
+        core.dispatch(wonton_protocol::Action::Timeline {
+            action: TimelineAction::SendText {
+                target: target(),
+                body: "Fixture alive".into(),
+                reply_to: None,
+                mentions: Vec::new(),
+            },
+        })
+        .unwrap();
+        let sent =
+            tokio::time::timeout(std::time::Duration::from_secs(2), subscription.next()).await;
+        assert!(matches!(sent, Ok(Some(_))), "发出去的字该推过来");
+        // 没事发生的时候也不该结束：结束的话壳会把这条时间线当成没了。
+        let idle =
+            tokio::time::timeout(std::time::Duration::from_millis(300), subscription.next()).await;
+        assert!(idle.is_err(), "没有操作时订阅自己结束了");
     }
 
     fn message(items: &[TimelineItem], id: &str) -> wonton_protocol::TimelineMessage {
