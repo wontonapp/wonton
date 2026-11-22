@@ -40,6 +40,7 @@ import app.wonton.client.ClientCore
 import app.wonton.protocol.Action
 import app.wonton.protocol.BackPagination
 import app.wonton.protocol.ChatAction
+import app.wonton.protocol.ImageContent
 import app.wonton.protocol.JumpState
 import app.wonton.protocol.OutgoingMessage
 import app.wonton.protocol.TimelineAction
@@ -84,6 +85,9 @@ internal fun TimelineList(
     // 倒着排：第 0 项是最新的一条，贴着底部。
     val newestFirst = timeline.items.asReversed()
     val openCard: (String) -> Unit = { cardId -> timeline.openedConfirmation = cardId }
+    // 同一次发送的多张照片（ADR-0094）：查看器在同组里翻页用。items 是原地增删的同一份列表，
+    // remember 的键要跟批号（revision）走；拿 items 本身当键永远等于自己，收组就只在空表上算一次。
+    val imageGroups = remember(timeline.revision) { timeline.items.imageGroups() }
     val pill = rememberDatePill(listState, newestFirst)
     val inset = LocalWontonTopInset.current
     PaginateOnTop(listState, timeline, target, onAction)
@@ -130,6 +134,9 @@ internal fun TimelineList(
                         onOpenMenu = onOpenMenu,
                         onReply = onReply,
                         openCard = openCard,
+                        groupImages = item.message?.let { message ->
+                            message.group?.id?.let { imageGroups[message.senderId to it] }
+                        },
                     )
                 }
             }
@@ -252,6 +259,7 @@ private fun TimelineRow(
     onOpenMenu: (TimelineItem, TimelineMessage, Rect) -> Unit,
     onReply: (TimelineMessage) -> Unit,
     openCard: (String) -> Unit,
+    groupImages: List<ImageContent>?,
 ) {
     val joinsPrevious = item.joins(previous)
     Box(
@@ -285,6 +293,7 @@ private fun TimelineRow(
             emphasize = timeline.focus?.highlight == true,
             flushesPrevious = previous?.flushesWith(next = item) == true,
             flushesNext = item.flushesWith(next = next),
+            groupImages = groupImages,
         )
     }
 }

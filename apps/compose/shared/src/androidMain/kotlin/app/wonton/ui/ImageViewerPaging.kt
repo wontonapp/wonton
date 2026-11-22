@@ -3,12 +3,16 @@ package app.wonton.ui
 import androidx.compose.animation.core.Animatable
 import androidx.compose.animation.core.Spring
 import androidx.compose.animation.core.spring
+import androidx.compose.runtime.Composable
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableFloatStateOf
 import androidx.compose.runtime.mutableIntStateOf
+import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
+import androidx.compose.ui.unit.Density
 import androidx.compose.ui.unit.dp
 import app.wonton.protocol.ImageContent
+import app.wonton.protocol.MediaHandle
 import app.wonton.protocol.MessageContent
 import app.wonton.protocol.TimelineContent
 import app.wonton.protocol.TimelineItem
@@ -102,13 +106,41 @@ internal class PageState(
     }
 }
 
-/** 同一次发送（ADR-0094）的多张照片：按组收集、组内按 index 排好，查看器在同组里翻页用。单张的组不进。 */
-internal fun List<TimelineItem>.imageGroups(): Map<String, List<ImageContent>> = asSequence()
+/**
+ * 同一次发送（ADR-0094）的多张照片：按（发送者、组 id）收集、组内按 index 排好，查看器在同组里翻页用。
+ * 组 id 只有 32 位，和发送者一起才是 ADR 说的那个组；单张的组不进。
+ */
+internal fun List<TimelineItem>.imageGroups(): Map<Pair<String, String>, List<ImageContent>> = asSequence()
     .mapNotNull { item -> (item.content as? TimelineContent.Message)?.message }
     .mapNotNull { message ->
         val group = message.group ?: return@mapNotNull null
         val image = (message.body as? MessageContent.Image)?.image ?: return@mapNotNull null
-        if (group.count <= 1u) null else group.id to (group.index to image)
+        if (group.count <= 1u) null else (message.senderId to group.id) to (group.index to image)
     }
-    .groupBy({ (id, _) -> id }, { (_, pair) -> pair })
+    .groupBy({ (key, _) -> key }, { (_, pair) -> pair })
     .mapValues { (_, entries) -> entries.sortedBy { it.first }.map { it.second } }
+
+/**
+ * 翻页状态：图片或密度变了才重建，起头停在原来那张（那张被删了就停原位）。重建后查看器把新位置写回 [viewing]。
+ */
+@Composable
+internal fun rememberPager(
+    images: List<ImageContent>,
+    viewing: Pair<MediaHandle, Int>?,
+    fallback: Int,
+    transform: ViewerTransform,
+    density: Density,
+    scope: CoroutineScope,
+): PageState? = remember(images, density) {
+    images.takeIf { it.size > 1 }?.let { group ->
+        PageState(
+            group.size,
+            group.indexOfFirst { image -> image.media == viewing?.first }
+                .takeIf { at -> at >= 0 }
+                ?: (viewing?.second ?: fallback).coerceIn(0, group.size - 1),
+            { transform.viewport.width.toFloat() },
+            with(density) { PAGE_FLING.toPx() },
+            scope,
+        )
+    }
+}
