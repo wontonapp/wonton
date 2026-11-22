@@ -277,18 +277,21 @@ final class ChatTelegramUITests: XCTestCase {
         if app.buttons["timelineDown"].exists { tap(app.buttons["timelineDown"]) }
         let arrived = text(startingWith: "Fixture forward comment")
         XCTAssertTrue(arrived.waitForExistence(timeout: 10), "附言没进目标房间\n\(app.debugDescription)")
-        // 目标房间本来就有一条“Fixture message 3”，转发过来的那条是第二条。列表懒加载，底下的行没画就不在树里：
-        // 附言出来后一段段往新的那边拖（dragUp），直到它露出来。
+        // 转发的副本跟在附言下面。列表懒加载，底下的行没画就不在树里：一段段往新的那边拖（dragUp）到它露出来。
+        // 原件滚到顶上去了，所以不能按“两条 Fixture message 3”数，按落在附言下面认。
         let copies = app.staticTexts.matching(NSPredicate(format: "label BEGINSWITH %@", "Fixture message 3"))
+        func belowCaption() -> XCUIElement? {
+            copies.allElementsBoundByIndex.first { $0.frame.minY > arrived.frame.maxY }
+        }
         XCTAssertTrue(
             wait(10) {
-                if copies.count < 2 { dragUp() }
-                return copies.count == 2
+                if belowCaption() != nil { return true }
+                dragUp()
+                return false
             },
-            "转发的消息没进目标房间（只有 \(copies.count) 条）\n\(app.debugDescription)"
+            "附言下面没有转发的消息\n\(app.debugDescription)"
         )
-        let forwarded = copies.allElementsBoundByIndex[1]
-        XCTAssertLessThanOrEqual(arrived.frame.maxY, forwarded.frame.minY, "附言没排在被转发的消息上面")
+        XCTAssertNotNil(belowCaption(), "转发的消息没排在附言下面")
         shot("forwarded-comment")
         darkShot("forwarded-comment-dark")
     }
