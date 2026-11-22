@@ -200,13 +200,13 @@ fn item(index: usize) -> TimelineItem {
         at_ms(index),
         &paragraphs,
     );
-    if index == APP_LINK_INDEX || index == UNKNOWN_APP_LINK_INDEX {
-        if let MessageContent::Text { blocks, .. } = &mut message.body {
-            blocks[0].spans[0].link = Some(RichLink {
-                url: paragraphs[0].clone(),
-                kind: RichLinkKind::Other,
-            });
-        }
+    if (index == APP_LINK_INDEX || index == UNKNOWN_APP_LINK_INDEX)
+        && let MessageContent::Text { blocks, .. } = &mut message.body
+    {
+        blocks[0].spans[0].link = Some(RichLink {
+            url: paragraphs[0].clone(),
+            kind: RichLinkKind::Other,
+        });
     }
     let status = if index <= REPLY_INDEX {
         MessageStatus::Read
