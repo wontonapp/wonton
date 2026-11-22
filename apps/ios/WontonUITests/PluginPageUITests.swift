@@ -48,7 +48,8 @@ final class PluginPageUITests: XCTestCase {
     /// 2 秒盯的是页面自己（和第 1 轮真红时 5.25 秒里那 2 秒空白同量级）；点按侧边栏、等抽屉展开这些是 XCTest 的
     /// 合成输入，模拟器上稳定要 3 秒上下，另用一条宽的总时限兜住整条路的回归。
     func testContentWithinTwoSecondsAfterResume() throws {
-        executionTimeAllowance = 900
+        // 夜跑的 -maximum-test-execution-time-allowance 是 600：留出余量。
+        executionTimeAllowance = 580
         try launch(arguments: [])
         // 先开一次关掉：全新设备的插件列表和网页都是冷的，枚举前把“我的应用”和隧道预热好，
         // 免得第 1 轮把冷启动算进去。
