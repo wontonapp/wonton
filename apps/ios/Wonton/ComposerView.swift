@@ -65,11 +65,15 @@ struct ComposerView: View {
             AgentStopNotice(state: composer.agentStop)
             if isSideChat && showsSideChatHint {
                 SideChatAttachHint(
-                    openMain: { model.closeSideChat(in: composer.target.roomId) },
+                    openMain: { model.closeSideChat(in: composer.target.roomId, why: "hint") },
                     close: { showsSideChatHint = false }
                 )
                 .padding(.horizontal, WontonTheme.spacing.chatFloatInset - WontonTheme.spacing.s4)
                 .transition(.opacity)
+            }
+            if let rejection = model.rejection {
+                ComposerRejection(problem: rejection) { model.rejection = nil }
+                    .padding(.horizontal, WontonTheme.spacing.chatFloatInset - WontonTheme.spacing.s4)
             }
             composerRow(isEmpty: isEmpty)
             // 渐隐从输入栏上方一点开始，一直垫到屏幕底（伸出去的部分在屏幕外或键盘后面）。

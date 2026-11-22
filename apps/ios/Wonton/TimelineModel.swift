@@ -86,6 +86,9 @@ final class TimelineModel {
         }
         // 走查：订阅结束的原因（取消还是自己断了），挂在 `ScrollDebug` 里。
         debugEnded = Task.isCancelled ? "cancelled" : "ended"
+        walkLog.notice(
+            "timeline ended cancelled=\(Task.isCancelled, privacy: .public) room=\(self.roomId, privacy: .public)"
+        )
         if !Task.isCancelled {
             failure = Problem(title: String(localized: .Problem1.problemGenericTitle))
         }

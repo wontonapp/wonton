@@ -62,7 +62,8 @@ struct ChatRoomView: View {
                             ScrollDebug(
                                 pin: pin,
                                 extra: "sub=\(timeline.debugSubscribes) up=\(timeline.debugUpdates)"
-                                    + " n=\(timeline.items.count) end=\(timeline.debugEnded)"
+                                    + " n=\(timeline.items.count)"
+                                    + " end=\(timeline.debugEnded) closed=\(model.debugClosed)"
                             )
                         }
                     #endif
@@ -152,7 +153,7 @@ private extension ChatRoomView {
             typing: typingText,
             openProfile: profileAction,
             sideChatTitle: threadRoot == nil ? nil : timeline.sideChat?.title ?? String(localized: .Chat.sideChat),
-            close: threadRoot == nil ? nil : { model.closeSideChat(in: roomId) }
+            close: threadRoot == nil ? nil : { model.closeSideChat(in: roomId, why: "bar") }
         ) {
             // 面板跟着主对话（ADR-0093）：旁聊页没有房间的面板，也没有这里的按钮。
             // 房间里装着的 widget（通话）：点了全屏打开，关掉回到这里（ADR-0096）。旁聊页没有。
@@ -189,7 +190,7 @@ private extension ChatRoomView {
             if await timeline.observe(pin: pin) {
                 if threadRoot != nil {
                     // 旁聊没了：只收起旁聊，主对话还在。
-                    model.closeSideChat(in: roomId)
+                    model.closeSideChat(in: roomId, why: "ended")
                 } else if !isContentRoot {
                     model.path = []
                     model.visiting = nil
@@ -206,7 +207,7 @@ private extension ChatRoomView {
                 }
             } else if model.sideChats[roomId] == threadRoot {
                 // 旁聊页收起时同步关掉：改回主对话就不再算“旁聊开着”。
-                model.closeSideChat(in: roomId)
+                model.closeSideChat(in: roomId, why: "gone")
             }
         }
         .onChange(of: covered) { _, isCovered in

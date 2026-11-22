@@ -40,6 +40,8 @@ final class ChatModel {
     var visiting: VisitingRoom?
     /// 开着的旁聊：房间 ID → 旁聊根的事件 ID。一个房间同时最多一个（ADR-0093）。
     var sideChats: [String: String] = [:]
+    /// 走查：最近一次收起旁聊是谁收的（`bar`/`ended`/`gone`/`hint`）。
+    var debugClosed = ""
     /// 正在写第一句的房间：开新旁聊的面板开着。
     var composingSideChat: String?
     /// 新建聊天选的 AI 不支持旁聊、打开的是主对话的房间（ADR-0093 §7）。
@@ -170,7 +172,9 @@ final class ChatModel {
         composingSideChat = nil
     }
 
-    func closeSideChat(in roomId: String) {
+    func closeSideChat(in roomId: String, why: String = "") {
+        debugClosed = why
+        walkLog.notice("side chat closed why=\(why, privacy: .public)")
         sideChats[roomId] = nil
     }
 
