@@ -61,10 +61,11 @@ fun PrivacyPage(core: ClientCore, back: () -> Unit) {
 @Composable
 fun LicensesPage(licenses: LicensesLoad, onOpen: (LicenseGroup) -> Unit, back: () -> Unit) {
     WontonScreen(bar = { WontonPushedBar(stringResource(R.string.settings_licenses), back) }) {
-        when (val result = licenses.result) {
-            null -> Unit
-            is Result.Failure -> LicensesProblem(licenses.retry)
-            is Result.Success -> LazyColumn(
+        val result = licenses.result ?: return@WontonScreen
+        if (result.isFailure) {
+            LicensesProblem(licenses.retry)
+        } else {
+            LazyColumn(
                 Modifier.fillMaxSize().wontonContentPadding().padding(WontonTheme.spacing.pageInset),
                 verticalArrangement = Arrangement.spacedBy(WontonTheme.spacing.sectionGap),
             ) {

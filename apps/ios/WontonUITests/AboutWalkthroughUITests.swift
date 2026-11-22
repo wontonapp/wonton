@@ -1,6 +1,6 @@
 import XCTest
 
-/// 一次性走查：#661 关于页里的隐私说明和开源许可（不进仓库的临时类）。
+/// 走查：#661 关于页里的隐私说明和开源许可。
 /// 走完引导后从侧边栏进设置 → 关于，截隐私页、许可列表、许可全文；最后用测试钩子再看一次读不到清单的重试态。
 final class AboutWalkthroughUITests: XCTestCase {
     private var app: XCUIApplication!
