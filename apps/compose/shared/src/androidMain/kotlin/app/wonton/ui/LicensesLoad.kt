@@ -15,7 +15,7 @@ import app.wonton.protocol.LicensesViewModel
  *
  * 清单是构建时生成的资源文件，读它和解析它都在核心，壳只管把资源交过去。
  */
-internal class LicensesLoad(
+class LicensesLoad(
     val result: Result<LicensesViewModel>?,
     val retry: () -> Unit,
 )
