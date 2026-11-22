@@ -53,9 +53,9 @@ pub(crate) fn contacts(query: &str, bots: &[BotView], rooms: &[RoomRow]) -> Vec<
             let Some(user_id) = room.direct_user_id.as_deref() else {
                 return false;
             };
-            !bots
-                .iter()
-                .any(|bot| bot.user_id == user_id && bot.availability != BotChatAvailability::Available)
+            !bots.iter().any(|bot| {
+                bot.user_id == user_id && bot.availability != BotChatAvailability::Available
+            })
         })
         .filter_map(|room| {
             let user_id = room.direct_user_id.clone()?;
@@ -67,7 +67,8 @@ pub(crate) fn contacts(query: &str, bots: &[BotView], rooms: &[RoomRow]) -> Vec<
         });
     let query = query.trim().to_lowercase();
     let mut seen = HashSet::new();
-    candidates.chain(peers)
+    candidates
+        .chain(peers)
         .filter(|contact| seen.insert(contact.user_id.clone()))
         .filter(|contact| {
             contact.name.to_lowercase().contains(&query) || contact.user_id.contains(&query)

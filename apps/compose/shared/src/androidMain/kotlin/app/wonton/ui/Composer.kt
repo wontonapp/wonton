@@ -113,6 +113,7 @@ fun Composer(
     commands: List<RoomCommand> = emptyList(),
     commandsOmitted: Int = 0,
     dropCommand: String? = null,
+    enabled: Boolean = true,
 ) {
     val incoming = LocalTabDraft.current
     LaunchedEffect(incoming.text) {
@@ -185,6 +186,7 @@ fun Composer(
         commands = commands,
         agentStop = agentStop,
         isEmpty = isEmpty,
+        enabled = enabled,
         focusRequester = focusRequester,
         onDraftChange = onDraftChange,
         attach = attach,
@@ -261,6 +263,7 @@ private fun ComposerBar(
     commands: List<RoomCommand>,
     agentStop: RoomAgentStop,
     isEmpty: Boolean,
+    enabled: Boolean,
     focusRequester: FocusRequester,
     onDraftChange: (String) -> Unit,
     attach: Attachments,
@@ -290,8 +293,13 @@ private fun ComposerBar(
             draft,
             onDraftChange,
             attach.pasteListener,
+<<<<<<< HEAD
             onHardwareSend = { text -> send(dropCommand ?: text) },
             onFocusChange = { focused -> if (!focused) onTyping(false) },
+=======
+            onHardwareSend = { text -> if (enabled) send(dropCommand ?: text) },
+            enabled = enabled,
+>>>>>>> 601b5b077 (feat(chat): 按人投影可用 Bot，不能聊的私聊如实说明 (#646))
             modifier = Modifier.weight(1f)
                 .focusRequester(focusRequester)
                 .padding(vertical = (size.target - size.composerField) / 2)
@@ -307,7 +315,7 @@ private fun ComposerBar(
             enter = scaleIn(motion) + fadeIn(motion),
             exit = scaleOut(motion) + fadeOut(motion),
         ) {
-            SendButton { send(dropCommand ?: draft) }
+            SendButton { if (enabled) send(dropCommand ?: draft) }
         }
     }
 }
@@ -444,7 +452,11 @@ private fun ComposerField(
     onDraftChange: (String) -> Unit,
     pasteListener: ReceiveContentListener,
     onHardwareSend: (String) -> Unit,
+<<<<<<< HEAD
     onFocusChange: (Boolean) -> Unit,
+=======
+    enabled: Boolean,
+>>>>>>> 601b5b077 (feat(chat): 按人投影可用 Bot，不能聊的私聊如实说明 (#646))
     modifier: Modifier,
 ) {
     val colors = WontonTheme.colors
@@ -470,10 +482,15 @@ private fun ComposerField(
     }
     BasicTextField(
         state = fieldState,
+<<<<<<< HEAD
         modifier = modifier
             .onFocusChanged { onFocusChange(it.isFocused) }
             .contentReceiver(pasteListener)
             .hardwareMessageKeys(fieldState, onHardwareSend),
+=======
+        enabled = enabled,
+        modifier = modifier.contentReceiver(pasteListener).hardwareMessageKeys(fieldState, onHardwareSend),
+>>>>>>> 601b5b077 (feat(chat): 按人投影可用 Bot，不能聊的私聊如实说明 (#646))
         lineLimits = TextFieldLineLimits.MultiLine(
             maxHeightInLines = WontonTheme.ratio.composerLines.toInt(),
         ),

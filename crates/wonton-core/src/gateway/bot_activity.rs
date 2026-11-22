@@ -21,7 +21,9 @@ pub(super) struct ActivityQuery {
     after: Option<u64>,
 }
 
+/// 不能聊时把活动抹平：插件跑着也不代表这个人的私聊会被接。
 fn zero(facts: &mut BotActivityFacts) {
+    facts.running = false;
     facts.model_requests = 0;
     facts.tool_calls = 0;
     facts.waiting = 0;
@@ -44,7 +46,7 @@ fn snapshot(
                         plugin_id: facts.plugin_id.clone(),
                         bot: bot.clone(),
                     };
-                    chat_availability_of(gateway, peer, headers, &reference, &caller)
+                    chat_availability_of(gateway, peer, headers, &reference, &caller)?
                 }
                 None => BotChatAvailability::Unknown,
             };
@@ -77,10 +79,7 @@ pub(super) async fn get(
     Query(query): Query<ActivityQuery>,
 ) -> Response {
     let peer = peer.map(|Extension(peer)| peer);
-    if gateway
-        .device_user(peer)
-        .is_none()
-    {
+    if gateway.device_user(peer).is_none() {
         return error_response(
             StatusCode::UNAUTHORIZED,
             "unauthenticated",

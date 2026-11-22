@@ -6,6 +6,7 @@ use serde_json::{Value, json};
 use wonton_client::{Action, TimelineContent, TimelineItem};
 use wonton_matrix::testkit::eventually;
 use wonton_matrix::{ChatRoom, EventId, MatrixSession, OwnedEventId, OwnedRoomId, RelationType};
+use wonton_protocol::BotChatAvailability;
 use wonton_protocol::{BotActivityFacts, ChatAction, ChoiceSend, ChoicesState, MessageChoices};
 
 use super::confirmation::joined_direct_chat;

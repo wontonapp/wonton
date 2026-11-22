@@ -9,6 +9,7 @@ use serde_json::{Value, json};
 use wonton_client::{Action, Answer, MessageContent, TimelineContent};
 use wonton_matrix::testkit::eventually;
 use wonton_matrix::{ChatRoom, MatrixSession, Membership, RelationType};
+use wonton_protocol::BotChatAvailability;
 use wonton_protocol::{
     AgentRunChoice, AgentRunState, BotActivityFacts, ChoiceSend, TimelineAction, TimelineTarget,
 };

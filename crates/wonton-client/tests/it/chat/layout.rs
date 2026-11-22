@@ -9,6 +9,7 @@ use wonton_client::{
     ChatTextScale, CodeOverflow, RoomMembership,
 };
 use wonton_matrix::{MatrixSession, OwnedUserId};
+use wonton_protocol::BotChatAvailability;
 use wonton_protocol::{BotActivityFacts, PluginChat};
 
 use super::support::{Home, OWNER, Phone, WAIT};

@@ -9,9 +9,9 @@ use tokio::sync::{Notify, watch};
 use tokio::time::Instant;
 use wonton_matrix::{MatrixSession, UserProfile};
 use wonton_protocol::{
-    AVATARS_FIELD, AvatarImage, AvatarKind, AvatarMedia, BotActivity, BotActivityFacts, BotRef,
-    BotView, ChatForm, ChatViewModel, HomeStatus, InstalledPlugins, MediaHandle, StateAvatar,
-    StateAvatars,
+    AVATARS_FIELD, AvatarImage, AvatarKind, AvatarMedia, BotActivity, BotActivityFacts,
+    BotChatAvailability, BotRef, BotView, ChatForm, ChatViewModel, HomeStatus, InstalledPlugins,
+    MediaHandle, StateAvatar, StateAvatars,
 };
 
 use super::bot_activity::{Activity, synthesize};
@@ -510,6 +510,8 @@ impl Bots {
             for bot in &mut view.bots {
                 bot.web = None;
                 bot.web_page = None;
+                // 没新的快照就核实不了资格：不再声称“能用”或“不能用”，壳照常能发、只写还没核实。
+                bot.availability = BotChatAvailability::Unknown;
             }
         });
         for record in local.records.values_mut() {
@@ -518,6 +520,7 @@ impl Bots {
             record.activity = synthesize(&record.activity, None, false, Instant::now());
         }
         self.publish_activity(&local);
+        self.changed.notify_one();
     }
 
     pub fn update_activity(&self) -> Option<Instant> {

@@ -97,6 +97,7 @@ pub enum BotChatAvailability {
     },
     /// 还核实不了（身份、记录、联系人或角色读不到）：壳照实说不知道，不伪装送达。
     #[default]
+    #[serde(other)]
     Unknown,
 }
 
@@ -227,10 +228,10 @@ pub struct BotActivityFacts {
     pub bot: Option<String>,
     /// Bot 的 Matrix 用户 ID。
     pub user_id: String,
-    /// 请求者能不能和它聊天；不能时下面的计数已经按请求者清零。
+    /// 请求者能不能和它聊天；不能或不确定时，下面的活动和 `running` 已按请求者抹平（都为假/零）。
     #[serde(default)]
     pub chat: crate::BotChatAvailability,
-    /// 插件在运行，健康检查过了。
+    /// 插件在运行，健康检查过了；不能聊时也按假给。
     pub running: bool,
     /// 经核心的模型网关入口、还没结束的请求数（流式的到最后一块为止）。
     pub model_requests: u32,
@@ -587,6 +588,21 @@ mod tests {
             bot.current_state_avatar().unwrap().media.token,
             "idle",
             "没设的状态用待机的"
+        );
+    }
+
+    #[test]
+    fn chat_availability_has_a_stable_wire_format() {
+        let unavailable = BotChatAvailability::Unavailable {
+            reason: BotChatUnavailable::GrantNotActive,
+        };
+        assert_eq!(
+            serde_json::to_value(unavailable).unwrap(),
+            json!({"state": "unavailable", "reason": "grant_not_active"})
+        );
+        assert_eq!(
+            serde_json::from_value::<BotChatAvailability>(json!({"state": "future"})).unwrap(),
+            BotChatAvailability::Unknown
         );
     }
 }

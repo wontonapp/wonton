@@ -50,6 +50,8 @@ import app.wonton.protocol.PageAction
 import app.wonton.protocol.Action
 import app.wonton.protocol.BackPagination
 import app.wonton.protocol.BotView
+import app.wonton.protocol.BotChatAvailability
+import app.wonton.protocol.BotChatUnavailable
 import app.wonton.protocol.BotRef
 import app.wonton.protocol.ComposerEdit
 import app.wonton.protocol.ComposerViewModel
@@ -190,6 +192,7 @@ internal fun RoomRoute(
     isDirect: Boolean,
     isReadOnly: Boolean,
     bot: BotView?,
+    botChat: BotChatAvailability?,
     bots: List<BotView>,
     plugins: PluginsState,
     rooms: List<RoomRow>,
@@ -261,6 +264,7 @@ internal fun RoomRoute(
             isDirect,
             isReadOnly,
             bot,
+            botChat,
             bots,
             plugins,
             rooms,
@@ -304,6 +308,7 @@ private fun RoomScreen(
     isDirect: Boolean,
     isReadOnly: Boolean,
     bot: BotView?,
+    botChat: BotChatAvailability?,
     bots: List<BotView>,
     plugins: PluginsState,
     rooms: List<RoomRow>,
@@ -350,6 +355,7 @@ private fun RoomScreen(
                         roomAi = if (isDirect) emptyList() else timeline.roomBots?.mapNotNull { id ->
                             bots.firstOrNull { it.userId == id }
                         },
+                        botNotice = botChatNotice(botChat),
                         plugins = plugins,
                         onOpenBotProfile = onOpenBotProfile,
                     )
@@ -555,6 +561,7 @@ private fun Conversation(
     backdrop: RoomBackdrop,
     roomAi: List<BotView>?,
     plugins: PluginsState,
+    botNotice: Int?,
     onOpenBotProfile: (BotRef) -> Unit,
 ) {
     val density = LocalDensity.current
@@ -621,6 +628,7 @@ private fun Conversation(
                 timeline.notice?.let { KeyNoticeRow(it, onOpenBackup) }
                 TransfersStrip(target.roomId, core)
                 RoomConfirmationRow(timeline.confirmations) { timeline.openedConfirmation = it }
+                botNotice?.let { BotChatNoticeRow(it) }
             }
             if (!isReadOnly) {
                 Composer(
@@ -653,6 +661,7 @@ private fun Conversation(
                     commands = timeline.commands,
                     commandsOmitted = timeline.commandsOmitted,
                     // 草稿整句就是一条完整命令（没有多写的正文）时发核心给的整句，不自己拼。
+                    enabled = botNotice == null,
                     dropCommand = timeline.commands.firstOrNull { it.text == draft.text.trim() }?.text,
                 )
             }
@@ -698,10 +707,6 @@ private val KeyNotice.text: Int
         KeyNotice.VERIFY_WITH_OTHER_DEVICE -> R.string.timeline_key_notice_verify
         KeyNotice.OTHER -> R.string.timeline_undecryptable_notice
     }
-
-/** 转发能去的房间：别的、已经加入、能发的房间。 */
-private fun RoomRow.forwardTarget(roomId: String): Boolean =
-    this.roomId != roomId && membership == RoomMembership.JOINED && !isReadOnly
 
 /** 撤回对所有人生效，发出去之前先确认。 */
 @Composable

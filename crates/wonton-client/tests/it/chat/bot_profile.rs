@@ -8,6 +8,7 @@ use wonton_client::{
     BotNameProblem, BotProfileFailure, BotView, CoreError, MediaHandle, TimelineContent,
 };
 use wonton_matrix::MatrixSession;
+use wonton_protocol::BotChatAvailability;
 use wonton_protocol::{AVATARS_FIELD, PushMethod};
 
 use super::PNG;

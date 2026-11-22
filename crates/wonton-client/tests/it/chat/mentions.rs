@@ -2,6 +2,7 @@
 
 use wonton_client::{Action, MessageContent, TimelineContent};
 use wonton_matrix::{Message, MessageBody};
+use wonton_protocol::BotChatAvailability;
 use wonton_protocol::{
     BotActivityFacts, ComposerViewModel, TimelineAction, TimelineMessage, TimelineTarget,
 };

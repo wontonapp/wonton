@@ -51,6 +51,8 @@ impl ChatLink {
                     }
                     Ok(()) = layouts.changed() => {}
                     Ok(()) = declarations.changed() => {}
+                    // Bot 的资格变了（授权、角色、断线）：已打开的行跟着换原因。
+                    () = bots.changed.notified() => {}
                 }
                 if !ready {
                     continue;
@@ -62,8 +64,7 @@ impl ChatLink {
                     .iter()
                     .map(|bot| (bot.user_id.clone(), bot.availability))
                     .collect();
-                let bot_users: HashSet<String> =
-                    availability.keys().cloned().collect();
+                let bot_users: HashSet<String> = availability.keys().cloned().collect();
                 // 和 Bot 的私聊取一次旁聊的支持声明（ADR-0093 §1）；进房间时再取。
                 for room in &latest {
                     if room

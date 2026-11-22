@@ -3,7 +3,7 @@ use std::sync::Mutex;
 use std::sync::atomic::AtomicU64;
 use tokio::sync::{Notify, watch};
 use wonton_protocol::{
-    BotActivityFacts, BotView, BotWebFailure, BotWebPage, ChatViewModel, HomeStatus,
+    BotActivityFacts, BotChatAvailability, BotView, BotWebPage, ChatViewModel, HomeStatus,
 };
 
 use crate::chat::bot_activity::Activity;

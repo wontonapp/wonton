@@ -71,10 +71,10 @@ pub(super) fn identity(
         &facts.contact,
         PersonContactFacts::Record(
             PersonContactRecordRead::Missing
-            | PersonContactRecordRead::Person {
-                state: ContactState::Pending | ContactState::Declined | ContactState::NotFound,
-                ..
-            },
+                | PersonContactRecordRead::Person {
+                    state: ContactState::Pending | ContactState::Declined | ContactState::NotFound,
+                    ..
+                },
         )
     );
     let Some(record) = facts.bot.as_ref() else {

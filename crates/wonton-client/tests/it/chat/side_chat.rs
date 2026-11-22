@@ -7,6 +7,7 @@ use wonton_client::{
     TimelineContent, TimelineItem, TimelineScroll,
 };
 use wonton_matrix::{ChatRoom, MatrixSession, MessageBody, OwnedRoomId};
+use wonton_protocol::BotChatAvailability;
 use wonton_protocol::{
     BotActivityFacts, SideChatCard, SideChatState, TimelineAction, TimelineTarget,
 };

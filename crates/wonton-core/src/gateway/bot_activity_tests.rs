@@ -100,7 +100,7 @@ impl Home {
                 lifecycle,
                 ImageWorker::in_process(),
             )
-            .with_matrix(Some(matrix)),
+            .with_matrix(Some(matrix.clone())),
         );
         // 有 Bot 记录的 Agent 必须用带总线令牌的地址；先记一个固定令牌的 Bot，装的时候沿用。
         plugins.bot_records_for_test(
@@ -144,6 +144,7 @@ impl Home {
                 http,
                 tunnel,
             )
+            .with_matrix(Some(matrix))
             .with_mcp(Some(bus.endpoint())),
         );
         let app = router(gateway.clone());
@@ -343,6 +344,10 @@ async fn a_family_device_sees_the_private_bot_without_its_activity() {
     let h = Home::start(Duration::from_secs(60)).await;
     let _active = h.gateway.plugins.activity.start_model(&id());
     let owner = h.report(None).await;
+    assert_eq!(
+        owner.bots[0].chat,
+        wonton_protocol::BotChatAvailability::Available
+    );
     assert_eq!(owner.bots[0].model_requests, 1);
 
     let mia = h.family_peer();
@@ -360,6 +365,7 @@ async fn a_family_device_sees_the_private_bot_without_its_activity() {
         .find(|bot| bot.user_id == "@activity:test")
         .expect("旧房间还认得出这个 Bot");
     assert_eq!(bot.model_requests, 0);
+    assert_eq!((bot.tool_calls, bot.waiting, bot.running), (0, 0, false));
     assert_eq!(
         bot.chat,
         wonton_protocol::BotChatAvailability::Unavailable {

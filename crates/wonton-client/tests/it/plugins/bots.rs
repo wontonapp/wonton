@@ -2,6 +2,7 @@ use std::time::Duration;
 
 use axum::http::Method;
 use wonton_client::{Action, BotActivity, BotProfileFailure, CoreError};
+use wonton_protocol::BotChatAvailability;
 use wonton_protocol::{BotActivityFacts, BotActivityReport, BotRef};
 
 use super::rig::{Rig, WAIT, running};

@@ -24,6 +24,8 @@ struct ComposerView: View {
     var openChanged: (Bool) -> Void = { _ in }
     /// 正在编辑哪条（ADR-0109 第 10 节）：有值时输入框上方画编辑条、发送键变成确认。
     var editing: ComposerEdit?
+    /// 这个 Bot 现在不能聊时输入框只读，草稿和附件都留着。
+    var isEnabled = true
     private var roomId: String { composer.roomId }
     /// 附件区只有主对话有（ADR-0093）：旁聊里字和照片直接发，不给选文件，粘贴文件提示去主对话发。
     private var isSideChat: Bool { composer.threadRoot != nil }
@@ -310,7 +312,7 @@ private extension ComposerView {
 
     private func send() {
         let blank = draft.wrappedValue.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty
-        guard !blank || (editing == nil && !composer.attachments.isEmpty) else { return }
+        guard isEnabled, !blank || (editing == nil && !composer.attachments.isEmpty) else { return }
         pin.pin()
         model.send(.timeline(action: .setTyping(target: composer.target, typing: false)))
         // 编辑只改这一条的正文；成功后核心恢复原草稿，`onChange(of: editing)` 把它读回来。
@@ -384,6 +386,7 @@ private extension ComposerView {
         .clipShape(shape)
         .chatGlass(in: shape)
         .padding(.vertical, (WontonTheme.size.target - WontonTheme.size.chatControl) / 2)
+        .disabled(!isEnabled)
     }
 }
 
