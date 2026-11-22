@@ -116,6 +116,9 @@ private struct InviteCode: View {
                 .contentShape(Rectangle())
             }
             .buttonStyle(.plain)
+            .accessibilityValue(
+                fullText ? Text(.Appearance1.appearanceExpanded) : Text(.Appearance0.appearanceCollapsed)
+            )
             if fullText {
                 Text(code)
                     .font(.caption.monospaced())

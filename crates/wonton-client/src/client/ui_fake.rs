@@ -27,10 +27,11 @@ use wonton_protocol::{
     ChatViewModel, CoreError, DeviceInvite, DeviceNetwork, DeviceVerification, EncryptionStatus,
     HomePath, HomeStatus, HomeViewModel, InstalledPlugin, InstalledPlugins, MessageSummary,
     OnboardingStep, OnboardingViewModel, OpenPage, PagesViewModel, PanelItem, PanelSource,
-    PluginHealth, PluginKind, PluginState, PluginTrust, PluginsViewModel, PushStatus,
-    RecoveryNextStep, RecoveryStatus, RoomMembership, RoomPreview, RoomRow, SecretString, ServerKind,
-    ServerName, ServerRow, ServersViewModel, SettingsEntry, SettingsSection, SettingsViewModel,
-    SidebarApp, SidebarBadge, SidebarOpen, TabIcon, TabLayout, TabPage, TabRef, TabState,
+    PluginHealth, PluginKind, PluginState, PluginTrust, PluginsViewModel, PushMethod, PushStatus,
+    RecoveryNextStep, RecoveryStatus, RoomMembership, RoomPreview, RoomRow, SecretString,
+    ServerKind, ServerName, ServerRow, ServersViewModel, SettingsEntry, SettingsSection,
+    SettingsViewModel, SidebarApp, SidebarBadge, SidebarOpen, TabIcon, TabLayout, TabPage, TabRef,
+    TabState,
 };
 
 use super::ClientCore;
@@ -378,6 +379,7 @@ fn fake_rooms() -> Vec<RoomRow> {
 }
 
 /// 设置首页的最小假数据：配对布局里“你的资料”和“家里的服务器”两行，走到“添加设备”就够了，其余行不 seed。
+/// 通知这一行要给：Android 在 `onCreate` 里按推送方式登记，取不到通知入口会直接崩。
 fn fake_settings() -> SettingsViewModel {
     SettingsViewModel {
         sections: vec![
@@ -391,6 +393,13 @@ fn fake_settings() -> SettingsViewModel {
                     }),
                     status: HomeStatus::Connected,
                     upgrade: false,
+                }],
+            },
+            SettingsSection {
+                entries: vec![SettingsEntry::Notifications {
+                    method: PushMethod::Keepalive,
+                    push: PushStatus::NoEndpoint,
+                    categories: Vec::new(),
                 }],
             },
         ],

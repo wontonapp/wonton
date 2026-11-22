@@ -183,7 +183,7 @@
       }
     },
     "invite.pasteFallback": {
-      "comment": "Label above the pairing code as text, for when the QR code can't be scanned.",
+      "comment": "Collapsed row that reveals the full pairing code as text, for when the QR code can't be scanned.",
       "extractionState": "manual",
       "localizations": {
         "en": {
