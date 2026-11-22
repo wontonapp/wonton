@@ -13,7 +13,8 @@
 - **UI**：iOS 用 SwiftUI；Android 用 Jetpack Compose；桌面用 Compose Multiplatform，与 Android
   共享 UI 模块（M2）。实际维护两套 UI。
 - **厚核心**：所有状态、业务逻辑、网络（matrix-rust-sdk、iroh）、存储和 ViewModel 都在 Rust 客户端
-  核心里，经 UniFFI 导出“操作进、ViewModel 出”的接口。原生壳只负责渲染 ViewModel、把用户操作发回
+  核心里（[ADR-0113](0113-media-transport.md) 补了一处：跨设备的离线长任务与播放会话的事实源在家里服务器的核心，
+  其余仍在客户端核心），经 UniFFI 导出“操作进、ViewModel 出”的接口。原生壳只负责渲染 ViewModel、把用户操作发回
   核心，以及调用平台能力（推送、通知扩展、相册、文件选择、后台音频）。
 - **测试**：行为测试写在核心里一次，各端共享。
 - **Web**：MVP 只有服务器上的最小网页（配对二维码、运行状态）。核心接口保持可序列化；M3 把 Compose
