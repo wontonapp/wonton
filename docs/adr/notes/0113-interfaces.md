@@ -140,6 +140,8 @@ pub struct UploadItem {
     pub checksum: Option<String>,
     pub taken_at: Option<Timestamp>,
     pub state: ItemState,
+    /// 服务端已知的已收字节；非 Done 项有效
+    pub upload_offset: u64,
 }
 
 /// 逐项状态；`Partial` 由这里聚出来，不靠猜。
@@ -300,7 +302,7 @@ pub struct TaskView {
 }
 
 #[derive(Serialize, Deserialize, Debug, Clone)]
-pub struct ItemView { pub item_id: String, pub name: String, pub state: ItemState }
+pub struct ItemView { pub item_id: String, pub name: String, pub state: ItemState, pub upload_offset: u64 }
 
 /// 两本账各一项，壳才知道去清哪边
 #[derive(Serialize, Deserialize, Debug, Clone)]

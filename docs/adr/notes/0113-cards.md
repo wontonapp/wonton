@@ -49,7 +49,7 @@
 | 编号 | 目标 | 改哪 | 依赖 | 大小 | 先红后绿的行为测试 | 并行 |
 | --- | --- | --- | --- | --- | --- | --- |
 | M43 | 媒体回环：照 `files/stream.rs` 起本机随机令牌回环，播放器与上传下载只连它 | `client/media/loopback.rs` | M17、M46 | L | 无令牌 401；`Range` 转发后被 `If-Range` 成 206；关闭后端口释放 | 与 M17 并行 |
-| M46 | 服务器字节路由：上传建立/续写、取内容、取流四条透传（路径见接口清单），`{item}` 是 `item_id`，`upload_id` 映射只在核心 | `crates/wonton-core/src/gateway/media.rs` | M11 | L | POST 由核心补体并记映射；PATCH 按映射续写；偏移 409 带当前偏移；`Range` 回 206 | 排在 M11 之后；与 M13 同文件，先说好先后 |
+| M46 | 服务器字节路由：上传建立/续写、取内容、取流三条路径、四个方法（见接口清单），`{item}` 是 `item_id`，`upload_id` 映射只在核心 | `crates/wonton-core/src/gateway/media.rs` | M11 | L | POST 由核心补体并记映射；PATCH 按映射续写；偏移 409 带当前偏移；`Range` 回 206；回环令牌过期 401（核心下发的一次性投屏地址另测） | 排在 M11 之后；与 M13 同文件，先说好先后 |
 | M44 | `DeviceProfile` 组装：从壳上报的编解码支持拼出来，按人按设备缓存 | `client/media/profile.rs` | M17 | S | 缺能力时不发空数组；换设备各自的 Profile 不串 | 与 M17 并行 |
 | M45 | 插件页“播这条”桥：`ui/initialize` 报 `media.play` 能力位、页面 RPC 拉起宿主播放器，成功回 `started` 并让页面 `pause()` | `pages/bridge`、`pages/media`、两壳 | M6、M30、M31 | L | 老壳不报能力位时页面不显示按钮；回包失败页面继续自己放 | 靠 M30/M31 |
 

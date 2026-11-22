@@ -109,13 +109,13 @@ Plex 客户端只接自己的服务器；Synology 的客户端只接自家 NAS�
 - **只用开放标准**：音乐能走 OpenSubsonic，相册和影视没有可用的开放标准，还是得为它们开特例。
 - **行业做法照搬**（Plex 只接自家、Synology 只接自家、Infuse 把协议编进单体客户端）：三家都没有插件生态，能接多少种源由发版决定；Wonton 已有插件体系，照搬会丢掉可替换性。
 
-### 3. 长任务的统一模型：三类共用一套骨架，差异逐项写明
+### 3. 长任务的统一模型：上传与下载共用一套骨架，播放会话借用状态与失败分类
 
-两类长任务：`Upload`（相册备份、收件）、`Download`（离线）；播放会话有自己的一套（第 4 节）。共用下面这套骨架，字段和状态机只有一份（`wonton-protocol` 的 `media` 模块），三类只在标“差异”的地方分叉。
+两类长任务：`Upload`（相册备份、收件）、`Download`（离线）；两者共用下面这套骨架，字段和状态机只有一份（`wonton-protocol` 的 `media` 模块），只在标“差异”的地方分叉。
 
 **身份与任务号。** 每个任务带 `(person, device, task_id)`。`person` 是本机家人（ADR-0045/0088 的账号），`device` 是设备标识。设备走隧道时核心已按隧道 peer 认出设备（不需要另发 `_meta`）；HTTP 请求里显式带 `X-Wonton-Device`，供同一个人两台设备时区分。任务号由服务器核发，客户端核只引用。凭据一律按人取（第 6 节），不按设备。
 
-**状态机。** 一份，三类共用：
+**状态机。** 一份，上传与下载共用，播放会话也用它：
 
 ```
 Queued → Preparing → Running ⇄ Paused{reason} / WaitingNetwork / WaitingPower
@@ -147,7 +147,7 @@ Queued → Preparing → Running ⇄ Paused{reason} / WaitingNetwork / WaitingPo
 
 **多设备。** 一人可以有多台设备，每台各跑各的传输任务，互不影响；**播放会话一人同时只有一个**，新设备开就是接管（第 4 节）。下载任务的配额按设备算，同一部片在两台设备上各占一份。
 
-**三类各自的不同点：**
+**两者的不同点：**
 
 | | 上传 | 下载 | 播放会话 |
 | --- | --- | --- | --- |
@@ -158,11 +158,11 @@ Queued → Preparing → Running ⇄ Paused{reason} / WaitingNetwork / WaitingPo
 | 完成事件 | `media.task.done` | 同左，带本地路径 | `media.playback.finished` |
 | 清理 | 无（已在提供方） | 手动/Agent | 无 |
 
-三类共用 `Task` 的类型、状态机、进度、退避、失败分类、配额和后台限制接口，只在上表三行分叉；实现卡按“一张传输骨架卡 + 两张差异卡（上传、下载）+ 一张会话卡”拆，不按三块各拆一套。
+两者共用 `Task` 的类型、状态机、进度、退避、失败分类、配额和后台限制接口，只在上表几行分叉；播放会话只借状态与失败分类，不用 `Task`；实现卡按“一张传输骨架卡 + 两张差异卡（上传、下载）+ 一张会话卡”拆，不按三块各拆一套。
 
 没选的做法：
 
-- **三类各写一套**：三种重试和失败分类会分叉，Agent 要分三套接，界面上三处进度各长一个样。
+- **上传、下载各写一套**：两种重试和失败分类会分叉，Agent 要分三套接，界面上三处进度各长一个样。
 - **只做传输、下载不归入**：下载和上传共用 `Range`/`.part` 与同一套退避，拆开就是抄一遍。
 - **全局单队列**：一个卡的退避会堵住所有人；播放也要和备份抢队。
 - **失败自动无限重试**：错误被藏住，用户看不出是密码过期还是格式不支持。
@@ -255,7 +255,7 @@ Agent（Hermes，家里服务器上）与壳走同一条核心 API，不给 Agen
 
 做：
 
-- 一套长任务模型（三类共用第 3 节的身份、状态、进度、断点、退避、失败分类、配额，三种任务各自多出来的部分写在各节）；
+- 一套长任务模型（上传与下载共用第 3 节的身份、状态、进度、断点、退避、失败分类、配额；播放会话借用同一套状态与失败分类）；
 - 能力 `media_source` 与契约测试（两个假提供方），核心当使用方，三个插件各出一个薄适配器翻上游接口（Immich `POST /assets` 与 `bulk-upload-check`、Subsonic `stream`/`scrobble`/`savePlayQueue`、Jellyfin `PlaybackInfo`/`Sessions/…`）；
 - 服务器核的任务与会话、命令通道、MCP 工具；客户端核的执行与 ViewModel；两壳的原生播放、上传、下载、锁屏与 PiP；
 - 音乐、影视各自的原生播放界面（结论已由主人定，本篇只给底座）。
@@ -291,7 +291,7 @@ Agent（Hermes，家里服务器上）与壳走同一条核心 API，不给 Agen
 | `PATCH /uploads/{id}` | 续传 | 体是从 `Upload-Offset` 起的字节，`Content-Range` 校验；冲突回 409 并给当前偏移 |
 | `POST /uploads/{id}/finish` | 收尾 | 提供方校验后入库，返回 `item_id` |
 | `DELETE /uploads/{id}` | 放弃 | 幂等 |
-| `POST /playback` | 取播放计划 | 体带 `item`、`DeviceProfile`；返回 `PlaybackPlan`（直连 URL 或转码流、音轨字幕、可 seek 范围、过期时间） |
+| `POST /playback` | 取播放计划 | 体带 `item`、`DeviceProfile`、`position_ms`、`audio?`、`subtitle?`（同 `PlaybackRequest`；切轨用同一 `item`、当前 `position_ms` 与新轨号重取）；返回 `PlaybackPlan`（直连 URL 或转码流、音轨字幕、可 seek 范围、过期时间） |
 | `POST /playback/{session}/progress` | 报进度 | 体带位置毫秒与墙钟；提供方按上游约定写（scrobble、`Sessions/Playing/Progress`） |
 | `PUT /playback/{session}/queue` | 存队列 | 体带 `entries`、`position`、`mode`；幂等，成功 204；提供方不支持的队列字段忽略 |
 | `POST /playback/{session}/stopped` | 结束 | 带最终位置与原因 |
@@ -305,7 +305,8 @@ Agent（Hermes，家里服务器上）与壳走同一条核心 API，不给 Agen
 
 ## 失败类别
 
-码分五组：本地、传输、协议、上游、平台。前三组来自 `FileFailure` 原样保留，后两组是新加的；`device_no_response` 不是任务的失败，只在工具结果里：工具的失败体单独带它（`{code:"device_no_response", reasons:[…]}`），不进 `Failed`。
+码分五组：本地、传输、协议、上游、平台。前三组来自 `FileFailure` 原样保留，后两组是新加的；`device_no_response` 不是任务的失败，只在工具结果的失败体里单独带：
+`{code: "device_no_response", message, reasons: [DeviceNoResponse]}`，`reasons` 的取值照 ADR-0098 第 6 节列全（关机、没网、被划掉、被系统限流）。
 
 | 类别 | 何时出现 | 壳怎么显示 | 退避 |
 | --- | --- | --- | --- |
