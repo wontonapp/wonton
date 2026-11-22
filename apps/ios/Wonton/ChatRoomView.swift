@@ -173,7 +173,7 @@ private extension ChatRoomView {
                     .frame(height: WontonTheme.size.chatControl)
                     .chatGlass(in: Capsule(), interactive: true)
             }
-            // 和 Bot 的私聊：点顶栏的头像或标题进它的资料页（ADR-0044、ADR-0109 第 8 节），不另放按钮。
+            // 和 Bot 的私聊：点顶栏的头像或标题进它的资料页（ADR-0044、ADR-0109 第 9 节），不另放按钮。
             if supportsSideChats {
                 ChatGlassButton(icon: .compose, label: String(localized: .Chat.sideChatNew)) {
                     model.composingSideChat = roomId
@@ -637,7 +637,7 @@ private extension ChatRoomView {
         )
     }
 
-    /// 顶栏状态行的“正在输入…”（ADR-0109 第 7 节）：私聊不写名字，群里写第一个人，多人时加“和另外 N 人”。
+    /// 顶栏状态行的“正在输入…”（ADR-0109 第 8 节）：私聊不写名字，群里写第一个人，多人时加“和另外 N 人”。
     /// 谁在输入、什么时候算停都由核心给。
     var typingText: String? {
         guard let first = timeline.typing.first else { return nil }
@@ -675,7 +675,7 @@ private extension TimelineItem {
         return WontonTheme.spacing.runGap / 2
     }
 
-    /// 气泡那一行贴近屏幕边（ADR-0109 第 8 节），其余的行照页面的边距。
+    /// 气泡那一行贴近屏幕边（ADR-0109 第 9 节），其余的行照页面的边距。
     var sideInset: CGFloat {
         if case .message = content { return WontonTheme.spacing.bubbleEdge }
         return WontonTheme.spacing.pageInset

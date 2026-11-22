@@ -48,7 +48,7 @@ struct ComposerView: View {
     var body: some View {
         let isEmpty = draft.wrappedValue.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty
             && composer.attachments.isEmpty
-        // 输入栏浮在消息上（ADR-0107、ADR-0109 第 8 节）：菜单胶囊、回形针、输入框、发送键各是一块玻璃，
+        // 输入栏浮在消息上（ADR-0107、ADR-0109 第 9 节）：菜单胶囊、回形针、输入框、发送键各是一块玻璃，
         // 回复条和附件区收在输入框那一块里；命令列表是它们上方的一张玻璃卡片。
         VStack(spacing: WontonTheme.spacing.s4) {
             if !listedCommands.isEmpty {
@@ -92,7 +92,7 @@ struct ComposerView: View {
         .onChange(of: draft.wrappedValue) { _, text in
             if !text.isEmpty { showsCommands = false }
         }
-        // 翻时间线时列表收起，把列表让出来（ADR-0109 第 7 节）。
+        // 翻时间线时列表收起，把列表让出来（ADR-0109 第 8 节）。
         .onChange(of: pin.isScrolling) { _, scrolling in
             if scrolling { showsCommands = false }
         }
@@ -189,7 +189,7 @@ struct ComposerView: View {
         return showsCommands ? commands : []
     }
 
-    /// 点了一条命令：直接发出核心给的那句，不用再按发送（ADR-0109 第 7 节）。输入框里的草稿是主人正在写的，
+    /// 点了一条命令：直接发出核心给的那句，不用再按发送（ADR-0109 第 8 节）。输入框里的草稿是主人正在写的，
     /// 发完留着；回复对象跟着命令发出去，发出去才收起。
     private func run(_ command: RoomCommand) {
         pin.pin()
