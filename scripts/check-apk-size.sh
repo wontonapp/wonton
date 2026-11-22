@@ -6,7 +6,7 @@
 set -euo pipefail
 
 apk="${1:?用法：$0 <APK 路径>}"
-limit="${WONTON_MAX_APK_MB:?要设 WONTON_MAX_APK_MB（整 MB，比如 96）}"
+limit="${WONTON_MAX_APK_MB:?要设 WONTON_MAX_APK_MB（整 MB，android-size.yml 里是 53）}"
 
 [ -f "$apk" ] || { echo "找不到 $apk" >&2; exit 1; }
 
