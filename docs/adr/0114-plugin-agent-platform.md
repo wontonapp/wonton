@@ -1,6 +1,7 @@
 # ADR-0114 插件 Agent 底座：家人账号、群聊说话人、事件、按人通知、卡片模板、深链、结果可见范围、文件交给插件
 
 - 状态：提议（2026-11-21），影音相册线起草，插件底座线复审后合并
+- 破坏性改动三处（逐条见“兼容与迁移”）：`lan.client` 口令按人、共享 Bot 单人时 `app.wonton/user` 带人、结果可见性引入 `Room`
 - 关联：[ADR-0015](0015-small-components-standard-interfaces.md)（小部件、标准接口）、[ADR-0016](0016-mcp-bus-and-confirmations.md)（MCP 总线与确认）、
   [ADR-0020](0020-file-service.md)（文件服务）、[ADR-0024](0024-confirmation-scope.md)（每次问的三类）、[ADR-0038](0038-multi-step-cards.md)（卡片）、
   [ADR-0041](0041-app-links-and-shortcuts.md)（`wonton://` 链接）、[ADR-0045](0045-family-members.md)（家人）、[ADR-0047](0047-plugin-notices.md)（插件通知）、
@@ -117,12 +118,18 @@ Navidrome 要每人一个用户，都不是“发一个口令就够”的形状�
 
 - 核心在转给插件的 `tools/call` 的 `_meta` 里加两项：
 
-  - `app.wonton/speakers`：本轮这条消息实际说话的家人用户名，去重，按第一次出现排序，最多 8 个。认不出来不带。
-  - `app.wonton/room_people`：这个报的来源房间的现有成员里，既能打开这个插件、又能用这个 Bot 的人，同样去重排序。
-    只有来源房间经核心核对过（`audience::reported_origin` 认下了，Bot 和说话人都在房间里）才带。
+  - `app.wonton/speakers`：本轮说话的家人用户名，去重。来源只有一个：这一轮进行中的轮次的 `turn_sender`，
+    按它们在轮次里出现的先后排；单条消息就是 1 个，凑不到 8 个就不写 8 个。认不出来不带。
+    和 `X-Wonton-On-Behalf-Of` 冲突时以请求头为准（头是 Bot 发出的原始事实，`turn_sender` 只是核心的副本）。
+  - `app.wonton/room_people`：来源房间的成员里，既能打开这个插件、又能用这个 Bot 的人，去重。
+    带的门槛是“核对过”：Bot 与**每个说话人**都在该房间的 `joined_members` 里（`audience::checked_origin` 用的那次查询，
+    核的是 Bot 与收件人，这里要连说话人一起核）；核一次的结果按房间缓存 60 秒，别每请求登录一次。
 
 - `app.wonton/user`（`crates/wonton-protocol/src/family.rs:50`）改成：私人 Bot 是归属人；共享 Bot 且 `speakers` 恰好一个
   人才带那一个；其余不带（和现在一样）。共享 Bot 多人同轮时不猜谁为主。
+- **`user` 和 `app.wonton/capabilities` 一起动**：`capabilities` 按被带上的那个人重算角色（现在两者一起递，
+  `upstream.rs:517-533`，只给 `user` 不给 `capabilities` 时插件会拿归属 Bot 的权限，共享 Bot 里说话人就算是管理员也拿不到
+  `PluginAdmin`）。语义变更写进 ADR-0098 第 3 节，`family.rs:50` 的注释一起改。
 - 这三项都只是提示：确认口径、AI 级别、放行时段仍由核心按 `ai_cap`、`audience` 算，插件不能拿 `speakers` 当授权。
   插件用 `app.wonton/capabilities` 和核心的级别判断动手幅度。
 - 插件侧：一个工具只要有一个可选参数就按人写时，模型从 `speakers` 里取值填 `person`；只一个人时插件可以直接当默认。
@@ -148,10 +155,16 @@ MCP 订阅只收 `tools_list_changed`（`crates/wonton-core/src/mcp/server.rs:29
 
 **设计。**
 
-- 新权限 `events`（`wonton-docs/plugin-spec.md:1404` 那张表里加一行）。申请了的插件在插件网络里拿到别名
+- 加**两个**权限 `events` 与 `files`，进 `plugin-spec.md:1404` 那张表、`Permission` 枚举、
+  安装预览、商店元数据和四种语言说明。`files` 的含义是“能收核心放进来的字节”，`inbox` 必须声明它；
+  `member_accounts` 只走 stdout 凭据，可以不声明。
+- 申请了 `events` 的插件在插件网络里拿到别名
   `events.wonton.internal` 和注入变量 `WONTON_EVENTS_URL`（如 `http://events.wonton.internal:8080/events`），
   和 `notify` 一样不用令牌、按来源地址认插件。
-- `POST` 一条 JSON，成功回 `202` 和 `{"event_id":"…"}`：
+- `POST` 一条 JSON，成功回 `202` 和 `{"event_id":"…"}`。事件的 `data` 原文存着、只在 `wonton__events` 里回，
+  投递单里不放（投递单只带 `truncated` 与 `event_id`）；同一个人有两个私人 Bot 时，事件绑定收件 Bot，
+  `wonton__events` 取的时候加 60 秒租约，别人同时取不到同一条。
+- `person` 省略时取主人；主人打不开这个插件就退回按人通知（不叫醒），和通知那条的规则一致。
 
   | 字段 | 必填 | 说明 |
   | --- | --- | --- |
@@ -311,7 +324,13 @@ MCP 订阅只收 `tools_list_changed`（`crates/wonton-core/src/mcp/server.rs:29
 - `Accessor` 加 `Room(房间内部 ID)`（存本地 ID，不是别名的 `!xxx:server`，别名可改）。在来源房间经核对过（`reported_origin` 认下、
   Bot 和归属人都在房间里）时随记录加；报的来源没核对过就不加。
 - 鉴权时按**当下**的成员算，不拍快照：会查 `joined_members` 现算这个人在不在房间，在就能读，退了就失去。记录本身的 24 小时过期规则不变。
-- 工具结果 `_meta` 加 `app.wonton/result_scope: "room" | "keeper"`。房间核对过时默认 `room`；插件写 `keeper` 就退回现在的行为
+- **“核对过”写死成一个函数**（`audience::verify_room(id, bot, 说话人…)`）：Bot 和每个说话人都在 `joined_members` 里才算，
+  结果按房间缓存 60 秒；它只回答“是不是这个房间的人”，不给确认卡用（确认卡的 `checked_origin` 照旧单独走）。
+- **降级要能操作**：旧核心读到 `Accessor::Room` 会让整条记录反序列化失败（`record.rs:28-64` 的 `try_from`），所以
+  ①`spec_floor` 把用到 `result_scope`、`member_accounts`、`inbox` 的最低 `spec` 抬上去，旧核心按版本号拒装并提示升级；
+  ②升级说明写“旧核心上的记录里可能带 `room:…`，升上来读不出的那条按 `keeper` 重新登记”，卡里给一条清理脚本；
+  ③`plugin check` 对声明了这三项却低于门槛的清单当场失败。
+- 工具结果 `_meta` 加 `app.wonton/result_scope: "room" | "keeper"`。房间核对过时**也默认 `keeper`**，插件在 `tools/list` 的 `_meta` 里声明支持后才按 `room`；插件写 `keeper` 就退回现在的行为
   （Bot 和归属人）。私聊里没有房间，一律 `keeper`。
 - 反向：家人在房间里发出的附件，核心在发出时把同一个房间的 `Room` 挂到记录上；Bot 在自己这一轮的来源房间（同样核对过）能读。
 - App 的附件面板标出来源：“这个房间可见”或“只有你”，作者能把它改成更窄的 `keeper`。给人看的复制/下载不额外要权限，
@@ -336,6 +355,9 @@ MCP 订阅只收 `tools_list_changed`（`crates/wonton-core/src/mcp/server.rs:29
 
 **设计。**
 
+- `inbox` 声明里带一条 `scan` 命令（形状同 `member_accounts` 的命令：容器内执行、退出码 0 成功、2 输入非法、其它算失败），
+  核心放完字节调它；同一目录 30 秒内的多次放进合并成一次调用，失败只记日志并在下一次放进时重试，不阻塞分享本身。
+  没写 `scan` 就等于插件自己定期扫，核心不催。
 - 工具在 `tools/list` 的 `_meta` 里声明哪个参数收文件：`"app.wonton/files": ["files[]"]`，元素是顶层数组参数的 Rust 名称，
   最多 4 个参数。调用时这些参数的值是文件编号数组；上限同结果通道（一件 1 MiB、一轮 48 MiB、100 个文件）。
 - 清单声明收件箱：
@@ -346,7 +368,7 @@ MCP 订阅只收 `tools_list_changed`（`crates/wonton-core/src/mcp/server.rs:29
     path: /inbox          # 容器里的绝对路径，挂的是插件数据卷
   ```
 
-  要和 `files` 权限一起声明。没声明 `inbox` 的插件，`app.wonton/files` 里的参数原样传编号。
+  要声明 `files` 权限；没声明 `inbox` 的插件，`app.wonton/files` 里的参数原样传编号。
   核心按编号取到字节，拷进 `<path>/<8 位随机>/<安全名>`，把参数换成 `inbox:<子目录>/<名字>` 字符串；插件不用认识核心的编号，
   也不经网络回取。
 - 安全名：去掉斜杠和控制字符、Unicode 归一、最长 120 字节，重名按 `-2`、`-3` 顺延。子目录按次生成，同一次调用的文件都在一个子目录里，
@@ -382,18 +404,22 @@ MCP 订阅只收 `tools_list_changed`（`crates/wonton-core/src/mcp/server.rs:29
 - 核心多四个要持久化、要清理的东西：事件队列（7 天）、收件箱（24 小时）、按（插件, 人）的通知限流、房间访问者的实时成员查询。
   进程重启后事件留在磁盘、收件箱残留照删，都得测。
 - `events` 是新的权限面：安装预览、商店元数据、四种语言的说明都要加，还要防插件刷事件把 Agent 一直叫醒。
-- `lan.client` 从插件一份口令改成按人，存储键、详情接口、复制界面和已装插件的迁移都要改；这是本篇唯一的破坏性改动。
+- **三处破坏性改动**（都要升级说明和降级路径，不是一处）：`lan.client` 从插件一份口令改成按人（存储键、详情接口、复制界面、迁移）；
+  `app.wonton/user` 在共享 Bot 单人时开始带人（语义变更）；结果可见性引入 `Accessor::Room`（旧核心读到会读不出那条记录）。
 - 房间可见是放开：一条结果发给整房间，事后想收窄只能由作者改；私密内容要靠插件写 `result_scope: keeper`。
 - 模板由插件写、不做翻译，同一插件要维护多种语言的模板；模板坏了的回退只有原始 JSON 兜底，观感差。
 - 测试面变大：房间成员进出、同轮多人、事件合并、深链前缀越权、收件箱重名和越界都要有端到端用例，不能只测类型。
 
 ## 兼容与迁移
 
-- 加字段一律可选，旧核心忽略新字段，旧插件在新核心上行为不变（通知仍到主人、结果仍 `keeper`、参数仍传编号）。
+- 加字段一律可选，但 `Manifest`/`Provides` 都是 `deny_unknown_fields`：**旧核心会按 `spec` 版本拒装并提示升级**，不是静默忽略。
+  用到新字段的清单要升 `spec` 并在 `spec_floor.rs` 登记；`plugin check` 当场拦低位清单。
+- 旧插件在新核心上行为不变：通知仍到主人、结果仍 `keeper`（插件没在 `tools/list` 里声明支持 `room` 就不开门）、参数仍传编号。
 - 唯一要迁的一次：`lan.client` 的口令表从（插件, 标签）改成（插件, 标签, 人）。旧值升级时复制给主人一份并标“待重设”，
   不猜该给谁。
-- 共享 Bot 单人对话时 `app.wonton/user` 从“不带”变成“带那个人”：两边都按可选读，插件不写这个字段也必须能跑。
-- `notify` 的 `path` 保留，`to`、`link` 是新增；`to` 里有人已移除时整条 400，不悄悄少发。
+- 共享 Bot 单人对话时 `app.wonton/user` 从“不带”变成“带那个人”，`capabilities` 跟着按那人重算：ADR-0098 第 3 节同批改，
+  personal_data 的实现要按新语义放行；插件不读这个字段也必须能跑。
+- `notify` 的 `path` 保留，`to`、`link` 是新增；`plugin_notice.rs:1-10` 的文档注释（还写“发给主人”）一起改；`to` 里有人已移除时整条 400，不悄悄少发。
 
 ## 待验证
 
@@ -406,8 +432,9 @@ MCP 订阅只收 `tools_list_changed`（`crates/wonton-core/src/mcp/server.rs:29
    自己就标了没实测。不过就退回“首次输一次密码”，`credential` 改回一次性口令。
 3. **Immich/Navidrome 的建号命令。** Immich 建用户、建库、加“家庭”账号的共享；Navidrome 的管理员建用户。三家用同一套命令形状是否够，
    还是要给 `add` 加应用特有字段。
-4. **工具 `_meta` 能不能带到插件。** `tools/list` 的 `_meta` 由核心原样转发给插件还是被 rmcp 丢掉；`app.wonton/files`、`app.wonton/card`
-   都靠它。结果方向的 `_meta` 已有先例（`app.wonton/failure`），工具方向没核。
+4. **（先做实验卡）工具 `_meta` 能不能带到插件。** `tools/list` 的 `_meta` 由核心原样转发给插件还是被 rmcp 丢掉；`app.wonton/files`、`app.wonton/card`
+   都靠它。过不了就换路：`tools/list` 的 `description` 写前缀约定，或核心侧维护工具能力表；卡 7、9、12 的前置里写死“先验”。
+   结果方向的 `_meta` 已有先例（`app.wonton/failure`），工具方向没核。
 5. **房间成员查询的开销。** 每次读文件都查 `joined_members` 在几十人的房间里能不能接受；不行就加 30 秒内的短缓存，仍以实时为准。
 6. **命令在容器里的用户和属主。** 插件容器常以 `PUID`/`PGID` 跑，核心 exec 带哪个用户、写出的 0600 文件谁读得到。
 7. **事件合并和限流一起的表现。** 10 分钟内 200 张照片合并计 `count` 时，Agent 一轮能不能一次取完、会不会反复被叫醒。

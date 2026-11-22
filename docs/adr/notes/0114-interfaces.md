@@ -43,7 +43,11 @@ pub enum MemberCredential {
 }
 ```
 
-校验：`service` 在 `services` 里；三条命令以 `/` 开头；申请时必须同时有 `files` 权限；`webui.service` 不必相同。
+校验：`service` 在 `services` 里；三条命令以 `/` 开头；`webui.service` 不必相同。
+另有 `status` 命令（可选，一条 JSON 列出已建账号，核心用它跑对账，补漏掉的 `add`）。
+
+运行约束：每条命令 30 秒超时，stdout 4 KiB、stderr 8 KiB 截断；退出码 0 成功、2 输入非法、3 只对 `credential` 有意义（凭据失效，重放 `add`），
+其它算失败并进待重试。
 
 ## 2. 清单：`inbox`（只加）
 
@@ -55,15 +59,19 @@ pub struct InboxSpec {
     pub service: String,
     /// 容器里的绝对路径，挂在插件数据卷上。
     pub path: String,
+    /// 放完字节要调的命令（可选）；不写等于插件自己定期扫
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub scan: Option<String>,
 }
 ```
 
-校验：`/` 开头的绝对路径，不含 `..`，不在 `/proc`、`/sys`、`/dev` 下；声明了也要 `files` 权限。
+校验：`/` 开头的绝对路径，不含 `..`，不在 `/proc`、`/sys`、`/dev` 下；必须同时有 `files` 权限。
 
 ## 3. 事件（协议只加；清单用了在旧核心装不上，预期）
 
 - 新文件 `crates/wonton-protocol/src/event.rs`。
-- 在 `manifest/permission.rs` 的 `Permission` 加 `Events`（序列化成 `events`）。
+- 在 `manifest/permission.rs` 的 `Permission` 加 `Events`（`events`）与 `Files`（`files`）；`Files` 是 `inbox` 的前置。
+- `spec_floor.rs` 登记 `member_accounts`、`inbox`、`events`、`result_scope` 用到的最低 `spec`（旧核心 `deny_unknown_fields` 会拒装，靠版本号提示升级）。
 - 插件网络别名：`events.wonton.internal`；注入变量：`WONTON_EVENTS_URL`。
 
 `POST` 的请求体和 202 回体（新类型在 `event.rs`）：
@@ -102,7 +110,13 @@ pub struct AckResult { pub acked: usize }
 pub struct DeliveredEvent {
     pub id: String, pub plugin_id: String, pub kind: String, pub person: Option<String>,
     pub title: String, pub body: Option<String>, pub link: Option<String>, pub path: Option<String>,
+    /// 原文事件数据；只在 `wonton__events` 回，投递单里不带
+    pub data: Option<serde_json::Value>,
+    /// 原文被截断过
+    pub truncated: bool,
     pub level: NoticeLevel, pub count: u32, pub created_at: i64,
+    /// 取走时加的 60 秒租约；同一个人有两个 Bot 时防重
+    pub lease_until: Option<i64>,
 }
 ```
 
@@ -132,7 +146,7 @@ pub const TOOL_CARD_META: &str = "app.wonton/card";                 // tools/lis
 pub const TOOL_FILES_META: &str = "app.wonton/files";               // [String]，1..=4
 pub const TOOL_CARD_RESULT_META: &str = "app.wonton/card_result";   // 结果
 pub const TOOL_DEEP_LINK_META: &str = "app.wonton/deep_link";       // 结果
-pub const TOOL_RESULT_SCOPE_META: &str = "app.wonton/result_scope"; // "room" | "keeper"
+pub const TOOL_RESULT_SCOPE_META: &str = "app.wonton/result_scope"; // "room" | "keeper"，默认 keeper；插件没在 tools/list 里声明支持就不开门
 ```
 
 类型：
