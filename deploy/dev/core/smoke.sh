@@ -325,7 +325,8 @@ reply="$(t -o /dev/null -D - -H "Authorization: Bearer $access" \
 ok "会话 ID 带 %2F 的密钥备份请求转给了 Tuwunel（HTTP $(head -1 <<<"$reply" | cut -d' ' -f2)）"
 
 # 回声 Bot 的安装、加密收发、crypto store 丢失与重装恢复：smoke-echo-bot.sh。
-shellcheck source=deploy/dev/core/smoke-echo-bot.sh
+# 本机装了 shellcheck 就顺手检查一遍：它里面的变量都来自冒烟本体，SC2154 免不了，所以不作门槛。
+command -v shellcheck >/dev/null && shellcheck "$here/smoke-echo-bot.sh" || true
 source "$here/smoke-echo-bot.sh"
 
 fi
