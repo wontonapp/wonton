@@ -41,7 +41,7 @@
 ## 剩下步骤
 
 1. 逐张看浅/深截图（附件切换排、选中、被拒、转发、旁聊提示/被拒），红绿和全套都已绿。
-2. `git push --force-with-lease` 推 #831，`gh pr ready 831`；PR 正文用 `.walk/pr831.md`（`gh pr edit --body-file` 后用 `gh pr view` 核一遍），**不要把截图传到公开地方以外**。
+2. ✅ 已推 #831（head da9feeb67，钩子 clippy/detekt/merged-main/swiftlint 全过）并保持 ready；PR 正文用 `.walk/pr831.md`（`gh pr edit --body-file` 后用 `gh pr view` 核一遍），**不要把截图传到公开地方以外**。
 3. 等 #837 + 转发附言的核心 PR 合进 main 后再做单次派发（`comment`），否则保留 `SendText`+`ForwardMessage` 两个动作。
 4. #831 合并后：`chat-ios-859` rebase 到含 #831 的 main，解冲突（`ComposerView` 附件面板 `limit:` 留 `composer.photoRoom`、用 #831 的 `send:`；`SideChatCover` 取 main 的；测试 `attachDone` → `attachSend`；ADR 把“旁聊开不出面板”那句删掉、十张限制并进 #831 的句子），跑它自己的全套 + 截图，`--force-with-lease` 推、`gh pr ready 859`。
 5. `chat-ios-813` 先跑红（把 `ReplyQuoteView` 那一行临时改回 1 行不必要，现状就是红的），贴红行，再把 `lineLimit` 改成 2 跑绿、浅深截图、推、PR 写 `Closes #813`。
