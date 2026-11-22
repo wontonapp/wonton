@@ -146,6 +146,12 @@ final class SafeAreaUITests: XCTestCase {
             // the clock, the island and the home indicator.
             columns = [((pageLeft * scale) + inset) / CGFloat(captured.image.width)]
             edges = [0.07, 0.93]
+            // 侧栏打开时列表行和滚动指示器就在屏幕中部，middle 会偏几个色阶（实测 9），
+            // 所以这个场景改比上下两条边缘，不再用 middle。
+            let top = try patch(captured.image, x: columns[0], y: 0.07)
+            let bottom = try patch(captured.image, x: columns[0], y: 0.93)
+            assertMatches(bottom, top, context: "\(captured.name) main preview y=0.93 against 0.07")
+            return
         }
         for column in columns {
             let middle = try patch(captured.image, x: column, y: 0.5)

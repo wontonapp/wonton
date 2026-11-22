@@ -128,6 +128,8 @@ private extension ChatRoomView {
         }
         .safeAreaInset(edge: .bottom, spacing: 0) {
             roomBottomBar
+                // 同顶栏：底栏和列表是同层兄弟，输入框会落在列表后面点不到，显式压上去。
+                .zIndex(1)
         }
         .modifier(RoomPresentations(presenter: presenter))
         .wontonSheet(isPresented: $showingConfirmations,
