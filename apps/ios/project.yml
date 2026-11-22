@@ -67,6 +67,7 @@ targets:
       path: Wonton/Info.plist
       properties:
         UIBackgroundModes: [audio]
+        LSApplicationQueriesSchemes: [App-prefs]
         UISupportedInterfaceOrientations~ipad:
           - UIInterfaceOrientationPortrait
           - UIInterfaceOrientationLandscapeLeft
