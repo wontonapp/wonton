@@ -171,7 +171,7 @@ MCP 订阅只收 `tools_list_changed`（`crates/wonton-core/src/mcp/server.rs:29
   2. 他能用、没停用的共享 Bot；
   3. 都没有就退回第 4 项的按人通知，事件留在队列里，不叫醒。
 - 叫醒就是核心以核心账号在那条 Bot 和他自己的私聊里发一条 `m.text`，文案用核心的四种语言（“相册有新照片”一类不写死，正文取 `title`），
-  `content` 里带 `app.wonton.event: {"id":…,"kind":…,"count":…}` 和 `app.wonton/confirmation` 同款的结构字段。消息到不了会话，
+  `content` 里带 `app.wonton.event: {"id":…,"kind":…,"count":…}`。消息到不了会话，
   记一次“投递失败”，事件仍在队列，下一次有事件或每 5 分钟重试一次。
 - Agent 的一轮里能调两个核心工具：`wonton__events {since?, wait_seconds?}` 取自己收件队列里还没 ack 的事件
   （`wait_seconds` 最多 60 秒，给了就长轮询到有事件或到点）；`wonton__events_ack {ids:[…]}` 标已处理。没 ack 的 7 天后过期。
