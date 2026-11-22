@@ -151,9 +151,9 @@ curl --noproxy '' -x http://127.0.0.1:18008 -U wonton:<密码> -H 'content-type:
 `WONTON_DEV_DEFAULT_PLUGINS= dev.sh up` 起核心。声明了 `models` 的插件经 `models.wonton.internal` 访问 magpie，凭据由
 核心签发。“模型设置”网页（`http://ai-usemagpie-magpie.wonton.localhost:18480/`）由网关代登录：登录过核心的浏览器和
 已配对设备直接打开，不用输 magpie 的网页密钥。也可以用 magpie 的命令行配置 provider，比如指向开发机上已在运行的
-magpie；上游地址别写 `http://host.docker.internal:3425`——核心不给插件容器加 host-gateway（有意的
-隔离），Linux 上这个名字解析不了。用[端到端冒烟](#端到端冒烟)一节的 socat 中继（`WONTON_SMOKE_MODEL_RELAY` 指向只监听
-回环的 magpie），宿主防火墙要放行插件网段到中继端口（13425）。加了 provider，默认路由组 `wonton-default` 自动有了它的
+magpie。手动配置时上游地址别写 `http://host.docker.internal:3425`：核心不给插件容器加 host-gateway（有意的
+隔离），Linux 上这个名字解析不了；[端到端冒烟](#端到端冒烟)自己会按能不能解析选地址，解析不到时在插件网络的网关
+上起 socat 转发（宿主防火墙要放行插件网段到 13425）。加了 provider，默认路由组 `wonton-default` 自动有了它的
 模型（ADR-0008）。
 
 ## MCP 总线
@@ -296,8 +296,7 @@ DOCKER_HOST=ssh://$DEV_HOST deploy/dev/core/smoke.sh  # 远端 Linux 主机
 核心重启后插件恢复，卸掉的 Hermes 不会被装回来；卸载后容器、网络、卷、应用数据和 OIDC 客户端都没有残留。
 结束时清理全部资源，`KEEP=1` 保留现场。Hermes 一步要真实模型：开发机上要有在运行的 magpie，模型名经
 `WONTON_SMOKE_MODEL` 传入（magpie 里一个能对话的模型；`/v1/models` 里的 id 带 provider 前缀，冒烟在交给
-插件前会去掉了它），冒烟里的 magpie 经 `host.docker.internal:3425` 用它，
-不读取开发机 magpie 的配置和密钥。
+插件前会去掉最前面那一段）。冒烟的 magpie 怎么连宿主见下面「远端主机」一段；不读取开发机 magpie 的配置和密钥。
 
 远端主机拉不到 Docker Hub 时，先把镜像从本机传过去（以 amd64 主机为例），传完删掉本机的 amd64 副本。核心镜像的 Rust、
 Debian 基础镜像从 ECR Public 拉（见 Dockerfile），不用传：
@@ -325,13 +324,15 @@ ssh "$DEV_HOST" docker tag "sha256:${image#*@sha256:}" "${image%@*}"
 链接预览经代理用的 DoH 服务器用 `WONTON_DOH_URL` 换（默认 `https://1.1.1.1/dns-query`，ADR-0065）。
 
 远端主机直连 crates.io、GitHub 太慢时，构建镜像经那台主机自己的代理（`WONTON_DEV_BUILD_PROXY`，构建用宿主网络）。
-Linux 主机上容器里没有 `host.docker.internal`，冒烟用 `WONTON_SMOKE_MODEL_RELAY` 指向那台主机上只监听回环地址的
-magpie，`WONTON_SMOKE_MODEL` 选它提供的模型。冒烟在主机网络里起一个 socat 转发，监听在冒烟 magpie 插件网络的网关上、
-只接受冒烟的 magpie，结束时删掉；主机的防火墙要放行插件网络连这个端口（13425），否则 Hermes 一步连不上模型：
+Linux 的 Docker 不给容器加 `host.docker.internal`，冒烟自己判：插件容器能解析这个名字就用它，解析不到就在冒烟
+magpie 插件网络的网关上起一个 socat 转发，监听在所有地址上，结束时删掉。转发的目标默认是宿主的 `127.0.0.1:3425`
+（只监听回环就可以），不在那里时用 `WONTON_SMOKE_MODEL_RELAY=<宿主上的地址:端口>`，`WONTON_SMOKE_MODEL` 选它提供的模型。
+主机的防火墙要放行插件网段到这个端口（13425），否则 Hermes 一步连不上模型。宿主 magpie 在容器里时冒烟按发布 3425
+的容器找它，名字不同就设 `WONTON_SMOKE_HOST_MAGPIE=<容器名>`：
 
 ```bash
 DOCKER_HOST=ssh://$DEV_HOST WONTON_DEV_BUILD_PROXY=http://127.0.0.1:7899 WONTON_DEV_BUILD_JOBS=16 \
-  WONTON_SMOKE_MODEL_RELAY=127.0.0.1:3425 WONTON_SMOKE_MODEL='<开发机 magpie 里的模型名>' deploy/dev/core/smoke.sh
+  WONTON_SMOKE_MODEL='<开发机 magpie 里能对话的模型名>' deploy/dev/core/smoke.sh
 ```
 
 ## 在宿主上直接运行核心

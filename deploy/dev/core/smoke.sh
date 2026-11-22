@@ -4,10 +4,12 @@
 # 已配对设备经隧道打开插件，直接是主人 → 经隧道登录 Matrix，和回声 Bot 加密收发 →
 # 核心自己装好的默认 Agent Hermes 就绪后出现在主人的私聊里：没有模型时提示去“模型设置”，加了 provider 后经模型网关和
 # 主人加密对话两轮 → 网关代登录打开“模型设置”网页 → 核心重启后恢复、不装回卸掉的 Hermes → 卸载干净。
-# Hermes 一步要真实模型：开发机上要有在运行的 magpie。冒烟的 magpie 容器直连宿主 3425，
+# Hermes 一步要真实模型：开发机上要有在运行的 magpie。冒烟的 magpie 容器直连宿主 3425；插件容器解析不到
+# host.docker.internal 时（Linux 的 Docker 不给插件容器加这条）经插件网络网关上的 socat 转发连，见模型段。
 # 凭据是冒烟自己新建的一次性网关凭据：限定到这次的模型，退出时按建 key 时记下的 id 删掉
 # （失败退出也删），凭据不进日志、不写进仓库。
-# 模型名经 WONTON_SMOKE_MODEL 传入：开发机 magpie 里一个能对话的模型。
+# 模型名经 WONTON_SMOKE_MODEL 传入：开发机 magpie 里一个能对话的模型；宿主 magpie 不在 3425 时用
+# WONTON_SMOKE_MODEL_RELAY=<宿主上的地址:端口>。
 #
 #   deploy/dev/core/smoke.sh    本机 Docker；要设 WONTON_SMOKE_MODEL，见上
 #   DOCKER_HOST=ssh://$DEV_HOST deploy/dev/core/smoke.sh  远端 Linux 主机（远端只需要 Docker，DEV_HOST 是它的 SSH 目标）
@@ -49,6 +51,7 @@ phone_image="wonton-tunnel-client:dev"
 echo_image="wonton-echo-bot:dev"
 curl_image="curlimages/curl:8.23.0"
 busybox_image="public.ecr.aws/docker/library/busybox:1.37"
+socat_image="alpine/socat:1.8.0.3"
 core_url="http://$WONTON_DEV_DOMAIN:$WONTON_DEV_PORT"
 grafana_url="http://app-grafana.$WONTON_DEV_DOMAIN:$WONTON_DEV_PORT"
 whoami_url="http://app-whoami.$WONTON_DEV_DOMAIN:$WONTON_DEV_PORT"
@@ -60,6 +63,7 @@ hermes_network="wonton-$WONTON_DEV_INSTANCE--com-nousresearch-hermes"
 grafana="$grafana_network--grafana"
 echo_bot="wonton-$WONTON_DEV_INSTANCE--agent-echo--bot"
 magpie="$magpie_network--magpie"
+model_relay="$WONTON_DEV_PROJECT-model-relay"
 model_client="wonton-$WONTON_DEV_INSTANCE--app-model-client--client"
 # Hermes 声明了 bots（x-wonton.bots），gateway 是 Bot 服务：容器按 Bot 一份。
 hermes="$hermes_network--gateway--default"
@@ -88,7 +92,7 @@ ok "没有残留的示例插件资源"
 fi
 # 对着已有的栈跑时不拆栈，只删自己起的探针容器。
 if [[ -n "${SMOKE_ONLY:-}" ]]; then
-  trap '[[ -z "${events_pid:-}" ]] || kill "$events_pid" 2>/dev/null; docker rm -f "$browser" "$phone" >/dev/null 2>&1 || true' EXIT
+  trap '[[ -z "${events_pid:-}" ]] || kill "$events_pid" 2>/dev/null; [[ -z "${host_model_key_id:-}" ]] || host_magpie gateway-key remove "$host_model_key_id" >/dev/null 2>&1 || true; docker rm -f "$browser" "$phone" "$model_relay" >/dev/null 2>&1 || true' EXIT
 else trap cleanup EXIT; fi
 
 if step core "启动核心和身份提供方（项目 $core，端口 $WONTON_DEV_PORT）"; then
@@ -389,31 +393,61 @@ grep '^第' "$said" | sed 's/^/   · /'
 # Hermes v0.6.6 起默认说英文，提示里用的是 “Apps → Models”，两种写法都认。
 grep -qE '模型设置|add a model provider' "$said" || fail "没有模型时 Hermes 应提示去模型设置添加：$(cat "$said")"
 ok "没有模型时，Hermes 提示主人去模型设置添加模型服务商"
-# 模型只经开发机上的 magpie：冒烟的 magpie 容器直连宿主 3425，不读取、不复制主人 magpie 的配置和密钥。
-# 地址按 Docker 的种类定：OrbStack 和 Docker Desktop 的网络网关在虚拟机里，到不了宿主上的 magpie，
-# 用 host.docker.internal；其余用插件网络的网关地址。凭据是本冒烟新建的一次性网关凭据：限定到这次的
-# 模型，cleanup 按建 key 时记下的 id 删掉（失败退出也删），凭据不进日志、不写进仓库。
-case "$(docker info --format '{{.OperatingSystem}}')" in
-  *"Docker Desktop"* | *OrbStack*) model_host=host.docker.internal ;;
-  *) model_host="$(docker network inspect "$magpie_network" --format '{{(index .IPAM.Config 0).Gateway}}')" ;;
-esac
-model_url="http://$model_host:3425/v1"
+# 模型只经开发机上的 magpie：冒烟的 magpie 容器直连宿主 3425，不读取、不复制它的配置和密钥。
+# 地址：插件容器能解析 host.docker.internal 就直接连（Docker Desktop、OrbStack 提供这个名字，它们的网关在
+# 虚拟机里，到不了宿主的回环）；Linux 的 Docker 不给插件容器加 host-gateway，解析不到时在冒烟 magpie 插件网络
+# 的网关地址上起一个 socat 转发（监听所有地址），宿主的 magpie 照旧只监听回环也行。凭据是本冒烟新建的
+# 一次性网关凭据：限定到这次的模型，cleanup 按建 key 时记下的 id 删掉（失败退出也删），凭据不进日志、不写进仓库。
+#
+# 冒烟的 magpie 容器能不能解析 host.docker.internal：busybox 的 ping 解析失败打 “bad address”，能解析就先打
+# 一行 PING 再等回包（ICMP 被挡不影响判断），所以只看第一行。
+host_name_resolves() {
+  local first
+  first="$(docker run --rm --network "$magpie_network" "$busybox_image" \
+    sh -c 'ping -c1 -W1 host.docker.internal 2>&1' 2>&1 | head -1)" || true
+  [[ "$first" == PING* ]]
+}
+
+# 宿主 magpie 的 CLI：宿主上装了 magpie 就用它，跑在容器里就 exec 进发布 3425 的那个容器（或用
+# WONTON_SMOKE_HOST_MAGPIE 指定名字）。
+host_magpie() {
+  if command -v magpie >/dev/null; then magpie "$@"; return; fi
+  local container="${WONTON_SMOKE_HOST_MAGPIE:-}"
+  [[ -n "$container" ]] || container="$(docker ps --filter publish=3425 --format '{{.Names}}' | head -1)"
+  [[ -n "$container" ]] || fail "找不到宿主 magpie：宿主上放一个发布 3425 的 magpie 容器，或设 WONTON_SMOKE_HOST_MAGPIE=<容器名>"
+  docker exec -i "$container" magpie "$@"
+}
+
+model_relay_target="${WONTON_SMOKE_MODEL_RELAY:-127.0.0.1:3425}"
+model_port=3425
+if host_name_resolves; then
+  model_host=host.docker.internal
+else
+  model_host="$(docker network inspect "$magpie_network" --format '{{(index .IPAM.Config 0).Gateway}}')"
+  model_port=13425
+  # 监听所有地址：插件容器走自己的网络网关，别的容器加 host.docker.internal 也能到（凭据仍在转发后面的 magpie 上）。
+  docker run -d --rm --name "$model_relay" --network host "$socat_image" \
+    "TCP-LISTEN:$model_port,fork,reuseaddr" "TCP:$model_relay_target" >/dev/null ||
+    fail "起不了到宿主 magpie（$model_relay_target）的转发"
+fi
+model_url="http://$model_host:$model_port/v1"
 model_no_proxy="host.docker.internal,localhost,127.0.0.1,$model_host"
 model_key="$(openssl rand -hex 24)"
 host_model_key_name="wonton-smoke-core-$$"
-magpie gateway-key add "$host_model_key_name" --key - <<<"$model_key" >/dev/null \
+host_magpie gateway-key add "$host_model_key_name" --key - <<<"$model_key" >/dev/null \
   || fail "宿主 magpie 建不了一次性网关凭据"
-host_model_key_id="$(magpie gateway-key list 2>/dev/null | awk -v n="$host_model_key_name" '$2 == n { print $1; exit }')" \
+host_model_key_id="$(host_magpie gateway-key list 2>/dev/null | awk -v n="$host_model_key_name" '$2 == n { print $1; exit }')" \
   || fail "建了凭据但读不到凭据列表"
 [[ -n "$host_model_key_id" ]] || fail "建了凭据但在列表里找不到它"
-magpie gateway-key models "$host_model_key_id" "$model" >/dev/null || fail "一次性凭据限定模型失败"
+host_magpie gateway-key models "$host_model_key_id" "$model" >/dev/null || fail "一次性凭据限定模型失败"
 
 # 只加 provider，不建路由组：默认路由组由 magpie 插件建好，成员跟着 provider 变。
-# 模型名去掉上游的 provider 前缀（`zcode/GLM-5.3-Flash` → `GLM-5.3-Flash`）：带斜杠时插件把它当成别的
-# provider 的模型，`models=` 挑不中，模型目录和默认组都是空的（magpie 0.1.1327 实测）。
+# 模型名去掉最前面那段（宿主 magpie 的 provider 前缀；`zcode/GLM-5.3-Flash` → `GLM-5.3-Flash`）：带斜杠时插件把
+# 它当成别的 provider 的模型，`models=` 挑不中，模型目录和默认组都是空的（magpie 0.1.1327 实测）。只去一段，
+# 路由组的模型（`group/main`）的斜杠要留着。
 docker exec -e no_proxy="$model_no_proxy" -e NO_PROXY="$model_no_proxy" "$magpie" \
   magpie provider add upstream url="$model_url" key="$model_key" \
-  models="${model##*/}" >/dev/null || fail "magpie 连不上开发机上的 magpie（$model_url）"
+  models="${model#*/}" >/dev/null || fail "magpie 连不上开发机上的 magpie（$model_url）"
 # 默认组由插件里的 default-model 服务每两秒按 provider 对一次，这里等它，和上面等 Navidrome 扫描一样。
 for _ in $(seq 15); do
   [[ " $(hermes_models) " == *" group/wonton-default "* ]] && break
