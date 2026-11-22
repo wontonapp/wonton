@@ -15,22 +15,21 @@
 //! 媒体、商店列表和别的操作后的新状态不在里面，
 //! 要用这些的测试仍然连开发栈（见 `apps/ios/WontonUITests/UITestBackend.swift`）。
 
-use std::sync::Arc;
 use std::sync::atomic::AtomicUsize;
 use std::sync::atomic::Ordering;
+use std::sync::Arc;
 use std::time::{SystemTime, UNIX_EPOCH};
 
 use tokio::sync::watch;
 
 use wonton_protocol::{
-    AppLockViewModel, AppsAction, BotActivity, BotRef, BotView, ChatAccount, ChatLayout,
-    ChatLayoutChoice, ChatSync, ChatViewModel, CoreError, DeviceInvite, DeviceNetwork,
-    DeviceVerification, EncryptionStatus, HomePath, HomeStatus, HomeViewModel, InstalledPlugin,
-    InstalledPlugins, MessageSummary, OnboardingStep, OnboardingViewModel, OpenPage,
-    PagesViewModel, PanelItem, PanelSource, PluginHealth, PluginKind, PluginState, PluginTrust,
-    PluginsViewModel, PushMethod, PushStatus, RecoveryNextStep, RecoveryStatus, RoomMembership,
-    RoomPreview, RoomRow, SecretString, ServerKind, ServerName, ServerRow, ServersViewModel,
-    SettingsEntry, SettingsSection, SettingsViewModel, SidebarApp, SidebarBadge, SidebarOpen,
+    AppsAction, BotActivity, BotRef, BotView, ChatAccount, ChatLayout, ChatLayoutChoice, ChatSync,
+    ChatViewModel, CoreError, DeviceInvite, DeviceNetwork, DeviceVerification, EncryptionStatus,
+    HomePath, HomeStatus, HomeViewModel, InstalledPlugin, InstalledPlugins, MessageSummary,
+    OnboardingStep, OnboardingViewModel, OpenPage, PagesViewModel, PanelItem, PanelSource,
+    PluginHealth, PluginKind, PluginState, PluginTrust, PluginsViewModel, PushStatus,
+    RecoveryNextStep, RecoveryStatus, RoomMembership, RoomPreview, RoomRow, SecretString,
+    ServerKind, ServerName, ServerRow, ServersViewModel, SidebarApp, SidebarBadge, SidebarOpen,
     TabIcon, TabLayout, TabPage, TabRef, TabState,
 };
 
@@ -373,53 +372,6 @@ fn fake_rooms() -> Vec<RoomRow> {
     ]
 }
 
-/// 假设置首页：按真设置的结构排（资料、服务器、这台手机上的几行、备份、关于），走到“添加设备”和
-/// 夜跑按文字点的行都在。真设置里“资料、服务器、默认 Agent、引导”要配对后才出现，这里照样给，方便走配对流程。
-/// 通知这一行要给：Android 在 `onCreate` 里按推送方式登记，取不到通知入口会直接崩。
-fn fake_settings() -> SettingsViewModel {
-    let lock = AppLockViewModel::default();
-    SettingsViewModel {
-        sections: vec![
-            SettingsSection {
-                entries: vec![SettingsEntry::Profile],
-            },
-            SettingsSection {
-                entries: vec![SettingsEntry::Server {
-                    name: Some(ServerName::Named {
-                        name: "Home".into(),
-                    }),
-                    status: HomeStatus::Connected,
-                    upgrade: false,
-                }],
-            },
-            SettingsSection {
-                entries: vec![
-                    SettingsEntry::Appearance,
-                    SettingsEntry::Language,
-                    SettingsEntry::MyApps,
-                    SettingsEntry::Notifications {
-                        method: PushMethod::Keepalive,
-                        push: PushStatus::NoEndpoint,
-                        categories: Vec::new(),
-                    },
-                    SettingsEntry::AppLock {
-                        enabled: lock.enabled,
-                        timeout: lock.timeout,
-                    },
-                ],
-            },
-            SettingsSection {
-                entries: vec![SettingsEntry::ChatBackup {
-                    recovery: RecoveryStatus::Unknown,
-                }],
-            },
-            SettingsSection {
-                entries: vec![SettingsEntry::About],
-            },
-        ],
-    }
-}
-
 fn fake_chat(mut chat: ChatViewModel) -> ChatViewModel {
     chat.account = ChatAccount::SignedIn {
         user_id: "@owner:home.example".into(),
@@ -674,18 +626,16 @@ mod tests {
         assert_eq!(core.pages().root, TabRef::Chat);
         assert_eq!(core.onboarding().step, Some(OnboardingStep::Finished));
         // 操作不落到作用域。
-        assert!(
-            core.dispatch(Action::Pages {
+        assert!(core
+            .dispatch(Action::Pages {
                 action: PageAction::OpenPage { tab: TabRef::Apps },
             })
-            .is_ok()
-        );
-        assert!(
-            core.dispatch(Action::Plugins {
+            .is_ok());
+        assert!(core
+            .dispatch(Action::Plugins {
                 action: wonton_protocol::PluginAction::RefreshPlugins
             })
-            .is_ok()
-        );
+            .is_ok());
         assert_eq!(core.pages().root, TabRef::Chat);
         let _ = std::fs::remove_dir_all(&dir);
     }
@@ -731,15 +681,14 @@ mod tests {
         assert_eq!(view.attachments.len(), 1);
         assert_eq!(view.attachments[0].id, second);
         // 拿掉的再拿一次才算找不到。
-        assert!(
-            core.dispatch(Action::Timeline {
+        assert!(core
+            .dispatch(Action::Timeline {
                 action: TimelineAction::RemoveAttachment {
                     target,
                     attachment_id: first,
                 },
             })
-            .is_err()
-        );
+            .is_err());
         let _ = std::fs::remove_dir_all(&dir);
     }
 
