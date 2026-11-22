@@ -136,15 +136,11 @@ impl ClientCore {
             peers: watch::Sender::new(current.peers.borrow().clone()),
             friends: watch::Sender::new(current.friends.borrow().clone()),
             bot_contacts: watch::Sender::new(current.bot_contacts.borrow().clone()),
-<<<<<<< HEAD
             // 假数据下设置页带着当前值：真设置页的构建循环订阅着被丢弃的旧接收器，开起来会停在
             // 未配对的状态，设置里的“添加设备”走不通。
-            settings: watch::Sender::new(fake_settings(current.settings.borrow().clone())),
-=======
             settings: watch::Sender::new(super::ui_fake_settings::fake_settings(
                 current.settings.borrow().clone(),
             )),
->>>>>>> e39668c9e (fix(pairing): 复审意见：首屏测试走真核心、按钮与返回一致、iOS 断言不再硬停)
             confirmations: watch::Sender::new(super::ui_fake_devices::confirmations(
                 current.confirmations.borrow().clone(),
             )),
