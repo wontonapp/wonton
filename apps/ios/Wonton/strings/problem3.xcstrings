@@ -541,6 +541,66 @@
         "zh-Hant": { "stringUnit": { "state": "translated", "value": "請檢查雲吞和伺服器是否有更新；如果問題持續，請查看詳細資訊。" } },
         "ja": { "stringUnit": { "state": "translated", "value": "アプリとサーバの更新を確認し、問題が続く場合は詳細を確認してください。" } }
       }
+    },
+    "problem.serverNotPaired.nextStep": {
+      "comment": "What to do when the other server isn't paired: pair it first.",
+      "extractionState": "manual",
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Pair it under Other servers, then open the chat again."
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "先在“其他服务器”里配对，再打开聊天。"
+          }
+        },
+        "zh-Hant": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "先在「其他伺服器」裡配對，再打開聊天。"
+          }
+        },
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "「他のサーバー」でペアリングしてから、チャットを開いてください。"
+          }
+        }
+      }
+    },
+    "problem.peerPublicAccessOff.title": {
+      "comment": "Problem title when a chat can't start because the other server turned its public access off.",
+      "extractionState": "manual",
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "The other server's public access is off"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "对方服务器的公网访问已关"
+          }
+        },
+        "zh-Hant": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "對方伺服器的公網訪問已關"
+          }
+        },
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "相手のサーバーは外部からのアクセスがオフです"
+          }
+        }
+      }
     }
   }
 }

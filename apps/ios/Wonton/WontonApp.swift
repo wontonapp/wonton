@@ -27,6 +27,8 @@ struct WontonApp: App {
                             AgentRunPreview.root
                         } else if ProblemPreview.active {
                             ProblemPreview.root
+                        } else if PeersPreview.active {
+                            PeersPreview.root
                         } else if QualityPreviews.active {
                             QualityPreviews.root
                         } else {

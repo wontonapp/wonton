@@ -32,11 +32,13 @@ struct ReloginState {
     failures: u32,
 }
 
-/// 连不上、Matrix 还没就绪会自己好；被拒、输入非法、服务器出错要用户处理，重试也没用。
+/// 连不上、Matrix 还没就绪、对方公网关会自己好；没配对、被拒、输入非法、服务器出错要用户处理，重试也没用。
 fn temporary(reason: ChatFailure) -> bool {
     matches!(
         reason,
-        ChatFailure::TransportUnavailable | ChatFailure::NotReady
+        ChatFailure::TransportUnavailable
+            | ChatFailure::PeerPublicAccessOff
+            | ChatFailure::NotReady
     )
 }
 

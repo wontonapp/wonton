@@ -114,6 +114,16 @@ fun ChatFailure.problem(detail: String): Problem = when (this) {
         R.string.problem_forbidden_next_step,
         detail,
     )
+    ChatFailure.SERVER_NOT_PAIRED -> problem(
+        R.string.problem_server_not_paired_title,
+        R.string.problem_server_not_paired_next_step,
+        detail,
+    )
+    ChatFailure.PEER_PUBLIC_ACCESS_OFF -> problem(
+        R.string.problem_peer_public_access_off_title,
+        R.string.problem_peer_public_access_off_next_step,
+        detail,
+    )
     ChatFailure.UPSTREAM -> problem(R.string.problem_upstream_title, R.string.problem_upstream_next_step, detail)
     ChatFailure.NOT_READY -> Problem(titleRes = R.string.problem_not_ready_title, nextStep = detail)
     ChatFailure.INVALID_INPUT -> Problem(titleRes = R.string.problem_invalid_input_title, nextStep = detail)
