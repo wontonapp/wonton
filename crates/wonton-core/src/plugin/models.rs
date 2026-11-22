@@ -656,19 +656,14 @@ impl PluginManager {
         let Some(route) = self.models_route() else {
             return Vec::new();
         };
+        // 用记录里的清单判断，不看店里的条目：restore 回来的插件没有那条，照样要接。
         let candidates: Vec<(PluginId, bool)> = {
             let plugins = self.plugins.read().expect("插件表锁中毒");
             plugins
                 .iter()
                 .filter(|(id, entry)| {
                     **id != route.id
-                        && entry.listed.as_ref().is_some_and(|listed| {
-                            uses_models(&listed.manifest)
-                                && matches!(
-                                    entry.status,
-                                    PluginStatus::Running | PluginStatus::Stopped
-                                )
-                        })
+                        && matches!(entry.status, PluginStatus::Running | PluginStatus::Stopped)
                 })
                 .map(|(id, entry)| (id.clone(), entry.status == PluginStatus::Running))
                 // 只补没接上的：已接上的对账刚把凭据对好，变量没变，容器不用动。
@@ -694,6 +689,9 @@ impl PluginManager {
                 continue;
             };
             package.origin = record.origin.clone();
+            if !uses_models(&package.manifest) {
+                continue;
+            }
             let bot_names = self.bot_names(&id);
             match self
                 .issue_consumer_credentials(&route, &package, langs, &bot_names)
