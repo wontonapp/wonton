@@ -1,5 +1,7 @@
 //! 真实 Docker：删掉插件的容器和网络（相当于开发栈 down）后核心重启，restore 自己重建，不要求重装。
 
+use std::time::Duration;
+
 use super::super::PluginStatus;
 use super::super::docker::Engine;
 use super::manager::manager_in_instance;
@@ -32,7 +34,10 @@ async fn a_stack_restart_with_lost_network_and_containers_recovers_on_restore() 
     let image = busybox(&engine).await;
     let names = Names::new();
     let dir = tempfile::tempdir().unwrap();
-    let manager = manager_in_instance(engine.clone(), &dir, names.name());
+    // 恢复和安装一样要重建容器再等健康检查。测试默认只等 5 秒，dockerd 忙的时候探针还没跑完就到点，
+    // 这条测试又偏偏是“删光了重建”，最容易撞上；等 60 秒，和别的重活测试一样。
+    let mut manager = manager_in_instance(engine.clone(), &dir, names.name());
+    manager.cfg.install_timeout = Duration::from_secs(60);
     let installed = manager
         .install(&compose(&image), &[], super::langs())
         .await
@@ -57,7 +62,8 @@ async fn a_stack_restart_with_lost_network_and_containers_recovers_on_restore() 
     }
     assert!(engine.network_reach(&network).await.unwrap().is_none());
 
-    let restarted = manager_in_instance(engine.clone(), &dir, names.name());
+    let mut restarted = manager_in_instance(engine.clone(), &dir, names.name());
+    restarted.cfg.install_timeout = Duration::from_secs(60);
     restarted.restore().await.unwrap();
     let [view] = <[_; 1]>::try_from(restarted.list()).expect("只有一个插件");
     assert_eq!(view.status, PluginStatus::Running, "不用重装就该自己回来");
