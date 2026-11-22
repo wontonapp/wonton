@@ -363,7 +363,7 @@ impl PluginsLink {
     }
 
     /// 记下预览：失败后重试要来源，聊天列表的安装行要知道它是不是 Bot 插件。
-    fn remember_preview(&self, preview: &InstallPreview) {
+    pub(super) fn remember_preview(&self, preview: &InstallPreview) {
         self.previews
             .lock()
             .expect("the previews lock never panics")

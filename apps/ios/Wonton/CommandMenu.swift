@@ -1,7 +1,7 @@
 import SwiftUI
 import WontonClient
 
-/// “/”命令列表（ADR-0054、ADR-0109 第 7 节）：浮在输入框上方的一张玻璃卡片，一行一条命令（Bot 头像、名字和说明），点一条就发出去。
+/// “/”命令列表（ADR-0054、ADR-0109 第 8 节）：浮在输入框上方的一张玻璃卡片，一行一条命令（Bot 头像、名字和说明），点一条就发出去。
 /// 敲“/”弹出和点“菜单”按钮打开的是同一张；列哪些由输入栏定，这里只画。
 struct CommandMenu: View {
     let commands: [RoomCommand]
@@ -67,7 +67,7 @@ struct CommandMenu: View {
                 .foregroundStyle(Color(colors.textPrimary))
                 .lineLimit(1)
                 .layoutPriority(1)
-            // 参数提示跟在名字后面（ADR-0109 第 7 节）。
+            // 参数提示跟在名字后面（ADR-0109 第 8 节）。
             if let hint = command.hint {
                 Text(verbatim: hint)
                     .wontonText(WontonTheme.typography.caption)

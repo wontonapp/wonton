@@ -93,6 +93,10 @@ impl ClientCore {
             Action::Family { action } => scope.plugins.dispatch_roles(action),
             Action::Friends { action } => scope.friends.dispatch(action),
             Action::Sharing { action } => self.dispatch_sharing(&scope, action),
+            // 公网访问的模块还没接；接上之前如实报还没就绪，不静默当成功。
+            Action::Clients { .. } => Err(CoreError::NotReady {
+                reason: "clients module is not wired yet".into(),
+            }),
             Action::Timeline { action } => self.timeline_action(&scope, action),
             Action::Agent { action } => self.agent_action(&scope, action),
         }
@@ -282,6 +286,10 @@ impl ClientCore {
             PluginAction::InstallNow { source } => scope.plugins.install_now(source),
             PluginAction::UpgradeNow { plugin_id } => scope.plugins.upgrade_now(plugin_id),
             PluginAction::UpgradeAll => scope.plugins.upgrade_all(),
+            PluginAction::ReviewStoreUpdate { plugin_id } => {
+                scope.plugins.review_store_update(&plugin_id)
+            }
+            PluginAction::DismissStoreUpdates => scope.plugins.dismiss_store_updates(),
             PluginAction::DismissStoreConfirmation => {
                 scope.plugins.dismiss_confirmation();
                 Ok(())

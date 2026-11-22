@@ -30,6 +30,7 @@ mod passwords;
 mod status;
 #[cfg(test)]
 mod tests;
+mod view;
 
 pub use domain::{
     CaaState, CertificateState, CredentialEntry, DnsProviderPreset, DomainSettings, LanRecordState,
@@ -51,6 +52,10 @@ pub use passwords::{
 };
 pub use status::{
     Ban, ClientsStatus, PendingChange, PendingChangeKind, ProbeResult, PublicItem, PublicReach,
+};
+pub use view::{
+    ClientsBlocked, ClientsGuests, ClientsPassword, ClientsSettingsViewModel, ClientsState,
+    ClientsViewModel,
 };
 
 /// 所有第三方客户端接口都要带的请求头，值是 `1`；不带的请求（跨站）过不了。
@@ -101,11 +106,13 @@ pub fn clients_public_access_path() -> String {
 }
 
 /// `GET`：这个插件的访客链接，响应是 `Vec<`[`GuestLink`]`>`。`POST`：新建，请求体是 [`NewGuestLinkRequest`]。
+/// 局域网和公网入口都关着时 `POST` 回 409 [`ClientsFailure::EntryClosed`](crate::ClientsFailure)。
 pub fn clients_guests_path(id: &str) -> String {
     format!("{}/{id}/guests", clients_path())
 }
 
 /// `GET`：取地址，响应是 [`GuestLink`]，每次取记审计。`DELETE`：收回，下一个请求就失效。
+/// 已经失效的链接（收回、过期、总开关关着）在入口页面上回 403（页面正文，不是 API），访客接口回 409。
 pub fn clients_guest_path(id: &str, guest: &str) -> String {
     format!("{}/{id}/guests/{guest}", clients_path())
 }

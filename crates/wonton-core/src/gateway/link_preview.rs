@@ -84,9 +84,8 @@ pub async fn image(
         .into_response()
 }
 
-fn failure_response(failure: &Failure, headers: &HeaderMap) -> Response {
-    let langs = languages(headers);
-    let (status, kind, message) = match failure.kind {
+fn failure_message(kind: LinkPreviewFailure) -> (StatusCode, &'static str, &'static str) {
+    match kind {
         LinkPreviewFailure::InvalidUrl => (
             StatusCode::BAD_REQUEST,
             "invalid_url",
@@ -127,13 +126,18 @@ fn failure_response(failure: &Failure, headers: &HeaderMap) -> Response {
             "too_many_requests",
             "link-preview-too-many-requests",
         ),
-        // 核心自己不会给出 `Other`，它只是 App 认不出新类别时的落脚处。
+        // 自己取页的这一路上只有“等别人的结果等丢了、等超了”会给 `Other`；另外它是 App 认不出新类别时的落脚处。
         LinkPreviewFailure::Other => (
             StatusCode::INTERNAL_SERVER_ERROR,
             "other",
-            "link-preview-upstream-error",
+            "link-preview-interrupted",
         ),
-    };
+    }
+}
+
+fn failure_response(failure: &Failure, headers: &HeaderMap) -> Response {
+    let langs = languages(headers);
+    let (status, kind, message) = failure_message(failure.kind);
     let detail = failure.detail.as_str();
     error_response(
         status,

@@ -1,0 +1,7 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!-- 由 scripts/make-app-icon.py 从 design/app-icon/mascot/ 生成，不要手改。 -->
+<shape xmlns:android="http://schemas.android.com/apk/res/android">
+    <gradient android:angle="270" android:type="linear"
+        android:startColor="@color/app_icon_gradient_top"
+        android:endColor="@color/app_icon_gradient_bottom" />
+</shape>

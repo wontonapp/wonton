@@ -1,8 +1,8 @@
 import SwiftUI
 import WontonClient
 
-/// 状态行上的一串待回答选项（ADR-0082）：一排最多两个，放不下就换排，每排等分宽度，
-/// 照 Telegram 的内联键盘（ADR-0109 第 7 节）。一排只有一个时铺满整排；比自己那一格还长的字截断。
+/// 状态行上的一串待回答选项（ADR-0082）：一排最多两个，多出来的换到下一排，每排等分宽度，
+/// 照 Telegram 的内联键盘（ADR-0109 第 8 节）。一排只有一个时铺满整排；比自己那一格还长的字截断。
 struct AgentRunChoices: View {
     let choices: [AgentRunChoice]
     let answer: (String) -> Void
@@ -38,7 +38,7 @@ struct AgentRunChoices: View {
     }
 }
 
-/// 按内容宽度贪心分排，再让每一排平分容器宽度。`Layout` 而不是 `HStack`：`HStack` 只摊开当前这一排，
+/// 按个数两两分排，再让每一排平分容器宽度。`Layout` 而不是 `HStack`：`HStack` 只摊开当前这一排，
 /// 窄屏或大字号下每个选项都缩到一两个字宽、竖着堆。
 private struct ChoiceRowsLayout: Layout {
     let spacing: CGFloat
@@ -47,7 +47,7 @@ private struct ChoiceRowsLayout: Layout {
 
     func sizeThatFits(proposal: ProposedViewSize, subviews: Subviews, cache: inout ()) -> CGSize {
         let width = proposal.replacingUnspecifiedDimensions().width
-        let rows = rows(width: width, subviews: subviews)
+        let rows = rows(count: subviews.count)
         let height = rows.enumerated().reduce(CGFloat.zero) { total, row in
             total + rowHeight(row.element, subviews: subviews) + (row.offset == 0 ? 0 : spacing)
         }
@@ -56,7 +56,7 @@ private struct ChoiceRowsLayout: Layout {
 
     func placeSubviews(in bounds: CGRect, proposal: ProposedViewSize, subviews: Subviews, cache: inout ()) {
         var cursorY = bounds.minY
-        for row in rows(width: bounds.width, subviews: subviews) {
+        for row in rows(count: subviews.count) {
             let itemWidth = (bounds.width - spacing * CGFloat(row.count - 1)) / CGFloat(row.count)
             var cursorX = bounds.minX
             for index in row {
@@ -72,22 +72,12 @@ private struct ChoiceRowsLayout: Layout {
         }
     }
 
-    private func rows(width: CGFloat, subviews: Subviews) -> [[Int]] {
-        var rows: [[Int]] = [[]]
-        var used: CGFloat = 0
-        for index in subviews.indices {
-            let natural = subviews[index].sizeThatFits(.unspecified).width
-            let row = rows[rows.count - 1]
-            let next = row.isEmpty ? natural : used + spacing + natural
-            if row.isEmpty || (row.count < perRow && next <= width) {
-                rows[rows.count - 1].append(index)
-                used = next
-            } else {
-                rows.append([index])
-                used = natural
-            }
+    /// 只按个数分排，不按文字宽度：大字号下每格的自然宽度都超过半屏，按宽度判就会退成一格一排、满屏竖着堆；
+    /// 该截断的字交给按钮的 `lineLimit(1)`。
+    private func rows(count: Int) -> [[Int]] {
+        stride(from: 0, to: count, by: perRow).map {
+            Array($0..<min($0 + perRow, count))
         }
-        return rows
     }
 
     private func rowHeight(_ row: [Int], subviews: Subviews) -> CGFloat {

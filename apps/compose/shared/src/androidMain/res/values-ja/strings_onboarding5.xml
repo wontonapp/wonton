@@ -20,4 +20,5 @@
     <string name="onboarding_step_apps">アプリの選択</string>
     <!-- Card title at the top of the profile step in setup. -->
     <string name="onboarding_step_profile">プロフィール</string>
+    <string name="onboarding_problem_plugin_health_timeout">サービスはまだ準備できていません。サーバーが落ち着いてからもう一度お試しください。</string>
 </resources>

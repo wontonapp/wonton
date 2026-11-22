@@ -96,7 +96,7 @@ struct TimelineRow: View {
         Rectangle().fill(Color(colors.separator)).frame(height: WontonTheme.size.hairline)
     }
 
-    /// 说明行和日期胶囊一个样：压在聊天背景上的半透明胶囊（ADR-0109 第 8 节）。
+    /// 说明行和日期胶囊一个样：压在聊天背景上的半透明胶囊（ADR-0109 第 9 节）。
     private func note(_ text: Text) -> some View {
         text
             .wontonText(WontonTheme.typography.datePill)
@@ -254,7 +254,7 @@ private struct MessageBubble: View {
             // 同一次发送里贴着的照片不留上下衬垫，贴成一摞（ADR-0094）。
             .padding(.top, flushesPrevious ? 0 : WontonTheme.spacing.bubbleInsetY)
             .padding(.bottom, flushesNext ? 0 : WontonTheme.spacing.bubbleInsetY)
-        // 气泡是内容：纯色、不透明，不描边、不叠颗粒，也不铺玻璃（ADR-0107、ADR-0109 第 8 节）。
+        // 气泡是内容：纯色、不透明，不描边、不叠颗粒，也不铺玻璃（ADR-0107、ADR-0109 第 9 节）。
         body.background(shape.fill(message.isOwn ? Color(colors.accentFill) : palette.incoming))
     }
 

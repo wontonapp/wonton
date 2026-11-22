@@ -28,4 +28,5 @@
     <string name="problem_unauthorized_title">家里的服务器不认这台设备</string>
     <!-- Next step under the server-error problem. Also used for other problems that only say to try later. -->
     <string name="problem_upstream_next_step">稍后再试。</string>
+    <string name="problem_plugin_health_timeout_next_step">到时限服务还没就绪。主机空下来后重试安装通常就能过；服务一直答 5xx 也可能是它自己有问题。详情里有是哪个服务、等了多久、最后状态和最近的探针。</string>
 </resources>

@@ -20,6 +20,8 @@ on:
 env:
   CARGO_INCREMENTAL: "0"
   CARGO_PROFILE_DEV_DEBUG: line-tables-only
+  # Release 的符号要能还原到行：崩溃分析只靠它，剥掉的是打包进 APK 的那份。
+  CARGO_PROFILE_RELEASE_DEBUG: line-tables-only
 
 permissions:
   contents: read
@@ -90,6 +92,7 @@ jobs:
               - "rust-toolchain.toml"
               - ".github/workflows/cache.yml"
               - ".github/workflows/android.yml"
+              - ".github/workflows/android-size.yml"
     outputs:
       rust: ${{ steps.filter.outputs.rust }}
       ios: ${{ steps.filter.outputs.ios }}
@@ -216,3 +219,7 @@ jobs:
         # 夜跑在 x86_64 模拟器上跑，ABI 和上面的手机包不同，缓存里两套都要有。
         working-directory: apps/compose
         run: ./gradlew :shared:buildRustCore -Pwonton.abis=x86_64
+      - name: 编译 Rust 核心（release；android-size.yml 的 APK 体积作业用）
+        # 体积门禁要编一份 release 核心，放在这里随 main 的缓存一起编好，那边只增量链接。
+        working-directory: apps/compose
+        run: ./gradlew :shared:buildRustCore -Pwonton.abis=arm64-v8a -Pwonton.rustProfile=release

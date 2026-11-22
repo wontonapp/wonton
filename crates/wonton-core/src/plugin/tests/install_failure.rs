@@ -100,7 +100,7 @@ async fn assert_health_timeout_logged(events: Events) {
     let mut manager = manager_with(engine, &dir);
     manager.cfg.install_timeout = Duration::ZERO;
     let error = manager.install(&source(), &[], langs()).await.unwrap_err();
-    assert_eq!(error.kind(), "unhealthy", "{error}");
+    assert_eq!(error.kind(), "health_timeout", "{error}");
     let failed = failure(&manager);
     assert_eq!(failed["stage"], "waiting_for_bot");
     let recorded = events.0.lock().unwrap();
@@ -110,7 +110,9 @@ async fn assert_health_timeout_logged(events: Events) {
                 && fields
                     .get("plugin")
                     .is_some_and(|value| value == "app.test")
-                && fields.get("kind").is_some_and(|value| value == "unhealthy")
+                && fields
+                    .get("kind")
+                    .is_some_and(|value| value == "health_timeout")
                 && fields
                     .get("stage")
                     .is_some_and(|value| value == "WaitingForBot")

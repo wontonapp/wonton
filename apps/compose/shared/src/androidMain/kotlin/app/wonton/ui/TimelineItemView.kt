@@ -254,7 +254,7 @@ private fun MessageBubble(
                 Modifier.fillMaxWidth().then(pressable),
                 contentAlignment = if (isOwn) Alignment.CenterEnd else Alignment.CenterStart,
             ) {
-                // 有选项时这一列按气泡的自然宽度和按钮行撑开，按钮跟着列宽走、不越过气泡（ADR-0109 第 7 节）。
+                // 有选项时这一列按气泡的自然宽度和按钮行撑开，按钮跟着列宽走、不越过气泡（ADR-0109 第 8 节）。
                 Column(columnWrap(message.choices != null).widthIn(max = rowWidth)) {
                     // 群聊里别人的气泡左边先留出头像那一格，没有组尾头像的照样留，一组里的气泡起点才齐。
                     val avatarColumn = isGroup && !isOwn

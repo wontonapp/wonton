@@ -1,5 +1,6 @@
 //! 链接预览的行为测试：假 DNS 和拨号把“公网”接到本机的假站点（[`super::test_support`]），断言类别和看得到的效果。
 
+use std::sync::Arc;
 use std::time::Duration;
 
 use axum::Router;
@@ -10,7 +11,7 @@ use axum::routing::get;
 use wonton_protocol::LinkPreviewFailure;
 
 use super::test_support::{SITE_IP, og_page, png, world, world_with};
-use super::{Limits, LinkPreviews};
+use super::{Flight, Limits, LinkPreviews};
 
 fn html(body: String) -> Response {
     ([(header::CONTENT_TYPE, "text/html; charset=utf-8")], body).into_response()
@@ -421,4 +422,57 @@ async fn failures_are_cached_for_ten_minutes() {
         LinkPreviewFailure::UpstreamError
     );
     assert_eq!(world.hits_of("/down"), 2);
+}
+
+/// 呼叫方断了（连接断了、请求被取消）不该连累等同一个网址的人：取页在独立任务里，等待者照样拿到卡片，
+/// 结果也照样进缓存。
+#[tokio::test]
+async fn a_waiter_still_gets_the_card_after_the_first_request_is_cancelled() {
+    let routes = Router::new().route(
+        "/slow",
+        get(|| async {
+            tokio::time::sleep(Duration::from_millis(200)).await;
+            html(og_page("Slow", None))
+        }),
+    );
+    let (previews, world) = world(routes).await;
+    let previews = Arc::new(previews);
+    let url = "http://site.test/slow";
+    let first = tokio::spawn({
+        let previews = previews.clone();
+        async move { previews.preview(url, "phone").await }
+    });
+    // 第一次请求已经登记，正在取。
+    tokio::task::yield_now().await;
+    let waiter = tokio::spawn({
+        let previews = previews.clone();
+        async move { previews.preview(url, "tablet").await }
+    });
+    // 等待者已经进了这一份。
+    tokio::task::yield_now().await;
+    first.abort();
+    assert!(first.await.unwrap_err().is_cancelled());
+
+    let card = waiter
+        .await
+        .unwrap()
+        .expect("领头被打断，等待者照样拿到卡片");
+    assert_eq!(card.title.as_deref(), Some("Slow"));
+    // 拿到的就是取页的结果，缓存里也有：再来一次不重新取，也不占额度。
+    assert_eq!(previews.preview(url, "phone").await.unwrap(), card);
+    assert_eq!(world.hits_of("/slow"), 1);
+}
+
+/// 等的人自己也有上限，不能只靠源头那一段兜着：源头没跑完（写缓存卡住、任务丢了）时等到点了要自己回失败。
+#[tokio::test]
+async fn waiting_for_a_flight_never_outlives_the_fetch_by_long() {
+    let flight = Flight::new();
+    let failure = tokio::time::timeout(
+        Duration::from_secs(5),
+        flight.wait(Duration::from_millis(20)),
+    )
+    .await
+    .expect("等的人没有上限：取页任务一卡，等的人也一起挂着")
+    .unwrap_err();
+    assert_eq!(failure.kind, LinkPreviewFailure::Other);
 }

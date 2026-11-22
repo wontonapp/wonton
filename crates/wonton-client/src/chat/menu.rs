@@ -182,7 +182,7 @@ pub(super) struct Outbox {
     side_chat: Mutex<Option<wonton_protocol::SideChatCard>>,
     /// 壳那边的列表，给每条消息填组内位置（ADR-0109）。
     runs: Mutex<super::Runs>,
-    /// 正在输入、命令表和跳转的栈（ADR-0109 §4、§7）。
+    /// 正在输入、命令表和跳转的栈（ADR-0109 §4、§8）。
     pub(super) live: Arc<Live>,
 }
 

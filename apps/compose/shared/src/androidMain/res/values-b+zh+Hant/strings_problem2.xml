@@ -8,6 +8,7 @@
     <string name="problem_plugin_conflict_next_step">它已經安裝了，或正在安裝、更新、解除安裝，請等它完成。</string>
     <!-- Next step: try after the update finishes. -->
     <string name="problem_plugin_core_upgrading_next_step">更新完成後再試。</string>
+    <string name="problem_plugin_health_timeout_title">應用程式還沒就緒</string>
     <!-- Next step: contact the app's author. -->
     <string name="problem_plugin_invalid_next_step">請聯絡應用程式的作者。</string>
     <!-- Problem title: the app's package is broken. -->
