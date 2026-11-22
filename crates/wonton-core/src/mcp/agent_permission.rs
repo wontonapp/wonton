@@ -170,11 +170,19 @@ impl Bus {
         };
         asked.card.clone_from(&card.id);
         asked.settled = false;
-        asked.chain = card_chain(self, &caller, &asked.request);
         // 停链抢在开卡片和绑卡片之间时，停链那一遍已经收不到这张卡片了：绑上之后回查，是停的就当场撤回，
-        if bind_card(self, &caller, asked.chain.as_deref(), &card.id, "权限卡片")
-            == Bound::Withdrawn
-        {
+        // 不等回答、也不让它挂在“等你确认”。绑到哪条链（请求里的会话那条，或回退认出的）就记给 `Drop` 的
+        // `resolve_chain`。
+        let session_chain = card_chain(self, &caller, &asked.request);
+        let binding = bind_card(
+            self,
+            &caller,
+            session_chain.as_deref(),
+            &card.id,
+            "权限卡片",
+        );
+        asked.chain = binding.chain;
+        if binding.outcome == Bound::Withdrawn {
             asked.settled = true;
             asked.audit(Decision::Withdrawn, None);
             return Ok(AgentPermissionOutcome::Cancelled);

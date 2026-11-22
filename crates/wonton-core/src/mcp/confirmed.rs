@@ -209,7 +209,7 @@ async fn ask_second(
 ) -> Result<Ticket, Refusal> {
     let (card, answered) = bus.confirmations.open_as(&caller.id, second, audience)?;
     // 停链抢在开卡片和绑卡片之间时自己撤回；第一张也一起落成取消。
-    if bind_card(bus, caller, None, &card.id, "工具卡片") == Bound::Withdrawn {
+    if bind_card(bus, caller, None, &card.id, "工具卡片").outcome == Bound::Withdrawn {
         return Err(Refusal::Cancelled);
     }
     bus.confirmations.wait(card, answered).await

@@ -3,7 +3,7 @@
 use std::time::Duration;
 
 use serde_json::json;
-use wonton_protocol::{Answer, ConfirmationCard, ConfirmationState, ToolAccess};
+use wonton_protocol::{AgentChainStatus, Answer, ConfirmationCard, ConfirmationState, ToolAccess};
 
 use super::confirm::DEFAULT_WINDOW;
 use super::tests::{Setup, failed, setup, setup_window, text};
@@ -166,4 +166,53 @@ async fn stopping_the_chain_withdraws_a_plugin_tool_card() {
         ConfirmationState::Failed { .. }
     ));
     assert!(s.notes.deleted.lock().unwrap().is_empty(), "工具没跑");
+}
+
+/// 链还活着时，批准的卡片照常执行：绑链后的回查不会把正常卡片误撤。
+#[tokio::test]
+async fn an_approved_plugin_tool_card_runs_with_the_chain_alive() {
+    let s = setup_notes().await;
+    let chains = crate::gateway::agent_chains::AgentChains::for_test(s.dir.path()).unwrap();
+    s.bus.attach_agent_chains(chains.clone());
+    let mut caller = s.caller.clone();
+    caller.bot = Some(super::server::BotIdentity {
+        bot: "main".into(),
+        keeper: wonton_protocol::BotKeeper::User {
+            username: "owner".into(),
+        },
+    });
+    let grant = chains
+        .ledger()
+        .start_turn(
+            wonton_protocol::BotRef {
+                plugin_id: caller.id.to_string(),
+                bot: "main".into(),
+            },
+            wonton_protocol::ChainTurnReport::Start {
+                session: "sess-1".into(),
+                room: "!room:wonton.localhost".into(),
+                thread: None,
+                sender: "@owner:wonton.localhost".into(),
+                event_id: "$turn".into(),
+            },
+            None,
+            "@owner:wonton.localhost".into(),
+        )
+        .unwrap();
+    caller.chain = Some(grant.chain.clone());
+    let call = s.spawn_as(&caller, PURGE, json!({"name": "a"}));
+    let card = s.cards.wait_for(1).await;
+    s.answer(&card.id, Answer::Approve).unwrap();
+    let result = call.await.unwrap();
+    assert!(!failed(&result));
+    assert_eq!(text(&result), "删掉了 a.txt");
+    assert_eq!(*s.notes.deleted.lock().unwrap(), ["a"]);
+    assert!(matches!(
+        s.bus.confirmations().card(&card.id).unwrap().state,
+        ConfirmationState::Succeeded { .. }
+    ));
+    assert_eq!(
+        chains.ledger().row(&grant.chain).unwrap().status,
+        AgentChainStatus::Running
+    );
 }

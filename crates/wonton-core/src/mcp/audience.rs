@@ -433,7 +433,7 @@ impl Bus {
         let audience = self.audience(caller, subject).await;
         let (card, answered) = self.confirmations.open_as(&caller.id, draft, audience)?;
         // 停链抢在开卡片和绑卡片之间时，停链那一遍已经收不到这张卡片了：绑上之后回查，是停的就当场撤回。
-        if super::chain_card::bind_card(self, caller, None, &card.id, "工具卡片")
+        if super::chain_card::bind_card(self, caller, None, &card.id, "工具卡片").outcome
             == super::chain_card::Bound::Withdrawn
         {
             return Err(Refusal::Cancelled);

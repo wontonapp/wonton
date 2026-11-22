@@ -473,7 +473,8 @@ async fn a_card_bound_after_the_stop_is_withdrawn() {
 
     // 停链之后才轮到绑卡：绑上立刻撤回，不等 deliver。
     assert_eq!(
-        super::chain_card::bind_card(&send.s.bus, &bare, Some(&chain), &card.id, "发消息卡片"),
+        super::chain_card::bind_card(&send.s.bus, &bare, Some(&chain), &card.id, "发消息卡片")
+            .outcome,
         super::chain_card::Bound::Withdrawn,
         "停链后绑上的卡片要当场撤回"
     );

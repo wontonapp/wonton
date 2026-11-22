@@ -128,7 +128,7 @@ async fn run(bus: &Arc<Bus>, caller: &Caller, args: JsonObject, activity: Guard)
         Err(refusal) => return bus.refused(caller, &name, &value, &refusal, None),
     };
     // 卡片认到调用头里的链：停链时随停撤回。
-    if bind_card(bus, caller, None, &card.id, "工具卡片") == Bound::Withdrawn {
+    if bind_card(bus, caller, None, &card.id, "工具卡片").outcome == Bound::Withdrawn {
         return bus.refused(caller, &name, &value, &Refusal::Cancelled, None);
     }
     let ticket = match bus.confirmations.wait(card, answered).await {

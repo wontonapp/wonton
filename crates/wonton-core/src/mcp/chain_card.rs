@@ -100,7 +100,7 @@ async fn ask_one(
         }
     };
     // 链已经停了（另一张卡片先选了“先停着”）就不再等。
-    if bind_chain(bus, &row.chain, &card.id, "上限卡片") == Bound::Withdrawn {
+    if bind_chain(bus, &row.chain, &card.id, "上限卡片").outcome == Bound::Withdrawn {
         return false;
     }
     match bus.confirmations().deliver(&card, answered).await {
@@ -210,6 +210,22 @@ pub(super) enum Bound {
     Unbound,
 }
 
+/// [`bind_card`] 的结果：认到哪条链、卡片落成什么。
+pub(super) struct Binding {
+    pub outcome: Bound,
+    /// 绑上的链；没绑上时是 `None`。调用方要按它回写卡片所属的链。
+    pub chain: Option<String>,
+}
+
+impl Binding {
+    fn unbound() -> Self {
+        Self {
+            outcome: Bound::Unbound,
+            chain: None,
+        }
+    }
+}
+
 /// 这次调用认得到哪条链：调用头报的那条（[`Caller::chain`]）；没报时按这个 Bot 最近活着、
 /// 说话人对得上的一轮认（[`crate::agent_chain::Chains::live_turn_chain`]）。
 /// 认不出是 `Ok(None)`；链服务没接上分开报 `Err(())`。
@@ -239,14 +255,14 @@ pub(super) fn bind_card(
     chain: Option<&str>,
     card: &str,
     what: &str,
-) -> Bound {
+) -> Binding {
     let chain = match chain {
         Some(chain) => Some(chain.to_owned()),
         None => match caller_chain(bus, caller) {
             Ok(chain) => chain,
             Err(()) => {
                 tracing::warn!(card = %card, "调用链的服务没接上，{what}不入链：停链撤回不了它");
-                return Bound::Unbound;
+                return Binding::unbound();
             }
         },
     };
@@ -254,7 +270,7 @@ pub(super) fn bind_card(
         Some(chain) => bind_chain(bus, &chain, card, what),
         None => {
             tracing::warn!(card = %card, "{what}认不出是哪一轮，卡片不入链：停链撤回不了它");
-            Bound::Unbound
+            Binding::unbound()
         }
     }
 }
@@ -263,25 +279,33 @@ pub(super) fn bind_card(
 ///
 /// 停链和在开卡片、绑卡片的空隙里插进来时，`stop()` 已经收完待撤的卡片，没人再来撤这一张：
 /// 这里自己撤回，别让它挂在“等你确认”、批准了还执行。
-pub(super) fn bind_chain(bus: &Bus, chain: &str, card: &str, what: &str) -> Bound {
+pub(super) fn bind_chain(bus: &Bus, chain: &str, card: &str, what: &str) -> Binding {
     let Some(chains) = bus.agent_chains() else {
         tracing::warn!(card = %card, %chain, "调用链的服务没接上，{what}不入链：停链撤回不了它");
-        return Bound::Unbound;
+        return Binding::unbound();
     };
     let ledger = chains.ledger();
     if let Err(error) = ledger.bind_card(chain, card) {
         tracing::warn!(%error, card = %card, %chain, "{what}没能认到链上");
-        return Bound::Unbound;
+        return Binding::unbound();
     }
-    if ledger.status(chain) != Some(AgentChainStatus::Stopped) {
-        return Bound::Waiting;
+    let chain = chain.to_owned();
+    if ledger.status(&chain) != Some(AgentChainStatus::Stopped) {
+        return Binding {
+            outcome: Bound::Waiting,
+            chain: Some(chain),
+        };
     }
     let _ = ledger.resolve_card(card);
-    if withdraw_card(bus, card) {
+    let outcome = if withdraw_card(bus, card) {
         Bound::Withdrawn
     } else {
         // 人抢在撤回之前批了：卡片已经在跑，交给调用方照常执行。
         Bound::Waiting
+    };
+    Binding {
+        outcome,
+        chain: Some(chain),
     }
 }
 
