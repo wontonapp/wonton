@@ -10,9 +10,9 @@ use wonton_protocol::{
     BotActivityFacts, SideChatCard, SideChatState, TimelineAction, TimelineTarget,
 };
 
+use super::accept_the_bots_invite;
 use super::bot_receives;
-use super::confirmation::joined_direct_chat;
-use super::support::{Home, Phone, Timeline};
+use super::support::{Home, Phone, Timeline, ToDeviceHold};
 use crate::plugins::rig::running;
 
 const PLUGIN: &str = "app.bot";
@@ -32,6 +32,25 @@ async fn setup() -> Setup {
     let phone = Phone::open(dir.path());
     let home = Home::start(&[phone.device_id()]).await;
     let bot = home.bot("hermes", "Hermes").await;
+    finish_setup(dir, phone, home, bot).await
+}
+
+async fn setup_with_held_bot() -> (Setup, ToDeviceHold) {
+    let dir = tempfile::tempdir().unwrap();
+    let phone = Phone::open(dir.path());
+    let home = Home::start(&[phone.device_id()]).await;
+    let hold = ToDeviceHold::start(&home.matrix.url).await;
+    let bot = home.bot_via(hold.url(), "hermes", "Hermes").await;
+    let setup = finish_setup(dir, phone, home, bot).await;
+    (setup, hold)
+}
+
+async fn finish_setup(
+    dir: tempfile::TempDir,
+    phone: Phone,
+    home: Home,
+    bot: MatrixSession,
+) -> Setup {
     let mut installed = running(PLUGIN);
     installed.bot_user_id = Some(bot.user_id().to_string());
     installed.default_bot_visibility = Some(wonton_protocol::DefaultBotVisibility::Visible);
@@ -56,7 +75,7 @@ async fn setup() -> Setup {
                 .then_some(())
         })
         .await;
-    let room = joined_direct_chat(&phone, &bot).await;
+    let room = accept_the_bots_invite(&home, &phone, &bot).await;
     let bot_room = bot.open_room(&room).await.expect("Bot 打开房间");
     bot_room
         .send_state_event_raw(
@@ -233,6 +252,91 @@ async fn a_side_chat_is_a_card_in_the_main_timeline_with_its_own_timeline() {
     room_unread(&setup.phone, &setup.room, 1).await;
     mark_read(&setup.phone, &mut thread, setup.room.as_str(), Some(&root)).await;
     room_unread(&setup.phone, &setup.room, 0).await;
+}
+
+/// 旁聊回复的房间密钥晚到：加密事件先进入旁聊时间线作为解不开的占位，密钥到后同一条事件回填正文。
+#[tokio::test(flavor = "multi_thread")]
+#[ignore = "需要 Docker，用 --include-ignored 运行"]
+async fn a_late_room_key_redecrypts_a_thread_reply() {
+    let (setup, hold) = setup_with_held_bot().await;
+    let mut main = open_main(&setup).await;
+    let root = setup
+        .phone
+        .start_side_chat(setup.room.to_string(), "整理照片".to_owned())
+        .await
+        .expect("开旁聊");
+    main.until("主对话里有旁聊卡", |item| card(item, &root))
+        .await;
+    let root_id = root.parse().unwrap();
+    bot_receives(&setup.bot_room, "Bot 收到旁聊根", |message| {
+        (message.thread_root.as_ref() == Some(&root_id)).then_some(())
+    })
+    .await;
+
+    let mut thread = Timeline::open_target(&setup.phone, setup.room.as_str(), Some(&root)).await;
+    hold.hold(true);
+    setup
+        .bot_room
+        .send_text_in_thread(&root_id, "迟到的密钥也能解开")
+        .await
+        .expect("Bot 发旁聊回复");
+    thread
+        .until("旁聊里先出现解不开的事件", |item| {
+            matches!(&item.content, TimelineContent::Message { message }
+                if message.body == MessageContent::Undecryptable)
+            .then_some(())
+        })
+        .await;
+
+    hold.replay().await;
+    thread
+        .until("密钥重放后旁聊里有回复", |item| {
+            matches!(&item.content, TimelineContent::Message { message }
+                if matches!(&message.body, MessageContent::Text { body, .. }
+                    if body == "迟到的密钥也能解开"))
+            .then_some(())
+        })
+        .await;
+}
+
+/// 旁聊时间线在事件到达之前打开：主人自己的第一句（本地回显或稍后的同步回声）和 Bot 的回复
+/// （正常解密到达）都要进旁聊。真实端到端里旁聊时间线在卡片出现后马上打开，之后的每一批都是空的。
+#[tokio::test(flavor = "multi_thread")]
+#[ignore = "需要 Docker，用 --include-ignored 运行"]
+async fn an_early_opened_side_chat_receives_the_first_message_and_the_reply() {
+    let setup = setup().await;
+    let mut main = open_main(&setup).await;
+    let root = setup
+        .phone
+        .start_side_chat(setup.room.to_string(), "整理照片".to_owned())
+        .await
+        .expect("开旁聊");
+    main.until("主对话里有旁聊卡", |item| card(item, &root))
+        .await;
+    let root_id = root.parse().unwrap();
+
+    // 卡片一出现就打开旁聊，不等第一句的回显；Bot 的回复和打开同时来：同步落在构建途中也要进得来。
+    bot_receives(&setup.bot_room, "Bot 收到旁聊根", |message| {
+        (message.thread_root.as_ref() == Some(&root_id)).then_some(())
+    })
+    .await;
+    let sending = setup.bot_room.send_text_in_thread(&root_id, "在整理了");
+    let opening = Timeline::open_target(&setup.phone, setup.room.as_str(), Some(&root));
+    let (sent, mut thread) = tokio::join!(sending, opening);
+    sent.expect("Bot 在话题里回");
+    thread
+        .until_items("旁聊里有主人自己发的那一句", |items| {
+            has_text(items, "整理照片").then_some(())
+        })
+        .await;
+    thread
+        .until("旁聊里出现 Bot 的回复", |item| {
+            matches!(&item.content, TimelineContent::Message { message }
+                if matches!(&message.body, MessageContent::Text { body, .. }
+                    if body == "在整理了"))
+            .then_some(())
+        })
+        .await;
 }
 
 /// 像壳一样：列表在底部时（先报告到底）发已读。

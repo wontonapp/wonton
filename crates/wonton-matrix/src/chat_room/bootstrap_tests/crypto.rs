@@ -8,6 +8,8 @@ use serde_json::{Value, json};
 pub(super) struct EncryptedMessages {
     pub earlier: Value,
     pub latest: Value,
+    /// 回复 `$root` 的话题消息。
+    pub reply: Value,
     pub keys: tempfile::NamedTempFile,
 }
 
@@ -44,6 +46,27 @@ impl EncryptedMessages {
                 "content":encrypted.content
             }));
         }
+        let reply = alice
+            .encrypt_room_event_raw(
+                room,
+                "m.room.message",
+                &Raw::new(&json!({
+                    "msgtype":"m.text", "body":"private reply",
+                    "m.relates_to": {
+                        "rel_type":"m.thread", "event_id":"$root",
+                        "m.in_reply_to":{"event_id":"$root"}
+                    }
+                }))
+                .unwrap()
+                .cast_unchecked(),
+            )
+            .await
+            .unwrap();
+        events.push(json!({
+            "type":"m.room.encrypted", "event_id":"$reply", "room_id":room,
+            "sender":"@alice:example.org", "origin_server_ts":1,
+            "content":reply.content
+        }));
         let exported = alice.store().export_room_keys(|_| true).await.unwrap();
         let keys = tempfile::NamedTempFile::new().unwrap();
         std::fs::write(
@@ -54,6 +77,7 @@ impl EncryptedMessages {
         Self {
             earlier: events.remove(0),
             latest: events.remove(0),
+            reply: events.remove(0),
             keys,
         }
     }
