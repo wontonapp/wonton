@@ -16,7 +16,7 @@ import app.wonton.ui.design.toColor
 private const val PREVIEW_CODE =
     "wonton://pair?v=0&id=9f2ce1a4b7d04e5f8a3c6d1b0e9f27a4&relays=https%3A%2F%2Frelay.example.org%3A443" +
         "&addr=192.0.2.10%3A3478&domain=wonton.example.org&core=https%3A%2F%2Fwonton.example.org%2F" +
-        "&secret=u7Xk2pQ9wR4tY6uI8oP1aS3dF5gH7jK9lZ2xC4vB6n8"
+        "&secret=u7Xk2pQ9wR4tY6uI8oP1aS3dF5gH7jK9lZ2xC4vB6n8"  // gitleaks:allow：写死的假码，不是凭据
 
 @Preview(name = "添加设备（收起）", locale = "en", widthDp = 390, heightDp = 844)
 @Composable

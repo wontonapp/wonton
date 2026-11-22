@@ -23,15 +23,15 @@ use std::time::{SystemTime, UNIX_EPOCH};
 use tokio::sync::watch;
 
 use wonton_protocol::{
-    AppsAction, BotActivity, BotRef, BotView, ChatAccount, ChatLayout, ChatLayoutChoice, ChatSync,
-    ChatViewModel, CoreError, DeviceInvite, DeviceNetwork, DeviceVerification, EncryptionStatus,
-    HomePath, HomeStatus, HomeViewModel, InstalledPlugin, InstalledPlugins, MessageSummary,
-    OnboardingStep, OnboardingViewModel, OpenPage, PagesViewModel, PanelItem, PanelSource,
-    PluginHealth, PluginKind, PluginState, PluginTrust, PluginsViewModel, PushMethod, PushStatus,
-    RecoveryNextStep, RecoveryStatus, RoomMembership, RoomPreview, RoomRow, SecretString,
-    ServerKind, ServerName, ServerRow, ServersViewModel, SettingsEntry, SettingsSection,
-    SettingsViewModel, SidebarApp, SidebarBadge, SidebarOpen, TabIcon, TabLayout, TabPage, TabRef,
-    TabState,
+    AppLockViewModel, AppsAction, BotActivity, BotRef, BotView, ChatAccount, ChatLayout,
+    ChatLayoutChoice, ChatSync, ChatViewModel, CoreError, DeviceInvite, DeviceNetwork,
+    DeviceVerification, EncryptionStatus, HomePath, HomeStatus, HomeViewModel, InstalledPlugin,
+    InstalledPlugins, MessageSummary, OnboardingStep, OnboardingViewModel, OpenPage,
+    PagesViewModel, PanelItem, PanelSource, PluginHealth, PluginKind, PluginState, PluginTrust,
+    PluginsViewModel, PushMethod, PushStatus, RecoveryNextStep, RecoveryStatus, RoomMembership,
+    RoomPreview, RoomRow, SecretString, ServerKind, ServerName, ServerRow, ServersViewModel,
+    SettingsEntry, SettingsSection, SettingsViewModel, SidebarApp, SidebarBadge, SidebarOpen,
+    TabIcon, TabLayout, TabPage, TabRef, TabState,
 };
 
 use super::ClientCore;
@@ -378,9 +378,11 @@ fn fake_rooms() -> Vec<RoomRow> {
     ]
 }
 
-/// 设置首页的最小假数据：配对布局里“你的资料”和“家里的服务器”两行，走到“添加设备”就够了，其余行不 seed。
+/// 假设置首页：按真设置的结构排（资料、服务器、这台手机上的几行、备份、关于），走到“添加设备”和
+/// 夜跑按文字点的行都在。真设置里“资料、服务器、默认 Agent、引导”要配对后才出现，这里照样给，方便走配对流程。
 /// 通知这一行要给：Android 在 `onCreate` 里按推送方式登记，取不到通知入口会直接崩。
 fn fake_settings() -> SettingsViewModel {
+    let lock = AppLockViewModel::default();
     SettingsViewModel {
         sections: vec![
             SettingsSection {
@@ -396,11 +398,28 @@ fn fake_settings() -> SettingsViewModel {
                 }],
             },
             SettingsSection {
-                entries: vec![SettingsEntry::Notifications {
-                    method: PushMethod::Keepalive,
-                    push: PushStatus::NoEndpoint,
-                    categories: Vec::new(),
+                entries: vec![
+                    SettingsEntry::Appearance,
+                    SettingsEntry::Language,
+                    SettingsEntry::MyApps,
+                    SettingsEntry::Notifications {
+                        method: PushMethod::Keepalive,
+                        push: PushStatus::NoEndpoint,
+                        categories: Vec::new(),
+                    },
+                    SettingsEntry::AppLock {
+                        enabled: lock.enabled,
+                        timeout: lock.timeout,
+                    },
+                ],
+            },
+            SettingsSection {
+                entries: vec![SettingsEntry::ChatBackup {
+                    recovery: RecoveryStatus::Unknown,
                 }],
+            },
+            SettingsSection {
+                entries: vec![SettingsEntry::About],
             },
         ],
     }
