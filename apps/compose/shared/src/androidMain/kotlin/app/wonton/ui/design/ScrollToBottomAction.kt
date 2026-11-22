@@ -2,7 +2,7 @@ package app.wonton.ui.design
 
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.offset
-import androidx.compose.foundation.layout.size
+import androidx.compose.foundation.layout.requiredSize
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.KeyboardArrowDown
 import androidx.compose.material3.Badge
@@ -20,7 +20,7 @@ import app.wonton.ui.R
 
 /**
  * 停在别处时的“回到底部”圆钮：数字是离开底部后到的消息数，没有就不写数字（ADR-0071）。
- * 命中区按 48dp 的点按门槛，取它和 FAB 尺寸里大的那个。
+ * 命中区按 48dp 的点按门槛，取它和 FAB 尺寸里大的那个，requiredSize 让外层挤小时也不缩。
  */
 @Composable
 fun ScrollToBottomAction(count: Int, onClick: () -> Unit, modifier: Modifier = Modifier) {
@@ -34,7 +34,7 @@ fun ScrollToBottomAction(count: Int, onClick: () -> Unit, modifier: Modifier = M
     FloatingActionButton(
         onClick = onClick,
         modifier = modifier
-            .size(size)
+            .requiredSize(size)
             .semantics { contentDescription = label },
         containerColor = WontonTheme.colors.accentFill.toColor(),
         contentColor = WontonTheme.colors.accentInkOnFill.toColor(),
