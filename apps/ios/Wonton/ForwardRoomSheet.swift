@@ -26,6 +26,10 @@ private struct ForwardPresentation: ViewModifier {
             Color.clear.sheet(isPresented: Binding(get: { item != nil }, set: { if !$0 { item = nil } }),
                               onDismiss: sendPending) {
                 ForwardRoomSheet(model: model, plugins: plugins, rooms: rooms) { targets, comment in
+                    walkLog.notice(
+                        "forward chosen rooms=\(targets.count, privacy: .public) "
+                            + "comment=\(comment.count, privacy: .public)"
+                    )
                     if let item { pending = PendingForward(item: item, rooms: targets, comment: comment) }
                     item = nil
                 }
@@ -36,6 +40,7 @@ private struct ForwardPresentation: ViewModifier {
     }
 
     private func sendPending() {
+        walkLog.notice("forward dismiss pending=\(self.pending != nil, privacy: .public)")
         guard let pending else { return }
         self.pending = nil
         model.forward(pending.item, from: source, to: pending.rooms, comment: pending.comment)

@@ -82,6 +82,9 @@ final class TimelineModel {
         for await update in subscription.updates() {
             guard !Task.isCancelled else { break }
             debugUpdates += 1
+            walkLog.notice(
+                "update diffs=\(update.diffs.count, privacy: .public) have=\(self.items.count, privacy: .public)"
+            )
             apply(update, pin: pin)
         }
         // 走查：订阅结束的原因（取消还是自己断了），挂在 `ScrollDebug` 里。

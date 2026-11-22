@@ -30,18 +30,19 @@ impl FakeTimelines {
         let fake = match self.get(room_id) {
             Some(fake) => fake,
             None => {
-                let fake = Arc::new(FakeTimeline::fresh(room_id));
+                // 转发、附言停在门外的字写进这一份的第一批里：壳会为同一次进门建两次订阅，后建的那份也得看得到。
+                let pending = lock(&self.forwarded)
+                    .get(room_id)
+                    .cloned()
+                    .unwrap_or_default();
+                let fake = Arc::new(FakeTimeline::fresh(room_id, &pending));
                 lock(&self.open).insert(room_id.to_owned(), Arc::downgrade(&fake));
                 fake
             }
         };
         // 先挂上这一份的通道，第一批才发得到它。
-        eprintln!("FAKE");
         lock(&fake.senders).push(sender);
         let mut first = fake.lock().base.clone();
-        let pending = lock(&self.forwarded).remove(room_id).unwrap_or_default();
-        // 没人转发进这个房间时也要留着第一批自己的 Reset：换成空 diffs 时间线就空了。
-        first.diffs.extend(fake.receive(pending));
         fake.push(&mut first);
         let scrolled = fake.clone();
         TimelineSubscription::seeded(receiver, Box::new(move |scroll| scrolled.scrolled(scroll)))
@@ -161,8 +162,9 @@ struct State {
 }
 
 impl FakeTimeline {
-    fn fresh(room_id: &str) -> Self {
-        FakeTimeline {
+    /// 一份新的假时间线：第一批带上停在门外等着进来的字（`pending`）。
+    fn fresh(room_id: &str, pending: &[String]) -> Self {
+        let fake = FakeTimeline {
             senders: Mutex::new(Vec::new()),
             state: Mutex::new(State {
                 base: timeline(room_id),
@@ -171,7 +173,12 @@ impl FakeTimeline {
                 back: Vec::new(),
                 sent: 0,
             }),
+        };
+        if !pending.is_empty() {
+            let extra = fake.receive(pending.to_vec());
+            fake.lock().base.diffs.extend(extra);
         }
+        fake
     }
 
     fn lock(&self) -> std::sync::MutexGuard<'_, State> {

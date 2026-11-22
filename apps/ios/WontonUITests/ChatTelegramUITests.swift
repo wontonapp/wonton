@@ -273,11 +273,20 @@ final class ChatTelegramUITests: XCTestCase {
         XCTAssertTrue(app.buttons["chatRoom.!ui-fake-notes:home.example"].waitForExistence(timeout: 10),
                       "没回到会话列表\n\(app.debugDescription)")
         enter("chatRoom.!ui-fake-notes:home.example")
+        // 转发和附言都排在房间末尾，列表停在锚点时它们不进无障碍树。
+        if app.buttons["timelineDown"].exists { tap(app.buttons["timelineDown"]) }
         let arrived = text(startingWith: "Fixture forward comment")
         XCTAssertTrue(arrived.waitForExistence(timeout: 10), "附言没进目标房间\n\(app.debugDescription)")
-        // 目标房间本来就有一条“Fixture message 3”，转发过来的那条是第二条。
+        // 目标房间本来就有一条“Fixture message 3”，转发过来的那条是第二条。列表懒加载，底下的行没画就不在树里：
+        // 附言出来后一段段往新的那边拖（dragUp），直到它露出来。
         let copies = app.staticTexts.matching(NSPredicate(format: "label BEGINSWITH %@", "Fixture message 3"))
-        XCTAssertTrue(wait(10) { copies.count == 2 }, "转发的消息没进目标房间（只有 \(copies.count) 条）\n\(app.debugDescription)")
+        XCTAssertTrue(
+            wait(10) {
+                if copies.count < 2 { dragUp() }
+                return copies.count == 2
+            },
+            "转发的消息没进目标房间（只有 \(copies.count) 条）\n\(app.debugDescription)"
+        )
         let forwarded = copies.allElementsBoundByIndex[1]
         XCTAssertLessThanOrEqual(arrived.frame.maxY, forwarded.frame.minY, "附言没排在被转发的消息上面")
         shot("forwarded-comment")

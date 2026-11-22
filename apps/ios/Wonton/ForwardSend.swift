@@ -13,9 +13,15 @@ extension ChatModel {
         for room in rooms {
             if !comment.isEmpty {
                 let target = TimelineTarget(roomId: room.roomId, threadRoot: nil)
-                send(.timeline(action: .sendText(target: target, body: comment, replyTo: nil)))
+                let textOk = send(.timeline(action: .sendText(target: target, body: comment, replyTo: nil)))
+                walkLog.notice(
+                    "forward text to \(room.roomId, privacy: .public) ok=\(textOk, privacy: .public)"
+                )
             }
-            send(.timeline(action: .forwardMessage(target: source, itemId: itemId, toRoomId: room.roomId)))
+            let forwardOk = send(
+                .timeline(action: .forwardMessage(target: source, itemId: itemId, toRoomId: room.roomId))
+            )
+            walkLog.notice("forward copy to \(room.roomId, privacy: .public) ok=\(forwardOk, privacy: .public)")
         }
         if rooms.count == 1, let only = rooms.first {
             openRoom(only.roomId)

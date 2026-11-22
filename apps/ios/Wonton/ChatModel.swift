@@ -158,6 +158,7 @@ final class ChatModel {
 
     /// 换了房间还在同一页：从应用页打开的就留在应用页，否则留在聊天页。
     func openRoom(_ roomId: String) {
+        walkLog.notice("open room=\(roomId, privacy: .public)")
         if let visiting {
             guard visiting.roomId != roomId else { return }
             self.visiting = VisitingRoom(tab: visiting.tab, roomId: roomId)
