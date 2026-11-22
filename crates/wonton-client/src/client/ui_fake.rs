@@ -12,8 +12,9 @@
 //! 以及时间线上界面测试约定的那几个（`ui_fake_timeline.rs`）：
 //! 开关页照真核心的规则改页面栈和应用网格的开关，壳的出口才有东西可测；
 //! 没有隧道，插件的网页本身加载不出来；房间的时间线和加载得出来的本机网页（面板里一张、整页一张）在 `ui_fake_room.rs`。
-//! 媒体、商店列表和别的操作后的新状态不在里面，
-//! 要用这些的测试仍然连开发栈（见 `apps/ios/WontonUITests/UITestBackend.swift`）。
+//! 商店列表和别的操作后的新状态不在里面，要用这些的测试仍然连开发栈（见
+//! `apps/ios/WontonUITests/UITestBackend.swift`）。假房间里的照片例外：`ui_fake_room` 带同组多张的
+//! 样张，字节由 `load_media` 在假数据入口下直接给，图像类走查不用连栈。
 
 use std::sync::Arc;
 use std::sync::atomic::AtomicUsize;

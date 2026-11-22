@@ -13,11 +13,12 @@ use std::net::{Ipv4Addr, TcpListener, TcpStream};
 use std::sync::LazyLock;
 
 use wonton_protocol::{
-    BackPagination, ChoiceSend, ChoicesState, MessageAction, MessageChoice, MessageChoices,
-    MessageContent, MessageStatus, PanelItem, PanelSource, QuotedContent, QuotedMessage,
-    ReplyQuote, RichBlock, RichBlockKind, RichSpan, RoomCommand, SendState, SideChatCard,
-    SideChatState, TabIcon, TabLayout, TabPage, TabRef, TabState, TimelineContent, TimelineDiff,
-    TimelineItem, TimelineMessage, TimelineUpdate, TimelineViewport,
+    BackPagination, ChoiceSend, ChoicesState, ImageCaption, ImageContent, MediaHandle,
+    MessageAction, MessageChoice, MessageChoices, MessageContent, MessageGroup, MessageStatus,
+    PanelItem, PanelSource, QuotedContent, QuotedMessage, ReplyQuote, RichBlock, RichBlockKind,
+    RichSpan, RoomCommand, SendState, SideChatCard, SideChatState, TabIcon, TabLayout, TabPage,
+    TabRef, TabState, TimelineContent, TimelineDiff, TimelineItem, TimelineMessage, TimelineUpdate,
+    TimelineViewport,
 };
 
 /// 主面板和房间面板里放的那一页。本机端口占不上时没有这一页。
@@ -157,7 +158,26 @@ const LAST_LINE: &str = "Fixture last line";
 /// 最后一条是自己刚发、还没送达的：待发脚注“已保存，等待送达”和时钟由它验。
 const SENDING_INDEX: usize = ITEMS - 1;
 
+/// 一次发送的三张照片（`item()` 里第 5..7 条）：查看器同组翻页的走屏用，字节在 [`media`]。
+/// 第 3 条是单张照片（没有组）：查看器不该翻页、也不该显示页码。
+const PHOTO_GROUP_START: usize = 5;
+const PHOTO_GROUP_COUNT: usize = 3;
+const PHOTO_SOLO_INDEX: usize = 3;
+const PHOTO_TOKEN: &str = "ui-fake-photo";
+const PHOTO_WIDTH: u64 = 320;
+const PHOTO_HEIGHT: u64 = 240;
+/// 四张照片的颜色，BGR 像素序：深蓝、琥珀、绿、紫（紫是单张那幅）。
+const PHOTO_COLORS: [[u8; 3]; 4] = [
+    [180, 105, 25],
+    [25, 165, 190],
+    [90, 160, 70],
+    [150, 60, 120],
+];
+
 fn item(index: usize) -> TimelineItem {
+    if let Some(photo) = photo(index) {
+        return photo;
+    }
     // 8..=10 都算 Echo 的，凑一组连发的消息给并排的气泡做样子，最后一条是自己还没送达的，其余一左一右轮流。
     let own = (index % 2 == 1 && !(8..=10).contains(&index)) || index == SENDING_INDEX;
     let last = index + 1 == ITEMS;
@@ -252,6 +272,18 @@ fn item(index: usize) -> TimelineItem {
     }
 }
 
+/// 第 5–7 条是一次发送的三张照片，第 3 条是没组的单张；其余下标不是照片。
+fn photo(index: usize) -> Option<TimelineItem> {
+    if (PHOTO_GROUP_START..PHOTO_GROUP_START + PHOTO_GROUP_COUNT).contains(&index) {
+        return Some(photo_item(
+            index,
+            index - PHOTO_GROUP_START,
+            Some(PHOTO_GROUP_COUNT as u32),
+        ));
+    }
+    (index == PHOTO_SOLO_INDEX).then(|| photo_item(index, PHOTO_GROUP_COUNT, None))
+}
+
 /// 一条发出去了的文字消息，段落之间空一行；菜单里有复制和回复（左滑回复要有回复）。组内位置和勾由调用方定。
 pub(super) fn text_message(
     id: &str,
@@ -312,6 +344,120 @@ pub(super) fn text_message(
         choices: None,
         sender_avatar: None,
     }
+}
+
+fn photo_item(index: usize, position: usize, count: Option<u32>) -> TimelineItem {
+    let handle = MediaHandle {
+        token: format!("{PHOTO_TOKEN}-{position}"),
+    };
+    // 说明文字就是原来这条的文字消息：现有走查按 “Fixture message N” 找这一条，
+    // 长按菜单（回复、转发）和引用也靠它，换成照片后这些还得照旧。
+    let own = index != PHOTO_SOLO_INDEX;
+    let text = format!("Fixture message {index}");
+    let blocks = vec![RichBlock {
+        kind: RichBlockKind::Paragraph,
+        depth: 0,
+        quoted: false,
+        spans: vec![RichSpan {
+            text: text.clone(),
+            ..RichSpan::default()
+        }],
+    }];
+    let event_id = format!("$ui-fake-{index}");
+    let sender_id = if own { OWNER } else { ECHO };
+    let sender_name = if own { "Owner" } else { "Echo" };
+    TimelineItem {
+        id: format!("ui-fake-{index}"),
+        content: TimelineContent::Message {
+            message: TimelineMessage {
+                event_id: Some(event_id.clone()),
+                sender_id: sender_id.into(),
+                sender_name: sender_name.into(),
+                is_own: own,
+                timestamp_ms: 1_792_000_000_000 + index as u64 * 60_000,
+                send_state: SendState::Sent,
+                body: MessageContent::Image {
+                    image: ImageContent {
+                        thumbnail: Some(handle.clone()),
+                        media: handle,
+                        filename: format!("photo-{position}.bmp"),
+                        mime_type: Some("image/bmp".into()),
+                        size: None,
+                        width: Some(PHOTO_WIDTH),
+                        height: Some(PHOTO_HEIGHT),
+                        caption: Some(ImageCaption {
+                            body: text.clone(),
+                            blocks,
+                        }),
+                    },
+                },
+                edited: false,
+                read_by: Vec::new(),
+                reply: None,
+                side_chat: None,
+                preview: None,
+                actions: vec![
+                    MessageAction::Copy { text: text.clone() },
+                    MessageAction::Reply {
+                        message: QuotedMessage {
+                            event_id,
+                            sender_id: sender_id.into(),
+                            sender_name: sender_name.into(),
+                            content: QuotedContent::Text { text },
+                        },
+                    },
+                    MessageAction::Forward,
+                ],
+                group: count.map(|count| MessageGroup {
+                    id: "000102030405060708090a0b0c0d0e0f".into(),
+                    index: position as u32,
+                    count,
+                }),
+                receipt: None,
+                starts_time_group: false,
+                run: wonton_protocol::MessageRun::Alone,
+                status: None,
+                choices: None,
+                sender_avatar: None,
+            },
+        },
+    }
+}
+
+/// 假房间图片的原文件：一张无压缩的 24 位 BMP，四张颜色不同（最后一张是单张那幅）。
+/// 假数据入口的 [`ClientCore::load_media`] 直接在这里取，不进下载。
+pub(super) fn media(token: &str) -> Option<Vec<u8>> {
+    let position: usize = token
+        .strip_prefix(PHOTO_TOKEN)?
+        .strip_prefix('-')?
+        .parse()
+        .ok()?;
+    PHOTO_COLORS
+        .get(position)
+        .map(|&bgr| bitmap(PHOTO_WIDTH as u32, PHOTO_HEIGHT as u32, bgr))
+}
+
+/// 无压缩的 24 位 BMP：头 + 从下往上的 BGR 像素行，每行补齐到 4 字节。
+fn bitmap(width: u32, height: u32, bgr: [u8; 3]) -> Vec<u8> {
+    let row = width as usize * 3;
+    let stride = row.div_ceil(4) * 4;
+    let size = 54 + stride * height as usize;
+    let mut out = vec![0u8; size];
+    out[0..2].copy_from_slice(b"BM");
+    out[2..6].copy_from_slice(&(size as u32).to_le_bytes());
+    out[10..14].copy_from_slice(&54u32.to_le_bytes());
+    out[14..18].copy_from_slice(&40u32.to_le_bytes());
+    out[18..22].copy_from_slice(&width.to_le_bytes());
+    out[22..26].copy_from_slice(&height.to_le_bytes());
+    out[26..28].copy_from_slice(&1u16.to_le_bytes());
+    out[28..30].copy_from_slice(&24u16.to_le_bytes());
+    for y in 0..height as usize {
+        let base = 54 + y * stride;
+        for x in 0..width as usize {
+            out[base + x * 3..base + x * 3 + 3].copy_from_slice(&bgr);
+        }
+    }
+    out
 }
 
 /// 面板里的那张网页。播放按钮放一段现场拼成 WAV 的两分钟轻方波，页面把播放位置写在 `#audio` 里：
@@ -517,6 +663,63 @@ mod tests {
         let plain = get("/corner");
         assert!(plain.contains("Fixture corner") && !plain.contains("viewport-fit=cover"));
         assert!(get("/corner-cover").contains("viewport-fit=cover"));
+    }
+
+    #[test]
+    fn photos_come_as_one_group_with_loadable_bytes() {
+        let update = timeline("!ui-fake:home.example");
+        let [TimelineDiff::Reset { items }] = update.diffs.as_slice() else {
+            panic!("the first batch must be a reset");
+        };
+        let images: Vec<&TimelineMessage> = items
+            .iter()
+            .filter_map(|item| match &item.content {
+                TimelineContent::Message { message }
+                    if matches!(message.body, MessageContent::Image { .. }) =>
+                {
+                    Some(message)
+                }
+                _ => None,
+            })
+            .collect();
+        // 组里三张（同组、按 index 排好）加一张没组的单张。
+        let grouped: Vec<&TimelineMessage> = images
+            .iter()
+            .copied()
+            .filter(|m| m.group.is_some())
+            .collect();
+        assert_eq!(grouped.len(), PHOTO_GROUP_COUNT);
+        for (position, message) in grouped.iter().enumerate() {
+            let group = message
+                .group
+                .as_ref()
+                .expect("a grouped photo carries its group");
+            assert_eq!(
+                (group.index, group.count),
+                (position as u32, PHOTO_GROUP_COUNT as u32)
+            );
+            let MessageContent::Image { image } = &message.body else {
+                panic!("a photo message must carry an image");
+            };
+            assert!(
+                media(&image.media.token).is_some(),
+                "{} must load",
+                image.media.token
+            );
+            assert_eq!(image.thumbnail, Some(image.media.clone()));
+        }
+        let solo = images
+            .iter()
+            .find(|m| m.group.is_none())
+            .expect("one photo is ungrouped");
+        let MessageContent::Image { image } = &solo.body else {
+            panic!("a photo message must carry an image");
+        };
+        assert!(
+            media(&image.media.token).is_some(),
+            "{} must load",
+            image.media.token
+        );
     }
 
     #[test]

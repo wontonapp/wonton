@@ -338,6 +338,13 @@ impl ClientCore {
 
     /// 取图片等媒体的原文件（时间线里给出的句柄）。核心负责下载、解密和缓存。
     pub async fn load_media(&self, media: MediaHandle) -> Result<Vec<u8>, CoreError> {
+        // 假数据入口没有后端：假房间图片的字节直接在这给，不进下载。
+        #[cfg(feature = "ui-fake")]
+        if self.ui_fake.load(Ordering::SeqCst)
+            && let Some(bytes) = ui_fake_room::media(&media.token)
+        {
+            return Ok(bytes);
+        }
         let scope = self.scope();
         let chat = scope.chat.clone();
         scope.run(async move { chat.load_media(media).await }).await
