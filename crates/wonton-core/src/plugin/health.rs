@@ -274,19 +274,6 @@ async fn failure_error(
     langs: &Languages,
 ) -> HealthError {
     match failure {
-        Failure::Unhealthy(probes) => {
-            let logs = traced(container, engine.logs_tail(container, LOG_LINES).await);
-            HealthError::Unhealthy(with_log_tail(
-                crate::l10n::text(
-                    langs,
-                    "plugin-settings-health-unhealthy",
-                    &[("container", container.into())],
-                ),
-                probe_block(&probes, langs),
-                &logs,
-                langs,
-            ))
-        }
         Failure::Exited(code) => {
             let logs = traced(container, engine.logs_tail(container, LOG_LINES).await);
             HealthError::Exited(with_log_tail(
@@ -323,7 +310,6 @@ fn with_log_tail(head: String, probes: String, logs: &str, langs: &Languages) ->
 }
 
 enum Failure {
-    Unhealthy(Vec<Probe>),
     Exited(i64),
     Other(HealthError),
 }
@@ -572,10 +558,20 @@ fn verdict(
     ) {
         return Err(Failure::Exited(exit_code));
     }
-    if health == Some(HealthStatusEnum::UNHEALTHY) {
-        return Err(Failure::Unhealthy(probes));
-    }
     let running = status == ContainerStateStatusEnum::RUNNING;
+    // 只要“起来了”的依赖，健康检查再差也够：商店里的 `service_started` 用在转发器这类容器上，
+    // 它们后面那个服务健不健康是另一条依赖的事。
+    if target == Target::Depend(DependCondition::ServiceStarted) && running {
+        return Ok(Observation::Done(Readiness::Running));
+    }
+    // 判成不健康不等于没救：慢主机上的数据库冷启动会先探针全失败再恢复，继续等到期限，
+    // 不能一看到 unhealthy 就回滚（盲测 immich-db-start-timeout）。
+    if health == Some(HealthStatusEnum::UNHEALTHY) {
+        return Ok(Observation::Waiting {
+            state: label,
+            probes,
+        });
+    }
     if let Some((request, outcome)) = webui {
         return match outcome {
             Ok(200..=499) => Ok(Observation::Done(Readiness::Healthy)),
@@ -597,9 +593,6 @@ fn verdict(
                 &[("container", container.into())],
             )),
         )),
-        Target::Depend(DependCondition::ServiceStarted) if running => {
-            Ok(Observation::Done(Readiness::Running))
-        }
         Target::Depend(DependCondition::ServiceHealthy) | Target::Ready if has_check => {
             if health == Some(HealthStatusEnum::HEALTHY) {
                 Ok(Observation::Done(Readiness::Healthy))

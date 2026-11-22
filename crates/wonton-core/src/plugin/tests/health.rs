@@ -9,8 +9,9 @@ use crate::l10n::CATALOG;
 use tokio::sync::oneshot;
 use tokio::time::sleep;
 
+use super::super::compose::DependCondition;
 use super::super::fake_docker::FakeDocker;
-use super::super::health::{Target, wait_for};
+use super::super::health::{Readiness, Target, wait_for};
 use super::super::health_gate::Wait;
 use super::super::names::container_name;
 use super::super::render::{RenderError, dry_run};
@@ -455,7 +456,7 @@ async fn a_failed_install_carries_the_whole_log_not_just_the_last_lines() {
 
 // 健康检查判成失败不等于没救：慢主机上的数据库冷启动会先探针全失败再恢复，安装要继续等，
 // 不能一看到 unhealthy 就回滚（盲测 immich-db-start-timeout，核心 84f4092a3）。
-#[tokio::test(start_paused = true)]
+#[tokio::test]
 async fn an_unhealthy_container_that_recovers_is_not_failed_early() {
     let (docker, engine) = FakeDocker::start().await;
     let engine = engine.with_request_limit_for_test(Duration::from_secs(2 * 60 * 60));
@@ -469,23 +470,26 @@ async fn an_unhealthy_container_that_recovers_is_not_failed_early() {
             "Health": {"Status": "unhealthy", "Log": [{"ExitCode": 1, "Output": "no response"}]},
         }),
     );
-    let mut m = manager_with(engine, &dir);
-    m.cfg.install_timeout = crate::config::DEFAULT_INSTALL_TIMEOUT;
-    let m = std::sync::Arc::new(m);
-    let install = {
-        let m = m.clone();
+    let m = manager_with(engine, &dir);
+    // 钉住 inspect：第一眼必须真读到 unhealthy，不能靠调度碰运气。
+    let first = docker.hold(&format!("GET /containers/{app}/json"));
+    let install = tokio::spawn({
         let compose = with_init("");
-        tokio::spawn(async move { m.install(&compose, &[], super::langs()).await })
-    };
-    for _ in 0..5 {
-        tokio::time::advance(Duration::from_secs(60)).await;
-        assert!(!install.is_finished(), "判成不健康也要继续等到期限");
-    }
+        async move { m.install(&compose, &[], super::langs()).await }
+    });
+    first.reached().await;
+    let second = docker.hold(&format!("GET /containers/{app}/json"));
+    first.release();
+    // 旧代码读到 unhealthy 当场失败；还能再来一眼才说明它接着等了。
+    tokio::time::timeout(Duration::from_secs(10), second.reached())
+        .await
+        .expect("判成不健康后没有再看一眼");
+    assert!(!install.is_finished(), "判成不健康也要继续等到期限");
     docker.set_state(
         &app,
         json!({"Status": "running", "Running": true, "Health": {"Status": "healthy"}}),
     );
-    tokio::time::advance(Duration::from_secs(1)).await;
+    second.release();
     let view = install.await.unwrap().unwrap();
     assert_eq!(
         (view.status, view.health),
@@ -521,11 +525,45 @@ async fn a_pending_container_that_stays_unhealthy_is_named_when_the_deadline_exp
         .await
         .unwrap_err()
         .to_string();
-    assert!(error.contains(&db), "{error}");
+    // 报的是等着的那一方的依赖：只有 db 进了没就绪名单，还在启动的 app 不算。
     assert!(error.contains("no response"), "{error}");
-    assert!(error.contains("never recovered"), "{error}");
     assert!(
-        !error.contains(&container_name("app-test", "app")),
-        "报的是不健康的依赖，不是还在启动的容器：{error}"
+        error.contains(&format!("and {db} never became ready")),
+        "{error}"
     );
+}
+
+// `service_started` 只看“起来了”：健康检查失败也不妨碍这条依赖满足（商店里 socat 转发器、
+// actual、uptime-kuma 都这样依赖后端）。
+#[tokio::test]
+async fn a_started_dependency_does_not_wait_for_its_health_check() {
+    let (docker, engine) = FakeDocker::start().await;
+    let db = container_name("app-test", "db");
+    docker.add_container(&db, "app.db");
+    docker.set_state(
+        &db,
+        json!({
+            "Status": "running", "Running": true,
+            "Health": {"Status": "unhealthy", "Log": [{"ExitCode": 1, "Output": "no response"}]},
+        }),
+    );
+    let started = tokio::time::Instant::now();
+    let budget = Duration::from_secs(60);
+    let wait = Wait {
+        at: started + budget,
+        budget,
+        started,
+    };
+    let readiness = wait_for(
+        &engine,
+        &crate::http::HttpClient::new(),
+        &db,
+        Target::Depend(DependCondition::ServiceStarted),
+        None,
+        wait,
+        &Languages::default(),
+    )
+    .await
+    .unwrap();
+    assert_eq!(readiness, Readiness::Running);
 }
