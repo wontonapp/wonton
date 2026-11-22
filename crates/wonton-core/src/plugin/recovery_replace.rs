@@ -57,8 +57,8 @@ impl PluginManager {
                 self.engine.remove_container(&container.name).await?;
             }
         }
-        let deadline = gate.deadline(plan, ctx.install_limit, Instant::now());
-        Box::pin(self.start_containers(None, plan, None, &mut Undo::default(), deadline, langs))
+        let wait = gate.deadline(plan, ctx.install_limit, Instant::now());
+        Box::pin(self.start_containers(None, plan, None, &mut Undo::default(), wait, langs))
             .await?;
         self.recovery_stage(id, PluginRecoveryStage::Reconciling)?;
         let mut record = self

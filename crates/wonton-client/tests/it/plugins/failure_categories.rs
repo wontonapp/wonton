@@ -134,6 +134,7 @@ async fn a_failed_start_keeps_the_core_error_category() {
     for (kind, expected) in [
         ("image_pull_failed", PluginFailure::SourceUnavailable),
         ("record_unusable", PluginFailure::RecordUnusable),
+        ("health_timeout", PluginFailure::TimedOut),
     ] {
         rig.core.answer(
             Method::POST,

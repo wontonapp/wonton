@@ -401,20 +401,19 @@ impl PluginManager {
         }
         self.sync_bot_web_clients(manifest, &ctx).await?;
         self.rewrite_image_healthchecks(&ctx, &mut plan).await?;
-        let deadline =
-            super::super::health_gate::deadline(&plan, ctx.install_limit, Instant::now());
+        let wait = super::super::health_gate::deadline(&plan, ctx.install_limit, Instant::now());
         self.stage(&manifest.id, InstallStage::Starting);
         let health = Box::pin(self.start_containers(
             Some(manifest),
             &plan,
             Some(&manifest.id),
             &mut progress.undo,
-            deadline,
+            wait,
             &langs,
         ))
         .await?;
         let (upstream, models, mcp) = self
-            .deploy_upstreams(manifest, &network, &mut secrets, deadline, &langs)
+            .deploy_upstreams(manifest, &network, &mut secrets, wait, &langs)
             .await?;
         let firewalled = self
             .host_webui_firewalled(manifest, &plan.relays, &network)

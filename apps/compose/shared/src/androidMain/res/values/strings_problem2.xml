@@ -10,6 +10,7 @@
     <string name="problem_plugin_conflict_next_step">It\'s already installed, or installing, updating or uninstalling. Wait for that to finish.</string>
     <!-- Next step: try after the update finishes. -->
     <string name="problem_plugin_core_upgrading_next_step">Try again after the update finishes.</string>
+    <string name="problem_plugin_health_timeout_title">The app is not ready yet</string>
     <!-- Next step: contact the app's author. -->
     <string name="problem_plugin_invalid_next_step">Contact the app\'s author.</string>
     <!-- Problem title: the app's package is broken. -->

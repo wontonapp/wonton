@@ -163,6 +163,8 @@ fn retryable(e: &InstallError) -> bool {
         // 核心起不了处理图片的子进程，和插件包里的图片无关。
         | InstallError::ImagesUnavailable(_)
         | InstallError::Unhealthy(_)
+        // 服务还在起：宿主空下来再试就能过（#682）。
+        | InstallError::TimedOut(_)
         | InstallError::Storage(_)
         | InstallError::SourceUnavailable(_)
         | InstallError::CoreUpgrading(_) => true,

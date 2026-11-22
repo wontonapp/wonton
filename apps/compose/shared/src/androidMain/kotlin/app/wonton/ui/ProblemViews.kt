@@ -211,6 +211,11 @@ fun PluginFailure.problem(detail: String?): Problem = when (this) {
         detail = detail,
     )
     PluginFailure.UPSTREAM -> problem(R.string.problem_upstream_title, R.string.problem_upstream_next_step, detail)
+    PluginFailure.TIMED_OUT -> problem(
+        R.string.problem_plugin_health_timeout_title,
+        R.string.problem_plugin_health_timeout_next_step,
+        detail,
+    )
     PluginFailure.PROTOCOL -> Problem(
         titleRes = R.string.problem_plugin_protocol_title,
         nextStepRes = R.string.problem_plugin_protocol_next_step,
