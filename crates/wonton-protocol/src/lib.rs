@@ -147,7 +147,8 @@ pub use chat_layout::{
 };
 pub use clients::{
     Ban, CLIENTS_ERROR_HEADER, CLIENTS_HEADER, CaaState, CertificateState, ClientAuthKind,
-    ClientsBlocked, ClientsErrorBody, ClientsFailure, ClientsGuests, ClientsPassword,
+    ClientsBlocked, ClientsDomainCertificate, ClientsDomainProvider, ClientsDomainState,
+    ClientsDomainViewModel, ClientsErrorBody, ClientsFailure, ClientsGuests, ClientsPassword,
     ClientsPlugin, ClientsProblem, ClientsSettingsViewModel, ClientsState, ClientsStatus,
     ClientsViewModel, CredentialEntry, DnsProviderPreset, DomainSettings, EntryBlock, EntryEffect,
     EntryKind, EntrySwitch, GUEST_LINKS_MAX, GUEST_TTL_DEFAULT, GUEST_TTL_MAX, GateState,

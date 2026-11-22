@@ -28,6 +28,7 @@ mod guests;
 mod ingress;
 mod passwords;
 mod status;
+mod view_model;
 #[cfg(test)]
 mod tests;
 mod view;
@@ -35,6 +36,9 @@ mod view;
 pub use domain::{
     CaaState, CertificateState, CredentialEntry, DnsProviderPreset, DomainSettings, LanRecordState,
     PutDomainRequest,
+};
+pub use view_model::{
+    ClientsDomainCertificate, ClientsDomainProvider, ClientsDomainState, ClientsDomainViewModel,
 };
 pub use entries::{
     ClientAuthKind, ClientsPlugin, EntryBlock, EntryEffect, EntryKind, EntrySwitch, PublicRuleMode,

@@ -16,61 +16,25 @@ use crate::agent_chain::AgentAction;
     reason = "passed by value across UniFFI; boxing would allocate and change the exposed contract"
 )]
 pub enum Action {
-    Session {
-        action: SessionAction,
-    },
-    Home {
-        action: HomeAction,
-    },
-    Chat {
-        action: ChatAction,
-    },
-    Bot {
-        action: BotAction,
-    },
-    Push {
-        action: PushAction,
-    },
-    Plugins {
-        action: PluginAction,
-    },
-    Settings {
-        action: SettingsAction,
-    },
-    Onboarding {
-        action: OnboardingAction,
-    },
-    Files {
-        action: FileAction,
-    },
-    Pages {
-        action: PageAction,
-    },
-    Peers {
-        action: PeerAction,
-    },
-    BotContacts {
-        action: BotContactAction,
-    },
-    Family {
-        action: FamilyAction,
-    },
-    Friends {
-        action: FriendsAction,
-    },
-    Sharing {
-        action: SharingAction,
-    },
+    Session { action: SessionAction },
+    Home { action: HomeAction },
+    Chat { action: ChatAction },
+    Bot { action: BotAction },
+    Push { action: PushAction },
+    Plugins { action: PluginAction },
+    Settings { action: SettingsAction },
+    Onboarding { action: OnboardingAction },
+    Files { action: FileAction },
+    Pages { action: PageAction },
+    Peers { action: PeerAction },
+    BotContacts { action: BotContactAction },
+    Family { action: FamilyAction },
+    Friends { action: FriendsAction },
+    Sharing { action: SharingAction },
     /// 公网访问、入口和访客链接（ADR-0021、ADR-0089、ADR-0090）。
-    Clients {
-        action: ClientsAction,
-    },
-    Timeline {
-        action: crate::TimelineAction,
-    },
-    Agent {
-        action: AgentAction,
-    },
+    Clients { action: ClientsAction },
+    Timeline { action: crate::TimelineAction },
+    Agent { action: AgentAction },
 }
 
 #[cfg(test)]
