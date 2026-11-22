@@ -1,7 +1,7 @@
 name: android
 
 # detekt、单元测试、Debug 构建和界面参考图比对。PR 上由 gate.yml 按改动范围调用（合并门槛，范围写在那边的
-# changes 里），不自己挂 pull_request；每天定时、手动触发时自己跑全量。
+# changes 里），不自己挂 pull_request；每天定时、手动触发时自己跑全量。Release APK 体积门禁在 android-size.yml，合进 main 之后跑，不挡合并。
 on:
   workflow_call:
   schedule:
@@ -16,6 +16,9 @@ concurrency:
 env:
   CARGO_INCREMENTAL: "0"
   CARGO_PROFILE_DEV_DEBUG: line-tables-only
+  # 这个作业只编 Debug；Release 那行留着，和 cache.yml 的 key 对齐（rust-cache 把 CARGO_ 开头的变量算进 key）。
+  # Release 的符号要能还原到行：崩溃分析只靠它，剥掉的是打包进 APK 的那份。
+  CARGO_PROFILE_RELEASE_DEBUG: line-tables-only
 
 permissions:
   contents: read
