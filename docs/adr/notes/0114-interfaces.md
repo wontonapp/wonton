@@ -35,8 +35,6 @@ pub struct MemberCommands {
 命令的标准输入与凭据输出（同文件）。退出码 `0` 成功、`2` 输入非法、`3` 只给 `credential` 表示凭据失效：
 
 ```rust
-pub struct MemberStatus { pub users: Vec<String> }
-
 pub struct MemberInput { pub user: String, #[serde(default)] pub admin: bool }
 pub struct MemberTarget { pub user: String }
 
@@ -48,7 +46,11 @@ pub enum MemberCredential {
 ```
 
 校验：`service` 在 `services` 里；`add`/`remove`/`credential` 必须以 `/` 开头，`status` 若有同样；`webui.service` 不必相同。
-`status` 的输出是一条 JSON：`{"users": ["<用户名>", …]}`，含已停用的账号、不含插件自己的管理员。
+`status` 的输出是一条 JSON：`{"users": ["<用户名>", …]}`，含已停用的账号、不含插件自己的管理员（只给对账用）：
+
+```rust
+pub struct MemberStatus { pub users: Vec<String> }
+```
 另有 `status: Option<String>`（可选，一条 JSON 列出已建账号）。对账只在安装完成、容器重建后跑一次、以及每天一次；补建前先看这人还在不在成员里，
   刚被移除的不会被补回来；补建失败进重试。
 
@@ -210,8 +212,6 @@ pub enum Accessor {
 - `tools/list` 一节写 `card`、`files`、`room_results`；`tools/call` 一节写 `speakers`、`room_people`；结果一节写 `result_scope`、`card_result`、`deep_link`。
   `room_results` 坏值只在 `plugin check` 与 `tools/list` 校验时记警告，运行期按 false。
 - “通知”一节加 `to`、`link`，把“家人不收”改成按 `to`。
-- `tools/list` 一节加 `card`、`files` 两个 `_meta`；`tools/call` 一节加 `speakers`、`room_people`、`result_scope`；
-  结果一节加 `card_result`、`deep_link`。
 - `plugin check --official` 的清单校验跟上第 1、2 节。
 - 规范版本按现有规则升一小版，写明需要的最低核心版本。
 
