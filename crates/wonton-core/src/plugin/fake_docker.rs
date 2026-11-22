@@ -377,9 +377,12 @@ impl FakeDocker {
         docker.states.insert(container.to_owned(), state);
     }
 
-    /// 容器从 Docker 里不见了（被外部删掉）。
+    /// 容器从 Docker 里不见了（被外部删掉）：连创建记录和归档一起清，模拟它没出现过。
     pub fn remove(&self, container: &str) {
-        drop_container(&mut self.lock(), container);
+        let mut docker = self.lock();
+        drop_container(&mut docker, container);
+        docker.created.remove(container);
+        docker.archives.remove(container);
     }
 
     /// 容器被标了删除（`docker rm` 或 Compose 换容器）：端点还在，断开被 Docker 拒绝；
@@ -570,14 +573,13 @@ impl FakeDocker {
     }
 }
 
-/// 容器连同端点、状态和归档一起从假 Docker 里没掉，记下当时的写操作条数。
+/// 容器连同端点、状态一起从假 Docker 里没掉，记下当时的写操作条数。`created` / `archives` 是历史记录
+/// （最近一次创建请求、一次性容器写下的东西），容器没了也留着，测试靠它们看它怎么被建的。
 fn drop_container(docker: &mut Resources, name: &str) {
     docker.removing.remove(name);
     docker.containers.remove(name);
     docker.states.remove(name);
-    docker.created.remove(name);
     docker.restartable.remove(name);
-    docker.archives.remove(name);
     for endpoints in docker.endpoints.values_mut() {
         endpoints.remove(name);
     }
