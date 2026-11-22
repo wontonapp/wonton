@@ -117,13 +117,13 @@ final class MainNavigationUITests: XCTestCase {
         tap(button("Store"), "应用页的商店入口")
         XCTAssertTrue(waitHittable(storeTitle), "商店入口没进商店\n\(app.debugDescription)")
 
-        // 拖之前在第二行上起手（issue 里被误开的是它下面那一行）：行有 16 点内边距，起点取行左端往里 2 点，
-        // 既在屏幕边缘的识别区里，也落在行自己的链接上。
+        // 拖之前在第二行上起手（issue 里被误开的是它下面那一行）。XCUITest 的坐标以 app.frame 为原点，
+        // 这里发的 app 坐标在窗口坐标左边 12 点：dx 8 到窗口 20，落在行链接（16 起）上，也在 24 点识别区里。
         let row = text("Home Music")
         XCTAssertTrue(waitHittable(row), "商店行没画出来\n\(app.debugDescription)")
         let line = row.element(boundBy: 0)
         let start = app.coordinate(withNormalizedOffset: .zero)
-            .withOffset(CGVector(dx: line.frame.minX + 2, dy: line.frame.midY))
+            .withOffset(CGVector(dx: 8, dy: line.frame.midY))
         swipeBack(from: start)
 
         XCTAssertTrue(waitHittable(appsPage), "商店行上从边缘里侧右滑没回应用页\n\(app.debugDescription)")
@@ -295,16 +295,17 @@ final class MainNavigationUITests: XCTestCase {
         )
     }
 
-    /// 手指落在屏幕边缘往里 12 点处：0.005 只有约 2 点，人的手指落不了那么准（#685）。
+    /// 手指落在离屏幕边缘约 22 点处：0.005 只有约 2 点，人的手指落不了那么准（#685）。
     private func midEdgeSwipeBack(file: StaticString = #filePath, line: UInt = #line) {
         swipeBack(
             from: app.coordinate(withNormalizedOffset: .zero)
-                .withOffset(CGVector(dx: 12, dy: app.frame.height / 2)),
+                .withOffset(CGVector(dx: 10, dy: app.frame.height / 2)),
             file: file, line: line
         )
     }
 
     private func swipeBack(from start: XCUICoordinate, file: StaticString = #filePath, line: UInt = #line) {
+        print("EDGE-TEST appFrame=\(app.frame) start=\(start)")
         XCTAssertTrue(waitTopBarStill(), "顶栏一直在动，转场没走完\n\(app.debugDescription)", file: file, line: line)
         // 拖到头停一下再松手：松手时速度是零，返回成不成只看拖过的距离（过半就成）。不停的话要看松手那一刻
         // 算出来的速度，模拟器一卡，拖到一半的转场会弹回去（录屏里看得到）。
