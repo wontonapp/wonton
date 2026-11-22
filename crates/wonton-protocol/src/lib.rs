@@ -74,9 +74,9 @@ mod widget;
 
 pub use action::Action;
 pub use action_domains::{
-    BotAction, BotContactAction, ChatAction, FamilyAction, FileAction, FriendsAction, HomeAction,
-    OnboardingAction, PageAction, PeerAction, PluginAction, PushAction, SessionAction,
-    SettingsAction, SharingAction,
+    BotAction, BotContactAction, ChatAction, ClientsAction, FamilyAction, FileAction,
+    FriendsAction, HomeAction, OnboardingAction, PageAction, PeerAction, PluginAction, PushAction,
+    SessionAction, SettingsAction, SharingAction,
 };
 pub use agent_chain::{
     AGENT_CHAINS_API_PATH, AGENT_CHAINS_PATH, AGENT_CHAINS_WAIT_SECS, AGENT_LIMITS_PATH,
@@ -136,16 +136,17 @@ pub use chat_layout::{
 };
 pub use clients::{
     Ban, CLIENTS_ERROR_HEADER, CLIENTS_HEADER, CaaState, CertificateState, ClientAuthKind,
-    ClientsErrorBody, ClientsFailure, ClientsPlugin, ClientsProblem, ClientsStatus,
-    CredentialEntry, DnsProviderPreset, DomainSettings, EntryBlock, EntryKind, EntrySwitch,
-    GUEST_LINKS_MAX, GUEST_TTL_DEFAULT, GUEST_TTL_MAX, GateState, GuestLink, IngressKind,
-    IngressSettings, LanRecordState, NewGuestLinkRequest, NewPasswordRequest, PasswordSummary,
-    PasswordValue, PendingChange, PendingChangeKind, PendingOp, ProbeResult, PublicAccess,
-    PublicItem, PublicReach, PublicRuleMode, PublicRules, PublicSwitchState, PutDomainRequest,
-    PutIngressRequest, RevokeDeviceRequest, SetEntryRequest, clients_ban_path, clients_domain_path,
-    clients_entry_path, clients_guest_path, clients_guests_path, clients_ingress_path,
-    clients_password_path, clients_passwords_path, clients_path, clients_public_access_path,
-    clients_status_path, dns_providers_path,
+    ClientsBlocked, ClientsErrorBody, ClientsFailure, ClientsGuests, ClientsPassword,
+    ClientsPlugin, ClientsProblem, ClientsSettingsViewModel, ClientsState, ClientsStatus,
+    ClientsViewModel, CredentialEntry, DnsProviderPreset, DomainSettings, EntryBlock, EntryKind,
+    EntrySwitch, GUEST_LINKS_MAX, GUEST_TTL_DEFAULT, GUEST_TTL_MAX, GateState, GuestLink,
+    IngressKind, IngressSettings, LanRecordState, NewGuestLinkRequest, NewPasswordRequest,
+    PasswordSummary, PasswordValue, PendingChange, PendingChangeKind, PendingOp, ProbeResult,
+    PublicAccess, PublicItem, PublicReach, PublicRuleMode, PublicRules, PublicSwitchState,
+    PutDomainRequest, PutIngressRequest, RevokeDeviceRequest, SetEntryRequest, clients_ban_path,
+    clients_domain_path, clients_entry_path, clients_guest_path, clients_guests_path,
+    clients_ingress_path, clients_password_path, clients_passwords_path, clients_path,
+    clients_public_access_path, clients_status_path, dns_providers_path,
 };
 pub use composer::{
     AttachmentFailure, AttachmentKind, AttachmentState, ComposerAttachment, ComposerMention,

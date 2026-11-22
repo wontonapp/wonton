@@ -15,6 +15,8 @@ pub enum IngressKind {
     OwnFrps,
     /// Cloudflare Tunnel，TLS 在 Cloudflare 边缘终止；`clients.tcp` 不可用。
     CloudflareTunnel,
+    /// 我们的中继（M2）：地址、端口和 CA 都来自装机时的注册（ADR-0048），App 只确认。
+    OurRelay,
     /// 比这个 App 新的核心给的入口。
     #[serde(other)]
     Other,
@@ -61,6 +63,8 @@ pub enum PutIngressRequest {
         /// 远程管理的隧道令牌，只能跑这一条隧道。
         token: SecretString,
     },
+    /// 我们的中继：值取自装机时的注册，App 只确认。
+    OurRelay {},
 }
 
 /// 公网访问总开关；默认关，只有主人在 App 里能开（ADR-0090 第 2 节）。
