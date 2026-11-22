@@ -215,12 +215,14 @@ struct ComposerView: View {
                 )
                 continue
             }
-            if !isSideChat {
-                await composer.addImage(data, type)
-            } else if await composer.sendImage(data, type, replyTo: replyTo) {
-                replyTo = nil
+            if isSideChat {
+                if await composer.sendImage(data, type, caption: caption, replyTo: replyTo) {
+                    replyTo = nil
+                } else {
+                    allSent = false
+                }
             } else {
-                allSent = false
+                await composer.addImage(data, type)
             }
         }
         // 旁聊里的附言跟着照片走：有一张没发出去就先不单发附言，留着下次和草稿一起发。
