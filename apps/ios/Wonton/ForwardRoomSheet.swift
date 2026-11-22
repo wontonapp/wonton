@@ -14,6 +14,7 @@ private struct ForwardPresentation: ViewModifier {
     @Binding var item: String?
     let model: ChatModel
     let plugins: PluginsModel
+    let source: TimelineTarget
     @State private var pending: PendingForward?
 
     /// 只列已加入、能写的房间。
