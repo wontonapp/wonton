@@ -493,7 +493,7 @@ mod tests {
             crate::chat::apply_diff(&mut items, diff);
         }
         assert_eq!(items.len(), ITEMS + 1);
-        let forwarded = message(&items, "ui-fake-forwarded-24");
+        let forwarded = message(&items, &format!("ui-fake-forwarded-{ITEMS}"));
         let MessageContent::Text { body, .. } = &forwarded.body else {
             panic!("转发的是文字");
         };
