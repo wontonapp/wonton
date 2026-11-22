@@ -1,5 +1,6 @@
 //! 本设备身份的 endpoint：配对、配对后建连、换服务器和重启后重连都从这里绑定。
 
+use std::sync::atomic::Ordering;
 use std::time::Duration;
 
 use iroh::endpoint::{Builder, QuicTransportConfig, presets};
@@ -105,6 +106,12 @@ impl HomeLink {
                 .ca_tls_config(iroh::tls::CaTlsConfig::insecure_skip_verify()),
             (Network::DirectOnly, _) => Endpoint::builder(presets::Minimal),
         };
+        // 开关关着（默认）就不装选路器，走 iroh 自己的默认选路，和打开这个功能之前一模一样。
+        let builder =
+            match wonton_tunnel::path_selector(self.fake_ip_exclusion.load(Ordering::SeqCst)) {
+                Some(selector) => builder.path_selector(selector),
+                None => builder,
+            };
         let transport = QuicTransportConfig::builder()
             .enable_segmentation_offload(false)
             .build();

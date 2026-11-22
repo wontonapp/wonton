@@ -12,7 +12,7 @@ mod suspend;
 
 use attempt::Attempt;
 use check::SlowPath;
-pub use path::{PathInfo, PathKind};
+pub use path::{PathInfo, PathKind, PreferRealPaths, is_fake_ip, path_selector};
 pub use streams::TunnelStreamStats;
 use streams::{StreamCounters, StreamLease, open_stream};
 pub use suspend::SuspendClock;
