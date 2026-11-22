@@ -158,8 +158,15 @@ impl TunnelClient {
     /// [`ping`]: Self::ping
     /// [`revalidate`]: Self::revalidate
     pub async fn probe(&self, deadline: Duration) -> Result<Duration, TunnelError> {
-        let Some(conn) = self.inner.live_connection() else {
-            return self.ping().await;
+        let live = self.inner.live_connection();
+        tracing::debug!(live = live.is_some(), "probe");
+        let Some(conn) = live else {
+            let result = self.ping().await;
+            if result.is_err() {
+                // 连接关了、状态却还写着“已连接”：补记一次，门禁不必等下一个请求。
+                self.inner.report_closed();
+            }
+            return result;
         };
         let path = CheckedPath::selected(&conn);
         let started = Instant::now();
