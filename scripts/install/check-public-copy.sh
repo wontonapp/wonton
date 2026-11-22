@@ -56,18 +56,7 @@ describe() {
 temporary=$(mktemp -d)
 trap 'rm -rf "$temporary"' EXIT
 
-# pin 得是公开仓库 main 上的提交：同步分支合了就被删，分支上的提交迟早不可达。
-code=$(code_of "$api/repos/$repo/compare/$pin...main" "$temporary/compare")
-[ "$code" = 200 ] || fail "查不了公开仓库 main 和 $pin 的对照：$(describe "$code")。" "https://github.com/$repo/commit/$pin"
-status=$(python3 -c 'import json,sys; print(json.load(open(sys.argv[1]))["status"])' "$temporary/compare") ||
-  fail "公开仓库 main 和 $pin 的对照读不懂：$(cat "$temporary/compare")"
-case "$status" in
-  identical | ahead) ;;
-  behind) fail "public-copy 的第一行 $pin 不在公开仓库 main 上（对照结果 behind）：公开 PR 合过之后没重跑 sync-public.sh，或者它还没合、写成了同步分支上的提交。" ;;
-  diverged) fail "public-copy 的第一行 $pin 和公开仓库 main 分叉了（对照结果 diverged）：pin 要写 main 上的提交。" ;;
-  *) fail "public-copy 的第一行 $pin 和公开仓库 main 的对照结果不认识：$status" ;;
-esac
-
+# 第二行得是仓库里真有、且装着这份内容的提交；本地取不到没关系，经 API 读。
 code=$(code_of "$api/repos/wontonapp/wonton/commits/$source" "$temporary/commit")
 [ "$code" = 200 ] || fail "public-copy 第二行记的主仓库提交 $source 找不到：$(describe "$code")。"
 
@@ -77,6 +66,7 @@ code=$(code_of "$api/repos/wontonapp/wonton/contents/$path?ref=$source" "$tempor
   fail "第二行记的提交 $source 里的 $path 和第三行记的内容对不上：$mapping。" \
     "在公开仓库的克隆里重跑 sync-public.sh，把 public-copy 一起提交。"
 
+# 先认内容：公开 main 已经是这份就放行（公开 PR 合过之后 pin 必然落在 main 后面，第四行也成了旧数据）。
 code=$(code_of "$api/repos/$repo/contents/install.sh?ref=main" "$temporary/main" application/vnd.github.raw)
 [ "$code" = 200 ] || fail "读不到公开仓库 main 的 install.sh：$(describe "$code")。"
 if cmp -s "$temporary/main" "$file"; then
@@ -90,6 +80,18 @@ if [ -z "$pending" ]; then
   fail "公开仓库 main 上的 install.sh 和这份不一样，第四行也没记待合的公开分支：$mapping。" \
     "改了 $path 就在公开仓库的克隆里跑 sync-public.sh：它推同步分支、把第四行写上，在公开仓库开草稿 PR 后这里就放行。"
 fi
+
+# 内容不一致才需要 pin：它得是公开仓库 main 上的提交（同步分支合了就被删，分支上的提交迟早不可达）。
+code=$(code_of "$api/repos/$repo/compare/$pin...main" "$temporary/compare")
+[ "$code" = 200 ] || fail "查不了公开仓库 main 和 $pin 的对照：$(describe "$code")。" "https://github.com/$repo/commit/$pin"
+status=$(python3 -c 'import json,sys; print(json.load(open(sys.argv[1]))["status"])' "$temporary/compare") ||
+  fail "公开仓库 main 和 $pin 的对照读不懂：$(cat "$temporary/compare")"
+case "$status" in
+  identical | ahead) ;;
+  behind) fail "public-copy 的第一行 $pin 不在公开仓库 main 上（对照结果 behind）：公开 PR 合过之后没重跑 sync-public.sh，或者它还没合、写成了同步分支上的提交。" ;;
+  diverged) fail "public-copy 的第一行 $pin 和公开仓库 main 分叉了（对照结果 diverged）：pin 要写 main 上的提交。" ;;
+  *) fail "public-copy 的第一行 $pin 和公开仓库 main 的对照结果不认识：$status" ;;
+esac
 
 code=$(code_of "$api/repos/$repo/commits/$pending" "$temporary/pcommit")
 [ "$code" = 200 ] || fail "public-copy 第四行记的待合分支 $pending 在公开仓库里取不到：$(describe "$code")。" \

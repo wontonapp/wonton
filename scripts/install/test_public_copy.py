@@ -49,8 +49,7 @@ class FakeApi:
 
     def __init__(self):
         self.pin_status = "ahead"
-        self.commit_exists = True
-        self.pending_exists = True
+        self.commits = set()
         self.limited = False
         self.public = b""
         self.source = b""
@@ -70,15 +69,20 @@ class FakeApi:
                     return self.reply(200, ('{"status": "%s"}' % api.pin_status).encode())
                 if url.path.endswith("/pulls"):
                     return self.reply(200, json.dumps(api.pulls).encode())
-                if "/wonton-install/commits/" in url.path:
-                    return self.reply(200 if api.pending_exists else 404, b'{"sha": "p"}')
+                if "/commits/" in url.path:
+                    # 真 API 对仓库里没有的 sha 回 422，不看它的形状。
+                    sha = url.path.rsplit("/", 1)[1]
+                    return self.reply(200 if sha in api.commits else 422, b'{"sha": "s"}')
                 if "/wonton-install/contents/install.sh" in url.path:
                     ref = urllib.parse.parse_qs(url.query).get("ref", ["main"])[0]
+                    if ref != "main" and ref not in api.commits:
+                        return self.reply(404, b"{}")
                     return self.reply(200, api.pending if ref != "main" else api.public)
                 if "/wonton/contents/" in url.path:
+                    ref = urllib.parse.parse_qs(url.query).get("ref", ["main"])[0]
+                    if ref not in api.commits:
+                        return self.reply(404, b"{}")
                     return self.reply(200, api.source)
-                if "/wonton/commits/" in url.path:
-                    return self.reply(200 if api.commit_exists else 404, b"{}")
                 return self.reply(404, b"{}")
 
             def reply(self, code, body):
@@ -141,13 +145,16 @@ class Fixture(unittest.TestCase):
         content = (self.repo / MAIN_PATH).read_bytes()
         self.api.public = content
         self.api.source = content
-        self.pin_file("1" * 40, git("rev-parse", "HEAD", cwd=self.repo))
+        head = git("rev-parse", "HEAD", cwd=self.repo)
+        self.api.commits.add(head)
+        self.pin_file("1" * 40, head)
 
     def waiting_public_pr(self, pending="p" * 40, content=None):
         """第四行记一条待合分支，默认内容和工作树一致、有开着的公开 PR。"""
         if content is None:
             content = (self.repo / MAIN_PATH).read_bytes()
         self.api.pending = content
+        self.api.commits.add(pending)
         self.api.pulls = [{"state": "open", "number": 2, "head": {"sha": pending}}]
         lines = (self.repo / "deploy/install/public-copy").read_text().splitlines()
         self.pin_file(lines[0], lines[1], lines[2], pending)
@@ -169,6 +176,7 @@ class CheckTest(Fixture):
     def test_a_source_commit_outside_the_shallow_history_passes(self):
         self.matching()
         # 和 CI 一样：第二行记的提交本地没有，只有 API 能读到。
+        self.api.commits.add(self.oldest)
         self.pin_file("1" * 40, self.oldest)
         missing = subprocess.run(
             ["git", "cat-file", "-e", self.oldest], cwd=self.repo, capture_output=True
@@ -194,10 +202,20 @@ class CheckTest(Fixture):
 
     def test_a_missing_source_commit_says_it_is_missing(self):
         self.matching()
-        self.api.commit_exists = False
+        self.api.commits.clear()
         done = self.check()
         self.assertEqual(done.returncode, 1)
         self.assertIn("找不到", done.stderr)
+
+    def test_a_source_sha_that_is_off_by_one_character_is_422_and_red(self):
+        self.matching()
+        # 拼错的 sha 形状照样对：本地 rev-parse 成功，只有 API 查对象时才露馅。
+        source = git("rev-parse", "HEAD", cwd=self.repo)
+        self.pin_file("1" * 40, source[:-1] + ("0" if source[-1] != "0" else "1"))
+        done = self.check()
+        self.assertEqual(done.returncode, 1)
+        self.assertIn("找不到", done.stderr)
+        self.assertIn("422", done.stderr)
 
     def test_rate_limiting_is_not_reported_as_a_missing_commit(self):
         self.matching()
@@ -205,10 +223,12 @@ class CheckTest(Fixture):
         done = self.check()
         self.assertEqual(done.returncode, 1)
         self.assertIn("403", done.stderr)
-        self.assertNotIn("找不到", done.stderr)
+        self.assertIn("限流", done.stderr)
 
-    def test_a_pin_that_is_not_on_public_main_is_red(self):
+    def test_a_pin_that_is_not_on_public_main_is_red_when_the_content_differs(self):
         self.matching()
+        self.api.public = b"v1\n"
+        self.waiting_public_pr()
         self.api.pin_status = "behind"
         done = self.check()
         self.assertEqual(done.returncode, 1)
@@ -262,8 +282,8 @@ class CheckTest(Fixture):
     def test_a_missing_pending_commit_is_red(self):
         self.matching()
         self.api.public = b"v1\n"
-        self.waiting_public_pr()
-        self.api.pending_exists = False
+        pending = self.waiting_public_pr()
+        self.api.commits.discard(pending)
         done = self.check()
         self.assertEqual(done.returncode, 1)
         self.assertIn("取不到", done.stderr)
@@ -271,6 +291,8 @@ class CheckTest(Fixture):
     def test_a_stale_pending_line_is_green_once_main_has_the_content(self):
         self.matching()
         self.waiting_public_pr()
+        # 公开 PR 合了：main 前进到第四行那条提交，pin 落在后面，PR 也不再是 open。
+        self.api.pin_status = "behind"
         self.api.pulls = []
         done = self.check()
         self.assertEqual(done.returncode, 0, done.stderr)
@@ -367,6 +389,7 @@ class SyncTest(Fixture):
         self.api.public = (self.repo / MAIN_PATH).read_bytes()
         # 主仓库的 PR 这时才能绿：公开 main 的内容、检查记的提交都和这份一致。
         self.api.source = (self.repo / MAIN_PATH).read_bytes()
+        self.api.commits.add(self.lines()[1])
         self.api.pin_status = "ahead"
         done = self.check()
         self.assertEqual(done.returncode, 0)

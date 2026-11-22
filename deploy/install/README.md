@@ -171,12 +171,12 @@ curl -fsSL https://raw.githubusercontent.com/wontonapp/wonton-install/main/insta
 - `deploy/install/public-copy` 四行：第一行是公开仓库 main 上的提交（用户装到的副本），第二行是主仓库里含这份内容的提交，
   第三行是 `install.sh` 的 blob（`git hash-object deploy/install/install.sh`），第四行是待合的公开同步分支上的提交，
   公开 main 已含这份内容时留空。`scripts/install/check-public-copy.sh` 在 `lint` 里每次都跑：第三行要等于工作树这份的 hash；
-  公开 main 那份要跟它逐字节相同，或者第四行那条分支里的内容相同、且这条提交有一个开着的公开 PR。还会确认第一行在公开仓库
-  main 上（同步分支合了就被删，分支上的提交迟早不可达）、第二行在仓库里且有这份内容。第二行的提交本地取不到没关系，
+  公开 main 那份要跟它逐字节相同，或者第四行那条分支里的内容相同、且这条提交有一个开着的公开 PR。内容对不上时还会要求
+  第一行在公开仓库 main 上（同步分支合了就被删，分支上的提交迟早不可达）；第二行在仓库里且有这份内容，这条每次都查。
   检查经 API 读。本地跑要带 token：`GH_TOKEN=$(gh auth token) bash scripts/install/check-public-copy.sh`。
-- 两边 PR 谁先合都行，先后都能走通：检查对着公开 main，或者对着第四行记的待合分支放行。公开 PR 合了之后第四行就是旧数据，
-  照样绿，下次跑 `sync-public.sh` 会顺带清掉。发版时在公开 PR 合了以后，同一个克隆 `git switch main && git pull`，
-  再跑一次 `sync-public.sh`：内容相同、不推分支，只把第一行换成合并后的 main 提交、清空第四行。
+- 两边 PR 谁先合都行，先后都能走通：检查对着公开 main，或者对着第四行记的待合分支放行；公开 main 已含这份内容就直接绿，
+  第一行这时落在 main 后面、第四行成了旧数据都不要紧，跑 `sync-public.sh` 会一并换掉。发版时在公开 PR 合了以后，同一个克隆
+  `git switch main && git pull`，再跑一次 `sync-public.sh`：内容相同、不推分支，只把第一行换成合并后的 main 提交、清空第四行。
 - 步骤：
   1. 改 `install.sh`，提交。
   2. 在公开仓库的克隆里执行 `scripts/install/sync-public.sh <克隆目录>`：它把这个文件拷过去、推一个同步分支，把四行写成
