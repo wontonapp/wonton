@@ -53,8 +53,8 @@ impl ClientCore {
     #[cfg_attr(not(feature = "ui-fake"), allow(dead_code))]
     fn dispatch_ui_fake_home(&self, action: HomeAction) {
         match action {
-            HomeAction::AddServer => self.servers.set_adding_for_fake(true),
-            HomeAction::CancelAddServer => self.servers.set_adding_for_fake(false),
+            HomeAction::AddServer => self.servers.seed_adding_ui_fake(true),
+            HomeAction::CancelAddServer => self.servers.seed_adding_ui_fake(false),
             _ => {}
         }
     }

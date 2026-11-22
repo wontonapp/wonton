@@ -111,7 +111,7 @@ impl ServerList {
 
     /// 假数据下“添加服务器”只有一个开关：壳按它决定显示配对页（`ui_fake` 的 Home 操作只认这个）。
     #[cfg_attr(not(feature = "ui-fake"), allow(dead_code))]
-    pub(crate) fn set_adding_for_fake(&self, adding: bool) {
+    pub(crate) fn seed_adding_ui_fake(&self, adding: bool) {
         self.view.send_modify(|view| view.adding = adding);
     }
 

@@ -23,15 +23,15 @@ use std::time::{SystemTime, UNIX_EPOCH};
 use tokio::sync::watch;
 
 use wonton_protocol::{
-    AppLockViewModel, AppsAction, BotActivity, BotRef, BotView, ChatAccount, ChatLayout,
-    ChatLayoutChoice, ChatSync, ChatViewModel, CoreError, DeviceInvite, DeviceNetwork,
-    DeviceVerification, EncryptionStatus, HomePath, HomeStatus, HomeViewModel, InstalledPlugin,
-    InstalledPlugins, MessageSummary, OnboardingStep, OnboardingViewModel, OpenPage,
-    PagesViewModel, PanelItem, PanelSource, PluginHealth, PluginKind, PluginState, PluginTrust,
-    PluginsViewModel, PushMethod, PushStatus, RecoveryNextStep, RecoveryStatus, RoomMembership,
-    RoomPreview, RoomRow, SecretString, ServerKind, ServerName, ServerRow, ServersViewModel,
-    SettingsEntry, SettingsSection, SettingsViewModel, SidebarApp, SidebarBadge, SidebarOpen,
-    TabIcon, TabLayout, TabPage, TabRef, TabState,
+
+    AppsAction, BotActivity, BotRef, BotView, ChatAccount, ChatLayout, ChatLayoutChoice, ChatSync,
+    ChatViewModel, CoreError, DeviceNetwork, DeviceVerification, EncryptionStatus, HomePath,
+    HomeStatus, HomeViewModel, InstalledPlugin, InstalledPlugins, MessageSummary, OnboardingStep,
+    OnboardingViewModel, OpenPage, PagesViewModel, PanelItem, PanelSource, PluginHealth,
+    PluginKind, PluginState, PluginTrust, PluginsViewModel, PushStatus, RecoveryNextStep,
+    RecoveryStatus, RoomMembership, RoomPreview, RoomRow, ServerKind, ServerName, ServerRow,
+    ServersViewModel, SidebarApp, SidebarBadge, SidebarOpen, TabIcon, TabLayout, TabPage, TabRef,
+    TabState,
 };
 
 use super::ClientCore;
@@ -136,9 +136,15 @@ impl ClientCore {
             peers: watch::Sender::new(current.peers.borrow().clone()),
             friends: watch::Sender::new(current.friends.borrow().clone()),
             bot_contacts: watch::Sender::new(current.bot_contacts.borrow().clone()),
+<<<<<<< HEAD
             // 假数据下设置页带着当前值：真设置页的构建循环订阅着被丢弃的旧接收器，开起来会停在
             // 未配对的状态，设置里的“添加设备”走不通。
             settings: watch::Sender::new(fake_settings(current.settings.borrow().clone())),
+=======
+            settings: watch::Sender::new(super::ui_fake_settings::fake_settings(
+                current.settings.borrow().clone(),
+            )),
+>>>>>>> e39668c9e (fix(pairing): 复审意见：首屏测试走真核心、按钮与返回一致、iOS 断言不再硬停)
             confirmations: watch::Sender::new(super::ui_fake_devices::confirmations(
                 current.confirmations.borrow().clone(),
             )),
@@ -310,28 +316,6 @@ fn fake_servers() -> ServersViewModel {
         adding: false,
         matrix_login: None,
     }
-}
-
-/// 假数据里已经配上了一台“家里”的服务器：设置页照配对后那样先给资料和服务器入口，
-/// 添加服务器和“重新配对”都在服务器页里。
-fn fake_settings(mut settings: SettingsViewModel) -> SettingsViewModel {
-    let mut paired = vec![
-        SettingsSection {
-            entries: vec![SettingsEntry::Profile],
-        },
-        SettingsSection {
-            entries: vec![SettingsEntry::Server {
-                name: Some(ServerName::Named {
-                    name: "Home".into(),
-                }),
-                status: HomeStatus::Connected,
-                upgrade: false,
-            }],
-        },
-    ];
-    paired.append(&mut settings.sections);
-    settings.sections = paired;
-    settings
 }
 
 /// 假聊天列表：私聊、通话中的群、没人说话只给转发用的群。

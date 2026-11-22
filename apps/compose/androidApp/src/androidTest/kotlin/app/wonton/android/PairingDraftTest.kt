@@ -15,12 +15,9 @@ import androidx.compose.ui.test.performTextReplacement
 import androidx.test.ext.junit.runners.AndroidJUnit4
 import androidx.test.platform.app.InstrumentationRegistry
 import androidx.test.rule.GrantPermissionRule
-import app.wonton.protocol.Action
-import app.wonton.protocol.HomeAction
-import app.wonton.ui.send
 import org.junit.After
 import org.junit.Assert.assertEquals
-import org.junit.Assert.assertFalse
+import org.junit.Assert.assertTrue
 import org.junit.Rule
 import org.junit.Test
 import org.junit.rules.RuleChain
@@ -29,13 +26,13 @@ import org.junit.runner.Description
 import org.junit.runner.RunWith
 import org.junit.runners.model.Statement
 
-/// 配对页上的输入不能跟着页面一起没：按返回（首屏就是退出 App）之前存进草稿，重开还填着。
+/// 首屏配对页按返回就是退出 App（系统惯例），打了一半的设备名不能跟着没：退出前存进草稿，重开还填着。
 ///
-/// 走假核心（`UiFakeMainActivity`）：真核心没配对时核心拒绝“添加服务器”，这里用假核心的“添加服务器”页
-/// 当配对页（和设置里打开的是同一页），随进程里先跑过的用例怎么选核心都不受影响。
+/// 真核心（`MainActivity`，全新安装 = 没配对）：首屏就是 `HomeRoute` 的根配对页，返回交给系统退出。
+/// 设置里那个“添加服务器”页（`AddServerPairing`）另有 `PairingDraftSettingsTest` 按假核心验。
 @RunWith(AndroidJUnit4::class)
 class PairingDraftTest {
-    private val compose = createAndroidComposeRule<UiFakeMainActivity>()
+    private val compose = createAndroidComposeRule<MainActivity>()
 
     /// 通知和相机权限弹窗都会把被测 Activity 顶到后台，先发掉再启动。
     private val permissions: TestRule =
@@ -60,25 +57,22 @@ class PairingDraftTest {
     val rules: RuleChain = RuleChain.outerRule(permissions).around(cleanDraft).around(compose)
 
     @Test
-    fun typedDeviceNameSurvivesBack() {
-        openPairingPage()
+    fun typedDeviceNameSurvivesExit() {
+        awaitPairingForm()
         nameField().performScrollTo().performTextReplacement("kitchen-ipad")
         assertEquals("kitchen-ipad", prefs().getString("device_name", null))
 
         compose.runOnUiThread { compose.activity.onBackPressedDispatcher.onBackPressed() }
 
-        // 返回上一层：离开配对页、不退出 App，名字留在草稿里。
-        compose.waitUntil(timeoutMillis = 5_000) {
-            compose.onAllNodesWithTag("pairing-device-name").fetchSemanticsNodes().isEmpty()
-        }
-        assertFalse(compose.activity.isFinishing)
+        // 首屏交给系统：退出 App；草稿在退出前就落了。
+        assertTrue(compose.activity.isFinishing)
         assertEquals("kitchen-ipad", prefs().getString("device_name", null))
     }
 
-    /// 重开这一页（新 Activity）时从草稿里把设备名填回来（改前那棵树只读默认名）。
+    /// 重开这一页时把草稿里的设备名填回来（改前那棵树只读默认名）。
     @Test
     fun savedDeviceNameIsFilledBack() {
-        openPairingPage()
+        awaitPairingForm()
         prefs().edit().putString("device_name", "kitchen-ipad").apply()
         compose.activityRule.scenario.recreate()
         nameField().performScrollTo().assert(hasText("kitchen-ipad"))
@@ -88,16 +82,6 @@ class PairingDraftTest {
     @After
     fun clearDraft() {
         prefs().edit().clear().apply()
-    }
-
-    /// 打开配对页。核心要是已经在“添加服务器”里（上个用例没退干净）就直接用，不再发一遍。
-    private fun openPairingPage() {
-        val core = (compose.activity.application as WontonApplication).core.getOrThrow()
-        if (!core.servers().adding) {
-            core.send(Action.Home(HomeAction.AddServer))
-            compose.waitUntil(timeoutMillis = 5_000) { core.servers().adding }
-        }
-        awaitPairingForm()
     }
 
     /// 设备名字段的 tag 是这次新加的；改前那棵树只有两个文本框（码、设备名），按“最后一个可输入框”找。

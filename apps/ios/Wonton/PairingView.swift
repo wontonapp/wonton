@@ -24,8 +24,8 @@ struct PairingView: View {
     @Environment(\.dynamicTypeSize) private var typeSize
 
     /// 相机状态和设备名都可以传入：截图测试要把它们固定住，模拟器的权限和设备名每次不一样。
-    /// 显式传入的设备名最优先（截图测试的固定值）；没传才取模型里最近一次提交用的（重试换实例
-    /// 不丢），再退回设备默认名。
+    /// 显式传入的设备名最优先（截图测试的固定值）；没传才取草稿（手打了一半退出 App 也还填着），
+    /// 再取模型里最近一次提交用的（重试换实例不丢），最后退回设备默认名。
     init(
         model: HomeModel,
         camera: CameraAccess = .current,

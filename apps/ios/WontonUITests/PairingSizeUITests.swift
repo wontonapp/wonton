@@ -62,15 +62,17 @@ final class PairingSizeUITests: XCTestCase {
         shot.lifetime = .keepAlways
         add(shot)
 
-        // 配对页的三个入口都是自绘栏：栏得在，说明还得整段落在栏以下（系统栏会把内容压在玻璃底下）。
+        // 配对页的三个入口都该是自绘栏（`root-bar`），说明要整段落在栏以下。
+        // 改前的树没有这个标识、走的是系统栏：没有标识时退回系统栏底部，量得到哪根栏就用哪根，
+        // 改前那条路也能把这组位置断言跑完，只在最后一条“没有自绘栏”上红。
         let window = app.windows.firstMatch.frame
         let instructions = instructions()
         XCTAssertTrue(instructions.exists, app.debugDescription)
         let bar = element("root-bar")
-        XCTAssertTrue(bar.exists, "配对页没有自绘栏：\(app.debugDescription)")
-        let top = bar.frame.maxY
         let navBar = app.navigationBars.firstMatch
-        let below = max(top, navBar.exists ? navBar.frame.maxY : window.minY)
+        let below = bar.exists
+            ? bar.frame.maxY
+            : (navBar.exists ? navBar.frame.maxY : window.minY)
         XCTAssertGreaterThanOrEqual(
             instructions.frame.minY, below - 1,
             "说明压到顶栏后面：说明 \(instructions.frame)，顶栏到 \(below)"
@@ -78,6 +80,7 @@ final class PairingSizeUITests: XCTestCase {
         XCTAssertGreaterThan(instructions.frame.height, 20, "说明被压成了一条窄缝")
         XCTAssertGreaterThanOrEqual(instructions.frame.minX, window.minX - 1, "说明出了屏幕左边")
         XCTAssertLessThanOrEqual(instructions.frame.maxX, window.maxX + 1, "说明出了屏幕右边")
+        XCTAssertTrue(bar.exists, "配对页没有自绘栏：\(app.debugDescription)")
 
         // 卡片下半截也不能被截掉：码框和提交滚得到、点得到。
         for id in ["pairing-code", "pairing-submit"] {

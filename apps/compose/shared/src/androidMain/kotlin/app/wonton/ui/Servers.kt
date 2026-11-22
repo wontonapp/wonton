@@ -36,6 +36,7 @@ import androidx.compose.ui.semantics.semantics
 import app.wonton.protocol.HomeAction
 import app.wonton.protocol.Action
 import app.wonton.protocol.HomeViewModel
+import app.wonton.protocol.PairingStatus
 import app.wonton.protocol.ServerName
 import app.wonton.protocol.ServerRow
 import app.wonton.protocol.ServersViewModel
@@ -160,15 +161,20 @@ private fun RenameServerDialog(server: ServerRow, send: (Action) -> Unit, dismis
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
 internal fun AddServerPairing(plugins: PluginsState, home: HomeViewModel) {
-    val cancel = { plugins.send(Action.Home(HomeAction.CancelAddServer)) }
+    // 顶栏的取消和返回键同一个行为：失败面先收掉，再退回服务器页。
+    val leave = {
+        if (home.pairing is PairingStatus.Failed) plugins.send(Action.Home(HomeAction.DismissPairingFailure))
+        plugins.send(Action.Home(HomeAction.CancelAddServer))
+        Unit
+    }
     WontonScreen(bar = {
         TopAppBar(
             title = { Text(stringResource(R.string.servers_add_title), style = WontonTheme.typography.itemTitle) },
-            navigationIcon = { TextButton(onClick = cancel) { Text(stringResource(R.string.common_cancel)) } },
+            navigationIcon = { TextButton(onClick = leave) { Text(stringResource(R.string.common_cancel)) } },
             colors = TopAppBarDefaults.topAppBarColors(containerColor = WontonTheme.colors.canvas.toColor()),
         )
     }) {
-        PairingScreen(plugins.core, home.pairing, onLeave = cancel)
+        PairingScreen(plugins.core, home.pairing, onLeave = leave)
     }
 }
 
