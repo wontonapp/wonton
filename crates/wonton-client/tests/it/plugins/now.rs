@@ -429,6 +429,30 @@ async fn a_locally_installed_plugin_is_not_counted_as_updatable() {
     assert_eq!(view.sidebar.updates, 0);
 }
 
+/// 预装插件（核心随包带的默认插件）没有来源，但升级走官方索引、核心查到了报价：照样算可更新。
+/// 行尾的“更新”按报价显示，不只靠“全部更新”顺带升它。
+#[tokio::test]
+async fn a_preinstalled_plugin_with_an_offer_stays_updatable() {
+    let rig = Rig::new().await;
+    rig.core.set_lists(vec![vec![upgradable(PHOTOS)]]);
+    let mut store = listing();
+    let mut photos = store.official.plugins.remove(0);
+    photos.version = "2.0.0".to_owned();
+    photos.installed_version = Some("1.0.0".to_owned());
+    store.official.plugins = vec![photos];
+    rig.core.answer(
+        Method::GET,
+        "/_wonton/api/store",
+        Canned(200, serde_json::to_string(&store).unwrap()),
+    );
+    connected_with_store(&rig).await;
+
+    let view = rig.wait_for(|view| view.updatable.len() == 1).await;
+    assert_eq!(view.updatable[0].plugin_id, PHOTOS);
+    assert_eq!(view.updatable[0].version, "2.0.0");
+    assert_eq!(view.sidebar.updates, 1);
+}
+
 #[tokio::test]
 async fn one_tap_on_a_running_task_is_ignored() {
     let rig = Rig::new().await;

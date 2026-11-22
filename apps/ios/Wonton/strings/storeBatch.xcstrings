@@ -33,13 +33,13 @@
       }
     },
     "storeBatch.summary": {
-      "comment": "Finished bulk update counts: succeeded, failed, needs attention.",
+      "comment": "Finished bulk update counts: succeeded, failed, awaiting decision.",
       "extractionState": "manual",
       "localizations": {
         "en": {
           "stringUnit": {
             "state": "translated",
-            "value": "Updates: %1$lld succeeded · %2$lld failed · %3$lld need attention"
+            "value": "Updates: %1$lld succeeded · %2$lld failed · %3$lld awaiting decision"
           }
         },
         "zh-Hans": {

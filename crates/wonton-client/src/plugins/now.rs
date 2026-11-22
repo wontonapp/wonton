@@ -62,8 +62,9 @@ pub(super) fn updatable(view: &PluginsViewModel) -> Vec<UpdatablePlugin> {
             if let Some(offer) = &plugin.upgrade {
                 return Some(updatable_of(plugin, &offer.version));
             }
-            // 本地装的插件（主人上传的包）没有来源，核心升不了它：升级接口对没有 origin 的记录直接报
-            // not_found。商店里版本号不一样也不算可更新，不然“全部更新”答应了核心做不到的事。
+            // 主人上传的包没有来源，核心升不了它：升级接口对没有 origin 的记录直接报 not_found。
+            // 商店里版本号不一样也不算可更新，不然“全部更新”答应了核心做不到的事。预装插件也没有来源，
+            // 但核心查到报价时走上面的分支，照样算，行尾的“更新”也不藏。
             plugin.source.as_ref()?;
             let item = store_item(view, &plugin.id)?;
             // 升级检查还没跑到时，商店里版本号和装着的不一样的也算（和行尾“更新”按钮同一个口径）。

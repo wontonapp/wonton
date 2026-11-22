@@ -59,6 +59,7 @@ import app.wonton.protocol.StoreItem
 import app.wonton.protocol.StoreListing
 import app.wonton.protocol.StoreLoadState
 import app.wonton.protocol.StoreConfirmation
+import app.wonton.protocol.StoreUpdateState
 import app.wonton.protocol.UpdatablePlugin
 import app.wonton.protocol.StoreSection
 import app.wonton.ui.design.wontonContentPaddingValues
@@ -318,6 +319,8 @@ private fun LazyListScope.section(
 private fun StoreRow(item: StoreItem, plugins: PluginsState, navigation: PluginNavigation) {
     val colors = WontonTheme.colors
     val installFailure = plugins.viewModel.installed?.plugins?.firstOrNull { it.id == item.id }?.installFailure
+    // 同一条失败批次里已经在行下显示过，不再重复一行红字。
+    val inBatch = plugins.viewModel.updateBatch?.items?.any { it.app.pluginId == item.id } == true
     Column {
         Row(
             Modifier.fillMaxWidth()
@@ -353,7 +356,9 @@ private fun StoreRow(item: StoreItem, plugins: PluginsState, navigation: PluginN
         }
         // 一键操作在取预览时失败：行下面一行红字配“重试”，不弹窗（ADR-0017）。
         plugins.viewModel.tasks.firstOrNull { it.id == item.id }
-            ?.takeIf { !plugins.viewModel.hasRunningTask(item.id) && item.id !in plugins.viewModel.pending }
+            ?.takeIf {
+                !inBatch && !plugins.viewModel.hasRunningTask(item.id) && item.id !in plugins.viewModel.pending
+            }
             ?.let { task ->
                 val state = task.state
                 if (state is PluginTaskState.Failed) {
@@ -441,6 +446,13 @@ private fun ItemTags(item: StoreItem) {
     }
 }
 
+/**
+ * 行尾给不给“更新”：装着的是旧版本，而且升得动——上传的包看来源，预装插件看核心查到的报价。
+ * 两样都没有时升级接口会报“应用没找到”。
+ */
+fun storeRowShowsUpdate(installed: String?, version: String, hasSource: Boolean, hasOffer: Boolean): Boolean =
+    installed != version && (hasSource || hasOffer)
+
 private sealed interface StoreButton {
     data class Get(val title: String, val enabled: Boolean, val perform: () -> Unit) : StoreButton
 
@@ -449,16 +461,20 @@ private sealed interface StoreButton {
     data object Hidden : StoreButton
 }
 
-/** 行尾的按钮：没装的“获取”，装着旧版本的“更新”，装着的“打开”；正在装、升级、卸载时转圈。 */
+/** 行尾的按钮：没装的“获取”，装着旧版本的“更新”，装着的“打开”；正在装、升级、卸载和批次内排队、检查时转圈。 */
 @Composable
 private fun storeButton(item: StoreItem, plugins: PluginsState, navigation: PluginNavigation): StoreButton {
     val viewModel = plugins.viewModel
     val installed = item.installedVersion
     val plugin = viewModel.installed?.plugins?.firstOrNull { it.id == item.id }
     val entry = plugin?.entries?.firstOrNull()
+    val queued = viewModel.updateBatch?.items?.any {
+        it.app.pluginId == item.id &&
+            (it.state is StoreUpdateState.Queued || it.state is StoreUpdateState.Checking)
+    } == true
     return when {
-        // 取预览、装、升、卸都在转圈。
-        viewModel.hasRunningTask(item.id) || item.id in viewModel.pending -> StoreButton.Busy
+        // 取预览、装、升、卸都在转圈；批次里排队、检查的也转，这时点了本来就静默无效。
+        queued || viewModel.hasRunningTask(item.id) || item.id in viewModel.pending -> StoreButton.Busy
         plugin?.installFailure != null || viewModel.tasks.any {
             it.id == item.id && it.operation == PluginOperation.INSTALL && it.state is PluginTaskState.Uncertain
         } -> StoreButton.Hidden
@@ -470,8 +486,11 @@ private fun storeButton(item: StoreItem, plugins: PluginsState, navigation: Plug
         ) {
             plugins.send(Action.Plugins(PluginAction.InstallNow(source = item.source)))
         }
-        // 本地装的（没有来源）核心升不了，不给“更新”：点了只会报“应用没找到”。
-        installed != item.version && plugin?.source != null -> StoreButton.Get(
+        // 上传的包（没有来源）核心升不了，不给“更新”：点了只会报“应用没找到”。预装插件没有来源，
+        // 但核心查到新版本时有报价，照样能升。
+        storeRowShowsUpdate(
+            installed, item.version, plugin?.source != null, plugin?.upgrade != null,
+        ) -> StoreButton.Get(
             stringResource(R.string.store_update),
             enabled = true,
         ) {
