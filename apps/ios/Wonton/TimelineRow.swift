@@ -28,6 +28,8 @@ struct TimelineRow: View {
     var isJumping = false
     /// 群聊里别人的组尾旁边画的头像；私聊不给。
     var avatar: ((TimelineMessage) -> AnyView)?
+    /// 这一条属于哪一组照片，点开查看器从这一张起翻；单张或不成组时 nil。
+    var photoGroup: PhotoGroup?
     /// 进旁聊（参数是根的事件 ID）：旁聊卡片和结果行都用它（ADR-0093）。
     var onOpenSideChat: (String) -> Void = { _ in }
     @Environment(\.wontonColors) private var colors
@@ -44,7 +46,8 @@ struct TimelineRow: View {
                 retry: retry, cancel: cancel,
                 cardAction: cardAction, reply: reply, forward: forward, redact: redact,
                 openSideChat: onOpenSideChat, answerChoice: answerChoice,
-                jump: jump, isJumping: isJumping, avatar: message.isOwn ? nil : avatar
+                jump: jump, isJumping: isJumping, avatar: message.isOwn ? nil : avatar,
+                photoGroup: photoGroup
             )
         case let .notice(text):
             note(Text(text))
@@ -137,6 +140,7 @@ private struct MessageBubble: View {
     let isJumping: Bool
     /// 群聊里别人的消息才有：组尾画头像，其余几条留出同样宽的空位，一组的气泡才对得齐。
     let avatar: ((TimelineMessage) -> AnyView)?
+    let photoGroup: PhotoGroup?
     @State private var isChoosingFailed = false
     @Environment(\.wontonColors) private var colors
     @Environment(\.chatPalette) private var palette
@@ -377,7 +381,7 @@ private extension MessageBubble {
         case let .image(image):
             // 一次发送里主人写的字是最后一张照片的说明文字（ADR-0094），画在照片下面。
             VStack(alignment: .leading, spacing: WontonTheme.spacing.s8) {
-                MediaImage(image: image, core: core, sendState: message.sendState)
+                MediaImage(image: image, group: photoGroup, core: core, sendState: message.sendState)
                     .overlay(alignment: .bottomTrailing) {
                         if image.caption == nil {
                             MessageMeta(message: message, onMedia: true).padding(WontonTheme.spacing.s4)
