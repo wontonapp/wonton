@@ -174,19 +174,12 @@ impl ClientCore {
                 Ok(())
             }
             wonton_protocol::PageAction::ClosePage => {
-                let mut closed = false;
+                // 和真核心一样：没有开着的页时是安静的什么也不做。
                 views.pages.send_if_modified(|pages| {
                     // 应用网格开着时关的是它，栈不动。
-                    closed = std::mem::take(&mut pages.shows_apps) || pages.stack.pop().is_some();
-                    closed
+                    std::mem::take(&mut pages.shows_apps) || pages.stack.pop().is_some()
                 });
-                if closed {
-                    Ok(())
-                } else {
-                    Err(CoreError::InvalidInput {
-                        reason: "no page is open".into(),
-                    })
-                }
+                Ok(())
             }
             _ => Ok(()),
         }
@@ -728,12 +721,12 @@ mod tests {
         })
         .unwrap();
         assert!(stack().is_empty());
-        assert!(matches!(
-            core.dispatch(Action::Pages {
-                action: PageAction::ClosePage
-            }),
-            Err(CoreError::InvalidInput { .. })
-        ));
+        // 栈空时再关一次是安静的什么也不做：界面上连点两下关闭不该弹问题框。
+        core.dispatch(Action::Pages {
+            action: PageAction::ClosePage,
+        })
+        .unwrap();
+        assert!(stack().is_empty());
         // 应用网格：打开记在视图里，关页关的是它；从网格开一页也收起它。
         core.dispatch(Action::Pages {
             action: PageAction::OpenPage { tab: TabRef::Apps },

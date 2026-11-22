@@ -207,7 +207,7 @@ internal fun AppNavigation.detail(id: String) {
     plugins.detail = PluginRoute.Installed(id)
 }
 
-/** 收起应用网格这一层。网格没开时不发：核心的 `ClosePage` 那时关的是栈顶的插件页，栈空则报错。 */
+/** 收起应用网格这一层。网格没开时不发：核心的 `ClosePage` 那时关的是栈顶的插件页，留着它不动。 */
 internal fun AppNavigation.closeApps() {
     if (pages.viewModel.showsApps) pages.send(Action.Pages(PageAction.ClosePage))
     plugins.detail = null
