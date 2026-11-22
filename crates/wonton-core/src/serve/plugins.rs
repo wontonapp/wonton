@@ -59,6 +59,10 @@ pub(crate) fn preinstall(
         {
             tracing::error!(error = %e, "预装默认插件失败");
         }
+        // 默认插件装得比网关晚，装完再对一次账：声明了 models 的默认 Bot 这时才拿得到凭据并按新变量重建。
+        for (plugin, error) in manager.reconcile_models().await {
+            tracing::error!(%plugin, %error, "默认插件接上模型网关失败");
+        }
     });
     Ok(())
 }
