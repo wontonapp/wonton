@@ -691,6 +691,36 @@
           }
         }
       }
+    },
+    "plugin.setupTitle": {
+      "comment": "Section title above the first-time steps of the app, from the plugin manifest.",
+      "extractionState": "manual",
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "First time opening it"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "第一次打开"
+          }
+        },
+        "zh-Hant": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "第一次開啟"
+          }
+        },
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "はじめて使うとき"
+          }
+        }
+      }
     }
   }
 }

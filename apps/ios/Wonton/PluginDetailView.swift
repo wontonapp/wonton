@@ -154,6 +154,16 @@ struct PluginDetailView: View {
                             .wontonText(WontonTheme.typography.body)
                             .foregroundStyle(Color(colors.textPrimary))
                     }
+                    if let setup = detail.setup {
+                        VStack(alignment: .leading, spacing: WontonTheme.spacing.s8) {
+                            Text(.Plugin3.pluginSetupTitle)
+                                .wontonText(WontonTheme.typography.sectionTitle)
+                                .foregroundStyle(Color(colors.textPrimary))
+                            Text(setup)
+                                .wontonText(WontonTheme.typography.body)
+                                .foregroundStyle(Color(colors.textPrimary))
+                        }
+                    }
                     if isInstalled {
                         SecretSection(detail: detail, model: model, isOwner: isOwner) { loaded = .success($0) }
                             .id(pluginSecretsAnchor)
