@@ -65,6 +65,8 @@ private struct InviteCode: View {
     let code: String
     let expiresAt: Date
     let renew: () -> Void
+    /// 配对文本很长，默认收起，只留“粘贴这段文字”的入口；复制按钮不收，随时能拿完整文本。
+    @State private var fullText = false
     @Environment(\.wontonColors) private var colors
 
     var body: some View {
@@ -100,18 +102,42 @@ private struct InviteCode: View {
             .wontonText(WontonTheme.typography.supporting)
             .foregroundStyle(Color(colors.textSecondary))
         VStack(alignment: .leading, spacing: WontonTheme.spacing.s8) {
-            Text(.Invite.invitePasteFallback)
-                .wontonText(WontonTheme.typography.supporting)
-                .foregroundStyle(Color(colors.textSecondary))
-            Text(code)
-                .font(.caption.monospaced())
-                // 英文断词会给这段码加上连字符，看着像码的一部分。
-                .typesettingLanguage(.init(identifier: "zh-Hans"))
-                .foregroundStyle(Color(colors.textPrimary))
-                .textSelection(.enabled)
-                .padding(WontonTheme.spacing.s12)
-                .frame(maxWidth: .infinity, alignment: .leading)
-                .background(RoundedRectangle(cornerRadius: WontonTheme.radii.control).fill(Color(colors.surfaceSubtle)))
+            Button { fullText.toggle() } label: {
+                HStack {
+                    Text(.Invite.invitePasteFallback)
+                        .wontonText(WontonTheme.typography.supporting)
+                        .foregroundStyle(Color(colors.textSecondary))
+                    Spacer(minLength: 0)
+                    WontonIcon.forward.view(size: WontonTheme.size.iconSmall)
+                        .foregroundStyle(Color(colors.textSecondary))
+                        .rotationEffect(.degrees(fullText ? 90 : 0))
+                }
+                .frame(minHeight: WontonTheme.size.target)
+                .contentShape(Rectangle())
+            }
+            .buttonStyle(.plain)
+            .accessibilityValue(
+                fullText ? Text(.Appearance1.appearanceExpanded) : Text(.Appearance0.appearanceCollapsed)
+            )
+            if fullText {
+                Text(code)
+                    .font(.caption.monospaced())
+                    // 英文断词会给这段码加上连字符，看着像码的一部分。
+                    .typesettingLanguage(.init(identifier: "zh-Hans"))
+                    .foregroundStyle(Color(colors.textPrimary))
+                    .textSelection(.enabled)
+                    .padding(WontonTheme.spacing.s12)
+                    .frame(maxWidth: .infinity, alignment: .leading)
+                    .background(
+                        RoundedRectangle(cornerRadius: WontonTheme.radii.control)
+                            .fill(Color(colors.surfaceSubtle))
+                    )
+            }
+            Button(String(localized: .ChatBackup1.chatBackupCopy)) {
+                // 配对文本要贴到新设备上，得能经通用剪贴板跨设备；恢复密钥那种 localOnly 的贴板这里不能用。
+                UIPasteboard.general.string = code
+            }
+            .buttonStyle(WontonSmallButtonStyle())
         }
     }
 }

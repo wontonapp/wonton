@@ -38,6 +38,7 @@ pub enum Action {
     Family { action: FamilyAction },
     Friends { action: FriendsAction },
     Sharing { action: SharingAction },
+    Clients { action: ClientsAction },
     Timeline { action: TimelineAction },
     Agent { action: AgentAction },
 }
@@ -92,6 +93,7 @@ Agent 动作由同步 `dispatch` 发起后在后台完成：即时连接错误�
 | `FamilyAction` | `RefreshRoles`、`CreateRole`、`UpdateRole`、`DeleteRole`、`SetDefaultRole`、`AssignMemberRole`、`AssignFriendRole` |
 | `FriendsAction` | `RefreshFriends`、`AddFriend`、`ApproveFriendRequest`、`RejectFriendRequest`、`CancelFriendRequest`、`RemoveFriend`、`BlockFriend`、`UnblockFriend`、`SaveFriendGroup`、`RemoveFriendGroup`、`SetFriendGroups` |
 | `SharingAction` | `CreatePluginShare`、`UpdatePluginShare`、`RevokePluginShare`、`RefreshSharedApps`、`OpenSharedApp` |
+| `ClientsAction` | `Refresh`、`SetEntry`、`SaveDomain`、`DnsProviders`、`SaveIngress`、`SetPublicAccess`、`RefreshGuests`、`CreateGuest`、`GetGuest`、`RevokeGuest`、`RefreshStatus`、`CreatePassword`、`GetPassword`、`RevokePassword`、`Unban` |
 | `AgentAction` | `StopChain`、`SetAgentLimits`（由原独立 `AgentChainAction` 改名并纳入 `Action::Agent`） |
 
 `SetPluginAudience` 归入 `PluginAction`。详情页需要等待保存并取回更新后的详情，因此保留请求–应答方法，参数直接传插件 ID 和授权，不解包顶层 `Action`。自己的头像同理走 `set_my_avatar`、`clear_my_avatar`：资料页本来就在 await 地读写 `me()`、`saveMe`，这两个调用成功直接返回新的 `Me`，失败返回 `MyAvatarProblem` 的类别。

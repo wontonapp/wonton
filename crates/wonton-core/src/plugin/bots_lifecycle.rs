@@ -526,19 +526,18 @@ impl PluginManager {
             self.prepare_dirs(&ctx, &plan.dirs, &mut undo, &langs)?;
             // 镜像自带的 healthcheck 也算进时限：和 replace_bot_containers 一样先并入计划。
             self.rewrite_image_healthchecks(&ctx, &mut plan).await?;
-            let deadline =
-                health_gate::deadline(&plan, ctx.install_limit, tokio::time::Instant::now());
+            let wait = health_gate::deadline(&plan, ctx.install_limit, tokio::time::Instant::now());
             self.stage(&package.manifest.id, InstallStage::Starting);
             Box::pin(self.start_containers(
                 Some(&package.manifest),
                 &plan,
                 Some(&package.manifest.id),
                 &mut undo,
-                deadline,
+                wait,
                 &langs,
             ))
             .await?;
-            self.wait_bot_web(&package.manifest, bot, deadline).await
+            self.wait_bot_web(&package.manifest, bot, wait).await
         }
         .await;
         if let Err(e) = started {
@@ -586,14 +585,14 @@ impl PluginManager {
             self.engine.remove_container(name).await?;
         }
         self.rewrite_image_healthchecks(&ctx, &mut plan).await?;
-        let deadline = health_gate::deadline(&plan, ctx.install_limit, tokio::time::Instant::now());
+        let wait = health_gate::deadline(&plan, ctx.install_limit, tokio::time::Instant::now());
         self.stage(id, InstallStage::Starting);
         Box::pin(self.start_containers(
             Some(&package.manifest),
             &plan,
             Some(id),
             &mut Undo::default(),
-            deadline,
+            wait,
             &langs,
         ))
         .await?;

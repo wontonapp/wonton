@@ -7,9 +7,10 @@
     <!-- Notice title when the pairing code couldn't be fetched; the core's reason is shown below. -->
     <string name="invite_failed_title">ペアリングコードを取得できませんでした</string>
     <!-- Explanation under the QR code: what the new device's owner should do. The code works only once. -->
-    <string name="invite_instructions">新しいデバイスでWontonを開いてこのコードをスキャンすると、デバイスを追加できます。コードは1回だけ使えます。</string>
-    <!-- Label above the pairing code as text, for when the QR code can't be scanned. -->
+    <string name="invite_instructions">新しいデバイスでWontonを開いてこのコードをスキャンすると、新しいデバイスを追加できます。追加したデバイスは、あなたが見られるものを見られます。ほかのデバイスから鍵を引き継がないと、以前のメッセージは読めません。コードは1回だけ使えます。</string>
+    <!-- Collapsed row that reveals the full pairing code as text, for when the QR code can't be scanned. -->
     <string name="invite_paste_fallback">スキャンできない場合はこのテキストを貼り付けてください</string>
+    <string name="invite_clip_label">ペアリングコード</string>
     <!-- Accessibility label of the QR code image with the pairing code. -->
     <string name="invite_qr_label">ペアリング用QRコード</string>
     <!-- Button under the expired notice: get a new code. -->

@@ -213,6 +213,7 @@ impl PluginManager {
                     device_record,
                 },
                 settings,
+                retry,
                 langs,
             )
             .await

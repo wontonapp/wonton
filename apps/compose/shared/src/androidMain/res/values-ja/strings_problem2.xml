@@ -8,6 +8,7 @@
     <string name="problem_plugin_conflict_next_step">インストール済みか、インストール・アップデート・アンインストールの途中です。終わるまでお待ちください。</string>
     <!-- Next step: try after the update finishes. -->
     <string name="problem_plugin_core_upgrading_next_step">アップデートが終わってからもう一度お試しください。</string>
+    <string name="problem_plugin_health_timeout_title">アプリはまだ準備できていません</string>
     <!-- Next step: contact the app's author. -->
     <string name="problem_plugin_invalid_next_step">アプリの作者に連絡してください。</string>
     <!-- Problem title: the app's package is broken. -->

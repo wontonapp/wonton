@@ -117,7 +117,7 @@ fn commands() -> Vec<RoomCommand> {
     .collect()
 }
 
-pub(super) const ITEMS: usize = 24;
+pub(super) const ITEMS: usize = 25;
 pub(super) const OWNER: &str = "@owner:home.example";
 const ECHO: &str = "@echo:home.example";
 /// 最早一条的时间；下标每大一条晚一分钟（下标大 = 屏幕上更靠下 = 更晚）。
@@ -152,10 +152,12 @@ const TALL_EVERY: usize = 4;
 const TALL_PARAGRAPHS: usize = 60;
 /// 最后一条消息的最后一段：UI 测试按它找真正的底。
 const LAST_LINE: &str = "Fixture last line";
+/// 最后一条是自己刚发、还没送达的：待发脚注“已保存，等待送达”和时钟由它验。
+const SENDING_INDEX: usize = ITEMS - 1;
 
 fn item(index: usize) -> TimelineItem {
-    // 8..=10 都算 Echo 的，凑一组连发的消息给并排的气泡做样子，其余一左一右轮流。
-    let own = index % 2 == 1 && !(8..=10).contains(&index);
+    // 8..=10 都算 Echo 的，凑一组连发的消息给并排的气泡做样子，最后一条是自己还没送达的，其余一左一右轮流。
+    let own = (index % 2 == 1 && !(8..=10).contains(&index)) || index == SENDING_INDEX;
     let last = index + 1 == ITEMS;
     let mut paragraphs = if index == CHOICES_INDEX {
         vec![
@@ -191,7 +193,10 @@ fn item(index: usize) -> TimelineItem {
     } else {
         MessageStatus::Sent
     };
-    message.status = own.then_some(status);
+    message.status = (own && index != SENDING_INDEX).then_some(status);
+    if index == SENDING_INDEX {
+        message.send_state = SendState::Sending { progress: None };
+    }
     if index == REPLY_INDEX {
         message.reply = Some(ReplyQuote::Ready {
             message: QuotedMessage {
@@ -521,5 +526,8 @@ mod tests {
             panic!("the last item must be text");
         };
         assert_eq!(blocks.last().unwrap().spans[0].text, LAST_LINE);
+        // 最后一条是待发消息：界面测试靠它验“已保存，等待送达”的脚注和时钟。
+        assert_eq!(message.send_state, SendState::Sending { progress: None });
+        assert_eq!(message.status, None);
     }
 }
