@@ -133,7 +133,7 @@ fun Composer(
     } else {
         null
     }
-    val attach = rememberAttachments(target, composer, core, onReject, reply, sendImage, draft)
+    val attach = rememberAttachments(target, composer, core, onReject, onReplyCancel, reply, sendImage, draft)
     val isEmpty = draft.isBlank() && attachments.isEmpty()
     val focusRequester = remember { FocusRequester() }
     LaunchedEffect(focusToken) { if (focusToken > 0) focusRequester.requestFocus() }
@@ -334,6 +334,7 @@ private fun rememberAttachments(
     composer: ComposerViewModel?,
     core: ClientCore,
     onReject: (Problem) -> Unit,
+    onReplyCancel: () -> Unit,
     reply: ReplyQuote?,
     sendImage: ((ImageUpload, caption: String?) -> Unit)?,
     draft: String,
