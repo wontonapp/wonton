@@ -3,7 +3,8 @@
 use axum::http::Method;
 use wonton_client::{
     Action, InstallPreview, InstallProgress, InstallStage, InstalledPlugin, PluginFailure,
-    PluginState, PluginTaskState, PluginsViewModel, StoreConfirmation, UpgradeOffer,
+    PluginState, PluginTaskState, PluginsViewModel, StoreConfirmation, StoreUpdateState,
+    UpgradeOffer,
 };
 
 use super::rig::{Canned, Rig, core_error, installed, listing, preview, running};
@@ -146,7 +147,7 @@ async fn one_tap_upgrade_asks_when_permissions_grow_and_clears_on_confirm() {
 }
 
 #[tokio::test]
-async fn upgrade_all_starts_the_plain_ones_and_queues_the_rest() {
+async fn upgrade_all_leaves_decisions_inline_without_covering_progress() {
     let rig = Rig::new().await;
     rig.core.set_lists(vec![vec![
         upgradable("app.plain"),
@@ -177,7 +178,7 @@ async fn upgrade_all_starts_the_plain_ones_and_queues_the_rest() {
             action: wonton_protocol::PluginAction::UpgradeAll,
         })
         .unwrap();
-    // 不用拿主意的直接开始做完；要拿主意的排进确认页，一次一条。
+    // 不用决定的直接更新；需要决定的留在批次行内，不能自动盖住进展。
     let state = rig
         .task("app.plain", |state| {
             !matches!(state, PluginTaskState::Running)
@@ -185,8 +186,21 @@ async fn upgrade_all_starts_the_plain_ones_and_queues_the_rest() {
         .await;
     assert!(matches!(state, PluginTaskState::Succeeded), "{state:?}");
     let view = rig
-        .wait_for(|view| matches!(view.confirmation, Some(StoreConfirmation::Upgrade { .. })))
+        .wait_for(|view| {
+            view.update_batch.as_ref().is_some_and(|batch| {
+                batch.finished && batch.succeeded == 1 && batch.needs_attention == 2
+            })
+        })
         .await;
+    assert!(view.confirmation.is_none());
+    rig.app
+        .dispatch(Action::Plugins {
+            action: wonton_protocol::PluginAction::ReviewStoreUpdate {
+                plugin_id: "app.risky".to_owned(),
+            },
+        })
+        .unwrap();
+    let view = rig.wait_for(|view| view.confirmation.is_some()).await;
     taking_confirmation(&view, "app.risky");
 
     rig.app
@@ -198,11 +212,15 @@ async fn upgrade_all_starts_the_plain_ones_and_queues_the_rest() {
             },
         })
         .unwrap();
-    let view = rig
-        .wait_for(|view| {
-            matches!(view.confirmation, Some(StoreConfirmation::Upgrade { ref preview }) if preview.id == "app.risky2")
+    rig.wait_for(|view| view.confirmation.is_none()).await;
+    rig.app
+        .dispatch(Action::Plugins {
+            action: wonton_protocol::PluginAction::ReviewStoreUpdate {
+                plugin_id: "app.risky2".to_owned(),
+            },
         })
-        .await;
+        .unwrap();
+    let view = rig.wait_for(|view| view.confirmation.is_some()).await;
 
     rig.app
         .dispatch(Action::Plugins {
@@ -213,12 +231,21 @@ async fn upgrade_all_starts_the_plain_ones_and_queues_the_rest() {
             },
         })
         .unwrap();
-    rig.wait_for(|view| view.confirmation.is_none()).await;
-    assert!(view.pending.is_empty());
+    let view = rig
+        .wait_for(|view| {
+            view.update_batch.as_ref().is_some_and(|batch| {
+                batch.finished
+                    && batch.succeeded == 3
+                    && batch.failed == 0
+                    && batch.needs_attention == 0
+            })
+        })
+        .await;
+    assert!(view.confirmation.is_none() && view.pending.is_empty());
 }
 
 #[tokio::test]
-async fn dismissing_the_confirmation_skips_that_one() {
+async fn dismissing_a_batch_confirmation_keeps_the_unresolved_decision_visible() {
     let rig = Rig::new().await;
     rig.core.set_lists(vec![vec![upgradable(PHOTOS)]]);
     answer_json(
@@ -235,6 +262,19 @@ async fn dismissing_the_confirmation_skips_that_one() {
             action: wonton_protocol::PluginAction::UpgradeAll,
         })
         .unwrap();
+    rig.wait_for(|view| {
+        view.update_batch
+            .as_ref()
+            .is_some_and(|batch| batch.finished)
+    })
+    .await;
+    rig.app
+        .dispatch(Action::Plugins {
+            action: wonton_protocol::PluginAction::ReviewStoreUpdate {
+                plugin_id: PHOTOS.to_owned(),
+            },
+        })
+        .unwrap();
     rig.wait_for(|view| view.confirmation.is_some()).await;
     rig.app
         .dispatch(Action::Plugins {
@@ -247,6 +287,12 @@ async fn dismissing_the_confirmation_skips_that_one() {
         "没确认就没有任务：{:?}",
         view.tasks
     );
+    let batch = view.update_batch.unwrap();
+    assert!(batch.finished && batch.needs_attention == 1 && batch.succeeded == 0);
+    assert!(matches!(
+        batch.items[0].state,
+        StoreUpdateState::NeedsDecision
+    ));
 }
 
 #[tokio::test]
@@ -325,7 +371,11 @@ async fn updates_flag_added_app_rows_and_the_store_row() {
 #[tokio::test]
 async fn store_versions_count_as_updates_when_the_check_has_not_run() {
     let rig = Rig::new().await;
-    rig.core.set_lists(vec![vec![running(PHOTOS)]]);
+    // 从商店装的应用有来源；升级检查还没跑到时，商店里版本号和装着的不一样，也算可更新
+    // （和行尾“更新”按钮同一个口径）。
+    let mut photos = running(PHOTOS);
+    photos.source = Some("github:owner/app.photos@v1.0.0".to_owned());
+    rig.core.set_lists(vec![vec![photos]]);
     let mut store = listing();
     let mut photos = store.official.plugins.remove(0);
     photos.version = "2.0.0".to_owned();
@@ -349,6 +399,58 @@ async fn store_versions_count_as_updates_when_the_check_has_not_run() {
         0,
         "没有网页的插件点不开，不进侧边栏"
     );
+}
+
+/// 本地装的插件（主人上传的包，没有来源）核心升不了：升级接口对没有 origin 的记录直接报
+/// not_found。商店里版本号不一样也不算可更新，不然“全部更新”答应了核心做不到的事。
+#[tokio::test]
+async fn a_locally_installed_plugin_is_not_counted_as_updatable() {
+    let rig = Rig::new().await;
+    rig.core.set_lists(vec![vec![running(PHOTOS)]]);
+    let mut store = listing();
+    let mut photos = store.official.plugins.remove(0);
+    photos.version = "2.0.0".to_owned();
+    photos.installed_version = Some("1.0.0".to_owned());
+    store.official.plugins = vec![photos];
+    rig.core.answer(
+        Method::GET,
+        "/_wonton/api/store",
+        Canned(200, serde_json::to_string(&store).unwrap()),
+    );
+    connected_with_store(&rig).await;
+
+    let view = rig.app.plugins();
+    assert_eq!(
+        view.updatable,
+        [],
+        "本地装的插件不算可更新：{:?}",
+        view.updatable
+    );
+    assert_eq!(view.sidebar.updates, 0);
+}
+
+/// 预装插件（核心随包带的默认插件）没有来源，但升级走官方索引、核心查到了报价：照样算可更新。
+/// 行尾的“更新”按报价显示，不只靠“全部更新”顺带升它。
+#[tokio::test]
+async fn a_preinstalled_plugin_with_an_offer_stays_updatable() {
+    let rig = Rig::new().await;
+    rig.core.set_lists(vec![vec![upgradable(PHOTOS)]]);
+    let mut store = listing();
+    let mut photos = store.official.plugins.remove(0);
+    photos.version = "2.0.0".to_owned();
+    photos.installed_version = Some("1.0.0".to_owned());
+    store.official.plugins = vec![photos];
+    rig.core.answer(
+        Method::GET,
+        "/_wonton/api/store",
+        Canned(200, serde_json::to_string(&store).unwrap()),
+    );
+    connected_with_store(&rig).await;
+
+    let view = rig.wait_for(|view| view.updatable.len() == 1).await;
+    assert_eq!(view.updatable[0].plugin_id, PHOTOS);
+    assert_eq!(view.updatable[0].version, "2.0.0");
+    assert_eq!(view.sidebar.updates, 1);
 }
 
 #[tokio::test]
@@ -457,4 +559,130 @@ async fn upgrade_task_shows_the_stages_the_server_reports() {
         "做完了不该还挂着阶段：{:?}",
         task.install_progress
     );
+}
+
+#[tokio::test]
+async fn bulk_results_retain_middle_failure_and_clear_without_canceling_other_work() {
+    let rig = Rig::new().await;
+    let ids = ["app.first", "app.middle", "app.last"];
+    rig.core
+        .set_lists(vec![ids.iter().map(|id| upgradable(id)).collect()]);
+    for id in ids {
+        let mut latest = preview(id);
+        latest.version = "3.0.0".to_owned();
+        answer_json(&rig, Method::POST, upgrade_preview_path(id), &latest);
+        if id != ids[1] {
+            answer_json(&rig, Method::POST, upgrade_path(id), &{});
+        }
+    }
+    rig.core.hold(Method::POST, &upgrade_preview_path(ids[0]));
+    rig.core.hold(Method::POST, &upgrade_path(ids[2]));
+    rig.core.answer(
+        Method::POST,
+        &upgrade_path(ids[1]),
+        core_error(503, "source_unavailable", "source offline"),
+    );
+    connected_with_store(&rig).await;
+    rig.wait_for(|view| view.updatable.len() == 3).await;
+    rig.app
+        .dispatch(Action::Plugins {
+            action: wonton_protocol::PluginAction::UpgradeAll,
+        })
+        .unwrap();
+    let view = rig
+        .wait_for(|view| {
+            view.update_batch
+                .as_ref()
+                .is_some_and(|batch| matches!(batch.items[0].state, StoreUpdateState::Checking))
+        })
+        .await;
+    let batch = view.update_batch.unwrap();
+    assert!(!batch.finished);
+    assert_eq!(
+        batch
+            .items
+            .iter()
+            .map(|item| item.app.plugin_id.as_str())
+            .collect::<Vec<_>>(),
+        ids
+    );
+    assert!(matches!(batch.items[1].state, StoreUpdateState::Queued));
+    assert!(matches!(batch.items[2].state, StoreUpdateState::Queued));
+    rig.app
+        .dispatch(Action::Plugins {
+            action: wonton_protocol::PluginAction::DismissStoreUpdates,
+        })
+        .unwrap();
+    assert!(rig.app.plugins().update_batch.is_some());
+    rig.app
+        .dispatch(Action::Plugins {
+            action: wonton_protocol::PluginAction::UpgradeAll,
+        })
+        .unwrap();
+    rig.core
+        .release(Method::POST, &upgrade_preview_path(ids[0]));
+    let view = rig
+        .wait_for(|view| {
+            view.update_batch
+                .as_ref()
+                .is_some_and(|batch| batch.failed == 1 && !batch.finished)
+        })
+        .await;
+    assert!(view.confirmation.is_none());
+    rig.core.release(Method::POST, &upgrade_path(ids[2]));
+    let view = rig
+        .wait_for(|view| {
+            view.update_batch
+                .as_ref()
+                .is_some_and(|batch| batch.finished)
+        })
+        .await;
+    let batch = view.update_batch.unwrap();
+    assert_eq!(
+        (batch.succeeded, batch.failed, batch.needs_attention),
+        (2, 1, 0)
+    );
+    assert!(batch.items.iter().all(|item| item.app.version == "3.0.0"));
+    assert!(
+        matches!(&batch.items[1].state, StoreUpdateState::Task { task }
+        if matches!(&task.state, PluginTaskState::Failed { reason: PluginFailure::SourceUnavailable, message }
+            if message == "source offline"))
+    );
+    assert_single_bulk_requests(&rig, &ids);
+    start_unrelated_install(&rig).await;
+    rig.app
+        .dispatch(Action::Plugins {
+            action: wonton_protocol::PluginAction::DismissStoreUpdates,
+        })
+        .unwrap();
+    let view = rig.app.plugins();
+    assert!(view.update_batch.is_none());
+    assert_eq!(view.tasks.len(), 1);
+    assert_eq!(view.tasks[0].id, PHOTOS);
+    assert!(view.tasks[0].state.in_progress());
+    rig.core.release(Method::POST, "/_wonton/api/plugins");
+}
+async fn start_unrelated_install(rig: &Rig) {
+    rig.core.hold(Method::POST, "/_wonton/api/plugins");
+    rig.app
+        .dispatch(Action::Plugins {
+            action: wonton_protocol::PluginAction::InstallNow {
+                source: "github:owner/app.photos".to_owned(),
+            },
+        })
+        .unwrap();
+    rig.task(PHOTOS, |state| matches!(state, PluginTaskState::Running))
+        .await;
+}
+
+fn assert_single_bulk_requests(rig: &Rig, ids: &[&str]) {
+    for id in ids {
+        assert_eq!(
+            rig.core
+                .seen(&Method::POST, &upgrade_preview_path(id))
+                .len(),
+            1
+        );
+        assert_eq!(rig.core.seen(&Method::POST, &upgrade_path(id)).len(), 1);
+    }
 }
