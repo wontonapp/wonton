@@ -34,6 +34,10 @@ struct ComposerView: View {
     }
     @State private var photos: [PhotosPickerItem] = []
     @State private var isChoosingAttachment = false
+    /// 旁聊里输入栏上那句“附件只能在主对话里发”：默认露出来，关掉不再打扰。
+    @State private var showsSideChatHint = true
+    /// 附件的字节还在取（比如 iCloud 原图）：发送键那一格换成转圈，画面上看得出点到了。
+    @State private var isSendingAttachment = false
     @State private var isPickingPhoto = false
     @State private var isPickingFiles = false
     /// 附件面板收起以后接着开哪个系统选择器：两张系统面板不能叠着开。
@@ -59,23 +63,19 @@ struct ComposerView: View {
                 .padding(.horizontal, WontonTheme.spacing.chatFloatInset - WontonTheme.spacing.s4)
             }
             AgentStopNotice(state: composer.agentStop)
-            HStack(alignment: .bottom, spacing: WontonTheme.spacing.s4) {
-                if !commands.isEmpty {
-                    ComposerMenuButton(showsTitle: isEmpty) { showsCommands.toggle() }
-                }
-                ChatGlassButton(icon: .attach, label: String(localized: .Composer.composerAttach)) {
-                    // 附件区满了就不开面板，说一声最多几个。
-                    if hasRoom() { isChoosingAttachment = true }
-                }
-                .accessibilityIdentifier("composerAttach")
-                field
-                // Bot 在跑时停止钮排在发送钮前面；没字时发送钮不出，只剩停止钮。
-                if AgentStopButton.isShown(composer.agentStop) {
-                    AgentStopButton(state: composer.agentStop, action: composer.stopAgent)
-                }
-                ComposerSendSlot(canSend: !isEmpty, send: send)
+            if isSideChat && showsSideChatHint {
+                SideChatAttachHint(
+                    openMain: { model.closeSideChat(in: composer.target.roomId, why: "hint") },
+                    close: { showsSideChatHint = false }
+                )
+                .padding(.horizontal, WontonTheme.spacing.chatFloatInset - WontonTheme.spacing.s4)
+                .transition(.opacity)
             }
-            .chatGlassCluster()
+            if let rejection = model.rejection {
+                ComposerRejection(problem: rejection) { model.rejection = nil }
+                    .padding(.horizontal, WontonTheme.spacing.chatFloatInset - WontonTheme.spacing.s4)
+            }
+            composerRow(isEmpty: isEmpty)
             // 渐隐从输入栏上方一点开始，一直垫到屏幕底（伸出去的部分在屏幕外或键盘后面）。
             .background {
                 ChatEdgeFade(edge: .bottom, fade: WontonTheme.spacing.s32)
@@ -106,10 +106,10 @@ struct ComposerView: View {
         }
         .sheet(isPresented: $isChoosingAttachment, onDismiss: continueAfterAttach) {
             AttachSheet(
-                limit: composer.remaining, allowsFiles: !isSideChat,
-                pick: { assets in
+                limit: composer.remaining, allowsFiles: !isSideChat, caption: draft,
+                send: { assets in
                     isChoosingAttachment = false
-                    Task { await add(assets) }
+                    Task { await sendPicked(assets) }
                 },
                 chooseFiles: { leaveAttach(for: .files) },
                 openSystemPicker: { leaveAttach(for: .photos) }
@@ -143,34 +143,6 @@ struct ComposerView: View {
                 )
             }
         }
-    }
-
-    /// 输入框那一块玻璃：回复条、附件区、文字框从上到下。
-    private var field: some View {
-        let shape = RoundedRectangle(cornerRadius: WontonTheme.size.chatControl / 2, style: .continuous)
-        return VStack(spacing: 0) {
-            if let reply = model.replies[draftKey] {
-                ReplyQuoteView(
-                    quote: reply, core: model.core, ink: Color(colors.textPrimary), accent: Color(colors.accentInk),
-                    cancel: { model.cancelReply(in: composer.target) },
-                    jump: { jumpToReply(reply.eventId) }
-                )
-                .padding(.leading, WontonTheme.spacing.s12)
-                .padding(.trailing, WontonTheme.spacing.s4)
-                .padding(.top, WontonTheme.spacing.s8)
-            }
-            ComposerTray(composer: composer)
-            ComposerField(
-                text: draft,
-                focused: $isFocused,
-                onPasteImage: { providers in Task { await pasteImage(from: providers) } },
-                onPasteFiles: { pasteFiles($0) },
-                onSend: send
-            )
-        }
-        .clipShape(shape)
-        .chatGlass(in: shape)
-        .padding(.vertical, (WontonTheme.size.target - WontonTheme.size.chatControl) / 2)
     }
 
     /// 输入框开头敲了“/”时，“/”后面的字：命令列表按它做前缀过滤。没敲“/”或者已经换行了为空。
@@ -223,8 +195,18 @@ struct ComposerView: View {
         afterAttach = nil
     }
 
-    /// 附件面板里选好的照片：取原图的字节，和粘贴进来的图走同一条路，进附件区；旁聊里直接发（ADR-0093）。
-    private func add(_ assets: [PHAsset]) async {
+    /// 附件面板里选好照片点了发送：照片和附言（就是草稿）作为一次发出去（ADR-0109 第 9 节）。主对话里照片先进附件区，
+    /// 再和发送键走同一条路（`SendComposer`），附件区里原有的附件也一起走；旁聊没有附件区，照片一张张直接发，附言跟在后面
+    /// （ADR-0093）。取字节的这段时间（比如 iCloud 原图下不下来）发送键那一格转圈；发出去了、草稿也还是派出时那句才清，
+    /// 被拒或者等的功夫又打了字都留着，回复对象跟着草稿留。
+    private func sendPicked(_ assets: [PHAsset]) async {
+        pin.pin()
+        isSendingAttachment = true
+        defer { isSendingAttachment = false }
+        let original = draft.wrappedValue
+        let caption = original.trimmingCharacters(in: .whitespacesAndNewlines)
+        var replyTo = model.replies[draftKey]?.eventId
+        var allSent = true
         for asset in assets {
             guard let (data, type) = await PhotoLibrary.data(asset) else {
                 model.rejection = Problem(
@@ -233,12 +215,26 @@ struct ComposerView: View {
                 )
                 continue
             }
-            if isSideChat {
-                await composer.sendImage(data, type, replyTo: model.replies[draftKey]?.eventId)
-            } else {
+            if !isSideChat {
                 await composer.addImage(data, type)
+            } else if await composer.sendImage(data, type, replyTo: replyTo) {
+                replyTo = nil
+            } else {
+                allSent = false
             }
         }
+        // 旁聊里的附言跟着照片走：有一张没发出去就先不单发附言，留着下次和草稿一起发。
+        guard allSent else { return }
+        let action: TimelineAction? = if !isSideChat {
+            .sendComposer(target: composer.target, body: caption, replyTo: replyTo)
+        } else if !caption.isEmpty {
+            .sendText(target: composer.target, body: caption, replyTo: replyTo)
+        } else {
+            nil
+        }
+        guard let action, model.send(.timeline(action: action)) else { return }
+        if draft.wrappedValue == original { draft.wrappedValue = "" }
+        model.cancelReply(in: composer.target)
     }
 
     /// 粘贴的图转码后进附件区；旁聊里直接发（ADR-0093）。
@@ -273,39 +269,61 @@ struct ComposerView: View {
         guard !draft.wrappedValue.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty
             || !composer.attachments.isEmpty else { return }
         pin.pin()
-        // 被核心拒收时字、附件和回复对象都留着，改完再发；收下了才清。
+        // 旁聊没有附件区，附件区空着时 `send` 走的就是直接发字。被核心拒收时字、附件和回复对象都留着，改完再发。
         guard composer.send(draft.wrappedValue, replyTo: model.replies[draftKey]?.eventId) else { return }
         draft.wrappedValue = ""
         model.cancelReply(in: composer.target)
     }
 }
 
-/// 输入框右边“发送键那一格”：有字或有附件才出现发送键（ADR-0109 第 6 节），空着时不画东西。
-/// 单独一个视图：别的按钮要占这一格（比如 Agent 在跑时的“停止”）就换在这里，不动输入框的布局。
-struct ComposerSendSlot: View {
-    let canSend: Bool
-    let send: () -> Void
-    @Environment(\.accessibilityReduceMotion) private var reduceMotion
-
-    var body: some View {
-        ZStack {
-            if canSend {
-                SendButton(action: send)
-                    .transition(reduceMotion ? .opacity : .scale.combined(with: .opacity))
+private extension ComposerView {
+    /// 输入栏那一排：菜单、回形针、输入框、发送键各是一块玻璃，靠 `chatGlassCluster` 拼成一整块。
+    private func composerRow(isEmpty: Bool) -> some View {
+        HStack(alignment: .bottom, spacing: WontonTheme.spacing.s4) {
+            if !commands.isEmpty {
+                ComposerMenuButton(showsTitle: isEmpty) { showsCommands.toggle() }
             }
+            ChatGlassButton(icon: .attach, label: String(localized: .Composer.composerAttach)) {
+                // 旁聊没有附件区，点了把那句话露出来；主对话里附件区满了就不开面板，说一声最多几个。
+                if isSideChat { showsSideChatHint = true } else if hasRoom() { isChoosingAttachment = true }
+            }
+            .accessibilityIdentifier("composerAttach")
+            field
+            // Bot 在跑时停止钮排在发送钮前面；没字时发送钮不出，只剩停止钮。
+            if AgentStopButton.isShown(composer.agentStop) {
+                AgentStopButton(state: composer.agentStop, action: composer.stopAgent)
+            }
+            ComposerSendSlot(canSend: !isEmpty, isSending: isSendingAttachment, send: send)
         }
-        // 空着时这一格不占宽，输入框一直伸到右边。
-        .padding(.leading, canSend ? 0 : -WontonTheme.spacing.s4)
-        .animation(.easeOut(duration: WontonTheme.motion.feedback), value: canSend)
+        .chatGlassCluster()
     }
-}
 
-private struct SendButton: View {
-    let action: () -> Void
-
-    var body: some View {
-        ChatGlassButton(icon: .send, label: String(localized: .Composer.composerSend), prominent: true, action: action)
-            .accessibilityIdentifier("composerSend")
+    /// 输入框那一块玻璃：回复条、附件区、文字框从上到下。
+    private var field: some View {
+        let shape = RoundedRectangle(cornerRadius: WontonTheme.size.chatControl / 2, style: .continuous)
+        return VStack(spacing: 0) {
+            if let reply = model.replies[draftKey] {
+                ReplyQuoteView(
+                    quote: reply, core: model.core, ink: Color(colors.textPrimary), accent: Color(colors.accentInk),
+                    cancel: { model.cancelReply(in: composer.target) },
+                    jump: { jumpToReply(reply.eventId) }
+                )
+                .padding(.leading, WontonTheme.spacing.s12)
+                .padding(.trailing, WontonTheme.spacing.s4)
+                .padding(.top, WontonTheme.spacing.s8)
+            }
+            ComposerTray(composer: composer)
+            ComposerField(
+                text: draft,
+                focused: $isFocused,
+                onPasteImage: { providers in Task { await pasteImage(from: providers) } },
+                onPasteFiles: { pasteFiles($0) },
+                onSend: send
+            )
+        }
+        .clipShape(shape)
+        .chatGlass(in: shape)
+        .padding(.vertical, (WontonTheme.size.target - WontonTheme.size.chatControl) / 2)
     }
 }
 

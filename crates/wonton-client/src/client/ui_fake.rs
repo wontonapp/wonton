@@ -333,6 +333,7 @@ fn fake_rooms() -> Vec<RoomRow> {
                 timestamp_ms: 1_792_000_000_000,
             }),
             unread_count: 1,
+            // 旁聊卡片挂在这条私聊里：界面测试从卡片进旁聊。
             side_chats: true,
             layout: ChatLayout::default(),
             call_active: false,

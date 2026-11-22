@@ -28,21 +28,39 @@ struct SideChatCover<Main: View>: View {
     let title: String
     @ViewBuilder let main: () -> Main
 
+    /// 呈现中的旁聊根。模型里的旁聊一没（返回、旁聊自己结束、离开房间）盖层就从这里收，收完自己再清；
+    /// 直接读模型的话收起动画还在跑、内容已经变空，滑下去的半秒是一张空白页。
+    @State private var shown: Shown?
+
+    private struct Shown: Identifiable {
+        let id: String
+    }
+
     var body: some View {
-        let root = model.sideChats[roomId]
-        let covered = root != nil
-        ZStack {
-            main()
-                .opacity(covered ? 0 : 1)
-                .allowsHitTesting(!covered)
-                .accessibilityHidden(covered)
-                .navigationBarBackButtonHidden(covered)
-            if let root {
-                NavigationStack {
-                    ChatRoomView(model: model, plugins: plugins, roomId: roomId, threadRoot: root, title: title)
-                }
+        let covered = model.sideChats[roomId] != nil
+        // 盖层单开一张全屏页，不塞进房间自己的布局：房间被压进的 NavigationStack 里再套一层栈，内层在 ZStack 里
+        // 量不出高度，整页变空（iOS 26 模拟器实测，空的 `NavigationStack { Text }` 也一样）。
+        main()
+            .opacity(covered || shown != nil ? 0 : 1)
+            .allowsHitTesting(covered || shown == nil)
+            .accessibilityHidden(covered || shown != nil)
+            .navigationBarBackButtonHidden(covered || shown != nil)
+            // 收起不在这里清：清掉 `shown` 会立刻把内容抽走，露出下面的主对话或一片白。留给 `onDismiss`，
+            // 转场跑完再清（ADR-0093 §6）。
+            .onChange(of: model.sideChats[roomId], initial: true) { _, root in
+                if let root, shown?.id != root { shown = Shown(id: root) }
             }
-        }
+            .fullScreenCover(
+                item: $shown,
+                onDismiss: { shown = nil },
+                content: { shown in
+                    NavigationStack {
+                        ChatRoomView(
+                            model: model, plugins: plugins, roomId: roomId, threadRoot: shown.id, title: title
+                        )
+                    }
+                }
+            )
     }
 }
 
@@ -123,6 +141,7 @@ struct SideChatCardView: View {
             .contentShape(RoundedRectangle(cornerRadius: WontonTheme.radii.card))
         }
         .buttonStyle(.plain)
+        .accessibilityIdentifier("sideChatCard")
     }
 
     /// 数字超过 99 就写“99+”。
@@ -182,6 +201,39 @@ struct NoSideChatsHint: View {
         .frame(maxWidth: .infinity, alignment: .leading)
         .padding(.horizontal, WontonTheme.spacing.pageInset)
         .padding(.vertical, WontonTheme.spacing.s4)
+    }
+}
+
+/// 旁聊输入栏上的一句：附件只能在主对话里发（ADR-0093 §5），右边一个关闭钮，底下带“打开主对话”直接过去。
+struct SideChatAttachHint: View {
+    let openMain: () -> Void
+    let close: () -> Void
+    @Environment(\.wontonColors) private var colors
+
+    var body: some View {
+        HStack(alignment: .top, spacing: WontonTheme.spacing.s8) {
+            VStack(alignment: .leading, spacing: WontonTheme.spacing.s4) {
+                HStack(alignment: .top, spacing: WontonTheme.spacing.s8) {
+                    WontonIcon.info.view(size: WontonTheme.size.iconTiny)
+                        .padding(.top, WontonTheme.spacing.s4)
+                    Text(.Composer.composerAttachOnlyMain)
+                }
+                Button(action: openMain) {
+                    Text(.Composer.composerOpenMainChat).fontWeight(.medium)
+                }
+                .buttonStyle(.plain)
+                .accessibilityIdentifier("sideChatOpenMain")
+            }
+            .wontonText(WontonTheme.typography.caption)
+            .foregroundStyle(Color(colors.textSecondary))
+            .frame(maxWidth: .infinity, alignment: .leading)
+            ChatGlassButton(icon: .close, label: String(localized: .Common.commonClose), action: close)
+                .accessibilityIdentifier("sideChatHintClose")
+        }
+        .padding(WontonTheme.spacing.s12)
+        .chatGlass(in: RoundedRectangle(cornerRadius: WontonTheme.radii.card, style: .continuous))
+        .accessibilityElement(children: .contain)
+        .accessibilityIdentifier("sideChatAttachHint")
     }
 }
 

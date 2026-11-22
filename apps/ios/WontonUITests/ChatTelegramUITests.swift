@@ -73,10 +73,10 @@ final class ChatTelegramUITests: XCTestCase {
     /// 输入框开头敲“/”弹出命令列表，按前缀过滤；点一条直接发出去，输入框里的草稿留着、列表收起；“菜单”按钮打开同一张列表。
     func testSlashOpensCommandMenuAndTapSends() {
         enter(Self.directRoom)
-        let field = app.textViews["Message"]
+        let field = input
         let commands = ["help", "model", "new"].map { app.buttons["command.\($0)"] }
         XCTAssertFalse(commands[0].exists, "没敲“/”就有命令列表")
-        field.tap()
+        focus(field)
         field.typeText("/")
         for command in commands {
             XCTAssertTrue(command.waitForExistence(timeout: 5), "敲“/”后列表里少了 \(command)")
@@ -106,12 +106,13 @@ final class ChatTelegramUITests: XCTestCase {
     /// 输入框空着时没有发送键，打了字才出现；“菜单”胶囊一直在。
     func testSendButtonAppearsWithText() {
         enter(Self.directRoom)
-        let field = app.textViews["Message"]
+        let field = input
         XCTAssertFalse(app.buttons["composerSend"].exists, "输入框空着就有发送键")
         XCTAssertTrue(app.buttons["composerCommands"].exists, "Bot 有命令，输入栏没有“菜单”")
         field.tap()
         waitForFloatingDateToFade()
         shot("composer-empty")
+        focus(field)
         field.typeText("Hello")
         XCTAssertTrue(app.buttons["composerSend"].waitForExistence(timeout: 5), "打了字没有发送键")
         XCTAssertTrue(app.buttons["composerCommands"].exists, "打了字“菜单”没了")
@@ -141,6 +142,16 @@ final class ChatTelegramUITests: XCTestCase {
         enter(Self.directRoom)
         waitForFloatingDateToFade()
         shot("direct-dark")
+        let (first, second) = openAttachSheet()
+        shot("attach-tabs-dark")
+        _ = selectTwo(first, second)
+        shot("attach-selected-dark")
+        app.terminate()
+        app.launch()
+        enter(Self.directRoom)
+        openForwardSheet()
+        selectTwoRooms()
+        shot("forward-sheet-dark")
         app.terminate()
         app.launch()
         enter(Self.groupRoom)
@@ -157,47 +168,183 @@ final class ChatTelegramUITests: XCTestCase {
         XCTAssertTrue(app.otherElements["chatPanel"].waitForExistence(timeout: 5), "资料页的按钮没有打开面板\n\(app.debugDescription)")
     }
 
-    /// 回形针打开附件面板：相册的照片网格能点选几张，底下有“文件”；选了出现“完成”，点了面板收起。
-    func testAttachSheetShowsPhotoGridAndSelects() {
+    /// 回形针打开附件面板：相册的照片网格能点选几张，底下浮着一排切换，私聊里有相册和文件；选了照片那一排换成附言框和
+    /// 发送键，关掉回到那一排；写了附言点发送，面板收起。
+    func testAttachSheetTabsThenCaptionAndSend() {
         enter(Self.directRoom)
-        tap(app.buttons["composerAttach"])
-        // 第一次打开网格系统会问相册权限。
-        // 系统弹窗跟着模拟器的语言走，不认字：三个按钮里中间那个是“允许完全访问”。
-        let springboard = XCUIApplication(bundleIdentifier: "com.apple.springboard")
-        let allow = springboard.alerts.buttons.element(boundBy: 1)
-        let first = app.buttons["attachPhoto.0"]
-        let second = app.buttons["attachPhoto.1"]
-        if allow.waitForExistence(timeout: 10) { allow.tap() }
-        XCTAssertTrue(first.waitForExistence(timeout: 15), "附件面板里没有照片\n\(app.debugDescription)")
-        XCTAssertTrue(app.buttons["attachFiles"].exists, "附件面板里没有“文件”")
-        XCTAssertFalse(app.buttons["attachDone"].exists, "还没选就有“完成”")
-        first.tap()
-        second.tap()
-        XCTAssertTrue(wait(5) { first.isSelected && second.isSelected }, "点了的照片没变成选中")
-        XCTAssertTrue(app.buttons["attachDone"].waitForExistence(timeout: 5), "选了照片没有“完成”")
+        let (first, second) = openAttachSheet()
+        XCTAssertTrue(app.buttons["attachPhotos"].exists, "附件面板底下没有“相册”")
+        XCTAssertTrue(app.buttons["attachFiles"].exists, "私聊的附件面板底下没有“文件”")
+        XCTAssertFalse(app.buttons["attachSend"].exists, "还没选就有发送键")
         shot("attach-sheet")
-        app.buttons["attachDone"].tap()
-        XCTAssertTrue(first.waitForNonExistence(timeout: 5), "点了“完成”面板没收起")
+        let send = selectTwo(first, second)
+        XCTAssertFalse(app.buttons["attachFiles"].exists, "选了照片，那一排切换还在")
+        shot("attach-selected")
+        tap(app.buttons["attachCancel"])
+        XCTAssertTrue(app.buttons["attachFiles"].waitForExistence(timeout: 5), "取消选择没回到那一排切换")
+        XCTAssertFalse(first.isSelected || second.isSelected, "取消选择后照片还是选中的")
+        first.tap()
+        let caption = element("attachCaption")
+        focus(caption)
+        caption.typeText("Fixture caption")
+        XCTAssertTrue(wait(5) { send.isHittable }, "键盘弹起后发送键点不到")
+        send.tap()
+        XCTAssertTrue(first.waitForNonExistence(timeout: 5), "点了发送面板没收起")
     }
 
-    /// 转发：面板顶上能搜，会话能选几个，选了才出现发送。
-    func testForwardSheetSearchesAndSelectsSeveral() {
+    /// 转发：面板顶上能搜，会话能选几个；选了以后附言框和发送键贴着面板底、点得到，写了附言点发送面板收起。
+    func testForwardSheetSelectsSeveralAndSendsWithComment() {
         enter(Self.directRoom)
-        waitForFloatingDateToFade()
-        message(3).press(forDuration: 1.2)
-        let forward = app.buttons["messageForward"]
-        XCTAssertTrue(forward.waitForExistence(timeout: 5), "长按菜单里没有“转发”")
-        forward.tap()
-        XCTAssertTrue(app.textFields["forwardSearch"].waitForExistence(timeout: 5), "转发面板没有搜索框")
-        let rooms = app.buttons.matching(NSPredicate(format: "identifier BEGINSWITH %@", "forward-"))
-        XCTAssertGreaterThanOrEqual(rooms.count, 2, "转发面板里的会话不到两个")
-        XCTAssertFalse(app.buttons["forwardSend"].exists, "还没选就有发送")
-        rooms.element(boundBy: 0).tap()
-        rooms.element(boundBy: 1).tap()
-        XCTAssertTrue(app.buttons["forwardSend"].waitForExistence(timeout: 5), "选了会话没有发送")
+        openForwardSheet()
+        let send = app.buttons["forwardSend"]
+        XCTAssertFalse(send.exists, "还没选就有发送键")
+        selectTwoRooms()
+        XCTAssertTrue(wait(5) { send.exists && send.isHittable }, "选了会话，发送键不在屏幕内\n\(app.debugDescription)")
+        let comment = element("forwardCaption")
+        XCTAssertTrue(wait(5) { comment.exists && comment.isHittable }, "选了会话，附言框不在屏幕内\n\(app.debugDescription)")
+        focus(comment)
+        comment.typeText("Fixture comment")
+        XCTAssertTrue(wait(5) { send.isHittable }, "键盘弹起后发送键点不到")
         shot("forward-sheet")
-        app.buttons["forwardSend"].tap()
+        send.tap()
         XCTAssertTrue(app.textFields["forwardSearch"].waitForNonExistence(timeout: 5), "发送以后面板没收起")
+    }
+
+    /// 附件面板里发出去的照片和附言真到了时间线：附言成了一条消息，附件区空了（ADR-0109 第 9 节）。
+    func testAttachSendsPhotoAndCaption() {
+        enter(Self.directRoom)
+        let (first, _) = openAttachSheet()
+        first.tap()
+        let send = app.buttons["attachSend"]
+        XCTAssertTrue(wait(5) { send.exists && send.isHittable }, "选了照片没有发送键")
+        XCTAssertTrue(send.isEnabled, "选了照片发送键还是灰的")
+        let caption = element("attachCaption")
+        focus(caption)
+        caption.typeText("Fixture attach caption")
+        send.tap()
+        XCTAssertTrue(first.waitForNonExistence(timeout: 5), "点了发送面板没收起")
+        XCTAssertTrue(text(startingWith: "Fixture attach caption").waitForExistence(timeout: 10),
+                      "附言没进时间线\n\(app.debugDescription)")
+        XCTAssertTrue(element("composerTray").waitForNonExistence(timeout: 10), "发出去了附件区里还留着照片")
+        shot("attach-sent")
+        darkShot("attach-sent-dark")
+    }
+
+    /// 发送被拒：面板照常收起，附言、回复对象和附件区里的照片都留着，让主人重试（ADR-0109 第 9 节）。
+    func testRejectedSendKeepsCaptionPhotoAndReply() {
+        app.terminate()
+        app.launchEnvironment["WONTON_UI_TEST_FAIL_ATTACHMENT"] = "1"
+        app.launch()
+        enter(Self.directRoom)
+        startReply(at: 3)
+        let (first, _) = openAttachSheet()
+        first.tap()
+        let send = app.buttons["attachSend"]
+        XCTAssertTrue(wait(5) { send.exists && send.isHittable }, "选了照片没有发送键")
+        let caption = element("attachCaption")
+        focus(caption)
+        caption.typeText("Fixture kept caption")
+        send.tap()
+        XCTAssertTrue(first.waitForNonExistence(timeout: 5), "点了发送面板没收起")
+        XCTAssertTrue(element("composerTray").waitForExistence(timeout: 5), "被拒以后附件区里的照片没了")
+        XCTAssertEqual(input.value as? String, "Fixture kept caption", "被拒以后附言被清掉了")
+        XCTAssertTrue(app.buttons["replyCancel"].exists, "被拒以后回复对象没了")
+        shot("attach-rejected")
+        darkShot("attach-rejected-dark")
+    }
+
+    /// 转发时写了附言：附言和转发的原消息都进了对方房间，附言排在上面（ADR-0073 第 4 节、ADR-0109 第 9 节）。
+    func testForwardCommentLandsInTargetRoom() {
+        enter(Self.directRoom)
+        openForwardSheet()
+        let search = app.textFields["forwardSearch"]
+        focus(search)
+        search.typeText("Notes")
+        tap(app.buttons["forward-!ui-fake-notes:home.example"])
+        let comment = element("forwardCaption")
+        XCTAssertTrue(wait(5) { comment.exists && comment.isHittable }, "选了会话，附言框不在屏幕内\n\(app.debugDescription)")
+        focus(comment)
+        comment.typeText("Fixture forward comment")
+        XCTAssertEqual(comment.value as? String, "Fixture forward comment", "附言没打进附言框")
+        tap(app.buttons["forwardSend"])
+        // 附言在目标房间没打开时排着，打开那条才发出去。
+        XCTAssertTrue(app.buttons["forwardSend"].waitForNonExistence(timeout: 5), "转发面板没收起")
+        tap(app.buttons["Back"])
+        XCTAssertTrue(app.buttons["chatRoom.!ui-fake-notes:home.example"].waitForExistence(timeout: 10),
+                      "没回到会话列表\n\(app.debugDescription)")
+        enter("chatRoom.!ui-fake-notes:home.example")
+        // 转发和附言都排在房间末尾，列表停在锚点时它们不进无障碍树。
+        if app.buttons["timelineDown"].exists { tap(app.buttons["timelineDown"]) }
+        let arrived = text(startingWith: "Fixture forward comment")
+        XCTAssertTrue(arrived.waitForExistence(timeout: 10), "附言没进目标房间\n\(app.debugDescription)")
+        // 转发的副本跟在附言下面。列表懒加载，底下的行没画就不在树里：一段段往新的那边拖（dragUp）到它露出来。
+        // 原件滚到顶上去了，所以不能按“两条 Fixture message 3”数，按落在附言下面认。
+        let copies = app.staticTexts.matching(NSPredicate(format: "label BEGINSWITH %@", "Fixture message 3"))
+        func belowCaption() -> XCUIElement? {
+            copies.allElementsBoundByIndex.first { $0.frame.minY > arrived.frame.maxY }
+        }
+        XCTAssertTrue(
+            wait(10) {
+                if belowCaption() != nil { return true }
+                dragUp()
+                return false
+            },
+            "附言下面没有转发的消息\n\(app.debugDescription)"
+        )
+        XCTAssertNotNil(belowCaption(), "转发的消息没排在附言下面")
+        shot("forwarded-comment")
+        darkShot("forwarded-comment-dark")
+    }
+
+    /// 照片的字节还在取的时候就显示“正在发送”：面板已经收起，等待期间打的字发完留在输入框里（ADR-0109 第 9 节）。
+    func testPhotoBytesWaitShowsSendingAndKeepsTextTypedMeanwhile() {
+        app.terminate()
+        app.launchEnvironment["WONTON_UI_PHOTO_DELAY_MS"] = "4000"
+        app.launch()
+        enter(Self.directRoom)
+        let (first, _) = openAttachSheet()
+        first.tap()
+        let send = app.buttons["attachSend"]
+        XCTAssertTrue(wait(5) { send.exists && send.isHittable }, "选了照片没有发送键")
+        let caption = element("attachCaption")
+        focus(caption)
+        caption.typeText("Fixture caption before")
+        send.tap()
+        XCTAssertTrue(first.waitForNonExistence(timeout: 5), "点了发送面板没收起")
+        XCTAssertTrue(element("composerSending").waitForExistence(timeout: 5), "取照片的时候没有“正在发送”")
+        let field = input
+        focus(field)
+        field.typeText("typed while sending")
+        XCTAssertTrue(element("composerSending").waitForNonExistence(timeout: 20), "照片发完了“正在发送”还在")
+        XCTAssertTrue(((field.value as? String) ?? "").contains("typed while sending"), "等待期间打的字没了")
+    }
+
+    /// 旁聊里被拒：草稿和回复对象都留着；提示上的关闭能把它收掉（ADR-0093、ADR-0109 第 9 节）。
+    func testSideChatRejectedSendKeepsDraftAndReply() {
+        app.terminate()
+        app.launchEnvironment["WONTON_UI_FAIL_SEND"] = "1"
+        app.launch()
+        enter(Self.directRoom)
+        // 房间可能停在顶上、也可能已经贴底；贴底时没有“向下”。
+        if app.buttons["timelineDown"].exists { tap(app.buttons["timelineDown"]) }
+        // 卡片挂在中间偏下的一条消息下面，底下又被附件提示盖住：往上、往下都试，直到它整个露在提示上面。
+        let card = app.buttons["sideChatCard"]
+        XCTAssertTrue(revealClearOfHint(card), "翻不到露出来的旁聊卡片\n\(app.debugDescription)")
+        tap(card)
+        // 假数据里旁聊和主对话共用同一份时间线，卡片在盖层里也还在；靠提示认出已经进了旁聊。
+        XCTAssertTrue(element("sideChatAttachHint").waitForExistence(timeout: 10), "点了卡片没进旁聊\n\(app.debugDescription)")
+        shot("side-chat-hint")
+        darkShot("side-chat-hint-dark")
+        startReply(at: 3)
+        let field = input
+        focus(field)
+        field.typeText("Fixture side draft")
+        tap(app.buttons["composerSend"])
+        XCTAssertTrue(app.buttons["replyCancel"].exists, "被拒以后回复对象没了")
+        XCTAssertEqual(field.value as? String, "Fixture side draft", "被拒以后草稿被清掉了")
+        shot("side-chat-rejected")
+        tap(app.buttons["sideChatHintClose"])
+        XCTAssertTrue(element("sideChatAttachHint").waitForNonExistence(timeout: 5), "提示上的关闭没把它收掉")
     }
 
     /// 引用块只有名字加一两行摘要那么高，不跟着气泡撑开。
@@ -277,6 +424,79 @@ final class ChatTelegramUITests: XCTestCase {
 
     // MARK: 助手
 
+    /// 点回形针打开附件面板，等相册网格出来，给回前两张照片。
+    private func openAttachSheet(file: StaticString = #filePath, line: UInt = #line) -> (XCUIElement, XCUIElement) {
+        tap(app.buttons["composerAttach"], file: file, line: line)
+        // 第一次打开网格系统会问相册权限。
+        // 系统弹窗跟着模拟器的语言走，不认字：三个按钮里中间那个是“允许完全访问”。
+        let springboard = XCUIApplication(bundleIdentifier: "com.apple.springboard")
+        let allow = springboard.alerts.buttons.element(boundBy: 1)
+        let first = app.buttons["attachPhoto.0"]
+        if allow.waitForExistence(timeout: 10) { allow.tap() }
+        XCTAssertTrue(first.waitForExistence(timeout: 15), "附件面板里没有照片\n\(app.debugDescription)", file: file, line: line)
+        // 面板升上来的动画还要一会儿；截图等它画完。
+        Thread.sleep(forTimeInterval: 1)
+        return (first, app.buttons["attachPhoto.1"])
+    }
+
+    /// 选两张照片，等附言框和发送键出来，给回发送键。
+    private func selectTwo(_ first: XCUIElement, _ second: XCUIElement) -> XCUIElement {
+        first.tap()
+        second.tap()
+        XCTAssertTrue(wait(5) { first.isSelected && second.isSelected }, "点了的照片没变成选中")
+        let send = app.buttons["attachSend"]
+        XCTAssertTrue(wait(5) { send.exists && send.isHittable }, "选了照片没有发送键\n\(app.debugDescription)")
+        XCTAssertTrue(element("attachCaption").exists, "选了照片没有附言框")
+        Thread.sleep(forTimeInterval: 0.5)
+        return send
+    }
+
+    /// 同一处再拍一张深色的，拍完换回浅色。
+    private func darkShot(_ name: String) {
+        XCUIDevice.shared.appearance = .dark
+        waitForFloatingDateToFade()
+        shot(name)
+        XCUIDevice.shared.appearance = .light
+    }
+
+    /// 长按第几条消息点“回复”，等回复条出来。
+    private func startReply(at index: Int, file: StaticString = #filePath, line: UInt = #line) {
+        reveal(message(index), file: file, line: line)
+        waitForFloatingDateToFade()
+        message(index).press(forDuration: 1.2)
+        let reply = app.buttons["messageReply"]
+        guard reply.waitForExistence(timeout: 5) else {
+            return XCTFail("长按菜单里没有“回复”\n\(app.debugDescription)", file: file, line: line)
+        }
+        reply.tap()
+        XCTAssertTrue(app.buttons["replyCancel"].waitForExistence(timeout: 5), "点了“回复”没进入回复状态", file: file, line: line)
+    }
+
+    /// 长按一条消息点“转发”，等转发面板出来。
+    private func openForwardSheet() {
+        waitForFloatingDateToFade()
+        message(3).press(forDuration: 1.2)
+        let forward = app.buttons["messageForward"]
+        XCTAssertTrue(forward.waitForExistence(timeout: 5), "长按菜单里没有“转发”")
+        forward.tap()
+        XCTAssertTrue(app.textFields["forwardSearch"].waitForExistence(timeout: 5), "转发面板没有搜索框")
+    }
+
+    /// 在转发面板里选前两个会话。
+    private func selectTwoRooms() {
+        let rooms = app.buttons.matching(NSPredicate(format: "identifier BEGINSWITH %@", "forward-"))
+        XCTAssertGreaterThanOrEqual(rooms.count, 2, "转发面板里的会话不到两个")
+        rooms.element(boundBy: 0).tap()
+        rooms.element(boundBy: 1).tap()
+        XCTAssertTrue(app.buttons["forwardSend"].waitForExistence(timeout: 5), "选了会话没有发送键")
+        Thread.sleep(forTimeInterval: 0.5)
+    }
+
+    /// 按无障碍标识找，不管它是哪种控件（多行的输入框在无障碍树里是 textView）。
+    private func element(_ identifier: String) -> XCUIElement {
+        app.descendants(matching: .any).matching(identifier: identifier).firstMatch
+    }
+
     /// 浮动日期只在滚动时盖在消息上，停下后淡出，不压着字（ADR-0109 第 4 节）。
     private func waitForFloatingDateToFade(file: StaticString = #filePath, line: UInt = #line) {
         let floatingDate = app.descendants(matching: .any)["timelineFloatingDate"]
@@ -287,7 +507,10 @@ final class ChatTelegramUITests: XCTestCase {
 
     private func enter(_ room: String) {
         tap(app.buttons[room])
-        XCTAssertTrue(message(3).waitForExistence(timeout: 10), "时间线没出来\n\(app.debugDescription)")
+        // 房间停在顶上还是贴底由落点和贴底决定：等到任意一条假消息就是时间线到了。
+        let any = app.staticTexts.matching(NSPredicate(format: "label BEGINSWITH %@", "Fixture ")).firstMatch
+        XCTAssertTrue(any.waitForExistence(timeout: 20), "时间线没出来\n\(app.debugDescription)")
+        XCTAssertTrue(input.exists, "房间打开了，输入框没出来")
     }
 
     /// 假房间的第几条消息（正文是 “Fixture message N”）。
@@ -307,12 +530,42 @@ final class ChatTelegramUITests: XCTestCase {
         app.staticTexts.matching(NSPredicate(format: "label BEGINSWITH %@", prefix)).firstMatch
     }
 
-    /// 整个落在顶栏和输入框之间。列表垫在半透明的顶栏下面，那里的元素 `isHittable` 也是真，点下去点到的是顶栏。
-    private func inView(_ element: XCUIElement) -> Bool {
-        guard element.exists, element.isHittable else { return false }
-        let top = app.staticTexts["barActivity"].frame.maxY
-        let bottom = app.textViews["Message"].frame.minY
-        return element.frame.minY > top && element.frame.maxY < bottom
+    /// 输入框。盖层开着时主对话那份也在无障碍树里，取第一份。
+    private var input: XCUIElement { app.textViews["Message"].firstMatch }
+
+    /// 列表可见区的上下沿：顶栏那一刻（有人打字时量提示的下沿）到输入框那一刻（上面有提示、附件区时量它们的上沿）。
+    private func visibleBounds() -> (top: CGFloat, bottom: CGFloat) {
+        let activity = app.staticTexts["barActivity"].firstMatch
+        let top = activity.exists ? activity.frame.maxY : app.buttons["roomTopBarAvatar"].firstMatch.frame.maxY
+        let cover = [element("sideChatAttachHint"), element("composerTray")].filter { $0.exists }.map { $0.frame.minY }
+        let bottom = min(input.frame.minY, cover.min() ?? .infinity)
+        return (top, bottom)
+    }
+
+    /// 整个落在顶栏和输入框之间。列表垫在半透明的顶栏下面，那里的元素 `isHittable` 也是真，点下去点到的是顶栏；
+    /// 输入框上面的附件区和旁聊提示一样盖住列表。
+    private func inView(_ node: XCUIElement) -> Bool {
+        guard node.exists, node.isHittable else { return false }
+        let (top, bottom) = visibleBounds()
+        return node.frame.minY > top && node.frame.maxY < bottom
+    }
+
+    /// 翻到露在附件提示上面的位置：卡片在提示底下就往上挪，在提示上面更远处就往下找。
+    private func revealClearOfHint(_ node: XCUIElement) -> Bool {
+        for _ in 0..<60 {
+            guard node.exists else {
+                dragDown()
+                continue
+            }
+            let (top, bottom) = visibleBounds()
+            if node.frame.minY > top, node.frame.maxY < bottom, node.isHittable { return true }
+            if node.frame.maxY <= top {
+                dragDown()
+            } else {
+                dragUp()
+            }
+        }
+        return false
     }
 
     /// 从底部一段一段往回翻，直到这个元素整个在可见区里。
@@ -322,6 +575,23 @@ final class ChatTelegramUITests: XCTestCase {
             dragDown()
         }
         XCTFail("往回翻了 60 段也没找到 \(element)\n\(app.debugDescription)", file: file, line: line)
+    }
+
+    /// 点一下输入框，等它真拿到键盘焦点；没拿到就重试。焦点还在上一个框里时 typeText 会打进那个框。
+    private func focus(_ field: XCUIElement, file: StaticString = #filePath, line: UInt = #line) {
+        for _ in 0..<5 {
+            field.tap()
+            // XCUITest 没有公开的焦点 API，`hasKeyboardFocus` 走 KVC 读。
+            if (field.value(forKey: "hasKeyboardFocus") as? Bool) == true { return }
+        }
+        XCTFail("输入框一直没拿到键盘焦点\n\(app.debugDescription)", file: file, line: line)
+    }
+
+    /// 往新的一头挪一小段：从提示上面起手，挪 110 点，不会把整屏翻过头。
+    private func dragUp() {
+        let start = app.coordinate(withNormalizedOffset: CGVector(dx: 0.5, dy: 0.55))
+        start.press(forDuration: 0.05, thenDragTo: app.coordinate(withNormalizedOffset: CGVector(dx: 0.5, dy: 0.42)),
+                    withVelocity: .default, thenHoldForDuration: 0.2)
     }
 
     /// 往回翻一段。慢拖、松手前停一下：不带惯性，不会一下翻过头。
