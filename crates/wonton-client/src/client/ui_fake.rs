@@ -18,18 +18,20 @@
 use std::sync::Arc;
 use std::sync::atomic::AtomicUsize;
 use std::sync::atomic::Ordering;
+use std::time::{SystemTime, UNIX_EPOCH};
 
 use tokio::sync::watch;
 
 use wonton_protocol::{
-    AppsAction, BotActivity, BotRef, BotView, ChatAccount, ChatLayout, ChatLayoutChoice, ChatSync,
-    ChatViewModel, CoreError, DeviceNetwork, DeviceVerification, EncryptionStatus, HomePath,
-    HomeStatus, HomeViewModel, InstalledPlugin, InstalledPlugins, MessageSummary, OnboardingStep,
-    OnboardingViewModel, OpenPage, PagesViewModel, PanelItem, PanelSource, PluginHealth,
-    PluginKind, PluginState, PluginTrust, PluginsViewModel, PushStatus, RecoveryNextStep,
-    RecoveryStatus, RoomMembership, RoomPreview, RoomRow, ServerKind, ServerName, ServerRow,
-    ServersViewModel, SidebarApp, SidebarBadge, SidebarOpen, TabIcon, TabLayout, TabPage, TabRef,
-    TabState,
+    AppLockViewModel, AppsAction, BotActivity, BotRef, BotView, ChatAccount, ChatLayout,
+    ChatLayoutChoice, ChatSync, ChatViewModel, CoreError, DeviceInvite, DeviceNetwork,
+    DeviceVerification, EncryptionStatus, HomePath, HomeStatus, HomeViewModel, InstalledPlugin,
+    InstalledPlugins, MessageSummary, OnboardingStep, OnboardingViewModel, OpenPage,
+    PagesViewModel, PanelItem, PanelSource, PluginHealth, PluginKind, PluginState, PluginTrust,
+    PluginsViewModel, PushMethod, PushStatus, RecoveryNextStep, RecoveryStatus, RoomMembership,
+    RoomPreview, RoomRow, SecretString, ServerKind, ServerName, ServerRow, ServersViewModel,
+    SettingsEntry, SettingsSection, SettingsViewModel, SidebarApp, SidebarBadge, SidebarOpen,
+    TabIcon, TabLayout, TabPage, TabRef, TabState,
 };
 
 use super::ClientCore;
@@ -57,6 +59,9 @@ const WEB_APPS: [(&str, &str, FakePage); 4] = [
 ];
 /// 点开是一张加载得出来的本机网页（`ui_fake_room::corner`），整页上有真网页可测。
 const CORNER_APP: &str = "app.example.corner";
+
+/// 添加设备页走查用的假配对码：格式同真码（`wonton://pair?v=0&…`），指向 example.org 和 192.0.2.10 的假地址。
+const FAKE_PAIRING_CODE: &str = "wonton://pair?v=0&id=9f2ce1a4b7d04e5f8a3c6d1b0e9f27a4&relays=https%3A%2F%2Frelay.example.org%3A443&addr=192.0.2.10%3A3478&domain=wonton.example.org&core=https%3A%2F%2Fwonton.example.org%2F&secret=u7Xk2pQ9wR4tY6uI8oP1aS3dF5gH7jK9lZ2xC4vB6n8"; // gitleaks:allow：写死的假码，不是凭据
 
 #[derive(Clone, Copy)]
 enum FakePage {
@@ -131,7 +136,9 @@ impl ClientCore {
             peers: watch::Sender::new(current.peers.borrow().clone()),
             friends: watch::Sender::new(current.friends.borrow().clone()),
             bot_contacts: watch::Sender::new(current.bot_contacts.borrow().clone()),
-            settings: watch::Sender::new(current.settings.borrow().clone()),
+            // 假数据下设置页是静态的这一份：真设置页的构建循环订阅着被丢弃的旧接收器，开起来会停在
+            // 未配对的状态，设置里的“添加设备”走不通。
+            settings: watch::Sender::new(fake_settings()),
             confirmations: watch::Sender::new(super::ui_fake_devices::confirmations(
                 current.confirmations.borrow().clone(),
             )),
@@ -277,6 +284,16 @@ fn fake_home(mut home: HomeViewModel) -> HomeViewModel {
     });
     home.details.network = Some(DeviceNetwork::Wifi);
     home.details.relay = Default::default();
+    // 添加设备页走查：摆一个十分钟内不过期的假码。假数据下 dispatch 忽略 Home 动作（见 dispatch.rs），
+    // 码不会被换掉或用掉。
+    home.invite = Some(DeviceInvite::Ready {
+        code: SecretString::new(FAKE_PAIRING_CODE),
+        expires_at_ms: (SystemTime::now()
+            .duration_since(UNIX_EPOCH)
+            .unwrap_or_default()
+            .as_millis()
+            + 600_000) as u64,
+    });
     home
 }
 
@@ -352,6 +369,53 @@ fn fake_rooms() -> Vec<RoomRow> {
             call_active: false,
         },
     ]
+}
+
+/// 假设置首页：按真设置的结构排（资料、服务器、这台手机上的几行、备份、关于），走到“添加设备”和
+/// 夜跑按文字点的行都在。真设置里“资料、服务器、默认 Agent、引导”要配对后才出现，这里照样给，方便走配对流程。
+/// 通知这一行要给：Android 在 `onCreate` 里按推送方式登记，取不到通知入口会直接崩。
+fn fake_settings() -> SettingsViewModel {
+    let lock = AppLockViewModel::default();
+    SettingsViewModel {
+        sections: vec![
+            SettingsSection {
+                entries: vec![SettingsEntry::Profile],
+            },
+            SettingsSection {
+                entries: vec![SettingsEntry::Server {
+                    name: Some(ServerName::Named {
+                        name: "Home".into(),
+                    }),
+                    status: HomeStatus::Connected,
+                    upgrade: false,
+                }],
+            },
+            SettingsSection {
+                entries: vec![
+                    SettingsEntry::Appearance,
+                    SettingsEntry::Language,
+                    SettingsEntry::MyApps,
+                    SettingsEntry::Notifications {
+                        method: PushMethod::Keepalive,
+                        push: PushStatus::NoEndpoint,
+                        categories: Vec::new(),
+                    },
+                    SettingsEntry::AppLock {
+                        enabled: lock.enabled,
+                        timeout: lock.timeout,
+                    },
+                ],
+            },
+            SettingsSection {
+                entries: vec![SettingsEntry::ChatBackup {
+                    recovery: RecoveryStatus::Unknown,
+                }],
+            },
+            SettingsSection {
+                entries: vec![SettingsEntry::About],
+            },
+        ],
+    }
 }
 
 fn fake_chat(mut chat: ChatViewModel) -> ChatViewModel {
