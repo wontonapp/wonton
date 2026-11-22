@@ -12,9 +12,8 @@ use wonton_protocol::{
     FileInfo, FileOperation, FileProblem, FriendsViewModel, HomeViewModel, InstallPreview,
     LanChoice, LanSettings, LicensesViewModel, Me, MediaHandle, MyAvatarProblem,
     OnboardingViewModel, OwnerProfileUpdate, PagesViewModel, PeersViewModel, PluginDetail,
-    PluginImage, PluginsViewModel, PrivacyViewModel, RoomTransfers, SecretString,
-    ServersViewModel, SessionListViewModel, SettingsViewModel, StoreItem, TimelineTarget,
-    TransfersViewModel,
+    PluginImage, PluginsViewModel, PrivacyViewModel, RoomTransfers, SecretString, ServersViewModel,
+    SessionListViewModel, SettingsViewModel, StoreItem, TimelineTarget, TransfersViewModel,
 };
 
 use crate::app_lock::AppLockLink;
