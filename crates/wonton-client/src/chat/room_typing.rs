@@ -48,12 +48,23 @@ impl Typing {
         let room = room.clone();
         let task = runtime.spawn(async move {
             let mut stream = std::pin::pin!(room.typing_notifications());
-            while let Some(list) = stream.next().await {
-                let Some(typing) = weak.upgrade() else { return };
-                if typing.update(&room, &list) {
-                    typing
-                        .changed
-                        .send_modify(|count| *count = count.wrapping_add(1));
+            let mut tick = tokio::time::interval(std::time::Duration::from_millis(500));
+            tick.set_missed_tick_behavior(tokio::time::MissedTickBehavior::Delay);
+            loop {
+                tokio::select! {
+                    list = stream.next() => {
+                        let Some(list) = list else { return };
+                        let Some(typing) = weak.upgrade() else { return };
+                        if typing.update(&room, &list) {
+                            typing.changed.send_modify(|count| *count = count.wrapping_add(1));
+                        }
+                    }
+                    _ = tick.tick() => {
+                        let Some(typing) = weak.upgrade() else { return };
+                        if typing.refresh_names(&room) {
+                            typing.changed.send_modify(|count| *count = count.wrapping_add(1));
+                        }
+                    }
                 }
             }
         });
@@ -129,6 +140,20 @@ impl Typing {
             }
         }
         users.len() != before || stayed != users.len()
+    }
+
+    /// 成员资料比“正在输入”晚到时，先记下的是账号名：按房间现在的成员表重算，换了名字返回真。
+    fn refresh_names(&self, room: &ChatRoom) -> bool {
+        let mut users = lock(&self.users);
+        let mut renamed = false;
+        for entry in users.iter_mut() {
+            let name = room.display_name(&entry.user);
+            if entry.name != name {
+                entry.name = name;
+                renamed = true;
+            }
+        }
+        renamed
     }
 }
 
