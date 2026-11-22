@@ -143,8 +143,10 @@ final class TabWebSession: NSObject {
                     try updateContext(webView)
                 }
             }
-            guard input.connected, input.page.state == .ready,
-                  let entry = input.page.url, let url = URL(string: entry) else {
+            // 不等 `connected`：回前台的头几秒它还在“连接中”，等它等于把整段重拨时间排在页面加载前面。开流时隧道
+            // 自己的门控会等恢复检查的结果，失效连接上的请求不会落上去（ADR-0004）。状态还没到只影响状态页，
+            // 网页照样先转起来。
+            guard input.page.state == .ready, let entry = input.page.url, let url = URL(string: entry) else {
                 AppTrace.event("tab.hold", "\(placed) connected=\(input.connected) page=\(input.page.state)")
                 return
             }
