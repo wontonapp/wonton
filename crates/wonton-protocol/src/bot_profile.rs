@@ -157,7 +157,7 @@ pub struct AvatarMedia {
     pub poster: Option<String>,
 }
 
-/// 头像文件的种类，壳按它选播放方式。不认识的取值按 [`Still`](Self::Still) 处理：旧 App 至少显示一帧图。
+/// 头像文件的种类，壳按它选播放方式。不认识的取值按 [`Still`](Self::Still) 处理，旧 App 只显示静态图。
 #[derive(Clone, Copy, Debug, Default, PartialEq, Eq, Serialize, Deserialize)]
 #[cfg_attr(feature = "uniffi", derive(uniffi::Enum))]
 #[serde(rename_all = "snake_case")]
@@ -171,7 +171,7 @@ pub enum AvatarKind {
     Video,
 }
 
-/// `kind` 是为以后加动图补的字段：旧核心不给，新核心以后可能给不认识的取值，都不能让整个头像解析失败。
+/// `kind` 可能缺、可能是不认识的取值（更新或更旧的核心），都落到 [`Still`](AvatarKind::Still)，不让整个头像解析失败。
 fn avatar_kind<'de, D: serde::Deserializer<'de>>(deserializer: D) -> Result<AvatarKind, D::Error> {
     Ok(match String::deserialize(deserializer)?.as_str() {
         "animated" => AvatarKind::Animated,

@@ -39,7 +39,9 @@ use rig::{
     CONNECT_BACKSTOP, Canned, IMAGE, Rig, WAIT, core_error, installed, item, listing, preview,
     running,
 };
-use wonton_protocol::{AvatarUpload, MyAvatarProblem, SecretInput, SecretString};
+use wonton_protocol::{
+    AvatarMediaProblem, AvatarUpload, MyAvatarProblem, SecretInput, SecretString,
+};
 
 /// 兜底预算，不是节奏：按生产常数推导——三次成功读取最坏 3 × (3s 间隔 + 30s 读取限时) = 99s，
 /// 之后 settle 自己在最后一次成功读取 120s 后转不确定（UNREACHABLE_LIMIT），合计 219s；取 240s。
@@ -408,7 +410,7 @@ async fn saving_the_profile_sends_it_and_keeps_the_reason_it_was_refused() {
 }
 
 #[tokio::test]
-async fn changing_your_avatar_says_so_until_it_is_wired_up() {
+async fn avatar_bytes_are_checked_before_the_upload() {
     let rig = Rig::new().await;
     let upload = AvatarUpload {
         mime_type: "image/jpeg".to_owned(),
@@ -417,12 +419,15 @@ async fn changing_your_avatar_says_so_until_it_is_wired_up() {
     };
     assert_eq!(
         rig.app.set_my_avatar(upload).await.unwrap_err(),
-        MyAvatarProblem::NotReady
+        MyAvatarProblem::MediaRejected {
+            problem: AvatarMediaProblem::Format
+        }
     );
-    assert_eq!(
+    // 字节先过检查，这一步还没连上 Matrix，清头像说传输不可用。
+    assert!(matches!(
         rig.app.clear_my_avatar().await.unwrap_err(),
-        MyAvatarProblem::NotReady
-    );
+        MyAvatarProblem::TransportUnavailable { .. }
+    ));
 }
 
 #[tokio::test]

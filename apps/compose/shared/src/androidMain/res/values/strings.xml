@@ -137,4 +137,14 @@
     <string name="attach_open_settings">Open Settings</string>
     <!-- Screen-reader label of the check on a picked album photo. -->
     <string name="attach_selected">Picked</string>
+    <!-- Section heading for the profile photo. -->
+    <string name="owner_profile_avatar">Avatar</string>
+    <!-- Next step when the core is too old to set an avatar. -->
+    <string name="owner_profile_avatar_not_ready_next">Update the app or your home\'s core and try again</string>
+    <!-- Title when the core is too old to set an avatar. -->
+    <string name="owner_profile_avatar_not_ready">This version can\'t change your avatar yet</string>
+    <!-- Button that opens the photo picker. -->
+    <string name="owner_profile_avatar_pick">Choose Photo</string>
+    <!-- Button that removes the profile photo. -->
+    <string name="owner_profile_avatar_remove">Remove Avatar</string>
 </resources>

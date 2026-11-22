@@ -86,7 +86,7 @@ pub struct Me {
 #[cfg_attr(feature = "uniffi", derive(uniffi::Error), uniffi::export(Display))]
 #[serde(tag = "type", rename_all = "snake_case")]
 pub enum MyAvatarProblem {
-    /// 这个核心还改不了头像（上传、写 `avatar_url` 还没接上），升级核心或 App 后可用。
+    /// 客户端连到的核心版本比 App 旧，还改不了头像；升级核心后可用。
     #[error("this core cannot change your avatar yet")]
     NotReady,
     /// 文件不行；原因由核心按文件头和尺寸查出来。

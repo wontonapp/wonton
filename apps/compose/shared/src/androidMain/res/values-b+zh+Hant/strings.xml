@@ -126,4 +126,14 @@
     <string name="attach_open_settings">去設定</string>
     <!-- 相簿裡選中一張照片後，勾上的讀屏標籤。 -->
     <string name="attach_selected">已選</string>
+    <!-- Section heading for the profile photo. -->
+    <string name="owner_profile_avatar">頭像</string>
+    <!-- Next step when the core is too old to set an avatar. -->
+    <string name="owner_profile_avatar_not_ready_next">更新 App 或家中的核心後再試</string>
+    <!-- Title when the core is too old to set an avatar. -->
+    <string name="owner_profile_avatar_not_ready">這個版本還改不了頭像</string>
+    <!-- Button that opens the photo picker. -->
+    <string name="owner_profile_avatar_pick">選擇照片</string>
+    <!-- Button that removes the profile photo. -->
+    <string name="owner_profile_avatar_remove">移除頭像</string>
 </resources>
