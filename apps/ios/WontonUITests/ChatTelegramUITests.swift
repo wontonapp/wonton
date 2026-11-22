@@ -210,7 +210,7 @@ final class ChatTelegramUITests: XCTestCase {
         XCTAssertTrue(app.textFields["forwardSearch"].waitForNonExistence(timeout: 5), "发送以后面板没收起")
     }
 
-    /// 附件面板里发出去的照片和附言真到了时间线：附言成了一条消息，附件区空了（ADR-0109 第 8 节）。
+    /// 附件面板里发出去的照片和附言真到了时间线：附言成了一条消息，附件区空了（ADR-0109 第 9 节）。
     func testAttachSendsPhotoAndCaption() {
         enter(Self.directRoom)
         let (first, _) = openAttachSheet()
@@ -230,7 +230,7 @@ final class ChatTelegramUITests: XCTestCase {
         darkShot("attach-sent-dark")
     }
 
-    /// 发送被拒：面板照常收起，附言、回复对象和附件区里的照片都留着，让主人重试（ADR-0109 第 8 节）。
+    /// 发送被拒：面板照常收起，附言、回复对象和附件区里的照片都留着，让主人重试（ADR-0109 第 9 节）。
     func testRejectedSendKeepsCaptionPhotoAndReply() {
         app.terminate()
         app.launchEnvironment["WONTON_UI_TEST_FAIL_ATTACHMENT"] = "1"
@@ -253,7 +253,7 @@ final class ChatTelegramUITests: XCTestCase {
         darkShot("attach-rejected-dark")
     }
 
-    /// 转发时写了附言：附言和转发的原消息都进了对方房间，附言排在上面（ADR-0073 第 4 节、ADR-0109 第 8 节）。
+    /// 转发时写了附言：附言和转发的原消息都进了对方房间，附言排在上面（ADR-0073 第 4 节、ADR-0109 第 9 节）。
     func testForwardCommentLandsInTargetRoom() {
         enter(Self.directRoom)
         openForwardSheet()
@@ -296,7 +296,7 @@ final class ChatTelegramUITests: XCTestCase {
         darkShot("forwarded-comment-dark")
     }
 
-    /// 照片的字节还在取的时候就显示“正在发送”：面板已经收起，等待期间打的字发完留在输入框里（ADR-0109 第 8 节）。
+    /// 照片的字节还在取的时候就显示“正在发送”：面板已经收起，等待期间打的字发完留在输入框里（ADR-0109 第 9 节）。
     func testPhotoBytesWaitShowsSendingAndKeepsTextTypedMeanwhile() {
         app.terminate()
         app.launchEnvironment["WONTON_UI_PHOTO_DELAY_MS"] = "4000"
@@ -319,7 +319,7 @@ final class ChatTelegramUITests: XCTestCase {
         XCTAssertTrue(((field.value as? String) ?? "").contains("typed while sending"), "等待期间打的字没了")
     }
 
-    /// 旁聊里被拒：草稿和回复对象都留着；提示上的关闭能把它收掉（ADR-0093、ADR-0109 第 8 节）。
+    /// 旁聊里被拒：草稿和回复对象都留着；提示上的关闭能把它收掉（ADR-0093、ADR-0109 第 9 节）。
     func testSideChatRejectedSendKeepsDraftAndReply() {
         app.terminate()
         app.launchEnvironment["WONTON_UI_FAIL_SEND"] = "1"

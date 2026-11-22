@@ -1,6 +1,6 @@
 import SwiftUI
 
-/// 发送被拒这类操作失败的提示，挂在输入栏上方：字和附件留着，关掉继续（ADR-0109 第 8 节）。
+/// 发送被拒这类操作失败的提示，挂在输入栏上方：字和附件留着，关掉继续（ADR-0109 第 9 节）。
 /// 房间盖着旁聊时，标签页底下的 `ChatDialogs` 弹不出来，这里就地显示。
 struct ComposerRejection: View {
     let problem: Problem
