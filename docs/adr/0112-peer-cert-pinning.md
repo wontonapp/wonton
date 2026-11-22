@@ -1,44 +1,51 @@
 # ADR-0112 没配公网入口的云吞：经 iroh 配对互钉证书的联邦
 
-- 状态：提议（2026-11-22）。主人 2026-11-21 选定方案 B
-- 补充 [ADR-0090](0090-public-access.md)：总开关关着时经 iroh 配对的云吞照常联邦
-- 相关：[ADR-0051](0051-friends-and-plugin-sharing.md)、[ADR-0090]（C3 的已知限制）
+- 状态：已接受（2026-11-22）。主人 2026-11-21 选定方案 B
+- 补充 [ADR-0090](0090-public-access.md)：总开关关着时，经 iroh 配对过的云吞照常联邦（0090 第 2 节补一条）
+- 推翻 [ADR-0051](0051-friends-and-plugin-sharing.md) 第 5 条“两种模式不互通，不做配对证书钉扎”的后半句
+- 推翻 [ADR-0050](0050-cross-server-chat.md) 的“不终结 TLS”与 `crates/wonton-tunnel/src/federation/mod.rs` 的同一说法
 
 ## 背景
 
 没配公网入口的安装盘上没有能验证的证书。对端一律拨 https，ClientHello 落到明文 HTTP 上（ADR-0090、C3），所以这类云吞连经 iroh 配对的朋友也聊不了。
 
-Tuwunel v1.9.4 出站联邦用 reqwest + rustls + 平台根，只有一个全局 allow_invalid_tls_certificates，没有按服务器钉证书或单独信任根的能力（调研 `research/people-fed-certpin.md`）。Matrix 规范允许服务器覆盖可信根。
+Tuwunel v2.0.0 出站联邦用 reqwest + rustls + 平台根，只有一个全局的 `[global.network.discovery].allow_invalid_signed_tls_certificates`（v1 的旧键是 legacy 别名），没有按服务器钉证书或单独信任根的能力（调研 `tasks/people-fed-certpin-research`）。Matrix 规范允许服务器覆盖可信根。
 
 ## 决策
 
 ### 1. 入口仍是首选，没入口的云吞也能和配对过的朋友聊
 
-公网入口有能验证的证书，优先。没入口时不对公网开 8448，也不自签；配对过的云吞走 iroh 隧道，由核心按配对表校验。除朋友以外的人和公网服务器照旧连不上。
+公网入口有能验证的证书，优先。没入口时不对公网开 8448、也不自签“公共证书”；配对过的云吞走 iroh 隧道，由核心按配对表校验。朋友以外的人和公网服务器照旧连不上。
 
 ### 2. 核心在隧道两端终结 TLS
 
 链路本来就是“本机 Tuwunel → CONNECT → 核心 → iroh → 对方核心 → 对方 Tuwunel”，明文流两头都在核心手里。出站时核心对本机 Tuwunel 当 TLS 服务端，对对方当客户端；入站反过来。两段握手都通过才转发，Tuwunel 只和核心说话，不改 Tuwunel 源码。
 
-### 3. 钉对方的叶子证书
+### 3. 钉对方的叶子证书，对外出示的也是自签叶
 
-配对时经已认证的 iroh 通道互换对方证书的 SPKI SHA-256，收到即落盘。不钉私钥、不钉 CA：CA 私钥被拿走能签任意名字，叶不能。不做 TOFU：没有 pin 不放行。
+配对时经已认证的 iroh 通道互换对方自签叶证书的 SPKI SHA-256 和整张 DER，收到即落盘。不钉 CA 私钥、不钉公钥基础设施：CA 私钥被拿走能签任意名字，叶不能。不做 TOFU：没有 pin 不放行。
+
+**对外的证书是自签叶**（SAN 是本机服务器名），pin 就是这张叶本身。核心出的私有 CA 只用于一件事：给**本机 Tuwunel 看的那张**证书签名，让 Tuwunel 按正常链验证核心。这样 rustls 的 `WebPkiServerVerifier` 在对方侧根库只放钉住的叶就成立（实测：根库放 CA 签出的叶 → `BadSignature`；放签发它的 CA 或自签叶 → 通过）。
 
 ### 4. 校验怎么做
 
-每台装一个私有 CA（核心持私钥、给对方名字签叶证书）。Tuwunel 的信任文件 = 系统根 + 本机 CA，用 SSL_CERT_FILE 指过去，去掉有名字安装的全局 allow_invalid。校验在核心：用 rustls 的 WebPkiServerVerifier，根库只放钉住的证书，另单独校 Hostname（规范要求证书名对得上）。
+对方侧：根库只放钉住的那张叶，用 `WebPkiServerVerifier`，另单独比 SPKI 是否等于 pin（只靠根库不够，见上）、并校 Hostname（规范要求证书名对得上）。
+
+本机 Tuwunel 侧：信任文件 = 系统根 + 本机 CA，用 `SSL_CERT_FILE` 指过去，`allow_invalid` 关掉。系统根在装机时从镜像抄一份，升级镜像后重抄，写进安装产物。
+
+私用名（`.wonton.internal`）的安装同样纳入：不再让 Tuwunel 自己挂自签 TLS，也不会双重 TLS（ADR-0051 第 5 条同步改）。
 
 ### 5. 轮换
 
-证书装机时生成一次，不自动过期。轮换由主人触发或随升级：新 key+cert 经 PeerMessage::Certificate 同步，双方 pin 集合同时收旧和新，双方确认或 7 天后只留新，宽限期仍接受旧 key。
+证书装机时生成，`notAfter` 给 5 年。轮换由主人触发或随升级：新 key+叶经 `PeerMessage::Certificate` 同步，双方 pin 集合同时收旧和新，双方确认或 7 天宽限后只留新，宽限期仍接受旧叶；到期不自动续也不静默放行，握手失败按“证书过期”如实报。对端离线超过 7 天宽限、只剩旧 pin 时，首次握手会失败，重配对即恢复。
 
 ### 6. 删好友即吊销
 
 删记录同时去掉 pin 和名单：出站查不到回 403，入站按 endpoint ID 拒，对方离线也立即失效；重连时握手再失败一次。
 
-### 7. 入口例外
+### 7. 入口例外要有状态，不靠猜
 
-有入口的安装仍用入口的公共证书，配对流入站投到入口 8449，对方按公共根校验；出站走 pin。同一条配对存在两套规则，状态和文档都要写明“已开入口时不走 pin”。
+有入口的安装仍用入口的公共证书，配对流入站投到入口 8449，对方按公共根校验；出站走 pin。`PeerRecord` 加 `peer_entry: none|public`，由 `PeerMessage` 双向同步；切换期两边都放行（既接受 pin 也接受公共根）。对端已开入口而本机仍按 pin 时，握手失败并报“对端换了入口，请重配对”，不静默。
 
 ### 8. 和 E2EE、签名无关
 
@@ -50,28 +57,35 @@ TLS 本来逐跳，X-Matrix 的 Ed25519 签在 HTTP 层，Olm/Megolm 在载荷�
 - B（本文）：配对时互钉证书。
 - C：Tuwunel 自签 + 全局放宽校验，所有服务器都认自签。
 
-C 最省事，但全局放宽的文件进 Tuwunel 一次就不分开；B 只在配对过的名字上生效，别的服务器照旧。
+C 最省事，但全局放宽一旦进 Tuwunel 就不分服务器；B 只在配对过的名字上生效，别的服务器照旧。
 
 ## 代价与风险
 
-- 自己写的验证器是安全边界：必须用 WebpkiServerVerifier 加只含钉证书的根库并单独校名字，不能只比指纹。
-- 信任文件写坏 Tuwunel 拒启动；空库要在安装时当错误报出来。
+- 核心从此是 TLS 端点、看得见联邦明文（ADR-0050 的“看不到内容”不再成立）。这是自证的代价：核心本来就持有全部密钥。
+- 自写验证器是安全边界：必须用 `WebPkiServerVerifier` 加只含钉叶的根库、并单独比 SPKI 和名字，不能只比指纹。
+- 信任文件写坏 Tuwunel 拒启动；空库在安装时报错。
+- 系统根是抄来的，镜像更新后会旧；安装产物记下来源镜像 digest，升级时重抄。
 - 私钥在宿主盘（0600、只读挂载），备份和导出跟着装机。
-- 入口例外是两套规则，漏写会让人以为 pin 总生效。
+- 入口例外要同步状态，漏同步会两边规则不一致。
 - 443 的 well-known CONNECT 现在 502 回退 8448，终结后行为不能变。
 
 ## 待验证
 
-- SSL_CERT_FILE 在 Tuwunel 镜像里实际生效；probe_tls 对空库报错的行为（单容器补测）。
+- `SSL_CERT_FILE` 在 Tuwunel 镜像里实际生效；`probe_tls` 对空库报错的行为（单容器补测）。
 - 两段握手对启动顺序、重连、并发的表现。
-- 本 ADR 没有实测，依据是源码和规范原文。
+- 本 ADR 没有实测握手，依据是源码、规范原文和一次 verifier 内存实验。
+
+## 新能力检查单
+
+- 契约：`PeerMessage::Certificate`、`PeerRecord.peer_entry`（protocol 层，带 serde default）。
+- 提供方：`wonton-tunnel` 的 `federation/{outbound,server}.rs`；消费方：`wonton-core` 的 peers 与安装。
+- 契约测试：pin 不匹配、SPKI 不符、名字不符各自失败；入口切换期两边都放行。
 
 ## 依据
 
-- 调研：tasks/people-fed-certpin-research 的结论（Tuwunel v1.9.4 无按服务器钉证书能力）。
+- 调研：`tasks/people-fed-certpin-research`（Tuwunel v2.0.0 无按服务器钉证书能力；`SSL_CERT_FILE` 生效）。
 - Matrix server-server-api：Destination server must provide a TLS certificate signed by a known CA；Requesting servers are ultimately responsible for determining trusted CAs；可覆盖可信根、可按白名单跳过。
-- C3：无入口的安装不自签、不开公网 8448。
-
+- C3（#891）：无入口的安装不自签、不开公网 8448。
 
 ## 主人已定（原话，2026-11-21）
 

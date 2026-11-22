@@ -21,4 +21,3 @@
 
 外加一条能证明“换提供方时消费方不用改”的契约测试；样板见
 [`model_gateway_contract`](../../crates/wonton-core/src/plugin/tests/model_gateway_contract/)。
-| [0112](0112-peer-cert-pinning.md) | 没配公网入口的云吞：经 iroh 配对互钉证书的联邦，核心在隧道两端终结 TLS，只放行配对过的人 |

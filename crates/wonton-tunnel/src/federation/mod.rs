@@ -2,8 +2,7 @@
 //!
 //! Tuwunel 的联邦写死了 HTTPS：本机 Tuwunel 的联邦出站经本模块监听的 HTTP CONNECT 代理走，模块按
 //! CONNECT 里的服务器名和配对时记下的“服务器名 → endpoint ID”绑定经 iroh 转过去；反方向上，对方经
-//! [`FEDERATION_ALPN`] 进来的每条流原样接到本机 Tuwunel 的联邦端口。TLS 在两台 Tuwunel 之间端到端，
-//! 本模块只按服务器名选路，看不到联邦内容。
+//! [`FEDERATION_ALPN`] 进来的每条流原样接到本机 Tuwunel 的联邦端口。TLS 由本模块在两端终结（ADR-0112），按配对表互钉证书；没配对、走公网入口的仍由两台 Tuwunel 端到端。
 //!
 //! - 入站：[`FederationProtocol`]，只接受服务器名单里的 endpoint ID。
 //! - 出站：[`FederationForwarder`]，每台对方服务器一个 [`TunnelClient`](crate::TunnelClient)
