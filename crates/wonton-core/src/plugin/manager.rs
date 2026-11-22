@@ -102,7 +102,7 @@ pub struct PluginManager {
     pub(super) bot_web_routes: RwLock<BTreeMap<String, super::bot_web::BotRoute>>,
     /// 交给 App 的图标。
     pub(super) gallery: Gallery,
-    pub(super) plugins: RwLock<BTreeMap<PluginId, Entry>>,
+    pub(crate) plugins: RwLock<BTreeMap<PluginId, Entry>>,
     pub(super) failed_installs: RwLock<BTreeMap<PluginId, super::install_failure::FailedInstall>>,
     pub(super) dependencies: super::dependencies::Dependencies,
     pub(crate) client_passwords: Option<Arc<crate::clients::passwords::PasswordStore>>,

@@ -15,7 +15,9 @@ use super::super::manifest_clients::ClientsHttp;
 use super::super::manifest_static::content_security_policy;
 use super::super::proxy_auth::ProxyAuth;
 use super::super::upstreams::Endpoint;
+
 use super::PluginManager;
+use crate::clients::passwords::State;
 
 #[derive(Debug, Clone, Serialize)]
 pub struct PluginView {
@@ -38,12 +40,13 @@ pub struct ClientsRoute {
     pub upstream: Option<Endpoint>,
 }
 
-/// App 里显示的第三方客户端入口和网关认证信息。
+/// App 里显示的第三方客户端入口和网关认证信息；只声明 `clients.tcp` 的插件没有 HTTP 路由。
 #[derive(Debug, Clone)]
 pub struct ClientsView {
     pub id: PluginId,
     pub label: String,
-    pub route: ClientsRoute,
+    pub route: Option<ClientsRoute>,
+
     pub switches: crate::clients::state::ClientsEntries,
     pub entry_label: Option<String>,
     pub tcp_names: Vec<String>,
@@ -182,20 +185,17 @@ impl PluginManager {
             let Some(clients) = listed.manifest.clients.as_ref() else {
                 continue;
             };
-            let Some(http) = clients.http.as_ref() else {
-                continue;
-            };
             let record = self.store.load(id)?;
             views.push(ClientsView {
                 id: id.clone(),
                 label: langs.pick_owned(&listed.manifest.title),
-                route: ClientsRoute {
+                route: clients.http.as_ref().map(|http| ClientsRoute {
                     upstream: entry
                         .clients
                         .as_ref()
                         .and_then(|route| route.upstream.clone()),
                     http: http.clone(),
-                },
+                }),
                 switches: record
                     .as_ref()
                     .map_or_else(Default::default, |record| record.clients_entries),
@@ -237,6 +237,30 @@ impl PluginManager {
             .http
             .as_ref()?;
         http.auth.credentials.clone()
+    }
+
+    /// 有没完成的凭据操作的运行中插件：后台重试的对象。
+    pub(crate) fn plugins_with_pending_credentials(&self) -> Vec<PluginId> {
+        let Some(store) = &self.client_passwords else {
+            return Vec::new();
+        };
+        let plugins = self.plugins.read().expect("插件表锁中毒");
+        plugins
+            .iter()
+            .filter(|(_, entry)| {
+                matches!(
+                    entry.status,
+                    PluginStatus::Running | PluginStatus::Degraded { .. }
+                )
+            })
+            .filter(|(id, _)| {
+                store
+                    .snapshots(id.as_str())
+                    .iter()
+                    .any(|snapshot| snapshot.state != State::Ready)
+            })
+            .map(|(id, _)| id.clone())
+            .collect()
     }
 
     /// 现在能不能跑凭据命令：插件在运行、`clients.http` 的服务在跑，而且确实用 `credentials`。

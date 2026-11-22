@@ -32,7 +32,8 @@ use wonton_protocol::ClientsFailure;
 /// `GET /_wonton/clients` 的响应：全部客户端的入口和密码。
 type ClientsList = Vec<ClientsPlugin>;
 
-/// 回给客户端的登录名：清单模板里的 `{user}` 换主人；没写就是主人。
+/// 回给客户端的登录名：清单模板里的 `{user}` 换主人、`{email}` 换主人派生出的内部邮箱；
+/// 没写就是主人。
 fn credential_username(
     credentials: &wonton_protocol::manifest::CredentialsAuth,
     owner: &str,
@@ -42,6 +43,7 @@ fn credential_username(
         .clone()
         .unwrap_or_else(|| "{user}".to_owned())
         .replace("{user}", owner)
+        .replace("{email}", &crate::owner::internal_email(owner))
 }
 
 pub fn routes() -> Router<Arc<Gateway>> {
@@ -56,7 +58,7 @@ pub fn routes() -> Router<Arc<Gateway>> {
         )
 }
 
-/// `GET`：每个声明了 `clients.http` 的插件的入口开关、密码清单和现在开不了的原因。
+/// `GET`：每个声明了客户端入口的插件的地址、入口开关、密码清单和现在开不了的原因。
 pub(super) async fn list(State(gateway): State<Arc<Gateway>>, headers: HeaderMap) -> Response {
     let langs = languages(&headers);
     let store = gateway.plugins.client_passwords.as_ref();
@@ -70,8 +72,9 @@ pub(super) async fn list(State(gateway): State<Arc<Gateway>>, headers: HeaderMap
     let owner = gateway.plugins.owner_username();
     let mut plugins: ClientsList = Vec::with_capacity(views.len());
     for view in views {
-        let credentials = view.route.http.auth.credentials.clone();
-        let gateway_auth = view.route.http.auth.gateway.is_some();
+        let http = view.route.as_ref().map(|route| &route.http);
+        let credentials = http.and_then(|http| http.auth.credentials.clone());
+        let gateway_auth = http.is_some_and(|http| http.auth.gateway.is_some());
         let auth = if credentials.is_some() {
             ClientAuthKind::Credentials
         } else if gateway_auth {
@@ -99,7 +102,10 @@ pub(super) async fn list(State(gateway): State<Arc<Gateway>>, headers: HeaderMap
                         last_viewed_by: {
                             let mut viewed: Vec<_> = snapshot.viewed_by.into_iter().collect();
                             viewed.sort_by_key(|(_, at)| std::cmp::Reverse(*at));
-                            viewed.into_iter().map(|(device, _)| device).collect()
+                            viewed
+                                .into_iter()
+                                .map(|(device, _)| viewer_name(&gateway, &device, &owner))
+                                .collect()
                         },
                     })
                     .collect()
@@ -128,22 +134,37 @@ pub(super) async fn list(State(gateway): State<Arc<Gateway>>, headers: HeaderMap
             auth,
             username,
             passwords,
-            public_rules: view.route.http.public.as_ref().map(|public| PublicRules {
-                mode: if public.allow.is_some() {
-                    PublicRuleMode::Allow
-                } else {
-                    PublicRuleMode::Deny
-                },
-                paths: public
-                    .allow
-                    .clone()
-                    .or_else(|| public.deny.clone())
-                    .unwrap_or_default(),
-            }),
+            public_rules: http
+                .and_then(|http| http.public.as_ref())
+                .map(|public| PublicRules {
+                    mode: if public.allow.is_some() {
+                        PublicRuleMode::Allow
+                    } else {
+                        PublicRuleMode::Deny
+                    },
+                    paths: public
+                        .allow
+                        .clone()
+                        .or_else(|| public.deny.clone())
+                        .unwrap_or_default(),
+                }),
+
             blocked,
         });
     }
     no_store(Json(plugins).into_response())
+}
+/// 列表里显示“谁看过”：设备名，没登记名字时用设备 ID；主人的令牌记成主人。
+fn viewer_name(gateway: &Gateway, device: &str, owner: &str) -> String {
+    if device == crate::clients::passwords::OWNER_TOKEN {
+        return owner.to_owned();
+    }
+    device
+        .parse::<iroh::EndpointId>()
+        .ok()
+        .and_then(|id| gateway.tunnel.devices.get(&id))
+        .and_then(|device| device.name)
+        .unwrap_or_else(|| device.to_owned())
 }
 
 fn entry_switches(view: &crate::plugin::manager::ClientsView) -> Vec<EntrySwitch> {
@@ -188,6 +209,12 @@ async fn create(
             &l10n::text(&langs, "clients-password-not-found", &[]),
         );
     };
+    if !gateway.plugins.is_installed(&id) {
+        return failure(
+            ClientsFailure::PluginUnavailable,
+            &l10n::text(&langs, "clients-plugin-unavailable", &[]),
+        );
+    }
     // 设备身份：经隧道的已配对设备记 ID（吊销按它连带），名字给界面显示。
     let device = peer.as_ref().map(|Extension(peer)| {
         let name = gateway
@@ -236,18 +263,19 @@ async fn create(
                 audit.record(&serde_json::json!({
                     "event": "client_password_issue_failed",
                     "plugin": plugin,
-                    "id": issued.id,
+                    "id": &issued.id,
                     "error": error.detail(),
                     "by": acted_by(&gateway, peer.as_ref(), &headers),
                 }));
             }
-            credential_failure(&langs, error)
+            let mut response = credential_failure(&langs, error);
+            response.headers_mut().insert(
+                wonton_protocol::PASSWORD_ID_HEADER,
+                issued.id.parse().expect("记录 ID 是 ASCII"),
+            );
+            no_store(response)
         }
         Err(IssueError::Store) => unavailable(&langs),
-        Err(IssueError::NotCredentials) => failure(
-            ClientsFailure::InvalidInput,
-            &l10n::text(&langs, "clients-credentials-missing", &[]),
-        ),
         Err(IssueError::SharedExists) => failure(
             ClientsFailure::Conflict,
             &l10n::text(&langs, "clients-credentials-shared-exists", &[]),
@@ -283,16 +311,20 @@ fn issued_response(
     } else {
         StatusCode::CREATED
     };
-    no_store(
-        (
-            status,
-            Json(PasswordValue {
-                username: username.to_owned(),
-                password: SecretString::new(issued.value),
-            }),
-        )
-            .into_response(),
+    let value_pending = deferred && issued.value.is_empty();
+    let response = (
+        status,
+        Json(PasswordValue {
+            username: username.to_owned(),
+            password: SecretString::new(issued.value),
+        }),
     )
+        .into_response();
+    if value_pending {
+        // `generates` 的待换：值还在应用那边，别让客户端把空串当值。
+        return with_pending(response, wonton_protocol::PendingOp::Rotate);
+    }
+    no_store(response)
 }
 
 /// `GET`：取值；每次都记审计、具体到设备。待完成的记录用响应头标出来，值照旧给。
@@ -329,23 +361,15 @@ async fn read_value(
                     credential_username(&credentials, &gateway.plugins.owner_username())
                 })
                 .unwrap_or_else(|| gateway.plugins.owner_username());
-            let mut response = Json(PasswordValue {
+            let response = Json(PasswordValue {
                 username,
                 password: SecretString::new(value),
             })
             .into_response();
-            if let Some(pending) = pending {
-                let marker = match pending {
-                    wonton_protocol::PendingOp::Revoke => "revoke",
-                    wonton_protocol::PendingOp::Rotate => "rotate",
-                    wonton_protocol::PendingOp::Other => "other",
-                };
-                response.headers_mut().insert(
-                    wonton_protocol::PASSWORD_PENDING_HEADER,
-                    marker.parse().expect("静态标记"),
-                );
+            match pending {
+                Some(pending) => with_pending(response, pending),
+                None => no_store(response),
             }
-            no_store(response)
         }
         Err(PasswordError::NotFound) => failure(
             ClientsFailure::InvalidInput,
@@ -355,7 +379,9 @@ async fn read_value(
     }
 }
 
-/// `DELETE`：吊销；`per_client: false` 时换成新值。完成 `200`，插件没在跑 `202`，失败 `502`。
+/// `DELETE`：吊销；`per_client: false` 时换成新值。完成 `200`，插件没在跑 `202`，失败 `502`；
+/// 吊销和换值都用 [`PENDING_HEADER`](wonton_protocol::PASSWORD_PENDING_HEADER) 标出来，
+/// 吊销设备的省略请求体时也走这里。
 async fn revoke(
     State(gateway): State<Arc<Gateway>>,
     headers: HeaderMap,
@@ -371,9 +397,15 @@ async fn revoke(
             &l10n::text(&langs, "clients-password-not-found", &[]),
         );
     };
+    if !gateway.plugins.is_installed(&plugin_id) {
+        return failure(
+            ClientsFailure::PluginUnavailable,
+            &l10n::text(&langs, "clients-plugin-unavailable", &[]),
+        );
+    }
     match gateway.plugins.settle_password(&plugin_id, &id).await {
-        Ok(Settle::Done) => StatusCode::OK.into_response(),
-        Ok(Settle::Deferred) => StatusCode::ACCEPTED.into_response(),
+        Ok(Settle::Done(op)) => with_pending(StatusCode::OK.into_response(), op),
+        Ok(Settle::Deferred(op)) => with_pending(StatusCode::ACCEPTED.into_response(), op),
         Ok(Settle::Failed(error)) => credential_failure(&langs, error),
         Err(PasswordError::NotFound) => failure(
             ClientsFailure::InvalidInput,
@@ -381,6 +413,20 @@ async fn revoke(
         ),
         Err(error) => storage_failure(&langs, error),
     }
+}
+
+/// 标出还没做完的操作，值照旧照给。
+fn with_pending(mut response: Response, op: wonton_protocol::PendingOp) -> Response {
+    let marker = match op {
+        wonton_protocol::PendingOp::Revoke => "revoke",
+        wonton_protocol::PendingOp::Rotate => "rotate",
+        wonton_protocol::PendingOp::Other => "other",
+    };
+    response.headers_mut().insert(
+        wonton_protocol::PASSWORD_PENDING_HEADER,
+        marker.parse().expect("静态标记"),
+    );
+    no_store(response)
 }
 
 /// 应用里的命令失败：`502`，带标准错误输出；超时说明可能已经生效，会重试。

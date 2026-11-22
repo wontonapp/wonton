@@ -90,6 +90,7 @@ gateway-icon-failed = アイコンを処理できません：{ $error }
 # デバイスとペアリングコード。
 gateway-devices-not-found = このデバイスは登録されていません
 gateway-devices-invalid-id = リクエストボディは{"{"}"endpoint_id": "<64桁の16進数>"{"}"}の形式にしてください
+gateway-devices-invalid-body = リクエストボディは{"{"}"keep_shared_passwords": true|false{"}"}か空にしてください
 gateway-devices-invalid-addrs = リクエストボディは{"{"}"direct_addrs": ["IP:ポート"]{"}"}の形式にしてください：{ $error }
 gateway-devices-already-paired = このサーバーには既にペアリング済みのデバイスがあるため、初回ペアリングコードは発行しません
 gateway-devices-no-addresses = トンネルがまだリレーに接続しておらず、リクエストにも直接接続用のアドレスがないため、コードに接続できるアドレスがありません
@@ -171,6 +172,7 @@ clients-unavailable = コアがコンテナで実行されていないため、�
 clients-passwords-unavailable = 今はアプリのパスワードの保存先を読み取れません
 clients-password-label-invalid = クライアントには改行を含まない1〜128文字の名前を付けてください
 clients-password-not-found = このアプリのパスワードはもう存在しません
+clients-plugin-unavailable = このアプリはインストールされていません
 clients-password-shared = アプリのパスワード
 clients-credentials-missing = このアプリは資格情報認証を使っていません
 clients-credentials-shared-exists = このアプリには共有パスワードがすでにあります

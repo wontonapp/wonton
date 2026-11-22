@@ -90,6 +90,7 @@ gateway-icon-failed = 無法處理圖示：{ $error }
 # 裝置和配對碼。
 gateway-devices-not-found = 沒有登記這部裝置
 gateway-devices-invalid-id = 請求內容應為 {"{"}"endpoint_id": "<64 位十六進位>"{"}"}
+gateway-devices-invalid-body = 請求內容應為 {"{"}"keep_shared_passwords": true|false{"}"} 或空白
 gateway-devices-invalid-addrs = 請求內容應為 {"{"}"direct_addrs": ["IP:連接埠"]{"}"}：{ $error }
 gateway-devices-already-paired = 伺服器上已經有配對的裝置，不再發首次配對碼
 gateway-devices-no-addresses = 隧道還沒連上中繼，請求裡也沒給直接連線位址，碼裡沒有能連的位址
@@ -171,6 +172,7 @@ clients-unavailable = 核心沒有跑在安裝好的容器裡，網域設定用�
 clients-passwords-unavailable = 現在讀不到專用密碼的存放處
 clients-password-label-invalid = 給用戶端起個 1-128 個字元、不帶換行的名字
 clients-password-not-found = 這個專用密碼已經不存在了
+clients-plugin-unavailable = 這個應用程式沒有安裝
 clients-password-shared = 應用密碼
 clients-credentials-missing = 這個應用不用憑證驗證
 clients-credentials-shared-exists = 這個應用已經有它唯一的共享密碼

@@ -139,7 +139,7 @@ pub use clients::{
     ClientsErrorBody, ClientsFailure, ClientsPlugin, ClientsProblem, ClientsStatus,
     CredentialEntry, DnsProviderPreset, DomainSettings, EntryBlock, EntryKind, EntrySwitch,
     GUEST_LINKS_MAX, GUEST_TTL_DEFAULT, GUEST_TTL_MAX, GateState, GuestLink, IngressKind,
-    IngressSettings, LanRecordState, NewGuestLinkRequest, NewPasswordRequest,
+    IngressSettings, LanRecordState, NewGuestLinkRequest, NewPasswordRequest, PASSWORD_ID_HEADER,
     PASSWORD_PENDING_HEADER, PasswordSummary, PasswordValue, PendingChange, PendingChangeKind,
     PendingOp, ProbeResult, PublicAccess, PublicItem, PublicReach, PublicRuleMode, PublicRules,
     PublicSwitchState, PutDomainRequest, PutIngressRequest, RevokeDeviceRequest, SetEntryRequest,

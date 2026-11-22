@@ -90,6 +90,7 @@ gateway-icon-failed = 图标处理不了：{ $error }
 # 设备和配对码。
 gateway-devices-not-found = 没有登记这台设备
 gateway-devices-invalid-id = 请求体应为 {"{"}"endpoint_id": "<64 位十六进制>"{"}"}
+gateway-devices-invalid-body = 请求体应为 {"{"}"keep_shared_passwords": true|false{"}"} 或空
 gateway-devices-invalid-addrs = 请求体应为 {"{"}"direct_addrs": ["IP:端口"]{"}"}：{ $error }
 gateway-devices-already-paired = 服务器上已经有配对的设备，不再发首次配对码
 gateway-devices-no-addresses = 隧道还没连上中继，请求里也没给直连地址，码里没有能连的地址
@@ -171,6 +172,7 @@ clients-unavailable = 核心没有跑在装好的容器里，域名设置用不�
 clients-passwords-unavailable = 现在读不到专用密码的存放处
 clients-password-label-invalid = 给客户端起个 1-128 个字符、不带换行的名字
 clients-password-not-found = 这个专用密码已经不存在了
+clients-plugin-unavailable = 这个应用没有安装
 clients-password-shared = 应用密码
 clients-credentials-missing = 这个应用不用凭据验证
 clients-credentials-shared-exists = 这个应用已经有它唯一的共享密码
