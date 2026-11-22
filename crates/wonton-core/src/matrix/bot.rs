@@ -180,7 +180,7 @@ impl Matrix {
 
     /// 主人建房、主人邀请、Bot 接受：Bot 的进房事件发送人是主人。插件适配器只收允许名单里的邀请人
     /// （名单是归属人和联系人，Bot 自己不在里面），所以不能自己邀请自己。
-    async fn create_bot_home(
+    pub(super) async fn create_bot_home(
         &self,
         bot: &Session<'_>,
         owner: &str,
@@ -188,11 +188,20 @@ impl Matrix {
     ) -> Result<String, MatrixError> {
         self.as_owner(owner, async |me: &Session<'_>| {
             let room = me.create_bot_home(owner_user, bot.user_id()).await?;
-            me.invite(&room, bot.user_id()).await?;
-            bot.join(&room).await?;
-            // 主人一退出，房间就不在主人的聊天列表里了（列表只要没退出的房间），交出去（`hand_over`）才回来：
-            // 装不上、没交付的私聊不该留在那里。
-            me.leave_room(&room, &Languages::default()).await?;
+            // 建房之后的步骤失败了：主人这时就在房间里，房间又是刚建的、除了这次调用谁都不认识，不退出就永远
+            // 留在主人的聊天列表里，重试还会另建一间。退出成功、房间就只在服务器的库里，留不留都不影响主人。
+            let done = async {
+                me.invite(&room, bot.user_id()).await?;
+                bot.join(&room).await?;
+                // 主人退出，房间就不在主人的聊天列表里了（列表只要没退出的房间），交出去（`hand_over`）才回来。
+                me.leave_room(&room, &Languages::default()).await
+            }
+            .await;
+            if let Err(error) = done {
+                // 退出也失败时照样报原错误：那是装不上的原因。房间留在列表里，主人看得见、删得掉。
+                me.leave_room(&room, &Languages::default()).await.ok();
+                return Err(error);
+            }
             Ok(room)
         })
         .await

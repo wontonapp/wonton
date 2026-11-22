@@ -365,6 +365,41 @@ async fn a_bot_that_cannot_get_its_home_room_leaves_no_device_behind() {
 }
 
 #[tokio::test]
+async fn a_failed_invite_leaves_the_owner_out_of_the_room() {
+    let (fake, config) = start().await;
+    let dir = tempfile::tempdir().unwrap();
+    let matrix = connect(&dir, &config).await;
+    fake.state().refuse_invites = true;
+    let taken = BTreeSet::new();
+    let err = matrix
+        .provision_bot(&spec("echo", &taken))
+        .await
+        .unwrap_err();
+    assert_eq!(err.errcode(), "M_UNKNOWN", "{err}");
+    let first_room = fake.state().rooms.keys().next().unwrap().clone();
+    {
+        let state = fake.state();
+        assert_eq!(state.rooms.len(), 1);
+        let room = &state.rooms[&first_room];
+        assert!(
+            !room.members.contains("@owner:test"),
+            "建房成功后失败，主人要退出，房间不留在他列表里"
+        );
+        assert!(room.left.contains("@owner:test"), "主人是以退出结束的");
+        assert_eq!(state.user("@owner:test").direct, None);
+        assert!(state.devices("@echo:test").is_empty());
+    }
+    // 邀请恢复后重装：另建一间，旧的那间已经没人再看一眼。
+    fake.state().refuse_invites = false;
+    let again = matrix.provision_bot(&spec("echo", &taken)).await.unwrap();
+    assert_eq!(again.account.user_id, "@echo-2:test");
+    // 旧房间还留在服务器上，但主人已经退出、不在他的列表里。
+    assert_ne!(again.account.home_room, first_room);
+    assert!(!members(&fake, &first_room).contains("@owner:test"));
+    assert_eq!(fake.state().rooms.len(), 2);
+}
+
+#[tokio::test]
 async fn an_existing_account_is_never_taken_over_by_a_new_bot() {
     let (fake, config) = start().await;
     let dir = tempfile::tempdir().unwrap();

@@ -36,7 +36,8 @@
 
 ## 验证结果（M0-2）
 
-JWT 登录可行，按下面的方案实现。验证版本：Tuwunel v1.9.4、matrix-sdk 0.19.1。可复跑：
+JWT 登录可行，按下面的方案实现。验证版本：Tuwunel v1.9.4、matrix-sdk 0.19.1；Bot 主房间的 JWT 登录另在
+v2.0.0 上随那一节复跑（只验证能登录）。可复跑：
 `cargo test -p wonton-matrix --test tuwunel -- --include-ignored login`；签发逻辑见
 `crates/wonton-matrix/src/testkit/issuer.rs`，Tuwunel 配置见 `deploy/dev/matrix/tuwunel.toml`。
 
@@ -392,7 +393,9 @@ matrix-sdk 0.19.1；主房间的建房、邀请、退出和撤回另在 v2.0.0 �
   踢掉后是 `leave`。Bot 退出后查成员回 403 `M_FORBIDDEN`，所以成员状态一律用 Bot 的会话读（它在房间里），
   主人退出过时用他的会话读不稳。
   房间建好、主人还在里面时就出现在主人的聊天列表里：列表是服务器给的全部没退出的房间，不看 `m.direct`，
-  所以注册、邀请、Bot 接受之后主人马上退出，房间从列表里消失。插件装好、健康检查通过后 `hand_over` 才用 JWT 临时
+  所以注册、邀请、Bot 接受之后主人马上退出，房间从列表里消失。建房之后的步骤算一个整体：邀请、Bot 接受、退出
+  哪一步失败，主人也退出（`leave_room`）。退出成功，房间就只剩服务器上一间没人认领的房，重试另建一间；退出
+  也失败时照样报原错误，房间留在列表里，主人看得见、删得掉。插件装好、健康检查通过后 `hand_over` 才用 JWT
   登录主人的一台设备，把主人请回房间、把房间写进双方的 `m.direct`（没写过时读出来是 404 `M_NOT_FOUND`），再退出
   登录。主人在 App 里直接看到和 Bot 的私聊，不用接受邀请；安装在交付之前失败时列表里不留一条没人应答的私聊
   （撤回重试时 `m.direct` 也一起去掉）。
@@ -408,6 +411,19 @@ matrix-sdk 0.19.1；主房间的建房、邀请、退出和撤回另在 v2.0.0 �
 - 第二个 Bot：Hermes Agent v0.22.5 按同样的规则装上，用户名是 `hermes`，只凭注入的令牌连上 Matrix
   （`MATRIX_E2EE_MODE=required`），在主房间里和主人的新设备加密对话两轮（模型的部分见 ADR-0008）。核心没有为它
   开任何特例。
+
+## 验证结果（M1，重装后是谁把 Bot 拉进主房间）
+
+`--purge` 卸载会吊销设备、停用账号，主人也退出主房间，重装后旧房间不能再交出去。在 v2.0.0 上逐个容器复跑
+（`cargo test -p wonton-core --lib matrix::bot_docker_tests -- --ignored`，超时或失败时整条用例红）。
+
+- 重装：新房间照样由主人建、主人邀请，`m.room.create` 的 `sender` 是主人，`additional_creators` 里是 Bot；
+  邀请被接受后成员状态变成 `join`，邀请人只能从 Bot 的房间历史（`/rooms/{room}/messages`，`dir=b`）里翻出来，
+  是主人、不是 Bot 自己。
+- 建房和邀请在同一个主人会话里连着做完，邀请成功后没人再动成员状态；主人紧接着退出，重装出来的房间交给新 Bot。
+- 建房这一步成功之后的任何一步失败，主人也退出，只有邀请失败能在假 Tuwunel 上复跑
+  （`cargo test -p wonton-core matrix::tests::a_failed_invite`）。
+- 撤回仍然是主人自己退出（Bot 踢建房的人回 403），成员状态是 `leave`。
 
 ## 验证结果（M1，网关代登录）
 
