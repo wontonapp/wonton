@@ -40,11 +40,13 @@ extension TabWebSession: WKNavigationDelegate {
     }
 
     func webView(_ webView: WKWebView, didStartProvisionalNavigation navigation: WKNavigation!) {
+        AppTrace.event("didStartProvisionalNavigation", "\(placed)")
         ready = hasContent
         navigationURL = webView.url
     }
 
     func webView(_ webView: WKWebView, didFinish navigation: WKNavigation!) {
+        AppTrace.event("didFinish", "\(placed)")
         ready = true
         hasContent = true
         // 不透明时 WebKit 才在页面之外（回弹露出的那块）画页面自己的背景色；透明时露出的是 App 底色，
@@ -115,6 +117,7 @@ extension TabWebSession: WKNavigationDelegate {
         case "tunnel-unavailable", "unauthorized", "protocol": status = nil
         default: status = tunnelFailed ? nil : UInt16(clamping: http.statusCode)
         }
+        AppTrace.event("response.tunnelFailed", "\(placed) status=\(http.statusCode)")
         loadFailed(status: status)
     }
 
@@ -169,12 +172,16 @@ extension TabWebSession: WKNavigationDelegate {
         failed(error)
     }
 
-    func webViewWebContentProcessDidTerminate(_ webView: WKWebView) { rebuild() }
+    func webViewWebContentProcessDidTerminate(_ webView: WKWebView) {
+        AppTrace.event("webContentProcessTerminated", "\(placed)")
+        rebuild()
+    }
 
     private func failed(_ error: Error) {
         let error = error as NSError
         let cancelled = error.domain == NSURLErrorDomain && error.code == NSURLErrorCancelled
         let policy = error.domain == "WebKitErrorDomain" && error.code == 102
+        AppTrace.event("navigationFailed", "\(placed) \(error.domain)/\(error.code) cancelled=\(cancelled)")
         if !cancelled && !policy { loadFailed(status: nil) }
     }
 

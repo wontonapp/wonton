@@ -144,10 +144,16 @@ final class TabWebSession: NSObject {
                 }
             }
             guard input.connected, input.page.state == .ready,
-                  let entry = input.page.url, let url = URL(string: entry) else { return }
+                  let entry = input.page.url, let url = URL(string: entry) else {
+                AppTrace.event("tab.hold", "\(placed) connected=\(input.connected) page=\(input.page.state)")
+                return
+            }
             // 插件页要等家里的代理；公网网页直接连，不经隧道（ADR-0052），没有代理也加载。
             let proxy = input.proxy
-            guard proxy != nil || !bridged else { return }
+            guard proxy != nil || !bridged else {
+                AppTrace.event("tab.hold.proxy", "\(placed)")
+                return
+            }
             if webView == nil { try create() }
             guard let webView else { return }
             if loadedReload != input.page.reload || loadedEntry != entry || loadedProxy != proxy {
@@ -158,6 +164,7 @@ final class TabWebSession: NSObject {
                 loadedEntry = entry
                 loadedProxy = proxy
                 recoveryURL = nil
+                AppTrace.event("webView.load", "\(placed) \(destination.absoluteString)")
                 webView.load(URLRequest(url: destination))
                 // widget 页每次加载都是一次新的 widget 会话（重新加载换驱动、换地址）：页面开始加载后订阅。
                 if tab.isWidget { try widgetChannel.start(page: placed, core: core, into: self) }
