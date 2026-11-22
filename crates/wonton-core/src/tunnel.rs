@@ -28,7 +28,7 @@ use hyper::service::service_fn;
 use hyper_util::rt::TokioIo;
 use iroh::endpoint::presets;
 use iroh::tls::CaTlsConfig;
-use iroh::{Endpoint, RelayMode, RelayUrl, SecretKey, Watcher};
+use iroh::{Endpoint, EndpointId, RelayMode, RelayUrl, SecretKey, Watcher};
 use rustls_pki_types::{CertificateDer, pem::PemObject};
 use tokio::io::{AsyncRead, AsyncReadExt, AsyncWrite, AsyncWriteExt, ReadBuf};
 use tokio::sync::watch;
@@ -476,28 +476,30 @@ impl hyper::body::Body for FailedBody {
     }
 }
 
-/// 异常收尾的侧别和类别，进 ERROR 日志：只按 hyper 给得出的事实分，分不出就写未知。
+/// 异常收尾的侧别（`upstream` 是网关这边、`downstream` 是设备那边）和机制，进日志。
+/// 只按 hyper 给得出的事实分，看不出哪一侧就写 `unknown`。
 fn classify(err: &hyper::Error, response_body_failed: bool) -> (&'static str, &'static str) {
     if response_body_failed {
-        return ("upstream", "broken_body");
+        return ("upstream", "response_body_aborted");
     }
     if err.is_parse() {
-        return ("device", "malformed");
+        return ("downstream", "malformed");
     }
     if err.is_incomplete_message() {
-        return ("device", "incomplete");
+        return ("downstream", "incomplete");
     }
+    // hyper 说的是写响应体时用户代码中止，不是请求体。
     if err.is_body_write_aborted() {
-        return ("device", "request_body_aborted");
+        return ("upstream", "response_body_aborted");
     }
     if err.is_canceled() || err.is_closed() {
-        return ("device", "cancelled");
+        return ("unknown", "cancelled");
     }
     if err.is_shutdown() {
-        return ("write", "write_failed");
+        return ("downstream", "write_failed");
     }
     if err.is_timeout() {
-        return ("device", "timeout");
+        return ("unknown", "timeout");
     }
     match io_kind(err) {
         Some(
@@ -505,8 +507,8 @@ fn classify(err: &hyper::Error, response_body_failed: bool) -> (&'static str, &'
             | io::ErrorKind::ConnectionAborted
             | io::ErrorKind::ConnectionReset
             | io::ErrorKind::NotConnected,
-        ) => ("write", "write_failed"),
-        Some(io::ErrorKind::UnexpectedEof) => ("device", "incomplete"),
+        ) => ("downstream", "write_failed"),
+        Some(io::ErrorKind::UnexpectedEof) => ("downstream", "incomplete"),
         _ => ("unknown", "other"),
     }
 }
@@ -529,6 +531,57 @@ fn panic_text(payload: &(dyn Any + Send)) -> String {
         .or_else(|| payload.downcast_ref::<String>().cloned())
         .unwrap_or_else(|| "（panic 内容认不出）".to_owned())
 }
+
+/// 收尾日志：正常结束记 debug，异常记 ERROR 带事件名、侧别、机制、panic 标记和详情。
+fn log_outcome(
+    device: &EndpointId,
+    upgraded: bool,
+    outcome: &Result<Result<(), hyper::Error>, Box<dyn Any + Send>>,
+    response_body_failed: bool,
+) {
+    let (side, category, is_panic, detail) = match outcome {
+        Ok(Ok(())) => ("downstream", "closed", false, "连接正常结束".to_owned()),
+        Ok(Err(err)) => {
+            let (side, category) = classify(err, response_body_failed);
+            (side, category, false, err.to_string())
+        }
+        Err(payload) => ("upstream", "panic", true, panic_text(payload.as_ref())),
+    };
+    match (upgraded, category == "closed") {
+        (false, true) => tracing::debug!(
+            device = %device.fmt_short(),
+            side = %side,
+            category = %category,
+            "隧道上的 HTTP 连接结束"
+        ),
+        (true, true) => tracing::debug!(
+            device = %device.fmt_short(),
+            side = %side,
+            category = %category,
+            "隧道连接升级结束"
+        ),
+        (false, false) => tracing::error!(
+            event = "tunnel_stream_aborted",
+            device = %device.fmt_short(),
+            side = %side,
+            is_panic,
+            category = %category,
+            detail = %detail,
+            "隧道上的 HTTP 连接异常结束"
+        ),
+        // 101 之后读写在处理器的任务里，这里不收尾，但交接失败照样得记下来。
+        (true, false) => tracing::error!(
+            event = "tunnel_stream_aborted",
+            device = %device.fmt_short(),
+            side = %side,
+            is_panic,
+            category = %category,
+            detail = %detail,
+            "隧道连接升级后交接失败"
+        ),
+    }
+}
+
 /// 用网关服务一条隧道流（一条设备本地代理收到的 TCP 连接），支持 keep-alive 和 WebSocket 等协议升级。
 ///
 /// 异常结束时不能直接丢弃流：`PeerStream` 没有 shutdown 就 Drop 会复位，客户端下一次读拿到复位，
@@ -577,34 +630,25 @@ async fn serve_stream(stream: PeerStream, app: Router) {
         .with_upgrades();
     let outcome = AssertUnwindSafe(served).catch_unwind().await;
 
-    if upgraded.load(Ordering::Relaxed) {
-        tracing::debug!(device = %device.fmt_short(), "隧道连接升级结束");
+    let upgraded = upgraded.load(Ordering::Relaxed);
+    log_outcome(
+        &device,
+        upgraded,
+        &outcome,
+        body_failed.load(Ordering::Relaxed),
+    );
+    if upgraded {
         return;
-    }
-    let (side, category, is_panic, detail) = match &outcome {
-        Ok(Ok(())) => ("gateway", "closed", false, "连接正常结束".to_owned()),
-        Ok(Err(err)) => {
-            let (side, category) = classify(err, body_failed.load(Ordering::Relaxed));
-            (side, category, false, err.to_string())
-        }
-        Err(payload) => ("upstream", "panic", true, panic_text(payload.as_ref())),
-    };
-    if category == "closed" {
-        tracing::debug!(device = %device.fmt_short(), "隧道上的 HTTP 连接结束");
-    } else {
-        tracing::error!(
-            event = "tunnel_stream_aborted",
-            device = %device.fmt_short(),
-            side = %side,
-            is_panic,
-            category = %category,
-            detail = %detail,
-            "隧道上的 HTTP 连接异常结束"
-        );
     }
 
     let mut stream = io.lock().await;
-    let _ = AsyncWriteExt::shutdown(&mut *stream).await;
+    if let Err(err) = AsyncWriteExt::shutdown(&mut *stream).await {
+        tracing::debug!(
+            device = %device.fmt_short(),
+            error = %err,
+            "隧道写半边 shutdown 失败，客户端读到的是复位"
+        );
+    }
     if in_flight.load(Ordering::Relaxed) {
         let drained = timeout(CLOSE_DRAIN, async {
             let mut buf = [0u8; 4096];
