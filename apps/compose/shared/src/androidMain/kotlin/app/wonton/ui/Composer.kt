@@ -122,23 +122,18 @@ fun Composer(
     val inSideChat = target.threadRoot != null
     // 旁聊里照片不进附件区，选好就发；输入框里的字只当第一张的说明，回复跟着这张照片发出去。
     val sendImage = if (inSideChat) {
-        { upload: ImageUpload, caption: String? ->
-            val problem =
-                core.send(
-                    Action.Timeline(
-                        TimelineAction.SendImage(target, upload, caption = caption, replyTo = reply?.eventId),
-                    ),
-                )
-            if (problem == null) {
-                if (caption != null) onSent() else if (reply != null) onReplyCancel()
-            } else {
-                onReject(problem)
-            }
-        }
+        sendSideChatImage(
+            core = core,
+            target = target,
+            reply = reply,
+            onSent = onSent,
+            onReplyCancel = onReplyCancel,
+            onReject = onReject,
+        )
     } else {
         null
     }
-    val attach = rememberAttachments(target, composer, core, onReject, onReplyCancel, reply, sendImage, draft)
+    val attach = rememberAttachments(target, composer, core, onReject, reply, sendImage, draft)
     val isEmpty = draft.isBlank() && attachments.isEmpty()
     val focusRequester = remember { FocusRequester() }
     LaunchedEffect(focusToken) { if (focusToken > 0) focusRequester.requestFocus() }
@@ -310,6 +305,28 @@ private class Attachments(
     val chooser: @Composable () -> Unit,
 )
 
+/** 旁聊的照片选好就发；输入框里的字只带在第一张上，发出去后清草稿、收回复。 */
+private fun sendSideChatImage(
+    core: ClientCore,
+    target: TimelineTarget,
+    reply: ReplyQuote?,
+    onSent: () -> Unit,
+    onReplyCancel: () -> Unit,
+    onReject: (Problem) -> Unit,
+): (ImageUpload, String?) -> Unit = { upload, caption ->
+    val problem =
+        core.send(
+            Action.Timeline(
+                TimelineAction.SendImage(target, upload, caption = caption, replyTo = reply?.eventId),
+            ),
+        )
+    if (problem == null) {
+        if (caption != null) onSent() else if (reply != null) onReplyCancel()
+    } else {
+        onReject(problem)
+    }
+}
+
 @OptIn(ExperimentalFoundationApi::class)
 @Composable
 private fun rememberAttachments(
@@ -317,7 +334,6 @@ private fun rememberAttachments(
     composer: ComposerViewModel?,
     core: ClientCore,
     onReject: (Problem) -> Unit,
-    onReplyCancel: () -> Unit,
     reply: ReplyQuote?,
     sendImage: ((ImageUpload, caption: String?) -> Unit)?,
     draft: String,
