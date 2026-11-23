@@ -247,6 +247,8 @@ async fn the_plugins_own_network_gets_no_header() {
 async fn an_oidc_callback_gets_no_header() {
     let h = Harness::start(None).await;
     let seen = plain(&h).await;
+    // 认得出人也照旧不带：应用在回调里自己换凭据。
+    let session = h.app_session().await;
     let reply = h
         .send(
             hyper::Method::POST,
@@ -254,6 +256,7 @@ async fn an_oidc_callback_gets_no_header() {
             "/cb",
             &[
                 ("content-type", "application/x-www-form-urlencoded"),
+                ("cookie", session.as_str()),
                 (WEB_USER_HEADER, FORGED),
             ],
             axum::body::Body::from("code=fixture-code&state=fixture-state"),

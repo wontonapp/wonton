@@ -205,6 +205,7 @@ App 打开插件网页时，WebView 以客户端核心的本地代理为 HTTP �
 由网关代为带上当前人的用户名或应用自己的密钥，`{role}` 只有 `admin` 和 `user` 两种，网关同时注入 `X-Wonton-Capabilities`
 能力头，页面自己带的同名头先删掉（ADR-0088 第 8 节）。认出人并过了 `open_apps` 的请求另带 `X-Wonton-Web-User`，
 值是当前这个人的 Matrix 用户 ID，普通页和 Bot 页一样，客户端的同名头先删掉；插件自己网络里的直转、没登录、没授权和 OIDC 回调不带。
+好友经分享连接打开共享页时也带，值是好友自己，按分享授权判，不看 `open_apps`。
 只有经网关的请求有，插件把网页端口曝到宿主上时可以伪造（[ADR-0045](adr/0045-family-members.md#网页里的说话人)）。
 
 每 Bot 网页不改清单：`webui.service` 属于 `bots.services` 时，每个 Bot 一份 UI 和独立 origin。

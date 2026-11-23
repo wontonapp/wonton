@@ -178,8 +178,10 @@ async fn plugin_request_path(
     if let Some(denied) = request_guards::app_denied(gateway, person.as_ref(), &route.id, &req) {
         return denied;
     }
+    // 回调里应用自己换凭据，用不到打开者；带着会话 Cookie 也照旧不带（ADR-0045）。
     let web_user = person
         .as_ref()
+        .filter(|_| !callback)
         .map(|person| matrix_user_id(gateway, &person.username));
     // 数据存储不经网页的提供方，不看它的状态（ADR-0080 第 6 节）。
     if let Some(hosted) = &route.hosted
