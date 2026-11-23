@@ -170,6 +170,18 @@ extension ChatFailure {
                 nextStep: String(localized: .Problem2.problemUpstreamNextStep),
                 detail: detail
             )
+        case .serverNotPaired:
+            return Problem(
+                title: String(localized: .Problem2.problemServerNotPairedTitle),
+                nextStep: String(localized: .Problem3.problemServerNotPairedNextStep),
+                detail: detail
+            )
+        case .peerPublicAccessOff:
+            return Problem(
+                title: String(localized: .Problem3.problemPeerPublicAccessOffTitle),
+                nextStep: String(localized: .Problem0.problemPeerPublicAccessOffNextStep),
+                detail: detail
+            )
         case .notReady:
             return Problem(
                 title: String(localized: .Problem0.problemNotReadyTitle),

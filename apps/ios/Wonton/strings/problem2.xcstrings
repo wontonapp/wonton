@@ -411,6 +411,36 @@
           }
         }
       }
+    },
+    "problem.serverNotPaired.title": {
+      "comment": "Problem title when a chat can't start because the other server isn't paired with this one.",
+      "extractionState": "manual",
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "The other server isn't paired"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "对方服务器还没配对"
+          }
+        },
+        "zh-Hant": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "對方伺服器還沒配對"
+          }
+        },
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "相手のサーバーはまだペアリングされていません"
+          }
+        }
+      }
     }
   }
 }

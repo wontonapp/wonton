@@ -322,7 +322,7 @@ private fun PeerRow.removesDirectly() = status == PeerStatus.AWAITING_APPROVAL |
 /** 一台对方服务器：标题是对方主人的显示名，下面是状态；点开展开服务器名和详情，长按或行尾删除。 */
 @OptIn(ExperimentalFoundationApi::class)
 @Composable
-private fun PeerRowView(row: PeerRow, onRemove: (PeerRow) -> Unit) {
+internal fun PeerRowView(row: PeerRow, onRemove: (PeerRow) -> Unit) {
     var expanded by remember(row.serverName) { mutableStateOf(false) }
     var menu by remember(row.serverName) { mutableStateOf(false) }
     val colors = WontonTheme.colors
