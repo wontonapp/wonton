@@ -8,8 +8,10 @@ use serde_json::{Value, json};
 
 use crate::entry_settings::EntrySettings;
 
+/// 入口和连接器的镜像。3.2.8-alpine 的构建开了 pthread 模拟，`-S` 打 Usage，所以用 3.4-alpine。
+/// `scripts/mirror-test-images.sh` 从这里的字面量取测试镜像；测试直接用这个常量，不再抄一份。
 pub const HAPROXY_IMAGE: &str =
-    "haproxy:3.2.8-alpine@sha256:8c6b55d891584afded3ab1b91063a703ecc8ff2481302b691773648ffa806226";
+    "haproxy:3.4-alpine@sha256:8aa6458a9d22a8364a2d2ee9ce93de0cc4a2789e3cf63f0b44adc972863724d7";
 
 pub fn render(
     base: &str,

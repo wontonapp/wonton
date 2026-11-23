@@ -28,8 +28,14 @@ async fn the_admin_account_is_registered_once_and_its_token_kept_private() {
     let mode = std::fs::metadata(&saved).unwrap().permissions().mode() & 0o777;
     assert_eq!(mode, 0o600);
     assert_eq!(first.admin_user_id(), "@wonton-core:test");
+    // 管理账号被服务器邀请进管理房间；核心连上就加入，热加载用这个账号发命令。
+    assert!(
+        fake.state().rooms[super::fake::ADMIN_ROOM_ID]
+            .members
+            .contains("@wonton-core:test")
+    );
 
-    // 核心重启：令牌还有效就沿用，不再注册。
+    // 核心重启：令牌还有效就沿用，不再注册；管理房间已经进去了，也不再有写请求。
     let again = connect(&dir, &config).await;
     assert_eq!(again.admin_token, first.admin_token);
     assert_eq!(fake.state().registrations, 1);
@@ -57,7 +63,7 @@ async fn a_wrong_shared_secret_is_refused_by_tuwunel() {
 
 #[tokio::test]
 async fn an_account_that_is_not_a_server_admin_stops_the_core() {
-    // 管理账号的用户名先被 JWT 登录建成了普通账号：注册报 M_USER_IN_USE，登录能拿到令牌，但调不了管理接口。
+    // 管理账号的用户名先被 JWT 登录建成了普通账号：注册报 M_USER_IN_USE，登录能拿到令牌，但没被邀请进管理房间。
     let (fake, config) = start().await;
     fake.state()
         .users
@@ -67,7 +73,6 @@ async fn an_account_that_is_not_a_server_admin_stops_the_core() {
         panic!("管理账号不是服务器管理员时核心不能启动");
     };
     assert_eq!(error.errcode(), "M_FORBIDDEN", "{error}");
-    assert!(error.to_string().contains("服务器管理员"), "{error}");
 }
 
 fn spec<'a>(localpart: &'a str, taken: &'a BTreeSet<String>) -> BotSpec<'a> {
@@ -204,7 +209,14 @@ async fn reinstalling_keeps_the_account_and_home_room_unless_the_owner_left_it()
         .unwrap();
     assert_eq!(again.account, first.account, "沿用账号和主房间");
     assert_ne!(again.device_id, first.device_id, "每次安装一台新设备");
-    assert_eq!(fake.state().rooms.len(), 1);
+    assert_eq!(
+        fake.state()
+            .rooms
+            .keys()
+            .filter(|id| id.as_str() != super::fake::ADMIN_ROOM_ID)
+            .count(),
+        1
+    );
     assert_eq!(
         fake.state().user("@echo:test").display_name.as_deref(),
         Some("主人改过的名字")
@@ -277,7 +289,14 @@ async fn a_home_room_never_handed_to_the_owner_is_kept_for_the_next_install() {
         .await
         .unwrap();
     assert_eq!(third.account, first.account);
-    assert_eq!(fake.state().rooms.len(), 1);
+    assert_eq!(
+        fake.state()
+            .rooms
+            .keys()
+            .filter(|id| id.as_str() != super::fake::ADMIN_ROOM_ID)
+            .count(),
+        1
+    );
     assert!(
         matrix
             .hand_over("owner", &third, &Languages::default())
@@ -307,7 +326,14 @@ async fn an_abandoned_home_room_is_recovered_without_the_install_record() {
         .await
         .unwrap();
     assert_eq!(again.account, first.account, "捡回上次的房间");
-    assert_eq!(fake.state().rooms.len(), 1);
+    assert_eq!(
+        fake.state()
+            .rooms
+            .keys()
+            .filter(|id| id.as_str() != super::fake::ADMIN_ROOM_ID)
+            .count(),
+        1
+    );
 }
 
 #[tokio::test]
@@ -377,10 +403,23 @@ async fn a_failed_invite_leaves_the_owner_out_of_the_room() {
         .await
         .unwrap_err();
     assert_eq!(err.errcode(), "M_UNKNOWN", "{err}");
-    let first_room = fake.state().rooms.keys().next().unwrap().clone();
+    let first_room = fake
+        .state()
+        .rooms
+        .keys()
+        .find(|id| id.as_str() != super::fake::ADMIN_ROOM_ID)
+        .unwrap()
+        .clone();
     {
         let state = fake.state();
-        assert_eq!(state.rooms.len(), 1);
+        assert_eq!(
+            state
+                .rooms
+                .keys()
+                .filter(|id| id.as_str() != super::fake::ADMIN_ROOM_ID)
+                .count(),
+            1
+        );
         let room = &state.rooms[&first_room];
         assert!(
             !room.members.contains("@owner:test"),
@@ -397,7 +436,14 @@ async fn a_failed_invite_leaves_the_owner_out_of_the_room() {
     // 旧房间还留在服务器上，但主人已经退出、不在他的列表里。
     assert_ne!(again.account.home_room, first_room);
     assert!(!members(&fake, &first_room).contains("@owner:test"));
-    assert_eq!(fake.state().rooms.len(), 2);
+    assert_eq!(
+        fake.state()
+            .rooms
+            .keys()
+            .filter(|id| id.as_str() != super::fake::ADMIN_ROOM_ID)
+            .count(),
+        2
+    );
 }
 
 #[tokio::test]
@@ -413,10 +459,23 @@ async fn a_lost_create_room_response_leaves_no_room_for_the_owner() {
         .await
         .unwrap_err();
     assert!(matches!(err, MatrixError::Unavailable { .. }), "{err}");
-    let first_room = fake.state().rooms.keys().next().unwrap().clone();
+    let first_room = fake
+        .state()
+        .rooms
+        .keys()
+        .find(|id| id.as_str() != super::fake::ADMIN_ROOM_ID)
+        .unwrap()
+        .clone();
     {
         let state = fake.state();
-        assert_eq!(state.rooms.len(), 1);
+        assert_eq!(
+            state
+                .rooms
+                .keys()
+                .filter(|id| id.as_str() != super::fake::ADMIN_ROOM_ID)
+                .count(),
+            1
+        );
         let room = &state.rooms[&first_room];
         assert!(
             !room.members.contains("@owner:test"),
@@ -429,7 +488,14 @@ async fn a_lost_create_room_response_leaves_no_room_for_the_owner() {
     let again = matrix.provision_bot(&spec("echo", &taken)).await.unwrap();
     assert_ne!(again.account.home_room, first_room);
     assert!(!members(&fake, &first_room).contains("@owner:test"));
-    assert_eq!(fake.state().rooms.len(), 2);
+    assert_eq!(
+        fake.state()
+            .rooms
+            .keys()
+            .filter(|id| id.as_str() != super::fake::ADMIN_ROOM_ID)
+            .count(),
+        2
+    );
 }
 
 #[tokio::test]

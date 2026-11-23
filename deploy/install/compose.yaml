@@ -273,14 +273,18 @@ services:
 
   tuwunel:
     image: ghcr.io/matrix-construct/tuwunel:v2.0.0@sha256:3dde1e9b3503c68218f95415ec3ebff522bd945065ba76019d408543540d1730
-    restart: unless-stopped
+    # 热加载走管理房间命令（ADR-0116），核心不再给这个容器发信号；`restart: always` 仍然要写：Docker 重启、
+    # 崩溃都要自己回来，`unless-stopped` 会被历史上任何一次 kill 记成“手动停过”（HasBeenManuallyStopped），重启后
+    # 不再拉起，核心连不上 Matrix 一直崩。停止信号要写明：没写时 Docker 把任何信号都当成停止信号，停掉重启管理器。
+    restart: always
+    stop_signal: SIGTERM
     # 升级后首次启动可能在迁移数据库，不能被 10 秒后强杀（见 Tuwunel 的 docker.md）。
     stop_grace_period: 5m
     # 配对代理范围与黑名单在第二份配置一起热加载（ADR-0051）；私用名另有允许名单。
     command: ["-c", "/etc/tuwunel/tuwunel.toml", "-c", "/etc/tuwunel/wonton-fed.toml"]
     environment:
       <<: *no-proxy
-      # 配置和 JWT 公钥都在文件里：轮换签发密钥时核心改写它、发 SIGUSR1 热加载（ADR-0009）。
+      # 配置和 JWT 公钥都在文件里：轮换签发密钥时核心改写它，下一步热加载一起重读（ADR-0009）。
       TUWUNEL_CONFIG: /etc/tuwunel/tuwunel.toml
       # MatrixRTC 的授权服务固定在 Matrix 对外地址的这个前缀下，网关转给通话插件（ADR-0096）：装卸插件不改这里。
       TUWUNEL_WELL_KNOWN__LIVEKIT_URL: http://matrix.${WONTON_BASE_DOMAIN}:${WONTON_PORT}/_wonton/matrix-rtc

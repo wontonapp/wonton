@@ -243,7 +243,13 @@ impl Family {
 async fn approved_family_joins_once_and_power_levels_follow_role_assignment_and_edits() {
     let f = Family::start().await;
     let (id, _) = f.pending("alice", "family");
-    assert!(f.fake.state().rooms.is_empty());
+    assert!(
+        f.fake
+            .state()
+            .rooms
+            .keys()
+            .all(|id| id.as_str() == crate::matrix::fake::ADMIN_ROOM_ID)
+    );
     let reply = f.approve(&id).await;
     assert_eq!(reply.status, StatusCode::NO_CONTENT, "{}", reply.text());
     let room = f.room();
@@ -325,7 +331,13 @@ async fn approved_family_joins_once_and_power_levels_follow_role_assignment_and_
 async fn friends_stay_out_even_with_manage_members_and_removal_kicks_family() {
     let f = Family::start().await;
     f.join("guest", "friend").await;
-    assert!(f.fake.state().rooms.is_empty());
+    assert!(
+        f.fake
+            .state()
+            .rooms
+            .keys()
+            .all(|id| id.as_str() == crate::matrix::fake::ADMIN_ROOM_ID)
+    );
     f.join("alice", "family").await;
     let room = f.room();
     let reply = f
@@ -386,7 +398,13 @@ async fn failed_creation_is_reported_and_retry_uses_saved_approval_without_reinv
         f.gateway.members.get("alice").unwrap().status,
         MemberStatus::Joined
     );
-    assert!(f.fake.state().rooms.is_empty());
+    assert!(
+        f.fake
+            .state()
+            .rooms
+            .keys()
+            .all(|id| id.as_str() == crate::matrix::fake::ADMIN_ROOM_ID)
+    );
     f.fake.state().refuse_rooms = false;
     let reply = f.retry().await;
     assert_eq!(reply.status, StatusCode::NO_CONTENT, "{}", reply.text());

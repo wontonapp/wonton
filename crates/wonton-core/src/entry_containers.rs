@@ -25,6 +25,7 @@ use crate::plugin::docker::{Engine, EngineError};
 use crate::plugin::names::{Instance, LABEL_COMPONENT, LABEL_MANAGED_BY};
 
 mod options;
+pub use reload::reload_haproxy;
 mod reload;
 use options::same_options;
 
@@ -35,6 +36,11 @@ pub const CONNECTOR_COMPONENT: &str = "connector";
 pub const ENTRY_EDGE_ALIAS: &str = "entry-edge.wonton.internal";
 pub const ENTRY_CLIENTS_ALIAS: &str = "entry.wonton.internal";
 pub const CONNECTOR_ALIAS: &str = "connector.wonton.internal";
+
+/// 入口 HAProxy 主进程的管理地址：只有核心和入口在 `clients` 网络上，这个端口不出那个网络。
+pub const ENTRY_RELOAD_ADDR: &str = "entry.wonton.internal:8404";
+/// 连接器的管理地址（连接器在 `relay` 和 `edge` 上）。
+pub const CONNECTOR_RELOAD_ADDR: &str = "connector.wonton.internal:8404";
 
 /// 连接器把公网 TCP 转发接进入口的端口（路由器和自建 frps 都用）。
 const CONNECTOR_PORT: u32 = 8443;
@@ -49,6 +55,8 @@ pub enum EntryError {
     NetworkMissing(String),
     /// 入口容器不唯一，热加载不知道该发给谁。
     NotOneEntry(usize),
+    /// 入口 HAProxy 的主进程没接受新配置，带着它的启动日志。
+    Reload(String),
     Docker(EngineError),
 }
 
@@ -58,6 +66,7 @@ impl EntryError {
         match self {
             Self::CoreNotInContainer | Self::NetworkMissing(_) => "core_not_in_container",
             Self::NameTaken(_) | Self::NotOneEntry(_) => "conflict",
+            Self::Reload(_) => "upstream_error",
             Self::Docker(EngineError::PortTaken(_)) => "conflict",
             Self::Docker(EngineError::Rejected { .. }) => "invalid_input",
             Self::Docker(EngineError::NotFound(_)) => "not_found",
@@ -91,6 +100,7 @@ impl fmt::Display for EntryError {
                 "{}：找到 {count} 个入口容器，热加载不知道发给谁",
                 self.category()
             ),
+            Self::Reload(logs) => write!(f, "{}：入口拒绝了新配置：{logs}", self.category()),
             Self::Docker(error) => write!(f, "{}：{error}", self.category()),
         }
     }
@@ -125,6 +135,8 @@ pub struct EntryContainers {
     /// 连接器发布的地址和端口；空时看 `WONTON_ENTRY_BIND`/`WONTON_ENTRY_PORT`。
     binding: Option<(String, String)>,
     operation: std::sync::Arc<tokio::sync::Mutex<Option<crate::entry_haproxy::Model>>>,
+    /// 入口主进程的管理地址；测试指向临时端口。
+    reload_addr: String,
 }
 
 impl EntryContainers {
@@ -144,6 +156,7 @@ impl EntryContainers {
             lan_forward_available: false,
             binding: None,
             operation: std::sync::Arc::new(tokio::sync::Mutex::new(None)),
+            reload_addr: ENTRY_RELOAD_ADDR.to_owned(),
         }
     }
 
@@ -155,6 +168,13 @@ impl EntryContainers {
     /// 测试和后续局域网转发实现用：入口容器接入局域网转发网络后才可设为 true。
     pub fn with_lan_forward_available(mut self, available: bool) -> Self {
         self.lan_forward_available = available;
+        self
+    }
+
+    /// 测试用：把入口的主进程管理端口指到临时监听。
+    #[must_use]
+    pub fn with_reload_addr(mut self, addr: String) -> Self {
+        self.reload_addr = addr;
         self
     }
 
@@ -213,7 +233,7 @@ impl EntryContainers {
             crate::entry_compose::prepare_permissions(&self.install_dir)
                 .map_err(|error| config_error("入口文件权限", error))?;
             self.reconcile_inner(Some(settings)).await?;
-            self.reload().await
+            self.reload(&self.reload_addr).await
         }
         .await;
         if let Err(error) = applied {
@@ -221,7 +241,7 @@ impl EntryContainers {
             let mut failures = Vec::new();
             if let Err(cause) = snapshot.restore(&self.install_dir) {
                 failures.push(format!("恢复配置失败：{cause:#}"));
-            } else if let Err(cause) = self.reload().await {
+            } else if let Err(cause) = self.reload(&self.reload_addr).await {
                 failures.push(format!("重载旧配置失败：{cause}"));
             }
             return if failures.is_empty() {
@@ -320,9 +340,9 @@ impl EntryContainers {
         Ok(())
     }
 
-    /// 证书续期后让 HAProxy 热加载配置（`USR2`：已升级的连接不断，实测）。
-    pub async fn reload(&self) -> Result<(), EntryError> {
-        self.reload_checked().await
+    /// 让入口的 HAProxy 主进程软重载，见 [`reload`]。
+    pub async fn reload(&self, addr: &str) -> Result<(), EntryError> {
+        self.reload_checked(addr).await
     }
 
     /// 容器的名字：和插件资源一样带实例名，几套核心共用一台 Docker 时不会撞。
@@ -602,6 +622,8 @@ impl EntryContainers {
                         .collect(),
                 ),
                 labels: Some(self.labels(component)),
+                // Docker 重启时停容器用它。不写就跟镜像的 StopSignal 走，镜像改了可能来不及排空连接。
+                stop_signal: Some("SIGTERM".to_owned()),
                 exposed_ports: (!ports.is_empty())
                     .then(|| ports.iter().map(|(key, _)| key.clone()).collect()),
                 networking_config: Some(NetworkingConfig {
@@ -612,7 +634,7 @@ impl EntryContainers {
                     network_mode: Some(primary),
                     dns: (!resolvers.is_empty()).then_some(resolvers),
                     restart_policy: Some(RestartPolicy {
-                        name: Some(RestartPolicyNameEnum::UNLESS_STOPPED),
+                        name: Some(RestartPolicyNameEnum::ALWAYS),
                         ..Default::default()
                     }),
                     cap_drop: Some(vec!["ALL".to_owned()]),
@@ -666,7 +688,7 @@ impl EntryContainers {
                 ),
                 None => (
                     crate::entry_compose::HAPROXY_IMAGE,
-                    haproxy_command("/config/connector.cfg"),
+                    haproxy_command("/config/connector.cfg", CONNECTOR_RELOAD_ADDR),
                     mounts(&entry, &[("connector.cfg", "/config/connector.cfg")]),
                     // 路由器把公网端口转到宿主，连接器在宿主上收。
                     vec![(format!("{CONNECTOR_PORT}/tcp"), self.host_binding())],
@@ -675,7 +697,7 @@ impl EntryContainers {
         } else {
             (
                 crate::entry_compose::HAPROXY_IMAGE,
-                haproxy_command("/config/haproxy.cfg"),
+                haproxy_command("/config/haproxy.cfg", ENTRY_RELOAD_ADDR),
                 mounts(
                     &entry,
                     &[("haproxy.cfg", "/config/haproxy.cfg"), ("certs", "/certs")],
@@ -777,8 +799,9 @@ fn mounts(entry: &Path, names: &[(&str, &str)]) -> Vec<String> {
         .collect()
 }
 
-fn haproxy_command(config: &str) -> Vec<String> {
-    ["haproxy", "-W", "-db", "-f", config]
+/// `-S` 开主进程的管理端口，热加载走它；`-W` 是主从模式，新配置起不来时旧进程照常跑。
+fn haproxy_command(config: &str, reload_addr: &str) -> Vec<String> {
+    ["haproxy", "-W", "-db", "-f", config, "-S", reload_addr]
         .map(str::to_owned)
         .to_vec()
 }
