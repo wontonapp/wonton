@@ -63,7 +63,8 @@ fun LicensesPage(licenses: LicensesLoad, onOpen: (LicenseGroup) -> Unit, back: (
     WontonScreen(bar = { WontonPushedBar(stringResource(R.string.settings_licenses), back) }) {
         val result = licenses.result ?: return@WontonScreen
         if (result.isFailure) {
-            LicensesProblem(licenses.retry)
+            val reason = result.exceptionOrNull()?.let { it.message ?: it.toString() }
+            LicensesProblem(reason, licenses.retry)
         } else {
             LazyColumn(
                 Modifier.fillMaxSize().wontonContentPadding().padding(WontonTheme.spacing.pageInset),
@@ -78,7 +79,7 @@ fun LicensesPage(licenses: LicensesLoad, onOpen: (LicenseGroup) -> Unit, back: (
 }
 
 @Composable
-private fun LicensesProblem(retry: () -> Unit) {
+private fun LicensesProblem(detail: String?, retry: () -> Unit) {
     Column(
         Modifier.fillMaxSize().wontonContentPadding().padding(WontonTheme.spacing.pageInset),
         verticalArrangement = Arrangement.spacedBy(WontonTheme.spacing.s12),
@@ -88,6 +89,8 @@ private fun LicensesProblem(retry: () -> Unit) {
             style = WontonTheme.typography.body,
             color = WontonTheme.colors.textPrimary.toColor(),
         )
+        // 原因按类别由核心按 App 的语言给，收进默认收起的详情。
+        if (detail != null) ProblemDetail(detail)
         WontonSmallButton(stringResource(R.string.common_retry), retry)
     }
 }

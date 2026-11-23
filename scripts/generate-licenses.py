@@ -18,6 +18,7 @@ import argparse
 import hashlib
 import json
 import os
+import platform
 import shutil
 import subprocess
 import sys
@@ -31,8 +32,18 @@ TEXTS = ROOT / "licenses" / "texts"
 CARGO_ABOUT_CONFIG = ROOT / "licenses" / "about.toml"
 
 # cargo-about 是开发期工具，不进 App 二进制；它是 MIT OR Apache-2.0，升级时改这里并跑一遍 check-licenses.sh。
+# 发布资产按平台分开（0.9.3 没有 x86_64 darwin 的），每个钉自己的 sha256；第二段是 tar 里的目录名。
 CARGO_ABOUT_VERSION = "0.9.3"
-CARGO_ABOUT_SHA256 = "3ad1e94ea1e63d69d1961f4fb15ccbbe9575d906111f96d2cb4dce6df48f71b4"
+CARGO_ABOUT_ASSETS = {
+    ("linux", "x86_64"): (
+        "x86_64-unknown-linux-musl",
+        "3ad1e94ea1e63d69d1961f4fb15ccbbe9575d906111f96d2cb4dce6df48f71b4",
+    ),
+    ("darwin", "arm64"): (
+        "aarch64-apple-darwin",
+        "45520df8680978a6e7c4023ace0e3f311c73efc208cd68e5a7f4ed4822fa0349",
+    ),
+}
 
 # 各平台真正编进 App 的目标。一次只给一个平台，页面就不会列出另一端的 crate。
 TARGETS = {
@@ -78,6 +89,19 @@ def standard_text(license_id: str) -> str:
     return path.read_text(encoding="utf-8")
 
 
+def cargo_about_asset(system: str | None = None, machine: str | None = None) -> tuple[str, str]:
+    """这台机器该下载的资产目录名和它的 sha256；没有对应资产时报清楚平台。"""
+    system = system or sys.platform
+    machine = machine or platform.machine()
+    found = CARGO_ABOUT_ASSETS.get((system, machine))
+    if found:
+        return found
+    raise GenerateError(
+        f"没有 cargo-about {CARGO_ABOUT_VERSION} 的 {system}/{machine} 资产；"
+        f"先 cargo install cargo-about --version {CARGO_ABOUT_VERSION} --locked 放进 PATH"
+    )
+
+
 def cargo_about_path() -> Path:
     """找 cargo-about：PATH 里有就用，没有就下载钉死的那份到缓存目录，校验 sha256。"""
     found = shutil.which("cargo-about")
@@ -92,20 +116,21 @@ def cargo_about_path() -> Path:
     if binary.is_file():
         return binary
 
+    triple, sha256 = cargo_about_asset()
     url = (
         "https://github.com/EmbarkStudios/cargo-about/releases/download/"
-        f"{CARGO_ABOUT_VERSION}/cargo-about-{CARGO_ABOUT_VERSION}-x86_64-unknown-linux-musl.tar.gz"
+        f"{CARGO_ABOUT_VERSION}/cargo-about-{CARGO_ABOUT_VERSION}-{triple}.tar.gz"
     )
-    print(f"下载 cargo-about {CARGO_ABOUT_VERSION}", file=sys.stderr)
+    print(f"下载 cargo-about {CARGO_ABOUT_VERSION}（{triple}）", file=sys.stderr)
     with urllib.request.urlopen(url, timeout=120) as response:
         archive = response.read()
     digest = hashlib.sha256(archive).hexdigest()
-    if digest != CARGO_ABOUT_SHA256:
+    if digest != sha256:
         raise GenerateError(f"cargo-about 的 sha256 是 {digest}，和钉死的对不上")
     binary.parent.mkdir(parents=True, exist_ok=True)
     with tempfile.TemporaryDirectory() as tmp:
         subprocess.run(["tar", "xzf", "-", "-C", tmp], input=archive, check=True)
-        inner = Path(tmp) / f"cargo-about-{CARGO_ABOUT_VERSION}-x86_64-unknown-linux-musl" / "cargo-about"
+        inner = Path(tmp) / f"cargo-about-{CARGO_ABOUT_VERSION}-{triple}" / "cargo-about"
         binary.write_bytes(inner.read_bytes())
     binary.chmod(0o755)
     return binary
@@ -157,7 +182,10 @@ def rust_components(platform: str) -> tuple[list[dict], dict[str, dict]]:
                 raise GenerateError(f"{crate['package']['name']} 没有对应的许可文本，声明是 {crate['license']}")
             licenses[ids[0]] = {"name": ids[0], "text": standard_text(ids[0])}
         for license_id in ids:
-            entry = texts[license_id]
+            entry = texts.get(license_id)
+            if entry is None:
+                # 兜底分支刚补过正文，这里不覆盖它。
+                continue
             if not entry["text"].strip():
                 raise GenerateError(f"许可 {license_id} 没有文本")
             licenses.setdefault(license_id, {"name": entry["name"], "text": entry["text"]})

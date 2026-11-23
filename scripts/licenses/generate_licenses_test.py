@@ -6,6 +6,7 @@ import importlib.util
 import json
 import sys
 import unittest
+import unittest.mock
 from pathlib import Path
 
 SCRIPT = Path(__file__).resolve().parents[1] / "generate-licenses.py"
@@ -30,6 +31,36 @@ class ApprovedTableTest(unittest.TestCase):
     def test_unknown_license_has_no_text(self):
         with self.assertRaises(licenses.GenerateError):
             licenses.standard_text("GPL-3.0-only")
+
+
+class AssetTest(unittest.TestCase):
+    def test_each_supported_platform_has_its_asset(self):
+        self.assertEqual(licenses.cargo_about_asset("linux", "x86_64")[0], "x86_64-unknown-linux-musl")
+        self.assertEqual(licenses.cargo_about_asset("darwin", "arm64")[0], "aarch64-apple-darwin")
+
+    def test_sha256_is_per_asset(self):
+        digests = {sha for _, sha in licenses.CARGO_ABOUT_ASSETS.values()}
+        self.assertEqual(len(digests), len(licenses.CARGO_ABOUT_ASSETS))
+
+    def test_unknown_platform_names_the_triple(self):
+        with self.assertRaises(licenses.GenerateError) as raised:
+            licenses.cargo_about_asset("darwin", "x86_64")
+        self.assertIn("darwin/x86_64", str(raised.exception))
+
+
+class RustFallbackTest(unittest.TestCase):
+    def test_crate_without_license_file_uses_declared_license(self):
+        payload = {
+            "overview": [],
+            "crates": [{"package": {"name": "opaque-debug", "version": "1"}, "license": "MIT OR Apache-2.0"}],
+        }
+        stub = Path(self.enterContext(__import__("tempfile").TemporaryDirectory())) / "cargo-about"
+        stub.write_text(f"#!/usr/bin/env python3\nprint({json.dumps(json.dumps(payload))})\n", encoding="utf-8")
+        stub.chmod(0o755)
+        with unittest.mock.patch.object(licenses, "cargo_about_path", return_value=stub):
+            components, texts = licenses.rust_components("ios")
+        self.assertEqual(components[0]["license_ids"], ["MIT"])
+        self.assertIn("Permission is hereby granted", texts["MIT"]["text"])
 
 
 class AndroidTest(unittest.TestCase):
