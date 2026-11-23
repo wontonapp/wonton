@@ -191,6 +191,19 @@ async fn a_relay_still_joining_the_network_is_not_reported_as_a_failure() {
 }
 
 #[tokio::test]
+async fn a_relay_that_was_just_recreated_and_listens_a_moment_later_is_not_a_failure() {
+    let rig = Rig::proxied().await;
+    // 没有出口容器：这一探会把它建起来。刚起的 gost 还没监听，第一次连不上，一秒后通。
+    {
+        let mut script = rig.script.lock().unwrap();
+        script.via_relay_later = vec![Some("Connection refused".to_owned()), None];
+    }
+    rig.m.probe_egress(&Languages::default()).await.unwrap();
+    assert_eq!(rig.m.egress_problem(), None);
+    assert_eq!(rig.script.lock().unwrap().via_relay_later.len(), 0);
+}
+
+#[tokio::test]
 async fn a_relay_image_that_cannot_be_pulled_is_reported_with_dockers_words() {
     let rig = Rig::proxied().await;
     rig.docker.fail_pulls(Some("pull access denied"));

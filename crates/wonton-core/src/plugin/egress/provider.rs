@@ -20,7 +20,6 @@ pub(in crate::plugin) fn provides_proxy(manifest: &Manifest) -> bool {
 }
 
 pub(in crate::plugin) struct Provider {
-    pub id: PluginId,
     /// 主人那边的语言下插件的名字。
     pub title: String,
     pub address: ProxyAddress,
@@ -30,7 +29,7 @@ pub(in crate::plugin) struct Provider {
 
 /// 状态没变时等这么久再看一眼容器：装的过程里 Docker 的状态自己会往前（或者镜像拉完），
 /// 一下没看到运行中不代表装坏了。每次核对（预览、探测、安装）都会多等这一秒。
-const STATUS_RECHECK: Duration = Duration::from_secs(1);
+pub(super) const STATUS_RECHECK: Duration = Duration::from_secs(1);
 
 /// 看一眼的结论：问题为空就是就绪；`status_waiting` 表示问题是“状态还没走到”来的，值得再看一眼。
 struct Verdict {
@@ -70,12 +69,19 @@ impl PluginManager {
         let address = ProxyAddress::parse(&format!("http://{container}:{}", spec.port), langs)
             .map_err(InstallError::Storage)?;
         Ok(Provider {
-            id: id.clone(),
             title: langs.pick_owned(&entry.title),
             address,
             network: self.cfg.instance.network(&id.slug()),
             status: entry.status.clone(),
         })
+    }
+
+    pub(in crate::plugin) fn egress_provider_id(&self) -> Option<PluginId> {
+        let plugins = self.plugins.read().expect("插件表锁中毒");
+        plugins
+            .iter()
+            .find(|(_, entry)| entry.provides_egress_proxy)
+            .map(|(id, _)| id.clone())
     }
 
     pub(super) fn egress_provider_view(&self, langs: &Languages) -> Option<EgressProxyProvider> {

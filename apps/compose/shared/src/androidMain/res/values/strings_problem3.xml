@@ -14,7 +14,8 @@
     <string name="problem_plugin_core_upgrading_title">Your home server is updating</string>
     <!-- Next step: look at the devices again and choose one that's available. -->
     <string name="problem_plugin_device_unavailable_next_step">Check your devices and try again.</string>
-    <string name="problem_plugin_egress_proxy_waiting_next_step">Nothing to do; it is retried automatically. If it stays stuck, look at the proxy app\'s logs on its install page.</string>
+    <!-- Next step: retry once it is up; look at its install page if it stays stuck. -->
+    <string name="problem_plugin_egress_proxy_waiting_next_step">Retry once it is up. If it stays stuck, look at the proxy app\'s logs on its install page.</string>
     <!-- Problem title: a port the app opens on the local network is used by another container or program. -->
     <string name="problem_plugin_lan_port_taken_title">Port in use</string>
     <!-- Next step: choose an interface or address in the local network settings, then try again. -->

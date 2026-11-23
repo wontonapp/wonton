@@ -13,7 +13,7 @@ use wonton_protocol::{EgressFailure, EgressProbe, EgressProblem};
 
 use super::address::ProxyAddress;
 use super::check::{self, TARGET, URL_VAR};
-use super::provider::provides_proxy;
+use super::provider::{STATUS_RECHECK, provides_proxy};
 use crate::l10n;
 use crate::plugin::lan::detect::with_replaced_note;
 use crate::plugin::lan::probe::NOBODY_USER;
@@ -46,8 +46,10 @@ pub enum Prober {
 #[cfg(test)]
 #[derive(Debug, Clone, Default)]
 pub struct Scripted {
-    /// 经出口容器访问外面失败的原因。
+    /// 经出口容器访问外面失败的原因；`via_relay_later` 用完才回到它。
     pub via_relay: Option<String>,
+    /// 后面几次经出口容器探测的结果：重建容器后“过一秒才通”的情况用。
+    pub via_relay_later: Vec<Option<String>>,
     /// 核心直接连代理的结果。
     pub direct: Option<EgressProblem>,
 }
@@ -57,11 +59,18 @@ impl Prober {
         match self {
             Self::Real => check::fetch(relay, TARGET.url, VIA_RELAY_TIMEOUT).await,
             #[cfg(test)]
-            Self::Fixed(script) => match script.lock().expect("探测脚本锁中毒").via_relay.clone()
-            {
-                Some(reason) => Err(reason),
-                None => Ok(()),
-            },
+            Self::Fixed(script) => {
+                let mut script = script.lock().expect("探测脚本锁中毒");
+                let next = if script.via_relay_later.is_empty() {
+                    script.via_relay.clone()
+                } else {
+                    script.via_relay_later.remove(0)
+                };
+                match next {
+                    Some(reason) => Err(reason),
+                    None => Ok(()),
+                }
+            }
             #[cfg(test)]
             Self::Fine => Ok(()),
         }
@@ -160,8 +169,8 @@ impl PluginManager {
     ) -> Result<Option<EgressProblem>, InstallError> {
         let name = self.cfg.instance.egress();
         // 每次都核对：出口容器可能被删了，核心换了容器后也要重新接上它的网络。
-        match self.reconcile_relay().await {
-            // 镜像已经拉完了：这意味着 registry 拒了、tag 不存在，重试也还是它。
+        let rebuilt = match self.reconcile_relay().await {
+            // 拉取以确定的方式失败（registry 拒了、tag 不存在这类），重试也还是它。
             Err(e @ InstallError::ImagePull(_)) => {
                 return Ok(Some(relay_failed(l10n::text(
                     langs,
@@ -181,7 +190,7 @@ impl PluginManager {
                 return Ok(Some(relay_failed(e.to_string())));
             }
             result => result?,
-        }
+        };
         let created = self.engine.inspect_container(&name).await?;
         if created.is_some_and(|info| info.state.and_then(|s| s.running) != Some(true)) {
             // 核对没报错、这里却没在跑：核对会重新把它起来。
@@ -200,15 +209,25 @@ impl PluginManager {
             ))));
         };
         let relay = format!("http://{address}:3128");
-        let Err(detail) = self.egress.prober().via_relay(&relay).await else {
-            return Ok(None);
+        let error = self.egress.prober().via_relay(&relay).await;
+        // 刚重建的容器：gost 这时可能还没开始监听，接不上不代表出口坏了。等一秒再试，通了就不算失败。
+        let error = match error {
+            Ok(()) => return Ok(None),
+            Err(_) if rebuilt => {
+                tokio::time::sleep(STATUS_RECHECK).await;
+                match self.egress.prober().via_relay(&relay).await {
+                    Ok(()) => return Ok(None),
+                    Err(detail) => detail,
+                }
+            }
+            Err(detail) => detail,
         };
         let found = self.diagnose(proxy, langs).await?;
         Ok(Some(found.unwrap_or_else(|| {
             relay_failed(l10n::text(
                 langs,
                 "plugin-settings-egress-relay-detail",
-                &[("detail", detail.into()), ("container", name.into())],
+                &[("detail", error.into()), ("container", name.into())],
             ))
         })))
     }

@@ -549,6 +549,7 @@ async fn egress_plugin_without_an_upstream_warns_but_does_not_block_installation
     let dir = tempfile::tempdir().unwrap();
     let script = Arc::new(Mutex::new(Scripted {
         via_relay: Some("TLS handshake failed".to_owned()),
+        via_relay_later: Vec::new(),
         direct: Some(wonton_protocol::EgressProblem {
             reason: EgressFailure::UpstreamFailed,
             message: "CONNECT succeeded; upstream TLS unavailable".to_owned(),
