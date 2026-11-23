@@ -449,11 +449,13 @@ impl ClientCore {
     fn lifecycle_action(&self, scope: &Scope, action: HomeAction) -> Result<(), CoreError> {
         match action {
             HomeAction::AppForegrounded => {
+                tracing::info!("the shell reports the app came to the foreground");
                 self.app_lock.foregrounded();
                 scope.foregrounded();
                 Ok(())
             }
             HomeAction::AppBackgrounded => {
+                tracing::info!("the shell reports the app went to the background");
                 scope.backgrounded();
                 self.app_lock.backgrounded(scope.handle());
                 Ok(())
