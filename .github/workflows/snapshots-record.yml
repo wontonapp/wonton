@@ -43,7 +43,7 @@ jobs:
       # 重录的测试步骤把这两个值和 enforce 开关交给测试进程，不符就当场失败。
       SIMULATOR_NAME: iPhone 17
       SIMULATOR_MODEL: "iPhone18,3"
-      SIMULATOR_OS: "27.0"
+      SIMULATOR_OS: "26.5"
       # 日期按 UTC、en_US 排版，参考图才可复现。录制模式由 `WontonSnapshots` scheme 的环境变量打开：
       # xcodebuild 步骤的 env 传不进模拟器里跑的 App。
       TZ: UTC
