@@ -131,10 +131,10 @@ struct Resources {
     start_error: Option<String>,
     stop_error: Option<String>,
     create_error: Option<(String, String)>,
+    kill_error: Option<(String, String)>,
     remove_error: Option<(String, String)>,
     /// 按容器名让 inspect（`GET /containers/{name}/json`）一直报错。
     inspect_error: Option<(String, String)>,
-    kill_error: Option<(String, String)>,
     signals: BTreeMap<String, u32>,
     /// 网络名 → 最近一次把容器接入它的请求（`EndpointConfig.Aliases` 等）。
     connections: BTreeMap<String, Value>,
@@ -431,6 +431,8 @@ impl FakeDocker {
         self.lock().inspect_error = message.map(|m| (container.to_owned(), m.to_owned()));
     }
 
+    /// 下一次 kill 失败；开关测试改用管理端口后暂时没调用方，留给以后按信号路径重测。
+    #[allow(dead_code)]
     pub fn fail_next_kill(&self, container: &str, message: &str) {
         self.lock().kill_error = Some((container.to_owned(), message.to_owned()));
     }
