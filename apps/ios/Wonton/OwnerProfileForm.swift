@@ -62,7 +62,7 @@ final class OwnerProfileFormState {
             profile = try await core.setMyAvatar(upload: upload)
         } catch {
             guard !Task.isCancelled else { return }
-            avatarProblem = error.problem
+            avatarProblem = (error as? AvatarTranscodeError)?.problem ?? error.problem
         }
     }
 

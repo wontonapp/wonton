@@ -25,6 +25,7 @@ pub fn probe_video(data: &[u8]) -> Result<VideoInfo, AvatarMediaProblem> {
     mp4::probe(data)
 }
 
+/// 按文件头认图片或 MP4：检查大小、格式、尺寸，头像还查正方和时长。认不出或不合规时给类别，不做完整解码。
 pub fn inspect(data: &[u8]) -> Result<AvatarMedia, AvatarMediaProblem> {
     if data.len() as u64 > MAX_AVATAR_BYTES {
         return Err(Problem::TooLarge);

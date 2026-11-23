@@ -378,6 +378,12 @@ extension MyAvatarProblem {
                 title: String(localized: .Peers.ownerProfileAvatarNotReady),
                 nextStep: String(localized: .Peers.ownerProfileAvatarNotReadyNext)
             )
+        case let .NotLoggedIn(reason):
+            return Problem(
+                title: String(localized: .Peers.ownerProfileAvatarNotLoggedIn),
+                nextStep: String(localized: .Peers.ownerProfileAvatarNotLoggedInNext),
+                detail: reason
+            )
         case let .MediaRejected(problem):
             return Problem(title: problem.problem)
         case let .TransportUnavailable(reason):

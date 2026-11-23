@@ -86,9 +86,12 @@ pub struct Me {
 #[cfg_attr(feature = "uniffi", derive(uniffi::Error), uniffi::export(Display))]
 #[serde(tag = "type", rename_all = "snake_case")]
 pub enum MyAvatarProblem {
-    /// 客户端连到的核心版本比 App 旧，还改不了头像；升级核心后可用。
+    /// 客户端连到的核心版本比 App 旧，还改不了头像；升级核心后可用。只有旧核心会给这个类别。
     #[error("this core cannot change your avatar yet")]
     NotReady,
+    /// 这台设备的聊天还没登录好（刚配对、Matrix 登录还没成或失败），没有会话可以改资料。
+    #[error("chat is not signed in yet: {reason}")]
+    NotLoggedIn { reason: String },
     /// 文件不行；原因由核心按文件头和尺寸查出来。
     #[error("the avatar file was rejected: {:?}", .problem)]
     MediaRejected { problem: crate::AvatarMediaProblem },
@@ -546,6 +549,13 @@ mod tests {
         assert_eq!(
             serde_json::to_value(MyAvatarProblem::NotReady).unwrap(),
             json!({"type": "not_ready"})
+        );
+        assert_eq!(
+            serde_json::to_value(MyAvatarProblem::NotLoggedIn {
+                reason: "还没有登录 Matrix".to_owned()
+            })
+            .unwrap(),
+            json!({"type": "not_logged_in", "reason": "还没有登录 Matrix"})
         );
         assert_eq!(
             serde_json::from_value::<MyAvatarProblem>(json!({"type": "quota"})).unwrap(),

@@ -31,14 +31,14 @@ pub(super) async fn set(scope: Arc<Scope>, upload: AvatarUpload) -> Result<Me, M
         .upload_media(&media.mimetype, upload.data)
         .await
         .map_err(problem)?;
-    session
+    let url = session
         .set_own_avatar_url(Some(&url))
         .await
         .map_err(problem)?
         .ok_or_else(|| MyAvatarProblem::Upstream {
             reason: "Matrix did not keep the avatar url".to_owned(),
         })?;
-    me(scope).await
+    current(scope, Some(&url)).await
 }
 
 /// 清头像。Matrix 那边本来就是空的也照常成功。
@@ -54,33 +54,30 @@ pub(super) async fn clear(scope: Arc<Scope>) -> Result<Me, MyAvatarProblem> {
             reason: "Matrix did not clear the avatar url".to_owned(),
         });
     }
-    me(scope).await
+    current(scope, None).await
 }
 
-/// 把服务器上的资料拼在 `me.avatar` 上。聊天还没登录好时留空，头像只是资料的一部分，不影响整页。
-pub(super) async fn attach(me: &mut Me, scope: &Scope) -> Result<(), CoreError> {
-    let session = match scope.chat.current() {
-        Ok(session) => session,
-        Err(CoreError::NotReady { .. }) => return Ok(()),
-        Err(error) => return Err(error),
+/// 把服务器上的资料拼在 `me.avatar` 上。头像只是资料的一部分，聊天没登录、资料取不到都留空，不影响整页。
+pub(super) async fn attach(me: &mut Me, scope: &Scope) {
+    let Ok(session) = scope.chat.current() else {
+        return;
     };
-    let profile = session
-        .fetch_user_profile(session.user_id())
-        .await
-        .map_err(core_problem)?;
+    let Ok(profile) = session.fetch_user_profile(session.user_id()).await else {
+        return;
+    };
     me.avatar = handle(profile.avatar_url.as_deref());
-    Ok(())
 }
 
-async fn me(scope: Arc<Scope>) -> Result<Me, MyAvatarProblem> {
+/// 资料其余字段照旧，头像直接用刚读回的值，不再为同一个资料多打一次 GET。
+async fn current(scope: Arc<Scope>, avatar: Option<&str>) -> Result<Me, MyAvatarProblem> {
     let mut me = scope.plugins.me().await.map_err(me_problem)?;
-    attach(&mut me, &scope).await.map_err(me_problem)?;
+    me.avatar = handle(avatar);
     Ok(me)
 }
 
 fn session(scope: &Scope) -> Result<Arc<MatrixSession>, MyAvatarProblem> {
     scope.chat.current().map_err(|error| match error {
-        CoreError::NotReady { reason } => MyAvatarProblem::TransportUnavailable { reason },
+        CoreError::NotReady { reason } => MyAvatarProblem::NotLoggedIn { reason },
         other => MyAvatarProblem::Upstream {
             reason: other.to_string(),
         },
@@ -113,25 +110,12 @@ fn problem(error: Error) -> MyAvatarProblem {
     }
 }
 
-fn core_problem(error: Error) -> CoreError {
-    match error {
-        Error::Transport(reason) => CoreError::TransportUnavailable { reason },
-        Error::NotReady(reason) => CoreError::NotReady { reason },
-        Error::Unauthorized { errcode, message } => CoreError::Unauthorized {
-            reason: format!("{errcode}: {message}"),
-        },
-        Error::Forbidden { errcode, message } => CoreError::Forbidden {
-            reason: format!("{errcode}: {message}"),
-        },
-        Error::Upstream(reason) | Error::InvalidInput(reason) => CoreError::Upstream { reason },
-    }
-}
-
 fn me_problem(error: CoreError) -> MyAvatarProblem {
     match error {
-        CoreError::TransportUnavailable { reason } | CoreError::NotReady { reason } => {
+        CoreError::TransportUnavailable { reason } => {
             MyAvatarProblem::TransportUnavailable { reason }
         }
+        CoreError::NotReady { reason } => MyAvatarProblem::NotLoggedIn { reason },
         other => MyAvatarProblem::Upstream {
             reason: other.to_string(),
         },

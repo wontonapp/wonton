@@ -701,6 +701,66 @@
           }
         }
       }
+    },
+    "ownerProfile.avatarNotLoggedInNext": {
+      "comment": "Shown under the not-signed-in problem.",
+      "extractionState": "manual",
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Try again in a moment"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "稍后再试"
+          }
+        },
+        "zh-Hant": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "稍後再試"
+          }
+        },
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "しばらくしてからやり直してください"
+          }
+        }
+      }
+    },
+    "ownerProfile.avatarNotLoggedIn": {
+      "comment": "Chat is not signed in yet.",
+      "extractionState": "manual",
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Chat isn't signed in yet"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "聊天还没登录好"
+          }
+        },
+        "zh-Hant": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "聊天還沒登入好"
+          }
+        },
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "チャットがまだサインインしていません"
+          }
+        }
+      }
     }
   }
 }

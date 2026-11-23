@@ -423,10 +423,19 @@ async fn avatar_bytes_are_checked_before_the_upload() {
             problem: AvatarMediaProblem::Format
         }
     );
-    // 字节先过检查，这一步还没连上 Matrix，清头像说传输不可用。
+    // 字节先过检查，这一步还没连上 Matrix，清头像说聊天还没登录。
     assert!(matches!(
         rig.app.clear_my_avatar().await.unwrap_err(),
-        MyAvatarProblem::TransportUnavailable { .. }
+        MyAvatarProblem::NotLoggedIn { .. }
+    ));
+    let png = AvatarUpload {
+        mime_type: "image/png".to_owned(),
+        data: include_bytes!("../../../../wonton-matrix/tests/tuwunel/fixtures/2x2.png").to_vec(),
+        poster: None,
+    };
+    assert!(matches!(
+        rig.app.set_my_avatar(png).await.unwrap_err(),
+        MyAvatarProblem::NotLoggedIn { .. }
     ));
 }
 

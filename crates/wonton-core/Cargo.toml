@@ -48,9 +48,6 @@ rustls-native-certs = "0.8.5"
 # MIT OR Apache-2.0。插件的图标和截图（ADR-0017，只收 PNG 和 JPEG）、文件的缩略图（ADR-0020，另收 GIF 和 WebP）解码、
 # 缩放后重新编码。
 image = { version = "0.25.10", default-features = false, features = ["png", "jpeg", "gif", "webp"] }
-# MIT OR Apache-2.0。头像逐行 PNG、流式 GIF、WebP 时长和帧校验；复用 image 已用的解析器。
-png = "0.18.1"
-gif = "0.14.2"
 # MIT。`view_file` 抽 PDF 的文字层（ADR-0104）：纯 Rust，传递依赖 lopdf 等也都是 MIT 或 Apache-2.0。以会 panic 出名，
 # 只在图片助手的子进程里调用。
 pdf-extract = "0.12.1"

@@ -190,11 +190,11 @@ private fun OwnerAvatarSection(
             verticalAlignment = Alignment.CenterVertically,
             horizontalArrangement = Arrangement.spacedBy(WontonTheme.spacing.sectionGap),
         ) {
-            Box(Modifier.size(WontonTheme.size.previewIcon).clip(CircleShape), contentAlignment = Alignment.Center) {
+            Box(Modifier.size(WontonTheme.size.detailIcon).clip(CircleShape), contentAlignment = Alignment.Center) {
                 val avatar = profile.avatar
                 if (avatar != null) {
                     StillAvatar(
-                        avatar, plugins, WontonTheme.size.previewIcon,
+                        avatar, plugins, WontonTheme.size.detailIcon,
                         fallbackStill = null, fallbackIcon = null,
                     )
                 } else {

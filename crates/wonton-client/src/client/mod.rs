@@ -436,7 +436,7 @@ impl ClientCore {
                 let scope = scope.clone();
                 async move {
                     let mut me = scope.plugins.me().await?;
-                    my_avatar::attach(&mut me, &scope).await?;
+                    my_avatar::attach(&mut me, &scope).await;
                     Ok(me)
                 }
             })
@@ -455,7 +455,7 @@ impl ClientCore {
                     if let Some(name) = saved.display_name.clone() {
                         scope.chat.set_owner_display_name(name);
                     }
-                    my_avatar::attach(&mut saved, &scope).await?;
+                    my_avatar::attach(&mut saved, &scope).await;
                     Ok(saved)
                 }
             })

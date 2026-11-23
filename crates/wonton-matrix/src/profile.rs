@@ -35,8 +35,8 @@ impl MatrixSession {
 
     /// 改自己的全局头像；传 `None` 清掉。返回服务器读回的值，不信任本地拼的地址。
     pub async fn set_own_avatar_url(&self, url: Option<&str>) -> Result<Option<String>> {
-        // SDK 的 `set_avatar_url` 写的是旧的 `/profile/{user}/avatar_url`，Tuwunel 2 只挂了
-        // 后来统一的 `/profile/{user}/{field}`（MSC4133），旧地址回 404。
+        // 和 SDK 的 `set_avatar_url` 路径相同，差别只在请求体：它发裸 JSON 字符串，Tuwunel 2 不认，
+        // 只按 MSC4133 收 `{"avatar_url": …}`，所以走 `set_profile_field`。
         match url {
             Some(url) => {
                 self.client

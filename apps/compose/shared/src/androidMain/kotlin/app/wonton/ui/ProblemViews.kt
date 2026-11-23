@@ -286,6 +286,11 @@ val MyAvatarProblem.problem: Problem
             titleRes = R.string.owner_profile_avatar_not_ready,
             nextStepRes = R.string.owner_profile_avatar_not_ready_next,
         )
+        is MyAvatarProblem.NotLoggedIn -> Problem(
+            titleRes = R.string.owner_profile_avatar_not_logged_in,
+            nextStepRes = R.string.owner_profile_avatar_not_logged_in_next,
+            detail = reason,
+        )
         is MyAvatarProblem.MediaRejected -> Problem(titleRes = problem.textRes())
         is MyAvatarProblem.TransportUnavailable -> problem(
             R.string.problem_transport_unavailable_title,
