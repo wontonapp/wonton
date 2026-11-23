@@ -23,8 +23,9 @@ enum NotificationPermission: Equatable {
     /// （Int 的 NS_ENUM）穿过隔离边界。回调方法叫 `getNotificationSettings`，async 版才叫 `notificationSettings`。
     @MainActor
     static func current() async -> NotificationPermission {
-        let status: UNAuthorizationStatus = await withCheckedContinuation { (done: CheckedContinuation<UNAuthorizationStatus, Never>) in
-            UNUserNotificationCenter.current().getNotificationSettings(completionHandler: { done.resume(returning: $0.authorizationStatus) })
+        let center = UNUserNotificationCenter.current()
+        let status: UNAuthorizationStatus = await withCheckedContinuation { done in
+            center.getNotificationSettings { done.resume(returning: $0.authorizationStatus) }
         }
         return NotificationPermission(status)
     }
@@ -47,15 +48,23 @@ enum NotificationPermission: Equatable {
     }
 
     /// 云吞自己的系统设置页：通知开关就在这页第一行，点进去是逐项开关。
-    /// 用社区一直用的 `App-prefs:root=<bundle id>`（苹果没写进文档）；`openSettingsURLString` 的 `app-settings:` 在这台
-    /// 模拟器上只把系统设置开到首页，`path=NOTIFICATIONS_ID` 也一样。解析不出时退回文档里的取值。
-    static var systemSettingsURL: URL? {
-        URL(string: "App-Prefs:root=\(Bundle.main.bundleIdentifier ?? "")")
-            ?? URL(string: UIApplication.openSettingsURLString)
+    /// 依次试三种落点：文档里的 `openNotificationSettingsURLString`（问过权限以后系统才给这一页）、
+    /// 社区的 `App-prefs:root=NOTIFICATIONS_ID` 的写法（苹果没写进文档）；
+    /// 最后退回文档里的普通应用页。打不开就换下一个；系统设置停在前面的页时 App 里看不出来，只能按顺序试。
+    static var settingsURLs: [URL] {
+        let bundleID = Bundle.main.bundleIdentifier ?? ""
+        return [
+            URL(string: UIApplication.openNotificationSettingsURLString),
+            URL(string: "App-prefs:root=NOTIFICATIONS_ID&path=\(bundleID)"),
+            URL(string: UIApplication.openSettingsURLString)
+        ].compactMap(\.self)
     }
 
+    /// `canOpenURL` 挡掉没登记过的 scheme（`App-prefs`）；打不开就换下一个。
     @MainActor
     static func openSystemSettings() async {
-        if let target = systemSettingsURL { _ = await UIApplication.shared.open(target) }
+        for url in settingsURLs where UIApplication.shared.canOpenURL(url) {
+            if await UIApplication.shared.open(url) { return }
+        }
     }
 }

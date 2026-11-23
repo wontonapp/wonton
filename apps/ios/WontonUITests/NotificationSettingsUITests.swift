@@ -26,7 +26,8 @@ final class NotificationSettingsUITests: XCTestCase {
     }
 
     func testSystemNotificationsEntryOpensWontonsOwnNotificationPage() {
-        reachSettings()
+        // 落点没成立时记一条失败也接着走，后面的状态断言才有机会说明问题。
+        continueAfterFailure = true
         let notifications = app.buttons.matching(NSPredicate(format: "label == %@", "Notifications"))
         for _ in 0..<3 where hittable(notifications) == nil { app.swipeUp() }
         XCTAssertNotNil(hittable(notifications), "设置页里没有“通知”\n\(app.debugDescription)")
@@ -34,10 +35,12 @@ final class NotificationSettingsUITests: XCTestCase {
 
         let entry = poll(uiWait, until: { row("System Notifications") })
         XCTAssertNotNil(entry, "通知页里没有“系统通知”\n\(app.debugDescription)")
+        let value = poll(uiWait, until: { rowValue(entry, excluding: "System Notifications") })
+        XCTAssertEqual(value, "Not allowed", "没问过权限时行右侧应写“未允许”\n\(app.debugDescription)")
         shot("01-notification-settings")
         entry?.tap()
 
-        // 没问过权限：系统先弹授权框。按钮跟着模拟器语言走，不认字：三个按钮里第二个是“允许”。
+        // 没问过权限：系统先弹授权框。按钮跟着模拟器语言走，不认字：两个按钮里第二个是“允许”。
         let springboard = XCUIApplication(bundleIdentifier: "com.apple.springboard")
         let allow = springboard.alerts.buttons.element(boundBy: 1)
         if allow.waitForExistence(timeout: uiWait) {
@@ -51,21 +54,18 @@ final class NotificationSettingsUITests: XCTestCase {
         let front = prefs.wait(for: .runningForeground, timeout: 30)
         shot("03-system-settings")
         XCTAssertTrue(front, "点“系统通知”没把系统设置带到前台\n\(app.debugDescription)")
-
-        // 这台系统（27.1 模拟器）不认从 App 里带过来的深链：`app-settings:`、`app-settings:notifications`
-        // 和 `App-prefs:root=<bundle id>` 都只把系统设置开在首页，再开一次又被“目标已经在前台”挡回去。
-        // 所以测试自己把系统设置走到云吞的页上：真机上深链会直接到那一页，到了就跳过找路的几步。
-        if !isOnWontPage(prefs) { openWontPage(in: prefs) }
-        let notificationEntry = poll(uiWait, until: { row(prefs, labels: ["Notifications", "通知"]) })
-        XCTAssertNotNil(notificationEntry, "云吞的页里没有“通知”这一行\n\(prefs.debugDescription)")
-        notificationEntry?.tap()
-        XCTAssertTrue(
-            waitUntil(uiWait, {
-                prefs.switches["Allow Notifications"].exists || prefs.switches["允许通知"].exists
-                    || prefs.navigationBars["Notifications"].exists || prefs.navigationBars["通知"].exists
-            }),
-            "没进云吞的通知页\n\(prefs.debugDescription)"
-        )
+        // 先断言入口自己落到了云吞的通知页。27.1 模拟器上深链到不了的话在这里记一条失败，
+        // 再自己把系统设置走到云吞的页上，后面的状态断言照跑。
+        let landed = waitUntil(uiWait, { isOnNotificationPage(prefs) })
+        XCTAssertTrue(landed, "入口没落到云吞的通知页\n\(prefs.debugDescription)")
+        if !landed {
+            shot("03b-system-settings-home")
+            if !isOnWontPage(prefs) { openWontPage(in: prefs) }
+            let notificationEntry = poll(uiWait, until: { row(prefs, labels: ["Notifications", "通知"]) })
+            XCTAssertNotNil(notificationEntry, "云吞的页里没有“通知”这一行\n\(prefs.debugDescription)")
+            notificationEntry?.tap()
+        }
+        XCTAssertTrue(waitUntil(uiWait, { isOnNotificationPage(prefs) }), "没进云吞的通知页\n\(prefs.debugDescription)")
         shot("04-wonton-notification-page")
     }
 
@@ -92,11 +92,18 @@ final class NotificationSettingsUITests: XCTestCase {
         prefs.navigationBars["Wonton"].exists || prefs.navigationBars["云吞"].exists
     }
 
+    /// 云吞在系统设置里的通知页：有允许开关或者通知页的导航栏。
+    private func isOnNotificationPage(_ prefs: XCUIApplication) -> Bool {
+        prefs.switches["Allow Notifications"].exists || prefs.switches["允许通知"].exists
+            || prefs.navigationBars["Notifications"].exists || prefs.navigationBars["通知"].exists
+    }
+
     /// 系统设置首页 → App 列表 → 云吞 → 云吞的页。
     private func openWontPage(in prefs: XCUIApplication) {
         // 在别的子页里：先退回首页。
-        for _ in 0..<4 where prefs.navigationBars.buttons["设置"].exists {
-            prefs.navigationBars.buttons["设置"].tap()
+        for _ in 0..<4 {
+            guard let back = backButton(in: prefs) else { break }
+            back.tap()
         }
         var appsRow: XCUIElement?
         for _ in 0..<8 where appsRow == nil {
@@ -114,6 +121,15 @@ final class NotificationSettingsUITests: XCTestCase {
         appCell?.tap()
     }
 
+    /// 系统设置子页的返回按钮，跟系统语言走。
+    private func backButton(in prefs: XCUIApplication) -> XCUIElement? {
+        for label in ["设置", "Settings"] {
+            let button = prefs.navigationBars.buttons[label]
+            if button.exists { return button }
+        }
+        return nil
+    }
+
     /// 列表里云吞那一行的文字。
     private func wontonCell(in prefs: XCUIApplication) -> XCUIElement? {
         for label in ["云吞", "Wonton"] {
@@ -125,6 +141,14 @@ final class NotificationSettingsUITests: XCTestCase {
 
     private func row(_ title: String) -> XCUIElement? {
         row(app, labels: [title])
+    }
+
+    /// 行右侧的状态文字：行里除标题之外的文字。行被暴露成单个文字时（点得到的是文字本身），退回整页找状态词。
+    private func rowValue(_ cell: XCUIElement?, excluding title: String) -> String? {
+        let labels = cell?.staticTexts.allElementsBoundByIndex.map { $0.label } ?? []
+        if let text = labels.first(where: { $0 != title }) { return text }
+        let known = ["Allowed", "Not allowed"]
+        return known.first { app.staticTexts[$0].exists }
     }
 
     /// 指定界面里叫这个名字的列表行。

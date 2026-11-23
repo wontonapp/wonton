@@ -1,3 +1,4 @@
+import UIKit
 import UserNotifications
 import XCTest
 @testable import Wonton
@@ -23,15 +24,17 @@ final class NotificationPermissionTests: XCTestCase {
 
     /// 允许时写“已允许”，没问过和拒绝都写“未允许”。
     func testRowValueFollowsThePermission() {
-        XCTAssertEqual(NotificationPermission.allowed.rowValue, "Allowed")
-        XCTAssertEqual(NotificationPermission.denied.rowValue, "Not allowed")
-        XCTAssertEqual(NotificationPermission.notAsked.rowValue, "Not allowed")
+        XCTAssertEqual(NotificationPermission.allowed.rowValue, String(localized: .Settings.notificationAllowed))
+        XCTAssertEqual(NotificationPermission.denied.rowValue, String(localized: .Settings.notificationDenied))
+        XCTAssertEqual(NotificationPermission.notAsked.rowValue, String(localized: .Settings.notificationDenied))
     }
 
-    /// 设置页地址带自己的 bundle id，系统才知道开哪一页。
-    func testSystemSettingsURLCarriesTheBundleID() {
-        let target = NotificationPermission.systemSettingsURL?.absoluteString ?? ""
-        XCTAssertTrue(target.hasPrefix("App-Prefs:root="), target)
-        XCTAssertTrue(target.hasSuffix(Bundle.main.bundleIdentifier ?? "?"), target)
+    /// 落点顺序：文档 API → 带自己 bundle id 的 `App-prefs` 通知页 → 文档里的普通应用页。
+    func testSettingsURLsGoFromDocumentedToThePlainAppPage() {
+        let urls = NotificationPermission.settingsURLs.map(\.absoluteString)
+        XCTAssertEqual(urls.first, UIApplication.openNotificationSettingsURLString)
+        XCTAssertEqual(urls.last, UIApplication.openSettingsURLString)
+        let bundleID = Bundle.main.bundleIdentifier ?? "?"
+        XCTAssertEqual(urls.dropFirst().first, "App-prefs:root=NOTIFICATIONS_ID&path=\(bundleID)")
     }
 }
