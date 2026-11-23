@@ -127,10 +127,10 @@ final class ChatTelegramUITests: XCTestCase {
     /// 顶栏下面照 Telegram 的叠放：插件横幅在最上，旁聊标题在它下面。
     func testPluginBannerSitsAboveSideChatTitle() {
         enter(Self.notesRoom)
-        // 卡片挂在倒数第 4 条下面（假数据 index 21/25）：先到底，固定往回几段就够，比整条翻一遍快得多。
+        // 卡片挂在 index 21 那条下面，但 index 24 是二十几段的长消息（三千多点高）：一段一段往回翻，见到就停。
         if app.buttons["timelineDown"].exists { tap(app.buttons["timelineDown"]) }
         let card = element("sideChatCard")
-        for _ in 0..<4 where !card.exists { dragDown() }
+        for _ in 0..<60 where !card.exists { dragDown() }
         XCTAssertTrue(card.waitForExistence(timeout: 5), "翻不到旁聊卡\n\(app.debugDescription)")
         tap(card)
         // 主对话那份还留在辅助功能树里（透明、盖住），横幅会匹配到两个：先到先取，两处位置一样。
