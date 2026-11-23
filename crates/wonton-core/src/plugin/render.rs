@@ -105,6 +105,8 @@ pub struct InstallContext {
     pub shares: BTreeMap<String, PathBuf>,
     /// 插件网页的公开地址（不带末尾斜杠）。
     pub app_url: Option<String>,
+    /// 注入的规范对外地址（`WONTON_EXTERNAL_URL`，ADR-0089 第 5 节）；只有开得出入口的插件有。
+    pub external_url: Option<String>,
     pub oidc: Option<OidcVars>,
     /// 声明了 `webui.sso`（`oidc` 或 `proxy`）时：主人的用户名和邮箱。这些插件本来就能从登录里得到它们，其余的
     /// 插件（包括未审核的）不多拿一份主人的个人信息。
@@ -167,6 +169,7 @@ impl std::fmt::Debug for InstallContext {
             .field("config_store", &self.config_store)
             .field("shares", &self.shares)
             .field("app_url", &self.app_url)
+            .field("external_url", &self.external_url)
             .field("oidc", &self.oidc)
             .field("owner", &self.owner)
             .field("matrix", &self.matrix)
@@ -271,6 +274,9 @@ pub(super) fn dry_run_context(package: &PluginPackage) -> InstallContext {
         config_store: root.join("core").join("configs"),
         shares,
         app_url: webui.map(|_| url.clone()),
+        external_url: (manifest.clients.as_ref().is_some_and(|c| c.http.is_some())
+            || manifest.webui.as_ref().is_some_and(|webui| webui.guests))
+        .then(|| url.clone()),
         oidc: webui.filter(|w| w.sso == Sso::Oidc).map(|_| OidcVars {
             issuer: "http://auth.wonton.invalid".into(),
             client_id: manifest.id.to_string(),

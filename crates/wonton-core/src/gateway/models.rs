@@ -56,6 +56,7 @@ pub async fn request(gateway: &Gateway, req: Request) -> Response {
         web_user: None,
         client: client_addr(&req),
         scheme: "http",
+        external_url: None,
     };
     let endpoint = crate::plugin::upstreams::Endpoint::Tcp(route.upstream.clone());
     let name = l10n::text(&langs, "gateway-name-models", &[]);

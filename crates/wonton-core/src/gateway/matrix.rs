@@ -332,6 +332,7 @@ async fn forward_client_api(gateway: &Gateway, req: Request) -> Response {
         web_user: None,
         client: client_addr(&req),
         scheme: &gateway.public.scheme,
+        external_url: None,
     };
     let endpoint = crate::plugin::upstreams::Endpoint::Tcp(matrix.authority().to_owned());
     let target = proxy::Target {

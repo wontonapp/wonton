@@ -60,6 +60,9 @@ pub struct Forwarded<'a> {
     pub scheme: &'a str,
     /// 插件网页的打开者（ADR-0045 第 6 节），`Build` 时覆盖客户端带的同名头。
     pub web_user: Option<&'a str>,
+    /// `clients.http.single_host` 的规范对外地址：`Host` 和 `X-Forwarded-Proto` 按它改写，
+    /// 原 `Host` 进 `X-Forwarded-Host`（ADR-0089 第 5 节）。
+    pub external_url: Option<&'a str>,
 }
 
 /// 转发途中可以撤销的访问：share 收回和客户端入口的开关关闭
@@ -366,7 +369,18 @@ fn build_outbound(
     if let Some(host) = host {
         parts.headers.insert("x-forwarded-host", host);
     }
-    if let Ok(proto) = HeaderValue::from_str(fwd.scheme) {
+    // `single_host`：Host 和协议换成规范对外地址，原来的 Host 已进了 X-Forwarded-Host。
+    let rewritten = fwd
+        .external_url
+        .and_then(crate::clients::external_url::split);
+    if let Some((scheme, authority)) = rewritten {
+        if let Ok(host) = HeaderValue::from_str(authority) {
+            parts.headers.insert(header::HOST, host);
+        }
+        if let Ok(proto) = HeaderValue::from_str(scheme) {
+            parts.headers.insert("x-forwarded-proto", proto);
+        }
+    } else if let Ok(proto) = HeaderValue::from_str(fwd.scheme) {
         parts.headers.insert("x-forwarded-proto", proto);
     }
     parts.uri = uri;
@@ -580,6 +594,7 @@ mod tests {
                                     web_user: None,
                                     client: None,
                                     scheme: "http",
+                                    external_url: None,
                                 },
                                 &Languages::from_header(None),
                             )
@@ -641,6 +656,7 @@ mod tests {
             web_user: None,
             client: None,
             scheme: "http",
+            external_url: None,
         };
         let response = forward(
             &HttpClient::new(),
@@ -705,6 +721,7 @@ mod tests {
                 web_user: None,
                 client: None,
                 scheme: "http",
+                external_url: None,
             },
             &Languages::from_header(None),
         )

@@ -8,7 +8,7 @@ use axum::response::{IntoResponse, Response};
 use axum::routing::{get, put};
 use hyper::HeaderMap;
 use wonton_protocol::{
-    ClientAuthKind, ClientsFailure, ClientsPlugin, EntryBlock, EntryKind, EntrySwitch,
+    ClientAuthKind, ClientsFailure, ClientsPlugin, EntryBlock, EntryEffect, EntryKind, EntrySwitch,
     SetEntryRequest,
 };
 
@@ -65,7 +65,7 @@ async fn list(State(gateway): State<Arc<Gateway>>, headers: HeaderMap) -> Respon
     };
     let mut views = Vec::with_capacity(clients.len());
     for client in clients {
-        match client_view(&gateway, &langs, client, suffix.as_deref(), None).await {
+        match client_view(&gateway, &langs, client, suffix.as_deref(), None, None).await {
             Ok(view) => views.push(view),
             Err(error) => return failure(error.failure, &error.localized_message(&langs)),
         }
@@ -90,8 +90,8 @@ async fn set_entry(
             &crate::l10n::text(&langs, "clients-switch-kind", &[]),
         );
     };
-    let blocked = match apply::set_entry(&gateway, &id, kind, request.enabled).await {
-        Ok(blocked) => blocked,
+    let applied = match apply::set_entry(&gateway, &id, kind, request.enabled).await {
+        Ok(applied) => applied,
         Err(error) => return failure(error.failure, &error.localized_message(&langs)),
     };
     let client = match gateway.plugins.client_plugins() {
@@ -111,7 +111,17 @@ async fn set_entry(
         Ok(suffix) => suffix,
         Err(error) => return failure(error.failure, &error.localized_message(&langs)),
     };
-    match client_view(&gateway, &langs, client, suffix.as_deref(), blocked).await {
+    let effect = applied.restarts.then_some(EntryEffect::Restart);
+    match client_view(
+        &gateway,
+        &langs,
+        client,
+        suffix.as_deref(),
+        applied.blocked,
+        effect,
+    )
+    .await
+    {
         Ok(view) => no_store(Json(view).into_response()),
         Err(error) => failure(error.failure, &error.localized_message(&langs)),
     }
@@ -131,6 +141,7 @@ async fn client_view(
     mut client: ClientPlugin,
     suffix: Option<&str>,
     blocked_override: Option<EntryBlock>,
+    effect: Option<EntryEffect>,
 ) -> Result<ClientsPlugin, apply::ApplyError> {
     let blocked = match blocked_override {
         Some(blocked) => Some(blocked),
@@ -196,6 +207,7 @@ async fn client_view(
         passwords: password_summaries(gateway, &client, langs)?,
         public_rules: client.public_rules.clone(),
         blocked,
+        effect,
     })
 }
 
@@ -257,4 +269,4 @@ fn entry_switches(client: &ClientPlugin) -> Vec<EntrySwitch> {
 
 #[cfg(test)]
 #[path = "clients_api_tests.rs"]
-mod clients_api_tests;
+pub(crate) mod clients_api_tests;

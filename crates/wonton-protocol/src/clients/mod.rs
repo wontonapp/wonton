@@ -37,8 +37,8 @@ pub use domain::{
     PutDomainRequest,
 };
 pub use entries::{
-    ClientAuthKind, ClientsPlugin, EntryBlock, EntryKind, EntrySwitch, PublicRuleMode, PublicRules,
-    SetEntryRequest,
+    ClientAuthKind, ClientsPlugin, EntryBlock, EntryEffect, EntryKind, EntrySwitch, PublicRuleMode,
+    PublicRules, SetEntryRequest,
 };
 pub use failure::{CLIENTS_ERROR_HEADER, ClientsErrorBody, ClientsFailure, ClientsProblem};
 pub use guests::{

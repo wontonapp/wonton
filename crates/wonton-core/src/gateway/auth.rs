@@ -46,6 +46,7 @@ pub(super) async fn request(gateway: &Gateway, mut req: Request) -> Response {
         web_user: None,
         client: client_addr(&req),
         scheme: &gateway.public.scheme,
+        external_url: None,
     };
     let endpoint = crate::plugin::upstreams::Endpoint::Tcp(authority.clone());
     let name = l10n::text(&langs, "gateway-name-oidc", &[]);

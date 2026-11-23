@@ -74,6 +74,18 @@ pub(super) fn upstream(
     }
 }
 
+/// `clients.http.single_host` 时给转发层的规范对外地址；没声明时 `None`，Host 原样转发。
+async fn external_url(gateway: &Gateway, route: &crate::plugin::manager::Route) -> Option<String> {
+    let single = route
+        .clients
+        .as_ref()
+        .is_some_and(|clients| clients.http.single_host);
+    if !single {
+        return None;
+    }
+    crate::clients::external_url::for_installed(gateway, &route.id).await
+}
+
 /// 插件自己的容器访问自己的网页地址（ADR-0063）：不要会话，直接转给上游。不代表任何人：代登录的
 /// 请求头和 Cookie 只剥掉、不注入（来源是真的浏览器请求经插件后端转发时，这些值也属于别人）。
 pub(super) async fn self_request(
@@ -90,10 +102,12 @@ pub(super) async fn self_request(
     if let Some(auth) = &route.proxy {
         proxy_sso::strip(req.headers_mut(), auth);
     }
+    let external = external_url(gateway, route).await;
     let fwd = proxy::Forwarded {
         web_user: None,
         client: client_addr(&req),
         scheme: &gateway.public.scheme,
+        external_url: external.as_deref(),
     };
     let target = proxy::Target {
         endpoint: &upstream,
@@ -220,10 +234,12 @@ async fn plugin_request_path(
     {
         return *response;
     }
+    let external = external_url(gateway, &route).await;
     let fwd = proxy::Forwarded {
         web_user: web_user.as_deref(),
         client: client_addr(&req),
         scheme: &gateway.public.scheme,
+        external_url: external.as_deref(),
     };
     let target = proxy::Target {
         endpoint: &upstream,
@@ -286,10 +302,12 @@ async fn bot_request(
     {
         return *response;
     }
+    let external = external_url(gateway, &route).await;
     let fwd = proxy::Forwarded {
         web_user: web_user.as_deref(),
         client: client_addr(&req),
         scheme: &gateway.public.scheme,
+        external_url: external.as_deref(),
     };
     let target = proxy::Target {
         endpoint: upstream,

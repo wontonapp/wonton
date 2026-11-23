@@ -92,6 +92,7 @@ pub(super) async fn send(
         web_user,
         client,
         scheme: &gateway.public.scheme,
+        external_url: None,
     };
     let target = proxy::Target {
         endpoint: upstream,

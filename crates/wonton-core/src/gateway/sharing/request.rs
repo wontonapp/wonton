@@ -101,6 +101,7 @@ async fn plugin(gateway: &Gateway, slug: &str, mut req: Request) -> Response {
         web_user: Some(peer.user_id.as_str()),
         client: None,
         scheme: &gateway.public.scheme,
+        external_url: None,
     };
     let mut response =
         match proxy::forward_or(&gateway.upstream_http, target, req, fwd, &langs).await {

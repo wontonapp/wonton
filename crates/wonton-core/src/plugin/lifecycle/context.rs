@@ -43,6 +43,18 @@ impl PluginManager {
         }))
     }
 
+    /// 开得出入口的插件才有 `WONTON_EXTERNAL_URL`。
+    async fn served_external_url(
+        &self,
+        manifest: &Manifest,
+        app_url: Option<&str>,
+    ) -> Result<Option<String>, InstallError> {
+        if !super::super::manifest_clients::served(manifest) {
+            return Ok(None);
+        }
+        Ok(Some(self.external_url_value(&manifest.id, app_url).await?))
+    }
+
     pub(in crate::plugin) async fn install_context(
         &self,
         manifest: &Manifest,
@@ -57,6 +69,9 @@ impl PluginManager {
             .webui
             .as_ref()
             .map(|_| public.origin(&public.plugin_host(&slug)));
+        let external_url = self
+            .served_external_url(manifest, app_url.as_deref())
+            .await?;
         let oidc = self.oidc_vars(manifest, secret, langs).await?;
         let shares = manifest
             .permissions
@@ -104,6 +119,7 @@ impl PluginManager {
             instance: self.cfg.instance.clone(),
             shares,
             app_url,
+            external_url,
             oidc,
             owner: manifest.gets_owner_identity().then(|| OwnerVars {
                 name: self.cfg.owner.clone(),

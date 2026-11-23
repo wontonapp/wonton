@@ -206,10 +206,17 @@ async fn forward_to_plugin(
         .map(|ip| SocketAddr::new(ip, 0));
     // 关开关断的是这个入口已有的连接：守卫从这进转发层，已升级的连接立即断。
     req.extensions_mut().insert(cancel);
+    let external = clients.http.single_host;
+    let external = if external {
+        crate::clients::external_url::for_installed(gateway, &route.id).await
+    } else {
+        None
+    };
     let forwarded = proxy::Forwarded {
         web_user: None,
         client,
         scheme: "https",
+        external_url: external.as_deref(),
     };
     let target = proxy::Target {
         endpoint: upstream,

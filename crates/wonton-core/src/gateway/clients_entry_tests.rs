@@ -18,11 +18,14 @@ use tower::ServiceExt;
 use super::fakes::{bind, serve};
 use super::tests::{Harness, Reply, owner};
 use super::{Gateway, entry_router};
+use crate::clients::domain::Domain;
+use crate::entry_containers::EntryContainers;
 use crate::http::HttpClient;
 use crate::matrix::Matrix;
 use crate::owner::OwnerStore;
 use crate::plugin::fake_docker::FakeDocker;
 use crate::plugin::languages::Languages;
+use crate::plugin::names::Instance;
 use crate::plugin::proxy_auth::ProxyAuth;
 use crate::plugin::{PluginManager, PluginPackage, PluginStatus};
 use crate::tunnel::Tunnel;
@@ -113,11 +116,14 @@ impl Received {
 
 struct Home {
     app: Router,
+    /// 主网关（经隧道的插件网页）。
+    main: Router,
     gateway: Arc<Gateway>,
     manager: Arc<PluginManager>,
     docker: FakeDocker,
     backend: SocketAddr,
     received: Arc<Mutex<Vec<Received>>>,
+    install: std::path::PathBuf,
     /// 假插件后端和假 Tuwunel 的任务，跟着 Home 活着。
     _backend: tokio::task::JoinHandle<()>,
     _fake: crate::matrix::fake::Fake,
@@ -127,7 +133,37 @@ struct Home {
 impl Home {
     async fn start() -> Self {
         let h = Harness::start(None).await;
-        let gateway = gateway(&h);
+        let install = crate::gateway::clients_switches::clients_api_tests::prepare_entry_files(&h);
+        h.docker.add_stranger_container(
+            "wonton-core",
+            serde_json::json!({"Labels":{"com.docker.compose.project":"wonton"}}),
+        );
+        for network in ["clients", "edge", "relay"] {
+            h.docker.add_unlabeled_network(&format!("wonton_{network}"));
+        }
+        let domain = Domain::new(
+            install.clone(),
+            h.data_dir.clone(),
+            h.docker.engine().await,
+            None,
+        );
+        // 入口热加载走管理端口：假入口主进程回 `Success=1`，不然每次开关都等 10 秒连接超时。
+        let (reload_addr, _reloads, _gate) =
+            crate::gateway::clients_switches::clients_api_tests::master("Success=1\n", false, None)
+                .await;
+        let entry = EntryContainers::new(
+            h.docker.engine().await,
+            install.clone(),
+            h.data_dir.clone(),
+            Instance::default(),
+            Some("wonton-core".into()),
+        )
+        .with_lan_forward_available(true)
+        .with_reload_addr(reload_addr);
+        let gateway = gateway(&h)
+            .with_clients(Some(domain))
+            .with_entry(Some(entry))
+            .with_public_ingress_configured(true);
         let (backend, received, backend_task) = start_backend().await;
         let (fake, config) = crate::matrix::fake::start().await;
         let matrix = Arc::new(
@@ -149,15 +185,19 @@ impl Home {
         gateway.matrix = Some(matrix);
         let gateway = Arc::new(gateway.with_notices(Some(notices.clone())));
         let manager = gateway.plugins.clone();
+        manager.attach_clients_gateway(&gateway);
         let docker = h.docker.clone();
         let app = entry_router(gateway.clone());
+        let main = crate::gateway::router(gateway.clone());
         Self {
             app,
+            main,
             gateway,
             manager,
             docker,
             backend,
             received,
+            install,
             _backend: backend_task,
             _fake: fake,
             _harness: h,
@@ -179,9 +219,16 @@ impl Home {
             PluginStatus::Running,
             Some(self.backend.to_string()),
         );
-        let container =
-            crate::plugin::names::Instance::default().container(&manifest.id.slug(), &http.service);
+        let instance = crate::plugin::names::Instance::default();
+        let container = instance.container(&manifest.id.slug(), &http.service);
         self.docker.add_image_container(&container, "example/app:1");
+        self.docker
+            .add_unlabeled_network(&instance.network(&manifest.id.slug()));
+        self.docker.add_endpoint(
+            &instance.network(&manifest.id.slug()),
+            "wonton-core",
+            serde_json::json!({"IPAddress": "10.90.0.3"}),
+        );
         if manifest
             .webui
             .as_ref()
@@ -196,6 +243,11 @@ impl Home {
             .clients_route_for_test(&manifest.id, http, Some(self.backend.to_string()));
         self.manager
             .clients_entry_for_test(&manifest.id, label, lan, public);
+        // 重建会从记录里的 compose 重新渲染：换成真包，不然只剩空 services。
+        let mut record = self.manager.record_for_test(&manifest.id).unwrap();
+        record.source = compose.to_owned();
+        record.granted_permissions = vec![crate::plugin::Permission::NetworkClients];
+        self.manager.store().save(&record).unwrap();
     }
 
     fn host(&self, label: &str) -> String {
@@ -237,6 +289,43 @@ impl Home {
 
     async fn get(&self, host: &str, path: &str, headers: &[(&str, &str)]) -> Reply {
         self.request(Method::GET, host, path, headers).await
+    }
+
+    async fn main_request(
+        &self,
+        method: Method,
+        host: &str,
+        path: &str,
+        headers: &[(&str, &str)],
+        body: &str,
+    ) -> Reply {
+        let port = self.gateway.public.port;
+        let mut builder = Request::builder()
+            .method(method)
+            .uri(format!("http://{host}:{port}{path}"))
+            .header(header::HOST, format!("{host}:{port}"));
+        for (name, value) in headers {
+            builder = builder.header(*name, *value);
+        }
+        let request = builder.body(Body::from(body.to_owned())).unwrap();
+        Reply::of(self.main.clone().oneshot(request).await.unwrap()).await
+    }
+    /// 主人令牌的一次入口开关。
+    async fn switch(&self, id: &str, kind: &str, enabled: bool) -> Reply {
+        let bearer = format!("Bearer {}", crate::gateway::tests::TOKEN);
+        let body = serde_json::json!({"enabled": enabled}).to_string();
+        self.main_request(
+            Method::PUT,
+            self.gateway.public.base_domain.as_str(),
+            &wonton_protocol::clients_entry_path(id, kind),
+            &[
+                ("authorization", &bearer),
+                ("x-wonton-clients", "1"),
+                ("content-type", "application/json"),
+            ],
+            &body,
+        )
+        .await
     }
 
     fn upstream_hits(&self) -> Vec<Received> {
@@ -411,3 +500,6 @@ mod clients_entry_setup_tests;
 
 #[path = "clients_entry_credentials_tests.rs"]
 mod clients_entry_credentials_tests;
+
+#[path = "clients_entry_single_host_tests.rs"]
+mod clients_entry_single_host_tests;
