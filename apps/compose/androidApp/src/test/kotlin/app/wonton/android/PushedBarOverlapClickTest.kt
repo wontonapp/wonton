@@ -239,16 +239,19 @@ class PushedBarOverlapClickTest {
     }
 
     /**
-     * 内容第一遍组合就要拿到栏高：靠状态回填时第一遍是 0、下一帧才补上，
-     * 一帧定格的截图（Paparazzi）会抽到栏压内容的那一帧。
+     * 稳定后内容拿到的 inset 就是栏高，内容让位等于栏底。
+     *
+     * 不比“第一遍组合”：宿主第一次测量给的是 0 约束，栏量出来就是 0，第一遍记录 0 不代表漏了让位。
+     * 旧实现（栏高用状态回填、内容先按 0 让位）也能在稳定后补上；真正的差别是一帧定格的截图会抽到补上之前那一帧，
+     * 那由 Paparazzi 的参考图守（`PreviewSnapshotsTest`）。
      */
     @Test
-    fun contentSeesTheBarHeightOnItsFirstComposition() {
-        var firstInset: Dp? = null
+    fun contentGetsTheBarHeightAsItsInset() {
+        var lastInset: Dp? = null
         compose.setContent {
             WontonTheme(testAppearance()) {
                 WontonScreen(bar = { WontonPushedBar(title = "外观", onBack = {}) }) {
-                    if (firstInset == null) firstInset = LocalWontonTopInset.current
+                    lastInset = LocalWontonTopInset.current
                     Column(Modifier.wontonContentPadding()) { BasicText("内容") }
                 }
             }
@@ -258,7 +261,7 @@ class PushedBarOverlapClickTest {
         val content = compose.onNodeWithText("内容").getUnclippedBoundsInRoot()
         val barHeight = (bar.bottom - bar.top).value.toDouble()
         assertEquals("栏高是 M3 的 64dp", 64.0, barHeight, 0.5)
-        assertEquals("内容第一遍组合就该拿到栏高", barHeight, firstInset?.value?.toDouble() ?: -1.0, 0.5)
-        assertEquals("内容的让位要和栏高一致", bar.bottom.value.toDouble(), content.top.value.toDouble(), 0.5)
+        assertEquals("内容的 inset 要等于栏高", barHeight, lastInset?.value?.toDouble() ?: -1.0, 0.5)
+        assertEquals("内容让位要从栏底开始", bar.bottom.value.toDouble(), content.top.value.toDouble(), 0.5)
     }
 }
