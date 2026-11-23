@@ -6,8 +6,8 @@ use futures_util::StreamExt;
 use tokio::runtime::Handle;
 use tokio::sync::{Mutex, broadcast, mpsc, watch};
 use wonton_matrix::{
-    BackPaginationStatus, ChatRoom, EntryKind, MissedEvent, OwnedEventId, OwnedRoomId,
-    TimelineEntry, Vector, VectorDiff,
+    BackPaginationStatus, ChatRoom, EntryKind, MissedEvent, OwnedRoomId, TimelineEntry, Vector,
+    VectorDiff,
 };
 use wonton_protocol::{
     BackPagination, ConfirmationView, KeyNotice, TimelineDiff, TimelineScroll, TimelineUpdate,
@@ -823,7 +823,10 @@ fn log_rebuild(room: &ChatRoom, reason: &'static str, missed: Option<&MissedEven
 
 /// 测试钩子：登记下一条要“悄悄”清空的时间线，见 [`apply`] 里清空批的分支。
 #[cfg(feature = "test-hooks")]
-pub(crate) fn mark_silent_clear(room_id: OwnedRoomId, thread_root: Option<OwnedEventId>) {
+pub(crate) fn mark_silent_clear(
+    room_id: OwnedRoomId,
+    thread_root: Option<wonton_matrix::OwnedEventId>,
+) {
     silent_clears()
         .lock()
         .expect("安静清空的记录锁")
@@ -831,7 +834,7 @@ pub(crate) fn mark_silent_clear(room_id: OwnedRoomId, thread_root: Option<OwnedE
 }
 
 #[cfg(feature = "test-hooks")]
-type SilentClears = std::sync::Mutex<Vec<(OwnedRoomId, Option<OwnedEventId>)>>;
+type SilentClears = std::sync::Mutex<Vec<(OwnedRoomId, Option<wonton_matrix::OwnedEventId>)>>;
 
 #[cfg(feature = "test-hooks")]
 fn silent_clears() -> &'static SilentClears {

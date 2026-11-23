@@ -353,9 +353,9 @@ async fn a_late_room_key_redecrypts_a_thread_reply() {
 /// 旁聊时间线在事件到达之前打开：主人自己的第一句（本地回显或稍后的同步回声）和 Bot 的回复
 /// （正常解密到达）都要进旁聊。真实端到端里旁聊时间线在卡片出现后马上打开，之后的每一批都是空的。
 ///
-/// 回复可能在建时间线读缓存之前就到了，落不进修复覆盖的窗口：这条用例最后把回复当成被 SDK 丢掉的活事件
-/// 清掉，断言补检会清屏（原因 `missed-cached-event`）并把它重建回来。补检判定本身（宽限、去重）的
-/// 确定性守卫在 matrix 的 `chat_room/bootstrap_tests/thread.rs`
+/// 这条的前半（第一句和回复与打开同时发）是冒烟：回复可能在建时间线读缓存之前就到了，落不进修复覆盖的窗口。
+/// 所以后半把回复当成被 SDK 丢掉的活事件清掉，断言补检会清屏（原因 `missed-cached-event`）并把它重建回来。
+/// 补检判定本身（宽限、去重）真正的确定性守卫在 matrix 的 `chat_room/bootstrap_tests/thread.rs`
 /// `a_cached_thread_event_the_timeline_lost_is_reported_as_missed`。
 #[tokio::test(flavor = "multi_thread")]
 #[ignore = "需要 Docker，用 --include-ignored 运行"]
@@ -500,16 +500,16 @@ async fn an_image_sent_in_a_side_chat_stays_in_the_thread() {
         .then_some(())
     })
     .await;
+    // 照片算第二条回复；卡片的状态不受影响。等卡片处理到这条再断言主对话里没有照片。
+    main.until("卡片把照片算进回复数", |item| {
+        card(item, &root).filter(|card| card.reply_count == 2)
+    })
+    .await;
     assert!(
         !has_image(&main.items),
         "照片不在主对话里：{:#?}",
         main.items
     );
-    // 照片算第二条回复；卡片的状态不受影响。
-    main.until("卡片把照片算进回复数", |item| {
-        card(item, &root).filter(|card| card.reply_count == 2)
-    })
-    .await;
 }
 
 /// 活事件被 SDK 丢掉（缓存里在、时间线里没有）：补检发现后让壳清屏重画，回复跟着重建回来。

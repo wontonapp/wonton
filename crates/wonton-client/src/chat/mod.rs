@@ -801,8 +801,9 @@ impl ChatLink {
         target: &TimelineTarget,
     ) -> Result<(), CoreError> {
         let key = TimelineKey::parse(target)?;
+        let room = self.opened(&key)?;
         timeline::mark_silent_clear(key.room_id.clone(), key.thread_root.clone());
-        self.opened(&key)?.timeline().await.clear().await;
+        room.timeline().await.clear().await;
         Ok(())
     }
 
