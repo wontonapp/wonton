@@ -102,5 +102,5 @@ chat-draft-read-interrupted = Loading the draft was interrupted
 chat-choice-send-failed = Not sent: the home server can't be reached. ({ $error })
 chat-op-agent-answer-failed = Can't answer the option: { $error }
 
-# 转发带附言时，附言没被服务器收下。
+# 附言没进发送队列或没被服务器收下，转发也没发。
 chat-forward-comment-failed = The comment wasn't sent, so the forward wasn't sent: { $error }

@@ -414,7 +414,7 @@ async fn a_forward_waits_for_its_comment() {
     .await;
 }
 
-/// 附言被拒：转发不发，原因进 `problem`，对方只收到失败的那条附言。
+/// 附言被拒：转发不发，原因进 `problem`，对方只收到失败的那条附言，自己这边也没有转发的本地回显。
 #[tokio::test(flavor = "multi_thread")]
 #[ignore = "需要 Docker，用 --include-ignored 运行"]
 async fn a_rejected_comment_stops_the_forward() {
@@ -460,6 +460,19 @@ async fn a_rejected_comment_stops_the_forward() {
         })
         .await;
     assert_eq!(problem.reason, ChatFailure::Upstream);
+    // 目标房间里也不该有转发的本地回显：真发出去过的话，它会被拒、停成失败的一条留在这里。
+    let mut echo = Timeline::open(&phone, group.as_str()).await;
+    let deadline = tokio::time::Instant::now() + std::time::Duration::from_secs(1);
+    while tokio::time::timeout_at(deadline, echo.next()).await.is_ok() {}
+    assert!(
+        !echo.items.iter().any(|item| matches!(
+            &item.content,
+            TimelineContent::Message { message }
+                if matches!(&message.body, MessageContent::Text { body, .. } if body == "转发这句")
+        )),
+        "附言失败后转发的本地回显还是出现了：{:?}",
+        echo.items
+    );
 
     let bot_group = bot.open_room(&group).await.expect("Bot 打开群聊");
     tokio::time::sleep(std::time::Duration::from_secs(1)).await;

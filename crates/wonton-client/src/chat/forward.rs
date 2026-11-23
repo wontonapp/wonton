@@ -2,15 +2,15 @@
 
 use std::sync::Arc;
 
-use wonton_l10n::l10n;
-use wonton_protocol::{CoreError, MessageAction};
-
 use super::{ChatLink, TimelineKey, invalid, onboarding};
 use crate::l10n::{CATALOG, language};
+use wonton_l10n::l10n;
+use wonton_matrix::Error;
+use wonton_protocol::{CoreError, MessageAction};
 
 impl ChatLink {
-    /// 照原样发到另一个已加入的房间，进展在那个房间的时间线里。附言由动作带来，核心先确认附言再转发；首尾空白去掉，
-    /// 只含空白的当作没带。
+    /// 照原样发到另一个已加入的房间，进展在那个房间的时间线里。附言由动作带来，核心先确认附言再转发，
+    /// 首尾空白和只含空白的处理都在核心。
     pub(super) fn forward_message(
         self: &Arc<Self>,
         key: &TimelineKey,
@@ -30,20 +30,14 @@ impl ChatLink {
                 "chat-forward-target-not-joined"
             )));
         }
-        // 空白附言和没带一样，失败也按转发本身报。
-        let comment = comment
-            .map(str::trim)
-            .filter(|comment| !comment.is_empty())
-            .map(str::to_owned);
-        let failure = if comment.is_some() {
-            "chat-forward-comment-failed"
-        } else {
-            "chat-op-forward-failed"
-        };
+        let comment = comment.map(str::to_owned);
         let sent = self.sent.clone();
         let sent_room = to.to_string();
         self.spawn_op_with_success(
-            failure,
+            |error| match error {
+                Error::CommentNotSent(_) => "chat-forward-comment-failed",
+                _ => "chat-op-forward-failed",
+            },
             async move {
                 session
                     .forward(&room, &event_id, &to, comment.as_deref())

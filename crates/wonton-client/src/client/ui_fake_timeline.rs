@@ -84,7 +84,7 @@ impl FakeTimelines {
                 to_room_id,
                 comment,
             } => {
-                if let Some(comment) = comment.as_deref().filter(|c| !c.trim().is_empty()) {
+                if let Some(comment) = comment.as_deref().map(str::trim).filter(|c| !c.is_empty()) {
                     match self.get(to_room_id) {
                         Some(fake) => fake.send_text(comment, &[]),
                         None => self.park(to_room_id, comment),
@@ -655,7 +655,7 @@ mod tests {
         );
     }
 
-    /// 转发带附言：附言排在转发的副本前面；只含空白的附言不落。目标房间没开和先开着都一样。
+    /// 转发带附言：附言去掉首尾空白后排进转发的副本前面，只含空白的附言不落；目标房间没开和先开着都一样。
     #[tokio::test]
     async fn forward_comment_lands_before_the_copy_and_blank_is_dropped() {
         let far_id = "!ui-fake-call:home.example";
@@ -668,7 +668,11 @@ mod tests {
             if let Some(far) = &opened {
                 let _first = next(far).await;
             }
-            for comment in [Some("看这条".into()), Some("  \n".into())] {
+            for comment in [
+                Some("看这条".into()),
+                Some("  首尾空白  ".into()),
+                Some("  \n".into()),
+            ] {
                 fakes.timeline_action(TimelineAction::ForwardMessage {
                     target: target(),
                     item_id: "ui-fake-11".into(),
@@ -678,9 +682,9 @@ mod tests {
             }
             let far = opened.unwrap_or_else(|| fakes.subscribe(far_id));
             let mut bodies = Vec::new();
-            // 一条附言一条、一份副本一条；到齐就停，多出来的第四条由下面两条断言报出来。整段丢掉时 5 秒就失败，不挂在作业的 45 分钟超时上。
+            // 一条附言一条、一份副本一条；到齐就停，多出来的第六条由下面两条断言报出来。整段丢掉时 5 秒就失败，不挂在作业的 45 分钟超时上。
             tokio::time::timeout(Duration::from_secs(5), async {
-                while bodies.len() < 3 {
+                while bodies.len() < 5 {
                     for diff in next(&far).await.diffs {
                         let TimelineDiff::PushBack { item } = diff else {
                             continue;
@@ -701,14 +705,20 @@ mod tests {
                 tokio::time::timeout(Duration::from_millis(200), next(&far))
                     .await
                     .is_err(),
-                "收齐三条后还有第四条（空白附言落了）：{bodies:?}"
+                "收齐五条后还有第六条（空白附言落了）：{bodies:?}"
             );
             landed.push((opened_first, bodies));
         }
         for (opened_first, bodies) in landed {
             assert_eq!(
                 bodies,
-                ["看这条", "Fixture message 11", "Fixture message 11"],
+                [
+                    "看这条",
+                    "Fixture message 11",
+                    "首尾空白",
+                    "Fixture message 11",
+                    "Fixture message 11"
+                ],
                 "目标房间先开着：{opened_first}"
             );
         }

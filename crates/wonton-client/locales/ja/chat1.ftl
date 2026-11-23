@@ -97,5 +97,5 @@ chat-draft-read-interrupted = 下書きの読み込みが中断されました
 chat-choice-send-failed = 送れませんでした：自宅サーバーに繋がりません。（{ $error }）
 chat-op-agent-answer-failed = 選択肢に回答できませんでした：{ $error }
 
-# 转发带附言时，附言没被服务器收下。
+# 附言没进发送队列或没被服务器收下，转发也没发。
 chat-forward-comment-failed = コメントを送信できなかったため、転送しませんでした：{ $error }

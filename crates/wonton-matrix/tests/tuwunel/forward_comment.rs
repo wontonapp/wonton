@@ -7,7 +7,7 @@ use matrix_sdk::send_queue::RoomSendQueueUpdate;
 use tokio::sync::broadcast;
 use wonton_matrix::{
     ChatRoom, EntryKind, Error, MatrixSession, Message, MessageBody, OwnedEventId, OwnedRoomId,
-    SendOutcome, SendStatus, StoreConfig,
+    SendFailure, SendOutcome, SendStatus, StoreConfig,
 };
 
 use crate::chat::{direct_chat, entry_snapshots, is_text};
@@ -84,7 +84,35 @@ async fn a_blank_comment_is_no_comment() {
     receives_in_order(&chat.bob_room, &["原消息", "原消息"]).await;
 }
 
+/// 附言首尾的空白去掉再发。
+#[tokio::test]
+#[ignore = "需要 Docker，用 --include-ignored 运行"]
+async fn a_padded_comment_arrives_trimmed() {
+    let chat = Chat::open().await;
+    let _source = chat
+        .alice_room
+        .send_text("原消息", &[])
+        .await
+        .expect("放进发送队列");
+    let source_id = entry_id(&chat.alice_room, "原消息", |message| {
+        matches!(message.status, SendStatus::Sent) && is_text(message, "原消息")
+    })
+    .await;
+
+    chat.alice
+        .forward(
+            &chat.alice_room,
+            &source_id,
+            &chat.room_id,
+            Some("  看这个  "),
+        )
+        .await
+        .expect("带空白的附言照常转发");
+    receives_in_order(&chat.bob_room, &["原消息", "看这个", "原消息"]).await;
+}
+
 /// 接收端已经关掉（`Closed`）时按队列里的当下状态给结果：还在队里就当没发出去，已经出队就当收下了，都不挂住。
+/// 前两段在初次检查就返回；第三段断着网把消息留在队里，等的是已关闭的接收端本身。
 #[tokio::test]
 #[ignore = "需要 Docker，用 --include-ignored 运行"]
 async fn a_closed_receiver_still_resolves_the_comment() {
@@ -150,6 +178,23 @@ async fn a_closed_receiver_still_resolves_the_comment() {
         "comment_rejected",
         "拒收的要带服务器给的原因，不能挂着"
     );
+
+    // 断着网，还留在队里：这一段真的停在已关闭的接收端上，按“队列停了”报，不能挂住。
+    chat.relay.cut();
+    let stuck = chat
+        .alice_room
+        .send_text("断网排队", &[])
+        .await
+        .expect("放进发送队列");
+    waiting_echo(&chat.alice_room, "断网排队").await;
+    let (sender, _) = broadcast::channel::<RoomSendQueueUpdate>(1);
+    let closed = sender.subscribe();
+    drop(sender);
+    assert_eq!(
+        tokio_timeout(chat.alice_room.wait_outcome(closed, stuck)).await,
+        SendOutcome::Failed(SendFailure::QueueStopped)
+    );
+    chat.relay.restore();
 }
 
 /// 附言被拒（不可恢复）：转发不发，对方只收到原消息。
@@ -182,7 +227,15 @@ async fn a_rejected_comment_stops_the_forward() {
     };
     assert!(reason.to_string().contains("comment_rejected"), "{reason}");
 
-    // 拒收和转发都走服务器，等出结果后对方还是只有原消息；Alice 的附言停在失败。
+    // 失败的附言在，转发就不该有本地回显：自己房间里只剩原消息，没有第二份。
+    let own = messages(&chat.alice_room).await;
+    assert!(
+        !own.iter().any(|message| {
+            is_text(message, "原消息") && message.event_id.as_ref() != Some(&source_id)
+        }),
+        "附言被拒后转发的本地回显还是出现了：{own:?}"
+    );
+
     let comment_status = failed(&chat.alice_room, "被拒的附言").await;
     assert!(
         matches!(
@@ -199,37 +252,47 @@ async fn a_rejected_comment_stops_the_forward() {
     receives_in_order(&chat.bob_room, &["原消息"]).await;
 }
 
-/// 等附言发出，再故意让房间广播冲出容量：接收方还没读就有 270 条更新，必有一次 `Lagged`。
+/// 接收方跟不上（`Lagged`）时不挂住：断着网把附言留在队里，让房间广播冲出容量（下一次读必是 `Lagged`），
+/// 恢复后照样等到服务器收下。
 #[tokio::test]
 #[ignore = "需要 Docker，用 --include-ignored 运行"]
 async fn a_lagged_receiver_still_waits_for_the_comment() {
     let chat = Chat::open().await;
-    let _source = chat
-        .alice_room
+    let alice_room = chat.alice_room.clone();
+    let _source = alice_room
         .send_text("原消息", &[])
         .await
         .expect("放进发送队列");
-    let source_id = entry_id(&chat.alice_room, "原消息", |message| {
+    let source_id = entry_id(&alice_room, "原消息", |message| {
         matches!(message.status, SendStatus::Sent) && is_text(message, "原消息")
     })
     .await;
 
-    let (_, updates) = chat.alice_room.send_updates().await.expect("订阅发送队列");
-    let comment = chat
-        .alice_room
+    let (_, updates) = alice_room.send_updates().await.expect("订阅发送队列");
+    chat.relay.cut();
+    let comment = alice_room
         .send_text("附言", &[])
         .await
         .expect("附言放进发送队列");
     for number in 0..270 {
-        chat.alice_room
+        alice_room
             .send_text(&format!("填充 {number}"), &[])
             .await
             .expect("填充消息放进发送队列");
     }
+    // 一次都没读，广播已经满格溢出（容量 256），附言还在队里：下一次读必是 `Lagged`。
+    assert_eq!(updates.len(), 256, "广播没被冲出容量");
+    let relay = std::sync::Arc::new(chat.relay);
+    let restoring = relay.clone();
+    let restore = tokio::spawn(async move {
+        tokio::time::sleep(Duration::from_millis(500)).await;
+        restoring.restore();
+    });
     assert!(matches!(
-        chat.alice_room.wait_outcome(updates, comment).await,
+        tokio_timeout(alice_room.wait_outcome(updates, comment)).await,
         SendOutcome::Sent
     ));
+    restore.await.expect("恢复网络的任务");
     chat.alice
         .forward(
             &chat.alice_room,

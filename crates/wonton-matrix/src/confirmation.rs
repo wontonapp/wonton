@@ -26,6 +26,8 @@ pub enum SendFailure {
     Cancelled,
     /// 发送队列关掉了。
     QueueStopped,
+    /// 连发送队列都没进去：订阅队列或入队时就失败了。
+    NotQueued(String),
     /// 查不到它在队列里的状态。
     Unreadable(String),
     /// 发送请求不可恢复地失败（服务器拒收、设备不信任等）。
@@ -39,6 +41,7 @@ impl SendFailure {
             Self::Cancelled => "comment_cancelled",
             Self::QueueStopped => "comment_queue_stopped",
             Self::Unreadable(_) => "comment_unreadable",
+            Self::NotQueued(_) => "comment_not_queued",
             Self::Server(_) => "comment_rejected",
         }
     }
@@ -47,7 +50,9 @@ impl SendFailure {
     pub fn detail(&self) -> Option<&str> {
         match self {
             Self::Cancelled | Self::QueueStopped => None,
-            Self::Unreadable(detail) | Self::Server(detail) => Some(detail),
+            Self::NotQueued(detail) | Self::Unreadable(detail) | Self::Server(detail) => {
+                Some(detail)
+            }
         }
     }
 }
@@ -111,6 +116,8 @@ impl ChatRoom {
                 }) if failed == transaction_id => {
                     return SendOutcome::Failed(SendFailure::Server(error.to_string()));
                 }
+                // 只有直播路径能拿到：初次检查和 `Closed` 都是按回显在不在判（不在就当已发出、在就按队列当下状态报），
+                // 不看取消。
                 Ok(RoomSendQueueUpdate::CancelledLocalEvent {
                     transaction_id: cancelled,
                 }) if cancelled == transaction_id => {
