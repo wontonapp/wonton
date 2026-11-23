@@ -23,7 +23,7 @@ settings:
     # 三个标识跟着变（见 README）；直接改 PRODUCT_BUNDLE_IDENTIFIER 会把扩展的也改成同一个，签不过。
     WONTON_BUNDLE_ID: app.wonton.ios
   configs:
-    # Release 产物体积：#887。调试信息留在 dSYM 里，装进 App 的二进制剥掉本地符号（atos 仍靠 dSYM 解出函数名）。
+    # Release 产物体积：#887。调试信息留在 dSYM 里，装进 App 的二进制把符号全剥掉（atos 用 dSYM 解地址）。
     Release:
       ENABLE_TESTABILITY: NO
       ENABLE_PREVIEWS: NO
@@ -31,7 +31,7 @@ settings:
       DEAD_CODE_STRIPPING: YES
       DEPLOYMENT_POSTPROCESSING: YES
       STRIP_INSTALLED_PRODUCT: YES
-      STRIP_STYLE: non-global
+      STRIP_STYLE: all
 packages:
   WontonClient:
     path: WontonClient
