@@ -354,7 +354,6 @@ private fun rememberAttachments(
                 context, uris, send, photoUnreadable, photoTryAnother, core, roomId, caption,
                 reply?.eventId, onReplyCancel,
             )
-            choosing = false
             if (failure != null) {
                 onReject(photoFailure(context, failure, photoTryAnother))
             } else if (send != null) {
@@ -365,6 +364,8 @@ private fun rememberAttachments(
                     settleCaption(caption, currentDraft, currentOnDraftChange, onSent, onReplyCancel)
                 }
             }
+            // 先把草稿落定再收面板：面板还组合着时先落的值不会被它收尾那一写盖回去。
+            choosing = false
         }
         Unit
     }

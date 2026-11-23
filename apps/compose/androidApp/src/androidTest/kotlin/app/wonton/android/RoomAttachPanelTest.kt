@@ -29,8 +29,14 @@ import androidx.compose.ui.test.performTextClearance
 import androidx.compose.ui.test.performTextInput
 import androidx.compose.ui.test.performTouchInput
 import androidx.compose.ui.test.swipe
+import app.wonton.protocol.TimelineDiff
 import app.wonton.protocol.TimelineTarget
 import app.wonton.ui.R
+import java.util.concurrent.atomic.AtomicInteger
+import kotlinx.coroutines.CompletableDeferred
+import kotlinx.coroutines.CoroutineScope
+import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.launch
 import kotlinx.coroutines.runBlocking
 import org.junit.Test
 
@@ -131,8 +137,9 @@ class RoomAttachPanelTest : RoomTelegramCase() {
         core.releaseHeldAttachmentForTest(TimelineTarget(ECHO_ROOM, null))
         compose.waitUntil(10_000) { compose.onAllNodes(hasTestTag("attach-send")).fetchSemanticsNodes().isEmpty() }
         // 发出去的是按下时那句；补的那句还在输入框里，没跟着走也没被清掉。
+        // 气泡正文末尾拼了脚注占位，按包含匹配。
         compose.waitUntil(10_000) {
-            compose.onAllNodes(hasText("先说一句")).fetchSemanticsNodes().isNotEmpty()
+            compose.onAllNodes(hasText("先说一句", substring = true)).fetchSemanticsNodes().isNotEmpty()
         }
         compose.onNode(hasSetTextAction()).assert(hasText("等的时候补的"))
         check(trayTiles() == 0) { "附件区里还剩着照片" }
@@ -148,7 +155,22 @@ class RoomAttachPanelTest : RoomTelegramCase() {
         openAlbum()
         photos()[albumIndexOf(picks[0])].performClick()
         compose.waitUntil(10_000) { photos()[albumIndexOf(picks[0])].isSelected() }
-        val sentBefore = photoMessages()
+        // 订阅着数核心里发出去的照片：新订阅的第一批不含后来发的，要在点发送之前订上。
+        val sent = AtomicInteger()
+        val ready = CompletableDeferred<Unit>()
+        val watch = CoroutineScope(Dispatchers.Default).launch {
+            core.subscribeTimeline(TimelineTarget(ECHO_ROOM, null)).use { subscription ->
+                ready.complete(Unit)
+                while (true) {
+                    val update = subscription.next() ?: break
+                    update.diffs.forEach { diff ->
+                        val item = (diff as? TimelineDiff.PushBack)?.item ?: return@forEach
+                        if (item.id.startsWith("ui-fake-photo-")) sent.incrementAndGet()
+                    }
+                }
+            }
+        }
+        runBlocking { ready.await() }
         sheetSend("attach-send").performClick()
         compose.waitUntil(10_000) { trayTiles() == 1 }
         sheetSend("attach-send").assertIsNotEnabled()
@@ -156,12 +178,14 @@ class RoomAttachPanelTest : RoomTelegramCase() {
         core.releaseHeldAttachmentForTest(TimelineTarget(ECHO_ROOM, null))
         compose.waitUntil(10_000) { compose.onAllNodes(hasTestTag("attach-send")).fetchSemanticsNodes().isEmpty() }
         check(trayTiles() == 0) { "附件区里还剩着照片" }
-        check(photoMessages() == sentBefore + 1) { "发了 ${photoMessages() - sentBefore} 条照片" }
+        compose.waitUntil(10_000) { sent.get() == 1 }
+        check(sent.get() == 1) { "发了 ${sent.get()} 条照片" }
+        watch.cancel()
     }
 
     /**
      * 转发面板：搜索能收窄列表，勾上两个房间后一起发出去，谁也没跳走，两个房间都有一条转发来的。
-     * 附言按定案拿出去，等核心的 `ForwardMessage.comment`。
+     * 附言按定案拿出去，等壳切换接上 `ForwardMessage.comment`。
      */
     @Test
     fun forwardPickerSendsToEveryTarget() {
@@ -188,12 +212,12 @@ class RoomAttachPanelTest : RoomTelegramCase() {
         if (hasBack()) compose.onNodeWithContentDescription(string(R.string.design_back)).performClick()
         // 到了聊天列表，依次进 Family 和 Notes，两边都得有转发来的那条。
         compose.onNodeWithText("Family").performClick()
-        compose.waitUntil(10_000) { forwardedInto("Family", "ui-fake-forwarded-24") }
+        compose.waitUntil(10_000) { forwardedInto("Family", "ui-fake-forwarded-25") }
         compose.onNodeWithContentDescription(string(R.string.design_back)).performClick()
         compose.waitForIdle()
         if (hasBack()) compose.onNodeWithContentDescription(string(R.string.design_back)).performClick()
         compose.onNodeWithText("Notes").performClick()
-        compose.waitUntil(10_000) { forwardedInto("Notes", "ui-fake-forwarded-24") }
+        compose.waitUntil(10_000) { forwardedInto("Notes", "ui-fake-forwarded-25") }
     }
 
     /** 只勾一个时发完跟过去：那个房间打开，转发也在。 */
@@ -203,7 +227,7 @@ class RoomAttachPanelTest : RoomTelegramCase() {
         compose.waitUntil(10_000) { forwardRows().fetchSemanticsNodes().size == 2 }
         compose.onNode(hasTestTag("forward-row") and hasText("Family")).performClick()
         sheetSend("forward-send").performClick()
-        compose.waitUntil(10_000) { forwardedInto("Family", "ui-fake-forwarded-24") }
+        compose.waitUntil(10_000) { forwardedInto("Family", "ui-fake-forwarded-25") }
     }
 
     /** 旁聊里一摞能选好几张（和 Telegram 的十张一样），发送键跟着选中数启用。 */
@@ -244,10 +268,14 @@ class RoomAttachPanelTest : RoomTelegramCase() {
         // 两张能读的照片各选一张。
         photos()[albumIndexOf(picks[0])].performClick()
         photos()[albumIndexOf(picks[1])].performClick()
+        // 旁聊盖着主对话，主对话里的引用还在树里：记个基准，只比新多出来的那条。
+        val quotesBefore = compose.onAllNodes(hasTestTag("quote"), useUnmergedTree = true)
+            .fetchSemanticsNodes().size
         sheetSend("attach-send").performClick()
         compose.waitUntil(10_000) { compose.onAllNodes(hasTestTag("attach-send")).fetchSemanticsNodes().isEmpty() }
         compose.waitUntil(10_000) {
-            compose.onAllNodes(hasTestTag("quote"), useUnmergedTree = true).fetchSemanticsNodes().size == 1
+            compose.onAllNodes(hasTestTag("quote"), useUnmergedTree = true)
+                .fetchSemanticsNodes().size == quotesBefore + 1
         }
         compose.onNodeWithContentDescription(string(R.string.message_reply_cancel)).assertDoesNotExist()
     }

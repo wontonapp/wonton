@@ -40,7 +40,7 @@ import app.wonton.ui.icons.WontonIcon
 
 /**
  * 转发先选房间：上面搜，中间挨个勾，底下是发给几个的发送键。列的是聊天列表里已经加入、能发的房间，勾几个就发给几个。
- * 转发不带附言：附言要等核心的 `ForwardMessage.comment`（见 ADR-0109）。
+ * 转发不带附言：附言交给核心的 `ForwardMessage.comment` 走次序，等壳切换时再接（见 ADR-0109）。
  */
 @Composable
 fun ForwardSheet(
