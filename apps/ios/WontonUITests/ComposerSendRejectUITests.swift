@@ -29,7 +29,7 @@ final class ComposerSendRejectUITests: XCTestCase {
         let field = app.textViews["Message"]
         field.tap()
         field.typeText(Self.draft)
-        // 草稿和回复对象先摆好：选照片的那一下就是发送。
+        // 草稿和回复对象先摆好：附件面板选完照片就是发送。
         addFailedAttachment()
 
         let reason = app.staticTexts["An attachment didn't upload. Retry or remove it first."]
@@ -58,6 +58,7 @@ final class ComposerSendRejectUITests: XCTestCase {
         tap(app.buttons[Self.directRoom])
         XCTAssertTrue(message(3).waitForExistence(timeout: 10), "时间线没出来\n\(app.debugDescription)")
         addFailedAttachment()
+        dismissRejection()
         tap(app.buttons["composerCommands"])
         tap(app.buttons["command.help"])
 
@@ -80,7 +81,7 @@ final class ComposerSendRejectUITests: XCTestCase {
         let field = app.textViews["Message"]
         tap(field)
         field.typeText(Self.draft)
-        _ = addFailedAttachment()
+        addFailedAttachment()
         dismissRejection()
         tap(app.buttons["composerCommands"])
         tap(app.buttons["command.model"])
@@ -102,7 +103,7 @@ final class ComposerSendRejectUITests: XCTestCase {
         if ok.waitForExistence(timeout: 2) { ok.tap() }
     }
 
-    /// 回形针里选第一张相册照片，等它被假数据标成上传失败。
+    /// 面板里选第一张相册照片，让它被假数据标成上传失败；新面板底下是发送键，选完就连着草稿一起发。
     private func addFailedAttachment() {
         tap(app.buttons["composerAttach"])
         let springboard = XCUIApplication(bundleIdentifier: "com.apple.springboard")

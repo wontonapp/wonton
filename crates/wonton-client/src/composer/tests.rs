@@ -625,6 +625,10 @@ async fn uploads_pause_offline_and_resume_when_back() {
     })
     .await;
 
+    // 等联网（Paused）不算失败：这时照样点得了发送，字排在附件后面等。
+    s.link.send(ROOM, "先发字", None, &[]).unwrap();
+    assert_eq!(view(&s).outgoing.len(), 1, "暂停时发送被拒了");
+
     s.fake.online.send_replace(true);
     until("连上后接着传", || s.fake.upload_calls() == 1).await;
     until("显示进度", || {
@@ -635,10 +639,8 @@ async fn uploads_pause_offline_and_resume_when_back() {
     })
     .await;
     s.fake.finish("a.jpg", Ok(uploaded("a.jpg", true)));
-    until("传完", || {
-        view(&s).attachments[0].state == AttachmentState::Ready
-    })
-    .await;
+    // 传完马上被那条待发消息带走，附件区清空、字发出去。
+    until("传完、字发出去", || view(&s).outgoing.is_empty()).await;
 }
 
 #[tokio::test(flavor = "multi_thread")]

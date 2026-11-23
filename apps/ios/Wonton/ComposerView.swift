@@ -145,7 +145,7 @@ struct ComposerView: View {
         }
     }
 
-    /// 输入框开头敲了“/”时，“/”后面的字：命令列表按它做前缀过滤。没敲“/”或者已经换行了为空。
+    /// 输入框开头敲了“/”时，“/”后面的字：命令列表按开头的第一个词过滤。没敲“/”或者已经换行了为空。
     /// 只看到第一个词：命令发出去以后在后面接着打参数（“/model gpt”），那句命令本身没改就不弹回来；
     /// 改到命令名才恢复。
     private var commandQuery: String? {
@@ -168,7 +168,8 @@ struct ComposerView: View {
     /// 发完留着；回复对象跟着命令发出去，发出去才收起。
     private func run(_ command: RoomCommand) {
         pin.pin()
-        sentSlash = draft.wrappedValue
+        // 记第一个词就够：草稿里本来就带着参数送出去的，也能认出“这一条刚发过”。
+        sentSlash = String(draft.wrappedValue.prefix { $0 != " " })
         // 被拒（附件区里有传不上去的）时命令没发出去：草稿和回复条留着，列表也留着让主人再点。
         // 走和发送键同一个口：附件区里有东西时按 Attachment 送，才会被附件区拦下。
         guard composer.send(command.text, replyTo: model.replies[draftKey]?.eventId) else { return }

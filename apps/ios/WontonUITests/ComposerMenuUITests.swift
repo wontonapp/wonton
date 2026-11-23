@@ -58,6 +58,14 @@ final class ComposerMenuUITests: XCTestCase {
         field.typeText(" name")
         XCTAssertTrue(app.buttons["command.model"].exists, "打了参数，命令那一条没了")
         XCTAssertFalse(app.buttons["command.help"].exists, "打了参数，列表没按第一个词过滤")
+
+        // 带着参数点一条：发出去以后列表收起，后面再打参数也不弹回来。
+        tap(app.buttons["command.model"])
+        XCTAssertTrue(app.otherElements["commandMenu"].waitForNonExistence(timeout: 5), "发出去以后列表还开着")
+        XCTAssertEqual(field.value as? String, "/m name", "点命令把草稿动了")
+        field.tap()
+        field.typeText(" 70b")
+        XCTAssertFalse(app.otherElements["commandMenu"].exists, "接着打参数把列表弹回来了")
     }
 
     /// 每条命令的名字后面写它的参数提示，说明另起一行（一行挤不下，后面会被截掉）。

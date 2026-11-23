@@ -1,8 +1,8 @@
 import SwiftUI
 import WontonClient
 
-/// “/”命令列表（ADR-0054、ADR-0109 第 8 节）：浮在输入框上方的一张玻璃卡片，一行一条命令（Bot 头像、名字和说明），点一条就发出去。
-/// 敲“/”弹出和点“菜单”按钮打开的是同一张；列哪些由输入栏定，这里只画。
+/// “/”命令列表（ADR-0054、ADR-0109 第 8 节）：浮在输入框上方的一张玻璃卡片，一块一条命令（Bot 头像、名字和参数提示、
+/// 说明），点一条就发出去。敲“/”弹出和点“菜单”按钮打开的是同一张；列哪些由输入栏定，这里只画。
 struct CommandMenu: View {
     let commands: [RoomCommand]
     /// 各 Bot 的表里超过上限被截掉的条数：列表末尾说一声。按前缀过滤时不给。
@@ -61,7 +61,7 @@ struct CommandMenu: View {
             avatar(command)
                 .frame(width: WontonTheme.size.commandAvatar, height: WontonTheme.size.commandAvatar)
                 .accessibilityHidden(true)
-            // 名字和参数提示一行，说明在下一行，和 Android 的排法一致（ADR-0109 第 7 节）。
+            // 名字和参数提示一行，说明在下一行，和 Android 的排法一致（ADR-0109 第 8 节）。
             VStack(alignment: .leading, spacing: WontonTheme.spacing.s4) {
                 HStack(spacing: WontonTheme.spacing.s8) {
                     Text(verbatim: "/\(command.name)")
