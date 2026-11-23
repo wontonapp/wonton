@@ -22,6 +22,16 @@ settings:
     # App 的 bundle ID；分享扩展是 `<它>.share`，App Group 是 `group.<它>`（ADR-0097）。真机用自己的团队签名时只改这一个，
     # 三个标识跟着变（见 README）；直接改 PRODUCT_BUNDLE_IDENTIFIER 会把扩展的也改成同一个，签不过。
     WONTON_BUNDLE_ID: app.wonton.ios
+  configs:
+    # Release 产物体积：#887。调试信息留在 dSYM 里，装进 App 的二进制剥掉本地符号（atos 仍靠 dSYM 解出函数名）。
+    Release:
+      ENABLE_TESTABILITY: NO
+      ENABLE_PREVIEWS: NO
+      SWIFT_OPTIMIZATION_LEVEL: "-Osize"
+      DEAD_CODE_STRIPPING: YES
+      DEPLOYMENT_POSTPROCESSING: YES
+      STRIP_INSTALLED_PRODUCT: YES
+      STRIP_STYLE: non-global
 packages:
   WontonClient:
     path: WontonClient

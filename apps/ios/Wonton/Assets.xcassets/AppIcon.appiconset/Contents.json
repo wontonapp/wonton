@@ -57,7 +57,7 @@
       "size": "40x40"
     },
     {
-      "filename": "light-60@2x.png",
+      "filename": "light-40@3x.png",
       "idiom": "universal",
       "platform": "ios",
       "scale": "2x",
@@ -222,7 +222,7 @@
           "value": "dark"
         }
       ],
-      "filename": "dark-60@2x.png",
+      "filename": "dark-40@3x.png",
       "idiom": "universal",
       "platform": "ios",
       "scale": "2x",
@@ -429,7 +429,7 @@
           "value": "tinted"
         }
       ],
-      "filename": "tinted-60@2x.png",
+      "filename": "tinted-40@3x.png",
       "idiom": "universal",
       "platform": "ios",
       "scale": "2x",
