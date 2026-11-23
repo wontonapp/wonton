@@ -106,14 +106,25 @@ jobs:
       # 放在后台先启动，和下面编 Rust 核心、构建测试重叠；跑测试前再等它启动完。
       - name: 后台启动模拟器
         run: |
+          # 设备的 CoreSimulator 库是按用户分的：直接在 runner 用户里按名字找，找不到就现建一台（同一运行时、同一机型）。
           udid=$(xcrun simctl list devices available -j | python3 -c '
           import json, os, sys
           runtime = "com.apple.CoreSimulator.SimRuntime.iOS-" + os.environ["SIMULATOR_OS"].replace(".", "-")
-          names = [d["udid"] for d in json.load(sys.stdin)["devices"].get(runtime, []) if d["name"] == os.environ["SIMULATOR_NAME"]]
+          devices = json.load(sys.stdin)["devices"]
+          names = [d["udid"] for d in devices.get(runtime, []) if d["name"] == os.environ["SIMULATOR_NAME"]]
+          if not names:
+              keys = [k for k in devices if k.startswith("com.apple.CoreSimulator.SimRuntime.iOS-")]
+              print("候选运行时: " + ", ".join(keys), file=sys.stderr)
           print(names[0] if names else "")')
           if [ -z "$udid" ]; then
-            echo "::error::找不到模拟器 $SIMULATOR_NAME（iOS $SIMULATOR_OS），runner 镜像变了要改 SIMULATOR_NAME/SIMULATOR_OS 并重录参考图"
-            exit 1
+            echo "::notice::没有现成的 $SIMULATOR_NAME（iOS $SIMULATOR_OS），现建一台"
+            type=$(xcrun simctl list devicetypes -j | python3 -c '
+          import json, os, sys
+          types = json.load(sys.stdin)["devicetypes"]
+          hit = [t["identifier"] for t in types if t["name"] == os.environ["SIMULATOR_NAME"]]
+          print(hit[0] if hit else "")')
+            runtime="com.apple.CoreSimulator.SimRuntime.iOS-$(echo "$SIMULATOR_OS" | tr . -)"
+            udid=$(xcrun simctl create "$SIMULATOR_NAME" "$type" "$runtime")
           fi
           echo "SIMULATOR_UDID=$udid" >> "$GITHUB_ENV"
           nohup xcrun simctl bootstatus "$udid" -b > "$RUNNER_TEMP/simulator-boot.log" 2>&1 &
