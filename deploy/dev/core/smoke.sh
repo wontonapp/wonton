@@ -736,7 +736,6 @@ seen+="$reply"
 ! docker exec "$browser" grep -qF -e "$web_key" -e magpie_web /tmp/jar /tmp/phone-jar /tmp/ios-jar ||
   fail "浏览器或手机的 Cookie 罐里有 magpie 的网页密钥"
 ok "网页密钥不在任何响应头、响应体和 Cookie 罐里"
-expect "卸载模型网关" "$("$dev" uninstall ai.usemagpie.magpie --purge | json data_removed)" true
 
 fi
 if step revoke "吊销手机"; then
@@ -793,6 +792,8 @@ expect "主人卸掉的 Hermes，核心重启后不装回来" "$(plugin_state co
 
 fi
 if step uninstall "卸载干净"; then
+# 要从镜像里现装的网关（models 一步）用到了“模型设置”网页和 restart 两处，最后一步才卸。
+expect "卸载模型网关" "$("$dev" uninstall ai.usemagpie.magpie --purge | json data_removed)" true
 started=$(date +%s)
 report="$("$dev" uninstall app.grafana --purge)"
 uninstall_seconds=$(($(date +%s) - started))
