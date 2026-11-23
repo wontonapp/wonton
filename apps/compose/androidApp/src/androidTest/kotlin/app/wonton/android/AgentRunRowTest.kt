@@ -17,6 +17,7 @@ import androidx.test.platform.app.InstrumentationRegistry
 import app.wonton.protocol.AgentRunChoice
 import app.wonton.protocol.AgentRunState
 import app.wonton.protocol.AppearanceViewModel
+import app.wonton.protocol.ChoiceSend
 import app.wonton.protocol.FontStyle
 import app.wonton.protocol.Rgb
 import app.wonton.protocol.TextSize
@@ -113,7 +114,12 @@ class AgentRunRowTest {
     @Test
     fun askingChipsWrapIntoEqualPairs() {
         val choices = listOf("Allow once", "Allow for this session", "Deny").mapIndexed { index, label ->
-            AgentRunChoice(key = "k$index", label = label)
+            AgentRunChoice(
+                key = "k$index",
+                label = label,
+                chosen = false,
+                send = ChoiceSend.Idle,
+            )
         }
         compose.setContent {
             WontonTheme(previewAppearance()) {
