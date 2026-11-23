@@ -326,7 +326,14 @@ async fn an_abandoned_home_room_is_recovered_without_the_install_record() {
         .await
         .unwrap();
     assert_eq!(again.account, first.account, "捡回上次的房间");
-    assert_eq!(fake.state().rooms.len(), 1);
+    assert_eq!(
+        fake.state()
+            .rooms
+            .keys()
+            .filter(|id| id.as_str() != super::fake::ADMIN_ROOM_ID)
+            .count(),
+        1
+    );
 }
 
 #[tokio::test]
@@ -396,10 +403,23 @@ async fn a_failed_invite_leaves_the_owner_out_of_the_room() {
         .await
         .unwrap_err();
     assert_eq!(err.errcode(), "M_UNKNOWN", "{err}");
-    let first_room = fake.state().rooms.keys().next().unwrap().clone();
+    let first_room = fake
+        .state()
+        .rooms
+        .keys()
+        .find(|id| id.as_str() != super::fake::ADMIN_ROOM_ID)
+        .unwrap()
+        .clone();
     {
         let state = fake.state();
-        assert_eq!(state.rooms.len(), 1);
+        assert_eq!(
+            state
+                .rooms
+                .keys()
+                .filter(|id| id.as_str() != super::fake::ADMIN_ROOM_ID)
+                .count(),
+            1
+        );
         let room = &state.rooms[&first_room];
         assert!(
             !room.members.contains("@owner:test"),
@@ -416,7 +436,14 @@ async fn a_failed_invite_leaves_the_owner_out_of_the_room() {
     // 旧房间还留在服务器上，但主人已经退出、不在他的列表里。
     assert_ne!(again.account.home_room, first_room);
     assert!(!members(&fake, &first_room).contains("@owner:test"));
-    assert_eq!(fake.state().rooms.len(), 2);
+    assert_eq!(
+        fake.state()
+            .rooms
+            .keys()
+            .filter(|id| id.as_str() != super::fake::ADMIN_ROOM_ID)
+            .count(),
+        2
+    );
 }
 
 #[tokio::test]
@@ -432,10 +459,23 @@ async fn a_lost_create_room_response_leaves_no_room_for_the_owner() {
         .await
         .unwrap_err();
     assert!(matches!(err, MatrixError::Unavailable { .. }), "{err}");
-    let first_room = fake.state().rooms.keys().next().unwrap().clone();
+    let first_room = fake
+        .state()
+        .rooms
+        .keys()
+        .find(|id| id.as_str() != super::fake::ADMIN_ROOM_ID)
+        .unwrap()
+        .clone();
     {
         let state = fake.state();
-        assert_eq!(state.rooms.len(), 1);
+        assert_eq!(
+            state
+                .rooms
+                .keys()
+                .filter(|id| id.as_str() != super::fake::ADMIN_ROOM_ID)
+                .count(),
+            1
+        );
         let room = &state.rooms[&first_room];
         assert!(
             !room.members.contains("@owner:test"),
@@ -448,7 +488,14 @@ async fn a_lost_create_room_response_leaves_no_room_for_the_owner() {
     let again = matrix.provision_bot(&spec("echo", &taken)).await.unwrap();
     assert_ne!(again.account.home_room, first_room);
     assert!(!members(&fake, &first_room).contains("@owner:test"));
-    assert_eq!(fake.state().rooms.len(), 2);
+    assert_eq!(
+        fake.state()
+            .rooms
+            .keys()
+            .filter(|id| id.as_str() != super::fake::ADMIN_ROOM_ID)
+            .count(),
+        2
+    );
 }
 
 #[tokio::test]

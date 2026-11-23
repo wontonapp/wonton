@@ -171,6 +171,13 @@ impl EntryContainers {
         self
     }
 
+    /// 测试用：把入口的主进程管理端口指到临时监听。
+    #[must_use]
+    pub fn with_reload_addr(mut self, addr: String) -> Self {
+        self.reload_addr = addr;
+        self
+    }
+
     pub fn lan_forward_available(&self) -> bool {
         self.lan_forward_available
     }
