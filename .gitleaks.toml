@@ -44,3 +44,9 @@ description = "matrix 的 Tuwunel 测试夹具：源文件里只写 `{private}` 
 condition = "AND"
 paths = ['''^crates/wonton-core/src/matrix/(bot|invite_filter)_docker_tests\.rs$''', '''^crates/wonton-core/src/matrix/profile_tuwunel_tests\.rs$''']
 regexes = ['''-----BEGIN PRIVATE KEY-----\\n''']
+
+[[allowlists]]
+description = "入口热加载演练里现场生成的 JWT 密钥只写 PEM 空头，后面紧跟 {} 占位；真 PEM 头后面是换行加 base64，不会命中"
+condition = "AND"
+paths = ['''^crates/wonton-core/src/matrix/federation_config/tests\.rs$''']
+regexes = ['''-----BEGIN PRIVATE KEY-----\\n\{\}''']
