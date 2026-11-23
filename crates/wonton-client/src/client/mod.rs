@@ -70,6 +70,8 @@ mod ui_fake_room;
 #[cfg(feature = "ui-fake")]
 mod ui_fake_settings;
 #[cfg(feature = "ui-fake")]
+mod ui_fake_store;
+#[cfg(feature = "ui-fake")]
 mod ui_fake_timeline;
 mod widget;
 
