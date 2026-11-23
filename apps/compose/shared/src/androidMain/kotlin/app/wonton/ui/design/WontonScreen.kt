@@ -11,7 +11,7 @@ import androidx.compose.runtime.Composable
 import androidx.compose.runtime.CompositionLocalProvider
 import androidx.compose.runtime.compositionLocalOf
 import androidx.compose.runtime.getValue
-import androidx.compose.runtime.mutableStateOf
+import androidx.compose.runtime.mutableIntStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Modifier
@@ -49,13 +49,14 @@ fun wontonContentPaddingValues(
 
 /**
  * Full-screen content beneath a pinned Material bar; only scroll content receives clearance.
- *
- * 栏高在这一次测量里定下来：先量栏，再用实测高度 composition-local 给内容、量内容。
- * 用状态回填栏高时，内容先按 0 让位，要到下一帧才补上；一帧定格的快照会抽到栏压内容的帧。
+ * 栏高在这一次测量里定下来：先量栏，把实测高度写进状态，再给内容、量内容。
+ * 状态在 subcompose 内容之前已经更新，内容第一次组合就读到真值，以后高度变了也会让读方重组。
+ * （只传一个非状态变量不行：同一个键复用子组合时不会重跑 subcompose 的 lambda，内容会一直拿着首测的 0。）
  */
 @Composable
 fun WontonScreen(bar: @Composable () -> Unit, modifier: Modifier = Modifier, content: @Composable () -> Unit) {
     val density = LocalDensity.current
+    var barHeight by remember { mutableIntStateOf(0) }
     val canvas = WontonTheme.colors.canvas.toColor()
     // 向上滚第一像素内容就进了顶栏下面；回到顶（剩余向下分量没人消费）时恢复透明。
     // 不用 pinnedScrollBehavior：小顶栏的 overlappedFraction 恒为 0，collapsedFraction 也不随 nested scroll 变化。
@@ -87,9 +88,10 @@ fun WontonScreen(bar: @Composable () -> Unit, modifier: Modifier = Modifier, con
         val barPlaceables = subcompose(BarSlot) { Box(Modifier.background(fill)) { bar() } }
             .map { it.measure(loose) }
         val barHeightPx = barPlaceables.maxOfOrNull { it.height } ?: 0
+        barHeight = with(density) { barHeightPx.toDp() }
         val contentPlaceables = subcompose(ContentSlot) {
             CompositionLocalProvider(
-                LocalWontonTopInset provides with(density) { barHeightPx.toDp() },
+                LocalWontonTopInset provides barHeight,
                 LocalWontonBottomInset provides bottomInset,
             ) { content() }
         }.map { it.measure(loose) }
