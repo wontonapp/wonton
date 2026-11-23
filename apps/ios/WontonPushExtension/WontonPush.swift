@@ -15,29 +15,29 @@ enum WontonPushPayload {
         let roomName: String?
     }
 
-    struct Confirmation: Decodable {
-        let server: String
-        let confirmation: Card
-
-        struct Card: Decodable {
-            let id: String
-            let title: String
-            /// 卡片发起的会话；核心自己发起的卡片没有，点开去“等你确认”的入口。
-            let origin: Origin?
-        }
-
-        struct Origin: Decodable {
-            let roomId: String
-        }
-    }
-
     case message(Message)
     case confirmation(Confirmation)
 }
 
+struct Confirmation: Decodable {
+    let server: String
+    let confirmation: ConfirmationCard
+}
+
+struct ConfirmationCard: Decodable {
+    let id: String
+    let title: String
+    /// 卡片发起的会话；核心自己发起的卡片没有，点开去“等你确认”的入口。
+    let origin: ConfirmationOrigin?
+}
+
+struct ConfirmationOrigin: Decodable {
+    let roomId: String
+}
+
 /// 按明文的形状解析：带 `confirmation` 段的是卡片直推，其余按房间消息。
 private struct PayloadShim: Decodable {
-    let confirmation: WontonPushPayload.Confirmation.Card?
+    let confirmation: ConfirmationCard?
     let server: String
     let roomId: String?
     let eventId: String?

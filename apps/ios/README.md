@@ -12,7 +12,7 @@ SwiftUI 原生壳，外加通知扩展（解密推送）和小组件扩展（ADR
   跟手、翻页的小圆点，页面按全页大小放着不缩放，面板里的 WKWebView 和底栏的各一份；`PanelEditor` 增删面板里的页面。`PairingView` 是扫码配对页，
   `QRScannerView` 用 VisionKit 的 `DataScannerViewController` 识别二维码，`QRCameraArea` 按相机权限包着它，配对、服务器互加和加好友的扫码页共用；加好友扫到或粘贴的原文原样交给核心的 `AddFriend`，“我的二维码”画核心给的 `my_link`；`InviteView` 是“添加设备”，用 Core Image
   把核心要来的配对码画成二维码。`HomeView` 是侧边栏进入的“应用”页，商店入口独立放在已装插件网格上方，有更新时显示数量；连接和“添加设备”在设置的“家里的服务器”里。`StoreView`、
-  `PluginDetailView`、`InstallConfirmView` 是商店、详情和安装确认页（ADR-0017）。`SettingsModel` 订阅核心的设置首页，`SettingsView` 按核心的分组渲染，外观、通知和关于在二级页（ADR-0028）；`NotificationSettingsView` 只提供系统通知设置入口并说明这个版本收不到推送，不放无效的类别开关。`EgressSettingsView` 是“家里的服务器”里的出网代理设置，也放着插件网页局域网端口的开关（ADR-0023）。`CoreUpgradeView` 是“家里的服务器”里的升级服务器（ADR-0025）。
+  `PluginDetailView`、`InstallConfirmView` 是商店、详情和安装确认页（ADR-0017）。`SettingsModel` 订阅核心的设置首页，`SettingsView` 按核心的分组渲染，外观、通知和关于在二级页（ADR-0028）；`NotificationSettingsView` 提供系统通知设置入口，并按核心的状态和原因显示推送登记结果，不放无效的类别开关。`EgressSettingsView` 是“家里的服务器”里的出网代理设置，也放着插件网页局域网端口的开关（ADR-0023）。`CoreUpgradeView` 是“家里的服务器”里的升级服务器（ADR-0025）。
   “家里的服务器”顶部始终显示服务器列表和“添加服务器”，当前这台带勾，点另一台切换。长按可改名或移除；移除前确认只删手机上的聊天记录和文件，不影响服务器。添加时配对页左上角可取消，首次配对不显示取消（ADR-0042）。
   默认名由壳按核心给的固定编号和 App 语言显示，自定义名字原样显示；改名预填显示名，只在主人保存时写回（ADR-0043）。
   配对页和服务器列表的“添加服务器”下面是“用 Matrix 账号登录”（`MatrixLoginView`，ADR-0051），没有服务器的人从配对页进：按核心发现的方式给浏览器登录或密码表单，浏览器登录用
@@ -25,6 +25,7 @@ SwiftUI 原生壳，外加通知扩展（解密推送）和小组件扩展（ADR
   控制按钮的 OpenIntent 同时编进 App 和扩展（App 侧 `WONTON_APP` 编译条件），由 App 进程执行。`Wonton/SystemEntryModel`
   在 App 进程里订阅核心的快照：每写一份刷新 WidgetKit 时间线，并把系统搜索条目同步进 Core Spotlight——只放名字，
   不放消息和未读数（ADR-0100 决策 4）。
+- `WontonPushExtension/`：通知服务扩展（ADR-0003）。只在本机按 RFC 8291 解开推送、填发送者和会话，不跑完整核心；解不开也发一条通用通知。密钥存在和 App 共用的 App Group 钥匙串里，点开后的取消息由 App 做。
 - `WontonClient/`：Rust 核心的 Swift 包。`build/WontonClientFFI.xcframework` 和
   `Sources/WontonClient/Generated/` 由脚本生成，不提交；手写的只有把订阅包装成 `AsyncStream`
   等几行胶水代码。Rust 静态库依赖的系统框架由包声明，App 和测试目标不各自补链接选项。
@@ -122,10 +123,13 @@ xcodegen generate --spec apps/ios/project.yml
 xcodebuild -project apps/ios/Wonton.xcodeproj -scheme Wonton -destination "id=<设备 UDID>" -allowProvisioningUpdates DEVELOPMENT_TEAM=<团队 ID> WONTON_BUNDLE_ID=<自己的 bundle ID> build
 ```
 
-`WONTON_BUNDLE_ID` 一个设置管四个标识：App 是它本身，分享扩展是 `<它>.share`，小组件扩展是 `<它>.widget`，App Group 是
-`group.<它>`，自动签名（`-allowProvisioningUpdates`）时 Xcode 自己注册，免费的个人团队也行。不要直接改
+`WONTON_BUNDLE_ID` 一个设置管五个标识：App 是它本身，分享扩展是 `<它>.share`，小组件扩展是 `<它>.widget`，推送扩展是 `<它>.push`，App Group 是
+`group.<它>`，自动签名（`-allowProvisioningUpdates`）时 Xcode 自己注册，免费的个人团队也能装，但推送能力要付费的开发者账号。不要直接改
 `PRODUCT_BUNDLE_IDENTIFIER`：
 那会把扩展的也改成同一个，签不过。换了 bundle ID 就是换了 App Group，数据目录跟着换，要重新配对。
+
+推送要一个中继地址（ADR-0003）：`WontonPushRelay` 默认为空，设置页会如实显示推送还没开通；验证推送时给 `xcodebuild` 加
+`INFOPLIST_KEY_WontonPushRelay=<中继地址>`。
 
 用 `xcrun devicectl device install app --device <设备 UDID> <Wonton.app 路径>` 安装。第一次装要在手机的
 “设置 → 通用 → VPN 与设备管理”里信任开发者证书；第一次打开配对页时系统请求相机权限，第一次连家里的服务器时请求

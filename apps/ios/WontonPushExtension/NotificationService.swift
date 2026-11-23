@@ -48,7 +48,7 @@ final class NotificationService: UNNotificationServiceExtension {
             content.body = String(localized: .pushNewMessage)
             content.threadIdentifier = message.roomId
             content.userInfo = content.userInfo.merging([
-                "server": message.server, "room_id": message.roomId,
+                "server": message.server, "room_id": message.roomId
             ]) { current, _ in current }
         case .confirmation(let direct):
             // 标题就是卡片标题（核心已按收推送那台设备的语言写好），正文一句类别文案，不重复标题。
@@ -57,7 +57,7 @@ final class NotificationService: UNNotificationServiceExtension {
             content.threadIdentifier = direct.confirmation.origin?.roomId ?? direct.confirmation.id
             // 没有来源会话的卡片 room_id 为空，点开后壳落到会话列表的“等你确认”入口。
             content.userInfo = content.userInfo.merging([
-                "server": direct.server, "room_id": direct.confirmation.origin?.roomId ?? "",
+                "server": direct.server, "room_id": direct.confirmation.origin?.roomId ?? ""
             ]) { current, _ in current }
         }
         return content
@@ -65,8 +65,8 @@ final class NotificationService: UNNotificationServiceExtension {
 
     /// 中继封装的约定：APNs 载荷的自定义键 `wp.b` 里是 Web Push 密文（aes128gcm，base64url）。
     private func pushBody(from userInfo: [AnyHashable: Any]) -> Data? {
-        guard let wp = userInfo["wp"] as? [AnyHashable: Any],
-            let encoded = wp["b"] as? String
+        guard let webPush = userInfo["wp"] as? [AnyHashable: Any],
+            let encoded = webPush["b"] as? String
         else { return nil }
         var base64 = encoded
             .replacingOccurrences(of: "-", with: "+")

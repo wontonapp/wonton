@@ -86,7 +86,7 @@ enum PushKeys {
             kSecAttrService as String: service,
             kSecAttrAccessGroup as String: accessGroup,
             // 锁屏时通知扩展要能读：开机后解锁过一次就一直可读。
-            kSecAttrAccessible as String: kSecAttrAccessibleAfterFirstUnlock,
+            kSecAttrAccessible as String: kSecAttrAccessibleAfterFirstUnlock
         ]
     }
 }

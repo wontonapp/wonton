@@ -19,8 +19,9 @@ configFiles:
 settings:
   base:
     SWIFT_VERSION: "6.0"
-    # App 的 bundle ID；分享扩展是 `<它>.share`，App Group 是 `group.<它>`（ADR-0097）。真机用自己的团队签名时只改这一个，
-    # 三个标识跟着变（见 README）；直接改 PRODUCT_BUNDLE_IDENTIFIER 会把扩展的也改成同一个，签不过。
+    # App 的 bundle ID；分享扩展是 `<它>.share`，小组件扩展是 `<它>.widget`，推送扩展是 `<它>.push`，App Group 是
+    # `group.<它>`（ADR-0097）。真机用自己的团队签名时只改这一个，这些标识跟着变（见 README）；直接改
+    # PRODUCT_BUNDLE_IDENTIFIER 会把扩展的也改成同一个，签不过。
     WONTON_BUNDLE_ID: app.wonton.ios
 packages:
   WontonClient:
