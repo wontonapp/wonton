@@ -114,6 +114,7 @@ fun Composer(
     commandsOmitted: Int = 0,
     dropCommand: String? = null,
     enabled: Boolean = true,
+    disabledProblem: Problem? = null,
 ) {
     val incoming = LocalTabDraft.current
     LaunchedEffect(incoming.text) {
@@ -127,19 +128,19 @@ fun Composer(
     val roomId = target.roomId
     val inSideChat = target.threadRoot != null
     // 旁聊里的照片都不进附件区，选好就发；附言只跟着第一张（照 iOS），回复也只跟着第一张。
-    // 被拒时那张就没了，原因给出去，后面的不再试。
+    // 被拒时那张就没了，原因给出去，后面的不再试；确定不能聊时先报原因，字节也不用再取。
     val sendImage: ((ImageUpload, caption: String?, replyTo: String?) -> Problem?)? = if (inSideChat) {
         { upload, caption, replyTo ->
-            val problem = core.send(
+            disabledProblem ?: core.send(
                 Action.Timeline(TimelineAction.SendImage(target, upload, caption = caption, replyTo = replyTo)),
             )
-            problem
         }
     } else {
         null
     }
     val attach = rememberAttachments(
         target, composer, core, draft, onDraftChange, onSent, onReject, onReplyCancel, reply, sendImage,
+        disabledProblem,
     )
     // 编辑时确认的是正文：附件区有东西也不算能发。
     val isEmpty = if (edit != null) draft.isBlank() else draft.isBlank() && attachments.isEmpty()
@@ -178,6 +179,7 @@ fun Composer(
         onReject = onReject,
         listShown = listShown,
         onPicked = { onMenuChange(false) },
+        disabledProblem = disabledProblem,
     )
     AgentStopNotice(agentStop)
     ComposerBar(
@@ -225,6 +227,7 @@ private fun ComposerStack(
     onReject: (Problem) -> Unit,
     listShown: Boolean,
     onPicked: () -> Unit,
+    disabledProblem: Problem?,
 ) {
     if (!inSideChat) OnboardingChatPrompts(roomId)
     if (edit != null) {
@@ -238,11 +241,15 @@ private fun ComposerStack(
         val menuMax = (LocalConfiguration.current.screenHeightDp * TRAY_HEIGHT_SHARE).dp
         Box(Modifier.heightIn(max = menuMax)) {
             ComposerCommands(commands, commandsOmitted) { command ->
-                val action = Action.Timeline(TimelineAction.SendText(target, command.text, reply?.eventId))
-                val problem = core.send(action)
                 onPicked()
-                // 点命令保留草稿：主人没打完的字还在。
-                if (problem == null) onCommandSent() else onReject(problem)
+                if (disabledProblem != null) {
+                    onReject(disabledProblem)
+                } else {
+                    val action = Action.Timeline(TimelineAction.SendText(target, command.text, reply?.eventId))
+                    val problem = core.send(action)
+                    // 点命令保留草稿：主人没打完的字还在。
+                    if (problem == null) onCommandSent() else onReject(problem)
+                }
             }
         }
     }
@@ -293,13 +300,9 @@ private fun ComposerBar(
             draft,
             onDraftChange,
             attach.pasteListener,
-<<<<<<< HEAD
-            onHardwareSend = { text -> send(dropCommand ?: text) },
-            onFocusChange = { focused -> if (!focused) onTyping(false) },
-=======
             onHardwareSend = { text -> if (enabled) send(dropCommand ?: text) },
             enabled = enabled,
->>>>>>> 601b5b077 (feat(chat): 按人投影可用 Bot，不能聊的私聊如实说明 (#646))
+            onFocusChange = { focused -> if (!focused) onTyping(false) },
             modifier = Modifier.weight(1f)
                 .focusRequester(focusRequester)
                 .padding(vertical = (size.target - size.composerField) / 2)
@@ -328,6 +331,87 @@ private class Attachments(
     val chooser: @Composable () -> Unit,
 )
 
+/** 旁聊和面板里照片的两种发法：粘贴一张，或面板里一次发一叠。 */
+private class PhotoSenders(
+    val add: (List<Uri>) -> Unit,
+    val send: (List<Uri>, String) -> Unit,
+)
+
+/** 照片发送的两个入口；确定不能聊时先报同一句原因，字节也不再取。 */
+@Composable
+private fun rememberPhotoSenders(
+    target: TimelineTarget,
+    core: ClientCore,
+    draft: String,
+    onDraftChange: (String) -> Unit,
+    onSent: () -> Unit,
+    onReject: (Problem) -> Unit,
+    onReplyCancel: () -> Unit,
+    reply: ReplyQuote?,
+    sendImage: ((ImageUpload, caption: String?, replyTo: String?) -> Problem?)?,
+    disabledProblem: Problem?,
+    onClosed: () -> Unit,
+): PhotoSenders {
+    val roomId = target.roomId
+    val context = LocalContext.current
+    val scope = rememberCoroutineScope()
+    // 字符串资源在协程里取不到，弹窗前先取好。
+    val photoUnreadable = stringResource(R.string.photo_unreadable)
+    val photoTryAnother = stringResource(R.string.photo_try_another)
+    // 等的功夫草稿还能改，收尾按改到哪一步来：只清掉跟着走了的那句，后来补的字留着。
+    val currentDraft by rememberUpdatedState(draft)
+    val currentOnDraftChange by rememberUpdatedState(onDraftChange)
+    // 能不能发也按最新的算：面板开着、离线切回来时按现在的来。
+    val currentDisabled by rememberUpdatedState(disabledProblem)
+    // 粘贴进来的照片：旁聊里直接发，主对话里放进附件区；第一张不行就停。旁聊里的字只当第一张的说明。
+    val add: (List<Uri>) -> Unit = { uris ->
+        val send = sendImage
+        val blocked = currentDisabled
+        if (send != null && blocked != null) {
+            onReject(blocked)
+        } else scope.launch {
+            val failure = sendPickedPhotos(
+                context, uris, send, photoUnreadable, photoTryAnother, core, roomId, draft, reply?.eventId,
+                onReplyCancel,
+            )
+            if (failure != null) {
+                onReject(photoFailure(context, failure, photoTryAnother))
+            } else if (send != null) {
+                settleCaption(draft, currentDraft, currentOnDraftChange, onSent, onReplyCancel)
+            }
+        }
+    }
+    // 相册里选好后附言和照片一起发（照 Telegram）：附言就是输入框的草稿，面板里改的正是那一份。
+    // 主对话里照片先进附件区，全部到位再发一条带附言的 SendComposer；旁聊里附言跟着第一张走（和 iOS 一样）。
+    // 中途中止就停在那里、报第几张，草稿原样留着；收下了只清跟着走了的那句、收回复。
+    val send: (List<Uri>, String) -> Unit = { uris, note ->
+        val blocked = currentDisabled
+        if (blocked != null) {
+            // 确定不能聊：一句原因就收，照片的字节也不用再取。
+            onReject(blocked)
+            onClosed()
+        } else scope.launch {
+            val failure = sendPickedPhotos(
+                context, uris, sendImage, photoUnreadable, photoTryAnother, core, roomId, note,
+                reply?.eventId, onReplyCancel,
+            )
+            if (failure != null) {
+                onReject(photoFailure(context, failure, photoTryAnother))
+            } else if (sendImage != null) {
+                settleCaption(note, currentDraft, currentOnDraftChange, onSent, onReplyCancel)
+            } else {
+                val problem = core.send(Action.Timeline(TimelineAction.SendComposer(target, note, reply?.eventId)))
+                if (problem != null) onReject(problem) else {
+                    settleCaption(note, currentDraft, currentOnDraftChange, onSent, onReplyCancel)
+                }
+            }
+            // 先把草稿落定再收面板：面板还组合着时先落的值不会被它收尾那一写盖回去。
+            onClosed()
+        }
+    }
+    return PhotoSenders(add, send)
+}
+
 @OptIn(ExperimentalFoundationApi::class)
 @Composable
 private fun rememberAttachments(
@@ -341,6 +425,7 @@ private fun rememberAttachments(
     onReplyCancel: () -> Unit,
     reply: ReplyQuote?,
     sendImage: ((ImageUpload, caption: String?, replyTo: String?) -> Problem?)?,
+    disabledProblem: Problem?,
 ): Attachments {
     val roomId = target.roomId
     val context = LocalContext.current
@@ -359,51 +444,12 @@ private fun rememberAttachments(
     var choosing by rememberSaveable { mutableStateOf(false) }
     // 粘贴的回调只登记一次：回复对象换了也要发给现在的那条。
     val currentSendImage by rememberUpdatedState(sendImage)
-    // 等的功夫草稿还能改，收尾按改到哪一步来：只清掉跟着走了的那句，后来补的字留着。
-    val currentDraft by rememberUpdatedState(draft)
-    val currentOnDraftChange by rememberUpdatedState(onDraftChange)
-    // 粘贴进来的照片：旁聊里直接发，主对话里放进附件区；第一张不行就停。旁聊里的字只当第一张的说明。
-    val addPhotos = { uris: List<Uri> ->
-        val send = currentSendImage
-        scope.launch {
-            val failure = sendPickedPhotos(
-                context, uris, send, photoUnreadable, photoTryAnother, core, roomId, draft, reply?.eventId,
-                onReplyCancel,
-            )
-            if (failure != null) {
-                onReject(photoFailure(context, failure, photoTryAnother))
-            } else if (send != null) {
-                settleCaption(draft, currentDraft, currentOnDraftChange, onSent, onReplyCancel)
-            }
-        }
-        Unit
-    }
-    // 相册里选好后附言和照片一起发（照 Telegram）：附言就是输入框的草稿，面板里改的正是那一份。
-    // 主对话里照片先进附件区，全部到位再发一条带附言的 SendComposer；旁聊里附言跟着第一张走（和 iOS 一样）。
-    // 中途中止就停在那里、报第几张，草稿原样留着；收下了只清跟着走了的那句、收回复。
-    val sendPhotos = { uris: List<Uri>, note: String ->
-        val send = currentSendImage
-        val caption = note
-        scope.launch {
-            val failure = sendPickedPhotos(
-                context, uris, send, photoUnreadable, photoTryAnother, core, roomId, caption,
-                reply?.eventId, onReplyCancel,
-            )
-            if (failure != null) {
-                onReject(photoFailure(context, failure, photoTryAnother))
-            } else if (send != null) {
-                settleCaption(caption, currentDraft, currentOnDraftChange, onSent, onReplyCancel)
-            } else {
-                val problem = core.send(Action.Timeline(TimelineAction.SendComposer(target, caption, reply?.eventId)))
-                if (problem != null) onReject(problem) else {
-                    settleCaption(caption, currentDraft, currentOnDraftChange, onSent, onReplyCancel)
-                }
-            }
-            // 先把草稿落定再收面板：面板还组合着时先落的值不会被它收尾那一写盖回去。
-            choosing = false
-        }
-        Unit
-    }
+    // 能不能发也登记成最新的：面板开着、离线切回来时按现在的算。
+    val currentDisabled by rememberUpdatedState(disabledProblem)
+    val senders = rememberPhotoSenders(
+        target, core, draft, onDraftChange, onSent, onReject, onReplyCancel, reply, sendImage,
+        disabledProblem,
+    ) { choosing = false }
     val noFiles = Problem(titleRes = R.string.side_chat_no_files)
     val addFiles = { uris: List<Uri> ->
         if (currentSendImage != null) {
@@ -417,7 +463,7 @@ private fun rememberAttachments(
     val pasteListener = remember(roomId) {
         pasteContentListener(
             context.applicationContext.contentResolver,
-            onImage = { uri -> addPhotos(listOf(uri)) },
+            onImage = { uri -> senders.add(listOf(uri)) },
             onFile = { uri -> addFiles(listOf(uri)) },
         )
     }
@@ -426,7 +472,10 @@ private fun rememberAttachments(
         if (composer != null && remaining == 0) onReject(Problem(trayFull)) else open()
     }
     return Attachments(
-        choose = { whenRoom { choosing = true } },
+        choose = {
+            val blocked = currentDisabled
+            if (blocked != null) onReject(blocked) else whenRoom { choosing = true }
+        },
         pasteListener = pasteListener,
         chooser = {
             if (choosing) {
@@ -436,7 +485,7 @@ private fun rememberAttachments(
                     note = draft,
                     // 面板收起以后附言框还握着整句，它迟到的回写不再盖掉刚落的草稿。
                     onNote = { text -> if (choosing) onDraftChange(text) },
-                    onSend = sendPhotos,
+                    onSend = senders.send,
                     onFiles = { whenRoom { pickFiles.launch(arrayOf("*/*")) } },
                     onDismiss = { choosing = false },
                 )
@@ -452,11 +501,8 @@ private fun ComposerField(
     onDraftChange: (String) -> Unit,
     pasteListener: ReceiveContentListener,
     onHardwareSend: (String) -> Unit,
-<<<<<<< HEAD
     onFocusChange: (Boolean) -> Unit,
-=======
     enabled: Boolean,
->>>>>>> 601b5b077 (feat(chat): 按人投影可用 Bot，不能聊的私聊如实说明 (#646))
     modifier: Modifier,
 ) {
     val colors = WontonTheme.colors
@@ -482,15 +528,11 @@ private fun ComposerField(
     }
     BasicTextField(
         state = fieldState,
-<<<<<<< HEAD
+        enabled = enabled,
         modifier = modifier
             .onFocusChanged { onFocusChange(it.isFocused) }
             .contentReceiver(pasteListener)
             .hardwareMessageKeys(fieldState, onHardwareSend),
-=======
-        enabled = enabled,
-        modifier = modifier.contentReceiver(pasteListener).hardwareMessageKeys(fieldState, onHardwareSend),
->>>>>>> 601b5b077 (feat(chat): 按人投影可用 Bot，不能聊的私聊如实说明 (#646))
         lineLimits = TextFieldLineLimits.MultiLine(
             maxHeightInLines = WontonTheme.ratio.composerLines.toInt(),
         ),

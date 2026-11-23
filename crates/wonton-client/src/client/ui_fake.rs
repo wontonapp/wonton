@@ -23,15 +23,15 @@ use std::time::{SystemTime, UNIX_EPOCH};
 use tokio::sync::watch;
 
 use wonton_protocol::{
-    AppsAction, BotActivity, BotRef, BotView, BotWebPage, BotWebView, ChatAccount, ChatLayout,
-    ChatLayoutChoice, ChatSync, ChatViewModel, CoreError, DeviceInvite, DeviceNetwork,
-    DeviceVerification, EncryptionStatus, HomePath, HomeStatus, HomeViewModel, InstalledPlugin,
-    InstalledPlugins, MessageSummary, OnboardingStep, OnboardingViewModel, OpenPage,
-    PagesViewModel, PanelItem, PanelSource, PluginHealth, PluginKind, PluginState, PluginTrust,
-    PluginsViewModel, PushStatus, RecoveryNextStep, RecoveryStatus, RoomMembership, RoomPlugin,
-    RoomPreview, RoomRow, SecretString, ServerKind, ServerName, ServerRow, ServersViewModel,
-    SidebarApp, SidebarBadge, SidebarOpen, StoreLoadState, TabIcon, TabLayout, TabPage, TabRef,
-    TabState,
+    AppsAction, BotActivity, BotChatAvailability, BotRef, BotView, BotWebPage, BotWebView,
+    ChatAccount, ChatLayout, ChatLayoutChoice, ChatSync, ChatViewModel, CoreError, DeviceInvite,
+    DeviceNetwork, DeviceVerification, EncryptionStatus, HomePath, HomeStatus, HomeViewModel,
+    InstalledPlugin, InstalledPlugins, MessageSummary, OnboardingStep, OnboardingViewModel,
+    OpenPage, PagesViewModel, PanelItem, PanelSource, PluginHealth, PluginKind, PluginState,
+    PluginTrust, PluginsViewModel, PushStatus, RecoveryNextStep, RecoveryStatus, RoomMembership,
+    RoomPlugin, RoomPreview, RoomRow, SecretString, ServerKind, ServerName, ServerRow,
+    ServersViewModel, SidebarApp, SidebarBadge, SidebarOpen, StoreLoadState, TabIcon, TabLayout,
+    TabPage, TabRef, TabState,
 };
 
 use super::ClientCore;
@@ -430,7 +430,7 @@ fn fake_chat(mut chat: ChatViewModel) -> ChatViewModel {
     chat.bots = vec![
         BotView {
             user_id: "@echo:home.example".into(),
-            availability: Default::default(),
+            availability: BotChatAvailability::Available,
             bot: BotRef {
                 plugin_id: "app.example.echo".into(),
                 bot: "echo".into(),
@@ -449,7 +449,7 @@ fn fake_chat(mut chat: ChatViewModel) -> ChatViewModel {
         },
         BotView {
             user_id: "@hermes:home.example".into(),
-            availability: Default::default(),
+            availability: BotChatAvailability::Available,
             bot: BotRef {
                 plugin_id: "app.example.hermes".into(),
                 bot: "hermes".into(),
@@ -648,6 +648,13 @@ mod tests {
         assert_eq!(core.servers().servers.len(), 1);
         assert_eq!(core.chat().rooms[0].room_id, ROOM_ID);
         assert!(core.chat().rooms[1].call_active);
+        // 私聊对象可用：夜跑在 Echo 私聊里点发送，不能因为资格未知被禁用。
+        assert!(
+            core.chat()
+                .bots
+                .iter()
+                .all(|bot| bot.availability == BotChatAvailability::Available)
+        );
         assert_eq!(core.pages().root, TabRef::Chat);
         assert_eq!(core.onboarding().step, Some(OnboardingStep::Finished));
         assert_eq!(core.plugins().installed.unwrap().plugins[0].title, "Notes");

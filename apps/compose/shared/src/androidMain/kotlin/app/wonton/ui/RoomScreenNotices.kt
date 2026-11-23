@@ -6,9 +6,12 @@ import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.res.stringResource
-import app.wonton.R
 import app.wonton.protocol.BotChatAvailability
 import app.wonton.protocol.BotChatUnavailable
+import app.wonton.protocol.RoomMembership
+import app.wonton.protocol.RoomRow
+import app.wonton.ui.design.WontonTheme
+import app.wonton.ui.design.toColor
 
 /** 这个 Bot 现在不能聊的原因；能用、不是 Bot 或还没取到时为空，输入框照常。 */
 internal fun botChatNotice(availability: BotChatAvailability?): Int? = when (availability) {
@@ -20,6 +23,10 @@ internal fun botChatNotice(availability: BotChatAvailability?): Int? = when (ava
     }
     BotChatAvailability.Unknown -> R.string.room_bot_unknown
 }
+
+/** 确定不能用时命令菜单和旁聊照片直发要说的那句；能用或资格未知（照常发）时为空。 */
+internal fun botChatBlockedProblem(canSend: Boolean, notice: Int?): Problem? =
+    if (canSend) null else notice?.let { Problem(titleRes = it) }
 
 /** 不能聊时输入框上方的一句话；房间和历史照留，只是不发。 */
 @Composable

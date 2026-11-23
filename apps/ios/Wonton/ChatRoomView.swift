@@ -258,7 +258,8 @@ private extension ChatRoomView {
                     menuOpen: commandMenuOpen,
                     openChanged: { commandMenuOpen = $0 },
                     editing: timeline.editing,
-                    isEnabled: botChatNotice == nil
+                    isEnabled: canSend,
+                    disabledProblem: sendBlockedProblem
                 )
                 .onGeometryChange(for: CGFloat.self) { $0.frame(in: .global).minY } action: { top in
                     pin.noteComposer(top: top)
@@ -657,16 +658,29 @@ private extension ChatRoomView {
             return .Chat.roomBotUnknown
         }
     }
+
+    /// 确定的不能用才拦发送；资格未知（离线、老核心）照常发，进离线队列。
+    var canSend: Bool {
+        guard let availability = botChat else { return true }
+        if case .unavailable = availability { return false }
+        return true
+    }
+
+    var sendBlockedProblem: Problem? {
+        guard !canSend, let notice = botChatNotice else { return nil }
+        return Problem(title: String(localized: notice))
+    }
 }
 
 /// 不能聊时输入框上方的一句话；房间和历史照留，只是不发。
 private struct BotChatNoticeRow: View {
     let text: LocalizedStringResource
+    @Environment(\.wontonColors) private var colors
 
     var body: some View {
         Text(text)
-            .font(WontonTheme.typography.body)
-            .foregroundStyle(Color(WontonTheme.colors.textSecondary))
+            .wontonText(WontonTheme.typography.body)
+            .foregroundStyle(Color(colors.textSecondary))
             .frame(maxWidth: .infinity, alignment: .leading)
             .padding(.horizontal, WontonTheme.spacing.pageInset)
             .padding(.vertical, WontonTheme.spacing.s4)

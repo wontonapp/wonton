@@ -86,7 +86,8 @@ pub enum DefaultBotVisibility {
 }
 
 /// 当前请求者能不能和这个 Bot 聊天（ADR-0045、ADR-0088）。身份可见不等于能聊：共享 Bot、别人的私人 Bot
-/// 都按归属、成立的联系人和角色算。`Unknown` 既不是能用也不是确定不能用。
+/// 都按归属、成立的联系人和角色算。`Unknown` 既不是能用也不是确定不能用，壳照常放行发送（进离线队列），
+/// 只多写一句还没核实。
 #[derive(Clone, Copy, Debug, Default, PartialEq, Eq, Serialize, Deserialize)]
 #[cfg_attr(feature = "uniffi", derive(uniffi::Enum))]
 #[serde(tag = "state", rename_all = "snake_case")]
@@ -95,7 +96,7 @@ pub enum BotChatAvailability {
     Unavailable {
         reason: BotChatUnavailable,
     },
-    /// 还核实不了（身份、记录、联系人或角色读不到）：壳照实说不知道，不伪装送达。
+    /// 还核实不了（身份、记录、联系人或角色读不到，或者核心不可达、核心还是旧版）：壳照实说不知道，不拦发送。
     #[default]
     #[serde(other)]
     Unknown,
@@ -106,7 +107,7 @@ pub enum BotChatAvailability {
 #[cfg_attr(feature = "uniffi", derive(uniffi::Enum))]
 #[serde(rename_all = "snake_case")]
 pub enum BotChatUnavailable {
-    /// 别人的私人 Bot，没有给这个人授权。
+    /// 别人的私人 Bot，没给这个人授权（从没授权、等主人同意、等对方接受都算）。
     OtherPrivateBot,
     /// 授权过，现在没有成立的联系人记录。
     GrantNotActive,
@@ -314,7 +315,7 @@ pub fn check_bot_name(name: &str) -> Result<(), BotNameProblem> {
 pub struct BotView {
     pub user_id: String,
     pub bot: BotRef,
-    /// 当前人能不能和它聊天；不能时 `activity` 为空，壳显示原因并禁用输入。
+    /// 当前人能不能和它聊天；不能时 `activity` 为空，壳显示原因并禁用输入；未知时壳照常能发。
     #[serde(default)]
     pub availability: BotChatAvailability,
     /// 由当前请求者的身份决定；未核实、断线或切换账号时为空，不能借用插件的默认网页地址。
@@ -603,6 +604,15 @@ mod tests {
         assert_eq!(
             serde_json::from_value::<BotChatAvailability>(json!({"state": "future"})).unwrap(),
             BotChatAvailability::Unknown
+        );
+        assert_eq!(
+            serde_json::from_value::<BotChatAvailability>(
+                json!({"state": "unavailable", "reason": "future"})
+            )
+            .unwrap(),
+            BotChatAvailability::Unavailable {
+                reason: BotChatUnavailable::Other
+            }
         );
     }
 }

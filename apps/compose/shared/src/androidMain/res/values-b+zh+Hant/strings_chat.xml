@@ -171,8 +171,7 @@
     <string name="timeline_send_failure_upstream">伺服器出錯了</string>
     <!-- 核心還分不出類別的失敗訊息旁的腳註。無參數；有原文時換成原文。 -->
     <string name="timeline_send_failure_other">傳送失敗</string>
-
-    <string name="room_bot_other_private">這是別人的私人 Bot，找它的主人開授權。</string>
+    <string name="room_bot_other_private">這是家裡人的私人 Bot，主人還沒給授權。</string>
     <string name="room_bot_grant_revoked">這個 Bot 的授權已經收回。</string>
     <string name="room_bot_unavailable">這個 Bot 現在用不了。</string>
     <string name="room_bot_unknown">還沒核實這個 Bot 能不能發。</string>

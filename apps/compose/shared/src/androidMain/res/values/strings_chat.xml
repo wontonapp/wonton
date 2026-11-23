@@ -202,8 +202,8 @@
     <string name="timeline_send_failure_upstream">Server problem</string>
     <!-- Footer beside a failed message whose kind the core can't classify yet. No arguments; the raw reason replaces it when there is one. -->
     <string name="timeline_send_failure_other">Send failed</string>
-    <!-- This DM is the private Bot of another member; the current person has no grant. -->
-    <string name="room_bot_other_private">This is someone else\'s private Bot. Ask its owner for access.</string>
+    <!-- This DM is a family member's private Bot; the current person, owner included, has no grant. -->
+    <string name="room_bot_other_private">This is another family member\'s private Bot. Its owner hasn\'t given access.</string>
     <!-- The person was a contact of the Bot, and the grant no longer exists. -->
     <string name="room_bot_grant_revoked">Access to this Bot was removed.</string>
     <!-- The Bot is known but currently unusable for an unclassified reason. -->

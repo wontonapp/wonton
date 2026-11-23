@@ -7,7 +7,8 @@ fn hide_unverified(plugin: &mut InstalledPlugin) {
         .as_deref()
         .is_some_and(|id| <&UserId>::try_from(id).is_ok());
     match (plugin.default_bot_visibility, plugin.bot_user_id.is_some()) {
-        (Some(DefaultBotVisibility::Visible), true) if valid_id => {}
+        // 不可见、还没核实也不代表没有身份：插件页照样点得开私聊，房间行说为什么。
+        (Some(_), true) if valid_id => {}
         (Some(DefaultBotVisibility::Absent | DefaultBotVisibility::Unknown), false) => {}
         // 没 Bot、核心也没发可见性（旧核心）：没有要藏的身份，原样透传；视图把 None 也当 Unknown。
         (None, false) => {}

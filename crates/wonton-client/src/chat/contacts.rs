@@ -25,6 +25,7 @@ impl ChatLink {
 }
 
 /// 核心给的可聊 Bot 在前，然后是私聊过的人（按最近活动）；对方是当前不能用的 Bot 时不再当人列一次。
+/// 资格未知（离线、老核心）照常算可聊：发出去的会进离线队列，服务器也不拦。
 /// 通知房间只读，它的对方不算。`query` 不为空时只留名字或 ID 里含它的，不分大小写。
 pub(crate) fn contacts(query: &str, bots: &[BotView], rooms: &[RoomRow]) -> Vec<ChatContact> {
     // 和对方的私聊里对方声明了支持旁聊，发起时就在那个房间里开旁聊（ADR-0093 §4）；否则壳走 StartDirectChat。
@@ -40,7 +41,7 @@ pub(crate) fn contacts(query: &str, bots: &[BotView], rooms: &[RoomRow]) -> Vec<
     };
     let candidates = bots
         .iter()
-        .filter(|bot| bot.availability == BotChatAvailability::Available)
+        .filter(|bot| !matches!(&bot.availability, BotChatAvailability::Unavailable { .. }))
         .map(|bot| ChatContact {
             side_chat_room_id: side_chat_room(&bot.user_id),
             user_id: bot.user_id.clone(),
@@ -54,7 +55,8 @@ pub(crate) fn contacts(query: &str, bots: &[BotView], rooms: &[RoomRow]) -> Vec<
                 return false;
             };
             !bots.iter().any(|bot| {
-                bot.user_id == user_id && bot.availability != BotChatAvailability::Available
+                bot.user_id == user_id
+                    && matches!(&bot.availability, BotChatAvailability::Unavailable { .. })
             })
         })
         .filter_map(|room| {
@@ -145,6 +147,7 @@ mod tests {
             },
             availability,
             web: None,
+            web_page: None,
             name: title.to_owned(),
             avatar: None,
             state_avatars: Vec::new(),
@@ -205,7 +208,7 @@ mod tests {
     }
 
     #[test]
-    fn unavailable_and_unknown_bots_stay_out_and_their_rooms_are_not_people() {
+    fn unavailable_bot_stays_out_and_unknown_stays_in_as_one_contact() {
         let bots = [
             bot(
                 "主人的助手",
@@ -220,6 +223,11 @@ mod tests {
             room("主人的助手", Some("@private:s"), false),
             room("还没核实", Some("@unsure:s"), false),
         ];
-        assert!(contacts("", &bots, &rooms).is_empty());
+        let names: Vec<_> = contacts("", &bots, &rooms)
+            .into_iter()
+            .map(|c| c.name)
+            .collect();
+        // 未知的照常能发起（断网会进离线队列），房间也不再当人重复列一次。
+        assert_eq!(names, ["还没核实"]);
     }
 }
