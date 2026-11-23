@@ -100,8 +100,8 @@ fun WontonScreen(bar: @Composable () -> Unit, modifier: Modifier = Modifier, con
         val height = if (constraints.hasBoundedHeight) constraints.maxHeight
         else maxOf(contentPlaceables.maxOfOrNull { it.height } ?: 0, barHeightPx)
         layout(width, height) {
-            contentPlaceables.forEach { it.place(0, 0) }
-            barPlaceables.forEach { it.place(0, 0) }
+            contentPlaceables.forEach { it.placeRelative(0, 0) }
+            barPlaceables.forEach { it.placeRelative(0, 0) }
         }
     }
 }
