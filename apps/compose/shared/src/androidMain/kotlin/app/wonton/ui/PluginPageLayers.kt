@@ -84,6 +84,7 @@ private fun PageOverlays(
     val capsule: (@Composable () -> Unit)? = if (viewport.capsule) {
         {
             PluginPageCapsule(state.tab, pages, state.capsule, state.controller, takeover,
+                onClosePage = { pages.send(Action.Pages(PageAction.ClosePage)) },
                 onClose = { state.controller.closeCustomView(); pages.send(Action.Pages(PageAction.ClosePage)) },
                 onReload = { pages.send(Action.Pages(PageAction.ReloadTab(state.place))) }, onDetails = onDetails)
         }

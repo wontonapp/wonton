@@ -101,7 +101,7 @@ internal fun ExpandedChatPane(
     home: HomeViewModel,
     appearance: AppearanceViewModel,
 ) {
-    val panel = rememberChatPanelState(PanelEdge.TOP, PanelScope.Main)
+    val panel = rememberChatPanelState(PanelEdge.TOP, PanelScope.Main, nav.pages)
     val draft = LocalTabDraft.current
     SideEffect { panel.feed(nav.pages.viewModel.panel, nav.pages.viewModel.panelSelected) }
     CompositionLocalProvider(LocalChatPanel provides panel) {

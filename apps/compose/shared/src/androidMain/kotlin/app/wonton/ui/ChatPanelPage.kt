@@ -142,6 +142,7 @@ internal fun PanelPage(
         if (panel.level == PanelLevel.FULL && current) {
             PluginPageChrome(safe, 0.dp, shortStatus(page), takeover) {
                 PluginPageCapsule(tab, tabs, capsule, state.controller, takeover,
+                    onClosePage = { panel.closePage() },
                     onClose = { panel.move(PanelLevel.CLOSED) },
                     onReload = { tabs.send(Action.Pages(PageAction.ReloadTab(place))) },
                     onDetails = onDetails,
