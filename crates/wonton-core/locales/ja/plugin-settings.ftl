@@ -307,7 +307,6 @@ plugin-settings-health-timeout = { $waiting }は{ $waited }秒待っても（制
 plugin-settings-health-timeout-next = 次の一手：ヘルスチェックを宣言したサービスには、制限時間を起動猶予とそれ自身のリトライ期間まで広げてあります（宣言が無ければインストール期限そのもの）。ホストが空いてからインストールをやり直せば通るのが普通です。ずっと 5xx を返すならサービス自身の不調かもしれません。下のプローブとログを見てください。
 plugin-settings-health-target = サービス
 plugin-settings-health-list-separator = 、
-plugin-settings-health-unhealthy = コンテナ{ $container }のヘルスチェックが失敗しました
 plugin-settings-health-exited = コンテナ{ $container }が終了しました（終了コード{ $code }）
 plugin-settings-health-no-healthcheck = コンテナ{ $container }はservice_healthyが求められていますが、ヘルスチェックが設定されていません
 plugin-settings-health-webui-state = { $method } の最後の応答：{ $error }

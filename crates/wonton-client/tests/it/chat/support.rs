@@ -470,8 +470,9 @@ impl Home {
         self.core.layout_down.store(down, Ordering::SeqCst);
     }
 
-    /// 下一个带着 `stale` 房间加入事件的同步应答起，每个这样的应答都被改写成还是受邀（同步重启后 SDK 会
-    /// 重发房间状态，会话里多条连接都会带回它），直到 [`Self::clear_join_report_as_invited`] 清除。
+    /// arm 起之后、有任何一条同步应答带过 `stale` 房间的加入事件（连接被丢弃也算）起，每个这样的应答都被改写
+    /// 成还是受邀（同步重启后 SDK 会重发房间状态，会话里多条连接都会带回它），直到
+    /// [`Self::clear_join_report_as_invited`] 清除。
     pub fn report_join_as_invited(&self, stale: StaleJoin) {
         self.core.stale_join.send_replace(Some(stale));
     }

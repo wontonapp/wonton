@@ -101,13 +101,42 @@ impl crate::plugin::PluginManager {
         &self,
         id: &PluginId,
     ) -> Result<Option<String>, crate::plugin::InstallError> {
-        let taken: Vec<String> = self
+        let retained = self.store().retained_entry_labels()?;
+        let mut taken = Vec::new();
+        for file in self
             .store()
             .load_all()?
             .into_iter()
-            .filter_map(|file| file.record.ok()?.entry_label)
-            .collect();
-        let existing = self.store().load(id)?.and_then(|record| record.entry_label);
+            .filter(|file| file.id != *id)
+        {
+            match file.record {
+                Ok(record) => taken.extend(record.entry_label),
+                // 坏记录连标签也读不出，没法防它撞名：宁可可能撞，也不让别处的坏记录挡住安装。
+                // 崩溃的插件重装时旧标签本就丢了（卸载读不出记录就不保留），重装会重新避让。
+                Err(error) => {
+                    tracing::warn!(plugin = %file.id, %error, "插件记录读不了，分配入口标签时跳过")
+                }
+            }
+        }
+        taken.extend(
+            retained
+                .iter()
+                .filter(|(key, _)| key.as_str() != id.as_str())
+                .map(|(_, value)| value.clone()),
+        );
+        let existing = match self.store().load(id) {
+            Ok(record) => record.and_then(|record| record.entry_label),
+            Err(error) => {
+                tracing::warn!(plugin = %id, %error, "插件记录读不了，按没有标签分配");
+                None
+            }
+        }
+        .or_else(|| retained.get(id.as_str()).cloned());
+        if existing.as_ref().is_some_and(|label| taken.contains(label)) {
+            return Err(crate::plugin::InstallError::Invalid(
+                "保留的入口标签与其他插件冲突".to_owned(),
+            ));
+        }
         ensure(existing.as_deref(), id, &taken)
             .map(Some)
             .map_err(crate::plugin::InstallError::Invalid)

@@ -49,6 +49,10 @@ pub fn render(
     // 容器本身由核心按设置建（`entry_containers`）。
     compose["services"]["core"]["networks"]["clients"] =
         json!({"aliases":["entry-gateway.wonton.internal"]});
+    // 配对前端的客户端 API 直给 Tuwunel（入口的 `paired` 前端）：入口在新后端上按这个别名找它，所以 Tuwunel
+    // 也要接进 clients。clients 是隔离网络，Tuwunel 仍然连不到宿主。
+    compose["services"]["tuwunel"]["networks"]["clients"] =
+        json!({"aliases":["tuwunel.wonton.internal"]});
     compose["services"]["core"]["environment"]["WONTON_ENTRY_LISTEN"] =
         json!("entry-gateway.wonton.internal:8484");
     // 隧道只绑核心在 core 网络上的地址（ADR-0021）：被攻破的入口容器在 clients 网络上发到隧道端口的包
@@ -134,7 +138,7 @@ pub fn write_model(install_dir: &Path, model: &crate::entry_haproxy::Model) -> a
     let directory = install_dir.join("entry");
     std::fs::create_dir_all(&directory)?;
     let rendered = crate::entry_haproxy::render(model).map_err(anyhow::Error::msg)?;
-    crate::install::write_private(&directory.join("haproxy.cfg"), &rendered.config)?;
+    write_mounted_config(&directory.join("haproxy.cfg"), &rendered.config)?;
     std::fs::create_dir_all(directory.join("certs"))?;
     crate::install::write_private(
         &directory.join("certs/public.crt-list"),
@@ -145,6 +149,65 @@ pub fn write_model(install_dir: &Path, model: &crate::entry_haproxy::Model) -> a
         &rendered.lan_crt_list,
     )?;
     Ok(())
+}
+
+// 单文件 bind mount 固定 inode，重命名会让运行中的容器继续看到旧配置。
+fn write_mounted_config(path: &Path, text: &str) -> anyhow::Result<()> {
+    use std::io::Write;
+    use std::os::unix::fs::OpenOptionsExt;
+    let mut file = std::fs::OpenOptions::new()
+        .write(true)
+        .create(true)
+        .truncate(true)
+        .mode(0o600)
+        .open(path)?;
+    file.write_all(text.as_bytes())?;
+    file.sync_all()?;
+    Ok(())
+}
+
+/// 一次入口配置变更的旧内容；某一文件写失败也必须逐个恢复全部文件。
+pub(crate) struct ModelSnapshot(Vec<(std::path::PathBuf, Option<String>)>);
+
+impl ModelSnapshot {
+    pub(crate) fn read(install_dir: &Path) -> anyhow::Result<Self> {
+        let mut files = Vec::new();
+        for name in ["haproxy.cfg", "certs/public.crt-list", "certs/lan.crt-list"] {
+            let path = install_dir.join("entry").join(name);
+            let content = match std::fs::read_to_string(&path) {
+                Ok(content) => Some(content),
+                Err(error) if error.kind() == std::io::ErrorKind::NotFound => None,
+                Err(error) => return Err(error.into()),
+            };
+            files.push((path, content));
+        }
+        Ok(Self(files))
+    }
+
+    pub(crate) fn restore(self, install_dir: &Path) -> anyhow::Result<()> {
+        let mut failures = Vec::new();
+        for (path, content) in self.0 {
+            let result = match content {
+                Some(content) if path.ends_with("haproxy.cfg") => {
+                    write_mounted_config(&path, &content)
+                }
+                Some(content) => crate::install::write_private(&path, &content),
+                None => match std::fs::remove_file(&path) {
+                    Ok(()) => Ok(()),
+                    Err(error) if error.kind() == std::io::ErrorKind::NotFound => Ok(()),
+                    Err(error) => Err(error.into()),
+                },
+            };
+            if let Err(error) = result {
+                failures.push(format!("{}: {error:#}", path.display()));
+            }
+        }
+        if let Err(error) = prepare_permissions(install_dir) {
+            failures.push(format!("恢复权限: {error:#}"));
+        }
+        anyhow::ensure!(failures.is_empty(), "{}", failures.join("；"));
+        Ok(())
+    }
 }
 
 pub fn prepare_permissions(dir: &Path) -> anyhow::Result<()> {
@@ -408,6 +471,20 @@ mod tests {
             compose["services"]["core"]["environment"]["WONTON_ENTRY_LISTEN"],
             "entry-gateway.wonton.internal:8484"
         );
+    }
+
+    /// 配对前端的客户端 API 直给 Tuwunel：入口按这个别名在 clients 上找它，后端才不会 503。
+    #[test]
+    fn tuwunel_joins_the_clients_network_for_the_paired_frontend() {
+        let dir = tempfile::tempdir().unwrap();
+        let compose: Value =
+            serde_json::from_str(&render(crate::install::COMPOSE, None, dir.path()).unwrap())
+                .unwrap();
+        assert_eq!(
+            compose["services"]["tuwunel"]["networks"]["clients"],
+            json!({"aliases": ["tuwunel.wonton.internal"]})
+        );
+        assert!(compose["services"]["tuwunel"]["networks"]["edge"].is_null());
     }
 
     /// 主网关从一开始就不在入口地址上接连接：已攻破的入口读不到首次配对码。

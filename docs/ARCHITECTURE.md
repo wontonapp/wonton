@@ -222,6 +222,7 @@ Bot 页使用 `TabRef::Bot { bot: BotRef, path: Option<String> }`，不保存 UR
 聊天已有的 `BotView` watch 通道接入 `PagesLink`，网页状态变化时重算 `PagesViewModel` 的 `TabPage`；
 URL 只来自精确匹配该 `BotRef` 的 Ready 页面，不读 `plugin.web_url`，桥和媒体以 `TabPage.url` 的精确 origin 为准。
 `BotView.web: None` 没有验证可用的 URL；未知、缺失或错误时不发页面 URL，断连或身份变化时清空，不猜 URL 或回退默认 Bot。
+资料页要显示地址、决定有没有入口，读和 `web` 同时写的 `BotView.web_page`（只在属于这个 Bot 的 Ready 页面时非空），壳不自己解析 `web`。
 Bot 页复用既有页面容器、桥、媒体和 `--wonton-*`，不另造壳层 WebView、不省略桥。
 
 插件整体异常时网关按服务看：清单 `webui` 指向的服务现在能用（容器在运行、健康检查没失败）就照常转发，网页里
@@ -236,6 +237,7 @@ MCP 服务和模型网关同一条规则，局域网端口本来就直连各自�
 
 三条不经隧道的路，都要清单声明：第三方 App、外部回调和访客链接经公网子域名或局域网直连到入口容器（ADR-0021、ADR-0090）；插件把清单列出的端口发布到
 局域网（`network.lan`，ADR-0019），网页端口要主人打开 `lan_webui`（ADR-0023）；出网插件经出口容器走主人的代理或代理插件（ADR-0023、ADR-0039）。
+入口按 SNI 和 `Host` 分前端；前端在转发前盖 `X-Wonton-Entry` 标记（取前端名），核心据此区分来源。公网、局域网两个前端整体交给核心；经 iroh 进来的已配对服务器走配对前端，只有联邦、key 和三个发现文件交给核心，其余客户端 API 直给 Tuwunel（ADR-0051）。
 宿主网络的插件按 ADR-0036 由核心配中继，网页和 MCP 经插件数据目录里的 unix 套接字进网关和总线，宿主防火墙不用改。
 插件之间按能力依赖，使用方连 `<能力>.wonton.internal`，由核心按确认记录转发给选用的提供方：HTTP 能力经网关（ADR-0053），
 `mqtt` 这类 TCP 能力经核心的四层中继（ADR-0092）。插件网络之间不互通。

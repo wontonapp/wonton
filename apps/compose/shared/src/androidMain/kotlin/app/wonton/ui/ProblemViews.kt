@@ -35,6 +35,7 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.alpha
 import androidx.compose.ui.draw.rotate
 import androidx.compose.ui.graphics.vector.ImageVector
+import androidx.compose.ui.platform.testTag
 import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.semantics.Role
 import androidx.compose.ui.semantics.contentDescription
@@ -323,14 +324,18 @@ fun ProblemDetail(
     text: String,
     label: String = stringResource(R.string.common_details),
     modifier: Modifier = Modifier,
+    /** 展开按钮的测试标识，UI 测试按它定位，不按文案。 */
+    toggleTag: String? = null,
 ) {
     var expanded by remember { mutableStateOf(false) }
     val colors = WontonTheme.colors
     val style = WontonTheme.typography.caption
     val tint = colors.textSecondary.toColor()
-    Column(verticalArrangement = Arrangement.spacedBy(WontonTheme.spacing.s4)) {
+    Column(modifier, verticalArrangement = Arrangement.spacedBy(WontonTheme.spacing.s4)) {
         Row(
-            modifier.clickable(role = Role.Button) { expanded = !expanded }.heightIn(min = WontonTheme.size.target),
+            Modifier.then(if (toggleTag != null) Modifier.testTag(toggleTag) else Modifier)
+                .clickable(role = Role.Button) { expanded = !expanded }
+                .heightIn(min = WontonTheme.size.target),
             horizontalArrangement = Arrangement.spacedBy(WontonTheme.spacing.s4),
             verticalAlignment = Alignment.CenterVertically,
         ) {

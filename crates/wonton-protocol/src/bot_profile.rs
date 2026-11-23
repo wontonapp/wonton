@@ -12,7 +12,7 @@ use std::collections::BTreeMap;
 
 use serde::{Deserialize, Serialize};
 
-use crate::{BotChatSettings, BotRef, BotWebView, MediaHandle};
+use crate::{BotChatSettings, BotRef, BotWebPage, BotWebView, MediaHandle};
 
 /// Bot 资料里状态头像那个字段的名字。
 pub const AVATARS_FIELD: &str = "app.wonton.avatars";
@@ -285,6 +285,10 @@ pub struct BotView {
     /// 由当前请求者的身份决定；未核实、断线或切换账号时为空，不能借用插件的默认网页地址。
     #[serde(default)]
     pub web: Option<BotWebView>,
+    /// 和 [`Self::web`] 同时写：网页属于这个 Bot 时是它的地址，能打开的入口和地址都看这个字段；
+    /// 权限由核心的网关判断（家人要主人开放），壳不自己判断。
+    #[serde(default)]
+    pub web_page: Option<BotWebPage>,
     /// Matrix 显示名；还没取到资料时是插件名。
     pub name: String,
     /// 静态头像；没设时为空，壳用插件图标。
@@ -531,6 +535,7 @@ mod tests {
                 bot: "default".into(),
             },
             web: None,
+            web_page: None,
             name: "B".into(),
             avatar: None,
             state_avatars: vec![StateAvatar {

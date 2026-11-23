@@ -307,7 +307,6 @@ plugin-settings-health-timeout = { $waiting } 等了 { $waited } 秒（时限 { 
 plugin-settings-health-timeout-next = 下一步：时限对声明了健康检查的服务已经放宽到启动宽限加它自己的重试窗，没声明的就是安装期限；主机空下来后重试安装通常能过。服务一直答 5xx 则可能是它自己起得来但报错，看下面的探针和日志。
 plugin-settings-health-target = 服务
 plugin-settings-health-list-separator = 、
-plugin-settings-health-unhealthy = 容器 { $container } 健康检查失败
 plugin-settings-health-exited = 容器 { $container } 已退出（退出码 { $code }）
 plugin-settings-health-no-healthcheck = 容器 { $container } 被要求 service_healthy，但没有配置健康检查
 plugin-settings-health-webui-state = { $method } 最后一次响应：{ $error }

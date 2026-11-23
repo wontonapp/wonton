@@ -23,6 +23,29 @@ impl PluginManager {
             .await?;
         Ok(found)
     }
+    /// 清除数据就一并释放标签占用；保留数据时留下标签，重装沿用。
+    /// 记录读不出就不知道标签，占用丢就丢了，记一条。
+    fn keep_entry_label(
+        &self,
+        id: &PluginId,
+        purge: bool,
+    ) -> Result<(), super::super::store::StoreError> {
+        if purge {
+            return self.store.retain_entry_label(id, None);
+        }
+        match self.store.load(id) {
+            Ok(Some(record)) => {
+                if let Some(label) = record.entry_label {
+                    self.store.retain_entry_label(id, Some(&label))?;
+                }
+            }
+            Ok(None) => {}
+            Err(error) => {
+                tracing::warn!(plugin = %id, %error, "插件记录读不了，卸载时不保留入口标签");
+            }
+        }
+        Ok(())
+    }
 
     pub(in crate::plugin) async fn teardown(
         &self,
@@ -104,6 +127,7 @@ impl PluginManager {
             report.data_removed = true;
         }
         self.remove_hosted(id, purge, langs)?;
+        self.keep_entry_label(id, purge)?;
         self.store.save_grants().clear(id)?;
         self.store.remove(id)?;
         let left = self.own_resources(id).await?;
