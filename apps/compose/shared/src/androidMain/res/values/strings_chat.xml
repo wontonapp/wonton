@@ -158,12 +158,12 @@
     <string name="bot_state_offline">Offline</string>
     <string name="bot_avatar_pick_state">Change the %1$s picture</string>
     <string name="bot_profile_open">View Bot profile</string>
-    <string name="bot_identity_title">Bot identity</string>
     <string name="bot_identity_value">Plugin: %1$s\nBot: %2$s</string>
+    <string name="bot_details_account">Account: %1$s</string>
+    <string name="bot_details_web">Web page: %1$s</string>
     <string name="bot_profile_read_only">This Bot\'s profile is read-only. Profile editing is only available for the default Bot.</string>
     <string name="bot_profile_missing">This Bot\'s profile is no longer available.</string>
-    <string name="bot_web_title">Bot webpage</string>
-    <string name="bot_web_open">Open Bot webpage</string>
+    <string name="bot_web_open">Open the web version (English)</string>
     <string name="bot_web_unauthenticated">Sign in to the server to open this Bot\'s webpage.</string>
     <string name="bot_web_not_shared">The server owner has not shared this Bot\'s webpage with family.</string>
     <string name="bot_web_permission_denied">This identity is not allowed to open Bot webpages.</string>

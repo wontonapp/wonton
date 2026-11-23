@@ -77,7 +77,12 @@ extension RoomPanelGestureUITests {
     /// 房间面板的入口在 Bot 资料页（ADR-0052）：点顶栏头像进资料页，再点“打开面板”。
     private func openPanelFromProfile() {
         tap(app.buttons["roomTopBarAvatar"])
-        tap(app.buttons["botProfilePanelOpen"])
+        let entry = app.buttons["botProfilePanelOpen"]
+        XCTAssertTrue(entry.waitForExistence(timeout: 20), "Bot 资料页没有打开面板的按钮\n\(app.debugDescription)")
+        for _ in 0..<4 where !entry.isHittable {
+            app.swipeUp()
+        }
+        entry.tap()
     }
 
     private func enterRoom() -> XCUIElement {
