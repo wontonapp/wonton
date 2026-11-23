@@ -63,15 +63,7 @@ class PairingDraftTest {
 
     @Test
     fun typedDeviceNameSurvivesExit() {
-        val core = (compose.activity.application as WontonApplication).core.getOrThrow()
-        // 真核心没配对时首屏就是根配对页。进程里先跑过假核心的类时核心换不过来（`core` 一个进程一个），
-        // 这时退回“添加服务器”页继续验草稿；两条路的返回语义不同：根页交给系统退出，添加页退一层。
-        val rootScreen = core.home().status is HomeStatus.NotConfigured
-        if (!rootScreen) {
-            core.send(Action.Home(HomeAction.AddServer))
-            compose.waitUntil(timeoutMillis = 5_000) { core.servers().adding }
-        }
-        awaitPairingForm()
+        val rootScreen = openPairingPage()
         nameField().performScrollTo().performTextReplacement("kitchen-ipad")
         assertEquals("kitchen-ipad", prefs().getString("device_name", null))
 
@@ -85,10 +77,23 @@ class PairingDraftTest {
     /// 重开这一页时把草稿里的设备名填回来（改前那棵树只读默认名）。
     @Test
     fun savedDeviceNameIsFilledBack() {
-        awaitPairingForm()
+        openPairingPage()
         prefs().edit().putString("device_name", "kitchen-ipad").apply()
         compose.activityRule.scenario.recreate()
         nameField().performScrollTo().assert(hasText("kitchen-ipad"))
+    }
+
+    /// 打开配对页。真核心没配对时首屏就是它；进程里先起过假核心时核心换不过来（`core` 一个进程一个），
+    /// 首屏在假核心里是应用列表、没有输入框，这时退回“添加服务器”页。返回 true 表示是首屏根页。
+    private fun openPairingPage(): Boolean {
+        val core = (compose.activity.application as WontonApplication).core.getOrThrow()
+        val rootScreen = core.home().status is HomeStatus.NotConfigured
+        if (!rootScreen) {
+            core.send(Action.Home(HomeAction.AddServer))
+            compose.waitUntil(timeoutMillis = 5_000) { core.servers().adding }
+        }
+        awaitPairingForm()
+        return rootScreen
     }
 
     /// 别把草稿留给后面的类：别的用例往空的码框里打字，残留会接在前面。
