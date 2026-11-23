@@ -33,6 +33,8 @@ import app.wonton.protocol.FontStyle
 import app.wonton.protocol.HomePath
 import app.wonton.protocol.HomeStatus
 import app.wonton.protocol.HomeViewModel
+import app.wonton.protocol.InstallFailure
+import app.wonton.protocol.InstallStage
 import app.wonton.protocol.InstalledPlugin
 import app.wonton.protocol.InstalledPlugins
 import app.wonton.protocol.PendingConfirmation
@@ -251,8 +253,10 @@ internal fun previewInstalled() = InstalledPlugins(
     upgradeCheck = null,
 )
 
-internal fun previewPlugins() = PluginsViewModel(
-    installed = InstalledPlugins(plugins = emptyList(), upgradeCheck = null),
+internal fun previewPlugins(
+    installed: InstalledPlugins = InstalledPlugins(plugins = emptyList(), upgradeCheck = null),
+) = PluginsViewModel(
+    installed = installed,
     store = null,
     storeLoad = StoreLoadState.NotRequested,
     sidebar = SidebarViewModel(apps = emptyList(), moreApps = false, updates = 0u, settingsBadge = false),
@@ -438,6 +442,37 @@ internal fun AgentDegradedPreview() {
             ),
             title = "Home Hub",
             plugins = previewPlugins(),
+            onAction = {},
+        )
+    }
+}
+
+/** 同上的降级卡，但插件是安装失败回滚的：已经不是“已安装”，不再带那句说明。 */
+@Preview(name = "Agent 安装失败提示", locale = "en", widthDp = 390, heightDp = 200)
+@Composable
+internal fun AgentInstallFailedPreview() {
+    val failed = previewInstalled().plugins.first().copy(
+        id = "app.example.hub",
+        title = "Home Hub",
+        installFailure = InstallFailure(
+            kind = "upstream",
+            message = "container app-example-hub exited with code 137",
+            stage = InstallStage.STARTING,
+            failedPluginId = "app.example.hub",
+            cleanupErrors = emptyList(),
+            retryable = true,
+        ),
+    )
+    PreviewFrame {
+        AgentPluginStatusBanner(
+            plugin = RoomPlugin(
+                pluginId = failed.id,
+                status = PluginState.Degraded(reason = "container app-example-hub exited with code 137"),
+                start = null,
+                canStart = false,
+            ),
+            title = failed.title,
+            plugins = previewPlugins(InstalledPlugins(plugins = listOf(failed), upgradeCheck = null)),
             onAction = {},
         )
     }
