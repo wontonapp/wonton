@@ -11,7 +11,7 @@ import androidx.compose.runtime.Composable
 import androidx.compose.runtime.CompositionLocalProvider
 import androidx.compose.runtime.compositionLocalOf
 import androidx.compose.runtime.getValue
-import androidx.compose.runtime.mutableIntStateOf
+import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Modifier
@@ -56,7 +56,7 @@ fun wontonContentPaddingValues(
 @Composable
 fun WontonScreen(bar: @Composable () -> Unit, modifier: Modifier = Modifier, content: @Composable () -> Unit) {
     val density = LocalDensity.current
-    var barHeight by remember { mutableIntStateOf(0) }
+    var barHeight by remember { mutableStateOf(0.dp) }
     val canvas = WontonTheme.colors.canvas.toColor()
     // 向上滚第一像素内容就进了顶栏下面；回到顶（剩余向下分量没人消费）时恢复透明。
     // 不用 pinnedScrollBehavior：小顶栏的 overlappedFraction 恒为 0，collapsedFraction 也不随 nested scroll 变化。
