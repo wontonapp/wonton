@@ -310,9 +310,8 @@ internal fun dayMarksFor(items: List<TimelineItem>): Array<String?> {
     val marks = arrayOfNulls<String>(items.size)
     for (index in items.indices) {
         val day = days[index]
-        if (day == null || day == days.getOrNull(index + 1)) continue
-        if (items[index].content is TimelineContent.DateDivider) continue
-        marks[index] = day
+        val own = day != null && day != days.getOrNull(index + 1)
+        if (own && items[index].content !is TimelineContent.DateDivider) marks[index] = day
     }
     return marks
 }
