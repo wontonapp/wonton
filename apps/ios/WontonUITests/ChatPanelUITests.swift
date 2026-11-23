@@ -373,6 +373,10 @@ extension ChatPanelUITests {
         avatar.tap()
         let entry = app.buttons["botProfilePanelOpen"]
         XCTAssertTrue(entry.waitForExistence(timeout: 5), "Bot 资料页没有打开面板的按钮\n\(app.debugDescription)")
+        // 资料页上面是头像、状态、网页入口和收起的详情，按钮在下面。
+        for _ in 0..<4 where !entry.isHittable {
+            app.swipeUp()
+        }
         entry.tap()
     }
 

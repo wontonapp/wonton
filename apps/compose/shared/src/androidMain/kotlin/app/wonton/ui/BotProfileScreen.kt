@@ -63,26 +63,14 @@ internal fun BotProfileScreen(
                 .wontonContentPadding().padding(WontonTheme.spacing.pageInset),
             verticalArrangement = Arrangement.spacedBy(WontonTheme.spacing.sectionGap),
         ) {
-            DetailSection(stringResource(R.string.bot_identity_title)) {
-                Text(
-                    stringResource(R.string.bot_identity_value, identity.pluginId, identity.bot),
-                    Modifier.testTag("bot-profile-identity"),
-                    style = WontonTheme.typography.body,
-                    color = WontonTheme.colors.textPrimary.toColor(),
-                )
-                bot?.let {
-                    Text(it.userId, Modifier.testTag("bot-profile-user-id"),
-                        style = WontonTheme.typography.supporting,
-                        color = WontonTheme.colors.textSecondary.toColor())
-                }
-            }
             if (bot == null) {
                 Text(stringResource(R.string.bot_profile_missing), Modifier.testTag("bot-profile-unavailable"),
                     color = WontonTheme.colors.textSecondary.toColor())
             } else {
                 BotProfileSection(bot, plugins)
+                BotWebAction(identity, bot, onAction)
             }
-            BotWebSection(identity, bot?.web, onAction)
+            BotProfileDetails(identity, bot)
         }
     }
 }
@@ -116,25 +104,37 @@ internal fun ReadOnlyBotProfile(bot: BotView, plugins: PluginsState) {
     }
 }
 
+/**
+ * 只有核心给了这个 Bot 的网页地址时才给入口（家人要主人开放，由核心判断）；不能打开的一句话就地说明。
+ * 按钮文字写明打开的是什么，网页里的界面是英文。
+ */
 @Composable
-private fun BotWebSection(identity: BotRef, web: BotWebView?, onAction: (Action) -> Unit) {
-    val ready = (web as? BotWebView.Ready)?.page?.takeIf { it.bot == identity }
-    DetailSection(stringResource(R.string.bot_web_title)) {
-        if (ready != null) {
-            Text(ready.url, Modifier.testTag("bot-web-address"), style = WontonTheme.typography.body,
-                color = WontonTheme.colors.textPrimary.toColor())
-            WontonButton(
-                stringResource(R.string.bot_web_open), {
-                    onAction(Action.Pages(PageAction.OpenPage(TabRef.Bot(identity, null))))
-                },
-                Modifier.fillMaxWidth().testTag("bot-web-open"),
-            )
-        } else {
-            val reason = (web as? BotWebView.Unavailable)?.reason
-            Text(stringResource(reason.webReasonRes()), Modifier.testTag("bot-web-unavailable"),
-                style = WontonTheme.typography.body, color = WontonTheme.colors.textSecondary.toColor())
-        }
+private fun BotWebAction(identity: BotRef, bot: BotView?, onAction: (Action) -> Unit) {
+    val page = bot?.webPage
+    if (page != null) {
+        WontonButton(
+            stringResource(R.string.bot_web_open), {
+                onAction(Action.Pages(PageAction.OpenPage(TabRef.Bot(identity, null))))
+            },
+            Modifier.fillMaxWidth().testTag("bot-web-open"),
+        )
+    } else {
+        val reason = (bot?.web as? BotWebView.Unavailable)?.reason
+        Text(stringResource(reason.webReasonRes()), Modifier.testTag("bot-web-unavailable"),
+            style = WontonTheme.typography.body, color = WontonTheme.colors.textSecondary.toColor())
     }
+}
+
+/** 插件、账号和网页地址这些技术标识，默认收起。 */
+@Composable
+private fun BotProfileDetails(identity: BotRef, bot: BotView?) {
+    val plugin = stringResource(R.string.bot_identity_value, identity.pluginId, identity.bot)
+    val account = bot?.let { stringResource(R.string.bot_details_account, it.userId) }
+    val address = bot?.webPage?.let { stringResource(R.string.bot_details_web, it.url) }
+    ProblemDetail(
+        listOfNotNull(plugin, account, address).joinToString("\n"),
+        toggleTag = "bot-profile-details",
+    )
 }
 
 private fun BotWebFailure?.webReasonRes(): Int = when (this) {

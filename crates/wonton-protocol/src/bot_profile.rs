@@ -12,7 +12,7 @@ use std::collections::BTreeMap;
 
 use serde::{Deserialize, Serialize};
 
-use crate::{BotChatSettings, BotRef, BotWebView, MediaHandle};
+use crate::{BotChatSettings, BotRef, BotWebPage, BotWebView, MediaHandle};
 
 /// Bot 资料里状态头像那个字段的名字。
 pub const AVATARS_FIELD: &str = "app.wonton.avatars";
@@ -157,7 +157,7 @@ pub struct AvatarMedia {
     pub poster: Option<String>,
 }
 
-/// 头像文件的种类，壳按它选播放方式。不认识的取值按 [`Still`](Self::Still) 处理：旧 App 至少显示一帧图。
+/// 头像文件的种类，壳按它选播放方式。不认识的取值按 [`Still`](Self::Still) 处理，旧 App 只显示静态图。
 #[derive(Clone, Copy, Debug, Default, PartialEq, Eq, Serialize, Deserialize)]
 #[cfg_attr(feature = "uniffi", derive(uniffi::Enum))]
 #[serde(rename_all = "snake_case")]
@@ -171,7 +171,7 @@ pub enum AvatarKind {
     Video,
 }
 
-/// `kind` 是为以后加动图补的字段：旧核心不给，新核心以后可能给不认识的取值，都不能让整个头像解析失败。
+/// `kind` 可能缺、可能是不认识的取值（更新或更旧的核心），都落到 [`Still`](AvatarKind::Still)，不让整个头像解析失败。
 fn avatar_kind<'de, D: serde::Deserializer<'de>>(deserializer: D) -> Result<AvatarKind, D::Error> {
     Ok(match String::deserialize(deserializer)?.as_str() {
         "animated" => AvatarKind::Animated,
@@ -285,6 +285,10 @@ pub struct BotView {
     /// 由当前请求者的身份决定；未核实、断线或切换账号时为空，不能借用插件的默认网页地址。
     #[serde(default)]
     pub web: Option<BotWebView>,
+    /// 和 [`Self::web`] 同时写：网页属于这个 Bot 时是它的地址，能打开的入口和地址都看这个字段；
+    /// 权限由核心的网关判断（家人要主人开放），壳不自己判断。
+    #[serde(default)]
+    pub web_page: Option<BotWebPage>,
     /// Matrix 显示名；还没取到资料时是插件名。
     pub name: String,
     /// 静态头像；没设时为空，壳用插件图标。
@@ -531,6 +535,7 @@ mod tests {
                 bot: "default".into(),
             },
             web: None,
+            web_page: None,
             name: "B".into(),
             avatar: None,
             state_avatars: vec![StateAvatar {

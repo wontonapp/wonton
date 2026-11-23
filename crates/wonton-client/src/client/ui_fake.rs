@@ -12,8 +12,9 @@
 //! 以及时间线上界面测试约定的那几个（`ui_fake_timeline.rs`）：
 //! 开关页照真核心的规则改页面栈和应用网格的开关，壳的出口才有东西可测；
 //! 没有隧道，插件的网页本身加载不出来；房间的时间线和加载得出来的本机网页（面板里一张、整页一张）在 `ui_fake_room.rs`。
-//! 媒体、商店列表和别的操作后的新状态不在里面，
-//! 要用这些的测试仍然连开发栈（见 `apps/ios/WontonUITests/UITestBackend.swift`）。
+//! 商店列表和别的操作后的新状态不在里面，要用这些的测试仍然连开发栈（见
+//! `apps/ios/WontonUITests/UITestBackend.swift`）。假房间里的照片例外：`ui_fake_room` 带同组多张的
+//! 样张，字节由 `load_media` 在假数据入口下直接给，图像类走查不用连栈。
 
 use std::sync::Arc;
 use std::sync::atomic::AtomicUsize;
@@ -23,15 +24,14 @@ use std::time::{SystemTime, UNIX_EPOCH};
 use tokio::sync::watch;
 
 use wonton_protocol::{
-    AppLockViewModel, AppsAction, BotActivity, BotRef, BotView, ChatAccount, ChatLayout,
+    AppsAction, BotActivity, BotRef, BotView, BotWebPage, BotWebView, ChatAccount, ChatLayout,
     ChatLayoutChoice, ChatSync, ChatViewModel, CoreError, DeviceInvite, DeviceNetwork,
     DeviceVerification, EncryptionStatus, HomePath, HomeStatus, HomeViewModel, InstalledPlugin,
     InstalledPlugins, MessageSummary, OnboardingStep, OnboardingViewModel, OpenPage,
     PagesViewModel, PanelItem, PanelSource, PluginHealth, PluginKind, PluginState, PluginTrust,
-    PluginsViewModel, PushMethod, PushStatus, RecoveryNextStep, RecoveryStatus, RoomMembership,
-    RoomPreview, RoomRow, SecretString, ServerKind, ServerName, ServerRow, ServersViewModel,
-    SettingsEntry, SettingsSection, SettingsViewModel, SidebarApp, SidebarBadge, SidebarOpen,
-    TabIcon, TabLayout, TabPage, TabRef, TabState,
+    PluginsViewModel, PushStatus, RecoveryNextStep, RecoveryStatus, RoomMembership, RoomPreview,
+    RoomRow, SecretString, ServerKind, ServerName, ServerRow, ServersViewModel, SidebarApp,
+    SidebarBadge, SidebarOpen, StoreLoadState, TabIcon, TabLayout, TabPage, TabRef, TabState,
 };
 
 use super::ClientCore;
@@ -136,9 +136,11 @@ impl ClientCore {
             peers: watch::Sender::new(current.peers.borrow().clone()),
             friends: watch::Sender::new(current.friends.borrow().clone()),
             bot_contacts: watch::Sender::new(current.bot_contacts.borrow().clone()),
-            // 假数据下设置页是静态的这一份：真设置页的构建循环订阅着被丢弃的旧接收器，开起来会停在
+            // 假数据下设置页带着当前值：真设置页的构建循环订阅着被丢弃的旧接收器，开起来会停在
             // 未配对的状态，设置里的“添加设备”走不通。
-            settings: watch::Sender::new(fake_settings()),
+            settings: watch::Sender::new(super::ui_fake_settings::fake_settings(
+                current.settings.borrow().clone(),
+            )),
             confirmations: watch::Sender::new(super::ui_fake_devices::confirmations(
                 current.confirmations.borrow().clone(),
             )),
@@ -249,6 +251,17 @@ fn fake_page(tab: &TabRef) -> Option<TabPage> {
         });
     }
     let TabRef::Plugin { plugin_id, .. } = tab else {
+        if let TabRef::Bot { bot, .. } = tab {
+            return Some(TabPage {
+                title: bot.bot.clone(),
+                icon: TabIcon::Plugin { icon: None },
+                url: Some(web_url(&bot.plugin_id)),
+                layout: TabLayout::default(),
+                state: TabState::Ready,
+                reload: 0,
+                opens_in_browser: false,
+            });
+        }
         return None;
     };
     let (title, _, kind) = WEB_APPS.iter().find(|(_, id, _)| id == plugin_id)?;
@@ -271,6 +284,17 @@ fn fake_page(tab: &TabRef) -> Option<TabPage> {
 
 fn web_url(plugin_id: &str) -> String {
     format!("http://{}.wonton.localhost/", plugin_id.replace('.', "-"))
+}
+
+fn fake_bot_page(plugin_id: &str, bot: &str) -> BotWebPage {
+    BotWebPage {
+        bot: BotRef {
+            plugin_id: plugin_id.into(),
+            bot: bot.into(),
+        },
+        url: web_url(plugin_id),
+        cross_origin_isolated: false,
+    }
 }
 
 fn fake_home(mut home: HomeViewModel) -> HomeViewModel {
@@ -372,53 +396,6 @@ fn fake_rooms() -> Vec<RoomRow> {
     ]
 }
 
-/// 假设置首页：按真设置的结构排（资料、服务器、这台手机上的几行、备份、关于），走到“添加设备”和
-/// 夜跑按文字点的行都在。真设置里“资料、服务器、默认 Agent、引导”要配对后才出现，这里照样给，方便走配对流程。
-/// 通知这一行要给：Android 在 `onCreate` 里按推送方式登记，取不到通知入口会直接崩。
-fn fake_settings() -> SettingsViewModel {
-    let lock = AppLockViewModel::default();
-    SettingsViewModel {
-        sections: vec![
-            SettingsSection {
-                entries: vec![SettingsEntry::Profile],
-            },
-            SettingsSection {
-                entries: vec![SettingsEntry::Server {
-                    name: Some(ServerName::Named {
-                        name: "Home".into(),
-                    }),
-                    status: HomeStatus::Connected,
-                    upgrade: false,
-                }],
-            },
-            SettingsSection {
-                entries: vec![
-                    SettingsEntry::Appearance,
-                    SettingsEntry::Language,
-                    SettingsEntry::MyApps,
-                    SettingsEntry::Notifications {
-                        method: PushMethod::Keepalive,
-                        push: PushStatus::NoEndpoint,
-                        categories: Vec::new(),
-                    },
-                    SettingsEntry::AppLock {
-                        enabled: lock.enabled,
-                        timeout: lock.timeout,
-                    },
-                ],
-            },
-            SettingsSection {
-                entries: vec![SettingsEntry::ChatBackup {
-                    recovery: RecoveryStatus::Unknown,
-                }],
-            },
-            SettingsSection {
-                entries: vec![SettingsEntry::About],
-            },
-        ],
-    }
-}
-
 fn fake_chat(mut chat: ChatViewModel) -> ChatViewModel {
     chat.account = ChatAccount::SignedIn {
         user_id: "@owner:home.example".into(),
@@ -453,7 +430,10 @@ fn fake_chat(mut chat: ChatViewModel) -> ChatViewModel {
                 plugin_id: "app.example.echo".into(),
                 bot: "echo".into(),
             },
-            web: None,
+            web: Some(BotWebView::Ready {
+                page: fake_bot_page("app.example.echo", "echo"),
+            }),
+            web_page: Some(fake_bot_page("app.example.echo", "echo")),
             name: "Echo".into(),
             avatar: None,
             state_avatars: Vec::new(),
@@ -469,6 +449,7 @@ fn fake_chat(mut chat: ChatViewModel) -> ChatViewModel {
                 bot: "hermes".into(),
             },
             web: None,
+            web_page: None,
             name: "Hermes".into(),
             avatar: None,
             state_avatars: Vec::new(),
@@ -512,6 +493,8 @@ fn fake_plugins(mut plugins: PluginsViewModel) -> PluginsViewModel {
         plugins: installed,
         upgrade_check: None,
     });
+    plugins.store = Some(super::ui_fake_store::listing());
+    plugins.store_load = StoreLoadState::Ready;
     plugins.problem = None;
     // 我的应用里放两个应用：一个有分享、一个没有，设置里的行点开就是详情页。
     plugins.sidebar.apps = vec![

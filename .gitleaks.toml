@@ -38,3 +38,9 @@ description = "测试里的本地 Hydra 地址带占位用户名密码（user:se
 condition = "AND"
 paths = ['''^crates/wonton-core/src/config_tests\.rs$''']
 regexes = ['''user:secret@hydra''']
+
+[[allowlists]]
+description = "matrix 的 Tuwunel 测试夹具：源文件里只写 `{private}` 占位符（运行时现生成密钥），带转义的 \\n 写进临时目录；真 PEM 后面是换行加 base64，不会命中。paths 里的 invite_filter、profile 两个测试文件不在这条提交里，改到时会用上"
+condition = "AND"
+paths = ['''^crates/wonton-core/src/matrix/(bot|invite_filter)_docker_tests\.rs$''', '''^crates/wonton-core/src/matrix/profile_tuwunel_tests\.rs$''']
+regexes = ['''-----BEGIN PRIVATE KEY-----\\n''']

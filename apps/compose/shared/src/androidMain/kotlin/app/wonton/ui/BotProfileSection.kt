@@ -315,7 +315,7 @@ private fun BotNameProblem.textRes() = when (this) {
     BotNameProblem.OTHER -> R.string.bot_name_other
 }
 
-private fun AvatarMediaProblem.textRes() = when (this) {
+internal fun AvatarMediaProblem.textRes() = when (this) {
     AvatarMediaProblem.FORMAT -> R.string.bot_media_format
     AvatarMediaProblem.TOO_LARGE -> R.string.bot_media_too_large
     AvatarMediaProblem.TOO_BIG -> R.string.bot_media_too_big

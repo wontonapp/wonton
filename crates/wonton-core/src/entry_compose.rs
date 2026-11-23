@@ -49,6 +49,10 @@ pub fn render(
     // 容器本身由核心按设置建（`entry_containers`）。
     compose["services"]["core"]["networks"]["clients"] =
         json!({"aliases":["entry-gateway.wonton.internal"]});
+    // 配对前端的客户端 API 直给 Tuwunel（入口的 `paired` 前端）：入口在新后端上按这个别名找它，所以 Tuwunel
+    // 也要接进 clients。clients 是隔离网络，Tuwunel 仍然连不到宿主。
+    compose["services"]["tuwunel"]["networks"]["clients"] =
+        json!({"aliases":["tuwunel.wonton.internal"]});
     compose["services"]["core"]["environment"]["WONTON_ENTRY_LISTEN"] =
         json!("entry-gateway.wonton.internal:8484");
     // 隧道只绑核心在 core 网络上的地址（ADR-0021）：被攻破的入口容器在 clients 网络上发到隧道端口的包
@@ -467,6 +471,20 @@ mod tests {
             compose["services"]["core"]["environment"]["WONTON_ENTRY_LISTEN"],
             "entry-gateway.wonton.internal:8484"
         );
+    }
+
+    /// 配对前端的客户端 API 直给 Tuwunel：入口按这个别名在 clients 上找它，后端才不会 503。
+    #[test]
+    fn tuwunel_joins_the_clients_network_for_the_paired_frontend() {
+        let dir = tempfile::tempdir().unwrap();
+        let compose: Value =
+            serde_json::from_str(&render(crate::install::COMPOSE, None, dir.path()).unwrap())
+                .unwrap();
+        assert_eq!(
+            compose["services"]["tuwunel"]["networks"]["clients"],
+            json!({"aliases": ["tuwunel.wonton.internal"]})
+        );
+        assert!(compose["services"]["tuwunel"]["networks"]["edge"].is_null());
     }
 
     /// 主网关从一开始就不在入口地址上接连接：已攻破的入口读不到首次配对码。

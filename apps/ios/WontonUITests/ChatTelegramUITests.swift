@@ -164,7 +164,11 @@ final class ChatTelegramUITests: XCTestCase {
         enter(Self.directRoom)
         XCTAssertFalse(app.buttons["panelOpen"].exists, "房间顶栏还有打开面板的按钮")
         tap(app.buttons["roomTopBarAvatar"])
-        tap(app.buttons["botProfilePanelOpen"])
+        let open = app.buttons["botProfilePanelOpen"]
+        for _ in 0..<4 where !open.isHittable {
+            app.swipeUp()
+        }
+        tap(open)
         XCTAssertTrue(app.otherElements["chatPanel"].waitForExistence(timeout: 5), "资料页的按钮没有打开面板\n\(app.debugDescription)")
     }
 

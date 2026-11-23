@@ -67,6 +67,8 @@ uniffi = { workspace = true }
 url = { workspace = true }
 # MIT OR Apache-2.0. Explicit discovery roots must be valid CA certificates.
 x509-parser = "0.18.1"
+# MIT OR Apache-2.0。自己的头像按文件头检查（和核心共用一份规则）。
+wonton-avatar = { path = "../wonton-avatar" }
 wonton-l10n = { path = "../wonton-l10n" }
 wonton-matrix = { path = "../wonton-matrix" }
 wonton-protocol = { path = "../wonton-protocol", features = ["uniffi"] }

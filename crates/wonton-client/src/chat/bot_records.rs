@@ -89,6 +89,7 @@ fn reconcile(
                 bot: id.clone(),
                 user_id: fact.user_id.clone(),
                 web: None,
+                web_page: None,
                 name: title.to_owned(),
                 avatar: None,
                 state_avatars: Vec::new(),

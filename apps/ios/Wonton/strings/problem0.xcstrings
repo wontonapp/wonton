@@ -471,6 +471,36 @@
           }
         }
       }
+    },
+    "problem.peerPublicAccessOff.nextStep": {
+      "comment": "What to do when the other server's public access is off: wait, then send again.",
+      "extractionState": "manual",
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Wait for them to turn it back on, then send again. Messages arrive after that."
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "等对方重新打开后再发；消息会在那之后补到。"
+          }
+        },
+        "zh-Hant": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "等對方重新打開後再傳；訊息會在那之後補到。"
+          }
+        },
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "相手がオンに戻してからもう一度送ってください。メッセージはその後で届きます。"
+          }
+        }
+      }
     }
   }
 }

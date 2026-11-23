@@ -100,7 +100,7 @@ impl ClientCore {
             return None;
         }
         let PluginDetailRoute::Installed { id } = route else {
-            return None;
+            return super::ui_fake_plugin_detail::detail(route, None);
         };
         let installed = self.plugins().installed.and_then(|installed| {
             installed

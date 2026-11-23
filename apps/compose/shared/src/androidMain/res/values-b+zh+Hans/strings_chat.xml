@@ -126,12 +126,12 @@
     <string name="bot_state_offline">离线</string>
     <string name="bot_avatar_pick_state">更换%1$s头像</string>
     <string name="bot_profile_open">查看 Bot 资料</string>
-    <string name="bot_identity_title">Bot 身份</string>
     <string name="bot_identity_value">插件：%1$s\nBot：%2$s</string>
+    <string name="bot_details_account">账号：%1$s</string>
+    <string name="bot_details_web">网页：%1$s</string>
     <string name="bot_profile_read_only">此 Bot 的资料只读。只有默认 Bot 支持编辑资料。</string>
     <string name="bot_profile_missing">此 Bot 的资料已不可用。</string>
-    <string name="bot_web_title">Bot 网页</string>
-    <string name="bot_web_open">打开 Bot 网页</string>
+    <string name="bot_web_open">打开网页版（英文）</string>
     <string name="bot_web_unauthenticated">请先登录服务器，再打开此 Bot 的网页。</string>
     <string name="bot_web_not_shared">服务器主人尚未向家人开放此 Bot 的网页。</string>
     <string name="bot_web_permission_denied">此身份无权打开 Bot 网页。</string>

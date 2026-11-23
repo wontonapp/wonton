@@ -237,8 +237,12 @@ pub enum ChatFailure {
     TransportUnavailable,
     /// 登录失效：登录凭据无效或过期、设备已被吊销、账号已停用。要重新登录或配对。
     Unauthorized,
-    /// 登录有效，但服务器不让做这件事：没有权限、对方屏蔽了自己、对方的服务器不和这台互通。不是要重新登录。
+    /// 登录有效，但服务器不让做这件事：没有权限、对方屏蔽了自己。不是要重新登录。
     Forbidden,
+    /// 对方服务器还没和这台配对（ADR-0050）：跨服务器的私聊要先在“其他服务器”里配对。
+    ServerNotPaired,
+    /// 对方服务器的公网访问关着（ADR-0090 第 2 节）：经公网才联系得到的对方暂时收不到，要等对方重新打开。
+    PeerPublicAccessOff,
     /// 前置条件不满足：服务器缺少必需的能力，或者要操作的房间还没同步到本机。
     NotReady,
     /// 服务器或 Matrix SDK 出错。
@@ -753,5 +757,31 @@ mod tests {
         let status: EncryptionStatus = serde_json::from_value(value).unwrap();
         assert!(!status.can_reset);
         assert_eq!(status.recovery_next_step, RecoveryNextStep::None);
+    }
+
+    /// 契约：跨服务器私聊失败的两个原因各有自己的取值，不并进 `Forbidden`/`Other`；
+    /// 不认识的取值才落 `Other`。
+    #[test]
+    fn cross_server_problems_keep_their_category() {
+        for (wire, expected) in [
+            ("server_not_paired", ChatFailure::ServerNotPaired),
+            ("peer_public_access_off", ChatFailure::PeerPublicAccessOff),
+        ] {
+            let problem: ChatProblem = serde_json::from_value(serde_json::json!({
+                "reason": wire,
+                "message": "发起私聊失败",
+            }))
+            .unwrap();
+            assert_eq!(problem.reason, expected);
+            assert_eq!(
+                serde_json::to_value(expected).unwrap(),
+                serde_json::json!(wire)
+            );
+            assert_eq!(round_trip(&problem), problem);
+        }
+        assert_eq!(
+            serde_json::from_value::<ChatFailure>(serde_json::json!("hibernating")).unwrap(),
+            ChatFailure::Other
+        );
     }
 }

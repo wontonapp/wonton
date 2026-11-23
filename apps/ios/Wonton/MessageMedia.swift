@@ -1,9 +1,24 @@
 import SwiftUI
 import WontonClient
 
+/// 同一次发送的一组照片（发送者、组 id 和按组内顺序的照片）：查看器在同组里翻页，时间线变了按它重取。
+struct PhotoGroup {
+    let senderId: String
+    let id: String
+    var images: [ImageContent]
+}
+
+/// 组键：组 id 只有 32 位，和发送者一起才是 ADR-0094 说的那个组。
+struct PhotoGroupKey: Hashable {
+    let senderId: String
+    let id: String
+}
+
 /// 消息里的图片：先画缩略图，点了看原图。
 struct MediaImage: View {
     let image: ImageContent
+    /// 这一条属于哪一组照片；不属于多张一组时是 nil，查看器就是单张。
+    let group: PhotoGroup?
     let core: ClientCore
     let sendState: SendState
     @Environment(RoomPresenter.self) private var presenter
@@ -42,9 +57,10 @@ struct MediaImage: View {
             }
         }
         .contentShape(Rectangle())
-        .onTapGesture { presenter.showOriginal(image) }
+        .onTapGesture { presenter.showOriginal(image, group: group) }
         .accessibilityAddTraits(.isButton)
         .accessibilityLabel(Text(.Message2.messagePhoto))
+        .accessibilityIdentifier("messagePhoto.\(image.filename)")
         .task(id: image.thumbnail ?? image.media) {
             preview = await MediaFailure.load(image.thumbnail ?? image.media, from: core)
         }

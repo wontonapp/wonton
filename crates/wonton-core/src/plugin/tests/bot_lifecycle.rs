@@ -217,9 +217,11 @@ async fn a_failed_install_leaves_the_owner_no_chat_and_keeps_the_home_room_for_n
         let room = &state.rooms[&failed["ROOM"]];
         assert_eq!(room.members, BTreeSet::from(["@echo:test".to_owned()]));
         assert!(
-            room.invited.is_empty(),
-            "没装好的 Bot 不出现在主人的聊天列表里"
+            room.left.contains("@owner:test"),
+            "主人建完就退出了，房间不在主人的聊天列表里"
         );
+        assert!(room.invited.is_empty(), "邀请已经被 Bot 接受");
+        assert_eq!(state.user("@owner:test").direct, None, "没交付，不算私聊");
     }
 
     bed.docker

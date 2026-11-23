@@ -287,9 +287,10 @@ private extension ChatRoomView {
                 // 进房间时列表从头排起，这一行一定会出现。
                 .background(EnclosingScrollView { pin.attach($0) })
                 .timelineListRow()
+                let groups = imageGroups
                 ForEach(Array(timeline.items.enumerated()), id: \.element.id) { index, item in
                     // 做完了又没什么可写的 Agent 状态行不占一行。
-                    if !item.isBlankAgentRun { row(item, at: index) }
+                    if !item.isBlankAgentRun { row(item, at: index, groups: groups) }
                 }
                 // 点了发送、还没交出去的消息（ADR-0094）跟在最后一条后面；交出去后由时间线里的本地回显代替。
                 ForEach(composer.outgoing, id: \.id) { message in
@@ -298,6 +299,8 @@ private extension ChatRoomView {
                         .timelineListRow()
                 }
             }
+            // 时间线变了（删了一张、发出去了）：查看器里那组跟着重取，别停在已经不存在的照片上。
+            .onChange(of: timeline.items.map(\.id)) { _, _ in presenter.refreshOriginal(imageGroups) }
             .listStyle(.plain)
             .coordinateSpace(name: "timelineViewport")
             .task(id: PageRequest(timeline)) {
@@ -387,7 +390,30 @@ private extension ChatRoomView {
         }
     }
 
-    private func row(_ item: TimelineItem, at index: Int) -> some View {
+    /// 这一条属于哪一组的多张照片；不属于时 nil。
+    private func photoGroup(_ content: TimelineContent, _ groups: [PhotoGroupKey: [ImageContent]]) -> PhotoGroup? {
+        guard case let .message(message) = content, let group = message.group else { return nil }
+        let key = PhotoGroupKey(senderId: message.senderId, id: group.id)
+        guard let images = groups[key] else { return nil }
+        return PhotoGroup(senderId: message.senderId, id: group.id, images: images)
+    }
+
+    /// 一次发送里的照片按组收好（只有一张的组也收），给查看器翻页和删除后重取用。
+    private var imageGroups: [PhotoGroupKey: [ImageContent]] {
+        var byGroup: [PhotoGroupKey: [(index: UInt32, image: ImageContent)]] = [:]
+        for item in timeline.items {
+            guard case let .message(message) = item.content,
+                  let group = message.group,
+                  case let .image(image) = message.body else { continue }
+            let key = PhotoGroupKey(senderId: message.senderId, id: group.id)
+            byGroup[key, default: []].append((group.index, image))
+        }
+        return byGroup.mapValues { members in
+            members.sorted { $0.index < $1.index }.map(\.image)
+        }
+    }
+
+    private func row(_ item: TimelineItem, at index: Int, groups: [PhotoGroupKey: [ImageContent]]) -> some View {
         let flushesPrevious = index > 0 && timeline.items[index - 1].flushesWith(next: item)
         let flushesNext = index + 1 < timeline.items.count && item.flushesWith(next: timeline.items[index + 1])
         return TimelineRow(
@@ -415,6 +441,7 @@ private extension ChatRoomView {
             },
             isJumping: timeline.jump == .loading && jump.from == item.id,
             avatar: isDirect ? nil : { senderAvatar($0) },
+            photoGroup: photoGroup(item.content, groups),
             onOpenSideChat: { model.openSideChat($0, in: roomId) }
         )
         .id(item.id)

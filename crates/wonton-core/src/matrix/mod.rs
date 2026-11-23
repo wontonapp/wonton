@@ -203,6 +203,8 @@ impl Matrix {
 }
 
 #[cfg(test)]
+mod bot_docker_tests;
+#[cfg(test)]
 pub(crate) mod fake;
 #[cfg(test)]
 mod invite_filter_docker_tests;
