@@ -8793,6 +8793,20 @@ dependencies = [
 ]
 
 [[package]]
+name = "wonton-avatar"
+version = "0.0.0"
+dependencies = [
+ "gif",
+ "image",
+ "image-webp",
+ "mp4parse",
+ "png",
+ "wonton-protocol",
+ "zune-core",
+ "zune-jpeg",
+]
+
+[[package]]
 name = "wonton-client"
 version = "0.0.0"
 dependencies = [
@@ -8826,6 +8840,7 @@ dependencies = [
  "tracing-subscriber",
  "uniffi",
  "url",
+ "wonton-avatar",
  "wonton-client",
  "wonton-l10n",
  "wonton-matrix",
@@ -8848,7 +8863,6 @@ dependencies = [
  "flate2",
  "futures-util",
  "getrandom 0.4.3",
- "gif",
  "hickory-proto",
  "hickory-resolver",
  "html2text",
@@ -8857,20 +8871,17 @@ dependencies = [
  "hyper",
  "hyper-util",
  "image",
- "image-webp",
  "ipnet",
  "iroh",
  "jiff-tzdb",
  "jsonschema",
  "jsonwebtoken",
  "libc",
- "mp4parse",
  "netlink-packet-core 0.9.0",
  "netlink-packet-route 0.33.0",
  "netlink-sys 0.9.0",
  "pdf-extract",
  "percent-encoding",
- "png",
  "qrcode",
  "rcgen",
  "regex",
@@ -8908,6 +8919,7 @@ dependencies = [
  "unicode-segmentation",
  "url",
  "web-push-native",
+ "wonton-avatar",
  "wonton-client",
  "wonton-l10n",
  "wonton-protocol",
@@ -8915,8 +8927,6 @@ dependencies = [
  "wonton-tunnel",
  "x509-parser",
  "zip",
- "zune-core",
- "zune-jpeg",
 ]
 
 [[package]]

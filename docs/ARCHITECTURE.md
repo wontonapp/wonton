@@ -144,7 +144,7 @@ Matrix 邀请流程只在对方同意后调用存储 API；本机账号分配须
 4. 之后 App 每次启动都经隧道连回；服务器换了网络，App 通过发现服务找到它。
 5. 以后加设备，在已配对的 App 里点“添加设备”出码给新设备扫；设备都丢了，在服务器终端执行 `sudo wonton pair`。
    信任边界是服务器终端和已配对的设备，能接触局域网不算可信（理由见 ADR-0009）。
-6. 显示名和邮箱在 App 里填，存在核心里，单点登录从那里取显示名（ADR-0030）；资料里的头像就是 Matrix 上这个人的 `avatar_url`。插件拿到的邮箱是每人一个、不变的内部邮箱，应用发来的信转进这个人的 Wonton 私聊（ADR-0056）。
+6. 显示名和邮箱在 App 里填，存在核心里，单点登录从那里取显示名（ADR-0030）；资料里的头像就是 Matrix 上这个人的 `avatar_url`，换头像由客户端把自己的会话传文件、写好这个字段，核心只读服务器上的那份。插件拿到的邮箱是每人一个、不变的内部邮箱，应用发来的信转进这个人的 Wonton 私聊（ADR-0056）。
 
 ### 新用户引导
 
@@ -377,6 +377,7 @@ crates/
   wonton-protocol/   核心 API、ViewModel、插件清单类型：跨端唯一事实源，生成 Swift/Kotlin 类型
   wonton-tunnel/     iroh 隧道，服务端与客户端共用
   wonton-matrix/     Matrix 客户端封装（matrix-rust-sdk），供客户端核心使用
+  wonton-avatar/     头像文件的文件头检查、文件预览的视频探测，核心和客户端共用
   wonton-l10n/       Fluent 目录、语言协商与资源一致性检查，客户端与服务器共用
   wonton-core/       服务端核心
   wonton-client/     客户端厚核心，UniFFI 导出

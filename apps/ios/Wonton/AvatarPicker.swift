@@ -33,6 +33,8 @@ extension PhotosPickerItem {
 
 /// 选取的归类：转码和出错提示都按它走。
 enum AvatarSlot: Equatable {
+    /// 自己的资料头像：只收图片，动图也取第一帧。
+    case profile
     /// 静态头像：只收图片；动图不合规时按具体的检查结果报。
     case staticAvatar
     /// 状态头像：图片或视频；动图不合规提示用视频（ADR-0044）。
@@ -41,6 +43,11 @@ enum AvatarSlot: Equatable {
     var allowsVideo: Bool {
         if case .state = self { return true }
         return false
+    }
+
+    /// 动图原样交；资料头像只要静态图，交给后面的裁切取第一帧。
+    var allowsAnimated: Bool {
+        self != .profile
     }
 
     var state: BotActivity? {

@@ -23,9 +23,12 @@ enum Limits {
 
 /// 视频的时长和分辨率，给 `view_file` 用。
 #[derive(Debug, PartialEq, Eq)]
-pub(crate) struct VideoInfo {
+pub struct VideoInfo {
+    /// 显示宽度（像素）。
     pub width: u32,
+    /// 显示高度（像素）。
     pub height: u32,
+    /// 时长（毫秒）。
     pub duration_ms: u64,
 }
 

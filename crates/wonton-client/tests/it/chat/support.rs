@@ -207,6 +207,8 @@ struct Core {
     sync_recording_released: watch::Sender<bool>,
     /// 引导状态：没有就是没有这个接口（404）。
     onboarding: Mutex<Option<Value>>,
+    /// `GET /_wonton/api/me` 的资料，`PUT` 改名字和邮箱。
+    me: Mutex<Value>,
     /// “添加设备”发的配对码（`POST /_wonton/api/pairing-codes`），隧道起来后填上；每次要码换一个新 secret。
     issued_pairing_code: Mutex<Option<String>>,
     /// 发过多少个配对码，用它在每次回应里换一个新 secret。
@@ -253,14 +255,11 @@ pub(crate) struct FakeFile {
     pub name: String,
 }
 
-impl Home {
-    pub async fn start(devices: &[EndpointId]) -> Self {
-        init_test_logging();
-        let push = PushGateway::start().await;
-        let matrix = TestServer::with_push_gateway(&push).await;
-        let core = Arc::new(Core {
-            tuwunel: matrix.url.trim_start_matches("http://").to_owned(),
-            issuer: matrix.issuer.clone(),
+impl Core {
+    fn new(tuwunel: String, issuer: Issuer) -> Self {
+        Self {
+            tuwunel,
+            issuer,
             login_tokens: AtomicUsize::new(0),
             failing_login_tokens: AtomicUsize::new(0),
             matrix_unavailable: AtomicBool::new(false),
@@ -298,6 +297,17 @@ impl Home {
             sync_recording_held: watch::Sender::new(None),
             sync_recording_released: watch::Sender::new(false),
             onboarding: Mutex::default(),
+            me: Mutex::new(serde_json::json!({
+                "user_id": OWNER,
+                "username": "owner",
+                "is_owner": true,
+                "role_id": null,
+                "role_name": null,
+                "permissions": null,
+                "display_name": null,
+                "email": null,
+                "avatar": null,
+            })),
             issued_pairing_code: Mutex::default(),
             pairing_codes_issued: AtomicUsize::new(0),
             installed: Mutex::default(),
@@ -318,7 +328,19 @@ impl Home {
             link_previews: Mutex::default(),
             link_preview_images: Mutex::default(),
             link_preview_requests: AtomicUsize::new(0),
-        });
+        }
+    }
+}
+
+impl Home {
+    pub async fn start(devices: &[EndpointId]) -> Self {
+        init_test_logging();
+        let push = PushGateway::start().await;
+        let matrix = TestServer::with_push_gateway(&push).await;
+        let core = Arc::new(Core::new(
+            matrix.url.trim_start_matches("http://").to_owned(),
+            matrix.issuer.clone(),
+        ));
         let (addr, task) = fake_core(core.clone()).await;
         let tunnel_key = SecretKey::generate();
         let endpoint = loopback_endpoint(tunnel_key.clone(), 0).await;
