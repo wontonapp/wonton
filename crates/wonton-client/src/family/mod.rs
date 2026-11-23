@@ -41,6 +41,8 @@ pub(crate) struct FamilyLink {
     view: WatchSender<FamilyViewModel>,
     /// 页面开着：定时重取。
     live: AtomicBool,
+    /// 有跟随时钟在跑；停下时清掉，回到页面再起。
+    following: AtomicBool,
     /// 同一时刻只跑一次取数。
     queue: tokio::sync::Mutex<()>,
     /// 每次重取加一，只有最后发起的那次能写进 ViewModel。
@@ -60,11 +62,11 @@ impl FamilyLink {
             plugins,
             view: reuse(view, FamilyViewModel::default()),
             live: AtomicBool::new(false),
+            following: AtomicBool::new(false),
             queue: tokio::sync::Mutex::default(),
             epoch: AtomicU64::new(0),
         });
-        let weak = Arc::downgrade(&link);
-        link.runtime.spawn(async move { follow_home(weak).await });
+        link.ensure_following();
         link
     }
 
@@ -78,6 +80,15 @@ impl FamilyLink {
 
     fn spawn(&self, future: impl Future<Output = ()> + Send + 'static) {
         self.runtime.spawn(future);
+    }
+
+    /// 没有跟随时钟就起一个；已经有在跑的就不重复起。
+    fn ensure_following(self: &Arc<Self>) {
+        if self.following.swap(true, Ordering::SeqCst) {
+            return;
+        }
+        let weak = Arc::downgrade(self);
+        self.runtime.spawn(async move { follow_home(weak).await });
     }
 
     fn api(&self) -> Result<CoreApi, FamilyProblem> {
@@ -94,6 +105,7 @@ impl FamilyLink {
         match action {
             FamilyAction::RefreshFamily => {
                 self.live.store(true, Ordering::SeqCst);
+                self.ensure_following();
                 self.refresh(true);
             }
             FamilyAction::LeaveFamily => self.live.store(false, Ordering::SeqCst),
@@ -153,12 +165,14 @@ impl FamilyLink {
         self.view.send_modify(|view| {
             view.members.loading = false;
             view.join_requests.loading = false;
+            let access_problem = access.as_ref().err().cloned();
             match access {
                 Ok(access) => {
                     view.access = access;
                     apply_roles(&mut view.members.members, &view.roles.roles);
                     apply_role_names(&mut view.join_requests.requests, &view.roles.roles);
                 }
+                // 自己的资料取不到更根本：成员和请求的结果不盖掉它。
                 Err(problem) => view.members.problem = Some(problem),
             }
             view.roles.loading = false;
@@ -175,13 +189,27 @@ impl FamilyLink {
                 }
                 Err(problem) => view.roles.problem = Some(problem),
             }
-            let member_problem = members.as_ref().err().cloned();
-            let new_members = members_items(members, &view.roles.roles);
-            let new_requests = request_items(requests, &view.roles.roles);
-            view.members.members = new_members;
-            view.members.problem = member_problem;
-            view.join_requests.requests = new_requests;
-            view.join_requests.problem = None;
+            match members {
+                Ok(list) => {
+                    view.members.members = member_items(list, &view.roles.roles);
+                    if access_problem.is_none() {
+                        view.members.problem = None;
+                    }
+                }
+                // 取失败保留上次的列表，等恢复再换。
+                Err(problem) => {
+                    if access_problem.is_none() {
+                        view.members.problem = Some(problem);
+                    }
+                }
+            }
+            match requests {
+                Ok(list) => {
+                    view.join_requests.requests = request_items(list, &view.roles.roles);
+                    view.join_requests.problem = None;
+                }
+                Err(problem) => view.join_requests.problem = Some(problem),
+            }
         });
     }
 
@@ -235,7 +263,7 @@ impl FamilyLink {
                 view.join_requests.loading = false;
                 match fetched {
                     Ok(list) => {
-                        view.join_requests.requests = request_items(Ok(list), &view.roles.roles);
+                        view.join_requests.requests = request_items(list, &view.roles.roles);
                         view.join_requests.problem = None;
                     }
                     Err(problem) => view.join_requests.problem = Some(problem),
@@ -417,8 +445,7 @@ impl FamilyLink {
 }
 
 /// 成员记录配上角色名和模板；码过期按本机时间算。
-fn members_items(list: Result<MemberList, FamilyProblem>, roles: &[RoleDef]) -> Vec<MemberRow> {
-    let Ok(list) = list else { return Vec::new() };
+fn member_items(list: MemberList, roles: &[RoleDef]) -> Vec<MemberRow> {
     let now = now_ms();
     list.members
         .into_iter()
@@ -446,11 +473,7 @@ fn members_items(list: Result<MemberList, FamilyProblem>, roles: &[RoleDef]) -> 
         .collect()
 }
 
-fn request_items(
-    list: Result<wonton_protocol::JoinRequestList, FamilyProblem>,
-    roles: &[RoleDef],
-) -> Vec<JoinRequestRow> {
-    let Ok(list) = list else { return Vec::new() };
+fn request_items(list: wonton_protocol::JoinRequestList, roles: &[RoleDef]) -> Vec<JoinRequestRow> {
     let mut rows: Vec<JoinRequestRow> = list
         .requests
         .into_iter()
@@ -507,6 +530,18 @@ async fn follow_home(link: std::sync::Weak<FamilyLink>) {
     loop {
         let Some(arc) = link.upgrade() else { return };
         if !arc.live.load(Ordering::SeqCst) {
+            arc.following.store(false, Ordering::SeqCst);
+            // 停下的一刻可能又有人进了页面：接着跟，别把新请求丢了。
+            if arc.live.load(Ordering::SeqCst) {
+                if arc
+                    .following
+                    .compare_exchange(false, true, Ordering::SeqCst, Ordering::SeqCst)
+                    .is_err()
+                {
+                    return;
+                }
+                continue;
+            }
             return;
         }
         tokio::time::sleep(POLL_INTERVAL).await;

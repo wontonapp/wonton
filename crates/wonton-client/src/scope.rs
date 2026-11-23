@@ -11,8 +11,8 @@ use tokio::sync::watch;
 use wonton_protocol::{
     AgentChainsViewModel, BotContactsViewModel, ChatViewModel, ConfirmationsViewModel, CoreError,
     FamilyViewModel, FriendsViewModel, HomeViewModel, MyAvatarProblem, OnboardingViewModel,
-    PagesViewModel,
-    PeersViewModel, PluginsViewModel, ServersViewModel, SettingsViewModel, TransfersViewModel,
+    PagesViewModel, PeersViewModel, PluginsViewModel, ServersViewModel, SettingsViewModel,
+    TransfersViewModel,
 };
 
 use crate::agent_chains::AgentChainsLink;

@@ -7,7 +7,7 @@ use axum::http::Method;
 use wonton_client::{Action, FamilyFailure, FamilyProblem, FamilyViewModel, MemberStatus};
 use wonton_protocol::{FamilyAction, MemberInvite, PermissionItem, RoleDraft, RoleTemplate};
 
-use crate::plugins::rig::{Rig, WAIT};
+use crate::plugins::rig::{Headered, Rig, WAIT};
 
 async fn family(
     rig: &Rig,
@@ -407,4 +407,169 @@ async fn a_server_failure_keeps_its_category() {
         .stop_answering_headered(Method::GET, "/_wonton/api/members");
     refresh(&rig);
     family(&rig, "恢复", |view| view.members.problem.is_none()).await;
+}
+
+fn storage_failure() -> Headered {
+    Headered(
+        500,
+        vec![("x-wonton-error".to_owned(), "storage".to_owned())],
+        "{\"error\":{\"kind\":\"storage\",\"message\":\"盘满了\"}}".to_owned(),
+    )
+}
+
+/// 离开页面再回来：轮询要跟着恢复，不能只靠手动刷新那一次。
+#[tokio::test]
+async fn coming_back_to_the_page_resumes_the_polling() {
+    let rig = Rig::new().await;
+    owner_ready(&rig).await;
+    rig.app
+        .dispatch(Action::Family {
+            action: FamilyAction::LeaveFamily,
+        })
+        .unwrap();
+    tokio::time::sleep(std::time::Duration::from_secs(6)).await;
+    refresh(&rig);
+    tokio::time::sleep(std::time::Duration::from_secs(1)).await;
+    let before = rig.core.seen(&Method::GET, "/_wonton/api/members").len();
+    tokio::time::sleep(std::time::Duration::from_secs(6)).await;
+    let after = rig.core.seen(&Method::GET, "/_wonton/api/members").len();
+    assert!(after > before, "回到页面后定时重取要恢复");
+}
+
+#[tokio::test]
+async fn a_failed_member_refresh_keeps_the_last_list() {
+    let rig = Rig::new().await;
+    owner_ready(&rig).await;
+    rig.core.family.add_member("bob", "friend");
+    refresh(&rig);
+    family(&rig, "看到 bob", |view| {
+        view.members
+            .members
+            .iter()
+            .any(|member| member.username == "bob")
+    })
+    .await;
+
+    rig.core
+        .answer_always_headered(Method::GET, "/_wonton/api/members", storage_failure());
+    refresh(&rig);
+    let view = family(&rig, "取成员失败", |view| {
+        view.members.problem.is_some()
+    })
+    .await;
+    assert_eq!(
+        view.members.problem.as_ref().map(|problem| problem.reason),
+        Some(FamilyFailure::Storage)
+    );
+    assert!(
+        view.members
+            .members
+            .iter()
+            .any(|member| member.username == "bob"),
+        "失败不能把旧列表清空"
+    );
+    rig.core
+        .stop_answering_headered(Method::GET, "/_wonton/api/members");
+}
+
+#[tokio::test]
+async fn a_failed_request_refresh_keeps_the_last_list() {
+    let rig = Rig::new().await;
+    owner_ready(&rig).await;
+    rig.core.family.join_request("r1", "pending", "child");
+    refresh(&rig);
+    family(&rig, "看到请求", |view| {
+        !view.join_requests.requests.is_empty()
+    })
+    .await;
+
+    rig.core.answer_always_headered(
+        Method::GET,
+        "/_wonton/api/members/join-requests",
+        storage_failure(),
+    );
+    refresh(&rig);
+    let view = family(&rig, "取请求失败", |view| {
+        view.join_requests.problem.is_some()
+    })
+    .await;
+    assert_eq!(
+        view.join_requests
+            .problem
+            .as_ref()
+            .map(|problem| problem.reason),
+        Some(FamilyFailure::Storage)
+    );
+    assert!(
+        view.join_requests
+            .requests
+            .iter()
+            .any(|request| request.id == "r1"),
+        "失败不能把旧请求清空"
+    );
+    rig.core
+        .stop_answering_headered(Method::GET, "/_wonton/api/members/join-requests");
+}
+
+#[tokio::test]
+async fn an_access_failure_is_not_overwritten_by_a_member_result() {
+    let rig = Rig::new().await;
+    owner_ready(&rig).await;
+    rig.core.family.add_member("bob", "friend");
+    rig.core.answer_always_headered(
+        Method::GET,
+        "/_wonton/api/me",
+        Headered(
+            403,
+            vec![(
+                "x-wonton-error".to_owned(),
+                "permission_required".to_owned(),
+            )],
+            "{\"missing\":\"manage_members\"}".to_owned(),
+        ),
+    );
+    refresh(&rig);
+    let view = family(&rig, "取自己失败", |view| {
+        view.members.problem.is_some()
+    })
+    .await;
+    assert_eq!(
+        view.members.problem.as_ref().map(|problem| problem.reason),
+        Some(FamilyFailure::PermissionRequired)
+    );
+    assert!(
+        view.members
+            .members
+            .iter()
+            .any(|member| member.username == "bob"),
+        "成员列表照常取到"
+    );
+    rig.core
+        .stop_answering_headered(Method::GET, "/_wonton/api/me");
+}
+
+#[tokio::test]
+async fn a_removed_member_on_me_reads_as_removed() {
+    let rig = Rig::new().await;
+    owner_ready(&rig).await;
+    rig.core.answer_always_headered(
+        Method::GET,
+        "/_wonton/api/me",
+        Headered(
+            403,
+            vec![("x-wonton-error".to_owned(), "member_removed".to_owned())],
+            "{\"error\":{\"kind\":\"member_removed\",\"message\":\"已经移除\"}}".to_owned(),
+        ),
+    );
+    refresh(&rig);
+    let view = family(&rig, "自己已被移除", |view| {
+        view.members.problem.is_some()
+    })
+    .await;
+    assert_eq!(
+        view.members.problem.as_ref().map(|problem| problem.reason),
+        Some(FamilyFailure::Removed)
+    );
+    rig.core
+        .stop_answering_headered(Method::GET, "/_wonton/api/me");
 }

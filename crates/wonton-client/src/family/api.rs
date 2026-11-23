@@ -95,7 +95,8 @@ fn problem(status: u16, kind: Option<&str>, body: &[u8]) -> FamilyProblem {
         Some("permission_required") => (FamilyFailure::PermissionRequired, missing()),
         Some("unauthenticated" | "cross_site") => (FamilyFailure::Unauthorized, None),
         Some("not_found" | "role_not_found") => (FamilyFailure::NotFound, None),
-        Some("removed") => (FamilyFailure::Removed, None),
+        // `/me` 报的是 member_removed，成员和角色接口报 removed，同一个意思。
+        Some("member_removed" | "removed") => (FamilyFailure::Removed, None),
         Some("device_registration") => (FamilyFailure::DeviceRegistered, None),
         Some("username_taken") => (FamilyFailure::UsernameTaken, None),
         Some("matrix_unavailable") => (FamilyFailure::MatrixUnavailable, None),
