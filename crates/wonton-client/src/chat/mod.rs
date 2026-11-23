@@ -451,6 +451,40 @@ impl ChatLink {
         }
     }
 
+    fn retry_send(
+        self: &Arc<Self>,
+        target: &TimelineTarget,
+        item_id: &str,
+    ) -> Result<(), CoreError> {
+        let key = TimelineKey::parse(target)?;
+        let room = self.opened(&key)?;
+        let sent = self.sent.clone();
+        let item_id = item_id.to_owned();
+        self.spawn_op_with_success(
+            "chat-op-resend-failed",
+            async move { room.retry_send(&item_id).await },
+            move || onboarding::record_sent(&sent, key.room_id.to_string()),
+        );
+        Ok(())
+    }
+
+    fn cancel_send(&self, target: &TimelineTarget, item_id: &str) -> Result<(), CoreError> {
+        let room = self.opened(&TimelineKey::parse(target)?)?;
+        let item_id = item_id.to_owned();
+        self.spawn_op("chat-op-cancel-send-failed", async move {
+            room.cancel_send(&item_id).await
+        });
+        Ok(())
+    }
+
+    fn paginate_backwards(&self, target: &TimelineTarget) -> Result<(), CoreError> {
+        let room = self.opened(&TimelineKey::parse(target)?)?;
+        self.spawn_op("chat-op-paginate-failed", async move {
+            room.paginate_backwards(PAGE).await.map(drop)
+        });
+        Ok(())
+    }
+
     pub(crate) fn timeline_action(
         self: &Arc<Self>,
         action: TimelineAction,
@@ -488,31 +522,9 @@ impl ChatLink {
             TimelineAction::RedactMessage { target, item_id } => {
                 self.redact_message(&TimelineKey::parse(&target)?, &item_id)
             }
-            TimelineAction::RetrySend { target, item_id } => {
-                let key = TimelineKey::parse(&target)?;
-                let room = self.opened(&key)?;
-                let sent = self.sent.clone();
-                self.spawn_op_with_success(
-                    "chat-op-resend-failed",
-                    async move { room.retry_send(&item_id).await },
-                    move || onboarding::record_sent(&sent, key.room_id.to_string()),
-                );
-                Ok(())
-            }
-            TimelineAction::CancelSend { target, item_id } => {
-                let room = self.opened(&TimelineKey::parse(&target)?)?;
-                self.spawn_op("chat-op-cancel-send-failed", async move {
-                    room.cancel_send(&item_id).await
-                });
-                Ok(())
-            }
-            TimelineAction::PaginateBackwards { target } => {
-                let room = self.opened(&TimelineKey::parse(&target)?)?;
-                self.spawn_op("chat-op-paginate-failed", async move {
-                    room.paginate_backwards(PAGE).await.map(drop)
-                });
-                Ok(())
-            }
+            TimelineAction::RetrySend { target, item_id } => self.retry_send(&target, &item_id),
+            TimelineAction::CancelSend { target, item_id } => self.cancel_send(&target, &item_id),
+            TimelineAction::PaginateBackwards { target } => self.paginate_backwards(&target),
             TimelineAction::SetTimelineScroll { target, scroll } => {
                 self.set_timeline_scroll(&TimelineKey::parse(&target)?, scroll)
             }
