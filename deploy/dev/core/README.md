@@ -335,7 +335,7 @@ Linux 的 Docker 不给容器加 `host.docker.internal`，冒烟自己判：Herm
 
 ```bash
 DOCKER_HOST=ssh://$DEV_HOST WONTON_DEV_BUILD_PROXY=http://127.0.0.1:7899 WONTON_DEV_BUILD_JOBS=16 \
-  WONTON_SMOKE_MODEL='<开发机 magpie 里能对话的模型名>' deploy/dev/core/smoke.sh
+  WONTON_SMOKE_MODEL='<开发机 magpie 的 /v1/models 里的 id（带 provider 前缀）>' deploy/dev/core/smoke.sh
 ```
 
 ## 在宿主上直接运行核心

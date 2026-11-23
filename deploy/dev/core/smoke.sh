@@ -325,7 +325,7 @@ ok "会话 ID 带 %2F 的密钥备份请求转给了 Tuwunel（HTTP $(head -1 <<
 
 # 回声 Bot 的安装、加密收发、crypto store 丢失与重装恢复：smoke-echo-bot.sh。
 # 本机装了 shellcheck 就顺手检查一遍：它里面的变量都来自冒烟本体，SC2154 免不了，所以不作门槛。
-command -v shellcheck >/dev/null && shellcheck "$here/smoke-echo-bot.sh" || true
+if command -v shellcheck >/dev/null; then shellcheck "$here/smoke-echo-bot.sh" || true; fi
 source "$here/smoke-echo-bot.sh"
 
 fi
@@ -660,10 +660,11 @@ expect "卸载 Hermes：吊销 Bot 的设备、停用账号" \
 expect "Hermes 的 Matrix 令牌失效" \
   "$(t -o /dev/null -w '%{http_code}' -H "Authorization: Bearer $hermes_token" "$matrix_url/_matrix/client/v3/account/whoami")" 401
 # 凭据是冒烟按 Bot 的名字直接建在宿主 magpie 上的（Hermes 不申请 models，核心不管它），冒烟自己删。
+# 宿主上可能还有同名旧条：按 id 认，删完旧条还在也不能算失败。
 host_magpie gateway-key remove "$host_model_key_id" >/dev/null || fail "删不掉 Hermes 在宿主 magpie 上的凭据"
+expect "宿主 magpie 上只删了冒烟建的凭据" \
+  "$(host_magpie gateway-key list | awk -v i="$host_model_key_id" '$1 == i')" ""
 host_model_key_id=""
-expect "宿主 magpie 上 Hermes 的凭据删掉了" \
-  "$(host_magpie gateway-key list | awk '$2 == n { print $2 }' n=com.nousresearch.hermes/default)" ""
 expect "卸载 Hermes：存文件的授权清掉了" "$(docker exec "$core" find "$WONTON_DEV_DATA" -path '*save-grants*' -name 'com.nousresearch.hermes.json')" ""
 
 fi

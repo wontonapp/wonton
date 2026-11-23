@@ -319,7 +319,7 @@ async fn an_install_waits_for_a_gateway_that_is_still_starting() {
     manager.start_detached(gateway).await.unwrap();
     pending.await.unwrap().unwrap();
 
-    let env = env_of_container(&bed.docker, &container_name("app.test", "web"));
+    let env = env_of_container(&bed.docker, &container_name("app-test", "web"));
     assert_eq!(env["BASE"], "http://models.wonton.internal:8080/v1");
     assert_eq!(env["KEY"].len(), 64);
 }
@@ -343,7 +343,7 @@ async fn a_restored_consumer_without_a_listed_entry_is_connected_by_its_record()
 
     bed.install_gateway().await;
 
-    let env = env_of_container(&bed.docker, &container_name("app.test", "web"));
+    let env = env_of_container(&bed.docker, &container_name("app-test", "web"));
     assert_eq!(env["KEY"].len(), 64);
     assert!(bed.hints().await.hints.is_empty());
 }

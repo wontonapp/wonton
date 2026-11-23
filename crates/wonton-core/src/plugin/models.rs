@@ -301,9 +301,14 @@ impl PluginManager {
         }
     }
 
-    /// 签发凭据前等网关就绪：启动时核心并发装网关和默认 Bot，先装完的那个常常赶上网关还在起。到点还没起来就
-    /// 按实际状态报错，调用方照旧安装、变量留空。没装（Absent）不用等。
-    async fn provider_when_ready(&self, langs: &Languages) -> Result<ModelsRoute, InstallError> {
+    /// 等网关就绪：启动时核心并发装网关和默认 Bot，先装完的那个常常赶上网关还在起。到点还没起来就按实际
+    /// 状态报错，调用方照旧安装、变量留空。没装（Absent）不用等。
+    ///
+    /// 调用方必须在拿 `dependencies.changing` **之前**等：起网关的 `start` 也要那把锁，锁里等只能等到超时。
+    pub(super) async fn provider_when_ready(
+        &self,
+        langs: &Languages,
+    ) -> Result<ModelsRoute, InstallError> {
         const INTERVAL: std::time::Duration = std::time::Duration::from_secs(2);
         for _ in 0..60 {
             match self.models_provider() {
@@ -315,9 +320,9 @@ impl PluginManager {
         self.provider(langs)
     }
 
-    /// 安装声明了 `models` 的插件时：等网关就绪（最多两分钟）再签发并验证凭据；没装、到点没就绪或签发失败都照样装，
-    /// 变量定义成空字符串（见 [`empty_model_vars`]）。签发失败记日志、原因记进凭据文件，
-    /// 详情页的轻提示带上它（网关不在的情形详情页现场就能算出来，不记）。
+    /// 安装声明了 `models` 的插件时签发并验证凭据（[`provider_when_ready`](Self::provider_when_ready) 已在
+    /// 拿依赖锁之前等过网关）；没装、没就绪或签发失败都照样装，变量定义成空字符串（见 [`empty_model_vars`]）。
+    /// 签发失败记日志、原因记进凭据文件，详情页的轻提示带上它（网关不在的情形详情页现场就能算出来，不记）。
     pub(super) async fn provision_models(
         &self,
         package: &PluginPackage,
@@ -328,7 +333,7 @@ impl PluginManager {
             return Ok(None);
         }
         let bot_names = self.bot_names(&manifest.id);
-        let vars = match self.provider_when_ready(langs).await {
+        let vars = match self.provider(langs) {
             Err(e) => {
                 tracing::info!(plugin = %manifest.id, error = %e, "模型网关没接上，照样安装，模型变量为空");
                 empty_model_vars(package, &bot_names)
