@@ -32,6 +32,36 @@
         }
       }
     },
+    "message.linkUpdateApp": {
+      "comment": "Shown when a message links to a wonton:// page this app version doesn't know.",
+      "extractionState": "manual",
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Update the app to open this link"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "更新 App 后才能打开这个链接"
+          }
+        },
+        "zh-Hant": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "更新 App 後才能開啟這個連結"
+          }
+        },
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "このリンクを開くにはアプリを更新してください"
+          }
+        }
+      }
+    },
     "message.copy": {
       "comment": "Item in the message menu: copy the message text. Android only.",
       "extractionState": "manual",

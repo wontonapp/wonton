@@ -1,0 +1,23 @@
+head 86ff3238（分支 fix/chat-applink，只提交没推）
+改动：917-r2.md 的必须项 1-3、小问题两条全部落地。
+- 必须项 1 按实际表名处理：`message.linkUpdateApp` 留在 message2.xcstrings（check-ui-text 按 crc32 分份要求 message2；Android 键 hash 到 1 留在 strings_message1.xml 没动），AppNavigation 的引用改 `.Message2.messageLinkUpdateApp`。没照 r2 的“挪到 message1”，因为挪过去 check-ui-text 直接报错。
+- Android 两个 monitor 改成 `IntentFilter(ACTION_VIEW).apply { addDataScheme("wonton") }`，`assertEquals(0, monitor.hits)` 保留。
+- ADR-0065 第 3 节、timeline.rs:491 的 Other 注释改口径，ADR-0041 补“认不得的 app 链接提示更新、选页不看查询/片段/多余斜杠”。
+- 两端“就地打开”用例都加了只在配对页有的“添加”按钮断言（iOS 另断言没有 Safari 视图）；壳里判断放宽到 `wonton:` 并在 parseAppLink 前剥 query/fragment/多余斜杠。
+- 顺带修：ui_fake_room 的 item() 被新分支顶到 103 行（clippy too_many_lines），拆出 paragraphs()；ui_fake_room 原本就缺 SideChatCard/SideChatState 导入，补上。
+
+验证（在 194 本机跑）：
+- Android 红：tree 回到修前（stash 测试、LinkOpener、假数据，只留编译要的导入）→ `ANDROID_SERIAL=emulator-5570 ANDROID_TASKS=:androidApp:connectedDebugAndroidTest nice -n 19 ~/wonton-dev/android-build.sh -Pwonton.abis=x86_64 -Pandroid.testInstrumentationRunnerArguments.class=app.wonton.android.ChatAppLinkTest` → BUILD FAILED，两用例都是 `IntentFilter$MalformedMimeTypeException: wonton`（ChatAppLinkTest.kt:59、:76）。日志 .work/android-red.log，结果 XML tests=2 failures=2。
+- Android 绿：同一命令在修后的树（stash 前的同一份代码）→ BUILD SUCCESSFUL，tests=2 failures=0，两用例各 4.6s / 6.1s 通过。日志 .work/android-green2.log，结果 XML 03:37:40。
+- `cargo clippy -p wonton-protocol --all-targets --locked -- -D warnings` → Finished，干净。
+- `cargo clippy -p wonton-client --all-targets --features ui-fake --locked -- -D warnings` → Finished，干净（走 cargo-slot，nice 19）。
+- `python3 scripts/check-ui-text.py` → 界面文字检查通过。
+- `bash scripts/check-file-size.sh` → 通过（只剩既有的 >800 警告，无 >2000）。
+- `rustfmt --edition 2024 --check` 两个改动文件 → 0。
+- 提交钩子（file-size、rustfmt、ui-text）全过；swiftlint 本机没装，跳过。
+
+没做/没验证：
+- **iOS 没跑、Swift 没编译**：mini-ios 的受限 ssh 入口坏，`ssh mini-ios light chat-applink -- true` 回 `zsh: no such file or directory: /Users/jiale/wonton-dev/mini-ios-remote.sh`，退出 127。ChatAppLinkUITests 的绿（和修前红）要等入口恢复后在 mini 上跑。
+- 没推分支、没开/改 PR 文案。
+
+给复审的提示：iOS 键的位置和 r2 说的相反（见上），如果复审坚持挪到 message1，得同时改 check-ui-text 的分份或加白名单。
