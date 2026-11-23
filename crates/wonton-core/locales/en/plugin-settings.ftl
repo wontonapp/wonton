@@ -307,7 +307,6 @@ plugin-settings-health-timeout = { $waiting } waited { $waited } s of { $budget 
 plugin-settings-health-timeout-next = Next step: for a service that declares a health check the deadline already stretches past its start period and retry window (without one it is the install deadline itself), so retrying once the host has calmed down usually works. A service answering 5xx all along may be up but failing on its own; see the probes and logs below.
 plugin-settings-health-target = the service
 plugin-settings-health-list-separator = { ", " }
-plugin-settings-health-unhealthy = The container { $container } failed its health check
 plugin-settings-health-exited = The container { $container } has exited (exit code { $code })
 plugin-settings-health-no-healthcheck = The container { $container } is required to be service_healthy but has no health check configured
 plugin-settings-health-webui-state = { $method } last answered: { $error }
