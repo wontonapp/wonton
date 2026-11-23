@@ -24,7 +24,7 @@ final class LicensesModel {
             let json = try String(contentsOf: url, encoding: .utf8)
             state = .loaded(try core.licenses(licensesJson: json).licenses)
         } catch {
-            state = .failed(String(describing: error))
+            state = .failed(error.localizedDescription)
         }
     }
 
@@ -67,7 +67,7 @@ struct AboutView: View {
                         WontonRow(
                             title: String(localized: .Settings.settingsLicenses),
                             value: licenses.count.map { count in
-                                String(localized: .Settings.settingsLicensesValue(count))
+                                String(localized: .Settings.settingsLicensesValue(count: count))
                             },
                             showsForward: true
                         )
@@ -120,7 +120,7 @@ struct LicensesView: View {
                 VStack(alignment: .leading, spacing: WontonTheme.spacing.s12) {
                     Text(.Settings.settingsLicensesProblem).wontonText(WontonTheme.typography.body)
                     // 原因按类别由核心按 App 的语言给，收进默认收起的详情。
-                    if let reason { ProblemDetail(text: reason) }
+                    if let reason { ProblemDetail(text: reason, minimumTargetHeight: WontonTheme.size.target) }
                     Button(.Common.commonRetry) { model.retry(core: core) }
                         .buttonStyle(WontonSmallButtonStyle())
                 }

@@ -42,7 +42,11 @@ class AssetTest(unittest.TestCase):
         self.assertEqual(licenses.cargo_about_asset("linux", "x86_64")[0], "x86_64-unknown-linux-musl")
         self.assertEqual(licenses.cargo_about_asset("darwin", "arm64")[0], "aarch64-apple-darwin")
 
-    def test_sha256_is_per_asset(self):
+    def test_sha256_is_pinned_per_asset(self):
+        self.assertEqual(
+            licenses.cargo_about_asset("darwin", "arm64")[1],
+            "45520df8680978a6e7c4023ace0e3f311c73efc208cd68e5a7f4ed4822fa0349",
+        )
         digests = {sha for _, sha in licenses.CARGO_ABOUT_ASSETS.values()}
         self.assertEqual(len(digests), len(licenses.CARGO_ABOUT_ASSETS))
 

@@ -90,6 +90,7 @@ struct SettingsTab: View {
                     .wontonText(WontonTheme.typography.body)
                     .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .topLeading)
                     .padding(WontonTheme.spacing.pageInset)
+                    .wontonPushedScreen(String(localized: .Settings.settingsLicenses), usesSystemToolbar: true)
             }
         }
     }
