@@ -25,9 +25,8 @@ deploy/dev/core/dev.sh reset                 # 停掉并删除数据、密钥、
 `dev.sh status` 查询状态，避免把客户端超时当成安装结果。
 
 `down` 后插件记录和卷都还在，容器没了；再 `up` 时核心只核对、不重建，插件在 `list` 里是 `degraded`。要接着用就
-重新装一次：普通插件先 `uninstall <ID>`（不带 `--purge`，卷和数据留着）再 `install <包>`；系统插件（模型网关
-`ai.usemagpie.magpie`）接口装不了，`uninstall <ID>` 之后重启核心（再 `down` 后 `up`，或 `reset --keep-tunnel-identity`），
-核心启动时从镜像重装。
+重新装一次：先 `uninstall <ID>`（不带 `--purge`，卷和数据留着）再 `install <包>`。系统插件也走这个流程；
+模型网关 magpie 不在锁文件里，卸载后重启核心不会从镜像装回，要用再从商店装。
 
 浏览器打开 `http://app-grafana.wonton.localhost:18480`，用主人令牌登录一次，之后自动进入 Grafana，
 不会看到 Grafana 自己的登录页。`*.localhost` 由浏览器和 curl 自动解析到本机，不用改 hosts。命令行里
