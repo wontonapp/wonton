@@ -85,13 +85,13 @@ pub(super) fn deadline_from_configs<'a>(
     }
     // 没写 `start_period` 时 `longest` 为 0，5 分钟的余量不加；检查自己的判定窗照样计入，
     // 否则 `{interval: 60s, retries: 10}` 这种要在 Docker 判不健康前 10 分钟就放弃了。
-    let retined = if longest.is_zero() {
+    let retained = if longest.is_zero() {
         Duration::ZERO
     } else {
         longest + START_PERIOD_MARGIN
     };
     // 声明得比上限还长时按上限等；`install_timeout` 配得比 60 分钟长时以它为准。
-    let budget = retined
+    let budget = retained
         .max(window)
         .clamp(install_timeout, MAX_WAIT.max(install_timeout));
     Wait {
