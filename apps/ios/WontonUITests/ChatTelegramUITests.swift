@@ -14,6 +14,8 @@ final class ChatTelegramUITests: XCTestCase {
 
     override func setUpWithError() throws {
         continueAfterFailure = false
+        // 顶栏叠放那条要翻遍整条时间线，默认 360 秒会被 kill 在半路、连断言里的树都拿不到。
+        executionTimeAllowance = 900
         app = XCUIApplication()
         // 不恢复上一次的场景状态：房间记着上次看到哪一条（SceneStorage），上一条用例翻到别处会带到这一条来。
         app.launchArguments += ["-AppleLanguages", "(en)", "-AppleLocale", "en_US", "-ApplePersistenceIgnoreState", "YES"]
@@ -124,8 +126,6 @@ final class ChatTelegramUITests: XCTestCase {
 
     /// 顶栏下面照 Telegram 的叠放：插件横幅在最上，旁聊标题在它下面。
     func testPluginBannerSitsAboveSideChatTitle() {
-        // 这条要翻遍整条时间线，默认 360 秒不够：被 kill 时连断言里的树都拿不到。
-        executionTimeAllowance = 900
         enter(Self.notesRoom)
         // 卡片挂在靠近底部的一条上、又不撑高：先到底，再往回找。reveal 的 200 段在这条用例里会超时，
         // 改用有界、逐段判存在和可见的 revealClearOfHint。
