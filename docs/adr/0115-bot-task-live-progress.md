@@ -5,11 +5,6 @@
 - 边界：[ADR-0113](0113-media-transport.md) 的传输、播放会话是核心自己持有的长任务，进度和锁屏走它自己的那套，不并进本篇；
   本篇只管聊天里 Bot 的回合。收件人按人的规则引用 [ADR-0114](0114-plugin-agent-platform.md) 第 4 项，深链引用第 6 项
 - 依赖：ADR-0003 的加密推送链路和中继；iOS 的推送部分要 Apple 付费开发者账号（未就绪）
-- 关联：[ADR-0003](0003-matrix-and-encrypted-push.md)（加密推送、中继）、[ADR-0015](0015-small-components-standard-interfaces.md)（标准接口、不为某个 Agent 开特例）、
-  [ADR-0016](0016-mcp-bus-and-confirmations.md)（MCP 总线、确认卡片）、[ADR-0041](0041-app-links-and-shortcuts.md)（`wonton://` 链接）、
-  [ADR-0043](0043-app-languages.md)（壳的文字）、[ADR-0082](0082-agent-run-status.md)（Agent 运行状态）、[ADR-0101](0101-notifications.md)（通知、锁屏内容、实时活动方向）、
-  [ADR-0102](0102-app-lock.md)（App 锁、锁屏隐私）、[ADR-0108](0108-hermes-default-kernel.md)（只维护 Hermes）、
-  [ADR-0113](0113-media-transport.md)（核心持有的媒体长任务）、[ADR-0114](0114-plugin-agent-platform.md)（按人通知、深链）
 
 ## 背景
 
@@ -68,19 +63,22 @@ Bot 经 MCP 总线报进度（[ADR-0016](0016-mcp-bus-and-confirmations.md)）�
   - `progress` 是可选的 0～1；下载这类知道总量的给，其余不给（不确定进度）。
   - `result` 是给聊天用的总结。锁屏不放自由文字（见第 7 节），所以它不进实时活动。
 - 回应：`{"activity": "none" | "armed" | "running" | "ended", "reason": "..."}`。`none` 的 `reason` 说清为什么
-  （`too_short`、`no_device`、`activities_disabled`、`too_many`），Bot 照实转告，不假装上了锁屏。
-- `run` 缺省时按（Bot，房间）当同一轮；同一轮再来的调用推进它，`run` 换了就是新一轮，把旧的一轮按 `uncertain` 结束。
+  （`not_a_turn`、`too_short`、`no_device`、`activities_disabled`、`too_many`），Bot 照实转告，不假装上了锁屏。
+- `run` 缺省时按（Bot，房间）当同一轮，但这时必须靠 `Caller.chain` 证明这是本 Bot 的一轮（见第 2 节）；
+  同一轮再来的调用推进它，`run` 换了就是新一轮，把旧的一轮按 `uncertain` 结束。
 - 工具**不改** ADR-0082 的消息格式：状态消息还是聊天里的那一行，两边可以同时存在。对不上时锁屏以工具为准，聊天以消息为准。
 - 核心不核对 `run` 那个事件真的存在（它不读房间），也不核对来源房间的成员：和 0082 一样，进度和来源都是自述。
 - 核心把这条调用记进那条 Bot 的调用链和审计（ADR-0061），出问题能追到哪个 Bot 在自报。
 
 ### 2. 什么任务配得上锁屏：人来发起、跑够 30 秒、每台设备最多 2 条
 
-- **发起人是本机的人**。从 `Caller.sender` 归一成“人”：`None`（私聊没带 `X-Wonton-On-Behalf-Of`，也没报过轮次）按 Bot 的归属人算，
-  共享 Bot 没有单个归属人，按主人；
-  `Local(mxid)` 是本机主人时映射成主人（设备表里的 `None`），家人映射成用户名；`Unknown`（远端好友、认不出）不上锁屏。
+- **先过“是人来发起的一轮”**：这轮得有一个真人的轮次挂得上。判据二选一：调用带 `run`（Matrix 事件 ID，核心不核对它存在，
+  只当“这轮有出处”），或者 `Caller.chain` 是这个 Bot 的活跃轮次。两样都没有（定时任务、没有轮次的别的 Bot 委派）回
+  `none`/`not_a_turn`，只发普通通知。这就是背景里“定时任务不上锁屏”的落地规则，也是第 12 节验收的那条测试。
+- **发起人（只用来挑设备）**：从 `Caller.sender` 归一成“人”：`Local(mxid)` 是主人时映射成主人（设备表里的 `None`），
+  家人映射成用户名；`None` 按 Bot 的归属人算，共享 Bot 没有单个归属人，按主人；`Unknown`（远端好友、认不出）不上锁屏。
   设备用 `PushService` 现有的 `devices_of(person: Option<&str>)` 取（`None` 是主人，其余是用户名），不直接把 MXID 传给它。
-  定时任务、别的 Bot 交给它干的活不上锁屏。
+  别的 Bot 把活转进本 Bot 的轮次时带的是真人的 `Local`，按那个人挑设备。
 - **第一轮 `working` 先只“挂上”**（`armed`），到下面任一条件才真正开始：
   - 连续工作满 30 秒；
   - 报了 `progress`；
@@ -89,7 +87,10 @@ Bot 经 MCP 总线报进度（[ADR-0016](0016-mcp-bus-and-confirmations.md)）�
 - 目标设备只有发起人这个“人”名下的已配对设备，规则同 [ADR-0114](0114-plugin-agent-platform.md) 第 4 项的按人收件：主人是 `None`，家人是用户名。
 - Google 把“聊天消息”列为不适合 Live Update，长任务是另一种形状：人当场发起、有开始和结束、不是一条条新消息刷屏，
   所以只有这里申请提升，普通消息仍然是普通通知（和 ADR-0101 第 4 节同一句）。
-- **每台设备最多 2 条**并行的实时活动。超了按相关度取舍：`waiting` 优先，其次最早的；被挤掉的按 `uncertain` 结束。
+- **每台设备最多 2 条**并行的实时活动，取舍规则写死：
+  1. 没满 2 条：进；
+  2. 满了且还有 `armed`/`working` 的：挤掉最早的非 `waiting`，被挤的按 `uncertain` 结束；
+  3. 满了且两条都在 `waiting`：新的这轮回 `none`/`too_many`，不挤正在等主人的；下一次上报再试。
 - 主人随手划掉一条（ActivityKit 的 `activityState == .dismissed`）以后，这一轮不再为这台设备重开。
 - 被 `waiting` 的卡片过期的、主人答完的，立刻结束。
 
@@ -110,7 +111,8 @@ Bot 经 MCP 总线报进度（[ADR-0016](0016-mcp-bus-and-confirmations.md)）�
 ### 4. 数据形状：核心给类别和数，壳写文字
 
 服务端新增 `GET /_wonton/api/runs`（已配对设备，同其他 ViewModel 的鉴权）和客户端核心的
-`subscribe_live_runs()`：整份列表，每项是
+`subscribe_live_runs()`：整份列表，每项是下面的结构。这份列表吸收 ADR-0101 第 4 节的 `runs_waiting()`：以前那个“只给 `Waiting`、
+最多 3 条”的视图不再单独存在，等确认的项就是本列表 `state == Waiting` 的部分，上限统一成每设备 2 条。
 
 ```rust
 pub struct LiveRunsViewModel { pub runs: Vec<LiveRun> }   // 最多按设备 2 条取，服务端已经挑过
@@ -123,7 +125,7 @@ pub struct LiveRun {
     pub bot_name: String,         // 只在本地画；进 APNs 载荷的没有
     pub state: AgentRunState,     // 复用 ADR-0082：Working/Waiting/Done/Failed/Uncertain/Other
     pub phase: RunPhase,          // 未知落 Other
-    pub percent: Option<u8>,      // 0～100，只在有确定进度时给
+    pub percent: Option<u8>,      // 0～100，只在有确定进度时给；明文里叫 pct
     pub steps: u32,
     pub started_at_ms: u64,
     pub updated_at_ms: u64,
@@ -160,6 +162,9 @@ pub struct LiveRun {
 - 推送路径的壳不猜：载荷里有什么画什么，`timestamp` 旧的丢掉。
 
 ### 6. 设备登记和中继
+
+**注册表（第 4 节）是唯一的 run 清单**：活动、令牌都按它里面的 (设备, run) 绑定；ADR-0101 的 `runs_waiting()` 并进来以后，
+等确认的卡片也从这里取，不再另存一份等待视图。
 
 **iOS 的令牌**都由 App 经隧道登记给核心，存活在 `core/push/live.json`：
 
@@ -207,6 +212,7 @@ pub struct LiveRun {
   放明文只说明“有个任务在跑”，看不出内容。
 - 指向卡片时只放 `card` 和 `canAnswer`；按钮上的“允许/拒绝”是壳写死的词，进本地化资源。
   确认通知自己的推送（ADR-0101 §5）照旧带选项标签，那两个词的来源是核心，不是用户数据；实时活动这边为了本地化和 4 KB 只放布尔。
+- 提示（`alert`）用 `loc-key` 加数字参数，由 App 按系统语言写；只有进入 `waiting` 和结束时带提示，平常更新不响。
 - 过期时间只有一份：APNs 的 `stale-date`（第 3 节），系统的 `isStale` 由它驱动，`content-state` 不再放 `staleAt`。
   本地路径没有推送，壳按 `LiveRun.stale_at_ms` 画同一行提示。
 - 锁屏内容单独一个开关（新增 `NotificationCategory::Task`，默认开）；关掉只写“有任务在跑”。
@@ -266,7 +272,7 @@ iOS 的呈现按平台指引：锁屏一条，灵动岛紧凑左侧 App 标记�
 - **契约**：`wonton-protocol` 的 `runs` 模块（上面的结构体和 `RunPhase`，测试盖未知值落 `Other`、`LiveRun` 的字段往返、
   `can_answer` 只对标准按钮为 true）；`SettingsEntry::TaskProgress`；`wonton__report_progress` 的参数和错误类别；
   中继的 `POST /v1/live-activity`、`PUT/DELETE /_wonton/push/live` 的 body 与 APNs 载荷（固定 golden 载荷测试，
-  断言 `content-state` 里没有选项文字）。
+  断言 `content-state` 里没有选项文字，`waiting` 和结束带 `alert` 的 `loc-key`、平常更新不带）。
 - **提供方**：家里的核心（聚合、节流、推送、VM）+ 中继（APNs）+ 两端壳（ActivityKit、通知）。
 - **消费方**：两端壳。换中继不改核心和壳（只有 HTTP 契约）；换客户端只要实现“拉 `/_wonton/api/runs` 或解 `run_progress`
   → 画列表 → 深链”，核心不认平台。
@@ -278,8 +284,8 @@ iOS 的呈现按平台指引：锁屏一条，灵动岛紧凑左侧 App 标记�
 
 1. **核心**：`run_progress` 模块（注册表、聚合、节流、`Uncertain` 合成、8 小时/10 分钟收尾）、`wonton__report_progress`、
    `GET /_wonton/api/runs`、`subscribe_live_runs()`。
-   验收：行为测试——工具序列到 VM 的迁移、30 秒门槛、5 点/10 秒节流与合并、两个上限和挤掉、离线变不确定、超时结束、
-   定时任务不上锁屏、别的 Bot 的调用不能推进。
+   验收：行为测试——工具序列到 VM 的迁移、无 `run` 无 `chain` 的定时上报回 `not_a_turn` 不上锁屏、30 秒门槛、
+   5 点/10 秒节流与合并、两条都在 `waiting` 时第三次回 `too_many`、只有非 `waiting` 时才挤、离线变不确定、超时结束。
 2. **Android 画**：从 VM 画进度通知（36 上 `ProgressStyle`、以下 `setProgress`）、提升请求（先查 `canPostPromotedNotifications`）、
    深链、公开版和隐藏版、设置开关。
    验收：投递假 VM 的截图测试；模拟器上对着开发栈真跑一遍（装、跑长任务、锁屏看、点回聊天）。
@@ -329,8 +335,9 @@ iOS 的呈现按平台指引：锁屏一条，灵动岛紧凑左侧 App 标记�
 
 - **ADR-0003**：通过后要在它里面补一节例外：实时活动的概要是明文，只放枚举、数和随机 ID，文字在壳里；普通消息的推送加密不变。
   本节先记着，本 PR 不改它的正文。
-- **ADR-0101**：本 PR 已经在状态行和第 4 节写上到本篇的链接和“扩充中”，范围以本篇为准；第 5 节要给 `Task` 类别加锁屏开关，
-  第 1 节的按钮要加实时活动入口。后面两项等它通过后再补。
+- **ADR-0101**：本 PR 已经在状态行和第 4 节写上到本篇的链接和“扩充中”，范围以本篇为准；§4 的 `runs_waiting()` 由本篇的
+  注册表吸收，它原来的“最多 3 条”改成和本篇同一套“每设备 2 条、`waiting` 优先、两条都在等时回 `too_many`”；
+  第 5 节要给 `Task` 类别加锁屏开关，第 1 节的按钮要加实时活动入口。后面两项等它通过后再补。
 - **ADR-0113**：媒体任务不并进来，进度和锁屏各走各的；只有播放会话等确认时用本篇的卡片按钮规则。
 - **ADR-0114**：收件人按第 4 项的“按人”规则，深链按第 6 项；本篇不重写它们。
 - **ADR-0082**：状态取值和类别的**含义**复用，消息格式不动；锁屏的数据来自新工具，冲突时两边各按自己的源。

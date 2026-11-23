@@ -144,8 +144,8 @@ NSE 和分享扩展不同：分享扩展是前台、可等；NSE 只有 30 秒�
 
 ### 4. 灵动岛 / 实时活动（等主人确认的 Agent 任务；长任务进度见 [ADR-0115](0115-bot-task-live-progress.md)）
 
-- 数据源已经够：`AgentRunState` 的 `Waiting`（等主人确认，`agent_run.rs:14-22`），加上会话名和开始时间。
-- 核心加 `runs_waiting()` 视图，只给 `Waiting` 的，最多 3 条。
+- 数据源现在由 [ADR-0115](0115-bot-task-live-progress.md) 的注册表统一给：`runs_waiting()` 并进去，就是它的列表里
+  `state == Waiting` 的部分。上限也从这里改：每台设备最多 2 条，`Waiting` 优先，两条都在等时新的回 `too_many`。
 - **什么时候开**：
   - iOS `Activity.request(attributes:content:pushType: .token)`，在 App 运行并看到某轮进入 `Waiting` 时开；主人答完
     （`Done`/`Failed`）结束（`end`）；Live Activity 最长活跃 8 小时，超过系统自动结束（Apple 文档）。
