@@ -411,11 +411,13 @@ private fun RoomOverlays(
     onRedact: (MessageMenuTarget?) -> Unit,
 ) {
     menu?.let { opened ->
+        val groups = remember(timeline.revision) { timeline.items.imageGroups() }
         MessageMenu(
             message = opened.message,
             bubble = opened.bubble,
             visible = visible,
             core = core,
+            groupImages = opened.message.group?.let { groups[opened.message.senderId to it.id] },
             onReply = draft::replyTo,
             onForward = { onForward(opened.itemId) },
             onRedact = { onRedact(opened) },

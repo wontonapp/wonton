@@ -49,6 +49,7 @@ import androidx.compose.ui.window.Popup
 import androidx.compose.ui.window.PopupPositionProvider
 import androidx.compose.ui.window.PopupProperties
 import app.wonton.client.ClientCore
+import app.wonton.protocol.ImageContent
 import app.wonton.protocol.MessageAction
 import app.wonton.protocol.QuotedMessage
 import app.wonton.protocol.TimelineMessage
@@ -79,6 +80,7 @@ fun MessageMenu(
     bubble: Rect,
     visible: Rect,
     core: ClientCore,
+    groupImages: List<ImageContent>? = null,
     onReply: (QuotedMessage) -> Unit,
     onForward: () -> Unit,
     onRedact: () -> Unit,
@@ -105,7 +107,7 @@ fun MessageMenu(
                 content = {
                     // 预览不接受操作，读屏也不再念一遍。
                     Box(Modifier.width(width).clearAndSetSemantics {}) {
-                        BubbleSurface(message, core, false, false, Modifier, {})
+                        BubbleSurface(message, core, false, false, Modifier, {}, groupImages = groupImages)
                     }
                     MenuSurface(message, onReply, onForward, onRedact, onDismiss)
                 },
