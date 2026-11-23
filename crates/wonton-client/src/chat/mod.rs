@@ -461,7 +461,7 @@ impl ChatLink {
         let sent = self.sent.clone();
         let item_id = item_id.to_owned();
         self.spawn_op_with_success(
-            "chat-op-resend-failed",
+            |_| "chat-op-resend-failed",
             async move { room.retry_send(&item_id).await },
             move || onboarding::record_sent(&sent, key.room_id.to_string()),
         );
