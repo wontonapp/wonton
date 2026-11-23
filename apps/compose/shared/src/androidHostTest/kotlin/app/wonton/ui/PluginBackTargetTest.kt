@@ -25,4 +25,10 @@ class PluginBackTargetTest {
             assertEquals(case.name, case.expected, pluginBackTarget(case.customView, case.history))
         }
     }
+
+    @Test
+    fun logUrlDropsQueryAndFragment() {
+        assertEquals("http://app.test/app/", logUrl("http://app.test/app/?code=abc#/album/2"))
+        assertEquals("http://app.test/app/", logUrl("http://app.test/app/#/album/2"))
+    }
 }

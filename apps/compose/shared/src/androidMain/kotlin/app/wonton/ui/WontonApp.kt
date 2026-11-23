@@ -153,7 +153,8 @@ private fun AppContent(
     val panelActive = shown == TabRef.Chat && !pluginShown && !nav.settingsOverlay &&
         !view.showsApps && !nav.chat.showingBackup && !nav.chat.startingChat && !nav.chat.showingConfirmations
     val panel = if (panelActive && (!expanded || nav.chat.openRoom != null)) {
-        rememberChatPanelState(if (nav.chat.openRoom == null) PanelEdge.TOP else PanelEdge.BOTTOM, panelScope)
+        rememberChatPanelState(if (nav.chat.openRoom == null) PanelEdge.TOP else PanelEdge.BOTTOM, panelScope,
+            nav.pages)
     } else null
     if (panel != null && panel.scope == PanelScope.Main) {
         SideEffect { panel.feed(view.panel, view.panelSelected) }

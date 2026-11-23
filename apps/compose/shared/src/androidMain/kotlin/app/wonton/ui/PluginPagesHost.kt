@@ -273,7 +273,7 @@ internal class WebPageState(val place: PlacedTab, val pages: PagesState) {
 
     /** 返回：全屏视频先退出，网页历史里会换页的一步照常后退，剩下的一步关掉当前页（核心弹栈）。 */
     fun back() {
-        if (controller.back() == PluginBackTarget.ClosePage) pages.send(Action.Pages(PageAction.ClosePage))
+        controller.backOrClose { pages.send(Action.Pages(PageAction.ClosePage)) }
     }
 
     fun loadStarted() {
