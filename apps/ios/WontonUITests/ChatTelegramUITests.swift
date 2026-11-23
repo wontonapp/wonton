@@ -130,7 +130,8 @@ final class ChatTelegramUITests: XCTestCase {
         // 卡片挂在靠近底部的一条上、又不撑高：先到底，再往回找。reveal 的 200 段在这条用例里会超时，
         // 改用有界、逐段判存在和可见的 revealClearOfHint。
         if app.buttons["timelineDown"].exists { tap(app.buttons["timelineDown"]) }
-        let card = app.buttons["sideChatCard"]
+        // 按标识找、不限定控件类型：同一张卡在别处是按钮，这里跟着顶栏那条走。
+        let card = element("sideChatCard")
         XCTAssertTrue(revealClearOfHint(card), "翻不到旁聊卡
 \(app.debugDescription)")
         tap(card)
