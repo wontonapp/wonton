@@ -199,10 +199,14 @@ pub fn sync(dir: &Path, config: &Config) -> anyhow::Result<bool> {
 }
 
 pub fn write(install_dir: &Path, settings: &EntrySettings) -> anyhow::Result<()> {
+    // 已发布的证书还不认识新后缀时按旧名字写，别让入口拿着对不上的 crt-list 起。
+    let names =
+        crate::entry_certificate::published_names(&install_dir.join("entry/certs/site.pem"));
+    let domain = crate::entry_certificate::served_suffix(&names, &settings.domain);
     sync(
         install_dir,
         &Config {
-            domain: &settings.domain,
+            domain: &domain,
             connector: crate::entry_haproxy::CONNECTOR_ADDRESS,
             registration: settings.registration.as_ref(),
             relay_ca: settings.relay_ca.as_deref(),
@@ -215,6 +219,10 @@ pub fn write(install_dir: &Path, settings: &EntrySettings) -> anyhow::Result<()>
 fn write_mounted_config(path: &Path, text: &str) -> anyhow::Result<()> {
     use std::io::Write;
     use std::os::unix::fs::OpenOptionsExt;
+    // 上一版把要写的文件漏了时 Docker 会在宿主侧把挂载源建成目录；改名换不掉目录，先删掉。
+    if path.is_dir() {
+        std::fs::remove_dir_all(path).with_context(|| format!("替换目录 {}", path.display()))?;
+    }
     let mut file = std::fs::OpenOptions::new()
         .write(true)
         .create(true)
@@ -234,6 +242,11 @@ impl ModelSnapshot {
         let mut files = Vec::new();
         for name in ["haproxy.cfg", "certs/public.crt-list", "certs/lan.crt-list"] {
             let path = install_dir.join("entry").join(name);
+            // 旧版把挂载源建成了目录：和“还没有这个文件”一样，回滚时按文件重写。
+            if path.is_dir() {
+                files.push((path, None));
+                continue;
+            }
             let content = match std::fs::read_to_string(&path) {
                 Ok(content) => Some(content),
                 Err(error) if error.kind() == std::io::ErrorKind::NotFound => None,
@@ -252,6 +265,7 @@ impl ModelSnapshot {
                     write_mounted_config(&path, &content)
                 }
                 Some(content) => crate::install::write_private(&path, &content),
+                None if path.is_dir() => std::fs::remove_dir_all(&path).map_err(Into::into),
                 None => match std::fs::remove_file(&path) {
                     Ok(()) => Ok(()),
                     Err(error) if error.kind() == std::io::ErrorKind::NotFound => Ok(()),

@@ -370,7 +370,12 @@ async fn serve() -> anyhow::Result<()> {
         tracing::warn!(%error, "启动时客户端入口配置未对上，运行循环会重试");
     }
     if let (Some(containers), Some(clients)) = (entry, clients) {
-        wonton_core::entry_runtime::spawn(containers, clients, notices.clone(), gateway.clone());
+        wonton_core::entry_runtime::spawn(
+            containers,
+            clients,
+            notices.clone(),
+            Some(gateway.clone()),
+        );
     }
     let _mail_worker = start_mailpit(&cfg, mailpit.as_ref(), system_http, gateway.clone())?;
     serve::run_gateway(

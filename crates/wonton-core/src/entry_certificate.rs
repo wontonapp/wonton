@@ -348,13 +348,19 @@ pub(crate) fn published_names(path: &Path) -> Vec<String> {
     names
 }
 
-/// 证书里的名字是否覆盖这个后缀：相等，或者是它下面的标签（`probe.home.example.test`）。
-/// DNS 名字不分大小写。
-fn covers(names: &[String], suffix: &str) -> bool {
-    let suffix = suffix.to_ascii_lowercase();
-    names.iter().any(|name| {
-        let name = name.to_ascii_lowercase();
-        name == suffix || name.ends_with(&format!(".{suffix}"))
+/// 证书能不能认证这个名字：同名，或证书里的 `*.x` 通配它下面正好一层。DNS 名字不分大小写。
+/// 子域不在父域的覆盖里：给 `a.example.test` 签的证书认证不了 `example.test`。
+fn covers(names: &[String], name: &str) -> bool {
+    let name = name.to_ascii_lowercase();
+    names.iter().any(|claimed| {
+        let claimed = claimed.to_ascii_lowercase();
+        if claimed == name {
+            return true;
+        }
+        claimed.strip_prefix("*.").is_some_and(|base| {
+            name.strip_suffix(&format!(".{base}"))
+                .is_some_and(|label| !label.is_empty() && !label.contains('.'))
+        })
     })
 }
 

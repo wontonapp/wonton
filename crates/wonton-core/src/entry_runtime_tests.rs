@@ -53,7 +53,6 @@ impl Rig {
             dir.path().to_owned(),
             dir.path().join("data"),
             Engine::for_test(),
-            Instance::default(),
             None,
         );
         Self {
@@ -211,7 +210,7 @@ async fn settle(domain: &Domain) {
 #[tokio::test(start_paused = true)]
 async fn none_mode_renews_after_the_owner_sets_a_domain() {
     let rig = Rig::new().await;
-    spawn(rig.containers(), rig.domain.clone(), None);
+    spawn(rig.containers(), rig.domain.clone(), None, None);
     // 没配域名：没有要服务的东西，也不该联系 CA。
     tick(Duration::from_secs(3 * 3600)).await;
     assert_eq!(rig.entries(), 0);
@@ -237,7 +236,7 @@ async fn none_mode_renews_after_the_owner_sets_a_domain() {
 async fn own_domain_install_renews() {
     let rig = Rig::new().await;
     own_domain_settings(rig.dir.path());
-    spawn(rig.containers(), rig.domain.clone(), None);
+    spawn(rig.containers(), rig.domain.clone(), None, None);
     until("入口和连接器建起来", || rig.created()).await;
     until("起来那一轮就排一次续期", || rig.attempts() > 0).await;
     let before = rig.attempts();
@@ -251,7 +250,7 @@ async fn own_domain_install_renews() {
 async fn given_name_install_renews() {
     let rig = Rig::new().await;
     registered_settings(rig.dir.path());
-    spawn(rig.containers(), rig.domain.clone(), None);
+    spawn(rig.containers(), rig.domain.clone(), None, None);
     until("入口和连接器建起来", || rig.created()).await;
     let connector = rig
         .docker
@@ -263,4 +262,21 @@ async fn given_name_install_renews() {
     tick(Duration::from_secs(90 * 24 * 3600)).await;
     until("90 天里天天续期", || rig.attempts() >= before + 89).await;
     assert_eq!(rig.entries(), 1);
+}
+
+/// 新证书发布后运行循环收到唤醒，不等 30 秒的退避就重对一次账。
+#[tokio::test(start_paused = true)]
+async fn a_published_certificate_wakes_the_loop() {
+    let rig = Rig::new().await;
+    std::fs::write(
+        rig.dir.path().join("entry/domain.json"),
+        json!({"suffix": "home.example.test"}).to_string(),
+    )
+    .unwrap();
+    spawn(rig.containers(), rig.domain.clone(), None, None);
+    // 第一轮对账在 30 秒后退避到点，测试不等钟；唤醒要立刻建起入口。
+    assert!(!rig.created());
+    rig.domain.notify_refresh();
+    until("被唤醒的那轮把入口建起来", || rig.created()).await;
+    assert!(rig.dir.path().join("entry/haproxy.cfg").is_file());
 }

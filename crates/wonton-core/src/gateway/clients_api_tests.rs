@@ -100,7 +100,6 @@ impl Rig {
             install.clone(),
             h.data_dir.clone(),
             h.docker.engine().await,
-            Instance::default(),
             None,
         );
         let gateway = Arc::new(

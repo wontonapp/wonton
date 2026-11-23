@@ -29,7 +29,6 @@ pub(crate) fn open_domain(
         dir.clone(),
         cfg.data_dir.clone(),
         engine.clone(),
-        cfg.instance.clone(),
         notices.clone(),
     )))
 }

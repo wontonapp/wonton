@@ -185,6 +185,8 @@ pub struct EntryContainers {
     operation: std::sync::Arc<tokio::sync::Mutex<Option<crate::entry_haproxy::Model>>>,
     /// 入口主进程的管理地址；测试指向临时端口。
     reload_addr: String,
+    /// 上一次成功让入口读过的 `site.pem` 摘要：同名续期换的只是证书内容，配置文本不变，也要重载。
+    loaded_cert: std::sync::Arc<std::sync::Mutex<Option<u64>>>,
 }
 
 impl EntryContainers {
@@ -205,6 +207,7 @@ impl EntryContainers {
             binding: None,
             operation: std::sync::Arc::new(tokio::sync::Mutex::new(None)),
             reload_addr: ENTRY_RELOAD_ADDR.to_owned(),
+            loaded_cert: std::sync::Arc::new(std::sync::Mutex::new(None)),
         }
     }
 
@@ -254,8 +257,12 @@ impl EntryContainers {
         }
         let core = self.core_container.as_deref().expect("已检查核心容器");
         let (_, networks) = self.networks(core).await?;
-        let mut model =
-            crate::entry_haproxy::Model::federation_only(&settings.domain, &settings.domain);
+        // 证书还没换到新后缀时先按旧名字服务（和 `write_config` 同一条规则）。
+        let names = crate::entry_certificate::published_names(
+            &self.install_dir.join("entry/certs/site.pem"),
+        );
+        let domain = crate::entry_certificate::served_suffix(&names, &settings.domain);
+        let mut model = crate::entry_haproxy::Model::federation_only(&domain, &domain);
         model.public_labels = if public_access {
             public_labels
         } else {
@@ -317,6 +324,25 @@ impl EntryContainers {
         &self.data_dir
     }
 
+    fn cert_digest(&self) -> Option<u64> {
+        use std::hash::{Hash, Hasher};
+        let pem = std::fs::read(self.install_dir.join("entry/certs/site.pem")).ok()?;
+        let mut hasher = std::collections::hash_map::DefaultHasher::new();
+        pem.hash(&mut hasher);
+        Some(hasher.finish())
+    }
+
+    /// 证书内容变过（含同名续期）：上次加载的不是现在这份。
+    fn cert_changed(&self) -> bool {
+        let current = self.cert_digest();
+        *self.loaded_cert.lock().expect("证书摘要锁") != current
+    }
+
+    fn remember_cert(&self) {
+        let current = self.cert_digest();
+        *self.loaded_cert.lock().expect("证书摘要锁") = current;
+    }
+
     /// 有联邦或者任何一个打开的入口就要入口容器；有入口就要连接器。
     ///
     /// 入口的开关（ADR-0021）和 ADR-0090 的总开关要等设置里有开关以后才可能关掉它；
@@ -334,12 +360,32 @@ impl EntryContainers {
     pub async fn reconcile(&self, settings: Option<&EntrySettings>) -> Result<(), EntryError> {
         let mut applied_model = self.operation.lock().await;
         *applied_model = None;
-        self.reconcile_inner(settings).await
+        let target = Target::resolve(&self.install_dir, settings)?;
+        // 有设置文件时配置一般由 `wonton-core init` 或客户端开关写好，这里只对容器（别把带标签的模型
+        // 覆盖成只有联邦）；文件缺了（旧版坏掉的安装）或证书换过（要按新证书重算名字）就写一份。
+        // 没有设置文件的装法没有第二个写入者，每轮都按 `domain.json` 和已发布的证书写。
+        let missing = !self.install_dir.join("entry/haproxy.cfg").is_file();
+        let cert_changed = self.cert_changed();
+        self.reconcile_target(
+            target.as_ref(),
+            settings.is_none() || missing || cert_changed,
+        )
+        .await
     }
 
+    /// 客户端开关先 `write_model` 再走这里：模型里带着标签，所以不能再按“只有联邦”重写。
     async fn reconcile_inner(&self, settings: Option<&EntrySettings>) -> Result<(), EntryError> {
         let target = Target::resolve(&self.install_dir, settings)?;
-        let Some(target) = &target else {
+        self.reconcile_target(target.as_ref(), false).await
+    }
+
+    /// 按目标对容器和配置对账：缺的建、多的删、镜像换了重建、网络没接上就接上。
+    async fn reconcile_target(
+        &self,
+        target: Option<&Target>,
+        write: bool,
+    ) -> Result<(), EntryError> {
+        let Some(target) = target else {
             // 没有要服务的名字和证书：两个容器都删掉，不去动网络。
             for component in [ENTRY_COMPONENT, CONNECTOR_COMPONENT] {
                 self.engine.remove_container(&self.name(component)).await?;
@@ -351,23 +397,32 @@ impl EntryContainers {
             return Err(EntryError::CoreNotInContainer);
         };
         let (project, networks) = self.networks(core).await?;
-        let changed = self.write_config(target, &networks.connector)?;
+        let changed = write && self.write_config(target, &networks.connector)?;
+        let cert_changed = self.cert_changed();
         let existed = self
             .engine
             .inspect_container(&self.name(ENTRY_COMPONENT))
             .await?
             .is_some();
         let (entry, connector) = Self::wanted(target);
+        let mut started = false;
         for (wanted, component) in [(entry, ENTRY_COMPONENT), (connector, CONNECTOR_COMPONENT)] {
             if !wanted {
                 self.engine.remove_container(&self.name(component)).await?;
                 continue;
             }
             let side = self.side(component, &networks, target)?;
-            self.ensure(&side, &project).await?;
+            started |= self.ensure(&side, &project).await?;
         }
-        if changed && existed && entry {
-            self.reload().await?;
+        // 刚起/重建的入口自己会读当前证书，但这一轮要重载时得等重载成功才算数：重载失败后
+        // 记成已加载，下一轮既没有配置变化也没有证书变化，就再也不会重试。
+        let reload = (changed || cert_changed) && existed && entry;
+        if started && !reload {
+            self.remember_cert();
+        }
+        if reload {
+            self.reload(&self.reload_addr).await?;
+            self.remember_cert();
         }
         Ok(())
     }
@@ -528,7 +583,8 @@ impl EntryContainers {
 
     /// 创建一侧的容器：已经在了就只补齐网络；镜像或运行参数变了、或者是上一版 compose 留下的同名容器，删了重建；
     /// 名字被别的资源占着就停。
-    async fn ensure(&self, side: &Side, project: &str) -> Result<(), EntryError> {
+    /// 返回这次有没有建/重建容器（新容器起来时会自己读当前证书）。
+    async fn ensure(&self, side: &Side, project: &str) -> Result<bool, EntryError> {
         let name = self.name(side.component);
         let found = self.engine.inspect_container(&name).await?;
         let mut previous_version = false;
@@ -577,7 +633,7 @@ impl EntryContainers {
                     .await?;
             }
             self.engine.start_container(&name).await?;
-            return Ok(());
+            return Ok(true);
         }
         if recreate {
             self.engine.create_container(&name, body).await?;
@@ -592,7 +648,7 @@ impl EntryContainers {
         if recreate {
             self.engine.start_container(&name).await?;
         }
-        Ok(())
+        Ok(recreate)
     }
 
     fn owns(&self, labels: &HashMap<String, String>, component: &str, project: &str) -> bool {

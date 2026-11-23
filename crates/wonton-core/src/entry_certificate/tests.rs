@@ -334,7 +334,12 @@ fn certificate_names_cover_their_domain() {
     assert!(covers(&names, "home.example.test"));
     assert!(covers(&names, "HOME.Example.Test"), "名字不分大小写");
     assert!(!covers(&names, "new.example.test"));
-    assert!(covers(&names, "example.test"), "父域也按后缀算");
+    assert!(!covers(&names, "example.test"), "父域不在证书的名字里");
+    let wildcard = vec!["*.example.test".to_owned()];
+    assert!(covers(&wildcard, "home.example.test"), "通配符认证下一层");
+    assert!(covers(&wildcard, "HOME.EXAMPLE.TEST"));
+    assert!(!covers(&wildcard, "example.test"), "通配符不认证本名");
+    assert!(!covers(&wildcard, "a.home.example.test"), "通配符只认一层");
 }
 
 #[test]
@@ -357,5 +362,10 @@ fn the_served_suffix_waits_on_the_published_certificate() {
         served_suffix(&["*.old.example.test".to_owned()], "new.example.test"),
         "new.example.test",
         "只有通配符名字时按设置"
+    );
+    assert_eq!(
+        served_suffix(&["*.example.test".to_owned()], "home.example.test",),
+        "home.example.test",
+        "通配符认证的名字算覆盖"
     );
 }
