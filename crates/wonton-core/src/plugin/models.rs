@@ -313,9 +313,28 @@ impl PluginManager {
         }
     }
 
-    /// 安装声明了 `models` 的插件时：网关就绪就签发并验证凭据；没装、没就绪或签发失败都照样装，
-    /// 变量定义成空字符串（见 [`empty_model_vars`]）。签发失败记日志、原因记进凭据文件，
-    /// 详情页的轻提示带上它；网关不在的情形详情页现场就能算出来，不记。
+    /// 等网关就绪：启动时核心并发装网关和默认 Bot，先装完的那个常常赶上网关还在起。到点还没起来就按实际
+    /// 状态报错，调用方照旧安装、变量留空。没装（Absent）不用等。
+    ///
+    /// 调用方必须在拿 `dependencies.changing` **之前**等：起网关的 `start` 也要那把锁，锁里等只能等到超时。
+    pub(super) async fn provider_when_ready(
+        &self,
+        langs: &Languages,
+    ) -> Result<ModelsRoute, InstallError> {
+        const INTERVAL: std::time::Duration = std::time::Duration::from_secs(2);
+        for _ in 0..60 {
+            match self.models_provider() {
+                ProviderState::Ready(route) => return Ok(*route),
+                ProviderState::NotReady(_) => tokio::time::sleep(INTERVAL).await,
+                ProviderState::Absent => return Err(unavailable(gateway_absent(langs))),
+            }
+        }
+        self.provider(langs)
+    }
+
+    /// 安装声明了 `models` 的插件时签发并验证凭据（[`provider_when_ready`](Self::provider_when_ready) 已在
+    /// 拿依赖锁之前等过网关）；没装、没就绪或签发失败都照样装，变量定义成空字符串（见 [`empty_model_vars`]）。
+    /// 签发失败记日志、原因记进凭据文件，详情页的轻提示带上它（网关不在的情形详情页现场就能算出来，不记）。
     pub(super) async fn provision_models(
         &self,
         package: &PluginPackage,
@@ -743,19 +762,14 @@ impl PluginManager {
         let Some(route) = self.models_route() else {
             return Vec::new();
         };
+        // 用记录里的清单判断，不看店里的条目：restore 回来的插件没有那条，照样要接。
         let candidates: Vec<(PluginId, bool)> = {
             let plugins = self.plugins.read().expect("插件表锁中毒");
             plugins
                 .iter()
                 .filter(|(id, entry)| {
                     **id != route.id
-                        && entry.listed.as_ref().is_some_and(|listed| {
-                            uses_models(&listed.manifest)
-                                && matches!(
-                                    entry.status,
-                                    PluginStatus::Running | PluginStatus::Stopped
-                                )
-                        })
+                        && matches!(entry.status, PluginStatus::Running | PluginStatus::Stopped)
                 })
                 .map(|(id, entry)| (id.clone(), entry.status == PluginStatus::Running))
                 // 只补没接上的：已接上的对账刚把凭据对好，变量没变，容器不用动。
@@ -781,6 +795,9 @@ impl PluginManager {
                 continue;
             };
             package.origin = record.origin.clone();
+            if !uses_models(&package.manifest) {
+                continue;
+            }
             let bot_names = self.bot_names(&id);
             match self
                 .issue_consumer_credentials(&route, &package, langs, &bot_names)

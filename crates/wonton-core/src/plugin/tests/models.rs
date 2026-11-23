@@ -302,6 +302,53 @@ async fn the_gateway_arriving_later_issues_and_rebuilds_the_consumer() {
 }
 
 #[tokio::test]
+async fn an_install_waits_for_a_gateway_that_is_still_starting() {
+    // 默认 Bot 和网关一起装时，签发会赶上网关还在起：要等它就绪，不能拿空变量收场。
+    let bed = bed().await;
+    let gateway = PluginId::parse("system.models").unwrap();
+    let manager = Arc::new(bed.manager);
+    manager.stop_detached(gateway.clone()).await.unwrap();
+
+    let installing = manager.clone();
+    let package = consumer();
+    let granted = models();
+    let pending =
+        tokio::spawn(async move { installing.install(&package, &granted, super::langs()).await });
+    // 安装已经进到等网关的循环里，再让网关起来。
+    tokio::time::sleep(std::time::Duration::from_millis(100)).await;
+    manager.start_detached(gateway).await.unwrap();
+    pending.await.unwrap().unwrap();
+
+    let env = env_of_container(&bed.docker, &container_name("app-test", "web"));
+    assert_eq!(env["BASE"], "http://models.wonton.internal:8080/v1");
+    assert_eq!(env["KEY"].len(), 64);
+}
+
+#[tokio::test]
+async fn a_restored_consumer_without_a_listed_entry_is_connected_by_its_record() {
+    // restore 回来的插件没有店里的那份条目：网关事后到达时也要按记录接上，不能整条跳过。
+    let bed = bed_without_gateway().await;
+    let id = PluginId::parse("app.test").unwrap();
+    bed.manager
+        .install(&consumer(), &models(), super::langs())
+        .await
+        .unwrap();
+    bed.manager
+        .plugins
+        .write()
+        .expect("插件表锁中毒")
+        .get_mut(&id)
+        .expect("刚装好的插件")
+        .listed = None;
+
+    bed.install_gateway().await;
+
+    let env = env_of_container(&bed.docker, &container_name("app-test", "web"));
+    assert_eq!(env["KEY"].len(), 64);
+    assert!(bed.hints().await.hints.is_empty());
+}
+
+#[tokio::test]
 async fn the_gateway_coming_back_again_leaves_connected_consumers_alone() {
     let bed = bed().await;
     bed.manager
