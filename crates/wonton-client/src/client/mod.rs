@@ -32,6 +32,8 @@ use crate::subscription::{
     TransfersSubscription, UnreadSubscription,
 };
 use switch::Replay;
+#[cfg(feature = "ui-fake")]
+use wonton_protocol::{AvatarImage, AvatarKind};
 
 pub use share_in::ShareInSubscription;
 
@@ -43,6 +45,7 @@ mod confirmations;
 mod dispatch;
 mod limits;
 mod media;
+mod my_avatar;
 mod page_color;
 mod pages;
 mod plugin_detail;
@@ -426,40 +429,63 @@ impl ClientCore {
                 permissions: None,
                 display_name: Some("Owner".into()),
                 email: None,
-                avatar: None,
+                avatar: Some(AvatarImage {
+                    media: MediaHandle {
+                        token: "m-owner-avatar".into(),
+                    },
+                    kind: AvatarKind::Still,
+                    width: None,
+                    height: None,
+                    poster: None,
+                }),
             });
         }
         let scope = self.scope();
-        let plugins = scope.plugins.clone();
-        scope.run(async move { plugins.me().await }).await
+        scope
+            .run({
+                let scope = scope.clone();
+                async move {
+                    let mut me = scope.plugins.me().await?;
+                    my_avatar::attach(&mut me, &scope).await;
+                    Ok(me)
+                }
+            })
+            .await
     }
 
     /// 保存资料（主人写 owner.json，家人写自己那条），名字同步成 Matrix 上的显示名。不合规则时返回
-    /// `InvalidInput`，原因由家里的服务器写好。保存后要重新取安装页的预览。
+    /// `InvalidInput`，原因由家里的服务器写好。保存后要重新取安装页的预览。返回的资料带服务器上的头像。
     pub async fn save_me(&self, update: OwnerProfileUpdate) -> Result<Me, CoreError> {
         let scope = self.scope();
-        let plugins = scope.plugins.clone();
-        let saved = scope
-            .run(async move { plugins.save_profile(update).await })
-            .await?;
-        if let Some(name) = saved.display_name.clone() {
-            scope.chat.set_owner_display_name(name);
-        }
-        Ok(saved)
+        scope
+            .run({
+                let scope = scope.clone();
+                async move {
+                    let mut saved = scope.plugins.save_profile(update).await?;
+                    if let Some(name) = saved.display_name.clone() {
+                        scope.chat.set_owner_display_name(name);
+                    }
+                    my_avatar::attach(&mut saved, &scope).await;
+                    Ok(saved)
+                }
+            })
+            .await
     }
 
     /// 换自己的头像：文件由壳按 [`max_avatar_edge`](Self::max_avatar_edge)、[`max_avatar_bytes`](Self::max_avatar_bytes)
     /// 裁好、压好，核心按文件头检查后传到 Matrix 的媒体库，再把 `mxc://` 写进自己的资料 `avatar_url`。资料只放静态图。
-    /// 成功返回新的 [`Me`]，壳不用再取一次；家人和主人一样能用。上传和写 `avatar_url` 还没接上之前报
-    /// [`MyAvatarProblem::NotReady`]，不安静地吞掉。
+    /// 成功返回新的 [`Me`]，壳不用再取一次；家人和主人一样能用。
     pub async fn set_my_avatar(&self, upload: AvatarUpload) -> Result<Me, MyAvatarProblem> {
-        let _ = upload;
-        Err(MyAvatarProblem::NotReady)
+        let scope = self.scope();
+        scope
+            .run_avatar(my_avatar::set(scope.clone(), upload))
+            .await
     }
 
     /// 清掉自己的头像，壳显示名字首字母。本来就没有头像时也算成功：清两次的结果一样。
     pub async fn clear_my_avatar(&self) -> Result<Me, MyAvatarProblem> {
-        Err(MyAvatarProblem::NotReady)
+        let scope = self.scope();
+        scope.run_avatar(my_avatar::clear(scope.clone())).await
     }
 
     /// 升级前的预览：升到已安装列表里提示的版本。

@@ -28,7 +28,7 @@ internal sealed interface AvatarPick {
 /**
  * 把主人选的一个文件转成核心收得下的头像（规格第 2 节）：图片居中裁方、缩到 [IMAGE_EDGE]、JPEG（PNG 保透明）；
  * 动图原样交（方形、在核心的上限内），否则状态头像提示用视频。上限问核心（[ClientCore.maxAvatarEdge] 等），
- * 壳不写死数字。视频在 [video] 里。
+ * 壳不写死数字。视频在 [video] 里。`stillOnly` 只取静态图（自己的资料头像）。
  */
 internal object AvatarTranscode {
     suspend fun make(
@@ -36,11 +36,17 @@ internal object AvatarTranscode {
         uri: Uri,
         core: ClientCore,
         forState: Boolean,
+        stillOnly: Boolean = false,
         onProgress: (Float) -> Unit,
     ): AvatarPick {
         val type = context.contentResolver.getType(uri)
         return when {
-            type == "image/gif" || type == "image/webp" -> animated(context, uri, core, forState)
+            // 自己的资料只收静态图：动图、动图 WebP 都取首帧。
+            type == "image/gif" || type == "image/webp" -> if (stillOnly) {
+                still(context, uri)
+            } else {
+                animated(context, uri, core, forState)
+            }
             type?.startsWith("video/") == true && forState -> video(context, uri, core, onProgress)
             type?.startsWith("image/") == true -> still(context, uri)
             else -> throw IOException("Unrecognized file: $type")
