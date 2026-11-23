@@ -62,10 +62,12 @@ pub(super) fn corner() -> Option<(TabRef, TabPage)> {
 /// 房间的第一批：全部条目，落点在第三条。之后的批次由 `ui_fake_timeline` 按壳的操作推。
 /// 通话中的那个群聊（`ui_fake::CALL_ROOM_ID`）另带顶栏的 widget 入口和“通话中”。
 /// Echo 一直在输入，带三条命令（ADR-0109 的命令表和正在输入）。
-/// 跨日的地方像核心一样先放一条日期分隔：最顶上那条（自己占一天）和 `DAY_BREAK_INDEX` 前各一条。
+/// 跨日的地方像核心一样先放一条日期分隔：第一条前和 `DAY_BREAK_INDEX` 前各一条；第一条前那条和它上面的
+/// `TimelineStart` 排在一起，和真核心翻到房间开头时的样子一样。
 pub(super) fn timeline(room_id: &str) -> TimelineUpdate {
     let in_call = room_id == super::ui_fake::CALL_ROOM_ID;
-    let mut items: Vec<TimelineItem> = Vec::with_capacity(ITEMS + 2);
+    let mut items: Vec<TimelineItem> = Vec::with_capacity(ITEMS + 3);
+    items.push(timeline_start());
     items.push(divider(TOP_INDEX));
     for index in 0..ITEMS {
         if index == DAY_BREAK_INDEX {
@@ -195,6 +197,14 @@ fn divider(index: usize) -> TimelineItem {
         content: TimelineContent::DateDivider {
             timestamp_ms: at_ms(index),
         },
+    }
+}
+
+/// 房间开头：SDK 固定放在最前面的条目，翻到头时它上面是那条分隔。
+fn timeline_start() -> TimelineItem {
+    TimelineItem {
+        id: "ui-fake-start".into(),
+        content: TimelineContent::TimelineStart,
     }
 }
 
@@ -770,7 +780,7 @@ mod tests {
         let [TimelineDiff::Reset { items }] = update.diffs.as_slice() else {
             panic!("the first batch must be a reset");
         };
-        assert_eq!(items.len(), ITEMS + 2);
+        assert_eq!(items.len(), ITEMS + 3);
         assert_ne!(
             update.anchor.as_deref(),
             items.last().map(|item| item.id.as_str())

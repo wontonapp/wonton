@@ -292,7 +292,8 @@ private fun TimelineRow(
 /**
  * 每个下标上方要不要来一行日期；跨日的那条才有。列表是倒排的（下标 0 贴着底部），屏幕上往下是越来越新。
  * 一条和它正上方那条不是同一天（或者它就在最顶上、上面没有消息）时，分隔画在它上面、写它自己的日期，
- * 也就是它下面那条消息的日期。跨日的日期由核心的分隔条目写，这里只兜底没有分隔条目的边界。
+ * 也就是它下面那条消息的日期。跨日的日期由核心的分隔条目写，这里只兜底没有分隔条目的边界；
+ * 下面紧挨着同一天的分隔条目时也不出，那枚已经写了这一天（房间开头的 TimelineStart）。
  */
 internal fun dayMarksFor(items: List<TimelineItem>): Array<String?> {
     // 没有时间的旁注跟着下面（更新）的那条算同一天，下标越小越新。
@@ -306,7 +307,9 @@ internal fun dayMarksFor(items: List<TimelineItem>): Array<String?> {
     for (index in items.indices) {
         val day = days[index]
         val own = day != null && day != days.getOrNull(index + 1)
-        if (own && items[index].content !is TimelineContent.DateDivider) marks[index] = day
+        val below = items.getOrNull(index - 1)
+        val belowWritesDay = below?.content is TimelineContent.DateDivider && days.getOrNull(index - 1) == day
+        if (own && !belowWritesDay && items[index].content !is TimelineContent.DateDivider) marks[index] = day
     }
     return marks
 }

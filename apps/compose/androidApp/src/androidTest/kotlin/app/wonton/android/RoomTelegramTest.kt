@@ -820,7 +820,6 @@ class RoomTelegramTest {
     private fun imeHeight(): Int =
         compose.activity.window.decorView.rootWindowInsets.getInsets(WindowInsets.Type.ime()).bottom
 
-
     private fun screenshot(name: String) {
         // 滚过以后浮动日期胶囊还在，等它淡出再拍，不然截到的是它盖在字上的样子；失败现场可能已经停了，等不到也照拍。
         runCatching { compose.waitUntil(5_000) { !pillVisible() } }

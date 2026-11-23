@@ -21,7 +21,6 @@ import androidx.test.rule.GrantPermissionRule
 import app.wonton.protocol.Action
 import app.wonton.protocol.PageAction
 import app.wonton.protocol.TabRef
-import app.wonton.ui.R
 import app.wonton.ui.send
 import java.io.File
 import java.io.FileOutputStream
@@ -34,6 +33,8 @@ import org.junit.Test
 import org.junit.runner.RunWith
 import org.junit.rules.RuleChain
 import org.junit.rules.TestRule
+import org.junit.rules.TestWatcher
+import org.junit.runner.Description
 
 /** 夜跑界面测试（#812）：跨天处只画一枚居中日期胶囊，写那一天，不叠第二行；浅色、深色各留一张现场。 */
 @RunWith(AndroidJUnit4::class)
@@ -48,8 +49,14 @@ class CrossDayDateTest {
         GrantPermissionRule.grant()
     }
 
+    private val failureEvidence = object : TestWatcher() {
+        override fun failed(error: Throwable, description: Description) {
+            screenshot("failure-${description.methodName}")
+        }
+    }
+
     @get:Rule
-    val rules: RuleChain = RuleChain.outerRule(permissions).around(compose)
+    val rules: RuleChain = RuleChain.outerRule(permissions).around(compose).around(failureEvidence)
 
     @Before
     fun openEchoRoom() {
@@ -72,18 +79,19 @@ class CrossDayDateTest {
         for (position in 1 until dates.size) {
             check(dates[position].after(dates[position - 1])) { "日期没随消息往下变晚：$dates" }
         }
-        // 列表最顶上那条的上面也有一行日期，就是核心的分隔条目，写它自己的日期，底下不再叠。
-        compose.onNodeWithTag("room-timeline").performScrollToKey("ui-fake-day-0")
-        compose.waitUntil(10_000) { visible(0) }
+        // 列表最顶上是房间开头的 TimelineStart，它下面紧挨着核心的分隔条目：顶端只该有分隔那一行，
+        // 写第一条的日期，TimelineStart 和第一条之间不再叠兜底行。
+        compose.onNodeWithTag("room-timeline").performScrollToKey("top-gap")
+        compose.waitUntil(10_000) { startVisible() }
         val topLine = dateLines().minByOrNull { it.boundsInRoot.top }
         checkNotNull(topLine) { "列表最顶上那条的上面没有日期行" }
-        check(texts(topLine).startsWith(fixtureDate(0))) { "最顶上那行不是第一条的日期：${texts(topLine)}" }
+        check(texts(topLine) == fixtureDate(0)) { "最顶上那行不是第一条的日期：${texts(topLine)}" }
         check(topLine.config.getOrNull(SemanticsProperties.TestTag) == "day-divider") {
             "最顶上的日期行不是核心的分隔条目：${topLine.config.getOrNull(SemanticsProperties.TestTag)}"
         }
         val firstBubble = bubble(0).fetchSemanticsNode().boundsInRoot
         check(dateLines().none { it.id != topLine.id && it.boundsInRoot.bottom <= firstBubble.top + 1f }) {
-            "最顶上那行和第一条之间又叠了一行：${dateLines().map(::texts)}"
+            "最顶上那条上面又叠了一行：${dateLines().map(::texts)}"
         }
         // 这条分隔和它两边的消息一起进画面，留一张给人看；深色那张由 Paparazzi 的 DayBreakDarkPreview 出。
         scrollTo(11)
@@ -132,7 +140,7 @@ class CrossDayDateTest {
         check(line.config.getOrNull(SemanticsProperties.TestTag) == "day-divider") {
             "跨天处那行不是核心的分隔条目：${texts(line)}"
         }
-        check(texts(line).startsWith(fixtureDate(11))) { "跨天那行不是第 11 条的日期：${texts(line)}" }
+        check(texts(line) == fixtureDate(11)) { "跨天那行不是第 11 条的日期：${texts(line)}" }
     }
 
     /** 日期行夹在前一天最后一条和后一天第一条之间：下面紧挨着的那条是它写的这一天，上面那条是更早的一天。 */
@@ -143,7 +151,7 @@ class CrossDayDateTest {
         check(bubbles.none { it.boundsInRoot.overlaps(mark) }) { "气泡压在日期行上：$mark" }
         val below = bubbles.firstOrNull { it.boundsInRoot.top >= mark.bottom - 1f }
         val belowIndex = checkNotNull(below?.let(::fixtureIndexOf)) { "日期行下面认不出气泡：$mark" }
-        check(texts(line).startsWith(fixtureDate(belowIndex))) {
+        check(texts(line) == fixtureDate(belowIndex)) {
             "日期行不是它下面那条的日期：${texts(line)} vs ${fixtureDate(belowIndex)}（第 $belowIndex 条）"
         }
         val above = bubbles.lastOrNull { it.boundsInRoot.bottom <= mark.top + 1f }
@@ -217,6 +225,14 @@ class CrossDayDateTest {
         val center = compose.onAllNodes(hasTestTag("item-ui-fake-$index")).fetchSemanticsNodes().singleOrNull()
             ?.boundsInRoot?.center?.y ?: return false
         return center in list.top..list.bottom
+    }
+
+    /** 房间开头那条整个在时间线视口里。 */
+    private fun startVisible(): Boolean {
+        val list = compose.onNodeWithTag("room-timeline").fetchSemanticsNode().boundsInRoot
+        val start = compose.onAllNodes(hasTestTag("item-ui-fake-start"), useUnmergedTree = true)
+            .fetchSemanticsNodes().singleOrNull()?.boundsInRoot ?: return false
+        return start.top >= list.top - 1f && start.bottom <= list.bottom + 1f
     }
 
     private fun bubble(index: Int) = compose.onNode(
