@@ -568,11 +568,6 @@ private struct WontonCanvas: ViewModifier {
 
 /// 隐藏系统导航栏后，SwiftUI 默认会失去边缘返回手势（ADR-0026），这里还给它。
 extension UINavigationController: @retroactive UIGestureRecognizerDelegate {
-    override open func viewDidLoad() {
-        super.viewDidLoad()
-        interactivePopGestureRecognizer?.delegate = self
-    }
-
     /// 旁聊盖在房间上：边缘右滑留在房间（ADR-0093）。手机只有一个可见的导航栈，盖层的开关都在主线程上写。
     static var keepsRoomOnSideChat = false
 

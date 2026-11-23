@@ -162,7 +162,8 @@ final class EdgeBack: NSObject, UIGestureRecognizerDelegate {
 
     func gestureRecognizerShouldBegin(_ gesture: UIGestureRecognizer) -> Bool {
         guard let navigation, navigation.viewControllers.count > 1,
-              navigation.transitionCoordinator?.isAnimated != true else { return false }
+              navigation.transitionCoordinator?.isAnimated != true,
+              !UINavigationController.keepsRoomOnSideChat else { return false }
         // shouldBegin 是过了阈值才问，现场的 location 已经在起手点右边；减去已拖距离还原落点。
         // 导航视图为盖住安全区会向左右探出去，左缘为负；屏幕上的左缘是 0，分栏时才是列自己的左边。
         let origin = max(0, navigation.view.convert(.zero, to: nil).x)
