@@ -302,7 +302,7 @@ val LocalWontonBarStatus = compositionLocalOf { WontonBarStatus() }
 /**
  * 进入下一层的标题栏：返回在前，标题靠左，操作在后。
  *
- * 用普通 Row 而不是 M3 的 TopAppBar：顶部栏的子树带 pointer input，命中测试停在栏里就不再下探，
+ * 用自定义 Layout 而不是 M3 的 TopAppBar：顶部栏的子树带 pointer input，命中测试停在栏里就不再下探，
  * 滚进栏下的内容看得见、点不到（#688）；栏本身只是透明背景，点击会落到 [WontonScreen] 的内容上。
  *
  * `centeredTitle` 把标题挪到正中（群聊用它，两边不放头像）；带 `avatar` 的标题只能在左边。
