@@ -46,7 +46,7 @@ mod clients;
 pub(crate) use clients::ClientPlugin;
 mod views;
 
-pub use views::{ClientsRoute, ClientsView, HostedRoute, PluginView, Route, StorageRoute};
+pub use views::{ClientsRoute, HostedRoute, PluginView, Route, StorageRoute};
 
 pub(super) use busy::{busy, detached};
 

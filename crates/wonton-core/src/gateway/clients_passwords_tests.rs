@@ -1,6 +1,7 @@
 //! 专用密码管理接口的行为测试：审计具体到设备、设备吊销连带（ADR-0021、ADR-0046）。
 
 use std::sync::Arc;
+use std::sync::atomic::{AtomicUsize, Ordering};
 
 use axum::Router;
 use axum::body::Body;
@@ -13,6 +14,7 @@ use serde_json::{Value, json};
 use tower::ServiceExt;
 
 use crate::clients::credentials::{CredentialExec, ExecError, ExecOutput};
+use crate::clients::passwords::State;
 use crate::config::PublicUrls;
 use crate::gateway::fakes::loopback_tunnel;
 use crate::gateway::tests::{CORE, Reply, TOKEN, owner};
@@ -59,26 +61,33 @@ x-wonton:
           ends_sessions: false
 "#;
 
-/// 网关验证的清单（`auth.gateway`）：首次发密码走 C16 的 store 写入，不跑命令。
-const GATEWAY_MANIFEST: &str = r#"
+/// 共享密码的清单（`per_client: false`）：吊销默认换值，`keep_shared_passwords` 时原样留着。
+const KEEP_SHARED_MANIFEST: &str = r#"
 services:
   app:
     image: example/app:1
 x-wonton:
-  spec: '0.14'
+  spec: '0.4'
   id: app.demo.gw
   version: 1.0.0
   kind: app
-  title: { en: Test }
-  description: { en: Test }
+  title: { zh: 凭据应用, en: Credentials app }
+  description:
+    zh: 凭据接口测试用
+    en: For password API tests
   permissions: [network.clients]
   clients:
     http:
       service: app
       port: 8080
       auth:
-        gateway:
-          headers: { X-Remote-User: '{user}' }
+        credentials:
+          username: "{user}"
+          per_client: false
+          issue: [pw, issue, "{name}"]
+          verify: [pw, verify, "{name}"]
+          rotate: [pw, rotate, "{name}"]
+          ends_sessions: false
 "#;
 
 /// 网关测试不关心应用里的输出；退出 0 就当命令成功。
@@ -132,10 +141,40 @@ impl CredentialExec for AlwaysOk {
     }
 }
 
+/// 数跑过几次命令：keep_shared 吊销一次都不该跑。
+#[derive(Clone, Default)]
+struct Counting(Arc<AtomicUsize>);
+
+impl Counting {
+    fn calls(&self) -> usize {
+        self.0.load(Ordering::SeqCst)
+    }
+}
+
+impl CredentialExec for Counting {
+    fn exec<'a>(
+        &'a self,
+        _container: &'a str,
+        _argv: &'a [String],
+        _stdin: Option<&'a [u8]>,
+        _timeout: std::time::Duration,
+    ) -> BoxFuture<'a, Result<ExecOutput, ExecError>> {
+        self.0.fetch_add(1, Ordering::SeqCst);
+        Box::pin(async {
+            Ok(ExecOutput {
+                exit_code: 0,
+                stdout: String::new(),
+                stderr: String::new(),
+            })
+        })
+    }
+}
+
 struct Home {
     app: Router,
     dir: tempfile::TempDir,
     gateway: Arc<Gateway>,
+    manifest: &'static str,
 }
 
 async fn home() -> Home {
@@ -222,6 +261,7 @@ async fn home_with_manifest_and_file(manifest: &'static str, contents: Option<&s
         app: router(gateway.clone()),
         dir,
         gateway,
+        manifest,
     }
 }
 
@@ -268,9 +308,10 @@ impl Home {
     }
 
     fn set_status(&self, status: crate::plugin::manager::PluginStatus) {
-        let manifest = PluginPackage::parse(MANIFEST, &Languages::from_header(Some("zh-Hans")))
-            .unwrap()
-            .manifest;
+        let manifest =
+            PluginPackage::parse(self.manifest, &Languages::from_header(Some("zh-Hans")))
+                .unwrap()
+                .manifest;
         self.gateway
             .manager()
             .register_for_test(manifest, status, Some("127.0.0.1:9".into()));
@@ -433,6 +474,46 @@ async fn device_revoke_revokes_its_passwords() {
 }
 
 #[tokio::test]
+async fn device_revoke_keep_shared_keeps_value_and_skips_command() {
+    let h = home_with(KEEP_SHARED_MANIFEST).await;
+    let exec = Counting::default();
+    h.gateway
+        .plugins
+        .set_credential_exec(Arc::new(exec.clone()));
+    let store = h.gateway.plugins.client_passwords.as_ref().unwrap();
+    let device = SecretKey::generate().public();
+    let device_id = device.to_string();
+    h.gateway
+        .tunnel
+        .devices
+        .add(device, Some("平板".into()))
+        .unwrap();
+    let created = store
+        .create(PLUGIN, "日历", Some((&device_id, Some("平板"))))
+        .unwrap();
+
+    let revoked = h
+        .send(
+            h.owner_request(Method::DELETE, &format!("/_wonton/api/devices/{device}"))
+                .header(CONTENT_TYPE, "application/json")
+                .body(Body::from(r#"{"keep_shared_passwords": true}"#))
+                .unwrap(),
+        )
+        .await;
+    assert_eq!(revoked.status, StatusCode::OK, "{}", revoked.text());
+    assert_eq!(exec.calls(), 0);
+    let kept = store.snapshot(PLUGIN, &created.id).unwrap();
+    assert_eq!(kept.value, created.value);
+    assert_eq!(kept.state, State::Ready);
+    // 别的设备手上同一个老值照样能用。
+    assert!(
+        store
+            .authenticate(PLUGIN, &created.value)
+            .unwrap()
+            .is_some()
+    );
+}
+
 #[tokio::test]
 async fn created_passwords_are_discoverable_and_revocable_from_the_list() {
     let h = home().await;
@@ -493,6 +574,40 @@ async fn created_passwords_are_discoverable_and_revocable_from_the_list() {
 }
 
 #[tokio::test]
+async fn device_revoke_null_body_rotates_shared() {
+    let h = home_with(KEEP_SHARED_MANIFEST).await;
+    let exec = Counting::default();
+    h.gateway
+        .plugins
+        .set_credential_exec(Arc::new(exec.clone()));
+    let store = h.gateway.plugins.client_passwords.as_ref().unwrap();
+    let device = SecretKey::generate().public();
+    let device_id = device.to_string();
+    h.gateway
+        .tunnel
+        .devices
+        .add(device, Some("平板".into()))
+        .unwrap();
+    let created = store
+        .create(PLUGIN, "日历", Some((&device_id, Some("平板"))))
+        .unwrap();
+
+    let revoked = h
+        .send(
+            h.owner_request(Method::DELETE, &format!("/_wonton/api/devices/{device}"))
+                .header(CONTENT_TYPE, "application/json")
+                .body(Body::from("null"))
+                .unwrap(),
+        )
+        .await;
+    assert_eq!(revoked.status, StatusCode::OK, "{}", revoked.text());
+    assert_eq!(exec.calls(), 1);
+    let rotated = store.snapshot(PLUGIN, &created.id).unwrap();
+    assert_ne!(rotated.value, created.value);
+    assert_eq!(rotated.state, State::Ready);
+}
+
+#[tokio::test]
 async fn list_reports_corrupt_password_storage_instead_of_an_empty_list() {
     let h = home_with_password_file(Some("invalid json")).await;
     let reply = h
@@ -546,6 +661,31 @@ async fn restored_password_summaries_keep_creation_and_view_order_and_pending_st
     assert_eq!(passwords[0]["pending"], "revoke");
     assert!(passwords[1]["pending"].is_null());
     assert!(!reply.text().contains("not-in-list"));
+}
+
+#[tokio::test]
+async fn device_revoke_invalid_body_is_invalid_input() {
+    let h = home().await;
+    let device = SecretKey::generate().public();
+    h.gateway.tunnel.devices.add(device, None).unwrap();
+
+    let revoked = h
+        .send(
+            h.owner_request(Method::DELETE, &format!("/_wonton/api/devices/{device}"))
+                .header(CONTENT_TYPE, "application/json")
+                .body(Body::from("not json"))
+                .unwrap(),
+        )
+        .await;
+    assert_eq!(
+        revoked.status,
+        StatusCode::BAD_REQUEST,
+        "{}",
+        revoked.text()
+    );
+    assert_eq!(revoked.error_kind(), Some("invalid_input"));
+    // 解析失败时设备留着，什么都没动。
+    assert!(h.gateway.tunnel.devices.get(&device).is_some());
 }
 
 #[tokio::test]

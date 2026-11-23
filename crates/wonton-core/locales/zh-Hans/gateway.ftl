@@ -174,7 +174,6 @@ clients-password-label-invalid = 给客户端起个 1-128 个字符、不带换�
 clients-password-not-found = 这个专用密码已经不存在了
 clients-plugin-unavailable = 这个应用没有安装
 clients-password-shared = 应用密码
-clients-credentials-missing = 这个应用不用凭据验证
 clients-credentials-shared-exists = 这个应用已经有它唯一的共享密码
 clients-credentials-timeout = 应用里的命令超时，可能已经生效，会重试
 clients-credentials-unavailable = 插件没在运行，现在发不了密码

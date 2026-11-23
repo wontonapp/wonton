@@ -40,18 +40,6 @@ pub struct ClientsRoute {
     pub upstream: Option<Endpoint>,
 }
 
-/// App 里显示的第三方客户端入口和网关认证信息；只声明 `clients.tcp` 的插件没有 HTTP 路由。
-#[derive(Debug, Clone)]
-pub struct ClientsView {
-    pub id: PluginId,
-    pub label: String,
-    pub route: Option<ClientsRoute>,
-
-    pub switches: crate::clients::state::ClientsEntries,
-    pub entry_label: Option<String>,
-    pub tcp_names: Vec<String>,
-}
-
 /// 网关查询用的路由信息。
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct Route {
@@ -172,53 +160,6 @@ impl PluginManager {
             hosted: None,
             clients: clients_route(manifest, entry),
         })
-    }
-
-    pub fn client_views(&self) -> Result<Vec<ClientsView>, super::super::store::StoreError> {
-        let langs = self.owner_languages();
-        let plugins = self.plugins.read().expect("插件表锁中毒");
-        let mut views = Vec::new();
-        for (id, entry) in plugins.iter() {
-            let Some(listed) = entry.listed.as_ref() else {
-                continue;
-            };
-            let Some(clients) = listed.manifest.clients.as_ref() else {
-                continue;
-            };
-            let record = self.store.load(id)?;
-            views.push(ClientsView {
-                id: id.clone(),
-                label: langs.pick_owned(&listed.manifest.title),
-                route: clients.http.as_ref().map(|http| ClientsRoute {
-                    upstream: entry
-                        .clients
-                        .as_ref()
-                        .and_then(|route| route.upstream.clone()),
-                    http: http.clone(),
-                }),
-                switches: record
-                    .as_ref()
-                    .map_or_else(Default::default, |record| record.clients_entries),
-                entry_label: record
-                    .as_ref()
-                    .and_then(|record| record.entry_label.clone()),
-                tcp_names: clients
-                    .tcp
-                    .as_deref()
-                    .unwrap_or_default()
-                    .iter()
-                    .map(|tcp| tcp.name.clone())
-                    .collect(),
-            });
-        }
-        Ok(views)
-    }
-
-    pub fn client_view(
-        &self,
-        id: &PluginId,
-    ) -> Result<Option<ClientsView>, super::super::store::StoreError> {
-        Ok(self.client_views()?.into_iter().find(|view| view.id == *id))
     }
 
     /// 清单声明的 `credentials`（插件没装、不是这个模式时为空）。

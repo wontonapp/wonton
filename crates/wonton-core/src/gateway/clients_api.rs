@@ -28,10 +28,6 @@ pub fn routes(gateway: Arc<Gateway>) -> Router<Arc<Gateway>> {
             &wonton_protocol::dns_providers_path(),
             get(clients_domain::providers),
         )
-        .route(
-            &wonton_protocol::clients_path(),
-            get(crate::gateway::clients_passwords::list),
-        )
         .merge(super::clients_passwords::routes())
         .layer(axum::extract::DefaultBodyLimit::max(16 << 10))
         .layer(middleware::from_fn_with_state(

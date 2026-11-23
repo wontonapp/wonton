@@ -174,7 +174,6 @@ clients-password-label-invalid = 給用戶端起個 1-128 個字元、不帶換�
 clients-password-not-found = 這個專用密碼已經不存在了
 clients-plugin-unavailable = 這個應用程式沒有安裝
 clients-password-shared = 應用密碼
-clients-credentials-missing = 這個應用不用憑證驗證
 clients-credentials-shared-exists = 這個應用已經有它唯一的共享密碼
 clients-credentials-timeout = 應用裡的命令逾時，可能已經生效，會重試
 clients-credentials-unavailable = 外掛沒在執行，現在發不了密碼

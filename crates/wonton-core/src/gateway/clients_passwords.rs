@@ -13,10 +13,7 @@ use axum::extract::{Path, State};
 use axum::response::{IntoResponse, Response};
 use axum::routing::{get, post};
 use hyper::{HeaderMap, StatusCode};
-use wonton_protocol::{
-    ClientAuthKind, ClientsPlugin, EntryBlock, EntryKind, EntrySwitch, NewPasswordRequest,
-    PasswordSummary, PasswordValue, PublicRuleMode, PublicRules, SecretString,
-};
+use wonton_protocol::{NewPasswordRequest, PasswordValue, SecretString};
 
 use super::Gateway;
 use super::TunnelPeer;
@@ -28,9 +25,6 @@ use crate::clients::pending::{Issue, IssueError, Settle};
 use crate::l10n;
 use crate::plugin::languages::Languages;
 use wonton_protocol::ClientsFailure;
-
-/// `GET /_wonton/clients` 的响应：全部客户端的入口和密码。
-type ClientsList = Vec<ClientsPlugin>;
 
 /// 回给客户端的登录名：清单模板里的 `{user}` 换主人、`{email}` 换主人派生出的内部邮箱；
 /// 没写就是主人。
@@ -56,139 +50,6 @@ pub fn routes() -> Router<Arc<Gateway>> {
             &wonton_protocol::clients_password_path("{id}", "{pw}"),
             get(read_value).delete(revoke),
         )
-}
-
-/// `GET`：每个声明了客户端入口的插件的地址、入口开关、密码清单和现在开不了的原因。
-pub(super) async fn list(State(gateway): State<Arc<Gateway>>, headers: HeaderMap) -> Response {
-    let langs = languages(&headers);
-    let store = gateway.plugins.client_passwords.as_ref();
-    let views = match gateway.plugins.client_views() {
-        Ok(views) => views,
-        Err(error) => {
-            tracing::error!("读插件表失败：{error}");
-            return unavailable(&langs);
-        }
-    };
-    let owner = gateway.plugins.owner_username();
-    let mut plugins: ClientsList = Vec::with_capacity(views.len());
-    for view in views {
-        let http = view.route.as_ref().map(|route| &route.http);
-        let credentials = http.and_then(|http| http.auth.credentials.clone());
-        let gateway_auth = http.is_some_and(|http| http.auth.gateway.is_some());
-        let auth = if credentials.is_some() {
-            ClientAuthKind::Credentials
-        } else if gateway_auth {
-            ClientAuthKind::Gateway
-        } else {
-            ClientAuthKind::App
-        };
-        let username = if let Some(credentials) = &credentials {
-            Some(credential_username(credentials, &owner))
-        } else if gateway_auth {
-            Some(owner.clone())
-        } else {
-            None
-        };
-        let passwords = store
-            .map(|store| {
-                store
-                    .snapshots(view.id.as_str())
-                    .into_iter()
-                    .map(|snapshot| PasswordSummary {
-                        pending: crate::plugin::PluginManager::pending_op(&snapshot.state),
-                        id: snapshot.id,
-                        label: snapshot.label,
-                        created_by_device: snapshot.created_by_device,
-                        last_viewed_by: {
-                            let mut viewed: Vec<_> = snapshot.viewed_by.into_iter().collect();
-                            viewed.sort_by_key(|(_, at)| std::cmp::Reverse(*at));
-                            viewed
-                                .into_iter()
-                                .map(|(device, _)| viewer_name(&gateway, &device, &owner))
-                                .collect()
-                        },
-                    })
-                    .collect()
-            })
-            .unwrap_or_default();
-        let blocked = credentials
-            .as_ref()
-            .filter(|_| !gateway.plugins.credentials_ready(&view.id))
-            .map(|_| EntryBlock::CredentialsNotIssued);
-        plugins.push(ClientsPlugin {
-            id: view.id.to_string(),
-            label: view.label.clone(),
-            lan_url: view.switches.lan.then(|| {
-                gateway.public.origin(&format!(
-                    "{}.lan.{}",
-                    view.id.slug(),
-                    gateway.public.base_domain
-                ))
-            }),
-            public_url: view.switches.public.then(|| {
-                gateway
-                    .public
-                    .origin(&gateway.public.plugin_host(&view.id.slug()))
-            }),
-            entries: entry_switches(&view),
-            auth,
-            username,
-            passwords,
-            public_rules: http
-                .and_then(|http| http.public.as_ref())
-                .map(|public| PublicRules {
-                    mode: if public.allow.is_some() {
-                        PublicRuleMode::Allow
-                    } else {
-                        PublicRuleMode::Deny
-                    },
-                    paths: public
-                        .allow
-                        .clone()
-                        .or_else(|| public.deny.clone())
-                        .unwrap_or_default(),
-                }),
-
-            blocked,
-        });
-    }
-    no_store(Json(plugins).into_response())
-}
-/// 列表里显示“谁看过”：设备名，没登记名字时用设备 ID；主人的令牌记成主人。
-fn viewer_name(gateway: &Gateway, device: &str, owner: &str) -> String {
-    if device == crate::clients::passwords::OWNER_TOKEN {
-        return owner.to_owned();
-    }
-    device
-        .parse::<iroh::EndpointId>()
-        .ok()
-        .and_then(|id| gateway.tunnel.devices.get(&id))
-        .and_then(|device| device.name)
-        .unwrap_or_else(|| device.to_owned())
-}
-
-fn entry_switches(view: &crate::plugin::manager::ClientsView) -> Vec<EntrySwitch> {
-    let mut entries: Vec<EntrySwitch> = [
-        (EntryKind::Lan, view.switches.lan),
-        (EntryKind::Public, view.switches.public),
-    ]
-    .into_iter()
-    .map(|(kind, enabled)| EntrySwitch { kind, enabled })
-    .collect();
-    let mut tcp: Vec<EntrySwitch> = view
-        .tcp_names
-        .iter()
-        .map(|name| EntrySwitch {
-            kind: EntryKind::Tcp { name: name.clone() },
-            enabled: false,
-        })
-        .collect();
-    tcp.sort_by_key(|switch| match &switch.kind {
-        EntryKind::Tcp { name } => name.clone(),
-        _ => String::new(),
-    });
-    entries.extend(tcp);
-    entries
 }
 
 /// `POST`：写真值并跑应用的签发命令。成功 `201`、插件没在跑 `202`、命令失败 `502`（值都已落盘）。
@@ -379,9 +240,9 @@ async fn read_value(
     }
 }
 
-/// `DELETE`：吊销；`per_client: false` 时换成新值。完成 `200`，插件没在跑 `202`，失败 `502`；
-/// 吊销和换值都用 [`PENDING_HEADER`](wonton_protocol::PASSWORD_PENDING_HEADER) 标出来，
-/// 吊销设备的省略请求体时也走这里。
+/// `DELETE /_wonton/clients/{plugin}/passwords/{id}`：吊销；`per_client: false` 时换成新值。
+/// 完成 `200`，插件没在跑 `202`，失败 `502`；[`PENDING_HEADER`](wonton_protocol::PASSWORD_PENDING_HEADER)
+/// 标出没做完的吊销或换值。吊销设备走 `devices.rs`，不经过这里。
 async fn revoke(
     State(gateway): State<Arc<Gateway>>,
     headers: HeaderMap,

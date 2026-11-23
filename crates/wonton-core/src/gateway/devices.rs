@@ -117,7 +117,8 @@ pub async fn add(
 ///
 /// 这台设备建过或看过的专用密码跟着走（ADR-0021「在 App 里」）：`per_client` 的吊销，
 /// 共享密码默认换值、`keep_shared` 时只吊销。设备已不在表里时也照做：上次吊销在半路失败时，
-/// 再来一次能把密码清掉。命令没跑成的列进报告，插件启动时重试。
+/// 再来一次能把密码清掉；所以同一设备重复 DELETE 会再换一次共享密码并回 `404`，这次的报告不带回。
+/// 命令没跑成的列进报告，插件启动时重试。
 pub(super) async fn revoke_device(
     gateway: &Gateway,
     id: &EndpointId,

@@ -49,7 +49,7 @@ pub struct PasswordValue {
     pub password: SecretString,
 }
 
-/// 取值的响应头：这个密码还有没做完的吊销/换值，值为 `revoke` 或 `rotate`。
+/// 吊销/换值还没做完时的响应头，值为 `revoke` 或 `rotate`；`200` 和 `202` 都可能带。
 pub const PASSWORD_PENDING_HEADER: &str = "x-wonton-password-value-pending";
 
 /// 新建失败（502）的响应头：已经落盘的记录 ID，重试对照它，不用再建一条。

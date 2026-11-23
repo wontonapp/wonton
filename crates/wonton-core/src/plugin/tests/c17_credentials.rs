@@ -398,6 +398,11 @@ async fn shared_password_rotated_on_device_revoke_unless_kept() {
     // keep_shared：记录和值都留着、不跑命令，别的设备继续用老值。
     store.read("app.test", "shared", Some("device-a")).unwrap();
     let kept_value = store.snapshot("app.test", "shared").unwrap().value;
+    // 老值上挂着一条已升级的连接，keep_shared 吊销不该断它。
+    let receiver = store
+        .authenticate("app.test", &kept_value)
+        .unwrap()
+        .unwrap();
     let before = home.script.calls().len();
     let kept_report = home
         .manager
@@ -405,6 +410,7 @@ async fn shared_password_rotated_on_device_revoke_unless_kept() {
         .await
         .unwrap();
     assert_eq!(home.script.calls().len(), before);
+    assert!(!*receiver.borrow());
     let kept = store.snapshot("app.test", "shared").unwrap();
     assert_eq!(kept.value, kept_value);
     assert_eq!(kept.state, State::Ready);

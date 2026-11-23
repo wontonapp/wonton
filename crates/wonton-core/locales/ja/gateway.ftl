@@ -174,7 +174,6 @@ clients-password-label-invalid = クライアントには改行を含まない1�
 clients-password-not-found = このアプリのパスワードはもう存在しません
 clients-plugin-unavailable = このアプリはインストールされていません
 clients-password-shared = アプリのパスワード
-clients-credentials-missing = このアプリは資格情報認証を使っていません
 clients-credentials-shared-exists = このアプリには共有パスワードがすでにあります
 clients-credentials-timeout = アプリ内のコマンドがタイムアウトしました。すでに反映されている可能性があり、再試行します
 clients-credentials-unavailable = アプリが実行されていないため、今はパスワードを発行できません

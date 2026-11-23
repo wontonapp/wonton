@@ -174,7 +174,6 @@ clients-password-label-invalid = Give the client a name of 1-128 characters with
 clients-password-not-found = This app password doesn't exist any more
 clients-plugin-unavailable = This app isn't installed
 clients-password-shared = App password
-clients-credentials-missing = This app doesn't use credentials auth
 clients-credentials-shared-exists = This app already has its one shared password
 clients-credentials-timeout = The command in the app timed out; it may already have taken effect and will be retried
 clients-credentials-unavailable = The app isn't running, so passwords can't be issued right now

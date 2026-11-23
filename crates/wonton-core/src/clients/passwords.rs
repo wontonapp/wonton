@@ -106,11 +106,11 @@ pub struct Created {
 #[derive(Debug, Clone)]
 pub(crate) struct Snapshot {
     pub id: String,
+    /// 只在测试里用来挑记录。
+    #[cfg_attr(not(test), allow(dead_code))]
     pub label: String,
     pub value: String,
     pub state: State,
-    pub created_by_device: Option<String>,
-    pub viewed_by: BTreeMap<String, u64>,
 }
 
 impl PasswordStore {
@@ -600,8 +600,6 @@ impl Record {
             label: self.label.clone(),
             value: self.value.clone(),
             state: self.state.clone(),
-            created_by_device: self.created_by_device.clone(),
-            viewed_by: self.viewed_by.clone(),
         }
     }
 }
