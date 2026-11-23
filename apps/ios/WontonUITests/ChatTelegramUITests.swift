@@ -124,6 +124,8 @@ final class ChatTelegramUITests: XCTestCase {
 
     /// 顶栏下面照 Telegram 的叠放：插件横幅在最上，旁聊标题在它下面。
     func testPluginBannerSitsAboveSideChatTitle() {
+        // 这条要翻遍整条时间线，默认 360 秒不够：被 kill 时连断言里的树都拿不到。
+        executionTimeAllowance = 900
         enter(Self.notesRoom)
         // 卡片挂在靠近底部的一条上、又不撑高：先到底，再往回找。reveal 的 200 段在这条用例里会超时，
         // 改用有界、逐段判存在和可见的 revealClearOfHint。
