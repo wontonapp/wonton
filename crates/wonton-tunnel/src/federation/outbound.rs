@@ -2,8 +2,10 @@
 //! `proxy` 配置），按 CONNECT 里的服务器名转给配对过的对方服务器。
 //!
 //! 每条 TCP 连接先读 CONNECT 请求头，目标的主机名就是对方的 Matrix 服务器名；按嵌入方给的查找函数换成
-//! 配对时记下的 endpoint ID，经共享的 iroh 连接转发。对方确认接上它那台 Tuwunel 之后才回 200，之后的
-//! 字节（两台 Tuwunel 之间的 TLS）双向原样转发，转发器不终结 TLS，断开也不当协议错误。
+//! 配对时记下的 endpoint ID，经共享的 iroh 连接转发。对方确认接上它那台 Tuwunel 之后，配置了 TLS 材料
+//! 时就在两端各做一段握手（[`super::tls`]，ADR-0112）：对本机 Tuwunel 当服务端出示本机 CA 签的证书，
+//! 对对方当客户端按 pin 校验，两段都过才回 200，之后的字节明文转发。没配 TLS 材料时照旧原样转发两台
+//! Tuwunel 之间的 TLS。
 //!
 //! 有名字的配对服务器也通过此代理取 443 上的发现文件；私用名保留 8448。其余端口拒绝。
 use std::{
@@ -18,17 +20,23 @@ use std::{
 };
 
 use iroh::{Endpoint, EndpointAddr, EndpointId};
+use rustls::pki_types::ServerName;
 use tokio::{
     io::{AsyncReadExt, AsyncWriteExt},
     net::{TcpListener, TcpStream},
     sync::watch,
     task::AbortHandle,
+    time::timeout,
 };
+use tokio_rustls::TlsConnector;
 use tracing::{debug, info, warn};
 
 use crate::{client::TunnelStream, error::TunnelError, forward};
 
-use super::peer::{PeerStates, PeerTable};
+use super::{
+    peer::{PeerStates, PeerTable},
+    tls::{self, ForwarderTls, PeerVerification, TunnelIo},
+};
 
 /// 嵌入方提供的查找函数：Matrix 服务器名 → 配对时记下的对方 endpoint ID 和地址。
 ///
@@ -45,12 +53,15 @@ pub struct OutboundErrors {
     /// 连接开头不是能读懂的 CONNECT 请求（格式不对、不是 CONNECT、目标不是 `主机:端口`、太大或超时），
     /// 回 400 后关闭。
     pub invalid_request: u64,
+    /// 本机 CA 签不出证书、pin 配置坏，或者任一端的 TLS 握手失败，回 502 后关闭。
+    pub tls_failed: u64,
 }
 
 #[derive(Debug, Default)]
 struct Counters {
     unknown_server: AtomicU64,
     invalid_request: AtomicU64,
+    tls_failed: AtomicU64,
 }
 
 /// 联邦出站转发器：在 `listen` 上接受本机 Tuwunel 发往对方服务器的 CONNECT，经 iroh 转出去；
@@ -72,12 +83,15 @@ pub(super) struct ForwarderCtx {
     pub(super) peers: Arc<PeerTable>,
     pub(super) ping_interval: Duration,
     pub(super) ping_timeout: Duration,
+    /// 有值时出站终结 TLS；`None` 是还没配证书材料的旧形态，两端 Tuwunel 的 TLS 原样穿过。
+    pub(super) tls: Option<Arc<ForwarderTls>>,
 }
 
 impl FederationForwarder {
     /// 在 `listen` 上开始转发。`paired` 是已配对的服务器名：名单里出现的每台马上建客户端并探活，
     /// 名单里消失的拆掉。`ping_interval` 和 `ping_timeout` 是对每台对方服务器的定时探活周期和每次
-    /// 探活的超时。
+    /// 探活的超时。`tls` 是出站终结要的本地证书和 pin 来源，`None` 时原样转发。
+    #[allow(clippy::too_many_arguments)]
     pub async fn bind(
         endpoint: Endpoint,
         listen: SocketAddr,
@@ -85,6 +99,7 @@ impl FederationForwarder {
         paired: watch::Receiver<BTreeSet<String>>,
         ping_interval: Duration,
         ping_timeout: Duration,
+        tls: Option<ForwarderTls>,
     ) -> io::Result<Self> {
         let listener = TcpListener::bind(listen).await?;
         let listen_addr = listener.local_addr()?;
@@ -96,6 +111,7 @@ impl FederationForwarder {
             peers: Arc::new(PeerTable::new(status.clone())),
             ping_interval,
             ping_timeout,
+            tls: tls.map(Arc::new),
         });
         let task = tokio::spawn(accept_loop(listener, ctx.clone(), counters.clone()));
         let sync = tokio::spawn(sync_loop(paired, ctx.clone())).abort_handle();
@@ -124,6 +140,7 @@ impl FederationForwarder {
         OutboundErrors {
             unknown_server: self.counters.unknown_server.load(Ordering::Relaxed),
             invalid_request: self.counters.invalid_request.load(Ordering::Relaxed),
+            tls_failed: self.counters.tls_failed.load(Ordering::Relaxed),
         }
     }
 }
@@ -205,9 +222,23 @@ async fn serve_conn(mut tcp: TcpStream, ctx: Arc<ForwarderCtx>, counters: Arc<Co
             return;
         }
     };
-    // 对方先回 1 字节状态，然后是它那台 Tuwunel 的原样字节（TLS 在两台 Tuwunel 之间）。
+    // 对方先回 1 字节状态。配置了 TLS 材料就在两端各做一段握手，否则照旧原样转发。
     match peer.read_status(&mut stream).await {
-        Ok(()) => established(stream, tcp, request.rest, &name).await,
+        Ok(()) => match ctx.tls.clone() {
+            Some(tls) => {
+                terminate_tls(
+                    stream,
+                    tcp,
+                    request.rest,
+                    &name,
+                    &counters,
+                    &tls,
+                    &ctx.peers,
+                )
+                .await
+            }
+            None => established(stream, tcp, request.rest, &name).await,
+        },
         Err(TunnelError::UpstreamUnavailable) => {
             info!(server = %name, "federation outbound: the peer cannot reach its Tuwunel");
             stream.abort();
@@ -250,12 +281,113 @@ async fn relay(mut stream: TunnelStream, tcp: TcpStream) {
     }
 }
 
+/// 出站终结 TLS：对本机 Tuwunel 当服务端出示本机 CA 签的证书，对对方当客户端按 pin 校验，两段都过才
+/// 回 200 并改成明文转发。对方的失败进它的离线状态，本机签不出证书等配置问题只计数。
+#[allow(clippy::too_many_arguments)]
+async fn terminate_tls(
+    stream: TunnelStream,
+    mut tcp: TcpStream,
+    rest: Vec<u8>,
+    name: &str,
+    counters: &Counters,
+    tls: &ForwarderTls,
+    peers: &PeerTable,
+) {
+    let acceptor = match (tls.local_certificates)(name) {
+        Ok(acceptor) => acceptor,
+        Err(err) => {
+            counters.tls_failed.fetch_add(1, Ordering::Relaxed);
+            warn!(server = %name, "federation outbound: cannot issue the certificate for the local Tuwunel: {err}");
+            respond(&mut tcp, BAD_GATEWAY).await;
+            return;
+        }
+    };
+    let verification = (tls.peer_pin)(name).unwrap_or(PeerVerification::Pending);
+    let config = match tls::client_config(&verification) {
+        Ok(config) => config,
+        Err(err) => {
+            counters.tls_failed.fetch_add(1, Ordering::Relaxed);
+            warn!(server = %name, "federation outbound: unusable pinned certificates: {err}");
+            respond(&mut tcp, BAD_GATEWAY).await;
+            return;
+        }
+    };
+    let Ok(server_name) = ServerName::try_from(name.to_owned()) else {
+        counters.tls_failed.fetch_add(1, Ordering::Relaxed);
+        warn!(server = %name, "federation outbound: the server name is not a TLS server name");
+        respond(&mut tcp, BAD_GATEWAY).await;
+        return;
+    };
+    let handshake = TlsConnector::from(config).connect(server_name, TunnelIo(stream));
+    let mut peer_tls = match timeout(TLS_HANDSHAKE_TIMEOUT, handshake).await {
+        Ok(Ok(stream)) => stream,
+        Ok(Err(err)) => {
+            fail_tls(&mut tcp, name, peers, counters, tls::handshake_reason(&err)).await;
+            return;
+        }
+        Err(_) => {
+            fail_tls(
+                &mut tcp,
+                name,
+                peers,
+                counters,
+                "the TLS handshake with the peer timed out".into(),
+            )
+            .await;
+            return;
+        }
+    };
+    if let Err(err) = tcp.write_all(ESTABLISHED).await {
+        debug!(server = %name, "federation outbound: failed to answer the CONNECT: {err}");
+        peer_tls.get_mut().0.abort();
+        return;
+    }
+    let local = tls::accept_local(&acceptor, tcp, rest);
+    let mut local = match timeout(TLS_HANDSHAKE_TIMEOUT, local).await {
+        Ok(Ok(local)) => local,
+        Ok(Err(err)) => {
+            counters.tls_failed.fetch_add(1, Ordering::Relaxed);
+            debug!(server = %name, "federation outbound: the local Tuwunel rejected the certificate: {err}");
+            peer_tls.get_mut().0.abort();
+            return;
+        }
+        Err(_) => {
+            counters.tls_failed.fetch_add(1, Ordering::Relaxed);
+            debug!(server = %name, "federation outbound: the local Tuwunel TLS handshake timed out");
+            peer_tls.get_mut().0.abort();
+            return;
+        }
+    };
+    if let Err(err) = tokio::io::copy_bidirectional(&mut local, &mut peer_tls).await {
+        debug!(server = %name, "federation TLS forwarding interrupted: {err}");
+        peer_tls.get_mut().0.abort();
+    }
+}
+
+/// 对对方的 TLS 失败：计数、把原因写进这台服务器的离线状态，回 502。
+async fn fail_tls(
+    tcp: &mut TcpStream,
+    name: &str,
+    peers: &PeerTable,
+    counters: &Counters,
+    reason: String,
+) {
+    counters.tls_failed.fetch_add(1, Ordering::Relaxed);
+    let err = TunnelError::PeerCertificate { reason };
+    peers.note_tls_failure(name, &err);
+    warn!(server = %name, "federation outbound: TLS with the peer failed: {err}");
+    respond(tcp, BAD_GATEWAY).await;
+}
+
 /// 回一个不带正文的错误状态，然后关闭（客户端可能已经走了，写失败不用管）。
 async fn respond(tcp: &mut TcpStream, status: &str) {
     let reply = format!("HTTP/1.1 {status}\r\nContent-Length: 0\r\nConnection: close\r\n\r\n");
     let _ = tcp.write_all(reply.as_bytes()).await;
     let _ = tcp.shutdown().await;
 }
+
+/// 一段 TLS 握手的最长时间。两段都在本机与对端之间，正常毫秒级。
+const TLS_HANDSHAKE_TIMEOUT: Duration = Duration::from_secs(10);
 
 const ESTABLISHED: &[u8] = b"HTTP/1.1 200 Connection established\r\n\r\n";
 const BAD_REQUEST: &str = "400 Bad Request";

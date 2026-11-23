@@ -132,6 +132,7 @@ async fn open_peers_and_federation(
         peers.paired_names(),
         FEDERATION_PING_INTERVAL,
         FEDERATION_PING_TIMEOUT,
+        None,
     )
     .await
     .with_context(|| format!("联邦转发组件监听 {}", cfg.federation_listen))?;

@@ -159,6 +159,7 @@ impl Core {
             paired_rx,
             Duration::from_millis(500),
             Duration::from_secs(3),
+            None,
         )
         .await
         .unwrap();

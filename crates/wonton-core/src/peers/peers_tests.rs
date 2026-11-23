@@ -130,6 +130,7 @@ impl TestCore {
             self.peers.paired_names(),
             Duration::from_millis(200),
             Duration::from_secs(2),
+            None,
         )
         .await
         .unwrap();
