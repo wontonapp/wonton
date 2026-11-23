@@ -7,7 +7,10 @@ use serde_json::{Value, json};
 
 use super::networks::{endpoint_settings, published, running, state_name};
 use super::update::update_container;
-use super::{FakeExec, Resources, archive_of, gone, json_reply, labeled, labels_of, query_param};
+use super::{
+    FakeExec, Resources, archive_of, drop_container, gone, json_reply, labeled, labels_of,
+    query_param,
+};
 
 pub(super) fn containers(
     docker: &mut Resources,
@@ -85,16 +88,10 @@ pub(super) fn containers(
             )
         }
         (&Method::DELETE, [name]) => {
-            if docker.restartable.remove(*name).is_some() {
-                docker.states.remove(*name);
-            }
-            for endpoints in docker.endpoints.values_mut() {
-                endpoints.remove(*name);
-            }
-            // 容器没了，它的运行状态清掉：同名的下一个容器不该继承上一个的退出态。start_states 的
-            // 覆盖保留——它是测试按名字预置的"这个容器起成什么样"，重建后照样适用。
-            docker.states.remove(*name);
-            gone(docker.containers.remove(*name).is_some())
+            let found = exists(name);
+            // start_states 的覆盖保留——它是测试按名字预置的"这个容器起成什么样"，重建后照样适用。
+            drop_container(docker, name);
+            gone(found)
         }
         (&Method::GET, [name, "json"])
             if docker
@@ -108,7 +105,24 @@ pub(super) fn containers(
                 json!({"message": message}),
             )
         }
-        (&Method::GET, [name, "json"]) if exists(name) => inspect_container(docker, name),
+        // 删除中的容器：端点还看得见，再被 inspect 几次才连同容器一起没。
+        (&Method::GET, [name, "json"]) if docker.removing.contains_key(*name) => {
+            count_inspect(docker, name);
+            let left = docker.removing.get_mut(*name).map_or(0, |left| {
+                *left = left.saturating_sub(1);
+                *left
+            });
+            if left == 0 {
+                drop_container(docker, name);
+                gone(false)
+            } else {
+                inspect_container(docker, name)
+            }
+        }
+        (&Method::GET, [name, "json"]) if exists(name) => {
+            count_inspect(docker, name);
+            inspect_container(docker, name)
+        }
         (&Method::POST, [name, "wait"]) if exists(name) => {
             let code = docker.outputs.get(*name).map_or(0, |o| o.0);
             json_reply(StatusCode::OK, json!({"StatusCode": code}))
@@ -286,7 +300,11 @@ fn start_container(docker: &mut Resources, name: &str) -> Response {
     gone(true)
 }
 
-fn inspect_container(docker: &Resources, name: &str) -> Response {
+fn count_inspect(docker: &mut Resources, name: &str) {
+    *docker.inspect_count.entry(name.to_owned()).or_default() += 1;
+}
+
+fn inspect_container(docker: &mut Resources, name: &str) -> Response {
     let healthy = json!({"Status": "running", "Running": true, "Health": {"Status": "healthy"}});
     let mut state = docker.states.get(name).cloned().unwrap_or(healthy);
     state
