@@ -34,8 +34,8 @@ struct Rig {
 async fn master(
     reply: &'static str,
     gated: bool,
-    // 第几次以后改回失败（0 起算），`usize::MAX` 一直成功。
-    fail_from: usize,
+    // 从第几次到第几次之间回失败（0 起算，两端都含），给回的那种文本。
+    fails: Option<(&'static str, usize, usize)>,
 ) -> (String, Arc<AtomicUsize>, Option<(Arc<Notify>, Arc<Notify>)>) {
     let listener = tokio::net::TcpListener::bind("127.0.0.1:0").await.unwrap();
     let addr = listener.local_addr().unwrap().to_string();
@@ -58,10 +58,10 @@ async fn master(
             let mut byte = [0u8; 1];
             while socket.read_exact(&mut byte).await.is_ok() && byte[0] != b'\n' {}
             let hits_now = hit.load(Ordering::SeqCst);
-            let text = if hits_now > fail_from {
-                "Success=0\n--\nsignal rejected\n"
-            } else {
-                reply
+            let failing = fails.is_some_and(|(_, from, to)| hits_now > from && hits_now <= to);
+            let text = match fails {
+                Some((text, _, _)) if failing => text,
+                _ => reply,
             };
             let _ = socket.write_all(text.as_bytes()).await;
         }
@@ -72,7 +72,7 @@ async fn master(
 
 impl Rig {
     async fn start(lan: bool, ingress: bool, public: bool) -> Self {
-        Self::start_with_reload(lan, ingress, public, "Success=1\n", false, usize::MAX).await
+        Self::start_with_reload(lan, ingress, public, "Success=1\n", false, None).await
     }
 
     async fn start_with_reload(
@@ -81,12 +81,12 @@ impl Rig {
         public: bool,
         reply: &'static str,
         gated: bool,
-        fail_from: usize,
+        fails: Option<(&'static str, usize, usize)>,
     ) -> Self {
         let h = Harness::start(None).await;
         let id = register(&h);
         let install = prepare_entry_files(&h);
-        let (reload_addr, reloads, gate) = master(reply, gated, fail_from).await;
+        let (reload_addr, reloads, gate) = master(reply, gated, fails).await;
         let entry = EntryContainers::new(
             h.docker.engine().await,
             install.clone(),
@@ -421,7 +421,15 @@ async fn opening_without_container_is_not_reported_as_success() {
 
 #[tokio::test]
 async fn reload_failure_rolls_back_switch() {
-    let rig = Rig::start_with_reload(true, true, true, "Success=1\n", false, 1).await;
+    let rig = Rig::start_with_reload(
+        true,
+        true,
+        true,
+        "Success=1\n",
+        false,
+        Some(("Success=0\n--\nsignal rejected\n", 1, usize::MAX)),
+    )
+    .await;
     assert_eq!(rig.switch("public", true).await.status, StatusCode::OK);
     let before = rig.crt_list("public");
     let guard = rig
@@ -595,7 +603,7 @@ async fn unavailable_lan_is_not_reported_as_open() {
 
 #[tokio::test]
 async fn opening_is_not_published_until_reload_succeeds() {
-    let rig = Rig::start_with_reload(true, true, true, "Success=1\n", true, usize::MAX).await;
+    let rig = Rig::start_with_reload(true, true, true, "Success=1\n", true, None).await;
     let hold = rig.gate.as_ref().unwrap().1.clone();
     let release = rig.gate.as_ref().unwrap().0.clone();
     let gateway = rig.gateway.clone();
@@ -637,6 +645,22 @@ async fn opening_is_not_published_until_reload_succeeds() {
 }
 
 #[tokio::test]
+async fn a_reload_still_in_progress_is_retried() {
+    // 装机首次启动就对账时，入口的主进程可能刚起来、上一次重载还没完。
+    let rig = Rig::start_with_reload(
+        true,
+        true,
+        true,
+        "Success=1\n",
+        false,
+        Some(("Success=0\n--\nAnother reload is still in progress\n", 0, 1)),
+    )
+    .await;
+    assert_eq!(rig.switch("public", true).await.status, StatusCode::OK);
+    assert!(rig.reloads() >= 2, "第一次回过重载中，要再试");
+}
+
+#[tokio::test]
 async fn rejected_configuration_never_opens_entry() {
     let rig = Rig::start_with_reload(
         true,
@@ -644,7 +668,7 @@ async fn rejected_configuration_never_opens_entry() {
         true,
         "Success=0\n--\ninvalid certificate\n",
         false,
-        0,
+        Some(("Success=0\n--\ninvalid certificate\n", 0, usize::MAX)),
     )
     .await;
     let reply = rig.switch("public", true).await;
