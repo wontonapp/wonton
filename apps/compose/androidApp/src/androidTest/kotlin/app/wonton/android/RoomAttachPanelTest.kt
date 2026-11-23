@@ -1,6 +1,7 @@
 package app.wonton.android
 
 import android.content.ContentValues
+import android.net.Uri
 import android.os.Environment
 import android.provider.MediaStore
 import androidx.compose.ui.geometry.Offset
@@ -38,11 +39,15 @@ class RoomAttachPanelTest : RoomTelegramCase() {
     @Test
     fun attachSheetSendsPhotosWithDraftAsCaption() {
         val core = (compose.activity.application as WontonApplication).core.getOrThrow()
-        ensureAlbumPhotos()
+        val picks = ensureAlbumPhotos()
         clearTray()
-        // 输入框里先打一句：打开面板时附言框里就是它，面板改的也是同一份草稿。
+        // 输入框里先打一句：选了照片、附言条出来时里面就是它，面板改的也是同一份草稿。
         compose.onNode(hasSetTextAction()).performTextInput("先说一句")
         openAlbum()
+        photos()[albumIndexOf(picks[0])].performClick()
+        photos()[albumIndexOf(picks[1])].performClick()
+        compose.waitUntil(10_000) { photos()[albumIndexOf(picks[0])].isSelected() }
+        // 附言条只在选了照片以后才出来（ADR-0109 第 8 节），选了第一张再找它。
         val field = compose.onNode(hasSetTextAction() and hasAnyAncestor(hasTestTag("attach-send")))
         field.assert(hasText("先说一句"))
         field.performTextClearance()
@@ -50,15 +55,14 @@ class RoomAttachPanelTest : RoomTelegramCase() {
         compose.waitForIdle()
         val composerField = compose.onNode(hasSetTextAction() and !hasAnyAncestor(hasTestTag("attach-send")))
         composerField.assert(hasText("两张都发"))
-        photos()[0].performClick()
-        photos()[1].performClick()
-        compose.waitUntil(10_000) { photos()[0].isSelected() }
         screenshot("attach-sheet")
         sheetSend("attach-send").performClick()
         compose.waitUntil(10_000) {
             compose.onAllNodes(hasTestTag("attach-send")).fetchSemanticsNodes().isEmpty()
         }
-        runCatching { compose.onNodeWithContentDescription(string(R.string.room_scroll_to_bottom)).performClick() }
+        compose.waitUntil(10_000) {
+            compose.onAllNodes(hasSetTextAction() and hasText("")).fetchSemanticsNodes().isNotEmpty()
+        }
         compose.waitUntil(10_000) {
             compose.onAllNodes(hasText("两张都发", substring = true)).fetchSemanticsNodes().isNotEmpty()
         }
@@ -74,12 +78,13 @@ class RoomAttachPanelTest : RoomTelegramCase() {
     @Test
     fun rejectedAttachKeepsCaptionInTheInput() {
         val core = (compose.activity.application as WontonApplication).core.getOrThrow()
-        ensureAlbumPhotos()
+        val picks = ensureAlbumPhotos()
         clearTray()
         // 面板选完就发，先在核心那边定好：下一张进附件区的照片上传失败。
         core.failNextAttachmentForTest(TimelineTarget(ECHO_ROOM, null))
         openAlbum()
-        photos()[0].performClick()
+        photos()[albumIndexOf(picks[0])].performClick()
+        compose.waitUntil(10_000) { photos()[albumIndexOf(picks[0])].isSelected() }
         sheetSend("attach-send").performClick()
         compose.waitUntil(10_000) { trayTiles() == 1 }
         // 附言就是草稿：打一句再发，被拒以后这句还在输入框里。
@@ -93,6 +98,8 @@ class RoomAttachPanelTest : RoomTelegramCase() {
             "被拒的这句也进了时间线"
         }
         check(trayTiles() == 1) { "附件被吃掉了" }
+        // 这张一直标着上传失败，留着会让后面用例的发送也被核心拒掉。
+        clearTray()
     }
 
     /**
@@ -146,16 +153,18 @@ class RoomAttachPanelTest : RoomTelegramCase() {
     @Test
     fun sideChatAlbumTakesSeveralPhotos() {
         enterSideChat()
-        ensureAlbumPhotos()
+        val picks = ensureAlbumPhotos()
+        val first = albumIndexOf(picks[0])
+        val second = albumIndexOf(picks[1])
         openAlbum()
         compose.waitUntil(10_000) { photos().fetchSemanticsNodes().size >= 2 }
-        photos()[0].performClick()
+        photos()[first].performClick()
         compose.waitForIdle()
         // 旁聊没有附件区，但一摞能选好几张：选了一张，后面的照样点得动。
-        photos()[1].assertIsEnabled().performClick()
+        photos()[second].assertIsEnabled().performClick()
         compose.waitForIdle()
-        photos()[0].assertIsSelected()
-        photos()[1].assertIsSelected()
+        photos()[first].assertIsSelected()
+        photos()[second].assertIsSelected()
         sheetSend("attach-send").assertIsEnabled()
     }
 
@@ -163,7 +172,7 @@ class RoomAttachPanelTest : RoomTelegramCase() {
     @Test
     fun sideChatPhotosOnlyFirstCarriesTheReply() {
         enterSideChat()
-        ensureAlbumPhotos()
+        val picks = ensureAlbumPhotos()
         // 旁聊里发一句，左滑它当回复对象。
         compose.onNode(hasSetTextAction()).performTextInput("回这一条")
         compose.onNodeWithContentDescription(string(R.string.composer_send)).performClick()
@@ -175,10 +184,9 @@ class RoomAttachPanelTest : RoomTelegramCase() {
         compose.onNodeWithContentDescription(string(R.string.message_reply_cancel)).assertIsDisplayed()
         openAlbum()
         compose.waitUntil(10_000) { photos().fetchSemanticsNodes().size >= 2 }
-        // 两张能读的照片：能读的那些比坏图放得早，在相册末尾。
-        val count = photos().fetchSemanticsNodes().size
-        photos()[count - 2].performClick()
-        photos()[count - 1].performClick()
+        // 两张能读的照片各选一张。
+        photos()[albumIndexOf(picks[0])].performClick()
+        photos()[albumIndexOf(picks[1])].performClick()
         sheetSend("attach-send").performClick()
         compose.waitUntil(10_000) { compose.onAllNodes(hasTestTag("attach-send")).fetchSemanticsNodes().isEmpty() }
         compose.waitUntil(10_000) {
@@ -191,20 +199,22 @@ class RoomAttachPanelTest : RoomTelegramCase() {
     @Test
     fun sideChatPhotoFailureStopsAndNamesTheNth() {
         enterSideChat()
-        ensureAlbumPhotos()
-        addBrokenPhoto()
+        val picks = ensureAlbumPhotos()
+        val broken = addBrokenPhoto()
         compose.onNode(hasSetTextAction()).performTextInput("这段留着")
         openAlbum()
         compose.waitUntil(10_000) { photos().fetchSemanticsNodes().size >= 2 }
-        // 坏图最新，排在相册第一张；再选一张好的，坏的那张失败以后好的不再试。
-        photos()[0].performClick()
-        photos()[1].performClick()
+        // 先点坏的那张、再点一张好的：坏的那张失败以后好的不再试。
+        photos()[albumIndexOf(broken)].performClick()
+        photos()[albumIndexOf(picks[0])].performClick()
+        compose.waitForIdle()
         sheetSend("attach-send").performClick()
         compose.waitUntil(10_000) {
             compose.onAllNodes(hasText(string(R.string.photo_failed_at).replace("%1\$d", "1"), substring = true))
                 .fetchSemanticsNodes().isNotEmpty()
         }
         compose.onNode(hasText("这段留着")).assertIsDisplayed()
+        removePhoto(broken)
     }
 
     private fun sentItems() = compose.onAllNodes(
@@ -236,16 +246,16 @@ class RoomAttachPanelTest : RoomTelegramCase() {
         }
     }
 
-    /** 插一张读不出来的“图”（MIME 说是 PNG，内容只有四个字节）：转码必失败，而且它最新、排在相册第一张。 */
-    private fun addBrokenPhoto() {
+    /** 插一张读不出来的“图”（MIME 说是 PNG，内容只有四个字节）：转码必失败。 */
+    private fun addBrokenPhoto(): Uri {
         val resolver = instrumentation.targetContext.contentResolver
         val collection = MediaStore.Images.Media.EXTERNAL_CONTENT_URI
         val values = ContentValues().apply {
             put(MediaStore.Images.Media.DISPLAY_NAME, "broken.png")
             put(MediaStore.Images.Media.MIME_TYPE, "image/png")
             put(MediaStore.Images.Media.RELATIVE_PATH, Environment.DIRECTORY_PICTURES)
-            // 比现有的都新：相册按 DATE_ADDED 倒序，坏图必须排第一张。
-            put(MediaStore.Images.Media.DATE_ADDED, System.currentTimeMillis() / 1000 + 1)
+            // 插入时给的 DATE_ADDED 会被 MediaProvider 冲成当时那一秒，照样给个新值；先后用 albumIndexOf 查。
+            put(MediaStore.Images.Media.DATE_ADDED, System.currentTimeMillis() / 1000 + 10)
             put(MediaStore.Images.Media.IS_PENDING, 1)
         }
         val uri = resolver.insert(collection, values) ?: error("相册里放不进坏图")
@@ -253,6 +263,12 @@ class RoomAttachPanelTest : RoomTelegramCase() {
         values.clear()
         values.put(MediaStore.Images.Media.IS_PENDING, 0)
         resolver.update(uri, values, null, null)
+        return uri
+    }
+
+    /** 删掉自己插的照片；别的 UID 的行删不掉也不影响这一轮。 */
+    private fun removePhoto(uri: Uri) {
+        runCatching { instrumentation.targetContext.contentResolver.delete(uri, null, null) }
     }
 
     private fun androidx.compose.ui.test.SemanticsNodeInteraction.isSelected(): Boolean =

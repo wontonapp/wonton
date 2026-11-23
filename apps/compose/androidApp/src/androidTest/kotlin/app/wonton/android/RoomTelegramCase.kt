@@ -1,8 +1,10 @@
 package app.wonton.android
 
 import android.Manifest
+import android.content.ContentUris
 import android.content.ContentValues
 import android.graphics.Bitmap
+import android.net.Uri
 import android.os.Build
 import android.os.Environment
 import android.provider.MediaStore
@@ -307,18 +309,24 @@ abstract class RoomTelegramCase {
         useUnmergedTree = true,
     ).fetchSemanticsNodes().size
 
-    /** 相册里能读的（`pick-` 开头的）照片不够两张时先放两张真照片进去，够了两张就不再加，多跑几次也不堆。 */
-    protected fun ensureAlbumPhotos() {
+    /**
+     * 相册开头放两张一定能读的照片（`pick-` 开头），返回它们的 URI；先删上一轮留下的照片。
+     * 插入时给的 DATE_ADDED 会被 MediaProvider 冲成插入那一秒，同一秒里的先后按 _id 排——
+     * 所以别假定开头的两张就是它们，用 [albumIndexOf] 查网格里的下标。
+     */
+    protected fun ensureAlbumPhotos(): List<Uri> {
         val resolver = instrumentation.targetContext.contentResolver
         val collection = MediaStore.Images.Media.EXTERNAL_CONTENT_URI
-        val existing = resolver.query(
-            collection,
-            arrayOf(MediaStore.Images.Media._ID),
-            "${MediaStore.Images.Media.DISPLAY_NAME} LIKE 'pick-%'",
-            null,
-            null,
-        )?.use { it.count } ?: 0
-        repeat((2 - existing).coerceAtLeast(0)) { index ->
+        runCatching {
+            resolver.delete(
+                collection,
+                "${MediaStore.Images.Media.DISPLAY_NAME} LIKE 'pick-%'" +
+                    " OR ${MediaStore.Images.Media.DISPLAY_NAME} LIKE 'broken%'",
+                null,
+            )
+        }
+        val added = mutableListOf<Uri>()
+        repeat(2) { index ->
             val values = ContentValues().apply {
                 put(MediaStore.Images.Media.DISPLAY_NAME, "pick-$index.png")
                 put(MediaStore.Images.Media.MIME_TYPE, "image/png")
@@ -334,7 +342,31 @@ abstract class RoomTelegramCase {
             values.clear()
             values.put(MediaStore.Images.Media.IS_PENDING, 0)
             resolver.update(uri, values, null, null)
+            added += uri
         }
+        return added
+    }
+
+    /** 照片在相册网格里的下标：和面板一样按 `DATE_ADDED DESC` 查一遍（同一秒里的先后按 _id）。 */
+    protected fun albumIndexOf(uri: Uri): Int {
+        val resolver = instrumentation.targetContext.contentResolver
+        val id = ContentUris.parseId(uri)
+        val index = resolver.query(
+            MediaStore.Images.Media.EXTERNAL_CONTENT_URI,
+            arrayOf(MediaStore.Images.Media._ID),
+            null,
+            null,
+            "${MediaStore.Images.Media.DATE_ADDED} DESC",
+        )?.use { cursor ->
+            var position = 0
+            while (cursor.moveToNext()) {
+                if (cursor.getLong(0) == id) return@use position
+                position++
+            }
+            -1
+        } ?: -1
+        check(index >= 0) { "照片不在相册里" }
+        return index
     }
 
     protected fun photos() = compose.onAllNodes(hasTestTag("album-photo"))
