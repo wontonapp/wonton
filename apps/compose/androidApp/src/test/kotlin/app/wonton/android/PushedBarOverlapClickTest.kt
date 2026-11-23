@@ -33,12 +33,14 @@ import androidx.compose.ui.test.onNodeWithText
 import androidx.compose.ui.test.onRoot
 import androidx.compose.ui.test.performClick
 import androidx.compose.ui.test.performTouchInput
+import androidx.compose.ui.unit.Dp
 import androidx.compose.ui.unit.dp
 import androidx.test.core.app.ApplicationProvider
 import androidx.test.ext.junit.runners.AndroidJUnit4
 import app.wonton.ui.R
-import app.wonton.ui.design.WontonPushedBar
+import app.wonton.ui.design.LocalWontonTopInset
 import app.wonton.ui.design.WontonIconButton
+import app.wonton.ui.design.WontonPushedBar
 import app.wonton.ui.design.WontonScreen
 import app.wonton.ui.design.WontonTheme
 import app.wonton.ui.design.wontonContentPadding
@@ -234,5 +236,29 @@ class PushedBarOverlapClickTest {
         val title = compose.onNodeWithText(LONG_TITLE).getUnclippedBoundsInRoot()
         assertTrue("长标题要从返回键右边起", title.left >= back.right)
         assertTrue("长标题要在 actions 左边收住", title.right <= action.left)
+    }
+
+    /**
+     * 内容第一遍组合就要拿到栏高：靠状态回填时第一遍是 0、下一帧才补上，
+     * 一帧定格的截图（Paparazzi）会抽到栏压内容的那一帧。
+     */
+    @Test
+    fun contentSeesTheBarHeightOnItsFirstComposition() {
+        var firstInset: Dp? = null
+        compose.setContent {
+            WontonTheme(testAppearance()) {
+                WontonScreen(bar = { WontonPushedBar(title = "外观", onBack = {}) }) {
+                    if (firstInset == null) firstInset = LocalWontonTopInset.current
+                    Column(Modifier.wontonContentPadding()) { BasicText("内容") }
+                }
+            }
+        }
+        compose.waitForIdle()
+        val bar = compose.onNodeWithText("外观").getUnclippedBoundsInRoot()
+        val content = compose.onNodeWithText("内容").getUnclippedBoundsInRoot()
+        val barHeight = (bar.bottom - bar.top).value.toDouble()
+        assertEquals("栏高是 M3 的 64dp", 64.0, barHeight, 0.5)
+        assertEquals("内容第一遍组合就该拿到栏高", barHeight, firstInset?.value?.toDouble() ?: -1.0, 0.5)
+        assertEquals("内容的让位要和栏高一致", bar.bottom.value.toDouble(), content.top.value.toDouble(), 0.5)
     }
 }
