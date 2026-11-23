@@ -1,15 +1,22 @@
 # HANDOFF plat-dev-host-magpie（#57 Linux 宿主经转发用宿主 magpie 跑冒烟）
 
-写于 2026-11-24 02:1x。**复审（rv-948）的意见已全部改完，整条冒烟在复审改完后重跑通过。**
+写于 2026-11-24 05:0x。**第二轮复审（1k-rv-948b）的意见已全部改完，带宿主同名旧条的冒烟重跑通过。**
 
 ## 结果
 
 `stack-slot.sh acquire --priority --project wonton-smoke plat-dev-host-magpie -- ./deploy/dev/core/smoke.sh`
-（1k，端口 18491/18492 避开别的栈，宿主 magpie 是那台上的容器，模型 `upstream/group/main`）：01:45:33 开跑，
-02:09:41 结束，24 分钟，151 条断言全过，`端到端冒烟通过：安装 30s，卸载 1s`。模型调用 77 次、输入 95,988 /
-输出 15,872 token。日志 `plat-dev-host-magpie-host/1k-logs/smoke-1k17.log`。
+（1k，端口 18491/18492 避开别的栈，**先在宿主 magpie 上预置一条同名旧凭据**，模型 `upstream/group/main`）：
+04:23:09 开跑，05:01:20 结束，38 分钟，151 条断言全过，`端到端冒烟通过：安装 34s，卸载 1s`；跑完旧条还在、
+只删了冒烟建的那条。模型调用 80 次、输入 141,572 / 输出 21,962 token。日志 `plat-dev-host-magpie-host/1k-logs/smoke-1k18.log`。
 
-## 复审改了什么
+## 第二轮复审又改了什么
+
+- 卸载断言按 id，`host_model_key_id` 在断言之后清空；带旧条实测通过。
+- 新增两条用例的容器名 `app.test` → `app-test`。
+- 等网关挪到拿 `dependencies.changing` 之前（起网关的 start 也要那把锁），`provision_models` 直接取状态。
+- `smoke.sh:328` 的 shellcheck 改 if 去掉 SC2015；README 示例改成 `/v1/models` 里的 id。
+
+## 首轮复审改了什么
 
 1. `gateway-key models` 只传 `$model`（参数必须带斜杠），期望 `only $model`；README 补回“填 `/v1/models` 的 id”。
 2. 同名凭据按建前/建后 id 差集取新建的那条，断言按 id；不再删错、留错。
