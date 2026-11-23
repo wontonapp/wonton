@@ -353,8 +353,10 @@ async fn a_late_room_key_redecrypts_a_thread_reply() {
 /// 旁聊时间线在事件到达之前打开：主人自己的第一句（本地回显或稍后的同步回声）和 Bot 的回复
 /// （正常解密到达）都要进旁聊。真实端到端里旁聊时间线在卡片出现后马上打开，之后的每一批都是空的。
 ///
-/// 这条是冒烟：回复可能在建时间线读缓存之前就到了，落不进修复覆盖的窗口。钉住补检的是下面
-/// `a_thread_reply_lost_from_the_timeline_is_rebuilt_back` 和 matrix 的 `a_cached_thread_event_the_timeline_lost_is_reported_as_missed`。
+/// 回复可能在建时间线读缓存之前就到了，落不进修复覆盖的窗口：这条用例最后把回复当成被 SDK 丢掉的活事件
+/// 清掉，断言补检会清屏（原因 `missed-cached-event`）并把它重建回来。补检判定本身（宽限、去重）的
+/// 确定性守卫在 matrix 的 `chat_room/bootstrap_tests/thread.rs`
+/// `a_cached_thread_event_the_timeline_lost_is_reported_as_missed`。
 #[tokio::test(flavor = "multi_thread")]
 #[ignore = "需要 Docker，用 --include-ignored 运行"]
 async fn an_early_opened_side_chat_receives_the_first_message_and_the_reply() {
@@ -411,6 +413,34 @@ async fn an_early_opened_side_chat_receives_the_first_message_and_the_reply() {
         .await;
     assert_eq!(card.title, "整理照片");
     room_unread(&setup.phone, &setup.room, 1).await;
+    // 把回复当活事件被 SDK 丢掉：只清 SDK 时间线、缓存不动，这次清空对壳无声，只有补检会让壳清屏。
+    setup
+        .phone
+        .test_clear_timeline(TimelineTarget {
+            room_id: setup.room.to_string(),
+            thread_root: Some(root.clone()),
+        })
+        .await
+        .expect("清空旁聊时间线");
+    thread.until_cleared().await;
+    assert!(
+        !has_text(&thread.items, "在整理了"),
+        "壳清屏后回复先消失：{}",
+        thread.cleared_reasons()
+    );
+    assert!(
+        thread.cleared_reasons().contains("missed-cached-event"),
+        "清空来自补检：{}",
+        thread.cleared_reasons()
+    );
+    thread
+        .until("重画后回复回来", |item| {
+            matches!(&item.content, TimelineContent::Message { message }
+                if matches!(&message.body, MessageContent::Text { body, .. }
+                    if body == "在整理了"))
+            .then_some(())
+        })
+        .await;
 }
 
 /// 旁聊里发的照片只进旁聊：主对话里不出现，Bot 收到的带话题根。

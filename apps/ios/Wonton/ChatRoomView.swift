@@ -152,7 +152,9 @@ private extension ChatRoomView {
             avatar: barAvatar,
             typing: typingText,
             openProfile: profileAction,
-            sideChatTitle: threadRoot == nil ? nil : timeline.sideChat?.title ?? String(localized: .Chat.sideChat),
+            sideChatTitle: threadRoot == nil ? nil : timeline.sideChat?.title.flatMap {
+                $0.isEmpty ? nil : $0
+            } ?? String(localized: .Chat.sideChat),
             close: threadRoot == nil ? nil : { model.closeSideChat(in: roomId, why: "bar") }
         ) {
             // 面板跟着主对话（ADR-0093）：旁聊页没有房间的面板，也没有这里的按钮。

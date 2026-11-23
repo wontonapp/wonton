@@ -126,10 +126,11 @@ async fn a_cached_thread_event_the_timeline_lost_is_reported_as_missed() {
     server.abort();
 }
 
-/// 未读不等密钥：解不开的话题回复也算进房间未读，房间根从外层的话题关系收集。
+/// 未读不等密钥：解不开的话题回复也算进房间未读，房间根从外层的话题关系收集；密钥到了换成正文，
+/// 同一条回执不重复计。
 #[tokio::test]
 async fn an_undecryptable_thread_reply_counts_toward_the_room_unread() {
-    let (_encrypted, client, server) = seeded_thread().await;
+    let (encrypted, client, server) = seeded_thread().await;
     let room = client.get_room(room_id!("!bootstrap:example.org")).unwrap();
     // 话题回执不在事件缓存里，直接写这份回执：一条没读的回复。
     let root = event_id!("$root");
@@ -143,6 +144,28 @@ async fn an_undecryptable_thread_reply_counts_toward_the_room_unread() {
         .await
         .unwrap();
     drop(lock);
+    assert_eq!(crate::side_chat::threads_unread(&room).await, 1);
+
+    // 密钥到、占位换成正文：还是那一条回执，未读不翻倍。
+    let chat = ChatRoom::open_with(room.clone(), Focus::Thread(root.to_owned()))
+        .await
+        .unwrap();
+    client
+        .encryption()
+        .import_room_keys(encrypted.keys.path().to_owned(), "test")
+        .await
+        .unwrap();
+    crate::testkit::eventually(
+        "密钥解开话题回复",
+        chat.message_updates().await,
+        |messages| {
+            messages
+                .iter()
+                .any(|message| message.body == MessageBody::Text("private reply".into()))
+                .then_some(())
+        },
+    )
+    .await;
     assert_eq!(crate::side_chat::threads_unread(&room).await, 1);
     server.abort();
 }
