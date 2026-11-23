@@ -310,18 +310,6 @@
       "appearances": [
         {
           "appearance": "luminosity",
-          "value": "dark"
-        }
-      ],
-      "filename": "dark-1024.png",
-      "idiom": "universal",
-      "platform": "ios",
-      "size": "1024x1024"
-    },
-    {
-      "appearances": [
-        {
-          "appearance": "luminosity",
           "value": "tinted"
         }
       ],
@@ -512,18 +500,6 @@
       "platform": "ios",
       "scale": "2x",
       "size": "83.5x83.5"
-    },
-    {
-      "appearances": [
-        {
-          "appearance": "luminosity",
-          "value": "tinted"
-        }
-      ],
-      "filename": "tinted-1024.png",
-      "idiom": "universal",
-      "platform": "ios",
-      "size": "1024x1024"
     }
   ],
   "info": {
