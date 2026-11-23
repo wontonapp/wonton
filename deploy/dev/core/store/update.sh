@@ -15,7 +15,7 @@ dev_guard_check wonton-dev-store
 # Agent 只收 Hermes：别的 Agent 插件还是 `agent.protocol: acp` 的旧清单，核心按新协议读不懂，等它们改完再加回来。
 plugins=(
   geraldpeng6/wonton-plugin-files@v0.2.2
-  wontonapp/wonton-plugin-hermes@v0.8.0
+  wontonapp/wonton-plugin-hermes@v0.8.1
   geraldpeng6/wonton-plugin-magpie@v0.6.4
   geraldpeng6/wonton-plugin-immich@v0.2.0
   geraldpeng6/wonton-plugin-navidrome@v0.1.1
@@ -34,7 +34,8 @@ git init -q "$work/store"
 git -C "$work/store" fetch -q --depth 1 https://github.com/wontonapp/wonton-store.git "$store_commit"
 git -C "$work/store" checkout -q FETCH_HEAD
 onboarding="$work/store/onboarding.json"
-cargo build -q --manifest-path "$repo/Cargo.toml" -p wonton-core
+# 在仓库根目录编：cargo 的排队垫片按 cwd 判断能不能分到编译机，带绝对的 --manifest-path 分不出去。
+(cd "$repo" && cargo build -q -p wonton-core)
 core="${CARGO_TARGET_DIR:-$repo/target}/debug/wonton-core"
 for plugin in "${plugins[@]}"; do
   name="${plugin%@*}"

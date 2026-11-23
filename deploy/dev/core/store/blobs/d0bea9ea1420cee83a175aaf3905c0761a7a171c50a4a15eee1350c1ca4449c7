@@ -3,6 +3,8 @@
 #
 # 1) gateway.trust_env：Matrix 适配器 v0.22.5–v0.22.7 解析代理时不传目标主机，NO_PROXY 不生效；继承
 #    HTTPS_PROXY 会把内部的 matrix.wonton.internal 发给出口代理而被 403 拒绝，所以关闭网关的环境代理。
+# 2) plugins.enabled：网页控制台的后端（dashboard/api.py）只在名单里有 wonton 时才载入；老安装缺这项、或主人关过
+#    插件，重建时在这里补回，和 Hermes 的启用命令一样从 disabled 里撤掉。
 # 3) platforms.matrix.allow_admin_from：见下面第 3 块——占位符在这里换成注入值。
 # 4) approvals.smart_policy：包里 config.yaml 定的守卫默认规则，已有 Bot 的配置缺这项或留空时补上，
 #    主人自己写过的不动。
@@ -66,6 +68,21 @@ def apply(config, seed) -> bool:
     if gateway.get("trust_env") is not False:
         gateway["trust_env"] = False
         config["gateway"] = gateway
+        changed = True
+
+    # 2) plugins.enabled：缺这项时 Hermes 当作「还没开过任何插件」交给初次迁移去补，名单里有别的插件却没有 wonton
+    #    时整个网页后端不载入、控制台静默只剩只读。补回 wonton 并从 disabled 撤掉，和 Hermes 的启用命令一致。
+    plugins = config.get("plugins")
+    if not isinstance(plugins, dict):
+        plugins = {}
+        config["plugins"] = plugins
+    if not isinstance(plugins.get("enabled"), list):
+        plugins["enabled"] = []
+    if "wonton" not in plugins["enabled"]:
+        plugins["enabled"].append("wonton")
+        changed = True
+    if isinstance(plugins.get("disabled"), list) and "wonton" in plugins["disabled"]:
+        plugins["disabled"].remove("wonton")
         changed = True
 
     # 3) platforms.matrix.allow_admin_from：Hermes 只展开模型配置里的 ${VAR}，平台 extra 不展开；把名单占位符换成

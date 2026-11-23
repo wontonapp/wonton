@@ -19,8 +19,9 @@ services:
       - /bin/sh
       - -c
       - >-
-        mkdir -p /opt/data/plugins/wonton/locales /opt/data/hooks/wonton-language /opt/data/skills/wonton-help &&
+        mkdir -p /opt/data/plugins/wonton/locales /opt/data/plugins/wonton/dashboard /opt/data/hooks/wonton-language /opt/data/skills/wonton-help &&
         cp /seed/wonton/plugin.yaml /seed/wonton/*.py /opt/data/plugins/wonton/ &&
+        cp /seed/wonton/dashboard/* /opt/data/plugins/wonton/dashboard/ &&
         cp /seed/wonton/locales/*.yaml /opt/data/plugins/wonton/locales/ &&
         cp /seed/wonton-language/HOOK.yaml /seed/wonton-language/handler.py /opt/data/hooks/wonton-language/ &&
         cp /seed/skills/wonton-help/SKILL.md /opt/data/skills/wonton-help/ &&
@@ -54,6 +55,12 @@ services:
         target: /seed/wonton/commands.py
       - source: wonton_turn
         target: /seed/wonton/turn.py
+      - source: wonton_pages
+        target: /seed/wonton/pages.py
+      - source: wonton_dashboard_api
+        target: /seed/wonton/dashboard/api.py
+      - source: wonton_dashboard_manifest
+        target: /seed/wonton/dashboard/manifest.json
       - source: wonton_texts
         target: /seed/wonton/texts.py
       - source: wonton_locale
@@ -182,6 +189,12 @@ configs:
     file: ./wonton/commands.py
   wonton_turn:
     file: ./wonton/turn.py
+  wonton_pages:
+    file: ./wonton/pages.py
+  wonton_dashboard_api:
+    file: ./wonton/dashboard/api.py
+  wonton_dashboard_manifest:
+    file: ./wonton/dashboard/manifest.json
   wonton_texts:
     file: ./wonton/texts.py
   wonton_locale:
@@ -208,7 +221,7 @@ configs:
 x-wonton:
   spec: "0.12"
   id: com.nousresearch.hermes
-  version: 0.8.0
+  version: 0.8.1
   kind: agent
   title: { zh: AI 管家（Hermes）, en: All-Purpose Bot (Hermes) }
   description:
@@ -238,10 +251,10 @@ x-wonton:
 
       CN office-IM channels (Feishu, DingTalk, WeCom, QQ bot, personal WeChat) are enabled one by one in the plugin's settings: create a bot app on the platform's console, fill in the app ID and secret, and turn the switch on. These chats live only in that IM, not in the Wonton app's chat page; personal WeChat supports direct messages only and needs a one-time scan login from a terminal on the server (steps in the plugin README). Telegram is configured on the Channels page of the Hermes web page and uses Wonton's outbound proxy.
   release_notes:
-    zh: "模型改用 Hermes 自带的接入，不再经模型网关 magpie：打开它的网页，在 Keys 页填 key 或登录订阅，再在 Models 页选模型。修好了停链、发私聊和认人：在 App 里停链能马上打断手头的事，批准过的私聊会真的发出去，别人派活过来时它知道是谁。链到上限或者已经停了时，会回一句话说清原因。"
-    zh-Hant: "模型改用 Hermes 自帶的接入，不再經模型閘道 magpie：打開它的網頁，在 Keys 頁填入金鑰或登入訂閱，再在 Models 頁選模型。修好了停鏈、發私聊和認人：在 App 裡停鏈能馬上打斷手頭的事，批准過的私聊會真的發出去，別人派活過來時它知道是誰。鏈到上限或者已經停了時，會回一句話說清原因。"
-    en: "Models now use Hermes's own setup instead of the magpie model gateway: open its web page, add a key or sign in under Keys, then pick a model under Models. Fixed stopping, sending and knowing who is talking: stopping a chain in the app now interrupts what it is doing, approved direct messages really go out, and it knows who sent work down a chain. When a chain is at its limit or has been stopped, it answers with a short line saying why."
-    ja: "モデルは magpie モデルゲートウェイを経由せず、Hermes 自身の設定を使います。ウェブページを開き、Keys でキーを入力するかログインしてから、Models でモデルを選んでください。停止・送信・相手の識別を直しました。アプリでチェーンを止めると作業がすぐ中断され、承認済みの DM は実際に送られ、チェーンで仕事を回してきた相手も分かります。上限や停止のときは理由を一言返します。"
+    zh: "模型改用 Hermes 自带的接入，不再经模型网关 magpie：升级后请打开它的网页，在 Keys 页新加一个模型服务商，填它的 key 或登录订阅，再在 Models 页选模型。修好了停链、发私聊和认人：在 App 里停链能马上打断手头的事，批准过的私聊会真的发出去，别人派活过来时它知道是谁；链到上限或者已经停了时，会回一句话说清原因。网页控制台里，它现在按打开这页的人说话，不再一直是只读的。"
+    zh-Hant: "模型改用 Hermes 自帶的接入，不再經模型閘道 magpie：升級後請打開它的網頁，在 Keys 頁新加一個模型服務商，填入它的金鑰或登入訂閱，再在 Models 頁選模型。修好了停鏈、發私聊和認人：在 App 裡停鏈能馬上打斷手頭的事，批准過的私聊會真的發出去，別人派活過來時它知道是誰；鏈到上限或者已經停了時，會回一句話說清原因。網頁控制台裡，它現在按打開這頁的人說話，不再一直是唯讀的。"
+    en: "Models now use Hermes's own setup instead of the magpie model gateway: after updating, open its web page, add a model provider under Keys, fill in its key or sign in, then pick a model under Models. Fixed stopping, sending and knowing who is talking: stopping a chain in the app now interrupts what it is doing, approved direct messages really go out, and it knows who sent work down a chain; when a chain is at its limit or has been stopped, it answers with a short line saying why. In the web console it now talks as whoever opened the page instead of staying read-only."
+    ja: "モデルは magpie モデルゲートウェイを経由せず、Hermes 自身の設定を使います。更新後はウェブページを開き、Keys でモデルプロバイダーを追加してキーを入力するかログインし、Models でモデルを選んでください。停止・送信・相手の識別を直しました。アプリでチェーンを止めると作業がすぐ中断され、承認済みの DM は実際に送られ、チェーンで仕事を回してきた相手も分かります。上限や停止のときは理由を一言返します。Web コンソールでは、ページを開いた人として話すようになり、読み取り専用のままではなくなりました。"
   agent:
     protocol: matrix
   bot:

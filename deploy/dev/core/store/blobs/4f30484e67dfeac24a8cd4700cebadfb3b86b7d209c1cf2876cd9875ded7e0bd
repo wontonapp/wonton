@@ -103,10 +103,28 @@ def send_files_context(**_):
     return {"context": f"{SEND_FILES}\n{RECEIVED_FILES}\n{WRITE_PLUGIN}\n{TOOL_RESULTS}\n{WONTON_APPS}"}
 
 
+def revive_parked_mcp(**_):
+    """``pre_gateway_dispatch``：核心重启时 MCP 服务器会被整轮 park（上游对 403 的处理，park 后要 300 秒才自探一次）。
+    主人再说一句话就顺手叫醒它们，不等那 300 秒；没 park 的不动，也不等连接（下一轮工具调用照常走）。"""
+    try:
+        from tools import mcp_tool
+    except Exception:
+        return None
+    loop = getattr(mcp_tool, "_mcp_loop", None)
+    if loop is None or not loop.is_running():
+        return None
+    with mcp_tool._lock:
+        parked = [server for server in mcp_tool._servers.values() if getattr(server, "_park_reason", None)]
+    for server in parked:
+        loop.call_soon_threadsafe(server._reconnect_event.set)
+    return None
+
+
 def register(ctx):
     ctx.register_locale_dir(Path(__file__).with_name("locales"))
     ctx.register_hook("post_gateway_admission", missing_model_hint)
     ctx.register_hook("pre_llm_call", send_files_context)
+    ctx.register_hook("pre_gateway_dispatch", revive_parked_mcp)
     from . import commands
     from . import message_batch
     from . import side_chat

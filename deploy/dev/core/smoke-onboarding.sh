@@ -27,7 +27,7 @@ export WONTON_DEV_DOMAIN=wonton.localhost
 export WONTON_DEV_DATA="/tmp/wonton-onboarding-smoke-$(date +%s)-$$"
 # 不预装默认 Agent：引导的 Agent 名单应来自官方索引，不是本机装了什么。
 export WONTON_DEV_DEFAULT_PLUGINS=''
-# 出网代理（ADR-0023）：模型网关的上游经出口容器走。要不要设见文件头的说明。
+# 出网代理（ADR-0023）：要出网的插件经出口容器走。要不要设见文件头的说明。
 export WONTON_EGRESS_PROXY="${WONTON_SMOKE_EGRESS_PROXY:-}"
 # 这个脚本的密钥放在检出目录（不带进正式安装的状态目录）；dev.sh 在 source 时就按它定好变量。
 export WONTON_DEV_SECRETS="$here/.secrets"

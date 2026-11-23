@@ -85,13 +85,6 @@ CHAIN_LIMIT = {
     "ja": "このチェーンは上限に達しました。続けるにはチェーンの代表者の承認が必要です。",
 }
 
-CHAIN_BUSY = {
-    "en": "Too many conversations are running at once. Send the message again in a moment.",
-    "zh-Hans": "同时跑的会话太多了，稍等一下再发一句。",
-    "zh-Hant": "同時跑的會話太多了，稍等一下再傳一句。",
-    "ja": "同時に動いている会話が多すぎます。少し待ってから、もう一度送ってください。",
-}
-
 CHAIN_DENIED = {
     "en": "The core doesn't know the sender as someone this bot listens to.",
     "zh-Hans": "核心不认这个说话的人，他不在这个 Bot 听的人里。",
@@ -111,4 +104,11 @@ CHAIN_LOOP = {
     "zh-Hans": "这个 Bot 已经在这条链的上级，接着做要另起一条链。",
     "zh-Hant": "這個 Bot 已經在這條鏈的上級，接著做要另起一條鏈。",
     "ja": "この Bot はすでにチェーンの上流にいます。続けるには新しいチェーンが必要です。",
+}
+
+CHAIN_OTHER = {
+    "en": "The core didn't accept this turn.",
+    "zh-Hans": "核心这次没收下这一轮。",
+    "zh-Hant": "核心這次沒收下這一輪。",
+    "ja": "コアは今回のターンを受け付けませんでした。",
 }
