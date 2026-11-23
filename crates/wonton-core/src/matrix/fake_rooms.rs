@@ -1,7 +1,9 @@
 use std::collections::BTreeMap;
 
+use axum::body::{Body, Bytes};
 use axum::extract::{Path, State};
 use axum::http::{HeaderMap, StatusCode};
+use axum::response::{IntoResponse, Response};
 use axum::routing::{get, post};
 use axum::{Json, Router};
 use serde_json::{Value, json};
@@ -29,9 +31,10 @@ async fn create_room(
     State(fake): State<Fake>,
     headers: HeaderMap,
     Json(body): Json<Value>,
-) -> Reply {
+) -> Response {
     let mut state = fake.state();
-    reply(auth(&state, &headers).and_then(|(user, _)| {
+    let dropped = std::mem::take(&mut state.drop_next_room_create);
+    let result = reply(auth(&state, &headers).and_then(|(user, _)| {
         if state.refuse_rooms {
             return Err(error(StatusCode::INTERNAL_SERVER_ERROR, "M_UNKNOWN"));
         }
@@ -101,7 +104,18 @@ async fn create_room(
             },
         );
         Ok(ok(json!({"room_id": id})))
-    }))
+    }));
+    if dropped {
+        // 状态已经改完，响应体在发完头之后断掉：客户端收到的是传输错误，不是拒绝。
+        let stream = futures_util::stream::once(async {
+            Err::<Bytes, std::io::Error>(std::io::Error::new(
+                std::io::ErrorKind::ConnectionReset,
+                "createRoom 的响应丢了",
+            ))
+        });
+        return (StatusCode::OK, Body::from_stream(stream)).into_response();
+    }
+    result.into_response()
 }
 
 async fn joined_rooms(State(fake): State<Fake>, headers: HeaderMap) -> Reply {

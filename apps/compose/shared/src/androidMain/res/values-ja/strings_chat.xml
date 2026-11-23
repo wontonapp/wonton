@@ -126,12 +126,12 @@
     <string name="bot_state_offline">オフライン</string>
     <string name="bot_avatar_pick_state">%1$sの画像を変更</string>
     <string name="bot_profile_open">Bot のプロフィールを表示</string>
-    <string name="bot_identity_title">Bot の識別情報</string>
     <string name="bot_identity_value">プラグイン：%1$s\nBot：%2$s</string>
+    <string name="bot_details_account">アカウント：%1$s</string>
+    <string name="bot_details_web">ウェブページ：%1$s</string>
     <string name="bot_profile_read_only">この Bot のプロフィールは読み取り専用です。編集できるのはデフォルト Bot のみです。</string>
     <string name="bot_profile_missing">この Bot のプロフィールは利用できなくなりました。</string>
-    <string name="bot_web_title">Bot のウェブページ</string>
-    <string name="bot_web_open">Bot のウェブページを開く</string>
+    <string name="bot_web_open">ウェブ版で開く（英語）</string>
     <string name="bot_web_unauthenticated">この Bot のウェブページを開くには、サーバーにログインしてください。</string>
     <string name="bot_web_not_shared">サーバーの所有者は、この Bot のウェブページを家族に公開していません。</string>
     <string name="bot_web_permission_denied">このユーザーは Bot のウェブページを開くことができません。</string>

@@ -25,6 +25,11 @@ pub(crate) struct Storage {
 }
 
 impl Storage {
+    /// 设备级的数据目录：几台服务器共用的设置和设备密钥都在这里。
+    pub(crate) fn root(&self) -> &Path {
+        &self.root
+    }
+
     /// `root` 是壳给的数据目录，`dir` 是这台服务器的目录。
     pub(crate) fn open(root: &Path, dir: &Path) -> Result<Self, CoreError> {
         for dir in [root, dir] {

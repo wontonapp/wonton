@@ -19,6 +19,19 @@ use crate::l10n::{CATALOG, language};
 impl ClientCore {
     /// 假数据入口下照走真逻辑的时间线操作：拿掉附件只动本机的附件区，发送照样要过核心的检查。
     fn dispatch_ui_fake_composer(&self, action: &TimelineAction) -> Result<(), CoreError> {
+        // `WONTON_UI_FAIL_SEND`：界面测试要的“发送被拒”，三种发送都照附件传不上去的样子拒掉。
+        if std::env::var_os("WONTON_UI_FAIL_SEND").is_some()
+            && matches!(
+                action,
+                TimelineAction::SendText { .. }
+                    | TimelineAction::SendImage { .. }
+                    | TimelineAction::SendComposer { .. }
+            )
+        {
+            return Err(CoreError::InvalidInput {
+                reason: l10n!(CATALOG, language(), "composer-has-failed"),
+            });
+        }
         match action {
             TimelineAction::RemoveAttachment { .. } => {
                 self.composer_action(&self.scope(), action.clone())
@@ -71,10 +84,11 @@ impl ClientCore {
                     Ok(())
                 }
                 Action::Plugins { action } => self.dispatch_ui_fake_plugins(action),
-                // 假时间线（跳转、发字）和停止钮的假运行段都要看到同一个操作；被拒的不开假链。
+                // 假时间线（跳转、发字）和停止钮的假运行段都要看到同一个操作。
+                // 先过发送的拒绝和附件区的清空：被拒的发送不进假时间线。
                 Action::Timeline { action } => {
-                    self.ui_fake_timelines.timeline_action(action.clone());
                     self.dispatch_ui_fake_composer(&action)?;
+                    self.ui_fake_timelines.timeline_action(action.clone());
                     self.dispatch_ui_fake_timeline(action);
                     Ok(())
                 }
@@ -300,6 +314,10 @@ impl ClientCore {
             PluginAction::InstallNow { source } => scope.plugins.install_now(source),
             PluginAction::UpgradeNow { plugin_id } => scope.plugins.upgrade_now(plugin_id),
             PluginAction::UpgradeAll => scope.plugins.upgrade_all(),
+            PluginAction::ReviewStoreUpdate { plugin_id } => {
+                scope.plugins.review_store_update(&plugin_id)
+            }
+            PluginAction::DismissStoreUpdates => scope.plugins.dismiss_store_updates(),
             PluginAction::DismissStoreConfirmation => {
                 scope.plugins.dismiss_confirmation();
                 Ok(())
@@ -445,11 +463,13 @@ impl ClientCore {
     fn lifecycle_action(&self, scope: &Scope, action: HomeAction) -> Result<(), CoreError> {
         match action {
             HomeAction::AppForegrounded => {
+                tracing::info!("the shell reports the app came to the foreground");
                 self.app_lock.foregrounded();
                 scope.foregrounded();
                 Ok(())
             }
             HomeAction::AppBackgrounded => {
+                tracing::info!("the shell reports the app went to the background");
                 scope.backgrounded();
                 self.app_lock.backgrounded(scope.handle());
                 Ok(())

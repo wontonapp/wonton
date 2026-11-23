@@ -49,7 +49,7 @@ struct MessageBubbleShape: InsettableShape {
             tangent2End: CGPoint(x: body.maxX, y: body.minY + top), radius: top
         )
         if !joinsNext {
-            // 尾巴（ADR-0109 第 8 节）：侧边在底边上方 `bubbleTailRise` 处向外凹着弯出去，尖伸出 `bubbleTail`；
+            // 尾巴（ADR-0109 第 9 节）：侧边在底边上方 `bubbleTailRise` 处向外凹着弯出去，尖伸出 `bubbleTail`；
             // 尖的下缘鼓着收回底边，不是一条直线。
             let rise = WontonTheme.size.bubbleTailRise
             let tip = CGPoint(x: body.maxX + tail, y: body.maxY - 1)

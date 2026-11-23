@@ -261,6 +261,7 @@ internal fun previewPlugins() = PluginsViewModel(
     tasks = emptyList(),
     starts = emptyList(),
     updatable = emptyList(),
+    updateBatch = null,
     pending = emptyList(),
     confirmation = null,
     egress = EgressViewModel(

@@ -22,8 +22,11 @@ pub fn link_preview_image_path(id: &str) -> String {
 pub struct LinkPreview {
     /// 跳转之后的最终网址，卡片上显示它的域名。
     pub url: String,
+    /// 核心已按字素截到 80，客户端按行数再截。
     pub title: Option<String>,
+    /// 核心已按字素截到 120，客户端按行数再截。
     pub description: Option<String>,
+    /// 核心已按字素截到 40。
     pub site_name: Option<String>,
     pub image: Option<LinkPreviewImage>,
 }
@@ -61,7 +64,7 @@ pub enum LinkPreviewFailure {
     NoPreview,
     /// 这台设备取得太频繁。
     TooManyRequests,
-    /// 比这个 App 新的核心给的原因。
+    /// 等同一个网址的结果时，取页的那次丢了或者等超了；以及比这个 App 新的核心给的原因。
     #[serde(other)]
     Other,
 }

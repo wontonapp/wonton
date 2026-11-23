@@ -136,6 +136,39 @@ impl PasswordStore {
         Ok(value)
     }
 
+    pub(crate) fn summaries(
+        &self,
+        plugin: &str,
+        device_name: impl Fn(&str) -> Option<String>,
+    ) -> Result<Vec<wonton_protocol::PasswordSummary>, PasswordError> {
+        let state = self
+            .state
+            .lock()
+            .map_err(|error| PasswordError::Corrupt(error.to_string()))?;
+        // Vec 的追加顺序就是创建顺序；删除后复用的 ID 不能拿来排序。
+        Ok(state
+            .plugins
+            .get(plugin)
+            .into_iter()
+            .flatten()
+            .map(|record| {
+                let mut viewed: Vec<_> = record.viewed_by.iter().collect();
+                viewed
+                    .sort_by(|(a, time_a), (b, time_b)| time_b.cmp(time_a).then_with(|| a.cmp(b)));
+                wonton_protocol::PasswordSummary {
+                    id: record.id.clone(),
+                    label: record.label.clone(),
+                    created_by_device: record.created_by_device.clone(),
+                    last_viewed_by: viewed
+                        .into_iter()
+                        .filter_map(|(id, _)| device_name(id))
+                        .collect(),
+                    pending: record.pending.then_some(wonton_protocol::PendingOp::Revoke),
+                }
+            })
+            .collect())
+    }
+
     pub fn authenticate(
         &self,
         plugin: &str,

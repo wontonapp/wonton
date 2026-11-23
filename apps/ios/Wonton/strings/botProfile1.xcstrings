@@ -2,14 +2,34 @@
   "sourceLanguage": "en",
   "version": "1.0",
   "strings": {
-    "botProfile.web.title": {
-      "comment": "Section title for the webpage belonging to a Bot.",
+    "botProfile.details.identity": {
+      "comment": "Collapsed details: the plugin and Bot key behind the profile. Two arguments, one per line.",
       "extractionState": "manual",
       "localizations": {
-        "en": {"stringUnit": {"state": "translated", "value": "Bot webpage"}},
-        "zh-Hans": {"stringUnit": {"state": "translated", "value": "Bot 网页"}},
-        "zh-Hant": {"stringUnit": {"state": "translated", "value": "Bot 網頁"}},
-        "ja": {"stringUnit": {"state": "translated", "value": "Bot のウェブページ"}}
+        "en": {"stringUnit": {"state": "translated", "value": "Plugin: %1$@\nBot: %2$@"}},
+        "zh-Hans": {"stringUnit": {"state": "translated", "value": "插件：%1$@\nBot：%2$@"}},
+        "zh-Hant": {"stringUnit": {"state": "translated", "value": "外掛：%1$@\nBot：%2$@"}},
+        "ja": {"stringUnit": {"state": "translated", "value": "プラグイン：%1$@\nBot：%2$@"}}
+      }
+    },
+    "botProfile.details.account": {
+      "comment": "Collapsed details: the Bot's Matrix account.",
+      "extractionState": "manual",
+      "localizations": {
+        "en": {"stringUnit": {"state": "translated", "value": "Account: %@"}},
+        "zh-Hans": {"stringUnit": {"state": "translated", "value": "账号：%@"}},
+        "zh-Hant": {"stringUnit": {"state": "translated", "value": "帳號：%@"}},
+        "ja": {"stringUnit": {"state": "translated", "value": "アカウント：%@"}}
+      }
+    },
+    "botProfile.missing": {
+      "comment": "The profile of a Bot that is no longer in the chat view model.",
+      "extractionState": "manual",
+      "localizations": {
+        "en": {"stringUnit": {"state": "translated", "value": "This Bot’s profile is no longer available."}},
+        "zh-Hans": {"stringUnit": {"state": "translated", "value": "此 Bot 的资料已不可用。"}},
+        "zh-Hant": {"stringUnit": {"state": "translated", "value": "此 Bot 的個人資料已無法使用。"}},
+        "ja": {"stringUnit": {"state": "translated", "value": "この Bot のプロフィールは利用できなくなりました。"}}
       }
     },
     "botProfile.web.permissionDenied": {

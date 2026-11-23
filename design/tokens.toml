@@ -10,7 +10,7 @@ s32 = 32
 s48 = 48
 pageInset = 16
 sectionGap = 24
-# 聊天气泡照 Telegram（ADR-0109 第 8 节）：组内两条之间、组与组之间。
+# 聊天气泡照 Telegram（ADR-0109 第 9 节）：组内两条之间、组与组之间。
 runGap = 2
 groupGap = 6
 # 气泡那一行离屏幕边；正文离气泡边（左右、上下）；气泡对面至少留出的空（屏宽减它就是气泡最宽）。
@@ -25,7 +25,7 @@ chatFloatInset = 8
 [radii]
 control = { ios = 14, android = 12 }
 card = { ios = 20, android = 16 }
-# 气泡照 Telegram（ADR-0109 第 8 节）：大圆角；组内贴近发送者一侧的小圆角。
+# 气泡照 Telegram（ADR-0109 第 9 节）：大圆角；组内贴近发送者一侧的小圆角。
 bubble = 16
 bubbleJoined = 8
 # 网页变量 --border-radius-xs 的值（ADR-0033），和气泡分开，气泡改形状不动网页。
@@ -68,7 +68,7 @@ grabberWidth = 36
 grabberHeight = 4
 hairline = 1
 quoteBar = 2
-# 气泡尾巴伸出气泡的宽度，尾巴从底边往上占的高度（ADR-0109 第 8 节）。
+# 气泡尾巴伸出气泡的宽度，尾巴从底边往上占的高度（ADR-0109 第 9 节）。
 bubbleTail = 6
 bubbleTailRise = 9
 # 聊天页浮着的玻璃圆钮、标题胶囊、输入框一行时的高度，顶栏头像的直径。
@@ -81,6 +81,8 @@ commandAvatar = 28
 messageAvatar = 34
 # “/”命令列表最高这么高，再多就在里面滚（ADR-0109，估计值）。
 commandMenu = 240
+# 附件面板底下那排切换里一项的宽（ADR-0109，估计值）。
+attachTab = 76
 
 [ratio]
 pluginIconRadius = 0.2237
@@ -90,7 +92,7 @@ codeFill = 0.1
 # 气泡最大宽度占可用宽度；输入框最多长到几行（ADR-0109，估计值）。
 bubbleWidth = 0.8
 composerLines = 6
-# 聊天背景：重点色盖在底色上的浓度、图案线条的浓度（ADR-0109 第 8 节）。
+# 聊天背景：重点色盖在底色上的浓度、图案线条的浓度（ADR-0109 第 9 节）。
 wallTint = 0.16
 wallPattern = 0.14
 # 压在聊天背景上的日期胶囊、说明行和选项按钮的半透明底：浅色主题盖黑、深色主题盖白。
@@ -98,6 +100,8 @@ serviceFill = 0.32
 serviceFillDark = 0.16
 # 跳到原消息后整行闪的重点色浓度。
 jumpHighlight = 0.2
+# 附件面板那排切换里当前一项垫的重点色浓度（ADR-0109，估计值）。
+tabHighlight = 0.14
 
 [typography]
 screenTitle = { size = 28, line = 34, weight = "bold", relativeTo = "title" }
@@ -106,7 +110,7 @@ itemTitle = { size = 17, line = 24, weight = "medium", relativeTo = "headline" }
 body = { size = 16, line = 22, weight = "regular", relativeTo = "body" }
 supporting = { size = 14, line = 20, weight = "regular", relativeTo = "subheadline" }
 caption = { size = 12, line = 16, weight = "regular", relativeTo = "caption" }
-# 聊天页（ADR-0109 第 8 节）：气泡正文、气泡右下角的时间、群聊里的名字、选项按钮、日期胶囊、顶栏的标题和状态行。
+# 聊天页（ADR-0109 第 9 节）：气泡正文、气泡右下角的时间、群聊里的名字、选项按钮、日期胶囊、顶栏的标题和状态行。
 message = { size = 16, line = 21, weight = "regular", relativeTo = "body" }
 messageMeta = { size = 11, line = 13, weight = "regular", relativeTo = "caption2" }
 senderName = { size = 14, line = 18, weight = "semibold", relativeTo = "subheadline" }

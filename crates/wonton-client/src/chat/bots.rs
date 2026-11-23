@@ -408,6 +408,7 @@ impl Bots {
                             bot: "default".into(),
                         },
                         web: None,
+                        web_page: None,
                         name: plugin.title.clone(),
                         avatar: None,
                         state_avatars: Vec::new(),
@@ -504,6 +505,7 @@ impl Bots {
         self.view.send_modify(|view| {
             for bot in &mut view.bots {
                 bot.web = None;
+                bot.web_page = None;
             }
         });
         for record in local.records.values_mut() {
@@ -670,6 +672,7 @@ mod tests {
                 bot: "default".into(),
             },
             web: None,
+            web_page: None,
             name: "Bot".into(),
             avatar: None,
             state_avatars: states

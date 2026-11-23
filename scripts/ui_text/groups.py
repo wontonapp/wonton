@@ -48,6 +48,7 @@ PREFIXES: Dict[str, str] = {
     "plugin": "plugin",
     "pluginsources": "pluginSources",
     "store": "store",
+    "storebatch": "storeBatch",
     "registry": "plugins",
     "registrymirror": "registryMirror",
     "tool": "plugins",
@@ -93,6 +94,7 @@ PREFIXES: Dict[str, str] = {
     "egress": "egress",
     "notification": "settings",
     "push": "settings",
+    "path": "settings",
     "shortcuts": "shortcuts",
     "shortcut": "settings",
     # common
@@ -141,7 +143,7 @@ GROUP_OF: Dict[str, str] = {
         "onboarding": "onboarding pairing joining install home homestatus launcher",
         "plugins": "plugin pluginsources store registry registrymirror tool toolpolicy tab tabs files file viewer photo preview secret sidebar sessions scope takeover port mapping portmapping",
         "peers": "peers friends invite servers connection verification lanclient lanwebui qr qrscanner camera ownerprofile keepalive share contacts handoff matrixlogin",
-        "settings": "settings appearance applock egress notification push shortcuts shortcut",
+        "settings": "settings appearance applock egress notification push path shortcuts shortcut",
         "common": "common problem core coreupgrade design app language startup page pin unpin",
     }.items()
     for prefix in prefixes.split()
@@ -152,6 +154,7 @@ GROUP_OF["share"] = "peers"
 GROUP_OF["contacts"] = "peers"
 GROUP_OF["handoff"] = "peers"
 GROUP_OF["matrixlogin"] = "peers"
+GROUP_OF["storebatch"] = "plugins"
 
 # 各平台的默认文件（common 的基准文件）。
 BASE_FILE = {"ios": "Localizable.xcstrings", "android": "strings.xml", "fluent": "common.ftl"}

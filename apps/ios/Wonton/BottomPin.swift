@@ -224,11 +224,13 @@ struct EnclosingScrollView: UIViewRepresentable {
 /// 走查用：看不见的一行，写着 `BottomPin` 的贴底状态，UI 测试按标识读它。只在 Debug 包里挂。
 struct ScrollDebug: View {
     let pin: BottomPin
+    /// 走查用的额外一段（订阅次数、收到的批数），跟在自述后面。
+    var extra = ""
 
     var body: some View {
         // 滚动位置不是可观察的状态：只在房间重画时取一次的话，测试读到的是上一次重画时的位置。
         TimelineView(.periodic(from: .now, by: 0.25)) { _ in
-            Text(verbatim: pin.snapshot)
+            Text(verbatim: extra.isEmpty ? pin.snapshot : "\(pin.snapshot) \(extra)")
                 .accessibilityIdentifier("roomScroll")
                 .allowsHitTesting(false)
                 // 小到看不见：垫在玻璃和材质底下时，再淡的字也会被透出来。

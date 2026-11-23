@@ -120,15 +120,15 @@ fn bot_view(plugin: &str, bot: &str, url: &str, isolated: bool) -> wonton_protoc
         plugin_id: plugin.to_owned(),
         bot: bot.to_owned(),
     };
+    let page = wonton_protocol::BotWebPage {
+        bot: bot.clone(),
+        url: url.to_owned(),
+        cross_origin_isolated: isolated,
+    };
     wonton_protocol::BotView {
         user_id: format!("@{}:{}:wonton.localhost", bot.plugin_id, bot.bot),
-        web: Some(wonton_protocol::BotWebView::Ready {
-            page: wonton_protocol::BotWebPage {
-                bot: bot.clone(),
-                url: url.to_owned(),
-                cross_origin_isolated: isolated,
-            },
-        }),
+        web: Some(wonton_protocol::BotWebView::Ready { page: page.clone() }),
+        web_page: Some(page),
         bot,
         name: "Bot".into(),
         avatar: None,

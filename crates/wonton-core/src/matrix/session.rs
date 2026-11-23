@@ -1,4 +1,5 @@
-//! 以某个用户的身份调 Tuwunel 的客户端接口：核心代 Bot 设置资料、建主房间、邀请主人，代主人加入它。
+//! 以某个用户的身份调 Tuwunel 的客户端接口：核心代 Bot 设置资料、接受邀请进主房间，代主人建房间、邀请 Bot、
+//! 写私聊记录。
 
 use hyper::Method;
 use serde_json::{Map, Value, json};
@@ -241,21 +242,26 @@ impl<'a> Session<'a> {
         }
     }
 
-    /// 撤回对 `user` 的邀请并退出房间：建好的私聊没能交到对方手里时用，免得对方收到一个没人应答的邀请。
+    /// 踢掉 `user` 再自己退出：建好的私聊没能交到对方手里时用，免得对方收到一个没人应答的邀请。对方的会话没有
+    /// 踢他的权限时（房间里两个建房人）用 [`Self::leave_room`] 让对方自己退。
     pub async fn abandon(
         &self,
         room: &str,
         user: &str,
         langs: &Languages,
     ) -> Result<(), MatrixError> {
-        let room = encode(room);
-        let reason = l10n::text(langs, "chat-kick-reason", &[]);
-        let kick = json!({"user_id": user, "reason": reason});
-        let path = format!("/_matrix/client/v3/rooms/{room}/kick");
-        self.json(Method::POST, &path, Some(&kick), "撤回邀请")
+        let path = format!("/_matrix/client/v3/rooms/{}/kick", encode(room));
+        let body = json!({"user_id": user, "reason": l10n::text(langs, "chat-kick-reason", &[])});
+        self.json(Method::POST, &path, Some(&body), "撤回邀请")
             .await?;
-        let path = format!("/_matrix/client/v3/rooms/{room}/leave");
-        self.json(Method::POST, &path, Some(&json!({})), "退出房间")
+        self.leave_room(room, langs).await
+    }
+
+    /// 自己退出房间，带一句原因。
+    pub async fn leave_room(&self, room: &str, langs: &Languages) -> Result<(), MatrixError> {
+        let path = format!("/_matrix/client/v3/rooms/{}/leave", encode(room));
+        let body = json!({"reason": l10n::text(langs, "chat-kick-reason", &[])});
+        self.json(Method::POST, &path, Some(&body), "退出房间")
             .await
             .map(|_| ())
     }
@@ -298,6 +304,21 @@ impl<'a> Session<'a> {
         .map(|_| ())
     }
 
+    /// `m.direct` 里已经记了和 `other` 的这个房间。
+    pub async fn has_direct(&self, other: &str, room: &str) -> Result<bool, MatrixError> {
+        let path = format!(
+            "/_matrix/client/v3/user/{}/account_data/m.direct",
+            encode(&self.user_id)
+        );
+        match self.json(Method::GET, &path, None, "读取 m.direct").await {
+            Ok(value) => Ok(value[other]
+                .as_array()
+                .is_some_and(|rooms| rooms.iter().any(|r| r == room))),
+            Err(e) if e.errcode() == "M_NOT_FOUND" => Ok(false),
+            Err(e) => Err(e),
+        }
+    }
+
     /// 不再用这个和 `other` 的私聊：退出房间，从 `m.direct` 去掉。收拾不掉只记日志，新的房间已经能用了。
     pub async fn retire_direct(&self, other: &str, room: &str) {
         let path = format!("/_matrix/client/v3/rooms/{}/leave", encode(room));
@@ -315,7 +336,7 @@ impl<'a> Session<'a> {
         }
     }
 
-    async fn remove_direct(&self, other: &str, room: &str) -> Result<(), MatrixError> {
+    pub(super) async fn remove_direct(&self, other: &str, room: &str) -> Result<(), MatrixError> {
         let path = format!(
             "/_matrix/client/v3/user/{}/account_data/m.direct",
             encode(&self.user_id)

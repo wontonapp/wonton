@@ -126,12 +126,12 @@
     <string name="bot_state_offline">離線</string>
     <string name="bot_avatar_pick_state">更換%1$s頭像</string>
     <string name="bot_profile_open">查看 Bot 個人資料</string>
-    <string name="bot_identity_title">Bot 身分</string>
     <string name="bot_identity_value">外掛：%1$s\nBot：%2$s</string>
+    <string name="bot_details_account">帳號：%1$s</string>
+    <string name="bot_details_web">網頁：%1$s</string>
     <string name="bot_profile_read_only">此 Bot 的個人資料唯讀。只有預設 Bot 支援編輯個人資料。</string>
     <string name="bot_profile_missing">此 Bot 的個人資料已無法使用。</string>
-    <string name="bot_web_title">Bot 網頁</string>
-    <string name="bot_web_open">開啟 Bot 網頁</string>
+    <string name="bot_web_open">開啟網頁版（英文）</string>
     <string name="bot_web_unauthenticated">請先登入伺服器，再開啟此 Bot 的網頁。</string>
     <string name="bot_web_not_shared">伺服器主人尚未向家人開放此 Bot 的網頁。</string>
     <string name="bot_web_permission_denied">此身分無權開啟 Bot 網頁。</string>

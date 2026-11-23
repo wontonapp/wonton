@@ -42,6 +42,8 @@ use crate::l10n;
 use crate::matrix::Matrix;
 
 pub(super) mod busy;
+mod clients;
+pub(crate) use clients::ClientPlugin;
 mod views;
 
 pub use views::{ClientsRoute, ClientsView, HostedRoute, PluginView, Route, StorageRoute};
@@ -108,6 +110,7 @@ pub struct PluginManager {
     pub(crate) client_passwords: Option<Arc<crate::clients::passwords::PasswordStore>>,
     /// 插件表每变一次加一：MCP 总线据此刷新工具列表（见 [`Self::changes`]）。
     changes: tokio::sync::watch::Sender<u64>,
+    clients_gateway: std::sync::OnceLock<std::sync::Weak<crate::gateway::Gateway>>,
     pub(crate) activity: Arc<crate::bot_activity::BotActivity>,
     pub(crate) clients: Arc<crate::clients::state::State>,
     /// 随核心附带的插件（预装目录里的插件包），见 [`super::preinstall`]。
@@ -116,6 +119,9 @@ pub struct PluginManager {
     pub(super) default_bot_plugin: RwLock<Option<PluginId>>,
     /// 局域网端口开在哪里，见 [`super::lan`]。
     pub(super) lan: Lan,
+    #[cfg(test)]
+    pub(super) recovery_metadata_hold:
+        std::sync::Mutex<Option<super::recovery_replace::MetadataHold>>,
     /// 出网插件走哪个代理，见 [`super::egress`]。
     pub(super) egress: Egress,
     /// 宿主主机名（`WONTON_HOST_NAME`）；只在取到时缓存，失败下次安装再取，见 [`super::host_check`]。
@@ -197,9 +203,14 @@ impl PluginManager {
             Storefront::new(github.clone(), StoreConfig::default(), store.index_cache());
         let dependencies = super::dependencies::Dependencies::open(store.capabilities_path());
         let clients = Arc::new(crate::clients::state::State::new(&store));
-        let client_passwords = crate::clients::passwords::PasswordStore::open(&cfg.data_dir)
-            .map(Arc::new)
-            .ok();
+        let client_passwords = match crate::clients::passwords::PasswordStore::open(&cfg.data_dir) {
+            Ok(passwords) => Some(Arc::new(passwords)),
+            // 打开失败时客户端列表和开关都会报密码库不可用；留下原因，不然只能看到那句报错。
+            Err(error) => {
+                tracing::error!(%error, "客户端密码库打开失败");
+                None
+            }
+        };
         Self {
             client_passwords,
             engine,
@@ -226,10 +237,13 @@ impl PluginManager {
             dependencies,
             changes: tokio::sync::watch::Sender::new(0),
             clients,
+            clients_gateway: std::sync::OnceLock::new(),
             activity: Arc::default(),
             bundled: RwLock::new(BTreeSet::new()),
             default_bot_plugin: RwLock::new(None),
             lan,
+            #[cfg(test)]
+            recovery_metadata_hold: Default::default(),
             egress: Egress::default(),
             host_name: tokio::sync::OnceCell::new(),
             registry_mirror: Default::default(),

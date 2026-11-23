@@ -2,6 +2,7 @@
 //!
 //! `domain` 是自己的域名和运行时签发；`providers` 是服务商预设；`path_rules` 是公开路径的校验。
 
+pub(crate) mod apply;
 pub mod domain;
 #[cfg(test)]
 mod domain_docker_tests;

@@ -23,14 +23,15 @@ use std::time::{SystemTime, UNIX_EPOCH};
 use tokio::sync::watch;
 
 use wonton_protocol::{
-    AppsAction, BotActivity, BotRef, BotView, ChatAccount, ChatLayout, ChatLayoutChoice, ChatSync,
-    ChatViewModel, CoreError, DeviceInvite, DeviceNetwork, DeviceVerification, EncryptionStatus,
-    HomePath, HomeStatus, HomeViewModel, InstalledPlugin, InstalledPlugins, MessageSummary,
-    OnboardingStep, OnboardingViewModel, OpenPage, PagesViewModel, PanelItem, PanelSource,
-    PluginHealth, PluginKind, PluginState, PluginTrust, PluginsViewModel, PushStatus,
-    RecoveryNextStep, RecoveryStatus, RoomMembership, RoomPreview, RoomRow, SecretString,
-    ServerKind, ServerName, ServerRow, ServersViewModel, SidebarApp, SidebarBadge, SidebarOpen,
-    TabIcon, TabLayout, TabPage, TabRef, TabState,
+    AppLockViewModel, AppsAction, BotActivity, BotRef, BotView, BotWebPage, BotWebView,
+    ChatAccount, ChatLayout, ChatLayoutChoice, ChatSync, ChatViewModel, CoreError, DeviceInvite,
+    DeviceNetwork, DeviceVerification, EncryptionStatus, HomePath, HomeStatus, HomeViewModel,
+    InstalledPlugin, InstalledPlugins, MessageSummary, OnboardingStep, OnboardingViewModel,
+    OpenPage, PagesViewModel, PanelItem, PanelSource, PluginHealth, PluginKind, PluginState,
+    PluginTrust, PluginsViewModel, PushMethod, PushStatus, RecoveryNextStep, RecoveryStatus,
+    RoomMembership, RoomPreview, RoomRow, SecretString, ServerKind, ServerName, ServerRow,
+    ServersViewModel, SettingsEntry, SettingsSection, SettingsViewModel, SidebarApp, SidebarBadge,
+    SidebarOpen, TabIcon, TabLayout, TabPage, TabRef, TabState,
 };
 
 use super::ClientCore;
@@ -250,6 +251,17 @@ fn fake_page(tab: &TabRef) -> Option<TabPage> {
         });
     }
     let TabRef::Plugin { plugin_id, .. } = tab else {
+        if let TabRef::Bot { bot, .. } = tab {
+            return Some(TabPage {
+                title: bot.bot.clone(),
+                icon: TabIcon::Plugin { icon: None },
+                url: Some(web_url(&bot.plugin_id)),
+                layout: TabLayout::default(),
+                state: TabState::Ready,
+                reload: 0,
+                opens_in_browser: false,
+            });
+        }
         return None;
     };
     let (title, _, kind) = WEB_APPS.iter().find(|(_, id, _)| id == plugin_id)?;
@@ -272,6 +284,17 @@ fn fake_page(tab: &TabRef) -> Option<TabPage> {
 
 fn web_url(plugin_id: &str) -> String {
     format!("http://{}.wonton.localhost/", plugin_id.replace('.', "-"))
+}
+
+fn fake_bot_page(plugin_id: &str, bot: &str) -> BotWebPage {
+    BotWebPage {
+        bot: BotRef {
+            plugin_id: plugin_id.into(),
+            bot: bot.into(),
+        },
+        url: web_url(plugin_id),
+        cross_origin_isolated: false,
+    }
 }
 
 fn fake_home(mut home: HomeViewModel) -> HomeViewModel {
@@ -334,6 +357,7 @@ fn fake_rooms() -> Vec<RoomRow> {
                 timestamp_ms: 1_792_000_000_000,
             }),
             unread_count: 1,
+            // 旁聊卡片挂在这条私聊里：界面测试从卡片进旁聊。
             side_chats: true,
             layout: ChatLayout::default(),
             call_active: false,
@@ -406,7 +430,10 @@ fn fake_chat(mut chat: ChatViewModel) -> ChatViewModel {
                 plugin_id: "app.example.echo".into(),
                 bot: "echo".into(),
             },
-            web: None,
+            web: Some(BotWebView::Ready {
+                page: fake_bot_page("app.example.echo", "echo"),
+            }),
+            web_page: Some(fake_bot_page("app.example.echo", "echo")),
             name: "Echo".into(),
             avatar: None,
             state_avatars: Vec::new(),
@@ -422,6 +449,7 @@ fn fake_chat(mut chat: ChatViewModel) -> ChatViewModel {
                 bot: "hermes".into(),
             },
             web: None,
+            web_page: None,
             name: "Hermes".into(),
             avatar: None,
             state_avatars: Vec::new(),

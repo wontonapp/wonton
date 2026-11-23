@@ -65,7 +65,7 @@ pub struct Model {
 }
 
 impl Model {
-    /// 只有联邦、没有任何插件标签的形状：`entry_compose::write` 生成配置用；按开关和服务生成的完整模型还没接上。
+    /// 装机时生成的联邦基础模型；插件标签由持久开关派生。
     pub fn federation_only(suffix: &str, federation: &str) -> Self {
         Self {
             suffix: suffix.to_owned(),
