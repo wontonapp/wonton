@@ -107,9 +107,11 @@ fn problem(error: Error) -> MyAvatarProblem {
         Error::CommentNotSent(..) => MyAvatarProblem::Upstream {
             reason: error.to_string(),
         },
-        Error::Upstream(reason) | Error::InvalidInput(reason) => {
-            MyAvatarProblem::Upstream { reason }
-        }
+        Error::Upstream(reason)
+        | Error::InvalidInput(reason)
+        | Error::TooLarge(reason)
+        | Error::UnsupportedType(reason)
+        | Error::ReplyTarget(reason) => MyAvatarProblem::Upstream { reason },
     }
 }
 

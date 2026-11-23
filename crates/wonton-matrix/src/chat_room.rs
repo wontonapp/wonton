@@ -423,8 +423,8 @@ impl ChatRoom {
     /// 回答一条消息的选项（ADR-0109 第 8 节）：以本账号加选项那个表情，不往聊天里发消息。发送者自己先放的
     /// 表情就是选项；私聊或提到了本账号的才能答，答过一条后其余不能再答。还在发或发失败的先撤掉再发。
     ///
-    /// 也回答 MSC4564 的状态消息（ADR-0082），它的选项在状态对象里、不靠表情。
-    /// 条目不在时间线里、选项没有了、不是问我的、已经答过时报 `InvalidInput`。
+    /// 也回答 MSC4564 的状态消息（ADR-0082）：它的选项在状态对象里，点下去照样加那个表情，已选也照表情回填。
+    /// 条目不在时间线里、选项没有了、不是问我的、已经答过、状态行已经不在等待时报 `InvalidInput`。
     pub async fn answer_agent_choice(&self, item_id: &str, key: &str) -> Result<()> {
         let timeline = self.timeline().await;
         let items = timeline.items().await;
@@ -442,8 +442,26 @@ impl ChatRoom {
             .agent_run
             .as_ref()
             .is_some_and(|status| status.choices.iter().any(|choice| choice.key == key));
-        let mut retry = false;
-        if !status_choice {
+        let retry = if status_choice {
+            let status = message
+                .agent_run
+                .as_ref()
+                .expect("status_choice 说明有状态");
+            // 状态行只在“等待”时有效：跑完了、失败了再点就是过期的回答。
+            if status.state != wonton_protocol::AgentRunState::Waiting {
+                return Err(Error::InvalidInput("这条状态行已经不在等待".to_owned()));
+            }
+            if status.choices.iter().any(|choice| choice.chosen) {
+                return Err(Error::InvalidInput("这条已经答过了".to_owned()));
+            }
+            if !message.is_direct && !message.mentions_me {
+                return Err(Error::InvalidInput("这条不是问我的".to_owned()));
+            }
+            status
+                .choices
+                .iter()
+                .any(|choice| choice.key == key && matches!(choice.send, ChoiceSend::Failed { .. }))
+        } else {
             let choices = message
                 .choices()
                 .ok_or_else(|| Error::InvalidInput("这条没有选项".to_owned()))?;
@@ -462,8 +480,8 @@ impl ChatRoom {
                 }
                 ChoicesState::Other => {}
             }
-            retry = matches!(option.send, ChoiceSend::Failed { .. });
-        }
+            matches!(option.send, ChoiceSend::Failed { .. })
+        };
         let event_id = event
             .event_id()
             .map(ToOwned::to_owned)

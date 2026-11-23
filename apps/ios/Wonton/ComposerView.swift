@@ -19,6 +19,8 @@ struct ComposerView: View {
     var commandAvatar: (RoomCommand) -> AnyView = { _ in AnyView(EmptyView()) }
     /// 点回复条里的引用，跳到原消息（ADR-0109 第 4 节）。
     var jumpToReply: (String) -> Void = { _ in }
+    /// 正在编辑哪条（ADR-0109 第 10 节）：有值时输入框上方画编辑条、发送键变成确认。
+    var editing: ComposerEdit?
     private var roomId: String { composer.roomId }
     /// 附件区只有主对话有（ADR-0093）：旁聊里字和照片直接发，不给选文件，粘贴文件提示去主对话发。
     private var isSideChat: Bool { composer.threadRoot != nil }
@@ -50,8 +52,9 @@ struct ComposerView: View {
     @Environment(\.wontonColors) private var colors
 
     var body: some View {
-        let isEmpty = draft.wrappedValue.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty
-            && composer.attachments.isEmpty
+        let draftEmpty = draft.wrappedValue.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty
+        // 编辑时确认的是正文：附件区有东西也不算能发。
+        let isEmpty = editing != nil ? draftEmpty : draftEmpty && composer.attachments.isEmpty
         // 输入栏浮在消息上（ADR-0107、ADR-0109 第 9 节）：菜单胶囊、回形针、输入框、发送键各是一块玻璃，
         // 回复条和附件区收在输入框那一块里；命令列表是它们上方的一张玻璃卡片。
         VStack(spacing: WontonTheme.spacing.s4) {
@@ -96,9 +99,20 @@ struct ComposerView: View {
         .onChange(of: pin.isScrolling) { _, scrolling in
             if scrolling { showsCommands = false }
         }
-        // 点了回复就把光标放进输入框。
+        // 点了回复或编辑就把光标放进输入框。
         .onChange(of: model.replyFocusRevision) {
-            if model.replies[draftKey] != nil { isFocused = true }
+            if model.replies[draftKey] != nil || editing != nil { isFocused = true }
+        }
+        // 退出编辑态（取消或发成功）：核心已经恢复原草稿，整份读回来。
+        .onChange(of: editing?.eventId) { old, new in
+            if old != nil, new == nil { Task { await model.reloadDraft(composer.target) } }
+        }
+        // 打字报给核心，节流和 5 秒超时都在核心（ADR-0109 第 8 节）。
+        .onChange(of: draft.wrappedValue) { _, text in
+            model.send(.timeline(action: .setTyping(target: composer.target, typing: !text.isEmpty)))
+        }
+        .onChange(of: isFocused) { _, focused in
+            if !focused { model.send(.timeline(action: .setTyping(target: composer.target, typing: false))) }
         }
         .onAppear {
             // 外面发来的文字只进主对话（ADR-0093）：旁聊是主人主动开的，不接外面的文字。
@@ -286,10 +300,49 @@ struct ComposerView: View {
         if sent { draft.wrappedValue = "" }
     }
 
+    /// 编辑条：铅笔、“编辑消息”、原正文摘要和关闭（ADR-0109 第 10 节）。
+    private func editBar(_ edit: ComposerEdit) -> some View {
+        HStack(spacing: WontonTheme.spacing.s8) {
+            Image(systemName: "pencil")
+                .font(.footnote)
+                .foregroundStyle(Color(colors.textSecondary))
+            VStack(alignment: .leading, spacing: 0) {
+                Text(.Message2.messageEditTitle)
+                    .wontonText(WontonTheme.typography.caption)
+                    .foregroundStyle(Color(colors.textSecondary))
+                Text(edit.summary)
+                    .wontonText(WontonTheme.typography.caption)
+                    .foregroundStyle(Color(colors.textSecondary))
+                    .lineLimit(1)
+            }
+            Spacer(minLength: 0)
+            Button {
+                model.send(.timeline(action: .setTyping(target: composer.target, typing: false)))
+                model.send(.timeline(action: .cancelEdit(target: composer.target)))
+            } label: {
+                Image(systemName: "xmark.circle.fill")
+                    .foregroundStyle(Color(colors.textSecondary))
+            }
+            .buttonStyle(.plain)
+            .accessibilityLabel(String(localized: .Common.commonClose))
+            .accessibilityIdentifier("editCancel")
+        }
+        .padding(.horizontal, WontonTheme.spacing.s12)
+        .padding(.vertical, WontonTheme.spacing.s8)
+    }
+
     private func send() {
-        guard !draft.wrappedValue.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty
-            || !composer.attachments.isEmpty else { return }
+        let blank = draft.wrappedValue.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty
+        guard !blank || (editing == nil && !composer.attachments.isEmpty) else { return }
         pin.pin()
+        model.send(.timeline(action: .setTyping(target: composer.target, typing: false)))
+        // 编辑只改这一条的正文；成功后核心恢复原草稿，`onChange(of: editing)` 把它读回来。
+        if let editing = editing {
+            model.send(.timeline(action: .editMessage(
+                target: composer.target, eventId: editing.eventId, body: draft.wrappedValue
+            )))
+            return
+        }
         // 旁聊没有附件区，附件区空着时 `send` 走的就是直接发字。被核心拒收时字、附件和回复对象都留着，改完再发。
         guard composer.send(draft.wrappedValue, replyTo: model.replies[draftKey]?.eventId) else { return }
         draft.wrappedValue = ""
@@ -323,7 +376,9 @@ private extension ComposerView {
     private var field: some View {
         let shape = RoundedRectangle(cornerRadius: WontonTheme.size.chatControl / 2, style: .continuous)
         return VStack(spacing: 0) {
-            if let reply = model.replies[draftKey] {
+            if let editing = editing {
+                editBar(editing)
+            } else if let reply = model.replies[draftKey] {
                 ReplyQuoteView(
                     quote: reply, core: model.core, ink: Color(colors.textPrimary), accent: Color(colors.accentInk),
                     cancel: { model.cancelReply(in: composer.target) },

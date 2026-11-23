@@ -166,9 +166,10 @@ pub enum TimelineAction {
     /// 旁聊的输入框也有链接预览，预览状态和主时间线的分开。
     DismissLinkPreview { target: TimelineTarget },
     /// 进入编辑态（ADR-0109 第 10 节）：只能编辑菜单里有 [`MessageAction::Edit`](crate::MessageAction::Edit) 的消息。
+    /// 壳已经用 [`MessageAction::Edit`](crate::MessageAction::Edit) 的 `text` 换掉了输入框，发它之前抽空把光标放到末尾。
     /// 核心把现在的草稿（正文和回复对象）存下来，换成正被编辑的那条的正文，记进
-    /// [`TimelineUpdate::editing`](crate::TimelineUpdate::editing)；壳收到它之后才填输入框、光标放末尾、画编辑条。
-    /// 已经在编辑别的消息时直接换过去，不叠加。
+    /// [`TimelineUpdate::editing`](crate::TimelineUpdate::editing) 供壳画编辑条。
+    /// 已经在编辑别的消息时直接换过去，不叠加；取消后恢复的仍是最初进入编辑态之前的草稿。
     ///
     /// 取消（[`TimelineAction::CancelEdit`]）后壳用 [`ClientCore::draft`](crate::ClientCore::draft) 重读核心恢复的草稿。
     StartEdit {
@@ -186,9 +187,9 @@ pub enum TimelineAction {
         event_id: String,
         body: String,
     },
-    /// 壳报告输入框在不在打字（ADR-0109 第 8 节）：正文有变化发 `true`，输入框失焦、清空、主人离开这条时间线或
-    /// 发送后发 `false`。核心按需转发成“正在输入”到服务器，同一条时间线里至少隔几秒才再发一次，停止输入几秒后
-    /// 自动转成“停了”，壳不用自己计时。
+    /// 壳报告输入框在不在打字（ADR-0109 第 8 节）：正文有变化发 `true`，输入框失焦、清空、发送或进出编辑态后发
+    /// `false`。核心按需转发成“正在输入”到服务器，同一条时间线里至少隔 5 秒才再发一次，停止输入 5 秒后自动转成
+    /// “停了”；主人离开这条时间线（订阅释放）也由核心发“停了”。节流和计时都在核心，壳不用自己算。
     SetTyping {
         target: TimelineTarget,
         typing: bool,

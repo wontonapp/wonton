@@ -1,4 +1,4 @@
-//! 本地回显的发送状态和失败类别（ADR-0109 第 10 节）。
+//! 本地回显的发送状态（ADR-0109 第 3 节）和失败类别（第 10 节）。
 
 use serde::{Deserialize, Serialize};
 
@@ -26,7 +26,7 @@ pub enum SendState {
         #[serde(default)]
         failure: SendFailure,
         /// 详情：SDK 或家里服务器给的原文，可能带英文。放在失败面板里给愿意看的人，`None` 表示没有。
-        /// 老核心的 `message` 也是它，读旧 JSON 时照样落在这里。
+        /// 旧核心把这个字段叫 `message`，也认。
         #[serde(default, alias = "message")]
         details: Option<String>,
         #[serde(default)]
@@ -84,7 +84,7 @@ mod tests {
         assert_eq!(state, SendState::Sending { progress: None });
     }
 
-    /// 契约：旧形状的 `message` 原文落进 `details`，类别仍是 `Other`，壳照样念得出原因。
+    /// 契约：没有 `failure` 的旧形状仍然能解析，类别落到 `Other`，原文留在 `details`。
     #[test]
     fn failed_message_of_the_old_shape_becomes_details() {
         let state: SendState =
@@ -111,5 +111,26 @@ mod tests {
                 recoverable: false,
             }
         );
+    }
+
+    /// 契约：每个失败类别的 JSON 名固定（壳按它写说法），类别能原样往返。
+    #[test]
+    fn failure_categories_round_trip_with_their_names() {
+        for (failure, name) in [
+            (SendFailure::Offline, "offline"),
+            (SendFailure::TooLarge, "too_large"),
+            (SendFailure::UnsupportedType, "unsupported_type"),
+            (SendFailure::ReplyTarget, "reply_target"),
+            (SendFailure::Rejected, "rejected"),
+            (SendFailure::Upstream, "upstream"),
+            (SendFailure::Other, "other"),
+        ] {
+            let json = serde_json::Value::from(name);
+            assert_eq!(serde_json::to_value(failure).unwrap(), json);
+            assert_eq!(
+                serde_json::from_value::<SendFailure>(json).unwrap(),
+                failure
+            );
+        }
     }
 }

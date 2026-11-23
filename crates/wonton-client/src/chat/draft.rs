@@ -145,6 +145,18 @@ impl ChatLink {
         let _ = self.draft_writes.send(write);
     }
 
+    /// 存着的草稿本身（正文和回复的事件 ID），进编辑态时存下来用。
+    pub(super) async fn read_raw_draft(
+        &self,
+        key: &TimelineKey,
+    ) -> Result<Option<Draft>, CoreError> {
+        let (ack, received) = oneshot::channel();
+        self.enqueue_draft(DraftWrite::Read(key.clone(), ack));
+        received.await.map_err(|_| CoreError::NotReady {
+            reason: l10n!(CATALOG, language(), "chat-draft-read-interrupted"),
+        })
+    }
+
     /// 一条时间线（主对话或旁聊）输入框里的草稿，没打过字也没在回复时是 `None`。只在本机，换房间、重启核心都还在。
     /// 回复对象那条消息本机没有时向服务器取，取不到给 `Unavailable`（壳照样能拿它的事件 ID 发回复）。
     pub(crate) async fn draft(

@@ -33,6 +33,8 @@ final class TimelineModel {
     /// 群里在场的 AI（本账号认识的 Bot 的 Matrix 用户 ID）；私聊不算。nil 是成员名单还没取全、
     /// 在场的算不准，别下“群里没有 AI”的结论；空列表才是确定没有。
     private(set) var roomBots: [String]?
+    /// 输入框正在编辑哪条（ADR-0109 第 10 节）；不在编辑时为空。
+    private(set) var editing: ComposerEdit?
     /// 正在输入的人的显示名，不含自己（ADR-0109）。
     private(set) var typing: [String] = []
     /// 房间里各 Bot 的斜杠命令和被截掉的条数（ADR-0054、ADR-0109）：空的时候没有“菜单”按钮，敲“/”也不弹列表。
@@ -110,6 +112,7 @@ final class TimelineModel {
         for diff in update.diffs {
             apply(diff)
         }
+        editing = update.editing
         backPagination = update.backPagination
         confirmations = update.confirmations
         viewport = update.viewport

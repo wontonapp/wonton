@@ -313,6 +313,7 @@ async fn forward(
         let mut table_changes = live.tables.subscribe();
         let mut jump_changes = live.jumps.pending();
         // 重建期间挂上的跳转请求收不到那次唤醒，订阅之后先补一步。
+        let mut edit_changes = live.edit.subscribe();
         live.jumps.tick(&runtime, room, &entries);
         live.tables.refresh(&runtime, session);
         // 插件装、卸以后，同一段文字里的插件网址类别会变，要重算。
@@ -497,6 +498,15 @@ async fn forward(
                         return;
                     }
                     if !live.tables.take_changed() {
+                        continue;
+                    }
+                    Batch::Sent(send(sender, &entries, Vec::new(), &mut view, None), false)
+                }
+                changed = edit_changes.changed() => {
+                    if changed.is_err() {
+                        return;
+                    }
+                    if !live.edit.take_changed() {
                         continue;
                     }
                     Batch::Sent(send(sender, &entries, Vec::new(), &mut view, None), false)

@@ -1,6 +1,7 @@
 package app.wonton.ui
 
 import androidx.compose.foundation.border
+import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Column
@@ -36,6 +37,7 @@ import kotlinx.coroutines.delay
 import app.wonton.protocol.AgentRunChoice
 import app.wonton.protocol.AgentRunEnd
 import app.wonton.protocol.AgentRunState
+import app.wonton.protocol.ChoiceSend
 import app.wonton.protocol.ThemeColors
 import app.wonton.protocol.TimelineContent
 import app.wonton.ui.design.WontonTheme
@@ -290,12 +292,17 @@ private fun Asking(run: TimelineContent.AgentRun, onAnswerChoice: (String) -> Un
                 color = ink,
             )
         }
+        val waiting = run.state == AgentRunState.Waiting
+        val answered = run.choices.any { it.chosen }
         run.choices.chunked(PAIR).forEach { pair ->
             Row(horizontalArrangement = Arrangement.spacedBy(WontonTheme.spacing.s8)) {
                 pair.forEach { choice ->
-                    AskingChip(choice, ink, Modifier.weight(1f), onAnswerChoice)
+                    AskingChip(choice, ink, waiting, answered, Modifier.weight(1f), onAnswerChoice)
                 }
             }
+        }
+        run.choices.firstNotNullOfOrNull { (it.send as? ChoiceSend.Failed)?.message }?.let { reason ->
+            ProblemDetail(reason)
         }
     }
 }
@@ -304,26 +311,47 @@ private fun Asking(run: TimelineContent.AgentRun, onAnswerChoice: (String) -> Un
 private fun AskingChip(
     choice: AgentRunChoice,
     ink: Color,
+    waiting: Boolean,
+    answered: Boolean,
     modifier: Modifier,
     onAnswerChoice: (String) -> Unit,
 ) {
+    val colors = WontonTheme.colors
+    val canAnswer = waiting && !answered && choice.send != ChoiceSend.Sending
+    val fill = if (choice.chosen) colors.accentFill.toColor() else null
+    val side = if (waiting || choice.chosen) ink else colors.textSecondary.toColor()
+    val shape = RoundedCornerShape(WontonTheme.radii.pill)
+    val background = if (fill != null) Modifier.background(fill, shape) else Modifier
     Row(
         modifier
             .testTag("asking-choice-${choice.key}")
-            .border(WontonTheme.size.hairline, ink, RoundedCornerShape(WontonTheme.radii.pill))
-            .clickable(role = Role.Button) { onAnswerChoice(choice.key) }
+            .border(WontonTheme.size.hairline, side, shape)
+            .then(background)
+            .clickable(enabled = canAnswer, role = Role.Button) { onAnswerChoice(choice.key) }
             .heightIn(min = WontonTheme.size.target)
             .padding(horizontal = WontonTheme.spacing.s12, vertical = WontonTheme.spacing.s4),
         verticalAlignment = Alignment.CenterVertically,
-        horizontalArrangement = Arrangement.Center,
+        horizontalArrangement = Arrangement.spacedBy(WontonTheme.spacing.s4, Alignment.CenterHorizontally),
     ) {
         Text(
             choice.label,
             style = WontonTheme.typography.supporting,
-            color = ink,
+            color = if (choice.chosen) colors.textOnAccentFill.toColor() else side,
             textAlign = TextAlign.Center,
             maxLines = 1,
             overflow = TextOverflow.Ellipsis,
         )
+        when (choice.send) {
+            ChoiceSend.Sending -> CircularProgressIndicator(
+                Modifier.size(WontonTheme.size.iconTiny),
+                color = side,
+            )
+            is ChoiceSend.Failed -> Text(
+                "!",
+                style = WontonTheme.typography.supporting,
+                color = colors.danger.toColor(),
+            )
+            else -> {}
+        }
     }
 }

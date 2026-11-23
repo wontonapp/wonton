@@ -58,6 +58,21 @@ class RoomDraft(
         save()
     }
 
+    /** 进入编辑态：把原正文换进输入框、收掉回复；核心随后存草稿，这里不自己写。 */
+    fun startEditing(text: String) {
+        body.value = text
+        quoted.value = null
+        focusToken++
+        touched = true
+    }
+
+    /** 退出编辑态后用核心恢复的草稿换回来。 */
+    fun restore(text: String, reply: ReplyQuote?) {
+        body.value = text
+        quoted.value = reply
+        touched = true
+    }
+
     fun stopReplying() {
         quoted.value = null
         touched = true

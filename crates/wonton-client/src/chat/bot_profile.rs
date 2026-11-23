@@ -275,6 +275,9 @@ fn matrix_problem(error: Error) -> BotProfileProblem {
             (BotProfileFailure::Upstream, detail)
         }
         Error::CommentNotSent(failure) => (BotProfileFailure::Upstream, failure.to_string()),
+        Error::TooLarge(detail) | Error::UnsupportedType(detail) | Error::ReplyTarget(detail) => {
+            (BotProfileFailure::Upstream, detail)
+        }
     };
     BotProfileProblem {
         reason,

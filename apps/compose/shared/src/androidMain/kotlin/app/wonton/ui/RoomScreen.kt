@@ -51,6 +51,7 @@ import app.wonton.protocol.Action
 import app.wonton.protocol.BackPagination
 import app.wonton.protocol.BotView
 import app.wonton.protocol.BotRef
+import app.wonton.protocol.ComposerEdit
 import app.wonton.protocol.ComposerViewModel
 import app.wonton.protocol.CoreException
 import app.wonton.protocol.ConfirmationView
@@ -132,6 +133,9 @@ internal class TimelineState {
     var call by mutableStateOf(RoomCall())
     var confirmations by mutableStateOf<List<ConfirmationView>>(emptyList())
     var openedConfirmation by mutableStateOf<String?>(null)
+
+    /** 输入框正在编辑哪条（ADR-0109 第 10 节），每一批都带当前值。 */
+    var editing by mutableStateOf<ComposerEdit?>(null)
 
     /** 群里在场的 AI（本账号认识的 Bot 的 Matrix 用户 ID）；私聊不算。null 是成员名单还没取全、
      * 在场的算不准，别下“群里没有 AI”的结论；空列表才是确定没有。 */
@@ -215,6 +219,7 @@ internal fun RoomRoute(
                 timeline.focus = update.focus
                 timeline.jump = update.jump
                 timeline.backTo = update.backTo
+                timeline.editing = update.editing
                 timeline.typing = update.typing
                 timeline.commands = update.commands
                 timeline.commandsOmitted = update.commandsOmitted.toInt()
@@ -418,6 +423,11 @@ private fun RoomOverlays(
             core = core,
             groupImages = opened.message.group?.let { groups[opened.message.senderId to it.id] },
             onReply = draft::replyTo,
+            onEdit = { text ->
+                onAction(Action.Timeline(TimelineAction.SetTyping(target, false)))
+                draft.startEditing(text)
+                onAction(Action.Timeline(TimelineAction.StartEdit(target, opened.itemId)))
+            },
             onForward = { onForward(opened.itemId) },
             onRedact = { onRedact(opened) },
             onDismiss = onMenuDismiss,
@@ -615,16 +625,28 @@ private fun Conversation(
                     target = target,
                     draft = draft.text,
                     reply = draft.reply,
+                    edit = timeline.editing,
                     focusToken = draft.focusToken,
                     composer = composer,
                     core = core,
-                    onDraftChange = draft::change,
+                    onDraftChange = { text ->
+                        draft.change(text)
+                        onAction(Action.Timeline(TimelineAction.SetTyping(target, text.isNotEmpty())))
+                    },
                     onSent = draft::sent,
                     onCommandSent = { draft.sent(keepBody = true) },
                     onCommandListShown = { commandMenuShown = it },
                     onReplyCancel = draft::stopReplying,
-                    onAction = onAction,
+                    onEditCancel = {
+                        onAction(Action.Timeline(TimelineAction.SetTyping(target, false)))
+                        onAction(Action.Timeline(TimelineAction.CancelEdit(target)))
+                    },
+                    onRestoreDraft = draft::restore,
+                    onTyping = { typing ->
+                        onAction(Action.Timeline(TimelineAction.SetTyping(target, typing)))
+                    },
                     onReject = onReject,
+                    onAction = onAction,
                     commands = timeline.commands,
                     commandsOmitted = timeline.commandsOmitted,
                     // 草稿整句就是一条完整命令（没有多写的正文）时发核心给的整句，不自己拼。

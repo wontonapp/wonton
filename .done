@@ -1,13 +1,34 @@
-# chat-802-r3：#802 第二轮复审（6335d7e9）
+# chat-804：按复审 rv-804 把编辑、正在输入和失败分类接进核心
 
-分支 feat/chat-edit-typing-proto。远端已被叠到最新 main 6dbdcfa9 并加了 clippy 拆分提交；本地先 reset 到远端头再改。
+分支 feat/chat-edit-typing-core，已 rebase 到最新 main 738cf13d4（#802 已合入），只加语义接线和错误分类。
 
-这轮：
-- ADR 0109 把视觉规格留在第 9 节、编辑/贴图/失败挪成第 10 节（标题“编辑消息、贴图和发送失败”）；protocol 里六处引用改第 10 节，`SetTyping` 改第 8 节；ADR:149 补回“点‘编辑’后输入框换成原文”，顺手修“铅笔.、”。
-- §8 写明节流/自动停还没接：本 PR 里 SetTyping 直接转发、失败进 problem，下一条补。
-- 正文补验证结果、`SendState` FFI 不兼容这句、两条没跑的原因；`.done` 重写。
-- iOS 侧聊发图：附言只给第一张试过的照片，不再每张都带再单发一条；旁聊成功后清草稿和回复对象。
-- Android `timeline_send_failed_other` 改名 `timeline_send_failure_other`；`SendFailure.text` 挪进新的 MessageTexts（Kotlin、Swift），不再挂在失败控件文件里。
-- iOS 用例 `ComposerSendRejectUITests` 的旧标识 `attachDone` 改 `attachSend`。
+逐条：
+- P1-1 失败类别：`SendStatus::Failed` / `OutgoingFailure` 带 `SendFailure`，`wonton_matrix::Error` 按类型分（Transport/NotReady→Offline，401/403/400→Rejected，Upstream→Upstream，413/M_TOO_LARGE→TooLarge，415/M_UNSUPPORTED_CONTENT_TYPE→UnsupportedType，NotFound→ReplyTarget）；`details` 原文仍只进面板。附件侧同类别，`InvalidInput` 不再一律说“太大”。
+- P1-2：`Error::ReplyTarget` 由 `load_event` 的 NotFound 和组回复失败产生，附件提示不再说错。
+- P1-3：四个动作进 `ChatLink`；`ChatRoom::edit_message` 发 `m.replace`；`TimelineUpdate::editing` 由订阅的编辑态驱动、变化补批；取消/成功恢复原草稿，换目标保留最初草稿；两端菜单显示编辑、输入框上方编辑条、确认走 `EditMessage`。
+- 正在输入：5 秒节流、停 5 秒自动报停，订阅释放也报停；两端在打字/清空/发送/进出编辑态发 `SetTyping`。
+- 状态行选项：`chosen`/`send` 按反应回填；不在等待、已答、不是问我都拒绝；两端画选中/转圈/感叹号，非等待变灰。
+- P2-4/5：iOS 气泡只留类别（other 有原文时用原文），原文只进面板标题，可重试也带。
+- P2-6：`details` 认旧 `message`，旧形状原文不丢，测试断言。
+- P2-7/8/9：ADR 断句补回；视觉规格留在第 9 节、编辑/贴图/失败改为第 10 节，protocol 引用一起改；`SetTyping` 第 8 节；协议注释去重。
+- P2-10：两端跳过编辑的死代码删掉。
+- 测试：类别 JSON 名往返、`failure_of` 每类、旧 alias、编辑态（摘要/晚到 begin/换目标/取消恢复）、5 秒停、tuwunel 编辑与带 caption 图片。
 
-验证：SwiftLint strict 通过；iOS build-for-testing 成功；ChatTelegramUITests 19/20；protocol send_state 4 passed；lint 脚本通过。Android/clippy/enum 尺寸、edit_typing it、重跑未拿到名额，正文已注明。
+验证：
+- `cargo check -p wonton-matrix --all-targets` → Finished（无错误）。
+- `cargo check -p wonton-client --all-targets --features ui-fake` → 通过（无 error/warning；修掉了 `Live` 缺字段、`Draft` 无 Default、`is_editing`/`saved` 缺失、`SendStatus` 缺 `error`、`Item.reason`）。
+- `python3 scripts/check-ui-text.py`、`check-conflict-markers.sh`、`check-file-size.sh`：通过；`cargo fmt --all` 已跑。
+- SwiftLint `--strict`（含新 MessageTexts.swift、ComposerView.swift、ComposerTray.swift）：通过。
+
+没做/没验证：
+- clippy、相关单测/it、tuwunel 用例、Android 构建、iOS 构建都没等到编译机/模拟器名额，没有结果。
+- 真机/模拟器没手点编辑条和状态行。
+
+基座问题：
+- `RoomMessageEventContent` 在 ruma 0.35 没有 `text_markdown`，只能用 `text_plain`；编辑事件因此不带 HTML 格式化正文，和现有发送路径一致。
+- 编辑目标只给 `MessageAction::Edit` 的正文，不带 item id，壳得自己拿菜单里的 item id。
+
+复审五条的落点：
+1) 失败类别有生产者：`failure_of`、`OutgoingFailure`、`message_failure`；2) 附件侧 `AttachmentFailure` 新值有构造，`InvalidInput` 改 Rejected；3) 正文按实况写；4) iOS 气泡/读屏只用类别（other 有原文时兜底），原文只进面板；5) 可重试也让面板带 details，两端一致。
+冲突：并了 main 的附言顺序（`CommentNotSent`）和 Android 选项两列布局（AskingChip 里补三态）。
+验证：matrix/client 的 all-targets check 和 clippy 都 Finished；chat::edit 5 passed、chat::out_typing 2 passed；ui-text、冲突标记、fmt、SwiftLint（8 个改动文件）通过；Android detekt + :shared:compileAndroidMain `BUILD SUCCESSFUL`；mini `build-for-testing` `TEST BUILD SUCCEEDED`。it/tuwunel 未跑。

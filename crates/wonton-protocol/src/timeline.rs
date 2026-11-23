@@ -358,8 +358,8 @@ pub enum MessageAction {
     Forward,
     /// 撤回（[`TimelineAction::RedactMessage`](crate::TimelineAction::RedactMessage)）：所有人那里都会变成“已撤回”，壳先请主人确认。
     Redact,
-    /// 编辑这条（ADR-0109 第 10 节）：壳先发 [`TimelineAction::StartEdit`](crate::TimelineAction::StartEdit)，核心存下当前草稿；
-    /// 收到 [`TimelineUpdate::editing`](crate::TimelineUpdate::editing) 后壳再把 `text` 填进输入框、光标放在末尾、上方画编辑条。
+    /// 编辑这条（ADR-0109 第 10 节）：壳把 `text` 换成输入框正文、光标放末尾、键盘弹出，随即发
+    /// [`TimelineAction::StartEdit`](crate::TimelineAction::StartEdit)；核心存下原草稿并进入编辑态，输入框上方画编辑条。
     /// 取消后壳用 [`ClientCore::draft`](crate::ClientCore::draft) 重读核心恢复的草稿。确认时发
     /// [`TimelineAction::EditMessage`](crate::TimelineAction::EditMessage)。
     ///

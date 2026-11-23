@@ -16,6 +16,7 @@ import androidx.compose.foundation.clickable
 import androidx.compose.foundation.content.ReceiveContentListener
 import androidx.compose.foundation.content.contentReceiver
 import androidx.compose.foundation.layout.Box
+import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.heightIn
@@ -43,6 +44,8 @@ import androidx.compose.runtime.snapshotFlow
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.focus.FocusRequester
+import androidx.compose.ui.focus.onFocusChanged
+import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.focus.focusRequester
 import androidx.compose.ui.graphics.SolidColor
 import androidx.compose.ui.platform.LocalConfiguration
@@ -56,6 +59,7 @@ import app.wonton.client.ClientCore
 import app.wonton.protocol.Action
 import app.wonton.protocol.AgentAction
 import app.wonton.protocol.ComposerAttachment
+import app.wonton.protocol.ComposerEdit
 import app.wonton.protocol.ComposerViewModel
 import androidx.activity.compose.BackHandler
 import app.wonton.protocol.CoreException
@@ -69,6 +73,8 @@ import app.wonton.ui.design.WontonIconButton
 import app.wonton.ui.design.WontonTheme
 import app.wonton.ui.design.toColor
 import app.wonton.ui.icons.Attach
+import app.wonton.ui.icons.Close
+import app.wonton.ui.icons.Compose
 import app.wonton.ui.icons.Code
 import app.wonton.ui.icons.Image
 import app.wonton.ui.icons.Send
@@ -95,6 +101,7 @@ fun Composer(
     target: TimelineTarget,
     draft: String,
     reply: ReplyQuote?,
+    edit: ComposerEdit?,
     focusToken: Int,
     composer: ComposerViewModel?,
     core: ClientCore,
@@ -103,6 +110,9 @@ fun Composer(
     onCommandSent: () -> Unit,
     onCommandListShown: (Boolean) -> Unit,
     onReplyCancel: () -> Unit,
+    onEditCancel: () -> Unit,
+    onRestoreDraft: (String, ReplyQuote?) -> Unit,
+    onTyping: (Boolean) -> Unit,
     onAction: (Action) -> Unit,
     onReject: (Problem) -> Unit,
     commands: List<RoomCommand> = emptyList(),
@@ -134,14 +144,16 @@ fun Composer(
         null
     }
     val attach = rememberAttachments(target, composer, core, onReject, onReplyCancel, reply, sendImage, draft)
-    val isEmpty = draft.isBlank() && attachments.isEmpty()
+    // 编辑时确认的是正文：附件区有东西也不算能发。
+    val isEmpty = if (edit != null) draft.isBlank() else draft.isBlank() && attachments.isEmpty()
     val focusRequester = remember { FocusRequester() }
     LaunchedEffect(focusToken) { if (focusToken > 0) focusRequester.requestFocus() }
+    // 编辑时返回键先退出编辑态，不离开房间。
+    BackHandler(enabled = edit != null) { onEditCancel() }
     // 核心收下了才清草稿、收回复：被拒（附件没传上去、房间不能发）时字和回复都留着等主人改。
-    val send = { text: String ->
-        val problem = core.send(sendAction(target, text, reply, viaTray))
-        if (problem == null) onSent() else onReject(problem)
-    }
+    val send = rememberComposerSend(target, edit, reply, viaTray, core, onTyping, onSent, onReject)
+    // 退出编辑态后把核心恢复的草稿读回来。
+    RestoreDraftOnEditEnd(edit, target, core, onRestoreDraft)
     val agentStop by produceState<RoomAgentStop>(RoomAgentStop.Idle, core, target) {
         core.agentStopUpdates(target).collect { value = it }
     }
@@ -160,8 +172,10 @@ fun Composer(
         inSideChat = inSideChat,
         roomId = roomId,
         reply = reply,
+        edit = edit,
         core = core,
         onReplyCancel = onReplyCancel,
+        onEditCancel = onEditCancel,
         attachments = attachments,
         onAction = onAction,
         commands = shown,
@@ -183,6 +197,7 @@ fun Composer(
         onDraftChange = onDraftChange,
         attach = attach,
         send = send,
+        onTyping = onTyping,
         dropCommand = dropCommand,
         onAction = onAction,
         onMenu = { menuOpen = !menuOpen },
@@ -197,14 +212,16 @@ internal fun commandQuery(draft: String, commands: List<RoomCommand>): List<Room
     return commands.filter { it.name.startsWith(query, ignoreCase = true) }
 }
 
-/** 输入框上方跟着草稿变的那一摞：引导、回复、附件区和命令菜单。 */
+/** 输入框上方跟着草稿变的那一摞：引导、编辑条或回复、附件区和命令菜单。 */
 @Composable
 private fun ComposerStack(
     inSideChat: Boolean,
     roomId: String,
     reply: ReplyQuote?,
+    edit: ComposerEdit?,
     core: ClientCore,
     onReplyCancel: () -> Unit,
+    onEditCancel: () -> Unit,
     attachments: List<ComposerAttachment>,
     onAction: (Action) -> Unit,
     commands: List<RoomCommand>,
@@ -216,7 +233,11 @@ private fun ComposerStack(
     onPicked: () -> Unit,
 ) {
     if (!inSideChat) OnboardingChatPrompts(roomId)
-    if (reply != null) ComposerReply(reply, core, onReplyCancel)
+    if (edit != null) {
+        ComposerEditBar(edit, onEditCancel)
+    } else if (reply != null) {
+        ComposerReply(reply, core, onReplyCancel)
+    }
     ComposerTray(attachments, roomId, core, onAction)
     if (listShown) {
         // 键盘把可用的地方压小以后菜单跟着缩，别把输入框和顶栏一起挤走。
@@ -252,6 +273,7 @@ private fun ComposerBar(
     onDraftChange: (String) -> Unit,
     attach: Attachments,
     send: (String) -> Unit,
+    onTyping: (Boolean) -> Unit,
     dropCommand: String?,
     onAction: (Action) -> Unit,
     onMenu: () -> Unit,
@@ -277,6 +299,7 @@ private fun ComposerBar(
             onDraftChange,
             attach.pasteListener,
             onHardwareSend = { text -> send(dropCommand ?: text) },
+            onFocusChange = { focused -> if (!focused) onTyping(false) },
             modifier = Modifier.weight(1f)
                 .focusRequester(focusRequester)
                 .padding(vertical = (size.target - size.composerField) / 2)
@@ -435,6 +458,7 @@ private fun ComposerField(
     onDraftChange: (String) -> Unit,
     pasteListener: ReceiveContentListener,
     onHardwareSend: (String) -> Unit,
+    onFocusChange: (Boolean) -> Unit,
     modifier: Modifier,
 ) {
     val colors = WontonTheme.colors
@@ -460,7 +484,10 @@ private fun ComposerField(
     }
     BasicTextField(
         state = fieldState,
-        modifier = modifier.contentReceiver(pasteListener).hardwareMessageKeys(fieldState, onHardwareSend),
+        modifier = modifier
+            .onFocusChanged { onFocusChange(it.isFocused) }
+            .contentReceiver(pasteListener)
+            .hardwareMessageKeys(fieldState, onHardwareSend),
         lineLimits = TextFieldLineLimits.MultiLine(
             maxHeightInLines = WontonTheme.ratio.composerLines.toInt(),
         ),
@@ -519,7 +546,7 @@ private fun SendButton(onClick: () -> Unit) {
  * 发送按钮。附件区空着、前面也没有待发消息时照旧直接发字：不进待发消息，不闪一下；否则作为一次发送交给附件区，
  * 字也排在前面的待发消息后面，不抢到前面去。
  */
-private fun sendAction(target: TimelineTarget, text: String, reply: ReplyQuote?, viaTray: Boolean): Action =
+internal fun sendAction(target: TimelineTarget, text: String, reply: ReplyQuote?, viaTray: Boolean): Action =
     Action.Timeline(
         if (viaTray) {
             TimelineAction.SendComposer(target, text, reply?.eventId)

@@ -53,9 +53,21 @@ pub enum Error {
     #[error("{0}")]
     CommentNotSent(SendFailure),
 
-    /// 输入非法。
+    /// 输入非法：填的内容服务器不接受、ID 格式不对。
     #[error("输入非法：{0}")]
     InvalidInput(String),
+
+    /// 太大：超过服务器的上传上限（`M_TOO_LARGE` 或 413）。
+    #[error("内容太大：{0}")]
+    TooLarge(String),
+
+    /// 这个格式服务器发不了（`M_UNSUPPORTED_CONTENT_TYPE` 或 415）。
+    #[error("服务器发不了这个格式：{0}")]
+    UnsupportedType(String),
+
+    /// 要回复的那条不在了：不在这个房间里，或者已经被删得拿不到。
+    #[error("要回复的那条不在了：{0}")]
+    ReplyTarget(String),
 }
 
 /// 403 里说身份失效的错误码（规范的 Standard error codes）；其余的 403 是权限问题。
@@ -105,6 +117,17 @@ impl From<&ApiError> for Error {
             api.error_kind()
                 .map_or_else(String::new, |kind| kind.errcode().to_string())
         };
+        // 413 和 `M_TOO_LARGE` 是上传上限，415 和 `M_UNSUPPORTED_CONTENT_TYPE` 是认不出的格式：壳各有一句话，
+        // 比笼统的“服务器出错”有用。
+        match api.status_code.as_u16() {
+            413 => return Self::TooLarge(api.to_string()),
+            415 => return Self::UnsupportedType(api.to_string()),
+            _ if errcode() == "M_TOO_LARGE" => return Self::TooLarge(api.to_string()),
+            _ if errcode() == "M_UNSUPPORTED_CONTENT_TYPE" => {
+                return Self::UnsupportedType(api.to_string());
+            }
+            _ => {}
+        }
         match api.status_code.as_u16() {
             401 => Self::Unauthorized {
                 errcode: errcode(),
@@ -242,6 +265,25 @@ mod tests {
         assert!(matches!(
             Error::from(&response(500, r#"{"errcode":"M_UNKNOWN","error":"x"}"#)),
             Error::Upstream(_)
+        ));
+        assert!(matches!(
+            Error::from(&response(413, r#"{"errcode":"M_TOO_LARGE","error":"x"}"#)),
+            Error::TooLarge(_)
+        ));
+        assert!(matches!(
+            Error::from(&response(400, r#"{"errcode":"M_TOO_LARGE","error":"x"}"#)),
+            Error::TooLarge(_)
+        ));
+        assert!(matches!(
+            Error::from(&response(415, r#"{"errcode":"M_UNKNOWN","error":"x"}"#)),
+            Error::UnsupportedType(_)
+        ));
+        assert!(matches!(
+            Error::from(&response(
+                400,
+                r#"{"errcode":"M_UNSUPPORTED_CONTENT_TYPE","error":"x"}"#
+            )),
+            Error::UnsupportedType(_)
         ));
     }
 

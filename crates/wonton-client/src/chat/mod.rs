@@ -26,6 +26,8 @@ mod connect;
 mod contacts;
 mod display_name;
 mod draft;
+mod edit;
+mod edit_actions;
 mod follow_home;
 mod forward;
 mod handoff;
@@ -38,6 +40,7 @@ pub(crate) mod mentions;
 mod menu;
 mod onboarding;
 mod ops;
+mod out_typing;
 mod pending;
 mod plugin_status;
 mod previews;
@@ -560,25 +563,27 @@ impl ChatLink {
                     .jump_back();
                 Ok(())
             }
-            // 正在输入直接转给服务器；节流和超时自动停还留给下一条 PR。
-            TimelineAction::SetTyping { target, typing } => {
-                let room = self.opened(&TimelineKey::parse(&target)?)?;
-                self.spawn_op("chat-op-typing-failed", async move {
-                    room.typing_notice(typing).await
-                });
-                Ok(())
-            }
             // 附件区的操作由 `ClientCore::dispatch` 交给附件区（ADR-0094），不会到这里。
             TimelineAction::SendComposer { .. }
             | TimelineAction::RemoveAttachment { .. }
             | TimelineAction::RetryAttachment { .. }
             | TimelineAction::RetryOutgoing { .. }
-            | TimelineAction::CancelOutgoing { .. }
-            // 编辑先只在接口里（下一条 PR 才连核心）。
-            | TimelineAction::StartEdit { .. }
-            | TimelineAction::CancelEdit { .. }
-            | TimelineAction::EditMessage { .. } => {
+            | TimelineAction::CancelOutgoing { .. } => {
                 Err(invalid(&l10n!(CATALOG, language(), "chat-invalid-action")))
+            }
+            TimelineAction::StartEdit { target, item_id } => {
+                self.start_edit(&TimelineKey::parse(&target)?, &item_id)
+            }
+            TimelineAction::CancelEdit { target } => {
+                self.cancel_edit(&TimelineKey::parse(&target)?)
+            }
+            TimelineAction::EditMessage {
+                target,
+                event_id,
+                body,
+            } => self.edit_message(&TimelineKey::parse(&target)?, &event_id, &body),
+            TimelineAction::SetTyping { target, typing } => {
+                self.set_typing(&TimelineKey::parse(&target)?, typing)
             }
         }
     }
