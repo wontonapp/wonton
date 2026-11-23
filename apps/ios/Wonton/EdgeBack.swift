@@ -128,12 +128,15 @@ extension UINavigationController: @retroactive UINavigationControllerDelegate {
         }
         objc_setAssociatedObject(self, &edgeBackWatchKey, observation, .OBJC_ASSOCIATION_RETAIN_NONATOMIC)
     }
+
+    override open func viewDidDisappear(_ animated: Bool) {
+        super.viewDidDisappear(animated)
+        edgeBack?.resetInteractive()
+    }
 }
 
-/// 左边 24 点内的平移 = 返回。只在该起点、有上一页、没有别的转场时开始。
+/// 左边 `WontonTheme.gesture.edgeWidth` 点内的平移 = 返回。只在该起点、有上一页、没有别的转场时开始。
 final class EdgeBack: NSObject, UIGestureRecognizerDelegate {
-    /// 起手允许离屏幕左边多远。
-    static let edge: CGFloat = 24
 
     private(set) weak var navigation: UINavigationController?
     let pan = UIPanGestureRecognizer()
@@ -143,6 +146,11 @@ final class EdgeBack: NSObject, UIGestureRecognizerDelegate {
     /// 方向还没定：竖直的先走就让给滚动。
     private var decided = false
     private var gaveUp = false
+
+    /// 拖动途中视图被摘掉时复位；不复位的话，下一次返回键的 pop 会拿到没人驱动的交互控制器。
+    func resetInteractive() {
+        isInteractive = false
+    }
 
     init(navigation: UINavigationController) {
         self.navigation = navigation
@@ -162,7 +170,7 @@ final class EdgeBack: NSObject, UIGestureRecognizerDelegate {
         let velocity = pan.velocity(in: navigation.view)
         NSLog("EDGE shouldBegin start=%.1f v=(%.0f,%.0f)", start, velocity.x, velocity.y)
         guard velocity.x > 0, abs(velocity.x) > abs(velocity.y) else { return false }
-        return start <= Self.edge
+        return start <= WontonTheme.gesture.edgeWidth
     }
 
     func gestureRecognizer(

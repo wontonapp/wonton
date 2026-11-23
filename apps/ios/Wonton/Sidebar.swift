@@ -13,7 +13,7 @@ extension EnvironmentValues {
 /// 侧边栏打开时把主界面整页推到右边、缩小、变圆角，只露出一条（学 ChatGPT、Grok）。
 struct SidebarContainer<Main: View, Panel: View>: View {
     @Binding var isOpen: Bool
-    /// 根页面才响应左边缘右滑；进了下一层，左边缘留给系统的返回手势。
+    /// 根页面才响应左边缘右滑；进了下一层，左边缘留给返回手势。
     let edgeSwipe: Bool
     @ViewBuilder let main: Main
     @ViewBuilder let panel: Panel
