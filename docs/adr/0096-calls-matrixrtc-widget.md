@@ -222,9 +222,9 @@ widget ID、用 `generate_webview_url` 得出地址。页面关掉、换房间�
 
 ### Android 冒烟脚本
 
-`deploy/dev/core/call-e2e.sh` 尝试从已登录同一加密房间的两台 Android 设备打开 widget，采集 WebRTC 统计并检查挂断和断线退场；需要本地 call 插件、Debug APK 和设备。一次完整通话尚未验证，不能把脚本输出当作三条路径的验收结果。
+`deploy/dev/calls/smoke.sh` 在开发栈上跑三组媒体路径（UDP 直连、只剩插件 TCP 7881、强制 n0 中继）和一组 delayed leave。每组断言的判据是退出码：直连/TCP 组看两端选中候选对的 local 类型和协议，中继组看 App 隧道日志里的实际路径、双向音频和双向视频的收发字节都大于 0、本轮新增的两条 `call.member`、挂断后这两条不再活跃（内容清空）。统计来自页面自己的 `getStats`；本轮新增用房间 state 的前后差集，复用的旧房间里的旧成员不算。它取代 `deploy/dev/core/call-e2e.sh`（已删），前置和运行方法见同目录 README。
 
-当前脚本的 relay 模式不能证明强制走公共中继：设备配对和连接地址由调用方准备，WebRTC 的回环 ICE 候选也不能证明隧道的实际路径。UDP/TCP 组同样需要核对选中的候选协议。实际通话、路径判定和 delayed leave 均待实测。
+2026-11-24 复审按旧脚本实测：三组都只是“跑完”退出 0，两端只有 WebRTC 连接、没有任何 RTP，挂断后两端仍在通话、成员不消失；旧判定还把 UDP 中继当直连、把 remote 候选当 relay。下面记录的是脚本修好前的 11-16 观察，本次修好后的复跑结果看 PR。
 
 ### 已有 Android WebView 媒体前置结果
 
@@ -248,16 +248,21 @@ Tuwunel v2.0.0、lk-jwt-service 0.9.0、livekit-server v1.13.11，Linux + Docker
 - full access 的服务器名换到令牌后，授权服务建 LiveKit 房间成功。
 - 网关测试：真实 Tuwunel 发的 OpenID 令牌经 `/_wonton/matrix-rtc/sfu/get` 换回 LiveKit 令牌，假令牌 401，没装提供方 503
   （`gateway/matrix_rtc_docker_tests.rs`）。
-App 端（两条模拟器设备、Debug、各自独立身份，同一加密房间；本 PR 的复跑补齐，`⏳` 是还没观察到的）：
+App 端（两条模拟器设备、Debug、各自独立身份，同一加密房间）：
 
-- 双向音视频打通：两端 LiveKit 日志 `participant active` + `mediaTrack published`（2026-11-16 14:36、16:04 各一次，截图在证据目录）。
-- 相机、麦克风在入会时已授权（`granted`）：APK 装好后 `pm grant`，页面带默认 `facingMode` 取流成功。
-- UDP 直连组：两端 `candidate-pair` 都是 `protocol=udp` 且 `selected`，`/proc/net/udp` 里有到插件 7882 的已连接 socket。⏳
-- 只留插件 TCP 时 `protocol=tcp`（7881）；强制 n0 中继时 `protocol=relay` 且出现 `PortMappingWarning::PublicRelayBandwidth`
-  轻提示。⏳
-- 插件页请求按主机放行，经隧道身份过设备门到网关，再反代到插件；预检和 CORS 由授权服务自己答。三条路径下都成立。⏳
-- 房间里两条 `org.matrix.msc3401.call.member`，`state_key` 是成员 user id（可带 `_<device>` 后缀）。⏳
-- 关页面即挂断，成员随之消失；`force-stop` 后成员由 delayed leave 在十几秒内清掉。⏳
+- 页面在入会后默认静音、相机也关：脚本直接打开发送轨道，判定要求双向音频和双向视频的收发字节都大于 0。11-16 观察到过
+  LiveKit `participant active` + `mediaTrack published`；11-24 复审只看连接建立、没有 RTP，修好后的脚本才把媒体变成门槛。
+- 相机、麦克风在入会时已授权（`granted`）：APK 装好后 `pm grant`。
+- UDP 直连组：两端选中候选对的 local 类型是 udp 且不是 relay。不能只看 `protocol=udp`：UDP 中继也是它。
+- 只留插件 TCP 组：两端 local 协议是 tcp（7881）。
+- 强制 n0 中继组：脚本先把两台设备到私网候选（10/8、172.16/12、192.168/16，模拟器自己的 DNS 和宿主别名除外）的
+  包丢掉，再看 App 核心日志里最近一次隧道路径 `CheckedPath { relay: true, remote: Relay(...) }`。LiveKit 是 ICE-lite、
+  没有 TURN，WebRTC 的 local 候选恒是 host/prflx，所以隧道路径才是中继组的判据。强制中继时还可能出
+  `PortMappingWarning::PublicRelayBandwidth` 轻提示。
+- 插件页请求按主机放行，经隧道身份过设备门到网关，再反代到插件；预检和 CORS 由授权服务自己答。
+- 房间里本轮新增两条 `org.matrix.msc3401.call.member`，`state_key` 是成员 user id 加 `_<device>`；判定用房间 state 的前后差集。
+- 网页里点挂断后关闭页面：Element Call 把本设备的 `call.member` 内容清空（键本身不删，房间判定按“内容为空＝不在通话”），脚本轮询本轮两条 60 秒内都不再活跃，超时失败。
+- `force-stop`：LiveKit 在约 30 秒后看到参与者断开（`PEER_CONNECTION_DISCONNECTED`），但当前 lk-jwt 0.10.0 没有在随后 60 秒内代发 delayed leave，`call.member` 要等事件自带的 `expires`（4 小时）过期才失效。脚本在强杀后等 60 秒，没清掉只记录，不算失败。
 
 ### 本次 Android 现场（2026-11-14）
 
