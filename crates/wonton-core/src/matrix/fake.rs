@@ -68,6 +68,9 @@ pub struct Tuwunel {
     pub refuse_power_levels: bool,
     pub refuse_room_reads: bool,
     pub refuse_kicks: bool,
+    /// 为真时下一次建房照样建好，但响应体半路断掉（模拟客户端丢掉 createRoom 的响应）。
+    pub drop_next_room_create: bool,
+
     /// 为真时邀请失败。
     pub refuse_invites: bool,
     /// 发出的消息：（房间，内容）。

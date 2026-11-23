@@ -4,16 +4,28 @@
 //! Bot 接受邀请后主人马上退出：房间从主人的聊天列表里消失，交付（`hand_over`）时再请回来。
 //!
 //! 建房时写的一个标记让重试能捡回上次建了一半的主房间。能捡回的是 Bot 已经进来的那一段（建房、邀请、Bot
-//! 加入都做完了，后面的设置或交付崩了）；`createRoom` 的响应丢掉时 Bot 还没被邀请，房间只留在主人的
-//! `joined_rooms` 里，捡不回来。
+//! 加入都做完了，后面的设置或交付崩了）；`createRoom` 的响应丢掉时 Bot 还没被邀请，房间捡不回来，建房失败时
+//! 按标记把它找出来让主人退出，不让它留在主人的列表里。
+
+use std::collections::BTreeSet;
+use std::sync::atomic::{AtomicU64, Ordering};
 
 use hyper::Method;
-use serde_json::json;
+use serde_json::{Value, json};
 
 use super::Session;
 use super::api::{MatrixError, encode};
+use crate::plugin::languages::Languages;
 
 const MARKER: &str = "app.wonton.bot_home";
+
+/// 每次建房用一个号写进标记：并发装两个插件时，失败的那一路只退出自己那间，不动另一路刚建的房。
+static NEXT_RESERVATION: AtomicU64 = AtomicU64::new(1);
+
+/// 取一个建房号；进程内唯一。重启后从 1 再数，早先的房间在快照 `before` 里，撞号也不影响。
+pub(super) fn next_reservation() -> u64 {
+    NEXT_RESERVATION.fetch_add(1, Ordering::Relaxed)
+}
 
 impl Session<'_> {
     /// 捡回上次建了一半的主房间：有标记、主人对得上、房间还能用。标记的发送人是建房的人（主人），
@@ -24,41 +36,63 @@ impl Session<'_> {
         owner: &str,
         handed_over: bool,
     ) -> Result<Option<String>, MatrixError> {
-        let rooms = self
-            .json(
-                Method::GET,
-                "/_matrix/client/v3/joined_rooms",
-                None,
-                "recover bot home",
-            )
-            .await?;
+        let rooms = self.joined_rooms().await?;
         let mut found = None;
-        for room in rooms["joined_rooms"]
-            .as_array()
-            .into_iter()
-            .flatten()
-            .filter_map(|room| room.as_str())
-        {
+        for room in &rooms {
             let path = format!("/_matrix/client/v3/rooms/{}/state", encode(room));
             let state = self
                 .json(Method::GET, &path, None, "inspect bot home marker")
                 .await?;
-            let marked = state.as_array().into_iter().flatten().any(|event| {
-                event["type"] == MARKER
-                    && event["state_key"] == ""
-                    && (event["sender"] == self.user_id() || event["sender"] == owner)
-                    && event["content"]["owner"] == owner
-            });
-            if marked && super::bot::reusable(self, room, owner, handed_over).await? {
+            if marked_as_bot_home(&state, self.user_id(), owner, None)
+                && super::bot::reusable(self, room, owner, handed_over).await?
+            {
                 if found.is_some() {
                     return Err(MatrixError::Invalid(
                         "multiple bot home reservations".into(),
                     ));
                 }
-                found = Some(room.to_owned());
+                found = Some(room.clone());
             }
         }
         Ok(found)
+    }
+
+    /// 主人现在加入的房间。
+    pub(super) async fn joined_rooms(&self) -> Result<BTreeSet<String>, MatrixError> {
+        let rooms = self
+            .json(
+                Method::GET,
+                "/_matrix/client/v3/joined_rooms",
+                None,
+                "list joined rooms",
+            )
+            .await?;
+        Ok(rooms["joined_rooms"]
+            .as_array()
+            .into_iter()
+            .flatten()
+            .filter_map(|room| room.as_str().map(str::to_owned))
+            .collect())
+    }
+
+    /// `createRoom` 的响应丢掉时房间可能已经建好、主人正留在里面，而客户端没拿到 room_id。[`Self::joined_rooms`]
+    /// 的快照 `before` 之外、带这次建房号（`reservation`）标记的房间就是这次新建的：让主人退出后再报原错误。
+    pub(super) async fn leave_new_bot_homes(
+        &self,
+        owner: &str,
+        before: &BTreeSet<String>,
+        reservation: u64,
+    ) -> Result<(), MatrixError> {
+        for room in self.joined_rooms().await?.difference(before) {
+            let path = format!("/_matrix/client/v3/rooms/{}/state", encode(room));
+            let state = self
+                .json(Method::GET, &path, None, "inspect new bot home")
+                .await?;
+            if marked_as_bot_home(&state, self.user_id(), owner, Some(reservation)) {
+                self.leave_room(room, &Languages::default()).await?;
+            }
+        }
+        Ok(())
     }
 
     /// 建房：带标记和加密，把 `bot` 写进 `additional_creators`，让它和建房人一样是 creator 级（主人是建房人，
@@ -68,6 +102,7 @@ impl Session<'_> {
         &self,
         owner: &str,
         bot: &str,
+        reservation: u64,
     ) -> Result<String, MatrixError> {
         let body = json!({
             "preset": "trusted_private_chat",
@@ -75,7 +110,7 @@ impl Session<'_> {
             "creation_content": {"additional_creators": [bot]},
             "initial_state": [
                 {"type": "m.room.encryption", "state_key": "", "content": {"algorithm": "m.megolm.v1.aes-sha2"}},
-                {"type": MARKER, "state_key": "", "content": {"owner": owner}},
+                {"type": MARKER, "state_key": "", "content": {"owner": owner, "reservation": reservation}},
             ],
         });
         let room = self
@@ -91,4 +126,17 @@ impl Session<'_> {
             .map(str::to_owned)
             .ok_or_else(|| MatrixError::Invalid("createRoom returned no room_id".into()))
     }
+}
+
+/// 房间状态里有没有属于 `owner` 的主房间标记；标记的发送人是建房的人（主人，旧版本是 Bot）。给了建房号时还要对上号。
+fn marked_as_bot_home(state: &Value, user: &str, owner: &str, reservation: Option<u64>) -> bool {
+    state.as_array().into_iter().flatten().any(|event| {
+        event["type"] == MARKER
+            && event["state_key"] == ""
+            && (event["sender"] == user || event["sender"] == owner)
+            && event["content"]["owner"] == owner
+            && reservation.is_none_or(|reservation| {
+                event["content"]["reservation"].as_u64() == Some(reservation)
+            })
+    })
 }

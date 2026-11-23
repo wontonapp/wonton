@@ -10,6 +10,7 @@ use serde::{Deserialize, Serialize};
 
 use super::admin::{ADMIN_LOCALPART, SERVER_USER_LOCALPART};
 use super::api::{Login, MatrixError};
+use super::bot_home::next_reservation;
 use super::{Matrix, Session};
 use crate::plugin::languages::Languages;
 
@@ -186,8 +187,28 @@ impl Matrix {
         owner: &str,
         owner_user: &str,
     ) -> Result<String, MatrixError> {
+        let reservation = next_reservation();
         self.as_owner(owner, async |me: &Session<'_>| {
-            let room = me.create_bot_home(owner_user, bot.user_id()).await?;
+            // `joined_rooms` 先拍个快照：`createRoom` 的响应丢掉时，只有拿它做差才能认出这次新建的房。
+            let before = me.joined_rooms().await?;
+            let room = match me
+                .create_bot_home(owner_user, bot.user_id(), reservation)
+                .await
+            {
+                Ok(room) => room,
+                Err(error @ MatrixError::Unavailable { .. }) => {
+                    // 服务端建房了、主人是成员，客户端没拿到 room_id：原来的清理块碰不到它，主人会一直在房里。
+                    // 按这次建房号找出来退出，不让死房留在主人的列表里。
+                    if let Err(cleanup) = me
+                        .leave_new_bot_homes(owner_user, &before, reservation)
+                        .await
+                    {
+                        tracing::warn!(error = %cleanup, "清理建房失败留下的主房间失败");
+                    }
+                    return Err(error);
+                }
+                Err(error) => return Err(error),
+            };
             // 建房之后的步骤失败了：主人这时就在房间里，房间又是刚建的、除了这次调用谁都不认识，不退出就永远
             // 留在主人的聊天列表里，重试还会另建一间。退出成功、房间就只在服务器的库里，留不留都不影响主人。
             let done = async {

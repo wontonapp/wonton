@@ -6,6 +6,7 @@ use std::os::unix::fs::PermissionsExt;
 
 use serde_json::json;
 
+use super::api::MatrixError;
 use super::fake::{Fake, User, start};
 use super::{Avatar, BotSpec, Matrix};
 use crate::config::MatrixConfig;
@@ -394,6 +395,38 @@ async fn a_failed_invite_leaves_the_owner_out_of_the_room() {
     let again = matrix.provision_bot(&spec("echo", &taken)).await.unwrap();
     assert_eq!(again.account.user_id, "@echo-2:test");
     // 旧房间还留在服务器上，但主人已经退出、不在他的列表里。
+    assert_ne!(again.account.home_room, first_room);
+    assert!(!members(&fake, &first_room).contains("@owner:test"));
+    assert_eq!(fake.state().rooms.len(), 2);
+}
+
+#[tokio::test]
+async fn a_lost_create_room_response_leaves_no_room_for_the_owner() {
+    let (fake, config) = start().await;
+    let dir = tempfile::tempdir().unwrap();
+    let matrix = connect(&dir, &config).await;
+    // 服务端会建好房间，但客户端拿不到响应：room_id 丢了，原来的清理块碰不到这间房。
+    fake.state().drop_next_room_create = true;
+    let taken = BTreeSet::new();
+    let err = matrix
+        .provision_bot(&spec("echo", &taken))
+        .await
+        .unwrap_err();
+    assert!(matches!(err, MatrixError::Unavailable { .. }), "{err}");
+    let first_room = fake.state().rooms.keys().next().unwrap().clone();
+    {
+        let state = fake.state();
+        assert_eq!(state.rooms.len(), 1);
+        let room = &state.rooms[&first_room];
+        assert!(
+            !room.members.contains("@owner:test"),
+            "响应丢了、主人却是成员时要按标记退出"
+        );
+        assert!(room.left.contains("@owner:test"), "主人是以退出结束的");
+        assert!(state.devices("@echo:test").is_empty());
+    }
+    // 重试另建一间，旧的那间主人已经退出、不在列表里。
+    let again = matrix.provision_bot(&spec("echo", &taken)).await.unwrap();
     assert_ne!(again.account.home_room, first_room);
     assert!(!members(&fake, &first_room).contains("@owner:test"));
     assert_eq!(fake.state().rooms.len(), 2);
