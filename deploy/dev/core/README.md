@@ -285,18 +285,19 @@ DOCKER_HOST=ssh://$DEV_HOST deploy/dev/core/smoke.sh  # 远端 Linux 主机
 有自己的账号、显示名和加密主房间，主人的一台新设备经隧道发加密消息能收到它的加密回声，卸载后它的令牌立即
 失效，不删数据重装沿用账号和主房间，删除数据时账号停用；核心预装了模型网关，使用方拿到只属于自己的凭据，
 经 `models.wonton.internal` 能用、卸载后凭据被吊销；核心在主人配对之前就自己装好了 Hermes，它过了健康检查
-之后，和它的加密私聊才出现在主人的聊天列表里，还没有 provider 时 Hermes 回提示去“模型设置”添加，命令行加了 provider（不建路由组）
-之后，主人的新设备经隧道和它加密对话两轮：逐轮检查 magpie 用量在 Hermes 凭据名下新增了至少一条成功且有输出 token 的请求，
+之后，和它的加密私聊才出现在主人的聊天列表里，还没有 provider 时 Hermes 回提示去“模型设置”添加；冒烟给它的 Bot
+在宿主 magpie 上建一条限定模型的凭据，再经 Hermes 自己的接口把宿主 magpie 配成它的 provider，之后主人的新设备
+经隧道和它加密对话两轮：逐轮检查宿主 magpie 用量在 Hermes 凭据名下新增了至少一条成功且有输出 token 的请求，
 第二轮回复必须提到第一轮让它“介绍”或“自己”；本轮没有成功调用就带回复原文停止，不依赖 Hermes 的报错措辞。
-删除数据卸载后 Bot 账号停用、凭据吊销；“模型设置”网页由网关代登录，局域网
+删除数据卸载后 Bot 账号停用、冒烟的凭据删掉；“模型设置”网页由网关代登录，局域网
 浏览器登录过核心、已配对设备经隧道都直接打开并能改设置，没登录和别的插件网页发来的请求被拒，网页密钥不出现在任何
 响应和 Cookie 罐里；对 Hermes 说装文件搜索，核心在 Wonton 房间里发确认卡片，Hermes 的插件网络和局域网浏览器都答不了，
 主人的手机确认后才装好，Hermes 再经 MCP 总线在授权的文件夹里找到文件，审计记下这两次调用；没申请 `matrix.bot`、
 `models`、`tools` 的插件进不了对应的内部地址；
 核心重启后插件恢复，卸掉的 Hermes 不会被装回来；卸载后容器、网络、卷、应用数据和 OIDC 客户端都没有残留。
 结束时清理全部资源，`KEEP=1` 保留现场。Hermes 一步要真实模型：开发机上要有在运行的 magpie，模型名经
-`WONTON_SMOKE_MODEL` 传入（magpie 里一个能对话的模型；`/v1/models` 里的 id 带 provider 前缀，冒烟在交给
-插件前会去掉最前面那一段）。冒烟的 magpie 怎么连宿主见下面「远端主机」一段；不读取开发机 magpie 的配置和密钥。
+`WONTON_SMOKE_MODEL` 传入（magpie 里一个能对话的模型）。Hermes 怎么连宿主见下面「远端主机」一段；
+不读取开发机 magpie 的配置和密钥。
 
 远端主机拉不到 Docker Hub 时，先把镜像从本机传过去（以 amd64 主机为例），传完删掉本机的 amd64 副本。核心镜像的 Rust、
 Debian 基础镜像从 ECR Public 拉（见 Dockerfile），不用传：
@@ -324,11 +325,11 @@ ssh "$DEV_HOST" docker tag "sha256:${image#*@sha256:}" "${image%@*}"
 链接预览经代理用的 DoH 服务器用 `WONTON_DOH_URL` 换（默认 `https://1.1.1.1/dns-query`，ADR-0065）。
 
 远端主机直连 crates.io、GitHub 太慢时，构建镜像经那台主机自己的代理（`WONTON_DEV_BUILD_PROXY`，构建用宿主网络）。
-Linux 的 Docker 不给容器加 `host.docker.internal`，冒烟自己判：插件容器能解析这个名字就用它，解析不到就在冒烟
-magpie 插件网络的网关上起一个 socat 转发，监听在所有地址上，结束时删掉。转发的目标默认是宿主的 `127.0.0.1:3425`
-（只监听回环就可以），不在那里时用 `WONTON_SMOKE_MODEL_RELAY=<宿主上的地址:端口>`，`WONTON_SMOKE_MODEL` 选它提供的模型。
-主机的防火墙要放行插件网段到这个端口（13425），否则 Hermes 一步连不上模型。宿主 magpie 在容器里时冒烟按发布 3425
-的容器找它，名字不同就设 `WONTON_SMOKE_HOST_MAGPIE=<容器名>`：
+Linux 的 Docker 不给容器加 `host.docker.internal`，冒烟自己判：Hermes 容器能解析这个名字就用它，解析不到就在
+宿主机上起一个 socat 转发，监听在所有地址上，结束时删掉，Hermes 经它自己网络的网关地址连。转发的目标默认是宿主的
+`127.0.0.1:3425`（只监听回环就可以），不在那里时用 `WONTON_SMOKE_MODEL_RELAY=<宿主上的地址:端口>`，
+`WONTON_SMOKE_MODEL` 选它提供的模型。主机的防火墙要放行插件网段到这个端口（13425），否则 Hermes 一步连不上模型。
+宿主 magpie 在容器里时冒烟按发布 3425 的容器找它，名字不同就设 `WONTON_SMOKE_HOST_MAGPIE=<容器名>`：
 
 ```bash
 DOCKER_HOST=ssh://$DEV_HOST WONTON_DEV_BUILD_PROXY=http://127.0.0.1:7899 WONTON_DEV_BUILD_JOBS=16 \

@@ -1,13 +1,13 @@
 # Hermes 对话和用量断言的助手，只由 smoke.sh source：回复从探针输出里取，用量按本轮开始时间取增量
-# （网关记 Hermes 的调用时 request_id 是空的），等不到时把最近几行打出来再失败。
+# （宿主 magpie 记 Hermes 的调用时 request_id 是空的），等不到时把最近几行打出来再失败。
 # shellcheck shell=bash
-# shellcheck disable=SC2154 # $magpie 由 smoke.sh 赋值
+# shellcheck disable=SC2154 # host_magpie 由 smoke.sh 赋值
 
 hermes_reply() {
   python3 -c 'import sys
 print(sys.stdin.read().partition("第 1 轮：收到加密的回复：")[2].strip())' <"$1"
 }
-model_usage() { docker exec "$magpie" magpie usage --last 15m --csv; }
+model_usage() { host_magpie usage --last 15m --csv; }
 # <回复文件> <本轮开始的 epoch 秒> <第几轮>：用量按开始时间取增量（request_id 实测为空，靠不住）。
 expect_model_reply() {
   local usage deadline=$((SECONDS + 30))
