@@ -169,7 +169,7 @@ pub enum CollectError {
 pub enum CollectMissing {
     /// 重启路径：插件可能还没写到这一步，下次启动再收。
     Skip,
-    /// 安装/升级路径：一次性容器都已经跑完，写下才算数，没写下就报错。
+    /// 安装/升级路径：一次性服务都已经跑完，`mcp.headers` 引用到的项收不到就报错；没人引用的项下次核对再收。
     Fail,
 }
 
@@ -187,10 +187,21 @@ pub async fn collect(
 ) -> Result<bool, CollectError> {
     let slug = manifest.id.slug();
     let bot_services = super::bot_services::bot_services(manifest);
+    // 规范只要求 `mcp.headers` 引用的密钥在安装时已经有值（“MCP 调用”节）；其余的缺了照样等下次核对（“插件
+    // 生成、核心保管”节）。
+    let required = match missing {
+        CollectMissing::Fail => super::proxy_auth::mcp_header_secret_refs(manifest, langs),
+        CollectMissing::Skip => Default::default(),
+    };
     let mut changed = false;
     for (name, spec) in &manifest.secrets {
         let SecretSpec::Collect(spec) = spec else {
             continue;
+        };
+        let missing = if required.contains(name) {
+            CollectMissing::Fail
+        } else {
+            CollectMissing::Skip
         };
         if bot_services.contains(spec.service.as_str()) {
             for bot in bots {

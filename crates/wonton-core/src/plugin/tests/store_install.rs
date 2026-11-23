@@ -34,7 +34,7 @@ fn committed(source: &str) -> serde_json::Value {
         .unwrap_or_else(|| panic!("索引里没有 {source}"))
 }
 
-fn package(compose: &'static str, dir: &str, files: &[&str]) -> PluginPackage {
+fn package(compose: &str, dir: &str, files: &[&str]) -> PluginPackage {
     let files = files
         .iter()
         .map(|name| {
@@ -62,8 +62,12 @@ fn package(compose: &'static str, dir: &str, files: &[&str]) -> PluginPackage {
 }
 
 fn autobangumi() -> PluginPackage {
+    autobangumi_with(include_str!("examples/autobangumi/docker-compose.yml"))
+}
+
+fn autobangumi_with(compose: &str) -> PluginPackage {
     package(
-        include_str!("examples/autobangumi/docker-compose.yml"),
+        compose,
         "ab",
         &[
             "config/seed.sh",
@@ -128,21 +132,40 @@ async fn store() -> (
     tempfile::TempDir,
     tempfile::TempDir,
 ) {
+    store_with(autobangumi(), qbittorrent()).await
+}
+
+/// 和 [`store`] 一样，但可以换掉包：比如拿去掉了 `mcp.headers` 的清单看安装行为。
+async fn store_with(
+    ab: PluginPackage,
+    qb: PluginPackage,
+) -> (
+    Arc<super::super::PluginManager>,
+    FakeDocker,
+    tempfile::TempDir,
+    tempfile::TempDir,
+) {
     let index = tempfile::tempdir().unwrap();
-    // 夹具和仓库里的索引逐字节一致；网页端口按测试现起的端口改写后再写进临时索引。
-    for (source, fixture, package) in [
-        (AB, autobangumi(), served(autobangumi(), 7892).await),
-        (QB, qbittorrent(), served(qbittorrent(), 8080).await),
-    ] {
+    for (source, fixture) in [(AB, ab), (QB, qb)] {
         let committed = committed(source);
+        // 没换过的夹具和仓库里的索引逐字节一致。
+        let original = match source {
+            AB => include_str!("examples/autobangumi/docker-compose.yml"),
+            _ => include_str!("examples/qbittorrent/docker-compose.yml"),
+        };
         let entry =
             IndexEntry::of(&fixture, source, committed["commit"].as_str().unwrap()).unwrap();
         assert_eq!(entry.version, committed["version"], "{source}");
-        assert_eq!(
-            serde_json::to_value(&entry.files).unwrap(),
-            committed["files"],
-            "{source}"
-        );
+        if fixture.source == original {
+            assert_eq!(
+                serde_json::to_value(&entry.files).unwrap(),
+                committed["files"],
+                "{source}"
+            );
+        }
+        // 网页端口按测试现起的端口改写后再写进临时索引。
+        let port = fixture.manifest.webui.as_ref().unwrap().port;
+        let package = served(fixture, port).await;
         let entry =
             IndexEntry::of(&package, source, committed["commit"].as_str().unwrap()).unwrap();
         entry.write_to(index.path(), &package).unwrap();
@@ -191,6 +214,16 @@ async fn install(
     docker: &FakeDocker,
     source: &str,
 ) -> Result<String, InstallError> {
+    install_with(manager, docker, source, true).await
+}
+
+/// `write_mcp_token` 为假时不写 `mcp-token` 容器里的令牌文件，模拟一次性服务没写下。
+async fn install_with(
+    manager: &Arc<super::super::PluginManager>,
+    docker: &FakeDocker,
+    source: &str,
+    write_mcp_token: bool,
+) -> Result<String, InstallError> {
     let began = std::time::Instant::now();
     let preview = manager.preview_source(source, &langs()).await?;
     eprintln!("preview {} in {:?}", preview.id, began.elapsed());
@@ -198,11 +231,13 @@ async fn install(
     match plugin.slug().as_str() {
         "org-autobangumi-autobangumi" => {
             finish(docker, &plugin, &["seed", "mcp-token"], &["autobangumi"]);
-            docker.set_file(
-                &container_name(&plugin.slug(), "mcp-token"),
-                "/bridge/token",
-                Some(FakeFile::Regular(b"tok".to_vec())),
-            );
+            if write_mcp_token {
+                docker.set_file(
+                    &container_name(&plugin.slug(), "mcp-token"),
+                    "/bridge/token",
+                    Some(FakeFile::Regular(b"tok".to_vec())),
+                );
+            }
         }
         _ => finish(docker, &plugin, &["init"], &["webui", "qbittorrent"]),
     }
@@ -256,4 +291,19 @@ async fn autobangumi_from_store_source_without_token_says_why() {
     for expected in ["mcp_token", "mcp-token", "/bridge/token"] {
         assert!(message.contains(expected), "{expected}: {message}");
     }
+}
+
+/// 头没引用的 `collect` 项在安装时收不到不算失败：规范只要求 `mcp.headers` 引用项安装时就有值，其余项
+/// 可以等核心下次核对（“插件生成、核心保管”节）。
+#[tokio::test]
+async fn an_unreferenced_collect_key_may_be_missing_at_install() {
+    let compose = include_str!("examples/autobangumi/docker-compose.yml").replace(
+        "    headers:\n      Authorization: Bearer {secret:mcp_token}\n",
+        "",
+    );
+    let (manager, docker, _index, _data) =
+        store_with(autobangumi_with(&compose), qbittorrent()).await;
+    install(&manager, &docker, QB).await.unwrap();
+    let installed = install_with(&manager, &docker, AB, false).await.unwrap();
+    assert_eq!(installed, ORG);
 }
