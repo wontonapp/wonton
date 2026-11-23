@@ -4,6 +4,7 @@ kotlin = "2.4.21"
 compose-multiplatform = "1.12.2"
 compose-material3 = "1.9.0"
 detekt = "2.0.0-alpha.6"
+aboutlibraries = "14.2.1"
 jna = "5.19.1"
 kotlinx-coroutines = "1.11.0"
 androidx-activity = "1.13.0"
@@ -97,5 +98,7 @@ android-kmp-library = { id = "com.android.kotlin.multiplatform.library", version
 kotlin-multiplatform = { id = "org.jetbrains.kotlin.multiplatform", version.ref = "kotlin" }
 compose-compiler = { id = "org.jetbrains.kotlin.plugin.compose", version.ref = "kotlin" }
 detekt = { id = "dev.detekt", version.ref = "detekt" }
+# Apache-2.0。构建时把 Gradle 依赖和它们的许可证文本收进 res/raw，关于页的开源许可列表用它。
+aboutlibraries = { id = "com.mikepenz.aboutlibraries.plugin.android", version.ref = "aboutlibraries" }
 # Apache-2.0。在 JVM 上按布局渲染界面并比对参考图。
 paparazzi = { id = "app.cash.paparazzi", version.ref = "paparazzi" }

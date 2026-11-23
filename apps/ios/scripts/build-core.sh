@@ -32,6 +32,10 @@ fi
 
 repo_root="$(git -C "$(dirname "$0")" rev-parse --show-toplevel)"
 
+# 开源许可清单（cargo-about 取 Rust crate）。App 打包时连同这个文件一起进 bundle，关于页把它交给核心解析；
+# 生成失败就停，不带上半份清单。
+python3 "$repo_root/scripts/generate-licenses.py" --platform ios --out "$repo_root/apps/ios/Wonton"
+
 # project.yml 的 configFiles 引用版本号 xcconfig，XcodeGen 在生成时校验它存在，而 postGenCommand 在生成
 # 之后才跑、兜不住首次生成，所以在这里（xcodegen 之前）写好。规则和 Android 共 scripts/app-version.sh
 # 一处，发版显式传 WONTON_VERSION=X.Y.Z；Debug 必有输出（无 tag 落 0.0.0/0）。
