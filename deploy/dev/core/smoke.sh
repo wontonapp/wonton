@@ -391,6 +391,8 @@ else
   model_host="$(docker network inspect "$hermes_network" --format '{{(index .IPAM.Config 0).Gateway}}')"
   model_port=13425
   # 宿主的防火墙要放行插件网段到这个端口（默认的 DOCKER-USER 链放行 docker 网桥到宿主的流量）。
+  # KEEP=1 的上一轮会把转发留着（它不在 compose 项目里），先删掉同名的再起。
+  docker rm -f "$model_relay" >/dev/null 2>&1 || true
   docker run -d --rm --name "$model_relay" --network host "$socat_image" \
     "TCP-LISTEN:$model_port,fork,reuseaddr" "TCP:$model_relay_target" >/dev/null ||
     fail "起不了到宿主 magpie（$model_relay_target）的转发"
@@ -403,10 +405,10 @@ host_magpie gateway-key add "$host_model_key_name" --key - <<<"$hermes_key" >/de
 host_model_key_id="$(host_magpie gateway-key list 2>/dev/null | awk -v n="$host_model_key_name" '$2 == n { print $1; exit }')" ||
   fail "建了凭据但读不到凭据列表"
 [[ -n "$host_model_key_id" ]] || fail "建了凭据但在列表里找不到它"
-host_magpie gateway-key models "$host_model_key_id" "$model" >/dev/null || fail "Hermes 的凭据限定模型失败"
+host_magpie gateway-key models "$host_model_key_id" "$model" "${model#*/}" >/dev/null || fail "Hermes 的凭据限定模型失败"
 expect "宿主上的凭据以 Hermes 的 Bot 命名" \
   "$(host_magpie gateway-key list | awk -v n="$host_model_key_name" '$2 == n { print $2 }')" "$host_model_key_name"
-expect "宿主上的凭据只放行这次的模型" "$(host_magpie gateway-key models "$host_model_key_id")" "$host_model_key_id: only $model"
+expect "宿主上的凭据只放行这次的模型" "$(host_magpie gateway-key models "$host_model_key_id" | sed 's/^[^:]*: //')" "only $model, ${model#*/}"
 # 从 Hermes 自己的容器真连一次：地址、凭据、防火墙都得通。
 hermes_models() {
   docker exec "$hermes" sh -c "curl -fsS --max-time 30 -H 'Authorization: Bearer $hermes_key' '$model_url/models'" |
@@ -447,13 +449,26 @@ ok "没有模型时，Hermes 提示主人去 Keys 页添加模型服务商"
 hermes_token="$(docker exec "$hermes" sh -c 'curl -fsS http://127.0.0.1:9119/' |
   sed -n 's/.*__HERMES_SESSION_TOKEN__="\([^"]*\)".*/\1/p')"
 [[ -n "$hermes_token" ]] || fail "Hermes 的页面没有给出会话令牌"
-endpoint="$(printf '{"name":"宿主 magpie","base_url":"%s","model":"%s","api_key":"%s","api_mode":"chat_completions","make_default":true}' \
+endpoint="$(printf '{"name":"宿主 magpie","base_url":"%s","model":"%s","api_key":"%s","api_mode":"chat_completions","context_length":65536,"make_default":true}' \
   "$model_url" "$model" "$hermes_key" |
   docker exec -i "$hermes" sh -c "curl -sS --max-time 120 -X POST http://127.0.0.1:9119/api/providers/custom-endpoints \
     -H 'X-Hermes-Session-Token: $hermes_token' -H 'content-type: application/json' \
     -H 'Origin: http://127.0.0.1:9119' --data-binary @-")"
 expect "加了 provider，Hermes 拿它当当前模型" "$(json ok <<<"$endpoint") $(json current.model <<<"$endpoint")" "true $model"
+# Hermes 要求模型至少 64k 上下文；magpie 对没标上下文的上游回 32768。冒烟按上游实际的窗口把
+# model.context_length 设成 64k——运行时只读这一个，provider 条目上的那个只用于显示。
+docker exec "$hermes" sh -c "curl -sS --max-time 30 -X PUT http://127.0.0.1:9119/api/config \
+  -H 'X-Hermes-Session-Token: $hermes_token' -H 'content-type: application/json' \
+  -H 'Origin: http://127.0.0.1:9119' -d '{\"config\":{\"model\":{\"context_length\":65536}}}'" >/dev/null ||
+  fail "Hermes 的上下文设不进去"
+expect "Hermes 用放宽后的上下文" \
+  "$(docker exec "$hermes" sh -c 'curl -sS --max-time 30 http://127.0.0.1:9119/api/model/info' | json effective_context_length)" 65536
 ok "Hermes 的模型设置指向宿主的 magpie"
+# 后面“模型设置”网页那一步要在插件网关里看得到、开关得了一个上游：用 Hermes 这条凭据加一个指向宿主 magpie
+# 的 provider（Hermes 自己不经过它，但网页得有内容）。插件网关经自己的网络网关连转发，no_proxy 带上它。
+docker exec -e no_proxy="$model_host,localhost,127.0.0.1" -e NO_PROXY="$model_host,localhost,127.0.0.1" "$magpie" \
+  magpie provider add upstream url="$model_url" key="$hermes_key" models="${model#*/}" >/dev/null ||
+  fail "插件网关加不上指向宿主 magpie 的上游（$model_url）"
 round=0
 for text in "你好，用一句话介绍你自己。" "我刚才让你做什么？"; do
   round=$((round + 1))
@@ -477,38 +492,38 @@ esac
 # 经隧道在和 Hermes 的私聊里说一句话，收它的回答，直到它 180 秒不再说话（它先说一句再去调要等确认的工具，
 # 工具往返加慢模型会先超过 90 秒的静默窗口）：
 # $1 输出文件，$2 话。
-ask_hermes() { probe_in_hermes_room "$1" --wait 300 --settle 180 --text "$2"; }
-# 核心和主人的通知房间里最新的一张确认卡片（编辑过的以最新内容为准），输出“ID 状态”。
+# Hermes 在网关里缓存配置，它自己保存配置（装插件换工具时实测）会把 model.context_length 从磁盘盖回去，
+# 之后一轮就按 32768 撞它 64k 的下限。让它动手前对一遍，不是 64k 就重新写；会话令牌每轮重取（网关可能重启）。
+ensure_hermes_context() {
+  hermes_token="$(docker exec "$hermes" sh -c 'curl -fsS http://127.0.0.1:9119/' |
+    sed -n 's/.*__HERMES_SESSION_TOKEN__="\([^"]*\)".*/\1/p')"
+  [[ -n "$hermes_token" ]] || fail "Hermes 的页面没有给出会话令牌"
+  [[ "$(docker exec "$hermes" sh -c 'curl -sS --max-time 30 http://127.0.0.1:9119/api/model/info' | json effective_context_length)" == 65536 ]] && return 0
+  docker exec "$hermes" sh -c "curl -sS --max-time 30 -X PUT http://127.0.0.1:9119/api/config \
+    -H 'X-Hermes-Session-Token: $hermes_token' -H 'content-type: application/json' \
+    -H 'Origin: http://127.0.0.1:9119' -d '{\"config\":{\"model\":{\"context_length\":65536}}}'" >/dev/null ||
+    fail "Hermes 的上下文设不进去"
+}
+ask_hermes() { ensure_hermes_context; probe_in_hermes_room "$1" --wait 1200 --settle 180 --text "$2"; }
+# 确认卡片（ADR-0016）：卡片不再进 Matrix 房间，从核心的“等你确认”列表取；等人回答的在前，已经结束的在
+# 后面，拼成一行“ID 状态 ”（每项后面带空格，只有一张卡时 `*" pending "*` 也匹配得上）。
 latest_card() {
-  local room
-  room="$(direct_rooms "@wonton-core:$WONTON_DEV_DOMAIN" | tail -1)"
-  [[ -n "$room" ]] || return 0
-  owner_api "/rooms/$room/messages?dir=b&limit=30" | python3 -c 'import json, sys
-field = "app.wonton.confirmation"
-edits, cards = {}, []
-for event in json.load(sys.stdin).get("chunk", []):
-    content = event.get("content", {})
-    relation = content.get("m.relates_to", {})
-    if relation.get("rel_type") == "m.replace":
-        edits.setdefault(relation["event_id"], content.get("m.new_content", {}).get(field))
-    elif field in content:
-        cards.append((event["event_id"], content[field]))
-if cards:
-    event, card = cards[0]
-    card = edits.get(event) or card
-    print(card["id"], card["state"]["type"])'
+  t "$core_url/_wonton/api/confirmations" | python3 -c 'import json, sys
+d = json.load(sys.stdin)
+cards = d.get("confirmations", []) + d.get("finished", [])
+print(" ".join("{} {}".format(c["id"], c["state"]["type"]) for c in cards) + " ")'
 }
 answer() { "$@" -sS -o /dev/null -w '%{http_code}' -X POST -H 'content-type: application/json' -d '{"answer": "approve"}'; }
 asked="$(mktemp)"
 ask_hermes "$asked" "帮我装一下官方插件里的“文件搜索”。" &
 asking=$!
 card=""
-for _ in $(seq 240); do
+for _ in $(seq 900); do
   card="$(latest_card)"
-  [[ "$card" == *" pending" ]] && break
+  [[ "$card" == *" pending "* ]] && break
   sleep 1
 done
-[[ "$card" == *" pending" ]] || fail "Wonton 房间里没有出现待确认的卡片（$card）：$(cat "$asked")"
+[[ "$card" == *" pending "* ]] || fail "Wonton 房间里没有出现待确认的卡片（$card）：$(cat "$asked")"
 card_id="${card%% *}"
 ok "Hermes 发起安装，核心在 Wonton 房间里发了确认卡片，还没有装"
 expect "插件还没装" "$(plugin_state app.wonton.files)" absent
@@ -521,8 +536,9 @@ expect "局域网浏览器（有核心会话）答不了确认" "$(answer b "$co
 expect "主人的手机经隧道确认" "$(answer t "$confirm_url")" 200
 for _ in $(seq 180); do [[ "$(plugin_state app.wonton.files)" == running ]] && break; sleep 1; done
 expect "主人确认后装好了文件搜索" "$(plugin_state app.wonton.files)" running
-for _ in $(seq 30); do [[ "$(latest_card)" == *" succeeded" ]] && break; sleep 1; done
-expect "卡片更新成装好了" "$(latest_card)" "$card_id succeeded"
+for _ in $(seq 30); do [[ "$(latest_card)" == *"$card_id succeeded"* ]] && break; sleep 1; done
+[[ "$(latest_card)" == *"$card_id succeeded"* ]] || fail "卡片没有更新成装好了：$(latest_card)"
+ok "卡片更新成装好了"
 wait "$asking" || fail "Hermes 没有回答安装的结果：$(cat "$asked")"
 grep '^第' "$asked" | sed 's/^/   · /'
 [[ "$(grep -c '^第' "$asked")" -ge 1 ]] || fail "Hermes 没有说话：$(cat "$asked")"
@@ -572,9 +588,9 @@ if [[ -n "${WONTON_SMOKE_SONG_URL:-}" ]]; then song_ext="${WONTON_SMOKE_SONG_URL
 # 等 Wonton 房间里出现待确认的卡片，输出卡片 ID。
 pending_card() {
   local card=""
-  for _ in $(seq 240); do
+  for _ in $(seq 900); do
     card="$(latest_card)"
-    [[ "$card" == *" pending" ]] && { echo "${card%% *}"; return 0; }
+    [[ "$card" == *" pending "* ]] && { echo "${card%% *}"; return 0; }
     sleep 1
   done
   return 1
@@ -596,7 +612,7 @@ expect "Hermes 的详情页列出这个路径" "$(save_grants)" "music/冒烟"
 ask_hermes "$asked" "$(song_task "smoke-b.$song_ext")，放在 outbox 目录里，然后存进共享文件夹 music 的子目录 冒烟/第二张。" ||
   fail "Hermes 没有回答第二次存文件的结果：$(cat "$asked")"
 expect "子文件夹不再问，直接放进去" "$(docker exec "$core" ls "$shares/music/冒烟/第二张")" "smoke-b.$song_ext"
-[[ "$(latest_card)" == "$card_id succeeded" ]] || fail "第二次存文件又发了卡片：$(latest_card)"
+[[ "$(latest_card)" == *"$card_id succeeded"* ]] || fail "第二次存文件又发了卡片：$(latest_card)"
 expect "撤销授权" "$(t -o /dev/null -w '%{http_code}' -X DELETE "$core_url/_wonton/api/plugins/com.nousresearch.hermes/save-grants?folder=music%2F%E5%86%92%E7%83%9F")" 200
 expect "详情页不再列它" "$(save_grants)" ""
 ask_hermes "$asked" "$(song_task "smoke-c.$song_ext")，放在 outbox 目录里，然后存进共享文件夹 music 的子目录 冒烟。" &
