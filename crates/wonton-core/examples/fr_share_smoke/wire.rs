@@ -2,6 +2,7 @@ use anyhow::{Context, Result, ensure};
 use serde_json::{Value, json};
 use std::time::Duration;
 use tokio::io::{AsyncBufReadExt, AsyncReadExt, AsyncWriteExt, BufReader};
+use tokio::time::timeout;
 use wonton_protocol::MatrixOpenIdToken;
 use wonton_tunnel::sharing::{ShareClient, ShareStream};
 
@@ -132,11 +133,75 @@ async fn frame(socket: &mut Socket) -> Result<Vec<u8>> {
     Ok(bytes)
 }
 
-pub async fn reset(mut socket: Socket) -> Result<()> {
+/// 分享连接上发一条普通 HTTP 请求，返回状态码、响应头和正文开头。
+/// 调用方自己决定哪个状态算对：同一个连接上，授权过的插件答 200，别处是 403 `share_required`。
+/// `host` 不带端口，网关的监听端口固定按 8080 拼。
+pub async fn probe(
+    client: &ShareClient,
+    method: &str,
+    host: &str,
+    path: &str,
+) -> Result<(u16, Vec<(String, String)>, String)> {
+    let mut stream = client.open_forward().await?;
+    stream
+        .write_all(
+            format!(
+                "{method} {path} HTTP/1.1\r\nHost: {host}:8080\r\nAccept: application/json\r\nConnection: close\r\n\r\n"
+            )
+            .as_bytes(),
+        )
+        .await?;
+    let mut reader = BufReader::new(stream);
+    let mut line = String::new();
+    reader.read_line(&mut line).await?;
+    let status: u16 = line
+        .split_whitespace()
+        .nth(1)
+        .context("status line")?
+        .parse()?;
+    let mut headers = Vec::new();
+    loop {
+        line.clear();
+        ensure!(reader.read_line(&mut line).await? != 0, "EOF in headers");
+        if line == "\r\n" {
+            break;
+        }
+        if let Some((name, value)) = line.split_once(':') {
+            headers.push((name.to_ascii_lowercase(), value.trim().to_owned()));
+        }
+    }
+    // 上游插件不一定因为 Connection: close 就关连接：有长度就只读那么多，没有就最多等 3 秒。
+    let length = headers
+        .iter()
+        .find(|(key, _)| key == "content-length")
+        .and_then(|(_, value)| value.parse::<u64>().ok());
+    let mut body = String::new();
+    if let Some(length) = length {
+        (&mut reader)
+            .take(length)
+            .read_to_string(&mut body)
+            .await
+            .ok();
+    } else {
+        timeout(Duration::from_secs(3), reader.read_to_string(&mut body))
+            .await
+            .ok();
+    }
+    Ok((status, headers, body))
+}
+
+pub fn header<'a>(headers: &'a [(String, String)], name: &str) -> Option<&'a str> {
+    headers
+        .iter()
+        .find(|(key, _)| key == name)
+        .map(|(_, value)| value.as_str())
+}
+
+pub async fn reset(mut socket: Socket, label: &str) -> Result<()> {
     let result = tokio::time::timeout(Duration::from_secs(3), socket.read_u8()).await;
     ensure!(
         matches!(result, Ok(Err(_))),
-        "revoke did not reset the established WebSocket within 3 seconds"
+        "{label}: connection did not reset within 3 seconds: {result:?}"
     );
     Ok(())
 }
