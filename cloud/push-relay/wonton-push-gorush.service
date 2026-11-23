@@ -1,0 +1,34 @@
+[Unit]
+Description=gorush：推送中继的 APNs 发送端，只监听回环
+After=network-online.target
+Wants=network-online.target
+
+[Service]
+Type=simple
+User=wonton-push
+Group=wonton-push
+WorkingDirectory=/var/lib/wonton-push-relay
+ExecStart=/opt/wonton-push-relay/gorush -c /etc/wonton-push-relay/gorush.yml
+Restart=on-failure
+RestartSec=2
+TimeoutStopSec=10
+
+NoNewPrivileges=true
+CapabilityBoundingSet=
+PrivateTmp=true
+PrivateDevices=true
+ProtectSystem=strict
+ProtectHome=true
+ProtectKernelTunables=true
+ProtectKernelModules=true
+ProtectControlGroups=true
+RestrictAddressFamilies=AF_INET AF_INET6
+RestrictNamespaces=true
+LockPersonality=true
+MemoryMax=256M
+TasksMax=64
+CPUQuota=80%
+SystemCallFilter=@system-service
+
+[Install]
+WantedBy=multi-user.target

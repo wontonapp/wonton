@@ -94,7 +94,7 @@ impl Install {
         let device = SecretKey::generate().public();
         devices.add(device, None).unwrap();
         let server = wonton_core::tunnel::load_or_create_key(&state.join("tunnel-key")).unwrap();
-        let push = Push::open(state.join("push.json"), devices, server.public()).unwrap();
+        let push = Push::open(state.join("push.json"), devices, server.public(), None).unwrap();
         // 真实的 HTTP 端点回 404 表示订阅失效。只有带事件的通知才会发 Web Push；计数通知不能让它被删除。
         let subscription = Subscription::new(
             "http://127.0.0.1:8080/push-install-expired",

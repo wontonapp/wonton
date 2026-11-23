@@ -78,6 +78,9 @@ services:
       WONTON_FEDERATION_LISTEN: federation-proxy.wonton.internal:8448
       # 推送直连核心在 core 网络上的 80 端口，不经联邦 CONNECT 代理，也不发布到宿主。
       WONTON_PUSH_LISTEN: push.wonton.internal:80
+      # 发往我们运营的推送中继时的 VAPID 身份（ADR-0003 的 M2，cloud/push-relay）；不设时不带 VAPID 头。
+      WONTON_PUSH_VAPID_KEY: ${WONTON_PUSH_VAPID_KEY:-}
+      WONTON_PUSH_VAPID_SUBJECT: ${WONTON_PUSH_VAPID_SUBJECT:-}
       # 通话插件（matrix_rtc 的提供方）验 OpenID 令牌时连服务器名的 443，核心在它的网络里以这个名字答（ADR-0096）。
       WONTON_MATRIX_RTC_LISTEN: 0.0.0.0:443
       WONTON_SYSTEM_PLUGINS: /usr/share/wonton/system-plugins

@@ -1,0 +1,34 @@
+# gorush 只给包装器用：只听回环，没有自己的鉴权（1.22.0 没有 API key）。
+core:
+  enabled: true
+  address: "127.0.0.1"
+  port: "8088"
+  worker_num: 4
+  queue_num: 2048
+  max_notification: 1
+  sync: true
+  mode: "release"
+api:
+  push_uri: "/api/push"
+  health_uri: "/healthz"
+android:
+  enabled: false
+huawei:
+  enabled: false
+ios:
+  enabled: true
+  key_path: "/etc/wonton-push-relay/apns.p8"
+  key_type: "p8"
+  key_id: "FAKEKEYID1"
+  team_id: "FAKETEAMID1"
+  production: false
+  max_concurrent_pushes: 20
+  max_retry: 1
+log:
+  format: "string"
+  access_log: "stdout"
+  access_level: "warn"
+  error_log: "stderr"
+  error_level: "warn"
+  hide_token: true
+  hide_messages: true
