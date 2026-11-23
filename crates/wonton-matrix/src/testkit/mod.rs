@@ -53,6 +53,19 @@ impl MatrixSession {
         Ok(room.room_id().to_owned())
     }
 
+    /// 建一个不加密的群聊，先不邀请人：要在邀请同步到手机之前挂上改写时，建房和邀请得分两步。
+    pub async fn create_empty_group_room(
+        &self,
+        name: &str,
+    ) -> Result<matrix_sdk::ruma::OwnedRoomId> {
+        use matrix_sdk::ruma::api::client::room::create_room::v3::{Request, RoomPreset};
+        let mut request = Request::new();
+        request.name = Some(name.to_owned());
+        request.preset = Some(RoomPreset::PrivateChat);
+        let room = self.client.create_room(request).await?;
+        Ok(room.room_id().to_owned())
+    }
+
     /// 邀请一个人进已加入的房间。
     pub async fn invite_user(
         &self,
