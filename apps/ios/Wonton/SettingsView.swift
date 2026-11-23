@@ -61,7 +61,7 @@ struct SettingsTab: View {
                 onBack: { if !model.path.isEmpty { model.path.removeLast() } },
                 onPaired: { if !model.path.isEmpty { model.path.removeLast() } }
             )
-                .wontonPushedScreen(String(localized: .Pairing.pairingTitleAgain), usesSystemToolbar: true)
+                .wontonPushedScreen(String(localized: .Pairing.pairingTitleAgain))
         case .peers:
             PeersView(core: chat.core, focusRequests: model.peersFocusRequests)
         case .friends: FriendsView(core: chat.core)

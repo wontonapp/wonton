@@ -1,11 +1,10 @@
 package app.wonton.ui
 
 import androidx.activity.compose.BackHandler
+import androidx.activity.compose.LocalActivity
 import androidx.compose.runtime.Composable
 import androidx.compose.ui.res.stringResource
 import app.wonton.client.ClientCore
-import app.wonton.protocol.HomeAction
-import app.wonton.protocol.Action
 import app.wonton.protocol.CoreUpgradeViewModel
 import app.wonton.protocol.HomeStatus
 import app.wonton.protocol.HomeViewModel
@@ -31,11 +30,13 @@ fun HomeRoute(
     onSettings: (() -> Unit)? = null,
 ) {
     val servers = LocalServers.current
+    val activity = LocalActivity.current
     BackHandler(enabled = page != HomePage.LAUNCHER) { onPage(HomePage.LAUNCHER) }
     when {
         viewModel.status is HomeStatus.NotConfigured && (servers.adding || servers.servers.none { it.current }) ->
             PairingPage(
-                stringResource(R.string.pairing_title), core, viewModel.pairing, onBack = null,
+                stringResource(R.string.pairing_title), core, viewModel.pairing,
+                onLeave = { activity?.finish() }, root = true,
                 actions = if (onSettings != null) {
                     { SettingsToolbarButton(settingsUpgrade, onSettings) }
                 } else null,
@@ -67,26 +68,23 @@ internal fun PairingPage(
     title: String,
     core: ClientCore,
     pairing: PairingStatus?,
-    onBack: (() -> Unit)?,
+    onLeave: () -> Unit,
+    root: Boolean = false,
     actions: (@Composable () -> Unit)? = null,
 ) {
-    val back = onBack?.let { navigate ->
-        {
-            if (pairing is PairingStatus.Failed) core.send(Action.Home(HomeAction.DismissPairingFailure))
-            navigate()
-        }
-    }
-    BackHandler(enabled = back != null) { back?.invoke() }
+    // 失败面由 PairingScreen 的返回自己收掉，这里只负责去调用方说的地方。
+    val leave = { onLeave(); Unit }
     WontonScreen(
         bar = {
-            if (back != null) WontonPushedBar(title, back) else WontonRootBar(
-                title,
-                actions = if (actions != null) { { actions() } } else null,
-            )
+            if (root) {
+                WontonRootBar(title, actions = if (actions != null) { { actions() } } else null)
+            } else {
+                WontonPushedBar(title, leave)
+            }
         },
     ) {
-        // 配上了由核心说：进展停在 Paired 才算配上，取消不会到那一步。
-        PairingScreen(core, pairing, onPaired = { onBack?.invoke() }, onBack = onBack)
+        // 配上了由核心说：进展停在 Paired 才算配上，取消不会到那一步。首屏配上不退出，原地换成应用列表。
+        PairingScreen(core, pairing, onPaired = if (root) ({}) else leave, onLeave = leave)
     }
 }
 

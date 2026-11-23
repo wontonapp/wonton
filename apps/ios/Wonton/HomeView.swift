@@ -48,7 +48,7 @@ struct HomeView: View {
             } else if case .notConfigured = model.viewModel.status,
                model.servers.adding || !model.servers.servers.contains(where: { $0.current }) {
                 PairingView(model: model)
-                    .wontonRootScreen(String(localized: .Pairing.pairingTitle), hasActions: true) {
+                    .wontonPairingRootScreen(String(localized: .Pairing.pairingTitle), hasActions: true) {
                         settingsLink
                     }
             } else {
