@@ -262,6 +262,20 @@ class RoomTelegramTest : RoomTelegramCase() {
     }
 
     @Test
+    fun pluginStatusRowCoversNoBubble() {
+        // 群里那行 AI（假房间里是 Hermes）自己占一条，时间线让开它，气泡不压在它上面。
+        openFamily()
+        compose.onNodeWithText("Hermes", useUnmergedTree = true).assertIsDisplayed()
+        val header = compose.onNodeWithTag("room-header").fetchSemanticsNode().boundsInRoot
+        val bubbles = compose.onAllNodes(hasTestTag("bubble"), useUnmergedTree = true).fetchSemanticsNodes()
+        check(bubbles.isNotEmpty())
+        for (bubble in bubbles) {
+            val box = bubble.boundsInRoot
+            check(!box.overlaps(header)) { "气泡压在状态行上：$box vs $header" }
+        }
+    }
+
+    @Test
     fun datePillFadesAfterScrollingStops() {
         scrollTo(15)
         compose.onNodeWithTag("room-timeline").performTouchInput {

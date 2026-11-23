@@ -34,7 +34,7 @@ import app.wonton.ui.icons.WontonIcon
 
 /**
  * 面板底部的发送条（照 Telegram）：右边主题色圆形发送键，键上是选中的个数，键盘弹起时跟着上来。
- * `note` 不为 null 时左边还有附言框（附件面板）；转发面板没有附言，只留发送键。没有选中东西时键是灰的。
+ * `note` 不为 null 时左边还有附言框（附件面板）；转发面板没有附言，只留发送键。没有选中东西时键是灰的，`busy` 时也灰着。
  */
 @Composable
 fun SheetSendBar(
@@ -43,7 +43,6 @@ fun SheetSendBar(
     count: Int,
     hint: String,
     onSend: () -> Unit,
-    modifier: Modifier = Modifier,
     busy: Boolean = false,
     sendTag: String = "sheet-send",
 ) {
@@ -52,10 +51,10 @@ fun SheetSendBar(
     val focusRequester = remember { FocusRequester() }
     LaunchedEffect(count) { if (count > 0 && note != null) focusRequester.requestFocus() }
     Row(
-        modifier.fillMaxWidth().testTag(sendTag).imePadding()
+        Modifier.fillMaxWidth().testTag(sendTag).imePadding()
             .padding(horizontal = WontonTheme.spacing.s16, vertical = WontonTheme.spacing.s8),
-        verticalAlignment = Alignment.CenterVertically,
         horizontalArrangement = Arrangement.spacedBy(WontonTheme.spacing.s8),
+        verticalAlignment = Alignment.CenterVertically,
     ) {
         if (note != null && count > 0) {
             Box(

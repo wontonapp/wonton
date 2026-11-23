@@ -106,10 +106,13 @@ impl FakeTimelines {
             },
             // 假数据没有真上传：照片也补一条，回复对象照原样带上，界面测试才看得见第一张带没带回复。
             TimelineAction::SendImage {
-                target, reply_to, ..
+                target,
+                reply_to,
+                caption,
+                ..
             } => {
                 if let Some(fake) = self.get(&target.room_id) {
-                    fake.sent_photo(reply_to.as_deref());
+                    fake.sent_photo(reply_to.as_deref(), caption.as_deref());
                 }
             }
             _ => {}
@@ -371,15 +374,16 @@ impl FakeTimeline {
         });
     }
 
-    /// 假数据收下一张照片：补一条写着 photo 的文字，回复对象原样带上。真上传和媒体句柄不管。
-    fn sent_photo(&self, reply_to: Option<&str>) {
+    /// 假数据收下一张照片：补一条写着 photo（有说明就写说明）的文字，回复对象原样带上。真上传和媒体句柄不管。
+    fn sent_photo(&self, reply_to: Option<&str>, caption: Option<&str>) {
         let index = {
             let mut state = self.lock();
             state.sent += 1;
             ITEMS - 1 + state.sent
         };
         let id = format!("ui-fake-photo-{index}");
-        let mut message = text_message(&id, OWNER, at_ms(index), &["photo".to_owned()]);
+        let body = caption.map(str::trim).filter(|c| !c.is_empty()).unwrap_or("photo");
+        let mut message = text_message(&id, OWNER, at_ms(index), &[body.to_owned()]);
         message.status = Some(MessageStatus::Sent);
         message.reply = reply_to.and_then(|event| {
             let text = self.text_of(event.trim_start_matches('$'))?;

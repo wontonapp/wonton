@@ -2,7 +2,6 @@ package app.wonton.ui
 
 import androidx.activity.compose.rememberLauncherForActivityResult
 import androidx.activity.result.contract.ActivityResultContracts.OpenMultipleDocuments
-import android.content.Context
 import android.net.Uri
 import androidx.compose.animation.AnimatedVisibility
 import androidx.compose.animation.core.tween
@@ -58,7 +57,6 @@ import app.wonton.protocol.AgentAction
 import app.wonton.protocol.ComposerAttachment
 import app.wonton.protocol.ComposerViewModel
 import androidx.activity.compose.BackHandler
-import app.wonton.protocol.CoreException
 import app.wonton.protocol.ImageUpload
 import app.wonton.protocol.ReplyQuote
 import app.wonton.protocol.RoomAgentStop
@@ -74,9 +72,7 @@ import app.wonton.ui.icons.Image
 import app.wonton.ui.icons.Send
 import app.wonton.ui.icons.List
 import app.wonton.ui.icons.WontonIcon
-import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.launch
-import kotlinx.coroutines.withContext
 
 /**
  * 聊天页底部的输入栏。`reply` 是正在回复的消息，画在输入框上方；`focusToken` 变一次就把光标放回输入框（开始回复时）。
@@ -333,6 +329,9 @@ private fun rememberAttachments(
     var choosing by rememberSaveable { mutableStateOf(false) }
     // 粘贴的回调只登记一次：回复对象换了也要发给现在的那条。
     val currentSendImage by rememberUpdatedState(sendImage)
+    // 等的功夫草稿还能改，收尾按改到哪一步来：只清掉跟着走了的那句，后来补的字留着。
+    val currentDraft by rememberUpdatedState(draft)
+    val currentOnDraftChange by rememberUpdatedState(onDraftChange)
     // 粘贴进来的照片：旁聊里直接发，主对话里放进附件区；第一张不行就停。旁聊里的字只当第一张的说明。
     val addPhotos = { uris: List<Uri> ->
         val send = currentSendImage
@@ -357,18 +356,14 @@ private fun rememberAttachments(
             )
             choosing = false
             if (failure != null) {
-                onReject(
-                    Problem(
-                        title = context.getString(R.string.photo_failed_at, failure.index + 1),
-                        nextStep = photoTryAnother,
-                        detail = failure.problem.detail ?: failure.problem.title.takeIf { it.isNotEmpty() },
-                    ),
-                )
-            } else if (send == null) {
-                val problem = core.send(Action.Timeline(TimelineAction.SendComposer(target, caption, reply?.eventId)))
-                if (problem != null) onReject(problem) else onSent()
+                onReject(photoFailure(context, failure, photoTryAnother))
+            } else if (send != null) {
+                settleCaption(caption, currentDraft, currentOnDraftChange, onSent, onReplyCancel)
             } else {
-                onSent()
+                val problem = core.send(Action.Timeline(TimelineAction.SendComposer(target, caption, reply?.eventId)))
+                if (problem != null) onReject(problem) else {
+                    settleCaption(caption, currentDraft, currentOnDraftChange, onSent, onReplyCancel)
+                }
             }
         }
         Unit
@@ -404,7 +399,7 @@ private fun rememberAttachments(
                     allowFiles = sendImage == null,
                     note = draft,
                     // 面板收起以后附言框还握着整句，它迟到的回写不再盖掉刚落的草稿。
-                    onNote = onDraftChange,
+                    onNote = { text -> if (choosing) onDraftChange(text) },
                     onSend = sendPhotos,
                     onFiles = { whenRoom { pickFiles.launch(arrayOf("*/*")) } },
                     onDismiss = { choosing = false },
@@ -413,53 +408,6 @@ private fun rememberAttachments(
         },
     )
 }
-
-/** 照片转码好了放进附件区。核心要把字节写进本机的附件区目录，放到后台。 */
-private suspend fun addImage(core: ClientCore, roomId: String, upload: ImageUpload): Problem? =
-    withContext(Dispatchers.IO) {
-        try {
-            core.addImageAttachment(TimelineTarget(roomId, null), upload)
-            null
-        } catch (rejection: CoreException) {
-            rejection.problem
-        }
-    }
-
-/**
- * 选好的照片按选的顺序逐张处理：旁聊里直接发，主对话里放进附件区。附言和回复只跟着第一张（和 iOS 一样），
- * 某一张不行就停在那里，后面的不再试，返回它是第几张和原因。
- */
-private suspend fun sendPickedPhotos(
-    context: Context,
-    uris: List<Uri>,
-    send: ((ImageUpload, caption: String?, replyTo: String?) -> Problem?)?,
-    unreadable: String,
-    tryAnother: String,
-    core: ClientCore,
-    roomId: String,
-    caption: String,
-    firstReply: String?,
-    onFirstSent: () -> Unit,
-): PickedFailure? {
-    val note = caption.trim().takeIf { it.isNotEmpty() }
-    for ((index, uri) in uris.withIndex()) {
-        // 主对话里附言和回复是给最后那条 SendComposer 的，照片本身不带（`send` 为空）。
-        val replyTo = if (index == 0 && send != null) firstReply else null
-        val firstNote = if (index == 0) note else null
-        val problem = PhotoUpload.make(context, uri).fold(
-            onSuccess = { upload ->
-                if (send != null) send(upload, firstNote, replyTo) else addImage(core, roomId, upload)
-            },
-            onFailure = { failure -> Problem(unreadable, tryAnother, failure.message) },
-        )
-        if (problem != null) return PickedFailure(index, problem)
-        if (replyTo != null) onFirstSent()
-    }
-    return null
-}
-
-/** 第 [index] 张没能发出去（从 0 数）和原因。 */
-private class PickedFailure(val index: Int, val problem: Problem)
 
 @OptIn(ExperimentalFoundationApi::class)
 @Composable

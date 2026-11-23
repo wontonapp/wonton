@@ -34,7 +34,7 @@ import app.wonton.ui.R
 import kotlinx.coroutines.runBlocking
 import org.junit.Test
 
-/** 附件面板和转发面板（ADR-0109 第 8 节）：附言就是草稿、选完就发、被拒留住字和附件。 */
+/** 附件面板和转发面板（ADR-0109 第 9 节）：附言就是草稿、选完就发、被拒留住字和附件。 */
 class RoomAttachPanelTest : RoomTelegramCase() {
     @Test
     fun attachSheetSendsPhotosWithDraftAsCaption() {
@@ -47,7 +47,7 @@ class RoomAttachPanelTest : RoomTelegramCase() {
         photos()[albumIndexOf(picks[0])].performClick()
         photos()[albumIndexOf(picks[1])].performClick()
         compose.waitUntil(10_000) { photos()[albumIndexOf(picks[0])].isSelected() }
-        // 附言条只在选了照片以后才出来（ADR-0109 第 8 节），选了第一张再找它。
+        // 附言条只在选了照片以后才出来（ADR-0109 第 9 节），选了第一张再找它。
         val field = compose.onNode(hasSetTextAction() and hasAnyAncestor(hasTestTag("attach-send")))
         field.assert(hasText("先说一句"))
         field.performTextClearance()
@@ -87,12 +87,21 @@ class RoomAttachPanelTest : RoomTelegramCase() {
         compose.waitUntil(10_000) { photos()[albumIndexOf(picks[0])].isSelected() }
         sheetSend("attach-send").performClick()
         compose.waitUntil(10_000) { trayTiles() == 1 }
+        compose.waitUntil(10_000) { compose.onAllNodes(hasTestTag("attach-send")).fetchSemanticsNodes().isEmpty() }
+        // 左滑一条当回复对象：被拒以后它和字一起留着。
+        scrollTo(15)
+        item(15).performTouchInput {
+            val middle = height / 2f
+            swipe(Offset(width * 0.8f, middle), Offset(width * 0.3f, middle), durationMillis = 300)
+        }
+        compose.onNodeWithContentDescription(string(R.string.message_reply_cancel)).assertIsDisplayed()
         // 附言就是草稿：打一句再发，被拒以后这句还在输入框里。
         compose.onNode(hasSetTextAction()).performTextInput("先发这句")
         compose.onNodeWithContentDescription(string(R.string.composer_send)).performClick()
         compose.waitUntil(10_000) {
             compose.onAllNodes(hasText("Retry or remove it first", substring = true)).fetchSemanticsNodes().isNotEmpty()
         }
+        compose.onNodeWithContentDescription(string(R.string.message_reply_cancel)).assertIsDisplayed()
         compose.onNode(hasText("先发这句")).assertIsDisplayed()
         check(compose.onAllNodes(hasText("先发这句")).fetchSemanticsNodes().size == 1) {
             "被拒的这句也进了时间线"
@@ -100,6 +109,54 @@ class RoomAttachPanelTest : RoomTelegramCase() {
         check(trayTiles() == 1) { "附件被吃掉了" }
         // 这张一直标着上传失败，留着会让后面用例的发送也被核心拒掉。
         clearTray()
+    }
+
+    /** 转码期间又打的字留着：发出去的是按下时的那句附言，等的时候补的字回到输入框。 */
+    @Test
+    fun textTypedWhileSendingStaysInTheInput() {
+        val core = (compose.activity.application as WontonApplication).core.getOrThrow()
+        val picks = ensureAlbumPhotos()
+        clearTray()
+        core.holdNextAttachmentForTest(TimelineTarget(ECHO_ROOM, null))
+        openAlbum()
+        photos()[albumIndexOf(picks[0])].performClick()
+        compose.waitUntil(10_000) { photos()[albumIndexOf(picks[0])].isSelected() }
+        val field = compose.onNode(hasSetTextAction() and hasAnyAncestor(hasTestTag("attach-send")))
+        field.performTextInput("先说一句")
+        sheetSend("attach-send").performClick()
+        // 照片进了附件区、停在这里：附言框里再补一句。
+        compose.waitUntil(10_000) { trayTiles() == 1 }
+        field.performTextInput("等的时候补的")
+        compose.waitForIdle()
+        core.releaseHeldAttachmentForTest(TimelineTarget(ECHO_ROOM, null))
+        compose.waitUntil(10_000) { compose.onAllNodes(hasTestTag("attach-send")).fetchSemanticsNodes().isEmpty() }
+        // 发出去的是按下时那句；补的那句还在输入框里，没跟着走也没被清掉。
+        compose.waitUntil(10_000) {
+            compose.onAllNodes(hasText("先说一句")).fetchSemanticsNodes().isNotEmpty()
+        }
+        compose.onNode(hasSetTextAction()).assert(hasText("等的时候补的"))
+        check(trayTiles() == 0) { "附件区里还剩着照片" }
+    }
+
+    /** 转码期间再点一下发送不会发两遍：键灰着，第二下不起作用。 */
+    @Test
+    fun secondTapWhileSendingDoesNotSendTwice() {
+        val core = (compose.activity.application as WontonApplication).core.getOrThrow()
+        val picks = ensureAlbumPhotos()
+        clearTray()
+        core.holdNextAttachmentForTest(TimelineTarget(ECHO_ROOM, null))
+        openAlbum()
+        photos()[albumIndexOf(picks[0])].performClick()
+        compose.waitUntil(10_000) { photos()[albumIndexOf(picks[0])].isSelected() }
+        val sentBefore = photoMessages()
+        sheetSend("attach-send").performClick()
+        compose.waitUntil(10_000) { trayTiles() == 1 }
+        sheetSend("attach-send").assertIsNotEnabled()
+        sheetSend("attach-send").performClick()
+        core.releaseHeldAttachmentForTest(TimelineTarget(ECHO_ROOM, null))
+        compose.waitUntil(10_000) { compose.onAllNodes(hasTestTag("attach-send")).fetchSemanticsNodes().isEmpty() }
+        check(trayTiles() == 0) { "附件区里还剩着照片" }
+        check(photoMessages() == sentBefore + 1) { "发了 ${photoMessages() - sentBefore} 条照片" }
     }
 
     /**
@@ -208,11 +265,16 @@ class RoomAttachPanelTest : RoomTelegramCase() {
         photos()[albumIndexOf(broken)].performClick()
         photos()[albumIndexOf(picks[0])].performClick()
         compose.waitForIdle()
+        val sentBefore = photoMessages()
         sheetSend("attach-send").performClick()
-        compose.waitUntil(10_000) {
+        // 面板收起就是这次发送收尾了（无论成败）。
+        compose.waitUntil(10_000) { compose.onAllNodes(hasTestTag("attach-send")).fetchSemanticsNodes().isEmpty() }
+        check(
             compose.onAllNodes(hasText(string(R.string.photo_failed_at).replace("%1\$d", "1"), substring = true))
-                .fetchSemanticsNodes().isNotEmpty()
-        }
+                .fetchSemanticsNodes().isNotEmpty(),
+        ) { "没说第 1 张发不出去" }
+        // 好的那张没再试：照片的假消息一条都没多。草稿留在输入框里。
+        check(photoMessages() == sentBefore) { "坏的那张以后还在接着发" }
         compose.onNode(hasText("这段留着")).assertIsDisplayed()
         removePhoto(broken)
     }
@@ -223,6 +285,13 @@ class RoomAttachPanelTest : RoomTelegramCase() {
         },
         useUnmergedTree = true,
     )
+
+    private fun photoMessages() = compose.onAllNodes(
+        SemanticsMatcher("发出去的一张照片") { node ->
+            node.config.getOrNull(SemanticsProperties.TestTag)?.startsWith("item-ui-fake-photo-") == true
+        },
+        useUnmergedTree = true,
+    ).fetchSemanticsNodes().size
 
     private fun openForward() {
         // 12 是长条，气泡比整屏还高，按正中会落到屏幕外；换它上面那条一句话的 11。
