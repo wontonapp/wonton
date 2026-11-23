@@ -33,6 +33,19 @@ struct Service {
     environment: BTreeMap<String, serde_json::Value>,
     #[serde(default)]
     volumes: Vec<String>,
+    restart: Option<String>,
+    stop_signal: Option<String>,
+}
+
+/// Docker 重启、容器崩溃都要自己回来：compose 写死 `restart: always` 和停止信号 `SIGTERM`。
+/// `unless-stopped` 会被历史上任何一次非停止 kill 记成手动停过，守护进程重启后不再拉起；没写停止信号时信号还会停掉
+/// 重启管理器，之后容器崩了也不拉起。
+#[test]
+fn tuwunel_comes_back_after_docker_restarts_even_when_signalled() {
+    let compose: Compose = serde_saphyr::from_str(super::COMPOSE).unwrap();
+    let tuwunel = compose.services.tuwunel;
+    assert_eq!(tuwunel.restart.as_deref(), Some("always"));
+    assert_eq!(tuwunel.stop_signal.as_deref(), Some("SIGTERM"));
 }
 
 #[test]

@@ -82,7 +82,7 @@ fn two_installs_on_one_host_federate_through_the_core_proxy() {
         let server_b = stack_b.server();
         wait_ready(&server_a.address).await;
         wait_ready(&server_b.address).await;
-        // 配对成立时核心做的事：重写名单、发 SIGUSR1。要等 Tuwunel 起好，启动中收到的信号不会重读配置。
+        // 配对成立时核心做的事：重写名单、让 Tuwunel 重读配置。要等 Tuwunel 起好，启动中收到的信号不会重读配置。
         // 代理在 tuwunel.toml 里，热加载以后照样生效。
         stack_a.allow(&stack_b.server_name);
         stack_b.allow(&stack_a.server_name);
@@ -335,7 +335,9 @@ impl Stack {
         ClusterServer {
             name: self.container.clone(),
             address: format!("http://127.0.0.1:{}", self.federation_port),
+            server_name: self.server_name.clone(),
             fed_path: None,
+            jwt_key: std::fs::read_to_string(self.dir.join("secrets/matrix-jwt.pem")).unwrap(),
         }
     }
 
@@ -346,6 +348,7 @@ impl Stack {
             &address,
             &self.registration_secret,
             user,
+            false,
         )
         .await
     }
