@@ -7,12 +7,16 @@ import UIKit
 ///   iOS 17 没有 `containerBackground(_:for: .navigation)`，只能在 UIKit 这层改。
 /// - iOS 26 起系统另给整片内容加了一个右滑返回手势（`interactiveContentPopGestureRecognizer`），会抢网页里的横滑；
 ///   插件页层关掉它（`contentPop` 为 false），只留左边缘右滑，网页里的横滑归网页。别的导航栈（聊天、设置）不受影响。
+///   系统在换页时会把它重开，所以每次更新和布局都关一次。
+/// - 左边缘那条是 `UINavigationController` 扩展自绘的，见 `EdgeBack.swift`。
 struct PageStackBack: UIViewControllerRepresentable {
     var contentPop = false
 
     func makeUIViewController(context: Context) -> Controller { Controller(contentPop: contentPop) }
 
-    func updateUIViewController(_ controller: Controller, context: Context) {}
+    func updateUIViewController(_ controller: Controller, context: Context) {
+        controller.configure()
+    }
 
     final class Controller: UIViewController {
         private let contentPop: Bool
@@ -29,12 +33,12 @@ struct PageStackBack: UIViewControllerRepresentable {
             configure()
         }
 
-        override func viewWillAppear(_ animated: Bool) {
-            super.viewWillAppear(animated)
+        override func viewDidLayoutSubviews() {
+            super.viewDidLayoutSubviews()
             configure()
         }
 
-        private func configure() {
+        func configure() {
             view.backgroundColor = .clear
             parent?.view.backgroundColor = .clear
             guard let navigation = navigationController else { return }
@@ -42,6 +46,7 @@ struct PageStackBack: UIViewControllerRepresentable {
             if #available(iOS 26, *), !contentPop {
                 navigation.interactiveContentPopGestureRecognizer?.isEnabled = false
             }
+            navigation.installEdgeBack()
         }
     }
 }

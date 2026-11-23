@@ -31,7 +31,7 @@ use wonton_protocol::{
     PagesViewModel, PanelItem, PanelSource, PluginHealth, PluginKind, PluginState, PluginTrust,
     PluginsViewModel, PushStatus, RecoveryNextStep, RecoveryStatus, RoomMembership, RoomPreview,
     RoomRow, SecretString, ServerKind, ServerName, ServerRow, ServersViewModel, SidebarApp,
-    SidebarBadge, SidebarOpen, TabIcon, TabLayout, TabPage, TabRef, TabState,
+    SidebarBadge, SidebarOpen, StoreLoadState, TabIcon, TabLayout, TabPage, TabRef, TabState,
 };
 
 use super::ClientCore;
@@ -493,6 +493,8 @@ fn fake_plugins(mut plugins: PluginsViewModel) -> PluginsViewModel {
         plugins: installed,
         upgrade_check: None,
     });
+    plugins.store = Some(super::ui_fake_store::listing());
+    plugins.store_load = StoreLoadState::Ready;
     plugins.problem = None;
     // 我的应用里放两个应用：一个有分享、一个没有，设置里的行点开就是详情页。
     plugins.sidebar.apps = vec![
