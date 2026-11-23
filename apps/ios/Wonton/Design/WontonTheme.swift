@@ -50,7 +50,16 @@ struct WontonThemeRoot<Content: View>: View {
             // 放在根上，系统的字号和字体环境值整个 App 都读：包括 `wontonText`、没写令牌的文字和输入框。
             .dynamicTypeSize(appearance.textSize.dynamicTypeSize ?? systemTextSize)
             .fontDesign(appearance.font.design)
-            .preferredColorScheme(appearance.themeMode.colorScheme)
+            .preferredColorScheme(shotColorScheme ?? appearance.themeMode.colorScheme)
+    }
+
+    /// 截图用：系统外观切换在这代模拟器运行时不一定生效，走查直接钉住。
+    private var shotColorScheme: ColorScheme? {
+        switch ProcessInfo.processInfo.environment["WONTON_SHOT_SCHEME"] {
+        case "light": .light
+        case "dark": .dark
+        default: nil
+        }
     }
 }
 
