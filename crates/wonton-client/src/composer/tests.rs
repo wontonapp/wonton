@@ -632,7 +632,8 @@ async fn uploads_pause_offline_and_resume_when_back() {
     s.fake.online.send_replace(true);
     until("连上后接着传", || s.fake.upload_calls() == 1).await;
     until("显示进度", || {
-        view(&s).attachments[0].state
+        // 发送以后附件挪进待发消息，附件区是空的；进度照样写得进去（`item_mut` 两边都找）。
+        view(&s).outgoing[0].attachments[0].state
             == AttachmentState::Uploading {
                 progress: Some(0.5),
             }
