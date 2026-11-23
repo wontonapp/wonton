@@ -105,10 +105,11 @@ services:
     image: ${SHARE_SMOKE_CORE_IMAGE:?}
     container_name: ${SHARE_SMOKE_PROJECT}--owner
     entrypoint: [/bin/sh, -ec]
-    command: ['cat "$${SHARE_SMOKE_STATE}/ca.pem" >> /etc/ssl/certs/ca-certificates.crt; exec wonton-core serve']
+    command: ['cat "$${SHARE_SMOKE_STATE}/ca.pem" >> /etc/ssl/certs/ca-certificates.crt; mkdir -p "$${WONTON_INSTALL_DIR}/secrets/tuwunel"; exec wonton-core serve']
     environment:
       <<: *core
       WONTON_DATA_DIR: ${SHARE_SMOKE_STATE}/owner
+      WONTON_INSTALL_DIR: ${SHARE_SMOKE_STATE}/owner
       # 两套核心在同一台 Docker 上：中继套接字目录各一套，不共用。
       WONTON_RELAY_DIR: ${SHARE_SMOKE_STATE}/owner/relay
       WONTON_BASE_DOMAIN: owner.test
@@ -134,10 +135,11 @@ services:
     image: ${SHARE_SMOKE_CORE_IMAGE:?}
     container_name: ${SHARE_SMOKE_PROJECT}--friend
     entrypoint: [/bin/sh, -ec]
-    command: ['cat "$${SHARE_SMOKE_STATE}/ca.pem" >> /etc/ssl/certs/ca-certificates.crt; exec wonton-core serve']
+    command: ['cat "$${SHARE_SMOKE_STATE}/ca.pem" >> /etc/ssl/certs/ca-certificates.crt; mkdir -p "$${WONTON_INSTALL_DIR}/secrets/tuwunel"; exec wonton-core serve']
     environment:
       <<: *core
       WONTON_DATA_DIR: ${SHARE_SMOKE_STATE}/friend
+      WONTON_INSTALL_DIR: ${SHARE_SMOKE_STATE}/friend
       WONTON_RELAY_DIR: ${SHARE_SMOKE_STATE}/friend/relay
       WONTON_BASE_DOMAIN: friend.test
       WONTON_INSTANCE: ${SHARE_SMOKE_INSTANCE}f
