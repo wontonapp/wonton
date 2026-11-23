@@ -158,9 +158,6 @@ printf '%s' "$("$dev" token)" |
 
 fi
 if step models "不预装模型网关：申请 models 的插件照样装得上；没有网关时请求报网关不可用"; then
-plugin_state() {
-  "$dev" list | awk -v id="$1" '$1 == id { print $2; found = 1 } END { if (!found) print "absent" }'
-}
 expect "核心没有预装模型网关" "$(plugin_state ai.usemagpie.magpie)" absent
 client_file="$(mktemp)"
 cat >"$client_file" <<'YAML'
@@ -246,7 +243,10 @@ docker rm -f "$fake_upstream" >/dev/null
 docker stop "$magpie" >/dev/null
 expect "网关没启动：核心报网关不可用" "$(request_models)" 503
 expect "错误类别" "$(docker exec "$model_client" cat /tmp/models.json | json error.kind)" models_unavailable
-expect "卸载模型网关" "$("$dev" uninstall ai.usemagpie.magpie --purge | json data_removed)" true
+# 后面 Hermes 和“模型设置”网页两步还要用这个网关，重新起来放着，最后一步再卸。
+docker start "$magpie" >/dev/null
+for _ in $(seq 60); do [[ "$(docker inspect -f '{{.State.Health.Status}}' "$magpie")" == healthy ]] && break; sleep 1; done
+expect "网关重新启动" "$(docker inspect -f '{{.State.Health.Status}}' "$magpie")" healthy
 expect "卸载使用方" "$("$dev" uninstall app.model-client --purge | json data_removed)" true
 
 fi
@@ -736,6 +736,7 @@ seen+="$reply"
 ! docker exec "$browser" grep -qF -e "$web_key" -e magpie_web /tmp/jar /tmp/phone-jar /tmp/ios-jar ||
   fail "浏览器或手机的 Cookie 罐里有 magpie 的网页密钥"
 ok "网页密钥不在任何响应头、响应体和 Cookie 罐里"
+expect "卸载模型网关" "$("$dev" uninstall ai.usemagpie.magpie --purge | json data_removed)" true
 
 fi
 if step revoke "吊销手机"; then
