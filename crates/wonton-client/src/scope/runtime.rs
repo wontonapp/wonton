@@ -7,7 +7,7 @@ use std::time::Duration;
 
 use tokio::runtime::{Handle, Runtime};
 use wonton_l10n::l10n;
-use wonton_protocol::CoreError;
+use wonton_protocol::{CoreError, MyAvatarProblem};
 
 use crate::l10n::{CATALOG, language};
 
@@ -43,6 +43,28 @@ impl ScopeRuntime {
                 switched()
             } else {
                 CoreError::Upstream {
+                    reason: l10n!(
+                        CATALOG,
+                        language(),
+                        "scope-task-crashed",
+                        error = error.to_string()
+                    ),
+                }
+            }
+        })?
+    }
+
+    /// 同 [`run`](Self::run)，但保留 `MyAvatarProblem` 的类别：壳按类别写人话，压成一个 `CoreError` 就分不出来了。
+    pub(crate) async fn run_avatar<T: Send + 'static>(
+        &self,
+        task: impl Future<Output = Result<T, MyAvatarProblem>> + Send + 'static,
+    ) -> Result<T, MyAvatarProblem> {
+        let handle = self.handle().ok_or_else(switched_avatar)?;
+        handle.spawn(task).await.map_err(|error| {
+            if error.is_cancelled() {
+                switched_avatar()
+            } else {
+                MyAvatarProblem::Upstream {
                     reason: l10n!(
                         CATALOG,
                         language(),
@@ -99,6 +121,12 @@ impl Drop for ScopeRuntime {
 
 fn switched() -> CoreError {
     CoreError::NotReady {
+        reason: l10n!(CATALOG, language(), "scope-switched-server"),
+    }
+}
+
+fn switched_avatar() -> MyAvatarProblem {
+    MyAvatarProblem::TransportUnavailable {
         reason: l10n!(CATALOG, language(), "scope-switched-server"),
     }
 }

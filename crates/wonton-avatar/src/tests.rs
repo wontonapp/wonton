@@ -1,11 +1,12 @@
 use super::*;
 
-const PNG: &[u8] = include_bytes!("../../tests/fixtures/avatars/square.png");
-const JPEG: &[u8] = include_bytes!("../../tests/fixtures/avatars/square.jpg");
-const WEBP: &[u8] = include_bytes!("../../tests/fixtures/avatars/square.webp");
-const GIF: &[u8] = include_bytes!("../../tests/fixtures/avatars/animated.gif");
-const ANIMATED_WEBP: &[u8] = include_bytes!("../../tests/fixtures/avatars/animated.webp");
-const MP4: &[u8] = include_bytes!("../../tests/fixtures/avatars/h264.mp4");
+const PNG: &[u8] = include_bytes!("../../wonton-core/tests/fixtures/avatars/square.png");
+const JPEG: &[u8] = include_bytes!("../../wonton-core/tests/fixtures/avatars/square.jpg");
+const WEBP: &[u8] = include_bytes!("../../wonton-core/tests/fixtures/avatars/square.webp");
+const GIF: &[u8] = include_bytes!("../../wonton-core/tests/fixtures/avatars/animated.gif");
+const ANIMATED_WEBP: &[u8] =
+    include_bytes!("../../wonton-core/tests/fixtures/avatars/animated.webp");
+const MP4: &[u8] = include_bytes!("../../wonton-core/tests/fixtures/avatars/h264.mp4");
 
 // ImageMagick: magick -size 16x16 xc:red square.{png,jpg,webp}
 // magick -delay 10 -size 16x16 xc:red -delay 20 -size 16x16 xc:blue -loop 0 animated.{gif,webp}
@@ -14,7 +15,7 @@ const MP4: &[u8] = include_bytes!("../../tests/fixtures/avatars/h264.mp4");
 // Limit/rectangle fixtures use the same solid-color generation at their named dimensions.
 #[test]
 fn reads_real_supported_media_and_leaves_matrix_fields_unset() {
-    let avc3 = include_bytes!("../../tests/fixtures/avatars/h264-avc3.mp4");
+    let avc3 = include_bytes!("../../wonton-core/tests/fixtures/avatars/h264-avc3.mp4");
     for (bytes, mime, duration) in [
         (PNG, "image/png", None),
         (JPEG, "image/jpeg", None),
@@ -36,20 +37,20 @@ fn reads_real_supported_media_and_leaves_matrix_fields_unset() {
 
 #[test]
 fn rejects_unsupported_images_and_video_codecs() {
-    let bmp = include_bytes!("../../tests/fixtures/avatars/unsupported.bmp");
-    let mpeg4 = include_bytes!("../../tests/fixtures/avatars/mpeg4.mp4");
+    let bmp = include_bytes!("../../wonton-core/tests/fixtures/avatars/unsupported.bmp");
+    let mpeg4 = include_bytes!("../../wonton-core/tests/fixtures/avatars/mpeg4.mp4");
     assert_eq!(inspect(bmp), Err(Problem::Format));
     assert_eq!(inspect(mpeg4), Err(Problem::Format));
-    let apng = include_bytes!("../../tests/fixtures/avatars/unsupported-apng.png");
+    let apng = include_bytes!("../../wonton-core/tests/fixtures/avatars/unsupported-apng.png");
     assert_eq!(inspect(apng), Err(Problem::Format));
     assert_eq!(inspect(b"not a media file"), Err(Problem::Format));
 }
 
 #[test]
 fn enforces_square_and_exact_edge_limit() {
-    let limit = include_bytes!("../../tests/fixtures/avatars/limit.png");
-    let oversized = include_bytes!("../../tests/fixtures/avatars/oversized.png");
-    let rectangle = include_bytes!("../../tests/fixtures/avatars/rectangle.png");
+    let limit = include_bytes!("../../wonton-core/tests/fixtures/avatars/limit.png");
+    let oversized = include_bytes!("../../wonton-core/tests/fixtures/avatars/oversized.png");
+    let rectangle = include_bytes!("../../wonton-core/tests/fixtures/avatars/rectangle.png");
     assert_eq!(inspect(limit).unwrap().width, MAX_AVATAR_EDGE);
     assert_eq!(inspect(oversized), Err(Problem::TooBig));
     assert_eq!(inspect(rectangle), Err(Problem::NotSquare));
@@ -175,7 +176,7 @@ fn mp4_missing_metrics_and_media_bytes_are_unreadable() {
 
 #[test]
 fn reads_64_bit_mvhd_duration_without_using_track_timescale() {
-    let bytes = include_bytes!("../../tests/fixtures/avatars/h264-mvhd-v1.mp4");
+    let bytes = include_bytes!("../../wonton-core/tests/fixtures/avatars/h264-mvhd-v1.mp4");
     assert_eq!(inspect(bytes).unwrap().duration_ms, Some(5000));
     let mut bytes = bytes.to_vec();
     let mvhd = tag(&bytes, b"mvhd");
@@ -215,7 +216,7 @@ fn accepts_eof_sized_media_and_fragmented_h264_with_known_movie_duration() {
     eof[mdat - 4..mdat].fill(0);
     assert_eq!(inspect(&eof).unwrap().duration_ms, Some(500));
     // ffmpeg +empty_moov+default_base_moof+frag_keyframe; mvhd populated to 500ms.
-    let fragmented = include_bytes!("../../tests/fixtures/avatars/h264-fragmented.mp4");
+    let fragmented = include_bytes!("../../wonton-core/tests/fixtures/avatars/h264-fragmented.mp4");
     assert_eq!(inspect(fragmented).unwrap().duration_ms, Some(500));
     let mut broken = fragmented.to_vec();
     let trun = tag(&broken, b"trun");
@@ -244,7 +245,7 @@ fn view_probe_takes_long_rectangle_videos() {
 
 #[test]
 fn view_probe_accepts_other_codecs_but_the_avatar_check_keeps_h264() {
-    let mpeg4 = include_bytes!("../../tests/fixtures/avatars/mpeg4.mp4");
+    let mpeg4 = include_bytes!("../../wonton-core/tests/fixtures/avatars/mpeg4.mp4");
     assert_eq!(probe_video(mpeg4).unwrap().width, 16);
     assert_eq!(inspect(mpeg4), Err(Problem::Format));
     assert_eq!(probe_video(PNG), Err(Problem::Format));
