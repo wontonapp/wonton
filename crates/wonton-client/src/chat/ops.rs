@@ -44,10 +44,10 @@ impl ChatLink {
         Ok(())
     }
 
-    /// 在后台执行一个操作，成功时先回调，失败时把原因放进 `problem`。
+    /// 在后台执行一个操作，成功时先回调，失败时按错误选整句消息（`failure` 给消息 id）、把原因放进 `problem`。
     pub(super) fn spawn_op_with_success(
         &self,
-        failure_id: &'static str,
+        failure: impl FnOnce(&Error) -> &'static str + Send + 'static,
         op: impl Future<Output = Result<(), Error>> + Send + 'static,
         success: impl FnOnce() + Send + 'static,
     ) {
@@ -55,7 +55,7 @@ impl ChatLink {
         self.runtime.spawn(async move {
             match op.await {
                 Ok(()) => success(),
-                Err(error) => report_failure(&view, failure_id, &error),
+                Err(error) => report_failure(&view, failure(&error), &error),
             }
         });
     }
@@ -71,7 +71,7 @@ impl ChatLink {
         failure_id: &'static str,
         op: impl Future<Output = Result<(), Error>> + Send + 'static,
     ) {
-        self.spawn_op_with_success(failure_id, op, || {});
+        self.spawn_op_with_success(move |_| failure_id, op, || {});
     }
 }
 

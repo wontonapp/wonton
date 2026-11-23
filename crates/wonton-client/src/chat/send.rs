@@ -47,7 +47,7 @@ impl ChatLink {
         let key = key.clone();
         let sent_room = key.room_id.to_string();
         self.spawn_op_with_success(
-            "chat-op-send-text-failed",
+            |_| "chat-op-send-text-failed",
             async move {
                 let room = chat.room(&key).await?;
                 // 预览的图片传不上去时不挡消息：正文照发，原因报出来（取不到的类别发送框里已经显示过）。
@@ -62,13 +62,17 @@ impl ChatLink {
                     Some(event_id) => match extra {
                         Some(extra) => {
                             room.send_reply_with_extra(&body, &mentions, event_id, extra)
-                                .await?
+                                .await?;
                         }
                         None => room.send_reply(&body, &mentions, event_id).await?,
                     },
                     None => match extra {
-                        Some(extra) => room.send_text_with_extra(&body, &mentions, extra).await?,
-                        None => room.send_text(&body, &mentions).await?,
+                        Some(extra) => {
+                            room.send_text_with_extra(&body, &mentions, extra).await?;
+                        }
+                        None => {
+                            room.send_text(&body, &mentions).await?;
+                        }
                     },
                 }
                 // 发出去了，草稿（连同回复对象）留着没用了；发送途中又打的字不算。
@@ -195,7 +199,7 @@ impl ChatLink {
                 }),
         };
         self.spawn_op_with_success(
-            "chat-op-send-image-failed",
+            |_| "chat-op-send-image-failed",
             async move {
                 let room = chat.room(&key).await?;
                 let mut replied_to = None;

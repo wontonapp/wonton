@@ -274,6 +274,7 @@ fn matrix_problem(error: Error) -> BotProfileProblem {
         Error::Upstream(detail) | Error::InvalidInput(detail) => {
             (BotProfileFailure::Upstream, detail)
         }
+        Error::CommentNotSent(failure) => (BotProfileFailure::Upstream, failure.to_string()),
     };
     BotProfileProblem {
         reason,
