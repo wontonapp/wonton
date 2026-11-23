@@ -35,6 +35,7 @@ use wonton_core::friends::Friends;
 use wonton_core::gateway::agent_chains::AgentChains;
 use wonton_core::gateway::{self, Gateway};
 use wonton_core::http::HttpClient;
+use wonton_core::matrix::federation_tls;
 use wonton_core::matrix::{FederationBlocks, FederationConfig, Matrix, NoticeRoom};
 use wonton_core::mcp;
 use wonton_core::mcp::audit::Audit;
@@ -63,7 +64,9 @@ use wonton_core::tunnel::{self, Tunnel, TunnelEntry};
 use wonton_core::upgrade::compose_images;
 use wonton_core::upgrade::docker_host::DockerHost;
 use wonton_core::upgrade::service::{UpgradeConfig, Upgrades};
-use wonton_tunnel::federation::{FEDERATION_ALPN, FederationForwarder, FederationProtocol};
+use wonton_tunnel::federation::{
+    FEDERATION_ALPN, FederationForwarder, FederationProtocol, PeerPinLookup,
+};
 use wonton_tunnel::peer_pair::{PEER_PAIR_ALPN, PeerPairProtocol};
 
 /// 联邦转发组件对每台对方服务器的探活周期和超时。Tuwunel 的联邦请求是并发的，断了的连接靠下一次
@@ -125,6 +128,15 @@ async fn open_peers_and_federation(
     );
     let lookup = peers.clone();
     let listen = federation_addrs::listen(&cfg.federation_listen).await?;
+    let tls = cfg
+        .peer_tls_dir
+        .as_deref()
+        .map(|dir| {
+            let pin_peers = peers.clone();
+            let pins: PeerPinLookup = Arc::new(move |name: &str| pin_peers.tls_verification(name));
+            federation_tls::forwarder(dir, pins)
+        })
+        .transpose()?;
     let forwarder = FederationForwarder::bind(
         tunnel.endpoint.clone(),
         listen,
@@ -132,7 +144,7 @@ async fn open_peers_and_federation(
         peers.paired_names(),
         FEDERATION_PING_INTERVAL,
         FEDERATION_PING_TIMEOUT,
-        None,
+        tls,
     )
     .await
     .with_context(|| format!("联邦转发组件监听 {}", cfg.federation_listen))?;

@@ -165,6 +165,9 @@ pub struct Config {
     pub federation_listen: String,
     /// Tuwunel 的联邦端口（`WONTON_MATRIX_FEDERATION_ADDR`，ADR-0050），主机名用时解析。
     pub matrix_federation_addr: String,
+    /// 配对联邦的证书材料目录（`WONTON_PEER_TLS_DIR`，ADR-0112）：本机 CA 的证书和私钥。
+    /// 不设时出站不终结 TLS（还没装过证书材料）。
+    pub peer_tls_dir: Option<PathBuf>,
     /// 升级时看的渠道（`WONTON_CORE_SOURCE`）：`仓库:tag`。正式安装才有（ADR-0025）。
     pub core_source: Option<String>,
     /// compose 文件和 `.env` 所在的目录（`WONTON_INSTALL_DIR`）。正式安装才有。
@@ -343,6 +346,9 @@ impl Config {
                 .unwrap_or_else(|| "0.0.0.0:8448".into()),
             matrix_federation_addr: get("WONTON_MATRIX_FEDERATION_ADDR")
                 .unwrap_or_else(|| "tuwunel.wonton.internal:8448".into()),
+            peer_tls_dir: get("WONTON_PEER_TLS_DIR")
+                .filter(|value| !value.is_empty())
+                .map(PathBuf::from),
             core_source: get("WONTON_CORE_SOURCE"),
             install_dir: get("WONTON_INSTALL_DIR").map(PathBuf::from),
         })

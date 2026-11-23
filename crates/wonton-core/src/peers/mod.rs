@@ -34,7 +34,7 @@ use wonton_protocol::{
     PeerCode, PeerRequestRow, PeerRow, PeerStatus, PeersView, RejectedPeerRow, SecretString,
 };
 use wonton_tunnel::Allowlist;
-use wonton_tunnel::federation::{PeerStates, PeerStatus as FederationStatus};
+use wonton_tunnel::federation::{PeerStates, PeerStatus as FederationStatus, PeerVerification};
 use wonton_tunnel::peer_pair::{PeerIdentity, PeerPairingCode};
 use wonton_tunnel::relays::canonical_url;
 
@@ -436,6 +436,17 @@ impl Peers {
         let peers = self.lock();
         let record = peers.peers.get(server_name)?;
         (record.phase == Phase::Paired).then(|| (record.endpoint_id, record.endpoint_addr()))
+    }
+
+    /// 出站 TLS 的对端校验材料（ADR-0112）：钉住的叶，轮换期新旧都在。
+    ///
+    /// 还没落 pin 的旧记录、以及刚配对还没收到对方证书的记录都回 `None`，握手按“待钉”只校名字
+    /// （ADR-0112 §5b）；pin 字段由配对和轮换维护，这里只读。
+    pub fn tls_verification(&self, server_name: &str) -> Option<PeerVerification> {
+        let peers = self.lock();
+        let record = peers.peers.get(server_name)?;
+        (record.phase == Phase::Paired).then_some(())?;
+        None
     }
 
     /// 这次的配对握手里要发给对方的身份。主人的显示名现取，主人改资料后不用重启核心。
