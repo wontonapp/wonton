@@ -375,7 +375,9 @@ fun WontonPushedBar(
             // M3 的栏高 64dp；用令牌拼出来，不写死在调用点上。
             modifier = Modifier.fillMaxWidth().heightIn(min = minHeight)
                 .padding(horizontal = WontonTheme.spacing.pageInset),
-            measurePolicy = PushedBarMeasurePolicy(minHeight, WontonTheme.spacing.s4, WontonTheme.spacing.s12, centeredTitle),
+            measurePolicy = PushedBarMeasurePolicy(
+                minHeight, WontonTheme.spacing.s4, WontonTheme.spacing.s12, centeredTitle,
+            ),
         )
         line?.let {
             Box(
