@@ -436,9 +436,11 @@ MCP 订阅只收 `tools_list_changed`（`crates/wonton-core/src/mcp/server.rs:29
    自己就标了没实测。不过就退回“首次输一次密码”，`credential` 改回一次性口令。
 3. **Immich/Navidrome 的建号命令。** Immich 建用户、建库、加“家庭”账号的共享；Navidrome 的管理员建用户。三家用同一套命令形状是否够，
    还是要给 `add` 加应用特有字段。
-4. **（先做实验卡）工具 `_meta` 能不能带到插件。** `tools/list` 的 `_meta` 由核心原样转发给插件还是被 rmcp 丢掉；`app.wonton/files`、`app.wonton/card`
-   都靠它。过不了就换路：`tools/list` 的 `description` 写前缀约定，或核心侧维护工具能力表；卡 7、9、12 的前置里写死“先验”。
-   结果方向的 `_meta` 已有先例（`app.wonton/failure`），工具方向没核。
+4. **（实验卡已做，2026-11-23）工具 `_meta` 能不能带到插件。** rmcp 不丢：插件工具的 `_meta` 经核心到 Agent 原样保留；
+   核心自己写进 `tools/call` 的 `_meta`（`app.wonton/user`、`app.wonton/capabilities`）也到得了插件。但核心现在不把调用方自己塞的 `_meta`
+   往下递（只用自己的身份键和 rmcp 的 `progressToken`），所以 `tools/list` 的 `app.wonton/card`、`app.wonton/files` 直接可用，
+   `tools/call` 的新键（`speakers` 等）必须由核心在 `upstream.rs::call_with_identity` 里写。不用换路。
+   测试：`gateway::mcp_tests::tool_meta_survives_the_bus_and_core_call_meta_reaches_the_plugin`。
 5. **房间成员查询的开销。** 每次读文件都查 `joined_members` 在几十人的房间里能不能接受；不行就加 30 秒内的短缓存，仍以实时为准。
 6. **命令在容器里的用户和属主。** 插件容器常以 `PUID`/`PGID` 跑，核心 exec 带哪个用户、写出的 0600 文件谁读得到。
 7. **事件合并和限流一起的表现。** 10 分钟内 200 张照片合并计 `count` 时，Agent 一轮能不能一次取完、会不会反复被叫醒。
