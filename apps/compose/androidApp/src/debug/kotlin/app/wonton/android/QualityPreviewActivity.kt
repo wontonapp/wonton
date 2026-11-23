@@ -7,7 +7,11 @@ import android.os.Bundle
 import androidx.activity.ComponentActivity
 import androidx.activity.compose.setContent
 import androidx.activity.enableEdgeToEdge
+import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
+import androidx.compose.foundation.layout.fillMaxSize
+import androidx.compose.foundation.layout.navigationBarsPadding
+import androidx.compose.foundation.layout.statusBarsPadding
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.runtime.Composable
@@ -101,6 +105,7 @@ class QualityPreviewActivity : ComponentActivity() {
         val core = (application as WontonApplication).core.getOrNull() ?: return
         val plugins = remember(core) { PluginsState(core) }
         val scroll = rememberScrollState()
+        Box(Modifier.fillMaxSize().statusBarsPadding().navigationBarsPadding()) {
         StepCardFrame(
             nav = StepNav(position = 4u, total = 4u, canBack = true, canSkip = false, canNext = true, canClose = true),
             title = stringResource(R.string.onboarding_step_review),
@@ -114,6 +119,8 @@ class QualityPreviewActivity : ComponentActivity() {
                 OnboardingReviewStep(previewOnboardingReview(), plugins) {}
             }
         }
+        }
+
     }
 
     /** 聊天房间：短状态替换副标题。 */

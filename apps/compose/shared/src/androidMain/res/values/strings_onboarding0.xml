@@ -13,7 +13,7 @@
     <!-- Problem title in setup: the recommendation source hit an error. -->
     <string name="onboarding_problem_store_upstream">The recommendation source hit an error. Try again or skip.</string>
     <!-- Checkmark icon for an app that finished installing. -->
-    <string name="onboarding_review_done">Installed</string>
+    <string name="onboarding_review_done">Done</string>
     <!-- Kind label above a review row: the profile that will be saved. -->
     <string name="onboarding_review_section_profile">Your profile</string>
     <!-- Kind label above a review row: the model that will answer. -->

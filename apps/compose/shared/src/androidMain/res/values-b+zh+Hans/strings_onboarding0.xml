@@ -13,7 +13,7 @@
     <!-- Problem title in setup: the recommendation source hit an error. -->
     <string name="onboarding_problem_store_upstream">推荐清单的来源出错了，可以重试或跳过。</string>
     <!-- Checkmark icon for an app that finished installing. -->
-    <string name="onboarding_review_done">装好了</string>
+    <string name="onboarding_review_done">完成</string>
     <!-- Kind label above a review row: the profile that will be saved. -->
     <string name="onboarding_review_section_profile">你的资料</string>
     <!-- Kind label above a review row: the model that will answer. -->
