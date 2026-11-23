@@ -65,4 +65,10 @@ class PreviewSnapshotsTest {
 
     @Test
     fun shareSheetNotPaired() = paparazzi.snapshot { ShareSheetNotPairedPreview() }
+
+    @Test
+    fun peersPublicAccessOff() = paparazzi.snapshot { PeersPublicAccessOffPreview() }
+
+    @Test
+    fun peersPublicAccessOffDark() = paparazzi.snapshot { PeersPublicAccessOffDarkPreview() }
 }

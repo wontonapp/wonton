@@ -5,10 +5,15 @@
 package app.wonton.ui
 
 import androidx.compose.foundation.background
+import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
+import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.fillMaxSize
+import androidx.compose.foundation.layout.padding
+import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.tooling.preview.Preview
 import app.wonton.protocol.AppearanceViewModel
 import app.wonton.protocol.ChatAccount
@@ -36,6 +41,8 @@ import app.wonton.protocol.HomeViewModel
 import app.wonton.protocol.InstalledPlugin
 import app.wonton.protocol.InstalledPlugins
 import app.wonton.protocol.PendingConfirmation
+import app.wonton.protocol.PeerRow
+import app.wonton.protocol.PeerStatus
 import app.wonton.protocol.PluginKind
 import app.wonton.protocol.PluginRuntime
 import app.wonton.protocol.PluginState
@@ -57,6 +64,9 @@ import app.wonton.protocol.TextSize
 import app.wonton.protocol.ThemeColors
 import app.wonton.protocol.ThemeMode
 import app.wonton.protocol.UdpFlowStats
+import app.wonton.ui.R
+import app.wonton.ui.design.WontonGroup
+import app.wonton.ui.design.WontonSeparator
 import app.wonton.ui.design.WontonTheme
 import app.wonton.ui.design.toColor
 
@@ -466,3 +476,53 @@ internal fun ProblemViewPreview() {
         )
     }
 }
+
+/** “其他服务器”页：连上的不写状态，公网访问关着的那一行说清原因；深色版看令牌。 */
+@Preview(name = "对方公网关", locale = "en", widthDp = 390, heightDp = 240)
+@Composable
+internal fun PeersPublicAccessOffPreview() {
+    PreviewFrame { PeersPreviewList() }
+}
+
+@Preview(name = "对方公网关（深色）", locale = "en", widthDp = 390, heightDp = 240)
+@Composable
+internal fun PeersPublicAccessOffDarkPreview() {
+    PreviewFrame(dark = true) { PeersPreviewList() }
+}
+
+@Composable
+private fun PeersPreviewList() {
+    Column(
+        Modifier
+            .fillMaxSize()
+            .padding(WontonTheme.spacing.s24),
+        verticalArrangement = Arrangement.spacedBy(WontonTheme.spacing.s12),
+    ) {
+        Text(
+            stringResource(R.string.peers_title),
+            color = WontonTheme.colors.textSecondary.toColor(),
+        )
+        WontonGroup {
+            rows.forEachIndexed { index, row ->
+                if (index > 0) WontonSeparator()
+                PeerRowView(row, onRemove = {})
+            }
+        }
+    }
+}
+
+private val rows: List<PeerRow>
+    get() = listOf(
+        row("lin7c3d", "Lin", PeerStatus.CONNECTED, null),
+        row("sam5e8f", "Sam", PeerStatus.PUBLIC_ACCESS_OFF, "endpoint 3c4d5e6f"),
+        row("mai2a9b", "Mai", PeerStatus.OFFLINE, "endpoint 0"),
+    )
+
+private fun row(handle: String, name: String, status: PeerStatus, detail: String?) = PeerRow(
+    serverName = "$handle.wonton",
+    ownerUserId = "@$handle:$handle.wonton",
+    ownerDisplayName = name,
+    status = status,
+    lastConnectedMs = 1_762_800_000_000uL,
+    detail = detail,
+)

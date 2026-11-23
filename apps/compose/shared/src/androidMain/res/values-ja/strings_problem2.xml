@@ -33,4 +33,8 @@
     <string name="problem_upgrade_server_next_step">まず自宅サーバーをアップデートしてください。</string>
     <!-- Problem title used for plugin, chat and connection failures: the home server itself reported an error. -->
     <string name="problem_upstream_title">自宅サーバーでエラーが発生しました</string>
+    <!-- Next step when the other server's public access is off: wait, then send again. -->
+    <string name="problem_peer_public_access_off_next_step">相手がオンに戻してからもう一度送ってください。メッセージはその後で届きます。</string>
+    <!-- Next step when the other server isn't paired: pair it first. -->
+    <string name="problem_server_not_paired_next_step">「他のサーバー」でペアリングしてから、チャットを開いてください。</string>
 </resources>

@@ -249,6 +249,8 @@ private val PushStatus.notificationStatus: String
                 ChatFailure.FORBIDDEN -> R.string.push_status_failed_forbidden
                 ChatFailure.UPSTREAM, ChatFailure.OTHER -> R.string.push_status_failed_upstream
                 ChatFailure.NOT_READY -> R.string.push_status_failed_not_ready
+                ChatFailure.SERVER_NOT_PAIRED -> R.string.push_status_failed_not_ready
+                ChatFailure.PEER_PUBLIC_ACCESS_OFF -> R.string.push_status_failed_transport
                 ChatFailure.INVALID_INPUT -> R.string.push_status_failed_invalid_input
             },
         )
