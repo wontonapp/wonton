@@ -26,6 +26,8 @@ struct ComposerView: View {
     var editing: ComposerEdit?
     /// 这个 Bot 现在不能聊时输入框只读，草稿和附件都留着。
     var isEnabled = true
+    /// 不能聊的原因，菜单、照片和附件面板发送被拦时写出去。
+    var disabledProblem: Problem?
     private var roomId: String { composer.roomId }
     /// 附件区只有主对话有（ADR-0093）：旁聊里字和照片直接发，不给选文件，粘贴文件提示去主对话发。
     private var isSideChat: Bool { composer.threadRoot != nil }
@@ -148,6 +150,7 @@ struct ComposerView: View {
             photos = []
             // 旁聊里照片不进附件区，转码好直接发（ADR-0093）；输入框里的字当说明一起发，回复对象跟着第一张照片走。
             if isSideChat {
+                if blocked() { return }
                 // 选择器本身按张数挡过；这里再切一刀，多出来的不让撑破上限。
                 Task { await sendPhotos(Array(items.prefix(composer.photoRoom))) }
             } else {
@@ -189,6 +192,7 @@ struct ComposerView: View {
     /// 点了一条命令：直接发出核心给的那句，不用再按发送（ADR-0109 第 8 节）。输入框里的草稿是主人正在写的，
     /// 发完留着；回复对象跟着命令发出去，发出去才收起。
     private func run(_ command: RoomCommand) {
+        if blocked() { return }
         pin.pin()
         // 被拒（附件区里有传不上去的）时命令没发出去：草稿、回复条和列表都留着让主人再点。
         // 走和发送键同一个口：附件区里有东西时按 Attachment 送，才会被附件区拦下。
@@ -230,6 +234,7 @@ private extension ComposerView {
     /// 第一张试过的照片的说明（ADR-0093）。取字节的这段时间（比如 iCloud 原图下不下来）发送键那一格转圈；发出去了、
     /// 草稿也还是派出时那句才清，被拒或者等的功夫又打了字都留着，回复对象跟着草稿留。
     private func sendPicked(_ assets: [PHAsset]) async {
+        if blocked() { return }
         pin.pin()
         isSendingAttachment = true
         defer { isSendingAttachment = false }
@@ -272,6 +277,13 @@ private extension ComposerView {
         model.cancelReply(in: composer.target)
     }
 
+    /// 不能聊时把原因写出去并返回 true；发送、菜单和照片直发都先过它。
+    private func blocked() -> Bool {
+        guard !isEnabled else { return false }
+        model.rejection = disabledProblem
+        return true
+    }
+
     /// 粘贴的图转码后进附件区；旁聊里直接发（ADR-0093）。
     private func pasteImage(from providers: [NSItemProvider]) async {
         guard let (data, type) = await ComposerPaste.image(from: providers) else {
@@ -281,6 +293,7 @@ private extension ComposerView {
             return
         }
         if isSideChat {
+            if blocked() { return }
             await sendImage(data, type)
         } else {
             await composer.addImage(data, type)

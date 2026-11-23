@@ -1193,31 +1193,31 @@
       }
     },
     "room.botOtherPrivate": {
-      "comment": "Above the composer in a DM with another member's private Bot, which the current person has no grant for.",
+      "comment": "Above the composer in a DM with a family member's private Bot, which the current person, owner included, has no grant for.",
       "extractionState": "manual",
       "localizations": {
         "en": {
           "stringUnit": {
             "state": "translated",
-            "value": "This is someone else's private Bot. Ask its owner for access."
+            "value": "This is another family member's private Bot. Its owner hasn't given access."
           }
         },
         "zh-Hans": {
           "stringUnit": {
             "state": "translated",
-            "value": "这是别人的私人 Bot，找它的主人开授权。"
+            "value": "这是家里人的私人 Bot，主人还没给授权。"
           }
         },
         "zh-Hant": {
           "stringUnit": {
             "state": "translated",
-            "value": "這是別人的私人 Bot，找它的主人開授權。"
+            "value": "這是家裡人的私人 Bot，主人還沒給授權。"
           }
         },
         "ja": {
           "stringUnit": {
             "state": "translated",
-            "value": "これは他の人のプライベート Bot です。持ち主に利用を頼んでください。"
+            "value": "これは家族の他の人のプライベート Bot です。持ち主はまだ利用を許可していません。"
           }
         }
       }

@@ -67,20 +67,14 @@ pub(super) fn identity(
         };
         Some((member, role))
     };
-    let contact_absent = matches!(
+    let has_record = matches!(
         &facts.contact,
-        PersonContactFacts::Record(
-            PersonContactRecordRead::Missing
-                | PersonContactRecordRead::Person {
-                    state: ContactState::Pending | ContactState::Declined | ContactState::NotFound,
-                    ..
-                },
-        )
+        PersonContactFacts::Record(PersonContactRecordRead::Person { .. })
     );
     let Some(record) = facts.bot.as_ref() else {
         return Ok((
             None,
-            if contact_absent {
+            if has_record {
                 DefaultBotVisibility::Absent
             } else {
                 DefaultBotVisibility::Unknown
@@ -88,8 +82,12 @@ pub(super) fn identity(
         ));
     };
     let availability = chat_availability(gateway, &facts);
+    // 不能用也给出身份：插件页照样点得开和它的私聊，房间行带着原因。
     if availability != BotChatAvailability::Available {
-        return Ok((None, visibility(availability)));
+        return Ok((
+            Some(record.listing.user_id.clone()),
+            visibility(availability),
+        ));
     }
     let own = matches!(&record.listing.keeper, BotKeeper::User { username } if username == &person.username);
     let shared = record.listing.keeper == BotKeeper::Household
