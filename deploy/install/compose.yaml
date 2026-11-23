@@ -273,7 +273,7 @@ services:
 
   tuwunel:
     image: ghcr.io/matrix-construct/tuwunel:v2.0.0@sha256:3dde1e9b3503c68218f95415ec3ebff522bd945065ba76019d408543540d1730
-    # 热加载走管理房间命令（ADR-0115），核心不再给这个容器发信号；`restart: always` 仍然要写：Docker 重启、
+    # 热加载走管理房间命令（ADR-0116），核心不再给这个容器发信号；`restart: always` 仍然要写：Docker 重启、
     # 崩溃都要自己回来，`unless-stopped` 会被历史上任何一次 kill 记成“手动停过”（HasBeenManuallyStopped），重启后
     # 不再拉起，核心连不上 Matrix 一直崩。停止信号要写明：没写时 Docker 把任何信号都当成停止信号，停掉重启管理器。
     restart: always
