@@ -152,23 +152,28 @@ class RoomAttachPanelTest : RoomTelegramCase() {
         val picks = ensureAlbumPhotos()
         clearTray()
         core.holdNextAttachmentForTest(TimelineTarget(ECHO_ROOM, null))
+        // 主对话里发出去的照片不单独进时间线，带一句附言：重发一次就会多一条发出去了的字。
+        compose.onNode(hasSetTextAction()).performTextInput("配一句")
         openAlbum()
         photos()[albumIndexOf(picks[0])].performClick()
         compose.waitUntil(10_000) { photos()[albumIndexOf(picks[0])].isSelected() }
-        // 订阅着数核心里发出去的照片：新订阅的第一批不含后来发的，要在点发送之前订上。
+        // 订阅着数核心里发出去的字：新订阅的第一批不含后来发的，要在点发送之前订上。
         val sent = AtomicInteger()
         val ready = CompletableDeferred<Unit>()
         val watch = CoroutineScope(Dispatchers.Default).launch {
-            core.subscribeTimeline(TimelineTarget(ECHO_ROOM, null)).use { subscription ->
-                ready.complete(Unit)
-                while (true) {
-                    val update = subscription.next() ?: break
-                    update.diffs.forEach { diff ->
-                        val item = (diff as? TimelineDiff.PushBack)?.item ?: return@forEach
-                        if (item.id.startsWith("ui-fake-photo-")) sent.incrementAndGet()
+            runCatching {
+                core.subscribeTimeline(TimelineTarget(ECHO_ROOM, null)).use { subscription ->
+                    ready.complete(Unit)
+                    while (true) {
+                        val update = subscription.next() ?: break
+                        android.util.Log.d("rv889", "update " + update.diffs.map { it::class.simpleName })
+                        update.diffs.forEach { diff ->
+                            val item = (diff as? TimelineDiff.PushBack)?.item ?: return@forEach
+                            if (item.id.startsWith("ui-fake-sent-")) sent.incrementAndGet()
+                        }
                     }
                 }
-            }
+            }.onFailure { android.util.Log.e("rv889", "watch failed", it) }
         }
         runBlocking { ready.await() }
         sheetSend("attach-send").performClick()
@@ -179,7 +184,7 @@ class RoomAttachPanelTest : RoomTelegramCase() {
         compose.waitUntil(10_000) { compose.onAllNodes(hasTestTag("attach-send")).fetchSemanticsNodes().isEmpty() }
         check(trayTiles() == 0) { "附件区里还剩着照片" }
         compose.waitUntil(10_000) { sent.get() == 1 }
-        check(sent.get() == 1) { "发了 ${sent.get()} 条照片" }
+        check(sent.get() == 1) { "发了 ${sent.get()} 次" }
         watch.cancel()
     }
 
@@ -268,16 +273,36 @@ class RoomAttachPanelTest : RoomTelegramCase() {
         // 两张能读的照片各选一张。
         photos()[albumIndexOf(picks[0])].performClick()
         photos()[albumIndexOf(picks[1])].performClick()
-        // 旁聊盖着主对话，主对话里的引用还在树里：记个基准，只比新多出来的那条。
-        val quotesBefore = compose.onAllNodes(hasTestTag("quote"), useUnmergedTree = true)
-            .fetchSemanticsNodes().size
         sheetSend("attach-send").performClick()
         compose.waitUntil(10_000) { compose.onAllNodes(hasTestTag("attach-send")).fetchSemanticsNodes().isEmpty() }
-        compose.waitUntil(10_000) {
-            compose.onAllNodes(hasTestTag("quote"), useUnmergedTree = true)
-                .fetchSemanticsNodes().size == quotesBefore + 1
-        }
+        // 两条新照片里只有第一条带引用：按条目自己的标签数，主对话背后的引用不算进来。
+        val sentPhotos = compose.onAllNodes(
+            SemanticsMatcher("新发出去的一张照片") { node ->
+                node.config.getOrNull(SemanticsProperties.TestTag)?.startsWith("item-ui-fake-photo-") == true
+            },
+            useUnmergedTree = true,
+        )
+        compose.waitUntil(10_000) { sentPhotos.fetchSemanticsNodes().size == 2 }
+        val tags = sentPhotos.fetchSemanticsNodes().map { it.config[SemanticsProperties.TestTag] }
+        fun quotesIn(tag: String) = compose.onAllNodes(
+            hasTestTag("quote") and hasAnyAncestor(hasTestTag(tag)),
+            useUnmergedTree = true,
+        ).fetchSemanticsNodes().size
+        check(quotesIn(tags[0]) == 1) { "第一张照片没带引用" }
+        check(quotesIn(tags[1]) == 0) { "第二张也带了引用" }
         compose.onNodeWithContentDescription(string(R.string.message_reply_cancel)).assertDoesNotExist()
+    }
+
+    @Test
+    fun tmpSideChatTwoPhotosNoReply() {
+        enterSideChat()
+        val picks = ensureAlbumPhotos()
+        openAlbum()
+        compose.waitUntil(10_000) { photos().fetchSemanticsNodes().size >= 2 }
+        photos()[albumIndexOf(picks[0])].performClick()
+        photos()[albumIndexOf(picks[1])].performClick()
+        sheetSend("attach-send").performClick()
+        compose.waitUntil(20_000) { compose.onAllNodes(hasTestTag("attach-send")).fetchSemanticsNodes().isEmpty() }
     }
 
     /** 某一张发不出去就停在那里，说清是第几张，附言（草稿）留着。 */

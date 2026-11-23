@@ -121,9 +121,12 @@ fun Composer(
     // 被拒时那张就没了，原因给出去，后面的不再试。
     val sendImage: ((ImageUpload, caption: String?, replyTo: String?) -> Problem?)? = if (inSideChat) {
         { upload, caption, replyTo ->
-            core.send(
+            android.util.Log.d("rv889", "sendImage before")
+            val problem = core.send(
                 Action.Timeline(TimelineAction.SendImage(target, upload, caption = caption, replyTo = replyTo)),
             )
+            android.util.Log.d("rv889", "sendImage after problem=$problem")
+            problem
         }
     } else {
         null
@@ -336,10 +339,15 @@ private fun rememberAttachments(
     val addPhotos = { uris: List<Uri> ->
         val send = currentSendImage
         scope.launch {
-            sendPickedPhotos(
+            val failure = sendPickedPhotos(
                 context, uris, send, photoUnreadable, photoTryAnother, core, roomId, draft, reply?.eventId,
                 onReplyCancel,
-            )?.problem?.let(onReject)
+            )
+            if (failure != null) {
+                onReject(photoFailure(context, failure, photoTryAnother))
+            } else if (send != null) {
+                settleCaption(draft, currentDraft, currentOnDraftChange, onSent, onReplyCancel)
+            }
         }
         Unit
     }

@@ -39,8 +39,10 @@ internal suspend fun sendPickedPhotos(
     firstReply: String?,
     onFirstSent: () -> Unit,
 ): PickedFailure? {
+    android.util.Log.d("rv889", "picked start ${uris.size}")
     val note = caption.trim().takeIf { it.isNotEmpty() }
     for ((index, uri) in uris.withIndex()) {
+        android.util.Log.d("rv889", "make $index")
         // 主对话里附言和回复是给最后那条 SendComposer 的，照片本身不带（`send` 为空）。
         val replyTo = if (index == 0 && send != null) firstReply else null
         val firstNote = if (index == 0) note else null
@@ -50,6 +52,7 @@ internal suspend fun sendPickedPhotos(
             },
             onFailure = { failure -> Problem(unreadable, tryAnother, failure.message) },
         )
+        android.util.Log.d("rv889", "sent $index problem=$problem")
         if (problem != null) return PickedFailure(index, problem)
         if (replyTo != null) onFirstSent()
     }
