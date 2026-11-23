@@ -55,6 +55,11 @@ jobs:
       - name: detekt（函数 ≤ 100 行）、单元测试与 Debug APK
         working-directory: apps/compose
         run: ./gradlew detekt :androidApp:testDebugUnitTest :androidApp:assembleDebug
+      # 许可清单：用刚导出的 AboutLibraries JSON 跑一遍生成和校验，挡住许可表、全文或收集断掉。
+      - name: 许可清单和许可表
+        env:
+          LICENSES_REQUIRE_ANDROID: "1"
+        run: bash scripts/check-licenses.sh
       # 界面参考图：预览用固定假数据，在 JVM 上渲染，不加载 .so。重录在 snapshots-record.yml，这里只比对。
       - name: 比对界面参考图
         working-directory: apps/compose

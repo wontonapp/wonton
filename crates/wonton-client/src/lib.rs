@@ -23,6 +23,7 @@
 
 uniffi::setup_scaffolding!();
 
+mod about;
 mod agent_chains;
 #[cfg(target_os = "android")]
 mod android;

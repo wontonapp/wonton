@@ -15,6 +15,7 @@ dist/
 .dev-ports
 # iOS 的版本号，xcodegen 生成工程时由 scripts/app-version.sh 写出
 apps/ios/Version.xcconfig
+apps/ios/Wonton/licenses.json
 
 # 调试产物（截图、录屏、测试结果放在仓库外）
 *.xcresult
