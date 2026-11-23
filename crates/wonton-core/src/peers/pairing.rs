@@ -14,13 +14,13 @@ use std::time::Duration;
 use iroh::EndpointId;
 use wonton_protocol::PeerError;
 use wonton_tunnel::peer_pair::{
-    PeerIdentity, PeerPairHandler, PeerPairToken, PeerRejectReason, PeerReply, deliver_decision,
-    notify_removed,
+    PeerCertificate, PeerIdentity, PeerPairHandler, PeerPairToken, PeerRejectReason, PeerReply,
+    deliver_decision, notify_removed,
 };
 
 use super::{
-    HOUR_MS, MAX_PENDING, MAX_PER_HOUR, PeerRecord, PeerRequest, Peers, Phase, RejectedRequest,
-    code, now_ms,
+    HOUR_MS, MAX_PENDING, MAX_PER_HOUR, PeerRecord, PeerRequest, Peers, Phase, PinState,
+    RejectedRequest, code, now_ms,
 };
 use crate::secret::random_token;
 
@@ -68,6 +68,10 @@ impl PeerPairHandler for PeerPairing {
 
     fn removed(&self, from: EndpointId, server_name: &str) {
         self.0.on_removed(from, server_name);
+    }
+
+    fn certificate(&self, from: EndpointId, certificate: &PeerCertificate, ack: bool) {
+        self.0.on_certificate(from, certificate, ack);
     }
 }
 
@@ -213,6 +217,9 @@ impl Peers {
                     paired_at_ms: now_ms(),
                     phase: Phase::Paired,
                     last_connected_ms: None,
+                    peer_pin: Vec::new(),
+                    peer_entry: super::PeerEntry::None,
+                    pin_state: PinState::starting_now(),
                 },
             );
             self.server_allowlist.allow(request.endpoint_id);
@@ -233,6 +240,7 @@ impl Peers {
                     "配对结果没有送到对方：对方来问结果时会知道"
                 );
             }
+            peers.send_certificate(&name, false).await;
             let still_paired = peers
                 .lock()
                 .peers
@@ -457,6 +465,11 @@ impl Peers {
             record.addrs = identity.addrs.clone();
             record.owner_user_id = identity.owner_user_id.clone();
             record.owner_display_name = identity.owner_display_name.clone();
+            record.pin_state = if record.peer_pin.is_empty() {
+                PinState::starting_now()
+            } else {
+                PinState::Pinned
+            };
             record.paired_at_ms = now_ms();
             // 成立以后这条请求就处理完了：不再列出，也不占待处理的名额。
             inner.requests.retain(|row| row.endpoint_id != endpoint);
@@ -477,6 +490,7 @@ impl Peers {
         tokio::spawn(async move {
             // 对方还要收下这条结果：送不到也不影响本机，对方回头来问就成立。
             deliver_with_retries(&peers.tunnel.endpoint, addr, true, own).await;
+            peers.send_certificate(&name, false).await;
             let still_paired = peers
                 .lock()
                 .peers

@@ -12,6 +12,8 @@
 //! - 删配对：记录删掉、联邦名单撤掉、通知对方一次（尽力而为）；自己发出的请求用同一路径取消。
 //! - 对方删了配对：对方收到通知后（或握手被对方拒绝时）记录留着、标成“对方删了”，联邦名单同样撤掉；
 //!   主人在 App 里移除这一行才真删记录，重新配对时这条记录被新配对替换。
+//! - 证书（ADR-0112）：配对成立时记成待钉（窗口起点是当时的核心版本），两端经配对通道互换自签叶证书，
+//!   收到就钉；回执后只留新的，旧的最多留 7 天。删配对时 pin 一起删。
 //!
 //! 联邦转发用的接口：[`Peers::server_allowlist`]（入站名单）、[`Peers::lookup`]（服务器名 → endpoint ID，
 //! 核心层的“一个服务器名只会转发到配对时绑定的 endpoint ID”）、[`Peers::paired_names`]（已配对的服务器名，
@@ -41,6 +43,9 @@ use crate::tunnel::Tunnel;
 
 mod code;
 pub mod pairing;
+mod pin;
+use pin::prune_expired_pins;
+pub use pin::{OwnCertificate, PeerEntry, PeerPin, PinState};
 #[cfg(test)]
 mod peers_tests;
 mod scanning;
@@ -86,6 +91,15 @@ pub struct PeerRecord {
     /// 最近一次连上对方的时刻（Unix 毫秒）。转发组件的状态变成“已连上”时记下，离线时保留。
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub last_connected_ms: Option<u64>,
+    /// 钉住的对方证书（ADR-0112）：旧的和新的一起收，最新的在最后。
+    #[serde(default)]
+    pub peer_pin: Vec<PeerPin>,
+    /// 对方走哪条入口（ADR-0112 §7）。
+    #[serde(default)]
+    pub peer_entry: PeerEntry,
+    /// 证书的钉扎状态和待钉窗口的起点。
+    #[serde(default)]
+    pub pin_state: PinState,
 }
 
 impl PeerRecord {
@@ -214,6 +228,8 @@ pub struct Peers {
     owner_display_name: Arc<dyn Fn() -> String + Send + Sync>,
     /// 主人的语言，说明和提醒按它写（ADR-0043）。
     languages: Arc<dyn Fn() -> Languages + Send + Sync>,
+    /// 本机证书的来源（ADR-0112）：配对成立后发给对方。
+    own_certificate: Mutex<Option<OwnCertificate>>,
     /// 测试用：每写一次盘推进一版，等状态变化用。
     #[cfg(test)]
     changes: watch::Sender<u64>,
@@ -271,6 +287,18 @@ impl Peers {
         if created_token {
             stored.token = Some(code::issue());
         }
+        // 老记录没有窗口起点：从这次启动的核心版本补上（ADR-0112 §5b）。离线期间过了宽限期的
+        // 旧 pin 顺手丢掉，只留最新一张。
+        let mut stored_changed = false;
+        for record in stored.peers.values_mut() {
+            if let PinState::Pending { since_version } = &mut record.pin_state
+                && since_version.is_empty()
+            {
+                *since_version = crate::build_info::version().to_owned();
+                stored_changed = true;
+            }
+            stored_changed |= prune_expired_pins(&mut record.peer_pin);
+        }
         let paired: BTreeSet<String> = stored
             .peers
             .values()
@@ -308,13 +336,14 @@ impl Peers {
             notices,
             owner_display_name,
             languages,
+            own_certificate: Mutex::new(None),
             #[cfg(test)]
             changes: watch::channel(0).0,
         });
-        if created_token {
+        if created_token || stored_changed {
             let inner = peers.lock();
             if let Err(e) = peers.save(&inner) {
-                tracing::error!(error = %e, "新配的码写不进去");
+                tracing::error!(error = %e, "配对记录写不进去");
             }
         }
         for name in waiting {

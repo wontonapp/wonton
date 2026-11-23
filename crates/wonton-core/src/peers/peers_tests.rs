@@ -27,10 +27,10 @@ use wonton_tunnel::federation::{
     FEDERATION_ALPN, FederationForwarder, FederationProtocol, PeerStates,
     PeerStatus as TunnelPeerStatus, ServerLookup,
 };
-use wonton_tunnel::peer_pair::{PEER_PAIR_ALPN, PeerIdentity, deliver_decision};
+use wonton_tunnel::peer_pair::{PEER_PAIR_ALPN, PeerCertificate, PeerIdentity, deliver_decision};
 use wonton_tunnel::relays::RelayTable;
 
-use super::{OwnIdentity, OwnerNotices, PeerRequest, Peers};
+use super::{OwnIdentity, OwnerNotices, PeerEntry, PeerRequest, Peers, PinState};
 use crate::device::Devices;
 use crate::members::Members;
 
@@ -39,6 +39,22 @@ use crate::tunnel::Tunnel;
 
 /// 等待异步事件的上限。
 const WAIT: Duration = Duration::from_secs(15);
+
+/// 生成一张自签叶证书，当作配对时互换的那张（真实 DER，指纹现算）。
+fn certificate(name: &str) -> PeerCertificate {
+    let key = rcgen::KeyPair::generate().unwrap();
+    let params = rcgen::CertificateParams::new(vec![name.to_owned()]).unwrap();
+    PeerCertificate::from_der(params.self_signed(&key).unwrap().der().to_vec()).unwrap()
+}
+
+/// 一台记录上钉着的证书，按钉的顺序。
+fn pins(peers: &Peers, server_name: &str) -> Vec<PeerCertificate> {
+    peers.lock().peers[server_name]
+        .peer_pin
+        .iter()
+        .map(|pin| pin.certificate.clone())
+        .collect()
+}
 
 /// 私聊里的提醒：测试里只记下内容，写入时叫醒等待者。
 #[derive(Debug, Default)]
@@ -164,6 +180,12 @@ impl TestCore {
         self.wait_for(|core| core.peers.lookup(server_name).is_some(), "配对成立")
             .await;
         self.peers.lookup(server_name).expect("刚等到的配对").0
+    }
+
+    /// 接上本机证书：配对成立后会发给对方。
+    fn set_certificate(&self, certificate: PeerCertificate) {
+        self.peers
+            .set_own_certificate(Arc::new(move || Some(certificate.clone())));
     }
 
     /// 等到 `server_name` 的记录消失。
@@ -663,6 +685,9 @@ async fn pending_rows_do_not_expire() {
         paired_at_ms: 0,
         phase: super::Phase::AwaitingPeer,
         last_connected_ms: None,
+        peer_pin: Vec::new(),
+        peer_entry: PeerEntry::None,
+        pin_state: PinState::default(),
     };
     std::fs::write(
         &path,
@@ -706,4 +731,140 @@ async fn pending_rows_do_not_expire() {
         .find(|row| row.server_name == "late.example.internal")
         .expect("还在等的记录照旧列出");
     assert_eq!(row.status, PeerStatus::AwaitingApproval);
+}
+
+/// 配对成立时记成待钉、窗口从当前核心版本起算；证书一到就钉，回执后只留最新一张，删配对时 pin 一起没。
+#[tokio::test]
+async fn pins_start_pending_and_follow_certificates() {
+    let a = TestCore::start("Alex", "a.example.internal").await;
+    let mut b = TestCore::start("Alice", "b.example.internal").await;
+    pair(&a, &b).await;
+
+    let pending = PinState::Pending {
+        since_version: crate::build_info::version().to_owned(),
+    };
+    for core in [&a, &b] {
+        let inner = core.peers.lock();
+        let record = inner.peers.values().next().unwrap();
+        assert_eq!(record.pin_state, pending);
+        assert!(record.peer_pin.is_empty());
+        assert_eq!(record.peer_entry, PeerEntry::None);
+    }
+
+    let first = certificate("a.example.internal");
+    let second = certificate("a.example.internal");
+    b.peers.on_certificate(a.id_endpoint(), &first, false);
+    b.peers.on_certificate(a.id_endpoint(), &second, false);
+    assert_eq!(
+        pins(&b.peers, "a.example.internal"),
+        vec![first.clone(), second.clone()]
+    );
+    assert_eq!(
+        b.peers.lock().peers["a.example.internal"].pin_state,
+        PinState::Pinned
+    );
+
+    // 对方回执了我们最新的那张：旧的丢掉。
+    b.peers.on_certificate(a.id_endpoint(), &second, true);
+    assert_eq!(pins(&b.peers, "a.example.internal"), vec![second.clone()]);
+
+    // 不是已配对的 endpoint 发来的证书不落盘。
+    b.peers.on_certificate(
+        SecretKey::generate().public(),
+        &certificate("other.example.internal"),
+        false,
+    );
+    assert_eq!(pins(&b.peers, "a.example.internal"), vec![second.clone()]);
+
+    // 钉住的证书落盘，重启后还在。
+    let (reopened, _) = b.reopen().await;
+    assert_eq!(pins(&reopened, "a.example.internal"), vec![second.clone()]);
+
+    // 删配对：记录连着 pin 一起删，文件里也不留。
+    reopened.remove("a.example.internal").await.unwrap();
+    assert!(!reopened.lock().peers.contains_key("a.example.internal"));
+    assert!(
+        !std::fs::read_to_string(b.store_path())
+            .unwrap()
+            .contains("spki_sha256")
+    );
+}
+
+/// 老版本写的记录没有 pin 相关字段：读成待钉、没有入口，窗口起点补上当前核心版本并落盘。
+#[tokio::test]
+async fn old_records_read_as_pending_on_the_current_version() {
+    let mut a = TestCore::start("Alex", "a.example.internal").await;
+    let record = legacy_record(&SecretKey::generate().public().to_string());
+    std::fs::write(
+        a.store_path(),
+        serde_json::json!({"peers": {"old.example.internal": record}}).to_string(),
+    )
+    .unwrap();
+
+    let (reopened, _) = a.reopen().await;
+    let inner = reopened.lock();
+    let record = &inner.peers["old.example.internal"];
+    assert_eq!(
+        record.pin_state,
+        PinState::Pending {
+            since_version: crate::build_info::version().to_owned(),
+        }
+    );
+    assert!(record.peer_pin.is_empty());
+    assert_eq!(record.peer_entry, PeerEntry::None);
+    drop(inner);
+
+    let stored: serde_json::Value =
+        serde_json::from_str(&std::fs::read_to_string(a.store_path()).unwrap()).unwrap();
+    assert_eq!(
+        stored["peers"]["old.example.internal"]["pin_state"]["pending"]["since_version"],
+        crate::build_info::version()
+    );
+}
+
+/// 老版本写的记录形状（没有 peer_pin、peer_entry、pin_state）。
+fn legacy_record(endpoint_id: &str) -> serde_json::Value {
+    serde_json::json!({
+        "server_name": "old.example.internal",
+        "endpoint_id": endpoint_id,
+        "relays": [],
+        "addrs": [],
+        "owner_user_id": "@alex:old.example.internal",
+        "owner_display_name": "Alex",
+        "paired_at_ms": 1,
+        "phase": "paired",
+    })
+}
+
+/// 两边都接了本机证书：配对成立后自动互换、钉住、回执，各留对方一张，状态转成已钉。
+#[tokio::test]
+async fn pairing_exchanges_certificates() {
+    let a = TestCore::start("Alex", "a.example.internal").await;
+    let b = TestCore::start("Alice", "b.example.internal").await;
+    let a_certificate = certificate("a.example.internal");
+    let b_certificate = certificate("b.example.internal");
+    a.set_certificate(a_certificate.clone());
+    b.set_certificate(b_certificate.clone());
+    pair(&a, &b).await;
+
+    a.wait_for(
+        |core| !pins(&core.peers, "b.example.internal").is_empty(),
+        "对方证书送到",
+    )
+    .await;
+    b.wait_for(
+        |core| !pins(&core.peers, "a.example.internal").is_empty(),
+        "对方证书送到",
+    )
+    .await;
+    assert_eq!(pins(&a.peers, "b.example.internal"), vec![b_certificate]);
+    assert_eq!(pins(&b.peers, "a.example.internal"), vec![a_certificate]);
+    assert_eq!(
+        a.peers.lock().peers["b.example.internal"].pin_state,
+        PinState::Pinned
+    );
+    assert_eq!(
+        b.peers.lock().peers["a.example.internal"].pin_state,
+        PinState::Pinned
+    );
 }
