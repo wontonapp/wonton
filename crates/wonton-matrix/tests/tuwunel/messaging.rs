@@ -105,7 +105,7 @@ async fn an_image_over_the_upload_limit_is_refused_as_invalid_input() {
         height: Some(3072),
         thumbnail: None,
     };
-    let refused = room.send_image(photo).await;
+    let refused = room.send_image(photo, None).await;
     assert!(
         matches!(refused, Err(Error::InvalidInput(_))),
         "超过上限的图片：{refused:?}"
@@ -352,7 +352,7 @@ async fn send_and_receive_image(
     (receiver, to): (&MatrixSession, &ChatRoom),
     upload: ImageUpload,
 ) {
-    from.send_image(upload.clone()).await.expect("发图片");
+    from.send_image(upload.clone(), None).await.expect("发图片");
     let image = eventually(
         "对方收到图片",
         to.message_updates().await,

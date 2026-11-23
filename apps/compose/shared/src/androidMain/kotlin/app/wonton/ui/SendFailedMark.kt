@@ -15,6 +15,7 @@ import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.semantics.Role
 import androidx.compose.ui.semantics.contentDescription
 import androidx.compose.ui.semantics.semantics
+import app.wonton.protocol.SendFailure
 import app.wonton.protocol.SendState
 import app.wonton.ui.design.WontonActionSheet
 import app.wonton.ui.design.WontonSheetAction
@@ -24,7 +25,7 @@ import app.wonton.ui.icons.Refresh
 import app.wonton.ui.icons.Trash
 import app.wonton.ui.icons.WontonIcon
 
-/** 气泡旁的红色感叹号：点开选重发或删除，原因念给读屏。 */
+/** 气泡旁的红色感叹号：点开选重发或删除。讲类别给读屏；核心还分不出类别（`Other`）时讲原文。 */
 @Composable
 internal fun FailedMark(state: SendState.Failed, onRetry: () -> Unit, onCancel: () -> Unit) {
     var choosing by remember { mutableStateOf(false) }
@@ -32,7 +33,7 @@ internal fun FailedMark(state: SendState.Failed, onRetry: () -> Unit, onCancel: 
     val text = if (state.recoverable) {
         stringResource(R.string.timeline_send_failed_retrying)
     } else {
-        stringResource(R.string.timeline_send_failed, state.message)
+        state.details.takeIf { state.failure == SendFailure.OTHER } ?: stringResource(state.failure.text)
     }
     Box(
         Modifier.size(WontonTheme.size.iconSmall).clickable(role = Role.Button) { choosing = true }
@@ -50,7 +51,7 @@ internal fun FailedMark(state: SendState.Failed, onRetry: () -> Unit, onCancel: 
                 ),
             ),
             { choosing = false },
+            title = state.details,
         )
     }
 }
-

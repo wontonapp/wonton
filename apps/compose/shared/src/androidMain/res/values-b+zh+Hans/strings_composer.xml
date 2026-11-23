@@ -40,4 +40,9 @@
     <string name="composer_commands">命令</string>
     <!-- 命令菜单末尾：某个 Bot 还有几条没有列出。参数：条数。 -->
     <string name="composer_commands_more">还有 %1$d 条命令没列出</string>
+    <!-- 附件格式服务器发不了时的说明行。无参数。 -->
+    <string name="composer_attachment_unsupported_type">这个格式传不上去</string>
+    <!-- 要回复的那条不在了、回复被去掉时的说明行。无参数。 -->
+    <string name="composer_attachment_reply_target">要回复的那条不在了，去掉回复</string>
+
 </resources>

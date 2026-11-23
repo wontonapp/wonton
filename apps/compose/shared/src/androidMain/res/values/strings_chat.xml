@@ -43,8 +43,6 @@
     <string name="timeline_sending">Saved, not delivered yet</string>
     <!-- Footer label of a message that failed but retries by itself. No arguments. -->
     <string name="timeline_send_failed_retrying">Not sent, retrying</string>
-    <!-- Footer label of a message that failed for good. Argument: the core's reason. -->
-    <string name="timeline_send_failed">Not sent: %1$s</string>
     <!-- Action that sends a failed message again. No arguments; short label. -->
     <string name="timeline_resend">Send again</string>
     <!-- Body placeholder of a message this device can't decrypt. No arguments. -->
@@ -190,4 +188,18 @@
     <string name="timeline_typing_more">%1$s and %2$d more are typing…</string>
     <!-- Light hint when the jumped-to message can't be found. No arguments. -->
     <string name="timeline_jump_unavailable">That message isn\'t here anymore</string>
+    <!-- Footer beside a failed message when the connection is down. No arguments. -->
+    <string name="timeline_send_failure_offline">Not connected</string>
+    <!-- Footer beside a failed message when the file is over the server's upload limit. No arguments. -->
+    <string name="timeline_send_failure_too_large">Too large, send it as a file</string>
+    <!-- Footer beside a failed message when the server can't take this format. No arguments. -->
+    <string name="timeline_send_failure_unsupported_type">This format can\'t be sent</string>
+    <!-- Footer beside a failed message when the quoted message is gone. No arguments. -->
+    <string name="timeline_send_failure_reply_target">The quoted message is gone</string>
+    <!-- Footer beside a failed message when the home server refuses it. No arguments. -->
+    <string name="timeline_send_failure_rejected">Your server refused it</string>
+    <!-- Footer beside a failed message when the home server errors. No arguments. -->
+    <string name="timeline_send_failure_upstream">Server problem</string>
+    <!-- Footer beside a failed message whose kind the core can't classify yet. No arguments; the raw reason replaces it when there is one. -->
+    <string name="timeline_send_failure_other">Send failed</string>
 </resources>

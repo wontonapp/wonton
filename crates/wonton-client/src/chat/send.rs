@@ -160,6 +160,7 @@ impl ChatLink {
         self: &Arc<Self>,
         key: &TimelineKey,
         image: ImageUpload,
+        caption: Option<&str>,
         reply_to: Option<&str>,
     ) -> Result<(), CoreError> {
         if !image.mime_type.starts_with("image/") {
@@ -175,7 +176,9 @@ impl ChatLink {
         let sent = self.sent.clone();
         self.send_target(key.room_id.as_str())?;
         let key = key.clone();
+        let draft_key = key.clone();
         let sent_room = key.room_id.to_string();
+        let caption = caption.map(ToOwned::to_owned);
         let upload = wonton_matrix::ImageUpload {
             filename: image.filename,
             mime_type: image.mime_type,
@@ -195,13 +198,23 @@ impl ChatLink {
             "chat-op-send-image-failed",
             async move {
                 let room = chat.room(&key).await?;
+                let mut replied_to = None;
                 match reply_to {
                     Some(event_id) => {
-                        room.send_image_reply(upload, &event_id).await?;
-                        // 图片不带输入框里的字，草稿的正文留着，回复对象用掉了。
-                        chat.enqueue_draft(DraftWrite::ForgetReply(key, event_id));
+                        room.send_image_reply(upload, caption.as_deref(), &event_id)
+                            .await?;
+                        replied_to = Some(event_id);
                     }
-                    None => room.send_image(upload).await?,
+                    None => room.send_image(upload, caption.as_deref()).await?,
+                }
+                // 说明跟着图片走了，清掉草稿；没有说明时只把回复对象用掉。
+                match caption {
+                    Some(caption) => chat.enqueue_draft(DraftWrite::Forget(draft_key, caption)),
+                    None => {
+                        if let Some(event_id) = replied_to {
+                            chat.enqueue_draft(DraftWrite::ForgetReply(draft_key, event_id));
+                        }
+                    }
                 }
                 Ok(())
             },

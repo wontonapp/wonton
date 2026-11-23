@@ -228,14 +228,18 @@ fn timeline_message(
     let body = message_content(message.body, message.is_own, links);
     let event_id = message.event_id.map(|id| id.to_string());
     let sender_id = message.sender.to_string();
-    let actions = message_actions(&body, event_id.as_deref(), message.can_redact, |event_id| {
-        QuotedMessage {
+    let actions = message_actions(
+        &body,
+        event_id.as_deref(),
+        message.can_redact,
+        message.is_own,
+        |event_id| QuotedMessage {
             event_id,
             sender_id: sender_id.clone(),
             sender_name: message.sender_name.clone(),
             content: quoted_content(&body),
-        }
-    });
+        },
+    );
     let send_state = send_state(message.status);
     TimelineMessage {
         event_id,
@@ -281,7 +285,8 @@ fn send_state(status: SendStatus) -> SendState {
         },
         SendStatus::Sent => SendState::Sent,
         SendStatus::Failed { error, recoverable } => SendState::Failed {
-            message: error,
+            failure: wonton_protocol::SendFailure::Other,
+            details: Some(error),
             recoverable,
         },
     }
