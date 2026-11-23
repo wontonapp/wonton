@@ -170,6 +170,6 @@
     <!-- 家裡伺服器出錯時失敗訊息旁的腳註。無參數。 -->
     <string name="timeline_send_failure_upstream">伺服器出錯了</string>
     <!-- 核心還分不出類別的失敗訊息旁的腳註。無參數；有原文時換成原文。 -->
-    <string name="timeline_send_failed_other">傳送失敗</string>
+    <string name="timeline_send_failure_other">傳送失敗</string>
 
 </resources>

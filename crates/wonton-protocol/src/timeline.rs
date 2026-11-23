@@ -94,7 +94,7 @@ pub struct TimelineUpdate {
     /// 回到这里，为空时才滚到底。壳报告回到底部（[`TimelineScroll::Bottom`]）后核心清空。
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub back_to: Option<String>,
-    /// 输入框正在编辑哪条（ADR-0109 第 9 节），每一批都带当前值。有值时输入框上方画一条“编辑消息”和原文摘要、
+    /// 输入框正在编辑哪条（ADR-0109 第 10 节），每一批都带当前值。有值时输入框上方画一条“编辑消息”和原文摘要、
     /// 带取消，发送键变成确认；正文由壳从 [`MessageAction::Edit`] 的 `text` 预填，原草稿在取消后由核心恢复。
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub editing: Option<crate::ComposerEdit>,
@@ -358,7 +358,7 @@ pub enum MessageAction {
     Forward,
     /// 撤回（[`TimelineAction::RedactMessage`](crate::TimelineAction::RedactMessage)）：所有人那里都会变成“已撤回”，壳先请主人确认。
     Redact,
-    /// 编辑这条（ADR-0109 第 9 节）：壳先发 [`TimelineAction::StartEdit`](crate::TimelineAction::StartEdit)，核心存下当前草稿；
+    /// 编辑这条（ADR-0109 第 10 节）：壳先发 [`TimelineAction::StartEdit`](crate::TimelineAction::StartEdit)，核心存下当前草稿；
     /// 收到 [`TimelineUpdate::editing`](crate::TimelineUpdate::editing) 后壳再把 `text` 填进输入框、光标放在末尾、上方画编辑条。
     /// 取消后壳用 [`ClientCore::draft`](crate::ClientCore::draft) 重读核心恢复的草稿。确认时发
     /// [`TimelineAction::EditMessage`](crate::TimelineAction::EditMessage)。

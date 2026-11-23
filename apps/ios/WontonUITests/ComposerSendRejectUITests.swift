@@ -25,8 +25,8 @@ final class ComposerSendRejectUITests: XCTestCase {
     func testRejectedSendKeepsDraftReplyAndAttachment() {
         tap(app.buttons[Self.directRoom])
         XCTAssertTrue(message(3).waitForExistence(timeout: 10), "时间线没出来\n\(app.debugDescription)")
-        addFailedAttachment()
         startReply()
+        addFailedAttachment()
         let field = app.textViews["Message"]
         field.tap()
         field.typeText(Self.draft)
@@ -40,8 +40,8 @@ final class ComposerSendRejectUITests: XCTestCase {
         XCTAssertTrue(app.buttons["composerAttachmentFailed"].exists, "被拒以后附件没了")
         XCTAssertFalse(text(Self.draft).exists, "被拒了消息还是发了")
 
-        tap(app.buttons["OK"])
-        XCTAssertTrue(reason.waitForNonExistence(timeout: 5), "点了“好”，说明没收起")
+        tap(app.buttons["composerRejectionClose"])
+        XCTAssertTrue(reason.waitForNonExistence(timeout: 5), "点了关闭，说明没收起")
         screenshot("kept")
         // 删掉失败的附件再发：这次核心收下，输入框和回复条才清。
         tap(app.buttons.matching(NSPredicate(format: "label BEGINSWITH %@", "Remove ")).firstMatch)
@@ -62,7 +62,8 @@ final class ComposerSendRejectUITests: XCTestCase {
         let first = app.buttons["attachPhoto.0"]
         if allow.waitForExistence(timeout: 10) { allow.tap() }
         tap(first)
-        tap(app.buttons["attachDone"])
+        tap(app.buttons["attachSend"])
+        XCTAssertTrue(app.buttons["attachSend"].waitForNonExistence(timeout: 5), "选完照片面板没收起")
         XCTAssertTrue(
             app.buttons["composerAttachmentFailed"].waitForExistence(timeout: 15),
             "附件没被标成上传失败\n\(app.debugDescription)"
@@ -71,6 +72,7 @@ final class ComposerSendRejectUITests: XCTestCase {
 
     /// 左滑一条消息进入回复。
     private func startReply() {
+        XCTAssertTrue(message(3).waitForExistence(timeout: 10), "时间线里的消息不见了")
         let start = message(3).coordinate(withNormalizedOffset: CGVector(dx: 0.5, dy: 0.5))
         start.press(
             forDuration: 0.05, thenDragTo: start.withOffset(CGVector(dx: -160, dy: 0)),

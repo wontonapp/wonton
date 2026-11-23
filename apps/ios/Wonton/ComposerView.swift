@@ -195,10 +195,10 @@ struct ComposerView: View {
         afterAttach = nil
     }
 
-    /// 附件面板里选好照片点了发送：照片和附言（就是草稿）作为一次发出去（ADR-0109 第 9 节）。主对话里照片先进附件区，
-    /// 再和发送键走同一条路（`SendComposer`），附件区里原有的附件也一起走；旁聊没有附件区，照片一张张直接发，附言跟在后面
-    /// （ADR-0093）。取字节的这段时间（比如 iCloud 原图下不下来）发送键那一格转圈；发出去了、草稿也还是派出时那句才清，
-    /// 被拒或者等的功夫又打了字都留着，回复对象跟着草稿留。
+    /// 附件面板里选好照片点了发送：照片和附言（就是草稿）作为一次发出去（ADR-0109 第 10 节）。主对话里照片先进附件区，
+    /// 再和发送键走同一条路（`SendComposer`），附件区里原有的附件也一起走；旁聊没有附件区，照片一张张直接发，附言只当
+    /// 第一张试过的照片的说明（ADR-0093）。取字节的这段时间（比如 iCloud 原图下不下来）发送键那一格转圈；发出去了、
+    /// 草稿也还是派出时那句才清，被拒或者等的功夫又打了字都留着，回复对象跟着草稿留。
     private func sendPicked(_ assets: [PHAsset]) async {
         pin.pin()
         isSendingAttachment = true
@@ -206,6 +206,7 @@ struct ComposerView: View {
         let original = draft.wrappedValue
         let caption = original.trimmingCharacters(in: .whitespacesAndNewlines)
         var replyTo = model.replies[draftKey]?.eventId
+        var pendingCaption = caption
         var allSent = true
         for asset in assets {
             guard let (data, type) = await PhotoLibrary.data(asset) else {
@@ -216,7 +217,10 @@ struct ComposerView: View {
                 continue
             }
             if isSideChat {
-                if await composer.sendImage(data, type, caption: caption, replyTo: replyTo) {
+                // 第一张试过的照片带走附言；被拒也不留给后面的（和 Android 一样）。
+                let photoCaption = pendingCaption
+                pendingCaption = ""
+                if await composer.sendImage(data, type, caption: photoCaption, replyTo: replyTo) {
                     replyTo = nil
                 } else {
                     allSent = false
@@ -225,16 +229,15 @@ struct ComposerView: View {
                 await composer.addImage(data, type)
             }
         }
-        // 旁聊里的附言跟着照片走：有一张没发出去就先不单发附言，留着下次和草稿一起发。
         guard allSent else { return }
-        let action: TimelineAction? = if !isSideChat {
-            .sendComposer(target: composer.target, body: caption, replyTo: replyTo)
-        } else if !caption.isEmpty {
-            .sendText(target: composer.target, body: caption, replyTo: replyTo)
-        } else {
-            nil
+        if isSideChat {
+            // 附言已经跟着第一张走了，不再单发一条。
+            if draft.wrappedValue == original { draft.wrappedValue = "" }
+            model.cancelReply(in: composer.target)
+            return
         }
-        guard let action, model.send(.timeline(action: action)) else { return }
+        let action = TimelineAction.sendComposer(target: composer.target, body: caption, replyTo: replyTo)
+        guard model.send(.timeline(action: action)) else { return }
         if draft.wrappedValue == original { draft.wrappedValue = "" }
         model.cancelReply(in: composer.target)
     }

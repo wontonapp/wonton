@@ -1,12 +1,20 @@
-# chat-802-r3：#802 按复审改（已 rebase origin/main 5bb792f1a）
+# chat-802-r3：#802 第二轮复审（6335d7e9）
 
-分支 feat/chat-edit-typing-proto，单提交（head 见 git log），已推。
+分支 feat/chat-edit-typing-proto。远端已被叠到最新 main 6dbdcfa9 并加了 clippy 拆分提交；本地先 reset 到远端头再改。
 
-复审 1-3 全部落地，其它项也照做：
-- `SendState::Failed::details` 加 `#[serde(alias = "message")]`；`failure == Other` 且有 `details` 时两个壳的气泡旁文案/读屏都用原文，面板标题仍是原文；`failed_without_a_failure_still_parses` 拆成“旧 message 进 details”和“缺 failure 也能解析”两条。
-- iOS `TimelineRow` 拆成 `label`（类别，Other 有 details 时用原文）和面板标题（details）；`OutgoingRow` 同样。
-- 跨二进制：`SendImage.caption` 挪到 `reply_to` 后，`MessageAction::Edit` 挪到 `Redact` 后，四个新 `TimelineAction` 追加到最后一个动作之后；两处枚举补了“只追加在末尾”的注释。
-- 正文口径改对：旁聊 caption 已接矩阵；菜单 Edit 两壳都跳过、用户看不见；状态行选项是纯接口；未生产者的类别写明下一条接。验证里加了正在输入到核心真实分支的用例。
-- send_state.rs 模块注释第 10 节改第 9 节；Composer.kt 注释改“第一张试过的照片”；九条新 Android 字符串四种语言都补了注释。
+这轮：
+- ADR 0109 把视觉规格留在第 9 节、编辑/贴图/失败挪成第 10 节（标题“编辑消息、贴图和发送失败”）；protocol 里六处引用改第 10 节，`SetTyping` 改第 8 节；ADR:149 补回“点‘编辑’后输入框换成原文”，顺手修“铅笔.、”。
+- §8 写明节流/自动停还没接：本 PR 里 SetTyping 直接转发、失败进 problem，下一条补。
+- 正文补验证结果、`SendState` FFI 不兼容这句、两条没跑的原因；`.done` 重写。
+- iOS 侧聊发图：附言只给第一张试过的照片，不再每张都带再单发一条；旁聊成功后清草稿和回复对象。
+- Android `timeline_send_failed_other` 改名 `timeline_send_failure_other`；`SendFailure.text` 挪进新的 MessageTexts（Kotlin、Swift），不再挂在失败控件文件里。
+- iOS 用例 `ComposerSendRejectUITests` 的旧标识 `attachDone` 改 `attachSend`。
 
-验证结果：见下（红先绿后）。
+验证：SwiftLint strict 通过；iOS build-for-testing 成功；ChatTelegramUITests 19/20；protocol send_state 4 passed；lint 脚本通过。Android/clippy/enum 尺寸、edit_typing it、重跑未拿到名额，正文已注明。
+
+- Android 本机 `detekt :shared:compileAndroidMain`：`BUILD SUCCESSFUL`（第一次 Kotlin 临时目录写失败，重试通过）。
+- `ComposerSendRejectUITests`：1 passed。
+- clippy（protocol/client/matrix，all-targets，-D warnings）：Finished。
+- `chat::edit_typing` it：1 passed。
+
+- enum 尺寸：TIMELINEACTION 9927（限 16384/32768），MESSAGEACTION 1550，其它更小。

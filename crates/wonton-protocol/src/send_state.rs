@@ -1,4 +1,4 @@
-//! 本地回显的发送状态和失败类别（ADR-0109 第 9 节）。
+//! 本地回显的发送状态和失败类别（ADR-0109 第 10 节）。
 
 use serde::{Deserialize, Serialize};
 
