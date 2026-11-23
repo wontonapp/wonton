@@ -117,4 +117,3 @@ x-wonton:
     - network.lan
   requirements:
     arch: [amd64, arm64]
-
