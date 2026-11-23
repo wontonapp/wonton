@@ -796,7 +796,9 @@ impl ClientCore {
             #[cfg(feature = "ui-fake")]
             ui_fake: AtomicBool::new(false),
             #[cfg(feature = "ui-fake")]
-            ui_fake_timelines: ui_fake_timeline::FakeTimelines::default(),
+            ui_fake_timelines: ui_fake_timeline::FakeTimelines::new(
+                scope.handle().expect("scope must be live here"),
+            ),
         });
         let switch: std::sync::Weak<Self> = Arc::downgrade(&core);
         core.matrix_login.bind(switch);
