@@ -431,10 +431,15 @@ async fn a_broken_record_degrades_only_its_own_plugin() {
             if b == "app.broken" && g == "app.good"),
         "{states:?}"
     );
-    // 坏记录不挡别的插件安装，也不参与标签防撞名。
-    m.install_package(example("whoami"), &[], super::langs())
-        .await
-        .unwrap();
+    // 坏记录不挡别的插件安装，也不参与标签防撞名。装没有网页入口的包：装好时的网页确认会真连端口，
+    // CI 上 127.0.0.1:8000 没有服务，带 webui 的示例包会等满时限。
+    m.install(
+        &package("  web:\n    image: nginx", "  permissions: []"),
+        &[],
+        super::langs(),
+    )
+    .await
+    .unwrap();
     assert_eq!(m.list().len(), 3);
     // 主人能卸载这个异常的插件，它的记录文件随之删除。
     let id = PluginId::parse("app.broken").unwrap();
