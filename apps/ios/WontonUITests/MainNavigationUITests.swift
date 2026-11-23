@@ -67,7 +67,7 @@ final class MainNavigationUITests: XCTestCase {
         tap(button("Back"), "详情页的返回键")
         XCTAssertTrue(waitHittable(gear), "详情页点返回没回应用页\n\(app.debugDescription)")
 
-        // 手指落在边缘往里 12 点处也要返回（#685）。
+        // 手指落在离窗口左边约 22 点处（app 坐标 10 点）也要返回（#685）。
         tap(notes, "应用图标")
         XCTAssertTrue(waitGone(gear), "第三次点应用图标没进详情页\n\(app.debugDescription)")
         midEdgeSwipeBack()
@@ -151,7 +151,7 @@ final class MainNavigationUITests: XCTestCase {
         tap(subpageBack, "外观页的返回键")
         XCTAssertTrue(waitHittable(settingsClose), "设置的下一层点返回没返回\n\(app.debugDescription)")
 
-        // 手指实际落点：边缘往里 12 点起手也要返回（#685）。
+        // 手指实际落点：离窗口左边约 22 点（app 坐标 10 点）起手也要返回（#685）。
         tap(appearance, "设置里的外观")
         XCTAssertTrue(waitHittable(subpageBack), "外观页没再次打开\n\(app.debugDescription)")
         midEdgeSwipeBack()
@@ -196,7 +196,7 @@ final class MainNavigationUITests: XCTestCase {
         edgeSwipeBack()
         assertOnChatRoot("聊天页左边缘右滑")
 
-        // 手指落在边缘往里 12 点处也要返回（#685）。
+        // 手指落在离窗口左边约 22 点处（app 坐标 10 点）也要返回（#685）。
         tap(room, "聊天列表里的房间")
         XCTAssertTrue(waitHittable(back), "第三次没进聊天页\n\(app.debugDescription)")
         midEdgeSwipeBack()
