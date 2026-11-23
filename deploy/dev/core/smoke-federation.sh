@@ -68,13 +68,19 @@ stack() { # stack a|b <dev.sh 的参数…>
 }
 
 logs() {
+  docker logs "$project_a" >"$state/core-a.full.log" 2>&1 || true
+  docker logs "$project_b" >"$state/core-b.full.log" 2>&1 || true
   docker logs --tail 80 "$project_a" >"$state/core-a.log" 2>&1 || true
   docker logs --tail 80 "$project_b" >"$state/core-b.log" 2>&1 || true
+  # 联邦的红通常在 Tuwunel 一侧（握手、签名），核心日志只有它转回来的 502。
+  docker logs "$project_a-tuwunel-1" >"$state/tuwunel-a.log" 2>&1 || true
+  docker logs "$project_b-tuwunel-1" >"$state/tuwunel-b.log" 2>&1 || true
 }
 
 stop_stacks() {
   (( stopped )) && return 0
   stopped=1
+  docker unpause "$project_a" "$project_b" >/dev/null 2>&1 || true
   if [[ -n "${WONTON_FED_KEEP:-}" ]]; then
     echo "保留两栈：${env_a[*]} \"$dev\" reset；$slot release $project_a（B 同理）" >&2
     return 0
@@ -84,6 +90,17 @@ stop_stacks() {
   stack b reset >/dev/null 2>&1 || true
   (( held_a )) && "$slot" release "$project_a" >/dev/null 2>&1 || true
   (( held_b )) && "$slot" release "$project_b" >/dev/null 2>&1 || true
+  purge "$project_a"
+  purge "$project_b"
+}
+
+# dev.sh reset 之后还剩下的同名资源（栈起了一半、reset 中途失败时会有）：按 compose 项目标签删掉。
+purge() {
+  docker ps -aq --filter "label=com.docker.compose.project=$1" | xargs -r docker rm -f >/dev/null 2>&1 || true
+  docker volume ls -q --filter "label=com.docker.compose.project=$1" |
+    xargs -r docker volume rm >/dev/null 2>&1 || true
+  docker network ls -q --filter "label=com.docker.compose.project=$1" |
+    xargs -r docker network rm >/dev/null 2>&1 || true
 }
 
 cleanup() {
@@ -93,6 +110,10 @@ cleanup() {
   exit "$status"
 }
 trap cleanup EXIT
+
+# 先编好驱动再出码：码 10 分钟就过期，而排 cargo 名额可能更久。出码之后只剩一次增量编译，几百毫秒。
+nice -n 19 "$HOME/wonton-dev/cargo-slot.sh" cargo build -p wonton-client \
+  --example "$driver_example" --target-dir "$root/target"
 
 # 名额按名字排：先占 A 再占 B，任何一个拿不到都只放已经拿到的。
 "$slot" acquire --project "$project_a" "$project_a"
@@ -107,6 +128,20 @@ export WONTON_DEV_CORE_SUBNET
 stack b up
 unset WONTON_DEV_CORE_SUBNET
 
+# 容器里 `*.wonton.localhost` 由 Docker 的 DNS 解析成 `::1`/`127.0.0.1`，Tuwunel 会把发往对方的联邦请求
+# 发回自己，核心的出站 CONNECT 代理根本收不到。把对方域名写进本栈 Tuwunel 的 extra_hosts 指到本栈核心：
+# 解析成功的地址只用来建连接，真正去哪由核心按 CONNECT 里的名字转；只重建 Tuwunel，不动网络。
+peer_host() { # <side> <对方的域名>
+  local project ip
+  if [[ "$1" == a ]]; then project="$project_a"; else project="$project_b"; fi
+  ip="$(docker inspect -f "{{(index .NetworkSettings.Networks \"${project}_core\").IPAddress}}" "$project")"
+  export WONTON_DEV_TUWENEL_PEER="$2:$ip"
+  stack "$1" up
+}
+peer_host a "$domain_b"
+peer_host b "$domain_a"
+unset WONTON_DEV_TUWENEL_PEER
+
 code() { # code a|b
   local file="$state/$1.code" code
   stack "$1" pair >"$file" 2>&1
@@ -115,17 +150,14 @@ code() { # code a|b
   printf '%s\n' "$code" >"$file"
 }
 echo "A http://$domain_a:$port_a  B http://$domain_b:$port_b"
-# 先编好驱动再出码：码 10 分钟就过期，而排 cargo 名额可能更久。出码之后只剩一次增量编译，几百毫秒。
-nice -n 19 "$HOME/wonton-dev/cargo-slot.sh" cargo build -p wonton-client \
-  --example "$driver_example" --target-dir "$root/target"
 
 code a
 code b
 stack a token >"$state/a.token"
 stack b token >"$state/b.token"
 set +e
-nice -n 19 "$HOME/wonton-dev/cargo-slot.sh" cargo run -p wonton-client --example "$driver_example" \
-  --target-dir "$root/target" -- \
+# 直接跑编好的二进制：再经 cargo 会重新排队领名额，而配对码 10 分钟就过期。
+"$root/target/debug/examples/$driver_example" \
   --a-dir "$state/a/client" --b-dir "$state/b/client" \
   --a-code-file "$state/a.code" --b-code-file "$state/b.code" \
   --a-api "http://$domain_a:$port_a" --b-api "http://$domain_b:$port_b" \
@@ -141,6 +173,16 @@ if (( driver != 0 )); then
   for file in "$state/core-a.log" "$state/core-b.log"; do
     echo "== ${file##*/} 末尾" >&2
     tail -60 "$file" >&2 || true
+  done
+  # C2/C3 的红要看联邦投递：把两份完整日志里和联邦、8448 有关的行摘出来。
+  for file in "$state"/core-*.full.log; do
+    echo "== ${file##*/} 里的联邦行" >&2
+    grep -E 'federat|8448|8008|handshake|peer|signature|not paired|public' "$file" |
+      tail -40 >&2 || true
+  done
+  for file in "$state"/tuwunel-*.log; do
+    echo "== ${file##*/} 里的握手/联邦行" >&2
+    grep -iE 'tls|cert|handshake|federat|8448|502|fail' "$file" | tail -40 >&2 || true
   done
 fi
 counts="$(awk '/^STEP .*: PASS/{p++} /^STEP .*: FAIL/{f++} END{print p+0, f+0}' "$state/driver.log")"

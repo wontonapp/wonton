@@ -31,10 +31,35 @@ use wonton_client::{
 /// 等一件事的上限。离线补到的窗口按研究定成 120 秒，其余步骤用同一个上限。
 const WAIT: Duration = Duration::from_secs(120);
 
+/// 开发栈的域名（`*.wonton.localhost`）解析时先给 `::1`，栈只把端口发布在 `127.0.0.1`：连 IPv4，
+/// 原来的 host:port 放进显式 `Host` 头，网关照样按它选路。
+fn route(api: &str) -> (String, Option<String>) {
+    let api = api.trim_end_matches('/').to_owned();
+    let Some((scheme, rest)) = api.split_once("://") else {
+        return (api, None);
+    };
+    let (authority, path) = match rest.find('/') {
+        Some(cut) => (&rest[..cut], &rest[cut..]),
+        None => (rest, ""),
+    };
+    let Some((host, port)) = authority.rsplit_once(':') else {
+        return (api, None);
+    };
+    if !host.ends_with(".localhost") {
+        return (api, None);
+    }
+    (
+        format!("{scheme}://127.0.0.1:{port}{path}"),
+        Some(authority.to_owned()),
+    )
+}
+
 struct End {
     core: Arc<ClientCore>,
     name: &'static str,
     api: String,
+    /// 网关按 Host 选路：连接改用 IPv4 的 127.0.0.1 时，这个头保留栈原来的域名和端口。
+    host: Option<String>,
     token: String,
     http: reqwest::Client,
 }
@@ -45,13 +70,18 @@ impl End {
             .unwrap_or_else(|error| panic!("{name} 读令牌 {token_file}: {error}"))
             .trim()
             .to_owned();
+        let (api, host) = route(api);
         Self {
             core: ClientCore::new(dir.to_owned())
                 .unwrap_or_else(|error| panic!("{name} 建客户端: {error}")),
             name,
-            api: api.trim_end_matches('/').to_owned(),
+            api,
+            host,
             token,
-            http: reqwest::Client::new(),
+            http: reqwest::Client::builder()
+                .no_proxy()
+                .build()
+                .expect("建 HTTP 客户端"),
         }
     }
 
@@ -86,6 +116,9 @@ impl End {
             .timeout(WAIT)
             .header("Authorization", format!("Bearer {}", self.token))
             .header("X-Wonton-Clients", "1");
+        if let Some(host) = &self.host {
+            request = request.header(reqwest::header::HOST, host);
+        }
         if let Some(body) = body {
             request = request.json(body);
         }
@@ -588,27 +621,74 @@ async fn main() {
             b.peers_until("出码", |view| view.code.clone().map(|_| ()))
                 .await?;
             let code = b.peers().code.clone().expect("刚等到的码").code.clone();
-            a.dispatch(Action::Peers {
-                action: PeerAction::ScanPeerCode { code },
-            })?;
-            b.peers_until("收到配对请求", |view| {
-                (!view.requests.is_empty()).then_some(())
-            })
-            .await?;
-            let id = b.peers().requests[0].id.clone();
-            b.dispatch(Action::Peers {
-                action: PeerAction::ApprovePeerRequest { id },
-            })?;
-            for (end, server) in [(&a, b_server.as_str()), (&b, a_server.as_str())] {
-                end.peers_until("配对成立", |view| {
-                    view.peers
-                        .iter()
-                        .any(|peer| {
-                            peer.server_name == server && peer.status == PeerStatus::Connected
-                        })
-                        .then_some(())
-                })
-                .await?;
+            // iroh 的握手偶尔慢或第一次就失败：B 没收到请求就隔 10 秒再扫，重试算在同一个 WAIT 里。
+            let deadline = Instant::now() + WAIT;
+            loop {
+                a.dispatch(Action::Peers {
+                    action: PeerAction::ScanPeerCode { code: code.clone() },
+                })?;
+                let tried = tokio::time::timeout(
+                    Duration::from_secs(10),
+                    b.peers_until("收到配对请求", |view| {
+                        (!view.requests.is_empty()).then_some(())
+                    }),
+                )
+                .await;
+                match tried {
+                    Ok(result) => {
+                        result?;
+                        break;
+                    }
+                    Err(_) if Instant::now() < deadline => {}
+                    Err(_) => {
+                        return Err(format!("{} 120 秒没收到配对请求：{:#?}", b.name, b.peers()));
+                    }
+                }
+            }
+            // 同意以后也可能建不起连（iroh 握手第一下失败）：没连上就再扫一次码、再同意，仍在同一个 WAIT 里。
+            let deadline = Instant::now() + WAIT;
+            loop {
+                if let Some(request) = b.peers().requests.first() {
+                    b.dispatch(Action::Peers {
+                        action: PeerAction::ApprovePeerRequest {
+                            id: request.id.clone(),
+                        },
+                    })?;
+                }
+                let mut waiting = false;
+                for (end, server) in [(&a, b_server.as_str()), (&b, a_server.as_str())] {
+                    let tried = tokio::time::timeout(
+                        Duration::from_secs(10),
+                        end.peers_until("配对成立", |view| {
+                            view.peers
+                                .iter()
+                                .any(|peer| {
+                                    peer.server_name == server
+                                        && peer.status == PeerStatus::Connected
+                                })
+                                .then_some(())
+                        }),
+                    )
+                    .await;
+                    match tried {
+                        Ok(Ok(())) => {}
+                        Ok(Err(error)) => return Err(error),
+                        Err(_) => waiting = true,
+                    }
+                }
+                if !waiting {
+                    break;
+                }
+                if Instant::now() >= deadline {
+                    return Err(format!(
+                        "120 秒没配对成立：A {:#?}\nB {:#?}",
+                        a.peers(),
+                        b.peers()
+                    ));
+                }
+                a.dispatch(Action::Peers {
+                    action: PeerAction::ScanPeerCode { code: code.clone() },
+                })?;
             }
             Ok(String::new())
         })
