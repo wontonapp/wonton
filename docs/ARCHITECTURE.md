@@ -222,6 +222,7 @@ Bot 页使用 `TabRef::Bot { bot: BotRef, path: Option<String> }`，不保存 UR
 聊天已有的 `BotView` watch 通道接入 `PagesLink`，网页状态变化时重算 `PagesViewModel` 的 `TabPage`；
 URL 只来自精确匹配该 `BotRef` 的 Ready 页面，不读 `plugin.web_url`，桥和媒体以 `TabPage.url` 的精确 origin 为准。
 `BotView.web: None` 没有验证可用的 URL；未知、缺失或错误时不发页面 URL，断连或身份变化时清空，不猜 URL 或回退默认 Bot。
+资料页要显示地址、决定有没有入口，读和 `web` 同时写的 `BotView.web_page`（只在属于这个 Bot 的 Ready 页面时非空），壳不自己解析 `web`。
 Bot 页复用既有页面容器、桥、媒体和 `--wonton-*`，不另造壳层 WebView、不省略桥。
 
 插件整体异常时网关按服务看：清单 `webui` 指向的服务现在能用（容器在运行、健康检查没失败）就照常转发，网页里

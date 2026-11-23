@@ -117,10 +117,15 @@ fn apply(
     else {
         return false;
     };
-    if bot.web == result {
+    let page = match &result {
+        Some(BotWebView::Ready { page }) => Some(page.clone()),
+        _ => None,
+    };
+    if bot.web == result && bot.web_page == page {
         return false;
     }
     bot.web = result;
+    bot.web_page = page;
     true
 }
 

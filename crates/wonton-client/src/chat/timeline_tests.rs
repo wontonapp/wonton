@@ -194,6 +194,7 @@ fn chat_view(bots: &[&str]) -> ChatViewModel {
                     bot: "default".into(),
                 },
                 web: None,
+                web_page: None,
                 name: "Hermes".into(),
                 avatar: None,
                 state_avatars: Vec::new(),
