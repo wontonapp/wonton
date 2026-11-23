@@ -45,6 +45,10 @@ pub enum Error {
     #[error("Matrix 尚未就绪：{0}")]
     NotReady(String),
 
+    /// 本地已观察到房间不在受邀状态，不代表传输或服务不可用。
+    #[error("房间不在受邀状态：{0}")]
+    NotInvited(String),
+
     /// 服务器或 SDK 出错。
     #[error("Matrix 服务出错：{0}")]
     Upstream(String),
