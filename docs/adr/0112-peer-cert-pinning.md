@@ -25,7 +25,7 @@ Tuwunel v2.0.0 出站联邦用 reqwest + rustls + 平台根，只有一个全局
 
 配对时经已认证的 iroh 通道互换对方自签叶证书的 SPKI SHA-256 和整张 DER，收到即落盘。不钉 CA 私钥、不钉公钥基础设施：CA 私钥被拿走能签任意名字，叶不能。配对时不做 TOFU：没有 pin 不放行；已有配对升级的第一段按 §5b“待钉”放行。
 
-**对外的证书是自签叶**（SAN 是本机服务器名），pin 就是这张叶本身。核心出的私有 CA 只用于一件事：给**本机 Tuwunel 看的那张**证书签名，让 Tuwunel 按正常链验证核心。这样 rustls 的 `WebPkiServerVerifier` 在对方侧根库只放钉住的叶就成立（实测：根库放 CA 签出的叶 → `BadSignature`；放签发它的 CA 或自签叶 → 通过）。
+**对外的证书是自签叶**（SAN 是本机服务器名），pin 就是这张叶本身。核心出的私有 CA 只用于一件事：给**本机 Tuwunel 看的那张**证书签名，让 Tuwunel 按正常链验证核心；这张证书按 CONNECT 里的目标服务器名现签（SAN 要和对端名字一致），所以只存 CA、不存固定的叶。这样 rustls 的 `WebPkiServerVerifier` 在对方侧根库只放钉住的叶就成立（实测：根库放 CA 签出的叶 → `BadSignature`；放签发它的 CA 或自签叶 → 通过）。
 
 ### 4. 校验怎么做
 

@@ -83,7 +83,8 @@ services:
       # 给 Tuwunel 的联邦出站代理（ADR-0050）：用下面 core 网络上的别名，核心只绑在这个网络的地址上，插件网络里
       # 连不到。和 tuwunel.toml 里的代理地址（wonton-core init 写的）是同一个值。
       WONTON_FEDERATION_LISTEN: federation-proxy.wonton.internal:8448
-      # 推送直连核心在 core 网络上的 80 端口，不经联邦 CONNECT 代理，也不发布到宿主。
+      # 配对联邦的证书材料（ADR-0112）：核心在隧道两端终结 TLS 时用。
+      WONTON_PEER_TLS_DIR: ${WONTON_INSTALL_DIR}/secrets/peer-tls
       WONTON_PUSH_LISTEN: push.wonton.internal:80
       # 发往我们运营的推送中继时的 VAPID 身份（ADR-0003 的 M2，cloud/push-relay）；不设时不带 VAPID 头。
       WONTON_PUSH_VAPID_KEY: ${WONTON_PUSH_VAPID_KEY:-}
@@ -296,13 +297,16 @@ services:
       <<: *no-proxy
       # 配置和 JWT 公钥都在文件里：轮换签发密钥时核心改写它，下一步热加载一起重读（ADR-0009）。
       TUWUNEL_CONFIG: /etc/tuwunel/tuwunel.toml
-      # MatrixRTC 的授权服务固定在 Matrix 对外地址的这个前缀下，网关转给通话插件（ADR-0096）：装卸插件不改这里。
+      # 验证核心出示的证书：系统根证书加本机 CA 的证书包（ADR-0112）。没这个变量 Tuwunel 改用系统根，
+      # 而核心那张是本机 CA 签的，链就到不了。
+      SSL_CERT_FILE: /etc/wonton-peer-tls/trust.pem
       TUWUNEL_WELL_KNOWN__LIVEKIT_URL: http://matrix.${WONTON_BASE_DOMAIN}:${WONTON_PORT}/_wonton/matrix-rtc
     volumes:
       - tuwunel:/var/lib/tuwunel
       # 只挂 Tuwunel 自己的文件：`secrets/` 根上还有核心的 `matrix-jwt.pem`、`hydra-secret`/`hydra.env`，
       # 联邦容器读不到才对（ADR-0051）。整目录一次挂完，不用在只读目录里再建挂载点。
       - ${WONTON_INSTALL_DIR}/secrets/tuwunel:/etc/tuwunel:ro
+      - ${WONTON_INSTALL_DIR}/secrets/peer-tls:/etc/wonton-peer-tls:ro
     # 不发布任何端口：有入口时公网联邦经过隔离入口容器（TLS 在那里终止）和核心的专用监听；没有入口时
     # 只有内部的 8008/8448，对端经 iroh 投进来的流落在 8448（ADR-0090）。
     networks:

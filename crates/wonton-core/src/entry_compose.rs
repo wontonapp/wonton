@@ -20,10 +20,17 @@ pub fn render(
     _install_dir: &Path,
 ) -> anyhow::Result<String> {
     let mut compose: Value = serde_saphyr::from_str(base)?;
+    // 信任包（ADR-0112）只读挂给 Tuwunel：核心对本机 Tuwunel 出示的证书由本机 CA 签，它按这份证书包验证。
     compose["services"]["tuwunel"]["volumes"] = json!([
         "tuwunel:/var/lib/tuwunel",
-        "${WONTON_INSTALL_DIR}/secrets/tuwunel:/etc/tuwunel:ro"
+        "${WONTON_INSTALL_DIR}/secrets/tuwunel:/etc/tuwunel:ro",
+        "${WONTON_INSTALL_DIR}/secrets/peer-tls:/etc/wonton-peer-tls:ro"
     ]);
+    compose["services"]["tuwunel"]["environment"]["SSL_CERT_FILE"] = json!(format!(
+        "{}/{}",
+        crate::peer_tls::TUWUNEL_DIR,
+        crate::peer_tls::TRUST
+    ));
     // 运行时签发：核心经 PUT 收设置后写 `entry/`（CSR、ACME 账号、dns.env），lego 容器按宿主路径绑挂
     // `entry/acme` 和 `entry/requests/`。核心容器里必须看得到同一个宿主目录，不然签发的产物只落进容器
     // 可写层，lego 拿不到 CSR；CA 文件在 `entry-input/` 里，核心也要读。挂载本身不依赖 settings，
@@ -435,7 +442,11 @@ mod tests {
                 .collect();
             assert_eq!(
                 sources,
-                ["tuwunel", "${WONTON_INSTALL_DIR}/secrets/tuwunel"],
+                [
+                    "tuwunel",
+                    "${WONTON_INSTALL_DIR}/secrets/tuwunel",
+                    "${WONTON_INSTALL_DIR}/secrets/peer-tls"
+                ],
                 "{sources:?}"
             );
             for source in &sources {

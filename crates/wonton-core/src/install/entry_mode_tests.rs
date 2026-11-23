@@ -1,8 +1,8 @@
 //! 有名字的安装按“配没配入口”分成两种落盘配置（ADR-0090）：有入口时 TLS 全交给入口容器，Tuwunel 只留 8008；
 //! 没有入口时公网联邦关着，Tuwunel 也不自签，但 iroh 配对过的对方经隧道投进来的流仍要落在它的联邦端口上。
 //!
-//! 私用名（`.wonton.internal`）另有一套，自签证书和 `allow_invalid_tls_certificates` 由 `tests` 和
-//! `tuwunel_tests` 管。
+//! 私用名（`.wonton.internal`）另有一套：仍然保留联邦端口，但同样不自己听 TLS，证书材料和信任文件在
+//! `install/peer_tls_tests`。
 
 use std::fs;
 use std::path::Path;
@@ -108,28 +108,20 @@ fn a_named_install_without_an_entry_keeps_the_federation_port_for_the_tunnel() {
     );
 }
 
-/// 私用名不受入口设置影响：自签证书、`allow_invalid`、两个端口都照旧（ADR-0050 的封闭配对联邦）。
+/// 私用名同样不自己听 TLS：两个端口都在，核心在隧道两端终结，Tuwunel 只和核心说话（ADR-0112）。
 #[test]
-fn a_private_name_keeps_its_self_signed_federation_without_an_entry() {
+fn a_private_name_keeps_the_federation_port_without_its_own_tls() {
     let dir = tempfile::tempdir().unwrap();
     let report = init(dir.path(), Some("home.wonton.internal")).unwrap();
 
     let config = config(dir.path());
     assert!(config.contains("port = [8008, 8448]"), "{config}");
-    assert!(config.contains("[global.tls]"), "{config}");
+    assert!(!config.contains("[global.tls]"), "{config}");
     assert!(
-        config.contains("allow_invalid_tls_certificates = true"),
+        config.contains("allow_invalid_tls_certificates = false"),
         "{config}"
     );
-    assert!(
-        dir.path().join("secrets/tuwunel/tuwunel-tls.crt").exists(),
-        "私用名要自签"
-    );
-    assert!(
-        report
-            .created
-            .contains(&dir.path().join("secrets/tuwunel/tuwunel-tls.key"))
-    );
+    no_self_signed_cert(dir.path(), &report);
     assert_eq!(
         core_env(dir.path())["WONTON_MATRIX_FEDERATION_ADDR"],
         "tuwunel.wonton.internal:8448"
