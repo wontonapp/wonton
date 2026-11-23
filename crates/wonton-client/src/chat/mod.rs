@@ -451,6 +451,40 @@ impl ChatLink {
         }
     }
 
+    fn retry_send(
+        self: &Arc<Self>,
+        target: &TimelineTarget,
+        item_id: &str,
+    ) -> Result<(), CoreError> {
+        let key = TimelineKey::parse(target)?;
+        let room = self.opened(&key)?;
+        let sent = self.sent.clone();
+        let item_id = item_id.to_owned();
+        self.spawn_op_with_success(
+            "chat-op-resend-failed",
+            async move { room.retry_send(&item_id).await },
+            move || onboarding::record_sent(&sent, key.room_id.to_string()),
+        );
+        Ok(())
+    }
+
+    fn cancel_send(&self, target: &TimelineTarget, item_id: &str) -> Result<(), CoreError> {
+        let room = self.opened(&TimelineKey::parse(target)?)?;
+        let item_id = item_id.to_owned();
+        self.spawn_op("chat-op-cancel-send-failed", async move {
+            room.cancel_send(&item_id).await
+        });
+        Ok(())
+    }
+
+    fn paginate_backwards(&self, target: &TimelineTarget) -> Result<(), CoreError> {
+        let room = self.opened(&TimelineKey::parse(target)?)?;
+        self.spawn_op("chat-op-paginate-failed", async move {
+            room.paginate_backwards(PAGE).await.map(drop)
+        });
+        Ok(())
+    }
+
     pub(crate) fn timeline_action(
         self: &Arc<Self>,
         action: TimelineAction,
@@ -471,8 +505,14 @@ impl ChatLink {
             TimelineAction::SendImage {
                 target,
                 image,
+                caption,
                 reply_to,
-            } => self.send_image(&TimelineKey::parse(&target)?, image, reply_to.as_deref()),
+            } => self.send_image(
+                &TimelineKey::parse(&target)?,
+                image,
+                caption.as_deref(),
+                reply_to.as_deref(),
+            ),
             TimelineAction::ForwardMessage {
                 target,
                 item_id,
@@ -482,31 +522,9 @@ impl ChatLink {
             TimelineAction::RedactMessage { target, item_id } => {
                 self.redact_message(&TimelineKey::parse(&target)?, &item_id)
             }
-            TimelineAction::RetrySend { target, item_id } => {
-                let key = TimelineKey::parse(&target)?;
-                let room = self.opened(&key)?;
-                let sent = self.sent.clone();
-                self.spawn_op_with_success(
-                    "chat-op-resend-failed",
-                    async move { room.retry_send(&item_id).await },
-                    move || onboarding::record_sent(&sent, key.room_id.to_string()),
-                );
-                Ok(())
-            }
-            TimelineAction::CancelSend { target, item_id } => {
-                let room = self.opened(&TimelineKey::parse(&target)?)?;
-                self.spawn_op("chat-op-cancel-send-failed", async move {
-                    room.cancel_send(&item_id).await
-                });
-                Ok(())
-            }
-            TimelineAction::PaginateBackwards { target } => {
-                let room = self.opened(&TimelineKey::parse(&target)?)?;
-                self.spawn_op("chat-op-paginate-failed", async move {
-                    room.paginate_backwards(PAGE).await.map(drop)
-                });
-                Ok(())
-            }
+            TimelineAction::RetrySend { target, item_id } => self.retry_send(&target, &item_id),
+            TimelineAction::CancelSend { target, item_id } => self.cancel_send(&target, &item_id),
+            TimelineAction::PaginateBackwards { target } => self.paginate_backwards(&target),
             TimelineAction::SetTimelineScroll { target, scroll } => {
                 self.set_timeline_scroll(&TimelineKey::parse(&target)?, scroll)
             }
@@ -537,12 +555,24 @@ impl ChatLink {
                     .jump_back();
                 Ok(())
             }
+            // 正在输入直接转给服务器；节流和超时自动停还留给下一条 PR。
+            TimelineAction::SetTyping { target, typing } => {
+                let room = self.opened(&TimelineKey::parse(&target)?)?;
+                self.spawn_op("chat-op-typing-failed", async move {
+                    room.typing_notice(typing).await
+                });
+                Ok(())
+            }
             // 附件区的操作由 `ClientCore::dispatch` 交给附件区（ADR-0094），不会到这里。
             TimelineAction::SendComposer { .. }
             | TimelineAction::RemoveAttachment { .. }
             | TimelineAction::RetryAttachment { .. }
             | TimelineAction::RetryOutgoing { .. }
-            | TimelineAction::CancelOutgoing { .. } => {
+            | TimelineAction::CancelOutgoing { .. }
+            // 编辑先只在接口里（下一条 PR 才连核心）。
+            | TimelineAction::StartEdit { .. }
+            | TimelineAction::CancelEdit { .. }
+            | TimelineAction::EditMessage { .. } => {
                 Err(invalid(&l10n!(CATALOG, language(), "chat-invalid-action")))
             }
         }

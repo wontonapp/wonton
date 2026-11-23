@@ -181,7 +181,7 @@ private struct MessageBubble: View {
                         .contentShape(.contextMenuPreview, shape)
                         .contextMenu {
                             ForEach(Array(message.actions.enumerated()), id: \.offset) { _, action in
-                                menuItem(action)
+                                if case .edit = action {} else { menuItem(action) }
                             }
                             Section {
                                 Text(.Message1.messageSentAt(sentAt))
@@ -221,6 +221,8 @@ private struct MessageBubble: View {
                 Label { Text(.Message0.messageReply) } icon: { Image(systemName: "arrowshape.turn.up.left") }
             }
             .accessibilityIdentifier("messageReply")
+        case .edit:
+            EmptyView()
         case .forward:
             Button {
                 forward()
@@ -339,12 +341,17 @@ private struct MessageBubble: View {
         return MessageMeta.reserve(for: message)
     }
 
-    /// 发送失败：气泡旁的红色感叹号，点它重发或删除；原因写在面板的标题上。
+    /// 发送失败：气泡旁的红色感叹号，点它重发或删除。读屏讲类别，核心还分不出类别（`other`）时讲原文；
+    /// 原文写在点开的面板标题上。
     @ViewBuilder private var failedBadge: some View {
-        if case let .failed(reason, recoverable) = message.sendState {
-            let title = recoverable
-                ? String(localized: .Message2.messageSendFailedRetrying)
-                : String(localized: .Message1.messageSendFailed(reason))
+        if case let .failed(failure, details, recoverable) = message.sendState {
+            let label = if recoverable {
+                String(localized: .Message2.messageSendFailedRetrying)
+            } else if failure == .other, let details {
+                details
+            } else {
+                String(localized: failure.text)
+            }
             Button {
                 isChoosingFailed = true
             } label: {
@@ -354,9 +361,9 @@ private struct MessageBubble: View {
                     .contentShape(Rectangle())
             }
             .buttonStyle(.plain)
-            .accessibilityLabel(title)
+            .accessibilityLabel(label)
             .accessibilityIdentifier("messageFailed")
-            .wontonActionSheet(isPresented: $isChoosingFailed, title: title, actions: [
+            .wontonActionSheet(isPresented: $isChoosingFailed, title: details, actions: [
                 WontonSheetAction(
                     title: String(localized: .Message1.messageResend), icon: .refresh, perform: retry
                 ),

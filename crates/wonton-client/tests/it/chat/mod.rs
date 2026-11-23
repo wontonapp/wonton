@@ -14,6 +14,7 @@ mod concurrent_timelines;
 mod confirmation;
 mod device_name;
 mod draft;
+mod edit_typing;
 mod file_link;
 mod jumps;
 mod key_handoff;
@@ -387,7 +388,10 @@ async fn chat_with_the_bot(phone: &Phone, bot: &MatrixSession, room_id: &OwnedRo
     })
     .await;
 
-    bot_room.send_image(test_image()).await.expect("Bot 发图片");
+    bot_room
+        .send_image(test_image(), None)
+        .await
+        .expect("Bot 发图片");
     let image = timeline.until("收到 Bot 的图片", bots_image).await;
     let bytes = phone.load_media(image.media).await.expect("取图片");
     assert_eq!(bytes, PNG, "取到的图片和原图不一致");
@@ -399,6 +403,7 @@ async fn chat_with_the_bot(phone: &Phone, bot: &MatrixSession, room_id: &OwnedRo
     phone
         .dispatch(Action::Timeline {
             action: TimelineAction::SendImage {
+                caption: None,
                 target: TimelineTarget {
                     room_id: room_id.to_string(),
                     thread_root: None,

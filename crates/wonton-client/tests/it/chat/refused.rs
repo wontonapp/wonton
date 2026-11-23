@@ -184,7 +184,10 @@ async fn bots_image_in_room(home: &Home, phone: &Phone) -> wonton_client::MediaH
     let room_id = accept_the_bots_invite(home, phone, &bot).await;
     let mut timeline = Timeline::open(phone, room_id.as_str()).await;
     let bot_room = bot.open_room(&room_id).await.expect("Bot 打开私聊");
-    bot_room.send_image(test_image()).await.expect("Bot 发图片");
+    bot_room
+        .send_image(test_image(), None)
+        .await
+        .expect("Bot 发图片");
     timeline.until("收到 Bot 的图片", bots_image).await.media
 }
 

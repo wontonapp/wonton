@@ -117,11 +117,14 @@ final class ComposerModel {
     }
 
     /// 旁聊里粘贴的图：转码好直接发进那个旁聊，不进附件区（附件区只有主对话有，ADR-0093）。
-    /// 回复对象跟着这张照片发出去。发出去返回真；转码失败、核心拒绝都弹原因返回假，回复对象留着。
+    /// 输入框里的字当图片的说明一起发，回复对象跟着这张照片发出去。发出去返回真；转码失败、核心拒绝都弹原因返回假，回复对象留着。
     @discardableResult
-    func sendImage(_ data: Data, _ type: UTType?, replyTo: String?) async -> Bool {
+    func sendImage(_ data: Data, _ type: UTType?, caption: String, replyTo: String?) async -> Bool {
         guard let upload = await transcode(data, type) else { return false }
-        guard chat.send(.timeline(action: .sendImage(target: target, image: upload, replyTo: replyTo))) else {
+        let caption = caption.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard chat.send(.timeline(action: .sendImage(
+            target: target, image: upload, replyTo: replyTo, caption: caption.isEmpty ? nil : caption
+        ))) else {
             return false
         }
         if replyTo != nil { chat.cancelReply(in: target) }
@@ -129,9 +132,11 @@ final class ComposerModel {
     }
 
     /// 旁聊里选的照片：转码好直接发进那个旁聊，不进附件区（附件区只有主对话有，ADR-0093）。
-    /// 回复对象跟着第一张发出去的照片走；转码失败的照片跳过，原因弹给主人。
-    func sendPhotos(_ items: [PhotosPickerItem], replyTo: String?) async {
+    /// 说明、回复对象都跟着第一张发出去的照片走；转码失败的照片跳过，原因弹给主人。
+    func sendPhotos(_ items: [PhotosPickerItem], caption: String, replyTo: String?) async -> Bool {
         var pendingReply = replyTo
+        var pendingCaption = caption
+        var sent = false
         for item in items {
             guard let data = try? await item.loadTransferable(type: Data.self) else {
                 reject(Problem(
@@ -140,10 +145,13 @@ final class ComposerModel {
                 ))
                 continue
             }
-            if await sendImage(data, item.supportedContentTypes.first, replyTo: pendingReply) {
+            if await sendImage(data, item.supportedContentTypes.first, caption: pendingCaption, replyTo: pendingReply) {
                 pendingReply = nil
+                pendingCaption = ""
+                sent = true
             }
         }
+        return sent
     }
 
     /// 文件选择器或剪贴板给的文件：按书签记下，App 重启后还能接着传。

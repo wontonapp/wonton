@@ -79,18 +79,20 @@ struct OutgoingRow: View {
                         composer.cancel(message)
                     }
                 ])
-            case let .failed(reason, _):
+            case let .failed(failure, details, _):
                 Button {
                     isChoosingFailed = true
                 } label: {
                     HStack(spacing: WontonTheme.spacing.s4) {
                         WontonIcon.warningCircle.view(size: WontonTheme.size.iconTiny)
-                        Text(.Message1.messageSendFailed(reason))
+                        Text(failure == .other
+                            ? details ?? String(localized: failure.text)
+                            : String(localized: failure.text))
                     }
                     .foregroundStyle(Color(colors.textOnAccentFill))
                 }
                 .buttonStyle(.plain)
-                .wontonActionSheet(isPresented: $isChoosingFailed, actions: [
+                .wontonActionSheet(isPresented: $isChoosingFailed, title: details, actions: [
                     WontonSheetAction(title: String(localized: .Message1.messageResend), icon: .refresh) {
                         composer.retry(message)
                     },
