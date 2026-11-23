@@ -280,8 +280,8 @@ async fn a_lagged_receiver_still_waits_for_the_comment() {
             .await
             .expect("填充消息放进发送队列");
     }
-    // 一次都没读，广播已经满格溢出（容量 256），附言还在队里：下一次读必是 `Lagged`。
-    assert_eq!(updates.len(), 256, "广播没被冲出容量");
+    // 一次都没读，积压已经超出容量（256），附言还在队里：下一次读必是 `Lagged`。
+    assert!(updates.len() > 256, "广播没被冲出容量：{}", updates.len());
     let relay = std::sync::Arc::new(chat.relay);
     let restoring = relay.clone();
     let restore = tokio::spawn(async move {
