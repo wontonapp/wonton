@@ -355,6 +355,30 @@ fn revocation_diagnostics_are_bounded_and_expire_at_the_exact_retention_boundary
 }
 
 #[test]
+fn old_group_grant_reopens_as_inert_instead_of_corrupt() {
+    let rig = Rig::new();
+    let path = rig.temp.path().join("core/shares.json");
+    let mut snapshot = serde_json::to_value(rig.shares.snapshot().as_ref()).unwrap();
+    snapshot["revision"] = 1.into();
+    snapshot["grants"] = serde_json::json!([{
+        "grant": {
+            "id": "share-1",
+            "plugin_id": "game",
+            "recipient": {"type": "group", "group_id": "players"},
+            "expires_at_ms": null
+        },
+        "generation": 1,
+        "direct_generation": null
+    }]);
+    fs::write(&path, serde_json::to_vec(&snapshot).unwrap()).unwrap();
+
+    let reopened = rig.reopen();
+    // 组授权不认识以后没有收件人，不参与可见性判断；记录本身留着。
+    assert_eq!(reopened.evaluate(ALICE, "game", 100), Err(ShareRequired));
+    assert_eq!(reopened.snapshot().grants.len(), 1);
+}
+
+#[test]
 fn corrupt_storage_is_rejected_without_overwrite_and_replacement_is_private() {
     let rig = Rig::new();
     rig.shares.create(&direct(None), &offer()).unwrap();

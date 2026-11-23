@@ -233,6 +233,7 @@ gateway-friend-request-submit = 送出请求
 gateway-friend-request-waiting = 请求送出了，正在等管理员回答（对方：{ $target }）。
 gateway-friend-request-approved = 管理员同意了。回去重新送一次邀请就能进来。
 gateway-friend-request-open = 对方的角色已经不用审批，直接重新送邀请就好。
+gateway-friend-request-forbidden = 这个成员的角色不能加好友，请让管理员邀请。
 gateway-friend-request-denied = 管理员没有同意这次加好友。
 gateway-friend-request-expired = 没有管理员在时间内回答，稍后再来送一次。
 gateway-friend-request-changed = 对方的人或权限变了，稍后再试或让对方来加你。

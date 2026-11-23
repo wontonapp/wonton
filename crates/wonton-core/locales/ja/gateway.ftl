@@ -233,6 +233,7 @@ gateway-friend-request-submit = リクエストを送る
 gateway-friend-request-waiting = リクエストを送りました。管理者の回答を待っています（相手：{ $target }）。
 gateway-friend-request-approved = 管理者が承認しました。もう一度招待を送ってください。
 gateway-friend-request-open = 相手の役割はもう承認不要です。招待を送り直すだけです。
+gateway-friend-request-forbidden = このメンバーは役割上フレンドを追加できません。管理者に招待してもらってください。
 gateway-friend-request-denied = 管理者はこのフレンド申請を承認しませんでした。
 gateway-friend-request-expired = 時間内に管理者が答えませんでした。あとでもう一度どうぞ。
 gateway-friend-request-changed = 相手のアカウントや権限が変わりました。あとで試すか、相手から追加してもらってください。

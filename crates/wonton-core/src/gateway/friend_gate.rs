@@ -172,7 +172,7 @@ fn hold(
     tokio::spawn(async move {
         let response = match bus.ask_plugin_admin(identity, draft).await {
             Ok(_ticket) => after_approval(gateway, parts, bytes, person, peer, invitees).await,
-            Err(refusal) => refusal_response(refusal),
+            Err(refusal) => refusal_response(refusal, &langs),
         };
         let _ = sent.send(response);
     });
@@ -274,13 +274,13 @@ async fn after_approval(
 }
 
 /// 卡片没答成（拒绝、过期或其他）时回给邀请人的设备。
-fn refusal_response(refusal: Refusal) -> Response {
+fn refusal_response(refusal: Refusal, langs: &Languages) -> Response {
     match refusal {
         Refusal::Rejected => matrix_error(
             StatusCode::FORBIDDEN,
             "M_FORBIDDEN",
             "permission_denied",
-            "管理员没有同意这次加好友",
+            &l10n::text(langs, "gateway-friend-invite-rejected", &[]),
         ),
         Refusal::Unavailable(message) => matrix_error(
             StatusCode::SERVICE_UNAVAILABLE,
@@ -288,11 +288,18 @@ fn refusal_response(refusal: Refusal) -> Response {
             "confirmation_unavailable",
             &message,
         ),
-        _ => matrix_error(
+        // 卡没开成的时候报“超时”是假原因；管理员只是答不过来，让设备过会儿重试。
+        Refusal::TooMany => matrix_error(
+            StatusCode::TOO_MANY_REQUESTS,
+            "M_UNKNOWN",
+            "too_many_pending",
+            "还有太多问题在等管理员，这次加好友没能开卡",
+        ),
+        refusal @ (Refusal::Expired | Refusal::Superseded | Refusal::Cancelled) => matrix_error(
             StatusCode::REQUEST_TIMEOUT,
             "M_UNKNOWN",
-            "confirmation_expired",
-            "没有管理员在时间内回答这次加好友",
+            refusal.kind(),
+            &l10n::text(langs, "gateway-friend-invite-expired", &[]),
         ),
     }
 }

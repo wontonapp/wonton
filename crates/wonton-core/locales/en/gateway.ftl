@@ -233,6 +233,7 @@ gateway-friend-request-submit = Send request
 gateway-friend-request-waiting = Request sent; waiting for an administrator (for { $target }).
 gateway-friend-request-approved = An administrator approved. Send the invitation again.
 gateway-friend-request-open = Their role needs no approval any more. Just send the invitation again.
+gateway-friend-request-forbidden = This member cannot add friends by role. Ask an administrator to invite them.
 gateway-friend-request-denied = An administrator declined this friend request.
 gateway-friend-request-expired = No administrator answered in time. Try again later.
 gateway-friend-request-changed = Their account or permissions changed. Try again later or let them add you.

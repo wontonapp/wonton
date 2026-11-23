@@ -188,6 +188,9 @@ async fn approving_one_outsider_lets_only_that_person_in() {
     let tls = certificates(dir.path());
     let a = server(&mut names, dir.path(), &network, "a.test", &tls);
     let b = server(&mut names, dir.path(), &network, "b.test", &tls);
+    // 先等两台都起来再连：容器慢时 connect 自己的版本查询会被取消，裸 unwrap 直接 panic。
+    wait_ready(&a.url).await;
+    wait_ready(&b.url).await;
     let matrix_a = std::sync::Arc::new(
         Matrix::connect(&a, dir.path(), HttpClient::new())
             .await
@@ -198,8 +201,6 @@ async fn approving_one_outsider_lets_only_that_person_in() {
             .await
             .unwrap(),
     );
-    wait_ready(&a.url).await;
-    wait_ready(&b.url).await;
 
     let bob = matrix_a.login("bob", "bob phone").await.unwrap();
     let carol = matrix_a.login("carol", "carol phone").await.unwrap();

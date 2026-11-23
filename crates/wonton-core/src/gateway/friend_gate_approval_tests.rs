@@ -215,3 +215,21 @@ async fn several_invitees_are_all_recorded_in_one_approval() {
         json!([REMOTE, OTHER])
     );
 }
+
+#[tokio::test]
+async fn a_full_card_queue_is_a_retryable_limit_not_a_timeout() {
+    let rig = start().await;
+    let device = rig.member_device("kid");
+    let child = rig.roles.get("child").unwrap();
+    rig.members.set_role("kid", &child.id).unwrap();
+
+    // 确认总线对一个调用方只留三张：先占满，再交一张开不出卡。
+    let waiting =
+        [REMOTE, OTHER, "@third:elsewhere.test"].map(|user| invite(&rig, device, &[user]));
+    rig.wait_cards(3).await;
+    let (status, _) = settle(invite(&rig, device, &["@fourth:elsewhere.test"])).await;
+    assert_eq!(status, StatusCode::TOO_MANY_REQUESTS);
+    for waited in waiting {
+        waited.abort();
+    }
+}

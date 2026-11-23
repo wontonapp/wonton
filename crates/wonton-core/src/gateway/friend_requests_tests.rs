@@ -175,6 +175,20 @@ async fn an_open_role_needs_no_request() {
 }
 
 #[tokio::test]
+async fn a_deny_role_cannot_use_the_page() {
+    let rig = start().await;
+    rig.members
+        .invite(crate::members::MemberRecord::for_test("li"))
+        .unwrap();
+    rig.members
+        .set_role("li", wonton_protocol::DEFAULT_INVITE_ROLE)
+        .unwrap();
+    let (status, page) = rig.submit(&[("user_id", CAROL), ("to", "@li:test")]).await;
+    assert_eq!(status, StatusCode::CONFLICT);
+    assert!(page.contains("cannot add friends"), "{page}");
+}
+
+#[tokio::test]
 async fn an_unknown_target_is_not_found() {
     let rig = start().await;
     let (status, _) = rig

@@ -1,6 +1,7 @@
 //! 家外的人要加管理员批的成员时，邀请在 Tuwunel 那里就被 MSC4155 挡住（[`crate::matrix::invite_filter`]），
 //! 核心看不到，成员也收不到审批。服务器名上的公开落地页补这条路：外人填自己的 Matrix ID 和对方，
 //! 核心开一张管理员卡片；同意了就把这个人记进对方的 `allowed_users`，他重新发一次邀请就能进来。
+//! 只服务“要管理员批”（`AskAdmin`）的角色：能自己加好友的让直接发邀请，不能加的回 409 让管理员邀请。
 //!
 //! 页面只用 `Host`（[`super::entry_federation`]，server_name 的入口），不需要账号和设备。公网页面，挡滥用靠
 //! “同一个（对方，发起人）只留一条”和总条数上限；结果存在内存里，核心重启就没了（同卡片）。
@@ -240,7 +241,8 @@ async fn submit(gateway: Arc<Gateway>, req: Request, langs: Languages) -> Respon
             return reply(status, kind, text, &langs);
         }
     };
-    let draft = draft(&gateway, &langs, &target);
+    // 卡片收件人是管理员：按主人的语言（ADR-0043，同出站卡片）；页面本身仍跟游客的 Accept-Language。
+    let draft = draft(&gateway, &gateway.plugins.owner_languages(), &target);
     let location = format!("{PATH}/{id}");
     let asking = async move {
         let outcome = match bus.ask_plugin_admin(requester.clone(), draft).await {
@@ -290,12 +292,15 @@ fn check(gateway: &Gateway, requester: &str, to: &str) -> Result<(String, String
     {
         return Err(Refused::Local);
     }
-    if target == gateway.owner.username()
-        || gateway.permissions(&Person::member(&target)).add_friends == Gate::Allow
-    {
+    if target == gateway.owner.username() {
         return Err(Refused::Open);
     }
-    Ok((requester.to_owned(), target))
+    match gateway.permissions(&Person::member(&target)).add_friends {
+        Gate::Allow => Err(Refused::Open),
+        // “朋友”模板（以及不认识、按 Deny 处理的取值）不能自己加好友，邀请会被拦在这里，页面也帮不上。
+        Gate::Deny | Gate::Other => Err(Refused::Forbidden),
+        Gate::AskAdmin => Ok((requester.to_owned(), target)),
+    }
 }
 
 /// `check` 的拒绝原因。
@@ -304,6 +309,7 @@ enum Refused {
     Invalid,
     Local,
     Open,
+    Forbidden,
 }
 
 fn refused(refused: Refused, langs: &Languages) -> Response {
@@ -325,6 +331,12 @@ fn refused(refused: Refused, langs: &Languages) -> Response {
             StatusCode::CONFLICT,
             "not_needed",
             l10n::text(langs, "gateway-friend-request-open", &[]),
+            langs,
+        ),
+        Refused::Forbidden => reply(
+            StatusCode::CONFLICT,
+            "forbidden",
+            l10n::text(langs, "gateway-friend-request-forbidden", &[]),
             langs,
         ),
     }
@@ -374,9 +386,11 @@ async fn approve(gateway: &Gateway, target: &str, requester: &str) -> Outcome {
     else {
         return Outcome::Changed;
     };
-    let gate = gateway.permissions(&Person::member(target)).add_friends;
-    if gate == Gate::Allow {
-        return Outcome::Open;
+    match gateway.permissions(&Person::member(target)).add_friends {
+        // 等的时候角色放开了就不用再记名单；收成不能加好友的，这次批了也没用。
+        Gate::Allow => return Outcome::Open,
+        Gate::Deny | Gate::Other => return Outcome::Changed,
+        Gate::AskAdmin => {}
     }
     let Some(matrix) = gateway.matrix.as_deref() else {
         return Outcome::Unavailable("没有接上 Matrix".to_owned());

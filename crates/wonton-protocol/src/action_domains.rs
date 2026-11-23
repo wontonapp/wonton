@@ -574,7 +574,7 @@ pub enum FamilyAction {
     AssignFriendRole { user_id: String, role_id: String },
 }
 
-/// 好友、好友组和屏蔽操作。
+/// 好友和屏蔽操作。
 #[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize)]
 #[cfg_attr(feature = "uniffi", derive(uniffi::Enum))]
 #[serde(tag = "type", rename_all = "snake_case")]
