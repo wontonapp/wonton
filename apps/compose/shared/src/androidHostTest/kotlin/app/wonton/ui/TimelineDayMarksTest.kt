@@ -46,6 +46,14 @@ class TimelineDayMarksTest {
         assertEquals(listOf(null, null, dateLabel(DAY_A)), dayMarksFor(items).toList())
     }
 
+    @Test
+    fun startAtTheTopRidesOnItsDaysDivider() {
+        val items = listOf(messageAt(DAY_A), dividerAt(DAY_A), timelineStart())
+
+        // 翻到房间开头：最顶上也是最后一条是 TimelineStart，它下面紧挨着同一天的分隔条目，不再出兜底那行。
+        assertEquals(listOf(null, null, null), dayMarksFor(items).toList())
+    }
+
     private fun messageAt(timestampMs: Long) = TimelineItem(
         id = "m$timestampMs",
         content = TimelineContent.Message(
@@ -73,6 +81,8 @@ class TimelineDayMarksTest {
         id = "d$timestampMs",
         content = TimelineContent.DateDivider(timestampMs.toULong()),
     )
+
+    private fun timelineStart() = TimelineItem("start", TimelineContent.TimelineStart)
 
     private fun note(text: String) = TimelineItem("n", TimelineContent.Notice(text))
 

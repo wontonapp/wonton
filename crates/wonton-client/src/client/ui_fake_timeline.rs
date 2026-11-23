@@ -510,7 +510,7 @@ mod tests {
         let [TimelineDiff::Reset { items }] = batch.diffs.as_slice() else {
             panic!("后订的那份也拿到整条时间线");
         };
-        assert_eq!(items.len(), ITEMS);
+        assert_eq!(items.len(), ITEMS + 3);
 
         fakes.timeline_action(TimelineAction::SendText {
             target: target(),
@@ -658,7 +658,7 @@ mod tests {
         for diff in sent.diffs {
             crate::chat::apply_diff(&mut items, diff);
         }
-        assert_eq!(items.len(), ITEMS + 3);
+        assert_eq!(items.len(), ITEMS + 4);
         let last = message(&items, &items.last().unwrap().id.clone());
         assert!(last.is_own);
         assert_eq!(last.run, MessageRun::Last);
@@ -751,7 +751,7 @@ mod tests {
         for diff in first.diffs {
             crate::chat::apply_diff(&mut items, diff);
         }
-        assert_eq!(items.len(), ITEMS + 3);
+        assert_eq!(items.len(), ITEMS + 4);
         let forwarded = message(&items, "ui-fake-forwarded-1");
         let MessageContent::Text { body, .. } = &forwarded.body else {
             panic!("转发的是文字");
@@ -792,8 +792,8 @@ mod tests {
         for diff in first.diffs {
             crate::chat::apply_diff(&mut items, diff);
         }
-        assert_eq!(items.len(), ITEMS + 6);
-        let bodies: Vec<String> = items[ITEMS + 2..]
+        assert_eq!(items.len(), ITEMS + 7);
+        let bodies: Vec<String> = items[ITEMS + 3..]
             .iter()
             .map(|item| {
                 let TimelineContent::Message { message } = &item.content else {

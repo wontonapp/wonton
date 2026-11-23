@@ -369,5 +369,4 @@ class RoomTelegramTest : RoomTelegramCase() {
         screenshot("room-confirmations-open")
     }
 
-
 }
