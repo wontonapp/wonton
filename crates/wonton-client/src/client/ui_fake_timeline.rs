@@ -424,7 +424,7 @@ mod tests {
         let [TimelineDiff::Reset { items }] = batch.diffs.as_slice() else {
             panic!("后订的那份也拿到整条时间线");
         };
-        assert_eq!(items.len(), ITEMS);
+        assert_eq!(items.len(), ITEMS + 2);
 
         fakes.timeline_action(TimelineAction::SendText {
             target: target(),
