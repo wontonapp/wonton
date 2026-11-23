@@ -76,7 +76,6 @@ internal fun TimelineList(
     onReply: (TimelineMessage) -> Unit,
     modifier: Modifier,
     menuOpen: Boolean = false,
-    headerHeight: Dp = 0.dp,
     onScroll: () -> Unit = {},
 ) {
     val listState = timeline.list

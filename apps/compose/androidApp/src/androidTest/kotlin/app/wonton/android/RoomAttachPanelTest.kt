@@ -219,12 +219,12 @@ class RoomAttachPanelTest : RoomTelegramCase() {
         if (hasBack()) compose.onNodeWithContentDescription(string(R.string.design_back)).performClick()
         // 到了聊天列表，依次进 Family 和 Notes，两边都得有转发来的那条。
         compose.onNodeWithText("Family").performClick()
-        compose.waitUntil(10_000) { forwardedInto("Family", "ui-fake-forwarded-25") }
+        compose.waitUntil(10_000) { forwardedInto("Family", "ui-fake-forwarded-1") }
         compose.onNodeWithContentDescription(string(R.string.design_back)).performClick()
         compose.waitForIdle()
         if (hasBack()) compose.onNodeWithContentDescription(string(R.string.design_back)).performClick()
         compose.onNodeWithText("Notes").performClick()
-        compose.waitUntil(10_000) { forwardedInto("Notes", "ui-fake-forwarded-25") }
+        compose.waitUntil(10_000) { forwardedInto("Notes", "ui-fake-forwarded-1") }
     }
 
     /** 只勾一个时发完跟过去：那个房间打开，转发也在。 */
@@ -234,7 +234,7 @@ class RoomAttachPanelTest : RoomTelegramCase() {
         compose.waitUntil(10_000) { forwardRows().fetchSemanticsNodes().size == 2 }
         compose.onNode(hasTestTag("forward-row") and hasText("Family")).performClick()
         sheetSend("forward-send").performClick()
-        compose.waitUntil(10_000) { forwardedInto("Family", "ui-fake-forwarded-25") }
+        compose.waitUntil(10_000) { forwardedInto("Family", "ui-fake-forwarded-1") }
     }
 
     /** 旁聊里一摞能选好几张（和 Telegram 的十张一样），发送键跟着选中数启用。 */

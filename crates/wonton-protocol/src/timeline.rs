@@ -794,6 +794,7 @@ mod tests {
             jump: crate::JumpState::Idle,
             back_to: None,
             editing: None,
+            focus_revision: 0,
         };
         let mut value = serde_json::to_value(&update).unwrap();
         assert_eq!(value["editing"], serde_json::Value::Null);

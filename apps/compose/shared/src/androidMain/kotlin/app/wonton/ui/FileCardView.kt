@@ -64,8 +64,14 @@ import kotlinx.coroutines.withContext
 
 /** 文字消息：排好版的文字，下面是文件卡片。消息只有链接时没有文字。 */
 @Composable
-fun TextMessageBody(blocks: List<RichBlock>, files: List<FileId>, core: ClientCore, trailingReserve: String? = null) {
-    Column(verticalArrangement = Arrangement.spacedBy(WontonTheme.spacing.s8)) {
+fun TextMessageBody(
+    blocks: List<RichBlock>,
+    files: List<FileId>,
+    core: ClientCore,
+    trailingReserve: String? = null,
+    modifier: Modifier = Modifier,
+) {
+    Column(modifier, verticalArrangement = Arrangement.spacedBy(WontonTheme.spacing.s8)) {
         if (blocks.isNotEmpty()) RichText(blocks, trailingReserve)
         files.forEach { id -> key(id) { FileCardView(id, core) } }
     }

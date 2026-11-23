@@ -194,6 +194,7 @@ private fun MenuSurface(
     val format = DateFormat.getDateTimeInstance(DateFormat.MEDIUM, DateFormat.SHORT)
     val time = format.format(Date(message.timestampMs.toLong()))
     Surface(
+        Modifier.testTag("message-menu"),
         shape = MaterialTheme.shapes.medium,
         color = WontonTheme.colors.surface.toColor(),
         shadowElevation = WontonTheme.size.menuElevation,

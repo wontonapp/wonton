@@ -31,6 +31,6 @@ internal fun TimelineState.bottomMostItemId(): String =
         // 列表的键就是条目 ID：待发消息、翻页转圈也占下标，按 ID 对回来才不会错位。
         .mapNotNull { info -> items.firstOrNull { it.id == info.key }?.takeUnless { it.isBlankAgentRun }?.id }
         .firstOrNull()
-        ?: items.firstOrNull { !it.isBlankAgentRun }?.id
-        ?: items.firstOrNull()?.id
+        ?: items.lastOrNull { !it.isBlankAgentRun }?.id
+        ?: items.lastOrNull()?.id
         .orEmpty()

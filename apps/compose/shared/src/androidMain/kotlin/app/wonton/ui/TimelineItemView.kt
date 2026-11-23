@@ -238,8 +238,7 @@ private fun MessageBubble(
     // 图片和文件自己认点（看图、打开文件），菜单手势交给它们，免得一下点出两样；别的正文点一下、长按都开菜单——
     // 菜单里至少写着发送时间，没有别的操作也值得看。确认卡片里的按钮、输入框照常自己认点，卡片其余地方走外层。
     val bodyOwnsPress = message.body is MessageContent.Image || message.body is MessageContent.File
-    // 时间就在正文末尾的透明占位里，读屏顺着正文念一次；回执和“已编辑”由脚注自己的节点念。
-    // 不再另加 stateDescription，否则一次聚焦时间会念两遍。
+    // 有正文占位时，时间和“已编辑”在占位里、读屏顺着正文念，脚注节点清掉免得念两遍；没有占位的消息由脚注节点自己念。
     val pressable = (if (bodyOwnsPress) {
         Modifier
     } else {
@@ -375,7 +374,7 @@ fun BubbleSurface(
         // 正文末尾有一段和脚注等宽的透明占位，脚注压在它上面。放不下时占位自己换行，脚注就落在新的一行。
         Box(padded) {
             styledBody()
-            MessageFooter(message, Modifier.align(Alignment.BottomEnd))
+            MessageFooter(message, Modifier.align(Alignment.BottomEnd), inBody = true)
         }
     } else if (overImage) {
         Box(padded) {
@@ -385,7 +384,7 @@ fun BubbleSurface(
     } else {
         Column(padded, verticalArrangement = Arrangement.spacedBy(WontonTheme.spacing.s4)) {
             styledBody()
-            MessageFooter(message, Modifier.align(Alignment.End))
+            MessageFooter(message, Modifier.align(Alignment.End), inBody = false)
         }
     }
 }
@@ -428,9 +427,11 @@ internal fun footerReserve(message: TimelineMessage, resources: Resources): Stri
 /**
  * 气泡右下角的脚注，和正文同一个色系：编辑过、时间、回执。自己的回执是一个钟表（服务器收到了）、一个勾（对方收到了）
  * 或两个勾（对方读了）；别人的只写时间。
+ * [inBody]：这张气泡有正文占位，两格的字已经在正文里、读屏顺着正文念得到，清掉免得念两遍；
+ * 没有占位时（删除的消息、文件卡片等）这一行是时间和“已编辑”唯一的出处，留着节点让读屏念。
  */
 @Composable
-private fun MessageFooter(message: TimelineMessage, modifier: Modifier) {
+private fun MessageFooter(message: TimelineMessage, modifier: Modifier, inBody: Boolean) {
     val colors = WontonTheme.colors
     val style = WontonTheme.typography.caption
     val color = (if (message.isOwn) colors.accentInkOnFill else colors.textSecondary).toColor()
@@ -438,12 +439,15 @@ private fun MessageFooter(message: TimelineMessage, modifier: Modifier) {
         if (message.edited) {
             Text(
                 stringResource(R.string.timeline_edited),
-<<<<<<< HEAD
-                Modifier.testTag("message-edited"),
-=======
                 // 字就在正文末尾的占位里，读屏顺着正文念；这里再念一遍就重了。
                 Modifier.clearAndSetSemantics { testTag = "messageEdited" },
->>>>>>> 76602b3ba (fix(android): 聊天页时间线、引用、菜单和命令草稿)
+=======
+                if (inBody) {
+                    Modifier.clearAndSetSemantics { testTag = "messageEdited" }
+                } else {
+                    Modifier.testTag("messageEdited")
+                },
+>>>>>>> 68016bf25 (fix(android): 聊天页脚注念得到时间、跳转不再卡住、照片说明可点)
                 style = style,
                 color = color,
             )
@@ -459,7 +463,11 @@ private fun MessageFooter(message: TimelineMessage, modifier: Modifier) {
         } else {
             Text(
                 messageTime(message),
-                Modifier.clearAndSetSemantics { testTag = "messageTime" },
+                if (inBody) {
+                    Modifier.clearAndSetSemantics { testTag = "messageTime" }
+                } else {
+                    Modifier.testTag("messageTime")
+                },
                 style = style,
                 color = color,
             )
@@ -529,7 +537,21 @@ private fun MessageBody(
         is MessageContent.Image -> Column(verticalArrangement = Arrangement.spacedBy(WontonTheme.spacing.s8)) {
             MessageImage(body.image, core, sendState, onLongPress, groupImages)
             // 一次发送里主人写的字是最后一张照片的说明文字（ADR-0094），画在照片下面。
-            body.image.caption?.let { caption -> TextMessageBody(caption.blocks, emptyList(), core, trailingReserve) }
+            // 说明和照片是兄弟节点：照片自己认点（看图），说明接同样的点按和长按，不然说明上点了没反应。
+            body.image.caption?.let { caption ->
+                TextMessageBody(
+                    caption.blocks,
+                    emptyList(),
+                    core,
+                    trailingReserve,
+                    Modifier.combinedClickable(
+                        interactionSource = null,
+                        indication = null,
+                        onLongClick = onLongPress,
+                        onClick = { onLongPress?.invoke() },
+                    ),
+                )
+            }
         }
         is MessageContent.File -> MessageFileCard(body.file, core, onLongPress)
         is MessageContent.Confirmation -> ConfirmationCardView(body.view, onCardAction)

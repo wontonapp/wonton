@@ -6,6 +6,7 @@ import android.os.Build
 import android.os.SystemClock
 import androidx.compose.ui.geometry.Offset
 import androidx.compose.ui.semantics.SemanticsActions
+import androidx.compose.ui.semantics.SemanticsProperties
 import androidx.compose.ui.semantics.getOrNull
 import androidx.compose.ui.text.TextLayoutResult
 import androidx.compose.ui.test.SemanticsMatcher
@@ -13,6 +14,7 @@ import androidx.compose.ui.test.SemanticsNodeInteraction
 import androidx.compose.ui.test.assertIsDisplayed
 import androidx.compose.ui.test.assertTextEquals
 import androidx.compose.ui.test.hasAnyAncestor
+import androidx.compose.ui.test.hasClickAction
 import androidx.compose.ui.test.hasContentDescription
 import androidx.compose.ui.test.hasSetTextAction
 import androidx.compose.ui.test.hasTestTag
@@ -62,13 +64,17 @@ import org.junit.runner.Description
 import org.junit.runner.RunWith
 
 /** 引用一条不在房间里的消息（`ui_fake_room.rs` 的 `MISSING_QUOTE_INDEX`）。 */
-private const val MISSING_QUOTE = 24
+private const val MISSING_QUOTE = 18
 /** 删除的消息，菜单里没有动作（`ui_fake_room.rs` 的 `REDACTED_INDEX`）。 */
-private const val REDACTED = 25
+private const val REDACTED = 17
 /** 名字很长的发送者（`ui_fake_room.rs` 的 `LONG_NAME_INDEX`）。 */
-private const val LONG_NAME = 26
-
-private const val ECHO_ROOM = "!ui-fake:home.example"
+private const val LONG_NAME = 22
+/** 带说明文字的照片（`ui_fake_room.rs` 的 `PHOTO_SOLO_INDEX`）。 */
+private const val CAPTION = 3
+/** 最后一条、自己刚发还没送达（`ui_fake_room.rs` 的 `SENDING_INDEX`）。 */
+private const val SENDING = 26
+/** 那张照片下面那行说明的原文。 */
+private const val CAPTION_TEXT = "Fixture message $CAPTION"
 
 /** 主人正在写的普通话，点命令时不能丢。 */
 private const val SENTENCE = "今天把日志发我"
@@ -138,8 +144,21 @@ class RoomQuoteFixTest {
     fun menuEndsWithSentTime() {
         scrollTo(11)
         bubble(11).performTouchInput { longClick() }
-        val expected = sentAt(11)
-        compose.onNodeWithText(expected).assertIsDisplayed()
+        val sent = compose.onNodeWithTag("message-sent-at", useUnmergedTree = true)
+        sent.assertTextEquals(sentAt(11))
+        val sentBox = sent.fetchSemanticsNode().boundsInRoot
+        // 时间在菜单最底：每个操作项都排在它上面。
+        val actions = compose.onAllNodes(
+            hasAnyAncestor(hasTestTag("message-menu")) and hasClickAction(),
+            useUnmergedTree = true,
+        ).fetchSemanticsNodes()
+        check(actions.size >= 3) { "菜单里只有 ${actions.size} 个操作" }
+        for (action in actions) {
+            check(action.boundsInRoot.bottom <= sentBox.top) { "操作排到了时间下面：${action.boundsInRoot} 与 $sentBox" }
+        }
+        // 也没有别的字比时间还靠下。
+        val below = menuTextNodes().filter { it.boundsInRoot.bottom > sentBox.bottom + 1f }
+        check(below.isEmpty()) { "时间不在菜单最底：${below.map { it.boundsInRoot }}" }
     }
 
     @Test
@@ -159,11 +178,55 @@ class RoomQuoteFixTest {
             useUnmergedTree = true,
         ).assertExists()
 
+        // 删除的消息没有正文占位：脚注这一行是时间和“已编辑”唯一的出处，读屏两样都念得到。
         scrollTo(REDACTED)
         compose.onNode(
-            hasTestTag("messageEdited") and hasAnyAncestor(hasTestTag("item-ui-fake-$REDACTED")),
+            hasTestTag("messageEdited") and hasText(string(R.string.timeline_edited)) and
+                hasAnyAncestor(hasTestTag("item-ui-fake-$REDACTED")),
             useUnmergedTree = true,
         ).assertExists()
+        compose.onNode(
+            hasTestTag("messageTime") and hasText(timeAt(REDACTED)) and
+                hasAnyAncestor(hasTestTag("item-ui-fake-$REDACTED")),
+            useUnmergedTree = true,
+        ).assertExists()
+    }
+
+    @Test
+    fun sendingMessageShowsClockAndReadsTime() {
+        scrollTo(SENDING)
+        // 时钟有自己的描述，读屏念得出还在发。
+        compose.onNode(
+            hasContentDescription(string(R.string.message_sending)) and
+                hasAnyAncestor(hasTestTag("item-ui-fake-$SENDING")),
+            useUnmergedTree = true,
+        ).assertExists()
+        // 时间在正文末尾的占位里，跟着正文念得到；占位里的空格是不折行的。
+        compose.onNode(
+            hasText(timeAt(SENDING).replace(' ', '\u00A0'), substring = true) and
+                hasAnyAncestor(hasTestTag("item-ui-fake-$SENDING")),
+            useUnmergedTree = true,
+        ).assertExists()
+    }
+
+    @Test
+    fun photoCaptionOpensMenu() {
+        scrollTo(CAPTION)
+        // 说明的文字节点末尾还接着脚注占位，按包含匹配。
+        val caption = compose.onNode(
+            hasText(CAPTION_TEXT, substring = true) and hasAnyAncestor(hasTestTag("item-ui-fake-$CAPTION")),
+            useUnmergedTree = true,
+        )
+        caption.performScrollTo()
+        val sent = compose.onNodeWithTag("message-sent-at", useUnmergedTree = true)
+        // 点说明也弹菜单，和点正文一样。
+        caption.performClick()
+        compose.waitUntil(10_000) { displayed(sent) }
+        dismissMenu()
+        // 长按说明也一样。
+        caption.performTouchInput { longClick() }
+        compose.waitUntil(10_000) { displayed(sent) }
+        sent.assertTextEquals(sentAt(CAPTION))
     }
 
     @Test
@@ -394,6 +457,24 @@ class RoomQuoteFixTest {
         DateFormat.getDateTimeInstance(DateFormat.MEDIUM, DateFormat.SHORT)
             .format(Date(AT_MS + index * 60_000L + if (index >= 11) 86_400_000L else 0)),
     )
+
+    /** 脚注里写的时间，和 `sentAt` 同一份假数据；脚注只写时分。 */
+    private fun timeAt(index: Int): String = DateFormat.getTimeInstance(DateFormat.SHORT)
+        .format(Date(AT_MS + index * 60_000L + if (index >= 11) 86_400_000L else 0))
+
+    /** 菜单里所有带字的节点。 */
+    private fun menuTextNodes(): List<SemanticsNode> = compose.onAllNodes(
+        hasAnyAncestor(hasTestTag("message-menu")),
+        useUnmergedTree = true,
+    ).fetchSemanticsNodes().filter { it.config.getOrNull(SemanticsProperties.Text)?.isNotEmpty() == true }
+
+    /** 弹层自己收：按返回键，等菜单节点消失。 */
+    private fun dismissMenu() {
+        compose.runOnUiThread { compose.activity.onBackPressedDispatcher.onBackPressed() }
+        compose.waitUntil(5_000) {
+            compose.onAllNodesWithTag("message-sent-at", useUnmergedTree = true).fetchSemanticsNodes().isEmpty()
+        }
+    }
 
     /** 外观经后台订阅回流，界面不是发完就换色；按画布像素等到真换上再拍。 */
     private fun awaitTheme(mode: ThemeMode) {

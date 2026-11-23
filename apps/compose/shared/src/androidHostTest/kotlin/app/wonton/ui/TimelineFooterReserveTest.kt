@@ -59,8 +59,10 @@ class TimelineFooterReserveTest {
         // 时间前面是“已编辑”时，时间后面的分隔也是不折行空格；回执那一格只看时间之后。
         val edited = checkNotNull(footer(MessageStatus.SENT, edited = true, own = false))
 
+        val mark = resources.getString(R.string.timeline_edited)
         assertTrue("别人的消息不该留回执的空白：$reserve", reserve.substringAfter(TIME_UNBROKEN).isBlank())
-        assertTrue("别人的消息不该留回执的空白：$edited", edited.endsWith(reserve))
+        assertTrue("编辑标记排到时间后面了：$edited", edited.indexOf(mark) < edited.indexOf(TIME_UNBROKEN))
+        assertTrue("别人的消息不该留回执的空白：$edited", edited.substringAfter(TIME_UNBROKEN).isBlank())
     }
 
     @Test
@@ -90,8 +92,11 @@ class TimelineFooterReserveTest {
             preview = null,
             actions = emptyList(),
             group = MessageGroup("00000000000000000000000000000000", 0u, 1u),
-            
+            receipt = null,
+            startsTimeGroup = false,
             run = MessageRun.ALONE,
+            choices = null,
+            senderAvatar = null,
         ),
         resources,
     )

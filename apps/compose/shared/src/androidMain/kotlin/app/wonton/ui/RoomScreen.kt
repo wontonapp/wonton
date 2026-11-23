@@ -583,7 +583,6 @@ private fun Conversation(
                             onReply = { message -> message.replyAction?.let { draft.replyTo(it.message) } },
                             modifier = Modifier.fillMaxSize().recordRoomBackdrop(backdrop),
                             menuOpen = commandMenuShown,
-                            headerHeight = with(density) { headerHeight.toDp() },
                             onScroll = { commandMenuShown = false },
                         )
                     }

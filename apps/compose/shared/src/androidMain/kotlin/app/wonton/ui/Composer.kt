@@ -158,7 +158,6 @@ fun Composer(
     var refocus by remember { mutableStateOf(0) }
     LaunchedEffect(refocus) { if (refocus > 0) focusRequester.requestFocus() }
     // 命令列表由“/”或菜单键打开，菜单键本身不动草稿；返回键先收列表。
-    var menuOpen by rememberSaveable { mutableStateOf(false) }
     // 刚点出去的那句还原本样留在输入框里：列表先别按“/”自己弹回来，动一个字才恢复（和 iOS 的 sentSlash 一样）。
     var sentSlash by remember { mutableStateOf<String?>(null) }
     // 草稿还是刚发出去的那一句时先压住，动了字才恢复。
@@ -166,7 +165,7 @@ fun Composer(
     val commandSent: () -> Unit = {
         onCommandSent()
         sentSlash = draft
-        menuOpen = false
+        onMenuChange(false)
         refocus++
     }
 >>>>>>> 76602b3ba (fix(android): 聊天页时间线、引用、菜单和命令草稿)
@@ -177,13 +176,12 @@ fun Composer(
     val query = commandQuery(draft, commands)
     val auto = if (sentSlash != null) emptyList() else query
     LaunchedEffect(draft) {
-        if (!draft.startsWith("/")) menuOpen = false else if (auto.isNotEmpty()) menuOpen = true
-        onMenuChange(menuOpen)
+        onMenuChange(draft.startsWith("/") && auto.isNotEmpty())
     }
     // 草稿没以“/”开头时菜单键给整张表；以“/”开头时只给匹配的那几条；刚发出去的那句先压住。
     val shown = if (draft.startsWith("/")) auto else commands
     val listShown = menuOpen && shown.isNotEmpty()
-    BackHandler(enabled = listShown) { menuOpen = false; onMenuChange(false) }
+    BackHandler(enabled = listShown) { onMenuChange(false) }
     ComposerStack(
         inSideChat = inSideChat,
         roomId = roomId,
@@ -199,7 +197,7 @@ fun Composer(
         onQuoteJump = onQuoteJump,
         onReject = onReject,
         listShown = listShown,
-        onPicked = { menuOpen = false; onMenuChange(false) },
+        onPicked = { onMenuChange(false) },
     )
     AgentStopNotice(agentStop)
     ComposerBar(
@@ -216,7 +214,7 @@ fun Composer(
         dropCommand = dropCommand,
         onAction = onAction,
         // 点菜单键时放开刚发出去那句的压制，列表按现在的草稿来。
-        onMenu = { sentSlash = null; menuOpen = !menuOpen; onMenuChange(menuOpen) },
+        onMenu = { sentSlash = null; onMenuChange(!menuOpen) },
     )
     attach.chooser()
 }
