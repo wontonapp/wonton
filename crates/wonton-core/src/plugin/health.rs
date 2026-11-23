@@ -70,6 +70,8 @@ enum Observation {
     Waiting {
         state: String,
         probes: Vec<Probe>,
+        /// 这一轮探测了网页入口（超时报告据此决定等的是 URL 还是容器状态）。
+        probed: bool,
     },
 }
 
@@ -84,7 +86,7 @@ pub(super) async fn wait_for(
 ) -> Result<Readiness, HealthError> {
     let mut running_since: Option<Instant> = None;
     loop {
-        let (state, probes) = match observe(
+        let (state, probes, probed) = match observe(
             engine,
             http,
             container,
@@ -96,12 +98,16 @@ pub(super) async fn wait_for(
         .await
         {
             Ok(Observation::Done(readiness)) => return Ok(readiness),
-            Ok(Observation::Waiting { state, probes }) => (state, probes),
+            Ok(Observation::Waiting {
+                state,
+                probes,
+                probed,
+            }) => (state, probes, probed),
             Err(failure) => return Err(failure_error(engine, container, failure, langs).await),
         };
         if Instant::now() >= wait.at {
             let logs = traced(container, engine.logs_tail(container, LOG_LINES).await);
-            let pending = match webui_health {
+            let pending = match webui_health.filter(|_| probed) {
                 Some(webui) => webui.endpoint.url(&webui.path),
                 None => crate::l10n::text(langs, "plugin-settings-health-target", &[]),
             };
@@ -169,7 +175,7 @@ pub(super) async fn wait_for_all(
                 Ok(Observation::Done(_)) => {
                     pending.remove(index);
                 }
-                Ok(Observation::Waiting { state, probes }) => {
+                Ok(Observation::Waiting { state, probes, .. }) => {
                     dep.state = state;
                     dep.probes = probes;
                     index += 1;
@@ -538,6 +544,7 @@ fn verdict(
         probes,
         webui,
     } = snapshot;
+    let probed = webui.is_some();
     if target == Target::Depend(DependCondition::ServiceCompletedSuccessfully) {
         return match status {
             ContainerStateStatusEnum::EXITED if exit_code == 0 => {
@@ -549,6 +556,7 @@ fn verdict(
             _ => Ok(Observation::Waiting {
                 state: label,
                 probes,
+                probed,
             }),
         };
     }
@@ -570,6 +578,7 @@ fn verdict(
         return Ok(Observation::Waiting {
             state: label,
             probes,
+            probed,
         });
     }
     if let Some((request, outcome)) = webui {
@@ -578,10 +587,12 @@ fn verdict(
             Ok(code) => Ok(Observation::Waiting {
                 state: format!("{label} / {request} → HTTP {code}"),
                 probes,
+                probed,
             }),
             Err(e) => Ok(Observation::Waiting {
                 state: format!("{label} / {request} → {e}"),
                 probes,
+                probed,
             }),
         };
     }
@@ -600,6 +611,7 @@ fn verdict(
                 Ok(Observation::Waiting {
                     state: label,
                     probes,
+                    probed,
                 })
             }
         }
@@ -611,6 +623,7 @@ fn verdict(
                 Ok(Observation::Waiting {
                     state: label,
                     probes,
+                    probed,
                 })
             }
         }
@@ -619,6 +632,7 @@ fn verdict(
             Ok(Observation::Waiting {
                 state: label,
                 probes,
+                probed,
             })
         }
     }

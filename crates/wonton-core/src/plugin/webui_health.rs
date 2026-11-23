@@ -106,14 +106,7 @@ impl PluginManager {
         if let Some(manifest) = manifest
             && let Some(webui) = &manifest.webui
         {
-            let slug = manifest.id.slug();
-            let name = if super::bot_web_registry::has_bot_web(manifest) {
-                self.cfg
-                    .instance
-                    .bot_container(&slug, &webui.service, "default")
-            } else {
-                self.cfg.instance.container(&slug, &webui.service)
-            };
+            let name = self.webui_container(manifest, &webui.service);
             if deps.iter().any(|(dep, condition)| {
                 dep == &name && *condition == DependCondition::ServiceHealthy
             }) && let Some(webui) = self.webui_health(manifest, &webui.service).await?
