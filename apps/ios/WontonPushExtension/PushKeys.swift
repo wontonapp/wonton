@@ -6,7 +6,15 @@ import Security
 /// （ADR-0003 的“设备的推送密钥”）。存在和通知扩展共享的钥匙串里（经 App Group），扩展用它解开推送；
 /// 核心只拿到公钥和认证密钥。
 enum PushKeys {
-    private static let accessGroup = "group.app.wonton.ios"
+    /// 钥匙串访问组：取 Info.plist 的 `WontonAppGroup`（project.yml 按 bundle ID 注入），换 bundle ID 不会失配。
+    private static var accessGroup: String {
+        guard let group = Bundle.main.object(forInfoDictionaryKey: "WontonAppGroup") as? String,
+              !group.isEmpty else {
+            fatalError("WontonAppGroup is missing from Info.plist")
+        }
+        return group
+    }
+
     private static let service = "app.wonton.ios.push"
     private static let privateKeyAccount = "push.private"
     private static let authAccount = "push.auth"

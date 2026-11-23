@@ -225,7 +225,6 @@ async fn a_paired_device_gets_an_encrypted_notification_without_the_message_cont
             room_name: Some("Hermes 主房间".into()),
             prio: Some("high".into()),
             contact_request: None,
-            category: None,
         },
         "设备解开后拿到房间和事件，没有正文"
     );

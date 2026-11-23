@@ -9,6 +9,10 @@ final class PushTapProbe: XCTestCase {
     private var app: XCUIApplication!
 
     override func setUpWithError() throws {
+        // 夜跑没有外层推送循环，也没给配对码；只有外层 e2e 带 TEST_RUNNER_WONTON_PUSH_PROBE=1 时才跑。
+        guard ProcessInfo.processInfo.environment["WONTON_PUSH_PROBE"] == "1" else {
+            throw XCTSkip("推送探针要外层循环和配对码，夜跑不带")
+        }
         app = XCUIApplication()
         app.launchArguments += ["-AppleLanguages", "(zh-Hans)", "-AppleLocale", "zh_CN"]
         app.launchEnvironment["WONTON_DEV_DATA_SUFFIX"] = Self.dataSuffix

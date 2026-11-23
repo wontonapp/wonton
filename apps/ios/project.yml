@@ -208,6 +208,8 @@ targets:
         NSExtension:
           NSExtensionPointIdentifier: com.apple.usernotifications.service
           NSExtensionPrincipalClass: $(PRODUCT_MODULE_NAME).NotificationService
+        # 和 App、分享扩展同一套：钥匙串访问组跟着 bundle ID 走，代码里不写死（AppGroup.swift 同源）。
+        WontonAppGroup: group.$(WONTON_BUNDLE_ID)
     entitlements:
       path: WontonPushExtension/WontonPushExtension.entitlements
       properties:
