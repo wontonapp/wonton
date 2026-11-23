@@ -86,7 +86,6 @@ import app.wonton.ui.design.WontonTheme
 import app.wonton.ui.design.toColor
 import app.wonton.ui.icons.Compose
 import app.wonton.ui.icons.Home
-import app.wonton.ui.icons.Info
 import app.wonton.ui.icons.LockKey
 import app.wonton.ui.icons.WontonIcon
 import kotlinx.coroutines.currentCoroutineContext
@@ -476,7 +475,7 @@ private fun RoomPanelEffects(timeline: TimelineState, draft: RoomDraft) {
 
 /**
  * 顶栏。和 Bot 的私聊显示 Bot 的状态头像和名字（ADR-0044），名字下面常空着，有人正在输入时写那一行（ADR-0109），
- * 群聊的标题居中；支持旁聊的房间带开旁聊的按钮。面板的入口不在这里，在 Bot 资料页。
+ * 群聊的标题居中；支持旁聊的房间带开旁聊的按钮。私聊点名字或头像进 Bot 资料页（面板也从那里进）。
  * 旁聊页的标题是旁聊的标题（ADR-0093），状态在顶栏下面一行。
  * 房间里装着 widget（通话）时带它的入口：点了全屏打开 widget 页，关掉回到这个房间（ADR-0096）。
  */
@@ -499,10 +498,9 @@ private fun RoomBar(
         return
     }
     val barTitle = if (isDirect) bot?.name ?: title else title
-    val barAvatar: (@Composable () -> Unit)? = if (isDirect && bot != null) {
-        { BotAvatar(bot, plugins, WontonTheme.size.avatar) }
-    } else {
-        null
+    val profileBot = bot?.takeIf { isDirect }
+    val barAvatar: (@Composable () -> Unit)? = profileBot?.let {
+        { BotAvatar(it, plugins, WontonTheme.size.avatar) }
     }
     WontonPushedBar(
         barTitle,
@@ -510,17 +508,11 @@ private fun RoomBar(
         showsStatus = true,
         showsStatusLine = true,
         avatar = barAvatar,
+        titleClick = profileBot?.let { open -> { onOpenBotProfile(open.bot) } },
+        avatarLabel = stringResource(R.string.bot_profile_open),
         centeredTitle = !isDirect,
         actions = {
             RoomCallEntry(call, onOpenWidget)
-            if (isDirect && bot != null) {
-                Box(Modifier.testTag("bot-profile-open")) {
-                    WontonIconButton(
-                        WontonIcon.Info, stringResource(R.string.bot_profile_open),
-                        { onOpenBotProfile(bot.bot) },
-                    )
-                }
-            }
             if (sideChats.supported) {
                 WontonIconButton(
                     WontonIcon.Compose,
