@@ -201,5 +201,5 @@
     <!-- Footer beside a failed message when the home server errors. No arguments. -->
     <string name="timeline_send_failure_upstream">Server problem</string>
     <!-- Footer beside a failed message whose kind the core can't classify yet. No arguments; the raw reason replaces it when there is one. -->
-    <string name="timeline_send_failed_other">Send failed</string>
+    <string name="timeline_send_failure_other">Send failed</string>
 </resources>

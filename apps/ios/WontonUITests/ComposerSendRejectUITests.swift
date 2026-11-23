@@ -62,7 +62,7 @@ final class ComposerSendRejectUITests: XCTestCase {
         let first = app.buttons["attachPhoto.0"]
         if allow.waitForExistence(timeout: 10) { allow.tap() }
         tap(first)
-        tap(app.buttons["attachDone"])
+        tap(app.buttons["attachSend"])
         XCTAssertTrue(
             app.buttons["composerAttachmentFailed"].waitForExistence(timeout: 15),
             "附件没被标成上传失败\n\(app.debugDescription)"

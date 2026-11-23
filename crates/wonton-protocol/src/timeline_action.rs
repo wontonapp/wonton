@@ -48,7 +48,7 @@ pub enum TimelineAction {
     },
     /// 发送图片。上传和发送的进展、`reply_to` 同 [`TimelineAction::SendText`]。
     ///
-    /// `caption` 是图片下面带的一段话。旁聊里贴图（ADR-0109 第 9 节）用它把输入框里已经打的字一起发出去，
+    /// `caption` 是图片下面带的一段话。旁聊里贴图（ADR-0109 第 10 节）用它把输入框里已经打的字一起发出去，
     /// 发完清掉草稿；主时间线有附件区，贴图走 [`TimelineAction::SendComposer`]。
     SendImage {
         target: TimelineTarget,
@@ -162,7 +162,7 @@ pub enum TimelineAction {
     /// [`LinkPreviewState`](crate::LinkPreviewState) 上：这条草稿不再出预览，第一个链接换成别的或草稿发出去就作废。
     /// 旁聊的输入框也有链接预览，预览状态和主时间线的分开。
     DismissLinkPreview { target: TimelineTarget },
-    /// 进入编辑态（ADR-0109 第 9 节）：只能编辑菜单里有 [`MessageAction::Edit`](crate::MessageAction::Edit) 的消息。
+    /// 进入编辑态（ADR-0109 第 10 节）：只能编辑菜单里有 [`MessageAction::Edit`](crate::MessageAction::Edit) 的消息。
     /// 核心把现在的草稿（正文和回复对象）存下来，换成正被编辑的那条的正文，记进
     /// [`TimelineUpdate::editing`](crate::TimelineUpdate::editing)；壳收到它之后才填输入框、光标放末尾、画编辑条。
     /// 已经在编辑别的消息时直接换过去，不叠加。
@@ -175,7 +175,7 @@ pub enum TimelineAction {
     /// 退出编辑态、不发这条修改：恢复进入编辑态之前的草稿（正文和回复对象）。没在编辑时什么也不做。
     CancelEdit { target: TimelineTarget },
     /// 确认这次修改（[`TimelineAction::StartEdit`] 之后），矩阵上发到 `event_id`（现在这条），正文换成 `body`（空正文
-    /// 返回 `InvalidInput`）。发出去的事件在所有人那里整条替换成新正文（ADR-0109 第 9 节）；成功后清掉编辑态、草稿
+    /// 返回 `InvalidInput`）。发出去的事件在所有人那里整条替换成新正文（ADR-0109 第 10 节）；成功后清掉编辑态、草稿
     /// 换回进入编辑态之前的，失败时编辑态留着、失败原因进 `ChatViewModel::problem`。新正文按
     /// ADR-0054 的 Markdown 记成格式化正文。
     EditMessage {
@@ -183,7 +183,7 @@ pub enum TimelineAction {
         event_id: String,
         body: String,
     },
-    /// 壳报告输入框在不在打字（ADR-0109 第 7 节）：正文有变化发 `true`，输入框失焦、清空、主人离开这条时间线或
+    /// 壳报告输入框在不在打字（ADR-0109 第 8 节）：正文有变化发 `true`，输入框失焦、清空、主人离开这条时间线或
     /// 发送后发 `false`。核心按需转发成“正在输入”到服务器，同一条时间线里至少隔几秒才再发一次，停止输入几秒后
     /// 自动转成“停了”，壳不用自己计时。
     SetTyping {

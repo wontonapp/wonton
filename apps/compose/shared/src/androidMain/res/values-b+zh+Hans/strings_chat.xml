@@ -170,5 +170,5 @@
     <!-- 家里服务器出错时失败消息旁的脚注。无参数。 -->
     <string name="timeline_send_failure_upstream">服务器出错了</string>
     <!-- 核心还分不出类别的失败消息旁的脚注。无参数；有原文时换成原文。 -->
-    <string name="timeline_send_failed_other">发送失败</string>
+    <string name="timeline_send_failure_other">发送失败</string>
 </resources>
