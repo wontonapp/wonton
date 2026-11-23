@@ -22,6 +22,9 @@ pub(super) fn containers(
     if let Some(reply) = container_details(docker, method, parts, query, raw) {
         return Some(reply);
     }
+    if let Some(reply) = delete_or_inspect(docker, method, parts) {
+        return Some(reply);
+    }
     let exists = |name: &str| docker.containers.contains_key(name);
     let reply = match (method, parts) {
         (&Method::POST, ["create"])
@@ -75,6 +78,20 @@ pub(super) fn containers(
             gone(true)
         }
         (&Method::POST, [name, "start" | "stop"]) => gone(exists(name)),
+        (&Method::POST, [name, "wait"]) if exists(name) => {
+            let code = docker.outputs.get(*name).map_or(0, |o| o.0);
+            json_reply(StatusCode::OK, json!({"StatusCode": code}))
+        }
+        (&Method::GET, ["json"]) => list_containers(docker, query),
+        _ => return None,
+    };
+    Some(reply)
+}
+
+/// `DELETE /containers/<name>` 和 `GET /containers/<name>/json`；名字对不上时返回 None。
+fn delete_or_inspect(docker: &mut Resources, method: &Method, parts: &[&str]) -> Option<Response> {
+    let exists = |name: &str| docker.containers.contains_key(name);
+    let reply = match (method, parts) {
         (&Method::DELETE, [name])
             if docker
                 .remove_error
@@ -123,11 +140,6 @@ pub(super) fn containers(
             count_inspect(docker, name);
             inspect_container(docker, name)
         }
-        (&Method::POST, [name, "wait"]) if exists(name) => {
-            let code = docker.outputs.get(*name).map_or(0, |o| o.0);
-            json_reply(StatusCode::OK, json!({"StatusCode": code}))
-        }
-        (&Method::GET, ["json"]) => list_containers(docker, query),
         _ => return None,
     };
     Some(reply)
