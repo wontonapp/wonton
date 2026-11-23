@@ -4,8 +4,8 @@
     <string name="pairing_title">Pairing</string>
     <!-- Title of the page for pairing the same phone again from the server settings. -->
     <string name="pairing_title_again">Pair again</string>
-    <!-- Explanation above the paste field: where the pairing QR code lives. May wrap. -->
-    <string name="pairing_instructions">On your home network, open the server\'s IP address in a browser (the installer prints it), then scan the pairing QR code on that page.</string>
+    <!-- Explanation above the paste field: who to ask for the pairing code, and the scan path for whoever runs the server. May wrap. -->
+    <string name="pairing_instructions">Ask whoever runs your home server for a pairing code. It comes from Add Device on a paired device, or from sudo wonton pair on the computer. Running the server yourself? On your home network, open the address the installer printed and scan the QR code there.</string>
     <!-- Placeholder of the field to paste the pairing code when scanning is not possible. -->
     <string name="pairing_paste_placeholder">Paste the pairing code</string>
     <!-- Persistent label above the paste field; also the field's accessibility label. -->

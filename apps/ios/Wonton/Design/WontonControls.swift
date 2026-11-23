@@ -332,6 +332,8 @@ struct WontonRootBar<Trailing: View>: View {
         }
         .padding(.horizontal, WontonTheme.spacing.pageInset)
         .frame(maxWidth: .infinity)
+        // 界面测试按它量栏的底边，断言内容整段落在栏以下。
+        .accessibilityIdentifier("root-bar")
     }
 }
 
@@ -509,6 +511,18 @@ extension View {
             wontonTopBar { bar }
                 .modifier(WontonCanvas())
         }
+    }
+
+    /// 自绘栏的根页面：系统栏在特大字号下会铺到首屏内容上沿，整屏表单（配对）用它。
+    /// 栏仍然走 `wontonTopBar`（iOS 26 是 `safeAreaBar`），内容从玻璃后面滚过去，栏自己不占页面高度。
+    @ViewBuilder func wontonPairingRootScreen<Trailing: View>(
+        _ title: String, hasActions: Bool, @ViewBuilder trailing: () -> Trailing
+    ) -> some View {
+        let bar = WontonRootBar(title: title, hasActions: hasActions, trailing: trailing)
+        wontonTopBar { bar }
+            .navigationTitle(title)
+            .toolbar(.hidden, for: .navigationBar)
+            .modifier(WontonCanvas())
     }
 
     /// 根页面不显示页面名，连接状态和导航动作由系统栏承载。
