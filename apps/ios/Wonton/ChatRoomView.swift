@@ -62,11 +62,13 @@ struct ChatRoomView: View {
                     #if DEBUG
                         .overlay(alignment: .topLeading) {
                             ScrollDebug(
-                                pin: pin, flashes: jump.flashes,
-                                flashItem: jump.flash?.itemId, lastFlash: jump.lastFlash,
+                                pin: pin,
                                 extra: "sub=\(timeline.debugSubscribes) up=\(timeline.debugUpdates)"
                                     + " n=\(timeline.items.count)"
-                                    + " end=\(timeline.debugEnded) closed=\(model.debugClosed)"
+                                    + " end=\(timeline.debugEnded) closed=\(model.debugClosed)",
+                                flashItem: jump.flash?.itemId,
+                                flashes: jump.flashes,
+                                lastFlash: jump.lastFlash
                             )
                         }
                     #endif
