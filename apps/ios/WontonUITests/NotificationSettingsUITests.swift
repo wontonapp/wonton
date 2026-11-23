@@ -28,6 +28,7 @@ final class NotificationSettingsUITests: XCTestCase {
     func testSystemNotificationsEntryOpensWontonsOwnNotificationPage() {
         // 落点没成立时记一条失败也接着走，后面的状态断言才有机会说明问题。
         continueAfterFailure = true
+        reachSettings()
         let notifications = app.buttons.matching(NSPredicate(format: "label == %@", "Notifications"))
         for _ in 0..<3 where hittable(notifications) == nil { app.swipeUp() }
         XCTAssertNotNil(hittable(notifications), "设置页里没有“通知”\n\(app.debugDescription)")
