@@ -9,8 +9,8 @@ use std::sync::{Arc, Mutex, Weak};
 use tokio::sync::mpsc;
 use wonton_protocol::{
     ChatAction, ChoiceSend, ChoicesState, JumpState, MessageContent, MessageStatus, QuotedContent,
-    QuotedMessage, ReplyQuote, TimelineAction, TimelineContent, TimelineDiff, TimelineFocus,
-    TimelineItem, TimelineScroll, TimelineTarget, TimelineUpdate,
+    QuotedMessage, ReplyQuote, SideChatCard, SideChatState, TimelineAction, TimelineContent,
+    TimelineDiff, TimelineFocus, TimelineItem, TimelineScroll, TimelineTarget, TimelineUpdate,
 };
 
 use super::ui_fake_room::{
@@ -498,11 +498,80 @@ mod tests {
         subscription.next().await.expect("假房间一直开着")
     }
 
+    /// 同一个房间能同时订两份（主对话和盖在上面的旁聊）：两份都拿到整条时间线，发出去的字两份都收得到，
+    /// 谁先订着谁也不会被挤掉。
+    #[tokio::test]
+    async fn two_subscriptions_share_one_room() {
+        let fakes = FakeTimelines::default();
+        let first = fakes.subscribe(&target());
+        let _ = next(&first).await;
+        let second = fakes.subscribe(&target());
+        let batch = next(&second).await;
+        let [TimelineDiff::Reset { items }] = batch.diffs.as_slice() else {
+            panic!("后订的那份也拿到整条时间线");
+        };
+        assert_eq!(items.len(), ITEMS);
+
+        fakes.timeline_action(TimelineAction::SendText {
+            target: target(),
+            body: "Fixture both".into(),
+            reply_to: None,
+            mentions: Vec::new(),
+        });
+        assert!(!next(&second).await.diffs.is_empty());
+        assert!(!next(&first).await.diffs.is_empty());
+        // 后订的那份订阅时会给先订的那份也推一批，这里已经收过；两边的通道都没断。
+    }
+
+    /// 走壳用的入口订阅一条时间线：第一批之后不该自己结束（壳那边一结束就当房间没了、把页收起来）。
+    #[tokio::test]
+    async fn a_subscription_does_not_end_by_itself() {
+        let dir = tempfile::tempdir().unwrap();
+        let core =
+            crate::client::ClientCore::new_ui_fake(dir.path().to_string_lossy().into_owned())
+                .unwrap();
+        let subscription = core.subscribe_timeline(target()).await.unwrap();
+        let first =
+            tokio::time::timeout(std::time::Duration::from_secs(2), subscription.next()).await;
+        assert!(matches!(first, Ok(Some(_))), "第一批该马上到");
+        core.dispatch(wonton_protocol::Action::Timeline {
+            action: TimelineAction::SendText {
+                target: target(),
+                body: "Fixture alive".into(),
+                reply_to: None,
+                mentions: Vec::new(),
+            },
+        })
+        .unwrap();
+        let sent =
+            tokio::time::timeout(std::time::Duration::from_secs(2), subscription.next()).await;
+        assert!(matches!(sent, Ok(Some(_))), "发出去的字该推过来");
+        // 没事发生的时候也不该结束：结束的话壳会把这条时间线当成没了。
+        let idle =
+            tokio::time::timeout(std::time::Duration::from_millis(300), subscription.next()).await;
+        assert!(idle.is_err(), "没有操作时订阅自己结束了");
+    }
+
     fn message(items: &[TimelineItem], id: &str) -> wonton_protocol::TimelineMessage {
         match &items.iter().find(|item| item.id == id).unwrap().content {
             TimelineContent::Message { message } => message.clone(),
             _ => panic!("{id} 不是消息"),
         }
+    }
+
+    /// 旁聊的批次多一张旁聊卡：旁聊页顶栏下那行要有东西可画。
+    #[tokio::test]
+    async fn a_side_chat_batch_carries_the_header_card() {
+        let fakes = FakeTimelines::default();
+        let subscription = fakes.subscribe(&TimelineTarget {
+            room_id: ROOM.into(),
+            thread_root: Some("$ui-fake-4".into()),
+        });
+        let first = next(&subscription).await;
+        assert_eq!(
+            first.side_chat.map(|card| card.root_event_id),
+            Some("$ui-fake-4".into())
+        );
     }
 
     /// 界面测试约定的那几步：点引用跳过去、“向下”回来、回到底部清栈、点选项、发“/help”。

@@ -10,6 +10,7 @@ final class ChatTelegramUITests: XCTestCase {
 
     private static let directRoom = "chatRoom.!ui-fake:home.example"
     private static let groupRoom = "chatRoom.!ui-fake-call:home.example"
+    private static let notesRoom = "chatRoom.!ui-fake-notes:home.example"
 
     override func setUpWithError() throws {
         continueAfterFailure = false
@@ -50,6 +51,98 @@ final class ChatTelegramUITests: XCTestCase {
         tap(down)
         let last = text(startingWith: "Fixture last line")
         XCTAssertTrue(wait(10) { last.exists && last.isHittable }, "返回栈空了以后“向下”没到底")
+    }
+
+    /// 跳转本身也是一路在滚：途中要出浮动日期；手一碰打断跳转，也要在原消息上闪一下点名（ADR-0109 第 4 节）。
+    func testQuoteJumpShowsDateAndStillFlashesWhenTouched() {
+        enter(Self.directRoom)
+        tap(app.buttons["timelineDown"])
+        let quote = app.buttons["messageQuote.ui-fake-21"]
+        reveal(quote)
+        let scroll = app.descendants(matching: .any)["roomScroll"]
+        let before = flashCount(scroll)
+        quote.tap()
+        let floatingDate = app.descendants(matching: .any)["timelineFloatingDate"]
+        XCTAssertTrue(floatingDate.waitForExistence(timeout: 3), "跳的途中没有浮动日期\n\(app.debugDescription)")
+        // 立刻碰一下列表：程序化滚动停下，闪光照样要点在原消息上。
+        let start = app.coordinate(withNormalizedOffset: CGVector(dx: 0.5, dy: 0.5))
+        start.press(forDuration: 0.05, thenDragTo: start.withOffset(CGVector(dx: 0, dy: 20)),
+                    withVelocity: .default, thenHoldForDuration: 0.05)
+        // 闪光只亮一秒多，读得比它晚：按永远留着的计数和最后一行核对。
+        XCTAssertTrue(wait(5) { flashCount(scroll) > before },
+                      "手碰断跳转后原消息没闪\n\(app.debugDescription)")
+        XCTAssertTrue(scroll.label.contains("last=ui-fake-5"), "闪的不是原消息\n\(app.debugDescription)")
+    }
+
+    /// 引用摘要按原文换行，两行都给，还是最多两行（和安卓一样）；输入框上方那条回复也是两行。
+    func testQuoteSummaryKeepsBothLines() {
+        enter(Self.directRoom)
+        tap(app.buttons["timelineDown"])
+        let quote = app.buttons["messageQuote.ui-fake-20"]
+        reveal(quote)
+        // 名字一行加摘要两行约 58；只剩一行约 38。
+        XCTAssertGreaterThanOrEqual(quote.frame.height, 56, "引用摘要只剩一行\n\(app.debugDescription)")
+        XCTAssertLessThanOrEqual(quote.frame.height, Self.quoteMaxHeight, "引用摘要超过两行")
+        waitForFloatingDateToFade()
+        shot("quote-two-lines")
+    }
+
+    /// 引用跳到那条“表情 + 一行字”的消息，左滑它：输入框上方的回复条也要两行。
+    func testComposerReplySummaryKeepsBothLines() {
+        enter(Self.directRoom)
+        tap(app.buttons["timelineDown"])
+        let quote = app.buttons["messageQuote.ui-fake-20"]
+        reveal(quote)
+        quote.tap()
+        let original = app.descendants(matching: .any)["message.ui-fake-19"]
+        XCTAssertTrue(wait(10) { self.inView(original) }, "跳转没到原消息\n\(app.debugDescription)")
+        let start = original.coordinate(withNormalizedOffset: CGVector(dx: 0.5, dy: 0.5))
+        start.press(forDuration: 0.05, thenDragTo: start.withOffset(CGVector(dx: -160, dy: 0)),
+                    withVelocity: .default, thenHoldForDuration: 0.1)
+        let reply = app.descendants(matching: .any)["composerReplyQuote"]
+        XCTAssertTrue(reply.waitForExistence(timeout: 5), "左滑没进入回复\n\(app.debugDescription)")
+        // 名字一行加摘要两行约 54；只剩一行约 38。
+        XCTAssertGreaterThanOrEqual(reply.frame.height, 50, "输入框上的摘要只剩一行\n\(app.debugDescription)")
+        shot("reply-two-lines")
+    }
+
+    /// 命令菜单占着右下角时“向下”让开，收起菜单再回来。
+    func testDownButtonHidesWhileCommandMenuOpen() {
+        enter(Self.directRoom)
+        let down = app.buttons["timelineDown"]
+        tap(down)
+        dragDown()
+        XCTAssertTrue(down.waitForExistence(timeout: 5), "离开底部后没有“向下”\n\(app.debugDescription)")
+        let field = app.textViews["Message"]
+        field.tap()
+        field.typeText("/")
+        XCTAssertTrue(app.buttons["command.help"].waitForExistence(timeout: 5), "敲“/”没开命令菜单")
+        XCTAssertTrue(down.waitForNonExistence(timeout: 5), "菜单开着还压着“向下”\n\(app.debugDescription)")
+        field.typeText(XCUIKeyboardKey.delete.rawValue)
+        XCTAssertTrue(down.waitForExistence(timeout: 5), "收起菜单后“向下”没回来\n\(app.debugDescription)")
+    }
+
+    /// 顶栏下面照 Telegram 的叠放：插件横幅在最上，旁聊标题在它下面。
+    func testPluginBannerSitsAboveSideChatTitle() {
+        enter(Self.notesRoom)
+        let card = app.buttons["sideChatCard"]
+        reveal(card)
+        tap(card)
+        // 主对话那份还留在辅助功能树里（透明、盖住），横幅会匹配到两个：先到先取，两处位置一样。
+        let banner = app.descendants(matching: .any)["pluginStatusBanner"].firstMatch
+        let header = app.descendants(matching: .any)["sideChatHeader"].firstMatch
+        XCTAssertTrue(banner.waitForExistence(timeout: 5), "旁聊页顶栏下没有插件横幅\n\(app.debugDescription)")
+        XCTAssertTrue(header.waitForExistence(timeout: 5), "旁聊页顶栏下没有旁聊标题\n\(app.debugDescription)")
+        XCTAssertLessThan(banner.frame.maxY, header.frame.minY,
+                          "插件横幅不在旁聊标题上面\n\(app.debugDescription)")
+        waitForFloatingDateToFade()
+        shot("side-chat-top")
+        // 旁聊页自带一层导航栈：这是它那一层的根，左边缘右滑不把整个房间划走（ADR-0093）。
+        let edge = app.coordinate(withNormalizedOffset: CGVector(dx: 0.005, dy: 0.5))
+        edge.press(forDuration: 0.05, thenDragTo: app.coordinate(withNormalizedOffset: CGVector(dx: 0.9, dy: 0.5)),
+                   withVelocity: .default, thenHoldForDuration: 0.1)
+        Thread.sleep(forTimeInterval: 0.6)
+        XCTAssertTrue(header.exists, "右滑把房间划走了\n\(app.debugDescription)")
     }
 
     /// 选项按钮：点一个变成选中，另一个不能再点。
@@ -714,13 +807,29 @@ final class ChatTelegramUITests: XCTestCase {
         return false
     }
 
-    /// 从底部一段一段往回翻，直到这个元素整个在可见区里。
+    /// `ScrollDebug` 里的闪光计数；读不到给 -1。
+    private func flashCount(_ element: XCUIElement) -> Int {
+        let part = element.label.split(separator: " ").first { $0.hasPrefix("flashes=") }
+        return part.flatMap { Int($0.dropFirst("flashes=".count)) } ?? -1
+    }
+
+    /// 一段一段翻到元素整个在可见区里。默认往回翻；元素已经画在输入框下面时朝新消息翻，
+    /// 房间开在落点上，紧贴着落点下面的东西（旁聊卡）不用先翻到最上面再回来。
     private func reveal(_ element: XCUIElement, file: StaticString = #filePath, line: UInt = #line) {
-        for _ in 0..<60 {
+        for step in 0..<200 {
             if inView(element) { return }
-            dragDown()
+            if element.exists {
+                // 已经画出来、但在输入框下面（朝新消息的一侧）就往下翻，其余往回翻。
+                if element.frame.minY > app.textViews["Message"].frame.minY { dragUp() } else { dragDown() }
+            } else if step < 12 {
+                // 没画出来就按锚点猜：房间开在落点上，落点下面紧贴的卡（旁聊卡）要先往回翻。
+                dragDown()
+            } else {
+                // 猜的这头翻到头了还没有：换一头。翻到头时列表回弹，两边都试满才判失败。
+                if step % 10 < 5 { dragDown() } else { dragUp() }
+            }
         }
-        XCTFail("往回翻了 60 段也没找到 \(element)\n\(app.debugDescription)", file: file, line: line)
+        XCTFail("翻了 200 段也没找到 \(element)\n\(app.debugDescription)", file: file, line: line)
     }
 
     /// 点一下输入框，等它真拿到键盘焦点；没拿到就重试。焦点还在上一个框里时 typeText 会打进那个框。

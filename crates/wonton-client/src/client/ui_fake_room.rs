@@ -226,6 +226,9 @@ pub(super) const FAILED_SEND_INDEX: usize = 24;
 pub(super) const FAILED_CHOICE_INDEX: usize = 25;
 /// 失败选项的原因，界面上应当收在“详情”里。
 pub(super) const FAILED_CHOICE_REASON: &str = "Server timed out while sending";
+/// 这条下面挂着一张旁聊卡，点进去是旁聊页：界面测试用它查顶栏下面的叠放顺序。
+/// 紧贴落点（第 2 条）下面、又不在“高消息”的下标上：进房间不用翻页就点得到。
+pub(super) const SIDE_CHAT_TOP_INDEX: usize = 3;
 // 中文假数据放在数据文件里：它是界面测试的输入，不是界面文字，界面文字检查（ADR-0043）只管源码里的字符串。
 const QUOTED_TEXT: &str = include_str!("ui_fake_text/quoted.txt");
 const LONG_REPLY: &str = include_str!("ui_fake_text/long_reply.txt");
@@ -313,10 +316,19 @@ fn decorate(index: usize, own: bool, message: &mut TimelineMessage) {
     if let Some(reply) = quote(index) {
         message.reply = Some(reply);
     }
+    if index == SIDE_CHAT_INDEX {
+        message.side_chat = Some(SideChatCard {
+            root_event_id: format!("$ui-fake-{index}"),
+            title: "Fixture side chat".into(),
+            reply_count: 1,
+            unread_count: 0,
+            state: SideChatState::Open,
+        });
+    }
     if index == CHOICES_INDEX {
         message.choices = Some(choices());
     }
-    if index == SIDE_CHAT_INDEX {
+    if index == SIDE_CHAT_TOP_INDEX {
         message.side_chat = Some(SideChatCard {
             root_event_id: message.event_id.clone().unwrap_or_default(),
             title: "Fixture side chat".into(),
