@@ -21,6 +21,13 @@ struct FriendsView: View {
         _model = State(initialValue: FriendsModel(core: core))
     }
 
+    #if DEBUG
+    /// 截图测试用：不订阅核心，直接渲染给定的 ViewModel。
+    init(core: ClientCore, viewModel: FriendsViewModel) {
+        _model = State(initialValue: FriendsModel(core: core, viewModel: viewModel))
+    }
+    #endif
+
     var body: some View {
         content
             .wontonPushedScreen(String(localized: .Friends2.friendsTitle), usesSystemToolbar: true) {
@@ -378,6 +385,13 @@ final class FriendsModel {
         self.core = core
         viewModel = core.friends()
     }
+
+    #if DEBUG
+    init(core: ClientCore, viewModel: FriendsViewModel) {
+        self.core = core
+        self.viewModel = viewModel
+    }
+    #endif
 
     /// 进页面时取一次列表，之后跟着核心的推送走；页面消失时订阅结束。
     func observe() async {
