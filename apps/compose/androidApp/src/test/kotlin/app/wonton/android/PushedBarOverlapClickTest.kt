@@ -11,6 +11,7 @@ import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
+import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.text.BasicText
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.runtime.getValue
@@ -239,29 +240,32 @@ class PushedBarOverlapClickTest {
     }
 
     /**
-     * 稳定后内容拿到的 inset 就是栏高，内容让位等于栏底。
+     * 内容第一遍组合就拿得到栏高，内容让位等于栏底。
      *
-     * 不比“第一遍组合”：宿主第一次测量给的是 0 约束，栏量出来就是 0，第一遍记录 0 不代表漏了让位。
-     * 旧实现（栏高用状态回填、内容先按 0 让位）也能在稳定后补上；真正的差别是一帧定格的截图会抽到补上之前那一帧，
-     * 那由 Paparazzi 的参考图守（`PreviewSnapshotsTest`）。
+     * 宿主最外层先给有限尺寸：不定尺寸时宿主首测是 0 约束，栏也量成 0，第一遍就测不出差别。
+     * 旧实现（栏高靠 `onSizeChanged` 回填）第一遍固定是 0；`waitForIdle` 之后它也会收敛到 64，所以只断言稳定值锁不住它。
      */
     @Test
-    fun contentGetsTheBarHeightAsItsInset() {
-        var lastInset: Dp? = null
+    fun contentSeesTheBarHeightOnItsFirstComposition() {
+        var firstInset: Dp? = null
         compose.setContent {
             WontonTheme(testAppearance()) {
-                WontonScreen(bar = { WontonPushedBar(title = "外观", onBack = {}) }) {
-                    lastInset = LocalWontonTopInset.current
-                    Column(Modifier.wontonContentPadding()) { BasicText("内容") }
+                Box(Modifier.size(320.dp, 640.dp)) {
+                    WontonScreen(
+                        bar = { Box(Modifier.testTag("bar")) { WontonPushedBar(title = "外观", onBack = {}) } },
+                    ) {
+                        if (firstInset == null) firstInset = LocalWontonTopInset.current
+                        Column(Modifier.wontonContentPadding()) { BasicText("内容") }
+                    }
                 }
             }
         }
         compose.waitForIdle()
-        val bar = compose.onNodeWithText("外观").getUnclippedBoundsInRoot()
+        val bar = compose.onNodeWithTag("bar").getUnclippedBoundsInRoot()
         val content = compose.onNodeWithText("内容").getUnclippedBoundsInRoot()
         val barHeight = (bar.bottom - bar.top).value.toDouble()
         assertEquals("栏高是 M3 的 64dp", 64.0, barHeight, 0.5)
-        assertEquals("内容的 inset 要等于栏高", barHeight, lastInset?.value?.toDouble() ?: -1.0, 0.5)
+        assertEquals("内容第一遍组合就要拿到栏高", barHeight, firstInset?.value?.toDouble() ?: -1.0, 0.5)
         assertEquals("内容让位要从栏底开始", bar.bottom.value.toDouble(), content.top.value.toDouble(), 0.5)
     }
 }
