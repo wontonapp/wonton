@@ -97,7 +97,7 @@ private fun LicenseBlock(license: LicenseGroup, onOpen: () -> Unit) {
     WontonGroup {
         license.components.forEachIndexed { index, component ->
             if (index > 0) WontonSeparator()
-            WontonRow(component.name, component.version)
+            WontonRow(component.name, component.version, valueOneLine = true)
         }
         WontonSeparator()
         WontonRow(stringResource(R.string.settings_licenses_text), license.name, showsForward = true, onClick = onOpen)
