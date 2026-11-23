@@ -26,8 +26,8 @@ fn image() -> String {
     )
 }
 
-/// 共用主机上 Docker 建容器偶尔超过一分钟；这个期限同时是普通请求的时限。
-const INSTALL_TIMEOUT: Duration = Duration::from_secs(300);
+/// 共用主机上 Docker 建容器偶尔超过一分钟；这是安装和启动的期限（普通请求用 bollard 自己的 120 秒）。
+const INSTALL_TIMEOUT: Duration = crate::config::DEFAULT_INSTALL_TIMEOUT;
 
 /// 只有 `comfy` 要显卡，`web` 不要；都以和核心相同的非 root 用户运行，设备所属的组得靠 GroupAdd 给。
 fn compose(need: &str) -> String {
@@ -142,7 +142,7 @@ async fn docker_hands_render_nodes_and_their_groups_to_declared_services_only() 
 }
 
 #[tokio::test]
-#[ignore = "需要 Docker 和显卡"]
+#[ignore = "需要 Docker"]
 async fn required_plugins_do_not_install_on_a_host_without_a_gpu() {
     let engine = Engine::connect().unwrap();
     engine.check_server().await.unwrap();
@@ -167,7 +167,7 @@ async fn required_plugins_do_not_install_on_a_host_without_a_gpu() {
 }
 
 #[tokio::test]
-#[ignore = "需要 Docker 和显卡"]
+#[ignore = "需要 Docker"]
 async fn optional_plugins_install_without_devices_on_a_host_without_a_gpu() {
     let engine = Engine::connect().unwrap();
     engine.check_server().await.unwrap();
