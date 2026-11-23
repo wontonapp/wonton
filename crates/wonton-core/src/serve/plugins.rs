@@ -283,7 +283,7 @@ pub(crate) async fn start_restored_plugins(
 }
 
 pub(crate) fn spawn_federation_config(
-    engine: &Engine,
+    matrix: Option<&Arc<Matrix>>,
     cfg: &Config,
     peers: &Option<Arc<peers::Peers>>,
     notices: &Option<Arc<NoticeRoom>>,
@@ -298,9 +298,8 @@ pub(crate) fn spawn_federation_config(
         return;
     };
     FederationConfig::spawn(
-        engine.clone(),
+        matrix.cloned(),
         cfg.install_dir.clone(),
-        cfg.core_container.clone(),
         notices.clone(),
         names,
         server_name,

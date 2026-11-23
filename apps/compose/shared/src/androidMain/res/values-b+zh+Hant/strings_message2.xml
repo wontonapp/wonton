@@ -15,6 +15,8 @@
     <string name="message_image_save">儲存到相簿</string>
     <string name="message_image_saved">已儲存到相簿</string>
     <string name="message_image_share">分享</string>
+    <!-- 全螢幕檢視器翻同一次傳送的照片時的頁碼。Android 專用。 -->
+    <string name="message_image_page">%1$d / %2$d</string>
     <string name="message_summary_files">[檔案]</string>
     <string name="message_summary_image">[圖片]</string>
     <string name="message_image_permission_denied">Android 拒絕存取。請在設定中檢查此應用程式的權限，再試一次。</string>

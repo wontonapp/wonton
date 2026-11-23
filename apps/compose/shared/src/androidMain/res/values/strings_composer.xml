@@ -51,4 +51,8 @@
     <string name="composer_commands">Commands</string>
     <!-- Footer of the command menu: how many commands a Bot has beyond the listed ones. Argument: the count. -->
     <string name="composer_commands_more">%1$d more commands not listed</string>
+    <!-- Sheet line when an attachment has a format the server can't take. No arguments. -->
+    <string name="composer_attachment_unsupported_type">This format can\'t be uploaded</string>
+    <!-- Sheet line when the message being replied to is gone; the reply is dropped. No arguments. -->
+    <string name="composer_attachment_reply_target">The quoted message is gone, drop the reply</string>
 </resources>

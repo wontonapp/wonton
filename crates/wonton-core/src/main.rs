@@ -316,7 +316,13 @@ async fn serve() -> anyhow::Result<()> {
     let forwarder = _forwarder.map(Arc::new);
     let sharing = sharing_registries.service(peers.clone(), forwarder.clone())?;
     // Tuwunel 的名单和 hosts 跟着配对走（ADR-0050）。
-    serve::spawn_federation_config(&engine, &cfg, &peers, &notices, federation_blocks.clone());
+    serve::spawn_federation_config(
+        matrix.as_ref(),
+        &cfg,
+        &peers,
+        &notices,
+        federation_blocks.clone(),
+    );
     let clients = serve::open_domain(&cfg, &engine, &notices)?;
     let contacts = serve::open_contacts(
         &cfg,

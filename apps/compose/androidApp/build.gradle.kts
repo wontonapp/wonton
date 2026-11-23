@@ -4,6 +4,7 @@ plugins {
     alias(libs.plugins.android.application)
     alias(libs.plugins.compose.compiler)
     alias(libs.plugins.detekt)
+    alias(libs.plugins.aboutlibraries)
 }
 
 /**
@@ -122,8 +123,94 @@ configurations.configureEach {
 val versionScript = rootDir.parentFile.parentFile.resolve("scripts/app-version.sh")
 require(versionScript.isFile) { "找不到版本号脚本 ${versionScript.path}（rootDir=${rootDir.path}）" }
 
+/**
+ * 生成关于页“开源许可”用的 assets/licenses.json：Rust crate 经 cargo-about 从 Cargo.lock 取，
+ * Android 依赖读 AboutLibraries 刚导出的 aboutlibraries.json，许可全文一并带上。
+ */
+abstract class GenerateLicenses : DefaultTask() {
+    @get:InputFile
+    abstract val script: RegularFileProperty
+
+    @get:InputFile
+    abstract val androidExport: RegularFileProperty
+
+    @get:InputFile
+    abstract val approved: RegularFileProperty
+
+    /** 脚本按自己的路径定位仓库根，这里只当工作目录；不拿它当输入。 */
+    @get:Internal
+    abstract val repo: DirectoryProperty
+
+    /**
+     * 只把脚本要读的文件列成输入：整个仓库还含 target/ 和 build/，cargo 并发写它们会让 Gradle
+     * 判“输入不可读”（删掉的 .o），build/ 里的输出还会和本任务形成隐式依赖。
+     */
+    @get:InputFiles
+    @get:PathSensitive(PathSensitivity.RELATIVE)
+    abstract val sources: ConfigurableFileCollection
+
+    @get:OutputDirectory
+    abstract val outDir: DirectoryProperty
+
+    @get:Inject
+    abstract val exec: ExecOperations
+
+    @TaskAction
+    fun generate() {
+        outDir.get().asFile.mkdirs()
+        exec.exec {
+            commandLine(
+                "python3",
+                script.get().asFile.absolutePath,
+                "--platform",
+                "android",
+                "--android-export",
+                androidExport.get().asFile.absolutePath,
+                "--out",
+                outDir.get().asFile.absolutePath,
+            )
+            workingDir = repo.get().asFile
+        }
+    }
+}
+
+/** 仓库根：androidApp 在 apps/compose/androidApp。 */
+val repoRoot = rootDir.parentFile.parentFile
+
+/** licenses/APPROVED 里的许可 id（每行第一段），和 Rust 侧 cargo-about 的 accepted 是同一张表。 */
+val approvedLicenses = providers.fileContents(layout.projectDirectory.file("../../../licenses/APPROVED")).asText.map { text ->
+    text.lineSequence().filter { "|" in it && !it.startsWith("格式") }
+        .map { it.substringBefore('|').trim() }.filter { it.isNotEmpty() }.toList()
+}
+
+aboutLibraries {
+    // 许可全文由插件取（SPDX 文本，取过就进 Gradle 缓存）；离线模式下它不回填文本，所以不开。
+    offlineMode = false
+    license {
+        // 依赖里出现 APPROVED 之外（含 GPL、AGPL）的许可就让构建失败，等人看过再补。
+        strictMode = com.mikepenz.aboutlibraries.plugin.StrictMode.FAIL
+        allowedLicenses.addAll(approvedLicenses.get())
+        additionalLicenses.addAll(approvedLicenses.get())
+    }
+}
+
 extensions.configure<ApplicationAndroidComponentsExtension> {
     onVariants { variant ->
+        val generateLicenses = tasks.register<GenerateLicenses>("generateLicenses${variant.name.replaceFirstChar { it.uppercase() }}") {
+            script.set(repoRoot.resolve("scripts/generate-licenses.py"))
+            approved.set(repoRoot.resolve("licenses/APPROVED"))
+            repo.set(repoRoot)
+            sources.from(
+                project.fileTree(repoRoot) { include("Cargo.lock", "crates/*/Cargo.toml", "licenses/**") },
+            )
+            androidExport.set(
+                layout.buildDirectory.file("generated/aboutLibraries/${variant.name}/res/raw/aboutlibraries.json"),
+            )
+            // 同一个文件来自 AboutLibraries 的导出任务；它的输出路径就是上面这个约定位置。
+            dependsOn("prepareLibraryDefinitions${variant.name.replaceFirstChar { it.uppercase() }}")
+        }
+        variant.sources.assets?.addGeneratedSourceDirectory(generateLicenses, GenerateLicenses::outDir)
+
         val buildType = variant.buildType
         val wontonVersionProperty = providers.gradleProperty("wontonVersion").orNull
         val appVersion = providers.exec {

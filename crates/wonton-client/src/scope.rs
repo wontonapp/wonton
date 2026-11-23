@@ -10,8 +10,8 @@ use std::sync::Arc;
 use tokio::sync::watch;
 use wonton_protocol::{
     AgentChainsViewModel, BotContactsViewModel, ChatViewModel, ConfirmationsViewModel, CoreError,
-    FriendsViewModel, HomeViewModel, OnboardingViewModel, PagesViewModel, PeersViewModel,
-    PluginsViewModel, ServersViewModel, SettingsViewModel, TransfersViewModel,
+    FriendsViewModel, HomeViewModel, MyAvatarProblem, OnboardingViewModel, PagesViewModel,
+    PeersViewModel, PluginsViewModel, ServersViewModel, SettingsViewModel, TransfersViewModel,
 };
 
 use crate::agent_chains::AgentChainsLink;
@@ -401,6 +401,14 @@ impl Scope {
         task: impl Future<Output = Result<T, CoreError>> + Send + 'static,
     ) -> Result<T, CoreError> {
         self.runtime.run(task).await
+    }
+
+    /// 同 [`run`](Self::run)，但保留 [`MyAvatarProblem`] 的类别。
+    pub(crate) async fn run_avatar<T: Send + 'static>(
+        &self,
+        task: impl Future<Output = Result<T, MyAvatarProblem>> + Send + 'static,
+    ) -> Result<T, MyAvatarProblem> {
+        self.runtime.run_avatar(task).await
     }
 
     pub(crate) fn spawn(&self, task: impl Future<Output = ()> + Send + 'static) {

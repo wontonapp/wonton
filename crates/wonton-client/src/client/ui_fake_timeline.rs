@@ -77,11 +77,19 @@ impl FakeTimelines {
     /// 时间线上的操作。没订阅的房间、约定以外的操作不理，转发的副本和发出去的字除外。
     pub(super) fn timeline_action(&self, action: TimelineAction) {
         match &action {
+            // 附言先落进目标房间再转发，和真核心等附言被确认后才转发的顺序一致。
             TimelineAction::ForwardMessage {
                 target,
                 item_id,
                 to_room_id,
+                comment,
             } => {
+                if let Some(comment) = comment.as_deref().filter(|c| !c.trim().is_empty()) {
+                    match self.get(to_room_id) {
+                        Some(fake) => fake.send_text(comment, &[]),
+                        None => self.park(to_room_id, comment),
+                    }
+                }
                 self.forward(&target.room_id, item_id, to_room_id);
                 return;
             }
@@ -386,6 +394,8 @@ fn lock<T>(mutex: &Mutex<T>) -> std::sync::MutexGuard<'_, T> {
 
 #[cfg(test)]
 mod tests {
+    use std::time::Duration;
+
     use super::*;
     use wonton_protocol::{MessageRun, TimelineTarget};
 
@@ -574,6 +584,7 @@ mod tests {
             target: target(),
             item_id: "ui-fake-11".into(),
             to_room_id: "!ui-fake-call:home.example".into(),
+            comment: None,
         });
         let far = fakes.subscribe("!ui-fake-call:home.example");
         let first = next(&far).await;
@@ -611,6 +622,7 @@ mod tests {
                 target: target(),
                 item_id: "ui-fake-11".into(),
                 to_room_id: far_id.into(),
+                comment: None,
             });
         }
         let far = fakes.subscribe(far_id);
@@ -641,5 +653,64 @@ mod tests {
                 "Fixture message 11"
             ]
         );
+    }
+
+    /// 转发带附言：附言排在转发的副本前面；只含空白的附言不落。目标房间没开和先开着都一样。
+    #[tokio::test]
+    async fn forward_comment_lands_before_the_copy_and_blank_is_dropped() {
+        let far_id = "!ui-fake-call:home.example";
+        let mut landed = Vec::new();
+        for opened_first in [false, true] {
+            let fakes = FakeTimelines::default();
+            let echo = fakes.subscribe(ROOM);
+            let _first = next(&echo).await;
+            let opened = opened_first.then(|| fakes.subscribe(far_id));
+            if let Some(far) = &opened {
+                let _first = next(far).await;
+            }
+            for comment in [Some("看这条".into()), Some("  \n".into())] {
+                fakes.timeline_action(TimelineAction::ForwardMessage {
+                    target: target(),
+                    item_id: "ui-fake-11".into(),
+                    to_room_id: far_id.into(),
+                    comment,
+                });
+            }
+            let far = opened.unwrap_or_else(|| fakes.subscribe(far_id));
+            let mut bodies = Vec::new();
+            // 一条附言一条、一份副本一条；到齐就停，多出来的第四条由下面两条断言报出来。整段丢掉时 5 秒就失败，不挂在作业的 45 分钟超时上。
+            tokio::time::timeout(Duration::from_secs(5), async {
+                while bodies.len() < 3 {
+                    for diff in next(&far).await.diffs {
+                        let TimelineDiff::PushBack { item } = diff else {
+                            continue;
+                        };
+                        let TimelineContent::Message { message } = item.content else {
+                            panic!("补进来的都是消息");
+                        };
+                        let MessageContent::Text { body, .. } = message.body else {
+                            panic!("补进来的都是文字");
+                        };
+                        bodies.push(body);
+                    }
+                }
+            })
+            .await
+            .expect("附言和副本没到齐（等 5 秒）");
+            assert!(
+                tokio::time::timeout(Duration::from_millis(200), next(&far))
+                    .await
+                    .is_err(),
+                "收齐三条后还有第四条（空白附言落了）：{bodies:?}"
+            );
+            landed.push((opened_first, bodies));
+        }
+        for (opened_first, bodies) in landed {
+            assert_eq!(
+                bodies,
+                ["看这条", "Fixture message 11", "Fixture message 11"],
+                "目标房间先开着：{opened_first}"
+            );
+        }
     }
 }

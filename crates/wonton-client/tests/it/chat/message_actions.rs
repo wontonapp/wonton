@@ -93,6 +93,7 @@ pub(super) fn kinds(actions: &[MessageAction]) -> Vec<&'static str> {
         .map(|action| match action {
             MessageAction::Copy { .. } => "copy",
             MessageAction::Reply { .. } => "reply",
+            MessageAction::Edit { .. } => "edit",
             MessageAction::Forward => "forward",
             MessageAction::Redact => "redact",
         })
@@ -155,8 +156,11 @@ async fn the_menu_follows_power_and_a_redaction_reaches_both_sides() {
             text_message(item, "Bot 说的话")
         })
         .await;
-    assert_eq!(kinds(&own.actions), ["copy", "reply", "forward", "redact"]);
-    assert_eq!(kinds(&bots.actions), ["copy", "reply", "forward"]);
+    assert_eq!(
+        kinds(&own.actions),
+        ["reply", "copy", "edit", "forward", "redact"]
+    );
+    assert_eq!(kinds(&bots.actions), ["reply", "copy", "forward"]);
 
     let redact = |item_id: &str| Action::Timeline {
         action: TimelineAction::RedactMessage {
@@ -270,7 +274,7 @@ async fn forwarded_messages_arrive_as_they_were() {
         .await
         .expect("Bot 发文字");
     bot_direct
-        .send_image(super::test_image())
+        .send_image(super::test_image(), None)
         .await
         .expect("Bot 发图片");
     let mut timeline = Timeline::open(&phone, direct.as_str()).await;
@@ -298,6 +302,7 @@ async fn forwarded_messages_arrive_as_they_were() {
             },
             item_id: item_id.to_owned(),
             to_room_id: to.to_owned(),
+            comment: None,
         },
     };
     let nowhere = phone.dispatch(forward(&text_item, "!nowhere:wonton.localhost"));

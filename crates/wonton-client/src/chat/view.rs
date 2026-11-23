@@ -228,14 +228,18 @@ fn timeline_message(
     let body = message_content(message.body, message.is_own, links);
     let event_id = message.event_id.map(|id| id.to_string());
     let sender_id = message.sender.to_string();
-    let actions = message_actions(&body, event_id.as_deref(), message.can_redact, |event_id| {
-        QuotedMessage {
+    let actions = message_actions(
+        &body,
+        event_id.as_deref(),
+        message.can_redact,
+        message.is_own,
+        |event_id| QuotedMessage {
             event_id,
             sender_id: sender_id.clone(),
             sender_name: message.sender_name.clone(),
             content: quoted_content(&body),
-        }
-    });
+        },
+    );
     let send_state = send_state(message.status);
     TimelineMessage {
         event_id,
@@ -281,7 +285,8 @@ fn send_state(status: SendStatus) -> SendState {
         },
         SendStatus::Sent => SendState::Sent,
         SendStatus::Failed { error, recoverable } => SendState::Failed {
-            message: error,
+            failure: wonton_protocol::SendFailure::Other,
+            details: Some(error),
             recoverable,
         },
     }
@@ -434,12 +439,20 @@ pub(crate) fn failure(error: &Error) -> ChatFailure {
 /// 直接返回给壳的 Matrix 错误。
 pub(crate) fn core_error(error: &Error) -> CoreError {
     let reason = error.to_string();
-    match failure(error) {
+    core_failure(failure(error), reason)
+}
+
+/// 类别换成直接返回给壳的错误：连不上说统一的那句话，其余保留原文。核心自己判出的跨服务器原因
+/// （对方没配对、对方公网关）也从这里过，不并成“服务器出错”。
+pub(crate) fn core_failure(failure: ChatFailure, reason: String) -> CoreError {
+    match failure {
         ChatFailure::TransportUnavailable => CoreError::TransportUnavailable {
             reason: not_connected(),
         },
+        ChatFailure::PeerPublicAccessOff => CoreError::TransportUnavailable { reason },
         ChatFailure::Unauthorized => CoreError::Unauthorized { reason },
         ChatFailure::Forbidden => CoreError::Forbidden { reason },
+        ChatFailure::ServerNotPaired => CoreError::NotReady { reason },
         ChatFailure::NotReady => CoreError::NotReady { reason },
         ChatFailure::Upstream | ChatFailure::Other => CoreError::Upstream { reason },
         ChatFailure::InvalidInput => CoreError::InvalidInput { reason },
@@ -628,6 +641,24 @@ mod tests {
                 ("http://example.com/".to_owned(), RichLinkKind::External),
                 ("tel:+8613800138000".to_owned(), RichLinkKind::Phone),
             ]
+        );
+    }
+
+    /// 行为：对方服务器没配对、对方公网关是两个原因，给壳时不并成“服务器出错”：前者是还没就绪
+    /// （配好对再试），后者是暂时连不上（等对方重开）。
+    #[test]
+    fn cross_server_failures_keep_their_reason() {
+        assert_eq!(
+            core_failure(ChatFailure::ServerNotPaired, "对方服务器还没配对".into()),
+            CoreError::NotReady {
+                reason: "对方服务器还没配对".into()
+            }
+        );
+        assert_eq!(
+            core_failure(ChatFailure::PeerPublicAccessOff, "对方公网访问关着".into()),
+            CoreError::TransportUnavailable {
+                reason: "对方公网访问关着".into()
+            }
         );
     }
 }

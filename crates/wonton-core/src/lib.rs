@@ -8,6 +8,8 @@
 extern crate self as wonton_core;
 
 #[cfg(test)]
+mod restart_contract_tests;
+#[cfg(test)]
 pub mod test_docker;
 #[cfg(test)]
 mod test_docker_check;

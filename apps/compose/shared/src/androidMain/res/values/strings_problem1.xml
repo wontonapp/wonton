@@ -29,4 +29,8 @@
     <!-- Next step under the server-error problem. Also used for other problems that only say to try later. -->
     <string name="problem_upstream_next_step">Try again later.</string>
     <string name="problem_plugin_health_timeout_next_step">The service was still not ready when the deadline passed. Retrying the install once the host has calmed down usually works; a service answering 5xx all along may also be failing on its own. The details name the service, how long it waited, its last state and recent probes.</string>
+    <!-- Problem title when a chat can't start because the other server turned its public access off. -->
+    <string name="problem_peer_public_access_off_title">The other server\'s public access is off</string>
+    <!-- Problem title when a chat can't start because the other server isn't paired with this one. -->
+    <string name="problem_server_not_paired_title">The other server isn\'t paired</string>
 </resources>

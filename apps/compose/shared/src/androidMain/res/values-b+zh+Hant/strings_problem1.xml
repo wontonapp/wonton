@@ -29,4 +29,8 @@
     <!-- Next step under the server-error problem. Also used for other problems that only say to try later. -->
     <string name="problem_upstream_next_step">稍後再試。</string>
     <string name="problem_plugin_health_timeout_next_step">到時限服務還沒就緒。主機空下來後重試安裝通常就能過；服務一直回 5xx 也可能是它自己有問題。詳情裡有是哪個服務、等了多久、最後狀態和最近的探針。</string>
+    <!-- Problem title when a chat can't start because the other server turned its public access off. -->
+    <string name="problem_peer_public_access_off_title">對方伺服器的公網訪問已關</string>
+    <!-- Problem title when a chat can't start because the other server isn't paired with this one. -->
+    <string name="problem_server_not_paired_title">對方伺服器還沒配對</string>
 </resources>

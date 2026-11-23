@@ -120,20 +120,20 @@ fun Composer(
     val viaTray = attachments.isNotEmpty() || composer?.outgoing.orEmpty().isNotEmpty()
     val roomId = target.roomId
     val inSideChat = target.threadRoot != null
-    // 旁聊里的照片都不进附件区，选好就发；回复跟着这张照片发出去。核心没收下就都留着，原因给出去。
+    // 旁聊里照片不进附件区，选好就发；输入框里的字只当第一张的说明，回复跟着这张照片发出去。
     val sendImage = if (inSideChat) {
-        { upload: ImageUpload ->
-            val problem = core.send(Action.Timeline(TimelineAction.SendImage(target, upload, reply?.eventId)))
-            if (problem != null) {
-                onReject(problem)
-            } else if (reply != null) {
-                onReplyCancel()
-            }
-        }
+        sendSideChatImage(
+            core = core,
+            target = target,
+            reply = reply,
+            onSent = onSent,
+            onReplyCancel = onReplyCancel,
+            onReject = onReject,
+        )
     } else {
         null
     }
-    val attach = rememberAttachments(target, composer, core, onReject, onReplyCancel, reply, sendImage)
+    val attach = rememberAttachments(target, composer, core, onReject, onReplyCancel, reply, sendImage, draft)
     val isEmpty = draft.isBlank() && attachments.isEmpty()
     val focusRequester = remember { FocusRequester() }
     LaunchedEffect(focusToken) { if (focusToken > 0) focusRequester.requestFocus() }
@@ -305,6 +305,28 @@ private class Attachments(
     val chooser: @Composable () -> Unit,
 )
 
+/** 旁聊的照片选好就发；输入框里的字只带在第一张上，发出去后清草稿、收回复。 */
+private fun sendSideChatImage(
+    core: ClientCore,
+    target: TimelineTarget,
+    reply: ReplyQuote?,
+    onSent: () -> Unit,
+    onReplyCancel: () -> Unit,
+    onReject: (Problem) -> Unit,
+): (ImageUpload, String?) -> Unit = { upload, caption ->
+    val problem =
+        core.send(
+            Action.Timeline(
+                TimelineAction.SendImage(target, upload, caption = caption, replyTo = reply?.eventId),
+            ),
+        )
+    if (problem == null) {
+        if (caption != null) onSent() else if (reply != null) onReplyCancel()
+    } else {
+        onReject(problem)
+    }
+}
+
 @OptIn(ExperimentalFoundationApi::class)
 @Composable
 private fun rememberAttachments(
@@ -314,7 +336,8 @@ private fun rememberAttachments(
     onReject: (Problem) -> Unit,
     onReplyCancel: () -> Unit,
     reply: ReplyQuote?,
-    sendImage: ((ImageUpload) -> Unit)?,
+    sendImage: ((ImageUpload, caption: String?) -> Unit)?,
+    draft: String,
 ): Attachments {
     val roomId = target.roomId
     val context = LocalContext.current
@@ -337,33 +360,21 @@ private fun rememberAttachments(
     val addPhotos = { uris: List<Uri> ->
         val send = currentSendImage
         scope.launch {
-            sendPickedPhotos(context, uris, send, photoUnreadable, photoTryAnother, core, roomId)?.let(onReject)
+            sendPickedPhotos(context, uris, send, photoUnreadable, photoTryAnother, core, roomId, draft)?.let(onReject)
         }
-        Unit
     }
-    // 相册里选好后附言和照片一起发（照 Telegram）：旁聊没有附件区，照片照旧选好就发，附言跟着当一句话发出去；
-    // 主对话里照片先进附件区，全部到位再发一条带附言的消息。发不了时附件留在附件区、面板收起，主人改完再发；
-    // 照片进附件区失败则面板留着，原因说出去。
+    // 相册里选好后附言和照片一起发（照 Telegram）：旁聊里附言只当第一张的说明；主对话里照片先进附件区，
+    // 全部到位再发一条带附言的消息。发不了时附件留在附件区、面板收起，主人改完再发。
     val sendPhotos = { uris: List<Uri>, note: String ->
         val send = currentSendImage
         scope.launch {
-            val failed = sendPickedPhotos(context, uris, send, photoUnreadable, photoTryAnother, core, roomId)
+            val failed = sendPickedPhotos(context, uris, send, photoUnreadable, photoTryAnother, core, roomId, note)
             choosing = false
             if (failed != null) {
                 onReject(failed)
-            } else if (send != null) {
-                // 旁聊没有附件区：附言单独一条，接在照片后面。
-                if (note.isNotBlank()) {
-                    core.send(Action.Timeline(TimelineAction.SendText(target, note, null)))?.let(onReject)
-                }
-            } else {
-                val action = Action.Timeline(TimelineAction.SendComposer(target, note, reply?.eventId))
-                val problem = core.send(action)
-                if (problem != null) {
-                    onReject(problem)
-                } else if (reply != null) {
-                    onReplyCancel()
-                }
+            } else if (send == null) {
+                val problem = core.send(Action.Timeline(TimelineAction.SendComposer(target, note, reply?.eventId)))
+                if (problem != null) onReject(problem) else if (reply != null) onReplyCancel()
             }
         }
         Unit
@@ -524,15 +535,26 @@ private fun sendAction(target: TimelineTarget, text: String, reply: ReplyQuote?,
 private suspend fun sendPickedPhotos(
     context: Context,
     uris: List<Uri>,
-    send: ((ImageUpload) -> Unit)?,
+    send: ((ImageUpload, String?) -> Unit)?,
     unreadable: String,
     tryAnother: String,
     core: ClientCore,
     roomId: String,
+    caption: String,
 ): Problem? {
+    // 输入框里的字只当第一张试过的照片的说明（跟 Telegram 一样）；那一张被拒也照样清掉，不留给后面的。
+    var note = caption.trim().takeIf { it.isNotEmpty() }
     for (uri in uris) {
         val problem = PhotoUpload.make(context, uri).fold(
-            onSuccess = { upload -> if (send != null) { send(upload); null } else addImage(core, roomId, upload) },
+            onSuccess = { upload ->
+                if (send != null) {
+                    send(upload, note)
+                    note = null
+                } else {
+                    addImage(core, roomId, upload)
+                }
+                null
+            },
             onFailure = { failure -> Problem(unreadable, tryAnother, failure.message) },
         )
         if (problem != null) return problem

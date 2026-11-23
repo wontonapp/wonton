@@ -37,6 +37,9 @@ class PreviewSnapshotsTest {
     fun agentDegraded() = paparazzi.snapshot { AgentDegradedPreview() }
 
     @Test
+    fun agentInstallFailed() = paparazzi.snapshot { AgentInstallFailedPreview() }
+
+    @Test
     fun chatInvite() = paparazzi.snapshot { ChatInvitePreview() }
 
     @Test
@@ -65,4 +68,10 @@ class PreviewSnapshotsTest {
 
     @Test
     fun shareSheetNotPaired() = paparazzi.snapshot { ShareSheetNotPairedPreview() }
+
+    @Test
+    fun peersPublicAccessOff() = paparazzi.snapshot { PeersPublicAccessOffPreview() }
+
+    @Test
+    fun peersPublicAccessOffDark() = paparazzi.snapshot { PeersPublicAccessOffDarkPreview() }
 }

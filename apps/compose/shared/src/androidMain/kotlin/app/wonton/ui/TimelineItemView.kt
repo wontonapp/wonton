@@ -59,6 +59,7 @@ import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.unit.dp
 import app.wonton.client.ClientCore
 import app.wonton.protocol.Action
+import app.wonton.protocol.ImageContent
 import app.wonton.protocol.MessageAction
 import app.wonton.protocol.MessageContent
 import app.wonton.protocol.MessageRun
@@ -113,6 +114,7 @@ fun TimelineItemView(
     emphasize: Boolean = false,
     flushesPrevious: Boolean = false,
     flushesNext: Boolean = false,
+    groupImages: List<ImageContent>? = null,
 ) {
     val flash = remember(item.id) { Animatable(0f) }
     LaunchedEffect(focused, emphasize) {
@@ -149,6 +151,7 @@ fun TimelineItemView(
                     onAnswerChoice,
                     flushesPrevious,
                     flushesNext,
+                    groupImages,
                 )
             }
             is TimelineContent.Notice -> CenteredNote(content.text)
@@ -218,6 +221,7 @@ private fun MessageBubble(
     onAnswerChoice: (String) -> Unit,
     flushesPrevious: Boolean = false,
     flushesNext: Boolean = false,
+    groupImages: List<ImageContent>?,
 ) {
     val colors = WontonTheme.colors
     val isOwn = message.isOwn
@@ -275,6 +279,7 @@ private fun MessageBubble(
                                 onJumpQuote = onJumpQuote,
                                 flushesPrevious = flushesPrevious,
                                 flushesNext = flushesNext,
+                                groupImages = groupImages,
                             )
                         }
                         (message.sendState as? SendState.Failed)?.let { failed ->
@@ -307,6 +312,7 @@ fun BubbleSurface(
     onJumpQuote: (String) -> Unit = {},
     flushesPrevious: Boolean = false,
     flushesNext: Boolean = false,
+    groupImages: List<ImageContent>? = null,
 ) {
     val colors = WontonTheme.colors
     val isOwn = message.isOwn
@@ -344,7 +350,7 @@ fun BubbleSurface(
                 LocalContentColor provides content.toColor(),
                 LocalTextStyle provides WontonTheme.typography.body,
             ) {
-                MessageBody(message.body, core, message.sendState, reserve, onCardAction, onLongPress)
+                MessageBody(message.body, core, message.sendState, reserve, onCardAction, onLongPress, groupImages)
             }
         }
     }
@@ -464,6 +470,18 @@ private fun TimeCapsule(message: TimelineMessage, modifier: Modifier) {
     }
 }
 
+/** 这一条是不是它那一组的最后一条：组尾才画尾巴。 */
+internal val TimelineItem.endsRun: Boolean
+    get() = message?.let { it.run == MessageRun.ALONE || it.run == MessageRun.LAST } == true
+
+/** 气泡后面闪光的不透明度，只在跳转落到这一条时用。 */
+private const val FLASH_ALPHA = 0.16f
+
+/** 脚注里钟表的轻重：和正文的墨色有区分。 */
+private const val FOOTER_ICON_ALPHA = 0.7f
+
+/** 图片上时间胶囊的底色。 */
+private val TIME_CAPSULE_BG = Color.Black.copy(alpha = 0.45f)
 @Composable
 private fun MessageBody(
     body: MessageContent,
@@ -472,11 +490,12 @@ private fun MessageBody(
     trailingReserve: String?,
     onCardAction: (Action) -> Unit,
     onLongPress: (() -> Unit)? = null,
+    groupImages: List<ImageContent>? = null,
 ) {
     when (body) {
         is MessageContent.Text -> TextMessageBody(body.blocks, body.files, core, trailingReserve)
         is MessageContent.Image -> Column(verticalArrangement = Arrangement.spacedBy(WontonTheme.spacing.s8)) {
-            MessageImage(body.image, core, sendState, onLongPress)
+            MessageImage(body.image, core, sendState, onLongPress, groupImages)
             // 一次发送里主人写的字是最后一张照片的说明文字（ADR-0094），画在照片下面。
             body.image.caption?.let { caption -> TextMessageBody(caption.blocks, emptyList(), core, trailingReserve) }
         }
@@ -504,15 +523,3 @@ private fun MessageBody(
 val TimelineMessage.replyAction: MessageAction.Reply?
     get() = actions.firstOrNull { it is MessageAction.Reply } as? MessageAction.Reply
 
-/** 这一条是不是它那一组的最后一条：组尾才画尾巴。 */
-internal val TimelineItem.endsRun: Boolean
-    get() = message?.let { it.run == MessageRun.ALONE || it.run == MessageRun.LAST } == true
-
-/** 气泡后面闪光的不透明度，只在跳转落到这一条时用。 */
-private const val FLASH_ALPHA = 0.16f
-
-/** 脚注里钟表的轻重：和正文的墨色有区分。 */
-private const val FOOTER_ICON_ALPHA = 0.7f
-
-/** 图片上时间胶囊的底色。 */
-private val TIME_CAPSULE_BG = Color.Black.copy(alpha = 0.45f)

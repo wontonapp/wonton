@@ -1,10 +1,14 @@
 //! 入口容器和连接器的期望状态：按设置建、删，安全选项逐项锁住。
 
 use std::collections::HashMap;
+use std::time::Duration;
 
 use serde_json::{Value, json};
 
-use super::{ENTRY_CLIENTS_ALIAS, ENTRY_EDGE_ALIAS, EntryContainers, EntryError};
+use super::{
+    CONNECTOR_RELOAD_ADDR, ENTRY_CLIENTS_ALIAS, ENTRY_EDGE_ALIAS, ENTRY_RELOAD_ADDR,
+    EntryContainers, EntryError,
+};
 use crate::entry_compose::HAPROXY_IMAGE;
 use crate::entry_runtime::FRPC_IMAGE;
 use crate::entry_settings::EntrySettings;
@@ -58,13 +62,15 @@ impl Rig {
         let dir = tempfile::tempdir().unwrap();
         std::fs::create_dir_all(dir.path().join("entry/certs")).unwrap();
         std::fs::write(dir.path().join("entry/certs/site.pem"), "pem").unwrap();
-        let containers = EntryContainers::new(
+        let reload_addr = master_forever("Success=1\n").await;
+        let mut containers = EntryContainers::new(
             engine,
             dir.path().to_owned(),
             dir.path().join("data"),
             Instance::default(),
             Some(CORE.to_owned()),
         );
+        containers.reload_addr = reload_addr;
         Self {
             docker,
             containers,
@@ -117,12 +123,28 @@ async fn federation_settings_create_entry_and_connector() {
     assert_eq!(entry["Image"], HAPROXY_IMAGE);
     assert_eq!(
         entry["Cmd"],
-        json!(["haproxy", "-W", "-db", "-f", "/config/haproxy.cfg"])
+        json!([
+            "haproxy",
+            "-W",
+            "-db",
+            "-f",
+            "/config/haproxy.cfg",
+            "-S",
+            ENTRY_RELOAD_ADDR
+        ])
     );
     assert_eq!(connector["Image"], HAPROXY_IMAGE);
     assert_eq!(
         connector["Cmd"],
-        json!(["haproxy", "-W", "-db", "-f", "/config/connector.cfg"])
+        json!([
+            "haproxy",
+            "-W",
+            "-db",
+            "-f",
+            "/config/connector.cfg",
+            "-S",
+            CONNECTOR_RELOAD_ADDR
+        ])
     );
     // 入口在 edge 和 clients 上，连接器在 edge 和 relay 上。
     let edge = format!("{PROJECT}_edge");
@@ -189,7 +211,9 @@ async fn containers_have_security_options() {
         );
         assert_eq!(host["LogConfig"]["Config"]["max-size"], "10m");
         assert_eq!(host["LogConfig"]["Config"]["max-file"], "3");
-        assert_eq!(host["RestartPolicy"]["Name"], "unless-stopped");
+        // Docker 重启后要自己回来：核心发过信号的容器会被记成手动停过，`unless-stopped` 不再拉起。
+        assert_eq!(host["RestartPolicy"]["Name"], "always");
+        assert_eq!(created["StopSignal"], "SIGTERM");
     }
     // 连接器不在 core 网络上；入口也不在。
     let core = format!("{PROJECT}_core");
@@ -280,15 +304,86 @@ async fn router_forwarding_publishes_the_host_port() {
     );
 }
 
-/// 证书续期后发 `USR2` 给入口容器：按组件标签找，不看 compose 服务名。
+/// 假 HAProxy 主进程的管理端口：收一条命令，回一段固定回应，返回命令原文。
+async fn master_cli(reply: &'static str) -> (String, tokio::task::JoinHandle<String>) {
+    use tokio::io::{AsyncReadExt, AsyncWriteExt};
+    let listener = tokio_listener().await;
+    let addr = listener.local_addr().unwrap().to_string();
+    let handle = tokio::spawn(async move {
+        let (mut socket, _) = listener.accept().await.unwrap();
+        let mut command = Vec::new();
+        loop {
+            let mut byte = [0u8; 1];
+            socket.read_exact(&mut byte).await.unwrap();
+            command.push(byte[0]);
+            if byte[0] == b'\n' {
+                break;
+            }
+        }
+        socket.write_all(reply.as_bytes()).await.unwrap();
+        String::from_utf8(command).unwrap()
+    });
+    (addr, handle)
+}
+
+/// 每次连接都回同一段的假主进程：要在 reconcile 路径上重载的用例用。
+async fn master_forever(reply: &'static str) -> String {
+    use tokio::io::{AsyncReadExt, AsyncWriteExt};
+    let listener = tokio_listener().await;
+    let addr = listener.local_addr().unwrap().to_string();
+    tokio::spawn(async move {
+        loop {
+            let Ok((mut socket, _)) = listener.accept().await else {
+                return;
+            };
+            let mut byte = [0u8; 1];
+            loop {
+                if socket.read_exact(&mut byte).await.is_err() || byte[0] == b'\n' {
+                    break;
+                }
+            }
+            if socket.write_all(reply.as_bytes()).await.is_err() {
+                return;
+            }
+        }
+    });
+    addr
+}
+
+async fn tokio_listener() -> tokio::net::TcpListener {
+    tokio::net::TcpListener::bind("127.0.0.1:0").await.unwrap()
+}
+
+/// 证书续期后向入口 HAProxy 的主进程发 `reload`：按组件标签找，不经 Docker 的 kill 接口。
 #[tokio::test]
-async fn reload_signals_the_entry_container() {
+async fn reload_asks_the_entry_to_soft_reload() {
+    let (addr, seen) = master_cli("Success=1\n").await;
     let rig = Rig::new().await;
     rig.reconcile(Some(&settings())).await.unwrap();
-    rig.containers.reload().await.unwrap();
-    let kills = rig.writes_for("/kill");
-    assert_eq!(kills.len(), 1, "{kills:?}");
-    assert!(kills[0].contains("wonton-entry"), "{kills:?}");
+    rig.containers.reload(&addr).await.unwrap();
+    let seen = tokio::time::timeout(Duration::from_secs(5), seen)
+        .await
+        .expect("没有连管理端口")
+        .unwrap();
+    assert_eq!(seen, "reload\n");
+    assert!(
+        rig.writes_for("/kill").is_empty(),
+        "{:?}",
+        rig.docker.writes()
+    );
+}
+
+/// 新配置没起来：`Success=0` 后面跟着启动日志，原样报出来。
+#[tokio::test]
+async fn reload_reports_the_startup_logs_of_a_failed_reload() {
+    let (addr, _seen) =
+        master_cli("Success=0\n--\n[ALERT] (49) : config : missing timeouts for proxy 'public'.\n")
+            .await;
+    let rig = Rig::new().await;
+    rig.reconcile(Some(&settings())).await.unwrap();
+    let error = rig.containers.reload(&addr).await.unwrap_err();
+    let text = error.to_string();
+    assert!(text.contains("missing timeouts"), "{text}");
 }
 #[tokio::test]
 async fn open_lan_writes_lan_crt_list_and_reloads() {
@@ -311,7 +406,7 @@ async fn open_lan_writes_lan_crt_list_and_reloads() {
         public.contains("public-app.k3f9qzab.example.test"),
         "{public}"
     );
-    assert_eq!(rig.writes_for("/kill").len(), 1);
+    assert!(rig.writes_for("/kill").is_empty());
 }
 
 #[tokio::test]
@@ -340,7 +435,7 @@ async fn public_model_respects_public_access_gate() {
 
 #[tokio::test]
 async fn reload_failure_restores_all_configuration() {
-    let rig = Rig::new().await;
+    let mut rig = Rig::new().await;
     rig.containers
         .apply_clients_model(&settings(), true, vec!["old".into()], vec![])
         .await
@@ -351,7 +446,7 @@ async fn reload_failure_restores_all_configuration() {
         .iter()
         .map(|path| std::fs::read(entry.join(path)).unwrap())
         .collect();
-    rig.docker.fail_next_kill("wonton-entry", "USR2 failed");
+    rig.containers.reload_addr = master_forever("Success=0\n--\nUSR2 failed\n").await;
     let error = rig
         .containers
         .apply_clients_model(&settings(), true, vec!["new".into()], vec![])
@@ -361,7 +456,7 @@ async fn reload_failure_restores_all_configuration() {
     for (path, expected) in paths.iter().zip(before) {
         assert_eq!(std::fs::read(entry.join(path)).unwrap(), expected, "{path}");
     }
-    assert_eq!(rig.writes_for("/kill").len(), 3);
+    assert!(rig.writes_for("/kill").is_empty());
 }
 
 #[tokio::test]

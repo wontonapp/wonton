@@ -47,6 +47,7 @@ import app.wonton.protocol.AppearanceProblem
 import app.wonton.protocol.ChatFailure
 import app.wonton.protocol.ChatProblem
 import app.wonton.protocol.CoreException
+import app.wonton.protocol.MyAvatarProblem
 import app.wonton.protocol.PluginFailure
 import app.wonton.protocol.PluginProblem
 import app.wonton.protocol.StoreFailure
@@ -113,6 +114,16 @@ fun ChatFailure.problem(detail: String): Problem = when (this) {
     ChatFailure.FORBIDDEN -> problem(
         R.string.problem_forbidden_title,
         R.string.problem_forbidden_next_step,
+        detail,
+    )
+    ChatFailure.SERVER_NOT_PAIRED -> problem(
+        R.string.problem_server_not_paired_title,
+        R.string.problem_server_not_paired_next_step,
+        detail,
+    )
+    ChatFailure.PEER_PUBLIC_ACCESS_OFF -> problem(
+        R.string.problem_peer_public_access_off_title,
+        R.string.problem_peer_public_access_off_next_step,
         detail,
     )
     ChatFailure.UPSTREAM -> problem(R.string.problem_upstream_title, R.string.problem_upstream_next_step, detail)
@@ -267,6 +278,35 @@ val StoreProblem.canRetry: Boolean
 /** 详情页、确认页取内容失败的结果。 */
 val Result<*>.failureProblem: Problem
     get() = (exceptionOrNull() as CoreException).problem
+
+/** 设自己的头像没成：类别由核心给，文字写在这里（ADR-0043）。 */
+val MyAvatarProblem.problem: Problem
+    get() = when (this) {
+        is MyAvatarProblem.NotReady -> Problem(
+            titleRes = R.string.owner_profile_avatar_not_ready,
+            nextStepRes = R.string.owner_profile_avatar_not_ready_next,
+        )
+        is MyAvatarProblem.NotLoggedIn -> Problem(
+            titleRes = R.string.owner_profile_avatar_not_logged_in,
+            nextStepRes = R.string.owner_profile_avatar_not_logged_in_next,
+            detail = reason,
+        )
+        is MyAvatarProblem.MediaRejected -> Problem(titleRes = problem.textRes())
+        is MyAvatarProblem.TransportUnavailable -> problem(
+            R.string.problem_transport_unavailable_title,
+            R.string.problem_transport_unavailable_next_step,
+            reason,
+        )
+        is MyAvatarProblem.Upstream -> Problem(
+            titleRes = R.string.problem_upstream_title,
+            nextStepRes = R.string.problem_upstream_next_step,
+            detail = reason,
+        )
+        is MyAvatarProblem.Other -> Problem(
+            titleRes = R.string.problem_upstream_title,
+            nextStepRes = R.string.problem_upstream_next_step,
+        )
+    }
 
 val CoreException.problem: Problem
     get() {

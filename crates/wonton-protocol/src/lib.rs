@@ -8,6 +8,7 @@
 #[cfg(feature = "uniffi")]
 uniffi::setup_scaffolding!();
 
+mod about;
 mod action;
 mod action_domains;
 mod agent_chain;
@@ -57,6 +58,7 @@ mod registry_mirror;
 mod reply;
 mod roles;
 mod secret;
+mod send_state;
 mod server_version;
 mod servers;
 mod session;
@@ -72,6 +74,9 @@ mod timeline_jump;
 mod verification;
 mod widget;
 
+pub use about::{
+    LicenseComponent, LicenseGroup, LicensesViewModel, PrivacySection, PrivacyViewModel,
+};
 pub use action::Action;
 pub use action_domains::{
     BotAction, BotContactAction, ChatAction, ClientsAction, FamilyAction, FileAction,
@@ -312,7 +317,7 @@ pub use registry_mirror::{
     RegistryMirrorTests, RegistryMirrorUpdate, RegistryMirrorViewModel, RegistryProbe,
     RegistryProblem,
 };
-pub use reply::{ComposerDraft, QuotedContent, QuotedMessage, ReplyQuote};
+pub use reply::{ComposerDraft, ComposerEdit, QuotedContent, QuotedMessage, ReplyQuote};
 pub use roles::{
     AdminScope, AiLevel, AppScope, BOT_AI_LEVEL_ENV, CAPABILITIES_HEADER, Capability,
     DEFAULT_INVITE_ROLE_PATH, Gate, JOIN_REQUESTS_PATH, JoinOutcome, JoinRequest, JoinRequestList,
@@ -323,6 +328,7 @@ pub use roles::{
     join_request_reject_path, member_role_path, plugin_audience_path, role_path,
 };
 pub use secret::SecretString;
+pub use send_state::{SendFailure, SendState};
 pub use server_version::{is_older, minimum_server_version};
 pub use servers::{ServerKind, ServerName, ServerRow, ServersViewModel};
 pub use session::{SessionListViewModel, SessionRow};
@@ -350,8 +356,8 @@ pub use sidebar::{SidebarApp, SidebarBadge, SidebarOpen, SidebarViewModel};
 pub use timeline::{
     BackPagination, FileAttachment, ImageCaption, ImageContent, KeyNotice, MatrixTarget,
     MediaHandle, MessageAction, MessageContent, MessageReceipt, RichBlock, RichBlockKind, RichLink,
-    RichLinkKind, RichSpan, SendState, TimelineContent, TimelineDiff, TimelineItem,
-    TimelineMessage, TimelineScroll, TimelineUpdate, TimelineViewport,
+    RichLinkKind, RichSpan, TimelineContent, TimelineDiff, TimelineItem, TimelineMessage,
+    TimelineScroll, TimelineUpdate, TimelineViewport,
 };
 pub use timeline_action::{TimelineAction, TimelineTarget};
 pub use timeline_jump::{JumpState, TimelineFocus};

@@ -552,11 +552,11 @@ impl Domain {
             })
             .await
             .context("找入口容器")?;
-        let Some(container) = found.containers.first() else {
+        if found.containers.is_empty() {
             return Ok(());
-        };
-        self.engine
-            .kill_container(container, "SIGUSR2")
+        }
+        // 不经 Docker 的 kill：HAProxy 主进程自己起个新进程试新配置，起不来旧配置照常服务。
+        crate::entry_containers::reload_haproxy(crate::entry_containers::ENTRY_RELOAD_ADDR)
             .await
             .map_err(Into::into)
     }

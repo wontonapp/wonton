@@ -302,6 +302,36 @@
         }
       }
     },
+    "friends.myCodeQrFailed": {
+      "comment": "Shown in place of the QR image when CoreImage cannot render it; the matrix.to link below stays usable.",
+      "extractionState": "manual",
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Couldn't create the QR code"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "二维码生成失败"
+          }
+        },
+        "zh-Hant": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "QR碼產生失敗"
+          }
+        },
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "QRコードを作成できません"
+          }
+        }
+      }
+    },
     "friends.status.publicAccessOff": {
       "comment": "Title of the banner on the friends page while the public access master switch is off.",
       "extractionState": "manual",

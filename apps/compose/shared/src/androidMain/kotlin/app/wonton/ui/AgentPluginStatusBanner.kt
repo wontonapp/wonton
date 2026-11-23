@@ -20,6 +20,7 @@ import app.wonton.protocol.PluginDetail
 import app.wonton.protocol.PluginTaskState
 import app.wonton.protocol.PluginStartState
 import app.wonton.protocol.PluginState
+import app.wonton.protocol.PluginsViewModel
 import app.wonton.protocol.RoomPlugin
 import app.wonton.ui.design.WontonButton
 import app.wonton.ui.design.WontonNotice
@@ -30,12 +31,21 @@ import app.wonton.ui.icons.Warning
 import app.wonton.ui.icons.WontonIcon
 
 @Composable
-internal fun AgentPluginStatusBanner(plugin: RoomPlugin?, title: String, onAction: (Action) -> Unit) {
+internal fun AgentPluginStatusBanner(
+    plugin: RoomPlugin?,
+    title: String,
+    plugins: PluginsViewModel,
+    onAction: (Action) -> Unit,
+) {
     if (plugin == null) return
+    // 安装失败并回滚的插件带着降级状态，但不是“已安装”；列表没到时无从判断，照旧显示。
+    val installFailed = plugins.installed?.plugins
+        ?.firstOrNull { it.id == plugin.pluginId }?.installFailure != null
     Column(Modifier.padding(horizontal = WontonTheme.spacing.pageInset, vertical = WontonTheme.spacing.s8)) {
         PluginStatusNotice(
             plugin.pluginId, plugin.status, plugin.start, plugin.canStart, title,
             stringResource(R.string.chat_plugin_stopped), onAction, stringResource(R.string.chat_plugin_starting),
+            degradedLine = !installFailed,
         )
     }
 }
@@ -81,6 +91,7 @@ internal fun PluginStatusNotice(
     stoppedText: String,
     onAction: (Action) -> Unit,
     startingText: String = stringResource(R.string.tab_starting),
+    degradedLine: Boolean = true,
 ) {
     val launch = { onAction(Action.Plugins(PluginAction.StartPlugin(pluginId))) }
     when (start) {
@@ -94,7 +105,7 @@ internal fun PluginStatusNotice(
                 }
             }
         }
-        null -> PluginStateNotice(status, canStart, title, stoppedText, launch)
+        null -> PluginStateNotice(status, canStart, title, stoppedText, launch, degradedLine)
     }
 }
 
@@ -105,6 +116,7 @@ private fun PluginStateNotice(
     title: String,
     stoppedText: String,
     launch: () -> Unit,
+    degradedLine: Boolean,
 ) {
     when (status) {
         is PluginState.Stopped -> WontonNotice(WontonIcon.PauseFill, stoppedText, isError = false) {
@@ -112,7 +124,7 @@ private fun PluginStateNotice(
         }
         is PluginState.Degraded -> WontonNotice(
             WontonIcon.Warning, stringResource(R.string.tab_problem, title),
-            lines = listOf(stringResource(R.string.tab_degraded_line)),
+            lines = if (degradedLine) listOf(stringResource(R.string.tab_degraded_line)) else emptyList(),
         ) {
             // 原因是核心按语言写的，个别场景夹着原始报错；没有内容时不给一个展开是空的详情。
             if (status.reason.isNotBlank()) {

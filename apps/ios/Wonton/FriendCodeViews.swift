@@ -1,4 +1,6 @@
+import CoreTransferable
 import SwiftUI
+import UniformTypeIdentifiers
 
 /// 扫对方的码：取景框扫，扫不到就粘贴。原文原样交给 `onCode`，是用户 ID 还是 matrix.to 链接由核心认，
 /// 认不出来时好友页按类别说。
@@ -55,6 +57,19 @@ struct MyFriendCodePanel: View {
                     .frame(maxWidth: 260)
                     .clipShape(RoundedRectangle(cornerRadius: WontonTheme.radii.control))
                     .accessibilityLabel(String(localized: .Friends3.friendsMyCode))
+                ShareLink(
+                    item: QRShareItem(image: image),
+                    preview: SharePreview(String(localized: .Friends3.friendsMyCode), image: Image(uiImage: image))
+                ) {
+                    Text(.Peers2.peersShare).frame(maxWidth: .infinity)
+                }
+                .buttonStyle(WontonButtonStyle())
+                .accessibilityIdentifier("friends-my-share")
+            } else {
+                Text(.Friends2.friendsMyCodeQrFailed)
+                    .wontonText(WontonTheme.typography.supporting)
+                    .foregroundStyle(Color(colors.danger))
+                    .frame(maxWidth: .infinity, alignment: .center)
             }
             Text(link)
                 .font(.caption.monospaced())
@@ -67,5 +82,19 @@ struct MyFriendCodePanel: View {
         }
         .padding(.horizontal, WontonTheme.spacing.pageInset)
         .padding(.vertical, WontonTheme.spacing.s16)
+    }
+}
+
+/// UIImage 在 iOS 27.1 SDK 实测不符合 Transferable：分享载荷用显式 PNG 包装。
+private struct QRShareItem: Transferable {
+    let image: UIImage
+
+    struct EncodeFailed: Error {}
+
+    static var transferRepresentation: some TransferRepresentation {
+        DataRepresentation(exportedContentType: .png) { item in
+            guard let png = item.image.pngData() else { throw EncodeFailed() }
+            return png
+        }
     }
 }

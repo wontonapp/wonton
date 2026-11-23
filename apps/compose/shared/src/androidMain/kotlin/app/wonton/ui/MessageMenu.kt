@@ -49,6 +49,7 @@ import androidx.compose.ui.window.Popup
 import androidx.compose.ui.window.PopupPositionProvider
 import androidx.compose.ui.window.PopupProperties
 import app.wonton.client.ClientCore
+import app.wonton.protocol.ImageContent
 import app.wonton.protocol.MessageAction
 import app.wonton.protocol.QuotedMessage
 import app.wonton.protocol.TimelineMessage
@@ -79,6 +80,7 @@ fun MessageMenu(
     bubble: Rect,
     visible: Rect,
     core: ClientCore,
+    groupImages: List<ImageContent>? = null,
     onReply: (QuotedMessage) -> Unit,
     onForward: () -> Unit,
     onRedact: () -> Unit,
@@ -105,7 +107,7 @@ fun MessageMenu(
                 content = {
                     // 预览不接受操作，读屏也不再念一遍。
                     Box(Modifier.width(width).clearAndSetSemantics {}) {
-                        BubbleSurface(message, core, false, false, Modifier, {})
+                        BubbleSurface(message, core, false, false, Modifier, {}, groupImages = groupImages)
                     }
                     MenuSurface(message, onReply, onForward, onRedact, onDismiss)
                 },
@@ -171,6 +173,8 @@ private fun MenuSurface(
         Column(Modifier.width(WontonTheme.size.menuWidth)) {
             // 顺序照核心给的 `actions`，核心和 App 分开升级时不认识的不显示。
             message.actions.forEach { action ->
+                // 编辑还没接（#804）：先不显示，和不认识的动作一样跳过。
+                if (action is MessageAction.Edit) return@forEach
                 val run: () -> Unit = when (action) {
                     is MessageAction.Copy -> {
                         {
@@ -180,12 +184,14 @@ private fun MenuSurface(
                         }
                     }
                     is MessageAction.Reply -> { { reply(action.message) } }
+                    is MessageAction.Edit -> ({})
                     MessageAction.Forward -> forward
                     MessageAction.Redact -> redact
                 }
                 val (label, icon) = when (action) {
                     is MessageAction.Copy -> copyLabel to WontonIcon.Copy
                     is MessageAction.Reply -> replyLabel to WontonIcon.Reply
+                    is MessageAction.Edit -> "" to WontonIcon.Copy
                     // 转发是回复的镜像：同一个箭头左右翻过来（`WontonIcon.Forward` 是“进下一层”的尖角，不是转发）。
                     MessageAction.Forward -> forwardLabel to WontonIcon.Reply
                     MessageAction.Redact -> redactLabel to WontonIcon.Trash

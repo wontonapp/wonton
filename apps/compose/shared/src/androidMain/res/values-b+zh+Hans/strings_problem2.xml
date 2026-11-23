@@ -33,4 +33,8 @@
     <string name="problem_upgrade_server_next_step">先升级家里的服务器。</string>
     <!-- Problem title used for plugin, chat and connection failures: the home server itself reported an error. -->
     <string name="problem_upstream_title">家里的服务器出错了</string>
+    <!-- Next step when the other server's public access is off: wait, then send again. -->
+    <string name="problem_peer_public_access_off_next_step">等对方重新打开后再发；消息会在那之后补到。</string>
+    <!-- Next step when the other server isn't paired: pair it first. -->
+    <string name="problem_server_not_paired_next_step">先在“其他服务器”里配对，再打开聊天。</string>
 </resources>

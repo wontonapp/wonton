@@ -235,7 +235,14 @@ async fn a_failed_install_leaves_the_owner_no_chat_and_keeps_the_home_room_for_n
         "重试沿用上次建好的主房间"
     );
     let state = bed.tuwunel.state();
-    assert_eq!(state.rooms.len(), 1);
+    assert_eq!(
+        state
+            .rooms
+            .keys()
+            .filter(|id| id.as_str() != crate::matrix::fake::ADMIN_ROOM_ID)
+            .count(),
+        1
+    );
     assert!(state.rooms[&failed["ROOM"]].members.contains("@owner:test"));
 }
 

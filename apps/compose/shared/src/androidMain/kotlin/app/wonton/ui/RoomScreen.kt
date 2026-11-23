@@ -411,11 +411,13 @@ private fun RoomOverlays(
     onRedact: (MessageMenuTarget?) -> Unit,
 ) {
     menu?.let { opened ->
+        val groups = remember(timeline.revision) { timeline.items.imageGroups() }
         MessageMenu(
             message = opened.message,
             bubble = opened.bubble,
             visible = visible,
             core = core,
+            groupImages = opened.message.group?.let { groups[opened.message.senderId to it.id] },
             onReply = draft::replyTo,
             onForward = { onForward(opened.itemId) },
             onRedact = { onRedact(opened) },
@@ -568,7 +570,7 @@ private fun Conversation(
                     .onSizeChanged { headerHeight = it.height }
                     .testTag("room-header"),
             ) {
-                AgentPluginStatusBanner(plugin, title, onAction)
+                AgentPluginStatusBanner(plugin, title, plugins.viewModel, onAction)
                 timeline.sideChat?.let { SideChatHeaderLine(it.state) }
                 if (sideChats.unsupportedHint) NoSideChatsHint()
                 // 群里能用的 AI；私聊不显示，Bot 本来就在顶栏（ADR-0044）。
