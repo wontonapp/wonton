@@ -111,7 +111,7 @@ fn the_real_server_hot_reloads_the_allowlist_from_the_second_file() {
     });
 }
 
-/// 核心自己经管理房间命令重读（ADR-0111）：同一个接口 `FederationConfig` 用的是它。
+/// 核心自己经管理房间命令重读（ADR-0115）：同一个接口 `FederationConfig` 用的是它。
 #[test]
 #[ignore = "需要 Docker，跑一遍约一分钟"]
 fn the_real_server_reloads_the_admin_room_command() {

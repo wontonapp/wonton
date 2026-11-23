@@ -333,7 +333,7 @@ impl EntryContainers {
     /// 让入口的 HAProxy 主进程软重载：它带着同一个配置起一个新进程，起得来才换掉旧的，已升级的连接不断。
     ///
     /// 不经 Docker 的 kill 接口：发过信号的容器会被记成手动停过，Docker 重启后 `unless-stopped` 不再拉起
-    /// （ADR-0111）。`addr` 是入口的管理地址，测试里换成临时端口。
+    /// （ADR-0115）。`addr` 是入口的管理地址，测试里换成临时端口。
     pub async fn reload(&self, addr: &str) -> Result<(), EntryError> {
         let found = self
             .engine

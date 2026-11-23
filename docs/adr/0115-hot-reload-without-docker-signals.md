@@ -1,4 +1,4 @@
-# ADR-0111 热加载不经 Docker 的 kill 接口
+# ADR-0115 热加载不经 Docker 的 kill 接口
 
 - 状态：已接受（2026-11-20）
 - 相关：[ADR-0050](0050-cross-server-chat.md)、[ADR-0051](0051-friends-and-plugin-sharing.md)、[ADR-0021](0021-third-party-clients.md)

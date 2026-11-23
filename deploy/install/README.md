@@ -96,7 +96,7 @@ ACME 为服务器名本身、`*.<服务器名>` 和 `*.lan.<服务器名>` 签�
 送的名字会先把 ACME 账号 URI 绑定到家名服务的 CAA，并查询生效后才下单。备份时保留整个 `entry/` 和 `entry-input/`，不要单独删私钥或账号文件。
 
 核心启动时和此后每 24 小时使用 `entry/settings.json` 保存的 directory、条款确认、网络、CA、DNS 解析器及 provider/凭据输入调用证书流程，
-成功后原子发布 `entry/certs/site.pem`，在入口 HAProxy 的主进程管理端口上发 `reload`（ADR-0111）。签发失败保留原证书并通知主人；
+成功后原子发布 `entry/certs/site.pem`，在入口 HAProxy 的主进程管理端口上发 `reload`（ADR-0115）。签发失败保留原证书并通知主人；
 热加载失败也单独通知。
 `init` 发现已有 `site.pem` 就沿用，重新执行安装不会重新选择证书配置。
 
