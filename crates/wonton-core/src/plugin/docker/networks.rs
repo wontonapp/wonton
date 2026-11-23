@@ -1,6 +1,7 @@
 //! 网络相关的操作：查标签、端点、可达性、网关和子网，建删网络，把容器接上或断开。
 
 use std::collections::HashMap;
+use std::time::Duration;
 
 use bollard::models::{EndpointSettings, NetworkConnectRequest, NetworkDisconnectRequest};
 
@@ -174,7 +175,46 @@ impl Engine {
             Err(EngineError::Rejected { message, .. }) if message.contains("is not connected") => {
                 Ok(())
             }
+            // 容器正在被换掉（Compose 重建它、有人正删它）：端点跟着旧容器走，断开被 Docker 拒绝。
+            // 等端点真的没了再返回：调用方紧接着就可能删网络，端点在时网络删不掉。
+            Err(EngineError::Rejected { message, .. })
+                if message.contains("is marked for removal") =>
+            {
+                self.wait_endpoint_gone(network, container).await;
+                Ok(())
+            }
             other => ignore_missing(other),
         }
+    }
+
+    /// 等端点从网络上消失：删除是异步的，端点可能还在几秒。查不动（传输抖）当没消失接着等，
+    /// 等满 5 秒还在就放行，紧接着的删网络会给出真实原因。
+    async fn wait_endpoint_gone(&self, network: &str, container: &str) {
+        const TIMEOUT: Duration = Duration::from_secs(5);
+        const POLL: Duration = Duration::from_millis(100);
+        // 抖动不动 endpoint_seen：它是最后一次看到的结果，不是这一轮查得查不得。
+        let mut endpoint_seen = false;
+        let mut last_error = None;
+        let deadline = tokio::time::Instant::now() + TIMEOUT;
+        loop {
+            match self.endpoint(container, network).await {
+                Ok(None) => return,
+                Ok(Some(_)) => endpoint_seen = true,
+                Err(error) => last_error = Some(error.to_string()),
+            }
+            // 总时长按 deadline 算，最后一轮只睡剩下的那一截，不因整轮 sleep 超出。
+            let left = deadline.saturating_duration_since(tokio::time::Instant::now());
+            if left.is_zero() {
+                break;
+            }
+            tokio::time::sleep(left.min(POLL)).await;
+        }
+        tracing::warn!(
+            network,
+            container,
+            endpoint_seen,
+            error = last_error.as_deref().unwrap_or("无"),
+            "等端点从网络消失超时（5 秒），先放行；紧跟着删网络失败时以那条报错为准"
+        );
     }
 }

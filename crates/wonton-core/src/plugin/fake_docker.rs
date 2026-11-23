@@ -103,6 +103,9 @@ struct Resources {
     created: BTreeMap<String, Value>,
     /// 容器名 → 被创建过的次数：重建会计数，断言“容器（别的 Bot 的）没被动过”用。
     creation_count: BTreeMap<String, u32>,
+    /// 标了删除、删除还没做完的容器 → 再被 inspect 几次才连同端点一起没：接出网络被 Docker 拒绝，
+    /// 等够了次数容器和端点一起消失，模拟 Docker 删容器的异步过程。
+    removing: BTreeMap<String, u32>,
     /// 网络名 → 标签。
     networks: BTreeMap<String, Labels>,
     /// 网络名 → 创建时的请求（`Internal`、`Options` 等）。
@@ -114,6 +117,10 @@ struct Resources {
     volumes: BTreeMap<String, Labels>,
     /// 收到的写操作，按顺序，如 `POST /containers/x/start`。
     writes: Vec<String>,
+    /// 容器名 → 被 inspect 的次数。
+    inspect_count: BTreeMap<String, u32>,
+    /// 容器名 → 端点没掉那一刻 `writes` 的条数：断言删网络发生在端点消失之后用。
+    removed_at: BTreeMap<String, usize>,
     /// 写进容器的归档：容器名 → 归档内容。
     archives: BTreeMap<String, Vec<u8>>,
     /// 容器里能经归档接口读到的路径：（容器名，路径）→ 内容。
@@ -372,17 +379,34 @@ impl FakeDocker {
         docker.states.insert(container.to_owned(), state);
     }
 
-    /// 容器从 Docker 里不见了（被外部删掉）。
+    /// 容器从 Docker 里不见了（被外部删掉）：连创建记录和归档一起清，模拟它没出现过。
     pub fn remove(&self, container: &str) {
         let mut docker = self.lock();
-        docker.containers.remove(container);
-        docker.states.remove(container);
+        drop_container(&mut docker, container);
         docker.created.remove(container);
-        docker.restartable.remove(container);
         docker.archives.remove(container);
-        for endpoints in docker.endpoints.values_mut() {
-            endpoints.remove(container);
-        }
+    }
+
+    /// 容器被标了删除（`docker rm` 或 Compose 换容器）：端点还在，断开被 Docker 拒绝；
+    /// 再被 inspect `inspects_left` 次之后容器连同端点一起没。
+    pub fn mark_removing(&self, container: &str, inspects_left: u32) {
+        self.lock()
+            .removing
+            .insert(container.to_owned(), inspects_left);
+    }
+
+    /// 这个容器被 inspect 过的次数。
+    pub fn inspect_count(&self, container: &str) -> u32 {
+        self.lock()
+            .inspect_count
+            .get(container)
+            .copied()
+            .unwrap_or_default()
+    }
+
+    /// 容器连端点一起没掉时已发生的写操作条数；还没没掉时 `None`。
+    pub fn removed_at(&self, container: &str) -> Option<usize> {
+        self.lock().removed_at.get(container).copied()
     }
 
     pub fn fail_stops(&self, message: Option<&str>) {
@@ -553,6 +577,21 @@ impl FakeDocker {
     pub fn fail_updates(&self, message: Option<&str>) {
         self.lock().update_error = message.map(str::to_owned);
     }
+}
+
+/// 容器连同端点、状态一起从假 Docker 里没掉，记下当时的写操作条数。`created` / `archives` 是历史记录
+/// （最近一次创建请求、一次性容器写下的东西），容器没了也留着，测试靠它们看它怎么被建的。
+fn drop_container(docker: &mut Resources, name: &str) {
+    docker.removing.remove(name);
+    docker.containers.remove(name);
+    docker.states.remove(name);
+    docker.restartable.remove(name);
+    for endpoints in docker.endpoints.values_mut() {
+        endpoints.remove(name);
+    }
+    docker
+        .removed_at
+        .insert(name.to_owned(), docker.writes.len());
 }
 
 async fn handle(State(fake): State<FakeDocker>, request: Request) -> Response {
