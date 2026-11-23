@@ -2,8 +2,12 @@
 
 from __future__ import annotations
 
+import hashlib
 import importlib.util
+import io
 import json
+import os
+import tarfile
 import sys
 import unittest
 import unittest.mock
@@ -47,6 +51,43 @@ class AssetTest(unittest.TestCase):
             licenses.cargo_about_asset("darwin", "x86_64")
         self.assertIn("darwin/x86_64", str(raised.exception))
 
+
+class CacheTest(unittest.TestCase):
+    def test_cache_from_another_platform_is_not_used(self):
+        root = Path(self.enterContext(__import__("tempfile").TemporaryDirectory()))
+        stale = root / "wonton" / "cargo-about" / licenses.CARGO_ABOUT_VERSION / "aarch64-apple-darwin" / "cargo-about"
+        stale.parent.mkdir(parents=True)
+        stale.write_bytes(b"ELF-from-a-mac-cache")
+
+        payload = io.BytesIO()
+        with tarfile.open(fileobj=payload, mode="w:gz") as tar:
+            data = b"#!/bin/sh\necho cargo-about 0.9.3\n"
+            info = tarfile.TarInfo(f"cargo-about-{licenses.CARGO_ABOUT_VERSION}-x86_64-unknown-linux-musl/cargo-about")
+            info.size = len(data)
+            tar.addfile(info, io.BytesIO(data))
+        archive = payload.getvalue()
+        sha = hashlib.sha256(archive).hexdigest()
+        triple = "x86_64-unknown-linux-musl"
+
+        class Response:
+            def __enter__(self):
+                return self
+
+            def __exit__(self, *args):
+                return False
+
+            def read(self):
+                return archive
+
+        with (
+            unittest.mock.patch.dict(os.environ, {"XDG_CACHE_HOME": str(root)}),
+            unittest.mock.patch.object(licenses.shutil, "which", return_value=None),
+            unittest.mock.patch.object(licenses, "cargo_about_asset", return_value=(triple, sha)),
+            unittest.mock.patch.object(licenses.urllib.request, "urlopen", return_value=Response()),
+        ):
+            path = licenses.cargo_about_path()
+        self.assertEqual(path, root / "wonton" / "cargo-about" / licenses.CARGO_ABOUT_VERSION / triple / "cargo-about")
+        self.assertTrue(path.read_bytes().startswith(b"#!/bin/sh"))
 
 class RustFallbackTest(unittest.TestCase):
     def test_crate_without_license_file_uses_declared_license(self):

@@ -111,12 +111,13 @@ def cargo_about_path() -> Path:
             return Path(found)
         raise GenerateError(f"PATH 里的 cargo-about 是 {version.strip()}，要 {CARGO_ABOUT_VERSION}")
 
+    # 缓存按平台分开：以前只按版本存，mac 上会拿回之前在别的平台下的那份（以前下过 Linux 版就是 ELF）。
+    triple, sha256 = cargo_about_asset()
     cache = Path(os.environ.get("XDG_CACHE_HOME", Path.home() / ".cache")) / "wonton" / "cargo-about"
-    binary = cache / CARGO_ABOUT_VERSION / "cargo-about"
+    binary = cache / CARGO_ABOUT_VERSION / triple / "cargo-about"
     if binary.is_file():
         return binary
 
-    triple, sha256 = cargo_about_asset()
     url = (
         "https://github.com/EmbarkStudios/cargo-about/releases/download/"
         f"{CARGO_ABOUT_VERSION}/cargo-about-{CARGO_ABOUT_VERSION}-{triple}.tar.gz"
