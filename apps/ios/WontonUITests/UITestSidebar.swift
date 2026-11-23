@@ -23,6 +23,7 @@ enum UITestSidebar {
     /// 下面的列表元素照样能查到，它们在场时也不算。认列表自己的东西：空列表的提示、新聊天按钮或已有的 Hermes 行。
     static func chatListVisible(_ app: XCUIApplication) -> Bool {
         if app.staticTexts["Continue on your other device"].firstMatch.exists { return false }
+        if app.scrollViews["chat-backup"].exists { return false }
         if app.staticTexts["No chats yet"].firstMatch.exists { return true }
         let newChat = app.buttons.matching(NSPredicate(format: "label IN %@", ["New chat", "New Chat"])).firstMatch
         if newChat.exists { return true }
