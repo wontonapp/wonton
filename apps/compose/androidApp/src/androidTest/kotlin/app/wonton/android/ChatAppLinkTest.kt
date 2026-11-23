@@ -57,7 +57,8 @@ class ChatAppLinkTest {
 
     @Test
     fun wontonLinkOpensInPlace() {
-        val monitor = Instrumentation.ActivityMonitor(IntentFilter(Intent.ACTION_VIEW).apply { addDataScheme("wonton") }, null, false)
+        val filter = IntentFilter(Intent.ACTION_VIEW).apply { addDataScheme("wonton") }
+        val monitor = Instrumentation.ActivityMonitor(filter, null, false)
         InstrumentationRegistry.getInstrumentation().addMonitor(monitor)
         try {
             scrollTo(6)
@@ -76,7 +77,8 @@ class ChatAppLinkTest {
 
     @Test
     fun unknownWontonLinkShowsMessage() {
-        val monitor = Instrumentation.ActivityMonitor(IntentFilter(Intent.ACTION_VIEW).apply { addDataScheme("wonton") }, null, false)
+        val filter = IntentFilter(Intent.ACTION_VIEW).apply { addDataScheme("wonton") }
+        val monitor = Instrumentation.ActivityMonitor(filter, null, false)
         InstrumentationRegistry.getInstrumentation().addMonitor(monitor)
         try {
             scrollTo(7)
