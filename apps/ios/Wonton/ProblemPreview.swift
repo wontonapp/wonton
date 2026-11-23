@@ -27,7 +27,10 @@ enum ProblemPreview {
                 Divider()
                 problem(ChatFailure.serverNotPaired, Self.serverNotPairedDetail, id: "problemFixture-serverNotPaired")
                 Divider()
-                problem(ChatFailure.peerPublicAccessOff, Self.peerPublicAccessOffDetail, id: "problemFixture-peerPublicAccessOff")
+                problem(
+                    ChatFailure.peerPublicAccessOff, Self.peerPublicAccessOffDetail,
+                    id: "problemFixture-peerPublicAccessOff"
+                )
                 Divider()
                 problem(ChatFailure.invalidInput, invalidInputDetail, id: "problemFixture-invalidInput")
             }

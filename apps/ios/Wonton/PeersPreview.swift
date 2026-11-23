@@ -33,7 +33,7 @@ enum PeersPreview {
                 ownerUserId: "@lin:lin7c3d.wonton",
                 ownerDisplayName: "Lin",
                 status: .connected,
-                lastConnectedMs: 1_796_400_000_000,
+                lastConnectedMs: 1_762_800_000_000,
                 detail: nil
             ),
             PeerRow(
@@ -41,7 +41,7 @@ enum PeersPreview {
                 ownerUserId: "@sam:sam5e8f.wonton",
                 ownerDisplayName: "Sam",
                 status: .publicAccessOff,
-                lastConnectedMs: 1_796_300_000_000,
+                lastConnectedMs: 1_762_700_000_000,
                 detail: endpoint("3c4d5e6f")
             ),
             PeerRow(
@@ -49,9 +49,9 @@ enum PeersPreview {
                 ownerUserId: "@mai:mai2a9b.wonton",
                 ownerDisplayName: "Mai",
                 status: .offline,
-                lastConnectedMs: 1_796_100_000_000,
+                lastConnectedMs: 1_762_600_000_000,
                 detail: endpoint("7a8b9c0d")
-            ),
+            )
         ]
     }
 

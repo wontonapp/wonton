@@ -183,3 +183,20 @@ impl ChatLink {
         });
     }
 }
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    /// 行为：对方公网关着会自己好，按暂时的原因退避重登，不停在失败上等用户。
+    #[test]
+    fn peer_public_access_off_is_temporary() {
+        assert!(temporary(ChatFailure::PeerPublicAccessOff));
+    }
+
+    /// 行为：对方服务器没配对要先配对，重登也到不了，停在失败上。
+    #[test]
+    fn server_not_paired_is_not_temporary() {
+        assert!(!temporary(ChatFailure::ServerNotPaired));
+    }
+}

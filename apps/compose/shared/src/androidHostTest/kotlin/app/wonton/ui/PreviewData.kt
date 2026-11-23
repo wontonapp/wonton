@@ -9,7 +9,6 @@ import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.fillMaxSize
-import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.padding
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
@@ -524,6 +523,6 @@ private fun row(handle: String, name: String, status: PeerStatus, detail: String
     ownerUserId = "@$handle:$handle.wonton",
     ownerDisplayName = name,
     status = status,
-    lastConnectedMs = 1_796_400_000_000uL,
+    lastConnectedMs = 1_762_800_000_000uL,
     detail = detail,
 )
