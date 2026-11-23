@@ -11,7 +11,7 @@ use std::sync::Arc;
 use futures_util::stream::{FuturesUnordered, StreamExt};
 use wonton_protocol::{
     AgentChainRow, AgentChainStatus, Answer, BotRef, CardChoice, ChainLimitKind,
-    ConfirmationCategory, ConfirmationRequester,
+    ConfirmationCategory, ConfirmationRequester, ConfirmationState,
 };
 
 use super::cards::{Draft, line};
@@ -300,8 +300,12 @@ pub(super) fn bind_chain(bus: &Bus, chain: &str, card: &str, what: &str) -> Bind
     let outcome = if withdraw_card(bus, card) {
         Bound::Withdrawn
     } else {
-        // 人抢在撤回之前批了：卡片已经在跑，交给调用方照常执行。
-        Bound::Waiting
+        // 撤不到：人抢在撤回之前答了（批了照常执行），或停链那一遍已经比这里先撤过。
+        // 卡片已经是 `Failed` 就是后者：等待方拿到 `Cancelled`，不再给它发一遍通知。
+        match bus.confirmations.card(card).map(|card| card.state) {
+            Some(ConfirmationState::Failed { .. }) => Bound::Withdrawn,
+            _ => Bound::Waiting,
+        }
     };
     Binding {
         outcome,
