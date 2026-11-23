@@ -30,7 +30,8 @@ cleanup() {
   local status=$?
   [[ -z "${events_pid:-}" ]] || kill "$events_pid" 2>/dev/null || true
   # 一次性网关凭据按建 key 时记下的 id 删（失败退出也删，KEEP 也删）；没建过（id 为空）就什么都不做。
-  [[ -z "${host_model_key_id:-}" ]] || host_magpie gateway-key remove "$host_model_key_id" >/dev/null 2>&1 || true
+  # host_magpie 里的 fail 是 exit，子壳兜住，后面的容器、网络、数据目录照删。
+  [[ -z "${host_model_key_id:-}" ]] || ( host_magpie gateway-key remove "$host_model_key_id" ) >/dev/null 2>&1 || true
   if [[ "${KEEP:-}" == 1 ]]; then
     echo "保留现场：项目 $core，数据目录 $WONTON_DEV_DATA（清理：WONTON_DEV_PROJECT=$core WONTON_DEV_DATA=$WONTON_DEV_DATA $dev reset）"
     return

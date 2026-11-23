@@ -91,7 +91,7 @@ ok "没有残留的示例插件资源"
 fi
 # 对着已有的栈跑时不拆栈，只删自己起的探针容器。
 if [[ -n "${SMOKE_ONLY:-}" ]]; then
-  trap '[[ -z "${events_pid:-}" ]] || kill "$events_pid" 2>/dev/null; [[ -z "${host_model_key_id:-}" ]] || host_magpie gateway-key remove "$host_model_key_id" >/dev/null 2>&1 || true; docker rm -f "$browser" "$phone" "$model_relay" >/dev/null 2>&1 || true' EXIT
+  trap '[[ -z "${events_pid:-}" ]] || kill "$events_pid" 2>/dev/null; [[ -z "${host_model_key_id:-}" ]] || ( host_magpie gateway-key remove "$host_model_key_id" ) >/dev/null 2>&1 || true; docker rm -f "$browser" "$phone" "$model_relay" >/dev/null 2>&1 || true' EXIT
 else trap cleanup EXIT; fi
 
 if step core "启动核心和身份提供方（项目 $core，端口 $WONTON_DEV_PORT）"; then
@@ -365,27 +365,35 @@ ok "Hermes 就绪后 $(printf '%d.%03d' $((after_ms / 1000)) $((after_ms % 1000)
 # 连，宿主的 magpie 照旧只监听回环也行。
 #
 # 用 busybox 的 ping 探名字：解析失败打 “bad address”，能解析就先打一行 PING 再等回包（ICMP 被挡不影响
-# 判断），所以只看第一行。
+# 判断），所以只看第一行。两样都没有说明探针自己坏了（镜像拉不下来、网络不在），不能悄悄改走转发。
 host_name_resolves() {
-  local first
-  first="$(docker run --rm --network "$hermes_network" "$busybox_image" \
-    sh -c 'ping -c1 -W1 host.docker.internal 2>&1' 2>&1 | head -1)" || true
-  [[ "$first" == PING* ]]
+  local out
+  out="$(docker run --rm --network "$hermes_network" "$busybox_image" \
+    sh -c 'ping -c1 -W1 host.docker.internal 2>&1' 2>&1)" || true
+  if grep -q 'bad address' <<<"$out"; then return 1; fi
+  if head -1 <<<"$out" | grep -q '^PING'; then return 0; fi
+  fail "探 host.docker.internal 失败：$out"
 }
 
-# 宿主 magpie 的 CLI：宿主上装了 magpie 就用它，跑在容器里就 exec 进发布 3425 的那个容器（或用
-# WONTON_SMOKE_HOST_MAGPIE 指定名字）。
+# 宿主 magpie 的 CLI：设了 WONTON_SMOKE_HOST_MAGPIE 就一律进那个容器；否则宿主上装了 magpie 就用它，
+# 再不然找发布 3425 的容器。
 host_magpie() {
-  if command -v magpie >/dev/null; then magpie "$@"; return; fi
   local container="${WONTON_SMOKE_HOST_MAGPIE:-}"
-  [[ -n "$container" ]] || container="$(docker ps --filter publish=3425 --format '{{.Names}}' | head -1)"
+  if [[ -n "$container" ]]; then docker exec -i "$container" magpie "$@"; return; fi
+  if command -v magpie >/dev/null; then magpie "$@"; return; fi
+  container="$(docker ps --filter publish=3425 --format '{{.Names}}' | head -1)"
   [[ -n "$container" ]] || fail "找不到宿主 magpie：宿主上放一个发布 3425 的 magpie 容器，或设 WONTON_SMOKE_HOST_MAGPIE=<容器名>"
   docker exec -i "$container" magpie "$@"
 }
 
-model_relay_target="${WONTON_SMOKE_MODEL_RELAY:-127.0.0.1:3425}"
 model_port=3425
-if host_name_resolves; then
+if [[ -n "${WONTON_SMOKE_MODEL_RELAY:-}" ]]; then
+  # 宿主上已经有转发（magpie 不在 3425）：两个分支都直接用它，容器本身到得了宿主地址。
+  model_host="${WONTON_SMOKE_MODEL_RELAY%:*}"
+  model_port="${WONTON_SMOKE_MODEL_RELAY##*:}"
+  [[ -n "$model_host" && "$model_host" != "$model_port" && "$model_port" =~ ^[0-9]+$ ]] ||
+    fail "WONTON_SMOKE_MODEL_RELAY 要写成 <地址>:<端口>：$WONTON_SMOKE_MODEL_RELAY"
+elif host_name_resolves; then
   model_host=host.docker.internal
 else
   model_host="$(docker network inspect "$hermes_network" --format '{{(index .IPAM.Config 0).Gateway}}')"
@@ -394,21 +402,28 @@ else
   # KEEP=1 的上一轮会把转发留着（它不在 compose 项目里），先删掉同名的再起。
   docker rm -f "$model_relay" >/dev/null 2>&1 || true
   docker run -d --rm --name "$model_relay" --network host "$socat_image" \
-    "TCP-LISTEN:$model_port,fork,reuseaddr" "TCP:$model_relay_target" >/dev/null ||
-    fail "起不了到宿主 magpie（$model_relay_target）的转发"
+    "TCP-LISTEN:$model_port,fork,reuseaddr" "TCP:127.0.0.1:3425" >/dev/null ||
+    fail "起不了到宿主 magpie（127.0.0.1:3425）的转发"
+  # 端口被占时 docker run -d 照样返回 0：看容器还在不在。
+  [[ "$(docker inspect -f '{{.State.Running}}' "$model_relay" 2>/dev/null)" == true ]] ||
+    fail "转发没起来：$(docker logs "$model_relay" 2>&1 | tail -3)"
 fi
 model_url="http://$model_host:$model_port/v1"
 hermes_key="$(openssl rand -hex 24)"
 host_model_key_name="com.nousresearch.hermes/default"
+# 同名 add 是追加（旧的在前），按前后列表的差集挑出刚建的那条，别动到宿主上原有的同名凭据。
+keys_before="$(host_magpie gateway-key list 2>/dev/null | awk 'NR > 1 { print $1 }' | sort)" ||
+  fail "建凭据前读不到宿主 magpie 的凭据列表"
 host_magpie gateway-key add "$host_model_key_name" --key - <<<"$hermes_key" >/dev/null ||
   fail "宿主 magpie 建不了 Hermes 的网关凭据"
-host_model_key_id="$(host_magpie gateway-key list 2>/dev/null | awk -v n="$host_model_key_name" '$2 == n { print $1; exit }')" ||
+host_model_key_id="$(comm -13 <(printf '%s\n' "$keys_before") \
+  <(host_magpie gateway-key list | awk 'NR > 1 { print $1 }' | sort) | grep . | tail -1)" ||
   fail "建了凭据但读不到凭据列表"
-[[ -n "$host_model_key_id" ]] || fail "建了凭据但在列表里找不到它"
-host_magpie gateway-key models "$host_model_key_id" "$model" "${model#*/}" >/dev/null || fail "Hermes 的凭据限定模型失败"
+[[ -n "$host_model_key_id" ]] || fail "建了凭据但列表里没有新的一条"
+host_magpie gateway-key models "$host_model_key_id" "$model" >/dev/null || fail "Hermes 的凭据限定模型失败"
 expect "宿主上的凭据以 Hermes 的 Bot 命名" \
-  "$(host_magpie gateway-key list | awk -v n="$host_model_key_name" '$2 == n { print $2 }')" "$host_model_key_name"
-expect "宿主上的凭据只放行这次的模型" "$(host_magpie gateway-key models "$host_model_key_id" | sed 's/^[^:]*: //')" "only $model, ${model#*/}"
+  "$(host_magpie gateway-key list | awk -v i="$host_model_key_id" '$1 == i { print $2 }')" "$host_model_key_name"
+expect "宿主上的凭据只放行这次的模型" "$(host_magpie gateway-key models "$host_model_key_id" | sed 's/^[^:]*: //')" "only $model"
 # 从 Hermes 自己的容器真连一次：地址、凭据、防火墙都得通。
 hermes_models() {
   docker exec "$hermes" sh -c "curl -fsS --max-time 30 -H 'Authorization: Bearer $hermes_key' '$model_url/models'" |
@@ -523,9 +538,9 @@ for _ in $(seq 900); do
   [[ "$card" == *" pending "* ]] && break
   sleep 1
 done
-[[ "$card" == *" pending "* ]] || fail "Wonton 房间里没有出现待确认的卡片（$card）：$(cat "$asked")"
+[[ "$card" == *" pending "* ]] || fail "待确认列表里没有出现卡片（$card）：$(cat "$asked")"
 card_id="${card%% *}"
-ok "Hermes 发起安装，核心在 Wonton 房间里发了确认卡片，还没有装"
+ok "Hermes 发起安装，核心发了确认卡片，还没有装"
 expect "插件还没装" "$(plugin_state app.wonton.files)" absent
 confirm_url="$core_url/_wonton/confirmations/$card_id"
 # 按 IP 打核心接口必须带域名 Host：IP 只回局域网状态页，API 一律 404（防 DNS 重绑定，dev.sh 头部有完整说明）。
@@ -585,7 +600,7 @@ song_task() {
 }
 song_ext=wav
 if [[ -n "${WONTON_SMOKE_SONG_URL:-}" ]]; then song_ext="${WONTON_SMOKE_SONG_URL##*.}"; fi
-# 等 Wonton 房间里出现待确认的卡片，输出卡片 ID。
+# 等核心的待确认列表里出现卡片，输出卡片 ID。
 pending_card() {
   local card=""
   for _ in $(seq 900); do
