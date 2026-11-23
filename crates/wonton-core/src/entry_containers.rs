@@ -11,7 +11,6 @@ use std::collections::HashMap;
 use std::fmt;
 use std::os::unix::fs::MetadataExt;
 use std::path::{Path, PathBuf};
-use std::time::Duration;
 
 use bollard::models::{
     ContainerCreateBody, EndpointIpamConfig, EndpointSettings, HostConfig, HostConfigLogConfig,
@@ -26,6 +25,7 @@ use crate::plugin::docker::{Engine, EngineError};
 use crate::plugin::names::{Instance, LABEL_COMPONENT, LABEL_MANAGED_BY};
 
 mod options;
+pub use reload::reload_haproxy;
 mod reload;
 use options::same_options;
 
@@ -135,6 +135,8 @@ pub struct EntryContainers {
     /// 连接器发布的地址和端口；空时看 `WONTON_ENTRY_BIND`/`WONTON_ENTRY_PORT`。
     binding: Option<(String, String)>,
     operation: std::sync::Arc<tokio::sync::Mutex<Option<crate::entry_haproxy::Model>>>,
+    /// 入口主进程的管理地址；测试指向临时端口。
+    reload_addr: String,
 }
 
 impl EntryContainers {
@@ -154,6 +156,7 @@ impl EntryContainers {
             lan_forward_available: false,
             binding: None,
             operation: std::sync::Arc::new(tokio::sync::Mutex::new(None)),
+            reload_addr: ENTRY_RELOAD_ADDR.to_owned(),
         }
     }
 
@@ -223,7 +226,7 @@ impl EntryContainers {
             crate::entry_compose::prepare_permissions(&self.install_dir)
                 .map_err(|error| config_error("入口文件权限", error))?;
             self.reconcile_inner(Some(settings)).await?;
-            self.reload().await
+            self.reload(&self.reload_addr).await
         }
         .await;
         if let Err(error) = applied {
@@ -231,7 +234,7 @@ impl EntryContainers {
             let mut failures = Vec::new();
             if let Err(cause) = snapshot.restore(&self.install_dir) {
                 failures.push(format!("恢复配置失败：{cause:#}"));
-            } else if let Err(cause) = self.reload().await {
+            } else if let Err(cause) = self.reload(&self.reload_addr).await {
                 failures.push(format!("重载旧配置失败：{cause}"));
             }
             return if failures.is_empty() {
@@ -330,22 +333,9 @@ impl EntryContainers {
         Ok(())
     }
 
-    /// 让入口的 HAProxy 主进程软重载：它带着同一个配置起一个新进程，起得来才换掉旧的，已升级的连接不断。
-    ///
-    /// 不经 Docker 的 kill 接口：发过信号的容器会被记成手动停过，Docker 重启后 `unless-stopped` 不再拉起
-    /// （ADR-0115）。`addr` 是入口的管理地址，测试里换成临时端口。
+    /// 让入口的 HAProxy 主进程软重载，见 [`reload`]。
     pub async fn reload(&self, addr: &str) -> Result<(), EntryError> {
-        let found = self
-            .engine
-            .labeled(LABEL_MANAGED_BY, "core", |labels| {
-                self.instance.owns(labels)
-                    && labels.get(LABEL_COMPONENT).map(String::as_str) == Some(ENTRY_COMPONENT)
-            })
-            .await?;
-        match found.containers.as_slice() {
-            [_] => reload_haproxy(addr).await,
-            other => Err(EntryError::NotOneEntry(other.len())),
-        }
+        self.reload_checked(addr).await
     }
 
     /// 容器的名字：和插件资源一样带实例名，几套核心共用一台 Docker 时不会撞。
@@ -807,64 +797,6 @@ fn haproxy_command(config: &str, reload_addr: &str) -> Vec<String> {
     ["haproxy", "-W", "-db", "-f", config, "-S", reload_addr]
         .map(str::to_owned)
         .to_vec()
-}
-
-/// 连入口的主进程管理端口发 `reload`，等它回 `Success=1`。
-///
-/// 主进程可能还没起来（刚对账过、容器在重启）：连不上就重试到 5 秒。`Success=0` 后面是新的启动日志，
-/// 原样带回错误里，主人看到的不是一句"热加载失败"。
-pub async fn reload_haproxy(addr: &str) -> Result<(), EntryError> {
-    use tokio::io::{AsyncReadExt, AsyncWriteExt};
-    use tokio::net::TcpStream;
-
-    let mut last = None;
-    let mut stream = None;
-    for _ in 0..20 {
-        match TcpStream::connect(addr).await {
-            Ok(found) => {
-                stream = Some(found);
-                break;
-            }
-            Err(error) => last = Some(error),
-        }
-        tokio::time::sleep(Duration::from_millis(250)).await;
-    }
-    let Some(mut stream) = stream else {
-        return Err(EntryError::Reload(format!(
-            "连不上 {addr}：{}",
-            last.map_or_else(|| "没有尝试".to_owned(), |error| error.to_string())
-        )));
-    };
-    stream
-        .write_all(b"reload\n")
-        .await
-        .map_err(|error| EntryError::Reload(format!("发不出 reload：{error}")))?;
-    // 回应可能分几段到：读到关连接或 10 秒为止，失败时的启动日志也这样收全。
-    let deadline = tokio::time::Instant::now() + Duration::from_secs(10);
-    let mut reply = Vec::new();
-    loop {
-        let mut buffer = [0u8; 4096];
-        match tokio::time::timeout_at(deadline, stream.read(&mut buffer)).await {
-            Err(_) if reply.is_empty() => {
-                return Err(EntryError::Reload("主进程 10 秒没有回应".to_owned()));
-            }
-            Err(_) | Ok(Ok(0)) | Ok(Err(_)) => break,
-            Ok(Ok(n)) => {
-                reply.extend_from_slice(&buffer[..n]);
-                if reply.windows(9).any(|w| w == b"Success=1") {
-                    break;
-                }
-            }
-        }
-    }
-    let reply = String::from_utf8_lossy(&reply);
-    if reply.contains("Success=1") {
-        Ok(())
-    } else if let Some((_, logs)) = reply.split_once("Success=0\n--\n") {
-        Err(EntryError::Reload(logs.trim().to_owned()))
-    } else {
-        Err(EntryError::Reload(reply.trim().to_owned()))
-    }
 }
 
 struct Networks {

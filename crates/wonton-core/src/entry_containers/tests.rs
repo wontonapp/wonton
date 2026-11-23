@@ -62,13 +62,15 @@ impl Rig {
         let dir = tempfile::tempdir().unwrap();
         std::fs::create_dir_all(dir.path().join("entry/certs")).unwrap();
         std::fs::write(dir.path().join("entry/certs/site.pem"), "pem").unwrap();
-        let containers = EntryContainers::new(
+        let reload_addr = master_forever("Success=1\n").await;
+        let mut containers = EntryContainers::new(
             engine,
             dir.path().to_owned(),
             dir.path().join("data"),
             Instance::default(),
             Some(CORE.to_owned()),
         );
+        containers.reload_addr = reload_addr;
         Self {
             docker,
             containers,
@@ -324,6 +326,30 @@ async fn master_cli(reply: &'static str) -> (String, tokio::task::JoinHandle<Str
     (addr, handle)
 }
 
+/// 每次连接都回同一段的假主进程：要在 reconcile 路径上重载的用例用。
+async fn master_forever(reply: &'static str) -> String {
+    use tokio::io::{AsyncReadExt, AsyncWriteExt};
+    let listener = tokio_listener().await;
+    let addr = listener.local_addr().unwrap().to_string();
+    tokio::spawn(async move {
+        loop {
+            let Ok((mut socket, _)) = listener.accept().await else {
+                return;
+            };
+            let mut byte = [0u8; 1];
+            loop {
+                if socket.read_exact(&mut byte).await.is_err() || byte[0] == b'\n' {
+                    break;
+                }
+            }
+            if socket.write_all(reply.as_bytes()).await.is_err() {
+                return;
+            }
+        }
+    });
+    addr
+}
+
 async fn tokio_listener() -> tokio::net::TcpListener {
     tokio::net::TcpListener::bind("127.0.0.1:0").await.unwrap()
 }
@@ -380,7 +406,7 @@ async fn open_lan_writes_lan_crt_list_and_reloads() {
         public.contains("public-app.k3f9qzab.example.test"),
         "{public}"
     );
-    assert_eq!(rig.writes_for("/kill").len(), 1);
+    assert!(rig.writes_for("/kill").is_empty());
 }
 
 #[tokio::test]
@@ -409,7 +435,7 @@ async fn public_model_respects_public_access_gate() {
 
 #[tokio::test]
 async fn reload_failure_restores_all_configuration() {
-    let rig = Rig::new().await;
+    let mut rig = Rig::new().await;
     rig.containers
         .apply_clients_model(&settings(), true, vec!["old".into()], vec![])
         .await
@@ -420,7 +446,7 @@ async fn reload_failure_restores_all_configuration() {
         .iter()
         .map(|path| std::fs::read(entry.join(path)).unwrap())
         .collect();
-    rig.docker.fail_next_kill("wonton-entry", "USR2 failed");
+    rig.containers.reload_addr = master_forever("Success=0\n--\nUSR2 failed\n").await;
     let error = rig
         .containers
         .apply_clients_model(&settings(), true, vec!["new".into()], vec![])
@@ -430,7 +456,7 @@ async fn reload_failure_restores_all_configuration() {
     for (path, expected) in paths.iter().zip(before) {
         assert_eq!(std::fs::read(entry.join(path)).unwrap(), expected, "{path}");
     }
-    assert_eq!(rig.writes_for("/kill").len(), 3);
+    assert!(rig.writes_for("/kill").is_empty());
 }
 
 #[tokio::test]
