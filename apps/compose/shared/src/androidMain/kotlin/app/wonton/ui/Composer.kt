@@ -121,11 +121,9 @@ fun Composer(
     // 被拒时那张就没了，原因给出去，后面的不再试。
     val sendImage: ((ImageUpload, caption: String?, replyTo: String?) -> Problem?)? = if (inSideChat) {
         { upload, caption, replyTo ->
-            android.util.Log.d("rv889", "sendImage before")
             val problem = core.send(
                 Action.Timeline(TimelineAction.SendImage(target, upload, caption = caption, replyTo = replyTo)),
             )
-            android.util.Log.d("rv889", "sendImage after problem=$problem")
             problem
         }
     } else {

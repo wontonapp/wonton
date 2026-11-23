@@ -111,11 +111,9 @@ impl FakeTimelines {
                 caption,
                 ..
             } => {
-                tracing::info!("fake send_image into {} reply={reply_to:?}", target.room_id);
                 if let Some(fake) = self.get(&target.room_id) {
                     fake.sent_photo(reply_to.as_deref(), caption.as_deref());
                 }
-                tracing::info!("fake send_image done");
             }
             _ => {}
         }
@@ -209,20 +207,21 @@ impl FakeTimeline {
 
     /// 补上组内位置，记下壳那边的列表，再推出去。壳已经释放时发不出去，不用管。
     fn push(&self, update: &mut TimelineUpdate) {
-        tracing::info!("push wait diffs={}", update.diffs.len());
-        let mut state = self.lock();
-        tracing::info!("push locked");
-        state.runs.apply(&mut update.diffs);
-        tracing::info!("push applied");
-        for diff in update.diffs.clone() {
-            crate::chat::apply_diff(&mut state.items, diff);
+        // 状态锁在送出去之前放掉：壳收下一批时可能就地报滚动，绕回来又要这份锁（界面测试的主线程）。
+        {
+            let mut state = self.lock();
+            state.runs.apply(&mut update.diffs);
+            for diff in update.diffs.clone() {
+                crate::chat::apply_diff(&mut state.items, diff);
+            }
+            update.back_to = state.back.last().cloned();
         }
-        update.back_to = state.back.last().cloned();
-        tracing::info!("push items");
-        let senders = lock(&self.senders).len();
-        tracing::info!("push senders={senders}");
-        lock(&self.senders).retain(|sender| sender.send(update.clone()).is_ok());
-        tracing::info!("push done");
+        // 发的时候同样不拿着名单的锁，让绕回来的推送能进。
+        let senders = lock(&self.senders).clone();
+        for sender in &senders {
+            let _ = sender.send(update.clone());
+        }
+        lock(&self.senders).retain(|sender| !sender.is_closed());
     }
 
     /// 一批空的：只带外壳状态，加上 `change` 改的字段。
@@ -380,16 +379,17 @@ impl FakeTimeline {
 
     /// 假数据收下一张照片：补一条写着 photo（有说明就写说明）的文字，回复对象原样带上。真上传和媒体句柄不管。
     fn sent_photo(&self, reply_to: Option<&str>, caption: Option<&str>) {
-        tracing::info!("sent_photo start reply={reply_to:?}");
         let index = {
             let mut state = self.lock();
             state.sent += 1;
             ITEMS - 1 + state.sent
         };
         let id = format!("ui-fake-photo-{index}");
-        let body = caption.map(str::trim).filter(|c| !c.is_empty()).unwrap_or("photo");
+        let body = caption
+            .map(str::trim)
+            .filter(|c| !c.is_empty())
+            .unwrap_or("photo");
         let mut message = text_message(&id, OWNER, at_ms(index), &[body.to_owned()]);
-        tracing::info!("sent_photo message built");
         message.status = Some(MessageStatus::Sent);
         message.reply = reply_to.and_then(|event| {
             let text = self.text_of(event.trim_start_matches('$'))?;
@@ -402,7 +402,6 @@ impl FakeTimeline {
                 },
             })
         });
-        tracing::info!("sent_photo reply resolved");
         let item = TimelineItem {
             id,
             content: TimelineContent::Message { message },
@@ -411,7 +410,6 @@ impl FakeTimeline {
             update.diffs = vec![TimelineDiff::PushBack { item }];
             update.scroll_to_bottom = true;
         });
-        tracing::info!("sent_photo done");
     }
 
     /// 自己发的一条接在末尾，比上一条晚一分钟（和上一条自己的消息连成一组）。

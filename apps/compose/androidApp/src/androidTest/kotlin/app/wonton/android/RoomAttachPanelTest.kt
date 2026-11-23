@@ -166,7 +166,6 @@ class RoomAttachPanelTest : RoomTelegramCase() {
                     ready.complete(Unit)
                     while (true) {
                         val update = subscription.next() ?: break
-                        android.util.Log.d("rv889", "update " + update.diffs.map { it::class.simpleName })
                         update.diffs.forEach { diff ->
                             val item = (diff as? TimelineDiff.PushBack)?.item ?: return@forEach
                             if (item.id.startsWith("ui-fake-sent-")) sent.incrementAndGet()
@@ -275,34 +274,26 @@ class RoomAttachPanelTest : RoomTelegramCase() {
         photos()[albumIndexOf(picks[1])].performClick()
         sheetSend("attach-send").performClick()
         compose.waitUntil(10_000) { compose.onAllNodes(hasTestTag("attach-send")).fetchSemanticsNodes().isEmpty() }
-        // 两条新照片里只有第一条带引用：按条目自己的标签数，主对话背后的引用不算进来。
+        // 两条新照片里只有第一条带引用：按条目自己的标签数。旁聊盖着主对话，同一条在两层里都组合着，
+        // 所以每张按出现几次算几次。
         val sentPhotos = compose.onAllNodes(
             SemanticsMatcher("新发出去的一张照片") { node ->
                 node.config.getOrNull(SemanticsProperties.TestTag)?.startsWith("item-ui-fake-photo-") == true
             },
             useUnmergedTree = true,
         )
-        compose.waitUntil(10_000) { sentPhotos.fetchSemanticsNodes().size == 2 }
-        val tags = sentPhotos.fetchSemanticsNodes().map { it.config[SemanticsProperties.TestTag] }
+        compose.waitUntil(10_000) {
+            sentPhotos.fetchSemanticsNodes().map { it.config[SemanticsProperties.TestTag] }.distinct().size == 2
+        }
+        val copies = sentPhotos.fetchSemanticsNodes().groupingBy { it.config[SemanticsProperties.TestTag] }.eachCount()
         fun quotesIn(tag: String) = compose.onAllNodes(
             hasTestTag("quote") and hasAnyAncestor(hasTestTag(tag)),
             useUnmergedTree = true,
         ).fetchSemanticsNodes().size
-        check(quotesIn(tags[0]) == 1) { "第一张照片没带引用" }
+        val tags = copies.keys.sorted()
+        check(quotesIn(tags[0]) == copies.getValue(tags[0])) { "第一张照片没带引用" }
         check(quotesIn(tags[1]) == 0) { "第二张也带了引用" }
         compose.onNodeWithContentDescription(string(R.string.message_reply_cancel)).assertDoesNotExist()
-    }
-
-    @Test
-    fun tmpSideChatTwoPhotosNoReply() {
-        enterSideChat()
-        val picks = ensureAlbumPhotos()
-        openAlbum()
-        compose.waitUntil(10_000) { photos().fetchSemanticsNodes().size >= 2 }
-        photos()[albumIndexOf(picks[0])].performClick()
-        photos()[albumIndexOf(picks[1])].performClick()
-        sheetSend("attach-send").performClick()
-        compose.waitUntil(20_000) { compose.onAllNodes(hasTestTag("attach-send")).fetchSemanticsNodes().isEmpty() }
     }
 
     /** 某一张发不出去就停在那里，说清是第几张，附言（草稿）留着。 */

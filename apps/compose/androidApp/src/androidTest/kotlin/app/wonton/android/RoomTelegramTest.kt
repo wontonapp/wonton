@@ -65,6 +65,8 @@ class RoomTelegramTest : RoomTelegramCase() {
         item(21).performScrollTo()
         // 引用那块本身可点，问主人要不要跳的是它里面的文字。
         compose.onNodeWithText("Fixture message 5", useUnmergedTree = true).performClick()
+        compose.waitForIdle()
+        screenshot("after-quote-click")
         compose.waitUntil(10_000) { visible(5) && !visible(21) }
         screenshot("jump-highlight")
         // 离开底部时“向下”先退回跳之前的那条，不直接回最新。

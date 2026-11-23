@@ -930,9 +930,9 @@ mod tests {
         let _ = std::fs::remove_dir_all(&dir);
     }
 
-    /// 临时：旁聊里带回复发照片，看看是不是卡住。
+    /// 旁聊里带回复发照片不会卡住：推送时状态锁和订阅名单的锁都已放掉，壳就地报滚动也能绕回来。
     #[tokio::test]
-    async fn tmp_side_chat_photo_with_reply() {
+    async fn side_chat_photo_with_reply_does_not_block() {
         use tokio::time::{Duration, timeout};
         use wonton_protocol::TimelineDiff;
         let dir = std::env::temp_dir().join(format!("wonton-ui-fake-photo-{}", std::process::id()));
@@ -942,7 +942,7 @@ mod tests {
             room_id: ROOM_ID.into(),
             thread_root: Some("$root".into()),
         };
-        let mut sub = core.subscribe_timeline(target.clone()).await.unwrap();
+        let sub = core.subscribe_timeline(target.clone()).await.unwrap();
         let first = sub.next().await.unwrap();
         assert!(!first.diffs.is_empty());
         core.dispatch(Action::Timeline {
@@ -978,6 +978,7 @@ mod tests {
                     thumbnail: None,
                 },
                 reply_to: Some(format!("${id}")),
+                caption: Some("说明".into()),
             },
         })
         .unwrap();

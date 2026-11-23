@@ -89,7 +89,7 @@ internal fun AttachmentSheet(
     allowFiles: Boolean,
     note: String,
     onNote: (String) -> Unit,
-    onSend: (List<Uri>) -> Unit,
+    onSend: (List<Uri>, String) -> Unit,
     onFiles: () -> Unit,
     onDismiss: () -> Unit,
 ) {
@@ -137,7 +137,7 @@ internal fun AttachmentSheet(
                     onSend = {
                         if (!sending) {
                             sending = true
-                            onSend(selected.toList())
+                            onSend(selected.toList(), note.trim())
                         }
                     },
                     busy = sending,
