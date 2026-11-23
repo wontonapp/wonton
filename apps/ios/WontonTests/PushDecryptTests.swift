@@ -8,7 +8,7 @@ import XCTest
 final class PushDecryptTests: XCTestCase {
     /// RFC 8291 第 5 节例子的明文。
     private static let plaintext = "When I grow up, I want to be a watermelon"
-    private static let authSecret = "BTBZMqHH6r4Tts7J_aSIgg"
+    private static let authSecret = "BTBZMqHH6r4Tts7J_aSIgg" // gitleaks:allow（RFC 8291 的公开测试向量）
     private static let uaPrivate = "q1dXpw3UpT5VOmu_cf_v6ih07Aems3njxI-JWgLcM94"
     private static let salt = "DGv6ra1nlYgDCS1FRnbzlw"
     private static let senderPrivate = "yfWPiYE-n46HLnH0KqZOF1fJJU3MYrct3AELtAQ-oRw"

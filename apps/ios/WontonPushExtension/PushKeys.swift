@@ -19,7 +19,7 @@ enum PushKeys {
 
     /// 取已有的，没有就生成。生成过的密钥一直用同一对：换一对等于换设备，核心那边要重新登记。
     static func registration() throws -> Registration {
-        let privateKey: P256.KeyAgreement.PrivateKey
+        let privateKey: P256.KeyAgreement.PrivateKey // gitleaks:allow（类型名被当成密钥值）
         if let existing = read(account: privateKeyAccount), existing.count == 32 {
             privateKey = try P256.KeyAgreement.PrivateKey(rawRepresentation: existing)
         } else {
