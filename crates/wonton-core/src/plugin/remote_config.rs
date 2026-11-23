@@ -16,6 +16,7 @@ use super::mcp_server::{McpServer, ToolLimits};
 use super::proxy_auth::{self, McpHeaders};
 use super::remote_redaction::Redaction;
 use super::secrets::Secrets;
+use crate::l10n;
 
 // No Debug: both the URL and forwarded headers can contain input secrets.
 #[derive(Serialize)]
@@ -83,43 +84,86 @@ impl Config {
     }
 }
 
-pub(super) fn servers<'a>(
-    manager: &'a PluginManager,
-    plugins: &'a BTreeMap<PluginId, Entry>,
-) -> impl Iterator<Item = McpServer> + 'a {
+/// 能接上总线的远端服务，以及没能解析出来的插件和原因（状态里显示异常）。
+pub(super) fn servers(
+    manager: &PluginManager,
+    plugins: &BTreeMap<PluginId, Entry>,
+) -> (Vec<McpServer>, Vec<(PluginId, String)>) {
     let langs = manager.owner_languages();
-    plugins.iter().filter_map(move |(id, entry)| {
-        let manifest = &entry.listed.as_ref()?.manifest;
-        let remote = manifest.remote_mcp.as_ref()?;
-        if super::install_hosted::effective_status(plugins, entry, &langs) != PluginStatus::Running {
-            return None;
+    let mut servers = Vec::new();
+    let mut failures = Vec::new();
+    for (id, entry) in plugins {
+        let Some(manifest) = entry.listed.as_ref().map(|listed| &listed.manifest) else {
+            continue;
+        };
+        let Some(remote) = manifest.remote_mcp.as_ref() else {
+            continue;
+        };
+        // 停了的插件先让开，哪怕还留着上次的异常记录；运行中的往下走，改好了才能把记录清掉。
+        if entry.status != PluginStatus::Running {
+            continue;
         }
-        let provider = super::install_hosted::provider_in(plugins, "remote_mcp", &langs)?;
-        let endpoint = provider.endpoint?;
-        let headers = (|| {
-            let secrets = manager.store.secrets().load(id).map_err(|error| error.to_string())?
-                .unwrap_or_default();
-            Config::resolve(manifest, &secrets, &langs)?.bus_headers(id)
-        })();
-        let headers = match headers {
+        let Some(endpoint) = super::install_hosted::provider_in(plugins, "remote_mcp", &langs)
+            .and_then(|provider| provider.endpoint)
+        else {
+            continue;
+        };
+        let secrets = match manager.store.secrets().load(id) {
+            Ok(secrets) => secrets.unwrap_or_default(),
+            Err(error) => {
+                tracing::warn!(plugin = %id, url = %remote.url, %error, "Remote MCP secret store unreadable");
+                failures.push((
+                    id.clone(),
+                    l10n::text(
+                        &langs,
+                        "remote-install-secrets-unreadable",
+                        &[("error", error.to_string().into())],
+                    ),
+                ));
+                continue;
+            }
+        };
+        if super::remote_install::unresolved_input(manifest, &secrets, &langs) {
+            failures.push((
+                id.clone(),
+                l10n::text(&langs, "remote-install-secret-missing", &[]),
+            ));
+            continue;
+        }
+        let headers = match Config::resolve(manifest, &secrets, &langs)
+            .and_then(|config| config.bus_headers(id))
+        {
             Ok(headers) => headers,
             Err(error) => {
                 tracing::warn!(plugin = %id, url = %remote.url, %error, "Remote MCP configuration unavailable");
-                return None;
+                failures.push((
+                    id.clone(),
+                    l10n::text(
+                        &langs,
+                        "remote-install-secrets-unreadable",
+                        &[("error", error.into())],
+                    ),
+                ));
+                continue;
             }
         };
         let defaults = ToolLimits::default();
-        Some(McpServer {
+        servers.push(McpServer {
             id: id.clone(),
             title: entry.title.clone(),
             url: endpoint.url("/mcp"),
             socket: endpoint.socket().map(std::path::Path::to_path_buf),
             headers,
             tool_limits: ToolLimits {
-                idle: remote.tool_idle_seconds.map_or(defaults.idle, Duration::from_secs),
-                total: remote.tool_total_seconds.map_or(defaults.total, Duration::from_secs),
+                idle: remote
+                    .tool_idle_seconds
+                    .map_or(defaults.idle, Duration::from_secs),
+                total: remote
+                    .tool_total_seconds
+                    .map_or(defaults.total, Duration::from_secs),
             },
             tools: remote.tools.clone(),
-        })
-    })
+        });
+    }
+    (servers, failures)
 }

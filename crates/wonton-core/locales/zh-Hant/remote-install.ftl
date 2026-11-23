@@ -1,4 +1,3 @@
-remote-install-authorize-first = 請先授權登入這台伺服器，再安裝。
 remote-install-connector-unavailable = 遠端工具連接器沒有正確回應，請啟動它後重試。
 remote-install-needs-oauth = 這台伺服器需要登入授權，但外掛清單沒有宣告。
 remote-install-needs-header = 這台伺服器需要請求標頭密鑰，但外掛清單沒有宣告。
@@ -10,3 +9,6 @@ remote-install-proxy-unavailable = 對外連線代理不可用，請檢查代理
 remote-install-remote-error = 遠端伺服器發生錯誤，請稍後重試。
 remote-install-probe-failed = { $reason } 位址：{ $url }。詳細資訊：{ $detail }
 remote-install-forget-failed = 外掛已解除安裝，但連接器那邊的權杖未刪除。
+remote-install-secrets-unreadable = 外掛還在執行，但讀不出存著的密鑰：{ $error }
+remote-install-oauth-unsupported = 這個遠端伺服器用 OAuth 登入，授權入口還沒接。
+remote-install-secret-missing = 等主人填必填的密鑰。

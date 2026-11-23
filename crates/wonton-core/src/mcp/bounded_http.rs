@@ -264,6 +264,11 @@ impl BoundedHttp {
     ) -> Result<StreamableHttpPostResponse, HttpError> {
         let status = response.status();
         let limit = self.limit.min(MAX_ERROR_BODY_BYTES);
+        let challenge = response
+            .headers()
+            .get(reqwest::header::WWW_AUTHENTICATE)
+            .and_then(|value| value.to_str().ok())
+            .map(str::to_owned);
         let read = self.read_body(response, limit);
         let body = match tokio::time::timeout(ERROR_BODY_TIMEOUT, read).await {
             Ok(Ok(Body::Complete(body))) => body,
@@ -283,6 +288,14 @@ impl BoundedHttp {
             reqwest::StatusCode::UNAUTHORIZED | reqwest::StatusCode::FORBIDDEN
         ) {
             // 不自动重试、也不重新取密钥：凭据不对是清单和插件的事，如实报出来。
+            if let Some(challenge) = challenge {
+                why.push_str("; WWW-Authenticate: ");
+                why.push_str(
+                    &self
+                        .diagnostics
+                        .words(challenge.as_bytes(), MAX_ERROR_WORDS),
+                );
+            }
             why.push_str("; the app's MCP server rejected the credentials");
         }
         not_mcp(message, session, why)

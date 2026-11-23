@@ -494,6 +494,7 @@ async fn quiet_update(
             record.lan_webui,
             &[],
             &Default::default(),
+            &SecretValues::default(),
             &langs,
         )
         .await;

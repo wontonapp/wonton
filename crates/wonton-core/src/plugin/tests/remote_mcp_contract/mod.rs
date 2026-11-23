@@ -285,10 +285,10 @@ async fn expanded_remote_url_never_enters_errors_details_or_logs() {
 }
 
 #[tokio::test]
-async fn remote_oauth_install_requires_authorization_before_probe() {
+async fn remote_oauth_installs_are_rejected_as_unsupported_before_probe() {
     let bed = Bed::new(true).await;
     let error = bed.install("oauth").await.unwrap_err();
-    assert_eq!(error.kind(), "invalid_input");
+    assert_eq!(error.kind(), "unsupported");
     assert!(bed.fake.probes.lock().unwrap().is_empty());
     assert!(bed.manager.record_for_test(&id(REMOTE)).is_none());
 }
@@ -373,4 +373,35 @@ async fn remote_mcp_restores_without_a_directory_or_another_probe() {
     ));
     assert_eq!(restarted.mcp_servers().len(), 1);
     assert_eq!(bed.fake.probes.lock().unwrap().len(), 1);
+}
+
+#[tokio::test]
+async fn an_unreadable_secret_store_shows_degraded_instead_of_a_green_running_plugin() {
+    let bed = Bed::new(true).await;
+    bed.install("header").await.unwrap();
+    let path = bed
+        .data
+        .path()
+        .join(format!("plugins/secrets/{REMOTE}.json"));
+    std::fs::write(&path, b"broken").unwrap();
+
+    assert!(bed.manager.mcp_servers().is_empty());
+    let view = bed.manager.installed_plugin(&id(REMOTE), &langs()).unwrap();
+    assert!(
+        matches!(&view.status, PluginState::Degraded { reason } if !reason.is_empty()),
+        "{:?}",
+        view.status
+    );
+
+    std::fs::remove_file(&path).unwrap();
+    bed.manager
+        .secrets_for_test(&id(REMOTE), &[("token", SECRET)]);
+    assert_eq!(bed.manager.mcp_servers().len(), 1);
+    assert!(matches!(
+        bed.manager
+            .installed_plugin(&id(REMOTE), &langs())
+            .unwrap()
+            .status,
+        PluginState::Running { .. }
+    ));
 }

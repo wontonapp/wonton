@@ -94,6 +94,7 @@ async fn a_read_only_service_reads_configs_mounted_from_the_core_store() {
         false,
         &[],
         &Default::default(),
+        &Default::default(),
         &super::langs(),
     )
     .await

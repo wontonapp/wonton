@@ -323,6 +323,10 @@ impl PluginManager {
             .write()
             .expect("安装结果锁中毒")
             .remove(&manifest.id);
+        self.mcp_unavailable
+            .write()
+            .expect("远端 MCP 状态锁中毒")
+            .remove(&manifest.id);
         plugins.insert(
             manifest.id.clone(),
             Entry::new(listed.clone(), PluginStatus::Installing, None),
@@ -496,6 +500,10 @@ impl PluginManager {
                 self.clear_oom(id);
                 self.lan.clear_degraded(id);
                 self.plugins.write().expect("插件表锁中毒").remove(id);
+                self.mcp_unavailable
+                    .write()
+                    .expect("远端 MCP 状态锁中毒")
+                    .remove(id);
                 self.tool_policy().forget_plugin(id.as_str());
                 self.remove_capability_records(id, removing, approve_connections, langs)
                     .await?;

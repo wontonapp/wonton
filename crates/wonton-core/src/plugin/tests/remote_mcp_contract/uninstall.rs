@@ -1,3 +1,5 @@
+use std::os::unix::fs::PermissionsExt;
+
 use hyper::StatusCode;
 use serde_json::json;
 
@@ -8,7 +10,11 @@ use crate::plugin::tests::langs;
 
 #[tokio::test]
 async fn remote_mcp_uninstall_preview_removes_consumer_before_selected_connector() {
-    for status in [StatusCode::NO_CONTENT, StatusCode::INTERNAL_SERVER_ERROR] {
+    for status in [
+        StatusCode::NO_CONTENT,
+        StatusCode::NOT_FOUND,
+        StatusCode::INTERNAL_SERVER_ERROR,
+    ] {
         let bed = Bed::new(true).await;
         bed.install("header").await.unwrap();
         *bed.fake.forget_status.lock().unwrap() = status;
@@ -29,12 +35,39 @@ async fn remote_mcp_uninstall_preview_removes_consumer_before_selected_connector
             *bed.fake.forgotten.lock().unwrap(),
             [format!("/_wonton/plugins/{REMOTE}")]
         );
-        assert_eq!(report.warnings.is_empty(), status.is_success());
+        assert_eq!(
+            report.warnings.is_empty(),
+            status.is_success() || status == StatusCode::NOT_FOUND
+        );
         assert!(bed.manager.record_for_test(&id(REMOTE)).is_none());
         assert!(bed.manager.record_for_test(&id(PROVIDER)).is_none());
         assert!(bed.manager.mcp_servers().is_empty());
         assert!(!bed.docker.containers().contains(&bed.provider_container()));
     }
+}
+
+/// 探针成功、发布失败以后卸载：连接器里可能已经留下令牌，必须撤。
+#[tokio::test]
+async fn a_failed_install_after_a_successful_probe_is_forgotten_on_uninstall() {
+    let bed = Bed::new(true).await;
+    let plugins = bed.data.path().join("plugins");
+    std::fs::set_permissions(&plugins, std::fs::Permissions::from_mode(0o500)).unwrap();
+    bed.install("header").await.unwrap_err();
+    assert!(!bed.fake.probes.lock().unwrap().is_empty());
+    std::fs::set_permissions(&plugins, std::fs::Permissions::from_mode(0o700)).unwrap();
+
+    let report = bed
+        .manager
+        .uninstall(&id(REMOTE), false, &langs())
+        .await
+        .unwrap();
+
+    assert_eq!(
+        *bed.fake.forgotten.lock().unwrap(),
+        [format!("/_wonton/plugins/{REMOTE}")]
+    );
+    assert!(report.warnings.is_empty());
+    assert!(bed.manager.record_for_test(&id(REMOTE)).is_none());
 }
 
 #[tokio::test]

@@ -91,6 +91,8 @@ pub(crate) fn failure_kind(kind: Option<&str>, status: u16) -> PluginFailure {
         Some("conflict") => PluginFailure::Conflict,
         Some("not_ready") => PluginFailure::Upstream,
         Some("invalid_input") => PluginFailure::Invalid,
+        Some("remote_unavailable") => PluginFailure::TransportUnavailable,
+        Some("remote_error") => PluginFailure::Upstream,
         Some("lan_unavailable") => PluginFailure::LanUnavailable,
         Some("port_taken") => PluginFailure::LanPortTaken,
         Some("egress_proxy_unavailable") => PluginFailure::EgressProxyUnavailable,

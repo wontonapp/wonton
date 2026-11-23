@@ -1,4 +1,3 @@
-remote-install-authorize-first = インストールする前に、このサーバーへのログインを許可してください。
 remote-install-connector-unavailable = リモートツールのコネクターが正しく応答しませんでした。起動してから再試行してください。
 remote-install-needs-oauth = このサーバーにはログイン認証が必要ですが、マニフェストに宣言されていません。
 remote-install-needs-header = このサーバーにはリクエストヘッダーのシークレットが必要ですが、マニフェストに宣言されていません。
@@ -10,3 +9,6 @@ remote-install-proxy-unavailable = 外向きプロキシを利用できません
 remote-install-remote-error = リモートサーバーでエラーが発生しました。後でもう一度お試しください。
 remote-install-probe-failed = { $reason } アドレス：{ $url }。詳細：{ $detail }
 remote-install-forget-failed = プラグインは削除されましたが、コネクターのトークンを削除できませんでした。
+remote-install-secrets-unreadable = プラグインは動作中ですが、保存済みの認証情報を読み取れません：{ $error }
+remote-install-oauth-unsupported = このリモートサーバーは OAuth でログインします。認可の入口はまだ未接続です。
+remote-install-secret-missing = 必須の認証情報がまだ未入力です。

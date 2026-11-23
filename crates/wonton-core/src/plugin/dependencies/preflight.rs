@@ -208,7 +208,8 @@ impl PluginManager {
                 &[],
             )));
         }
-        crate::plugin::remote_install::check_oauth(manifest, request.remote_oauth.as_ref(), langs)?;
+        // 别让客户端以为授权完就能装：授权入口还没接，这里先拒。
+        crate::plugin::remote_install::check_oauth_unsupported(manifest, langs)?;
         if !matches!(request.scope, None | Some(PluginScope::All)) {
             return Err(InstallError::Unsupported(l10n::text(
                 langs,
@@ -255,7 +256,9 @@ impl PluginManager {
                 langs,
             )?;
         }
-        if manifest.remote_mcp.is_some() {
+        if manifest.remote_mcp.is_some()
+            && !crate::plugin::remote_install::unresolved_input(manifest, &secrets, langs)
+        {
             crate::plugin::remote_config::Config::resolve(manifest, &secrets, langs)
                 .map_err(InstallError::Invalid)?;
         }

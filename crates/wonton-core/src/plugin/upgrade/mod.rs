@@ -631,6 +631,7 @@ impl PluginManager {
         lan_webui: bool,
         devices: &[String],
         given: &wonton_protocol::SettingValues,
+        inputs: &wonton_protocol::SecretValues,
         langs: &Languages,
     ) -> Result<(), InstallError> {
         let record = self.upgradable_record(id, langs)?;
@@ -643,7 +644,7 @@ impl PluginManager {
             lan_webui || record.lan_webui,
             devices.to_vec(),
             settings,
-            Default::default(),
+            inputs.clone(),
         )
         .await
     }

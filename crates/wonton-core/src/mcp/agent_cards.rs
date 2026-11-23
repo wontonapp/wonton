@@ -28,20 +28,6 @@ pub(super) async fn upgrade_ran(
     writer: Option<PluginWriter>,
 ) -> Outcome {
     let langs = bus.plugins.owner_languages();
-    let filled = bus.plugins.store().secrets().load(&id).ok().flatten();
-    if let Err(e) =
-        bus.plugins
-            .store_input_values(&package.manifest, &secrets, filled.as_ref(), &langs)
-    {
-        return Outcome::failed(
-            e.kind(),
-            l10n::text(
-                &langs,
-                "chat-install-failed",
-                &[("kind", e.kind().into()), ("error", e.to_string().into())],
-            ),
-        );
-    }
     // 可选项按执行时读到的记录沿用，不用发卡时的快照：主人在卡片挂着时关掉的项，批准不会重新打开（#767）。
     let upgraded = bus
         .plugins
@@ -53,6 +39,7 @@ pub(super) async fn upgrade_ran(
             lan_webui,
             &devices,
             &settings,
+            &secrets,
             &langs,
         )
         .await;

@@ -220,7 +220,7 @@ impl PluginManager {
         purge: bool,
         langs: &Languages,
     ) -> Result<super::manager::UninstallReport, InstallError> {
-        let (needs_cleanup, hosted, storage) = {
+        let (needs_cleanup, remote, hosted, storage) = {
             let failed = self.failed_installs.read().expect("安装结果锁中毒");
             let entry = failed
                 .get(id)
@@ -228,11 +228,12 @@ impl PluginManager {
             let manifest = entry.entry.listed.as_ref().map(|listed| &listed.manifest);
             (
                 !entry.failure.cleanup_errors.is_empty(),
+                manifest.is_some_and(|m| m.remote_mcp.is_some()),
                 manifest.and_then(super::install_hosted::hosted_capability),
                 manifest.is_some_and(|m| super::install_storage::storage_need(m).is_some()),
             )
         };
-        let report = if purge || needs_cleanup {
+        let mut report = if purge || needs_cleanup {
             let result = self.teardown(id, purge, langs).await;
             if let Err(error) = &result {
                 self.append_install_cleanup(id, &[error.to_string()], langs);
@@ -241,6 +242,12 @@ impl PluginManager {
         } else {
             super::manager::UninstallReport::default()
         };
+        // 探针可能已经在连接器留下会话和令牌；失败安装也要撤，不能只删本机记录。
+        if remote {
+            report
+                .warnings
+                .extend(self.forget_connector(id, langs).await);
+        }
         for capability in hosted
             .into_iter()
             .chain((purge && storage).then_some(super::capabilities::WEB_STORAGE.name))
@@ -253,6 +260,10 @@ impl PluginManager {
         self.failed_installs
             .write()
             .expect("安装结果锁中毒")
+            .remove(id);
+        self.mcp_unavailable
+            .write()
+            .expect("远端 MCP 状态锁中毒")
             .remove(id);
         self.changed();
         Ok(report)

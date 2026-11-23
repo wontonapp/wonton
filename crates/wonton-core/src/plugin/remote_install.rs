@@ -12,6 +12,8 @@ use super::manager::PluginManager;
 use super::manifest::{Manifest, PluginId};
 use super::manifest_remote::RemoteAuth;
 use super::remote_config::Config;
+use super::secret_spec::SecretSpec;
+use super::secrets::Secrets;
 use super::upstreams::Endpoint;
 use crate::l10n;
 
@@ -25,9 +27,9 @@ struct ProbeResult {
     http_status: Option<u16>,
 }
 
-pub(super) fn check_oauth(
+/// OAuth 的授权码结构能交进来，但核心还没有交换和保存令牌的入口。
+pub(super) fn check_oauth_unsupported(
     manifest: &Manifest,
-    grant: Option<&wonton_protocol::RemoteOauthGrant>,
     langs: &Languages,
 ) -> Result<(), InstallError> {
     if manifest
@@ -35,12 +37,11 @@ pub(super) fn check_oauth(
         .as_ref()
         .is_some_and(|remote| remote.auth == RemoteAuth::Oauth)
     {
-        let message = l10n::text(langs, "remote-install-authorize-first", &[]);
-        return Err(if grant.is_none() {
-            InstallError::Invalid(message)
-        } else {
-            InstallError::Unsupported(message)
-        });
+        return Err(InstallError::Unsupported(l10n::text(
+            langs,
+            "remote-install-oauth-unsupported",
+            &[],
+        )));
     }
     Ok(())
 }
@@ -54,7 +55,7 @@ impl PluginManager {
         let Some(remote) = &manifest.remote_mcp else {
             return Ok(());
         };
-        check_oauth(manifest, None, langs)?;
+        check_oauth_unsupported(manifest, langs)?;
         let endpoint = self
             .hosted_provider("remote_mcp")
             .and_then(|provider| provider.endpoint)
@@ -66,6 +67,11 @@ impl PluginManager {
                 ))
             })?;
         let secrets = self.store.secrets().load(&manifest.id)?.unwrap_or_default();
+        // ADR-0064：装好再填。凭据还没交给核心时无从握手，先装，填齐后下一次请求生效。
+        if unresolved_input(manifest, &secrets, langs) {
+            tracing::info!(plugin = %manifest.id, "远端 MCP 的密钥还没填齐，跳过装前握手");
+            return Ok(());
+        }
         let config = Config::resolve(manifest, &secrets, langs).map_err(InstallError::Invalid)?;
         let request = serde_json::to_value(&config).expect("字符串配置可序列化");
         let response = self
@@ -144,6 +150,16 @@ impl PluginManager {
         if !remote {
             return None;
         }
+        self.forget_connector(id, langs).await
+    }
+
+    /// 失败安装的记录已经不在插件表里，调用方按清单判断过后直接调这里。
+    /// 连接器对已删插件回 404 算删过：重试卸载不该报成清理失败。
+    pub(super) async fn forget_connector(
+        &self,
+        id: &PluginId,
+        langs: &Languages,
+    ) -> Option<String> {
         let endpoint = self
             .hosted_provider("remote_mcp")
             .and_then(|provider| provider.endpoint);
@@ -156,7 +172,7 @@ impl PluginManager {
                     None,
                 )
                 .await
-                .map(|(status, _)| status.is_success()),
+                .map(|(status, _)| status.is_success() || status == StatusCode::NOT_FOUND),
             None => Err(()),
         };
         if result != Ok(true) {
@@ -211,6 +227,36 @@ impl PluginManager {
             .await
             .map_err(|_| ())?
     }
+}
+
+/// 地址或必填请求头还引用着没填的密钥：此刻握不了手，先让插件装上等主人填。
+pub(super) fn unresolved_input(manifest: &Manifest, secrets: &Secrets, langs: &Languages) -> bool {
+    let Some(remote) = &manifest.remote_mcp else {
+        return false;
+    };
+    let referenced = |template: &String| {
+        super::proxy_auth::validate_input_template(manifest, template, langs).unwrap_or_default()
+    };
+    // 地址拼不出来就总是算没填齐，和必填与否无关。
+    if referenced(&remote.url)
+        .into_iter()
+        .any(|name| !secrets.contains_key(&name))
+    {
+        return true;
+    }
+    remote
+        .headers
+        .values()
+        .flat_map(referenced)
+        .any(|name| missing_required(manifest, secrets, &name))
+}
+
+fn missing_required(manifest: &Manifest, secrets: &Secrets, name: &str) -> bool {
+    !secrets.contains_key(name)
+        && matches!(
+            manifest.secrets.get(name),
+            Some(SecretSpec::Input(input)) if input.required
+        )
 }
 
 fn connector_failed(langs: &Languages) -> InstallError {

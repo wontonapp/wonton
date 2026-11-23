@@ -119,26 +119,7 @@ impl PluginManager {
         let (upgrade, mut notices) =
             self.upgrades
                 .listing(id, &entry.version, &entry.status, langs);
-        let tabs = entry
-            .listed
-            .as_ref()
-            .and_then(|listed| listed.manifest.tabs.as_ref().map(|tabs| (listed, tabs)))
-            .map(|(listed, tabs)| {
-                tabs.iter()
-                    .zip(&listed.tab_icons)
-                    .filter_map(|(tab, (icon, selected))| {
-                        Some(PluginTab {
-                            id: tab.id.clone(),
-                            title: langs.pick_owned(&tab.title),
-                            icon: icon.as_ref()?.tab_image(),
-                            icon_selected: selected.as_ref().map(IconSource::tab_image),
-                            path: tab.path.clone(),
-                            layout: manifest_tabs::layout(&tab.layout)?,
-                        })
-                    })
-                    .collect()
-            })
-            .unwrap_or_default();
+        let tabs = Self::listing_tabs(entry, langs);
         if entry.status == PluginStatus::Running {
             notices.extend(self.oom_notices(id, langs));
         }
@@ -175,10 +156,7 @@ impl PluginManager {
             written_by: None,
             status: self.plugin_state(
                 id,
-                state(
-                    &super::super::install_hosted::effective_status(plugins, entry, langs),
-                    entry.health,
-                ),
+                state(&self.listed_status(plugins, entry, langs), entry.health),
                 manifest,
             ),
             web_url: self.open_url(id, entry),
@@ -213,6 +191,40 @@ impl PluginManager {
             ),
             matrix_widget: manifest.and_then(super::super::manifest_widget::plugin_widget),
         }
+    }
+
+    /// 列表里的状态要算上托管提供方和远端密钥库的情况。
+    fn listed_status(
+        &self,
+        plugins: &std::collections::BTreeMap<PluginId, Entry>,
+        entry: &Entry,
+        langs: &Languages,
+    ) -> PluginStatus {
+        let unavailable = self.mcp_unavailable.read().expect("远端 MCP 状态锁中毒");
+        super::super::install_hosted::effective_status(plugins, entry, &unavailable, langs)
+    }
+
+    fn listing_tabs(entry: &Entry, langs: &Languages) -> Vec<PluginTab> {
+        entry
+            .listed
+            .as_ref()
+            .and_then(|listed| listed.manifest.tabs.as_ref().map(|tabs| (listed, tabs)))
+            .map(|(listed, tabs)| {
+                tabs.iter()
+                    .zip(&listed.tab_icons)
+                    .filter_map(|(tab, (icon, selected))| {
+                        Some(PluginTab {
+                            id: tab.id.clone(),
+                            title: langs.pick_owned(&tab.title),
+                            icon: icon.as_ref()?.tab_image(),
+                            icon_selected: selected.as_ref().map(IconSource::tab_image),
+                            path: tab.path.clone(),
+                            layout: manifest_tabs::layout(&tab.layout)?,
+                        })
+                    })
+                    .collect()
+            })
+            .unwrap_or_default()
     }
 
     pub(in crate::plugin) fn set_listed_limits(&self, id: &PluginId, limits: PluginLimits) {

@@ -125,6 +125,7 @@ async fn content_revision_changes_without_a_version_bump_and_survives_restore() 
         false,
         &[],
         &Default::default(),
+        &Default::default(),
         &super::langs(),
     )
     .await

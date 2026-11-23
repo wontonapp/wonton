@@ -4,7 +4,7 @@
 
 use super::super::languages::Languages;
 use super::super::manager::{InstallError, PluginManager};
-use super::super::manifest::Permission;
+use super::super::manifest::{Permission, PluginId};
 use super::super::package::PluginPackage;
 use super::{UpgradeSwitches, installed_package};
 
@@ -29,7 +29,7 @@ impl PluginManager {
         let store = self.store.secrets();
         let secrets = store.load(&manifest.id)?;
         let changed = store.changed(&manifest.id)?;
-        self.store_input_values(&manifest, inputs, secrets.as_ref(), &langs)?;
+        let written = self.store_input_values(&manifest, inputs, secrets.as_ref(), &langs)?;
         let outcome = self
             .upgrade_declared(package, granted, switches, lan_webui, devices, settings)
             .await;
@@ -71,23 +71,39 @@ impl PluginManager {
                 Ok(()) => cleanup,
             });
         }
-        if !retained {
-            let restored = self
-                .store
-                .load(&manifest.id)?
-                .ok_or_else(|| InstallError::not_installed(&langs, &manifest.id))?;
-            let restored = installed_package(&restored, &langs)?;
-            if let Err(cleanup) = self
-                .capabilities_installed(&restored.manifest, &[], true)
+        if !retained
+            && let Err(cleanup) = self
+                .restore_after_rollback(&manifest.id, &written, &langs)
                 .await
-            {
-                return Err(match result {
-                    Err(error) => error.with_note(&langs, &cleanup.to_string()),
-                    Ok(()) => cleanup,
-                });
-            }
+        {
+            return Err(match result {
+                Err(error) => error.with_note(&langs, &cleanup.to_string()),
+                Ok(()) => cleanup,
+            });
         }
         result
+    }
+
+    /// 回滚把库退回旧值后，插件表里的请求头和旧容器还拿着新值：先照退回的值刷头，再重建用到这些变量的服务。
+    async fn restore_after_rollback(
+        &self,
+        id: &PluginId,
+        written: &[String],
+        langs: &Languages,
+    ) -> Result<(), InstallError> {
+        let record = self
+            .store
+            .load(id)?
+            .ok_or_else(|| InstallError::not_installed(langs, id))?;
+        let package = installed_package(&record, langs)?;
+        let secrets = self.store.secrets().load(id)?.unwrap_or_default();
+        self.refresh_mcp_headers(id, &package.manifest, &secrets, langs);
+        let listed = self.listed(id)?;
+        for name in written {
+            self.rebuild_secret_users(&listed, &package, &record, name, langs)
+                .await?;
+        }
+        Ok(())
     }
 
     pub(super) fn upgrade_capability_block(

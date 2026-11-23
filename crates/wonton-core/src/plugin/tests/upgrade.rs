@@ -425,6 +425,7 @@ async fn plugins_without_a_tag_are_not_checked_and_uploads_are_not_offered_upgra
         false,
         &[],
         &Default::default(),
+        &Default::default(),
         &super::langs(),
     )
     .await
@@ -445,6 +446,7 @@ async fn plugins_without_a_tag_are_not_checked_and_uploads_are_not_offered_upgra
             Vec::new(),
             false,
             &[],
+            &Default::default(),
             &Default::default(),
             &super::langs(),
         )
@@ -486,6 +488,7 @@ pub(super) async fn upgrade_expect_rollback(
             Vec::new(),
             false,
             &[],
+            &Default::default(),
             &Default::default(),
             &super::langs(),
         )
@@ -657,6 +660,7 @@ async fn nothing_is_upgraded_while_the_core_itself_is_upgrading() {
             Vec::new(),
             false,
             &[],
+            &Default::default(),
             &Default::default(),
             &super::langs(),
         )

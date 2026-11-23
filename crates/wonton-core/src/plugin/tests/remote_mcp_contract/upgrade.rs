@@ -8,12 +8,12 @@ use tokio::sync::Notify;
 
 use rmcp::model::CallToolRequestParams;
 use serde_json::json;
-use wonton_protocol::UpgradeRequest;
+use wonton_protocol::{SecretString, SecretValues, UpgradeRequest};
 
 use super::fixture::{Bed, Fake, REMOTE, SECRET, id, remote};
-use crate::plugin::PluginPackage;
 use crate::plugin::tests::langs;
 use crate::plugin::upgrade::UpgradeTo;
+use crate::plugin::{PluginPackage, UpgradeSwitches};
 
 async fn request(bed: &Bed, token: &str) -> UpgradeRequest {
     let mut document: serde_json::Value = serde_json::from_str(&remote("header").source).unwrap();
@@ -103,6 +103,56 @@ async fn rejected_remote_mcp_upgrade_restores_secret_bytes_and_old_runtime() {
         }
     }
     agent.cancel().await.unwrap();
+}
+
+/// 上传升级在事务外先写库再升级时，被拒不回滚；这条盯的是 `upgrade_upload` 自己把输入带进事务。
+#[tokio::test]
+async fn rejected_remote_mcp_upload_restores_secret_bytes_timestamp_and_runtime() {
+    let bed = Bed::new(true).await;
+    bed.install("header").await.unwrap();
+    seed_timestamp(&bed);
+    let path = bed
+        .data
+        .path()
+        .join(format!("plugins/secrets/{REMOTE}.json"));
+    let before = std::fs::read(&path).unwrap();
+    let mut document: serde_json::Value = serde_json::from_str(&remote("header").source).unwrap();
+    document["x-wonton"]["version"] = json!("2.0.0");
+    let package = PluginPackage::parse(&document.to_string(), &langs()).unwrap();
+    *bed.fake.outcome.lock().unwrap() = "secret_rejected".into();
+    let inputs = SecretValues::from([("token".to_owned(), SecretString::new("rejected-upload"))]);
+    let error = bed
+        .manager
+        .upgrade_upload(
+            &id(REMOTE),
+            package,
+            Vec::new(),
+            UpgradeSwitches::Kept,
+            false,
+            &[],
+            &Default::default(),
+            &inputs,
+            &langs(),
+        )
+        .await
+        .unwrap_err();
+    assert_eq!(error.kind(), "invalid_input");
+    assert_eq!(std::fs::read(&path).unwrap(), before);
+    assert_eq!(
+        bed.manager.record_for_test(&id(REMOTE)).unwrap().version,
+        "1.0.0"
+    );
+    let store = bed.manager.store.secrets();
+    assert_eq!(
+        store.load(&id(REMOTE)).unwrap().unwrap()["token"],
+        SECRET.as_bytes()
+    );
+    assert_eq!(store.changed(&id(REMOTE)).unwrap()["token"], 123);
+    assert_eq!(
+        bed.fake.probes.lock().unwrap().last().unwrap()["headers"]["authorization"],
+        "Bearer rejected-upload"
+    );
+    assert_runtime_token(&bed, SECRET).await;
 }
 
 #[tokio::test]

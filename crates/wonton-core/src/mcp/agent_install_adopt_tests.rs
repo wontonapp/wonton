@@ -231,6 +231,7 @@ async fn an_owner_upgrade_takes_the_plugin_back_from_the_agent() {
             false,
             &[],
             &Default::default(),
+            &Default::default(),
             &Languages::from_header(Some("zh")),
         )
         .await

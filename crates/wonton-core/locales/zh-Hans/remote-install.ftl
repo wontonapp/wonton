@@ -1,4 +1,3 @@
-remote-install-authorize-first = 请先授权登录这台服务器，再安装。
 remote-install-connector-unavailable = 远端工具连接器没有正确响应，请启动它后重试。
 remote-install-needs-oauth = 这台服务器需要登录授权，但插件清单没有声明。
 remote-install-needs-header = 这台服务器需要请求头密钥，但插件清单没有声明。
@@ -10,3 +9,6 @@ remote-install-proxy-unavailable = 出网代理不可用，请检查代理后重
 remote-install-remote-error = 远端服务器出错了，请稍后重试。
 remote-install-probe-failed = { $reason } 地址：{ $url }。详情：{ $detail }
 remote-install-forget-failed = 插件已卸载，但连接器那边的令牌没删掉。
+remote-install-secrets-unreadable = 插件还在运行，但读不出存着的密钥：{ $error }
+remote-install-oauth-unsupported = 这个远端服务器用 OAuth 登录，授权入口还没接。
+remote-install-secret-missing = 等主人填必填的密钥。

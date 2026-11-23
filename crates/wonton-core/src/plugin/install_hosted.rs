@@ -81,10 +81,11 @@ pub(super) fn provider_in(
 }
 
 /// 托管插件的状态由提供方决定：自己的记录是“运行中”时，提供方没在运行就如实标异常（ADR-0053 的“依赖的插件
-/// 没有在运行”），不显示成插件自己坏了。
+/// 没有在运行”），不显示成插件自己坏了。远端 MCP 的密钥库读不出来时也一样。
 pub(super) fn effective_status(
     plugins: &BTreeMap<PluginId, Entry>,
     entry: &Entry,
+    unavailable: &BTreeMap<PluginId, String>,
     langs: &Languages,
 ) -> PluginStatus {
     let Some(listed) = entry.listed.as_ref() else {
@@ -92,6 +93,11 @@ pub(super) fn effective_status(
     };
     if entry.status != PluginStatus::Running {
         return entry.status.clone();
+    }
+    if let Some(reason) = unavailable.get(&listed.manifest.id) {
+        return PluginStatus::Degraded {
+            reason: reason.clone(),
+        };
     }
     required_hosted(&listed.manifest)
         .into_iter()
@@ -250,9 +256,17 @@ impl PluginManager {
     ) -> Result<(PluginView, Undo), InstallError> {
         let manifest = package.manifest.clone();
         self.check_hosted_providers(&manifest, langs)?;
-        self.probe_remote(&manifest, langs).await?;
         let listed = Listed::new(package, now_secs(), false, false, Default::default());
         self.reserve(&listed, langs)?;
+        // 先查完状态并占住 ID 再对远端握手：并发安装不重复握手，失败时把占位撤掉。
+        if let Err(error) = self.probe_remote(&manifest, langs).await {
+            self.plugins
+                .write()
+                .expect("插件表锁中毒")
+                .remove(&manifest.id);
+            self.changed();
+            return Err(error);
+        }
         tracing::info!(plugin = %manifest.id, runtime = manifest.runtime.as_str(), "开始安装插件");
         let undo = match self.publish(package, granted, None, langs).await {
             Ok(undo) => undo,
@@ -291,7 +305,6 @@ impl PluginManager {
     ) -> Result<(), InstallError> {
         let id = package.manifest.id.clone();
         self.check_hosted_providers(&package.manifest, langs)?;
-        self.probe_remote(&package.manifest, langs).await?;
         let old = self
             .store
             .load(&id)?
@@ -307,13 +320,17 @@ impl PluginManager {
             std::mem::replace(&mut entry.status, PluginStatus::Upgrading)
         };
         self.changed();
-        let result = self
-            .publish(&package, granted, Some(&old), langs)
-            .await
-            .map(|_| ())
-            .map_err(|failed| {
-                self.install_rollback_error(failed.error, failed.cleanup_errors, langs)
-            });
+        let result = async {
+            // 先读记录、查完状态再对远端握手：没装或正在升级的插件不用白跑一次。
+            self.probe_remote(&package.manifest, langs).await?;
+            self.publish(&package, granted, Some(&old), langs)
+                .await
+                .map(|_| ())
+                .map_err(|failed| {
+                    self.install_rollback_error(failed.error, failed.cleanup_errors, langs)
+                })
+        }
+        .await;
         let mut plugins = self.plugins.write().expect("插件表锁中毒");
         if let Some(entry) = plugins.get_mut(&id) {
             match &result {

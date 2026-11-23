@@ -770,8 +770,6 @@ async fn perform_upgrade(
         {
             Ok(((grant, enabled, secrets, package), given)) => {
                 let plugins = &gateway.plugins;
-                let filled = plugins.store().secrets().load(&id).ok().flatten();
-                plugins.store_input_values(&package.manifest, &secrets, filled.as_ref(), &langs)?;
                 plugins
                     .upgrade_upload(
                         &id,
@@ -781,6 +779,7 @@ async fn perform_upgrade(
                         query.lan_webui,
                         &comma_list(&query.devices),
                         &given,
+                        &secrets,
                         &langs,
                     )
                     .await

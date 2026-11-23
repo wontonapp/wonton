@@ -212,3 +212,61 @@ impl Region<'_> {
         *copied = self.end;
     }
 }
+
+#[cfg(test)]
+mod tests {
+    use super::Redaction;
+
+    fn text(secrets: &[&str], value: &str) -> String {
+        Redaction::new("", "", secrets.iter().copied())
+            .expect("有非空密钥")
+            .text(value)
+            .into_owned()
+    }
+
+    #[test]
+    fn overlapping_secrets_leave_neither_prefixes_nor_suffixes() {
+        for (short, long) in [
+            ("sk", "sk_live_abc123"),
+            ("live_abc123", "sk_live_abc123"),
+            ("bc", "abcd"),
+            ("bcd", "abcd"),
+        ] {
+            let visible = text(&[short, long], &format!("Bearer {long}"));
+            assert!(!visible.contains(short), "{short}: {visible}");
+            assert!(!visible.contains(long), "{long}: {visible}");
+            assert!(visible.contains(super::SECRET_MARKER), "{visible}");
+        }
+    }
+
+    #[test]
+    fn a_secret_overlapping_itself_keeps_a_single_marker() {
+        assert_eq!(text(&["abab"], "ababab"), "[secret]");
+        assert_eq!(text(&["aa"], "aaaaa"), "[secret]");
+    }
+
+    #[test]
+    fn a_secret_inside_the_expanded_url_keeps_the_template() {
+        let redaction = Redaction::new(
+            "https://mcp.example.com/x?t=abc",
+            "https://mcp.example.com/x?t={secret:t}",
+            ["abc"],
+        )
+        .unwrap();
+        assert_eq!(
+            redaction
+                .text("remote https://mcp.example.com/x?t=abc")
+                .as_ref(),
+            "remote https://mcp.example.com/x?t={secret:t}"
+        );
+    }
+
+    #[test]
+    fn raw_percent_encoded_and_json_escaped_forms_are_all_covered() {
+        let slash = Redaction::new("", "", ["a/b"]).unwrap();
+        assert_eq!(slash.text("raw a/b").as_ref(), "raw [secret]");
+        assert_eq!(slash.text("encoded a%2Fb").as_ref(), "encoded [secret]");
+        let quote = Redaction::new("", "", ["a\"b"]).unwrap();
+        assert_eq!(quote.text(r#"json a\"b"#).as_ref(), r#"json [secret]"#);
+    }
+}

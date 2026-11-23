@@ -123,6 +123,7 @@ impl PluginManager {
     pub fn route(&self, slug: &str, path: &str) -> Option<Route> {
         let langs = self.owner_languages();
         let plugins = self.plugins.read().expect("插件表锁中毒");
+        let unavailable = self.mcp_unavailable.read().expect("远端 MCP 状态锁中毒");
         let (id, entry) = plugins.iter().find(|(id, _)| id.slug() == slug)?;
         let manifest = entry.listed.as_ref().map(|listed| &listed.manifest);
         if let Some(capability) = manifest.and_then(hosted_capability) {
@@ -131,7 +132,7 @@ impl PluginManager {
                 .unwrap_or_default();
             return Some(Route {
                 id: id.clone(),
-                status: effective_status(&plugins, entry, &langs),
+                status: effective_status(&plugins, entry, &unavailable, &langs),
                 upstream: provider_in(&plugins, capability, &langs).and_then(|p| p.endpoint),
                 web_serving: false,
                 cross_origin_isolated: manifest

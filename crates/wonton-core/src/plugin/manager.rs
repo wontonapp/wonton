@@ -106,6 +106,8 @@ pub struct PluginManager {
     pub(super) gallery: Gallery,
     pub(super) plugins: RwLock<BTreeMap<PluginId, Entry>>,
     pub(super) failed_installs: RwLock<BTreeMap<PluginId, super::install_failure::FailedInstall>>,
+    /// 远端 MCP 密钥库读不出来：状态显示异常，别让人以为工具还在。
+    pub(super) mcp_unavailable: RwLock<BTreeMap<PluginId, String>>,
     pub(super) dependencies: super::dependencies::Dependencies,
     pub(crate) client_passwords: Option<Arc<crate::clients::passwords::PasswordStore>>,
     /// 插件表每变一次加一：MCP 总线据此刷新工具列表（见 [`Self::changes`]）。
@@ -209,6 +211,7 @@ impl PluginManager {
             gallery: Gallery::new(images),
             plugins: RwLock::new(BTreeMap::new()),
             failed_installs: RwLock::new(BTreeMap::new()),
+            mcp_unavailable: RwLock::new(BTreeMap::new()),
             dependencies,
             changes: tokio::sync::watch::Sender::new(0),
             clients,
@@ -251,7 +254,8 @@ impl PluginManager {
     /// 能用的 MCP 服务：容器按入口服务判断；远端按连接器是否可用判断。
     pub fn mcp_servers(&self) -> Vec<McpServer> {
         let plugins = self.plugins.read().expect("插件表锁中毒");
-        plugins
+        let (remote, failures) = super::remote_config::servers(self, &plugins);
+        let mut servers: Vec<McpServer> = plugins
             .iter()
             .filter(|(_, entry)| {
                 matches!(
@@ -275,8 +279,15 @@ impl PluginManager {
                     tools: mcp.tools.clone(),
                 })
             })
-            .chain(super::remote_config::servers(self, &plugins))
-            .collect()
+            .collect();
+        drop(plugins);
+        servers.extend(remote);
+        let mut unavailable = self.mcp_unavailable.write().expect("远端 MCP 状态锁中毒");
+        for server in &servers {
+            unavailable.remove(&server.id);
+        }
+        unavailable.extend(failures);
+        servers
     }
 
     /// 这个插件的最高级权限：它的工具每次都以 root 身份执行，不能放宽（ADR-0036）。

@@ -111,6 +111,7 @@ async fn data_survives_upgrades_and_plain_uninstalls_but_not_a_purge() {
             false,
             &[],
             &Default::default(),
+            &Default::default(),
             &super::langs(),
         )
         .await

@@ -125,6 +125,7 @@ async fn a_static_page_lives_in_the_hosted_directory_for_its_whole_life() {
             false,
             &[],
             &Default::default(),
+            &Default::default(),
             &super::langs(),
         )
         .await

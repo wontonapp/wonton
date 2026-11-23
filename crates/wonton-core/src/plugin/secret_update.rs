@@ -59,7 +59,9 @@ impl PluginManager {
                 .await
                 .ok_or_else(|| not_installed(id));
         }
-        if package.manifest.remote_mcp.is_some() {
+        if package.manifest.remote_mcp.is_some()
+            && !super::remote_install::unresolved_input(&package.manifest, &stored, langs)
+        {
             super::remote_config::Config::resolve(&package.manifest, &stored, langs)
                 .map_err(InstallError::Invalid)?;
         }
@@ -108,7 +110,7 @@ impl PluginManager {
 
     /// `mcp.headers` 里引用的密钥换了值：按新值重新解析到插件表的连接上。填齐必填项后，MCP 的未就绪和这
     /// 时空了头的请求头一起恢复。解析不出来（别的密钥有问题）就留着旧头，等下次核对。
-    fn refresh_mcp_headers(
+    pub(super) fn refresh_mcp_headers(
         &self,
         id: &PluginId,
         manifest: &Manifest,
@@ -127,7 +129,7 @@ impl PluginManager {
     }
 
     /// 只重建 env 里有 `WONTON_SECRET_<名字>` 的服务；没有服务用它就只存值，下次启动生效。
-    async fn rebuild_secret_users(
+    pub(super) async fn rebuild_secret_users(
         &self,
         listed: &Listed,
         package: &PluginPackage,

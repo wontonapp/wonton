@@ -1,4 +1,3 @@
-remote-install-authorize-first = Authorize this server before installing it.
 remote-install-connector-unavailable = The remote tool connector did not respond correctly. Start it and try again.
 remote-install-needs-oauth = This server requires sign-in, but the manifest does not declare it.
 remote-install-needs-header = This server requires a request-header secret, but the manifest does not declare it.
@@ -10,3 +9,6 @@ remote-install-proxy-unavailable = The outbound proxy is unavailable. Check the 
 remote-install-remote-error = The remote server returned an error. Try again later.
 remote-install-probe-failed = { $reason } Address: { $url }. Details: { $detail }
 remote-install-forget-failed = The plugin was removed, but the connector's tokens could not be deleted.
+remote-install-secrets-unreadable = The plugin is running, but its saved credentials could not be read: { $error }
+remote-install-oauth-unsupported = This remote server signs in with OAuth. The authorization endpoints are not wired up yet.
+remote-install-secret-missing = Waiting for the required credentials to be filled in.

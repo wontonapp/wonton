@@ -93,6 +93,21 @@ async fn rpc(
     axum::Json(body): axum::Json<Value>,
 ) -> Response {
     state.posts.lock().unwrap().push(headers);
+    if let Mode::Auth(status) = state.mode
+        && body["method"] == "tools/call"
+    {
+        return (
+            status,
+            [(
+                "www-authenticate",
+                format!(
+                    "Bearer error=\"insufficient_scope\", error_description=\"{SECRET}\", \
+                 scope=\"old%2Fone%3Fx%3D1\""
+                ),
+            )],
+        )
+            .into_response();
+    }
     if matches!(state.mode, Mode::EventIds(event_ids::Source::Post))
         && body["method"] == "tools/list"
     {
@@ -136,7 +151,8 @@ async fn events(State(state): State<Streaming>, headers: HeaderMap) -> Response 
         Mode::Auth(status) => (
             status,
             [("www-authenticate", format!(
-                "Bearer error=\"insufficient_scope\", error_description=\"{SECRET}\", scope=\"{SECRET}\""
+                "Bearer error=\"insufficient_scope\", error_description=\"{SECRET}\", \
+                 scope=\"{SECRET}\", resource_metadata=\"https://mcp.example.com/old%2Fone%3Fx%3D1?x={SECRET}\""
             ))],
         )
             .into_response(),
@@ -221,7 +237,16 @@ async fn authentication(status: StatusCode, logs: &Logs) {
         );
     }
     assert!(!text.contains(SECRET), "{text}");
+    assert!(!text.contains("old%2Fone%3Fx%3D1"), "{text}");
     assert_forwarded(&state, SECRET);
+    let call = upstreams
+        .call(&server, "search", None, std::future::pending::<()>())
+        .await
+        .unwrap_err()
+        .to_string();
+    assert!(call.contains("WWW-Authenticate"), "{call}");
+    assert!(call.contains("[secret]"), "{call}");
+    assert!(!call.contains(SECRET), "{call}");
 }
 
 async fn oversized(logs: &Logs) {
