@@ -216,13 +216,7 @@ impl PluginManager {
         };
         let slug = manifest.id.slug();
         let per_bot = super::bot_web_registry::has_bot_web(manifest);
-        let name = if per_bot {
-            self.cfg
-                .instance
-                .bot_container(&slug, &webui.service, "default")
-        } else {
-            self.cfg.instance.container(&slug, &webui.service)
-        };
+        let name = self.webui_container(manifest, &webui.service);
         if let Some(endpoint) = self
             .host_relay_endpoint(manifest, Purpose::Webui, &webui.service, webui.port)
             .await?
@@ -244,6 +238,18 @@ impl PluginManager {
         )
         .await
         .map(|address| address.map(Endpoint::Tcp))
+    }
+
+    /// 网页容器的名字：bot-web 的网页按 Bot 各一份，核心访问、诊断的是默认 Bot 那份。
+    pub(super) fn webui_container(&self, manifest: &Manifest, service: &str) -> String {
+        let slug = manifest.id.slug();
+        if super::bot_web_registry::has_bot_web(manifest) {
+            self.cfg
+                .instance
+                .bot_container(&slug, service, super::bot_services::DEFAULT_BOT)
+        } else {
+            self.cfg.instance.container(&slug, service)
+        }
     }
 
     /// 托管能力的提供方（ADR-0080）：网关把托管插件的请求转到这些地址。容器不在时少了那一项，
@@ -493,10 +499,7 @@ impl PluginManager {
             langs,
         )?;
         if let (Some(upstream), Some(webui)) = (&upstream, &manifest.webui) {
-            let container = self
-                .cfg
-                .instance
-                .container(&manifest.id.slug(), &webui.service);
+            let container = self.webui_container(manifest, &webui.service);
             health::wait_webui(&self.http, upstream, &webui.path, &container, wait, langs).await?;
         }
         if super::bot_web_registry::has_bot_web(manifest) {
@@ -615,12 +618,21 @@ pub(super) fn check_present(
     langs: &Languages,
 ) -> Result<(), InstallError> {
     let slug = manifest.id.slug();
+    // 网页入口可以指向 Bot 服务，报的必须是默认 Bot 那份容器；其余入口校验保证不是 Bot 服务。
+    let bots = super::bot_services::bot_services(manifest);
+    let container = |service: &str| {
+        if bots.contains(service) {
+            instance.bot_container(&slug, service, super::bot_services::DEFAULT_BOT)
+        } else {
+            instance.container(&slug, service)
+        }
+    };
     let missing = |service: &str| {
         InstallError::Docker(l10n::text(
             langs,
             "plugin-install-upstream-container-missing",
             &[
-                ("container", instance.container(&slug, service).into()),
+                ("container", container(service).into()),
                 ("network", network.into()),
             ],
         ))
@@ -686,6 +698,24 @@ x-wonton:
       redirect_paths: [/oidc/callback]
   permissions: []
 ";
+    const BOT_WEB_MANIFEST: &str = "name: t
+services:
+  web:
+    image: example/t
+x-wonton:
+  spec: '0.4'
+  id: app.example.t
+  version: 0.1.0
+  kind: app
+  title: {zh: 测试, en: Test}
+  description: {zh: 测试, en: Test}
+  webui:
+    service: web
+    port: 3000
+  permissions: [matrix.bot]
+  bots:
+    services: [web]
+";
 
     fn public() -> PublicUrls {
         PublicUrls {
@@ -720,6 +750,30 @@ x-wonton:
         assert!(aliases.contains(&"auth.wonton.internal".to_owned()));
         assert!(!aliases.contains(&"auth.wonton.example".to_owned()));
         assert!(aliases.contains(&"app-example-t.wonton.example".to_owned()));
+    }
+
+    #[test]
+    fn a_missing_bot_web_container_is_named_with_its_bot() {
+        let langs = Languages::from_header(Some("zh-Hans"));
+        let manifest = PluginPackage::parse(BOT_WEB_MANIFEST, &langs)
+            .unwrap()
+            .manifest;
+        let error = check_present(
+            None,
+            None,
+            None,
+            &manifest,
+            &names::Instance::default(),
+            "wonton-app-example-t",
+            &langs,
+        )
+        .unwrap_err();
+        assert!(
+            error
+                .to_string()
+                .contains("容器 wonton-app-example-t--web--default 不存在"),
+            "{error}"
+        );
     }
 
     #[test]

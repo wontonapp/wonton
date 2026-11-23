@@ -373,10 +373,7 @@ impl PluginManager {
         if let (Some(upstream), Some(webui)) = (&deployed.upstream, &package.manifest.webui)
             && deployed.serving.contains(&webui.service)
         {
-            let container = self
-                .cfg
-                .instance
-                .container(&package.manifest.id.slug(), &webui.service);
+            let container = self.webui_container(&package.manifest, &webui.service);
             health::wait_webui(&self.http, upstream, &webui.path, &container, wait, langs).await?;
         }
         Ok(Started {
