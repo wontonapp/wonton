@@ -16,6 +16,7 @@ use super::ChatRoom;
 mod crypto;
 mod pagination_status;
 mod reset_echo;
+mod side_chat_preview;
 mod thread;
 use crypto::EncryptedMessages;
 

@@ -8,6 +8,7 @@ use matrix_sdk::{
     deserialized_responses::TimelineEvent,
     ruma::{event_id, events::AnySyncTimelineEvent, room_id, serde::Raw},
 };
+use matrix_sdk_base::event_cache::thread::ThreadInfo;
 use serde_json::json;
 use tokio::task::JoinHandle;
 
@@ -18,8 +19,9 @@ use crate::chat_room::{ChatRoom, Focus};
 
 const ROOM: &str = "!bootstrap:example.org";
 
-/// 起一个只答加密状态、其余 404 的假服务端，往缓存里放话题根和一条解不开的回复，再打开这个话题的时间线。
-async fn thread_with_unreadable_reply() -> (EncryptedMessages, Client, ChatRoom, JoinHandle<()>) {
+/// 起一个只答加密状态、其余 404 的假服务端，往缓存里放话题根和一条解不开的回复。话题还没打开，
+/// 要预置话题回执的用例可以在这之前写缓存。
+async fn seeded_thread() -> (EncryptedMessages, Client, JoinHandle<()>) {
     let encrypted = EncryptedMessages::create().await;
     let root = event_id!("$root");
     let root_event = json!({
@@ -53,8 +55,14 @@ async fn thread_with_unreadable_reply() -> (EncryptedMessages, Client, ChatRoom,
     let url = format!("http://{}", listener.local_addr().unwrap());
     let server = tokio::spawn(async move { axum::serve(listener, app).await.unwrap() });
     let client = seeded_client(url, events, None).await;
+    (encrypted, client, server)
+}
+
+/// 再打开这个话题的时间线。
+async fn thread_with_unreadable_reply() -> (EncryptedMessages, Client, ChatRoom, JoinHandle<()>) {
+    let (encrypted, client, server) = seeded_thread().await;
     let room = client.get_room(room_id!("!bootstrap:example.org")).unwrap();
-    let chat = ChatRoom::open_with(room, Focus::Thread(root.to_owned()))
+    let chat = ChatRoom::open_with(room, Focus::Thread(event_id!("$root").to_owned()))
         .await
         .unwrap();
     (encrypted, client, chat, server)
@@ -115,5 +123,26 @@ async fn a_cached_thread_event_the_timeline_lost_is_reported_as_missed() {
         .await
         .expect("时间线丢了缓存里的话题事件");
     assert_eq!(missed.id.as_str(), "$reply");
+    server.abort();
+}
+
+/// 未读不等密钥：解不开的话题回复也算进房间未读，房间根从外层的话题关系收集。
+#[tokio::test]
+async fn an_undecryptable_thread_reply_counts_toward_the_room_unread() {
+    let (_encrypted, client, server) = seeded_thread().await;
+    let room = client.get_room(room_id!("!bootstrap:example.org")).unwrap();
+    // 话题回执不在事件缓存里，直接写这份回执：一条没读的回复。
+    let root = event_id!("$root");
+    let lock = client.event_cache_store().lock().await.unwrap();
+    let store = lock.as_clean().expect("事件缓存存储没被别人拿着");
+    store.load_thread_info(room.room_id(), root).await.unwrap();
+    let mut info = ThreadInfo::new();
+    info.read_receipts.num_unread = 1;
+    store
+        .update_thread_info(room.room_id(), root, &info)
+        .await
+        .unwrap();
+    drop(lock);
+    assert_eq!(crate::side_chat::threads_unread(&room).await, 1);
     server.abort();
 }

@@ -6,8 +6,8 @@ use futures_util::StreamExt;
 use tokio::runtime::Handle;
 use tokio::sync::{Mutex, broadcast, mpsc, watch};
 use wonton_matrix::{
-    BackPaginationStatus, ChatRoom, EntryKind, MissedEvent, OwnedRoomId, TimelineEntry, Vector,
-    VectorDiff,
+    BackPaginationStatus, ChatRoom, EntryKind, MissedEvent, OwnedEventId, OwnedRoomId,
+    TimelineEntry, Vector, VectorDiff,
 };
 use wonton_protocol::{
     BackPagination, ConfirmationView, KeyNotice, TimelineDiff, TimelineScroll, TimelineUpdate,
@@ -612,6 +612,15 @@ fn apply(
     batch: Vec<VectorDiff<TimelineEntry>>,
 ) -> Batch {
     if batch.iter().any(|diff| matches!(diff, VectorDiff::Clear)) {
+        // 测试钩子：这次清空不算 SDK 清空，只清自己的列表，不发 Clear 也不从缓存重建。留在时间线里
+        // 缺着的缓存事件交给下方每秒的补检发现，走的就是活事件被丢掉的路径。
+        #[cfg(feature = "test-hooks")]
+        if take_silent_clear(room) {
+            for diff in batch {
+                diff.apply(entries);
+            }
+            return Batch::Sent(Ok(()), false);
+        }
         return clear_batch(
             room,
             entries,
@@ -810,6 +819,39 @@ fn log_rebuild(room: &ChatRoom, reason: &'static str, missed: Option<&MissedEven
         ),
         None => tracing::info!(room_id = %room.room_id(), reason, "rebuilding the timeline"),
     }
+}
+
+/// 测试钩子：登记下一条要“悄悄”清空的时间线，见 [`apply`] 里清空批的分支。
+#[cfg(feature = "test-hooks")]
+pub(crate) fn mark_silent_clear(room_id: OwnedRoomId, thread_root: Option<OwnedEventId>) {
+    silent_clears()
+        .lock()
+        .expect("安静清空的记录锁")
+        .push((room_id, thread_root));
+}
+
+#[cfg(feature = "test-hooks")]
+type SilentClears = std::sync::Mutex<Vec<(OwnedRoomId, Option<OwnedEventId>)>>;
+
+#[cfg(feature = "test-hooks")]
+fn silent_clears() -> &'static SilentClears {
+    static CLEARS: std::sync::LazyLock<SilentClears> = std::sync::LazyLock::new(Default::default);
+    &CLEARS
+}
+
+/// 这条时间线登记过安静清空就消费掉；`apply` 据此不发清空。
+#[cfg(feature = "test-hooks")]
+fn take_silent_clear(room: &ChatRoom) -> bool {
+    let key = (
+        room.room_id().to_owned(),
+        room.thread_root().map(ToOwned::to_owned),
+    );
+    let mut clears = silent_clears().lock().expect("安静清空的记录锁");
+    let Some(index) = clears.iter().position(|registered| *registered == key) else {
+        return false;
+    };
+    clears.swap_remove(index);
+    true
 }
 
 /// “已读”“已送达”换了地方、上方该不该写时间变了的条目，各发一个 `Set`。

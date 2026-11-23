@@ -101,6 +101,7 @@ impl RawEvent {
     pub(crate) fn parse(json: &str) -> Option<Self> {
         let value: Value = serde_json::from_str(json).ok()?;
         // 解不开的加密事件也要算：话题关系、发送者和时间在密文外层，旁聊的回复数和未读不等密钥。
+        // 密文里读不出 `m.agent`，状态消息在密钥到之前会先按一条回复计、并推后“最后一条”，换回明文后再减掉。
         if !matches!(
             value.get("type").and_then(Value::as_str),
             Some("m.room.message" | "m.room.encrypted")
@@ -218,7 +219,7 @@ pub struct LatestSideChat {
 }
 
 /// 房间最新一条（SDK 算的，话题里的也算）如果属于旁聊，给出旁聊的标题和结果行。话题里的消息要按根取标题，
-/// 根不在本机缓存里时不算，按普通消息预览。
+/// 根不在本机缓存里、或者根还解不开读不出标题时不算，按普通消息预览。
 pub(crate) async fn latest_side_chat(room: &Room) -> Option<LatestSideChat> {
     let matrix_sdk_base::latest_event::LatestEventValue::Remote(event) = (**room).latest_event()
     else {
@@ -231,6 +232,10 @@ pub(crate) async fn latest_side_chat(room: &Room) -> Option<LatestSideChat> {
         let root = RawEvent::parse(root.raw().json().get())?;
         let title = root_marker(&root.content)
             .map_or_else(|| title_from_body(root.body()), |marker| marker.title);
+        // 根还是密文时标题读不出来，别渲染「旁聊「」」。
+        if title.is_empty() {
+            return None;
+        }
         return Some(LatestSideChat {
             title,
             result: None,
