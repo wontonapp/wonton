@@ -75,15 +75,15 @@ Bot 经 MCP 总线报进度（[ADR-0016](0016-mcp-bus-and-confirmations.md)）�
 - **先过“是人来发起的一轮”**：这轮得挂在真实的人身上。判据二选一：
   - 调用带 `run`（Matrix 事件 ID），核心不核对它存在，只当“这轮有出处”；
   - `Caller.chain` 是本 Bot 的活跃轮次，且这条链代表一个本机的人：`live_turns()` 里找得到这条链，
-    `Chains::chain_user(chain)` 归一是 `Local`、用户名也在成员表里（远端代表不算）。说话人本身是 Bot 账号也一样：
-    Bot 把活转进来时，链跟着叫回走，或者按点名者的归属人开链，链代表的是真人（ADR-0050 第 8 块；
-    取法和 `audience.rs` 的 `bot_speaker_ai` 相同）。
+    `Chains::chain_user(chain)` 归一是 `Local`，且 `person_ai_option` 认得它（主人，以及已加入/已邀请的成员都算；
+    远端代表认不出）。说话人本身是 Bot 账号也一样：Bot 把活转进来时，链跟着叫回走，或者按点名者的归属人开链，
+    链代表的是真人（ADR-0061 第 10 节；取法和 `audience.rs` 的 `bot_speaker_ai` 相同）。
   两样都没有（定时任务、链代表认不出）回 `none`/`not_a_turn`，只发普通通知。定时任务没有 `run`，也没有活跃轮次
   （ADR-0050、ADR-0083：报不了轮次的按只读回落），落在这一条上。这就是背景里“定时任务不上锁屏”的落地规则，
   也是第 12 节验收的那条测试。`waiting` 不例外：没进这道门的等待只发 ADR-0101 的普通确认通知。
 - **发起人（只用来挑设备）**：`Local(mxid)` 是本机主人时映射成主人（设备表里的 `None`），家人映射成用户名。
-  两个特例：门是用链过的，取那条链的 `chain_user`，不用 `Caller.sender`（Bot 传话时 `sender` 是 Bot 账号，
-  链上的 `chain_user` 才是真人）；`sender` 本身是本机 Bot 账号时（带了 `run`）用它的归属人。
+  链在就用链的 `chain_user`，优先于 `Caller.sender`（Bot 传话时 `sender` 是 Bot 账号，链上的 `chain_user` 才是真人）；
+  没有链、`sender` 本身是本机 Bot 账号时（带了 `run`）用它的归属人。
   `None`（没报说话人）按 Bot 的归属人算，共享 Bot 没有单个归属人，按主人；`Unknown`（远端好友、认不出）不上锁屏。
   设备用 `PushService` 现有的 `devices_of(person: Option<&str>)` 取（`None` 是主人，其余是用户名），不直接把 MXID 传给它。
 - **第一轮 `working` 先只“挂上”**（`armed`），到下面任一条件才真正开始：
@@ -302,7 +302,7 @@ iOS 的呈现按平台指引：锁屏一条，灵动岛紧凑左侧 App 标记�
 1. **核心**：`run_progress` 模块（注册表、聚合、节流、`Uncertain` 合成、8 小时/10 分钟收尾）、`wonton__report_progress`、
    `GET /_wonton/api/runs`、`subscribe_live_runs()`。
    验收：行为测试——工具序列到 VM 的迁移、无 `run` 也没有活跃真人轮次的定时上报回 `not_a_turn` 不上锁屏、
-   Bot 传话（说话人是 Bot 账号、链代表真人）能上锁屏并按链上的那个人挑设备、链代表是远端时不上、30 秒门槛、
+   Bot 传话（说话人是 Bot 账号、链代表真人）能上锁屏并按链上的那个人挑设备（主人也认）、链代表是远端时不上、30 秒门槛、
    5 点/10 秒节流与合并、两条都在 `waiting` 时第三次回 `too_many`、只有非 `waiting` 时才挤、离线变不确定、超时结束。
 2. **Android 画**：从 VM 画进度通知（36 上 `ProgressStyle`、以下 `setProgress`）、提升请求（先查 `canPostPromotedNotifications`）、
    深链、公开版和隐藏版、设置开关。
