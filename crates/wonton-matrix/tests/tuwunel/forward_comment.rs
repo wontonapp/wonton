@@ -227,7 +227,9 @@ async fn a_rejected_comment_stops_the_forward() {
     };
     assert!(reason.to_string().contains("comment_rejected"), "{reason}");
 
-    // 失败的附言在，转发就不该有本地回显：自己房间里只剩原消息，没有第二份。
+    // 失败的附言在，转发就不该有本地回显：自己房间里只剩原消息，没有第二份。回显是后台加进时间线的，
+    // 给错实现半秒把它放进去。
+    tokio::time::sleep(Duration::from_millis(500)).await;
     let own = messages(&chat.alice_room).await;
     assert!(
         !own.iter().any(|message| {

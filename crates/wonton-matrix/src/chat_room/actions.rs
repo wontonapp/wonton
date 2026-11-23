@@ -181,7 +181,7 @@ impl ChatRoom {
 impl MatrixSession {
     /// 把 `from` 里的一条消息照原样发到已加入的房间 `to`：经那个房间的发送队列，本地回显出现在它的时间线里，发送结果
     /// 也在那里。附言先去首尾空白，只含空白的等于没带；有 `comment` 时先在 `to` 里发附言，服务器收下才转发，附言不可
-    /// 恢复地失败（连发送队列都进不去也算）就不转发，原因进错误。为此打开 `from` 和 `to` 的时间线、给 `to` 挂上补全
+    /// 恢复地失败（连发送队列都进不去也算）就不转发，原因进错误。为此读 `from` 的时间线、打开 `to` 的时间线并给它挂上补全
     /// 成员资料的后台任务，房间的 Sliding Sync 订阅不动；时间线建不起来时在发任何东西之前就失败。
     pub async fn forward(
         &self,
@@ -192,16 +192,19 @@ impl MatrixSession {
     ) -> Result<()> {
         let content = from.forward_content(event_id).await?;
         let room = ChatRoom::open(self.joined(to)?).await?;
-        ensure_recipient_devices(&room.room).await?;
-        if let Some(comment) = comment.map(str::trim).filter(|comment| !comment.is_empty()) {
-            let not_queued =
-                |error: Error| Error::CommentNotSent(SendFailure::NotQueued(error.to_string()));
-            let (_, updates) = room.send_updates().await.map_err(not_queued)?;
-            let handle = room.send_text(comment, &[]).await.map_err(not_queued)?;
-            match room.wait_outcome(updates, handle).await {
-                SendOutcome::Sent => {}
-                SendOutcome::Failed(failure) => return Err(Error::CommentNotSent(failure)),
+        match comment.map(str::trim).filter(|comment| !comment.is_empty()) {
+            Some(comment) => {
+                let not_queued =
+                    |error: Error| Error::CommentNotSent(SendFailure::NotQueued(error.to_string()));
+                let (_, updates) = room.send_updates().await.map_err(not_queued)?;
+                let handle = room.send_text(comment, &[]).await.map_err(not_queued)?;
+                match room.wait_outcome(updates, handle).await {
+                    SendOutcome::Sent => {}
+                    SendOutcome::Failed(failure) => return Err(Error::CommentNotSent(failure)),
+                }
             }
+            // 附言走 `send_text`，它会自己确保收件设备；不带附言直接转发这条要在这里补。
+            None => ensure_recipient_devices(&room.room).await?,
         }
         room.room
             .send_queue()
