@@ -136,7 +136,11 @@ async fn start_waits_for_running_and_is_idempotent() {
 
 #[tokio::test]
 async fn start_exposes_docker_and_health_failures() {
-    for (docker_failure, kind) in [(true, "docker_rejected"), (false, "unhealthy")] {
+    // 判不健康不再当场失败：等到期限后以 504 timeout 报，容器名和最后状态都在正文里。
+    for (docker_failure, status, kind) in [
+        (true, StatusCode::BAD_GATEWAY, "docker_rejected"),
+        (false, StatusCode::GATEWAY_TIMEOUT, "health_timeout"),
+    ] {
         let (h, container) = installed().await;
         stopped(&h, &container).await;
         if docker_failure {
@@ -149,11 +153,14 @@ async fn start_exposes_docker_and_health_failures() {
         }
         let before = h.docker.writes().len();
         let reply = start(&h, PATH).await;
-        assert_eq!(reply.status, StatusCode::BAD_GATEWAY, "{}", reply.text());
+        assert_eq!(reply.status, status, "{}", reply.text());
         assert_eq!(reply.error_kind(), Some(kind));
         assert_eq!(reply.json()["error"]["kind"], kind);
         if docker_failure {
             assert!(reply.text().contains("start refused by Docker"));
+        } else {
+            assert!(reply.text().contains(&container), "{}", reply.text());
+            assert!(reply.text().contains("RUNNING"), "{}", reply.text());
         }
         assert!(
             h.docker.writes()[before..].contains(&format!("POST /containers/{container}/start"))
