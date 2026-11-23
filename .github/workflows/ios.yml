@@ -89,7 +89,7 @@ jobs:
       # 系统版本核对，不符就在 CI 上失败。测试步骤把这两个值和 enforce 开关交给测试进程。
       SIMULATOR_NAME: iPhone 17
       SIMULATOR_MODEL: "iPhone18,3"
-      SIMULATOR_OS: "26.5"
+      SIMULATOR_OS: "27.0"
       # 截图测试并行会同时开好几个窗口、失败时也不好定位，单台模拟器顺序跑；日期按 UTC、en_US 排版，参考图才可复现。
       TZ: UTC
     steps:
