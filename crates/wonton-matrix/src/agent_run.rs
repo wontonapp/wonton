@@ -3,7 +3,7 @@
 
 use serde_json::{Map, Value};
 
-use wonton_protocol::{AgentRunChoice, AgentRunEnd, AgentRunState};
+use wonton_protocol::{AgentRunChoice, AgentRunEnd, AgentRunState, ChoiceSend};
 
 /// MSC4564 稳定前的键，桥现在发它。
 pub(crate) const FLUXCHAT_FIELD: &str = "org.fluxchat.agent";
@@ -84,6 +84,8 @@ fn choices(object: &Map<String, Value>) -> Vec<AgentRunChoice> {
                     Some(AgentRunChoice {
                         key: string(choice.as_object()?, "key")?,
                         label: string(choice.as_object()?, "label")?,
+                        chosen: false,
+                        send: ChoiceSend::Idle,
                     })
                 })
                 .collect()
@@ -182,7 +184,9 @@ mod tests {
             status.choices,
             vec![AgentRunChoice {
                 key: "allow".into(),
-                label: "继续".into()
+                label: "继续".into(),
+                chosen: false,
+                send: ChoiceSend::Idle,
             }]
         );
     }

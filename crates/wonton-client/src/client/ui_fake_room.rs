@@ -95,6 +95,7 @@ pub(super) fn timeline(room_id: &str) -> TimelineUpdate {
         focus: None,
         jump: wonton_protocol::JumpState::Idle,
         back_to: None,
+        editing: None,
     }
 }
 

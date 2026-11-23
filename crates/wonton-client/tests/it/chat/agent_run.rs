@@ -10,7 +10,7 @@ use wonton_client::{Action, Answer, MessageContent, TimelineContent};
 use wonton_matrix::testkit::eventually;
 use wonton_matrix::{ChatRoom, MatrixSession, Membership, RelationType};
 use wonton_protocol::{
-    AgentRunChoice, AgentRunState, BotActivityFacts, TimelineAction, TimelineTarget,
+    AgentRunChoice, AgentRunState, BotActivityFacts, ChoiceSend, TimelineAction, TimelineTarget,
 };
 
 use super::confirmation::{in_ten_minutes, joined_direct_chat, send};
@@ -464,7 +464,9 @@ async fn choices_answer_with_a_reaction_only_when_tapped() {
         choices,
         vec![AgentRunChoice {
             key: "allow".into(),
-            label: "继续".into()
+            label: "继续".into(),
+            chosen: false,
+            send: ChoiceSend::Idle,
         }]
     );
 
