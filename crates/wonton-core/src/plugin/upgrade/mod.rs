@@ -4,6 +4,7 @@
 mod adopt;
 mod dependencies;
 mod offers;
+mod record;
 mod run;
 
 use std::sync::Arc;

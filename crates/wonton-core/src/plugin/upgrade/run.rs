@@ -421,7 +421,7 @@ impl PluginManager {
         if let Some((_, _, bot)) = &progress.undo.bot {
             progress.undo.handed_over = self.hand_over_home_room(&self.cfg.owner, bot).await?;
         }
-        self.store.save(&InstalledRecord {
+        self.save_upgraded_record(InstalledRecord {
             lifecycle: super::super::recovery::running(),
             id: manifest.id.clone(),
             version: manifest.version.clone(),
@@ -437,9 +437,9 @@ impl PluginManager {
             proxied: ctx.egress.is_some(),
             oidc_client_secret: oidc_secret,
             installed_at: old.record.installed_at,
-            entry_label: old.record.entry_label.clone(),
-            clients_entries: old.record.clients_entries,
-            setup_done_ever: old.record.setup_done_ever,
+            entry_label: None,
+            clients_entries: Default::default(),
+            setup_done_ever: false,
             origin: package.origin.clone(),
             // 归属跟着插件走：Agent 更新自己写的插件后还是它写的；App 里经文件或来源升级的清掉（各路径自己做）。
             written_by: old.record.written_by.clone(),
@@ -449,7 +449,8 @@ impl PluginManager {
             static_files: Default::default(),
             hosted: Vec::new(),
             gpu_vendor: ctx.gpu.as_ref().map(|gpu| gpu.vendor),
-        })?;
+        })
+        .await?;
         self.refresh_bot_web_routes(manifest).await?;
         Ok(Deployed {
             upstream,
