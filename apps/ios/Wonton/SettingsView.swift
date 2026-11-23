@@ -84,6 +84,12 @@ struct SettingsTab: View {
         case let .licenseText(id):
             if let license = licenses.license(id: id) {
                 LicenseTextView(license: license)
+            } else {
+                // 列表被重载或换成失败态后，路由里的 id 可能已经取不到：留一句问题话，别白页。
+                Text(.Settings.settingsLicensesProblem)
+                    .wontonText(WontonTheme.typography.body)
+                    .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .topLeading)
+                    .padding(WontonTheme.spacing.pageInset)
             }
         }
     }

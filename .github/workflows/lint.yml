@@ -90,7 +90,7 @@ jobs:
       - name: 界面文字检查自己的用例
         if: steps.changes.outputs.source == 'true'
         run: python3 -m unittest discover -s scripts/ui_text -t scripts
-      - name: 许可清单和许可表能生成出完整内容（含 Android 依赖）
+      - name: 许可清单和许可表能生成出完整内容（iOS/Rust 那半）
         if: steps.changes.outputs.source == 'true'
         run: bash scripts/check-licenses.sh
       - name: 许可表检查自己的用例

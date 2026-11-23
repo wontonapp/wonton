@@ -26,6 +26,7 @@ import app.wonton.ui.design.WontonSmallButton
 import app.wonton.ui.design.WontonTheme
 import app.wonton.ui.design.toColor
 import app.wonton.ui.design.wontonContentPadding
+import app.wonton.ui.ProblemDetail
 
 /** 隐私说明：正文按段落排，段落和标题都由核心给。 */
 @Composable
@@ -103,7 +104,7 @@ private fun LicenseBlock(license: LicenseGroup, onOpen: () -> Unit) {
             WontonRow(component.name, component.version, valueOneLine = true)
         }
         WontonSeparator()
-        WontonRow(stringResource(R.string.settings_licenses_text), license.name, showsForward = true, onClick = onOpen)
+        WontonRow(stringResource(R.string.settings_licenses_text), showsForward = true, onClick = onOpen)
     }
 }
 

@@ -49,6 +49,19 @@ fn drops_licenses_no_component_uses() {
 }
 
 #[test]
+fn rejects_a_list_none_of_whose_licenses_are_used() {
+    let json = r#"{
+      "components": [{"source": "rust", "name": "serde", "version": "1.0.0", "license_ids": []}],
+      "licenses": {"MIT": {"name": "MIT", "text": "MIT text"}}
+    }"#;
+    let error = licenses(json).expect_err("没有可显示的许可要报错");
+    assert!(
+        matches!(error, CoreError::InvalidInput { ref reason } if !reason.is_empty()),
+        "{error}"
+    );
+}
+
+#[test]
 fn rejects_license_without_text() {
     let json = catalog().replace("MIT text", " ");
     let error = licenses(&json).expect_err("没有全文要报错");

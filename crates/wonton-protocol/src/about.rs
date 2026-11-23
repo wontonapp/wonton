@@ -29,9 +29,9 @@ pub struct LicensesViewModel {
 #[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize)]
 #[cfg_attr(feature = "uniffi", derive(uniffi::Record))]
 pub struct LicenseGroup {
-    /// 许可 id（如 `MIT`），壳里当列表的稳定标识；两个 id 可能同名，不能拿名字当键。
+    /// 许可 id（SPDX id，如 `MIT`），壳里当列表的稳定标识；两个许可可能同名，不能拿名字当键。
     pub id: String,
-    /// 许可名（如 `MIT License`），列表上的分组标题。
+    /// 列表上的分组标题，取来源里的许可名；Rust 侧就是 SPDX id，Android 侧是 POM 里的名，可能和 id 相同。
     pub name: String,
     pub components: Vec<LicenseComponent>,
     pub text: String,

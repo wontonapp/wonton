@@ -15,6 +15,7 @@ import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.res.pluralStringResource
 import androidx.compose.ui.res.stringResource
 import app.wonton.protocol.Action
 import app.wonton.protocol.ChatAction
@@ -62,7 +63,7 @@ fun SettingsPage(
     var openedLicense by remember { mutableStateOf<LicenseGroup?>(null) }
     var rejection by remember { mutableStateOf<Problem?>(null) }
     BackHandler(enabled = subpage != SettingsSubpage.MAIN) {
-        // 在许可全文里先回列表，再按一次才离开关于页。
+        // 在许可全文里先回列表，返回键先回关于页（parent()）。
         if (openedLicense != null) openedLicense = null else back()
     }
     when (subpage) {
@@ -225,7 +226,7 @@ private fun AboutPage(
                 WontonRow(
                     stringResource(R.string.settings_licenses),
                     (licenses.result?.getOrNull())?.licenses?.size?.let {
-                        stringResource(R.string.settings_licenses_value, it)
+                        pluralStringResource(R.plurals.settings_licenses_value, it, it)
                     },
                     showsForward = true,
                     onClick = onOpenLicenses,

@@ -13,10 +13,15 @@
     <!-- Settings row and page title for the bundled open source license list. No arguments. -->
     <string name="settings_licenses">Open source licenses</string>
     <!-- Value of the licenses row: how many distinct licenses the list covers. Argument: the count. -->
-    <string name="settings_licenses_value">%1$d licenses</string>
-    <!-- Row on the About page and value label of the version. No arguments. -->
-    <string name="settings_licenses_problem">Couldn\'t read the license list from the app bundle.</string>
+    <plurals name="settings_licenses_value">
+        <item quantity="one">%1$d license</item>
+        <item quantity="other">%1$d licenses</item>
+    </plurals>
+    <!-- Error on the licenses page when the bundled list can't be read or parsed. No arguments. -->
+    <string name="settings_licenses_problem">The license list couldn\'t be loaded.</string>
+    <!-- Row at the end of a license group that opens its full text. No arguments. -->
     <string name="settings_licenses_text">Full text</string>
+    <!-- Row on the About page and value label of the version. No arguments. -->
     <string name="settings_version">Version</string>
     <!-- Settings row title that restarts the setup steps. No arguments. -->
     <string name="settings_show_setup_again">Watch setup again</string>

@@ -603,31 +603,101 @@
       }
     },
     "settings.licenses.value": {
-      "comment": "Value of the licenses row: how many components the list covers. Argument: the count.",
+      "comment": "Value of the licenses row: how many distinct licenses the list covers. Argument: the count.",
       "extractionState": "manual",
       "localizations": {
         "en": {
           "stringUnit": {
             "state": "translated",
-            "value": "%d licenses"
+            "value": "%#@count@"
+          },
+          "substitutions": {
+            "count": {
+              "argNum": 1,
+              "formatSpecifier": "lld",
+              "variations": {
+                "plural": {
+                  "one": {
+                    "stringUnit": {
+                      "state": "translated",
+                      "value": "%lld license"
+                    }
+                  },
+                  "other": {
+                    "stringUnit": {
+                      "state": "translated",
+                      "value": "%lld licenses"
+                    }
+                  }
+                }
+              }
+            }
           }
         },
         "zh-Hans": {
           "stringUnit": {
             "state": "translated",
-            "value": "%d 项许可"
+            "value": "%#@count@"
+          },
+          "substitutions": {
+            "count": {
+              "argNum": 1,
+              "formatSpecifier": "lld",
+              "variations": {
+                "plural": {
+                  "other": {
+                    "stringUnit": {
+                      "state": "translated",
+                      "value": "%lld 项许可"
+                    }
+                  }
+                }
+              }
+            }
           }
         },
         "zh-Hant": {
           "stringUnit": {
             "state": "translated",
-            "value": "%d 項授權"
+            "value": "%#@count@"
+          },
+          "substitutions": {
+            "count": {
+              "argNum": 1,
+              "formatSpecifier": "lld",
+              "variations": {
+                "plural": {
+                  "other": {
+                    "stringUnit": {
+                      "state": "translated",
+                      "value": "%lld 項授權"
+                    }
+                  }
+                }
+              }
+            }
           }
         },
         "ja": {
           "stringUnit": {
             "state": "translated",
-            "value": "%d 件"
+            "value": "%#@count@"
+          },
+          "substitutions": {
+            "count": {
+              "argNum": 1,
+              "formatSpecifier": "lld",
+              "variations": {
+                "plural": {
+                  "other": {
+                    "stringUnit": {
+                      "state": "translated",
+                      "value": "%lld 件"
+                    }
+                  }
+                }
+              }
+            }
           }
         }
       }
@@ -639,25 +709,25 @@
         "en": {
           "stringUnit": {
             "state": "translated",
-            "value": "Couldn't read the license list from the app bundle."
+            "value": "The license list couldn't be loaded."
           }
         },
         "zh-Hans": {
           "stringUnit": {
             "state": "translated",
-            "value": "读不到 App 里的许可清单。"
+            "value": "许可清单没能载入。"
           }
         },
         "zh-Hant": {
           "stringUnit": {
             "state": "translated",
-            "value": "讀不到 App 裡的授權清單。"
+            "value": "授權清單沒能載入。"
           }
         },
         "ja": {
           "stringUnit": {
             "state": "translated",
-            "value": "アプリ内のライセンス一覧を読めませんでした。"
+            "value": "ライセンス一覧を読み込めませんでした。"
           }
         }
       }

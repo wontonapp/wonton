@@ -8,7 +8,7 @@ import WontonClient
 final class LicensesModel {
     enum State {
         case loading
-        case failed
+        case failed(String?)
         case loaded([LicenseGroup])
     }
 
@@ -18,13 +18,13 @@ final class LicensesModel {
         do {
             guard ProcessInfo.processInfo.environment["WONTON_LICENSES_MISSING"] != "1",
                   let url = Bundle.main.url(forResource: "licenses", withExtension: "json") else {
-                state = .failed
+                state = .failed(nil)
                 return
             }
             let json = try String(contentsOf: url, encoding: .utf8)
             state = .loaded(try core.licenses(licensesJson: json).licenses)
         } catch {
-            state = .failed
+            state = .failed(String(describing: error))
         }
     }
 
@@ -67,7 +67,7 @@ struct AboutView: View {
                         WontonRow(
                             title: String(localized: .Settings.settingsLicenses),
                             value: licenses.count.map { count in
-                                String(format: String(localized: .Settings.settingsLicensesValue), count)
+                                String(localized: .Settings.settingsLicensesValue(count))
                             },
                             showsForward: true
                         )
@@ -116,9 +116,11 @@ struct LicensesView: View {
             switch model.state {
             case .loading:
                 EmptyView()
-            case .failed:
+            case let .failed(reason):
                 VStack(alignment: .leading, spacing: WontonTheme.spacing.s12) {
                     Text(.Settings.settingsLicensesProblem).wontonText(WontonTheme.typography.body)
+                    // 原因按类别由核心按 App 的语言给，收进默认收起的详情。
+                    if let reason { ProblemDetail(text: reason) }
                     Button(.Common.commonRetry) { model.retry(core: core) }
                         .buttonStyle(WontonSmallButtonStyle())
                 }
@@ -136,7 +138,6 @@ struct LicensesView: View {
                             NavigationLink(value: SettingsRoute.licenseText(license.id)) {
                                 WontonRow(
                                     title: String(localized: .Settings.settingsLicensesText),
-                                    value: license.name,
                                     showsForward: true
                                 )
                             }
