@@ -57,7 +57,7 @@ pub enum TimelineAction {
         target: TimelineTarget,
         item_id: String,
         to_room_id: String,
-        /// 转发附言；`None` 只转发，只含空白也当作没有。旧 JSON/旧壳不带时按没有附言处理。
+        /// 转发附言；`None` 只转发，首尾空白去掉再发，只含空白也当作没有。旧 JSON/旧壳不带时按没有附言处理。
         #[serde(default)]
         #[cfg_attr(feature = "uniffi", uniffi(default = None))]
         comment: Option<String>,

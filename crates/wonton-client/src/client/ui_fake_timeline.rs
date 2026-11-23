@@ -394,6 +394,8 @@ fn lock<T>(mutex: &Mutex<T>) -> std::sync::MutexGuard<'_, T> {
 
 #[cfg(test)]
 mod tests {
+    use std::time::Duration;
+
     use super::*;
     use wonton_protocol::{MessageRun, TimelineTarget};
 
@@ -676,21 +678,31 @@ mod tests {
             }
             let far = opened.unwrap_or_else(|| fakes.subscribe(far_id));
             let mut bodies = Vec::new();
-            // 一条附言一条、一份副本一条；到齐就停，多出来的（空白落了）由下面的断言报出来。
-            while bodies.len() < 3 {
-                for diff in next(&far).await.diffs {
-                    let TimelineDiff::PushBack { item } = diff else {
-                        continue;
-                    };
-                    let TimelineContent::Message { message } = item.content else {
-                        panic!("补进来的都是消息");
-                    };
-                    let MessageContent::Text { body, .. } = message.body else {
-                        panic!("补进来的都是文字");
-                    };
-                    bodies.push(body);
+            // 一条附言一条、一份副本一条；到齐就停，多出来的第四条由下面两条断言报出来。整段丢掉时 5 秒就失败，不挂在作业的 45 分钟超时上。
+            tokio::time::timeout(Duration::from_secs(5), async {
+                while bodies.len() < 3 {
+                    for diff in next(&far).await.diffs {
+                        let TimelineDiff::PushBack { item } = diff else {
+                            continue;
+                        };
+                        let TimelineContent::Message { message } = item.content else {
+                            panic!("补进来的都是消息");
+                        };
+                        let MessageContent::Text { body, .. } = message.body else {
+                            panic!("补进来的都是文字");
+                        };
+                        bodies.push(body);
+                    }
                 }
-            }
+            })
+            .await
+            .expect("附言和副本没到齐（等 5 秒）");
+            assert!(
+                tokio::time::timeout(Duration::from_millis(200), next(&far))
+                    .await
+                    .is_err(),
+                "收齐三条后还有第四条（空白附言落了）：{bodies:?}"
+            );
             landed.push((opened_first, bodies));
         }
         for (opened_first, bodies) in landed {
