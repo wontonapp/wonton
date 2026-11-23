@@ -1,0 +1,12 @@
+fix(app): 链接判断放宽到 wonton: 并剥查询片段
+
+复审 r2：iOS 的提示键引用改到键实际所在的表，Android 的
+ActivityMonitor 用 addDataScheme 建过滤器，两端的就地打开用例加
+配对页才有的添加按钮并断言没有 Safari 视图。
+
+- 壳里只看 `wonton:` 前缀，parseAppLink 前剥掉查询、片段和多余的斜杠，
+  单斜杠写法也能就地打开；认不得的照样提示更新。
+- 假数据的链接带查询和单斜杠，两端的用例顺带覆盖归一。
+- ADR-0065 第 3 节、ADR-0041 和 RichLinkKind::Other 的注释改口径。
+- ui_fake_room 的正文选择拆成 paragraphs()，item() 回到 100 行内，
+  并补上 SideChat 两个类型的导入。
