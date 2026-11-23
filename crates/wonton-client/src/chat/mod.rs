@@ -461,7 +461,7 @@ impl ChatLink {
         let sent = self.sent.clone();
         let item_id = item_id.to_owned();
         self.spawn_op_with_success(
-            "chat-op-resend-failed",
+            |_| "chat-op-resend-failed",
             async move { room.retry_send(&item_id).await },
             move || onboarding::record_sent(&sent, key.room_id.to_string()),
         );
@@ -517,8 +517,13 @@ impl ChatLink {
                 target,
                 item_id,
                 to_room_id,
-                comment: _,
-            } => self.forward_message(&TimelineKey::parse(&target)?, &item_id, &to_room_id),
+                comment,
+            } => self.forward_message(
+                &TimelineKey::parse(&target)?,
+                &item_id,
+                &to_room_id,
+                comment.as_deref(),
+            ),
             TimelineAction::RedactMessage { target, item_id } => {
                 self.redact_message(&TimelineKey::parse(&target)?, &item_id)
             }
