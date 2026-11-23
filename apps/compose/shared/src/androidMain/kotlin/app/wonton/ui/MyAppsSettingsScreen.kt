@@ -88,7 +88,7 @@ fun MyAppsSettingsScreen(onBack: () -> Unit, open: (PluginEntry) -> Unit, checkI
     val navigation = remember { PluginNavigation(open = open, checkInstalled = checkInstalled) }
     var adding by remember { mutableStateOf(false) }
     var editingPanel by remember { mutableStateOf(false) }
-    val editor = if (editingPanel) rememberChatPanelState(PanelEdge.TOP, PanelScope.Main) else null
+    val editor = if (editingPanel) rememberChatPanelState(PanelEdge.TOP, PanelScope.Main, pages) else null
     if (editor != null) {
         SideEffect { editor.feed(pages.viewModel.panel, pages.viewModel.panelSelected) }
         ChatPanelEditor(editor, pages) { editingPanel = false }
