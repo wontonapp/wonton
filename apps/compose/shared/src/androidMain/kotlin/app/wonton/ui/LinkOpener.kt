@@ -30,7 +30,7 @@ interface LinkOpener {
 val LocalLinkOpener = compositionLocalOf<LinkOpener> { error("chat must provide a LinkOpener") }
 
 /**
- * 外部网页换 Custom Tabs，`wonton://` 交给 App 自己的链接表就地打开，插件进插件页，
+ * 外部网页换 Custom Tabs，`wonton:` 交给 App 自己的链接表就地打开，插件进插件页，
  * Matrix 在 App 里跳，邮件、电话和其他地址交给系统。
  */
 class AndroidLinkOpener(
@@ -68,16 +68,24 @@ class AndroidLinkOpener(
         start(Intent.createChooser(intent, null), R.string.message_link_share_failed)
     }
 
-    /// 认得的 `wonton://` 就地打开（ADR-0041）；认不得的提示一句，不再绕系统一圈；别的地址返回 false。
+    /// 认得的 `wonton:` 就地打开（ADR-0041）；认不得的提示一句，不再绕系统一圈；别的地址返回 false。
     private fun openWontonLink(url: String): Boolean {
-        if (!url.startsWith("wonton://")) return false
-        val link = parseAppLink(url)
+        if (!url.startsWith("wonton:")) return false
+        val link = parseAppLink(normalizedAppLink(url))
         if (link == null) {
             onReject(Problem(titleRes = R.string.message_link_update_app))
         } else {
             openAppLink(link)
         }
         return true
+    }
+
+    /// 查询、片段和多余的斜杠不参与选页，`wonton:` 后面补回 `//`（`wonton:settings` 和 `wonton://settings` 一样）。
+    private fun normalizedAppLink(url: String): String {
+        val colon = url.indexOf(':')
+        val path = url.substring(colon + 1).substringBefore('?').substringBefore('#')
+            .trimStart('/').trimEnd('/')
+        return url.substring(0, colon + 1) + "//" + path
     }
 
 

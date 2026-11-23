@@ -488,7 +488,7 @@ pub enum RichLinkKind {
     Email,
     /// 电话：交给系统。
     Phone,
-    /// 其他交给系统的地址，比如云吞自己的 `wonton://`。
+    /// 云吞自己的 `wonton://` 等其他协议地址：`wonton` 由壳交给 App 的链接表就地打开，别的交给系统。
     Other,
 }
 

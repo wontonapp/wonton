@@ -16,8 +16,8 @@ use wonton_protocol::{
     BackPagination, ChoiceSend, ChoicesState, MessageAction, MessageChoice, MessageChoices,
     MessageContent, MessageStatus, PanelItem, PanelSource, QuotedContent, QuotedMessage,
     ReplyQuote, RichBlock, RichBlockKind, RichLink, RichLinkKind, RichSpan, RoomCommand, SendState,
-    TabIcon, TabLayout, TabPage, TabRef, TabState, TimelineContent, TimelineDiff, TimelineItem,
-    TimelineMessage, TimelineUpdate, TimelineViewport,
+    SideChatCard, SideChatState, TabIcon, TabLayout, TabPage, TabRef, TabState, TimelineContent,
+    TimelineDiff, TimelineItem, TimelineMessage, TimelineUpdate, TimelineViewport,
 };
 
 /// 主面板和房间面板里放的那一页。本机端口占不上时没有这一页。
@@ -146,12 +146,12 @@ pub(super) const QUOTED_INDEX: usize = 19;
 pub(super) const SIDE_CHAT_INDEX: usize = 21;
 /// 引用上一条的长中文回复：几段长短不一，有的末行写满，用来查时间戳和正文重叠、长段被截断。
 pub(super) const LONG_REPLY_INDEX: usize = 20;
-/// 一条只有 `wonton://` 链接的消息：点它要就地打开“其他服务器”。
+/// 一条只有 `wonton://` 链接的消息，带查询和结尾斜杠：点它要剥掉后就地打开“其他服务器”。
 pub(super) const APP_LINK_INDEX: usize = 6;
-/// 认不得的 `wonton://` 链接：点它要提示一句，不开白页。
+/// 认不得的 `wonton:` 链接（单斜杠写法）：点它要提示一句，不开白页。
 pub(super) const UNKNOWN_APP_LINK_INDEX: usize = 7;
-pub(super) const APP_LINK: &str = "wonton://settings/peers";
-pub(super) const UNKNOWN_APP_LINK: &str = "wonton://tab/from-the-future";
+pub(super) const APP_LINK: &str = "wonton://settings/peers/?from=chat";
+pub(super) const UNKNOWN_APP_LINK: &str = "wonton:tab/from-the-future";
 // 中文假数据放在数据文件里：它是界面测试的输入，不是界面文字，界面文字检查（ADR-0043）只管源码里的字符串。
 const QUOTED_TEXT: &str = include_str!("ui_fake_text/quoted.txt");
 const LONG_REPLY: &str = include_str!("ui_fake_text/long_reply.txt");
@@ -163,10 +163,8 @@ const LAST_LINE: &str = "Fixture last line";
 /// 最后一条是自己刚发、还没送达的：待发脚注“已保存，等待送达”和时钟由它验。
 const SENDING_INDEX: usize = ITEMS - 1;
 
-fn item(index: usize) -> TimelineItem {
-    // 8..=10 都算 Echo 的，凑一组连发的消息给并排的气泡做样子，最后一条是自己还没送达的，其余一左一右轮流。
-    let own = (index % 2 == 1 && !(8..=10).contains(&index)) || index == SENDING_INDEX;
-    let last = index + 1 == ITEMS;
+/// 这一条消息的正文：几类固定样本，其余是一句普通的话或一条长回复，最后一条补上找底用的那句话。
+fn paragraphs(index: usize, last: bool) -> Vec<String> {
     let mut paragraphs = if index == CHOICES_INDEX {
         vec![
             "Fixture approval".into(),
@@ -194,6 +192,14 @@ fn item(index: usize) -> TimelineItem {
     if last {
         paragraphs.push(LAST_LINE.into());
     }
+    paragraphs
+}
+
+fn item(index: usize) -> TimelineItem {
+    // 8..=10 都算 Echo 的，凑一组连发的消息给并排的气泡做样子，最后一条是自己还没送达的，其余一左一右轮流。
+    let own = (index % 2 == 1 && !(8..=10).contains(&index)) || index == SENDING_INDEX;
+    let last = index + 1 == ITEMS;
+    let paragraphs = paragraphs(index, last);
     let mut message = text_message(
         &format!("ui-fake-{index}"),
         if own { OWNER } else { ECHO },

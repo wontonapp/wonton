@@ -86,14 +86,15 @@ final class AppNavigation {
         }
     }
 
-    /// 聊天里的一条链接：类别由核心判断，壳只按类别开（ADR-0065）。`wonton://` 交给上面的 App 链接表就地打开
+    /// 聊天里的一条链接：类别由核心判断，壳只按类别开（ADR-0065）。`wonton:` 交给上面的 App 链接表就地打开
     /// （ADR-0041），认不得的提示一句；外部地址用 Safari 在 App 内打开，插件进插件页，matrix.to 在 App 里跳
     /// 用户或房间，邮件和电话交给系统。
     func openLink(_ link: RichLink) {
         switch link.kind {
-        case .other where link.url.hasPrefix("wonton://"):
-            guard let appLink = parseAppLink(url: link.url) else {
-                pages.rejection = Problem(title: String(localized: .Message1.messageLinkUpdateApp))
+        case .other where link.url.hasPrefix("wonton:"):
+            guard let normalized = normalizedAppLink(link.url),
+                  let appLink = parseAppLink(url: normalized) else {
+                pages.rejection = Problem(title: String(localized: .Message2.messageLinkUpdateApp))
                 return
             }
             handle(appLink)
@@ -123,6 +124,15 @@ final class AppNavigation {
             guard let url = URL(string: link.url) else { return }
             UIApplication.shared.open(url)
         }
+    }
+
+    /// `wonton:` 地址归一：查询、片段和多余的斜杠不参与选页，`wonton:` 后面补回 `//`。不是 App 链接时返回 nil。
+    private func normalizedAppLink(_ url: String) -> String? {
+        guard url.hasPrefix("wonton:"), let colon = url.firstIndex(of: ":") else { return nil }
+        var path = String(url[url.index(after: colon)...].prefix { $0 != "?" && $0 != "#" })
+        while path.hasPrefix("/") { path.removeFirst() }
+        while path.hasSuffix("/") { path.removeLast() }
+        return "wonton:" + "//" + path
     }
 
     /// 链接和 Intent 都会把 App 打开，所以交给 App 执行、出错用 App 的对话框说。冷启动时连上家里的服务器可能要十几秒以上，

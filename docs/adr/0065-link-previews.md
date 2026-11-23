@@ -50,7 +50,8 @@ Tuwunel 的 `preview_url` 我们故意关着（ADR-0003）：Bot 也有 Matrix �
 ### 3. 点链接怎么开
 
 链接的类别由客户端核心判断，壳只按类别开：外部 http(s)（iOS 的 SFSafariViewController、Android 的 Custom Tabs）、插件地址（进插件页，走隧道）、
-Matrix 链接（matrix.to、房间、用户，在 App 内跳转）、邮件和电话（交给系统）。认不出的类别落到 `Other`，按外部链接开。
+Matrix 链接（matrix.to、房间、用户，在 App 内跳转）、邮件和电话（交给系统）。云吞自己的 `wonton:` 链接落到 `Other`，壳认出前缀后交给 App 的链接表
+就地打开（ADR-0041），不再绕系统一圈；链接表认不得的（新版 App 写的页面）提示更新 App，也不当外部地址开。
 
 ## 考虑过的做法
 

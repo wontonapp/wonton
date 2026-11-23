@@ -1,4 +1,4 @@
-// 消息里的 `wonton://` 链接就地打开，不再交给 Safari 开成白页（ADR-0041、ADR-0065）。
+// 消息里的 `wonton:` 链接就地打开，不再交给 Safari 开成白页（ADR-0041、ADR-0065）。
 import XCTest
 
 final class ChatAppLinkUITests: XCTestCase {
@@ -16,7 +16,7 @@ final class ChatAppLinkUITests: XCTestCase {
     /// 认不得的 wonton 链接提示一句，不开白页，也不绕系统。
     func testUnknownWontonLinkExplains() {
         enterRoom()
-        let link = textView("wonton://tab/from-the-future")
+        let link = textView("wonton:tab/from-the-future")
         reveal(link)
         shot("unknown-link")
         link.tap()
@@ -87,11 +87,13 @@ final class ChatAppLinkUITests: XCTestCase {
     /// 点消息里的 wonton 链接：设置页就地打开，没有 Safari 视图。
     func testWontonLinkOpensInPlace() {
         enterRoom()
-        let link = textView("wonton://settings/peers")
+        let link = textView("wonton://settings/peers/?from=chat")
         reveal(link)
         shot("app-link")
         link.tap()
         XCTAssertTrue(app.staticTexts["Other Servers"].waitForExistence(timeout: 10), "没进设置页\n\(app.debugDescription)")
+        XCTAssertTrue(app.buttons["Add"].waitForExistence(timeout: 10), "「其他服务器」页没有添加按钮\n\(app.debugDescription)")
+        XCTAssertFalse(app.webViews.firstMatch.exists, "打开了 Safari 视图")
         shot("peers")
     }
 }

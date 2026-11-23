@@ -13,6 +13,7 @@ import androidx.compose.ui.test.assertIsDisplayed
 import androidx.compose.ui.test.hasSetTextAction
 import androidx.compose.ui.test.junit4.createAndroidComposeRule
 import androidx.compose.ui.test.onAllNodesWithText
+import androidx.compose.ui.test.onNodeWithContentDescription
 import androidx.compose.ui.test.onNodeWithTag
 import androidx.compose.ui.test.onNodeWithText
 import androidx.compose.ui.test.performClick
@@ -32,7 +33,7 @@ import org.junit.rules.RuleChain
 import org.junit.Test
 import org.junit.runner.RunWith
 
-/** 消息里的 `wonton://` 链接就地打开（ADR-0041），不再绕系统一圈；认不得的提示一句。 */
+/** 消息里的 `wonton:` 链接就地打开（ADR-0041），不再绕系统一圈；认不得的提示一句。 */
 @RunWith(AndroidJUnit4::class)
 class ChatAppLinkTest {
     private val compose = createAndroidComposeRule<UiFakeMainActivity>()
@@ -56,14 +57,16 @@ class ChatAppLinkTest {
 
     @Test
     fun wontonLinkOpensInPlace() {
-        val monitor = Instrumentation.ActivityMonitor(IntentFilter(Intent.ACTION_VIEW, "wonton"), null, false)
+        val monitor = Instrumentation.ActivityMonitor(IntentFilter(Intent.ACTION_VIEW).apply { addDataScheme("wonton") }, null, false)
         InstrumentationRegistry.getInstrumentation().addMonitor(monitor)
         try {
             scrollTo(6)
-            compose.onNodeWithText("wonton://settings/peers", useUnmergedTree = true).performClick()
+            compose.onNodeWithText("wonton://settings/peers/?from=chat", substring = true, useUnmergedTree = true)
+                .performClick()
             compose.waitUntil(10_000) {
                 compose.onAllNodesWithText("Other servers").fetchSemanticsNodes().isNotEmpty()
             }
+            compose.onNodeWithContentDescription("Add").assertIsDisplayed()
             assertEquals("打开 wonton:// 链接绕了一圈", 0, monitor.hits)
             pressBack()
         } finally {
@@ -73,11 +76,12 @@ class ChatAppLinkTest {
 
     @Test
     fun unknownWontonLinkShowsMessage() {
-        val monitor = Instrumentation.ActivityMonitor(IntentFilter(Intent.ACTION_VIEW, "wonton"), null, false)
+        val monitor = Instrumentation.ActivityMonitor(IntentFilter(Intent.ACTION_VIEW).apply { addDataScheme("wonton") }, null, false)
         InstrumentationRegistry.getInstrumentation().addMonitor(monitor)
         try {
             scrollTo(7)
-            compose.onNodeWithText("wonton://tab/from-the-future", useUnmergedTree = true).performClick()
+            compose.onNodeWithText("wonton:tab/from-the-future", substring = true, useUnmergedTree = true)
+                .performClick()
             compose.onNodeWithText("Update the app to open this link").assertIsDisplayed()
             assertEquals(0, monitor.hits)
         } finally {
