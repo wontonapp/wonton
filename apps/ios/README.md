@@ -157,6 +157,15 @@ SIMCTL_CHILD_WONTON_DEV_PAIRING_CODE="$(deploy/dev/core/dev.sh pair | tail -n 1)
 
 图片上传进度未知不等于 0%：已知比例时显示线性条，未知时显示转圈。
 
+## 首次打开走查
+
+`WontonUITests/FirstRunWalkthroughUITests` 走一遍新用户路径（配对页输入码、交接和备份层、引导、列表、和 Hermes 的第一句、
+长按菜单、`/`、侧栏），浅色和深色各一例，每步留截图。两例都是新设备（每例换数据目录），**每例要一个码**，一例只给它一个码时
+那一例会 `XCTSkip`；没有一个码时整类跳过。
+
+用 `mini-walkthrough.sh up <名字> <检出> --host 194` 起栈和模拟器，`build` 一次，再 `test <名字> FirstRunWalkthroughUITests`
+（它的 `test` 会按用例数现取码）。已知软失败在 `knownIssues` 里放行，新问题照红。
+
 ## 检查
 
 ```bash
