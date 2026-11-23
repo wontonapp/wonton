@@ -179,6 +179,24 @@ Debug 构建默认编译 debug 的 Rust 核心，加上 matrix-sdk 后 `.so` 将
 
 聊天列表右下角的 Material 3 加号按钮进入“发起私聊”；列表底部留出按钮空间，最后一行可以滚动到按钮上方。
 
+## 首次打开走查
+
+`androidTest/.../FirstRunWalkthroughTest`（`light`/`dark` 两个阶段）从没配对、没走过引导的设备开始走一遍新用户路径：
+配对页输入配对码、交接和备份层、引导、空列表、和 Hermes 的第一句、长按菜单、`/`、侧栏各入口，每步留一张截图。
+用真核心和真入口，不走 `ui-fake`。
+
+- 栈：开发栈（`remote-dev.sh`/`stack-slot.sh` 起的），**别连正式安装**；配对码从自己那套栈现取（10 分钟、单次）。
+- 两个 APK 必须同一台机器上编：本机和 194 的 debug keystore 不同，混着装会签名不符、`am instrument` 直接被拒。
+- 没传 `-e code` 时用例 `Assume` 跳过（nightly 的安卓作业不带参数，见 `nightly-ui.yml`）。
+- 已知软失败在用例的 `knownIssues` 里放行（现在只有“没配模型时 `/` 没有命令菜单”），新问题照红。
+- 截图由用例写进设备相册 `Pictures/WontonUITests/`；侧栏只验入口存在和点得开，进页面以后的内容属于各页面自己的测试。
+
+```bash
+code=$(ssh 194-stack dev <栈名> pair 192.168.0.194:<隧道端口> | grep -o 'wonton://pair[^[:space:]]*' | tail -1)
+adb shell "am instrument -w -r -e class app.wonton.android.FirstRunWalkthroughTest \
+  -e phase light -e code '$code' app.wonton.android.test/androidx.test.runner.AndroidJUnitRunner"
+```
+
 ## 检查
 
 ```bash
