@@ -216,13 +216,7 @@ impl PluginManager {
         };
         let slug = manifest.id.slug();
         let per_bot = super::bot_web_registry::has_bot_web(manifest);
-        let name = if per_bot {
-            self.cfg
-                .instance
-                .bot_container(&slug, &webui.service, "default")
-        } else {
-            self.cfg.instance.container(&slug, &webui.service)
-        };
+        let name = self.webui_container(manifest, &webui.service);
         if let Some(endpoint) = self
             .host_relay_endpoint(manifest, Purpose::Webui, &webui.service, webui.port)
             .await?
@@ -244,6 +238,18 @@ impl PluginManager {
         )
         .await
         .map(|address| address.map(Endpoint::Tcp))
+    }
+
+    /// 网页容器的名字：bot-web 的网页按 Bot 各一份，核心访问、诊断的是默认 Bot 那份。
+    pub(super) fn webui_container(&self, manifest: &Manifest, service: &str) -> String {
+        let slug = manifest.id.slug();
+        if super::bot_web_registry::has_bot_web(manifest) {
+            self.cfg
+                .instance
+                .bot_container(&slug, service, super::bot_services::DEFAULT_BOT)
+        } else {
+            self.cfg.instance.container(&slug, service)
+        }
     }
 
     /// 托管能力的提供方（ADR-0080）：网关把托管插件的请求转到这些地址。容器不在时少了那一项，
@@ -493,10 +499,7 @@ impl PluginManager {
             langs,
         )?;
         if let (Some(upstream), Some(webui)) = (&upstream, &manifest.webui) {
-            let container = self
-                .cfg
-                .instance
-                .container(&manifest.id.slug(), &webui.service);
+            let container = self.webui_container(manifest, &webui.service);
             health::wait_webui(&self.http, upstream, &webui.path, &container, wait, langs).await?;
         }
         if super::bot_web_registry::has_bot_web(manifest) {
