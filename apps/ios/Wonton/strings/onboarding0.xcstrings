@@ -313,31 +313,31 @@
       }
     },
     "onboarding.review.done": {
-      "comment": "Checkmark icon for an app that finished installing.",
+      "comment": "Checkmark icon for a finished row (an app or a saved setting).",
       "extractionState": "manual",
       "localizations": {
         "en": {
           "stringUnit": {
             "state": "translated",
-            "value": "Installed"
+            "value": "Done"
           }
         },
         "zh-Hans": {
           "stringUnit": {
             "state": "translated",
-            "value": "装好了"
+            "value": "完成"
           }
         },
         "zh-Hant": {
           "stringUnit": {
             "state": "translated",
-            "value": "裝好了"
+            "value": "完成"
           }
         },
         "ja": {
           "stringUnit": {
             "state": "translated",
-            "value": "インストール済み"
+            "value": "完了"
           }
         }
       }

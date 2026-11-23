@@ -115,7 +115,7 @@ class QualityPreviewActivity : ComponentActivity() {
             onSkip = {},
             onPrimary = {},
         ) {
-            Column(Modifier.verticalScroll(scroll)) {
+            Column(Modifier.weight(1f).verticalScroll(scroll)) {
                 OnboardingReviewStep(previewOnboardingReview(), plugins) {}
             }
         }
