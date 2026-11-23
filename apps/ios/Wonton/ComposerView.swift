@@ -44,7 +44,7 @@ struct ComposerView: View {
     @State private var afterAttach: AfterAttach?
     /// 点“菜单”按钮打开的命令列表；敲“/”弹出的那一张不看它。
     @State private var showsCommands = false
-    /// 点了命令以后输入框里的“/…”原样留着；字还是这一句时列表不再按它弹，动一下字就恢复。
+    /// 命令收下以后输入框里的“/…”原样留着；字还是这一句时列表不再按它弹，动一下字就恢复。被拒时不动它，列表照旧。
     @State private var sentSlash = ""
     @FocusState private var isFocused: Bool
     @Environment(\.wontonColors) private var colors
@@ -168,11 +168,12 @@ struct ComposerView: View {
     /// 发完留着；回复对象跟着命令发出去，发出去才收起。
     private func run(_ command: RoomCommand) {
         pin.pin()
-        // 记第一个词就够：草稿里本来就带着参数送出去的，也能认出“这一条刚发过”。
-        sentSlash = String(draft.wrappedValue.prefix { $0 != " " })
-        // 被拒（附件区里有传不上去的）时命令没发出去：草稿和回复条留着，列表也留着让主人再点。
+        // 被拒（附件区里有传不上去的）时命令没发出去：草稿、回复条和列表都留着让主人再点。
         // 走和发送键同一个口：附件区里有东西时按 Attachment 送，才会被附件区拦下。
         guard composer.send(command.text, replyTo: model.replies[draftKey]?.eventId) else { return }
+        // 收下了才记这一句：被拒时草稿没动，先记会把列表压掉。
+        // 记第一个词就够：草稿里本来就带着参数送出去的，也能认出“这一条刚发过”。
+        sentSlash = String(draft.wrappedValue.prefix { $0 != " " })
         model.cancelReply(in: composer.target)
         showsCommands = false
     }

@@ -40,8 +40,8 @@ final class ComposerSendRejectUITests: XCTestCase {
         XCTAssertTrue(app.buttons["composerAttachmentFailed"].exists, "被拒以后附件没了")
         XCTAssertFalse(text(Self.draft).exists, "被拒了消息还是发了")
 
-        tap(app.buttons["dialogOk"])
-        XCTAssertTrue(reason.waitForNonExistence(timeout: 5), "点了“好”，说明没收起")
+        tap(app.buttons["composerRejectionClose"])
+        XCTAssertTrue(reason.waitForNonExistence(timeout: 5), "点掉说明没收起")
         screenshot("kept")
         // 删掉失败的附件再发：这次核心收下，输入框和回复条才清。
         tap(app.buttons.matching(NSPredicate(format: "label BEGINSWITH %@", "Remove ")).firstMatch)
@@ -95,10 +95,48 @@ final class ComposerSendRejectUITests: XCTestCase {
         screenshot("commandRejected")
     }
 
+    /// 附件区里有传不上去的图、敲“/”从列表里点一条：和点“菜单”那条一样，草稿、回复对象和列表都留着；
+    /// 处理完附件再点这一条才出去，时间线上只留一条。
+    func testRejectedSlashCommandKeepsDraftReplyAndMenu() {
+        tap(app.buttons[Self.directRoom])
+        XCTAssertTrue(message(3).waitForExistence(timeout: 10), "时间线没出来\n\(app.debugDescription)")
+        startReply()
+        let field = app.textViews["Message"]
+        tap(field)
+        field.typeText("/h")
+        // 放进一张传不上去的图：面板连着草稿发一次被拒，点掉原因，列表照旧。
+        addFailedAttachment()
+        dismissRejection()
+        tap(app.buttons["command.help"])
+
+        XCTAssertTrue(
+            text("An attachment didn't upload").waitForExistence(timeout: 5),
+            "被拒没说原因\n\(app.debugDescription)"
+        )
+        XCTAssertEqual(field.value as? String, "/h", "被拒把草稿清掉了")
+        XCTAssertTrue(app.buttons["replyCancel"].exists, "被拒把回复条撤了")
+        XCTAssertTrue(app.buttons["command.help"].exists, "被拒把命令列表收起来了")
+        XCTAssertEqual(helpTexts.count, 1, "被拒了命令还是发出去了（列表里那一条之外还有）")
+        screenshot("slashCommandRejected")
+
+        dismissRejection()
+        tap(app.buttons.matching(NSPredicate(format: "label BEGINSWITH %@", "Remove ")).firstMatch)
+        XCTAssertTrue(app.buttons["composerAttachmentFailed"].waitForNonExistence(timeout: 5), "删了附件失败标记还在")
+        tap(app.buttons["command.help"])
+        XCTAssertTrue(app.otherElements["commandMenu"].waitForNonExistence(timeout: 5), "收下以后列表没收起")
+        XCTAssertEqual(helpTexts.count, 1, "收下以后时间线上没有这条，或者不止一条")
+        XCTAssertEqual(field.value as? String, "/h", "点命令把草稿动了")
+    }
+
     // MARK: 助手
 
-    /// 附件面板底下是发送键时，选完照片会自动发一次、被拒、弹出说明：有就点掉。
+    /// 被拒的说明挂在输入栏上方（房间里没有窗口级弹窗）：有就点掉；窗口级弹窗那条路也照样认。
     private func dismissRejection() {
+        let close = app.buttons["composerRejectionClose"]
+        if close.waitForExistence(timeout: 2) {
+            close.tap()
+            return
+        }
         let ok = app.buttons["dialogOk"]
         if ok.waitForExistence(timeout: 2) { ok.tap() }
     }
@@ -130,6 +168,11 @@ final class ComposerSendRejectUITests: XCTestCase {
 
     private func message(_ index: Int) -> XCUIElement {
         text("Fixture message \(index)")
+    }
+
+    /// 时间线的消息和菜单行都写“/help”：列表还开着时只能有菜单那一条。
+    private var helpTexts: XCUIElementQuery {
+        app.staticTexts.matching(NSPredicate(format: "label BEGINSWITH %@", "/help"))
     }
 
     private func text(_ prefix: String) -> XCUIElement {
