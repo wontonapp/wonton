@@ -1,12 +1,15 @@
-# ADR-0112 Bot 长任务的锁屏进度：iOS 实时活动（灵动岛）、Android 进度通知
+# ADR-0115 Bot 长任务的锁屏进度：iOS 实时活动（灵动岛）、Android 进度通知
 
 - 状态：提议（2026-11-20）。由主人拍板后才能开工，要拍板的取舍见“要主人拍板”
 - 扩展：[ADR-0101](0101-notifications.md) 第 4 节（原来只给“等主人确认”的任务上灵动岛/实时活动）
+- 边界：[ADR-0113](0113-media-transport.md) 的传输、播放会话是核心自己持有的长任务，进度和锁屏走它自己的那套，不并进本篇；
+  本篇只管聊天里 Bot 的回合。收件人按人的规则引用 [ADR-0114](0114-plugin-agent-platform.md) 第 4 项，深链引用第 6 项
 - 依赖：ADR-0003 的加密推送链路和中继；iOS 的推送部分要 Apple 付费开发者账号（未就绪）
 - 关联：[ADR-0003](0003-matrix-and-encrypted-push.md)（加密推送、中继）、[ADR-0015](0015-small-components-standard-interfaces.md)（标准接口、不为某个 Agent 开特例）、
   [ADR-0016](0016-mcp-bus-and-confirmations.md)（MCP 总线、确认卡片）、[ADR-0041](0041-app-links-and-shortcuts.md)（`wonton://` 链接）、
   [ADR-0043](0043-app-languages.md)（壳的文字）、[ADR-0082](0082-agent-run-status.md)（Agent 运行状态）、[ADR-0101](0101-notifications.md)（通知、锁屏内容、实时活动方向）、
-  [ADR-0102](0102-app-lock.md)（App 锁、锁屏隐私）、[ADR-0108](0108-hermes-default-kernel.md)（只维护 Hermes）
+  [ADR-0102](0102-app-lock.md)（App 锁、锁屏隐私）、[ADR-0108](0108-hermes-default-kernel.md)（只维护 Hermes）、
+  [ADR-0113](0113-media-transport.md)（核心持有的媒体长任务）、[ADR-0114](0114-plugin-agent-platform.md)（按人通知、深链）
 
 ## 背景
 
@@ -42,7 +45,9 @@ Bot 经 MCP 总线报进度（[ADR-0016](0016-mcp-bus-and-confirmations.md)）�
 能按着急程度决定推不推，不需要读懂房间里的密文。
 
 - 新的核心工具 `wonton__report_progress`，`read_only: false`，**不要主人确认**（只是自报状态，不动任何东西）。
-- 调用方必须是带 Bot 身份的插件（总线的令牌已经认出 `BotIdentity`），报的来源会话必须是核对得上的房间（`Caller.origin`）。
+- 调用方必须是带 Bot 身份的插件（总线的令牌已经认出 `BotIdentity`）。报的来源会话取自 `Caller.origin`，它是**自述**：
+  核心不核对成员和加入状态，核对过的只有确认卡片的 `checked_origin`/`both_joined`（`crates/wonton-core/src/mcp/audience.rs`）。
+  报错房间只影响深链落到哪个聊天、以及 `run` 缺省时的轮次键，不泄露别的房间（房间 ID 本来就在明文里）。
   工具插件、没有 Bot 的进程调用时回 `permission_denied`。
 - 参数：
 
@@ -66,18 +71,24 @@ Bot 经 MCP 总线报进度（[ADR-0016](0016-mcp-bus-and-confirmations.md)）�
   （`too_short`、`no_device`、`activities_disabled`、`too_many`），Bot 照实转告，不假装上了锁屏。
 - `run` 缺省时按（Bot，房间）当同一轮；同一轮再来的调用推进它，`run` 换了就是新一轮，把旧的一轮按 `uncertain` 结束。
 - 工具**不改** ADR-0082 的消息格式：状态消息还是聊天里的那一行，两边可以同时存在。对不上时锁屏以工具为准，聊天以消息为准。
-- 核心不核对 `run` 那个事件真的存在（它不读房间），只核对 Bot 身份和来源房间：和 0082 一样，进度是自述。
+- 核心不核对 `run` 那个事件真的存在（它不读房间），也不核对来源房间的成员：和 0082 一样，进度和来源都是自述。
 - 核心把这条调用记进那条 Bot 的调用链和审计（ADR-0061），出问题能追到哪个 Bot 在自报。
 
 ### 2. 什么任务配得上锁屏：人来发起、跑够 30 秒、每台设备最多 2 条
 
-- **发起人是本机的人**（`Caller.sender` 是本机的 MXID，或已报的轮次）：定时任务、别的 Bot 交给它干的活不上锁屏。
+- **发起人是本机的人**。从 `Caller.sender` 归一成“人”：`None`（私聊没带 `X-Wonton-On-Behalf-Of`，也没报过轮次）按 Bot 的归属人算，
+  共享 Bot 没有单个归属人，按主人；
+  `Local(mxid)` 是本机主人时映射成主人（设备表里的 `None`），家人映射成用户名；`Unknown`（远端好友、认不出）不上锁屏。
+  设备用 `PushService` 现有的 `devices_of(person: Option<&str>)` 取（`None` 是主人，其余是用户名），不直接把 MXID 传给它。
+  定时任务、别的 Bot 交给它干的活不上锁屏。
 - **第一轮 `working` 先只“挂上”**（`armed`），到下面任一条件才真正开始：
   - 连续工作满 30 秒；
   - 报了 `progress`；
   - 进了 `waiting`。
   30 秒内就 `done`/`failed` 的，`activity` 一直是 `none`，只发普通通知。
-- 目标设备只有发起人名下的已配对设备。
+- 目标设备只有发起人这个“人”名下的已配对设备，规则同 [ADR-0114](0114-plugin-agent-platform.md) 第 4 项的按人收件：主人是 `None`，家人是用户名。
+- Google 把“聊天消息”列为不适合 Live Update，长任务是另一种形状：人当场发起、有开始和结束、不是一条条新消息刷屏，
+  所以只有这里申请提升，普通消息仍然是普通通知（和 ADR-0101 第 4 节同一句）。
 - **每台设备最多 2 条**并行的实时活动。超了按相关度取舍：`waiting` 优先，其次最早的；被挤掉的按 `uncertain` 结束。
 - 主人随手划掉一条（ActivityKit 的 `activityState == .dismissed`）以后，这一轮不再为这台设备重开。
 - 被 `waiting` 的卡片过期的、主人答完的，立刻结束。
@@ -118,13 +129,15 @@ pub struct LiveRun {
     pub updated_at_ms: u64,
     pub stale_at_ms: u64,
     pub card_id: Option<String>,  // state 是 Waiting 且是核心卡片时
-    pub choices: Vec<CardChoice>, // 卡片没有表单时最多 3 个，用来画锁屏上的按钮
+    pub can_answer: bool,         // 只有标准同意/拒绝按钮时给 true；见第 8 节
 }
 ```
 
 - 壳只按枚举和数画：文字全在各端本地化资源里（ADR-0043），核心不给展示句子。
 - `Uncertain` 由核心合成（Bot 离线、2 分钟没更新），和客户端核心在聊天里的合成规则一致（ADR-0082 第 4 节）。
 - 百分比超出 0～100 按没有进度画；`phase` 不认识落 `Other`，壳照旧画一条不确定进度，不丢整条。
+- `can_answer` 由核心算：卡片没有表单字段，且选项恰好是核心补的 `approve`/`reject` 这一对。自定义选项的标签不进推送，
+  所以这种卡片在锁屏上只给“打开”（第 8 节）。
 
 ### 5. 传输：连着就在本地更新，断了才推送
 
@@ -135,37 +148,52 @@ pub struct LiveRun {
   - **Android**：现有的加密推送再加一种数据载荷 `run_progress`，设备上 `WontonPushService` 解开后更新对应通知；
     Android 本来就是本机解密，加密不受这次改动影响。
 - 本地路径上，iOS 壳对 `LiveRun` 用自己的 1 秒合并；`waiting`、结束立刻画。Android 同样。
-- iOS 只在场景是 `active` 时用 `Activity.request` 本地开始（后台开始要 `LiveActivityIntent`，这里不用）；
-  App 不在前台就由核心的 push-to-start 开，17.0/17.1 没有 push-to-start，后台就不开。
+- iOS 只在场景是 `active` 时本地开始（后台开始要 `LiveActivityIntent`，这里不用）；App 不在前台就由核心的 push-to-start 开，
+  17.0/17.1 没有 push-to-start，后台就不开。
+  - `request` 带 `style:` 的重载是 iOS 18 起：18 以上走 `request(attributes:content:pushType:style: .standard)`，
+    17.0/17.1 走 `request(attributes:content:pushType:)`；`pushToStartTokenUpdates`（17.2 起）、
+    `isDynamicIslandLimitedInWidth`（27 起）都套 `#available`。
+- 本地开始和 push-to-start 之间有竞态（核心以为这台设备没有活动，壳刚好本地起了一条），同一轮会出两条活动。去重两头都做：
+  壳本地一开起来就先报 `live_activity_changed(...started, activity_id)`，核心把它记进 (设备, run)，没有 `ended`/`dismissed` 之前不再发 start；
+  壳收到 start 推送时先查自己有没有这个 (server, run) 的活动，有就结束新来的那条、留下先有的，再按活动 ID 重新报一次 `started`。
+  更新令牌跟着活下来的那条走。
 - 推送路径的壳不猜：载荷里有什么画什么，`timestamp` 旧的丢掉。
 
 ### 6. 设备登记和中继
 
 **iOS 的令牌**都由 App 经隧道登记给核心，存活在 `core/push/live.json`：
 
-- 首次配对、App 启动时给每台已配对的服务器登记同一个 **push-to-start** 令牌（`Activity.pushToStartTokenUpdates`，iOS 17.2 起），
-  用来在 App 没开时把活动开起来；一台设备只有一个，换新时删旧的。
+- 总开关开着时，首次配对、App 启动时给每台已配对的服务器登记同一个 **push-to-start** 令牌（`Activity.pushToStartTokenUpdates`，iOS 17.2 起），
+  用来在 App 没开时把活动开起来；一台设备只有一个，换新时删旧的。开关后来打开时补登记，关掉时删。
 - 每条活动起来以后登记它自己的更新令牌（`activity.pushTokenUpdates`），绑定（设备，`run_id`，`activity_id`）。
-- 设备经核心登记：`PUT /_wonton/push/live`（只有隧道里的已配对设备，body `{kind: "start"|"update", token, run_id?, activity_id?}`）、
-  `DELETE /_wonton/push/live`；壳用新 `ClientCore` 方法走它，不加 `Action` 变体（同 ADR-0101/0102 的先例）：
-  `set_live_activity_token(server_id, token, kind, run_id?, activity_id?)`、`clear_live_activity_token(...)`、
+- 设备经核心登记：`PUT /_wonton/push/live`（只有隧道里的已配对设备），body 三种：
+  `{kind: "start", token, run_id}`、`{kind: "update", token, run_id, activity_id}`、`{kind: "enabled", enabled}`；
+  `DELETE /_wonton/push/live` 带 body `{run_id?}`：带 `run_id` 只清这一轮（`ended`/`dismissed` 后），
+  不带 `run_id` 清这台设备的全部令牌（退出服务器、关掉系统开关）。
+  壳用新 `ClientCore` 方法走它，不加 `Action` 变体（同 ADR-0101/0102 的先例）：
+  `set_live_activity_token(server_id, token, kind, run_id?, activity_id?)`、`clear_live_activity_token(server_id, run_id?)`、
   `live_activity_changed(server_id, run_id, activity_id?, state)`（`started`/`ended`/`dismissed`，划掉的别重开）。
-- 设备报告 `ActivityAuthorizationInfo.areActivitiesEnabled == false` 时核心不再为它发起（`activities_disabled`）；
-  系统开关变了（`activityEnablementUpdates`）壳就再报一次。
+- 有两层开关，都由核心判定：
+  - **系统的**：设备报告 `ActivityAuthorizationInfo.areActivitiesEnabled`（iOS）或通知权限与
+    `NotificationManager.canPostPromotedNotifications()`（Android）算不算可用，经 `kind: "enabled"` 报上来；
+    系统开关变了（`activityEnablementUpdates` 等）壳就再报一次。不可用时核心不再为它发起（`activities_disabled`）。
+  - **我们的总开关**：`live_activity_enabled(server_id, enabled)`，存核心的本机文件（同 `appearance.json`/`push-method.json`，
+    ADR-0102 第 2 节），默认开；设置页新增 `SettingsEntry::TaskProgress { enabled }`。关掉时核心结束已有活动、删掉令牌；
+    再打开由壳重新登记。
 - 中继（gorush 之上那层鉴权）加一个 `POST /v1/live-activity`：核心发
   `{token, priority, aps}`，中继补 `apns-push-type`、`apns-topic`（固定成 App 的 bundle 加后缀）、`apns-priority` 后交 gorush
   （gorush 已原生支持 `push_type`、`topic`、`content-state`、`stale-date`、`relevance-score`、`attributes-type`、`attributes`）。
-  鉴权沿用服务器现有的中继凭据。APNs 回 410/BadDeviceToken 时把令牌删掉并告诉核心。
-- `push-to-start` 只在“这轮在这台设备上没有活动、连接也断着”时用：一轮最多一次，失败就等下一次更新重试。
+  鉴权沿用服务器现有的中继凭据。APNs 回 410 `Unregistered`（令牌作废）或 400 `BadDeviceToken`（令牌不属于这个环境和 topic）时把令牌删掉并告诉核心。
+- `push-to-start` 只在“这轮在这台设备上没有活动、连接也断着”时用：同一轮同一台设备同时只发一条，失败就等下一次更新重试。
   令牌在活动起来后立刻换成更新令牌。
 - iOS 18 起的开始载荷带 `input-push-token: 1`，确保系统给更新令牌；17.2/17.3 由系统随开始一并给出。
 
-### 7. 隐私：明文里只有枚举、数和三个不透明 ID
+### 7. 隐私：明文里只有枚举、数和四个不透明 ID
 
 `content-state`（每次更新都全量给）：
 
 ```json
-{ "state": "working", "phase": "searching", "pct": 42, "steps": 7, "staleAt": 1763700120, "card": null }
+{ "state": "working", "phase": "searching", "pct": 42, "steps": 7, "canAnswer": false, "card": null }
 ```
 
 开始载荷的 `attributes`（之后不变）：
@@ -174,10 +202,13 @@ pub struct LiveRun {
 { "server": "<配对码里的 endpoint ID>", "room": "!abc:host", "run": "$事件 ID" }
 ```
 
-- 不放：消息正文、文件名、房间名、Bot 名字、命令、模型名、结果总结。
-- `room`、`run` 是随机的 Matrix 标识，`server` 是公开的 endpoint ID；这三样放明文只说明“有个任务在跑”，看不出内容。
-- 指向卡片时只放卡片 ID（`card`），选项文字也不进明文；按钮上的“允许/拒绝”是壳写死的词。
-- 提示（`alert`）用 `loc-key` 加数字参数，由 App 按系统语言写。进入 `waiting` 和结束时才带提示，平常更新不响。
+- 不放：消息正文、文件名、房间名、Bot 名字、命令、模型名、结果总结、选项文字。
+- 四个 ID 都不透明：`room`、`run` 是随机的 Matrix 标识，`server` 是公开的 endpoint ID，`card` 是随机卡片 ID。
+  放明文只说明“有个任务在跑”，看不出内容。
+- 指向卡片时只放 `card` 和 `canAnswer`；按钮上的“允许/拒绝”是壳写死的词，进本地化资源。
+  确认通知自己的推送（ADR-0101 §5）照旧带选项标签，那两个词的来源是核心，不是用户数据；实时活动这边为了本地化和 4 KB 只放布尔。
+- 过期时间只有一份：APNs 的 `stale-date`（第 3 节），系统的 `isStale` 由它驱动，`content-state` 不再放 `staleAt`。
+  本地路径没有推送，壳按 `LiveRun.stale_at_ms` 画同一行提示。
 - 锁屏内容单独一个开关（新增 `NotificationCategory::Task`，默认开）；关掉只写“有任务在跑”。
 - App 锁（ADR-0102）开着且锁定时：实时活动照常显示百分比和条，但不显示阶段文字，标题写成“云吞”；数字不算敏感内容（ADR-0101 第 5 节的同一条）。
   锁定标记写进 App Group，实时活动的视图和通知扩展读同一个文件。
@@ -186,12 +217,13 @@ pub struct LiveRun {
 ### 8. 点进去打开哪里、等确认时的动作
 
 - 点实时活动（任何一处）：`wonton://room/<房间 ID>`，壳先盖锁定页，解锁后进那个聊天（ADR-0102 已规定深链要穿过锁屏）。
+  链接语法归 [ADR-0114](0114-plugin-agent-platform.md) 第 6 项管，这里只复用 `room` 那一支。
   v1 只保证当前这台服务器；别的服务器的房间先停在切换那一步，多服务器的 `?server=` 后续补。
 - `waiting` 时：`relevance-score` 用 100（平时 50）并带提示，灵动岛显示这一条；卡片还在，列表里点了能到卡片。
-- 卡片没有表单字段（和 ADR-0101 第 1 节同一个条件）时，锁屏和通知上给“允许”“拒绝”：
-  - iOS：`LiveActivityIntent` 的按钮，系统在后台拉起 App 进程，走 `answer_push_confirmation` 同一条回答路径；
+- `can_answer` 为 true 时（卡片没有表单字段，选项就是核心补的 `approve`/`reject` 这一对），锁屏和通知上给“允许”“拒绝”：
+  - iOS：`LiveActivityIntent` 的按钮，系统在后台拉起 App 进程，走 `answer_push_confirmation(server_id, card_id, approve|reject, None)` 同一条回答路径；
   - Android：`NotificationCompat.Action` → 现有的 `PushActionReceiver`；
-  - 要填密钥或设置的卡片只给“打开”，不在锁屏上填。
+  - 有自定义选项、要填密钥或设置的卡片只给“打开”，不在锁屏上猜选项的含义（`choice_id` 不往明文里放）。
 
 ### 9. 平台约束和降级
 
@@ -201,11 +233,14 @@ pub struct LiveRun {
   27 起横屏也显示紧凑视图（要按 `isDynamicIslandLimitedInWidth` 收窄）。
 - 没有灵动岛的机型是锁屏实时活动；iOS 16.1 以下没有。
 - Android：`NotificationCompat.ProgressStyle` 只在 API 36 起有进度条外观，更早的版本退回普通 `setProgress`；
-  成为 Android 16 的 Live Update 要清单里的 `POST_PROMOTED_NOTIFICATIONS`（普通权限）、`ongoing`、有标题、渠道不是 `IMPORTANCE_MIN`，
-  用户把 Live Update 关了就不再请求提升；OEM 还会有自己的额外条件。
+  用户把 Live Update 关了就不再请求提升：实现先查 `NotificationManager.canPostPromotedNotifications()`，关着就不申请，
+  设置页给 `Settings.ACTION_MANAGE_APP_PROMOTED_NOTIFICATIONS` 的入口；OEM 还会有自己的额外条件。
 - Android 的通知权限被关：进度通知和上面的活动都画不出来，设置页如实指去系统设置；iOS 的实时活动不受通知权限影响。
   Android 没装分发器、又在保持连接时，进程被系统杀掉后通知停在最后一格，打开 App 再继续。
-- 全局开关在设置里，按设备；关掉后不再登记令牌，已有的活动收尾。
+- 全局开关就是第 6 节的 `SettingsEntry::TaskProgress`（按设备）；关掉后不再登记令牌，已有的活动收尾。
+- 媒体任务（[ADR-0113](0113-media-transport.md) 的上传、下载、播放会话）不走 `wonton__report_progress`：它们由核心自己持有，
+  进度走 `media.task.progress`，锁屏由 0113 第 4 节的 `MediaSessionService`/`MPNowPlayingInfoCenter` 出；
+  只有播放会话自己的“等你确认”才借用本节的卡片规则。
 
 ### 10. 壳的文字和画法
 
@@ -228,8 +263,10 @@ iOS 的呈现按平台指引：锁屏一条，灵动岛紧凑左侧 App 标记�
 
 ### 11. 契约、提供方、消费方
 
-- **契约**：`wonton-protocol` 的 `runs` 模块（上面的结构体和 `RunPhase`，测试盖未知值落 `Other`、`LiveRun` 的字段往返）；
-  `wonton__report_progress` 的参数和错误类别；中继的 `POST /v1/live-activity` 与 APNs 载荷（固定 golden 载荷测试）。
+- **契约**：`wonton-protocol` 的 `runs` 模块（上面的结构体和 `RunPhase`，测试盖未知值落 `Other`、`LiveRun` 的字段往返、
+  `can_answer` 只对标准按钮为 true）；`SettingsEntry::TaskProgress`；`wonton__report_progress` 的参数和错误类别；
+  中继的 `POST /v1/live-activity`、`PUT/DELETE /_wonton/push/live` 的 body 与 APNs 载荷（固定 golden 载荷测试，
+  断言 `content-state` 里没有选项文字）。
 - **提供方**：家里的核心（聚合、节流、推送、VM）+ 中继（APNs）+ 两端壳（ActivityKit、通知）。
 - **消费方**：两端壳。换中继不改核心和壳（只有 HTTP 契约）；换客户端只要实现“拉 `/_wonton/api/runs` 或解 `run_progress`
   → 画列表 → 深链”，核心不认平台。
@@ -243,15 +280,17 @@ iOS 的呈现按平台指引：锁屏一条，灵动岛紧凑左侧 App 标记�
    `GET /_wonton/api/runs`、`subscribe_live_runs()`。
    验收：行为测试——工具序列到 VM 的迁移、30 秒门槛、5 点/10 秒节流与合并、两个上限和挤掉、离线变不确定、超时结束、
    定时任务不上锁屏、别的 Bot 的调用不能推进。
-2. **Android 画**：从 VM 画进度通知（36 上 `ProgressStyle`、以下 `setProgress`）、提升请求、深链、公开版和隐藏版、设置开关。
+2. **Android 画**：从 VM 画进度通知（36 上 `ProgressStyle`、以下 `setProgress`）、提升请求（先查 `canPostPromotedNotifications`）、
+   深链、公开版和隐藏版、设置开关。
    验收：投递假 VM 的截图测试；模拟器上对着开发栈真跑一遍（装、跑长任务、锁屏看、点回聊天）。
 3. **Android 推送**：加密载荷 `run_progress`、`resolve_push` 分开消息和进度、410 处理。
    验收：核心契约测试；模拟器装分发器，杀掉 App 后看进度还能动。
-4. **iOS 本地**：widget 扩展里的 `ActivityConfiguration`、本地开始/更新/结束、深链、App Group 的锁定标记、授权探测。
+4. **iOS 本地**：widget 扩展里的 `ActivityConfiguration`、本地开始/更新/结束、深链、App Group 的锁定标记、授权探测、
+   18/17.2/27 的 `#available` 分支。
    验收：固定假 VM 的预览（锁屏、紧凑、最小、展开）；模拟器走查；关掉实时活动后不再开。
 5. **iOS 推送和中继**：中继接口、令牌登记、开始/更新/结束的载荷、priority、`stale-date`、`dismissal-date`。
    验收：本机对 APNs 沙箱 curl；模拟器用 `simctl push` 打活动载荷；真机在账号到位后走一遍（开始、更新、结束、410）。
-6. **等确认的动作**：活动/通知上的允许、拒绝，接 `answer_push_confirmation`；把现有 `OngoingTasks` 的确认通知并进同一份注册表。
+6. **等确认的动作**：活动/通知上标准同意/拒绝的按钮，接 `answer_push_confirmation`；把现有 `OngoingTasks` 的确认通知并进同一份注册表。
    验收：卡片、过期、答完后的撤下；两端各一遍。
 
 ## 考虑过的做法
@@ -273,13 +312,14 @@ iOS 的呈现按平台指引：锁屏一条，灵动岛紧凑左侧 App 标记�
 - 进度是 Bot 的自述：Bot 卡住不报时锁屏会停在旧值，靠 `stale-date` 和“不确定”兜底，不补猜。
 - APNs 预算、OEM 的 Live Update 条件、iOS 17.2 以前的限制都是平台侧、只能按上面降级。
 - 每人每设备两条，多了会挤；挤掉的按不确定结束，主人可能觉得忽然没了。
+- 本地开始和 start 推送的竞态去重后仍可能多出一条，壳结束它、主人可能闪一下。
+- 自定义选项的卡片在锁屏上只能“打开”，选项再多也不猜；这是为了不把插件写的标签放进明文。
 - `GET /_wonton/api/runs` 和 `PUT /_wonton/push/live` 是又一组常驻接口；前者只在有运行时才有内容，没有时不唤醒。
 - 明文里的 `room`/`run` 让中继能对上一台设备连续看了哪些任务（次数和时长），对不上具体内容。
-- 实时活动的视图在 widget 扩展里，读 App Group 的锁定标记；扩展内存和时序沿用 ADR-0101 通知扩展那一套的结论，要真机验。
 
 ## 要主人拍板
 
-1. **明文概要（推荐）还是自加密让中继也看不到？** 推荐明文：只放枚举、百分比和三个随机 ID，换来实现简单、系统原生呈现全能用；
+1. **明文概要（推荐）还是自加密让中继也看不到？** 推荐明文：只放枚举、百分比和四个不透明 ID，换来实现简单、系统原生呈现全能用；
    自加密要多一套钥匙和编解码，锁屏提示也用不上本地化。
 2. **哪些任务上锁屏？** 推荐“人当场发起、跑过 30 秒、每设备最多 2 条”。备选是维持 ADR-0101 的“只在等你确认时”，
    或者由 Bot 自己声明“这是长任务”（安静，但会漏报，Bot 判断错就没有）。
@@ -289,7 +329,10 @@ iOS 的呈现按平台指引：锁屏一条，灵动岛紧凑左侧 App 标记�
 
 - **ADR-0003**：通过后要在它里面补一节例外：实时活动的概要是明文，只放枚举、数和随机 ID，文字在壳里；普通消息的推送加密不变。
   本节先记着，本 PR 不改它的正文。
-- **ADR-0101**：第 4 节的范围从“等确认”扩到长任务进度；第 5 节要给 `Task` 类别加锁屏开关；第 1 节的按钮要加实时活动入口。同样是它通过后再补。
+- **ADR-0101**：本 PR 已经在状态行和第 4 节写上到本篇的链接和“扩充中”，范围以本篇为准；第 5 节要给 `Task` 类别加锁屏开关，
+  第 1 节的按钮要加实时活动入口。后面两项等它通过后再补。
+- **ADR-0113**：媒体任务不并进来，进度和锁屏各走各的；只有播放会话等确认时用本篇的卡片按钮规则。
+- **ADR-0114**：收件人按第 4 项的“按人”规则，深链按第 6 项；本篇不重写它们。
 - **ADR-0082**：状态取值和类别的**含义**复用，消息格式不动；锁屏的数据来自新工具，冲突时两边各按自己的源。
 - **ADR-0016**：核心工具表加 `wonton__report_progress`（不要确认）。
 - **ADR-0102**：锁定期间实时活动隐藏阶段文字；深链穿过锁定页的规则不变。
@@ -319,6 +362,9 @@ iOS 的呈现按平台指引：锁屏一条，灵动岛紧凑左侧 App 标记�
 - Android“Live update notifications”：`POST_PROMOTED_NOTIFICATIONS`（普通权限）、`setRequestPromotedOngoing`、必须 ongoing /
   有标题 / 不用 RemoteViews / 渠道不是 MIN、用户能划掉、别重发被划掉的：
   https://developer.android.com/develop/ui/views/notifications/live-update 。
+- Android `NotificationManager.canPostPromotedNotifications()` 与设置入口 `Settings.ACTION_MANAGE_APP_PROMOTED_NOTIFICATIONS`：
+  https://developer.android.com/reference/android/app/NotificationManager#canPostPromotedNotifications() 、
+  https://developer.android.com/reference/android/provider/Settings#ACTION_MANAGE_APP_PROMOTED_NOTIFICATIONS 。
 - Android“Create a progress-centric notification”与 `Notification.ProgressStyle`（API 36）、`NotificationCompat.ProgressStyle`
   （androidx.core 1.17.0，36 以下退回默认样式）：
   https://developer.android.com/develop/ui/compose/notifications/progress-centric 。
@@ -326,8 +372,10 @@ iOS 的呈现按平台指引：锁屏一条，灵动岛紧凑左侧 App 标记�
   https://developer.android.com/develop/ui/compose/notifications/create-notification 。
 - gorush 已支持 `push_type`、`topic`、`content-state`、`stale-date`、`dismissal-date`、`relevance-score`、`attributes-type`、`attributes`
   （`notify/notification.go`、`notify/notification_apns.go` 的 `GetIOSNotification`，仓库 appleboy/gorush，MIT）。
-- 现有代码：`crates/wonton-core/src/push/`（加密推送、登记、`send_confirmation`）、`crates/wonton-client/src/chat/pending.rs`
-  （`LONG_WAIT_MS` 和 `ongoing`）、`apps/compose/androidApp/src/main/kotlin/app/wonton/android/push/OngoingTasks.kt`、
+- 现有代码：`crates/wonton-core/src/push/`（加密推送、登记、`send_confirmation`、`devices_of` 的按人签名）、
+  `crates/wonton-core/src/device.rs`（`Device.user`）、`crates/wonton-core/src/mcp/server.rs`（`Caller.sender`/`origin`）、
+  `crates/wonton-client/src/chat/pending.rs`（`LONG_WAIT_MS` 和 `ongoing`）、
+  `apps/compose/androidApp/src/main/kotlin/app/wonton/android/push/OngoingTasks.kt`、
   `crates/wonton-protocol/src/agent_run.rs`、`apps/ios/project.yml`（已有 widget 扩展、iOS 17.0、App Group）。
 
 ## 关联
@@ -335,4 +383,5 @@ iOS 的呈现按平台指引：锁屏一条，灵动岛紧凑左侧 App 标记�
 [ADR-0003](0003-matrix-and-encrypted-push.md)、[ADR-0015](0015-small-components-standard-interfaces.md)、[ADR-0016](0016-mcp-bus-and-confirmations.md)、
 [ADR-0041](0041-app-links-and-shortcuts.md)、[ADR-0043](0043-app-languages.md)、[ADR-0044](0044-bot-profile-and-status-avatars.md)、
 [ADR-0061](0061-agent-runtime-and-frontends.md)、[ADR-0082](0082-agent-run-status.md)、[ADR-0101](0101-notifications.md)、
-[ADR-0102](0102-app-lock.md)、[ADR-0108](0108-hermes-default-kernel.md)、[ADR-0110](0110-one-hermes-container-per-person.md)。
+[ADR-0102](0102-app-lock.md)、[ADR-0108](0108-hermes-default-kernel.md)、[ADR-0110](0110-one-hermes-container-per-person.md)、
+[ADR-0113](0113-media-transport.md)、[ADR-0114](0114-plugin-agent-platform.md)。
