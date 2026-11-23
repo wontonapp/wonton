@@ -1,7 +1,7 @@
 //! 契约：核心向容器发信号时，那个容器必须在 `systemctl restart docker` 之后自己回来。
 //!
 //! Docker 把经 kill 接口发的任何信号都当成停止：容器记上手动停过的标记，`unless-stopped` 的容器重启后
-//! 不再拉起（ADR-0115）。现在热加载两条路都不发信号，但机制留着：这里扫源码找 `kill_container(`，不维护
+//! 不再拉起（ADR-0116）。现在热加载两条路都不发信号，但机制留着：这里扫源码找 `kill_container(`，不维护
 //! 容器名单，新加一处信号测试就红，要求它所在的 compose 服务或创建请求给出 `restart: always` 和
 //! `stop_signal: SIGTERM`。
 

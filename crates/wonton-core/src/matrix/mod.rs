@@ -128,7 +128,7 @@ impl Matrix {
     /// 让 Tuwunel 重读配置：用核心的管理账号在管理房间发 `!admin server reload-config`（与 SIGUSR1 走同一条
     /// `reload` 路径）。
     ///
-    /// Docker 的 kill 接口发信号会把容器记成手动停过，Docker 重启后 `unless-stopped` 不再拉起（ADR-0115）。
+    /// Docker 的 kill 接口发信号会把容器记成手动停过，Docker 重启后 `unless-stopped` 不再拉起（ADR-0116）。
     pub(crate) async fn reload_config(&self) -> Result<(), MatrixError> {
         let room = self.admin_room().await?;
         self.core_session()

@@ -1,6 +1,6 @@
 //! 入口 HAProxy 的软重载：经它主进程的管理端口（`-S`）发 `reload`，不带 Docker 的 kill。
 //!
-//! 经 Docker 发的信号都当停止处理，`unless-stopped` 的容器在守护进程重启后不再拉起（ADR-0115）。
+//! 经 Docker 发的信号都当停止处理，`unless-stopped` 的容器在守护进程重启后不再拉起（ADR-0116）。
 
 use std::time::Duration;
 
