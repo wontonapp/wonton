@@ -1,6 +1,7 @@
 //! 扮演加设备时的旧设备（ADR-0087）：真实的客户端核心，经隧道配对、登录 Matrix、开好备份，打开“添加设备”把配对码写进
 //! 文件，等新设备来请求确认；对表情时打印出来并替主人点“相同”，交完密钥后再留一会儿，等新设备取走密钥。
-//! 没有第二台 App 时用它和 App 做端到端验证，见 deploy/dev/core/README.md。
+//! 开备份时把恢复密钥写进 `<写配对码的文件>.recovery`，并先往默认 Bot 的私聊发一句加密历史（`KEY_HANDOFF_HISTORY_TEXT`），
+//! 给“恢复密钥恢复”和“历史解密”两条走查留证据。没有第二台 App 时用它和 App 做端到端验证，见 deploy/dev/core/README.md。
 //!
 //! ```text
 //! cargo run -p wonton-client --example key-handoff-old-device -- <数据目录> <配对码，已配对时写 -> <写配对码的文件>
@@ -15,7 +16,8 @@ use std::time::Duration;
 
 use wonton_client::{
     Action, ChatAccount, ChatAction, ChatViewModel, ClientCore, DeviceInvite, DeviceVerification,
-    HomeAction, KeyHandoff, Network, RecoveryStatus, SecretString, VerificationStage,
+    HomeAction, KeyHandoff, Network, RecoveryStatus, RoomMembership, SecretString, TimelineAction,
+    TimelineTarget, VerificationStage,
 };
 
 /// 从配对到新设备确认完。新设备那边要人去扫码、点按钮，给足时间。
@@ -25,6 +27,7 @@ const STAY: Duration = Duration::from_secs(120);
 
 #[tokio::main]
 async fn main() -> ExitCode {
+    wonton_client::init_logging(std::env::var("RUST_LOG").unwrap_or_default(), None);
     let args: Vec<String> = std::env::args().skip(1).collect();
     let [dir, code, out] = args.as_slice() else {
         eprintln!(
@@ -56,19 +59,8 @@ async fn run(dir: &str, code: &str, out: &str) -> Result<(), String> {
         })
         .map_err(|e| e.to_string())?;
     }
-    let view = wait_chat(&core, |view| {
-        let encryption = &view.encryption;
-        encryption.verification == DeviceVerification::Verified
-            && encryption.recovery == RecoveryStatus::Enabled
-    })
-    .await?;
-    if view.encryption.recovery_key.is_some() {
-        core.dispatch(Action::Chat {
-            action: ChatAction::ConfirmRecoveryKeySaved,
-        })
-        .map_err(|e| e.to_string())?;
-    }
-    println!("已登录、已验证、备份已开");
+    enable_backup(&core, out).await?;
+    leave_history(&core).await;
 
     core.dispatch(Action::Home {
         action: HomeAction::InviteDevice,
@@ -135,6 +127,115 @@ async fn run(dir: &str, code: &str, out: &str) -> Result<(), String> {
     Ok(())
 }
 
+/// 等本设备被当成已验证、备份开起来，把恢复密钥抄到文件并确认已保存。
+async fn enable_backup(core: &Arc<ClientCore>, out: &str) -> Result<(), String> {
+    wait_chat(core, |view| {
+        let encryption = &view.encryption;
+        encryption.verification == DeviceVerification::Verified
+            && encryption.recovery == RecoveryStatus::Enabled
+    })
+    .await?;
+    // 开启备份和把密钥交到快照之间有间隔，等它出现再抄；走查要拿这把钥匙验“没有旧设备时用恢复密钥恢复”。
+    let keyed = tokio::time::timeout(
+        Duration::from_secs(30),
+        wait_chat(core, |v| v.encryption.recovery_key.is_some()),
+    )
+    .await
+    .ok()
+    .and_then(Result::ok);
+    if let Some(key) = keyed.and_then(|v| v.encryption.recovery_key) {
+        let key_file = format!("{out}.recovery");
+        std::fs::write(&key_file, key.expose()).map_err(|e| format!("写不了 {key_file}：{e}"))?;
+        println!("恢复密钥已写进 {key_file}");
+        core.dispatch(Action::Chat {
+            action: ChatAction::ConfirmRecoveryKeySaved,
+        })
+        .map_err(|e| e.to_string())?;
+    }
+    println!("已登录、已验证、备份已开");
+    Ok(())
+}
+
+/// 留在备份里的加密历史：新设备拿到密钥后进这个私聊的时间线应该读到这句明文。
+async fn leave_history(core: &Arc<ClientCore>) {
+    let history = std::env::var("KEY_HANDOFF_HISTORY_TEXT").unwrap_or_else(|_| {
+        format!(
+            "历史消息 {}",
+            std::time::SystemTime::now()
+                .duration_since(std::time::UNIX_EPOCH)
+                .map(|d| d.as_secs())
+                .unwrap_or(0)
+        )
+    });
+    match send_history(core, &history).await {
+        Ok(()) => println!("历史消息已发出：{history}"),
+        Err(error) => println!("历史消息没发出：{error}"),
+    }
+    tokio::time::sleep(Duration::from_secs(5)).await;
+}
+
+/// 先走“问 Bot”；Home 状态还没连上时退回直接建私聊、订阅时间线再发。
+async fn send_history(core: &Arc<ClientCore>, body: &str) -> Result<(), String> {
+    if core
+        .dispatch(Action::Chat {
+            action: ChatAction::AskAgent {
+                text: body.to_owned(),
+            },
+        })
+        .is_ok()
+    {
+        return Ok(());
+    }
+    let bot = std::env::var("KEY_HANDOFF_BOT_USER")
+        .map_err(|_| "问 Bot 没就绪，也没给 KEY_HANDOFF_BOT_USER".to_owned())?;
+    core.dispatch(Action::Chat {
+        action: ChatAction::StartDirectChat {
+            user_id: bot.clone(),
+        },
+    })
+    .map_err(|e| e.to_string())?;
+    let view = wait_chat(core, |view| {
+        view.rooms.iter().any(|room| {
+            room.direct_user_id.as_deref() == Some(bot.as_str())
+                && room.membership == RoomMembership::Joined
+        })
+    })
+    .await?;
+    let room = view
+        .rooms
+        .iter()
+        .find(|room| room.direct_user_id.as_deref() == Some(bot.as_str()))
+        .map(|room| room.room_id.clone())
+        .ok_or_else(|| "建不出和 Bot 的私聊".to_owned())?;
+    let target = TimelineTarget {
+        room_id: room,
+        thread_root: None,
+    };
+    let _subscription = core
+        .subscribe_timeline(target.clone())
+        .await
+        .map_err(|e| e.to_string())?;
+    let mut last = None;
+    for _ in 0..10 {
+        let sent = core.dispatch(Action::Timeline {
+            action: TimelineAction::SendText {
+                target: target.clone(),
+                body: body.to_owned(),
+                reply_to: None,
+                mentions: Vec::new(),
+            },
+        });
+        match sent {
+            Ok(()) => return Ok(()),
+            Err(error) => {
+                last = Some(error.to_string());
+                tokio::time::sleep(Duration::from_secs(1)).await;
+            }
+        }
+    }
+    Err(last.unwrap_or_default())
+}
+
 async fn invite_code(core: &Arc<ClientCore>) -> Result<String, String> {
     let updates = core.subscribe_home();
     while let Some(view) = updates.next().await {
@@ -155,6 +256,18 @@ async fn wait_chat(
 ) -> Result<ChatViewModel, String> {
     let updates = core.subscribe_chat();
     while let Some(view) = updates.next().await {
+        if std::env::var_os("KEY_HANDOFF_DEBUG").is_some() {
+            eprintln!(
+                "view: verif={:?} rec={:?} key={} flow={:?}",
+                view.encryption.verification,
+                view.encryption.recovery,
+                view.encryption.recovery_key.is_some(),
+                view.encryption
+                    .verification_flow
+                    .as_ref()
+                    .map(|f| f.stage.clone()),
+            );
+        }
         if let ChatAccount::Failed { message, .. } = &view.account {
             return Err(format!("登录 Matrix 失败：{message}"));
         }

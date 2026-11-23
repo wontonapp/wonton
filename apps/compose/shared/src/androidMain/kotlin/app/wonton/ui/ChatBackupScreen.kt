@@ -34,6 +34,7 @@ import androidx.compose.runtime.setValue
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.semantics.Role
 import androidx.compose.ui.platform.LocalContext
+import androidx.compose.ui.platform.testTag
 import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.text.font.FontFamily
 import androidx.compose.ui.text.input.KeyboardCapitalization
@@ -112,7 +113,7 @@ private fun ResetBackup(onAction: (Action) -> Unit) {
     val interaction = remember { MutableInteractionSource() }
     Text(
         stringResource(R.string.chat_backup_reset),
-        Modifier.fillMaxWidth()
+        Modifier.fillMaxWidth().testTag("chat-backup-reset")
             .clickable(interaction, indication = null, role = Role.Button) { confirming = true }
             .heightIn(min = WontonTheme.size.target)
             .padding(vertical = WontonTheme.spacing.s8),
@@ -203,7 +204,7 @@ private fun RecoveryKeyEntry(key: String, onKeyChange: (String) -> Unit, onActio
         WontonTextField(
             value = key,
             onValueChange = onKeyChange,
-            modifier = Modifier.fillMaxWidth(),
+            modifier = Modifier.fillMaxWidth().testTag("chat-backup-recovery-key"),
             placeholder = stringResource(R.string.chat_backup_recovery_key),
             visualTransformation = PasswordVisualTransformation(),
             // 按密码输入：输入法不联想、不自动改写和大写，否则恢复密钥会被“纠正”成别的字。
@@ -219,7 +220,7 @@ private fun RecoveryKeyEntry(key: String, onKeyChange: (String) -> Unit, onActio
                 onAction(Action.Chat(ChatAction.RecoverEncryption(key)))
                 onKeyChange("")
             },
-            Modifier.fillMaxWidth(),
+            Modifier.fillMaxWidth().testTag("chat-backup-recover"),
             enabled = key.isNotBlank(),
         )
     }
@@ -346,7 +347,7 @@ private fun RevealedKey(
         // 不能长按选中：系统的拷贝不会标为敏感内容，复制只走“复制”按钮。
         Text(
             key,
-            Modifier.fillMaxWidth()
+            Modifier.fillMaxWidth().testTag("chat-backup-new-key")
                 .background(colors.surfaceSubtle.toColor(), RoundedCornerShape(WontonTheme.radii.control))
                 .padding(WontonTheme.spacing.s12),
             style = WontonTheme.typography.body.copy(fontFamily = FontFamily.Monospace),

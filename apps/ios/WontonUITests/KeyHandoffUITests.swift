@@ -27,7 +27,18 @@ final class KeyHandoffUITests: XCTestCase {
         XCTAssertTrue(title.waitForNonExistence(timeout: 90))
         shot("handoff-finished")
         XCTAssertFalse(app.staticTexts["Enter your recovery key to restore past messages"].exists)
-    }
+
+        // 旧设备在交接前发过一句加密消息：密钥到齐后时间线里应该是明文。
+        if let history = ProcessInfo.processInfo.environment["HISTORY_TEXT"], !history.isEmpty {
+            // 进旧设备发过消息的那个私聊看时间线；列表预览可能已被 Bot 的新回复顶掉。
+            let room = app.staticTexts["Hermes"]
+            XCTAssertTrue(room.waitForExistence(timeout: 90), app.debugDescription)
+            room.tap()
+            let text = app.staticTexts.containing(NSPredicate(format: "label CONTAINS %@", history)).firstMatch
+            XCTAssertTrue(text.waitForExistence(timeout: 90), app.debugDescription)
+            shot("history-decrypted")
+        }
+     }
 
     private func shot(_ name: String) {
         let attachment = XCTAttachment(screenshot: XCUIScreen.main.screenshot())
