@@ -51,6 +51,7 @@ import org.junit.Test
 import org.junit.runner.RunWith
 import org.robolectric.annotation.Config
 import org.robolectric.annotation.GraphicsMode
+private const val LONG_TITLE = "一个长到需要省略而且还要再长一些的标题，用来确认夹紧"
 
 /**
  * 推进栏（[WontonPushedBar]）盖住的内容照样点得到：内容滚进半透明顶栏下面以后，点在它身上要触发它自己，
@@ -146,12 +147,12 @@ class PushedBarOverlapClickTest {
         }
         compose.onNodeWithText("外观").assert(isHeading())
         val bar = compose.onNodeWithTag("bar").getUnclippedBoundsInRoot()
-        assertEquals("栏高要和 M3 的单行栏一致", 64.0, bar.height.value.toDouble(), 0.5)
+        assertEquals("栏高要和 M3 的单行栏一致", 64.0, (bar.bottom - bar.top).value.toDouble(), 0.5)
         val back = compose.onNodeWithContentDescription(context.getString(R.string.design_back))
             .assert(SemanticsMatcher.expectValue(SemanticsProperties.Role, Role.Button))
             .getUnclippedBoundsInRoot()
-        assertEquals("返回键的命中区是 48dp", 48.0, back.width.value.toDouble(), 0.5)
-        assertEquals(48.0, back.height.value.toDouble(), 0.5)
+        assertEquals("返回键的命中区是 48dp", 48.0, (back.right - back.left).value.toDouble(), 0.5)
+        assertEquals(48.0, (back.bottom - back.top).value.toDouble(), 0.5)
         compose.onNodeWithContentDescription(context.getString(R.string.design_back)).performClick()
         compose.runOnIdle { assertEquals(1, backs) }
     }
@@ -187,7 +188,51 @@ class PushedBarOverlapClickTest {
     private fun assertTitleIsCenteredOnTheBar() {
         val bar = compose.onNodeWithTag("bar").getUnclippedBoundsInRoot()
         val title = compose.onNodeWithText("外观").getUnclippedBoundsInRoot()
-        assertEquals((bar.left.value + bar.right.value) / 2, (title.left.value + title.right.value) / 2, 0.5)
+        assertEquals(
+            ((bar.left + bar.right).value / 2).toDouble(),
+            ((title.left + title.right).value / 2).toDouble(),
+            0.5,
+        )
         assertTrue("标题要整条在栏内", title.left >= bar.left && title.right <= bar.right)
+    }
+
+    @Test
+    fun aLongCenteredTitleStopsAtTheBackButton() {
+        compose.setContent {
+            WontonTheme(testAppearance()) {
+                Box(Modifier.testTag("bar")) {
+                    WontonPushedBar(
+                        title = LONG_TITLE, onBack = {}, centeredTitle = true,
+                        actions = { WontonIconButton(WontonIcon.Home, "home", {}) },
+                    )
+                }
+            }
+        }
+        compose.waitForIdle()
+        val back = compose.onNodeWithContentDescription(context.getString(R.string.design_back))
+            .getUnclippedBoundsInRoot()
+        val title = compose.onNodeWithText(LONG_TITLE).getUnclippedBoundsInRoot()
+        assertTrue("长标题不能压到返回键底下", title.left >= back.right)
+    }
+
+    @Test
+    fun aLongLeftTitleStopsBeforeTheActions() {
+        compose.setContent {
+            WontonTheme(testAppearance()) {
+                Box(Modifier.testTag("bar")) {
+                    WontonPushedBar(
+                        title = LONG_TITLE, onBack = {},
+                        actions = { WontonIconButton(WontonIcon.Home, "home", {}) },
+                    )
+                }
+            }
+        }
+        compose.waitForIdle()
+        val back = compose.onNodeWithContentDescription(context.getString(R.string.design_back))
+            .getUnclippedBoundsInRoot()
+        val action = compose.onNodeWithContentDescription("home").getUnclippedBoundsInRoot()
+        val title = compose.onNodeWithText(LONG_TITLE).getUnclippedBoundsInRoot()
+        assertTrue("长标题要从返回键右边起", title.left >= back.right)
+        assertTrue("长标题要在 actions 左边收住", title.right <= action.left)
     }
 }

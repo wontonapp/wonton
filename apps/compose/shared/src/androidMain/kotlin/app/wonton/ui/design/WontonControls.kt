@@ -66,7 +66,6 @@ import androidx.compose.ui.text.input.VisualTransformation
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.Constraints
 import androidx.compose.ui.unit.Dp
-import androidx.compose.ui.unit.dp
 import app.wonton.ui.R
 import app.wonton.ui.LocalWontonOpenSidebar
 import app.wonton.ui.SidebarMenuButton
@@ -369,12 +368,14 @@ fun WontonPushedBar(
                     avatar?.invoke()
                     titleSlot()
                 }
-                Row { actions?.invoke(this) }
+                Row(horizontalArrangement = Arrangement.spacedBy(WontonTheme.spacing.s12)) {
+                    actions?.invoke(this)
+                }
             },
             // M3 的栏高 64dp；用令牌拼出来，不写死在调用点上。
             modifier = Modifier.fillMaxWidth().heightIn(min = minHeight)
                 .padding(horizontal = WontonTheme.spacing.pageInset),
-            measurePolicy = PushedBarMeasurePolicy(minHeight, 4.dp, WontonTheme.spacing.s12, centeredTitle),
+            measurePolicy = PushedBarMeasurePolicy(minHeight, WontonTheme.spacing.s4, WontonTheme.spacing.s12, centeredTitle),
         )
         line?.let {
             Box(
@@ -402,18 +403,19 @@ private class PushedBarMeasurePolicy(
         )
         val back = measurables[0].measure(loose)
         val trailing = measurables[2].measure(loose)
+        // 和原来 Row 的间距一致：返回键与标题、标题与 actions 各 12dp；标题最左至少是 M3 的 4dp 内缩。
+        // 先算两侧让位再量标题：限宽和真正可用的跨度一致，长标题才不会压到返回键底下（夹紧也不会越界）。
+        val gapPx = gap.roundToPx()
+        val start = maxOf(titleInset.roundToPx(), back.width) + gapPx
+        val end = trailing.width + gapPx
         val titleLimit = if (constraints.maxWidth == Constraints.Infinity) constraints.maxWidth
-        else (constraints.maxWidth - back.width - trailing.width).coerceAtLeast(0)
+        else (constraints.maxWidth - start - end).coerceAtLeast(0)
         val title = measurables[1].measure(
             Constraints(minWidth = 0, maxWidth = titleLimit, minHeight = 0, maxHeight = constraints.maxHeight),
         )
         val contentHeight = maxOf(minBarHeight.roundToPx(), back.height, title.height, trailing.height)
         val barHeight = if (constraints.maxHeight == Constraints.Infinity) contentHeight
         else contentHeight.coerceAtMost(constraints.maxHeight)
-        // 和原来 Row 的间距一致：返回键与标题、标题与 actions 各 12dp；标题最左至少是 M3 的 4dp 内缩。
-        val gapPx = gap.roundToPx()
-        val start = maxOf(titleInset.roundToPx(), back.width) + gapPx
-        val end = trailing.width + gapPx
         var titleX = if (centeredTitle) (constraints.maxWidth - title.width) / 2 else 0
         if (titleX < start) titleX = start
         val rightmost = constraints.maxWidth - end - title.width
