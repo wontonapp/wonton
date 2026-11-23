@@ -14,6 +14,7 @@ mod concurrent_timelines;
 mod confirmation;
 mod device_name;
 mod draft;
+mod edit_typing;
 mod file_link;
 mod jumps;
 mod key_handoff;

@@ -22,6 +22,9 @@ pub struct TimelineTarget {
 /// 原来直接放在 [`crate::Action`] 上；`Action` 的 UniFFI 元数据一个类型只有 32 KiB，成组的
 /// 操作整组搬进嵌套枚举，嵌套枚举有自己的 32 KiB（ADR-0093 §5）。以后要加一组相关操作，同样
 /// 先搬成一个嵌套枚举，不在 `Action` 上逐个加变体。
+///
+/// 变体和带载荷的字段只追加在末尾：UniFFI 按声明顺序读写，旧壳二进制和新核心分开升级时，插在中间会让后面的
+/// 变体号、字段对不上。JSON 的形状不受顺序影响。
 #[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize)]
 #[cfg_attr(feature = "uniffi", derive(uniffi::Enum))]
 #[serde(tag = "type", rename_all = "snake_case")]
@@ -46,15 +49,15 @@ pub enum TimelineAction {
     /// 发送图片。上传和发送的进展、`reply_to` 同 [`TimelineAction::SendText`]。
     ///
     /// `caption` 是图片下面带的一段话。旁聊里贴图（ADR-0109 第 9 节）用它把输入框里已经打的字一起发出去，
-    /// `caption` 是图片下面带的一段话。旁聊里贴图（ADR-0109 第 9 节）用它把输入框里已经打的字一起发出去，
     /// 发完清掉草稿；主时间线有附件区，贴图走 [`TimelineAction::SendComposer`]。
     SendImage {
         target: TimelineTarget,
         image: ImageUpload,
         #[cfg_attr(feature = "uniffi", uniffi(default = None))]
-        caption: Option<String>,
-        #[cfg_attr(feature = "uniffi", uniffi(default = None))]
         reply_to: Option<String>,
+        // 追加在末尾：旧壳按顺序读写字段，插在中间会把 `reply_to` 读成 `caption`。
+        #[cfg_attr(feature = "uniffi", uniffi(default = None))]
+        caption: Option<String>,
     },
     /// 把一条消息转发到另一个房间（ADR-0073）：照原样再发一条，不带“转发自”，加密附件不重新上传。`item_id` 同
     /// [`TimelineAction::RetrySend`]，只能转发菜单里有 [`MessageAction::Forward`](crate::MessageAction::Forward) 的消息。
@@ -86,36 +89,6 @@ pub enum TimelineAction {
     CancelSend {
         target: TimelineTarget,
         item_id: String,
-    },
-    /// 进入编辑态（ADR-0109 第 9 节）：只能编辑菜单里有 [`MessageAction::Edit`](crate::MessageAction::Edit) 的消息。
-    /// 进入编辑态（ADR-0109 第 9 节）：只能编辑菜单里有 [`MessageAction::Edit`](crate::MessageAction::Edit) 的消息。
-    /// 核心把现在的草稿（正文和回复对象）存下来，换成正被编辑的那条的正文，记进
-    /// [`TimelineUpdate::editing`](crate::TimelineUpdate::editing)；壳收到它之后才填输入框、光标放末尾、画编辑条。
-    /// 已经在编辑别的消息时直接换过去，不叠加。
-    ///
-    /// 取消（[`TimelineAction::CancelEdit`]）后壳用 [`ClientCore::draft`](crate::ClientCore::draft) 重读核心恢复的草稿。
-    StartEdit {
-        target: TimelineTarget,
-        item_id: String,
-    },
-    /// 退出编辑态、不发这条修改：恢复进入编辑态之前的草稿（正文和回复对象）。没在编辑时什么也不做。
-    CancelEdit { target: TimelineTarget },
-    /// 确认这次修改（[`TimelineAction::StartEdit`] 之后），矩阵上发到 `event_id`（现在这条），正文换成 `body`（空正文
-    /// 返回 `InvalidInput`）。发出去的事件在所有人那里整条替换成新正文（ADR-0109 第 9 节）；成功后清掉编辑态、草稿
-    /// 返回 `InvalidInput`）。发出去的事件在所有人那里整条替换成新正文（ADR-0109 第 9 节）；成功后清掉编辑态、草稿
-    /// 换回进入编辑态之前的，失败时编辑态留着、失败原因进 `ChatViewModel::problem`。新正文按
-    /// ADR-0054 的 Markdown 记成格式化正文。
-    EditMessage {
-        target: TimelineTarget,
-        event_id: String,
-        body: String,
-    },
-    /// 壳报告输入框在不在打字（ADR-0109 第 7 节）：正文有变化发 `true`，输入框失焦、清空、主人离开这条时间线或
-    /// 发送后发 `false`。核心按需转发成“正在输入”到服务器，同一条时间线里至少隔几秒才再发一次，停止输入几秒后
-    /// 自动转成“停了”，壳不用自己计时。
-    SetTyping {
-        target: TimelineTarget,
-        typing: bool,
     },
     /// 加载更早的消息。要先订阅这条时间线，结果体现在时间线的增量和翻页状态里。
     PaginateBackwards { target: TimelineTarget },
@@ -189,6 +162,34 @@ pub enum TimelineAction {
     /// [`LinkPreviewState`](crate::LinkPreviewState) 上：这条草稿不再出预览，第一个链接换成别的或草稿发出去就作废。
     /// 旁聊的输入框也有链接预览，预览状态和主时间线的分开。
     DismissLinkPreview { target: TimelineTarget },
+    /// 进入编辑态（ADR-0109 第 9 节）：只能编辑菜单里有 [`MessageAction::Edit`](crate::MessageAction::Edit) 的消息。
+    /// 核心把现在的草稿（正文和回复对象）存下来，换成正被编辑的那条的正文，记进
+    /// [`TimelineUpdate::editing`](crate::TimelineUpdate::editing)；壳收到它之后才填输入框、光标放末尾、画编辑条。
+    /// 已经在编辑别的消息时直接换过去，不叠加。
+    ///
+    /// 取消（[`TimelineAction::CancelEdit`]）后壳用 [`ClientCore::draft`](crate::ClientCore::draft) 重读核心恢复的草稿。
+    StartEdit {
+        target: TimelineTarget,
+        item_id: String,
+    },
+    /// 退出编辑态、不发这条修改：恢复进入编辑态之前的草稿（正文和回复对象）。没在编辑时什么也不做。
+    CancelEdit { target: TimelineTarget },
+    /// 确认这次修改（[`TimelineAction::StartEdit`] 之后），矩阵上发到 `event_id`（现在这条），正文换成 `body`（空正文
+    /// 返回 `InvalidInput`）。发出去的事件在所有人那里整条替换成新正文（ADR-0109 第 9 节）；成功后清掉编辑态、草稿
+    /// 换回进入编辑态之前的，失败时编辑态留着、失败原因进 `ChatViewModel::problem`。新正文按
+    /// ADR-0054 的 Markdown 记成格式化正文。
+    EditMessage {
+        target: TimelineTarget,
+        event_id: String,
+        body: String,
+    },
+    /// 壳报告输入框在不在打字（ADR-0109 第 7 节）：正文有变化发 `true`，输入框失焦、清空、主人离开这条时间线或
+    /// 发送后发 `false`。核心按需转发成“正在输入”到服务器，同一条时间线里至少隔几秒才再发一次，停止输入几秒后
+    /// 自动转成“停了”，壳不用自己计时。
+    SetTyping {
+        target: TimelineTarget,
+        typing: bool,
+    },
 }
 
 #[cfg(test)]
@@ -323,21 +324,22 @@ mod tests {
         }
     }
 
-    /// 契约：图片的说明文字能经 JSON 往返，老壳不带 `caption` 时是 None。
+    /// 契约：图片的说明文字能经 JSON 往返；老形状没有 `caption`、只带 `reply_to` 时，回复对象不会被读成说明。
     #[test]
     fn image_caption_round_trips_and_may_be_absent() {
+        let image = ImageUpload {
+            filename: "a.jpg".into(),
+            mime_type: "image/jpeg".into(),
+            data: vec![1, 2],
+            width: None,
+            height: None,
+            thumbnail: None,
+        };
         let action = TimelineAction::SendImage {
             target: target(),
-            image: ImageUpload {
-                filename: "a.jpg".into(),
-                mime_type: "image/jpeg".into(),
-                data: vec![1, 2],
-                width: None,
-                height: None,
-                thumbnail: None,
-            },
+            image: image.clone(),
+            reply_to: Some("$r".into()),
             caption: Some("说明".into()),
-            reply_to: None,
         };
         let json = serde_json::to_value(&action).unwrap();
         assert_eq!(json["caption"], "说明");
@@ -345,12 +347,16 @@ mod tests {
             serde_json::from_value::<TimelineAction>(json.clone()).unwrap(),
             action
         );
-        let mut without = json;
-        without.as_object_mut().unwrap().remove("caption");
-        let parsed = serde_json::from_value::<TimelineAction>(without).unwrap();
+        let old = serde_json::json!({
+            "type": "send_image",
+            "target": {"room_id": "!a:home.example"},
+            "image": serde_json::to_value(image).unwrap(),
+            "reply_to": "$r",
+        });
+        let parsed = serde_json::from_value::<TimelineAction>(old).unwrap();
         assert!(matches!(
             parsed,
-            TimelineAction::SendImage { caption: None, .. }
+            TimelineAction::SendImage { caption: None, reply_to: Some(reply), .. } if reply == "$r"
         ));
     }
 }

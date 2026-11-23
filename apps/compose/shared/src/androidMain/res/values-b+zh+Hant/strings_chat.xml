@@ -157,11 +157,19 @@
     <string name="timeline_typing_more">%1$s 和另外 %2$d 人正在輸入…</string>
     <!-- 跳轉的原訊息找不到時的輕提示。無參數。 -->
     <string name="timeline_jump_unavailable">這則訊息找不到了</string>
+    <!-- 連不上時失敗訊息旁的腳註。無參數。 -->
     <string name="timeline_send_failure_offline">連不上</string>
+    <!-- 檔案超過家裡伺服器的上傳上限時失敗訊息旁的腳註。無參數。 -->
     <string name="timeline_send_failure_too_large">太大了，改送檔案</string>
+    <!-- 伺服器送不了這個格式時失敗訊息旁的腳註。無參數。 -->
     <string name="timeline_send_failure_unsupported_type">這個格式送不了</string>
+    <!-- 要回覆的那則不在了時失敗訊息旁的腳註。無參數。 -->
     <string name="timeline_send_failure_reply_target">要回覆的那則不在了</string>
+    <!-- 家裡伺服器拒收時失敗訊息旁的腳註。無參數。 -->
     <string name="timeline_send_failure_rejected">伺服器不收</string>
+    <!-- 家裡伺服器出錯時失敗訊息旁的腳註。無參數。 -->
     <string name="timeline_send_failure_upstream">伺服器出錯了</string>
+    <!-- 核心還分不出類別的失敗訊息旁的腳註。無參數；有原文時換成原文。 -->
     <string name="timeline_send_failed_other">傳送失敗</string>
+
 </resources>

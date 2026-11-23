@@ -123,7 +123,7 @@ final class ComposerModel {
         guard let upload = await transcode(data, type) else { return false }
         let caption = caption.trimmingCharacters(in: .whitespacesAndNewlines)
         guard chat.send(.timeline(action: .sendImage(
-            target: target, image: upload, caption: caption.isEmpty ? nil : caption, replyTo: replyTo
+            target: target, image: upload, replyTo: replyTo, caption: caption.isEmpty ? nil : caption
         ))) else {
             return false
         }

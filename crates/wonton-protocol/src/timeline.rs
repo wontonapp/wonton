@@ -95,7 +95,6 @@ pub struct TimelineUpdate {
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub back_to: Option<String>,
     /// 输入框正在编辑哪条（ADR-0109 第 9 节），每一批都带当前值。有值时输入框上方画一条“编辑消息”和原文摘要、
-    /// 输入框正在编辑哪条（ADR-0109 第 9 节），每一批都带当前值。有值时输入框上方画一条“编辑消息”和原文摘要、
     /// 带取消，发送键变成确认；正文由壳从 [`MessageAction::Edit`] 的 `text` 预填，原草稿在取消后由核心恢复。
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub editing: Option<crate::ComposerEdit>,
@@ -344,7 +343,8 @@ pub enum MessageReceipt {
     Other,
 }
 
-/// 长按消息的菜单里的一项，按 Telegram 的菜单顺序。
+/// 长按消息的菜单里的一项。菜单顺序由核心给的菜单数据决定（电报的顺序：回复、复制、编辑、转发、删除），和这里的
+/// 声明顺序无关；变体只追加在末尾，旧壳二进制才不会读错变体号。
 #[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize)]
 #[cfg_attr(feature = "uniffi", derive(uniffi::Enum))]
 #[serde(tag = "type", rename_all = "snake_case")]
@@ -354,8 +354,10 @@ pub enum MessageAction {
     /// 回复这条：壳把 `message` 画在输入框上方，发送时把它的事件 ID 作为 `reply_to` 交回，并用
     /// [`TimelineAction::SetDraft`](crate::TimelineAction::SetDraft) 记进草稿。有这一项时壳也允许左滑这条消息来回复（ADR-0109）。
     Reply { message: QuotedMessage },
-    /// 编辑这条（ADR-0109 第 9 节）：壳把 `text` 预填进输入框，再发 [`TimelineAction::StartEdit`](crate::TimelineAction::StartEdit)
-    /// 让核心进入编辑态，输入框上方画编辑条；确认时发 [`TimelineAction::EditMessage`](crate::TimelineAction::EditMessage)。
+    /// 转发到另一个房间（[`TimelineAction::ForwardMessage`](crate::TimelineAction::ForwardMessage)），壳先让主人选房间。
+    Forward,
+    /// 撤回（[`TimelineAction::RedactMessage`](crate::TimelineAction::RedactMessage)）：所有人那里都会变成“已撤回”，壳先请主人确认。
+    Redact,
     /// 编辑这条（ADR-0109 第 9 节）：壳先发 [`TimelineAction::StartEdit`](crate::TimelineAction::StartEdit)，核心存下当前草稿；
     /// 收到 [`TimelineUpdate::editing`](crate::TimelineUpdate::editing) 后壳再把 `text` 填进输入框、光标放在末尾、上方画编辑条。
     /// 取消后壳用 [`ClientCore::draft`](crate::ClientCore::draft) 重读核心恢复的草稿。确认时发
@@ -363,10 +365,6 @@ pub enum MessageAction {
     ///
     /// 只在有事件 ID、自己发的、没撤回的文字消息上有。
     Edit { text: String },
-    /// 转发到另一个房间（[`TimelineAction::ForwardMessage`](crate::TimelineAction::ForwardMessage)），壳先让主人选房间。
-    Forward,
-    /// 撤回（[`TimelineAction::RedactMessage`](crate::TimelineAction::RedactMessage)）：所有人那里都会变成“已撤回”，壳先请主人确认。
-    Redact,
 }
 
 /// 消息内容。

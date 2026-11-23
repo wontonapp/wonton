@@ -85,7 +85,9 @@ struct OutgoingRow: View {
                 } label: {
                     HStack(spacing: WontonTheme.spacing.s4) {
                         WontonIcon.warningCircle.view(size: WontonTheme.size.iconTiny)
-                        Text(failure.text)
+                        Text(failure == .other
+                            ? details ?? String(localized: failure.text)
+                            : String(localized: failure.text))
                     }
                     .foregroundStyle(Color(colors.textOnAccentFill))
                 }

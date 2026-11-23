@@ -166,6 +166,8 @@ X，光标在末尾，键盘弹出；壳随即发 `TimelineAction::StartEdit`，
 发送失败和附件失败都只给类别（`SendFailure`、`AttachmentFailure`），说法在壳里：核心给“太大”“连不上”“服务器不收”，
 壳把它们写成一句话。SDK 和家里服务器的原文进 `SendState::Failed::details`，放在点开失败状态后的那个面板顶上，
 愿意看英文的人看得到，气泡旁只留一句话。这样服务器换说法、SDK 升级原文变了，界面上的话也跟着不变。
+例外：核心自己的分类还没跟上时（`Other`），气泡旁和读屏直接用 `details` 原文，免得只剩一句泛泛的“发送失败”；
+旧核心的 `message` 读出来也落进 `details`（`alias = "message"`）。
 
 ### 10. 视觉规格
 目标是 iOS 26 上的 Telegram，也就是用了 Liquid Glass 的那一版，同时要现代、有 Wonton 自己的样子。分两层：

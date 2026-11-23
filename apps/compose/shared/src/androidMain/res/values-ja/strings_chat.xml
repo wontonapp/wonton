@@ -157,11 +157,19 @@
     <string name="timeline_typing_more">%1$s さんとほか %2$d 人が入力中…</string>
     <!-- ジャンプ先のメッセージが見つからないときの軽いヒント。引数なし。 -->
     <string name="timeline_jump_unavailable">そのメッセージはもうありません</string>
+    <!-- 接続できないときの、失敗メッセージ横の脚注。引数なし。 -->
     <string name="timeline_send_failure_offline">接続できません</string>
+    <!-- ファイルが自宅サーバーのアップロード上限を超えたときの、失敗メッセージ横の脚注。引数なし。 -->
     <string name="timeline_send_failure_too_large">大きすぎます。ファイルで送ってください</string>
+    <!-- サーバーがこの形式を送れないときの、失敗メッセージ横の脚注。引数なし。 -->
     <string name="timeline_send_failure_unsupported_type">この形式は送れません</string>
+    <!-- 返信元のメッセージがないときの、失敗メッセージ横の脚注。引数なし。 -->
     <string name="timeline_send_failure_reply_target">返信元のメッセージがありません</string>
+    <!-- 自宅サーバーが受け取らないときの、失敗メッセージ横の脚注。引数なし。 -->
     <string name="timeline_send_failure_rejected">サーバーに拒否されました</string>
+    <!-- 自宅サーバーがエラーになったときの、失敗メッセージ横の脚注。引数なし。 -->
     <string name="timeline_send_failure_upstream">サーバーの問題</string>
+    <!-- 核心がまだ種類を分けられない失敗メッセージ横の脚注。引数なし。原文があるときは原文に置き換わる。 -->
     <string name="timeline_send_failed_other">送信できませんでした</string>
+
 </resources>

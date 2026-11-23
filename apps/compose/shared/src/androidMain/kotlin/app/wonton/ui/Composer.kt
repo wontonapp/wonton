@@ -542,7 +542,7 @@ private suspend fun sendPickedPhotos(
     roomId: String,
     caption: String,
 ): Problem? {
-    // 输入框里的字只当第一张发出去的照片的说明（跟 Telegram 一样）。
+    // 输入框里的字只当第一张试过的照片的说明（跟 Telegram 一样）；那一张被拒也照样清掉，不留给后面的。
     var note = caption.trim().takeIf { it.isNotEmpty() }
     for (uri in uris) {
         val problem = PhotoUpload.make(context, uri).fold(
