@@ -168,6 +168,7 @@ fn ambiguous_path(path: &str) -> bool {
 async fn forward(gateway: &Gateway, authority: &str, req: Request) -> Response {
     let langs = super::api::languages(req.headers());
     let forwarded = proxy::Forwarded {
+        web_user: None,
         client: client_addr(&req),
         scheme: "https",
     };
