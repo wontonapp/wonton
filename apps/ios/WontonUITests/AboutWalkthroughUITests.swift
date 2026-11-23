@@ -21,7 +21,11 @@ final class AboutWalkthroughUITests: XCTestCase {
         add(attachment)
     }
 
-    private func button(_ labels: String...) -> XCUIElement? {
+    private func button(_ labels: String...) -> XCUIElement? { firstButton(labels) }
+
+    private func button(_ labels: [String]) -> XCUIElement? { firstButton(labels) }
+
+    private func firstButton(_ labels: [String]) -> XCUIElement? {
         let deadline = Date().addingTimeInterval(15)
         while Date() < deadline {
             for label in labels {
