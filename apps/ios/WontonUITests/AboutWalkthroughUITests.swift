@@ -4,13 +4,16 @@ import XCTest
 /// 走完引导后从侧边栏进设置 → 关于，截隐私页、许可列表、许可全文；最后用测试钩子再看一次读不到清单的重试态。
 final class AboutWalkthroughUITests: XCTestCase {
     private var app: XCUIApplication!
+    /// 同一个类的第二条用例沿用前一条配好的数据目录：一个码只能用一次，重开新目录会拿已用过的码再配对。
+    private static var dataSuffix = ""
 
     override func setUpWithError() throws {
         continueAfterFailure = true
         try UITestBackend.require()
         app = XCUIApplication()
         app.launchArguments += ["-AppleLanguages", "(en)", "-AppleLocale", "en_US"]
-        try UITestBackend.passPairingCode(to: app)
+        Self.dataSuffix = UUID().uuidString
+        try UITestBackend.passPairingCode(to: app, dataSuffix: Self.dataSuffix)
         app.launch()
     }
 
@@ -103,6 +106,8 @@ final class AboutWalkthroughUITests: XCTestCase {
     func testLicensesMissing() throws {
         app.terminate()
         app.launchEnvironment["WONTON_LICENSES_MISSING"] = "1"
+        app.launchEnvironment["WONTON_DEV_DATA_SUFFIX"] = Self.dataSuffix
+        app.launchEnvironment.removeValue(forKey: "WONTON_DEV_PAIRING_CODE")
         app.launch()
         openAbout()
         tap("Open source licenses", "开源许可")

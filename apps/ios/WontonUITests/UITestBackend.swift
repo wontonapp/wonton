@@ -35,8 +35,8 @@ enum UITestBackend {
         app.launchEnvironment["WONTON_UI_TEST_STATE"] = "1"
     }
     /// 每次启动都用一个空的数据目录，再带上第一个配对码：不依赖模拟器上留下的会话。
-    static func passPairingCode(to app: XCUIApplication) throws {
-        app.launchEnvironment["WONTON_DEV_DATA_SUFFIX"] = UUID().uuidString
+    static func passPairingCode(to app: XCUIApplication, dataSuffix: String = UUID().uuidString) throws {
+        app.launchEnvironment["WONTON_DEV_DATA_SUFFIX"] = dataSuffix
         enableStateProbe(to: app)
         if let code = try codes().first {
             app.launchEnvironment["WONTON_DEV_PAIRING_CODE"] = code
