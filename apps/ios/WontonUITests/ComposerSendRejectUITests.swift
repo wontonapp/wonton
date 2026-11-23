@@ -141,15 +141,22 @@ final class ComposerSendRejectUITests: XCTestCase {
         if ok.waitForExistence(timeout: 2) { ok.tap() }
     }
 
-    /// 面板里选第一张相册照片，让它被假数据标成上传失败；新面板底下是发送键，选完就连着草稿一起发。
+    /// 面板里选第一张相册照片，让它被假数据标成上传失败，再照面板的两种收尾发一次：
+    /// 新面板底下是发送键，选完点它就连着草稿一起发；只有“完成”的旧面板才点“完成”再走发送键。
+    /// 两种都会撞上附件区的失败，调用方紧接着看拒绝就行。
     private func addFailedAttachment() {
         tap(app.buttons["composerAttach"])
         let springboard = XCUIApplication(bundleIdentifier: "com.apple.springboard")
         let allow = springboard.alerts.buttons.element(boundBy: 1)
-        let first = app.buttons["attachPhoto.0"]
         if allow.waitForExistence(timeout: 10) { allow.tap() }
-        tap(first)
-        tap(app.buttons["attachSend"])
+        tap(app.buttons["attachPhoto.0"])
+        let sendPicked = app.buttons["attachSend"]
+        if sendPicked.waitForExistence(timeout: 2) {
+            tap(sendPicked)
+        } else {
+            tap(app.buttons["attachDone"])
+            tap(app.buttons["composerSend"])
+        }
         XCTAssertTrue(
             app.buttons["composerAttachmentFailed"].waitForExistence(timeout: 15),
             "附件没被标成上传失败\n\(app.debugDescription)"
