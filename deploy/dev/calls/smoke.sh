@@ -30,15 +30,32 @@ flock -n 9 || { echo "另一份冒烟在跑（$EVIDENCE）" >&2; exit 1; }
 # cdp.py / premain.js 在 <主机> 上跑：随栈副本推过去（remote-dev 维护 stacks/dev-<栈>）。
 RCD="\$HOME/wonton-dev/stacks/dev-$STACK/deploy/dev/calls"
 timeout 25 ssh "$HOST" "true; mkdir -p $RCD"
+# cdp.py 的 websocket-client 随脚本推到 HOST 的栈副本，固定 PYTHONPATH；矩阵操作还要 host 上的 PyJWT。
 for f in cdp.py premain.js; do timeout 25 ssh "$HOST" "cat > $RCD/$f" < "$here/$f"; done
+timeout 60 ssh "$HOST" "tar -C $RCD -xzf -" < <(tar -C "$here" -czf - pylib)
 
 log() { printf '%s %s\n' "$(date +%T)" "$*" | tee -a "$EVIDENCE/run.log" >&2; }
 die() { log "失败：$*"; exit 1; }
 
-adb_a() { timeout 25 ssh "$HOST" "adb -s $DEV_A $*"; }
-adb_b() { timeout 25 ssh "$HOST" "adb -s $DEV_B $*"; }
 dev_sh() { "$HOME/wonton-dev/remote-dev.sh" --host "$HOST" "$STACK" "$@"; }
 stack() { timeout 60 ssh "$HOST-stack" "$1" "$STACK" "${@:2}"; }
+# 配对码里的直连地址要从 HOST 算：远端栈是本机回环，本机模拟器用 127.0.0.1 + adb reverse。
+pair_addr=$HOST
+case $HOST in localhost|127.0.0.1|::1|"$(hostname)"|"$(hostname -f 2>/dev/null)") pair_addr=10.0.2.2 ;; esac
+failures=0
+fail_group() { failures=$((failures + 1)); log "组 $1 失败：$2"; }
+compose_changed=0 direct_blocked=0
+restore_defaults() {
+    restore_compose
+    (( direct_blocked )) && unblock_direct
+    if (( compose_changed )); then
+        dev_sh uninstall app.element-call >/dev/null 2>&1 || true
+        echo y | dev_sh install "$pkg" >"$EVIDENCE/install-default.log" 2>&1 ||
+            log "还原默认插件失败（见 install-default.log；留给人工重装）"
+        compose_changed=0
+    fi
+}
+trap restore_defaults EXIT
 # matrix.<base> 只认经隧道进来的已配对设备，宿主机上的 owner 令牌进不去；
 # 冒烟直接拿核心的 Ed25519 私钥在 <主机> 上签一次性 JWT 登 Tuwunel，再直接打 Tuwunel（容器地址当场查，别写死）。
 matrix_env() {
@@ -95,6 +112,16 @@ to_list() { # to_list <dev>：一路清掉验证/备份页直到聊天列表出�
     for _ in 1 2 3 4 5 6 7 8; do
         xml=$(ui "$dev" 2>/dev/null || true)
         if grep -qE 'content-desc="Sidebar"|text="call-smoke-|text="Waiting for you"' <<<"$xml"; then return 0; fi
+        # 配对后的资料/引导页（1/5 之类）：中间页有 Skip，最后一页是 Done；BACK 会退到桌面。
+        if grep -q 'text="Go to chat"\|text="Done"\|text="完成"\|text="去聊天"' <<<"$xml"; then
+            tap_text "$dev" "Go to chat" >/dev/null 2>&1 || tap_text "$dev" "去聊天" >/dev/null 2>&1 ||
+                tap_text "$dev" "Done" >/dev/null 2>&1 || tap_text "$dev" "完成" >/dev/null 2>&1 || true
+            sleep 2; continue
+        fi
+        if grep -q 'text="Skip"\|text="跳过"' <<<"$xml"; then
+            tap_text "$dev" "Skip" >/dev/null 2>&1 || tap_text "$dev" "跳过" >/dev/null 2>&1 || true
+            sleep 2; continue
+        fi
         # 验证超时页：只有跳过一条路，BACK 会退出 App。
         if grep -q "Continue on your other device" <<<"$xml"; then
             tap_text "$dev" "I don't have my other device" || true; sleep 2; continue
@@ -161,20 +188,13 @@ pair() { # pair <a|b> <dev>
         timeout 25 ssh "$HOST" "adb -s $dev shell am start -n app.wonton.android/.MainActivity" >/dev/null
         sleep 4
     fi
-    local pre; pre=$(ui "$dev" 2>/dev/null || true)
-    # 反转判据：只在明确看到配对入口时才走配对；其它页面（引导页、列表、抽屉…）都当已配对，
-    # 由 to_list 负责清到列表。否则弹窗循环会在已配对设备上搅几十分钟。
-    if grep -q 'Paste the pairing code' <<<"$pre" || grep -q 'Not connected' <<<"$pre"; then
-        :
-    else
-        log "设备 $1 已配对，跳过"; return 0
-    fi
-    since=
+    # 每轮都从 pm clear 后的空数据起（见准备段），所以无条件配对；不再用页面文本猜“已配对”，
+    # 全新安装先出 Loading/相机授权页时猜不准。
     since=$(date -u +%Y-%m-%dT%H:%M:%S)
     log="$EVIDENCE/pair-$1.raw"
     : > "$log"
     # wonton-core pair 一直挂着等设备连上，不能在命令替换里等：后台起，轮询日志取码。
-    dev_sh pair "10.0.2.2:$tunnel" > "$log" 2>&1 &
+    dev_sh pair "$pair_addr:$tunnel" > "$log" 2>&1 &
     pid=$!
     for _ in $(seq 1 90); do
         code=$(grep -o 'wonton://pair[^[:space:]]*' "$log" 2>/dev/null | head -1 || true)
@@ -183,8 +203,6 @@ pair() { # pair <a|b> <dev>
         sleep 1
     done
     [[ -n ${code:-} ]] || { cat "$log" >> "$EVIDENCE/pair.log"; kill "$pid" 2>/dev/null; die "没取到配对码（$1）"; }
-    # 设备经 adb reverse 只能连 127.0.0.1，码里的 10.0.2.2 在 194 上到不了。
-    code=${code//10.0.2.2/192.168.0.194}
     # 配对码是一次性的，落盘只留连通用的 URL。
     printf '%s pair 码已取到\n' "$(date +%T)" >> "$EVIDENCE/pair.log"
     # 先 force-stop：设备上残留的旧配对请求会和这次的码撞成 “Both were cancelled”。
@@ -331,8 +349,7 @@ wait_room_visible() { # 等 room_name 的行在两端列表出现（预算 40 �
 
 open_room() { # open_room <dev> <显示名片段>
     # 列表行按房间名找；房间名带时间戳，用前缀匹配。
-    local dev=$1 name=$2 xml row port=9331 b cs x1 y1 x2 y2
-    [[ $dev == "$DEV_B" ]] && port=9334
+    local dev=$1 name=$2 xml row b cs x1 y1 x2 y2
     for i in $(seq 1 240); do
         # 列表 UI 不实时刷新：新建房间的行要等 App 重启才渲染出来（17:19 实测）。
         # 周期性重启一次，重渲染列表；房间行出现就往下走。
@@ -402,9 +419,9 @@ open_call() { # 顶栏的入口，通话中时是“通话中”
     for i in $(seq 1 20); do
         local xml desc bounds coords x1 y1 x2 y2 page
         xml=$(ui "$dev" 2>/dev/null || true)
-        if grep -q 'text="End call"\|text="Element Call |' <<<"$xml"; then return 0; fi
+        if grep -q 'text="End call"\|text="Element Call |' <<<"$xml"; then allow_media "$dev"; return 0; fi
         page=$(cdp "$( [[ $dev == "$DEV_B" ]] && echo b || echo a )" "$port" pick 2>/dev/null || true)
-        if [[ -n $page ]] && cdp "$( [[ $dev == "$DEV_B" ]] && echo b || echo a )" "$port" eval "$page" 'document.readyState' 2>/dev/null | grep -q complete; then return 0; fi
+        if [[ -n $page ]] && cdp "$( [[ $dev == "$DEV_B" ]] && echo b || echo a )" "$port" eval "$page" 'document.readyState' 2>/dev/null | grep -q complete; then allow_media "$dev"; return 0; fi
         if grep -q 'content-desc="In call"' <<<"$xml"; then desc='In call'; else desc='Video call'; fi
         coords=$(grep -oE "content-desc=\"$desc\"[^>]*bounds=\"[^\"]+\"" <<<"$xml" | tail -1) || true
         if [[ -n $coords ]]; then
@@ -425,7 +442,8 @@ open_call() { # 顶栏的入口，通话中时是“通话中”
         if [[ $coords =~ ^[0-9]+\ [0-9]+\ [0-9]+\ [0-9]+$ ]]; then
             read -r x1 y1 x2 y2 <<<"$coords"
             timeout 25 ssh "$HOST" "adb -s $dev shell input tap $(( (x1 + x2) / 2 )) $(( (y1 + y2) / 2 ))"
-            sleep 4
+            sleep 2
+            allow_media "$dev"
             return 0
         fi
         sleep 1
@@ -434,9 +452,25 @@ open_call() { # 顶栏的入口，通话中时是“通话中”
 }
 
 # 网页里的 Join：页面在 WebView 里，按钮靠 uiautomator 的文本也能看到。
+allow_media() { # 页面一加载就请求摄像头/麦克风：核心弹原生询问，答错一次就按拒绝记下来，后面全被拒
+    local dev=$1 xml
+    [[ -f $EVIDENCE/.media-$dev-ok ]] && return 0
+    for _ in $(seq 1 6); do
+        xml=$(ui "$dev" 2>/dev/null || true)
+        if grep -q 'text="Allow"' <<<"$xml" && grep -qiE 'camera|microphone' <<<"$xml"; then
+            tap_text "$dev" "Allow" || true
+            : > "$EVIDENCE/.media-$dev-ok"
+            log "设备 $dev 已允许摄像头/麦克风"
+            return 0
+        fi
+        sleep 1
+    done
+}
+
 join_call() {
     local dev=$1 port=9331 page txt i rect x y
     [[ $dev == "$DEV_B" ]] && port=9334
+    allow_media "$dev"
     # 核心重启后隧道重连要几分钟，40 轮（~3 分钟）不够（relay 组实测），放宽到 100。
     for i in $(seq 1 100); do
         page=$(cdp "$( [[ $dev == "$DEV_B" ]] && echo b || echo a )" "$port" pick 2>/dev/null || true)
@@ -482,7 +516,7 @@ cdp() { # cdp <a|b> <端口> <子命令> [参数]
     [[ -n $sock ]] || sock="webview_devtools_remote_${pids%% *}"
     timeout 25 ssh "$HOST" "adb -s $dev forward --remove tcp:$port; adb -s $dev forward tcp:$port localabstract:$sock" >/dev/null 2>&1 || true
     printf -v q ' %q' "$@"
-    # 194 的系统 python 没有 websocket-client（重启后 pip 模块丢失）；纯 Python 包随栈副本带上。
+    # 系统 python 可能没有 websocket-client（有的机器重启后 pip 模块丢）；纯 Python 包随仓库 pylib 带上。
     timeout 90 ssh "$HOST" "cd $RCD && no_proxy=* PYTHONPATH=$RCD/pylib python3 cdp.py --port $port$q"
 }
 # widget 页上的可见文本（CDP 一次 eval，不碰 uiautomator）。
@@ -502,52 +536,140 @@ for e in events:
 ' | sort -u
 }
 
-wait_members() { # wait_members <房间> <期望人数> <秒>
-    local i out n
-    for i in $(seq 1 "$3"); do
-        out=$(members "$1" || true)
-        n=$(grep -c '@' <<<"$out" || true)
-        if [[ $n -ge $2 ]]; then
-            printf '%s\n' "$out" | tee -a "$EVIDENCE/members.log"
+active_members() { # 还在通话里的：content 非空的 call.member（Element Call 挂断后写空 content，不删键）
+    api GET "/_matrix/client/v3/rooms/$1/state" 2>/dev/null | python3 -c '
+import json, sys
+try:
+    events = json.load(sys.stdin)
+except Exception:
+    raise SystemExit
+for e in events:
+    if e.get("type") in ("org.matrix.msc3401.call.member", "m.call.member") and e.get("content") and e.get("state_key"):
+        print(e["state_key"])
+' | sort -u
+}
+
+wait_new_members() { # <房间> <本轮开始前的 keys> <本轮 keys 文件> <期望条数> <秒>：只认本轮新增
+    local i after
+    for i in $(seq 1 "$5"); do
+        after=$(active_members "$1" || true)
+        comm -13 "$2" <(printf '%s\n' "$after" | sort -u) | grep '@' > "$3" || true
+        if [[ $(wc -l <"$3") -ge $4 ]]; then
+            tee -a "$EVIDENCE/members.log" <"$3"
             return 0
         fi
         sleep 1
     done
-    printf '%s\n' "$out" | tee -a "$EVIDENCE/members.log"
     return 1
 }
 
-stats() { # stats <a|b> <端口> <组名>：一端 10 个采样落盘，按最后一个采样汇总候选对和收发字节
+wait_left() { # <房间> <keys 文件> <秒>：这些键都不再活跃（content 清空或键没了）
+    local i active
+    for i in $(seq 1 "$3"); do
+        active=$(active_members "$1" || true)
+        if ! comm -12 "$2" <(printf '%s\n' "$active" | sort -u) | grep -q '@'; then return 0; fi
+        sleep 1
+    done
+    comm -12 "$2" <(printf '%s\n' "$active" | sort -u) | tee -a "$EVIDENCE/members.log"
+    return 1
+}
+
+stats() { # stats <a|b> <端口> <组名>：一端采样落盘（判定在 check_media_path 里做）
     local page
     page=$(cdp "$1" "$2" pick 2>/dev/null || true)
     [[ -n $page ]] || { log "统计：设备 $1 没有 widget 页"; return 1; }
     # 同连接装钩子+采样：target 换代后旧注入是死信，采样时现装才落在本页上。
     cdp "$1" "$2" session "$page" premain.js 15 > "$EVIDENCE/webrtc-$1-$3.jsonl" 2>>"$EVIDENCE/webrtc-$1.err" || true
-    python3 - "$EVIDENCE/webrtc-$1-$3.jsonl" <<'PEOF' | tee -a "$EVIDENCE/run.log"
+    [[ -s $EVIDENCE/webrtc-$1-$3.jsonl ]] || return 1
+}
+
+check_media_path() { # <组 a|b|c>：两端都必须走指定路径，且双向音频和视频都真正有字节
+    python3 - "$1" "$EVIDENCE/webrtc-a-$1.jsonl" "$EVIDENCE/webrtc-b-$1.jsonl" <<'PEOF' | tee -a "$EVIDENCE/run.log"
 import json, sys
-samples = [json.loads(l) for l in open(sys.argv[1]) if l.strip()]
-if not samples:
-    print("统计为空"); raise SystemExit
-last = samples[-1]
-for pc in last.get("pcs") or []:
+group, *files = sys.argv[1:]
+bad = []
+sides = {}
+for side, path in zip("ab", files):
+    try:
+        samples = [json.loads(l) for l in open(path) if l.strip()]
+    except FileNotFoundError:
+        samples = []
+    if not samples:
+        bad.append(f"设备 {side}: 统计为空")
+        print(f"设备 {side}: 统计为空")
+        continue
+    pcs = [pc for s in samples for pc in (s.get("pcs") or []) if pc.get("selected")]
+    if not pcs:
+        bad.append(f"设备 {side}: 没有选中的候选对")
+        print(f"设备 {side}: 没有选中的候选对")
+        continue
+    pc = pcs[-1]
     cands = {c.get("id"): c for c in pc.get("candidates") or []}
-    sel = pc.get("selected") or {}
+    sel = pc["selected"]
     local = cands.get(sel.get("local")) or {}
     remote = cands.get(sel.get("remote")) or {}
-    out = pc.get("outbound", {}).get("video") or {}
-    inn = pc.get("inbound", {}).get("video") or {}
-    print(f"state={pc.get('state')} pair={local.get('type')}/{local.get('protocol')}->{remote.get('type')}"
-          f" rtt={sel.get('rtt')} sent={out.get('bytes')} recv={inn.get('bytes')} frames={inn.get('frames')} lost={inn.get('lost')}")
+    kind, proto = local.get("type"), local.get("protocol")
+    # 用全部采样的最大值，容忍起步时的零。
+    def peak(direction, media):
+        return max([((s.get("pcs") or [{}])[0].get(direction, {}).get(media) or {}).get("bytes") or 0
+                    for s in samples] or [0])
+    media = {(d, m): peak(d, m) for d in ("inbound", "outbound") for m in ("audio", "video")}
+    sides[side] = media
+    print(f"设备 {side}: state={pc.get('state')} pair={kind}/{proto}->{remote.get('type')}"
+          f" rtt={sel.get('rtt')} 收音频={media[('inbound', 'audio')]} 发音频={media[('outbound', 'audio')]}"
+          f" 收视频={media[('inbound', 'video')]} 发视频={media[('outbound', 'video')]}")
+    # 中继组看的是隧道路径（见 check_tunnel_relay），WebRTC 的 local 候选在 ICE-lite 下恒是 host/prflx。
+    if {"a": proto == "udp" and kind != "relay",
+        "b": proto == "tcp" and kind != "relay",
+        "c": True}[group] is False:
+        bad.append(f"设备 {side}: 路径是 {kind}/{proto}，不是 {group}")
+    if pc.get("state") != "connected":
+        bad.append(f"设备 {side}: 连接状态 {pc.get('state')}")
+if len(sides) == 2:
+    a, b = sides["a"], sides["b"]
+    # 双向音视频。视频的发送统计在有的设备上恒为 0，但接收端看得到字节，两个方向都按
+    # “发送有字节或对端收到字节”算；音频必须两端都真有收发。
+    directions = {
+        "a→b 音频": a[("outbound", "audio")] > 0 and b[("inbound", "audio")] > 0,
+        "b→a 音频": b[("outbound", "audio")] > 0 and a[("inbound", "audio")] > 0,
+        "a→b 视频": a[("outbound", "video")] > 0 or b[("inbound", "video")] > 0,
+        "b→a 视频": b[("outbound", "video")] > 0 or a[("inbound", "video")] > 0,
+    }
+    for name, ok in directions.items():
+        if not ok:
+            bad.append(f"{name}没有字节")
+for reason in bad:
+    print(f"  - {reason}")
+raise SystemExit(1 if bad else 0)
 PEOF
 }
+check_tunnel_relay() { # <a|b>：App 核心日志里最近一次隧道路径必须是 relay（中继组真正的判据）
+    local side=$1 dev last
+    [[ $side == a ]] && dev=$DEV_A || dev=$DEV_B
+    # 回前台会重查一次隧道；不这样拿到的可能是阻断直连之前的旧路径。
+    timeout 25 ssh "$HOST" "adb -s $dev shell input keyevent 3; adb -s $dev shell am start -n app.wonton.android/.MainActivity" >/dev/null 2>&1 || true
+    sleep 8
+    last=$(timeout 25 ssh "$HOST" "adb -s $dev shell 'run-as app.wonton.android tail -n 400 files/core.log'" 2>/dev/null |
+        grep 'CheckedPath' | tail -1 || true)
+    if grep -q 'relay: true' <<<"$last"; then
+        log "设备 $side 隧道走中继：$last"
+        return 0
+    fi
+    log "设备 $side 隧道没走中继：${last:-没有路径日志}"
+    return 1
+}
+
 configure_udp_only() { log "路径：UDP 直连（插件默认）"; }
 configure_tcp_only() {
     log "路径：只留 TCP 7881"
     local dc=$pkg/docker-compose.yml
     [[ -f $dc.orig ]] || cp "$dc" "$dc.orig"
     sed -i 's/^      UDP_PORT: "7882"$/      UDP_PORT: "0"/' "$dc"
+    grep -q '^      UDP_PORT: "0"$' "$dc" || die "compose 里没找到 UDP_PORT: \"7882\"，sed 没生效"
     # 插件 compose 里 livekit 的 UDP 端口映射也去掉：隧道不再转发 7882。
     sed -i '/service: livekit, port: 7882, protocol: udp/d' "$dc"
+    ! grep -q 'port: 7882, protocol: udp' "$dc" || die "compose 里的 7882/udp 隧道行没删掉"
+    compose_changed=1
     # remote-dev install 只收 worktree 相对路径，pkg 保持相对（绝对化会被拒）。
     # 同版本已装会被拒：先幂等卸载（未装时静默），ssh 闪断已由落盘+响亮 die 兜住。
     dev_sh uninstall app.element-call >/dev/null 2>&1 || true
@@ -560,21 +682,67 @@ restore_compose() { # 把就地改过的插件 compose 还原（副本在插件�
     local dc=$pkg/docker-compose.yml
     if [[ -f $dc.orig ]]; then cp "$dc.orig" "$dc" && rm "$dc.orig"; log "已还原插件 compose"; fi
 }
+block_direct() { # 模拟两端只能走中继：丢掉到私网直连候选的包，只留模拟器的 DNS 和宿主机 10.0.2.2
+    local d
+    for d in "$DEV_A" "$DEV_B"; do
+        timeout 25 ssh "$HOST" "adb -s $d root" >/dev/null 2>&1 || true
+    done
+    sleep 4
+    for d in "$DEV_A" "$DEV_B"; do
+        timeout 25 ssh "$HOST" "adb -s $d wait-for-device" >/dev/null 2>&1 || true
+        # 只有模拟器自己的 DNS（10.0.2.3）和宿主 TCP（页面/调试）留在私网里；到宿主的隧道 UDP 也丢掉，
+        # 否则 10.0.2.2:隧道端口 仍会被当成直连。
+        timeout 25 ssh "$HOST" "adb -s $d shell '
+            iptables -F OUTPUT
+            iptables -I OUTPUT 1 -d 192.168.0.0/16 -j DROP
+            iptables -I OUTPUT 1 -d 172.16.0.0/12 -j DROP
+            iptables -I OUTPUT 1 -d 10.0.0.0/8 -j DROP
+            iptables -I OUTPUT 1 -d 10.0.2.2 -p udp --dport $tunnel -j DROP
+            iptables -I OUTPUT 1 -d 10.0.2.2 -p tcp -j ACCEPT
+            iptables -I OUTPUT 1 -d 10.0.2.3 -j ACCEPT'" >/dev/null 2>&1 || true
+        timeout 25 ssh "$HOST" "adb -s $d reverse tcp:$gw tcp:$gw; adb -s $d reverse tcp:$tunnel tcp:$tunnel" >/dev/null 2>&1 || true
+        # 网络变化要 App 回前台才会重拨。
+        timeout 25 ssh "$HOST" "adb -s $d shell am force-stop app.wonton.android; adb -s $d shell am start -n app.wonton.android/.MainActivity" >/dev/null 2>&1 || true
+    done
+    direct_blocked=1
+}
+unblock_direct() { # 去掉 block_direct 的规则，恢复直连
+    local d
+    for d in "$DEV_A" "$DEV_B"; do
+        timeout 25 ssh "$HOST" "adb -s $d root" >/dev/null 2>&1 || true
+    done
+    sleep 4
+    for d in "$DEV_A" "$DEV_B"; do
+        timeout 25 ssh "$HOST" "adb -s $d wait-for-device; adb -s $d shell iptables -F OUTPUT" >/dev/null 2>&1 || true
+    done
+    direct_blocked=0
+}
 configure_relay_only() {
     log "路径：强制 n0 中继（宣告一个到不了的直连地址）"
-    dev_sh status --announce 10.0.2.99 >/dev/null
-    timeout 60 ssh "$HOST-stack" restart "$STACK" core
-    for _ in $(seq 1 60); do dev_sh status 2>/dev/null | grep -q '已连接\|connected' && break; sleep 2; done
-    # 设备已是全新配对态（10:2x 手动配对+同步实证），pm clear 会摧毁好状态且 pair()
-    # 的跳过判据会把 pm clear 后的引导页误判为已配对（三轮同断点），故跳过清与重配。
-    # timeout 25 ssh "$HOST" "adb -s $DEV_A shell pm clear app.wonton.android; adb -s $DEV_B shell pm clear app.wonton.android"
-    # pair a "$DEV_A"; pair b "$DEV_B"
+    dev_sh status --announce 10.0.2.99 >/dev/null || die "设置中继宣告地址失败"
+    timeout 300 ssh "$HOST-stack" restart "$STACK" core || die "重启核心失败"
+    # 重启后 remote-dev 可能丢 compose 的网络别名，core 一直起不来；必须等到网关、隧道和
+    # Tuwunel 都能答，再往下走，否则失败会伪装成“房间不在列表/没进通话”。
+    local i code ready=0
+    for i in $(seq 1 90); do
+        code=$(timeout 10 ssh "$HOST" "curl -s -m 3 -o /dev/null -w '%{http_code}' http://127.0.0.1:$gw/" || true)
+        if [[ $code != 000 ]] && dev_sh status 2>/dev/null | grep -q '已连接\|connected' &&
+            api GET /_matrix/client/versions >/dev/null 2>&1; then
+            ready=1; break
+        fi
+        sleep 2
+    done
+    ((ready)) || die "核心重启后 180 秒仍没就绪（网关/隧道/Tuwunel 有一个不通；别名丢失见 README）"
+    block_direct
+    sleep 12
     open_room "$DEV_A" "$room_name"; open_room "$DEV_B" "$room_name"
     sleep 3
 }
 
 # —— 准备 ——
 [[ -f $pkg/docker-compose.yml ]] || die "插件包不在 $pkg"
+timeout 25 ssh "$HOST" "docker ps --filter name=wonton-$STACK-- --format '{{.Names}}'" | grep -q 'app-element-call' ||
+    die "栈里没装 app.element-call（先装默认 UDP 版）"
 log "预检"
 # dev.sh status 会跑 docker compose ps，在共用机上常常一卡几分钟；这里只看 .dev-ports 和网关是否回 HTTP（根路径 401/404 都算在）。
 read -r gw tunnel < <(timeout 25 ssh "$HOST" "cat ~/wonton-dev/stacks/dev-$STACK/.dev-ports")
@@ -582,13 +750,25 @@ read -r gw tunnel < <(timeout 25 ssh "$HOST" "cat ~/wonton-dev/stacks/dev-$STACK
 code=$(timeout 25 ssh "$HOST" "curl -s -o /dev/null -w '%{http_code}' http://127.0.0.1:$gw/" || true)
 [[ $code != 000 ]] || die "网关 127.0.0.1:$gw 不在"
 timeout 25 ssh "$HOST" "adb -s $DEV_A shell pm path app.wonton.android; adb -s $DEV_B shell pm path app.wonton.android" | grep -c package | grep -q 2 || die "App 没装上"
-for d in "$DEV_A" "$DEV_B"; do timeout 25 ssh "$HOST" "adb -s $d reverse tcp:$gw tcp:$gw; adb -s $d reverse tcp:$tunnel tcp:$tunnel" >/dev/null; done
+timeout 25 ssh "$HOST" "python3 -c 'import jwt'" || die "HOST 上缺 PyJWT（pip install pyjwt；EdDSA 还要 cryptography）"
+timeout 25 ssh "$HOST" "PYTHONPATH=$RCD/pylib python3 -c 'import websocket'" || die "HOST 上的 cdp 缺 websocket-client（随仓库 pylib 推过去失败）"
+for d in "$DEV_A" "$DEV_B"; do
+    timeout 25 ssh "$HOST" "adb -s $d reverse tcp:$gw tcp:$gw; adb -s $d reverse tcp:$tunnel tcp:$tunnel" >/dev/null
+done
 if [[ -n ${ROOM_ID:-} ]]; then
     room_name=$ROOM_NAME room_id=$ROOM_ID
     log "复用房间 $room_id"
 else
     create_room
 fi
+# 每轮清空 App 数据再配对：全新安装会先出 Loading/授权页，靠页面文本猜“已配对”会跳过真需要配对的设备。
+rm -f "$EVIDENCE"/.media-*
+timeout 60 ssh "$HOST" "for d in $DEV_A $DEV_B; do
+    adb -s \$d shell pm clear app.wonton.android >/dev/null
+    adb -s \$d shell pm grant app.wonton.android android.permission.CAMERA
+    adb -s \$d shell pm grant app.wonton.android android.permission.RECORD_AUDIO
+    adb -s \$d shell pm grant app.wonton.android android.permission.POST_NOTIFICATIONS
+done" || die "清空 App 数据或授权失败"
 pair a "$DEV_A"; pair b "$DEV_B"
 # 屏幕一灭 uiautomator dump 与点按全部失效（轮 17-22 的爬行皆源于此）：保持常亮并唤醒。
 for d in "$DEV_A" "$DEV_B"; do
@@ -639,89 +819,158 @@ except Exception: pass' || true)
     return 1
 }
 
-hangup() { # 关掉 widget 页（页面卸载时 Element Call 发 leave）
-    local d=$1 xml b c x1 y1 x2 y2
-    xml=$(ui "$d" 2>/dev/null || true)
-    c=$(grep -oE 'content-desc="Close page"[^>]*bounds="[^"]+"' <<<"$xml" | tail -1) || true
+hangup() { # 先点网页自己的挂断（页面卸载不会发 leave），再关页；两样都找不到返回 1
+    local d=$1 side=a port=9331 page pos tb xml b c x1 y1 x2 y2
+    [[ $d == "$DEV_B" ]] && { side=b; port=9334; }
+    page=$(cdp "$side" "$port" pick 2>/dev/null || true)
+    if [[ -n $page ]]; then
+        pos=$(cdp "$side" "$port" eval "$page" 'JSON.stringify((()=>{const b=document.querySelector("[data-testid=incall_leave]");if(!b)return null;const r=b.getBoundingClientRect();return [r.x+r.width/2,r.y+r.height/2]})())' 2>/dev/null |
+            python3 -c 'import json,sys; v=json.load(sys.stdin).get("value") or "null"; print(" ".join(str(round(x)) for x in (json.loads(v) or [])))' 2>/dev/null || true)
+        if [[ -n ${pos:-} ]]; then
+            read -r x1 y1 <<<"$pos"
+            cdp "$side" "$port" click "$page" "$x1" "$y1" >/dev/null 2>&1 || true
+            log "设备 $d 已点网页里的挂断"
+            sleep 3
+        fi
+    fi
+    tb=$(ui "$d" 2>/dev/null || true)
+    c=$(grep -oE 'content-desc="Close page"[^>]*bounds="[^"]+"' <<<"$tb" | tail -1) || true
+    [[ -n $page || -n $c ]] || { log "设备 $d 既没有通话页也没有 Close page"; return 1; }
+    [[ -n $c ]] || return 0
     b=${c##*bounds=\"}
     c=$(sed -E 's/.*\[([0-9]+),([0-9]+)\]\[([0-9]+),([0-9]+)\].*/\1 \2 \3 \4/' <<<"${b%\"}")
-    if [[ $c =~ ^[0-9]+\ [0-9]+\ [0-9]+\ [0-9]+$ ]]; then
-        read -r x1 y1 x2 y2 <<<"$c"
-        timeout 25 ssh "$HOST" "adb -s $d shell input tap $(( (x1 + x2) / 2 )) $(( (y1 + y2) / 2 ))"
-    else
-        log "设备 $d 没找到 Close page，页面可能已经关了"
-    fi
+    read -r x1 y1 x2 y2 <<<"$c"
+    timeout 25 ssh "$HOST" "adb -s $d shell input tap $(( (x1 + x2) / 2 )) $(( (y1 + y2) / 2 ))"
 }
 
-run_group() { # run_group <a|b|c> <说明> <配置函数>
-    log "== 组 $1：$2"
-    "$3" || die "组 $1 配置失败（set -e 静默死的教训：配置失败必须带名字响亮报）"
+ensure_media() { # 页面可能停在入口/大厅/静音：没有页就重新开，没进就加入，静音/关摄像头就点开关
+    local side=$1 dev=$DEV_A port=9331 page n=0 rects x y
+    [[ $side == b ]] && { dev=$DEV_B; port=9334; }
+    allow_media "$dev"
+    for _ in $(seq 1 20); do
+        allow_media "$dev"
+        page=$(cdp "$side" "$port" pick 2>/dev/null || true)
+        if [[ -z $page ]]; then
+            open_call "$dev" || true
+            sleep 2
+            continue
+        fi
+        n=$(cdp "$side" "$port" eval "$page" \
+            '(async()=>{let n=0;for(const pc of (window.__pcs||[]))for(const s of pc.getSenders())if(s.track){s.track.enabled=true;n++}return n})()' 2>/dev/null |
+            python3 -c 'import json,sys; print(json.load(sys.stdin).get("value") or "")' 2>/dev/null || true)
+        [[ $n =~ ^[1-9] ]] && { log "设备 $side 已打开 $n 条发送轨道"; return 0; }
+        # 还在大厅（没有挂断键）就先加入。
+        if ! cdp "$side" "$port" eval "$page" '!!document.querySelector("[data-testid=incall_leave]")' 2>/dev/null | grep -q true; then
+            join_call "$dev" || true
+            sleep 2
+            continue
+        fi
+        # 底栏开关：标签是 Unmute microphone / Start video 时点它（真鼠标事件，React 才收得到）。
+        rects=$(cdp "$side" "$port" eval "$page" '(async()=>{const out=[];for(const [id,want] of [["incall_mute","Unmute microphone"],["incall_videomute","Start video"]]){const b=document.querySelector(`[data-testid=${id}]`);if(!b)continue;const label=document.getElementById(b.getAttribute("aria-labelledby"))?.textContent;if(label===want){const r=b.getBoundingClientRect();out.push([r.x+r.width/2,r.y+r.height/2])}}return JSON.stringify(out)})()' 2>/dev/null |
+            python3 -c 'import json,sys; print(json.load(sys.stdin).get("value") or "[]")' 2>/dev/null || echo '[]')
+        while read -r x y; do cdp "$side" "$port" click "$page" "$x" "$y" >/dev/null 2>&1 || true; done < <(
+            python3 -c 'import json,sys
+for x, y in json.loads(sys.argv[1]): print(round(x), round(y))' "$rects" 2>/dev/null || true)
+        sleep 2
+    done
+    log "设备 $side 没有发送轨道（页面可能还在拒绝媒体，看 logcat 的 Permission denied）"
+    return 1
+}
+
+run_group() { # run_group <a|b|c> <说明> <配置函数>；任何一步不过都记一组失败，不再静默“完成”
+    local g=$1 keys="$EVIDENCE/members-$1.keys" before="$EVIDENCE/members-$1.before"
+    log "== 组 $g：$2"
+    "$3" || die "组 $g 配置失败"
     clear_dialogs
     for d in "$DEV_A" "$DEV_B"; do timeout 25 ssh "$HOST" "adb -s $d shell input keyevent BACK" || true; done
     sleep 3
-    # 强杀过的一端可能停在桌面或别的会话：先各自回到本房间，再开顶栏入口。
     open_room "$DEV_A" "$room_name"; open_room "$DEV_B" "$room_name"
+    active_members "$room_id" | sort -u > "$before" || true
     # 包裹器挂 getStats 原型，须在通话建立、页面稳定后注入（pre-join 注入会被 EC 重置，05:2x 实测）。
-    open_call "$DEV_A"; join_call "$DEV_A"; inject_stats a || log "组 $1：a 注入失败"
+    open_call "$DEV_A"; join_call "$DEV_A"; inject_stats a || fail_group "$g" "a 注入失败"
     sleep 15
-    open_call "$DEV_B"; join_call "$DEV_B"; inject_stats b || log "组 $1：b 注入失败"
-    # 从聊天回到通话页会停在 Join call，join_call 会再点一次。
+    open_call "$DEV_B"; join_call "$DEV_B"; inject_stats b || fail_group "$g" "b 注入失败"
     join_call "$DEV_A" || true
-    wait_members "$room_id" 2 60 || log "组 $1：call.member 读不到，改用核心时间线里的通话状态兜底"
-    stack logs core 400 2>/dev/null | grep 'call.member' | tail -5 >> "$EVIDENCE/members.log" || true
-    sleep 15
-    if [[ $1 == a ]]; then
-        # 两端同时录 20 秒：媒体路径的样子落成视频证据。
-        rec "$DEV_A" "group-$1-a"; rec "$DEV_B" "group-$1-b"; sleep 22
-        fetch_rec "$DEV_A" "group-$1-a"; fetch_rec "$DEV_B" "group-$1-b"
+    # 只认本轮新增的 state_key：房间复用时会积着上轮的成员。
+    if wait_new_members "$room_id" "$before" "$keys" 2 60; then
+        log "组 $g 本轮成员：$(tr '\n' ' ' <"$keys")"
+    else
+        fail_group "$g" "60 秒内没有两条本轮新增的 call.member"
     fi
-    shot "$DEV_A" "group-$1-a"; shot "$DEV_B" "group-$1-b"
+    stack logs core 400 2>/dev/null | grep 'call.member' | tail -5 >> "$EVIDENCE/members.log" || true
+    ensure_media a || fail_group "$g" "a 没有开麦/开摄像头"
+    ensure_media b || fail_group "$g" "b 没有开麦/开摄像头"
+    sleep 15
+    if [[ $g == a ]]; then
+        # 两端同时录 20 秒：媒体路径的样子落成视频证据。
+        rec "$DEV_A" "group-$g-a"; rec "$DEV_B" "group-$g-b"; sleep 22
+        fetch_rec "$DEV_A" "group-$g-a"; fetch_rec "$DEV_B" "group-$g-b"
+    fi
+    shot "$DEV_A" "group-$g-a"; shot "$DEV_B" "group-$g-b"
     for d in "$DEV_A" "$DEV_B"; do
         timeout 25 ssh "$HOST" "adb -s $d shell dumpsys package app.wonton.android | grep -E 'android.permission.(CAMERA|RECORD_AUDIO): granted'"
     done | tee -a "$EVIDENCE/permissions.log" >/dev/null
-    stats a 9331 "$1" || true; stats b 9334 "$1" || true
-    local want=udp
-    [[ $1 == b ]] && want=tcp
-    [[ $1 == c ]] && want=relay
-    if [[ $(tail -n 40 "$EVIDENCE/run.log" | grep -c "/$want->") -ge 2 ]]; then
-        log "组 $1 判定：两端选中的都是 $want"
+    stats a 9331 "$g" || fail_group "$g" "a 没有统计"
+    stats b 9334 "$g" || fail_group "$g" "b 没有统计"
+    if [[ -s $EVIDENCE/webrtc-a-$g.jsonl && -s $EVIDENCE/webrtc-b-$g.jsonl ]] && check_media_path "$g"; then
+        log "组 $g 判定：路径和双向音视频都成立"
     else
-        log "组 $1 判定：没看到两端选中 $want（看 webrtc-*.jsonl）"
+        fail_group "$g" "两端路径或双向音视频不符（看 webrtc-*.jsonl）"
+    fi
+    if [[ $g == c ]]; then
+        check_tunnel_relay a || fail_group "$g" "a 的隧道没走中继"
+        check_tunnel_relay b || fail_group "$g" "b 的隧道没走中继"
     fi
     timeout 25 ssh "$HOST" "adb -s $DEV_A shell cmd media_session volume --stream 3 --set 0" >/dev/null 2>&1 || true
-    hangup "$DEV_A"; hangup "$DEV_B"
-    sleep 10
-    shot "$DEV_A" "group-$1-after"
+    hangup "$DEV_A" || fail_group "$g" "a 找不到挂断按钮"
+    hangup "$DEV_B" || fail_group "$g" "b 找不到挂断按钮"
+    if [[ -s $keys ]] && wait_left "$room_id" "$keys" 60; then
+        log "组 $g 挂断后本轮成员都不在通话里（state 清空）"
+    else
+        fail_group "$g" "挂断 60 秒后本轮成员还在通话里"
+    fi
+    shot "$DEV_A" "group-$g-after"
 }
 
-run_kill() { # 延迟 leave：B 正常挂断，再把 A 的 App 强杀，成员应在十几秒内被清掉
+run_kill() { # 延迟 leave：B 正常挂断，再把 A 的 App 强杀，本轮两个成员都应消失
+    local keys=$EVIDENCE/members-kill.keys before=$EVIDENCE/members-kill.before t0 i took
     log "== 组 kill：延迟 leave"
     clear_dialogs
-    open_call "$DEV_A"; join_call "$DEV_A"; inject_stats a || log "组 kill：a 注入失败"
+    active_members "$room_id" | sort -u > "$before" || true
+    open_call "$DEV_A"; join_call "$DEV_A"; inject_stats a || fail_group kill "a 注入失败"
     sleep 15
-    open_call "$DEV_B"; join_call "$DEV_B"; inject_stats b || log "组 kill：b 注入失败"
-    wait_members "$room_id" 2 60 || log "组 kill：成员没到 2"
-    hangup "$DEV_B"
-    sleep 5
-    log "强杀前成员=$(members "$room_id" | grep -c '@' || true)"
+    open_call "$DEV_B"; join_call "$DEV_B"; inject_stats b || fail_group kill "b 注入失败"
+    wait_new_members "$room_id" "$before" "$keys" 2 60 || fail_group kill "成员没到 2 条新键"
+    ensure_media a || fail_group kill "a 没有开麦/开摄像头"
+    ensure_media b || fail_group kill "b 没有开麦/开摄像头"
+    if [[ ! -s $keys ]]; then fail_group kill "本轮没有成员键，延迟 leave 无从验证"; return 0; fi
+    hangup "$DEV_B" || fail_group kill "b 找不到挂断按钮"
+    # 正常挂断必须把 B 的那条清掉（B 之外的另一条是 A）。
+    local active cleared=0
+    for i in $(seq 1 30); do
+        sleep 2
+        active=$(comm -12 "$keys" <(active_members "$room_id" | sort -u) | grep -c '@' || true)
+        if (( active <= 1 )); then cleared=1; break; fi
+    done
+    ((cleared)) || fail_group kill "B 挂断 60 秒后本轮成员仍有两條"
+    sleep 3
     timeout 25 ssh "$HOST" "adb -s $DEV_A shell am force-stop app.wonton.android"
-    local t0 i n
     t0=$(date +%s)
     for i in $(seq 1 30); do
         sleep 2
-        n=$(members "$room_id" | grep -c '@' || true)
-        log "强杀后 $(( $(date +%s) - t0 ))s 成员=$n"
-        if [[ $n -eq 0 ]]; then
-            if [[ $(( $(date +%s) - t0 )) -le 25 ]]; then log "延迟 leave 正常：$(( $(date +%s) - t0 ))s"; else log "延迟 leave 偏慢：$(( $(date +%s) - t0 ))s"; fi
+        if ! comm -12 "$keys" <(active_members "$room_id" | sort -u) | grep -q '@'; then
+            took=$(( $(date +%s) - t0 ))
+            log "强杀后延迟 leave 清掉了 A 的成员：${took}s"
             return 0
         fi
     done
-    log "延迟 leave 超时：60s 后仍有成员"
+    log "强杀 60 秒后 A 的 call.member 仍留着（当前 lk-jwt 没在 60 秒内代发延迟 leave；事件靠 expires 过期）"
+    return 0
 }
 
 case "$stage" in
 udp) run_group a "UDP 直连" configure_udp_only ;;
-tcp) run_group b "只有 TCP" configure_tcp_only; restore_compose ;;
+tcp) run_group b "只有 TCP" configure_tcp_only ;;
 relay) run_group c "只有中继" configure_relay_only ;;
 kill) run_kill ;;
 all)
@@ -729,9 +978,9 @@ all)
     run_kill
     run_group b "只有 TCP" configure_tcp_only
     run_group c "只有中继" configure_relay_only
-    restore_compose
     ;;
 *) die "不认识的 STAGE=$stage" ;;
 esac
 
-log "完成"
+if (( failures )); then die "$failures 组失败（证据 $EVIDENCE）"; fi
+log "全部通过"
