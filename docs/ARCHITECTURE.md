@@ -377,7 +377,7 @@ crates/
   wonton-protocol/   核心 API、ViewModel、插件清单类型：跨端唯一事实源，生成 Swift/Kotlin 类型
   wonton-tunnel/     iroh 隧道，服务端与客户端共用
   wonton-matrix/     Matrix 客户端封装（matrix-rust-sdk），供客户端核心使用
-  wonton-avatar/     头像、缩略图和 Bot 图标的文件头检查与转码
+  wonton-avatar/     头像文件的文件头检查、文件预览的视频探测，核心和客户端共用
   wonton-l10n/       Fluent 目录、语言协商与资源一致性检查，客户端与服务器共用
   wonton-core/       服务端核心
   wonton-client/     客户端厚核心，UniFFI 导出
