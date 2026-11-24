@@ -432,6 +432,7 @@ async fn a_deny_role_member_cannot_invite_people_outside_the_home() {
     let device = rig.member_device("kid");
     let role = rig.roles.create(&deny_role(&rig)).unwrap();
     rig.members.set_role("kid", &role.id).unwrap();
+    let baseline = rig.fake.state().rooms.len();
 
     for path in [
         "/_matrix/client/v3/createRoom".to_owned(),
@@ -448,7 +449,11 @@ async fn a_deny_role_member_cannot_invite_people_outside_the_home() {
         assert_eq!(status, StatusCode::FORBIDDEN, "{body}");
         assert_eq!(body["errcode"], "M_FORBIDDEN");
     }
-    assert!(rig.fake.state().rooms.is_empty(), "邀请不该到得了 Tuwunel");
+    assert_eq!(
+        rig.fake.state().rooms.len(),
+        baseline,
+        "邀请不该到得了 Tuwunel"
+    );
 }
 
 #[tokio::test]
@@ -457,6 +462,7 @@ async fn inviting_local_people_is_not_gated_by_add_friends() {
     let device = rig.member_device("kid");
     let role = rig.roles.create(&deny_role(&rig)).unwrap();
     rig.members.set_role("kid", &role.id).unwrap();
+    let baseline = rig.fake.state().rooms.len();
 
     let (status, body) = rig
         .matrix(
@@ -469,7 +475,7 @@ async fn inviting_local_people_is_not_gated_by_add_friends() {
         .await;
     assert_eq!(status, StatusCode::OK, "{body}");
     assert!(body["room_id"].as_str().is_some());
-    assert_eq!(rig.fake.state().rooms.len(), 1);
+    assert_eq!(rig.fake.state().rooms.len(), baseline + 1);
 }
 
 #[tokio::test]
@@ -478,6 +484,7 @@ async fn an_ask_admin_invite_waits_for_an_administrator_and_goes_out_on_approval
     let device = rig.member_device("kid");
     let child = rig.roles.get("child").unwrap();
     rig.members.set_role("kid", &child.id).unwrap();
+    let baseline = rig.fake.state().rooms.len();
 
     let app = rig.app.clone();
     let waiting = tokio::spawn(async move {
@@ -501,9 +508,9 @@ async fn an_ask_admin_invite_waits_for_an_administrator_and_goes_out_on_approval
         )
     });
 
-    // 挂住的期间 Tuwunel 上没有房间：邀请还没发出去。
+    // 挂住的期间 Tuwunel 上没有新房间：邀请还没发出去。假服务器自带一个管理房间，按基线算。
     tokio::time::sleep(std::time::Duration::from_millis(200)).await;
-    assert!(rig.fake.state().rooms.is_empty());
+    assert_eq!(rig.fake.state().rooms.len(), baseline);
 
     let id = rig.wait_card().await;
     rig.answer(&id, "approve").await;
@@ -525,6 +532,7 @@ async fn a_rejected_friend_invite_refuses_the_inviter() {
     let device = rig.member_device("kid");
     let child = rig.roles.get("child").unwrap();
     rig.members.set_role("kid", &child.id).unwrap();
+    let baseline = rig.fake.state().rooms.len();
 
     let app = rig.app.clone();
     let waiting = tokio::spawn(async move {
@@ -556,7 +564,7 @@ async fn a_rejected_friend_invite_refuses_the_inviter() {
         .unwrap();
     assert_eq!(status, StatusCode::FORBIDDEN, "{body}");
     assert_eq!(body["errcode"], "M_FORBIDDEN");
-    assert!(rig.fake.state().rooms.is_empty());
+    assert_eq!(rig.fake.state().rooms.len(), baseline);
 }
 
 /// 分享按对方角色的 `open_apps` 判定（ADR-0088 第 4 节）：角色没开的应用 400，开了就能分享；

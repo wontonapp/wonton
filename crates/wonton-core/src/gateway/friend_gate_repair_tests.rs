@@ -9,6 +9,7 @@ async fn downgrade_while_waiting_for_approval_does_not_send_the_invite() {
     let rig = start().await;
     let device = rig.member_device("kid");
     rig.members.set_role("kid", "child").unwrap();
+    let baseline = rig.fake.state().rooms.len();
 
     let app = rig.app.clone();
     let waiting = tokio::spawn(async move {
@@ -33,7 +34,7 @@ async fn downgrade_while_waiting_for_approval_does_not_send_the_invite() {
 
     let status = waiting.await.unwrap();
     assert_eq!(status, StatusCode::FORBIDDEN);
-    assert!(rig.fake.state().rooms.is_empty());
+    assert_eq!(rig.fake.state().rooms.len(), baseline);
 }
 
 #[tokio::test]
@@ -41,6 +42,7 @@ async fn revoked_device_cannot_send_an_invite_after_approval() {
     let rig = start().await;
     let device = rig.member_device("kid");
     rig.members.set_role("kid", "child").unwrap();
+    let baseline = rig.fake.state().rooms.len();
 
     let app = rig.app.clone();
     let waiting = tokio::spawn(async move {
@@ -64,5 +66,5 @@ async fn revoked_device_cannot_send_an_invite_after_approval() {
 
     let status = waiting.await.unwrap();
     assert_eq!(status, StatusCode::FORBIDDEN);
-    assert!(rig.fake.state().rooms.is_empty());
+    assert_eq!(rig.fake.state().rooms.len(), baseline);
 }
