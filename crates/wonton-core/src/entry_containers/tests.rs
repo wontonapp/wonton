@@ -473,6 +473,68 @@ async fn a_failed_reload_with_a_recreated_container_is_retried() {
     );
 }
 
+/// 只有配置变（证书没变）的重载失败，也要在下一轮重试：失败不能算恢复。
+#[tokio::test]
+async fn a_failed_config_reload_is_retried() {
+    let mut rig = Rig::new().await;
+    publish_cert(&rig, &["example.test", "*.example.test"]);
+    app_domain(&rig, "example.test");
+    rig.reconcile(None).await.unwrap();
+    let (addr, attempts) = failing_once_master().await;
+    rig.containers.reload_addr = addr;
+    rig.docker.remove("wonton-connector");
+    // 证书覆盖新名字，配置按新名字写；证书本身没换。
+    app_domain(&rig, "home.example.test");
+    rig.reconcile(None).await.unwrap_err();
+    assert_eq!(attempts.load(std::sync::atomic::Ordering::SeqCst), 1);
+    rig.reconcile(None).await.unwrap();
+    assert_eq!(
+        attempts.load(std::sync::atomic::Ordering::SeqCst),
+        2,
+        "配置变化的重载失败后下一轮要再试"
+    );
+}
+
+/// 同上，但这一轮没有容器重建：失败的重试和“有没有 started”无关。
+#[tokio::test]
+async fn a_failed_config_reload_is_retried_without_a_restart() {
+    let mut rig = Rig::new().await;
+    publish_cert(&rig, &["example.test", "*.example.test"]);
+    app_domain(&rig, "example.test");
+    rig.reconcile(None).await.unwrap();
+    let (addr, attempts) = failing_once_master().await;
+    rig.containers.reload_addr = addr;
+    app_domain(&rig, "home.example.test");
+    rig.reconcile(None).await.unwrap_err();
+    rig.reconcile(None).await.unwrap();
+    assert_eq!(
+        attempts.load(std::sync::atomic::Ordering::SeqCst),
+        2,
+        "配置变化的重载失败也跨轮重试"
+    );
+}
+
+/// 配置写下去之后、容器动作失败：这笔账不能丢，下一轮要让入口读新配置。
+#[tokio::test]
+async fn a_write_then_failed_container_action_is_retried() {
+    let rig = Rig::new().await;
+    publish_cert(&rig, &["example.test", "*.example.test"]);
+    app_domain(&rig, "example.test");
+    rig.reconcile(None).await.unwrap();
+    let reloads = rig.reloads();
+    app_domain(&rig, "home.example.test");
+    rig.docker
+        .fail_inspect("wonton-entry", Some("inspect boom"));
+    rig.reconcile(None).await.unwrap_err();
+    rig.docker.fail_inspect("wonton-entry", None);
+    rig.reconcile(None).await.unwrap();
+    assert_eq!(
+        rig.reloads(),
+        reloads + 1,
+        "配置已经写下去，下一轮必须让入口读"
+    );
+}
+
 /// 重复对账不重建：每轮都删了再建会让公网入口一直断。
 #[tokio::test]
 async fn app_domain_without_settings_is_idempotent() {
