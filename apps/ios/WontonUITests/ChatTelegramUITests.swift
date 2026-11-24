@@ -127,13 +127,14 @@ final class ChatTelegramUITests: XCTestCase {
     /// 顶栏下面照 Telegram 的叠放：插件横幅在最上，旁聊标题在它下面。
     func testPluginBannerSitsAboveSideChatTitle() {
         enter(Self.notesRoom)
-        // 卡片挂在 index 21 那条下面，但 index 24 是二十几段的长消息（三千多点高）：一段一段往回翻，见到就停。
+        // 卡片挂在 index 21 那条下面，隔着几条一行字的失败发送和 index 26 那条三千多点的高消息：
+        // 一段一段往回拖（每段约 210 点，60 段有余量），见到卡就停。
         if app.buttons["timelineDown"].exists { tap(app.buttons["timelineDown"]) }
         let card = element("sideChatCard")
         for _ in 0..<60 where !card.exists { dragDown() }
         XCTAssertTrue(card.waitForExistence(timeout: 5), "翻不到旁聊卡\n\(app.debugDescription)")
         tap(card)
-        // 主对话那份还留在辅助功能树里（透明、盖住），横幅会匹配到两个：先到先取，两处位置一样。
+        // 盖着的那份主对话被 accessibilityHidden，横幅只留一份；先到先取仍稳妥。
         let banner = app.descendants(matching: .any)["pluginStatusBanner"].firstMatch
         let header = app.descendants(matching: .any)["sideChatHeader"].firstMatch
         XCTAssertTrue(banner.waitForExistence(timeout: 5), "旁聊页顶栏下没有插件横幅\n\(app.debugDescription)")
