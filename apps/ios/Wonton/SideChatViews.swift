@@ -27,7 +27,6 @@ struct SideChatCover<Main: View>: View {
     let roomId: String
     let title: String
     @ViewBuilder let main: () -> Main
-
     /// 呈现中的旁聊根。模型里的旁聊一没（返回、旁聊自己结束、离开房间）盖层就从这里收，收完自己再清；
     /// 直接读模型的话收起动画还在跑、内容已经变空，滑下去的半秒是一张空白页。
     @State private var shown: Shown?
@@ -68,6 +67,8 @@ struct SideChatCover<Main: View>: View {
 struct NewSideChatSheet: ViewModifier {
     let model: ChatModel
     let roomId: String
+    /// 开成了的旁聊根：面板收完再开盖层，两次呈现不撞在同一个呈现时机上。
+    @State private var started: String?
 
     func body(content: Content) -> some View {
         content.wontonSheet(
@@ -75,12 +76,18 @@ struct NewSideChatSheet: ViewModifier {
                 get: { model.composingSideChat == roomId },
                 set: { if !$0 { model.composingSideChat = nil } }
             ),
-            title: String(localized: .Chat.sideChatNew)
-        ) { close in
-            NewSideChatFields(model: model, roomId: roomId, close: close) { root in
+            title: String(localized: .Chat.sideChatNew),
+            afterDismiss: {
+                guard let root = started else { return }
+                started = nil
                 model.openSideChat(root, in: roomId)
+            },
+            content: { close in
+                NewSideChatFields(model: model, roomId: roomId, close: close) { root in
+                    started = root
+                }
             }
-        }
+        )
     }
 }
 
@@ -141,7 +148,7 @@ struct SideChatCardView: View {
             .contentShape(RoundedRectangle(cornerRadius: WontonTheme.radii.card))
         }
         .buttonStyle(.plain)
-        .accessibilityIdentifier("sideChatCard")
+        .accessibilityIdentifier("sideChatCard.\(card.rootEventId)")
     }
 
     /// 数字超过 99 就写“99+”。
@@ -204,7 +211,7 @@ struct NoSideChatsHint: View {
     }
 }
 
-/// 旁聊输入栏上的一句：附件只能在主对话里发（ADR-0093 §5），右边一个关闭钮，底下带“打开主对话”直接过去。
+/// 旁聊输入栏上的一句：文件只能在主对话里发（照片这里直接发，ADR-0093 §5），右边一个关闭钮，底下带“打开主对话”直接过去。
 struct SideChatAttachHint: View {
     let openMain: () -> Void
     let close: () -> Void
@@ -243,7 +250,7 @@ struct SideChatAttachHint: View {
 struct NewSideChatFields: View {
     let model: ChatModel
     let roomId: String
-    /// 面板的关闭回调（WontonSheet 给的）：先收起面板再开旁聊页，两次呈现不撞上。
+    /// 面板的关闭回调（WontonSheet 给的）：收起面板，面板的 `afterDismiss` 再开旁聊页。
     let close: (@escaping () -> Void) -> Void
     let onStarted: (String) -> Void
     @State private var firstMessage = ""
@@ -257,6 +264,7 @@ struct NewSideChatFields: View {
                 .textInputAutocapitalization(.sentences)
                 .wontonField()
                 .disabled(sending)
+                .accessibilityIdentifier("sideChatFirstMessage")
             if let failure {
                 ProblemRow(problem: failure, retry: start)
             }
@@ -265,6 +273,7 @@ struct NewSideChatFields: View {
             }
             .buttonStyle(WontonButtonStyle(kind: .primary))
             .disabled(firstMessage.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty || sending)
+            .accessibilityIdentifier("sideChatStart")
         }
         .padding(.horizontal, WontonTheme.spacing.pageInset)
     }

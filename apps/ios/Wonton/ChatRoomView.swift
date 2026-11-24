@@ -149,7 +149,8 @@ private extension ChatRoomView {
         )
         .environment(model.files)
         .environment(presenter)
-        // 开新旁聊的面板（ADR-0093 §6）。
+        // 开新旁聊的面板（ADR-0093 §6）。开成了以后旁聊页由面板的 `afterDismiss` 等面板收完再盖（见 SideChatCover），
+        // 两次系统呈现不撞在同一个时机上。
         .modifier(NewSideChatSheet(model: model, roomId: roomId))
         // 盖层见 body 里的 SideChatCover（一张系统全屏页）；“开新旁聊”面板收起和它抬起来会落在同一个呈现时机上。
         .modifier(RoomTopBar(
@@ -170,7 +171,9 @@ private extension ChatRoomView {
             }
             // 和 Bot 的私聊：点顶栏的头像或标题进它的资料页（ADR-0044、ADR-0109 第 9 节），不另放按钮。
             if supportsSideChats {
-                ChatGlassButton(icon: .compose, label: String(localized: .Chat.sideChatNew)) {
+                ChatGlassButton(
+                    icon: .compose, label: String(localized: .Chat.sideChatNew), identifier: "sideChatNew"
+                ) {
                     model.composingSideChat = roomId
                 }
             } else {
