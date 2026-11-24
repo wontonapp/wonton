@@ -66,7 +66,7 @@ internal fun ComposerEditBar(edit: ComposerEdit, onCancel: () -> Unit) {
     }
 }
 
-/** 一次发送：编辑时发 `EditMessage`，否者按附件区状态发消息或附件。 */
+/** 一次发送：编辑时发 `EditMessage`，否则按附件区状态发消息或附件。 */
 @Composable
 internal fun rememberComposerSend(
     target: TimelineTarget,
@@ -97,6 +97,11 @@ internal fun rememberComposerSend(
     }
 }
 
+/**
+ * 退出编辑态时恢复什么：核心对“进编辑前没打过字”回 `None`，这时恢复空正文，别把编辑的正文留成草稿。
+ */
+fun restoredDraft(body: String?, reply: ReplyQuote?): Pair<String, ReplyQuote?> = body.orEmpty() to reply
+
 /** 退出编辑态（取消或发成功）后把核心恢复的草稿读回来；刚进编辑态时读到的还是上一条草稿，跳过。 */
 @Composable
 internal fun RestoreDraftOnEditEnd(
@@ -109,7 +114,8 @@ internal fun RestoreDraftOnEditEnd(
     LaunchedEffect(edit) {
         if (wasEditing && edit == null) {
             runCatching { core.draft(target) }.onSuccess { stored ->
-                if (stored != null) onRestoreDraft(stored.body, stored.reply)
+                val (restored, restoredReply) = restoredDraft(stored?.body, stored?.reply)
+                onRestoreDraft(restored, restoredReply)
             }
         }
         wasEditing = edit != null
