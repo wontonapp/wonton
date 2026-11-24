@@ -39,7 +39,7 @@ fn person(
 
 /// 链代表的人是这个人：链上的 Matrix 用户 ID 和这个人的对上。
 fn represents(gateway: &Gateway, person: &super::Person, row: &AgentChainRow) -> bool {
-    user_id(gateway, &person.username).is_some_and(|id| id == row.user)
+    super::matrix_user_id(gateway, &person.username) == row.user
 }
 
 /// 链上某个 Bot 归这个人：私人 Bot 是归属人，共享 Bot 是主人。
@@ -54,13 +54,6 @@ fn keeps_any(gateway: &Gateway, person: &super::Person, row: &AgentChainRow) -> 
             .and_then(|account| gateway.plugins.bot_by_user(&account.user_id))
             .is_some_and(|(_, _, keeper)| keeper == person.username)
     })
-}
-
-fn user_id(gateway: &Gateway, username: &str) -> Option<String> {
-    match &gateway.matrix {
-        Some(matrix) => Some(matrix.user_id(username)),
-        None => Some(format!("@{username}:{}", gateway.public.base_domain)),
-    }
 }
 
 fn visible(gateway: &Gateway, person: &super::Person, row: &AgentChainRow) -> bool {

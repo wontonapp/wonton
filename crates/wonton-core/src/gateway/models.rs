@@ -54,6 +54,7 @@ pub async fn request(gateway: &Gateway, req: Request) -> Response {
         );
     };
     let fwd = proxy::Forwarded {
+        web_user: None,
         client: client_addr(&req),
         scheme: "http",
     };

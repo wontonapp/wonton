@@ -33,6 +33,7 @@ async fn forward(endpoint: &Endpoint, request: Request<Body>) -> axum::response:
         },
         request,
         Forwarded {
+            web_user: None,
             client: None,
             scheme: "http",
         },
@@ -53,6 +54,7 @@ async fn web(endpoint: &Endpoint, request: Request<Body>) -> axum::response::Res
         },
         request,
         Forwarded {
+            web_user: None,
             client: None,
             scheme: "http",
         },
@@ -75,6 +77,7 @@ async fn api(
         },
         request,
         Forwarded {
+            web_user: None,
             client: None,
             scheme: "http",
         },

@@ -43,6 +43,7 @@ pub(super) async fn request(gateway: &Gateway, mut req: Request) -> Response {
         );
     };
     let fwd = proxy::Forwarded {
+        web_user: None,
         client: client_addr(&req),
         scheme: &gateway.public.scheme,
     };
