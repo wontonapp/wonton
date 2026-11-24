@@ -435,6 +435,7 @@ impl PluginManager {
             relays: plan.relays.clone(),
             firewalled,
             proxied: ctx.egress.is_some(),
+            bundled: false,
             oidc_client_secret: oidc_secret,
             installed_at: old.record.installed_at,
             entry_label: None,

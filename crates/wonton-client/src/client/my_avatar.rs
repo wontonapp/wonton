@@ -107,7 +107,8 @@ fn problem(error: Error) -> MyAvatarProblem {
         Error::CommentNotSent(..) => MyAvatarProblem::Upstream {
             reason: error.to_string(),
         },
-        Error::Upstream(reason)
+        Error::NotInvited(reason)
+        | Error::Upstream(reason)
         | Error::InvalidInput(reason)
         | Error::NotInTimeline(reason)
         | Error::TooLarge(reason)

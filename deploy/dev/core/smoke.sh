@@ -1,10 +1,10 @@
 #!/usr/bin/env bash
 # M0 端到端冒烟：一条命令装好示例插件 → 健康检查通过 → 未登录的请求被拒 →
-# 像浏览器一样经核心网关打开插件并自动登录 → 核心预装模型网关，使用方拿到自己的凭据 →
+# 像浏览器一样经核心网关打开插件并自动登录 → 核心不预装模型网关，申请 models 的插件照样装得上，请求报网关不可用，
+# 装上后转发、停掉报 503 →
 # 已配对设备经隧道打开插件，直接是主人 → 经隧道登录 Matrix，和回声 Bot 加密收发 →
-# 核心自己装好的默认 Agent Hermes 就绪后出现在主人的私聊里：没有模型时提示去“模型设置”，给它的 Bot 配一个指向
-# 宿主 magpie 的服务后和主人加密对话两轮 → 网关代登录打开“模型设置”网页 → 核心重启后恢复、不装回卸掉的 Hermes →
-# 卸载干净。Hermes 一步要真实模型：开发机上要有在运行的 magpie，模型名经 WONTON_SMOKE_MODEL 传入
+# 核心自己装好的默认 Agent Hermes 就绪后出现在主人的私聊里：还没选模型时提示去它网页的 Keys、Models 页，给它的
+# Bot 配一个指向宿主 magpie 的服务后和主人加密对话两轮 → 核心重启后恢复、不装回卸掉的 Hermes → 卸载干净。Hermes 一步要真实模型：开发机上要有在运行的 magpie，模型名经 WONTON_SMOKE_MODEL 传入
 # （magpie 里一个能对话的模型），宿主 magpie 不在 3425 时用 WONTON_SMOKE_MODEL_RELAY=<宿主上的地址:端口>。
 # Hermes 容器解析不到 host.docker.internal 时（Linux 的 Docker 不给插件容器加这条）经它自己网络网关上的 socat
 # 转发连，见 Hermes 段。凭据是冒烟按 Bot 名字新建的一次性网关凭据：限定到这次的模型，退出时按建 key 时记下的 id
@@ -66,7 +66,7 @@ model_relay="$WONTON_DEV_PROJECT-model-relay"
 model_client="wonton-$WONTON_DEV_INSTANCE--app-model-client--client"
 # Hermes 声明了 bots（x-wonton.bots），gateway 是 Bot 服务：容器按 Bot 一份。
 hermes="$hermes_network--gateway--default"
-plugins=(app.grafana app.whoami agent.echo ai.usemagpie.magpie app.model-client com.nousresearch.hermes app.wonton.files org.navidrome.navidrome)
+plugins=(app.grafana app.whoami agent.echo app.model-client ai.usemagpie.magpie com.nousresearch.hermes app.wonton.files org.navidrome.navidrome)
 
 # shellcheck source=deploy/dev/core/smoke-cleanup.sh
 source "$here/smoke-cleanup.sh"
@@ -85,6 +85,8 @@ fi
 if step preflight "预检"; then
 docker version --format '   Docker {{.Server.Version}} {{.Server.Os}}/{{.Server.Arch}}'
 for id in "${plugins[@]}"; do
+  # 默认 Agent 由核心启动时自己装：对着已有的栈跑（SMOKE_ONLY）时它已经在，是正常的。
+  [[ $id != com.nousresearch.hermes ]] || continue
   [[ -z "$(labeled "$id")" ]] || fail "Docker 上已经有插件 $id 的资源，先卸载它再跑冒烟"
 done
 ok "没有残留的示例插件资源"
@@ -157,12 +159,8 @@ printf '%s' "$("$dev" token)" |
   python3 "$here/smoke-oidc.py" "$browser" "$grafana" "$core_url" "$grafana_url"
 
 fi
-if step models "模型网关（models）：核心预装 magpie，给使用方签发只属于它的凭据，经 models.wonton.internal 转发"; then
-plugin_state() {
-  "$dev" list | awk -v id="$1" '$1 == id { print $2; found = 1 } END { if (!found) print "absent" }'
-}
-for _ in $(seq 180); do [[ "$(plugin_state ai.usemagpie.magpie)" == running ]] && break; sleep 1; done
-expect "核心在后台预装了模型网关" "$(plugin_state ai.usemagpie.magpie)" running
+if step models "不预装模型网关：申请 models 的插件照样装得上；没有网关时请求报网关不可用"; then
+expect "核心没有预装模型网关" "$(plugin_state ai.usemagpie.magpie)" absent
 client_file="$(mktemp)"
 cat >"$client_file" <<'YAML'
 services:
@@ -182,22 +180,49 @@ x-wonton:
   description: { zh: 冒烟用的模型网关使用方, en: Model gateway consumer for the smoke test }
   permissions: [models]
 YAML
-installed="$("$dev" install "$client_file" --yes 2>/dev/null)" || fail "使用方安装失败：$installed"
-rm -f "$client_file"
+install_err="$(mktemp)"
+installed="$("$dev" install "$client_file" --yes 2>"$install_err")" || fail "使用方安装失败：$(cat "$install_err")"
+rm -f "$client_file" "$install_err"
 expect "使用方安装完成" "$(json status.state <<<"$installed")" running
 client_env() { docker inspect "$model_client" --format '{{range .Config.Env}}{{println .}}{{end}}' | sed -n "s/^$1=//p"; }
-model_key="$(client_env KEY)"
-expect "使用方经核心在插件网络里的别名访问模型网关" "$(client_env BASE)" "http://models.wonton.internal:$WONTON_DEV_PORT/v1"
-expect "默认模型由网关决定" "$(client_env MODEL)" group/wonton-default
-in_client() { curl_in "$model_client" -sS -o /dev/null -w '%{http_code}' "$@" "$(client_env BASE)/models"; }
-expect "凭据能用" "$(in_client -H "Authorization: Bearer $model_key")" 200
-expect "不带凭据被网关拒绝" "$(in_client)" 401
+expect "没有网关时模型变量是空的" "$(client_env BASE)|$(client_env KEY)|$(client_env MODEL)" "||"
+# 凭据按使用方的变量带上：magpie 对非回环、没凭据的请求回 401（契约测试 consumer.rs 同样带 Bearer）。
+request_models() {
+  local -a auth=()
+  local key
+  key="$(client_env KEY)"
+  [[ -z "$key" ]] || auth=(-H "Authorization: Bearer $key")
+  docker exec "$model_client" curl -sS "${auth[@]}" -o /tmp/models.json -w '%{http_code}' \
+    http://models.wonton.internal:$WONTON_DEV_PORT/v1/models
+}
+expect "没有网关：核心报网关不可用" "$(request_models)" 503
+expect "错误类别" "$(docker exec "$model_client" cat /tmp/models.json | json error.kind)" models_unavailable
+# 从开发索引里把网关按包装一遍：核心现在接受 kind: system，网页和凭据都由核心照常创出来。
+magpie_dir="$(mktemp -d)"
+python3 - "$here/store" "$magpie_dir" <<'PY'
+import json
+import pathlib
+import re
+import sys
+
+store, out = map(pathlib.Path, sys.argv[1:])
+blobs = store / "blobs"
+entries = json.loads((store / "index.json").read_text())["plugins"]
+entry = next(e for e in entries if re.search(r"^\s+id:\s*ai\.usemagpie\.magpie\s*$", e["compose"], re.M))
+(out / "docker-compose.yml").write_text(entry["compose"])
+for path, digest in entry["files"].items():
+    (out / path).parent.mkdir(parents=True, exist_ok=True)
+    (out / path).write_bytes((blobs / digest).read_bytes())
+PY
+installed="$("$dev" install "$magpie_dir" --yes 2>/dev/null)" || fail "模型网关安装失败：$installed"
+rm -rf "$magpie_dir"
+for _ in $(seq 180); do [[ "$(plugin_state ai.usemagpie.magpie)" == running ]] && break; sleep 1; done
+expect "从商店装上了模型网关" "$(plugin_state ai.usemagpie.magpie)" running
+expect "有网关：模型列表转给网关" "$(request_models)" 200
 # 网关里的使用方凭据。健康探测凭据（`<网关>/health`）是核心自己的，不算使用方。
 gateway_keys() { docker exec "$magpie" magpie gateway-key list | awk 'NR > 1 && $2 !~ /\/health$/ { print $2 }'; }
-# 核心同时在后台装默认 Agent，网关里可能已经有 Hermes 的凭据，这里只看使用方的。
 expect "网关里的凭据以使用方命名" "$(gateway_keys | grep -cx app.model-client)" 1
-expect "卸载使用方" "$("$dev" uninstall app.model-client --purge | json data_removed)" true
-expect "卸载时在网关里吊销凭据" "$(gateway_keys | grep -cx app.model-client)" 0
+model_key="$(client_env KEY)"
 # 吊销后旧凭据换不到上游：网关前面加一个假上游（来什么都回 200 和固定的模型列表、记下收到的凭据），用旧凭据请求，
 # 假上游不能收到网关替它配的上游凭据。不断言网关回哪个状态码：magpie 0.1.1327 碰到不认识的凭据不在本地回 401，
 # 转发出去回 502（2026-11-07 实测），把客户端自己的凭据原样转给上游也说得通；那是 magpie 自己的行为，
@@ -225,6 +250,17 @@ revoked_code="$(docker run --rm --network "container:$core" "$curl_image" --nopr
 expect "吊销后旧凭据换不到网关的上游凭据（网关回 HTTP $revoked_code）" "$(docker exec "$fake_upstream" grep -c "$fake_key" /tmp/auth.log)" 0
 docker exec "$magpie" magpie provider rm smoke-fake >/dev/null || fail "删不掉假上游"
 docker rm -f "$fake_upstream" >/dev/null
+docker stop "$magpie" >/dev/null
+# 核心把停掉的网关记成 degraded 之后才不再转发，否则请求会先撞到已停的地址回 502。
+for _ in $(seq 60); do [[ "$(plugin_state ai.usemagpie.magpie)" != running ]] && break; sleep 1; done
+expect "网关停了" "$(plugin_state ai.usemagpie.magpie)" degraded
+expect "网关没启动：核心报网关不可用" "$(request_models)" 503
+expect "错误类别" "$(docker exec "$model_client" cat /tmp/models.json | json error.kind)" models_unavailable
+# 后面的 Hermes、MCP、files、model-page、restart 几步还要用这个网关，重新起来放着，最后一步再卸。
+docker start "$magpie" >/dev/null
+for _ in $(seq 60); do [[ "$(docker inspect -f '{{.State.Health.Status}}' "$magpie")" == healthy ]] && break; sleep 1; done
+expect "网关重新启动" "$(docker inspect -f '{{.State.Health.Status}}' "$magpie")" healthy
+expect "卸载使用方" "$("$dev" uninstall app.model-client --purge | json data_removed)" true
 
 fi
 if step tunnel "已配对设备经隧道打开插件：不用登录，直接是主人"; then
@@ -769,6 +805,11 @@ expect "主人卸掉的 Hermes，核心重启后不装回来" "$(plugin_state co
 
 fi
 if step uninstall "卸载干净"; then
+# 从镜像里现装的网关后面几步一直在用，到这一步才卸。
+gateway_report="$("$dev" uninstall ai.usemagpie.magpie --purge)"
+expect "删除了网关容器" "$(json containers <<<"$gateway_report" | grep -c magpie)" 1
+expect "删除了网关网络" "$(json networks <<<"$gateway_report")" "[\"$magpie_network\"]"
+expect "删除了网关数据" "$(json data_removed <<<"$gateway_report")" true
 started=$(date +%s)
 report="$("$dev" uninstall app.grafana --purge)"
 uninstall_seconds=$(($(date +%s) - started))

@@ -1,4 +1,4 @@
-//! 模型网关（插件规范的“模型网关”）。提供方是声明了 `provides.models` 的系统插件，同一时间只有一个；声明了
+//! 模型网关（插件规范的“模型网关”）。提供方是声明了 `provides.models` 的插件，同一时间只能装一个；声明了
 //! `models` 的插件经核心在插件网络里的别名 `models.wonton.internal` 访问它，各自拿一个只属于自己的凭据。
 //!
 //! 凭据按 Docker 凭据助手的约定签发：核心在网关的容器里执行声明的命令，值走标准输入，只看退出码；签发后用这个
@@ -45,7 +45,7 @@ type Keys = BTreeMap<String, String>;
 
 /// 一个使用方的凭据，和最近一次成功注入的变量。
 #[derive(Debug, Clone, Default, PartialEq, Eq, Serialize, Deserialize)]
-struct KeyFile {
+pub(super) struct KeyFile {
     keys: Keys,
     /// 最近一次成功注入给使用方的变量：之后重建容器时网关不在，也注入同一套值，网关回来就对上了。
     #[serde(default)]
@@ -61,6 +61,9 @@ struct KeyFile {
     /// “没接上”由网关状态现场推导。恢复可用就清掉。
     #[serde(default)]
     route: Option<super::model_health::RouteProbe>,
+    /// 使用方卸载时网关没在运行，凭据没吊销成；网关回来后对账补吊销，成功了再删掉这个文件。
+    #[serde(default)]
+    pub(super) revoke_pending: bool,
 }
 
 /// 使用方的凭据，每个插件一个 JSON 文件（0600）。卸载时连同网关里的凭据一起删掉。
@@ -91,7 +94,7 @@ impl ModelKeyStore {
         self.dir.join(format!("{id}.json"))
     }
 
-    fn load(&self, id: &PluginId) -> Result<KeyFile, StoreError> {
+    pub(super) fn load(&self, id: &PluginId) -> Result<KeyFile, StoreError> {
         Ok(read_json::<KeyFile>(&self.path(id))?.unwrap_or_default())
     }
 
@@ -110,7 +113,7 @@ impl ModelKeyStore {
     }
 
     /// 记着凭据的使用方。
-    fn all(&self) -> Result<Vec<(PluginId, KeyFile)>, StoreError> {
+    pub(super) fn all(&self) -> Result<Vec<(PluginId, KeyFile)>, StoreError> {
         let entries = match std::fs::read_dir(&self.dir) {
             Ok(entries) => entries,
             Err(e) if e.kind() == std::io::ErrorKind::NotFound => return Ok(Vec::new()),
@@ -578,32 +581,31 @@ impl PluginManager {
     }
 
     /// 卸载使用方或安装失败回滚：在网关里吊销它的凭据，再删掉记下的文件（没有凭据也删——里面可能只记着
-    /// 签发失败的原因）。网关已经卸载了就没有可吊销的；网关装着但没在运行时吊销不了，如实报错。
+    /// 签发失败的原因）。网关已经卸载了就没有可吊销的；网关装着但没在运行时不挡卸载，把文件留下、记上待补，
+    /// 网关回来对账时再吊销（吊销不掉最多留一条孤立的凭据，不影响卸载本身）。
     pub(super) async fn revoke_models(
         &self,
         id: &PluginId,
         langs: &Languages,
     ) -> Result<(), InstallError> {
         let store = self.store.model_keys();
-        let keys = store.load(id)?.keys;
+        let mut file = store.load(id)?;
         match self.models_provider() {
             ProviderState::Absent => {}
             ProviderState::NotReady(provider) => {
-                if keys.is_empty() {
-                    store.remove(id)?;
+                if !file.keys.is_empty() {
+                    tracing::warn!(
+                        plugin = %id,
+                        provider = %provider,
+                        "模型网关没在运行，凭据留到网关回来后补吊销"
+                    );
+                    file.revoke_pending = true;
+                    store.save(id, &file)?;
                     return Ok(());
                 }
-                return Err(unavailable(crate::l10n::text(
-                    langs,
-                    "plugin-settings-models-revoke-provider-not-running",
-                    &[
-                        ("provider", provider.as_str().into()),
-                        ("id", id.as_str().into()),
-                    ],
-                )));
             }
             ProviderState::Ready(route) => {
-                for name in keys.keys() {
+                for name in file.keys.keys() {
                     let revoke = &route.spec.credentials.revoke;
                     self.run_command(&route, revoke, name, None, langs).await?;
                 }
@@ -650,6 +652,28 @@ impl PluginManager {
         let mut failures = Vec::new();
         for (id, mut file) in all {
             let mut problems = Vec::new();
+            // 卸载时网关没在运行、没吊销成的：网关回来了补吊销，成功了就不必再重签。
+            if file.revoke_pending {
+                let mut failed = Vec::new();
+                for name in file.keys.keys() {
+                    if let Err(e) = self
+                        .run_command(&route, &route.spec.credentials.revoke, name, None, langs)
+                        .await
+                    {
+                        tracing::warn!(plugin = %id, credential = %name, error = %e, "补吊销模型网关凭据失败");
+                        failed.push(Self::named(name, &e));
+                    }
+                }
+                if failed.is_empty() {
+                    match self.store.model_keys().remove(&id) {
+                        Ok(()) => continue,
+                        Err(e) => failures.push((id.clone(), e.into())),
+                    }
+                    continue;
+                }
+                failures.push((id.clone(), unavailable(failed.join("\n"))));
+                continue;
+            }
             for (name, value) in &file.keys {
                 if let Err(e) = self.issue_verified(&route, name, value, langs).await {
                     tracing::warn!(plugin = %id, credential = %name, error = %e, "模型网关凭据对账失败");

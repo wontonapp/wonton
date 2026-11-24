@@ -1,0 +1,21 @@
+gateway:
+  model:
+    usage_switch_provider: "モデルサービスを変更するには、アプリ → All-Purpose Bot (Hermes) → Models を開いてください。"
+  errors:
+    connection_unknown: "選んだAIサービスに接続できません。後でもう一度試すか、「アプリ → All-Purpose Bot (Hermes) → Models」で接続を確認してください。"
+    unreachable: "選んだAIサービスに接続できません。「アプリ → All-Purpose Bot (Hermes) → Models」でサービスが動いているか、アドレスが正しいか確認してください。"
+    connection_interrupted: "AIサービスへの接続が切れ、回答を終えられませんでした。後でもう一度試してください。"
+    auth_failed: "AIサービスで認証できませんでした。「アプリ → All-Purpose Bot (Hermes) → Keys」でログイン情報を確認してから、もう一度試してください。"
+    provider_kept_failing: "選んだAIサービスでエラーが続いています。後でもう一度試すか、「アプリ → All-Purpose Bot (Hermes) → Models」で別のサービスを選んでください。"
+    rate_limited: "AIサービスへのリクエストが多すぎます。少し待ってから、もう一度試してください。"
+    usage_limit_resets: "AIサービスの利用上限に達しました。{window}後に試すか、「アプリ → All-Purpose Bot (Hermes) → Models」で別のサービスを選んでください。"
+    bad_request: "AIサービスにリクエストを拒否されました。言い方を変えて送るか、「アプリ → All-Purpose Bot (Hermes) → Models」で別のサービスを選んでください。"
+    no_credentials: "選んだAIサービスで認証できず、このメッセージは処理されませんでした。「アプリ → All-Purpose Bot (Hermes) → Keys」でログイン情報を確認してください。"
+    hint_auth: " AIサービスで認証できませんでした。「アプリ → All-Purpose Bot (Hermes) → Keys」でログイン情報を確認してください。"
+    hint_quota: " AIサービスの残高か利用枠がなくなりました。サービスのサイトでアカウントを確認するか、「アプリ → All-Purpose Bot (Hermes) → Models」で別のサービスを選んでください。"
+    hint_overloaded: " AIサービスが一時的に混み合っています。少し待ってから、もう一度試してください。"
+    hint_rate_limited: " AIサービスへのリクエストが多すぎます。少し待ってから、もう一度試してください。"
+    hint_usage_limit_resets: " AIサービスの利用上限に達しました。約{hours}時間後に、もう一度試してください。"
+    hint_usage_limit: " AIサービスの利用上限に達しました。利用枠が戻るのを待つか、「アプリ → All-Purpose Bot (Hermes) → Models」で別のサービスを選んでください。"
+    hint_rejected: " AIサービスにリクエストを拒否されました。言い方を変えて送ってください。"
+    generic_failed_with_hint: "回答を終えられませんでした。{hint}"

@@ -435,7 +435,9 @@ pub(crate) fn failure(error: &Error) -> ChatFailure {
         // 不让做这件事（没有权限、对方屏蔽、联邦不通），登录还有效，不能说成登录失效。
         Error::Forbidden { .. } => ChatFailure::Forbidden,
         Error::NotReady(_) => ChatFailure::NotReady,
-        Error::Upstream(_) | Error::CommentNotSent(_) => ChatFailure::Upstream,
+        Error::NotInvited(_) | Error::Upstream(_) | Error::CommentNotSent(_) => {
+            ChatFailure::Upstream
+        }
         Error::InvalidInput(_)
         | Error::NotInTimeline(_)
         | Error::TooLarge(_)

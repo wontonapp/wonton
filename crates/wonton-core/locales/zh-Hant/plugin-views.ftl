@@ -62,7 +62,6 @@ install-images-unpinned = 程式沒有鎖定具體版本：{ $images }
 install-webui-sso = 在應用程式裡開啟它的網頁時自動登入
 install-host-network-egress = 它連外用伺服器自己的網路，不經過雲吞的代理伺服器
 install-host-network-proxied = 它連外也經過雲吞的代理伺服器
-install-system-preinstalled = 系統應用程式只能隨家用伺服器預先安裝
 install-already-installed = 已經安裝了 { $id }（版本 { $version }）
 install-unreviewed-provider = 雲吞沒有審核過這個應用程式，程式由 { $provider } 提供
 install-unreviewed-provider-via = 雲吞沒有審核過這個應用程式，程式由 { $provider } 提供，列在 { $host } 裡

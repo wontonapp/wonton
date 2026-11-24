@@ -178,7 +178,6 @@ plugin-settings-store-source-plugin-missing = 索引 { $provider } 里没有 { $
 plugin-settings-store-community-partial = 有的没读到：{ $missing }
 plugin-settings-store-community-page-failed = 搜索结果的第 { $page } 页（{ $error }）
 plugin-settings-store-community-unavailable = 取不到社区应用：{ $error }
-plugin-settings-store-system-app = 系统应用只能随服务器预装
 plugin-settings-store-permission-unsupported = 服务器还不支持权限 { $permission }
 plugin-settings-store-index-newer = 索引的格式是 { $format }，这个版本的服务器只读得懂 { $supported }：更新服务器后才能用新的索引
 plugin-settings-store-index-invalid = 索引读不懂：{ $error }

@@ -4,7 +4,7 @@ use std::sync::Arc;
 
 use super::languages::Languages;
 use super::manager::{InstallError, PluginManager, PluginView, detached};
-use super::manifest::{Manifest, Permission, PluginKind, Runtime};
+use super::manifest::{Manifest, Permission, Runtime};
 use super::package::PluginPackage;
 use super::store::EnabledPermission;
 use crate::l10n;
@@ -68,7 +68,7 @@ impl PluginManager {
         Box::pin(self.install_user(package, granted, false, langs)).await
     }
 
-    /// `lan_webui`：主人看过风险后打开了开关。系统插件只能由安装器预装（见 [`super::system`]）。
+    /// `lan_webui`：主人看过风险后打开了开关。
     pub async fn install_user(
         &self,
         package: PluginPackage,
@@ -102,13 +102,6 @@ impl PluginManager {
         langs: Languages,
     ) -> Result<PluginView, InstallError> {
         check_runtime(&package.manifest, &langs)?;
-        if package.manifest.kind == PluginKind::System {
-            return Err(InstallError::Unsupported(l10n::text(
-                &langs,
-                "install-system-preinstalled",
-                &[],
-            )));
-        }
         Box::pin(self.install_checked(
             package, granted, enabled, lan_webui, devices, settings, &langs,
         ))

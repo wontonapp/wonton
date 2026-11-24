@@ -25,9 +25,8 @@ deploy/dev/core/dev.sh reset                 # 停掉并删除数据、密钥、
 `dev.sh status` 查询状态，避免把客户端超时当成安装结果。
 
 `down` 后插件记录和卷都还在，容器没了；再 `up` 时核心只核对、不重建，插件在 `list` 里是 `degraded`。要接着用就
-重新装一次：普通插件先 `uninstall <ID>`（不带 `--purge`，卷和数据留着）再 `install <包>`；系统插件（模型网关
-`ai.usemagpie.magpie`）接口装不了，`uninstall <ID>` 之后重启核心（再 `down` 后 `up`，或 `reset --keep-tunnel-identity`），
-核心启动时从镜像重装。
+重新装一次：先 `uninstall <ID>`（不带 `--purge`，卷和数据留着）再 `install <包>`。系统插件也走这个流程；
+模型网关 magpie 不在锁文件里，卸载后重启核心不会从镜像装回，要用再从商店装。
 
 浏览器打开 `http://app-grafana.wonton.localhost:18480`，用主人令牌登录一次，之后自动进入 Grafana，
 不会看到 Grafana 自己的登录页。`*.localhost` 由浏览器和 curl 自动解析到本机，不用改 hosts。命令行里
@@ -146,15 +145,15 @@ curl --noproxy '' -x http://127.0.0.1:18008 -U wonton:<密码> -H 'content-type:
 
 核心镜像构建时按 [`plugins/system.lock`](../../../plugins/system.lock) 从独立仓库取包并核对提交和摘要；升级只改
 锁文件对应的一行，详见 [插件目录说明](../../../plugins/README.md#预装插件)。启动时从镜像内的
-`/usr/share/wonton/system-plugins` 预装 magpie（`WONTON_SYSTEM_PLUGINS`），再从
-`/usr/share/wonton/default-plugins` 装一次 Hermes（`WONTON_DEFAULT_PLUGINS`），首次启动无需联网取插件包；规则见插件规范的“预装插件”。不要 Hermes 时用
-`WONTON_DEV_DEFAULT_PLUGINS= dev.sh up` 起核心。声明了 `models` 的插件经 `models.wonton.internal` 访问 magpie，凭据由
-核心签发。“模型设置”网页（`http://ai-usemagpie-magpie.wonton.localhost:18480/`）由网关代登录：登录过核心的浏览器和
-已配对设备直接打开，不用输 magpie 的网页密钥。也可以用 magpie 的命令行配置 provider，比如指向开发机上已在运行的
-magpie。手动配置时上游地址别写 `http://host.docker.internal:3425`：核心不给插件容器加 host-gateway（有意的
-隔离），Linux 上这个名字解析不了；[端到端冒烟](#端到端冒烟)自己会按能不能解析选地址，解析不到时在插件网络的网关
-上起 socat 转发（宿主防火墙要放行插件网段到 13425）。加了 provider，默认路由组 `wonton-default` 自动有了它的
-模型（ADR-0008）。
+`/usr/share/wonton/default-plugins` 装一次 Hermes（`WONTON_DEFAULT_PLUGINS`），首次启动无需联网取插件包；规则见插件规范的“预装插件”。
+不要 Hermes 时用 `WONTON_DEV_DEFAULT_PLUGINS= dev.sh up` 起核心。模型在 Hermes 自己的网页里接（Keys 页填 key 或登录订阅，
+Models 页选模型），不经核心。模型网关 magpie 不预装，要在开发里试网关时从商店装；声明了 `models` 的插件经
+`models.wonton.internal` 访问它，凭据由核心签发（ADR-0008）。装上 magpie 后，“模型设置”网页
+（`http://ai-usemagpie-magpie.wonton.localhost:18480/`）由网关代登录：登录过核心的浏览器和已配对设备直接打开，
+不用输 magpie 的网页密钥。也可以用 magpie 的命令行配置 provider，比如指向开发机上已在运行的 magpie。手动配置时
+上游地址别写 `http://host.docker.internal:3425`：核心不给插件容器加 host-gateway（有意的隔离），Linux 上这个名字
+解析不了；[端到端冒烟](#端到端冒烟)自己会按能不能解析选地址，解析不到时在插件网络的网关上起 socat 转发（宿主防火墙
+要放行插件网段到 13425）。加了 provider，默认路由组 `wonton-default` 自动有了它的模型（ADR-0008）。
 
 ## MCP 总线
 
@@ -283,15 +282,15 @@ DOCKER_HOST=ssh://$DEV_HOST deploy/dev/core/smoke.sh  # 远端 Linux 主机
 插件收不到网关 Cookie 和伪造的转发头；已配对设备经隧道拿到 Matrix 登录令牌、登录 Tuwunel，局域网拿不到
 令牌也进不了 `matrix.<基础域名>`，管理接口和绕路到它的路径都不转发；回声 Bot（`plugins/examples/echo-bot`）装好后
 有自己的账号、显示名和加密主房间，主人的一台新设备经隧道发加密消息能收到它的加密回声，卸载后它的令牌立即
-失效，不删数据重装沿用账号和主房间，删除数据时账号停用；核心预装了模型网关，使用方拿到只属于自己的凭据，
-经 `models.wonton.internal` 能用、卸载后凭据被吊销；核心在主人配对之前就自己装好了 Hermes，它过了健康检查
-之后，和它的加密私聊才出现在主人的聊天列表里，还没有 provider 时 Hermes 回提示去“模型设置”添加；冒烟给它的 Bot
+失效，不删数据重装沿用账号和主房间，删除数据时账号停用；核心不预装模型网关，申请 `models` 的插件没有网关时照样
+装得上、拿到空变量；核心在主人配对之前就自己装好了 Hermes，它不经模型网关，过了健康检查
+之后，和它的加密私聊才出现在主人的聊天列表里，还没接模型时 Hermes 回提示去它网页的 Keys、Models 页；冒烟给它的 Bot
 在宿主 magpie 上建一条限定模型的凭据，再经 Hermes 自己的接口把宿主 magpie 配成它的 provider，之后主人的新设备
 经隧道和它加密对话两轮：逐轮检查宿主 magpie 用量在 Hermes 凭据名下新增了至少一条成功且有输出 token 的请求，
 第二轮回复必须提到第一轮让它“介绍”或“自己”；本轮没有成功调用就带回复原文停止，不依赖 Hermes 的报错措辞。
-删除数据卸载后 Bot 账号停用、冒烟的凭据删掉；“模型设置”网页由网关代登录，局域网
-浏览器登录过核心、已配对设备经隧道都直接打开并能改设置，没登录和别的插件网页发来的请求被拒，网页密钥不出现在任何
-响应和 Cookie 罐里；对 Hermes 说装文件搜索，核心在确认列表里发卡片，Hermes 的插件网络和局域网浏览器都答不了，
+删除数据卸载后 Bot 账号停用、冒烟的凭据删掉；“模型设置”网页由网关代登录，局域网浏览器登录过核心、已配对设备经
+隧道都直接打开并能改设置，没登录和别的插件网页发来的请求被拒，网页密钥不出现在任何响应和 Cookie 罐里；对 Hermes
+说装文件搜索，核心在确认列表里发卡片，Hermes 的插件网络和局域网浏览器都答不了，
 主人的手机确认后才装好，Hermes 再经 MCP 总线在授权的文件夹里找到文件，审计记下这两次调用；没申请 `matrix.bot`、
 `models`、`tools` 的插件进不了对应的内部地址；
 核心重启后插件恢复，卸掉的 Hermes 不会被装回来；卸载后容器、网络、卷、应用数据和 OIDC 客户端都没有残留。
