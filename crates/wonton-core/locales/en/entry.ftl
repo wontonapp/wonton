@@ -5,3 +5,4 @@ entry-certificate-reload-failed = The renewed entry certificate could not be loa
 entry-certificate-renew-failed = Entry certificate renewal failed. The existing certificate is still in use: { $error }
 entry-reconcile-failed = Public entry reconciliation failed. The public entry and federation TLS may be unavailable until it recovers: { $error }
 entry-reconcile-recovered = Public entry is reconciled and available again.
+entry-domain-unreadable = Cannot read the domain settings; skipping this renewal round. Check the entry settings: { $error }

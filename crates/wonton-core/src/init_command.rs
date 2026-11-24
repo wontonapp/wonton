@@ -22,7 +22,6 @@ pub(super) async fn init(args: &[String]) -> anyhow::Result<()> {
                 dir.to_owned(),
                 data_dir.clone(),
                 Engine::connect()?,
-                wonton_core::plugin::names::Instance::default(),
                 None,
             );
             domain.issue_now().await?;

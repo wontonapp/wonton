@@ -246,6 +246,15 @@ impl FakeDocker {
         docker.networks.insert(name.to_owned(), Labels::new());
         docker.network_bodies.insert(name.to_owned(), json!({}));
     }
+
+    /// 把已有网络的网段钉成给定值：真实网络建的时候就带了 IPAM，全新安装的 `edge` 就是默认网段。
+    pub fn pin_subnet(&self, name: &str, subnet: &str) {
+        self.lock().network_bodies.insert(
+            name.to_owned(),
+            json!({"IPAM": {"Config": [{"Subnet": subnet}]}}),
+        );
+    }
+
     /// 模拟主人手动删掉一个网络（或上一代核心清掉过）。
     pub fn remove_network(&self, name: &str) {
         let mut docker = self.lock();

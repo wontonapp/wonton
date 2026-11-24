@@ -114,11 +114,14 @@ pub async fn reconcile_clients(gateway: &Gateway) -> Result<(), String> {
 
 /// 对账按退避间隔跑，家名和证书按小时跑；续期由 [`crate::clients::domain::Domain`] 发布证书，
 /// 入口容器在不在由对账判断（读不到设置按"不确定"，不删在跑的容器）。
+///
+/// 续期不看设置文件在不在：条款、后缀和服务商的门禁在 `Domain::ready` 里，所以“不要名字”的安装
+/// （没有设置文件）每小时也照样走到续期。
 pub fn spawn(
     containers: EntryContainers,
     domain: Arc<crate::clients::domain::Domain>,
     notices: Option<Arc<NoticeRoom>>,
-    gateway: Arc<Gateway>,
+    gateway: Option<Arc<Gateway>>,
 ) {
     tokio::spawn(async move {
         let mut previous = None;
@@ -127,52 +130,81 @@ pub fn spawn(
         // 上一次对账的成败：None=还没对过。失败进通知、恢复时再发一条（复用家名状态的转移+notify 模式）。
         let mut reconciled: Option<bool> = None;
         let mut hourly = tokio::time::interval(Duration::from_secs(3600));
-        let mut changes = gateway.plugins.changes();
+        let mut changes = gateway.clone().map(|gateway| gateway.plugins.changes());
         loop {
             // 对账按退避间隔跑，家名和证书按小时跑；第一次对账等一会儿，起来先服务再对账。
             tokio::select! {
-                changed = changes.changed() => {
+                changed = async {
+                    match changes.as_mut() {
+                        Some(changes) => changes.changed().await,
+                        None => std::future::pending().await,
+                    }
+                } => {
                     if changed.is_err() { break; }
-                    if let Err(error) = reconcile_clients(&gateway).await {
+                    if let Err(error) = reconcile_once(&containers, gateway.as_deref()).await {
                         tracing::warn!(%error, "插件状态变化后的入口对账失败");
                     }
                 }
                 _ = tokio::time::sleep(retry) => {
-                    retry = reconcile_entry(&notices, &mut reconciled, &gateway)
+                    retry = reconcile_entry(&containers, &notices, &mut reconciled, gateway.as_deref())
                         .await
                         .unwrap_or(retry * 2)
                         .min(Duration::from_secs(RETRY_MAX));
                 }
+                _ = domain.refreshed() => {
+                    // 新证书发布了：这一轮按它重写配置再重载，不用等退避间隔。
+                    if let Err(error) = reconcile_once(&containers, gateway.as_deref()).await {
+                        tracing::warn!(%error, "签发后的入口对账失败");
+                    }
+                }
                 _ = hourly.tick() => {
                     match EntrySettings::load(containers.install_dir()) {
+                        // 家名只有送名字的安装才有。
                         Ok(Some(settings)) => {
                             check_home(&settings, containers.data_dir(), &notices, &mut previous).await;
-                            if hours % 24 == 0 {
-                                domain.renew_if_configured();
-                            }
-                            hours += 1;
                         }
-                        // 没有设置就没有家名和证书可查；读不了是不确定，记下来别无声跳过。
-                        Ok(None) => continue,
+                        // 没有设置文件照样有证书要续期（“不要名字”的安装）。
+                        Ok(None) => {}
+                        // 读不了是不确定：家名这一小时跳过，续期照常（它自己读设置）。
                         Err(error) => {
-                            tracing::warn!(%error, "入口设置读不了，这一小时跳过家名检查和证书续期");
-                            continue;
+                            tracing::warn!(%error, "入口设置读不了，这一小时跳过家名检查");
                         }
                     }
+                    if hours % 24 == 0 {
+                        domain.renew_if_configured();
+                    }
+                    hours += 1;
                 }
             }
         }
     });
 }
 
+/// 对一次账：有网关走客户端开关那套（按已发布证书写配置、再重载），没有网关就直接按设置对账。
+async fn reconcile_once(
+    containers: &EntryContainers,
+    gateway: Option<&Gateway>,
+) -> Result<(), String> {
+    if let Some(gateway) = gateway {
+        return reconcile_clients(gateway).await;
+    }
+    let settings =
+        EntrySettings::load(containers.install_dir()).map_err(|error| error.to_string())?;
+    containers
+        .reconcile(settings.as_ref())
+        .await
+        .map_err(|error| error.to_string())
+}
+
 /// 对一次账，返回下一次的退避间隔：成功时回到最短，失败时翻倍（调用方封顶到 [`RETRY_MAX`]）。
 /// 失败进入和恢复退出各发一条通知——对账持续失败时公网入口和联邦 TLS 整个不可用，主人得知道。
 async fn reconcile_entry(
+    containers: &EntryContainers,
     notices: &Option<Arc<NoticeRoom>>,
     reconciled: &mut Option<bool>,
-    gateway: &Gateway,
+    gateway: Option<&Gateway>,
 ) -> Option<Duration> {
-    let result = reconcile_clients(gateway).await;
+    let result = reconcile_once(containers, gateway).await;
     match result {
         Ok(()) => {
             if *reconciled == Some(false) {
@@ -271,3 +303,7 @@ async fn notify(notices: &Option<Arc<NoticeRoom>>, id: &str, args: &[(&str, &str
         tracing::error!(%error, "入口状态通知失败");
     }
 }
+
+#[cfg(test)]
+#[path = "entry_runtime_tests.rs"]
+mod entry_runtime_tests;
