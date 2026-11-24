@@ -130,7 +130,8 @@ final class ChatTelegramUITests: XCTestCase {
         // 卡片挂在落点那条（`SIDE_CHAT_TOP_INDEX`）：等落点摆稳（落点滚动出的日期胶囊淡掉）它就在眼前；
         // 再不行往上翻一两段，不指望“向下”按钮，也不用横穿整条时间线。
         waitForFloatingDateToFade()
-        let card = element("sideChatCard")
+        // 卡片标识带根事件 ID（`sideChatCard.<root>`），按前缀取一张。
+        let card = app.buttons.matching(NSPredicate(format: "identifier BEGINSWITH %@", "sideChatCard.")).firstMatch
         for _ in 0..<3 where !card.exists { dragDown() }
         XCTAssertTrue(card.waitForExistence(timeout: 10), "找不到旁聊卡\n\(app.debugDescription)")
         reveal(card)
