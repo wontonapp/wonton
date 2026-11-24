@@ -18,6 +18,9 @@ use crate::l10n::{CATALOG, language};
 #[uniffi::export]
 impl ClientCore {
     /// 假数据入口下照走真逻辑的时间线操作：拿掉附件只动本机的附件区，发送照样要过核心的检查。
+    ///
+    /// 只有走输入框的 `SendComposer` 查附件区：真核心的 `send_text` / `send_image` 都不看它
+    /// （`chat/send.rs`），命令和旁聊贴图有空附件失败也照发。
     fn dispatch_ui_fake_composer(&self, action: &TimelineAction) -> Result<(), CoreError> {
         // `WONTON_UI_FAIL_SEND`：界面测试要的“发送被拒”，三种发送都照附件传不上去的样子拒掉。
         if std::env::var_os("WONTON_UI_FAIL_SEND").is_some()
@@ -37,9 +40,6 @@ impl ClientCore {
                 self.composer_action(&self.scope(), action.clone())
             }
             // 假数据没有真上传，附件区的失败由 `fail_attachment_for_test` 写；被拒就中止，不往假时间线补。
-            TimelineAction::SendText { target, .. } => {
-                self.scope().composer.reject_if_failed(&target.room_id)
-            }
             // 过了拒绝才有附言：补进假时间线、清附件区，返回 Ok 让外层继续开假链。
             TimelineAction::SendComposer { target, body, .. } => {
                 #[cfg(not(feature = "ui-fake"))]
@@ -84,8 +84,8 @@ impl ClientCore {
                     Ok(())
                 }
                 Action::Plugins { action } => self.dispatch_ui_fake_plugins(action),
-                // 假时间线（跳转、发字）和停止钮的假运行段都要看到同一个操作。
-                // 先过发送的拒绝和附件区的检查：被拒的发送不进假时间线，也不开假链；收下了才记假时间线（发附言的顺带补一条）。
+                // 假时间线（跳转、发字）和停止钮的假运行段都要看到同一个操作。发送的检查放在前面：
+                // 先过发送的拒绝和附件区的检查：被拒的发送不进假时间线、不开假链，也不回显；收下了才记假时间线（发附言的顺带补一条）。
                 Action::Timeline { action } => {
                     self.dispatch_ui_fake_composer(&action)?;
                     self.ui_fake_timelines.timeline_action(action.clone());
