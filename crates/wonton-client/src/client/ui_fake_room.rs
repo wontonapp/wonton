@@ -210,8 +210,6 @@ pub(super) const CHOICES_INDEX: usize = 22;
 pub(super) const TABLE_INDEX: usize = 23;
 /// 一条“表情 + 一行字”的短消息，下一条长中文回复引用它：引用块要只有名字加一两行高。
 pub(super) const QUOTED_INDEX: usize = 19;
-/// 挂着旁聊卡片的那条（靠近底部，不撑高）：点卡片进旁聊（ADR-0093）。
-pub(super) const SIDE_CHAT_INDEX: usize = 21;
 /// 引用上一条的长中文回复：几段长短不一，有的末行写满，用来查时间戳和正文重叠、长段被截断。
 pub(super) const LONG_REPLY_INDEX: usize = 20;
 /// 一条只有 `wonton://` 链接的消息，带查询和结尾斜杠：点它要剥掉后就地打开“其他服务器”。
@@ -226,8 +224,8 @@ pub(super) const FAILED_SEND_INDEX: usize = 24;
 pub(super) const FAILED_CHOICE_INDEX: usize = 25;
 /// 失败选项的原因，界面上应当收在“详情”里。
 pub(super) const FAILED_CHOICE_REASON: &str = "Server timed out while sending";
-/// 这条下面挂着一张旁聊卡，点进去是旁聊页：界面测试用它查顶栏下面的叠放顺序。
-/// 紧贴落点（第 2 条）下面、又不在“高消息”的下标上：进房间不用翻页就点得到。
+/// 这条下面挂着一张旁聊卡，点进去是旁聊页：界面测试用它查顶栏下面的叠放顺序（ADR-0093）。
+/// 紧贴落点（第 2 条）下面、又不在“高消息”的下标上：进房间往回翻几段就点得到。
 pub(super) const SIDE_CHAT_TOP_INDEX: usize = 3;
 // 中文假数据放在数据文件里：它是界面测试的输入，不是界面文字，界面文字检查（ADR-0043）只管源码里的字符串。
 const QUOTED_TEXT: &str = include_str!("ui_fake_text/quoted.txt");

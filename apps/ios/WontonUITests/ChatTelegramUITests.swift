@@ -127,8 +127,8 @@ final class ChatTelegramUITests: XCTestCase {
     /// 顶栏下面照 Telegram 的叠放：插件横幅在最上，旁聊标题在它下面。
     func testPluginBannerSitsAboveSideChatTitle() {
         enter(Self.notesRoom)
-        // 卡片挂在 index 21 那条下面，隔着几条一行字的失败发送和 index 26 那条三千多点的高消息：
-        // 一段一段往回拖（每段约 210 点，60 段有余量），见到卡就停。
+        // 卡片挂在第 3 条下面，离底部隔着二十几条（含一条三千多点的高消息）：一段一段往回拖，见到卡就停。
+        // 每段约 210 点，60 段有余量。
         if app.buttons["timelineDown"].exists { tap(app.buttons["timelineDown"]) }
         let card = element("sideChatCard")
         for _ in 0..<60 where !card.exists { dragDown() }
