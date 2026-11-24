@@ -1,6 +1,8 @@
 //! 入口容器和连接器的期望状态：按设置建、删，安全选项逐项锁住。
 
 use std::collections::HashMap;
+use std::sync::Arc;
+use std::sync::atomic::{AtomicUsize, Ordering};
 use std::time::Duration;
 
 use serde_json::{Value, json};
@@ -63,14 +65,14 @@ impl Rig {
         std::fs::create_dir_all(dir.path().join("entry/certs")).unwrap();
         std::fs::write(dir.path().join("entry/certs/site.pem"), "pem").unwrap();
         let reload_addr = master_forever("Success=1\n").await;
-        let mut containers = EntryContainers::new(
+        let containers = EntryContainers::new(
             engine,
             dir.path().to_owned(),
             dir.path().join("data"),
             Instance::default(),
             Some(CORE.to_owned()),
-        );
-        containers.reload_addr = reload_addr;
+        )
+        .with_reload_addr(reload_addr);
         Self {
             docker,
             containers,
@@ -304,6 +306,16 @@ async fn router_forwarding_publishes_the_host_port() {
     );
 }
 
+async fn read_command(socket: &mut tokio::net::TcpStream) {
+    use tokio::io::AsyncReadExt;
+    let mut byte = [0u8; 1];
+    loop {
+        if socket.read_exact(&mut byte).await.is_err() || byte[0] == b'\n' {
+            break;
+        }
+    }
+}
+
 /// 假 HAProxy 主进程的管理端口：收一条命令，回一段固定回应，返回命令原文。
 async fn master_cli(reply: &'static str) -> (String, tokio::task::JoinHandle<String>) {
     use tokio::io::{AsyncReadExt, AsyncWriteExt};
@@ -312,8 +324,8 @@ async fn master_cli(reply: &'static str) -> (String, tokio::task::JoinHandle<Str
     let handle = tokio::spawn(async move {
         let (mut socket, _) = listener.accept().await.unwrap();
         let mut command = Vec::new();
+        let mut byte = [0u8; 1];
         loop {
-            let mut byte = [0u8; 1];
             socket.read_exact(&mut byte).await.unwrap();
             command.push(byte[0]);
             if byte[0] == b'\n' {
@@ -328,7 +340,7 @@ async fn master_cli(reply: &'static str) -> (String, tokio::task::JoinHandle<Str
 
 /// 每次连接都回同一段的假主进程：要在 reconcile 路径上重载的用例用。
 async fn master_forever(reply: &'static str) -> String {
-    use tokio::io::{AsyncReadExt, AsyncWriteExt};
+    use tokio::io::AsyncWriteExt;
     let listener = tokio_listener().await;
     let addr = listener.local_addr().unwrap().to_string();
     tokio::spawn(async move {
@@ -336,18 +348,38 @@ async fn master_forever(reply: &'static str) -> String {
             let Ok((mut socket, _)) = listener.accept().await else {
                 return;
             };
-            let mut byte = [0u8; 1];
-            loop {
-                if socket.read_exact(&mut byte).await.is_err() || byte[0] == b'\n' {
-                    break;
-                }
-            }
+            read_command(&mut socket).await;
             if socket.write_all(reply.as_bytes()).await.is_err() {
                 return;
             }
+            // 真的 master 返状态后关连接：读的一方靠 EOF 收尾，失败用例也不用干等截止。
+            drop(socket);
         }
     });
     addr
+}
+
+/// 按顺序回应的假主进程：每次连接取一条回应，返回到管理端口的地址和已收的连接数。
+async fn master_sequence(replies: Vec<&'static str>) -> (String, Arc<AtomicUsize>) {
+    use tokio::io::AsyncWriteExt;
+    let listener = tokio_listener().await;
+    let addr = listener.local_addr().unwrap().to_string();
+    let hits = Arc::new(AtomicUsize::new(0));
+    let counter = hits.clone();
+    tokio::spawn(async move {
+        for reply in replies {
+            let Ok((mut socket, _)) = listener.accept().await else {
+                return;
+            };
+            read_command(&mut socket).await;
+            counter.fetch_add(1, Ordering::SeqCst);
+            if socket.write_all(reply.as_bytes()).await.is_err() {
+                return;
+            }
+            drop(socket);
+        }
+    });
+    (addr, hits)
 }
 
 async fn tokio_listener() -> tokio::net::TcpListener {
@@ -384,6 +416,30 @@ async fn reload_reports_the_startup_logs_of_a_failed_reload() {
     let error = rig.containers.reload(&addr).await.unwrap_err();
     let text = error.to_string();
     assert!(text.contains("missing timeouts"), "{text}");
+}
+
+/// 容器刚起来：主进程还在初始装载，第一次回“还在重载”，隔一会儿重发后成功。
+#[tokio::test]
+async fn reload_retries_while_another_reload_is_in_progress() {
+    let (addr, hits) = master_sequence(vec![
+        "Success=0\n--\nAnother reload is still in progress.\n",
+        "Success=1\n",
+    ])
+    .await;
+    let rig = Rig::new().await;
+    rig.reconcile(Some(&settings())).await.unwrap();
+    rig.containers.reload(&addr).await.unwrap();
+    assert_eq!(hits.load(Ordering::SeqCst), 2);
+}
+
+/// 主进程接了就断、还没开始回应：也算可重试。
+#[tokio::test]
+async fn reload_retries_a_connection_closed_without_a_reply() {
+    let (addr, hits) = master_sequence(vec!["", "Success=1\n"]).await;
+    let rig = Rig::new().await;
+    rig.reconcile(Some(&settings())).await.unwrap();
+    rig.containers.reload(&addr).await.unwrap();
+    assert_eq!(hits.load(Ordering::SeqCst), 2);
 }
 #[tokio::test]
 async fn open_lan_writes_lan_crt_list_and_reloads() {
