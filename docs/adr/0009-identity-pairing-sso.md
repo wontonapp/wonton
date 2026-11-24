@@ -344,7 +344,7 @@ iOS 用成功通知触感，Android 11 起用确认触感、Android 10 用虚拟
 
 ## 验证结果（M1，核心接入 Tuwunel）
 
-Tuwunel 成为核心管理的组件，上面的接口按设计工作。验证版本：Tuwunel v1.9.4。可复跑：`deploy/dev/core/smoke.sh`
+Tuwunel 成为核心管理的组件，上面的接口按设计工作。验证版本：Tuwunel v1.9.4（JWT 登录另在 v2.0.0 上复跑，见 M0-2 和“Bot 账号”一节）。可复跑：`deploy/dev/core/smoke.sh`
 （“已配对设备经隧道登录 Matrix”一步）；管理账号的几种情况在假 Tuwunel 上测（`cargo test -p wonton-core matrix`）。
 
 - 部署：Tuwunel 只在核心的私有网络里（`deploy/dev/core/compose.yaml`），App 和 Bot 都经核心网关访问它。核心的
@@ -422,7 +422,7 @@ matrix-sdk 0.19.1；主房间的建房、邀请、退出和撤回另在 v2.0.0 �
   是主人、不是 Bot 自己。
 - 建房和邀请在同一个主人会话里连着做完，邀请成功后没人再动成员状态；主人紧接着退出，重装出来的房间交给新 Bot。
 - 建房这一步成功之后的任何一步失败（邀请、Bot 接受），以及 `createRoom` 的响应丢掉，主人也退出，都能在假 Tuwunel
-  上复跑，不只邀请失败（`cargo test -p wonton-core matrix::tests::a_`，含 `a_failed_invite` 和
+  上复跑，不只邀请失败（`cargo test -p wonton-core matrix::tests::a_`，含 `a_failed_invite`、`a_failed_join` 和
   `a_lost_create_room_response_leaves_no_room_for_the_owner`）。
 - 撤回仍然是主人自己退出（Bot 踢建房的人回 403），成员状态是 `leave`。
 

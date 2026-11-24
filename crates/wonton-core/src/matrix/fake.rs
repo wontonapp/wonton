@@ -81,6 +81,8 @@ pub struct Tuwunel {
 
     /// 为真时邀请失败。
     pub refuse_invites: bool,
+    /// 为真时加入失败（邀请已经发出去了）。
+    pub refuse_joins: bool,
     /// 发出的消息：（房间，内容）。
     pub sent: Vec<(String, Value)>,
     /// 为真时拒绝下一条消息（`M_FORBIDDEN`）：核对之后才被踢出去。
@@ -492,7 +494,10 @@ async fn membership(
 ) -> Reply {
     let mut state = fake.state();
     reply(auth(&state, &headers).and_then(|(user, _)| {
-        if action == "kick" && state.refuse_kicks || action == "invite" && state.refuse_invites {
+        if action == "kick" && state.refuse_kicks
+            || action == "invite" && state.refuse_invites
+            || action == "join" && state.refuse_joins
+        {
             return Err(error(StatusCode::INTERNAL_SERVER_ERROR, "M_UNKNOWN"));
         }
         let room_state = state
