@@ -53,9 +53,10 @@ impl Failure {
                 (FriendFailure::Forbidden, Some(403), Some(errcode.clone()))
             }
             Error::NotInvited(_) => (FriendFailure::RequestNotFound, None, None),
-            Error::NotReady(_) => (FriendFailure::RequestNotFound, None, None),
-            Error::InvalidInput(_) => (FriendFailure::InvalidUserId, None, None),
-            Error::Upstream(_)
+            // 没就绪、服务器说输入非法都留成中性“暂时无法完成”（#966）。
+            Error::NotReady(_)
+            | Error::InvalidInput(_)
+            | Error::Upstream(_)
             | Error::CommentNotSent(_)
             | Error::TooLarge(_)
             | Error::UnsupportedType(_)

@@ -27,8 +27,11 @@ struct AgentRunChoices: View {
                     .accessibilityIdentifier("agentRun-choice-\(choice.key)")
                 }
             }
-            // 没发出去的那个选项的原因收在“详情”里。
+            // 没发出去：和消息选项一样先给一句“没发出去，再点一次重试”，原因收在详情里。
             if let failure = failure, case let .failed(reason) = failure {
+                Text(.Message0.messageChoiceFailed)
+                    .wontonText(WontonTheme.typography.caption)
+                    .foregroundStyle(Color(colors.danger))
                 ProblemDetail(text: reason)
             }
         }

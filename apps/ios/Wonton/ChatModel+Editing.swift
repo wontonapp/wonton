@@ -10,14 +10,16 @@ extension ChatModel {
         } catch {
             return
         }
-        drafts[key] = stored?.body ?? ""
+        let restored = stored?.body ?? ""
+        suppressNextTyping = drafts[key] != restored
+        drafts[key] = restored
         draftStore.setReply(stored?.reply, in: key)
     }
 
     /// 进入编辑态：先把原文换进输入框、收掉回复，再让核心存下原草稿（ADR-0109 第 10 节）。
     func startEdit(_ text: String, itemId: String, in target: TimelineTarget) {
         draftStore.selectServer(core.servers().servers.first(where: \.current)?.id)
-        suppressNextTyping = true
+        suppressNextTyping = drafts[draftKey(target)] != text
         drafts[draftKey(target)] = text
         draftStore.setReply(nil, in: draftKey(target))
         replyFocusRevision += 1

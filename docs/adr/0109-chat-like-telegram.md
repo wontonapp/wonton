@@ -251,7 +251,7 @@ Telegram 自己也让用户换主题色，形状和位置才是“像 Telegram�
   只有图片、别人的、撤回过的都没有。改过的还能再改。
 点“编辑”后输入框换成原文，光标在末尾，键盘弹出；壳随即发 `TimelineAction::StartEdit`，进入编辑态（`TimelineUpdate::editing`）。
   编辑条照回复条的样子：铅笔、“编辑消息”、原文一行摘要（`ComposerEdit::summary`）、右侧关闭；发送键换成确认。
-- 关闭（`TimelineAction::CancelEdit`，也可以按键盘上的取消）或发送成功：清空输入框，退出编辑态，把进入编辑态之前的草稿和回复对象原样恢复；关闭时壳用 `ClientCore::draft` 重读核心恢复的草稿。
+- 关闭（`TimelineAction::CancelEdit`，也可以按键盘上的取消）或发送成功：清空输入框，退出编辑态，把进入编辑态之前的草稿和回复对象原样恢复（编辑途中又打了字就以新打的为准，不盖）；关闭时壳用 `ClientCore::draft` 重读核心恢复的草稿。
   发送失败时编辑态留着、输入框的字留着，原因进 `ChatViewModel::problem`，确认键再点一次是重来。
 - 确认（`TimelineAction::EditMessage`）：发到原来那条事件上（`m.replace`），新正文按 ADR-0054 记成格式化正文。所有人那里整条换成新正文，
   不新增一条，时间不变，时间前多“已编辑”（第 3 节）。

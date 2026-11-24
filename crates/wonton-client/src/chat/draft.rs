@@ -71,15 +71,12 @@ pub(super) async fn write_drafts(
             }
             DraftWrite::Restore(key, editing, saved) => {
                 let Some(session) = &session else { continue };
-                let Some(stored) = session
+                let stored = session
                     .draft(&key.room_id, key.thread())
                     .await
                     .ok()
-                    .flatten()
-                else {
-                    continue;
-                };
-                if stored.body.trim() != editing.trim() {
+                    .flatten();
+                if restore_if_unchanged(stored.as_ref(), &editing, &saved).is_none() {
                     continue;
                 }
                 if let Err(error) = session.save_draft(&key.room_id, key.thread(), &saved).await {
@@ -120,6 +117,15 @@ pub(super) async fn write_drafts(
             }
         }
     }
+}
+
+/// 退出编辑态要不要把原草稿写回去：存着的草稿还是框里那份原文（编辑途中没再打字）才写。
+pub(super) fn restore_if_unchanged<'a>(
+    stored: Option<&Draft>,
+    editing: &str,
+    saved: &'a Draft,
+) -> Option<&'a Draft> {
+    (stored.map(|stored| stored.body.trim()) == Some(editing.trim())).then_some(saved)
 }
 
 async fn save_draft(
@@ -226,5 +232,34 @@ impl ChatLink {
             reply,
             preview,
         }))
+    }
+}
+
+#[cfg(test)]
+mod restore_tests {
+    use super::*;
+
+    fn draft(body: &str) -> Draft {
+        Draft {
+            body: body.to_owned(),
+            reply_to: None,
+        }
+    }
+
+    #[test]
+    fn the_saved_draft_comes_back_when_nothing_was_typed() {
+        let stored = draft("改成这样");
+        let saved = draft("之前的草稿");
+        assert_eq!(
+            restore_if_unchanged(Some(&stored), "改成这样", &saved).map(|d| d.body.as_str()),
+            Some("之前的草稿")
+        );
+    }
+
+    #[test]
+    fn typing_during_the_edit_keeps_the_new_text() {
+        let stored = draft("改成这样，又补了一句");
+        let saved = draft("之前的草稿");
+        assert!(restore_if_unchanged(Some(&stored), "改成这样", &saved).is_none());
     }
 }
