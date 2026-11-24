@@ -115,6 +115,13 @@ final class ClientsDomainWalkthroughTests: XCTestCase {
         return false
     }
 
+    /// 回到（或重新打开）域名页；已经不在设置里就从头开。
+    private func ensureDomainPage() -> Bool {
+        if app.staticTexts["Certificate"].exists { return true }
+        guard openSettings() else { return false }
+        return tapRow("HTTPS and domain", timeout: 20)
+    }
+
     private func type(_ text: String, into element: XCUIElement) {
         XCTAssertTrue(scrollTo(element), "找不到输入框 \(element)")
         element.tap()
@@ -196,10 +203,10 @@ final class ClientsDomainWalkthroughTests: XCTestCase {
                 _ = scrollTo(app.staticTexts["Issuing"])
                 shot("04-issuing")
             }
-            // 退回设置页并确认真的退回了，再进来拉新状态。
+            // 退出去再进来拉新状态；退多了一步（回到聊天列表）就重开设置。
             _ = try? app.navigationBars.buttons.firstMatch.tap()
             usleep(500_000)
-            XCTAssertTrue(tapRow("HTTPS and domain", timeout: 20), "退不回也进不去设置")
+            XCTAssertTrue(ensureDomainPage(), "回不去域名页")
         }
         XCTAssertTrue(issuedHit, "证书没签出来：\(app.debugDescription)")
         _ = scrollTo(issued)
