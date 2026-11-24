@@ -563,15 +563,13 @@ mod tests {
     #[tokio::test]
     async fn a_side_chat_batch_carries_the_header_card() {
         let fakes = FakeTimelines::default();
+        let root = crate::client::ui_fake_room::side_card().root_event_id;
         let subscription = fakes.subscribe(&TimelineTarget {
             room_id: ROOM.into(),
-            thread_root: Some("$ui-fake-4".into()),
+            thread_root: Some(root.clone()),
         });
         let first = next(&subscription).await;
-        assert_eq!(
-            first.side_chat.map(|card| card.root_event_id),
-            Some("$ui-fake-4".into())
-        );
+        assert_eq!(first.side_chat.map(|card| card.root_event_id), Some(root));
     }
 
     /// 界面测试约定的那几步：点引用跳过去、“向下”回来、回到底部清栈、点选项、发“/help”。
