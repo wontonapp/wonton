@@ -409,7 +409,7 @@ async fn resume_upload(
             size
         }
         UploadState::Finished { size } => {
-            caller.files.authorize(&id, &caller.who, langs)?;
+            caller.files.authorize(&id, &caller.who, langs).await?;
             return if method == Method::HEAD {
                 Ok(finished_response(size))
             } else {
@@ -436,7 +436,7 @@ async fn resume_upload(
         };
         return match caller.files.settle_lost_upload(turn).await? {
             UploadState::Finished { size } => {
-                caller.files.authorize(&id, &caller.who, langs)?;
+                caller.files.authorize(&id, &caller.who, langs).await?;
                 if method == Method::HEAD {
                     Ok(finished_response(size))
                 } else {
