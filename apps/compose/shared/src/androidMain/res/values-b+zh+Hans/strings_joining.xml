@@ -3,4 +3,6 @@
     <string name="joining_failure_rejected">管理员拒绝了加入请求</string>
     <string name="joining_failure_code_used">这个邀请码已经用过了</string>
     <string name="joining_next_invite">请管理员重新发一个邀请码。</string>
+    <string name="joining_failure_pending_approval">等待管理员同意</string>
+    <string name="joining_hint_pending">管理员同意后会自动继续配对</string>
 </resources>

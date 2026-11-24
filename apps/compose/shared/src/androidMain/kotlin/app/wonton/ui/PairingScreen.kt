@@ -319,6 +319,7 @@ private fun failureTitle(reason: PairingFailure): Int = when (reason) {
     PairingFailure.EXPIRED -> R.string.pairing_failure_expired
     PairingFailure.USED -> R.string.pairing_scan_used
     PairingFailure.CLOSED -> R.string.pairing_failure_closed
+    PairingFailure.PENDING_APPROVAL -> R.string.joining_failure_pending_approval
     PairingFailure.JOIN_REJECTED -> R.string.joining_failure_rejected
     PairingFailure.CODE_USED -> R.string.joining_failure_code_used
     PairingFailure.TRANSPORT_UNAVAILABLE -> R.string.pairing_failure_transport
@@ -330,13 +331,15 @@ private fun failureHint(reason: PairingFailure): Int? = when (reason) {
     PairingFailure.REJECTED, PairingFailure.EXPIRED, PairingFailure.USED -> R.string.pairing_next_new_code
     PairingFailure.CLOSED -> R.string.pairing_next_closed
     PairingFailure.JOIN_REJECTED, PairingFailure.CODE_USED -> R.string.joining_next_invite
+    PairingFailure.PENDING_APPROVAL -> R.string.joining_hint_pending
     PairingFailure.TRANSPORT_UNAVAILABLE -> R.string.pairing_hint_transport
     PairingFailure.PROTOCOL -> R.string.pairing_hint_protocol
     PairingFailure.UPSTREAM -> null
 }
 /** 连不上和服务器出错可能是暂时的，同一个码可以再试；其余原因要换码或者更新。 */
 private fun PairingFailure.canRetrySameCode() =
-    this == PairingFailure.TRANSPORT_UNAVAILABLE || this == PairingFailure.UPSTREAM
+    this == PairingFailure.TRANSPORT_UNAVAILABLE || this == PairingFailure.UPSTREAM ||
+        this == PairingFailure.PENDING_APPROVAL
 
 internal fun Problem.pairingRefusal(): Problem = copy(
     nextStep = null,
