@@ -112,7 +112,7 @@ struct ComposerView: View {
         .onChange(of: model.replyFocusRevision) {
             if model.replies[draftKey] != nil || editing != nil { isFocused = true }
         }
-        // 退出编辑态（取消或发成功）：核心已经恢复原草稿，整份读回来。
+        // 退出编辑态（取消或发成功）：核心在没再打字时恢复原草稿，整份读回来。
         .onChange(of: editing?.eventId) { old, new in
             if old != nil, new == nil { Task { await model.reloadDraft(composer.target) } }
         }
@@ -328,7 +328,7 @@ private extension ComposerView {
         guard isEnabled, !blank || (editing == nil && !composer.attachments.isEmpty) else { return }
         pin.pin()
         model.send(.timeline(action: .setTyping(target: composer.target, typing: false)))
-        // 编辑只改这一条的正文；成功后核心恢复原草稿，`onChange(of: editing)` 把它读回来。
+        // 编辑只改这一条的正文；成功后核心在没再打字时把原草稿恢复回来，`onChange(of: editing)` 把它读回来。
         if let editing = editing {
             model.send(.timeline(action: .editMessage(
                 target: composer.target, eventId: editing.eventId, body: draft.wrappedValue
@@ -359,7 +359,7 @@ private extension ComposerView {
             if AgentStopButton.isShown(composer.agentStop) {
                 AgentStopButton(state: composer.agentStop, action: composer.stopAgent)
             }
-            ComposerSendSlot(canSend: !isEmpty, isSending: isSendingAttachment, send: send)
+            ComposerSendSlot(canSend: !isEmpty, editing: editing != nil, isSending: isSendingAttachment, send: send)
         }
         .chatGlassCluster()
     }
@@ -451,26 +451,31 @@ extension ComposerView {
 
     /// 编辑条：铅笔、“编辑消息”、原正文摘要和关闭（ADR-0109 第 10 节）。
     private func editBar(_ edit: ComposerEdit) -> some View {
-        HStack(spacing: WontonTheme.spacing.s8) {
+        // 编辑条和回复条一个色系：输入框的玻璃在半透明键盘上会显得很浅，文字用主墨色才压得住。
+        let ink = Color(colors.textPrimary)
+        return HStack(spacing: WontonTheme.spacing.s8) {
             Image(systemName: "pencil")
                 .font(.footnote)
-                .foregroundStyle(Color(colors.textSecondary))
+                .foregroundStyle(ink.opacity(WontonTheme.ratio.secondaryContent))
             VStack(alignment: .leading, spacing: 0) {
                 Text(.Message2.messageEditTitle)
                     .wontonText(WontonTheme.typography.caption)
-                    .foregroundStyle(Color(colors.textSecondary))
+                    .foregroundStyle(ink)
                 Text(edit.summary)
                     .wontonText(WontonTheme.typography.caption)
-                    .foregroundStyle(Color(colors.textSecondary))
+                    .foregroundStyle(ink.opacity(WontonTheme.ratio.secondaryContent))
                     .lineLimit(1)
+                    .accessibilityIdentifier("editSummary")
             }
             Spacer(minLength: 0)
             Button {
                 model.send(.timeline(action: .setTyping(target: composer.target, typing: false)))
                 model.send(.timeline(action: .cancelEdit(target: composer.target)))
             } label: {
-                Image(systemName: "xmark.circle.fill")
-                    .foregroundStyle(Color(colors.textSecondary))
+                WontonIcon.close.view(size: WontonTheme.size.iconTiny)
+                    .foregroundStyle(ink.opacity(WontonTheme.ratio.secondaryContent))
+                    .frame(width: WontonTheme.size.smallButton, height: WontonTheme.size.smallButton)
+                    .contentShape(Rectangle())
             }
             .buttonStyle(.plain)
             .accessibilityLabel(String(localized: .Common.commonClose))
@@ -478,5 +483,10 @@ extension ComposerView {
         }
         .padding(.horizontal, WontonTheme.spacing.s12)
         .padding(.vertical, WontonTheme.spacing.s8)
+        #if DEBUG
+        // 走查用：编辑条自己的记号，子元素（摘要、关闭）照常单独可点。只在 Debug 包里挂。
+        .accessibilityElement(children: .contain)
+        .accessibilityIdentifier("composerEditBar")
+        #endif
     }
 }

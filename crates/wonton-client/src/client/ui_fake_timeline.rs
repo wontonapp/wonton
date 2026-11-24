@@ -8,8 +8,9 @@ use std::sync::{Arc, Mutex, Weak};
 
 use tokio::sync::mpsc;
 use wonton_protocol::{
-    ChatAction, ChoiceSend, ChoicesState, JumpState, MessageContent, MessageStatus, QuotedContent,
-    QuotedMessage, ReplyQuote, TimelineAction, TimelineContent, TimelineDiff, TimelineFocus,
+    ChatAction, ChoiceSend, ChoicesState, ComposerDraft, ComposerEdit, JumpState, MessageAction,
+    MessageContent, MessageStatus, QuotedContent, QuotedMessage, ReplyQuote, RichBlock,
+    RichBlockKind, RichSpan, TimelineAction, TimelineContent, TimelineDiff, TimelineFocus,
     TimelineItem, TimelineScroll, TimelineTarget, TimelineUpdate,
 };
 
@@ -91,6 +92,24 @@ impl FakeTimelines {
             .get(&key_of(target))
             .and_then(Weak::upgrade)
     }
+
+    /// 这条时间线存着的草稿，没打过字也没在回复时为空。壳退出编辑态后用它重读恢复的那一份。
+    pub(super) fn draft(&self, target: &TimelineTarget) -> Option<ComposerDraft> {
+        let fake = self.get(target)?;
+        let state = fake.lock();
+        let draft = &state.draft;
+        if draft.body.is_empty() && draft.reply_to.is_none() {
+            return None;
+        }
+        Some(ComposerDraft {
+            body: draft.body.clone(),
+            reply: draft
+                .reply_to
+                .clone()
+                .map(|event_id| ReplyQuote::Unavailable { event_id }),
+            preview: None,
+        })
+    }
     /// 转发的副本：去的地方开着就马上推过去，没开就留着等它打开。只转发文字，别的照抄不了。
     fn forward(&self, from: &TimelineTarget, item_id: &str, to_room_id: &str) {
         let Some(body) = self.get(from).and_then(|room| room.text_of(item_id)) else {
@@ -140,6 +159,10 @@ impl FakeTimelines {
         let target = match &action {
             TimelineAction::JumpToMessage { target, .. }
             | TimelineAction::JumpBack { target }
+            | TimelineAction::StartEdit { target, .. }
+            | TimelineAction::CancelEdit { target }
+            | TimelineAction::EditMessage { target, .. }
+            | TimelineAction::SetDraft { target, .. }
             | TimelineAction::SetTimelineScroll { target, .. }
             | TimelineAction::SendText { target, .. }
             | TimelineAction::SendImage { target, .. } => target,
@@ -173,6 +196,12 @@ impl FakeTimelines {
             TimelineAction::SendImage {
                 reply_to, caption, ..
             } => fake.sent_photo(reply_to.as_deref(), caption.as_deref()),
+            TimelineAction::SetDraft { body, reply_to, .. } => fake.set_draft(&body, reply_to),
+            TimelineAction::StartEdit { item_id, .. } => fake.start_edit(&item_id),
+            TimelineAction::CancelEdit { .. } => fake.cancel_edit(),
+            TimelineAction::EditMessage { event_id, body, .. } => {
+                fake.edit_message(&event_id, &body)
+            }
             _ => {}
         }
     }
@@ -213,6 +242,31 @@ struct State {
     back: Vec<String>,
     /// 发过几条，给新消息编号。
     sent: usize,
+    /// 输入框里的草稿，和真核心一样按时间线存：取消编辑、发成功都原样恢复。
+    draft: Saved,
+    /// 正在编辑哪条，以及进入编辑态之前的草稿。
+    editing: Option<Editing>,
+}
+
+/// 存下的一份草稿。
+#[derive(Clone, Default)]
+struct Saved {
+    body: String,
+    reply_to: Option<String>,
+}
+
+struct Editing {
+    card: ComposerEdit,
+    /// 进编辑态时换进输入框的原文：退出时输入框里还是它，才换回原草稿（同真核心 `restore_if_unchanged`）。
+    text: String,
+    saved: Saved,
+}
+
+/// 退出编辑态换回原草稿：编辑途中又打了字（输入框里已不是原文）就留着新打的。
+fn restore_after_edit(draft: &mut Saved, editing: &Editing) {
+    if draft.body.trim() == editing.text.trim() {
+        *draft = editing.saved.clone();
+    }
 }
 
 impl FakeTimeline {
@@ -225,6 +279,8 @@ impl FakeTimeline {
                 runs: Runs::default(),
                 items: Vec::new(),
                 back: Vec::new(),
+                draft: Saved::default(),
+                editing: None,
                 sent: 0,
             }),
         };
@@ -249,6 +305,7 @@ impl FakeTimeline {
                 crate::chat::apply_diff(&mut state.items, diff);
             }
             update.back_to = state.back.last().cloned();
+            update.editing = state.editing.as_ref().map(|editing| editing.card.clone());
         }
         // 发的时候同样不拿着名单的锁，让绕回来的推送能进。
         let senders = lock(&self.senders).clone();
@@ -470,6 +527,156 @@ impl FakeTimeline {
             update.scroll_to_bottom = true;
         });
     }
+
+    /// 壳把输入框里的字交上来。空空如也时按没有草稿算。
+    fn set_draft(&self, body: &str, reply_to: Option<String>) {
+        let mut state = self.lock();
+        state.draft = Saved {
+            body: body.to_owned(),
+            reply_to,
+        };
+    }
+
+    /// 进入编辑态：存下现在的草稿，输入框换成原文（真核心在 `chat/edit_actions.rs` 做同样的事）。
+    /// 菜单里没有这条时不动。
+    fn start_edit(&self, item_id: &str) {
+        let mut state = self.lock();
+        let found = state.items.iter().find_map(|item| {
+            let TimelineContent::Message { message } = &item.content else {
+                return None;
+            };
+            if item.id != item_id {
+                return None;
+            }
+            let MessageContent::Text { body, .. } = &message.body else {
+                return None;
+            };
+            Some((message.event_id.clone()?, body.clone()))
+        });
+        let Some((event_id, text)) = found else {
+            return;
+        };
+        // 已经在编辑别的消息：原草稿仍是第一次进来之前那份，不拿现在的输入框。
+        let saved = match state.editing.take() {
+            Some(previous) => previous.saved,
+            None => std::mem::take(&mut state.draft),
+        };
+        state.editing = Some(Editing {
+            card: ComposerEdit {
+                item_id: item_id.to_owned(),
+                event_id,
+                summary: summary(&text),
+            },
+            text: text.clone(),
+            saved,
+        });
+        state.draft = Saved {
+            body: text,
+            reply_to: None,
+        };
+        drop(state);
+        self.batch(|_| {});
+    }
+
+    /// 退出编辑态：草稿换回进入编辑态之前的。没在编辑时什么也不做。
+    fn cancel_edit(&self) {
+        let mut state = self.lock();
+        let Some(editing) = state.editing.take() else {
+            return;
+        };
+        restore_after_edit(&mut state.draft, &editing);
+        drop(state);
+        self.batch(|_| {});
+    }
+
+    /// 确认这次修改：这一条换成新正文并标“已编辑”，草稿换回进入编辑态之前的。
+    fn edit_message(&self, event_id: &str, body: &str) {
+        if body.trim().is_empty() {
+            return;
+        }
+        let edited = {
+            let mut state = self.lock();
+            let Some(editing) = state.editing.as_ref() else {
+                return;
+            };
+            if editing.card.event_id != event_id {
+                return;
+            }
+            let found = state.items.iter().enumerate().find_map(|(index, item)| {
+                let TimelineContent::Message { message } = &item.content else {
+                    return None;
+                };
+                if message.event_id.as_deref() != Some(event_id) {
+                    return None;
+                }
+                let mut item = item.clone();
+                let TimelineContent::Message { message } = &mut item.content else {
+                    return None;
+                };
+                let MessageContent::Text {
+                    body: current,
+                    blocks,
+                    ..
+                } = &mut message.body
+                else {
+                    return None;
+                };
+                *current = body.to_owned();
+                *blocks = paragraphs(body);
+                message.edited = true;
+                // 菜单跟着换：改过的还能再改，复制拿到的也是新正文。
+                for action in &mut message.actions {
+                    match action {
+                        MessageAction::Copy { text } | MessageAction::Edit { text } => {
+                            *text = body.to_owned();
+                        }
+                        _ => {}
+                    }
+                }
+                Some((index, item))
+            });
+            let Some(found) = found else {
+                return;
+            };
+            let editing = state.editing.take().unwrap_or_else(|| unreachable!());
+            restore_after_edit(&mut state.draft, &editing);
+            found
+        };
+        let (index, item) = edited;
+        self.batch(|update| {
+            update.diffs = vec![TimelineDiff::Set {
+                index: u32::try_from(index).unwrap_or(u32::MAX),
+                item,
+            }];
+        });
+    }
+}
+
+/// 编辑条上的一行摘要：第一个非空行，去掉首尾空白，太长截断（同 `chat/edit.rs`）。
+fn summary(text: &str) -> String {
+    let Some(line) = text.lines().map(str::trim).find(|line| !line.is_empty()) else {
+        return String::new();
+    };
+    if line.chars().count() <= 80 {
+        return line.to_owned();
+    }
+    let mut cut: String = line.chars().take(80).collect();
+    cut.push('…');
+    cut
+}
+
+fn paragraphs(body: &str) -> Vec<RichBlock> {
+    body.split("\n\n")
+        .map(|text| RichBlock {
+            kind: RichBlockKind::Paragraph,
+            depth: 0,
+            quoted: false,
+            spans: vec![RichSpan {
+                text: text.to_owned(),
+                ..RichSpan::default()
+            }],
+        })
+        .collect()
 }
 
 fn lock<T>(mutex: &Mutex<T>) -> std::sync::MutexGuard<'_, T> {
@@ -550,6 +757,148 @@ mod tests {
         let idle =
             tokio::time::timeout(std::time::Duration::from_millis(300), subscription.next()).await;
         assert!(idle.is_err(), "没有操作时订阅自己结束了");
+    }
+
+    /// 编辑的一整套：菜单只给自己的文字、进编辑态换成原文并存下草稿、取消恢复、确认换正文并标已编辑。
+    #[tokio::test]
+    async fn editing_saves_and_restores_the_draft() {
+        let fakes = FakeTimelines::default();
+        let subscription = fakes.subscribe(&target());
+        let batch = next(&subscription).await;
+        let [TimelineDiff::Reset { items }] = batch.diffs.as_slice() else {
+            panic!("第一批是整条时间线");
+        };
+        assert!(
+            message(items, "ui-fake-15")
+                .actions
+                .iter()
+                .any(|action| matches!(action, MessageAction::Edit { .. })),
+            "自己的消息菜单里没有编辑"
+        );
+        assert!(
+            !message(items, "ui-fake-14")
+                .actions
+                .iter()
+                .any(|action| matches!(action, MessageAction::Edit { .. })),
+            "别人的消息菜单里有编辑"
+        );
+
+        fakes.timeline_action(TimelineAction::SetDraft {
+            target: target(),
+            body: "draft".into(),
+            reply_to: None,
+        });
+        fakes.timeline_action(TimelineAction::StartEdit {
+            target: target(),
+            item_id: "ui-fake-15".into(),
+        });
+        let editing = next(&subscription).await.editing.expect("进了编辑态");
+        assert_eq!(editing.item_id, "ui-fake-15");
+        assert_eq!(editing.summary, "Fixture message 15");
+        assert_eq!(fakes.draft(&target()).unwrap().body, "Fixture message 15");
+
+        fakes.timeline_action(TimelineAction::CancelEdit { target: target() });
+        assert!(
+            next(&subscription).await.editing.is_none(),
+            "取消以后还在编辑"
+        );
+        assert_eq!(fakes.draft(&target()).unwrap().body, "draft");
+
+        fakes.timeline_action(TimelineAction::StartEdit {
+            target: target(),
+            item_id: "ui-fake-15".into(),
+        });
+        next(&subscription).await;
+        fakes.timeline_action(TimelineAction::EditMessage {
+            target: target(),
+            event_id: "$ui-fake-15".into(),
+            body: "Fixture edited".into(),
+        });
+        let batch = next(&subscription).await;
+        assert!(batch.editing.is_none(), "确认以后还在编辑");
+        let [TimelineDiff::Set { item, .. }] = batch.diffs.as_slice() else {
+            panic!("确认以后这一条要换掉");
+        };
+        let TimelineContent::Message { message } = &item.content else {
+            panic!("换掉的还是消息");
+        };
+        assert!(message.edited, "确认以后没标已编辑");
+        let MessageContent::Text { body, .. } = &message.body else {
+            panic!("正文还是文字");
+        };
+        assert_eq!(body, "Fixture edited");
+        assert_eq!(fakes.draft(&target()).unwrap().body, "draft");
+    }
+
+    /// 编辑着又换一条改：恢复用的还是第一次进来之前的草稿（同真核心）。
+    #[tokio::test]
+    async fn switching_the_target_keeps_the_first_saved_draft() {
+        let fakes = FakeTimelines::default();
+        let subscription = fakes.subscribe(&target());
+        next(&subscription).await;
+        fakes.timeline_action(TimelineAction::SetDraft {
+            target: target(),
+            body: "draft".into(),
+            reply_to: None,
+        });
+        fakes.timeline_action(TimelineAction::StartEdit {
+            target: target(),
+            item_id: "ui-fake-15".into(),
+        });
+        next(&subscription).await;
+        fakes.timeline_action(TimelineAction::StartEdit {
+            target: target(),
+            item_id: "ui-fake-13".into(),
+        });
+        let switching = next(&subscription).await.editing.expect("换到另一条");
+        assert_eq!(switching.item_id, "ui-fake-13");
+        assert_eq!(switching.summary, "Fixture message 13");
+
+        fakes.timeline_action(TimelineAction::CancelEdit { target: target() });
+        next(&subscription).await;
+        assert_eq!(fakes.draft(&target()).unwrap().body, "draft");
+    }
+
+    /// 编辑途中又打了字：退出时留着新打的，不拿进编辑前那份盖回去（同真核心）。
+    #[tokio::test]
+    async fn typing_during_an_edit_survives_cancel_and_confirm() {
+        let fakes = FakeTimelines::default();
+        let subscription = fakes.subscribe(&target());
+        next(&subscription).await;
+        fakes.timeline_action(TimelineAction::SetDraft {
+            target: target(),
+            body: "draft".into(),
+            reply_to: None,
+        });
+
+        for confirm in [false, true] {
+            fakes.timeline_action(TimelineAction::StartEdit {
+                target: target(),
+                item_id: "ui-fake-15".into(),
+            });
+            next(&subscription).await;
+            fakes.timeline_action(TimelineAction::SetDraft {
+                target: target(),
+                body: "Fixture message 15 再补一句".into(),
+                reply_to: None,
+            });
+            if confirm {
+                fakes.timeline_action(TimelineAction::EditMessage {
+                    target: target(),
+                    event_id: "$ui-fake-15".into(),
+                    body: "Fixture message 15 再补一句".into(),
+                });
+            } else {
+                fakes.timeline_action(TimelineAction::CancelEdit { target: target() });
+            }
+            next(&subscription).await;
+            assert_eq!(
+                fakes.draft(&target()).unwrap().body,
+                "Fixture message 15 再补一句",
+                "{}",
+                if confirm { "确认" } else { "取消" }
+            );
+        }
     }
 
     fn message(items: &[TimelineItem], id: &str) -> wonton_protocol::TimelineMessage {

@@ -506,19 +506,26 @@ pub(super) fn text_message(
     let body = paragraphs.join("\n\n");
     let event_id = format!("${id}");
     let sender_name = if own { "Owner" } else { "Echo" };
-    TimelineMessage {
-        actions: vec![
-            MessageAction::Copy { text: body.clone() },
-            MessageAction::Reply {
-                message: QuotedMessage {
-                    event_id: event_id.clone(),
-                    sender_id: sender.into(),
-                    sender_name: sender_name.into(),
-                    content: QuotedContent::Text { text: body.clone() },
-                },
+    let mut actions = vec![
+        MessageAction::Copy { text: body.clone() },
+        MessageAction::Reply {
+            message: QuotedMessage {
+                event_id: event_id.clone(),
+                sender_id: sender.into(),
+                sender_name: sender_name.into(),
+                content: QuotedContent::Text { text: body.clone() },
             },
-            MessageAction::Forward,
-        ],
+        },
+    ];
+    // ADR-0109 的菜单顺序是回复、复制、编辑、转发：前两条造的时候换了位，这里换回来。
+    actions.swap(0, 1);
+    // 编辑的规则照真核心的菜单：只有自己的文字消息给（`chat/menu.rs`），不看正文空不空。
+    if own {
+        actions.push(MessageAction::Edit { text: body.clone() });
+    }
+    actions.push(MessageAction::Forward);
+    TimelineMessage {
+        actions,
         event_id: Some(event_id),
         sender_id: sender.into(),
         sender_name: sender_name.into(),
@@ -596,18 +603,22 @@ fn photo_item(index: usize, position: usize, count: Option<u32>) -> TimelineItem
                 // 第 5 条也是旁聊的根：旁聊卡片挂在它的照片下面（ADR-0093 的走查）。
                 side_chat: (index == SIDE_ROOT_INDEX).then(side_card),
                 preview: None,
-                actions: vec![
-                    MessageAction::Copy { text: text.clone() },
-                    MessageAction::Reply {
-                        message: QuotedMessage {
-                            event_id,
-                            sender_id: sender_id.into(),
-                            sender_name: sender_name.into(),
-                            content: QuotedContent::Text { text },
+                actions: {
+                    let mut actions = vec![
+                        MessageAction::Copy { text: text.clone() },
+                        MessageAction::Reply {
+                            message: QuotedMessage {
+                                event_id,
+                                sender_id: sender_id.into(),
+                                sender_name: sender_name.into(),
+                                content: QuotedContent::Text { text },
+                            },
                         },
-                    },
-                    MessageAction::Forward,
-                ],
+                        MessageAction::Forward,
+                    ];
+                    actions.swap(0, 1);
+                    actions
+                },
                 group: count.map(|count| MessageGroup {
                     id: "000102030405060708090a0b0c0d0e0f".into(),
                     index: position as u32,

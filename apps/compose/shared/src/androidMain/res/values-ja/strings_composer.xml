@@ -12,6 +12,7 @@
     <string name="composer_photo">写真</string>
     <!-- Screen-reader label of the round send button at the right of the chat composer. -->
     <string name="composer_send">送信</string>
+    <string name="composer_edit_confirm">確定</string>
     <string name="composer_file_unreadable">このファイルを読み込めませんでした。もう一度コピーするか、別のファイルを選んでください。</string>
     <string name="composer_tray_full">一度に送れる添付は %1$d 個までです。</string>
     <string name="composer_attachment_remove">%1$s を外す</string>

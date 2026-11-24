@@ -21,6 +21,11 @@ final class ChatTelegramUITests: XCTestCase {
         app.launchArguments += ["-AppleLanguages", "(en)", "-AppleLocale", "en_US", "-ApplePersistenceIgnoreState", "YES"]
         app.launchEnvironment["WONTON_DEV_DATA_SUFFIX"] = UUID().uuidString
         app.launchEnvironment["WONTON_UI_FAKE"] = "1"
+        // 深色轮次由跑测脚本经 `TEST_RUNNER_WONTON_DARK=1` 传进来；XCUITest 每轮开场会把设备外观改回上一次的样子，
+        // 只在外面 `simctl ui` 切会被盖回去。
+        if ProcessInfo.processInfo.environment["WONTON_DARK"] == "1" {
+            XCUIDevice.shared.appearance = .dark
+        }
         app.launch()
     }
 
@@ -381,6 +386,11 @@ final class ChatTelegramUITests: XCTestCase {
         app.terminate()
         app.launchArguments += ["-UIPreferredContentSizeCategoryName", "UICTContentSizeCategoryAccessibilityXXXL"]
         app.launchEnvironment["WONTON_UI_FAKE"] = "1"
+        // 深色轮次由跑测脚本经 `TEST_RUNNER_WONTON_DARK=1` 传进来；XCUITest 每轮开场会把设备外观改回上一次的样子，
+        // 只在外面 `simctl ui` 切会被盖回去。
+        if ProcessInfo.processInfo.environment["WONTON_DARK"] == "1" {
+            XCUIDevice.shared.appearance = .dark
+        }
         app.launch()
         enter(Self.groupRoom)
         let title = app.staticTexts["Family"]

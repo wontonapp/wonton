@@ -69,6 +69,7 @@ import app.wonton.ui.design.WontonIconButton
 import app.wonton.ui.design.WontonTheme
 import app.wonton.ui.design.toColor
 import app.wonton.ui.icons.Attach
+import app.wonton.ui.icons.Check
 import app.wonton.ui.icons.Close
 import app.wonton.ui.icons.Compose
 import app.wonton.ui.icons.Code
@@ -150,7 +151,7 @@ fun Composer(
     BackHandler(enabled = edit != null) { onEditCancel() }
     // 核心收下了才清草稿、收回复：被拒（附件没传上去、房间不能发）时字和回复都留着等主人改。
     val send = rememberComposerSend(target, edit, reply, viaTray, core, onTyping, onSent, onReject)
-    // 退出编辑态后把核心恢复的草稿读回来。
+    // 退出编辑态后把核心恢复的草稿读回来（编辑途中又打了字时，核心给的就是新打的）。
     RestoreDraftOnEditEnd(edit, target, core, onRestoreDraft)
     val agentStop by produceState<RoomAgentStop>(RoomAgentStop.Idle, core, target) {
         core.agentStopUpdates(target).collect { value = it }
@@ -187,6 +188,7 @@ fun Composer(
         draft = draft,
         commands = commands,
         agentStop = agentStop,
+        editing = edit != null,
         isEmpty = isEmpty,
         enabled = enabled,
         focusRequester = focusRequester,
@@ -269,6 +271,7 @@ private fun ComposerBar(
     draft: String,
     commands: List<RoomCommand>,
     agentStop: RoomAgentStop,
+    editing: Boolean,
     isEmpty: Boolean,
     enabled: Boolean,
     focusRequester: FocusRequester,
@@ -318,7 +321,7 @@ private fun ComposerBar(
             enter = scaleIn(motion) + fadeIn(motion),
             exit = scaleOut(motion) + fadeOut(motion),
         ) {
-            SendButton { if (enabled) send(dropCommand ?: draft) }
+            SendButton(editing) { if (enabled) send(dropCommand ?: draft) }
         }
     }
 }
@@ -563,9 +566,12 @@ private fun ComposerField(
 }
 
 @Composable
-private fun SendButton(onClick: () -> Unit) {
+private fun SendButton(editing: Boolean, onClick: () -> Unit) {
     val colors = WontonTheme.colors
-    val sendLabel = stringResource(R.string.composer_send)
+    // 编辑时是确认（勾），不是发送（ADR-0109 第 10 节）。
+    val sendLabel = stringResource(
+        if (editing) R.string.composer_edit_confirm else R.string.composer_send,
+    )
     Box(
         Modifier.size(WontonTheme.size.target)
             .clickable(role = Role.Button, onClick = onClick)
@@ -577,8 +583,8 @@ private fun SendButton(onClick: () -> Unit) {
             contentAlignment = Alignment.Center,
         ) {
             Icon(
-                WontonIcon.Send,
-                // 装饰：外层的可点区域已经带了“发送”。
+                if (editing) WontonIcon.Check else WontonIcon.Send,
+                // 装饰：外层的可点区域已经带了“发送”（编辑时是“确认”）。
                 contentDescription = null,
                 modifier = Modifier.size(WontonTheme.size.iconSmall),
                 tint = colors.onPrimary.toColor(),

@@ -335,6 +335,11 @@ impl ClientCore {
     /// 一条时间线（主对话或旁聊）输入框里的草稿（正文和正在回复的消息），没打过字也没在回复时是
     /// `None`。每个旁聊各有一份，换房间、重启核心都还在，主人回来接着写。
     pub async fn draft(&self, target: TimelineTarget) -> Result<Option<ComposerDraft>, CoreError> {
+        // 假数据入口没有服务器，草稿由假时间线存（`ui_fake_timeline.rs`）。
+        #[cfg(feature = "ui-fake")]
+        if self.ui_fake.load(Ordering::SeqCst) {
+            return Ok(self.ui_fake_timelines.draft(&target));
+        }
         let scope = self.scope();
         let chat = scope.chat.clone();
         scope.run(async move { chat.draft(&target).await }).await

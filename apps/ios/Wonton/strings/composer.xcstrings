@@ -242,6 +242,36 @@
         }
       }
     },
+    "composer.editConfirm": {
+      "comment": "Screen-reader label of the check button that submits the edited text while a message is being edited.",
+      "extractionState": "manual",
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Edit"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "确认"
+          }
+        },
+        "zh-Hant": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "確認"
+          }
+        },
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "確定"
+          }
+        }
+      }
+    },
     "composer.trayFull": {
       "comment": "Shown when the attachment tray is full. Argument: the most attachments one message can carry.",
       "extractionState": "manual",

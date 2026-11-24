@@ -415,7 +415,14 @@ private fun MessageFooter(message: TimelineMessage, modifier: Modifier) {
     val style = WontonTheme.typography.caption
     val color = (if (message.isOwn) colors.accentInkOnFill else colors.textSecondary).toColor()
     Row(modifier, horizontalArrangement = Arrangement.spacedBy(WontonTheme.spacing.s4)) {
-        if (message.edited) Text(stringResource(R.string.timeline_edited), style = style, color = color)
+        if (message.edited) {
+            Text(
+                stringResource(R.string.timeline_edited),
+                Modifier.testTag("message-edited"),
+                style = style,
+                color = color,
+            )
+        }
         // 还在发的时间换成一个钟表，发出去以后照常写时间。
         if (message.sendState is SendState.Sending) {
             Icon(
