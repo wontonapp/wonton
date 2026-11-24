@@ -34,8 +34,10 @@ fn cancelling_gives_the_saved_draft_back_and_clears_the_state() {
     let edit = Edit::default();
     let token = edit.begin_token();
     assert!(edit.begin(token, "i".into(), "$a".into(), "改成这样", saved(), |_| {}));
-    let (event_id, draft) = edit.take().expect("在编辑");
+    let (event_id, editing, draft) = edit.take().expect("在编辑");
     assert_eq!(event_id, "$a");
+    // 也交出放进框里的原文：退出时输入框里还是它，才拿原草稿盖回去。
+    assert_eq!(editing, "改成这样");
     assert_eq!(draft.body, "之前的草稿");
     assert!(edit.card().is_none());
     // 取过之后原样的编辑态不再补发一批。
@@ -68,7 +70,9 @@ fn switching_messages_keeps_the_first_saved_draft() {
         edit.saved().expect("还留着最初那份"),
         |_| {},
     ));
-    let (event_id, draft) = edit.take().expect("在编辑");
+    let (event_id, editing, draft) = edit.take().expect("在编辑");
     assert_eq!(event_id, "$b");
+    // 换过目标，交出的是换过去时框里那句。
+    assert_eq!(editing, "第二条");
     assert_eq!(draft.body, "之前的草稿");
 }

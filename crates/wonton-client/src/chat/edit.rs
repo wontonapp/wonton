@@ -30,6 +30,8 @@ struct Active {
     item_id: String,
     event_id: String,
     summary: String,
+    /// 进编辑态时放进输入框的原文：退出时输入框里还是它，才拿原草稿盖回去。
+    body: String,
     /// 进入编辑态之前输入框里的草稿，取消或发送成功后原样恢复。
     saved: Draft,
 }
@@ -58,6 +60,7 @@ impl Edit {
             item_id,
             event_id,
             summary: summary(text),
+            body: body.clone(),
             saved,
         };
         // 号和状态在同一把锁下核对：取消是“先换号、再拿状态”，先拿锁的那一方赢。
@@ -76,11 +79,11 @@ impl Edit {
     }
 
     /// 退出编辑态并拿走要发的事件 ID 和原草稿；没在编辑时为空。
-    pub(super) fn take(&self) -> Option<(String, Draft)> {
+    pub(super) fn take(&self) -> Option<(String, String, Draft)> {
         self.token.fetch_add(1, Ordering::SeqCst);
         let active = lock(&self.active).take()?;
         self.wake();
-        Some((active.event_id, active.saved))
+        Some((active.event_id, active.body, active.saved))
     }
 
     /// 进入编辑态之前的那份草稿。

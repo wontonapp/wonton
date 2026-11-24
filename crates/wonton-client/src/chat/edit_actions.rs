@@ -76,10 +76,10 @@ impl ChatLink {
     pub(super) fn cancel_edit(&self, key: &TimelineKey) -> Result<(), CoreError> {
         let live = self.live(key)?;
         live.typing_out.set(false);
-        let Some((_event_id, saved)) = live.edit.take() else {
+        let Some((_event_id, editing, saved)) = live.edit.take() else {
             return Ok(());
         };
-        self.enqueue_draft(DraftWrite::Save(key.clone(), saved));
+        self.enqueue_draft(DraftWrite::Restore(key.clone(), editing, saved));
         Ok(())
     }
 
@@ -112,9 +112,9 @@ impl ChatLink {
             room.edit_message(&event_id, &body).await?;
             // 发完又去编辑别的了：那一条的编辑态和原草稿留着。
             if edit.is_editing(&event_id)
-                && let Some((_sent, saved)) = edit.take()
+                && let Some((_sent, editing, saved)) = edit.take()
             {
-                chat.enqueue_draft(DraftWrite::Save(key, saved));
+                chat.enqueue_draft(DraftWrite::Restore(key, editing, saved));
             }
             Ok(())
         });

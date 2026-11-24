@@ -22,6 +22,8 @@ pub(super) enum DraftWrite {
     Save(TimelineKey, Draft),
     /// 已经发出去的正文：存着的草稿还是它才删，回复对象一起删（发送途中又打了字就不是它了）。
     Forget(TimelineKey, String),
+    /// 退出编辑态：存着的草稿还是编辑时放进框里那份（编辑途中没再打字）才写回原草稿。
+    Restore(TimelineKey, String, Draft),
     /// 用图片回复了这条：存着的草稿还在回复它的话，只去掉回复对象，正文留着。
     ForgetReply(TimelineKey, OwnedEventId),
     /// 读回草稿，发给 `ack`。排在前面的写入都落盘了才回。
@@ -65,6 +67,23 @@ pub(super) async fn write_drafts(
                 };
                 if let Err(error) = session.save_draft(&key.room_id, key.thread(), &empty).await {
                     chat.report_op_failure("chat-draft-clear-failed", &error);
+                }
+            }
+            DraftWrite::Restore(key, editing, saved) => {
+                let Some(session) = &session else { continue };
+                let Some(stored) = session
+                    .draft(&key.room_id, key.thread())
+                    .await
+                    .ok()
+                    .flatten()
+                else {
+                    continue;
+                };
+                if stored.body.trim() != editing.trim() {
+                    continue;
+                }
+                if let Err(error) = session.save_draft(&key.room_id, key.thread(), &saved).await {
+                    chat.report_op_failure("chat-draft-save-failed", &error);
                 }
             }
             DraftWrite::ForgetReply(key, event_id) => {
