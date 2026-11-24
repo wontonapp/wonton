@@ -271,10 +271,11 @@ class Friend689Base: XCTestCase {
     /// 外观设置默认跟随系统：换系统外观即可，页面在栈上也能就地变。切完等到真的变过去，截图才是深色。
     func setAppearance(dark: Bool) {
         XCUIDevice.shared.appearance = dark ? .dark : .light
-        let deadline = Date().addingTimeInterval(10)
+        // 系统切外观要几秒才落到画面，截图也会先给几帧旧的：给 25 秒，每秒看一次。
+        let deadline = Date().addingTimeInterval(25)
         while Date() < deadline {
             if screenIsDark() == dark { return }
-            Thread.sleep(forTimeInterval: 0.5)
+            Thread.sleep(forTimeInterval: 1)
         }
         XCTFail(dark ? "外观没切成深色" : "外观没切回浅色")
     }
