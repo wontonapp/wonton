@@ -143,7 +143,12 @@ final class ClientsDomainWalkthroughTests: XCTestCase {
         XCTAssertTrue(app.textFields["clientsDomainSuffix"].waitForExistence(timeout: 30), "域名页没打开")
         shot("01-empty")
 
-        type("example.test", into: app.textFields["clientsDomainSuffix"])
+        // 栈上有存过的后缀时输入框是带值的：先清空再打，别打成两遍。
+        let suffixField = app.textFields["clientsDomainSuffix"]
+        XCTAssertTrue(scrollTo(suffixField), "没有域名字段")
+        suffixField.tap()
+        suffixField.typeText(String(repeating: XCUIKeyboardKey.delete.rawValue, count: 64))
+        suffixField.typeText("example.test")
         // 键盘盖住下半页会吞掉滑动手势：先收起键盘，“其他”在懒加载列表的更下面。
         if app.keyboards.count > 0 { app.typeText("\n") }
         var other: XCUIElement?
@@ -177,13 +182,23 @@ final class ClientsDomainWalkthroughTests: XCTestCase {
         // 保存成功就回设置页；再进来看着签发，签完了看证书。
         XCTAssertTrue(tapRow("HTTPS and domain", timeout: 60), "保存后没回设置页：\(app.debugDescription)")
         XCTAssertTrue(app.staticTexts["Certificate"].waitForExistence(timeout: 30), "域名页没重开")
-        let issuing = app.staticTexts["Issuing"]
-        if issuing.waitForExistence(timeout: 20) {
-            _ = scrollTo(issuing)
-            shot("04-issuing")
-        }
+        // 页面不自己刷新证书：没签完就退出去再进来，重新拉一次。
         let issued = app.staticTexts.matching(NSPredicate(format: "label BEGINSWITH 'Expires'")).firstMatch
-        XCTAssertTrue(issued.waitForExistence(timeout: 180), "证书没签出来：\(app.debugDescription)")
+        var issuedHit = false
+        for _ in 0..<10 where !issuedHit {
+            if issued.waitForExistence(timeout: 20) {
+                issuedHit = true
+                break
+            }
+            if app.staticTexts["Issuing"].exists {
+                _ = scrollTo(app.staticTexts["Issuing"])
+                shot("04-issuing")
+            }
+            _ = try? app.navigationBars.buttons.firstMatch.tap()
+            usleep(400_000)
+            _ = tapRow("HTTPS and domain", timeout: 20)
+        }
+        XCTAssertTrue(issuedHit, "证书没签出来：\(app.debugDescription)")
         _ = scrollTo(issued)
         shot("05-issued")
 
