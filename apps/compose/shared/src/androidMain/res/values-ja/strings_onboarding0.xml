@@ -12,7 +12,7 @@
     <string name="onboarding_problem_store_index_too_new">おすすめの表示には新しい自宅サーバーが必要です。アップデートするか、スキップしてください。</string>
     <!-- Problem title in setup: the recommendation source hit an error. -->
     <string name="onboarding_problem_store_upstream">おすすめの提供元でエラーが発生しました。再試行するかスキップできます。</string>
-    <!-- Checkmark icon for an app that finished installing. -->
+    <!-- Checkmark icon for a finished row (an app or a saved setting). -->
     <string name="onboarding_review_done">完了</string>
     <!-- Kind label above a review row: the profile that will be saved. -->
     <string name="onboarding_review_section_profile">あなたのプロフィール</string>
