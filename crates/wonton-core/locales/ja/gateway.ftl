@@ -90,6 +90,7 @@ gateway-icon-failed = アイコンを処理できません：{ $error }
 # デバイスとペアリングコード。
 gateway-devices-not-found = このデバイスは登録されていません
 gateway-devices-invalid-id = リクエストボディは{"{"}"endpoint_id": "<64桁の16進数>"{"}"}の形式にしてください
+gateway-devices-invalid-body = リクエストボディは{"{"}"keep_shared_passwords": true|false{"}"}か空にしてください
 gateway-devices-invalid-addrs = リクエストボディは{"{"}"direct_addrs": ["IP:ポート"]{"}"}の形式にしてください：{ $error }
 gateway-devices-already-paired = このサーバーには既にペアリング済みのデバイスがあるため、初回ペアリングコードは発行しません
 gateway-devices-no-addresses = トンネルがまだリレーに接続しておらず、リクエストにも直接接続用のアドレスがないため、コードに接続できるアドレスがありません
@@ -171,6 +172,14 @@ clients-unavailable = コアがコンテナで実行されていないため、�
 clients-passwords-unavailable = 今はアプリのパスワードの保存先を読み取れません
 clients-password-label-invalid = クライアントには改行を含まない1〜128文字の名前を付けてください
 clients-password-not-found = このアプリのパスワードはもう存在しません
+clients-plugin-unavailable = このアプリはインストールされていません
+clients-password-shared = アプリのパスワード
+clients-credentials-shared-exists = このアプリには共有パスワードがすでにあります
+clients-credentials-timeout = アプリ内のコマンドがタイムアウトしました。すでに反映されている可能性があり、再試行します
+clients-credentials-unavailable = アプリが実行されていないため、今はパスワードを発行できません
+clients-credentials-missing-command = マニフェストに { $op } コマンドがありません
+clients-credentials-failed = アプリ内のコマンドが失敗しました：{ $error }
+gateway-entry-credentials-not-issued = アプリのパスワードがまだないため、入口は閉じたままです
 clients-domain-read-failed = ドメイン設定を読めませんでした：{ $error }
 gateway-chains-disabled = 自宅サーバーで呼び出しの連鎖の台帳が有効になっていません
 

@@ -8,7 +8,7 @@ use crate::gateway::Gateway;
 use crate::plugin::clients_entry::SetupCheck;
 use crate::plugin::manager::ClientPlugin;
 use crate::plugin::manifest::PluginId;
-use wonton_protocol::{CertificateState, ClientsFailure, EntryBlock};
+use wonton_protocol::{CertificateState, ClientAuthKind, ClientsFailure, EntryBlock};
 
 pub(crate) struct ApplyError {
     pub failure: ClientsFailure,
@@ -130,8 +130,10 @@ pub(crate) async fn block_reason(
     client: &ClientPlugin,
 ) -> Result<Option<EntryBlock>, ApplyError> {
     let entries = client.record.clients_entries;
+    let credentials_pending = matches!(client.auth, ClientAuthKind::Credentials)
+        && !gateway.plugins.credentials_ready(&client.id);
     if !(entries.lan || entries.public) {
-        return Ok(None);
+        return Ok(credentials_pending.then_some(EntryBlock::CredentialsNotIssued));
     }
     let domain_ready = match &gateway.domain {
         Some(domain) => {
@@ -190,7 +192,7 @@ pub(crate) async fn block_reason(
                 ));
             }
         }
-    } else if http.http.auth.credentials.is_some() {
+    } else if credentials_pending {
         return Ok(Some(EntryBlock::CredentialsNotIssued));
     }
     if entries.public && !gateway.public_ingress_configured {

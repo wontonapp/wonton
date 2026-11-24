@@ -90,6 +90,7 @@ gateway-icon-failed = Can't process the icon: { $error }
 # Devices and pairing codes.
 gateway-devices-not-found = This device isn't registered
 gateway-devices-invalid-id = The request body should be {"{"}"endpoint_id": "<64 hex digits>"{"}"}
+gateway-devices-invalid-body = The request body should be {"{"}"keep_shared_passwords": true|false{"}"} or empty
 gateway-devices-invalid-addrs = The request body should be {"{"}"direct_addrs": ["IP:port"]{"}"}: { $error }
 gateway-devices-already-paired = This server already has paired devices, so it won't issue a first-pairing code
 gateway-devices-no-addresses = The tunnel isn't connected to a relay yet and the request gave no direct addresses, so the code has no reachable address
@@ -171,6 +172,14 @@ clients-unavailable = The core isn't running in its container, so domain setting
 clients-passwords-unavailable = The app password storage can't be read right now
 clients-password-label-invalid = Give the client a name of 1-128 characters without line breaks
 clients-password-not-found = This app password doesn't exist any more
+clients-plugin-unavailable = This app isn't installed
+clients-password-shared = App password
+clients-credentials-shared-exists = This app already has its one shared password
+clients-credentials-timeout = The command in the app timed out; it may already have taken effect and will be retried
+clients-credentials-unavailable = The app isn't running, so passwords can't be issued right now
+clients-credentials-missing-command = The app manifest has no { $op } command
+clients-credentials-failed = The command in the app failed: { $error }
+gateway-entry-credentials-not-issued = The app has no password yet, so its entry stays closed
 clients-domain-read-failed = Couldn't read the domain settings: { $error }
 gateway-chains-disabled = The home server doesn't have the call chain ledger enabled
 
