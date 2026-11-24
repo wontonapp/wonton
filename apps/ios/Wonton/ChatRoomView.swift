@@ -187,9 +187,7 @@ private extension ChatRoomView {
             }
         })
         // 入口按钮压进这一页。房间也能从别的标签页打开，那边的导航栈不认聊天页的路由，所以在这里登记一次。
-        .modifier(ChatRouteDestinations(
-            model: model, plugins: plugins, isContentRoot: isContentRoot, enabled: threadRoot == nil
-        ))
+        .modifier(ChatRouteDestinations(model: model, plugins: plugins, isContentRoot: isContentRoot))
         // 留着标签栏时，键盘弹出后输入框和发送按钮被盖在键盘下面（iOS 26.5 模拟器实测）。
         .toolbar(.hidden, for: .tabBar)
         .task(id: model.draftKey(target)) { await model.loadDraft(target) }
@@ -745,27 +743,20 @@ private extension ChatRoomView {
     }
 }
 
-/// 聊天页登记导航路由。旁聊页也在这个栈上，重复登记同一类型会让栈退回根：只在主对话那一份上挂。
+/// 聊天页登记导航路由。旁聊页有自己的栈（盖层里），各登记一次互不影响。
 struct ChatRouteDestinations: ViewModifier {
     let model: ChatModel
     let plugins: PluginsModel
     let isContentRoot: Bool
-    let enabled: Bool
 
     func body(content: Content) -> some View {
-        Group {
-            if enabled {
-                content.navigationDestination(for: ChatRoute.self) { route in
-                    if isContentRoot {
-                        ChatDestination(model: model, plugins: plugins, route: route)
-                            .environment(\.wontonContentRoot, false)
-                    } else if case .chatBackup = route {
-                        ChatBackupView(model: model)
-                            .environment(\.wontonContentRoot, false)
-                    }
-                }
-            } else {
-                content
+        content.navigationDestination(for: ChatRoute.self) { route in
+            if isContentRoot {
+                ChatDestination(model: model, plugins: plugins, route: route)
+                    .environment(\.wontonContentRoot, false)
+            } else if case .chatBackup = route {
+                ChatBackupView(model: model)
+                    .environment(\.wontonContentRoot, false)
             }
         }
     }
