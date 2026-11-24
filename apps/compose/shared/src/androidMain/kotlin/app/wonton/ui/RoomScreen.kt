@@ -494,7 +494,11 @@ private fun RoomBar(
     onOpenWidget: (RoomWidget) -> Unit,
 ) {
     if (target.threadRoot != null) {
-        WontonPushedBar(header?.title ?: stringResource(R.string.side_chat), onClose, showsStatus = true)
+        WontonPushedBar(
+            header?.title?.takeIf { it.isNotBlank() } ?: stringResource(R.string.side_chat),
+            onClose,
+            showsStatus = true,
+        )
         return
     }
     val barTitle = if (isDirect) bot?.name ?: title else title
