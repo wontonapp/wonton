@@ -85,6 +85,8 @@ fi
 if step preflight "预检"; then
 docker version --format '   Docker {{.Server.Version}} {{.Server.Os}}/{{.Server.Arch}}'
 for id in "${plugins[@]}"; do
+  # 默认 Agent 由核心启动时自己装：对着已有的栈跑（SMOKE_ONLY）时它已经在，是正常的。
+  [[ $id != com.nousresearch.hermes ]] || continue
   [[ -z "$(labeled "$id")" ]] || fail "Docker 上已经有插件 $id 的资源，先卸载它再跑冒烟"
 done
 ok "没有残留的示例插件资源"
@@ -183,21 +185,28 @@ rm -f "$client_file"
 expect "使用方安装完成" "$(json status.state <<<"$installed")" running
 client_env() { docker inspect "$model_client" --format '{{range .Config.Env}}{{println .}}{{end}}' | sed -n "s/^$1=//p"; }
 expect "没有网关时模型变量是空的" "$(client_env BASE)|$(client_env KEY)|$(client_env MODEL)" "||"
+# 凭据按使用方的变量带上：magpie 对非回环、没凭据的请求回 401（契约测试 consumer.rs 同样带 Bearer）。
 request_models() {
-  docker exec "$model_client" curl -sS -o /tmp/models.json -w '%{http_code}' http://models.wonton.internal/v1/models
+  local -a auth=()
+  local key
+  key="$(client_env KEY)"
+  [[ -z "$key" ]] || auth=(-H "Authorization: Bearer $key")
+  docker exec "$model_client" curl -sS "${auth[@]}" -o /tmp/models.json -w '%{http_code}' \
+    http://models.wonton.internal:$WONTON_DEV_PORT/v1/models
 }
 expect "没有网关：核心报网关不可用" "$(request_models)" 503
 expect "错误类别" "$(docker exec "$model_client" cat /tmp/models.json | json error.kind)" models_unavailable
 # 从开发索引里把网关按包装一遍：核心现在接受 kind: system，网页和凭据都由核心照常创出来。
 magpie_dir="$(mktemp -d)"
-python3 - "$here/store/index.json" "$here/store/blobs" "$magpie_dir" <<'PY'
+python3 - "$here/store" "$magpie_dir" <<'PY'
 import json
 import pathlib
 import re
 import sys
 
-index, blobs, out = map(pathlib.Path, sys.argv[1:])
-entries = json.loads((index / "index.json").read_text())["plugins"]
+store, out = map(pathlib.Path, sys.argv[1:])
+blobs = store / "blobs"
+entries = json.loads((store / "index.json").read_text())["plugins"]
 entry = next(e for e in entries if re.search(r"^\s+id:\s*ai\.usemagpie\.magpie\s*$", e["compose"], re.M))
 (out / "docker-compose.yml").write_text(entry["compose"])
 for path, digest in entry["files"].items():
@@ -241,6 +250,9 @@ expect "吊销后旧凭据换不到网关的上游凭据（网关回 HTTP $revok
 docker exec "$magpie" magpie provider rm smoke-fake >/dev/null || fail "删不掉假上游"
 docker rm -f "$fake_upstream" >/dev/null
 docker stop "$magpie" >/dev/null
+# 核心把停掉的网关记成 degraded 之后才不再转发，否则请求会先撞到已停的地址回 502。
+for _ in $(seq 60); do [[ "$(plugin_state ai.usemagpie.magpie)" != running ]] && break; sleep 1; done
+expect "网关停了" "$(plugin_state ai.usemagpie.magpie)" degraded
 expect "网关没启动：核心报网关不可用" "$(request_models)" 503
 expect "错误类别" "$(docker exec "$model_client" cat /tmp/models.json | json error.kind)" models_unavailable
 # 后面 Hermes 和“模型设置”网页两步还要用这个网关，重新起来放着，最后一步再卸。
