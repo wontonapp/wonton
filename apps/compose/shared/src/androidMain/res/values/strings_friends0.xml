@@ -25,7 +25,7 @@
     <!-- Failure title when the Matrix server can't be reached. -->
     <string name="friends_error_transport">Can\'t reach the Matrix server</string>
     <!-- Next step under the invalid-ID failure. -->
-    <string name="friends_error_invalid_user_id_next">Use the whole ID, like @bob:example.org.</string>
+    <string name="friends_error_invalid_user_id_next">Ask them for their real, full friend address or user link instead of copying the example.</string>
     <!-- Failure title when the server asks to wait before trying again. Argument: seconds to wait. -->
     <string name="friends_error_rate_limited">Too many requests. Wait %1$d seconds.</string>
     <!-- Failure title for the remaining categories. -->

@@ -24,7 +24,7 @@
     <!-- Failure title when the Matrix server can't be reached. -->
     <string name="friends_error_transport">Matrix サーバーに接続できません</string>
     <!-- Next step under the invalid-ID failure. -->
-    <string name="friends_error_invalid_user_id_next">@bob:example.org のような完全な ID を入れてください。</string>
+    <string name="friends_error_invalid_user_id_next">形式の例をそのまま入力せず、相手に実際の完全な友だちアドレスかユーザーリンクを送ってもらってください。</string>
     <!-- Failure title when the server asks to wait before trying again. Argument: seconds to wait. -->
     <string name="friends_error_rate_limited">リクエストが多すぎます。%1$d 秒お待ちください。</string>
     <!-- Failure title for the remaining categories. -->

@@ -278,6 +278,7 @@ fn reason(error: &wonton_matrix::Error) -> &'static str {
         Error::NotReady(_) => "not-ready",
         Error::Upstream(_) | Error::CommentNotSent(_) => "upstream",
         Error::InvalidInput(_) => "invalid-input",
+        Error::NotInvited(_) => "not-invited",
     }
 }
 
