@@ -114,7 +114,11 @@ deploy/dev/core/dev.sh devices                 # 已登记的设备；revoke <en
 
 加设备时交接聊天密钥（ADR-0087）没有第二台 App 时，用真实的客户端核心扮演旧设备：
 `cargo run -p wonton-client --example key-handoff-old-device -- <数据目录> <配对码> <写码的文件>` 登录、开好备份后打开
-“添加设备”，把给新设备的码写进文件；对表情时打印表情并替主人点“相同”，之后留两分钟回答新设备要密钥。
+“添加设备”，等加密历史真的进了房间预览才把给新设备的码写进文件；对表情时另起一行按序打印符号（外面拿它跟新设备屏幕上
+的比），并替主人点“相同”，之后留两分钟回答新设备要密钥。恢复密钥另外写进 `<写码的文件>.recovery`。
+历史句用 `KEY_HANDOFF_HISTORY_TEXT` 换（走查要和 App 那边同一个字符串）——
+它先往默认 Bot 的私聊发一句加密历史，给恢复密钥恢复和历史解密留证据；问不到默认 Bot（没装、没就绪）时用
+`KEY_HANDOFF_BOT_USER` 给它的 Matrix 用户 ID。历史发不出去示例直接退，不写码。
 
 在本机用隧道客户端示例扮演手机：`cargo run -p wonton-tunnel --example tunnel-client -- pair '<配对码>'` 用配对码
 登记它（`-- id` 输出它的 ID）。`--auth` 和 App 一样起带会话凭据的 HTTP 正向代理，启动时打印凭据：

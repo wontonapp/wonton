@@ -197,6 +197,39 @@ adb shell "am instrument -w -r -e class app.wonton.android.FirstRunWalkthroughTe
   -e phase light -e code '$code' app.wonton.android.test/androidx.test.runner.AndroidJUnitRunner"
 ```
 
+## 加设备交接与恢复走查
+
+连开发栈的界面走查在 `androidApp/src/androidTest`。`SasWalkTest` 跑加设备交接（配对 → SAS → 历史解密）和没有可信设备时的
+两条恢复路径（ADR-0087、ADR-0076），栈按 [`deploy/dev/core/README.md`](../../deploy/dev/core/README.md) 的
+“交接聊天密钥”一节备好旧设备（`key-handoff-old-device` 示例，用户名不同时用 `KEY_HANDOFF_BOT_USER` 指定它的用户 ID）。
+
+- 每跑一次成一个新设备：配对码只能用一次，配对页也只在没配对的 App 上出现。每条用例单独 `am instrument` 一次，
+  跑前 `adb shell pm clear app.wonton.android`，现取一个新码。
+- 交接那条要比两端表情：示例打出 `表情：` 那行后，把后面的 7 个符号（一个空格分隔，用例按空格拆）写进
+  `/sdcard/Android/data/app.wonton.android/files/sas-emoji.txt`。用例只等 120 秒，得用命令写：
+
+```bash
+symbols=$(grep '^表情：' <示例日志> | tail -n 1 | sed 's/^表情：//')
+printf '%s' "$symbols" | adb -s <串号> shell 'cat > /sdcard/Android/data/app.wonton.android/files/sas-emoji.txt'
+```
+
+  也可以先把符号存成文件再 `adb -s <串号> push <文件> /sdcard/Android/data/app.wonton.android/files/sas-emoji.txt`。
+- 恢复和重置两条先 `dev.sh devices` 看设备 ID，逐个 `dev.sh revoke <ID>`（含示例那台）；重置那条用上一台已删、
+  钥匙作废的状态，`RECOVERY_KEY_B64` 取示例写在码文件旁的 `.recovery`。栈不在本机时这两个命令经
+  `ssh <机>-stack dev <栈名> devices` / `revoke <ID>` 在那套栈上跑，别在调用机直接跑。
+- 历史必须两端同一串：示例的 `KEY_HANDOFF_HISTORY_TEXT` 和 `HISTORY_TEXT_B64` 解出来的要完全一致，不设时示例
+  自己按时间戳造一句，明文断言必红。
+- 历史和密钥都经 base64 传，照这样拼参数：
+
+```bash
+CODE_B64=$(printf %s '<码>' | base64 -w0)
+HISTORY_B64=$(printf %s '<历史>' | base64 -w0)
+RECOVERY_KEY_B64=$(printf %s '<恢复密钥>' | base64 -w0)
+adb shell am instrument -w -e PAIRING_CODE_B64 "$CODE_B64" -e HISTORY_TEXT_B64 "$HISTORY_B64" \
+  -e RECOVERY_KEY_B64 "$RECOVERY_KEY_B64" \
+  -e class app.wonton.android.SasWalkTest#<用例> app.wonton.android.test/androidx.test.runner.AndroidJUnitRunner
+```
+
 ## 检查
 
 ```bash
