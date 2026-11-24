@@ -56,3 +56,17 @@ PR #859（分支 fix/ios-side-chat-entry）按复审 rv-859 改完，CI 全绿�
 - 自托管 mini 的 iOS 27.1 运行时只注册了 iPhone Duo 一个机型，按名字建 iPhone 17 会报 `Incompatible device`；设备库还会留坏设备，boot 直接报同错。
 - `snapshots-record` 两个作业都在自己结束时摘标签，摘标签的事件又会按 `label.name` 命中 concurrency 的取消条件，先把另一个还在录的作业掐掉。
 - 录模式在 snapshot-testing 里就是按失败报（“Record mode is on”），重录作业天生是红的，看不出“录成功”还是“录崩了”。
+
+## 复审 rv-804c 两轮之后（11-24 晚）
+
+- 必须改 1：Android 恢复草稿空也恢复，抽 `restoredDraft` + `ComposerEditRestoreTest`（删掉修复会红）。
+- 必须改 2：好友失败分类并回 main（#966）：`NotReady`/`InvalidInput` 回 `Upstream`，只剩 `NotInvited` 是 `RequestNotFound`。
+- 可选：iOS 进编辑态不报“在输入”（`suppressNextTyping` 那类抑制，两边都只在框里真会变时压）；编辑途中打字就不拿原草稿盖（`DraftWrite::Restore` + `restore_if_unchanged`，两条用例，删比较会红）；`start_edit` 读原草稿失败会报；只有 `NotInTimeline` 才换时间线（新错误变体）；旧 `composer.json` 字符串 failure 能读回（附用例，删修复会红）；两端状态行失败都有红字；无用 import、用例名、模块说明、错字、措辞。
+- 合并 main 时 #966 的 example 用了不存在的 `PairingFailure::PendingApproval`（main 本就红），改成看 `JoinPending`。
+- 文档改成“有条件恢复”：ADR 第 10 节、`edit.rs`、`edit_actions.rs`、`agent_run.rs` 注释。
+
+验证（本轮）：`chat::` 152 passed、`composer::` 19、`friends` 全绿（含那两条）、`matrix --lib` 67、`--test-threads=1` 全量 445 passed、clippy `-D warnings`（client 与 matrix）、fmt/ui-text/冲突标记/行数门禁通过。
+
+已知非本 PR：全量 lib 并行跑时 `chat::choices::tests::the_failure_reason_is_a_sentence_with_the_original_as_detail` 会偶发红（`set_languages` 是进程全局，被并行用例改掉），串行 445 全过；`choices.rs`/`l10n.rs` 与 main 一致。
+
+没做/没验证：状态行被拒的界面用例（假数据不产生拒绝）；Android detekt/单测、iOS 模拟器构建、tuwunel 用例待 CI 与主人。
