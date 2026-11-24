@@ -32,6 +32,8 @@ for r in rows:
     }
     sleep 0.5
   done
+  { grep -q Keys <<<"$(hermes_reply "$1")" && grep -q Models <<<"$(hermes_reply "$1")"; } &&
+    fail "配上模型后 Hermes 还在提示去设置模型：$(hermes_reply "$1")"
   ok "第 $3 轮模型调用成功且有输出 token，用量记在 Hermes 的凭据名下"
 }
 expect_hermes_memory() {

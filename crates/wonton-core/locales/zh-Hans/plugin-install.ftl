@@ -261,7 +261,6 @@ plugin-install-prv-permission-needs-egress = egress.proxy 权限必须声明 pro
 plugin-install-prv-egress-needs-network = provides.egress_proxy 必须申请 network.egress 权限
 plugin-install-prv-egress-port = provides.egress_proxy.port 不能为 0
 plugin-install-prv-empty = provides 至少声明一项能力
-plugin-install-prv-models-system-only = 只有 kind: system 的插件能声明 provides.models
 plugin-install-prv-models-port = provides.models.port 不能为 0
 plugin-install-prv-models-apis-path = provides.models.apis 的路径必须以 / 开头
 plugin-install-prv-models-default-model = provides.models.default_model 不能为空

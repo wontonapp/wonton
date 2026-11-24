@@ -22,6 +22,11 @@ for key in sys.argv[1].split("."):
 print(json.dumps(value) if isinstance(value, (bool, dict, list)) else value)' "$1"
 }
 
+# 插件在核心里的状态（running、degraded……），没装是 absent。
+plugin_state() {
+  "$dev" list | awk -v id="$1" '$1 == id { print $2; found = 1 } END { if (!found) print "absent" }'
+}
+
 known_step() { [[ " ${smoke_steps[*]} " == *" $1 "* ]]; }
 
 # 参数先校验，写错的步骤名在起栈之前就报出来。

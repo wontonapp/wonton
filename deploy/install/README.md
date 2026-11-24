@@ -10,8 +10,8 @@ curl -fsSL https://raw.githubusercontent.com/wontonapp/wonton-install/main/insta
 脚本副本放在公开仓库 [`wontonapp/wonton-install`](https://github.com/wontonapp/wonton-install)（主仓库私有），
 那份副本对应的提交记在本目录的 `public-copy`，两边不一样 CI 会失败，见[公开仓库里的副本](#公开仓库里的副本)。
 
-装好核心后在后台自己装上系统插件（模型网关 magpie），再装一次默认 Agent
-Hermes（ADR-0007），授予它 `models`、`matrix.bot`、`tools`、`network.egress`。装好后浏览器用主机的
+核心启动后在后台装一次默认 Agent Hermes（ADR-0007、ADR-0108），授予它 `matrix.bot`、`tools`、`network.egress`；
+模型在 Hermes 自己的网页里接。装好后浏览器用主机的
 IP 打开 `http://<IP>:8480/`，是局域网状态页：运行状态，以及还没有设备时的首次配对二维码。
 
 安装输出是终端时，最后显示同一个首次配对码，第一台设备配上后结束；`curl | sudo sh` 的标准输入是管道，不影响这个体验。
@@ -23,9 +23,9 @@ IP 打开 `http://<IP>:8480/`，是局域网状态页：运行状态，以及还
 或直接在 App 里粘贴文本码。二维码使用 L 级纠错，保留四模块静区；输出到管道或文件时仍显示二维码，不按终端宽度隐藏。
 
 Hermes 装好后，聊天列表里就有和它的加密私聊。它的镜像要下载约 1 GB（解开约 4 GB），全新主机上要等 5 分钟左右，
-还没装好时插件列表和局域网状态页上是“安装中”；拉不下镜像时两处都写明原因，核心隔一阵自动重试。在“模型设置”里
-添加任意一家模型服务商的 key，Hermes 就能回答；没添加时它会提示去添加（ADR-0008）。主人卸掉 Hermes 后，核心不会
-再自动装它。
+还没装好时插件列表和局域网状态页上是“安装中”；拉不下镜像时两处都写明原因，核心隔一阵自动重试。在 Hermes 自己的
+网页里接模型（Keys 页填 key 或登录订阅、Models 页选模型），它就能回答；没接时它会提示去接（ADR-0108）。主人卸掉
+Hermes 后，核心不会再自动装它。
 
 - `install.sh`：检查系统和 Docker，拉核心镜像，在镜像里执行 `wonton-core init` 注册服务器名、准备证书、生成密钥和配置，写 `.env`，
   最后用镜像里的 compose 启动 Tuwunel 等服务，等到都健康。可调的环境变量写在脚本开头和下面。
@@ -143,12 +143,12 @@ curl -fsSL https://raw.githubusercontent.com/wontonapp/wonton-install/main/insta
 
 ## 拉不到镜像
 
-核心、Tuwunel 和 magpie 的镜像在 GHCR，Hydra、tusd 和 Hermes 的在 Docker Hub；国内的主机常常连不上 Docker Hub 或 GHCR。
+核心和 Tuwunel 的镜像在 GHCR，Hydra、tusd 和 Hermes 的在 Docker Hub；国内的主机常常连不上 Docker Hub 或 GHCR。
 安装脚本拉不到镜像、且 Docker 报的是拨号超时一类的网络错误时，会直接说明连不上镜像仓库，并给出给 Docker daemon 配代理
 的做法（systemd drop-in），配好后重新执行安装命令即可；别的拉取失败（认证、清单不存在、磁盘满这些）按原样报。
 
 装 Docker 本身也常被网络卡住：用官方 `get.docker.com` 时，脚本内部的下载不会带你的代理环境变量（`sudo` 会剥掉），要
-`sudo env https_proxy=http://代理地址:端口 sh get-docker.sh`，或先给 apt 配代理。magpie 和 Hermes 由核心拉：拉不到时
+`sudo env https_proxy=http://代理地址:端口 sh get-docker.sh`，或先给 apt 配代理。Hermes 由核心拉：拉不到时
 插件列表里如实显示原因，核心隔一段时间（最长 10 分钟）自动重试，配好代理后不用重装。国内的镜像仓库按 ADR-0012 以后加上。
 
 安装前脚本会看一眼 Docker 数据目录所在盘的剩余空间，不到 8 GB 时提醒一次（Hermes 的镜像约 4.3 GB；已有的镜像越多要得

@@ -13,7 +13,7 @@ use super::super::image_worker::ImageError;
 use super::super::lan::webui;
 use super::super::languages::Languages;
 use super::super::manager::{InstallError, PluginManager, supported};
-use super::super::manifest::{Manifest, ManifestExt, Permission, PluginId, PluginKind};
+use super::super::manifest::{Manifest, ManifestExt, Permission, PluginId};
 use super::super::package::PluginPackage;
 use super::super::render::{Deployment, dry_run};
 use super::super::store::{EnabledPermission, InstalledRecord};
@@ -251,13 +251,6 @@ impl PluginManager {
 
     /// 这台主机上装不了的原因，和安装时的检查一致，但什么也不改。
     async fn precheck(&self, m: &Manifest, langs: &Languages) -> Result<(), InstallError> {
-        if m.kind == PluginKind::System {
-            return Err(InstallError::Unsupported(l10n::text(
-                langs,
-                "install-system-preinstalled",
-                &[],
-            )));
-        }
         {
             let plugins = self.plugins.read().expect("插件表锁中毒");
             if let Some(entry) = plugins.get(&m.id) {
@@ -303,9 +296,6 @@ impl PluginManager {
         m: &Manifest,
         langs: &Languages,
     ) -> Result<Option<String>, InstallError> {
-        if m.kind == PluginKind::System {
-            return Ok(Some(l10n::text(langs, "install-system-preinstalled", &[])));
-        }
         blocked_by(self.fits_host(m, langs).await)
     }
 }

@@ -178,7 +178,6 @@ plugin-settings-store-source-plugin-missing = インデックス{ $provider }に
 plugin-settings-store-community-partial = 読めなかったものがあります：{ $missing }
 plugin-settings-store-community-page-failed = 検索結果の{ $page }ページ目（{ $error }）
 plugin-settings-store-community-unavailable = コミュニティのアプリを取得できません：{ $error }
-plugin-settings-store-system-app = システムアプリは自宅サーバーに同梱されているものだけです
 plugin-settings-store-permission-unsupported = この自宅サーバーは権限{ $permission }にまだ対応していません
 plugin-settings-store-index-newer = インデックスの形式は{ $format }です。このバージョンの自宅サーバーが読めるのは{ $supported }までです。新しいインデックスを使うには自宅サーバーをアップデートしてください
 plugin-settings-store-index-invalid = インデックスを読み込めません：{ $error }
