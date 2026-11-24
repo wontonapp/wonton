@@ -1,0 +1,12 @@
+# Wonton 给 Hermes 的插件，由 init 服务放进 Bot 的数据目录（$HERMES_HOME/plugins/wonton），config.yaml 启用。
+name: wonton
+version: 1.3.0
+description: "每轮带上云吞的用法引导：应用的事用应用的工具、身份已带好不用要令牌、调不通如实说；还没选模型时按说话人的语言告诉他去插件网页的 Keys、Models 页设置。App 一次发的几张照片加一句话收齐了再交给它，不当成一轮一轮的碎消息。旁聊（私聊里的 Matrix 话题）一轮结束在主对话里留一行结果，下一轮把旁聊的动态带给主对话。网页控制台里的对话按打开网页的人说话，会话归属照旧。"
+provides_locales: [en, zh, zh-hant, ja]
+provides_hooks:
+  - post_gateway_admission
+  - pre_llm_call
+  - pre_gateway_dispatch
+  - post_llm_call
+  - on_session_end
+  - on_session_reset

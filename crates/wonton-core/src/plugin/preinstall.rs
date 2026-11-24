@@ -215,6 +215,40 @@ impl PluginManager {
             .insert(id.clone());
     }
 
+    /// 预装随核心附带的插件：系统插件装完（或停下）先给模型网关的使用方对一次账（凭据的值在核心，网关的数据丢了也能
+    /// 补回来）；默认插件同时装，不等它们，两边都结束后再对一次账。默认 Agent 用自己的模型接入（ADR-0108），系统插件
+    /// 一直重试装不上也不能把它挡在外面（#643、#681）。
+    pub async fn preinstall_bundled(
+        &self,
+        system: Option<&Path>,
+        defaults: Option<&Path>,
+        backoff: Backoff,
+    ) {
+        let system = async {
+            if let Some(dir) = system
+                && let Err(e) = self.ensure_system(dir, backoff).await
+            {
+                tracing::error!(error = %e, "预装系统插件失败");
+            }
+            for (plugin, error) in self.reconcile_models().await {
+                tracing::error!(%plugin, %error, "模型网关凭据对账失败");
+            }
+        };
+        let defaults = async {
+            if let Some(dir) = defaults
+                && let Err(e) = self.ensure_defaults(dir, backoff).await
+            {
+                tracing::error!(error = %e, "预装默认插件失败");
+            }
+        };
+        // 两条 await 链都搬上堆：预装、升级的链贴着测试线程的栈上限（见 system.rs）。
+        tokio::join!(Box::pin(system), Box::pin(defaults));
+        // 默认插件装得比系统插件晚，装完再对一次账：声明了 models 的默认 Bot 这时才拿得到凭据并按新变量重建。
+        for (plugin, error) in self.reconcile_models().await {
+            tracing::error!(%plugin, %error, "默认插件接上模型网关失败");
+        }
+    }
+
     /// 装上 `dir` 里还没装过的默认插件，一个装完（或停下）再装下一个。系统插件不放这里。
     pub async fn ensure_defaults(&self, dir: &Path, backoff: Backoff) -> Result<(), InstallError> {
         for package in self.bundled_in(dir)? {

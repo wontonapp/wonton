@@ -1,0 +1,20 @@
+/* 手机上的页面头收成一行。上游 0.1.1327 把品牌和标签分两行：上面一行只有一个 18px 的鸟和
+   两个图标，近 50px 高的空白，页面内容被压到 110px 以下。App 自己的标题栏已经写着页面名，
+   品牌让给它；标签和图标并排，标签自己横向滑。平板和桌面不动。 */
+@media (max-width: 760px), (pointer: coarse) and (max-width: 1024px) {
+  body.web .top {
+    flex-wrap: nowrap; height: auto; min-height: 0;
+    padding: 2px max(8px, env(safe-area-inset-right)) 2px max(8px, env(safe-area-inset-left));
+    gap: 0 8px;
+  }
+  body.web .top .brand { display: none; }
+  body.web .top #nav {
+    position: relative; left: auto; top: auto; transform: none; order: 0;
+    flex: 1 1 auto; min-width: 0; max-width: none;
+    overflow-x: auto; overflow-y: hidden; overscroll-behavior-x: contain; scrollbar-width: none;
+  }
+  body.web .top #nav::-webkit-scrollbar { display: none; }
+  body.web .top #nav button { flex: none; height: 40px; padding: 0 12px; font-size: 13px; }
+  body.web .top .actions { flex: none; margin-left: 0; min-height: 40px; }
+  body.web .top .icon { width: 40px; height: 40px; }
+}

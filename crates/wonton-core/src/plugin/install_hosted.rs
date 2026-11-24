@@ -426,6 +426,7 @@ impl PluginManager {
             relays: Vec::new(),
             firewalled: false,
             proxied: false,
+            bundled: false,
             oidc_client_secret: None,
             installed_at: old.map_or_else(now_secs, |old| old.installed_at),
             origin: package.origin.clone(),

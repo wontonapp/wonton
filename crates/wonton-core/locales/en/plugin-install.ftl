@@ -262,7 +262,6 @@ plugin-install-prv-permission-needs-egress = The egress.proxy permission needs p
 plugin-install-prv-egress-needs-network = provides.egress_proxy needs the network.egress permission
 plugin-install-prv-egress-port = provides.egress_proxy.port can't be 0
 plugin-install-prv-empty = provides must declare at least one capability
-plugin-install-prv-models-system-only = Only kind: system apps can declare provides.models
 plugin-install-prv-models-port = provides.models.port can't be 0
 plugin-install-prv-models-apis-path = Paths in provides.models.apis must start with /
 plugin-install-prv-models-default-model = provides.models.default_model can't be empty

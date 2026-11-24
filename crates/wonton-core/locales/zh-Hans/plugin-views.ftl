@@ -62,7 +62,6 @@ install-images-unpinned = 程序没有锁定具体版本：{ $images }
 install-webui-sso = 在应用里打开它的网页时自动登录
 install-host-network-egress = 它连外网用服务器自己的网络，不经过云吞的代理
 install-host-network-proxied = 它连外网也经过云吞的代理
-install-system-preinstalled = 系统应用只能随家里的服务器预装
 install-already-installed = 已经装了 { $id }（版本 { $version }）
 install-unreviewed-provider = 云吞没审核过这个应用，程序由 { $provider } 提供
 install-unreviewed-provider-via = 云吞没审核过这个应用，程序由 { $provider } 提供，列在 { $host } 里

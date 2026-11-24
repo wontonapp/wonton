@@ -10,8 +10,8 @@ use tokio::time::Instant;
 
 use super::languages::Languages;
 use super::manager::{InstallError, PluginManager};
-use super::manifest::{Manifest, Permission, PluginId, PluginKind};
-use super::models::{ModelsRoute, unavailable};
+use super::manifest::{Manifest, Permission, PluginId};
+use super::models::{ModelsRoute, unavailable, uses_models};
 use super::store::{create_private_dir, read_json, write_json};
 use crate::http::{HttpError, RequestBody};
 use crate::l10n;
@@ -40,10 +40,6 @@ pub(crate) enum RouteProbe {
 pub(super) struct ProbeSchedule {
     startup_checked: bool,
     upstream_error: Option<(String, Instant)>,
-}
-
-pub(super) fn needs_default_model(manifest: &Manifest) -> bool {
-    manifest.kind == PluginKind::Agent || manifest.permissions.contains(&Permission::Models)
 }
 
 impl PluginManager {
@@ -106,7 +102,7 @@ impl PluginManager {
 
     /// 刚安装的使用方：补全节奏里“刚安装”的那一次（网关本身的清单不申请 `models`，不会进来）。
     pub(super) async fn probe_fresh_consumer(&self, manifest: &Manifest) {
-        if !needs_default_model(manifest) {
+        if !uses_models(manifest) {
             return;
         }
         self.check_models_once(vec![manifest.id.clone()]).await;
@@ -308,14 +304,14 @@ impl PluginManager {
         }
     }
 
-    /// 安装预览的提示（不挡安装）：默认路由还没有模型时提一句先接模型。只查模型列表，
-    /// 不发可能计费的补全（见 `scheduled_model_probe` 的节奏约定）。
+    /// 安装预览的提示（不挡安装）：申请了 `models` 的插件，默认路由还没有模型时提一句先接模型。不看插件是不是
+    /// Agent：Agent 可以用自己的模型接入（ADR-0108）。只查模型列表，不发可能计费的补全（见 `scheduled_model_probe`）。
     pub(in crate::plugin) async fn model_route_notice(
         &self,
         manifest: &Manifest,
         langs: &Languages,
     ) -> Option<wonton_protocol::CardLine> {
-        if !needs_default_model(manifest) {
+        if !uses_models(manifest) {
             return None;
         }
         match self.default_model_target(langs).await {

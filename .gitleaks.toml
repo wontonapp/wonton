@@ -50,3 +50,9 @@ description = "入口热加载演练里现场生成的 JWT 密钥只写 PEM 空�
 condition = "AND"
 paths = ['''^crates/wonton-core/src/matrix/federation_config/tests\.rs$''']
 regexes = ['''-----BEGIN PRIVATE KEY-----\\n\{\}''']
+
+[[allowlists]]
+description = "index.json 的 files 是插件包内文件的 sha256，文件名带 credentials 或 api 的（credentials.sh、wonton/dashboard/api.py）会被 generic-api-key 当成密钥；上报的值就是 64 位小写十六进制摘要，只放行这个形状"
+condition = "AND"
+paths = ['''^deploy/dev/core/store/index\.json$''']
+regexes = ['''^[0-9a-f]{64}$''']

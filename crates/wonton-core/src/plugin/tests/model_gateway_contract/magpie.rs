@@ -13,11 +13,13 @@ use crate::plugin::github::GitHub;
 use crate::plugin::github_source::{self, SourceRef, Wanted};
 use crate::plugin::interpolate::Vars;
 use crate::plugin::languages::Languages;
-use crate::plugin::manifest::PluginKind;
 use crate::plugin::names::LABEL_INSTANCE;
 use crate::test_docker::Names;
 
-const LOCK: &str = include_str!("../../../../../../plugins/system.lock");
+/// 被测的 magpie 插件包：来源、固定提交和包摘要（同 `plugins/system.lock` 的写法）。magpie 不随核心预装（ADR-0108），
+/// 这里单独钉住一版，证明一个真实网关满足通用的消费方契约；升级 magpie 时改这一行。
+const MAGPIE: &str = "github:geraldpeng6/wonton-plugin-magpie@v0.6.3 ccc49916f42f763ece50ed19f60eaadd2fb7a1a8 \
+                      sha256:2a99dbb92cd5c0f838ccd55a0ac21051279fde3a6195637af004a74f13162049";
 const PROXIES: [&str; 8] = [
     "HTTP_PROXY",
     "HTTPS_PROXY",
@@ -181,27 +183,21 @@ async fn wait_for_default_model(container: &str) {
 }
 
 async fn locked_package() -> PluginPackage {
-    let fields = LOCK
-        .lines()
-        .filter(|line| !line.trim_start().starts_with('#'))
-        .map(|line| line.split_whitespace().collect::<Vec<_>>())
-        .find(|fields| fields.first() == Some(&"system"))
-        .expect("the repository lock must declare a system gateway");
-    assert_eq!(fields.len(), 5);
+    let fields = MAGPIE.split_whitespace().collect::<Vec<_>>();
+    assert_eq!(fields.len(), 3);
     let langs = Languages::default();
-    let mut source = SourceRef::parse(fields[2], &langs).unwrap();
+    let mut source = SourceRef::parse(fields[0], &langs).unwrap();
     // Fetch immutable bytes, not the plugin's live main branch or a moving release tag.
-    source.wanted = Wanted::Commit(fields[3].to_owned());
+    source.wanted = Wanted::Commit(fields[1].to_owned());
     let github = GitHub::new(&CoreProxy::default());
     let origin = github_source::resolve(&github, &source, &langs)
         .await
         .unwrap();
-    assert_eq!(origin.commit, fields[3]);
+    assert_eq!(origin.commit, fields[1]);
     let package = github_source::fetch(&github, &origin, &langs)
         .await
         .unwrap();
-    assert_eq!(package.digest(), fields[4], "locked package digest changed");
-    assert_eq!(package.manifest.kind, PluginKind::System);
+    assert_eq!(package.digest(), fields[2], "pinned package digest changed");
     package
 }
 
