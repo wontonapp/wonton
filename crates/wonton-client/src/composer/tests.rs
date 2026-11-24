@@ -900,3 +900,43 @@ async fn shared_items_beyond_the_limit_are_refused() {
     ));
     assert!(view(&s).outgoing.is_empty());
 }
+
+/// 旧的 `composer.json` 里 `failure` 是一句原文：解析不能整份失败，原文要留着。
+#[test]
+fn an_old_failure_string_still_loads() {
+    let dir = tempfile::tempdir().unwrap();
+    let state = serde_json::json!({
+        "rooms": {
+            "!room:example.invalid": {
+                "tray": [],
+                "outgoing": [{
+                    "id": "abc",
+                    "group": "abc",
+                    "room": "!room:example.invalid",
+                    "body": "hello",
+                    "reply_to": null,
+                    "prepared_reply": null,
+                    "items": [],
+                    "timestamp_ms": 1,
+                    "handed": 0,
+                    "failure": "transport unavailable"
+                }]
+            }
+        }
+    });
+    std::fs::write(dir.path().join("composer.json"), state.to_string()).unwrap();
+    let loaded = super::store::Disk::new(dir.path().to_path_buf()).load();
+    let room = loaded
+        .rooms
+        .get("!room:example.invalid")
+        .expect("the room survives");
+    let failure = room.outgoing[0]
+        .failure
+        .as_ref()
+        .expect("the old failure text survives");
+    assert!(matches!(
+        failure.failure,
+        wonton_protocol::SendFailure::Other
+    ));
+    assert_eq!(failure.details, "transport unavailable");
+}

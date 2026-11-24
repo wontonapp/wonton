@@ -284,8 +284,12 @@ fn send_state(status: SendStatus) -> SendState {
             }),
         },
         SendStatus::Sent => SendState::Sent,
-        SendStatus::Failed { error, recoverable } => SendState::Failed {
-            failure: wonton_protocol::SendFailure::Other,
+        SendStatus::Failed {
+            failure,
+            error,
+            recoverable,
+        } => SendState::Failed {
+            failure,
             details: Some(error),
             recoverable,
         },
@@ -434,7 +438,11 @@ pub(crate) fn failure(error: &Error) -> ChatFailure {
         Error::NotInvited(_) | Error::Upstream(_) | Error::CommentNotSent(_) => {
             ChatFailure::Upstream
         }
-        Error::InvalidInput(_) => ChatFailure::InvalidInput,
+        Error::InvalidInput(_)
+        | Error::NotInTimeline(_)
+        | Error::TooLarge(_)
+        | Error::UnsupportedType(_)
+        | Error::ReplyTarget(_) => ChatFailure::InvalidInput,
     }
 }
 

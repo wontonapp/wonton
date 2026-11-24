@@ -12,4 +12,7 @@
     <!-- Result line when the search in the forward sheet matches no room. Android only. -->
     <string name="message_forward_no_match">その名前のチャットはありません</string>
     <string name="message_choice_failed">送信できませんでした。もう一度タップしてください</string>
+    <!-- Title of the bar above the input while editing a message. Android only. -->
+    <string name="message_edit_title">メッセージを編集</string>
+
 </resources>

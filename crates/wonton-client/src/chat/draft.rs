@@ -22,6 +22,8 @@ pub(super) enum DraftWrite {
     Save(TimelineKey, Draft),
     /// 已经发出去的正文：存着的草稿还是它才删，回复对象一起删（发送途中又打了字就不是它了）。
     Forget(TimelineKey, String),
+    /// 退出编辑态：存着的草稿还是编辑时放进框里那份（编辑途中没再打字）才写回原草稿。
+    Restore(TimelineKey, String, Draft),
     /// 用图片回复了这条：存着的草稿还在回复它的话，只去掉回复对象，正文留着。
     ForgetReply(TimelineKey, OwnedEventId),
     /// 读回草稿，发给 `ack`。排在前面的写入都落盘了才回。
@@ -67,6 +69,20 @@ pub(super) async fn write_drafts(
                     chat.report_op_failure("chat-draft-clear-failed", &error);
                 }
             }
+            DraftWrite::Restore(key, editing, saved) => {
+                let Some(session) = &session else { continue };
+                let stored = session
+                    .draft(&key.room_id, key.thread())
+                    .await
+                    .ok()
+                    .flatten();
+                if restore_if_unchanged(stored.as_ref(), &editing, &saved).is_none() {
+                    continue;
+                }
+                if let Err(error) = session.save_draft(&key.room_id, key.thread(), &saved).await {
+                    chat.report_op_failure("chat-draft-save-failed", &error);
+                }
+            }
             DraftWrite::ForgetReply(key, event_id) => {
                 let Some(session) = &session else { continue };
                 let Some(stored) = session
@@ -101,6 +117,15 @@ pub(super) async fn write_drafts(
             }
         }
     }
+}
+
+/// 退出编辑态要不要把原草稿写回去：存着的草稿还是框里那份原文（编辑途中没再打字）才写。
+pub(super) fn restore_if_unchanged<'a>(
+    stored: Option<&Draft>,
+    editing: &str,
+    saved: &'a Draft,
+) -> Option<&'a Draft> {
+    (stored.map(|stored| stored.body.trim()) == Some(editing.trim())).then_some(saved)
 }
 
 async fn save_draft(
@@ -143,6 +168,18 @@ impl ChatLink {
     pub(super) fn enqueue_draft(&self, write: DraftWrite) {
         // 写入任务随这个发送端一起活着，排不进去只可能是核心正在销毁。
         let _ = self.draft_writes.send(write);
+    }
+
+    /// 存着的草稿本身（正文和回复的事件 ID），进编辑态时存下来用。
+    pub(super) async fn read_raw_draft(
+        &self,
+        key: &TimelineKey,
+    ) -> Result<Option<Draft>, CoreError> {
+        let (ack, received) = oneshot::channel();
+        self.enqueue_draft(DraftWrite::Read(key.clone(), ack));
+        received.await.map_err(|_| CoreError::NotReady {
+            reason: l10n!(CATALOG, language(), "chat-draft-read-interrupted"),
+        })
     }
 
     /// 一条时间线（主对话或旁聊）输入框里的草稿，没打过字也没在回复时是 `None`。只在本机，换房间、重启核心都还在。
@@ -195,5 +232,34 @@ impl ChatLink {
             reply,
             preview,
         }))
+    }
+}
+
+#[cfg(test)]
+mod restore_tests {
+    use super::*;
+
+    fn draft(body: &str) -> Draft {
+        Draft {
+            body: body.to_owned(),
+            reply_to: None,
+        }
+    }
+
+    #[test]
+    fn the_saved_draft_comes_back_when_nothing_was_typed() {
+        let stored = draft("改成这样");
+        let saved = draft("之前的草稿");
+        assert_eq!(
+            restore_if_unchanged(Some(&stored), "改成这样", &saved).map(|d| d.body.as_str()),
+            Some("之前的草稿")
+        );
+    }
+
+    #[test]
+    fn typing_during_the_edit_keeps_the_new_text() {
+        let stored = draft("改成这样，又补了一句");
+        let saved = draft("之前的草稿");
+        assert!(restore_if_unchanged(Some(&stored), "改成这样", &saved).is_none());
     }
 }

@@ -14,4 +14,7 @@
     <string name="message_forward_no_match">No chat by that name</string>
     <!-- Caption under choices whose answer did not reach the server. No arguments. -->
     <string name="message_choice_failed">Couldn\'t send your choice. Tap it to try again.</string>
+    <!-- Title of the bar above the input while editing a message. Android only. -->
+    <string name="message_edit_title">Editing message</string>
+
 </resources>

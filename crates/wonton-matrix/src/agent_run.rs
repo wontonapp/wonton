@@ -33,6 +33,29 @@ pub struct AgentRunStatus {
     pub choices: Vec<AgentRunChoice>,
 }
 
+impl AgentRunStatus {
+    /// 按这条状态消息上的反应把我点过的选项对回来：加过的是选上了，在发、发失败的照实记。
+    /// 只认本账号的反应，别人的反应是 Bot 放的选项本身。
+    pub(crate) fn mark_answers(&mut self, reactions: &[crate::Reaction]) {
+        for choice in &mut self.choices {
+            let own = reactions
+                .iter()
+                .find(|reaction| reaction.key == choice.key)
+                .and_then(|reaction| reaction.own.as_ref());
+            match own {
+                Some(crate::OwnReaction::Sent) => choice.chosen = true,
+                Some(crate::OwnReaction::Sending) => choice.send = ChoiceSend::Sending,
+                Some(crate::OwnReaction::Failed { error, .. }) => {
+                    choice.send = ChoiceSend::Failed {
+                        message: error.clone(),
+                    };
+                }
+                None => {}
+            }
+        }
+    }
+}
+
 /// 从消息内容解析状态对象；不是状态消息（没有对象、`v` 不是 1、没有 `state`）返回 `None`，按普通消息显示。
 pub(crate) fn parse(content: &Map<String, Value>) -> Option<AgentRunStatus> {
     let object = content
