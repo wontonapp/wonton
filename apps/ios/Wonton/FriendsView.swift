@@ -318,7 +318,6 @@ private extension FriendsView {
         close {}
     }
 
-
     private func blockServer() {
         let name = normalizedServerName
         guard !name.isEmpty else { return }
@@ -431,7 +430,6 @@ extension View {
             ]
         )
     }
-
 
     /// 核心当场拒绝了一个操作（比如列表还没就绪）：说清原因就好。
     func friendsRejectionDialog(model: FriendsModel) -> some View {
