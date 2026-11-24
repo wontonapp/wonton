@@ -42,6 +42,7 @@ mod egress_switch;
 mod friend_namespace;
 mod github;
 mod gpu;
+mod gpu_docker;
 mod gpu_images;
 mod gpu_vendor;
 mod guide_backend_health;
