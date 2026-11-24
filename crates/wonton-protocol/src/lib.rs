@@ -41,6 +41,7 @@ mod link;
 mod link_preview;
 pub mod manifest;
 mod matrix_login;
+pub mod media;
 mod message_choice;
 mod message_layout;
 mod onboarding;

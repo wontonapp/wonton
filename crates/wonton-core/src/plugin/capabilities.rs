@@ -128,6 +128,17 @@ pub const PERSONAL_DATA: Capability = Capability {
     hosted: None,
 };
 
+/// 媒体源（ADR-0113）：列条目、上传、取播放计划，核心是使用方。与 `jellyfin`（Seerr 之类窄用途）并存，
+/// 同一个插件可以两样都提供。路径和失败信封在 `wonton-protocol::media`。
+pub const MEDIA_SOURCE: Capability = Capability {
+    name: wonton_protocol::media::MEDIA_CAPABILITY,
+    interface: "媒体源：GET /_wonton/capabilities 自报 operations 与 kinds，条目、上传、播放计划各走 /items、/uploads、/playback；\
+                每个请求带 X-Wonton-User，失败回 MediaFailure 信封",
+    credentials: Credentials::Required,
+    high_privilege: false,
+    hosted: None,
+};
+
 /// 远端 MCP（ADR-0066 第 3 节）：核心不直接外连，交给提供这个能力的连接器；没有包内目录，提供方不写 `mount`。
 pub const REMOTE_MCP: Capability = Capability {
     name: "remote_mcp",
@@ -175,6 +186,7 @@ pub const ALL: &[Capability] = &[
     REMOTE_MCP,
     MATRIX_RTC,
     PERSONAL_DATA,
+    MEDIA_SOURCE,
 ];
 
 pub fn lookup(name: &str) -> Option<&'static Capability> {
@@ -369,6 +381,23 @@ fn validate_provides(provides: &Provides, langs: &Languages) -> Result<(), Manif
                 )));
             }
             _ => {}
+        }
+        if name == wonton_protocol::media::MEDIA_CAPABILITY {
+            for (field, empty) in [
+                ("operations", service.operations.is_empty()),
+                ("kinds", service.kinds.is_empty()),
+            ] {
+                if empty {
+                    return Err(ManifestError::Invalid(text(
+                        langs,
+                        "plugin-capability-media-source-empty",
+                        &[
+                            ("capability", name.as_str().into()),
+                            ("field", field.into()),
+                        ],
+                    )));
+                }
+            }
         }
         if let Some(credentials) = &service.credentials {
             for (field, argv) in [
@@ -661,5 +690,58 @@ mod tests {
             e.to_string()
                 .contains("provides.x-acme.ledger.credentials.issue")
         );
+    }
+    fn media_source_provider(extra: serde_json::Value) -> Manifest {
+        let mut provider = serde_json::json!({
+            "service": "sidecar",
+            "port": 8090,
+            "operations": ["upload", "list"],
+            "kinds": ["photo"],
+            "credentials": {"issue": ["i", "{name}"], "revoke": ["r", "{name}"]},
+        });
+        if let serde_json::Value::Object(extra) = extra {
+            provider.as_object_mut().unwrap().extend(extra);
+        }
+        manifest_with_provides(serde_json::json!({"media_source": provider}))
+    }
+
+    #[test]
+    fn media_source_is_registered_and_requires_credentials() {
+        let capability = lookup(wonton_protocol::media::MEDIA_CAPABILITY).unwrap();
+        assert!(matches!(capability.credentials, Credentials::Required));
+        assert!(!capability.high_privilege);
+        assert!(capability.hosted.is_none());
+        assert_eq!(wonton_protocol::media::MEDIA_CAPABILITY, "media_source");
+    }
+
+    #[test]
+    fn media_source_providers_must_declare_credentials() {
+        let manifest = manifest_with_provides(serde_json::json!({
+            "media_source": {
+                "service": "sidecar",
+                "port": 8090,
+                "operations": ["upload"],
+                "kinds": ["photo"],
+            },
+        }));
+        let e = validate(&manifest, &Languages::default()).unwrap_err();
+        assert!(e.to_string().contains("media_source"));
+        assert!(e.to_string().contains("credentials"));
+    }
+
+    #[test]
+    fn media_source_providers_must_list_operations_and_kinds() {
+        validate(
+            &media_source_provider(serde_json::json!({})),
+            &Languages::default(),
+        )
+        .unwrap();
+
+        for field in ["operations", "kinds"] {
+            let manifest = media_source_provider(serde_json::json!({field: serde_json::json!([])}));
+            let e = validate(&manifest, &Languages::default()).unwrap_err();
+            assert!(e.to_string().contains("media_source"), "{e}");
+            assert!(e.to_string().contains(field), "{e}");
+        }
     }
 }

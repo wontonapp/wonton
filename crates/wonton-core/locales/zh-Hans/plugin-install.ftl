@@ -534,6 +534,7 @@ plugin-capability-port-zero = provides.{ $capability }.port 不能为 0
 plugin-capability-credentials-required = provides.{ $capability } 要声明 credentials：给每个使用方签一个只属于它的凭据
 plugin-capability-credentials-forbidden = provides.{ $capability } 不能声明 credentials：这个能力的提供方只认经核心转发来的请求
 plugin-capability-credentials-argv = provides.{ $capability }.credentials.{ $field } 是非空的 argv，并用 { $placeholder } 指明凭据名
+plugin-capability-media-source-empty = provides.{ $capability }.{ $field } 至少要写一项
 plugin-capability-service-unknown = { $field } 引用的服务 `{ $service }` 在 compose 里不存在
 plugin-capability-service-not-forwardable = { $field } 不能指向 network_mode: none 的服务：核心要转发进去、在里面签发凭据
 plugin-install-capability-deps-unsupported = 这个核心还不支持插件之间的依赖，升级核心后再装

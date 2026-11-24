@@ -22,6 +22,8 @@ serde_json = { workspace = true }
 sha2 = { workspace = true }
 thiserror = { workspace = true }
 uniffi = { workspace = true, optional = true }
+# Apache-2.0 OR MIT。媒体任务号和播放会话号。
+uuid = { workspace = true }
 
 [lints]
 workspace = true

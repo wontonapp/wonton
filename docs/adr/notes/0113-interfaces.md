@@ -2,9 +2,16 @@
 
 只改接口的 PR 的全部改动。**全部只加不改**，没有破坏性项；ADR 正文列了为什么不上破坏性改动（#585 的收口在壳内）。字段级照 ADR-0113 第 3、4 节，类型用 Rust 写。
 
-所有要过壳的类型都照 `file/mod.rs:291-320` 的写法加 `#[cfg_attr(feature = "uniffi", derive(uniffi::Record))]`（枚举加 `uniffi::Enum`）；下面为了可读没有逐条重复。
+所有要过壳的类型都照 `file/mod.rs:291-320` 的写法加 `#[cfg_attr(feature = "uniffi", derive(uniffi::Record))]`（枚举加 `uniffi::Enum`）；下面为了可读没有逐条重复。不过壳的 `IllegalTransition`、`Backoff`、`MediaOperation` 不加（`IllegalTransition` 将来要过壳得先改成 `uniffi::Error`）。
 
-模块位置：`crates/wonton-protocol/src/media/`，`lib.rs` 加 `pub mod media;`，按职责分 `mod.rs`（常量与入口类型）、`task.rs`、`session.rs`、`view.rs`。
+取值不认识时怎么办，按方向分（AGENTS.md）：
+
+- “服务端 → 消费方”方向的取值枚举（`MediaKind`、`TaskKind`、`TaskState`、`PauseReason`、`MediaFailureCode`、`ItemState`、`TrackKind`、`SegmentKind`、`ProviderStream`）都带 `Other(String)`，认不得的值把原文存进去、原样序列化回去，不报错；
+- 请求方向（`MediaAction`、`ControlOp`、`QueueOp`、`StopReason`）和清单/协商面（`MediaOperation`）照旧报错：发错方向的东西，收的一方也不知道该怎么执行；`ProgressUnit`、`QueueMode` 是核心自己定、两边都读的小枚举，同样报错；
+- 未知 `TaskState` 的转移规则只有服务端知道：只能进它，不能从它出来；字符串写法的原值原样回写，对象写法（暂停原因、失败体）只留标签名、载荷丢弃，读成 `"migrating"`；
+- `ItemState` 带内部标记，未知状态的原文就放在 `state` 里（`{"state":"frozen"}`），未知的附加键忽略。
+
+模块位置：`crates/wonton-protocol/src/media/`，`lib.rs` 加 `pub mod media;`，按职责分 `mod.rs`（常量、路径拼接与入口类型）、`task.rs`、`session.rs`、`view.rs`。
 
 ## `media/mod.rs`
 
@@ -16,10 +23,19 @@ pub use crate::personal_data::WONTON_USER_HEADER;
 /// 同一个人两台设备时区分；不打用户表。
 pub const WONTON_DEVICE_HEADER: &str = "X-Wonton-Device";
 
+/// Unix 毫秒（UTC）。
+pub type Timestamp = u64;
+
 pub const PATH_CAPABILITIES: &str = "/_wonton/capabilities";
 pub const PATH_UPLOADS: &str = "/uploads";
 pub const PATH_PLAYBACK: &str = "/playback";
 pub const PATH_ITEMS: &str = "/items";
+
+/// 列条目的路径，`query` 原样接在后面，不转义。
+pub fn items_path(query: &str) -> String { format!("{PATH_ITEMS}?{query}") }
+
+/// 条目自己的路径，`id` 原样接在后面，不转义。
+pub fn item_path(id: &str) -> String { format!("{PATH_ITEMS}/{id}") }
 
 /// 一条媒体条目的不变量；原生页要的展示字段全在这里，提供方内部 id 只回传给提供方。
 #[derive(Serialize, Deserialize, Debug, Clone, PartialEq)]
@@ -53,14 +69,12 @@ pub type TaskId = Uuid;
 pub type Person = String;
 pub type DeviceId = String;
 
-#[derive(Serialize, Deserialize, Debug, Clone, Copy, PartialEq)]
-#[serde(rename_all = "snake_case")]
-pub enum TaskKind { Upload, Download }
+#[derive(Debug, Clone, PartialEq)]
+pub enum TaskKind { Upload, Download, Other(String) }
 
 
 
-#[derive(Serialize, Deserialize, Debug, Clone)]
-#[serde(rename_all = "snake_case")]
+#[derive(Debug, Clone, PartialEq)]
 pub enum TaskState {
     Queued,
     Preparing,
@@ -72,11 +86,27 @@ pub enum TaskState {
     Partial,
     Failed(MediaFailure),
     Cancelled,
+    Other(String),
 }
 
-#[derive(Serialize, Deserialize, Debug, Clone, Copy, PartialEq)]
-#[serde(rename_all = "snake_case")]
-pub enum PauseReason { User, Agent, LowBattery, SuspendedBySystem }
+impl TaskState {
+    pub fn as_str(&self) -> &str;
+    fn is_terminal(&self) -> bool;  // Done | Partial | Failed | Cancelled
+    pub fn transition(self, to: Self) -> Result<Self, IllegalTransition>;
+}
+
+/// 「从，到」直接转，规则同 `transition`。
+impl TryFrom<(TaskState, TaskState)> for TaskState { type Error = IllegalTransition; }
+
+// 合法转移（ADR 第 3 节状态图）：
+// Queued → Preparing | Cancelled（排队中也能直接取消）
+// Preparing → Running | Done | Partial | Failed | Cancelled
+// Running → Paused | WaitingNetwork | WaitingPower | Done | Partial | Failed | Cancelled
+// Paused | WaitingNetwork | WaitingPower → Running | Paused（换原因） | Cancelled
+// 非终态 → Other，Other → Other；终态不可逆；其余（含 Any → Queued/Preparing、Queued → Running）非法。
+
+#[derive(Debug, Clone, PartialEq)]
+pub enum PauseReason { User, Agent, LowBattery, SuspendedBySystem, Other(String) }
 
 /// 失败的类别就是协议面，不是文案；壳按类别出字。
 #[derive(Serialize, Deserialize, Debug, Clone, PartialEq)]
@@ -87,8 +117,7 @@ pub struct MediaFailure {
     pub retry_after_secs: Option<u32>,
 }
 
-#[derive(Serialize, Deserialize, Debug, Clone, Copy, PartialEq)]
-#[serde(rename_all = "snake_case")]
+#[derive(Debug, Clone, PartialEq)]
 pub enum MediaFailureCode {
     LocalSourceUnavailable,
     LocalPermissionDenied,
@@ -105,11 +134,27 @@ pub enum MediaFailureCode {
     UpstreamError,
     ServerStorageFull,
     SuspendedBySystem,
+    Other(String),
 }
 
+impl MediaFailureCode {
+    /// 这类失败该等多久再退避。`Other` 按不退避算，交给壳显示原文。
+    pub fn backoff(&self) -> Backoff;
+}
+
+/// 一个失败类别的退避档。退避由核心算，不过壳。
+#[derive(Serialize, Deserialize, Debug, Clone, Copy, PartialEq)]
+#[serde(rename_all = "snake_case")]
+pub enum Backoff { None, Once, Standard, ThreeTimes, RetryAfter, SystemPause }
+
+/// 状态机不允许的转移。只在 Rust 的 `TryFrom` 里用，不过壳。
+#[derive(Debug, Clone, PartialEq)]
+pub struct IllegalTransition { pub from: TaskState, pub to: TaskState }
+
 /// 一条长任务。上传与下载共用；`target` 与 `progress.unit` 各自成立。
+/// 名字带 `Media`：Swift 绑定在全局命名空间，`Task` 会和 Swift 的 `Task` 撞。JSON 形状不受影响。
 #[derive(Serialize, Deserialize, Debug, Clone)]
-pub struct Task {
+pub struct MediaTask {
     pub id: TaskId,
     pub kind: TaskKind,
     pub person: Person,
@@ -125,11 +170,14 @@ pub struct Task {
 }
 
 #[derive(Serialize, Deserialize, Debug, Clone)]
-#[serde(rename_all = "snake_case", tag = "kind")]
+#[serde(rename_all = "snake_case", tag = "kind", content = "value")]
 pub enum TaskTarget {
     Upload(Vec<UploadItem>), // 一批文件；相册备份 = 一个任务 + N 个 item
     Download(MediaItemRef),
 }
+
+// 内部标记放不下序列和结构，载荷另起 `value` 键：{"kind":"upload","value":[…]}
+// 序列化不带 `content` 会报 `cannot serialize tagged newtype variant … containing a sequence`。
 
 /// 上传的一项：路径、大小、校验和、拍摄时间，都是提供方要的。
 #[derive(Serialize, Deserialize, Debug, Clone)]
@@ -144,10 +192,9 @@ pub struct UploadItem {
     pub upload_offset: u64,
 }
 
-/// 逐项状态；`Partial` 由这里聚出来，不靠猜。
-#[derive(Serialize, Deserialize, Debug, Clone)]
-#[serde(rename_all = "snake_case", tag = "state")]
-pub enum ItemState { Queued, Running, Done, Skipped, Failed(MediaFailure) }
+/// 逐项状态；`Partial` 由这里聚出来，不靠猜。未知状态把原文放进 `state`（`{"state":"frozen"}`）。
+#[derive(Debug, Clone, PartialEq)]
+pub enum ItemState { Queued, Running, Done, Skipped, Failed(MediaFailure), Other(String) }
 
 #[derive(Serialize, Deserialize, Debug, Clone)]
 pub struct FailedItem { pub item_id: String, pub path: String, pub failure: MediaFailure }
@@ -159,6 +206,29 @@ pub struct Progress { pub done: u64, pub total: Option<u64>, pub unit: ProgressU
 #[serde(rename_all = "snake_case")]
 pub enum ProgressUnit { Bytes, Items }
 
+/// 建任务用的入参：`options` 是各轴自己的开关（只在传输、只在充电、转码率上限）。
+#[derive(Serialize, Deserialize, Debug, Clone)]
+pub struct TaskCreate { pub kind: TaskKind, pub person: Person, pub device: DeviceId, pub target: TaskTarget, pub options: TaskOptions }
+
+fn one() -> u8 { 1 }
+
+#[derive(Serialize, Deserialize, Debug, Clone, PartialEq)]
+pub struct TaskOptions {
+    pub wifi_only: bool,
+    pub charging_only: bool,
+    pub max_bitrate: Option<u32>,
+    /// 相册范围（可选）；只传相册不传 items 时由设备枚举
+    pub albums: Vec<String>,
+    /// 同时在跑几项，1–4
+    #[serde(default = "one")]
+    pub concurrency: u8, // 1–4，缺省 1
+    /// 立即备份：忽略 wifi/充电条件一次
+    pub force_now: bool,
+}
+
+// `Default` 手写（`concurrency: 1`）：derive 出来的 `concurrency` 是 0，越界；serde 缺省走 `one()`。
+impl Default for TaskOptions { fn default() -> Self; }
+
 ## `media/session.rs`
 
 ```rust
@@ -168,6 +238,11 @@ pub type Revision = u64;
 /// 队列自带 revision；所有改动带读到的 revision，不等就 409。
 #[derive(Serialize, Deserialize, Debug, Clone)]
 pub struct Queue { pub revision: Revision, pub entries: Vec<MediaItemRef>, pub cursor: Option<usize>, pub mode: QueueMode, pub sleep_at_ms: Option<u64> }
+
+impl Queue {
+    /// 队列改了就加一版（`revision + 1`，进位时回绕），让并发的旧版本落空。
+    pub fn bump(&mut self);
+}
 
 #[derive(Serialize, Deserialize, Debug, Clone, Copy, PartialEq)]
 #[serde(rename_all = "snake_case")]
@@ -202,22 +277,24 @@ pub struct PlaybackPlan {
 }
 
 #[derive(Serialize, Deserialize, Debug, Clone)]
-pub enum ProviderStream { Direct(String), Transcoded(String) }
+#[serde(rename_all = "snake_case")]
+pub enum ProviderStream { Direct(String), Transcoded(String), Other(String) }
+
+// 外部标记，标签是小写：{"direct":"https://…"}、{"transcoded":"https://…"}。未知流型的载荷是字符串时
+// 存进 `Other`（{"other":"https://…"}），否则只留标签名（{"other":"opaque"}）；新流型（如 dash）来了不判死整条 `PlaybackPlan`。
 
 #[derive(Serialize, Deserialize, Debug, Clone)]
 pub struct MediaTrack { pub index: u16, pub language: String, pub label: Option<String>, pub kind: TrackKind, pub selected: bool }
 
-#[derive(Serialize, Deserialize, Debug, Clone, Copy, PartialEq)]
-#[serde(rename_all = "snake_case")]
-pub enum TrackKind { Audio, Subtitle }
+#[derive(Debug, Clone, PartialEq)]
+pub enum TrackKind { Audio, Subtitle, Other(String) }
 
 /// 章节、片头片尾。
 #[derive(Serialize, Deserialize, Debug, Clone)]
 pub struct Segment { pub kind: SegmentKind, pub start_ms: u64, pub end_ms: u64 }
 
-#[derive(Serialize, Deserialize, Debug, Clone, Copy, PartialEq)]
-#[serde(rename_all = "snake_case")]
-pub enum SegmentKind { Chapter, Intro, Outro }
+#[derive(Debug, Clone, PartialEq)]
+pub enum SegmentKind { Chapter, Intro, Outro, Other(String) }
 
 #[derive(Serialize, Deserialize, Debug, Clone)]
 pub struct PlaybackSession {
@@ -229,26 +306,6 @@ pub struct PlaybackSession {
     pub position_ms: u64,
     /// 起播时带回的 plan；过期由核心重取
     pub plan: Option<PlaybackPlan>,
-}
-
-/// 建任务用的入参：`options` 是各轴自己的开关（只在传输、只在充电、转码率上限）。
-#[derive(Serialize, Deserialize, Debug, Clone)]
-pub struct TaskCreate { kind: TaskKind, person: Person, device: DeviceId, target: TaskTarget, options: TaskOptions }
-
-#[derive(Serialize, Deserialize, Debug, Clone, Default)]
-fn one() -> u8 { 1 }
-
-pub struct TaskOptions {
-    pub wifi_only: bool,
-    pub charging_only: bool,
-    pub max_bitrate: Option<u32>,
-    /// 相册范围（可选）；只传相册不传 items 时由设备枚举
-    pub albums: Vec<String>,
-    /// 同时在跑几项，1–4
-    #[serde(default = "one")]
-    pub concurrency: u8, // 1–4，缺省 1
-    /// 立即备份：忽略 wifi/充电条件一次
-    pub force_now: bool,
 }
 
 ## `media/view.rs`
@@ -263,8 +320,10 @@ pub enum ControlOp { Play, Pause, Resume, SeekMs(u64), Next, Prev, Volume(u8), S
 pub enum StopReason { User, Agent, TakenOver, Finished, Error }
 
 #[derive(Serialize, Deserialize, Debug, Clone)]
-#[serde(rename_all = "snake_case", tag = "op")]
+#[serde(rename_all = "snake_case", tag = "op", content = "value")]
 pub enum QueueOp { Read, Enqueue { at: Option<usize>, item: MediaItemRef }, Remove { index: usize }, Jump { index: usize }, Clear, SetMode(QueueMode) }
+
+// 同 `TaskTarget`，载荷另起 `value`：{"op":"set_mode","value":"shuffle"}；`Read` 等无载荷的没有 `value`。
 
 #[derive(Serialize, Deserialize, Debug, Clone)]
 pub struct DoneItem { pub item: MediaItemRef, pub local_path: Option<String> }
@@ -346,10 +405,11 @@ pub kinds: Vec<MediaKind>,
 
 ```rust
 // wonton-protocol/src/media/mod.rs（枚举只在这里定义一次，别处引用）
-#[derive(Serialize, Deserialize, Debug, Clone, Copy, PartialEq, Eq, Hash)]
-#[serde(rename_all = "snake_case")]
-pub enum MediaKind { Photo, Video, Audio }
+/// 内容的种类。
+#[derive(Debug, Clone, PartialEq, Eq, Hash)]
+pub enum MediaKind { Photo, Video, Audio, Other(String) }
 
+/// 请求/协商面：认不得的操作报错。
 #[derive(Serialize, Deserialize, Debug, Clone, Copy, PartialEq, Eq, Hash)]
 #[serde(rename_all = "snake_case")]
 pub enum MediaOperation { Upload, Download, Playback, List }
@@ -376,13 +436,13 @@ pub enum MediaOperation { Upload, Download, Playback, List }
 
 | 路径 | 方法 | 请求体 | 响应体 |
 | --- | --- | --- | --- |
-| `/tasks` | `POST` | `TaskCreate{kind, person, device, target, options}` | `Task` |
-| `/tasks` | `GET` | 无（query: `person?`, `kind?`, `state?`） | `{tasks: Vec<Task>, cursor?}` |
-| `/tasks/{id}` | `GET` | 无 | `Task`（上传的每项带当前 `upload_offset`，重连后靠它续） |
-| `/tasks/{id}/pause` | `POST` | `{reason: PauseReason}` | `Task` |
-| `/tasks/{id}/resume` | `POST` | 无 | `Task` |
-| `/tasks/{id}/cancel` | `POST` | 无 | `Task` |
-| `/tasks/{id}/retry` | `POST` | 无（终态才允许，设 `retry_of`） | `Task` |
+| `/tasks` | `POST` | `TaskCreate{kind, person, device, target, options}` | `MediaTask` |
+| `/tasks` | `GET` | 无（query: `person?`, `kind?`, `state?`） | `{tasks: Vec<MediaTask>, cursor?}` |
+| `/tasks/{id}` | `GET` | 无 | `MediaTask`（上传的每项带当前 `upload_offset`，重连后靠它续） |
+| `/tasks/{id}/pause` | `POST` | `{reason: PauseReason}` | `MediaTask` |
+| `/tasks/{id}/resume` | `POST` | 无 | `MediaTask` |
+| `/tasks/{id}/cancel` | `POST` | 无 | `MediaTask` |
+| `/tasks/{id}/retry` | `POST` | 无（终态才允许，设 `retry_of`） | `MediaTask` |
 | `/sessions` | `POST` | `PlaybackRequest`（含 `position_ms`、`person`、`device`、`profile`） | `PlaybackSession`（`plan` 已填） |
 | `/sessions` | `GET` | 无（query: `person?`） | `{sessions: Vec<PlaybackSession>}` |
 | `/sessions/{id}` | `GET` | 无 | `PlaybackSession` |
@@ -434,13 +494,13 @@ pub fn media_loopback(&self) -> String;
 | 工具 | 参数 | 返回 |
 | --- | --- | --- |
 | `wonton__media_status` | `{kind?, person?}` | 任务与会话列表，带进度与失败原因 |
-| `wonton__backup_now` | `{device?, kinds?}` | `Task` |
-| `wonton__media_download` | `{device, item, kind}` | `Task` |
+| `wonton__backup_now` | `{device?, kinds?}` | `MediaTask` |
+| `wonton__media_download` | `{device, item, kind}` | `MediaTask` |
 | `wonton__media_play` | `{device?, item, kind, person?}` | `PlaybackSession` |
 | `wonton__media_control` | `{session, ctl: ControlOp}` | `PlaybackSession` |
 | `wonton__media_queue` | `{op: QueueOp\|read, revision?}` | `Queue` |
 | `wonton__media_sessions` | `{person?}` | 这个人的全部设备与会话能力 |
-| `wonton__media_task` | `{task, op: pause\|resume\|cancel\|retry}` | `Task` |
+| `wonton__media_task` | `{task, op: pause\|resume\|cancel\|retry}` | `MediaTask` |
 | `wonton__media_delete` | `{device, items: Vec<MediaItemRef>}` | `204` |
 
 `person` 只能填本轮 `speakers` 里的人；共享 Bot 省略则取唯一说话人，多人必填。

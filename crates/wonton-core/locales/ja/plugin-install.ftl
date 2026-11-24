@@ -534,6 +534,7 @@ plugin-capability-port-zero = provides.{ $capability }.port は 0 にできま�
 plugin-capability-credentials-required = provides.{ $capability } には credentials の宣言が必要です。利用者ごとに専用の資格情報を発行するためです
 plugin-capability-credentials-forbidden = provides.{ $capability } には credentials を宣言できません。この能力の提供元はコアが転送した要求だけを受け付けます
 plugin-capability-credentials-argv = provides.{ $capability }.credentials.{ $field } は空でない argv で、{ $placeholder } で資格情報名を指し示す必要があります
+plugin-capability-media-source-empty = provides.{ $capability }.{ $field } には少なくとも 1 つの値を指定してください
 plugin-capability-service-unknown = { $field } が参照するサービス `{ $service }` が compose ファイルにありません
 plugin-capability-service-not-forwardable = { $field } は network_mode: none のサービスを指せません。コアが転送し、そこで資格情報を発行するためです
 plugin-install-capability-deps-unsupported = このコアはプラグイン間の依存関係にまだ対応していません。コアを更新してからインストールしてください
