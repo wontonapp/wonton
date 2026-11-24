@@ -166,7 +166,7 @@ final class ClientsDomainWalkthroughTests: XCTestCase {
             XCTAssertEqual(suffixField.value as? String, "example.test", "域名没清干净")
         }
         if app.keyboards.count > 0 {
-            app.keys["return"].tap()
+            app.typeText("\n")
         }
         // “其他”在懒加载列表的更下面，往上滑。
         var other: XCUIElement?
