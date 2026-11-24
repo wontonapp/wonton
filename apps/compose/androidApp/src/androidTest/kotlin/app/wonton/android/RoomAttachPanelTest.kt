@@ -290,8 +290,8 @@ class RoomAttachPanelTest : RoomTelegramCase() {
             hasTestTag("quote") and hasAnyAncestor(hasTestTag(tag)),
             useUnmergedTree = true,
         ).fetchSemanticsNodes().size
-        val tags = copies.keys.sortedByDescending { it.substringAfterLast('-').toInt() }
-        // 盖着的那层里引用可能不进树：只要第一张带、第二张不带，别拿它和复制数比。
+        val tags = copies.keys.sortedBy { it.substringAfterLast('-').toInt() }
+        // 编号是 -25、-26，按数字升序第一张就是先发的；盖着那层里引用可能不进树：只要第一张带、第二张不带，别拿它和复制数比。
         check(quotesIn(tags[0]) > 0) { "第一张照片没带引用" }
         check(quotesIn(tags[1]) == 0) { "第二张也带了引用" }
         compose.onNodeWithContentDescription(string(R.string.message_reply_cancel)).assertDoesNotExist()
