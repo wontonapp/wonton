@@ -12,4 +12,6 @@
     <string name="message_forward_search">Search chats</string>
     <!-- Result line when the search in the forward sheet matches no room. Android only. -->
     <string name="message_forward_no_match">No chat by that name</string>
+    <!-- Caption under choices whose answer did not reach the server. No arguments. -->
+    <string name="message_choice_failed">Couldn\'t send your choice. Tap it to try again.</string>
 </resources>

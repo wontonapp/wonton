@@ -24,12 +24,16 @@ import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.rotate
+import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.platform.testTag
 import androidx.compose.ui.res.pluralStringResource
 import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.semantics.Role
+import androidx.compose.ui.text.style.TextAlign
+import androidx.compose.ui.text.style.TextOverflow
 import kotlinx.coroutines.delay
+import app.wonton.protocol.AgentRunChoice
 import app.wonton.protocol.AgentRunEnd
 import app.wonton.protocol.AgentRunState
 import app.wonton.protocol.ThemeColors
@@ -266,6 +270,9 @@ private fun statusInk(run: TimelineContent.AgentRun, colors: ThemeColors) = when
     is AgentRunState.Other -> colors.textSecondary
 }
 
+/** 状态行上的选项一行最多几个，多了换行；一排几个就几个等分。 */
+private const val PAIR = 2
+
 /** choices 区：来源行标明是这个 Bot 在问，按钮是描边胶囊——和核心确认卡片的实心按钮分开。 */
 @Composable
 private fun Asking(run: TimelineContent.AgentRun, onAnswerChoice: (String) -> Unit) {
@@ -283,23 +290,40 @@ private fun Asking(run: TimelineContent.AgentRun, onAnswerChoice: (String) -> Un
                 color = ink,
             )
         }
-        Row(horizontalArrangement = Arrangement.spacedBy(WontonTheme.spacing.s8)) {
-            run.choices.forEach { choice ->
-                Row(
-                    Modifier
-                        .border(
-                            width = WontonTheme.size.hairline,
-                            color = ink,
-                            shape = RoundedCornerShape(WontonTheme.radii.pill),
-                        )
-                        .clickable(role = Role.Button) { onAnswerChoice(choice.key) }
-                        .heightIn(min = WontonTheme.size.target)
-                        .padding(horizontal = WontonTheme.spacing.s12),
-                    verticalAlignment = Alignment.CenterVertically,
-                ) {
-                    Text(choice.label, style = WontonTheme.typography.supporting, color = ink)
+        run.choices.chunked(PAIR).forEach { pair ->
+            Row(horizontalArrangement = Arrangement.spacedBy(WontonTheme.spacing.s8)) {
+                pair.forEach { choice ->
+                    AskingChip(choice, ink, Modifier.weight(1f), onAnswerChoice)
                 }
             }
         }
+    }
+}
+
+@Composable
+private fun AskingChip(
+    choice: AgentRunChoice,
+    ink: Color,
+    modifier: Modifier,
+    onAnswerChoice: (String) -> Unit,
+) {
+    Row(
+        modifier
+            .testTag("asking-choice-${choice.key}")
+            .border(WontonTheme.size.hairline, ink, RoundedCornerShape(WontonTheme.radii.pill))
+            .clickable(role = Role.Button) { onAnswerChoice(choice.key) }
+            .heightIn(min = WontonTheme.size.target)
+            .padding(horizontal = WontonTheme.spacing.s12, vertical = WontonTheme.spacing.s4),
+        verticalAlignment = Alignment.CenterVertically,
+        horizontalArrangement = Arrangement.Center,
+    ) {
+        Text(
+            choice.label,
+            style = WontonTheme.typography.supporting,
+            color = ink,
+            textAlign = TextAlign.Center,
+            maxLines = 1,
+            overflow = TextOverflow.Ellipsis,
+        )
     }
 }

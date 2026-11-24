@@ -35,7 +35,7 @@
     <string name="timeline_start">チャットの最初です</string>
     <string name="timeline_edited">編集済み</string>
     <string name="timeline_sending">保存済み、未配信</string>
-    <string name="timeline_send_failed_retrying">送信できませんでした。自動で再試行します</string>
+    <string name="timeline_send_failed_retrying">送信に失敗しました。自動で再試行します</string>
     <string name="timeline_resend">再送信</string>
     <string name="timeline_undecryptable">復号できません：このデバイスにこのメッセージの鍵がありません</string>
     <string name="timeline_undecryptable_notice">このデバイスでは以前の暗号化メッセージを読めません。</string>

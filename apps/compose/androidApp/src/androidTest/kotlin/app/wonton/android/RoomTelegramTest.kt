@@ -36,6 +36,7 @@ import androidx.compose.ui.test.hasText
 import androidx.compose.ui.test.isDisplayed
 import androidx.compose.ui.test.junit4.createAndroidComposeRule
 import androidx.compose.ui.test.onNodeWithContentDescription
+import androidx.compose.ui.test.onAllNodesWithContentDescription
 import androidx.compose.ui.test.onAllNodesWithTag
 import androidx.compose.ui.test.onNodeWithTag
 import androidx.compose.ui.test.onAllNodesWithText
@@ -93,6 +94,12 @@ private val LONG_REPLY_PARAGRAPHS = listOf(
 )
 /** 第 19 条引用内容的原文。 */
 private const val QUOTED_TEXT = "🚗\n好久了，有什么问题吗？"
+/** 自己发的、发送失败的那条（`ui_fake_room.rs` 的 `FAILED_SEND_INDEX`）。 */
+private const val FAILED_SEND = 24
+/** 带一个发送失败的选项的那条（`ui_fake_room.rs` 的 `FAILED_CHOICE_INDEX`）。 */
+private const val FAILED_CHOICE = 25
+/** 失败原因，和假数据一样。 */
+private const val FAILED_REASON = "Server timed out while sending"
 
 /**
  * Telegram 样式的聊天页（ADR-0109）：左滑回复、点引用跳转和“向下”回去、命令菜单、选项按钮。
@@ -318,6 +325,11 @@ class RoomTelegramTest {
         compose.onNodeWithContentDescription(string(R.string.message_reply_cancel)).assertIsDisplayed()
         compose.onNode(hasSetTextAction()).performTextInput("先发这句")
         compose.onNodeWithContentDescription(string(R.string.composer_send)).performClick()
+        // 原因现在收在默认收起的“详情”里，展开再看。
+        compose.waitUntil(10_000) {
+            compose.onAllNodes(hasText(string(R.string.common_details))).fetchSemanticsNodes().isNotEmpty()
+        }
+        compose.onNodeWithText(string(R.string.common_details)).performClick()
         compose.waitUntil(10_000) {
             compose.onAllNodes(hasText("Retry or remove it first", substring = true)).fetchSemanticsNodes().isNotEmpty()
         }
@@ -364,7 +376,7 @@ class RoomTelegramTest {
         if (hasBack()) compose.onNodeWithContentDescription(string(R.string.design_back)).performClick()
         // 到了聊天列表，依次进 Family 和 Notes，两边都得有附言和转发来的那条。
         compose.onNodeWithText("Family").performClick()
-        compose.waitUntil(10_000) { forwardedInto("Family", "ui-fake-forwarded-24") }
+        compose.waitUntil(10_000) { forwardedInto("Family", "ui-fake-forwarded-1") }
         check(compose.onAllNodes(hasText("都看一下", substring = true)).fetchSemanticsNodes().isNotEmpty()) {
             "Family 没收到附言"
         }
@@ -372,7 +384,7 @@ class RoomTelegramTest {
         compose.waitForIdle()
         if (hasBack()) compose.onNodeWithContentDescription(string(R.string.design_back)).performClick()
         compose.onNodeWithText("Notes").performClick()
-        compose.waitUntil(10_000) { forwardedInto("Notes", "ui-fake-forwarded-24") }
+        compose.waitUntil(10_000) { forwardedInto("Notes", "ui-fake-forwarded-1") }
         check(compose.onAllNodes(hasText("都看一下", substring = true)).fetchSemanticsNodes().isNotEmpty()) {
             "Notes 没收到附言"
         }
@@ -388,7 +400,7 @@ class RoomTelegramTest {
         compose.waitUntil(10_000) { forwardRows() == 2 }
         compose.onNode(hasTestTag("forward-row") and hasText("Family")).performClick()
         sheetSend("forward-send").performClick()
-        compose.waitUntil(10_000) { forwardedInto("Family", "ui-fake-forwarded-24") }
+        compose.waitUntil(10_000) { forwardedInto("Family", "ui-fake-forwarded-1") }
     }
 
     private fun forwardRows() = compose.onAllNodes(hasTestTag("forward-row")).fetchSemanticsNodes().size
@@ -470,6 +482,8 @@ class RoomTelegramTest {
 
     @Test
     fun commandMenuListsBotCommandsAndSends() {
+        // 别的用例可能留着一张发不出去的附件，发命令会被它挡住。
+        clearTray()
         compose.onNodeWithContentDescription(string(R.string.composer_commands)).performClick()
         compose.onNodeWithTag("command-help").assertIsDisplayed()
         compose.onNodeWithTag("command-model").assertIsDisplayed()
@@ -539,6 +553,7 @@ class RoomTelegramTest {
 
     @Test
     fun sideChatAlbumTakesSeveralPhotos() {
+        ensureAlbumPhotos()
         compose.onNodeWithContentDescription(string(R.string.side_chat_new)).performClick()
         compose.waitUntil(10_000) { compose.onAllNodes(hasSetTextAction()).fetchSemanticsNodes().size == 2 }
         compose.onNodeWithTag("side-chat-field").performTextInput("旁聊开场")
@@ -549,7 +564,7 @@ class RoomTelegramTest {
                 compose.onAllNodes(hasSetTextAction()).fetchSemanticsNodes().size == 1
         }
         compose.onNodeWithContentDescription(string(R.string.composer_attach)).performClick()
-        compose.waitUntil(10_000) { photos().fetchSemanticsNodes().size >= 3 }
+        compose.waitUntil(10_000) { photos().fetchSemanticsNodes().size >= 2 }
         photos()[0].performClick()
         compose.waitForIdle()
         // 旁聊没有附件区，但一摞能选好几张：选了一张，后面的照样点得动。
@@ -571,7 +586,7 @@ class RoomTelegramTest {
         // 表情先画出来，按钮行不比气泡宽。
         compose.onAllNodesWithText("✅", useUnmergedTree = true).fetchSemanticsNodes().isNotEmpty()
         val rowWidth = compose.onNode(
-            hasTestTag("choices-row"),
+            hasTestTag("choices-row") and hasAnyAncestor(hasTestTag("item-ui-fake-22")),
             useUnmergedTree = true,
         ).fetchSemanticsNode().boundsInRoot.width
         val bubbleWidth = bubble(22).fetchSemanticsNode().boundsInRoot.width
@@ -636,17 +651,17 @@ class RoomTelegramTest {
     @Test
     fun groupTopKeepsFirstBubbleBelowTheBar() {
         openFamily()
-        // 23 是最早的一条，翻到最上面就是它。
-        scrollTo(23)
+        // 最新那条是整屏高的长条，翻到最上面它还会露着；顶栏不许盖住它。
+        scrollTo(26)
         repeat(3) {
             compose.onNodeWithTag("room-timeline").performTouchInput {
                 swipe(Offset(centerX, centerY * 0.3f), Offset(centerX, centerY * 1.9f), durationMillis = 400)
             }
             compose.waitForIdle()
         }
-        bubble(23).assertIsDisplayed()
-        // 最早那条气泡的顶边还在顶栏下面，没被顶栏拿走。
-        val first = bubble(23).fetchSemanticsNode().boundsInRoot
+        bubble(26).assertIsDisplayed()
+        // 最新那条气泡的顶边还在顶栏下面，没被顶栏拿走。
+        val first = bubble(26).fetchSemanticsNode().boundsInRoot
         // 顶栏和它下面那行（群里的 AI 等）都不能压在第一条上。
         val bar = compose.onNodeWithTag("room-bar").fetchSemanticsNode().boundsInRoot.bottom
         val header = compose.onNodeWithTag("room-header").fetchSemanticsNode().boundsInRoot.bottom
@@ -836,6 +851,75 @@ class RoomTelegramTest {
         }
     }
 
+    @Test
+    fun barTitleAndAvatarOpenBotProfile() {
+        val profile = compose.onNodeWithTag("bot-profile")
+        // 入口只剩头像一个，顶栏里没有额外的信息按钮。
+        compose.onAllNodesWithContentDescription(string(R.string.bot_profile_open)).assertCountEquals(1)
+        compose.onNodeWithTag("roomTopBarTitle").performClick()
+        profile.assertIsDisplayed()
+        // 资料页自己的返回按钮跟页面一起出现；系统返回按早了会把整个 Activity 关掉。
+        compose.onNodeWithContentDescription(string(R.string.design_back)).performClick()
+        compose.onNodeWithTag("roomTopBarAvatar").performClick()
+        profile.assertIsDisplayed()
+        screenshot("bar-profile")
+    }
+
+    @Test
+    fun failedChoiceKeepsReasonInDetails() {
+        scrollTo(FAILED_CHOICE)
+        item(FAILED_CHOICE).performScrollTo()
+        // 按钮里不再画原因，原因在下面一行小字里。
+        compose.onAllNodes(hasText(FAILED_REASON) and hasAnyAncestor(hasTestTag("choice-⏳")), useUnmergedTree = true)
+            .assertCountEquals(0)
+        compose.onNodeWithText(string(R.string.message_choice_failed)).assertIsDisplayed()
+        compose.onNodeWithText(string(R.string.common_details)).performClick()
+        compose.onNodeWithText(FAILED_REASON).assertIsDisplayed()
+        screenshot("failed-choice-open")
+        // 失败的按钮还能点，点了就重发。
+        choice("⏳").assertIsEnabled().performClick()
+        compose.waitUntil(10_000) {
+            choice("⏳").fetchSemanticsNode().config[SemanticsProperties.Selected]
+        }
+        compose.waitUntil(10_000) { compose.onAllNodesWithText(FAILED_REASON).fetchSemanticsNodes().isEmpty() }
+        screenshot("failed-choice-resent")
+    }
+
+
+    @Test
+    fun failedMarkHasATargetSizedHitArea() {
+        scrollTo(FAILED_SEND)
+        item(FAILED_SEND).performScrollTo()
+        val mark = compose.onNodeWithContentDescription(string(R.string.timeline_send_failed_retrying))
+        val target = with(compose.density) { 48.dp.toPx() }
+        val box = mark.fetchSemanticsNode().boundsInRoot
+        check(box.width >= target - 1f) { "失败标记宽 ${box.width}，不到 $target" }
+        check(box.height >= target - 1f) { "失败标记高 ${box.height}，不到 $target" }
+        // 整个命中区都能点开重发菜单。
+        mark.performClick()
+        compose.onNodeWithText(string(R.string.timeline_resend)).assertIsDisplayed()
+        screenshot("failed-mark-menu")
+    }
+
+    @Test
+    fun confirmationBarNamesTheCardAndOpensIt() {
+        val bar = compose.onNodeWithTag("room-confirmations")
+        bar.assertIsDisplayed()
+        val target = with(compose.density) { 48.dp.toPx() }
+        check(bar.fetchSemanticsNode().boundsInRoot.height >= target - 1f) { "确认入口不到 48dp 高" }
+        // 写清是哪一张：一行“有事要你定”，下一行是首条的标题。
+        compose.onNode(
+            hasText(string(R.string.confirmation_card_requests)) and hasAnyAncestor(hasTestTag("room-confirmations")),
+            useUnmergedTree = true,
+        ).assertIsDisplayed()
+        compose.onNodeWithText("Echo wants to install Home Hub", useUnmergedTree = true).assertIsDisplayed()
+        screenshot("room-confirmations")
+        bar.performClick()
+        compose.onNodeWithText("Home Hub can read and write everything on the disks you tick.")
+            .assertIsDisplayed()
+        screenshot("room-confirmations-open")
+    }
+
     /** 这条消息的中心在时间线视口里。跳转过后 `isDisplayed` 会因为列表项没 placed 而恒假。 */
     private fun visible(index: Int): Boolean {
         val list = compose.onNodeWithTag("room-timeline").fetchSemanticsNode().boundsInRoot
@@ -875,6 +959,7 @@ class RoomTelegramTest {
     /** 这条消息的正文文字节点，跳过引用块和脚注。 */
     private fun bodyNodes(index: Int): List<SemanticsNode> = compose.onAllNodes(
         hasAnyAncestor(hasTestTag("item-ui-fake-$index")) and
+            hasAnyAncestor(hasTestTag("bubble")) and
             SemanticsMatcher.keyIsDefined(SemanticsActions.GetTextLayoutResult) and
             !hasAnyAncestor(hasTestTag("quote")) and
             !hasTestTag("messageTime"),

@@ -1,3 +1,5 @@
+@file:Suppress("TooManyFunctions") // 各类失败的文案映射平铺在一起才好对照；核心异常那份要能被 host test 直接调，单独拆走会丢掉这层对照。
+
 package app.wonton.ui
 
 import androidx.compose.animation.core.LinearEasing
@@ -127,8 +129,16 @@ fun ChatFailure.problem(detail: String): Problem = when (this) {
         detail,
     )
     ChatFailure.UPSTREAM -> problem(R.string.problem_upstream_title, R.string.problem_upstream_next_step, detail)
-    ChatFailure.NOT_READY -> Problem(titleRes = R.string.problem_not_ready_title, nextStep = detail)
-    ChatFailure.INVALID_INPUT -> Problem(titleRes = R.string.problem_invalid_input_title, nextStep = detail)
+    ChatFailure.NOT_READY -> problem(
+        R.string.problem_not_ready_title,
+        R.string.problem_upstream_next_step,
+        detail,
+    )
+    ChatFailure.INVALID_INPUT -> problem(
+        R.string.problem_invalid_input_title,
+        R.string.problem_invalid_input_next_step,
+        detail,
+    )
     // 比这个壳新的类别：先按服务器出错说。
     ChatFailure.OTHER -> problem(R.string.problem_upstream_title, R.string.problem_upstream_next_step, detail)
 }
@@ -309,50 +319,50 @@ val MyAvatarProblem.problem: Problem
     }
 
 val CoreException.problem: Problem
-    get() {
-        val detail = toString()
-        return when (this) {
-            is CoreException.TransportUnavailable -> problem(
-                R.string.problem_transport_unavailable_title,
-                R.string.problem_transport_unavailable_next_step,
-                detail,
-            )
-            is CoreException.Unauthorized -> problem(
-                R.string.problem_unauthorized_title,
-                R.string.problem_unauthorized_next_step,
-                detail,
-            )
-            is CoreException.Forbidden -> problem(
-                R.string.problem_forbidden_title,
-                R.string.problem_forbidden_next_step,
-                detail,
-            )
-            is CoreException.Upstream -> problem(
-                R.string.problem_upstream_title,
-                R.string.problem_upstream_next_step,
-                detail,
-            )
-            is CoreException.NotReady -> Problem(titleRes = R.string.problem_not_ready_title, nextStep = reason)
-            is CoreException.Storage -> Problem(
-                titleRes = R.string.problem_storage_title,
-                nextStepRes = R.string.problem_storage_next_step,
-                detail = detail,
-            )
-            is CoreException.InvalidInput -> Problem(titleRes = R.string.problem_invalid_input_title, nextStep = reason)
-            // 设置没过校验：逐字段的明细由设置页标到控件旁，这里只说发生了什么。
-            is CoreException.SettingsInvalid -> Problem(
-                titleRes = R.string.problem_invalid_input_title,
-                nextStep = reason,
-            )
-            is CoreException.ServerTooOld -> Problem(
-                titleRes = R.string.problem_plugin_server_too_old_title,
-                nextStepRes = R.string.problem_upgrade_server_next_step,
-                detail = detail,
-            )
-            // 比这个壳新的类别：先按服务器出错说。
-            else -> problem(R.string.problem_upstream_title, R.string.problem_upstream_next_step, detail)
-        }
-    }
+    get() = coreProblem(toString())
+
+/** 核心异常只有类型能信：标题和下一步用壳里的固定句子，能给的原文收进详情；notReady、invalidInput 的下一步直接是原文。 */
+internal fun CoreException.coreProblem(detail: String): Problem = when (this) {
+    is CoreException.TransportUnavailable -> problem(
+        R.string.problem_transport_unavailable_title,
+        R.string.problem_transport_unavailable_next_step,
+        detail,
+    )
+    is CoreException.Unauthorized -> problem(
+        R.string.problem_unauthorized_title,
+        R.string.problem_unauthorized_next_step,
+        detail,
+    )
+    is CoreException.Forbidden -> problem(
+        R.string.problem_forbidden_title,
+        R.string.problem_forbidden_next_step,
+        detail,
+    )
+    is CoreException.Upstream -> problem(
+        R.string.problem_upstream_title,
+        R.string.problem_upstream_next_step,
+        detail,
+    )
+    is CoreException.NotReady -> Problem(titleRes = R.string.problem_not_ready_title, nextStep = reason)
+    is CoreException.Storage -> Problem(
+        titleRes = R.string.problem_storage_title,
+        nextStepRes = R.string.problem_storage_next_step,
+        detail = detail,
+    )
+    is CoreException.InvalidInput -> Problem(titleRes = R.string.problem_invalid_input_title, nextStep = reason)
+    // 设置没过校验：逐字段的明细由设置页标到控件旁，这里只说发生了什么。
+    is CoreException.SettingsInvalid -> Problem(
+        titleRes = R.string.problem_invalid_input_title,
+        nextStep = reason,
+    )
+    is CoreException.ServerTooOld -> Problem(
+        titleRes = R.string.problem_plugin_server_too_old_title,
+        nextStepRes = R.string.problem_upgrade_server_next_step,
+        detail = detail,
+    )
+    // 比这个壳新的类别：先按服务器出错说。
+    else -> problem(R.string.problem_upstream_title, R.string.problem_upstream_next_step, detail)
+}
 
 /** 连不上、不认设备、服务器出错这三句在插件、聊天和连接错误里共用。 */
 private fun problem(titleRes: Int, nextStepRes: Int, detail: String?) =
