@@ -127,10 +127,11 @@ final class ChatTelegramUITests: XCTestCase {
     /// 顶栏下面照 Telegram 的叠放：插件横幅在最上，旁聊标题在它下面。
     func testPluginBannerSitsAboveSideChatTitle() {
         enter(Self.notesRoom)
-        // 卡片挂在 `SIDE_CHAT_TOP_INDEX`（落点附近、靠上）：进房就往上翻一两段找它，
-        // 不指望“向下”按钮（它要等视口报上来，深色跑里偶尔还没出），也不用横穿整条时间线。
+        // 卡片挂在落点那条（`SIDE_CHAT_TOP_INDEX`）：等落点摆稳（落点滚动出的日期胶囊淡掉）它就在眼前；
+        // 再不行往上翻一两段，不指望“向下”按钮，也不用横穿整条时间线。
+        waitForFloatingDateToFade()
         let card = element("sideChatCard")
-        for _ in 0..<10 where !card.exists { dragDown() }
+        for _ in 0..<3 where !card.exists { dragDown() }
         XCTAssertTrue(card.waitForExistence(timeout: 10), "找不到旁聊卡\n\(app.debugDescription)")
         reveal(card)
         tap(card)
