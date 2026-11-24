@@ -16,8 +16,9 @@ App 里能直接打开的地方是 `AppLink`，写成 `wonton://` 链接。编�
 
 | 链接 | 打开 |
 | --- | --- |
-| `wonton://tab/chat`、`/tab/apps`、`/tab/settings` | 底栏的三个固定页 |
-| `wonton://tab/plugin/<插件>`、`/tab/plugin/<插件>/<页面>` | 插件页；没固定在底栏上的盖在主界面上打开 |
+| `wonton://tab/home`、`/tab/agent`、`/tab/apps` | 主界面三页，落地到那一页、弹空页面栈（[ADR-0115](0115-home-and-agent-debut.md)） |
+| `wonton://rooms` | 所有会话列表页（`TabRef::Rooms`），侧边栏那一行的同一个 |
+| `wonton://tab/plugin/<插件>`、`/tab/plugin/<插件>/<页面>` | 插件页；没钉在底栏上的也整页盖在主界面上打开 |
 | `wonton://new-chat` | 发起私聊 |
 | `wonton://agent-chat` | 和默认 Agent 的聊天 |
 | `wonton://settings/peers` | 设置里的“其他服务器”，滚到“请求”（ADR-0050 的配对提醒用） |
@@ -39,7 +40,7 @@ App 里能直接打开的地方是 `AppLink`，写成 `wonton://` 链接。编�
 
 ### 两端各用系统的方式
 
-- iOS：App Intents。“问 Bot”带一个文字参数；“打开页面”的候选来自底栏上的项和可以添加的页面；“新会话”。
+- iOS：App Intents。“问 Bot”带一个文字参数；“打开页面”的候选来自主界面三页、底栏上的应用和可以添加的页面；“新会话”。
   `AppShortcutsProvider` 给 Siri 和 Spotlight 的短语。Intent 在 App 里运行（核心在 App 进程里）。
 - Android：静态快捷方式“新会话”“问 Bot”（打开和默认 Agent 的聊天），动态快捷方式是固定在底栏上的插件页，用插件
   自己的图标，剩下的名额放最近的会话（[ADR-0100](0100-system-entry.md)）。都经 `wonton://` 链接进 App。

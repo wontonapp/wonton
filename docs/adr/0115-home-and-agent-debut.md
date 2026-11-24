@@ -58,7 +58,7 @@
 
 - 排序：待确认最先（到期早的在前），然后未读（按会话最近活动），然后插件事件（出错、停止、可升级），最后晨报。同一件事只出一张卡：
   一个会话既有待确认又有未读时只出待确认那张，数量记在角标上。
-- 上限 5 张，多出来的不显示个数，往下翻还是能翻到；总数为 0 时首页只剩问候和输入框，不垫骨架、不放示例卡。
+- 上限 5 张，5 张以外的不进首页、不显示个数；这 5 张能一张张翻到底。总数为 0 时首页只剩问候和输入框，不垫骨架、不放示例卡。
 - 卡片被处理掉才消失：确认答完、会话读完、插件问题修好、晨报读过。核心重新算，壳不做本地备忘。
 - 连接断了、最近一次没取到时保留上次的卡片并标不确定；配对还没完成时不出卡片。
 
@@ -228,7 +228,7 @@ pub struct MainTabItem {
     pub entry: MainTabEntry,     // Home / Agent / Apps / Pinned(MyAppRef)
     pub label: String,           // 无障碍标签，底栏不写字
     pub icon: MainTabIcon,       // 固定图标，或插件图标
-    pub badge: u32,              // 未读 + 待确认；Apps 是出错和可升级
+    pub badge: u32,              // Home：未读 + 待确认的总数；Agent：默认 Agent 私聊的未读；Apps：出错 + 可升级。0 不画
 }
 pub enum MainTabEntry { Home, Agent, Apps, Pinned(MyAppRef) }
 pub enum MainTabIcon { Home, Agent, Apps, Plugin(PluginIcon) }
@@ -245,6 +245,10 @@ pub struct MainTabsViewModel {
 - `PageAction` 增 `SelectMainTab { tab: MainTab }`、`PinToBar { app: MyAppRef }`、`UnpinFromBar { app: MyAppRef }`；
   `AddMyApp` 加 `pinned: bool`（同时钉上）；`MoveMyApp` 不改，底栏跟着走。钉满时 `PinToBar` 返回 `invalid_input` 带原因。
 - `MyAppEntry` 加 `pinned: bool`，存进 `app.wonton.layout` 的同一条。
+- `TabRef` 只留页面（`Plugin`、`PluginPath`、`Bot`、`Url`、`UiResource`、`SharedApp`、`Widget`）；`Chat` 换成 `Rooms`（会话列表页，侧边栏
+  “所有会话”和通知用），删 `Apps`。`AppLink` 增 `MainTab { tab: MainTab }`，链接是 `wonton://tab/home`、`/tab/agent`、`/tab/apps`，
+  旧的 `tab/chat` 不留；`AppLink::Tab` 仍指页面，会话列表另有 `wonton://rooms`。设置仍走 `wonton://settings`。
+  我的应用仍只收插件和页面（`MyAppRef::Plugin` / `Page { tab }`），三个根页不占钉位。
 
 ```rust
 /// 首页。
@@ -298,6 +302,7 @@ pub struct CloudAsset {
     pub kind: CloudAssetKind,      // BodyPreset / Face / Headdress
     pub name: String,
     pub author: CloudAssetAuthor,  // Builtin / Plugin { plugin_id } / User
+    pub color: Option<String>,     // 只对 BodyPreset：预设的 "#RRGGBB"，点它就是 SetBotCloudPart::Body
     pub preview: AvatarImage,
 }
 // BotView 里增 cloud: Option<BotCloud>、custom_media: bool、face: Option<String>（当前该播的表情 ID）
@@ -368,12 +373,14 @@ pub struct AgentIntroView {
 - **聊天与 Agent 线**：首页的未读和待确认直接读 `ChatViewModel` 的字段，不另开接口；确认卡片点开进详情是壳的现有页面，
   首页只给 `HomeCardId`。问：`ChatViewModel` 这两个字段的稳定承诺要不要写进契约测试。
 - **聊天与 Agent 线**：晨报的产出、取法和已读都没有，等晨报设计开工时一起出 ADR；这页只留 `Digest` 类别。
+  问：晨报 ADR 什么时候开、在那之前首页要不要先出这一类。
 - **Hermes 默认 Agent**：出场的第一句自我介绍由 Agent 自己发还是核心代发（现在草案是 Hermes 侧给文本、核心发），
   以及默认 Agent 的私聊建没建由谁先动。问：Hermes 侧接不接这句。
-- **Bot 资料和 Bot 网页那一路**：`BotActivity` 加两个值、`app.wonton.avatars` 加两个键、`BotView` 加字段都在协议里，他们负责的 Bot 资料写入和
-  web 端要跟着认；接口 PR 出来后请他们先看。
+- **Bot 资料和 Bot 网页那一路**：云朵编辑器就长在 #934 收过的那节头像里，替换现在“选一张图”的按钮，#798 的工具和 #874 人的头像不动。
+  `BotActivity` 加两个值、`app.wonton.avatars` 加两个键、`BotView` 加字段都在协议里，他们负责的 Bot 资料写入和 web 端要跟着认；
+  接口 PR 出来后请他们先看。问：资料页和 web 端谁先改、接口 PR 要不要等他们一起。
 - **设计**：素材（身体、九张表情、七种头饰、锚点表）和 App 图标都已有，总览图在；素材命名与图标各尺寸由设计补。
-  App 图标定为主人原图抠出来的那一版加蓝白渐变底（2026-11-22），不再改正面。出场的大图要不要也从 3/4 改成正面，等主人看完动画稿定。
+  App 图标定为主人原图抠出来的那一版加蓝白渐变底（2026-11-22），不再改正面。问：出场大图用 3/4 还是正面、动画稿什么时候能看。
 
 ## 待验证
 
@@ -386,6 +393,6 @@ pub struct AgentIntroView {
 
 [ADR-0005](0005-native-clients-thick-core.md)、[ADR-0016](0016-mcp-bus-and-confirmations.md)、[ADR-0024](0024-confirmation-scope.md)、
 [ADR-0026](0026-design-system.md)、[ADR-0029](0029-platform-material.md)、[ADR-0034](0034-onboarding-and-help.md)、
-[ADR-0043](0043-app-languages.md)、[ADR-0044](0044-bot-profile-and-status-avatars.md)、[ADR-0054](0054-bot-command-menu.md)、
-[ADR-0095](0095-no-tab-bar.md)、[ADR-0100](0100-system-entry.md)、[ADR-0103](0103-ipad-and-large-screens.md)、[ADR-0108](0108-hermes-default-kernel.md)、
-[ADR-0109](0109-chat-like-telegram.md)
+[ADR-0041](0041-app-links-and-shortcuts.md)、[ADR-0043](0043-app-languages.md)、[ADR-0044](0044-bot-profile-and-status-avatars.md)、
+[ADR-0054](0054-bot-command-menu.md)、[ADR-0095](0095-no-tab-bar.md)、[ADR-0100](0100-system-entry.md)、
+[ADR-0103](0103-ipad-and-large-screens.md)、[ADR-0108](0108-hermes-default-kernel.md)、[ADR-0109](0109-chat-like-telegram.md)
