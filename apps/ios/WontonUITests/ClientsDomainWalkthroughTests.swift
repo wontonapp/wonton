@@ -170,7 +170,7 @@ final class ClientsDomainWalkthroughTests: XCTestCase {
             app.swipeUp()
             other = waitAnyButton(["Other", "其他"], timeout: 15)
         }
-        guard let other else { return XCTFail("没有“其他”") }
+        guard let other else { return XCTFail("没有“其他”：\(app.debugDescription)") }
         XCTAssertTrue(scrollTo(other), "“其他”点不到")
         usleep(300_000)
         other.tap()
