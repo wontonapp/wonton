@@ -983,11 +983,16 @@ fn register(home: &Home, manifest: &str) {
     let manifest = PluginPackage::parse(manifest, &Languages::from_header(Some("zh-Hans")))
         .unwrap()
         .manifest;
+    let id = manifest.id.clone();
     home.gateway.plugins.register_for_test(
         manifest,
         crate::plugin::manager::PluginStatus::Running,
         Some("127.0.0.1:9".into()),
     );
+    // 列表要读安装记录（入口标签、开关），补一条最小记录。
+    home.gateway
+        .plugins
+        .clients_entry_for_test(&id, "客户端", false, false);
 }
 
 const EMAIL_MANIFEST: &str = r#"
@@ -1098,8 +1103,9 @@ async fn tcp_only_plugin_is_listed_without_http_auth() {
         .unwrap();
     assert_eq!(item["auth"], "app");
     assert!(item["passwords"].as_array().unwrap().is_empty());
-    assert_eq!(item["entries"][2]["kind"]["kind"], "tcp");
-    assert_eq!(item["entries"][2]["kind"]["name"], "ssh");
+    // 只声明 tcp 的插件没有 lan/public 两项，tcp 是第一个入口。
+    assert_eq!(item["entries"][0]["kind"]["kind"], "tcp");
+    assert_eq!(item["entries"][0]["kind"]["name"], "ssh");
 }
 
 #[tokio::test]
