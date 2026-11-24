@@ -872,8 +872,9 @@ final class ChatTelegramUITests: XCTestCase {
 
     /// 往回翻一段。慢拖、松手前停一下：不带惯性，不会一下翻过头。
     private func dragDown() {
-        let start = app.coordinate(withNormalizedOffset: CGVector(dx: 0.5, dy: 0.35))
-        start.press(forDuration: 0.05, thenDragTo: app.coordinate(withNormalizedOffset: CGVector(dx: 0.5, dy: 0.6)),
+        // 起点放在下半屏：顶栏下叠着插件横幅时，0.35 会压在那张卡片上，拖不动列表。
+        let start = app.coordinate(withNormalizedOffset: CGVector(dx: 0.5, dy: 0.6))
+        start.press(forDuration: 0.05, thenDragTo: app.coordinate(withNormalizedOffset: CGVector(dx: 0.5, dy: 0.85)),
                     withVelocity: .default, thenHoldForDuration: 0.2)
     }
 
