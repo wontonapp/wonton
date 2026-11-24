@@ -599,6 +599,27 @@ async fn system_plugins_upgrade_from_the_image_and_say_so_when_they_cannot() {
     .await;
 }
 
+#[tokio::test]
+async fn a_system_plugin_installed_from_a_source_can_be_upgraded() {
+    let (github, _docker, m, _dir) = with_github(false).await;
+    let system = |version: &str| {
+        hello(version, "", "  permissions: []\n").replace("kind: app", "kind: system")
+    };
+    release(&github, &system("1.0.0"));
+    install(&m, SOURCE).await;
+    assert!(m.is_system(&id()));
+    assert!(!m.is_bundled_system(&id()), "从来源装的不算随核心带");
+
+    release(&github, &system("1.1.0"));
+    let preview = m
+        .preview_upgrade(&id(), UpgradeTo::Offered, None, &zh())
+        .await
+        .unwrap();
+    assert_eq!(preview.version, "1.1.0");
+    upgrade(&m).await.unwrap();
+    assert_eq!(version(&m), "1.1.0");
+}
+
 /// 核心升级后读不懂旧记录（清单新增了必填字段，插件版本号却没变）：接口重装不了系统插件，升级要先读旧包也走不通。
 /// 启动时保留数据，用随核心带来的包重装。
 #[tokio::test]

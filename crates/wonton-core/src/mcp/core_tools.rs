@@ -454,10 +454,10 @@ async fn uninstall(
         if id == caller.id {
             return Err(ToolFailure::new("invalid_input", "不能卸载自己"));
         }
-        if bus.plugins.is_system(&id) {
+        if bus.plugins.is_bundled_system(&id) {
             return Err(ToolFailure::new(
                 "unsupported",
-                format!("{id} 是系统插件，不能卸载"),
+                format!("{id} 是随核心带的系统插件，不能卸载"),
             ));
         }
         Ok((id, langs.pick_owned(&view.title)))
