@@ -485,6 +485,7 @@ async fn an_image_sent_in_a_side_chat_stays_in_the_thread() {
                         height: 1,
                     }),
                 },
+                caption: None,
                 reply_to: None,
             },
         })
