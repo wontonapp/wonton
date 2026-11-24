@@ -8889,6 +8889,7 @@ dependencies = [
  "resvg",
  "rmcp",
  "ruma-common",
+ "rusqlite",
  "rustix",
  "rustls",
  "rustls-native-certs",

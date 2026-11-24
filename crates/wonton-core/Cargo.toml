@@ -101,6 +101,8 @@ shlex = "2.0.1"
 simplecss = "0.2.2"
 # Apache-2.0。按 SPDX 许可证列表校验清单的 `license`。
 spdx = "0.13.6"
+# MIT；SQLite 本体是公有领域。媒体库（ADR-0113）。
+rusqlite = { workspace = true }
 # 经 Docker 的归档接口往容器里写 configs、读插件写下的密钥。
 tar = { version = "0.4.46", default-features = false }
 thiserror = { workspace = true }
@@ -113,6 +115,7 @@ tracing-subscriber = { workspace = true, features = ["env-filter", "fmt"] }
 # MIT OR Apache-2.0。按 Unicode 类别过滤文件名里看不见的字符。
 unicode-properties = { version = "0.1.5", default-features = false, features = ["general-category"] }
 url = { workspace = true }
+# 任务号、会话号由 wonton-protocol 的 `TaskId` 等别名带出来，不直接依赖 uuid。
 # MIT OR Apache-2.0。推送内容按 RFC 8291 加密给设备（RustCrypto 的 P-256、HKDF、AES-GCM）；不用 VAPID。
 web-push-native = { version = "0.5.0", default-features = false }
 wonton-protocol = { path = "../wonton-protocol" }

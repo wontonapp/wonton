@@ -1,0 +1,545 @@
+use std::sync::Arc;
+use std::thread;
+
+use tempfile::TempDir;
+
+use wonton_protocol::media::view::QuotaEntry;
+use wonton_protocol::media::{
+    FailedItem, ItemState, MediaFailure, MediaFailureCode, MediaItemRef, MediaKind, MediaTask,
+    PauseReason, PlaybackPlan, PlaybackSession, Progress, ProgressUnit, Queue, QueueMode, TaskId,
+    TaskKind, TaskState, TaskTarget, UploadItem,
+};
+
+use super::store::{DEFAULT_PROVIDER_UPLOAD_LIMIT, Ledger, MediaStoreError, SCHEMA_V1, Store};
+
+const ALICE: &str = "@alice:one.example.test";
+const BOB: &str = "@bob:two.example.test";
+const PHONE: &str = "phone-a";
+const IMMICH: &str = "immich";
+const JELLYFIN: &str = "jellyfin";
+
+fn store() -> (TempDir, Store) {
+    let dir = tempfile::tempdir().unwrap();
+    let store = Store::open(dir.path()).unwrap();
+    (dir, store)
+}
+
+fn item(id: &str, offset: u64) -> UploadItem {
+    UploadItem {
+        item_id: id.into(),
+        path: format!("/photos/{id}.jpg"),
+        size: 4096,
+        checksum: Some(format!("sha256:{id}")),
+        taken_at: Some(1_700_000_000_000),
+        state: ItemState::Queued,
+        upload_offset: offset,
+    }
+}
+
+fn failure() -> MediaFailure {
+    MediaFailure {
+        code: MediaFailureCode::UpstreamError,
+        message: "提供方 502".into(),
+        retry_after_secs: Some(7),
+    }
+}
+
+/// 一个各字段都不取默认值的上传任务：读回不一致时能直接看出是哪一列。
+fn upload_task(id: u128, person: &str) -> MediaTask {
+    MediaTask {
+        id: TaskId::from_u128(id),
+        kind: TaskKind::Upload,
+        person: person.into(),
+        device: PHONE.into(),
+        target: TaskTarget::Upload(vec![item("one", 7), item("two", 0)]),
+        state: TaskState::Paused(PauseReason::LowBattery),
+        progress: Progress {
+            done: 1,
+            total: Some(2),
+            unit: ProgressUnit::Items,
+        },
+        retry_count: 2,
+        retry_of: Some(TaskId::from_u128(999)),
+        created_at: 1_700_000_000_000,
+        partial_failures: vec![FailedItem {
+            item_id: "two".into(),
+            path: "/photos/two.jpg".into(),
+            failure: failure(),
+        }],
+    }
+}
+
+fn media_item(id: &str) -> MediaItemRef {
+    MediaItemRef {
+        id: id.into(),
+        kind: MediaKind::Photo,
+        title: format!("照片 {id}"),
+        artist: None,
+        album: None,
+        artwork_url: Some("https://provider.example.test/a.jpg".into()),
+        duration_ms: Some(5_000),
+        series: None,
+        index: Some(3),
+        played: true,
+        starred: false,
+    }
+}
+
+fn session(person: &str, id: u128) -> PlaybackSession {
+    PlaybackSession {
+        id: TaskId::from_u128(id),
+        person: person.into(),
+        device: PHONE.into(),
+        item: media_item("track"),
+        state: TaskState::Running,
+        position_ms: 42_000,
+        plan: Some(PlaybackPlan {
+            session: "provider-session".into(),
+            stream: wonton_protocol::media::ProviderStream::Direct(
+                "https://provider.example.test/stream".into(),
+            ),
+            origin_stream: None,
+            segments: vec![],
+            audio: vec![],
+            subtitles: vec![],
+            seekable: true,
+            duration_ms: 180_000,
+            expires_at: 1_700_000_100_000,
+        }),
+    }
+}
+
+fn queue() -> Queue {
+    Queue {
+        revision: 1,
+        entries: vec![media_item("a"), media_item("b")],
+        cursor: Some(1),
+        mode: QueueMode::Shuffle,
+        sleep_at_ms: Some(120_000),
+    }
+}
+
+#[test]
+fn a_created_task_reads_back_with_every_field() {
+    let (_dir, store) = store();
+    let task = upload_task(1, ALICE);
+    store.create_task(&task).unwrap();
+
+    let back = store.task(ALICE, task.id).unwrap().expect("刚建的任务");
+    assert_eq!(back, task);
+
+    let offsets = store.item_offsets(ALICE, task.id).unwrap();
+    assert_eq!(
+        offsets,
+        vec![("one".to_string(), 7), ("two".to_string(), 0)]
+    );
+}
+
+#[test]
+fn items_can_be_appended_and_saved_by_offset() {
+    let (_dir, store) = store();
+    let task = upload_task(1, ALICE);
+    store.create_task(&task).unwrap();
+    store
+        .enqueue_items(ALICE, task.id, &[item("three", 0)])
+        .unwrap();
+
+    let mut saved = item("one", 4096);
+    saved.state = ItemState::Running;
+    assert!(store.save_item(ALICE, task.id, &saved).unwrap());
+
+    let back = store.task(ALICE, task.id).unwrap().expect("任务还在");
+    let TaskTarget::Upload(items) = &back.target else {
+        panic!("上传任务的目标应该是上传");
+    };
+    assert_eq!(items.len(), 3);
+    assert_eq!(items[0].upload_offset, 4096);
+    assert_eq!(items[0].state, ItemState::Running);
+
+    assert!(!store.save_item(BOB, task.id, &item("one", 1)).unwrap());
+    assert!(!store.save_item(ALICE, task.id, &item("ghost", 1)).unwrap());
+}
+
+#[test]
+fn a_created_session_reads_back_with_every_field() {
+    let (_dir, store) = store();
+    let session = session(ALICE, 2);
+    store.create_session(&session).unwrap();
+    assert_eq!(
+        store.session(ALICE, session.id).unwrap(),
+        Some(session.clone())
+    );
+    assert_eq!(store.sessions(Some(ALICE)).unwrap(), vec![session]);
+}
+
+#[test]
+fn a_saved_queue_reads_back() {
+    let (_dir, store) = store();
+    let mut queue = queue();
+    store.save_queue(ALICE, &queue).unwrap();
+    assert_eq!(store.queue(ALICE).unwrap(), Some(queue.clone()));
+
+    queue.bump();
+    queue.cursor = None;
+    store.save_queue(ALICE, &queue).unwrap();
+    assert_eq!(store.queue(ALICE).unwrap(), Some(queue));
+}
+
+#[test]
+fn people_do_not_see_each_others_rows() {
+    let (_dir, store) = store();
+    let mut task = upload_task(1, ALICE);
+    let session = session(ALICE, 2);
+    let queue = queue();
+    store.create_task(&task).unwrap();
+    store.create_session(&session).unwrap();
+    store.save_queue(ALICE, &queue).unwrap();
+
+    assert!(store.task(BOB, task.id).unwrap().is_none());
+    assert!(store.session(BOB, session.id).unwrap().is_none());
+    assert!(store.queue(BOB).unwrap().is_none());
+    assert!(store.item_offsets(BOB, task.id).unwrap().is_empty());
+    assert!(store.tasks(Some(BOB), None, None).unwrap().is_empty());
+    assert!(store.sessions(Some(BOB)).unwrap().is_empty());
+
+    assert_eq!(store.tasks(None, None, None).unwrap().len(), 1);
+    assert_eq!(store.tasks(Some(ALICE), None, None).unwrap().len(), 1);
+    assert_eq!(store.sessions(None).unwrap().len(), 1);
+    assert_eq!(store.sessions(Some(ALICE)).unwrap().len(), 1);
+
+    // 拿别人的名字写，落不到 A 的行上。
+    task.person = BOB.into();
+    task.state = TaskState::Running;
+    assert!(!store.save_task(&task).unwrap());
+    let stored = store.task(ALICE, task.id).unwrap().unwrap();
+    assert_eq!(stored.person, ALICE);
+    assert_eq!(stored.state, TaskState::Paused(PauseReason::LowBattery));
+
+    let mut session = session;
+    session.person = BOB.into();
+    session.position_ms = 1;
+    assert!(!store.save_session(&session).unwrap());
+}
+
+#[test]
+fn tasks_can_be_filtered_by_kind_and_state() {
+    let (_dir, store) = store();
+    let mut queued = upload_task(1, ALICE);
+    queued.state = TaskState::Queued;
+    let mut download = upload_task(2, ALICE);
+    download.kind = TaskKind::Download;
+    download.target = TaskTarget::Download(media_item("movie"));
+    download.state = TaskState::Running;
+    store.create_task(&queued).unwrap();
+    store.create_task(&download).unwrap();
+
+    let uploads = store
+        .tasks(Some(ALICE), Some(&TaskKind::Upload), None)
+        .unwrap();
+    assert_eq!(uploads.len(), 1);
+    assert_eq!(uploads[0].id, queued.id);
+
+    let running = store
+        .tasks(Some(ALICE), None, Some(&TaskState::Running))
+        .unwrap();
+    assert_eq!(running.len(), 1);
+    assert_eq!(running[0].id, download.id);
+    assert_eq!(
+        store
+            .tasks(
+                Some(ALICE),
+                Some(&TaskKind::Download),
+                Some(&TaskState::Queued)
+            )
+            .unwrap()
+            .len(),
+        0
+    );
+}
+
+#[test]
+fn unknown_people_read_empty_without_creating_rows() {
+    let (dir, store) = store();
+    let ghost = "@ghost:example.test";
+    let ghost_task = TaskId::from_u128(1);
+    assert!(store.task(ghost, ghost_task).unwrap().is_none());
+    assert!(store.tasks(Some(ghost), None, None).unwrap().is_empty());
+    assert!(store.tasks(None, None, None).unwrap().is_empty());
+    assert!(store.item_offsets(ghost, ghost_task).unwrap().is_empty());
+    assert!(store.session(ghost, ghost_task).unwrap().is_none());
+    assert!(store.sessions(None).unwrap().is_empty());
+    assert!(store.queue(ghost).unwrap().is_none());
+
+    let quota = store.quota(ghost).unwrap();
+    assert_eq!(quota.provider_upload.used, 0);
+    assert_eq!(
+        quota.provider_upload.limit,
+        Some(DEFAULT_PROVIDER_UPLOAD_LIMIT)
+    );
+    assert_eq!(quota.device_offline.used, 0);
+    assert_eq!(quota.device_offline.limit, None);
+
+    let conn = rusqlite::Connection::open(dir.path().join("media.sqlite3")).unwrap();
+    for table in ["tasks", "task_items", "sessions", "queue", "quota"] {
+        let count: i64 = conn
+            .query_row(&format!("SELECT COUNT(*) FROM {table}"), [], |row| {
+                row.get(0)
+            })
+            .unwrap();
+        assert_eq!(count, 0, "{table} 不该有行");
+    }
+}
+
+#[test]
+fn quota_stops_at_the_limit_and_releases_afterwards() {
+    let (_dir, store) = store();
+    let limit = store.quota(ALICE).unwrap().provider_upload.limit.unwrap();
+    store
+        .add_quota(ALICE, Ledger::ProviderUpload, Some(IMMICH), None, limit)
+        .unwrap();
+
+    let err = store
+        .add_quota(ALICE, Ledger::ProviderUpload, Some(IMMICH), None, 1)
+        .unwrap_err();
+    assert!(
+        matches!(err, MediaStoreError::QuotaExceeded { used, limit: hit, want: 1, .. } if used == limit && hit == limit),
+        "{err}"
+    );
+    assert_eq!(store.quota(ALICE).unwrap().provider_upload.used, limit);
+
+    store
+        .take_quota(ALICE, Ledger::ProviderUpload, Some(IMMICH), None, limit)
+        .unwrap();
+    assert_eq!(store.quota(ALICE).unwrap().provider_upload.used, 0);
+    store
+        .add_quota(ALICE, Ledger::ProviderUpload, Some(IMMICH), None, 1)
+        .unwrap();
+}
+
+#[test]
+fn offline_quota_is_unlimited_and_kept_per_device() {
+    let (_dir, store) = store();
+    let half = u64::MAX / 4;
+    store
+        .add_quota(ALICE, Ledger::DeviceOffline, None, Some(PHONE), half)
+        .unwrap();
+    store
+        .add_quota(ALICE, Ledger::DeviceOffline, None, Some(PHONE), half)
+        .unwrap();
+    let quota = store.quota(ALICE).unwrap();
+    assert_eq!(quota.device_offline.used, half * 2);
+    assert_eq!(quota.device_offline.limit, None);
+    assert_eq!(store.quota(BOB).unwrap().device_offline.used, 0);
+
+    let err = store
+        .add_quota(ALICE, Ledger::DeviceOffline, None, None, 1)
+        .unwrap_err();
+    assert!(matches!(err, MediaStoreError::MissingDevice), "{err}");
+
+    store
+        .take_quota(ALICE, Ledger::DeviceOffline, None, Some(PHONE), u64::MAX)
+        .unwrap();
+    assert_eq!(store.quota(ALICE).unwrap().device_offline.used, 0);
+}
+
+#[test]
+fn a_quota_row_keeps_its_limit_across_adds() {
+    let (_dir, store) = store();
+    store
+        .add_quota(ALICE, Ledger::ProviderUpload, Some(IMMICH), None, 1)
+        .unwrap();
+    assert_eq!(
+        store.quota(ALICE).unwrap().provider_upload.limit,
+        Some(DEFAULT_PROVIDER_UPLOAD_LIMIT)
+    );
+}
+
+#[test]
+fn reopening_the_directory_keeps_everything() {
+    let dir = tempfile::tempdir().unwrap();
+    let task = upload_task(1, ALICE);
+    let session = session(ALICE, 2);
+    let queue = queue();
+    {
+        let store = Store::open(dir.path()).unwrap();
+        store.create_task(&task).unwrap();
+        store.create_session(&session).unwrap();
+        store.save_queue(ALICE, &queue).unwrap();
+        store
+            .add_quota(ALICE, Ledger::ProviderUpload, Some(IMMICH), None, 4096)
+            .unwrap();
+    }
+
+    let store = Store::open(dir.path()).unwrap();
+    assert_eq!(store.task(ALICE, task.id).unwrap(), Some(task));
+    assert_eq!(store.session(ALICE, session.id).unwrap(), Some(session));
+    assert_eq!(store.queue(ALICE).unwrap(), Some(queue));
+    assert_eq!(store.quota(ALICE).unwrap().provider_upload.used, 4096);
+}
+
+#[test]
+fn a_file_that_is_not_a_database_reports_its_path() {
+    let dir = tempfile::tempdir().unwrap();
+    let path = dir.path().join("media.sqlite3");
+    std::fs::write(&path, "这不是数据库").unwrap();
+
+    let err = Store::open(dir.path()).unwrap_err();
+    assert!(matches!(err, MediaStoreError::Corrupt { .. }), "{err}");
+    assert!(
+        err.to_string().contains(&path.display().to_string()),
+        "{err}"
+    );
+}
+
+#[test]
+fn two_threads_write_without_locking_errors() {
+    let (_dir, store) = store();
+    let store = Arc::new(store);
+    let threads: Vec<_> = [(ALICE, 0u128), (BOB, 1000)]
+        .into_iter()
+        .map(|(person, base)| {
+            let store = Arc::clone(&store);
+            thread::spawn(move || {
+                for n in 0..100 {
+                    store.create_task(&upload_task(base + n, person)).unwrap();
+                }
+            })
+        })
+        .collect();
+    for thread in threads {
+        thread.join().unwrap();
+    }
+
+    assert_eq!(store.tasks(None, None, None).unwrap().len(), 200);
+    assert_eq!(store.tasks(Some(ALICE), None, None).unwrap().len(), 100);
+    assert_eq!(store.tasks(Some(BOB), None, None).unwrap().len(), 100);
+}
+
+#[test]
+fn quota_entry_matches_the_view_type() {
+    let (_dir, store) = store();
+    let quota = store.quota(ALICE).unwrap();
+    assert_eq!(
+        quota.provider_upload,
+        QuotaEntry {
+            used: 0,
+            limit: Some(DEFAULT_PROVIDER_UPLOAD_LIMIT)
+        }
+    );
+}
+
+#[test]
+fn save_task_leaves_items_to_save_item() {
+    let (_dir, store) = store();
+    let task = upload_task(1, ALICE);
+    store.create_task(&task).unwrap();
+
+    let mut changed = store.task(ALICE, task.id).unwrap().unwrap();
+    changed.progress.done = 2;
+    let TaskTarget::Upload(items) = &mut changed.target else {
+        panic!("上传任务的目标应该是上传");
+    };
+    items[0].upload_offset = 4096;
+    items[0].state = ItemState::Running;
+    assert!(store.save_task(&changed).unwrap());
+
+    let stored = store.task(ALICE, task.id).unwrap().unwrap();
+    assert_eq!(stored.progress.done, 2);
+    let TaskTarget::Upload(items) = stored.target else {
+        panic!("上传任务的目标应该是上传");
+    };
+    assert_eq!(items[0].upload_offset, 7);
+    assert_eq!(items[0].state, ItemState::Queued);
+
+    let mut offset_only = items[0].clone();
+    offset_only.upload_offset = 4096;
+    store.save_item(ALICE, task.id, &offset_only).unwrap();
+    assert_eq!(store.item_offsets(ALICE, task.id).unwrap()[0].1, 4096);
+}
+
+#[test]
+fn enqueueing_on_a_missing_or_download_task_errors() {
+    let (_dir, store) = store();
+    let missing = TaskId::from_u128(9);
+    let err = store
+        .enqueue_items(ALICE, missing, &[item("x", 0)])
+        .unwrap_err();
+    assert!(matches!(err, MediaStoreError::TaskNotFound { .. }), "{err}");
+
+    let mut download = upload_task(1, ALICE);
+    download.kind = TaskKind::Download;
+    download.target = TaskTarget::Download(media_item("movie"));
+    store.create_task(&download).unwrap();
+    let err = store
+        .enqueue_items(ALICE, download.id, &[item("x", 0)])
+        .unwrap_err();
+    assert!(
+        matches!(err, MediaStoreError::TaskNotUpload { .. }),
+        "{err}"
+    );
+}
+
+#[test]
+fn upload_quota_is_kept_per_provider() {
+    let (_dir, store) = store();
+    let limit = store.quota(ALICE).unwrap().provider_upload.limit.unwrap();
+    store
+        .add_quota(ALICE, Ledger::ProviderUpload, Some(IMMICH), None, limit)
+        .unwrap();
+    // 另一个提供方不受第一家用满的影响
+    store
+        .add_quota(ALICE, Ledger::ProviderUpload, Some(JELLYFIN), None, limit)
+        .unwrap();
+    let quota = store.quota(ALICE).unwrap();
+    assert_eq!(quota.provider_upload.used, limit * 2);
+    assert_eq!(quota.provider_upload.limit, Some(limit * 2));
+
+    let err = store
+        .add_quota(ALICE, Ledger::ProviderUpload, Some(IMMICH), None, 1)
+        .unwrap_err();
+    assert!(
+        matches!(err, MediaStoreError::QuotaExceeded { .. }),
+        "{err}"
+    );
+    assert_eq!(store.quota(BOB).unwrap().provider_upload.used, 0);
+}
+
+#[test]
+fn upload_quota_needs_a_provider() {
+    let (_dir, store) = store();
+    let err = store
+        .add_quota(ALICE, Ledger::ProviderUpload, None, None, 1)
+        .unwrap_err();
+    assert!(matches!(err, MediaStoreError::MissingProvider), "{err}");
+}
+
+#[test]
+fn a_version_1_database_is_migrated_and_keeps_its_quota() {
+    let dir = tempfile::tempdir().unwrap();
+    let conn = rusqlite::Connection::open(dir.path().join("media.sqlite3")).unwrap();
+    conn.execute_batch(SCHEMA_V1).unwrap();
+    conn.execute(
+        "INSERT INTO quota (person, ledger, device, used, cap) VALUES (?, ?, ?, ?, ?)",
+        rusqlite::params![ALICE, "provider_upload", "", 4096, 100_000],
+    )
+    .unwrap();
+    conn.pragma_update(None, "user_version", 1).unwrap();
+    drop(conn);
+
+    let store = Store::open(dir.path()).unwrap();
+    let quota = store.quota(ALICE).unwrap();
+    assert_eq!(quota.provider_upload.used, 4096);
+    assert_eq!(quota.provider_upload.limit, Some(100_000));
+}
+
+#[test]
+fn a_newer_database_version_is_refused() {
+    let dir = tempfile::tempdir().unwrap();
+    drop(Store::open(dir.path()).unwrap());
+    let conn = rusqlite::Connection::open(dir.path().join("media.sqlite3")).unwrap();
+    conn.pragma_update(None, "user_version", 99).unwrap();
+    drop(conn);
+
+    let err = Store::open(dir.path()).unwrap_err();
+    assert!(matches!(err, MediaStoreError::TooNew { .. }), "{err}");
+}

@@ -1,0 +1,203 @@
+//! 媒体库的建表与升级语句、行到结构体的搬运。
+//!
+//! 结构版本记在 `PRAGMA user_version`：`MIGRATIONS` 从旧到新一版一条，`open` 时按库里记的版本往后补，
+//! 每条迁移连同版本号写在一个事务里。加迁移时同时把 `CURRENT_VERSION` 加一。
+
+use std::path::Path;
+
+use rusqlite::Row;
+
+use super::MediaStoreError;
+
+pub(super) const CURRENT_VERSION: i64 = 2;
+
+/// 第 1 版：最初的五张表。逐项条目单独成表，偏移一次只改一行。
+pub(crate) const SCHEMA_V1: &str = "
+CREATE TABLE IF NOT EXISTS tasks (
+    id TEXT PRIMARY KEY,
+    person TEXT NOT NULL,
+    device TEXT NOT NULL,
+    kind TEXT NOT NULL,
+    target TEXT NOT NULL,
+    state TEXT NOT NULL,
+    state_tag TEXT NOT NULL,
+    progress TEXT NOT NULL,
+    retry_count INTEGER NOT NULL,
+    retry_of TEXT,
+    created_at INTEGER NOT NULL,
+    partial_failures TEXT NOT NULL
+);
+CREATE INDEX IF NOT EXISTS tasks_by_person ON tasks(person, created_at);
+CREATE TABLE IF NOT EXISTS task_items (
+    person TEXT NOT NULL,
+    task_id TEXT NOT NULL REFERENCES tasks(id) ON DELETE CASCADE,
+    item_id TEXT NOT NULL,
+    position INTEGER NOT NULL,
+    path TEXT NOT NULL,
+    size INTEGER NOT NULL,
+    checksum TEXT,
+    taken_at INTEGER,
+    state TEXT NOT NULL,
+    upload_offset INTEGER NOT NULL,
+    PRIMARY KEY (task_id, item_id)
+);
+CREATE INDEX IF NOT EXISTS task_items_by_person ON task_items(person, task_id);
+CREATE TABLE IF NOT EXISTS sessions (
+    id TEXT PRIMARY KEY,
+    person TEXT NOT NULL,
+    device TEXT NOT NULL,
+    item TEXT NOT NULL,
+    state TEXT NOT NULL,
+    -- 和 state 一起写；M9 靠它找这个人的活动会话
+    state_tag TEXT NOT NULL,
+    position_ms INTEGER NOT NULL,
+    plan TEXT
+);
+CREATE INDEX IF NOT EXISTS sessions_by_person ON sessions(person);
+CREATE TABLE IF NOT EXISTS queue (
+    person TEXT PRIMARY KEY,
+    revision INTEGER NOT NULL,
+    entries TEXT NOT NULL,
+    cursor INTEGER,
+    mode TEXT NOT NULL,
+    sleep_at_ms INTEGER
+);
+CREATE TABLE IF NOT EXISTS quota (
+    person TEXT NOT NULL,
+    ledger TEXT NOT NULL,
+    device TEXT NOT NULL,
+    used INTEGER NOT NULL,
+    cap INTEGER,
+    PRIMARY KEY (person, ledger, device)
+);
+";
+
+/// 第 2 版：上传配额按提供方分开记（ADR-0113 第 3 节），加 `provider` 列。主键变了，只能重建表。
+pub(super) const MIGRATE_V2: &str = "
+CREATE TABLE quota_v2 (
+    person TEXT NOT NULL,
+    ledger TEXT NOT NULL,
+    provider TEXT NOT NULL,
+    device TEXT NOT NULL,
+    used INTEGER NOT NULL,
+    cap INTEGER,
+    PRIMARY KEY (person, ledger, provider, device)
+);
+INSERT INTO quota_v2 (person, ledger, provider, device, used, cap)
+    SELECT person, ledger, '', device, used, cap FROM quota;
+DROP TABLE quota;
+ALTER TABLE quota_v2 RENAME TO quota;
+";
+
+pub(super) const MIGRATIONS: &[(i64, &str)] = &[(1, SCHEMA_V1), (2, MIGRATE_V2)];
+
+/// 把库补到 [`CURRENT_VERSION`]；比核心新的库拒绝打开，免得更新的核心写坏后被旧版改。
+pub(super) fn migrate(conn: &rusqlite::Connection, path: &Path) -> Result<(), MediaStoreError> {
+    let found: i64 = conn
+        .query_row("PRAGMA user_version", [], |row| row.get(0))
+        .map_err(|source| classify(path, source))?;
+    if found > CURRENT_VERSION {
+        return Err(MediaStoreError::TooNew {
+            path: path.to_owned(),
+            found,
+            supported: CURRENT_VERSION,
+        });
+    }
+    for (version, sql) in MIGRATIONS.iter().filter(|(version, _)| *version > found) {
+        let tx = conn
+            .unchecked_transaction()
+            .map_err(|source| classify(path, source))?;
+        tx.execute_batch(sql)
+            .map_err(|source| classify(path, source))?;
+        tx.pragma_update(None, "user_version", version)
+            .map_err(|source| classify(path, source))?;
+        tx.commit().map_err(|source| classify(path, source))?;
+    }
+    Ok(())
+}
+
+pub(super) struct TaskRow {
+    pub id: String,
+    pub person: String,
+    pub device: String,
+    pub kind: String,
+    pub target: String,
+    pub state: String,
+    pub progress: String,
+    pub retry_count: i64,
+    pub retry_of: Option<String>,
+    pub created_at: i64,
+    pub partial_failures: String,
+}
+
+pub(super) struct SessionRow {
+    pub id: String,
+    pub person: String,
+    pub device: String,
+    pub item: String,
+    pub state: String,
+    pub position_ms: i64,
+    pub plan: Option<String>,
+}
+
+pub(super) struct QueueRow {
+    pub revision: i64,
+    pub entries: String,
+    pub cursor: Option<i64>,
+    pub mode: String,
+    pub sleep_at_ms: Option<i64>,
+}
+
+pub(super) fn row_to_task(row: &Row<'_>) -> rusqlite::Result<TaskRow> {
+    Ok(TaskRow {
+        id: row.get(0)?,
+        person: row.get(1)?,
+        device: row.get(2)?,
+        kind: row.get(3)?,
+        target: row.get(4)?,
+        state: row.get(5)?,
+        progress: row.get(6)?,
+        retry_count: row.get(7)?,
+        retry_of: row.get(8)?,
+        created_at: row.get(9)?,
+        partial_failures: row.get(10)?,
+    })
+}
+
+pub(super) fn session_row(row: &Row<'_>) -> rusqlite::Result<SessionRow> {
+    Ok(SessionRow {
+        id: row.get(0)?,
+        person: row.get(1)?,
+        device: row.get(2)?,
+        item: row.get(3)?,
+        state: row.get(4)?,
+        position_ms: row.get(5)?,
+        plan: row.get(6)?,
+    })
+}
+
+pub(super) fn queue_row(row: &Row<'_>) -> rusqlite::Result<QueueRow> {
+    Ok(QueueRow {
+        revision: row.get(0)?,
+        entries: row.get(1)?,
+        cursor: row.get(2)?,
+        mode: row.get(3)?,
+        sleep_at_ms: row.get(4)?,
+    })
+}
+
+/// 不是 SQLite 文件的错误单独成一类，消息里才能说清是哪个文件坏了。头合法、内容坏的文件仍归
+/// `Database`，SQLite 报的错会原样带出来。
+pub(super) fn classify(path: &Path, source: rusqlite::Error) -> MediaStoreError {
+    if matches!(&source, rusqlite::Error::SqliteFailure(code, _) if code.code == rusqlite::ErrorCode::NotADatabase)
+    {
+        return MediaStoreError::Corrupt {
+            path: path.to_owned(),
+            source,
+        };
+    }
+    MediaStoreError::Database {
+        path: path.to_owned(),
+        source,
+    }
+}
