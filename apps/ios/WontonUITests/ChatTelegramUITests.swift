@@ -826,7 +826,8 @@ final class ChatTelegramUITests: XCTestCase {
             if inView(element) { return }
             if element.exists {
                 // 已经画出来、但在输入框下面（朝新消息的一侧）就往下翻，其余往回翻。
-                if element.frame.minY > app.textViews["Message"].frame.minY { dragUp() } else { dragDown() }
+                // 旁聊页开着时树里有两个 “Message”，走 `input` 取第一份。
+                if element.frame.minY > input.frame.minY { dragUp() } else { dragDown() }
             } else if step < 12 {
                 // 没画出来就按锚点猜：房间开在落点上，落点下面紧贴的卡（旁聊卡）要先往回翻。
                 dragDown()
