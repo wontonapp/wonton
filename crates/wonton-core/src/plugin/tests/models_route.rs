@@ -341,6 +341,36 @@ async fn an_app_provider_installs_through_the_manager_and_serves_consumers() {
 }
 
 #[tokio::test]
+async fn uninstalling_a_consumer_does_not_wait_for_a_stopped_gateway() {
+    let bed = bed_with(None).await;
+    let keys = Keys::default();
+    bed.docker.on_exec(credential_script(keys.clone()));
+    let port = gateway_with_route(keys.clone(), Arc::new(Mutex::new(RouteReply::default()))).await;
+    let provider = provider(port, "app");
+    let provider_id = provider.manifest.id.clone();
+    bed.manager
+        .install(&provider.source, &[], langs())
+        .await
+        .unwrap();
+    bed.install_consumer().await;
+    bed.manager.set(&provider_id, PluginStatus::Stopped, None);
+
+    bed.manager
+        .uninstall(&Bed::consumer_id(), false, &langs())
+        .await
+        .unwrap();
+    assert!(keys.lock().unwrap().contains_key("app.test"));
+    assert!(bed.manager.store.model_keys().load(&Bed::consumer_id()).unwrap().revoke_pending);
+
+    bed.manager.set(&provider_id, PluginStatus::Running, None);
+    assert!(bed.manager.models_route().is_some());
+    assert_eq!(bed.manager.store.model_keys().all().unwrap().len(), 1);
+    let failures = bed.manager.reconcile_models().await;
+    assert!(failures.is_empty(), "{failures:?}");
+    assert!(!keys.lock().unwrap().contains_key("app.test"));
+}
+
+#[tokio::test]
 async fn model_settings_uses_stored_consumer_state_without_probing() {
     let state = Arc::new(Mutex::new(RouteReply {
         listed: true,
@@ -501,6 +531,8 @@ async fn unreachable_model_list_reads_as_not_connected() {
 
     // 列表回来：签发对上账、探测通过，提示清掉。
     state.lock().unwrap().catalog_status = StatusCode::OK;
+    assert!(bed.manager.models_route().is_some());
+    assert_eq!(bed.manager.store.model_keys().all().unwrap().len(), 1);
     let failures = bed.manager.reconcile_models().await;
     assert!(failures.is_empty(), "{failures:?}");
     bed.manager
