@@ -8,7 +8,7 @@ use serde_json::json;
 
 use super::api::MatrixError;
 use super::fake::{Fake, User, start};
-use super::{Avatar, BotSpec, Matrix};
+use super::{Avatar, BotAccount, BotSpec, Matrix};
 use crate::config::MatrixConfig;
 use crate::http::HttpClient;
 use crate::plugin::languages::Languages;
@@ -434,6 +434,66 @@ async fn a_failed_invite_leaves_the_owner_out_of_the_room() {
     let again = matrix.provision_bot(&spec("echo", &taken)).await.unwrap();
     assert_eq!(again.account.user_id, "@echo-2:test");
     // 旧房间还留在服务器上，但主人已经退出、不在他的列表里。
+    assert_ne!(again.account.home_room, first_room);
+    assert!(!members(&fake, &first_room).contains("@owner:test"));
+    assert_eq!(
+        fake.state()
+            .rooms
+            .keys()
+            .filter(|id| id.as_str() != super::fake::ADMIN_ROOM_ID)
+            .count(),
+        2
+    );
+}
+
+#[tokio::test]
+async fn a_failed_join_leaves_the_owner_out_of_the_room() {
+    let (fake, config) = start().await;
+    let dir = tempfile::tempdir().unwrap();
+    let matrix = connect(&dir, &config).await;
+    fake.state().refuse_joins = true;
+    let taken = BTreeSet::new();
+    let err = matrix
+        .provision_bot(&spec("echo", &taken))
+        .await
+        .unwrap_err();
+    assert_eq!(err.errcode(), "M_UNKNOWN", "{err}");
+    let first_room = fake
+        .state()
+        .rooms
+        .keys()
+        .find(|id| id.as_str() != super::fake::ADMIN_ROOM_ID)
+        .unwrap()
+        .clone();
+    {
+        let state = fake.state();
+        let room = &state.rooms[&first_room];
+        assert!(
+            !room.members.contains("@owner:test"),
+            "Bot 进来失败时主人也要退出，房间不留在他列表里"
+        );
+        assert!(room.left.contains("@owner:test"), "主人是以退出结束的");
+        assert!(
+            room.invited.contains("@echo:test"),
+            "邀请已经发出去了，留在旧房间上"
+        );
+        assert_eq!(state.user("@owner:test").direct, None);
+        assert!(state.devices("@echo:test").is_empty());
+    }
+    // 加入恢复后重装：同一个账号，另建一间；旧房间上的邀请留着，主人也看不到它。
+    fake.state().refuse_joins = false;
+    let previous = BotAccount {
+        user_id: "@echo:test".into(),
+        home_room: String::new(),
+    };
+    let again = matrix
+        .provision_bot(&BotSpec {
+            previous: Some(&previous),
+            ..spec("echo", &taken)
+        })
+        .await
+        .unwrap();
+    assert_eq!(again.account.user_id, "@echo:test");
     assert_ne!(again.account.home_room, first_room);
     assert!(!members(&fake, &first_room).contains("@owner:test"));
     assert_eq!(
