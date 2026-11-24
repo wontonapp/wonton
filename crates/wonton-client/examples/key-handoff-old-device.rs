@@ -16,12 +16,12 @@ use std::time::Duration;
 
 use wonton_client::{
     Action, ChatAccount, ChatAction, ChatViewModel, ClientCore, DeviceInvite, DeviceVerification,
-    HomeAction, KeyHandoff, Network, RecoveryStatus, RoomMembership, SecretString, TimelineAction,
-    TimelineTarget, VerificationStage,
+    HomeAction, KeyHandoff, MessageSummary, Network, RecoveryStatus, RoomMembership, SecretString,
+    TimelineAction, TimelineTarget, VerificationStage,
 };
 
 /// 从配对到新设备确认完。新设备那边要人去扫码、点按钮，给足时间。
-const WAIT: Duration = Duration::from_secs(900);
+const WAIT: Duration = Duration::from_secs(1800);
 /// 确认完以后新设备才来要密钥（经 to-device 消息），旧设备得在线回答。
 const STAY: Duration = Duration::from_secs(120);
 
@@ -60,7 +60,7 @@ async fn run(dir: &str, code: &str, out: &str) -> Result<(), String> {
         .map_err(|e| e.to_string())?;
     }
     enable_backup(&core, out).await?;
-    leave_history(&core).await;
+    leave_history(&core).await?;
 
     core.dispatch(Action::Home {
         action: HomeAction::InviteDevice,
@@ -157,7 +157,8 @@ async fn enable_backup(core: &Arc<ClientCore>, out: &str) -> Result<(), String> 
 }
 
 /// 留在备份里的加密历史：新设备拿到密钥后进这个私聊的时间线应该读到这句明文。
-async fn leave_history(core: &Arc<ClientCore>) {
+/// 发出去只说明派发成功，等它真的出现在房间预览里再往下走（示例退出、没写码时，因果就在这一行）。
+async fn leave_history(core: &Arc<ClientCore>) -> Result<(), String> {
     let history = std::env::var("KEY_HANDOFF_HISTORY_TEXT").unwrap_or_else(|_| {
         format!(
             "历史消息 {}",
@@ -167,11 +168,23 @@ async fn leave_history(core: &Arc<ClientCore>) {
                 .unwrap_or(0)
         )
     });
-    match send_history(core, &history).await {
-        Ok(()) => println!("历史消息已发出：{history}"),
-        Err(error) => println!("历史消息没发出：{error}"),
-    }
-    tokio::time::sleep(Duration::from_secs(5)).await;
+    send_history(core, &history).await?;
+    let arrived = tokio::time::timeout(
+        Duration::from_secs(60),
+        wait_chat(core, |view| {
+            view.rooms.iter().any(|room| {
+                room.preview.as_ref().is_some_and(|preview| {
+                    preview.is_own
+                        && matches!(&preview.body, MessageSummary::Text { text } if text == &history)
+                })
+            })
+        }),
+    )
+    .await
+    .map_err(|_| format!("60 秒内历史消息没进房间：{history}"))?;
+    arrived?;
+    println!("历史消息已发出：{history}");
+    Ok(())
 }
 
 /// 先走“问 Bot”；Home 状态还没连上时退回直接建私聊、订阅时间线再发。

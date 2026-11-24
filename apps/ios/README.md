@@ -214,6 +214,30 @@ apps/ios/scripts/ui-test.sh <模拟器 UDID> test \
 测试启动时经 `passPairingCode` 设置 `WONTON_UI_TEST_STATE=1`；自行启动的调用方也要设置。Debug 只读 AX 标识
 只暴露登录、同步和交接类别，不含密钥、不改核心状态；真正验证 SAS 交接的 `KeyHandoffUITests` 不调用跳过前置。
 
+`KeyHandoffUITests`（加设备时交接密钥，ADR-0087）和 `SasResetUITests`（没有可信设备时用恢复密钥或重置，ADR-0076）
+要一台在跑“添加设备”的旧设备和准备好的账号状态。旧设备按 [`deploy/dev/core/README.md`](../../deploy/dev/core/README.md)
+的“交接聊天密钥”一节用 `key-handoff-old-device` 示例扮演：
+
+- 示例的 `KEY_HANDOFF_HISTORY_TEXT` 必须和传给用例的 `HISTORY_TEXT` 是同一串：不设时示例自己按时间戳生成，
+  两边必然对不上，明文断言也就作废。用例没拿到 `HISTORY_TEXT` 会打印一行。恢复和重置两条的 `RECOVERY_KEY`
+  取示例写在码文件旁的 `.recovery`。
+- 两条恢复路径跑前先用 `deploy/dev/core/dev.sh devices` 看设备 ID，逐个 `deploy/dev/core/dev.sh revoke <ID>`（含示例那台）；
+  重置那条用上一台已删、手里的密钥已作废的状态。
+- 配对码只能用一次，这两个类每条用例都换新数据目录（等于新设备）：一条用例一个码，`PAIRING_CODE` 给逗号分隔的
+  一串，用例在失败面按顺序换下一个，跑整个类时给够条数。
+- 交接那条要比较两端表情：示例打出 `表情：` 那行后，把后面的符号写进 App 容器的
+  `Documents/sas-emoji.txt`（`xcrun simctl get_app_container <UDID> app.wonton.ios data` 拿目录；
+  粘贴板要过 iOS 的粘贴许可，读不到），用例从屏幕按序取 7 个符号比对。
+
+```bash
+TEST_RUNNER_KEY_HANDOFF=1 TEST_RUNNER_HISTORY_TEXT='<历史>' PAIRING_CODE='<码>,<码>' \
+  apps/ios/scripts/ui-test.sh <UDID> test -only-testing:WontonUITests/KeyHandoffUITests
+TEST_RUNNER_RECOVERY_KEY='<恢复密钥>' TEST_RUNNER_HISTORY_TEXT='<历史>' PAIRING_CODE='<码>,<码>' \
+  apps/ios/scripts/ui-test.sh <UDID> test -only-testing:WontonUITests/SasResetUITests
+```
+
+断言依赖的截图是 `handoff-compare`、`history-undecryptable`、`history-decrypted`、`new-key`，留在 xcresult 里。
+
 ```bash
 PAIRING_CODE="$(deploy/dev/core/dev.sh pair <地址> | tail -n 1)" apps/ios/scripts/ui-test.sh <模拟器 UDID> test \
   -only-testing:WontonUITests/BotProfileUITests

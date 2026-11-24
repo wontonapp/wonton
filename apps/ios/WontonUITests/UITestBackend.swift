@@ -34,17 +34,69 @@ enum UITestBackend {
     static func enableStateProbe(to app: XCUIApplication) {
         app.launchEnvironment["WONTON_UI_TEST_STATE"] = "1"
     }
-    /// 每次启动依次用下一个码、一个空的数据目录：不依赖模拟器上留下的会话。一个用例里浅色、深色各启动一次就各占一个码。
-    nonisolated(unsafe) static var nextLaunch = 0
+    /// 配对码只能用一次，每次启动都换一个：一个类里每条用例、一个用例里浅色/深色两次启动都是新数据目录（等于新设备），
+    /// 各占一个码。启动时带的是第 `pairingCursor` 个，配对失败（已用、过期）就换下一个。
+    nonisolated(unsafe) private static var pairingCursor = 0
 
+    /// 每次启动都用一个空的数据目录，再带上下一个没用过的配对码：不依赖模拟器上留下的会话。
     static func passPairingCode(to app: XCUIApplication) throws {
         app.launchEnvironment["WONTON_DEV_DATA_SUFFIX"] = UUID().uuidString
         enableStateProbe(to: app)
-        let all = try codes()
-        if !all.isEmpty {
-            app.launchEnvironment["WONTON_DEV_PAIRING_CODE"] = all[min(nextLaunch, all.count - 1)]
-            nextLaunch += 1
+        let codes = try codes()
+        if !codes.isEmpty {
+            app.launchEnvironment["WONTON_DEV_PAIRING_CODE"] = codes[min(pairingCursor, codes.count - 1)]
+            pairingCursor += 1
         }
+    }
+
+    /// 配到离开配对页为止。启动时带的码可能已经被上一条用了：在失败面点“再扫一次”换下一个码；
+    /// 已经配上就什么都不做。返回时配对页已经不在，后续断言各自等自己那一屏。
+    @MainActor
+    static func pairIfNeeded(_ app: XCUIApplication) throws {
+        let codes = try codes()
+        try XCTSkipIf(codes.isEmpty, "需要开发栈：没有 PAIRING_CODE")
+        let field = app.descendants(matching: .any)["pairing-code"].firstMatch
+        let failure = app.descendants(matching: .any)["pairing-failure"].firstMatch
+        let progress = app.descendants(matching: .any)["pairing-progress"].firstMatch
+        // 交接页、引导页出现就是配上了；主界面的侧栏在配对页后面也有，得等配对页真正收起。
+        func paired() -> Bool {
+            if app.staticTexts["Continue on your other device"].exists { return true }
+            if app.buttons["key-handoff-skip"].exists { return true }
+            if app.buttons["Skip"].exists { return true }
+            let pairing = field.exists || failure.exists || progress.exists
+            return !pairing && app.buttons["Sidebar"].exists
+        }
+        let start = min(pairingCursor, codes.count)
+        let candidates = Array(codes[start...]) + codes[..<start]
+        for (index, code) in candidates.enumerated() {
+            if field.waitForExistence(timeout: 20) {
+                field.tap()
+                UIPasteboard.general.string = code
+                field.press(forDuration: 1.2)
+                let paste = app.menuItems["Paste"].exists ? app.menuItems["Paste"] : app.menuItems["粘贴"]
+                if paste.exists {
+                    paste.tap()
+                } else {
+                    field.typeText(code)
+                }
+                let pair = app.buttons["pairing-submit"]
+                XCTAssertTrue(pair.waitForExistence(timeout: 10), app.debugDescription)
+                pair.tap()
+            }
+            let deadline = Date().addingTimeInterval(120)
+            while Date() < deadline {
+                if paired() {
+                    pairingCursor = (start + index + 1) % codes.count
+                    return
+                }
+                if failure.exists { break }
+                Thread.sleep(forTimeInterval: 1)
+            }
+            // 已用、过期的码在失败面换下一个；连失败面都没有就再等等，交给最后一条断言。
+            let again = app.buttons["pairing-scan-again"]
+            if again.exists && again.isHittable { again.tap() }
+        }
+        XCTFail("配对码都不好使（已用或过期）：\(app.debugDescription)")
     }
 
     /// 只处理已经出现的交接入口；引导循环和收尾等待共用同一条导航路径。
