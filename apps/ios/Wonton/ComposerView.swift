@@ -114,7 +114,7 @@ struct ComposerView: View {
         }
         // 打字报给核心，节流和 5 秒超时都在核心（ADR-0109 第 8 节）。
         .onChange(of: draft.wrappedValue) { _, text in
-            model.send(.timeline(action: .setTyping(target: composer.target, typing: !text.isEmpty)))
+            model.reportTyping(!text.isEmpty, in: composer.target)
         }
         .onChange(of: isFocused) { _, focused in
             if !focused { model.send(.timeline(action: .setTyping(target: composer.target, typing: false))) }

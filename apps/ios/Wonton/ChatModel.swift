@@ -35,6 +35,8 @@ final class ChatModel {
     }
     var replies: [String: ReplyQuote] { draftStore.replies }
     var replyFocusRevision = 0
+    /// 进编辑态换进来的原文会触发一次草稿变化，那一次的“正在输入”不报（进编辑态就停，ADR-0109 第 8 节）。
+    var suppressNextTyping = false
     /// 聊天页打开的页面。
     var path: [ChatRoute] = []
     var visiting: VisitingRoom?
