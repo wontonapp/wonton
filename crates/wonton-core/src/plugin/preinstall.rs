@@ -11,6 +11,7 @@ use std::path::{Path, PathBuf};
 use std::time::Duration;
 
 use serde::{Deserialize, Serialize};
+use wonton_protocol::EgressFailure;
 
 use super::languages::Languages;
 use super::manager::{InstallError, PluginManager, PluginStatus, PluginView, now_secs};
@@ -34,6 +35,9 @@ impl Default for Backoff {
         }
     }
 }
+
+/// 出口还没就绪时最多等这么久再试：它自己会往前走，等太久反而错过就绪的那一刻（#681）。
+const WAITING_MAX: Duration = Duration::from_secs(60);
 
 /// 预装一个插件包的结果。
 pub(super) enum Outcome {
@@ -271,6 +275,14 @@ impl PluginManager {
                 }
                 Err(e) => e,
             };
+            // 出口还在就绪的路上：报“等着”而不是“重试”，并保持一分钟内一次的短间隔。
+            let waiting = matches!(
+                e,
+                InstallError::EgressProxyUnavailable {
+                    reason: EgressFailure::Waiting,
+                    ..
+                }
+            );
             if let InstallError::Conflict(_) = e {
                 tracing::warn!(plugin = %id, error = %e, "插件已经存在，不再预装");
                 return Outcome::Stopped;
@@ -291,13 +303,18 @@ impl PluginManager {
                 return Outcome::Stopped;
             }
             tracing::warn!(plugin = %id, attempts, retry_in = ?wait, error = %e, "预装失败，稍后重试");
+            let langs = self.owner_languages();
             let reason = format!(
                 "{}：{e}",
-                crate::l10n::text(
-                    &self.owner_languages(),
-                    "plugin-install-preinstall-retrying",
-                    &[("attempts", attempts.to_string().into())],
-                )
+                if waiting {
+                    crate::l10n::text(&langs, "plugin-install-preinstall-waiting", &[])
+                } else {
+                    crate::l10n::text(
+                        &langs,
+                        "plugin-install-preinstall-retrying",
+                        &[("attempts", attempts.to_string().into())],
+                    )
+                }
             );
             // 先订阅再标异常：标完之后主人马上卸掉它，也能收到通知。
             let changes = self.changes();
@@ -314,7 +331,11 @@ impl PluginManager {
                     }
                 };
             }
-            wait = (wait * 2).min(backoff.max);
+            wait = if waiting {
+                (wait * 2).min(WAITING_MAX).max(backoff.first)
+            } else {
+                (wait * 2).min(backoff.max)
+            };
         }
     }
 
