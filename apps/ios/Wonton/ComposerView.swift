@@ -44,7 +44,7 @@ struct ComposerView: View {
     @State private var afterAttach: AfterAttach?
     /// 点“菜单”按钮打开的命令列表；敲“/”弹出的那一张不看它。
     @State private var showsCommands = false
-    /// 点了命令以后输入框里的“/…”原样留着；字还是这一句时列表不再按它弹，动一下字就恢复。
+    /// 命令收下以后输入框里的“/…”原样留着；字还是这一句时列表不再按它弹，动一下字就恢复。被拒时不动它，列表照旧。
     @State private var sentSlash = ""
     @FocusState private var isFocused: Bool
     @Environment(\.wontonColors) private var colors
@@ -145,18 +145,21 @@ struct ComposerView: View {
         }
     }
 
-    /// 输入框开头敲了“/”时，“/”后面的字：命令列表按它做前缀过滤。没敲“/”或者已经换行了为空。
+    /// 输入框开头敲了“/”时，“/”后面的字：命令列表按开头的第一个词过滤。没敲“/”或者已经换行了为空。
+    /// 只看到第一个词：命令发出去以后在后面接着打参数（“/model gpt”），那句命令本身没改就不弹回来；
+    /// 改到命令名才恢复。
     private var commandQuery: String? {
         let text = draft.wrappedValue
-        guard text != sentSlash else { return nil }
         guard text.hasPrefix("/"), !text.contains(where: \.isNewline) else { return nil }
+        guard text.prefix { $0 != " " } != sentSlash else { return nil }
         return String(text.dropFirst())
     }
 
-    /// 这会儿列出来的命令：敲了“/”按前缀过滤，点了“菜单”按钮是整张表，都不是就不列。
+    /// 这会儿列出来的命令：敲了“/”按第一个词做前缀过滤，点了“菜单”按钮是整张表，都不是就不列。
     private var listedCommands: [RoomCommand] {
         if let query = commandQuery?.lowercased() {
-            return commands.filter { $0.name.lowercased().hasPrefix(query) }
+            let word = query.prefix { $0 != " " }
+            return commands.filter { $0.name.lowercased().hasPrefix(word) }
         }
         return showsCommands ? commands : []
     }
@@ -165,9 +168,12 @@ struct ComposerView: View {
     /// 发完留着；回复对象跟着命令发出去，发出去才收起。
     private func run(_ command: RoomCommand) {
         pin.pin()
-        sentSlash = draft.wrappedValue
-        model.send(.timeline(action: .sendText(
-            target: composer.target, body: command.text, replyTo: model.replies[draftKey]?.eventId)))
+        // 被拒（附件区里有传不上去的）时命令没发出去：草稿、回复条和列表都留着让主人再点。
+        // 走和发送键同一个口：附件区里有东西时按 Attachment 送，才会被附件区拦下。
+        guard composer.send(command.text, replyTo: model.replies[draftKey]?.eventId) else { return }
+        // 收下了才记这一句：被拒时草稿没动，先记会把列表压掉。
+        // 记第一个词就够：草稿里本来就带着参数送出去的，也能认出“这一条刚发过”。
+        sentSlash = String(draft.wrappedValue.prefix { $0 != " " })
         model.cancelReply(in: composer.target)
         showsCommands = false
     }

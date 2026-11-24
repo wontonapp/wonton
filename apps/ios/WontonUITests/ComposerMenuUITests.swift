@@ -42,18 +42,41 @@ final class ComposerMenuUITests: XCTestCase {
         openCommands()
         let menu = app.otherElements["commandMenu"]
         XCTAssertTrue(menu.waitForExistence(timeout: 5), "菜单没打开\n\(app.debugDescription)")
-        app.swipeUp()
+        // 起手放在消息上：系统在屏幕底部的拖动会先落到浮着的卡片上，卡片自己不滚。
+        swipeUp(on: text("Fixture message 3"))
         XCTAssertTrue(menu.waitForNonExistence(timeout: 5), "滚了时间线命令列表还开着\n\(app.debugDescription)")
     }
 
-    /// 每条命令的名字后面写它的参数提示。
+    /// 命令带着参数打：后面的词不参与过滤，列表还按命令名列出那一条。
+    func testCommandMenuFiltersByFirstWordOnly() {
+        enter()
+        let field = app.textViews["Message"]
+        field.tap()
+        field.typeText("/m")
+        XCTAssertTrue(app.buttons["command.model"].waitForExistence(timeout: 5), "没有按“m”列出 model")
+
+        field.typeText(" name")
+        XCTAssertTrue(app.buttons["command.model"].exists, "打了参数，命令那一条没了")
+        XCTAssertFalse(app.buttons["command.help"].exists, "打了参数，列表没按第一个词过滤")
+
+        // 带着参数点一条：发出去以后列表收起，后面再打参数也不弹回来。
+        tap(app.buttons["command.model"])
+        XCTAssertTrue(app.otherElements["commandMenu"].waitForNonExistence(timeout: 5), "发出去以后列表还开着")
+        XCTAssertEqual(field.value as? String, "/m name", "点命令把草稿动了")
+        field.tap()
+        field.typeText(" 70b")
+        XCTAssertFalse(app.otherElements["commandMenu"].exists, "接着打参数把列表弹回来了")
+    }
+
+    /// 每条命令的名字后面写它的参数提示，说明另起一行（一行挤不下，后面会被截掉）。
     func testCommandRowShowsHint() {
         enter()
         openCommands()
-        XCTAssertTrue(
-            app.staticTexts["model name"].waitForExistence(timeout: 5),
-            "命令后面没有参数提示\n\(app.debugDescription)"
-        )
+        let hint = app.staticTexts["model name"]
+        XCTAssertTrue(hint.waitForExistence(timeout: 5), "命令后面没有参数提示 \n\(app.debugDescription)")
+        let description = app.staticTexts["Switch model"]
+        XCTAssertTrue(description.waitForExistence(timeout: 5), "命令没有说明 \n\(app.debugDescription)")
+        XCTAssertGreaterThan(description.frame.minY, hint.frame.maxY, "说明和名字挤在同一行")
         screenshot("menu-hint")
     }
 
@@ -86,6 +109,15 @@ final class ComposerMenuUITests: XCTestCase {
 
     private func openCommands() {
         tap(app.buttons["composerCommands"])
+    }
+
+    /// 从某个元素上往上拖一格。
+    private func swipeUp(on element: XCUIElement) {
+        let start = element.coordinate(withNormalizedOffset: CGVector(dx: 0.5, dy: 0.5))
+        start.press(
+            forDuration: 0.05, thenDragTo: start.withOffset(CGVector(dx: 0, dy: -220)),
+            withVelocity: .default, thenHoldForDuration: 0.1
+        )
     }
 
     private func text(_ prefix: String) -> XCUIElement {
