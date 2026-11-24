@@ -573,10 +573,10 @@ final class ChatTelegramUITests: XCTestCase {
         app.launchEnvironment["WONTON_UI_FAIL_SEND"] = "1"
         app.launch()
         enter(Self.directRoom)
-        // 卡片就挂在进房落点那条下面：没画出来往新消息的方向挪一两段，不用横穿整条时间线；
+        // 卡片就挂在进房落点那条：没画出来往上挪一两段，不用横穿整条时间线；
         // 底下可能被附件提示盖住，交给 revealClearOfHint 挪到提示上面。
-        let card = element("sideChatCard")
-        for _ in 0..<10 where !card.exists { dragUp() }
+        let card = app.buttons.matching(NSPredicate(format: "identifier BEGINSWITH %@", "sideChatCard.")).firstMatch
+        for _ in 0..<3 where !card.exists { dragDown() }
         XCTAssertTrue(revealClearOfHint(card), "翻不到露出来的旁聊卡片\n\(app.debugDescription)")
         tap(card)
         // 假数据里旁聊和主对话共用同一份时间线，卡片在盖层里也还在；靠提示认出已经进了旁聊。
