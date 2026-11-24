@@ -382,6 +382,39 @@ async fn master_sequence(replies: Vec<&'static str>) -> (String, Arc<AtomicUsize
     (addr, hits)
 }
 
+/// 第一条连接读了命令后既不回也不关，后续连接按顺序回 `replies`。
+async fn master_silent_then(replies: Vec<&'static str>) -> (String, Arc<AtomicUsize>) {
+    use tokio::io::AsyncWriteExt;
+    let listener = tokio_listener().await;
+    let addr = listener.local_addr().unwrap().to_string();
+    let hits = Arc::new(AtomicUsize::new(0));
+    let counter = hits.clone();
+    tokio::spawn(async move {
+        let mut silent = Vec::new();
+        for index in 0..=replies.len() {
+            let Ok((mut socket, _)) = listener.accept().await else {
+                return;
+            };
+            read_command(&mut socket).await;
+            counter.fetch_add(1, Ordering::SeqCst);
+            if index == 0 {
+                // 不说话也不关，读完命令就搁着。
+                silent.push(socket);
+                continue;
+            }
+            if socket
+                .write_all(replies[index - 1].as_bytes())
+                .await
+                .is_err()
+            {
+                return;
+            }
+            drop(socket);
+        }
+    });
+    (addr, hits)
+}
+
 async fn tokio_listener() -> tokio::net::TcpListener {
     tokio::net::TcpListener::bind("127.0.0.1:0").await.unwrap()
 }
@@ -436,6 +469,26 @@ async fn reload_retries_while_another_reload_is_in_progress() {
 #[tokio::test]
 async fn reload_retries_a_connection_closed_without_a_reply() {
     let (addr, hits) = master_sequence(vec!["", "Success=1\n"]).await;
+    let rig = Rig::new().await;
+    rig.reconcile(Some(&settings())).await.unwrap();
+    rig.containers.reload(&addr).await.unwrap();
+    assert_eq!(hits.load(Ordering::SeqCst), 2);
+}
+
+/// 连上却一个字都不回：不能吃光 10 秒预算，隔一小段换连接重发。
+#[tokio::test]
+async fn reload_retries_a_silent_connection() {
+    let (addr, hits) = master_silent_then(vec!["Success=1\n"]).await;
+    let rig = Rig::new().await;
+    rig.reconcile(Some(&settings())).await.unwrap();
+    rig.containers.reload(&addr).await.unwrap();
+    assert_eq!(hits.load(Ordering::SeqCst), 2);
+}
+
+/// 主进程只回了半截 `Success=0\n` 就断：不是拒绝，换条连接重发。
+#[tokio::test]
+async fn reload_retries_a_truncated_rejection() {
+    let (addr, hits) = master_sequence(vec!["Success=0\n", "Success=1\n"]).await;
     let rig = Rig::new().await;
     rig.reconcile(Some(&settings())).await.unwrap();
     rig.containers.reload(&addr).await.unwrap();
