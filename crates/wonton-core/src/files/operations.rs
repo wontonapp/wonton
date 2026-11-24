@@ -43,7 +43,7 @@ impl Files {
         self.delete_for(Accessor::Owner, id, device, langs).await
     }
 
-    /// 把这个房间的 Bot 加进访问范围，并记下这个房间（它现在的家人成员也能看），返回加了哪些 Bot。房间里没有 Bot 时也会清掉过期：
+    /// 把这个房间的 Bot 加进访问范围，并记下这个房间和授权的人（它现在的家人成员也能看），返回加了哪些 Bot。房间里没有 Bot 时也会清掉过期：
     /// App 授权之后马上发链接，这时链接就算发出去了。和到期清理排同一个队：清理已经取了过期名单也不会在授权之后把文件删掉。
     pub async fn grant_room_for(
         self: &Arc<Self>,
@@ -57,14 +57,10 @@ impl Files {
         let granted = async {
             self.authorize(&task, &who, &langs).await?;
             self.blocking(move |files| {
-                // 授权的人已经在范围里，`grant` 也负责清掉过期时间（ADR-0020 的“生命周期”）。
+                // 授权的人已经在范围里，这里顺便清掉过期时间（ADR-0020 的“生命周期”）。
                 files
                     .registry
-                    .grant(&task, who, now_secs())?
-                    .ok_or_else(|| Failure::unknown(&langs))?;
-                files
-                    .registry
-                    .grant_room(&task, &room, now_secs())?
+                    .grant_room(&task, who, &room, now_secs())?
                     .ok_or_else(|| Failure::unknown(&langs))?;
                 let bots = files.host.bots_in_room(&room)?;
                 for bot in &bots {

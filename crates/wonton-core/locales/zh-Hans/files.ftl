@@ -6,6 +6,7 @@ files-not-found = 没有这个文件
 files-moved-or-deleted = 文件已被移动或删除
 files-not-shared = 这个文件没有分享给你
 files-room-members-unknown = 暂时查不到群里现在有谁：{ $error }，稍后再试
+files-room-members-unconfigured = 暂时查不到群里现在有谁：家里的服务器没有接入 Matrix
 files-share-expired = 这个编号的分享过期了，再找一次文件
 files-changed = 文件登记后改过，你看过的可能不是现在的内容，再找一次
 files-share-not-authorized = 应用 { $plugin } 没有共享文件夹 { $share } 的授权

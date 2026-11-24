@@ -320,10 +320,11 @@ impl Registry {
         })
     }
 
-    /// 记下分享进了这个房间，和 `grant` 一样清掉过期。
+    /// 把访问者加进范围，并记下分享进了这个房间，和 `grant` 一样清掉过期。
     pub fn grant_room(
         &self,
         id: &FileId,
+        accessor: Accessor,
         room: &str,
         now: u64,
     ) -> Result<Option<FileRecord>, RegistryError> {
@@ -333,6 +334,7 @@ impl Registry {
             };
             let mut record = record.clone();
             record.expires_at = None;
+            record.access.insert(accessor);
             record.rooms.insert(room.to_owned());
             (Some(record.clone()), Some(record))
         })

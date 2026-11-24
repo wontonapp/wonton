@@ -92,7 +92,8 @@ impl CoreHost {
     }
 
     /// 向 Matrix 核对 `who` 是不是这些房间中某一间的当前成员。核心自己不在的房间（不是它
-    /// 管的家庭群）查不到成员，跳过；其它查询失败都是查不到，不是不在。
+    /// 管的家庭群）查不到成员，跳过；其它查询失败都是查不到，不是不在。后面的房间已经有答案时
+    /// 以答案为准，只有一间都没命中、又至少失败过一次才报错。
     pub(super) fn member_of_file_rooms<'a>(
         &'a self,
         who: &'a Accessor,
@@ -116,21 +117,29 @@ impl CoreHost {
                     ),
                 )
             };
-            let matrix = people
-                .matrix
-                .as_ref()
-                .ok_or_else(|| unknown("no Matrix".into()))?;
+            let matrix = people.matrix.as_ref().ok_or_else(|| {
+                Failure::new(
+                    FileFailure::ServiceUnavailable,
+                    crate::l10n::text(&langs, "files-room-members-unconfigured", &[]),
+                )
+            })?;
             let wanted = matrix.user_id(&username);
             let core = matrix.core_session();
+            let mut failed = None;
             for room in rooms {
                 match core.joined_members(room).await {
                     Ok(members) if members.iter().any(|id| id == &wanted) => return Ok(true),
                     Ok(_) => {}
                     Err(e) if matches!(e.errcode(), "M_FORBIDDEN" | "M_NOT_FOUND") => {}
-                    Err(e) => return Err(unknown(e.to_string())),
+                    Err(e) => {
+                        failed.get_or_insert_with(|| e.to_string());
+                    }
                 }
             }
-            Ok(false)
+            match failed {
+                Some(error) => Err(unknown(error)),
+                None => Ok(false),
+            }
         }
         .boxed()
     }
