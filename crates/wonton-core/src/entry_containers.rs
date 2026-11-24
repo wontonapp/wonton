@@ -187,6 +187,8 @@ pub struct EntryContainers {
     reload_addr: String,
     /// 上一次成功让入口读过的 `site.pem` 摘要：同名续期换的只是证书内容，配置文本不变，也要重载。
     loaded_cert: std::sync::Arc<std::sync::Mutex<Option<u64>>>,
+    /// 上一轮该重载但没成：配置或证书都可能已经不再变化，必须跨轮把这笔账留住。
+    reload_pending: std::sync::Arc<std::sync::atomic::AtomicBool>,
 }
 
 impl EntryContainers {
@@ -208,6 +210,7 @@ impl EntryContainers {
             operation: std::sync::Arc::new(tokio::sync::Mutex::new(None)),
             reload_addr: ENTRY_RELOAD_ADDR.to_owned(),
             loaded_cert: std::sync::Arc::new(std::sync::Mutex::new(None)),
+            reload_pending: std::sync::Arc::new(std::sync::atomic::AtomicBool::new(false)),
         }
     }
 
@@ -386,7 +389,9 @@ impl EntryContainers {
         write: bool,
     ) -> Result<(), EntryError> {
         let Some(target) = target else {
-            // 没有要服务的名字和证书：两个容器都删掉，不去动网络。
+            // 没有要服务的名字和证书：两个容器都删掉，不去动网络；下次起来是新的。
+            self.reload_pending
+                .store(false, std::sync::atomic::Ordering::SeqCst);
             for component in [ENTRY_COMPONENT, CONNECTOR_COMPONENT] {
                 self.engine.remove_container(&self.name(component)).await?;
             }
@@ -397,7 +402,23 @@ impl EntryContainers {
             return Err(EntryError::CoreNotInContainer);
         };
         let (project, networks) = self.networks(core).await?;
-        let changed = write && self.write_config(target, &networks.connector)?;
+        // 配置一写下去（哪怕只写出一半）就先记着：后面任何容器动作失败都不能把这笔账丢掉。
+        let changed = if write {
+            match self.write_config(target, &networks.connector) {
+                Ok(changed) => changed,
+                Err(error) => {
+                    self.reload_pending
+                        .store(true, std::sync::atomic::Ordering::SeqCst);
+                    return Err(error);
+                }
+            }
+        } else {
+            false
+        };
+        if changed {
+            self.reload_pending
+                .store(true, std::sync::atomic::Ordering::SeqCst);
+        }
         let cert_changed = self.cert_changed();
         let existed = self
             .engine
@@ -414,14 +435,25 @@ impl EntryContainers {
             let side = self.side(component, &networks, target)?;
             started |= self.ensure(&side, &project).await?;
         }
-        // 刚起/重建的入口自己会读当前证书，但这一轮要重载时得等重载成功才算数：重载失败后
-        // 记成已加载，下一轮既没有配置变化也没有证书变化，就再也不会重试。
-        let reload = (changed || cert_changed) && existed && entry;
+        // 刚起/重建的入口自己会读当前证书和配置，但这一轮要重载时得等重载成功才算数：
+        // 失败后配置和证书都可能不再变化，靠 `reload_pending` 跨轮重试，直到成功或容器重建。
+        let pending = self
+            .reload_pending
+            .load(std::sync::atomic::Ordering::SeqCst);
+        let reload = (changed || cert_changed || pending) && existed && entry;
         if started && !reload {
             self.remember_cert();
+            self.reload_pending
+                .store(false, std::sync::atomic::Ordering::SeqCst);
         }
         if reload {
-            self.reload(&self.reload_addr).await?;
+            if let Err(error) = self.reload(&self.reload_addr).await {
+                self.reload_pending
+                    .store(true, std::sync::atomic::Ordering::SeqCst);
+                return Err(error);
+            }
+            self.reload_pending
+                .store(false, std::sync::atomic::Ordering::SeqCst);
             self.remember_cert();
         }
         Ok(())
