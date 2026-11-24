@@ -481,7 +481,8 @@ final class ChatTelegramUITests: XCTestCase {
         app.launchEnvironment["WONTON_UI_TEST_FAIL_ATTACHMENT"] = "1"
         app.launch()
         enter(Self.directRoom)
-        startReply(at: 3)
+        // 旁聊打开就停在落点附近，回复紧挨着的那条（旁聊里编号不一定和主列表对齐）。
+        startReply(at: 2)
         let (first, _) = openAttachSheet()
         first.tap()
         let send = app.buttons["attachSend"]
