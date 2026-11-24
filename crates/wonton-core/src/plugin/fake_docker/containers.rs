@@ -12,6 +12,7 @@ use super::{
     query_param,
 };
 
+#[allow(clippy::too_many_lines)] // 假路由按动词和路径穷举，拆开只会把共用的预检和变量搬来搬去。
 pub(super) fn containers(
     docker: &mut Resources,
     method: &Method,

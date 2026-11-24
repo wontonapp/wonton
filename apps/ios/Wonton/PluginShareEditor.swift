@@ -79,18 +79,13 @@ struct PluginShareEditor: View {
 
     @ViewBuilder private func recipientPicker(_ view: FriendsViewModel) -> some View {
         Section(String(localized: .Share1.shareRecipient)) {
-            if view.friends.isEmpty && view.groups.isEmpty { Text(.Share1.shareEmpty) }
+            if view.friends.isEmpty { Text(.Share1.shareEmpty) }
             Picker(String(localized: .Share1.shareRecipient), selection: $recipient) {
                 Text(.Share1.shareRecipient).tag(ShareRecipient?.none)
                 Section(String(localized: .Share2.shareFriends)) {
                     ForEach(view.friends, id: \.userId) { friend in
                         Text(friend.displayName.flatMap { $0.isEmpty ? nil : $0 } ?? friend.userId)
                             .tag(ShareRecipient?.some(.friend(userId: friend.userId)))
-                    }
-                }
-                Section(String(localized: .Share2.shareGroups)) {
-                    ForEach(view.groups, id: \.id) { group in
-                        Text(group.name).tag(ShareRecipient?.some(.group(groupId: group.id)))
                     }
                 }
             }
@@ -106,7 +101,6 @@ struct PluginShareEditor: View {
         guard let recipients, let recipient else { return false }
         switch recipient {
         case let .friend(id): return recipients.friends.contains { $0.userId == id }
-        case let .group(id): return recipients.groups.contains { $0.id == id }
         case .other: return false
         }
     }

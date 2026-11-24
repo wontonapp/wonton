@@ -188,6 +188,12 @@ gateway-agent-acp-token-missing = {$provider} has no provider token yet; reinsta
 gateway-agent-acp-provider-unreachable = The agent runtime did not take over this connection: {$detail}
 
 gateway-install-rejected = An administrator declined; the { $action } was not done
+
+# Friend invitations gated by the inviter role (ADR-0088): the card goes to the administrators, the invite is released on approval.
+gateway-friend-invite-title = Friend request awaiting approval
+gateway-friend-invite-to = { $inviter } wants to add { $friend } as a friend
+gateway-friend-invite-rejected = An administrator declined this friend request
+gateway-friend-invite-expired = No administrator answered this friend request in time
 gateway-install-expired = No administrator answered in time; the { $action } was not done
 gateway-install-card-device = Device handed to it: { $device }
 gateway-install-card-secret = Secret filled in by the request: { $title }
@@ -217,3 +223,27 @@ clients-switch-label-conflict = Entry label { $label } is used twice
 clients-switch-records-read = Could not read the plugin records: { $error }
 clients-switch-rollback-entry = Rolling back the entry configuration also failed: { $error }
 clients-switch-rollback-switch = Rolling back the switch also failed: { $error }
+# Friend requests from outside servers: the public page files one, an administrator answers, the person is recorded in allowed_users.
+gateway-friend-request-title = Friend request
+gateway-friend-request-intro = This server lets people from other servers in only after an administrator approves. Leave your Matrix ID; the answer shows up here.
+gateway-friend-request-you = Your Matrix ID
+gateway-friend-request-to = Their Matrix ID
+gateway-friend-request-target = Adding { $target }
+gateway-friend-request-submit = Send request
+gateway-friend-request-waiting = Request sent; waiting for an administrator (for { $target }).
+gateway-friend-request-approved = An administrator approved. Send the invitation again.
+gateway-friend-request-open = Their role needs no approval any more. Just send the invitation again.
+gateway-friend-request-forbidden = This member cannot add friends by role. Ask an administrator to invite them.
+gateway-friend-request-denied = An administrator declined this friend request.
+gateway-friend-request-expired = No administrator answered in time. Try again later.
+gateway-friend-request-changed = Their account or permissions changed. Try again later or let them add you.
+gateway-friend-request-unavailable = This server cannot answer right now. Try again later.
+gateway-friend-request-duplicate = A request for this person is already waiting.
+gateway-friend-request-too-many = Too many requests are waiting. Try again later.
+gateway-friend-request-local = People on the same server need no request; just invite them.
+gateway-friend-request-unknown = This server has no such person.
+gateway-friend-request-invalid = Enter a full Matrix ID such as @bob:example.org.
+gateway-friend-request-invalid-method = This address only takes GET and POST.
+gateway-friend-request-again = Send another
+gateway-friend-request-card-title = Someone outside wants to add a friend
+gateway-friend-request-card-to = wants to add { $target } as a friend

@@ -45,7 +45,7 @@ pub fn escape(text: &str) -> String {
         .collect()
 }
 
-fn layout(title: &str, body: &str, langs: &Languages) -> String {
+pub(super) fn layout(title: &str, body: &str, langs: &Languages) -> String {
     let lang = l10n::lang_tag(langs);
     format!(
         "<!doctype html><html lang=\"{lang}\"><head><meta charset=\"utf-8\">\

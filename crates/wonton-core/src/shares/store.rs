@@ -7,8 +7,9 @@ use tokio::sync::watch;
 use wonton_protocol::{PluginShares, ShareGrant, ShareGrantUpdate, ShareRecipient};
 
 use crate::friends::{Friends, Snapshot as FriendsSnapshot};
+use crate::roles::Roles;
 
-use super::evaluation::{self, generation_matches, recipient_matches};
+use super::evaluation::{self, generation_matches, recipient_matches, role_allows};
 use super::{Access, GatewayRefusal, PluginOffer, SharesError, Snapshot, StoredGrant, persistence};
 
 type Clock = Arc<dyn Fn() -> u64 + Send + Sync>;
@@ -16,19 +17,25 @@ type Clock = Arc<dyn Fn() -> u64 + Send + Sync>;
 pub struct Shares {
     path: PathBuf,
     friends: Arc<Friends>,
+    roles: Arc<Roles>,
     writer: Mutex<()>,
     snapshots: watch::Sender<Arc<Snapshot>>,
     clock: Clock,
 }
 
 impl Shares {
-    pub fn open(path: impl Into<PathBuf>, friends: Arc<Friends>) -> Result<Self, SharesError> {
-        Self::with_clock(path, friends, Arc::new(system_ms))
+    pub fn open(
+        path: impl Into<PathBuf>,
+        friends: Arc<Friends>,
+        roles: Arc<Roles>,
+    ) -> Result<Self, SharesError> {
+        Self::with_clock(path, friends, roles, Arc::new(system_ms))
     }
 
     pub fn with_clock(
         path: impl Into<PathBuf>,
         friends: Arc<Friends>,
+        roles: Arc<Roles>,
         clock: Clock,
     ) -> Result<Self, SharesError> {
         let path = path.into();
@@ -37,6 +44,7 @@ impl Shares {
         Ok(Self {
             path,
             friends,
+            roles,
             writer: Mutex::new(()),
             snapshots,
             clock,
@@ -47,7 +55,7 @@ impl Shares {
         Arc::clone(&self.snapshots.borrow())
     }
 
-    /// Also subscribe to Friends: group membership and activation changes do not rewrite shares.
+    /// Also subscribe to Friends: activation changes do not rewrite shares, they are rechecked live.
     pub fn subscribe(&self) -> watch::Receiver<Arc<Snapshot>> {
         self.snapshots.subscribe()
     }
@@ -66,9 +74,17 @@ impl Shares {
         update: &ShareGrantUpdate,
         offer: &PluginOffer,
     ) -> Result<ShareGrant, SharesError> {
-        self.change(|snapshot, friends, now| {
+        self.change(|snapshot, friends, roles, now| {
             let id = format!("share-{}", next_revision(snapshot)?);
-            let stored = bind(id, next_revision(snapshot)?, update, offer, friends, now)?;
+            let stored = bind(
+                id,
+                next_revision(snapshot)?,
+                update,
+                offer,
+                friends,
+                roles,
+                now,
+            )?;
             let grant = stored.grant.clone();
             snapshot.grants.push(stored);
             Ok(grant)
@@ -82,7 +98,7 @@ impl Shares {
         update: &ShareGrantUpdate,
         offer: &PluginOffer,
     ) -> Result<ShareGrant, SharesError> {
-        self.change(|snapshot, friends, now| {
+        self.change(|snapshot, friends, roles, now| {
             let index = snapshot
                 .grants
                 .iter()
@@ -94,6 +110,7 @@ impl Shares {
                 update,
                 offer,
                 friends,
+                roles,
                 now,
             )?;
             let previous = snapshot.grants[index].clone();
@@ -105,7 +122,7 @@ impl Shares {
     }
 
     pub fn revoke(&self, id: &str) -> Result<(), SharesError> {
-        self.change(|snapshot, friends, now| {
+        self.change(|snapshot, friends, _roles, now| {
             let index = snapshot
                 .grants
                 .iter()
@@ -119,7 +136,7 @@ impl Shares {
 
     /// Persist before uninstall completes. Deleted grants cannot revive if the same plugin returns.
     pub fn revoke_plugin(&self, plugin_id: &str) -> Result<(), SharesError> {
-        self.change(|snapshot, friends, now| {
+        self.change(|snapshot, friends, _roles, now| {
             let removed: Vec<_> = snapshot
                 .grants
                 .iter()
@@ -145,7 +162,7 @@ impl Shares {
         let _writer = self.writer.lock().expect("share registry lock poisoned");
         let shares = self.snapshot();
         let friends = self.friends.snapshot();
-        evaluation::evaluate(&shares, &friends, user_id, plugin_id, now_ms)
+        evaluation::evaluate(&shares, &friends, &self.roles, user_id, plugin_id, now_ms)
     }
 
     pub fn active_plugin_ids(&self, user_id: &str, now_ms: u64) -> Vec<String> {
@@ -154,7 +171,9 @@ impl Shares {
         let friends = self.friends.snapshot();
         let ids: BTreeSet<_> = shares.grants.iter().map(|s| &s.grant.plugin_id).collect();
         ids.into_iter()
-            .filter(|id| evaluation::evaluate(&shares, &friends, user_id, id, now_ms).is_ok())
+            .filter(|id| {
+                evaluation::evaluate(&shares, &friends, &self.roles, user_id, id, now_ms).is_ok()
+            })
             .cloned()
             .collect()
     }
@@ -171,8 +190,15 @@ impl Shares {
         let count = friends
             .active()
             .filter(|friend| {
-                evaluation::evaluate(&shares, &friends, &friend.user_id, &offer.plugin_id, now_ms)
-                    .is_ok()
+                evaluation::evaluate(
+                    &shares,
+                    &friends,
+                    &self.roles,
+                    &friend.user_id,
+                    &offer.plugin_id,
+                    now_ms,
+                )
+                .is_ok()
             })
             .count();
         Ok(PluginShares {
@@ -203,14 +229,14 @@ impl Shares {
 
     fn change<T>(
         &self,
-        change: impl FnOnce(&mut Snapshot, &FriendsSnapshot, u64) -> Result<T, SharesError>,
+        change: impl FnOnce(&mut Snapshot, &FriendsSnapshot, &Roles, u64) -> Result<T, SharesError>,
     ) -> Result<T, SharesError> {
         let _writer = self.writer.lock().expect("share registry lock poisoned");
         let before = self.snapshot();
         let friends = self.friends.snapshot();
         let now = (self.clock)();
         let mut next = before.as_ref().clone();
-        let result = change(&mut next, &friends, now)?;
+        let result = change(&mut next, &friends, &self.roles, now)?;
         if next != *before {
             next.prune(now);
             next.revision = next_revision(&before)?;
@@ -235,6 +261,7 @@ fn bind(
     update: &ShareGrantUpdate,
     offer: &PluginOffer,
     friends: &FriendsSnapshot,
+    roles: &Roles,
     now_ms: u64,
 ) -> Result<StoredGrant, SharesError> {
     validate_offer(offer, &update.plugin_id)?;
@@ -247,19 +274,17 @@ fn bind(
         ));
     }
     let direct_generation = match &update.recipient {
-        ShareRecipient::Friend { user_id } => Some(
-            friends
+        ShareRecipient::Friend { user_id } => {
+            let friend = friends
                 .get(user_id)
-                .ok_or_else(|| SharesError::Invalid("recipient is not an active friend".into()))?
-                .access_generation,
-        ),
-        ShareRecipient::Group { group_id } => {
-            if !friends.groups.iter().any(|group| group.id == *group_id) {
+                .ok_or_else(|| SharesError::Invalid("recipient is not an active friend".into()))?;
+            if !role_allows(roles, friend, offer.plugin_id.as_str()) {
+                // 角色里没开放的应用给好友分享是无效输入（ADR-0088 第 4 节），先改角色再分享。
                 return Err(SharesError::Invalid(
-                    "recipient group does not exist".into(),
+                    "the friend's role does not open this app".into(),
                 ));
             }
-            None
+            Some(friend.access_generation)
         }
         _ => return Err(SharesError::Invalid("unknown share recipient".into())),
     };
@@ -271,7 +296,6 @@ fn bind(
             expires_at_ms: update.expires_at_ms,
         },
         generation,
-        friend_revision: friends.revision,
         direct_generation,
     })
 }
@@ -283,28 +307,17 @@ fn remember_recipients(
     friends: &FriendsSnapshot,
     now_ms: u64,
 ) {
-    let retained = |user_id: &str| {
-        replacement.is_some_and(|replacement| {
-            stored.grant.plugin_id == replacement.grant.plugin_id
-                && friends.get(user_id).is_some_and(|friend| {
-                    recipient_matches(replacement, friend)
-                        && generation_matches(replacement, friend)
-                })
-        })
-    };
-    if let ShareRecipient::Friend { user_id } = &stored.grant.recipient {
-        if !retained(user_id) {
-            snapshot.remember(user_id, &stored.grant.plugin_id, now_ms);
-        }
+    let ShareRecipient::Friend { user_id } = &stored.grant.recipient else {
         return;
-    }
-    for friend in friends
-        .active()
-        .filter(|f| recipient_matches(stored, f) && generation_matches(stored, f))
-    {
-        if !retained(&friend.user_id) {
-            snapshot.remember(&friend.user_id, &stored.grant.plugin_id, now_ms);
-        }
+    };
+    let retained = replacement.is_some_and(|replacement| {
+        stored.grant.plugin_id == replacement.grant.plugin_id
+            && friends.get(user_id).is_some_and(|friend| {
+                recipient_matches(replacement, friend) && generation_matches(replacement, friend)
+            })
+    });
+    if !retained {
+        snapshot.remember(user_id, &stored.grant.plugin_id, now_ms);
     }
 }
 

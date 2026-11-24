@@ -52,12 +52,10 @@ fn checking_a_candidate_reserves_nothing_and_reuses_removed_identity_names() {
 }
 
 #[test]
-fn identity_survives_rename_restart_removal_and_reacceptance_without_restoring_groups() {
+fn identity_survives_rename_restart_removal_and_reacceptance() {
     let temp = tempfile::tempdir().unwrap();
     let store = open(&temp);
     let original = accept(&store, ALICE, "friend-alice");
-    let group = store.save_group(None, "  Family friends  ").unwrap();
-    store.set_groups(ALICE, &[group.id]).unwrap();
     store
         .update_display_name(ALICE, Some("Real Matrix name"))
         .unwrap();
@@ -71,8 +69,6 @@ fn identity_survives_rename_restart_removal_and_reacceptance_without_restoring_g
     assert_eq!(renamed.last_opened_share_at_ms, Some(50));
     let removed = store.remove(ALICE, 1000).unwrap();
     assert_eq!(removed.status, FriendStatus::Removed);
-    assert!(removed.groups.is_empty());
-    assert!(removed.group_generations.is_empty());
     assert!(store.get(ALICE).is_none());
     assert!(store.find_username(&original.username).is_none());
     assert!(store.list_active().is_empty());
@@ -94,10 +90,19 @@ fn identity_survives_rename_restart_removal_and_reacceptance_without_restoring_g
     assert_eq!(restored.accepted_at_ms, original.accepted_at_ms);
     assert!(restored.access_generation > original.access_generation);
     assert_eq!(restored.last_opened_share_at_ms, Some(50));
-    assert!(restored.groups.is_empty());
-    assert!(restored.group_generations.is_empty());
     assert_eq!(restored.display_name, None);
     assert_eq!(store.find_username(&original.username), Some(restored));
+}
+
+#[test]
+fn a_new_friend_starts_with_the_default_invite_role() {
+    let temp = tempfile::tempdir().unwrap();
+    let store = open(&temp);
+    let alice = accept(&store, ALICE, "friend-alice");
+    assert_eq!(alice.role_id, crate::roles::DEFAULT_INVITE_ROLE);
+    drop(store);
+    let reopened = open(&temp);
+    assert_eq!(reopened.get(ALICE).unwrap().role_id, alice.role_id);
 }
 
 #[test]
@@ -202,20 +207,15 @@ fn acceptance_rejects_invalid_ids_and_reserved_or_invalid_plugin_names_without_c
 }
 
 #[tokio::test]
-async fn deletion_and_group_changes_publish_complete_effective_membership_without_lag_loss() {
+async fn deletion_publishes_complete_effective_membership_without_lag_loss() {
     let temp = tempfile::tempdir().unwrap();
     let store = open(&temp);
     let mut changes = store.subscribe();
     assert_eq!(changes.borrow_and_update().revision, 0);
     accept(&store, ALICE, "friend-alice");
-    let group = store.save_group(None, "Friends").unwrap();
-    store
-        .set_groups(ALICE, std::slice::from_ref(&group.id))
-        .unwrap();
     changes.changed().await.unwrap();
-    let grouped = Arc::clone(&changes.borrow_and_update());
-    assert_eq!(grouped.get(ALICE).unwrap().groups, vec![group.id.clone()]);
-    assert_eq!(grouped.groups, vec![group.clone()]);
+    let listed = Arc::clone(&changes.borrow_and_update());
+    assert!(listed.get(ALICE).is_some());
 
     // Coalesce more mutations than an ordinary bounded event queue can retain.
     for index in 0..100 {
@@ -223,20 +223,21 @@ async fn deletion_and_group_changes_publish_complete_effective_membership_withou
             .update_display_name(ALICE, Some(&format!("Name {index}")))
             .unwrap();
     }
-    store.remove_group(&group.id).unwrap();
     changes.changed().await.unwrap();
-    let ungrouped = Arc::clone(&changes.borrow_and_update());
-    assert!(ungrouped.get(ALICE).unwrap().groups.is_empty());
-    assert!(ungrouped.groups.is_empty());
-    assert!(ungrouped.revision > grouped.revision);
+    let renamed = Arc::clone(&changes.borrow_and_update());
+    assert_eq!(
+        renamed.get(ALICE).unwrap().display_name.as_deref(),
+        Some("Name 99")
+    );
+    assert!(renamed.revision > listed.revision);
     store.remove(ALICE, 1000).unwrap();
     changes.changed().await.unwrap();
     let deleted = Arc::clone(&changes.borrow_and_update());
     assert!(deleted.get(ALICE).is_none());
     assert!(deleted.active().next().is_none());
-    assert!(deleted.revision > ungrouped.revision);
+    assert!(deleted.revision > renamed.revision);
     assert_eq!(deleted.friends[0].status, FriendStatus::Removed);
-    assert!(grouped.get(ALICE).is_some()); // Existing immutable snapshots are not mutated.
+    assert!(listed.get(ALICE).is_some()); // Existing immutable snapshots are not mutated.
 }
 
 #[test]
@@ -252,56 +253,13 @@ fn subscribing_before_first_check_observes_an_intervening_deletion() {
 }
 
 #[test]
-fn groups_have_stable_nonreused_ids_and_replace_membership_atomically() {
+fn invalid_changes_and_inactive_friend_updates_leave_everything_unchanged() {
     let temp = tempfile::tempdir().unwrap();
     let store = open(&temp);
     accept(&store, ALICE, "friend-alice");
-    accept(&store, BOB, "friend-bob");
-    let first = store.save_group(None, "  First  ").unwrap();
-    let second = store.save_group(None, "Second").unwrap();
-    assert_eq!(first.name, "First");
-    let renamed = store.save_group(Some(&first.id), "  Renamed  ").unwrap();
-    assert_eq!(renamed.id, first.id);
-    store
-        .set_groups(ALICE, &[first.id.clone(), second.id.clone()])
-        .unwrap();
-    store
-        .set_groups(BOB, std::slice::from_ref(&first.id))
-        .unwrap();
-    store.remove_group(&first.id).unwrap();
-    assert_eq!(store.get(ALICE).unwrap().groups, vec![second.id.clone()]);
-    assert!(store.get(BOB).unwrap().groups.is_empty());
-    drop(store);
-    let store = open(&temp);
-    let third = store.save_group(None, "Third").unwrap();
-    assert_ne!(third.id, first.id);
-    assert_ne!(third.id, second.id);
-    assert_eq!(store.snapshot().groups[0], second);
-}
-
-#[test]
-fn invalid_group_changes_and_inactive_friend_updates_leave_everything_unchanged() {
-    let temp = tempfile::tempdir().unwrap();
-    let store = open(&temp);
-    accept(&store, ALICE, "friend-alice");
-    let group = store.save_group(None, "Friends").unwrap();
-    store
-        .set_groups(ALICE, std::slice::from_ref(&group.id))
-        .unwrap();
     let mut changes = store.subscribe();
     changes.borrow_and_update();
     let before = store.snapshot();
-    for invalid in [
-        vec![group.id.clone(), group.id.clone()],
-        vec!["unknown".into()],
-    ] {
-        assert!(store.set_groups(ALICE, &invalid).is_err());
-        assert_eq!(store.snapshot(), before);
-    }
-    assert!(store.save_group(None, " \n\t ").is_err());
-    assert!(store.save_group(Some("unknown"), "Name").is_err());
-    assert!(store.remove_group("unknown").is_err());
-    assert!(store.set_groups(BOB, &[]).is_err());
     assert!(
         store
             .update_display_name(ALICE, Some("invalid\nname"))
@@ -311,14 +269,14 @@ fn invalid_group_changes_and_inactive_friend_updates_leave_everything_unchanged(
     assert!(!changes.has_changed().unwrap());
     store.remove(ALICE, 1000).unwrap();
     let removed = store.snapshot();
-    assert!(store.set_groups(ALICE, &[group.id]).is_err());
     assert!(store.update_display_name(ALICE, Some("New")).is_err());
     assert!(store.record_opened(ALICE, 20).is_err());
+    assert!(store.set_role(ALICE, "friend").is_err());
     assert_eq!(store.snapshot(), removed);
 }
 
 #[test]
-fn concurrent_accepted_friends_groups_and_profile_updates_do_not_overwrite_one_another() {
+fn concurrent_accepted_friends_and_profile_updates_do_not_overwrite_one_another() {
     let temp = tempfile::tempdir().unwrap();
     let store = Arc::new(open(&temp));
     let ready = Arc::new(Barrier::new(9));
@@ -330,8 +288,6 @@ fn concurrent_accepted_friends_groups_and_profile_updates_do_not_overwrite_one_a
                 ready.wait();
                 let id = format!("@person{index}:one.example.test");
                 accept(&store, &id, &format!("friend-{index}"));
-                let group = store.save_group(None, &format!("Group {index}")).unwrap();
-                store.set_groups(&id, &[group.id]).unwrap();
                 store
                     .update_display_name(&id, Some(&format!("Person {index}")))
                     .unwrap();
@@ -339,15 +295,13 @@ fn concurrent_accepted_friends_groups_and_profile_updates_do_not_overwrite_one_a
         }
         ready.wait();
     });
-    assert_eq!(store.snapshot().revision, 32);
-    assert_eq!(store.snapshot().groups.len(), 8);
+    assert_eq!(store.snapshot().revision, 16);
     assert_eq!(store.list_active().len(), 8);
     for index in 0..8 {
         let friend = store
             .get(&format!("@person{index}:one.example.test"))
             .unwrap();
         assert_eq!(friend.username, format!("friend-{index}"));
-        assert_eq!(friend.groups.len(), 1);
         assert_eq!(friend.display_name, Some(format!("Person {index}")));
     }
     assert_eq!(open(&temp).snapshot(), store.snapshot());
@@ -358,10 +312,6 @@ fn failed_persistence_changes_neither_memory_nor_subscriber_state() {
     let temp = tempfile::tempdir().unwrap();
     let store = open(&temp);
     accept(&store, ALICE, "friend-alice");
-    let group = store.save_group(None, "Friends").unwrap();
-    store
-        .set_groups(ALICE, std::slice::from_ref(&group.id))
-        .unwrap();
     let before = store.snapshot();
     let mut changes = store.subscribe();
     changes.borrow_and_update();
@@ -370,11 +320,8 @@ fn failed_persistence_changes_neither_memory_nor_subscriber_state() {
     fs::rename(&core, &saved_core).unwrap();
     fs::write(&core, b"blocks the parent directory").unwrap();
     assert!(store.remove(ALICE, 1000).is_err());
-    assert!(store.remove_group(&group.id).is_err());
-    assert!(store.set_groups(ALICE, &[]).is_err());
     assert!(store.update_display_name(ALICE, Some("Changed")).is_err());
     assert!(store.record_opened(ALICE, 100).is_err());
-    assert!(store.save_group(None, "Other").is_err());
     assert!(store.accept(BOB, None, 20, |_| false).is_err());
     assert_eq!(store.snapshot(), before);
     assert!(!changes.has_changed().unwrap());
@@ -388,8 +335,6 @@ fn corrupt_json_and_invalid_records_are_rejected_without_overwriting() {
     let temp = tempfile::tempdir().unwrap();
     let store = open(&temp);
     accept(&store, ALICE, "friend-alice");
-    let group = store.save_group(None, "Friends").unwrap();
-    store.set_groups(ALICE, &[group.id]).unwrap();
     let valid = serde_json::to_value(store.snapshot().as_ref()).unwrap();
     drop(store);
     let path = temp.path().join("core/friends.json");
@@ -402,23 +347,7 @@ fn corrupt_json_and_invalid_records_are_rejected_without_overwriting() {
     invalid["friends"].as_array_mut().unwrap().push(duplicate);
     cases.push(invalid);
     let mut invalid = valid.clone();
-    invalid["friends"][0]["groups"] = serde_json::json!(["unknown"]);
-    cases.push(invalid);
-    let mut invalid = valid.clone();
-    invalid["friends"][0]["status"] = "removed".into();
-    cases.push(invalid);
-    let mut invalid = valid.clone();
     invalid["friends"][0]["accepted_order"] = 0.into();
-    cases.push(invalid);
-    let mut invalid = valid.clone();
-    invalid["groups"][0]["name"] = " ".into();
-    cases.push(invalid);
-    let mut invalid = valid.clone();
-    invalid["groups"][0]["id"] = "group-999999".into();
-    invalid["friends"][0]["groups"] = serde_json::json!(["group-999999"]);
-    cases.push(invalid);
-    let mut invalid = valid.clone();
-    invalid["friends"][0]["groups"] = serde_json::json!(["group-2", "group-2"]);
     cases.push(invalid);
     let mut invalid = valid.clone();
     invalid["friends"][0]["access_generation"] = 0.into();
@@ -529,7 +458,6 @@ fn access_time_is_monotonic_durable_and_noops_do_not_invalidate_readers() {
     store.record_opened(ALICE, 100).unwrap();
     store.record_opened(ALICE, 101).unwrap();
     store.update_display_name(ALICE, None).unwrap();
-    store.set_groups(ALICE, &[]).unwrap();
     assert_eq!(store.get(ALICE).unwrap().last_opened_share_at_ms, Some(101));
     assert!(!changes.has_changed().unwrap());
     // 到点落盘也不叫醒守着授权快照的连接：打开时间不进 access_generation。
@@ -582,8 +510,6 @@ async fn coalesced_remove_and_reaccept_invalidates_old_grants_and_connection_gen
     let store = open(&temp);
     let original = accept(&store, ALICE, "friend-alice");
     assert_eq!(original.access_generation, store.snapshot().revision);
-    let group = store.save_group(None, "Friends").unwrap();
-    store.set_groups(ALICE, &[group.id]).unwrap();
     let duplicate = store.accept(ALICE, Some("Renamed"), 20, |_| false).unwrap();
     assert_eq!(duplicate.access_generation, original.access_generation);
     let mut changes = store.subscribe();
@@ -598,7 +524,6 @@ async fn coalesced_remove_and_reaccept_invalidates_old_grants_and_connection_gen
     let latest = Arc::clone(&changes.borrow_and_update());
     let active = latest.get(ALICE).unwrap();
     assert_eq!(active.username, original.username);
-    assert!(active.groups.is_empty());
     assert_ne!(active.access_generation, authenticated_generation);
     assert_eq!(active.access_generation, latest.revision);
     assert_eq!(restored.access_generation, active.access_generation);
@@ -612,105 +537,4 @@ async fn coalesced_remove_and_reaccept_invalidates_old_grants_and_connection_gen
     reopened.remove(ALICE, 1000).unwrap();
     let restored_again = reopened.accept(ALICE, None, 40, |_| false).unwrap();
     assert!(restored_again.access_generation > restored.access_generation);
-}
-
-#[tokio::test]
-async fn membership_epochs_survive_reopen_and_change_only_after_membership_is_readded() {
-    let temp = tempfile::tempdir().unwrap();
-    let store = open(&temp);
-    accept(&store, ALICE, "friend-alice");
-    let first = store.save_group(None, "First").unwrap();
-    let second = store.save_group(None, "Second").unwrap();
-    let joined = store
-        .set_groups(ALICE, std::slice::from_ref(&first.id))
-        .unwrap();
-    let first_epoch = joined.group_generations[&first.id];
-    assert_eq!(first_epoch, store.snapshot().revision);
-    store.update_display_name(ALICE, Some("Renamed")).unwrap();
-    store.record_opened(ALICE, 90).unwrap();
-    store.accept(ALICE, None, 20, |_| false).unwrap();
-    store.save_group(Some(&first.id), "Renamed group").unwrap();
-    assert_eq!(
-        store.get(ALICE).unwrap().group_generations[&first.id],
-        first_epoch
-    );
-    let joined_both = store
-        .set_groups(ALICE, &[first.id.clone(), second.id.clone()])
-        .unwrap();
-    assert_eq!(joined_both.group_generations[&first.id], first_epoch);
-    let second_epoch = joined_both.group_generations[&second.id];
-    assert_eq!(second_epoch, store.snapshot().revision);
-    let before_noop = store.snapshot();
-    store
-        .set_groups(ALICE, &[second.id.clone(), first.id.clone()])
-        .unwrap();
-    assert_eq!(store.snapshot(), before_noop);
-    drop(store);
-
-    let store = open(&temp);
-    assert_eq!(
-        store.get(ALICE).unwrap().group_generations,
-        joined_both.group_generations
-    );
-    let mut changes = store.subscribe();
-    changes.borrow_and_update();
-    store
-        .set_groups(ALICE, std::slice::from_ref(&second.id))
-        .unwrap();
-    store
-        .set_groups(ALICE, &[first.id.clone(), second.id.clone()])
-        .unwrap();
-    changes.changed().await.unwrap();
-    let latest = Arc::clone(&changes.borrow_and_update());
-    let active = latest.get(ALICE).unwrap();
-    assert!(active.group_generations[&first.id] > first_epoch);
-    assert_eq!(active.group_generations[&first.id], latest.revision);
-    assert_eq!(active.group_generations[&second.id], second_epoch);
-    store.remove_group(&first.id).unwrap();
-    assert!(
-        !store
-            .get(ALICE)
-            .unwrap()
-            .group_generations
-            .contains_key(&first.id)
-    );
-    store.remove(ALICE, 1000).unwrap();
-    assert!(
-        store.list_including_removed()[0]
-            .group_generations
-            .is_empty()
-    );
-}
-
-#[test]
-fn invalid_membership_epochs_reject_reopen_without_replacing_the_file() {
-    let temp = tempfile::tempdir().unwrap();
-    let store = open(&temp);
-    accept(&store, ALICE, "friend-alice");
-    let group = store.save_group(None, "Friends").unwrap();
-    store
-        .set_groups(ALICE, std::slice::from_ref(&group.id))
-        .unwrap();
-    let valid = serde_json::to_value(store.snapshot().as_ref()).unwrap();
-    let path = temp.path().join("core/friends.json");
-    let mut cases = Vec::new();
-    for epochs in [
-        serde_json::json!({}),
-        serde_json::json!({"unknown":1}),
-        serde_json::json!({(group.id.clone()):0}),
-        serde_json::json!({(group.id.clone()):999999}),
-    ] {
-        let mut invalid = valid.clone();
-        invalid["friends"][0]["group_generations"] = epochs;
-        cases.push(invalid);
-    }
-    for invalid in cases {
-        let bytes = serde_json::to_vec(&invalid).unwrap();
-        fs::write(&path, &bytes).unwrap();
-        assert!(matches!(
-            Friends::open(&path),
-            Err(FriendsError::Corrupt { .. })
-        ));
-        assert_eq!(fs::read(&path).unwrap(), bytes);
-    }
 }
