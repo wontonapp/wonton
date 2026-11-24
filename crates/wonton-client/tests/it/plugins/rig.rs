@@ -80,6 +80,7 @@ pub struct CoreState {
     /// 带延迟的预设回应：发出早的请求把它取走，睡完才回，制造“发得早、回得晚”。
     canned_delayed: Mutex<HashMap<(Method, String), DelayedCanned>>,
     seen: Mutex<Vec<Seen>>,
+    pub family: Arc<crate::family_support::FamilyFake>,
     bot_activity: bot_activity::Activity,
 }
 
@@ -314,6 +315,11 @@ pub async fn fake_core(State(core): State<Arc<CoreState>>, request: Request) -> 
             .unwrap();
     }
     if let Some(response) = bot_activity::respond(&core, &parts.method, &parts.uri).await {
+        return response;
+    }
+    if let Some(response) =
+        crate::family_support::respond(&core.family, &parts.method, parts.uri.path(), &body)
+    {
         return response;
     }
     if let Some(response) = onboarding_routes(&core, &parts.method, parts.uri.path(), &body).await {
