@@ -307,43 +307,7 @@ private extension ComposerView {
     }
 
     /// 旁聊里一次发几张：说明跟第一张走，发出去了才清输入框。
-    private func sendPhotos(_ items: [PhotosPickerItem]) async {
-        let sent = await composer.sendPhotos(
-            items, caption: draft.wrappedValue, replyTo: model.replies[draftKey]?.eventId
-        )
-        if sent { draft.wrappedValue = "" }
-    }
 
-    /// 编辑条：铅笔、“编辑消息”、原正文摘要和关闭（ADR-0109 第 10 节）。
-    private func editBar(_ edit: ComposerEdit) -> some View {
-        HStack(spacing: WontonTheme.spacing.s8) {
-            Image(systemName: "pencil")
-                .font(.footnote)
-                .foregroundStyle(Color(colors.textSecondary))
-            VStack(alignment: .leading, spacing: 0) {
-                Text(.Message2.messageEditTitle)
-                    .wontonText(WontonTheme.typography.caption)
-                    .foregroundStyle(Color(colors.textSecondary))
-                Text(edit.summary)
-                    .wontonText(WontonTheme.typography.caption)
-                    .foregroundStyle(Color(colors.textSecondary))
-                    .lineLimit(1)
-            }
-            Spacer(minLength: 0)
-            Button {
-                model.send(.timeline(action: .setTyping(target: composer.target, typing: false)))
-                model.send(.timeline(action: .cancelEdit(target: composer.target)))
-            } label: {
-                Image(systemName: "xmark.circle.fill")
-                    .foregroundStyle(Color(colors.textSecondary))
-            }
-            .buttonStyle(.plain)
-            .accessibilityLabel(String(localized: .Common.commonClose))
-            .accessibilityIdentifier("editCancel")
-        }
-        .padding(.horizontal, WontonTheme.spacing.s12)
-        .padding(.vertical, WontonTheme.spacing.s8)
-    }
 
     private func send() {
         let blank = draft.wrappedValue.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty
@@ -457,5 +421,47 @@ private struct ComposerMenuButton: View {
         .animation(
             .easeOut(duration: reduceMotion ? WontonTheme.motion.reduced : WontonTheme.motion.state), value: showsTitle
         )
+    }
+}
+
+/// 编辑条和发照片的收尾单独成段，主类型体保持短。
+extension ComposerView {
+    // 两段都只服务编辑和选照片的收尾，从主文件挪出来让类型体保持紧凑。
+    private func sendPhotos(_ items: [PhotosPickerItem]) async {
+        let sent = await composer.sendPhotos(
+            items, caption: draft.wrappedValue, replyTo: model.replies[draftKey]?.eventId
+        )
+        if sent { draft.wrappedValue = "" }
+    }
+
+    /// 编辑条：铅笔、“编辑消息”、原正文摘要和关闭（ADR-0109 第 10 节）。
+    private func editBar(_ edit: ComposerEdit) -> some View {
+        HStack(spacing: WontonTheme.spacing.s8) {
+            Image(systemName: "pencil")
+                .font(.footnote)
+                .foregroundStyle(Color(colors.textSecondary))
+            VStack(alignment: .leading, spacing: 0) {
+                Text(.Message2.messageEditTitle)
+                    .wontonText(WontonTheme.typography.caption)
+                    .foregroundStyle(Color(colors.textSecondary))
+                Text(edit.summary)
+                    .wontonText(WontonTheme.typography.caption)
+                    .foregroundStyle(Color(colors.textSecondary))
+                    .lineLimit(1)
+            }
+            Spacer(minLength: 0)
+            Button {
+                model.send(.timeline(action: .setTyping(target: composer.target, typing: false)))
+                model.send(.timeline(action: .cancelEdit(target: composer.target)))
+            } label: {
+                Image(systemName: "xmark.circle.fill")
+                    .foregroundStyle(Color(colors.textSecondary))
+            }
+            .buttonStyle(.plain)
+            .accessibilityLabel(String(localized: .Common.commonClose))
+            .accessibilityIdentifier("editCancel")
+        }
+        .padding(.horizontal, WontonTheme.spacing.s12)
+        .padding(.vertical, WontonTheme.spacing.s8)
     }
 }

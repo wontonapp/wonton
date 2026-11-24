@@ -34,7 +34,7 @@ final class ChatModel {
         set { draftStore.bodies = newValue }
     }
     var replies: [String: ReplyQuote] { draftStore.replies }
-    private(set) var replyFocusRevision = 0
+    var replyFocusRevision = 0
     /// 聊天页打开的页面。
     var path: [ChatRoute] = []
     var visiting: VisitingRoom?
@@ -134,18 +134,6 @@ final class ChatModel {
         draftStore.restore(stored, in: draftKey(target))
     }
 
-    /// 退出编辑态后把核心恢复的草稿整份读回来：正文和回复都盖掉本地那份。
-    func reloadDraft(_ target: TimelineTarget) async {
-        let key = draftKey(target)
-        let stored: ComposerDraft?
-        do {
-            stored = try await core.draft(target: target)
-        } catch {
-            return
-        }
-        drafts[key] = stored?.body ?? ""
-        draftStore.setReply(stored?.reply, in: key)
-    }
 
     /// 每次写草稿都带上正在回复的那条，不带核心会把存着的回复对象清掉。
     func saveDraft(_ target: TimelineTarget) {
@@ -164,15 +152,6 @@ final class ChatModel {
         replyFocusRevision += 1
     }
 
-    /// 进入编辑态：先把原文换进输入框、收掉回复，再让核心存下原草稿（ADR-0109 第 10 节）。
-    func startEdit(_ text: String, itemId: String, in target: TimelineTarget) {
-        draftStore.selectServer(core.servers().servers.first(where: \.current)?.id)
-        drafts[draftKey(target)] = text
-        draftStore.setReply(nil, in: draftKey(target))
-        replyFocusRevision += 1
-        send(.timeline(action: .setTyping(target: target, typing: false)))
-        send(.timeline(action: .startEdit(target: target, itemId: itemId)))
-    }
 
     func cancelReply(in target: TimelineTarget) {
         draftStore.setReply(nil, in: draftKey(target))
