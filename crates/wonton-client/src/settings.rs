@@ -569,6 +569,7 @@ mod tests {
     }
 
     #[tokio::test]
+    #[allow(clippy::too_many_lines)] // 一次把连接推送和升级标记的几种取值都走一遍，拆开只剩接线。
     async fn follows_the_connection_push_and_core_upgrades() {
         let home = |status| HomeViewModel {
             device_id: "device".into(),

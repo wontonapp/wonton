@@ -115,11 +115,20 @@ final class ClientsDomainWalkthroughTests: XCTestCase {
         return false
     }
 
-    /// 回到（或重新打开）域名页；已经不在设置里就从头开。
+    /// 回到（或重新打开）域名页：设置页的快照要等，30 秒内反复试。
     private func ensureDomainPage() -> Bool {
-        if app.staticTexts["Certificate"].exists { return true }
-        guard openSettings() else { return false }
-        return tapRow("HTTPS and domain", timeout: 20)
+        let deadline = Date().addingTimeInterval(30)
+        while Date() < deadline {
+            if app.staticTexts["Certificate"].exists { return true }
+            if UITestSidebar.chatListVisible(app) {
+                _ = openSettings()
+            }
+            if tapRow("HTTPS and domain", timeout: 5) {
+                return true
+            }
+            usleep(500_000)
+        }
+        return app.staticTexts["Certificate"].exists
     }
 
     private func type(_ text: String, into element: XCUIElement) {
