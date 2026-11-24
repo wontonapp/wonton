@@ -76,8 +76,10 @@ struct NotificationSettingsView: View {
             case .unauthorized: String(localized: .Settings.pushStatusFailedUnauthorized)
             case .forbidden: String(localized: .Settings.pushStatusFailedForbidden)
             case .upstream: String(localized: .Settings.pushStatusFailedUpstream)
-            case .notReady: String(localized: .Settings.pushStatusFailedNotReady)
+            case .notReady, .serverNotPaired: String(localized: .Settings.pushStatusFailedNotReady)
             case .invalidInput: String(localized: .Settings.pushStatusFailedInvalidInput)
+            // 对方服务器经公网才联系得到、暂时联系不上：和传输不可用一样，等它恢复。
+            case .peerPublicAccessOff: String(localized: .Settings.pushStatusFailedTransport)
             case .other: String(localized: .Settings.pushStatusFailedUpstream)
             }
         }
