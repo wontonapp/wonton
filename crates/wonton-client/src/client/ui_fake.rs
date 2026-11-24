@@ -28,9 +28,10 @@ use wonton_protocol::{
     DeviceVerification, EncryptionStatus, HomePath, HomeStatus, HomeViewModel, InstalledPlugin,
     InstalledPlugins, MessageSummary, OnboardingStep, OnboardingViewModel, OpenPage,
     PagesViewModel, PanelItem, PanelSource, PluginHealth, PluginKind, PluginState, PluginTrust,
-    PluginsViewModel, PushStatus, RecoveryNextStep, RecoveryStatus, RoomMembership, RoomPreview,
-    RoomRow, SecretString, ServerKind, ServerName, ServerRow, ServersViewModel, SidebarApp,
-    SidebarBadge, SidebarOpen, StoreLoadState, TabIcon, TabLayout, TabPage, TabRef, TabState,
+    PluginsViewModel, PushStatus, RecoveryNextStep, RecoveryStatus, RoomMembership, RoomPlugin,
+    RoomPreview, RoomRow, SecretString, ServerKind, ServerName, ServerRow, ServersViewModel,
+    SidebarApp, SidebarBadge, SidebarOpen, StoreLoadState, TabIcon, TabLayout, TabPage, TabRef,
+    TabState,
 };
 
 use super::ClientCore;
@@ -370,19 +371,25 @@ fn fake_rooms() -> Vec<RoomRow> {
             layout: ChatLayout::default(),
             call_active: true,
         },
-        // 转发要能一次挑好几个房间，列表里多放一个没人说话的群。
+        // 转发要能一次挑好几个房间，列表里多放一个没人说话的群；顶栏下插件横幅、旁聊标题、AI 行一起出现，
+        // 界面测试在这间房里看它们的上下顺序。
         RoomRow {
             room_id: NOTES_ROOM_ID.into(),
             name: "Notes".into(),
             is_direct: false,
             direct_user_id: None,
-            plugin: None,
+            plugin: Some(RoomPlugin {
+                plugin_id: "app.echo".into(),
+                status: PluginState::Installing,
+                start: None,
+                can_start: false,
+            }),
             is_encrypted: true,
             is_read_only: false,
             membership: RoomMembership::Joined,
             preview: None,
             unread_count: 0,
-            side_chats: false,
+            side_chats: true,
             layout: ChatLayout::default(),
             call_active: false,
         },
