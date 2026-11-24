@@ -176,9 +176,9 @@ final class ClientsDomainWalkthroughTests: XCTestCase {
         // 键盘不专门收：滑动照样能滚列表（typeText 的回车会去找键盘上的 return 键，键位标识不稳）。
         // “其他”在懒加载列表的更下面，往上滑。
         var other: XCUIElement?
-        for _ in 0..<4 where other == nil {
-            app.swipeUp()
-            other = waitAnyButton(["Other", "其他"], timeout: 15)
+        for _ in 0..<8 where other == nil {
+            app.swipeUp(velocity: .slow)
+            other = waitAnyButton(["Other", "其他"], timeout: 8)
         }
         guard let other else { return XCTFail("没有“其他”：\(app.debugDescription)") }
         XCTAssertTrue(scrollTo(other), "“其他”点不到")
