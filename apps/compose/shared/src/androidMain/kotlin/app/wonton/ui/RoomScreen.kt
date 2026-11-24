@@ -428,12 +428,9 @@ private fun RoomOverlays(
             rooms = rooms.filter { it.forwardTarget(target.roomId) },
             bots = bots,
             plugins = plugins,
-            // 核心一次只发一个房间：挨个发，每个房间先附言再原消息；只选了一个才跟过去，选几个留在原房间。
-            onSend = { rows, note ->
+            // 核心一次只发一个房间：挨个发；只选了一个才跟过去，选几个留在原房间。
+            onSend = { rows ->
                 rows.forEach { row ->
-                    if (note.isNotEmpty()) {
-                        onAction(Action.Timeline(TimelineAction.SendText(TimelineTarget(row.roomId, null), note, null)))
-                    }
                     onAction(Action.Timeline(TimelineAction.ForwardMessage(target, itemId, row.roomId)))
                 }
                 if (rows.size == 1) onOpenRoom(rows.first().roomId)
@@ -556,7 +553,7 @@ private fun Conversation(
     val barInset = LocalWontonTopInset.current
     val panelVisible = LocalChatPanel.current?.visible == true
     val bottomInsets = if (panelVisible) WindowInsets.ime else WindowInsets.ime.union(WindowInsets.navigationBars)
-    // 命令列表开着没有由输入区说了算（菜单键在它里面），这里只要知道，好把“向下”钮收起来。
+    // 命令列表开没开：输入区的菜单键改它，翻时间线先收起来，好把列表让出去；“向下”钮开着时不画。
     var commandMenuShown by remember { mutableStateOf(false) }
     BoxWithConstraints(Modifier.fillMaxSize().windowInsetsPadding(bottomInsets)) {
         Column(Modifier.fillMaxSize()) {
@@ -595,6 +592,7 @@ private fun Conversation(
                             modifier = Modifier.fillMaxSize().recordRoomBackdrop(backdrop),
                             menuOpen = commandMenuShown,
                             headerHeight = with(density) { headerHeight.toDp() },
+                            onScroll = { commandMenuShown = false },
                         )
                     }
                 }
@@ -625,7 +623,8 @@ private fun Conversation(
                     onDraftChange = draft::change,
                     onSent = draft::sent,
                     onCommandSent = { draft.sent(keepBody = true) },
-                    onCommandListShown = { commandMenuShown = it },
+                    menuOpen = commandMenuShown,
+                    onMenuChange = { commandMenuShown = it },
                     onReplyCancel = draft::stopReplying,
                     onAction = onAction,
                     onReject = onReject,

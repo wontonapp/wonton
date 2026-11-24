@@ -23,6 +23,7 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.focus.FocusRequester
 import androidx.compose.ui.focus.focusRequester
 import androidx.compose.ui.graphics.SolidColor
+import androidx.compose.ui.platform.testTag
 import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.semantics.Role
 import androidx.compose.ui.semantics.contentDescription
@@ -32,29 +33,30 @@ import app.wonton.ui.icons.Send
 import app.wonton.ui.icons.WontonIcon
 
 /**
- * 面板底部的附言条（照 Telegram）：左边输入框，右边主题色圆形发送键，键上是选中的个数。
- * 键盘弹起时整条跟着上来。没有选中东西时键是灰的、不出输入框。
+ * 面板底部的发送条（照 Telegram）：右边主题色圆形发送键，键上是选中的个数，键盘弹起时跟着上来。
+ * `note` 不为 null 时左边还有附言框（附件面板）；转发面板没有附言，只留发送键。没有选中东西时键是灰的，`busy` 时也灰着。
  */
 @Composable
 fun SheetSendBar(
-    note: String,
+    note: String?,
     onNoteChange: (String) -> Unit,
     count: Int,
     hint: String,
     onSend: () -> Unit,
-    modifier: Modifier = Modifier,
+    busy: Boolean = false,
+    sendTag: String = "sheet-send",
 ) {
     val colors = WontonTheme.colors
     val sendLabel = stringResource(R.string.composer_send)
     val focusRequester = remember { FocusRequester() }
-    LaunchedEffect(count) { if (count > 0) focusRequester.requestFocus() }
+    LaunchedEffect(count) { if (count > 0 && note != null) focusRequester.requestFocus() }
     Row(
-        modifier.fillMaxWidth().imePadding()
+        Modifier.fillMaxWidth().testTag(sendTag).imePadding()
             .padding(horizontal = WontonTheme.spacing.s16, vertical = WontonTheme.spacing.s8),
-        verticalAlignment = Alignment.CenterVertically,
         horizontalArrangement = Arrangement.spacedBy(WontonTheme.spacing.s8),
+        verticalAlignment = Alignment.CenterVertically,
     ) {
-        if (count > 0) {
+        if (note != null && count > 0) {
             Box(
                 Modifier.weight(1f)
                     .heightIn(min = WontonTheme.size.target)
@@ -80,9 +82,10 @@ fun SheetSendBar(
         } else {
             Box(Modifier.weight(1f))
         }
-        val enabled = count > 0
+        val enabled = count > 0 && !busy
         Box(
             Modifier.size(WontonTheme.size.target)
+                .testTag(sendTag)
                 .clickable(role = Role.Button, enabled = enabled, onClick = onSend)
                 .semantics { contentDescription = sendLabel },
             contentAlignment = Alignment.Center,

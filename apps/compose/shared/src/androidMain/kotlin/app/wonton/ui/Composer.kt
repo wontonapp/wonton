@@ -2,7 +2,6 @@ package app.wonton.ui
 
 import androidx.activity.compose.rememberLauncherForActivityResult
 import androidx.activity.result.contract.ActivityResultContracts.OpenMultipleDocuments
-import android.content.Context
 import android.net.Uri
 import androidx.compose.animation.AnimatedVisibility
 import androidx.compose.animation.core.tween
@@ -58,7 +57,6 @@ import app.wonton.protocol.AgentAction
 import app.wonton.protocol.ComposerAttachment
 import app.wonton.protocol.ComposerViewModel
 import androidx.activity.compose.BackHandler
-import app.wonton.protocol.CoreException
 import app.wonton.protocol.ImageUpload
 import app.wonton.protocol.ReplyQuote
 import app.wonton.protocol.RoomAgentStop
@@ -74,9 +72,7 @@ import app.wonton.ui.icons.Image
 import app.wonton.ui.icons.Send
 import app.wonton.ui.icons.List
 import app.wonton.ui.icons.WontonIcon
-import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.launch
-import kotlinx.coroutines.withContext
 
 /**
  * 聊天页底部的输入栏。`reply` 是正在回复的消息，画在输入框上方；`focusToken` 变一次就把光标放回输入框（开始回复时）。
@@ -101,7 +97,8 @@ fun Composer(
     onDraftChange: (String) -> Unit,
     onSent: () -> Unit,
     onCommandSent: () -> Unit,
-    onCommandListShown: (Boolean) -> Unit,
+    menuOpen: Boolean,
+    onMenuChange: (Boolean) -> Unit,
     onReplyCancel: () -> Unit,
     onAction: (Action) -> Unit,
     onReject: (Problem) -> Unit,
@@ -120,20 +117,21 @@ fun Composer(
     val viaTray = attachments.isNotEmpty() || composer?.outgoing.orEmpty().isNotEmpty()
     val roomId = target.roomId
     val inSideChat = target.threadRoot != null
-    // 旁聊里照片不进附件区，选好就发；输入框里的字只当第一张的说明，回复跟着这张照片发出去。
-    val sendImage = if (inSideChat) {
-        sendSideChatImage(
-            core = core,
-            target = target,
-            reply = reply,
-            onSent = onSent,
-            onReplyCancel = onReplyCancel,
-            onReject = onReject,
-        )
+    // 旁聊里的照片都不进附件区，选好就发；附言只跟着第一张（照 iOS），回复也只跟着第一张。
+    // 被拒时那张就没了，原因给出去，后面的不再试。
+    val sendImage: ((ImageUpload, caption: String?, replyTo: String?) -> Problem?)? = if (inSideChat) {
+        { upload, caption, replyTo ->
+            val problem = core.send(
+                Action.Timeline(TimelineAction.SendImage(target, upload, caption = caption, replyTo = replyTo)),
+            )
+            problem
+        }
     } else {
         null
     }
-    val attach = rememberAttachments(target, composer, core, onReject, onReplyCancel, reply, sendImage, draft)
+    val attach = rememberAttachments(
+        target, composer, core, draft, onDraftChange, onSent, onReject, onReplyCancel, reply, sendImage,
+    )
     val isEmpty = draft.isBlank() && attachments.isEmpty()
     val focusRequester = remember { FocusRequester() }
     LaunchedEffect(focusToken) { if (focusToken > 0) focusRequester.requestFocus() }
@@ -145,17 +143,13 @@ fun Composer(
     val agentStop by produceState<RoomAgentStop>(RoomAgentStop.Idle, core, target) {
         core.agentStopUpdates(target).collect { value = it }
     }
-    // 命令列表由“/”或菜单键打开，菜单键本身不动草稿；返回键先收列表。
-    var menuOpen by rememberSaveable { mutableStateOf(false) }
+    // 命令列表由“/”或菜单键打开，菜单键本身不动草稿；返回键和翻时间线先收列表（ADR-0109 第 7 节）。
     val query = commandQuery(draft, commands)
-    LaunchedEffect(draft) {
-        if (!draft.startsWith("/")) menuOpen = false else if (query.isNotEmpty()) menuOpen = true
-    }
+    LaunchedEffect(draft) { onMenuChange(draft.startsWith("/")) }
     // 草稿没以“/”开头时菜单键给整张表；以“/”开头时只给匹配的那几条。
     val shown = if (draft.startsWith("/")) query else commands
     val listShown = menuOpen && shown.isNotEmpty()
-    LaunchedEffect(listShown) { onCommandListShown(listShown) }
-    BackHandler(enabled = listShown) { menuOpen = false }
+    BackHandler(enabled = listShown) { onMenuChange(false) }
     ComposerStack(
         inSideChat = inSideChat,
         roomId = roomId,
@@ -170,7 +164,7 @@ fun Composer(
         onCommandSent = onCommandSent,
         onReject = onReject,
         listShown = listShown,
-        onPicked = { menuOpen = false },
+        onPicked = { onMenuChange(false) },
     )
     AgentStopNotice(agentStop)
     ComposerBar(
@@ -185,7 +179,7 @@ fun Composer(
         send = send,
         dropCommand = dropCommand,
         onAction = onAction,
-        onMenu = { menuOpen = !menuOpen },
+        onMenu = { onMenuChange(!menuOpen) },
     )
     attach.chooser()
 }
@@ -305,39 +299,19 @@ private class Attachments(
     val chooser: @Composable () -> Unit,
 )
 
-/** 旁聊的照片选好就发；输入框里的字只带在第一张上，发出去后清草稿、收回复。 */
-private fun sendSideChatImage(
-    core: ClientCore,
-    target: TimelineTarget,
-    reply: ReplyQuote?,
-    onSent: () -> Unit,
-    onReplyCancel: () -> Unit,
-    onReject: (Problem) -> Unit,
-): (ImageUpload, String?) -> Unit = { upload, caption ->
-    val problem =
-        core.send(
-            Action.Timeline(
-                TimelineAction.SendImage(target, upload, caption = caption, replyTo = reply?.eventId),
-            ),
-        )
-    if (problem == null) {
-        if (caption != null) onSent() else if (reply != null) onReplyCancel()
-    } else {
-        onReject(problem)
-    }
-}
-
 @OptIn(ExperimentalFoundationApi::class)
 @Composable
 private fun rememberAttachments(
     target: TimelineTarget,
     composer: ComposerViewModel?,
     core: ClientCore,
+    draft: String,
+    onDraftChange: (String) -> Unit,
+    onSent: () -> Unit,
     onReject: (Problem) -> Unit,
     onReplyCancel: () -> Unit,
     reply: ReplyQuote?,
-    sendImage: ((ImageUpload, caption: String?) -> Unit)?,
-    draft: String,
+    sendImage: ((ImageUpload, caption: String?, replyTo: String?) -> Problem?)?,
 ): Attachments {
     val roomId = target.roomId
     val context = LocalContext.current
@@ -356,26 +330,48 @@ private fun rememberAttachments(
     var choosing by rememberSaveable { mutableStateOf(false) }
     // 粘贴的回调只登记一次：回复对象换了也要发给现在的那条。
     val currentSendImage by rememberUpdatedState(sendImage)
-    // 粘贴进来的照片：旁聊里直接发，主对话里放进附件区；第一张不行就停。
+    // 等的功夫草稿还能改，收尾按改到哪一步来：只清掉跟着走了的那句，后来补的字留着。
+    val currentDraft by rememberUpdatedState(draft)
+    val currentOnDraftChange by rememberUpdatedState(onDraftChange)
+    // 粘贴进来的照片：旁聊里直接发，主对话里放进附件区；第一张不行就停。旁聊里的字只当第一张的说明。
     val addPhotos = { uris: List<Uri> ->
         val send = currentSendImage
         scope.launch {
-            sendPickedPhotos(context, uris, send, photoUnreadable, photoTryAnother, core, roomId, draft)?.let(onReject)
+            val failure = sendPickedPhotos(
+                context, uris, send, photoUnreadable, photoTryAnother, core, roomId, draft, reply?.eventId,
+                onReplyCancel,
+            )
+            if (failure != null) {
+                onReject(photoFailure(context, failure, photoTryAnother))
+            } else if (send != null) {
+                settleCaption(draft, currentDraft, currentOnDraftChange, onSent, onReplyCancel)
+            }
         }
+        Unit
     }
-    // 相册里选好后附言和照片一起发（照 Telegram）：旁聊里附言只当第一张的说明；主对话里照片先进附件区，
-    // 全部到位再发一条带附言的消息。发不了时附件留在附件区、面板收起，主人改完再发。
+    // 相册里选好后附言和照片一起发（照 Telegram）：附言就是输入框的草稿，面板里改的正是那一份。
+    // 主对话里照片先进附件区，全部到位再发一条带附言的 SendComposer；旁聊里附言跟着第一张走（和 iOS 一样）。
+    // 中途中止就停在那里、报第几张，草稿原样留着；收下了只清跟着走了的那句、收回复。
     val sendPhotos = { uris: List<Uri>, note: String ->
         val send = currentSendImage
+        val caption = note
         scope.launch {
-            val failed = sendPickedPhotos(context, uris, send, photoUnreadable, photoTryAnother, core, roomId, note)
-            choosing = false
-            if (failed != null) {
-                onReject(failed)
-            } else if (send == null) {
-                val problem = core.send(Action.Timeline(TimelineAction.SendComposer(target, note, reply?.eventId)))
-                if (problem != null) onReject(problem) else if (reply != null) onReplyCancel()
+            val failure = sendPickedPhotos(
+                context, uris, send, photoUnreadable, photoTryAnother, core, roomId, caption,
+                reply?.eventId, onReplyCancel,
+            )
+            if (failure != null) {
+                onReject(photoFailure(context, failure, photoTryAnother))
+            } else if (send != null) {
+                settleCaption(caption, currentDraft, currentOnDraftChange, onSent, onReplyCancel)
+            } else {
+                val problem = core.send(Action.Timeline(TimelineAction.SendComposer(target, caption, reply?.eventId)))
+                if (problem != null) onReject(problem) else {
+                    settleCaption(caption, currentDraft, currentOnDraftChange, onSent, onReplyCancel)
+                }
             }
+            // 先把草稿落定再收面板：面板还组合着时先落的值不会被它收尾那一写盖回去。
+            choosing = false
         }
         Unit
     }
@@ -408,6 +404,9 @@ private fun rememberAttachments(
                 AttachmentSheet(
                     remaining = remaining,
                     allowFiles = sendImage == null,
+                    note = draft,
+                    // 面板收起以后附言框还握着整句，它迟到的回写不再盖掉刚落的草稿。
+                    onNote = { text -> if (choosing) onDraftChange(text) },
                     onSend = sendPhotos,
                     onFiles = { whenRoom { pickFiles.launch(arrayOf("*/*")) } },
                     onDismiss = { choosing = false },
@@ -416,17 +415,6 @@ private fun rememberAttachments(
         },
     )
 }
-
-/** 照片转码好了放进附件区。核心要把字节写进本机的附件区目录，放到后台。 */
-private suspend fun addImage(core: ClientCore, roomId: String, upload: ImageUpload): Problem? =
-    withContext(Dispatchers.IO) {
-        try {
-            core.addImageAttachment(TimelineTarget(roomId, null), upload)
-            null
-        } catch (rejection: CoreException) {
-            rejection.problem
-        }
-    }
 
 @OptIn(ExperimentalFoundationApi::class)
 @Composable
@@ -528,36 +516,3 @@ private fun sendAction(target: TimelineTarget, text: String, reply: ReplyQuote?,
         },
     )
 
-/**
- * 选好的照片按选的顺序逐张处理：旁聊里直接发，主对话里放进附件区。
- * 第一张放不进去就停下，返回那条原因，后面的不再处理。
- */
-private suspend fun sendPickedPhotos(
-    context: Context,
-    uris: List<Uri>,
-    send: ((ImageUpload, String?) -> Unit)?,
-    unreadable: String,
-    tryAnother: String,
-    core: ClientCore,
-    roomId: String,
-    caption: String,
-): Problem? {
-    // 输入框里的字只当第一张试过的照片的说明（跟 Telegram 一样）；那一张被拒也照样清掉，不留给后面的。
-    var note = caption.trim().takeIf { it.isNotEmpty() }
-    for (uri in uris) {
-        val problem = PhotoUpload.make(context, uri).fold(
-            onSuccess = { upload ->
-                if (send != null) {
-                    send(upload, note)
-                    note = null
-                } else {
-                    addImage(core, roomId, upload)
-                }
-                null
-            },
-            onFailure = { failure -> Problem(unreadable, tryAnother, failure.message) },
-        )
-        if (problem != null) return problem
-    }
-    return null
-}

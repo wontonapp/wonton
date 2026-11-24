@@ -55,6 +55,10 @@ struct Inner {
     mentions: HashMap<String, Vec<ComposerMention>>,
     /// 假数据入口（`ui-fake`）下，下次放进附件区的东西要标成上传失败的房间。
     fail_next: HashSet<String>,
+    /// 假数据入口（`ui-fake`）下，界面测试叫停的那间：下一张照片进附件区以后在这里等，等的一头在下面。
+    holds: HashMap<String, std::sync::mpsc::Receiver<()>>,
+    /// 上面那些叫停的放手一头，[`ComposerLink::release_held_for_test`] 用它把等着的放走。
+    hold_releases: HashMap<String, std::sync::mpsc::Sender<()>>,
 }
 
 impl Inner {
@@ -339,7 +343,13 @@ impl ComposerLink {
         check_image_type(&image)?;
         self.check_room_has_space(room)?;
         let item = self.image_item(image)?;
-        self.add(room, item)
+        let id = self.add(room, item)?;
+        // 界面测试叫停时停在照片已经进附件区、还没发这一步；先放开锁，放行的调用还要进来。
+        let wait = self.lock().holds.remove(room);
+        if let Some(wait) = wait {
+            let _ = wait.recv();
+        }
+        Ok(id)
     }
 
     /// 同 [`add_image_offline`](Self::add_image_offline)，文件那侧。
@@ -515,6 +525,22 @@ impl ComposerLink {
     /// 相册面板选完就发，没有机会在中间把它标红。
     pub(crate) fn fail_next_for_test(&self, room: &str) {
         self.lock().fail_next.insert(room.to_owned());
+    }
+
+    /// 假数据入口（`ui-fake`）：下一张放进附件区的照片在进附件区以后停住，直到 [`Self::release_held_for_test`]。
+    /// 转码和发送之间只有很短一段，界面测试靠它停在那里看点两下、等的时候又打字的样子。
+    pub(crate) fn hold_next_for_test(&self, room: &str) {
+        let (release, wait) = std::sync::mpsc::channel();
+        let mut inner = self.lock();
+        inner.holds.insert(room.to_owned(), wait);
+        inner.hold_releases.insert(room.to_owned(), release);
+    }
+
+    /// 放走 [`Self::hold_next_for_test`] 停住的那张照片。
+    pub(crate) fn release_held_for_test(&self, room: &str) {
+        if let Some(release) = self.lock().hold_releases.remove(room) {
+            let _ = release.send(());
+        }
     }
 
     /// 假数据入口（`ui-fake`）没有真上传，界面测试靠它把附件标成上传失败，走到被拒的分支。

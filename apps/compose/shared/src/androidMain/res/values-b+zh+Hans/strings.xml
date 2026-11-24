@@ -116,7 +116,7 @@
     <string name="owner_secrets_problem_other">无法加载密钥。请重试。</string>
     <!-- 附件面板：底下的切换，把手机相册列成照片网格。 -->
     <string name="attach_album">相册</string>
-    <!-- 附件面板：把选中的照片放进待发的按钮。参数：张数。 -->
+    <!-- 附件面板：选中照片后底下的附言输入框，附言随照片一起发出去。 -->
     <string name="sheet_note_hint">添加附言</string>
     <!-- 附件面板：相册里还没有照片。 -->
     <string name="attach_album_empty">相册里没有照片</string>
