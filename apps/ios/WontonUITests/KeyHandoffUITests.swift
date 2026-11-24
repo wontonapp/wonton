@@ -41,14 +41,19 @@ final class KeyHandoffUITests: XCTestCase {
     }
 
     /// 两端必须显示同一组表情、同一顺序：对不上就是两台换了不同的东西，主人却点了“相同”。
+    /// 一次取全部再按纵坐标排：逐个 `staticTexts[symbol]` 取时，重复的符号两次落到同一节点，顺序错也能过。
     private func assertSameEmoji(_ app: XCUIApplication) {
         let expected = waitForEmoji()
-        // 逐个取再按纵坐标排：一次拿全部静态文本太慢，SAS 每 60 秒没事件就超时。
-        let rows = expected.map { symbol -> (CGFloat, String) in
-            let node = app.staticTexts[symbol].firstMatch
-            XCTAssertTrue(node.waitForExistence(timeout: 5), "屏幕上没有 \(symbol)")
-            return (node.frame.midY, symbol)
-        }
+        // 表情在文件写好前就可能已经上屏，也可能晚一拍：等到够数再取，别把还没画出来的当成没有。
+        var rows: [(CGFloat, String)] = []
+        let deadline = Date().addingTimeInterval(10)
+        repeat {
+            rows = app.staticTexts.allElementsBoundByIndex
+                .filter { expected.contains($0.label) }
+                .map { ($0.frame.midY, $0.label) }
+            if rows.count >= expected.count { break }
+            Thread.sleep(forTimeInterval: 0.5)
+        } while Date() < deadline
         XCTAssertEqual(rows.sorted { $0.0 < $1.0 }.map(\.1), expected, "两端表情不同：旧设备 \(expected)")
     }
 
@@ -96,9 +101,16 @@ final class KeyHandoffUITests: XCTestCase {
         let back = app.buttons.matching(NSPredicate(format: "label IN %@", ["Back", "返回"])).firstMatch
         if back.exists { back.tap() }
         let room = app.staticTexts["Hermes"]
-        if !text.exists { XCTAssertTrue(room.waitForExistence(timeout: 180), app.debugDescription) }
-        if !text.exists { room.tap() }
-        XCTAssertTrue(text.waitForExistence(timeout: 180), app.debugDescription)
+        XCTAssertTrue(room.waitForExistence(timeout: 180), app.debugDescription)
+        // 回列表时可能还在换场、点不进去：等那行能点，再点、等，没进去就再来一轮。
+        let open = NSPredicate { _, _ in room.exists && room.isHittable }
+        _ = XCTWaiter.wait(for: [XCTNSPredicateExpectation(predicate: open, object: app)], timeout: 60)
+        for _ in 0..<3 {
+            if text.waitForExistence(timeout: 60) { break }
+            if back.exists { back.tap() }
+            if room.exists && room.isHittable { room.tap() }
+        }
+        XCTAssertTrue(text.waitForExistence(timeout: 60), app.debugDescription)
         shot("history-decrypted")
     }
 

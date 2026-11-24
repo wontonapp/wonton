@@ -56,14 +56,16 @@ enum UITestBackend {
         let codes = try codes()
         try XCTSkipIf(codes.isEmpty, "需要开发栈：没有 PAIRING_CODE")
         let field = app.descendants(matching: .any)["pairing-code"].firstMatch
-        let failure = app.descendants(matching: .any)["pairing-failure"].firstMatch
+        // 失败面的判据用 scan-again：`pairing-failure` 标识运行时不进 a11y 树（见 `PairingFailureUITests`），
+        // scan-again 是失败面独有的按钮。
+        let again = app.buttons["pairing-scan-again"].firstMatch
         let progress = app.descendants(matching: .any)["pairing-progress"].firstMatch
         // 交接页、引导页出现就是配上了；主界面的侧栏在配对页后面也有，得等配对页真正收起。
         func paired() -> Bool {
             if app.staticTexts["Continue on your other device"].exists { return true }
             if app.buttons["key-handoff-skip"].exists { return true }
             if app.buttons["Skip"].exists { return true }
-            let pairing = field.exists || failure.exists || progress.exists
+            let pairing = field.exists || again.exists || progress.exists
             return !pairing && app.buttons["Sidebar"].exists
         }
         let start = min(pairingCursor, codes.count)
@@ -89,11 +91,10 @@ enum UITestBackend {
                     pairingCursor = (start + index + 1) % codes.count
                     return
                 }
-                if failure.exists { break }
+                if again.exists { break }
                 Thread.sleep(forTimeInterval: 1)
             }
             // 已用、过期的码在失败面换下一个；连失败面都没有就再等等，交给最后一条断言。
-            let again = app.buttons["pairing-scan-again"]
             if again.exists && again.isHittable { again.tap() }
         }
         XCTFail("配对码都不好使（已用或过期）：\(app.debugDescription)")

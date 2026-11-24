@@ -168,37 +168,46 @@ async fn leave_history(core: &Arc<ClientCore>) -> Result<(), String> {
                 .unwrap_or(0)
         )
     });
-    send_history(core, &history).await?;
-    let arrived = tokio::time::timeout(
-        Duration::from_secs(60),
+    // 先问 Bot。旧会话里恢复不了的设备确认请求会让这一步当场报错、也不发消息：等不到就走直发。
+    let asked = core
+        .dispatch(Action::Chat {
+            action: ChatAction::AskAgent {
+                text: history.clone(),
+            },
+        })
+        .is_ok();
+    if !asked
+        || wait_preview(core, &history, Duration::from_secs(30))
+            .await
+            .is_err()
+    {
+        send_history_direct(core, &history).await?;
+        wait_preview(core, &history, Duration::from_secs(60)).await?;
+    }
+    println!("历史消息已发出：{history}");
+    Ok(())
+}
+
+/// 等这句以自己消息的形式出现在任一房间预览里。
+async fn wait_preview(core: &Arc<ClientCore>, history: &str, wait: Duration) -> Result<(), String> {
+    tokio::time::timeout(
+        wait,
         wait_chat(core, |view| {
             view.rooms.iter().any(|room| {
                 room.preview.as_ref().is_some_and(|preview| {
                     preview.is_own
-                        && matches!(&preview.body, MessageSummary::Text { text } if text == &history)
+                        && matches!(&preview.body, MessageSummary::Text { text } if text == history)
                 })
             })
         }),
     )
     .await
-    .map_err(|_| format!("60 秒内历史消息没进房间：{history}"))?;
-    arrived?;
-    println!("历史消息已发出：{history}");
-    Ok(())
+    .map_err(|_| format!("{wait:?} 内历史消息没进房间：{history}"))?
+    .map(|_| ())
 }
 
-/// 先走“问 Bot”；Home 状态还没连上时退回直接建私聊、订阅时间线再发。
-async fn send_history(core: &Arc<ClientCore>, body: &str) -> Result<(), String> {
-    if core
-        .dispatch(Action::Chat {
-            action: ChatAction::AskAgent {
-                text: body.to_owned(),
-            },
-        })
-        .is_ok()
-    {
-        return Ok(());
-    }
+/// 直接建和 Bot 的私聊、订阅时间线再发；问 Bot 没就绪或报错时走这里。
+async fn send_history_direct(core: &Arc<ClientCore>, body: &str) -> Result<(), String> {
     let bot = std::env::var("KEY_HANDOFF_BOT_USER")
         .map_err(|_| "问 Bot 没就绪，也没给 KEY_HANDOFF_BOT_USER".to_owned())?;
     core.dispatch(Action::Chat {

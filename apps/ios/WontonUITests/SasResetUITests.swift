@@ -79,17 +79,32 @@ final class SasResetUITests: XCTestCase {
 
         XCTAssertTrue(app.staticTexts["Chat Backup Is On"].waitForExistence(timeout: 120), app.debugDescription)
         shot("reset-done")
-        back(app)
+        var screen = app
+        if !back(app) {
+            // 重置后的备份页 Back 在层级里却点不动：直接重启一次回列表，同一数据目录，去掉已经用过的码。
+            app.terminate()
+            var env = app.launchEnvironment
+            env.removeValue(forKey: "WONTON_DEV_PAIRING_CODE")
+            let list = XCUIApplication()
+            list.launchEnvironment = env
+            list.launchArguments = app.launchArguments
+            list.launch()
+            screen = list
+        }
         // 重置删了旧备份，旧消息不一定还能解密；用新身份发一条，能发出并显示才算真的可继续用。
-        openRoom(app)
+        openRoom(screen)
         let sent = "重置后 \(Int(Date().timeIntervalSince1970))"
-        let field = app.textViews.firstMatch.exists ? app.textViews.firstMatch : app.textFields.firstMatch
-        XCTAssertTrue(field.waitForExistence(timeout: 30), app.debugDescription)
+        let field = screen.textViews.firstMatch.exists ? screen.textViews.firstMatch : screen.textFields.firstMatch
+        XCTAssertTrue(field.waitForExistence(timeout: 30), screen.debugDescription)
         field.tap()
         field.typeText(sent)
-        app.buttons["composerSend"].tap()
-        let seen = app.staticTexts.containing(NSPredicate(format: "label CONTAINS %@", sent)).firstMatch
-        XCTAssertTrue(seen.waitForExistence(timeout: 90), app.debugDescription)
+        screen.buttons["composerSend"].tap()
+        let seen = screen.staticTexts.containing(NSPredicate(format: "label CONTAINS %@", sent)).firstMatch
+        XCTAssertTrue(seen.waitForExistence(timeout: 90), screen.debugDescription)
+        // 键盘和浮动的标题栏会盖住顶上那行：回列表再进这个房间，进来时停在最新几条，那句就在屏上。
+        back(screen)
+        openRoom(screen)
+        XCTAssertTrue(seen.waitForExistence(timeout: 30), screen.debugDescription)
         shot("reset-message")
     }
 
@@ -153,15 +168,19 @@ final class SasResetUITests: XCTestCase {
         banner.tap()
     }
 
-    private func back(_ app: XCUIApplication) {
+    /// 回列表；离开备份页返回 true。转场里那一下有时不生效，没走成就再点。
+    @discardableResult
+    private func back(_ app: XCUIApplication) -> Bool {
         let back = app.buttons.matching(NSPredicate(format: "label IN %@", ["Back", "返回"])).firstMatch
         XCTAssertTrue(back.waitForExistence(timeout: 10), app.debugDescription)
         back.tap()
         // 底栏 Settings 在备份页开着时也在层级里，凭它判断没离开；等页面标题消失。
         let title = app.staticTexts["Chat Backup"].firstMatch
-        if title.exists {
-            XCTAssertTrue(title.waitForNonExistence(timeout: 10), app.debugDescription)
+        for _ in 0..<3 {
+            if !title.waitForExistence(timeout: 5) { return true }
+            if back.exists && back.isHittable { back.tap() }
         }
+        return !title.waitForExistence(timeout: 5)
     }
 
     private func openRoom(_ app: XCUIApplication) {

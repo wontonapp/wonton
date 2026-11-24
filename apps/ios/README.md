@@ -221,13 +221,22 @@ apps/ios/scripts/ui-test.sh <模拟器 UDID> test \
 - 示例的 `KEY_HANDOFF_HISTORY_TEXT` 必须和传给用例的 `HISTORY_TEXT` 是同一串：不设时示例自己按时间戳生成，
   两边必然对不上，明文断言也就作废。用例没拿到 `HISTORY_TEXT` 会打印一行。恢复和重置两条的 `RECOVERY_KEY`
   取示例写在码文件旁的 `.recovery`。
-- 两条恢复路径跑前先用 `deploy/dev/core/dev.sh devices` 看设备 ID，逐个 `deploy/dev/core/dev.sh revoke <ID>`（含示例那台）；
-  重置那条用上一台已删、手里的密钥已作废的状态。
-- 配对码只能用一次，这两个类每条用例都换新数据目录（等于新设备）：一条用例一个码，`PAIRING_CODE` 给逗号分隔的
-  一串，用例在失败面按顺序换下一个，跑整个类时给够条数。
-- 交接那条要比较两端表情：示例打出 `表情：` 那行后，把后面的符号写进 App 容器的
-  `Documents/sas-emoji.txt`（`xcrun simctl get_app_container <UDID> app.wonton.ios data` 拿目录；
-  粘贴板要过 iOS 的粘贴许可，读不到），用例从屏幕按序取 7 个符号比对。
+- 码从哪来：示例把给新设备的邀请码写进你传给它的码文件（示例页开着时会自动接第一个确认请求），也可以现取
+  `dev.sh pair <地址>` 的码。一条用例一个码；`PAIRING_CODE` 给逗号分隔的一串，只有前一个已用/过期、用例退回
+  失败面时才用下一个，跑整个类时给够条数。
+- 两条恢复路径跑前先把设备删掉：`dev.sh devices` 看设备 ID，逐个 `dev.sh revoke <ID>`（含示例那台）；
+  重置那条用上一台已删、手里的密钥已作废的状态。栈在别的机器上时这两个命令要在那套栈上跑
+  （`ssh <机>-stack dev <栈名> devices` / `revoke <ID>`），在调用机直接跑会打到本机 Docker。
+- 交接那条要比较两端表情：示例打出 `表情：` 那行后，把后面的 7 个符号（一个空格分隔，用例按空格拆）写进 App 容器的
+  `Documents/sas-emoji.txt`。用例只等 120 秒，得用命令写；在 mini 上跑时这三条经 `ssh mini-ios light <名字> -- …` 执行：
+
+```bash
+symbols=$(grep '^表情：' <示例日志> | tail -n 1 | sed 's/^表情：//')
+appdir=$(xcrun simctl get_app_container <UDID> app.wonton.ios data)
+printf '%s' "$symbols" > "$appdir/Documents/sas-emoji.txt"
+```
+
+粘贴板要过 iOS 的粘贴许可，读不到。用例从屏幕一次取 7 个符号按纵坐标排，和文件按序比对。
 
 ```bash
 TEST_RUNNER_KEY_HANDOFF=1 TEST_RUNNER_HISTORY_TEXT='<历史>' PAIRING_CODE='<码>,<码>' \
