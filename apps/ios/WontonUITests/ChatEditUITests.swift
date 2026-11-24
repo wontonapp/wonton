@@ -48,14 +48,14 @@ final class ChatEditUITests: XCTestCase {
         waitForFloatingDateToFade()
         shot("edit-bar")
         // 深色：先退出编辑态，在深色里重新进去，免得玻璃停在浅色的旧帧；键盘开着会一直是浅色，拍之前收掉。
-        XCUIDevice.shared.appearance = .dark
+        setAppearance(.dark)
         forceTap(app.buttons["editCancel"])
         XCTAssertTrue(bar.waitForNonExistence(timeout: 5), "切深色时没退出编辑态")
         openEdit(Self.ownIndex)
         hideKeyboard()
         waitForFloatingDateToFade()
         shot("edit-bar-dark")
-        XCUIDevice.shared.appearance = .light
+        setAppearance(.light)
 
         forceTap(app.buttons["editCancel"])
         XCTAssertTrue(bar.waitForNonExistence(timeout: 5), "取消了编辑条还在\n\(app.debugDescription)")
@@ -83,7 +83,7 @@ final class ChatEditUITests: XCTestCase {
         XCTAssertTrue(app.buttons["replyCancel"].waitForExistence(timeout: 5), "点“回复”没进回复状态")
     }
 
-    /// 改掉正文再确认：编辑条收起、输入框清空、这一条换成新正文并标“已编辑”，不新增一条。
+    /// 改掉正文再确认：编辑条收起、这一条换成新正文并标“已编辑”，不新增一条；改过的字留在输入框当草稿。
     func testConfirmReplacesTextAndShowsEdited() {
         enter()
         goToBottom()
@@ -98,14 +98,17 @@ final class ChatEditUITests: XCTestCase {
 
         forceTap(app.buttons["composerSend"])
         XCTAssertTrue(element("composerEditBar").waitForNonExistence(timeout: 5), "确认以后编辑条没收起")
-        XCTAssertTrue(wait(5) { (field.value as? String ?? "").isEmpty }, "确认以后输入框没清空")
+        // 编辑途中打过字，原草稿就不盖回来了（同核心）：新正文留在输入框里，发送键换回“Send”。
+        let confirm = app.buttons["composerSend"]
+        XCTAssertTrue(wait(5) { (field.value as? String) == Self.replacement }, "确认以后输入框里的新正文没了")
+        XCTAssertTrue(wait(5) { confirm.label == "Send" }, "确认以后发送键没换回发送")
         let edited = text(startingWith: Self.replacement)
         shot("after-confirm")
         // 编辑条收起会让列表挪一点，这一条可能正好被挤出屏幕；往回翻着找。
         revealBackwards(edited)
         XCTAssertFalse(text(startingWith: Self.original).exists, "旧正文还在\n\(app.debugDescription)")
         XCTAssertTrue(wait(5) { self.inView(self.element("messageEdited")) }, "确认以后没标“已编辑”")
-        XCTAssertEqual(app.buttons["composerSend"].exists, false, "确认以后还留着确认键")
+
         waitForFloatingDateToFade()
         shot("edit-sent")
         darkShot("edit-sent-dark")
@@ -264,9 +267,37 @@ final class ChatEditUITests: XCTestCase {
 
     /// 同一处再拍一张深色的，拍完换回浅色。
     private func darkShot(_ name: String) {
-        XCUIDevice.shared.appearance = .dark
+        setAppearance(.dark)
         waitForFloatingDateToFade()
         shot(name)
-        XCUIDevice.shared.appearance = .light
+        setAppearance(.light)
+    }
+
+    /// 换外观并等画面真的变了：刚建好的模拟器上 `appearance` 偶尔要好几秒才生效，只等固定时间会拍到旧颜色。
+    private func setAppearance(_ appearance: XCUIDevice.Appearance) {
+        let dark = appearance == .dark
+        for _ in 0..<3 {
+            XCUIDevice.shared.appearance = appearance
+            let deadline = Date().addingTimeInterval(4)
+            while Date() < deadline {
+                if screenIsDark() == dark { return }
+                Thread.sleep(forTimeInterval: 0.3)
+            }
+        }
+    }
+
+    /// 左上角几个点的平均亮度接近黑就是深色。
+    private func screenIsDark() -> Bool {
+        guard let cg = XCUIScreen.main.screenshot().image.cgImage,
+              let data = cg.dataProvider?.data,
+              let bytes = CFDataGetBytePtr(data) else { return false }
+        let bpp = max(cg.bitsPerPixel / 8, 3)
+        var sum = 0
+        for (x, y) in [(100, 300), (600, 300), (1100, 300), (600, 2000)] {
+            guard x < cg.width, y < cg.height else { continue }
+            let offset = y * cg.bytesPerRow + x * bpp
+            sum += (Int(bytes[offset]) + Int(bytes[offset + 1]) + Int(bytes[offset + 2])) / 3
+        }
+        return sum / 4 < 100
     }
 }

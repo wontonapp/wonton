@@ -584,7 +584,7 @@ private fun SendButton(editing: Boolean, onClick: () -> Unit) {
         ) {
             Icon(
                 if (editing) WontonIcon.Check else WontonIcon.Send,
-                // 装饰：外层的可点区域已经带了“发送”。
+                // 装饰：外层的可点区域已经带了“发送”（编辑时是“确认”）。
                 contentDescription = null,
                 modifier = Modifier.size(WontonTheme.size.iconSmall),
                 tint = colors.onPrimary.toColor(),

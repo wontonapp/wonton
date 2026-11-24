@@ -257,7 +257,16 @@ struct Saved {
 
 struct Editing {
     card: ComposerEdit,
+    /// 进编辑态时换进输入框的原文：退出时输入框里还是它，才换回原草稿（同真核心 `restore_if_unchanged`）。
+    text: String,
     saved: Saved,
+}
+
+/// 退出编辑态换回原草稿：编辑途中又打了字（输入框里已不是原文）就留着新打的。
+fn restore_after_edit(draft: &mut Saved, editing: &Editing) {
+    if draft.body.trim() == editing.text.trim() {
+        *draft = editing.saved.clone();
+    }
 }
 
 impl FakeTimeline {
@@ -547,13 +556,18 @@ impl FakeTimeline {
         let Some((event_id, text)) = found else {
             return;
         };
-        let saved = std::mem::take(&mut state.draft);
+        // 已经在编辑别的消息：原草稿仍是第一次进来之前那份，不拿现在的输入框。
+        let saved = match state.editing.take() {
+            Some(previous) => previous.saved,
+            None => std::mem::take(&mut state.draft),
+        };
         state.editing = Some(Editing {
             card: ComposerEdit {
                 item_id: item_id.to_owned(),
                 event_id,
                 summary: summary(&text),
             },
+            text: text.clone(),
             saved,
         });
         state.draft = Saved {
@@ -570,7 +584,7 @@ impl FakeTimeline {
         let Some(editing) = state.editing.take() else {
             return;
         };
-        state.draft = editing.saved;
+        restore_after_edit(&mut state.draft, &editing);
         drop(state);
         self.batch(|_| {});
     }
@@ -625,7 +639,7 @@ impl FakeTimeline {
                 return;
             };
             let editing = state.editing.take().unwrap_or_else(|| unreachable!());
-            state.draft = editing.saved;
+            restore_after_edit(&mut state.draft, &editing);
             found
         };
         let (index, item) = edited;
@@ -814,6 +828,48 @@ mod tests {
         };
         assert_eq!(body, "Fixture edited");
         assert_eq!(fakes.draft(&target()).unwrap().body, "draft");
+    }
+
+    /// 编辑途中又打了字：退出时留着新打的，不拿进编辑前那份盖回去（同真核心）。
+    #[tokio::test]
+    async fn typing_during_an_edit_survives_cancel_and_confirm() {
+        let fakes = FakeTimelines::default();
+        let subscription = fakes.subscribe(&target());
+        next(&subscription).await;
+        fakes.timeline_action(TimelineAction::SetDraft {
+            target: target(),
+            body: "draft".into(),
+            reply_to: None,
+        });
+
+        for confirm in [false, true] {
+            fakes.timeline_action(TimelineAction::StartEdit {
+                target: target(),
+                item_id: "ui-fake-15".into(),
+            });
+            next(&subscription).await;
+            fakes.timeline_action(TimelineAction::SetDraft {
+                target: target(),
+                body: "Fixture message 15 再补一句".into(),
+                reply_to: None,
+            });
+            if confirm {
+                fakes.timeline_action(TimelineAction::EditMessage {
+                    target: target(),
+                    event_id: "$ui-fake-15".into(),
+                    body: "Fixture message 15 再补一句".into(),
+                });
+            } else {
+                fakes.timeline_action(TimelineAction::CancelEdit { target: target() });
+            }
+            next(&subscription).await;
+            assert_eq!(
+                fakes.draft(&target()).unwrap().body,
+                "Fixture message 15 再补一句",
+                "{}",
+                if confirm { "确认" } else { "取消" }
+            );
+        }
     }
 
     fn message(items: &[TimelineItem], id: &str) -> wonton_protocol::TimelineMessage {

@@ -59,8 +59,14 @@ xcodebuild test-without-building -project apps/ios/Wonton.xcodeproj -scheme Wont
 test=$?
 grep -E "error: -\[|^Test Case .*(passed|failed|skipped)|Executed [0-9]+ tests?|\*\* TEST" "$w/$stamp.test.log" | tail -80
 echo "test-exit=$test 日志 $PWD/$w/$stamp.test.log 结果 $PWD/$w/$stamp.xcresult"
+# 引用两行、顶栏叠放最容易在深色下翻车：#945 那两条跟着深色再跑一遍。
+xcrun simctl ui "$udid" appearance dark
+xcodebuild test-without-building -project apps/ios/Wonton.xcodeproj -scheme Wonton   -destination "platform=iOS Simulator,id=$udid" -derivedDataPath "$WONTON_DERIVED_DATA"   -resultBundlePath "$w/$stamp-dark.xcresult" -parallel-testing-enabled NO -testLanguage en -testRegion US   -collect-test-diagnostics never   -only-testing:WontonUITests/ChatTelegramUITests/testQuoteSummaryKeepsBothLines   -only-testing:WontonUITests/ChatTelegramUITests/testPluginBannerSitsAboveSideChatTitle   > "$w/$stamp.dark.log" 2>&1
+dark=$?
+echo "dark-exit=$dark 日志 $PWD/$w/$stamp.dark.log"
+xcrun simctl ui "$udid" appearance light
 # 这一轮的用例自己在同一处拍浅深两张（XCUIDevice.appearance），这里只导出附件。
 mkdir -p "$w/shots-$stamp"
 xcrun xcresulttool export attachments --path "$w/$stamp.xcresult" --output-path "$w/shots-$stamp" > "$w/$stamp.export.log" 2>&1 || tail -5 "$w/$stamp.export.log"
 xcrun simctl shutdown "$udid"
-echo "lint=$lint build=$build test=$test stamp=$stamp"
+echo "lint=$lint build=$build test=$test dark=$dark stamp=$stamp"

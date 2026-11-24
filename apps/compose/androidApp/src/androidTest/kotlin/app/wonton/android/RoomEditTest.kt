@@ -90,8 +90,10 @@ class RoomEditTest : RoomTelegramCase() {
         compose.onNode(hasSetTextAction()).performTextInput(REPLACEMENT)
 
         compose.onNodeWithContentDescription(string(R.string.composer_edit_confirm)).performClick()
+        // 编辑途中打过字，原草稿就不盖回来了（同核心）：新正文留在输入框里。
         compose.waitUntil(10_000) {
-            fieldText().isEmpty() && compose.onAllNodes(hasTestTag("composer-edit-bar")).fetchSemanticsNodes().isEmpty()
+            fieldText() == REPLACEMENT &&
+                compose.onAllNodes(hasTestTag("composer-edit-bar")).fetchSemanticsNodes().isEmpty()
         }
         compose.waitUntil(10_000) {
             compose.onAllNodesWithText(REPLACEMENT, substring = true).fetchSemanticsNodes().isNotEmpty()
