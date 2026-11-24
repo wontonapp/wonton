@@ -58,6 +58,7 @@ mod storage;
 mod target;
 mod timeline;
 mod timeline_previews;
+mod typing;
 mod util;
 mod verification;
 mod view;
@@ -115,6 +116,8 @@ const SEND_TIMEOUT: Duration = Duration::from_secs(60);
 pub(crate) struct ChatLink {
     runtime: Handle,
     home: Arc<HomeLink>,
+    /// 自己这边发出去的“正在输入”（ADR-0109 第 8 节）：节流、停手后自动收。
+    typing: typing::TypingNotices,
     /// 本作用域的槽位号（`ServerRow::id`）：后台通知的 `server_id` 填它，壳点开通知按它切服务器；
     /// 不是 home 里的 endpoint ID，那是配对键，槽位列表里没有。
     slot: String,
@@ -326,6 +329,7 @@ impl ChatLink {
             session: Mutex::new(None),
             session_out,
             open: Mutex::default(),
+            typing: typing::TypingNotices::default(),
             opening: tokio::sync::Mutex::new(()),
             side_chat_support: Arc::default(),
             answers: watch::Sender::default(),
@@ -497,7 +501,7 @@ impl ChatLink {
                 mentions,
                 ..
             } => self.send_text(
-                &TimelineKey::parse(&target)?,
+                &self.quiet_typing(&target)?,
                 &body,
                 reply_to.as_deref(),
                 &mentions,
@@ -508,7 +512,7 @@ impl ChatLink {
                 caption,
                 reply_to,
             } => self.send_image(
-                &TimelineKey::parse(&target)?,
+                &self.quiet_typing(&target)?,
                 image,
                 caption.as_deref(),
                 reply_to.as_deref(),
@@ -518,7 +522,7 @@ impl ChatLink {
                 item_id,
                 to_room_id,
                 comment: _,
-            } => self.forward_message(&TimelineKey::parse(&target)?, &item_id, &to_room_id),
+            } => self.forward_message(&self.quiet_typing(&target)?, &item_id, &to_room_id),
             TimelineAction::RedactMessage { target, item_id } => {
                 self.redact_message(&TimelineKey::parse(&target)?, &item_id)
             }
@@ -555,26 +559,44 @@ impl ChatLink {
                     .jump_back();
                 Ok(())
             }
-            // 正在输入直接转给服务器；节流和超时自动停还留给下一条 PR。
+            // 节流和“停了”的计时都在核心，壳只管报告。
             TimelineAction::SetTyping { target, typing } => {
-                let room = self.opened(&TimelineKey::parse(&target)?)?;
-                self.spawn_op("chat-op-typing-failed", async move {
-                    room.typing_notice(typing).await
-                });
+                let key = TimelineKey::parse(&target)?;
+                self.opened(&key)?;
+                if typing {
+                    self.typing.activity(self, &key);
+                } else {
+                    self.typing.stop(&key);
+                }
                 Ok(())
             }
-            // 附件区的操作由 `ClientCore::dispatch` 交给附件区（ADR-0094），不会到这里。
-            TimelineAction::SendComposer { .. }
-            | TimelineAction::RemoveAttachment { .. }
-            | TimelineAction::RetryAttachment { .. }
-            | TimelineAction::RetryOutgoing { .. }
-            | TimelineAction::CancelOutgoing { .. }
-            // 编辑先只在接口里（下一条 PR 才连核心）。
-            | TimelineAction::StartEdit { .. }
-            | TimelineAction::CancelEdit { .. }
-            | TimelineAction::EditMessage { .. } => {
+            // 附件区的操作由 `ClientCore::dispatch` 交给附件区（ADR-0094），不会到这里；回到这里的壳还没走。
+            // 编辑先只在接口里（下一条 PR 才连核心）。这些都不经过发送，只顺手收掉正在输入。
+            TimelineAction::SendComposer { target, .. }
+            | TimelineAction::RemoveAttachment { target, .. }
+            | TimelineAction::RetryAttachment { target, .. }
+            | TimelineAction::RetryOutgoing { target, .. }
+            | TimelineAction::CancelOutgoing { target, .. }
+            | TimelineAction::StartEdit { target, .. }
+            | TimelineAction::CancelEdit { target }
+            | TimelineAction::EditMessage { target, .. } => {
+                self.quiet_typing(&target)?;
                 Err(invalid(&l10n!(CATALOG, language(), "chat-invalid-action")))
             }
+        }
+    }
+
+    /// 正要发送或进出编辑态：先收掉这条时间线的“正在输入”，再把目标解析成键。
+    fn quiet_typing(&self, target: &TimelineTarget) -> Result<TimelineKey, CoreError> {
+        let key = TimelineKey::parse(target)?;
+        self.typing.stop(&key);
+        Ok(key)
+    }
+
+    /// 输入框里要发送了：先收掉这条时间线的“正在输入”。附件区那条发送路不走 [`Self::timeline_action`]，自己来收。
+    pub(crate) fn stop_typing(&self, target: &TimelineTarget) {
+        if let Ok(key) = TimelineKey::parse(target) {
+            self.typing.stop(&key);
         }
     }
 
@@ -806,6 +828,7 @@ impl ChatLink {
         self.bots.set_session(None);
         self.session_out.send_replace(None);
         lock(&self.open).clear();
+        self.typing.cancel_all();
         *lock(&self.verification) = None;
         self.side_chat_support.clear();
         self.room_order.clear();

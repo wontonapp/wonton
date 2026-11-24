@@ -128,5 +128,3 @@ chat-window-ended =
     }
 
 chat-choice-send-failed-rejected = Not sent: the home server refused it. ({ $error })
-
-chat-op-typing-failed = Can't report typing: { $error }

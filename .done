@@ -1,20 +1,20 @@
-# chat-802-r3：#802 第二轮复审（6335d7e9）
+# fix-802：#802 返修（ADR 节号、正在输入节流、复审小项）
 
-分支 feat/chat-edit-typing-proto。远端已被叠到最新 main 6dbdcfa9 并加了 clippy 拆分提交；本地先 reset 到远端头再改。
+分支 feat/chat-edit-typing-proto，提交见 git log，已推。
 
-这轮：
-- ADR 0109 把视觉规格留在第 9 节、编辑/贴图/失败挪成第 10 节（标题“编辑消息、贴图和发送失败”）；protocol 里六处引用改第 10 节，`SetTyping` 改第 8 节；ADR:149 补回“点‘编辑’后输入框换成原文”，顺手修“铅笔.、”。
-- §8 写明节流/自动停还没接：本 PR 里 SetTyping 直接转发、失败进 problem，下一条补。
-- 正文补验证结果、`SendState` FFI 不兼容这句、两条没跑的原因；`.done` 重写。
-- iOS 侧聊发图：附言只给第一张试过的照片，不再每张都带再单发一条；旁聊成功后清草稿和回复对象。
-- Android `timeline_send_failed_other` 改名 `timeline_send_failure_other`；`SendFailure.text` 挪进新的 MessageTexts（Kotlin、Swift），不再挂在失败控件文件里。
-- iOS 用例 `ComposerSendRejectUITests` 的旧标识 `attachDone` 改 `attachSend`。
+上一轮复审的两条和四个小项：
 
-验证：SwiftLint strict 通过；iOS build-for-testing 成功；ChatTelegramUITests 19/20；protocol send_state 4 passed；lint 脚本通过。Android/clippy/enum 尺寸、edit_typing it、重跑未拿到名额，正文已注明。
+1. ADR 节号按建议重排：把“视觉规格”整块提前、留在第 9 节，编辑/贴图/失败挪成第 10 节并改名“编辑消息、贴图和发送失败”。`send_state.rs:1`、`timeline.rs:97,361`、`timeline_action.rs:51,165,178` 改指第 10 节，`SetTyping` 改指第 8 节；`0109:41`、`0073:40`、`0052:46` 指的视觉规格仍在第 9 节，不用动。补回 `0109:149` 丢掉的前半句（“输入框换成那条的原文”），失败的原因跟着第 10 节标题走，不再挂在第 9 节下。
+2. 正在输入照 ADR 补了实现，不再写“留给下一条 PR”：新 `chat/typing.rs`，每条时间线一个计时任务，第一下马上发、之后最多 5 秒补发一次，停手 5 秒自己发“停了”；发送、转发和进出编辑态先停；失败只记日志、不进 `problem`。删掉不再用到的 `chat-op-typing-failed` 四条文案。
+3. iOS 侧聊附件面板的说明只跟第一张试过的照片走，不再一张贴一遍、也不再另发一条 `SendText`；附言随第一张发出去才清草稿，被拒留着。
+4. Android `timeline_send_failed_other` 改名 `timeline_send_failure_other`（五种语言的键一起改）。
+5. `SendFailure.text` 从 `SendFailedMark.kt` 挪到 `OutgoingRow.kt`，iOS 那份从 `ComposerTray.swift` 挪到 `OutgoingRow.swift`。
 
-- Android 本机 `detekt :shared:compileAndroidMain`：`BUILD SUCCESSFUL`（第一次 Kotlin 临时目录写失败，重试通过）。
-- `ComposerSendRejectUITests`：1 passed。
-- clippy（protocol/client/matrix，all-targets，-D warnings）：Finished。
-- `chat::edit_typing` it：1 passed。
-
-- enum 尺寸：TIMELINEACTION 9927（限 16384/32768），MESSAGEACTION 1550，其它更小。
+验证：
+- `cargo fmt --all --check`、`git diff --check`：通过。
+- `scripts/check-ui-text.py`、`check-conflict-markers.sh`、`check-uniffi-comments.sh`、`check-shell-parity.py`、`check-file-size.sh`：通过（file-size 只报既有 10 个文件超 800 行的警告）。
+- `cargo check -p wonton-client --all-targets`：0 error。
+- `cargo clippy -p wonton-protocol -p wonton-client -p wonton-matrix --all-targets --locked -- -D warnings`：0 warning 0 error。
+- `cargo test -p wonton-client --test it chat::edit_typing::typing_is_throttled_and_stops_by_itself -- --include-ignored`：1 passed（154.34s，节流、自己收、发送时收三段都验了）。
+- `cargo test -p wonton-client --test it chat::edit_typing -- --include-ignored`：同一轮里 `typing_goes_to_the_room_and_edit_is_still_invalid ... ok`；两条一起跑时 Tuwunel 容器创建在机器负载高时超时过几次（不是断言），两条都单独跑到绿。
+- `bash scripts/check-protocol-base.sh main <head>`：“crates/wonton-protocol 的改动基于最新的 main。”
