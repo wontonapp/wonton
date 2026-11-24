@@ -129,10 +129,17 @@ final class ClientsDomainWalkthroughTests: XCTestCase {
             waitAnyButton(["Later", "稍后"], timeout: 10)?.tap()
             XCTAssertTrue(UITestSidebar.waitForChatList(app, timeout: 60), "没到聊天列表")
         }
-        guard openSettings() else { return XCTFail("没有 Settings") }
-        guard tapRow("HTTPS and domain", timeout: 180) else {
-            return XCTFail("设置里没有 HTTPS 和域名入口")
+        // 刚配对完时设置可能还是配对前的旧快照（没有入口）：退回去重开，等它自己刷过来。
+        var entered = false
+        for _ in 0..<12 where !entered {
+            guard openSettings() else { continue }
+            entered = tapRow("HTTPS and domain", timeout: 15)
+            if !entered {
+                _ = try? app.navigationBars.buttons.firstMatch.tap()
+                usleep(1_000_000)
+            }
         }
+        XCTAssertTrue(entered, "设置里没有 HTTPS 和域名入口")
         XCTAssertTrue(app.textFields["clientsDomainSuffix"].waitForExistence(timeout: 30), "域名页没打开")
         shot("01-empty")
 
