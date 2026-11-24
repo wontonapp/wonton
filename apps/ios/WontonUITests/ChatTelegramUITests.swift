@@ -583,8 +583,8 @@ final class ChatTelegramUITests: XCTestCase {
         XCTAssertTrue(element("sideChatAttachHint").waitForExistence(timeout: 10), "点了卡片没进旁聊\n\(app.debugDescription)")
         shot("side-chat-hint")
         darkShot("side-chat-hint-dark")
-        // 旁聊打开就停在落点附近，回复紧挨着的那条（旁聊里编号不一定和主列表对齐）。
-        startReply(at: 2)
+        // 旁聊里是它自己的假时间线（`Fixture side N`），回复紧挨着落点的那条。
+        startReply(on: text(startingWith: "Fixture side 1"))
         let field = input
         focus(field)
         field.typeText("Fixture side draft")
