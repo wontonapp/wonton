@@ -53,10 +53,11 @@ pub struct CredentialEntry {
 }
 
 /// 证书现在到哪一步；过期后如实说连接会失败，不降级到自签名或 `http`。
-#[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize)]
+#[derive(Clone, Debug, Default, PartialEq, Eq, Serialize, Deserialize)]
 #[cfg_attr(feature = "uniffi", derive(uniffi::Enum))]
 #[serde(tag = "state", rename_all = "snake_case")]
 pub enum CertificateState {
+    #[default]
     None,
     Issuing,
     Valid {

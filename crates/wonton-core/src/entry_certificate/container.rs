@@ -82,6 +82,22 @@ impl CertificateManager {
                 "SSL_CERT_FILE=/acme/ca.pem".to_owned(),
             ]);
         }
+        // ACME 目录在自家网络里时（开发栈、家里的 acme-dns）不该经宿主代理 CONNECT：代理那边解析不了容器名，
+        // 隧道建立后 TLS 直接断。Docker 会把宿主配置里的代理注入每个容器，这里把目录的主机名并进 NO_PROXY，
+        // 其余请求照旧走代理。
+        if let Ok(url) = url::Url::parse(&self.config.directory_url)
+            && let Some(host) = url.host_str()
+        {
+            let existing = std::env::var("NO_PROXY")
+                .or_else(|_| std::env::var("no_proxy"))
+                .unwrap_or_default();
+            let value = if existing.is_empty() {
+                host.to_owned()
+            } else {
+                format!("{existing},{host}")
+            };
+            environment.extend([format!("NO_PROXY={value}"), format!("no_proxy={value}")]);
+        }
         let resolvers = crate::entry_settings::resolver_ips(&self.config.dns_resolvers)?;
         // No cert directory, leaf key, Docker socket or parent directory mount.
         Ok(ContainerCreateBody {

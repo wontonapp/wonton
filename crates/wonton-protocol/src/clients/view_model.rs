@@ -4,7 +4,7 @@
 
 use serde::{Deserialize, Serialize};
 
-use super::ClientsProblem;
+use super::{CaaState, CertificateState, ClientsProblem, LanRecordState};
 
 /// 页面当前拿不拿得到设置。加载中和失败都不画表单。
 #[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize)]
@@ -106,10 +106,4 @@ pub struct ClientsDomainCertificate {
     pub retryable: bool,
     /// lego 的原始错误，放进默认收起的“详情”。
     pub details: Option<String>,
-}
-
-impl Default for CertificateState {
-    fn default() -> Self {
-        Self::None
-    }
 }

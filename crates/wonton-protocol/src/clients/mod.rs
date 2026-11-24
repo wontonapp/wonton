@@ -28,17 +28,14 @@ mod guests;
 mod ingress;
 mod passwords;
 mod status;
-mod view_model;
 #[cfg(test)]
 mod tests;
 mod view;
+mod view_model;
 
 pub use domain::{
     CaaState, CertificateState, CredentialEntry, DnsProviderPreset, DomainSettings, LanRecordState,
     PutDomainRequest,
-};
-pub use view_model::{
-    ClientsDomainCertificate, ClientsDomainProvider, ClientsDomainState, ClientsDomainViewModel,
 };
 pub use entries::{
     ClientAuthKind, ClientsPlugin, EntryBlock, EntryEffect, EntryKind, EntrySwitch, PublicRuleMode,
@@ -61,6 +58,9 @@ pub use status::{
 pub use view::{
     ClientsBlocked, ClientsGuests, ClientsPassword, ClientsSettingsViewModel, ClientsState,
     ClientsViewModel,
+};
+pub use view_model::{
+    ClientsDomainCertificate, ClientsDomainProvider, ClientsDomainState, ClientsDomainViewModel,
 };
 
 /// 所有第三方客户端接口都要带的请求头，值是 `1`；不带的请求（跨站）过不了。

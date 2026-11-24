@@ -33,6 +33,7 @@ mod bot_contacts;
 mod browser;
 mod chat;
 mod client;
+mod clients;
 mod composer;
 mod device_choices;
 mod family;
@@ -89,8 +90,9 @@ pub use plugin_choices::{
 pub use sharing::discover_share_source;
 pub use subscription::{
     AgentChainsSubscription, AgentStopSubscription, AppLockSubscription, AppearanceSubscription,
-    BotContactsSubscription, ChatSubscription, ComposerSubscription, ConfirmationsSubscription,
-    FamilySubscription, FriendsSubscription, HomeSubscription, OnboardingSubscription,
+    BotContactsSubscription, ChatSubscription, ClientsDomainSubscription, ComposerSubscription,
+    ConfirmationsSubscription, FamilySubscription, FriendsSubscription, HomeSubscription,
+    OnboardingSubscription,
     PagesSubscription, PeersSubscription, PluginsSubscription, ServersSubscription,
     SessionListSubscription, SettingsSubscription, TransfersSubscription, UnreadSubscription,
     WidgetSnapshotSubscription,

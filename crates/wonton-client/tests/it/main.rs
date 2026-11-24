@@ -10,6 +10,7 @@ mod bot_contacts;
 pub(crate) mod chat;
 mod family;
 mod family_support;
+mod clients;
 mod files;
 mod files_cards;
 mod files_services;

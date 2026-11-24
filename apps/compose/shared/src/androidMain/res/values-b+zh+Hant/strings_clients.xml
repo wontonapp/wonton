@@ -1,0 +1,91 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <!-- Title of the HTTPS and domain settings page and its settings row. -->
+    <string name="clients_domain_title">HTTPS 和網域</string>
+    <!-- Label of the domain field. -->
+    <string name="clients_domain_suffix">網域</string>
+    <!-- Shown under a changeable domain: third-party apps must re-enter the address. -->
+    <string name="clients_domain_suffix_note">改了以後第三方 App 都要重填地址</string>
+    <!-- Heading of the DNS provider choice list. -->
+    <string name="clients_domain_provider">DNS 服務商</string>
+    <!-- Last provider row: type the lego code yourself. -->
+    <string name="clients_domain_other">其他</string>
+    <!-- Label of the lego provider code field. -->
+    <string name="clients_domain_other_code">lego 服務商代碼</string>
+    <!-- Placeholder of the free-form credentials field. -->
+    <string name="clients_domain_other_hint">一行一個「鍵=值」</string>
+    <!-- Label of the credentials field. -->
+    <string name="clients_domain_credentials">憑據</string>
+    <!-- Shown when credentials are already stored on the server; values are never read back. -->
+    <string name="clients_domain_credentials_set">已填寫</string>
+    <!-- Link to the provider\'s sign-up page. -->
+    <string name="clients_domain_signup">去註冊</string>
+    <!-- Checkbox for the Let\'s Encrypt subscriber agreement. -->
+    <string name="clients_domain_terms">我同意 Let\'s Encrypt 的訂戶協議</string>
+    <!-- Link to the Let\'s Encrypt agreement page. -->
+    <string name="clients_domain_terms_open">查看協議</string>
+    <!-- Heading of the certificate section. -->
+    <string name="clients_domain_certificate">憑證</string>
+    <!-- Certificate is valid; argument is the expiry date. -->
+    <string name="clients_domain_cert_valid">%1$s 到期</string>
+    <!-- Renewal failed; the old certificate is still in use. -->
+    <string name="clients_domain_cert_renewing">續期失敗，還在用舊憑證</string>
+    <!-- The certificate expired; connections fail. -->
+    <string name="clients_domain_cert_expired">憑證已過期，連線會失敗</string>
+    <!-- A certificate is being issued. -->
+    <string name="clients_domain_cert_issuing">正在簽發</string>
+    <!-- No certificate has been requested yet. -->
+    <string name="clients_domain_cert_none">還沒有憑證</string>
+    <!-- Button to retry certificate issuance. -->
+    <string name="clients_domain_retry">重試</string>
+    <!-- Heading of the CAA record section. -->
+    <string name="clients_domain_caa">CAA</string>
+    <!-- CAA record limits issuance to this home\'s account. -->
+    <string name="clients_domain_caa_bound">已限定到這台伺服器的帳號</string>
+    <!-- No CAA record; adding one is recommended. -->
+    <string name="clients_domain_caa_missing">建議加上這一條</string>
+    <!-- A CAA record exists but does not name this home\'s account. -->
+    <string name="clients_domain_caa_mismatch">有記錄，但沒限定到這台伺服器的帳號</string>
+    <!-- The CAA record could not be checked. -->
+    <string name="clients_domain_caa_unknown">查不出來</string>
+    <!-- Button that copies the record line. -->
+    <string name="clients_domain_copy">複製</string>
+    <!-- Shown after copying; the button ticks meanwhile. -->
+    <string name="clients_domain_copied">已複製</string>
+    <!-- Heading of the LAN record section. -->
+    <string name="clients_domain_lan">區域網路記錄</string>
+    <!-- The LAN record already points to this host. -->
+    <string name="clients_domain_lan_ok">已經指向這台主機</string>
+    <!-- The LAN record is missing. -->
+    <string name="clients_domain_lan_missing">還沒有這一條</string>
+    <!-- The LAN record points elsewhere; argument is the current address. -->
+    <string name="clients_domain_lan_wrong">現在指向 %1$s</string>
+    <!-- The LAN record could not be checked. -->
+    <string name="clients_domain_lan_unknown">查不出來</string>
+    <!-- Placeholder where the line needs this host\'s LAN address. -->
+    <string name="clients_domain_lan_address">這台的區域網路位址</string>
+    <!-- Heading of the collapsed deSEC instructions. -->
+    <string name="clients_domain_desec">deSEC 權杖</string>
+    <!-- Steps to create a deSEC token limited to the two challenge records. -->
+    <string name="clients_domain_desec_steps">去 desec.io 註冊，再建一個只能寫 _acme-challenge 和 _acme-challenge.lan 兩個 TXT 記錄的權杖。</string>
+    <!-- Generic save failure title. -->
+    <string name="clients_domain_problem_failed">沒儲存成功</string>
+    <!-- Title when the form needs fixing; the detail says what. -->
+    <string name="clients_domain_problem_invalid">有地方要改</string>
+    <!-- Title when this device may not change the domain. -->
+    <string name="clients_domain_problem_unauthenticated">這台裝置不能改</string>
+    <!-- Next step for the unauthenticated case. -->
+    <string name="clients_domain_problem_unauthenticated_next">用主人的裝置、經通道連線再試</string>
+    <!-- Title when the core or plugin is not ready. -->
+    <string name="clients_domain_problem_not_ready">家裡的服務還沒準備好</string>
+    <!-- Next step when the core or plugin is not ready. -->
+    <string name="clients_domain_problem_not_ready_next">等外掛或應用程式就緒後再試</string>
+    <!-- Title when the provider or relay failed. -->
+    <string name="clients_domain_problem_upstream">服務商那邊沒成功</string>
+    <!-- Next step when the provider failed. -->
+    <string name="clients_domain_problem_upstream_next">稍後重試，詳細資訊裡是服務商的原話</string>
+    <!-- Title when the LAN record is wrong. -->
+    <string name="clients_domain_problem_lan">區域網路記錄有問題</string>
+    <!-- Next step when the LAN record is wrong. -->
+    <string name="clients_domain_problem_lan_next">照提示補上或改掉這一條</string>
+</resources>

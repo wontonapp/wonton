@@ -287,17 +287,22 @@ fn clients_actions_round_trip_inside_actions() {
             kind: EntryKind::Other,
             enabled: false,
         },
-        ClientsAction::SaveDomain {
-            request: PutDomainRequest {
-                suffix: Some("example.test".into()),
-                provider: "desec".into(),
-                credentials: vec![CredentialEntry {
-                    name: "DESEC_TOKEN".into(),
-                    value: SecretString::new("SECRET"),
-                }],
-                accept_terms: true,
-            },
+        ClientsAction::RefreshDomain,
+        ClientsAction::SelectDomainProvider {
+            code: Some("desec".into()),
         },
+        ClientsAction::SaveDomain {
+            suffix: Some("example.test".into()),
+            provider: Some("desec".into()),
+            credentials: vec![CredentialEntry {
+                name: "DESEC_TOKEN".into(),
+                value: SecretString::new("SECRET"),
+            }],
+            other_credentials: String::new(),
+            accept_terms: true,
+        },
+        ClientsAction::RetryCertificate,
+        ClientsAction::DismissDomainProblem,
         ClientsAction::SaveIngress {
             request: PutIngressRequest::OurRelay {},
         },
