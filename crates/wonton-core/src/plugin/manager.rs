@@ -436,7 +436,7 @@ impl PluginManager {
             .is_some_and(|entry| entry.system)
     }
 
-    /// 随核心镜像附带、由核心自己维护的系统插件。从商店或来源装的同名 system 插件不算，
+    /// 随核心镜像附带、由核心自己维护的系统插件。从商店、来源或上传的同名 system 插件不算，
     /// 它们和普通插件一样能经接口升级、卸载（ADR-0108）。
     pub fn is_bundled_system(&self, id: &PluginId) -> bool {
         if !self.is_system(id) {
@@ -449,7 +449,7 @@ impl PluginManager {
             .load(id)
             .ok()
             .flatten()
-            .is_some_and(|record| record.origin.is_none())
+            .is_some_and(|record| record.bundled)
     }
 
     /// OIDC 客户端（ID 是插件的 `id`，Bot 的网页客户端按它的插件 ID 查）声明的管理员组和角色声明；

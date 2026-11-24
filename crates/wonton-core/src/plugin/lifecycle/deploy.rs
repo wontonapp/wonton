@@ -204,6 +204,7 @@ impl PluginManager {
             relays: plan.relays.clone(),
             firewalled,
             proxied: ctx.egress.is_some(),
+            bundled: false,
             oidc_client_secret: oidc_secret,
             installed_at: super::super::manager::now_secs(),
             entry_label: self.install_entry_label(&manifest.id)?,

@@ -611,6 +611,11 @@ async fn a_system_plugin_installed_from_a_source_can_be_upgraded() {
     assert!(!m.is_bundled_system(&id()), "从来源装的不算随核心带");
 
     release(&github, &system("1.1.0"));
+    m.check_upgrades_now().await;
+    assert!(
+        m.installed_plugin(&id(), &zh()).unwrap().upgrade.is_some(),
+        "来源装的就该查新版本"
+    );
     let preview = m
         .preview_upgrade(&id(), UpgradeTo::Offered, None, &zh())
         .await
@@ -618,6 +623,32 @@ async fn a_system_plugin_installed_from_a_source_can_be_upgraded() {
     assert_eq!(preview.version, "1.1.0");
     upgrade(&m).await.unwrap();
     assert_eq!(version(&m), "1.1.0");
+}
+
+#[tokio::test]
+async fn an_uploaded_system_plugin_can_be_upgraded() {
+    let (_github, _docker, m, _dir) = with_github(false).await;
+    let manifest = PluginPackage::parse(
+        &hello("1.0.0", "", "  permissions: []\n").replace("kind: app", "kind: system"),
+        &super::langs(),
+    )
+    .unwrap();
+    let permissions = manifest.manifest.permissions.clone();
+    m.install_package(manifest, &permissions, super::langs())
+        .await
+        .unwrap();
+    assert!(m.is_system(&id()));
+    assert!(!m.is_bundled_system(&id()), "上传的不算随核心带");
+    let next = PluginPackage::parse(
+        &hello("1.1.0", "", "  permissions: []\n").replace("kind: app", "kind: system"),
+        &super::langs(),
+    )
+    .unwrap();
+    let preview = m
+        .preview_upgrade(&id(), UpgradeTo::Upload(Box::new(next)), None, &zh())
+        .await
+        .unwrap();
+    assert_eq!(preview.version, "1.1.0");
 }
 
 /// 核心升级后读不懂旧记录（清单新增了必填字段，插件版本号却没变）：接口重装不了系统插件，升级要先读旧包也走不通。

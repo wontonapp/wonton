@@ -88,6 +88,9 @@ pub struct InstalledRecord {
     pub devices: Vec<InstalledDevice>,
     #[serde(default, skip_serializing_if = "limits_empty")]
     pub limits: PluginLimits,
+    /// 随核心镜像附带、由核心预装和维护。上传的和从商店/来源装的为 false。
+    #[serde(default, skip_serializing_if = "std::ops::Not::not")]
+    pub bundled: bool,
     /// 开关 `lan_webui`（见 [`super::lan::webui`]），默认关。
     #[serde(default)]
     pub lan_webui: bool,
@@ -700,6 +703,7 @@ mod tests {
             relays: Vec::new(),
             firewalled: false,
             proxied: false,
+            bundled: false,
             id: PluginId::parse(id).unwrap(),
             version: "1.0.0".into(),
             source: "services: {}".into(),

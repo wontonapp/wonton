@@ -202,6 +202,7 @@ fn minimal_record(id: &PluginId) -> InstalledRecord {
         relays: Vec::new(),
         firewalled: false,
         proxied: false,
+        bundled: false,
         id: id.clone(),
         version: "1.0.0".into(),
         source: "services: {}".into(),

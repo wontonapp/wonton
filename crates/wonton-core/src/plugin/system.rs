@@ -18,20 +18,23 @@ impl PluginManager {
     pub async fn ensure_system(&self, dir: &Path, backoff: Backoff) -> Result<(), InstallError> {
         for package in self.bundled_in(dir)? {
             let manifest = &package.manifest;
+            let id = manifest.id.clone();
             if manifest.kind != PluginKind::System {
-                tracing::error!(plugin = %manifest.id, "系统插件目录里的插件不是 kind: system，没有安装");
+                tracing::error!(plugin = %id, "系统插件目录里的插件不是 kind: system，没有安装");
                 continue;
             }
-            if self.is_installed(&manifest.id) {
+            if self.is_installed(&id) {
                 // 每个包的工作都搬上堆：预装、升级的 await 链贴着测试线程的栈上限。
-                if self.record_unreadable(&manifest.id) {
+                if self.record_unreadable(&id) {
                     Box::pin(self.reinstall_bundled(package, backoff)).await;
                 } else {
                     Box::pin(self.upgrade_bundled(package)).await;
                 }
+                self.mark_bundled(&id);
                 continue;
             }
             Box::pin(self.preinstall(package, backoff)).await;
+            self.mark_bundled(&id);
         }
         Ok(())
     }
@@ -44,6 +47,20 @@ impl PluginManager {
                     .is_err()
             }
             Ok(None) | Err(_) => false,
+        }
+    }
+
+    /// 记录标成随核心带的：用户从商店、来源或上传装的同名包不算（见 `is_bundled_system`）。
+    fn mark_bundled(&self, id: &PluginId) {
+        let Ok(Some(mut record)) = self.store.load(id) else {
+            return;
+        };
+        if record.bundled {
+            return;
+        }
+        record.bundled = true;
+        if let Err(e) = self.store.save(&record) {
+            tracing::error!(plugin = %id, error = %e, "标记随核心带的系统插件失败");
         }
     }
 
