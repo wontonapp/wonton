@@ -4,12 +4,14 @@ use std::time::Duration;
 
 use serde_json::{Value, json};
 use wonton_protocol::{
-    Answer, BotKeeper, PanelScope, TOOL_CALL_CAPABILITIES_META, TOOL_CALL_USER_META,
+    AgentChainStatus, Answer, BotKeeper, BotRef, ChainTurnReport, ConfirmationState, PanelScope,
+    TOOL_CALL_CAPABILITIES_META, TOOL_CALL_USER_META,
 };
 
 use super::test_setup::setup_with_upstreams;
 use super::upstream::Upstreams;
-use super::{Bus, Caller};
+use super::{AnswerError, Bus, Caller};
+use crate::gateway::agent_chains::AgentChains;
 use crate::http::HttpClient;
 use crate::matrix::Matrix;
 use crate::plugin::PluginId;
@@ -77,6 +79,9 @@ async fn bot(plugin: &str) -> (super::test_setup::Setup, Bot, crate::matrix::fak
     let (caller, id) = caller(plugin);
     let room = "!hermes:wonton.localhost";
     register(&setup.bus, &id, room).await;
+    setup
+        .bus
+        .attach_agent_chains(AgentChains::for_test(setup.dir.path()).unwrap());
     let fake = attach_matrix(&setup.bus, &setup.dir.path().join("matrix")).await;
     fake.state().rooms.insert(
         room.to_owned(),
@@ -131,6 +136,31 @@ async fn wait_for_card(
         tokio::time::sleep(Duration::from_millis(10)).await;
     }
     panic!("等了 5 秒还没有确认卡片");
+}
+
+/// 这个 Bot 在它的房间开一轮，说话人是主人，返回链 ID。
+fn start_turn(s: &super::test_setup::Setup, b: &Bot, session: &str) -> String {
+    s.bus
+        .agent_chains()
+        .unwrap()
+        .ledger()
+        .start_turn(
+            BotRef {
+                plugin_id: b.id.to_string(),
+                bot: "hermes".into(),
+            },
+            ChainTurnReport::Start {
+                session: session.into(),
+                room: b.room.clone(),
+                thread: None,
+                sender: "@owner:wonton.localhost".into(),
+                event_id: format!("${session}"),
+            },
+            None,
+            "@owner:wonton.localhost".into(),
+        )
+        .unwrap()
+        .chain
 }
 
 #[tokio::test]
@@ -243,6 +273,74 @@ async fn a_refused_main_pin_is_not_stored() {
             .is_empty()
     );
     assert!(!s.bus.plugins.store().pins().load(&b.id).unwrap().bots["hermes"].main_consent);
+}
+
+/// 钉页卡片认在这一轮的链上：停链撤回它，等着的那次调用拿到 `chain_stopped`，之后再答不再钉。
+#[tokio::test]
+async fn stopping_the_chain_withdraws_the_main_pin_card() {
+    let (s, b, _fake) = bot("com.example.agent").await;
+    let chain = start_turn(&s, &b, "sess-pin");
+    let mut caller = b.caller.clone();
+    caller.chain = Some(chain.clone());
+    let mut call = s.spawn_as(
+        &caller,
+        "wonton__pin_page",
+        pin_args("app.example.notes", "/one", "main"),
+    );
+    let card = wait_for_card(&s, &mut call).await;
+    let stop = s.bus.stop_chain(&chain).await.unwrap();
+    assert!(
+        stop.cards.contains(&card),
+        "钉页卡片要绑在链上：{:?}",
+        stop.cards
+    );
+    let result = tokio::time::timeout(Duration::from_secs(5), call)
+        .await
+        .expect("停链以后钉页调用没结束（卡片没撤回）")
+        .unwrap();
+    assert_eq!(
+        result.meta.as_ref().unwrap().0["app.wonton/failure"],
+        "chain_stopped"
+    );
+    assert!(matches!(
+        s.bus.confirmations().card(&card).unwrap().state,
+        ConfirmationState::Failed { .. }
+    ));
+    let record = s.bus.plugins.store().pins().load(&b.id).unwrap();
+    assert!(record.bots["hermes"].pins.is_empty(), "撤回了就不该钉上");
+    assert!(!record.bots["hermes"].main_consent);
+    assert!(matches!(
+        s.bus.confirmations().answer(&card, Answer::Approve, None),
+        Err(AnswerError::AlreadyAnswered)
+    ));
+}
+
+/// 卡片绑在链上不影响回答：链还开着时批准照常钉上，之后的回查不误撤。
+#[tokio::test]
+async fn an_approved_main_pin_with_the_chain_alive_is_saved() {
+    let (s, b, _fake) = bot("com.example.agent").await;
+    let chain = start_turn(&s, &b, "sess-pin-ok");
+    let mut caller = b.caller.clone();
+    caller.chain = Some(chain.clone());
+    let mut call = s.spawn_as(
+        &caller,
+        "wonton__pin_page",
+        pin_args("app.example.notes", "/one", "main"),
+    );
+    let card = wait_for_card(&s, &mut call).await;
+    s.bus
+        .confirmations()
+        .answer(&card, Answer::Approve, None)
+        .unwrap();
+    let result = call.await.unwrap();
+    assert!(!result.is_error.unwrap_or(false), "{result:?}");
+    let record = s.bus.plugins.store().pins().load(&b.id).unwrap();
+    assert!(record.bots["hermes"].main_consent);
+    assert_eq!(record.bots["hermes"].pins.len(), 1);
+    assert_eq!(
+        s.bus.agent_chains().unwrap().ledger().status(&chain),
+        Some(AgentChainStatus::Running)
+    );
 }
 
 #[tokio::test]

@@ -245,3 +245,44 @@ async fn a_caller_that_goes_away_withdraws_the_card() {
     assert!(pending.is_empty());
     assert_eq!(s.audit().last().unwrap()["decision"], "withdrawn");
 }
+
+/// 停链抢在开卡片和绑卡片之间：卡片当场撤回，Agent 拿到 Cancelled，批准不再生效。
+#[tokio::test]
+async fn a_permission_card_bound_after_the_stop_is_cancelled() {
+    let s = setup_with_ttl(Duration::from_secs(60)).await;
+    let chains = crate::gateway::agent_chains::AgentChains::for_test(s.dir.path()).unwrap();
+    s.bus.attach_agent_chains(chains.clone());
+    let mut caller = s.caller.clone();
+    caller.bot = Some(super::server::BotIdentity {
+        bot: "main".into(),
+        keeper: wonton_protocol::BotKeeper::User {
+            username: "owner".into(),
+        },
+    });
+    caller.session = Some("sess-1".into());
+    let grant = chains
+        .ledger()
+        .start_turn(
+            wonton_protocol::BotRef {
+                plugin_id: caller.id.to_string(),
+                bot: "main".into(),
+            },
+            wonton_protocol::ChainTurnReport::Start {
+                session: "sess-1".into(),
+                room: "!room:wonton.localhost".into(),
+                thread: None,
+                sender: "@owner:wonton.localhost".into(),
+                event_id: "$turn".into(),
+            },
+            None,
+            "@owner:wonton.localhost".into(),
+        )
+        .unwrap();
+    s.bus.stop_chain(&grant.chain).await.unwrap();
+
+    let mut request = request(full_options());
+    request.session = Some("sess-1".into());
+    let outcome = s.bus.agent_permission(&caller, request).await;
+    assert_eq!(outcome, Ok(AgentPermissionOutcome::Cancelled));
+    assert_eq!(s.audit().last().unwrap()["decision"], "withdrawn");
+}
