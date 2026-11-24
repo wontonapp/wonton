@@ -161,10 +161,8 @@ fun TimelineItemView(
                     ?.let { stringResource(R.string.timeline_profile_rename, it, content.name) }
                     ?: stringResource(R.string.timeline_profile_avatar, content.name),
             )
-            is TimelineContent.DateDivider -> CenteredNote(
-                DateFormat.getDateTimeInstance(DateFormat.FULL, DateFormat.SHORT)
-                    .format(Date(content.timestampMs.toLong())),
-            )
+            is TimelineContent.DateDivider ->
+                DaySeparator(dateLabel(content.timestampMs.toLong()), Modifier.testTag("day-divider"))
             TimelineContent.ReadMarker -> Row(
                 verticalAlignment = Alignment.CenterVertically,
                 horizontalArrangement = Arrangement.spacedBy(WontonTheme.spacing.s8),
