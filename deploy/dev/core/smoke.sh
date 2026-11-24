@@ -180,8 +180,9 @@ x-wonton:
   description: { zh: 冒烟用的模型网关使用方, en: Model gateway consumer for the smoke test }
   permissions: [models]
 YAML
-installed="$("$dev" install "$client_file" --yes 2>/dev/null)" || fail "使用方安装失败：$installed"
-rm -f "$client_file"
+install_err="$(mktemp)"
+installed="$("$dev" install "$client_file" --yes 2>"$install_err")" || fail "使用方安装失败：$(cat "$install_err")"
+rm -f "$client_file" "$install_err"
 expect "使用方安装完成" "$(json status.state <<<"$installed")" running
 client_env() { docker inspect "$model_client" --format '{{range .Config.Env}}{{println .}}{{end}}' | sed -n "s/^$1=//p"; }
 expect "没有网关时模型变量是空的" "$(client_env BASE)|$(client_env KEY)|$(client_env MODEL)" "||"
@@ -255,7 +256,7 @@ for _ in $(seq 60); do [[ "$(plugin_state ai.usemagpie.magpie)" != running ]] &&
 expect "网关停了" "$(plugin_state ai.usemagpie.magpie)" degraded
 expect "网关没启动：核心报网关不可用" "$(request_models)" 503
 expect "错误类别" "$(docker exec "$model_client" cat /tmp/models.json | json error.kind)" models_unavailable
-# 后面 Hermes 和“模型设置”网页两步还要用这个网关，重新起来放着，最后一步再卸。
+# 后面的 Hermes、MCP、files、model-page、restart 几步还要用这个网关，重新起来放着，最后一步再卸。
 docker start "$magpie" >/dev/null
 for _ in $(seq 60); do [[ "$(docker inspect -f '{{.State.Health.Status}}' "$magpie")" == healthy ]] && break; sleep 1; done
 expect "网关重新启动" "$(docker inspect -f '{{.State.Health.Status}}' "$magpie")" healthy
@@ -804,8 +805,11 @@ expect "主人卸掉的 Hermes，核心重启后不装回来" "$(plugin_state co
 
 fi
 if step uninstall "卸载干净"; then
-# 要从镜像里现装的网关（models 一步）用到了“模型设置”网页和 restart 两处，最后一步才卸。
-expect "卸载模型网关" "$("$dev" uninstall ai.usemagpie.magpie --purge | json data_removed)" true
+# 从镜像里现装的网关后面几步一直在用，到这一步才卸。
+gateway_report="$("$dev" uninstall ai.usemagpie.magpie --purge)"
+expect "删除了网关容器" "$(json containers <<<"$gateway_report" | grep -c magpie)" 1
+expect "删除了网关网络" "$(json networks <<<"$gateway_report")" "[\"$magpie_network\"]"
+expect "删除了网关数据" "$(json data_removed <<<"$gateway_report")" true
 started=$(date +%s)
 report="$("$dev" uninstall app.grafana --purge)"
 uninstall_seconds=$(($(date +%s) - started))
