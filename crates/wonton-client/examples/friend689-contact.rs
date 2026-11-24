@@ -7,8 +7,7 @@ use std::sync::Arc;
 use std::time::{Duration, Instant};
 
 use wonton_client::{
-    Action, ChatAccount, ClientCore, FriendsAction, HomeAction, HomeStatus, PairingFailure,
-    PairingStatus,
+    Action, ChatAccount, ClientCore, FriendsAction, HomeAction, HomeStatus, PairingStatus,
 };
 use wonton_protocol::OwnerProfileUpdate;
 
@@ -57,12 +56,7 @@ async fn run(dir: &str, code: &str) {
     let deadline = Instant::now() + WAIT;
     let mut pending = false;
     loop {
-        if !paired
-            && let Some(PairingStatus::Failed {
-                reason: PairingFailure::PendingApproval,
-                ..
-            }) = &core.home().pairing
-        {
+        if !paired && let Some(PairingStatus::JoinPending { .. }) = &core.home().pairing {
             if !pending {
                 println!("等管理员同意加入");
                 let _ = std::io::stdout().flush();

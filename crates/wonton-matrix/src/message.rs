@@ -535,9 +535,10 @@ fn failure_of(error: crate::Error) -> wonton_protocol::SendFailure {
     use wonton_protocol::SendFailure;
     match error {
         Error::Transport(_) | Error::NotReady(_) => SendFailure::Offline,
-        Error::Unauthorized { .. } | Error::Forbidden { .. } | Error::InvalidInput(_) => {
-            SendFailure::Rejected
-        }
+        Error::Unauthorized { .. }
+        | Error::Forbidden { .. }
+        | Error::NotInvited(_)
+        | Error::InvalidInput(_) => SendFailure::Rejected,
         Error::TooLarge(_) => SendFailure::TooLarge,
         Error::UnsupportedType(_) => SendFailure::UnsupportedType,
         Error::ReplyTarget(_) => SendFailure::ReplyTarget,
