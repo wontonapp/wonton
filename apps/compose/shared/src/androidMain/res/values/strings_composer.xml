@@ -12,6 +12,8 @@
     <string name="composer_photo">Photo</string>
     <!-- Screen-reader label of the round send button at the right of the chat composer. -->
     <string name="composer_send">Send</string>
+    <!-- Screen-reader label of the check button that submits the edited text while a message is being edited. -->
+    <string name="composer_edit_confirm">Edit</string>
     <string name="composer_file_unreadable">Couldn\'t read this file. Copy it again or choose another file.</string>
     <!-- Shown when the attachment tray is full. Argument: the most attachments one message can carry. -->
     <string name="composer_tray_full">You can send up to %1$d attachments at a time.</string>

@@ -100,6 +100,13 @@ impl ClientCore {
                     self.dispatch_ui_fake_agent(action);
                     Ok(())
                 }
+                // 外壳状态（深色截图、字号）照走真设置；配对等假状态在别的 ViewModel 里，不受影响。
+                Action::Settings { action } => {
+                    if let SettingsAction::SetThemeMode { mode } = action {
+                        self.appearance.set_theme_mode(mode)?;
+                    }
+                    Ok(())
+                }
                 _ => Ok(()),
             };
         }

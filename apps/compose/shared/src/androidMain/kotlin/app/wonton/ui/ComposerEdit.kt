@@ -16,6 +16,7 @@ import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.res.stringResource
+import androidx.compose.ui.platform.testTag
 import androidx.compose.ui.text.style.TextOverflow
 import app.wonton.client.ClientCore
 import app.wonton.protocol.Action
@@ -34,7 +35,7 @@ import app.wonton.ui.design.WontonIconButton
 @Composable
 internal fun ComposerEditBar(edit: ComposerEdit, onCancel: () -> Unit) {
     Row(
-        Modifier.fillMaxWidth().padding(
+        Modifier.fillMaxWidth().testTag("composer-edit-bar").padding(
             start = WontonTheme.spacing.s16,
             end = WontonTheme.spacing.s8,
             bottom = WontonTheme.spacing.s4,
@@ -60,6 +61,7 @@ internal fun ComposerEditBar(edit: ComposerEdit, onCancel: () -> Unit) {
                 color = WontonTheme.colors.textSecondary.toColor(),
                 maxLines = 1,
                 overflow = TextOverflow.Ellipsis,
+                modifier = Modifier.testTag("edit-summary"),
             )
         }
         WontonIconButton(WontonIcon.Close, stringResource(R.string.common_close), onCancel)

@@ -12,6 +12,7 @@
     <string name="composer_photo">照片</string>
     <!-- Screen-reader label of the round send button at the right of the chat composer. -->
     <string name="composer_send">发送</string>
+    <string name="composer_edit_confirm">确认</string>
     <string name="composer_file_unreadable">无法读取这个文件。请重新复制，或选择其他文件。</string>
     <string name="composer_tray_full">一次最多发 %1$d 个附件。</string>
     <string name="composer_attachment_remove">移除 %1$s</string>

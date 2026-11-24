@@ -69,6 +69,7 @@ import app.wonton.ui.design.WontonIconButton
 import app.wonton.ui.design.WontonTheme
 import app.wonton.ui.design.toColor
 import app.wonton.ui.icons.Attach
+import app.wonton.ui.icons.Check
 import app.wonton.ui.icons.Close
 import app.wonton.ui.icons.Compose
 import app.wonton.ui.icons.Code
@@ -187,6 +188,7 @@ fun Composer(
         draft = draft,
         commands = commands,
         agentStop = agentStop,
+        editing = edit != null,
         isEmpty = isEmpty,
         enabled = enabled,
         focusRequester = focusRequester,
@@ -269,6 +271,7 @@ private fun ComposerBar(
     draft: String,
     commands: List<RoomCommand>,
     agentStop: RoomAgentStop,
+    editing: Boolean,
     isEmpty: Boolean,
     enabled: Boolean,
     focusRequester: FocusRequester,
@@ -318,7 +321,7 @@ private fun ComposerBar(
             enter = scaleIn(motion) + fadeIn(motion),
             exit = scaleOut(motion) + fadeOut(motion),
         ) {
-            SendButton { if (enabled) send(dropCommand ?: draft) }
+            SendButton(editing) { if (enabled) send(dropCommand ?: draft) }
         }
     }
 }
@@ -563,9 +566,12 @@ private fun ComposerField(
 }
 
 @Composable
-private fun SendButton(onClick: () -> Unit) {
+private fun SendButton(editing: Boolean, onClick: () -> Unit) {
     val colors = WontonTheme.colors
-    val sendLabel = stringResource(R.string.composer_send)
+    // 编辑时是确认（勾），不是发送（ADR-0109 第 10 节）。
+    val sendLabel = stringResource(
+        if (editing) R.string.composer_edit_confirm else R.string.composer_send,
+    )
     Box(
         Modifier.size(WontonTheme.size.target)
             .clickable(role = Role.Button, onClick = onClick)
@@ -577,7 +583,7 @@ private fun SendButton(onClick: () -> Unit) {
             contentAlignment = Alignment.Center,
         ) {
             Icon(
-                WontonIcon.Send,
+                if (editing) WontonIcon.Check else WontonIcon.Send,
                 // 装饰：外层的可点区域已经带了“发送”。
                 contentDescription = null,
                 modifier = Modifier.size(WontonTheme.size.iconSmall),

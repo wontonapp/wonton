@@ -506,19 +506,24 @@ pub(super) fn text_message(
     let body = paragraphs.join("\n\n");
     let event_id = format!("${id}");
     let sender_name = if own { "Owner" } else { "Echo" };
-    TimelineMessage {
-        actions: vec![
-            MessageAction::Copy { text: body.clone() },
-            MessageAction::Reply {
-                message: QuotedMessage {
-                    event_id: event_id.clone(),
-                    sender_id: sender.into(),
-                    sender_name: sender_name.into(),
-                    content: QuotedContent::Text { text: body.clone() },
-                },
+    let mut actions = vec![
+        MessageAction::Copy { text: body.clone() },
+        MessageAction::Reply {
+            message: QuotedMessage {
+                event_id: event_id.clone(),
+                sender_id: sender.into(),
+                sender_name: sender_name.into(),
+                content: QuotedContent::Text { text: body.clone() },
             },
-            MessageAction::Forward,
-        ],
+        },
+    ];
+    // 编辑的规则照真核心的菜单：只有自己的、正文非空的文字消息给（`chat/menu.rs`）。
+    if own && !body.trim().is_empty() {
+        actions.push(MessageAction::Edit { text: body.clone() });
+    }
+    actions.push(MessageAction::Forward);
+    TimelineMessage {
+        actions,
         event_id: Some(event_id),
         sender_id: sender.into(),
         sender_name: sender_name.into(),
