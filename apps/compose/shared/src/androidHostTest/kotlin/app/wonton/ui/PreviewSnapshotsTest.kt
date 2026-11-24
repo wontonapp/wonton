@@ -37,6 +37,9 @@ class PreviewSnapshotsTest {
     fun agentDegraded() = paparazzi.snapshot { AgentDegradedPreview() }
 
     @Test
+    fun agentDegradedInstalledFailure() = paparazzi.snapshot { AgentDegradedInstalledFailurePreview() }
+
+    @Test
     fun agentInstallFailed() = paparazzi.snapshot { AgentInstallFailedPreview() }
 
     @Test
