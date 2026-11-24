@@ -255,12 +255,18 @@ class Friend689Base: XCTestCase {
     /// 屏幕当前是不是深色：把整屏缩到 1 像素读亮度。
     func screenIsDark() -> Bool {
         let image = XCUIScreen.main.screenshot().image
-        let renderer = UIGraphicsImageRenderer(size: CGSize(width: 1, height: 1))
-        let pixel = renderer.image { image.draw(in: CGRect(origin: .zero, size: CGSize(width: 1, height: 1))) }
-            .cgImage!
-            .dataProvider!.data!
-        let bytes = CFDataGetBytePtr(pixel)!
-        let luma = 0.299 * Double(bytes[0]) + 0.587 * Double(bytes[1]) + 0.114 * Double(bytes[2])
+        let side = CGSize(width: 1, height: 1)
+        let renderer = UIGraphicsImageRenderer(size: side)
+        let draw: (UIGraphicsImageRendererContext) -> Void = { (ctx: UIGraphicsImageRendererContext) in
+            image.draw(in: CGRect(origin: .zero, size: side))
+        }
+        let pixel = renderer.image(actions: draw)
+        let data: CFData = pixel.cgImage!.dataProvider!.data!
+        let bytes: UnsafePointer<UInt8> = CFDataGetBytePtr(data)!
+        let r: Double = 0.299 * Double(bytes[0])
+        let g: Double = 0.587 * Double(bytes[1])
+        let b: Double = 0.114 * Double(bytes[2])
+        let luma: Double = r + g + b
         return luma < 128
     }
 

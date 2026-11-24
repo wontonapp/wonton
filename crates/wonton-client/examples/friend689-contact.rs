@@ -35,35 +35,44 @@ fn main() {
 }
 
 async fn run(dir: &str, code: &str) {
+    // 客户端建起来时自己会写 servers.json：必须在建之前看这个目录配过没有。
+    // 配过再拿新码 PairHome 会被当成 CodeUsed，直接等它用存下的会话重连。
+    let paired = std::fs::read_to_string(format!("{dir}/servers.json"))
+        .map(|saved| !saved.trim().is_empty())
+        .unwrap_or(false);
     let core: Arc<ClientCore> = ClientCore::new(dir.to_owned()).expect("建客户端");
-    core.dispatch(Action::Home {
-        action: HomeAction::PairHome {
-            code: wonton_protocol::SecretString::new(code.to_owned()),
-            device_name: DISPLAY_NAME.to_owned(),
-        },
-    })
-    .expect("派发 PairHome");
+    if !paired {
+        core.dispatch(Action::Home {
+            action: HomeAction::PairHome {
+                code: wonton_protocol::SecretString::new(code.to_owned()),
+                device_name: DISPLAY_NAME.to_owned(),
+            },
+        })
+        .expect("派发 PairHome");
+    }
     // 加入别人家的码要管理员同意；同意之后拿同一个码再配一次才会配上，所以失败在这一步就自己重试。
     let deadline = Instant::now() + WAIT;
     let mut pending = false;
     loop {
-        if let Some(PairingStatus::Failed {
-            reason: PairingFailure::PendingApproval,
-            ..
-        }) = &core.home().pairing
-        {
-            if !pending {
-                println!("等管理员同意加入");
-                let _ = std::io::stdout().flush();
-                pending = true;
+        if !paired {
+            if let Some(PairingStatus::Failed {
+                reason: PairingFailure::PendingApproval,
+                ..
+            }) = &core.home().pairing
+            {
+                if !pending {
+                    println!("等管理员同意加入");
+                    let _ = std::io::stdout().flush();
+                    pending = true;
+                }
+                core.dispatch(Action::Home {
+                    action: HomeAction::PairHome {
+                        code: wonton_protocol::SecretString::new(code.to_owned()),
+                        device_name: DISPLAY_NAME.to_owned(),
+                    },
+                })
+                .expect("重试 PairHome");
             }
-            core.dispatch(Action::Home {
-                action: HomeAction::PairHome {
-                    code: wonton_protocol::SecretString::new(code.to_owned()),
-                    device_name: DISPLAY_NAME.to_owned(),
-                },
-            })
-            .expect("重试 PairHome");
         }
         if matches!(core.home().status, HomeStatus::Connected) {
             break;
