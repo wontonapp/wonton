@@ -6,6 +6,7 @@ use serde_json::{Value, json};
 use wonton_client::{Action, TimelineContent, TimelineItem};
 use wonton_matrix::testkit::eventually;
 use wonton_matrix::{ChatRoom, EventId, MatrixSession, OwnedEventId, OwnedRoomId, RelationType};
+use wonton_protocol::BotChatAvailability;
 use wonton_protocol::{BotActivityFacts, ChatAction, ChoiceSend, ChoicesState, MessageChoices};
 
 use super::confirmation::joined_direct_chat;
@@ -139,6 +140,7 @@ async fn setup() -> Setup {
         plugin_id: PLUGIN.to_owned(),
         bot: Some("default".into()),
         user_id: hermes.user_id().to_string(),
+        chat: BotChatAvailability::Available,
         running: true,
         model_requests: 0,
         tool_calls: 0,

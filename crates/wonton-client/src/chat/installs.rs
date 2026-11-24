@@ -435,6 +435,7 @@ mod tests {
             is_direct: true,
             direct_user_id: Some(bot.into()),
             plugin: None,
+            bot_chat: None,
             is_encrypted: true,
             is_read_only: false,
             membership: RoomMembership::Joined,

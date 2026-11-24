@@ -7,6 +7,7 @@ use wonton_client::{
     TimelineContent, TimelineItem, TimelineScroll,
 };
 use wonton_matrix::{ChatRoom, MatrixSession, MessageBody, OwnedRoomId};
+use wonton_protocol::BotChatAvailability;
 use wonton_protocol::{
     BotActivityFacts, SideChatCard, SideChatState, TimelineAction, TimelineTarget,
 };
@@ -60,6 +61,7 @@ async fn finish_setup(
         plugin_id: PLUGIN.to_owned(),
         bot: Some("default".into()),
         user_id: bot.user_id().to_string(),
+        chat: BotChatAvailability::Available,
         running: true,
         model_requests: 0,
         tool_calls: 0,

@@ -287,13 +287,9 @@ impl ClientCore {
         Arc::new(UnreadSubscription::new(self.views().chat.subscribe()))
     }
 
-    /// 发起私聊时能直接选的人：已装插件的 Bot 在前，然后是私聊过的人。`query` 不为空时按名字和 ID 筛。
+    /// 发起私聊时能直接选的人：核心给的可聊 Bot 在前，然后是私聊过的人。`query` 不为空时按名字和 ID 筛。
     pub fn chat_contacts(&self, query: String) -> Vec<ChatContact> {
-        let installed = self.scope().plugins.view().installed;
-        let plugins = installed
-            .map(|installed| installed.plugins)
-            .unwrap_or_default();
-        self.scope().chat.contacts(&query, &plugins)
+        self.scope().chat.contacts(&query)
     }
 
     /// 把发起私聊时输入的用户名或 Matrix ID 变成完整的 ID：只输用户名时补上本账号的服务器。不合法时返回

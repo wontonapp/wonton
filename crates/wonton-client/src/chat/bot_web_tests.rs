@@ -3,7 +3,7 @@ use std::sync::Mutex;
 use std::sync::atomic::AtomicU64;
 use tokio::sync::{Notify, watch};
 use wonton_protocol::{
-    BotActivityFacts, BotView, BotWebFailure, BotWebPage, ChatViewModel, HomeStatus,
+    BotActivityFacts, BotChatAvailability, BotView, BotWebPage, ChatViewModel, HomeStatus,
 };
 
 use crate::chat::bot_activity::Activity;
@@ -81,6 +81,7 @@ fn record() -> Record {
             plugin_id: "app.bot".into(),
             bot: Some("alice".into()),
             user_id: "@opaque:home".into(),
+            chat: BotChatAvailability::Available,
             running: true,
             model_requests: 0,
             tool_calls: 0,
@@ -108,6 +109,7 @@ fn request() -> Request {
 
 fn profile(id: BotRef, user: &str) -> BotView {
     BotView {
+        availability: Default::default(),
         bot: id,
         user_id: user.into(),
         web: None,

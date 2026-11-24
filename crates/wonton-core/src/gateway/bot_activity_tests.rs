@@ -100,7 +100,7 @@ impl Home {
                 lifecycle,
                 ImageWorker::in_process(),
             )
-            .with_matrix(Some(matrix)),
+            .with_matrix(Some(matrix.clone())),
         );
         // 有 Bot 记录的 Agent 必须用带总线令牌的地址；先记一个固定令牌的 Bot，装的时候沿用。
         plugins.bot_records_for_test(
@@ -144,6 +144,7 @@ impl Home {
                 http,
                 tunnel,
             )
+            .with_matrix(Some(matrix))
             .with_mcp(Some(bus.endpoint())),
         );
         let app = router(gateway.clone());
@@ -157,6 +158,24 @@ impl Home {
             _entry: entry,
             _dir: dir,
         }
+    }
+
+    /// 一个已加入的家人 mia 和她的一台设备。
+    fn family_peer(&self) -> TunnelPeer {
+        self.gateway
+            .members
+            .invite(crate::members::MemberRecord {
+                role_id: "family".into(),
+                ..crate::members::MemberRecord::for_test("mia")
+            })
+            .unwrap();
+        self.gateway.members.mark_joined("mia").unwrap();
+        let peer = TunnelPeer(SecretKey::generate().public());
+        self.tunnel()
+            .devices
+            .add_if(peer.0, None, Some("mia".into()), |_| true)
+            .unwrap();
+        peer
     }
 
     fn request(&self, after: Option<u64>, peer: Option<TunnelPeer>) -> hyper::Request<Body> {
@@ -317,6 +336,42 @@ async fn a_current_revision_waits_and_a_counter_change_releases_it() {
         assert_eq!(current.bots[0].model_requests, 0);
         assert!(current.rev > changed.rev);
     }
+}
+
+/// 家人的列表和活动都不借用主人的私人 Bot：身份仍能对上旧房间，但计数不算他的。
+#[tokio::test]
+async fn a_family_device_sees_the_private_bot_without_its_activity() {
+    let h = Home::start(Duration::from_secs(60)).await;
+    let _active = h.gateway.plugins.activity.start_model(&id());
+    let owner = h.report(None).await;
+    assert_eq!(
+        owner.bots[0].chat,
+        wonton_protocol::BotChatAvailability::Available
+    );
+    assert_eq!(owner.bots[0].model_requests, 1);
+
+    let mia = h.family_peer();
+    let family = report(
+        h.app
+            .clone()
+            .oneshot(h.request(None, Some(mia)))
+            .await
+            .unwrap(),
+    )
+    .await;
+    let bot = family
+        .bots
+        .iter()
+        .find(|bot| bot.user_id == "@activity:test")
+        .expect("旧房间还认得出这个 Bot");
+    assert_eq!(bot.model_requests, 0);
+    assert_eq!((bot.tool_calls, bot.waiting, bot.running), (0, 0, false));
+    assert_eq!(
+        bot.chat,
+        wonton_protocol::BotChatAvailability::Unavailable {
+            reason: wonton_protocol::BotChatUnavailable::OtherPrivateBot
+        }
+    );
 }
 
 #[tokio::test]

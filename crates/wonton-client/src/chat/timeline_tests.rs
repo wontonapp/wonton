@@ -188,6 +188,7 @@ fn chat_view(bots: &[&str]) -> ChatViewModel {
             .iter()
             .map(|user_id| BotView {
                 chat: Default::default(),
+                availability: Default::default(),
                 user_id: (*user_id).to_owned(),
                 bot: BotRef {
                     plugin_id: "app.hermes".into(),

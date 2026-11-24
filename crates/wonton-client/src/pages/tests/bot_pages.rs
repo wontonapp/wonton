@@ -12,6 +12,7 @@ fn bot(name: &str, url: &str) -> BotView {
         cross_origin_isolated: false,
     };
     BotView {
+        availability: Default::default(),
         user_id: format!("@{name}:home"),
         bot,
         name: name.into(),

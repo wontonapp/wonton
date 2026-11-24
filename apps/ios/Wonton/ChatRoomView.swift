@@ -235,6 +235,9 @@ private extension ChatRoomView {
                     selectedConfirmation = nil
                     showingConfirmations = true
                 }
+                if let notice = botChatNotice {
+                    BotChatNoticeRow(text: notice)
+                }
                 if !isReadOnly, threadRoot == nil, onboarding.viewModel.defaultBotVisibility == .visible,
                    let bot = onboarding.viewModel.defaultBotUserId,
                    model.viewModel.rooms.first(where: { $0.roomId == roomId })?.directUserId == bot,
@@ -254,7 +257,9 @@ private extension ChatRoomView {
                     jumpToReply: { replyJump($0) },
                     menuOpen: commandMenuOpen,
                     openChanged: { commandMenuOpen = $0 },
-                    editing: timeline.editing
+                    editing: timeline.editing,
+                    isEnabled: canSend,
+                    disabledProblem: sendBlockedProblem
                 )
                 .onGeometryChange(for: CGFloat.self) { $0.frame(in: .global).minY } action: { top in
                     pin.noteComposer(top: top)
@@ -626,6 +631,59 @@ private extension ChatRoomView {
 
     var isReadOnly: Bool {
         model.viewModel.rooms.first { $0.roomId == roomId }?.isReadOnly ?? false
+    }
+
+    /// 这个私聊的 Bot 现在能不能聊；房间里没这条事实时退回 Bot 列表，普通人私聊为空。
+    var botChat: BotChatAvailability? {
+        let row = model.viewModel.rooms.first { $0.roomId == roomId }
+        if let chat = row?.botChat { return chat }
+        return row?.directUserId.flatMap { user in
+            model.viewModel.bots.first { $0.userId == user }?.availability
+        }
+    }
+
+    /// 不能聊时输入框上方写一句为什么；能用或不是 Bot 时为空。
+    var botChatNotice: LocalizedStringResource? {
+        guard let availability = botChat else { return nil }
+        switch availability {
+        case .available:
+            return nil
+        case let .unavailable(reason):
+            switch reason {
+            case .otherPrivateBot: return .Chat.roomBotOtherPrivate
+            case .grantNotActive: return .Chat.roomBotGrantRevoked
+            default: return .Chat.roomBotUnavailable
+            }
+        case .unknown:
+            return .Chat.roomBotUnknown
+        }
+    }
+
+    /// 确定的不能用才拦发送；资格未知（离线、老核心）照常发，进离线队列。
+    var canSend: Bool {
+        guard let availability = botChat else { return true }
+        if case .unavailable = availability { return false }
+        return true
+    }
+
+    var sendBlockedProblem: Problem? {
+        guard !canSend, let notice = botChatNotice else { return nil }
+        return Problem(title: String(localized: notice))
+    }
+}
+
+/// 不能聊时输入框上方的一句话；房间和历史照留，只是不发。
+private struct BotChatNoticeRow: View {
+    let text: LocalizedStringResource
+    @Environment(\.wontonColors) private var colors
+
+    var body: some View {
+        Text(text)
+            .wontonText(WontonTheme.typography.body)
+            .foregroundStyle(Color(colors.textSecondary))
+            .frame(maxWidth: .infinity, alignment: .leading)
+            .padding(.horizontal, WontonTheme.spacing.pageInset)
+            .padding(.vertical, WontonTheme.spacing.s4)
     }
 }
 

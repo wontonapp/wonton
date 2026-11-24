@@ -52,6 +52,7 @@ fn room(id: &str, direct: Option<&str>) -> RoomRow {
         is_direct: direct.is_some(),
         direct_user_id: direct.map(str::to_owned),
         plugin: None,
+        bot_chat: None,
         is_encrypted: true,
         is_read_only: false,
         membership: RoomMembership::Joined,

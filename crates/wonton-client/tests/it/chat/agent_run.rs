@@ -9,6 +9,7 @@ use serde_json::{Value, json};
 use wonton_client::{Action, Answer, MessageContent, TimelineContent};
 use wonton_matrix::testkit::eventually;
 use wonton_matrix::{ChatRoom, MatrixSession, Membership, RelationType};
+use wonton_protocol::BotChatAvailability;
 use wonton_protocol::{
     AgentRunChoice, AgentRunState, BotActivityFacts, ChoiceSend, TimelineAction, TimelineTarget,
 };
@@ -101,6 +102,7 @@ async fn setup() -> Setup {
         plugin_id: PLUGIN.to_owned(),
         bot: Some("default".into()),
         user_id: hermes.user_id().to_string(),
+        chat: BotChatAvailability::Available,
         running: true,
         model_requests: 0,
         tool_calls: 0,
@@ -337,6 +339,7 @@ async fn an_offline_bot_shows_uncertain_until_it_is_back() {
         plugin_id: PLUGIN.to_owned(),
         bot: Some("default".into()),
         user_id: hermes.user_id().to_string(),
+        chat: BotChatAvailability::Available,
         running: false,
         model_requests: 0,
         tool_calls: 0,
