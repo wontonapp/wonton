@@ -435,7 +435,7 @@ impl PluginManager {
         }
         drop(plugins);
         if self.egress_config()?.source == wonton_protocol::EgressProxySource::Plugin
-            && self.egress_provider(langs)?.id == *id
+            && self.egress_provider_id().as_ref() == Some(id)
         {
             return Err(InstallError::Conflict(l10n::text(
                 langs,
@@ -511,7 +511,7 @@ impl PluginManager {
     async fn begin_uninstall(&self, id: &PluginId, langs: &Languages) -> Result<(), InstallError> {
         let _changing = self.egress.changing.lock().await;
         if self.egress_config()?.source == wonton_protocol::EgressProxySource::Plugin
-            && self.egress_provider(langs)?.id == *id
+            && self.egress_provider_id().as_ref() == Some(id)
         {
             return Err(InstallError::Conflict(l10n::text(
                 langs,

@@ -4,6 +4,7 @@
 
 use std::collections::{BTreeMap, BTreeSet};
 use std::sync::{Arc, Mutex, MutexGuard};
+use std::time::Duration;
 
 use axum::body::Bytes;
 use axum::extract::{Request, State};
@@ -151,6 +152,8 @@ struct Resources {
     pull_error: Option<String>,
     /// 名字里有这段的镜像不受 `pull_error` 影响，还在本地。
     pull_spared: Option<String>,
+    /// 拉镜像的请求拖这么久才回，模拟拉不完（客户端先超时）。
+    pull_delay: Option<Duration>,
     /// 查不到的镜像：查它和用它创建容器都回 404。模拟 containerd 镜像存储下镜像记录被清掉（#666）。
     missing_images: BTreeSet<String>,
     /// Docker 登记的运行时；没设时只有 runc。
@@ -468,6 +471,11 @@ impl FakeDocker {
         self.lock().pull_error = message.map(str::to_owned);
     }
 
+    /// 之后拉镜像的请求拖 `delay` 才回应，让客户端先超时。
+    pub fn slow_pulls(&self, delay: Duration) {
+        self.lock().pull_delay = Some(delay);
+    }
+
     /// 同 [`Self::fail_pulls`]，但名字里有 `spared` 的镜像还在本地。
     pub fn fail_pulls_except(&self, spared: &str, message: &str) {
         let mut docker = self.lock();
@@ -633,6 +641,13 @@ async fn handle(State(fake): State<FakeDocker>, request: Request) -> Response {
             });
         matches.then(|| docker.committed_create.take()).flatten()
     };
+    let pull_delay = fake.lock().pull_delay;
+    if method == Method::POST
+        && api_path(&uri) == "/images/create"
+        && let Some(delay) = pull_delay
+    {
+        tokio::time::sleep(delay).await;
+    }
     let response = serve(&fake, &method, &uri, &body);
     if let Some((name, hold)) = committed
         && response.status() == StatusCode::CREATED

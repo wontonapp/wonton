@@ -518,8 +518,9 @@ plugin-install-img-worker-host-exited = 画像処理のヘルパーが終了し�
 plugin-install-img-worker-host-not-ready = 画像処理のヘルパーが準備できませんでした：{ $error }
 plugin-install-img-worker-host-protocol = 画像処理のヘルパーのプロトコルバージョンは { $got } ですが、コアは { $want } です
 
-## 预装（启动时随服务器带的包）失败的原因。
+## 预装（启动时随服务器带的包）进行不下去的原因。
 plugin-install-preinstall-retrying = プリインストールに失敗しました（{ $attempts } 回試行、自動で再試行します）
+plugin-install-preinstall-waiting = プロキシがまだ準備できていません（自動で再試行します）
 plugin-install-preinstall-failed = プリインストールに失敗しました
 
 # ── 能力依存（capabilities.rs、ADR-0053）──────────────────────────────────

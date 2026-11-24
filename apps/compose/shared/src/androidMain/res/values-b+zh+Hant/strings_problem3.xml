@@ -13,6 +13,8 @@
     <string name="problem_plugin_core_upgrading_title">家用伺服器正在更新</string>
     <!-- Next step: look at the devices again and choose one that's available. -->
     <string name="problem_plugin_device_unavailable_next_step">重新查看裝置後再試。</string>
+    <!-- Next step: retry once it is up; look at its install page if it stays stuck. -->
+    <string name="problem_plugin_egress_proxy_waiting_next_step">等它起來後重試；一直不動，去代理應用程式的安裝頁看記錄檔。</string>
     <!-- Problem title: a port the app opens on the local network is used by another container or program. -->
     <string name="problem_plugin_lan_port_taken_title">連接埠被佔用</string>
     <!-- Next step: choose an interface or address in the local network settings, then try again. -->

@@ -134,6 +134,10 @@ impl InstallError {
             Self::GpuUnavailable(_) => "gpu_unavailable",
             Self::DeviceUnavailable(_) => "device_unavailable",
             Self::LanUnavailable(_) => "lan_unavailable",
+            Self::EgressProxyUnavailable {
+                reason: EgressFailure::Waiting,
+                ..
+            } => "egress_proxy_waiting",
             Self::EgressProxyUnavailable { .. } => "egress_proxy_unavailable",
             Self::ImagesUnavailable(_) => "images_unavailable",
             Self::Unhealthy(_) => "unhealthy",
