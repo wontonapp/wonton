@@ -169,9 +169,7 @@ final class ClientsDomainWalkthroughTests: XCTestCase {
             suffixField.typeText("example.test")
             XCTAssertEqual(suffixField.value as? String, "example.test", "域名没清干净")
         }
-        if app.keyboards.count > 0 {
-            app.typeText("\n")
-        }
+        // 键盘不专门收：滑动照样能滚列表（typeText 的回车会去找键盘上的 return 键，键位标识不稳）。
         // “其他”在懒加载列表的更下面，往上滑。
         var other: XCUIElement?
         for _ in 0..<4 where other == nil {
