@@ -136,9 +136,13 @@ final class ClientsDomainWalkthroughTests: XCTestCase {
             waitAnyButton(["Later", "稍后"], timeout: 10)?.tap()
             XCTAssertTrue(UITestSidebar.waitForChatList(app, timeout: 60), "没到聊天列表")
         }
-        // 刚配对完时设置可能还是配对前的旧快照（没有入口）：退回去重开，等它自己刷过来。
+        // 刚配对完时设置可能还是配对前的旧快照（没有入口）：重启一版 App 强制重建，再从聊天列表走。
+        app.terminate()
+        app.launch()
+        XCTAssertTrue(UITestSidebar.waitForChatList(app, timeout: 60), "重启后没到聊天列表")
+        // 仍没入口就退回去重开，等它自己刷过来。
         var entered = false
-        for _ in 0..<12 where !entered {
+        for _ in 0..<6 where !entered {
             guard openSettings() else { continue }
             entered = tapRow("HTTPS and domain", timeout: 15)
             if !entered {
