@@ -308,7 +308,6 @@ private extension ComposerView {
 
     /// 旁聊里一次发几张：说明跟第一张走，发出去了才清输入框。
 
-
     private func send() {
         let blank = draft.wrappedValue.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty
         guard !blank || (editing == nil && !composer.attachments.isEmpty) else { return }

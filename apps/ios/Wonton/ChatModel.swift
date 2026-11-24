@@ -134,7 +134,6 @@ final class ChatModel {
         draftStore.restore(stored, in: draftKey(target))
     }
 
-
     /// 每次写草稿都带上正在回复的那条，不带核心会把存着的回复对象清掉。
     func saveDraft(_ target: TimelineTarget) {
         let key = draftKey(target)
@@ -151,7 +150,6 @@ final class ChatModel {
         saveDraft(target)
         replyFocusRevision += 1
     }
-
 
     func cancelReply(in target: TimelineTarget) {
         draftStore.setReply(nil, in: draftKey(target))
