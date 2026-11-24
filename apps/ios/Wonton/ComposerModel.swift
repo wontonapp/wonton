@@ -23,8 +23,17 @@ final class ComposerModel {
     var attachments: [ComposerAttachment] { viewModel?.attachments ?? [] }
     var outgoing: [OutgoingMessage] { viewModel?.outgoing ?? [] }
     var maxAttachments: UInt32 { viewModel?.maxAttachments ?? 0 }
-    /// 系统选择器这次还能选几个；附件区满了是 0。
+    /// 主对话的附件区还剩几个位置；旁聊里照片不停在附件区，选择器读的是 [`photoRoom`]。
     var remaining: Int { max(0, Int(maxAttachments) - attachments.count) }
+
+    /// 一次最多带几张照片：主对话问核心的附件区，旁聊不上附件区、照片选好就发，按核心的默认上限。
+    var photoLimit: Int { threadRoot == nil ? Int(maxAttachments) : Self.sideChatPhotos }
+
+    /// 选择器这会儿还能选几张：主对话是附件区余量，旁聊是一次能带的张数。
+    var photoRoom: Int { threadRoot == nil ? remaining : photoLimit }
+
+    /// 核心的 `max_attachments` 默认值（`wonton-client` 的 `composer/state.rs` 的 `MAX_ATTACHMENTS`）。
+    private static let sideChatPhotos = 10
 
     init(chat: ChatModel, roomId: String, threadRoot: String? = nil) {
         self.chat = chat

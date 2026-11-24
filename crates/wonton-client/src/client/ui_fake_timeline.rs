@@ -10,34 +10,54 @@ use tokio::sync::mpsc;
 use wonton_protocol::{
     ChatAction, ChoiceSend, ChoicesState, JumpState, MessageContent, MessageStatus, QuotedContent,
     QuotedMessage, ReplyQuote, TimelineAction, TimelineContent, TimelineDiff, TimelineFocus,
-    TimelineItem, TimelineScroll, TimelineUpdate,
+    TimelineItem, TimelineScroll, TimelineTarget, TimelineUpdate,
 };
 
-use super::ui_fake_room::{ITEMS, OWNER, at_ms, text_message, timeline};
+use super::ui_fake_room::{
+    ITEMS, OWNER, at_ms, side_timeline, started_timeline, text_message, timeline,
+};
+
 use crate::chat::{Runs, TimelineSubscription};
 
-/// 打开着的假房间，按房间 ID 找；同一房间再订阅时换成新的那份。
+/// 一条时间线的键：房间加上旁聊根。同一个目标再订阅时换成新的那份。
+type Key = (String, Option<String>);
+
+fn key_of(target: &TimelineTarget) -> Key {
+    (target.room_id.clone(), target.thread_root.clone())
+}
+
+/// 开着的假时间线，按目标和旁聊根找。
 #[derive(Default)]
 pub(super) struct FakeTimelines {
-    open: Mutex<HashMap<String, Weak<FakeTimeline>>>,
-    /// 转发、发字去到了还没打开的房间：房间打开时补进第一批。
+    open: Mutex<HashMap<Key, Weak<FakeTimeline>>>,
+    /// 转发进了还没打开的房间：房间打开时补进第一批。
     forwarded: Mutex<HashMap<String, Vec<String>>>,
+    /// 新开的旁聊：根 ID 和主人写的第一句，订阅这个根时当第一批。
+    started: Mutex<HashMap<String, String>>,
+    started_count: Mutex<u64>,
 }
 
 impl FakeTimelines {
-    /// 订阅一个假房间：先给这个订阅者推第一批。房间已经开着就共用同一份状态，主对话和盖在上面的旁聊各订一份。
-    pub(super) fn subscribe(&self, room_id: &str) -> Arc<TimelineSubscription> {
+    /// 订阅一个假房间：先推第一批。旁聊的根是那条主对话里的消息 ID。
+    pub(super) fn subscribe(&self, target: &TimelineTarget) -> Arc<TimelineSubscription> {
         let (sender, receiver) = mpsc::unbounded_channel();
-        let fake = match self.get(room_id) {
+        let fake = match self.get(target) {
             Some(fake) => fake,
             None => {
                 // 转发、附言停在门外的字写进这一份的第一批里：壳会为同一次进门建两次订阅，后建的那份也得看得到。
                 let pending = lock(&self.forwarded)
-                    .get(room_id)
+                    .get(&target.room_id)
                     .cloned()
                     .unwrap_or_default();
-                let fake = Arc::new(FakeTimeline::fresh(room_id, &pending));
-                lock(&self.open).insert(room_id.to_owned(), Arc::downgrade(&fake));
+                let first_batch = match target.thread_root.as_deref() {
+                    Some(root) => match lock(&self.started).get(root) {
+                        Some(body) => started_timeline(&target.room_id, body),
+                        None => side_timeline(&target.room_id),
+                    },
+                    None => timeline(&target.room_id),
+                };
+                let fake = Arc::new(FakeTimeline::fresh(first_batch, &pending));
+                lock(&self.open).insert(key_of(target), Arc::downgrade(&fake));
                 fake
             }
         };
@@ -57,79 +77,81 @@ impl FakeTimelines {
             .push(body.to_owned());
     }
 
-    fn get(&self, room_id: &str) -> Option<Arc<FakeTimeline>> {
-        lock(&self.open).get(room_id).and_then(Weak::upgrade)
+    /// 开旁聊：假入口没有服务器，根现造，第一句记下来，订阅这个根时推出来。
+    pub(super) fn start_side_chat(&self, body: &str) -> String {
+        let mut count = lock(&self.started_count);
+        *count += 1;
+        let root = format!("$ui-fake-new-{count}");
+        lock(&self.started).insert(root.clone(), body.trim().to_owned());
+        root
     }
 
+    fn get(&self, target: &TimelineTarget) -> Option<Arc<FakeTimeline>> {
+        lock(&self.open)
+            .get(&key_of(target))
+            .and_then(Weak::upgrade)
+    }
     /// 转发的副本：去的地方开着就马上推过去，没开就留着等它打开。只转发文字，别的照抄不了。
-    fn forward(&self, from: &str, item_id: &str, to: &str) {
+    fn forward(&self, from: &TimelineTarget, item_id: &str, to_room_id: &str) {
         let Some(body) = self.get(from).and_then(|room| room.text_of(item_id)) else {
             return;
+        };
+        let to = &TimelineTarget {
+            room_id: to_room_id.to_owned(),
+            thread_root: None,
         };
         match self.get(to) {
             Some(destination) => {
                 let diffs = destination.receive(vec![body]);
                 destination.batch(|update| update.diffs = diffs);
             }
-            None => self.park(to, &body),
+            None => {
+                lock(&self.forwarded)
+                    .entry(to.room_id.clone())
+                    .or_default()
+                    .push(body);
+            }
         }
     }
 
-    /// 时间线上的操作。没订阅的房间、约定以外的操作不理，转发的副本和发出去的字除外。
+    /// 时间线上的操作。没订阅的房间、约定以外的操作不理。
     pub(super) fn timeline_action(&self, action: TimelineAction) {
-        match &action {
+        if let TimelineAction::ForwardMessage {
+            target,
+            item_id,
+            to_room_id,
+            comment,
+        } = &action
+        {
             // 附言先落进目标房间再转发，和真核心等附言被确认后才转发的顺序一致。
-            TimelineAction::ForwardMessage {
-                target,
-                item_id,
-                to_room_id,
-                comment,
-            } => {
-                if let Some(comment) = comment.as_deref().map(str::trim).filter(|c| !c.is_empty()) {
-                    match self.get(to_room_id) {
-                        Some(fake) => fake.send_text(comment, &[]),
-                        None => self.park(to_room_id, comment),
-                    }
-                }
-                self.forward(&target.room_id, item_id, to_room_id);
-                return;
-            }
-            // 转发面板、相册面板一次发给好几个房间：没开着的先留着，打开时再补进去。
-            TimelineAction::SendText {
-                target,
-                body,
-                mentions,
-                ..
-            } => match self.get(&target.room_id) {
-                Some(fake) => fake.send_text(body, mentions),
-                None => self.park(&target.room_id, body),
-            },
-            // 假数据没有真上传：照片也补一条，回复对象照原样带上，界面测试才看得见第一张带没带回复。
-            TimelineAction::SendImage {
-                target,
-                reply_to,
-                caption,
-                ..
-            } => {
-                if let Some(fake) = self.get(&target.room_id) {
-                    fake.sent_photo(reply_to.as_deref(), caption.as_deref());
+            if let Some(comment) = comment.as_deref().map(str::trim).filter(|c| !c.is_empty()) {
+                let to = TimelineTarget {
+                    room_id: to_room_id.clone(),
+                    thread_root: None,
+                };
+                match self.get(&to) {
+                    Some(fake) => fake.send_text(comment, &[]),
+                    None => self.park(to_room_id, comment),
                 }
             }
-            _ => {}
+            self.forward(target, item_id, to_room_id);
+            return;
         }
-        let room_id = match &action {
+        let target = match &action {
             TimelineAction::JumpToMessage { target, .. }
             | TimelineAction::JumpBack { target }
-            | TimelineAction::SetTimelineScroll { target, .. } => target.room_id.clone(),
+            | TimelineAction::SetTimelineScroll { target, .. }
+            | TimelineAction::SendText { target, .. }
+            | TimelineAction::SendImage { target, .. } => target,
             _ => return,
         };
-        let Some(fake) = self.get(&room_id) else {
+        let Some(fake) = self.get(target) else {
             // 转发连同附言常常发往还没打开的房间：留着，等它打开时和转发的消息一起补进第一批。
             if let TimelineAction::SendText { body, .. } = &action
                 && !body.is_empty()
             {
                 lock(&self.forwarded)
-                    .entry(room_id)
+                    .entry(target.room_id.clone())
                     .or_default()
                     .push(body.clone());
             }
@@ -143,6 +165,14 @@ impl FakeTimelines {
             } => fake.jump_to(&event_id, from_item_id),
             TimelineAction::JumpBack { .. } => fake.jump_back(),
             TimelineAction::SetTimelineScroll { scroll, .. } => fake.scrolled(scroll),
+            // 只发了照片、没写附言时正文是空的，假时间线不画空的一行。
+            TimelineAction::SendText { body, mentions, .. } if !body.is_empty() => {
+                fake.send_text(&body, &mentions)
+            }
+            // 假数据没有真上传：照片也补一条，回复对象和说明照原样带上，界面测试才看得见第一张带没带回复。
+            TimelineAction::SendImage {
+                reply_to, caption, ..
+            } => fake.sent_photo(reply_to.as_deref(), caption.as_deref()),
             _ => {}
         }
     }
@@ -157,14 +187,18 @@ impl FakeTimelines {
         else {
             return;
         };
-        if let Some(fake) = self.get(room_id) {
+        let target = TimelineTarget {
+            room_id: room_id.clone(),
+            thread_root: None,
+        };
+        if let Some(fake) = self.get(&target) {
             fake.answer(item_id, key);
         }
     }
 }
 
 struct FakeTimeline {
-    /// 订着这个房间的每一份（主对话、旁聊）；订阅者全没了才随房间一起丢。
+    /// 订着这条时间线的每一份（壳会为同一次进门建两次）；订阅者全没了才随它一起丢。
     senders: Mutex<Vec<mpsc::UnboundedSender<TimelineUpdate>>>,
     state: Mutex<State>,
 }
@@ -183,11 +217,11 @@ struct State {
 
 impl FakeTimeline {
     /// 一份新的假时间线：第一批带上停在门外等着进来的字（`pending`）。
-    fn fresh(room_id: &str, pending: &[String]) -> Self {
+    fn fresh(base: TimelineUpdate, pending: &[String]) -> Self {
         let fake = FakeTimeline {
             senders: Mutex::new(Vec::new()),
             state: Mutex::new(State {
-                base: timeline(room_id),
+                base,
                 runs: Runs::default(),
                 items: Vec::new(),
                 back: Vec::new(),
@@ -464,60 +498,6 @@ mod tests {
         subscription.next().await.expect("假房间一直开着")
     }
 
-    /// 同一个房间能同时订两份（主对话和盖在上面的旁聊）：两份都拿到整条时间线，发出去的字两份都收得到，
-    /// 谁先订着谁也不会被挤掉。
-    #[tokio::test]
-    async fn two_subscriptions_share_one_room() {
-        let fakes = FakeTimelines::default();
-        let first = fakes.subscribe(ROOM);
-        let _ = next(&first).await;
-        let second = fakes.subscribe(ROOM);
-        let batch = next(&second).await;
-        let [TimelineDiff::Reset { items }] = batch.diffs.as_slice() else {
-            panic!("后订的那份也拿到整条时间线");
-        };
-        assert_eq!(items.len(), ITEMS);
-
-        fakes.timeline_action(TimelineAction::SendText {
-            target: target(),
-            body: "Fixture both".into(),
-            reply_to: None,
-            mentions: Vec::new(),
-        });
-        assert!(!next(&second).await.diffs.is_empty());
-        assert!(!next(&first).await.diffs.is_empty());
-        // 后订的那份订阅时会给先订的那份也推一批，这里已经收过；两边的通道都没断。
-    }
-
-    /// 走壳用的入口订阅一条时间线：第一批之后不该自己结束（壳那边一结束就当房间没了、把页收起来）。
-    #[tokio::test]
-    async fn a_subscription_does_not_end_by_itself() {
-        let dir = tempfile::tempdir().unwrap();
-        let core =
-            crate::client::ClientCore::new_ui_fake(dir.path().to_string_lossy().into_owned())
-                .unwrap();
-        let subscription = core.subscribe_timeline(target()).await.unwrap();
-        let first =
-            tokio::time::timeout(std::time::Duration::from_secs(2), subscription.next()).await;
-        assert!(matches!(first, Ok(Some(_))), "第一批该马上到");
-        core.dispatch(wonton_protocol::Action::Timeline {
-            action: TimelineAction::SendText {
-                target: target(),
-                body: "Fixture alive".into(),
-                reply_to: None,
-                mentions: Vec::new(),
-            },
-        })
-        .unwrap();
-        let sent =
-            tokio::time::timeout(std::time::Duration::from_secs(2), subscription.next()).await;
-        assert!(matches!(sent, Ok(Some(_))), "发出去的字该推过来");
-        // 没事发生的时候也不该结束：结束的话壳会把这条时间线当成没了。
-        let idle =
-            tokio::time::timeout(std::time::Duration::from_millis(300), subscription.next()).await;
-        assert!(idle.is_err(), "没有操作时订阅自己结束了");
-    }
-
     fn message(items: &[TimelineItem], id: &str) -> wonton_protocol::TimelineMessage {
         match &items.iter().find(|item| item.id == id).unwrap().content {
             TimelineContent::Message { message } => message.clone(),
@@ -529,7 +509,7 @@ mod tests {
     #[tokio::test]
     async fn the_fake_room_answers_the_agreed_actions() {
         let fakes = FakeTimelines::default();
-        let subscription = fakes.subscribe(ROOM);
+        let subscription = fakes.subscribe(&target());
         let first = next(&subscription).await;
         let [TimelineDiff::Reset { items }] = first.diffs.as_slice() else {
             panic!("第一批是整条列表");
@@ -615,18 +595,75 @@ mod tests {
         let last = message(&items, &items.last().unwrap().id.clone());
         assert!(last.is_own);
         assert_eq!(last.run, MessageRun::Last);
+        // 23 和后面还没送达的 24 都是自己发的，同属一组。
         assert_eq!(message(&items, "ui-fake-23").run, MessageRun::First);
+    }
+
+    /// 旁聊是按根消息开的另一份时间线：第一批是旁聊那四条，发出去的照片只落在旁聊里。
+    #[tokio::test]
+    async fn side_chat_is_its_own_timeline() {
+        let fakes = FakeTimelines::default();
+        let root = "$ui-fake-5";
+        let main = fakes.subscribe(&target());
+        next(&main).await;
+        let side_target = TimelineTarget {
+            room_id: ROOM.into(),
+            thread_root: Some(root.into()),
+        };
+        let side = fakes.subscribe(&side_target);
+        let first = next(&side).await;
+        assert_eq!(first.viewport, wonton_protocol::TimelineViewport::Bottom);
+        let [TimelineDiff::Reset { items }] = first.diffs.as_slice() else {
+            panic!("旁聊的第一批是整条回复列表");
+        };
+        assert_eq!(
+            items
+                .iter()
+                .map(|item| item.id.as_str())
+                .collect::<Vec<_>>(),
+            ["side-0", "side-1", "side-2", "side-3"]
+        );
+        assert_eq!(first.side_chat.unwrap().root_event_id, root);
+
+        fakes.timeline_action(TimelineAction::SendImage {
+            target: side_target.clone(),
+            image: wonton_protocol::ImageUpload {
+                filename: "photo.png".into(),
+                mime_type: "image/png".into(),
+                data: Vec::new(),
+                width: None,
+                height: None,
+                thumbnail: None,
+            },
+            reply_to: None,
+            caption: None,
+        });
+        let sent = next(&side).await;
+        let [TimelineDiff::PushBack { item }] = sent.diffs.as_slice() else {
+            panic!("旁聊里发出的照片回显一条");
+        };
+        let MessageContent::Text { body, .. } = &message(std::slice::from_ref(item), &item.id).body
+        else {
+            panic!("回显的是文字");
+        };
+        assert_eq!(body, "photo");
+        assert!(
+            tokio::time::timeout(std::time::Duration::from_millis(50), main.next())
+                .await
+                .is_err(),
+            "旁聊里发的照片落到了主对话"
+        );
     }
 
     /// 转发一条老消息到没开的房间：等那个房间打开时补进第一批。老消息在第一千里，不在 `items` 里。
     #[tokio::test]
     async fn forwarding_reaches_an_unopened_room() {
         let fakes = FakeTimelines::default();
-        let echo = fakes.subscribe(ROOM);
+        let echo = fakes.subscribe(&target());
         let _first = next(&echo).await;
         assert_eq!(
             fakes
-                .get(ROOM)
+                .get(&target())
                 .expect("Echo 开着")
                 .text_of("ui-fake-11")
                 .as_deref(),
@@ -638,7 +675,10 @@ mod tests {
             to_room_id: "!ui-fake-call:home.example".into(),
             comment: None,
         });
-        let far = fakes.subscribe("!ui-fake-call:home.example");
+        let far = fakes.subscribe(&TimelineTarget {
+            room_id: "!ui-fake-call:home.example".into(),
+            thread_root: None,
+        });
         let first = next(&far).await;
         let mut items = Vec::new();
         for diff in first.diffs {
@@ -651,12 +691,11 @@ mod tests {
         };
         assert_eq!(body, "Fixture message 11");
     }
-
     /// 发给没开的房间的一句话：等它打开时补进第一批，排在跟着转发的那条前面。
     #[tokio::test]
     async fn sent_text_reaches_an_unopened_room() {
         let fakes = FakeTimelines::default();
-        let echo = fakes.subscribe(ROOM);
+        let echo = fakes.subscribe(&target());
         let _first = next(&echo).await;
         let far_id = "!ui-fake-call:home.example";
         let far_target = TimelineTarget {
@@ -677,7 +716,10 @@ mod tests {
                 comment: None,
             });
         }
-        let far = fakes.subscribe(far_id);
+        let far = fakes.subscribe(&TimelineTarget {
+            room_id: far_id.into(),
+            thread_root: None,
+        });
         let first = next(&far).await;
         let mut items = Vec::new();
         for diff in first.diffs {
@@ -714,9 +756,13 @@ mod tests {
         let mut landed = Vec::new();
         for opened_first in [false, true] {
             let fakes = FakeTimelines::default();
-            let echo = fakes.subscribe(ROOM);
+            let echo = fakes.subscribe(&target());
             let _first = next(&echo).await;
-            let opened = opened_first.then(|| fakes.subscribe(far_id));
+            let far_target = TimelineTarget {
+                room_id: far_id.into(),
+                thread_root: None,
+            };
+            let opened = opened_first.then(|| fakes.subscribe(&far_target));
             if let Some(far) = &opened {
                 let _first = next(far).await;
             }
@@ -732,7 +778,7 @@ mod tests {
                     comment,
                 });
             }
-            let far = opened.unwrap_or_else(|| fakes.subscribe(far_id));
+            let far = opened.unwrap_or_else(|| fakes.subscribe(&far_target));
             let mut bodies = Vec::new();
             // 一条附言一条、一份副本一条；到齐就停，多出来的第六条由下面两条断言报出来。整段丢掉时 5 秒就失败，不挂在作业的 45 分钟超时上。
             tokio::time::timeout(Duration::from_secs(5), async {

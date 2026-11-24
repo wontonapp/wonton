@@ -106,7 +106,7 @@ struct ComposerView: View {
         }
         .sheet(isPresented: $isChoosingAttachment, onDismiss: continueAfterAttach) {
             AttachSheet(
-                limit: composer.remaining, allowsFiles: !isSideChat, caption: draft,
+                limit: composer.photoRoom, allowsFiles: !isSideChat, caption: draft,
                 send: { assets in
                     isChoosingAttachment = false
                     Task { await sendPicked(assets) }
@@ -117,17 +117,18 @@ struct ComposerView: View {
             .presentationDetents([.medium, .large])
             .presentationDragIndicator(.visible)
         }
-        // 选几张都只进附件区，不发；最多选到附件区放满。0 在系统选择器里是不限，所以至少给 1，满了根本不打开。
+        // 相册最多选到还能带的张数：主对话是附件区的余量，旁聊是一次能发的张数。0 在系统选择器里是不限，所以至少给 1，满了根本不打开。
         .photosPicker(
             isPresented: $isPickingPhoto, selection: $photos,
-            maxSelectionCount: max(composer.remaining, 1), selectionBehavior: .ordered, matching: .images
+            maxSelectionCount: max(composer.photoRoom, 1), selectionBehavior: .ordered, matching: .images
         )
         .onChange(of: photos) { _, items in
             guard !items.isEmpty else { return }
             photos = []
             // 旁聊里照片不进附件区，转码好直接发（ADR-0093）；输入框里的字当说明一起发，回复对象跟着第一张照片走。
             if isSideChat {
-                Task { await sendPhotos(items) }
+                // 选择器本身按张数挡过；这里再切一刀，多出来的不让撑破上限。
+                Task { await sendPhotos(Array(items.prefix(composer.photoRoom))) }
             } else {
                 Task { await composer.addPhotos(items) }
             }
@@ -180,8 +181,8 @@ struct ComposerView: View {
 
     /// 附件区满了就不开选择器，说一声最多几个。
     private func hasRoom() -> Bool {
-        guard composer.remaining == 0 else { return true }
-        model.rejection = Problem(title: String(localized: .Composer.composerTrayFull(Int(composer.maxAttachments))))
+        guard composer.photoRoom == 0 else { return true }
+        model.rejection = Problem(title: String(localized: .Composer.composerTrayFull(composer.photoLimit)))
         return false
     }
 
@@ -200,7 +201,9 @@ struct ComposerView: View {
         }
         afterAttach = nil
     }
+}
 
+private extension ComposerView {
     /// 附件面板里选好照片点了发送：照片和附言（就是草稿）作为一次发出去（ADR-0109 第 10 节）。主对话里照片先进附件区，
     /// 再和发送键走同一条路（`SendComposer`），附件区里原有的附件也一起走；旁聊没有附件区，照片一张张直接发，附言只当
     /// 第一张试过的照片的说明（ADR-0093）。取字节的这段时间（比如 iCloud 原图下不下来）发送键那一格转圈；发出去了、
@@ -301,9 +304,7 @@ struct ComposerView: View {
         draft.wrappedValue = ""
         model.cancelReply(in: composer.target)
     }
-}
 
-private extension ComposerView {
     /// 输入栏那一排：菜单、回形针、输入框、发送键各是一块玻璃，靠 `chatGlassCluster` 拼成一整块。
     private func composerRow(isEmpty: Bool) -> some View {
         HStack(alignment: .bottom, spacing: WontonTheme.spacing.s4) {
@@ -311,8 +312,10 @@ private extension ComposerView {
                 ComposerMenuButton(showsTitle: isEmpty) { showsCommands.toggle() }
             }
             ChatGlassButton(icon: .attach, label: String(localized: .Composer.composerAttach)) {
-                // 旁聊没有附件区，点了把那句话露出来；主对话里附件区满了就不开面板，说一声最多几个。
-                if isSideChat { showsSideChatHint = true } else if hasRoom() { isChoosingAttachment = true }
+                // 旁聊不上附件区，照片选好直接发，上限是核心默认的一次十张，提示照旧露着（打开主对话去发文件）；
+                // 主对话里附件区满了就不开面板，说一声最多几个。
+                if isSideChat { showsSideChatHint = true }
+                if hasRoom() { isChoosingAttachment = true }
             }
             .accessibilityIdentifier("composerAttach")
             field
