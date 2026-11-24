@@ -7,6 +7,7 @@ import UIKit
 private enum L {
     static let settings = ["Settings", "設定"]
     static let appearance = ["Appearance", "外観"]
+    static let back = ["Back", "戻る"]
     static let dark = ["Dark", "ダーク"]
     static let friends = ["Friends", "友だち"]
     static let add = ["Add Friend", "友だちを追加"]
@@ -21,7 +22,7 @@ private enum L {
     static let placeholder = ["Paste an address or link", "アドレスかリンクを貼り付け"]
     static let contactName = "689 Contact"
     static let noGroups = ["No groups", "グループなし"]
-    static let contactUser = "@contact689c:"
+    static let contactUser = "@family1:"
     static let help = [
         "Ask them for their full friend address; in Wonton, once the Friends page loads successfully, they can copy their link from Add Friend → My QR Code.\nFormat only, not a real account: @bob:example.org",
         "相手に完全な友だちアドレスを送ってもらいましょう（Wontonでは、友だちページの読み込みが成功した後、「友だちを追加 → 自分のQRコード」からリンクをコピーできます）。\n形式の例（実在のアカウントではありません）：@bob:example.org",
@@ -254,18 +255,61 @@ class Friend689Base: XCTestCase {
 
     /// 屏幕当前是不是深色：把整屏缩到 1 个 RGBA 像素读亮度。截图原来的像素布局带 alpha，直接读前三个
     /// 字节会把透明度当颜色算，暗色也会被判成亮，深色就一直切不过去。
-    func screenIsDark() -> Bool {
-        guard let shot = XCUIScreen.main.screenshot().image.cgImage else { return false }
+    /// 取整屏缩到 1 个 RGBA 像素的亮度和四个字节，失败时写进日志便于定位。
+    func screenLuma() -> (Double, [UInt8]) {
+        guard let shot = XCUIScreen.main.screenshot().image.cgImage else { return (-1, []) }
         var pixel = [UInt8](repeating: 0, count: 4)
         let space = CGColorSpaceCreateDeviceRGB()
         let info = CGImageAlphaInfo.premultipliedLast.rawValue
         guard let context = CGContext(
             data: &pixel, width: 1, height: 1, bitsPerComponent: 8, bytesPerRow: 4,
             space: space, bitmapInfo: info
-        ) else { return false }
+        ) else { return (-1, []) }
         context.draw(shot, in: CGRect(x: 0, y: 0, width: 1, height: 1))
         let luma = 0.299 * Double(pixel[0]) + 0.587 * Double(pixel[1]) + 0.114 * Double(pixel[2])
-        return luma < 128
+        return (luma, pixel)
+    }
+
+    func screenIsDark() -> Bool { screenLuma().0 < 128 }
+
+    /// 深色靠 App 的截图钩子（WONTON_SHOT_SCHEME）在启动时钉住：换下一个登录码、空数据目录重开，再回到同一页。
+    func relaunchDark() {
+        app.launchEnvironment["WONTON_SHOT_SCHEME"] = "dark"
+        app.terminate()
+        do { try UITestBackend.passPairingCode(to: app) } catch { XCTFail("换码失败：\(error)") }
+        app.launch()
+        let deadline = Date().addingTimeInterval(40)
+        while Date() < deadline {
+            if screenIsDark() { return }
+            Thread.sleep(forTimeInterval: 1)
+        }
+        XCTFail("重开后屏幕不是深色（luma=\(screenLuma().0)）")
+    }
+
+    /// 系统外观落不到 App（App 有自己的主题设置），深色从设置里换：好友页 → 设置 → 外観 → ダーク。
+    func setThemeDark() {
+        if app.textFields.firstMatch.exists { closeSheet() }
+        guard let back = any(L.back, timeout: 20) else { return XCTFail("好友页没有返回") }
+        back.tap()
+        guard let appearance = any(L.appearance, timeout: 30) else { return XCTFail("设置里没有外观") }
+        appearance.tap()
+        guard let dark = any(L.dark, timeout: 30) else { return XCTFail("没有深色选项") }
+        dark.tap()
+        let deadline = Date().addingTimeInterval(20)
+        while Date() < deadline {
+            if screenIsDark() { return }
+            Thread.sleep(forTimeInterval: 0.5)
+        }
+        XCTFail("主题没切成深色（luma=\(screenLuma().0)）")
+    }
+
+    /// 从外观页回设置、再进好友页。
+    func backToFriends() {
+        guard let back = any(L.back, timeout: 20) else { return XCTFail("外观页没有返回") }
+        back.tap()
+        guard let friends = anyPrefix(L.friends, timeout: 60) else { return XCTFail("设置里没有好友入口") }
+        friends.tap()
+        XCTAssertNotNil(any(L.add, timeout: 30), "好友页没打开")
     }
 
     /// 外观设置默认跟随系统：换系统外观即可，页面在栈上也能就地变。切完等到真的变过去，截图才是深色。
@@ -277,7 +321,8 @@ class Friend689Base: XCTestCase {
             if screenIsDark() == dark { return }
             Thread.sleep(forTimeInterval: 1)
         }
-        XCTFail(dark ? "外观没切成深色" : "外观没切回浅色")
+        let last = screenLuma()
+        XCTFail("\(dark ? "外观没切成深色" : "外观没切回浅色")（luma=\(last.0) bytes=\(last.1)）")
     }
 }
 
@@ -289,8 +334,8 @@ final class Friend689EntryJATests: Friend689Base {
         _ = openAdd()
         assertEntry()
         shot("entry-light")
-        closeSheet()
-        setAppearance(dark: true)
+        setThemeDark()
+        backToFriends()
         _ = openAdd()
         assertEntry()
         shot("entry-dark")
@@ -302,8 +347,8 @@ final class Friend689EntryUITests: Friend689Base {
         enterFriends()
         _ = openAdd()
         shot("entry-light")
-        closeSheet()
-        setAppearance(dark: true)
+        setThemeDark()
+        backToFriends()
         _ = openAdd()
         assertEntry()
         shot("entry-dark")
@@ -353,7 +398,14 @@ final class Friend689ErrorUITests: Friend689Base {
             shot("error-forbidden-details")
         }
 
-        setAppearance(dark: true)
+        setThemeDark()
+        backToFriends()
+        let ownDark = ownLink()
+        let fieldDark = openAdd()
+        fieldDark.tap()
+        fieldDark.typeText(ownDark)
+        guard let sendDark = any(L.send, timeout: 10) else { return XCTFail("没有发送按钮") }
+        sendDark.tap()
         XCTAssertNotNil(text(L.forbidden, timeout: 90), "深色下禁止提示没了")
         shot("error-forbidden-dark")
         XCTAssertNotNil(any(L.retry, timeout: 10), "没有重试按钮")
@@ -381,21 +433,14 @@ final class Friend689SuccessUITests: Friend689Base {
         XCTAssertTrue(appeared, "邀请没发出去")
         XCTAssertNotNil(text([L.contactName], timeout: 30), "没有对方请求行")
         shot("add-success-light")
-        let acceptDeadline = Date().addingTimeInterval(180)
-        var lastRefresh = Date()
-        while Date() < acceptDeadline {
-            if countText(L.waiting) <= before { break }
-            if Date().timeIntervalSince(lastRefresh) > 10 {
-                app.swipeDown()
-                lastRefresh = Date()
-            }
-            Thread.sleep(forTimeInterval: 0.5)
-        }
-        XCTAssertLessThanOrEqual(countText(L.waiting), before, "对方没接受")
-        XCTAssertNotNil(text(L.noGroups, timeout: 30), "没有好友行")
+        // 对方接受：好友行出现。旧的“等待对方同意”行可能一直留着，不以它消失为准。
+        XCTAssertNotNil(text(L.noGroups, timeout: 180), "对方没接受")
+        XCTAssertNotNil(text([L.contactName], timeout: 30), "没有好友行")
         shot("add-success-accepted-light")
-        setAppearance(dark: true)
+        setThemeDark()
+        backToFriends()
         XCTAssertNotNil(text([L.contactName], timeout: 60), "深色下好友行没了")
+        XCTAssertNotNil(text(L.noGroups, timeout: 30), "深色下没有好友行")
         shot("add-success-dark")
     }
 }
