@@ -5,6 +5,8 @@
     <string name="problem_plugin_conflict_title">这个应用正忙</string>
     <!-- Problem title: the device the app should run on isn't available. -->
     <string name="problem_plugin_device_unavailable_title">选择的设备不可用</string>
+    <!-- Problem title: the proxy app the install needs is still starting. -->
+    <string name="problem_plugin_egress_proxy_waiting_title">代理还没就绪</string>
     <!-- Problem title: the home server can't read this app's install record. -->
     <string name="problem_plugin_record_unusable_title">应用的安装记录不可用</string>
     <!-- Problem title: the app's information can't be fetched from its source right now. -->

@@ -60,6 +60,7 @@ internal fun PluginProblem.onboardingTitle(): String = stringResource(
         PluginFailure.LAN_PORT_TAKEN -> R.string.onboarding_problem_plugin_lan_port_taken
         PluginFailure.CORE_UPGRADING -> R.string.onboarding_problem_plugin_core_upgrading
         PluginFailure.EGRESS_PROXY_UNAVAILABLE -> R.string.onboarding_problem_plugin_egress_proxy_unavailable
+        PluginFailure.EGRESS_PROXY_WAITING -> R.string.onboarding_problem_plugin_egress_proxy_waiting
         PluginFailure.UPSTREAM -> R.string.onboarding_problem_plugin_upstream
         PluginFailure.TIMED_OUT -> R.string.onboarding_problem_plugin_health_timeout
         PluginFailure.PROTOCOL -> R.string.onboarding_problem_plugin_protocol

@@ -5,6 +5,8 @@
     <string name="problem_plugin_conflict_title">このアプリは処理中です</string>
     <!-- Problem title: the device the app should run on isn't available. -->
     <string name="problem_plugin_device_unavailable_title">選択したデバイスを利用できません</string>
+    <!-- Problem title: the proxy app the install needs is still starting. -->
+    <string name="problem_plugin_egress_proxy_waiting_title">プロキシの準備中です</string>
     <!-- Problem title: the home server can't read this app's install record. -->
     <string name="problem_plugin_record_unusable_title">アプリのインストール記録が壊れています</string>
     <!-- Problem title: the app's information can't be fetched from its source right now. -->
