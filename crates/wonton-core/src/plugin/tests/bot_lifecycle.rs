@@ -40,16 +40,16 @@ fn service_container(slug: &str, service: &str) -> String {
     super::super::names::Instance::default().bot_container(slug, service, "default")
 }
 
-struct Bed {
-    docker: FakeDocker,
-    engine: Engine,
-    tuwunel: Fake,
-    matrix: Arc<Matrix>,
-    dir: tempfile::TempDir,
+pub(super) struct Bed {
+    pub(super) docker: FakeDocker,
+    pub(super) engine: Engine,
+    pub(super) tuwunel: Fake,
+    pub(super) matrix: Arc<Matrix>,
+    pub(super) dir: tempfile::TempDir,
 }
 
 impl Bed {
-    async fn start() -> Self {
+    pub(super) async fn start() -> Self {
         let (docker, engine) = FakeDocker::start().await;
         let (tuwunel, config) = start().await;
         let dir = tempfile::tempdir().unwrap();
@@ -66,7 +66,7 @@ impl Bed {
     }
 
     /// 核心（重新）启动后的插件管理器，数据目录不变。
-    fn manager(&self) -> PluginManager {
+    pub(super) fn manager(&self) -> PluginManager {
         manager_in_container(self.engine.clone(), &self.dir).with_matrix(Some(self.matrix.clone()))
     }
 

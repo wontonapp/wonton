@@ -146,6 +146,12 @@ struct Resources {
     https_proxy: Option<String>,
     /// 镜像 → 它自带的 `Healthcheck`（Docker 的 JSON 写法），没设的没有。
     image_healthchecks: BTreeMap<String, Value>,
+    /// 镜像 → 它声明的匿名卷目标（`VOLUME`）；创建容器时像 Docker 一样补成匿名卷。
+    image_volumes: BTreeMap<String, Vec<String>>,
+    /// 匿名卷名 → 哪个容器创建的，删容器带 `v` 时按它删卷。
+    anonymous_volumes: BTreeMap<String, Vec<String>>,
+    /// 匿名卷计数器。
+    anonymous_seq: u64,
     /// 容器名 → 跑完时的（退出码，标准输出，标准错误），`wait` 和 `logs` 按它回答；没设的以 0 退出、没有输出。
     outputs: BTreeMap<String, (i64, String, String)>,
     /// 下次容器更新时返回 Docker 错误；`None` 恢复正常。
@@ -332,6 +338,14 @@ impl FakeDocker {
         self.lock().states.insert(container.to_owned(), state);
     }
 
+    /// 容器在不在运行。
+    pub fn is_running(&self, container: &str) -> bool {
+        self.lock()
+            .states
+            .get(container)
+            .is_some_and(|state| state["Running"].as_bool() == Some(true))
+    }
+
     /// 容器从 Docker 里不见了（被外部删掉）。
     pub fn remove(&self, container: &str) {
         let mut docker = self.lock();
@@ -431,6 +445,14 @@ impl FakeDocker {
         self.lock()
             .image_healthchecks
             .insert(image.to_owned(), check);
+    }
+
+    /// 给镜像声明匿名卷目标（`VOLUME`）。
+    pub fn set_image_volumes(&self, image: &str, targets: &[&str]) {
+        self.lock().image_volumes.insert(
+            image.to_owned(),
+            targets.iter().map(|t| (*t).to_owned()).collect(),
+        );
     }
 
     pub fn set_runtimes(&self, runtimes: &[&str]) {
@@ -583,7 +605,15 @@ fn others(
         }
         (&Method::GET, ["images", image @ .., "json"]) => {
             let check = docker.image_healthchecks.get(&image.join("/"));
-            json_reply(StatusCode::OK, json!({"Config": {"Healthcheck": check}}))
+            let volumes: serde_json::Map<String, Value> = docker
+                .image_volumes
+                .get(&image.join("/"))
+                .map(|targets| targets.iter().map(|t| (t.clone(), json!({}))).collect())
+                .unwrap_or_default();
+            json_reply(
+                StatusCode::OK,
+                json!({"Config": {"Healthcheck": check, "Volumes": volumes}}),
+            )
         }
         (&Method::POST, ["images", "create"]) if docker.pull_error.is_some() => json_reply(
             StatusCode::INTERNAL_SERVER_ERROR,

@@ -1,6 +1,8 @@
 //! Bot 服务的变量和规则，以及模型网关的变量。安装、卸载时 Bot 在 Matrix 上的副作用见
 //! [`super::bot_lifecycle`]，模型网关的凭据见 [`super::models`]。
 
+use std::collections::BTreeMap;
+
 use super::super::PluginId;
 use super::super::bot_services::DEFAULT_BOT;
 use super::super::bots::{BotEntry, BotStore, PluginBots};
@@ -255,6 +257,8 @@ fn a_room_only_has_the_bots_whose_home_it_is() {
                     username: "owner".to_owned(),
                 },
                 bus_token: "token".to_owned(),
+                volumes: BTreeMap::new(),
+                restricted: None,
             },
         )
     };

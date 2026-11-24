@@ -106,6 +106,8 @@ fn bot(h: &Harness, id: &str) {
                             username: "owner".to_owned(),
                         },
                         bus_token: "bot-token".to_owned(),
+                        volumes: Default::default(),
+                        restricted: None,
                     },
                 )]
                 .into_iter()

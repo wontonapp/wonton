@@ -463,6 +463,15 @@ impl PluginManager {
         gate: Gate,
     ) -> Result<(), InstallError> {
         let langs = self.owner_languages();
+        // 待恢复的 Bot 停着，等它自己的重试：这里重建整个插件时不碰它的容器（见 member_bots）。
+        let restricted = plan
+            .labels
+            .get(crate::plugin::names::LABEL_PLUGIN)
+            .and_then(|id| crate::plugin::manifest::PluginId::parse(id).ok())
+            .map(|id| self.restricted_bots(&id))
+            .unwrap_or_default();
+        plan.containers
+            .retain(|c| c.bot.as_deref().is_none_or(|bot| !restricted.contains(bot)));
         self.prepare_images(&mut plan, None, &langs).await?;
         // 计划按依赖拓扑排序，正序删除让共享网络命名空间的容器先于目标删；逆序会把目标先删，等价于按容器 ID 绑定的依赖先拆引用者。
         for container in plan.containers.iter() {

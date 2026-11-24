@@ -7,7 +7,9 @@ use serde_json::{Value, json};
 
 use super::networks::{endpoint_settings, published, running, state_name};
 use super::update::update_container;
-use super::{FakeExec, Resources, archive_of, gone, json_reply, labeled, labels_of, query_param};
+use super::{
+    FakeExec, Labels, Resources, archive_of, gone, json_reply, labeled, labels_of, query_param,
+};
 
 pub(super) fn containers(
     docker: &mut Resources,
@@ -32,10 +34,25 @@ pub(super) fn containers(
         }
         (&Method::POST, [name, "update"]) if exists(name) => update_container(docker, name, raw),
         (&Method::POST, [name, "start"]) if exists(name) => start_container(docker, name),
+        (&Method::POST, [name, "stop"]) if exists(name) => {
+            docker.states.insert(
+                (*name).to_owned(),
+                json!({"Status": "exited", "Running": false, "ExitCode": 0}),
+            );
+            gone(true)
+        }
         (&Method::POST, [name, "start" | "stop"]) => gone(exists(name)),
         (&Method::DELETE, [name]) => {
             for endpoints in docker.endpoints.values_mut() {
                 endpoints.remove(*name);
+            }
+            // 带 `v` 时和 Docker 一样连当时挂着的匿名卷一起删；有名字的卷（有 Source）不动。容器名会
+            // 被下一次创建复用，登记表不管带不带 `v` 都清掉。
+            let mut owned = docker.anonymous_volumes.remove(*name).unwrap_or_default();
+            if matches!(query_param(query, "v").as_deref(), Some("1" | "true" | "")) {
+                for volume in owned.drain(..) {
+                    docker.volumes.remove(&volume);
+                }
             }
             gone(docker.containers.remove(*name).is_some())
         }
@@ -100,6 +117,7 @@ fn create(docker: &mut Resources, name: &str, body: Value) -> Response {
             json!({"message": format!("No such image: {image}")}),
         );
     }
+    let body = with_volume_mounts(docker, name, body);
     docker.containers.insert(name.to_owned(), labels_of(&body));
     let networks = body["NetworkingConfig"]["EndpointsConfig"].as_object();
     for (network, endpoint) in networks.into_iter().flatten() {
@@ -135,9 +153,10 @@ fn start_container(docker: &mut Resources, name: &str) -> Response {
             json!({"message": message}),
         );
     }
-    if let Some(state) = docker.start_states.get(name).cloned() {
-        docker.states.insert(name.to_owned(), state);
-    }
+    let state = docker.start_states.get(name).cloned().unwrap_or_else(
+        || json!({"Status": "running", "Running": true, "Health": {"Status": "healthy"}}),
+    );
+    docker.states.insert(name.to_owned(), state);
     gone(true)
 }
 
@@ -167,7 +186,7 @@ fn inspect_container(docker: &Resources, name: &str) -> Response {
         json!({"Name": format!("/{name}"), "State": state, "Image": image,
                "Config": {"Image": config_image, "Labels": created["Labels"], "Env": created["Env"],
                           "Healthcheck": created["Healthcheck"]},
-               "HostConfig": created["HostConfig"],
+               "HostConfig": created["HostConfig"], "Mounts": inspect_mounts(&created),
                "NetworkSettings": {"Networks": networks}}),
     )
 }
@@ -195,4 +214,73 @@ fn list_containers(docker: &Resources, query: &str) -> Response {
         })
         .collect();
     json_reply(StatusCode::OK, json!(list))
+}
+
+/// 和 Docker 一样把卷挂载变成实名：镜像声明的卷和没写来源的卷各分配一个匿名卷，写了来源的卷
+/// （命名卷）没有就建出来。返回补好的创建请求，`Mounts` 里带着卷名。
+fn with_volume_mounts(docker: &mut Resources, name: &str, mut body: Value) -> Value {
+    // 同名的容器是新建的：匿名卷登记从空开始。
+    docker.anonymous_volumes.remove(name);
+    let image = body["Image"].as_str().unwrap_or_default().to_owned();
+    let declared = docker
+        .image_volumes
+        .get(&image)
+        .cloned()
+        .unwrap_or_default();
+    let mut mounts: Vec<Value> = body["HostConfig"]["Mounts"]
+        .as_array()
+        .cloned()
+        .unwrap_or_default();
+    for target in declared {
+        if !mounts
+            .iter()
+            .any(|m| m["Target"].as_str() == Some(target.as_str()))
+        {
+            mounts.push(json!({"Type": "volume", "Target": target}));
+        }
+    }
+    for mount in &mut mounts {
+        if mount["Type"].as_str() != Some("volume") {
+            continue;
+        }
+        match mount["Source"].as_str() {
+            Some(source) if !source.is_empty() => {
+                docker.volumes.entry(source.to_owned()).or_default();
+            }
+            _ => {
+                docker.anonymous_seq += 1;
+                let volume = format!("wonton-anon-{}-{}", name, docker.anonymous_seq);
+                docker.volumes.insert(volume.clone(), Labels::new());
+                docker
+                    .anonymous_volumes
+                    .entry(name.to_owned())
+                    .or_default()
+                    .push(volume.clone());
+                mount["Source"] = json!(volume);
+            }
+        }
+    }
+    body["HostConfig"]["Mounts"] = json!(mounts);
+    body
+}
+
+/// inspect 的 `Mounts`：Docker 的写法（`Destination`、`Name`），只列卷。
+fn inspect_mounts(created: &Value) -> Value {
+    let mounts: Vec<Value> = created["HostConfig"]["Mounts"]
+        .as_array()
+        .cloned()
+        .unwrap_or_default()
+        .into_iter()
+        .filter(|m| m["Type"].as_str() == Some("volume"))
+        .map(|m| {
+            json!({
+                "Type": "volume",
+                "Name": m["Source"],
+                "Source": format!("/var/lib/docker/volumes/{}/_data", m["Source"].as_str().unwrap_or_default()),
+                "Destination": m["Target"],
+                "RW": !m["ReadOnly"].as_bool().unwrap_or(false),
+            })
+        })
+        .collect();
+    json!(mounts)
 }

@@ -60,6 +60,8 @@ fn register_bot(s: &Setup) {
                             username: "owner".to_owned(),
                         },
                         bus_token: "source-token".to_owned(),
+                        volumes: Default::default(),
+                        restricted: None,
                     },
                 )]
                 .into_iter()

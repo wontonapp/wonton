@@ -237,6 +237,7 @@ impl PluginManager {
                 &[("containers", l10n::list(langs, &stopped).into())],
             ));
         }
+        failures.extend(self.restricted_notes(&package.manifest.id));
         Ok(Containers {
             state,
             serving: served,

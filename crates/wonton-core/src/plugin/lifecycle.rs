@@ -644,6 +644,20 @@ impl PluginManager {
         for container in &found.containers {
             self.engine.remove_container(container).await?;
         }
+        // Bot 记下的匿名卷在 Docker 里没有标签，按标签找不到：删数据时照记录删。
+        let bot_volumes: Vec<String> = self
+            .store
+            .bots()
+            .load(id)?
+            .bots
+            .into_values()
+            .flat_map(|entry| {
+                entry
+                    .volumes
+                    .into_values()
+                    .flat_map(|targets| targets.into_values())
+            })
+            .collect();
         // 容器都停了再吊销 Bot 的设备和模型网关凭据。
         let bots = self.deactivate_bots(id, purge).await?;
         self.revoke_models(id, langs).await?;
@@ -673,10 +687,10 @@ impl PluginManager {
             report.oidc_client_removed = Some(!hydra.client_exists(id.as_str()).await?);
         }
         if purge {
-            for volume in &found.volumes {
+            for volume in found.volumes.iter().chain(&bot_volumes) {
                 self.engine.remove_volume(volume).await?;
             }
-            report.volumes = found.volumes.clone();
+            report.volumes = found.volumes.iter().chain(&bot_volumes).cloned().collect();
             let dir = self.cfg.apps_dir.join(id.slug());
             match fs::remove_dir_all(&dir) {
                 Ok(()) => {}

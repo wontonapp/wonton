@@ -94,6 +94,8 @@ impl PluginManager {
                                 username: "owner".to_owned(),
                             },
                             bus_token: "test-token".to_owned(),
+                            volumes: Default::default(),
+                            restricted: None,
                         },
                     )]
                     .into_iter()

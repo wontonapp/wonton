@@ -47,6 +47,8 @@ mod leftovers;
 mod limits;
 mod manager;
 mod manifest_errors;
+mod member_bot_recovery;
+mod member_bot_recovery_docker;
 mod model_providers;
 mod models;
 mod models_route;

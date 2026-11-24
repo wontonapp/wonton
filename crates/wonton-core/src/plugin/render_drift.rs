@@ -80,7 +80,11 @@ impl PluginManager {
         let lan = self.lan_grant(package, record.lan_webui, langs).await?;
         let mut ctx = self.rebuild_context(package, record, lan, None).await?;
         self.fill_bot_vars(package, &mut ctx, langs).await?;
-        let plan = render(package, &ctx, langs)?;
+        let mut plan = render(package, &ctx, langs)?;
+        // 待恢复的 Bot 停着、容器可能已经没了：不算漂移，由它自己的重试处理（见 member_bots）。
+        let restricted = self.restricted_bots(&package.manifest.id);
+        plan.containers
+            .retain(|c| c.bot.as_deref().is_none_or(|bot| !restricted.contains(bot)));
         let drift = self.drift_of(&plan).await?;
         if !drift.drifted || (drift.running == 0 && !when_stopped) {
             return Ok(false);

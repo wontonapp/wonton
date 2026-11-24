@@ -7,14 +7,12 @@ use std::time::Duration;
 
 use bollard::Docker;
 use bollard::errors::Error as BollardError;
-use bollard::models::{
-    ContainerCreateBody, ContainerInspectResponse, HealthConfig, VolumeCreateRequest,
-};
+use bollard::models::{ContainerCreateBody, ContainerInspectResponse, HealthConfig};
 use bollard::query_parameters::{
     CreateContainerOptionsBuilder, DownloadFromContainerOptionsBuilder,
     KillContainerOptionsBuilder, ListContainersOptionsBuilder, ListNetworksOptionsBuilder,
     ListVolumesOptionsBuilder, LogsOptionsBuilder, RemoveContainerOptionsBuilder,
-    RemoveVolumeOptionsBuilder, StopContainerOptionsBuilder, UploadToContainerOptionsBuilder,
+    StopContainerOptionsBuilder, UploadToContainerOptionsBuilder,
 };
 use futures_util::StreamExt;
 use wonton_l10n::Arg;
@@ -199,6 +197,7 @@ pub struct Engine {
 type Result<T> = std::result::Result<T, EngineError>;
 
 mod networks;
+mod volumes;
 
 impl Engine {
     /// 按 `DOCKER_HOST` 连接，未设置时使用本机 socket。
@@ -386,46 +385,6 @@ impl Engine {
         Ok(inspect.config.and_then(|config| config.healthcheck))
     }
 
-    pub async fn create_volume(&self, name: &str, labels: &HashMap<String, String>) -> Result<()> {
-        let request = VolumeCreateRequest {
-            name: Some(name.to_owned()),
-            labels: Some(labels.clone()),
-            ..Default::default()
-        };
-        self.docker
-            .create_volume(request)
-            .await
-            .map(|_| ())
-            .map_err(|e| self.fail_name("plugin-install-docker-context-create-volume", name, e))
-    }
-
-    /// 查询卷的标签；卷不存在时返回 `None`。
-    pub async fn volume_labels(&self, name: &str) -> Result<Option<HashMap<String, String>>> {
-        match self.docker.inspect_volume(name).await {
-            Ok(volume) => Ok(Some(volume.labels)),
-            Err(e) => match self.fail(
-                "plugin-install-docker-context-volume-labels",
-                &[("name", name.into())],
-                e,
-            ) {
-                EngineError::NotFound(_) => Ok(None),
-                other => Err(other),
-            },
-        }
-    }
-
-    pub async fn remove_volume(&self, name: &str) -> Result<()> {
-        let options = RemoveVolumeOptionsBuilder::default().force(true).build();
-        ignore_missing(
-            self.patient()
-                .remove_volume(name, Some(options))
-                .await
-                .map_err(|e| {
-                    self.fail_name("plugin-install-docker-context-remove-volume", name, e)
-                }),
-        )
-    }
-
     pub async fn create_container(&self, name: &str, body: ContainerCreateBody) -> Result<()> {
         let options = CreateContainerOptionsBuilder::default().name(name).build();
         let response = self
@@ -567,6 +526,15 @@ impl Engine {
 
     /// 停止并删除容器（连同匿名卷）；不存在视为成功。
     pub async fn remove_container(&self, name: &str) -> Result<()> {
+        self.remove_container_keep(name, false).await
+    }
+
+    /// 停止并删除容器，但留着它的匿名卷：换 Bot 的容器时卷还要按名字接回去。
+    pub async fn remove_container_keep_volumes(&self, name: &str) -> Result<()> {
+        self.remove_container_keep(name, true).await
+    }
+
+    async fn remove_container_keep(&self, name: &str, keep_volumes: bool) -> Result<()> {
         let stop = StopContainerOptionsBuilder::default().t(10).build();
         let docker = self.patient();
         let stopped = docker
@@ -579,7 +547,7 @@ impl Engine {
         }
         let options = RemoveContainerOptionsBuilder::default()
             .force(true)
-            .v(true)
+            .v(!keep_volumes)
             .build();
         ignore_missing(
             docker

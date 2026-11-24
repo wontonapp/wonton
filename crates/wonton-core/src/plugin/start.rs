@@ -231,7 +231,13 @@ impl PluginManager {
         )?;
         let one_shot = package.one_shot_services();
         let bot_services = super::bot_services::bot_services(&package.manifest);
-        let bots = self.bot_names(&package.manifest.id);
+        // 待恢复的 Bot 停着，等它自己的重试：插件启动不把它们起起来，否则又去写了（见 member_bots）。
+        let restricted = self.restricted_bots(&package.manifest.id);
+        let bots: Vec<String> = self
+            .bot_names(&package.manifest.id)
+            .into_iter()
+            .filter(|bot| !restricted.contains(bot))
+            .collect();
         // 要启动的容器：Bot 服务的按 Bot 一组，其余全插件一份；启动顺序不变。
         let name_of = |service: &str, bot: Option<&str>| match bot {
             Some(bot) => self.cfg.instance.bot_container(&slug, service, bot),
@@ -282,15 +288,20 @@ impl PluginManager {
             .await?;
         for (service, bot) in &group {
             // 一次性服务不重跑（见文件头）：它上次以 0 退出才算满足。
+            // 待恢复的 Bot 的容器起不来，等它只会等到超时：跳过这类依赖。
             let deps: Vec<(String, DependCondition)> = dependencies[service]
                 .iter()
+                .filter(|(dependency, _)| {
+                    // 依赖的 Bot 服务是同一个 Bot 的那份；全插件一份的服务就它自己。
+                    let dep_bot = bot.filter(|_| bot_services.contains(dependency.as_str()));
+                    dep_bot.is_none_or(|bot| !restricted.contains(bot))
+                })
                 .map(|(dependency, condition)| {
                     let condition = if one_shot.contains(dependency.as_str()) {
                         DependCondition::ServiceCompletedSuccessfully
                     } else {
                         *condition
                     };
-                    // 依赖的 Bot 服务是同一个 Bot 的那份；全插件一份的服务就它自己。
                     let dep_bot = bot.filter(|_| bot_services.contains(dependency.as_str()));
                     (name_of(dependency, dep_bot), condition)
                 })

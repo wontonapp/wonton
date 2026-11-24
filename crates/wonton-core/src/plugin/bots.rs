@@ -22,7 +22,7 @@ use crate::config::PLUGIN_MATRIX_HOST;
 use crate::matrix::{Avatar, BotAccount, BotSpec, Matrix, MatrixError, ProvisionedBot};
 use crate::secret::random_token;
 
-/// 一个 Bot 的记录：Matrix 身份、正在用的设备、归属人和总线令牌。
+/// 一个 Bot 的记录：Matrix 身份、正在用的设备、归属人、总线令牌和恢复用的数据身份。
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 pub struct BotEntry {
     #[serde(flatten)]
@@ -33,6 +33,13 @@ pub struct BotEntry {
     pub keeper: BotKeeper,
     /// 总线令牌，在 `WONTON_MCP_URL` 的路径里（`/mcp/<令牌>`）。建 Bot 时生成，之后不变。
     pub bus_token: String,
+    /// 它的匿名卷：容器名 → 挂载目标 → Docker 卷名。删容器前记下，重建时按它接回同一份数据（见
+    /// [`super::member_bots`]）。
+    #[serde(default, skip_serializing_if = "BTreeMap::is_empty")]
+    pub volumes: BTreeMap<String, BTreeMap<String, String>>,
+    /// 为什么还没恢复：容器停着，插件启动和核心重启都不把它起起来，免得降级时又去写。恢复成功后清空。
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub restricted: Option<String>,
 }
 
 /// 一个插件的全部 Bot 记录，每个插件一个 JSON 文件（0600）。
@@ -312,7 +319,10 @@ impl PluginManager {
                 e.into()
             }
         })?;
-        let bus_token = existing.map_or_else(random_token, |e| e.bus_token);
+        let bus_token = existing
+            .as_ref()
+            .map_or_else(random_token, |e| e.bus_token.clone());
+        // 重试同一个 Bot 时沿用记下的卷和“还没恢复”，部署成功后由部署那一步清掉。
         plugin_bots.bots.insert(
             bot.to_owned(),
             BotEntry {
@@ -320,6 +330,11 @@ impl PluginManager {
                 device_id: Some(provisioned.device_id.clone()),
                 keeper,
                 bus_token,
+                volumes: existing
+                    .as_ref()
+                    .map(|e| e.volumes.clone())
+                    .unwrap_or_default(),
+                restricted: existing.as_ref().and_then(|e| e.restricted.clone()),
             },
         );
         store.save(id, &plugin_bots)?;
@@ -512,6 +527,7 @@ impl PluginManager {
     }
 
     /// 核心重启后核对 Bot：每个插件拿着的令牌对应的设备还在。被吊销了就如实报异常，重装才能重新签发。
+    /// 待恢复的 Bot 跳过：它的设备下一次重试才重新登录，限制没撤前整个插件不该因此异常。
     pub(super) async fn check_bot(&self, manifest: &Manifest) -> Result<(), InstallError> {
         if !is_bot(manifest) {
             return Ok(());
@@ -519,6 +535,9 @@ impl PluginManager {
         let matrix = self.matrix()?;
         let plugin_bots = self.store.bots().load(&manifest.id)?;
         for (bot, entry) in &plugin_bots.bots {
+            if entry.restricted.is_some() {
+                continue;
+            }
             let Some(device) = &entry.device_id else {
                 return Err(InstallError::Unhealthy(crate::l10n::text(
                     &self.owner_languages(),
@@ -610,6 +629,8 @@ impl PluginManager {
                         device_id: None,
                         keeper: keeper.clone(),
                         bus_token: token.to_string(),
+                        volumes: BTreeMap::new(),
+                        restricted: None,
                     },
                 )
             })
