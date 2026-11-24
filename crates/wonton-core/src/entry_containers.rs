@@ -55,7 +55,7 @@ pub enum EntryError {
     NetworkMissing(String),
     /// 入口容器不唯一，热加载不知道该发给谁。
     NotOneEntry(usize),
-    /// 入口 HAProxy 的主进程没接受新配置，带着它的启动日志。
+    /// 入口热加载失败：新配置被主进程拒绝（带启动日志）或一直没完成。
     Reload(String),
     Docker(EngineError),
 }
@@ -100,7 +100,7 @@ impl fmt::Display for EntryError {
                 "{}：找到 {count} 个入口容器，热加载不知道发给谁",
                 self.category()
             ),
-            Self::Reload(logs) => write!(f, "{}：入口拒绝了新配置：{logs}", self.category()),
+            Self::Reload(logs) => write!(f, "{}：入口热加载失败：{logs}", self.category()),
             Self::Docker(error) => write!(f, "{}：{error}", self.category()),
         }
     }
