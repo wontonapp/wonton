@@ -311,6 +311,7 @@ abstract class RoomTelegramCase {
 
     /**
      * 相册开头放两张一定能读的照片（`pick-` 开头），返回它们的 URI；先删上一轮留下的照片。
+     * 名字带时间戳：删掉的行，文件可能还在盘上，同名插进去 MediaProvider 要改名排队，偶尔 "Failed to build unique file"。
      * 插入时给的 DATE_ADDED 会被 MediaProvider 冲成插入那一秒，同一秒里的先后按 _id 排——
      * 所以别假定开头的两张就是它们，用 [albumIndexOf] 查网格里的下标。
      */
@@ -326,9 +327,10 @@ abstract class RoomTelegramCase {
             )
         }
         val added = mutableListOf<Uri>()
+        val stamp = System.currentTimeMillis()
         repeat(2) { index ->
             val values = ContentValues().apply {
-                put(MediaStore.Images.Media.DISPLAY_NAME, "pick-$index.png")
+                put(MediaStore.Images.Media.DISPLAY_NAME, "pick-$stamp-$index.png")
                 put(MediaStore.Images.Media.MIME_TYPE, "image/png")
                 put(MediaStore.Images.Media.RELATIVE_PATH, Environment.DIRECTORY_PICTURES)
                 put(MediaStore.Images.Media.IS_PENDING, 1)

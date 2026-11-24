@@ -62,6 +62,7 @@ class RoomAttachPanelTest : RoomTelegramCase() {
         val composerField = compose.onNode(hasSetTextAction() and !hasAnyAncestor(hasTestTag("attach-send")))
         composerField.assert(hasText("两张都发"))
         screenshot("attach-sheet")
+        settleKeyboard()
         sheetSend("attach-send").performClick()
         compose.waitUntil(10_000) {
             compose.onAllNodes(hasTestTag("attach-send")).fetchSemanticsNodes().isEmpty()
@@ -91,6 +92,7 @@ class RoomAttachPanelTest : RoomTelegramCase() {
         openAlbum()
         photos()[albumIndexOf(picks[0])].performClick()
         compose.waitUntil(10_000) { photos()[albumIndexOf(picks[0])].isSelected() }
+        settleKeyboard()
         sheetSend("attach-send").performClick()
         compose.waitUntil(10_000) { trayTiles() == 1 }
         compose.waitUntil(10_000) { compose.onAllNodes(hasTestTag("attach-send")).fetchSemanticsNodes().isEmpty() }
@@ -129,6 +131,7 @@ class RoomAttachPanelTest : RoomTelegramCase() {
         compose.waitUntil(10_000) { photos()[albumIndexOf(picks[0])].isSelected() }
         val field = compose.onNode(hasSetTextAction() and hasAnyAncestor(hasTestTag("attach-send")))
         field.performTextInput("先说一句")
+        settleKeyboard()
         sheetSend("attach-send").performClick()
         // 照片进了附件区、停在这里：附言框里再补一句。
         compose.waitUntil(10_000) { trayTiles() == 1 }
@@ -269,28 +272,24 @@ class RoomAttachPanelTest : RoomTelegramCase() {
         compose.onNodeWithContentDescription(string(R.string.message_reply_cancel)).assertIsDisplayed()
         openAlbum()
         compose.waitUntil(10_000) { photos().fetchSemanticsNodes().size >= 2 }
-        // 两张能读的照片各选一张。
+        // 两张能读的照片各选一张。选了照片附言框自己拿焦点、键盘弹上来，等它停稳再按。
         photos()[albumIndexOf(picks[0])].performClick()
         photos()[albumIndexOf(picks[1])].performClick()
+        settleKeyboard()
+        sheetSend("attach-send").assertIsEnabled()
+        // 假房间自带几张照片，只认这次新出现的：先记下已有的标签。
+        val before = photoTags()
         sheetSend("attach-send").performClick()
         compose.waitUntil(10_000) { compose.onAllNodes(hasTestTag("attach-send")).fetchSemanticsNodes().isEmpty() }
         // 两条新照片里只有第一条带引用：按条目自己的标签数。旁聊盖着主对话，同一条在两层里都组合着，
-        // 所以每张按出现几次算几次。
-        val sentPhotos = compose.onAllNodes(
-            SemanticsMatcher("新发出去的一张照片") { node ->
-                node.config.getOrNull(SemanticsProperties.TestTag)?.startsWith("item-ui-fake-photo-") == true
-            },
-            useUnmergedTree = true,
-        )
-        compose.waitUntil(10_000) {
-            sentPhotos.fetchSemanticsNodes().map { it.config[SemanticsProperties.TestTag] }.distinct().size == 2
-        }
-        val copies = sentPhotos.fetchSemanticsNodes().groupingBy { it.config[SemanticsProperties.TestTag] }.eachCount()
+        // 所以每张按出现几次算几次，引用数要和它那一份的复制数相等。
+        compose.waitUntil(20_000) { (photoTags() - before).size == 2 }
+        val copies = (photoTags() - before).groupingBy { it }.eachCount()
         fun quotesIn(tag: String) = compose.onAllNodes(
             hasTestTag("quote") and hasAnyAncestor(hasTestTag(tag)),
             useUnmergedTree = true,
         ).fetchSemanticsNodes().size
-        val tags = copies.keys.sorted()
+        val tags = copies.keys.sortedBy { it.substringAfterLast('-').toInt() }
         check(quotesIn(tags[0]) == copies.getValue(tags[0])) { "第一张照片没带引用" }
         check(quotesIn(tags[1]) == 0) { "第二张也带了引用" }
         compose.onNodeWithContentDescription(string(R.string.message_reply_cancel)).assertDoesNotExist()
@@ -310,6 +309,7 @@ class RoomAttachPanelTest : RoomTelegramCase() {
         photos()[albumIndexOf(picks[0])].performClick()
         compose.waitForIdle()
         val sentBefore = photoMessages()
+        settleKeyboard()
         sheetSend("attach-send").performClick()
         // 面板收起就是这次发送收尾了（无论成败）。
         compose.waitUntil(10_000) { compose.onAllNodes(hasTestTag("attach-send")).fetchSemanticsNodes().isEmpty() }
@@ -336,6 +336,14 @@ class RoomAttachPanelTest : RoomTelegramCase() {
         },
         useUnmergedTree = true,
     ).fetchSemanticsNodes().size
+
+    /** 时间线里现存的照片条目标签（两层树各算各的，同一条会出现多次）。 */
+    private fun photoTags(): Set<String> = compose.onAllNodes(
+        SemanticsMatcher("时间线里的照片条目") { node ->
+            node.config.getOrNull(SemanticsProperties.TestTag)?.startsWith("item-ui-fake-photo-") == true
+        },
+        useUnmergedTree = true,
+    ).fetchSemanticsNodes().map { it.config[SemanticsProperties.TestTag] }.toSet()
 
     private fun openForward() {
         // 12 是长条，气泡比整屏还高，按正中会落到屏幕外；换它上面那条一句话的 11。
@@ -364,7 +372,7 @@ class RoomAttachPanelTest : RoomTelegramCase() {
         val resolver = instrumentation.targetContext.contentResolver
         val collection = MediaStore.Images.Media.EXTERNAL_CONTENT_URI
         val values = ContentValues().apply {
-            put(MediaStore.Images.Media.DISPLAY_NAME, "broken.png")
+            put(MediaStore.Images.Media.DISPLAY_NAME, "broken-${System.currentTimeMillis()}.png")
             put(MediaStore.Images.Media.MIME_TYPE, "image/png")
             put(MediaStore.Images.Media.RELATIVE_PATH, Environment.DIRECTORY_PICTURES)
             // 插入时给的 DATE_ADDED 会被 MediaProvider 冲成当时那一秒，照样给个新值；先后用 albumIndexOf 查。
