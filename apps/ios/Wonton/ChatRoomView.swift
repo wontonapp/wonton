@@ -78,6 +78,11 @@ struct ChatRoomView: View {
 
 @MainActor
 private extension ChatRoomView {
+    /// 旁聊页顶栏标题。根还解不开时标题可能是空串，回落本地化「旁聊」。
+    private var sideChatBarTitle: String {
+        let title = timeline.sideChat?.title ?? ""
+        return title.isEmpty ? String(localized: .Chat.sideChat) : title
+    }
     private var roomContent: some View {
         Group {
             if let failure = timeline.failure {
@@ -152,7 +157,7 @@ private extension ChatRoomView {
             avatar: barAvatar,
             typing: typingText,
             openProfile: profileAction,
-            sideChatTitle: threadRoot == nil ? nil : timeline.sideChat?.title ?? String(localized: .Chat.sideChat),
+            sideChatTitle: threadRoot == nil ? nil : sideChatBarTitle,
             close: threadRoot == nil ? nil : { model.closeSideChat(in: roomId, why: "bar") }
         ) {
             // 面板跟着主对话（ADR-0093）：旁聊页没有房间的面板，也没有这里的按钮。

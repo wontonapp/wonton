@@ -793,6 +793,20 @@ impl ChatLink {
             .ok_or_else(|| target::not_subscribed(key))
     }
 
+    /// 测试用：像 SDK 丢掉活事件那样清掉一条已打开时间线的条目，事件缓存不动，等补检重建。清空对壳是无声的
+    /// （不发 `Clear`，也不走 SDK 清空的重建），只有补检发现后才让壳清屏。只在 `test-hooks` 构建里有调用方。
+    #[cfg(feature = "test-hooks")]
+    pub(crate) async fn test_clear_timeline(
+        &self,
+        target: &TimelineTarget,
+    ) -> Result<(), CoreError> {
+        let key = TimelineKey::parse(target)?;
+        let room = self.opened(&key)?;
+        timeline::mark_silent_clear(key.room_id.clone(), key.thread_root.clone());
+        room.timeline().await.clear().await;
+        Ok(())
+    }
+
     /// 已打开的目标共用时间线；临时操作独立持有房间监听。
     async fn room(&self, key: &TimelineKey) -> Result<Arc<ChatRoom>, Error> {
         if let Some(room) = lock(&self.open)
