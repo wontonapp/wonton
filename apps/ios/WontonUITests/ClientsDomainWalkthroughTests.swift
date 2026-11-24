@@ -143,12 +143,14 @@ final class ClientsDomainWalkthroughTests: XCTestCase {
         XCTAssertTrue(app.textFields["clientsDomainSuffix"].waitForExistence(timeout: 30), "域名页没打开")
         shot("01-empty")
 
-        // 栈上有存过的后缀时输入框是带值的：先清空再打，别打成两遍。
+        // 栈上有存过的后缀时输入框带着值；清空不一定成功，那就别动它（存着的一定是能签发的开发后缀）。
         let suffixField = app.textFields["clientsDomainSuffix"]
         XCTAssertTrue(scrollTo(suffixField), "没有域名字段")
-        suffixField.tap()
-        suffixField.typeText(String(repeating: XCUIKeyboardKey.delete.rawValue, count: 64))
-        suffixField.typeText("example.test")
+        let suffixValue = (suffixField.value as? String) ?? ""
+        if suffixValue.isEmpty || suffixValue == String(localized: .Clients.clientsDomainSuffix) {
+            suffixField.tap()
+            suffixField.typeText("example.test")
+        }
         // 键盘盖住下半页会吞掉滑动手势：先收起键盘，“其他”在懒加载列表的更下面。
         if app.keyboards.count > 0 { app.typeText("\n") }
         var other: XCUIElement?
@@ -186,7 +188,7 @@ final class ClientsDomainWalkthroughTests: XCTestCase {
         let issued = app.staticTexts.matching(NSPredicate(format: "label BEGINSWITH 'Expires'")).firstMatch
         var issuedHit = false
         for _ in 0..<10 where !issuedHit {
-            if issued.waitForExistence(timeout: 20) {
+            if issued.waitForExistence(timeout: 15) {
                 issuedHit = true
                 break
             }
@@ -194,9 +196,10 @@ final class ClientsDomainWalkthroughTests: XCTestCase {
                 _ = scrollTo(app.staticTexts["Issuing"])
                 shot("04-issuing")
             }
+            // 退回设置页并确认真的退回了，再进来拉新状态。
             _ = try? app.navigationBars.buttons.firstMatch.tap()
-            usleep(400_000)
-            _ = tapRow("HTTPS and domain", timeout: 20)
+            usleep(500_000)
+            XCTAssertTrue(tapRow("HTTPS and domain", timeout: 20), "退不回也进不去设置")
         }
         XCTAssertTrue(issuedHit, "证书没签出来：\(app.debugDescription)")
         _ = scrollTo(issued)
