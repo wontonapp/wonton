@@ -8,7 +8,7 @@ use std::sync::{Arc, Mutex, Weak};
 
 use tokio::sync::mpsc;
 use wonton_protocol::{
-    ChatAction, ChoicesState, JumpState, MessageContent, MessageStatus, TimelineAction,
+    ChatAction, ChoiceSend, ChoicesState, JumpState, MessageContent, MessageStatus, TimelineAction,
     TimelineContent, TimelineDiff, TimelineFocus, TimelineItem, TimelineScroll, TimelineUpdate,
 };
 
@@ -310,7 +310,8 @@ impl FakeTimeline {
             .map(|body| {
                 state.sent += 1;
                 let index = ITEMS - 1 + state.sent;
-                let id = format!("ui-fake-forwarded-{index}");
+                // 编号只看第几次发送，不和假数据总条数绑：测试按它认这条，条数加减不用改。
+                let id = format!("ui-fake-forwarded-{}", state.sent);
                 let mut message = text_message(&id, OWNER, at_ms(index), &[body]);
                 message.status = Some(MessageStatus::Sent);
                 TimelineDiff::PushBack {
@@ -344,6 +345,7 @@ impl FakeTimeline {
                     choices.state = ChoicesState::Answered;
                     for option in &mut choices.options {
                         option.chosen = option.key == key;
+                        option.send = ChoiceSend::Idle;
                     }
                 }
                 Some((index, item))
@@ -363,20 +365,20 @@ impl FakeTimeline {
     /// 自己发的一条接在末尾，比上一条晚一分钟（和上一条自己的消息连成一组）。
     /// 提及的用户不画胶囊：假数据里没有成员表，胶囊的样式由真实房间里看。
     fn send_text(&self, body: &str, _mentions: &[String]) {
-        let index = {
+        let (index, sent) = {
             let mut state = self.lock();
             state.sent += 1;
-            ITEMS - 1 + state.sent
+            (ITEMS - 1 + state.sent, state.sent)
         };
         let mut message = text_message(
-            &format!("ui-fake-sent-{index}"),
+            &format!("ui-fake-sent-{sent}"),
             OWNER,
             at_ms(index),
             &[body.to_owned()],
         );
         message.status = Some(MessageStatus::Sent);
         let item = TimelineItem {
-            id: format!("ui-fake-sent-{index}"),
+            id: format!("ui-fake-sent-{sent}"),
             content: TimelineContent::Message { message },
         };
         self.batch(|update| {
@@ -593,7 +595,7 @@ mod tests {
             crate::chat::apply_diff(&mut items, diff);
         }
         assert_eq!(items.len(), ITEMS + 1);
-        let forwarded = message(&items, &format!("ui-fake-forwarded-{ITEMS}"));
+        let forwarded = message(&items, "ui-fake-forwarded-1");
         let MessageContent::Text { body, .. } = &forwarded.body else {
             panic!("转发的是文字");
         };

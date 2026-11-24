@@ -13,12 +13,12 @@ use std::net::{Ipv4Addr, TcpListener, TcpStream};
 use std::sync::LazyLock;
 
 use wonton_protocol::{
-    BackPagination, ChoiceSend, ChoicesState, ImageCaption, ImageContent, MediaHandle,
-    MessageAction, MessageChoice, MessageChoices, MessageContent, MessageGroup, MessageStatus,
-    PanelItem, PanelSource, QuotedContent, QuotedMessage, ReplyQuote, RichBlock, RichBlockKind,
-    RichLink, RichLinkKind, RichSpan, RoomCommand, SendState, SideChatCard, SideChatState, TabIcon,
-    TabLayout, TabPage, TabRef, TabState, TimelineContent, TimelineDiff, TimelineItem,
-    TimelineMessage, TimelineUpdate, TimelineViewport,
+    BackPagination, ChoiceSend, ChoicesState, ConfirmationView, ImageCaption, ImageContent,
+    MediaHandle, MessageAction, MessageChoice, MessageChoices, MessageContent, MessageGroup,
+    MessageStatus, PanelItem, PanelSource, QuotedContent, QuotedMessage, ReplyQuote, RichBlock,
+    RichBlockKind, RichLink, RichLinkKind, RichSpan, RoomCommand, SendFailure, SendState,
+    SideChatCard, SideChatState, TabIcon, TabLayout, TabPage, TabRef, TabState, TimelineContent,
+    TimelineDiff, TimelineItem, TimelineMessage, TimelineUpdate, TimelineViewport,
 };
 
 /// 主面板和房间面板里放的那一页。本机端口占不上时没有这一页。
@@ -74,7 +74,18 @@ pub(super) fn timeline(room_id: &str) -> TimelineUpdate {
         panel: panel(),
         panel_selected: None,
         key_notice: None,
-        confirmations: Vec::new(),
+        // Echo 的房间里挂着一张等回答的确认卡片，输入框上方的入口由界面测试看。
+        confirmations: if room_id == super::ui_fake::ROOM_ID {
+            vec![ConfirmationView {
+                card: super::ui_fake_devices::card(),
+                sending: None,
+                sending_choice_id: None,
+                problem: None,
+                window: None,
+            }]
+        } else {
+            Vec::new()
+        },
         side_chat: None,
         widgets: if in_call {
             vec![super::ui_fake::call_widget()]
@@ -119,7 +130,7 @@ fn commands() -> Vec<RoomCommand> {
     .collect()
 }
 
-pub(super) const ITEMS: usize = 25;
+pub(super) const ITEMS: usize = 27;
 pub(super) const OWNER: &str = "@owner:home.example";
 const ECHO: &str = "@echo:home.example";
 /// 最早一条的时间；下标每大一条晚一分钟（下标大 = 屏幕上更靠下 = 更晚）。
@@ -154,6 +165,12 @@ pub(super) const APP_LINK_INDEX: usize = 6;
 pub(super) const UNKNOWN_APP_LINK_INDEX: usize = 7;
 pub(super) const APP_LINK: &str = "wonton://settings/peers/?from=chat";
 pub(super) const UNKNOWN_APP_LINK: &str = "wonton:tab/from-the-future";
+/// 自己发的、发不出去的一条：旁边红色感叹号的点击范围要看它。
+pub(super) const FAILED_SEND_INDEX: usize = 24;
+/// Echo 带一个发送失败的选项：失败原因和重试要看它。
+pub(super) const FAILED_CHOICE_INDEX: usize = 25;
+/// 失败选项的原因，界面上应当收在“详情”里。
+pub(super) const FAILED_CHOICE_REASON: &str = "Server timed out while sending";
 // 中文假数据放在数据文件里：它是界面测试的输入，不是界面文字，界面文字检查（ADR-0043）只管源码里的字符串。
 const QUOTED_TEXT: &str = include_str!("ui_fake_text/quoted.txt");
 const LONG_REPLY: &str = include_str!("ui_fake_text/long_reply.txt");
@@ -192,6 +209,13 @@ fn paragraphs(index: usize, last: bool) -> Vec<String> {
         vec![APP_LINK.into()]
     } else if index == UNKNOWN_APP_LINK_INDEX {
         vec![UNKNOWN_APP_LINK.into()]
+    } else if index == FAILED_SEND_INDEX {
+        vec!["Fixture failed send".into()]
+    } else if index == FAILED_CHOICE_INDEX {
+        vec![
+            "Fixture choices with a failure".into(),
+            "⏳ = ask later\n🔁 = retry tomorrow".into(),
+        ]
     } else if index == QUOTED_INDEX {
         vec![QUOTED_TEXT.trim_end().into()]
     } else if index == LONG_REPLY_INDEX {
@@ -213,34 +237,15 @@ fn paragraphs(index: usize, last: bool) -> Vec<String> {
     paragraphs
 }
 
-fn item(index: usize) -> TimelineItem {
-    if let Some(photo) = photo(index) {
-        return photo;
-    }
-    // 8..=10 都算 Echo 的，凑一组连发的消息给并排的气泡做样子，最后一条是自己还没送达的，其余一左一右轮流。
-    let own = (index % 2 == 1 && !(8..=10).contains(&index)) || index == SENDING_INDEX;
-    let last = index + 1 == ITEMS;
-    let paragraphs = paragraphs(index, last);
-    let mut message = text_message(
-        &format!("ui-fake-{index}"),
-        if own { OWNER } else { ECHO },
-        at_ms(index),
-        &paragraphs,
-    );
-    if (index == APP_LINK_INDEX || index == UNKNOWN_APP_LINK_INDEX)
-        && let MessageContent::Text { blocks, .. } = &mut message.body
-    {
-        blocks[0].spans[0].link = Some(RichLink {
-            url: paragraphs[0].clone(),
-            kind: RichLinkKind::Other,
-        });
-    }
+/// 状态、回复、选项、旁聊卡片和两处失败标记：`item` 里只留正文。
+fn decorate(index: usize, own: bool, message: &mut TimelineMessage) {
     let status = if index <= REPLY_INDEX {
         MessageStatus::Read
     } else {
         MessageStatus::Sent
     };
-    message.status = (own && index != SENDING_INDEX).then_some(status);
+    message.status =
+        (own && index != SENDING_INDEX && index != FAILED_SEND_INDEX).then_some(status);
     if index == SENDING_INDEX {
         message.send_state = SendState::Sending { progress: None };
     }
@@ -291,6 +296,61 @@ fn item(index: usize) -> TimelineItem {
             state: SideChatState::Open,
         });
     }
+    if index == FAILED_SEND_INDEX {
+        message.send_state = SendState::Failed {
+            failure: SendFailure::Upstream,
+            details: Some(FAILED_CHOICE_REASON.into()),
+            recoverable: true,
+        };
+    }
+    if index == FAILED_CHOICE_INDEX {
+        message.choices = Some(MessageChoices {
+            options: [("⏳", "ask later"), ("🔁", "retry tomorrow")]
+                .into_iter()
+                .map(|(key, label)| MessageChoice {
+                    key: key.into(),
+                    label: Some(label.into()),
+                    chosen: false,
+                    send: if key == "⏳" {
+                        ChoiceSend::Failed {
+                            message: FAILED_CHOICE_REASON.into(),
+                        }
+                    } else {
+                        ChoiceSend::Idle
+                    },
+                })
+                .collect(),
+            state: ChoicesState::Open,
+        });
+    }
+}
+
+fn item(index: usize) -> TimelineItem {
+    if let Some(photo) = photo(index) {
+        return photo;
+    }
+    // 8..=10 都算 Echo 的，凑一组连发的消息给并排的气泡做样子，第 24 条是自己发不出去的一条，最后一条是自己还没送达的，
+    // 其余一左一右轮流。
+    let own = (index % 2 == 1 && !(8..=10).contains(&index))
+        || index == FAILED_SEND_INDEX
+        || index == SENDING_INDEX;
+    let last = index + 1 == ITEMS;
+    let paragraphs = paragraphs(index, last);
+    let mut message = text_message(
+        &format!("ui-fake-{index}"),
+        if own { OWNER } else { ECHO },
+        at_ms(index),
+        &paragraphs,
+    );
+    if (index == APP_LINK_INDEX || index == UNKNOWN_APP_LINK_INDEX)
+        && let MessageContent::Text { blocks, .. } = &mut message.body
+    {
+        blocks[0].spans[0].link = Some(RichLink {
+            url: paragraphs[0].clone(),
+            kind: RichLinkKind::Other,
+        });
+    }
+    decorate(index, own, &mut message);
     TimelineItem {
         id: format!("ui-fake-{index}"),
         content: TimelineContent::Message { message },

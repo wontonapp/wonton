@@ -42,7 +42,7 @@ pub(super) fn new_thread_root() -> String {
     format!("$ui-fake-thread-{}", NEXT.fetch_add(1, Ordering::SeqCst))
 }
 
-const ROOM_ID: &str = "!ui-fake:home.example";
+pub(super) const ROOM_ID: &str = "!ui-fake:home.example";
 /// 有人在通话的群聊：列表这一行和顶栏都标“通话中”，顶栏有 [`CALL_PLUGIN`] 的 widget 入口。
 pub(super) const CALL_ROOM_ID: &str = "!ui-fake-call:home.example";
 /// 没人说话的群，转发时多一个去处。

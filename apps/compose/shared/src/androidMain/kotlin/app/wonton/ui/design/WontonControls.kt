@@ -54,6 +54,7 @@ import androidx.compose.ui.layout.MeasurePolicy
 import androidx.compose.ui.layout.MeasureResult
 import androidx.compose.ui.layout.MeasureScope
 import androidx.compose.ui.platform.LocalContext
+import androidx.compose.ui.platform.testTag
 import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.semantics.Role
 import androidx.compose.ui.semantics.contentDescription
@@ -308,6 +309,7 @@ val LocalWontonBarStatus = compositionLocalOf { WontonBarStatus() }
  * `centeredTitle` 把标题挪到正中（群聊用它，两边不放头像）；带 `avatar` 的标题只能在左边。
  * `showsStatus` 把连接状态放进副标题；`showsStatusLine` 给内容全靠连接的页面：长时间连不上时换成标题下面那一行，带下一步，
  * 不然页面只会一直转圈。`avatar` 放在标题前（和 Bot 私聊的房间用它显示状态头像，ADR-0044）。
+ * 给了 `titleClick` 时标题和头像都能点（私聊点进 Bot 资料页），`avatarLabel` 是头像的读屏名。
  */
 @Composable
 fun WontonPushedBar(
@@ -318,6 +320,8 @@ fun WontonPushedBar(
     showsStatus: Boolean = false,
     showsStatusLine: Boolean = false,
     avatar: (@Composable () -> Unit)? = null,
+    titleClick: (() -> Unit)? = null,
+    avatarLabel: String = "",
     centeredTitle: Boolean = false,
     actions: (@Composable RowScope.() -> Unit)? = null,
 ) {
@@ -325,7 +329,17 @@ fun WontonPushedBar(
     val line = status.line.takeIf { showsStatusLine }
     val subtitle = status.subtitle.takeIf { (showsStatus || showsStatusLine) && line == null }
     val titleSlot: @Composable () -> Unit = {
-        Column {
+        Column(
+            Modifier
+                .testTag("roomTopBarTitle")
+                .then(
+                    if (titleClick == null) {
+                        Modifier
+                    } else {
+                        Modifier.clickable(role = Role.Button, onClick = titleClick)
+                    },
+                ),
+        ) {
             Text(
                 title,
                 Modifier.semantics { heading() },
@@ -365,7 +379,22 @@ fun WontonPushedBar(
                     verticalAlignment = Alignment.CenterVertically,
                     horizontalArrangement = Arrangement.spacedBy(WontonTheme.spacing.s12),
                 ) {
-                    avatar?.invoke()
+                    avatar?.let {
+                        Box(
+                            Modifier
+                                .testTag("roomTopBarAvatar")
+                                .then(
+                                    if (titleClick == null) {
+                                        Modifier
+                                    } else {
+                                        Modifier.clickable(role = Role.Button, onClick = titleClick)
+                                    },
+                                )
+                                .semantics { contentDescription = avatarLabel },
+                        ) {
+                            it()
+                        }
+                    }
                     titleSlot()
                 }
                 Row(horizontalArrangement = Arrangement.spacedBy(WontonTheme.spacing.s12)) {

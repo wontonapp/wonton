@@ -6,7 +6,7 @@
     <string name="problem_forbidden_title">The request was refused</string>
     <!-- Accessibility label of the skeleton list placeholder while content loads. -->
     <string name="problem_loading">Loading</string>
-    <!-- Problem title when the core says the action can't run yet; the core's own reason is shown as the next step. -->
+    <!-- Problem title when the core says the action can't run yet; the core's own reason goes into the details. -->
     <string name="problem_not_ready_title">Not available right now</string>
     <!-- Problem title: the app changed after the owner approved the install. -->
     <string name="problem_plugin_changed_title">The app changed after you approved it</string>

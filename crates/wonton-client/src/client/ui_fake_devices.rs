@@ -51,7 +51,7 @@ pub(super) fn answer(
     true
 }
 
-fn card() -> ConfirmationCard {
+pub(super) fn card() -> ConfirmationCard {
     ConfirmationCard {
         id: CARD_ID.into(),
         state: ConfirmationState::Pending,
