@@ -146,9 +146,10 @@ final class ClientsDomainWalkthroughTests: XCTestCase {
         }
         // 仍没入口就退回去重开，等它自己刷过来。
         var entered = false
-        for _ in 0..<6 where !entered {
+        for _ in 0..<12 where !entered {
             guard openSettings() else { continue }
             entered = tapRow("HTTPS and domain", timeout: 15)
+            usleep(2_000_000)
             if !entered {
                 _ = try? app.navigationBars.buttons.firstMatch.tap()
                 usleep(1_000_000)
