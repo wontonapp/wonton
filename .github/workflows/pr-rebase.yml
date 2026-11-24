@@ -1,0 +1,81 @@
+name: pr-rebase
+
+# main 一动，把开着的 PR 重新 rebase 到最新 main：机械能解开的直接强推，解不开就贴冲突文件清单、打 needs-rebase 标叫人。
+# 只做 rebase，不做合并——合并仍按 docs/merge-policy.md 由人或 auto-merge 决定，这里的推送也不改任何内容。
+# 规矩（同时开着的 PR 上限、基础层先合、分支 48 小时寿命）写在 docs/merge-policy.md。
+on:
+  push:
+    branches: [main]
+
+permissions:
+  contents: write
+  pull-requests: write
+  issues: write
+
+# 连着合几次只留最新那轮：rebase 的目标永远是当前 main，前一轮的目标已经过期。
+concurrency:
+  group: pr-rebase-main
+  cancel-in-progress: true
+
+jobs:
+  rebase:
+    name: 把开着的 PR rebase 到最新 main
+    runs-on: ubuntu-24.04
+    timeout-minutes: 20
+    env:
+      GH_TOKEN: ${{ github.token }}
+    steps:
+      # 要能对每条分支做 rebase 并强推，所以拉全历史、带上写权限。
+      - uses: actions/checkout@fbc6f3992d24b796d5a048ff273f7fcc4a7b6c09 # v5
+        with:
+          fetch-depth: 0
+
+      - name: 逐个 PR 试 rebase
+        run: |
+          set -uo pipefail
+          git config user.name "wonton-rebase"
+          git config user.email "noreply@wonton.app"
+
+          # 只处理本仓库的分支：fork 的分支这里推不动。
+          gh pr list --state open --limit 100 \
+            --json number,headRefName,isCrossRepository \
+            -q '.[] | select(.isCrossRepository == false) | [.number, .headRefName] | @tsv' \
+            | sort -n > /tmp/prs.tsv
+
+          touched=0
+          conflicted=0
+          while IFS=$'\t' read -r num branch; do
+            git fetch --quiet origin "+refs/heads/$branch:refs/remotes/origin/$branch"
+            # 基点就是当前 main（或已经领先于它）就不用动。
+            if [ "$(git rev-list --count "refs/remotes/origin/$branch..origin/main")" = "0" ]; then
+              continue
+            fi
+
+            git checkout --quiet -B "$branch" "refs/remotes/origin/$branch"
+            if git rebase --quiet origin/main; then
+              git push --quiet --force-with-lease="refs/heads/$branch:refs/remotes/origin/$branch" \
+                origin "HEAD:refs/heads/$branch" && touched=$((touched + 1))
+              echo "rebase 成功：#$num $branch"
+              continue
+            fi
+
+            # 冲突：把撞到的文件列出来、标上，等作者接手。已经标过的不再重复评论。
+            files=$(git diff --name-only --diff-filter=U | sort | sed 's/^/- `/' | sed 's/$/`/')
+            git rebase --abort
+            conflicted=$((conflicted + 1))
+            labels=$(gh pr view "$num" --json labels -q '.labels[].name' | tr '\n' ' ')
+            if [[ "$labels" != *needs-rebase* ]]; then
+              gh pr edit "$num" --add-label needs-rebase
+              gh pr comment "$num" --body "$(printf 'main 又往前走了，这条分支和它有冲突，自动 rebase 没解开。撞到的文件：\n\n%s\n\nrebase 到最新 main 解掉冲突再推，解完自己摘掉 needs-rebase 标。' "$files")"
+            fi
+            echo "撞车：#$num $branch"
+          done < /tmp/prs.tsv
+
+          git checkout --quiet main
+          echo "成功 $touched 条，冲突 $conflicted 条" >> "$GITHUB_STEP_SUMMARY"
+
+      # 一条都没解开不算失败：冲突本来就该作者处理。但脚本自身出错要红。
+      - name: 汇总
+        if: always()
+        run: |
+          echo "本轮由 \`${{ github.sha }}\` 触发，看上面每条的结论。" >> "$GITHUB_STEP_SUMMARY"
