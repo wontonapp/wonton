@@ -7,14 +7,23 @@ import android.os.Bundle
 import androidx.activity.ComponentActivity
 import androidx.activity.compose.setContent
 import androidx.activity.enableEdgeToEdge
+import androidx.compose.foundation.layout.Box
+import androidx.compose.foundation.layout.Column
+import androidx.compose.foundation.layout.fillMaxSize
+import androidx.compose.foundation.layout.navigationBarsPadding
+import androidx.compose.foundation.layout.statusBarsPadding
+import androidx.compose.foundation.rememberScrollState
+import androidx.compose.foundation.verticalScroll
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.CompositionLocalProvider
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
+import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.res.stringResource
 import app.wonton.protocol.AppearanceViewModel
+import app.wonton.protocol.CardLine
 import app.wonton.protocol.ConnectionCheck
 import app.wonton.protocol.ConnectionDetails
 import app.wonton.protocol.ConnectionQuality
@@ -23,22 +32,34 @@ import app.wonton.protocol.FontStyle
 import app.wonton.protocol.HomePath
 import app.wonton.protocol.HomeStatus
 import app.wonton.protocol.HomeViewModel
+import app.wonton.protocol.OnboardingCommit
+import app.wonton.protocol.OnboardingItemState
+import app.wonton.protocol.OnboardingReview
+import app.wonton.protocol.OnboardingReviewDetail
+import app.wonton.protocol.OnboardingReviewItem
+import app.wonton.protocol.OnboardingReviewKind
+import app.wonton.protocol.PermissionLine
+import app.wonton.protocol.PermissionRisk
 import app.wonton.protocol.Rgb
+import app.wonton.protocol.StepNav
 import app.wonton.protocol.ThemeColors
 import app.wonton.protocol.ThemeMode
 import app.wonton.protocol.TextSize
 import app.wonton.protocol.UdpFlowStats
 import app.wonton.ui.ConnectionDetailsPage
+import app.wonton.ui.OnboardingReviewStep
+import app.wonton.ui.PluginsState
 import app.wonton.ui.R
 import app.wonton.ui.connectionBarStatus
 import app.wonton.ui.design.LocalWontonBarStatus
+import app.wonton.ui.design.StepCardFrame
 import app.wonton.ui.design.WontonPushedBar
 import app.wonton.ui.design.WontonRootBar
 import app.wonton.ui.design.WontonScreen
 import app.wonton.ui.design.WontonTheme
 
 /**
- * #847 的界面走查：核心还没判 Poor 时，用假数据把三种状态摆出来。`-e screen poor|relay|details|details-flows` 选页。
+ * #847 的界面走查和引导确认页：用假数据把状态摆出来。`-e screen poor|relay|details|details-flows|onboarding-review` 选页。
  * 只在 debug 构建注册（src/debug/AndroidManifest.xml），不进 release。
  */
 class QualityPreviewActivity : ComponentActivity() {
@@ -53,6 +74,7 @@ class QualityPreviewActivity : ComponentActivity() {
                 when (screen) {
                     SCREEN_RELAY -> RelayBarPreview()
                     SCREEN_DETAILS -> ConnectionDetailsPage(previewHome(relay = true), null, onBack = {})
+                    SCREEN_ONBOARDING_REVIEW -> OnboardingReviewPreview()
                     SCREEN_DETAILS_FLOWS -> ConnectionDetailsPage(
                         previewHome(relay = true, flows = previewUdpFlows(), evicted = 57uL),
                         null,
@@ -75,6 +97,30 @@ class QualityPreviewActivity : ComponentActivity() {
         WithBarStatus(previewHome(relay = false)) {
             WontonScreen(bar = { WontonRootBar(stringResource(R.string.launcher_title)) }) {}
         }
+    }
+
+    /** 引导最后一步：三类汇总、权限、来源提示和安装进展。 */
+    @Composable
+    private fun OnboardingReviewPreview() {
+        val core = (application as WontonApplication).core.getOrNull() ?: return
+        val plugins = remember(core) { PluginsState(core) }
+        val scroll = rememberScrollState()
+        Box(Modifier.fillMaxSize().statusBarsPadding().navigationBarsPadding()) {
+        StepCardFrame(
+            nav = StepNav(position = 4u, total = 4u, canBack = true, canSkip = false, canNext = true, canClose = true),
+            title = stringResource(R.string.onboarding_step_review),
+            primaryText = stringResource(R.string.onboarding_done),
+            primaryBusy = false,
+            onBack = {},
+            onSkip = {},
+            onPrimary = {},
+        ) {
+            Column(Modifier.weight(1f).verticalScroll(scroll)) {
+                OnboardingReviewStep(previewOnboardingReview(), plugins) {}
+            }
+        }
+        }
+
     }
 
     /** 聊天房间：短状态替换副标题。 */
@@ -100,6 +146,82 @@ private const val SCREEN_POOR = "poor"
 private const val SCREEN_RELAY = "relay"
 private const val SCREEN_DETAILS = "details"
 private const val SCREEN_DETAILS_FLOWS = "details-flows"
+private const val SCREEN_ONBOARDING_REVIEW = "onboarding-review"
+
+/** 确认页的假数据：资料和模型没改，一台要装的应用带两项权限和来源提示，一台在排队。 */
+private fun previewOnboardingReview() = OnboardingReview(
+    items = listOf(
+        OnboardingReviewItem(
+            id = "profile",
+            kind = OnboardingReviewKind.PROFILE,
+            titles = listOf("Ada Lovelace"),
+            detail = OnboardingReviewDetail.Unchanged,
+            icon = null,
+            permissions = emptyList(),
+            notices = emptyList(),
+            state = OnboardingItemState.Ready,
+        ),
+        OnboardingReviewItem(
+            id = "model",
+            kind = OnboardingReviewKind.MODEL,
+            titles = listOf("OpenAI"),
+            detail = OnboardingReviewDetail.Unchanged,
+            icon = null,
+            permissions = emptyList(),
+            notices = emptyList(),
+            state = OnboardingItemState.Ready,
+        ),
+        OnboardingReviewItem(
+            id = "app.immich.photos",
+            kind = OnboardingReviewKind.APP,
+            titles = listOf("家庭相册"),
+            detail = null,
+            icon = null,
+            permissions = listOf(
+                PermissionLine(
+                    permission = "storage.share.photos:read",
+                    text = "读共享文件夹 photos",
+                    risk = null,
+                    notice = null,
+                    supported = true,
+                    added = false,
+                    optional = false,
+                    enabled = false,
+                    offLoss = null,
+                    opened = null,
+                ),
+                PermissionLine(
+                    permission = "devices.gpu",
+                    text = "用显卡（高权限）",
+                    risk = PermissionRisk.HIGH,
+                    notice = null,
+                    supported = true,
+                    added = false,
+                    optional = false,
+                    enabled = false,
+                    offLoss = null,
+                    opened = null,
+                ),
+            ),
+            notices = listOf(
+                CardLine(text = "云吞没审核过这个应用，程序由 Example 提供", emphasis = true),
+                CardLine(text = "程序没有锁定具体版本：example/app:latest", emphasis = false),
+            ),
+            state = OnboardingItemState.Ready,
+        ),
+        OnboardingReviewItem(
+            id = "app.memos",
+            kind = OnboardingReviewKind.APP,
+            titles = listOf("随手记"),
+            detail = null,
+            icon = null,
+            permissions = emptyList(),
+            notices = emptyList(),
+            state = OnboardingItemState.Waiting,
+        ),
+    ),
+    commit = OnboardingCommit.NOT_STARTED,
+)
 
 private fun previewHome(
     relay: Boolean,

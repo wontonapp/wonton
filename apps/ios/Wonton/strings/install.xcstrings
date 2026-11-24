@@ -579,25 +579,25 @@
         "en": {
           "stringUnit": {
             "state": "translated",
-            "value": "Permissions"
+            "value": "What it can use"
           }
         },
         "zh-Hans": {
           "stringUnit": {
             "state": "translated",
-            "value": "权限"
+            "value": "它会用到"
           }
         },
         "zh-Hant": {
           "stringUnit": {
             "state": "translated",
-            "value": "權限"
+            "value": "它會用到"
           }
         },
         "ja": {
           "stringUnit": {
             "state": "translated",
-            "value": "権限"
+            "value": "使うもの"
           }
         }
       }

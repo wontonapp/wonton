@@ -183,31 +183,31 @@
       }
     },
     "onboarding.review.uncertain": {
-      "comment": "Problem title in the review step: it's unknown whether the app installed. The reason is in the collapsed details.",
+      "comment": "Title when it's unknown whether the app installed; the next line says to check the app's page.",
       "extractionState": "manual",
       "localizations": {
         "en": {
           "stringUnit": {
             "state": "translated",
-            "value": "Install Result Unknown"
+            "value": "Not sure whether it installed."
           }
         },
         "zh-Hans": {
           "stringUnit": {
             "state": "translated",
-            "value": "不确定装好没有"
+            "value": "不确定装好了没有。"
           }
         },
         "zh-Hant": {
           "stringUnit": {
             "state": "translated",
-            "value": "不確定裝好沒有"
+            "value": "不確定裝好了沒有。"
           }
         },
         "ja": {
           "stringUnit": {
             "state": "translated",
-            "value": "インストールされたか確認できません"
+            "value": "インストールできたか分かりません。"
           }
         }
       }

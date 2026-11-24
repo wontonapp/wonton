@@ -13,7 +13,7 @@
     <!-- Problem title while installing: the home server is updating itself right now. -->
     <string name="onboarding_problem_plugin_core_upgrading">自宅サーバーをアップデート中です。終わってから再試行してください。</string>
     <!-- Problem title in the review step: it's unknown whether the app installed. The reason is in the collapsed details. -->
-    <string name="onboarding_review_uncertain">インストールされたか確認できません。アプリのページを確認してください。</string>
+    <string name="onboarding_review_uncertain">インストールできたか分かりません。アプリのページを確認してください。</string>
     <!-- Secondary button on the setup error screen: leave setup without finishing. -->
     <string name="onboarding_skip_anyway">スキップ</string>
     <!-- Card title after setup finished. -->
@@ -21,5 +21,5 @@
     <!-- Card title fallback in setup when the step is unknown. -->
     <string name="onboarding_step_other">セットアップ</string>
     <!-- Card title at the top of the review step in setup: check everything before finishing. -->
-    <string name="onboarding_step_review">確認</string>
+    <string name="onboarding_step_review">あと少し</string>
 </resources>
