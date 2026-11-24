@@ -277,19 +277,20 @@ class RoomAttachPanelTest : RoomTelegramCase() {
         photos()[albumIndexOf(picks[1])].performClick()
         settleKeyboard()
         sheetSend("attach-send").assertIsEnabled()
-        // 假房间自带几张照片，只认这次新出现的：先记下已有的标签。
-        val before = photoTags()
+        // 假房间自带几张照片，只认这次新出现的：先记下已有的标签（这里是集合，判“新”用）。
+        val before = photoTags().toSet()
         sheetSend("attach-send").performClick()
         compose.waitUntil(10_000) { compose.onAllNodes(hasTestTag("attach-send")).fetchSemanticsNodes().isEmpty() }
         // 两条新照片里只有第一条带引用：按条目自己的标签数。旁聊盖着主对话，同一条在两层里都组合着，
         // 所以每张按出现几次算几次，引用数要和它那一份的复制数相等。
-        compose.waitUntil(20_000) { (photoTags() - before).size == 2 }
+        // 列表按节点给，同一条有两份：等“新出现的标签”有两种，别看条数。
+        compose.waitUntil(20_000) { (photoTags() - before).distinct().size == 2 }
         val copies = (photoTags() - before).groupingBy { it }.eachCount()
         fun quotesIn(tag: String) = compose.onAllNodes(
             hasTestTag("quote") and hasAnyAncestor(hasTestTag(tag)),
             useUnmergedTree = true,
         ).fetchSemanticsNodes().size
-        val tags = copies.keys.sortedBy { it.substringAfterLast('-').toInt() }
+        val tags = copies.keys.sortedByDescending { it.substringAfterLast('-').toInt() }
         check(quotesIn(tags[0]) == copies.getValue(tags[0])) { "第一张照片没带引用" }
         check(quotesIn(tags[1]) == 0) { "第二张也带了引用" }
         compose.onNodeWithContentDescription(string(R.string.message_reply_cancel)).assertDoesNotExist()
@@ -337,13 +338,13 @@ class RoomAttachPanelTest : RoomTelegramCase() {
         useUnmergedTree = true,
     ).fetchSemanticsNodes().size
 
-    /** 时间线里现存的照片条目标签（两层树各算各的，同一条会出现多次）。 */
-    private fun photoTags(): Set<String> = compose.onAllNodes(
+    /** 时间线里现存的照片条目标签，按节点逐个给：两层树各算各的，同一条会出现多次，不能去重。 */
+    private fun photoTags(): List<String> = compose.onAllNodes(
         SemanticsMatcher("时间线里的照片条目") { node ->
             node.config.getOrNull(SemanticsProperties.TestTag)?.startsWith("item-ui-fake-photo-") == true
         },
         useUnmergedTree = true,
-    ).fetchSemanticsNodes().map { it.config[SemanticsProperties.TestTag] }.toSet()
+    ).fetchSemanticsNodes().map { it.config[SemanticsProperties.TestTag] }
 
     private fun openForward() {
         // 12 是长条，气泡比整屏还高，按正中会落到屏幕外；换它上面那条一句话的 11。
