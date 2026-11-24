@@ -16,5 +16,5 @@
     <!-- Problem title in setup: the recommendation source is turned off. -->
     <string name="onboarding_problem_store_disabled">The recommendation source is off. You can skip.</string>
     <!-- Kind label above a review row: the apps that will be installed. -->
-    <string name="onboarding_review_section_apps">Apps</string>
+    <string name="onboarding_review_section_apps">Apps to install</string>
 </resources>

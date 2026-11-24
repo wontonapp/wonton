@@ -15,5 +15,5 @@
     <!-- Problem title in setup: the recommendation source is turned off. -->
     <string name="onboarding_problem_store_disabled">推薦清單的來源已關閉，可以跳過。</string>
     <!-- Kind label above a review row: the apps that will be installed. -->
-    <string name="onboarding_review_section_apps">應用</string>
+    <string name="onboarding_review_section_apps">要安裝的應用程式</string>
 </resources>
