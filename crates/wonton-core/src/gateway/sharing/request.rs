@@ -98,6 +98,7 @@ async fn plugin(gateway: &Gateway, slug: &str, mut req: Request) -> Response {
         name: route.id.as_str(),
     };
     let fwd = proxy::Forwarded {
+        web_user: Some(peer.user_id.as_str()),
         client: None,
         scheme: &gateway.public.scheme,
     };

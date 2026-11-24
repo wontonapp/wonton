@@ -6,8 +6,8 @@ use hyper::header::CONTENT_TYPE;
 use hyper::{Method, StatusCode};
 
 use super::{
-    Gateway, api, bot_web, client_addr, hosted, isolation, pages, proxy, proxy_sso, request_guards,
-    sso, web_storage,
+    Gateway, WEB_USER_HEADER, api, bot_web, client_addr, hosted, isolation, matrix_user_id, pages,
+    proxy, proxy_sso, request_guards, sso, web_storage,
 };
 use crate::config::PublicUrls;
 use crate::l10n;
@@ -91,6 +91,7 @@ pub(super) async fn self_request(
         proxy_sso::strip(req.headers_mut(), auth);
     }
     let fwd = proxy::Forwarded {
+        web_user: None,
         client: client_addr(&req),
         scheme: &gateway.public.scheme,
     };
@@ -148,6 +149,8 @@ async fn plugin_request_path(
             format,
         );
     };
+    // 打开者由下面认出人以后再写，客户端带的一律不算。
+    req.headers_mut().remove(WEB_USER_HEADER);
     // 这个插件自己网络里的容器访问它自己的网页地址：不要会话，转给它自己的上游，也不代表任何人（ADR-0063）。
     // 认来源用网关认出调用方的同一张表（按来源地址落在哪个插件网络里）。
     let from_itself = client_addr(&req)
@@ -175,18 +178,41 @@ async fn plugin_request_path(
     if let Some(denied) = request_guards::app_denied(gateway, person.as_ref(), &route.id, &req) {
         return denied;
     }
+    // 回调里应用自己换凭据，用不到打开者；带着会话 Cookie 也照旧不带（ADR-0045）。
+    let web_user = person
+        .as_ref()
+        .filter(|_| !callback)
+        .map(|person| matrix_user_id(gateway, &person.username));
     // 数据存储不经网页的提供方，不看它的状态（ADR-0080 第 6 节）。
     if let Some(hosted) = &route.hosted
         && web_storage::is_data_path(req.uri().path())
     {
-        return web_storage::forward(gateway, &route, hosted, req, &origin, langs, format).await;
+        return web_storage::forward(
+            gateway,
+            &route,
+            hosted,
+            req,
+            &origin,
+            web_user.as_deref(),
+            langs,
+        )
+        .await;
     }
     let upstream = match upstream(&route, langs, format) {
         Ok(upstream) => upstream,
         Err(response) => return *response,
     };
     if let Some(hosted) = &route.hosted {
-        return hosted::forward(gateway, &route, &upstream, hosted, req, langs, format).await;
+        return hosted::forward(
+            gateway,
+            &route,
+            &upstream,
+            hosted,
+            req,
+            web_user.as_deref(),
+            langs,
+        )
+        .await;
     }
     if let Some(person) = &person
         && let Err(response) =
@@ -195,6 +221,7 @@ async fn plugin_request_path(
         return *response;
     }
     let fwd = proxy::Forwarded {
+        web_user: web_user.as_deref(),
         client: client_addr(&req),
         scheme: &gateway.public.scheme,
     };
@@ -224,6 +251,7 @@ async fn bot_request(
     mut req: Request,
 ) -> Response {
     let langs = api::languages(req.headers());
+    req.headers_mut().remove(WEB_USER_HEADER);
     if req.uri().path() == "/_wonton/session" {
         return sso::redeem(gateway, host, &req);
     }
@@ -244,6 +272,7 @@ async fn bot_request(
     if let Err(response) = bot_web::authorize(gateway, bot, Some(&person), &langs) {
         return *response;
     }
+    let web_user = Some(matrix_user_id(gateway, &person.username));
     let (route, _) = match gateway.plugins.bot_web_target(bot) {
         Ok(target) => target,
         Err(error) => return bot_web::runtime_error(error, &langs),
@@ -258,6 +287,7 @@ async fn bot_request(
         return *response;
     }
     let fwd = proxy::Forwarded {
+        web_user: web_user.as_deref(),
         client: client_addr(&req),
         scheme: &gateway.public.scheme,
     };
