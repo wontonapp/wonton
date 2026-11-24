@@ -89,7 +89,9 @@ final class ClientsDomainWalkthroughTests: XCTestCase {
             if let element = waitAnyButton([label], timeout: 2), element.exists {
                 usleep(400_000)
                 let fresh = app.buttons[label].firstMatch
-                if fresh.exists && fresh.isHittable {
+                // 行还没画好时 isHittable 会直接抛 “Activation point invalid” 记一条失败：
+                // 这里不看它，tap 会让 XCTest 自己滚过去。
+                if fresh.exists {
                     fresh.tap()
                     return true
                 }
