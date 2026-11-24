@@ -1,3 +1,37 @@
+# chat-804：按复审 rv-804 把编辑、正在输入和失败分类接进核心
+
+分支 feat/chat-edit-typing-core，已并入 main（#859 等），只加语义接线和错误分类。
+
+逐条：
+- P1-1 失败类别：`SendStatus::Failed` / `OutgoingFailure` 带 `SendFailure`，`wonton_matrix::Error` 按类型分（Transport/NotReady→Offline，401/403/400→Rejected，Upstream→Upstream，413/M_TOO_LARGE→TooLarge，415/M_UNSUPPORTED_CONTENT_TYPE→UnsupportedType，NotFound→ReplyTarget）；`details` 原文仍只进面板。附件侧同类别，`InvalidInput` 不再一律说“太大”。
+- P1-2：`Error::ReplyTarget` 由 `load_event` 的 NotFound 和组回复失败产生，附件提示不再说错。
+- P1-3：四个动作进 `ChatLink`；`ChatRoom::edit_message` 发 `m.replace`；`TimelineUpdate::editing` 由订阅的编辑态驱动、变化补批；取消/成功恢复原草稿，换目标保留最初草稿；两端菜单显示编辑、输入框上方编辑条、确认走 `EditMessage`。
+- 正在输入：5 秒节流、停 5 秒自动报停，订阅释放也报停；两端在打字/清空/发送/进出编辑态发 `SetTyping`。
+- 状态行选项：`chosen`/`send` 按反应回填；不在等待、已答、不是问我都拒绝；两端画选中/转圈/感叹号，非等待变灰。
+- P2-4/5：iOS 气泡只留类别（other 有原文时用原文），原文只进面板标题，可重试也带。
+- P2-6：`details` 认旧 `message`，旧形状原文不丢，测试断言。
+- P2-7/8/9：ADR 断句补回；视觉规格留在第 9 节、编辑/贴图/失败改为第 10 节，protocol 引用一起改；`SetTyping` 第 8 节；协议注释去重。
+- P2-10：两端跳过编辑的死代码删掉。
+- 测试：类别 JSON 名往返、`failure_of` 每类、旧 alias、编辑态（摘要/晚到 begin/换目标/取消恢复）、5 秒停、tuwunel 编辑与带 caption 图片。
+
+验证：
+- `cargo check -p wonton-matrix --all-targets` → Finished（无错误）。
+- `cargo check -p wonton-client --all-targets --features ui-fake` → 通过（无 error/warning；修掉了 `Live` 缺字段、`Draft` 无 Default、`is_editing`/`saved` 缺失、`SendStatus` 缺 `error`、`Item.reason`）。
+- `python3 scripts/check-ui-text.py`、`check-conflict-markers.sh`、`check-file-size.sh`：通过；`cargo fmt --all` 已跑。
+- SwiftLint `--strict`（含新 MessageTexts.swift、ComposerView.swift、ComposerTray.swift）：通过。
+
+没做/没验证：
+- clippy、相关单测/it、tuwunel 用例、Android 构建、iOS 构建都没等到编译机/模拟器名额，没有结果。
+- 真机/模拟器没手点编辑条和状态行。
+
+基座问题：
+- `RoomMessageEventContent` 在 ruma 0.35 没有 `text_markdown`，只能用 `text_plain`；编辑事件因此不带 HTML 格式化正文，和现有发送路径一致。
+- 编辑目标只给 `MessageAction::Edit` 的正文，不带 item id，壳得自己拿菜单里的 item id。
+
+复审五条的落点：
+1) 失败类别有生产者：`failure_of`、`OutgoingFailure`、`message_failure`；2) 附件侧 `AttachmentFailure` 新值有构造，`InvalidInput` 改 Rejected；3) 正文按实况写；4) iOS 气泡/读屏只用类别（other 有原文时兜底），原文只进面板；5) 可重试也让面板带 details，两端一致。
+冲突：并了 main 的附言顺序（`CommentNotSent`）和 Android 选项两列布局（AskingChip 里补三态）。
+验证：matrix/client 的 all-targets check 和 clippy 都 Finished；chat::edit 5 passed、chat::out_typing 2 passed；ui-text、冲突标记、fmt、SwiftLint（8 个改动文件）通过；Android detekt + :shared:compileAndroidMain `BUILD SUCCESSFUL`；mini `build-for-testing` `TEST BUILD SUCCEEDED`。it/tuwunel 未跑。
 PR #859（分支 fix/ios-side-chat-entry）按复审 rv-859 改完，CI 全绿，另按主人 11-24 的拍板把 CI 的模拟器改成按机器挑。
 
 改动：
@@ -22,3 +56,17 @@ PR #859（分支 fix/ios-side-chat-entry）按复审 rv-859 改完，CI 全绿�
 - 自托管 mini 的 iOS 27.1 运行时只注册了 iPhone Duo 一个机型，按名字建 iPhone 17 会报 `Incompatible device`；设备库还会留坏设备，boot 直接报同错。
 - `snapshots-record` 两个作业都在自己结束时摘标签，摘标签的事件又会按 `label.name` 命中 concurrency 的取消条件，先把另一个还在录的作业掐掉。
 - 录模式在 snapshot-testing 里就是按失败报（“Record mode is on”），重录作业天生是红的，看不出“录成功”还是“录崩了”。
+
+## 复审 rv-804c 两轮之后（11-24 晚）
+
+- 必须改 1：Android 恢复草稿空也恢复，抽 `restoredDraft` + `ComposerEditRestoreTest`（删掉修复会红）。
+- 必须改 2：好友失败分类并回 main（#966）：`NotReady`/`InvalidInput` 回 `Upstream`，只剩 `NotInvited` 是 `RequestNotFound`。
+- 可选：iOS 进编辑态不报“在输入”（`suppressNextTyping` 那类抑制，两边都只在框里真会变时压）；编辑途中打字就不拿原草稿盖（`DraftWrite::Restore` + `restore_if_unchanged`，两条用例，删比较会红）；`start_edit` 读原草稿失败会报；只有 `NotInTimeline` 才换时间线（新错误变体）；旧 `composer.json` 字符串 failure 能读回（附用例，删修复会红）；两端状态行失败都有红字；无用 import、用例名、模块说明、错字、措辞。
+- 合并 main 时 #966 的 example 用了不存在的 `PairingFailure::PendingApproval`（main 本就红），改成看 `JoinPending`。
+- 文档改成“有条件恢复”：ADR 第 10 节、`edit.rs`、`edit_actions.rs`、`agent_run.rs` 注释。
+
+验证（本轮）：`chat::` 152 passed、`composer::` 19、`friends` 全绿（含那两条）、`matrix --lib` 67、`--test-threads=1` 全量 445 passed、clippy `-D warnings`（client 与 matrix）、fmt/ui-text/冲突标记/行数门禁通过。
+
+已知非本 PR：全量 lib 并行跑时 `chat::choices::tests::the_failure_reason_is_a_sentence_with_the_original_as_detail` 会偶发红（`set_languages` 是进程全局，被并行用例改掉），串行 445 全过；`choices.rs`/`l10n.rs` 与 main 一致。
+
+没做/没验证：状态行被拒的界面用例（假数据不产生拒绝）；Android detekt/单测、iOS 模拟器构建、tuwunel 用例待 CI 与主人。

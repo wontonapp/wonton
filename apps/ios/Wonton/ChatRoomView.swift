@@ -253,7 +253,8 @@ private extension ChatRoomView {
                     commandAvatar: { commandAvatar($0) },
                     jumpToReply: { replyJump($0) },
                     menuOpen: commandMenuOpen,
-                    openChanged: { commandMenuOpen = $0 }
+                    openChanged: { commandMenuOpen = $0 },
+                    editing: timeline.editing
                 )
                 .onGeometryChange(for: CGFloat.self) { $0.frame(in: .global).minY } action: { top in
                     pin.noteComposer(top: top)
@@ -432,6 +433,7 @@ private extension ChatRoomView {
             cancel: { sendTimeline(.cancelSend(target: target, itemId: item.id)) },
             cardAction: { model.send($0) },
             reply: { model.startReply(.ready(message: $0), in: target) },
+            edit: { text in model.startEdit(text, itemId: item.id, in: target) },
             forward: { forwarding = item.id },
             redact: {
                 redactItem = item.id

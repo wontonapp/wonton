@@ -179,7 +179,7 @@ impl MatrixSession {
                             )
                             .await
                             .map_err(|error| {
-                                Error::InvalidInput(format!("组不了对这条的回复：{error}"))
+                                Error::ReplyTarget(format!("组不了对这条的回复：{error}"))
                             })?,
                         None => content.with_relation(None),
                     }

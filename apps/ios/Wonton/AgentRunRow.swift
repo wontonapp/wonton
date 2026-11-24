@@ -260,7 +260,7 @@ struct AgentRunRow: View {
                     .wontonText(WontonTheme.typography.supporting)
             }
             .foregroundStyle(Color(colors.accentInk))
-            AgentRunChoices(choices: choices, answer: answerChoice)
+            AgentRunChoices(choices: choices, state: state, answer: answerChoice)
         }
     }
 

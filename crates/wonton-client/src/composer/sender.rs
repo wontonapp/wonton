@@ -5,10 +5,12 @@ use std::sync::{Arc, Weak};
 
 use tokio::sync::Notify;
 use wonton_l10n::l10n;
-use wonton_protocol::{AttachmentState, FileId, files_message_body};
+use wonton_protocol::{
+    AttachmentFailure, AttachmentState, FileId, SendFailure, files_message_body,
+};
 
 use super::ComposerLink;
-use super::state::{Body, Outgoing};
+use super::state::{Body, Outgoing, OutgoingFailure};
 use super::uplink::{Handover, Part, UplinkError};
 use crate::l10n::{CATALOG, language};
 
@@ -18,6 +20,21 @@ enum Step {
     /// 队首在等附件或者等主人。
     Wait,
     Send(Outgoing),
+}
+
+/// 附件的失败类别换成整条消息的：附件区自己的存储原因在消息上没有对应的话，落到“别的”。
+fn message_failure(reason: AttachmentFailure) -> SendFailure {
+    match reason {
+        AttachmentFailure::TooLarge => SendFailure::TooLarge,
+        AttachmentFailure::UnsupportedType => SendFailure::UnsupportedType,
+        AttachmentFailure::ReplyTarget => SendFailure::ReplyTarget,
+        AttachmentFailure::Rejected => SendFailure::Rejected,
+        AttachmentFailure::Upstream => SendFailure::Upstream,
+        AttachmentFailure::SourceUnavailable
+        | AttachmentFailure::StorageFull
+        | AttachmentFailure::LocalStorage
+        | AttachmentFailure::Other => SendFailure::Other,
+    }
 }
 
 pub(super) async fn run(link: Weak<ComposerLink>, room: String, notify: Arc<Notify>) {
@@ -39,7 +56,9 @@ pub(super) async fn run(link: Weak<ComposerLink>, room: String, notify: Arc<Noti
                     drop(link);
                     online.await;
                 }
-                Err(UplinkError::Failed(_, message)) => link.fail(&room, &outgoing.id, message),
+                Err(UplinkError::Failed(failure, message)) => {
+                    link.fail(&room, &outgoing.id, message_failure(failure), message);
+                }
             },
         }
     }
@@ -105,12 +124,18 @@ impl ComposerLink {
             .iter()
             .find(|item| matches!(item.state, AttachmentState::Failed { .. }))
         {
-            head.failure = Some(l10n!(
-                CATALOG,
-                language(),
-                "composer-attachment-failed",
-                name = failed.name.as_str()
-            ));
+            let AttachmentState::Failed { reason, .. } = &failed.state else {
+                unreachable!("checked above")
+            };
+            head.failure = Some(OutgoingFailure {
+                failure: message_failure(*reason),
+                details: l10n!(
+                    CATALOG,
+                    language(),
+                    "composer-attachment-failed",
+                    name = failed.name.as_str()
+                ),
+            });
             if let Err(error) = self.disk.save(&inner.state) {
                 tracing::warn!(%error, "could not save the composer");
             }
@@ -127,10 +152,13 @@ impl ComposerLink {
         Step::Send(head.clone())
     }
 
-    fn fail(&self, room: &str, id: &str, message: String) {
+    fn fail(&self, room: &str, id: &str, failure: SendFailure, message: String) {
         self.record(room, |state| {
             if let Some(outgoing) = state.outgoing_mut(room, id) {
-                outgoing.failure = Some(message);
+                outgoing.failure = Some(OutgoingFailure {
+                    failure,
+                    details: message,
+                });
             }
         });
     }

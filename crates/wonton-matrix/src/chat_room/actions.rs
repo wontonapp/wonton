@@ -1,7 +1,10 @@
-//! 长按消息的菜单要做的事（ADR-0073）：回复、转发、撤回，以及取回复引用的原消息。
+//! 长按消息的菜单要做的事（ADR-0073、ADR-0109 第 10 节）：回复、转发、撤回、编辑，以及取回复引用的原消息。
 
 use matrix_sdk::{
-    room::reply::{EnforceThread, Reply},
+    room::{
+        edit::EditedContent,
+        reply::{EnforceThread, Reply},
+    },
     ruma::{
         EventId, RoomId,
         events::room::message::{
@@ -10,6 +13,7 @@ use matrix_sdk::{
         },
     },
 };
+use matrix_sdk_ui::timeline::TimelineEventItemId;
 
 use matrix_sdk::deserialized_responses::TimelineEvent;
 use matrix_sdk::ruma::events::Mentions;
@@ -49,7 +53,7 @@ impl ChatRoom {
     }
 
     /// 回复一条消息：发一条带 `m.in_reply_to` 的文字，其余同 [`Self::send_text`]。被回复的事件不在这个房间里时返回
-    /// [`Error::InvalidInput`]。
+    /// [`Error::ReplyTarget`]。
     pub async fn send_reply(
         &self,
         body: &str,
@@ -118,7 +122,7 @@ impl ChatRoom {
             .await
     }
 
-    /// 被回复的事件在这个房间里，否则返回 [`Error::InvalidInput`]。SDK 组回复时取不到原事件只报一个笼统的错，
+    /// 被回复的事件在这个房间里，否则返回 [`Error::ReplyTarget`]。SDK 组回复时取不到原事件只报一个笼统的错，
     /// 分不出是输入不对还是连不上，所以先自己取一次（本机有就不走网络）。
     pub(super) async fn check_reply_target(&self, in_reply_to: &EventId) -> Result<TimelineEvent> {
         load_event(&self.room, in_reply_to).await
@@ -128,6 +132,26 @@ impl ChatRoom {
     /// 都原样返回；走队列的话失败只出现在队列里，时间线还会先把它显示成已撤回。
     pub async fn redact_message(&self, event_id: &EventId) -> Result<()> {
         self.room.redact(event_id, None, None).await?;
+        Ok(())
+    }
+
+    /// 编辑一条已经发出去的文字（`m.replace`，ADR-0109 第 10 节）：所有人那里整条换成新正文，时间不变。
+    /// 新正文按原样记成 `m.text`。`event_id` 是原来那条的事件 ID。
+    pub async fn edit_message(&self, event_id: &str, body: &str) -> Result<()> {
+        let event_id = event_id
+            .parse()
+            .map_err(|_| Error::InvalidInput(format!("不是事件 ID：{event_id}")))?;
+        ensure_recipient_devices(&self.room).await?;
+        let content = RoomMessageEventContentWithoutRelation::new(
+            RoomMessageEventContent::text_plain(body).msgtype,
+        );
+        self.timeline()
+            .await
+            .edit(
+                &TimelineEventItemId::EventId(event_id),
+                EditedContent::RoomMessage(content),
+            )
+            .await?;
         Ok(())
     }
 
