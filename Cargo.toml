@@ -46,6 +46,7 @@ rustls = { version = "0.23.46", default-features = false, features = ["aws_lc_rs
 semver = "1.0.28"
 serde = { version = "1.0.229", features = ["derive"] }
 serde_json = "1.0.154"
+serde_urlencoded = "0.7.1"
 sha2 = "0.10"
 # MIT OR Apache-2.0。MCP SSE 事件边界。
 sse-stream = "0.2.6"

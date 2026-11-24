@@ -26,7 +26,6 @@ fn permits(generation: u64) -> Vec<crate::shares::GrantPermit> {
     vec![crate::shares::GrantPermit {
         grant_id: "share-1".into(),
         generation,
-        group_generation: None,
     }]
 }
 
@@ -325,10 +324,12 @@ impl Fixture {
         let friend = friends
             .accept("@bob:example.org", Some("Bob"), 1, |_| false)
             .unwrap();
+        let roles = Arc::new(crate::roles::Roles::initial_for_test());
         let shares = Arc::new(
             Shares::with_clock(
                 harness.data_dir.join("oidc-shares.json"),
                 friends.clone(),
+                roles,
                 Arc::new(|| 1),
             )
             .unwrap(),

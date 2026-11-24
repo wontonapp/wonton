@@ -255,6 +255,8 @@ pub(crate) mod fake;
 #[cfg(test)]
 mod invite_filter_docker_tests;
 #[cfg(test)]
+mod invite_filter_federation_docker_tests;
+#[cfg(test)]
 mod profile_tests;
 #[cfg(test)]
 mod profile_tuwunel_tests;

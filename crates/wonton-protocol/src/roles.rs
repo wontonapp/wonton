@@ -14,6 +14,9 @@ use serde::{Deserialize, Serialize};
 /// `GET`：[`RoleList`]。`POST`：请求体 [`RoleDraft`]，返回新建的 [`RoleDef`]。
 pub const ROLES_PATH: &str = "/_wonton/api/roles";
 
+/// 默认邀请角色的 ID：初始是“朋友”模板，权限最少（ADR-0088 第 4 节）。旧好友记录没有角色时也用它。
+pub const DEFAULT_INVITE_ROLE: &str = "friend";
+
 /// `PUT`：请求体 [`RoleDraft`]，返回 [`RoleDef`]。`DELETE`：还有人在用时回 409。
 pub fn role_path(role_id: &str) -> String {
     format!("{ROLES_PATH}/{role_id}")

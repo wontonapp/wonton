@@ -188,6 +188,12 @@ gateway-agent-acp-token-missing = {$provider} にはまだ提供者トークン�
 gateway-agent-acp-provider-unreachable = Agent ランタイムがこの接続を引き受けませんでした：{$detail}
 
 gateway-install-rejected = 管理者が承認しなかったため、{$action}は行われませんでした
+
+# 招待側のロールによるフレンド申請の管理（ADR-0088）：カードは管理者へ、承認後に招待を送る。
+gateway-friend-invite-title = フレンド申請が承認待ち
+gateway-friend-invite-to = { $inviter } が { $friend } をフレンドに追加したがっています
+gateway-friend-invite-rejected = 管理者がこのフレンド申請を承認しませんでした
+gateway-friend-invite-expired = 管理者は時間内にこのフレンド申請に答えませんでした
 gateway-install-expired = 管理者が期限内に回答しなかったため、{$action}は行われませんでした
 gateway-install-card-device = 渡すデバイス：{ $device }
 gateway-install-card-secret = リクエストで入力されたシークレット：{ $title }
@@ -217,3 +223,27 @@ clients-switch-label-conflict = 入口ラベル { $label } が重複していま
 clients-switch-records-read = プラグインの記録を読み取れません：{ $error }
 clients-switch-rollback-entry = 入口設定のロールバックにも失敗しました：{ $error }
 clients-switch-rollback-switch = スイッチのロールバックにも失敗しました：{ $error }
+# 外のサーバーの人からのフレンド申請：公開ページで受け付け、管理者が答え、承認した人を allowed_users に記録する。
+gateway-friend-request-title = フレンド申請
+gateway-friend-request-intro = このサーバーは、管理者が承認するまで他のサーバーの人を通しません。自分の Matrix ID を残してください。結果はここに出ます。
+gateway-friend-request-you = 自分の Matrix ID
+gateway-friend-request-to = 相手の Matrix ID
+gateway-friend-request-target = { $target } を追加したい
+gateway-friend-request-submit = リクエストを送る
+gateway-friend-request-waiting = リクエストを送りました。管理者の回答を待っています（相手：{ $target }）。
+gateway-friend-request-approved = 管理者が承認しました。もう一度招待を送ってください。
+gateway-friend-request-open = 相手の役割はもう承認不要です。招待を送り直すだけです。
+gateway-friend-request-forbidden = このメンバーは役割上フレンドを追加できません。管理者に招待してもらってください。
+gateway-friend-request-denied = 管理者はこのフレンド申請を承認しませんでした。
+gateway-friend-request-expired = 時間内に管理者が答えませんでした。あとでもう一度どうぞ。
+gateway-friend-request-changed = 相手のアカウントや権限が変わりました。あとで試すか、相手から追加してもらってください。
+gateway-friend-request-unavailable = このサーバーはいま答えられません。あとでどうぞ。
+gateway-friend-request-duplicate = この人へのリクエストがすでに待っています。
+gateway-friend-request-too-many = 待っているリクエストが多すぎます。あとでどうぞ。
+gateway-friend-request-local = 同じサーバーの人は承認不要です。そのまま招待してください。
+gateway-friend-request-unknown = このサーバーにその人はいません。
+gateway-friend-request-invalid = @bob:example.org のような完全な Matrix ID を入れてください。
+gateway-friend-request-invalid-method = このアドレスは GET と POST だけです。
+gateway-friend-request-again = もう一つ送る
+gateway-friend-request-card-title = 外の人がフレンドを追加したがっています
+gateway-friend-request-card-to = { $target } をフレンドに追加したがっています

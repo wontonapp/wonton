@@ -188,6 +188,12 @@ gateway-agent-acp-token-missing = {$provider} 還沒有提供方權杖，重新�
 gateway-agent-acp-provider-unreachable = Agent 執行時沒有接起這條連線：{$detail}
 
 gateway-install-rejected = 管理員沒有同意，沒有{$action}
+
+# 加好友按邀請人的角色（ADR-0088）：卡片發給管理員，同意後邀請才發出。
+gateway-friend-invite-title = 好友請求待批
+gateway-friend-invite-to = { $inviter } 想加 { $friend } 為好友
+gateway-friend-invite-rejected = 管理員沒有同意這次加好友
+gateway-friend-invite-expired = 沒有管理員在時間內回答這次加好友
 gateway-install-expired = 管理員沒有在期限內回答，沒有{$action}
 gateway-install-card-device = 交給它的裝置：{ $device }
 gateway-install-card-secret = 請求裡填了密鑰：{ $title }
@@ -217,3 +223,27 @@ clients-switch-label-conflict = 入口標籤 { $label } 重複
 clients-switch-records-read = 讀取外掛記錄失敗：{ $error }
 clients-switch-rollback-entry = 回滾入口設定也失敗：{ $error }
 clients-switch-rollback-switch = 回滾開關也失敗：{ $error }
+# 家外的人要加管理員批的成員：公網落地頁交請求，管理員點頭後記進對方的 allowed_users。
+gateway-friend-request-title = 加好友請求
+gateway-friend-request-intro = 這台伺服器要管理員同意才會放外面的伺服器的人進來。留下你的 Matrix ID，結果會顯示在這裡。
+gateway-friend-request-you = 你的 Matrix ID
+gateway-friend-request-to = 對方的 Matrix ID
+gateway-friend-request-target = 想加 { $target } 為好友
+gateway-friend-request-submit = 送出請求
+gateway-friend-request-waiting = 請求送出了，正在等管理員回答（對方：{ $target }）。
+gateway-friend-request-approved = 管理員同意了。回去重新送一次邀請就能進來。
+gateway-friend-request-open = 對方的角色已經不用審批，直接重新送邀請就好。
+gateway-friend-request-forbidden = 這個成員的角色不能加好友，請讓管理員邀請。
+gateway-friend-request-denied = 管理員沒有同意這次加好友。
+gateway-friend-request-expired = 沒有管理員在時間內回答，稍後再來送一次。
+gateway-friend-request-changed = 對方的人或權限變了，稍後再試或讓對方來加你。
+gateway-friend-request-unavailable = 這台伺服器暫時答不了，稍後再試。
+gateway-friend-request-duplicate = 這個人已經有一條請求在等。
+gateway-friend-request-too-many = 在等的請求太多了，稍後再來。
+gateway-friend-request-local = 同一個伺服器上的人不用審批，直接邀請就好。
+gateway-friend-request-unknown = 這台伺服器上沒有這個人。
+gateway-friend-request-invalid = 要填完整的 Matrix ID，像 @bob:example.org。
+gateway-friend-request-invalid-method = 這個位址只接受 GET 和 POST。
+gateway-friend-request-again = 再送一條
+gateway-friend-request-card-title = 外面的人想加好友
+gateway-friend-request-card-to = 想加 { $target } 為好友

@@ -4,8 +4,8 @@
 use std::time::Instant;
 
 use wonton_client::{
-    Action, CoreError, FriendBlockScope, FriendBlockTarget, FriendFailure, FriendsState,
-    FriendsViewModel, RoomMembership,
+    Action, CoreError, FriendBlockScope, FriendBlockTarget, FriendFailure, FriendsAction,
+    FriendsState, FriendsViewModel, RoomMembership,
 };
 use wonton_matrix::testkit::unique;
 
@@ -24,7 +24,7 @@ async fn until<R>(
         if !dispatched || phone.friends().state != FriendsState::Loading {
             phone
                 .dispatch(Action::Friends {
-                    action: wonton_protocol::FriendsAction::RefreshFriends,
+                    action: FriendsAction::RefreshFriends,
                 })
                 .unwrap();
             dispatched = true;
@@ -52,7 +52,7 @@ async fn signed_in_phone(dir: &std::path::Path) -> (Home, Phone) {
 fn refresh(phone: &Phone) {
     phone
         .dispatch(Action::Friends {
-            action: wonton_protocol::FriendsAction::RefreshFriends,
+            action: FriendsAction::RefreshFriends,
         })
         .unwrap();
 }
@@ -84,7 +84,7 @@ async fn a_friend_request_can_be_approved_and_removed() {
 
     phone
         .dispatch(Action::Friends {
-            action: wonton_protocol::FriendsAction::ApproveFriendRequest {
+            action: FriendsAction::ApproveFriendRequest {
                 room_id: room_id.to_string(),
             },
         })
@@ -104,36 +104,10 @@ async fn a_friend_request_can_be_approved_and_removed() {
         home.friends_calls()
     );
 
-    // 分组：建一个、把人放进去。
-    phone
-        .dispatch(Action::Friends {
-            action: wonton_protocol::FriendsAction::SaveFriendGroup {
-                id: None,
-                name: "打游戏的".to_owned(),
-            },
-        })
-        .unwrap();
-    let group = until(&phone, "建好分组", |view| view.groups.first().cloned()).await;
-    phone
-        .dispatch(Action::Friends {
-            action: wonton_protocol::FriendsAction::SetFriendGroups {
-                user_id: bob_id.clone(),
-                groups: vec![group.id.clone()],
-            },
-        })
-        .unwrap();
-    until(&phone, "分组记上了", |view| {
-        view.friends
-            .iter()
-            .find(|friend| friend.user_id == bob_id && friend.groups == [group.id.clone()])
-            .map(|_| ())
-    })
-    .await;
-
     // 删好友不退出私聊：房间还在会话列表里。
     phone
         .dispatch(Action::Friends {
-            action: wonton_protocol::FriendsAction::RemoveFriend {
+            action: FriendsAction::RemoveFriend {
                 user_id: bob_id.clone(),
             },
         })
@@ -172,7 +146,7 @@ async fn a_request_can_be_rejected_and_a_sent_one_cancelled() {
     .await;
     phone
         .dispatch(Action::Friends {
-            action: wonton_protocol::FriendsAction::RejectFriendRequest {
+            action: FriendsAction::RejectFriendRequest {
                 room_id: room_id.to_string(),
             },
         })
@@ -190,7 +164,7 @@ async fn a_request_can_be_rejected_and_a_sent_one_cancelled() {
     let carol = home.matrix.login(&unique("carol"), "Carol 的手机").await;
     phone
         .dispatch(Action::Friends {
-            action: wonton_protocol::FriendsAction::AddFriend {
+            action: FriendsAction::AddFriend {
                 user_id: carol.user_id().to_string(),
             },
         })
@@ -204,7 +178,7 @@ async fn a_request_can_be_rejected_and_a_sent_one_cancelled() {
     .await;
     phone
         .dispatch(Action::Friends {
-            action: wonton_protocol::FriendsAction::CancelFriendRequest {
+            action: FriendsAction::CancelFriendRequest {
                 room_id: outgoing.room_id,
             },
         })
@@ -238,7 +212,7 @@ async fn blocking_writes_msc4155_and_unblocking_clears_it() {
     };
     phone
         .dispatch(Action::Friends {
-            action: wonton_protocol::FriendsAction::BlockFriend {
+            action: FriendsAction::BlockFriend {
                 target: target.clone(),
                 scope: FriendBlockScope::Invitations,
             },
@@ -261,7 +235,7 @@ async fn blocking_writes_msc4155_and_unblocking_clears_it() {
 
     phone
         .dispatch(Action::Friends {
-            action: wonton_protocol::FriendsAction::UnblockFriend {
+            action: FriendsAction::UnblockFriend {
                 target: target.clone(),
                 scope: FriendBlockScope::Invitations,
             },
@@ -288,7 +262,7 @@ async fn a_server_can_be_blocked_for_federation() {
     };
     phone
         .dispatch(Action::Friends {
-            action: wonton_protocol::FriendsAction::BlockFriend {
+            action: FriendsAction::BlockFriend {
                 target: target.clone(),
                 scope: FriendBlockScope::Federation,
             },
@@ -303,7 +277,7 @@ async fn a_server_can_be_blocked_for_federation() {
     .await;
     phone
         .dispatch(Action::Friends {
-            action: wonton_protocol::FriendsAction::UnblockFriend {
+            action: FriendsAction::UnblockFriend {
                 target,
                 scope: FriendBlockScope::Federation,
             },
@@ -322,7 +296,7 @@ async fn a_bad_user_id_fails_with_its_own_class() {
     let (_home, phone) = signed_in_phone(dir.path()).await;
     phone
         .dispatch(Action::Friends {
-            action: wonton_protocol::FriendsAction::AddFriend {
+            action: FriendsAction::AddFriend {
                 user_id: "@nobody".to_owned(),
             },
         })
@@ -363,7 +337,7 @@ async fn a_refused_invite_is_not_reported_as_an_expired_login() {
     while next_state().await != FriendsState::Ready {}
     phone
         .dispatch(Action::Friends {
-            action: wonton_protocol::FriendsAction::AddFriend {
+            action: FriendsAction::AddFriend {
                 user_id: bob.user_id().to_string(),
             },
         })
@@ -395,7 +369,7 @@ async fn scanning_something_that_is_not_a_user_link_fails_as_invalid_input() {
     ] {
         phone
             .dispatch(Action::Friends {
-                action: wonton_protocol::FriendsAction::AddFriend {
+                action: FriendsAction::AddFriend {
                     user_id: scanned.to_owned(),
                 },
             })
@@ -424,7 +398,7 @@ async fn a_matrix_to_user_link_sends_the_request() {
     );
     phone
         .dispatch(Action::Friends {
-            action: wonton_protocol::FriendsAction::AddFriend { user_id: link },
+            action: FriendsAction::AddFriend { user_id: link },
         })
         .unwrap();
     until(&phone, "扫用户链接发出请求", |view| {

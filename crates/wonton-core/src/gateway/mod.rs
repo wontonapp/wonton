@@ -55,6 +55,8 @@ pub mod family;
 mod family_private;
 mod family_room;
 mod files;
+mod friend_gate;
+mod friend_requests;
 mod friends;
 mod friends_wiring;
 mod health;
@@ -62,6 +64,7 @@ mod hosted;
 mod install_gate_cards;
 mod install_gate_checks;
 mod install_gates;
+mod invite_filter_guard;
 mod isolation;
 mod join_requests;
 mod lan;
@@ -239,6 +242,8 @@ pub struct Gateway {
     pub upgrades: Option<Arc<crate::upgrade::service::Upgrades>>,
     pub peers: Option<Arc<crate::peers::Peers>>,
     pub(crate) friends: Option<Arc<Friends>>,
+    /// 公网上外人交的加好友请求（ADR-0088 第 98 行），只存内存。
+    pub(crate) friend_requests: friend_requests::Requests,
     /// Bot 的联系人（ADR-0045、ADR-0050）；没接 Matrix 的核心没有。
     contacts: Option<Arc<crate::contacts::Contacts>>,
     pub(crate) federation_blocks: Option<Arc<FederationBlocks>>,
@@ -325,6 +330,7 @@ impl Gateway {
             upgrades: None,
             peers: None,
             friends: None,
+            friend_requests: friend_requests::Requests::default(),
             contacts: None,
             federation_blocks: None,
             sharing: None,
@@ -717,7 +723,7 @@ async fn dispatch(gateway: Arc<Gateway>, core: Router, req: Request) -> Response
             Err(never) => match never {},
         },
         HostKind::Auth => auth::request(&gateway, req).await,
-        HostKind::Matrix => matrix::client_request(&gateway, req).await,
+        HostKind::Matrix => matrix::client_request(gateway, req).await,
         HostKind::PluginMatrix => matrix::bot_request(&gateway, req).await,
         HostKind::PluginModels => models::request(&gateway, req).await,
         HostKind::PluginCapability(capability) => {
@@ -821,6 +827,8 @@ mod files_upload_tests;
 #[cfg(test)]
 mod first_run_tests;
 #[cfg(test)]
+mod friend_gate_tests;
+#[cfg(test)]
 mod friends_tests;
 #[cfg(test)]
 mod health_tests;
@@ -844,6 +852,8 @@ mod lan_api_tests;
 mod lan_tests;
 #[cfg(test)]
 mod limits_tests;
+#[cfg(test)]
+mod local_friends_tests;
 #[cfg(test)]
 mod matrix_invite_filter_tests;
 #[cfg(test)]
