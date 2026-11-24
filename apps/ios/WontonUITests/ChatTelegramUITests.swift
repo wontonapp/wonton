@@ -481,8 +481,8 @@ final class ChatTelegramUITests: XCTestCase {
         app.launchEnvironment["WONTON_UI_TEST_FAIL_ATTACHMENT"] = "1"
         app.launch()
         enter(Self.directRoom)
-        // 旁聊打开就停在落点附近，回复紧挨着的那条（旁聊里编号不一定和主列表对齐）。
-        startReply(at: 2)
+        // 旁聊里是另一份假时间线（Fixture side N），回复落点旁边那条。
+        startReply(on: text(startingWith: "Fixture side 1"))
         let (first, _) = openAttachSheet()
         first.tap()
         let send = app.buttons["attachSend"]
@@ -708,9 +708,14 @@ final class ChatTelegramUITests: XCTestCase {
 
     /// 长按第几条消息点“回复”，等回复条出来。
     private func startReply(at index: Int, file: StaticString = #filePath, line: UInt = #line) {
-        reveal(message(index), file: file, line: line)
+        startReply(on: message(index), file: file, line: line)
+    }
+
+    /// 长按指到的消息点“回复”，等回复条出来。
+    private func startReply(on element: XCUIElement, file: StaticString = #filePath, line: UInt = #line) {
+        reveal(element, file: file, line: line)
         waitForFloatingDateToFade()
-        message(index).press(forDuration: 1.2)
+        element.press(forDuration: 1.2)
         let reply = app.buttons["messageReply"]
         guard reply.waitForExistence(timeout: 5) else {
             return XCTFail("长按菜单里没有“回复”\n\(app.debugDescription)", file: file, line: line)
