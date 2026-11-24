@@ -556,6 +556,9 @@ async fn system_plugins_upgrade_from_the_image_and_say_so_when_they_cannot() {
         write("1.0.0", "");
         m.ensure_system(&system, Backoff::default()).await.unwrap();
         assert_eq!(version(&m), "1.0.0");
+        let plugin = m.installed_plugin(&id(), &zh()).unwrap();
+        assert!(!plugin.removable, "随核心带的不给接口卸");
+        assert_eq!(plugin.trust, PluginTrust::System);
         let err = m
             .preview_upgrade(&id(), UpgradeTo::Offered, None, &zh())
             .await
@@ -623,6 +626,29 @@ async fn a_system_plugin_installed_from_a_source_can_be_upgraded() {
     assert_eq!(preview.version, "1.1.0");
     upgrade(&m).await.unwrap();
     assert_eq!(version(&m), "1.1.0");
+}
+
+#[tokio::test]
+async fn a_source_install_with_a_bundled_id_is_not_claimed_by_the_dir() {
+    let (github, _docker, m, _dir) = with_github(false).await;
+    let source = hello("1.0.0", "", "  permissions: []\n").replace("kind: app", "kind: system");
+    release(&github, &source);
+    install(&m, SOURCE).await;
+
+    let dir = tempfile::tempdir().unwrap();
+    let system = dir.path().join("system");
+    fs::create_dir_all(system.join("hello")).unwrap();
+    fs::write(
+        system.join("hello/docker-compose.yml"),
+        hello("1.1.0", "", "  permissions: []\n").replace("kind: app", "kind: system"),
+    )
+    .unwrap();
+    m.ensure_system(&system, Backoff::default()).await.unwrap();
+
+    assert!(!m.is_bundled_system(&id()), "来源装的不该被目录认领");
+    assert_eq!(version(&m), "1.0.0", "不从镜像升");
+    let plugin = m.installed_plugin(&id(), &zh()).unwrap();
+    assert!(plugin.removable);
 }
 
 #[tokio::test]

@@ -117,7 +117,7 @@ impl PluginManager {
         let manifest = entry.listed.as_ref().map(|l| &l.manifest);
         let origin = entry.listed.as_ref().and_then(|l| l.origin.as_ref());
         // 随核心带的才是系统插件；商店、来源和上传的 system 包和普通插件一样能卸、能换版本。
-        let bundled = entry.system && self.bundled.read().expect("插件表锁中毒").contains(id);
+        let bundled = entry.system && self.bundled_system_record(id);
         let (upgrade, mut notices) =
             self.upgrades
                 .listing(id, &entry.version, &entry.status, langs);

@@ -24,6 +24,13 @@ impl PluginManager {
                 continue;
             }
             if self.is_installed(&id) {
+                // 从商店或来源装的同名包归接口管：不认领、不从镜像升，版本由主人换。
+                if let Ok(Some(record)) = self.store.load(&id)
+                    && record.origin.is_some()
+                {
+                    self.bundled.write().expect("插件表锁中毒").remove(&id);
+                    continue;
+                }
                 // 每个包的工作都搬上堆：预装、升级的 await 链贴着测试线程的栈上限。
                 if self.record_unreadable(&id) {
                     Box::pin(self.reinstall_bundled(package, backoff)).await;

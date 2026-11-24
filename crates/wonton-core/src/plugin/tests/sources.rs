@@ -123,6 +123,14 @@ async fn an_uploaded_package_is_confirmed_and_installed_like_any_other_source() 
     assert_eq!(installed.provider, None);
     assert!(installed.removable);
 
+    // 预装任务还没把 ID 放进集合时，记录上的 bundled 标记也要让视图按系统插件显示。
+    let mut record = m.store.load(&id()).unwrap().unwrap();
+    record.bundled = true;
+    m.store.save(&record).unwrap();
+    let installed = m.installed_plugin(&id(), &zh()).unwrap();
+    assert!(!installed.removable);
+    assert_eq!(installed.trust, PluginTrust::System);
+
     let gone = m.fetch_source(&source).await.unwrap_err();
     assert_eq!(gone.kind(), "not_found", "装上之后不再暂存：{gone}");
 }
