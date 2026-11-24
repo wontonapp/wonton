@@ -252,21 +252,19 @@ class Friend689Base: XCTestCase {
         return String(tail)
     }
 
-    /// 屏幕当前是不是深色：把整屏缩到 1 像素读亮度。
+    /// 屏幕当前是不是深色：把整屏缩到 1 个 RGBA 像素读亮度。截图原来的像素布局带 alpha，直接读前三个
+    /// 字节会把透明度当颜色算，暗色也会被判成亮，深色就一直切不过去。
     func screenIsDark() -> Bool {
-        let image = XCUIScreen.main.screenshot().image
-        let side = CGSize(width: 1, height: 1)
-        let renderer = UIGraphicsImageRenderer(size: side)
-        let draw: (UIGraphicsImageRendererContext) -> Void = { (ctx: UIGraphicsImageRendererContext) in
-            image.draw(in: CGRect(origin: .zero, size: side))
-        }
-        let pixel = renderer.image(actions: draw)
-        let data: CFData = pixel.cgImage!.dataProvider!.data!
-        let bytes: UnsafePointer<UInt8> = CFDataGetBytePtr(data)!
-        let r: Double = 0.299 * Double(bytes[0])
-        let g: Double = 0.587 * Double(bytes[1])
-        let b: Double = 0.114 * Double(bytes[2])
-        let luma: Double = r + g + b
+        guard let shot = XCUIScreen.main.screenshot().image.cgImage else { return false }
+        var pixel = [UInt8](repeating: 0, count: 4)
+        let space = CGColorSpaceCreateDeviceRGB()
+        let info = CGImageAlphaInfo.premultipliedLast.rawValue
+        guard let context = CGContext(
+            data: &pixel, width: 1, height: 1, bitsPerComponent: 8, bytesPerRow: 4,
+            space: space, bitmapInfo: info
+        ) else { return false }
+        context.draw(shot, in: CGRect(x: 0, y: 0, width: 1, height: 1))
+        let luma = 0.299 * Double(pixel[0]) + 0.587 * Double(pixel[1]) + 0.114 * Double(pixel[2])
         return luma < 128
     }
 

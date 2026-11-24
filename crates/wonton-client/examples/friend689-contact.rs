@@ -41,7 +41,7 @@ async fn run(dir: &str, code: &str) {
         .map(|saved| !saved.trim().is_empty())
         .unwrap_or(false);
     let core: Arc<ClientCore> = ClientCore::new(dir.to_owned()).expect("建客户端");
-    if !paired {
+    let pair_home = || {
         core.dispatch(Action::Home {
             action: HomeAction::PairHome {
                 code: wonton_protocol::SecretString::new(code.to_owned()),
@@ -49,30 +49,26 @@ async fn run(dir: &str, code: &str) {
             },
         })
         .expect("派发 PairHome");
+    };
+    if !paired {
+        pair_home();
     }
     // 加入别人家的码要管理员同意；同意之后拿同一个码再配一次才会配上，所以失败在这一步就自己重试。
     let deadline = Instant::now() + WAIT;
     let mut pending = false;
     loop {
-        if !paired {
-            if let Some(PairingStatus::Failed {
+        if !paired
+            && let Some(PairingStatus::Failed {
                 reason: PairingFailure::PendingApproval,
                 ..
             }) = &core.home().pairing
-            {
-                if !pending {
-                    println!("等管理员同意加入");
-                    let _ = std::io::stdout().flush();
-                    pending = true;
-                }
-                core.dispatch(Action::Home {
-                    action: HomeAction::PairHome {
-                        code: wonton_protocol::SecretString::new(code.to_owned()),
-                        device_name: DISPLAY_NAME.to_owned(),
-                    },
-                })
-                .expect("重试 PairHome");
+        {
+            if !pending {
+                println!("等管理员同意加入");
+                let _ = std::io::stdout().flush();
+                pending = true;
             }
+            pair_home();
         }
         if matches!(core.home().status, HomeStatus::Connected) {
             break;
