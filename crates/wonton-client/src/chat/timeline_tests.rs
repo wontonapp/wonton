@@ -1,8 +1,16 @@
-use super::*;
-use wonton_matrix::{Message, MessageBody, SendStatus};
+use wonton_matrix::{Message, MessageBody, SendStatus, TimelineEntry, Vector};
 use wonton_protocol::{
-    BotRef, BotView, ChatViewModel, MessageContent, RichLinkKind, TimelineContent,
+    BotRef, BotView, ChatViewModel, MessageContent, RichLinkKind, TimelineContent, TimelineDiff,
 };
+
+use crate::chat::agent_run::BotsView;
+use crate::chat::links::LinkTargets;
+use crate::chat::previews::Previews;
+use crate::chat::read_mark::ReadMark;
+
+use super::diffs::relinked;
+use super::rebuild::move_read_mark;
+use super::recompute::room_bots;
 
 fn text_entry(id: &str, body: &str) -> TimelineEntry {
     TimelineEntry {

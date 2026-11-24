@@ -93,7 +93,8 @@ pub(crate) use login::proxy_url;
 pub(crate) use runs::Runs;
 #[cfg(feature = "ui-fake")]
 pub(crate) use runs::apply_diff;
-pub use timeline::{TimelineSource, TimelineSubscription};
+pub(crate) use timeline::TimelineSource;
+pub use timeline::TimelineSubscription;
 pub(crate) use view::{failure, summary, unread_total};
 
 use crate::home::HomeLink;
