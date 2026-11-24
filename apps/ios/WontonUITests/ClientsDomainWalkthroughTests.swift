@@ -150,19 +150,25 @@ final class ClientsDomainWalkthroughTests: XCTestCase {
         XCTAssertTrue(app.textFields["clientsDomainSuffix"].waitForExistence(timeout: 30), "域名页没打开")
         shot("01-empty")
 
-        // 栈上存过后缀时输入框带着旧值，再打会拼上去（太长的名字 Pebble 查 TXT 会溢出）。
-        // typeText 里的删除键是发给 App 的、删不掉；按模拟器键盘上的删除键。
+        // 栈上存过后缀时输入框带着旧值；tap 会把光标落在点中的字中间，delete 只删左边，会凑出怪名字。
+        // 先用 ⌘A 全选直接替换，值不对再从末尾按键盘删除键重来，最后校验值本身。
         let suffixField = app.textFields["clientsDomainSuffix"]
         XCTAssertTrue(scrollTo(suffixField), "没有域名字段")
         suffixField.tap()
-        let deleteKey = app.keys["delete"]
-        XCTAssertTrue(deleteKey.waitForExistence(timeout: 5), "没有删除键")
-        for _ in 0..<80 {
-            deleteKey.tap()
-        }
+        suffixField.typeKey("a", modifierFlags: .command)
         suffixField.typeText("example.test")
-        // 键盘盖住下半页会吞掉滑动手势：先收起键盘，“其他”在懒加载列表的更下面。
-        if app.keyboards.count > 0 { app.typeText("\n") }
+        usleep(300_000)
+        if (suffixField.value as? String) != "example.test" {
+            for _ in 0..<160 {
+                app.keys["delete"].tap()
+            }
+            suffixField.typeText("example.test")
+            XCTAssertEqual(suffixField.value as? String, "example.test", "域名没清干净")
+        }
+        if app.keyboards.count > 0 {
+            app.keys["return"].tap()
+        }
+        // “其他”在懒加载列表的更下面，往上滑。
         var other: XCUIElement?
         for _ in 0..<4 where other == nil {
             app.swipeUp()
