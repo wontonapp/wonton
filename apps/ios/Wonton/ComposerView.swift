@@ -112,7 +112,7 @@ struct ComposerView: View {
         .onChange(of: model.replyFocusRevision) {
             if model.replies[draftKey] != nil || editing != nil { isFocused = true }
         }
-        // 退出编辑态（取消或发成功）：核心已经恢复原草稿，整份读回来。
+        // 退出编辑态（取消或发成功）：核心在没再打字时恢复原草稿，整份读回来。
         .onChange(of: editing?.eventId) { old, new in
             if old != nil, new == nil { Task { await model.reloadDraft(composer.target) } }
         }
@@ -328,7 +328,7 @@ private extension ComposerView {
         guard isEnabled, !blank || (editing == nil && !composer.attachments.isEmpty) else { return }
         pin.pin()
         model.send(.timeline(action: .setTyping(target: composer.target, typing: false)))
-        // 编辑只改这一条的正文；成功后核心恢复原草稿，`onChange(of: editing)` 把它读回来。
+        // 编辑只改这一条的正文；成功后核心在没再打字时把原草稿恢复回来，`onChange(of: editing)` 把它读回来。
         if let editing = editing {
             model.send(.timeline(action: .editMessage(
                 target: composer.target, eventId: editing.eventId, body: draft.wrappedValue

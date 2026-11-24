@@ -18,8 +18,8 @@ final class ChatEditUITests: XCTestCase {
 
     override func setUpWithError() throws {
         continueAfterFailure = false
-        // 每条要翻时间线、敲字、拍浅深两张，默认的 120 秒够但余量不多。
-        executionTimeAllowance = 300
+        // 每条要翻时间线、敲字、拍浅深两张；慢的时候翻一条要几分钟，给满 xcodebuild 的上限。
+        executionTimeAllowance = 600
         app = XCUIApplication()
         app.launchArguments += ["-AppleLanguages", "(en)", "-AppleLocale", "en_US", "-ApplePersistenceIgnoreState", "YES"]
         app.launchEnvironment["WONTON_DEV_DATA_SUFFIX"] = UUID().uuidString
@@ -185,15 +185,14 @@ final class ChatEditUITests: XCTestCase {
         Thread.sleep(forTimeInterval: 1)
     }
 
-    /// 停在底部时往回翻到元素：先只往旧消息那头，翻到头再反过来。
+    /// 翻到元素：画出来了的按位置往那头翻，没画出来先往旧消息那头找，到头再反过来。
     private func revealBackwards(_ element: XCUIElement, file: StaticString = #filePath, line: UInt = #line) {
-        for backwards in [true, false] {
-            for _ in 0..<30 {
-                if element.isHittable { return }
-                drag(backwards: backwards)
-            }
+        for _ in 0..<60 {
+            if element.isHittable { return }
+            let forward = element.exists && element.frame.minY > input.frame.minY
+            drag(backwards: !forward)
         }
-        XCTFail("两头各翻 30 段也没找到 \(element)\n\(app.debugDescription)", file: file, line: line)
+        XCTFail("翻了 60 段也没找到 \(element)\n\(app.debugDescription)", file: file, line: line)
     }
 
     private func drag(backwards: Bool) {
@@ -276,13 +275,12 @@ final class ChatEditUITests: XCTestCase {
     /// 换外观并等画面真的变了：刚建好的模拟器上 `appearance` 偶尔要好几秒才生效，只等固定时间会拍到旧颜色。
     private func setAppearance(_ appearance: XCUIDevice.Appearance) {
         let dark = appearance == .dark
-        for _ in 0..<3 {
-            XCUIDevice.shared.appearance = appearance
-            let deadline = Date().addingTimeInterval(4)
-            while Date() < deadline {
-                if screenIsDark() == dark { return }
-                Thread.sleep(forTimeInterval: 0.3)
-            }
+        // 最多等 5 秒；还没变就随它，拍下来人眼看。
+        XCUIDevice.shared.appearance = appearance
+        let deadline = Date().addingTimeInterval(5)
+        while Date() < deadline {
+            if screenIsDark() == dark { return }
+            Thread.sleep(forTimeInterval: 0.3)
         }
     }
 
