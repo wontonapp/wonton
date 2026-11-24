@@ -115,7 +115,8 @@
             "value" : "管理者の承認待ち"
           }
         }
-      }
+      },
+      "extractionState" : "manual"
     },
     "joining.nextStep.pending" : {
       "localizations" : {
@@ -143,7 +144,8 @@
             "value" : "承認されると自動で続行します。"
           }
         }
-      }
+      },
+      "extractionState" : "manual"
     }
   }
 }

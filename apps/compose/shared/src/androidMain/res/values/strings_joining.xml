@@ -4,5 +4,5 @@
     <string name="joining_failure_code_used">This invitation code has already been used</string>
     <string name="joining_next_invite">Ask an admin for a new invitation code.</string>
     <string name="joining_failure_pending_approval">Waiting for an admin to approve</string>
-    <string name="joining_hint_pending">We'll continue automatically once an admin approves</string>
+    <string name="joining_hint_pending">We\'ll continue automatically once an admin approves</string>
 </resources>
