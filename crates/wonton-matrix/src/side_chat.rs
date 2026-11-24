@@ -89,7 +89,7 @@ pub struct SideChatFacts {
     pub titles: HashMap<OwnedEventId, String>,
 }
 
-/// 原始事件里要用的几个字段；不是 `m.room.message` 的不要。
+/// 原始事件里要用的几个字段；只认消息和还解不开的加密事件。
 pub(crate) struct RawEvent {
     pub(crate) event_id: Option<OwnedEventId>,
     sender: Option<OwnedUserId>,
@@ -100,7 +100,12 @@ pub(crate) struct RawEvent {
 impl RawEvent {
     pub(crate) fn parse(json: &str) -> Option<Self> {
         let value: Value = serde_json::from_str(json).ok()?;
-        if value.get("type").and_then(Value::as_str) != Some("m.room.message") {
+        // 解不开的加密事件也要算：话题关系、发送者和时间在密文外层，旁聊的回复数和未读不等密钥。
+        // 密文里读不出 `m.agent`，状态消息在密钥到之前会先按一条回复计、并推后“最后一条”，换回明文后再减掉。
+        if !matches!(
+            value.get("type").and_then(Value::as_str),
+            Some("m.room.message" | "m.room.encrypted")
+        ) {
             return None;
         }
         let id = |key: &str| value.get(key).and_then(Value::as_str).map(str::to_owned);
@@ -214,7 +219,7 @@ pub struct LatestSideChat {
 }
 
 /// 房间最新一条（SDK 算的，话题里的也算）如果属于旁聊，给出旁聊的标题和结果行。话题里的消息要按根取标题，
-/// 根不在本机缓存里时不算，按普通消息预览。
+/// 根不在本机缓存里、或者根还解不开读不出标题时不算，按普通消息预览。
 pub(crate) async fn latest_side_chat(room: &Room) -> Option<LatestSideChat> {
     let matrix_sdk_base::latest_event::LatestEventValue::Remote(event) = (**room).latest_event()
     else {
@@ -227,6 +232,10 @@ pub(crate) async fn latest_side_chat(room: &Room) -> Option<LatestSideChat> {
         let root = RawEvent::parse(root.raw().json().get())?;
         let title = root_marker(&root.content)
             .map_or_else(|| title_from_body(root.body()), |marker| marker.title);
+        // 根还是密文时标题读不出来，别渲染「旁聊「」」。
+        if title.is_empty() {
+            return None;
+        }
         return Some(LatestSideChat {
             title,
             result: None,
@@ -329,17 +338,20 @@ pub(crate) fn activity_of(events: &[RawEvent], own: &UserId) -> ThreadActivity {
     let mut statuses: HashMap<OwnedEventId, AgentRunState> = HashMap::new();
     let mut activity = ThreadActivity::default();
     for event in events {
-        if let Some((kind, original)) = event.relation()
-            && kind == "m.replace"
-        {
-            let new_content = event
-                .content
-                .get("m.new_content")
-                .and_then(Value::as_object);
-            if let Some(status) = new_content.and_then(agent_run::parse) {
-                statuses.insert(original, status.state);
+        if let Some((kind, original)) = event.relation() {
+            // 编辑按原消息记最新状态；编辑和表情回应都不单独算一条回复（加密房间里也是密文）。
+            if kind == "m.replace" {
+                let new_content = event
+                    .content
+                    .get("m.new_content")
+                    .and_then(Value::as_object);
+                if let Some(status) = new_content.and_then(agent_run::parse) {
+                    statuses.insert(original, status.state);
+                }
             }
-            continue;
+            if matches!(kind.as_str(), "m.replace" | "m.annotation") {
+                continue;
+            }
         }
         activity.replies += 1;
         if let Some(status) = agent_run::parse(&event.content) {

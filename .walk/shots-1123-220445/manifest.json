@@ -1,0 +1,47 @@
+[
+  {
+    "attachments" : [
+      {
+        "configurationName" : "Test Scheme Action",
+        "deviceId" : "781CF89C-AB58-48E4-A1BD-79D4A1AD0736",
+        "deviceName" : "ios-timeline",
+        "exportedFileName" : "C5A3CCBC-DB9B-4477-A414-9673B0228B82.png",
+        "isAssociatedWithFailure" : false,
+        "suggestedHumanReadableName" : "reply-two-lines_0_1410FB9A-974C-4D18-8082-B04AA3B31C50.png",
+        "timestamp" : 1795442927.563
+      }
+    ],
+    "testIdentifier" : "ChatTelegramUITests/testComposerReplySummaryKeepsBothLines()",
+    "testIdentifierURL" : "test://com.apple.xcode/Wonton/WontonUITests/ChatTelegramUITests/testComposerReplySummaryKeepsBothLines"
+  },
+  {
+    "attachments" : [
+      {
+        "configurationName" : "Test Scheme Action",
+        "deviceId" : "781CF89C-AB58-48E4-A1BD-79D4A1AD0736",
+        "deviceName" : "ios-timeline",
+        "exportedFileName" : "13583832-8D11-4880-8B9E-AC39856DCB40.png",
+        "isAssociatedWithFailure" : false,
+        "suggestedHumanReadableName" : "side-chat-top_0_154A10E8-3A47-4EC6-9EAF-2AE021C826E4.png",
+        "timestamp" : 1795442952.948
+      }
+    ],
+    "testIdentifier" : "ChatTelegramUITests/testPluginBannerSitsAboveSideChatTitle()",
+    "testIdentifierURL" : "test://com.apple.xcode/Wonton/WontonUITests/ChatTelegramUITests/testPluginBannerSitsAboveSideChatTitle"
+  },
+  {
+    "attachments" : [
+      {
+        "configurationName" : "Test Scheme Action",
+        "deviceId" : "781CF89C-AB58-48E4-A1BD-79D4A1AD0736",
+        "deviceName" : "ios-timeline",
+        "exportedFileName" : "7C71F414-4FC8-4983-B96E-750506B4B051.png",
+        "isAssociatedWithFailure" : false,
+        "suggestedHumanReadableName" : "quote-two-lines_0_406D0618-CFB2-49FB-A4B8-38B2B4F590F5.png",
+        "timestamp" : 1795443010.725
+      }
+    ],
+    "testIdentifier" : "ChatTelegramUITests/testQuoteSummaryKeepsBothLines()",
+    "testIdentifierURL" : "test://com.apple.xcode/Wonton/WontonUITests/ChatTelegramUITests/testQuoteSummaryKeepsBothLines"
+  }
+]

@@ -9,15 +9,14 @@
 //! 三个有网页的已装应用（页面各停在加载中、已停止、出了问题）、一个整页打开本机网页的应用、
 //! 主面板里钉着的一页、商店入口、“等你确认”里一张带设备的安装卡片（`ui_fake_devices.rs`）、引导已经走完。
 //! 操作里只认开页、关页（`OpenPage`、`ClosePage`）、回答确认卡片、重试失败的安装（`ui_fake_failed_install.rs`），
-//! 以及时间线上界面测试约定的那几个（`ui_fake_timeline.rs`）：
-//! 开关页照真核心的规则改页面栈和应用网格的开关，壳的出口才有东西可测；
+//! 以及时间线上界面测试约定的那几个（`ui_fake_timeline.rs`）：停下在跑的轮次（`ui_fake_agent_stop.rs`，停成了连在等
+//! 的卡片一起撤回），开关页照真核心的规则改页面栈和应用网格的开关，壳的出口才有东西可测；
 //! 没有隧道，插件的网页本身加载不出来；房间的时间线和加载得出来的本机网页（面板里一张、整页一张）在 `ui_fake_room.rs`。
 //! 商店列表和别的操作后的新状态不在里面，要用这些的测试仍然连开发栈（见
 //! `apps/ios/WontonUITests/UITestBackend.swift`）。假房间里的照片例外：`ui_fake_room` 带同组多张的
 //! 样张，字节由 `load_media` 在假数据入口下直接给，图像类走查不用连栈。
 
 use std::sync::Arc;
-use std::sync::atomic::AtomicUsize;
 use std::sync::atomic::Ordering;
 use std::time::{SystemTime, UNIX_EPOCH};
 
@@ -29,18 +28,13 @@ use wonton_protocol::{
     DeviceVerification, EncryptionStatus, HomePath, HomeStatus, HomeViewModel, InstalledPlugin,
     InstalledPlugins, MessageSummary, OnboardingStep, OnboardingViewModel, OpenPage,
     PagesViewModel, PanelItem, PanelSource, PluginHealth, PluginKind, PluginState, PluginTrust,
-    PluginsViewModel, PushStatus, RecoveryNextStep, RecoveryStatus, RoomMembership, RoomPreview,
-    RoomRow, SecretString, ServerKind, ServerName, ServerRow, ServersViewModel, SidebarApp,
-    SidebarBadge, SidebarOpen, StoreLoadState, TabIcon, TabLayout, TabPage, TabRef, TabState,
+    PluginsViewModel, PushStatus, RecoveryNextStep, RecoveryStatus, RoomMembership, RoomPlugin,
+    RoomPreview, RoomRow, SecretString, ServerKind, ServerName, ServerRow, ServersViewModel,
+    SidebarApp, SidebarBadge, SidebarOpen, StoreLoadState, TabIcon, TabLayout, TabPage, TabRef,
+    TabState,
 };
 
 use super::ClientCore;
-
-/// 假旁聊的根事件 ID：每开一间新旁聊给一个新号，测试靠它认这一间。
-pub(super) fn new_thread_root() -> String {
-    static NEXT: AtomicUsize = AtomicUsize::new(0);
-    format!("$ui-fake-thread-{}", NEXT.fetch_add(1, Ordering::SeqCst))
-}
 
 pub(super) const ROOM_ID: &str = "!ui-fake:home.example";
 /// 有人在通话的群聊：列表这一行和顶栏都标“通话中”，顶栏有 [`CALL_PLUGIN`] 的 widget 入口。
@@ -135,6 +129,7 @@ impl ClientCore {
             onboarding: watch::Sender::new(fake_onboarding(current.onboarding.borrow().clone())),
             peers: watch::Sender::new(current.peers.borrow().clone()),
             friends: watch::Sender::new(current.friends.borrow().clone()),
+            family: watch::Sender::new(current.family.borrow().clone()),
             bot_contacts: watch::Sender::new(current.bot_contacts.borrow().clone()),
             // 假数据下设置页带着当前值：真设置页的构建循环订阅着被丢弃的旧接收器，开起来会停在
             // 未配对的状态，设置里的“添加设备”走不通。
@@ -377,19 +372,25 @@ fn fake_rooms() -> Vec<RoomRow> {
             layout: ChatLayout::default(),
             call_active: true,
         },
-        // 转发要能一次挑好几个房间，列表里多放一个没人说话的群。
+        // 转发要能一次挑好几个房间，列表里多放一个没人说话的群；顶栏下插件横幅、旁聊标题、AI 行一起出现，
+        // 界面测试在这间房里看它们的上下顺序。
         RoomRow {
             room_id: NOTES_ROOM_ID.into(),
             name: "Notes".into(),
             is_direct: false,
             direct_user_id: None,
-            plugin: None,
+            plugin: Some(RoomPlugin {
+                plugin_id: "app.echo".into(),
+                status: PluginState::Installing,
+                start: None,
+                can_start: false,
+            }),
             is_encrypted: true,
             is_read_only: false,
             membership: RoomMembership::Joined,
             preview: None,
             unread_count: 0,
-            side_chats: false,
+            side_chats: true,
             layout: ChatLayout::default(),
             call_active: false,
         },
@@ -927,6 +928,64 @@ mod tests {
         })
         .unwrap();
         assert!(core.pages().stack.is_empty());
+        let _ = std::fs::remove_dir_all(&dir);
+    }
+
+    /// 旁聊里带回复发照片不会卡住：推送时状态锁和订阅名单的锁都已放掉，壳就地报滚动也能绕回来。
+    #[tokio::test]
+    async fn side_chat_photo_with_reply_does_not_block() {
+        use tokio::time::{Duration, timeout};
+        use wonton_protocol::TimelineDiff;
+        let dir = std::env::temp_dir().join(format!("wonton-ui-fake-photo-{}", std::process::id()));
+        let _ = std::fs::remove_dir_all(&dir);
+        let core = ClientCore::new_ui_fake(dir.to_string_lossy().into_owned()).unwrap();
+        let target = TimelineTarget {
+            room_id: ROOM_ID.into(),
+            thread_root: Some("$root".into()),
+        };
+        let sub = core.subscribe_timeline(target.clone()).await.unwrap();
+        let first = sub.next().await.unwrap();
+        assert!(!first.diffs.is_empty());
+        core.dispatch(Action::Timeline {
+            action: TimelineAction::SendText {
+                target: target.clone(),
+                body: "回这一条".into(),
+                reply_to: None,
+                mentions: Vec::new(),
+            },
+        })
+        .unwrap();
+        let update = timeout(Duration::from_secs(5), sub.next())
+            .await
+            .unwrap()
+            .unwrap();
+        let id = update
+            .diffs
+            .iter()
+            .find_map(|diff| match diff {
+                TimelineDiff::PushBack { item } => Some(item.id.clone()),
+                _ => None,
+            })
+            .expect("没拿到刚发的 id");
+        core.dispatch(Action::Timeline {
+            action: TimelineAction::SendImage {
+                target,
+                image: ImageUpload {
+                    filename: "photo.png".into(),
+                    mime_type: "image/png".into(),
+                    data: vec![1, 2, 3],
+                    width: Some(4),
+                    height: Some(3),
+                    thumbnail: None,
+                },
+                reply_to: Some(format!("${id}")),
+                caption: Some("说明".into()),
+            },
+        })
+        .unwrap();
+        timeout(Duration::from_secs(5), sub.next())
+            .await
+            .expect("send_image 卡住了");
         let _ = std::fs::remove_dir_all(&dir);
     }
 }

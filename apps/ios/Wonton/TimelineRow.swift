@@ -270,6 +270,9 @@ private struct MessageBubble: View {
             .padding(.bottom, flushesNext ? 0 : WontonTheme.spacing.bubbleInsetY)
         // 气泡是内容：纯色、不透明，不描边、不叠颗粒，也不铺玻璃（ADR-0107、ADR-0109 第 9 节）。
         body.background(shape.fill(message.isOwn ? Color(colors.accentFill) : palette.incoming))
+            // 整只气泡是一个容器：走查按条目定位，里面的引用、正文各自照旧查得到。
+            .accessibilityElement(children: .contain)
+            .accessibilityIdentifier("message.\(itemId)")
     }
 
     /// 群聊里组首气泡顶部写发送者的名字；回复别人时，正文上方画被引用的原消息（ADR-0073），点它跳到原消息。

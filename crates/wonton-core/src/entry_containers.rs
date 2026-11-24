@@ -19,6 +19,7 @@ use bollard::models::{
 
 use crate::entry_haproxy::{CONNECTOR_ADDRESS, ENTRY_EDGE_ADDRESS};
 use crate::entry_settings::EntrySettings;
+use crate::home_service::Registration;
 use crate::plugin::compose::PullPolicy;
 use crate::plugin::core_address::Endpoint;
 use crate::plugin::docker::{Engine, EngineError};
@@ -55,8 +56,10 @@ pub enum EntryError {
     NetworkMissing(String),
     /// 入口容器不唯一，热加载不知道该发给谁。
     NotOneEntry(usize),
-    /// 入口 HAProxy 的主进程没接受新配置，带着它的启动日志。
+    /// 入口热加载失败：新配置被主进程拒绝（带启动日志）或一直没完成。
     Reload(String),
+    /// 域名设置读不了：不知道要不要入口，这一轮什么都不删。
+    Settings(String),
     Docker(EngineError),
 }
 
@@ -67,6 +70,7 @@ impl EntryError {
             Self::CoreNotInContainer | Self::NetworkMissing(_) => "core_not_in_container",
             Self::NameTaken(_) | Self::NotOneEntry(_) => "conflict",
             Self::Reload(_) => "upstream_error",
+            Self::Settings(_) => "invalid_input",
             Self::Docker(EngineError::PortTaken(_)) => "conflict",
             Self::Docker(EngineError::Rejected { .. }) => "invalid_input",
             Self::Docker(EngineError::NotFound(_)) => "not_found",
@@ -100,7 +104,8 @@ impl fmt::Display for EntryError {
                 "{}：找到 {count} 个入口容器，热加载不知道发给谁",
                 self.category()
             ),
-            Self::Reload(logs) => write!(f, "{}：入口拒绝了新配置：{logs}", self.category()),
+            Self::Reload(logs) => write!(f, "{}：入口热加载失败：{logs}", self.category()),
+            Self::Settings(error) => write!(f, "{}：{error}", self.category()),
             Self::Docker(error) => write!(f, "{}：{error}", self.category()),
         }
     }
@@ -123,6 +128,49 @@ struct Side {
     endpoints: Vec<(String, Endpoint)>,
 }
 
+/// 一轮对账要服务的东西：名字来自设置文件（有名字的装法）或 App 里配的自己的域名（“不要名字”的装法），
+/// 连同渲染配置要用的家名服务和解析器。设置文件那一份带着家名服务，入口对账不该自己再读一遍设置。
+struct Target {
+    domain: String,
+    registration: Option<Registration>,
+    /// 校验 frps 证书用的 CA（有家名服务时才用）。
+    relay_ca: Option<PathBuf>,
+    resolvers: Vec<String>,
+}
+
+impl Target {
+    /// 有设置文件就按设置；没有就看域名设置文件里有没有后缀。
+    /// 名字和证书都在才有东西可服务，证书还没签出来时先不建，等签发后的下一轮对账。
+    fn resolve(
+        install_dir: &Path,
+        settings: Option<&EntrySettings>,
+    ) -> Result<Option<Self>, EntryError> {
+        let found = match settings {
+            Some(settings) => Some((
+                settings.domain.clone(),
+                settings.registration.clone(),
+                settings.relay_ca.clone(),
+                settings.acme_resolvers.clone(),
+            )),
+            None => crate::clients::domain::stored_suffix(install_dir)
+                .map_err(|error| EntryError::Settings(format!("{error:#}")))?
+                .map(|suffix| (suffix, None, None, Vec::new())),
+        };
+        let Some((domain, registration, relay_ca, resolvers)) = found else {
+            return Ok(None);
+        };
+        Ok(install_dir
+            .join("entry/certs/site.pem")
+            .is_file()
+            .then_some(Self {
+                domain,
+                registration,
+                relay_ca,
+                resolvers,
+            }))
+    }
+}
+
 #[derive(Clone)]
 pub struct EntryContainers {
     engine: Engine,
@@ -137,6 +185,8 @@ pub struct EntryContainers {
     operation: std::sync::Arc<tokio::sync::Mutex<Option<crate::entry_haproxy::Model>>>,
     /// 入口主进程的管理地址；测试指向临时端口。
     reload_addr: String,
+    /// 上一次成功让入口读过的 `site.pem` 摘要：同名续期换的只是证书内容，配置文本不变，也要重载。
+    loaded_cert: std::sync::Arc<std::sync::Mutex<Option<u64>>>,
 }
 
 impl EntryContainers {
@@ -157,6 +207,7 @@ impl EntryContainers {
             binding: None,
             operation: std::sync::Arc::new(tokio::sync::Mutex::new(None)),
             reload_addr: ENTRY_RELOAD_ADDR.to_owned(),
+            loaded_cert: std::sync::Arc::new(std::sync::Mutex::new(None)),
         }
     }
 
@@ -206,8 +257,12 @@ impl EntryContainers {
         }
         let core = self.core_container.as_deref().expect("已检查核心容器");
         let (_, networks) = self.networks(core).await?;
-        let mut model =
-            crate::entry_haproxy::Model::federation_only(&settings.domain, &settings.domain);
+        // 证书还没换到新后缀时先按旧名字服务（和 `write_config` 同一条规则）。
+        let names = crate::entry_certificate::published_names(
+            &self.install_dir.join("entry/certs/site.pem"),
+        );
+        let domain = crate::entry_certificate::served_suffix(&names, &settings.domain);
+        let mut model = crate::entry_haproxy::Model::federation_only(&domain, &domain);
         model.public_labels = if public_access {
             public_labels
         } else {
@@ -269,53 +324,105 @@ impl EntryContainers {
         &self.data_dir
     }
 
-    /// 有联邦或者任何一个打开的入口就要入口容器；有连接器设置就要连接器。
+    fn cert_digest(&self) -> Option<u64> {
+        use std::hash::{Hash, Hasher};
+        let pem = std::fs::read(self.install_dir.join("entry/certs/site.pem")).ok()?;
+        let mut hasher = std::collections::hash_map::DefaultHasher::new();
+        pem.hash(&mut hasher);
+        Some(hasher.finish())
+    }
+
+    /// 证书内容变过（含同名续期）：上次加载的不是现在这份。
+    fn cert_changed(&self) -> bool {
+        let current = self.cert_digest();
+        *self.loaded_cert.lock().expect("证书摘要锁") != current
+    }
+
+    fn remember_cert(&self) {
+        let current = self.cert_digest();
+        *self.loaded_cert.lock().expect("证书摘要锁") = current;
+    }
+
+    /// 有联邦或者任何一个打开的入口就要入口容器；有入口就要连接器。
     ///
-    /// `settings` 只在有名字时装机写下，那时 `is_private` 一定是假，所以这里目前恒开；入口的开关（ADR-0021）要等设置里
-    /// 有开关以后才可能关掉它。连接器同样：家名服务（frpc）和路由器转发（发布端口的 HAProxy）现在都随设置存在，
-    /// ADR-0090 的总开关接上后再由设置决定。
-    fn wanted(settings: &EntrySettings) -> (bool, bool) {
-        let federation = !crate::matrix::federation_config::is_private(&settings.domain);
+    /// 入口的开关（ADR-0021）和 ADR-0090 的总开关要等设置里有开关以后才可能关掉它；
+    /// 连接器的两种做法（frpc / 路由器转发）按设置里的家名服务选。
+    fn wanted(target: &Target) -> (bool, bool) {
+        let federation = !crate::matrix::federation_config::is_private(&target.domain);
         (federation, true)
     }
 
-    /// 按设置对账：缺的建、多的删、镜像换了重建、网络没接上就接上。文件由 `wonton-core init`（或改了开关的
-    /// 操作）先写好，这里只读。
+    /// 按目标对账：配置按实际网段和已发布的证书写，缺的容器建、多的删、镜像换了重建、网络没接上就接上，
+    /// 配置变了才让入口重读。
+    ///
+    /// 要不要入口看的是实际有没有要服务的名字和证书，不是设置文件在不在：“不要名字”的安装没有设置文件，
+    /// 主人在 App 里配的自己的域名写在 `entry/domain.json`，一样要有入口、一样要续期。
     pub async fn reconcile(&self, settings: Option<&EntrySettings>) -> Result<(), EntryError> {
         let mut applied_model = self.operation.lock().await;
         *applied_model = None;
-        self.reconcile_inner(settings).await
+        let target = Target::resolve(&self.install_dir, settings)?;
+        // 有设置文件时配置一般由 `wonton-core init` 或客户端开关写好，这里只对容器（别把带标签的模型
+        // 覆盖成只有联邦）；文件缺了（旧版坏掉的安装）或证书换过（要按新证书重算名字）就写一份。
+        // 没有设置文件的装法没有第二个写入者，每轮都按 `domain.json` 和已发布的证书写。
+        let missing = !self.install_dir.join("entry/haproxy.cfg").is_file();
+        let cert_changed = self.cert_changed();
+        self.reconcile_target(
+            target.as_ref(),
+            settings.is_none() || missing || cert_changed,
+        )
+        .await
     }
 
+    /// 客户端开关先 `write_model` 再走这里：模型里带着标签，所以不能再按“只有联邦”重写。
     async fn reconcile_inner(&self, settings: Option<&EntrySettings>) -> Result<(), EntryError> {
-        let (entry, connector) = match settings {
-            Some(settings) => Self::wanted(settings),
-            None => (false, false),
+        let target = Target::resolve(&self.install_dir, settings)?;
+        self.reconcile_target(target.as_ref(), false).await
+    }
+
+    /// 按目标对容器和配置对账：缺的建、多的删、镜像换了重建、网络没接上就接上。
+    async fn reconcile_target(
+        &self,
+        target: Option<&Target>,
+        write: bool,
+    ) -> Result<(), EntryError> {
+        let Some(target) = target else {
+            // 没有要服务的名字和证书：两个容器都删掉，不去动网络。
+            for component in [ENTRY_COMPONENT, CONNECTOR_COMPONENT] {
+                self.engine.remove_container(&self.name(component)).await?;
+            }
+            return Ok(());
         };
         let Some(core) = &self.core_container else {
-            // 没有设置、也没有容器网络：开发时跑在宿主上，什么都不用做。
-            return if entry || connector {
-                Err(EntryError::CoreNotInContainer)
-            } else {
-                Ok(())
-            };
+            // 要入口、又跑在宿主上：没有 compose 给的那些网络。
+            return Err(EntryError::CoreNotInContainer);
         };
-        let mut resolved = None;
-        let sides: [(bool, &'static str); 2] =
-            [(entry, ENTRY_COMPONENT), (connector, CONNECTOR_COMPONENT)];
-        for (wanted, component) in sides {
-            let name = self.name(component);
+        let (project, networks) = self.networks(core).await?;
+        let changed = write && self.write_config(target, &networks.connector)?;
+        let cert_changed = self.cert_changed();
+        let existed = self
+            .engine
+            .inspect_container(&self.name(ENTRY_COMPONENT))
+            .await?
+            .is_some();
+        let (entry, connector) = Self::wanted(target);
+        let mut started = false;
+        for (wanted, component) in [(entry, ENTRY_COMPONENT), (connector, CONNECTOR_COMPONENT)] {
             if !wanted {
-                self.engine.remove_container(&name).await?;
+                self.engine.remove_container(&self.name(component)).await?;
                 continue;
             }
-            if resolved.is_none() {
-                resolved = Some(self.networks(core).await?);
-            }
-            let (project, networks) = resolved.as_ref().expect("网络刚取过");
-            let settings = settings.expect("要有设置才可能有容器");
-            let side = self.side(component, networks, settings)?;
-            self.ensure(&side, project).await?;
+            let side = self.side(component, &networks, target)?;
+            started |= self.ensure(&side, &project).await?;
+        }
+        // 刚起/重建的入口自己会读当前证书，但这一轮要重载时得等重载成功才算数：重载失败后
+        // 记成已加载，下一轮既没有配置变化也没有证书变化，就再也不会重试。
+        let reload = (changed || cert_changed) && existed && entry;
+        if started && !reload {
+            self.remember_cert();
+        }
+        if reload {
+            self.reload(&self.reload_addr).await?;
+            self.remember_cert();
         }
         Ok(())
     }
@@ -476,7 +583,8 @@ impl EntryContainers {
 
     /// 创建一侧的容器：已经在了就只补齐网络；镜像或运行参数变了、或者是上一版 compose 留下的同名容器，删了重建；
     /// 名字被别的资源占着就停。
-    async fn ensure(&self, side: &Side, project: &str) -> Result<(), EntryError> {
+    /// 返回这次有没有建/重建容器（新容器起来时会自己读当前证书）。
+    async fn ensure(&self, side: &Side, project: &str) -> Result<bool, EntryError> {
         let name = self.name(side.component);
         let found = self.engine.inspect_container(&name).await?;
         let mut previous_version = false;
@@ -525,7 +633,7 @@ impl EntryContainers {
                     .await?;
             }
             self.engine.start_container(&name).await?;
-            return Ok(());
+            return Ok(true);
         }
         if recreate {
             self.engine.create_container(&name, body).await?;
@@ -540,7 +648,7 @@ impl EntryContainers {
         if recreate {
             self.engine.start_container(&name).await?;
         }
-        Ok(())
+        Ok(recreate)
     }
 
     fn owns(&self, labels: &HashMap<String, String>, component: &str, project: &str) -> bool {
@@ -563,13 +671,13 @@ impl EntryContainers {
         &self,
         component: &'static str,
         networks: &Networks,
-        settings: &EntrySettings,
+        target: &Target,
     ) -> Result<Side, EntryError> {
-        let (image, command, binds, ports) = self.spec(component, settings)?;
+        let (image, command, binds, ports) = self.spec(component, target)?;
         // 入口和连接器要解析的正是主人给的解析器认识的名字（中继、ACME）：compose 时代是核心和 lego 用这些解析器，
         // 容器自己的解析器跟着来，不然只能靠宿主的。
         let resolvers =
-            crate::entry_settings::resolver_ips(&settings.acme_resolvers).map_err(|error| {
+            crate::entry_settings::resolver_ips(&target.resolvers).map_err(|error| {
                 EntryError::Docker(EngineError::Rejected {
                     context: "解析入口的 DNS 解析器".to_owned(),
                     message: error.to_string(),
@@ -661,7 +769,7 @@ impl EntryContainers {
     fn spec(
         &self,
         component: &str,
-        settings: &EntrySettings,
+        target: &Target,
     ) -> Result<
         (
             &'static str,
@@ -673,7 +781,7 @@ impl EntryContainers {
     > {
         let entry = self.install_dir.join("entry");
         Ok(if component == CONNECTOR_COMPONENT {
-            match &settings.registration {
+            match &target.registration {
                 Some(_) => (
                     crate::entry_runtime::FRPC_IMAGE,
                     vec!["-c".to_owned(), "/config/frpc.json".to_owned()],
@@ -704,6 +812,30 @@ impl EntryContainers {
                 ),
                 Vec::new(),
             )
+        })
+    }
+
+    /// 按已发布的证书写入口配置：证书还不认识新后缀时继续服务旧名字（少一次入口断开），
+    /// 新证书发布后的下一轮对账才换。返回配置有没有变。
+    fn write_config(&self, target: &Target, connector: &str) -> Result<bool, EntryError> {
+        let names = crate::entry_certificate::published_names(
+            &self.install_dir.join("entry/certs/site.pem"),
+        );
+        let domain = crate::entry_certificate::served_suffix(&names, &target.domain);
+        crate::entry_compose::sync(
+            &self.install_dir,
+            &crate::entry_compose::Config {
+                domain: &domain,
+                connector,
+                registration: target.registration.as_ref(),
+                relay_ca: target.relay_ca.as_deref(),
+            },
+        )
+        .map_err(|error| {
+            EntryError::Docker(EngineError::Rejected {
+                context: "写入口配置".to_owned(),
+                message: error.to_string(),
+            })
         })
     }
 

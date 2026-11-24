@@ -31,7 +31,12 @@ import app.wonton.ui.icons.Check
 import app.wonton.ui.icons.WontonIcon
 
 @Composable
-internal fun OnboardingReviewStep(review: OnboardingReview, plugins: PluginsState, send: (Action) -> Unit) {
+fun OnboardingReviewStep(review: OnboardingReview, plugins: PluginsState, send: (Action) -> Unit) {
+    Text(
+        stringResource(R.string.onboarding_review_intro),
+        style = WontonTheme.typography.body,
+        color = WontonTheme.colors.textSecondary.toColor(),
+    )
     review.items.forEach { item ->
         key(item.id) {
             WontonGroup {

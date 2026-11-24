@@ -23,8 +23,10 @@ HAProxy 发 `SIGUSR2` 让 master 软重载。`systemctl restart docker` 之后�
   启动时建好（`create_admin_room`，默认开），带 `admin: true` 注册的账号由 `make_user_admin` 邀请进去。核心的管理账号
   （[ADR-0009](0009-identity-pairing-sso.md)）本来就是带 `admin: true` 注册的，手里有现成邀请；连上时加入一次，之后发命令都用它。不再另开管理员。
 - 入口 HAProxy：主进程的管理端口（`-S`，只在内网）上发 `reload`。master 会按同一份 argv 起新进程做预检，起得来
-  才切，回应 `Success=1`；起不来回应 `Success=0` 加启动日志，原样进错误。没有文件监视（人工的 `SIGUSR2` 外部入口还在，
-  核心不再用）。镜像跟着从 3.2.8-alpine 换到 3.4-alpine（官方摘要固定）：3.2.8 的 alpine 构建里 `-S` 直接打 Usage。
+  才切，回应 `Success=1`；起不来回应 `Success=0` 加启动日志，原样进错误。容器刚起来、master 还在做初始装载时会先回
+  `Success=0` / `Another reload is still in progress`（3.4-alpine 实测），核心在 10 秒内隔一小段重发。没有文件监视
+  （人工的 `SIGUSR2` 外部入口还在，核心不再用）。镜像跟着从 3.2.8-alpine 换到 3.4-alpine（官方摘要固定）：
+  3.2.8 的 alpine 构建里 `-S` 直接打 Usage。
 
 两边都保留“配置在文件里”，命令只负责“重读”，不把配置塞进请求。
 

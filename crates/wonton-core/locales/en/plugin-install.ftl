@@ -519,8 +519,9 @@ plugin-install-img-worker-host-exited = The image helper exited: { $error }
 plugin-install-img-worker-host-not-ready = The image helper did not get ready: { $error }
 plugin-install-img-worker-host-protocol = The image helper speaks protocol version { $got }, this core speaks { $want }
 
-## 预装（启动时随服务器带的包）失败的原因。
+## 预装（启动时随服务器带的包）进行不下去的原因。
 plugin-install-preinstall-retrying = Preinstall failed (tried { $attempts } time(s), will retry automatically)
+plugin-install-preinstall-waiting = The proxy isn't ready yet (will retry automatically)
 plugin-install-preinstall-failed = Preinstall failed
 
 # ── Capability dependencies (capabilities.rs, ADR-0053) ───────────────────

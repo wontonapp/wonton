@@ -15,34 +15,35 @@ import WontonClient
 final class SnapshotTests: XCTestCase {
 
     /// 参考图是在哪个型号的模拟器、哪个系统版本上录的。CI 用 `TEST_RUNNER_SNAPSHOT_MODEL`、
-    /// `TEST_RUNNER_SNAPSHOT_OS` 把工作流的 `SIMULATOR_MODEL`、`SIMULATOR_OS` 交给测试进程
-    /// （xcodebuild 只把 `TEST_RUNNER_` 开头的变量交给模拟器里的 App），工作流是唯一来源。
-    /// 型号是 `SIMULATOR_MODEL_IDENTIFIER` 的取值，`iPhone18,3` 就是 iPhone 17。
-    /// 本机没有这两个变量时用下面同一组值，标准运行时上照样能比；改参考图要打 record-snapshots 重录。
+    /// `TEST_RUNNER_SNAPSHOT_OS` 把工作流挑的型号、运行时交给测试进程（xcodebuild 只把 `TEST_RUNNER_`
+    /// 开头的变量交给模拟器里的 App），工作流是唯一来源。型号是 `SIMULATOR_MODEL_IDENTIFIER` 的取值，
+    /// `iPhone18,3` 就是 iPhone 17；运行时按机器挑（有 27.1 用 27.1，没有用机器上最新的 iOS 版本）。
+    /// 本机没有这两个变量时用当前这台机器的组合，参考图那个运行时上照样能比；换机器或改参考图要打 record-snapshots 重录。
     private enum ReferenceSimulator {
         private static let environment = ProcessInfo.processInfo.environment
-        static let model = environment["SNAPSHOT_MODEL"] ?? "iPhone18,3"
-        static let osVersion = environment["SNAPSHOT_OS"] ?? "27.0"
+        private static let runningOS = ProcessInfo.processInfo.operatingSystemVersion
+        static let model = environment["SNAPSHOT_MODEL"] ?? environment["SIMULATOR_MODEL_IDENTIFIER"] ?? "iPhone18,3"
+        static let osVersion =
+            environment["SNAPSHOT_OS"] ?? "\(runningOS.majorVersion).\(runningOS.minorVersion)"
         /// CI 上设 `TEST_RUNNER_SNAPSHOT_ENFORCE=1`：不符就失败而不是跳过，免得工作流和参考图漂开之后 CI 一路绿。
         static let enforced = environment["SNAPSHOT_ENFORCE"] == "1"
     }
 
-    /// 型号或运行时不符：本机整类跳过、CI 上整类失败，原因里写清参考组合和当前组合。
+    /// 运行时不符：本机整类跳过、CI 上整类失败，原因里写清参考版本和当前版本。
+    /// 界面按 `SnapshotFixtures.size`（390×844）固定尺寸渲染，机型只影响系统栏以外的少量画法，型号不上锁。
     override func setUp() async throws {
         let environment = ProcessInfo.processInfo.environment
-        if ReferenceSimulator.enforced,
-           environment["SNAPSHOT_MODEL"] == nil || environment["SNAPSHOT_OS"] == nil {
-            throw ReferenceRuntimeMismatch("CI 上没收到 TEST_RUNNER_SNAPSHOT_MODEL/TEST_RUNNER_SNAPSHOT_OS，"
-                + "参考运行时没交给测试进程。")
+        if ReferenceSimulator.enforced, environment["SNAPSHOT_OS"] == nil {
+            throw ReferenceRuntimeMismatch("CI 上没收到 TEST_RUNNER_SNAPSHOT_OS，参考运行时没交给测试进程。")
         }
         let model = environment["SIMULATOR_MODEL_IDENTIFIER"] ?? "不在模拟器里"
         let version = UIDevice.current.systemVersion
         let simulator = environment["SIMULATOR_DEVICE_NAME"].map { "（模拟器 \($0)）" } ?? ""
-        guard model == ReferenceSimulator.model, Self.majorMinor(version) == ReferenceSimulator.osVersion else {
+        guard Self.majorMinor(version) == ReferenceSimulator.osVersion else {
             throw Self.skipOrFail(
-                "参考图是在 \(ReferenceSimulator.model)/iOS \(ReferenceSimulator.osVersion) 上录的，"
+                "参考图是在 iOS \(ReferenceSimulator.osVersion) 上录的（\(ReferenceSimulator.model)），"
                     + "当前是 \(model)/iOS \(version)\(simulator)，像素比对没有意义；"
-                    + "在标准运行时上跑，或用 record-snapshots 标签重录。"
+                    + "在参考运行时上跑，或用 record-snapshots 标签重录。"
             )
         }
     }

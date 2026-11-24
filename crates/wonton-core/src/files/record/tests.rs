@@ -22,6 +22,7 @@ fn bot_record(id: FileId, bot: &str, origin: Origin, now: u64) -> FileRecord {
         },
         origin,
         access: [Accessor::Bot(bot.into())].into(),
+        rooms: Default::default(),
         owner_granted: Default::default(),
         registered: None,
         created_at: now,

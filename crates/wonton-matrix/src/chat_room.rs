@@ -179,24 +179,40 @@ impl ChatRoom {
     /// 编辑（`m.replace`）、表情回应（`m.annotation`）、撤回不会在时间线里单独成一项，跳过不比；还解不开的加密事件不知道
     /// 会不会成项，也当候选，跟别的一样走宽限。thread 回复照常算一项。
     ///
+    /// 主对话和平铺看房间缓存，旁聊看自己这个话题的缓存：话题时间线的事件不在房间缓存对得上的位置。
+    ///
     /// 缺席按本机单调时钟从第一次看到算起（[`MissedEvent::absent`]），事件回到时间线就忘掉。
     pub async fn missed_cached_event(&self, seen: Option<&EventId>) -> Option<MissedEvent> {
         /// 往回看几条就放弃（流式回复一次能连出好几条编辑）。
         const LOOK_BACK: usize = 5;
-        // 话题时间线的事件在话题缓存里，房间缓存对不上它；话题时间线不比。
-        if matches!(self.focus, Focus::Thread(_)) {
-            return None;
-        }
-        let Ok((cache, _handles)) = self
-            .room
-            .client()
-            .event_cache()
-            .room(self.room.room_id())
-            .await
-        else {
-            return None;
+        // 话题时间线的事件在话题缓存里，按这条时间线看的那一段取缓存。
+        let events = match &self.focus {
+            Focus::Thread(root) => {
+                let Ok((thread, _handles)) = self
+                    .room
+                    .client()
+                    .event_cache()
+                    .thread(self.room.room_id(), root)
+                    .await
+                else {
+                    return None;
+                };
+                // 订阅取一份当前的列表；这个订阅只用来取列表，马上放掉。
+                thread.subscribe().await.ok()?.0
+            }
+            Focus::Flat | Focus::Main => {
+                let Ok((cache, _handles)) = self
+                    .room
+                    .client()
+                    .event_cache()
+                    .room(self.room.room_id())
+                    .await
+                else {
+                    return None;
+                };
+                cache.events().await.ok()?
+            }
         };
-        let events = cache.events().await.ok()?;
         let rules = self.room.clone_info().room_version_rules_or_default();
         let timeline = self.timeline().await;
         let now = Instant::now();

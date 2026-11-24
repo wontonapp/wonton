@@ -54,7 +54,6 @@ import app.wonton.protocol.PushStatus
 import app.wonton.protocol.RecoveryNextStep
 import app.wonton.protocol.RecoveryStatus
 import app.wonton.protocol.RegistryMirrorViewModel
-import app.wonton.protocol.RolesViewModel
 import app.wonton.protocol.RoomMembership
 import app.wonton.protocol.RoomPlugin
 import app.wonton.protocol.RoomRow
@@ -313,7 +312,6 @@ internal fun previewPlugins(
     portMappings = emptyList(),
     ownerSecrets = null,
     mediaGrants = emptyList(),
-    roles = RolesViewModel(loading = false, roles = emptyList(), defaultInviteRole = null, problem = null),
 )
 
 internal fun previewCard() = PendingConfirmation(
@@ -434,6 +432,41 @@ internal fun ChatFailurePreview() {
                 account = ChatAccount.Failed(reason = ChatFailure.UPSTREAM, message = "502 Bad Gateway"),
             ),
             onOpenBackup = {},
+        )
+    }
+}
+
+/// 已安装列表里带着这次装失败的那个插件：降级行让位给失败卡，不再说“应用已安装”。
+@Preview(name = "Agent 降级且已装失败", locale = "en", widthDp = 390, heightDp = 200)
+@Composable
+internal fun AgentDegradedInstalledFailurePreview() {
+    PreviewFrame {
+        AgentPluginStatusBanner(
+            plugin = RoomPlugin(
+                pluginId = "app.example.hub",
+                status = PluginState.Degraded(reason = "container app-example-hub exited with code 137"),
+                start = null,
+                canStart = false,
+            ),
+            title = "Home Hub",
+            plugins = previewPlugins().copy(
+                installed = previewInstalled().copy(
+                    plugins = previewInstalled().plugins.map {
+                        it.copy(
+                            id = "app.example.hub",
+                            installFailure = InstallFailure(
+                                kind = "pulling_images",
+                                message = "拉取镜像超时",
+                                stage = InstallStage.PULLING_IMAGES,
+                                failedPluginId = "app.example.hub",
+                                cleanupErrors = emptyList(),
+                                retryable = true,
+                            ),
+                        )
+                    },
+                ),
+            ),
+            onAction = {},
         )
     }
 }

@@ -20,14 +20,15 @@ extension SideChatState {
 }
 
 /// 主对话上的旁聊盖层（ADR-0093）：下面的主对话继续订阅，被盖住时隐藏、读不到、摸不着、右滑不退出整个房间；
-/// 上面全屏盖旁聊页（独立导航栈，供旁聊里推入备份页等）。
+/// 上面用 `fullScreenCover` 单开一张全屏页：不能塞进房间自己的布局，房间被压进的栈里再套一层栈、
+/// 内层在 ZStack 里量不出高度，整页会变空（iOS 26 模拟器实测）。
+/// 盖着时同时按住外面的边缘返回手势（`keepsRoomOnSideChat`）：旁聊页那一层的根没有可退的页面。
 struct SideChatCover<Main: View>: View {
     let model: ChatModel
     let plugins: PluginsModel
     let roomId: String
     let title: String
     @ViewBuilder let main: () -> Main
-
     /// 呈现中的旁聊根。模型里的旁聊一没（返回、旁聊自己结束、离开房间）盖层就从这里收，收完自己再清；
     /// 直接读模型的话收起动画还在跑、内容已经变空，滑下去的半秒是一张空白页。
     @State private var shown: Shown?
@@ -38,21 +39,28 @@ struct SideChatCover<Main: View>: View {
 
     var body: some View {
         let covered = model.sideChats[roomId] != nil
-        // 盖层单开一张全屏页，不塞进房间自己的布局：房间被压进的 NavigationStack 里再套一层栈，内层在 ZStack 里
-        // 量不出高度，整页变空（iOS 26 模拟器实测，空的 `NavigationStack { Text }` 也一样）。
         main()
             .opacity(covered || shown != nil ? 0 : 1)
             .allowsHitTesting(covered || shown == nil)
             .accessibilityHidden(covered || shown != nil)
             .navigationBarBackButtonHidden(covered || shown != nil)
-            // 收起不在这里清：清掉 `shown` 会立刻把内容抽走，露出下面的主对话或一片白。留给 `onDismiss`，
-            // 转场跑完再清（ADR-0093 §6）。
+            // 侧栏被别处关掉时在这里清 `shown`；自己点返回清的是 `item`，内容留到 `onDismiss` 再收，转场里不抽走。
             .onChange(of: model.sideChats[roomId], initial: true) { _, root in
-                if let root, shown?.id != root { shown = Shown(id: root) }
+                if let root {
+                    if shown?.id != root { shown = Shown(id: root) }
+                } else {
+                    shown = nil
+                }
+                blockOuterPop()
             }
+            .onChange(of: shown?.id) { blockOuterPop() }
+            .onDisappear { UINavigationController.keepsRoomOnSideChat = false }
             .fullScreenCover(
                 item: $shown,
-                onDismiss: { shown = nil },
+                onDismiss: {
+                    shown = nil
+                    blockOuterPop()
+                },
                 content: { shown in
                     NavigationStack {
                         ChatRoomView(
@@ -62,12 +70,18 @@ struct SideChatCover<Main: View>: View {
                 }
             )
     }
+
+    private func blockOuterPop() {
+        UINavigationController.keepsRoomOnSideChat = model.sideChats[roomId] != nil || shown != nil
+    }
 }
 
 /// 主对话上的“开新旁聊”面板（ADR-0093 §6）：`model.composingSideChat == roomId` 时弹出，挂在房间内容上。
 struct NewSideChatSheet: ViewModifier {
     let model: ChatModel
     let roomId: String
+    /// 开成了的旁聊根：面板收完再开盖层，两次呈现不撞在同一个呈现时机上。
+    @State private var started: String?
 
     func body(content: Content) -> some View {
         content.wontonSheet(
@@ -75,12 +89,18 @@ struct NewSideChatSheet: ViewModifier {
                 get: { model.composingSideChat == roomId },
                 set: { if !$0 { model.composingSideChat = nil } }
             ),
-            title: String(localized: .Chat.sideChatNew)
-        ) { close in
-            NewSideChatFields(model: model, roomId: roomId, close: close) { root in
+            title: String(localized: .Chat.sideChatNew),
+            afterDismiss: {
+                guard let root = started else { return }
+                started = nil
                 model.openSideChat(root, in: roomId)
+            },
+            content: { close in
+                NewSideChatFields(model: model, roomId: roomId, close: close) { root in
+                    started = root
+                }
             }
-        }
+        )
     }
 }
 
@@ -141,7 +161,7 @@ struct SideChatCardView: View {
             .contentShape(RoundedRectangle(cornerRadius: WontonTheme.radii.card))
         }
         .buttonStyle(.plain)
-        .accessibilityIdentifier("sideChatCard")
+        .accessibilityIdentifier("sideChatCard.\(card.rootEventId)")
     }
 
     /// 数字超过 99 就写“99+”。
@@ -182,6 +202,7 @@ struct SideChatHeaderLine: View {
             .wontonText(WontonTheme.typography.caption)
             .foregroundStyle(Color(state.isFailure ? colors.danger : colors.textSecondary))
             .frame(maxWidth: .infinity, alignment: .leading)
+            .accessibilityIdentifier("sideChatHeader")
             .padding(.horizontal, WontonTheme.spacing.pageInset)
             .padding(.vertical, WontonTheme.spacing.s4)
     }
@@ -204,7 +225,7 @@ struct NoSideChatsHint: View {
     }
 }
 
-/// 旁聊输入栏上的一句：附件只能在主对话里发（ADR-0093 §5），右边一个关闭钮，底下带“打开主对话”直接过去。
+/// 旁聊输入栏上的一句：文件只能在主对话里发（照片这里直接发，ADR-0093 §5），右边一个关闭钮，底下带“打开主对话”直接过去。
 struct SideChatAttachHint: View {
     let openMain: () -> Void
     let close: () -> Void
@@ -243,7 +264,7 @@ struct SideChatAttachHint: View {
 struct NewSideChatFields: View {
     let model: ChatModel
     let roomId: String
-    /// 面板的关闭回调（WontonSheet 给的）：先收起面板再开旁聊页，两次呈现不撞上。
+    /// 面板的关闭回调（WontonSheet 给的）：收起面板，面板的 `afterDismiss` 再开旁聊页。
     let close: (@escaping () -> Void) -> Void
     let onStarted: (String) -> Void
     @State private var firstMessage = ""
@@ -257,6 +278,7 @@ struct NewSideChatFields: View {
                 .textInputAutocapitalization(.sentences)
                 .wontonField()
                 .disabled(sending)
+                .accessibilityIdentifier("sideChatFirstMessage")
             if let failure {
                 ProblemRow(problem: failure, retry: start)
             }
@@ -265,6 +287,7 @@ struct NewSideChatFields: View {
             }
             .buttonStyle(WontonButtonStyle(kind: .primary))
             .disabled(firstMessage.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty || sending)
+            .accessibilityIdentifier("sideChatStart")
         }
         .padding(.horizontal, WontonTheme.spacing.pageInset)
     }

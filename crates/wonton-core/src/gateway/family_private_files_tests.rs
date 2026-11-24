@@ -37,10 +37,7 @@ pub(super) fn service(gateway: &Gateway) -> Arc<Files> {
     )
 }
 
-async fn shared_upload(bed: &Bed, username: &str, text: &str) -> FileId {
-    let (request, device) = bed.pending(username, false);
-    let reply = bed.approve(&request).await;
-    assert_eq!(reply.status, StatusCode::NO_CONTENT, "{}", reply.text());
+async fn upload(bed: &Bed, device: iroh::EndpointId, text: &str) -> FileId {
     let files = bed.gateway.files.as_ref().unwrap();
     let id = new_upload_id();
     let langs = Languages::default();
@@ -63,6 +60,16 @@ async fn shared_upload(bed: &Bed, username: &str, text: &str) -> FileId {
     )
     .unwrap();
     files.finish_upload(&id, &langs).await.unwrap();
+    id
+}
+
+async fn shared_upload(bed: &Bed, username: &str, text: &str) -> FileId {
+    let (request, device) = bed.pending(username, false);
+    let reply = bed.approve(&request).await;
+    assert_eq!(reply.status, StatusCode::NO_CONTENT, "{}", reply.text());
+    let id = upload(bed, device, text).await;
+    let files = bed.gateway.files.as_ref().unwrap();
+    let langs = Languages::default();
     let bot = bed
         .gateway
         .plugins
@@ -176,4 +183,102 @@ async fn failed_file_record_cleanup_is_visible_and_resumes_after_restart() {
     assert_unknown(&bed, owner, &id).await;
     bed.reopen().await;
     assert_unknown(&bed, owner, &id).await;
+}
+
+const FAMILY_ROOM: &str = "!family:test";
+
+fn open_family_room(bed: &Bed, members: &[&str]) {
+    let mut people: std::collections::BTreeSet<String> = members
+        .iter()
+        .map(|name| bed.matrix.user_id(name))
+        .collect();
+    people.insert(bed.matrix.admin_user_id());
+    bed.fake.state().rooms.insert(
+        FAMILY_ROOM.into(),
+        fake::Room {
+            members: people,
+            ..Default::default()
+        },
+    );
+}
+
+async fn family_device(bed: &Bed, username: &str) -> iroh::EndpointId {
+    let (request, device) = bed.pending(username, false);
+    let reply = bed.approve(&request).await;
+    assert_eq!(reply.status, StatusCode::NO_CONTENT, "{}", reply.text());
+    device
+}
+
+async fn grant_to_family_room(bed: &Bed, id: &FileId) {
+    bed.gateway
+        .files
+        .as_ref()
+        .unwrap()
+        .grant_room_for(
+            Accessor::User("alice".into()),
+            id,
+            FAMILY_ROOM,
+            &Languages::default(),
+        )
+        .await
+        .unwrap();
+}
+
+#[tokio::test]
+async fn family_room_members_open_posted_files_and_removed_ones_do_not() {
+    let bed = Bed::start().await;
+    let alice = family_device(&bed, "alice").await;
+    let bob = family_device(&bed, "bob").await;
+    let carol = family_device(&bed, "carol").await;
+    let owner = SecretKey::generate().public();
+    bed.gateway.tunnel.devices.add(owner, None).unwrap();
+    open_family_room(&bed, &["alice", "bob", "owner"]);
+    let id = upload(&bed, alice, "family bill").await;
+    grant_to_family_room(&bed, &id).await;
+
+    let direct = bed
+        .gateway
+        .files
+        .as_ref()
+        .unwrap()
+        .authorize(&id, &Accessor::User("bob".into()), &Languages::default())
+        .await;
+    assert!(direct.is_ok(), "{:?}", direct.err());
+    assert_content(&bed, bob, &id, "family bill").await;
+    assert_content(&bed, owner, &id, "family bill").await;
+
+    let reply = file_reply(&bed, carol, &id, "").await;
+    assert_eq!(reply.status, StatusCode::FORBIDDEN, "{}", reply.text());
+    assert_eq!(reply.error_kind(), Some("not_shared"));
+
+    bed.fake
+        .state()
+        .rooms
+        .get_mut(FAMILY_ROOM)
+        .unwrap()
+        .members
+        .remove(&bed.matrix.user_id("bob"));
+    let reply = file_reply(&bed, bob, &id, "").await;
+    assert_eq!(reply.status, StatusCode::FORBIDDEN, "{}", reply.text());
+    assert_eq!(reply.error_kind(), Some("not_shared"));
+}
+
+#[tokio::test]
+async fn room_membership_that_cannot_be_read_is_service_unavailable() {
+    let bed = Bed::start().await;
+    let alice = family_device(&bed, "alice").await;
+    let bob = family_device(&bed, "bob").await;
+    open_family_room(&bed, &["alice", "bob"]);
+    let id = upload(&bed, alice, "family bill").await;
+    grant_to_family_room(&bed, &id).await;
+
+    bed.fake.state().refuse_room_reads = true;
+    let reply = file_reply(&bed, bob, &id, "").await;
+    assert_eq!(
+        reply.status,
+        StatusCode::SERVICE_UNAVAILABLE,
+        "{}",
+        reply.text()
+    );
+    assert_eq!(reply.error_kind(), Some("service_unavailable"));
 }

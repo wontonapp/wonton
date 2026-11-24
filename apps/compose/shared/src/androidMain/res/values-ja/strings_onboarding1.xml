@@ -10,6 +10,7 @@
     <string name="onboarding_pending_card_one">%1$sの確認待ちです</string>
     <!-- Problem title while installing: the device the app needs is unavailable. -->
     <string name="onboarding_problem_plugin_device_unavailable">選択したデバイスが利用できません。選び直してください。</string>
+    <string name="onboarding_problem_plugin_egress_proxy_waiting">サーバーのプロキシがまだ準備できていません。起動を待ってから再試行します。設定の変更は不要です。</string>
     <!-- Problem title while installing: a port the app opens on the local network is used by another container or program. -->
     <string name="onboarding_problem_plugin_lan_port_taken">このアプリがローカルネットワークに開くポートが使用中です。使っているコンテナかプログラムを止めてから、もう一度お試しください。</string>
     <!-- Problem title while installing: the home server doesn't support this app. -->

@@ -1,0 +1,32 @@
+[
+  {
+    "attachments" : [
+      {
+        "configurationName" : "Test Scheme Action",
+        "deviceId" : "781CF89C-AB58-48E4-A1BD-79D4A1AD0736",
+        "deviceName" : "ios-timeline",
+        "exportedFileName" : "2ECE2880-799A-4DA0-B362-D5E2100B0E82.png",
+        "isAssociatedWithFailure" : false,
+        "suggestedHumanReadableName" : "side-chat-top_0_90E5A48C-BE4F-46C0-AD16-17D3A0961241.png",
+        "timestamp" : 1795443026.897
+      }
+    ],
+    "testIdentifier" : "ChatTelegramUITests/testPluginBannerSitsAboveSideChatTitle()",
+    "testIdentifierURL" : "test://com.apple.xcode/Wonton/WontonUITests/ChatTelegramUITests/testPluginBannerSitsAboveSideChatTitle"
+  },
+  {
+    "attachments" : [
+      {
+        "configurationName" : "Test Scheme Action",
+        "deviceId" : "781CF89C-AB58-48E4-A1BD-79D4A1AD0736",
+        "deviceName" : "ios-timeline",
+        "exportedFileName" : "F8E7A273-9728-4BF5-A694-7A8F4DF2DA4C.png",
+        "isAssociatedWithFailure" : false,
+        "suggestedHumanReadableName" : "quote-two-lines_0_9AF08D61-A2C5-405B-8FB3-14DB72F4CD2C.png",
+        "timestamp" : 1795443056.029
+      }
+    ],
+    "testIdentifier" : "ChatTelegramUITests/testQuoteSummaryKeepsBothLines()",
+    "testIdentifierURL" : "test://com.apple.xcode/Wonton/WontonUITests/ChatTelegramUITests/testQuoteSummaryKeepsBothLines"
+  }
+]

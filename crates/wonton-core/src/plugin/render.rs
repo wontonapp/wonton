@@ -546,6 +546,14 @@ fn render_service_containers(
             devices: ctx.devices.as_ref(),
         };
         let mut plan = container_plan(name, service, bot, mounts, ctx, options, langs)?;
+        // 拿到显卡的服务总有这个变量（ADR-0099），插件不必为了它自己的判断再写一行占位环境。
+        if let Some(grant) = gpu {
+            let env = plan.body.env.get_or_insert_with(Vec::new);
+            let prefix = "WONTON_GPU_VENDOR=";
+            if !env.iter().any(|value| value.starts_with(prefix)) {
+                env.push(format!("{prefix}{}", grant.vendor.key()));
+            }
+        }
         if let Some(grant) = &ctx.lan {
             lan::publish(name, service, grant, &mut plan.body, langs)?;
         }

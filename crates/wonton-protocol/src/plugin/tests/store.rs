@@ -128,7 +128,6 @@ fn sidebar_view_model_round_trip() {
     };
     let view_model = PluginsViewModel {
         installed: Some(installed),
-        roles: Default::default(),
         store: Some(store()),
         store_load: StoreLoadState::Ready,
         refreshing: true,
@@ -348,6 +347,10 @@ fn older_app_install_defaults() {
     assert_eq!(
         serde_json::to_value(PluginFailure::EgressProxyUnavailable).unwrap(),
         json!("egress_proxy_unavailable")
+    );
+    assert_eq!(
+        serde_json::to_value(PluginFailure::EgressProxyWaiting).unwrap(),
+        json!("egress_proxy_waiting")
     );
     assert_eq!(
         serde_json::to_value(PluginFailure::DeviceUnavailable).unwrap(),

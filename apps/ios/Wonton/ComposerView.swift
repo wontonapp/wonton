@@ -19,6 +19,9 @@ struct ComposerView: View {
     var commandAvatar: (RoomCommand) -> AnyView = { _ in AnyView(EmptyView()) }
     /// 点回复条里的引用，跳到原消息（ADR-0109 第 4 节）。
     var jumpToReply: (String) -> Void = { _ in }
+    /// 命令列表开着没有：消息上的“向下”按钮让开，不和它抢右下角（ADR-0109 第 7 节）。
+    var menuOpen = false
+    var openChanged: (Bool) -> Void = { _ in }
     /// 正在编辑哪条（ADR-0109 第 10 节）：有值时输入框上方画编辑条、发送键变成确认。
     var editing: ComposerEdit?
     private var roomId: String { composer.roomId }
@@ -46,7 +49,7 @@ struct ComposerView: View {
     @State private var afterAttach: AfterAttach?
     /// 点“菜单”按钮打开的命令列表；敲“/”弹出的那一张不看它。
     @State private var showsCommands = false
-    /// 点了命令以后输入框里的“/…”原样留着；字还是这一句时列表不再按它弹，动一下字就恢复。
+    /// 命令收下以后输入框里的“/…”原样留着；字还是这一句时列表不再按它弹，动一下字就恢复。被拒时不动它，列表照旧。
     @State private var sentSlash = ""
     @FocusState private var isFocused: Bool
     @Environment(\.wontonColors) private var colors
@@ -58,7 +61,7 @@ struct ComposerView: View {
         // 输入栏浮在消息上（ADR-0107、ADR-0109 第 9 节）：菜单胶囊、回形针、输入框、发送键各是一块玻璃，
         // 回复条和附件区收在输入框那一块里；命令列表是它们上方的一张玻璃卡片。
         VStack(spacing: WontonTheme.spacing.s4) {
-            if !listedCommands.isEmpty {
+            if menuOpen {
                 CommandMenu(
                     commands: listedCommands, omitted: commandQuery == nil ? commandsOmitted : 0,
                     showsBot: Set(commands.map(\.botUserId)).count > 1, avatar: commandAvatar, choose: run
@@ -91,6 +94,8 @@ struct ComposerView: View {
         .padding(.bottom, WontonTheme.spacing.s4)
         // 停止钮的状态跟着输入栏订阅：聊天页不用知道它。
         .task(id: draftKey) { await composer.observeAgentStop() }
+        // 列表的显隐交给房间：开着的时候消息上的“向下”让开。
+        .onChange(of: listedCommands.isEmpty, initial: true) { _, empty in openChanged(!empty) }
         // 打了别的字，“菜单”按钮打开的列表就收起；敲“/”弹的那张跟着字过滤。
         .onChange(of: draft.wrappedValue) { _, text in
             if !text.isEmpty { showsCommands = false }
@@ -120,7 +125,7 @@ struct ComposerView: View {
         }
         .sheet(isPresented: $isChoosingAttachment, onDismiss: continueAfterAttach) {
             AttachSheet(
-                limit: composer.remaining, allowsFiles: !isSideChat, caption: draft,
+                limit: composer.photoRoom, allowsFiles: !isSideChat, caption: draft,
                 send: { assets in
                     isChoosingAttachment = false
                     Task { await sendPicked(assets) }
@@ -131,17 +136,18 @@ struct ComposerView: View {
             .presentationDetents([.medium, .large])
             .presentationDragIndicator(.visible)
         }
-        // 选几张都只进附件区，不发；最多选到附件区放满。0 在系统选择器里是不限，所以至少给 1，满了根本不打开。
+        // 相册最多选到还能带的张数：主对话是附件区的余量，旁聊是一次能发的张数。0 在系统选择器里是不限，所以至少给 1，满了根本不打开。
         .photosPicker(
             isPresented: $isPickingPhoto, selection: $photos,
-            maxSelectionCount: max(composer.remaining, 1), selectionBehavior: .ordered, matching: .images
+            maxSelectionCount: max(composer.photoRoom, 1), selectionBehavior: .ordered, matching: .images
         )
         .onChange(of: photos) { _, items in
             guard !items.isEmpty else { return }
             photos = []
             // 旁聊里照片不进附件区，转码好直接发（ADR-0093）；输入框里的字当说明一起发，回复对象跟着第一张照片走。
             if isSideChat {
-                Task { await sendPhotos(items) }
+                // 选择器本身按张数挡过；这里再切一刀，多出来的不让撑破上限。
+                Task { await sendPhotos(Array(items.prefix(composer.photoRoom))) }
             } else {
                 Task { await composer.addPhotos(items) }
             }
@@ -159,18 +165,21 @@ struct ComposerView: View {
         }
     }
 
-    /// 输入框开头敲了“/”时，“/”后面的字：命令列表按它做前缀过滤。没敲“/”或者已经换行了为空。
+    /// 输入框开头敲了“/”时，“/”后面的字：命令列表按开头的第一个词过滤。没敲“/”或者已经换行了为空。
+    /// 只看到第一个词：命令发出去以后在后面接着打参数（“/model gpt”），那句命令本身没改就不弹回来；
+    /// 改到命令名才恢复。
     private var commandQuery: String? {
         let text = draft.wrappedValue
-        guard text != sentSlash else { return nil }
         guard text.hasPrefix("/"), !text.contains(where: \.isNewline) else { return nil }
+        guard text.prefix { $0 != " " } != sentSlash else { return nil }
         return String(text.dropFirst())
     }
 
-    /// 这会儿列出来的命令：敲了“/”按前缀过滤，点了“菜单”按钮是整张表，都不是就不列。
+    /// 这会儿列出来的命令：敲了“/”按第一个词做前缀过滤，点了“菜单”按钮是整张表，都不是就不列。
     private var listedCommands: [RoomCommand] {
         if let query = commandQuery?.lowercased() {
-            return commands.filter { $0.name.lowercased().hasPrefix(query) }
+            let word = query.prefix { $0 != " " }
+            return commands.filter { $0.name.lowercased().hasPrefix(word) }
         }
         return showsCommands ? commands : []
     }
@@ -179,17 +188,20 @@ struct ComposerView: View {
     /// 发完留着；回复对象跟着命令发出去，发出去才收起。
     private func run(_ command: RoomCommand) {
         pin.pin()
-        sentSlash = draft.wrappedValue
-        model.send(.timeline(action: .sendText(
-            target: composer.target, body: command.text, replyTo: model.replies[draftKey]?.eventId)))
+        // 被拒（附件区里有传不上去的）时命令没发出去：草稿、回复条和列表都留着让主人再点。
+        // 走和发送键同一个口：附件区里有东西时按 Attachment 送，才会被附件区拦下。
+        guard composer.send(command.text, replyTo: model.replies[draftKey]?.eventId) else { return }
+        // 收下了才记这一句：被拒时草稿没动，先记会把列表压掉。
+        // 记第一个词就够：草稿里本来就带着参数送出去的，也能认出“这一条刚发过”。
+        sentSlash = String(draft.wrappedValue.prefix { $0 != " " })
         model.cancelReply(in: composer.target)
         showsCommands = false
     }
 
     /// 附件区满了就不开选择器，说一声最多几个。
     private func hasRoom() -> Bool {
-        guard composer.remaining == 0 else { return true }
-        model.rejection = Problem(title: String(localized: .Composer.composerTrayFull(Int(composer.maxAttachments))))
+        guard composer.photoRoom == 0 else { return true }
+        model.rejection = Problem(title: String(localized: .Composer.composerTrayFull(composer.photoLimit)))
         return false
     }
 
@@ -208,7 +220,9 @@ struct ComposerView: View {
         }
         afterAttach = nil
     }
+}
 
+private extension ComposerView {
     /// 附件面板里选好照片点了发送：照片和附言（就是草稿）作为一次发出去（ADR-0109 第 10 节）。主对话里照片先进附件区，
     /// 再和发送键走同一条路（`SendComposer`），附件区里原有的附件也一起走；旁聊没有附件区，照片一张张直接发，附言只当
     /// 第一张试过的照片的说明（ADR-0093）。取字节的这段时间（比如 iCloud 原图下不下来）发送键那一格转圈；发出去了、
@@ -348,9 +362,7 @@ struct ComposerView: View {
         draft.wrappedValue = ""
         model.cancelReply(in: composer.target)
     }
-}
 
-private extension ComposerView {
     /// 输入栏那一排：菜单、回形针、输入框、发送键各是一块玻璃，靠 `chatGlassCluster` 拼成一整块。
     private func composerRow(isEmpty: Bool) -> some View {
         HStack(alignment: .bottom, spacing: WontonTheme.spacing.s4) {
@@ -358,8 +370,10 @@ private extension ComposerView {
                 ComposerMenuButton(showsTitle: isEmpty) { showsCommands.toggle() }
             }
             ChatGlassButton(icon: .attach, label: String(localized: .Composer.composerAttach)) {
-                // 旁聊没有附件区，点了把那句话露出来；主对话里附件区满了就不开面板，说一声最多几个。
-                if isSideChat { showsSideChatHint = true } else if hasRoom() { isChoosingAttachment = true }
+                // 旁聊不上附件区，照片选好直接发，上限是核心默认的一次十张，提示照旧露着（打开主对话去发文件）；
+                // 主对话里附件区满了就不开面板，说一声最多几个。
+                if isSideChat { showsSideChatHint = true }
+                if hasRoom() { isChoosingAttachment = true }
             }
             .accessibilityIdentifier("composerAttach")
             field
@@ -384,6 +398,13 @@ private extension ComposerView {
                     cancel: { model.cancelReply(in: composer.target) },
                     jump: { jumpToReply(reply.eventId) }
                 )
+                // 走查用：量回复条高度的透明记号，不吃触摸，条上的引用和叉照常点得到。只在 Debug 包里挂。
+                #if DEBUG
+                .overlay {
+                    Color.clear.accessibilityElement().accessibilityIdentifier("composerReplyQuote")
+                        .allowsHitTesting(false)
+                }
+                #endif
                 .padding(.leading, WontonTheme.spacing.s12)
                 .padding(.trailing, WontonTheme.spacing.s4)
                 .padding(.top, WontonTheme.spacing.s8)

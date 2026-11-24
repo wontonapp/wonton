@@ -8,9 +8,9 @@ use tokio::sync::watch;
 use wonton_l10n::l10n;
 use wonton_protocol::{
     AddedSource, AppLockTimeout, AppLockViewModel, AppearanceViewModel, AvatarUpload, ChatContact,
-    ChatViewModel, ComposerDraft, CoreError, FileCard, FileCardActions, FileFailure, FileId,
-    FileInfo, FileOperation, FileProblem, FriendsViewModel, HomeViewModel, InstallPreview,
-    LanChoice, LanSettings, LicensesViewModel, Me, MediaHandle, MyAvatarProblem,
+    ChatViewModel, ComposerDraft, CoreError, FamilyViewModel, FileCard, FileCardActions,
+    FileFailure, FileId, FileInfo, FileOperation, FileProblem, FriendsViewModel, HomeViewModel,
+    InstallPreview, LanChoice, LanSettings, LicensesViewModel, Me, MediaHandle, MyAvatarProblem,
     OnboardingViewModel, OwnerProfileUpdate, PagesViewModel, PeersViewModel, PluginDetail,
     PluginImage, PluginsViewModel, PrivacyViewModel, RoomTransfers, SecretString, ServersViewModel,
     SessionListViewModel, SettingsViewModel, StoreItem, TimelineTarget, TransfersViewModel,
@@ -26,10 +26,10 @@ use crate::scope::{Scope, Views, Visits};
 use crate::servers::ServerList;
 use crate::session_store::SessionStore;
 use crate::subscription::{
-    AppLockSubscription, AppearanceSubscription, ChatSubscription, FriendsSubscription,
-    HomeSubscription, OnboardingSubscription, PagesSubscription, PeersSubscription,
-    PluginsSubscription, ServersSubscription, SessionListSubscription, SettingsSubscription,
-    TransfersSubscription, UnreadSubscription,
+    AppLockSubscription, AppearanceSubscription, ChatSubscription, FamilySubscription,
+    FriendsSubscription, HomeSubscription, OnboardingSubscription, PagesSubscription,
+    PeersSubscription, PluginsSubscription, ServersSubscription, SessionListSubscription,
+    SettingsSubscription, TransfersSubscription, UnreadSubscription,
 };
 use switch::Replay;
 #[cfg(feature = "ui-fake")]
@@ -237,6 +237,16 @@ impl ClientCore {
         Arc::new(FriendsSubscription::new(self.views().friends.subscribe()))
     }
 
+    /// 当前的成员页（ADR-0088），用于首帧渲染。
+    pub fn family(&self) -> FamilyViewModel {
+        self.views().family.borrow().clone()
+    }
+
+    /// 订阅成员页，语义同 [`subscribe_session_list`](Self::subscribe_session_list)。
+    pub fn subscribe_family(&self) -> Arc<FamilySubscription> {
+        Arc::new(FamilySubscription::new(self.views().family.subscribe()))
+    }
+
     /// 当前的会话列表，用于首帧渲染。
     pub fn session_list(&self) -> SessionListViewModel {
         self.state.borrow().view_model()
@@ -312,7 +322,7 @@ impl ClientCore {
         // 假数据入口（`new_ui_fake`）没有后端：时间线是写死的，只对界面测试约定的操作再推一批。
         #[cfg(feature = "ui-fake")]
         if self.ui_fake.load(Ordering::SeqCst) {
-            return Ok(self.ui_fake_timelines.subscribe(&target.room_id));
+            return Ok(self.ui_fake_timelines.subscribe(&target));
         }
         let scope = self.scope();
         let chat = scope.chat.clone();
@@ -344,7 +354,7 @@ impl ClientCore {
     ) -> Result<String, CoreError> {
         #[cfg(feature = "ui-fake")]
         if self.ui_fake.load(Ordering::SeqCst) {
-            return Ok(ui_fake::new_thread_root());
+            return Ok(self.ui_fake_timelines.start_side_chat(&body));
         }
         let scope = self.scope();
         let chat = scope.chat.clone();
