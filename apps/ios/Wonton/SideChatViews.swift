@@ -44,7 +44,7 @@ struct SideChatCover<Main: View>: View {
             .allowsHitTesting(covered || shown == nil)
             .accessibilityHidden(covered || shown != nil)
             .navigationBarBackButtonHidden(covered || shown != nil)
-            // 收起不在这里清 `shown`：清了内容会立刻抽走，露出下面的主对话或一片白。留给 `onDismiss`，转场跑完再清。
+            // 侧栏被别处关掉时在这里清 `shown`；自己点返回清的是 `item`，内容留到 `onDismiss` 再收，转场里不抽走。
             .onChange(of: model.sideChats[roomId], initial: true) { _, root in
                 if let root {
                     if shown?.id != root { shown = Shown(id: root) }
