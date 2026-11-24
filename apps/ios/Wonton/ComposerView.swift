@@ -19,6 +19,9 @@ struct ComposerView: View {
     var commandAvatar: (RoomCommand) -> AnyView = { _ in AnyView(EmptyView()) }
     /// 点回复条里的引用，跳到原消息（ADR-0109 第 4 节）。
     var jumpToReply: (String) -> Void = { _ in }
+    /// 命令列表开着没有：消息上的“向下”按钮让开，不和它抢右下角（ADR-0109 第 7 节）。
+    var menuOpen = false
+    var openChanged: (Bool) -> Void = { _ in }
     private var roomId: String { composer.roomId }
     /// 附件区只有主对话有（ADR-0093）：旁聊里字和照片直接发，不给选文件，粘贴文件提示去主对话发。
     private var isSideChat: Bool { composer.threadRoot != nil }
@@ -55,7 +58,7 @@ struct ComposerView: View {
         // 输入栏浮在消息上（ADR-0107、ADR-0109 第 9 节）：菜单胶囊、回形针、输入框、发送键各是一块玻璃，
         // 回复条和附件区收在输入框那一块里；命令列表是它们上方的一张玻璃卡片。
         VStack(spacing: WontonTheme.spacing.s4) {
-            if !listedCommands.isEmpty {
+            if menuOpen {
                 CommandMenu(
                     commands: listedCommands, omitted: commandQuery == nil ? commandsOmitted : 0,
                     showsBot: Set(commands.map(\.botUserId)).count > 1, avatar: commandAvatar, choose: run
@@ -88,6 +91,8 @@ struct ComposerView: View {
         .padding(.bottom, WontonTheme.spacing.s4)
         // 停止钮的状态跟着输入栏订阅：聊天页不用知道它。
         .task(id: draftKey) { await composer.observeAgentStop() }
+        // 列表的显隐交给房间：开着的时候消息上的“向下”让开。
+        .onChange(of: listedCommands.isEmpty, initial: true) { _, empty in openChanged(!empty) }
         // 打了别的字，“菜单”按钮打开的列表就收起；敲“/”弹的那张跟着字过滤。
         .onChange(of: draft.wrappedValue) { _, text in
             if !text.isEmpty { showsCommands = false }
@@ -338,6 +343,13 @@ private extension ComposerView {
                     cancel: { model.cancelReply(in: composer.target) },
                     jump: { jumpToReply(reply.eventId) }
                 )
+                // 走查用：量回复条高度的透明记号，不吃触摸，条上的引用和叉照常点得到。只在 Debug 包里挂。
+                #if DEBUG
+                .overlay {
+                    Color.clear.accessibilityElement().accessibilityIdentifier("composerReplyQuote")
+                        .allowsHitTesting(false)
+                }
+                #endif
                 .padding(.leading, WontonTheme.spacing.s12)
                 .padding(.trailing, WontonTheme.spacing.s4)
                 .padding(.top, WontonTheme.spacing.s8)

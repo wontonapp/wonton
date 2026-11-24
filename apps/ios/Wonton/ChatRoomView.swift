@@ -8,10 +8,10 @@ struct ChatRoomView: View {
     /// 旁聊根的事件 ID；空是房间的主时间线（ADR-0093）。旁聊页盖在主对话上（全屏盖层），主对话继续订阅。
     let threadRoot: String?
     let title: String
-    @State private var timeline: TimelineModel
+    @State var timeline: TimelineModel
     @State private var composer: ComposerModel
     @State private var presenter: RoomPresenter
-    @State private var pin = BottomPin()
+    @State var pin = BottomPin()
     @State private var isKeyboardVisible = false
     @State private var pageAnchor: String?
     @SceneStorage private var savedAnchor: String
@@ -27,7 +27,9 @@ struct ChatRoomView: View {
     /// 进房间的落点摆好之前不标已读（ADR-0071）：标早了已读行会跳到最新一条，落点就丢了。
     @State private var placed = false
     /// 跳到原消息（ADR-0109 第 4 节）：点的是哪一条的引用、刚跳到要闪一下的那一行、找不到时的轻提示。
-    @State private var jump = TimelineJumpState()
+    @State var jump = TimelineJumpState()
+    /// 输入框上的命令列表开着（ADR-0109 第 7 节）：右下角的“向下”让开，不和它抢地方。
+    @State private var commandMenuOpen = false
     /// 资料页里点了“打开面板”：每点一次加一，面板宿主跟着打开（ADR-0052）。
     @State private var panelOpenRequests = 0
     @Environment(\.panelDeps) private var panelDeps
@@ -63,7 +65,10 @@ struct ChatRoomView: View {
                                 pin: pin,
                                 extra: "sub=\(timeline.debugSubscribes) up=\(timeline.debugUpdates)"
                                     + " n=\(timeline.items.count)"
-                                    + " end=\(timeline.debugEnded) closed=\(model.debugClosed)"
+                                    + " end=\(timeline.debugEnded) closed=\(model.debugClosed)",
+                                flashItem: jump.flash?.itemId,
+                                flashes: jump.flashes,
+                                lastFlash: jump.lastFlash
                             )
                         }
                     #endif
@@ -95,13 +100,14 @@ private extension ChatRoomView {
         .safeAreaInset(edge: .top, spacing: 0) {
             // 顶栏下面这几行垫材质：列表从它们底下滚过去，不垫的话气泡里的字和它们叠在一起。
             VStack(spacing: 0) {
+                // 从上到下照 Telegram：插件横幅这类提醒在最上，旁聊标题或提示按在它下面，AI 那一行离内容最近。
+                if let plugin = model.viewModel.rooms.first(where: { $0.roomId == roomId })?.plugin {
+                    AgentPluginStatusBanner(plugin: plugin, model: plugins)
+                }
                 if threadRoot != nil {
                     if let state = timeline.sideChat?.state { SideChatHeaderLine(state: state) }
                 } else if model.noSideChatsRoom == roomId {
                     NoSideChatsHint()
-                }
-                if let plugin = model.viewModel.rooms.first(where: { $0.roomId == roomId })?.plugin {
-                    AgentPluginStatusBanner(plugin: plugin, model: plugins)
                 }
                 // 群里能用的 AI；私聊不显示，Bot 本来就在顶栏（ADR-0044）。
                 if threadRoot == nil, !isDirect {
@@ -181,21 +187,14 @@ private extension ChatRoomView {
             }
         })
         // 入口按钮压进这一页。房间也能从别的标签页打开，那边的导航栈不认聊天页的路由，所以在这里登记一次。
-        .navigationDestination(for: ChatRoute.self) { route in
-            if isContentRoot {
-                ChatDestination(model: model, plugins: plugins, route: route)
-                    .environment(\.wontonContentRoot, false)
-            } else if case .chatBackup = route {
-                ChatBackupView(model: model)
-                    .environment(\.wontonContentRoot, false)
-            }
-        }
+        .modifier(ChatRouteDestinations(model: model, plugins: plugins, isContentRoot: isContentRoot))
         // 留着标签栏时，键盘弹出后输入框和发送按钮被盖在键盘下面（iOS 26.5 模拟器实测）。
         .toolbar(.hidden, for: .tabBar)
         .task(id: model.draftKey(target)) { await model.loadDraft(target) }
         .task(id: model.draftKey(target)) { await composer.observe() }
         .task(id: timeline.attempt) {
-            if await timeline.observe(pin: pin) {
+            let ended = await timeline.observe(pin: pin)
+            if ended {
                 if threadRoot != nil {
                     // 旁聊没了：只收起旁聊，主对话还在。
                     model.closeSideChat(in: roomId, why: "ended")
@@ -252,7 +251,9 @@ private extension ChatRoomView {
                     model: model, composer: composer, pin: pin,
                     commands: timeline.commands, commandsOmitted: Int(timeline.commandsOmitted),
                     commandAvatar: { commandAvatar($0) },
-                    jumpToReply: { replyJump($0) }
+                    jumpToReply: { replyJump($0) },
+                    menuOpen: commandMenuOpen,
+                    openChanged: { commandMenuOpen = $0 }
                 )
                 .onGeometryChange(for: CGFloat.self) { $0.frame(in: .global).minY } action: { top in
                     pin.noteComposer(top: top)
@@ -385,7 +386,7 @@ private extension ChatRoomView {
             // 停在别处时的“向下”：数字是离开底部后到的消息数（ADR-0071）。跳过原消息的先回到跳之前那一条，
             // 栈空了才到底（ADR-0109 第 4 节）。
             .overlay(alignment: .bottomTrailing) {
-                if case let .away(newMessages) = timeline.viewport {
+                if case let .away(newMessages) = timeline.viewport, !commandMenuOpen {
                     ScrollToBottomButton(count: Int(newMessages)) {
                         if timeline.backTo != nil {
                             sendTimeline(.jumpBack(target: target))
@@ -474,57 +475,8 @@ private extension ChatRoomView {
     }
 }
 
-/// 跳到原消息在壳这边的状态（ADR-0109 第 4 节）；定位、返回栈都在核心。
-private struct TimelineJumpState {
-    /// 点的是哪一条的引用：核心往前翻页时在它上面画加载。
-    var from: String?
-    /// 刚跳到、要闪一下的那一行，和这是第几次跳。
-    var flash: (itemId: String, revision: Int)?
-    /// 原消息找不到的次数：每多一次，轻提示再出一回。
-    var missing = 0
-    var showsMissing = false
-}
-
 @MainActor
 private extension ChatRoomView {
-    /// 核心说滚到哪条就把哪条摆到可视区中部；跳到原消息时那一行闪一下，闪完把记号清掉（不然这一行滚出去再回来会再闪）。
-    func focus(_ scroller: ScrollViewProxy) {
-        guard let focus = timeline.focus else { return }
-        let revision = timeline.focusRevision
-        jump.from = nil
-        pin.unpin()
-        settle(focus.itemId, at: .center, scroller, corrections: Self.focusCorrections) {
-            guard focus.highlight, revision == timeline.focusRevision else { return }
-            jump.flash = (focus.itemId, revision)
-            let lit = WontonTheme.motion.jumpHighlight + WontonTheme.motion.panel
-            DispatchQueue.main.asyncAfter(deadline: .now() + lit) {
-                if jump.flash?.revision == revision { jump.flash = nil }
-            }
-        }
-    }
-
-    /// 离得远的行还没量过高度，第一次滚到的位置按估算的行高算、会偏：等这一轮排完再对几次。
-    /// 滚之前先看这条还在不在：`scrollTo` 找不到条目会越界崩掉（见 BottomPin）。
-    /// 主人自己滚走了（贴底了，或者在拖）就不再对。
-    func settle(
-        _ itemId: String, at anchor: UnitPoint, _ scroller: ScrollViewProxy, corrections: Int,
-        after delay: TimeInterval = 0, done: @escaping () -> Void
-    ) {
-        DispatchQueue.main.asyncAfter(deadline: .now() + delay) {
-            guard !pin.isPinned, !pin.isTouched,
-                  timeline.items.contains(where: { $0.id == itemId }) else { return }
-            scroller.scrollTo(itemId, anchor: anchor)
-            guard corrections > 0 else { return done() }
-            settle(
-                itemId, at: anchor, scroller, corrections: corrections - 1, after: WontonTheme.motion.feedback,
-                done: done
-            )
-        }
-    }
-
-    /// 滚到一条之后再对几次位置。
-    static var focusCorrections: Int { 2 }
-
     /// 可见区最上面那条消息的发送时间：浮动的日期胶囊写它的日期。
     var topVisibleTimestamp: UInt64? {
         guard let top = visibleRows.min(by: { $0.value < $1.value })?.key,
@@ -565,7 +517,7 @@ private extension ChatRoomView {
             pin.unpin()
             guard timeline.items.contains(where: { $0.id == savedAnchor }) else { return }
             let anchor = savedAnchor
-            settle(anchor, at: .top, scroller, corrections: Self.focusCorrections) {}
+            settle(anchor, at: .top, scroller, corrections: Self.placeCorrections) {}
             DispatchQueue.main.async {
                 guard timeline.items.contains(where: { $0.id == anchor }) else { return }
                 placed = true
@@ -577,7 +529,7 @@ private extension ChatRoomView {
            timeline.items.contains(where: { $0.id == anchor }) {
             pin.unpin()
             // 列表还没排完时这一次滚动不生效，停在最上面（iOS 26.5 模拟器 2026-11-19 实测，六次进房间有一次）：再对几次。
-            settle(anchor, at: .top, scroller, corrections: Self.focusCorrections) {}
+            settle(anchor, at: .top, scroller, corrections: Self.placeCorrections) {}
             DispatchQueue.main.async {
                 placed = true
                 reportPosition(false)
@@ -788,5 +740,24 @@ private extension ChatRoomView {
             default: true
             }
         }?.id
+    }
+}
+
+/// 聊天页登记导航路由。旁聊页有自己的栈（盖层里），各登记一次互不影响。
+struct ChatRouteDestinations: ViewModifier {
+    let model: ChatModel
+    let plugins: PluginsModel
+    let isContentRoot: Bool
+
+    func body(content: Content) -> some View {
+        content.navigationDestination(for: ChatRoute.self) { route in
+            if isContentRoot {
+                ChatDestination(model: model, plugins: plugins, route: route)
+                    .environment(\.wontonContentRoot, false)
+            } else if case .chatBackup = route {
+                ChatBackupView(model: model)
+                    .environment(\.wontonContentRoot, false)
+            }
+        }
     }
 }
