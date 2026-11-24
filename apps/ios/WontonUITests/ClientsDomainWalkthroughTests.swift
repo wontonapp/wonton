@@ -150,17 +150,15 @@ final class ClientsDomainWalkthroughTests: XCTestCase {
         XCTAssertTrue(app.textFields["clientsDomainSuffix"].waitForExistence(timeout: 30), "域名页没打开")
         shot("01-empty")
 
-        // 栈上存过后缀时输入框带着旧值，再打会拼上去（太长的名字 Pebble 的 DNS 查询会溢出）：
-        // 长按调出编辑菜单选“全选”再替换。删除键的键值直接 typeText 是发给 App 的，删不掉。
+        // 栈上存过后缀时输入框带着旧值，再打会拼上去（太长的名字 Pebble 查 TXT 会溢出）。
+        // typeText 里的删除键是发给 App 的、删不掉；按模拟器键盘上的删除键。
         let suffixField = app.textFields["clientsDomainSuffix"]
         XCTAssertTrue(scrollTo(suffixField), "没有域名字段")
         suffixField.tap()
-        suffixField.press(forDuration: 1.2)
-        let selectAll = app.menuItems["Select All"].exists
-            ? app.menuItems["Select All"]
-            : app.buttons["Select All"]
-        if selectAll.waitForExistence(timeout: 3) {
-            selectAll.tap()
+        let deleteKey = app.keys["delete"]
+        XCTAssertTrue(deleteKey.waitForExistence(timeout: 5), "没有删除键")
+        for _ in 0..<80 {
+            deleteKey.tap()
         }
         suffixField.typeText("example.test")
         // 键盘盖住下半页会吞掉滑动手势：先收起键盘，“其他”在懒加载列表的更下面。
