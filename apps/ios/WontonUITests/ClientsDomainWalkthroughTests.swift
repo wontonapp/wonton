@@ -150,14 +150,12 @@ final class ClientsDomainWalkthroughTests: XCTestCase {
         XCTAssertTrue(app.textFields["clientsDomainSuffix"].waitForExistence(timeout: 30), "域名页没打开")
         shot("01-empty")
 
-        // 栈上有存过的后缀时输入框带着值；清空不一定成功，那就别动它（存着的一定是能签发的开发后缀）。
+        // 栈上存过后缀时输入框带值，再打会拼在后面：三击全选再替换。
         let suffixField = app.textFields["clientsDomainSuffix"]
         XCTAssertTrue(scrollTo(suffixField), "没有域名字段")
-        let suffixValue = (suffixField.value as? String) ?? ""
-        if suffixValue.isEmpty || suffixValue == String(localized: .Clients.clientsDomainSuffix) {
-            suffixField.tap()
-            suffixField.typeText("example.test")
-        }
+        suffixField.tap(withNumberOfTaps: 3, numberOfTouches: 1)
+        usleep(300_000)
+        suffixField.typeText("example.test")
         // 键盘盖住下半页会吞掉滑动手势：先收起键盘，“其他”在懒加载列表的更下面。
         if app.keyboards.count > 0 { app.typeText("\n") }
         var other: XCUIElement?
