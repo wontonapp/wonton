@@ -11,19 +11,25 @@ struct WontonSheetAction {
 
 extension View {
     /// 传 `usesSystemPresentation` 的非聊天面板在 iOS 26 用系统 sheet；默认保留自绘 fullScreenCover，避免改变聊天面板布局。
+    /// `afterDismiss` 在面板完全收起之后才跑：面板里再弹一层盖层（旁聊页）时不会和收面板撞在同一个呈现时机上。
     @ViewBuilder func wontonSheet(
         isPresented: Binding<Bool>,
         title: String? = nil,
         usesSystemPresentation: Bool = false,
+        afterDismiss: (() -> Void)? = nil,
         @ViewBuilder content: @escaping (_ close: @escaping (@escaping () -> Void) -> Void) -> some View
     ) -> some View {
         if #available(iOS 26, *), usesSystemPresentation {
-            modifier(WontonNativeSheet(isPresented: isPresented, title: title, panelContent: content))
+            modifier(
+                WontonNativeSheet(
+                    isPresented: isPresented, title: title, afterDismiss: afterDismiss, panelContent: content
+                )
+            )
         } else {
             background {
                 // 为什么这样挂，见 `wontonDialog`。
                 Color.clear
-                    .fullScreenCover(isPresented: isPresented) {
+                    .fullScreenCover(isPresented: isPresented, onDismiss: afterDismiss) {
                         WontonSheetView(
                             title: title, usesMaterial: usesSystemPresentation,
                             finish: { isPresented.wrappedValue = false }, content: content
@@ -172,6 +178,7 @@ private struct WontonSheetView<Content: View>: View {
 private struct WontonNativeSheet<PanelContent: View>: ViewModifier {
     @Binding var isPresented: Bool
     let title: String?
+    let afterDismiss: (() -> Void)?
     let panelContent: (_ close: @escaping (@escaping () -> Void) -> Void) -> PanelContent
     @State private var pendingAction: (() -> Void)?
     @Environment(\.wontonColors) private var colors
@@ -214,5 +221,6 @@ private struct WontonNativeSheet<PanelContent: View>: ViewModifier {
         let action = pendingAction
         pendingAction = nil
         action?()
+        afterDismiss?()
     }
 }

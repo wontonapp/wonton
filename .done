@@ -1,13 +1,24 @@
-# chat-802-r3：#802 第二轮复审（6335d7e9）
+PR #859（分支 fix/ios-side-chat-entry）按复审 rv-859 改完，CI 全绿，另按主人 11-24 的拍板把 CI 的模拟器改成按机器挑。
 
-分支 feat/chat-edit-typing-proto。远端已被叠到最新 main 6dbdcfa9 并加了 clippy 拆分提交；本地先 reset 到远端头再改。
+改动：
+- 复审必须项 1：旁聊回形针改成直接开附件面板（`isChoosingAttachment = true`；旁聊 `photoRoom` 恒 10，`hasRoom()` 必过），提示照旧露。之前只置 `showsSideChatHint`，面板打不开。
+- 复审必须项 2：发给没打开房间的附言重新排队（`get` 失败分支写 `forwarded`），恢复 `sent_text_reaches_an_unopened_room` 单测。
+- 复审文档小项：ADR-0109:187 补“旁聊看一次十张的上限”；`SideChatAttachHint` 注释改成“文件只能在主对话里发”。
+- 复审两处待观察：`Message` 断言加 `firstMatch`；`testDarkAppearance` 连点前先等第 2、3 张出现；卡片位置注释按 5 号卡片改。
+- 合并 main：第 5–7 条被 #937 换成照片组、`item()` 提前返回，旁聊卡片挂到第 5 条照片的 `side_chat` 上，引用条仍写 “Fixture message 5”；#910/#918 的 `decorate()` 拆分、附言 trim 都保留。
+- CI（主人 11-24）：`ios.yml`、`snapshots-record.yml` 不再写死 `SIMULATOR_OS: 27.0`；运行时先找 27.1、没有再取机器最新的 iOS。机型从运行时的 `supportedDeviceTypes` 挑（优先 iPhone 17 系，这台 mini 的 27.1 只有 iPhone Duo）、设备现擦现建、一律按 UDID 指定目标，型号标识用 `simctl getenv` 从设备取。截图测试只锁运行时（界面是固定 390×844 渲染，机型不上锁）。`nightly-ui.yml` 同样先 27.1。摘标签不再取消另一个还在录的作业。README 跟上。
 
-这轮：
-- ADR 0109 把视觉规格留在第 9 节、编辑/贴图/失败挪成第 10 节（标题“编辑消息、贴图和发送失败”）；protocol 里六处引用改第 10 节，`SetTyping` 改第 8 节；ADR:149 补回“点‘编辑’后输入框换成原文”，顺手修“铅笔.、”。
-- §8 写明节流/自动停还没接：本 PR 里 SetTyping 直接转发、失败进 problem，下一条补。
-- 正文补验证结果、`SendState` FFI 不兼容这句、两条没跑的原因；`.done` 重写。
-- iOS 侧聊发图：附言只给第一张试过的照片，不再每张都带再单发一条；旁聊成功后清草稿和回复对象。
-- Android `timeline_send_failed_other` 改名 `timeline_send_failure_other`；`SendFailure.text` 挪进新的 MessageTexts（Kotlin、Swift），不再挂在失败控件文件里。
-- iOS 用例 `ComposerSendRejectUITests` 的旧标识 `attachDone` 改 `attachSend`。
+验证（在 npchy，命令经 cargo-slot）：
+- `cargo test -p wonton-client --features ui-fake --lib client::ui_fake` → 18 passed, 0 failed（合并 #936/#872 后各跑一遍）（含恢复的 `sent_text_reaches_an_unopened_room`、main 的 `photos_come_as_one_group_with_loadable_bytes` 和 `forward_comment_lands_before_the_copy_and_blank_is_dropped`）。
+- `cargo fmt --check` → 0；`bash scripts/check-file-size.sh` → 通过。
+- CI：`gh pr checks 859` 13 项全 pass（含 `ios / 模拟器构建`、`gate 汇总`），见分支头。
+- 参考图用 `record-snapshots` 在 27.1 上重录 16 张并提交；重录作业本身因 scheme 的录模式（snapshot-testing 的 “Record mode is on” 也算失败）是红，核对与提交两步都过了。
 
-验证：SwiftLint strict 通过；iOS build-for-testing 成功；ChatTelegramUITests 19/20；protocol send_state 4 passed；lint 脚本通过。Android/clippy/enum 尺寸、edit_typing it、重跑未拿到名额，正文已注明。
+没做/没验证：
+- 没在真机上试。
+- 复审要的“修完重跑一遍确认上限 1 能红”仍只有单测结论，界面证据靠模拟器走查（mini-ios 受限入口还是 `permission denied`，本次没修）。
+
+底座的问题（记给复审）：
+- 自托管 mini 的 iOS 27.1 运行时只注册了 iPhone Duo 一个机型，按名字建 iPhone 17 会报 `Incompatible device`；设备库还会留坏设备，boot 直接报同错。
+- `snapshots-record` 两个作业都在自己结束时摘标签，摘标签的事件又会按 `label.name` 命中 concurrency 的取消条件，先把另一个还在录的作业掐掉。
+- 录模式在 snapshot-testing 里就是按失败报（“Record mode is on”），重录作业天生是红的，看不出“录成功”还是“录崩了”。

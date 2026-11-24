@@ -115,11 +115,13 @@ PR 合并前只等快检查：格式、Clippy、detekt、SwiftLint、行数门�
 
 ## iOS 单测和截图测试
 
-`ios.yml` 的“模拟器构建”作业用 `build-for-testing` 加 `test-without-building`，在一台固定型号和系统版本的
-模拟器（工作流开头的 `SIMULATOR_NAME`、`SIMULATOR_OS`）上只跑 `WontonTests`，包括 `SnapshotTests`
+`ios.yml` 的“模拟器构建”作业用 `build-for-testing` 加 `test-without-building`，在固定型号
+（`SIMULATOR_NAME`）和这台机器上挑出来的系统版本的模拟器上只跑 `WontonTests`，包括 `SnapshotTests`
 （pointfreeco/swift-snapshot-testing，MIT，钉版本，只进测试目标不链接 App）。UI 测试在夜跑里跑，这个作业
 不编。参考图在 `apps/ios/WontonTests/__Snapshots__/`，直接进 git，不用 LFS。
 
+- 系统版本不写死：作业有 27.1 就用 27.1，没有用机器上最新的 iOS 版本（自托管 mini 没有 27.0，装运行时要
+  sudo；托管镜像有）。`nightly-ui`、`snapshots-record` 同一个口径。换成另一个版本时参考图要打 record-snapshots 重录。
 - 参考图绑定型号标识（`SIMULATOR_MODEL`，即测试进程里的 `SIMULATOR_MODEL_IDENTIFIER`）和系统版本，外观、
   语言（en、US）和时区（UTC）钉在 scheme 和测试里。换了型号或系统要整体重录，只换图不换参数会一直红。
   工作流是参考运行时的唯一来源：测试步骤用 `TEST_RUNNER_SNAPSHOT_MODEL`、`TEST_RUNNER_SNAPSHOT_OS` 把它交给

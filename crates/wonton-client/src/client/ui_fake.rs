@@ -17,7 +17,6 @@
 //! 样张，字节由 `load_media` 在假数据入口下直接给，图像类走查不用连栈。
 
 use std::sync::Arc;
-use std::sync::atomic::AtomicUsize;
 use std::sync::atomic::Ordering;
 use std::time::{SystemTime, UNIX_EPOCH};
 
@@ -35,12 +34,6 @@ use wonton_protocol::{
 };
 
 use super::ClientCore;
-
-/// 假旁聊的根事件 ID：每开一间新旁聊给一个新号，测试靠它认这一间。
-pub(super) fn new_thread_root() -> String {
-    static NEXT: AtomicUsize = AtomicUsize::new(0);
-    format!("$ui-fake-thread-{}", NEXT.fetch_add(1, Ordering::SeqCst))
-}
 
 pub(super) const ROOM_ID: &str = "!ui-fake:home.example";
 /// 有人在通话的群聊：列表这一行和顶栏都标“通话中”，顶栏有 [`CALL_PLUGIN`] 的 widget 入口。
