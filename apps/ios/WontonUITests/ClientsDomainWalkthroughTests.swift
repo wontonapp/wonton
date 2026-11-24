@@ -124,6 +124,11 @@ final class ClientsDomainWalkthroughTests: XCTestCase {
     func testConfigurePebbleCertificate() throws {
         XCTAssertTrue(waitPaired(timeout: 120), "配对没完成：\(app.debugDescription)")
         passOnboarding()
+        // 引导里可能还盖着“等其他设备交接”的层：没到列表就再点一次 Later，到了才开设置。
+        if !UITestSidebar.waitForChatList(app, timeout: 30) {
+            waitAnyButton(["Later", "稍后"], timeout: 10)?.tap()
+            XCTAssertTrue(UITestSidebar.waitForChatList(app, timeout: 60), "没到聊天列表")
+        }
         guard openSettings() else { return XCTFail("没有 Settings") }
         guard tapRow("HTTPS and domain", timeout: 180) else {
             return XCTFail("设置里没有 HTTPS 和域名入口")
