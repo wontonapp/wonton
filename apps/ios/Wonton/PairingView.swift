@@ -53,7 +53,7 @@ struct PairingView: View {
                             .accessibilityIdentifier("pairing-refusal")
                         scanAgainButton
                     }
-                } else if let pairing = model.viewModel.pairing {
+                } else if showsProgress, let pairing = model.viewModel.pairing {
                     PairingProgress(
                         status: pairing,
                         recognized: scanConsumed,
@@ -199,6 +199,14 @@ struct PairingView: View {
     private var hasFailedPairing: Bool {
         if case .failed? = model.viewModel.pairing { return true }
         return false
+    }
+
+    /// 只有正在配对和失败整块换成进展面；等批准和已配上都落回表单，码还在，再点一次即可。
+    private var showsProgress: Bool {
+        switch model.viewModel.pairing {
+        case .inProgress?, .failed?: true
+        default: false
+        }
     }
 
     /// 配对正在进行中：进展带上了时间和步骤，判断不再用相等比较。
@@ -420,7 +428,7 @@ private struct PairingProgress: View {
                 }
             }
             .accessibilityIdentifier("pairing-connecting")
-        // 加入别人家的码在等批准：加入页由成员那一张卡补上，这里先不画。
+        // 加入别人家的码在等批准：外层只在进行中和失败时用这一块，等批准落回表单，码还在，再点一次。
         case .joinPending:
             EmptyView()
         case let .failed(reason, message, diagnostic):

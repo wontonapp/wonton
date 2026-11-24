@@ -356,6 +356,7 @@ pub struct FamilyAccess {
     pub permissions: Option<Permissions>,
 }
 
+#[cfg_attr(feature = "uniffi", uniffi::export)]
 impl FamilyAccess {
     /// 这一项放不放行；主人有角色之外的一切。
     pub fn allows(&self, item: PermissionItem) -> bool {
@@ -378,7 +379,7 @@ impl FamilyAccess {
     }
 }
 
-/// 成员列表：所有人都在里面，已移除的也在（用户名不再分配）。
+/// 成员列表：只含还在的人；已移除的不再列出（用户名不再分配）。
 #[derive(Clone, Debug, Default, PartialEq, Eq, Serialize, Deserialize)]
 #[cfg_attr(feature = "uniffi", derive(uniffi::Record))]
 pub struct MembersViewModel {
@@ -509,7 +510,6 @@ pub struct FamilyProblem {
     pub missing: Option<PermissionItem>,
 }
 
-#[cfg(test)]
 #[cfg(test)]
 mod tests {
     use serde_json::json;

@@ -145,6 +145,13 @@ impl FamilyFake {
         });
     }
 
+    pub fn add_role(&self, id: &str, name: &str) {
+        self.roles
+            .lock()
+            .unwrap()
+            .push(role(id, name, None, Permissions::strictest()));
+    }
+
     /// 把码的期限改到过去。
     pub fn expire_code(&self, username: &str) {
         if let Some(member) = self
@@ -234,6 +241,7 @@ pub fn respond(fake: &FamilyFake, method: &Method, path: &str, body: &[u8]) -> O
         Some("me") if method == Method::GET => fake.me.lock().unwrap().as_ref().map(json),
         Some("members") => member_reply(fake, method, &segments, body),
         Some("roles") => role_reply(fake, method, &segments, body),
+        Some("friends") => friend_reply(fake, method, &segments, body),
         _ => None,
     }
 }
@@ -385,6 +393,26 @@ fn assign(fake: &FamilyFake, username: &str, body: &[u8]) -> Option<Response> {
         .find(|member| member.username == username)?;
     found.role_id = assignment.role_id;
     Some(json(list(fake)))
+}
+
+/// 好友的角色：只认换角色，角色得在名单里，改完回整份角色列表。
+fn friend_reply(
+    fake: &FamilyFake,
+    method: &Method,
+    segments: &[&str],
+    body: &[u8],
+) -> Option<Response> {
+    let (&Method::PUT, ["friends", _user_id, "role"]) = (method, segments) else {
+        return None;
+    };
+    let assignment: RoleAssignment = serde_json::from_slice(body).ok()?;
+    let known = fake
+        .roles
+        .lock()
+        .unwrap()
+        .iter()
+        .any(|role| role.id == assignment.role_id);
+    known.then(|| json(list(fake)))
 }
 
 /// 同意或拒绝一条加入请求：同意把人改成已加入，拒绝连同码作废。
