@@ -8,9 +8,9 @@ use tokio::sync::watch;
 use wonton_l10n::l10n;
 use wonton_protocol::{
     AddedSource, AppLockTimeout, AppLockViewModel, AppearanceViewModel, AvatarUpload, ChatContact,
-    ChatViewModel, ComposerDraft, CoreError, FileCard, FileCardActions, FileFailure, FileId,
-    FileInfo, FileOperation, FileProblem, FriendsViewModel, HomeViewModel, InstallPreview,
-    LanChoice, LanSettings, LicensesViewModel, Me, MediaHandle, MyAvatarProblem,
+    ChatViewModel, ComposerDraft, CoreError, FamilyViewModel, FileCard, FileCardActions,
+    FileFailure, FileId, FileInfo, FileOperation, FileProblem, FriendsViewModel, HomeViewModel,
+    InstallPreview, LanChoice, LanSettings, LicensesViewModel, Me, MediaHandle, MyAvatarProblem,
     OnboardingViewModel, OwnerProfileUpdate, PagesViewModel, PeersViewModel, PluginDetail,
     PluginImage, PluginsViewModel, PrivacyViewModel, RoomTransfers, SecretString, ServersViewModel,
     SessionListViewModel, SettingsViewModel, StoreItem, TimelineTarget, TransfersViewModel,
@@ -26,10 +26,10 @@ use crate::scope::{Scope, Views, Visits};
 use crate::servers::ServerList;
 use crate::session_store::SessionStore;
 use crate::subscription::{
-    AppLockSubscription, AppearanceSubscription, ChatSubscription, FriendsSubscription,
-    HomeSubscription, OnboardingSubscription, PagesSubscription, PeersSubscription,
-    PluginsSubscription, ServersSubscription, SessionListSubscription, SettingsSubscription,
-    TransfersSubscription, UnreadSubscription,
+    AppLockSubscription, AppearanceSubscription, ChatSubscription, FamilySubscription,
+    FriendsSubscription, HomeSubscription, OnboardingSubscription, PagesSubscription,
+    PeersSubscription, PluginsSubscription, ServersSubscription, SessionListSubscription,
+    SettingsSubscription, TransfersSubscription, UnreadSubscription,
 };
 use switch::Replay;
 #[cfg(feature = "ui-fake")]
@@ -235,6 +235,16 @@ impl ClientCore {
     /// 订阅好友页，语义同 [`subscribe_session_list`](Self::subscribe_session_list)。
     pub fn subscribe_friends(&self) -> Arc<FriendsSubscription> {
         Arc::new(FriendsSubscription::new(self.views().friends.subscribe()))
+    }
+
+    /// 当前的成员页（ADR-0088），用于首帧渲染。
+    pub fn family(&self) -> FamilyViewModel {
+        self.views().family.borrow().clone()
+    }
+
+    /// 订阅成员页，语义同 [`subscribe_session_list`](Self::subscribe_session_list)。
+    pub fn subscribe_family(&self) -> Arc<FamilySubscription> {
+        Arc::new(FamilySubscription::new(self.views().family.subscribe()))
     }
 
     /// 当前的会话列表，用于首帧渲染。

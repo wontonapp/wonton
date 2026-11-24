@@ -99,6 +99,8 @@ PREFIXES: Dict[str, str] = {
     "path": "settings",
     "shortcuts": "shortcuts",
     "shortcut": "settings",
+    # 成员与角色（设置里的成员页）
+    "family": "family",
     # common
     "common": "common",
     "problem": "problem",
@@ -147,6 +149,7 @@ GROUP_OF: Dict[str, str] = {
         "peers": "peers friends invite servers connection verification lanclient lanwebui qr qrscanner camera ownerprofile keepalive share contacts handoff matrixlogin",
         "settings": "settings appearance applock egress notification push path shortcuts shortcut privacy licenses",
         "common": "common problem core coreupgrade design app language startup page pin unpin",
+        "family": "family",
     }.items()
     for prefix in prefixes.split()
 }

@@ -542,36 +542,6 @@
         }
       }
     },
-    "pairing.failure.pending": {
-      "comment": "Failure title when the code is a joining code and the admins haven't approved yet.",
-      "extractionState": "manual",
-      "localizations": {
-        "en": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "Waiting for an admin to approve"
-          }
-        },
-        "zh-Hans": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "等管理员同意"
-          }
-        },
-        "zh-Hant": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "等管理員同意"
-          }
-        },
-        "ja": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "管理者の承認待ち"
-          }
-        }
-      }
-    },
     "pairing.failure.protocol": {
       "comment": "Failure title when the app and the server speak different versions.",
       "extractionState": "manual",

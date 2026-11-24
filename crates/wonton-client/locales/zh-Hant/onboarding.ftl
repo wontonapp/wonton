@@ -62,9 +62,6 @@ home-pairing-setup-failed = 裝置已配對，但無法設定連線。請開啟�
 # 可讀配對詳細資訊。$reason 已本地化；elapsed 是實際總耗時，stage 是每個交換階段的時限，單位均為秒。
 home-pairing-failed-detail = { $reason }本次總耗時 { $elapsed_seconds } 秒，配對交換的每個階段時限為 { $stage_seconds } 秒。
 
-home-pairing-joining-pending = 這是加入用的碼，正在等管理員同意。
-home-pairing-joining-pending-role = 這是加入用的碼，正在等管理員同意。同意後加入的角色是「{ $role }」。
-
 # 失敗類別不嵌入底層錯誤原文；原始資訊保留在診斷中。
 home-failure-transport = 無法建立與家用伺服器的連線，或連線已中斷。請檢查手機和伺服器的網路後重試。
 home-failure-unauthorized = 家用伺服器拒絕了這台裝置，請從已授權的裝置或伺服器重新配對。

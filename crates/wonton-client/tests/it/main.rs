@@ -8,6 +8,8 @@
 mod app_lock;
 mod bot_contacts;
 pub(crate) mod chat;
+mod family;
+mod family_support;
 mod files;
 mod files_cards;
 mod files_services;

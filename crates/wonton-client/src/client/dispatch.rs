@@ -118,7 +118,7 @@ impl ClientCore {
             Action::Pages { action } => self.page_action(&scope, action),
             Action::Peers { action } => scope.peers.dispatch(action),
             Action::BotContacts { action } => scope.bot_contacts.dispatch(action),
-            Action::Family { action } => scope.plugins.dispatch_roles(action),
+            Action::Family { action } => scope.family.dispatch(action),
             Action::Friends { action } => scope.friends.dispatch(action),
             Action::Sharing { action } => self.dispatch_sharing(&scope, action),
             // 公网访问的模块还没接；接上之前如实报还没就绪，不静默当成功。
