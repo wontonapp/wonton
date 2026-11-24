@@ -84,7 +84,7 @@ internal fun rememberComposerSend(
         if (edit != null && text.isBlank()) {
             // 确认的是正文：编辑时正文空着不算一次发送。
         } else if (edit != null) {
-            // 编辑只改这一条的正文；发送成功后核心恢复进入编辑态之前的草稿，壳等下一批把这个正文换回去。
+            // 编辑只改这一条的正文；发送成功后核心在没再打字时把原草稿恢复回来，壳等下一批换回去。
             val problem = core.send(Action.Timeline(TimelineAction.EditMessage(target, edit.eventId, text)))
             if (problem == null) onTyping(false) else onReject(problem)
         } else {

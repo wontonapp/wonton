@@ -519,8 +519,8 @@ pub(super) fn text_message(
     ];
     // ADR-0109 的菜单顺序是回复、复制、编辑、转发：前两条造的时候换了位，这里换回来。
     actions.swap(0, 1);
-    // 编辑的规则照真核心的菜单：只有自己的、正文非空的文字消息给（`chat/menu.rs`）。
-    if own && !body.trim().is_empty() {
+    // 编辑的规则照真核心的菜单：只有自己的文字消息给（`chat/menu.rs`），不看正文空不空。
+    if own {
         actions.push(MessageAction::Edit { text: body.clone() });
     }
     actions.push(MessageAction::Forward);

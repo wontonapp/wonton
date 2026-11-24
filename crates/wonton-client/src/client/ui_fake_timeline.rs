@@ -830,6 +830,35 @@ mod tests {
         assert_eq!(fakes.draft(&target()).unwrap().body, "draft");
     }
 
+    /// 编辑着又换一条改：恢复用的还是第一次进来之前的草稿（同真核心）。
+    #[tokio::test]
+    async fn switching_the_target_keeps_the_first_saved_draft() {
+        let fakes = FakeTimelines::default();
+        let subscription = fakes.subscribe(&target());
+        next(&subscription).await;
+        fakes.timeline_action(TimelineAction::SetDraft {
+            target: target(),
+            body: "draft".into(),
+            reply_to: None,
+        });
+        fakes.timeline_action(TimelineAction::StartEdit {
+            target: target(),
+            item_id: "ui-fake-15".into(),
+        });
+        next(&subscription).await;
+        fakes.timeline_action(TimelineAction::StartEdit {
+            target: target(),
+            item_id: "ui-fake-13".into(),
+        });
+        let switching = next(&subscription).await.editing.expect("换到另一条");
+        assert_eq!(switching.item_id, "ui-fake-13");
+        assert_eq!(switching.summary, "Fixture message 13");
+
+        fakes.timeline_action(TimelineAction::CancelEdit { target: target() });
+        next(&subscription).await;
+        assert_eq!(fakes.draft(&target()).unwrap().body, "draft");
+    }
+
     /// 编辑途中又打了字：退出时留着新打的，不拿进编辑前那份盖回去（同真核心）。
     #[tokio::test]
     async fn typing_during_an_edit_survives_cancel_and_confirm() {

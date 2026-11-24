@@ -151,7 +151,7 @@ fun Composer(
     BackHandler(enabled = edit != null) { onEditCancel() }
     // 核心收下了才清草稿、收回复：被拒（附件没传上去、房间不能发）时字和回复都留着等主人改。
     val send = rememberComposerSend(target, edit, reply, viaTray, core, onTyping, onSent, onReject)
-    // 退出编辑态后把核心恢复的草稿读回来。
+    // 退出编辑态后把核心恢复的草稿读回来（编辑途中又打了字时，核心给的就是新打的）。
     RestoreDraftOnEditEnd(edit, target, core, onRestoreDraft)
     val agentStop by produceState<RoomAgentStop>(RoomAgentStop.Idle, core, target) {
         core.agentStopUpdates(target).collect { value = it }

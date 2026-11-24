@@ -95,6 +95,10 @@ class RoomEditTest : RoomTelegramCase() {
             fieldText() == REPLACEMENT &&
                 compose.onAllNodes(hasTestTag("composer-edit-bar")).fetchSemanticsNodes().isEmpty()
         }
+        // 退出编辑以后那颗键换回发送。
+        compose.waitUntil(5_000) {
+            compose.onAllNodesWithContentDescription(string(R.string.composer_send)).fetchSemanticsNodes().isNotEmpty()
+        }
         compose.waitUntil(10_000) {
             compose.onAllNodesWithText(REPLACEMENT, substring = true).fetchSemanticsNodes().isNotEmpty()
         }

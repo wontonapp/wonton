@@ -65,6 +65,9 @@ xcodebuild test-without-building -project apps/ios/Wonton.xcodeproj -scheme Wont
 dark=$?
 echo "dark-exit=$dark 日志 $PWD/$w/$stamp.dark.log"
 xcrun simctl ui "$udid" appearance light
+# 深色那一轮的附件（那两条的图）导到 dark/ 下。
+mkdir -p "$w/shots-$stamp/dark"
+xcrun xcresulttool export attachments --path "$w/$stamp-dark.xcresult" --output-path "$w/shots-$stamp/dark" >> "$w/$stamp.export.log" 2>&1 || true
 # 这一轮的用例自己在同一处拍浅深两张（XCUIDevice.appearance），这里只导出附件。
 mkdir -p "$w/shots-$stamp"
 xcrun xcresulttool export attachments --path "$w/$stamp.xcresult" --output-path "$w/shots-$stamp" > "$w/$stamp.export.log" 2>&1 || tail -5 "$w/$stamp.export.log"
