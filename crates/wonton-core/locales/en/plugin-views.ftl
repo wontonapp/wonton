@@ -63,7 +63,6 @@ install-images-unpinned = The programs aren't locked to a specific version: { $i
 install-webui-sso = Opening its web page in Wonton signs you in automatically.
 install-host-network-egress = It reaches the internet over the server's own network, not through Wonton's proxy.
 install-host-network-proxied = It reaches the internet through Wonton's proxy too.
-install-system-preinstalled = System apps can only come preinstalled with your home server.
 install-already-installed = { $id } is already installed (version { $version })
 install-unreviewed-provider = Wonton hasn't reviewed this app. Its program comes from { $provider }.
 install-unreviewed-provider-via = Wonton hasn't reviewed this app. Its program comes from { $provider }, listed by { $host }.

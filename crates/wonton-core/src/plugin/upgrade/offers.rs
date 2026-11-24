@@ -249,9 +249,9 @@ impl PluginManager {
         problem
     }
 
-    /// 上传的、按提交装的和系统插件不查。
+    /// 上传的、按提交装的和随核心带的系统插件不查。
     fn has_source_to_check(&self, record: &InstalledRecord) -> bool {
-        !self.is_system(&record.id)
+        !self.is_bundled_system(&record.id)
             && !pinned(record)
             && (record.origin.is_some() || self.expects_official(record))
     }

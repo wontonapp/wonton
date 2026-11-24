@@ -43,9 +43,6 @@ pub struct PluginsViewModel {
     /// [`PluginAction::UpgradePlugin`](crate::PluginAction::UpgradePlugin)），或者关掉（[`PluginAction::DismissStoreConfirmation`](crate::PluginAction::DismissStoreConfirmation)）。
     #[serde(default)]
     pub confirmation: Option<StoreConfirmation>,
-    /// 角色页（ADR-0088）：主人建、改、删角色，给成员和好友分配，设默认邀请角色。
-    #[serde(default)]
-    pub roles: crate::RolesViewModel,
     /// 出网代理的设置页。
     pub egress: EgressViewModel,
     /// Docker Hub 镜像加速的设置页。

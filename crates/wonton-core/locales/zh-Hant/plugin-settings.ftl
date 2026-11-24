@@ -178,7 +178,6 @@ plugin-settings-store-source-plugin-missing = 索引 { $provider } 裡沒有 { $
 plugin-settings-store-community-partial = 有的沒讀到：{ $missing }
 plugin-settings-store-community-page-failed = 搜尋結果的第 { $page } 頁（{ $error }）
 plugin-settings-store-community-unavailable = 取不到社群應用程式：{ $error }
-plugin-settings-store-system-app = 系統應用程式只能隨家用伺服器預先安裝
 plugin-settings-store-permission-unsupported = 家用伺服器還不支援權限 { $permission }
 plugin-settings-store-index-newer = 索引的格式是 { $format }，這個版本的家用伺服器只看得懂 { $supported }：更新家用伺服器後才能用新的索引
 plugin-settings-store-index-invalid = 無法讀取索引：{ $error }

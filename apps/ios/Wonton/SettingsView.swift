@@ -187,7 +187,8 @@ struct SettingsView: View {
                     showsForward: true
                 )
             }
-        case .matrixAccount, .matrixDevices, .addWontonServer, .other:
+        // 成员页由成员那一张卡补上，入口先不画。
+        case .members, .matrixAccount, .matrixDevices, .addWontonServer, .other:
             EmptyView()
         }
     }

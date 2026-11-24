@@ -436,6 +436,24 @@ impl PluginManager {
             .is_some_and(|entry| entry.system)
     }
 
+    /// 随核心镜像附带、由核心自己维护的系统插件。从商店、来源或上传的同名 system 插件不算，
+    /// 它们和普通插件一样能经接口升级、卸载（ADR-0108）。
+    pub fn is_bundled_system(&self, id: &PluginId) -> bool {
+        self.is_system(id) && self.bundled_system_record(id)
+    }
+
+    /// 记录或内存集合表明这个插件随核心带。界面层拿着 entry 时也用它，和四道闸门同一套判定。
+    pub(super) fn bundled_system_record(&self, id: &PluginId) -> bool {
+        if self.bundled.read().expect("插件表锁中毒").contains(id) {
+            return true;
+        }
+        self.store
+            .load(id)
+            .ok()
+            .flatten()
+            .is_some_and(|record| record.bundled)
+    }
+
     /// OIDC 客户端（ID 是插件的 `id`，Bot 的网页客户端按它的插件 ID 查）声明的管理员组和角色声明；
     /// 插件没登记时返回空值。
     pub fn oidc_identity_claims(

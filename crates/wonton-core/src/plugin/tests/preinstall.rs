@@ -220,6 +220,36 @@ async fn a_preinstall_waits_for_the_egress_provider_to_come_up_and_then_installs
     task.await.unwrap().unwrap();
 }
 
+/// 系统插件（如以前预装的模型网关）一直装不上、一直在等重试，默认插件照样装上（#643、#681）。
+#[tokio::test]
+async fn a_system_plugin_stuck_retrying_does_not_hold_back_the_default_plugins() {
+    let (docker, engine) = FakeDocker::start().await;
+    let dir = tempfile::tempdir().unwrap();
+    let defaults = defaults(&dir, "  permissions: []");
+    let system = dir.path().join("system");
+    fs::create_dir_all(system.join("gateway")).unwrap();
+    let gateway = package("  web:\n    image: nginx", "  permissions: []")
+        .replace("id: app.test", "id: app.gateway")
+        .replace("kind: app", "kind: system");
+    fs::write(system.join("gateway/docker-compose.yml"), gateway).unwrap();
+    docker.set_state(&container_name("app-gateway", "web"), exited());
+    let m = Arc::new(manager_with(engine, &dir));
+    let task = tokio::spawn({
+        let m = m.clone();
+        async move {
+            m.preinstall_bundled(Some(&system), Some(&defaults), NEVER)
+                .await;
+        }
+    });
+    until(&m, |s| *s == Some(PluginStatus::Running)).await;
+    let gateway = PluginId::parse("app.gateway").unwrap();
+    assert!(matches!(
+        m.status_of(&gateway),
+        Some(PluginStatus::Degraded { .. })
+    ));
+    task.abort();
+}
+
 #[tokio::test]
 async fn an_image_that_cannot_be_pulled_is_named_in_the_reason_until_the_pull_works() {
     let (docker, engine) = FakeDocker::start().await;

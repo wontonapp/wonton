@@ -10,6 +10,9 @@
 mod api;
 mod local;
 
+#[cfg(test)]
+mod friend_errors_tests;
+
 use api::Failure;
 
 use std::future::Future;

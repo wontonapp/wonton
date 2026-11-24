@@ -34,12 +34,16 @@ enum UITestBackend {
     static func enableStateProbe(to app: XCUIApplication) {
         app.launchEnvironment["WONTON_UI_TEST_STATE"] = "1"
     }
-    /// 每次启动都用一个空的数据目录，再带上第一个配对码：不依赖模拟器上留下的会话。
+    /// 每次启动依次用下一个码、一个空的数据目录：不依赖模拟器上留下的会话。一个用例里浅色、深色各启动一次就各占一个码。
+    nonisolated(unsafe) static var nextLaunch = 0
+
     static func passPairingCode(to app: XCUIApplication) throws {
         app.launchEnvironment["WONTON_DEV_DATA_SUFFIX"] = UUID().uuidString
         enableStateProbe(to: app)
-        if let code = try codes().first {
-            app.launchEnvironment["WONTON_DEV_PAIRING_CODE"] = code
+        let all = try codes()
+        if !all.isEmpty {
+            app.launchEnvironment["WONTON_DEV_PAIRING_CODE"] = all[min(nextLaunch, all.count - 1)]
+            nextLaunch += 1
         }
     }
 

@@ -16,7 +16,7 @@
     <!-- Failure title when the Matrix server can't be reached. -->
     <string name="friends_error_transport">连不上 Matrix 服务器</string>
     <!-- Next step under the invalid-ID failure. -->
-    <string name="friends_error_invalid_user_id_next">写完整的 ID，比如 @bob:example.org。</string>
+    <string name="friends_error_invalid_user_id_next">请向对方索要真实、完整的好友地址或用户链接，不要照抄格式示例。</string>
     <!-- Failure title when the server asks to wait before trying again. Argument: seconds to wait. -->
     <string name="friends_error_rate_limited">请求太多，等 %1$d 秒</string>
     <!-- Failure title for the remaining categories. -->

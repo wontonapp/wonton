@@ -62,7 +62,6 @@ install-images-unpinned = プログラムが特定のバージョンに固定さ
 install-webui-sso = Wonton でウェブページを開くと自動的にログインします
 install-host-network-egress = インターネットへはサーバー自身のネットワークで接続し、Wonton のプロキシを通りません
 install-host-network-proxied = インターネットへは Wonton のプロキシも通ります
-install-system-preinstalled = システムアプリは自宅サーバーにプレインストールされているものに限ります
 install-already-installed = { $id }はすでにインストールされています（バージョン{ $version }）
 install-unreviewed-provider = Wonton はこのアプリを審査していません。プログラムは{ $provider }が提供しています
 install-unreviewed-provider-via = Wonton はこのアプリを審査していません。プログラムは{ $provider }が提供し、{ $host }に並んでいます

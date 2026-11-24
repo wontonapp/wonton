@@ -93,7 +93,7 @@ services:
       WONTON_MAILPIT_URL: http://mailpit.wonton.internal:8025
       WONTON_MATRIX_JWT_KEY: ${WONTON_DEV_MATRIX_JWT_KEY:?请用 deploy/dev/core/dev.sh up 启动}
       WONTON_MATRIX_REGISTRATION_SECRET: ${WONTON_DEV_MATRIX_SECRET:?请用 deploy/dev/core/dev.sh up 启动}
-      # 核心启动后在后台预装镜像里的系统插件（模型网关 magpie），再装一次默认 Agent（Hermes）。不要默认 Agent 时
+      # 核心启动后在后台预装镜像里的系统插件，并且不等它们，装一次默认 Agent（Hermes）。不要默认 Agent 时
       # （它的镜像有 4 GB）把 WONTON_DEV_DEFAULT_PLUGINS 设成空。
       WONTON_SYSTEM_PLUGINS: /usr/share/wonton/system-plugins
       WONTON_DEFAULT_PLUGINS: ${WONTON_DEV_DEFAULT_PLUGINS-/usr/share/wonton/default-plugins}

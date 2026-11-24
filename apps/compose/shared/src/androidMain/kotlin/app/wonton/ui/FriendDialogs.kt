@@ -75,6 +75,11 @@ internal fun AddFriendSheet(
             Modifier.fillMaxWidth().padding(WontonTheme.spacing.pageInset),
             verticalArrangement = Arrangement.spacedBy(WontonTheme.spacing.s12),
         ) {
+            Text(
+                stringResource(R.string.friends_add_help),
+                style = WontonTheme.typography.caption,
+                color = WontonTheme.colors.textSecondary.toColor(),
+            )
             WontonTextField(
                 userId,
                 { userId = it },

@@ -1,0 +1,21 @@
+gateway:
+  model:
+    usage_switch_provider: "要更換模型服務，請開啟「應用程式 → AI 管家（Hermes）→ Models」。"
+  errors:
+    connection_unknown: "暫時連不上你選的模型服務，稍後再試；也可以到「應用程式 → AI 管家（Hermes）→ Models」檢查連線。"
+    unreachable: "你選的模型服務無法連線，請到「應用程式 → AI 管家（Hermes）→ Models」檢查服務是否執行、位址是否正確。"
+    connection_interrupted: "模型服務的連線中斷了，這次沒能回答完，稍後再試。"
+    auth_failed: "模型服務沒有接受登入資訊，請到「應用程式 → AI 管家（Hermes）→ Keys」檢查後再試。"
+    provider_kept_failing: "你選的模型服務連續出錯，稍後再試；也可以到「應用程式 → AI 管家（Hermes）→ Models」換一個服務。"
+    rate_limited: "模型服務收到的請求太多了，請稍等一會兒再試。"
+    usage_limit_resets: "模型服務的使用額度用完了，{window}後再試；也可以到「應用程式 → AI 管家（Hermes）→ Models」換一個服務。"
+    bad_request: "模型服務拒絕了這次請求，可以換個說法再傳；也可以到「應用程式 → AI 管家（Hermes）→ Models」換一個服務。"
+    no_credentials: "沒能登入你選的模型服務，這則訊息還沒處理，請到「應用程式 → AI 管家（Hermes）→ Keys」檢查登入資訊。"
+    hint_auth: " 模型服務沒有接受登入資訊，請到「應用程式 → AI 管家（Hermes）→ Keys」檢查。"
+    hint_quota: " 模型服務的餘額或使用額度用完了，請到服務商網站查看帳戶；也可以到「應用程式 → AI 管家（Hermes）→ Models」換一個服務。"
+    hint_overloaded: " 模型服務暫時忙不過來，請稍等一會兒再試。"
+    hint_rate_limited: " 模型服務收到的請求太多了，請稍等一會兒再試。"
+    hint_usage_limit_resets: " 模型服務的使用額度用完了，約 {hours} 小時後再試。"
+    hint_usage_limit: " 模型服務的使用額度用完了，請等額度恢復；也可以到「應用程式 → AI 管家（Hermes）→ Models」換一個服務。"
+    hint_rejected: " 模型服務拒絕了這次請求，可以換個說法再傳。"
+    generic_failed_with_hint: "這次沒能回答完。{hint}"
