@@ -40,15 +40,22 @@ impl ChatLink {
         self.spawn_op("chat-op-edit-failed", async move {
             let saved = match carried {
                 Some(saved) => saved,
-                None => chat
-                    .read_raw_draft(&key)
-                    .await
-                    .ok()
-                    .flatten()
-                    .unwrap_or(Draft {
+                // 读不回原草稿时说一声，别让取消把主人的草稿悄悄换成空。
+                None => match chat.read_raw_draft(&key).await {
+                    Ok(Some(saved)) => saved,
+                    Ok(None) => Draft {
                         body: String::new(),
                         reply_to: None,
-                    }),
+                    },
+                    Err(error) => {
+                        let error = wonton_matrix::Error::NotReady(error.to_string());
+                        chat.report_op_failure("chat-op-edit-failed", &error);
+                        Draft {
+                            body: String::new(),
+                            reply_to: None,
+                        }
+                    }
+                },
             };
             live.edit.begin(
                 token,

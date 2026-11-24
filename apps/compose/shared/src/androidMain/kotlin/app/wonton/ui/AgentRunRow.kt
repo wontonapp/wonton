@@ -301,7 +301,13 @@ private fun Asking(run: TimelineContent.AgentRun, onAnswerChoice: (String) -> Un
                 }
             }
         }
+        // 发送失败：和消息选项一样先给一句“没发出去，再点一次重试”，原因收在详情里。
         run.choices.firstNotNullOfOrNull { (it.send as? ChoiceSend.Failed)?.message }?.let { reason ->
+            Text(
+                stringResource(R.string.message_choice_failed),
+                style = WontonTheme.typography.caption,
+                color = WontonTheme.colors.danger.toColor(),
+            )
             ProblemDetail(reason)
         }
     }

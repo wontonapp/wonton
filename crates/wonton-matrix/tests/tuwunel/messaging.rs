@@ -85,7 +85,7 @@ async fn two_accounts_exchange_text_and_images() {
 /// 比服务器上传上限大的图片按“太大”拒绝，不是笼统的上游出错。
 #[tokio::test]
 #[ignore = "需要 Docker，用 --include-ignored 运行"]
-async fn an_image_over_the_upload_limit_is_refused_as_invalid_input() {
+async fn an_image_over_the_upload_limit_is_refused_as_too_large() {
     // Tuwunel 不接受低于 10 MB 的上限。
     let server = TestServer::container(&[("TUWUNEL_MAX_REQUEST_SIZE", "10485760")]).await;
     let alice = server.login(&unique("alice"), "Alice 的手机").await;

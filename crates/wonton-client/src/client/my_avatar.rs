@@ -109,6 +109,7 @@ fn problem(error: Error) -> MyAvatarProblem {
         },
         Error::Upstream(reason)
         | Error::InvalidInput(reason)
+        | Error::NotInTimeline(reason)
         | Error::TooLarge(reason)
         | Error::UnsupportedType(reason)
         | Error::ReplyTarget(reason) => MyAvatarProblem::Upstream { reason },

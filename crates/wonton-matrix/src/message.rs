@@ -541,8 +541,8 @@ fn failure_of(error: crate::Error) -> wonton_protocol::SendFailure {
         Error::TooLarge(_) => SendFailure::TooLarge,
         Error::UnsupportedType(_) => SendFailure::UnsupportedType,
         Error::ReplyTarget(_) => SendFailure::ReplyTarget,
-        // 附言没发出去：这一层拿不到更细的原因，落到“别的”。
-        Error::CommentNotSent(_) => SendFailure::Other,
+        // 附言没发出去、消息不在这份时间线里：这一层拿不到更细的原因，落到“别的”。
+        Error::CommentNotSent(_) | Error::NotInTimeline(_) => SendFailure::Other,
         Error::Upstream(_) => SendFailure::Upstream,
     }
 }

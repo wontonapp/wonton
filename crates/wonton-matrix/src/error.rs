@@ -57,6 +57,10 @@ pub enum Error {
     #[error("输入非法：{0}")]
     InvalidInput(String),
 
+    /// 这条消息不在当前这一份时间线里：一份房间有好几条时间线（主对话、各个旁聊），换个时间线再找。
+    #[error("这条消息不在这一份时间线里：{0}")]
+    NotInTimeline(String),
+
     /// 太大：超过服务器的上传上限（`M_TOO_LARGE` 或 413）。
     #[error("内容太大：{0}")]
     TooLarge(String),

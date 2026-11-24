@@ -437,6 +437,7 @@ pub(crate) fn failure(error: &Error) -> ChatFailure {
         Error::NotReady(_) => ChatFailure::NotReady,
         Error::Upstream(_) | Error::CommentNotSent(_) => ChatFailure::Upstream,
         Error::InvalidInput(_)
+        | Error::NotInTimeline(_)
         | Error::TooLarge(_)
         | Error::UnsupportedType(_)
         | Error::ReplyTarget(_) => ChatFailure::InvalidInput,

@@ -1,6 +1,6 @@
 # chat-804：按复审 rv-804 把编辑、正在输入和失败分类接进核心
 
-分支 feat/chat-edit-typing-core，已 rebase 到最新 main 738cf13d4（#802 已合入），只加语义接线和错误分类。
+分支 feat/chat-edit-typing-core，已并入 main（#859 等），只加语义接线和错误分类。
 
 逐条：
 - P1-1 失败类别：`SendStatus::Failed` / `OutgoingFailure` 带 `SendFailure`，`wonton_matrix::Error` 按类型分（Transport/NotReady→Offline，401/403/400→Rejected，Upstream→Upstream，413/M_TOO_LARGE→TooLarge，415/M_UNSUPPORTED_CONTENT_TYPE→UnsupportedType，NotFound→ReplyTarget）；`details` 原文仍只进面板。附件侧同类别，`InvalidInput` 不再一律说“太大”。

@@ -55,9 +55,10 @@ impl Failure {
             Error::NotReady(_) => (FriendFailure::RequestNotFound, None, None),
             Error::InvalidInput(_) => (FriendFailure::InvalidUserId, None, None),
             Error::Upstream(_) | Error::CommentNotSent(_) => (FriendFailure::Upstream, None, None),
-            Error::TooLarge(_) | Error::UnsupportedType(_) | Error::ReplyTarget(_) => {
-                (FriendFailure::Upstream, None, None)
-            }
+            Error::TooLarge(_)
+            | Error::UnsupportedType(_)
+            | Error::ReplyTarget(_)
+            | Error::NotInTimeline(_) => (FriendFailure::Upstream, None, None),
         };
         Self {
             problem: FriendProblem {

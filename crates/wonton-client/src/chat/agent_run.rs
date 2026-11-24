@@ -171,7 +171,8 @@ impl ChatLink {
             let mut outcome = Ok(());
             for room in rooms {
                 outcome = room.answer_agent_choice(&item_id, &key).await;
-                if !matches!(outcome, Err(wonton_matrix::Error::InvalidInput(_))) {
+                // 只有“不在这份时间线里”才换一份再找；已经答过、不在等待这类拒绝就地生效。
+                if !matches!(outcome, Err(wonton_matrix::Error::NotInTimeline(_))) {
                     break;
                 }
             }

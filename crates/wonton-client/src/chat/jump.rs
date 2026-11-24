@@ -277,7 +277,7 @@ fn reason(error: &wonton_matrix::Error) -> &'static str {
         Error::Forbidden { .. } => "forbidden",
         Error::NotReady(_) => "not-ready",
         Error::Upstream(_) | Error::CommentNotSent(_) => "upstream",
-        Error::InvalidInput(_) => "invalid-input",
+        Error::InvalidInput(_) | Error::NotInTimeline(_) => "invalid-input",
         Error::TooLarge(_) => "too-large",
         Error::UnsupportedType(_) => "unsupported-type",
         Error::ReplyTarget(_) => "reply-target",

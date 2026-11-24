@@ -156,7 +156,9 @@ fn matrix_error(error: &wonton_matrix::Error) -> UplinkError {
     match error {
         Error::Transport(_) | Error::NotReady(_) => UplinkError::Offline(message),
         // 类型在放进附件区时就核对过；这里的“输入非法”是服务器对请求本身的拒绝，不是太大。
-        Error::InvalidInput(_) => UplinkError::Failed(AttachmentFailure::Rejected, message),
+        Error::InvalidInput(_) | Error::NotInTimeline(_) => {
+            UplinkError::Failed(AttachmentFailure::Rejected, message)
+        }
         Error::TooLarge(_) => UplinkError::Failed(AttachmentFailure::TooLarge, message),
         Error::UnsupportedType(_) => {
             UplinkError::Failed(AttachmentFailure::UnsupportedType, message)

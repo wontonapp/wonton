@@ -447,7 +447,7 @@ impl ChatRoom {
         let item = items
             .iter()
             .find(|item| item.unique_id().0 == item_id)
-            .ok_or_else(|| Error::InvalidInput("这条消息不在时间线里".to_owned()))?;
+            .ok_or_else(|| Error::NotInTimeline("这条消息不在时间线里".to_owned()))?;
         let event = item
             .as_event()
             .ok_or_else(|| Error::InvalidInput("这条不是消息".to_owned()))?;
