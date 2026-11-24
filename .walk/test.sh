@@ -29,6 +29,8 @@ udid=$(xcrun simctl list devices | sed -nE "s/^ +$SIM \(([0-9A-F-]{36})\).*/\1/p
 echo "sim $udid"
 xcrun simctl boot "$udid" 2>/dev/null || true
 xcrun simctl bootstatus "$udid" -b >/dev/null
+# 这台模拟器正在用：mini 的 3 台上限按“最后在用”挤掉多余的，不打点它会被当成闲的关掉、跑到一半掉线。
+python3 "$HOME/wonton-dev/mini-sims.py" touch "$udid" >/dev/null 2>&1 || true
 
 step build-for-testing
 xcodebuild build-for-testing -project apps/ios/Wonton.xcodeproj -scheme Wonton -configuration Debug \
@@ -46,6 +48,7 @@ only=""
 for class in ${BOTMODE_TESTS:-ChatTelegramUITests MessageTimeUITests ChatPanelUITests SidebarUITests MainNavigationUITests}; do
   only="$only -only-testing:WontonUITests/$class"
 done
+python3 "$HOME/wonton-dev/mini-sims.py" touch "$udid" >/dev/null 2>&1 || true
 step test
 xcodebuild test-without-building -project apps/ios/Wonton.xcodeproj -scheme Wonton \
   -destination "platform=iOS Simulator,id=$udid" -derivedDataPath "$WONTON_DERIVED_DATA" \

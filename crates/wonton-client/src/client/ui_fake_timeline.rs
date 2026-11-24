@@ -9,8 +9,8 @@ use std::sync::{Arc, Mutex, Weak};
 use tokio::sync::mpsc;
 use wonton_protocol::{
     ChatAction, ChoiceSend, ChoicesState, JumpState, MessageContent, MessageStatus, QuotedContent,
-    QuotedMessage, ReplyQuote, SideChatCard, SideChatState, TimelineAction, TimelineContent,
-    TimelineDiff, TimelineFocus, TimelineItem, TimelineScroll, TimelineTarget, TimelineUpdate,
+    QuotedMessage, ReplyQuote, TimelineAction, TimelineContent, TimelineDiff, TimelineFocus,
+    TimelineItem, TimelineScroll, TimelineTarget, TimelineUpdate,
 };
 
 use super::ui_fake_room::{
