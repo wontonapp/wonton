@@ -360,7 +360,14 @@ async fn uninstalling_a_consumer_does_not_wait_for_a_stopped_gateway() {
         .await
         .unwrap();
     assert!(keys.lock().unwrap().contains_key("app.test"));
-    assert!(bed.manager.store.model_keys().load(&Bed::consumer_id()).unwrap().revoke_pending);
+    assert!(
+        bed.manager
+            .store
+            .model_keys()
+            .load(&Bed::consumer_id())
+            .unwrap()
+            .revoke_pending
+    );
 
     bed.manager.set(&provider_id, PluginStatus::Running, None);
     assert!(bed.manager.models_route().is_some());

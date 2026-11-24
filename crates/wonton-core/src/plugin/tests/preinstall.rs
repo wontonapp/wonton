@@ -218,6 +218,7 @@ async fn a_preinstall_waits_for_the_egress_provider_to_come_up_and_then_installs
         .status = PluginStatus::Running;
     until(&m, |s| *s == Some(PluginStatus::Running)).await;
     task.await.unwrap().unwrap();
+}
 
 /// 系统插件（如以前预装的模型网关）一直装不上、一直在等重试，默认插件照样装上（#643、#681）。
 #[tokio::test]
