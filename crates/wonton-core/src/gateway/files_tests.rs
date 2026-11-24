@@ -494,6 +494,7 @@ async fn grants_add_the_bots_of_a_room() {
         home.f
             .files
             .authorize(&id, &Accessor::Bot("hermes".into()), &any_langs())
+            .await
             .is_ok()
     );
 
@@ -506,6 +507,7 @@ async fn grants_add_the_bots_of_a_room() {
         home.f
             .files
             .authorize(&id, &Accessor::Bot("hermes".into()), &any_langs())
+            .await
             .is_err()
     );
     assert_eq!(
@@ -532,6 +534,7 @@ async fn grants_add_the_bots_of_a_room() {
         home.f
             .files
             .authorize(&bots_only, &Accessor::Bot("hermes".into()), &any_langs())
+            .await
             .is_err()
     );
 }
