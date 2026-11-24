@@ -316,15 +316,6 @@ fn decorate(index: usize, own: bool, message: &mut TimelineMessage) {
     if let Some(reply) = quote(index) {
         message.reply = Some(reply);
     }
-    if index == SIDE_CHAT_INDEX {
-        message.side_chat = Some(SideChatCard {
-            root_event_id: format!("$ui-fake-{index}"),
-            title: "Fixture side chat".into(),
-            reply_count: 1,
-            unread_count: 0,
-            state: SideChatState::Open,
-        });
-    }
     if index == CHOICES_INDEX {
         message.choices = Some(choices());
     }
