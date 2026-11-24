@@ -85,7 +85,7 @@ impl ClientCore {
                 }
                 Action::Plugins { action } => self.dispatch_ui_fake_plugins(action),
                 // 假时间线（跳转、发字）和停止钮的假运行段都要看到同一个操作。发送的检查放在前面：
-                // 被拒的不开假链、也不回显。
+                // 先过发送的拒绝和附件区的检查：被拒的发送不进假时间线、不开假链，也不回显；收下了才记假时间线（发附言的顺带补一条）。
                 Action::Timeline { action } => {
                     self.dispatch_ui_fake_composer(&action)?;
                     self.ui_fake_timelines.timeline_action(action.clone());

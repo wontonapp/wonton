@@ -929,4 +929,62 @@ mod tests {
         assert!(core.pages().stack.is_empty());
         let _ = std::fs::remove_dir_all(&dir);
     }
+
+    /// 旁聊里带回复发照片不会卡住：推送时状态锁和订阅名单的锁都已放掉，壳就地报滚动也能绕回来。
+    #[tokio::test]
+    async fn side_chat_photo_with_reply_does_not_block() {
+        use tokio::time::{Duration, timeout};
+        use wonton_protocol::TimelineDiff;
+        let dir = std::env::temp_dir().join(format!("wonton-ui-fake-photo-{}", std::process::id()));
+        let _ = std::fs::remove_dir_all(&dir);
+        let core = ClientCore::new_ui_fake(dir.to_string_lossy().into_owned()).unwrap();
+        let target = TimelineTarget {
+            room_id: ROOM_ID.into(),
+            thread_root: Some("$root".into()),
+        };
+        let sub = core.subscribe_timeline(target.clone()).await.unwrap();
+        let first = sub.next().await.unwrap();
+        assert!(!first.diffs.is_empty());
+        core.dispatch(Action::Timeline {
+            action: TimelineAction::SendText {
+                target: target.clone(),
+                body: "回这一条".into(),
+                reply_to: None,
+                mentions: Vec::new(),
+            },
+        })
+        .unwrap();
+        let update = timeout(Duration::from_secs(5), sub.next())
+            .await
+            .unwrap()
+            .unwrap();
+        let id = update
+            .diffs
+            .iter()
+            .find_map(|diff| match diff {
+                TimelineDiff::PushBack { item } => Some(item.id.clone()),
+                _ => None,
+            })
+            .expect("没拿到刚发的 id");
+        core.dispatch(Action::Timeline {
+            action: TimelineAction::SendImage {
+                target,
+                image: ImageUpload {
+                    filename: "photo.png".into(),
+                    mime_type: "image/png".into(),
+                    data: vec![1, 2, 3],
+                    width: Some(4),
+                    height: Some(3),
+                    thumbnail: None,
+                },
+                reply_to: Some(format!("${id}")),
+                caption: Some("说明".into()),
+            },
+        })
+        .unwrap();
+        timeout(Duration::from_secs(5), sub.next())
+            .await
+            .expect("send_image 卡住了");
+        let _ = std::fs::remove_dir_all(&dir);
+    }
 }

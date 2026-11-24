@@ -2,7 +2,10 @@
 <resources>
     <!-- Detail of the photo problem: the GIF's header is invalid. Android only. -->
     <string name="photo_gif_unreadable">このGIFを読み込めません</string>
-    <!-- Next step under a photo problem: pick a different photo. -->
+    <!-- Title of the photo problem: photo number N of a bunch failed and the rest were not tried; a single photo is number 1. -->
+    <string name="photo_failed_at">%1$d 枚目を送れませんでした</string>
+    <string name="photo_failed_at_reason">%1$s：%2$s</string>
+    <!-- Next step under a photo problem when the core gave no reason: pick a different photo. -->
     <string name="photo_try_another">別の写真でお試しください。</string>
     <!-- Title of the photo problem on iOS, detail on Android: the photo was decoded but couldn't be re-encoded for sending. -->
     <string name="photo_unencodable">写真を変換できません</string>

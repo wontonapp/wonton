@@ -127,7 +127,7 @@
     <string name="owner_secrets_problem_other">Couldn\'t load the keys. Try again.</string>
     <!-- Attachment sheet: bottom tab that shows the phone's album as a photo grid. -->
     <string name="attach_album">Album</string>
-    <!-- Attachment sheet: button that puts the picked photos into the message. Argument: how many. -->
+    <!-- Attachment sheet: caption field at the bottom once photos are selected; the caption is sent with the photos. -->
     <string name="sheet_note_hint">Add a message</string>
     <!-- Attachment sheet: the album has no photos. -->
     <string name="attach_album_empty">No photos in your album</string>
