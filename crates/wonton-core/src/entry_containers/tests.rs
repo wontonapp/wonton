@@ -12,6 +12,7 @@ use super::{
     EntryContainers, EntryError,
 };
 use crate::entry_compose::HAPROXY_IMAGE;
+use crate::entry_haproxy::CONNECTOR_ADDRESS;
 use crate::entry_runtime::FRPC_IMAGE;
 use crate::entry_settings::EntrySettings;
 use crate::plugin::fake_docker::FakeDocker;
@@ -40,10 +41,65 @@ fn settings() -> EntrySettings {
     }
 }
 
+/// 主人在 App 里配了自己的域名：“不要名字”的安装没有设置文件，只有这份域名设置。
+fn app_domain(rig: &Rig, suffix: &str) {
+    std::fs::write(
+        rig.dir.path().join("entry/domain.json"),
+        serde_json::to_vec(&json!({"suffix": suffix, "terms_accepted": true})).unwrap(),
+    )
+    .unwrap();
+}
+
+/// 发布一张覆盖这些名字的证书，和签发成功落盘的 `site.pem` 一样。
+fn publish_cert(rig: &Rig, names: &[&str]) {
+    let names: Vec<String> = names.iter().map(|name| (*name).to_owned()).collect();
+    let cert = rcgen::generate_simple_self_signed(names).unwrap();
+    std::fs::write(rig.dir.path().join("entry/certs/site.pem"), cert.cert.pem()).unwrap();
+}
+
+/// 命令行 `-f`（或 frpc 的 `-c`）指到的配置文件：容器里的 `/config` 就是 `entry/`。
+fn command_file(rig: &Rig, container: &str) -> std::path::PathBuf {
+    let created = rig.created(container);
+    let arguments = created["Cmd"].as_array().unwrap();
+    let position = arguments
+        .iter()
+        .position(|argument| argument == "-f" || argument == "-c")
+        .unwrap();
+    let name = arguments[position + 1]
+        .as_str()
+        .unwrap()
+        .strip_prefix("/config/")
+        .unwrap();
+    rig.dir.path().join("entry").join(name)
+}
+
+/// 容器挂进去的每个源路径都得真的在：缺了 Docker 会在宿主侧建成目录，haproxy 起不来。
+fn assert_mounts_exist(rig: &Rig, container: &str) {
+    let created = rig.created(container);
+    for bind in created["HostConfig"]["Binds"].as_array().unwrap() {
+        let source = bind.as_str().unwrap().split(':').next().unwrap();
+        assert!(std::path::Path::new(source).exists(), "{source} 不在");
+    }
+}
+
+fn config(rig: &Rig) -> String {
+    std::fs::read_to_string(rig.dir.path().join("entry/haproxy.cfg")).unwrap_or_default()
+}
+/// 公网 crt-list 里列的名字。
+fn served_names(rig: &Rig) -> Vec<String> {
+    std::fs::read_to_string(rig.dir.path().join("entry/certs/public.crt-list"))
+        .unwrap_or_default()
+        .split_whitespace()
+        .map(str::to_owned)
+        .collect()
+}
+
 struct Rig {
     docker: FakeDocker,
     containers: EntryContainers,
     dir: tempfile::TempDir,
+    /// 管理端口被连了几次：每连一次就是一次 reload。
+    reloads: std::sync::Arc<std::sync::atomic::AtomicUsize>,
 }
 
 impl Rig {
@@ -64,7 +120,7 @@ impl Rig {
         let dir = tempfile::tempdir().unwrap();
         std::fs::create_dir_all(dir.path().join("entry/certs")).unwrap();
         std::fs::write(dir.path().join("entry/certs/site.pem"), "pem").unwrap();
-        let reload_addr = master_forever("Success=1\n").await;
+        let (reload_addr, reloads) = counting_master().await;
         let containers = EntryContainers::new(
             engine,
             dir.path().to_owned(),
@@ -77,7 +133,12 @@ impl Rig {
             docker,
             containers,
             dir,
+            reloads,
         }
+    }
+
+    fn reloads(&self) -> usize {
+        self.reloads.load(std::sync::atomic::Ordering::SeqCst)
     }
 
     async fn reconcile(&self, settings: Option<&EntrySettings>) -> Result<(), EntryError> {
@@ -245,6 +306,236 @@ async fn removed_settings_remove_containers() {
     assert_eq!(rig.others(), Vec::<String>::new());
 }
 
+/// “不要名字”的安装没有设置文件：主人在 App 里配了自己的域名（`entry/domain.json`）照样要有入口。
+/// 这是 #451 的回归：只看设置文件时这里会按“两个都不要”删。
+#[tokio::test]
+async fn app_domain_without_settings_creates_entry_and_connector() {
+    let rig = Rig::new().await;
+    app_domain(&rig, "home.example.test");
+    rig.reconcile(None).await.unwrap();
+    assert!(rig.docker.containers().contains(&"wonton-entry".to_owned()));
+    // 没有家名服务：连接器是路由器转发用的 HAProxy，不是 frpc。
+    assert_eq!(rig.created("wonton-connector")["Image"], HAPROXY_IMAGE);
+    // 入口配置按这个域名重写。
+    assert!(
+        config(&rig).contains("home.example.test"),
+        "{}",
+        config(&rig)
+    );
+}
+
+/// 全新安装时 `edge` 就是默认网段，算出来的连接器地址和装机时写的一样：配置不能因此不写。
+/// 缺文件时 Docker 会在宿主侧把这些路径建成目录，haproxy 在参数解析阶段就退出 1（复审 878 第 1 条）。
+/// 对账必须把目录换回文件。
+#[tokio::test]
+async fn the_default_edge_subnet_still_gets_the_whole_entry_config() {
+    let rig = Rig::new().await;
+    rig.docker.pin_subnet(
+        &format!("{PROJECT}_edge"),
+        crate::entry_haproxy::EDGE_SUBNET,
+    );
+    app_domain(&rig, "home.example.test");
+    // 旧版没写文件就建了容器：挂载源已经被 Docker 建成了目录。
+    for name in [
+        "entry/haproxy.cfg",
+        "entry/certs/public.crt-list",
+        "entry/certs/lan.crt-list",
+        "entry/connector.cfg",
+    ] {
+        std::fs::create_dir_all(rig.dir.path().join(name)).unwrap();
+    }
+    rig.reconcile(None).await.unwrap();
+    eprintln!(
+        "DEBUG writes {:?} containers {:?} others {:?}",
+        rig.docker.writes(),
+        rig.docker.containers(),
+        rig.others()
+    );
+    let config = config(&rig);
+    assert!(!config.is_empty(), "默认网段下入口配置没写出来");
+    assert!(
+        config.contains(&format!("src {CONNECTOR_ADDRESS}")),
+        "{config}"
+    );
+    assert!(
+        std::fs::read_to_string(rig.dir.path().join("entry/certs/public.crt-list"))
+            .unwrap()
+            .contains("home.example.test")
+    );
+    assert!(rig.dir.path().join("entry/certs/lan.crt-list").is_file());
+    let connector_config = command_file(&rig, "wonton-connector");
+    assert!(
+        connector_config.is_file(),
+        "{} 不在",
+        connector_config.display()
+    );
+    for container in ["wonton-entry", "wonton-connector"] {
+        assert_mounts_exist(&rig, container);
+    }
+}
+
+/// 换了后缀但新证书还没发布：入口继续按旧证书里的名字服务，新证书发布后的下一轮才换、才 reload。
+#[tokio::test]
+async fn a_changed_domain_keeps_the_published_certificate_untill_a_new_one_exists() {
+    let rig = Rig::new().await;
+    publish_cert(&rig, &["old.example.test", "probe.old.example.test"]);
+    app_domain(&rig, "old.example.test");
+    rig.reconcile(None).await.unwrap();
+    assert!(config(&rig).contains("old.example.test"));
+    let reloads = rig.reloads();
+    app_domain(&rig, "new.example.test");
+    rig.reconcile(None).await.unwrap();
+    assert!(
+        config(&rig).contains("old.example.test"),
+        "{}",
+        config(&rig)
+    );
+    assert!(
+        !config(&rig).contains("new.example.test"),
+        "{}",
+        config(&rig)
+    );
+    assert_eq!(rig.reloads(), reloads, "名字没换不该 reload");
+    publish_cert(&rig, &["new.example.test", "probe.new.example.test"]);
+    rig.reconcile(None).await.unwrap();
+    assert!(config(&rig).contains("new.example.test"));
+    assert!(!config(&rig).contains("old.example.test"));
+    assert_eq!(rig.reloads(), reloads + 1);
+}
+/// 旧证书只有子域、后缀改成它的父域：父域不在旧证书的覆盖范围里，配置留在旧名字；
+/// 新证书覆盖父域发布后的下一轮才换。
+#[tokio::test]
+async fn a_renamed_parent_domain_keeps_the_subdomain_certificate() {
+    let rig = Rig::new().await;
+    publish_cert(&rig, &["old.example.test", "probe.old.example.test"]);
+    app_domain(&rig, "old.example.test");
+    rig.reconcile(None).await.unwrap();
+    assert!(served_names(&rig).contains(&"old.example.test".to_owned()));
+    let reloads = rig.reloads();
+    app_domain(&rig, "example.test");
+    rig.reconcile(None).await.unwrap();
+    assert!(
+        served_names(&rig).contains(&"old.example.test".to_owned()),
+        "{:?}",
+        served_names(&rig)
+    );
+    assert!(
+        !served_names(&rig).contains(&"example.test".to_owned()),
+        "{:?}",
+        served_names(&rig)
+    );
+    assert_eq!(rig.reloads(), reloads, "名字没换不该 reload");
+    publish_cert(&rig, &["example.test", "*.example.test"]);
+    rig.reconcile(None).await.unwrap();
+    assert!(served_names(&rig).contains(&"example.test".to_owned()));
+    assert!(!served_names(&rig).contains(&"old.example.test".to_owned()));
+    assert_eq!(rig.reloads(), reloads + 1);
+}
+
+/// 同名续期：配置文本一个字都不变，换的只是 `site.pem` 的内容，也必须让入口重读。
+#[tokio::test]
+async fn a_same_name_renewal_still_reloads() {
+    let rig = Rig::new().await;
+    publish_cert(&rig, &["home.example.test", "*.home.example.test"]);
+    app_domain(&rig, "home.example.test");
+    rig.reconcile(None).await.unwrap();
+    let reloads = rig.reloads();
+    // 同名、内容不同的新证书：crt-list 的名字和内容都不变。
+    publish_cert(&rig, &["home.example.test", "*.home.example.test"]);
+    rig.reconcile(None).await.unwrap();
+    assert_eq!(
+        rig.reloads(),
+        reloads + 1,
+        "证书内容换了，配置文本没变也必须让入口重读"
+    );
+}
+
+/// 重载失败又碰上容器重建：失败那轮不能把证书记成已加载，下一轮要再试。
+#[tokio::test]
+async fn a_failed_reload_with_a_recreated_container_is_retried() {
+    let mut rig = Rig::new().await;
+    publish_cert(&rig, &["home.example.test", "*.home.example.test"]);
+    app_domain(&rig, "home.example.test");
+    rig.reconcile(None).await.unwrap();
+    // 第一条连接拒（带启动日志），第二条起成功。
+    let (addr, attempts) = failing_once_master().await;
+    rig.containers.reload_addr = addr;
+    rig.docker.remove("wonton-connector");
+    publish_cert(&rig, &["home.example.test", "*.home.example.test"]);
+    let error = rig.reconcile(None).await.unwrap_err();
+    assert_eq!(error.category(), "upstream_error");
+    assert_eq!(attempts.load(std::sync::atomic::Ordering::SeqCst), 1);
+    rig.reconcile(None).await.unwrap();
+    assert_eq!(
+        attempts.load(std::sync::atomic::Ordering::SeqCst),
+        2,
+        "重载失败后的下一轮要再试"
+    );
+}
+
+/// 重复对账不重建：每轮都删了再建会让公网入口一直断。
+#[tokio::test]
+async fn app_domain_without_settings_is_idempotent() {
+    let rig = Rig::new().await;
+    app_domain(&rig, "home.example.test");
+    rig.reconcile(None).await.unwrap();
+    rig.reconcile(None).await.unwrap();
+    assert_eq!(rig.docker.creations("wonton-entry"), 1);
+    assert_eq!(rig.docker.creations("wonton-connector"), 1);
+}
+
+/// 装机时的设置文件没了、App 里配的域名还在：入口容器留着，不按“没有设置”删掉。
+#[tokio::test]
+async fn app_domain_keeps_containers_after_settings_disappear() {
+    let rig = Rig::new().await;
+    rig.reconcile(Some(&settings())).await.unwrap();
+    app_domain(&rig, &settings().domain);
+    rig.reconcile(None).await.unwrap();
+    assert_eq!(rig.docker.creations("wonton-entry"), 1);
+    assert_eq!(rig.docker.creations("wonton-connector"), 1);
+    assert!(rig.docker.containers().contains(&"wonton-entry".to_owned()));
+}
+
+/// 域名配好了但证书还没签出来：先不建入口（入口要读 `site.pem` 定运行用户），签出来后的下一轮再建。
+#[tokio::test]
+async fn app_domain_without_a_certificate_waits_for_the_next_reconcile() {
+    let rig = Rig::new().await;
+    app_domain(&rig, "home.example.test");
+    std::fs::remove_file(rig.dir.path().join("entry/certs/site.pem")).unwrap();
+    rig.reconcile(None).await.unwrap();
+    assert_eq!(rig.others(), Vec::<String>::new());
+    std::fs::write(rig.dir.path().join("entry/certs/site.pem"), "pem").unwrap();
+    rig.reconcile(None).await.unwrap();
+    assert!(rig.docker.containers().contains(&"wonton-entry".to_owned()));
+}
+
+/// 域名设置读不了是“不确定”：不按没域名删掉在跑的入口，如实报错让循环退避重试。
+#[tokio::test]
+async fn an_unreadable_app_domain_keeps_the_containers() {
+    let rig = Rig::new().await;
+    rig.reconcile(Some(&settings())).await.unwrap();
+    std::fs::write(rig.dir.path().join("entry/domain.json"), "{").unwrap();
+    let error = rig.reconcile(None).await.unwrap_err();
+    assert_eq!(error.category(), "invalid_input");
+    assert!(rig.docker.containers().contains(&"wonton-entry".to_owned()));
+}
+
+/// 有设置文件时它说了算：名字和家名服务都按设置，域名设置文件里另写的后缀不参与。
+#[tokio::test]
+async fn settings_win_over_the_app_domain() {
+    let rig = Rig::new().await;
+    let mut settings = settings();
+    settings.registration = Some(federation_registration());
+    let ca = rig.dir.path().join("relay-ca.pem");
+    std::fs::write(&ca, "ca").unwrap();
+    settings.relay_ca = Some(ca);
+    app_domain(&rig, "other.example.test");
+    rig.reconcile(Some(&settings)).await.unwrap();
+    assert_eq!(rig.created("wonton-connector")["Image"], FRPC_IMAGE);
+    assert!(config(&rig).contains(&settings.domain));
+    assert!(!config(&rig).contains("other.example.test"));
+}
+
 /// 核心跑在宿主上：要入口就回 `core_not_in_container`，不建容器。
 #[tokio::test]
 async fn core_outside_container_reports_core_not_in_container() {
@@ -273,6 +564,9 @@ async fn federation_registration_uses_the_relay_connector() {
     let rig = Rig::new().await;
     let mut settings = settings();
     settings.registration = Some(federation_registration());
+    let ca = rig.dir.path().join("relay-ca.pem");
+    std::fs::write(&ca, "ca").unwrap();
+    settings.relay_ca = Some(ca);
     rig.reconcile(Some(&settings)).await.unwrap();
     let created = rig.created("wonton-connector");
     assert_eq!(created["Image"], FRPC_IMAGE);
@@ -339,6 +633,70 @@ async fn master_cli(reply: &'static str) -> (String, tokio::task::JoinHandle<Str
 }
 
 /// 每次连接都回同一段的假主进程：要在 reconcile 路径上重载的用例用。
+/// 数着连接的假主进程：每连一次记一次，回成功。
+/// 第一条连接回拒绝（带启动日志），之后回成功；返回连了几次。
+async fn failing_once_master() -> (String, std::sync::Arc<std::sync::atomic::AtomicUsize>) {
+    use std::sync::Arc;
+    use std::sync::atomic::{AtomicUsize, Ordering};
+    use tokio::io::{AsyncReadExt, AsyncWriteExt};
+    let listener = tokio_listener().await;
+    let addr = listener.local_addr().unwrap().to_string();
+    let attempts = Arc::new(AtomicUsize::new(0));
+    let seen = attempts.clone();
+    tokio::spawn(async move {
+        loop {
+            let Ok((mut socket, _)) = listener.accept().await else {
+                return;
+            };
+            let seen = seen.clone();
+            tokio::spawn(async move {
+                let mut byte = [0u8; 1];
+                loop {
+                    if socket.read_exact(&mut byte).await.is_err() || byte[0] == b'\n' {
+                        break;
+                    }
+                }
+                let first = seen.fetch_add(1, Ordering::SeqCst) == 0;
+                let reply: &[u8] = if first {
+                    b"Success=0\n--\nconfig error\n"
+                } else {
+                    b"Success=1\n"
+                };
+                let _ = socket.write_all(reply).await;
+            });
+        }
+    });
+    (addr, attempts)
+}
+
+async fn counting_master() -> (String, std::sync::Arc<std::sync::atomic::AtomicUsize>) {
+    use std::sync::Arc;
+    use std::sync::atomic::AtomicUsize;
+    use tokio::io::{AsyncReadExt, AsyncWriteExt};
+    let listener = tokio_listener().await;
+    let addr = listener.local_addr().unwrap().to_string();
+    let count = Arc::new(AtomicUsize::new(0));
+    let seen = count.clone();
+    tokio::spawn(async move {
+        loop {
+            let Ok((mut socket, _)) = listener.accept().await else {
+                return;
+            };
+            seen.fetch_add(1, std::sync::atomic::Ordering::SeqCst);
+            let mut byte = [0u8; 1];
+            loop {
+                if socket.read_exact(&mut byte).await.is_err() || byte[0] == b'\n' {
+                    break;
+                }
+            }
+            if socket.write_all(b"Success=1\n").await.is_err() {
+                return;
+            }
+        }
+    });
+    (addr, count)
+}
+
 async fn master_forever(reply: &'static str) -> String {
     use tokio::io::AsyncWriteExt;
     let listener = tokio_listener().await;

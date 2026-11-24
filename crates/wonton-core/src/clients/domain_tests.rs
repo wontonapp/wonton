@@ -5,16 +5,12 @@ use std::path::Path;
 use wonton_protocol::{CaaState, CredentialEntry, PutDomainRequest, SecretString};
 
 use super::{DNS_ENV_FILE, Domain, DomainError, dotenv_names, dotenv_value};
+use crate::entry_containers::EntryContainers;
 use crate::plugin::docker::Engine;
+use crate::plugin::fake_docker::FakeDocker;
 
 fn domain(dir: &Path) -> std::sync::Arc<Domain> {
-    Domain::new(
-        dir.to_owned(),
-        dir.join("data"),
-        Engine::for_test(),
-        crate::plugin::names::Instance::default(),
-        None,
-    )
+    Domain::new(dir.to_owned(), dir.join("data"), Engine::for_test(), None)
 }
 
 fn settings(dir: &Path, server_name: Option<&str>) {
@@ -601,4 +597,269 @@ async fn queued_issue_runs_even_after_last_error_changed() {
         quiet + 1,
         "last_error 变化不该误杀排队的签发"
     );
+}
+
+/// 续期循环和保存走同一道门：没勾订户协议之前绝不联系 CA，哪怕域名和凭据都齐了。
+/// “不要名字”的安装没有设置文件、条款没有环境初值，这条就是它的唯一保险。
+#[tokio::test]
+async fn renewal_waits_for_the_terms_before_contacting_the_ca() {
+    use std::sync::atomic::Ordering;
+    unsafe { std::env::set_var("WONTON_ACME_DIRECTORY", "https://pebble.test:14000/dir") };
+    let dir = tempfile::tempdir().unwrap();
+    let clients = domain(dir.path());
+    let settle = async || {
+        for _ in 0..20_000 {
+            if clients.pending.load(Ordering::SeqCst) == 0 {
+                return;
+            }
+            tokio::task::yield_now().await;
+        }
+        panic!("签发没在限定的轮数里结束");
+    };
+    // 什么都没有：一轮续期不起任何容器。
+    clients.renew_if_configured();
+    settle().await;
+    assert!(clients.engine.recorded_creations().is_empty());
+    // 域名、服务商、凭据都有，只差条款：还是不联系 CA。
+    clients
+        .apply(|store| {
+            store.suffix = Some("home.example.test".into());
+            store.provider = Some("httpreq".into());
+            store.credentials = [("HTTPREQ_ENDPOINT".into(), "x".into())].into();
+            Ok(())
+        })
+        .await
+        .unwrap();
+    clients.renew_if_configured();
+    settle().await;
+    assert!(clients.engine.recorded_creations().is_empty());
+    // 勾了条款：下一轮续期排到签发，签发在假 Docker 上起 lego 容器时失败。
+    clients
+        .apply(|store| {
+            store.terms_accepted = true;
+            Ok(())
+        })
+        .await
+        .unwrap();
+    clients.renew_if_configured();
+    settle().await;
+    assert!(!clients.engine.recorded_creations().is_empty());
+}
+
+/// 域名设置文件坏了：发通知、这一轮不联系 CA，也不当没有域名。
+#[tokio::test]
+async fn an_unreadable_domain_file_is_reported() {
+    use std::sync::atomic::Ordering;
+    let dir = tempfile::tempdir().unwrap();
+    let (fake, config) = crate::matrix::fake::start().await;
+    let http = crate::http::HttpClient::new();
+    let matrix = std::sync::Arc::new(
+        crate::matrix::Matrix::connect(&config, dir.path(), http)
+            .await
+            .unwrap(),
+    );
+    let notices = std::sync::Arc::new(crate::matrix::NoticeRoom::new(
+        matrix,
+        "owner",
+        dir.path().join("notice-room"),
+        std::sync::Arc::new(crate::plugin::languages::Languages::default),
+    ));
+    let clients = super::Domain::new(
+        dir.path().to_owned(),
+        dir.path().join("data"),
+        Engine::for_test(),
+        Some(notices),
+    );
+    std::fs::create_dir_all(dir.path().join("entry")).unwrap();
+    std::fs::write(dir.path().join("entry/domain.json"), "{").unwrap();
+    clients.renew_if_configured();
+    for _ in 0..20_000 {
+        if !fake.state().sent.is_empty() {
+            break;
+        }
+        tokio::task::yield_now().await;
+    }
+    let sent = fake.state().sent.clone();
+    assert!(
+        sent.iter().any(|(_, message)| message["body"]
+            .as_str()
+            .is_some_and(|body| body.contains("domain settings"))),
+        "{sent:?}"
+    );
+    assert_eq!(clients.pending.load(Ordering::SeqCst), 0);
+    assert!(clients.engine.recorded_creations().is_empty());
+}
+
+/// 调试用：把域名设置写成这个后缀；`renewable` 时连签发要用的服务商、凭据和条款一起写。
+fn app_domain(dir: &Path, suffix: &str, renewable: bool) {
+    let mut value = serde_json::json!({"suffix": suffix});
+    if renewable {
+        value["provider"] = serde_json::json!("httpreq");
+        value["credentials"] =
+            serde_json::json!({"HTTPREQ_ENDPOINT": "https://relay.test/present"});
+        value["terms_accepted"] = serde_json::json!(true);
+    }
+    fs::write(dir.join("entry/domain.json"), value.to_string()).unwrap();
+}
+
+/// 假 lego 只会“成功”：账号和它要发布的新证书自己放。
+fn fake_lego_outputs(dir: &Path) {
+    let account = dir.join("entry/acme/accounts/pebble.test_14000/wonton");
+    fs::create_dir_all(&account).unwrap();
+    fs::write(
+        account.join("account.json"),
+        serde_json::json!({
+            "server": "https://pebble.test:14000/dir",
+            "registration": {
+                "status": "valid",
+                "accountURL": "https://pebble.test:14000/my-account/1"
+            }
+        })
+        .to_string(),
+    )
+    .unwrap();
+    fs::write(
+        account.join("wonton.key"),
+        rcgen::KeyPair::generate().unwrap().serialize_pem(),
+    )
+    .unwrap();
+    let new = rcgen::generate_simple_self_signed(vec![
+        "example.test".to_owned(),
+        "*.example.test".to_owned(),
+    ])
+    .unwrap();
+    fs::create_dir_all(dir.join("entry/acme/certificates")).unwrap();
+    fs::write(dir.join("entry/acme/certificates/site.crt"), new.cert.pem()).unwrap();
+}
+
+/// 读到换行为止：假的主进程只等一条 `reload` 命令。
+async fn read_command(socket: &mut tokio::net::TcpStream) {
+    use tokio::io::AsyncReadExt;
+    let mut byte = [0u8; 1];
+    loop {
+        if socket.read_exact(&mut byte).await.is_err() || byte[0] == b'\n' {
+            break;
+        }
+    }
+}
+
+/// 假的管理端口：每收到一次 reload 就把当时的 crt-list 记一条，立刻回成功。
+async fn recording_master(
+    crt_list: std::path::PathBuf,
+) -> (String, std::sync::Arc<std::sync::Mutex<Vec<String>>>) {
+    use std::sync::{Arc, Mutex};
+    use tokio::io::AsyncWriteExt;
+    let listener = tokio::net::TcpListener::bind("127.0.0.1:0").await.unwrap();
+    let addr = listener.local_addr().unwrap().to_string();
+    let records: Arc<Mutex<Vec<String>>> = Arc::new(Mutex::new(Vec::new()));
+    let seen = records.clone();
+    tokio::spawn(async move {
+        loop {
+            let Ok((mut socket, _)) = listener.accept().await else {
+                return;
+            };
+            let seen = seen.clone();
+            let crt_list = crt_list.clone();
+            tokio::spawn(async move {
+                read_command(&mut socket).await;
+                let now = match std::fs::read_to_string(&crt_list) {
+                    Ok(content) => content,
+                    Err(error) => format!("<{error}>"),
+                };
+                seen.lock().expect("重载记录锁").push(now);
+                let _ = socket.write_all(b"Success=1\n").await;
+            });
+        }
+    });
+    (addr, records)
+}
+
+/// 入口按旧证书跑着、后缀已经改成父域、假 lego 的产物也摆好了：签发前的现场。
+async fn renamed_entry_rig() -> (
+    FakeDocker,
+    std::sync::Arc<EntryContainers>,
+    std::sync::Arc<Domain>,
+    tempfile::TempDir,
+    std::sync::Arc<std::sync::Mutex<Vec<String>>>,
+) {
+    use std::sync::Arc;
+    let (docker, engine) = FakeDocker::start().await;
+    docker.add_stranger_container(
+        "wonton-core",
+        serde_json::json!({"Labels": {"com.docker.compose.project": "wonton"}}),
+    );
+    for network in ["clients", "edge", "relay"] {
+        docker.add_unlabeled_network(&format!("wonton_{network}"));
+    }
+    let dir = tempfile::tempdir().unwrap();
+    let (reload_addr, reloads) =
+        recording_master(dir.path().join("entry/certs/public.crt-list")).await;
+    let entry = Arc::new(
+        EntryContainers::new(
+            engine.clone(),
+            dir.path().to_owned(),
+            dir.path().join("data"),
+            crate::plugin::names::Instance::default(),
+            Some("wonton-core".to_owned()),
+        )
+        .with_binding("127.0.0.1", "18443")
+        .with_reload_addr(reload_addr),
+    );
+    let clients = Domain::new(
+        dir.path().to_owned(),
+        dir.path().join("data"),
+        engine.clone(),
+        None,
+    );
+    let old = rcgen::generate_simple_self_signed(vec!["old.example.test".to_owned()]).unwrap();
+    fs::create_dir_all(dir.path().join("entry/certs")).unwrap();
+    fs::write(dir.path().join("entry/certs/site.pem"), old.cert.pem()).unwrap();
+    fs::write(
+        dir.path().join("entry/certs/site.key"),
+        old.signing_key.serialize_pem(),
+    )
+    .unwrap();
+    app_domain(dir.path(), "old.example.test", false);
+    settings(dir.path(), Some("old.example.test"));
+    entry.reconcile(None).await.unwrap();
+    // 后缀改成父域。
+    settings(dir.path(), Some("example.test"));
+    app_domain(dir.path(), "example.test", true);
+    fake_lego_outputs(dir.path());
+    (docker, entry, clients, dir, reloads)
+}
+
+/// 签发成功后先按新证书写入口配置、再让入口重读：反了入口会拿旧名字的 crt-list 去读新证书，
+/// 旧名字被 `strict-sni` 拒、新名字证书对不上。入口收到重载的那一刻就得看到新名字。
+#[tokio::test]
+async fn a_published_certificate_writes_the_config_before_reloading() {
+    use std::sync::atomic::Ordering;
+    let (_docker, entry, clients, dir, reloads) = renamed_entry_rig().await;
+    assert!(
+        reloads.lock().expect("重载记录锁").is_empty(),
+        "准备阶段不该重载：{:?}",
+        reloads.lock().expect("重载记录锁")
+    );
+    let served = fs::read_to_string(dir.path().join("entry/certs/public.crt-list")).unwrap();
+    assert!(served.contains("old.example.test"), "{served}");
+    // 签发成功只叫醒对账，自己不重载。
+    clients.renew_if_configured();
+    for _ in 0..20_000 {
+        if clients.pending.load(Ordering::SeqCst) == 0 {
+            break;
+        }
+        tokio::task::yield_now().await;
+    }
+    assert_eq!(clients.pending.load(Ordering::SeqCst), 0);
+    assert!(
+        reloads.lock().expect("重载记录锁").is_empty(),
+        "签发成功不该自己先重载"
+    );
+    // 循环收到唤醒就做这一轮：先按新证书写配置，再重载。重载那一刻看到的名字必须已经是新的。
+    entry.reconcile(None).await.unwrap();
+    let seen = reloads.lock().expect("重载记录锁").clone();
+    let last = seen.last().expect("入口没收到重载");
+    let names: Vec<&str> = last.split_whitespace().collect();
+    assert!(names.contains(&"example.test"), "记录：{seen:?}");
+    assert!(!names.contains(&"old.example.test"), "记录：{seen:?}");
 }
