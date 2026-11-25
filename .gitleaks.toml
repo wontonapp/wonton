@@ -56,3 +56,7 @@ description = "index.json 的 files 是插件包内文件的 sha256，文件名�
 condition = "AND"
 paths = ['''^deploy/dev/core/store/index\.json$''']
 regexes = ['''^[0-9a-f]{64}$''']
+
+[[allowlists]]
+description = "deploy/dev/calls/pylib 是随仓库原样带的 websocket-client 1.8.0（Apache-2.0，见同目录 LICENSE）；命中的是上游测试文件里的 key/nonce 夹具，不是我们的凭据"
+paths = ['''^deploy/dev/calls/pylib/''']
