@@ -59,7 +59,7 @@ enum QualityPreviews {
                 RelaySettingEntry(
                     url: "https://relay.example.net/", token: "wonton-relay-token", quicPort: 7_842, tier: 1,
                     source: .settings, state: .unknown, editable: true
-                ),
+                )
             ]
         )
     }
