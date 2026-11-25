@@ -6,9 +6,15 @@
 2. 附件区那条发送（`SendComposer`）不走 `timeline_action`，发送前自己先收“正在输入”（`ChatLink::stop_typing`），补上 ADR-0109 第 8 节“发送先停”里漏的一端。
 3. `edit_actions` 模块注释的 ADR 节号 9 改 10（编辑是第 10 节）；删掉没人再用的 `chat-op-typing-failed` 四条文案。
 
-验证：
-- `cargo fmt --all --check`、`git diff --check`、`check-conflict-markers.sh`、`check-ui-text.py`、`check-uniffi-comments.sh`、`check-shell-parity.py`：通过。
-- `cargo check -p wonton-client --all-targets`：0 error。
+与 main 的冲突（#973 返修）：已 rebase 到 main c49f56b8，`git merge origin/main` 报 Already up to date。main 侧的新行为保住：#1015 的 `ForwardMessage { .., comment }` 仍由 `chat/mod.rs` 交给 `forward_message(.., comment.as_deref())` 一次派发，`ui_fake_timeline` 也是先落附言再转发；本 PR 上面三条都在。
+
+验证（本机 194，cargo 经 cargo-slot）：
+- `cargo test -p wonton-client --features ui-fake --lib`：452 passed, 0 failed。
 - `cargo clippy -p wonton-protocol -p wonton-client -p wonton-matrix --all-targets --locked -- -D warnings`：0 warning 0 error。
+- `cargo fmt --all --check`、`git diff --check`、`check-conflict-markers.sh`、`check-file-size.sh`、`check-protocol-base.sh`、`check-ui-text.py`、`check-uniffi-comments.sh`、`check-shell-parity.py`：通过。
+- `nice ~/wonton-dev/android-build.sh`（detekt、`:androidApp:testDebugUnitTest`、`assembleDebug`）：BUILD SUCCESSFUL。
+- 界面用例（模拟器 emulator-5566）：`:androidApp:connectedDebugAndroidTest` 过滤 `RoomAttachPanelTest` 10 条、`RoomEditTest` 3 条，13 passed 0 failed。
 - 附件区发送的“先停”没有新集成用例（要真附件、起栈成本高）：靠 `out_typing` 现成的两条单元测试和读代码确认。
-- head 83890c16；#973 已 rebase 到 main 09870283。
+- iOS 没上模拟器/真机（这次只解冲突，没改界面结构）。
+
+head cd563b68（fix/973-rebase 的代码头，已 rebase 到 main c49f56b8；这条记录提交在它上面）。
