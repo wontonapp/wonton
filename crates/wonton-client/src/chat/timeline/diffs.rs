@@ -206,7 +206,14 @@ pub(super) fn clear_batch(
     previews: &Previews,
 ) -> Batch {
     let replaced = reset_diffs(entries, &batch, read, links, bots, previews);
-    tracing::info!(room_id = %room.room_id(), reason = "sdk-clear", silent = replaced.is_some(), "timeline got a Clear");
+    // target 同 `log_rebuild`：清空原因按时间线模块记，不跟着这个文件走。
+    tracing::info!(
+        target: "wonton_client::chat::timeline",
+        room_id = %room.room_id(),
+        reason = "sdk-clear",
+        silent = replaced.is_some(),
+        "timeline got a Clear"
+    );
     let Some(mut out) = replaced else {
         return Batch::Sent(
             send(sender, entries, vec![TimelineDiff::Clear], view, None),
