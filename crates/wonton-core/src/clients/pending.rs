@@ -40,11 +40,11 @@ pub(crate) enum Issue {
     },
 }
 
-/// 吊销/换值的结果；成功时带上刚落的操作（响应头要标出来）。
+/// 吊销/换值的结果。
 #[derive(Debug)]
 pub(crate) enum Settle {
     /// 执行完了（吊销的已删除、换值的已生效）。
-    Done(PendingOp),
+    Done,
     /// 插件没在跑，留在待完成等启动或后台重试。
     Deferred(PendingOp),
     /// 失败或超时，留在待完成等下次。
@@ -153,7 +153,7 @@ impl crate::plugin::PluginManager {
         let snapshot = store.snapshot(plugin.as_str(), id)?;
         let Some(credentials) = self.credentials_auth(plugin) else {
             store.revoke(plugin.as_str(), id)?;
-            return Ok(Settle::Done(PendingOp::Revoke));
+            return Ok(Settle::Done);
         };
         if credentials.per_client {
             self.revoke_record(plugin, &snapshot, credentials.ends_sessions)
@@ -174,7 +174,7 @@ impl crate::plugin::PluginManager {
         match self.revoke_password(plugin, snapshot).await {
             Ok(()) => {
                 store.finish_revoke(plugin.as_str(), &snapshot.id, ends_sessions)?;
-                Ok(Settle::Done(PendingOp::Revoke))
+                Ok(Settle::Done)
             }
             Err(CredentialError::Unavailable) => Ok(Settle::Deferred(PendingOp::Revoke)),
             Err(error) => Ok(Settle::Failed(error)),
@@ -203,7 +203,7 @@ impl crate::plugin::PluginManager {
                     credentials.ends_sessions,
                 )?;
                 store.mark_issued(plugin.as_str())?;
-                Ok(Settle::Done(PendingOp::Rotate))
+                Ok(Settle::Done)
             }
             Err(CredentialError::Unavailable) => Ok(Settle::Deferred(PendingOp::Rotate)),
             Err(error) => Ok(Settle::Failed(error)),
@@ -249,12 +249,12 @@ impl crate::plugin::PluginManager {
                     .await
             } else if keep_shared {
                 // 共享模式没有 revoke 命令：记录和值都留着，不动守卫。
-                Ok(Settle::Done(PendingOp::Rotate))
+                Ok(Settle::Done)
             } else {
                 self.rotate_record(&parsed, &snapshot, &credentials).await
             };
             match settle {
-                Ok(Settle::Done(_)) => {}
+                Ok(Settle::Done) => {}
                 Ok(Settle::Deferred(_) | Settle::Failed(_)) => {
                     pending.insert(plugin.clone());
                 }

@@ -55,7 +55,6 @@ gateway-entry-header-invalid = The entry gateway didn't label this request corre
 gateway-entry-closed = This entry is turned off; the owner can turn it on in the Wonton app
 gateway-entry-public-denied = This path isn't available on the public address
 gateway-entry-setup-pending = Finish the app's first-time setup on its web page first, then try again
-gateway-entry-auth-unsupported = Signing in with a Wonton-issued password isn't supported for this app yet
 gateway-entry-auth-required = Sign in with the app password issued in Wonton
 gateway-entry-auth-revoked = This app password was revoked; issue a new one in Wonton
 gateway-entry-state-unavailable = Can't read this app's entry settings; the owner can check them in Wonton

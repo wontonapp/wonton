@@ -15,7 +15,6 @@ pub(crate) struct ClientPlugin {
     pub auth: ClientAuthKind,
     pub username: Option<String>,
     pub public_rules: Option<PublicRules>,
-    pub tcp_names: Vec<String>,
 }
 impl PluginManager {
     pub(crate) fn client_plugins(&self) -> Result<Vec<ClientPlugin>, String> {
@@ -77,14 +76,6 @@ impl PluginManager {
                 }
                 None => (false, ClientAuthKind::App, None, None),
             };
-            let mut tcp_names: Vec<String> = clients
-                .tcp
-                .as_ref()
-                .into_iter()
-                .flatten()
-                .map(|entry| entry.name.clone())
-                .collect();
-            tcp_names.sort();
             result.push(ClientPlugin {
                 id: id.clone(),
                 title: listed.manifest.title.clone(),
@@ -93,7 +84,6 @@ impl PluginManager {
                 auth,
                 username,
                 public_rules,
-                tcp_names,
             });
         }
         Ok(result)
