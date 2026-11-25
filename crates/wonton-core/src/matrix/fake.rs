@@ -1,6 +1,7 @@
 //! 测试用的假 Tuwunel：只实现核心用到的客户端接口和 Synapse 兼容的管理接口，行为按 Tuwunel v1.9.4 实测
 //! （见 ADR-0009 的验证结果）：JWT 登录首次即建号，停用的账号登录得到 403 `M_USER_DEACTIVATED`；吊销设备或
-//! 停用账号后令牌立即失效；停用的账号退出所有房间；不是房间成员时查成员得到 403 `M_FORBIDDEN`。
+//! 停用账号后令牌立即失效；停用的账号退出所有房间；不是房间成员时查成员得到 403 `M_FORBIDDEN`，房间不存在得到
+//! 404 `M_NOT_FOUND`（Tuwunel v1.9.4 对后一种也回 403，这里是规范行为）。
 
 #[path = "fake_rooms.rs"]
 mod rooms;
@@ -75,6 +76,8 @@ pub struct Tuwunel {
     pub refuse_rooms: bool,
     pub refuse_power_levels: bool,
     pub refuse_room_reads: bool,
+    /// 查这些房间的成员时报 500：单间查不到，别的房间照常。
+    pub broken_rooms: BTreeSet<String>,
     pub refuse_kicks: bool,
     /// 为真时下一次建房照样建好，但响应体半路断掉（模拟客户端丢掉 createRoom 的响应）。
     pub drop_next_room_create: bool,
@@ -604,11 +607,16 @@ async fn joined_members(
         return reply(Err(error(StatusCode::INTERNAL_SERVER_ERROR, "M_UNKNOWN")));
     }
     reply(auth(&state, &headers).and_then(|(user, _)| {
+        if state.broken_rooms.contains(&room) {
+            return Err(error(StatusCode::INTERNAL_SERVER_ERROR, "M_UNKNOWN"));
+        }
         let room = state
             .rooms
             .get(&room)
-            .filter(|r| r.members.contains(&user))
-            .ok_or_else(|| error(StatusCode::FORBIDDEN, "M_FORBIDDEN"))?;
+            .ok_or_else(|| error(StatusCode::NOT_FOUND, "M_NOT_FOUND"))?;
+        if !room.members.contains(&user) {
+            return Err(error(StatusCode::FORBIDDEN, "M_FORBIDDEN"));
+        }
         let joined: serde_json::Map<String, Value> = room
             .members
             .iter()
