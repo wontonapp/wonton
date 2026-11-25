@@ -322,12 +322,18 @@ final class ChatPanelUITests: XCTestCase { // swiftlint:disable:this type_body_l
         shot("34-scroll-button-99plus")
     }
 
-    /// 进房间的落点（ADR-0071）：带 anchor 的房间开在历史里，点“向下”到底以后进房落点改成
-    /// `pin.scrollToBottom()` 的 0.3s 动画；动画走完必须贴底、真在底边，不能停在半路。
+    /// 进房间的贴底落点（ADR-0071）：假数据让落点就是最新一条（`WONTON_UI_FAKE_ANCHOR=last`），
+    /// `placeAnchor` 走贴底那一支的 0.3s `scrollToBottom`。进房不点“向下”，直接看动画走完是不是贴在底边；
+    /// 把它换回 `pin.pin()` 的瞬时跳会看不出动画半路，这条量的是落点本身。
     func testRoomEntryLandsAtBottom() throws {
-        try launch()
-        guard enterFakeRoom() != nil else {
-            return XCTFail("没进假房间")
+        try launch(environment: ["WONTON_UI_FAKE_ANCHOR": "last"])
+        let row = app.buttons["chatRoom.!ui-fake:home.example"]
+        guard row.waitForExistence(timeout: 20), row.isHittable else {
+            return XCTFail("没找到假房间：\(buttonLabels())")
+        }
+        row.tap()
+        guard waitInRoom(timeout: 10) else {
+            return XCTFail("没进假房间：\(buttonLabels())")
         }
         let deadline = Date().addingTimeInterval(5)
         var state = scrollState()
@@ -337,6 +343,8 @@ final class ChatPanelUITests: XCTestCase { // swiftlint:disable:this type_body_l
         }
         XCTAssertTrue(state.contains("pin=true"), "进房没贴底：\(state)")
         XCTAssertTrue(isAtBottom(state), "进房没停在底部：\(state)")
+        // `anim=` 是平滑滚的次数：换回 `pin.pin()` 的瞬时跳这里就是 0。
+        XCTAssertGreaterThanOrEqual(debugValues()["anim"] ?? 0, 1, "进房落点没走平滑滚动：\(state)")
     }
 }
 

@@ -25,6 +25,8 @@ final class BottomPin {
     @ObservationIgnored private var scrollEnd: DispatchWorkItem?
     /// 回到底部的动画在跑：期间自己引起的位移不交给 holdAtBottom 改写，免得一跳到底。
     private var animating = false
+    /// 平滑滚过几次（走查读 `anim=`）：瞬时跳的路径不长这个数。
+    private(set) var scrollAnimations = 0
 
     var viewportHeight: CGFloat { scrollView?.bounds.height ?? 0 }
     /// 可见区底边的屏幕 y：键盘和输入栏都算进 inset 之后的位置。
@@ -105,6 +107,7 @@ final class BottomPin {
         isPinned = true
         heldOffset = nil
         guard let scrollView = scrollView else { return }
+        scrollAnimations += 1
         animating = true
         UIView.animate(withDuration: Self.animationDuration, animations: {
             scrollView.contentOffset.y = scrollView.bottomOffset
@@ -174,7 +177,7 @@ final class BottomPin {
         let view = scrollView
         let visibleBottom = view == nil ? -1 : visibleBottom
         return "pin=\(isPinned) y=\(view?.contentOffset.y ?? -1) bottom=\(view?.bottomOffset ?? -1)"
-            + " visibleBottom=\(visibleBottom)"
+            + " visibleBottom=\(visibleBottom) anim=\(scrollAnimations)"
     }
 
     /// List 排完新行会自己再挪一次 contentOffset，保住原先看到的那一行；键盘弹着、新行比可见区高时新消息就停在可见区下面，
