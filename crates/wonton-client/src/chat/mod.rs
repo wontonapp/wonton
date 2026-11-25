@@ -494,6 +494,7 @@ impl ChatLink {
         Ok(())
     }
 
+    #[allow(clippy::too_many_lines, reason = "dispatch table")]
     pub(crate) fn timeline_action(
         self: &Arc<Self>,
         action: TimelineAction,
@@ -597,7 +598,16 @@ impl ChatLink {
             TimelineAction::SetTyping { target, typing } => {
                 self.set_typing(&TimelineKey::parse(&target)?, typing)
             }
+            // 未读跳转（ADR-0121）：这一步只接住动作，行为在下一个 PR。
+            TimelineAction::JumpToFirstUnread { .. }
+            | TimelineAction::JumpToNextMention { .. }
+            | TimelineAction::UnreadAnchorSeen { .. } => self.unread_action(),
         }
+    }
+
+    /// 未读跳转的动作（ADR-0121）：行为在核心 PR 里接，这一步先收下不报错。
+    fn unread_action(&self) -> Result<(), CoreError> {
+        Ok(())
     }
 
     fn confirm_recovery_key_saved(&self) -> Result<(), CoreError> {

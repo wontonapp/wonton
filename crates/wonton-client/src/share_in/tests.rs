@@ -47,6 +47,7 @@ fn photos_and_a_file(root: &Path) {
 
 fn room(id: &str, direct: Option<&str>) -> RoomRow {
     RoomRow {
+        unread_mentions: 0,
         room_id: id.into(),
         name: id.trim_start_matches('!').into(),
         is_direct: direct.is_some(),

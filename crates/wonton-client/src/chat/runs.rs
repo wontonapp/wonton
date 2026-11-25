@@ -201,6 +201,7 @@ mod tests {
             id: id.to_owned(),
             content: TimelineContent::Message {
                 message: TimelineMessage {
+                    mentions_me: false,
                     event_id: Some(format!("${id}")),
                     sender_id: sender.to_owned(),
                     sender_name: sender.to_owned(),

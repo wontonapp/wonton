@@ -344,6 +344,7 @@ fn fake_servers() -> ServersViewModel {
 fn fake_rooms() -> Vec<RoomRow> {
     vec![
         RoomRow {
+            unread_mentions: 0,
             room_id: ROOM_ID.into(),
             name: "Echo".into(),
             is_direct: true,
@@ -368,6 +369,7 @@ fn fake_rooms() -> Vec<RoomRow> {
             call_active: false,
         },
         RoomRow {
+            unread_mentions: 0,
             room_id: CALL_ROOM_ID.into(),
             name: "Family".into(),
             is_direct: false,
@@ -386,6 +388,7 @@ fn fake_rooms() -> Vec<RoomRow> {
         // 转发要能一次挑好几个房间，列表里多放一个没人说话的群；顶栏下插件横幅、旁聊标题、AI 行一起出现，
         // 界面测试在这间房里看它们的上下顺序。
         RoomRow {
+            unread_mentions: 0,
             room_id: NOTES_ROOM_ID.into(),
             name: "Notes".into(),
             is_direct: false,
