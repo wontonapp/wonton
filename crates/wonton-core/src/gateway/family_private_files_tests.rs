@@ -334,6 +334,7 @@ async fn a_deleted_room_is_skipped_not_unknown() {
 
 #[tokio::test]
 async fn a_later_room_member_still_opens_when_an_earlier_room_is_unreadable() {
+    // 房间按 BTreeSet 的字典序查：`!family:test` 在前（查不动），`!other:test` 在后（有答案）。
     let bed = Bed::start().await;
     let alice = family_device(&bed, "alice").await;
     let bob = family_device(&bed, "bob").await;
@@ -344,6 +345,21 @@ async fn a_later_room_member_still_opens_when_an_earlier_room_is_unreadable() {
     grant_to_family_room(&bed, &id).await;
     grant_to_room(&bed, &id, OTHER_ROOM).await;
 
+    assert_content(&bed, bob, &id, "family bill").await;
+}
+
+#[tokio::test]
+async fn room_membership_survives_restart() {
+    let mut bed = Bed::start().await;
+    let alice = family_device(&bed, "alice").await;
+    let bob = family_device(&bed, "bob").await;
+    open_family_room(&bed, &["alice", "bob"]);
+    let id = upload(&bed, alice, "family bill").await;
+    grant_to_family_room(&bed, &id).await;
+
+    // bob 只在房间成员里、不在显式 access：重启后只能靠落盘的 rooms 放行。
+    // 若 rooms 没落盘（比如 serde skip），这里会静默退回 403。
+    bed.reopen().await;
     assert_content(&bed, bob, &id, "family bill").await;
 }
 
