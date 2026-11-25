@@ -2,7 +2,7 @@
 
 use std::fs;
 use std::path::{Path, PathBuf};
-use std::sync::Arc;
+use std::sync::{Arc, Mutex};
 use std::time::Duration;
 
 use serde_json::{Value, json};
@@ -11,9 +11,12 @@ use super::super::docker::Engine;
 use super::super::fake_docker::FakeDocker;
 use super::super::gpu::fake_host::FakeHost;
 use super::super::image_worker::ImageWorker;
+use super::super::lan::Lan;
+use super::super::lan::detect::Detector;
 use super::super::names::container_name;
 use super::super::preinstall::Backoff;
 use super::super::{PluginId, PluginManager, PluginPackage, PluginStatus};
+use super::lan::{Host, add_default_bridge, office};
 use super::manager::{manager_with, manager_with_images};
 use super::package;
 
@@ -69,6 +72,11 @@ fn degraded(status: &Option<PluginStatus>) -> bool {
 /// 异常，而且已经重试过一次。
 fn retried(status: &Option<PluginStatus>) -> bool {
     matches!(status, Some(PluginStatus::Degraded { reason }) if reason.contains("tried 2 time(s)"))
+}
+
+fn lan() -> Lan {
+    let host: Host = Arc::new(Mutex::new(Ok(office())));
+    Lan::new(Detector::Fixed(host), None)
 }
 
 fn exited() -> Value {
@@ -147,6 +155,99 @@ async fn a_failed_preinstall_is_shown_with_its_cause_and_retried_until_it_works(
     until(&m, |s| *s == Some(PluginStatus::Running)).await;
     task.await.unwrap().unwrap();
     assert!(creates(&docker) >= 2, "失败后应当重试过");
+}
+
+/// 出网插件自己还在装：预装说清是"还没就绪、等着"，不是连不上；它起来以后预装自己装上。
+#[tokio::test]
+async fn a_preinstall_waits_for_the_egress_provider_to_come_up_and_then_installs() {
+    let (docker, engine) = FakeDocker::start().await;
+    add_default_bridge(&docker);
+    let dir = tempfile::tempdir().unwrap();
+    let defaults = defaults(&dir, "  permissions: [network.egress]");
+    let m = Arc::new(manager_with(engine.clone(), &dir).with_lan(lan()));
+    // 主人选了一个出网插件，它自己还在装。
+    let proxy = super::egress_plugin::proxy_app("app.proxy");
+    let grants = PluginPackage::parse(&proxy, &super::langs())
+        .unwrap()
+        .manifest
+        .permissions;
+    m.install(&proxy, &grants, super::langs()).await.unwrap();
+    let langs = super::langs();
+    m.set_egress_proxy(
+        wonton_protocol::EgressProxyUpdate {
+            url: None,
+            direct_cidrs: Vec::new(),
+            restarts: Vec::new(),
+            use_plugin: true,
+        },
+        langs,
+    )
+    .await
+    .unwrap();
+    let provider = PluginId::parse("app.proxy").unwrap();
+    m.plugins
+        .write()
+        .unwrap()
+        .get_mut(&provider)
+        .unwrap()
+        .status = PluginStatus::Installing;
+    engine
+        .remove_container("wonton-app-proxy--proxy")
+        .await
+        .unwrap();
+
+    let task = tokio::spawn({
+        let (m, defaults) = (m.clone(), defaults.clone());
+        async move { m.ensure_defaults(&defaults, QUICK).await }
+    });
+    let Some(PluginStatus::Degraded { reason }) = until(&m, degraded).await else {
+        unreachable!()
+    };
+    // 原因说出是哪个插件、还在装，而且不是"连不上"。
+    assert!(reason.contains("Test"), "{reason}");
+    assert!(reason.contains("still being installed"), "{reason}");
+    assert!(!reason.contains("not running"), "{reason}");
+
+    // 出网插件装好、跑起来了：预装接着装上。
+    docker.add_container("wonton-app-proxy--proxy", "app.proxy");
+    m.plugins
+        .write()
+        .unwrap()
+        .get_mut(&provider)
+        .unwrap()
+        .status = PluginStatus::Running;
+    until(&m, |s| *s == Some(PluginStatus::Running)).await;
+    task.await.unwrap().unwrap();
+}
+
+/// 系统插件（如以前预装的模型网关）一直装不上、一直在等重试，默认插件照样装上（#643、#681）。
+#[tokio::test]
+async fn a_system_plugin_stuck_retrying_does_not_hold_back_the_default_plugins() {
+    let (docker, engine) = FakeDocker::start().await;
+    let dir = tempfile::tempdir().unwrap();
+    let defaults = defaults(&dir, "  permissions: []");
+    let system = dir.path().join("system");
+    fs::create_dir_all(system.join("gateway")).unwrap();
+    let gateway = package("  web:\n    image: nginx", "  permissions: []")
+        .replace("id: app.test", "id: app.gateway")
+        .replace("kind: app", "kind: system");
+    fs::write(system.join("gateway/docker-compose.yml"), gateway).unwrap();
+    docker.set_state(&container_name("app-gateway", "web"), exited());
+    let m = Arc::new(manager_with(engine, &dir));
+    let task = tokio::spawn({
+        let m = m.clone();
+        async move {
+            m.preinstall_bundled(Some(&system), Some(&defaults), NEVER)
+                .await;
+        }
+    });
+    until(&m, |s| *s == Some(PluginStatus::Running)).await;
+    let gateway = PluginId::parse("app.gateway").unwrap();
+    assert!(matches!(
+        m.status_of(&gateway),
+        Some(PluginStatus::Degraded { .. })
+    ));
+    task.abort();
 }
 
 #[tokio::test]

@@ -37,6 +37,8 @@ use issuer::Issuer;
 /// 等 Tuwunel 就绪的上限：升级后首次启动可能在迁移数据库。
 const READY_TIMEOUT: Duration = Duration::from_secs(90);
 
+/// 管理房间收 `!admin` 命令：核心的管理账号注册时带 `admin: true`，服务器把它邀请进 `#admins`，
+/// 热加载就用这个账号发，不再另开管理员。
 pub struct Matrix {
     api: Api,
     server_name: String,
@@ -63,6 +65,7 @@ impl Matrix {
             issuer,
             admin_token,
         };
+        matrix.ensure_admin_room().await?;
         matrix.check_admin().await?;
         Ok(matrix)
     }
@@ -120,6 +123,49 @@ impl Matrix {
             .as_str()
             .map(str::to_owned)
             .ok_or_else(|| MatrixError::Invalid("whoami 没有返回 user_id".to_owned()))
+    }
+
+    /// 让 Tuwunel 重读配置：用核心的管理账号在管理房间发 `!admin server reload-config`（与 SIGUSR1 走同一条
+    /// `reload` 路径）。
+    ///
+    /// Docker 的 kill 接口发信号会把容器记成手动停过，Docker 重启后 `unless-stopped` 不再拉起（ADR-0116）。
+    pub(crate) async fn reload_config(&self) -> Result<(), MatrixError> {
+        let room = self.admin_room().await?;
+        self.core_session()
+            .send_message(
+                &room,
+                &json!({"msgtype": "m.text", "body": "!admin server reload-config"}),
+            )
+            .await?;
+        Ok(())
+    }
+
+    /// `#admins:<server>` 的房间号：服务器建了管理房间才解析得出来。
+    async fn admin_room(&self) -> Result<String, MatrixError> {
+        let alias = format!("#admins:{}", self.server_name);
+        let path = format!("/_matrix/client/v3/directory/room/{}", api::encode(&alias));
+        let value = self
+            .api
+            .json(
+                Method::GET,
+                &path,
+                Some(&self.admin_token),
+                None,
+                "找管理房间",
+            )
+            .await?;
+        value["room_id"]
+            .as_str()
+            .map(str::to_owned)
+            .ok_or_else(|| MatrixError::Invalid("管理房间别名没有解析出房间号".to_owned()))
+    }
+
+    /// 管理房间由服务器在空库首次启动时建好，注册为管理员的账号会收到邀请：进房间才能发命令。
+    ///
+    /// 加入是幂等的；还没被邀请（或已被踢出）时这里报错，核心不带着不能热加载的状态启动。
+    async fn ensure_admin_room(&self) -> Result<(), MatrixError> {
+        let room = self.admin_room().await?;
+        self.core_session().join(&room).await
     }
 
     /// 以核心的管理账号调客户端接口。
@@ -203,9 +249,13 @@ impl Matrix {
 }
 
 #[cfg(test)]
+mod bot_docker_tests;
+#[cfg(test)]
 pub(crate) mod fake;
 #[cfg(test)]
 mod invite_filter_docker_tests;
+#[cfg(test)]
+mod invite_filter_federation_docker_tests;
 #[cfg(test)]
 mod profile_tests;
 #[cfg(test)]

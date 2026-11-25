@@ -16,6 +16,8 @@ struct TimelineRow: View {
     let cardAction: (Action) -> Void
     /// 进入回复状态，引用由核心随菜单给。
     let reply: (QuotedMessage) -> Void
+    /// 点“编辑”：参数是原文，壳先填进输入框再发 `StartEdit`（ADR-0109 第 10 节）。
+    let edit: (String) -> Void
     let forward: () -> Void
     let redact: () -> Void
     /// Agent 在等回答的卡片就在这个房间：滚到那张卡片（ADR-0082）。
@@ -28,6 +30,8 @@ struct TimelineRow: View {
     var isJumping = false
     /// 群聊里别人的组尾旁边画的头像；私聊不给。
     var avatar: ((TimelineMessage) -> AnyView)?
+    /// 这一条属于哪一组照片，点开查看器从这一张起翻；单张或不成组时 nil。
+    var photoGroup: PhotoGroup?
     /// 进旁聊（参数是根的事件 ID）：旁聊卡片和结果行都用它（ADR-0093）。
     var onOpenSideChat: (String) -> Void = { _ in }
     @Environment(\.wontonColors) private var colors
@@ -42,9 +46,10 @@ struct TimelineRow: View {
                 showsSender: showsSender && message.run.startsRun,
                 flushesPrevious: flushesPrevious, flushesNext: flushesNext,
                 retry: retry, cancel: cancel,
-                cardAction: cardAction, reply: reply, forward: forward, redact: redact,
+                cardAction: cardAction, reply: reply, edit: edit, forward: forward, redact: redact,
                 openSideChat: onOpenSideChat, answerChoice: answerChoice,
-                jump: jump, isJumping: isJumping, avatar: message.isOwn ? nil : avatar
+                jump: jump, isJumping: isJumping, avatar: message.isOwn ? nil : avatar,
+                photoGroup: photoGroup
             )
         case let .notice(text):
             note(Text(text))
@@ -96,7 +101,7 @@ struct TimelineRow: View {
         Rectangle().fill(Color(colors.separator)).frame(height: WontonTheme.size.hairline)
     }
 
-    /// 说明行和日期胶囊一个样：压在聊天背景上的半透明胶囊（ADR-0109 第 8 节）。
+    /// 说明行和日期胶囊一个样：压在聊天背景上的半透明胶囊（ADR-0109 第 9 节）。
     private func note(_ text: Text) -> some View {
         text
             .wontonText(WontonTheme.typography.datePill)
@@ -128,6 +133,7 @@ private struct MessageBubble: View {
     let cancel: () -> Void
     let cardAction: (Action) -> Void
     let reply: (QuotedMessage) -> Void
+    let edit: (String) -> Void
     let forward: () -> Void
     let redact: () -> Void
     /// 挂在这条消息上的旁聊卡片点了就进那个旁聊（ADR-0093）。
@@ -137,6 +143,7 @@ private struct MessageBubble: View {
     let isJumping: Bool
     /// 群聊里别人的消息才有：组尾画头像，其余几条留出同样宽的空位，一组的气泡才对得齐。
     let avatar: ((TimelineMessage) -> AnyView)?
+    let photoGroup: PhotoGroup?
     @State private var isChoosingFailed = false
     @Environment(\.wontonColors) private var colors
     @Environment(\.chatPalette) private var palette
@@ -217,6 +224,13 @@ private struct MessageBubble: View {
                 Label { Text(.Message0.messageReply) } icon: { Image(systemName: "arrowshape.turn.up.left") }
             }
             .accessibilityIdentifier("messageReply")
+        case let .edit(text):
+            Button {
+                edit(text)
+            } label: {
+                Label { Text(.Message0.messageEdit) } icon: { Image(systemName: "pencil") }
+            }
+            .accessibilityIdentifier("messageEdit")
         case .forward:
             Button {
                 forward()
@@ -254,8 +268,11 @@ private struct MessageBubble: View {
             // 同一次发送里贴着的照片不留上下衬垫，贴成一摞（ADR-0094）。
             .padding(.top, flushesPrevious ? 0 : WontonTheme.spacing.bubbleInsetY)
             .padding(.bottom, flushesNext ? 0 : WontonTheme.spacing.bubbleInsetY)
-        // 气泡是内容：纯色、不透明，不描边、不叠颗粒，也不铺玻璃（ADR-0107、ADR-0109 第 8 节）。
+        // 气泡是内容：纯色、不透明，不描边、不叠颗粒，也不铺玻璃（ADR-0107、ADR-0109 第 9 节）。
         body.background(shape.fill(message.isOwn ? Color(colors.accentFill) : palette.incoming))
+            // 整只气泡是一个容器：走查按条目定位，里面的引用、正文各自照旧查得到。
+            .accessibilityElement(children: .contain)
+            .accessibilityIdentifier("message.\(itemId)")
     }
 
     /// 群聊里组首气泡顶部写发送者的名字；回复别人时，正文上方画被引用的原消息（ADR-0073），点它跳到原消息。
@@ -335,12 +352,18 @@ private struct MessageBubble: View {
         return MessageMeta.reserve(for: message)
     }
 
-    /// 发送失败：气泡旁的红色感叹号，点它重发或删除；原因写在面板的标题上。
+    /// 发送失败：气泡旁的红色感叹号，点它重发或删除。读屏讲类别，核心还分不出类别（`other`）时讲原文；
+    /// 原文写在点开的面板标题上。
     @ViewBuilder private var failedBadge: some View {
-        if case let .failed(reason, recoverable) = message.sendState {
-            let title = recoverable
-                ? String(localized: .Message2.messageSendFailedRetrying)
-                : String(localized: .Message1.messageSendFailed(reason))
+        if case let .failed(failure, details, recoverable) = message.sendState {
+            // 气泡旁和读屏只留一句话；核心还分不出类别（`other`）时用原文；SDK 的原文收在面板标题上（ADR-0109 第 10 节）。
+            let label = if recoverable {
+                String(localized: .Message2.messageSendFailedRetrying)
+            } else if failure == .other, let details {
+                details
+            } else {
+                String(localized: failure.text)
+            }
             Button {
                 isChoosingFailed = true
             } label: {
@@ -350,9 +373,9 @@ private struct MessageBubble: View {
                     .contentShape(Rectangle())
             }
             .buttonStyle(.plain)
-            .accessibilityLabel(title)
+            .accessibilityLabel(label)
             .accessibilityIdentifier("messageFailed")
-            .wontonActionSheet(isPresented: $isChoosingFailed, title: title, actions: [
+            .wontonActionSheet(isPresented: $isChoosingFailed, title: details, actions: [
                 WontonSheetAction(
                     title: String(localized: .Message1.messageResend), icon: .refresh, perform: retry
                 ),
@@ -377,7 +400,7 @@ private extension MessageBubble {
         case let .image(image):
             // 一次发送里主人写的字是最后一张照片的说明文字（ADR-0094），画在照片下面。
             VStack(alignment: .leading, spacing: WontonTheme.spacing.s8) {
-                MediaImage(image: image, core: core, sendState: message.sendState)
+                MediaImage(image: image, group: photoGroup, core: core, sendState: message.sendState)
                     .overlay(alignment: .bottomTrailing) {
                         if image.caption == nil {
                             MessageMeta(message: message, onMedia: true).padding(WontonTheme.spacing.s4)

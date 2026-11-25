@@ -67,11 +67,14 @@ fun PairingScreen(
     pairing: PairingStatus?,
     modifier: Modifier = Modifier,
     onPaired: () -> Unit = {},
-    onBack: (() -> Unit)? = null,
+    onLeave: () -> Unit = {},
 ) {
     val context = LocalContext.current
-    var deviceName by rememberSaveable { mutableStateOf(defaultDeviceName(context)) }
-    var pastedCode by rememberSaveable { mutableStateOf("") }
+    // 首屏按返回就退出 App（系统惯例），输入只活在这一页里就会跟着没：草稿另存一份，回到这一页时填回去。
+    // 每次输入都写草稿，所以连旋转都直接读草稿当初值，不必再借 rememberSaveable。
+    val draft = remember(context) { PairingDraft(context) }
+    var deviceName by remember { mutableStateOf(draft.deviceName ?: defaultDeviceName(context)) }
+    var pastedCode by remember { mutableStateOf(draft.code.orEmpty()) }
     // 核心当场拒绝的原因，比如扫到的不是配对码。
     var refusal by remember { mutableStateOf<Problem?>(null) }
     var lastCode by rememberSaveable { mutableStateOf<String?>(null) }
@@ -81,6 +84,7 @@ fun PairingScreen(
     LaunchedEffect(status, submitted) {
         if (submitted && status is PairingStatus.Paired) {
             submitted = false
+            draft.code = ""
             onPaired()
         }
     }
@@ -90,6 +94,7 @@ fun PairingScreen(
         if (core.home().pairing is PairingStatus.InProgress) return
         // 收起键盘，让配对结果和操作保持可见。
         focus.clearFocus()
+        draft.code = code
         lastCode = code
         refusal = core.send(Action.Home(HomeAction.PairHome(code, deviceName)))?.pairingRefusal()
         submitted = refusal == null
@@ -100,25 +105,32 @@ fun PairingScreen(
         refusal = null
         lastCode = null
         pastedCode = ""
+        draft.code = ""
         scanRecognized = false
         submitted = false
         core.send(Action.Home(HomeAction.DismissPairingFailure))
         status = core.home().pairing
         Unit
     }
-    val leaveFailure = {
-        scanAgain()
-        onBack?.invoke()
+    // 返回收掉失败面、留住输入，再去调用方说的地方（首屏是退出 App）。草稿留着，回来还填着。
+    val leave = {
+        if (status is PairingStatus.Failed) {
+            lastCode = null
+            submitted = false
+            core.send(Action.Home(HomeAction.DismissPairingFailure))
+            status = core.home().pairing
+        }
+        onLeave()
         Unit
     }
-    BackHandler(enabled = status is PairingStatus.Failed, onBack = leaveFailure)
+    BackHandler(onBack = leave)
     val failed = status as? PairingStatus.Failed
     if (failed != null) {
         PairingFailureNotice(
             failed,
             onRetry = lastCode?.let { code -> { pair(code) } },
             onScanAgain = scanAgain,
-            onBack = leaveFailure,
+            onBack = leave,
             modifier = modifier.verticalScroll(rememberScrollState())
                 .wontonContentPadding().padding(WontonTheme.spacing.pageInset),
         )
@@ -140,7 +152,10 @@ fun PairingScreen(
                 ProblemNotice(requireNotNull(refusal), WontonIcon.Error)
                 WontonButton(stringResource(R.string.pairing_scan_again), scanAgain)
             } else {
-                PairingForm(pastedCode, { pastedCode = it }, onScan = { code ->
+                PairingForm(pastedCode, {
+                    pastedCode = it
+                    draft.code = it
+                }, onScan = { code ->
                     if (!scanRecognized && core.home().pairing !is PairingStatus.InProgress) {
                         scanRecognized = true
                         view.performHapticFeedback(
@@ -150,7 +165,10 @@ fun PairingScreen(
                         pair(code)
                     }
                 }, pair = ::pair)
-                PairingDeviceName(deviceName, onDeviceName = { deviceName = it })
+                PairingDeviceName(deviceName, onDeviceName = {
+                    deviceName = it
+                    draft.deviceName = it
+                })
             }
         }
     }
@@ -215,7 +233,7 @@ private fun PairingDeviceName(deviceName: String, onDeviceName: (String) -> Unit
         WontonTextField(
             value = deviceName,
             onValueChange = onDeviceName,
-            modifier = Modifier.fillMaxWidth(),
+            modifier = Modifier.fillMaxWidth().testTag("pairing-device-name"),
             label = deviceNameLabel,
         )
     }
@@ -301,7 +319,6 @@ private fun failureTitle(reason: PairingFailure): Int = when (reason) {
     PairingFailure.EXPIRED -> R.string.pairing_failure_expired
     PairingFailure.USED -> R.string.pairing_scan_used
     PairingFailure.CLOSED -> R.string.pairing_failure_closed
-    PairingFailure.PENDING_APPROVAL -> R.string.pairing_failure_pending
     PairingFailure.JOIN_REJECTED -> R.string.joining_failure_rejected
     PairingFailure.CODE_USED -> R.string.joining_failure_code_used
     PairingFailure.TRANSPORT_UNAVAILABLE -> R.string.pairing_failure_transport
@@ -312,16 +329,14 @@ private fun failureTitle(reason: PairingFailure): Int = when (reason) {
 private fun failureHint(reason: PairingFailure): Int? = when (reason) {
     PairingFailure.REJECTED, PairingFailure.EXPIRED, PairingFailure.USED -> R.string.pairing_next_new_code
     PairingFailure.CLOSED -> R.string.pairing_next_closed
-    PairingFailure.PENDING_APPROVAL -> R.string.pairing_next_pending
     PairingFailure.JOIN_REJECTED, PairingFailure.CODE_USED -> R.string.joining_next_invite
     PairingFailure.TRANSPORT_UNAVAILABLE -> R.string.pairing_hint_transport
     PairingFailure.PROTOCOL -> R.string.pairing_hint_protocol
     PairingFailure.UPSTREAM -> null
 }
-/** 连不上和服务器出错可能是暂时的，同一个码可以再试；等批的在同意后重试同一个码。其余原因要换码或者更新。 */
+/** 连不上和服务器出错可能是暂时的，同一个码可以再试；其余原因要换码或者更新。 */
 private fun PairingFailure.canRetrySameCode() =
-    this == PairingFailure.TRANSPORT_UNAVAILABLE || this == PairingFailure.UPSTREAM ||
-        this == PairingFailure.PENDING_APPROVAL
+    this == PairingFailure.TRANSPORT_UNAVAILABLE || this == PairingFailure.UPSTREAM
 
 internal fun Problem.pairingRefusal(): Problem = copy(
     nextStep = null,

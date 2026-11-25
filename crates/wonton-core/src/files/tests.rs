@@ -142,6 +142,7 @@ async fn bots_and_devices_outside_the_scope_are_told_apart() {
         kind(
             f.files
                 .authorize(&record.id, &Accessor::Owner, &any_langs())
+                .await
         ),
         FileFailure::NotShared
     );
@@ -149,12 +150,14 @@ async fn bots_and_devices_outside_the_scope_are_told_apart() {
         kind(
             f.files
                 .authorize(&record.id, &Accessor::Bot("other".into()), &any_langs())
+                .await
         ),
         FileFailure::FileUnknown
     );
     assert!(
         f.files
             .authorize(&record.id, &Accessor::Bot("hermes".into()), &any_langs())
+            .await
             .is_ok()
     );
 
@@ -198,6 +201,7 @@ async fn an_expired_id_is_expired_for_its_bot_and_unknown_for_everyone_else() {
         kind(
             f.files
                 .authorize(&record.id, &Accessor::Bot("hermes".into()), &any_langs())
+                .await
         ),
         FileFailure::FileExpired
     );
@@ -205,6 +209,7 @@ async fn an_expired_id_is_expired_for_its_bot_and_unknown_for_everyone_else() {
         kind(
             f.files
                 .authorize(&record.id, &Accessor::Bot("other".into()), &any_langs())
+                .await
         ),
         FileFailure::FileUnknown
     );
@@ -212,6 +217,7 @@ async fn an_expired_id_is_expired_for_its_bot_and_unknown_for_everyone_else() {
         kind(
             f.files
                 .authorize(&record.id, &Accessor::Owner, &any_langs())
+                .await
         ),
         FileFailure::FileUnknown
     );
@@ -416,7 +422,7 @@ async fn deleting_only_touches_uploaded_files() {
         .unwrap();
     assert!(f.shares_dir.join("photos/a.jpg").exists(), "原文件不动");
     assert_eq!(
-        kind(f.files.authorize(&id, &Accessor::Owner, &any_langs())),
+        kind(f.files.authorize(&id, &Accessor::Owner, &any_langs()).await),
         FileFailure::FileUnknown
     );
 
@@ -437,7 +443,7 @@ async fn deleting_only_touches_uploaded_files() {
     );
     assert!(path.exists(), "已经是主人别的文件了");
     assert_eq!(
-        kind(f.files.authorize(&id, &Accessor::Owner, &any_langs())),
+        kind(f.files.authorize(&id, &Accessor::Owner, &any_langs()).await),
         FileFailure::FileUnknown,
         "编号照删"
     );
@@ -548,7 +554,7 @@ async fn a_delete_whose_request_went_away_still_finishes_and_is_audited() {
     .expect("请求断了也要写审计");
     assert!(!f.home_dir().join("transfers/a.txt").exists());
     assert_eq!(
-        kind(f.files.authorize(&id, &Accessor::Owner, &any_langs())),
+        kind(f.files.authorize(&id, &Accessor::Owner, &any_langs()).await),
         FileFailure::FileUnknown
     );
 }
@@ -559,12 +565,17 @@ async fn a_delete_that_is_not_confirmed_on_disk_says_so_in_the_audit() {
     let f = Fixture::new();
     let id = f.uploaded("a.txt", b"mine");
     super::share_fs::tests::DIR_SYNC_FAILS.set(Some("a.txt".to_owned()));
-    let outcome = f.files.delete_now(&id, &Accessor::Owner, &any_langs());
+    let record = f
+        .files
+        .authorize(&id, &Accessor::Owner, &any_langs())
+        .await
+        .unwrap();
+    let outcome = f.files.delete_record_now(&record, &any_langs());
     super::share_fs::tests::DIR_SYNC_FAILS.set(None);
     assert_eq!(outcome.unwrap(), super::DELETED_UNSYNCED);
     assert!(!f.home_dir().join("transfers/a.txt").exists());
     assert_eq!(
-        kind(f.files.authorize(&id, &Accessor::Owner, &any_langs())),
+        kind(f.files.authorize(&id, &Accessor::Owner, &any_langs()).await),
         FileFailure::FileUnknown
     );
 }

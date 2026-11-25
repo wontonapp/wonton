@@ -157,6 +157,15 @@ SIMCTL_CHILD_WONTON_DEV_PAIRING_CODE="$(deploy/dev/core/dev.sh pair | tail -n 1)
 
 图片上传进度未知不等于 0%：已知比例时显示线性条，未知时显示转圈。
 
+## 首次打开走查
+
+`WontonUITests/FirstRunWalkthroughUITests` 走一遍新用户路径（配对页输入码、交接和备份层、引导、列表、和 Hermes 的第一句、
+长按菜单、`/`、侧栏），浅色和深色各一例，每步留截图。两例都是新设备（每例换数据目录），**每例要一个码**，一例只给它一个码时
+那一例会 `XCTSkip`；没有一个码时整类跳过。
+
+用 `mini-walkthrough.sh up <名字> <检出> --host 194` 起栈和模拟器，`build` 一次，再 `test <名字> FirstRunWalkthroughUITests`
+（它的 `test` 会按用例数现取码）。已知软失败在 `knownIssues` 里放行，新问题照红。
+
 ## 检查
 
 ```bash
@@ -204,6 +213,39 @@ apps/ios/scripts/ui-test.sh <模拟器 UDID> test \
 “手边没有别的设备”进入备份页并返回，有恢复提醒就关提醒；不假定交接页必出现，也不以一段静默时间判成功。
 测试启动时经 `passPairingCode` 设置 `WONTON_UI_TEST_STATE=1`；自行启动的调用方也要设置。Debug 只读 AX 标识
 只暴露登录、同步和交接类别，不含密钥、不改核心状态；真正验证 SAS 交接的 `KeyHandoffUITests` 不调用跳过前置。
+
+`KeyHandoffUITests`（加设备时交接密钥，ADR-0087）和 `SasResetUITests`（没有可信设备时用恢复密钥或重置，ADR-0076）
+要一台在跑“添加设备”的旧设备和准备好的账号状态。旧设备按 [`deploy/dev/core/README.md`](../../deploy/dev/core/README.md)
+的“交接聊天密钥”一节用 `key-handoff-old-device` 示例扮演：
+
+- 示例的 `KEY_HANDOFF_HISTORY_TEXT` 必须和传给用例的 `HISTORY_TEXT` 是同一串：不设时示例自己按时间戳生成，
+  两边必然对不上，明文断言也就作废。用例没拿到 `HISTORY_TEXT` 会打印一行。恢复和重置两条的 `RECOVERY_KEY`
+  取示例写在码文件旁的 `.recovery`。
+- 码从哪来：示例把给新设备的邀请码写进你传给它的码文件（示例页开着时会自动接第一个确认请求），也可以现取
+  `dev.sh pair <地址>` 的码。一条用例一个码；`PAIRING_CODE` 给逗号分隔的一串，只有前一个已用/过期、用例退回
+  失败面时才用下一个，跑整个类时给够条数。
+- 两条恢复路径跑前先把设备删掉：`dev.sh devices` 看设备 ID，逐个 `dev.sh revoke <ID>`（含示例那台）；
+  重置那条用上一台已删、手里的密钥已作废的状态。栈在别的机器上时这两个命令要在那套栈上跑
+  （`ssh <机>-stack dev <栈名> devices` / `revoke <ID>`），在调用机直接跑会打到本机 Docker。
+- 交接那条要比较两端表情：示例打出 `表情：` 那行后，把后面的 7 个符号（一个空格分隔，用例按空格拆）写进 App 容器的
+  `Documents/sas-emoji.txt`。用例只等 120 秒，得用命令写；在 mini 上跑时这三条经 `ssh mini-ios light <名字> -- …` 执行：
+
+```bash
+symbols=$(grep '^表情：' <示例日志> | tail -n 1 | sed 's/^表情：//')
+appdir=$(xcrun simctl get_app_container <UDID> app.wonton.ios data)
+printf '%s' "$symbols" > "$appdir/Documents/sas-emoji.txt"
+```
+
+粘贴板要过 iOS 的粘贴许可，读不到。用例从屏幕一次取 7 个符号按纵坐标排，和文件按序比对。
+
+```bash
+TEST_RUNNER_KEY_HANDOFF=1 TEST_RUNNER_HISTORY_TEXT='<历史>' PAIRING_CODE='<码>,<码>' \
+  apps/ios/scripts/ui-test.sh <UDID> test -only-testing:WontonUITests/KeyHandoffUITests
+TEST_RUNNER_RECOVERY_KEY='<恢复密钥>' TEST_RUNNER_HISTORY_TEXT='<历史>' PAIRING_CODE='<码>,<码>' \
+  apps/ios/scripts/ui-test.sh <UDID> test -only-testing:WontonUITests/SasResetUITests
+```
+
+断言依赖的截图是 `handoff-compare`、`history-undecryptable`、`history-decrypted`、`new-key`，留在 xcresult 里。
 
 ```bash
 PAIRING_CODE="$(deploy/dev/core/dev.sh pair <地址> | tail -n 1)" apps/ios/scripts/ui-test.sh <模拟器 UDID> test \

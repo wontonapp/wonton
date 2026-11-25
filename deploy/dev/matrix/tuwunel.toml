@@ -21,6 +21,10 @@ login_with_password = false
 # 不给新用户的显示名追加 Tuwunel 默认的表情后缀。
 new_user_displayname_suffix = ""
 
+# 建 `#admins:<server>`：核心在房间里发 `!admin server reload-config` 热加载（ADR-0116）。
+# 2.0 的分组名是 [global.admin.room] create，扁平键名仍兼容。
+create_admin_room = true
+
 [global.jwt]
 enable = true
 # 核心持有 Ed25519 私钥，Tuwunel 只拿公钥验签，自己签不出令牌。

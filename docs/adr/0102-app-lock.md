@@ -31,7 +31,8 @@ App 锁要复用这套验证，并回答：什么时候锁、设置存哪谁判�
 
 - 前后台信号已经到核心：`HomeAction::AppForegrounded` / `HomeAction::AppBackgrounded`（`crates/wonton-protocol/src/action_domains.rs`）。
   iOS 由 `apps/ios/Wonton/WontonApp.swift` 的 `scenePhase` 发出（:41-46），Android 由
-  `apps/compose/androidApp/src/main/kotlin/app/wonton/android/MainActivity.kt` 的 `onResume` / `onStop` 发出。
+  `apps/compose/androidApp/src/main/kotlin/app/wonton/android/MainActivity.kt` 的 `onResume` / `onPause` 发出：
+  `onPause` 是失去可交互的那一刻，关屏和系统对话框到不了 `onStop`。
 - 本机设置文件的成熟模式：`appearance.json`（`crates/wonton-client/src/appearance/mod.rs`）、`push-method.json`
   （`crates/wonton-client/src/push_method.rs`，落盘成功才发布新值）。
 - 设置首页由核心的 `SettingsViewModel.sections[].entries[]` 给出，不认识的入口落 `SettingsEntry::Other` 被旧壳忽略

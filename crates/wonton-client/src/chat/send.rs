@@ -47,7 +47,7 @@ impl ChatLink {
         let key = key.clone();
         let sent_room = key.room_id.to_string();
         self.spawn_op_with_success(
-            "chat-op-send-text-failed",
+            |_| "chat-op-send-text-failed",
             async move {
                 let room = chat.room(&key).await?;
                 // 预览的图片传不上去时不挡消息：正文照发，原因报出来（取不到的类别发送框里已经显示过）。
@@ -62,13 +62,17 @@ impl ChatLink {
                     Some(event_id) => match extra {
                         Some(extra) => {
                             room.send_reply_with_extra(&body, &mentions, event_id, extra)
-                                .await?
+                                .await?;
                         }
                         None => room.send_reply(&body, &mentions, event_id).await?,
                     },
                     None => match extra {
-                        Some(extra) => room.send_text_with_extra(&body, &mentions, extra).await?,
-                        None => room.send_text(&body, &mentions).await?,
+                        Some(extra) => {
+                            room.send_text_with_extra(&body, &mentions, extra).await?;
+                        }
+                        None => {
+                            room.send_text(&body, &mentions).await?;
+                        }
                     },
                 }
                 // 发出去了，草稿（连同回复对象）留着没用了；发送途中又打的字不算。
@@ -160,6 +164,7 @@ impl ChatLink {
         self: &Arc<Self>,
         key: &TimelineKey,
         image: ImageUpload,
+        caption: Option<&str>,
         reply_to: Option<&str>,
     ) -> Result<(), CoreError> {
         if !image.mime_type.starts_with("image/") {
@@ -175,7 +180,9 @@ impl ChatLink {
         let sent = self.sent.clone();
         self.send_target(key.room_id.as_str())?;
         let key = key.clone();
+        let draft_key = key.clone();
         let sent_room = key.room_id.to_string();
+        let caption = caption.map(ToOwned::to_owned);
         let upload = wonton_matrix::ImageUpload {
             filename: image.filename,
             mime_type: image.mime_type,
@@ -192,16 +199,26 @@ impl ChatLink {
                 }),
         };
         self.spawn_op_with_success(
-            "chat-op-send-image-failed",
+            |_| "chat-op-send-image-failed",
             async move {
                 let room = chat.room(&key).await?;
+                let mut replied_to = None;
                 match reply_to {
                     Some(event_id) => {
-                        room.send_image_reply(upload, &event_id).await?;
-                        // 图片不带输入框里的字，草稿的正文留着，回复对象用掉了。
-                        chat.enqueue_draft(DraftWrite::ForgetReply(key, event_id));
+                        room.send_image_reply(upload, caption.as_deref(), &event_id)
+                            .await?;
+                        replied_to = Some(event_id);
                     }
-                    None => room.send_image(upload).await?,
+                    None => room.send_image(upload, caption.as_deref()).await?,
+                }
+                // 说明跟着图片走了，清掉草稿；没有说明时只把回复对象用掉。
+                match caption {
+                    Some(caption) => chat.enqueue_draft(DraftWrite::Forget(draft_key, caption)),
+                    None => {
+                        if let Some(event_id) = replied_to {
+                            chat.enqueue_draft(DraftWrite::ForgetReply(draft_key, event_id));
+                        }
+                    }
                 }
                 Ok(())
             },

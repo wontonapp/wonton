@@ -8,17 +8,16 @@ struct ChatRoomView: View {
     /// 旁聊根的事件 ID；空是房间的主时间线（ADR-0093）。旁聊页盖在主对话上（全屏盖层），主对话继续订阅。
     let threadRoot: String?
     let title: String
-    @State private var timeline: TimelineModel
+    @State var timeline: TimelineModel
     @State private var composer: ComposerModel
     @State private var presenter: RoomPresenter
-    @State private var pin = BottomPin()
+    @State var pin = BottomPin()
     @State private var isKeyboardVisible = false
     @State private var pageAnchor: String?
     @SceneStorage private var savedAnchor: String
     @State private var visibleRows: [String: CGFloat] = [:]
     /// 正在选转发目标的条目、正在确认撤回的条目。
     @State private var forwarding: String?
-    @State private var pickingForwardRoom = false
     @State private var redactItem: String?
     @State private var showingRedact = false
     @State private var showingConfirmations = false
@@ -28,7 +27,9 @@ struct ChatRoomView: View {
     /// 进房间的落点摆好之前不标已读（ADR-0071）：标早了已读行会跳到最新一条，落点就丢了。
     @State private var placed = false
     /// 跳到原消息（ADR-0109 第 4 节）：点的是哪一条的引用、刚跳到要闪一下的那一行、找不到时的轻提示。
-    @State private var jump = TimelineJumpState()
+    @State var jump = TimelineJumpState()
+    /// 输入框上的命令列表开着（ADR-0109 第 7 节）：右下角的“向下”让开，不和它抢地方。
+    @State private var commandMenuOpen = false
     /// 资料页里点了“打开面板”：每点一次加一，面板宿主跟着打开（ADR-0052）。
     @State private var panelOpenRequests = 0
     @Environment(\.panelDeps) private var panelDeps
@@ -59,7 +60,17 @@ struct ChatRoomView: View {
                 ) {
                     roomContent
                     #if DEBUG
-                        .overlay(alignment: .topLeading) { ScrollDebug(pin: pin) }
+                        .overlay(alignment: .topLeading) {
+                            ScrollDebug(
+                                pin: pin,
+                                extra: "sub=\(timeline.debugSubscribes) up=\(timeline.debugUpdates)"
+                                    + " n=\(timeline.items.count)"
+                                    + " end=\(timeline.debugEnded) closed=\(model.debugClosed)",
+                                flashItem: jump.flash?.itemId,
+                                flashes: jump.flashes,
+                                lastFlash: jump.lastFlash
+                            )
+                        }
                     #endif
                 }
             }
@@ -72,6 +83,11 @@ struct ChatRoomView: View {
 
 @MainActor
 private extension ChatRoomView {
+    /// 旁聊页顶栏标题。根还解不开时标题可能是空串，回落本地化「旁聊」。
+    private var sideChatBarTitle: String {
+        let title = timeline.sideChat?.title ?? ""
+        return title.isEmpty ? String(localized: .Chat.sideChat) : title
+    }
     private var roomContent: some View {
         Group {
             if let failure = timeline.failure {
@@ -84,13 +100,14 @@ private extension ChatRoomView {
         .safeAreaInset(edge: .top, spacing: 0) {
             // 顶栏下面这几行垫材质：列表从它们底下滚过去，不垫的话气泡里的字和它们叠在一起。
             VStack(spacing: 0) {
+                // 从上到下照 Telegram：插件横幅这类提醒在最上，旁聊标题或提示按在它下面，AI 那一行离内容最近。
+                if let plugin = model.viewModel.rooms.first(where: { $0.roomId == roomId })?.plugin {
+                    AgentPluginStatusBanner(plugin: plugin, model: plugins)
+                }
                 if threadRoot != nil {
                     if let state = timeline.sideChat?.state { SideChatHeaderLine(state: state) }
                 } else if model.noSideChatsRoom == roomId {
                     NoSideChatsHint()
-                }
-                if let plugin = model.viewModel.rooms.first(where: { $0.roomId == roomId })?.plugin {
-                    AgentPluginStatusBanner(plugin: plugin, model: plugins)
                 }
                 // 群里能用的 AI；私聊不显示，Bot 本来就在顶栏（ADR-0044）。
                 if threadRoot == nil, !isDirect {
@@ -118,23 +135,7 @@ private extension ChatRoomView {
             .environment(pages)
             .environment(plugins)
         }
-        .wontonSheet(isPresented: $pickingForwardRoom,
-            title: String(localized: .Message0.messageForwardTitle)) { close in
-            ForwardRoomSheet(model: model, plugins: plugins, rooms: forwardRooms) { targets in
-                close {
-                    guard let item = forwarding else { return }
-                    forwarding = nil
-                    // 只发给一个会话时跟过去看（原来的行为）；发给几个就留在这里，每个会话各发一次。
-                    if targets.count == 1, let only = targets.first {
-                        model.forward(item, from: roomId, to: only.roomId)
-                    } else {
-                        for room in targets {
-                            sendTimeline(.forwardMessage(target: target, itemId: item, toRoomId: room.roomId))
-                        }
-                    }
-                }
-            }
-        }
+        .forwardSheet(item: $forwarding, model: model, plugins: plugins, from: target)
         .navigationDestination(isPresented: $showsBotProfile) {
             if let profileBot {
                 BotProfileView(chat: model, plugins: plugins, botRef: profileBot, openPanel: openPanelFromProfile)
@@ -154,16 +155,17 @@ private extension ChatRoomView {
         )
         .environment(model.files)
         .environment(presenter)
-        // 开新旁聊的面板（ADR-0093 §6）。
+        // 开新旁聊的面板（ADR-0093 §6）。开成了以后旁聊页由面板的 `afterDismiss` 等面板收完再盖（见 SideChatCover），
+        // 两次系统呈现不撞在同一个时机上。
         .modifier(NewSideChatSheet(model: model, roomId: roomId))
-        // 盖层见 body 里的 SideChatCover：这里不另做系统呈现，免得和收起的“开新旁聊”面板撞在同一个呈现时机上。
+        // 盖层见 body 里的 SideChatCover（一张系统全屏页）；“开新旁聊”面板收起和它抬起来会落在同一个呈现时机上。
         .modifier(RoomTopBar(
             title: bot?.name ?? title,
             avatar: barAvatar,
             typing: typingText,
             openProfile: profileAction,
-            sideChatTitle: threadRoot == nil ? nil : timeline.sideChat?.title ?? String(localized: .Chat.sideChat),
-            close: threadRoot == nil ? nil : { model.closeSideChat(in: roomId) }
+            sideChatTitle: threadRoot == nil ? nil : sideChatBarTitle,
+            close: threadRoot == nil ? nil : { model.closeSideChat(in: roomId, why: "bar") }
         ) {
             // 面板跟着主对话（ADR-0093）：旁聊页没有房间的面板，也没有这里的按钮。
             // 房间里装着的 widget（通话）：点了全屏打开，关掉回到这里（ADR-0096）。旁聊页没有。
@@ -173,9 +175,11 @@ private extension ChatRoomView {
                     .frame(height: WontonTheme.size.chatControl)
                     .chatGlass(in: Capsule(), interactive: true)
             }
-            // 和 Bot 的私聊：点顶栏的头像或标题进它的资料页（ADR-0044、ADR-0109 第 8 节），不另放按钮。
+            // 和 Bot 的私聊：点顶栏的头像或标题进它的资料页（ADR-0044、ADR-0109 第 9 节），不另放按钮。
             if supportsSideChats {
-                ChatGlassButton(icon: .compose, label: String(localized: .Chat.sideChatNew)) {
+                ChatGlassButton(
+                    icon: .compose, label: String(localized: .Chat.sideChatNew), identifier: "sideChatNew"
+                ) {
                     model.composingSideChat = roomId
                 }
             } else {
@@ -183,24 +187,17 @@ private extension ChatRoomView {
             }
         })
         // 入口按钮压进这一页。房间也能从别的标签页打开，那边的导航栈不认聊天页的路由，所以在这里登记一次。
-        .navigationDestination(for: ChatRoute.self) { route in
-            if isContentRoot {
-                ChatDestination(model: model, plugins: plugins, route: route)
-                    .environment(\.wontonContentRoot, false)
-            } else if case .chatBackup = route {
-                ChatBackupView(model: model)
-                    .environment(\.wontonContentRoot, false)
-            }
-        }
+        .modifier(ChatRouteDestinations(model: model, plugins: plugins, isContentRoot: isContentRoot))
         // 留着标签栏时，键盘弹出后输入框和发送按钮被盖在键盘下面（iOS 26.5 模拟器实测）。
         .toolbar(.hidden, for: .tabBar)
         .task(id: model.draftKey(target)) { await model.loadDraft(target) }
         .task(id: model.draftKey(target)) { await composer.observe() }
         .task(id: timeline.attempt) {
-            if await timeline.observe(pin: pin) {
+            let ended = await timeline.observe(pin: pin)
+            if ended {
                 if threadRoot != nil {
                     // 旁聊没了：只收起旁聊，主对话还在。
-                    model.closeSideChat(in: roomId)
+                    model.closeSideChat(in: roomId, why: "ended")
                 } else if !isContentRoot {
                     model.path = []
                     model.visiting = nil
@@ -217,7 +214,7 @@ private extension ChatRoomView {
                 }
             } else if model.sideChats[roomId] == threadRoot {
                 // 旁聊页收起时同步关掉：改回主对话就不再算“旁聊开着”。
-                model.closeSideChat(in: roomId)
+                model.closeSideChat(in: roomId, why: "gone")
             }
         }
         .onChange(of: covered) { _, isCovered in
@@ -238,6 +235,9 @@ private extension ChatRoomView {
                     selectedConfirmation = nil
                     showingConfirmations = true
                 }
+                if let notice = botChatNotice {
+                    BotChatNoticeRow(text: notice)
+                }
                 if !isReadOnly, threadRoot == nil, onboarding.viewModel.defaultBotVisibility == .visible,
                    let bot = onboarding.viewModel.defaultBotUserId,
                    model.viewModel.rooms.first(where: { $0.roomId == roomId })?.directUserId == bot,
@@ -254,8 +254,16 @@ private extension ChatRoomView {
                     model: model, composer: composer, pin: pin,
                     commands: timeline.commands, commandsOmitted: Int(timeline.commandsOmitted),
                     commandAvatar: { commandAvatar($0) },
-                    jumpToReply: { replyJump($0) }
+                    jumpToReply: { replyJump($0) },
+                    menuOpen: commandMenuOpen,
+                    openChanged: { commandMenuOpen = $0 },
+                    editing: timeline.editing,
+                    isEnabled: canSend,
+                    disabledProblem: sendBlockedProblem
                 )
+                .onGeometryChange(for: CGFloat.self) { $0.frame(in: .global).minY } action: { top in
+                    pin.noteComposer(top: top)
+                }
             }
         }
     }
@@ -294,9 +302,10 @@ private extension ChatRoomView {
                 // 进房间时列表从头排起，这一行一定会出现。
                 .background(EnclosingScrollView { pin.attach($0) })
                 .timelineListRow()
+                let groups = imageGroups
                 ForEach(Array(timeline.items.enumerated()), id: \.element.id) { index, item in
                     // 做完了又没什么可写的 Agent 状态行不占一行。
-                    if !item.isBlankAgentRun { row(item, at: index) }
+                    if !item.isBlankAgentRun { row(item, at: index, groups: groups) }
                 }
                 // 点了发送、还没交出去的消息（ADR-0094）跟在最后一条后面；交出去后由时间线里的本地回显代替。
                 ForEach(composer.outgoing, id: \.id) { message in
@@ -305,6 +314,8 @@ private extension ChatRoomView {
                         .timelineListRow()
                 }
             }
+            // 时间线变了（删了一张、发出去了）：查看器里那组跟着重取，别停在已经不存在的照片上。
+            .onChange(of: timeline.items.map(\.id)) { _, _ in presenter.refreshOriginal(imageGroups) }
             .listStyle(.plain)
             .coordinateSpace(name: "timelineViewport")
             .task(id: PageRequest(timeline)) {
@@ -381,7 +392,7 @@ private extension ChatRoomView {
             // 停在别处时的“向下”：数字是离开底部后到的消息数（ADR-0071）。跳过原消息的先回到跳之前那一条，
             // 栈空了才到底（ADR-0109 第 4 节）。
             .overlay(alignment: .bottomTrailing) {
-                if case let .away(newMessages) = timeline.viewport {
+                if case let .away(newMessages) = timeline.viewport, !commandMenuOpen {
                     ScrollToBottomButton(count: Int(newMessages)) {
                         if timeline.backTo != nil {
                             sendTimeline(.jumpBack(target: target))
@@ -394,7 +405,30 @@ private extension ChatRoomView {
         }
     }
 
-    private func row(_ item: TimelineItem, at index: Int) -> some View {
+    /// 这一条属于哪一组的多张照片；不属于时 nil。
+    private func photoGroup(_ content: TimelineContent, _ groups: [PhotoGroupKey: [ImageContent]]) -> PhotoGroup? {
+        guard case let .message(message) = content, let group = message.group else { return nil }
+        let key = PhotoGroupKey(senderId: message.senderId, id: group.id)
+        guard let images = groups[key] else { return nil }
+        return PhotoGroup(senderId: message.senderId, id: group.id, images: images)
+    }
+
+    /// 一次发送里的照片按组收好（只有一张的组也收），给查看器翻页和删除后重取用。
+    private var imageGroups: [PhotoGroupKey: [ImageContent]] {
+        var byGroup: [PhotoGroupKey: [(index: UInt32, image: ImageContent)]] = [:]
+        for item in timeline.items {
+            guard case let .message(message) = item.content,
+                  let group = message.group,
+                  case let .image(image) = message.body else { continue }
+            let key = PhotoGroupKey(senderId: message.senderId, id: group.id)
+            byGroup[key, default: []].append((group.index, image))
+        }
+        return byGroup.mapValues { members in
+            members.sorted { $0.index < $1.index }.map(\.image)
+        }
+    }
+
+    private func row(_ item: TimelineItem, at index: Int, groups: [PhotoGroupKey: [ImageContent]]) -> some View {
         let flushesPrevious = index > 0 && timeline.items[index - 1].flushesWith(next: item)
         let flushesNext = index + 1 < timeline.items.count && item.flushesWith(next: timeline.items[index + 1])
         return TimelineRow(
@@ -404,10 +438,8 @@ private extension ChatRoomView {
             cancel: { sendTimeline(.cancelSend(target: target, itemId: item.id)) },
             cardAction: { model.send($0) },
             reply: { model.startReply(.ready(message: $0), in: target) },
-            forward: {
-                forwarding = item.id
-                pickingForwardRoom = true
-            },
+            edit: { text in model.startEdit(text, itemId: item.id, in: target) },
+            forward: { forwarding = item.id },
             redact: {
                 redactItem = item.id
                 showingRedact = true
@@ -425,6 +457,7 @@ private extension ChatRoomView {
             },
             isJumping: timeline.jump == .loading && jump.from == item.id,
             avatar: isDirect ? nil : { senderAvatar($0) },
+            photoGroup: photoGroup(item.content, groups),
             onOpenSideChat: { model.openSideChat($0, in: roomId) }
         )
         .id(item.id)
@@ -449,57 +482,8 @@ private extension ChatRoomView {
     }
 }
 
-/// 跳到原消息在壳这边的状态（ADR-0109 第 4 节）；定位、返回栈都在核心。
-private struct TimelineJumpState {
-    /// 点的是哪一条的引用：核心往前翻页时在它上面画加载。
-    var from: String?
-    /// 刚跳到、要闪一下的那一行，和这是第几次跳。
-    var flash: (itemId: String, revision: Int)?
-    /// 原消息找不到的次数：每多一次，轻提示再出一回。
-    var missing = 0
-    var showsMissing = false
-}
-
 @MainActor
 private extension ChatRoomView {
-    /// 核心说滚到哪条就把哪条摆到可视区中部；跳到原消息时那一行闪一下，闪完把记号清掉（不然这一行滚出去再回来会再闪）。
-    func focus(_ scroller: ScrollViewProxy) {
-        guard let focus = timeline.focus else { return }
-        let revision = timeline.focusRevision
-        jump.from = nil
-        pin.unpin()
-        settle(focus.itemId, at: .center, scroller, corrections: Self.focusCorrections) {
-            guard focus.highlight, revision == timeline.focusRevision else { return }
-            jump.flash = (focus.itemId, revision)
-            let lit = WontonTheme.motion.jumpHighlight + WontonTheme.motion.panel
-            DispatchQueue.main.asyncAfter(deadline: .now() + lit) {
-                if jump.flash?.revision == revision { jump.flash = nil }
-            }
-        }
-    }
-
-    /// 离得远的行还没量过高度，第一次滚到的位置按估算的行高算、会偏：等这一轮排完再对几次。
-    /// 滚之前先看这条还在不在：`scrollTo` 找不到条目会越界崩掉（见 BottomPin）。
-    /// 主人自己滚走了（贴底了，或者在拖）就不再对。
-    func settle(
-        _ itemId: String, at anchor: UnitPoint, _ scroller: ScrollViewProxy, corrections: Int,
-        after delay: TimeInterval = 0, done: @escaping () -> Void
-    ) {
-        DispatchQueue.main.asyncAfter(deadline: .now() + delay) {
-            guard !pin.isPinned, !pin.isTouched,
-                  timeline.items.contains(where: { $0.id == itemId }) else { return }
-            scroller.scrollTo(itemId, anchor: anchor)
-            guard corrections > 0 else { return done() }
-            settle(
-                itemId, at: anchor, scroller, corrections: corrections - 1, after: WontonTheme.motion.feedback,
-                done: done
-            )
-        }
-    }
-
-    /// 滚到一条之后再对几次位置。
-    static var focusCorrections: Int { 2 }
-
     /// 可见区最上面那条消息的发送时间：浮动的日期胶囊写它的日期。
     var topVisibleTimestamp: UInt64? {
         guard let top = visibleRows.min(by: { $0.value < $1.value })?.key,
@@ -540,7 +524,7 @@ private extension ChatRoomView {
             pin.unpin()
             guard timeline.items.contains(where: { $0.id == savedAnchor }) else { return }
             let anchor = savedAnchor
-            settle(anchor, at: .top, scroller, corrections: Self.focusCorrections) {}
+            settle(anchor, at: .top, scroller, corrections: Self.placeCorrections) {}
             DispatchQueue.main.async {
                 guard timeline.items.contains(where: { $0.id == anchor }) else { return }
                 placed = true
@@ -552,7 +536,7 @@ private extension ChatRoomView {
            timeline.items.contains(where: { $0.id == anchor }) {
             pin.unpin()
             // 列表还没排完时这一次滚动不生效，停在最上面（iOS 26.5 模拟器 2026-11-19 实测，六次进房间有一次）：再对几次。
-            settle(anchor, at: .top, scroller, corrections: Self.focusCorrections) {}
+            settle(anchor, at: .top, scroller, corrections: Self.placeCorrections) {}
             DispatchQueue.main.async {
                 placed = true
                 reportPosition(false)
@@ -634,7 +618,7 @@ private extension ChatRoomView {
         )
     }
 
-    /// 顶栏状态行的“正在输入…”（ADR-0109 第 7 节）：私聊不写名字，群里写第一个人，多人时加“和另外 N 人”。
+    /// 顶栏状态行的“正在输入…”（ADR-0109 第 8 节）：私聊不写名字，群里写第一个人，多人时加“和另外 N 人”。
     /// 谁在输入、什么时候算停都由核心给。
     var typingText: String? {
         guard let first = timeline.typing.first else { return nil }
@@ -645,13 +629,61 @@ private extension ChatRoomView {
             : String(localized: .Chat.roomTypingMany(first, others))
     }
 
-    /// 可以转发到的房间：已加入、能写。
-    var forwardRooms: [RoomRow] {
-        model.viewModel.rooms.filter { $0.membership == .joined && !$0.isReadOnly }
-    }
-
     var isReadOnly: Bool {
         model.viewModel.rooms.first { $0.roomId == roomId }?.isReadOnly ?? false
+    }
+
+    /// 这个私聊的 Bot 现在能不能聊；房间里没这条事实时退回 Bot 列表，普通人私聊为空。
+    var botChat: BotChatAvailability? {
+        let row = model.viewModel.rooms.first { $0.roomId == roomId }
+        if let chat = row?.botChat { return chat }
+        return row?.directUserId.flatMap { user in
+            model.viewModel.bots.first { $0.userId == user }?.availability
+        }
+    }
+
+    /// 不能聊时输入框上方写一句为什么；能用或不是 Bot 时为空。
+    var botChatNotice: LocalizedStringResource? {
+        guard let availability = botChat else { return nil }
+        switch availability {
+        case .available:
+            return nil
+        case let .unavailable(reason):
+            switch reason {
+            case .otherPrivateBot: return .Chat.roomBotOtherPrivate
+            case .grantNotActive: return .Chat.roomBotGrantRevoked
+            default: return .Chat.roomBotUnavailable
+            }
+        case .unknown:
+            return .Chat.roomBotUnknown
+        }
+    }
+
+    /// 确定的不能用才拦发送；资格未知（离线、老核心）照常发，进离线队列。
+    var canSend: Bool {
+        guard let availability = botChat else { return true }
+        if case .unavailable = availability { return false }
+        return true
+    }
+
+    var sendBlockedProblem: Problem? {
+        guard !canSend, let notice = botChatNotice else { return nil }
+        return Problem(title: String(localized: notice))
+    }
+}
+
+/// 不能聊时输入框上方的一句话；房间和历史照留，只是不发。
+private struct BotChatNoticeRow: View {
+    let text: LocalizedStringResource
+    @Environment(\.wontonColors) private var colors
+
+    var body: some View {
+        Text(text)
+            .wontonText(WontonTheme.typography.body)
+            .foregroundStyle(Color(colors.textSecondary))
+            .frame(maxWidth: .infinity, alignment: .leading)
+            .padding(.horizontal, WontonTheme.spacing.pageInset)
+            .padding(.vertical, WontonTheme.spacing.s4)
     }
 }
 
@@ -672,7 +704,7 @@ private extension TimelineItem {
         return WontonTheme.spacing.runGap / 2
     }
 
-    /// 气泡那一行贴近屏幕边（ADR-0109 第 8 节），其余的行照页面的边距。
+    /// 气泡那一行贴近屏幕边（ADR-0109 第 9 节），其余的行照页面的边距。
     var sideInset: CGFloat {
         if case .message = content { return WontonTheme.spacing.bubbleEdge }
         return WontonTheme.spacing.pageInset
@@ -768,5 +800,24 @@ private extension ChatRoomView {
             default: true
             }
         }?.id
+    }
+}
+
+/// 聊天页登记导航路由。旁聊页有自己的栈（盖层里），各登记一次互不影响。
+struct ChatRouteDestinations: ViewModifier {
+    let model: ChatModel
+    let plugins: PluginsModel
+    let isContentRoot: Bool
+
+    func body(content: Content) -> some View {
+        content.navigationDestination(for: ChatRoute.self) { route in
+            if isContentRoot {
+                ChatDestination(model: model, plugins: plugins, route: route)
+                    .environment(\.wontonContentRoot, false)
+            } else if case .chatBackup = route {
+                ChatBackupView(model: model)
+                    .environment(\.wontonContentRoot, false)
+            }
+        }
     }
 }

@@ -1,5 +1,7 @@
 <?xml version="1.0" encoding="utf-8"?>
 <resources>
+    <!-- Keep the fictional example in wrapping help, not the single-line input prompt. -->
+    <string name="friends_add_help">Ask them for their full friend address; in Wonton, they can copy the link from “Add → My QR code” after the Friends page loads successfully.\nFormat only, not a real account: @bob:example.org</string>
     <!-- Title of the friends page and the settings row that opens it. -->
     <string name="friends_title">Friends</string>
     <!-- Row in the add-friend sheet that opens the scan page. -->

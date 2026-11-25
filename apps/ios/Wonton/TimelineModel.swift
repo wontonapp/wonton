@@ -17,6 +17,10 @@ final class TimelineModel {
     private(set) var notice: KeyNotice?
     /// 时间线被清空重建的次数：重建的 Reset 里带新落点，视图要重新摆。
     private(set) var generation = 0
+    /// 走查用（DEBUG）：订阅任务进来了几次、收到了几批，挂在 `ScrollDebug` 的自述里。
+    private(set) var debugSubscribes = 0
+    private(set) var debugUpdates = 0
+    private(set) var debugEnded = ""
     /// 房间面板里的页面（ADR-0052）：列表为空时壳画大加号。每一批都带当前值。
     private(set) var panel: [PanelItem] = []
     /// 房间面板上次看的那一页（本机记住，不同步）。
@@ -29,6 +33,8 @@ final class TimelineModel {
     /// 群里在场的 AI（本账号认识的 Bot 的 Matrix 用户 ID）；私聊不算。nil 是成员名单还没取全、
     /// 在场的算不准，别下“群里没有 AI”的结论；空列表才是确定没有。
     private(set) var roomBots: [String]?
+    /// 输入框正在编辑哪条（ADR-0109 第 10 节）；不在编辑时为空。
+    private(set) var editing: ComposerEdit?
     /// 正在输入的人的显示名，不含自己（ADR-0109）。
     private(set) var typing: [String] = []
     /// 房间里各 Bot 的斜杠命令和被截掉的条数（ADR-0054、ADR-0109）：空的时候没有“菜单”按钮，敲“/”也不弹列表。
@@ -59,6 +65,7 @@ final class TimelineModel {
     /// 在视图的 `.task` 里调用：订阅时间线，视图消失时订阅随之结束。
     func observe(pin: BottomPin) async -> Bool {
         failure = nil
+        debugSubscribes += 1
         let subscription: TimelineSubscription
         do {
             subscription = try await core.subscribeTimeline(
@@ -76,12 +83,22 @@ final class TimelineModel {
         guard !Task.isCancelled else { return false }
         for await update in subscription.updates() {
             guard !Task.isCancelled else { break }
+            debugUpdates += 1
+            walkLog.notice(
+                "update diffs=\(update.diffs.count, privacy: .public) have=\(self.items.count, privacy: .public)"
+            )
             apply(update, pin: pin)
         }
+        // 走查：订阅结束的原因（取消还是自己断了），挂在 `ScrollDebug` 里。
+        debugEnded = Task.isCancelled ? "cancelled" : "ended"
+        walkLog.notice(
+            "timeline ended cancelled=\(Task.isCancelled, privacy: .public) room=\(self.roomId, privacy: .public)"
+        )
         if !Task.isCancelled {
             failure = Problem(title: String(localized: .Problem1.problemGenericTitle))
         }
-        return !Task.isCancelled
+        // 先不弹回列表：页留着才能读到 `roomScroll` 里的原因。
+        return false
     }
 
     func setScroll(_ scroll: TimelineScroll) {
@@ -95,6 +112,7 @@ final class TimelineModel {
         for diff in update.diffs {
             apply(diff)
         }
+        editing = update.editing
         backPagination = update.backPagination
         confirmations = update.confirmations
         viewport = update.viewport

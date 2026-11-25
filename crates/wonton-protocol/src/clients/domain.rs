@@ -8,10 +8,16 @@ use crate::SecretString;
 #[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize)]
 #[cfg_attr(feature = "uniffi", derive(uniffi::Record))]
 pub struct DomainSettings {
-    /// 入口用的后缀；还没配时为空。
+    /// 入口用的后缀，整串（如 `alice.808cbd.com` 或自己的域名）；还没配时为空。
     pub suffix: Option<String>,
     /// 装机时用了自己的域名（它同时是 Matrix 服务器名）时为假：后缀改不了，只能换服务商和凭据。
     pub suffix_editable: bool,
+    /// 家名服务给的户名（如 `alice`）；自己域名时为空。装好后不能改。
+    #[serde(default)]
+    pub home: Option<String>,
+    /// 户名后面那一段服务方的尾巴（如 `808cbd.com`）；和 `home` 用点拼成服务器名。自己域名时为空。
+    #[serde(default)]
+    pub tail: Option<String>,
     /// lego 的服务商代码；没配时为空。
     pub provider: Option<String>,
     /// 服务商的凭据已经存过；只写不读。

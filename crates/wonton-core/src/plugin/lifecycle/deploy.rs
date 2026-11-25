@@ -5,6 +5,8 @@ use std::sync::Arc;
 use tokio::time::Instant;
 use wonton_protocol::InstallStage;
 
+use super::super::health_gate::Wait;
+use super::super::install_failure::RetryInstall;
 use super::super::languages::Languages;
 use super::super::manager::{Deployed, InstallError, PluginManager};
 use super::super::manifest::{Manifest, Permission};
@@ -29,6 +31,7 @@ impl PluginManager {
         enabled: &[EnabledPermission],
         grants: Grants,
         settings: std::collections::BTreeMap<String, serde_json::Value>,
+        retry: Option<&RetryInstall>,
         langs: &Languages,
     ) -> Result<(Deployed, Undo), InstallError> {
         let _allocating = self.bot_allocation.lock().await;
@@ -54,7 +57,14 @@ impl PluginManager {
                     cleanup_result = "pending", "Plugin installation failed; starting rollback");
                 undo.keep_bot_data();
                 let failures = self.rollback(undo, langs).await;
-                self.installation_failed(id, &error, stage, failures.clone(), None, langs);
+                self.installation_failed(
+                    id,
+                    &error,
+                    stage,
+                    failures.clone(),
+                    retry.cloned(),
+                    langs,
+                );
                 Err(self.install_rollback_error(error, failures, langs))
             }
         }
@@ -116,20 +126,19 @@ impl PluginManager {
         }
         self.sync_bot_web_clients(manifest, &ctx).await?;
         self.rewrite_image_healthchecks(&ctx, &mut plan).await?;
-        let deadline =
-            super::super::health_gate::deadline(&plan, ctx.install_limit, Instant::now());
+        let wait = super::super::health_gate::deadline(&plan, ctx.install_limit, Instant::now());
         self.stage(&manifest.id, InstallStage::Starting);
         let health = Box::pin(self.start_containers(
             Some(manifest),
             &plan,
             Some(&manifest.id),
             undo,
-            deadline,
+            wait,
             langs,
         ))
         .await?;
         let (upstream, models, mcp) = self
-            .started_upstreams(manifest, &plan, &mut secrets, undo, deadline, langs)
+            .started_upstreams(manifest, &plan, &mut secrets, undo, wait, langs)
             .await?;
         let firewalled = self
             .host_webui_firewalled(manifest, &plan.relays, &plan.network)
@@ -195,6 +204,7 @@ impl PluginManager {
             relays: plan.relays.clone(),
             firewalled,
             proxied: ctx.egress.is_some(),
+            bundled: false,
             oidc_client_secret: oidc_secret,
             installed_at: super::super::manager::now_secs(),
             entry_label: self.install_entry_label(&manifest.id)?,
@@ -219,11 +229,11 @@ impl PluginManager {
         plan: &Deployment,
         secrets: &mut Secrets,
         undo: &mut Undo,
-        deadline: Instant,
+        wait: Wait,
         langs: &Languages,
     ) -> Result<(Option<Endpoint>, Option<ModelsRoute>, Option<McpTarget>), InstallError> {
         let upstreams = self
-            .deploy_upstreams(manifest, &plan.network, secrets, deadline, langs)
+            .deploy_upstreams(manifest, &plan.network, secrets, wait, langs)
             .await?;
         if let Some((_, _, bot)) = &undo.bot {
             undo.handed_over = self.hand_over_home_room(&self.cfg.owner, bot).await?;

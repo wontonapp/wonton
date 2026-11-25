@@ -137,13 +137,13 @@ async fn replied_message(room: &Room, event: TimelineEvent) -> Result<RepliedMes
     })
 }
 
-/// 本机事件缓存里有就用，没有向服务器要。服务器说这个房间里没有这条（不存在、在别的房间）时是输入非法。
+/// 本机事件缓存里有就用，没有向服务器要。服务器说这个房间里没有这条（不存在、在别的房间）时是要回复的那条不在了。
 pub(crate) async fn load_event(room: &Room, event_id: &EventId) -> Result<TimelineEvent> {
     room.load_or_fetch_event(event_id, None)
         .await
         .map_err(|error| {
             if error.client_api_error_kind() == Some(&ErrorKind::NotFound) {
-                Error::InvalidInput(format!("这个房间里没有事件 {event_id}"))
+                Error::ReplyTarget(format!("这个房间里没有事件 {event_id}"))
             } else {
                 (&error).into()
             }

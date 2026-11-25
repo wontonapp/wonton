@@ -44,6 +44,7 @@ import androidx.compose.ui.text.input.KeyboardCapitalization
 import androidx.compose.ui.text.style.TextOverflow
 import app.wonton.client.ClientCore
 import app.wonton.protocol.Action
+import app.wonton.protocol.AppLink
 import app.wonton.protocol.ChatAction
 import app.wonton.protocol.ChatAccount
 import app.wonton.protocol.ChatContact
@@ -95,6 +96,7 @@ fun ChatRoute(
     navigation: ChatNavigation,
     plugins: PluginsState,
     pluginNavigation: PluginNavigation,
+    onAppLink: (AppLink) -> Unit,
     onOpenApps: () -> Unit,
 ) {
     val updates = remember(core) { core.chatUpdates() }
@@ -158,8 +160,8 @@ fun ChatRoute(
             }
             val row = viewModel.rooms.firstOrNull { it.roomId == room }
             val context = LocalContext.current
-            val opener = remember(core, navigation, context, scope) {
-                AndroidLinkOpener(context, core, navigation, scope) { rejection = it }
+            val opener = remember(core, navigation, context, scope, onAppLink) {
+                AndroidLinkOpener(context, core, navigation, scope, onAppLink) { rejection = it }
             }
             CompositionLocalProvider(LocalLinkOpener provides opener) {
                 OpenRoom(core, navigation, room, row, viewModel, plugins, onAction) { rejection = it }

@@ -2,8 +2,9 @@ import XCTest
 
 /// 聊天面板按钮（ADR-0052）的走屏：空面板第 1 级、有页面第 2 级、展开后换级与胶囊退出。
 ///
-/// 要连家里的服务器（开发栈）：外部传 `PAIRING_CODE`（`deploy/dev/core/dev.sh pair <地址>` 打出的配对码），
-/// App 启动时交给核心配对（`WontonApp` 的 `WONTON_DEV_PAIRING_CODE`），没有就跳过。
+/// 默认用 `WONTON_UI_FAKE` 的假数据，夜跑带了配对码也一样：房间里的用例不依赖开发栈装没装 Bot。
+/// 要真插件页的用例连开发栈，外部传 `PAIRING_CODE`（`deploy/dev/core/dev.sh pair <地址>` 打出的配对码），
+/// App 启动时交给核心配对（`WontonApp` 的 `WONTON_DEV_PAIRING_CODE`）；没给码时这几条跳过。
 final class ChatPanelUITests: XCTestCase {
     private var app: XCUIApplication!
 
@@ -12,7 +13,7 @@ final class ChatPanelUITests: XCTestCase {
     }
 
     func testPanelButtonLevelsAndCapsule() throws {
-        try launch()
+        try launch(needsStack: true)
         shot("01-list")
         let panel = app.otherElements["chatPanel"]
         XCTAssertFalse(panel.exists, "面板一开始就是开的")
@@ -55,7 +56,10 @@ final class ChatPanelUITests: XCTestCase {
     func testCapsuleStaysAfterBackground() throws {
         XCUIDevice.shared.appearance = .dark
         defer { XCUIDevice.shared.appearance = .light }
-        try launch(arguments: ["-UIPreferredContentSizeCategoryName", "UICTContentSizeCategoryAccessibilityXXXL"])
+        try launch(
+            arguments: ["-UIPreferredContentSizeCategoryName", "UICTContentSizeCategoryAccessibilityXXXL"],
+            needsStack: true
+        )
         openPanel()
         XCTAssertTrue(app.buttons["panelAdd"].waitForExistence(timeout: 10), "空面板加号没出来")
         app.buttons["panelAdd"].tap()
@@ -87,7 +91,7 @@ final class ChatPanelUITests: XCTestCase {
 
     func testRoomPanelButtonAndExpandedGestures() throws {
         try launch()
-        XCTAssertNotNil(enterBotRoom(), "没进 Bot 的房间（开发栈默认装 Hermes，或先装回声 Bot）")
+        XCTAssertNotNil(enterBotRoom(), "没进 Bot 的房间（假数据里是 Echo，开发栈里是 Hermes）")
 
         let panel = app.otherElements["chatPanel"]
         openPanel()
@@ -120,6 +124,8 @@ final class ChatPanelUITests: XCTestCase {
         XCTAssertTrue(panel.waitForExistence(timeout: 5), "Home panel button did not open")
     }
 
+    /// 房间里往下往上滚都不打开面板，只有 Bot 资料页里的入口打开。（#556 报的是这条：改用资料页入口以后它换了名字，
+    /// issue 和夜跑里还写着旧的 `testRoomPullFromBottom`。）
     func testRoomScrollingNeverOpensPanel() throws {
         try launch()
         XCTAssertNotNil(enterBotRoom())
@@ -171,7 +177,7 @@ final class ChatPanelUITests: XCTestCase {
     }
 
     func testChatMaterialUnderlapAndPanelSeam() throws {
-        try launch()
+        try launch(needsStack: true)
         guard let field = enterBotRoom() else { return XCTFail("Bot room unavailable") }
         field.tap()
         field.typeText(String(repeating: "Material underlap sample: long message with several lines. ", count: 30))
@@ -210,16 +216,20 @@ final class ChatPanelUITests: XCTestCase {
     func testLastMessageClearsComposer() throws {
         try launch(arguments: ["-UIPreferredContentSizeCategoryName", "UICTContentSizeCategoryAccessibilityL"])
         guard let field = enterBotRoom() else {
-            return XCTFail("没进 Bot 的房间（开发栈默认装 Hermes，或先装回声 Bot）")
+            return XCTFail("没进 Bot 的房间（假数据里是 Echo，开发栈里是 Hermes）")
         }
         field.tap()
         field.typeText(String(repeating: "long reply text ", count: 30))
-        tapAnyButton(["Send", "发送"], timeout: 5, required: true)
+        let send = app.buttons["composerSend"]
+        XCTAssertTrue(send.waitForExistence(timeout: 5), "打了字没有发送键")
+        send.tap()
         Thread.sleep(forTimeInterval: 2)
         shot("29-after-send")
         let sent = frames(list: app.collectionViews.firstMatch, field: field)
         attach("after-send \(sent) \(scrollState())")
 
+        // 点发送会收起键盘，再打草稿得先点回输入框；不点回来，下面量的是没键盘的可见区。
+        field.tap()
         field.typeText(String(repeating: "draft ", count: 40))
         Thread.sleep(forTimeInterval: 2)
         shot("30-composer-grown")
@@ -240,13 +250,27 @@ extension ChatPanelUITests {
 
     // MARK: - 摆台
 
-    private func launch(arguments: [String] = []) throws {
-        try UITestBackend.require()
+    /// 整套前置。要真后端的用例传 `needsStack: true`：没有 `PAIRING_CODE` 就跳过，有就配上真开发栈。
+    /// 其余用例一律用假数据（`WONTON_UI_FAKE`），夜跑带了配对码也不连后端：房间里的用例不该依赖开发栈装没装 Bot。
+    private func launch(arguments: [String] = [], needsStack: Bool = false) throws {
         app = XCUIApplication()
         app.launchArguments += arguments
-        try UITestBackend.passPairingCode(to: app)
+        if needsStack {
+            try UITestBackend.require()
+            try UITestBackend.passPairingCode(to: app)
+        } else {
+            // 假数据界面是英文；每次一个干净的数据目录，不恢复上一次的场景状态（房间记着上次看到哪一条）。
+            app.launchArguments += [
+                "-AppleLanguages", "(en)", "-AppleLocale", "en_US", "-ApplePersistenceIgnoreState", "YES"
+            ]
+            app.launchEnvironment["WONTON_UI_FAKE"] = "1"
+            app.launchEnvironment["WONTON_DEV_DATA_SUFFIX"] = UUID().uuidString
+            // 交接走没走完也看测试探针，否则 `settleKeyHandoff` 要白等满超时。
+            UITestBackend.enableStateProbe(to: app)
+        }
+
         app.launch()
-        if app.launchEnvironment["WONTON_DEV_PAIRING_CODE"] != nil {
+        if needsStack {
             XCTAssertTrue(waitPaired(timeout: 90), "配对没完成（配对码过期、用过或连不上开发栈）")
         }
         // 落点二选一：引导页、已配对直进的聊天列表。
@@ -260,7 +284,8 @@ extension ChatPanelUITests {
         passOnboarding()
         UITestBackend.settleKeyHandoff(app)
         XCTAssertTrue(app.scrollViews.firstMatch.waitForExistence(timeout: 20), "没到聊天页")
-        clearPanelPages()
+        // 面板页面存在账号数据里，同一账号前一用例加的页会留到下一用例；假数据每次启动都是初态。
+        if needsStack { clearPanelPages() }
     }
 
     /// 面板页面存在账号数据里，同一账号前一用例加的页会留到下一用例。用例开头都要空面板，先删干净。
@@ -348,6 +373,10 @@ extension ChatPanelUITests {
         avatar.tap()
         let entry = app.buttons["botProfilePanelOpen"]
         XCTAssertTrue(entry.waitForExistence(timeout: 5), "Bot 资料页没有打开面板的按钮\n\(app.debugDescription)")
+        // 资料页上面是头像、状态、网页入口和收起的详情，按钮在下面。
+        for _ in 0..<4 where !entry.isHittable {
+            app.swipeUp()
+        }
         entry.tap()
     }
 

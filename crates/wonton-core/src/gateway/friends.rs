@@ -1,4 +1,5 @@
-//! 好友名单和整台服务器的联邦黑名单（ADR-0051 的“好友”“挡垃圾”）。
+//! 好友名单和整台服务器的联邦黑名单（ADR-0051 的“好友”“挡垃圾”）。每个好友记一个角色
+//! （ADR-0088），分享按这个角色能打开的应用算。
 //!
 //! 名单归主人（ADR-0051）：写接口只给主人设备，家人的好友留在客户端本机清单（列表里的 `owner_scope` 为假）。
 //!
@@ -7,12 +8,9 @@
 //!
 //! | 方法 | 路径 | 说明 |
 //! | --- | --- | --- |
-//! | GET | `/_wonton/api/friends` | 好友、分组、黑名单里的服务器 |
+//! | GET | `/_wonton/api/friends` | 好友（带角色）、黑名单里的服务器 |
 //! | PUT | `/_wonton/api/friends/{user_id}` | 记下同意的好友，请求体是 `{"display_name":…}` |
 //! | DELETE | `/_wonton/api/friends/{user_id}` | 删好友（插件授权的收回见分享模块） |
-//! | PUT | `/_wonton/api/friends/{user_id}/groups` | 整份替换分组，`{"groups":[…]}` |
-//! | POST | `/_wonton/api/friend-groups` | 建组，`{"id":…,"name":…}`；`id` 为空表示新建 |
-//! | DELETE | `/_wonton/api/friend-groups/{id}` | 删组 |
 //! | POST | `/_wonton/api/federation-blocks/{server_name}` | 拉黑整台服务器，只有主人 |
 //! | DELETE | `/_wonton/api/federation-blocks/{server_name}` | 撤销拉黑 |
 //!
@@ -40,18 +38,6 @@ use crate::matrix::ADMIN_LOCALPART;
 pub struct FriendAccept {
     #[serde(default)]
     pub display_name: Option<String>,
-}
-
-#[derive(Debug, Clone, Default, PartialEq, Eq, Serialize, Deserialize)]
-pub struct FriendGroups {
-    pub groups: Vec<String>,
-}
-
-#[derive(Debug, Clone, Default, PartialEq, Eq, Serialize, Deserialize)]
-pub struct FriendGroupSave {
-    #[serde(default)]
-    pub id: Option<String>,
-    pub name: String,
 }
 
 /// 认设备的人：只给经隧道接入的已配对设备，不接受别的网页发来的请求。
@@ -109,7 +95,7 @@ fn friends_error(error: FriendsError) -> Response {
             };
             error_response(StatusCode::BAD_REQUEST, kind, &message)
         }
-        FriendsError::NotFound(message) | FriendsError::GroupNotFound(message) => {
+        FriendsError::NotFound(message) => {
             error_response(StatusCode::NOT_FOUND, "request_not_found", &message)
         }
         FriendsError::UsernameTaken(name) => error_response(
@@ -142,7 +128,7 @@ fn view(gateway: &Gateway, person: &super::Person) -> FriendsList {
                 .map(|record| FriendRow {
                     user_id: record.user_id.clone(),
                     display_name: record.display_name.clone(),
-                    groups: record.groups.clone(),
+                    role_id: record.role_id.clone(),
                     shared_plugins: gateway
                         .sharing
                         .as_ref()
@@ -152,10 +138,6 @@ fn view(gateway: &Gateway, person: &super::Person) -> FriendsList {
                 })
                 .collect()
         })
-        .unwrap_or_default();
-    let groups = snapshot
-        .as_ref()
-        .map(|snapshot| snapshot.groups.clone())
         .unwrap_or_default();
     let removed = snapshot
         .as_ref()
@@ -175,7 +157,6 @@ fn view(gateway: &Gateway, person: &super::Person) -> FriendsList {
         .unwrap_or_default();
     FriendsList {
         friends,
-        groups,
         removed,
         blocked_servers: gateway
             .federation_blocks
@@ -277,109 +258,6 @@ pub async fn remove(
     };
     match friends.remove(&user_id, now_ms()) {
         Ok(_) => StatusCode::NO_CONTENT.into_response(),
-        Err(error) => friends_error(error),
-    }
-}
-
-pub async fn set_groups(
-    State(gateway): State<Arc<Gateway>>,
-    peer: Option<Extension<TunnelPeer>>,
-    Path(user_id): Path<String>,
-    headers: HeaderMap,
-    body: Bytes,
-) -> Response {
-    let person = match person_denied(&gateway, peer, &headers) {
-        Ok(person) => person,
-        Err(denied) => return denied,
-    };
-    if let Some(denied) = friend_guard(
-        &gateway,
-        &person,
-        wonton_protocol::PermissionItem::AddFriends,
-    ) {
-        return denied;
-    }
-    let Some(friends) = gateway.friends() else {
-        return error_response(
-            StatusCode::SERVICE_UNAVAILABLE,
-            "unavailable",
-            "没有好友名单",
-        );
-    };
-    let groups: FriendGroups = match parse(&body) {
-        Ok(groups) => groups,
-        Err(response) => return *response,
-    };
-    let user_id = match decode_user_id(&user_id) {
-        Ok(user_id) => user_id,
-        Err(response) => return *response,
-    };
-    match friends.set_groups(&user_id, &groups.groups) {
-        Ok(record) => Json(record).into_response(),
-        Err(error) => friends_error(error),
-    }
-}
-
-pub async fn save_group(
-    State(gateway): State<Arc<Gateway>>,
-    peer: Option<Extension<TunnelPeer>>,
-    headers: HeaderMap,
-    body: Bytes,
-) -> Response {
-    let person = match person_denied(&gateway, peer, &headers) {
-        Ok(person) => person,
-        Err(denied) => return denied,
-    };
-    if let Some(denied) = friend_guard(
-        &gateway,
-        &person,
-        wonton_protocol::PermissionItem::AddFriends,
-    ) {
-        return denied;
-    }
-    let Some(friends) = gateway.friends() else {
-        return error_response(
-            StatusCode::SERVICE_UNAVAILABLE,
-            "unavailable",
-            "没有好友名单",
-        );
-    };
-    let save: FriendGroupSave = match parse(&body) {
-        Ok(save) => save,
-        Err(response) => return *response,
-    };
-    match friends.save_group(save.id.as_deref(), &save.name) {
-        Ok(group) => Json(group).into_response(),
-        Err(error) => friends_error(error),
-    }
-}
-
-pub async fn remove_group(
-    State(gateway): State<Arc<Gateway>>,
-    peer: Option<Extension<TunnelPeer>>,
-    Path(id): Path<String>,
-    headers: HeaderMap,
-) -> Response {
-    let person = match person_denied(&gateway, peer, &headers) {
-        Ok(person) => person,
-        Err(denied) => return denied,
-    };
-    if let Some(denied) = friend_guard(
-        &gateway,
-        &person,
-        wonton_protocol::PermissionItem::AddFriends,
-    ) {
-        return denied;
-    }
-    let Some(friends) = gateway.friends() else {
-        return error_response(
-            StatusCode::SERVICE_UNAVAILABLE,
-            "unavailable",
-            "没有好友名单",
-        );
-    };
-    match friends.remove_group(&id) {
-        Ok(()) => StatusCode::NO_CONTENT.into_response(),
         Err(error) => friends_error(error),
     }
 }

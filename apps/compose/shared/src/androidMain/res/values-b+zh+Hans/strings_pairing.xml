@@ -4,8 +4,8 @@
     <string name="pairing_title">配对</string>
     <!-- Title of the page for pairing the same phone again from the server settings. -->
     <string name="pairing_title_again">重新配对</string>
-    <!-- Explanation above the paste field: where the pairing QR code lives. May wrap. -->
-    <string name="pairing_instructions">在家里的局域网里，用浏览器打开服务器的 IP 地址（装好时终端里给出），页面上有配对二维码。</string>
+    <!-- Explanation above the paste field: who to ask for the pairing code, and the scan path for whoever runs the server. May wrap. -->
+    <string name="pairing_instructions">找装服务器的人要一个配对码。码来自已配对设备上的“添加设备”，或在主机上执行 sudo wonton pair。自己装的服务器？在家里局域网里用浏览器打开安装时给出的地址，页面上有配对二维码。</string>
     <!-- Placeholder of the field to paste the pairing code when scanning is not possible. -->
     <string name="pairing_paste_placeholder">粘贴配对码</string>
     <string name="pairing_paste_label">配对码</string>
@@ -35,8 +35,4 @@
     <string name="pairing_hint_transport">确认家里的服务器已开机并联网，再试一次。</string>
     <!-- Next step under the protocol failure. May wrap. -->
     <string name="pairing_hint_protocol">请把 App 和服务器都更新到最新版本。</string>
-    <!-- 加入用的码在等管理员同意时的标题。无参数。 -->
-    <string name="pairing_failure_pending">等管理员同意</string>
-    <!-- 等批时下一步：管理员同意后重试同一个码。无参数。 -->
-    <string name="pairing_next_pending">管理员同意后，用这个码再试一次。</string>
 </resources>

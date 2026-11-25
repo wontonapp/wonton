@@ -49,11 +49,13 @@ import androidx.compose.ui.window.Popup
 import androidx.compose.ui.window.PopupPositionProvider
 import androidx.compose.ui.window.PopupProperties
 import app.wonton.client.ClientCore
+import app.wonton.protocol.ImageContent
 import app.wonton.protocol.MessageAction
 import app.wonton.protocol.QuotedMessage
 import app.wonton.protocol.TimelineMessage
 import app.wonton.ui.design.WontonTheme
 import app.wonton.ui.design.toColor
+import app.wonton.ui.icons.Compose
 import app.wonton.ui.icons.Copy
 import app.wonton.ui.icons.Reply
 import app.wonton.ui.icons.Trash
@@ -79,7 +81,9 @@ fun MessageMenu(
     bubble: Rect,
     visible: Rect,
     core: ClientCore,
+    groupImages: List<ImageContent>? = null,
     onReply: (QuotedMessage) -> Unit,
+    onEdit: (String) -> Unit,
     onForward: () -> Unit,
     onRedact: () -> Unit,
     onDismiss: () -> Unit,
@@ -105,9 +109,9 @@ fun MessageMenu(
                 content = {
                     // 预览不接受操作，读屏也不再念一遍。
                     Box(Modifier.width(width).clearAndSetSemantics {}) {
-                        BubbleSurface(message, core, false, false, Modifier, {})
+                        BubbleSurface(message, core, false, false, Modifier, {}, groupImages = groupImages)
                     }
-                    MenuSurface(message, onReply, onForward, onRedact, onDismiss)
+                    MenuSurface(message, onReply, onEdit, onForward, onRedact, onDismiss)
                 },
                 modifier = Modifier
                     .fillMaxSize()
@@ -145,6 +149,7 @@ fun MessageMenu(
 private fun MenuSurface(
     message: TimelineMessage,
     reply: (QuotedMessage) -> Unit,
+    edit: (String) -> Unit,
     forward: () -> Unit,
     redact: () -> Unit,
     onDismiss: () -> Unit,
@@ -155,6 +160,7 @@ private fun MenuSurface(
     // 剪贴板条目的标签：别的 App 粘贴时可能显示。
     val clipLabel = stringResource(R.string.message_clip_label)
     val replyLabel = stringResource(R.string.message_reply)
+    val editLabel = stringResource(R.string.message_edit)
     val forwardLabel = stringResource(R.string.message_forward)
     // 管理员也能撤别人的消息：写明是谁的，免得以为撤的是自己的。
     val redactLabel = if (message.isOwn) {
@@ -180,12 +186,14 @@ private fun MenuSurface(
                         }
                     }
                     is MessageAction.Reply -> { { reply(action.message) } }
+                    is MessageAction.Edit -> ({ edit(action.text) })
                     MessageAction.Forward -> forward
                     MessageAction.Redact -> redact
                 }
                 val (label, icon) = when (action) {
                     is MessageAction.Copy -> copyLabel to WontonIcon.Copy
                     is MessageAction.Reply -> replyLabel to WontonIcon.Reply
+                    is MessageAction.Edit -> editLabel to WontonIcon.Compose
                     // 转发是回复的镜像：同一个箭头左右翻过来（`WontonIcon.Forward` 是“进下一层”的尖角，不是转发）。
                     MessageAction.Forward -> forwardLabel to WontonIcon.Reply
                     MessageAction.Redact -> redactLabel to WontonIcon.Trash

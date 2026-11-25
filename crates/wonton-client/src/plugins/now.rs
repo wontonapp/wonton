@@ -1,12 +1,13 @@
 //! 一键安装、一键升级（ADR-0017 的“一键更新”）：核心取预览、判断要不要请主人拿主意，不用拿主意的直接开始。
-//! 要拿主意的放确认页（`PluginsViewModel.confirmation`），“全部更新”排进队列一次一条。
+//! 单项要拿主意的放确认页；批量更新留逐项结果，需要决定的由主人从行内打开。
 
 use std::collections::VecDeque;
 use std::sync::Arc;
 
 use wonton_protocol::{
     CoreError, InstallPreview, InstalledPlugin, PluginProblem, PluginState, PluginTask,
-    PluginTaskState, PluginsViewModel, SecretValues, StoreConfirmation, StoreItem, UpdatablePlugin,
+    PluginTaskState, PluginsViewModel, SecretValues, StoreConfirmation, StoreItem,
+    StoreUpdateBatch, StoreUpdateItem, StoreUpdateState, UpdatablePlugin,
 };
 
 use super::PluginsLink;
@@ -61,6 +62,10 @@ pub(super) fn updatable(view: &PluginsViewModel) -> Vec<UpdatablePlugin> {
             if let Some(offer) = &plugin.upgrade {
                 return Some(updatable_of(plugin, &offer.version));
             }
+            // 主人上传的包没有来源，核心升不了它：升级接口对没有 origin 的记录直接报 not_found。
+            // 商店里版本号不一样也不算可更新，不然“全部更新”答应了核心做不到的事。预装插件也没有来源，
+            // 但核心查到报价时走上面的分支，照样算，行尾的“更新”也不藏。
+            plugin.source.as_ref()?;
             let item = store_item(view, &plugin.id)?;
             // 升级检查还没跑到时，商店里版本号和装着的不一样的也算（和行尾“更新”按钮同一个口径）。
             (item.installed_version.as_deref() != Some(item.version.as_str()))
@@ -136,30 +141,231 @@ impl PluginsLink {
         Ok(())
     }
 
-    /// `UpgradeAll`：逐个升级可更新的应用；要拿主意的排进确认页，一次一条。
+    /// `UpgradeAll`：先发布完整批次，再逐项取预览；需要决定的留在行内，不盖住其他进展。
     pub(crate) fn upgrade_all(self: &Arc<Self>) -> Result<(), CoreError> {
-        let ids: Vec<String> = self
-            .view
-            .borrow()
-            .updatable
-            .iter()
-            .map(|updatable| updatable.plugin_id.clone())
-            .collect();
+        let generation = self.generation.load(std::sync::atomic::Ordering::SeqCst);
+        let mut ids = Vec::new();
+        self.view.send_if_modified(|view| {
+            if view
+                .update_batch
+                .as_ref()
+                .is_some_and(|batch| !batch.finished)
+            {
+                return false;
+            }
+            let items: Vec<_> = view
+                .updatable
+                .iter()
+                .filter(|app| {
+                    !view.pending.contains(&app.plugin_id)
+                        && !view
+                            .tasks
+                            .iter()
+                            .any(|task| task.id == app.plugin_id && task.state.in_progress())
+                        && !view.confirmation.as_ref().is_some_and(|confirmation| {
+                            confirmation_preview(confirmation).id == app.plugin_id
+                        })
+                })
+                .map(|app| StoreUpdateItem {
+                    app: app.clone(),
+                    state: StoreUpdateState::Queued,
+                })
+                .collect();
+            if items.is_empty() {
+                return false;
+            }
+            ids = items
+                .iter()
+                .map(|item| item.app.plugin_id.clone())
+                .collect();
+            view.tasks.retain(|task| !ids.contains(&task.id));
+            view.update_batch = Some(StoreUpdateBatch {
+                items,
+                ..Default::default()
+            });
+            true
+        });
         if ids.is_empty() {
             return Ok(());
         }
         let link = self.clone();
         self.runtime.spawn(async move {
             for plugin_id in ids {
-                if link.now_in_flight(&plugin_id) {
-                    continue;
+                if !link.is_current(generation) {
+                    return;
                 }
+                link.set_update_state(&plugin_id, StoreUpdateState::Checking);
                 link.begin_pending(&plugin_id);
                 let preview = link.preview_for_upgrade(&plugin_id).await;
-                link.settle_now(Some(plugin_id), preview, true).await;
+                if !link.is_current(generation) {
+                    return;
+                }
+                link.finish_pending(&plugin_id);
+                if let Ok(preview) = &preview {
+                    link.set_update_version(&plugin_id, &preview.version);
+                }
+                match preview {
+                    Ok(preview) if needs_confirmation(&preview, true) => {
+                        link.remember_preview(&preview);
+                        link.set_update_state(&plugin_id, StoreUpdateState::NeedsDecision);
+                    }
+                    Ok(preview) => {
+                        if let Err(error) =
+                            link.upgrade(preview, SecretValues::new(), Default::default())
+                        {
+                            let reason = match error {
+                                CoreError::NotReady { .. } => {
+                                    wonton_protocol::PluginFailure::Conflict
+                                }
+                                CoreError::InvalidInput { .. } => {
+                                    wonton_protocol::PluginFailure::Invalid
+                                }
+                                _ => wonton_protocol::PluginFailure::Protocol,
+                            };
+                            link.now_failed(
+                                Some(plugin_id),
+                                PluginProblem {
+                                    reason,
+                                    message: error.to_string(),
+                                    min_version: None,
+                                    settings: None,
+                                },
+                                true,
+                            );
+                        }
+                    }
+                    Err(problem) => link.now_failed(Some(plugin_id), problem, true),
+                }
             }
         });
         Ok(())
+    }
+
+    pub(crate) fn review_store_update(&self, plugin_id: &str) -> Result<(), CoreError> {
+        if self.now_in_flight(plugin_id) {
+            return Ok(());
+        }
+        let needs_decision = self
+            .view
+            .borrow()
+            .update_batch
+            .as_ref()
+            .is_some_and(|batch| {
+                batch.items.iter().any(|item| {
+                    item.app.plugin_id == plugin_id && item.state == StoreUpdateState::NeedsDecision
+                })
+            });
+        let preview = if needs_decision {
+            self.previews
+                .lock()
+                .expect("the previews lock never panics")
+                .get(plugin_id)
+                .cloned()
+        } else {
+            None
+        };
+        if let Some(preview) = preview {
+            self.offer_confirmation(StoreConfirmation::Upgrade { preview });
+        }
+        Ok(())
+    }
+
+    pub(crate) fn dismiss_store_updates(&self) -> Result<(), CoreError> {
+        self.view.send_if_modified(|view| {
+            let Some(batch) = &view.update_batch else {
+                return false;
+            };
+            if !batch.finished {
+                return false;
+            }
+            view.tasks.retain(|task| {
+                !batch.items.iter().any(|item|
+                matches!(&item.state, StoreUpdateState::Task { task: saved } if saved == task))
+            });
+            let mut previews = self
+                .previews
+                .lock()
+                .expect("the previews lock never panics");
+            for item in &batch.items {
+                if !view.tasks.iter().any(|task| task.id == item.app.plugin_id)
+                    && !view.confirmation.as_ref().is_some_and(|confirmation| {
+                        confirmation_preview(confirmation).id == item.app.plugin_id
+                    })
+                {
+                    previews.remove(&item.app.plugin_id);
+                }
+            }
+            view.update_batch = None;
+            Self::derive(view);
+            true
+        });
+        Ok(())
+    }
+
+    fn set_update_state(&self, id: &str, state: StoreUpdateState) {
+        self.view.send_modify(|view| {
+            if let Some(item) = view
+                .update_batch
+                .as_mut()
+                .and_then(|batch| batch.items.iter_mut().find(|item| item.app.plugin_id == id))
+            {
+                item.state = state;
+            }
+            Self::derive(view);
+        });
+    }
+
+    fn set_update_version(&self, id: &str, version: &str) {
+        self.view.send_modify(|view| {
+            if let Some(item) = view
+                .update_batch
+                .as_mut()
+                .and_then(|batch| batch.items.iter_mut().find(|item| item.app.plugin_id == id))
+            {
+                version.clone_into(&mut item.app.version);
+            }
+        });
+    }
+
+    pub(super) fn sync_update_batch(view: &mut PluginsViewModel) -> bool {
+        let Some(batch) = &mut view.update_batch else {
+            return false;
+        };
+        let mut changed = false;
+        let (mut succeeded, mut failed, mut attention, mut active) = (0, 0, 0, false);
+        for item in &mut batch.items {
+            let follows_task = match &item.state {
+                StoreUpdateState::Checking | StoreUpdateState::NeedsDecision => true,
+                StoreUpdateState::Task { task } => task.state.in_progress(),
+                StoreUpdateState::Queued => false,
+            };
+            if follows_task
+                && let Some(task) = view.tasks.iter().find(|task| task.id == item.app.plugin_id)
+                && !matches!(&item.state, StoreUpdateState::Task { task: saved } if saved == task)
+            {
+                item.state = StoreUpdateState::Task { task: task.clone() };
+                changed = true;
+            }
+            match &item.state {
+                StoreUpdateState::Queued | StoreUpdateState::Checking => active = true,
+                StoreUpdateState::NeedsDecision => attention += 1,
+                StoreUpdateState::Task { task } => match task.state {
+                    PluginTaskState::Running => active = true,
+                    PluginTaskState::Succeeded => succeeded += 1,
+                    PluginTaskState::Failed { .. } => failed += 1,
+                    PluginTaskState::Uncertain { .. } => attention += 1,
+                },
+            }
+        }
+        changed |= batch.finished == active
+            || batch.succeeded != succeeded
+            || batch.failed != failed
+            || batch.needs_attention != attention;
+        batch.finished = !active;
+        batch.succeeded = succeeded;
+        batch.failed = failed;
+        batch.needs_attention = attention;
+        changed
     }
 
     /// `DismissStoreConfirmation`：关掉确认页，没装也没升；还有排着队的就放下一条进来。
@@ -315,6 +521,15 @@ impl PluginsLink {
             .is_some_and(|confirmation| confirmation_preview(confirmation).id == key);
         confirmed
             || view.pending.iter().any(|pending| pending == key)
+            || view.update_batch.as_ref().is_some_and(|batch| {
+                batch.items.iter().any(|item| {
+                    item.app.plugin_id == key
+                        && matches!(
+                            item.state,
+                            StoreUpdateState::Queued | StoreUpdateState::Checking
+                        )
+                })
+            })
             || view
                 .tasks
                 .iter()

@@ -1,3 +1,5 @@
+@file:Suppress("TooManyFunctions") // 各类失败的文案映射平铺在一起才好对照；核心异常那份要能被 host test 直接调，单独拆走会丢掉这层对照。
+
 package app.wonton.ui
 
 import androidx.compose.animation.core.LinearEasing
@@ -35,6 +37,7 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.alpha
 import androidx.compose.ui.draw.rotate
 import androidx.compose.ui.graphics.vector.ImageVector
+import androidx.compose.ui.platform.testTag
 import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.semantics.Role
 import androidx.compose.ui.semantics.contentDescription
@@ -46,6 +49,7 @@ import app.wonton.protocol.AppearanceProblem
 import app.wonton.protocol.ChatFailure
 import app.wonton.protocol.ChatProblem
 import app.wonton.protocol.CoreException
+import app.wonton.protocol.MyAvatarProblem
 import app.wonton.protocol.PluginFailure
 import app.wonton.protocol.PluginProblem
 import app.wonton.protocol.StoreFailure
@@ -114,9 +118,27 @@ fun ChatFailure.problem(detail: String): Problem = when (this) {
         R.string.problem_forbidden_next_step,
         detail,
     )
+    ChatFailure.SERVER_NOT_PAIRED -> problem(
+        R.string.problem_server_not_paired_title,
+        R.string.problem_server_not_paired_next_step,
+        detail,
+    )
+    ChatFailure.PEER_PUBLIC_ACCESS_OFF -> problem(
+        R.string.problem_peer_public_access_off_title,
+        R.string.problem_peer_public_access_off_next_step,
+        detail,
+    )
     ChatFailure.UPSTREAM -> problem(R.string.problem_upstream_title, R.string.problem_upstream_next_step, detail)
-    ChatFailure.NOT_READY -> Problem(titleRes = R.string.problem_not_ready_title, nextStep = detail)
-    ChatFailure.INVALID_INPUT -> Problem(titleRes = R.string.problem_invalid_input_title, nextStep = detail)
+    ChatFailure.NOT_READY -> problem(
+        R.string.problem_not_ready_title,
+        R.string.problem_upstream_next_step,
+        detail,
+    )
+    ChatFailure.INVALID_INPUT -> problem(
+        R.string.problem_invalid_input_title,
+        R.string.problem_invalid_input_next_step,
+        detail,
+    )
     // 比这个壳新的类别：先按服务器出错说。
     ChatFailure.OTHER -> problem(R.string.problem_upstream_title, R.string.problem_upstream_next_step, detail)
 }
@@ -205,12 +227,22 @@ fun PluginFailure.problem(detail: String?): Problem = when (this) {
         nextStepRes = R.string.problem_plugin_egress_proxy_unavailable_next_step,
         detail = detail,
     )
+    PluginFailure.EGRESS_PROXY_WAITING -> Problem(
+        titleRes = R.string.problem_plugin_egress_proxy_waiting_title,
+        nextStepRes = R.string.problem_plugin_egress_proxy_waiting_next_step,
+        detail = detail,
+    )
     PluginFailure.RECORD_UNUSABLE -> Problem(
         titleRes = R.string.problem_plugin_record_unusable_title,
         nextStepRes = R.string.problem_plugin_record_unusable_next_step,
         detail = detail,
     )
     PluginFailure.UPSTREAM -> problem(R.string.problem_upstream_title, R.string.problem_upstream_next_step, detail)
+    PluginFailure.TIMED_OUT -> problem(
+        R.string.problem_plugin_health_timeout_title,
+        R.string.problem_plugin_health_timeout_next_step,
+        detail,
+    )
     PluginFailure.PROTOCOL -> Problem(
         titleRes = R.string.problem_plugin_protocol_title,
         nextStepRes = R.string.problem_plugin_protocol_next_step,
@@ -262,51 +294,80 @@ val StoreProblem.canRetry: Boolean
 val Result<*>.failureProblem: Problem
     get() = (exceptionOrNull() as CoreException).problem
 
-val CoreException.problem: Problem
-    get() {
-        val detail = toString()
-        return when (this) {
-            is CoreException.TransportUnavailable -> problem(
-                R.string.problem_transport_unavailable_title,
-                R.string.problem_transport_unavailable_next_step,
-                detail,
-            )
-            is CoreException.Unauthorized -> problem(
-                R.string.problem_unauthorized_title,
-                R.string.problem_unauthorized_next_step,
-                detail,
-            )
-            is CoreException.Forbidden -> problem(
-                R.string.problem_forbidden_title,
-                R.string.problem_forbidden_next_step,
-                detail,
-            )
-            is CoreException.Upstream -> problem(
-                R.string.problem_upstream_title,
-                R.string.problem_upstream_next_step,
-                detail,
-            )
-            is CoreException.NotReady -> Problem(titleRes = R.string.problem_not_ready_title, nextStep = reason)
-            is CoreException.Storage -> Problem(
-                titleRes = R.string.problem_storage_title,
-                nextStepRes = R.string.problem_storage_next_step,
-                detail = detail,
-            )
-            is CoreException.InvalidInput -> Problem(titleRes = R.string.problem_invalid_input_title, nextStep = reason)
-            // 设置没过校验：逐字段的明细由设置页标到控件旁，这里只说发生了什么。
-            is CoreException.SettingsInvalid -> Problem(
-                titleRes = R.string.problem_invalid_input_title,
-                nextStep = reason,
-            )
-            is CoreException.ServerTooOld -> Problem(
-                titleRes = R.string.problem_plugin_server_too_old_title,
-                nextStepRes = R.string.problem_upgrade_server_next_step,
-                detail = detail,
-            )
-            // 比这个壳新的类别：先按服务器出错说。
-            else -> problem(R.string.problem_upstream_title, R.string.problem_upstream_next_step, detail)
-        }
+/** 设自己的头像没成：类别由核心给，文字写在这里（ADR-0043）。 */
+val MyAvatarProblem.problem: Problem
+    get() = when (this) {
+        is MyAvatarProblem.NotReady -> Problem(
+            titleRes = R.string.owner_profile_avatar_not_ready,
+            nextStepRes = R.string.owner_profile_avatar_not_ready_next,
+        )
+        is MyAvatarProblem.NotLoggedIn -> Problem(
+            titleRes = R.string.owner_profile_avatar_not_logged_in,
+            nextStepRes = R.string.owner_profile_avatar_not_logged_in_next,
+            detail = reason,
+        )
+        is MyAvatarProblem.MediaRejected -> Problem(titleRes = problem.textRes())
+        is MyAvatarProblem.TransportUnavailable -> problem(
+            R.string.problem_transport_unavailable_title,
+            R.string.problem_transport_unavailable_next_step,
+            reason,
+        )
+        is MyAvatarProblem.Upstream -> Problem(
+            titleRes = R.string.problem_upstream_title,
+            nextStepRes = R.string.problem_upstream_next_step,
+            detail = reason,
+        )
+        is MyAvatarProblem.Other -> Problem(
+            titleRes = R.string.problem_upstream_title,
+            nextStepRes = R.string.problem_upstream_next_step,
+        )
     }
+
+val CoreException.problem: Problem
+    get() = coreProblem(toString())
+
+/** 核心异常只有类型能信：标题和下一步用壳里的固定句子，能给的原文收进详情；notReady、invalidInput 的下一步直接是原文。 */
+internal fun CoreException.coreProblem(detail: String): Problem = when (this) {
+    is CoreException.TransportUnavailable -> problem(
+        R.string.problem_transport_unavailable_title,
+        R.string.problem_transport_unavailable_next_step,
+        detail,
+    )
+    is CoreException.Unauthorized -> problem(
+        R.string.problem_unauthorized_title,
+        R.string.problem_unauthorized_next_step,
+        detail,
+    )
+    is CoreException.Forbidden -> problem(
+        R.string.problem_forbidden_title,
+        R.string.problem_forbidden_next_step,
+        detail,
+    )
+    is CoreException.Upstream -> problem(
+        R.string.problem_upstream_title,
+        R.string.problem_upstream_next_step,
+        detail,
+    )
+    is CoreException.NotReady -> Problem(titleRes = R.string.problem_not_ready_title, nextStep = reason)
+    is CoreException.Storage -> Problem(
+        titleRes = R.string.problem_storage_title,
+        nextStepRes = R.string.problem_storage_next_step,
+        detail = detail,
+    )
+    is CoreException.InvalidInput -> Problem(titleRes = R.string.problem_invalid_input_title, nextStep = reason)
+    // 设置没过校验：逐字段的明细由设置页标到控件旁，这里只说发生了什么。
+    is CoreException.SettingsInvalid -> Problem(
+        titleRes = R.string.problem_invalid_input_title,
+        nextStep = reason,
+    )
+    is CoreException.ServerTooOld -> Problem(
+        titleRes = R.string.problem_plugin_server_too_old_title,
+        nextStepRes = R.string.problem_upgrade_server_next_step,
+        detail = detail,
+    )
+    // 比这个壳新的类别：先按服务器出错说。
+    else -> problem(R.string.problem_upstream_title, R.string.problem_upstream_next_step, detail)
+}
 
 /** 连不上、不认设备、服务器出错这三句在插件、聊天和连接错误里共用。 */
 private fun problem(titleRes: Int, nextStepRes: Int, detail: String?) =
@@ -318,14 +379,18 @@ fun ProblemDetail(
     text: String,
     label: String = stringResource(R.string.common_details),
     modifier: Modifier = Modifier,
+    /** 展开按钮的测试标识，UI 测试按它定位，不按文案。 */
+    toggleTag: String? = null,
 ) {
     var expanded by remember { mutableStateOf(false) }
     val colors = WontonTheme.colors
     val style = WontonTheme.typography.caption
     val tint = colors.textSecondary.toColor()
-    Column(verticalArrangement = Arrangement.spacedBy(WontonTheme.spacing.s4)) {
+    Column(modifier, verticalArrangement = Arrangement.spacedBy(WontonTheme.spacing.s4)) {
         Row(
-            modifier.clickable(role = Role.Button) { expanded = !expanded }.heightIn(min = WontonTheme.size.target),
+            Modifier.then(if (toggleTag != null) Modifier.testTag(toggleTag) else Modifier)
+                .clickable(role = Role.Button) { expanded = !expanded }
+                .heightIn(min = WontonTheme.size.target),
             horizontalArrangement = Arrangement.spacedBy(WontonTheme.spacing.s4),
             verticalAlignment = Alignment.CenterVertically,
         ) {

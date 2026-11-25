@@ -146,12 +146,14 @@ fn signed_in(rooms: Vec<RoomRow>) -> ChatViewModel {
 fn agent(activity: Option<BotActivity>) -> BotView {
     BotView {
         chat: Default::default(),
+        availability: Default::default(),
         user_id: AGENT.into(),
         bot: BotRef {
             plugin_id: "hermes".into(),
             bot: "default".into(),
         },
         web: None,
+        web_page: None,
         name: "Hermes".into(),
         avatar: None,
         state_avatars: Vec::new(),
@@ -170,6 +172,7 @@ fn room(name: &str, peer: Option<&str>, unread: u64) -> RoomRow {
         is_direct: peer.is_some(),
         direct_user_id: peer.map(str::to_owned),
         plugin: None,
+        bot_chat: None,
         is_encrypted: true,
         is_read_only: false,
         membership: RoomMembership::Joined,

@@ -32,7 +32,14 @@ struct MessageMeta: View {
         }
         #if DEBUG
         // 走查用：时间的字在无障碍树里是藏起来的（正文已经念过），界面测试靠这个看不见的记号量它的位置。只在 Debug 包里挂。
-        .overlay { Color.clear.accessibilityElement().accessibilityIdentifier("messageMeta") }
+        .overlay {
+            Color.clear.accessibilityElement().accessibilityIdentifier("messageMeta")
+        }
+        .overlay {
+            if message.edited {
+                Color.clear.accessibilityElement().accessibilityIdentifier("messageEdited")
+            }
+        }
         #endif
     }
 

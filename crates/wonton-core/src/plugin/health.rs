@@ -7,6 +7,7 @@ use tokio::time::{Instant, sleep};
 
 use super::compose::DependCondition;
 use super::docker::{Engine, EngineError};
+use super::health_gate::Wait;
 use super::languages::Languages;
 use super::oom::{OomLimit, oom_reason};
 use crate::http::{HttpClient, HttpError};
@@ -27,7 +28,7 @@ const PROBE_OUTPUT_LIMIT: usize = 1024;
 pub enum HealthError {
     #[error(transparent)]
     Engine(#[from] EngineError),
-    /// 给 App 看的整句，构造点按当次语言写好（ADR-0043）。
+    /// 等到时限还在等：给 App 看的整句，构造点按当次语言写好（ADR-0043）。
     #[error("{0}")]
     Timeout(String),
     #[error("{0}")]
@@ -36,8 +37,6 @@ pub enum HealthError {
     Exited(String),
     #[error("{0}")]
     NoHealthcheck(String),
-    #[error("{0}")]
-    WebUi(String),
 }
 
 /// 核心直连网页服务的探针；默认网页路径只在容器没有健康检查时使用。
@@ -71,6 +70,8 @@ enum Observation {
     Waiting {
         state: String,
         probes: Vec<Probe>,
+        /// 这一轮探测了网页入口（超时报告据此决定等的是 URL 还是容器状态）。
+        probed: bool,
     },
 }
 
@@ -80,12 +81,12 @@ pub(super) async fn wait_for(
     container: &str,
     target: Target,
     webui_health: Option<&WebuiHealth>,
-    deadline: Instant,
+    wait: Wait,
     langs: &Languages,
 ) -> Result<Readiness, HealthError> {
     let mut running_since: Option<Instant> = None;
     loop {
-        let (state, probes) = match observe(
+        let (state, probes, probed) = match observe(
             engine,
             http,
             container,
@@ -97,16 +98,31 @@ pub(super) async fn wait_for(
         .await
         {
             Ok(Observation::Done(readiness)) => return Ok(readiness),
-            Ok(Observation::Waiting { state, probes }) => (state, probes),
+            Ok(Observation::Waiting {
+                state,
+                probes,
+                probed,
+            }) => (state, probes, probed),
             Err(failure) => return Err(failure_error(engine, container, failure, langs).await),
         };
-        if Instant::now() >= deadline {
+        if Instant::now() >= wait.at {
             let logs = traced(container, engine.logs_tail(container, LOG_LINES).await);
+            let pending = match webui_health.filter(|_| probed) {
+                Some(webui) => webui.endpoint.url(&webui.path),
+                None => crate::l10n::text(langs, "plugin-settings-health-target", &[]),
+            };
             return Err(HealthError::Timeout(with_log_tail(
-                crate::l10n::text(
+                timeout_head(
                     langs,
-                    "plugin-settings-health-timeout",
-                    &[("container", container.into()), ("state", state.into())],
+                    wait,
+                    crate::l10n::text(
+                        langs,
+                        "plugin-settings-health-container",
+                        &[("container", container.into())],
+                    ),
+                    pending,
+                    waited(wait.started),
+                    last_state(langs, container, &state),
                 ),
                 probe_block(&probes, langs),
                 &logs,
@@ -118,13 +134,14 @@ pub(super) async fn wait_for(
 }
 
 /// 一起等一组 `depends_on`：每一轮把还没满足的都看一遍，任何一个失败就立即报它（容器名、退出码、日志），
-/// 不再等其余依赖到超时。超时报第一个还没满足的。
+/// 不再等其余依赖到超时。超时时逐个报还没满足的（谁在等、等谁、各自最后看到的状态），不抽一个走。
 pub(super) async fn wait_for_all(
     engine: &Engine,
     http: &HttpClient,
     deps: &[(String, DependCondition)],
     webui: Option<(&str, &WebuiHealth)>,
-    deadline: Instant,
+    waiting: &str,
+    wait: Wait,
     langs: &Languages,
 ) -> Result<(), HealthError> {
     let mut pending: Vec<Pending> = deps
@@ -158,7 +175,7 @@ pub(super) async fn wait_for_all(
                 Ok(Observation::Done(_)) => {
                     pending.remove(index);
                 }
-                Ok(Observation::Waiting { state, probes }) => {
+                Ok(Observation::Waiting { state, probes, .. }) => {
                     dep.state = state;
                     dep.probes = probes;
                     index += 1;
@@ -169,19 +186,35 @@ pub(super) async fn wait_for_all(
         if pending.is_empty() {
             return Ok(());
         }
-        if Instant::now() >= deadline {
-            let dep = pending.swap_remove(0);
-            let logs = traced(dep.name, engine.logs_tail(dep.name, LOG_LINES).await);
+        if Instant::now() >= wait.at {
+            // 每个还没就绪的依赖各带一条它自己最后的状态，别把某个依赖的状态标成等它的容器的。
+            let first = &pending[0];
+            let separator = crate::l10n::text(langs, "plugin-settings-health-list-separator", &[]);
+            let names = pending
+                .iter()
+                .map(|dep| dep.name.to_owned())
+                .collect::<Vec<String>>()
+                .join(&*separator);
+            let states = pending
+                .iter()
+                .map(|dep| last_state(langs, dep.name, &dep.state))
+                .collect::<Vec<String>>()
+                .join(&separator);
+            let logs = traced(first.name, engine.logs_tail(first.name, LOG_LINES).await);
             return Err(HealthError::Timeout(with_log_tail(
-                crate::l10n::text(
+                timeout_head(
                     langs,
-                    "plugin-settings-health-timeout",
-                    &[
-                        ("container", dep.name.into()),
-                        ("state", dep.state.clone().into()),
-                    ],
+                    wait,
+                    crate::l10n::text(
+                        langs,
+                        "plugin-settings-health-container",
+                        &[("container", waiting.into())],
+                    ),
+                    names,
+                    waited(wait.started),
+                    states,
                 ),
-                probe_block(&dep.probes, langs),
+                probe_block(&first.probes, langs),
                 &logs,
                 langs,
             )));
@@ -199,6 +232,46 @@ struct Pending<'a> {
     probes: Vec<Probe>,
 }
 
+/// 等了多久，取整秒（不足一秒报 0）。
+fn waited(started: Instant) -> String {
+    Instant::now().duration_since(started).as_secs().to_string()
+}
+
+/// 最后看到的状态带上是谁的：单个目标只有等待的那个容器，多依赖时每个依赖各一条。
+fn last_state(langs: &Languages, container: &str, state: &str) -> String {
+    crate::l10n::text(
+        langs,
+        "plugin-settings-health-state",
+        &[("container", container.into()), ("state", state.into())],
+    )
+}
+
+/// 超时的第一段：谁在等、等谁、时限、已经等了多久、每个待就绪依赖最后看到的状态，再一句下一步。
+fn timeout_head(
+    langs: &Languages,
+    wait: Wait,
+    waiting: String,
+    pending: String,
+    waited: String,
+    states: String,
+) -> String {
+    format!(
+        "{}\n{}",
+        crate::l10n::text(
+            langs,
+            "plugin-settings-health-timeout",
+            &[
+                ("waiting", waiting.into()),
+                ("pending", pending.into()),
+                ("waited", waited.into()),
+                ("budget", wait.budget.as_secs().to_string().into()),
+                ("states", states.into()),
+            ],
+        ),
+        crate::l10n::text(langs, "plugin-settings-health-timeout-next", &[]),
+    )
+}
+
 /// 失败变成报错：附上容器最近的日志，让人不用去查 Docker 就能看出原因。
 async fn failure_error(
     engine: &Engine,
@@ -207,19 +280,6 @@ async fn failure_error(
     langs: &Languages,
 ) -> HealthError {
     match failure {
-        Failure::Unhealthy(probes) => {
-            let logs = traced(container, engine.logs_tail(container, LOG_LINES).await);
-            HealthError::Unhealthy(with_log_tail(
-                crate::l10n::text(
-                    langs,
-                    "plugin-settings-health-unhealthy",
-                    &[("container", container.into())],
-                ),
-                probe_block(&probes, langs),
-                &logs,
-                langs,
-            ))
-        }
         Failure::Exited(code) => {
             let logs = traced(container, engine.logs_tail(container, LOG_LINES).await);
             HealthError::Exited(with_log_tail(
@@ -256,7 +316,6 @@ fn with_log_tail(head: String, probes: String, logs: &str, langs: &Languages) ->
 }
 
 enum Failure {
-    Unhealthy(Vec<Probe>),
     Exited(i64),
     Other(HealthError),
 }
@@ -485,6 +544,7 @@ fn verdict(
         probes,
         webui,
     } = snapshot;
+    let probed = webui.is_some();
     if target == Target::Depend(DependCondition::ServiceCompletedSuccessfully) {
         return match status {
             ContainerStateStatusEnum::EXITED if exit_code == 0 => {
@@ -496,6 +556,7 @@ fn verdict(
             _ => Ok(Observation::Waiting {
                 state: label,
                 probes,
+                probed,
             }),
         };
     }
@@ -505,20 +566,33 @@ fn verdict(
     ) {
         return Err(Failure::Exited(exit_code));
     }
-    if health == Some(HealthStatusEnum::UNHEALTHY) {
-        return Err(Failure::Unhealthy(probes));
-    }
     let running = status == ContainerStateStatusEnum::RUNNING;
+    // 只要“起来了”的依赖，健康检查再差也够：商店里的 `service_started` 用在转发器这类容器上，
+    // 它们后面那个服务健不健康是另一条依赖的事。
+    if target == Target::Depend(DependCondition::ServiceStarted) && running {
+        return Ok(Observation::Done(Readiness::Running));
+    }
+    // 判成不健康不等于没救：慢主机上的数据库冷启动会先探针全失败再恢复，继续等到期限，
+    // 不能一看到 unhealthy 就回滚（盲测 immich-db-start-timeout）。
+    if health == Some(HealthStatusEnum::UNHEALTHY) {
+        return Ok(Observation::Waiting {
+            state: label,
+            probes,
+            probed,
+        });
+    }
     if let Some((request, outcome)) = webui {
         return match outcome {
             Ok(200..=499) => Ok(Observation::Done(Readiness::Healthy)),
             Ok(code) => Ok(Observation::Waiting {
                 state: format!("{label} / {request} → HTTP {code}"),
                 probes,
+                probed,
             }),
             Err(e) => Ok(Observation::Waiting {
                 state: format!("{label} / {request} → {e}"),
                 probes,
+                probed,
             }),
         };
     }
@@ -530,9 +604,6 @@ fn verdict(
                 &[("container", container.into())],
             )),
         )),
-        Target::Depend(DependCondition::ServiceStarted) if running => {
-            Ok(Observation::Done(Readiness::Running))
-        }
         Target::Depend(DependCondition::ServiceHealthy) | Target::Ready if has_check => {
             if health == Some(HealthStatusEnum::HEALTHY) {
                 Ok(Observation::Done(Readiness::Healthy))
@@ -540,6 +611,7 @@ fn verdict(
                 Ok(Observation::Waiting {
                     state: label,
                     probes,
+                    probed,
                 })
             }
         }
@@ -551,6 +623,7 @@ fn verdict(
                 Ok(Observation::Waiting {
                     state: label,
                     probes,
+                    probed,
                 })
             }
         }
@@ -559,6 +632,7 @@ fn verdict(
             Ok(Observation::Waiting {
                 state: label,
                 probes,
+                probed,
             })
         }
     }
@@ -648,7 +722,8 @@ pub async fn wait_webui(
     client: &HttpClient,
     endpoint: &super::upstreams::Endpoint,
     path: &str,
-    deadline: Instant,
+    container: &str,
+    wait: Wait,
     langs: &Languages,
 ) -> Result<(), HealthError> {
     let url = endpoint.url(path);
@@ -659,11 +734,26 @@ pub async fn wait_webui(
                 Ok(status) => format!("HTTP {status}"),
                 Err(e) => e.to_string(),
             };
-        if Instant::now() >= deadline {
-            return Err(HealthError::WebUi(crate::l10n::text(
+        if Instant::now() >= wait.at {
+            let state = crate::l10n::text(
                 langs,
-                "plugin-settings-health-webui-timeout",
-                &[("url", url.into()), ("last_error", last_error.into())],
+                "plugin-settings-health-webui-state",
+                &[
+                    ("method", format!("GET {path}").into()),
+                    ("error", last_error.clone().into()),
+                ],
+            );
+            return Err(HealthError::Timeout(timeout_head(
+                langs,
+                wait,
+                crate::l10n::text(
+                    langs,
+                    "plugin-settings-health-container",
+                    &[("container", container.into())],
+                ),
+                url,
+                waited(wait.started),
+                state,
             )));
         }
         sleep(POLL).await;

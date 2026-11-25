@@ -332,6 +332,8 @@ struct WontonRootBar<Trailing: View>: View {
         }
         .padding(.horizontal, WontonTheme.spacing.pageInset)
         .frame(maxWidth: .infinity)
+        // 界面测试按它量栏的底边，断言内容整段落在栏以下。
+        .accessibilityIdentifier("root-bar")
     }
 }
 
@@ -440,6 +442,7 @@ struct WontonPushedBar<Trailing: View>: View {
                 WontonIconButton(icon: icon, label: iconLabel) {
                     if let onClose { onClose() } else { dismiss() }
                 }
+                .accessibilityIdentifier("barBack")
             }
             Spacer(minLength: 0)
             trailing
@@ -511,6 +514,18 @@ extension View {
         }
     }
 
+    /// 自绘栏的根页面：系统栏在特大字号下会铺到首屏内容上沿，整屏表单（配对）用它。
+    /// 栏仍然走 `wontonTopBar`（iOS 26 是 `safeAreaBar`），内容从玻璃后面滚过去，栏自己不占页面高度。
+    @ViewBuilder func wontonPairingRootScreen<Trailing: View>(
+        _ title: String, hasActions: Bool, @ViewBuilder trailing: () -> Trailing
+    ) -> some View {
+        let bar = WontonRootBar(title: title, hasActions: hasActions, trailing: trailing)
+        wontonTopBar { bar }
+            .navigationTitle(title)
+            .toolbar(.hidden, for: .navigationBar)
+            .modifier(WontonCanvas())
+    }
+
     /// 根页面不显示页面名，连接状态和导航动作由系统栏承载。
     @ViewBuilder func wontonRootScreen<Trailing: View>(
         _ title: String, hasActions: Bool, @ViewBuilder trailing: () -> Trailing
@@ -553,12 +568,10 @@ private struct WontonCanvas: ViewModifier {
 
 /// 隐藏系统导航栏后，SwiftUI 默认会失去边缘返回手势（ADR-0026），这里还给它。
 extension UINavigationController: @retroactive UIGestureRecognizerDelegate {
-    override open func viewDidLoad() {
-        super.viewDidLoad()
-        interactivePopGestureRecognizer?.delegate = self
-    }
+    /// 旁聊盖在房间上：边缘右滑留在房间（ADR-0093）。手机只有一个可见的导航栈，盖层的开关都在主线程上写。
+    static var keepsRoomOnSideChat = false
 
     public func gestureRecognizerShouldBegin(_ gestureRecognizer: UIGestureRecognizer) -> Bool {
-        viewControllers.count > 1
+        viewControllers.count > 1 && !Self.keepsRoomOnSideChat
     }
 }

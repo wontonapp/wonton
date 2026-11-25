@@ -42,7 +42,7 @@ import app.wonton.ui.icons.WontonIcon
 internal fun PluginPageCapsule(
     tab: TabRef, tabs: PagesState, state: PageCapsuleState,
     controller: PluginWebViewController, takeover: PageTakeover?,
-    onClose: () -> Unit, onReload: () -> Unit, onDetails: (String) -> Unit,
+    onClosePage: () -> Unit, onClose: () -> Unit, onReload: () -> Unit, onDetails: (String) -> Unit,
     onEditPanel: (() -> Unit)? = null,
 ) {
     val configuration = LocalViewConfiguration.current
@@ -69,7 +69,7 @@ internal fun PluginPageCapsule(
                     CapsuleHitTarget(stringResource(R.string.tab_page_close), onClose)
                 }
                 Box(Modifier.size(WontonTheme.size.target, WontonTheme.size.smallButton)) {
-                    CapsuleMenu(tab, tabs, state, controller, takeover, onReload, onDetails, onEditPanel)
+                    CapsuleMenu(tab, tabs, state, controller, takeover, onClosePage, onReload, onDetails, onEditPanel)
                 }
             }
         }
@@ -104,12 +104,12 @@ private fun CapsuleHitTarget(label: String, onClick: () -> Unit) {
 private fun CapsuleMenu(
     tab: TabRef, tabs: PagesState, state: PageCapsuleState,
     controller: PluginWebViewController, takeover: PageTakeover?,
-    onReload: () -> Unit, onDetails: (String) -> Unit, onEditPanel: (() -> Unit)?,
+    onClosePage: () -> Unit, onReload: () -> Unit, onDetails: (String) -> Unit, onEditPanel: (() -> Unit)?,
 ) {
     val close = { state.menuOpen = false }
     DropdownMenu(state.menuOpen, close, containerColor = WontonTheme.colors.surface.toColor()) {
         if (controller.canGoBack) DropdownMenuItem(text = { Text(stringResource(R.string.tab_menu_back)) },
-            onClick = { close(); controller.goBack() })
+            onClick = { close(); controller.backOrClose(onClosePage) })
         takeover?.let { TakeoverButton(it) }
         DropdownMenuItem(text = { Text(stringResource(R.string.tab_menu_reload)) }, onClick = { close(); onReload() })
         if (tab is TabRef.Plugin) {

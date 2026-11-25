@@ -1,4 +1,4 @@
-//! 模型网关（插件规范的“模型网关”）。提供方是声明了 `provides.models` 的系统插件，同一时间只有一个；声明了
+//! 模型网关（插件规范的“模型网关”）。提供方是声明了 `provides.models` 的插件，同一时间只能装一个；声明了
 //! `models` 的插件经核心在插件网络里的别名 `models.wonton.internal` 访问它，各自拿一个只属于自己的凭据。
 //!
 //! 凭据按 Docker 凭据助手的约定签发：核心在网关的容器里执行声明的命令，值走标准输入，只看退出码；签发后用这个
@@ -45,7 +45,7 @@ type Keys = BTreeMap<String, String>;
 
 /// 一个使用方的凭据，和最近一次成功注入的变量。
 #[derive(Debug, Clone, Default, PartialEq, Eq, Serialize, Deserialize)]
-struct KeyFile {
+pub(super) struct KeyFile {
     keys: Keys,
     /// 最近一次成功注入给使用方的变量：之后重建容器时网关不在，也注入同一套值，网关回来就对上了。
     #[serde(default)]
@@ -53,10 +53,17 @@ struct KeyFile {
     /// 最近一次签发或验证失败的原因；接上了就清掉。详情页的轻提示带它（类别 [`wonton_protocol::PluginHintCategory::ModelsNotConnected`]）。
     #[serde(default)]
     problem: Option<String>,
+    /// 最近一次对账（用记下的值重新签发并验证）失败的原因。凭据值还在，巡检按它重试，成功就清掉，
+    /// 别让一次超时把使用方永远标成异常。
+    #[serde(default)]
+    reconcile_problem: Option<String>,
     /// 默认路由最近一次探测的结论（见 `model_health`）：只在接上之后有意义，接上前的
     /// “没接上”由网关状态现场推导。恢复可用就清掉。
     #[serde(default)]
     route: Option<super::model_health::RouteProbe>,
+    /// 使用方卸载时网关没在运行，凭据没吊销成；网关回来后对账补吊销，成功了再删掉这个文件。
+    #[serde(default)]
+    pub(super) revoke_pending: bool,
 }
 
 /// 使用方的凭据，每个插件一个 JSON 文件（0600）。卸载时连同网关里的凭据一起删掉。
@@ -87,7 +94,7 @@ impl ModelKeyStore {
         self.dir.join(format!("{id}.json"))
     }
 
-    fn load(&self, id: &PluginId) -> Result<KeyFile, StoreError> {
+    pub(super) fn load(&self, id: &PluginId) -> Result<KeyFile, StoreError> {
         Ok(read_json::<KeyFile>(&self.path(id))?.unwrap_or_default())
     }
 
@@ -106,7 +113,7 @@ impl ModelKeyStore {
     }
 
     /// 记着凭据的使用方。
-    fn all(&self) -> Result<Vec<(PluginId, KeyFile)>, StoreError> {
+    pub(super) fn all(&self) -> Result<Vec<(PluginId, KeyFile)>, StoreError> {
         let entries = match std::fs::read_dir(&self.dir) {
             Ok(entries) => entries,
             Err(e) if e.kind() == std::io::ErrorKind::NotFound => return Ok(Vec::new()),
@@ -228,6 +235,14 @@ pub(crate) fn gateway_absent(langs: &Languages) -> String {
     crate::l10n::text(langs, "plugin-settings-models-gateway-absent", &[])
 }
 
+pub(super) fn reconcile_failed(langs: &Languages, error: &str) -> String {
+    crate::l10n::text(
+        langs,
+        "plugin-settings-models-reconcile-failed",
+        &[("error", error.into())],
+    )
+}
+
 /// 没接上网关时注入的变量：`WONTON_MODEL_*` 全部定义成空字符串，compose 引用它们不会因为变量缺失而失败，
 /// 插件用它自己的登录或 key 设置。
 fn empty_model_vars(package: &PluginPackage, bot_names: &[String]) -> ModelVars {
@@ -301,9 +316,28 @@ impl PluginManager {
         }
     }
 
-    /// 安装声明了 `models` 的插件时：网关就绪就签发并验证凭据；没装、没就绪或签发失败都照样装，
-    /// 变量定义成空字符串（见 [`empty_model_vars`]）。签发失败记日志、原因记进凭据文件，
-    /// 详情页的轻提示带上它；网关不在的情形详情页现场就能算出来，不记。
+    /// 等网关就绪：启动时核心并发装网关和默认 Bot，先装完的那个常常赶上网关还在起。到点还没起来就按实际
+    /// 状态报错，调用方照旧安装、变量留空。没装（Absent）不用等。
+    ///
+    /// 调用方必须在拿 `dependencies.changing` **之前**等：起网关的 `start` 也要那把锁，锁里等只能等到超时。
+    pub(super) async fn provider_when_ready(
+        &self,
+        langs: &Languages,
+    ) -> Result<ModelsRoute, InstallError> {
+        const INTERVAL: std::time::Duration = std::time::Duration::from_secs(2);
+        for _ in 0..60 {
+            match self.models_provider() {
+                ProviderState::Ready(route) => return Ok(*route),
+                ProviderState::NotReady(_) => tokio::time::sleep(INTERVAL).await,
+                ProviderState::Absent => return Err(unavailable(gateway_absent(langs))),
+            }
+        }
+        self.provider(langs)
+    }
+
+    /// 安装声明了 `models` 的插件时签发并验证凭据（[`provider_when_ready`](Self::provider_when_ready) 已在
+    /// 拿依赖锁之前等过网关）；没装、没就绪或签发失败都照样装，变量定义成空字符串（见 [`empty_model_vars`]）。
+    /// 签发失败记日志、原因记进凭据文件，详情页的轻提示带上它（网关不在的情形详情页现场就能算出来，不记）。
     pub(super) async fn provision_models(
         &self,
         package: &PluginPackage,
@@ -362,6 +396,7 @@ impl PluginManager {
                 let vars = self.model_vars(route, package, &file.keys, bot_names);
                 file.vars = Some(vars.clone());
                 file.problem = None;
+                file.reconcile_problem = None;
                 // 凭据重新接上：之前的探测结论是旧状态留下的，下一轮探测重写。
                 file.route = None;
                 store.save(id, &file)?;
@@ -416,6 +451,7 @@ impl PluginManager {
         let vars = self.model_vars(&route, package, &file.keys, &bot_names);
         file.vars = Some(vars.clone());
         file.problem = None;
+        file.reconcile_problem = None;
         file.route = None;
         store.save(&manifest.id, &file)?;
         Ok(Some(vars))
@@ -545,32 +581,31 @@ impl PluginManager {
     }
 
     /// 卸载使用方或安装失败回滚：在网关里吊销它的凭据，再删掉记下的文件（没有凭据也删——里面可能只记着
-    /// 签发失败的原因）。网关已经卸载了就没有可吊销的；网关装着但没在运行时吊销不了，如实报错。
+    /// 签发失败的原因）。网关已经卸载了就没有可吊销的；网关装着但没在运行时不挡卸载，把文件留下、记上待补，
+    /// 网关回来对账时再吊销（吊销不掉最多留一条孤立的凭据，不影响卸载本身）。
     pub(super) async fn revoke_models(
         &self,
         id: &PluginId,
         langs: &Languages,
     ) -> Result<(), InstallError> {
         let store = self.store.model_keys();
-        let keys = store.load(id)?.keys;
+        let mut file = store.load(id)?;
         match self.models_provider() {
             ProviderState::Absent => {}
             ProviderState::NotReady(provider) => {
-                if keys.is_empty() {
-                    store.remove(id)?;
+                if !file.keys.is_empty() {
+                    tracing::warn!(
+                        plugin = %id,
+                        provider = %provider,
+                        "模型网关没在运行，凭据留到网关回来后补吊销"
+                    );
+                    file.revoke_pending = true;
+                    store.save(id, &file)?;
                     return Ok(());
                 }
-                return Err(unavailable(crate::l10n::text(
-                    langs,
-                    "plugin-settings-models-revoke-provider-not-running",
-                    &[
-                        ("provider", provider.as_str().into()),
-                        ("id", id.as_str().into()),
-                    ],
-                )));
             }
             ProviderState::Ready(route) => {
-                for name in keys.keys() {
+                for name in file.keys.keys() {
                     let revoke = &route.spec.credentials.revoke;
                     self.run_command(&route, revoke, name, None, langs).await?;
                 }
@@ -580,18 +615,27 @@ impl PluginManager {
         Ok(())
     }
 
+    /// 拒绝类错误文本里已经带了凭据名，没带的（命令超时之类）补上，免得原因里看不出是哪一个。
+    fn named(name: &str, error: &InstallError) -> String {
+        let text = error.to_string();
+        if text.contains(name) {
+            text
+        } else {
+            format!("{name}: {text}")
+        }
+    }
+
     /// 网关启动后（安装、恢复、升级）为使用方对一次账：记着凭据的用原值重新签发并验证，对账失败的标为异常、
-    /// 写明原因；没接上的（装它的时候网关不在或签发失败）现在签发，并按新变量重建运行中的容器。
+    /// 写明原因，按记下的值交给巡检重试（见 `watch_one`）；没接上的（装它的时候网关不在或签发失败）现在签发，
+    /// 并按新变量重建运行中的容器。
     pub async fn reconcile_models(&self) -> Vec<(PluginId, InstallError)> {
         let langs = self.owner_languages();
         let mut failures = self.reconcile_model_keys(&langs).await;
         for (id, error) in &failures {
-            let reason = crate::l10n::text(
-                &langs,
-                "plugin-settings-models-reconcile-failed",
-                &[("error", error.to_string().into())],
-            );
+            let reason = reconcile_failed(&langs, &error.to_string());
             self.set(id, PluginStatus::Degraded { reason }, None);
+            // 凭据对账失败不说明容器坏了：照样让巡检看着它，下一轮才有机会重试（#643）。
+            self.follow_for_reconcile(id);
         }
         failures.extend(self.connect_unconnected_consumers(&langs).await);
         failures
@@ -606,14 +650,38 @@ impl PluginManager {
             Err(e) => return vec![(route.id.clone(), e.into())],
         };
         let mut failures = Vec::new();
-        for (id, file) in all {
+        for (id, mut file) in all {
+            let mut problems = Vec::new();
+            // 卸载时网关没在运行、没吊销成的：网关回来了补吊销，成功了就不必再重签。
+            if file.revoke_pending {
+                let mut failed = Vec::new();
+                for name in file.keys.keys() {
+                    if let Err(e) = self
+                        .run_command(&route, &route.spec.credentials.revoke, name, None, langs)
+                        .await
+                    {
+                        tracing::warn!(plugin = %id, credential = %name, error = %e, "补吊销模型网关凭据失败");
+                        failed.push(Self::named(name, &e));
+                    }
+                }
+                if failed.is_empty() {
+                    match self.store.model_keys().remove(&id) {
+                        Ok(()) => continue,
+                        Err(e) => failures.push((id.clone(), e.into())),
+                    }
+                    continue;
+                }
+                failures.push((id.clone(), unavailable(failed.join("\n"))));
+                continue;
+            }
             for (name, value) in &file.keys {
                 if let Err(e) = self.issue_verified(&route, name, value, langs).await {
                     tracing::warn!(plugin = %id, credential = %name, error = %e, "模型网关凭据对账失败");
-                    failures.push((id.clone(), e));
+                    problems.push(Self::named(name, &e));
                 }
             }
             // 网关升级可能改了接口路径和默认模型：对账顺手把记下的变量刷新成现在的。
+            let mut changed = false;
             if !file.keys.is_empty()
                 && let Ok(Some(record)) = self.store.load(&id)
                 && let Ok(mut package) =
@@ -621,16 +689,92 @@ impl PluginManager {
             {
                 package.origin = record.origin.clone();
                 let vars = self.model_vars(&route, &package, &file.keys, &self.bot_names(&id));
-                let mut file = file;
                 file.vars = Some(vars);
                 file.problem = None;
                 file.route = None;
-                if let Err(e) = self.store.model_keys().save(&id, &file) {
-                    tracing::warn!(plugin = %id, error = %e, "记下模型网关变量失败");
-                }
+                changed = true;
+            }
+            let problem = (!problems.is_empty()).then(|| problems.join("\n"));
+            if file.reconcile_problem != problem {
+                file.reconcile_problem = problem.clone();
+                changed = true;
+            }
+            if changed && let Err(e) = self.store.model_keys().save(&id, &file) {
+                tracing::warn!(plugin = %id, error = %e, "记下模型网关对账结果失败");
+            }
+            if let Some(problem) = problem {
+                failures.push((id, unavailable(problem)));
             }
         }
         failures
+    }
+
+    /// 对账失败的使用方重新跟着容器巡检：容器回来、或下一次凭据重试成功时状态才有机会回去。
+    fn follow_for_reconcile(&self, id: &PluginId) {
+        let mut plugins = self.plugins.write().expect("插件表锁中毒");
+        if let Some(entry) = plugins.get_mut(id) {
+            entry.follows_containers = true;
+        }
+    }
+
+    /// 按当前的接口路径和默认模型把记下的变量刷新一遍（网关升级会改这两样）。插件记录读不到就不动。
+    fn refresh_model_vars(
+        &self,
+        id: &PluginId,
+        route: &ModelsRoute,
+        langs: &Languages,
+        file: &mut KeyFile,
+    ) {
+        let Ok(Some(record)) = self.store.load(id) else {
+            return;
+        };
+        let Ok(mut package) = PluginPackage::with_files(&record.source, record.files, langs) else {
+            return;
+        };
+        package.origin = record.origin.clone();
+        file.vars = Some(self.model_vars(route, &package, &file.keys, &self.bot_names(id)));
+        file.route = None;
+    }
+
+    /// 上次对账失败过、凭据值还记着：巡检在容器没问题时调用。
+    pub(super) fn model_reconcile_failed(&self, id: &PluginId) -> bool {
+        self.store
+            .model_keys()
+            .load(id)
+            .is_ok_and(|file| file.reconcile_problem.is_some() && !file.keys.is_empty())
+    }
+
+    /// 用记下的值重试一次对账，每个凭据都试（和启动、升级时的对账一致）。成功清掉原因；
+    /// 失败把失败的名字和原因合并记下，并交回调用方。
+    pub(super) async fn retry_model_keys(
+        &self,
+        id: &PluginId,
+        langs: &Languages,
+    ) -> Result<(), InstallError> {
+        let store = self.store.model_keys();
+        let mut file = store.load(id)?;
+        let route = self.provider(langs)?;
+        let mut problems = Vec::new();
+        for (name, value) in &file.keys {
+            if let Err(e) = self.issue_verified(&route, name, value, langs).await {
+                tracing::warn!(plugin = %id, credential = %name, error = %e, "模型网关凭据重试失败");
+                problems.push(Self::named(name, &e));
+            }
+        }
+        let problem = (!problems.is_empty()).then(|| problems.join("\n"));
+        file.reconcile_problem = problem.clone();
+        match problem {
+            Some(problem) => {
+                store.save(id, &file)?;
+                Err(unavailable(problem))
+            }
+            None => {
+                // 值不一定变，接口路径和默认模型却会跟着网关版本变：成功就按现在的刷新一遍变量。
+                self.refresh_model_vars(id, &route, langs, &mut file);
+                store.save(id, &file)?;
+                Ok(())
+            }
+        }
     }
 
     /// 给没接上的使用方签发凭据：装它的时候网关不在或签发失败，变量是空的。签发成功后，运行中的按新变量
@@ -642,19 +786,14 @@ impl PluginManager {
         let Some(route) = self.models_route() else {
             return Vec::new();
         };
+        // 用记录里的清单判断，不看店里的条目：restore 回来的插件没有那条，照样要接。
         let candidates: Vec<(PluginId, bool)> = {
             let plugins = self.plugins.read().expect("插件表锁中毒");
             plugins
                 .iter()
                 .filter(|(id, entry)| {
                     **id != route.id
-                        && entry.listed.as_ref().is_some_and(|listed| {
-                            uses_models(&listed.manifest)
-                                && matches!(
-                                    entry.status,
-                                    PluginStatus::Running | PluginStatus::Stopped
-                                )
-                        })
+                        && matches!(entry.status, PluginStatus::Running | PluginStatus::Stopped)
                 })
                 .map(|(id, entry)| (id.clone(), entry.status == PluginStatus::Running))
                 // 只补没接上的：已接上的对账刚把凭据对好，变量没变，容器不用动。
@@ -680,6 +819,9 @@ impl PluginManager {
                 continue;
             };
             package.origin = record.origin.clone();
+            if !uses_models(&package.manifest) {
+                continue;
+            }
             let bot_names = self.bot_names(&id);
             match self
                 .issue_consumer_credentials(&route, &package, langs, &bot_names)

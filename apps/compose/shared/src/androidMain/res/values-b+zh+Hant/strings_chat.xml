@@ -36,7 +36,6 @@
     <string name="timeline_edited">已編輯</string>
     <string name="timeline_sending">已儲存，等待送達</string>
     <string name="timeline_send_failed_retrying">傳送失敗，會自動重試</string>
-    <string name="timeline_send_failed">傳送失敗：%1$s</string>
     <string name="timeline_resend">重新傳送</string>
     <string name="timeline_undecryptable">無法解密：這支裝置還沒有這則訊息的金鑰</string>
     <string name="timeline_undecryptable_notice">這台裝置讀不了先前的加密訊息。</string>
@@ -126,12 +125,12 @@
     <string name="bot_state_offline">離線</string>
     <string name="bot_avatar_pick_state">更換%1$s頭像</string>
     <string name="bot_profile_open">查看 Bot 個人資料</string>
-    <string name="bot_identity_title">Bot 身分</string>
     <string name="bot_identity_value">外掛：%1$s\nBot：%2$s</string>
+    <string name="bot_details_account">帳號：%1$s</string>
+    <string name="bot_details_web">網頁：%1$s</string>
     <string name="bot_profile_read_only">此 Bot 的個人資料唯讀。只有預設 Bot 支援編輯個人資料。</string>
     <string name="bot_profile_missing">此 Bot 的個人資料已無法使用。</string>
-    <string name="bot_web_title">Bot 網頁</string>
-    <string name="bot_web_open">開啟 Bot 網頁</string>
+    <string name="bot_web_open">開啟網頁版（英文）</string>
     <string name="bot_web_unauthenticated">請先登入伺服器，再開啟此 Bot 的網頁。</string>
     <string name="bot_web_not_shared">伺服器主人尚未向家人開放此 Bot 的網頁。</string>
     <string name="bot_web_permission_denied">此身分無權開啟 Bot 網頁。</string>
@@ -158,4 +157,22 @@
     <string name="timeline_typing_more">%1$s 和另外 %2$d 人正在輸入…</string>
     <!-- 跳轉的原訊息找不到時的輕提示。無參數。 -->
     <string name="timeline_jump_unavailable">這則訊息找不到了</string>
+    <!-- 連不上時失敗訊息旁的腳註。無參數。 -->
+    <string name="timeline_send_failure_offline">連不上</string>
+    <!-- 檔案超過家裡伺服器的上傳上限時失敗訊息旁的腳註。無參數。 -->
+    <string name="timeline_send_failure_too_large">太大了，改送檔案</string>
+    <!-- 伺服器送不了這個格式時失敗訊息旁的腳註。無參數。 -->
+    <string name="timeline_send_failure_unsupported_type">這個格式送不了</string>
+    <!-- 要回覆的那則不在了時失敗訊息旁的腳註。無參數。 -->
+    <string name="timeline_send_failure_reply_target">要回覆的那則不在了</string>
+    <!-- 家裡伺服器拒收時失敗訊息旁的腳註。無參數。 -->
+    <string name="timeline_send_failure_rejected">伺服器不收</string>
+    <!-- 家裡伺服器出錯時失敗訊息旁的腳註。無參數。 -->
+    <string name="timeline_send_failure_upstream">伺服器出錯了</string>
+    <!-- 核心還分不出類別的失敗訊息旁的腳註。無參數；有原文時換成原文。 -->
+    <string name="timeline_send_failure_other">傳送失敗</string>
+    <string name="room_bot_other_private">這是家裡人的私人 Bot，主人還沒給授權。</string>
+    <string name="room_bot_grant_revoked">這個 Bot 的授權已經收回。</string>
+    <string name="room_bot_unavailable">這個 Bot 現在用不了。</string>
+    <string name="room_bot_unknown">還沒核實這個 Bot 能不能發。</string>
 </resources>

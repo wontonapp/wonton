@@ -601,12 +601,16 @@ pub enum PluginFailure {
     CoreUpgrading,
     /// 主人配的代理连不上或者拒绝了，出网插件装不上：要主人在代理设置里改地址，或者修好代理（ADR-0023）。
     EgressProxyUnavailable,
+    /// 出网插件或者它的出口容器还没就绪，预装和安装都挡住了：等它起来，不用改设置（#681）。
+    EgressProxyWaiting,
     /// 连不上远端 MCP 服务器：DNS、TLS、超时、拒连（ADR-0066）。
     RemoteUnavailable,
     /// 远端 MCP 服务器回 5xx 或者说了连接器听不懂的话（ADR-0066）。
     RemoteError,
     /// 家里的服务器上出错了：Docker、身份提供方、Matrix、模型网关没就绪，或者插件没通过健康检查。
     Upstream,
+    /// 等到健康门的时限，服务还在启动：不是探针判失败，宿主空下来后重试通常就过（issue #682）。
+    TimedOut,
     /// 设置值没通过 Schema（ADR-0077），明细在 [`PluginProblem::settings`]。
     SettingsInvalid,
     /// 插件包的设置 Schema 自己不合格（ADR-0077），明细在 [`PluginProblem::settings`]。

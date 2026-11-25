@@ -114,7 +114,7 @@ struct RoomAiLine: View {
 struct RoomTopBar<Trailing: View>: ViewModifier {
     let title: String
     let avatar: AnyView?
-    /// 有人正在输入时状态行写的字（ADR-0109 第 7 节）；没人输入为空。
+    /// 有人正在输入时状态行写的字（ADR-0109 第 8 节）；没人输入为空。
     var typing: String?
     /// 点头像或标题去的资料页；没有的房间为空。
     var openProfile: (() -> Void)?

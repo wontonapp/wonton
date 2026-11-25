@@ -1,13 +1,16 @@
 package app.wonton.ui
 
+import android.content.ClipData
 import android.graphics.Bitmap
 import android.graphics.Color
 import androidx.compose.foundation.Image
 import androidx.compose.foundation.background
+import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.fillMaxWidth
+import androidx.compose.foundation.layout.heightIn
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.rememberScrollState
@@ -15,6 +18,7 @@ import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.text.selection.SelectionContainer
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.material3.CircularProgressIndicator
+import androidx.compose.material3.Icon
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.DisposableEffect
@@ -23,14 +27,21 @@ import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.produceState
 import androidx.compose.runtime.remember
+import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
+import androidx.compose.ui.draw.rotate
 import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.graphics.FilterQuality
 import androidx.compose.ui.graphics.ImageBitmap
 import androidx.compose.ui.graphics.asImageBitmap
+import androidx.compose.ui.platform.ClipEntry
+import androidx.compose.ui.platform.LocalClipboard
+import androidx.compose.ui.semantics.Role
+import androidx.compose.ui.semantics.semantics
+import androidx.compose.ui.semantics.stateDescription
 import androidx.compose.ui.text.font.FontFamily
 import androidx.compose.ui.unit.dp
 import app.wonton.client.ClientCore
@@ -44,9 +55,11 @@ import app.wonton.ui.design.wontonContentPadding
 import app.wonton.ui.design.WontonButton
 import app.wonton.ui.design.WontonButtonKind
 import app.wonton.ui.design.WontonNotice
+import app.wonton.ui.design.WontonSmallButton
 import app.wonton.ui.design.WontonTheme
 import app.wonton.ui.design.toColor
 import app.wonton.ui.icons.Error
+import app.wonton.ui.icons.Forward
 import app.wonton.ui.icons.Warning
 import app.wonton.ui.icons.WontonIcon
 import com.google.zxing.BarcodeFormat
@@ -54,6 +67,7 @@ import com.google.zxing.EncodeHintType
 import com.google.zxing.qrcode.QRCodeWriter
 import com.google.zxing.qrcode.decoder.ErrorCorrectionLevel
 import kotlinx.coroutines.delay
+import kotlinx.coroutines.launch
 
 /**
  * “添加设备”：向家里的服务器要一个一次性配对码，画成二维码给新设备上的云吞 App 扫。进展和码都来自核心的
@@ -143,6 +157,11 @@ private fun InviteCode(code: String, expiresAtMs: Long, onRenew: () -> Unit) {
     val colors = WontonTheme.colors
     val secondary = colors.textSecondary.toColor()
     val remaining = (expiresAtMs - now) / SECOND_MS
+    // 配对文本很长，默认收起，只留“粘贴这段文字”的入口；复制按钮不收，随时能拿完整文本。
+    var fullText by remember { mutableStateOf(false) }
+    val clipboard = LocalClipboard.current
+    val scope = rememberCoroutineScope()
+    val clipLabel = stringResource(R.string.invite_clip_label)
     if (remaining > 0) {
         Column(
             Modifier.fillMaxWidth(),
@@ -173,26 +192,58 @@ private fun InviteCode(code: String, expiresAtMs: Long, onRenew: () -> Unit) {
         style = WontonTheme.typography.supporting,
         color = secondary,
     )
+    InviteCodeDetails(
+        code = code,
+        fullText = fullText,
+        onToggle = { fullText = !fullText },
+        onCopy = { scope.launch { clipboard.setClipEntry(ClipEntry(ClipData.newPlainText(clipLabel, code))) } },
+    )
+}
+
+/** 收起行、展开的码和复制按钮。状态在 [InviteCode]，截图测试用固定值直接画。 */
+@Composable
+internal fun InviteCodeDetails(code: String, fullText: Boolean, onToggle: () -> Unit, onCopy: () -> Unit) {
+    val colors = WontonTheme.colors
+    val secondary = colors.textSecondary.toColor()
     Column(verticalArrangement = Arrangement.spacedBy(WontonTheme.spacing.s8)) {
-        Text(
-            stringResource(R.string.invite_paste_fallback),
-            style = WontonTheme.typography.supporting,
-            color = secondary,
-        )
-        SelectionContainer {
+        val state = stringResource(if (fullText) R.string.appearance_expanded else R.string.appearance_collapsed)
+        Row(
+            Modifier.fillMaxWidth().heightIn(min = WontonTheme.size.target)
+                .semantics { stateDescription = state }
+                .clickable(role = Role.Button, onClick = onToggle),
+            verticalAlignment = Alignment.CenterVertically,
+        ) {
             Text(
-                code,
-                Modifier.fillMaxWidth()
-                    .background(colors.surfaceSubtle.toColor(), RoundedCornerShape(WontonTheme.radii.control))
-                    .padding(WontonTheme.spacing.s12),
-                style = WontonTheme.typography.caption.copy(fontFamily = FontFamily.Monospace),
-                color = colors.textPrimary.toColor(),
+                stringResource(R.string.invite_paste_fallback),
+                Modifier.weight(1f),
+                style = WontonTheme.typography.supporting,
+                color = secondary,
+            )
+            Icon(
+                WontonIcon.Forward,
+                contentDescription = null,
+                modifier = Modifier.size(WontonTheme.size.iconSmall).rotate(if (fullText) EXPANDED_DEGREES else 0f),
+                tint = secondary,
             )
         }
+        if (fullText) {
+            SelectionContainer {
+                Text(
+                    code,
+                    Modifier.fillMaxWidth()
+                        .background(colors.surfaceSubtle.toColor(), RoundedCornerShape(WontonTheme.radii.control))
+                        .padding(WontonTheme.spacing.s12),
+                    style = WontonTheme.typography.caption.copy(fontFamily = FontFamily.Monospace),
+                    color = colors.textPrimary.toColor(),
+                )
+            }
+        }
+        WontonSmallButton(stringResource(R.string.chat_backup_copy), onClick = onCopy)
     }
 }
 
 private val QR_SIZE = 260.dp
+private const val EXPANDED_DEGREES = 90f
 private const val SECOND_MS = 1000L
 private const val SECONDS_PER_MINUTE = 60
 

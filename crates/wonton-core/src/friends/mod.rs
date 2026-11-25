@@ -1,4 +1,5 @@
-//! Accepted Matrix friends and groups, persisted in `<data>/core/friends.json` (ADR-0051).
+//! Accepted Matrix friends, persisted in `<data>/core/friends.json` (ADR-0051). Each friend carries
+//! the role ID they are shared and gated by (ADR-0088).
 //!
 //! The file travels with the core data directory's existing backup/restore. Removed identities
 //! remain as tombstones so their plugin usernames can never identify another person. Share grants
@@ -7,7 +8,7 @@
 //! Authorization consumers must `subscribe()` **before** their first check, inspect that receiver's
 //! current snapshot, and recheck the latest complete snapshot after `changed()`. Watch coalesces
 //! changes without losing the final registry (unlike a bounded event broadcast). Each durable
-//! meaningful mutation advances the persisted revision, including deletions and group changes.
+//! meaningful mutation advances the persisted revision, including deletions.
 //! Bind grants and authenticated connections to `FriendRecord::access_generation`, and compare
 //! it on access: a coalesced remove/reaccept remains distinguishable from the previous activation.
 

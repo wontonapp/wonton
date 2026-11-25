@@ -2,12 +2,15 @@
 <resources>
     <string name="problem_default_agent_absent">没有可向这个账号显示的默认助手，请让主人检查设置。</string>
     <string name="problem_invalid_input_title">这个操作做不了</string>
+    <!-- Next step: check the input and try again. -->
+    <string name="problem_invalid_input_next_step">检查输入后重试。</string>
     <!-- Next step: look at the app again and approve it again. -->
     <string name="problem_plugin_changed_next_step">请重新查看、确认。</string>
     <!-- Next step: the app is installed or installing, updating or uninstalling; wait for that to finish. -->
     <string name="problem_plugin_conflict_next_step">它已经装了，或者正在安装、升级、卸载，等那边做完。</string>
     <!-- Next step: try after the update finishes. -->
     <string name="problem_plugin_core_upgrading_next_step">升级结束后再试。</string>
+    <string name="problem_plugin_health_timeout_title">应用还没就绪</string>
     <!-- Next step: contact the app's author. -->
     <string name="problem_plugin_invalid_next_step">请联系应用的作者。</string>
     <!-- Problem title: the app's package is broken. -->
@@ -32,4 +35,8 @@
     <string name="problem_upgrade_server_next_step">先升级家里的服务器。</string>
     <!-- Problem title used for plugin, chat and connection failures: the home server itself reported an error. -->
     <string name="problem_upstream_title">家里的服务器出错了</string>
+    <!-- Next step when the other server's public access is off: wait, then send again. -->
+    <string name="problem_peer_public_access_off_next_step">等对方重新打开后再发；消息会在那之后补到。</string>
+    <!-- Next step when the other server isn't paired: pair it first. -->
+    <string name="problem_server_not_paired_next_step">先在“其他服务器”里配对，再打开聊天。</string>
 </resources>

@@ -254,7 +254,7 @@ async fn serve() -> anyhow::Result<()> {
     let listener = serve::open_listener(cfg.listen).await?;
 
     let upgrades = open_upgrades(&cfg, &engine);
-    let sharing_registries = sharing_start::Registries::open(&cfg)?;
+    let sharing_registries = sharing_start::Registries::open(&cfg, roles.clone())?;
     let (http, system_http, hydra, matrix) =
         serve::open_clients(&cfg, &engine, &sharing_registries).await?;
     let hydra_for_manager = hydra.as_ref().map(|(h, _)| h.clone());
@@ -316,11 +316,14 @@ async fn serve() -> anyhow::Result<()> {
     let forwarder = _forwarder.map(Arc::new);
     let sharing = sharing_registries.service(peers.clone(), forwarder.clone())?;
     // Tuwunel 的名单和 hosts 跟着配对走（ADR-0050）。
-    serve::spawn_federation_config(&engine, &cfg, &peers, &notices, federation_blocks.clone());
+    serve::spawn_federation_config(
+        matrix.as_ref(),
+        &cfg,
+        &peers,
+        &notices,
+        federation_blocks.clone(),
+    );
     let clients = serve::open_domain(&cfg, &engine, &notices)?;
-    if let (Some(containers), Some(clients)) = (entry, &clients) {
-        wonton_core::entry_runtime::spawn(containers, clients.clone(), notices.clone());
-    }
     let contacts = serve::open_contacts(
         &cfg,
         (&manager, &members, &owner),
@@ -349,7 +352,7 @@ async fn serve() -> anyhow::Result<()> {
         matrix,
         push,
         bus,
-        notices,
+        notices.clone(),
         files,
         audit,
         upgrades,
@@ -358,9 +361,22 @@ async fn serve() -> anyhow::Result<()> {
         federation_blocks,
         sharing,
         contacts,
-        clients,
+        clients.clone(),
+        entry.clone(),
         agent_chains,
     );
+    manager.attach_clients_gateway(&gateway);
+    if let Err(error) = wonton_core::entry_runtime::reconcile_clients(&gateway).await {
+        tracing::warn!(%error, "启动时客户端入口配置未对上，运行循环会重试");
+    }
+    if let (Some(containers), Some(clients)) = (entry, clients) {
+        wonton_core::entry_runtime::spawn(
+            containers,
+            clients,
+            notices.clone(),
+            Some(gateway.clone()),
+        );
+    }
     let _mail_worker = start_mailpit(&cfg, mailpit.as_ref(), system_http, gateway.clone())?;
     serve::run_gateway(
         &cfg,
@@ -399,6 +415,7 @@ fn open_gateway(
     sharing: Arc<wonton_core::gateway::sharing::Sharing>,
     contacts: Option<Arc<wonton_core::contacts::Contacts>>,
     clients: Option<Arc<wonton_core::clients::domain::Domain>>,
+    entry: Option<wonton_core::entry_containers::EntryContainers>,
     agent_chains: Arc<AgentChains>,
 ) -> Arc<Gateway> {
     Arc::new(
@@ -432,7 +449,8 @@ fn open_gateway(
         .with_agent_chains(Some(agent_chains))
         .with_federation_blocks(federation_blocks)
         .with_sharing(Some(sharing))
-        .with_clients(clients),
+        .with_clients(clients)
+        .with_entry(entry),
     )
 }
 

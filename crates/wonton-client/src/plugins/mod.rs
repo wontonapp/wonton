@@ -15,7 +15,6 @@ mod now;
 mod owner_secrets;
 mod polling;
 mod registry_mirror;
-mod roles;
 mod settings;
 mod sharing;
 mod start;
@@ -104,7 +103,7 @@ pub(crate) struct PluginsLink {
     data_dir: PathBuf,
     /// 发起安装、升级时的预览，按插件 ID 记着：失败后重试要来源，聊天列表的安装行要 `has_bot`。做完被主人清掉时删。
     previews: Mutex<HashMap<String, InstallPreview>>,
-    /// “全部更新”里排着队等主人拿主意的确认，一次一条放进 `view.confirmation`；换服务器时随作用域作废。
+    /// 单项操作同时返回的确认，一次展示一条；批量更新的待决定项留在批次内。
     confirmations: Mutex<VecDeque<StoreConfirmation>>,
     /// 插件端口在本机的同号映射（ADR-0072），结果写进 `view.port_mappings`。
     ports: Arc<PortMapper>,
@@ -218,6 +217,7 @@ impl PluginsLink {
     pub(crate) fn derive(view: &mut PluginsViewModel) -> bool {
         let mut changed = Self::reconcile_starts(view);
         changed |= Self::sync_task_progress(view);
+        changed |= Self::sync_update_batch(view);
         let updatable = now::updatable(view);
         changed |= view.updatable != updatable;
         view.updatable = updatable.clone();
@@ -332,7 +332,6 @@ impl PluginsLink {
             link.home.retry_if_rejected().await;
             link.spawn_installed();
             link.spawn_storage();
-            link.spawn_roles();
         });
     }
 
@@ -431,6 +430,7 @@ impl PluginsLink {
             view.store_load = StoreLoadState::NotRequested;
             view.problem = None;
             view.starts.clear();
+            view.update_batch = None;
             view.egress = EgressViewModel::default();
             view.registry_mirror = wonton_protocol::RegistryMirrorViewModel::default();
             view.core_upgrade = CoreUpgradeViewModel::default();

@@ -6,12 +6,14 @@ use axum::response::{IntoResponse, Response};
 use hyper::{HeaderMap, StatusCode};
 use ruma_common::UserId;
 use wonton_protocol::{
-    BotKeeper, BotRef, ContactState, DefaultBotVisibility, InstalledPlugin, MemberStatus,
-    Onboarding, PluginDetail,
+    BotChatAvailability, BotKeeper, BotRef, ContactState, DefaultBotVisibility, InstalledPlugin,
+    MemberStatus, Onboarding, PluginDetail,
 };
 
 use super::api::{self, error_response};
-use super::bot_visibility::{CallerFacts, PersonContactFacts, bot_identity_and_contact_facts};
+use super::bot_visibility::{
+    CallerFacts, PersonContactFacts, bot_identity_and_contact_facts, chat_availability, visibility,
+};
 use super::{Gateway, Person, TunnelPeer};
 use crate::contacts::PersonContactRecordRead;
 use crate::plugin::PluginId;
@@ -65,46 +67,34 @@ pub(super) fn identity(
         };
         Some((member, role))
     };
-    let (contact_active, contact_absent) = match &facts.contact {
-        PersonContactFacts::Record(PersonContactRecordRead::Person {
-            state: ContactState::Active,
-            ..
-        }) => (true, false),
-        PersonContactFacts::Record(
-            PersonContactRecordRead::Missing
-            | PersonContactRecordRead::Person {
-                state: ContactState::Pending | ContactState::Declined | ContactState::NotFound,
-                ..
-            },
-        ) => (false, true),
-        _ => (false, false),
-    };
+    let has_record = matches!(
+        &facts.contact,
+        PersonContactFacts::Record(PersonContactRecordRead::Person { .. })
+    );
     let Some(record) = facts.bot.as_ref() else {
         return Ok((
             None,
-            if contact_absent {
+            if has_record {
                 DefaultBotVisibility::Absent
             } else {
                 DefaultBotVisibility::Unknown
             },
         ));
     };
+    let availability = chat_availability(gateway, &facts);
+    // 不能用也给出身份：插件页照样点得开和它的私聊，房间行带着原因。
+    if availability != BotChatAvailability::Available {
+        return Ok((
+            Some(record.listing.user_id.clone()),
+            visibility(availability),
+        ));
+    }
     let own = matches!(&record.listing.keeper, BotKeeper::User { username } if username == &person.username);
     let shared = record.listing.keeper == BotKeeper::Household
         && (person.is_owner()
             || role
                 .as_ref()
                 .is_some_and(|(_, role)| role.permissions.shared_bots));
-    if !own && !shared && !contact_active {
-        return Ok((
-            None,
-            if contact_absent && record.listing.keeper != BotKeeper::Other {
-                DefaultBotVisibility::Absent
-            } else {
-                DefaultBotVisibility::Unknown
-            },
-        ));
-    }
     let Some(confirmed) = confirm_visible(
         gateway,
         peer,

@@ -5,6 +5,7 @@
 files-not-found = No such file
 files-moved-or-deleted = The file was moved or deleted
 files-not-shared = This file isn't shared with you
+files-room-members-unknown = Can't check who's in the room right now: { $error }. Try again later
 files-share-expired = This file ID's share has expired; look the file up again
 files-changed = The file changed after it was registered, so what you saw may not be the current content; look it up again
 files-share-not-authorized = The app { $plugin } isn't authorized for the shared folder { $share }

@@ -1,4 +1,6 @@
-//! 正在输入、命令表和跳到原消息（ADR-0109 §4、§7）。
+//! 正在输入、命令表和跳到原消息（ADR-0109 §4、§8）。
+
+use std::time::Duration;
 
 use serde_json::json;
 use wonton_client::{Action, MessageContent, TimelineContent, TimelineScroll, TimelineUpdate};
@@ -7,7 +9,7 @@ use wonton_protocol::{BOT_COMMANDS_EVENT, JumpState, RoomCommand, TimelineAction
 
 use super::bot_profile_support::typing;
 use super::message_actions::join_group_room;
-use super::support::{Home, Phone, Timeline, WAIT};
+use super::support::{Home, Phone, Timeline, WAIT, is_room_list};
 
 /// 等一批满足条件的更新，交回去。
 async fn until_update(
@@ -73,11 +75,45 @@ async fn typing_shows_the_bot_and_clears_when_it_sends() {
     let mut timeline = Timeline::open(&phone, &room).await;
     let bot_room = bot.open_room(&room_id).await.expect("Bot 打开群聊");
 
-    typing(&home.matrix.url, &bot, &room, true).await;
-    let update = until_update(&mut timeline, "收到正在输入", |update| {
-        update.typing.iter().any(|name| name == "Hermes")
-    })
-    .await;
+    // 房间的订阅这一刻才在同步请求里挂上：在那之前发的正在输入没有谁订阅，服务器不会再补。
+    let subscribed = async {
+        loop {
+            if home.sync_requests().iter().any(|request| {
+                is_room_list(&request["conn_id"])
+                    && request["room_subscriptions"][room.as_str()].is_object()
+            }) {
+                return;
+            }
+            tokio::time::sleep(Duration::from_millis(20)).await;
+        }
+    };
+    tokio::time::timeout(WAIT, subscribed)
+        .await
+        .expect("时间线订阅没有出现在同步请求里");
+
+    // 正在输入是一次性的 ephemeral 事件，重报直到看见；已经标着“正在输入”时服务器不重发，撤一下再报才算一次变化。
+    let update = 'seen: {
+        for attempt in 1..=12 {
+            if attempt > 1 {
+                typing(&home.matrix.url, &bot, &room, false).await;
+            }
+            typing(&home.matrix.url, &bot, &room, true).await;
+            let seen = tokio::time::timeout(Duration::from_secs(5), async {
+                loop {
+                    let update = timeline.next().await;
+                    if update.typing.iter().any(|name| name == "Hermes") {
+                        return update;
+                    }
+                }
+            })
+            .await;
+            if let Ok(update) = seen {
+                break 'seen update;
+            }
+            assert!(attempt < 12, "重报 {attempt} 次正在输入都没收到");
+        }
+        unreachable!("上一轮没收到的断言会先报出来")
+    };
     assert_eq!(update.typing, ["Hermes"]);
 
     bot_room.send_text("我来了", &[]).await.expect("Bot 发文字");

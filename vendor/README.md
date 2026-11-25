@@ -83,6 +83,18 @@ receiver，任务体开头两行订阅删掉，`select!` 循环不动；`room_in
 行为回归见 `crates/wonton-matrix/tests/tuwunel/send_queue.rs`：`image_progress_updates_are_throttled` 发 8 MB 的图，
 断言进度条数不超过“每 100 ms 一条再加几条不等间隔的（缩略图、原图各自的开头和传完）”；`image_final_state_waits_for_a_late_reader` 发图后再连发
 40 条文字、期间不读广播，断言没有 `Lagged`，图片最后一条更新仍是 100% 之后的已发送。
+
+### `SendHandle` 公开事务号
+
+`src/send_queue/mod.rs` 的 `SendHandle` 加公开方法 `transaction_id`，返回队列给这条消息分配的事务号。
+
+为什么：转发要等附言被服务器收下的结果再发，只能按事务号从 `RoomSendQueueUpdate` 里认自己这条；`transaction_id`
+是私有字段，原来没有 getter。不改 SDK 的替代是从广播里取第一条 `NewLocalEvent` 当自己的事务号，但订阅之后、
+`send_raw` 之前别的发送（Bot、另一条操作）可以插进来，拿到的是别人的事务号；按正文在时间线里找本地回显也同样分不清
+连续发两句同样的话。访问器只读，不改发送行为。上游有访问器后删掉这处补丁。
+
+回归见 `crates/wonton-matrix/tests/tuwunel/forward_comment.rs`。
+
 ## matrix-sdk-ui 0.19.1（Apache-2.0，`matrix-sdk-ui/LICENSE`）
 
 crates.io 包原样导入，sha256 `e43a190b56df060b5a901d0e783e04002612981d1fef9562a44bf69330bb5257`，

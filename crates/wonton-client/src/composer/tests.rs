@@ -289,6 +289,16 @@ fn view(setup: &Setup) -> ComposerViewModel {
     setup.view.borrow().clone()
 }
 
+fn attachment(setup: &Setup, id: &str) -> AttachmentState {
+    view(setup)
+        .attachments
+        .iter()
+        .find(|item| item.id == id)
+        .expect("附件还在")
+        .state
+        .clone()
+}
+
 #[tokio::test(flavor = "multi_thread")]
 async fn photos_and_text_go_out_as_one_group_only_after_every_photo_is_up() {
     let s = setup();
@@ -486,6 +496,56 @@ async fn a_failed_photo_turns_the_message_red_and_retry_sends_it() {
     );
 }
 
+/// 失败是等主人处理的稳定态：迟到的进度和等联网都不能把它盖回上传中（否则发送按钮就不再被拦）；
+/// 重试（`restart`）才把它改成上传中，之后照常收进度。
+#[tokio::test(flavor = "multi_thread")]
+async fn a_failed_attachment_ignores_progress_and_offline_until_restart() {
+    let s = setup();
+    let id = s.link.add_image(ROOM, photo("big.jpg")).unwrap();
+    s.link.fail_for_test(ROOM, &id).unwrap();
+    until("标红", || {
+        matches!(attachment(&s, &id), AttachmentState::Failed { .. })
+    })
+    .await;
+
+    s.link.show(
+        ROOM,
+        &id,
+        AttachmentState::Uploading {
+            progress: Some(0.4),
+        },
+    );
+    assert!(
+        matches!(attachment(&s, &id), AttachmentState::Failed { .. }),
+        "迟到的进度把失败盖回去了"
+    );
+    s.link.show(ROOM, &id, AttachmentState::Paused);
+    assert!(
+        matches!(attachment(&s, &id), AttachmentState::Failed { .. }),
+        "等联网把失败盖回去了"
+    );
+
+    s.link.restart(ROOM, &id);
+    until("重试后回到上传中", || {
+        matches!(attachment(&s, &id), AttachmentState::Uploading { .. })
+    })
+    .await;
+    s.link.show(
+        ROOM,
+        &id,
+        AttachmentState::Uploading {
+            progress: Some(0.5),
+        },
+    );
+    assert_eq!(
+        attachment(&s, &id),
+        AttachmentState::Uploading {
+            progress: Some(0.5),
+        },
+        "重试后的进度没收下"
+    );
+}
+
 #[tokio::test(flavor = "multi_thread")]
 async fn later_messages_wait_for_the_one_in_front() {
     let s = setup();
@@ -565,20 +625,23 @@ async fn uploads_pause_offline_and_resume_when_back() {
     })
     .await;
 
+    // 等联网（Paused）不算失败：这时照样点得了发送，字排在附件后面等。
+    s.link.send(ROOM, "先发字", None, &[]).unwrap();
+    assert_eq!(view(&s).outgoing.len(), 1, "暂停时发送被拒了");
+
     s.fake.online.send_replace(true);
     until("连上后接着传", || s.fake.upload_calls() == 1).await;
     until("显示进度", || {
-        view(&s).attachments[0].state
+        // 发送以后附件挪进待发消息，附件区是空的；进度照样写得进去（`item_mut` 两边都找）。
+        view(&s).outgoing[0].attachments[0].state
             == AttachmentState::Uploading {
                 progress: Some(0.5),
             }
     })
     .await;
     s.fake.finish("a.jpg", Ok(uploaded("a.jpg", true)));
-    until("传完", || {
-        view(&s).attachments[0].state == AttachmentState::Ready
-    })
-    .await;
+    // 传完马上被那条待发消息带走，附件区清空、字发出去。
+    until("传完、字发出去", || view(&s).outgoing.is_empty()).await;
 }
 
 #[tokio::test(flavor = "multi_thread")]
@@ -836,4 +899,44 @@ async fn shared_items_beyond_the_limit_are_refused() {
         Err(CoreError::InvalidInput { .. })
     ));
     assert!(view(&s).outgoing.is_empty());
+}
+
+/// 旧的 `composer.json` 里 `failure` 是一句原文：解析不能整份失败，原文要留着。
+#[test]
+fn an_old_failure_string_still_loads() {
+    let dir = tempfile::tempdir().unwrap();
+    let state = serde_json::json!({
+        "rooms": {
+            "!room:example.invalid": {
+                "tray": [],
+                "outgoing": [{
+                    "id": "abc",
+                    "group": "abc",
+                    "room": "!room:example.invalid",
+                    "body": "hello",
+                    "reply_to": null,
+                    "prepared_reply": null,
+                    "items": [],
+                    "timestamp_ms": 1,
+                    "handed": 0,
+                    "failure": "transport unavailable"
+                }]
+            }
+        }
+    });
+    std::fs::write(dir.path().join("composer.json"), state.to_string()).unwrap();
+    let loaded = super::store::Disk::new(dir.path().to_path_buf()).load();
+    let room = loaded
+        .rooms
+        .get("!room:example.invalid")
+        .expect("the room survives");
+    let failure = room.outgoing[0]
+        .failure
+        .as_ref()
+        .expect("the old failure text survives");
+    assert!(matches!(
+        failure.failure,
+        wonton_protocol::SendFailure::Other
+    ));
+    assert_eq!(failure.details, "transport unavailable");
 }

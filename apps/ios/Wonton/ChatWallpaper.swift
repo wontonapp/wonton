@@ -1,7 +1,7 @@
 import SwiftUI
 import WontonClient
 
-/// 聊天页压在背景上的几样颜色（ADR-0109 第 8 节）。都由 ADR-0026 的令牌叠出来，壳不另算色值：
+/// 聊天页压在背景上的几样颜色（ADR-0109 第 9 节）。都由 ADR-0026 的令牌叠出来，壳不另算色值：
 /// 核心的 `ThemeColors` 里没有聊天背景这几项，补进核心之前先在这里按固定浓度叠。
 struct ChatPalette {
     let colors: ThemeColors
@@ -34,7 +34,7 @@ extension EnvironmentValues {
     var chatPalette: ChatPalette { ChatPalette(colors: wontonColors, isDark: colorScheme == .dark) }
 }
 
-/// 聊天背景（ADR-0109 第 8 节）：底色盖一层淡淡的重点色，上面铺一层细线图案。图案是这里自己画的几何小件，
+/// 聊天背景（ADR-0109 第 9 节）：底色盖一层淡淡的重点色，上面铺一层细线图案。图案是这里自己画的几何小件，
 /// 不用任何现成的壁纸素材。
 struct ChatWallpaper: View {
     @Environment(\.chatPalette) private var palette
@@ -150,11 +150,28 @@ extension View {
 
 /// 聊天页浮着的圆钮：看上去 `size.chatControl` 大，点得到的范围是 `size.target`。标准的 `.glass` 按钮样式定不了
 /// 直径，和输入框、标题胶囊对不齐，所以自己铺玻璃（ADR-0107 的“标准样式表达不了的自绘可操作件”）。
+/// 有标识才往无障碍树上写：没有时不盖掉调用方自己加的标识。
+private struct OptionalIdentifier: ViewModifier {
+    let identifier: String?
+
+    init(_ identifier: String?) { self.identifier = identifier }
+
+    func body(content: Content) -> some View {
+        if let identifier {
+            content.accessibilityIdentifier(identifier)
+        } else {
+            content
+        }
+    }
+}
+
 struct ChatGlassButton: View {
     let icon: WontonIcon
     let label: String
     /// 主要动作（发送）给重点色，图标用页面底色。
     var prominent = false
+    /// 可达性树的稳定标识；只给界面测试要按它找的按钮。
+    var identifier: String?
     let action: () -> Void
     @Environment(\.wontonColors) private var colors
 
@@ -169,5 +186,6 @@ struct ChatGlassButton: View {
         }
         .buttonStyle(.plain)
         .accessibilityLabel(label)
+        .modifier(OptionalIdentifier(identifier))
     }
 }

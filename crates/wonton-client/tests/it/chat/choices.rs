@@ -1,4 +1,4 @@
-//! 消息下面的选项按钮（ADR-0109 第 7 节）：发送者自己先放的表情是选项，点它按主人的身份加同一个表情；
+//! 消息下面的选项按钮（ADR-0109 第 8 节）：发送者自己先放的表情是选项，点它按主人的身份加同一个表情；
 //! 发失败停在按钮上，点它重发，不重复。
 
 use serde_json::{Value, json};
@@ -6,6 +6,7 @@ use serde_json::{Value, json};
 use wonton_client::{Action, TimelineContent, TimelineItem};
 use wonton_matrix::testkit::eventually;
 use wonton_matrix::{ChatRoom, EventId, MatrixSession, OwnedEventId, OwnedRoomId, RelationType};
+use wonton_protocol::BotChatAvailability;
 use wonton_protocol::{BotActivityFacts, ChatAction, ChoiceSend, ChoicesState, MessageChoices};
 
 use super::confirmation::joined_direct_chat;
@@ -139,6 +140,7 @@ async fn setup() -> Setup {
         plugin_id: PLUGIN.to_owned(),
         bot: Some("default".into()),
         user_id: hermes.user_id().to_string(),
+        chat: BotChatAvailability::Available,
         running: true,
         model_requests: 0,
         tool_calls: 0,

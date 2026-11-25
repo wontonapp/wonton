@@ -190,7 +190,7 @@ fn manager(dir: &tempfile::TempDir) -> PluginManager {
 }
 
 /// 一个服务、把数据放在应用数据目录里的插件。
-fn app(id: &str) -> String {
+pub(super) fn app(id: &str) -> String {
     package(
         "  web:\n    image: nginx\n    volumes: ['${WONTON_APP_DATA}/data:/data']",
         "  permissions: []",
@@ -392,6 +392,7 @@ async fn a_broken_record_degrades_only_its_own_plugin() {
             relays: Vec::new(),
             firewalled: false,
             proxied: false,
+            bundled: false,
             id: good.clone(),
             version: "1.0.0".into(),
             source: app("app.good"),
@@ -431,11 +432,21 @@ async fn a_broken_record_degrades_only_its_own_plugin() {
             if b == "app.broken" && g == "app.good"),
         "{states:?}"
     );
+    // 坏记录不挡别的插件安装，也不参与标签防撞名。装没有网页入口的包：装好时的网页确认会真连端口，
+    // CI 上 127.0.0.1:8000 没有服务，带 webui 的示例包会等满时限。
+    m.install(
+        &package("  web:\n    image: nginx", "  permissions: []"),
+        &[],
+        super::langs(),
+    )
+    .await
+    .unwrap();
+    assert_eq!(m.list().len(), 3);
     // 主人能卸载这个异常的插件，它的记录文件随之删除。
     let id = PluginId::parse("app.broken").unwrap();
     m.uninstall(&id, false, &super::langs()).await.unwrap();
     assert!(!broken.exists());
-    assert_eq!(m.list().len(), 1);
+    assert_eq!(m.list().len(), 2);
 }
 
 #[tokio::test]
@@ -500,7 +511,7 @@ async fn docker_outage_is_reported_and_leaves_nothing_behind() {
             .await
             .unwrap_err()
             .kind(),
-        "unsupported"
+        "docker_unavailable"
     );
     let id = super::super::PluginId::parse("app.whoami").unwrap();
     assert_eq!(
@@ -793,6 +804,7 @@ async fn in_a_container_the_webui_and_mcp_upstreams_use_the_service_host() {
             relays: Vec::new(),
             firewalled: false,
             proxied: false,
+            bundled: false,
             id: PluginId::parse("app.test").unwrap(),
             version: "1.0.0".into(),
             source: compose,

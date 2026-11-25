@@ -86,9 +86,11 @@ fn reconcile(
             })
             .cloned()
             .unwrap_or_else(|| BotView {
+                availability: Default::default(),
                 bot: id.clone(),
                 user_id: fact.user_id.clone(),
                 web: None,
+                web_page: None,
                 name: title.to_owned(),
                 avatar: None,
                 state_avatars: Vec::new(),
@@ -97,6 +99,7 @@ fn reconcile(
                 problem: None,
                 chat: Default::default(),
             });
+        view.availability = fact.chat;
         view.chat = layout::bot_settings(
             settings,
             plugin.and_then(|plugin| plugin.chat.as_ref()),

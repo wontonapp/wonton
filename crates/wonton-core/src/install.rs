@@ -66,6 +66,9 @@ pub fn init(dir: &Path, requested: Option<&str>) -> anyhow::Result<Report> {
         &format!("SECRETS_SYSTEM={hydra}\n"),
     )?;
 
+    // 有没有入口设置决定 Tuwunel 的联邦配置（谁终结 TLS、听哪个端口、要不要自签），也决定 compose 里联邦流的
+    // 投放地址，所以先读。
+    let settings = crate::entry_settings::EntrySettings::load(dir)?;
     let config = tuwenel.join("tuwunel.toml");
     let server_name = server_name(&secrets, &config, requested, &mut report)?;
     if federation_config::is_private(&server_name) {
@@ -73,7 +76,7 @@ pub fn init(dir: &Path, requested: Option<&str>) -> anyhow::Result<Report> {
     }
     write_private(
         &config,
-        &tuwunel_config(&server_name, &registration, &public_key),
+        &tuwunel_config(&server_name, &registration, &public_key, settings.is_some()),
     )?;
     fed_files(&tuwenel, &server_name, &mut report)?;
     // 这份 PR 之前配置和名单在 `secrets/` 根和 `fed/` 下；现在都不挂了，删掉免得两处内容分叉。
@@ -84,7 +87,6 @@ pub fn init(dir: &Path, requested: Option<&str>) -> anyhow::Result<Report> {
             Err(e) => return Err(e).with_context(|| format!("删除 {}", stale.display())),
         }
     }
-    let settings = crate::entry_settings::EntrySettings::load(dir)?;
     write_private(
         &dir.join("compose.yaml"),
         &crate::entry_compose::render(COMPOSE, settings.as_ref(), dir)?,
@@ -235,9 +237,23 @@ fn read_server_name(path: &Path) -> anyhow::Result<Option<String>> {
 }
 
 /// 证书校验按安装时定下的模式选择；配对目标和黑名单在第二份配置里热加载。
-fn tuwunel_config(server_name: &str, registration_secret: &str, public_key: &str) -> String {
+///
+/// `entry` 是安装时有没有入口设置。有入口时 TLS 由入口容器的配对前端（8449）用有效证书终结，Tuwunel 只有
+/// 明文 8008；没有入口时公网联邦关着，Tuwunel 也不自签，但保留内部 8448 让 iroh 投进来的流有监听可落
+/// （核心的投放地址是 `tuwunel.wonton.internal:8448`），对端的严格验证会停在 TLS 握手上，配好入口才通。
+/// 私用名不受入口影响：照旧自签、两个端口和证书例外（ADR-0050 的封闭配对联邦）。
+fn tuwunel_config(
+    server_name: &str,
+    registration_secret: &str,
+    public_key: &str,
+    entry: bool,
+) -> String {
     let private = federation_config::is_private(server_name);
-    let ports = if private { "[8008, 8448]" } else { "8008" };
+    let ports = if private || !entry {
+        "[8008, 8448]"
+    } else {
+        "8008"
+    };
     let tls = if private {
         "\n[global.tls]\ncerts = \"/etc/tuwunel/tuwunel-tls.crt\"\nkey = \"/etc/tuwunel/tuwunel-tls.key\"\ndual_protocol = true\n"
     } else {
@@ -249,7 +265,7 @@ fn tuwunel_config(server_name: &str, registration_secret: &str, public_key: &str
 server_name = "{server_name}"
 database_path = "/var/lib/tuwunel"
 address = "0.0.0.0"
-# 有名字时 TLS 在隔离入口容器里终止；私用模式保留内部 8448。
+# 公网 8448 不发布：有入口时 TLS 在隔离入口容器里终止，只有内部 8008；没有入口时 8448 只等 iroh 投进来的流。
 port = {ports}
 allow_federation = true
 trusted_servers = []
@@ -261,7 +277,10 @@ login_with_password = false
 new_user_displayname_suffix = ""
 # 核心用它注册自己的管理账号（Synapse 兼容的管理接口）。
 registration_shared_secret = "{registration_secret}"
-# 私用名拿不到公共证书，仅封闭配对模式保留此例外（ADR-0051）。
+# 服务器建 `#admins:<server>` 管理房间；核心的热加载在房间里发 `!admin server reload-config`（ADR-0116）。
+# 2.0 的分组名是 [global.admin.room] create，扁平键名仍兼容。
+create_admin_room = true
+# 私用名拿不到公共证书，仅封闭配对模式保留此例外（ADR-0051）；有名字但还没配入口的也不放宽。
 allow_invalid_tls_certificates = {private}
 
 [global.jwt]
@@ -331,9 +350,13 @@ pub(crate) fn write_private(path: &Path, text: &str) -> anyhow::Result<()> {
     write_file(path, text, 0o600)
 }
 
-/// 先写临时文件再改名：中途失败不会留下写了一半的文件。
+/// 先删掉挡路的目录（旧版对账没写文件就建了容器，Docker 把缺的挂载源建成了目录，改名盖不过目录），
+/// 再写临时文件、改名：中途失败不会留下写了一半的文件。
 fn write_file(path: &Path, text: &str, mode: u32) -> anyhow::Result<()> {
     let tmp = path.with_extension("tmp");
+    if path.is_dir() {
+        fs::remove_dir_all(path).with_context(|| format!("替换目录 {}", path.display()))?;
+    }
     let mut file = fs::OpenOptions::new()
         .write(true)
         .create(true)
@@ -347,6 +370,9 @@ fn write_file(path: &Path, text: &str, mode: u32) -> anyhow::Result<()> {
     file.sync_all()?;
     fs::rename(&tmp, path).with_context(|| format!("写入 {}", path.display()))
 }
+
+#[cfg(test)]
+mod entry_mode_tests;
 
 #[cfg(test)]
 mod tuwunel_tests;

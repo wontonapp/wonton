@@ -12,6 +12,7 @@
     <string name="composer_photo">写真</string>
     <!-- Screen-reader label of the round send button at the right of the chat composer. -->
     <string name="composer_send">送信</string>
+    <string name="composer_edit_confirm">確定</string>
     <string name="composer_file_unreadable">このファイルを読み込めませんでした。もう一度コピーするか、別のファイルを選んでください。</string>
     <string name="composer_tray_full">一度に送れる添付は %1$d 個までです。</string>
     <string name="composer_attachment_remove">%1$s を外す</string>
@@ -40,4 +41,9 @@
     <string name="composer_commands">コマンド</string>
     <!-- コマンド一覧の末尾：一覧に出ていない件数。引数：件数。 -->
     <string name="composer_commands_more">ほか %1$d 件のコマンドは表示していません</string>
+    <!-- 添付の形式をサーバーが受け取れないときの説明行。引数なし。 -->
+    <string name="composer_attachment_unsupported_type">この形式はアップロードできません</string>
+    <!-- 返信元がないので返信を外したときの説明行。引数なし。 -->
+    <string name="composer_attachment_reply_target">返信元がありません。返信を外してください</string>
+
 </resources>

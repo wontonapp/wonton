@@ -1,13 +1,15 @@
 //! 从 [`Model`] 生成 `haproxy.cfg` 和两份 crt-list。纯字符串拼接，不碰 Docker，也不解释网络。
 //!
-//! 两条前端各认一个固定对端：公网前端只认连接器，局域网前端只认局域网转发。规则顺序有讲究：
+//! 公网、局域网两条前端各认一个固定对端：公网前端只认连接器，局域网前端只认局域网转发。规则顺序有讲究：
 //! `reject` 在 `expect-proxy` 前面——解析 PROXY 头以后 `src` 变成客户端地址，再按 `src` 判连接器
-//! 就会把连接器自己拒掉。
+//! 就会把连接器自己拒掉。配对前端不认连接器，只认服务器名，再按路径分给核心或 Tuwunel。
+
+use wonton_protocol::WONTON_WELL_KNOWN_PATH;
 
 use super::model::{
     AUTH_FAILURE_HEADER, AUTH_FAILURES_EXPIRE, AUTH_FAILURES_LIMIT, AUTH_FAILURES_SIZE, CERT_FILE,
     GATEWAY_ADDRESS, LAN_BIND, LAN_CRT_LIST, Model, PAIRED_BIND, PUBLIC_BIND, PUBLIC_CRT_LIST,
-    RUNTIME_SOCKET, Trust,
+    RUNTIME_SOCKET, TUWUNEL_ADDRESS, Trust,
 };
 
 pub struct Rendered {
@@ -27,6 +29,7 @@ pub fn render(model: &Model) -> Result<Rendered, String> {
     }
     if model.paired_federation {
         paired_frontend(&mut config, &model.suffix);
+        tuwunel(&mut config);
     }
     gateway(&mut config);
     Ok(Rendered {
@@ -125,7 +128,7 @@ fn request_rules(out: &mut String, entry: &str, header: Option<&str>, peer: &str
     out.push_str(&format!(
         "  acl banned_v4 sc_get_gpc0(0) gt {AUTH_FAILURES_LIMIT}\n  acl banned_v6 sc_get_gpc0(1) gt {AUTH_FAILURES_LIMIT}\n  http-request deny deny_status 429 if banned_v4 or banned_v6\n"
     ));
-    // Host 必须和 SNI 相同，带端口的形式（`:443`、发布端口）先去掉端口再比。
+    // 插件需要原始 Host（包括局域网端口）；先校验主机名与 SNI 一致，再原样转发。
     out.push_str("  http-request set-var(txn.sni) ssl_fc_sni,lower\n");
     out.push_str("  http-request deny deny_status 421 unless { hdr(host),field(1,:),lower,strcmp(txn.sni) eq 0 }\n");
     stripped_headers(out);
@@ -165,10 +168,20 @@ fn response_rules(out: &mut String) {
     ));
 }
 
-/// 已配对的云吞之间：联邦服务器名固定，把 `Host` 归一成它。
+/// 已配对的云吞之间：只接受本机联邦服务器名，入口标记由 HAProxy 写入；只有核心自己答的路径留在 8484。
+///
+/// 联邦和 key 要走核心的转发和统一错误类别，发现文件由核心生成；其余（客户端 API 在 `/_matrix/client/*`）直给 Tuwunel，
+/// 8484 对它们回 404。`use_backend` 只负责选后端，`http-request` 的 421 照样先于它执行（haproxy 3.2.8 实测并告警）。
 fn paired_frontend(out: &mut String, suffix: &str) {
     out.push_str(&format!(
-        "frontend paired\n  bind {PAIRED_BIND} ssl crt {CERT_FILE} strict-sni expose-fd listeners\n  acl correct_sni ssl_fc_sni -i {suffix}\n  http-request deny deny_status 421 unless correct_sni\n  http-request deny deny_status 421 unless {{ hdr(host),lower -i {suffix} {suffix}:443 {suffix}:8448 }}\n  http-request set-header Host {suffix}\n  default_backend gateway\n\n"
+        "frontend paired\n  bind {PAIRED_BIND} ssl crt {CERT_FILE} strict-sni expose-fd listeners\n  acl correct_sni ssl_fc_sni -i {suffix}\n  http-request deny deny_status 421 unless correct_sni\n  http-request deny deny_status 421 unless {{ hdr(host),lower -i {suffix} {suffix}:443 {suffix}:8448 }}\n  http-request set-header X-Wonton-Entry paired\n  use_backend gateway if {{ path_beg /_matrix/federation/ }}\n  use_backend gateway if {{ path_beg /_matrix/key/ }}\n  use_backend gateway if {{ path /.well-known/matrix/server }}\n  use_backend gateway if {{ path /.well-known/matrix/client }}\n  use_backend gateway if {{ path {WONTON_WELL_KNOWN_PATH} }}\n  default_backend tuwunel\n\n"
+    ));
+}
+
+/// 配对前端默认去 Tuwunel 的明文 8008；端点由核心在同一个 compose 项目里给（clients 网络的别名）。
+fn tuwunel(out: &mut String) {
+    out.push_str(&format!(
+        "backend tuwunel\n  server tuwunel {TUWUNEL_ADDRESS} resolvers docker init-addr libc,none\n"
     ));
 }
 

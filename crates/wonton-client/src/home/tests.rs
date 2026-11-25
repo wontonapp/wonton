@@ -117,3 +117,53 @@ async fn a_known_unreachable_connection_gates_core_requests() {
         .send_modify(|view| view.status = down(HomeFailure::TransportUnavailable));
     assert!(home.tunnel_outage().is_some(), "传输不通要拦");
 }
+
+#[test]
+fn the_path_switch_is_off_by_default_and_roundtrips() {
+    let dir = tempfile::tempdir().unwrap();
+    assert!(!path_settings::exclude_fake_ip(dir.path()));
+    path_settings::set_exclude_fake_ip(dir.path(), true).unwrap();
+    assert!(path_settings::exclude_fake_ip(dir.path()));
+    path_settings::set_exclude_fake_ip(dir.path(), false).unwrap();
+    assert!(!path_settings::exclude_fake_ip(dir.path()));
+}
+
+#[test]
+fn a_broken_path_setting_file_reads_as_off() {
+    let dir = tempfile::tempdir().unwrap();
+    std::fs::write(dir.path().join("path-settings.json"), "not json").unwrap();
+    assert!(!path_settings::exclude_fake_ip(dir.path()));
+}
+
+/// 开关两种取值下都能真的绑起来：装上选路器不能把绑定本身弄坏。
+#[tokio::test]
+async fn the_endpoint_binds_with_the_path_switch_off_and_on() {
+    let (_dir, home, _method_rx) = paused_home().await;
+    let deadline = Duration::from_secs(10);
+    let off = home
+        .bind_endpoint(&[], 1, crate::l10n::language(), deadline)
+        .await;
+    assert!(off.is_ok(), "关着能绑：{:?}", off.err());
+    home.set_fake_ip_exclusion(true).unwrap();
+    assert!(home.fake_ip_exclusion.load(Ordering::SeqCst), "缓存已打开");
+    let on = home
+        .bind_endpoint(&[], 1, crate::l10n::language(), deadline)
+        .await;
+    assert!(on.is_ok(), "开着能绑：{:?}", on.err());
+}
+
+/// 写失败时缓存和文件都保持原值。
+#[tokio::test]
+async fn a_failed_write_keeps_the_old_value() {
+    let (dir, home, _method_rx) = paused_home().await;
+    home.set_fake_ip_exclusion(true).unwrap();
+    // 设置文件的位置放成目录，下一次写改名必失败。
+    let path = dir.path().join("path-settings.json");
+    std::fs::remove_file(&path).unwrap();
+    std::fs::create_dir(&path).unwrap();
+    assert!(home.set_fake_ip_exclusion(false).is_err());
+    assert!(
+        home.fake_ip_exclusion.load(Ordering::SeqCst),
+        "写失败时缓存保持原值"
+    );
+}

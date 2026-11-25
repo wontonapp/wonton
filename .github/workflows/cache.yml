@@ -20,6 +20,8 @@ on:
 env:
   CARGO_INCREMENTAL: "0"
   CARGO_PROFILE_DEV_DEBUG: line-tables-only
+  # Release 的符号要能还原到行：崩溃分析只靠它，剥掉的是打包进 APK 的那份。
+  CARGO_PROFILE_RELEASE_DEBUG: line-tables-only
 
 permissions:
   contents: read
@@ -90,6 +92,7 @@ jobs:
               - "rust-toolchain.toml"
               - ".github/workflows/cache.yml"
               - ".github/workflows/android.yml"
+              - ".github/workflows/android-size.yml"
     outputs:
       rust: ${{ steps.filter.outputs.rust }}
       ios: ${{ steps.filter.outputs.ios }}
@@ -165,7 +168,11 @@ jobs:
         with:
           persist-credentials: false
       - name: 用 Xcode 27.1（和开发机 mini 上的一致）
-        run: sudo xcode-select -s /Applications/Xcode_27.1.app
+        run: |
+          # 迷你机自托管 runner 的 sudo 可能没配免密；已经选好 27.1 时跳过，免得整条作业死在选 Xcode 上。
+          if ! xcodebuild -version | head -1 | grep -q "Xcode 27.1"; then
+            sudo xcode-select -s /Applications/Xcode_27.1.app
+          fi
       - name: 安装 rust-toolchain.toml 指定的工具链和 iOS 模拟器 target
         run: |
           rustup toolchain install
@@ -216,3 +223,7 @@ jobs:
         # 夜跑在 x86_64 模拟器上跑，ABI 和上面的手机包不同，缓存里两套都要有。
         working-directory: apps/compose
         run: ./gradlew :shared:buildRustCore -Pwonton.abis=x86_64
+      - name: 编译 Rust 核心（release；android-size.yml 的 APK 体积作业用）
+        # 体积门禁要编一份 release 核心，放在这里随 main 的缓存一起编好，那边只增量链接。
+        working-directory: apps/compose
+        run: ./gradlew :shared:buildRustCore -Pwonton.abis=arm64-v8a -Pwonton.rustProfile=release

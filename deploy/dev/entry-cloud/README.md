@@ -283,7 +283,7 @@ Rust 构建使用仓库 lockfile，系统包依赖 Debian 仓库（镜像摘要�
 | dnsdist | 1.9.10 | [GPL-2.0](https://github.com/PowerDNS/pdns/tree/rel/dnsdist-1.9.x) |
 | acme-dns | 1.0 | [MIT](https://github.com/joohoi/acme-dns/tree/v1.0) |
 | Pebble | 2.8.0 | [MPL-2.0](https://github.com/letsencrypt/pebble/tree/v2.8.0) |
-| HAProxy | 3.2.8 | [GPL-2.0 / LGPL-2.1（部分库）](https://www.haproxy.org/#licence) |
+| HAProxy | 3.4 | [GPL-2.0 / LGPL-2.1（部分库）](https://www.haproxy.org/#licence) |
 | lego（家庭验收工具） | 5.5.2 | [MIT](https://github.com/go-acme/lego/tree/v5.5.2) |
 | Rust / 标准库（构建） | 1.99.1 | MIT / Apache-2.0；GNU toolchain 仅构建工具 |
 | Debian / Alpine（镜像 OS） | 各镜像指定版本 | 各包许可证，不链接 PowerDNS/HAProxy GPL 代码进 Rust |

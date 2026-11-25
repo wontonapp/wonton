@@ -4,8 +4,8 @@
     <string name="pairing_title">ペアリング</string>
     <!-- Title of the page for pairing the same phone again from the server settings. -->
     <string name="pairing_title_again">再ペアリング</string>
-    <!-- Explanation above the paste field: where the pairing QR code lives. May wrap. -->
-    <string name="pairing_instructions">自宅のローカルネットワークで、ブラウザーでサーバーのIPアドレス（インストール時にターミナルに表示されます）を開くと、ペアリング用QRコードが表示されます。</string>
+    <!-- Explanation above the paste field: who to ask for the pairing code, and the scan path for whoever runs the server. May wrap. -->
+    <string name="pairing_instructions">サーバーをセットアップした人にペアリングコードをもらってください。コードは、ペアリング済みのデバイスの「デバイスを追加」か、ホストで sudo wonton pair を実行して発行されます。自分でサーバーを動かしている場合は、自宅のローカルネットワークで、インストール時に表示されたアドレスをブラウザーで開くと、ペアリング用QRコードが表示されます。</string>
     <!-- Placeholder of the field to paste the pairing code when scanning is not possible. -->
     <string name="pairing_paste_placeholder">ペアリングコードをペースト</string>
     <string name="pairing_paste_label">ペアリングコード</string>
@@ -35,8 +35,4 @@
     <string name="pairing_hint_transport">自宅サーバーの電源とネットワーク接続を確認して、もう一度試してください。</string>
     <!-- Next step under the protocol failure. May wrap. -->
     <string name="pairing_hint_protocol">Appとサーバーを最新バージョンに更新してください。</string>
-    <!-- 参加用コードで管理者の承認待ちのときの見出し。引数なし。 -->
-    <string name="pairing_failure_pending">管理者の承認待ち</string>
-    <!-- 承認待ちの次の手順：管理者が承認したら同じコードで再試行。引数なし。 -->
-    <string name="pairing_next_pending">管理者が承認したら、同じコードでもう一度お試しください。</string>
 </resources>

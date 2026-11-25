@@ -26,6 +26,8 @@ mod connect;
 mod contacts;
 mod display_name;
 mod draft;
+mod edit;
+mod edit_actions;
 mod follow_home;
 mod forward;
 mod handoff;
@@ -38,6 +40,7 @@ pub(crate) mod mentions;
 mod menu;
 mod onboarding;
 mod ops;
+mod out_typing;
 mod pending;
 mod plugin_status;
 mod previews;
@@ -90,7 +93,8 @@ pub(crate) use login::proxy_url;
 pub(crate) use runs::Runs;
 #[cfg(feature = "ui-fake")]
 pub(crate) use runs::apply_diff;
-pub use timeline::{TimelineSource, TimelineSubscription};
+pub(crate) use timeline::TimelineSource;
+pub use timeline::TimelineSubscription;
 pub(crate) use view::{failure, summary, unread_total};
 
 use crate::home::HomeLink;
@@ -451,6 +455,40 @@ impl ChatLink {
         }
     }
 
+    fn retry_send(
+        self: &Arc<Self>,
+        target: &TimelineTarget,
+        item_id: &str,
+    ) -> Result<(), CoreError> {
+        let key = TimelineKey::parse(target)?;
+        let room = self.opened(&key)?;
+        let sent = self.sent.clone();
+        let item_id = item_id.to_owned();
+        self.spawn_op_with_success(
+            |_| "chat-op-resend-failed",
+            async move { room.retry_send(&item_id).await },
+            move || onboarding::record_sent(&sent, key.room_id.to_string()),
+        );
+        Ok(())
+    }
+
+    fn cancel_send(&self, target: &TimelineTarget, item_id: &str) -> Result<(), CoreError> {
+        let room = self.opened(&TimelineKey::parse(target)?)?;
+        let item_id = item_id.to_owned();
+        self.spawn_op("chat-op-cancel-send-failed", async move {
+            room.cancel_send(&item_id).await
+        });
+        Ok(())
+    }
+
+    fn paginate_backwards(&self, target: &TimelineTarget) -> Result<(), CoreError> {
+        let room = self.opened(&TimelineKey::parse(target)?)?;
+        self.spawn_op("chat-op-paginate-failed", async move {
+            room.paginate_backwards(PAGE).await.map(drop)
+        });
+        Ok(())
+    }
+
     pub(crate) fn timeline_action(
         self: &Arc<Self>,
         action: TimelineAction,
@@ -471,41 +509,31 @@ impl ChatLink {
             TimelineAction::SendImage {
                 target,
                 image,
+                caption,
                 reply_to,
-            } => self.send_image(&TimelineKey::parse(&target)?, image, reply_to.as_deref()),
+            } => self.send_image(
+                &TimelineKey::parse(&target)?,
+                image,
+                caption.as_deref(),
+                reply_to.as_deref(),
+            ),
             TimelineAction::ForwardMessage {
                 target,
                 item_id,
                 to_room_id,
-            } => self.forward_message(&TimelineKey::parse(&target)?, &item_id, &to_room_id),
+                comment,
+            } => self.forward_message(
+                &TimelineKey::parse(&target)?,
+                &item_id,
+                &to_room_id,
+                comment.as_deref(),
+            ),
             TimelineAction::RedactMessage { target, item_id } => {
                 self.redact_message(&TimelineKey::parse(&target)?, &item_id)
             }
-            TimelineAction::RetrySend { target, item_id } => {
-                let key = TimelineKey::parse(&target)?;
-                let room = self.opened(&key)?;
-                let sent = self.sent.clone();
-                self.spawn_op_with_success(
-                    "chat-op-resend-failed",
-                    async move { room.retry_send(&item_id).await },
-                    move || onboarding::record_sent(&sent, key.room_id.to_string()),
-                );
-                Ok(())
-            }
-            TimelineAction::CancelSend { target, item_id } => {
-                let room = self.opened(&TimelineKey::parse(&target)?)?;
-                self.spawn_op("chat-op-cancel-send-failed", async move {
-                    room.cancel_send(&item_id).await
-                });
-                Ok(())
-            }
-            TimelineAction::PaginateBackwards { target } => {
-                let room = self.opened(&TimelineKey::parse(&target)?)?;
-                self.spawn_op("chat-op-paginate-failed", async move {
-                    room.paginate_backwards(PAGE).await.map(drop)
-                });
-                Ok(())
-            }
+            TimelineAction::RetrySend { target, item_id } => self.retry_send(&target, &item_id),
+            TimelineAction::CancelSend { target, item_id } => self.cancel_send(&target, &item_id),
+            TimelineAction::PaginateBackwards { target } => self.paginate_backwards(&target),
             TimelineAction::SetTimelineScroll { target, scroll } => {
                 self.set_timeline_scroll(&TimelineKey::parse(&target)?, scroll)
             }
@@ -543,6 +571,20 @@ impl ChatLink {
             | TimelineAction::RetryOutgoing { .. }
             | TimelineAction::CancelOutgoing { .. } => {
                 Err(invalid(&l10n!(CATALOG, language(), "chat-invalid-action")))
+            }
+            TimelineAction::StartEdit { target, item_id } => {
+                self.start_edit(&TimelineKey::parse(&target)?, &item_id)
+            }
+            TimelineAction::CancelEdit { target } => {
+                self.cancel_edit(&TimelineKey::parse(&target)?)
+            }
+            TimelineAction::EditMessage {
+                target,
+                event_id,
+                body,
+            } => self.edit_message(&TimelineKey::parse(&target)?, &event_id, &body),
+            TimelineAction::SetTyping { target, typing } => {
+                self.set_typing(&TimelineKey::parse(&target)?, typing)
             }
         }
     }
@@ -755,6 +797,20 @@ impl ChatLink {
             .get(key)
             .and_then(|open| open.room.upgrade())
             .ok_or_else(|| target::not_subscribed(key))
+    }
+
+    /// 测试用：像 SDK 丢掉活事件那样清掉一条已打开时间线的条目，事件缓存不动，等补检重建。清空对壳是无声的
+    /// （不发 `Clear`，也不走 SDK 清空的重建），只有补检发现后才让壳清屏。只在 `test-hooks` 构建里有调用方。
+    #[cfg(feature = "test-hooks")]
+    pub(crate) async fn test_clear_timeline(
+        &self,
+        target: &TimelineTarget,
+    ) -> Result<(), CoreError> {
+        let key = TimelineKey::parse(target)?;
+        let room = self.opened(&key)?;
+        timeline::mark_silent_clear(key.room_id.clone(), key.thread_root.clone());
+        room.timeline().await.clear().await;
+        Ok(())
     }
 
     /// 已打开的目标共用时间线；临时操作独立持有房间监听。

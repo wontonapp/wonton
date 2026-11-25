@@ -1,6 +1,6 @@
 # ADR-0090 公网访问：自己的域名或 Cloudflare Tunnel 当入口，默认关，一键全关，回调按路径放行，访客链接
 
-- 状态：已接受（2026-11-12）。方向由主人 2026-11-12 定，见“主人已定”
+- 状态：已接受（2026-11-12）。方向由主人 2026-11-12 定，见“主人已定”；2026-11-22 补充（[ADR-0112](0112-peer-cert-pinning.md)）：经 iroh 配对过的云吞照常联邦、不受总开关影响
 - 补充 [ADR-0021](0021-third-party-clients.md)：把它的公网入口从“第三方原生 App”扩成通用的公网访问；把它“换入口”里的两种做法
   提到 M1。补充 [ADR-0011](0011-security-model.md) 的“网络暴露”：访客链接是一种匿名访问。HTTPS 和规范对外地址见 [ADR-0089](0089-https-own-domain.md)
 
@@ -50,6 +50,7 @@ Home Assistant 的教训：cloudhook 关了 Remote UI 还开着、单个关掉�
   断开已有的公网连接。三道都做，任何一道没做成都如实显示“没关干净”和原因，不显示为已关（吸取 HA cloudhook 的教训）。
 - 包括 ADR-0051 公网入口上的 Matrix 联邦和 `.well-known`：关着时别的 Matrix 服务器上的人联系不到这台，重新打开后对方重试才收到消息。
   经 iroh 配对过的云吞、局域网入口、App 都不受影响。
+  配对过的云吞之间不是这条总开关能关的：它们经 iroh 走，见 [ADR-0112](0112-peer-cert-pinning.md)（核心在隧道两端终结 TLS、按配对表钉证书）。
 - **各插件的开关和访客链接都留着，只是不生效**，App 里标成“公网访问已关”。总开关打开前，确认页列出会重新打开的应用、路径和访客链接。
   访客链接的有效期照走，不因总开关停而顺延。
 - 总开关不改 `WONTON_EXTERNAL_URL`（ADR-0089 第 5 节），应用不重启。
@@ -66,7 +67,8 @@ Home Assistant 的教训：cloudhook 关了 Remote UI 还开着、单个关掉�
 
 照 Umbrel 给 n8n 的做法，不另造组件：
 
-- 插件用 `clients.http` + `auth: app` + `public.allow` 列出回调路径，公网上只有这几条能到应用；其余路径只在局域网入口和 App 里能用。
+- 插件用 `clients.http` + `auth: app` + `public.allow` 列出回调路径（按整段前缀匹配，和 `public.deny` 一样），公网上只有这几条能到应用；
+  其余路径只在局域网入口和 App 里能用。
   n8n 的例子：
 
   ```yaml
@@ -133,12 +135,14 @@ Halo 这类就是 `clients.http` + `auth: app` + `public.deny` 挡掉后台和�
 | 方法 | 路径 | 说明 |
 | --- | --- | --- |
 | GET、PUT | `/_wonton/clients/domain` | 后缀、DNS 服务商和凭据（只写不读）、订户协议的勾选（ADR-0089） |
-| GET、PUT | `/_wonton/clients/ingress` | 入口的种类和它的设置（只写不读的令牌）；总开关 |
+| GET、PUT | `/_wonton/clients/ingress` | 入口的种类和它的设置（只写不读的令牌） |
+| PUT | `/_wonton/clients/public-access` | 总开关，请求体 `{"enabled": true}`；关掉时三道闸门逐一执行 |
 | GET、POST | `/_wonton/clients/{id}/guests` | 列出、新建访客链接，请求体 `{"label", "ttl_seconds", "path"}`，`ttl_seconds` 超过 7 天回 400 `invalid_input` |
 | GET、DELETE | `/_wonton/clients/{id}/guests/{链接 id}` | 取地址（记审计）；收回 |
 | GET | `/_wonton/clients/status` | ADR-0021 已有，加上：入口种类、总开关和三道闸门各自的状态、当前公开的应用、路径和访客链接 |
 
-新错误类别：`entry_closed`（409，入口没开）、`ingress_unavailable`（503，连接器起不来或连不上，附详情）、`public_access_off`（409，总开关关着）。
+新错误类别：`entry_closed`（入口没开：访客接口回 409；入口页面上是 403 的“链接已失效或不对”，页面正文不是 API）、
+`ingress_unavailable`（503，连接器起不来或连不上，附详情）、`public_access_off`（409，总开关关着）。
 其余用 ADR-0021 的。
 
 ### 8. 契约、提供方、消费方和契约测试

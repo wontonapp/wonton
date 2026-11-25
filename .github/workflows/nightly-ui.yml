@@ -51,7 +51,11 @@ jobs:
         with:
           persist-credentials: false
       - name: 用 Xcode 27.1（和开发机一致）
-        run: sudo xcode-select -s /Applications/Xcode_27.1.app
+        run: |
+          # 迷你机自托管 runner 的 sudo 可能没配免密；已经选好 27.1 时跳过，免得整条作业死在选 Xcode 上。
+          if ! xcodebuild -version | head -1 | grep -q "Xcode 27.1"; then
+            sudo xcode-select -s /Applications/Xcode_27.1.app
+          fi
       - name: 安装 rust-toolchain.toml 指定的工具链和 iOS 模拟器 target
         run: |
           rustup toolchain install
@@ -87,7 +91,12 @@ jobs:
           devices = json.loads(subprocess.check_output(["xcrun", "simctl", "list", "devices", "available", "-j"]))["devices"]
           # 折屏（Duo）有两个显示，simctl recordVideo 不指定 --display 会等 5 分钟再报错，跳过它。
           # 同系统上优先成熟型号：最新那一代在镜像里刚上线，装测试包时崩过 CoreSimulator。
-          available = [d for runtime in sorted(devices, reverse=True) for d in devices[runtime]]
+          # 运行时和 ios.yml 一致：有 27.1 就先挑 27.1，没有就按机器上最新的系统。
+          order = sorted(devices, reverse=True)
+          favoured = "com.apple.CoreSimulator.SimRuntime.iOS-27-1"
+          if favoured in order:
+              order.insert(0, order.pop(order.index(favoured)))
+          available = [d for runtime in order for d in devices[runtime]]
           for name in ["iPhone 17 Pro", "iPhone 17", "iPhone 16 Pro", "iPhone 16"]:
               for device in available:
                   if device["name"] == name:

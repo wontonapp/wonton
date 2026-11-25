@@ -96,7 +96,9 @@ impl TlsFixture {
     }
 
     pub async fn trace(&mut self) -> Trace {
-        tokio::time::timeout(Duration::from_secs(2), self.traces.recv())
+        // 2 秒在负载高的机器上不够：握手本身只要几毫秒，但等任务被调度、TLS 库首次初始化会把
+        // 这个等待推到 2 秒以上（2026-11-24 CI 上连红两次，重跑即绿）。留 5 秒仍能抓住真卡死。
+        tokio::time::timeout(Duration::from_secs(5), self.traces.recv())
             .await
             .expect("TLS fixture did not finish its handshake")
             .expect("TLS fixture exited")

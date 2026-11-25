@@ -35,8 +35,7 @@
     <string name="timeline_start">チャットの最初です</string>
     <string name="timeline_edited">編集済み</string>
     <string name="timeline_sending">保存済み、未配信</string>
-    <string name="timeline_send_failed_retrying">送信できませんでした。自動で再試行します</string>
-    <string name="timeline_send_failed">送信できませんでした：%1$s</string>
+    <string name="timeline_send_failed_retrying">送信に失敗しました。自動で再試行します</string>
     <string name="timeline_resend">再送信</string>
     <string name="timeline_undecryptable">復号できません：このデバイスにこのメッセージの鍵がありません</string>
     <string name="timeline_undecryptable_notice">このデバイスでは以前の暗号化メッセージを読めません。</string>
@@ -126,12 +125,12 @@
     <string name="bot_state_offline">オフライン</string>
     <string name="bot_avatar_pick_state">%1$sの画像を変更</string>
     <string name="bot_profile_open">Bot のプロフィールを表示</string>
-    <string name="bot_identity_title">Bot の識別情報</string>
     <string name="bot_identity_value">プラグイン：%1$s\nBot：%2$s</string>
+    <string name="bot_details_account">アカウント：%1$s</string>
+    <string name="bot_details_web">ウェブページ：%1$s</string>
     <string name="bot_profile_read_only">この Bot のプロフィールは読み取り専用です。編集できるのはデフォルト Bot のみです。</string>
     <string name="bot_profile_missing">この Bot のプロフィールは利用できなくなりました。</string>
-    <string name="bot_web_title">Bot のウェブページ</string>
-    <string name="bot_web_open">Bot のウェブページを開く</string>
+    <string name="bot_web_open">ウェブ版で開く（英語）</string>
     <string name="bot_web_unauthenticated">この Bot のウェブページを開くには、サーバーにログインしてください。</string>
     <string name="bot_web_not_shared">サーバーの所有者は、この Bot のウェブページを家族に公開していません。</string>
     <string name="bot_web_permission_denied">このユーザーは Bot のウェブページを開くことができません。</string>
@@ -158,4 +157,22 @@
     <string name="timeline_typing_more">%1$s さんとほか %2$d 人が入力中…</string>
     <!-- ジャンプ先のメッセージが見つからないときの軽いヒント。引数なし。 -->
     <string name="timeline_jump_unavailable">そのメッセージはもうありません</string>
+    <!-- 接続できないときの、失敗メッセージ横の脚注。引数なし。 -->
+    <string name="timeline_send_failure_offline">接続できません</string>
+    <!-- ファイルが自宅サーバーのアップロード上限を超えたときの、失敗メッセージ横の脚注。引数なし。 -->
+    <string name="timeline_send_failure_too_large">大きすぎます。ファイルで送ってください</string>
+    <!-- サーバーがこの形式を送れないときの、失敗メッセージ横の脚注。引数なし。 -->
+    <string name="timeline_send_failure_unsupported_type">この形式は送れません</string>
+    <!-- 返信元のメッセージがないときの、失敗メッセージ横の脚注。引数なし。 -->
+    <string name="timeline_send_failure_reply_target">返信元のメッセージがありません</string>
+    <!-- 自宅サーバーが受け取らないときの、失敗メッセージ横の脚注。引数なし。 -->
+    <string name="timeline_send_failure_rejected">サーバーに拒否されました</string>
+    <!-- 自宅サーバーがエラーになったときの、失敗メッセージ横の脚注。引数なし。 -->
+    <string name="timeline_send_failure_upstream">サーバーの問題</string>
+    <!-- 核心がまだ種類を分けられない失敗メッセージ横の脚注。引数なし。原文があるときは原文に置き換わる。 -->
+    <string name="timeline_send_failure_other">送信できませんでした</string>
+    <string name="room_bot_other_private">これは家族の他の人のプライベート Bot です。持ち主はまだ利用を許可していません。</string>
+    <string name="room_bot_grant_revoked">この Bot へのアクセスは取り消されました。</string>
+    <string name="room_bot_unavailable">この Bot は今使えません。</string>
+    <string name="room_bot_unknown">この Bot に送れるかまだ確かめていません。</string>
 </resources>

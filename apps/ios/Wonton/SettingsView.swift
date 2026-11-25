@@ -14,6 +14,7 @@ struct SettingsTab: View {
     var isActive = true
     @Environment(\.dismiss) private var dismiss
     @State private var isEditingProfile = false
+    @State private var licenses = LicensesModel()
     @Environment(OnboardingModel.self) private var onboarding
 
     var body: some View {
@@ -61,7 +62,7 @@ struct SettingsTab: View {
                 onBack: { if !model.path.isEmpty { model.path.removeLast() } },
                 onPaired: { if !model.path.isEmpty { model.path.removeLast() } }
             )
-                .wontonPushedScreen(String(localized: .Pairing.pairingTitleAgain), usesSystemToolbar: true)
+                .wontonPushedScreen(String(localized: .Pairing.pairingTitleAgain))
         case .peers:
             PeersView(core: chat.core, focusRequests: model.peersFocusRequests)
         case .friends: FriendsView(core: chat.core)
@@ -77,7 +78,20 @@ struct SettingsTab: View {
                 .wontonPushedScreen(TabText.myApps, usesSystemToolbar: true)
         case .notifications: NotificationSettingsView()
         case .appLock: AppLockSettingsView(model: appLock).wontonPushedScreen(String(localized: .Settings.appLockTitle))
-        case .about: AboutView()
+        case .about: AboutView(licenses: licenses, core: chat.core)
+        case .privacy: PrivacyView(core: chat.core)
+        case .licenses: LicensesView(model: licenses, core: chat.core)
+        case let .licenseText(id):
+            if let license = licenses.license(id: id) {
+                LicenseTextView(license: license)
+            } else {
+                // 列表被重载或换成失败态后，路由里的 id 可能已经取不到：留一句问题话，别白页。
+                Text(.Settings.settingsLicensesProblem)
+                    .wontonText(WontonTheme.typography.body)
+                    .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .topLeading)
+                    .padding(WontonTheme.spacing.pageInset)
+                    .wontonPushedScreen(String(localized: .Settings.settingsLicenses), usesSystemToolbar: true)
+            }
         }
     }
 }
@@ -173,13 +187,14 @@ struct SettingsView: View {
                     showsForward: true
                 )
             }
-        case .matrixAccount, .matrixDevices, .addWontonServer, .other:
+        // 成员页由成员那一张卡补上，入口先不画。
+        case .members, .matrixAccount, .matrixDevices, .addWontonServer, .other:
             EmptyView()
         }
     }
 }
 
-private enum AppVersion {
+enum AppVersion {
     static var short: String {
         Bundle.main.object(forInfoDictionaryKey: "CFBundleShortVersionString") as? String
             ?? String(localized: .Common.commonUnknown)
@@ -193,7 +208,7 @@ private enum AppVersion {
 
 /// 截图测试钉版本号用：设置页直接读 Bundle 的版本，CI 的 Debug 构建没有 tag 时会变，参考图跟着漂。
 /// 测试夹具设一个固定值；生产不设，照常读真实版本。
-private struct AppVersionOverrideKey: EnvironmentKey {
+struct AppVersionOverrideKey: EnvironmentKey {
     static let defaultValue: String? = nil
 }
 
@@ -201,21 +216,5 @@ extension EnvironmentValues {
     var appVersionOverride: String? {
         get { self[AppVersionOverrideKey.self] }
         set { self[AppVersionOverrideKey.self] = newValue }
-    }
-}
-
-private struct AboutView: View {
-    @Environment(\.appVersionOverride) private var appVersionOverride
-    var body: some View {
-        ScrollView {
-            WontonGroup {
-                WontonRow(
-                    title: String(localized: .Plugin2.pluginInfoVersion),
-                    value: appVersionOverride ?? AppVersion.full
-                )
-            }
-            .padding(WontonTheme.spacing.pageInset)
-        }
-        .wontonPushedScreen(String(localized: .Settings.settingsAbout), usesSystemToolbar: true)
     }
 }

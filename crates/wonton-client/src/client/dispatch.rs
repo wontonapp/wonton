@@ -18,15 +18,28 @@ use crate::l10n::{CATALOG, language};
 #[uniffi::export]
 impl ClientCore {
     /// 假数据入口下照走真逻辑的时间线操作：拿掉附件只动本机的附件区，发送照样要过核心的检查。
+    ///
+    /// 只有走输入框的 `SendComposer` 查附件区：真核心的 `send_text` / `send_image` 都不看它
+    /// （`chat/send.rs`），命令和旁聊贴图有空附件失败也照发。
     fn dispatch_ui_fake_composer(&self, action: &TimelineAction) -> Result<(), CoreError> {
+        // `WONTON_UI_FAIL_SEND`：界面测试要的“发送被拒”，三种发送都照附件传不上去的样子拒掉。
+        if std::env::var_os("WONTON_UI_FAIL_SEND").is_some()
+            && matches!(
+                action,
+                TimelineAction::SendText { .. }
+                    | TimelineAction::SendImage { .. }
+                    | TimelineAction::SendComposer { .. }
+            )
+        {
+            return Err(CoreError::InvalidInput {
+                reason: l10n!(CATALOG, language(), "composer-has-failed"),
+            });
+        }
         match action {
             TimelineAction::RemoveAttachment { .. } => {
                 self.composer_action(&self.scope(), action.clone())
             }
             // 假数据没有真上传，附件区的失败由 `fail_attachment_for_test` 写；被拒就中止，不往假时间线补。
-            TimelineAction::SendText { target, .. } => {
-                self.scope().composer.reject_if_failed(&target.room_id)
-            }
             // 过了拒绝才有附言：补进假时间线、清附件区，返回 Ok 让外层继续开假链。
             TimelineAction::SendComposer { target, body, .. } => {
                 #[cfg(not(feature = "ui-fake"))]
@@ -49,6 +62,16 @@ impl ClientCore {
         }
     }
 
+    /// 假数据下的服务器开关：设置里“添加服务器”换成配对页，取消退出。
+    #[cfg_attr(not(feature = "ui-fake"), allow(dead_code))]
+    fn dispatch_ui_fake_home(&self, action: HomeAction) {
+        match action {
+            HomeAction::AddServer => self.servers.seed_adding_ui_fake(true),
+            HomeAction::CancelAddServer => self.servers.seed_adding_ui_fake(false),
+            _ => {}
+        }
+    }
+
     /// 处理一个操作。领域子枚举只在这里解包，运行时仍只有一个入口。
     pub fn dispatch(&self, action: Action) -> Result<(), CoreError> {
         #[cfg(feature = "ui-fake")]
@@ -61,15 +84,27 @@ impl ClientCore {
                     Ok(())
                 }
                 Action::Plugins { action } => self.dispatch_ui_fake_plugins(action),
-                // 假时间线（跳转、发字）和停止钮的假运行段都要看到同一个操作；被拒的不开假链。
+                // 假时间线（跳转、发字）和停止钮的假运行段都要看到同一个操作。发送的检查放在前面：
+                // 先过发送的拒绝和附件区的检查：被拒的发送不进假时间线、不开假链，也不回显；收下了才记假时间线（发附言的顺带补一条）。
                 Action::Timeline { action } => {
-                    self.ui_fake_timelines.timeline_action(action.clone());
                     self.dispatch_ui_fake_composer(&action)?;
+                    self.ui_fake_timelines.timeline_action(action.clone());
                     self.dispatch_ui_fake_timeline(action);
+                    Ok(())
+                }
+                Action::Home { action } => {
+                    self.dispatch_ui_fake_home(action);
                     Ok(())
                 }
                 Action::Agent { action } => {
                     self.dispatch_ui_fake_agent(action);
+                    Ok(())
+                }
+                // 深色截图要的主题照走真设置；字号、字体和配对等假状态在别的 ViewModel 里，不受影响。
+                Action::Settings { action } => {
+                    if let SettingsAction::SetThemeMode { mode } = action {
+                        self.appearance.set_theme_mode(mode)?;
+                    }
                     Ok(())
                 }
                 _ => Ok(()),
@@ -90,9 +125,13 @@ impl ClientCore {
             Action::Pages { action } => self.page_action(&scope, action),
             Action::Peers { action } => scope.peers.dispatch(action),
             Action::BotContacts { action } => scope.bot_contacts.dispatch(action),
-            Action::Family { action } => scope.plugins.dispatch_roles(action),
+            Action::Family { action } => scope.family.dispatch(action),
             Action::Friends { action } => scope.friends.dispatch(action),
             Action::Sharing { action } => self.dispatch_sharing(&scope, action),
+            // 公网访问的模块还没接；接上之前如实报还没就绪，不静默当成功。
+            Action::Clients { .. } => Err(CoreError::NotReady {
+                reason: "clients module is not wired yet".into(),
+            }),
             Action::Timeline { action } => self.timeline_action(&scope, action),
             Action::Agent { action } => self.agent_action(&scope, action),
         }
@@ -282,6 +321,10 @@ impl ClientCore {
             PluginAction::InstallNow { source } => scope.plugins.install_now(source),
             PluginAction::UpgradeNow { plugin_id } => scope.plugins.upgrade_now(plugin_id),
             PluginAction::UpgradeAll => scope.plugins.upgrade_all(),
+            PluginAction::ReviewStoreUpdate { plugin_id } => {
+                scope.plugins.review_store_update(&plugin_id)
+            }
+            PluginAction::DismissStoreUpdates => scope.plugins.dismiss_store_updates(),
             PluginAction::DismissStoreConfirmation => {
                 scope.plugins.dismiss_confirmation();
                 Ok(())
@@ -427,11 +470,13 @@ impl ClientCore {
     fn lifecycle_action(&self, scope: &Scope, action: HomeAction) -> Result<(), CoreError> {
         match action {
             HomeAction::AppForegrounded => {
+                tracing::info!("the shell reports the app came to the foreground");
                 self.app_lock.foregrounded();
                 scope.foregrounded();
                 Ok(())
             }
             HomeAction::AppBackgrounded => {
+                tracing::info!("the shell reports the app went to the background");
                 scope.backgrounded();
                 self.app_lock.backgrounded(scope.handle());
                 Ok(())

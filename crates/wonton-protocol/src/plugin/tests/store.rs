@@ -44,6 +44,14 @@ fn store_items_without_high_permissions_default_to_no_tag() {
     assert!(!item.high_permissions);
 }
 
+#[test]
+fn old_details_without_setup_still_parse() {
+    let mut old = serde_json::to_value(detail()).unwrap();
+    old.as_object_mut().unwrap().remove("setup");
+    let parsed: PluginDetail = serde_json::from_value(old).unwrap();
+    assert_eq!(parsed.setup, None);
+}
+
 /// 契约：一键装/升的操作、安装请求和升级报价的 JSON 写法；旧 App 读得懂新 App 加的字段。
 #[test]
 fn one_tap_requests_round_trip() {
@@ -120,7 +128,6 @@ fn sidebar_view_model_round_trip() {
     };
     let view_model = PluginsViewModel {
         installed: Some(installed),
-        roles: Default::default(),
         store: Some(store()),
         store_load: StoreLoadState::Ready,
         refreshing: true,
@@ -151,6 +158,7 @@ fn sidebar_view_model_round_trip() {
             version: "0.25.0".into(),
             icon: None,
         }],
+        update_batch: None,
         pending: vec!["app.memos".into()],
         confirmation: Some(StoreConfirmation::Upgrade { preview: preview() }),
         egress: EgressViewModel::default(),
@@ -339,6 +347,10 @@ fn older_app_install_defaults() {
     assert_eq!(
         serde_json::to_value(PluginFailure::EgressProxyUnavailable).unwrap(),
         json!("egress_proxy_unavailable")
+    );
+    assert_eq!(
+        serde_json::to_value(PluginFailure::EgressProxyWaiting).unwrap(),
+        json!("egress_proxy_waiting")
     );
     assert_eq!(
         serde_json::to_value(PluginFailure::DeviceUnavailable).unwrap(),

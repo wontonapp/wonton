@@ -9,8 +9,8 @@ use reqwest::{Client, Method};
 use serde::de::DeserializeOwned;
 use url::Url;
 use wonton_protocol::{
-    CLIENTS_HEADER, ClientsStatus, FriendFailure, FriendGroup, FriendProblem, FriendsList,
-    ProxySettings, PublicReach, clients_status_path,
+    CLIENTS_HEADER, ClientsStatus, FriendFailure, FriendProblem, FriendsList, ProxySettings,
+    PublicReach, clients_status_path,
 };
 
 use crate::l10n::text;
@@ -52,9 +52,16 @@ impl Failure {
             Error::Forbidden { errcode, .. } => {
                 (FriendFailure::Forbidden, Some(403), Some(errcode.clone()))
             }
-            Error::NotReady(_) => (FriendFailure::RequestNotFound, None, None),
-            Error::InvalidInput(_) => (FriendFailure::InvalidUserId, None, None),
-            Error::Upstream(_) => (FriendFailure::Upstream, None, None),
+            Error::NotInvited(_) => (FriendFailure::RequestNotFound, None, None),
+            // 没就绪、服务器说输入非法都留成中性“暂时无法完成”（#966）。
+            Error::NotReady(_)
+            | Error::InvalidInput(_)
+            | Error::Upstream(_)
+            | Error::CommentNotSent(_)
+            | Error::TooLarge(_)
+            | Error::UnsupportedType(_)
+            | Error::ReplyTarget(_)
+            | Error::NotInTimeline(_) => (FriendFailure::Upstream, None, None),
         };
         Self {
             problem: FriendProblem {
@@ -230,29 +237,6 @@ impl Api {
         self.call(Method::DELETE, &user_path(user_id), None)
             .await
             .map(drop)
-    }
-
-    pub(super) async fn set_groups(&self, user_id: &str, groups: &[String]) -> Result<(), Failure> {
-        let path = format!("{}/groups", user_path(user_id));
-        let body = serde_json::json!({ "groups": groups });
-        self.call(Method::PUT, &path, Some(&body)).await.map(drop)
-    }
-
-    pub(super) async fn save_group(
-        &self,
-        id: Option<&str>,
-        name: &str,
-    ) -> Result<FriendGroup, Failure> {
-        let body = serde_json::json!({ "id": id, "name": name });
-        let bytes = self
-            .call(Method::POST, "/_wonton/api/friend-groups", Some(&body))
-            .await?;
-        parse(&bytes)
-    }
-
-    pub(super) async fn remove_group(&self, id: &str) -> Result<(), Failure> {
-        let path = format!("/_wonton/api/friend-groups/{id}");
-        self.call(Method::DELETE, &path, None).await.map(drop)
     }
 
     pub(super) async fn set_block(&self, server_name: &str, blocked: bool) -> Result<(), Failure> {

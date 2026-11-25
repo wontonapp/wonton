@@ -1,7 +1,7 @@
 name: android
 
 # detekt、单元测试、Debug 构建和界面参考图比对。PR 上由 gate.yml 按改动范围调用（合并门槛，范围写在那边的
-# changes 里），不自己挂 pull_request；每天定时、手动触发时自己跑全量。
+# changes 里），不自己挂 pull_request；每天定时、手动触发时自己跑全量。Release APK 体积门禁在 android-size.yml，合进 main 之后跑，不挡合并。
 on:
   workflow_call:
   schedule:
@@ -16,6 +16,9 @@ concurrency:
 env:
   CARGO_INCREMENTAL: "0"
   CARGO_PROFILE_DEV_DEBUG: line-tables-only
+  # 这个作业只编 Debug；Release 那行留着，和 cache.yml 的 key 对齐（rust-cache 把 CARGO_ 开头的变量算进 key）。
+  # Release 的符号要能还原到行：崩溃分析只靠它，剥掉的是打包进 APK 的那份。
+  CARGO_PROFILE_RELEASE_DEBUG: line-tables-only
 
 permissions:
   contents: read
@@ -33,6 +36,14 @@ jobs:
         with:
           distribution: temurin
           java-version: "21"
+      # 缓存先还原：rust-cache 会把 ~/.rustup 整个盖回来，装 target 放在它前面会被还原冲掉
+      # （2026-11-24 起 android 作业就是这么红在 buildRustCore 的缺 target 上的）。
+      - uses: Swatinem/rust-cache@d1527c8f67ef9af357290475d4af4b0fab8f12e0 # v2
+        with:
+          # 只读：同一份 key 由 cache.yml 的 Android 作业在 push 时编好写回。这里也写的话，
+          # 一次 main 合并会编两遍、两条运行抢着写同一个 key。
+          shared-key: rust-android
+          save-if: false
       - name: 安装 rust-toolchain.toml 指定的工具链和 Android target
         run: |
           rustup toolchain install
@@ -40,18 +51,17 @@ jobs:
       - uses: taiki-e/install-action@cfdb7ed4ccc7c7dce37759eae89dc5674b469b39 # v2
         with:
           tool: cargo-ndk@4.1.2
-      - uses: Swatinem/rust-cache@d1527c8f67ef9af357290475d4af4b0fab8f12e0 # v2
-        with:
-          # 只读：同一份 key 由 cache.yml 的 Android 作业在 push 时编好写回。这里也写的话，
-          # 一次 main 合并会编两遍、两条运行抢着写同一个 key。
-          shared-key: rust-android
-          save-if: false
       - name: 设计生成结果和 design/ 一致
         run: python3 scripts/generate-design.py --check
       - uses: gradle/actions/setup-gradle@0723195856401067f7a2779048b490ace7a47d7c # v5.0.2
       - name: detekt（函数 ≤ 100 行）、单元测试与 Debug APK
         working-directory: apps/compose
         run: ./gradlew detekt :androidApp:testDebugUnitTest :androidApp:assembleDebug
+      # 许可清单：用刚导出的 AboutLibraries JSON 跑一遍生成和校验，挡住许可表、全文或收集断掉。
+      - name: 许可清单和许可表
+        env:
+          LICENSES_REQUIRE_ANDROID: "1"
+        run: bash scripts/check-licenses.sh
       # 界面参考图：预览用固定假数据，在 JVM 上渲染，不加载 .so。重录在 snapshots-record.yml，这里只比对。
       - name: 比对界面参考图
         working-directory: apps/compose

@@ -9,7 +9,8 @@ use wonton_protocol::{ConfirmationState, SecretValues};
 
 use super::audience::Subject;
 use super::audit::{Basis, Decision, Grounds};
-use super::{Bus, Caller, Draft, Outcome, with_confirmation, with_failure};
+use super::chain_card::{Bound, bind_card};
+use super::{Bus, Caller, Draft, Outcome, Refusal, Ticket, with_confirmation, with_failure};
 use crate::bot_activity::Guard;
 
 impl Bus {
@@ -135,42 +136,21 @@ impl Bus {
                 )
                 .await;
         }
-        let nvme: Vec<(String, bool)> = draft
-            .devices
-            .iter()
-            .filter(|device| {
-                device.kind == wonton_protocol::PluginDeviceKind::Disk
-                    && device.target.starts_with("/dev/nvme")
-            })
-            .map(|device| (device.id.clone(), device.chosen))
-            .collect();
+        let nvme = nvme_devices(&draft);
         drop(activity);
         let bus = self.clone();
         let caller = caller.clone();
         let name = name.to_owned();
         let task = tokio::spawn(async move {
-            // 两张卡片共用创建时冻结的管理员名单。
+            // 第二张卡片沿用第一张创建时冻结的管理员名单。
             let audience = bus.audience(&caller, Subject::PluginAdmin).await;
-            let ticket = match bus
-                .confirmations
-                .ask_as(&caller.id, draft, audience.clone())
-                .await
-            {
+            let ticket = match bus.ask_for(&caller, Subject::PluginAdmin, draft).await {
                 Ok(ticket) => ticket,
                 Err(refusal) => return bus.refused(&caller, &name, &args, &refusal, None),
             };
-            let selected_nvme = nvme.iter().any(|(id, chosen)| {
-                ticket.devices.contains(id) || (ticket.devices.is_empty() && *chosen)
-            });
-            let mut second = second.or_else(|| selected_nvme.then_some(device_second).flatten());
-            if selected_nvme && let Some(second) = &mut second {
-                super::cards::mark_nvme_risk(
-                    second,
-                    &bus.card_languages(&caller, Subject::PluginAdmin),
-                );
-            }
+            let second = pick_second(&bus, &caller, &nvme, second, device_second, &ticket);
             let second_ticket = if let Some(second) = second {
-                match bus.confirmations.ask_as(&caller.id, second, audience).await {
+                match ask_second(&bus, &caller, second, audience).await {
                     Ok(second) => Some(second),
                     Err(refusal) => {
                         let message = refusal.message();
@@ -218,4 +198,51 @@ impl Bus {
         task.await
             .unwrap_or_else(|e| with_failure(&format!("确认流程意外中止：{e}"), "internal_error"))
     }
+}
+
+/// 最高级权限的第二张卡片：开出来、认链、等回答。出错时由调用方把第一张落成失败。
+async fn ask_second(
+    bus: &Arc<Bus>,
+    caller: &Caller,
+    second: Draft,
+    audience: super::Audience,
+) -> Result<Ticket, Refusal> {
+    let (card, answered) = bus.confirmations.open_as(&caller.id, second, audience)?;
+    // 停链抢在开卡片和绑卡片之间时自己撤回；第一张也一起落成取消。
+    if bind_card(bus, caller, None, &card.id, "工具卡片").outcome == Bound::Withdrawn {
+        return Err(Refusal::Cancelled);
+    }
+    bus.confirmations.wait(card, answered).await
+}
+
+/// 第二张卡片的内容：`second` 优先；第一张选了 NVMe 盘时改用盘的风险卡片，并加一句“能控制整台主机”的警语。
+fn pick_second(
+    bus: &Bus,
+    caller: &Caller,
+    nvme: &[(String, bool)],
+    second: Option<Draft>,
+    device_second: Option<Draft>,
+    ticket: &Ticket,
+) -> Option<Draft> {
+    let selected_nvme = nvme
+        .iter()
+        .any(|(id, chosen)| ticket.devices.contains(id) || (ticket.devices.is_empty() && *chosen));
+    let mut second = second.or_else(|| selected_nvme.then_some(device_second).flatten());
+    if selected_nvme && let Some(second) = &mut second {
+        super::cards::mark_nvme_risk(second, &bus.card_languages(caller, Subject::PluginAdmin));
+    }
+    second
+}
+
+/// 第一张卡片上勾了的 NVMe 盘：(设备 ID, 是否默认勾选)。
+fn nvme_devices(draft: &Draft) -> Vec<(String, bool)> {
+    draft
+        .devices
+        .iter()
+        .filter(|device| {
+            device.kind == wonton_protocol::PluginDeviceKind::Disk
+                && device.target.starts_with("/dev/nvme")
+        })
+        .map(|device| (device.id.clone(), device.chosen))
+        .collect()
 }

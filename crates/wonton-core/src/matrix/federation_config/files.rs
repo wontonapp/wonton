@@ -21,7 +21,7 @@ pub(crate) fn allowlist_toml(names: &BTreeSet<String>) -> String {
         .collect::<Vec<_>>()
         .join(", ");
     format!(
-        "# 核心运行时原地重写这份名单（不换 inode），改动经 SIGUSR1 热加载（ADR-0050）。\n\
+        "# 核心运行时原地重写这份名单（不换 inode），改动经管理房间命令热加载（ADR-0116）。\n\
          # 这份文件只写联邦名单，别的选项在 tuwunel.toml。\n\
          allowed_remote_server_names_experimental = [{list}]\n"
     )

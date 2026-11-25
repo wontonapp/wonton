@@ -2,14 +2,17 @@
 <resources>
     <!-- No default agent identity is disclosable to this account. -->
     <string name="problem_default_agent_absent">No default assistant can be shown for this account. Ask the owner to check the settings.</string>
-    <!-- Problem title when the core rejected the input; the core's own reason is shown as the next step. -->
+    <!-- Problem title when the core rejected the input; the core's own reason goes into the details. -->
     <string name="problem_invalid_input_title">This can\'t be done</string>
+    <!-- Next step: check the input and try again. -->
+    <string name="problem_invalid_input_next_step">Check the input and try again.</string>
     <!-- Next step: look at the app again and approve it again. -->
     <string name="problem_plugin_changed_next_step">Review and approve it again.</string>
     <!-- Next step: the app is installed or installing, updating or uninstalling; wait for that to finish. -->
     <string name="problem_plugin_conflict_next_step">It\'s already installed, or installing, updating or uninstalling. Wait for that to finish.</string>
     <!-- Next step: try after the update finishes. -->
     <string name="problem_plugin_core_upgrading_next_step">Try again after the update finishes.</string>
+    <string name="problem_plugin_health_timeout_title">The app is not ready yet</string>
     <!-- Next step: contact the app's author. -->
     <string name="problem_plugin_invalid_next_step">Contact the app\'s author.</string>
     <!-- Problem title: the app's package is broken. -->
@@ -34,4 +37,8 @@
     <string name="problem_upgrade_server_next_step">Update your home server first.</string>
     <!-- Problem title used for plugin, chat and connection failures: the home server itself reported an error. -->
     <string name="problem_upstream_title">Your home server ran into a problem</string>
+    <!-- Next step when the other server's public access is off: wait, then send again. -->
+    <string name="problem_peer_public_access_off_next_step">Wait for them to turn it back on, then send again. Messages arrive after that.</string>
+    <!-- Next step when the other server isn't paired: pair it first. -->
+    <string name="problem_server_not_paired_next_step">Pair it under Other servers, then open the chat again.</string>
 </resources>

@@ -27,8 +27,12 @@ struct WontonApp: App {
                             AgentRunPreview.root
                         } else if ProblemPreview.active {
                             ProblemPreview.root
+                        } else if PeersPreview.active {
+                            PeersPreview.root
                         } else if QualityPreviews.active {
                             QualityPreviews.root
+                        } else if OnboardingReviewPreview.active {
+                            OnboardingReviewPreview.root(core: chat.core)
                         } else {
                             MainView(
                                 chat: chat, home: home, plugins: plugins, appearance: appearance,

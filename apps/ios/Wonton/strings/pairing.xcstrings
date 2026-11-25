@@ -243,31 +243,31 @@
       }
     },
     "pairing.instructions": {
-      "comment": "Explanation above the paste field: where the pairing QR code lives. May wrap.",
+      "comment": "Explanation above the paste field: who to ask for the pairing code, and the scan path for whoever runs the server. May wrap.",
       "extractionState": "manual",
       "localizations": {
         "en": {
           "stringUnit": {
             "state": "translated",
-            "value": "On your home network, open your home server's IP address in a browser (the installer prints it on the computer), then scan the pairing QR code on that page."
+            "value": "Ask whoever runs your home server for a pairing code. It comes from Add Device on a paired device, or from `sudo wonton pair` on the computer. Running the server yourself? On your home network, open the address the installer printed and scan the QR code there."
           }
         },
         "zh-Hans": {
           "stringUnit": {
             "state": "translated",
-            "value": "在家里的局域网里，用浏览器打开家里服务器的 IP 地址（装好时主机的终端里会给出），页面上有配对二维码。"
+            "value": "找装服务器的人要一个配对码。码来自已配对设备上的“添加设备”，或在主机上执行 `sudo wonton pair`。自己装的服务器？在家里局域网里用浏览器打开安装时给出的地址，页面上有配对二维码。"
           }
         },
         "zh-Hant": {
           "stringUnit": {
             "state": "translated",
-            "value": "在家用區域網路裡，用瀏覽器開啟家用伺服器的 IP 位址（安裝時主機的終端機裡會給出），頁面上有配對 QR 碼。"
+            "value": "找裝伺服器的人要一個配對碼。碼來自已配對裝置上的「新增裝置」，或在主機上執行 `sudo wonton pair`。自己裝的伺服器？在家用區域網路裡用瀏覽器開啟安裝時給出的位址，頁面上有配對 QR 碼。"
           }
         },
         "ja": {
           "stringUnit": {
             "state": "translated",
-            "value": "自宅のローカルネットワークで、ブラウザーで自宅サーバのIPアドレス（インストール時にホストのターミナルに表示されます）を開くと、ペアリング用QRコードが表示されます。"
+            "value": "サーバーをセットアップした人にペアリングコードをもらってください。コードは、ペアリング済みのデバイスの「デバイスを追加」か、ホストで `sudo wonton pair` を実行して発行されます。自分でサーバーを動かしている場合は、自宅のローカルネットワークで、インストール時に表示されたアドレスをブラウザーで開くと、ペアリング用QRコードが表示されます。"
           }
         }
       }
@@ -538,36 +538,6 @@
           "stringUnit": {
             "state": "translated",
             "value": "このペアリングコードは無効化されています"
-          }
-        }
-      }
-    },
-    "pairing.failure.pending": {
-      "comment": "Failure title when the code is a joining code and the admins haven't approved yet.",
-      "extractionState": "manual",
-      "localizations": {
-        "en": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "Waiting for an admin to approve"
-          }
-        },
-        "zh-Hans": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "等管理员同意"
-          }
-        },
-        "zh-Hant": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "等管理員同意"
-          }
-        },
-        "ja": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "管理者の承認待ち"
           }
         }
       }

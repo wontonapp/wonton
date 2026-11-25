@@ -169,7 +169,7 @@ enum SnapshotFixtures {
     private static func row(_ item: TimelineItem, core: ClientCore, showsSender: Bool) -> some View {
         TimelineRow(
             item: item, core: core, showsSender: showsSender,
-            retry: {}, cancel: {}, cardAction: { _ in }, reply: { _ in }, forward: {}, redact: {}
+            retry: {}, cancel: {}, cardAction: { _ in }, reply: { _ in }, edit: { _ in }, forward: {}, redact: {}
         )
     }
 

@@ -17,7 +17,7 @@ use super::{
 };
 use crate::bot_activity::Guard;
 use crate::l10n;
-use crate::plugin::manifest::{Manifest, Permission, PluginKind};
+use crate::plugin::manifest::{Manifest, Permission};
 use crate::plugin::render::dry_run;
 use crate::plugin::storefront::index::Listed;
 use crate::plugin::{InstallError, PluginId, PluginPackage};
@@ -212,16 +212,11 @@ fn list(bus: &Bus) -> Value {
     json!({ "plugins": plugins })
 }
 
-/// 官方索引里 Bot 能看到的插件（系统插件随核心预装，哪种来源都装不了），和读索引时遇到的问题。一个都读不到又
-/// 有问题时报错，免得 Bot 以为索引是空的。
+/// 官方索引里 Bot 能看到的插件，和读索引时遇到的问题。一个都读不到又有问题时报错，免得 Bot 以为索引是空的。
 async fn official(bus: &Bus) -> Result<(Vec<Listed>, Option<String>), ToolFailure> {
     let (index, problem) = bus.plugins.official_index().await;
     let problem = problem.map(|p| p.details);
-    let listed: Vec<Listed> = index
-        .plugins
-        .into_iter()
-        .filter(|l| l.manifest.kind != PluginKind::System)
-        .collect();
+    let listed = index.plugins;
     match problem {
         Some(problem) if listed.is_empty() => Err(ToolFailure::new(
             "source_unavailable",
@@ -459,10 +454,10 @@ async fn uninstall(
         if id == caller.id {
             return Err(ToolFailure::new("invalid_input", "不能卸载自己"));
         }
-        if bus.plugins.is_system(&id) {
+        if bus.plugins.is_bundled_system(&id) {
             return Err(ToolFailure::new(
                 "unsupported",
-                format!("{id} 是系统插件，不能卸载"),
+                format!("{id} 是随核心带的系统插件，不能卸载"),
             ));
         }
         Ok((id, langs.pick_owned(&view.title)))

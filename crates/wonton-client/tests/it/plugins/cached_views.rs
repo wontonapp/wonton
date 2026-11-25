@@ -5,9 +5,21 @@ use std::time::Duration;
 use axum::http::Method;
 use wonton_client::HomeStatus;
 
-use super::rig::{Rig, running};
+use super::rig::{Rig, WAIT, running};
 
 const PLUGINS: &str = "/_wonton/api/plugins";
+
+/// 等对话里的 Bot 列表跟上插件视图；联系人只读 Bot 列表，不等会撞上两条订阅的先后。
+async fn wait_bot(rig: &Rig, user: &str) {
+    let deadline = tokio::time::Instant::now() + WAIT;
+    loop {
+        if rig.app.chat().bots.iter().any(|bot| bot.user_id == user) {
+            return;
+        }
+        assert!(tokio::time::Instant::now() < deadline, "{user} 没出现");
+        tokio::time::sleep(Duration::from_millis(10)).await;
+    }
+}
 
 /// 冷启动没网也能显示主屏：一打开就有上次取到的列表，不等隧道。
 #[tokio::test]
@@ -70,6 +82,7 @@ async fn cached_bot_identity_is_not_a_current_chat_candidate() {
         })
     })
     .await;
+    wait_bot(&rig, CURRENT_BOT).await;
     assert!(
         rig.app
             .chat_contacts(String::new())
@@ -101,6 +114,7 @@ async fn unverified_bot_identity_is_not_a_chat_candidate() {
         installed.plugins[1].bot_user_id.as_deref(),
         Some("@mine:home")
     );
+    wait_bot(&rig, "@mine:home").await;
     let contacts = rig.app.chat_contacts(String::new());
     assert!(
         contacts
@@ -110,12 +124,14 @@ async fn unverified_bot_identity_is_not_a_chat_candidate() {
     assert!(
         contacts
             .iter()
-            .any(|contact| contact.user_id == "@mine:home")
+            .any(|contact| contact.user_id == "@mine:home"),
+        "bots: {:?}, contacts: {contacts:?}",
+        rig.app.chat().bots
     );
 }
 
 #[tokio::test]
-async fn inconsistent_default_identities_are_not_offered_as_chat_candidates() {
+async fn malformed_default_identities_are_not_offered_but_absent_bots_get_their_id() {
     use wonton_protocol::DefaultBotVisibility;
 
     let rig = Rig::new().await;
@@ -146,18 +162,36 @@ async fn inconsistent_default_identities_are_not_offered_as_chat_candidates() {
         })
         .await;
     let installed = view.installed.unwrap();
-    for plugin in &installed.plugins[..3] {
-        assert_eq!(plugin.bot_user_id, None);
+    let find = |id: &str| {
+        installed
+            .plugins
+            .iter()
+            .find(|plugin| plugin.id == id)
+            .unwrap()
+    };
+    for id in ["app.malformed", "app.missing"] {
+        assert_eq!(find(id).bot_user_id, None, "{id}");
         assert_eq!(
-            plugin.default_bot_visibility,
-            Some(DefaultBotVisibility::Unknown)
+            find(id).default_bot_visibility,
+            Some(DefaultBotVisibility::Unknown),
+            "{id}"
         );
     }
+    // 不可见但身份合法：留着身份，插件页点得开私聊。
+    assert_eq!(
+        find("app.contradictory").bot_user_id.as_deref(),
+        Some("@secret:home")
+    );
+    assert_eq!(
+        find("app.contradictory").default_bot_visibility,
+        Some(DefaultBotVisibility::Absent)
+    );
+    wait_bot(&rig, "@secret:home").await;
     let contacts = rig.app.chat_contacts(String::new());
     assert!(
         contacts
             .iter()
-            .all(|contact| contact.user_id != "@secret:home")
+            .any(|contact| contact.user_id == "@secret:home")
     );
     assert!(
         contacts
@@ -167,7 +201,7 @@ async fn inconsistent_default_identities_are_not_offered_as_chat_candidates() {
 }
 
 #[tokio::test]
-async fn disconnect_hides_last_known_bot_until_list_is_refetched() {
+async fn disconnect_keeps_last_known_bot_sendable_until_list_is_refetched() {
     let rig = Rig::new().await;
     let mut plugin = running("app.bot");
     plugin.bot_user_id = Some("@mine:home".into());
@@ -180,6 +214,7 @@ async fn disconnect_hides_last_known_bot_until_list_is_refetched() {
             .is_some_and(|list| list.plugins[0].bot_user_id.as_deref() == Some("@mine:home"))
     })
     .await;
+    wait_bot(&rig, "@mine:home").await;
 
     // 隧道每秒按真实连接重新发布状态，单次设置会被盖回“已连接”，盖得早时断开根本没被观察到。
     // 断言做完前一直设着“正在连接”；其间被盖回时触发的取列表按住不回，不让它把身份写回来。
@@ -202,11 +237,12 @@ async fn disconnect_hides_last_known_bot_until_list_is_refetched() {
         })
         .await;
     assert_eq!(offline.installed.unwrap().plugins[0].bot_user_id, None);
+    // 插件列表先藏掉身份，但对话里的 Bot 还是资格未知、照常能发，候选里也还在。
     assert!(
         rig.app
             .chat_contacts(String::new())
             .iter()
-            .all(|contact| contact.user_id != "@mine:home")
+            .any(|contact| contact.user_id == "@mine:home")
     );
     offline_guard.abort();
     rig.core.release(Method::GET, PLUGINS);

@@ -432,17 +432,12 @@ fn unknown_capabilities_are_highest_risk() {
 }
 
 #[test]
-fn app_provides_is_rejected() {
+fn an_app_can_provide_models() {
     let yaml = package(
         "  web:\n    image: nginx",
         "  provides:\n    models:\n      service: web\n      port: 8080\n      apis: {openai: /v1}\n      default_model: test\n      credentials:\n        issue: [issue, '{name}']\n        revoke: [revoke, '{name}']\n  permissions: []",
     );
-    let err = PluginPackage::parse(&yaml, &langs()).unwrap_err();
-    assert_eq!(
-        err.to_string(),
-        message("plugin-install-prv-models-system-only", &[]),
-        "{err}"
-    );
+    PluginPackage::parse(&yaml, &langs()).unwrap();
 }
 
 #[test]

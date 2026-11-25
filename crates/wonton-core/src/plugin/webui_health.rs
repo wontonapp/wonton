@@ -1,9 +1,8 @@
 //! 网页服务的健康门：显式健康路径或没有容器探针时，由核心直连网页入口。
 
-use tokio::time::Instant;
-
 use super::compose::DependCondition;
 use super::health::{self, Checked, Readiness, Target, WebuiHealth};
+use super::health_gate::Wait;
 use super::install_notes::note_dropped_capabilities;
 use super::languages::Languages;
 use super::manager::{Health, InstallError, PluginManager};
@@ -66,7 +65,7 @@ impl PluginManager {
         &self,
         manifest: Option<&Manifest>,
         plan: &Deployment,
-        deadline: Instant,
+        wait: Wait,
         langs: &Languages,
     ) -> Result<Health, InstallError> {
         let mut healthy = Vec::new();
@@ -85,7 +84,7 @@ impl PluginManager {
                 &container.name,
                 Target::Ready,
                 webui.as_ref(),
-                deadline,
+                wait,
                 langs,
             ))
             .await
@@ -99,21 +98,15 @@ impl PluginManager {
         &self,
         manifest: Option<&Manifest>,
         deps: &[(String, DependCondition)],
-        deadline: Instant,
+        waiting: &str,
+        wait: Wait,
         langs: &Languages,
     ) -> Result<(), InstallError> {
         let mut probe = None;
         if let Some(manifest) = manifest
             && let Some(webui) = &manifest.webui
         {
-            let slug = manifest.id.slug();
-            let name = if super::bot_web_registry::has_bot_web(manifest) {
-                self.cfg
-                    .instance
-                    .bot_container(&slug, &webui.service, "default")
-            } else {
-                self.cfg.instance.container(&slug, &webui.service)
-            };
+            let name = self.webui_container(manifest, &webui.service);
             if deps.iter().any(|(dep, condition)| {
                 dep == &name && *condition == DependCondition::ServiceHealthy
             }) && let Some(webui) = self.webui_health(manifest, &webui.service).await?
@@ -126,7 +119,8 @@ impl PluginManager {
             &self.http,
             deps,
             probe.as_ref().map(|(name, webui)| (name.as_str(), webui)),
-            deadline,
+            waiting,
+            wait,
             langs,
         )
         .await?;

@@ -1,6 +1,8 @@
 package app.wonton.ui
 
+import android.widget.Toast
 import androidx.activity.compose.BackHandler
+import androidx.activity.compose.LocalActivity
 import androidx.compose.foundation.background
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
@@ -46,11 +48,13 @@ import app.wonton.protocol.HomeViewModel
 import app.wonton.protocol.HomeStatus
 import app.wonton.protocol.PendingConfirmation
 import app.wonton.protocol.PanelScope
+import app.wonton.protocol.PagesViewModel
 import app.wonton.protocol.SettingsViewModel
 import app.wonton.protocol.TabRef
 import app.wonton.ui.design.LocalWontonBarStatus
 import app.wonton.ui.design.WontonTheme
 import app.wonton.ui.design.toColor
+import kotlinx.coroutines.delay
 
 @Composable
 internal fun ServerApp(
@@ -153,14 +157,15 @@ private fun AppContent(
     val panelActive = shown == TabRef.Chat && !pluginShown && !nav.settingsOverlay &&
         !view.showsApps && !nav.chat.showingBackup && !nav.chat.startingChat && !nav.chat.showingConfirmations
     val panel = if (panelActive && (!expanded || nav.chat.openRoom != null)) {
-        rememberChatPanelState(if (nav.chat.openRoom == null) PanelEdge.TOP else PanelEdge.BOTTOM, panelScope)
+        rememberChatPanelState(if (nav.chat.openRoom == null) PanelEdge.TOP else PanelEdge.BOTTOM, panelScope,
+            nav.pages)
     } else null
     if (panel != null && panel.scope == PanelScope.Main) {
         SideEffect { panel.feed(view.panel, view.panelSelected) }
     }
     // 只在聊天的根页面响应左边缘右滑（开抽屉）：进了房间、页面或盖了别的层，左边缘是系统的返回手势。
     val edgeSwipe = !expanded && panelActive && nav.chat.openRoom == null && panel?.visible != true
-    BackHandler(enabled = view.showsApps) { nav.closeApps() }
+    BackRootExit(nav, view)
     CompositionLocalProvider(LocalWontonBarStatus provides status) {
         WithPendingCards(cards, pluginShown && !nav.settingsOverlay, nav::openCardTarget) { bannerTop ->
             val page: @Composable () -> Unit = {
@@ -217,6 +222,43 @@ private fun AppContent(
     TabNotices(pages)
 }
 
+/** 到了根页面以后，“再按一次退出”认多久。 */
+private const val BACK_EXIT_MS = 2_000L
+
+/**
+ * 谁都没接住的返回：页面自己的返回（视频全屏、网页历史、关页）排在前面；这里只在它的处理器没装上时
+ * 兜底关页。到了根页面才谈退出：第一下提示，第二下在 [BACK_EXIT_MS] 内退出。
+ * 关页和退出之间留这一下，刚关掉页面又习惯性补按返回时，不会把云吞直接摔回桌面。
+ */
+@Composable
+private fun BackRootExit(nav: AppNavigation, view: PagesViewModel) {
+    val pages = nav.pages
+    val activity = LocalActivity.current
+    val context = LocalContext.current
+    var armed by remember { mutableStateOf(false) }
+    val showed = pages.current
+    // 页面栈、盖子或网格一变，上一次的“再按一次”作废：刚落到根页面的那一下先不算退出。
+    LaunchedEffect(showed, view.showsApps, nav.settingsOverlay) { armed = false }
+    LaunchedEffect(armed) {
+        if (armed) {
+            delay(BACK_EXIT_MS)
+            armed = false
+        }
+    }
+    BackHandler {
+        when {
+            view.showsApps -> nav.closeApps()
+            view.stack.isNotEmpty() && !nav.settingsOverlay ->
+                pages.send(Action.Pages(PageAction.ClosePage))
+            armed -> activity?.finish()
+            else -> {
+                armed = true
+                Toast.makeText(context, R.string.common_back_exit_hint, Toast.LENGTH_SHORT).show()
+            }
+        }
+    }
+}
+
 @Composable
 private fun OpeningChat(chat: ChatNavigation) {
     if (chat.isOpeningChat) {
@@ -265,7 +307,10 @@ private fun NativeTab(
             onConnection = { nav.settings(SettingsSubpage.SERVER) }, settingsUpgrade = settings.serverUpgrade,
             onSettings = { nav.settings() },
         )
-        else -> ChatRoute(pages.core, nav.chat, pages.plugins, nav.plugins) { nav.openApps(HomePage.LAUNCHER) }
+        else -> ChatRoute(
+            pages.core, nav.chat, pages.plugins, nav.plugins,
+            onAppLink = { nav.openLink(it, pages.core.onboarding()) },
+        ) { nav.openApps(HomePage.LAUNCHER) }
     }
 }
 

@@ -122,96 +122,6 @@
         }
       }
     },
-    "friends.groups.choose": {
-      "comment": "Title of the sheet for picking the groups of one friend.",
-      "extractionState": "manual",
-      "localizations": {
-        "en": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "Groups"
-          }
-        },
-        "zh-Hans": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "分组"
-          }
-        },
-        "zh-Hant": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "分組"
-          }
-        },
-        "ja": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "グループ"
-          }
-        }
-      }
-    },
-    "friends.groups.empty": {
-      "comment": "Shown when there are no groups, in the group picker and on a friend without groups.",
-      "extractionState": "manual",
-      "localizations": {
-        "en": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "No groups"
-          }
-        },
-        "zh-Hans": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "还没有分组"
-          }
-        },
-        "zh-Hant": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "還沒有分組"
-          }
-        },
-        "ja": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "グループなし"
-          }
-        }
-      }
-    },
-    "friends.groups.name": {
-      "comment": "Label of the group name field.",
-      "extractionState": "manual",
-      "localizations": {
-        "en": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "Group name"
-          }
-        },
-        "zh-Hans": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "分组名"
-          }
-        },
-        "zh-Hant": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "分組名稱"
-          }
-        },
-        "ja": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "グループ名"
-          }
-        }
-      }
-    },
     "friends.error.forbidden": {
       "comment": "Title when the server refused a friend action although the sign-in is valid.",
       "extractionState": "manual",
@@ -243,31 +153,31 @@
       }
     },
     "friends.error.forbidden.nextStep": {
-      "comment": "Explains why a friend action was refused.",
+      "comment": "Points to the collapsed details; the request was refused without saying who or what caused it.",
       "extractionState": "manual",
       "localizations": {
         "en": {
           "stringUnit": {
             "state": "translated",
-            "value": "They may have blocked you, or their server can't reach your home server yet."
+            "value": "Check the details for more information."
           }
         },
         "zh-Hans": {
           "stringUnit": {
             "state": "translated",
-            "value": "对方可能屏蔽了你，或者对方的服务器还不能和家里的服务器互通。"
+            "value": "可查看详情了解更多信息。"
           }
         },
         "zh-Hant": {
           "stringUnit": {
             "state": "translated",
-            "value": "對方可能封鎖了你，或者對方的伺服器還不能和家裡的伺服器互通。"
+            "value": "可查看詳細資訊。"
           }
         },
         "ja": {
           "stringUnit": {
             "state": "translated",
-            "value": "相手にブロックされているか、相手のサーバーがまだ自宅のサーバーとつながっていない可能性があります。"
+            "value": "詳細情報を確認してください。"
           }
         }
       }

@@ -2,6 +2,36 @@
   "sourceLanguage": "en",
   "version": "1.0",
   "strings": {
+    "friends.add.help": {
+      "comment": "Keep the fictional example with the address instructions in wrapping text, not in the single-line prompt.",
+      "extractionState": "manual",
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Ask them for their full friend address; in Wonton, once the Friends page loads successfully, they can copy their link from Add Friend → My QR Code.\nFormat only, not a real account: @bob:example.org"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "请对方把完整好友地址发给你；用云吞时，可在好友页加载成功后从“加好友 → 我的二维码”复制链接。\n仅为格式示例，非真实账号：@bob:example.org"
+          }
+        },
+        "zh-Hant": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "請對方把完整好友地址傳給你；使用雲吞時，可在好友頁載入成功後從「加好友 → 我的QR碼」複製連結。\n僅為格式範例，非真實帳號：@bob:example.org"
+          }
+        },
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "相手に完全な友だちアドレスを送ってもらいましょう（Wontonでは、友だちページの読み込みが成功した後、「友だちを追加 → 自分のQRコード」からリンクをコピーできます）。\n形式の例（実在のアカウントではありません）：@bob:example.org"
+          }
+        }
+      }
+    },
     "friends.add.submit": {
       "comment": "Sends the friend request.",
       "extractionState": "manual",
@@ -58,36 +88,6 @@
           "stringUnit": {
             "state": "translated",
             "value": "受信：%@"
-          }
-        }
-      }
-    },
-    "friends.groups.delete.message": {
-      "comment": "Deleting a group revokes the access shared through it, but keeps the friends.",
-      "extractionState": "manual",
-      "localizations": {
-        "en": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "Access shared through this group is revoked. The friends stay."
-          }
-        },
-        "zh-Hans": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "会收回经这个组分享的访问，好友保留。"
-          }
-        },
-        "zh-Hant": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "會收回經這個組分享的存取權，好友保留。"
-          }
-        },
-        "ja": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "このグループ経由の共有アクセスは取り消されます。友だちは残ります。"
           }
         }
       }

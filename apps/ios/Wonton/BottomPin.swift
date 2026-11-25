@@ -53,6 +53,8 @@ final class BottomPin {
     func attach(_ scrollView: UIScrollView) {
         guard scrollView !== self.scrollView else { return }
         self.scrollView = scrollView
+        // 新列表的内边距是干净的，补过的那笔跟着作废，下一帧按新输入框位置重算。
+        insetRepair = 0
         observations = [
             scrollView.observe(\.contentSize) { [weak self] _, _ in
                 MainActor.assumeIsolated { self?.stick() }
@@ -71,6 +73,7 @@ final class BottomPin {
                 }
             }
         ]
+        repairInset()
         stick()
         // 内容可能在注册观察之前就整套排好了（有缓存历史的房间一进就满）：注册后再没有 contentSize
         // 变化，上面那次 stick 量到的是注册前的高度。补一次异步 stick，等这一帧排完再贴底；落点摆放
@@ -87,6 +90,9 @@ final class BottomPin {
         scrollEnd = end
         DispatchQueue.main.asyncAfter(deadline: .now() + WontonTheme.motion.datePillHold, execute: end)
     }
+
+    /// 壳自己滚（跳到原消息、摆进房间的落点）：和主人滚一样出浮动日期，停下后照常淡出。
+    func noteProgrammaticScroll() { noteScroll() }
 
     /// 主人发了东西：不管翻到哪，回到底部看结果。
     func pin() {
@@ -107,6 +113,37 @@ final class BottomPin {
         } else {
             restoreOffset()
         }
+    }
+
+    /// 输入框顶在窗口里的 y；没有输入框时是无穷大。
+    private var composerTop = CGFloat.greatestFiniteMagnitude
+    /// 已经补进列表下内边距的那一段。
+    private var insetRepair: CGFloat = 0
+
+    /// 键盘弹着时 `safeAreaInset` 只留下键盘自己的内边距，输入框抬起来压在列表上，最后一条就藏在它后面
+    /// （iOS 26.5 模拟器实测：列表可见底停在键盘上沿，输入框上沿比它高 160）。差额当场补进列表的下内边距，
+    /// 输入框缩回去再撤掉。用不含这笔修补的内边距算，否则补完下一帧又会把补的撤回去。
+    func noteComposer(top: CGFloat?) {
+        let next = top ?? .greatestFiniteMagnitude
+        guard next != composerTop else { return }
+        composerTop = next
+        repairInset()
+    }
+
+    private func repairInset() {
+        guard let scrollView else { return }
+        let visible = scrollView.convert(
+            CGPoint(x: 0, y: scrollView.bounds.maxY - scrollView.adjustedContentInset.bottom + insetRepair),
+            to: nil
+        ).y
+        let shortfall = max(0, visible - composerTop)
+        let delta = shortfall - insetRepair
+        guard abs(delta) > 0.5 else { return }
+        insetRepair = shortfall
+        var inset = scrollView.contentInset
+        inset.bottom += delta
+        scrollView.contentInset = inset
+        stick()
     }
 
     /// 走查用：贴底状态和滚动的实际位置。界面上看不见，放进无障碍树给 UI 测试读。
@@ -190,11 +227,25 @@ struct EnclosingScrollView: UIViewRepresentable {
 /// 走查用：看不见的一行，写着 `BottomPin` 的贴底状态，UI 测试按标识读它。只在 Debug 包里挂。
 struct ScrollDebug: View {
     let pin: BottomPin
+    /// 走查用的额外一段（订阅次数、收到的批数），跟在自述后面。
+    var extra = ""
+    /// 正在闪的那一行，没有为空：跳转被主人碰断时也要能走查闪光有没有发生。
+    var flashItem: String?
+    /// 闪过几次、最后闪的是哪一行：闪光只亮一秒多，测试按计数走、按最后一行核对位置。
+    var flashes: Int
+    var lastFlash: String?
+
+    /// 测试读的那一行：贴底状态、闪光读数；`extra` 是订阅侧的补充。
+    private var line: String {
+        let base = "\(pin.snapshot) flash=\(flashItem ?? "-") flashes=\(flashes)"
+            + " last=\(lastFlash ?? "-")"
+        return extra.isEmpty ? base : "\(base) \(extra)"
+    }
 
     var body: some View {
         // 滚动位置不是可观察的状态：只在房间重画时取一次的话，测试读到的是上一次重画时的位置。
         TimelineView(.periodic(from: .now, by: 0.25)) { _ in
-            Text(verbatim: pin.snapshot)
+            Text(verbatim: line)
                 .accessibilityIdentifier("roomScroll")
                 .allowsHitTesting(false)
                 // 小到看不见：垫在玻璃和材质底下时，再淡的字也会被透出来。

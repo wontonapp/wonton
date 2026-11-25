@@ -104,6 +104,26 @@ impl PluginManager {
         self.store.load(id).ok().flatten()
     }
 
+    /// 精确停在替换容器后的记录读取与 metadata 写回之间，不持有记录锁。
+    #[cfg(test)]
+    pub(crate) fn hold_recovery_metadata_for_test(
+        &self,
+        id: &PluginId,
+    ) -> (
+        tokio::sync::oneshot::Receiver<InstalledRecord>,
+        tokio::sync::oneshot::Sender<()>,
+    ) {
+        let (read, snapshot) = tokio::sync::oneshot::channel();
+        let (resume, wait) = tokio::sync::oneshot::channel();
+        *self.recovery_metadata_hold.lock().unwrap() =
+            Some(super::recovery_replace::MetadataHold {
+                id: id.clone(),
+                read,
+                resume: wait,
+            });
+        (snapshot, resume)
+    }
+
     /// 测试用：该插件当前部署代是否记着一次完成的 setup 检查。
     #[cfg(test)]
     pub(crate) fn setup_done_cached_for_test(&self, id: &PluginId) -> bool {
@@ -182,6 +202,7 @@ fn minimal_record(id: &PluginId) -> InstalledRecord {
         relays: Vec::new(),
         firewalled: false,
         proxied: false,
+        bundled: false,
         id: id.clone(),
         version: "1.0.0".into(),
         source: "services: {}".into(),
@@ -227,6 +248,21 @@ fn serve_declared(entry: &mut Entry, manifest: &Manifest) {
                 .provides
                 .iter()
                 .flat_map(|provides| provides.capabilities.values().map(|c| &c.service)),
+        )
+        .chain(
+            manifest
+                .clients
+                .as_ref()
+                .and_then(|clients| clients.http.as_ref())
+                .map(|http| &http.service),
+        )
+        .chain(
+            manifest
+                .clients
+                .as_ref()
+                .and_then(|clients| clients.http.as_ref())
+                .and_then(|http| http.auth.credentials.as_ref())
+                .and_then(|credentials| credentials.service.as_ref()),
         );
     entry.serving.extend(services.cloned());
 }

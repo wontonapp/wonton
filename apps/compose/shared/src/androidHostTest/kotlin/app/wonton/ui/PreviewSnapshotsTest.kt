@@ -1,5 +1,6 @@
 package app.wonton.ui
 
+import androidx.compose.runtime.Composable
 import app.cash.paparazzi.DeviceConfig
 import app.cash.paparazzi.Paparazzi
 import org.junit.Rule
@@ -34,7 +35,19 @@ class PreviewSnapshotsTest {
     fun chatFailure() = paparazzi.snapshot { ChatFailurePreview() }
 
     @Test
+    fun dayBreak() = utcSnapshot { DayBreakPreview() }
+
+    @Test
+    fun dayBreakDark() = utcSnapshot { DayBreakDarkPreview() }
+
+    @Test
     fun agentDegraded() = paparazzi.snapshot { AgentDegradedPreview() }
+
+    @Test
+    fun agentDegradedInstalledFailure() = paparazzi.snapshot { AgentDegradedInstalledFailurePreview() }
+
+    @Test
+    fun agentInstallFailed() = paparazzi.snapshot { AgentInstallFailedPreview() }
 
     @Test
     fun chatInvite() = paparazzi.snapshot { ChatInvitePreview() }
@@ -49,12 +62,14 @@ class PreviewSnapshotsTest {
     fun coreUpgradeCompatFailed() = paparazzi.snapshot { CoreUpgradeCompatFailedPreview() }
 
     @Test
-    fun connectionDetailsFlows() {
+    fun connectionDetailsFlows() = utcSnapshot { ConnectionDetailsFlowsPreview() }
+
+    /** 时间按系统时区格式化；预览和 CI（UTC）画出来一致，参考图不随本机时区变。 */
+    private fun utcSnapshot(content: @Composable () -> Unit) {
         val previous = TimeZone.getDefault()
         try {
-            // 时间按系统时区格式化；预览与 CI 的 UTC 基准保持一致。
             TimeZone.setDefault(TimeZone.getTimeZone("UTC"))
-            paparazzi.snapshot { ConnectionDetailsFlowsPreview() }
+            paparazzi.snapshot { content() }
         } finally {
             TimeZone.setDefault(previous)
         }
@@ -65,4 +80,10 @@ class PreviewSnapshotsTest {
 
     @Test
     fun shareSheetNotPaired() = paparazzi.snapshot { ShareSheetNotPairedPreview() }
+
+    @Test
+    fun peersPublicAccessOff() = paparazzi.snapshot { PeersPublicAccessOffPreview() }
+
+    @Test
+    fun peersPublicAccessOffDark() = paparazzi.snapshot { PeersPublicAccessOffDarkPreview() }
 }

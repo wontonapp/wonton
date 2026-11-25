@@ -85,6 +85,10 @@ pub enum InstallError {
     ImagesUnavailable(String),
     #[error("{0}")]
     Unhealthy(String),
+    /// 等到健康门的时限还在启动：不是探针判了失败，是服务还在起（issue #682）。多半跟着宿主机一起慢，
+    /// 空下来再装通常就过。
+    #[error("{0}")]
+    TimedOut(String),
     #[error("{0}")]
     Storage(String),
     /// 家里的服务器连不上插件的来源（GitHub）。
@@ -130,9 +134,14 @@ impl InstallError {
             Self::GpuUnavailable(_) => "gpu_unavailable",
             Self::DeviceUnavailable(_) => "device_unavailable",
             Self::LanUnavailable(_) => "lan_unavailable",
+            Self::EgressProxyUnavailable {
+                reason: EgressFailure::Waiting,
+                ..
+            } => "egress_proxy_waiting",
             Self::EgressProxyUnavailable { .. } => "egress_proxy_unavailable",
             Self::ImagesUnavailable(_) => "images_unavailable",
             Self::Unhealthy(_) => "unhealthy",
+            Self::TimedOut(_) => "health_timeout",
             Self::Storage(_) => "storage",
             Self::SourceUnavailable(_) => "source_unavailable",
             Self::NotFound(_) => "not_found",
@@ -198,6 +207,7 @@ impl InstallError {
             },
             Self::ImagesUnavailable(m) => Self::ImagesUnavailable(add(m)),
             Self::Unhealthy(m) => Self::Unhealthy(add(m)),
+            Self::TimedOut(m) => Self::TimedOut(add(m)),
             Self::Storage(m) => Self::Storage(add(m)),
             Self::SourceUnavailable(m) => Self::SourceUnavailable(add(m)),
             Self::NotFound(m) => Self::NotFound(add(m)),
@@ -247,6 +257,7 @@ impl From<HealthError> for InstallError {
     fn from(e: HealthError) -> Self {
         match e {
             HealthError::Engine(engine) => engine.into(),
+            HealthError::Timeout(message) => Self::TimedOut(message),
             other => Self::Unhealthy(other.to_string()),
         }
     }

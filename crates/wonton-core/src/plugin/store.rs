@@ -88,6 +88,9 @@ pub struct InstalledRecord {
     pub devices: Vec<InstalledDevice>,
     #[serde(default, skip_serializing_if = "limits_empty")]
     pub limits: PluginLimits,
+    /// 随核心镜像附带、由核心预装和维护。上传的和从商店/来源装的为 false。
+    #[serde(default, skip_serializing_if = "std::ops::Not::not")]
+    pub bundled: bool,
     /// 开关 `lan_webui`（见 [`super::lan::webui`]），默认关。
     #[serde(default)]
     pub lan_webui: bool,
@@ -369,13 +372,16 @@ impl Store {
         write_json(&self.path(&record.id), record)
     }
 
-    /// 普通设置不能用操作开始时的旧副本覆盖并发保存的停止意图或重试额度。
+    /// 普通设置与回滚只提交元数据，不能覆盖独立保存的生命周期或客户端入口状态。
     pub(super) fn save_metadata(&self, record: &InstalledRecord) -> Result<(), StoreError> {
         let _writing = self.writes.lock().expect("插件记录写锁中毒");
         let path = self.path(&record.id);
         let mut updated = record.clone();
         if let Some(current) = self.load(&record.id)? {
             updated.lifecycle = current.lifecycle;
+            updated.entry_label = current.entry_label;
+            updated.clients_entries = current.clients_entries;
+            updated.setup_done_ever = current.setup_done_ever;
         }
         write_json(&path, &updated)
     }
@@ -435,6 +441,30 @@ impl Store {
         let dir = self.dir.join("lan");
         create_private_dir(&dir)?;
         write_json(&dir.join("choice.json"), choice)
+    }
+
+    /// 保留数据时只保留标签，不保留已卸载插件记录或开关。
+    pub(crate) fn retained_entry_labels(&self) -> Result<BTreeMap<String, String>, StoreError> {
+        Ok(read_json(&self.dir.join("entry-labels").join("retained.json"))?.unwrap_or_default())
+    }
+
+    pub(crate) fn retain_entry_label(
+        &self,
+        id: &PluginId,
+        label: Option<&str>,
+    ) -> Result<(), StoreError> {
+        let dir = self.dir.join("entry-labels");
+        create_private_dir(&dir)?;
+        let mut labels = self.retained_entry_labels()?;
+        match label {
+            Some(label) => {
+                labels.insert(id.to_string(), label.to_owned());
+            }
+            None => {
+                labels.remove(&id.to_string());
+            }
+        }
+        write_json(&dir.join("retained.json"), &labels)
     }
 
     pub fn remove(&self, id: &PluginId) -> Result<(), StoreError> {
@@ -673,6 +703,7 @@ mod tests {
             relays: Vec::new(),
             firewalled: false,
             proxied: false,
+            bundled: false,
             id: PluginId::parse(id).unwrap(),
             version: "1.0.0".into(),
             source: "services: {}".into(),

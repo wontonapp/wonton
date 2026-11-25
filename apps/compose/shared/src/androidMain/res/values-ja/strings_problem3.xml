@@ -13,6 +13,8 @@
     <string name="problem_plugin_core_upgrading_title">自宅サーバーはアップデート中です</string>
     <!-- Next step: look at the devices again and choose one that's available. -->
     <string name="problem_plugin_device_unavailable_next_step">デバイスを確認してからもう一度お試しください。</string>
+    <!-- Next step: retry once it is up; look at its install page if it stays stuck. -->
+    <string name="problem_plugin_egress_proxy_waiting_next_step">起動を待ってから再試行します。進まない場合は、プロキシアプリのインストールページでログを確認してください。</string>
     <!-- Problem title: a port the app opens on the local network is used by another container or program. -->
     <string name="problem_plugin_lan_port_taken_title">ポートが使用中です</string>
     <!-- Next step: choose an interface or address in the local network settings, then try again. -->

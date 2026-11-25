@@ -30,6 +30,10 @@ abstract class BuildRustCore : Exec() {
     @get:OutputDirectory
     abstract val kotlinDir: DirectoryProperty
 
+    /** 剥离符号表之前的 .so，留给崩溃分析用；不进 APK。 */
+    @get:OutputDirectory
+    abstract val symbolsDir: DirectoryProperty
+
     /** 每个 ABI 一个 .so，产物只有这些；目录本身仍要声明，AGP 拿它当生成的 jniLibs 源目录。 */
     @get:OutputFiles
     abstract val libraries: ConfigurableFileCollection
@@ -39,6 +43,7 @@ abstract class BuildRustCore : Exec() {
             listOf(
                 jniLibsDir.get().asFile.path,
                 kotlinDir.get().asFile.path,
+                symbolsDir.get().asFile.path,
                 rustProfile.get(),
                 minSdk.get().toString(),
                 uiFake.get(),
@@ -49,15 +54,35 @@ abstract class BuildRustCore : Exec() {
 
 val repoRoot = rootDir.resolve("../..").normalize()
 
+// 命令行上直接跑 Release 变体的任务（assembleRelease、installRelease…）时默认用 release 核心：debug 核心带着整份
+// 符号表，不带 -Pwonton.rustProfile=release 就把它打进 Release 包里，体积门禁会被骗过去。一次调用只编一个变体，
+// 所以只看任务名、不看变体图；assemble、build 这类不分变体的仍按 debug，同时编两种时告警提醒。
+// 变体任务都带 Release 字样；将来改了任务名又不带它的，会静默落回 debug，靠合后的体积门禁兜底。
+val requestedTaskNames = gradle.startParameter.taskRequests
+    .flatMap { request -> request.args }
+    .flatMap { arg -> arg.split(' ') }
+    .flatMap { arg -> arg.split(':') }
+    .filter { it.isNotBlank() }
+val defaultRustProfile = if (requestedTaskNames.any { it.contains("Release") }) "release" else "debug"
+val explicitRustProfile = providers.gradleProperty("wonton.rustProfile").orNull?.trim()?.ifEmpty { null }
+if (explicitRustProfile == null && defaultRustProfile == "debug" &&
+    requestedTaskNames.any { it == "assemble" || it == "build" }
+) {
+    logger.warn("这次同时编 Debug 和 Release，用的是 debug 核心；要看 Release 包的体积就单独跑 assembleRelease")
+}
+
 val buildRustCore = tasks.register<BuildRustCore>("buildRustCore") {
     group = "build"
     description = "用 cargo-ndk 编译 Rust 客户端核心，并生成 UniFFI Kotlin 绑定"
-    rustProfile.set(providers.gradleProperty("wonton.rustProfile"))
+    // 显式传的值优先，没传就用上面按任务名推出来的。值在配置期定成字符串：在 provider 的 lambda 里读脚本里的
+    // 属性，配置缓存会因“Gradle script object 不能序列化”存不进去。
+    rustProfile.set(explicitRustProfile ?: defaultRustProfile)
     // 假数据入口默认按构建类型开关（Debug 带、Release 不带）；夜跑用 -Pwonton.uiFake=1 显式带上。
     uiFake.set(providers.gradleProperty("wonton.uiFake").orElse("auto"))
     minSdk.set(libs.versions.android.minSdk.map { it.toInt() })
     abis.set(providers.gradleProperty("wonton.abis").map { value -> value.split(" ").filter { it.isNotBlank() } })
     kotlinDir.set(layout.buildDirectory.dir("generated/uniffi/kotlin"))
+    symbolsDir.set(layout.buildDirectory.dir("outputs/native-symbols"))
     val script = rootDir.resolve("scripts/build-core.sh")
     executable = script.path
     libraries.from(
@@ -75,6 +100,9 @@ val buildRustCore = tasks.register<BuildRustCore>("buildRustCore") {
     inputs.files(fileTree(repoRoot.resolve(".cargo")))
     inputs.dir(repoRoot.resolve("crates"))
     inputs.dir(repoRoot.resolve("vendor"))
+    // 这两个环境变量决定 .so 里带不带调试信息，CI 设了；默认不算任务输入，切换后 Gradle 会判 UP-TO-DATE 拿旧的。
+    inputs.property("devDebug", providers.environmentVariable("CARGO_PROFILE_DEV_DEBUG").orElse(""))
+    inputs.property("releaseDebug", providers.environmentVariable("CARGO_PROFILE_RELEASE_DEBUG").orElse(""))
 }
 
 kotlin {

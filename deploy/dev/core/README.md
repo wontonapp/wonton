@@ -25,9 +25,8 @@ deploy/dev/core/dev.sh reset                 # 停掉并删除数据、密钥、
 `dev.sh status` 查询状态，避免把客户端超时当成安装结果。
 
 `down` 后插件记录和卷都还在，容器没了；再 `up` 时核心只核对、不重建，插件在 `list` 里是 `degraded`。要接着用就
-重新装一次：普通插件先 `uninstall <ID>`（不带 `--purge`，卷和数据留着）再 `install <包>`；系统插件（模型网关
-`ai.usemagpie.magpie`）接口装不了，`uninstall <ID>` 之后重启核心（再 `down` 后 `up`，或 `reset --keep-tunnel-identity`），
-核心启动时从镜像重装。
+重新装一次：先 `uninstall <ID>`（不带 `--purge`，卷和数据留着）再 `install <包>`。系统插件也走这个流程；
+模型网关 magpie 不在锁文件里，卸载后重启核心不会从镜像装回，要用再从商店装。
 
 浏览器打开 `http://app-grafana.wonton.localhost:18480`，用主人令牌登录一次，之后自动进入 Grafana，
 不会看到 Grafana 自己的登录页。`*.localhost` 由浏览器和 curl 自动解析到本机，不用改 hosts。命令行里
@@ -115,7 +114,11 @@ deploy/dev/core/dev.sh devices                 # 已登记的设备；revoke <en
 
 加设备时交接聊天密钥（ADR-0087）没有第二台 App 时，用真实的客户端核心扮演旧设备：
 `cargo run -p wonton-client --example key-handoff-old-device -- <数据目录> <配对码> <写码的文件>` 登录、开好备份后打开
-“添加设备”，把给新设备的码写进文件；对表情时打印表情并替主人点“相同”，之后留两分钟回答新设备要密钥。
+“添加设备”，等加密历史真的进了房间预览才把给新设备的码写进文件；对表情时另起一行按序打印符号（外面拿它跟新设备屏幕上
+的比），并替主人点“相同”，之后留两分钟回答新设备要密钥。恢复密钥另外写进 `<写码的文件>.recovery`。
+历史句用 `KEY_HANDOFF_HISTORY_TEXT` 换（走查要和 App 那边同一个字符串）——
+它先往默认 Bot 的私聊发一句加密历史，给恢复密钥恢复和历史解密留证据；问不到默认 Bot（没装、没就绪）时用
+`KEY_HANDOFF_BOT_USER` 给它的 Matrix 用户 ID。历史发不出去示例直接退，不写码。
 
 在本机用隧道客户端示例扮演手机：`cargo run -p wonton-tunnel --example tunnel-client -- pair '<配对码>'` 用配对码
 登记它（`-- id` 输出它的 ID）。`--auth` 和 App 一样起带会话凭据的 HTTP 正向代理，启动时打印凭据：
@@ -146,15 +149,15 @@ curl --noproxy '' -x http://127.0.0.1:18008 -U wonton:<密码> -H 'content-type:
 
 核心镜像构建时按 [`plugins/system.lock`](../../../plugins/system.lock) 从独立仓库取包并核对提交和摘要；升级只改
 锁文件对应的一行，详见 [插件目录说明](../../../plugins/README.md#预装插件)。启动时从镜像内的
-`/usr/share/wonton/system-plugins` 预装 magpie（`WONTON_SYSTEM_PLUGINS`），再从
-`/usr/share/wonton/default-plugins` 装一次 Hermes（`WONTON_DEFAULT_PLUGINS`），首次启动无需联网取插件包；规则见插件规范的“预装插件”。不要 Hermes 时用
-`WONTON_DEV_DEFAULT_PLUGINS= dev.sh up` 起核心。声明了 `models` 的插件经 `models.wonton.internal` 访问 magpie，凭据由
-核心签发。“模型设置”网页（`http://ai-usemagpie-magpie.wonton.localhost:18480/`）由网关代登录：登录过核心的浏览器和
-已配对设备直接打开，不用输 magpie 的网页密钥。也可以用 magpie 的命令行配置 provider，比如指向开发机上已在运行的
-magpie；上游地址别写 `http://host.docker.internal:3425`——核心不给插件容器加 host-gateway（有意的
-隔离），Linux 上这个名字解析不了。用[端到端冒烟](#端到端冒烟)一节的 socat 中继（`WONTON_SMOKE_MODEL_RELAY` 指向只监听
-回环的 magpie），宿主防火墙要放行插件网段到中继端口（13425）。加了 provider，默认路由组 `wonton-default` 自动有了它的
-模型（ADR-0008）。
+`/usr/share/wonton/default-plugins` 装一次 Hermes（`WONTON_DEFAULT_PLUGINS`），首次启动无需联网取插件包；规则见插件规范的“预装插件”。
+不要 Hermes 时用 `WONTON_DEV_DEFAULT_PLUGINS= dev.sh up` 起核心。模型在 Hermes 自己的网页里接（Keys 页填 key 或登录订阅，
+Models 页选模型），不经核心。模型网关 magpie 不预装，要在开发里试网关时从商店装；声明了 `models` 的插件经
+`models.wonton.internal` 访问它，凭据由核心签发（ADR-0008）。装上 magpie 后，“模型设置”网页
+（`http://ai-usemagpie-magpie.wonton.localhost:18480/`）由网关代登录：登录过核心的浏览器和已配对设备直接打开，
+不用输 magpie 的网页密钥。也可以用 magpie 的命令行配置 provider，比如指向开发机上已在运行的 magpie。手动配置时
+上游地址别写 `http://host.docker.internal:3425`：核心不给插件容器加 host-gateway（有意的隔离），Linux 上这个名字
+解析不了；[端到端冒烟](#端到端冒烟)自己会按能不能解析选地址，解析不到时在插件网络的网关上起 socat 转发（宿主防火墙
+要放行插件网段到 13425）。加了 provider，默认路由组 `wonton-default` 自动有了它的模型（ADR-0008）。
 
 ## MCP 总线
 
@@ -283,20 +286,21 @@ DOCKER_HOST=ssh://$DEV_HOST deploy/dev/core/smoke.sh  # 远端 Linux 主机
 插件收不到网关 Cookie 和伪造的转发头；已配对设备经隧道拿到 Matrix 登录令牌、登录 Tuwunel，局域网拿不到
 令牌也进不了 `matrix.<基础域名>`，管理接口和绕路到它的路径都不转发；回声 Bot（`plugins/examples/echo-bot`）装好后
 有自己的账号、显示名和加密主房间，主人的一台新设备经隧道发加密消息能收到它的加密回声，卸载后它的令牌立即
-失效，不删数据重装沿用账号和主房间，删除数据时账号停用；核心预装了模型网关，使用方拿到只属于自己的凭据，
-经 `models.wonton.internal` 能用、卸载后凭据被吊销；核心在主人配对之前就自己装好了 Hermes，它过了健康检查
-之后，和它的加密私聊才出现在主人的聊天列表里，还没有 provider 时 Hermes 回提示去“模型设置”添加，命令行加了 provider（不建路由组）
-之后，主人的新设备经隧道和它加密对话两轮：逐轮检查 magpie 用量在 Hermes 凭据名下新增了至少一条成功且有输出 token 的请求，
+失效，不删数据重装沿用账号和主房间，删除数据时账号停用；核心不预装模型网关，申请 `models` 的插件没有网关时照样
+装得上、拿到空变量；核心在主人配对之前就自己装好了 Hermes，它不经模型网关，过了健康检查
+之后，和它的加密私聊才出现在主人的聊天列表里，还没接模型时 Hermes 回提示去它网页的 Keys、Models 页；冒烟给它的 Bot
+在宿主 magpie 上建一条限定模型的凭据，再经 Hermes 自己的接口把宿主 magpie 配成它的 provider，之后主人的新设备
+经隧道和它加密对话两轮：逐轮检查宿主 magpie 用量在 Hermes 凭据名下新增了至少一条成功且有输出 token 的请求，
 第二轮回复必须提到第一轮让它“介绍”或“自己”；本轮没有成功调用就带回复原文停止，不依赖 Hermes 的报错措辞。
-删除数据卸载后 Bot 账号停用、凭据吊销；“模型设置”网页由网关代登录，局域网
-浏览器登录过核心、已配对设备经隧道都直接打开并能改设置，没登录和别的插件网页发来的请求被拒，网页密钥不出现在任何
-响应和 Cookie 罐里；对 Hermes 说装文件搜索，核心在 Wonton 房间里发确认卡片，Hermes 的插件网络和局域网浏览器都答不了，
+删除数据卸载后 Bot 账号停用、冒烟的凭据删掉；“模型设置”网页由网关代登录，局域网浏览器登录过核心、已配对设备经
+隧道都直接打开并能改设置，没登录和别的插件网页发来的请求被拒，网页密钥不出现在任何响应和 Cookie 罐里；对 Hermes
+说装文件搜索，核心在确认列表里发卡片，Hermes 的插件网络和局域网浏览器都答不了，
 主人的手机确认后才装好，Hermes 再经 MCP 总线在授权的文件夹里找到文件，审计记下这两次调用；没申请 `matrix.bot`、
 `models`、`tools` 的插件进不了对应的内部地址；
 核心重启后插件恢复，卸掉的 Hermes 不会被装回来；卸载后容器、网络、卷、应用数据和 OIDC 客户端都没有残留。
 结束时清理全部资源，`KEEP=1` 保留现场。Hermes 一步要真实模型：开发机上要有在运行的 magpie，模型名经
-`WONTON_SMOKE_MODEL` 传入（magpie 里一个能对话的模型；`/v1/models` 里的 id 带 provider 前缀，冒烟在交给
-插件前会去掉了它），冒烟里的 magpie 经 `host.docker.internal:3425` 用它，
+`WONTON_SMOKE_MODEL` 传入：填 `/v1/models` 里的 id（带 provider 前缀），magpie 里一个能对话的模型。
+Hermes 怎么连宿主见下面「远端主机」一段；
 不读取开发机 magpie 的配置和密钥。
 
 远端主机拉不到 Docker Hub 时，先把镜像从本机传过去（以 amd64 主机为例），传完删掉本机的 amd64 副本。核心镜像的 Rust、
@@ -325,13 +329,16 @@ ssh "$DEV_HOST" docker tag "sha256:${image#*@sha256:}" "${image%@*}"
 链接预览经代理用的 DoH 服务器用 `WONTON_DOH_URL` 换（默认 `https://1.1.1.1/dns-query`，ADR-0065）。
 
 远端主机直连 crates.io、GitHub 太慢时，构建镜像经那台主机自己的代理（`WONTON_DEV_BUILD_PROXY`，构建用宿主网络）。
-Linux 主机上容器里没有 `host.docker.internal`，冒烟用 `WONTON_SMOKE_MODEL_RELAY` 指向那台主机上只监听回环地址的
-magpie，`WONTON_SMOKE_MODEL` 选它提供的模型。冒烟在主机网络里起一个 socat 转发，监听在冒烟 magpie 插件网络的网关上、
-只接受冒烟的 magpie，结束时删掉；主机的防火墙要放行插件网络连这个端口（13425），否则 Hermes 一步连不上模型：
+Linux 的 Docker 不给容器加 `host.docker.internal`，冒烟自己判：Hermes 容器能解析这个名字就用它，解析不到就在
+宿主机上起一个 socat 转发，监听在所有地址上，结束时删掉，Hermes 经它自己网络的网关地址连。宿主 magpie 不在 3425
+时直接用 `WONTON_SMOKE_MODEL_RELAY=<宿主上的地址:端口>`：设了它冒烟就用这个地址（两种宿主都一样），不再自己起转发；
+自己起转发时主机的防火墙要放行插件网段到 13425，否则 Hermes 一步连不上模型。`WONTON_SMOKE_MODEL` 填
+`/v1/models` 里的 id（带 provider 前缀）。宿主 magpie 在容器里时冒烟按发布 3425 的容器找它；名字不同设
+`WONTON_SMOKE_HOST_MAGPIE=<容器名>`（宿主上同时有 `magpie` 也进那个容器）：
 
 ```bash
 DOCKER_HOST=ssh://$DEV_HOST WONTON_DEV_BUILD_PROXY=http://127.0.0.1:7899 WONTON_DEV_BUILD_JOBS=16 \
-  WONTON_SMOKE_MODEL_RELAY=127.0.0.1:3425 WONTON_SMOKE_MODEL='<开发机 magpie 里的模型名>' deploy/dev/core/smoke.sh
+  WONTON_SMOKE_MODEL='<开发机 magpie 的 /v1/models 里的 id（带 provider 前缀）>' deploy/dev/core/smoke.sh
 ```
 
 ## 在宿主上直接运行核心

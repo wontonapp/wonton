@@ -302,6 +302,53 @@ async fn the_gateway_arriving_later_issues_and_rebuilds_the_consumer() {
 }
 
 #[tokio::test]
+async fn an_install_waits_for_a_gateway_that_is_still_starting() {
+    // 默认 Bot 和网关一起装时，签发会赶上网关还在起：要等它就绪，不能拿空变量收场。
+    let bed = bed().await;
+    let gateway = PluginId::parse("system.models").unwrap();
+    let manager = Arc::new(bed.manager);
+    manager.stop_detached(gateway.clone()).await.unwrap();
+
+    let installing = manager.clone();
+    let package = consumer();
+    let granted = models();
+    let pending =
+        tokio::spawn(async move { installing.install(&package, &granted, super::langs()).await });
+    // 安装已经进到等网关的循环里，再让网关起来。
+    tokio::time::sleep(std::time::Duration::from_millis(100)).await;
+    manager.start_detached(gateway).await.unwrap();
+    pending.await.unwrap().unwrap();
+
+    let env = env_of_container(&bed.docker, &container_name("app-test", "web"));
+    assert_eq!(env["BASE"], "http://models.wonton.internal:8080/v1");
+    assert_eq!(env["KEY"].len(), 64);
+}
+
+#[tokio::test]
+async fn a_restored_consumer_without_a_listed_entry_is_connected_by_its_record() {
+    // restore 回来的插件没有店里的那份条目：网关事后到达时也要按记录接上，不能整条跳过。
+    let bed = bed_without_gateway().await;
+    let id = PluginId::parse("app.test").unwrap();
+    bed.manager
+        .install(&consumer(), &models(), super::langs())
+        .await
+        .unwrap();
+    bed.manager
+        .plugins
+        .write()
+        .expect("插件表锁中毒")
+        .get_mut(&id)
+        .expect("刚装好的插件")
+        .listed = None;
+
+    bed.install_gateway().await;
+
+    let env = env_of_container(&bed.docker, &container_name("app-test", "web"));
+    assert_eq!(env["KEY"].len(), 64);
+    assert!(bed.hints().await.hints.is_empty());
+}
+
+#[tokio::test]
 async fn the_gateway_coming_back_again_leaves_connected_consumers_alone() {
     let bed = bed().await;
     bed.manager
@@ -575,4 +622,147 @@ async fn a_failed_reconcile_marks_the_consumer_as_degraded() {
         panic!("对账失败的使用方应标为异常");
     };
     assert!(reason.contains("网关坏了"), "{reason}");
+}
+
+#[tokio::test]
+async fn the_watch_retries_a_failed_reconcile_and_the_consumer_recovers() {
+    let bed = bed().await;
+    bed.manager
+        .install(&consumer(), &models(), super::langs())
+        .await
+        .unwrap();
+    let web = container_name("app-test", "web");
+    let key = web_env(&bed)["KEY"].clone();
+    let status = |bed: &Bed| {
+        bed.manager
+            .list()
+            .into_iter()
+            .find(|p| p.id.as_str() == "app.test")
+            .unwrap()
+            .status
+    };
+
+    // 网关一时应答慢（I/O 压力下命令超时）：对账失败，使用方如实标成异常。
+    bed.docker.on_exec(|_, _, _| (1, "命令超时".to_owned()));
+    assert_eq!(bed.manager.reconcile_models().await.len(), 1);
+    let PluginStatus::Degraded { reason } = status(&bed) else {
+        panic!("对账失败的使用方应标为异常");
+    };
+    assert!(reason.contains("命令超时"), "{reason}");
+
+    // 还没好：下一轮巡检重试还是失败，如实继续异常，不假装恢复，也不重建容器。
+    bed.manager.watch_containers().await;
+    assert!(matches!(status(&bed), PluginStatus::Degraded { .. }));
+    let PluginStatus::Degraded { reason } = status(&bed) else {
+        unreachable!()
+    };
+    assert!(reason.contains("命令超时"), "{reason}");
+    assert_eq!(bed.docker.creations(&web), 1);
+
+    // 网关缓过来了：下一轮巡检自己重试凭据，容器没白重建，状态回到运行中。
+    bed.docker.on_exec(credential_script(bed.keys.clone()));
+    bed.manager.watch_containers().await;
+    assert!(
+        matches!(status(&bed), PluginStatus::Running),
+        "{:?}",
+        status(&bed)
+    );
+    assert_eq!(web_env(&bed)["KEY"], key, "重试沿用记下的同一个值");
+    assert_eq!(bed.docker.creations(&web), 1);
+}
+
+/// 记下的全部凭据值：`{名字: 值}`。
+fn stored_keys(bed: &Bed) -> BTreeMap<String, String> {
+    let stored =
+        std::fs::read_to_string(bed._dir.path().join("plugins/model-keys/app.test.json")).unwrap();
+    let file: serde_json::Value = serde_json::from_str(&stored).unwrap();
+    serde_json::from_value(file["keys"].clone()).unwrap()
+}
+
+#[tokio::test]
+async fn a_failed_retry_still_tries_the_rest_and_replaces_only_the_failed_value() {
+    let _ = tracing_subscriber::fmt()
+        .with_max_level(tracing::Level::WARN)
+        .with_test_writer()
+        .try_init();
+    let bed = bed().await;
+    let source = package(
+        "  gateway:\n    image: hermes\n    environment:\n      KEY: ${WONTON_MODEL_API_KEY}\n  \
+         web:\n    image: nginx\n    environment:\n      KEY: ${WONTON_MODEL_API_KEY}",
+        "  bot: {display_name: {zh: 测试, en: Test}}\n  bots: {services: [gateway]}\n  \
+         permissions: [matrix.bot, models]",
+    );
+    let granted = vec!["matrix.bot".parse().unwrap(), "models".parse().unwrap()];
+    bed.manager
+        .install(&source, &granted, super::langs())
+        .await
+        .unwrap();
+    let first = "app.test".to_owned();
+    let second = "app.test/default".to_owned();
+    let before = stored_keys(&bed);
+    let status = |bed: &Bed| {
+        bed.manager
+            .list()
+            .into_iter()
+            .find(|p| p.id.as_str() == "app.test")
+            .unwrap()
+            .status
+    };
+
+    // 第一个凭据一直超时，第二个每次都正常：一轮里两个都要试，不能撞到第一个就收手。
+    let keys = bed.keys.clone();
+    let issues = Arc::new(Mutex::new(BTreeMap::<String, usize>::new()));
+    let counted = issues.clone();
+    let failing = first.clone();
+    bed.docker.on_exec(move |_, cmd, stdin| {
+        let value = String::from_utf8_lossy(stdin).trim().to_owned();
+        let mut keys = keys.lock().unwrap();
+        let mut issues = counted.lock().unwrap();
+        match cmd {
+            [_, _, action, name] if action == "issue" => {
+                let count = issues.entry(name.clone()).or_default();
+                *count += 1;
+                if name == &failing && *count <= 2 {
+                    (1, "命令超时".to_owned())
+                } else {
+                    // 网关的 issue 收下 stdin 的值：重新签发成功时值不变，同一个值又认了。
+                    keys.entry(name.clone()).or_insert(value);
+                    (0, String::new())
+                }
+            }
+            [_, _, action, name] if action == "revoke" => {
+                keys.remove(name);
+                (0, String::new())
+            }
+            _ => (2, "用法不对".to_owned()),
+        }
+    });
+
+    // 对账失败：两个凭据都试过，第二个照常重新签发了同一个值。
+    assert_eq!(bed.manager.reconcile_models().await.len(), 1);
+    assert_eq!(issues.lock().unwrap()[&second], 1);
+    assert_eq!(stored_keys(&bed)[&second], before[&second]);
+    // 再一轮还是失败：原因里带上是哪个凭据，第二个也又试了一次。
+    bed.manager.watch_containers().await;
+    let PluginStatus::Degraded { reason } = status(&bed) else {
+        panic!("凭据还在失败，使用方应继续异常");
+    };
+    assert!(reason.contains(&format!("{first}: ")), "{reason}");
+    assert_eq!(issues.lock().unwrap()[&second], 2);
+    // 第三轮缓过来：坏的那个重新签发、第二个也照试一遍，状态回去。
+    bed.manager.watch_containers().await;
+    let counts = issues.lock().unwrap().clone();
+    assert_eq!(counts[&first], 3, "{counts:?}");
+    assert!(
+        matches!(status(&bed), PluginStatus::Running),
+        "{:?}",
+        status(&bed)
+    );
+    let after = stored_keys(&bed);
+    assert_eq!(after, before, "值没变：重签发只重建网关里的那条记录");
+    let gateway = env_of_container(
+        &bed.docker,
+        &Instance::default().bot_container("app-test", "gateway", "default"),
+    );
+    assert_eq!(gateway["KEY"], before[&second], "好的那个凭据原样留着");
 }

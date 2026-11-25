@@ -1,11 +1,12 @@
 use std::path::Path;
 use std::time::Duration;
 
-use wonton_protocol::{CoreUpgradeCompat, CoreUpgradeFailure, PluginLimits};
+use wonton_protocol::{CoreUpgradeCompat, PluginLimits};
 
 use super::*;
+use crate::plugin::PluginId;
 use crate::plugin::package_files::PackageFiles;
-use crate::plugin::store::{InstalledRecord, PluginId, Store};
+use crate::plugin::store::{InstalledRecord, Store};
 use crate::upgrade::fake_host::{FakeHost, output};
 use crate::upgrade::host::OneShotOutput;
 use crate::upgrade::state::Layout;
@@ -38,6 +39,7 @@ fn record(id: &str, source: &str) -> InstalledRecord {
         granted_permissions: Vec::new(),
         enabled_permissions: Vec::new(),
         devices: Vec::new(),
+        bundled: false,
         oidc_client_secret: None,
         installed_at: 1,
         entry_label: None,
@@ -61,10 +63,19 @@ struct Scene {
 
 impl Scene {
     /// 记录写进 `<data>/core/plugins/`：compat 从那里读已装插件。
-    fn install(&self, id: &str, kind: &str, source: &str) {
+    fn install(&self, id: &str, _kind: &str, source: &str) {
         let store =
             Store::open(self.data_dir().join("core").join("plugins")).expect("打开记录目录");
         store.save(&record(id, source)).expect("写记录");
+    }
+
+    fn mark_bundled(&self, id: &str) {
+        let store =
+            Store::open(self.data_dir().join("core").join("plugins")).expect("打开记录目录");
+        let id = PluginId::parse(id).unwrap();
+        let mut record = store.load(&id).unwrap().unwrap();
+        record.bundled = true;
+        store.save(&record).unwrap();
     }
 
     fn data_dir(&self) -> std::path::PathBuf {
@@ -123,19 +134,27 @@ fn canned(entries: &[String]) -> OneShotOutput {
     )
 }
 
-/// 只报新失效：目标读不懂、当前核心也读不懂的不列；系统插件不列；现在读得懂、目标读不懂的才列。
+/// 只报新失效：目标读不懂、当前核心也读不懂的不列；随核心带的系统插件不列；现在读得懂、目标读不懂的才列。
 #[tokio::test]
 async fn only_new_breaking_plugins_are_reported() {
     let s = scene();
     s.install("app.good", "app", &package("app.good", "app"));
     // 现在就异常的：当前核心都读不懂，插件页已经显示，升级不改变它的处境。
     s.install("app.already", "app", "services: [broken");
-    // 系统插件跟着核心镜像走，新核心放行后自己会升级。
+    // 随核心带的系统插件跟着核心镜像走，新核心放行后自己会升级。
     s.install("app.system", "system", &package("app.system", "system"));
-    *s.host.world().compat = Some(canned(&[
+    s.mark_bundled("app.system");
+    // 上传/来源装的系统插件不在新镜像里，要列出来。
+    s.install(
+        "app.source-system",
+        "system",
+        &package("app.source-system", "system"),
+    );
+    s.host.world().compat = Some(canned(&[
         ok("app.good"),
         breaking("app.already", &[reason("other", "")]),
         breaking("app.system", &[reason("other", "")]),
+        breaking("app.source-system", &[reason("other", "")]),
         breaking(
             "app.good",
             &[reason("spec_unsupported", "0.13"), reason("other", "")],
@@ -147,9 +166,11 @@ async fn only_new_breaking_plugins_are_reported() {
     let CoreUpgradeCompat::Breaking { plugins } = compat else {
         panic!("{compat:?}");
     };
-    assert_eq!(plugins.len(), 1, "{plugins:?}");
-    assert_eq!(plugins[0].id, "app.good");
-    assert_eq!(plugins[0].reasons.len(), 2, "{plugins:?}");
+    let mut ids: Vec<_> = plugins.iter().map(|p| p.id.as_str()).collect();
+    ids.sort_unstable();
+    assert_eq!(ids, ["app.good", "app.source-system"], "{plugins:?}");
+    let good = plugins.iter().find(|p| p.id == "app.good").unwrap();
+    assert_eq!(good.reasons.len(), 2, "{plugins:?}");
     // 物化目录读完就删。
     assert!(!s.compat_dir().exists(), "{:?}", s.compat_dir());
 }
@@ -181,7 +202,7 @@ async fn an_old_target_image_is_unavailable() {
 async fn unreadable_output_is_failed() {
     let s = scene();
     s.install("app.good", "app", &package("app.good", "app"));
-    *s.host.world().compat = Some(output(0, "不是 JSON", ""));
+    s.host.world().compat = Some(output(0, "不是 JSON", ""));
     let compat = s.check("sha256:new").await;
     let CoreUpgradeCompat::Failed { problem } = compat else {
         panic!("{compat:?}");
@@ -209,7 +230,7 @@ async fn a_failed_run_is_failed() {
 async fn breaking_for_an_unsent_id_is_ignored() {
     let s = scene();
     s.install("app.good", "app", &package("app.good", "app"));
-    *s.host.world().compat = Some(canned(&[breaking("app.other", &[reason("other", "")])]));
+    s.host.world().compat = Some(canned(&[breaking("app.other", &[reason("other", "")])]));
     assert_eq!(s.check("sha256:new").await, CoreUpgradeCompat::Ok);
 }
 
@@ -218,7 +239,7 @@ async fn breaking_for_an_unsent_id_is_ignored() {
 async fn categories_map_by_name_and_fall_to_other() {
     let s = scene();
     s.install("app.good", "app", &package("app.good", "app"));
-    *s.host.world().compat = Some(canned(&[breaking(
+    s.host.world().compat = Some(canned(&[breaking(
         "app.good",
         &[
             reason("spec_unsupported", "0.13"),
@@ -258,9 +279,9 @@ fn materialization_writes_the_package_and_refuses_escape_paths() {
     let root = dir.path().join("compat").join("sha256-x");
     let mut files = PackageFiles::new();
     files.insert("settings/form.yaml".to_owned(), b"form".to_vec());
-    let mut record = record("app.good", &package("app.good", "app"));
-    record.files = files;
-    let dirs = materialize(&root, &[("app.good".to_owned(), record)]).unwrap();
+    let mut good = record("app.good", &package("app.good", "app"));
+    good.files = files;
+    let dirs = materialize(&root, &[("app.good".to_owned(), good)]).unwrap();
     assert_eq!(dirs, vec![root.join("app.good").display().to_string()]);
     assert_eq!(
         std::fs::read_to_string(root.join("app.good").join(COMPOSE_FILE)).unwrap(),
@@ -283,7 +304,7 @@ async fn the_compat_job_is_limited_read_only_and_names_every_package() {
     let s = scene();
     s.install("app.one", "app", &package("app.one", "app"));
     s.install("app.two", "app", &package("app.two", "app"));
-    *s.host.world().compat = Some(canned(&[ok("app.one"), ok("app.two")]));
+    s.host.world().compat = Some(canned(&[ok("app.one"), ok("app.two")]));
     s.check("sha256:new").await;
 
     let job = s.host.world().compat_spec.clone().expect("跑过 compat");

@@ -14,6 +14,7 @@ mod chat;
 mod client_lifetime;
 mod egress;
 mod encryption;
+mod forward_comment;
 mod friends;
 mod group;
 mod layout;
