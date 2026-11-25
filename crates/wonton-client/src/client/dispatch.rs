@@ -190,11 +190,11 @@ impl ClientCore {
             | HomeAction::StartMatrixOidc { .. }
             | HomeAction::CompleteMatrixOidc { .. }
             | HomeAction::CancelMatrixLogin { .. }) => self.matrix_login.dispatch(action),
+            HomeAction::RelaySettings { action } => scope.home.relay_settings(action),
             action @ (HomeAction::AppForegrounded
             | HomeAction::AppBackgrounded
             | HomeAction::NetworkChanged { .. }
             | HomeAction::RetryConnection) => self.lifecycle_action(scope, action),
-            HomeAction::RelaySettings { action } => scope.home.relay_settings(action),
         }
     }
 

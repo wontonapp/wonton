@@ -40,6 +40,7 @@ home-proxy-start-failed = App 無法啟動本機連線代理，請重試。
 
 home-tunnel-closed = 隧道用戶端已關閉
 
+
 home-lan-unsupported = 這個版本的用戶端核心不支援區域網路設定
 
 home-port-mapping-save-failed = 連接埠映射的開關存不下來：{ $error }

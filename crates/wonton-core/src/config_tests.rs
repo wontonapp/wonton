@@ -351,3 +351,25 @@ fn vapid_needs_both_the_key_and_the_subject() {
     );
     assert!(with(&[]).unwrap().push_vapid_key.is_none());
 }
+
+#[test]
+fn builtin_relays_can_come_from_the_runtime_environment() {
+    let cfg = config(&[
+        ("WONTON_DATA_DIR", "/data"),
+        ("WONTON_BUILTIN_RELAYS", "https://relay.example.org#7843"),
+    ])
+    .unwrap();
+    let relay = cfg
+        .builtin_relays
+        .relays()
+        .iter()
+        .find(|relay| relay.url.as_str() == "https://relay.example.org/")
+        .expect("运行时环境变量里的默认中继");
+    assert_eq!(relay.quic_port, Some(7843));
+
+    let bad = config(&[
+        ("WONTON_DATA_DIR", "/data"),
+        ("WONTON_BUILTIN_RELAYS", "http://relay.example.org"),
+    ]);
+    assert!(bad.is_err());
+}
