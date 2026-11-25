@@ -309,6 +309,7 @@ fn fake_home(mut home: HomeViewModel) -> HomeViewModel {
         public_relay: false,
         lan: true,
         rtt_ms: 12,
+        relay_url: None,
     });
     home.details.network = Some(DeviceNetwork::Wifi);
     home.details.relay = Default::default();

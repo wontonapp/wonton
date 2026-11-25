@@ -65,6 +65,8 @@ fn home(server: Option<&str>, proxy: Option<ProxySettings>) -> HomeViewModel {
         server_id: server.map(str::to_owned),
         status: HomeStatus::Connected,
         path: None,
+        current_relay: None,
+        relays: Default::default(),
         notice: None,
         details: Default::default(),
         proxy,

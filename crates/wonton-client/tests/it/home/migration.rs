@@ -120,7 +120,8 @@ async fn later_direct_path_survives_restart(empty_report: bool) {
         .unwrap();
     phone
         .wait_for(|view| {
-            view.status == HomeStatus::Connected && view.path.is_some_and(|path| path.relay)
+            view.status == HomeStatus::Connected
+                && view.path.as_ref().is_some_and(|path| path.relay)
         })
         .await;
     wait_until_ticket_has(dir.path(), reported).await;
@@ -143,7 +144,8 @@ async fn later_direct_path_survives_restart(empty_report: bool) {
     gate.enabled.send_replace(true);
     phone
         .wait_for(|view| {
-            view.status == HomeStatus::Connected && view.path.is_some_and(|path| !path.relay)
+            view.status == HomeStatus::Connected
+                && view.path.as_ref().is_some_and(|path| !path.relay)
         })
         .await;
     wait_until_leading_direct_addr(dir.path(), gate.addr).await;
