@@ -853,8 +853,7 @@ mod tests {
     use std::time::Duration;
 
     use super::*;
-
-    use wonton_protocol::{MessageRun, TimelineTarget, TimelineViewport};
+    use wonton_protocol::{Action, MessageRun, TimelineTarget, TimelineViewport};
 
     const ROOM: &str = "!ui-fake:home.example";
 
@@ -1032,6 +1031,38 @@ mod tests {
         };
         assert!(saw_bottom, "中间的到底批次该到");
         assert_eq!(update, 1);
+    }
+
+    /// 发送（附件区整单）前先收“正在输入”，主对话和旁聊都按各自的目标收；被拒的发送也照样先收。
+    #[tokio::test]
+    async fn send_composer_stops_typing_first() {
+        let dir = tempfile::tempdir().unwrap();
+        let core =
+            crate::client::ClientCore::new_ui_fake(dir.path().to_string_lossy().into_owned())
+                .unwrap();
+        let side = TimelineTarget {
+            room_id: ROOM.into(),
+            thread_root: Some("$ui-fake-5".into()),
+        };
+        for target in [target(), side] {
+            core.dispatch(Action::Timeline {
+                action: TimelineAction::SendComposer {
+                    target: target.clone(),
+                    body: "Fixture".into(),
+                    reply_to: None,
+                    mentions: Vec::new(),
+                },
+            })
+            .unwrap();
+        }
+        let stops = core.scope().chat.typing_stops_for_test();
+        assert_eq!(stops.len(), 2);
+        assert_eq!(stops[0].room_id.as_str(), ROOM);
+        assert_eq!(stops[0].thread_root, None);
+        assert_eq!(
+            stops[1].thread_root.as_ref().map(|id| id.as_str()),
+            Some("$ui-fake-5")
+        );
     }
 
     /// 走壳用的入口订阅一条时间线：第一批之后不该自己结束（壳那边一结束就当房间没了、把页收起来）。

@@ -116,5 +116,3 @@ chat-window-ended =
     }
 
 chat-choice-send-failed-rejected = 没发出去：家里服务器拒收。（{ $error }）
-
-chat-op-typing-failed = 报告正在输入失败：{ $error }

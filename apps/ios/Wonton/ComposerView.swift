@@ -230,9 +230,9 @@ struct ComposerView: View {
 
 private extension ComposerView {
     /// 附件面板里选好照片点了发送：照片和附言（就是草稿）作为一次发出去（ADR-0109 第 10 节）。主对话里照片先进附件区，
-    /// 再和发送键走同一条路（`SendComposer`），附件区里原有的附件也一起走；旁聊没有附件区，照片一张张直接发，附言只当
-    /// 第一张试过的照片的说明（ADR-0093）。取字节的这段时间（比如 iCloud 原图下不下来）发送键那一格转圈；发出去了、
-    /// 草稿也还是派出时那句才清，被拒或者等的功夫又打了字都留着，回复对象跟着草稿留。
+    /// 再和发送键走同一条路（`SendComposer`），附件区里原有的附件也一起走；旁聊没有附件区，照片一张张直接发，附言只跟第一张
+    /// 试过的照片走（ADR-0093）。取字节的这段时间（比如 iCloud 原图下不下来）发送键那一格转圈；附言随照片发出去了、草稿还是
+    /// 派出时那句才清，被拒或者等的功夫又打了字都留着，回复对象跟着草稿留。
     private func sendPicked(_ assets: [PHAsset]) async {
         if blocked() { return }
         pin.pin()
@@ -241,9 +241,9 @@ private extension ComposerView {
         let original = draft.wrappedValue
         let caption = original.trimmingCharacters(in: .whitespacesAndNewlines)
         var replyTo = model.replies[draftKey]?.eventId
-        var pendingCaption = caption
         var allSent = true
-        for asset in assets {
+        var captionSent = caption.isEmpty
+        for (index, asset) in assets.enumerated() {
             guard let (data, type) = await PhotoLibrary.data(asset) else {
                 model.rejection = Problem(
                     title: String(localized: .Photo.photoUnreadable),
@@ -251,30 +251,51 @@ private extension ComposerView {
                 )
                 continue
             }
-            if isSideChat {
-                // 第一张试过的照片带走附言；被拒也不留给后面的（和 Android 一样）。
-                let photoCaption = pendingCaption
-                pendingCaption = ""
-                if await composer.sendImage(data, type, caption: photoCaption, replyTo: replyTo) {
-                    replyTo = nil
-                } else {
-                    allSent = false
-                }
-            } else {
+            if !isSideChat {
                 await composer.addImage(data, type)
+                continue
             }
+            // 附言只跟第一张试过的照片走：那张取不出字节或发不出去也算用过，不留给后面的。
+            let carriesCaption = isSideChat && index == 0
+            if carriesCaption { captionSent = true }
+            let sent = await sendSideChatPhoto(
+                (data, type), caption: caption, carriesCaption: carriesCaption,
+                replyTo: replyTo, original: original
+            )
+            guard sent else {
+                allSent = false
+                continue
+            }
+            replyTo = nil
         }
-        guard allSent else { return }
-        if isSideChat {
-            // 附言已经跟着第一张走了，不再单发一条。
-            if draft.wrappedValue == original { draft.wrappedValue = "" }
-            model.cancelReply(in: composer.target)
-            return
-        }
-        let action = TimelineAction.sendComposer(target: composer.target, body: caption, replyTo: replyTo)
+        guard allSent,
+            let action = trailingAction(caption: caption, captionSent: captionSent, replyTo: replyTo)
+        else { return }
         guard model.send(.timeline(action: action)) else { return }
         if draft.wrappedValue == original { draft.wrappedValue = "" }
         model.cancelReply(in: composer.target)
+    }
+
+    /// 旁聊里发一张照片：附言只在 `carriesCaption`（第一张）时带上，草稿只在真带走了时清。
+    private func sendSideChatPhoto(
+        _ photo: (Data, UTType?),
+        caption: String,
+        carriesCaption: Bool,
+        replyTo: String?,
+        original: String
+    ) async -> Bool {
+        guard await composer.sendImage(photo.0, photo.1, caption: carriesCaption ? caption : "", replyTo: replyTo)
+        else { return false }
+        if carriesCaption, draft.wrappedValue == original { draft.wrappedValue = "" }
+        return true
+    }
+
+    /// 照片都处理完以后还要发的那一条：主对话把草稿当附言交给附件区整单发送；
+    /// 旁聊里只有一张都没进循环（现在面板要求至少选一张）且附言没空时，才单独当文字发。
+    private func trailingAction(caption: String, captionSent: Bool, replyTo: String?) -> TimelineAction? {
+        if !isSideChat { return .sendComposer(target: composer.target, body: caption, replyTo: replyTo) }
+        guard !captionSent, !caption.isEmpty else { return nil }
+        return .sendText(target: composer.target, body: caption, replyTo: replyTo)
     }
 
     /// 不能聊时把原因写出去并返回 true；发送、菜单和照片直发都先过它。

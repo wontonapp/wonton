@@ -354,6 +354,52 @@ final class ChatTelegramUITests: XCTestCase {
         XCTAssertFalse(app.buttons["dialogOk"].exists, "发照片弹了错误")
     }
 
+    /// 旁聊的说明只跟第一张照片：发两张时第一张带说明、第二张不带，草稿清掉。
+    func testSideChatCaptionGoesOnlyWithFirstPhoto() {
+        enter(Self.directRoom)
+        waitForFloatingDateToFade()
+        openSideChat()
+        let field = input
+        focus(field)
+        field.typeText("Fixture first caption")
+        XCTAssertTrue(openSideAttach().isEnabled, "旁聊里照片点不了，上限还是 0 个")
+        let photos = (0..<2).map { app.buttons["attachPhoto.\($0)"] }
+        XCTAssertTrue(photos[1].waitForExistence(timeout: 15), "旁聊的附件面板里没有两张照片\n\(app.debugDescription)")
+        for photo in photos { photo.tap() }
+        XCTAssertTrue(wait(5) { photos.allSatisfy { $0.isSelected } }, "一张面板里选不上两张")
+        sendPickedPhotos()
+        XCTAssertTrue(
+            text(startingWith: "Fixture first caption").waitForExistence(timeout: 20),
+            "第一张没带上说明\n\(app.debugDescription)"
+        )
+        XCTAssertTrue(text(startingWith: "photo").waitForExistence(timeout: 20), "第二张没发出去\n\(app.debugDescription)")
+        let captions = app.staticTexts.matching(NSPredicate(format: "label BEGINSWITH %@", "Fixture first caption"))
+        XCTAssertEqual(captions.count, 1, "说明跟了不止一张\n\(app.debugDescription)")
+        XCTAssertEqual(field.value as? String, "", "说明随照片发出去了，草稿没清")
+    }
+
+    /// 第一张被拒：说明留在草稿里，第二张照发但不带说明。
+    func testSideChatRefusedFirstPhotoKeepsCaptionForLater() {
+        app.terminate()
+        app.launchEnvironment["WONTON_UI_FAIL_SEND"] = "1"
+        app.launch()
+        enter(Self.directRoom)
+        waitForFloatingDateToFade()
+        openSideChat()
+        let field = input
+        focus(field)
+        field.typeText("Fixture kept caption")
+        XCTAssertTrue(openSideAttach().isEnabled, "旁聊里照片点不了，上限还是 0 个")
+        let photos = (0..<2).map { app.buttons["attachPhoto.\($0)"] }
+        XCTAssertTrue(photos[1].waitForExistence(timeout: 15), "旁聊的附件面板里没有两张照片\n\(app.debugDescription)")
+        for photo in photos { photo.tap() }
+        XCTAssertTrue(wait(5) { photos.allSatisfy { $0.isSelected } }, "一张面板里选不上两张")
+        sendPickedPhotos()
+        XCTAssertTrue(text(startingWith: "photo").waitForExistence(timeout: 20), "第一张被拒以后第二张没发出去\n\(app.debugDescription)")
+        XCTAssertFalse(text(startingWith: "Fixture kept caption").exists, "说明跟了第二张，本该留在草稿里\n\(app.debugDescription)")
+        XCTAssertEqual(field.value as? String, "Fixture kept caption", "第一张被拒后草稿没了")
+    }
+
     /// 宽表格上横拖不抢回复：从右往左拖是表格自己滚，回复条不出现；从左往右拖才进回复。
     func testTableScrollsSidewaysWithoutStartingReply() {
         enter(Self.directRoom)
