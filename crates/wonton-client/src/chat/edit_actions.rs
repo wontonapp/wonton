@@ -127,12 +127,15 @@ impl ChatLink {
         Ok(())
     }
 
-    /// 输入框里要发送了：先收掉这条时间线的“正在输入”。附件区那条发送路不走 `timeline_action`，自己来收。
+    /// 输入框里要发送了（包括附件区整单）：先收掉这条时间线的“正在输入”。附件区那条发送路不走 `timeline_action`，
+    /// 由 `dispatch` 统一在发送前叫，真路径和假数据都一样。
     pub(crate) fn stop_typing(&self, target: &TimelineTarget) {
-        if let Ok(key) = TimelineKey::parse(target)
-            && let Ok(live) = self.live(&key)
-        {
-            live.typing_out.set(false);
+        if let Ok(key) = TimelineKey::parse(target) {
+            #[cfg(all(test, feature = "ui-fake"))]
+            lock(&self.typing_stops).push(key.clone());
+            if let Ok(live) = self.live(&key) {
+                live.typing_out.set(false);
+            }
         }
     }
 }

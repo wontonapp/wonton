@@ -48,11 +48,7 @@ impl ClientCore {
                 reply_to,
                 mentions,
                 ..
-            } => {
-                let room = composer_room(&target)?;
-                scope.chat.stop_typing(&target);
-                composer.send(&room, &body, reply_to, &mentions)
-            }
+            } => composer.send(&composer_room(&target)?, &body, reply_to, &mentions),
             TimelineAction::RemoveAttachment {
                 target,
                 attachment_id,

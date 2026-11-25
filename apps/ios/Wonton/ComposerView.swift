@@ -243,7 +243,7 @@ private extension ComposerView {
         var replyTo = model.replies[draftKey]?.eventId
         var allSent = true
         var captionSent = caption.isEmpty
-        for asset in assets {
+        for (index, asset) in assets.enumerated() {
             guard let (data, type) = await PhotoLibrary.data(asset) else {
                 model.rejection = Problem(
                     title: String(localized: .Photo.photoUnreadable),
@@ -255,8 +255,9 @@ private extension ComposerView {
                 await composer.addImage(data, type)
                 continue
             }
-            // 附言只跟第一张试过的照片走；那一张被拒也留在草稿里，不跟后面的。
-            let carriesCaption = !captionSent
+            // 附言只跟第一张试过的照片走：那张取不出字节或发不出去也算用过，不留给后面的。
+            let carriesCaption = isSideChat && index == 0
+            if carriesCaption { captionSent = true }
             let sent = await sendSideChatPhoto(
                 (data, type), caption: caption, carriesCaption: carriesCaption,
                 replyTo: replyTo, original: original
@@ -266,7 +267,6 @@ private extension ComposerView {
                 continue
             }
             replyTo = nil
-            captionSent = captionSent || carriesCaption
         }
         guard allSent,
             let action = trailingAction(caption: caption, captionSent: captionSent, replyTo: replyTo)
@@ -276,7 +276,7 @@ private extension ComposerView {
         model.cancelReply(in: composer.target)
     }
 
-    /// 旁聊里发一张照片：附言只让第一张成功的那张带走，草稿只在真带走了时清。
+    /// 旁聊里发一张照片：附言只在 `carriesCaption`（第一张）时带上，草稿只在真带走了时清。
     private func sendSideChatPhoto(
         _ photo: (Data, UTType?),
         caption: String,
@@ -291,7 +291,7 @@ private extension ComposerView {
     }
 
     /// 照片都处理完以后还要发的那一条：主对话把草稿当附言交给附件区整单发送；
-    /// 旁聊里只剩没跟照片走掉的附言当文字发，其余不发。
+    /// 旁聊里只有一张都没进循环（现在面板要求至少选一张）且附言没空时，才单独当文字发。
     private func trailingAction(caption: String, captionSent: Bool, replyTo: String?) -> TimelineAction? {
         if !isSideChat { return .sendComposer(target: composer.target, body: caption, replyTo: replyTo) }
         guard !captionSent, !caption.isEmpty else { return nil }
