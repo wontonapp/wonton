@@ -1,6 +1,6 @@
 # ADR-0119 收件箱：要用户决定和要用户知道的事，用五种条目进核心里的一页
 
-- 状态：提议（2026-11-25 按主人 22:5x 的新意见重写：范围定为“收件箱”，不做待办；条目要能承载选择卡、HTML 报告、收尾框等富元素。上一版“通知/待办”两段式作废。）
+- 状态：已接受（2026-11-25 主人拍板：20 个问题全部按推荐；第 6 题“页面能不能跑脚本/联网”先按推荐实现、标待定，等页面安全复核后再定。范围是收件箱，不做待办；条目要能承载选择卡、HTML 报告、收尾框等富元素。上一版“通知/待办”两段式作废。）
 - 取代：[ADR-0016](0016-mcp-bus-and-confirmations.md) 第 2 步里的“等你确认”列表（`GET /_wonton/api/confirmations` 的列表、聊天列表里的入口和它的角标）。确认卡片本身、来源会话、回答接口都不变，只是列表换成收件箱，确认变成其中一种 `confirm` 条目
 - 部分取代：[ADR-0038](0038-multi-step-cards.md) 的“问题卡片 M1 不做”。问题卡片作为 `choice` 条目进收件箱；`StepCard` 的形状、上限和答案词汇直接沿用，不再只在 Bot 聊天里出现
 - 修订：[ADR-0047](0047-plugin-notices.md)（插件通知不再发进 Wonton 私聊，改成 `notice` 条目）、[ADR-0056](0056-internal-mailbox.md)（应用来信同上）、[ADR-0045](0045-family-members.md)（文件链接、家人加入的通知同上）、[ADR-0050](0050-cross-server-chat.md)（配对请求同上）、[ADR-0101](0101-notifications.md) 第 3 节（应用角标的数里加上待回答的条目，算法按下文第 9 节改）
@@ -264,9 +264,9 @@ wonton__inbox_cancel  { "item_id": "q-01J…", "reason": "任务提前结束" }
 **怎么打开**：App 当 MCP Apps 宿主，复用 ADR-0052 的沙箱宿主：
 
 - 单独的、不留持久存储的 WebView；页面放进 `sandbox` 的 iframe；按 MCP Apps 规范给 `allow-scripts` 和 `allow-same-origin`，不给 `allow-top-navigation`、`allow-popups`。
-- 核心按资源 `_meta.ui.csp` 生成 CSP；缺省就用 MCP Apps 的默认：
+- 核心按资源 `_meta.ui.csp` 生成 CSP（第 6 题的联网部分待定，先按下面的默认）；缺省就用 MCP Apps 的默认：
   `default-src 'none'; script-src 'self' 'unsafe-inline'; style-src 'self' 'unsafe-inline'; img-src 'self' data:; media-src 'self' data:; connect-src 'none'`。
-- 页面可以跑内联脚本（图表、折叠、表单校验）；页面要自带 CSS/JS，图片用 `data:` 或声明域里的绝对地址，M1 不解析 `ui://` 子资源。外链脚本/图片/字体/CSS 只在 `resourceDomains` 声明的域；`fetch`/WebSocket 只在 `connectDomains` 声明的域。声明了也必须带 `https:`（`wss:` 只给 WebSocket）。`permissions` 只透传 `clipboardWrite`；camera/mic/geolocation M1 不给。
+- 页面可以跑内联脚本（图表、折叠、表单校验；第 6 题待定，先按这个做，安全复核后再收紧）；页面要自带 CSS/JS，图片用 `data:` 或声明域里的绝对地址，M1 不解析 `ui://` 子资源。外链脚本/图片/字体/CSS 只在 `resourceDomains` 声明的域；`fetch`/WebSocket 只在 `connectDomains` 声明的域。声明了也必须带 `https:`（`wss:` 只给 WebSocket）。`permissions` 只透传 `clipboardWrite`；camera/mic/geolocation M1 不给。
 - 页面不能读 App 的 Cookie、钥匙串、文件；没有 `localStorage` 的跨条目持久化（WebView 每次打开都是干净 profile；`sessionStorage` 只在这一次打开有效）。
 - 外链一律 `ui/open-link` 交给系统浏览器；`target=_blank` 由宿主接住。页面自己不能做顶层跳转。
 - 页面可以经宿主调 `tools/call`，只限同一个 MCP 服务器上 `_meta.ui.visibility` 含 `app` 的工具，经核心总线转发；调用方记成发送方 Bot，敏感工具照常走确认。页面调用工具产生的确认是新的一条 `confirm`，嵌套最多一层。页面里的 `<a>` 由宿主接住、走 `ui/open-link`；`<form>` 不在页面里提交，只做本地校验。
@@ -420,14 +420,16 @@ POST /_wonton/api/inbox/workers
 
 表单类型、公网 URL 页面、页面持久存储、页面自动提交、多人分派、项目/任务状态、搜索、筛选、分组设置、全部已读、富文本编辑器、附件内联预览（HTML 以外走系统查看器）、嵌套超过一层、Agent 自动放宽确认。
 
-## 要主人拍板
+## 拍板结果（2026-11-25）
+
+2026-11-25 主人拍板：下面 20 题全部按推荐；第 6 题先按推荐写、标待定。
 
 1. **收件箱只放这五种吗**：五种（`choice`/`page`/`recap`/`confirm`/`notice`，推荐）；再加 `form` 自由表单；再加 `task` 待办。**推荐五种**，先把结构跑通。
 2. **谁能发**：任何有 `tools` 权限的 Agent（推荐，配上限）；只有核心和声明了 `inbox` 的插件；每次主人点“允许这个 Bot 发”。**推荐第一种**。
 3. **一张卡最多几题**：1–4 题（Claude 的上限，推荐）；1–5 题（照顾 Hermes `clarify`）；1 题。**推荐 4 题**，多出来的让 Agent 拆两张。
 4. **每题最多几个选项**：2–4 个，允许 0 个自由回答（推荐）；2–6 个；不限制。**推荐 4 个**，多了让 Agent 合并。
 5. **“其他”和备注**：每题永远有“其他”，备注可选（推荐）；“其他”永远有，备注必填；只在没有选项时给“其他”。**推荐第一种**。
-6. **页面能不能跑脚本**：允许内联脚本，联网只去声明的域（推荐，MCP Apps 默认）；允许脚本但默认断网；完全不许脚本。**推荐第一种**。
+6. **页面能不能跑脚本（待定）**：允许内联脚本，联网只去声明的域（推荐，MCP Apps 默认）；允许脚本但默认断网；完全不许脚本。**先按推荐（第一种）实现，安全复核后再定**。
 7. **页面从哪来**：只收 MCP Apps 的 `ui://` 资源 + 文件附件（推荐）；也收公网 URL；也收上传的 HTML 文件。**推荐第一种**，公网 URL 后加。
 8. **通知上能答什么**：无表单确认 + 单题≤3 选项 + 收尾按钮（推荐）；只有确认卡片；只给“打开”。**推荐第一种**。
 9. **答案能不能改**：提交即最终（推荐）；异步条目 60 秒内可撤回；发送方未读前都能改。**推荐第二种**（只给异步）。
