@@ -530,6 +530,7 @@ plugin-capability-no-consumer = { $capability } 没有使用方声明，不能�
 plugin-capability-duplicate = { $field } 里的能力 { $capability } 写了两次
 plugin-capability-in-both-lists = 能力 { $capability } 不能同时在 requires 和 wants 里
 plugin-capability-provider-requires = { $capability } 不是这个插件自己提供的能力：提供方只能 requires 自己也提供的能力
+plugin-capability-models-in-requires = models 是可选能力：写 wants: [models]，不放 requires
 plugin-capability-port-zero = provides.{ $capability }.port 不能为 0
 plugin-capability-credentials-required = provides.{ $capability } 要声明 credentials：给每个使用方签一个只属于它的凭据
 plugin-capability-credentials-forbidden = provides.{ $capability } 不能声明 credentials：这个能力的提供方只认经核心转发来的请求

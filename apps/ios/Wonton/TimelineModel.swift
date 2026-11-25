@@ -94,7 +94,9 @@ final class TimelineModel {
         }
         // 走查：订阅结束的原因（取消还是自己断了），挂在 `ScrollDebug` 里。
         debugEnded = Task.isCancelled ? "cancelled" : "ended"
-        let endLine = "timeline ended cancelled=\(Task.isCancelled) room=\(self.roomId) status=\(state)"
+        // 状态在结束时重取：用开始时的快照会和同一行的 cancelled、上面的 debugEnded 对不上。
+        let endLine = "timeline ended cancelled=\(Task.isCancelled) room=\(self.roomId)"
+            + " status=\(subscription.debugStatus())"
         walkLog.notice("\(endLine, privacy: .public)")
         if !Task.isCancelled {
             failure = Problem(title: String(localized: .Problem1.problemGenericTitle))

@@ -274,3 +274,23 @@ fn agent_protocol_matrix_still_requires_the_matrix_bot_permission() {
     let error = manifest.validate(&Languages::default()).unwrap_err();
     assert!(error.to_string().contains("matrix.bot"), "{error}");
 }
+
+/// 老清单的 `permissions: [models]` 继续解析和兑现（0.16 起只是 `plugin check` 让改）。
+#[test]
+fn old_spec_models_permission_still_parses() {
+    let manifest: Manifest = serde_json::from_value(serde_json::json!({
+        "spec": "0.15", "id": "app.test", "version": "1.0.0", "kind": "app",
+        "title": {"zh": "测试", "en": "Test"},
+        "description": {"zh": "描述", "en": "Description"},
+        "permissions": ["models"]
+    }))
+    .unwrap();
+    assert!(manifest.permissions.contains(&Permission::Models));
+    assert!(crate::plugin::models::uses_models(&manifest));
+    assert!(
+        crate::plugin::spec_floor::problems(
+            &serde_json::json!({"x-wonton": {"spec": "0.15", "permissions": ["models"]}})
+        )
+        .is_empty()
+    );
+}

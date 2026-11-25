@@ -249,13 +249,18 @@ final class ChatPanelUITests: XCTestCase {
     }
 
     /// 回到底部按钮（ADR-0071）：翻进历史就出现，只有箭头时命中区不小于 48 的点按门槛；
-    /// 后台消息把数字顶上去时也是同一块命中区，点一下平滑回到底部、按钮消失。
+    /// 后台消息把数字顶上去时也是同一块命中区，键盘弹起时抬过输入栏，点一下平滑回到底部、按钮消失。
     func testScrollToBottomButtonMeetsTarget() throws {
         try launch()
-        guard let field = enterFakeRoom(stayAway: true) else {
+        guard let field = enterFakeRoom() else {
             return XCTFail("没进假房间")
         }
+        // 进房落点摆好、回到底部以后按钮不该在；它要真在，下面“拖出来”的断言会被一开始就挂着的按钮骗过。
+        XCTAssertTrue(noBottomButton(timeout: 2), "停在底部时就有按钮：\(buttonLabels()) \(scrollState())")
+        // 在时间线上拖：叠层里那层记 ov= 的 Color.clear 得放行命中，否则拖不动、按钮永远出不来。
+        let before = scrollOffsetY()
         XCTAssertTrue(scrollUpInRoom(), "翻走以后没有回到底部按钮：\(buttonLabels()) \(scrollState())")
+        XCTAssertLessThan(scrollOffsetY(), before, "拖了列表没动：\(scrollState())")
         guard let button = anyBottomButton(timeout: 10) else {
             return XCTFail("翻走以后没有回到底部按钮：\(buttonLabels()) \(scrollState())\n\(app.debugDescription)")
         }
@@ -267,13 +272,25 @@ final class ChatPanelUITests: XCTestCase {
         }
         XCTAssertGreaterThanOrEqual(counted.frame.height, 47.5, "带数字时命中区高 \(counted.frame.height) 不到 48")
         shot("32-scroll-button-count")
+        XCTAssertTrue(scrollState().contains("vp=away"), "停在别处却报贴底：\(scrollState())")
+        // 键盘弹起时按钮抬过输入栏：量一次真实几何（ov 是叠层底边，ch 是输入栏高度）。
         field.tap()
-        field.typeText(String(repeating: "scroll target sample: long message. ", count: 10))
+        field.typeText(String(repeating: "scroll target sample: long message. ", count: 3))
+        let raised = debugValues()
+        guard raised["kb"] == 1 else {
+            return XCTFail("打了字键盘没起来，量不了抬升：\(scrollState())")
+        }
+        guard let lifted = countedBottomButton(3, timeout: 5) else {
+            return XCTFail("键盘起来后按钮没了：\(buttonLabels())")
+        }
+        let composerTop = (raised["ov"] ?? 0) - (raised["ch"] ?? 0)
+        XCTAssertLessThanOrEqual(lifted.frame.maxY, composerTop + 1,
+                                 "按钮压进输入栏：maxY=\(lifted.frame.maxY) 输入栏顶=\(composerTop) \(scrollState())")
         let send = app.buttons["composerSend"]
         XCTAssertTrue(send.waitForExistence(timeout: 5), "打了字没有发送键")
         send.tap()
-        XCTAssertTrue(waitGone(send, timeout: 3), "发送键没消失，消息没发出去：\(scrollState())")
-        XCTAssertTrue(waitGone(counted), "自己发消息以后没回到底部")
+        XCTAssertTrue(waitNoElement("composerSend", timeout: 3), "发送键没消失，消息没发出去：\(scrollState())")
+        XCTAssertTrue(noBottomButton(timeout: 5), "自己发消息以后没回到底部：\(scrollState())")
         // 发完以后又贴着底：再翻进历史，按钮还得回来。先等键盘和贴底动画停住。
         Thread.sleep(forTimeInterval: 1)
         XCTAssertTrue(scrollUpInRoom(times: 3), "发送后拖不上去：kb=\(app.keyboards.count) \(scrollState())")
@@ -281,16 +298,11 @@ final class ChatPanelUITests: XCTestCase {
             return XCTFail("发完再翻走没有回到底部按钮：\(buttonLabels()) \(scrollState())\n\(app.debugDescription)")
         }
         again.coordinate(withNormalizedOffset: CGVector(dx: 0.5, dy: 0.5)).tap()
-        // 点过的那个句柄会一直报存在（XCUIElement 缓存），要另起查询数还剩几个。
-        var left = -1
-        for _ in 0..<20 {
-            left = app.buttons.matching(identifier: "timelineDown").count
-            if left == 0 { break }
-            usleep(200_000)
-        }
-        XCTAssertEqual(left, 0, "点过以后按钮还在：\(scrollState())")
+        // 点过的那个句柄会一直报存在（XCUIElement 缓存），消失断言用现起的查询。
+        XCTAssertTrue(noBottomButton(timeout: 5), "点过以后按钮还在：\(scrollState())")
         let state = scrollState()
         XCTAssertTrue(state.contains("pin=true") && isAtBottom(state), "点了没有回到底部：\(state)")
+        XCTAssertTrue(state.contains("vp=bottom"), "点了还是停在别处：\(state)")
         shot("33-scroll-button-bottom")
     }
 
@@ -468,7 +480,7 @@ extension ChatPanelUITests {
     private func goToBottom() {
         var tapped = false
         for _ in 0..<3 {
-            guard let button = bottomButton(timeout: tapped ? 2 : 10) else { break }
+            guard let button = anyBottomButton(timeout: tapped ? 2 : 10) else { break }
             tapped = true
             button.tap()
             _ = waitGone(button, timeout: 5)
@@ -495,7 +507,8 @@ extension ChatPanelUITests {
         return false
     }
 
-    /// 在消息区正中往上拖，直到回到底部按钮真的出现：拖完贴底会自己吸回去，只看「刚才离开过」会被吸回的瞬间骗过。
+    /// 把列表拖进历史，直到回到底部按钮真的出现：拖完贴底会自己吸回去，只看「刚才离开过」会被吸回的瞬间骗过。
+    /// 贴底时历史在上方，手指往下拖才进历史；再补一下 `swipeDown` 走惯性滚。
     @discardableResult
     private func scrollUpInRoom(times: Int = 3) -> Bool {
         let list = app.collectionViews.firstMatch
@@ -504,17 +517,52 @@ extension ChatPanelUITests {
             usleep(600_000)
         }
         for _ in 0..<times {
-            let start = list.coordinate(withNormalizedOffset: CGVector(dx: 0.5, dy: 0.45))
+            let start = list.coordinate(withNormalizedOffset: CGVector(dx: 0.5, dy: 0.25))
             start.press(forDuration: 0.05,
-                        thenDragTo: list.coordinate(withNormalizedOffset: CGVector(dx: 0.5, dy: 0.03)),
+                        thenDragTo: list.coordinate(withNormalizedOffset: CGVector(dx: 0.5, dy: 0.85)),
                         withVelocity: .slow, thenHoldForDuration: 0.8)
             usleep(600_000)
             if anyBottomButton(timeout: 0) != nil { return true }
-            list.swipeUp(velocity: .slow)
+            list.swipeDown(velocity: .slow)
             usleep(600_000)
             if anyBottomButton(timeout: 0) != nil { return true }
         }
         return anyBottomButton(timeout: 1) != nil
+    }
+
+    /// 现在没有回到底部按钮（现起查询，不吃旧句柄的缓存）。
+    private func noBottomButton(timeout: TimeInterval) -> Bool {
+        let deadline = Date().addingTimeInterval(timeout)
+        while true {
+            if anyBottomButton(timeout: 0) == nil { return true }
+            if Date() >= deadline { return false }
+            _ = app.wait(for: .runningForeground, timeout: 0.3)
+        }
+    }
+
+    /// 按标识现查的元素不在了。
+    private func waitNoElement(_ identifier: String, timeout: TimeInterval) -> Bool {
+        let deadline = Date().addingTimeInterval(timeout)
+        while true {
+            if !app.buttons[identifier].exists { return true }
+            if Date() >= deadline { return false }
+            _ = app.wait(for: .runningForeground, timeout: 0.3)
+        }
+    }
+
+    /// `roomScroll` 里 `k=v` 的数值，`kb` 之类的布尔按 0/1 给。
+    private func debugValues() -> [String: Double] {
+        var values: [String: Double] = [:]
+        for part in scrollState().split(separator: " ") {
+            let pair = part.split(separator: "=", maxSplits: 1)
+            guard pair.count == 2 else { continue }
+            values[String(pair[0])] = Double(pair[1]) ?? (pair[1] == "true" ? 1 : 0)
+        }
+        return values
+    }
+
+    private func scrollOffsetY() -> Double {
+        debugValues()["y"] ?? -1
     }
 
     private static let bottomCountPrefixes = ["Back to bottom,", "回到底部，", "一番下へ戻る、", "回到底部,"]
@@ -552,20 +600,6 @@ extension ChatPanelUITests {
         }
     }
 
-    /// 停在别处时才有的“回到底部”，数字悬在图标上方，标签会带新消息条数。
-    private func bottomButton(timeout: TimeInterval) -> XCUIElement? {
-        let labels = ["Back to bottom", "回到底部", "回到底部", "一番下へ戻る"]
-        let deadline = Date().addingTimeInterval(timeout)
-        while true {
-            for label in labels {
-                let button = app.buttons.matching(NSPredicate(format: "label BEGINSWITH %@", label)).firstMatch
-                if button.exists { return button }
-            }
-            if Date() >= deadline { return nil }
-            _ = app.wait(for: .runningForeground, timeout: 0.3)
-        }
-    }
-
     /// 量一次列表：内容的底边是不是还在列表可见区里。
     private struct Layout: CustomStringConvertible {
         let contentBottom: CGFloat
@@ -581,7 +615,7 @@ extension ChatPanelUITests {
     private func frames(list: XCUIElement, field: XCUIElement) -> Layout {
         // 列表的第一个子元素是整片内容（含屏幕外的部分）。
         Layout(contentBottom: list.children(matching: .other).firstMatch.frame.maxY,
-               listBottom: list.frame.maxY, fieldTop: field.frame.minY, back: bottomButton(timeout: 0) != nil)
+               listBottom: list.frame.maxY, fieldTop: field.frame.minY, back: anyBottomButton(timeout: 0) != nil)
     }
 
     /// App 里 `BottomPin` 的自述：贴底没贴底、真实位置和底部差多少。
