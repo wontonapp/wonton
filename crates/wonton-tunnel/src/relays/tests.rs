@@ -386,6 +386,16 @@ fn the_quic_port_reaches_the_relay_config() {
 }
 
 #[test]
+fn an_at_sign_in_the_query_is_not_mistaken_for_userinfo_in_errors() {
+    // 地址合法、只有 query 里带 @：错误/展示不能把它当 userinfo 截断。
+    let parsed = relay_from_item("https://a.example/p?email=a@b", 0);
+    // 地址本身能解析；redact_item 只应影响提示文案。
+    assert!(parsed.is_ok());
+    let shown = redact_item("https://a.example/p?email=a@b");
+    assert_eq!(shown, "https://a.example/p?email=a@b");
+}
+
+#[test]
 fn an_invalid_item_does_not_echo_the_token_into_its_error() {
     // 地址里带令牌、又是 http：错误信息里不能再出现令牌原文。
     let error = relay_from_item("http://s3cret@relay.example.org", 0).unwrap_err();
