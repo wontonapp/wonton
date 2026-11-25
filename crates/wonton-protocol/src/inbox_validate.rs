@@ -160,14 +160,7 @@ pub fn validate_item(item: &InboxItem) -> Result<(), InboxInvalid> {
                 present("payload.question", question)?;
                 long("payload.question", question, MAX_INBOX_QUESTION_CHARS)?;
             }
-            validate_actions(&payload.actions)?;
-            if payload.actions.is_empty() && payload.question.is_none() {
-                return Err(Invalid::field(
-                    "payload",
-                    "summary 之外要有一个问题或 1–2 个动作",
-                ));
-            }
-            if !(1..=2).contains(&payload.actions.len()) && payload.question.is_none() {
+            if !(1..=2).contains(&payload.actions.len()) {
                 return Err(Invalid::field("payload.actions", "要有 1–2 个动作"));
             }
             Ok(())
@@ -186,7 +179,7 @@ pub fn validate_item(item: &InboxItem) -> Result<(), InboxInvalid> {
             }
             Ok(())
         }
-        (InboxType::Other, InboxPayload::Other) => Ok(()),
+        (InboxType::Other, InboxPayload::Other(_)) => Ok(()),
         (kind, payload) => Err(InboxInvalid::Mismatch {
             field: format!("{kind:?} 的条目的载荷是 {:?}", payload.kind()),
         }),
@@ -530,7 +523,7 @@ pub fn validate_answer(item: &InboxItem, input: &InboxAnswerInput) -> Result<(),
             }
         }
         InboxPayload::Confirm(payload) => validate_confirm_answer(payload, input),
-        InboxPayload::Other => Ok(()),
+        InboxPayload::Other(_) => Ok(()),
     }
 }
 
@@ -664,7 +657,7 @@ fn validate_confirm_answer(
 /// 判断一条条目是不是还没处理、可以答的结构。
 #[must_use]
 pub fn answerable(item: &InboxItem) -> bool {
-    matches!(item.status, InboxStatus::Pending) && !matches!(item.payload, InboxPayload::Other)
+    matches!(item.status, InboxStatus::Pending) && !matches!(item.payload, InboxPayload::Other(_))
 }
 
 struct Invalid;

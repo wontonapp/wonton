@@ -397,8 +397,19 @@ fn ids_have_a_stable_shape() {
 /// 契约：未知载荷类型解析成 Other；类型和载荷不一致的条目校验失败。
 #[test]
 fn unknown_payload_is_other() {
-    let payload: InboxPayload = serde_json::from_value(json!({"type": "other"})).unwrap();
-    assert_eq!(payload, InboxPayload::Other);
+    let payload: InboxPayload = serde_json::from_value(json!({
+        "type": "form",
+        "payload": {"fields": [{"id": "name", "label": "名字"}]}
+    }))
+    .unwrap();
+    let InboxPayload::Other(raw) = payload else {
+        panic!("未知 tag 要收住载荷");
+    };
+    assert_eq!(raw["fields"][0]["label"], "名字");
+    assert_eq!(
+        serde_json::to_value(InboxPayload::Other(raw.clone())).unwrap(),
+        json!({"type": "other"})
+    );
     let item_json = json!({
         "id": "f-1", "type": "form", "status": "pending", "created_at_ms": 1,
         "sender": {"kind": "agent", "id": "app.hermes", "display_name": "Hermes"},
