@@ -6,7 +6,7 @@ extension ChatModel {
     /// 选了几个就各派发一次；附言跟着转发交给核心，它在同一房间先发附言、服务器确认后才发副本，顺序由核心保证。
     /// 只发给一个会话时跟过去看；发给几个就留在原房间。
     func forward(_ itemId: String, from source: TimelineTarget, to rooms: [RoomRow], comment: String) {
-        // 只含空白当没有附言；值原样交给核心，首尾空白由核心 trim。
+        // 壳先 trim 判空白，只含空白当没有；交给核心的已是 trim 后的值，核心还会再 trim 一遍。
         let comment = comment.trimmingCharacters(in: .whitespacesAndNewlines)
         for room in rooms {
             let sent = send(.timeline(action: .forwardMessage(

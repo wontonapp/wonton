@@ -448,7 +448,7 @@ private fun RoomOverlays(
             plugins = plugins,
             // 核心一次只发一个房间：挨个带上附言派发；只选了一个才跟过去，选几个留在原房间。
             onSend = { rows, comment ->
-                // 只含空白当没有附言；首尾空白由核心 trim。
+                // 壳先 trim 判空白，只含空白当没有；核心还会再 trim 一遍。
                 val note = comment.trim().ifEmpty { null }
                 rows.forEach { row ->
                     onAction(Action.Timeline(TimelineAction.ForwardMessage(target, itemId, row.roomId, note)))
