@@ -601,3 +601,34 @@ async fn foregrounded_without_a_session_clears_both_own_bot_slots() {
     assert!(view.own_private_bot.is_none());
     assert!(view.own_private_bot_problem.is_none());
 }
+
+/// 行为：房间在通话时要进 `TimelineUpdate.call_active`，壳才画得出通话入口。
+#[tokio::test]
+async fn call_active_reaches_the_update() {
+    let (chat, _dir) = rig();
+    let room: OwnedRoomId = "!room:example.com".parse().unwrap();
+    let (sender, mut updates) = mpsc::unbounded_channel();
+    let room_view = watch::channel(None).1;
+    let outbox = Outbox::new(
+        sender,
+        Arc::default(),
+        room_view,
+        chat.view.subscribe(),
+        room,
+        watch::Sender::new(Arc::new(Vec::new())).subscribe(),
+        crate::chat::jump::seeded(),
+    );
+    outbox
+        .send(
+            &Vector::new(),
+            Vec::new(),
+            BackPagination::Idle,
+            TimelineViewport::Bottom,
+            None,
+            true,
+            None,
+            None,
+        )
+        .unwrap();
+    assert!(updates.try_recv().unwrap().call_active);
+}

@@ -73,6 +73,7 @@ impl View {
             self.read_item = None;
         }
         self.unread = u32::try_from(room.unread_messages().await).unwrap_or(u32::MAX);
+        self.call = room.call_active();
         self.bots_in_room = room_bots(room.are_members_synced(), bots, || room.member_user_ids());
         self.unread_jump = self.unread_jump(room, entries).await;
     }
