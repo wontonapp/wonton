@@ -1,6 +1,6 @@
 #!/usr/bin/env bash
 # 在公网 Ubuntu 主机上装 iroh 中继：TCP 443 由 nginx 终结 TLS 后反代，中继只监听回环，
-# UDP 7842 的 QUIC 地址发现直接对公网。按 cloud/iroh-relay/README.md 的部署一节使用。
+# UDP 7842 的 QUIC 地址发现直接对公网（安全组要放行 7842/udp，下面启动后会自检）。按 cloud/iroh-relay/README.md 的部署一节使用。
 #
 # 可以重复跑：已有的 config.toml、令牌、证书都不覆盖；同版本二进制不重下。
 #   bash install.sh                                  # 装服务 + vhost + 签 relay.808cbd.com 的证书
@@ -138,6 +138,19 @@ ensure_cert() {
     sh "$DEPLOY_HOOK"
 }
 
+# 判定准入模式：上游 access 默认 Everyone；只识别“显式 everyone”和“[access] 节”两类写法。
+# allowlist/denylist/http 也写在 [access] 节里，归 restricted（非 everyone）即可。
+admission_mode() {
+    local cfg=$1
+    if grep -Eq '^[[:space:]]*access[[:space:]]*=[[:space:]]*["'\'']?everyone["'\'']?' "$cfg"; then
+        echo everyone
+    elif grep -Eq '^[[:space:]]*\[access\]' "$cfg"; then
+        echo restricted
+    else
+        echo everyone-default
+    fi
+}
+
 # 启动后自检：QAD 必须在所有网卡上监听（quic_bind_addr 放错节时上游静默忽略、只绑回环）。
 post_start_check() {
     local qad
@@ -146,11 +159,17 @@ post_start_check() {
     echo "$qad" | grep -qE '(\*|0\.0\.0\.0|\[::\]):7842' ||
         die "UDP 7842 没有对外监听（QAD 需要）：$qad；检查 [tls] 节的 quic_bind_addr 和安全组"
     echo "install: QAD 对外监听正常：$qad"
-    if grep -Eq '^[[:space:]]*access[[:space:]]*=[[:space:]]*"everyone"' "$ETC/config.toml"; then
-        echo "install: 准入 = everyone（公开，谁都能用）"
-    else
-        echo "install: 准入 = shared_token（默认拒绝；令牌在 $ETC/relay.env，只发自己的设备）"
-    fi
+    case $(admission_mode "$ETC/config.toml") in
+        everyone)
+            echo "install: 准入 = everyone（公开，谁都能用）"
+            ;;
+        restricted)
+            echo "install: 准入 = [access] 节（shared_token/名单/http 回调；非 everyone；令牌在 $ETC/relay.env，只发自己的设备）"
+            ;;
+        everyone-default)
+            echo "install: 准入 = everyone（上游默认：配置里没有 [access] 节；推荐加回 [access] shared_token = [] 变成默认拒绝）"
+            ;;
+    esac
 }
 
 wait_healthy() {
@@ -229,4 +248,6 @@ main() {
     echo "install: 令牌在 $ETC/relay.env（0600），日志：journalctl -u wonton-iroh-relay，指标：curl --noproxy '*' http://127.0.0.1:19090/metrics"
 }
 
-main "$@"
+if [[ ${BASH_SOURCE[0]} == "$0" ]]; then
+    main "$@"
+fi

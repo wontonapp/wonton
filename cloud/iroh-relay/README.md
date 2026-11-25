@@ -80,7 +80,7 @@ bash install.sh --email ops@example.com   # 装服务、vhost、签证书
 - **默认是拒绝所有人，不是 everyone**：`shared_token` 留空列表、又没有 `IROH_RELAY_ACCESS_TOKEN`（或令牌为空）时，
   进程直接拒绝启动（失败即停）；要放开必须显式改 `access = "everyone"`。
 - 每连接入方向默认限速 256 KiB/s（`[limits.client.rx]`，1 MiB 突发）：按实测 5 Mbps 出口取，单条连接最多占约 40%，
-  让一条大同步不至于饿死语音（语音双向约 1.2 Mbps）；只是公平保护，不是全局限额也不是按 endpoint 计量。
+  让一条大同步不至于饿死语音（语音双向约 1.2 Mbps）。只保住“一条”同步：两条并发 4.2 Mbps 加语音 1.2 Mbps 仍会超 5 Mbps，大家一起慢。只是公平保护，不是全局限额也不是按 endpoint 计量。
 - 内测期所有自己的设备共用一个令牌：令牌随配对码/连接信息下发，泄露后别人也能用这个中继，接受（ADR-0048）；
   只发自己的设备，不公开。收费时改成按 endpoint ID 的 http 回调，核心和协议不用改。
 - 轮换：`printf 'IROH_RELAY_ACCESS_TOKEN=%s\n' "$(openssl rand -hex 32)" > /etc/wonton-iroh-relay/relay.env && systemctl restart wonton-iroh-relay`。
@@ -103,7 +103,7 @@ bash install.sh --email ops@example.com   # 装服务、vhost、签证书
   `relayserver_bytes_sent_total` / `relayserver_bytes_recv_total`、`relayserver_connects_total` /
   `relayserver_disconnects_total`、`relayserver_send_packets_dropped_total`。
 - 健康检查：`curl --noproxy '*' http://127.0.0.1:8742/healthz`（200）。
-- **令牌默认不进日志**：systemd 单元固定 `RUST_LOG=info`，journal 里 grep 不到令牌。上游 1.4.1 在 debug/trace 下
+- **令牌默认不进日志**：systemd 单元默认 `RUST_LOG=info`（`EnvironmentFile` 里同名变量可覆盖），journal 里 grep 不到令牌。上游 1.4.1 在 debug/trace 下
   启动时会 dump 整份配置、包含令牌，开 debug 排错时别把日志原样贴出去。
   验收：`journalctl -u wonton-iroh-relay | grep -F -- "$(cut -d= -f2 /etc/wonton-iroh-relay/relay.env)"` 应无输出。
 
@@ -124,7 +124,7 @@ cloud/iroh-relay/test/relay-e2e.sh
 ```
 
 `test/relay-e2e.sh` 用同版本官方二进制 + nginx（TLS 终结）+ 上游 `transfer` 示例当一对 `--relay-only` 端点：
-断言经中继连接成功、下载 ≥ 20 Mbps、路径是中继、中继字节计数上涨、错令牌拿不到数据。
+断言经中继连接成功、下载 ≥ 1.5 Mbps（默认 256 KiB/s 限速下实测约 2.2 Mbps）、路径是中继、中继字节计数上涨、错令牌拿不到数据。
 它把 `config.toml.example` 和 `nginx/relay.808cbd.com.conf` 过一遍 sed 后在临时端口跑，同时钉住这两个文件。
 
 ## 容量：出口只有约 5 Mbps
@@ -141,7 +141,7 @@ cloud/iroh-relay/test/relay-e2e.sh
 | 语音（Opus + 头） | 0.5 Mbps | 约 4 路 |
 | 远程桌面（日常） | 1 Mbps | 约 2 路 |
 | 720p 视频 | 2 Mbps | 约 1 路 |
-| 1080p 视频 | 4 Mbps | 1 路都紧：单路已占 9.6 Mbps，靠降码率/丢帧 |
+| 1080p 视频 | 4 Mbps（被限到约 2.1） | 1 路都紧：单连接被限到 2.1 Mbps 后按 ~2 Mbps 跑，2×2.1×1.2≈5.03 正好打满出口，靠降码率/丢帧 |
 
 - 上表是"只跑这一种"的理论值；混跑按 `Σ(2 × r × 1.2) ≤ 5` 加，超了大家一起变差。
 - 家庭日常同步（只在打洞失败时经中继）：平均占用 `M × Δ × 8 / 86400` Mbps。
@@ -164,6 +164,8 @@ cloud/iroh-relay/test/relay-e2e.sh
 - 扩容：升阿里云出口带宽包或加第二台分流，2 vCPU 不用动。
 
 ## 升级
+
+已有的 `config.toml` 不会被覆盖：从 #1058 及以前的版本升级后，手动加一段 `[limits.client.rx]`（默认 256 KiB/s）才有限速。
 
 改 `release.env` 的版本和 sha256（和仓库 `Cargo.lock` 里的 iroh 版本一起），在开发机跑
 `test/relay-e2e.sh` 过，再在目标机重跑 `install.sh`。二进制是 rename 替换，失败回滚就改回 `release.env` 重跑。

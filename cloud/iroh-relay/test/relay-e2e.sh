@@ -74,7 +74,19 @@ if ((${#missing[@]})); then
     die "部署件缺 ${#missing[@]} 个：${missing[*]}"
 fi
 
-for c in docker openssl curl cargo jq sha256sum; do need "$c"; done
+for c in docker openssl curl cargo jq sha256sum ss; do need "$c"; done
+# 准入判定用例：缺 [access] 节时上游默认 everyone，不能误报成 shared_token。
+# shellcheck source=../install.sh
+. "$HERE/install.sh"
+adm=$TMP/admission.toml
+printf 'http_bind_addr = "127.0.0.1:8742"\n' >"$adm"
+[[ $(admission_mode "$adm") == everyone-default ]] || die "缺 [access] 应判 everyone-default"
+printf 'access = "everyone"\n' >"$adm"
+[[ $(admission_mode "$adm") == everyone ]] || die "显式 everyone 应判 everyone"
+printf '[access]\nshared_token = []\n' >"$adm"
+[[ $(admission_mode "$adm") == restricted ]] || die "[access] 节应判 restricted"
+pass "准入判定用例（缺节=everyone-default / 显式 everyone / [access]=restricted）"
+
 mkdir -p "$CACHE"
 [[ -n $(docker images -q "$NGINX_IMAGE") ]] || docker pull -q "$NGINX_IMAGE" >/dev/null
 
@@ -139,7 +151,7 @@ for mode in missing empty; do
 done
 pass "缺令牌/空令牌都拒绝启动"
 
-IROH_RELAY_ACCESS_TOKEN=$TOKEN RUST_LOG=${RUST_LOG:-info} \
+IROH_RELAY_ACCESS_TOKEN=$TOKEN RUST_LOG=info \
     "$RELAY_BIN" --dev --config-path "$TMP/relay.toml" >"$TMP/relay.log" 2>&1 &
 RELAY_PID=$!
 for _ in $(seq 1 40); do
