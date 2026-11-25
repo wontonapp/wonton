@@ -97,6 +97,8 @@ pub struct InboxConfirmRequest {
     pub risk: InboxRisk,
     #[serde(default = "default_confirm_choices")]
     pub choices: Vec<ConfirmChoice>,
+    #[serde(default = "default_true")]
+    pub blocking: bool,
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub expires_in_ms: Option<u64>,
     #[serde(default, skip_serializing_if = "Option::is_none")]

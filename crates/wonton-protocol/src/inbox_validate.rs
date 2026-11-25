@@ -101,6 +101,14 @@ fn many(field: &str, count: usize, max: usize) -> Result<(), InboxInvalid> {
 /// 校验一整条条目：类型和载荷一致、公共字段、各类载荷的上限和形状。
 pub fn validate_item(item: &InboxItem) -> Result<(), InboxInvalid> {
     validate_id("id", &item.id)?;
+    let prefix = item.id.chars().next().unwrap_or('?');
+    if let Some(kind) = InboxType::from_prefix(prefix)
+        && kind != item.kind
+    {
+        return Err(InboxInvalid::Mismatch {
+            field: "id 前缀和 type 不一致".to_owned(),
+        });
+    }
     present("title", &item.title)?;
     long("title", &item.title, MAX_INBOX_TITLE_CHARS)?;
     long("body", &item.body, MAX_INBOX_BODY_CHARS)?;
@@ -178,7 +186,7 @@ pub fn validate_item(item: &InboxItem) -> Result<(), InboxInvalid> {
             }
             Ok(())
         }
-        (InboxType::Other, InboxPayload::Other(_)) => Ok(()),
+        (InboxType::Other, InboxPayload::Other) => Ok(()),
         (kind, payload) => Err(InboxInvalid::Mismatch {
             field: format!("{kind:?} 的条目的载荷是 {:?}", payload.kind()),
         }),
@@ -341,23 +349,29 @@ pub fn validate_action_id(field: &str, id: &str) -> Result<(), InboxInvalid> {
     Ok(())
 }
 
-fn validate_id(field: &str, id: &str) -> Result<(), InboxInvalid> {
-    let Some((prefix, rest)) = id.split_at_checked(2) else {
-        return Err(Invalid::field(field, "要“类型前缀-随机串”"));
+fn validate_id(_field: &str, id: &str) -> Result<(), InboxInvalid> {
+    split_id(id)?;
+    Ok(())
+}
+
+/// 拆成（前缀字符，随机串）。前缀是任意小写字母，未知前缀不拒。
+fn split_id(id: &str) -> Result<(char, &str), InboxInvalid> {
+    let mut chars = id.chars();
+    let Some(prefix) = chars.next() else {
+        return Err(Invalid::field("id", "要“类型前缀-随机串”"));
     };
-    if !prefix.ends_with('-')
-        || !InboxType::from_prefix(prefix.chars().next().unwrap_or('?')).is_some()
-    {
-        return Err(Invalid::field(field, "要“类型前缀-随机串”"));
+    if !prefix.is_ascii_lowercase() || chars.next() != Some('-') {
+        return Err(Invalid::field("id", "要“类型前缀-随机串”"));
     }
+    let rest = &id[prefix.len_utf8() + 1..];
     if rest.is_empty()
         || !rest
             .chars()
             .all(|c| c.is_ascii_alphanumeric() || c == '_' || c == '-')
     {
-        return Err(Invalid::field(field, "随机串只能用字母、数字、_ 和 -"));
+        return Err(Invalid::field("id", "随机串只能用字母、数字、_ 和 -"));
     }
-    Ok(())
+    Ok((prefix, rest))
 }
 
 fn validate_resource_uri(uri: &str) -> Result<(), InboxInvalid> {
@@ -498,11 +512,17 @@ pub fn validate_answer(item: &InboxItem, input: &InboxAnswerInput) -> Result<(),
     validate_answer_input(input)?;
     match &item.payload {
         InboxPayload::Choice(payload) => validate_choice_answer(payload, input),
-        InboxPayload::Page(payload) => validate_action_answer(&payload.actions, input),
-        InboxPayload::Recap(payload) => validate_action_answer(&payload.actions, input),
+        InboxPayload::Page(payload) => validate_action_answer(&payload.actions, input, true),
+        InboxPayload::Recap(payload) => {
+            if payload.question.is_some() {
+                validate_action_answer(&payload.actions, input, true)
+            } else {
+                validate_action_answer(&payload.actions, input, false)
+            }
+        }
         InboxPayload::Notice(payload) => {
             if let Some(action) = &payload.action {
-                validate_action_answer(std::slice::from_ref(action), input)
+                validate_action_answer(std::slice::from_ref(action), input, false)
             } else if input.action == InboxAnswerAction::Acknowledge {
                 Ok(())
             } else {
@@ -510,7 +530,7 @@ pub fn validate_answer(item: &InboxItem, input: &InboxAnswerInput) -> Result<(),
             }
         }
         InboxPayload::Confirm(payload) => validate_confirm_answer(payload, input),
-        InboxPayload::Other(_) => Ok(()),
+        InboxPayload::Other => Ok(()),
     }
 }
 
@@ -579,9 +599,15 @@ fn validate_choice_answer(
 fn validate_action_answer(
     actions: &[InboxAction],
     input: &InboxAnswerInput,
+    require_action: bool,
 ) -> Result<(), InboxInvalid> {
+    if input.action == InboxAnswerAction::Acknowledge {
+        if require_action && !actions.is_empty() {
+            return Err(Invalid::field("action", "有动作时不能只知道了"));
+        }
+        return Ok(());
+    }
     match input.action {
-        InboxAnswerAction::Acknowledge => return Ok(()),
         InboxAnswerAction::Action | InboxAnswerAction::Submit => {}
         other => {
             return Err(Invalid::field(
@@ -638,7 +664,7 @@ fn validate_confirm_answer(
 /// 判断一条条目是不是还没处理、可以答的结构。
 #[must_use]
 pub fn answerable(item: &InboxItem) -> bool {
-    matches!(item.status, InboxStatus::Pending) && !matches!(item.payload, InboxPayload::Other(_))
+    matches!(item.status, InboxStatus::Pending) && !matches!(item.payload, InboxPayload::Other)
 }
 
 struct Invalid;

@@ -57,6 +57,7 @@ fn item(kind: InboxType, payload: InboxPayload) -> InboxItem {
         outcome: None,
         result: None,
         payload,
+        raw_payload: None,
         answer: None,
         superseded_answers: Vec::new(),
     }
@@ -377,9 +378,15 @@ fn ids_have_a_stable_shape() {
         "/_wonton/api/inbox/p-1/page?token=tok"
     );
     assert!(validate_item(&choice_item()).is_ok());
-    let mut bad = choice_item();
-    bad.id = "x-1".into();
-    assert!(validate_item(&bad).is_err());
+    let mut unknown = choice_item();
+    unknown.id = "x-1".into();
+    validate_item(&unknown).unwrap();
+    let mut wrong = choice_item();
+    wrong.id = "p-1".into();
+    assert_eq!(
+        validate_item(&wrong).unwrap_err().field(),
+        "id 前缀和 type 不一致"
+    );
     validate_action_id("x", "approve").unwrap();
     validate_action_id("x", "approve_2").unwrap();
     validate_action_id("x", "Approve").unwrap_err();
@@ -390,17 +397,19 @@ fn ids_have_a_stable_shape() {
 /// 契约：未知载荷类型解析成 Other；类型和载荷不一致的条目校验失败。
 #[test]
 fn unknown_payload_is_other() {
-    let payload: InboxPayload = serde_json::from_value(json!({
-        "type": "form",
-        "payload": {"fields": [{"id": "name", "label": "名字"}]}
-    }))
-    .unwrap();
-    let InboxPayload::Other(raw) = payload else {
-        panic!("未知类型要落到 Other")
-    };
-    assert_eq!(raw["fields"][0]["label"], "名字");
+    let payload: InboxPayload = serde_json::from_value(json!({"type": "other"})).unwrap();
+    assert_eq!(payload, InboxPayload::Other);
+    let item_json = json!({
+        "id": "f-1", "type": "form", "status": "pending", "created_at_ms": 1,
+        "sender": {"kind": "agent", "id": "app.hermes", "display_name": "Hermes"},
+        "title": "表单", "payload": {"type": "other"},
+        "raw_payload": {"type": "form", "payload": {"fields": []}}
+    });
+    let item: InboxItem = serde_json::from_value(item_json).unwrap();
+    assert_eq!(item.raw_payload.unwrap()["type"], "form");
     let mut mismatch = choice_item();
     mismatch.kind = InboxType::Page;
+    mismatch.id = "p-1".into();
     assert_eq!(
         validate_item(&mismatch).unwrap_err().field(),
         "Page 的条目的载荷是 Choice"
@@ -461,4 +470,81 @@ fn notes_are_opt_in() {
         validate_answer(&item, &input(&long)).unwrap_err().field(),
         "answers.note"
     );
+}
+
+/// 契约：recap 要有 1–2 个动作；有问题时必须选动作，没问题时可以知道了。
+#[test]
+fn recaps_need_one_or_two_actions() {
+    let recap = |question: Option<&str>, actions: Vec<InboxAction>| {
+        item(
+            InboxType::Recap,
+            InboxPayload::Recap(RecapPayload {
+                summary: "已经挂载了，还缺证书。".into(),
+                question: question.map(str::to_owned),
+                actions,
+            }),
+        )
+    };
+    let action = |id: &str| InboxAction {
+        id: id.into(),
+        label: "继续".into(),
+        style: InboxActionStyle::Primary,
+        requires_comment: false,
+    };
+    assert!(validate_item(&recap(None, Vec::new())).is_err());
+    validate_item(&recap(None, vec![action("a")])).unwrap();
+    validate_item(&recap(None, vec![action("a"), action("b")])).unwrap();
+    assert!(validate_item(&recap(None, vec![action("a"), action("b"), action("c")])).is_err());
+
+    let ack = InboxAnswerInput {
+        answer_id: "a1".into(),
+        action: InboxAnswerAction::Acknowledge,
+        answers: Vec::new(),
+        action_id: None,
+        comment: None,
+    };
+    assert!(validate_answer(&recap(Some("继续吗？"), vec![action("go")]), &ack).is_err());
+    validate_answer(&recap(None, vec![action("go")]), &ack).unwrap();
+}
+
+/// 契约：page 有动作时不能只知道了；没动作时知道了就行。
+#[test]
+fn pages_with_actions_need_an_action() {
+    let page = |actions: Vec<InboxAction>| {
+        item(
+            InboxType::Page,
+            InboxPayload::Page(PagePayload {
+                resource_uri: Some("ui://x".into()),
+                file_id: None,
+                caption: "报告".into(),
+                network_domains: Vec::new(),
+                actions,
+            }),
+        )
+    };
+    let ack = InboxAnswerInput {
+        answer_id: "a1".into(),
+        action: InboxAnswerAction::Acknowledge,
+        answers: Vec::new(),
+        action_id: None,
+        comment: None,
+    };
+    validate_answer(&page(Vec::new()), &ack).unwrap();
+    let with_action = page(vec![InboxAction {
+        id: "approve".into(),
+        label: "通过".into(),
+        style: InboxActionStyle::Primary,
+        requires_comment: false,
+    }]);
+    assert!(validate_answer(&with_action, &ack).is_err());
+}
+
+/// 契约：确认请求默认阻塞，可以显式关掉。
+#[test]
+fn confirm_requests_block_by_default() {
+    let request: InboxConfirmRequest = serde_json::from_value(json!({
+        "title": "装 Immich？", "body": "要 storage.share.photos"
+    }))
+    .unwrap();
+    assert!(request.blocking);
 }
