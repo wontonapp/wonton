@@ -35,6 +35,10 @@ const DB_FILE: &str = "media.sqlite3";
 /// 每人向提供方上传的总量上限。ADR-0113 第 3 节没定值，先按 100 GiB 收；M16 接策略时用它兜底。
 pub const DEFAULT_PROVIDER_UPLOAD_LIMIT: u64 = 100 * 1024 * 1024 * 1024;
 
+/// 迁移前没有提供方的上传账行落在这个空串提供方上（`schema.rs` 的 `MIGRATE_V2`）；
+/// 这个人的第一笔上传落到具体提供方时接手它（`record_usage`）。
+const LEGACY_PROVIDER: &str = "";
+
 #[derive(Debug, thiserror::Error)]
 pub enum MediaStoreError {
     #[error("读写媒体库 {path} 失败：{source}")]
@@ -363,7 +367,9 @@ impl Store {
         let (provider, device) = ledger.keys(provider, device)?;
         let mut conn = self.conn()?;
         let tx = conn.transaction().map_err(|source| self.db_error(source))?;
-        let (used, limit) = self.ledger_usage(&tx, person, ledger, provider, device)?;
+        let (used, limit) = self
+            .ledger_usage(&tx, person, ledger, provider, device)?
+            .unwrap_or((0, ledger.default_limit()));
         let want_total = used
             .checked_add(bytes)
             .ok_or(MediaStoreError::QuotaOverflow { used, want: bytes })?;
@@ -377,26 +383,13 @@ impl Store {
                 want: bytes,
             });
         }
-        tx.execute(
-            "INSERT INTO quota (person, ledger, provider, device, used, cap)
-             VALUES (?, ?, ?, ?, ?, ?)
-             ON CONFLICT(person, ledger, provider, device) DO UPDATE SET used = excluded.used",
-            params![
-                person,
-                ledger.as_str(),
-                provider,
-                device,
-                want_total as i64,
-                limit.map(|value| value as i64),
-            ],
-        )
-        .map_err(|source| self.db_error(source))?;
+        self.record_usage(&tx, person, ledger, provider, device, want_total, limit)?;
         let view = self.read_quota(&tx, person)?;
         tx.commit().map_err(|source| self.db_error(source))?;
         Ok(view)
     }
 
-    /// 释放用量，最多减到 0。返回减完的合计。
+    /// 释放用量，最多减到 0。返回减完的合计。这一格没记过账就不建行，视图的上限才不会多出默认值。
     pub fn take_quota(
         &self,
         person: &str,
@@ -408,8 +401,35 @@ impl Store {
         let (provider, device) = ledger.keys(provider, device)?;
         let mut conn = self.conn()?;
         let tx = conn.transaction().map_err(|source| self.db_error(source))?;
-        let (used, limit) = self.ledger_usage(&tx, person, ledger, provider, device)?;
-        let remaining = used.saturating_sub(bytes);
+        if let Some((used, limit)) = self.ledger_usage(&tx, person, ledger, provider, device)? {
+            let remaining = used.saturating_sub(bytes);
+            self.record_usage(&tx, person, ledger, provider, device, remaining, limit)?;
+        }
+        let view = self.read_quota(&tx, person)?;
+        tx.commit().map_err(|source| self.db_error(source))?;
+        Ok(view)
+    }
+
+    /// 写一格账。上传账先删掉迁移留下的空提供方旧账行：它的用量由这一格接手，
+    /// 留着会被 `read_quota` 与这一格一起合计两遍。
+    #[allow(clippy::too_many_arguments)] // 一格账就是这几个字段，再包结构体只是把参数搬个家。
+    fn record_usage(
+        &self,
+        tx: &rusqlite::Transaction<'_>,
+        person: &str,
+        ledger: Ledger,
+        provider: &str,
+        device: &str,
+        used: u64,
+        limit: Option<u64>,
+    ) -> Result<(), MediaStoreError> {
+        if ledger == Ledger::ProviderUpload && provider != LEGACY_PROVIDER {
+            tx.execute(
+                "DELETE FROM quota WHERE person = ? AND ledger = ? AND provider = ? AND device = ?",
+                params![person, ledger.as_str(), LEGACY_PROVIDER, device],
+            )
+            .map_err(|source| self.db_error(source))?;
+        }
         tx.execute(
             "INSERT INTO quota (person, ledger, provider, device, used, cap)
              VALUES (?, ?, ?, ?, ?, ?)
@@ -419,16 +439,15 @@ impl Store {
                 ledger.as_str(),
                 provider,
                 device,
-                remaining as i64,
+                used as i64,
                 limit.map(|value| value as i64),
             ],
         )
         .map_err(|source| self.db_error(source))?;
-        let view = self.read_quota(&tx, person)?;
-        tx.commit().map_err(|source| self.db_error(source))?;
-        Ok(view)
+        Ok(())
     }
 
+    /// 这一格的用量与上限；没记过账返回 `None`。上传账没有这一格时回落到迁移留下的旧账行。
     fn ledger_usage(
         &self,
         conn: &Connection,
@@ -436,7 +455,24 @@ impl Store {
         ledger: Ledger,
         provider: &str,
         device: &str,
-    ) -> Result<(u64, Option<u64>), MediaStoreError> {
+    ) -> Result<Option<(u64, Option<u64>)>, MediaStoreError> {
+        if let Some(row) = self.quota_row(conn, person, ledger, provider, device)? {
+            return Ok(Some(row));
+        }
+        if ledger == Ledger::ProviderUpload && provider != LEGACY_PROVIDER {
+            return self.quota_row(conn, person, ledger, LEGACY_PROVIDER, device);
+        }
+        Ok(None)
+    }
+
+    fn quota_row(
+        &self,
+        conn: &Connection,
+        person: &str,
+        ledger: Ledger,
+        provider: &str,
+        device: &str,
+    ) -> Result<Option<(u64, Option<u64>)>, MediaStoreError> {
         let row: Option<(i64, Option<i64>)> = conn
             .query_row(
                 "SELECT used, cap FROM quota
@@ -446,10 +482,7 @@ impl Store {
             )
             .optional()
             .map_err(|source| self.db_error(source))?;
-        Ok(match row {
-            Some((used, limit)) => (used as u64, limit.map(|value| value as u64)),
-            None => (0, ledger.default_limit()),
-        })
+        Ok(row.map(|(used, limit)| (used as u64, limit.map(|value| value as u64))))
     }
 
     fn read_quota(&self, conn: &Connection, person: &str) -> Result<QuotaView, MediaStoreError> {
