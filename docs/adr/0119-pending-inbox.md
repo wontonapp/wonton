@@ -82,10 +82,10 @@
 
 **条目在核心里**（`core/inbox`，0600），由核心给 `InboxViewModel`，壳只渲染、把操作发回核心。一条条目有：
 
-- `id`（核心分配，带类型前缀 `c-`/`q-`/`p-`/`r-`/`n-`）、`type`、`status`、`created_at`、`expires_at`；
+- `id`（核心分配，带类型前缀 `c-`/`q-`/`p-`/`r-`/`n-`）、`type`、`status`、`created_at`、`expires_at`；可选的 `group_id`/`group_index`/`group_size`（只给拆开的 Hermes 卡）；
 - `sender`（`kind: agent|worker|core|plugin`、`id`、`display_name`、`avatar`）和可选的 `source`（房间、线程、worker_id、任务、深链）；
 - `recipient`（一个人或所有管理员）、`read_by`、`answered_by`、`answered_at`；
-- `title`、`body`（纯文本兜底，给旧 App、通知和读屏）、`level`（notice）；
+- `title`、`body`（纯文本兜底，给旧 App、通知和读屏）、`level`（notice）、可选的 `snooze_until`；
 - 类型载荷（下表）和 `actions`（0–3 个，带 `id`、`label`、`style`、`requires_comment`）；
 - `progress`（可选 0–1，给长任务更新）、`result`（给发送方看的结果引用）。
 
@@ -99,7 +99,7 @@
 | `confirm` | `title`、`body` ≤2000 字、`detail?` ≤8000 字、`risk`（`high`/`very_high`/`highest`）；固定 `choices`（`approve`/`deny`，可加 `always`） | 固定 choice | 10 分钟；配对不过期 | 是 |
 | `notice` | `title`、`body` ≤2000 字、`level`（`info`/`warning`/`critical`）、可选 `link`（只收 `https:`/`http:`/`wonton:`）、可选 1 个 `action`（同 page） | `acknowledge` 或 `action_id` | 30 天 | 否（只点未读） |
 
-`title` 和 `caption` 都 ≤120 字；所有文本字段超限就报 `invalid_input`，不截断。`choice` 的 `preview` 是**静态** HTML 片段（去掉 `<script>`，≤4 KiB），由宿主放进沙箱渲染；要脚本或联网就用 `page`。
+`title` 和 `caption` 都 ≤120 字；所有文本字段超限就报 `invalid_input`，不截断。`choice` 的 `preview` 是**静态** HTML 片段（去掉 `<script>`，≤4 KiB），由宿主放进沙箱渲染；CSP 固定为 `default-src 'none'; script-src 'none'; style-src 'unsafe-inline'; img-src 'self' data:; font-src 'self' data:; connect-src 'none'`，只允许内联样式和 `data:` 图片/字体，不能跑脚本、不能联网；要脚本或联网就用 `page`。
 
 **生命周期**：
 
@@ -112,7 +112,8 @@ pending ──answer──▶ handled ──24h──▶ archived ──30d─�
 
 - `handled` 带 `outcome`（answered / declined / acknowledged）和 `answered_by`；管理员条目被别人答了，其余人的那份变 `handled_elsewhere`。
 - `expired` 和 `withdrawn` 是终点：再答返回 409，页面显示“已过期 / 对方撤回”。过期后仍留在收件箱 30 天，不能答。
-- 一个条目只能答一次。同一个 `answer_id` 重试返回 200 和同一结果；不同 `answer_id` 再答返回 409 并附当前答案。
+- 一个条目只能答一次。同一个 `answer_id` 重试返回 200 和同一结果；不同 `answer_id` 再答返回 409 并附当前答案，唯一例外是异步条目第一次 `handled` 后的 60 秒内可以重答（见第 11 节）。
+- 重答时旧答案保留为 `superseded`，`GET /inbox/{id}` 同时返回 `answer`（当前）和 `superseded_answers`（旧）；60 秒后旧答案只进审计。
 - 阻塞条目在发送方断开 60 秒后自动 `withdrawn`，写明“对方不再等这个回答”；异步条目不因断开撤回。
 
 **谁能看见**：收件人在创建时定下，只有一个人（Agent 的归属人、家人自己）或所有管理员。列表按请求者过滤，家人看不到主人的、别人的，主人也不替家人看。管理员条目对每个管理员都出现，谁先答算谁的。
@@ -260,7 +261,7 @@ wonton__inbox_cancel  { "item_id": "q-01J…", "reason": "任务提前结束" }
 - `resource_uri`：发送方自己的 MCP 服务器提供的 MCP Apps 资源（`ui://…`，MIME 必须是 `text/html;profile=mcp-app`）。核心按发送方身份 `resources/read`，别的插件的资源不行；不能是公网 URL，M1 不嵌外部网页。
 - `file_id`：文件服务里的附件。HTML 文件和页面一样沙箱打开，HTML 文件也 ≤1 MiB；PDF/图片走系统查看器，附件 ≤20 MiB。附件 HTML 没有 MCP 元数据，联网名单要由 `inbox_present` 的 `network_domains` 给，不给就断网。
 
-**联网名单**：页面默认完全断网（`connect-src 'none'`，无外链资源）。发送方要联网，必须在 `_meta.ui.csp`（`ui://` 资源）或 `network_domains`（文件附件）里列域名；`ui://` 可以再用 `network_domains` 收紧：列表合并 `connectDomains` 和 `resourceDomains`，最多 20 个，只收 `https://` 和 `wss://`，不写路径；通配只允许 `https://*.example.com` 这种子域。核心把名单存进条目并生成 CSP：声明的域进 `connect-src`，`https` 域同时进 `script-src`/`img-src`/`style-src`/`font-src`/`media-src`。名单为空就是完全断网，只允许内联脚本和 `data:` 资源。页面运行时不能再加域。
+**联网名单**：页面默认完全断网（`connect-src 'none'`、`frame-src 'none'`、`base-uri 'none'`，无外链资源）。发送方要联网，必须在 `_meta.ui.csp`（`ui://` 资源）或 `network_domains`（文件附件）里列域名；`ui://` 可以再用 `network_domains` 收紧。合并规则：`connectDomains` + `resourceDomains` 合成显示和资源名单（最多 20 个，只收 `https://` 和 `wss://`）；`frameDomains` 只进 `frame-src`，`baseUriDomains` 只进 `base-uri`（两者只收 `https://`）；这两类也进“会访问”显示名单。文件附件 M1 的 `network_domains` 只喂资源和 connect，要 frame/base 用 `ui://` 资源。不写路径；通配只允许 `https://*.example.com` 这种子域。核心把最终名单存进条目并生成 CSP：`https` 的资源域进 `script-src`/`img-src`/`style-src`/`font-src`/`media-src`，`https`/`wss` 的 `connectDomains` 进 `connect-src`。名单为空就是完全断网，只允许内联脚本、`data:` 图片和 `data:` 字体。页面运行时不能再加域。
 
 **存哪**：核心在发送时把 HTML 取回来，存进 `core/inbox/pages/<item-id>.html`（0600，最大 1 MiB，随条目 30 天后删）。不依赖发送方以后还在不在；发送方删了插件，页面还能打开，但页面里的 `tools/call` 会失败并显示“插件连不上”。页面不是 ADR-0052 的“插件页/面板页”，是条目自己的快照，故不进面板、不共享存储。
 
@@ -268,19 +269,19 @@ wonton__inbox_cancel  { "item_id": "q-01J…", "reason": "任务提前结束" }
 
 - 单独的、不留持久存储的 WebView；页面放进 `sandbox` 的 iframe；按 MCP Apps 规范给 `allow-scripts` 和 `allow-same-origin`，不给 `allow-top-navigation`、`allow-popups`。
 - 核心按名单生成 CSP：名单为空时用 MCP Apps 的默认
-  `default-src 'none'; script-src 'self' 'unsafe-inline'; style-src 'self' 'unsafe-inline'; img-src 'self' data:; media-src 'self' data:; connect-src 'none'; base-uri 'none'; form-action 'none'`；
-  有名单时在以上指令里追加声明的域。
+  `default-src 'none'; script-src 'self' 'unsafe-inline'; style-src 'self' 'unsafe-inline'; img-src 'self' data:; font-src 'self' data:; media-src 'self' data:; connect-src 'none'; frame-src 'none'; base-uri 'none'; form-action 'none'`；
+  有名单时把资源域追加到 `script-src`/`img-src`/`style-src`/`font-src`/`media-src`，`connectDomains` 追加到 `connect-src`，`frameDomains` 覆盖 `frame-src`，`baseUriDomains` 覆盖 `base-uri`。
 - 页面可以跑内联脚本（图表、折叠、表单校验）；页面要自带 CSS/JS，图片用 `data:` 或名单里的绝对地址，M1 不解析 `ui://` 子资源。外链脚本/图片/字体/CSS 和 `fetch`/WebSocket 都只在名单里；没声明的域直接被 CSP 拦。`permissions` 只透传 `clipboardWrite`；camera/mic/geolocation M1 不给。
 - 列表行和详情顶部都显示“会访问：a.com、b.com”；名单为空写“不联网”。锁屏通知写“会访问 N 个站点”或“不联网”。用户点“打开”前就能看见。
 - `ui://` 的名单只来自资源 `_meta.ui.csp`；`network_domains` 对 `ui://` 是可选的收紧名单（交集），多写的域被忽略，少写的域会被去掉。文件附件没有元数据，名单只认 `network_domains`。核心把最终名单校验、存快照。
 - 页面不能读 App 的 Cookie、钥匙串、文件；没有 `localStorage` 的跨条目持久化（WebView 每次打开都是干净 profile；`sessionStorage` 只在这一次打开有效）。
 - 外链一律 `ui/open-link` 交给系统浏览器；`target=_blank` 由宿主接住。页面自己不能做顶层跳转。
-- 页面可以经宿主调 `tools/call`，只限同一个 MCP 服务器上 `_meta.ui.visibility` 含 `app` 的工具，经核心总线转发；调用方记成发送方 Bot，敏感工具照常走确认。页面调用工具产生的确认是新的一条 `confirm`，嵌套最多一层。页面里的 `<a>` 由宿主接住、走 `ui/open-link`；`<form>` 不在页面里提交，只做本地校验。
+- 页面可以经宿主调 `tools/call`，只限同一个 MCP 服务器上 `_meta.ui.visibility` 含 `app` 的工具，经核心总线转发；调用方记成发送方 Bot（ADR-0052 的例外，见 0052 状态行），敏感工具照常走确认。页面调用工具产生的确认是新的一条 `confirm`，嵌套最多一层。页面里的 `<a>` 由宿主接住、走 `ui/open-link`；`<form>` 不在页面里提交，只做本地校验。
 - 页面可以 `ui/message` 以主人名义在来源会话发一条消息，但**答案不走 `ui/message`**。
 
 **答案**：页面底下是 App 原生的动作条，不是页面自己画的提交按钮。动作来自条目的 `actions`，由核心校验 `action_id`；页面也可以 `postMessage` 一个 `ui/notifications/inbox-action` `{item_id, action_id, comment?}` 提前选好 `action_id`，但最终由原生条提交，核心按 `action_id` 再校验一次。答案只回核心，页面拿不到也能被审计。
 
-**和插件网页、ADR-0038 的关系**：页面复用 ADR-0052 的 MCP Apps 宿主和 CSP，但比插件网页更窄：无持久存储、无公网 URL、无顶层跳转、只活 30 天。问题卡直接复用 ADR-0038 的 `StepCard` 形状和 `AskUserQuestion` 上限，只是从“Bot 聊天里的面板”改成“收件箱里的 `choice` 条目”；原来的 `wonton__ask_owner` 字段直接搬成 `wonton__inbox_ask`，M1 没有外部用户，不做别名。
+**和插件网页、ADR-0038 的关系**：页面复用 ADR-0052 的 MCP Apps 宿主和 CSP，但比插件网页更窄：无持久存储、无公网 URL、无顶层跳转、只活 30 天。问题卡直接复用 ADR-0038 的 `StepCard` 形状和 `AskUserQuestion` 上限，只是从“Bot 聊天里的面板”改成“收件箱里的 `choice` 条目”；原来的 `wonton__ask_owner` 改名为 `wonton__inbox_ask`，上限和选项形状沿用（字段名从 `steps` 改为 `questions`）；M1 没有外部用户，不做别名。
 
 ### 5. 和 Hermes 的关系：通用工具 + 薄桥
 
@@ -291,11 +292,16 @@ wonton__inbox_cancel  { "item_id": "q-01J…", "reason": "任务提前结束" }
 **5.2 Hermes 原生的批准/澄清**：Hermes 的网关已经有 `approval.pending`、`approval.respond`、`clarify.respond` 这套 RPC（本地源码 `gateway/session_controls.py:238`、`acp_adapter/gateway_server.py:1202`）。一个薄的 Hermes 插件做桥：
 
 - 订阅网关的 `approval.pending` / `clarify` 请求，把 `prompt_id`/`clarify_id`、`session_id`、命令或问题、选项写成 `confirm`/`choice` 条目，`source` 带 `session_id` 和 `prompt_id`；条目的 `sender` 是 Hermes，`dedupe_key` 用 `prompt_id`。
-- Hermes 的 `clarify` 允许 5 题，超过 4 时桥按 4+1 拆成两张，`dedupe_key` 用 `prompt_id` 加同一前缀，答案按题目顺序合并回；不截断。
+- Hermes 的 `clarify` 允许 5 题，超过 4 时桥按 4+1 拆成两张，`dedupe_key` 用 `prompt_id` 加同一前缀，`group_id` 用 `prompt_id`、`group_index` 为 0/1，答案按题目顺序合并回；不截断。
+- 拆开的组只在**两张都 handled** 时才回 Hermes：合并 `answers` 后一次 `clarify.respond`，`outcome: "submitted"`。只有一张答了、另一张还 pending 时，先答的那张把答案存在自己的 item 里，桥不调 RPC；可以重答（60 秒内）就更新它。
+- 任一张 `decline`：整个组按 `cancelled` 回，带上已答的 `answers`，另一张 `inbox_cancel`；任一张 `expired`：按 `timed_out` 回，带上已答的 `answers`，另一张 `inbox_cancel`。两张都 `decline` 也是 `cancelled`，没有答案。
+- 合并回 Hermes 后 60 秒内重答：桥再发一次 `clarify.respond`（同一 `clarify_id`，`answers` 为完整一组）。网关若已经结束这一轮、不再送模型，收件箱和审计里仍保留新答案并标 `late_correction`；桥不假装 Hermes 收到了。
 - 主人在收件箱答完，桥调 `approval.respond`（`choice` 取 `once`/`session`/`always`/`deny`）或 `clarify.respond`（`response` 是选中项的原文，`Other` 是自填文本，多选是 JSON 数组）。Hermes 的网关按现有逻辑继续那一轮。`on_session_prompt` 这类 UI 层钩子只影响本地展示，桥以网关的 `approval.pending`/`clarify` 为准。
 - 另一端先答了（本地 CLI/桌面）：`approval.settled` / `clarify.lock` 会把结果广播给所有 viewer（`gateway/session_commands.py:516`）；桥收到后 `inbox_update` 成 `handled_elsewhere`，收件箱里撤下按钮。
 - Hermes 进程退出、轮次中断：桥在 60 秒后 `inbox_cancel`，条目写“Hermes 不再等这个回答”，不假装还阻塞。
 - 桥只做映射，不做权限判断：`always` 的持久化、`session` 的范围、危险命令的判断全在 Hermes；核心只把 choice 原样送回。
+
+`approval` 不拆卡：它是单个 `confirm`，答完直接 `approval.respond`，没有部分完成的问题。
 
 **5.3 异步**：Hermes 的 `clarify` 本身是阻塞工具，桥默认也用阻塞；`inbox_ask(blocking:false)` 只给愿意自己 `inbox_wait` 的 Agent。M1 不要求 Hermes 支持异步。
 
@@ -315,8 +321,9 @@ POST /_wonton/api/inbox/workers
   "place": "pane 3 / worktree photos",
   "title": "worker 等你批准",
   "body": "要删除 12 张重复照片",
+  "risk": "high",
   "choices": [
-    { "id": "allow", "label": "允许", "style": "primary" },
+    { "id": "approve", "label": "允许", "style": "primary" },
     { "id": "always", "label": "总是允许" },
     { "id": "deny", "label": "拒绝", "style": "destructive" }
   ],
@@ -324,9 +331,9 @@ POST /_wonton/api/inbox/workers
 }
 ```
 
-- `needs` → `confirm`；`done` → `notice` 或 `recap`（带结果链接，M1 不从 router 发 `page`）；`stuck` → `confirm`（重试/停止/打开）。
+- `needs` → `confirm`；`done` → `notice` 或 `recap`（带结果链接，M1 不从 router 发 `page`）；`stuck` → `confirm`（重试/停止/打开）。worker 的 `confirm` 必须带 `risk`，没给按 `high`。
 - 同一个 `worker_id` 的同一类事件只留最新一条；连续 `stuck` 更新那一条，不每次刷一条。
-- 答案怎么回：条目详情给 runner 自己的按钮语义（`tern approve allow|always|deny`、herdr 的“回车/Esc”）。router 轮询 `GET /_wonton/api/inbox/workers/{worker_id}` 拿 `{status, answer}`；执行成功 `POST …/workers/{worker_id}/resolve {delivery:"sent"}`，执行失败 `{delivery:"failed", error}`，条目保持 pending 并显示“没送到，重试”。
+- 答案怎么回：条目详情给 runner 自己的按钮语义（`approve`→`tern approve allow`、`always`→`tern approve always`、`deny`→`tern approve deny`、herdr 的“回车/Esc”）。router 轮询 `GET /_wonton/api/inbox/workers/{worker_id}` 拿 `{status, answer}`；执行成功 `POST …/workers/{worker_id}/resolve {delivery:"sent"}`，执行失败 `{delivery:"failed", error}`，条目保持 pending 并显示“没送到，重试”。
 - router 不把登记表塞进核心：核心只存 `worker_id`、name、task、place、最后事件，App 不查 router；要交互就“打开终端”，走 router 的深链。
 - 桥死、宿主重启、登记表对不上：对账补 `WorkerStuck`，不自动把 worker 当完成。
 
@@ -371,7 +378,7 @@ POST /_wonton/api/inbox/workers
 - `choice`：只有单题、≤3 个选项、无备注要求时给选项按钮；多题/有备注只给“打开作答”。通知上点选项等于选那一项并提交，`other` 仍要打开。
 - `recap`：≤2 个 action 直接给按钮；否则打开。
 - `page`：只给“打开”；页面底下的动作在详情里。无动作页面给“知道了”。
-- `notice`：给“知道了”，有 link 时另给“打开”。
+- `notice`：有 `action` 时给这个动作，另一个位置留给“知道了”；有 link 且仍有空位时再给“打开”。没有 action 时只给“知道了”（有 link 再加“打开”）。
 - 系统按钮最多 3 个（Apple 上限 4，留一个给“打开”）。核心保留的 `approve`/`deny`/`always`/`acknowledge`/`open` 由 App 本地化；插件自己的 `action_id` 用发送方给的 `label`（≤40 字），未知 id 用 label 兜底。
 - 答完立刻把通知从其他设备撤下（`revision` 长轮询）；答的动作也写审计。
 
@@ -379,7 +386,7 @@ POST /_wonton/api/inbox/workers
 
 **手势**：右滑是主要动作（通知已读、页面已读、问题“稍后”），左滑是“更多”（不回答/删除/打开来源）；长按多选，批量“已读/归档”。批准/拒绝不藏进滑动。
 
-`snooze` 只把条目挪出列表，**不延长 `expires_at`**；阻塞条目回来时可能已经过期，界面上写剩余时间。
+`snooze` 只对 `pending` 条目，只有四档：`hour`（+60 分钟）、`later_today`（本机时区今天 18:00；18:00 后按 +3 小时）、`tomorrow`（本机时区明天 09:00）、`next_week`（本机时区下周一 09:00）。App 传 `{preset, timezone_offset_min}`，核心算 `snooze_until`；没有偏移就用服务器时区。它只把条目挪出列表，**不延长 `expires_at`**；阻塞条目回来时可能已经过期，界面上写剩余时间。
 
 **空态**：托盘勾图标 + “都处理完了”，不加副标题；已处理为空时那一段不显示。读屏读出类型、发送方、是否阻塞、到期和按钮。
 
@@ -403,7 +410,7 @@ POST /_wonton/api/inbox/workers
 - `handled` 后留 24 小时可回看/撤销“已读”，之后进 `archived` 30 天；`expired`/`withdrawn` 留 30 天。
 - 页面快照随条目 30 天后删；附件按文件服务的保留策略。
 - 审计写：条目 id、类型、发送方、收件人、动作、`answer_id`、结果、投递状态（送到/撤不回/失败）、页面内容的 sha256，不写页面内容和自由文本（避免验证码进日志）；审计留 90 天。
-- 答案默认是最终的：阻塞条目的工具结果已经回去，不能再改；异步条目 60 秒内可以撤回重答。重答生成新 `answer_id`，旧答案标 `superseded`，按新答案处理。
+- 答案默认是最终的：阻塞条目的工具结果已经回去，不能再改；异步条目第一次 `handled` 后 60 秒内可以撤回重答。重答用新 `answer_id`，旧答案标 `superseded` 并留在 `superseded_answers`，`answer` 换成新答案；60 秒后再答返回 409 `answer_locked`。
 
 ### 12. 契约、提供方、消费方
 
@@ -412,7 +419,7 @@ POST /_wonton/api/inbox/workers
   - `GET /_wonton/api/inbox?after=<revision>`，长轮询 25 秒，返回 `InboxList { items, counts:{needing, unread_notices}, revision }`；
   - `GET /_wonton/api/inbox/{id}` 取一条；
   - `GET /_wonton/api/inbox/{id}/page?token=<短令牌>` 取页面（CSP 头、`text/html`）；token 5 分钟、绑条目，重载时 App 换新 token；
-  - `POST /_wonton/api/inbox/{id}/answer`、`/acknowledge`、`/read`、`/snooze`、`/cancel`；
+  - `POST /_wonton/api/inbox/{id}/answer`、`/acknowledge`、`/read`、`/cancel`；`POST /_wonton/api/inbox/{id}/snooze` 体是 `{preset: "hour"|"later_today"|"tomorrow"|"next_week", timezone_offset_min?}`；
   - `POST /_wonton/api/inbox` 核心内部建条目；`POST /_wonton/api/inbox/workers` 给 router，`GET /workers/{worker_id}` 取答案、`POST /workers/{worker_id}/resolve` 回投递结果；
   - `confirm` 旧的回答接口 `POST /_wonton/confirmations/{id}` 继续可用，条目状态由回写驱动，壳不直接改条目。
 - **提供方**：核心。现有确认表、通知入口、来信投递、配对请求、联系人请求、升级流程都改成写条目，不再写私聊。
@@ -438,7 +445,7 @@ POST /_wonton/api/inbox/workers
 6. **页面能不能跑脚本**：脚本可以跑；联网只按发送方声明的域名名单放行，卡上写明“会访问：xxx”，不写名单就完全断网。**已按此定。**
 7. **页面从哪来**：只收 MCP Apps 的 `ui://` 资源 + 文件附件（推荐）；也收公网 URL；也收上传的 HTML 文件。**推荐第一种**，公网 URL 后加。
 8. **通知上能答什么**：无表单确认 + 单题≤3 选项 + 收尾按钮（推荐）；只有确认卡片；只给“打开”。**推荐第一种**。
-9. **答案能不能改**：提交即最终（推荐）；异步条目 60 秒内可撤回；发送方未读前都能改。**推荐第二种**（只给异步）。
+9. **答案能不能改**：提交即最终；异步条目 60 秒内可撤回（推荐）；发送方未读前都能改。**推荐第二种**（只给异步）。
 10. **入口叫什么**：收件箱（推荐，主人的词）；待处理；通知。**推荐收件箱**。
 11. **角标算什么**：待回答的条目（推荐）；全部未处理含通知；全部未读。**推荐第一种**；通知不进角标。
 12. **保留多久**：已处理 24 小时 + 归档 30 天（推荐）；7 天 + 90 天；页面永久。**推荐第一种**。

@@ -1,6 +1,6 @@
 # ADR-0038 多步卡片：一组问题一步一张，最后一起提交
 
-- 状态：提议（2026-11-05 接受后重新打开）。主人决定 M1 不做 Agent 的问题卡片（见“问题卡片 M1 不做”）；其余取舍由主人确认（见“已定”）；2026-11-13 按 [ADR-0034](0034-onboarding-and-help.md) 修订引导模型配置的入口和保存边界
+- 状态：提议（2026-11-05 接受后重新打开）。主人决定 M1 不做 Agent 的问题卡片（见“问题卡片 M1 不做”）；问题卡片 M1 不做由 [ADR-0119](0119-pending-inbox.md) 部分取代（2026-11-25 已接受）：问题卡进收件箱，形状和上限沿用本篇；其余取舍由主人确认（见“已定”）；2026-11-13 按 [ADR-0034](0034-onboarding-and-help.md) 修订引导模型配置的入口和保存边界
 - 补充：[ADR-0016](0016-mcp-bus-and-confirmations.md)（卡片和回答的接口）、[ADR-0034](0034-onboarding-and-help.md)（引导的外观）、[ADR-0035](0035-acp-bridge.md)（`elicitation/create`）、[ADR-0036](0036-plugin-privileges.md)（最高级“多点一步”的做法）
 - 由 [ADR-0108](0108-hermes-default-kernel.md) 修订（主人 2026-11-15）：ACP 桥已删除，文中桥处理 `elicitation/create`、给桥用的 `POST /agent/questions`
   和对各家 ACP 适配器的估算只作历史
