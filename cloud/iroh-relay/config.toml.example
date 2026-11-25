@@ -35,7 +35,9 @@ cert_dir = "/etc/wonton-iroh-relay/tls"
 manual_cert_path = "/etc/wonton-iroh-relay/tls/fullchain.pem"
 manual_key_path = "/etc/wonton-iroh-relay/tls/privkey.pem"
 
-# 可选：单条连接下行限速，注释掉表示不限。内测先不限，按 ADR-0048 收费时换成 http 回调。
-# [limits.client.rx]
-# bytes_per_second = 2_000_000
-# max_burst_bytes = 8_000_000
+# 每条连接的入方向限速（relay 读到客户端的数据）。按实测出口 5 Mbps 取：
+# 一条连接最多 256 KiB/s ≈ 2 Mbps，让一条大同步不至于饿死语音（语音双向约 1.2 Mbps，占出口 24%）。
+# 只保护公平，不是全局限额也不是按 endpoint 计量；收费时改成按 endpoint 的 http 回调（ADR-0048）。
+[limits.client.rx]
+bytes_per_second = 262144
+max_burst_bytes = 1048576

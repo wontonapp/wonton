@@ -9,6 +9,8 @@ Type=simple
 User=wonton-iroh-relay
 Group=wonton-iroh-relay
 EnvironmentFile=/etc/wonton-iroh-relay/relay.env
+# 默认 info，不打印配置（令牌）；EnvironmentFile 里的同名 RUST_LOG 会覆盖，调试方便。
+Environment=RUST_LOG=info
 WorkingDirectory=/var/lib/wonton-iroh-relay
 ExecStart=/opt/wonton-iroh-relay/iroh-relay --dev --config-path /etc/wonton-iroh-relay/config.toml
 Restart=on-failure
