@@ -69,7 +69,11 @@ def accepted() -> list[str]:
     text = CARGO_ABOUT_CONFIG.read_text(encoding="utf-8")
     body = text.split("accepted = [", 1)[1].split("]", 1)[0]
     lines = [line.split("#", 1)[0] for line in body.splitlines()]
-    return [part.strip().strip('"') for part in "\n".join(lines).replace("\n", " ").split(",") if part.strip()]
+    return [
+        part.strip().strip('"').removeprefix("LicenseRef-")
+        for part in "\n".join(lines).replace("\n", " ").split(",")
+        if part.strip()
+    ]
 
 
 def approved_ids() -> list[str]:
