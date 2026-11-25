@@ -7,7 +7,7 @@
 
 # Matrix 的行为设置（身份和令牌由核心经环境变量注入）。只收发消息：不加处理中的表情回应、
 # 房间里不自动开线程，重启前后也不往聊天里发状态消息。
-# Matrix 的 reply_to_mode 在 v0.22.7 仍无效；适配器给回复附上触发消息的引用。
+# Matrix 的 reply_to_mode 在 v0.23.4 仍无效；适配器给回复附上触发消息的引用。
 platforms:
   matrix:
     reactions: false
@@ -45,6 +45,12 @@ group_sessions_per_user: true
 sessions:
   auto_prune: false
 
+# 主人没当场回答时 Hermes 等多久（秒）。上游 v0.23.x 把默认从 1 小时改成 90 秒（按终端里用户就在跟前的场景调），
+# 云吞的聊天是异步的，主人可能过一阵才看手机，这里钉回 1 小时；0 或更小是不限时。
+# init 只对缺这项的已有 Bot 补包里的值，主人自己写过的值不动（见 init_config.py 第 9 块）。
+agent:
+  clarify_timeout: 3600
+
 # 危险命令先经上游审批：显式写 smart（与上游默认一致，不依赖默认值）。命中上游危险规则的命令由辅助模型的
 # 「守卫」逐条评估：明显安全的放行，明确破坏性的拒绝，拿不准或守卫不可用的升级成人工审批，在发起的聊天里等
 # 主人回答；300 秒没人回答按拒绝处理（上游 fail-closed）。要每条命中危险规则的命令都人工放行，私聊发
@@ -53,7 +59,7 @@ sessions:
 approvals:
   mode: smart
   # 守卫默认规则：上游 tools/approval_smart.py 把这段文本逐字拼进守卫模型的 system prompt（trusted 通道，
-  # v0.22.7）。英文书写、沿用上游 approval.py 的分类词，守卫照它把这几类判成 ESCALATE 转人工，不再自动放行。
+  # v0.23.4）。英文书写、沿用上游 approval.py 的分类词，守卫照它把这几类判成 ESCALATE 转人工，不再自动放行。
   # 守卫只看得到上游危险规则命中的命令：普通 sudo、doas、crontab、docker run/start/rm、compose up、
   # 非递归 rm/rmdir 上游不命中，不会因此出卡片。init 只在本项缺失或为空时补同一份默认（取自包里的
   # config.yaml），主人自己写的规则不动。
