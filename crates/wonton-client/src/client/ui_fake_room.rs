@@ -75,8 +75,14 @@ pub(super) fn timeline(room_id: &str) -> TimelineUpdate {
         }
         items.push(item(index));
     }
+    // 走查进房落点用：`WONTON_UI_FAKE_ANCHOR=last` 让落点就是最新一条，`placeAnchor` 走贴底那一支。
+    let anchor = if std::env::var("WONTON_UI_FAKE_ANCHOR").as_deref() == Ok("last") {
+        items.last().map(|item| item.id.clone())
+    } else {
+        Some("ui-fake-2".into())
+    };
     TimelineUpdate {
-        anchor: Some("ui-fake-2".into()),
+        anchor,
         diffs: vec![TimelineDiff::Reset { items }],
         back_pagination: BackPagination::ReachedStart,
         viewport: TimelineViewport::Away { new_messages: 0 },
