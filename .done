@@ -37,4 +37,8 @@ Android 兜底：`TimelineList.dayMarksFor` 先拍一份列表再算日期（跑
 - 同轮既有的 `testSideChatPhotoGridUsable` 单独重跑仍红：`openSideChat` 后停在主对话、`composerAttach` 点不到（两条新用例用同一助手是通过的）；没改到这条，记下不下结论。
 - Android 界面用例复核：`RoomAttachPanelTest` 10 条、`RoomEditTest` 3 条，13 passed 0 failed（`dayMarksFor` 修复后）。
 
-head 7e1045a0（fix/973-rebase，基于 main c49f56b8；.done 记录提交在两个修复提交上面）。
+已合 main 4d151ac8（#875）：冲突两处——`TimelineList.kt` 的 `dayMarksFor` main 已用固定 `size` 修过同一个越界，取 main 的（我们的快照版多余）；`ui_fake_timeline.rs` 的用例相邻冲突两条都留。`#1015` 的 `ForwardMessage.comment` 一次派发、本 PR 的说明和发送先停在合并后都在（`comment.as_deref()`、`dispatch` 里的 `stop_typing`、`isSideChat && index == 0`）。
+
+验证（合并后）：rust `--lib` 460 passed、clippy 0 warning、fmt/行数/界面文字/uniffi/壳对齐、iOS SwiftLint 0、`android-build.sh`（detekt/单测/assemble）成功、`RoomAttachPanelTest` 10 passed。`RoomEditTest` 3 条里 2 passed（`editShowsBarAndCancelRestoresDraft`、`foreignMessageMenuHasNoEdit`），`confirmReplacesTextAndShowsEdited` 红两次；在纯 main（4d151ac8）上同样红，不是这次合并带来的。
+
+head 9222249a（合并提交，基于 main 4d151ac8；之前的修复提交都在）。
