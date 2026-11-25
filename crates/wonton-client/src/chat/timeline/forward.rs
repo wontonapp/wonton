@@ -1,8 +1,8 @@
 //! 订阅的转发循环：逐路等来 SDK 增量、房间信息、面板、插件表、加密状态、翻页、位置、确认卡片、预览、
 //! 输入状态和跳转，折成批次发出去；首批和清空重建也在这里收口。
 
+use std::collections::HashMap;
 use std::sync::Arc;
-use std::collections::HashSet;
 
 use futures_util::StreamExt;
 
@@ -21,8 +21,8 @@ use super::super::read_mark::ReadMark;
 use super::super::reply::QuoteFetches;
 use super::super::side_chat::{SideChatsView, Support};
 use super::super::timeline_previews::{ensure_previews, preview_diffs};
-use super::push_body;
 use super::diffs::{View, apply, relinked_batch, send, side_chat_batch, start_batch};
+use super::push_body;
 use super::rebuild::{back_pagination, log_rebuild};
 use super::recompute::{links_of, refreshed_agent_runs};
 
@@ -87,8 +87,14 @@ pub(super) async fn forward(
         let fetches = QuoteFetches::default();
         let (entries, diffs) = room.entries().await;
         let mut entries: Vector<TimelineEntry> = entries.into_iter().collect();
-        let mut previewed = HashSet::new();
-        push_body::merge(&mut entries, push_previews, room.room_id(), session.user_id(), &mut previewed);
+        let mut previewed = HashMap::new();
+        push_body::merge(
+            &mut entries,
+            push_previews,
+            room.room_id(),
+            session.user_id(),
+            &mut previewed,
+        );
         let mut read = ReadMark::of(&entries);
         let mut statuses = std::pin::pin!(room.back_pagination_status().await);
         let status = match statuses.next().await {

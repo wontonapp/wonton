@@ -10,6 +10,7 @@ import app.wonton.protocol.Action
 import app.wonton.protocol.PushAction
 import app.wonton.protocol.PushEndpoint
 import app.wonton.protocol.PushMethod
+import app.wonton.ui.pushMethod
 import app.wonton.ui.send
 import com.google.firebase.FirebaseApp
 import com.google.firebase.FirebaseOptions

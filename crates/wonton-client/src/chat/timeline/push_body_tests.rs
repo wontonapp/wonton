@@ -1,6 +1,6 @@
 //! 推送预览进时间线（ADR-0118）：同一个事件只显示一次，真正的事件到了换成它，预览过期的不再补。
 
-use std::collections::HashSet;
+use std::collections::HashMap;
 
 use wonton_matrix::testkit::random_hex;
 use wonton_matrix::{EntryKind, RoomId, UserId, Vector};
@@ -12,8 +12,8 @@ fn room() -> wonton_matrix::OwnedRoomId {
     RoomId::parse("!room:wonton.localhost").unwrap().to_owned()
 }
 
-fn own() -> &'static UserId {
-    UserId::parse("@owner:wonton.localhost").unwrap()
+fn own() -> wonton_matrix::OwnedUserId {
+    UserId::parse("@owner:wonton.localhost").unwrap().to_owned()
 }
 
 fn preview(event: &str, body: &str) -> Preview {
@@ -45,14 +45,14 @@ fn a_preview_shows_once_and_the_real_event_replaces_it() {
     previews.remember(preview("$reply", "今晚的会议改到八点"));
 
     let mut entries = Vector::new();
-    let mut previewed = HashSet::new();
-    let added = push_body::merge(&mut entries, &previews, &room(), own(), &mut previewed);
+    let mut previewed = HashMap::new();
+    let added = push_body::merge(&mut entries, &previews, &room(), &own(), &mut previewed);
     assert_eq!(added.len(), 1);
     assert_eq!(text(&added[0]), Some("今晚的会议改到八点"));
     assert_eq!(entries.len(), 1);
 
     // 同一条再来一次（比如两个进程都处理了这条推送）：不重复。
-    let again = push_body::merge(&mut entries, &previews, &room(), own(), &mut previewed);
+    let again = push_body::merge(&mut entries, &previews, &room(), &own(), &mut previewed);
     assert!(again.is_empty());
     assert_eq!(entries.len(), 1);
 
@@ -95,7 +95,7 @@ fn a_preview_shows_once_and_the_real_event_replaces_it() {
 fn the_same_event_in_the_timeline_is_not_previewed_again() {
     let dir = tempfile::tempdir().unwrap();
     let previews = PushPreviews::open(dir.path());
-    let event = format!("${}", random_hex());
+    let event = format!("${}", random_hex(8));
     previews.remember(preview(&event, "早就同步到了"));
 
     let mut entries = Vector::new();
@@ -125,8 +125,11 @@ fn the_same_event_in_the_timeline_is_not_previewed_again() {
             sender_avatar: None,
         })),
     });
-    let mut previewed = HashSet::new();
-    let added = push_body::merge(&mut entries, &previews, &room(), own(), &mut previewed);
+    let mut previewed = HashMap::new();
+    let added = push_body::merge(&mut entries, &previews, &room(), &own(), &mut previewed);
     assert!(added.is_empty());
-    assert!(previews.of(&room()).is_empty(), "已经同步到了的那条不再当预览");
+    assert!(
+        previews.of(&room()).is_empty(),
+        "已经同步到了的那条不再当预览"
+    );
 }

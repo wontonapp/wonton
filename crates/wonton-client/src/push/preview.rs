@@ -70,7 +70,10 @@ impl PushPreviews {
                 *row = preview;
             } else {
                 rows.push(preview);
-                let room = rows.last().map(|row| row.room_id.clone()).unwrap_or_default();
+                let room = rows
+                    .last()
+                    .map(|row| row.room_id.clone())
+                    .unwrap_or_default();
                 let mut in_room: Vec<usize> = rows
                     .iter()
                     .enumerate()

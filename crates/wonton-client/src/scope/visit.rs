@@ -79,8 +79,8 @@ impl Visit {
                 lock_screen: lock_screen.subscribe(),
                 session_out: watch::channel(None).0,
                 external: false,
+                push_previews: push_previews.clone(),
             },
-            push_previews.clone(),
         )?;
         chat.backgrounded();
         let push = PushLink::new(

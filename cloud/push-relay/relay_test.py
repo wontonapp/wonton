@@ -298,6 +298,54 @@ class HandlerTest(unittest.TestCase):
         FakeGorush.answer = {"logs": [{"error": "Unregistered"}]}
         self.assertEqual(self.fcm_post()[0], 410)
 
+    def fcm_post(self, path: str = f"/push/{FCM}", body: bytes = b"cipher"):
+        request = urllib.request.Request(self.base + path, data=body, method="POST")
+        request.add_header("Content-Encoding", "aes128gcm")
+        request.add_header("Authorization", vapid(self.key))
+        try:
+            with urllib.request.urlopen(request, timeout=5) as response:
+                return response.status, response.read()
+        except urllib.error.HTTPError as error:
+            return error.code, error.read()
+
+    def test_maps_web_push_to_fcm_data(self):
+        status, _ = self.fcm_post()
+        self.assertEqual(status, 201)
+        sent = FakeGorush.seen[0]["notifications"][0]
+        self.assertEqual(sent["platform"], 2)
+        self.assertEqual(sent["tokens"], [FCM])
+        self.assertEqual(base64.urlsafe_b64decode(sent["data"]["wonton"] + "=="), b"cipher")
+        self.assertNotIn("message", sent, "data 消息不要系统弹的那条通知")
+        self.assertNotIn("topic", sent)
+
+    def test_opens_an_fcm_push_endpoint(self):
+        request = urllib.request.Request(
+            self.base + "/v1/fcm",
+            data=json.dumps({"token": FCM}).encode(),
+            headers={"Content-Type": "application/json"},
+            method="POST",
+        )
+        with urllib.request.urlopen(request, timeout=5) as response:
+            self.assertEqual(response.status, 200)
+            answer = json.loads(response.read())
+        self.assertEqual(answer["endpoint"], f"{ORIGIN}/push/{FCM}")
+        self.assertEqual(FakeGorush.seen, [])
+
+    def test_bad_fcm_token_is_400(self):
+        request = urllib.request.Request(
+            self.base + "/v1/fcm",
+            data=json.dumps({"token": "short"}).encode(),
+            headers={"Content-Type": "application/json"},
+            method="POST",
+        )
+        with self.assertRaises(urllib.error.HTTPError) as caught:
+            urllib.request.urlopen(request, timeout=5)
+        self.assertEqual(caught.exception.code, 400)
+
+    def test_fcm_unregistered_is_410(self):
+        FakeGorush.answer = {"logs": [{"error": "Unregistered"}]}
+        self.assertEqual(self.fcm_post()[0], 410)
+
     def test_maps_web_push_to_apns(self):
         status, _ = self.post(headers={"Urgency": "high", "TTL": "60", "Topic": "room-1"})
         self.assertEqual(status, 201)

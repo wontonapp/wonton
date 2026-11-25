@@ -330,6 +330,7 @@ dependencies {
     // Apache-2.0（连带的 Tink 也是）。接 UnifiedPush 分发器：在本机生成 Web Push 密钥对，按 RFC 8291 解开推送。
     implementation(libs.unifiedpush.connector)
     implementation(libs.firebase.messaging)
+    implementation(libs.play.services.base)
     implementation(libs.rustls.platform.verifier)
 
     testImplementation(libs.junit)

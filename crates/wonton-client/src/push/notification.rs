@@ -5,6 +5,7 @@
 use std::sync::Arc;
 use std::time::{Duration, Instant};
 
+use super::preview::{Preview, now_ms};
 use serde::Deserialize;
 use serde_json::{Map, Value};
 use url::Url;
@@ -17,7 +18,6 @@ use wonton_protocol::{
     DeviceConfirmationPush, HomeStatus, MessageSummary, NOTICE_FIELD, NotificationCategory,
     PluginNotice, ProxySettings, PushConfirmation, PushContent, PushNotification,
 };
-use super::preview::{Preview, now_ms};
 
 use super::PushLink;
 use crate::chat::{LinkTargets, core_account, failure, fetch_card, summary, unread_total};
@@ -125,7 +125,11 @@ impl Payload {
     /// 推送里带了正文时通知上写什么：附件写类型和文件名，截断的带省略号。带了消息类型却没有正文的
     /// （比如文件名丢了）返回空，走取消息那条路。
     fn body_text(&self) -> Option<String> {
-        let body = self.body.as_deref().map(str::trim).filter(|body| !body.is_empty())?;
+        let body = self
+            .body
+            .as_deref()
+            .map(str::trim)
+            .filter(|body| !body.is_empty())?;
         let mut text = match self.msgtype.as_deref() {
             Some("image") => l10n!(CATALOG, language(), "push-preview-image", filename = body),
             Some("file") | Some("audio") | Some("video") => {
@@ -251,7 +255,9 @@ impl PushLink {
         // 推送里带了正文（ADR-0118）：直接弹通知、写进本机时间线，不连家里。点开房间时预览就在，服务器的
         // 同一条消息同步到以后换成真正的事件。
         if let Some(text) = payload.body_text() {
-            return Ok(Some(self.body_notification(payload, &room_id, &event_id, text)));
+            return Ok(Some(
+                self.body_notification(payload, &room_id, &event_id, text),
+            ));
         }
         let unavailable = |reason, message| payload.unavailable(reason, message);
         let session = match self.wait_session().await {

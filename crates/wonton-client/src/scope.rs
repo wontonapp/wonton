@@ -157,8 +157,7 @@ fn chat_links(
         dir,
         views,
     } = *shared;
-    // 推送写、时间线读，同一个实例（ADR-0118）。
-    let push_previews = Arc::new(PushPreviews::open(dir));
+    let push_previews = channels.push_previews.clone();
     let chat = ChatLink::new(
         handle.clone(),
         home.clone(),
@@ -167,7 +166,6 @@ fn chat_links(
         card_success,
         plugins.clone(),
         channels,
-        push_previews.clone(),
     )?;
     let push = PushLink::new(
         handle.clone(),
@@ -326,6 +324,7 @@ impl Scope {
             let plugins = plugins.clone();
             Arc::new(move |plugin_id: &str| plugins.card_succeeded(plugin_id))
         };
+        let push_previews = Arc::new(PushPreviews::open(dir));
         let channels = crate::chat::ChatChannels {
             view: views.map(|v| v.chat.clone()),
             confirmations: views.map(|v| v.confirmations.clone()),
@@ -334,6 +333,7 @@ impl Scope {
             lock_screen: lock_screen.subscribe(),
             session_out: session_out.0.clone(),
             external,
+            push_previews,
         };
         let shared = Shared {
             slot,

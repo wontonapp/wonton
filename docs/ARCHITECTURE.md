@@ -87,7 +87,7 @@ flowchart LR
 | 端 | 技术 | 说明 |
 | --- | --- | --- |
 | iOS | SwiftUI | 外加通知扩展（解密推送）；录屏扩展留给 M2 的屏幕共享。 |
-| Android | Jetpack Compose | 默认“保持连接”前台服务；UnifiedPush 是设置里的高级选项，推送服务内本地解密（ADR-0003）。 |
+| Android | Jetpack Compose | 默认“保持连接”前台服务；推送是设置里的高级选项：有谷歌服务走 FCM，其余用 UnifiedPush，一律在推送服务内本地解密（ADR-0003）。 |
 | 桌面（M2） | Compose Multiplatform | 与 Android 共享 UI 模块。 |
 | Web（M3） | Compose 编译到 Web | 核心在服务器上运行，浏览器经 WebSocket 收发。 |
 | 客户端核心 | Rust + UniFFI | matrix-rust-sdk、iroh、本地代理、状态、ViewModel（含设置首页 `SettingsViewModel`）、行为测试；壳经一个 `ClientCore.dispatch(Action)` 入口提交按领域包装的操作。 |

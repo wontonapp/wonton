@@ -159,8 +159,8 @@ fn friends() -> (Arc<FriendsLink>, tempfile::TempDir) {
             app_lock: crate::app_lock::AppLockLink::new(dir.path()),
             session_out: watch::Sender::new(None),
             external: false,
+            push_previews: Arc::new(crate::push::PushPreviews::open(dir.path())),
         },
-        Arc::new(crate::push::PushPreviews::open(dir.path())),
     )
     .unwrap();
     let link = FriendsLink::new(runtime, home, chat, dir.path(), None).unwrap();

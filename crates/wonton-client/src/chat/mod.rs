@@ -251,6 +251,8 @@ pub(crate) struct ChatChannels {
     pub(crate) session_out: watch::Sender<Option<Arc<MatrixSession>>>,
     /// 外部 Matrix 账号的槽位（ADR-0051）：不跟着家里的连接走，直连 homeserver，用登录时存下的状态恢复。
     pub(crate) external: bool,
+    /// 推送里带来的正文预览（ADR-0118）：推送写、时间线读，同一个实例。
+    pub(crate) push_previews: Arc<crate::push::PushPreviews>,
 }
 
 /// 还没登录时的加密状态：只知道本机存没存着恢复密钥。
@@ -305,7 +307,6 @@ impl ChatLink {
         card_success: CardSuccess,
         plugins: Arc<crate::plugins::PluginsLink>,
         channels: ChatChannels,
-        push_previews: Arc<crate::push::PushPreviews>,
     ) -> Result<Arc<Self>, CoreError> {
         let ChatChannels {
             view,
@@ -315,6 +316,7 @@ impl ChatLink {
             lock_screen,
             session_out,
             external,
+            push_previews,
         } = channels;
         let storage = ChatStorage::open(data_dir)?;
         let view = Self::initial_view(view, initial_encryption(&storage)?);

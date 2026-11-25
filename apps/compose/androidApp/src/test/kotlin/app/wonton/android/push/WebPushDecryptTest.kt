@@ -1,17 +1,21 @@
 package app.wonton.android.push
 
+import android.app.Application
 import android.util.Base64
 import java.nio.charset.StandardCharsets
 import org.junit.Assert.assertArrayEquals
 import org.junit.Test
 import org.junit.runner.RunWith
 import org.robolectric.RobolectricTestRunner
+import org.robolectric.annotation.Config
 
 /**
  * RFC 8291 附录 A 的测试向量：家里服务器按标准加密的推送，App 要解得开、解出来的就是原文。
  * 核心的加密实现和 iOS 通知扩展的单测用同一组向量。
  */
 @RunWith(RobolectricTestRunner::class)
+// 只测 JCA 加解密，不让 Robolectric 去加载 App 和它的 .so。
+@Config(application = Application::class)
 class WebPushDecryptTest {
     private fun decode(text: String): ByteArray =
         Base64.decode(text, Base64.URL_SAFE or Base64.NO_WRAP or Base64.NO_PADDING)
