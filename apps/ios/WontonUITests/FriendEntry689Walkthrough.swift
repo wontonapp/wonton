@@ -52,7 +52,7 @@ class Friend689Base: XCTestCase {
         app.launchEnvironment["WONTON_DEV_PAIRING_CODE"] = codes[index]
         XCUIDevice.shared.appearance = .light
         addTeardownBlock { XCUIDevice.shared.appearance = .light }
-        app.launch()
+        UITestBackend.launch(app)
     }
 
     func any(_ labels: [String], timeout: TimeInterval = 15) -> XCUIElement? {
@@ -277,7 +277,7 @@ class Friend689Base: XCTestCase {
         app.launchEnvironment["WONTON_SHOT_SCHEME"] = "dark"
         app.terminate()
         do { try UITestBackend.passPairingCode(to: app) } catch { XCTFail("换码失败：\(error)") }
-        app.launch()
+        UITestBackend.launch(app)
         let deadline = Date().addingTimeInterval(40)
         while Date() < deadline {
             if screenIsDark() { return }

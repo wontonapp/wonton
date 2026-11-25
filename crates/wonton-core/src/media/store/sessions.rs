@@ -187,6 +187,7 @@ fn stop_reason_raw(reason: &StopReason) -> &str {
         StopReason::TakenOver => "taken_over",
         StopReason::Finished => "finished",
         StopReason::Error => "error",
+        StopReason::Other(raw) => raw,
     }
 }
 
@@ -196,6 +197,7 @@ fn stop_reason_from_raw(raw: &str) -> StopReason {
         "agent" => StopReason::Agent,
         "taken_over" => StopReason::TakenOver,
         "finished" => StopReason::Finished,
-        _ => StopReason::Error,
+        "error" => StopReason::Error,
+        _ => StopReason::Other(raw.to_owned()),
     }
 }

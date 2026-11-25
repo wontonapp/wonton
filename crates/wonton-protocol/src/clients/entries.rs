@@ -28,7 +28,8 @@ pub enum PublicRuleMode {
     Other,
 }
 
-/// 一个入口的种类；每个声明了 `clients.http` 的插件有局域网和公网两个，每个 `clients.tcp` 一个。
+/// 一个入口的种类。局域网和公网属于 `clients.http`；`clients.tcp` 的入参用 [`EntryKind::Tcp`] 表示，
+/// 它的转发还没接，列表里先没有 TCP 项。
 #[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize)]
 #[cfg_attr(feature = "uniffi", derive(uniffi::Enum))]
 #[serde(tag = "kind", rename_all = "snake_case")]

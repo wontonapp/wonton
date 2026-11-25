@@ -119,9 +119,28 @@ mod tests {
     }
 
     #[test]
-    fn media_list_values_are_checked() {
-        let json = media_source(r#", "operations": ["upload", "stream"]"#);
-        assert!(serde_json::from_str::<ProviderService>(&json).is_err());
+    fn unknown_media_list_values_fall_to_other() {
+        let json = media_source(
+            r#", "operations": ["upload", "transcode"], "kinds": ["photo", "hologram"]"#,
+        );
+        let provider: ProviderService = serde_json::from_str(&json).unwrap();
+        assert_eq!(
+            provider.operations,
+            vec![
+                MediaOperation::Upload,
+                MediaOperation::Other("transcode".into())
+            ]
+        );
+        assert_eq!(
+            provider.kinds,
+            vec![MediaKind::Photo, MediaKind::Other("hologram".into())]
+        );
+        let back = serde_json::to_value(&provider).unwrap();
+        assert_eq!(
+            back["operations"],
+            serde_json::json!(["upload", "transcode"])
+        );
+        assert_eq!(back["kinds"], serde_json::json!(["photo", "hologram"]));
     }
 
     #[test]

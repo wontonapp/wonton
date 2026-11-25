@@ -201,6 +201,20 @@ pub enum TimelineAction {
         target: TimelineTarget,
         typing: bool,
     },
+    /// 点右上角的“回到最早未读”胶囊（ADR-0121）：核心取本次进房的会话锚点，已加载就下一批发
+    /// [`TimelineUpdate::focus`](crate::TimelineUpdate::focus)；没加载就往前分页，找到再给。找不到按
+    /// [`UnreadJumpUnavailable`](crate::UnreadJumpUnavailable) 的类别放进
+    /// [`UnreadJump::state`](crate::UnreadJump::state)。要先订阅这条时间线。
+    JumpToFirstUnread { target: TimelineTarget },
+    /// 胶囊在“有人@你”状态时点它：跳到未读里最早一条还没看过的 @；没有剩下的一律回到
+    /// [`TimelineAction::JumpToFirstUnread`](crate::TimelineAction::JumpToFirstUnread)。
+    JumpToNextMention { target: TimelineTarget },
+    /// 壳看到锚点条目进入视野：核心收掉胶囊和会话锚点。`item_id` 是
+    /// [`UnreadJump::anchor_item_id`](crate::UnreadJump::anchor_item_id)；锚点还没解析出来时壳不发。
+    UnreadAnchorSeen {
+        target: TimelineTarget,
+        item_id: String,
+    },
 }
 
 #[cfg(test)]
@@ -283,9 +297,9 @@ mod tests {
         );
     }
 
-    /// 契约：编辑、正在输入的操作能经 JSON 往返，壳照线上的字段名发就认。
+    /// 契约：编辑、正在输入、未读跳转的操作能经 JSON 往返，壳照线上的字段名发就认。
     #[test]
-    fn edit_and_typing_actions_round_trip_through_json() {
+    fn edit_typing_and_unread_actions_round_trip_through_json() {
         for (action, json) in [
             (
                 TimelineAction::StartEdit {
@@ -324,6 +338,31 @@ mod tests {
                     "type": "set_typing",
                     "target": {"room_id": "!a:home.example"},
                     "typing": true,
+                }),
+            ),
+            (
+                TimelineAction::JumpToFirstUnread { target: target() },
+                serde_json::json!({
+                    "type": "jump_to_first_unread",
+                    "target": {"room_id": "!a:home.example"},
+                }),
+            ),
+            (
+                TimelineAction::JumpToNextMention { target: target() },
+                serde_json::json!({
+                    "type": "jump_to_next_mention",
+                    "target": {"room_id": "!a:home.example"},
+                }),
+            ),
+            (
+                TimelineAction::UnreadAnchorSeen {
+                    target: target(),
+                    item_id: "__eid_$event".into(),
+                },
+                serde_json::json!({
+                    "type": "unread_anchor_seen",
+                    "target": {"room_id": "!a:home.example"},
+                    "item_id": "__eid_$event",
                 }),
             ),
         ] {

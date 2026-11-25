@@ -65,6 +65,7 @@ mod tests {
 
     fn row(id: &str, direct_user_id: Option<&str>) -> RoomRow {
         RoomRow {
+            unread_mentions: 0,
             layout: Default::default(),
             call_active: false,
             room_id: id.to_owned(),

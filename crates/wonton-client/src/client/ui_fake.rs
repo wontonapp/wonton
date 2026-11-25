@@ -31,7 +31,7 @@ use wonton_protocol::{
     PluginTrust, PluginsViewModel, PushStatus, RecoveryNextStep, RecoveryStatus, RoomMembership,
     RoomPlugin, RoomPreview, RoomRow, SecretString, ServerKind, ServerName, ServerRow,
     ServersViewModel, SidebarApp, SidebarBadge, SidebarOpen, StoreLoadState, TabIcon, TabLayout,
-    TabPage, TabRef, TabState,
+    TabPage, TabRef, TabState, TimelineTarget,
 };
 
 use super::ClientCore;
@@ -76,6 +76,15 @@ impl ClientCore {
         core.ui_fake.store(true, Ordering::SeqCst);
         core.seed_ui_fake();
         Ok(core)
+    }
+
+    /// UI 测试专用：让一条时间线像真核心那样自己结束（房间关了、旁聊根被撤回），等着的 `next()` 马上回 `None`。
+    /// 返回本来订没订着。
+    pub fn ui_fake_end_timeline(&self, target: TimelineTarget) -> bool {
+        if !self.ui_fake.load(Ordering::SeqCst) {
+            return false;
+        }
+        self.ui_fake_timelines.end(&target)
     }
 
     /// UI 测试专用：恢复页面初态并写出 fixture；只接受 ui-fake 核心。
@@ -335,6 +344,7 @@ fn fake_servers() -> ServersViewModel {
 fn fake_rooms() -> Vec<RoomRow> {
     vec![
         RoomRow {
+            unread_mentions: 0,
             room_id: ROOM_ID.into(),
             name: "Echo".into(),
             is_direct: true,
@@ -359,6 +369,7 @@ fn fake_rooms() -> Vec<RoomRow> {
             call_active: false,
         },
         RoomRow {
+            unread_mentions: 0,
             room_id: CALL_ROOM_ID.into(),
             name: "Family".into(),
             is_direct: false,
@@ -377,6 +388,7 @@ fn fake_rooms() -> Vec<RoomRow> {
         // 转发要能一次挑好几个房间，列表里多放一个没人说话的群；顶栏下插件横幅、旁聊标题、AI 行一起出现，
         // 界面测试在这间房里看它们的上下顺序。
         RoomRow {
+            unread_mentions: 0,
             room_id: NOTES_ROOM_ID.into(),
             name: "Notes".into(),
             is_direct: false,

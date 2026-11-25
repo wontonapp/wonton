@@ -1,0 +1,51 @@
+[Unit]
+Description=Wonton iroh-relay（打洞失败时的加密流量中继 + QUIC 地址发现）
+Documentation=https://github.com/wontonapp/wonton/blob/main/cloud/iroh-relay/README.md
+After=network-online.target
+Wants=network-online.target
+
+[Service]
+Type=simple
+User=wonton-iroh-relay
+Group=wonton-iroh-relay
+EnvironmentFile=/etc/wonton-iroh-relay/relay.env
+# 默认 info，不打印配置（令牌）；EnvironmentFile 里的同名 RUST_LOG 会覆盖，调试方便。
+Environment=RUST_LOG=info
+WorkingDirectory=/var/lib/wonton-iroh-relay
+ExecStart=/opt/wonton-iroh-relay/iroh-relay --dev --config-path /etc/wonton-iroh-relay/config.toml
+Restart=on-failure
+RestartSec=2
+TimeoutStopSec=10
+UMask=0077
+StateDirectory=wonton-iroh-relay
+StateDirectoryMode=0750
+
+# 只读根 + 最小权限；端口都 > 1024，不需要任何 capability。
+NoNewPrivileges=true
+CapabilityBoundingSet=
+AmbientCapabilities=
+PrivateTmp=true
+PrivateDevices=true
+ProtectSystem=strict
+ProtectHome=true
+ProtectKernelTunables=true
+ProtectKernelModules=true
+ProtectControlGroups=true
+ProtectClock=true
+ProtectHostname=true
+RestrictAddressFamilies=AF_INET AF_INET6 AF_UNIX
+RestrictNamespaces=true
+RestrictSUIDSGID=true
+LockPersonality=true
+MemoryDenyWriteExecute=true
+SystemCallArchitectures=native
+SystemCallFilter=@system-service
+SystemCallErrorNumber=EPERM
+LimitNOFILE=65536
+TasksMax=256
+MemoryHigh=384M
+MemoryMax=512M
+CPUQuota=180%
+
+[Install]
+WantedBy=multi-user.target

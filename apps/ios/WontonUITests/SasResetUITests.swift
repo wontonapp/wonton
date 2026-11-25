@@ -88,7 +88,7 @@ final class SasResetUITests: XCTestCase {
             let list = XCUIApplication()
             list.launchEnvironment = env
             list.launchArguments = app.launchArguments
-            list.launch()
+            UITestBackend.launch(list)
             screen = list
         }
         // 重置删了旧备份，旧消息不一定还能解密；用新身份发一条，能发出并显示才算真的可继续用。
@@ -119,7 +119,7 @@ final class SasResetUITests: XCTestCase {
         let app = XCUIApplication()
         app.launchArguments += ["-AppleLanguages", "(en)", "-AppleLocale", "en_US"]
         try UITestBackend.passPairingCode(to: app)
-        app.launch()
+        UITestBackend.launch(app)
         return app
     }
 

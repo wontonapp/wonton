@@ -8,7 +8,7 @@
 use std::fs;
 use std::path::{Path, PathBuf};
 use std::sync::{Arc, Mutex, MutexGuard};
-use std::time::Instant;
+use std::time::{Instant, SystemTime, UNIX_EPOCH};
 
 use serde::{Deserialize, Serialize};
 use tokio::sync::watch;
@@ -20,6 +20,19 @@ use crate::home::write_private;
 use crate::l10n::{CATALOG, language};
 
 const SETTINGS_FILE: &str = "app-lock.json";
+
+/// 通知扩展（另一个进程）发通知前读的锁定标记，和设置文件放在一起（ADR-0102 §4）。
+const LOCKED_FILE: &str = "app-lock-locked.json";
+
+/// 标记文件的格式。扩展把读不懂的标记当锁着，宁可少露内容。
+///
+/// iOS 后台进程几秒就挂起，tokio 定时器不保证跑到；宽限没走完时 `locked` 写 false 并带上
+/// 到点自动算锁的墙钟毫秒（`locks_at_ms`），扩展按它自己判。没在等锁时 `locks_at_ms` 是 `u64::MAX`。
+#[derive(Serialize)]
+struct LockMarker {
+    locked: bool,
+    locks_at_ms: u64,
+}
 
 /// 设置文件的格式。宽限存枚举，不存裸秒数：加档位时旧文件照样读得懂。
 #[derive(Default, Serialize, Deserialize)]
@@ -50,6 +63,18 @@ impl State {
                 .is_some_and(|at| now.duration_since(at) >= self.timeout.span())
     }
 
+    /// 宽限到点的墙钟毫秒；没在等锁时是 `u64::MAX`。
+    fn deadline_ms(&self, now: Instant) -> u64 {
+        let Some(at) = self.backgrounded_at else {
+            return u64::MAX;
+        };
+        let remaining = self
+            .timeout
+            .span()
+            .saturating_sub(now.saturating_duration_since(at));
+        wall_ms().saturating_add(remaining.as_millis() as u64)
+    }
+
     fn view(&self, now: Instant) -> AppLockViewModel {
         AppLockViewModel {
             enabled: self.enabled,
@@ -62,6 +87,7 @@ impl State {
 
 struct Inner {
     path: PathBuf,
+    marker: PathBuf,
     state: Mutex<State>,
     view: watch::Sender<AppLockViewModel>,
     /// 写文件和发布新值是一步，否则并发时文件和状态可能停在不同的设置上。
@@ -75,6 +101,7 @@ pub(crate) struct AppLockLink(Arc<Inner>);
 impl AppLockLink {
     pub(crate) fn new(data_dir: &Path) -> Self {
         let path = data_dir.join(SETTINGS_FILE);
+        let marker = data_dir.join(LOCKED_FILE);
         let (settings, problem) = match read_settings(&path) {
             Ok(settings) => (settings.unwrap_or_default(), None),
             Err(reason) => {
@@ -92,12 +119,20 @@ impl AppLockLink {
             epoch: 0,
             timer: None,
         };
-        Self(Arc::new(Inner {
+        let initially_locked = state.locked;
+        let link = Self(Arc::new(Inner {
             path,
+            marker,
             view: watch::Sender::new(state.view(Instant::now())),
             state: Mutex::new(state),
             writing: Mutex::new(()),
-        }))
+        }));
+        // 进程刚起来、订阅还没发出去时，扩展也可能正好收到推送，标记要先落地。
+        link.write_marker(LockMarker {
+            locked: initially_locked,
+            locks_at_ms: if initially_locked { 0 } else { u64::MAX },
+        });
+        link
     }
 
     pub(crate) fn view(&self) -> AppLockViewModel {
@@ -142,7 +177,7 @@ impl AppLockLink {
         } else {
             state.locked |= state.due(now);
         }
-        Self::publish(&state, &self.0.view, now);
+        self.publish(&state, now);
         Ok(())
     }
 
@@ -157,7 +192,7 @@ impl AppLockLink {
         // 解锁之后重新起算宽限：验证花的时间不算在后台里。
         state.backgrounded_at = None;
         state.epoch += 1;
-        Self::publish(&state, &self.0.view, now);
+        self.publish(&state, now);
     }
 
     /// App 进后台：开始算宽限，立即档当场锁上，其余档到点由定时器锁。`handle` 是当前作用域的运行时，
@@ -172,7 +207,7 @@ impl AppLockLink {
         let epoch = state.epoch;
         state.backgrounded_at = Some(now);
         state.locked |= state.timeout == AppLockTimeout::Immediate;
-        Self::publish(&state, &self.0.view, now);
+        self.publish(&state, now);
         if state.locked {
             return;
         }
@@ -203,7 +238,7 @@ impl AppLockLink {
         }
         state.locked |= state.due(now);
         state.backgrounded_at = None;
-        Self::publish(&state, &self.0.view, now);
+        self.publish(&state, now);
     }
 
     /// 测试用：把退到后台的时刻往前挪 `elapsed`，再走到点判定，不真的等一分。没退过后台的先当成刚退。
@@ -224,16 +259,41 @@ impl AppLockLink {
         }
         state.locked = true;
         state.backgrounded_at = None;
-        Self::publish(&state, &self.0.view, now);
+        self.publish(&state, now);
     }
 
-    fn publish(state: &State, view: &watch::Sender<AppLockViewModel>, now: Instant) {
-        view.send_if_modified(|current| {
-            let next = state.view(now);
-            let changed = *current != next;
-            *current = next;
+    /// 发布新状态，顺手把锁定标记写给通知扩展。标记写不进去只记日志：界面状态不受影响，
+    /// 扩展那边宁可少露内容。
+    fn publish(&self, state: &State, now: Instant) {
+        let view = state.view(now);
+        // 没当场锁、宽限还在走时写截止时刻：进程随时可能被系统挂起，不能只靠定时器。
+        self.write_marker(if view.locked {
+            LockMarker {
+                locked: true,
+                locks_at_ms: 0,
+            }
+        } else {
+            LockMarker {
+                locked: false,
+                locks_at_ms: state.deadline_ms(now),
+            }
+        });
+        self.0.view.send_if_modified(|current| {
+            let changed = *current != view;
+            *current = view.clone();
             changed
         });
+    }
+
+    fn write_marker(&self, marker: LockMarker) {
+        let text = serde_json::to_vec(&marker)
+            .expect("the lock marker is a plain value and always serializes");
+        if let Err(error) = write_private(&self.0.marker, &text) {
+            tracing::warn!(
+                path = %self.0.marker.display(),
+                "failed to write the app lock marker: {error}"
+            );
+        }
     }
 
     fn state(&self) -> MutexGuard<'_, State> {
@@ -249,6 +309,13 @@ impl AppLockLink {
             .lock()
             .unwrap_or_else(|poisoned| poisoned.into_inner())
     }
+}
+
+fn wall_ms() -> u64 {
+    SystemTime::now()
+        .duration_since(UNIX_EPOCH)
+        .unwrap_or_default()
+        .as_millis() as u64
 }
 
 /// 没设过时是 `None`。
@@ -416,5 +483,64 @@ mod tests {
             Err(CoreError::Storage { .. })
         ));
         assert_eq!(link.view(), before);
+    }
+
+    /// 通知扩展按这个文件决定露不露内容，锁没锁必须和它一致。
+    fn marker(dir: &Path) -> bool {
+        let bytes = std::fs::read(dir.join(LOCKED_FILE)).unwrap();
+        let value: serde_json::Value = serde_json::from_slice(&bytes).unwrap();
+        value["locked"].as_bool().unwrap()
+    }
+
+    #[test]
+    fn a_fresh_install_marks_the_lock_as_open() {
+        let dir = tempfile::tempdir().unwrap();
+        let link = AppLockLink::new(dir.path());
+        assert!(!marker(dir.path()));
+        link.set(true, AppLockTimeout::Immediate).unwrap();
+        assert!(!marker(dir.path()), "主人就在设置页里");
+        link.backgrounded(None);
+        assert!(marker(dir.path()));
+        link.unlock();
+        assert!(!marker(dir.path()));
+    }
+
+    /// 宽限没走完时标记带截止时刻：扩展不等定时器也能自己判到点。
+    #[test]
+    fn a_grace_marker_carries_its_deadline() {
+        let dir = tempfile::tempdir().unwrap();
+        let link = AppLockLink::new(dir.path());
+        link.set(true, AppLockTimeout::FiveMinutes).unwrap();
+        link.unlock();
+        link.backgrounded(None);
+        let read = || -> serde_json::Value {
+            let bytes = std::fs::read(dir.path().join(LOCKED_FILE)).unwrap();
+            serde_json::from_slice(&bytes).unwrap()
+        };
+        let value = read();
+        assert_eq!(value["locked"], false);
+        let due = value["locks_at_ms"].as_u64().unwrap();
+        // 距现在正好是剩下的五分钟宽限（毫秒）；窗口收紧能抓住单位写错。
+        let remaining = due.saturating_sub(wall_ms());
+        assert!(
+            (4 * 60_000..=5 * 60_000 + 5_000).contains(&remaining),
+            "截止时刻应落在五分钟宽限里，实际 {remaining} 毫秒"
+        );
+        // 回到前台就不再等锁，截止时刻清掉。
+        link.foregrounded();
+        let value = read();
+        assert_eq!(value["locked"], false);
+        assert_eq!(value["locks_at_ms"].as_u64(), Some(u64::MAX));
+    }
+
+    #[test]
+    fn a_cold_start_with_the_lock_on_marks_it_before_anyone_subscribes() {
+        let dir = tempfile::tempdir().unwrap();
+        AppLockLink::new(dir.path())
+            .set(true, AppLockTimeout::FiveMinutes)
+            .unwrap();
+        let reopened = AppLockLink::new(dir.path());
+        assert!(reopened.view().locked);
+        assert!(marker(dir.path()));
     }
 }

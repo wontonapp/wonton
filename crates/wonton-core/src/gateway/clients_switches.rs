@@ -238,25 +238,21 @@ fn password_summaries(
         })
 }
 
+/// TCP 入口的转发（ADR-0021“普通 TCP 转发”）还没接，先只列 HTTP 的两项。
 fn entry_switches(client: &ClientPlugin) -> Vec<EntrySwitch> {
-    let mut entries = Vec::new();
-    if client.http {
-        entries.extend([
-            EntrySwitch {
-                kind: EntryKind::Lan,
-                enabled: client.record.clients_entries.lan,
-            },
-            EntrySwitch {
-                kind: EntryKind::Public,
-                enabled: client.record.clients_entries.public,
-            },
-        ]);
+    if !client.http {
+        return Vec::new();
     }
-    entries.extend(client.tcp_names.iter().cloned().map(|name| EntrySwitch {
-        kind: EntryKind::Tcp { name },
-        enabled: false,
-    }));
-    entries
+    vec![
+        EntrySwitch {
+            kind: EntryKind::Lan,
+            enabled: client.record.clients_entries.lan,
+        },
+        EntrySwitch {
+            kind: EntryKind::Public,
+            enabled: client.record.clients_entries.public,
+        },
+    ]
 }
 
 #[cfg(test)]

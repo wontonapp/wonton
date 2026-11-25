@@ -345,14 +345,67 @@ pub struct MediaTask {
     pub partial_failures: Vec<FailedItem>,
 }
 
-/// 任务的目标。内部标记放不下序列，载荷另起 `value` 键。
-#[derive(Serialize, Deserialize, Debug, Clone, PartialEq)]
+/// 任务的目标。内部标记放不下序列，载荷另起 `value` 键；认不得的目标只留 `kind` 原文。
+#[derive(Debug, Clone, PartialEq)]
 #[cfg_attr(feature = "uniffi", derive(uniffi::Enum))]
-#[serde(rename_all = "snake_case", tag = "kind", content = "value")]
 pub enum TaskTarget {
     /// 一批文件；相册备份 = 一个任务 + N 个 item
     Upload(Vec<UploadItem>),
     Download(MediaItemRef),
+    /// 新版本新加的目标，原值在里，载荷丢弃。
+    Other(String),
+}
+
+/// 认得的目标；未知 `kind` 落到 [`TaskTarget::Other`]。
+#[derive(Deserialize)]
+#[serde(rename_all = "snake_case", tag = "kind", content = "value")]
+enum KnownTaskTarget {
+    Upload(Vec<UploadItem>),
+    Download(MediaItemRef),
+}
+
+impl From<KnownTaskTarget> for TaskTarget {
+    fn from(target: KnownTaskTarget) -> Self {
+        match target {
+            KnownTaskTarget::Upload(items) => Self::Upload(items),
+            KnownTaskTarget::Download(item) => Self::Download(item),
+        }
+    }
+}
+
+impl Serialize for TaskTarget {
+    fn serialize<S: serde::Serializer>(&self, serializer: S) -> Result<S::Ok, S::Error> {
+        let mut map = serializer.serialize_map(Some(2))?;
+        match self {
+            Self::Upload(items) => {
+                map.serialize_entry("kind", "upload")?;
+                map.serialize_entry("value", items)?;
+            }
+            Self::Download(item) => {
+                map.serialize_entry("kind", "download")?;
+                map.serialize_entry("value", item)?;
+            }
+            Self::Other(raw) => map.serialize_entry("kind", raw)?,
+        }
+        map.end()
+    }
+}
+
+impl<'de> Deserialize<'de> for TaskTarget {
+    fn deserialize<D: serde::Deserializer<'de>>(deserializer: D) -> Result<Self, D::Error> {
+        let value = serde_json::Value::deserialize(deserializer)?;
+        let kind = value
+            .get("kind")
+            .and_then(|kind| kind.as_str())
+            .map(str::to_owned)
+            .ok_or_else(|| serde::de::Error::missing_field("kind"))?;
+        match kind.as_str() {
+            "upload" | "download" => KnownTaskTarget::deserialize(value)
+                .map(Self::from)
+                .map_err(serde::de::Error::custom),
+            _ => Ok(Self::Other(kind)),
+        }
+    }
 }
 
 /// 上传的一项：路径、大小、校验和、拍摄时间，都是提供方要的。
@@ -449,7 +502,7 @@ pub struct FailedItem {
 }
 
 /// 进度；`unit` 是字节还是项，两边不混用。
-#[derive(Serialize, Deserialize, Debug, Clone, Copy, PartialEq)]
+#[derive(Serialize, Deserialize, Debug, Clone, PartialEq)]
 #[cfg_attr(feature = "uniffi", derive(uniffi::Record))]
 pub struct Progress {
     pub done: u64,
@@ -457,14 +510,20 @@ pub struct Progress {
     pub unit: ProgressUnit,
 }
 
-/// 进度的单位。
-#[derive(Serialize, Deserialize, Debug, Clone, Copy, PartialEq)]
+/// 进度的单位。新版本新加的单位落在 `Other`。
+#[derive(Debug, Clone, PartialEq)]
 #[cfg_attr(feature = "uniffi", derive(uniffi::Enum))]
-#[serde(rename_all = "snake_case")]
 pub enum ProgressUnit {
     Bytes,
     Items,
+    /// 新版本新加的单位，原值在里。
+    Other(String),
 }
+
+known_or_other!(ProgressUnit {
+    Bytes => "bytes",
+    Items => "items",
+});
 
 /// 建任务用的入参。
 #[derive(Serialize, Deserialize, Debug, Clone, PartialEq)]
@@ -722,6 +781,36 @@ mod tests {
         assert_eq!(json["state"], "failed");
         assert_eq!(json["code"], "media_gone");
         let back: ItemState = serde_json::from_value(json.clone()).unwrap();
+        assert_eq!(serde_json::to_value(&back).unwrap(), json);
+    }
+
+    #[test]
+    fn unknown_task_target_and_progress_unit_fall_to_other() {
+        let mut json = serde_json::to_value(MediaTask {
+            id: Uuid::nil(),
+            kind: TaskKind::Upload,
+            person: "Alice".into(),
+            device: "phone".into(),
+            target: TaskTarget::Download(super::super::tests::item()),
+            state: TaskState::Running,
+            progress: Progress {
+                done: 1,
+                total: Some(2),
+                unit: ProgressUnit::Items,
+            },
+            retry_count: 0,
+            retry_of: None,
+            next_attempt_at: None,
+            created_at: 1_700_000_000_000,
+            partial_failures: Vec::new(),
+        })
+        .unwrap();
+        json["target"] = serde_json::json!({"kind": "stream"});
+        json["progress"]["unit"] = serde_json::json!("chunks");
+
+        let back: MediaTask = serde_json::from_value(json.clone()).unwrap();
+        assert_eq!(back.target, TaskTarget::Other("stream".into()));
+        assert_eq!(back.progress.unit, ProgressUnit::Other("chunks".into()));
         assert_eq!(serde_json::to_value(&back).unwrap(), json);
     }
 

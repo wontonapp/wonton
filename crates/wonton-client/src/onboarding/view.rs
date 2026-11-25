@@ -243,6 +243,7 @@ mod tests {
             },
             installing_bots: Vec::new(),
             rooms: vec![RoomRow {
+                unread_mentions: 0,
                 layout: Default::default(),
                 call_active: false,
                 room_id: room_id.to_owned(),

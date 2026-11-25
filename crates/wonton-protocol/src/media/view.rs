@@ -1,16 +1,17 @@
+use serde::ser::SerializeMap;
 use serde::{Deserialize, Serialize};
 use uuid::Uuid;
 
 use super::MediaItemRef;
+use super::known_or_other;
 use super::session::{
     PlaybackPlan, PlaybackSession, PlaybackSessionId, Queue, QueueMode, Revision,
 };
 use super::task::{ItemState, MediaFailure, Person, Progress, TaskId, TaskKind, TaskState};
 
-/// 播放控制动作。
-#[derive(Serialize, Deserialize, Debug, Clone, PartialEq)]
+/// 播放控制动作。新版本新加的动作落在 `Other`，只留原值，载荷丢弃。
+#[derive(Debug, Clone, PartialEq)]
 #[cfg_attr(feature = "uniffi", derive(uniffi::Enum))]
-#[serde(rename_all = "snake_case")]
 pub enum ControlOp {
     Play,
     Pause,
@@ -21,18 +22,89 @@ pub enum ControlOp {
     Volume(u8),
     SetAudio(u16),
     SetSubtitle(Option<u16>),
+    /// 新版本新加的动作，原值在里。
+    Other(String),
 }
 
-/// 停播的原因。
-#[derive(Serialize, Deserialize, Debug, Clone, PartialEq)]
+/// 停播的原因。新版本新加的原因落在 `Other`。
+#[derive(Debug, Clone, PartialEq)]
 #[cfg_attr(feature = "uniffi", derive(uniffi::Enum))]
-#[serde(rename_all = "snake_case")]
 pub enum StopReason {
     User,
     Agent,
     TakenOver,
     Finished,
     Error,
+    /// 新版本新加的原因，原值在里。
+    Other(String),
+}
+
+known_or_other!(StopReason {
+    User => "user",
+    Agent => "agent",
+    TakenOver => "taken_over",
+    Finished => "finished",
+    Error => "error",
+});
+
+impl Serialize for ControlOp {
+    fn serialize<S: serde::Serializer>(&self, serializer: S) -> Result<S::Ok, S::Error> {
+        match self {
+            Self::Play => serializer.serialize_str("play"),
+            Self::Pause => serializer.serialize_str("pause"),
+            Self::Resume => serializer.serialize_str("resume"),
+            Self::SeekMs(ms) => serializer.serialize_newtype_variant("ControlOp", 3, "seek_ms", ms),
+            Self::Next => serializer.serialize_str("next"),
+            Self::Prev => serializer.serialize_str("prev"),
+            Self::Volume(volume) => {
+                serializer.serialize_newtype_variant("ControlOp", 6, "volume", volume)
+            }
+            Self::SetAudio(track) => {
+                serializer.serialize_newtype_variant("ControlOp", 7, "set_audio", track)
+            }
+            Self::SetSubtitle(track) => {
+                serializer.serialize_newtype_variant("ControlOp", 8, "set_subtitle", track)
+            }
+            Self::Other(raw) => serializer.serialize_str(raw),
+        }
+    }
+}
+
+impl<'de> Deserialize<'de> for ControlOp {
+    fn deserialize<D: serde::Deserializer<'de>>(deserializer: D) -> Result<Self, D::Error> {
+        let value = serde_json::Value::deserialize(deserializer)?;
+        Ok(match value {
+            serde_json::Value::String(raw) => match raw.as_str() {
+                "play" => Self::Play,
+                "pause" => Self::Pause,
+                "resume" => Self::Resume,
+                "next" => Self::Next,
+                "prev" => Self::Prev,
+                _ => Self::Other(raw),
+            },
+            serde_json::Value::Object(fields) if fields.len() == 1 => {
+                let (key, raw) = fields.into_iter().next().expect("刚判过只有一个键");
+                match key.as_str() {
+                    "seek_ms" => Self::SeekMs(lift(raw)?),
+                    "volume" => Self::Volume(lift(raw)?),
+                    "set_audio" => Self::SetAudio(lift(raw)?),
+                    "set_subtitle" => Self::SetSubtitle(lift(raw)?),
+                    _ => Self::Other(key),
+                }
+            }
+            other => {
+                return Err(serde::de::Error::custom(format!(
+                    "播放控制应该是字符串或单键对象，拿到 {other}"
+                )));
+            }
+        })
+    }
+}
+
+fn lift<T: serde::de::DeserializeOwned, E: serde::de::Error>(
+    value: serde_json::Value,
+) -> Result<T, E> {
+    serde_json::from_value(value).map_err(E::custom)
 }
 
 /// 队列改动。内部标记放不下序列和模式，载荷另起 `value` 键。
@@ -65,10 +137,10 @@ pub struct DoneItem {
     pub local_path: Option<String>,
 }
 
-/// 壳→核的动作与核→设备的命令是同一个类型。
-#[derive(Serialize, Deserialize, Debug, Clone, PartialEq)]
+/// 壳→核的动作与核→设备的命令是同一个类型。新版本新加的动作落在 `Other`，旧壳跳过那一条、同批其他
+/// 命令照常执行。
+#[derive(Debug, Clone, PartialEq)]
 #[cfg_attr(feature = "uniffi", derive(uniffi::Enum))]
-#[serde(rename_all = "snake_case", tag = "kind")]
 #[allow(clippy::large_enum_variant)]
 pub enum MediaAction {
     StartUpload {
@@ -93,6 +165,122 @@ pub enum MediaAction {
         revision: Revision,
         op: QueueOp,
     },
+    /// 新版本新加的动作，原值在里，载荷丢弃。
+    Other(String),
+}
+
+/// 认得的动作；未知 `kind` 落到 [`MediaAction::Other`]。
+#[derive(Deserialize)]
+#[serde(rename_all = "snake_case", tag = "kind")]
+#[allow(clippy::large_enum_variant)]
+enum KnownMediaAction {
+    StartUpload {
+        task: TaskId,
+    },
+    StartDownload {
+        task: TaskId,
+    },
+    Playback {
+        session: PlaybackSessionId,
+    },
+    Control {
+        session: PlaybackSessionId,
+        ctl: ControlOp,
+    },
+    Stop {
+        session: PlaybackSessionId,
+        reason: StopReason,
+    },
+    Queue {
+        person: Person,
+        revision: Revision,
+        op: QueueOp,
+    },
+}
+
+impl From<KnownMediaAction> for MediaAction {
+    fn from(action: KnownMediaAction) -> Self {
+        match action {
+            KnownMediaAction::StartUpload { task } => Self::StartUpload { task },
+            KnownMediaAction::StartDownload { task } => Self::StartDownload { task },
+            KnownMediaAction::Playback { session } => Self::Playback { session },
+            KnownMediaAction::Control { session, ctl } => Self::Control { session, ctl },
+            KnownMediaAction::Stop { session, reason } => Self::Stop { session, reason },
+            KnownMediaAction::Queue {
+                person,
+                revision,
+                op,
+            } => Self::Queue {
+                person,
+                revision,
+                op,
+            },
+        }
+    }
+}
+
+impl Serialize for MediaAction {
+    fn serialize<S: serde::Serializer>(&self, serializer: S) -> Result<S::Ok, S::Error> {
+        let mut map = serializer.serialize_map(None)?;
+        match self {
+            Self::StartUpload { task } => {
+                map.serialize_entry("kind", "start_upload")?;
+                map.serialize_entry("task", task)?;
+            }
+            Self::StartDownload { task } => {
+                map.serialize_entry("kind", "start_download")?;
+                map.serialize_entry("task", task)?;
+            }
+            Self::Playback { session } => {
+                map.serialize_entry("kind", "playback")?;
+                map.serialize_entry("session", session)?;
+            }
+            Self::Control { session, ctl } => {
+                map.serialize_entry("kind", "control")?;
+                map.serialize_entry("session", session)?;
+                map.serialize_entry("ctl", ctl)?;
+            }
+            Self::Stop { session, reason } => {
+                map.serialize_entry("kind", "stop")?;
+                map.serialize_entry("session", session)?;
+                map.serialize_entry("reason", reason)?;
+            }
+            Self::Queue {
+                person,
+                revision,
+                op,
+            } => {
+                map.serialize_entry("kind", "queue")?;
+                map.serialize_entry("person", person)?;
+                map.serialize_entry("revision", revision)?;
+                map.serialize_entry("op", op)?;
+            }
+            Self::Other(raw) => map.serialize_entry("kind", raw)?,
+        }
+        map.end()
+    }
+}
+
+impl<'de> Deserialize<'de> for MediaAction {
+    fn deserialize<D: serde::Deserializer<'de>>(deserializer: D) -> Result<Self, D::Error> {
+        let value = serde_json::Value::deserialize(deserializer)?;
+        let kind = value
+            .get("kind")
+            .and_then(|kind| kind.as_str())
+            .map(str::to_owned)
+            .ok_or_else(|| serde::de::Error::missing_field("kind"))?;
+        let known = matches!(
+            kind.as_str(),
+            "start_upload" | "start_download" | "playback" | "control" | "stop" | "queue"
+        );
+        if known {
+            KnownMediaAction::deserialize(value)
+                .map(Self::from)
+                .map_err(serde::de::Error::custom)
+        } else {
+            Ok(Self::Other(kind))
+        }
+    }
 }
 
 /// 核发给设备的命令，`command_id` 幂等，`seq` 单调。
@@ -210,9 +398,49 @@ mod tests {
     }
 
     #[test]
-    fn unknown_media_action_variant_is_an_error() {
+    fn unknown_media_action_variant_is_other_and_skippable() {
         let json = serde_json::json!({"kind": "beam_me_up", "session": Uuid::nil()});
-        assert!(serde_json::from_value::<MediaAction>(json).is_err());
+        let action: MediaAction = serde_json::from_value(json).unwrap();
+        assert_eq!(action, MediaAction::Other("beam_me_up".into()));
+        assert_eq!(
+            serde_json::to_value(&action).unwrap(),
+            serde_json::json!({"kind": "beam_me_up"})
+        );
+    }
+
+    #[test]
+    fn a_batch_of_commands_survives_an_unknown_one() {
+        let batch = serde_json::json!([
+            {
+                "command_id": Uuid::nil(),
+                "seq": 1,
+                "body": {"kind": "playback", "session": Uuid::nil()},
+            },
+            {
+                "command_id": Uuid::nil(),
+                "seq": 2,
+                "body": {"kind": "beam_me_up", "session": Uuid::nil()},
+            },
+        ]);
+        let commands: Vec<DeviceCommand> = serde_json::from_value(batch).unwrap();
+        assert_eq!(commands.len(), 2);
+        assert_eq!(commands[1].body, MediaAction::Other("beam_me_up".into()));
+    }
+
+    #[test]
+    fn unknown_control_ops_and_stop_reasons_fall_to_other() {
+        let ctl: ControlOp = serde_json::from_value(serde_json::json!({"speed": 2})).unwrap();
+        assert_eq!(ctl, ControlOp::Other("speed".into()));
+        assert_eq!(
+            serde_json::to_value(&ctl).unwrap(),
+            serde_json::json!("speed")
+        );
+
+        let ctl: ControlOp = serde_json::from_value(serde_json::json!("rewind")).unwrap();
+        assert_eq!(ctl, ControlOp::Other("rewind".into()));
+
+        let reason: StopReason = serde_json::from_value(serde_json::json!("sleep")).unwrap();
+        assert_eq!(reason, StopReason::Other("sleep".into()));
     }
 
     #[test]

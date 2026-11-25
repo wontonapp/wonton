@@ -373,7 +373,7 @@ extension ChatPanelUITests {
         }
         app.launchEnvironment.merge(environment) { _, new in new }
 
-        app.launch()
+        UITestBackend.launch(app)
         if needsStack {
             XCTAssertTrue(waitPaired(timeout: 90), "配对没完成（配对码过期、用过或连不上开发栈）")
         }

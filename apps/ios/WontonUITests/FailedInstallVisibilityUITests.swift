@@ -9,7 +9,7 @@ final class FailedInstallVisibilityUITests: XCTestCase {
         app.launchEnvironment["WONTON_DEV_DATA_SUFFIX"] = UUID().uuidString
         app.launchEnvironment["WONTON_UI_FAKE"] = "1"
         app.launchEnvironment["WONTON_UI_FAILED_INSTALL"] = failedInstall
-        app.launch()
+        UITestBackend.launch(app)
         return app
     }
 

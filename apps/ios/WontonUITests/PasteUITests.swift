@@ -74,7 +74,7 @@ final class PasteUITests: XCTestCase {
     private func launch() throws {
         app = XCUIApplication()
         try UITestBackend.passPairingCode(to: app)
-        app.launch()
+        UITestBackend.launch(app)
         let start = waitAnyButton(["Skip", "跳过", "Next", "下一步", "Done", "完成"], timeout: 25)
             ?? waitAnyButton(["Skip", "跳过", "Next", "下一步", "Done", "完成"], timeout: 60)
         XCTAssertNotNil(start, "既没到标签栏也没到引导页")

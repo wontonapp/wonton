@@ -508,6 +508,7 @@ fn upload_to(room: Option<&str>, state: TransferState) -> Transfer {
 
 fn room_row(room_id: &str, name: &str) -> RoomRow {
     RoomRow {
+        unread_mentions: 0,
         layout: Default::default(),
         call_active: false,
         room_id: room_id.into(),

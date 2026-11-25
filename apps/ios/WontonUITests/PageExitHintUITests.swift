@@ -70,7 +70,7 @@ final class PageExitHintUITests: XCTestCase {
         app.launchEnvironment["WONTON_UI_FAKE"] = "1"
         app.launchEnvironment["WONTON_UI_PAGE_EXIT_HINT"] = "1"
         if appPage { app.launchEnvironment["WONTON_UI_URL_AS_APP_PAGE"] = "1" }
-        app.launch()
+        UITestBackend.launch(app)
         XCTAssertTrue(waitHittable(sidebarButton, timeout: 20), "没进主界面\n\(app.debugDescription)")
     }
 

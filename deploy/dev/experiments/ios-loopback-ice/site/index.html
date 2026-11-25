@@ -1,0 +1,128 @@
+<!doctype html>
+<meta charset="utf-8">
+<title>init</title>
+<style>body{font:12px ui-monospace,monospace;margin:8px}pre{white-space:pre-wrap}</style>
+<pre id="log"></pre>
+<script>
+"use strict";
+const out = [];
+const started = Date.now();
+function log(...parts) {
+  const line = ((Date.now() - started) / 1000).toFixed(2) + "s " +
+    parts.map(p => typeof p === "string" ? p : JSON.stringify(p)).join(" ");
+  out.push(line);
+  document.getElementById("log").textContent = out.join("\n");
+  fetch("/log", {method: "POST", body: line}).catch(() => {});
+}
+window.addEventListener("error", e => log("WINDOW-ERROR", e.message));
+window.addEventListener("unhandledrejection", e => log("REJECTION", String(e.reason)));
+
+// Patch RTCPeerConnection before the app module loads so every remote candidate
+// and state transition WebKit sees is recorded.
+const Base = window.RTCPeerConnection;
+window.__pcs = [];
+let pcCount = 0;
+window.RTCPeerConnection = class extends Base {
+  constructor(cfg) {
+    super(cfg);
+    this.i = pcCount++;
+    window.__pcs.push(this);
+    this.addEventListener("icecandidate", e => {
+      if (e.candidate) log("pc" + this.i + " local-candidate", e.candidate.candidate);
+    });
+    this.addEventListener("icecandidateerror", e => log("pc" + this.i + " candidate-error",
+      e.address + ":" + e.port + " " + e.errorCode + " " + e.errorText + " " + e.url));
+    this.addEventListener("iceconnectionstatechange", () => log("pc" + this.i + " ice", this.iceConnectionState));
+    this.addEventListener("connectionstatechange", () => log("pc" + this.i + " conn", this.connectionState));
+    this.addEventListener("signalingstatechange", () => log("pc" + this.i + " signaling", this.signalingState));
+  }
+  addIceCandidate(c) {
+    log("pc" + this.i + " addIceCandidate", c && c.candidate || "(end)");
+    return super.addIceCandidate(c);
+  }
+  setRemoteDescription(d) {
+    const sdp = d && d.sdp || "";
+    const remote = sdp.split("\n").filter(l => l.startsWith("a=candidate:"));
+    log("pc" + this.i + " setRemoteDescription " + (d && d.type) + " candidates=" + remote.length);
+    for (const l of remote) log("pc" + this.i + " remote-candidate " + l.slice(12));
+    return super.setRemoteDescription(d);
+  }
+};
+
+async function pairInfo(pc) {
+  const stats = await pc.getStats();
+  const byId = new Map();
+  let pairId = null;
+  let transport = null;
+  stats.forEach(r => {
+    byId.set(r.id, r);
+    if (r.type === "transport") { pairId = r.selectedCandidatePairId; transport = r; }
+  });
+  const all = [];
+  const locals = [];
+  const remotes = [];
+  stats.forEach(r => {
+    if (r.type === "candidate-pair") all.push(r);
+    if (r.type === "local-candidate") locals.push((r.address || r.ip || "?") + ":" + r.port + "/" + (r.protocol || "?") + "/" + r.candidateType);
+    if (r.type === "remote-candidate") remotes.push((r.address || r.ip || "?") + ":" + r.port + "/" + (r.protocol || "?") + "/" + r.candidateType);
+  });
+  const pair = byId.get(pairId) || all.find(p => p.selected) || all.find(p => p.state === "succeeded") || null;
+  const side = id => {
+    const c = id && byId.get(id);
+    return c ? {addr: c.address || c.ip, port: c.port, proto: c.protocol, type: c.candidateType} : null;
+  };
+  return {
+    transport: transport && {dtls: transport.dtlsState, bytesSent: transport.bytesSent, bytesReceived: transport.bytesReceived},
+    locals, remotes,
+    pair: pair && {state: pair.state, nominated: pair.nominated, bytesSent: pair.bytesSent,
+      bytesReceived: pair.bytesReceived, currentRoundTripTime: pair.currentRoundTripTime,
+      local: side(pair.localCandidateId), remote: side(pair.remoteCandidateId)},
+  };
+}
+
+async function main() {
+  const q = new URLSearchParams(location.search);
+  const room = q.get("room") || "calltest";
+  const url = q.get("url") || "ws://127.0.0.1:7880";
+  log("page " + location.href + " ua " + navigator.userAgent);
+  const res = await fetch("/token?room=" + encodeURIComponent(room));
+  const {token} = await res.json();
+  const {Room, RoomEvent} = await import("./vendor/livekit-client.esm.mjs");
+  const k = new Room({adaptiveStream: false, dynacast: false});
+  let connected = false;
+  k.on(RoomEvent.SignalConnected, () => log("signal-connected"));
+  k.on(RoomEvent.Connected, () => { connected = true; log("room-connected"); });
+  k.on(RoomEvent.Disconnected, why => log("room-disconnected", String(why)));
+  k.on(RoomEvent.MediaDevicesError, e => log("media-devices-error", String(e)));
+  k.on(RoomEvent.ConnectionStateChanged, s => log("room-conn-state", s));
+  log("connecting " + url + " room=" + room);
+  let failure = null;
+  try {
+    await k.connect(url, token);
+  } catch (e) {
+    failure = String(e && e.message || e);
+    log("connect-threw", failure);
+  }
+  const pcs = window.__pcs || [];
+  window.__pcs = pcs;
+  const data = new TextEncoder().encode("ping");
+  const ping = setInterval(() => {
+    try { if (k.state === "connected") k.localParticipant.publishData(data, {reliable: false}); } catch (e) {}
+  }, 200);
+  const deadline = Date.now() + 12000;
+  while (Date.now() < deadline && (!connected || pcs.length === 0)) await new Promise(r => setTimeout(r, 250));
+  clearInterval(ping);
+  await new Promise(r => setTimeout(r, 1500));
+  const detail = [];
+  for (let i = 0; i < pcs.length; i++) {
+    try { detail.push({pc: i, ice: pcs[i].iceConnectionState, ...(await pairInfo(pcs[i]))}); }
+    catch (e) { detail.push({pc: i, statsError: String(e)}); }
+  }
+  const connected2 = k.state === "connected";
+  const result = {connected: connected2, threw: failure, detail};
+  log("RESULT " + JSON.stringify(result));
+  document.title = "DONE " + (connected2 ? "connected" : "failed");
+  window.__result = result;
+}
+main();
+</script>

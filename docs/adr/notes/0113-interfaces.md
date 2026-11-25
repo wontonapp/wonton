@@ -4,10 +4,12 @@
 
 所有要过壳的类型都照 `file/mod.rs:291-320` 的写法加 `#[cfg_attr(feature = "uniffi", derive(uniffi::Record))]`（枚举加 `uniffi::Enum`）；下面为了可读没有逐条重复。不过壳的 `IllegalTransition`、`Backoff`、`MediaOperation` 不加（`IllegalTransition` 将来要过壳得先改成 `uniffi::Error`）。
 
-取值不认识时怎么办，按方向分（AGENTS.md）：
+取值不认识时怎么办（AGENTS.md）：除了壳要执行的 `QueueOp`，一律不报错，带 `Other(String)` 把原文存进去、原样序列化回去。
+核心和 App 分开升级，新核发的新命令旧 App 跳过那一条，同批其他命令照常读；新 App 发的新字段旧核也不会整条拒。
 
-- “服务端 → 消费方”方向的取值枚举（`MediaKind`、`TaskKind`、`TaskState`、`PauseReason`、`MediaFailureCode`、`ItemState`、`TrackKind`、`SegmentKind`、`ProviderStream`）都带 `Other(String)`，认不得的值把原文存进去、原样序列化回去，不报错；
-- 请求方向（`MediaAction`、`ControlOp`、`QueueOp`、`StopReason`）和清单/协商面（`MediaOperation`）照旧报错：发错方向的东西，收的一方也不知道该怎么执行；`ProgressUnit`、`QueueMode` 是核心自己定、两边都读的小枚举，同样报错；
+- 服务端 → 消费方的取值枚举（`MediaKind`、`TaskKind`、`TaskState`、`PauseReason`、`MediaFailureCode`、`ItemState`、`TrackKind`、`SegmentKind`、`ProviderStream`）原本就这样；
+- 核 → 设备/App 下发的 `ControlOp`、`StopReason`、`MediaAction`（`DeviceCommand.body`）、`QueueMode`、`TaskTarget`、`ProgressUnit` 和清单/协商面的 `MediaOperation` 同样落 `Other`，载荷丢弃只留标签名；`MediaOperation` 落 `Other` 后安装预检忽略它，不再让插件装不上；
+- `QueueOp` 是壳要执行的动作，认不得就没法执行，仍报错。
 - 未知 `TaskState` 的转移规则只有服务端知道：只能进它，不能从它出来；字符串写法的原值原样回写，对象写法（暂停原因、失败体）只留标签名、载荷丢弃，读成 `"migrating"`；
 - `ItemState` 带内部标记，未知状态的原文就放在 `state` 里（`{"state":"frozen"}`），未知的附加键忽略。
 
@@ -174,11 +176,11 @@ pub struct MediaTask {
     pub partial_failures: Vec<FailedItem>,
 }
 
-#[derive(Serialize, Deserialize, Debug, Clone)]
-#[serde(rename_all = "snake_case", tag = "kind", content = "value")]
+#[derive(Debug, Clone)]
 pub enum TaskTarget {
     Upload(Vec<UploadItem>), // 一批文件；相册备份 = 一个任务 + N 个 item
     Download(MediaItemRef),
+    Other(String), // 新目标，载荷丢弃
 }
 
 // 内部标记放不下序列和结构，载荷另起 `value` 键：{"kind":"upload","value":[…]}
@@ -204,12 +206,11 @@ pub enum ItemState { Queued, Running, Done, Skipped, Failed(MediaFailure), Other
 #[derive(Serialize, Deserialize, Debug, Clone)]
 pub struct FailedItem { pub item_id: String, pub path: String, pub failure: MediaFailure }
 
-#[derive(Serialize, Deserialize, Debug, Clone, Copy)]
+#[derive(Serialize, Deserialize, Debug, Clone)]
 pub struct Progress { pub done: u64, pub total: Option<u64>, pub unit: ProgressUnit }
 
-#[derive(Serialize, Deserialize, Debug, Clone, Copy)]
-#[serde(rename_all = "snake_case")]
-pub enum ProgressUnit { Bytes, Items }
+#[derive(Debug, Clone)]
+pub enum ProgressUnit { Bytes, Items, Other(String) }
 
 /// 建任务用的入参：`options` 是各轴自己的开关（只在传输、只在充电、转码率上限）。
 #[derive(Serialize, Deserialize, Debug, Clone)]
@@ -249,9 +250,8 @@ impl Queue {
     pub fn bump(&mut self);
 }
 
-#[derive(Serialize, Deserialize, Debug, Clone, Copy, PartialEq)]
-#[serde(rename_all = "snake_case")]
-pub enum QueueMode { Sequential, Shuffle, RepeatAll, RepeatOne }
+#[derive(Debug, Clone, PartialEq)]
+pub enum QueueMode { Sequential, Shuffle, RepeatAll, RepeatOne, Other(String) }
 
 #[derive(Serialize, Deserialize, Debug, Clone)]
 pub struct PlaybackRequest {
@@ -318,13 +318,11 @@ pub struct PlaybackSession {
 ## `media/view.rs`
 
 ```rust
-#[derive(Serialize, Deserialize, Debug, Clone)]
-#[serde(rename_all = "snake_case")]
-pub enum ControlOp { Play, Pause, Resume, SeekMs(u64), Next, Prev, Volume(u8), SetAudio(u16), SetSubtitle(Option<u16>) }
+#[derive(Debug, Clone)]
+pub enum ControlOp { Play, Pause, Resume, SeekMs(u64), Next, Prev, Volume(u8), SetAudio(u16), SetSubtitle(Option<u16>), Other(String) }
 
-#[derive(Serialize, Deserialize, Debug, Clone)]
-#[serde(rename_all = "snake_case")]
-pub enum StopReason { User, Agent, TakenOver, Finished, Error }
+#[derive(Debug, Clone)]
+pub enum StopReason { User, Agent, TakenOver, Finished, Error, Other(String) }
 
 #[derive(Serialize, Deserialize, Debug, Clone)]
 #[serde(rename_all = "snake_case", tag = "op", content = "value")]
@@ -336,8 +334,7 @@ pub enum QueueOp { Read, Enqueue { at: Option<usize>, item: MediaItemRef }, Remo
 pub struct DoneItem { pub item: MediaItemRef, pub local_path: Option<String> }
 
 /// 壳→核的动作与核→设备的命令是同一个类型。
-#[derive(Serialize, Deserialize, Debug, Clone)]
-#[serde(rename_all = "snake_case", tag = "kind")]
+#[derive(Debug, Clone)]
 pub enum MediaAction {
     StartUpload { task: TaskId },
     StartDownload { task: TaskId },
@@ -345,6 +342,7 @@ pub enum MediaAction {
     Control { session: PlaybackSessionId, ctl: ControlOp },
     Stop { session: PlaybackSessionId, reason: StopReason },
     Queue { person: Person, revision: Revision, op: QueueOp },
+    Other(String), // 新动作，旧壳跳过这一条、同批其他照常执行
 }
 
 #[derive(Serialize, Deserialize, Debug, Clone)]
@@ -448,10 +446,9 @@ pub kinds: Vec<MediaKind>,
 #[derive(Debug, Clone, PartialEq, Eq, Hash)]
 pub enum MediaKind { Photo, Video, Audio, Other(String) }
 
-/// 请求/协商面：认不得的操作报错。
-#[derive(Serialize, Deserialize, Debug, Clone, Copy, PartialEq, Eq, Hash)]
-#[serde(rename_all = "snake_case")]
-pub enum MediaOperation { Upload, Download, Playback, List }
+/// 请求/协商面：认不得的操作落 `Other`，安装预检忽略。
+#[derive(Debug, Clone, PartialEq, Eq, Hash)]
+pub enum MediaOperation { Upload, Download, Playback, List, Other(String) }
 ```
 
 校验：`media_source` 出现时 `operations`、`kinds` 都不许空，`credentials` 必须有 `issue` 与 `revoke`（清单形状是 `{issue, revoke}`，没有 `required` 键）；`service` 必须在本插件 `services` 里。`spec_floor.rs` 登记用到这些字段的最低 `spec`。

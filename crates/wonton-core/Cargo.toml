@@ -117,7 +117,7 @@ unicode-properties = { version = "0.1.5", default-features = false, features = [
 url = { workspace = true }
 # 任务号、会话号由 wonton-protocol 的 `TaskId` 等别名带出来，不直接依赖 uuid。
 # MIT OR Apache-2.0。推送内容按 RFC 8291 加密给设备（RustCrypto 的 P-256、HKDF、AES-GCM）；不用 VAPID。
-web-push-native = { version = "0.5.0", default-features = false }
+web-push-native = { version = "0.5.0", default-features = false, features = ["vapid"] }
 wonton-protocol = { path = "../wonton-protocol" }
 wonton-tunnel = { path = "../wonton-tunnel" }
 # MIT OR Apache-2.0。gost、socat 的镜像引用经它读 `WONTON_TEST_IMAGES`（CI 指到镜像仓库副本），没设时原样返回。

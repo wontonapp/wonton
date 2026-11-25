@@ -781,4 +781,12 @@ mod tests {
             assert!(e.to_string().contains(field), "{e}");
         }
     }
+
+    #[test]
+    fn media_source_may_list_an_operation_this_core_does_not_know() {
+        let manifest = media_source_provider(
+            serde_json::json!({"operations": ["upload", "transcode"], "kinds": ["photo"]}),
+        );
+        validate(&manifest, &Languages::default()).unwrap();
+    }
 }

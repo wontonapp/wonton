@@ -2,6 +2,7 @@
 
 - 状态：提议（2026-11-12）；正式接受待三组真实通话路径均通过。路线（同 Element X：MatrixRTC + LiveKit + Element Call 网页嵌进 App）由主人 2026-11-08 定
 - 细化 [ADR-0014](0014-reserved-capabilities.md) 的“实时通话”：只定房间里的音视频通话；和 Bot 通话、屏幕共享、来电响铃不在这篇
+- 由 [ADR-0118](0118-im-three-layers-push-with-body.md) 修订（2026-11-25）：房间不再端到端加密。通话走法不变、媒体仍加密，媒体密钥的 to-device 在不加密房间里不再套 Olm；不加密房间里的那一组由卡 call-e2e-android 实测
 - 用 [ADR-0072](0072-tunnel-udp.md) 的 UDP 隧道，和 [ADR-0033](0033-plugin-tabs.md) 的插件页、桥、摄像头和麦克风授权
 
 ## 背景
@@ -15,7 +16,8 @@ MSC4157 delayed events、MSC4515 RTC transports）替它收发事件。Element X
 
 - **隧道**：ADR-0072 把 LiveKit 列为用例，插件声明 `tunnel.ports`，App 在手机本机 `127.0.0.1` 同号映射。2026-11-11 在
   Android WebView 里实测通过（ADR-0072“验证结果”）：UDP 直连、TCP 7881 退路、n0 公共中继三组都连上，中继组首帧 6.3 秒、
-  码率贴着约 1 Mbit/s。iOS WKWebView 没验。
+  码率贴着约 1 Mbit/s。iOS 的 WKWebView 2026-11-25 用最小页面在同一台机器上验过回环候选，`127.0.0.1` 和 `::1` 都照用
+  （见“验证结果”），真机没验。
 - **插件页**：WebView、桥（MCP Apps 的 JSON-RPC，注入脚本接住页面发给自己的 `postMessage` 转给核心）、摄像头和麦克风的
   逐插件授权（ADR-0033“插件网页的摄像头和麦克风”）。
 - **matrix-sdk 0.19.1**（`vendor/matrix-sdk`）带 widget 驱动（`experimental-widgets` feature）：`WidgetDriver::new(WidgetSettings)`
@@ -115,7 +117,7 @@ matrix_widget:
   Element Call 的 `m.call.member` 就这样写）。核心批准时按当前登录的账号收窄，页面改不了别人的状态。写成测试。
   SDK 的过滤只认确切的 `state_key`、表达不了前缀，所以页面点名的 `state_key` 按上面的规则核，页面要“任意 `state_key`”时
   只批 `#<自己的用户 ID>` 这一条；要别的自己的 `state_key`，页面得点名请求（Element Call 就是点名的）。
-- to-device：按事件类型列。加密房间里驱动自动加密发送、只转交加密收到的（0.19.1 `widget/matrix.rs`）。
+- to-device：按事件类型列。加密房间里驱动自动加密发送、只转交加密收到的（0.19.1 `widget/matrix.rs`）；不加密房间按明文 to-device 发（ADR-0118）。
 - `send.delayed_event`、`update_delayed_event`、`rtc_transports`、`requires_client`、`download_file`。
 - 不给：别的房间（`timeline:` 能力）。页面只拿到打开它的那个房间。
 - **OpenID：** 驱动对 `get_openid` 不查能力，直接向服务器要令牌（0.19.1 `widget/machine/mod.rs`）。所以声明了 `matrix_widget`
@@ -171,8 +173,8 @@ widget ID、用 `generate_webview_url` 得出地址。页面关掉、换房间�
 - 壳不解析 widget 报文，只把字符串交给核心、把核心给的脚本注入回去，同现有的桥。
 - 界面文字（入口按钮、“通话中”、中继提示、确认页的能力类别）进各平台的本地化资源，四种语言。
 
-**iOS 的回环候选：** WKWebView 的 WebRTC 能不能用 `127.0.0.1` 的 ICE 候选没验（WebKit 历史上过滤回环候选）。不通时的退路，
-按顺序试：
+**iOS 的回环候选：** iOS 26.5 模拟器的 WKWebView（WebKit 605.1.15）里验过：`127.0.0.1`、`::1` 的 host 候选原样进 ICE，
+页面 0.2 秒连上同一台机器上的 LiveKit，选中的就是回环候选对（见“验证结果”）。真机没验。真机上不通时的退路，按顺序试：
 
 1. 映射另监听一个 WebKit 不当回环过滤的本机地址，LiveKit 改报这个地址（要先验 WebKit 认不认、iOS 上绑不绑得上）；
 2. iOS 改用 LiveKit 的原生 Swift SDK 自画通话页，信令和授权照旧走 MatrixRTC，第 2 节的 widget 能力在 iOS 上用不上，工作量
@@ -207,14 +209,15 @@ widget ID、用 `generate_webview_url` 得出地址。页面关掉、换房间�
 
 ## 待验证
 
-- **三组 Android 端到端路径**：2026-11-25 在开发栈上实测，UDP 直连和只留 TCP 两组已通过；n0 中继组只到“隧道路径变成 relay + 双方 call.member”，LiveKit 媒体没连上（n0 公共中继限速，EC 入口 JS 325 KB 冷缓存下截断、warm 缓存下也连不上 SFU），细节见下方“本次 Android 现场（2026-11-25）”。三组没有全部通过，所以这篇还不改成已接受。
-- **iOS WKWebView：** `127.0.0.1` 的 ICE 候选、`requestMediaCaptureFor`、信令 WebSocket 经本地代理。不通按第 5 节的退路。
+- **三组 Android 端到端路径**：2026-11-25 在开发栈上实测，UDP 直连和只留 TCP 两组已通过；n0 中继组时好时坏——隧道路径能到 relay、媒体也通过过一次，但 EC 在 relay 下起得慢，成员/媒体常撞组级 deadline 或限速断开，细节见下方“本次 Android 现场（2026-11-25）”。三组没有全部通过，所以这篇还不改成已接受。
+- **iOS WKWebView：** 真机上的回环候选（模拟器已验，见“验证结果”）、`requestMediaCaptureFor`、信令经本地代理、完整 App 里的 Element Call 页面。真机上回环候选不通时按第 5 节的退路。
 - **delayed events 的上限**和 Element Call 的用法对不对得上。
 - **网页请求 Matrix 对外地址（真机）：** 见“验证结果”的设备门一条；`baseUrl` 取头像能否显示。
 - **Element Call 在顶层 WebView 里的 widget 模式：** 注入脚本拦下它发给自己的消息后，它的收发是否完整；`parentUrl` 设成页面自己的 origin 是否够。
 - **加密房间：** 每人的媒体密钥经加密 to-device 交换，两台 Wonton 设备和一台 Element X 三方互通。
-- **不加密房间：** 主人 2026-11-25 决定家里的房间以后不再端到端加密。Element Call 在不加密房间里的行为用冒烟的
-  `STAGE=plain` 记录（能不能通、媒体密钥怎么走），结果见下方。
+- **不加密房间（ADR-0118）：** 主人 2026-11-25 决定家里的房间以后不再端到端加密。Element Call 在不加密房间里的行为用冒烟的
+  `STAGE=plain` 记录（能不能通、媒体字节有没有），结果见下方。媒体帧加密还在不在、媒体密钥的 to-device 是否明文、
+  SFU 是否仍只见密文，由卡 call-e2e-android 实测，结果补在这里。
 
 ## 验证结果
 
@@ -306,6 +309,29 @@ Linux + Docker、两台 API 36 Android 模拟器（同一台宿主）、Element 
 
 
 公共中继提示不属于通话媒体连通性的验收门槛。现有 `PortMappingWarning::PublicRelayBandwidth` 在 Android 插件详情的端口映射区域渲染，而不是 widget 通话页；这属于前端线缺口，relay 冒烟不因缺少该提示失败。
+
+### iOS WKWebView 的回环候选（2026-11-25）
+
+mini（Apple silicon、macOS 27.0、Xcode 27.1）、iOS 26.5 模拟器、iPhone 17 Pro。最小的 Swift 宿主 App
+（`deploy/dev/experiments/ios-loopback-ice`）用 WKWebView 打开 `http://127.0.0.1:8000` 上的页面，页面 UA 报
+`AppleWebKit/605.1.15`；页面用 livekit-client 2.23.0 连同一台机器上的 LiveKit v1.13.11（`ws://127.0.0.1:7880`）。
+服务器按 App 映射的样子只报回环地址：`rtc.node_ip` 改写候选、`rtc.interfaces` 只留一张网卡。`127.0.0.1` 那一组跑了两遍，
+四组全部连上，页面日志、服务器日志和截图留在实验目录的 `results/`：
+
+| 服务器只绑 | 报出的远端候选 | 结果 | ICE 连上 | DTLS | 选中的候选对 |
+| --- | --- | --- | --- | --- | --- |
+| `en0`（对照） | en0 的地址 | 连上 | 0.35 s | connected | 远端 udp 7882 host、本端 prflx，往返 3 ms |
+| `lo0` | `127.0.0.1`（udp 7882、tcp 7881） | 连上，两次 | 0.16、0.19 s | connected | 同上，往返 1–2 ms |
+| `lo0` | `::1` | 连上 | 0.17 s | connected | 同上，往返 1 ms |
+
+- WebKit 把 `127.0.0.1` 的 host 候选原样进 ICE（`addIceCandidate` 的候选串就是 `127.0.0.1 7882 typ host`），没有过滤；
+  页面里的 `http`/`ws` 到回环也没被 ATS 或混合内容拦。
+- 选中的候选对都是远端 `udp 7882 host`、本端 `prflx`，DTLS 连上后两边各有约 1.4 KB 的 SCTP 数据，往返 1–3 ms：数据确实
+  走回环，不是恰好用了别的网卡。
+- WebKit 报自己的 host 候选用 mDNS 名字（`<uuid>.local`）。模拟器和服务器同机，服务器能解析；真机上服务器解析不了手机的
+  `.local`，但两端都能从对端打来的包学到 prflx，回环候选对不依赖它。
+- 没验：真机、媒体捕获权限、完整 App 里 Element Call 页面和信令经本地代理的端到端路径。真机上回环候选不通时按第 5 节的
+  退路。
 
 ## 和其他 ADR 的关系
 

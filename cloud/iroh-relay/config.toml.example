@@ -1,0 +1,43 @@
+# iroh-relay 配置模板。由 install.sh 装到 /etc/wonton-iroh-relay/config.toml（0640 root:wonton-iroh-relay）。
+# 部署形态：TCP 443 由 nginx 终结 TLS 再按 WebSocket Upgrade 反代到这里的 http_bind_addr；
+# 中继进程因此用 --dev（HTTP 只绑回环），TLS 配置只留给 UDP 上的 QUIC 地址发现（QAD）。
+# 字段含义见上游 iroh-relay v1.4.1 的 src/main.rs（Config / TlsConfig 的文档注释）。
+
+# 只给本机 nginx 反代，不直接对公网监听。
+http_bind_addr = "127.0.0.1:8742"
+
+# QUIC 地址发现（QAD）：客户端直连 UDP 7842，不经过 nginx。
+# 端口固定 7842 是 iroh 客户端的默认值（RelayQuicConfig::default），改端口要客户端能配上。
+enable_quic_addr_discovery = true
+
+# 指标只给本机看（127.0.0.1:19090/metrics），由运维自己抓。
+enable_metrics = true
+metrics_bind_addr = "127.0.0.1:19090"
+
+# 准入：默认拒绝所有人。内测期用 shared_token，令牌只发给主人自己的设备，不对外公开。
+# 留空列表 + 没有 IROH_RELAY_ACCESS_TOKEN（或令牌为空）时进程拒绝启动（失败即停），不会落到 everyone；
+# 真要放开必须显式改 access = "everyone"。实际令牌在 /etc/wonton-iroh-relay/relay.env（0600），
+# 由 systemd EnvironmentFile 注入，上游用它整个覆盖这里的列表。轮换见 README。
+[access]
+shared_token = []
+
+# TLS 只给 QAD 的 QUIC 用；TCP 443 的证书由 nginx 和 certbot 管。
+# Reloading：中继每 24h 重读下面两个文件，certbot 续期后的 deploy hook 会把新证书复制过来。
+[tls]
+# 注意：https_bind_addr 和 quic_bind_addr 是这个节里的字段。上游 1.4.1 对顶层未知键不报错
+# （Config 没有 deny_unknown_fields），放到顶层会被静默忽略，QAD 只剩回环监听。
+# --dev 下 TLS 的 TCP 监听不开，这个值只用于默认值推导和文档。
+https_bind_addr = "127.0.0.1:8443"
+# QAD 的 UDP 监听必须对公网；客户端默认就是 7842。
+quic_bind_addr = "0.0.0.0:7842"
+cert_mode = "Reloading"
+cert_dir = "/etc/wonton-iroh-relay/tls"
+manual_cert_path = "/etc/wonton-iroh-relay/tls/fullchain.pem"
+manual_key_path = "/etc/wonton-iroh-relay/tls/privkey.pem"
+
+# 每条连接的入方向限速（relay 读到客户端的数据）。按实测出口 5 Mbps 取：
+# 一条连接最多 256 KiB/s ≈ 2 Mbps，让一条大同步不至于饿死语音（语音双向约 1.2 Mbps，占出口 24%）。
+# 只保护公平，不是全局限额也不是按 endpoint 计量；收费时改成按 endpoint 的 http 回调（ADR-0048）。
+[limits.client.rx]
+bytes_per_second = 262144
+max_burst_bytes = 1048576

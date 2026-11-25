@@ -141,6 +141,11 @@ pub struct Config {
     pub relays: RelayTable,
     /// 推送代理的专用监听（`WONTON_PUSH_LISTEN`），不设就不开；主机名在启动时解析。
     pub push_listen: Option<String>,
+    /// 我们的推送中继要求的 VAPID 私钥（`WONTON_PUSH_VAPID_KEY` 或 `WONTON_PUSH_VAPID_KEY_FILE`，
+    /// 不带填充的 base64url 标量）。和 `push_vapid_subject` 一起设才生效。
+    pub push_vapid_key: Option<String>,
+    /// VAPID 的 `sub`（`WONTON_PUSH_VAPID_SUBJECT`），`mailto:` 或 `https:`。
+    pub push_vapid_subject: Option<String>,
     /// `matrix_rtc` 提供方网络里服务器名别名的 TLS 监听（`WONTON_MATRIX_RTC_LISTEN`，ADR-0096），不设就不开。
     /// 授权服务按 Matrix 的服务器发现连 443，正式安装写 `0.0.0.0:443`：核心在容器里，只经插件网络到达。
     pub matrix_rtc_listen: Option<String>,
@@ -176,6 +181,20 @@ fn doh_url(get: &impl Fn(&str) -> Option<String>) -> Result<Option<Url>, ConfigE
                 .map_err(|e| invalid("WONTON_DOH_URL", &e))
         })
         .transpose()
+}
+
+/// 我们运营的中继要的 VAPID 身份（ADR-0003 的 M2）：私钥文件和 `sub` 要么都设，要么都不设。
+fn vapid_settings(
+    get: &impl Fn(&str) -> Option<String>,
+) -> Result<(Option<String>, Option<String>), ConfigError> {
+    let key = secret_value(get, "WONTON_PUSH_VAPID_KEY", "WONTON_PUSH_VAPID_KEY_FILE")?;
+    let subject = get("WONTON_PUSH_VAPID_SUBJECT");
+    match (key, subject) {
+        (Some(key), Some(subject)) => Ok((Some(key), Some(subject))),
+        (None, None) => Ok((None, None)),
+        (Some(_), None) => Err(invalid("WONTON_PUSH_VAPID_SUBJECT", "设了私钥就要一起设")),
+        (None, Some(_)) => Err(invalid("WONTON_PUSH_VAPID_KEY", "设了 sub 就要一起设")),
+    }
 }
 
 /// 局域网地址的两个覆盖变量（ADR-0019）：`WONTON_LAN_ADDRESSES` 和 `WONTON_ANNOUNCE_ADDRESSES`。
@@ -244,6 +263,7 @@ impl Config {
         let core_container = get("WONTON_CORE_CONTAINER");
         let host_dev = host_dev(get("WONTON_HOST_DEV"), core_container.is_none())?;
         let host_udev = host_udev(get("WONTON_HOST_UDEV"), core_container.is_none())?;
+        let (push_vapid_key, push_vapid_subject) = vapid_settings(&get)?;
         let LanOverrides {
             fixed: lan_addresses,
             announce: announce_addresses,
@@ -294,6 +314,8 @@ impl Config {
             tunnel_port: parse(&get, "WONTON_TUNNEL_PORT", 0)?,
             relays: parse_relays(&get)?,
             push_listen: get("WONTON_PUSH_LISTEN").filter(|value| !value.is_empty()),
+            push_vapid_key,
+            push_vapid_subject,
             matrix_rtc_listen: get("WONTON_MATRIX_RTC_LISTEN").filter(|value| !value.is_empty()),
             federation_listen: get("WONTON_FEDERATION_LISTEN")
                 .unwrap_or_else(|| "0.0.0.0:8448".into()),

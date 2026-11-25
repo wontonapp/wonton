@@ -19,7 +19,7 @@ final class InstallingRowUITests: XCTestCase {
         // 模拟器的系统语言是中文也行：钉成英文，标记和查询对得上。
         app.launchArguments += ["-AppleLanguages", "(en)", "-AppleLocale", "en_US"]
         UITestBackend.enableStateProbe(to: app)
-        app.launch()
+        UITestBackend.launch(app)
     }
 
     private func shot(_ name: String) {
@@ -98,36 +98,6 @@ final class InstallingRowUITests: XCTestCase {
         tapWhenHittable(row)
     }
 
-    /// 还在配对页时粘贴配对码，配不上就换下一个码。已经配上就什么都不做。
-    private func pairIfNeeded(_ pairCodes: [String]) {
-        let field = app.textFields.firstMatch
-        guard field.waitForExistence(timeout: 20) else { return }
-        for (index, code) in pairCodes.enumerated() {
-            field.tap()
-            UIPasteboard.general.string = code
-            field.press(forDuration: 1.2)
-            let paste = app.menuItems["Paste"].exists ? app.menuItems["Paste"] : app.menuItems["粘贴"]
-            if paste.exists {
-                paste.tap()
-            } else {
-                field.typeText(code)
-            }
-            print("PAIR_FIELD:\(String(describing: field.value))")
-            shot("00-paired-\(index)")
-            if let pair = waitAnyButton(["Pair", "配对"], timeout: 8), pair.isEnabled { pair.tap() }
-            for _ in 0..<20 {
-                if waitAnyButton(["Sidebar", "Apps", "应用", "Skip", "跳过"], timeout: 1) != nil { return }
-
-            }
-            // 换下一个码：清空输入框。
-            field.tap()
-            field.press(forDuration: 1.2)
-            if app.menuItems["Select All"].exists { app.menuItems["Select All"].tap() }
-            if app.menuItems["全选"].exists { app.menuItems["全选"].tap() }
-            field.typeText("\u{8}")
-        }
-    }
-
     private func passOnboarding() {
         for _ in 0..<12 {
             if UITestBackend.skipKeyHandoff(app) { continue }
@@ -164,12 +134,16 @@ final class InstallingRowUITests: XCTestCase {
         return nil
     }
 
+    @MainActor
     func testInstallRow() throws {
         continueAfterFailure = false
         // 排队的机器上等锁很慢，最早的码可能已经过期：逐个试。
         let pairCodes = try UITestBackend.codes()
         try XCTSkipIf(pairCodes.isEmpty, "需要开发栈：没有 PAIRING_CODE")
-        pairIfNeeded(pairCodes)
+        try UITestBackend.pairIfNeeded(app) { index in
+            print("PAIR_FIELD:\(String(describing: self.app.textFields.firstMatch.value))")
+            self.shot("00-paired-\(index)")
+        }
         XCTAssertTrue(waitForRoot(timeout: 120), "配对后没回到主界面")
         passOnboarding()
         UITestBackend.settleKeyHandoff(app)

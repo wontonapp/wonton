@@ -366,7 +366,9 @@ async fn check_can_open(
                 ));
             }
         }
-    } else if route.http.auth.credentials.is_some() {
+    } else if route.http.auth.credentials.is_some()
+        && !gateway.plugins.credentials_ready(&client.id)
+    {
         return Err(error(
             ClientsFailure::Conflict,
             "clients-switch-credentials",

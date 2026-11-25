@@ -756,7 +756,7 @@ async fn shared_rotate_with_ends_sessions_drops_connections() {
         .settle_password(&home.id, "shared")
         .await
         .unwrap();
-    assert!(matches!(settled, Settle::Done(_)));
+    assert!(matches!(settled, Settle::Done));
     assert!(*receiver.borrow_and_update());
     // 新连接用新值建一个新守卫，不会被上一次的置位带走。
     let new = store.snapshot("app.test", "shared").unwrap().value;
