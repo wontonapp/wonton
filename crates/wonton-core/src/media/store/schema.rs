@@ -73,6 +73,10 @@ CREATE TABLE IF NOT EXISTS quota (
 ";
 
 /// 第 2 版：上传配额按提供方分开记（ADR-0113 第 3 节），加 `provider` 列。主键变了，只能重建表。
+///
+/// 第 1 版的账没有提供方。离线的账本来就按设备分，原样搬（provider 留空串）；上传的账每人并成
+/// provider 与 device 都是空串的一行，等这个人的第一笔上传落到具体提供方时接手它（`store.rs`
+/// 的 `record_usage`）。并成一行是为了让接手的查询只有一个落点。
 pub(super) const MIGRATE_V2: &str = "
 CREATE TABLE quota_v2 (
     person TEXT NOT NULL,
@@ -84,7 +88,11 @@ CREATE TABLE quota_v2 (
     PRIMARY KEY (person, ledger, provider, device)
 );
 INSERT INTO quota_v2 (person, ledger, provider, device, used, cap)
-    SELECT person, ledger, '', device, used, cap FROM quota;
+    SELECT person, ledger, '', device, used, cap FROM quota WHERE ledger = 'device_offline';
+INSERT INTO quota_v2 (person, ledger, provider, device, used, cap)
+    SELECT person, ledger, '', '', SUM(used),
+           CASE WHEN COUNT(cap) < COUNT(*) THEN NULL ELSE SUM(cap) END
+    FROM quota WHERE ledger = 'provider_upload' GROUP BY person, ledger;
 DROP TABLE quota;
 ALTER TABLE quota_v2 RENAME TO quota;
 ";

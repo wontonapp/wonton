@@ -357,10 +357,7 @@ async fn auth_reject(
             }
         };
     }
-    if clients.http.auth.app.is_none() {
-        // 清单校验保证三种恰好一种；都缺的清单到不了运行时，这里不兜底。
-        return Err(unsupported(langs, format));
-    }
+    // 清单校验保证三种验证方式恰好一种；`gateway` 和 `credentials` 上面已处理，剩下的是 `app`。
     use crate::plugin::clients_entry::SetupCheck;
     match gateway
         .plugins
@@ -384,16 +381,6 @@ async fn auth_reject(
             Err(plugin_unavailable(route, langs, format))
         }
     }
-}
-
-fn unsupported(langs: &Languages, format: pages::Format) -> Response {
-    pages::error(
-        StatusCode::NOT_IMPLEMENTED,
-        "unsupported",
-        &l10n::text(langs, "gateway-entry-auth-unsupported", &[]),
-        langs,
-        format,
-    )
 }
 
 /// 通过验证后带给转发层的：吊销守卫和按清单模板代加的身份头。

@@ -874,7 +874,8 @@ async fn revoke_maps_202_502_and_200_and_keeps_value_until_done() {
         done.headers
             .get(wonton_protocol::PASSWORD_PENDING_HEADER)
             .map(|value| value.to_str().unwrap()),
-        Some("revoke")
+        None,
+        "做完的 200 不再标待完成"
     );
     let gone = h
         .send(
@@ -1103,9 +1104,8 @@ async fn tcp_only_plugin_is_listed_without_http_auth() {
         .unwrap();
     assert_eq!(item["auth"], "app");
     assert!(item["passwords"].as_array().unwrap().is_empty());
-    // 只声明 tcp 的插件没有 lan/public 两项，tcp 是第一个入口。
-    assert_eq!(item["entries"][0]["kind"]["kind"], "tcp");
-    assert_eq!(item["entries"][0]["kind"]["name"], "ssh");
+    // 只声明 tcp 的插件没有 HTTP 入口；TCP 转发还没接，先不列入开关。
+    assert!(item["entries"].as_array().unwrap().is_empty());
 }
 
 #[tokio::test]

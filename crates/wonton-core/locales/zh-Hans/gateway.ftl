@@ -55,7 +55,6 @@ gateway-entry-header-invalid = 入口网关没有给这个请求打上正确的�
 gateway-entry-closed = 这个入口没有打开，主人可以在 Wonton 应用里打开
 gateway-entry-public-denied = 公网地址上访问不了这个路径
 gateway-entry-setup-pending = 请先在这个应用的网页上完成首次注册，然后再试
-gateway-entry-auth-unsupported = 这个应用还不支持用云吞发的密码登录
 gateway-entry-auth-required = 请用在云吞里给这个应用发的专用密码登录
 gateway-entry-auth-revoked = 这个专用密码已吊销，请在云吞里重新生成一个
 gateway-entry-state-unavailable = 读不到这个应用的入口设置，请主人在云吞里检查

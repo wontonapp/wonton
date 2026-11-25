@@ -313,8 +313,8 @@ pub use port_mapping::{
     MappedPort, PluginPortMapping, PortMappingState, PortMappingWarning, UdpFlowStats,
 };
 pub use push::{
-    NotificationCategory, PushConfirmation, PushContent, PushEndpoint, PushMethod,
-    PushNotification, PushStatus,
+    DevicePayload, MAX_BODY_CHARS, MAX_PLAINTEXT_BYTES, NotificationCategory, PushConfirmation,
+    PushContent, PushEndpoint, PushMessageType, PushMethod, PushNotification, PushStatus,
 };
 pub use registry_mirror::{
     RegistryFailure, RegistryMirrorSettings, RegistryMirrorTest, RegistryMirrorTestRequest,
@@ -361,7 +361,8 @@ pub use timeline::{
     BackPagination, FileAttachment, ImageCaption, ImageContent, KeyNotice, MatrixTarget,
     MediaHandle, MessageAction, MessageContent, MessageReceipt, RichBlock, RichBlockKind, RichLink,
     RichLinkKind, RichSpan, TimelineContent, TimelineDiff, TimelineItem, TimelineMessage,
-    TimelineScroll, TimelineUpdate, TimelineViewport,
+    TimelineScroll, TimelineUpdate, TimelineViewport, UnreadJump, UnreadJumpState,
+    UnreadJumpUnavailable,
 };
 pub use timeline_action::{TimelineAction, TimelineTarget};
 pub use timeline_jump::{JumpState, TimelineFocus};

@@ -7,10 +7,9 @@
 //! 条目、设备档和两个取值枚举在这里；[`task`] 是长任务的骨架，上传与下载共用；[`session`] 是播放会话、
 //! 队列与播放计划；[`view`] 是壳渲染的视图和核发给设备的命令。
 //!
-//! “服务端 → 消费方”方向的取值枚举（`kind`、失败码、状态、轨道/片段种类、暂停原因）认不出时落到各自的
-//! `Other`，原值原样留着再序列化回去，别让新服务端的一个新值把整条 `MediaItemRef`、`MediaFailure` 或 `MediaTask`
-//! 判成协议错（AGENTS.md）。请求方向的 `op`、`ctl`、`kind`（`MediaAction`）和清单/协商面的 `MediaOperation`
-//! 仍然报错：发错方向的东西，收的一方也不知道该怎么执行。
+//! 取值认不出时落到各自的 `Other`，原值留着，能原样再序列化回去，别让一个新值把整条信封判成协议错
+//! （AGENTS.md）：核心和 App 分开升级，新核发的新命令旧 App 跳过那一条，同批其他命令照常读。唯一的例外是
+//! [`QueueOp`]：它是壳要执行的动作，认不得就没法执行，报错。
 
 use serde::{Deserialize, Serialize};
 
@@ -145,15 +144,24 @@ known_or_other!(MediaKind {
     Audio => "audio",
 });
 
-/// 提供方自报能做的操作（清单 `operations` 与 `GET /_wonton/capabilities` 共用）。值认不出时报错。
-#[derive(Serialize, Deserialize, Debug, Clone, Copy, PartialEq, Eq, Hash)]
-#[serde(rename_all = "snake_case")]
+/// 提供方自报能做的操作（清单 `operations` 与 `GET /_wonton/capabilities` 共用）。认不得的操作落到
+/// `Other`，安装预检忽略它。
+#[derive(Debug, Clone, PartialEq, Eq, Hash)]
 pub enum MediaOperation {
     Upload,
     Download,
     Playback,
     List,
+    /// 新版本新加的操作，原值在里。
+    Other(String),
 }
+
+known_or_other!(MediaOperation {
+    Upload => "upload",
+    Download => "download",
+    Playback => "playback",
+    List => "list",
+});
 
 #[cfg(test)]
 mod tests {
@@ -249,8 +257,13 @@ mod tests {
     }
 
     #[test]
-    fn unknown_operation_values_are_errors() {
-        assert!(serde_json::from_str::<MediaOperation>("\"stream\"").is_err());
+    fn unknown_operation_falls_to_other_and_roundtrips() {
+        let operation: MediaOperation = serde_json::from_str("\"transcode\"").unwrap();
+        assert_eq!(operation, MediaOperation::Other("transcode".into()));
+        assert_eq!(
+            serde_json::to_value(&operation).unwrap(),
+            serde_json::json!("transcode")
+        );
     }
 
     #[test]

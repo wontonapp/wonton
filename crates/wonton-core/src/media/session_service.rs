@@ -35,6 +35,8 @@ pub enum SessionServiceError {
     Transition(#[from] IllegalTransition),
     #[error("会话 {session} 被别处连改，重读后仍没落库")]
     ConcurrentChange { session: PlaybackSessionId },
+    #[error("这一版核心不认识控制动作 {0}")]
+    UnsupportedControl(String),
 }
 
 /// 播放会话的状态机，落库到 [`Store`]。
@@ -95,12 +97,16 @@ impl SessionService {
         })
     }
 
-    /// 控制一条活动会话；停了或不属于这个人的会话报 `IllegalTransition`。
+    /// 控制一条活动会话；停了或不属于这个人的会话报 `IllegalTransition`，这一版核心不认识的动作报
+    /// `UnsupportedControl`。
     pub fn control(
         &self,
         session: PlaybackSessionId,
         ctl: ControlOp,
     ) -> Result<PlaybackSession, SessionServiceError> {
+        if let ControlOp::Other(raw) = &ctl {
+            return Err(SessionServiceError::UnsupportedControl(raw.clone()));
+        }
         let mut stored = self.store.stored_session(session)?;
         for _ in 0..3 {
             self.ensure_active(&stored.session, &ctl)?;
@@ -227,6 +233,8 @@ impl SessionService {
             ControlOp::Play | ControlOp::Resume | ControlOp::SeekMs(_) => TaskState::Running,
             ControlOp::Next | ControlOp::Prev | ControlOp::Volume(_) => TaskState::Running,
             ControlOp::SetAudio(_) | ControlOp::SetSubtitle(_) => TaskState::Running,
+            // `control` 已经在门口拒了未知动作，这里的终态只用来凑 `IllegalTransition` 的提示。
+            ControlOp::Other(_) => TaskState::Running,
         };
         Err(IllegalTransition {
             from: session.state.clone(),
@@ -273,6 +281,8 @@ impl SessionService {
                     }
                 }
             }
+            // `control` 已经在门口拒了未知动作，走到这里只可能是新加的调用点。
+            ControlOp::Other(_) => {}
         }
         Ok(None)
     }
@@ -344,7 +354,8 @@ fn clamp_to_duration(session: &PlaybackSession, position_ms: u64) -> u64 {
     }
 }
 
-/// 停播原因对应的终态；`Finished`/`Error` 从暂停、等条件过来时先回 `Running` 再走。
+/// 停播原因对应的终态；`Finished`/`Error` 从暂停、等条件过来时先回 `Running` 再走。认不得的原因按
+/// `Cancelled` 收尾：核心说了也不算完成或失败，原值留在 `stop_reason` 里给上层看。
 fn stopped_state(from: &TaskState, reason: &StopReason) -> Result<TaskState, IllegalTransition> {
     let to = match reason {
         StopReason::Finished => TaskState::Done,
@@ -353,7 +364,9 @@ fn stopped_state(from: &TaskState, reason: &StopReason) -> Result<TaskState, Ill
             message: "播放出错".into(),
             retry_after_secs: None,
         }),
-        StopReason::User | StopReason::Agent | StopReason::TakenOver => TaskState::Cancelled,
+        StopReason::User | StopReason::Agent | StopReason::TakenOver | StopReason::Other(_) => {
+            TaskState::Cancelled
+        }
     };
     if matches!(from, TaskState::Other(_)) {
         return Ok(to);
@@ -869,5 +882,35 @@ mod tests {
                 MediaStoreError::SessionNotFound { .. }
             ))
         ));
+    }
+
+    #[test]
+    fn an_unknown_control_op_is_refused_with_its_raw_name() {
+        let (_dir, store, service) = fixture();
+        let (session, _) = play(&service, ALICE, PHONE, 0);
+        let error = service
+            .control(session.id, ControlOp::Other("speed".into()))
+            .unwrap_err();
+        assert!(
+            matches!(&error, SessionServiceError::UnsupportedControl(raw) if raw == "speed"),
+            "{error}"
+        );
+        assert_eq!(stored(&store, session.id).session.position_ms, 0);
+    }
+
+    #[test]
+    fn an_unknown_stop_reason_cancels_and_keeps_its_raw_value() {
+        let (_dir, store, service) = fixture();
+        let (session, _) = play(&service, ALICE, PHONE, 0);
+        let stopped = service
+            .stop(session.id, 500, StopReason::Other("sleep".into()))
+            .unwrap();
+        assert_eq!(stopped.state, TaskStateAlias::Cancelled);
+        assert_eq!(stopped.stop_reason, Some(StopReason::Other("sleep".into())));
+        // 库里按原值存，读回来仍是原值，不落成 `Error`。
+        assert_eq!(
+            stored(&store, session.id).session.stop_reason,
+            Some(StopReason::Other("sleep".into()))
+        );
     }
 }

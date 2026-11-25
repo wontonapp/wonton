@@ -67,9 +67,9 @@ pub fn clients_path() -> String {
     "/_wonton/clients".into()
 }
 
-/// `PUT`：开或关一个入口，请求体是 [`SetEntryRequest`]。`entry` 取 [`EntryKind::as_path_segment`]：
-/// 局域网是 `lan`，公网是 `public`，`clients.tcp` 是清单里的名字。`credentials` 还没成功发过密码时回 409
-/// [`ClientsFailure::Conflict`](crate::ClientsFailure)。
+/// `PUT`：开或关一个入口，请求体是 [`SetEntryRequest`]。`entry` 只有 `lan` 和 `public`；
+/// `clients.tcp` 的转发还没接，名单里的名字先不认。`credentials` 还没成功发过密码时回 409
+/// [`ClientsFailure::Conflict`](crate::ClientsFailure::Conflict)。
 pub fn clients_entry_path(id: &str, entry: &str) -> String {
     format!("{}/{id}/entries/{entry}", clients_path())
 }

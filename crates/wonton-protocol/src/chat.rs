@@ -404,6 +404,10 @@ pub struct RoomRow {
     #[serde(default)]
     #[cfg_attr(feature = "uniffi", uniffi(default = false))]
     pub call_active: bool,
+    /// 未读里提到我的条数（ADR-0121）：大于 0 时房间行的徽标换成「@」。
+    #[serde(default)]
+    #[cfg_attr(feature = "uniffi", uniffi(default = 0))]
+    pub unread_mentions: u64,
 }
 
 /// 本账号在房间里的成员状态。
@@ -562,6 +566,7 @@ mod tests {
                 },
             }],
             rooms: vec![RoomRow {
+                unread_mentions: 0,
                 layout: Default::default(),
                 call_active: false,
                 room_id: "!bot:home.example".into(),

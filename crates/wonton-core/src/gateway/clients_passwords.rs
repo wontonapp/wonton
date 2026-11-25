@@ -241,8 +241,8 @@ async fn read_value(
 }
 
 /// `DELETE /_wonton/clients/{plugin}/passwords/{id}`：吊销；`per_client: false` 时换成新值。
-/// 完成 `200`，插件没在跑 `202`，失败 `502`；[`PENDING_HEADER`](wonton_protocol::PASSWORD_PENDING_HEADER)
-/// 标出没做完的吊销或换值。吊销设备走 `devices.rs`，不经过这里。
+/// 完成 `200`，插件没在跑 `202`，失败 `502`；只有 `202` 带
+/// [`PENDING_HEADER`](wonton_protocol::PASSWORD_PENDING_HEADER) 标出没做完的吊销或换值。吊销设备走 `devices.rs`，不经过这里。
 async fn revoke(
     State(gateway): State<Arc<Gateway>>,
     headers: HeaderMap,
@@ -265,7 +265,7 @@ async fn revoke(
         );
     }
     match gateway.plugins.settle_password(&plugin_id, &id).await {
-        Ok(Settle::Done(op)) => with_pending(StatusCode::OK.into_response(), op),
+        Ok(Settle::Done) => no_store(StatusCode::OK.into_response()),
         Ok(Settle::Deferred(op)) => with_pending(StatusCode::ACCEPTED.into_response(), op),
         Ok(Settle::Failed(error)) => credential_failure(&langs, error),
         Err(PasswordError::NotFound) => failure(

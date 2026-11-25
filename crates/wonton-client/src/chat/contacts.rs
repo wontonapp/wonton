@@ -160,6 +160,7 @@ mod tests {
 
     fn room(name: &str, peer: Option<&str>, read_only: bool) -> RoomRow {
         RoomRow {
+            unread_mentions: 0,
             layout: Default::default(),
             call_active: false,
             room_id: format!("!{name}:s"),
