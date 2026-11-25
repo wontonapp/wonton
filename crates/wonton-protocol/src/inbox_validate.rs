@@ -160,6 +160,7 @@ pub fn validate_item(item: &InboxItem) -> Result<(), InboxInvalid> {
                 present("payload.question", question)?;
                 long("payload.question", question, MAX_INBOX_QUESTION_CHARS)?;
             }
+            validate_actions(&payload.actions)?;
             if !(1..=2).contains(&payload.actions.len()) {
                 return Err(Invalid::field("payload.actions", "要有 1–2 个动作"));
             }

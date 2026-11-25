@@ -508,6 +508,44 @@ fn recaps_need_one_or_two_actions() {
     validate_item(&recap(None, vec![action("a")])).unwrap();
     validate_item(&recap(None, vec![action("a"), action("b")])).unwrap();
     assert!(validate_item(&recap(None, vec![action("a"), action("b"), action("c")])).is_err());
+    // 动作 id/标签/样式/重复都要过 validate_actions，不能因为 recap 分支删了它就失守。
+    assert!(
+        validate_item(&recap(
+            None,
+            vec![InboxAction {
+                id: "BAD".into(),
+                label: "坏".into(),
+                style: InboxActionStyle::Default,
+                requires_comment: false
+            }]
+        ))
+        .is_err()
+    );
+    assert!(
+        validate_item(&recap(
+            None,
+            vec![InboxAction {
+                id: "a".into(),
+                label: String::new(),
+                style: InboxActionStyle::Default,
+                requires_comment: false
+            }]
+        ))
+        .is_err()
+    );
+    assert!(
+        validate_item(&recap(
+            None,
+            vec![InboxAction {
+                id: "a".into(),
+                label: "A".into(),
+                style: InboxActionStyle::Other,
+                requires_comment: false
+            }]
+        ))
+        .is_err()
+    );
+    assert!(validate_item(&recap(None, vec![action("dup"), action("dup")])).is_err());
 
     let ack = InboxAnswerInput {
         answer_id: "a1".into(),
