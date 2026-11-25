@@ -111,6 +111,9 @@ pub enum RelaySettingsPhase {
         #[serde(default, skip_serializing_if = "Option::is_none")]
         reason: Option<String>,
     },
+    /// 比这个 App 新的核心给的状态。壳和客户端按 Idle 处理，不因为一个新取值整份解析失败。
+    #[serde(other)]
+    Other,
 }
 
 /// 当前这条连接走的中继。
@@ -272,6 +275,12 @@ mod tests {
         let parsed: RelaySettingsAction = serde_json::from_str(&text).unwrap();
         assert_eq!(parsed, action);
         assert!(!format!("{parsed:?}").contains("secret-token"));
+    }
+
+    #[test]
+    fn an_unknown_phase_value_is_other() {
+        let phase: RelaySettingsPhase = serde_json::from_str(r#"{"phase":"hologram"}"#).unwrap();
+        assert_eq!(phase, RelaySettingsPhase::Other);
     }
 
     #[test]

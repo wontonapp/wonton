@@ -316,3 +316,65 @@ fn update_from_carries_the_whole_table() {
     );
     assert_eq!(update.entries[0].tier, 0);
 }
+
+async fn idle_home() -> (tempfile::TempDir, std::sync::Arc<super::super::HomeLink>) {
+    let dir = tempfile::tempdir().unwrap();
+    let storage = super::super::storage::Storage::open(dir.path(), dir.path()).unwrap();
+    let (_method_tx, method_rx) =
+        tokio::sync::watch::channel(wonton_protocol::PushMethod::default());
+    let home = super::super::HomeLink::new(
+        tokio::runtime::Handle::current(),
+        wonton_tunnel::sharing::ProxyHub::bind().await.unwrap(),
+        storage,
+        super::super::Network::DirectOnly,
+        None,
+        method_rx,
+    )
+    .unwrap();
+    (dir, home)
+}
+
+#[tokio::test]
+async fn a_failed_edit_while_loading_keeps_the_in_flight_load() {
+    let (_dir, home) = idle_home().await;
+    home.view
+        .send_modify(|view| view.relays.phase = RelaySettingsPhase::Loading);
+    let before = home.lock_relays().epoch;
+    let error = home
+        .edit_relays(|_| {
+            Err(CoreError::NotReady {
+                reason: "boom".into(),
+            })
+        })
+        .unwrap_err();
+    assert!(matches!(error, CoreError::NotReady { .. }));
+    // 在途的 GET 回来时 epoch 必须还对得上，否则这份设置永远停在 Loading。
+    assert_eq!(home.lock_relays().epoch, before);
+    assert_eq!(home.view().relays.phase, RelaySettingsPhase::Loading);
+}
+
+#[tokio::test]
+async fn a_successful_edit_while_loading_discards_the_in_flight_load() {
+    let (_dir, home) = idle_home().await;
+    home.view
+        .send_modify(|view| view.relays.phase = RelaySettingsPhase::Loading);
+    let before = home.lock_relays().epoch;
+    home.edit_relays(|_| Ok(())).unwrap();
+    assert_eq!(home.view().relays.phase, RelaySettingsPhase::Ready);
+    // 成功的编辑作废在途的读，免得旧快照回来盖掉刚改的这份。
+    assert_ne!(home.lock_relays().epoch, before);
+}
+
+#[tokio::test]
+async fn an_unknown_phase_can_still_be_edited_and_becomes_ready() {
+    let (_dir, home) = idle_home().await;
+    home.view
+        .send_modify(|view| view.relays.phase = RelaySettingsPhase::Other);
+    home.edit_relays(|view| {
+        view.entries = Vec::new();
+        Ok(())
+    })
+    .unwrap();
+    assert_eq!(home.view().relays.phase, RelaySettingsPhase::Ready);
+    assert!(home.view().relays.dirty);
+}

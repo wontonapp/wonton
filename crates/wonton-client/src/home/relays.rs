@@ -123,11 +123,12 @@ impl HomeLink {
         if self.view().relays.phase == RelaySettingsPhase::Saving {
             return Err(not_ready("relays-busy"));
         }
-        state.epoch += 1;
         let mut outcome = Ok(());
+        let mut edited = false;
         self.view.send_modify(|view| {
             outcome = edit(&mut view.relays);
             if outcome.is_ok() {
+                edited = true;
                 let relays = &mut view.relays;
                 relays.phase = RelaySettingsPhase::Ready;
                 relays.dirty = true;
@@ -135,6 +136,10 @@ impl HomeLink {
                 relays.save_problem = None;
             }
         });
+        // 只有改成功才作废在途的读：改失败时这份设置在 Loading，丢掉在途 GET 就永远停在 Loading。
+        if edited {
+            state.epoch += 1;
+        }
         outcome
     }
 
