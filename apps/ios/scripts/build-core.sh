@@ -60,8 +60,9 @@ if [ "${WONTON_CORE_PREBUILT:-}" = 1 ]; then
   # 缺了不能悄悄从头编：那样拿到的产物慢、对不上“命中”这件事，问题被藏起来。
   set -- "$xcframework"/*-simulator/libwonton_client.a
   slice="${1%/libwonton_client.a}"
-  { [ -f "$1" ] && [ -f "$slice/Info.plist" ] && [ -f "$slice/Headers/module.modulemap" ]; } ||
-    { echo "WONTON_CORE_PREBUILT=1，但取回来的产物不完整：$xcframework/*-simulator 下要 libwonton_client.a、Info.plist、Headers/module.modulemap" >&2; exit 1; }
+  # Info.plist 在 xcframework 根上，不在切片里。
+  { [ -f "$1" ] && [ -f "$xcframework/Info.plist" ] && [ -f "$slice/Headers/module.modulemap" ]; } ||
+    { echo "WONTON_CORE_PREBUILT=1，但取回来的产物不完整：要有 $xcframework/Info.plist 和 $xcframework/*-simulator 下的 libwonton_client.a、Headers/module.modulemap" >&2; exit 1; }
   set -- "$generated_dir"/*.swift
   [ -f "$1" ] || { echo "WONTON_CORE_PREBUILT=1，但取回来的产物里没有 $generated_dir/*.swift" >&2; exit 1; }
   echo "用取回来的核心产物（$xcframework 与 $generated_dir），不编核心"

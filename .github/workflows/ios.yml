@@ -134,9 +134,11 @@ jobs:
         if: steps.corecache.outputs.cache-hit == 'true'
         run: |
           # 缺一样就停在这里，不让 xcodebuild 报看不懂的“找不到模块”。
-          slice=$(ls -d apps/ios/WontonClient/build/WontonClientFFI.xcframework/*-simulator)
+          xcframework=apps/ios/WontonClient/build/WontonClientFFI.xcframework
+          slice=$(ls -d "$xcframework"/*-simulator)
           echo "取回来的产物：$slice"
-          ls "$slice"/libwonton_client.a "$slice"/Info.plist "$slice"/Headers/module.modulemap
+          # Info.plist 在 xcframework 根上，不在切片里。
+          ls "$slice"/libwonton_client.a "$slice"/Headers/module.modulemap "$xcframework"/Info.plist
           ls apps/ios/WontonClient/Sources/WontonClient/Generated/*.swift
       - name: 挑这台机器上有的模拟器运行时
         run: |
