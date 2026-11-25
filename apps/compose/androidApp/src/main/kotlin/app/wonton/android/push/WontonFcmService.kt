@@ -27,6 +27,7 @@ class WontonFcmService : FirebaseMessagingService() {
         }
     }
 
+    @Suppress("ReturnCount") // 没有密文、没有密钥、解不开都丢弃并返回。
     override fun onMessageReceived(message: RemoteMessage) {
         val sealed = message.data[FIELD] ?: return
         val material = PushKeys.material(this)

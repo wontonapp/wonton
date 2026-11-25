@@ -34,6 +34,7 @@ import org.json.JSONObject
  */
 object FcmPush {
     private const val TAG = "WontonPush"
+    private const val TIMEOUT_MS = 15_000
 
     /** 构建参数里给了 Firebase 项目。中继地址可以另配。 */
     val configured: Boolean
@@ -64,6 +65,7 @@ object FcmPush {
      * 把令牌对应的推送地址登记给核心。失败按原因告诉核心（设置页写出来），不假装已开启。
      * 只在推送方式是 UnifiedPush 时登记；核心在保持连接时会拒绝地址。
      */
+    @Suppress("ReturnCount") // 每一步失败都如实告诉核心再返回，比层层嵌套清楚。
     suspend fun register(context: Context, core: ClientCore) {
         if (core.settings().pushMethod == PushMethod.KEEPALIVE) return
         val reason = runCatching { context.getString(R.string.push_no_relay) }
@@ -103,8 +105,8 @@ object FcmPush {
         val connection = URL("${relay.trimEnd('/')}/v1/fcm").openConnection() as HttpURLConnection
         try {
             connection.requestMethod = "POST"
-            connection.connectTimeout = 15_000
-            connection.readTimeout = 15_000
+            connection.connectTimeout = TIMEOUT_MS
+            connection.readTimeout = TIMEOUT_MS
             connection.doOutput = true
             connection.setRequestProperty("Content-Type", "application/json")
             connection.outputStream.use { out ->

@@ -23,6 +23,11 @@ object PushKeys {
     private const val PRIVATE = "private"
     private const val PUBLIC = "public"
     private const val AUTH = "auth"
+    private const val SECRET_BYTES = 32
+    private const val POINT_BYTES = 65
+    private const val COORD_BYTES = 32
+    private const val AUTH_BYTES = 16
+    private const val UNCOMPRESSED = 4
 
     /** 登记给家里服务器的两样东西：未压缩的 P-256 公钥（65 字节）和认证密钥（16 字节），都是 base64url。 */
     data class Registration(val p256dh: String, val auth: String)
@@ -34,37 +39,43 @@ object PushKeys {
         val prefs = context.getSharedPreferences(PREFS, Context.MODE_PRIVATE)
         var secret = prefs.getString(PRIVATE, null)?.let(::decode)
         var public = prefs.getString(PUBLIC, null)?.let(::decode)
-        if (secret == null || secret.size != 32 || public == null || public.size != 65) {
-            val pair = KeyPairGenerator.getInstance("EC").apply { initialize(ECGenParameterSpec("secp256r1")) }.generateKeyPair()
+        if (!usable(secret, public)) {
+            val pair = KeyPairGenerator.getInstance("EC")
+                .apply { initialize(ECGenParameterSpec("secp256r1")) }
+                .generateKeyPair()
             val ec = pair.private as java.security.interfaces.ECPrivateKey
             secret = secretOf(ec)
             val point = pair.public as ECPublicKey
-            public = ByteArray(65).also { out ->
-                out[0] = 4
+            public = ByteArray(POINT_BYTES).also { out ->
+                out[0] = UNCOMPRESSED
                 writeFixed(point.w.affineX, out, 1)
-                writeFixed(point.w.affineY, out, 33)
+                writeFixed(point.w.affineY, out, COORD_BYTES + 1)
             }
             prefs.edit()
                 .putString(PRIVATE, encode(secret))
                 .putString(PUBLIC, encode(public))
                 .apply()
         }
-        val auth = prefs.getString(AUTH, null)?.let(::decode)?.takeIf { it.size == 16 }
-            ?: ByteArray(16).also { bytes ->
+        val auth = prefs.getString(AUTH, null)?.let(::decode)?.takeIf { it.size == AUTH_BYTES }
+            ?: ByteArray(AUTH_BYTES).also { bytes ->
                 SecureRandom().nextBytes(bytes)
                 prefs.edit().putString(AUTH, encode(bytes)).apply()
             }
         return Registration(encode(public), encode(auth))
     }
 
+    @Suppress("ReturnCount") // 每样材料缺失就返回，读起来比层层嵌套清楚。
     fun material(context: Context): Material? {
         val prefs = context.getSharedPreferences(PREFS, Context.MODE_PRIVATE)
-        val secret = prefs.getString(PRIVATE, null)?.let(::decode)?.takeIf { it.size == 32 } ?: return null
-        val public = prefs.getString(PUBLIC, null)?.let(::decode)?.takeIf { it.size == 65 } ?: return null
-        val auth = prefs.getString(AUTH, null)?.let(::decode)?.takeIf { it.size == 16 } ?: return null
+        val secret = prefs.getString(PRIVATE, null)?.let(::decode)?.takeIf { it.size == SECRET_BYTES } ?: return null
+        val public = prefs.getString(PUBLIC, null)?.let(::decode)?.takeIf { it.size == POINT_BYTES } ?: return null
+        val auth = prefs.getString(AUTH, null)?.let(::decode)?.takeIf { it.size == AUTH_BYTES } ?: return null
         val key = WebPushDecrypt.privateKey(secret, curve())
         return Material(key, public, auth)
     }
+
+    private fun usable(secret: ByteArray?, public: ByteArray?): Boolean =
+        secret?.size == SECRET_BYTES && public?.size == POINT_BYTES
 
     private fun curve(): ECParameterSpec =
         java.security.AlgorithmParameters.getInstance("EC")
@@ -72,16 +83,20 @@ object PushKeys {
             .getParameterSpec(ECParameterSpec::class.java)
 
     private fun secretOf(key: java.security.interfaces.ECPrivateKey): ByteArray =
-        ByteArray(32).also { out ->
+        ByteArray(SECRET_BYTES).also { out ->
             val bytes = key.s.toByteArray()
-            val trimmed = if (bytes.size > 32) bytes.copyOfRange(bytes.size - 32, bytes.size) else bytes
-            trimmed.copyInto(out, 32 - trimmed.size)
+            val trimmed = if (bytes.size > SECRET_BYTES) {
+                bytes.copyOfRange(bytes.size - SECRET_BYTES, bytes.size)
+            } else {
+                bytes
+            }
+            trimmed.copyInto(out, SECRET_BYTES - trimmed.size)
         }
 
     private fun writeFixed(value: BigInteger, out: ByteArray, offset: Int) {
         val bytes = value.toByteArray()
-        val trimmed = if (bytes.size > 32) bytes.copyOfRange(bytes.size - 32, bytes.size) else bytes
-        trimmed.copyInto(out, offset + 32 - trimmed.size)
+        val trimmed = if (bytes.size > COORD_BYTES) bytes.copyOfRange(bytes.size - COORD_BYTES, bytes.size) else bytes
+        trimmed.copyInto(out, offset + COORD_BYTES - trimmed.size)
     }
 
     private fun encode(bytes: ByteArray): String =

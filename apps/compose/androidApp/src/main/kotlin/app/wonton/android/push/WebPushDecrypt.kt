@@ -24,15 +24,22 @@ import javax.crypto.spec.SecretKeySpec
 object WebPushDecrypt {
     private const val KEY_ID_LENGTH = 65
     private const val SALT_LENGTH = 16
+    /// salt(16) + rs(4) + idlen(1)，密文头在公钥之前。
+    private const val HEADER_LENGTH = 21
+    private const val HASH_LENGTH = 32
+    private const val KEY_BYTES = 16
+    private const val NONCE_BYTES = 12
+    private const val COORD_BYTES = 32
+    private const val TAG_BITS = 128
 
     /** 解不开时抛 [IllegalArgumentException]（不是家里服务器发的，或者密钥换了）。 */
     fun decrypt(ciphertext: ByteArray, privateKey: PrivateKey, publicKey: ByteArray, auth: ByteArray): ByteArray {
-        require(ciphertext.size > 21 + SALT_LENGTH) { "push too short" }
+        require(ciphertext.size > HEADER_LENGTH + SALT_LENGTH) { "push too short" }
         val salt = ciphertext.copyOfRange(0, SALT_LENGTH)
         val keyIdLength = ciphertext[20].toInt() and 0xff
         require(keyIdLength == KEY_ID_LENGTH) { "unexpected key id length $keyIdLength" }
-        val keyId = ciphertext.copyOfRange(21, 21 + keyIdLength)
-        val body = ciphertext.copyOfRange(21 + keyIdLength, ciphertext.size)
+        val keyId = ciphertext.copyOfRange(HEADER_LENGTH, HEADER_LENGTH + keyIdLength)
+        val body = ciphertext.copyOfRange(HEADER_LENGTH + keyIdLength, ciphertext.size)
 
         val curve = (privateKey as ECPrivateKey).params
         val ephemeral = KeyFactory.getInstance("EC")
@@ -42,19 +49,19 @@ object WebPushDecrypt {
         agreement.doPhase(ephemeral, true)
         val shared = agreement.generateSecret()
 
-        val ikm = hkdf(shared, auth, "WebPush: info\u0000", 32, publicKey, keyId)
-        val key = hkdf(ikm, salt, "Content-Encoding: aes128gcm\u0000", 16)
-        val nonce = hkdf(ikm, salt, "Content-Encoding: nonce\u0000", 12)
+        val ikm = hkdf(shared, auth, "WebPush: info\u0000", HASH_LENGTH, publicKey, keyId)
+        val key = hkdf(ikm, salt, "Content-Encoding: aes128gcm\u0000", KEY_BYTES)
+        val nonce = hkdf(ikm, salt, "Content-Encoding: nonce\u0000", NONCE_BYTES)
 
         val cipher = Cipher.getInstance("AES/GCM/NoPadding")
-        cipher.init(Cipher.DECRYPT_MODE, SecretKeySpec(key, "AES"), GCMParameterSpec(128, nonce))
+        cipher.init(Cipher.DECRYPT_MODE, SecretKeySpec(key, "AES"), GCMParameterSpec(TAG_BITS, nonce))
         return unpad(cipher.doFinal(body))
     }
 
     /** 未压缩的 P-256 点：0x04 | X(32) | Y(32)。 */
     private fun point(raw: ByteArray): ECPoint = ECPoint(
-        BigInteger(1, raw.copyOfRange(1, 33)),
-        BigInteger(1, raw.copyOfRange(33, 65)),
+        BigInteger(1, raw.copyOfRange(1, COORD_BYTES + 1)),
+        BigInteger(1, raw.copyOfRange(COORD_BYTES + 1, KEY_ID_LENGTH)),
     )
 
     /**
