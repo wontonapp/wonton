@@ -418,7 +418,7 @@ impl Inbox {
             None
         };
         let can_answer =
-            item.status == InboxStatus::Pending && !matches!(item.payload, InboxPayload::Other);
+            item.status == InboxStatus::Pending && !matches!(item.payload, InboxPayload::Other(_));
         let can_reedit = item.status == InboxStatus::Handled
             && !item.blocking
             && item

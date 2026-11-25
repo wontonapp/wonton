@@ -247,7 +247,7 @@ fn fallback_title(payload: &InboxPayload) -> String {
             .collect(),
         InboxPayload::Confirm(payload) => payload.title.clone(),
         InboxPayload::Notice(payload) => payload.title.clone(),
-        InboxPayload::Other => "收件箱".to_owned(),
+        InboxPayload::Other(_) => "收件箱".to_owned(),
     }
 }
 
@@ -305,7 +305,7 @@ pub(super) fn summarize(item: &InboxItem, viewer: &str) -> InboxListItem {
             payload.actions.len() as u32,
         ),
         InboxPayload::Notice(payload) => (None, 0, u32::from(payload.action.is_some())),
-        InboxPayload::Confirm(_) | InboxPayload::Other => (None, 0, 0),
+        InboxPayload::Confirm(_) | InboxPayload::Other(_) => (None, 0, 0),
     };
     let needs_answer = item.status == InboxStatus::Pending
         && match item.kind {
