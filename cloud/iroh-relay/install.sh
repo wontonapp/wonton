@@ -39,6 +39,8 @@ create_user() {
     fi
     install -d -m 0750 -o root -g "$USER" "$ETC" "$ETC/tls"
     install -d -m 0750 -o "$USER" -g "$USER" "$STATE" "$PREFIX"
+    # install -d 不改已存在的目录：重跑时把被人改宽的权限收回来。
+    chmod 0750 "$ETC" "$ETC/tls"
 }
 
 # 只支持 upstream 发了官方 asset 的架构；sha256 在 release.env。
@@ -95,6 +97,9 @@ ensure_config() {
         mv "$ETC/relay.env.tmp" "$ETC/relay.env"
         echo "install: 已生成中继准入令牌 $ETC/relay.env（0600）。改它后 systemctl restart wonton-iroh-relay"
     fi
+    # 同上：重跑时收回已存在配置的权限，令牌始终只有 root/systemd 读。
+    chmod 0640 "$ETC/config.toml"
+    chmod 0600 "$ETC/relay.env"
 }
 
 install_vhost() {
@@ -110,7 +115,10 @@ install_vhost() {
 # 装完把主人块的证书路径换回去。
 restore_owner_cert() {
     local owner=/etc/nginx/sites-available/$OWNER_DOMAIN
-    [[ -f $owner ]] || return 0
+    if [[ ! -f $owner ]]; then
+        echo "install: 警告：找不到 $owner，没把主人的证书路径换回去；nginx -T 里核对一下" >&2
+        return 0
+    fi
     sed -i "s#/etc/letsencrypt/live/$DOMAIN/#/etc/letsencrypt/live/$OWNER_DOMAIN/#g" "$owner"
 }
 
@@ -197,7 +205,7 @@ main() {
         echo "install: 还没证书，服务会起不来；签好 $DOMAIN 的证书后 install.sh 重跑或 systemctl restart"
     fi
 
-    echo "install: 完成"
+    echo "install: 完成（内测期准入是 shared_token：只把连接信息发给自己的设备，不公开注册）"
     echo "install: 令牌在 $ETC/relay.env（0600），日志：journalctl -u wonton-iroh-relay，指标：curl --noproxy '*' http://127.0.0.1:19090/metrics"
 }
 

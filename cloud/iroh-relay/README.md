@@ -6,6 +6,9 @@
 
 上游是 [iroh](https://github.com/n0-computer/iroh) 的官方 `iroh-relay`，固定版本、官方 release 二进制、不改编。
 
+**内测期只给主人自己的设备用**，不对外公开、不开放注册：准入是 `shared_token`，没带令牌的连接被拒；
+令牌随配对码/连接信息下发，只发给自己的设备。
+
 ## 端口
 
 | 端口 | 协议 | 谁听 | 用途 |
@@ -72,8 +75,12 @@ bash install.sh --email ops@example.com   # 装服务、vhost、签证书
 - 准入令牌在 `/etc/wonton-iroh-relay/relay.env`（**0600**），systemd 经 `EnvironmentFile` 注入
   `IROH_RELAY_ACCESS_TOKEN`，上游用它整个覆盖配置里的 `shared_token` 列表。配置里留空列表，
   令牌缺失时中继拒绝启动（失败即停）。
-- 内测期所有客户端共用一个令牌：令牌随配对码/连接信息下发，泄露后别人也能用这个中继，接受（ADR-0048）。
-  收费时改成按 endpoint ID 的 http 回调，核心和协议不用改。
+- `https_bind_addr` / `quic_bind_addr` 属于 `[tls]` 节（上游 `TlsConfig`）：上游对顶层未知键不报错，
+  放顶层会被静默忽略、QAD 只剩回环监听；e2e 会断言 UDP 7842 绑在 `0.0.0.0`。
+- **默认是拒绝所有人，不是 everyone**：`shared_token` 留空列表、又没有 `IROH_RELAY_ACCESS_TOKEN`（或令牌为空）时，
+  进程直接拒绝启动（失败即停）；要放开必须显式改 `access = "everyone"`。
+- 内测期所有自己的设备共用一个令牌：令牌随配对码/连接信息下发，泄露后别人也能用这个中继，接受（ADR-0048）；
+  只发自己的设备，不公开。收费时改成按 endpoint ID 的 http 回调，核心和协议不用改。
 - 轮换：`printf 'IROH_RELAY_ACCESS_TOKEN=%s\n' "$(openssl rand -hex 32)" > /etc/wonton-iroh-relay/relay.env && systemctl restart wonton-iroh-relay`。
   旧令牌立即失效，所有客户端要在下次连接前更新连接信息。
 - 上游没有按 endpoint 计量和限速：metrics 是进程累计值；限速只能全服务一个值（`[limits.client.rx]`，模板里注释着）。

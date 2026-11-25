@@ -120,9 +120,25 @@ openssl req -x509 -newkey ec -pkeyopt ec_paramgen_curve:prime256v1 \
 # 5. 中继按模板配置起在回环（--dev：HTTP 明文，TLS 只留给 QAD）。
 sed -e "s#127.0.0.1:8742#127.0.0.1:$HTTP_PORT#" \
     -e "s#127.0.0.1:19090#127.0.0.1:$METRICS_PORT#" \
-    -e "s#0.0.0.0:7842#127.0.0.1:$QAD_PORT#" \
+    -e "s#0.0.0.0:7842#0.0.0.0:$QAD_PORT#" \
     -e "s#/etc/wonton-iroh-relay/tls#$TMP/tls#g" \
     "$HERE/config.toml.example" > "$TMP/relay.toml"
+# 5a. 准入默认是关的：缺令牌文件、或令牌为空，都必须拒绝启动，而不是落到 everyone。
+for mode in missing empty; do
+    rc=0
+    if [[ $mode == missing ]]; then
+        env -u IROH_RELAY_ACCESS_TOKEN timeout 10 "$RELAY_BIN" --dev --config-path "$TMP/relay.toml" \
+            >"$TMP/relay-$mode.log" 2>&1 || rc=$?
+    else
+        IROH_RELAY_ACCESS_TOKEN= timeout 10 "$RELAY_BIN" --dev --config-path "$TMP/relay.toml" \
+            >"$TMP/relay-$mode.log" 2>&1 || rc=$?
+    fi
+    [[ $rc -ne 0 ]] || die "令牌 $mode 时中继也起来了（默认放开了？）"
+    grep -q 'shared_token must not be empty' "$TMP/relay-$mode.log" ||
+        die "令牌 $mode 时报错不是 shared_token 为空：$(tail -2 "$TMP/relay-$mode.log")"
+done
+pass "缺令牌/空令牌都拒绝启动"
+
 IROH_RELAY_ACCESS_TOKEN=$TOKEN RUST_LOG=iroh_relay=trace \
     "$RELAY_BIN" --dev --config-path "$TMP/relay.toml" >"$TMP/relay.log" 2>&1 &
 RELAY_PID=$!
@@ -135,6 +151,11 @@ curl --noproxy '*' -fsS -o /dev/null "http://127.0.0.1:$HTTP_PORT/healthz" || {
     die "中继没起来"
 }
 pass "中继 healthz"
+# 6a. QAD 必须对外监听（quic_bind_addr 若放错到顶层，上游会静默忽略、只绑回环）。
+qad=$(ss -lunH "sport = :$QAD_PORT" || true)
+echo "$qad" | grep -qE "(\*|0\.0\.0\.0):$QAD_PORT" ||
+    die "QAD 没有对外监听 0.0.0.0:$QAD_PORT（多半是 quic_bind_addr 放错节了）：$qad"
+pass "QAD 对外监听 0.0.0.0:$QAD_PORT"
 
 # 6. nginx 终结 TLS，按 WebSocket Upgrade 反代到中继（部署配置本身过一遍 sed）。
 # 宿主机可能已经占着 80/443，所以测试里把两个 listen 都挪到空闲端口（只改测试的绑定，不改文件语义）。
