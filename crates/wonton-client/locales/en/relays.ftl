@@ -9,7 +9,6 @@ relays-not-loaded = The relay table hasn't been loaded yet; refresh it first.
 
 # The table comes from the WONTON_RELAYS environment variable and is read-only.
 relays-locked = This relay table is fixed by an environment variable and can't be changed here.
-relays-not-loaded = The relay table has not loaded yet; refresh before saving.
 
 # $reason is the proxy URL parser's original error.
 relays-invalid-proxy = The local proxy address isn't valid: { $reason }
