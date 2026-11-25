@@ -36,6 +36,9 @@ mod family;
 mod file;
 mod friends;
 mod home;
+mod inbox;
+mod inbox_request;
+mod inbox_validate;
 mod lan;
 mod link;
 mod link_preview;
@@ -212,6 +215,11 @@ pub use home::{
     ConnectionCheck, ConnectionDetails, ConnectionNotice, ConnectionQuality, DeviceInvite,
     DeviceNetwork, HomeFailure, HomePath, HomeStatus, HomeViewModel, JoinRoleView, PairingFailure,
     PairingStage, PairingStatus, ProxySettings,
+};
+pub use inbox::*;
+pub use inbox_validate::{
+    InboxInvalid, answerable, normalize_network_domain, ordered_selection, validate_action_id,
+    validate_answer, validate_answer_input, validate_item, validate_link, validate_network_domains,
 };
 pub use lan::{
     LanAddress, LanChoice, LanFailure, LanInterface, LanInterfaceKind, LanPlugin, LanPort,
