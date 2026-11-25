@@ -58,10 +58,9 @@ jobs:
           sdk="${ANDROID_HOME:-$ANDROID_SDK_ROOT}"
           ndk="$sdk/ndk/$ANDROID_NDK_VERSION"
           if [ ! -d "$ndk" ]; then
-            # 镜像上的 sdkmanager 不一定在 PATH 里，按 SDK 里的固定位置找。
-            sm="$sdk/cmdline-tools/latest/bin/sdkmanager"
-            command -v sdkmanager > /dev/null || sdkmanager="$sm"
-            yes | sdkmanager --install "ndk;$ANDROID_NDK_VERSION" > /dev/null
+            echo "SDK 里现有：$(ls "$sdk/ndk" 2>/dev/null | tr '\n' ' ')，装 $ANDROID_NDK_VERSION"
+            sm=$(command -v sdkmanager || echo "$sdk/cmdline-tools/latest/bin/sdkmanager")
+            yes | "$sm" --install "ndk;$ANDROID_NDK_VERSION" > /dev/null
           fi
           echo "ANDROID_NDK_HOME=$ndk" >> "$GITHUB_ENV"
 
