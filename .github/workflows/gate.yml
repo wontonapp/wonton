@@ -14,6 +14,10 @@ name: gate
 on:
   pull_request:
     types: [opened, synchronize, reopened, ready_for_review]
+  # 手动补一轮：pr-rebase（.github/workflows/pr-rebase.yml）用工作流自带的 GITHUB_TOKEN 强推分支，
+  # 这种推送不触发新工作流，PR 上会一条检查都没有。rebase 成功后由它 dispatch 这里补跑，
+  # 参数是分支名（`gh workflow run gate.yml --ref <branch>`）。
+  workflow_dispatch:
   # main 上只跑 lint（密钥扫描这一个提交）；合后的慢测试在 rust-docker.yml、ios.yml 的 push 上。
   push:
     branches: [main]
@@ -32,7 +36,7 @@ jobs:
     # PR 用 REST 列改动文件，不用检出代码；草稿 PR 跳过，重作业跟着跳过。
     # push（合进 main）也进这个作业：main 上 rust 一律全跑——合后必须真验一遍，之前只在每天 3 点的定时里跑，
     # 合进 main 的提交到那时之前一次单测都没有（11-13 #470 就是这样合进去的）。ios/android 合后仍交给夜间兜底。
-    if: (github.event_name == 'pull_request' && github.event.pull_request.draft == false) || github.event_name == 'push'
+    if: (github.event_name == 'pull_request' && github.event.pull_request.draft == false) || github.event_name == 'push' || github.event_name == 'workflow_dispatch'
     runs-on: ubuntu-24.04
     timeout-minutes: 5
     permissions:
@@ -54,8 +58,11 @@ jobs:
       # MIT
       - uses: dorny/paths-filter@ceb8a2b8f2d89434be7ff52d3de7ec3738c5cc9d # v4.0.3
         id: filter
-        if: github.event_name == 'pull_request'
+        if: github.event_name != 'push'
         with:
+          # 只在这个工作流被 dispatch 时给：按 ref 和 main 比文件；PR 上留空，dorny 自己用 PR 的 base/head。
+          base: ${{ github.event_name == 'workflow_dispatch' && 'main' || '' }}
+          ref: ${{ github.event_name == 'workflow_dispatch' && github.ref_name || '' }}
           # 和 GitHub 自己的 paths 一样按文件判断：命中任意一条正向规则、且不命中任何 ! 排除项才算改到。
           predicate-quantifier: some-with-excludes
           filters: |

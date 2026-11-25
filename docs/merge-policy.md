@@ -40,6 +40,10 @@
 - **冲突**：只有这个要排。冲突由 `.github/workflows/pr-rebase.yml` 在 `main` 动了之后自动试解一次，
   解不开就贴冲突文件清单打 `needs-rebase` 标，作者接手。挂着 `needs-rebase` 的 PR 不进合并队列。
 
+自动 rebase 推分支用的是工作流的 `GITHUB_TOKEN`，这种推送不触发别的 workflow。所以它解开一条之后会
+`gh workflow run gate.yml --ref <branch>` 给那条分支补一轮检查（`gate.yml` 为此开了 `workflow_dispatch`）——
+看到某条 PR 的检查是「上一分钟刚起」的，就是这条路补的，正常。
+
 ## 复审和合并
 
 复审只在**最新的、已提交的 head** 上判，旧 head 的结论一律作废；复审不改码、不推 head，有问题发 review
