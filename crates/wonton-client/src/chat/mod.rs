@@ -1,9 +1,9 @@
 //! 聊天：经隧道登录主人的 Matrix 账号，房间列表、时间线、收发消息和端到端加密（ADR-0003、ADR-0005，以及
 //! ADR-0009 的“接口：App 登录和使用 Matrix”）。
 //!
-//! 跟着家里的连接走：本地代理就绪（或者换了）就登录。上次登录的是同一台服务器就用存下来的登录状态恢复，不经服务器；
-//! 否则经隧道向核心要一次性的登录令牌，用它登录 `matrix.<基础域名>`。所有 Matrix 请求都走本地代理，Tuwunel 只被当成
-//! 标准的 Matrix 服务器（ADR-0015）。
+//! 跟着家里的连接走：本机存着这台服务器的会话就立刻恢复、房间和历史先出来，不等隧道；本地代理就绪（或者换了）再换成
+//! 带代理的那次登录。上次登录的是同一台服务器就用存下来的登录状态恢复，不经服务器；否则经隧道向核心要一次性的登录
+//! 令牌，用它登录 `matrix.<基础域名>`。所有 Matrix 请求都走本地代理，Tuwunel 只被当成标准的 Matrix 服务器（ADR-0015）。
 //!
 //! 外部 Matrix 账号的槽位（ADR-0051）不跟着家里的连接走：直连那个账号的 homeserver，用登录时
 //! （`matrix_login`）存进槽位的登录状态和存储恢复；登录状态没了只能重新登录那个账号。
@@ -179,6 +179,8 @@ pub(crate) struct ChatLink {
     /// “添加设备”页开着、还能自动接受一个新设备的确认请求（ADR-0087）。
     handoff_armed: AtomicBool,
     relogin: connect::Relogin,
+    /// 这次登录用的本地代理：隧道刚通时又进来一次同样的代理，就知道不用再换一次会话。
+    signing_proxy: Mutex<Option<wonton_protocol::ProxySettings>>,
     external: bool,
     /// 已经有人在跟的房间，输入框的 @ 列表跟着成员和 Bot 补发，一个房间只跟一次。
     mentions_watched: Mutex<HashSet<String>>,
@@ -367,6 +369,7 @@ impl ChatLink {
             verification: Mutex::new(None),
             handoff_armed: AtomicBool::new(false),
             relogin: connect::Relogin::default(),
+            signing_proxy: Mutex::default(),
             external,
             mentions_watched: Mutex::new(HashSet::new()),
         });

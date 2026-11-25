@@ -1,20 +1,25 @@
 //! 登录或恢复 Matrix 会话，以及存下的登录状态属于哪台服务器。
 
+use std::time::Duration;
+
 use wonton_l10n::l10n;
+
 use wonton_matrix::{MatrixSession, SessionConfig, StoreConfig};
 use wonton_protocol::{ChatFailure, CoreError, DeviceVerification, ProxySettings, RecoveryStatus};
 
 use super::storage::StoredSession;
 use super::{ChatLink, failure, login};
+use crate::home::HomeLink;
 use crate::l10n::{CATALOG, language};
 
 /// 连接信息里没有设备名时的显示名（`ConnectHome` 给的连接信息没有）。
 const DEVICE_NAME: &str = "Wonton App";
 
 impl ChatLink {
+    /// 恢复或登录。`proxy` 为空只用于本机已有会话时的离线恢复（隧道没通）：这时只走恢复，不会去要令牌。
     pub(super) async fn sign_in(
         &self,
-        proxy: &ProxySettings,
+        proxy: Option<&ProxySettings>,
         server_id: String,
     ) -> Result<MatrixSession, (ChatFailure, String)> {
         let lang = language();
@@ -30,7 +35,7 @@ impl ChatLink {
                 path: self.storage.store_dir(),
                 passphrase: None,
             },
-            proxy: Some(login::proxy_url(proxy)),
+            proxy: proxy.map(login::proxy_url),
         };
         let storage_failure = |e: CoreError| (ChatFailure::Upstream, e.to_string());
         let stored = self.session_on(&server_id).map_err(storage_failure)?;
@@ -51,6 +56,12 @@ impl ChatLink {
                     )
                 });
         }
+        let Some(proxy) = proxy else {
+            return Err((
+                ChatFailure::NotReady,
+                l10n!(CATALOG, lang, "chat-sign-in-no-connection-info"),
+            ));
+        };
         let core_url = self.home.core_url().ok_or((
             ChatFailure::NotReady,
             l10n!(CATALOG, lang, "chat-sign-in-no-connection-info"),
@@ -127,6 +138,18 @@ impl ChatLink {
             })
     }
 
+    /// 本机存着 `server_id` 的登录状态、存储也在：隧道还没通也能先把它恢复出来。读不出来时按没有算，交给带代理的
+    /// 那次报存储错误。
+    pub(super) fn has_local_session(&self, server_id: &str) -> bool {
+        self.storage.has_store()
+            && self
+                .storage
+                .session()
+                .ok()
+                .flatten()
+                .is_some_and(|stored| stored.server_id == server_id)
+    }
+
     /// 存下的登录状态，只要 `server_id` 这台服务器的。别的服务器的令牌拿到这里只会被拒，看着像这台设备被吊销了，那边的
     /// 设备密钥和房间密钥也用不上，所以连本地存储一起丢掉，页面上也不再留那台服务器的房间。
     fn session_on(&self, server_id: &str) -> Result<Option<StoredSession>, CoreError> {
@@ -168,5 +191,23 @@ impl ChatLink {
             homeserver_url,
             session: saved,
         })
+    }
+}
+
+impl HomeLink {
+    /// 等本地代理出现，最多等 `grace`；隧道建不起来时返回 `None`。
+    pub(crate) async fn wait_for_proxy(&self, grace: Duration) -> Option<ProxySettings> {
+        let mut view = self.subscribe();
+        let wait = async {
+            loop {
+                if let Some(proxy) = view.borrow_and_update().proxy.clone() {
+                    return Some(proxy);
+                }
+                if view.changed().await.is_err() {
+                    return None;
+                }
+            }
+        };
+        tokio::time::timeout(grace, wait).await.ok().flatten()
     }
 }

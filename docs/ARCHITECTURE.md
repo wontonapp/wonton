@@ -168,6 +168,9 @@ Matrix 邀请流程只在对方同意后调用存储 API；本机账号分配须
 ### 聊天
 
 App 的 Matrix 客户端请求进入客户端核心的本地代理，经 iroh 隧道到核心网关，再转给 Tuwunel。
+
+打开 App 先用本机存下的会话：本机有这台服务器的登录状态就立刻恢复，房间和已有历史从本机出，不等隧道；请求连不上时状态如实显示“传输不可用”，同步自己退避重试，隧道通了再经本地代理接着同步。首次登录才等本地代理就绪。
+
 Hermes 以对应 Bot 的 Matrix 身份收到消息，通过上游自带的供应商接入调模型、经 Wonton MCP 总线调受管工具，再把回复发回房间，由 Sliding Sync 同步到所有设备。模型接入和原生委派的边界见 [ADR-0108](adr/0108-hermes-default-kernel.md)。
 
 Bot 的请求按令牌认是哪个 Bot，只有 whoami 说令牌不认（401 和 403 都算，后者是账号停用之类的真失效）才回 403；核心还在恢复插件、或问不到 Tuwunel 时回带 `Retry-After` 的 503，让上游的重试活下来（[ADR-0111](adr/0111-bot-request-retryable-restart.md)）。网关顺手记下每次成功的同步，插件的健康检查超过 120 秒没同步就标 `Degraded` 并写明原因：上游的 `/health/detailed` 只看平台状态，同步循环停了也报 connected。
