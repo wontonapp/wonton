@@ -82,7 +82,7 @@
 
 **条目在核心里**（`core/inbox`，0600），由核心给 `InboxViewModel`，壳只渲染、把操作发回核心。一条条目有：
 
-- `id`（核心分配，带类型前缀 `c-`/`q-`/`p-`/`r-`/`n-`）、`type`、`status`、`created_at`、`expires_at`；可选的 `group_id`/`group_index`/`group_size`（只给拆开的 Hermes 卡）；
+- `id`（核心分配，带类型前缀 `c-`/`q-`/`p-`/`r-`/`n-`）、`type`、`status`、`created_at`、`expires_at`；
 - `sender`（`kind: agent|worker|core|plugin`、`id`、`display_name`、`avatar`）和可选的 `source`（房间、线程、worker_id、任务、深链）；
 - `recipient`（一个人或所有管理员）、`read_by`、`answered_by`、`answered_at`；
 - `title`、`body`（纯文本兜底，给旧 App、通知和读屏）、`level`（notice）、可选的 `snooze_until`；
@@ -112,7 +112,7 @@ pending ──answer──▶ handled ──24h──▶ archived ──30d─�
 
 - `handled` 带 `outcome`（answered / declined / acknowledged）和 `answered_by`；管理员条目被别人答了，其余人的那份变 `handled_elsewhere`。
 - `expired` 和 `withdrawn` 是终点：再答返回 409，页面显示“已过期 / 对方撤回”。过期后仍留在收件箱 30 天，不能答。
-- 一个条目只能答一次。同一个 `answer_id` 重试返回 200 和同一结果；不同 `answer_id` 再答返回 409 并附当前答案，例外只有两种：异步条目第一次 `handled` 后的 60 秒内，或拆开的 Hermes 组还有 sibling 没答时（组未合并前，60 秒内）。
+- 一个条目只能答一次。同一个 `answer_id` 重试返回 200 和同一结果；不同 `answer_id` 再答返回 409 并附当前答案，例外只有一种：异步条目第一次 `handled` 后的 60 秒内。
 - 重答时旧答案保留为 `superseded`，`GET /inbox/{id}` 同时返回 `answer`（当前）和 `superseded_answers`（旧）；60 秒后旧答案只进审计。
 - 阻塞条目在发送方断开 60 秒后自动 `withdrawn`，写明“对方不再等这个回答”；异步条目不因断开撤回。
 
@@ -289,15 +289,14 @@ wonton__inbox_cancel  { "item_id": "q-01J…", "reason": "任务提前结束" }
 
 **5.1 Wonton 自己的问题卡**：关掉 Hermes 自带的 `clarify` 工具集，模型改用核心的 `wonton__inbox_ask`。答案作为工具结果回到 Hermes 的模型，Hermes 继续干；Hermes 不需要知道收件箱存在。
 
-**5.2 Hermes 原生的批准/澄清**：Hermes 的网关发 `approval.request` / `clarify.request` 事件，用 `approval.respond` / `clarify.respond` 回答。`approval.pending` 是 Desktop 的补播请求（不是事件）：入参 `session_id`+`profile`，返回 `{approvals:[{request_id,…}]}`，桥在 attach 时用它补没收到的事件。一个薄的 Hermes 插件做桥（以我们镜像钉的 v0.22.7 源码为准：`gateway/session_pending_controls.py:38`/`:51` 发请求，`gateway/session_controls.py:842-852` 收回答，`acp_adapter/gateway_server.py:1170`/`:1202` 是调用样板）：
+**5.2 Hermes 原生的批准/澄清**：Hermes 的网关发 `approval.request` / `clarify.request` 事件，用 `approval.respond` / `clarify.respond` 回答。`approval.pending` 是 Desktop 的补播请求（不是事件）：入参 `session_id`+`profile`，返回 `{approvals:[{request_id,…}]}`，桥在 attach 时用它补没收到的事件。一个薄的 Hermes 插件做桥（以我们镜像钉的 v0.22.7 源码为准：`gateway/session_pending_controls.py:38`/`:51` 发请求，`gateway/session_controls.py:842-852` 收回答，`acp_adapter/gateway_server.py` 的 `_answer_clarify`/`_answer_permission` 是调用样板）：
 
 - 订阅 `approval.request` / `clarify.request` 事件，把 `prompt_id`、`execution_generation`、`session_id`、命令或问题、`choices`/`multi_select` 写成 `confirm`/`choice` 条目（`clarify` 的 `choices` 为空就是 0 选项输入框），`source` 带 `session_id`/`prompt_id`/`execution_generation`；条目的 `sender` 是 Hermes，`dedupe_key` 用 `prompt_id`。`approval.request` 的 `choices` 只映射它实际给的档：`once`→`approve`、`session`→`session`、`always`→`always`、`deny`→`deny`；没给的档不显示。
-- Hermes 的 `clarify` 允许 5 题，超过 4 时桥按 4+1 拆成两张，`dedupe_key` 用 `prompt_id` 加同一前缀，`group_id` 用 `prompt_id`、`group_index` 为 0/1，答案按题目顺序合并回；不截断。
-- 拆开的组只在**两张都 handled** 时才回 Hermes：合并 `answers` 后一次 `clarify.respond`。这是阻塞条目的一个明确例外：组还没合并前（有 sibling 仍 pending），已答的那张在 60 秒内可以重答，桥更新同一个 item，旧答案 `superseded`；一旦组回给 Hermes，不再改。回 Hermes 的 `outcome` 用 Hermes 的词 `submitted`，收件箱自己的 outcome 仍是 answered。
-- 任一张 `decline`：整个组按 Hermes 的 `cancelled` 回，带上已答的 `answers`，另一张 `inbox_cancel`；任一张 `expired`：按 Hermes 的 `timed_out` 回，带上已答的 `answers`，另一张 `inbox_cancel`。两张都 `decline` 也是 `cancelled`，没有答案。回 Hermes 的 outcome 词和收件箱 item 的 outcome 分开写，不混用。
-- 合并回 Hermes 后不再重答（阻塞条目）。如果组是异步建的（M1 不要求），才考虑 `late_correction`。
+- **`clarify.request` 是一题一个事件，不拆卡。** Hermes 的 `clarify` 工具一次可以带 5 题，但网关每题发一个 `clarify.request`；桥就每题建一条 `choice`（1 题），`dedupe_key` 用 `prompt_id`。4 题上限只约束 `inbox_ask`，不约束 Hermes 的原生事件。主人在收件箱按顺序答，每题答完立刻调一次 `clarify.respond`；Hermes 自己数到最后一题继续，桥不合并、不等全部。
+- `decline` 对应的 `answer` 是 `"\x00cancelled"`（`tools/clarify_gateway.py:46` 的 `CANCELLED`，runner 在 `gateway/run_turn_runner.py:608` 认）；`expired` 对应空串 `""`（`gateway/run_turn_runner_clarify_delivery.py:115` 把它当没答、走 `timed_out`）；正常答案是选中项原文，默认 `submitted`。`clarify.respond` 没有 `outcome` 字段，outcome 是 Hermes runner 按这三种值推的，别在 RPC 里多加字段。
+- `clarify` 是阻塞条目，60 秒内不可重答（和全局一致）；要改只能等 Hermes 再问或另发一题。
 - 主人在收件箱答完，桥调 `approval.respond`（`{session_id, execution_generation, prompt_id, choice}`，`choice` 就是上面映射的档）或 `clarify.respond`（`{session_id, execution_generation, prompt_id, answer}`；`answer` 是字符串：选中项原文，`Other` 是自填文本，多选用 JSON 数组字符串）。Hermes 的网关按现有逻辑继续那一轮。`on_session_prompt` 这类 UI 层钩子只影响本地展示，桥以网关的 `*.request`/`*.settled` 事件为准。
-- 另一端先答了（本地 CLI/桌面）：网关广播 `approval.settled` / `clarify.settled`（`gateway/session_pending_controls.py:63`；ACP viewer 也收这两种，`acp_adapter/gateway_server.py:973`）；桥收到 `{prompt_id, execution_generation}` 后 `inbox_update` 成 `handled_elsewhere`，收件箱里撤下按钮。`clarify.lock` 是另一条 RPC（抢同一请求的回答权），不是广播事件。
+- 另一端先答了（本地 CLI/桌面）：网关广播 `approval.settled` / `clarify.settled`（`gateway/session_pending_controls.py:63`；ACP viewer 的 `_project` 也收这两种）；桥收到 `{prompt_id, execution_generation}` 后 `inbox_update` 成 `handled_elsewhere`，收件箱里撤下按钮。`clarify.lock` 是另一条 RPC（抢同一请求的回答权），不是广播事件。
 - Hermes 进程退出、轮次中断：桥在 60 秒后 `inbox_cancel`，条目写“Hermes 不再等这个回答”，不假装还阻塞。
 - 桥只做映射，不做权限判断：`always` 的持久化、`session` 的范围、危险命令的判断全在 Hermes；核心只把 choice 原样送回。
 
@@ -410,7 +409,7 @@ POST /_wonton/api/inbox/workers
 - `handled` 后留 24 小时可回看/撤销“已读”，之后进 `archived` 30 天；`expired`/`withdrawn` 留 30 天。
 - 页面快照随条目 30 天后删；附件按文件服务的保留策略。
 - 审计写：条目 id、类型、发送方、收件人、动作、`answer_id`、结果、投递状态（送到/撤不回/失败）、页面内容的 sha256，不写页面内容和自由文本（避免验证码进日志）；审计留 90 天。
-- 答案默认是最终的：阻塞条目的工具结果已经回去，不能再改；唯一例外是拆开的 Hermes 组在 sibling 还 pending 时（组未合并前 60 秒内）。异步条目第一次 `handled` 后 60 秒内也可以撤回重答。重答用新 `answer_id`，旧答案标 `superseded` 并留在 `superseded_answers`，`answer` 换成新答案；60 秒后再答返回 409 `answer_locked`。
+- 答案默认是最终的：阻塞条目的工具结果已经回去，不能再改；只有异步条目第一次 `handled` 后 60 秒内可以撤回重答。重答用新 `answer_id`，旧答案标 `superseded` 并留在 `superseded_answers`，`answer` 换成新答案；60 秒后再答返回 409 `answer_locked`。
 
 ### 12. 契约、提供方、消费方
 
@@ -439,7 +438,7 @@ POST /_wonton/api/inbox/workers
 
 1. **收件箱只放这五种吗**：五种（`choice`/`page`/`recap`/`confirm`/`notice`，推荐）；再加 `form` 自由表单；再加 `task` 待办。**推荐五种**，先把结构跑通。
 2. **谁能发**：任何有 `tools` 权限的 Agent（推荐，配上限）；只有核心和声明了 `inbox` 的插件；每次主人点“允许这个 Bot 发”。**推荐第一种**。
-3. **一张卡最多几题**：1–4 题（Claude 的上限，推荐）；1–5 题（照顾 Hermes `clarify`）；1 题。**推荐 4 题**，多出来的让 Agent 拆两张。
+3. **一张卡最多几题**：1–4 题（Claude 的上限，推荐）；1–5 题（照顾 Hermes `clarify`）；1 题。**推荐 4 题**，多出来的让 Agent 拆两张；Hermes 原生事件一题一条，不受此限。
 4. **每题最多几个选项**：2–4 个，允许 0 个自由回答（推荐）；2–6 个；不限制。**推荐 4 个**，多了让 Agent 合并。
 5. **“其他”和备注**：每题永远有“其他”，备注可选（推荐）；“其他”永远有，备注必填；只在没有选项时给“其他”。**推荐第一种**。
 6. **页面能不能跑脚本**：脚本可以跑；联网只按发送方声明的域名名单放行，卡上写明“会访问：xxx”，不写名单就完全断网。**已按此定。**
@@ -494,7 +493,7 @@ POST /_wonton/api/inbox/workers
 - 通知上的允许/拒绝/单题选项能答；答完另一台设备撤下；答失败留“重试”。
 - 页面沙箱：内联脚本能跑；未声明的 `fetch` 被 CSP 拦；`ui/open-link` 走系统浏览器；页面调 `tools/call` 记成发送方 Bot；敏感工具另弹确认。
 - 页面快照 30 天清理；发送方删插件后页面还能打开、工具调用显示“插件连不上”。
-- Hermes 桥：`approval.request` 变 `confirm`、`clarify.request` 变 `choice`（5 题拆 4+1）；答完分别调 `approval.respond`/`clarify.respond`；本地 CLI 先答时收到 `*.settled` 变 `handled_elsewhere`；Hermes 退出 60 秒后 `withdrawn`。
+- Hermes 桥：`approval.request` 变 `confirm`、`clarify.request` 逐题变 `choice`；答完分别调 `approval.respond`/`clarify.respond`；本地 CLI 先答时收到 `*.settled` 变 `handled_elsewhere`；Hermes 退出 60 秒后 `withdrawn`。
 - worker `needs` 变 `confirm`；答完 router 轮询拿到并 `tern approve`；执行失败留 pending 和“没送到”。
 - 管理员条目 A 答后 B 显示“已由 A 处理”且通知撤下；家人 A 的条目不出现在家人 B 的收件箱。
 - 无设备时 `inbox_ask` 返回 `pending` + `no_device`，不假装送达；上线后能看到。
@@ -511,7 +510,7 @@ POST /_wonton/api/inbox/workers
 - MCP Apps 规范（CSP 默认、沙箱、`ui/open-link`、`tools/call`）：https://github.com/modelcontextprotocol/ext-apps/blob/main/specification/2026-01-26/apps.mdx 。
 - 现有 MCP Apps 宿主、页面安全：`docs/adr/0052-chat-pull-panel.md`（“Bot 往面板上放页面”“MCP Apps 界面怎么显示”）。
 - 问题卡形状和上限：`docs/adr/0038-multi-step-cards.md`（`wonton__ask_owner`、`StepCard`、超时不提交、Other 永远有）。
-- Hermes 本地源码（commit `b200f5bc`）：`tools/clarify_tool.py:10-12`（5 题、4 选项、推荐项、Other）、`tools/clarify_gateway.py`（阻塞等待、`clarify.respond`）、`tools/approval_prompt.py:37`（`once`/`session`/`always`/`deny`/`timeout`/`cancelled`）、`gateway/session_controls.py:238`（`approval.respond`/`clarify.respond`）、`acp_adapter/gateway_server.py:1202`、`gateway/session_commands.py:516`（另一端先答后 settle 所有 viewer）。
+- Hermes 本地源码（commit `b200f5bc`）：`tools/clarify_tool.py:10-12`（5 题、4 选项、推荐项、Other）、`tools/clarify_gateway.py:46`（`CANCELLED = "\x00cancelled"`）、`tools/approval_prompt.py:37`（`once`/`session`/`always`/`deny`/`timeout`/`cancelled`）、`gateway/session_pending_controls.py:38/51/63`（`*.request`/`*.settled`、一题一个 `clarify.request`）、`gateway/session_controls.py:842-852`（两个 respond 的必填参数）、`gateway/run_turn_runner.py:608`、`gateway/run_turn_runner_clarify_delivery.py:115`（cancelled/timed_out 的约定值）、`acp_adapter/gateway_server.py` 的 `_project`/`_answer_clarify`/`_answer_permission`、`gateway/session_commands.py:516`（另一端先答后 settle 所有 viewer）。
 - Slack Block Kit：https://docs.slack.dev/reference/block-kit/blocks/ （最多 50 block、元素类型）；Actions block：https://docs.slack.dev/reference/block-kit/blocks/actions-block （最多 25 元素、`action_id`）；交互处理：https://docs.slack.dev/interactivity/handling-user-interaction/ （`payload`、3 秒 ack、`response_url` 30 分钟 5 次、`replace_original`）。
 - Teams Adaptive Cards：`Input.Text` https://learn.microsoft.com/en-us/adaptive-cards/schema-explorer/input-text （`id`、`isRequired`、`errorMessage`、`maxLength`）；`Action.Submit` https://learn.microsoft.com/en-us/adaptive-cards/schema-explorer/action-submit （收集输入、`style`、`mode`、`isEnabled`）；卡片版本/移动端上限：https://learn.microsoft.com/en-us/microsoftteams/platform/task-modules-and-cards/cards/cards-reference （移动端最高 1.6）。
 - Linear Inbox：https://linear.app/docs/inbox （读/未读、Snooze、删除、Priority/Other）。Linear Triage：https://linear.app/docs/triage （Accept/Decline/Duplicate/Snooze）。
