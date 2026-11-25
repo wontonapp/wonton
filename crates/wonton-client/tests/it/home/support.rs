@@ -10,6 +10,7 @@ use std::time::Duration;
 use base64::{Engine as _, engine::general_purpose::STANDARD};
 use iroh::endpoint::presets;
 use iroh::{Endpoint, EndpointId, SecretKey};
+use serde_json::json;
 use tokio::io::{AsyncReadExt, AsyncWriteExt};
 use tokio::net::{TcpListener, TcpStream, UdpSocket};
 use tokio::task::JoinHandle;
@@ -255,22 +256,47 @@ async fn loopback_endpoint(key: SecretKey, port: u16) -> Endpoint {
     }
 }
 
+/// 等连接信息里的直连候选包含 `addr`。候选只由核心的报告写；`used_addrs`（本机实际连通过的路径）
+/// 里出现不算，那条是当选路切到直连时立刻写的，早于报告。
 pub(super) async fn wait_until_ticket_has(dir: &std::path::Path, addr: SocketAddr) {
+    wait_for_candidate(dir, addr, false).await;
+}
+
+/// 等直连候选的第一条变成 `addr`：调用方接下来断言的就是第一条。
+pub(super) async fn wait_until_leading_direct_addr(dir: &std::path::Path, addr: SocketAddr) {
+    wait_for_candidate(dir, addr, true).await;
+}
+
+async fn wait_for_candidate(dir: &std::path::Path, addr: SocketAddr, leading: bool) {
     let deadline = tokio::time::Instant::now() + WAIT;
-    let wanted = addr.to_string();
+    let wanted = json!(addr);
     let has_it = || {
-        std::fs::read_to_string(dir.join("servers/1/home-ticket.json"))
-            .is_ok_and(|text| text.contains(&wanted))
+        direct_candidates(dir).is_some_and(|addrs| match addrs.first() {
+            Some(first) if leading => *first == wanted,
+            _ => addrs.contains(&wanted),
+        })
     };
     while !has_it() {
         assert!(
             tokio::time::Instant::now() < deadline,
-            "连接信息里一直没有 {wanted}"
+            "连接信息{}里一直没有 {addr}：{:?}",
+            if leading {
+                "的第一条直连候选"
+            } else {
+                "的直连候选"
+            },
+            direct_candidates(dir)
         );
         tokio::time::sleep(Duration::from_millis(10)).await;
     }
 }
 
+/// 连接信息里的直连候选；文件还没写、或者不是 JSON 时是 `None`。
+fn direct_candidates(dir: &std::path::Path) -> Option<Vec<serde_json::Value>> {
+    let bytes = std::fs::read(dir.join("servers/1/home-ticket.json")).ok()?;
+    let ticket: serde_json::Value = serde_json::from_slice(&bytes).ok()?;
+    ticket["server"]["direct_addrs"].as_array().cloned()
+}
 /// 上游：每个请求回 200，正文是请求路径；`/_wonton/api/tunnel` 有 `tunnel_info` 时回它，`fail_tunnel` 还没用完时回 503。
 async fn path_echo(
     tunnel_info: Arc<Mutex<Option<String>>>,
