@@ -56,3 +56,15 @@ description = "index.json 的 files 是插件包内文件的 sha256，文件名�
 condition = "AND"
 paths = ['''^deploy/dev/core/store/index\.json$''']
 regexes = ['''^[0-9a-f]{64}$''']
+
+[[allowlists]]
+description = "中继 README 里演示 WebSocket 握手用的 RFC 6455 文中的示例 nonce（和上面同值），不是凭据"
+condition = "AND"
+paths = ['''^cloud/iroh-relay/README\.md$''']
+regexes = ['''dGhlIHNhbXBsZSBub25jZQ==''']
+
+[[allowlists]]
+description = "relay.env.example 里的准入令牌占位值（大写字母加下划线），装机时会被真正的 64 位十六进制替换"
+condition = "AND"
+paths = ['''^cloud/iroh-relay/relay\.env\.example$''']
+regexes = ['''REPLACE_WITH_64_HEX_CHARS''']
