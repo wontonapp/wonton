@@ -261,3 +261,163 @@ async fn a_stale_plan_stops_before_any_card() {
     assert_eq!(kind.as_deref(), Some("changed"));
     assert_eq!(pending_cards(&h).await, 0);
 }
+
+const EARLIER_PROVIDER: &str = "app.example.aaa";
+const LATER_PROVIDER: &str = "app.example.zzz";
+
+/// 多提供方用例的提供方：标题就是 ID，卡片按标题写提供方，断言照着 ID 对。`search` 决定补不补第一项
+/// 能力；`docker.socket` 声明成可选、默认关，够最高级、又不多一张第二张卡。
+fn two_provider_compose(id: &str, search: bool) -> String {
+    let provides = if search {
+        "    x-acme.search: {service: web, port: 8080}\n    \
+         x-acme.lookup: {service: web, port: 8080}\n"
+    } else {
+        "    x-acme.lookup: {service: web, port: 8080}\n"
+    };
+    format!(
+        "services:\n  web:\n    image: nginx\n    expose: [8080]\n    volumes:\n      \
+         - /var/run/docker.sock:/var/run/docker.sock\nx-wonton:\n  spec: '{}'\n  id: {id}\n  \
+         version: 1.0.0\n  kind: app\n  title: {{zh: {id}, en: {id}}}\n  \
+         description: {{zh: {id}, en: {id}}}\n  permissions: []\n  optional_permissions:\n    \
+         docker.socket:\n      off_loss: {{zh: 无容器管理, en: No container management}}\n  \
+         provides:\n{provides}",
+        spec()
+    )
+}
+
+/// 索引里靠前的提供方只补第二项能力，靠后的两项都补：按“每项能力的第一个”造的请求是 [靠后, 靠前]。
+/// 返回使用方预览和两项提供方预览，检索目录要留到测试结束。
+async fn two_providers_fixture() -> (
+    tempfile::TempDir,
+    Harness,
+    iroh::PublicKey,
+    wonton_protocol::InstallPreview,
+    wonton_protocol::InstallPreview,
+    wonton_protocol::InstallPreview,
+) {
+    let index = tempfile::tempdir().unwrap();
+    for (id, repo, search) in [
+        (EARLIER_PROVIDER, "aaa", false),
+        (LATER_PROVIDER, "zzz", true),
+    ] {
+        let package =
+            PluginPackage::parse(&two_provider_compose(id, search), &Languages::default()).unwrap();
+        crate::plugin::storefront::index::IndexEntry::of(
+            &package,
+            &format!("github:example/{repo}"),
+            &"a".repeat(40),
+        )
+        .unwrap()
+        .write_to(index.path(), &package)
+        .unwrap();
+    }
+    let h = Harness::start_with_store(
+        None,
+        crate::plugin::storefront::StoreConfig {
+            index_dir: Some(index.path().to_owned()),
+            community: false,
+        },
+    )
+    .await;
+    let member = ask_admin_member(&h).await;
+    let consumer = h
+        .manager
+        .preview_upload(
+            PluginPackage::parse(&consumer_compose(), &Languages::default()).unwrap(),
+            &Languages::default(),
+        )
+        .await
+        .unwrap();
+    let later = h
+        .manager
+        .preview_source(
+            &consumer.missing_requires[0].providers[0].source,
+            &Languages::default(),
+        )
+        .await
+        .unwrap();
+    let earlier = h
+        .manager
+        .preview_source(
+            &consumer.missing_requires[1].providers[0].source,
+            &Languages::default(),
+        )
+        .await
+        .unwrap();
+    (index, h, member, consumer, later, earlier)
+}
+
+fn connection_lines(card: &Value) -> Vec<String> {
+    card["lines"]
+        .as_array()
+        .unwrap()
+        .iter()
+        .filter_map(|line| line["text"].as_str())
+        .filter(|text| text.contains("x-acme.search") || text.contains("x-acme.lookup"))
+        .map(str::to_owned)
+        .collect()
+}
+
+fn together(preview: &wonton_protocol::InstallPreview) -> Value {
+    json!({"source": preview.source, "digest": preview.digest, "plan": preview.plan, "grant": []})
+}
+
+/// 两项能力各有多个提供方：执行时一项能力连的是请求里排最前的能提供的那个。卡片只写它、两项能力一行；
+/// 索引里排最前、只补后一项的那个提供方不该出现在连接行里。
+#[tokio::test]
+async fn the_connection_line_names_the_provider_the_install_will_use() {
+    let (_index, h, member, consumer, later, earlier) = two_providers_fixture().await;
+    assert_eq!(consumer.missing_requires[0].providers[0].id, LATER_PROVIDER);
+    assert_eq!(
+        consumer.missing_requires[1].providers[0].id,
+        EARLIER_PROVIDER
+    );
+    let request = json!({
+        "source": consumer.source, "digest": consumer.digest, "plan": consumer.plan, "grant": [],
+        "install_together": [
+            {"id": LATER_PROVIDER, "request": together(&later)},
+            {"id": EARLIER_PROVIDER, "request": together(&earlier)},
+        ],
+    });
+    let waiting = spawn_member_request(&h, member, "/_wonton/api/plugins", request);
+    let card = pending_admin_card(&h).await;
+    let connection = connection_lines(&card);
+    assert_eq!(connection.len(), 1, "只写真会连上的那个提供方：{card}");
+    assert!(
+        connection[0].contains("x-acme.search, x-acme.lookup"),
+        "{card}"
+    );
+    assert!(
+        connection[0].contains(LATER_PROVIDER),
+        "写靠后、真会连上的那个：{card}"
+    );
+    answer_admin_card(&h, &card, "approve").await;
+    let (status, body) = finished(waiting).await;
+    assert_eq!(status, StatusCode::CREATED, "{body}");
+    assert!(installed(&h, LATER_PROVIDER));
+}
+
+/// 同一个提供方在请求里出现两次：卡片只写一行连接，执行时才回 400。
+#[tokio::test]
+async fn the_same_provider_twice_writes_one_connection_line() {
+    let (_index, h, member, consumer, later, _earlier) = two_providers_fixture().await;
+    let request = json!({
+        "source": consumer.source, "digest": consumer.digest, "plan": consumer.plan, "grant": [],
+        "install_together": [
+            {"id": LATER_PROVIDER, "request": together(&later)},
+            {"id": LATER_PROVIDER, "request": together(&later)},
+        ],
+    });
+    let waiting = spawn_member_request(&h, member, "/_wonton/api/plugins", request);
+    let card = pending_admin_card(&h).await;
+    let connection = connection_lines(&card);
+    assert_eq!(connection.len(), 1, "{card}");
+    assert!(
+        connection[0].contains("x-acme.search, x-acme.lookup"),
+        "{card}"
+    );
+    answer_admin_card(&h, &card, "approve").await;
+    let (status, body) = finished(waiting).await;
+    assert_eq!(status, StatusCode::BAD_REQUEST, "{body}");
+    assert!(!installed(&h, LATER_PROVIDER));
+}

@@ -3,8 +3,6 @@
 //! 经它用到的高权限能力都写进第一张，管理员批的就是执行要交出去的。卡片前的核对在
 //! [`super::install_gate_checks`]。
 
-use std::collections::BTreeSet;
-
 use wonton_protocol::{
     Answer, CardChoice, CardLine, InstallPreview, PermissionLine, PermissionRisk, PluginDevice,
     PluginDeviceKind, PluginTrust, SettingValue, SettingValues,
@@ -227,18 +225,26 @@ pub(super) async fn source_admin_cards(
     langs: &Languages,
 ) -> Result<(Draft, Option<Draft>), InstallError> {
     let (mut first, mut second) = admin_cards(preview, &request.devices, (false, &[]), langs)?;
-    let installing: BTreeSet<String> = request
-        .install_together
-        .iter()
-        .map(|provider| provider.id.clone())
-        .collect();
+    // 执行侧按请求的顺序取第一个能提供的提供方，卡片写的是同一个；同一个 id 请求两次时执行侧才 400，
+    // 卡片只写一次。
+    let mut installing: Vec<String> = Vec::new();
+    for provider in &request.install_together {
+        if !installing.contains(&provider.id) {
+            installing.push(provider.id.clone());
+        }
+    }
     first.lines.extend(filled_lines(
         preview,
         request.secrets.keys(),
         &request.settings,
         langs,
     ));
-    for provider in &request.install_together {
+    for id in &installing {
+        let provider = request
+            .install_together
+            .iter()
+            .find(|provider| &provider.id == id)
+            .expect("刚按请求排的提供方");
         let inner = &provider.request;
         if !preview
             .missing_requires
