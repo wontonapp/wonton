@@ -327,4 +327,10 @@ mod tests {
             serde_json::from_str(r#"{"phase": {"phase": "reticulating"}}"#).unwrap();
         assert_eq!(view.phase, Some(RelaySettingsPhase::Other));
     }
+
+    #[test]
+    fn an_unknown_phase_value_is_other() {
+        let phase: RelaySettingsPhase = serde_json::from_str(r#"{"phase":"hologram"}"#).unwrap();
+        assert_eq!(phase, RelaySettingsPhase::Other);
+    }
 }
