@@ -24,6 +24,7 @@ pub async fn run() -> Result<()> {
     owner::pair(&a, &b).await?;
     install(&a, "multiplayer").await?;
     install(&a, "second").await?;
+    open_to_friends(&a).await?;
     let grants = grant(&a, APP, &[BOB, CAROL]).await?;
     let target = wonton_client::discover_share_source("owner.test")
         .await
@@ -135,6 +136,19 @@ async fn install(owner: &Owner, directory: &str) -> Result<()> {
         status.as_u16() == 201,
         "plugin installation {status}: {body}"
     );
+    Ok(())
+}
+/// 分享按好友的角色算（ADR-0088）：默认的 friend 角色一个新应用都不开，先把两个插件开给它。
+async fn open_to_friends(owner: &Owner) -> Result<()> {
+    for plugin in [APP, OTHER] {
+        owner
+            .api(
+                Method::PUT,
+                &format!("/_wonton/api/plugins/{plugin}/audience"),
+                Some(json!({"role_ids":["friend"]})),
+            )
+            .await?;
+    }
     Ok(())
 }
 
