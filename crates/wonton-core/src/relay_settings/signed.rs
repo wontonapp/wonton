@@ -76,7 +76,7 @@ fn verified(data: &[u8], signature_text: &str, public_key_b64: &str) -> Result<R
 
 async fn get(client: &reqwest::Client, url: &str) -> Result<Vec<u8>, String> {
     let shown = redact_url(url);
-    let response = client
+    let mut response = client
         .get(url)
         .send()
         .await
@@ -85,19 +85,24 @@ async fn get(client: &reqwest::Client, url: &str) -> Result<Vec<u8>, String> {
     if !status.is_success() {
         return Err(format!("取 {shown}：HTTP {status}"));
     }
+    // 边读边卡：Content-Length 可以撒谎或根本没有（chunked），不能先收完再判。
     if let Some(length) = response.content_length()
         && length > MAX_BYTES as u64
     {
         return Err(format!("{shown} 超过 {MAX_BYTES} 字节"));
     }
-    let body = response
-        .bytes()
+    let mut body = Vec::new();
+    while let Some(chunk) = response
+        .chunk()
         .await
-        .map_err(|error| format!("读 {shown}：{error}"))?;
-    if body.len() > MAX_BYTES {
-        return Err(format!("{shown} 超过 {MAX_BYTES} 字节"));
+        .map_err(|error| format!("读 {shown}：{error}"))?
+    {
+        if body.len().saturating_add(chunk.len()) > MAX_BYTES {
+            return Err(format!("{shown} 超过 {MAX_BYTES} 字节"));
+        }
+        body.extend_from_slice(&chunk);
     }
-    Ok(body.to_vec())
+    Ok(body)
 }
 
 /// 报错时打的地址：userinfo 里的令牌换成 `<redacted>`。
@@ -176,5 +181,39 @@ mod tests {
         let (signature, public_key) = signed(data);
         let error = verified(data, &signature, &public_key).unwrap_err();
         assert!(error.contains("版本 2"), "{error}");
+    }
+}
+
+#[cfg(test)]
+mod limit_tests {
+    use super::*;
+    use tokio::io::{AsyncReadExt as _, AsyncWriteExt as _};
+
+    #[tokio::test]
+    async fn a_chunked_body_without_content_length_is_cut_at_the_limit() {
+        let listener = tokio::net::TcpListener::bind(("127.0.0.1", 0))
+            .await
+            .unwrap();
+        let url = format!("http://{}/relays.json", listener.local_addr().unwrap());
+        tokio::spawn(async move {
+            let (mut socket, _) = listener.accept().await.unwrap();
+            let mut request = [0u8; 1024];
+            let _ = socket.read(&mut request).await;
+            socket
+                .write_all(b"HTTP/1.1 200 OK\r\nTransfer-Encoding: chunked\r\n\r\n")
+                .await
+                .unwrap();
+            let chunk = vec![b'x'; 40_000];
+            for _ in 0..8 {
+                socket
+                    .write_all(format!("{:x}\r\n", chunk.len()).as_bytes())
+                    .await
+                    .unwrap();
+                socket.write_all(&chunk).await.unwrap();
+                socket.write_all(b"\r\n").await.unwrap();
+            }
+        });
+        let error = get(&reqwest::Client::new(), &url).await.unwrap_err();
+        assert!(error.contains("超过"), "{error}");
     }
 }

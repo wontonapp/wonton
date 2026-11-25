@@ -92,6 +92,42 @@ async fn the_same_url_twice_is_refused() {
 }
 
 #[tokio::test]
+async fn a_body_that_is_not_json_is_refused() {
+    let h = Harness::start(None).await;
+    let bearer = format!("Bearer {TOKEN}");
+    let reply = h
+        .send(
+            Method::PUT,
+            CORE,
+            PATH,
+            &[("authorization", bearer.as_str())],
+            Body::from("{not json"),
+        )
+        .await;
+    assert_eq!(reply.status, StatusCode::BAD_REQUEST);
+    assert_eq!(reply.json()["error"]["kind"], "invalid_input");
+}
+
+#[tokio::test]
+async fn a_table_fixed_by_the_environment_is_read_only() {
+    let h = Harness::start(None).await;
+    h.gateway
+        .tunnel
+        .relay_settings()
+        .set_locked_by_env_for_test(true);
+    let reply = put(
+        &h,
+        &json!({"n0": true, "entries": [{"url": "https://relay.example.org", "tier": 0}]}),
+    )
+    .await;
+    assert_eq!(reply.status, StatusCode::CONFLICT);
+    assert_eq!(reply.json()["error"]["kind"], "relay_settings_locked");
+
+    let listed = get(&h).await.json();
+    assert!(listed["locked_by_env"].as_bool().unwrap());
+}
+
+#[tokio::test]
 async fn removing_a_builtin_url_keeps_it_out_on_reload() {
     let h = Harness::start(None).await;
     let before = get(&h).await.json();

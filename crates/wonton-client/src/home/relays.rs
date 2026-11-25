@@ -145,6 +145,13 @@ impl HomeLink {
 
     /// 把整张表交给核心。交出去的是发起这一刻的那一份；回来之前不许再改、也不许再存。
     fn save_relays(self: &Arc<Self>) -> Result<(), CoreError> {
+        {
+            let view = self.view();
+            // 还没从核心取到过表时保存会把服务端的表清空。
+            if view.relays.phase.is_none() {
+                return Err(not_ready("relays-not-loaded"));
+            }
+        }
         let target = self
             .relay_target()
             .map_err(|reason| CoreError::NotReady { reason })?;
