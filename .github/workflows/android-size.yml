@@ -70,7 +70,8 @@ jobs:
       - name: 编手机架构的 Release APK
         working-directory: apps/compose
         # 不传 -Pwonton.rustProfile：assembleRelease 默认用 release 核心（shared/build.gradle.kts）。
-        run: ./gradlew --no-daemon :androidApp:assembleRelease -PwontonVersion=0.0.0
+        # 默认 ABI 里的 x86_64 只给 Robolectric 单测，体积档只编手机要的 arm64。
+        run: ./gradlew --no-daemon :androidApp:assembleRelease -PwontonVersion=0.0.0 -Pwonton.abis=arm64-v8a
       # 上限是修后大小 +15%：留得下正常的依赖和代码增长，挡得住符号没剥、R8 没开、多打进一个 ABI 这类成倍的回退。
       - name: 检查体积
         run: bash scripts/check-apk-size.sh apps/compose/androidApp/build/outputs/apk/release/androidApp-release-unsigned.apk

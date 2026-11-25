@@ -30,6 +30,8 @@ pub(crate) struct Preview {
     pub sender_name: Option<String>,
     pub room_name: Option<String>,
     pub body: String,
+    /// 消息在旁聊里时的话题根（ADR-0093）；主对话为空。
+    pub thread_root: Option<String>,
     /// 收到的时刻，Unix 毫秒。时间线拿它排序。
     pub timestamp_ms: u64,
 }
@@ -115,13 +117,14 @@ impl PushPreviews {
     }
 
     /// 这个房间还要补的预览，旧的在前。
-    pub(crate) fn of(&self, room_id: &RoomId) -> Vec<Preview> {
+    pub(crate) fn of(&self, room_id: &RoomId, thread_root: Option<&str>) -> Vec<Preview> {
         let now = now_ms();
         let mut rows: Vec<Preview> = self
             .lock()
             .iter()
             .filter(|row| {
                 row.room_id == room_id.as_str()
+                    && row.thread_root.as_deref() == thread_root
                     && now.saturating_sub(row.timestamp_ms) < MAX_AGE.as_millis() as u64
             })
             .cloned()

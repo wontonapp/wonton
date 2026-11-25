@@ -694,6 +694,7 @@ impl ChatLink {
                 confirmations: self.room_cards.subscribe(),
                 plugins: self.plugins.clone(),
                 push_previews: self.push_previews.clone(),
+                thread_root: key.thread_root.clone(),
                 previews: self.previews.clone(),
                 menus: menus.clone(),
                 room_view,

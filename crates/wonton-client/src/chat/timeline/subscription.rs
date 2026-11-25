@@ -42,6 +42,8 @@ pub(crate) struct TimelineSource {
     pub(crate) plugins: Arc<crate::plugins::PluginsLink>,
     /// 推送里带来的正文预览（ADR-0118），打开着房间时来了新的也补一批。
     pub(crate) push_previews: Arc<crate::push::PushPreviews>,
+    /// 打开的是旁聊时是话题根：只补这个旁聊的预览。
+    pub(crate) thread_root: Option<wonton_matrix::OwnedEventId>,
     pub(crate) previews: Previews,
     pub(crate) menus: Arc<std::sync::Mutex<Menus>>,
     pub(crate) room_view: watch::Receiver<Option<Arc<crate::pages::RoomPanelView>>>,
@@ -78,6 +80,7 @@ impl TimelineSubscription {
             bots: ledger,
             session,
             push_previews,
+            thread_root,
         } = source;
         let (sender, receiver) = mpsc::unbounded_channel();
         let (cancelled, mut stop) = watch::channel(false);
@@ -112,6 +115,7 @@ impl TimelineSubscription {
                     &watched,
                     &session,
                     &push_previews,
+                    thread_root.as_ref(),
                 ) => {}
                 () = outbox.closed() => {}
                 _ = stop.wait_for(|cancelled| *cancelled) => {}

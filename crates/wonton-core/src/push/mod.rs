@@ -163,6 +163,7 @@ impl Push {
             body: None,
             msgtype: None,
             truncated: false,
+            thread_root: None,
             contact_request: Some(request),
         };
         let plaintext = payload.encode();

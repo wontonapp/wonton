@@ -55,6 +55,9 @@ pub(crate) struct Payload {
     /// 正文放不下被截断了：通知上标出来，点开房间后取全。
     #[serde(default)]
     truncated: bool,
+    /// 这条消息在旁聊里时的话题根（ADR-0093）。
+    #[serde(default)]
+    thread_root: Option<String>,
     /// 新的联系人请求（ADR-0045）：不对应房间里的消息，`room_id`、`event_id` 为空。
     #[serde(default)]
     contact_request: Option<ContactRequestPush>,
@@ -160,6 +163,7 @@ impl PushLink {
             sender_name: payload.sender_display_name.clone(),
             room_name: payload.room_name.clone(),
             body: text.clone(),
+            thread_root: payload.thread_root.clone(),
             timestamp_ms: now_ms(),
         });
         PushNotification {
@@ -177,7 +181,7 @@ impl PushLink {
             category: NotificationCategory::Message,
             confirmation: None,
             contact_request: None,
-            thread_root: None,
+            thread_root: payload.thread_root.clone(),
             hidden: false,
             lock_screen_private: false,
             unread_total: 0,

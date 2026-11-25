@@ -35,6 +35,7 @@ object PushKeys {
     /** 解推送要用的私钥、公钥和认证密钥。 */
     data class Material(val privateKey: PrivateKey, val publicKey: ByteArray, val auth: ByteArray)
 
+    @Synchronized // PushRegistration.start 与 FCM 的 onNewToken 可能同时进来，不能各生成一对。
     fun registration(context: Context): Registration {
         val prefs = context.getSharedPreferences(PREFS, Context.MODE_PRIVATE)
         var secret = prefs.getString(PRIVATE, null)?.let(::decode)
@@ -51,17 +52,16 @@ object PushKeys {
                 writeFixed(point.w.affineX, out, 1)
                 writeFixed(point.w.affineY, out, COORD_BYTES + 1)
             }
-            prefs.edit()
-                .putString(PRIVATE, encode(secret!!))
-                .putString(PUBLIC, encode(public!!))
-                .apply()
         }
         val auth = prefs.getString(AUTH, null)?.let(::decode)?.takeIf { it.size == AUTH_BYTES }
-            ?: ByteArray(AUTH_BYTES).also { bytes ->
-                SecureRandom().nextBytes(bytes)
-                prefs.edit().putString(AUTH, encode(bytes)).apply()
-            }
-        return Registration(encode(public!!), encode(auth))
+            ?: ByteArray(AUTH_BYTES).also { SecureRandom().nextBytes(it) }
+        // 密钥、公钥、认证密钥一次写进去：返回的这一对永远和落盘的一致。
+        prefs.edit()
+            .putString(PRIVATE, encode(secret!!))
+            .putString(PUBLIC, encode(public!!))
+            .putString(AUTH, encode(auth))
+            .apply()
+        return Registration(encode(public), encode(auth))
     }
 
     @Suppress("ReturnCount") // 每样材料缺失就返回，读起来比层层嵌套清楚。

@@ -16,11 +16,12 @@ pub(super) fn merge(
     entries: &mut Vector<TimelineEntry>,
     previews: &PushPreviews,
     room_id: &RoomId,
+    thread_root: Option<&str>,
     own_user: &UserId,
     previewed: &mut HashMap<String, TimelineEntry>,
 ) -> Vec<TimelineEntry> {
     let present: HashSet<String> = message_ids(entries);
-    let rows = previews.of(room_id);
+    let rows = previews.of(room_id, thread_root);
     if rows.is_empty() {
         return Vec::new();
     }
@@ -52,29 +53,44 @@ pub(super) fn settle(
     entries: &mut Vector<TimelineEntry>,
     previews: &PushPreviews,
     room_id: &RoomId,
+    thread_root: Option<&str>,
     previewed: &mut HashMap<String, TimelineEntry>,
 ) -> Vec<u32> {
     if previewed.is_empty() {
         return Vec::new();
     }
     let live: HashSet<String> = previews
-        .of(room_id)
+        .of(room_id, thread_root)
         .into_iter()
         .map(|row| row.event_id)
         .collect();
+    // 预览已经在时间线里出现过的 id。真事件经同步的 Insert 进来时通常不会再 merge，所以“同 id 还有一个
+    // 别的条目”本身也算落定：只删掉和预览完全相同的那一条，真正的事件留着。
+    let mut seen: HashSet<&str> = HashSet::new();
+    let mut duplicated: HashSet<&str> = HashSet::new();
+    for entry in entries.iter() {
+        if previewed.contains_key(&entry.id) && !seen.insert(entry.id.as_str()) {
+            duplicated.insert(entry.id.as_str());
+        }
+    }
     let stale: Vec<(String, TimelineEntry)> = previewed
         .iter()
-        .filter(|(id, _)| !live.contains(*id))
+        .filter(|(id, _)| !live.contains(*id) || duplicated.contains(id.as_str()))
         .map(|(id, entry)| (id.clone(), entry.clone()))
         .collect();
     let mut removed = Vec::new();
+    let mut cleared = Vec::new();
     for (id, shown) in stale {
         // 按整条相等找：真正的事件和预览同名，但时间、状态等字段不同。
         if let Some(index) = entries.iter().position(|entry| entry == &shown) {
             removed.push(u32::try_from(index).unwrap_or(u32::MAX));
             entries.remove(index);
+            cleared.push(id.clone());
         }
         previewed.remove(&id);
+    }
+    if !cleared.is_empty() {
+        previews.settle(&cleared);
     }
     removed.sort_unstable();
     removed

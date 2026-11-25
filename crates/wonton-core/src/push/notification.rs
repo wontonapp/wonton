@@ -35,6 +35,15 @@ pub struct Content {
     /// 附件消息的上传文件名；有的客户端只在 `body` 里给。
     pub filename: Option<String>,
     pub membership: Option<String>,
+    /// `m.relates_to`（回复、编辑、话题、回应都用它）。
+    #[serde(rename = "m.relates_to")]
+    pub relates_to: Option<RelatesTo>,
+}
+
+#[derive(Debug, Deserialize)]
+pub struct RelatesTo {
+    pub rel_type: Option<String>,
+    pub event_id: Option<String>,
 }
 
 #[derive(Debug, Deserialize)]
@@ -63,8 +72,17 @@ impl Notification {
             body,
             msgtype,
             truncated: false,
+            thread_root: self.thread_root(),
             contact_request: None,
         })
+    }
+
+    /// 这条消息在旁聊里时的话题根。`m.thread` 之外的关系统统不认。
+    fn thread_root(&self) -> Option<String> {
+        let relates = self.content.as_ref()?.relates_to.as_ref()?;
+        (relates.rel_type.as_deref() == Some("m.thread"))
+            .then(|| relates.event_id.clone())
+            .flatten()
     }
 
     /// 推送里带的正文和类型；加密房间没有正文。附件只带类型和文件名，不带 URL 和缩略图；邀请按“有人邀请你”
@@ -177,6 +195,30 @@ mod tests {
                 "body": "机密内容",
                 "msgtype": "text",
             })
+        );
+        assert_eq!(pushed.notification.payload("s").unwrap().thread_root, None);
+    }
+
+    /// 旁聊里的回复带着话题根：手机点通知进那个旁聊。
+    #[test]
+    fn a_side_chat_reply_carries_its_root() {
+        let pushed = request(
+            "m.room.message",
+            json!({
+                "msgtype": "m.text",
+                "body": "在旁聊里",
+                "m.relates_to": {"rel_type": "m.thread", "event_id": "$root"},
+            }),
+            "k",
+        );
+        assert_eq!(
+            pushed
+                .notification
+                .payload("s")
+                .unwrap()
+                .thread_root
+                .as_deref(),
+            Some("$root")
         );
     }
 
