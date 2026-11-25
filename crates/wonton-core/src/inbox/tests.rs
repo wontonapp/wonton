@@ -480,16 +480,20 @@ fn concurrent_dedupe_pages_stay_whole() {
                     }
                 });
             }
+            let mut writers = Vec::new();
             for i in 0..32u8 {
                 let inbox = inbox.clone();
-                scope.spawn(move || {
+                writers.push(scope.spawn(move || {
                     let body = vec![b'a' + i; LEN];
                     inbox
                         .create(page_input(&body, &format!("csp-{i}"), "same"))
                         .unwrap();
-                });
+                }));
             }
-            // 写线程都结束后再停读者。
+            // 等写线程都结束，再停读者。
+            for writer in writers {
+                writer.join().unwrap();
+            }
             stop.store(true, Ordering::Relaxed);
         });
         let (html, _csp) = inbox.page_bytes(&id).unwrap().unwrap();
