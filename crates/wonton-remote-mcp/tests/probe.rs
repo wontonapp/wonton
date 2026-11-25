@@ -12,8 +12,17 @@ use std::{
 use axum::http::{Method, StatusCode};
 use probe_support::{Options, Server, config, initialize, probe, simple};
 use serde_json::{Value, json};
-use tokio::net::TcpListener;
+use tokio::net::TcpSocket;
 use wonton_remote_mcp::{Config, ResolveFuture, Resolver};
+
+/// 127.0.0.1 上一个保证没人能接管的端口：socket 只 bind 不 listen，存活期间端口归我们；
+/// 没有 listener 收连接，内核直接回 RST，连接结果就是“被拒绝”。
+fn refused_address() -> (std::net::SocketAddr, TcpSocket) {
+    let socket = TcpSocket::new_v4().unwrap();
+    socket.bind("127.0.0.1:0".parse().unwrap()).unwrap();
+    let address = socket.local_addr().unwrap();
+    (address, socket)
+}
 
 // A 150 ms budget does not reliably cover a loopback handshake: with 13 tasks
 // competing for one core the initialize request needed 0.23–0.46 s to reach the
@@ -443,12 +452,8 @@ async fn probe_tls_failure_unreachable() {
 
 #[tokio::test]
 async fn probe_connection_refused_unreachable() {
-    let listener = TcpListener::bind("127.0.0.1:0").await.unwrap();
-    let url = format!(
-        "http://{}/mcp?token=private-url-secret",
-        listener.local_addr().unwrap()
-    );
-    drop(listener);
+    let (address, _socket) = refused_address();
+    let url = format!("http://{address}/mcp?token=private-url-secret");
     let result = probe(&url, config(), "none", json!({})).await;
     assert_eq!(result["outcome"], "unreachable");
     assert!(!result.to_string().contains("private-url-secret"));
@@ -520,11 +525,8 @@ async fn probe_deadline_is_shared_by_all_handshake_steps() {
 
 #[tokio::test]
 async fn probe_proxy_down_is_proxy_unavailable() {
-    let listener = TcpListener::bind("127.0.0.1:0").await.unwrap();
-    let proxy = format!("http://{}", listener.local_addr().unwrap())
-        .parse()
-        .unwrap();
-    drop(listener);
+    let (address, _socket) = refused_address();
+    let proxy = format!("http://{address}").parse().unwrap();
     let config = Config {
         proxy: Some(proxy),
         resolver: Arc::new(PublicResolver),
