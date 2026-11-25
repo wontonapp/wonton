@@ -18,7 +18,7 @@ pub struct ClientsViewModel {
     pub state: ClientsState,
     /// 核心在容器里跑才做得到入口的监听和隧道绑定；在宿主上时打开入口回 [`ClientsFailure::CoreNotInContainer`](crate::ClientsFailure::CoreNotInContainer)。
     pub core_in_container: bool,
-    /// 有入口的应用，按显示名排；每个应用的入口先是局域网、再公网，最后按名字排 `clients.tcp`。
+    /// 有入口的应用，按显示名排；每个应用先局域网、再公网。`clients.tcp` 的转发还没接，先不列。
     pub plugins: Vec<ClientsPlugin>,
     /// 域名和证书；还没取到时为空。
     pub domain: Option<DomainSettings>,

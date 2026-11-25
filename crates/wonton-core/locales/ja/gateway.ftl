@@ -55,7 +55,6 @@ gateway-entry-header-invalid = 入口ゲートウェイがこのリクエスト�
 gateway-entry-closed = この入口は開いていません。オーナーがWontonアプリで開けられます
 gateway-entry-public-denied = 公開アドレスからはこのパスにアクセスできません
 gateway-entry-setup-pending = まずこのアプリのウェブページで初回登録を済ませてから、もう一度お試しください
-gateway-entry-auth-unsupported = このアプリはまだ、Wontonが発行したパスワードでのログインに対応していません
 gateway-entry-auth-required = Wontonで発行したこのアプリのパスワードでサインインしてください
 gateway-entry-auth-revoked = このパスワードは取り消されました。Wontonで新しく発行してください
 gateway-entry-state-unavailable = このアプリの入口設定を読み取れません。オーナーがWontonで確認してください

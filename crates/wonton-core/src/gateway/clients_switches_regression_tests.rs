@@ -10,18 +10,25 @@ fn record_path(h: &Harness, id: &PluginId) -> std::path::PathBuf {
 
 /// 第二个客户端插件：和 `register` 一样登记，换一个 id 和标签。
 fn register_second(h: &Harness) -> PluginId {
-    let source = CLIENT_APP.replace("io.wonton.test.client", "io.wonton.test.second");
-    let manifest = PluginPackage::manifest_of(&source, &Languages::default()).unwrap();
+    register_variant(
+        h,
+        &CLIENT_APP.replace("io.wonton.test.client", "io.wonton.test.second"),
+        "second",
+    )
+}
+
+/// 另一个清单的客户端插件：登记、给路由、放容器，入口标签用调用方给的。
+fn register_variant(h: &Harness, source: &str, label: &str) -> PluginId {
+    let manifest = PluginPackage::manifest_of(source, &Languages::default()).unwrap();
     let http = manifest.clients.as_ref().unwrap().http.clone().unwrap();
     let id = manifest.id.clone();
     h.manager
         .register_for_test(manifest, PluginStatus::Running, None);
     h.manager
         .clients_route_for_test(&id, http, Some(h.upstream.to_string()));
-    h.manager
-        .clients_entry_for_test(&id, "second", false, false);
+    h.manager.clients_entry_for_test(&id, label, false, false);
     let mut record = h.manager.record_for_test(&id).unwrap();
-    record.source = source;
+    record.source = source.to_owned();
     record.granted_permissions = vec![Permission::NetworkClients];
     h.docker.add_image_container(
         &Instance::default().container(&id.slug(), "app"),
@@ -379,4 +386,128 @@ async fn missing_client_record_blocks_uninstalling_another_client() {
     );
     assert_eq!(error.kind(), "upstream_unavailable");
     assert!(record_path(&rig.h, &rig.id).exists());
+}
+
+const CREDENTIALS_APP: &str = r#"
+services:
+  app:
+    image: example/app:1
+x-wonton:
+  spec: '0.14'
+  id: io.wonton.test.credentials
+  version: 1.0.0
+  kind: app
+  title: { en: Credentials }
+  description: { en: Credentials entry test }
+  permissions: [network.clients]
+  clients:
+    http:
+      service: app
+      port: 8080
+      auth:
+        credentials:
+          username: "{user}"
+          issue: [pw, issue, "{name}"]
+          verify: [pw, verify, "{name}"]
+          revoke: [pw, revoke, "{name}"]
+          ends_sessions: false
+"#;
+
+/// 有 HTTP 入口之外还声明了 `clients.tcp`；TCP 转发还没接。
+const TCP_APP: &str = r#"
+services:
+  app:
+    image: example/app:1
+x-wonton:
+  spec: '0.14'
+  id: io.wonton.test.tcp
+  version: 1.0.0
+  kind: app
+  title: { en: Tcp }
+  description: { en: Tcp entry test }
+  permissions: [network.clients]
+  clients:
+    http:
+      service: app
+      port: 8080
+      auth:
+        app:
+          setup_done: ['true']
+    tcp:
+      - name: ssh
+        service: app
+        port: 22
+"#;
+
+#[tokio::test]
+async fn credentials_entry_opens_after_first_issue() {
+    let rig = Rig::start(true, true, true).await;
+    let id = register_variant(&rig.h, CREDENTIALS_APP, "credentials");
+
+    let blocked = rig.switch_id(&id, "lan", true).await;
+    assert_eq!(blocked.status, StatusCode::CONFLICT, "{}", blocked.text());
+    assert_eq!(blocked.error_kind(), Some("conflict"));
+    assert!(
+        blocked.text().contains("has not issued a password"),
+        "{}",
+        blocked.text()
+    );
+    assert!(
+        !rig.h
+            .manager
+            .record_for_test(&id)
+            .unwrap()
+            .clients_entries
+            .lan
+    );
+
+    rig.h
+        .manager
+        .client_passwords
+        .as_ref()
+        .unwrap()
+        .mark_issued(id.as_str())
+        .unwrap();
+    let opened = rig.switch_id(&id, "lan", true).await;
+    assert_eq!(opened.status, StatusCode::OK, "{}", opened.text());
+    assert!(
+        rig.h
+            .manager
+            .record_for_test(&id)
+            .unwrap()
+            .clients_entries
+            .lan
+    );
+    assert!(
+        rig.crt_list("lan")
+            .contains("credentials.lan.home.example.test")
+    );
+}
+
+#[tokio::test]
+async fn tcp_entries_are_not_listed_and_rejected_until_forwarding_exists() {
+    let rig = Rig::start(true, true, true).await;
+    let id = register_variant(&rig.h, TCP_APP, "tcp");
+
+    let listed = rig.list().await;
+    assert_eq!(listed.status, StatusCode::OK, "{}", listed.text());
+    let item = listed
+        .json()
+        .as_array()
+        .unwrap()
+        .iter()
+        .find(|item| item["id"] == id.as_str())
+        .cloned()
+        .unwrap();
+    let kinds: Vec<&str> = item["entries"]
+        .as_array()
+        .unwrap()
+        .iter()
+        .map(|entry| entry["kind"]["kind"].as_str().unwrap())
+        .collect();
+    assert_eq!(kinds, ["lan", "public"]);
+
+    let reply = rig.switch_id(&id, "ssh", true).await;
+    assert_eq!(reply.status, StatusCode::BAD_REQUEST, "{}", reply.text());
+    assert_eq!(reply.error_kind(), Some("invalid_input"));
 }
