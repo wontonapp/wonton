@@ -134,6 +134,22 @@ class KeyTest(unittest.TestCase):
         for path, body in saved.items():
             self._write(path.relative_to(self.root).as_posix(), body)
 
+    def test_pinned_xcode_changes_ios_key(self) -> None:
+        # 钉死版本说了算，机器上默认的 Xcode 是哪个不影响；换了钉的版本必须换键。
+        before = self._digest("ios")
+        env = dict(self.env, XCODE_VERSION="27.1")
+        pinned = self._key("ios", env=env).stdout.strip()
+        self.assertNotEqual(before, pinned)
+        self.assertNotEqual(pinned, self._key("ios", env=dict(env, XCODE_VERSION="27.2")).stdout.strip())
+
+    def test_pinned_ndk_changes_android_key(self) -> None:
+        # 钉死版本说了算，机器上装的是哪个不影响；换了钉的版本必须换键。
+        before = self._digest("android")
+        env = dict(self.env, ANDROID_NDK_VERSION="28.0.1")
+        pinned = self._key("android", env=env).stdout.strip()
+        self.assertNotEqual(before, pinned)
+        self.assertNotEqual(pinned, self._key("android", env=dict(env, ANDROID_NDK_VERSION="29.0.1")).stdout.strip())
+
     def test_ios_key_ignores_ndk(self) -> None:
         # iOS 产物和 Android NDK 无关：同一台机器装没装 NDK 不该算出两个键。
         before = self._digest("ios")
@@ -191,10 +207,7 @@ class KeyTest(unittest.TestCase):
                         self._write("fakebin/xcodebuild", "#!/bin/sh\necho 'Xcode 27.2'\n")
                         self.assertNotEqual(before, self._digest(platform))
                         self._write("fakebin/xcodebuild", "#!/bin/sh\necho 'Xcode 27.1'\necho 'Build version 27A1'\n")
-                    elif name == "ios-sdk":
-                        self._write("fakebin/xcrun", "#!/bin/sh\necho '26.4'\n")
-                        self.assertNotEqual(before, self._digest(platform))
-                        self._write("fakebin/xcrun", "#!/bin/sh\necho '27.1.0'\n")
+
                     elif name == "ndk":
                         ndk = "sdk/ndk/27.0.12077973/source.properties"
                         original = (self.root / ndk).read_text(encoding="utf-8")

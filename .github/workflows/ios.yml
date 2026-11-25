@@ -55,6 +55,8 @@ env:
   CARGO_PROFILE_DEV_DEBUG: line-tables-only
   # 核心产物只按这个 target 编（CI 只跑模拟器）。
   WONTON_IOS_TARGETS: aarch64-apple-ios-sim
+  # 产物用它编、键也算它：钉死版本，别跟机器上默认装的是哪个走。
+  XCODE_VERSION: "27.1"
   # 这几行要和 cache.yml 的 iOS 作业一模一样：rust-cache 和核心产物的键都从这些变量算，少一个、换个值两边就对不上。
   CARGO_PROFILE_RELEASE_DEBUG: line-tables-only
 

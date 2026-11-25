@@ -20,6 +20,8 @@ env:
   # 这个作业只编 Debug；Release 那行留着，和 cache.yml 的 key 对齐（rust-cache 把 CARGO_ 开头的变量算进 key）。
   # Release 的符号要能还原到行：崩溃分析只靠它，剥掉的是打包进 APK 的那份。
   CARGO_PROFILE_RELEASE_DEBUG: line-tables-only
+  # 产物用它编、键也算它：钉死版本，别跟镜像漂。
+  ANDROID_NDK_VERSION: "27.0.12077973"
 
 permissions:
   contents: read
@@ -50,6 +52,19 @@ jobs:
             apps/compose/shared/build/generated/jniLibs/buildRustCore
             apps/compose/shared/build/generated/uniffi/kotlin
           key: ${{ steps.core.outputs.key }}
+      - name: 装产物用的 NDK（版本钉死，不跟镜像自带哪个走）
+        # 镜像上装了哪个 NDK 逐台不同；钉死一份，同一份源码在哪台 runner 上都算同一个键。已装好时不重新下。
+        run: |
+          sdk="${ANDROID_HOME:-$ANDROID_SDK_ROOT}"
+          ndk="$sdk/ndk/$ANDROID_NDK_VERSION"
+          if [ ! -d "$ndk" ]; then
+            # 镜像上的 sdkmanager 不一定在 PATH 里，按 SDK 里的固定位置找。
+            sm="$sdk/cmdline-tools/latest/bin/sdkmanager"
+            command -v sdkmanager > /dev/null || sdkmanager="$sm"
+            yes | sdkmanager --install "ndk;$ANDROID_NDK_VERSION" > /dev/null
+          fi
+          echo "ANDROID_NDK_HOME=$ndk" >> "$GITHUB_ENV"
+
       # 命中就一路跳过编核心；产物缺了当场停，不让 Kotlin 编译报一串看不懂的错。
       - name: 核对取回来的产物
         if: steps.corecache.outputs.cache-hit == 'true'

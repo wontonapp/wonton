@@ -174,8 +174,8 @@ iOS 是 XCFramework 和 Swift 绑定，Android 是 .so 和 Kotlin 绑定。键�
 - 算进去的：`crates/**`、`vendor/**`（`.md` 不算，见下）、`.cargo/**`、`Cargo.toml`、`Cargo.lock`、
   `rust-toolchain.toml`、两个 `build-core.sh`、`generate-swift-bindings.sh`、Android 的 `gradle.properties`、
   `libs.versions.toml`、`shared/build.gradle.kts`，`CARGO_*`、`WONTON_*` 等相关环境变量，`.github/workflows` 里
-  编产物的三个工作流（命令、cargo-ndk 版本、镜像、保存路径写在那里），探针取到的 Xcode 和模拟器 SDK 版本
-  （iOS 不看 NDK，Android 看 NDK 版本），以及键脚本自己。**新增会影响核心产物的输入必须加进去**，漏了壳会链接旧绑定。
+  编产物的三个工作流（命令、cargo-ndk 版本、镜像、保存路径写在那里），探针取到的 Xcode 和模拟器 SDK 版本、
+  工作流里钉死的 NDK 版本 `ANDROID_NDK_VERSION`（iOS 不看 NDK），以及键脚本自己。**新增会影响核心产物的输入必须加进去**，漏了壳会链接旧绑定。
 - 已列出的输入有测试兜底：`scripts/core_artifacts/key_test.py` 对每个输入文件、每个输入目录、每项配方和探针都验
   “改了键必变”，同时验无关文件（Swift、Kotlin、`.md`、文档）不改键。改了源码类文件时 lint 跑它（纯 `.md` 和草稿 PR 上不跑）；
   测试只认已经列进 `key.py` 的输入，**新加一个会变产物的输入却忘了列入，测试抓不到**。

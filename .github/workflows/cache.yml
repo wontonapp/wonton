@@ -24,6 +24,8 @@ env:
   CARGO_PROFILE_DEV_DEBUG: line-tables-only
   # Release 的符号要能还原到行：崩溃分析只靠它，剥掉的是打包进 APK 的那份。
   CARGO_PROFILE_RELEASE_DEBUG: line-tables-only
+  # 产物用它编、键也算它：钉死版本，别跟镜像漂。
+  ANDROID_NDK_VERSION: "27.0.12077973"
 
 permissions:
   contents: read
@@ -187,6 +189,8 @@ jobs:
     # 加上顶层的 CARGO_*，这些要和 ios.yml 的环境变量一模一样：核心产物的键从它们算，差一个两边就对不上。
     env:
       WONTON_IOS_TARGETS: aarch64-apple-ios-sim
+      # 产物用它编、键也算它：钉死版本，别跟机器上默认装的是哪个走。
+      XCODE_VERSION: "27.1"
     steps:
       - uses: actions/checkout@fbc6f3992d24b796d5a048ff273f7fcc4a7b6c09 # v5
         with:
@@ -252,6 +256,19 @@ jobs:
         with:
           distribution: temurin
           java-version: "21"
+      - name: 装产物用的 NDK（版本钉死，不跟镜像自带哪个走）
+        # 镜像上装了哪个 NDK 逐台不同；钉死一份，同一份源码在哪台 runner 上都算同一个键。已装好时不重新下。
+        run: |
+          sdk="${ANDROID_HOME:-$ANDROID_SDK_ROOT}"
+          ndk="$sdk/ndk/$ANDROID_NDK_VERSION"
+          if [ ! -d "$ndk" ]; then
+            # 镜像上的 sdkmanager 不一定在 PATH 里，按 SDK 里的固定位置找。
+            sm="$sdk/cmdline-tools/latest/bin/sdkmanager"
+            command -v sdkmanager > /dev/null || sdkmanager="$sm"
+            yes | sdkmanager --install "ndk;$ANDROID_NDK_VERSION" > /dev/null
+          fi
+          echo "ANDROID_NDK_HOME=$ndk" >> "$GITHUB_ENV"
+
       # 手机包（arm64-v8a Debug）那份按内容哈希存出来，给 PR 和定时运行取；x86_64 和 release 的两份只进 rust 缓存。
       - name: 核心产物的键
         id: core

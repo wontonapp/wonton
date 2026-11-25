@@ -4,7 +4,7 @@
 iOS 的作业和 Android 的作业都先按键去 main 上找同一份核心源码编好的产物（XCFramework 和 Swift 绑定、.so 和
 Kotlin 绑定），命中就跳过编译。键算错的后果不是作业红，而是壳悄悄链接上对的接口之前的旧绑定，所以这里按“会影响
 产物的所有输入”取：核心源码和它们的清单、锁文件、工具链文件、生成绑定的脚本、构建配方（工作流里的命令和参数也算）、
-探针取到的 Xcode/模拟器 SDK/NDK 版本、以及这个脚本自己。规则和命中方式写在 .github/workflows/README.md 的“核心产物”一节。
+探针取到的 Xcode/模拟器 SDK 版本和工作流里钉死的 NDK 版本、以及这个脚本自己。规则和命中方式写在 .github/workflows/README.md 的“核心产物”一节。
 
 用法：python3 scripts/core_artifacts/key.py <ios|android> [--profile debug] [--root 仓库根]
 只往 stdout 打键；缺输入（文件或整棵树）时打到 stderr 并以 2 退出，别让它悄悄少算一大块。
@@ -43,11 +43,8 @@ PLATFORMS = {
             "CARGO_PROFILE_DEV_DEBUG",
             "CARGO_PROFILE_RELEASE_DEBUG",
         ),
-        # iOS 产物和 Android NDK 无关，别让它跟着机器类别变。
-        "probes": {
-            "xcode": ("xcodebuild", "-version"),
-            "ios-sdk": ("xcrun", "--sdk", "iphonesimulator", "--show-sdk-version"),
-        },
+        # 只有 Xcode：产物和 Android NDK 无关，别让它跟着机器类别变。iOS SDK 跟着 Xcode 走，单独探会随镜像补丁抖。
+        "probes": {"xcode": None},
     },
     "android": {
         "files": (
@@ -77,6 +74,15 @@ PLATFORMS = {
 SELF = Path(__file__).resolve()
 
 
+def xcode_version() -> str:
+    """产物用的 Xcode：CI 里由工作流钉死的 `XCODE_VERSION` 说了算，别去探机器上是哪个补丁版本。
+
+    和 NDK 同理：镜像/机器上默认的 Xcode 逐台不同，探它会算出两个键。本地没设这个变量时才跑 `xcodebuild -version`。
+    """
+    pinned = os.environ.get("XCODE_VERSION", "").strip()
+    return pinned if pinned else probe(("xcodebuild", "-version"))
+
+
 def probe(cmd: tuple[str, ...]) -> str:
     """跑一条探针命令，只取第一行；没有这个工具时写 unset，跑挂了写退出码、超时写 timeout（都和正常值不同）。"""
     try:
@@ -93,7 +99,14 @@ def probe(cmd: tuple[str, ...]) -> str:
 
 
 def ndk_revision() -> str:
-    """NDK 的版本；找不到 NDK 时写 unset（这时候本来也编不了核心）。"""
+    """产物用的 NDK 版本。
+
+    CI 里由工作流钉死的 `ANDROID_NDK_VERSION` 说了算：镜像自带哪个 NDK 逐台不同，探机器上装的那个会让同一份
+    源码在两台 runner 上算出两个键、说好的命中变成现编。本地没设这个变量时才退回探 SDK 里最新的那份。
+    """
+    pinned = os.environ.get("ANDROID_NDK_VERSION", "").strip()
+    if pinned:
+        return pinned
     ndk = os.environ.get("ANDROID_NDK_HOME") or os.environ.get("ANDROID_NDK_ROOT")
     if not ndk:
         sdk = os.environ.get("ANDROID_HOME") or os.environ.get("ANDROID_SDK_ROOT")
@@ -107,7 +120,7 @@ def ndk_revision() -> str:
         return "unset"
     properties = Path(ndk) / "source.properties"
     if not properties.is_file():
-        return f"unset {ndk}"
+        return "unset"
     for line in properties.read_text(encoding="utf-8", errors="replace").splitlines():
         if line.startswith("Revision="):
             return line.partition("=")[2].strip()
@@ -116,7 +129,7 @@ def ndk_revision() -> str:
 
 def probe_values(platform: str) -> list[tuple[str, str]]:
     return [
-        (name, ndk_revision() if cmd is None else probe(cmd))
+        (name, (ndk_revision() if name == "ndk" else xcode_version()) if cmd is None else probe(cmd))
         for name, cmd in PLATFORMS[platform]["probes"].items()
     ]
 
