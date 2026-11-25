@@ -1,9 +1,11 @@
 #!/usr/bin/env python3
-"""推送中继的包装器：Web Push（RFC 8030、RFC 8292）进，gorush（APNs）出。
+"""推送中继的包装器：Web Push（RFC 8030、RFC 8292）进，gorush（APNs、FCM）出。
 
 家里服务器按 Web Push 发来的正文已经用设备的公钥加密过（RFC 8291），这里不解析、不落正文，只把它转成
-APNs 的 `wonton` 字段交给 gorush。鉴权靠 VAPID：JWT 的 ES256 签名、`aud` 和 `exp` 都要过，签名用的公钥必须
+APNs 或 FCM 的 `wonton` 字段交给 gorush。鉴权靠 VAPID：JWT 的 ES256 签名、`aud` 和 `exp` 都要过，签名用的公钥必须
 在 `servers.d` 里登记过；限速按登记的那把公钥算，登记之外的一律 401。
+
+`POST /v1/fcm` 给 App 的 FCM 令牌开一个推送地址（和 `/v1/apns` 一样），令牌形状不同，转发时分开。
 
 只绑 127.0.0.1，公网入口是 nginx。
 """
@@ -41,8 +43,9 @@ MAX_BODY = 2816
 # VAPID JWT 的 exp 最多 24 小时（RFC 8292 §2），时钟偏差留一分钟。
 CLOCK_SKEW = 60
 
-# 设备令牌是 32 字节的十六进制。
+# APNs 设备令牌是 32 字节的十六进制；FCM 令牌是更长的 base64url 风格串（含冒号）。
 TOKEN = set("0123456789abcdef")
+FCM_TOKEN = set("0123456789abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZ_-:")
 
 
 class ConfigError(Exception):
@@ -292,26 +295,36 @@ class Gorush:
             return False
 
     def push(
-        self, token: str, payload: bytes, priority: str, expiration: int, collapse: str
+        self, token: str, payload: bytes, priority: str, expiration: int, collapse: str, fcm: bool
     ) -> Reply:
-        body = {
-            "notifications": [
-                {
-                    "tokens": [token],
-                    "platform": 1,
-                    "message": self.alert,  # 通知扩展解密前显示的兜底正文
-                    "mutable_content": True,
-                    "content_available": True,
-                    "push_type": "alert",
-                    "priority": priority,
-                    "expiration": expiration,
-                    "topic": self.topic,
-                    "data": {"wonton": base64.urlsafe_b64encode(payload).decode().rstrip("=")},
-                }
-            ]
-        }
-        if collapse:
-            body["notifications"][0]["collapse_id"] = collapse
+        sealed = base64.urlsafe_b64encode(payload).decode().rstrip("=")
+        if fcm:
+            # data 消息由 App 自己弹通知：不要 title/message，否则进后台时系统直接弹一条没有正文的通知。
+            notification = {
+                "tokens": [token],
+                "platform": 2,
+                "priority": priority,
+                "expiration": expiration,
+                "data": {"wonton": sealed},
+            }
+            if collapse:
+                notification["collapse_key"] = collapse
+        else:
+            notification = {
+                "tokens": [token],
+                "platform": 1,
+                "message": self.alert,  # 通知扩展解密前显示的兜底正文
+                "mutable_content": True,
+                "content_available": True,
+                "push_type": "alert",
+                "priority": priority,
+                "expiration": expiration,
+                "topic": self.topic,
+                "data": {"wonton": sealed},
+            }
+            if collapse:
+                notification["collapse_id"] = collapse
+        body = {"notifications": [notification]}
         request = urllib.request.Request(
             self.url,
             data=json.dumps(body).encode(),
@@ -320,7 +333,7 @@ class Gorush:
         )
         try:
             with self.opener.open(request, timeout=self.timeout) as response:
-                return self._classify(json.loads(response.read() or b"{}"))
+                return self._classify(json.loads(response.read() or b"{}"), fcm)
         except urllib.error.HTTPError as error:
             LOG.warning("gorush 回了 %s：%s", error.code, error.read()[:200])
             return Reply(HTTPStatus.BAD_GATEWAY, b'{"error":"push service unavailable"}')
@@ -329,21 +342,26 @@ class Gorush:
             return Reply(HTTPStatus.BAD_GATEWAY, b'{"error":"push service unavailable"}')
 
     @staticmethod
-    def _classify(answer: dict) -> Reply:
+    def _classify(answer: dict, fcm: bool) -> Reply:
         logs = answer.get("logs") or []
         if not logs:
             return Reply(HTTPStatus.CREATED, b"")
         reason = str(logs[0].get("error") or "unknown")
-        if reason in ("BadDeviceToken", "Unregistered", "DeviceTokenNotForTopic"):
+        gone = ("BadDeviceToken", "Unregistered", "DeviceTokenNotForTopic")
+        if fcm:
+            gone = ("Unregistered", "NotRegistered", "InvalidRegistration")
+        if reason in gone:
             # 设备换了令牌或卸载了 App：等价于 Web Push 的 410，核心据此删掉登记。
             return Reply(HTTPStatus.GONE, json.dumps({"error": reason}, ensure_ascii=False).encode())
-        if reason == "TooManyRequests":
+        if reason == "MessageTooBig":
+            return Reply(HTTPStatus.REQUEST_ENTITY_TOO_LARGE, json.dumps({"error": reason}, ensure_ascii=False).encode())
+        if reason in ("TooManyRequests", "Unavailable", "InternalServerError"):
             return Reply(
                 HTTPStatus.SERVICE_UNAVAILABLE,
                 json.dumps({"error": reason}, ensure_ascii=False).encode(),
                 {"Retry-After": "1"},
             )
-        LOG.warning("APNs 拒绝：%s", reason)
+        LOG.warning("%s 拒绝：%s", "FCM" if fcm else "APNs", reason)
         return Reply(HTTPStatus.BAD_GATEWAY, json.dumps({"error": reason}, ensure_ascii=False).encode())
 
 
@@ -374,13 +392,16 @@ class Handler(BaseHTTPRequestHandler):
         token = ""
         size = 0
         try:
+            if self.path.partition("?")[0] == "/v1/fcm":
+                self._register_fcm()
+                return
             # 先读完正文：404、401、413 都在读完正文之后才判，不读就会被客户端写成 RST。
             payload = self._body()
             size = len(payload)
-            token = self._token()
+            token, fcm = self._token()
             server = self._authorize()
             self._limit(server)
-            reply = self._forward(token, payload)
+            reply = self._forward(token, fcm, payload)
         except RequestError as error:
             self._reply(Reply(error.status, json.dumps({"error": str(error)}, ensure_ascii=False).encode()), error.headers)
             reply = None
@@ -398,13 +419,16 @@ class Handler(BaseHTTPRequestHandler):
             f" server={server.name}" if server else "",
         )
 
-    def _token(self) -> str:
+    def _token(self) -> tuple[str, bool]:
+        """路径里的设备令牌；第二个值表示是不是 FCM 令牌。"""
         if not self.path.startswith("/push/"):
             raise RequestError(HTTPStatus.NOT_FOUND, "not found")
-        token = self.path[len("/push/") :].partition("?")[0].lower()
-        if len(token) != 64 or not set(token) <= TOKEN:
-            raise RequestError(HTTPStatus.BAD_REQUEST, "device token is not 64 hex chars")
-        return token
+        token = self.path[len("/push/") :].partition("?")[0]
+        if len(token) == 64 and set(token.lower()) <= TOKEN:
+            return token.lower(), False
+        if fcm_token(token):
+            return token, True
+        raise RequestError(HTTPStatus.BAD_REQUEST, "bad device token")
 
     def _body(self) -> bytes:
         encoding = self.headers.get("Content-Encoding", "")
@@ -451,13 +475,38 @@ class Handler(BaseHTTPRequestHandler):
                 {"Retry-After": str(max(1, math.ceil(wait)))},
             )
 
-    def _forward(self, token: str, payload: bytes) -> Reply:
+    def _register_fcm(self) -> None:
+        """`POST /v1/fcm {"token": …}`：为 App 的 FCM 令牌开一个推送地址，和 `/v1/apns` 同一个约定。"""
+        length = self.headers.get("Content-Length")
+        if length is None or not length.isdigit():
+            raise RequestError(HTTPStatus.LENGTH_REQUIRED, "Content-Length required")
+        if int(length) > 8192:
+            raise RequestError(HTTPStatus.REQUEST_ENTITY_TOO_LARGE, "body over 8192 bytes")
+        try:
+            body = json.loads(self.rfile.read(int(length)) or b"{}")
+        except json.JSONDecodeError as error:
+            raise RequestError(HTTPStatus.BAD_REQUEST, f"bad JSON: {error}") from error
+        token = str(body.get("token") or "")
+        if not fcm_token(token):
+            raise RequestError(HTTPStatus.BAD_REQUEST, "not an FCM token")
+        wait = self.global_bucket.take()
+        if wait > 0:
+            raise RequestError(
+                HTTPStatus.TOO_MANY_REQUESTS,
+                "rate limited",
+                {"Retry-After": str(max(1, math.ceil(wait)))},
+            )
+        endpoint = f"{self.config.origin}/push/{token}"
+        self._reply(Reply(HTTPStatus.OK, json.dumps({"endpoint": endpoint}).encode()))
+        LOG.info("POST /v1/fcm %s → %s", token[:8], endpoint)
+
+    def _forward(self, token: str, fcm: bool, payload: bytes) -> Reply:
         urgency = (self.headers.get("Urgency") or "normal").lower()
         priority = "high" if urgency == "high" else "normal"
         ttl = self._ttl()
         expiration = 0 if ttl == 0 else int(time.time()) + ttl
         collapse = (self.headers.get("Topic") or "")[:64]
-        return self.gorush.push(token, payload, priority, expiration, collapse)
+        return self.gorush.push(token, payload, priority, expiration, collapse, fcm)
 
     def _ttl(self) -> int:
         raw = self.headers.get("TTL")
@@ -481,6 +530,10 @@ class HttpServer(ThreadingHTTPServer):
     daemon_threads = True
     allow_reuse_address = True
     request_queue_size = 128
+
+
+def fcm_token(token: str) -> bool:
+    return 20 <= len(token) <= 4096 and set(token) <= FCM_TOKEN
 
 
 def serve(config_path: Path) -> int:

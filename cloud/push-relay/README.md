@@ -1,11 +1,14 @@
 # 推送中继
 
 ADR-0003 的 M2：家里服务器按 Web Push（RFC 8030）把**已经加密给设备**的通知发到这里（RFC 8291 的
-aes128gcm），这里把它当成 APNs 的 `data.wonton` 交给 [gorush](https://github.com/appleboy/gorush)，由 gorush
-发到 APNs。设备上的通知扩展取到密文后本机解密。
+aes128gcm），这里把它交给 [gorush](https://github.com/appleboy/gorush)，由 gorush 发到 APNs 或 FCM。
+设备本机解开密文：iOS 是通知扩展，Android 是 App 的推送服务。
 
-中继看到的只有：设备的 APNs 令牌、密文、大小和时间。看不到房间、发送者和正文；也不存、不重发，重启后
+中继看到的只有：设备令牌、密文、大小和时间。看不到房间、发送者和正文；也不存、不重发，重启后
 设备重新登记即可。
+
+推送地址由 App 用设备令牌换：`POST /v1/apns {"token": …}` 或 `POST /v1/fcm {"token": …}` 回一个
+`/push/<令牌>` 的 Web Push 地址。FCM 走 data 消息（`data.wonton`），由 App 自己弹通知。
 
 ## 链路
 
@@ -20,7 +23,7 @@ Tuwunel ──pushkey──▶ 核心（加密给设备的公钥）
                         ▼
                      gorush（127.0.0.1:8088，无鉴权，只听回环）
                         ▼
-                     APNs ──▶ 手机通知扩展 ──解密──▶ 通知
+                     APNs（通知扩展）/ FCM（App 推送服务） ──解密──▶ 通知
 ```
 
 包装器把 Web Push 的请求头和正文翻成 gorush 的 `/api/push`：
@@ -30,14 +33,22 @@ Tuwunel ──pushkey──▶ 核心（加密给设备的公钥）
 | 正文（aes128gcm）    | `data.wonton`：不带填充的 base64url          |
 | `Urgency: high`      | `apns-priority: 10`，其余 `5`                |
 | `TTL: n`             | `apns-expiration: now+n`，`0` 原样为 0，缺省 86400 |
-| `Topic: t`           | `collapse_id`（截到 64 字节）                |
+| `Topic: t`           | `collapse_id` / `collapse_key`（截到 64 字节） |
 | 固定                 | `apns-push-type: alert`、`mutable-content: 1`、`content-available: 1`；`aps.alert.body` 是兜底正文（配置里的 `alert`），扩展解出后覆盖 |
 
 正文上限 2816 字节：APNs 一条 4 KiB，外壳约 200 字节，base64 又把密文撑大 4/3，再大就撞 APNs 的上限。
 
-响应码：`201` 收下；`410` 设备令牌失效（`BadDeviceToken`、`Unregistered`、
-`DeviceTokenNotForTopic`），核心据此删登记；`502` gorush 或 APNs 出错；`503` 上游忙；`429` 限速；
-`401` VAPID 不对；`413` 正文过大；`415` 不是 `aes128gcm`；`400` 令牌不是 64 位十六进制。
+FCM 的请求不带 `message`：data 消息在后台也进 App 的 `onMessageReceived`，由 App 解出正文再弹通知。
+
+响应码：`201` 收下；`410` 设备令牌失效（APNs 的 `BadDeviceToken`、`Unregistered`、`DeviceTokenNotForTopic`，
+FCM 的 `Unregistered`、`NotRegistered`、`InvalidRegistration`），核心据此删登记；`502` gorush 或 APNs 出错；`503` 上游忙；`429` 限速；
+`401` VAPID 不对；`413` 正文过大；`415` 不是 `aes128gcm`；`400` 令牌形状不对。
+
+## FCM 配置
+
+Android 的 FCM 需要在 Firebase 控制台建项目，把服务器密钥填进 `gorush.yml` 的 `android.api_key`，把
+`google-services` 的项目号、应用 ID、API key、sender ID 经 `wonton.fcm*` 构建参数编进 App（见
+`apps/compose/androidApp/build.gradle.kts`）。缺任何一项时 App 的 `FcmPush.configured` 为假，退回 UnifiedPush。
 
 ## 鉴权
 

@@ -12,7 +12,10 @@ api:
   push_uri: "/api/push"
   health_uri: "/healthz"
 android:
-  enabled: false
+  enabled: true
+  # Firebase 控制台的服务器密钥（云消息 → 服务器密钥）。没有时 APNs 照常，FCM 推送会回 502。
+  api_key: "CHANGE_ME"
+  max_retry: 1
 huawei:
   enabled: false
 ios:
