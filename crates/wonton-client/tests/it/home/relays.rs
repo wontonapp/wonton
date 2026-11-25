@@ -169,7 +169,7 @@ async fn an_invalid_edit_while_loading_keeps_the_in_flight_refresh() {
             },
         },
     });
-    assert!(matches!(rejected, Err(_)), "{rejected:?}");
+    assert!(rejected.is_err(), "{rejected:?}");
 
     // 在途的 GET 没被作废，回来照样落表。
     let view = phone

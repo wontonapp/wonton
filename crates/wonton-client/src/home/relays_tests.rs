@@ -439,7 +439,7 @@ async fn idle_home() -> (tempfile::TempDir, std::sync::Arc<super::super::HomeLin
 async fn a_failed_edit_while_loading_keeps_the_in_flight_load() {
     let (_dir, home) = idle_home().await;
     home.view
-        .send_modify(|view| view.relays.phase = RelaySettingsPhase::Loading);
+        .send_modify(|view| view.relays.phase = Some(RelaySettingsPhase::Loading));
     let before = home.lock_relays().epoch;
     let error = home
         .edit_relays(|_| {
@@ -451,17 +451,17 @@ async fn a_failed_edit_while_loading_keeps_the_in_flight_load() {
     assert!(matches!(error, CoreError::NotReady { .. }));
     // 在途的 GET 回来时 epoch 必须还对得上，否则这份设置永远停在 Loading。
     assert_eq!(home.lock_relays().epoch, before);
-    assert_eq!(home.view().relays.phase, RelaySettingsPhase::Loading);
+    assert_eq!(home.view().relays.phase, Some(RelaySettingsPhase::Loading));
 }
 
 #[tokio::test]
 async fn a_successful_edit_while_loading_discards_the_in_flight_load() {
     let (_dir, home) = idle_home().await;
     home.view
-        .send_modify(|view| view.relays.phase = RelaySettingsPhase::Loading);
+        .send_modify(|view| view.relays.phase = Some(RelaySettingsPhase::Loading));
     let before = home.lock_relays().epoch;
     home.edit_relays(|_| Ok(())).unwrap();
-    assert_eq!(home.view().relays.phase, RelaySettingsPhase::Ready);
+    assert_eq!(home.view().relays.phase, Some(RelaySettingsPhase::Ready));
     // 成功的编辑作废在途的读，免得旧快照回来盖掉刚改的这份。
     assert_ne!(home.lock_relays().epoch, before);
 }
@@ -470,12 +470,12 @@ async fn a_successful_edit_while_loading_discards_the_in_flight_load() {
 async fn an_unknown_phase_can_still_be_edited_and_becomes_ready() {
     let (_dir, home) = idle_home().await;
     home.view
-        .send_modify(|view| view.relays.phase = RelaySettingsPhase::Other);
+        .send_modify(|view| view.relays.phase = Some(RelaySettingsPhase::Other));
     home.edit_relays(|view| {
         view.entries = Vec::new();
         Ok(())
     })
     .unwrap();
-    assert_eq!(home.view().relays.phase, RelaySettingsPhase::Ready);
+    assert_eq!(home.view().relays.phase, Some(RelaySettingsPhase::Ready));
     assert!(home.view().relays.dirty);
 }
