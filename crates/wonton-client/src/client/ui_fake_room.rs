@@ -403,8 +403,54 @@ fn decorate(index: usize, own: bool, message: &mut TimelineMessage) {
     }
 }
 
+/// 带链接的两条：正文就是那个 `wonton:` 地址。
+fn link_url(index: usize) -> Option<&'static str> {
+    match index {
+        APP_LINK_INDEX => Some(APP_LINK),
+        UNKNOWN_APP_LINK_INDEX => Some(UNKNOWN_APP_LINK),
+        _ => None,
+    }
+}
+
+/// 把正文换成一行链接：这两条是照片消息，链接得挂在照片的说明上，所以要等挑完条目再说。
+fn set_link(item: &mut TimelineItem, url: &str) {
+    let TimelineContent::Message { message } = &mut item.content else {
+        return;
+    };
+    let block = RichBlock {
+        kind: RichBlockKind::Paragraph,
+        depth: 0,
+        quoted: false,
+        spans: vec![RichSpan {
+            text: url.into(),
+            link: Some(RichLink {
+                url: url.into(),
+                kind: RichLinkKind::Other,
+            }),
+            ..RichSpan::default()
+        }],
+    };
+    match &mut message.body {
+        MessageContent::Text { body, blocks, .. } => {
+            *body = url.into();
+            blocks.clear();
+            blocks.push(block);
+        }
+        MessageContent::Image { image } => {
+            image.caption = Some(ImageCaption {
+                body: url.into(),
+                blocks: vec![block],
+            });
+        }
+        _ => {}
+    }
+}
+
 fn item(index: usize) -> TimelineItem {
-    if let Some(photo) = photo(index) {
+    if let Some(mut photo) = photo(index) {
+        if let Some(url) = link_url(index) {
+            set_link(&mut photo, url);
+        }
         return photo;
     }
     // 8..=10 都算 Echo 的，凑一组连发的消息给并排的气泡做样子，第 24 条是自己发不出去的一条，最后一条是自己还没送达的，
@@ -420,14 +466,6 @@ fn item(index: usize) -> TimelineItem {
         at_ms(index),
         &paragraphs,
     );
-    if (index == APP_LINK_INDEX || index == UNKNOWN_APP_LINK_INDEX)
-        && let MessageContent::Text { blocks, .. } = &mut message.body
-    {
-        blocks[0].spans[0].link = Some(RichLink {
-            url: paragraphs[0].clone(),
-            kind: RichLinkKind::Other,
-        });
-    }
     if index == TABLE_INDEX
         && let MessageContent::Text { blocks, .. } = &mut message.body
     {
@@ -442,10 +480,14 @@ fn item(index: usize) -> TimelineItem {
         message.edited = true;
     }
     decorate(index, own, &mut message);
-    TimelineItem {
+    let mut item = TimelineItem {
         id: format!("ui-fake-{index}"),
         content: TimelineContent::Message { message },
+    };
+    if let Some(url) = link_url(index) {
+        set_link(&mut item, url);
     }
+    item
 }
 
 /// 引用条：`REPLY_INDEX` 引用第 5 条，`LONG_REPLY_INDEX` 引用那条短消息，其余的没有。
@@ -589,7 +631,7 @@ fn photo_item(index: usize, position: usize, count: Option<u32>) -> TimelineItem
         token: format!("{PHOTO_TOKEN}-{position}"),
     };
     // 说明文字就是原来这条的文字消息：现有走查按 “Fixture message N” 找这一条，
-    // 长按菜单（回复、转发）和引用也靠它，换成照片后这些还得照旧。
+    // 长按菜单（回复、转发）和引用也靠它，换成照片后这些还得照旧。6、7 说明会被 `set_link` 换成链接地址。
     let own = index != PHOTO_SOLO_INDEX;
     let text = format!("Fixture message {index}");
     let blocks = vec![RichBlock {
@@ -963,6 +1005,34 @@ mod tests {
             "{} must load",
             image.media.token
         );
+    }
+
+    #[test]
+    fn link_messages_show_the_url_on_their_own_line() {
+        for (index, url) in [
+            (APP_LINK_INDEX, APP_LINK),
+            (UNKNOWN_APP_LINK_INDEX, UNKNOWN_APP_LINK),
+        ] {
+            let item = item(index);
+            let TimelineContent::Message { message } = item.content else {
+                panic!("item {index} must be a message");
+            };
+            // 6、7 是照片：链接挂在说明上，不能落在挑照片之前那条被丢掉的文字消息上。
+            let MessageContent::Image { image } = message.body else {
+                panic!("item {index} must be a photo");
+            };
+            let caption = image.caption.expect("the link must be the caption");
+            assert_eq!(caption.body, url);
+            assert_eq!(caption.blocks[0].spans[0].text, url);
+            let link = caption.blocks[0].spans[0]
+                .link
+                .as_ref()
+                .expect("the span carries the link");
+            assert_eq!(
+                (link.url.as_str(), link.kind.clone()),
+                (url, RichLinkKind::Other)
+            );
+        }
     }
 
     #[test]
