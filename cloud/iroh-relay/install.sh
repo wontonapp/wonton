@@ -138,13 +138,15 @@ ensure_cert() {
     sh "$DEPLOY_HOOK"
 }
 
-# 判定准入模式：上游 access 默认 Everyone；只识别“显式 everyone”和“[access] 节”两类写法。
-# allowlist/denylist/http 也写在 [access] 节里，归 restricted（非 everyone）即可。
+# 判定准入模式：上游 access 默认 Everyone；只识别“显式 everyone”和“非 everyone 的 access 配置”两类。
+# 非 everyone 包括 [access]、[access.http]、[access.allowlist] 等表变体和行内表 access = { ... }，一律 restricted。
 admission_mode() {
     local cfg=$1
     if grep -Eq '^[[:space:]]*access[[:space:]]*=[[:space:]]*["'\'']?everyone["'\'']?' "$cfg"; then
         echo everyone
-    elif grep -Eq '^[[:space:]]*\[access\]' "$cfg"; then
+    elif grep -Eq '^[[:space:]]*\[access(\.|\])' "$cfg"; then
+        echo restricted
+    elif grep -Eq '^[[:space:]]*access[[:space:]]*=' "$cfg"; then
         echo restricted
     else
         echo everyone-default

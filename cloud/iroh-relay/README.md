@@ -78,7 +78,8 @@ bash install.sh --email ops@example.com   # 装服务、vhost、签证书
 - **`https_bind_addr` / `quic_bind_addr` 必须写在 `[tls]` 节**（上游 `TlsConfig`）：上游对顶层未知键不报错，
   放顶层会被静默忽略、QAD 只剩回环监听；e2e 和 `install.sh` 都会断言 UDP 7842 绑在 `0.0.0.0`。
 - **默认是拒绝所有人，不是 everyone**：`shared_token` 留空列表、又没有 `IROH_RELAY_ACCESS_TOKEN`（或令牌为空）时，
-  进程直接拒绝启动（失败即停）；要放开必须显式改 `access = "everyone"`。
+  进程直接拒绝启动（失败即停）；要放开必须显式改 `access = "everyone"`。反过来，整段删掉 `[access]` 会回落到上游默认的
+  everyone，`install.sh` 会打 `everyone-default` 提醒加回。
 - 每连接入方向默认限速 256 KiB/s（`[limits.client.rx]`，1 MiB 突发）：按实测 5 Mbps 出口取，单条连接最多占约 40%，
   让一条大同步不至于饿死语音（语音双向约 1.2 Mbps）。只保住“一条”同步：两条并发 4.2 Mbps 加语音 1.2 Mbps 仍会超 5 Mbps，大家一起慢。只是公平保护，不是全局限额也不是按 endpoint 计量。
 - 内测期所有自己的设备共用一个令牌：令牌随配对码/连接信息下发，泄露后别人也能用这个中继，接受（ADR-0048）；
