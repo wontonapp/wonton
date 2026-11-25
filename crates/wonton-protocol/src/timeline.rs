@@ -102,6 +102,64 @@ pub struct TimelineUpdate {
     /// 核心没收到过为 0。壳按它重滚同一条原消息。
     #[serde(default)]
     pub focus_revision: u32,
+    /// 右上角“回到最早未读”的胶囊（ADR-0121）。每一批都给当前值；为空时不画。
+    ///
+    /// 由核心按本账号的 `m.fully_read` 和最新回执算，锚点在进房时冻结：标记已读不动它，别的设备读了也不动它。
+    /// 壳只按 [`UnreadJump::anchor_item_id`] 和 `state` 画，不自己比回执、不自己数条数。
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    #[cfg_attr(feature = "uniffi", uniffi(default = None))]
+    pub unread_jump: Option<UnreadJump>,
+}
+
+/// 胶囊和它要跳去的锚点。只在核心认为该显示时有值（`count > 0` 且本次进房还没看过锚点）。
+#[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize)]
+#[cfg_attr(feature = "uniffi", derive(uniffi::Record))]
+pub struct UnreadJump {
+    /// 最早未读的条目 ID。本地历史不全、锚点还没解析出来时为空：壳只画胶囊、不发
+    /// [`TimelineAction::UnreadAnchorSeen`](crate::TimelineAction::UnreadAnchorSeen)，点跳交给核心分页。
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    #[cfg_attr(feature = "uniffi", uniffi(default = None))]
+    pub anchor_item_id: Option<String>,
+    /// 未读条数。区间没加载时是 `num_unread_messages`，加载后是实际条数；壳按 99+ 显示。
+    pub count: u32,
+    /// 未读里提到我的条数。大于 0 时胶囊先走“有人@你”状态。
+    pub mentions: u32,
+    /// 最早一条未看过的 @ 的条目 ID；没有 @ 或还没解析出来时为空。
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    #[cfg_attr(feature = "uniffi", uniffi(default = None))]
+    pub first_mention_item_id: Option<String>,
+    pub state: UnreadJumpState,
+}
+
+/// 胶囊的进展。
+#[derive(Clone, Copy, Debug, PartialEq, Eq, Default, Serialize, Deserialize)]
+#[cfg_attr(feature = "uniffi", derive(uniffi::Enum))]
+#[serde(tag = "type", rename_all = "snake_case")]
+pub enum UnreadJumpState {
+    /// 可以点：锚点已加载，或者还没加载但核心会分页去找。
+    #[default]
+    Idle,
+    /// 核心在往前翻页找锚点：壳在胶囊上转圈，忽略连点。
+    Loading,
+    /// 找不到了：壳按 [`UnreadJumpUnavailable`] 写提示，胶囊留着让主人重试。
+    Unavailable { reason: UnreadJumpUnavailable },
+    /// 更新的核心给出的取值：按 `Idle` 画。
+    #[serde(other)]
+    Other,
+}
+
+/// [`UnreadJumpState::Unavailable`] 的原因，壳据此选提示。
+#[derive(Clone, Copy, Debug, PartialEq, Eq, Serialize, Deserialize)]
+#[cfg_attr(feature = "uniffi", derive(uniffi::Enum))]
+#[serde(rename_all = "snake_case")]
+pub enum UnreadJumpUnavailable {
+    /// 翻到房间开头也没有，或者读位置指向的事件已经没了。
+    NotFound,
+    /// 连不上服务器，本地也没有。
+    Offline,
+    /// 服务器拒绝、解析失败等。
+    #[serde(other)]
+    Other,
 }
 
 /// 解不开的消息旁边的入口，壳按它写按钮。
@@ -331,6 +389,10 @@ pub struct TimelineMessage {
     #[serde(default, skip_serializing_if = "Option::is_none")]
     #[cfg_attr(feature = "uniffi", uniffi(default = None))]
     pub sender_avatar: Option<MediaHandle>,
+    /// 这条消息的 `m.mentions.user_ids` 里有本账号（ADR-0083）。壳给气泡加“提到了你”的读屏和底色，胶囊也按它数 @。
+    #[serde(default)]
+    #[cfg_attr(feature = "uniffi", uniffi(default = false))]
+    pub mentions_me: bool,
 }
 
 /// 自己发的消息下面那行小字写什么。
@@ -699,6 +761,7 @@ mod tests {
     fn timeline_updates_round_trip_through_json() {
         let items = sample_items();
         let update = TimelineUpdate {
+            unread_jump: None,
             diffs: vec![
                 TimelineDiff::Reset {
                     items: items.clone(),
@@ -774,6 +837,7 @@ mod tests {
     #[test]
     fn editing_is_null_until_somebody_starts_an_edit() {
         let mut update = TimelineUpdate {
+            unread_jump: None,
             diffs: Vec::new(),
             back_pagination: BackPagination::ReachedStart,
             viewport: TimelineViewport::Bottom,
@@ -843,6 +907,7 @@ mod tests {
             KeyNotice::Other
         );
         let empty = || TimelineUpdate {
+            unread_jump: None,
             diffs: Vec::new(),
             back_pagination: BackPagination::Idle,
             viewport: TimelineViewport::Bottom,
@@ -989,6 +1054,93 @@ mod tests {
         }
     }
 
+    /// 契约：胶囊的状态能经 JSON 往返；空锚点不写字段，缺字段按空；不认识的失败原因落 `Other`。
+    #[test]
+    fn unread_jump_round_trips_and_unknown_reasons_fall_back() {
+        let jump = UnreadJump {
+            anchor_item_id: None,
+            count: 26,
+            mentions: 2,
+            first_mention_item_id: Some("$m".into()),
+            state: UnreadJumpState::Loading,
+        };
+        assert_eq!(round_trip(&jump), jump);
+        let value = serde_json::to_value(&jump).unwrap();
+        assert!(value.get("anchor_item_id").is_none());
+
+        let missing: UnreadJump = serde_json::from_value(serde_json::json!({
+            "count": 1,
+            "mentions": 0,
+            "state": {"type": "unavailable", "reason": "offline"},
+        }))
+        .unwrap();
+        assert_eq!(missing.anchor_item_id, None);
+        assert_eq!(
+            missing.state,
+            UnreadJumpState::Unavailable {
+                reason: UnreadJumpUnavailable::Offline
+            }
+        );
+
+        let unknown: UnreadJumpState = serde_json::from_value(serde_json::json!({
+            "type": "unavailable",
+            "reason": "another",
+        }))
+        .unwrap();
+        assert_eq!(
+            unknown,
+            UnreadJumpState::Unavailable {
+                reason: UnreadJumpUnavailable::Other
+            }
+        );
+    }
+
+    /// 契约：旧核心发来的批次没有 `unread_jump` 和 `mentions_me` 时按“没有胶囊、没提到我”收下。
+    #[test]
+    fn old_updates_without_unread_fields_still_deserialize() {
+        let mut value = serde_json::to_value(TimelineUpdate {
+            diffs: Vec::new(),
+            back_pagination: BackPagination::Idle,
+            viewport: TimelineViewport::Bottom,
+            scroll_to_bottom: false,
+            anchor: None,
+            panel: Vec::new(),
+            panel_selected: None,
+            key_notice: None,
+            confirmations: Vec::new(),
+            side_chat: None,
+            widgets: Vec::new(),
+            call_active: false,
+            room_bots: None,
+            typing: Vec::new(),
+            commands: Vec::new(),
+            commands_omitted: 0,
+            focus: None,
+            jump: crate::JumpState::Idle,
+            back_to: None,
+            editing: None,
+            focus_revision: 0,
+            unread_jump: None,
+        })
+        .unwrap();
+        value.as_object_mut().unwrap().remove("unread_jump");
+        let update: TimelineUpdate = serde_json::from_value(value).unwrap();
+        assert_eq!(update.unread_jump, None);
+
+        let mut content =
+            serde_json::to_value(message(MessageContent::Redacted, SendState::Sent)).unwrap();
+        let removed = content["message"]
+            .as_object_mut()
+            .unwrap()
+            .remove("mentions_me");
+        assert_eq!(removed, Some(serde_json::Value::Bool(false)));
+        let parsed: TimelineContent = serde_json::from_value(content).unwrap();
+        let TimelineContent::Message { message } = parsed else {
+            panic!("不是消息");
+        };
+        assert!(!message.mentions_me);
+    }
+
     fn round_trip<T: Serialize + DeserializeOwned>(value: &T) -> T {
         serde_json::from_str(&serde_json::to_string(value).unwrap()).unwrap()
     }
@@ -996,6 +1148,7 @@ mod tests {
     fn message(body: MessageContent, send_state: SendState) -> TimelineContent {
         TimelineContent::Message {
             message: TimelineMessage {
+                mentions_me: false,
                 event_id: Some("$event".into()),
                 sender_id: "@hermes:home.example".into(),
                 sender_name: "Hermes".into(),

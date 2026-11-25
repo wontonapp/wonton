@@ -361,7 +361,8 @@ pub use timeline::{
     BackPagination, FileAttachment, ImageCaption, ImageContent, KeyNotice, MatrixTarget,
     MediaHandle, MessageAction, MessageContent, MessageReceipt, RichBlock, RichBlockKind, RichLink,
     RichLinkKind, RichSpan, TimelineContent, TimelineDiff, TimelineItem, TimelineMessage,
-    TimelineScroll, TimelineUpdate, TimelineViewport,
+    TimelineScroll, TimelineUpdate, TimelineViewport, UnreadJump, UnreadJumpState,
+    UnreadJumpUnavailable,
 };
 pub use timeline_action::{TimelineAction, TimelineTarget};
 pub use timeline_jump::{JumpState, TimelineFocus};

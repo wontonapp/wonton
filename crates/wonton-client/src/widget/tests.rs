@@ -165,6 +165,7 @@ fn agent(activity: Option<BotActivity>) -> BotView {
 
 fn room(name: &str, peer: Option<&str>, unread: u64) -> RoomRow {
     RoomRow {
+        unread_mentions: 0,
         layout: Default::default(),
         call_active: false,
         room_id: format!("!{name}:home.example"),

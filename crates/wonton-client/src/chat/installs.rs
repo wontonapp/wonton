@@ -428,6 +428,7 @@ mod tests {
 
     fn room(bot: &str) -> RoomRow {
         RoomRow {
+            unread_mentions: 0,
             layout: ChatLayout::default(),
             call_active: false,
             room_id: format!("!{bot}:home"),

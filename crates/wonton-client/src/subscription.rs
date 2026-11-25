@@ -672,6 +672,7 @@ mod unread_tests {
 
     fn room(unread_count: u64, membership: RoomMembership) -> RoomRow {
         RoomRow {
+            unread_mentions: 0,
             room_id: "!room:example.org".into(),
             name: String::new(),
             is_direct: false,

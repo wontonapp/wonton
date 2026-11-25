@@ -403,6 +403,7 @@ impl FakeTimeline {
             TimelineViewport::Bottom
         };
         let mut update = TimelineUpdate {
+            unread_jump: None,
             diffs: Vec::new(),
             anchor: None,
             viewport,

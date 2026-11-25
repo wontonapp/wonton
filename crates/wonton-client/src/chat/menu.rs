@@ -292,6 +292,7 @@ impl Outbox {
         let (commands, omitted) = self.live.tables.values();
         self.sender
             .send(TimelineUpdate {
+                unread_jump: None,
                 diffs,
                 back_pagination,
                 viewport,
@@ -435,6 +436,7 @@ mod tests {
             id: id.to_owned(),
             content: TimelineContent::Message {
                 message: wonton_protocol::TimelineMessage {
+                    mentions_me: false,
                     event_id: Some(format!("${id}:x")),
                     sender_id: "@bot:x".to_owned(),
                     sender_name: "Bot".to_owned(),
@@ -533,6 +535,7 @@ mod tests {
             id: id.to_owned(),
             content: TimelineContent::Message {
                 message: wonton_protocol::TimelineMessage {
+                    mentions_me: false,
                     event_id: None,
                     sender_id: "@owner:example.com".into(),
                     sender_name: "Owner".into(),

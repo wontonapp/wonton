@@ -82,6 +82,7 @@ pub(super) fn timeline(room_id: &str) -> TimelineUpdate {
         Some("ui-fake-2".into())
     };
     TimelineUpdate {
+        unread_jump: None,
         anchor,
         diffs: vec![TimelineDiff::Reset { items }],
         back_pagination: BackPagination::ReachedStart,
@@ -599,6 +600,7 @@ pub(super) fn text_message(
         actions.push(MessageAction::Redact);
     }
     TimelineMessage {
+        mentions_me: false,
         actions,
         event_id: Some(event_id),
         sender_id: sender.into(),
@@ -650,6 +652,7 @@ fn photo_item(index: usize, position: usize, count: Option<u32>) -> TimelineItem
         id: format!("ui-fake-{index}"),
         content: TimelineContent::Message {
             message: TimelineMessage {
+                mentions_me: false,
                 event_id: Some(event_id.clone()),
                 sender_id: sender_id.into(),
                 sender_name: sender_name.into(),
