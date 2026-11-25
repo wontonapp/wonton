@@ -66,6 +66,12 @@ pub enum MediaStoreError {
     },
     #[error("媒体库 {path} 里的编号 {raw} 不合法")]
     InvalidId { path: PathBuf, raw: String },
+    #[error("媒体库 {path} 的 {column} 超出 SQLite 的整数范围：{value}")]
+    IntegerTooLarge {
+        path: PathBuf,
+        column: &'static str,
+        value: u64,
+    },
     #[error("媒体库 {path} 的写锁被上一次 panic 弄坏了")]
     Poisoned { path: PathBuf },
     #[error("媒体库 {path} 里没有这个人的任务 {task}")]
@@ -211,6 +217,23 @@ impl Store {
         })
     }
 
+    /// SQLite 的整数是 i64：无符号值超了报错，不静默截断。
+    fn int(&self, column: &'static str, value: u64) -> Result<i64, MediaStoreError> {
+        i64::try_from(value).map_err(|_| MediaStoreError::IntegerTooLarge {
+            path: self.path.clone(),
+            column,
+            value,
+        })
+    }
+
+    fn opt_int(
+        &self,
+        column: &'static str,
+        value: Option<u64>,
+    ) -> Result<Option<i64>, MediaStoreError> {
+        value.map(|value| self.int(column, value)).transpose()
+    }
+
     /// 存一条任务；上传的逐项条目和目标一起落库，目标列里只留空的条目表。
     pub fn create_task(&self, task: &MediaTask) -> Result<(), MediaStoreError> {
         let mut conn = self.conn()?;
@@ -234,7 +257,7 @@ impl Store {
                 self.json("progress", &task.progress)?,
                 task.retry_count,
                 task.retry_of.map(|id| id.to_string()),
-                task.created_at,
+                self.int("created_at", task.created_at)?,
                 self.json("partial_failures", &task.partial_failures)?,
             ],
         )
@@ -322,7 +345,7 @@ impl Store {
                     self.json("progress", &task.progress)?,
                     task.retry_count,
                     task.retry_of.map(|id| id.to_string()),
-                    task.created_at,
+                    self.int("created_at", task.created_at)?,
                     self.json("partial_failures", &task.partial_failures)?,
                     task.id.to_string(),
                     task.person,
@@ -414,11 +437,11 @@ impl Store {
                  WHERE person = ? AND task_id = ? AND item_id = ?",
                 params![
                     item.path,
-                    item.size,
+                    self.int("size", item.size)?,
                     item.checksum,
-                    item.taken_at,
+                    self.opt_int("taken_at", item.taken_at)?,
                     self.json("state", &item.state)?,
-                    item.upload_offset,
+                    self.int("upload_offset", item.upload_offset)?,
                     person,
                     task.to_string(),
                     item.item_id,
@@ -440,7 +463,7 @@ impl Store {
                 self.json("item", &session.item)?,
                 self.json("state", &session.state)?,
                 session.state.as_str(),
-                session.position_ms,
+                self.int("position_ms", session.position_ms)?,
                 session
                     .plan
                     .as_ref()
@@ -502,7 +525,7 @@ impl Store {
                     self.json("item", &session.item)?,
                     self.json("state", &session.state)?,
                     session.state.as_str(),
-                    session.position_ms,
+                    self.int("position_ms", session.position_ms)?,
                     session
                         .plan
                         .as_ref()
@@ -548,11 +571,11 @@ impl Store {
                  mode = excluded.mode, sleep_at_ms = excluded.sleep_at_ms",
             params![
                 person,
-                queue.revision,
+                self.int("revision", queue.revision)?,
                 self.json("entries", &queue.entries)?,
-                queue.cursor.map(|value| value as i64),
+                self.opt_int("cursor", queue.cursor.map(|value| value as u64))?,
                 self.json("mode", &queue.mode)?,
-                queue.sleep_at_ms,
+                self.opt_int("sleep_at_ms", queue.sleep_at_ms)?,
             ],
         )
         .map_err(|source| self.db_error(source))?;
@@ -600,8 +623,8 @@ impl Store {
                 ledger.as_str(),
                 provider,
                 device,
-                want_total as i64,
-                limit.map(|value| value as i64),
+                self.int("used", want_total)?,
+                self.opt_int("cap", limit)?,
             ],
         )
         .map_err(|source| self.db_error(source))?;
@@ -633,8 +656,8 @@ impl Store {
                 ledger.as_str(),
                 provider,
                 device,
-                remaining as i64,
-                limit.map(|value| value as i64),
+                self.int("used", remaining)?,
+                self.opt_int("cap", limit)?,
             ],
         )
         .map_err(|source| self.db_error(source))?;
@@ -733,11 +756,11 @@ impl Store {
                 item.item_id,
                 start + offset as i64,
                 item.path,
-                item.size,
+                self.int("size", item.size)?,
                 item.checksum,
-                item.taken_at,
+                self.opt_int("taken_at", item.taken_at)?,
                 self.json("state", &item.state)?,
-                item.upload_offset,
+                self.int("upload_offset", item.upload_offset)?,
             ])
             .map_err(|source| self.db_error(source))?;
         }

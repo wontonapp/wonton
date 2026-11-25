@@ -161,6 +161,82 @@ fn items_can_be_appended_and_saved_by_offset() {
 }
 
 #[test]
+fn the_signed_integer_edge_round_trips_and_one_past_it_is_refused() {
+    let (_dir, store) = store();
+    let edge = i64::MAX as u64;
+    let mut task = upload_task(1, ALICE);
+    task.created_at = edge;
+    task.target = TaskTarget::Upload(vec![UploadItem {
+        size: edge,
+        taken_at: Some(edge),
+        upload_offset: edge,
+        ..item("one", edge)
+    }]);
+    store.create_task(&task).unwrap();
+
+    let back = store.task(ALICE, task.id).unwrap().expect("任务还在");
+    assert_eq!(back.created_at, edge);
+    let TaskTarget::Upload(items) = &back.target else {
+        panic!("上传任务的目标应该是上传");
+    };
+    assert_eq!(items[0].size, edge);
+    assert_eq!(items[0].taken_at, Some(edge));
+    assert_eq_offsets(&store, task.id, edge);
+
+    let err = store
+        .save_item(ALICE, task.id, &item("one", edge + 1))
+        .unwrap_err();
+    assert!(
+        matches!(err, MediaStoreError::IntegerTooLarge { column: "upload_offset", value, .. } if value == edge + 1),
+        "{err}"
+    );
+
+    let mut session = session(ALICE, 2);
+    session.position_ms = edge + 1;
+    let err = store.create_session(&session).unwrap_err();
+    assert!(
+        matches!(
+            err,
+            MediaStoreError::IntegerTooLarge {
+                column: "position_ms",
+                ..
+            }
+        ),
+        "{err}"
+    );
+
+    let mut queue = queue();
+    queue.revision = edge + 1;
+    let err = store.save_queue(ALICE, &queue).unwrap_err();
+    assert!(
+        matches!(
+            err,
+            MediaStoreError::IntegerTooLarge {
+                column: "revision",
+                ..
+            }
+        ),
+        "{err}"
+    );
+
+    store
+        .add_quota(ALICE, Ledger::DeviceOffline, None, Some(PHONE), edge)
+        .unwrap();
+    let err = store
+        .add_quota(ALICE, Ledger::DeviceOffline, None, Some(PHONE), 1)
+        .unwrap_err();
+    assert!(
+        matches!(err, MediaStoreError::IntegerTooLarge { column: "used", .. }),
+        "{err}"
+    );
+}
+
+fn assert_eq_offsets(store: &Store, task: TaskId, expected: u64) {
+    let offsets = store.item_offsets(ALICE, task).unwrap();
+    assert_eq!(offsets[0].1, expected);
+}
+
+#[test]
 fn a_created_session_reads_back_with_every_field() {
     let (_dir, store) = store();
     let session = session(ALICE, 2);
