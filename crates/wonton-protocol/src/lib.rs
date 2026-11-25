@@ -56,6 +56,7 @@ mod plugin_notice;
 mod port_mapping;
 mod push;
 mod registry_mirror;
+mod relays;
 mod reply;
 mod roles;
 mod secret;
@@ -320,6 +321,10 @@ pub use registry_mirror::{
     RegistryFailure, RegistryMirrorSettings, RegistryMirrorTest, RegistryMirrorTestRequest,
     RegistryMirrorTests, RegistryMirrorUpdate, RegistryMirrorViewModel, RegistryProbe,
     RegistryProblem,
+};
+pub use relays::{
+    RelayCurrent, RelaySettingEntry, RelaySettingUpdate, RelaySettingsAction, RelaySettingsPhase,
+    RelaySettingsSnapshot, RelaySettingsUpdate, RelaySettingsView, RelaySource, RelayState,
 };
 pub use reply::{ComposerDraft, ComposerEdit, QuotedContent, QuotedMessage, ReplyQuote};
 pub use roles::{

@@ -1,6 +1,6 @@
 use serde::{Deserialize, Serialize};
 
-use crate::{PermissionItem, RoleTemplate, SecretString};
+use crate::{PermissionItem, RelayCurrent, RelaySettingsView, RoleTemplate, SecretString};
 
 /// 和家里服务器的连接：隧道状态，以及 WebView 和 HTTP 客户端要用的本地代理。壳只渲染，不做推导。
 #[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize)]
@@ -13,6 +13,12 @@ pub struct HomeViewModel {
     pub status: HomeStatus,
     /// 当前连接走的路径；没有可用连接时为空。
     pub path: Option<HomePath>,
+    /// 当前这条连接经哪台中继；直连或没连上时为空。设置页用它标出正在用的那台。
+    #[serde(default)]
+    pub current_relay: Option<RelayCurrent>,
+    /// 中继表设置页（ADR-0048）。没打开过设置页时是 [`RelaySettingsPhase::Idle`](crate::RelaySettingsPhase::Idle)。
+    #[serde(default)]
+    pub relays: RelaySettingsView,
     /// 要告诉主人的连接状态；连接正常时为空。壳只按它显示，不看 `status` 里的原文（ADR-0032）。
     pub notice: Option<ConnectionNotice>,
     /// 连接页的诊断和指标。
@@ -270,7 +276,7 @@ pub struct ConnectionDetails {
 }
 
 /// 连接当前走的路径。
-#[derive(Clone, Copy, Debug, PartialEq, Eq, Serialize, Deserialize)]
+#[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize)]
 #[cfg_attr(feature = "uniffi", derive(uniffi::Record))]
 pub struct HomePath {
     /// 经中继转发；否则是局域网或打洞成功的直连。
@@ -281,6 +287,9 @@ pub struct HomePath {
     pub lan: bool,
     /// 往返时间估计，毫秒。
     pub rtt_ms: u32,
+    /// 经哪台中继（只有 `relay` 为真时才有）。
+    #[serde(default)]
+    pub relay_url: Option<String>,
 }
 
 /// 本地代理：HTTP 代理地址和本次启动的会话凭据（`Proxy-Authorization: Basic`）。凭据只给本 App 的
@@ -314,6 +323,15 @@ mod tests {
     use super::*;
 
     /// 上一版的 JSON 里没有质量字段和窗口数字，新核心要读得懂，缺的按不知道处理。
+    /// 上一版的路径 JSON 里没有 `relay_url`，新核心要读得懂，缺的按直连处理。
+    #[test]
+    fn a_path_without_a_relay_url_reads_as_a_direct_path() {
+        let path: HomePath =
+            serde_json::from_str(r#"{"relay":false,"public_relay":false,"lan":true,"rtt_ms":3}"#)
+                .unwrap();
+        assert_eq!(path.relay_url, None);
+    }
+
     #[test]
     fn details_without_quality_fields_read_as_unknown() {
         let details: ConnectionDetails = serde_json::from_str(
