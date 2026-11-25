@@ -61,6 +61,7 @@ mod friends;
 mod friends_wiring;
 mod health;
 mod hosted;
+mod inbox;
 mod install_gate_cards;
 mod install_gate_checks;
 mod install_gates;
@@ -832,6 +833,8 @@ mod friend_gate_tests;
 mod friends_tests;
 #[cfg(test)]
 mod health_tests;
+#[cfg(test)]
+mod inbox_tests;
 #[cfg(test)]
 mod install_gate_tests;
 #[cfg(test)]

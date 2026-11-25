@@ -508,6 +508,14 @@ fn recaps_need_one_or_two_actions() {
     validate_item(&recap(None, vec![action("a")])).unwrap();
     validate_item(&recap(None, vec![action("a"), action("b")])).unwrap();
     assert!(validate_item(&recap(None, vec![action("a"), action("b"), action("c")])).is_err());
+    assert!(validate_item(&recap(Some("继续吗？"), Vec::new())).is_err());
+    assert!(
+        validate_item(&recap(
+            Some("继续吗？"),
+            vec![action("a"), action("b"), action("c")]
+        ))
+        .is_err()
+    );
     // 动作 id/标签/样式/重复都要过 validate_actions，不能因为 recap 分支删了它就失守。
     assert!(
         validate_item(&recap(

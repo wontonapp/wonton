@@ -21,6 +21,10 @@ use crate::plugin::manifest::{Manifest, Permission};
 use crate::plugin::render::dry_run;
 use crate::plugin::storefront::index::Listed;
 use crate::plugin::{InstallError, PluginId, PluginPackage};
+use wonton_protocol::{
+    INBOX_ASK_TOOL, INBOX_CANCEL_TOOL, INBOX_CONFIRM_TOOL, INBOX_NOTICE_TOOL, INBOX_PRESENT_TOOL,
+    INBOX_RECAP_TOOL, INBOX_UPDATE_TOOL, INBOX_WAIT_TOOL,
+};
 
 const LIST: &str = "list_plugins";
 pub(super) const SEARCH: &str = "search_catalog";
@@ -117,6 +121,7 @@ pub fn definitions() -> Vec<Tool> {
     tools.extend(profile_tools::definitions());
     tools.extend(people_tools::definitions());
     tools.extend(panel_tools::definitions());
+    tools.extend(crate::inbox::definitions());
     tools.push(send_message_tool::definition());
     tools
 }
@@ -158,6 +163,13 @@ pub async fn call(
         }
         panel_tools::PIN | panel_tools::UNPIN | panel_tools::LIST => {
             return panel_tools::call(bus, caller, tool, args, activity).await;
+        }
+        INBOX_ASK_TOOL | INBOX_PRESENT_TOOL | INBOX_RECAP_TOOL | INBOX_CONFIRM_TOOL
+        | INBOX_NOTICE_TOOL | INBOX_WAIT_TOOL | INBOX_CANCEL_TOOL | INBOX_UPDATE_TOOL => {
+            return match crate::inbox::call(bus, caller, tool, args).await {
+                Ok(result) => result,
+                Err(failure) => bus.deny(caller, &name, &value, &failure),
+            };
         }
         _ => Err(ToolFailure::new(
             "invalid_input",

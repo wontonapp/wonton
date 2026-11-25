@@ -38,6 +38,7 @@ pub mod gateway;
 pub mod help;
 pub mod home_service;
 pub mod http;
+pub mod inbox;
 pub mod install;
 pub(crate) mod l10n;
 pub(crate) mod link_preview;
