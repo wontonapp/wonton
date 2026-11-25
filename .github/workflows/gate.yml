@@ -55,6 +55,12 @@ jobs:
           echo "rust=true" >> "$GITHUB_OUTPUT"
           echo "ios=false" >> "$GITHUB_OUTPUT"
           echo "android=false" >> "$GITHUB_OUTPUT"
+      # 手动触发没有 PR 上下文：dorny 要比 base 和 head 的树，所以得先把这个 ref 检出来、历史拉全。
+      - uses: actions/checkout@fbc6f3992d24b796d5a048ff273f7fcc4a7b6c09 # v5
+        if: github.event_name == 'workflow_dispatch'
+        with:
+          ref: ${{ github.ref_name }}
+          fetch-depth: 0
       # MIT
       - uses: dorny/paths-filter@ceb8a2b8f2d89434be7ff52d3de7ec3738c5cc9d # v4.0.3
         id: filter
