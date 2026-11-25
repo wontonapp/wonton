@@ -65,7 +65,7 @@ if [ "${WONTON_CORE_PREBUILT:-}" = 1 ]; then
     { echo "WONTON_CORE_PREBUILT=1，但取回来的产物不完整：要有 $xcframework/Info.plist 和 $xcframework/*-simulator 下的 libwonton_client.a、Headers/module.modulemap" >&2; exit 1; }
   set -- "$generated_dir"/*.swift
   [ -f "$1" ] || { echo "WONTON_CORE_PREBUILT=1，但取回来的产物里没有 $generated_dir/*.swift" >&2; exit 1; }
-  echo "用取回来的核心产物（$xcframework 与 $generated_dir），不编核心"
+  echo "用取回来的核心产物（$xcframework 与 ${generated_dir}），不编核心"
   exit 0
 fi
 
