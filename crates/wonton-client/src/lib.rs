@@ -101,3 +101,4 @@ pub use widget::read_widget_snapshot;
 pub use wonton_protocol::{OwnBotFailure, OwnBotProblem, OwnPrivateBotView};
 // 协议类型整体转出：并行 PR 各自加名字不再挤在同一段列表里。
 pub use wonton_protocol::*;
+// 改了核心源码，PR 上会现编核心、不走 main 上的预编译产物（.github/workflows/README.md 的“核心产物”）。
