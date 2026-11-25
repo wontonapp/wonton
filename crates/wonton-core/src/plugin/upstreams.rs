@@ -805,6 +805,7 @@ x-wonton:
         assert_eq!(
             core_aliases(&public(), &manifest),
             vec![
+                "models.wonton.internal",
                 "torrent_client.wonton.internal",
                 "x-acme.ledger.wonton.internal",
                 "jellyfin.wonton.internal",
