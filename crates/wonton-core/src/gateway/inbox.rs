@@ -717,13 +717,13 @@ async fn worker_answer(
         Err(response) => return response,
     };
     match inbox.latest_for_worker(&worker_id) {
-        Some(item) => Json(InboxWorkerAnswer {
+        Some((item, delivery)) => Json(InboxWorkerAnswer {
             worker_id,
             item_id: item.id,
             status: item.status,
             answer: item.answer,
             confirm_action: None,
-            delivery: item.result.map(|_| InboxDelivery::Sent),
+            delivery,
         })
         .into_response(),
         None => error_response(StatusCode::NOT_FOUND, "not_found", "没有这个 worker 的条目"),
@@ -755,11 +755,7 @@ async fn worker_resolve(
             );
         }
     };
-    match inbox.resolve_worker(
-        &worker_id,
-        &format!("{:?}", resolve.delivery),
-        resolve.error,
-    ) {
+    match inbox.resolve_worker(&worker_id, resolve.delivery, resolve.error) {
         Ok(item) => Json(item).into_response(),
         Err(error) => fail(error),
     }

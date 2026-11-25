@@ -187,6 +187,9 @@ struct Stored {
     handled_at_ms: Option<u64>,
     #[serde(default, skip_serializing_if = "Option::is_none")]
     terminal_at_ms: Option<u64>,
+    /// worker 投递结果；GET workers 要如实回传，不能拿 result 猜成 sent。
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    delivery: Option<wonton_protocol::InboxDelivery>,
 }
 
 struct Record {

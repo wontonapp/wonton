@@ -22,7 +22,17 @@ impl Inbox {
         let mut records = HashMap::new();
         let entries = std::fs::read_dir(dir.join(ITEMS_DIR)).map_err(io)?;
         for entry in entries.flatten() {
-            let Ok(bytes) = std::fs::read(entry.path()) else {
+            let path = entry.path();
+            if !path
+                .file_name()
+                .and_then(|name| name.to_str())
+                .is_some_and(|name| name.ends_with(".json"))
+            {
+                // 上次崩溃留下的半截临时文件：不是条目，清掉，别读回。
+                let _ = std::fs::remove_file(&path);
+                continue;
+            }
+            let Ok(bytes) = std::fs::read(&path) else {
                 continue;
             };
             let Ok(stored) = serde_json::from_slice::<Stored>(&bytes) else {
@@ -218,6 +228,7 @@ impl Inbox {
                         csp: page.as_ref().map(|p| p.csp.clone()),
                         handled_at_ms: None,
                         terminal_at_ms: None,
+                        delivery: None,
                     },
                     waiters: vec![tx],
                 },
@@ -231,6 +242,7 @@ impl Inbox {
                         csp: page.as_ref().map(|p| p.csp.clone()),
                         handled_at_ms: None,
                         terminal_at_ms: None,
+                        delivery: None,
                     },
                     waiters: Vec::new(),
                 },
@@ -333,11 +345,17 @@ impl Inbox {
     }
 
     fn write(&self, item: &InboxItem, csp: Option<&str>) -> Result<(), InboxError> {
+        let delivery = self
+            .lock()
+            .records
+            .get(&item.id)
+            .and_then(|record| record.stored.delivery);
         let stored = Stored {
             item: item.clone(),
             csp: csp.map(str::to_owned),
             handled_at_ms: item.answered_at_ms,
             terminal_at_ms: terminal_at(item),
+            delivery,
         };
         let bytes = serde_json::to_vec(&stored).map_err(|e| io(e.to_string()))?;
         page::write_atomic(
@@ -905,7 +923,10 @@ impl Inbox {
     }
 
     /// 某个 worker 最近一条条目。
-    pub fn latest_for_worker(&self, worker_id: &str) -> Option<InboxItem> {
+    pub fn latest_for_worker(
+        &self,
+        worker_id: &str,
+    ) -> Option<(InboxItem, Option<wonton_protocol::InboxDelivery>)> {
         let inner = self.lock();
         inner
             .records
@@ -920,14 +941,14 @@ impl Inbox {
                     == Some(worker_id)
             })
             .max_by_key(|record| record.stored.item.created_at_ms)
-            .map(|record| record.stored.item.clone())
+            .map(|record| (record.stored.item.clone(), record.stored.delivery))
     }
 
     /// worker 投递结果：写到条目结果上。
     pub fn resolve_worker(
         &self,
         worker_id: &str,
-        delivery: &str,
+        delivery: wonton_protocol::InboxDelivery,
         error: Option<String>,
     ) -> Result<InboxItem, InboxError> {
         let mut inner = self.lock();
@@ -947,9 +968,10 @@ impl Inbox {
             .map(|record| record.stored.item.id.clone())
             .ok_or(InboxError::NotFound)?;
         let record = inner.records.get_mut(&id).expect("刚找到的条目");
+        record.stored.delivery = Some(delivery);
         record.stored.item.result = Some(match error {
-            Some(error) => format!("{delivery}: {error}"),
-            None => delivery.to_owned(),
+            Some(error) => format!("{delivery:?}: {error}"),
+            None => format!("{delivery:?}"),
         });
         let item = record.stored.item.clone();
         let csp = record.stored.csp.clone();
