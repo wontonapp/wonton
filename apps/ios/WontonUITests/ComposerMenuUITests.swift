@@ -17,7 +17,7 @@ final class ComposerMenuUITests: XCTestCase {
         app.launchArguments += ["-AppleLanguages", "(en)", "-AppleLocale", "en_US", "-ApplePersistenceIgnoreState", "YES"]
         app.launchEnvironment["WONTON_DEV_DATA_SUFFIX"] = UUID().uuidString
         app.launchEnvironment["WONTON_UI_FAKE"] = "1"
-        app.launch()
+        UITestBackend.launch(app)
     }
 
     /// 回复着一条、输入框里有草稿时点一条命令：命令带着回复对象发出去，回复条收起，草稿还在。

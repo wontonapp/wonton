@@ -14,7 +14,7 @@ final class MessageTimeUITests: XCTestCase {
         app.launchArguments += ["-AppleLanguages", "(en)", "-AppleLocale", "en_US"]
         app.launchEnvironment["WONTON_DEV_DATA_SUFFIX"] = UUID().uuidString
         app.launchEnvironment["WONTON_UI_FAKE"] = "1"
-        app.launch()
+        UITestBackend.launch(app)
 
         app.staticTexts["Echo"].tap()
         // 落点在第 2 条附近，第 4 条是整屏的高消息：message 5 在折叠线下面，message 3 一定在屏上。

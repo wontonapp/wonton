@@ -29,7 +29,7 @@ final class SendingLabelUITests: XCTestCase {
         app.launchArguments += ["-AppleLanguages", "(en)", "-AppleLocale", "en_US"]
         app.launchEnvironment["WONTON_UI_FAKE"] = "1"
         app.launchEnvironment["WONTON_DEV_DATA_SUFFIX"] = UUID().uuidString
-        app.launch()
+        UITestBackend.launch(app)
 
         app.staticTexts["Echo"].tap()
         // 进房停在靠前的消息上，待发的那条在底。正文和发送时间在同一个元素里，按开头找。

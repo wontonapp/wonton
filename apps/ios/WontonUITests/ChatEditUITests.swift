@@ -24,7 +24,7 @@ final class ChatEditUITests: XCTestCase {
         app.launchArguments += ["-AppleLanguages", "(en)", "-AppleLocale", "en_US", "-ApplePersistenceIgnoreState", "YES"]
         app.launchEnvironment["WONTON_DEV_DATA_SUFFIX"] = UUID().uuidString
         app.launchEnvironment["WONTON_UI_FAKE"] = "1"
-        app.launch()
+        UITestBackend.launch(app)
     }
 
     /// 长按自己的消息点“编辑”：输入框换成原文，上面出现编辑条，确认键换成勾；取消后编辑条收起、草稿回来、正文没变。

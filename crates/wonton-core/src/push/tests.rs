@@ -147,6 +147,36 @@ fn decrypt(body: &[u8]) -> DevicePayload {
     serde_json::from_slice(&plaintext).unwrap()
 }
 
+/// RFC 8291 第 5 节和附录 A 的测试向量：核心用的实现要能按标准加密，标准加密的（RFC 里那份固定的
+/// 密文）也要解得开。Swift 通知扩展解的是同一种格式，它的单测用同一组向量。
+#[test]
+fn rfc_8291_vector_round_trips() {
+    let plaintext = b"When I grow up, I want to be a watermelon";
+    let ua_public =
+        p256::PublicKey::from_sec1_bytes(&URL_SAFE_NO_PAD.decode(UA_PUBLIC).unwrap()).unwrap();
+    let auth = Auth::clone_from_slice(&URL_SAFE_NO_PAD.decode(AUTH).unwrap());
+
+    let body = web_push_native::encrypt(plaintext.to_vec(), &ua_public, &auth).unwrap();
+    let secret = p256::SecretKey::from_slice(&URL_SAFE_NO_PAD.decode(UA_PRIVATE).unwrap()).unwrap();
+    assert_eq!(
+        web_push_native::decrypt(body, &secret, &auth).unwrap(),
+        plaintext.to_vec()
+    );
+
+    let rfc = URL_SAFE_NO_PAD
+        .decode(
+            "DGv6ra1nlYgDCS1FRnbzlwAAEABBBP4z9KsN6nGRTbVYI_c7VJSPQTBtkgcy27mlmlMoZIIgDll6e3vCYLocInmYWAm\
+             S6TlzAC8wEqKK6PBru3jl7A_yl95bQpu6cVPTpK4Mqgkf1CXztLVBSt2Ks3oZwbuwXPXLWyouBWLVWGNWQexSgSxsj_\
+             Qulcy4a-fN",
+        )
+        .unwrap();
+    // 密文的 keyid 是应用服务器的公钥，收方（设备）用自己的私钥解：和上面同一把。
+    assert_eq!(
+        web_push_native::decrypt(rfc, &secret, &auth).unwrap(),
+        plaintext.to_vec()
+    );
+}
+
 fn contains(haystack: &[u8], needle: &str) -> bool {
     haystack
         .windows(needle.len())

@@ -10,7 +10,7 @@ final class PairingScanUITests: XCTestCase {
         app.launchArguments += ["-AppleLanguages", "(en)", "-AppleLocale", "en_US"]
         app.launchEnvironment["WONTON_DEV_DATA_SUFFIX"] = UUID().uuidString
         app.launchEnvironment["WONTON_UI_TEST_SCAN_INJECTION"] = "1"
-        app.launch()
+        UITestBackend.launch(app)
     }
 
     func testImmediateRefusalAllowsScanningSameCodeAgain() throws {
