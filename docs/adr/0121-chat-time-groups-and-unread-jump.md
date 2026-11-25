@@ -1,7 +1,6 @@
 # ADR-0121 聊天时间按组显示、未读用右上角胶囊回到最早一条
 
-- 状态：提议（2026-11-25）。时间部分主人 2026-11-25 22:26 已拍板（截图与要求见 `~/wonton-dev/tasks/chat-unread-jump-wechat.jpg`、
-  `~/wonton-dev/omp-msgs/1379247142731778-20261125-223514-2900553.md`）；跳转部分等主人看完 `~/wonton-dev/tasks/chat-unread-jump.html` 后由协调改成已接受。
+- 状态：已接受（2026-11-25 主人拍板）。6 个待定问题全照推荐：停在底部即标已读、@ 优先跳、锚点顶到标题栏下闪 1 秒、99+ 且翻不到时提示、30 分钟阈值、进房停在最新加右上角胶囊（原话见 `~/wonton-dev/omp-msgs/1379247142731778-20261125-231858-3298463.md`，截图与要求见同目录 `...-223514-2900553.md`）。
 - 修订：[ADR-0109](0109-chat-like-telegram.md) 第 2 节的组间隔、第 3 节的时间、第 9 节的时间和勾的令牌；[ADR-0071](0071-timeline-position.md) 的“进房间停在哪”和“按钮的样子”。
 - 关联：[ADR-0118](0118-im-three-layers-push-with-body.md)（本地层、房间不加密）、[ADR-0083](0083-bot-contacts-and-group-chat.md)（@ 的写法）、
   [ADR-0093](0093-side-chats.md)（旁聊的独立时间线）、[ADR-0107](0107-ios-liquid-glass.md)（玻璃浮层）、[ADR-0026](0026-design-system.md)（令牌）、
