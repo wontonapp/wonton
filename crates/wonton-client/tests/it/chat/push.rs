@@ -1,5 +1,5 @@
 //! 推送：手机把推送订阅登记给家里、注册 pusher；App 被杀后 Bot 回复，Tuwunel 推给推送代理；推送唤醒的进程
-//! 一创建核心就把推送交给它，核心等会话从本机恢复，经隧道取回消息、在本机解密，给出通知（ADR-0003）。
+//! 一创建核心就把推送交给它，核心等会话从本机恢复，经隧道取回消息（加密房间里的密文在本机解密），给出通知（ADR-0003）。
 
 use std::time::Duration;
 
@@ -94,7 +94,7 @@ async fn a_bot_reply_wakes_a_killed_app_and_shows_the_decrypted_text() {
     let bot = home.bot("hermes", "Hermes").await;
     let room_id = accept_the_bots_invite(&home, &phone, &bot).await;
 
-    // App 被杀，Bot 这时回复：房间密钥经 to-device 发给手机，手机还没收到。
+    // App 被杀，Bot 这时回复。
     drop(phone);
     let bot_room = bot.open_room(&room_id).await.expect("Bot 打开私聊");
     let sent = bot_room.send_text("你的快递到了", &[]).await;
@@ -102,7 +102,7 @@ async fn a_bot_reply_wakes_a_killed_app_and_shows_the_decrypted_text() {
     let pushed = home
         .push
         .wait_for("推送代理收到 Bot 回复的通知", |received| {
-            received.notification["type"] == "m.room.encrypted"
+            received.notification["type"] == "m.room.message"
                 && received.notification["devices"][0]["pushkey"] == home.pushkey()
         })
         .await;
@@ -196,10 +196,10 @@ async fn a_push_that_cannot_be_fetched_says_why() {
     );
 }
 
-/// 推送只带房间和事件 ID，用不着读预览：主人自己建的私聊和 Bot 的主房间一样端到端加密。
+/// 推送只带房间和事件 ID，用不着读预览：主人自己建的私聊和 Bot 的主房间一样不加密。
 #[tokio::test(flavor = "multi_thread")]
 #[ignore = "需要 Docker，用 --include-ignored 运行"]
-async fn direct_chats_the_owner_starts_are_encrypted() {
+async fn direct_chats_the_owner_starts_are_not_encrypted() {
     let dir = tempfile::tempdir().unwrap();
     let phone = Phone::open(dir.path());
     let home = Home::start(&[phone.device_id()]).await;
@@ -222,7 +222,7 @@ async fn direct_chats_the_owner_starts_are_encrypted() {
                 .cloned()
         })
         .await;
-    assert!(room.is_encrypted, "{room:?}");
+    assert!(!room.is_encrypted, "{room:?}");
 }
 
 async fn wait_for_unregistered(home: &Home) {
@@ -281,7 +281,7 @@ async fn a_push_from_a_server_you_are_not_on_is_fetched_from_that_server() {
     let pushed = a
         .push
         .wait_for("A 的推送代理收到通知", |received| {
-            received.notification["type"] == "m.room.encrypted"
+            received.notification["type"] == "m.room.message"
                 && received.notification["devices"][0]["pushkey"] == a.pushkey()
         })
         .await;

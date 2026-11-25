@@ -776,9 +776,9 @@ impl ChatLink {
         if session.direct_chat_with(&user).is_some() {
             return Ok(());
         }
-        // 和 Bot 的主房间一样端到端加密：推送只带房间和事件 ID，正文在手机上解密（ADR-0003 的“设计：加密推送”）。
+        // 房间不加密：推送只带房间和事件 ID，内容由手机在房间里直接读。
         self.spawn_op("chat-op-direct-chat-failed", async move {
-            session.create_direct_chat(&user, true).await.map(drop)
+            session.create_direct_chat(&user, false).await.map(drop)
         });
         Ok(())
     }

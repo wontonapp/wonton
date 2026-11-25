@@ -130,8 +130,7 @@ async fn the_owner_chats_with_a_bot_through_the_tunnel_and_keeps_it_after_restar
     assert_ne!(fresh, device_id, "存储丢了应登录成新设备");
     assert_eq!(home.login_tokens(), 2, "存储丢了应重新要登录令牌");
 
-    // 新设备解不开以前的加密消息（要用恢复密钥），但发送者照样显示名字：同步只带了最新一条的发送者，其余的
-    // 成员资料在打开房间后从服务器补上。
+    // 新设备的发送者照样显示名字：同步只带了最新一条的发送者，其余的成员资料在打开房间后从服务器补上。
     phone
         .wait_chat("新设备同步到私聊", |view| {
             view.rooms
@@ -301,14 +300,32 @@ async fn wait_for_owner_device_keys(home: &Home, phone: &Phone, bot: &MatrixSess
     }
 }
 
-/// Bot 发来加密私聊的邀请，等房间名同步成 Bot 的名字、对方也认出来后主人再接受。
+/// Bot 发来不加密私聊的邀请，等房间名同步成 Bot 的名字、对方也认出来后主人再接受。
 async fn accept_the_bots_invite(home: &Home, phone: &Phone, bot: &MatrixSession) -> OwnedRoomId {
+    accept_the_bots_invite_with(home, phone, bot, false).await
+}
+
+/// 同上，但房间加密：已有加密房间的路径（密钥交接、加密媒体）在这里验证。
+async fn accept_the_bots_encrypted_invite(
+    home: &Home,
+    phone: &Phone,
+    bot: &MatrixSession,
+) -> OwnedRoomId {
+    accept_the_bots_invite_with(home, phone, bot, true).await
+}
+
+async fn accept_the_bots_invite_with(
+    home: &Home,
+    phone: &Phone,
+    bot: &MatrixSession,
+    encrypted: bool,
+) -> OwnedRoomId {
     wait_for_owner_device_keys(home, phone, bot).await;
     let owner: OwnedUserId = OWNER.parse().unwrap();
     let room_id = bot
-        .create_direct_chat(&owner, true)
+        .create_direct_chat(&owner, encrypted)
         .await
-        .expect("Bot 发起加密私聊");
+        .expect("Bot 发起私聊");
     let invite = phone
         .wait_chat("收到 Bot 的邀请", |view| {
             view.rooms
@@ -348,7 +365,7 @@ async fn accept_the_bots_invite(home: &Home, phone: &Phone, bot: &MatrixSession)
                 .cloned()
         })
         .await;
-    assert!(joined.is_encrypted);
+    assert_eq!(joined.is_encrypted, encrypted);
     assert_eq!(
         joined.direct_user_id.as_deref(),
         Some(bot.user_id().as_str())
@@ -356,7 +373,7 @@ async fn accept_the_bots_invite(home: &Home, phone: &Phone, bot: &MatrixSession)
     room_id
 }
 
-/// 收发文字和图片：时间线按增量更新，图片凭句柄取到解密后的原图。
+/// 收发文字和图片：时间线按增量更新，图片凭句柄取到原图。
 async fn chat_with_the_bot(phone: &Phone, bot: &MatrixSession, room_id: &OwnedRoomId) {
     let bot_room = bot.open_room(room_id).await.expect("Bot 打开私聊");
     bot_room

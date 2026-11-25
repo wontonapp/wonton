@@ -257,6 +257,30 @@ async fn a_chat_with_someone_who_does_not_exist_is_refused() {
     assert!(alice.direct_chat_with(&nobody).is_none());
 }
 
+/// 新建的私聊不加密：房间里没有 `m.room.encryption`，发送走明文。
+#[tokio::test]
+#[ignore = "需要 Docker，用 --include-ignored 运行"]
+async fn a_new_direct_chat_is_not_encrypted() {
+    let server = TestServer::start().await;
+    let alice = server.login(&unique("alice"), "Alice 的手机").await;
+    let bob = server.login(&unique("bob"), "Bob 的手机").await;
+    alice.start_sync().await.expect("Alice 开始同步");
+    bob.start_sync().await.expect("Bob 开始同步");
+    let room_id = alice
+        .create_direct_chat(bob.user_id(), false)
+        .await
+        .expect("建私聊");
+    let row = wait_for_room(&bob, "Bob 收到邀请", &room_id, |row| {
+        row.membership == Membership::Invited
+    })
+    .await;
+    assert!(!row.is_encrypted, "私聊不加密");
+    assert!(
+        !alice.room_is_encrypted(&room_id).await.expect("查房间加密"),
+        "建出来的私聊没有加密"
+    );
+}
+
 /// 同时接受两个私聊邀请，两个都要记成私聊。`m.direct` 是整份写回的，后一次加入若按本机还没同步回来的
 /// 旧值写，就把前一个冲掉（通知房间因此不再只读）。
 #[tokio::test]

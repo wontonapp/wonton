@@ -96,7 +96,7 @@ impl Session<'_> {
         Ok(())
     }
 
-    /// 建房：带标记和加密，把 `bot` 写进 `additional_creators`，让它和建房人一样是 creator 级（主人是建房人，
+    /// 建房：带标记，把 `bot` 写进 `additional_creators`，让它和建房人一样是 creator 级（主人是建房人，
     /// Bot 踢不动他，靠提高自己权限没有用）。建房的人不能写进 `power_level_content_override.users`
     /// （`M_INVALID_PARAM` 400），所以两人都不写，都用 creator 的默认 100。用主人的会话调。邀请、加入由调用方接着做。
     pub(super) async fn create_bot_home(
@@ -110,7 +110,6 @@ impl Session<'_> {
             "room_version": "12",
             "creation_content": {"additional_creators": [bot]},
             "initial_state": [
-                {"type": "m.room.encryption", "state_key": "", "content": {"algorithm": "m.megolm.v1.aes-sha2"}},
                 {"type": MARKER, "state_key": "", "content": {"owner": owner, "reservation": reservation}},
             ],
         });

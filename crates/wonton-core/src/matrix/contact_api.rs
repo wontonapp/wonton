@@ -82,18 +82,13 @@ impl Session<'_> {
         self.json(Method::GET, &path, None, "同步").await
     }
 
-    /// 建一个带 [`BOT_CONTACT_CREATE_KEY`] 的加密私聊并邀请 `user`，返回房间 ID。邀请单独发：建房时顺带的邀请失败了
+    /// 建一个带 [`BOT_CONTACT_CREATE_KEY`] 的私聊并邀请 `user`，返回房间 ID。邀请单独发：建房时顺带的邀请失败了
     /// 只记服务器日志（同 wonton-matrix 的好友邀请）。邀请失败时退出刚建的房间，把邀请的错误交给调用方分类。
     pub async fn invite_as_contact(&self, user: &str) -> Result<String, MatrixError> {
         let body = json!({
             "preset": "trusted_private_chat",
             "is_direct": true,
             "creation_content": {BOT_CONTACT_CREATE_KEY: true},
-            "initial_state": [{
-                "type": "m.room.encryption",
-                "state_key": "",
-                "content": {"algorithm": "m.megolm.v1.aes-sha2"},
-            }],
         });
         let value = self
             .json(

@@ -56,8 +56,6 @@ impl Session<'_> {
             "power_level_content_override": {"users": users},
             "initial_state": [
                 {"type": FAMILY_ROOM_EVENT, "state_key": "", "content": {"version": 1}},
-                {"type": "m.room.encryption", "state_key": "",
-                 "content": {"algorithm": "m.megolm.v1.aes-sha2"}},
             ],
         });
         let value = self

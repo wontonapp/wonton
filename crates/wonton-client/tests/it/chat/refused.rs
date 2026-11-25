@@ -9,7 +9,7 @@ use wonton_client::{
 use wonton_protocol::{TimelineAction, TimelineTarget};
 
 use super::support::{Home, OWNER, Phone, Timeline};
-use super::{accept_the_bots_invite, bots_image, test_image};
+use super::{accept_the_bots_encrypted_invite, bots_image, test_image};
 
 const CREATE_ROOM: &str = "post /_matrix/client/v3/createroom";
 const REFRESH: &str = "post /_matrix/client/v3/refresh";
@@ -41,7 +41,7 @@ async fn invited_by_the_bot(home: &Home, phone: &Phone) -> wonton_matrix::OwnedR
     let bot = home.bot("hermes", "Hermes").await;
     let owner = wonton_matrix::OwnedUserId::try_from(OWNER).unwrap();
     let room_id = bot
-        .create_direct_chat(&owner, true)
+        .create_direct_chat(&owner, false)
         .await
         .expect("Bot 发起私聊");
     phone
@@ -106,7 +106,7 @@ async fn a_refused_join_is_not_reported_as_an_expired_login() {
 async fn a_refused_message_stays_on_the_message_and_keeps_the_login() {
     let (_dir, home, phone) = signed_in().await;
     let bot = home.bot("hermes", "Hermes").await;
-    let room = accept_the_bots_invite(&home, &phone, &bot)
+    let room = accept_the_bots_encrypted_invite(&home, &phone, &bot)
         .await
         .to_string();
     let mut timeline = Timeline::open(&phone, &room).await;
@@ -181,7 +181,7 @@ async fn a_401_unknown_token_still_signs_the_chat_out() {
 /// Bot 在私聊里发一张图，等手机的时间线收到，返回它的媒体句柄。
 async fn bots_image_in_room(home: &Home, phone: &Phone) -> wonton_client::MediaHandle {
     let bot = home.bot("hermes", "Hermes").await;
-    let room_id = accept_the_bots_invite(home, phone, &bot).await;
+    let room_id = accept_the_bots_encrypted_invite(home, phone, &bot).await;
     let mut timeline = Timeline::open(phone, room_id.as_str()).await;
     let bot_room = bot.open_room(&room_id).await.expect("Bot 打开私聊");
     bot_room

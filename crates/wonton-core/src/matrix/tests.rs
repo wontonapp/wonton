@@ -92,7 +92,7 @@ fn members(fake: &Fake, room: &str) -> BTreeSet<String> {
 }
 
 #[tokio::test]
-async fn a_bot_gets_an_account_a_device_and_an_encrypted_room_it_hands_to_the_owner_later() {
+async fn a_bot_gets_an_account_a_device_and_a_room_it_hands_to_the_owner_later() {
     let (fake, config) = start().await;
     let dir = tempfile::tempdir().unwrap();
     let matrix = connect(&dir, &config).await;
@@ -129,10 +129,16 @@ async fn a_bot_gets_an_account_a_device_and_an_encrypted_room_it_hands_to_the_ow
                 .as_deref()
                 .is_some_and(|u| u.starts_with("mxc://"))
         );
-        // 主房间：主人建的加密房间，主人邀请、Bot 接受之后主人退出。房间列表只要没退出的房间，交付（写
+        // 主房间：主人建的不加密房间，主人邀请、Bot 接受之后主人退出。房间列表只要没退出的房间，交付（写
         // m.direct）之前这条私聊就不在主人的列表里。
         let room = &state.rooms[&home];
-        assert!(room.encrypted, "主房间要加密");
+        assert!(!room.encrypted, "主房间不加密");
+        assert!(
+            !state.room_state[&home]
+                .events
+                .contains_key(&("m.room.encryption".to_owned(), String::new())),
+            "主房间没有 m.room.encryption"
+        );
         assert_eq!(room.members, BTreeSet::from(["@echo:test".to_owned()]));
         assert!(room.left.contains("@owner:test"), "主人建完就退出了");
         assert!(room.invited.is_empty(), "邀请已经被 Bot 接受");
@@ -167,6 +173,59 @@ async fn a_bot_gets_an_account_a_device_and_an_encrypted_room_it_hands_to_the_ow
             .hand_over("owner", &bot, &Languages::default())
             .await
             .unwrap()
+    );
+}
+
+#[tokio::test]
+async fn a_direct_room_is_created_without_encryption() {
+    let (fake, config) = start().await;
+    let dir = tempfile::tempdir().unwrap();
+    let matrix = connect(&dir, &config).await;
+    let owner = matrix.login("owner", "手机").await.unwrap();
+    let room = matrix
+        .session(&owner)
+        .create_direct_room("@echo:test")
+        .await
+        .unwrap();
+    let state = fake.state();
+    assert!(!state.rooms[&room].encrypted, "私聊不加密");
+    assert!(
+        !state.room_state[&room]
+            .events
+            .contains_key(&("m.room.encryption".to_owned(), String::new())),
+        "私聊没有 m.room.encryption"
+    );
+    assert_eq!(
+        state.room_state[&room].events[&("m.room.power_levels".to_owned(), String::new())]["users"]
+            ["@echo:test"],
+        100,
+        "对方仍是高权限"
+    );
+}
+
+#[tokio::test]
+async fn a_bot_contact_room_is_created_without_encryption() {
+    let (fake, config) = start().await;
+    let dir = tempfile::tempdir().unwrap();
+    let matrix = connect(&dir, &config).await;
+    let bot = matrix.login("hermes", "Wonton contacts").await.unwrap();
+    let room = matrix
+        .session(&bot)
+        .invite_as_contact("@owner:test")
+        .await
+        .unwrap();
+    let state = fake.state();
+    assert!(!state.rooms[&room].encrypted, "联系人私聊不加密");
+    assert!(
+        !state.room_state[&room]
+            .events
+            .contains_key(&("m.room.encryption".to_owned(), String::new())),
+        "联系人私聊没有 m.room.encryption"
+    );
+    assert!(state.rooms[&room].invited.contains("@owner:test"));
+    assert_eq!(
+        state.user("@hermes:test").direct,
+        Some(json!({"@owner:test": [&room]}))
     );
 }
 

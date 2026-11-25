@@ -5,7 +5,7 @@
 
 hermes_reply() {
   python3 -c 'import sys
-print(sys.stdin.read().partition("第 1 轮：收到加密的回复：")[2].strip())' <"$1"
+print(sys.stdin.read().partition("第 1 轮：收到明文的回复：")[2].strip())' <"$1"
 }
 model_usage() { host_magpie usage --last 15m --csv; }
 # <回复文件> <本轮开始的 epoch 秒> <第几轮>：用量按开始时间取增量（request_id 实测为空，靠不住）。
