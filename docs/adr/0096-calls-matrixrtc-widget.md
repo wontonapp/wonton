@@ -2,6 +2,7 @@
 
 - 状态：提议（2026-11-12）；正式接受待三组真实通话路径均通过
 - 细化 [ADR-0014](0014-reserved-capabilities.md) 的“实时通话”：只定房间里的音视频通话；和 Bot 通话、屏幕共享、来电响铃不在这篇
+- 由 [ADR-0118](0118-im-three-layers-push-with-body.md) 修订（2026-11-25）：房间不再端到端加密。通话走法不变、媒体仍加密，媒体密钥的 to-device 在不加密房间里不再套 Olm；不加密房间里的那一组由卡 call-e2e-android 实测
 - 用 [ADR-0072](0072-tunnel-udp.md) 的 UDP 隧道，和 [ADR-0033](0033-plugin-tabs.md) 的插件页、桥、摄像头和麦克风授权
 
 ## 背景
@@ -115,7 +116,7 @@ matrix_widget:
   Element Call 的 `m.call.member` 就这样写）。核心批准时按当前登录的账号收窄，页面改不了别人的状态。写成测试。
   SDK 的过滤只认确切的 `state_key`、表达不了前缀，所以页面点名的 `state_key` 按上面的规则核，页面要“任意 `state_key`”时
   只批 `#<自己的用户 ID>` 这一条；要别的自己的 `state_key`，页面得点名请求（Element Call 就是点名的）。
-- to-device：按事件类型列。加密房间里驱动自动加密发送、只转交加密收到的（0.19.1 `widget/matrix.rs`）。
+- to-device：按事件类型列。加密房间里驱动自动加密发送、只转交加密收到的（0.19.1 `widget/matrix.rs`）；不加密房间按明文 to-device 发（ADR-0118）。
 - `send.delayed_event`、`update_delayed_event`、`rtc_transports`、`requires_client`、`download_file`。
 - 不给：别的房间（`timeline:` 能力）。页面只拿到打开它的那个房间。
 - **OpenID：** 驱动对 `get_openid` 不查能力，直接向服务器要令牌（0.19.1 `widget/machine/mod.rs`）。所以声明了 `matrix_widget`
@@ -213,6 +214,8 @@ widget ID、用 `generate_webview_url` 得出地址。页面关掉、换房间�
 - **网页请求 Matrix 对外地址（真机）：** 见“验证结果”的设备门一条；`baseUrl` 取头像能否显示。
 - **Element Call 在顶层 WebView 里的 widget 模式：** 注入脚本拦下它发给自己的消息后，它的收发是否完整；`parentUrl` 设成页面自己的 origin 是否够。
 - **加密房间：** 每人的媒体密钥经加密 to-device 交换，两台 Wonton 设备和一台 Element X 三方互通。
+
+- **不加密房间（ADR-0118）：** 媒体帧加密还在不在、媒体密钥的 to-device 是否明文、SFU 是否仍只见密文，由卡 call-e2e-android 实测，结果补在这里。
 
 ## 验证结果
 
