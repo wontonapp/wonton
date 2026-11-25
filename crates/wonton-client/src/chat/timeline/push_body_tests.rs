@@ -33,9 +33,10 @@ fn preview_in(event: &str, body: &str, thread_root: Option<&str>) -> Preview {
     }
 }
 
-fn real(event: &str, body: &str) -> wonton_matrix::TimelineEntry {
+/// SDK 同步来的真条目：`id` 是计数器，事件 ID 在 `message.event_id` 里。
+fn real(id: &str, event: &str, body: &str) -> wonton_matrix::TimelineEntry {
     wonton_matrix::TimelineEntry {
-        id: event.to_owned(),
+        id: id.to_owned(),
         kind: EntryKind::Message(Box::new(wonton_matrix::Message {
             event_id: Some(wonton_matrix::OwnedEventId::try_from(event).unwrap()),
             is_own: false,
@@ -105,7 +106,7 @@ fn a_preview_shows_once_and_the_real_event_replaces_it() {
     assert_eq!(entries.len(), 1);
 
     // 服务器的事件到了：预览条目拿掉，真正的事件留着。
-    let real = real("$reply", "今晚的会议改到八点");
+    let real = real("0", "$reply", "今晚的会议改到八点");
     let mut synced = entries.clone();
     synced.push_back(real);
     let removed = push_body::settle(&mut synced, &previews, &room(), None, &mut previewed);
@@ -133,7 +134,7 @@ fn a_real_event_without_another_merge_settles_the_preview() {
     );
     assert_eq!(entries.len(), 1);
 
-    entries.push_back(real("$reply", "真事件"));
+    entries.push_back(real("7", "$reply", "真事件"));
     let removed = push_body::settle(&mut entries, &previews, &room(), None, &mut previewed);
     assert_eq!(removed, vec![0]);
     assert_eq!(entries.len(), 1);
@@ -142,6 +143,33 @@ fn a_real_event_without_another_merge_settles_the_preview() {
         previews.of(&room(), None).is_empty(),
         "存储里的那一行也要清掉"
     );
+}
+
+/// 真事件经同步 Insert 到达时，SDK 的条目 id 是计数器而非事件 id：预览仍要按 event_id 认出来删掉，
+/// 否则同一个事件会两条并列（预览的 `__push_` id 和真条目的 `"0"`）。
+#[test]
+fn a_counter_id_real_event_removes_the_preview_by_event_id() {
+    let dir = tempfile::tempdir().unwrap();
+    let previews = PushPreviews::open(dir.path());
+    previews.remember(preview("$x", "预览"));
+    let mut entries = Vector::new();
+    let mut previewed = HashMap::new();
+    push_body::merge(
+        &mut entries,
+        &previews,
+        &room(),
+        None,
+        &own(),
+        &mut previewed,
+    );
+    assert_eq!(entries[0].id, "__push_$x");
+
+    entries.push_back(real("0", "$x", "真事件"));
+    let removed = push_body::settle(&mut entries, &previews, &room(), None, &mut previewed);
+    assert_eq!(removed, vec![0]);
+    assert_eq!(entries.len(), 1);
+    assert_eq!(entries[0].id, "0");
+    assert_eq!(text(&entries[0]), Some("真事件"));
 }
 
 #[test]

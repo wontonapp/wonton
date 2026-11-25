@@ -11,6 +11,9 @@ use wonton_matrix::{
 };
 
 use crate::push::{Preview, PushPreviews};
+
+/// 预览条目的 id 前缀：SDK 的真条目 id 是计数器（"0"、"1"…），预览不能拿事件 id 去撞。
+const PREVIEW_ID: &str = "__push_";
 /// 这个房间还要补的预览，追加到末尾，返回新加的条目。真正的条目里已经有的顺手删掉，不再留。
 pub(super) fn merge(
     entries: &mut Vector<TimelineEntry>,
@@ -21,6 +24,7 @@ pub(super) fn merge(
     previewed: &mut HashMap<String, TimelineEntry>,
 ) -> Vec<TimelineEntry> {
     // 已经在列表里的（含预览自己）不重复补；“真正同步到了”的才算落定，预览自己不算。
+    // SDK 真条目的 id 是计数器，和事件 id 无关：两边都按 `message.event_id` 认，预览自己的 id 在 previewed 里。
     let mut existing: HashSet<String> = HashSet::new();
     let mut synced: HashSet<String> = HashSet::new();
     for entry in entries.iter() {
@@ -31,7 +35,7 @@ pub(super) fn merge(
             continue;
         };
         let id = id.to_string();
-        if previewed.get(&id) != Some(entry) {
+        if !previewed.contains_key(&entry.id) {
             synced.insert(id.clone());
         }
         existing.insert(id);
@@ -79,28 +83,30 @@ pub(super) fn settle(
         .into_iter()
         .map(|row| row.event_id)
         .collect();
-    // 预览已经在时间线里出现过的 id。真事件经同步的 Insert 进来时通常不会再 merge，所以“同 id 还有一个
-    // 别的条目”本身也算落定：只删掉和预览完全相同的那一条，真正的事件留着。
-    let mut seen: HashSet<&str> = HashSet::new();
-    let mut duplicated: HashSet<&str> = HashSet::new();
-    for entry in entries.iter() {
-        if previewed.contains_key(&entry.id) && !seen.insert(entry.id.as_str()) {
-            duplicated.insert(entry.id.as_str());
-        }
-    }
-    let stale: Vec<(String, TimelineEntry)> = previewed
+    // 真事件经同步的 Insert 进来时通常不会再 merge：只要列表里已经有另一个同事件 ID 的条目，就算落定。
+    let real: HashSet<String> = entries
         .iter()
-        .filter(|(id, _)| !live.contains(*id) || duplicated.contains(id.as_str()))
-        .map(|(id, entry)| (id.clone(), entry.clone()))
+        .filter(|entry| !previewed.contains_key(&entry.id))
+        .filter_map(|entry| match &entry.kind {
+            EntryKind::Message(message) => message.event_id.as_ref().map(ToString::to_string),
+            _ => None,
+        })
+        .collect();
+    let stale: Vec<(String, String, TimelineEntry)> = previewed
+        .iter()
+        .filter_map(|(id, entry)| {
+            let event = event_id_of(entry)?;
+            let settled = !live.contains(&event) || real.contains(&event);
+            settled.then(|| (id.clone(), event, entry.clone()))
+        })
         .collect();
     let mut removed = Vec::new();
     let mut cleared = Vec::new();
-    for (id, shown) in stale {
-        // 按整条相等找：真正的事件和预览同名，但时间、状态等字段不同。
-        if let Some(index) = entries.iter().position(|entry| entry == &shown) {
+    for (id, event, shown) in stale {
+        if let Some(index) = entries.iter().position(|entry| entry.id == id) {
             removed.push(u32::try_from(index).unwrap_or(u32::MAX));
             entries.remove(index);
-            cleared.push(id.clone());
+            cleared.push(event);
         }
         previewed.remove(&id);
     }
@@ -119,7 +125,7 @@ fn entry(row: Preview, own_user: &UserId, room_id: &RoomId) -> TimelineEntry {
         .unwrap_or_else(|| unknown_sender(room_id));
     let sender_name = row.sender_name.unwrap_or_else(|| sender.to_string());
     TimelineEntry {
-        id: row.event_id.clone(),
+        id: format!("{PREVIEW_ID}{}", row.event_id),
         kind: EntryKind::Message(Box::new(Message {
             event_id: OwnedEventId::try_from(row.event_id).ok(),
             is_own: sender == own_user,
@@ -143,6 +149,13 @@ fn entry(row: Preview, own_user: &UserId, room_id: &RoomId) -> TimelineEntry {
             mentions_me: false,
             sender_avatar: None,
         })),
+    }
+}
+
+fn event_id_of(entry: &TimelineEntry) -> Option<String> {
+    match &entry.kind {
+        EntryKind::Message(message) => message.event_id.as_ref().map(ToString::to_string),
+        _ => None,
     }
 }
 
