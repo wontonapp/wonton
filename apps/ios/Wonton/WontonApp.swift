@@ -4,6 +4,7 @@ import SwiftUI
 import UIKit
 import WontonClient
 
+// 只改壳的 PR 不编核心：核心产物按内容哈希从 main 上取，见 .github/workflows/README.md 的“核心产物”。
 @main
 struct WontonApp: App {
     @UIApplicationDelegateAdaptor(FullscreenOrientation.self) private var orientation

@@ -37,6 +37,8 @@ PLATFORMS = {
         "optional_trees": (".cargo",),
         "env": (
             "WONTON_IOS_TARGETS",
+            # build-core.sh 自己读它（case 里按 Debug 开关 ui-fake）。
+            "WONTON_UI_FAKE",
             "CARGO_INCREMENTAL",
             "CARGO_PROFILE_DEV_DEBUG",
             "CARGO_PROFILE_RELEASE_DEBUG",

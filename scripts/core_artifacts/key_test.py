@@ -159,9 +159,6 @@ class KeyTest(unittest.TestCase):
                 )
                 self.assertEqual(done.returncode, 2)
                 self.assertIn(tree, done.stderr)
-                # 放回来，后面的用例还要用。
-                for rel in spec["files"]:
-                    pass
                 self._write(f"{tree}/fixture/restored.txt", "目录里的文件\n")
 
     def test_unrelated_files_keep_key(self) -> None:
