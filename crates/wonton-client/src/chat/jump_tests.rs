@@ -286,3 +286,39 @@ fn no_position_uses_the_unread_count() {
         Target::Found(id) if id == "c"
     ));
 }
+
+/// 行为：传输错误给 Offline，服务器/其他错误给 Other；页数上限是 30。
+#[test]
+fn unavailable_reasons_and_page_limit() {
+    assert_eq!(
+        unavailable_reason(&wonton_matrix::Error::Transport("断线".into())),
+        UnreadJumpUnavailable::Offline
+    );
+    assert_eq!(
+        unavailable_reason(&wonton_matrix::Error::Upstream("502".into())),
+        UnreadJumpUnavailable::Other
+    );
+    assert!(!page_limit_reached(29));
+    assert!(page_limit_reached(30));
+}
+
+/// 行为：读完位置在首批冻结，之后回执再怎么动都不换。
+#[test]
+fn the_frozen_read_item_does_not_move() {
+    let jumps = Jumps::new();
+    jumps.set_read_item(Some("$a".into()));
+    jumps.set_read_item(Some("$b".into()));
+    assert_eq!(jumps.read_item().as_deref(), Some("$a"));
+}
+
+/// 行为：壳报锚点进视野就收胶囊，不等下一次跳转。
+#[test]
+fn seeing_the_anchor_dismisses_the_capsule() {
+    let jumps = Jumps::new();
+    jumps.request_first_unread(Some("$a".into()), 1);
+    jumps.begin(&entries(&[("a", Some("$a")), ("b", Some("$b"))]));
+    assert!(jumps.take_dismiss_unread());
+    jumps.anchor_seen("b".into());
+    jumps.begin(&entries(&[("a", Some("$a")), ("b", Some("$b"))]));
+    assert!(jumps.take_dismiss_unread());
+}

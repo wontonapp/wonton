@@ -321,11 +321,27 @@ async fn reopening_with_unread_stops_at_the_latest_message() {
     let mut timeline = chat.timeline().await;
     let first = timeline.next().await;
     let latest = timeline.items.last().expect("列表里有最新一条").id.clone();
+    let first_unread = timeline
+        .items
+        .iter()
+        .find(|item| text(item, "一").is_some())
+        .expect("未读第一条还在")
+        .id
+        .clone();
     assert_eq!(first.anchor.as_deref(), Some(latest.as_str()));
     assert_eq!(first.viewport, TimelineViewport::Bottom);
     let jump = first.unread_jump.as_ref().expect("有未读就有胶囊");
     assert_eq!(jump.count, 3);
-    assert_eq!(jump.anchor_item_id.as_deref(), Some(latest.as_str()));
+    assert_eq!(jump.anchor_item_id.as_deref(), Some(first_unread.as_str()));
+    let anchor = timeline
+        .items
+        .iter()
+        .find(|item| item.id == first_unread)
+        .unwrap();
+    assert!(matches!(
+        &anchor.content,
+        wonton_client::TimelineContent::Message { message } if message.unread_anchor
+    ));
 }
 
 /// 没有未读时重进：落点是最新一条，列表贴着底部。

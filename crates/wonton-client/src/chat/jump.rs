@@ -13,6 +13,9 @@ use wonton_protocol::{
     JumpState, TimelineFocus, TimelineScroll, UnreadJumpState, UnreadJumpUnavailable,
 };
 
+/// 胶囊最多往前翻这么多页（ADR-0121 §5）。
+const MAX_PAGES: u32 = 30;
+
 use super::PAGE;
 use super::timeline::TimelineSubscription;
 use super::util::lock;
@@ -55,7 +58,7 @@ struct Inner {
     reached_start: bool,
     /// 翻页失败的原因；下一次对表时收尾，别把任务卡在 Loading。
     failed: Option<UnreadJumpUnavailable>,
-    /// 首批冻结的读位置条目 ID：标记已读会移动服务器上的位置，但胶囊还按这个起点找。
+    /// 首批冻结的读位置事件 ID：标记已读会移动服务器上的位置，但胶囊还按这个起点找。
     read_item: Option<String>,
 }
 
@@ -233,6 +236,7 @@ impl Jumps {
         lock(&self.inner).seen_mentions.clone()
     }
 
+    /// 记下冻结的读位置事件 ID；已经有了就不换。
     pub(super) fn set_read_item(&self, item_id: Option<String>) {
         if let Some(item_id) = item_id {
             lock(&self.inner).read_item.get_or_insert(item_id);
@@ -507,6 +511,7 @@ impl Jumps {
         // 任务要活过这个方法，运行时句柄得自己拿一份。
         let runtime = runtime.clone();
         let task = runtime.clone().spawn(async move {
+            let mut pages = 0_u32;
             loop {
                 if jumps.state() != JumpState::Loading {
                     break;
@@ -519,12 +524,7 @@ impl Jumps {
                             reason = reason(&error),
                             "couldn't page back while jumping: {error}"
                         );
-                        let reason = if matches!(error, wonton_matrix::Error::Transport(_)) {
-                            UnreadJumpUnavailable::Offline
-                        } else {
-                            UnreadJumpUnavailable::Other
-                        };
-                        lock(&jumps.inner).failed = Some(reason);
+                        lock(&jumps.inner).failed = Some(unavailable_reason(&error));
                         jumps.wake();
                         break;
                     }
@@ -532,8 +532,12 @@ impl Jumps {
                 if at_start {
                     lock(&jumps.inner).reached_start = true;
                 }
+                pages = pages.saturating_add(1);
+                if page_limit_reached(pages) && !at_start {
+                    jumps.give_up_unread(UnreadJumpUnavailable::Other);
+                }
                 jumps.wake();
-                if at_start {
+                if at_start || jumps.state() != JumpState::Loading {
                     break;
                 }
             }
@@ -591,6 +595,17 @@ fn reason(error: &wonton_matrix::Error) -> &'static str {
     }
 }
 
+fn page_limit_reached(pages: u32) -> bool {
+    pages >= MAX_PAGES
+}
+
+fn unavailable_reason(error: &wonton_matrix::Error) -> UnreadJumpUnavailable {
+    if matches!(error, wonton_matrix::Error::Transport(_)) {
+        UnreadJumpUnavailable::Offline
+    } else {
+        UnreadJumpUnavailable::Other
+    }
+}
 /// 原消息在 `entries` 里的条目 ID。
 fn find(entries: &Vector<TimelineEntry>, event_id: &str) -> Option<String> {
     entries.iter().find_map(|entry| match &entry.kind {

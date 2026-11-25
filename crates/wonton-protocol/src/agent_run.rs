@@ -230,6 +230,7 @@ mod tests {
                 choices: Vec::new(),
                 sender_name: "Hermes".into(),
                 timestamp_ms: 1_793_000_000_000,
+                unread_anchor: false,
             },
         };
         let value = serde_json::to_value(&item).unwrap();

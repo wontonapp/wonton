@@ -1,6 +1,6 @@
 //! 时间线的批次与条目：发给壳的 [`View`] 外壳状态，SDK 增量折成增删的翻译，以及首批、插件重画、旁聊和送出。
 
-use wonton_matrix::{ChatRoom, EntryKind, TimelineEntry, Vector, VectorDiff, entry_id};
+use wonton_matrix::{ChatRoom, EntryKind, TimelineEntry, Vector, VectorDiff};
 use wonton_protocol::{
     BackPagination, KeyNotice, TimelineContent, TimelineDiff, TimelineScroll, TimelineViewport,
     UnreadJump, UnreadJumpState,
@@ -38,12 +38,14 @@ pub(crate) struct View {
     sent_bots_in_room: Option<Vec<String>>,
     /// 右上角“回到最早未读”的胶囊（ADR-0121）。锚点在首批冻结，标记已读不动它。
     pub(super) unread_jump: Option<UnreadJump>,
-    /// 读位置的条目 ID（`__eid_…`）；首批取一次，之后不跟着回执走。
+    /// 读位置的事件 ID；首批取一次，之后不跟着回执走。
     read_item: Option<String>,
     /// 未读里提到我的条目，按时间顺序；`send` 按已跳过的 @ 过滤出第一条。
     unread_mentions: Vec<String>,
-    /// 锚点已经看见或跳过了：本次进房不再出胶囊。
+    /// 锚点已经看见或跳过了：当前未读块不再出胶囊。
     pub(super) dismissed_unread: bool,
+    /// 收胶囊时最新一条的条目 ID；之后有新消息就重新出胶囊（ADR-0121 §4）。
+    dismissed_last: Option<String>,
 }
 
 impl View {
@@ -62,8 +64,15 @@ impl View {
         entries: &Vector<TimelineEntry>,
         bots: &BotsView,
     ) {
+        if unread_rearmed(
+            self.dismissed_unread,
+            self.dismissed_last.as_deref(),
+            entries.last().map(|entry| entry.id.as_str()),
+        ) {
+            self.dismissed_unread = false;
+            self.read_item = None;
+        }
         self.unread = u32::try_from(room.unread_messages().await).unwrap_or(u32::MAX);
-        self.call = room.call_active();
         self.bots_in_room = room_bots(room.are_members_synced(), bots, || room.member_user_ids());
         self.unread_jump = self.unread_jump(room, entries).await;
     }
@@ -78,7 +87,7 @@ impl View {
             return None;
         }
         if self.read_item.is_none() {
-            self.read_item = room.read_position().await.map(|id| entry_id(&id));
+            self.read_item = room.read_position().await.map(|id| id.to_string());
         }
         self.unread_mentions.clear();
         let Some(read_item) = self.read_item.as_deref() else {
@@ -95,7 +104,13 @@ impl View {
                 state: UnreadJumpState::Idle,
             });
         };
-        let Some(index) = entries.iter().position(|entry| entry.id == read_item) else {
+        let Some(index) = entries.iter().position(|entry| match &entry.kind {
+            EntryKind::Message(message) => message
+                .event_id
+                .as_ref()
+                .is_some_and(|id| id.as_str() == read_item),
+            _ => false,
+        }) else {
             let count = u32::try_from(room.unread_messages().await).unwrap_or(u32::MAX);
             let mentions = u32::try_from(room.unread_mentions()).unwrap_or(u32::MAX);
             if count == 0 && mentions == 0 {
@@ -165,6 +180,7 @@ pub(super) async fn start_batch(
         read_item: None,
         unread_mentions: Vec::new(),
         dismissed_unread: false,
+        dismissed_last: None,
     };
     view.refresh_unread(room, entries, bots).await;
     let anchor = entries.last().map(|entry| entry.id.clone());
@@ -430,6 +446,7 @@ pub(crate) fn send(
     if sender.live.jumps.take_dismiss_unread() {
         view.unread_jump = None;
         view.dismissed_unread = true;
+        view.dismissed_last = entries.last().map(|entry| entry.id.clone());
     }
     let unread_anchor = view
         .unread_jump
@@ -470,11 +487,35 @@ fn mark_unread_anchor(diffs: &mut [TimelineDiff], anchor: Option<&str>) {
             _ => {}
         }
         for item in items {
-            if item.id == anchor
-                && let TimelineContent::Message { message } = &mut item.content
-            {
-                message.unread_anchor = true;
+            if item.id == anchor {
+                match &mut item.content {
+                    TimelineContent::Message { message } => message.unread_anchor = true,
+                    TimelineContent::AgentRun { unread_anchor, .. } => *unread_anchor = true,
+                    _ => {}
+                }
             }
         }
+    }
+}
+
+/// 胶囊收掉后又来了新消息：重新出胶囊，锚点按新的未读块重算（ADR-0121 §4）。
+fn unread_rearmed(
+    dismissed: bool,
+    dismissed_last: Option<&str>,
+    current_last: Option<&str>,
+) -> bool {
+    dismissed && current_last != dismissed_last
+}
+
+#[cfg(test)]
+mod tests {
+    use super::unread_rearmed;
+
+    #[test]
+    fn new_messages_rearm_a_dismissed_capsule() {
+        assert!(!unread_rearmed(false, Some("b"), Some("c")));
+        assert!(!unread_rearmed(true, Some("b"), Some("b")));
+        assert!(unread_rearmed(true, Some("b"), Some("c")));
+        assert!(unread_rearmed(true, Some("b"), None));
     }
 }

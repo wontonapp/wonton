@@ -106,7 +106,8 @@ pub struct TimelineUpdate {
     pub unread_jump: Option<UnreadJump>,
 }
 
-/// 胶囊和它要跳去的锚点。只在核心认为该显示时有值（`count > 0` 且本次进房还没看过锚点）。
+/// 胶囊和它要跳去的锚点。只在核心认为该显示时有值（`count > 0` 且当前未读块还没看过）；
+/// 收掉后又有新消息时会按新的未读块重新给。
 #[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize)]
 #[cfg_attr(feature = "uniffi", derive(uniffi::Record))]
 pub struct UnreadJump {
@@ -290,6 +291,10 @@ pub enum TimelineContent {
         /// 这条状态消息的发送时间（Unix 毫秒）。编辑不改它：状态是 `Working` 时，壳从它算
         /// 这轮已经等了多久；其余状态用不到。
         timestamp_ms: u64,
+        /// 这一条是最早未读（ADR-0121）：壳在状态行上方画“以下是新消息”。
+        #[serde(default)]
+        #[cfg_attr(feature = "uniffi", uniffi(default = false))]
+        unread_anchor: bool,
     },
     /// 一行说明，比如成员加入、离开，房间改名。文字由核心给出。
     Notice {
@@ -709,6 +714,7 @@ mod tests {
                     }],
                     sender_name: "Hermes".into(),
                     timestamp_ms: 1_793_000_000_000,
+                    unread_anchor: false,
                 },
             ),
             item("5", TimelineContent::ReadMarker),

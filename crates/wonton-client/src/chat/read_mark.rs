@@ -139,8 +139,8 @@ fn time_groups(entries: &Vector<TimelineEntry>) -> HashSet<String> {
                 previous = Some(message.timestamp_ms);
                 after_divider = false;
             }
-            // 状态行和上一条消息之间不算断组。
-            EntryKind::Message(_) => {}
+            // 状态行不是气泡：时间不写在它上面，但它隔开前后，下一句另起一组。
+            EntryKind::Message(_) => previous = None,
             // 说明行、资料变化、“以下是新消息”、房间开头：下一句另起一组。
             EntryKind::Notice(_)
             | EntryKind::ProfileChange { .. }
@@ -154,7 +154,8 @@ fn time_groups(entries: &Vector<TimelineEntry>) -> HashSet<String> {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use wonton_matrix::{Message, MessageBody};
+    use wonton_matrix::{AgentRunStatus, Message, MessageBody};
+    use wonton_protocol::AgentRunState;
 
     fn message(id: &str, is_own: bool, read_by: &[&str]) -> TimelineEntry {
         message_at(id, is_own, read_by, 0)
@@ -213,6 +214,22 @@ mod tests {
         assert_eq!(marked(read), Some("b".to_owned()));
     }
 
+    fn agent_at(id: &str, timestamp_ms: u64) -> TimelineEntry {
+        let mut entry = message_at(id, false, &[], timestamp_ms);
+        if let EntryKind::Message(message) = &mut entry.kind {
+            message.agent_run = Some(AgentRunStatus {
+                run: None,
+                state: AgentRunState::Working,
+                step: None,
+                steps: None,
+                progress: None,
+                result: None,
+                end: None,
+                choices: Vec::new(),
+            });
+        }
+        entry
+    }
     fn divider(id: &str) -> TimelineEntry {
         TimelineEntry {
             id: id.to_owned(),
@@ -352,5 +369,16 @@ mod tests {
             timed(entries),
             vec!["a".to_owned(), "c".to_owned(), "d".to_owned()]
         );
+    }
+
+    /// ADR-0121：状态行不写时间，但隔开前后；下一句另起一组。
+    #[test]
+    fn an_agent_run_starts_a_group_but_has_no_time_of_its_own() {
+        let entries = vec![
+            message_at("a", true, &[], 0),
+            agent_at("r", 1),
+            message_at("b", true, &[], 2),
+        ];
+        assert_eq!(timed(entries), vec!["a".to_owned(), "b".to_owned()]);
     }
 }
