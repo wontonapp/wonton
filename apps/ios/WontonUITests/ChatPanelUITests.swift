@@ -1,14 +1,11 @@
 import XCTest
 
-// swiftlint:disable type_body_length
-
 /// 聊天面板按钮（ADR-0052）的走屏：空面板第 1 级、有页面第 2 级、展开后换级与胶囊退出。
 ///
 /// 默认用 `WONTON_UI_FAKE` 的假数据，夜跑带了配对码也一样：房间里的用例不依赖开发栈装没装 Bot。
 /// 要真插件页的用例连开发栈，外部传 `PAIRING_CODE`（`deploy/dev/core/dev.sh pair <地址>` 打出的配对码），
 /// App 启动时交给核心配对（`WontonApp` 的 `WONTON_DEV_PAIRING_CODE`）；没给码时这几条跳过。
-final class ChatPanelUITests: XCTestCase {
-    // swiftlint:enable type_body_length
+final class ChatPanelUITests: XCTestCase { // swiftlint:disable:this type_body_length
     private var app: XCUIApplication!
 
     override func setUpWithError() throws {
@@ -324,6 +321,23 @@ final class ChatPanelUITests: XCTestCase {
         XCTAssertTrue(button.staticTexts["99+"].firstMatch.waitForExistence(timeout: 5), "角标没有写成 99+")
         shot("34-scroll-button-99plus")
     }
+
+    /// 进房间的落点（ADR-0071）：带 anchor 的房间开在历史里，点“向下”到底以后进房落点改成
+    /// `pin.scrollToBottom()` 的 0.3s 动画；动画走完必须贴底、真在底边，不能停在半路。
+    func testRoomEntryLandsAtBottom() throws {
+        try launch()
+        guard enterFakeRoom() != nil else {
+            return XCTFail("没进假房间")
+        }
+        let deadline = Date().addingTimeInterval(5)
+        var state = scrollState()
+        while Date() < deadline, !(state.contains("pin=true") && isAtBottom(state)) {
+            usleep(300_000)
+            state = scrollState()
+        }
+        XCTAssertTrue(state.contains("pin=true"), "进房没贴底：\(state)")
+        XCTAssertTrue(isAtBottom(state), "进房没停在底部：\(state)")
+    }
 }
 
 extension ChatPanelUITests {
@@ -565,7 +579,13 @@ extension ChatPanelUITests {
         debugValues()["y"] ?? -1
     }
 
-    private static let bottomCountPrefixes = ["Back to bottom,", "回到底部，", "一番下へ戻る、", "回到底部,"]
+    /// 带数字的完整标签（四种语言的本地化串），断言用整串相同、不用子串。
+    private static let bottomCountFormats = [
+        "Back to bottom, %1$@ new messages",
+        "回到底部，还有 %1$@ 条新消息",
+        "回到底部，還有 %1$@ 條新訊息",
+        "一番下へ戻る、新着 %1$@ 件"
+    ]
 
     /// 失败时把界面上的按钮标签都列出来。
     private func buttonLabels() -> [String] {
@@ -588,8 +608,8 @@ extension ChatPanelUITests {
 
     /// 数字等于 `count` 的那版：用能自己重算的查询，取到的是按当前标签绑定的元素。
     private func countedBottomButton(_ count: Int, timeout: TimeInterval) -> XCUIElement? {
-        let matches = Self.bottomCountPrefixes.map { prefix in
-            NSPredicate(format: "label BEGINSWITH %@ AND label CONTAINS %@", prefix, "\(count)")
+        let matches = Self.bottomCountFormats.map { format in
+            NSPredicate(format: "label == %@", String(format: format, "\(count)"))
         }
         let query = app.buttons.matching(NSCompoundPredicate(orPredicateWithSubpredicates: matches))
         let deadline = Date().addingTimeInterval(timeout)

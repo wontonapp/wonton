@@ -402,7 +402,7 @@ private extension ChatRoomView {
             .overlay(alignment: .bottomTrailing) {
                 GeometryReader { _ in
                     ZStack(alignment: .bottomTrailing) {
-                        // 只用来记 ov=：命中也关掉，别把下面气泡、链接、拖动的点按全吃掉。
+                        // 只在 debug 里记 ov=，不放行命中。
                         Color.clear
                             .allowsHitTesting(false)
                             .onGeometryChange(for: CGFloat.self) { $0.frame(in: .global).maxY } action: {
