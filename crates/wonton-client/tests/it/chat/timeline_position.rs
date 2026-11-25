@@ -276,6 +276,48 @@ async fn new_messages_only_raise_the_number_until_the_shell_reports_the_bottom()
     assert_eq!(chat.unread(), 0);
 }
 
+/// 通话状态跟着房间走：有人加入后第一批是 true，清掉后下一批 false（ADR-0096、ADR-0121 的回归）。
+#[tokio::test(flavor = "multi_thread")]
+#[ignore = "需要 Docker，用 --include-ignored 运行"]
+async fn call_active_follows_the_room() {
+    let chat = Chat::open(tempfile::tempdir().unwrap()).await;
+    let mut timeline = chat.timeline().await;
+    let first = timeline.next().await;
+    assert!(!first.call_active);
+
+    chat._bot
+        .join_call(&chat.room_id)
+        .await
+        .expect("Bot 加入通话");
+    let ringing = tokio::time::timeout(WAIT, async {
+        loop {
+            let update = timeline.next().await;
+            if update.call_active {
+                return update;
+            }
+        }
+    })
+    .await
+    .expect("时间线报通话中");
+    assert!(ringing.call_active);
+
+    chat._bot
+        .leave_call(&chat.room_id)
+        .await
+        .expect("Bot 离开通话");
+    let quiet = tokio::time::timeout(WAIT, async {
+        loop {
+            let update = timeline.next().await;
+            if !update.call_active {
+                return update;
+            }
+        }
+    })
+    .await
+    .expect("时间线报通话结束");
+    assert!(!quiet.call_active);
+}
+
 /// 等核心报的数字和聊天列表那一行的读数一致。未读数与条数可能差一两条，两边同源即可。
 ///
 /// 每轮先比状态再等事件：`next()` 可能在上一次状态变化之后才挂起，一直等下去就赶不上已发生的匹配

@@ -602,9 +602,9 @@ async fn foregrounded_without_a_session_clears_both_own_bot_slots() {
     assert!(view.own_private_bot_problem.is_none());
 }
 
-/// 行为：房间在通话时要进 `TimelineUpdate.call_active`，壳才画得出通话入口。
+/// Outbox 把通话状态原样带进 update（房间那边由集成用例 `call_active_follows_the_room` 覆盖）。
 #[tokio::test]
-async fn call_active_reaches_the_update() {
+async fn outbox_forwards_call_active() {
     let (chat, _dir) = rig();
     let room: OwnedRoomId = "!room:example.com".parse().unwrap();
     let (sender, mut updates) = mpsc::unbounded_channel();
