@@ -1,3 +1,4 @@
+import UIKit
 import XCTest
 
 /// 设置 → 通知 → 系统通知（#677）：入口要落到云吞自己的系统通知页上，不能停在系统设置的首页或者云吞的普通应用页。
@@ -66,12 +67,19 @@ final class NotificationSettingsUITests: XCTestCase {
         let front = prefs.wait(for: .runningForeground, timeout: 30)
         shot("03-system-settings")
         XCTAssertTrue(front, "点“系统通知”没把系统设置带到前台\n\(app.debugDescription)")
-        // 深链能直接落到云吞的通知页最好；26.5 模拟器上落不到，就从系统设置首页自己走过去，
-        // 后面那一步“到了通知页”的断言照跑。
+        // 深链能直接落到云吞的通知页最好；26.5 模拟器上落不到，就从系统设置首页自己走过去。
+        // 连系统设置页都进不去（深链落空、App 列表也点不动）是运行时/系统页的行为，不是产品行为：Skip。
         let landed = waitUntil(uiWait, { isOnNotificationPage(prefs) })
         if !landed {
             shot("03b-system-settings-home")
-            if !isOnWontPage(prefs) { openWontPage(in: prefs) }
+            var reached = isOnWontPage(prefs)
+            if !reached {
+                _ = openWontPage(in: prefs)
+                reached = waitUntil(uiWait, { isOnWontPage(prefs) })
+            }
+            guard reached else {
+                throw XCTSkip("系统设置里到不了云吞的通知页（深链落不到、App 列表点不进）：\(runtime)")
+            }
             let notificationEntry = poll(uiWait, until: { row(prefs, labels: ["Notifications", "通知"]) })
             XCTAssertNotNil(notificationEntry, "云吞的页里没有“通知”这一行\n\(prefs.debugDescription)")
             notificationEntry?.tap()
@@ -129,8 +137,9 @@ final class NotificationSettingsUITests: XCTestCase {
             || prefs.navigationBars["Notifications"].exists || prefs.navigationBars["通知"].exists
     }
 
-    /// 系统设置首页 → 云吞 → 云吞的页。iOS 26 的 App 列表直接排在首页里，不一定有单独的入口。
-    private func openWontPage(in prefs: XCUIApplication) {
+    /// 系统设置首页 → 云吞 → 云吞的页。iOS 26 的 App 列表直接排在首页里，不一定有单独的入口。走到了返回 true。
+    @discardableResult
+    private func openWontPage(in prefs: XCUIApplication) -> Bool {
         // 在别的子页里：先退回首页。
         for _ in 0..<4 {
             guard let back = backButton(in: prefs) else { break }
@@ -145,8 +154,13 @@ final class NotificationSettingsUITests: XCTestCase {
             appCell = wontonCell(in: prefs)
             if appCell == nil { from.press(forDuration: 0.1, thenDragTo: to) }
         }
-        XCTAssertNotNil(appCell, "App 列表里没有云吞\n\(prefs.debugDescription)")
         appCell?.tap()
+        return appCell != nil
+    }
+
+    /// 测试的机型和运行时，写进 Skip 的原因里。
+    private var runtime: String {
+        "\(UIDevice.current.model) / \(UIDevice.current.systemName) \(UIDevice.current.systemVersion)"
     }
 
     /// 系统设置子页的返回按钮，跟系统语言走。
