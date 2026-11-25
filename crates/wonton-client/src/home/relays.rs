@@ -7,6 +7,7 @@
 //! 表由 `WONTON_RELAYS` 固定时整张只读；某一条由核心标成不能改时，改它当场拒绝，不等到保存。
 //! 保存期间进一步的改动和保存都按「正在保存」拒掉，因为保存交出去的是发起那一刻的整张表。
 
+use std::cmp::Ordering;
 use std::sync::Arc;
 use std::time::Duration;
 
@@ -73,7 +74,7 @@ impl HomeLink {
     /// 正在保存时读不进来：要交出去的那份表正在路上，替换掉本机这份只会让两边对不上。
     /// 还没配对、还没连上时把原因挂在 `load_problem` 上，不进后台任务。
     fn refresh_relays(self: &Arc<Self>) {
-        if self.view().relays.phase == RelaySettingsPhase::Saving {
+        if self.view().relays.phase == Some(RelaySettingsPhase::Saving) {
             return;
         }
         let target = match self.relay_target() {
@@ -90,7 +91,7 @@ impl HomeLink {
             state.epoch
         };
         self.view.send_modify(|view| {
-            view.relays.phase = RelaySettingsPhase::Loading;
+            view.relays.phase = Some(RelaySettingsPhase::Loading);
             view.relays.load_problem = None;
         });
         self.runtime.spawn(self.clone().load_relays(target, epoch));
@@ -115,26 +116,30 @@ impl HomeLink {
     }
 
     /// 在一份本地副本上改一步。改完置为可保存（`dirty`），清掉上一次保存的失败。
+    ///
+    /// 只有改成功才作废在途的读；改失败（比如地址不合法）时保留它，免得表卡在 `Loading`。
     fn edit_relays(
         self: &Arc<Self>,
         edit: impl FnOnce(&mut RelaySettingsView) -> Result<(), CoreError>,
     ) -> Result<(), CoreError> {
         let mut state = self.lock_relays();
-        if self.view().relays.phase == RelaySettingsPhase::Saving {
+        if self.view().relays.phase == Some(RelaySettingsPhase::Saving) {
             return Err(not_ready("relays-busy"));
         }
-        state.epoch += 1;
         let mut outcome = Ok(());
         self.view.send_modify(|view| {
             outcome = edit(&mut view.relays);
             if outcome.is_ok() {
                 let relays = &mut view.relays;
-                relays.phase = RelaySettingsPhase::Ready;
+                relays.phase = Some(RelaySettingsPhase::Ready);
                 relays.dirty = true;
                 relays.load_problem = None;
                 relays.save_problem = None;
             }
         });
+        if outcome.is_ok() {
+            state.epoch += 1;
+        }
         outcome
     }
 
@@ -147,7 +152,7 @@ impl HomeLink {
             let mut state = self.lock_relays();
             let view = self.view();
             let relays = &view.relays;
-            if relays.phase == RelaySettingsPhase::Saving {
+            if relays.phase == Some(RelaySettingsPhase::Saving) {
                 return Err(not_ready("relays-busy"));
             }
             if relays.locked_by_env {
@@ -157,7 +162,7 @@ impl HomeLink {
             (state.epoch, update_from(relays))
         };
         self.view.send_modify(|view| {
-            view.relays.phase = RelaySettingsPhase::Saving;
+            view.relays.phase = Some(RelaySettingsPhase::Saving);
             view.relays.save_problem = None;
         });
         self.runtime
@@ -180,9 +185,9 @@ impl HomeLink {
             // 改动留着，主人修好原因可以直接再存。
             Err(reason) => self.view.send_modify(|view| {
                 let relays = &mut view.relays;
-                relays.phase = RelaySettingsPhase::Failed {
+                relays.phase = Some(RelaySettingsPhase::Failed {
                     reason: Some(reason.clone()),
-                };
+                });
                 relays.save_problem = Some(reason);
             }),
         }
@@ -190,7 +195,7 @@ impl HomeLink {
 
     /// 丢掉没保存的修改，回到核心最近给的那一份；一份都没拿到过就回到空表。
     fn discard_relays(self: &Arc<Self>) -> Result<(), CoreError> {
-        if self.view().relays.phase == RelaySettingsPhase::Saving {
+        if self.view().relays.phase == Some(RelaySettingsPhase::Saving) {
             return Err(not_ready("relays-busy"));
         }
         let mut state = self.lock_relays();
@@ -334,7 +339,7 @@ fn l10n_text_with(key: &str, name: &str, value: String) -> String {
 }
 
 fn apply_snapshot(view: &mut RelaySettingsView, snapshot: &RelaySettingsSnapshot) {
-    view.phase = RelaySettingsPhase::Ready;
+    view.phase = Some(RelaySettingsPhase::Ready);
     view.entries = snapshot.entries.clone();
     view.n0 = snapshot.n0;
     view.locked_by_env = snapshot.locked_by_env;
@@ -345,9 +350,9 @@ fn apply_snapshot(view: &mut RelaySettingsView, snapshot: &RelaySettingsSnapshot
 }
 
 fn fail_load(view: &mut RelaySettingsView, reason: String) {
-    view.phase = RelaySettingsPhase::Failed {
+    view.phase = Some(RelaySettingsPhase::Failed {
         reason: Some(reason.clone()),
-    };
+    });
     view.load_problem = Some(reason);
 }
 
@@ -399,7 +404,8 @@ fn add(
     Ok(())
 }
 
-/// `token` 为空表示不动令牌，给空串表示清掉（同协议里的约定）。
+/// 三个可选字段的空值含义同协议里的 [`RelaySettingsAction::Update`]：令牌空着不动、给空串清掉；
+/// 端口空着清掉；档位空着不动。
 fn update(
     view: &mut RelaySettingsView,
     url: String,
@@ -436,6 +442,10 @@ fn remove(view: &mut RelaySettingsView, url: String) -> Result<(), CoreError> {
 }
 
 /// 挪到 `tier` 档、放在 `before` 前面；`before` 为空时放这一档的最后。
+///
+/// 表按档位排序，插进排完序的表里的最终位置，插完不再被排走：`before` 和自己同档时插在它前面；
+/// `before` 就是自己时放这一档的最前；`before` 在别的档时按档位算，在更高档就放目标档的最后
+/// （仍排在它前面），在更低档就放目标档的开头。
 fn move_entry(
     view: &mut RelaySettingsView,
     url: String,
@@ -450,23 +460,38 @@ fn move_entry(
     }
     let before = before.map(|before| validate_url(&before)).transpose()?;
     if let Some(before) = &before
+        && before != &url
         && position(view, before).is_err()
     {
         return Err(invalid("relays-before-missing", before.clone()));
     }
     let mut entry = view.entries.remove(index);
     entry.tier = tier;
-    let at = match before {
-        Some(before) => position(view, &before).expect("checked above"),
-        None => view
-            .entries
-            .iter()
-            .rposition(|entry| entry.tier <= tier)
-            .map_or(view.entries.len(), |index| index + 1),
+    let at = match &before {
+        None => tier_end(view, tier),
+        Some(before) if before == &url => tier_start(view, tier),
+        Some(before) => {
+            let at = position(view, before).expect("checked above");
+            match view.entries[at].tier.cmp(&tier) {
+                Ordering::Equal => at,
+                Ordering::Greater => tier_end(view, tier),
+                Ordering::Less => tier_start(view, tier),
+            }
+        }
     };
     view.entries.insert(at, entry);
-    view.entries.sort_by_key(|entry| entry.tier);
+    debug_assert!(view.entries.is_sorted_by_key(|entry| entry.tier));
     Ok(())
+}
+
+/// 排好序的表里，第一项落在 `tier` 或更高档的位置。
+fn tier_start(view: &RelaySettingsView, tier: u8) -> usize {
+    view.entries.partition_point(|entry| entry.tier < tier)
+}
+
+/// 排好序的表里，`tier` 这一档的结束位置（第一项更高档的位置）。
+fn tier_end(view: &RelaySettingsView, tier: u8) -> usize {
+    view.entries.partition_point(|entry| entry.tier <= tier)
 }
 
 fn set_n0(view: &mut RelaySettingsView, on: bool) -> Result<(), CoreError> {
@@ -501,15 +526,24 @@ fn entry_mut<'a>(
         .ok_or_else(|| invalid("relays-missing", url))
 }
 
-/// 地址要做核心 `Relay::validate` 的同一套检查：https、不带 userinfo；地址里的空白先去掉。
+/// 地址要做核心 `Relay::validate` 的同一套检查：https、不带 userinfo；地址里的空白先去掉，
+/// DNS 根点（FQDN 尾点）也去掉，和核心的 `canonical_url` 写成同一种，同一个地址在两边才相等。
 fn validate_url(text: &str) -> Result<String, CoreError> {
     let text = text.trim();
-    let url = Url::parse(text).map_err(|_| invalid("relays-invalid-url", text.to_owned()))?;
+    let mut url = Url::parse(text).map_err(|_| invalid("relays-invalid-url", text.to_owned()))?;
     if url.scheme() != "https" {
         return Err(invalid("relays-needs-https", text.to_owned()));
     }
     if !url.username().is_empty() || url.password().is_some() {
         return Err(invalid("relays-has-userinfo", text.to_owned()));
+    }
+    if let Some(domain) = url.domain() {
+        let host = domain.trim_end_matches('.');
+        if !host.is_empty() && url.host_str() != Some(host) {
+            let host = host.to_owned();
+            url.set_host(Some(&host))
+                .expect("stripping the DNS root dot keeps a valid host");
+        }
     }
     Ok(url.to_string())
 }

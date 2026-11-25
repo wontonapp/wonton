@@ -40,6 +40,12 @@ import app.wonton.protocol.OnboardingReviewItem
 import app.wonton.protocol.OnboardingReviewKind
 import app.wonton.protocol.PermissionLine
 import app.wonton.protocol.PermissionRisk
+import app.wonton.protocol.RelayCurrent
+import app.wonton.protocol.RelaySettingEntry
+import app.wonton.protocol.RelaySettingsPhase
+import app.wonton.protocol.RelaySettingsView
+import app.wonton.protocol.RelaySource
+import app.wonton.protocol.RelayState
 import app.wonton.protocol.Rgb
 import app.wonton.protocol.StepNav
 import app.wonton.protocol.ThemeColors
@@ -231,7 +237,19 @@ private fun previewHome(
     deviceId = "0".repeat(64),
     serverId = null,
     status = HomeStatus.Connected,
-    path = HomePath(relay = relay, publicRelay = false, lan = false, rttMs = 1240u),
+    path = HomePath(
+        relay = relay,
+        publicRelay = false,
+        lan = false,
+        rttMs = 1240u,
+        relayUrl = if (relay) "https://relay.example.org/" else null,
+    ),
+    currentRelay = if (relay) {
+        RelayCurrent(url = "https://relay.example.org/", rttMs = 1240u)
+    } else {
+        null
+    },
+    relays = previewRelays(),
     notice = null,
     details = ConnectionDetails(
         network = DeviceNetwork.WIFI,
@@ -258,6 +276,30 @@ private fun previewHome(
     invite = null,
     keepConnection = false,
     justRecovered = false,
+)
+
+private fun previewRelays() = RelaySettingsView(
+    phase = RelaySettingsPhase.Idle,
+    entries = listOf(
+        RelaySettingEntry(
+            url = "https://relay.example.org/",
+            token = null,
+            quicPort = null,
+            tier = 0u.toUByte(),
+            source = RelaySource.BUILTIN,
+            state = RelayState.Connected,
+            editable = true,
+        ),
+        RelaySettingEntry(
+            url = "https://relay.example.net/",
+            token = "wonton-relay-token",
+            quicPort = 7842u.toUShort(),
+            tier = 1u.toUByte(),
+            source = RelaySource.SETTINGS,
+            state = RelayState.Unknown,
+            editable = true,
+        ),
+    ),
 )
 
 private fun previewUdpFlows() = listOf(

@@ -54,6 +54,12 @@ import app.wonton.protocol.PushStatus
 import app.wonton.protocol.RecoveryNextStep
 import app.wonton.protocol.RecoveryStatus
 import app.wonton.protocol.RegistryMirrorViewModel
+import app.wonton.protocol.RelayCurrent
+import app.wonton.protocol.RelaySettingEntry
+import app.wonton.protocol.RelaySettingsPhase
+import app.wonton.protocol.RelaySettingsView
+import app.wonton.protocol.RelaySource
+import app.wonton.protocol.RelayState
 import app.wonton.protocol.RoomMembership
 import app.wonton.protocol.RoomPlugin
 import app.wonton.protocol.RoomRow
@@ -141,11 +147,44 @@ internal fun previewAppearance(dark: Boolean = false) = AppearanceViewModel(
 private const val DEVICE_ID = "6f1d3c47a90b5e28d34c1a7b0e965f2c8d4a13b6e075c9f2a8b4d61e3c05f7a9"
 private const val SERVER_ID = "b71e5048c29a6d3f"
 
+/** 中继设置预览：一台内置中继正在用，一条主人自己配的排在后面。 */
+internal fun previewRelays() = RelaySettingsView(
+    phase = RelaySettingsPhase.Idle,
+    entries = listOf(
+        RelaySettingEntry(
+            url = "https://relay.example.org/",
+            token = null,
+            quicPort = null,
+            tier = 0u.toUByte(),
+            source = RelaySource.BUILTIN,
+            state = RelayState.Connected,
+            editable = true,
+        ),
+        RelaySettingEntry(
+            url = "https://relay.example.net/",
+            token = "wonton-relay-token",
+            quicPort = 7842u.toUShort(),
+            tier = 1u.toUByte(),
+            source = RelaySource.SETTINGS,
+            state = RelayState.Unknown,
+            editable = true,
+        ),
+    ),
+)
+
 internal fun previewHome() = HomeViewModel(
     deviceId = DEVICE_ID,
     serverId = SERVER_ID,
     status = HomeStatus.Connected,
-    path = HomePath(relay = true, publicRelay = false, lan = false, rttMs = 48u),
+    path = HomePath(
+        relay = true,
+        publicRelay = false,
+        lan = false,
+        rttMs = 48u,
+        relayUrl = "https://relay.example.org/",
+    ),
+    currentRelay = RelayCurrent(url = "https://relay.example.org/", rttMs = 48u),
+    relays = previewRelays(),
     notice = null,
     details = ConnectionDetails(
         network = DeviceNetwork.WIFI,

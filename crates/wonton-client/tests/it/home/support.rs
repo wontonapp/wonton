@@ -95,6 +95,8 @@ pub(crate) struct Home {
     pub(super) relay_reply: Arc<Mutex<(u16, String)>>,
     /// 上游收到的 `/_wonton/api/relays` PUT 请求体。
     pub(super) relay_puts: Arc<Mutex<Vec<String>>>,
+    /// 上游回 `/_wonton/api/relays` 之前先等这么久：让测试把请求捏在 Loading 里。
+    pub(super) relay_delay: Arc<Mutex<Duration>>,
     /// 还要让多少次 `/_wonton/api/tunnel` 失败。
     fail_tunnel: Arc<AtomicUsize>,
     _upstream_task: JoinHandle<()>,
@@ -114,12 +116,14 @@ impl Home {
             r#"{"entries":[],"n0":false,"locked_by_env":false,"warnings":[]}"#.to_string(),
         )));
         let relay_puts = Arc::new(Mutex::new(Vec::new()));
+        let relay_delay = Arc::new(Mutex::new(Duration::ZERO));
         let fail_tunnel = Arc::new(AtomicUsize::new(0));
         let (upstream, task) = path_echo(
             tunnel_info.clone(),
             fail_tunnel.clone(),
             relay_reply.clone(),
             relay_puts.clone(),
+            relay_delay.clone(),
         )
         .await;
         let allowlist = Allowlist::new(devices.iter().copied());
@@ -133,6 +137,7 @@ impl Home {
             _upstream_task: task,
             relay_reply,
             relay_puts,
+            relay_delay,
         }
     }
 
@@ -321,6 +326,7 @@ async fn path_echo(
     fail_tunnel: Arc<AtomicUsize>,
     relay_reply: Arc<Mutex<(u16, String)>>,
     relay_puts: Arc<Mutex<Vec<String>>>,
+    relay_delay: Arc<Mutex<Duration>>,
 ) -> (SocketAddr, JoinHandle<()>) {
     let listener = TcpListener::bind((Ipv4Addr::LOCALHOST, 0)).await.unwrap();
     let addr = listener.local_addr().unwrap();
@@ -331,6 +337,7 @@ async fn path_echo(
             let fail_tunnel = fail_tunnel.clone();
             let relay_reply = relay_reply.clone();
             let relay_puts = relay_puts.clone();
+            let relay_delay = relay_delay.clone();
             tokio::spawn(async move {
                 let mut head = Vec::new();
                 while !head.ends_with(b"\r\n\r\n") {
@@ -348,6 +355,10 @@ async fn path_echo(
                 if path == "/_wonton/api/relays" {
                     if method == "PUT" {
                         relay_puts.lock().unwrap().push(body);
+                    }
+                    let delay = *relay_delay.lock().unwrap();
+                    if !delay.is_zero() {
+                        tokio::time::sleep(delay).await;
                     }
                     let (status, body) = relay_reply.lock().unwrap().clone();
                     write_response(&mut tcp, status, "", &body).await;

@@ -111,6 +111,9 @@ pub enum RelaySettingsPhase {
         #[serde(default, skip_serializing_if = "Option::is_none")]
         reason: Option<String>,
     },
+    /// 比这个 App 新的核心给的状态；壳按 Idle 当没打开过处理。
+    #[serde(other)]
+    Other,
 }
 
 /// 当前这条连接走的中继。
@@ -125,32 +128,63 @@ pub struct RelayCurrent {
 }
 
 /// 设置页的一整份 ViewModel。
-#[derive(Clone, Debug, Default, PartialEq, Eq, Serialize, Deserialize)]
+#[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize)]
 #[cfg_attr(feature = "uniffi", derive(uniffi::Record))]
 pub struct RelaySettingsView {
+    /// 设置页这次是加载、编辑还是保存；还没打开过设置页时为空，壳按 Idle 处理。
+    ///
+    /// 加 `uniffi(default = None)` 让 Kotlin/Swift 能省掉它：uniffi 0.32 的绑定生成器只支持
+    /// 字面量默认值，枚举字段直接写 `uniffi(default)` 会报 `Invalid literal for enum type: Default`。
     #[serde(default)]
-    pub phase: RelaySettingsPhase,
+    #[cfg_attr(feature = "uniffi", uniffi(default = None))]
+    pub phase: Option<RelaySettingsPhase>,
     /// 正在编辑的表。没在编辑时就是核心给的最近一份。
     #[serde(default)]
+    #[cfg_attr(feature = "uniffi", uniffi(default))]
     pub entries: Vec<RelaySettingEntry>,
-    /// 留不留 n0 兜底。
-    #[serde(default)]
+    /// 留不留 n0 兜底。缺省和核心一样是留。
+    #[serde(default = "n0_default")]
+    #[cfg_attr(feature = "uniffi", uniffi(default = true))]
     pub n0: bool,
     /// 环境变量固定，只读。
     #[serde(default)]
+    #[cfg_attr(feature = "uniffi", uniffi(default))]
     pub locked_by_env: bool,
     /// 核心的提示。
     #[serde(default)]
+    #[cfg_attr(feature = "uniffi", uniffi(default))]
     pub warnings: Vec<String>,
     /// 改过还没保存。
     #[serde(default)]
+    #[cfg_attr(feature = "uniffi", uniffi(default))]
     pub dirty: bool,
     /// 取表失败的原因。
     #[serde(default, skip_serializing_if = "Option::is_none")]
+    #[cfg_attr(feature = "uniffi", uniffi(default))]
     pub load_problem: Option<String>,
     /// 保存失败的原因。
     #[serde(default, skip_serializing_if = "Option::is_none")]
+    #[cfg_attr(feature = "uniffi", uniffi(default))]
     pub save_problem: Option<String>,
+}
+
+impl Default for RelaySettingsView {
+    fn default() -> Self {
+        Self {
+            phase: None,
+            entries: Vec::new(),
+            n0: n0_default(),
+            locked_by_env: false,
+            warnings: Vec::new(),
+            dirty: false,
+            load_problem: None,
+            save_problem: None,
+        }
+    }
+}
+
+fn n0_default() -> bool {
+    true
 }
 
 /// 设置页上的操作。
@@ -172,7 +206,9 @@ pub enum RelaySettingsAction {
         #[serde(default)]
         tier: Option<u8>,
     },
-    /// 改一条的令牌、端口或档位。`token` 为空表示不动令牌；给空串表示清掉令牌。
+    /// 改一条的令牌、端口或档位。三个可选字段的「空」按字段本身有没有「没有」这个状态算：
+    /// `token` 空着不动令牌，给空串清掉令牌；`quic_port` 空着清掉自定义端口、回到默认端口；
+    /// `tier` 空着不动档位（档位不能清，总有一档）。
     Update {
         url: String,
         #[serde(default)]
@@ -185,6 +221,9 @@ pub enum RelaySettingsAction {
     /// 删一条。内置或签名的项删掉后记进配置文件，不再是「没配」。
     Remove { url: String },
     /// 挪一条到某一档，放在 `before` 那一条前面；`before` 为空时放这一档的最后。
+    ///
+    /// 表按档位排序，`before` 只决定同一档里的先后：`before` 就是自己时放这一档的最前；`before`
+    /// 在别的档时按档位算，在更高档就放目标档的最后（仍排在它前面），在更低档就放目标档的开头。
     Move {
         url: String,
         tier: u8,
@@ -277,6 +316,15 @@ mod tests {
     #[test]
     fn an_empty_settings_view_reads_from_the_old_json() {
         let view: RelaySettingsView = serde_json::from_str("{}").unwrap();
+        // 缺键按核心的缺省：n0 留着。
         assert_eq!(view, RelaySettingsView::default());
+        assert!(view.n0);
+    }
+
+    #[test]
+    fn an_unknown_phase_falls_back_to_other() {
+        let view: RelaySettingsView =
+            serde_json::from_str(r#"{"phase": {"phase": "reticulating"}}"#).unwrap();
+        assert_eq!(view.phase, Some(RelaySettingsPhase::Other));
     }
 }

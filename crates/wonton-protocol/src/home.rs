@@ -15,9 +15,11 @@ pub struct HomeViewModel {
     pub path: Option<HomePath>,
     /// 当前这条连接经哪台中继；直连或没连上时为空。设置页用它标出正在用的那台。
     #[serde(default)]
+    #[cfg_attr(feature = "uniffi", uniffi(default = None))]
     pub current_relay: Option<RelayCurrent>,
-    /// 中继表设置页（ADR-0048）。没打开过设置页时是 [`RelaySettingsPhase::Idle`](crate::RelaySettingsPhase::Idle)。
+    /// 中继表设置页（ADR-0048）。没打开过设置页时为空，壳按 Idle 处理。
     #[serde(default)]
+    #[cfg_attr(feature = "uniffi", uniffi(default))]
     pub relays: RelaySettingsView,
     /// 要告诉主人的连接状态；连接正常时为空。壳只按它显示，不看 `status` 里的原文（ADR-0032）。
     pub notice: Option<ConnectionNotice>,
@@ -289,6 +291,7 @@ pub struct HomePath {
     pub rtt_ms: u32,
     /// 经哪台中继（只有 `relay` 为真时才有）。
     #[serde(default)]
+    #[cfg_attr(feature = "uniffi", uniffi(default = None))]
     pub relay_url: Option<String>,
 }
 

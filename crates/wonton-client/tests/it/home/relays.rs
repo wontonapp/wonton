@@ -71,7 +71,7 @@ async fn refresh_loads_the_table_and_save_puts_the_whole_table_back() {
     dispatch(&phone, RelaySettingsAction::Refresh);
     let view = phone
         .wait_for(|view| {
-            view.relays.phase == RelaySettingsPhase::Ready && view.relays.entries.len() == 1
+            view.relays.phase == Some(RelaySettingsPhase::Ready) && view.relays.entries.len() == 1
         })
         .await;
     assert!(view.relays.n0);
@@ -99,7 +99,7 @@ async fn refresh_loads_the_table_and_save_puts_the_whole_table_back() {
     );
     dispatch(&phone, RelaySettingsAction::Save);
     let view = phone
-        .wait_for(|view| view.relays.phase == RelaySettingsPhase::Ready && !view.relays.dirty)
+        .wait_for(|view| view.relays.phase == Some(RelaySettingsPhase::Ready) && !view.relays.dirty)
         .await;
     assert!(!view.relays.n0);
     assert_eq!(view.relays.entries.len(), 2);
@@ -124,14 +124,14 @@ async fn a_failed_refresh_shows_the_reason_and_keeps_the_table() {
     dispatch(&phone, RelaySettingsAction::Refresh);
     phone
         .wait_for(|view| {
-            view.relays.phase == RelaySettingsPhase::Ready && !view.relays.entries.is_empty()
+            view.relays.phase == Some(RelaySettingsPhase::Ready) && !view.relays.entries.is_empty()
         })
         .await;
 
     *home.relay_reply.lock().unwrap() = (503, error_body("relay store is down"));
     dispatch(&phone, RelaySettingsAction::Refresh);
     let view = phone
-        .wait_for(|view| matches!(view.relays.phase, RelaySettingsPhase::Failed { .. }))
+        .wait_for(|view| matches!(view.relays.phase, Some(RelaySettingsPhase::Failed { .. })))
         .await;
     assert!(
         view.relays
@@ -142,6 +142,42 @@ async fn a_failed_refresh_shows_the_reason_and_keeps_the_table() {
         view.relays.load_problem
     );
     assert_eq!(view.relays.entries.len(), 1);
+}
+
+/// 表还在 Loading 时一次被拒的编辑不能把在途的读作废，否则表卡在 Loading 再也不回来。
+#[tokio::test]
+async fn an_invalid_edit_while_loading_keeps_the_in_flight_refresh() {
+    let dir = tempfile::tempdir().unwrap();
+    let phone = Phone::open(dir.path());
+    let home = connected(&phone).await;
+
+    *home.relay_delay.lock().unwrap() = std::time::Duration::from_millis(200);
+    *home.relay_reply.lock().unwrap() = (
+        200,
+        snapshot(vec![entry("https://relay.example.org/", 0)], true),
+    );
+    dispatch(&phone, RelaySettingsAction::Refresh);
+
+    // 表还在路上：加一条地址不合法的，当场被拒。
+    let rejected = phone.dispatch(Action::Home {
+        action: HomeAction::RelaySettings {
+            action: RelaySettingsAction::Add {
+                url: "http://relay.example.org".into(),
+                token: None,
+                quic_port: None,
+                tier: None,
+            },
+        },
+    });
+    assert!(matches!(rejected, Err(_)), "{rejected:?}");
+
+    // 在途的 GET 没被作废，回来照样落表。
+    let view = phone
+        .wait_for(|view| view.relays.phase == Some(RelaySettingsPhase::Ready))
+        .await;
+    assert_eq!(view.relays.entries.len(), 1);
+    assert_eq!(view.relays.entries[0].url, "https://relay.example.org/");
+    assert!(!view.relays.dirty);
 }
 
 #[tokio::test]
@@ -157,7 +193,7 @@ async fn a_failed_save_keeps_the_edits_dirty_and_shows_the_reason() {
     dispatch(&phone, RelaySettingsAction::Refresh);
     phone
         .wait_for(|view| {
-            view.relays.phase == RelaySettingsPhase::Ready && !view.relays.entries.is_empty()
+            view.relays.phase == Some(RelaySettingsPhase::Ready) && !view.relays.entries.is_empty()
         })
         .await;
     add(&phone, "https://second.example.org", 1);
@@ -165,7 +201,7 @@ async fn a_failed_save_keeps_the_edits_dirty_and_shows_the_reason() {
     *home.relay_reply.lock().unwrap() = (500, error_body("could not write the relay table"));
     dispatch(&phone, RelaySettingsAction::Save);
     let view = phone
-        .wait_for(|view| matches!(view.relays.phase, RelaySettingsPhase::Failed { .. }))
+        .wait_for(|view| matches!(view.relays.phase, Some(RelaySettingsPhase::Failed { .. })))
         .await;
     assert!(
         view.relays
@@ -192,7 +228,7 @@ async fn discard_goes_back_to_the_last_table_the_core_gave() {
     dispatch(&phone, RelaySettingsAction::Refresh);
     phone
         .wait_for(|view| {
-            view.relays.phase == RelaySettingsPhase::Ready && !view.relays.entries.is_empty()
+            view.relays.phase == Some(RelaySettingsPhase::Ready) && !view.relays.entries.is_empty()
         })
         .await;
     add(&phone, "https://second.example.org", 1);
@@ -202,7 +238,7 @@ async fn discard_goes_back_to_the_last_table_the_core_gave() {
         .wait_for(|view| !view.relays.dirty && view.relays.entries.len() == 1)
         .await;
     assert_eq!(view.relays.entries[0].url, "https://relay.example.org/");
-    assert_eq!(view.relays.phase, RelaySettingsPhase::Ready);
+    assert_eq!(view.relays.phase, Some(RelaySettingsPhase::Ready));
 }
 
 #[tokio::test]
@@ -227,7 +263,7 @@ async fn a_write_to_a_locked_table_is_kept_for_the_caller_to_fix() {
     *home.relay_reply.lock().unwrap() = (200, locked);
     dispatch(&phone, RelaySettingsAction::Refresh);
     let view = phone
-        .wait_for(|view| view.relays.phase == RelaySettingsPhase::Ready)
+        .wait_for(|view| view.relays.phase == Some(RelaySettingsPhase::Ready))
         .await;
     assert!(view.relays.locked_by_env);
     assert_eq!(view.relays.warnings, ["WONTON_RELAYS is set"]);

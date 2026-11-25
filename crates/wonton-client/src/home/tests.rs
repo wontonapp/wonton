@@ -249,7 +249,7 @@ async fn a_refresh_without_a_paired_server_reports_why() {
     let view = home.view();
     assert!(matches!(
         view.relays.phase,
-        wonton_protocol::RelaySettingsPhase::Failed { .. }
+        Some(wonton_protocol::RelaySettingsPhase::Failed { .. })
     ));
     assert!(view.relays.load_problem.is_some());
 }
@@ -273,7 +273,7 @@ async fn relay_edits_stay_local_when_the_table_cannot_be_saved_yet() {
     assert!(view.relays.dirty);
     assert_eq!(
         view.relays.phase,
-        wonton_protocol::RelaySettingsPhase::Ready
+        Some(wonton_protocol::RelaySettingsPhase::Ready)
     );
 
     // 没有连接信息：保存当场失败，改动和待保存的标记都还在。

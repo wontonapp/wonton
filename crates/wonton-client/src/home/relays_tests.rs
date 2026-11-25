@@ -16,7 +16,7 @@ fn entry(url: &str, tier: u8) -> RelaySettingEntry {
 
 fn view(entries: Vec<RelaySettingEntry>) -> RelaySettingsView {
     RelaySettingsView {
-        phase: RelaySettingsPhase::Ready,
+        phase: Some(RelaySettingsPhase::Ready),
         entries,
         ..Default::default()
     }
@@ -81,6 +81,31 @@ fn add_rejects_bad_addresses_and_duplicates() {
             "{url}"
         );
     }
+    assert!(matches!(
+        add(
+            &mut view,
+            "https://relay.example.org".into(),
+            None,
+            None,
+            None
+        ),
+        Err(CoreError::InvalidInput { .. })
+    ));
+}
+
+#[test]
+fn addresses_drop_the_dns_root_dot() {
+    let mut view = view(Vec::new());
+    add(
+        &mut view,
+        "https://Relay.Example.org.".into(),
+        None,
+        None,
+        None,
+    )
+    .unwrap();
+    assert_eq!(urls(&view), ["https://relay.example.org/"]);
+    // 带根点的写法和不带的算同一条。
     assert!(matches!(
         add(
             &mut view,
@@ -215,6 +240,82 @@ fn move_rejects_a_missing_before() {
 }
 
 #[test]
+fn move_before_itself_puts_it_at_the_front_of_the_tier() {
+    let mut view = view(vec![
+        entry("https://first.example.org/", 0),
+        entry("https://second.example.org/", 1),
+        entry("https://third.example.org/", 2),
+    ]);
+    move_entry(
+        &mut view,
+        "https://third.example.org".into(),
+        1,
+        Some("https://third.example.org/".into()),
+    )
+    .unwrap();
+    assert_eq!(
+        urls(&view),
+        [
+            "https://first.example.org/",
+            "https://third.example.org/",
+            "https://second.example.org/"
+        ]
+    );
+}
+
+#[test]
+fn move_across_tiers_stays_before_a_before_in_a_higher_tier() {
+    let mut view = view(vec![
+        entry("https://first.example.org/", 0),
+        entry("https://second.example.org/", 1),
+        entry("https://third.example.org/", 2),
+    ]);
+    // third 挪进 0 档、放在 second 前面：second 在更高档，插在目标档的最后，排完仍排在它前面。
+    move_entry(
+        &mut view,
+        "https://third.example.org".into(),
+        0,
+        Some("https://second.example.org/".into()),
+    )
+    .unwrap();
+    assert_eq!(
+        urls(&view),
+        [
+            "https://first.example.org/",
+            "https://third.example.org/",
+            "https://second.example.org/"
+        ]
+    );
+}
+
+#[test]
+fn move_across_tiers_goes_to_the_front_of_the_tier_when_before_is_lower() {
+    let mut view = view(vec![
+        entry("https://first.example.org/", 0),
+        entry("https://second.example.org/", 1),
+        entry("https://third.example.org/", 1),
+        entry("https://fourth.example.org/", 2),
+    ]);
+    // fourth 挪进 1 档、放在 first 前面：first 在更低档，按档位落在 1 档的开头。
+    move_entry(
+        &mut view,
+        "https://fourth.example.org/".into(),
+        1,
+        Some("https://first.example.org/".into()),
+    )
+    .unwrap();
+    assert_eq!(
+        urls(&view),
+        [
+            "https://first.example.org/",
+            "https://fourth.example.org/",
+            "https://second.example.org/",
+            "https://third.example.org/"
+        ]
+    );
+}
+
+#[test]
 fn a_locked_table_rejects_every_edit() {
     let mut view = view(vec![entry("https://relay.example.org/", 0)]);
     view.locked_by_env = true;
@@ -291,7 +392,7 @@ fn applying_a_snapshot_clears_dirty_and_problems() {
         warnings: vec!["warning".into()],
     };
     apply_snapshot(&mut view, &snapshot);
-    assert_eq!(view.phase, RelaySettingsPhase::Ready);
+    assert_eq!(view.phase, Some(RelaySettingsPhase::Ready));
     assert_eq!(urls(&view), ["https://relay.example.org/"]);
     assert!(view.n0);
     assert!(view.locked_by_env);
