@@ -535,6 +535,7 @@ plugin-capability-port-zero = provides.{ $capability }.port must not be 0
 plugin-capability-credentials-required = provides.{ $capability } must declare credentials: each consumer gets a credential of its own
 plugin-capability-credentials-forbidden = provides.{ $capability } must not declare credentials: this capability serves only requests forwarded by the core
 plugin-capability-credentials-argv = provides.{ $capability }.credentials.{ $field } must be a non-empty argv naming the credential with { $placeholder }
+plugin-capability-media-source-empty = provides.{ $capability }.{ $field } must list at least one value
 plugin-capability-service-unknown = { $field } refers to service `{ $service }`, which doesn't exist in the compose file
 plugin-capability-service-not-forwardable = { $field } must not point at a network_mode: none service: the core forwards into it and issues credentials there
 plugin-install-capability-deps-unsupported = this core does not support dependencies between plugins yet; upgrade the core before installing

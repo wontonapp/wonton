@@ -661,7 +661,36 @@ const EXPECTED: &[(&str, &str)] = &[
     ("0.15", "x-wonton.remote_mcp"),
     ("0.15", "无健康检查的 webui 服务由核心代探测"),
     ("0.15", "variable WONTON_BOT_AI_LEVEL"),
+    // 0.16
+    ("0.16", "x-wonton.provides.<名字>.operations"),
+    ("0.16", "x-wonton.provides.<名字>.kinds"),
 ];
+
+#[test]
+fn media_source_lists_need_0_16() {
+    let manifest = json!({
+        "provides": {
+            "media_source": {
+                "service": "sidecar",
+                "port": 8090,
+                "operations": ["upload"],
+                "kinds": ["photo"],
+                "credentials": {"issue": ["i", "{name}"], "revoke": ["r", "{name}"]},
+            },
+        },
+    });
+    let found = problems(&document("0.15", manifest.clone(), plain()));
+    assert_eq!(found.len(), 2, "{found:?}");
+    assert!(
+        found[0].contains("provides.media_source.operations"),
+        "{found:?}"
+    );
+    assert!(
+        found[1].contains("provides.media_source.kinds"),
+        "{found:?}"
+    );
+    assert!(problems(&document("0.16", manifest, plain())).is_empty());
+}
 
 #[test]
 fn the_table_matches_the_expected_per_version_list() {

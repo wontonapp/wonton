@@ -67,6 +67,8 @@ uniffi = "0.32.2"
 url = "2.5.8"
 # Apache-2.0 OR MIT。
 unic-langid = "0.9.6"
+# Apache-2.0 OR MIT。媒体任务号和播放会话号。
+uuid = { version = "1.29.0", features = ["serde", "v4"] }
 
 # 依赖不带调试信息，崩溃栈里还有函数名：25 个测试二进制从 5.3 GB 降到 3.3 GB，target 目录少三分之一（2026-11-05 实测）。
 [profile.dev.package."*"]
