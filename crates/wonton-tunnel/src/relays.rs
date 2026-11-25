@@ -359,10 +359,14 @@ fn redact_item(item: &str) -> String {
     let Some((scheme, rest)) = item.split_once("://") else {
         return item.to_owned();
     };
-    match rest.split_once('@') {
-        Some((_, host)) => format!("{scheme}://<redacted>@{host}"),
-        None => item.to_owned(),
-    }
+    // userinfo 只在 authority 里；query 里的 `@` 不算。
+    let end = rest.find(['/', '?', '#']).unwrap_or(rest.len());
+    let (authority, tail) = rest.split_at(end);
+    let authority = match authority.split_once('@') {
+        Some((_, host)) => format!("<redacted>@{host}"),
+        None => authority.to_owned(),
+    };
+    format!("{scheme}://{authority}{tail}")
 }
 
 /// 解析一项中继地址：`https://TOKEN@relay.example.org#7843`。令牌取 userinfo 的用户名（按百分号编码
@@ -537,8 +541,8 @@ pub struct TierFallbackHandle {
     enabled: tokio::sync::watch::Receiver<u8>,
     /// 换表用：回退任务每拍读最新一份，换表也算一次重置。
     tables: tokio::sync::watch::Sender<RelayTable>,
-    /// 回退任务。句柄丢掉就停任务，表的持有者要一直留着它。
-    task: tokio::task::JoinHandle<()>,
+    /// 回退任务。丢掉句柄不 abort：任务自己盯到 endpoint 关闭才结束，误丢不会悄悄关掉回退。
+    _task: tokio::task::JoinHandle<()>,
 }
 
 impl TierFallbackHandle {
@@ -557,12 +561,6 @@ impl TierFallbackHandle {
             .wait_for(|enabled| *enabled == tiers)
             .await
             .expect("回退任务没在了");
-    }
-}
-
-impl Drop for TierFallbackHandle {
-    fn drop(&mut self) {
-        self.task.abort();
     }
 }
 
@@ -766,7 +764,7 @@ pub fn spawn_tier_fallback(
     TierFallbackHandle {
         enabled: watching,
         tables,
-        task,
+        _task: task,
     }
 }
 

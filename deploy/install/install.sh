@@ -161,7 +161,7 @@ owner_name=${WONTON_OWNER_NAME:-$(saved WONTON_OWNER_NAME)}
 # 不用 `:-`：环境变量设成空就是取消上次的设置。
 lan_addresses=${WONTON_LAN_ADDRESSES-$(saved WONTON_LAN_ADDRESSES)}
 announce_addresses=${WONTON_ANNOUNCE_ADDRESSES-$(saved WONTON_ANNOUNCE_ADDRESSES)}
-# 不用 `:-`：环境变量设成空就是取消上次的设置，回到 n0。
+# 不用 `:-`：环境变量设成空就是取消上次的设置，回到数据目录的 relays.json（没有就只用 n0）。
 relays=${WONTON_RELAYS-$(saved WONTON_RELAYS)}
 relay_list_url=${WONTON_RELAY_LIST_URL-$(saved WONTON_RELAY_LIST_URL)}
 relay_list_pubkey=${WONTON_RELAY_LIST_PUBKEY-$(saved WONTON_RELAY_LIST_PUBKEY)}
