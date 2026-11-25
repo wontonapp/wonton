@@ -314,11 +314,8 @@ fn snooze_removes_from_the_list() {
     assert_eq!(inbox.list("owner", clock.get()).items.len(), 1);
 }
 
-/// dedupe 命中要换新页面和 CSP，不是留着第一次的。
-#[test]
-fn dedupe_replaces_the_page_snapshot() {
-    let (inbox, _clock) = inbox();
-    let page = |html: &[u8], csp: &str, key: &str| CreateInput {
+fn page_input(html: &[u8], csp: &str, key: &str) -> CreateInput {
+    CreateInput {
         kind: InboxType::Page,
         sender: InboxSender {
             kind: InboxSenderKind::Agent,
@@ -347,7 +344,14 @@ fn dedupe_replaces_the_page_snapshot() {
             html: html.to_vec(),
             csp: csp.into(),
         }),
-    };
+    }
+}
+
+/// dedupe 命中要换新页面和 CSP，不是留着第一次的。
+#[test]
+fn dedupe_replaces_the_page_snapshot() {
+    let (inbox, _clock) = inbox();
+    let page = |html: &[u8], csp: &str, key: &str| page_input(html, csp, key);
     let first = inbox.create(page(b"<p>1</p>", "csp-1", "same")).unwrap();
     let second = inbox.create(page(b"<p>2</p>", "csp-2", "same")).unwrap();
     assert_eq!(
@@ -442,4 +446,54 @@ fn open_ignores_leftover_temp_files() {
     assert!(!temp_path.exists(), "条目残留临时文件要清掉");
     assert!(!page_tmp.exists(), "页面残留临时文件要清掉");
     assert!(page_path.exists(), "真正的页面要留着");
+}
+
+/// 并发 dedupe 同一条目：16 线程都走 create→write_page，读者在写的同时读，
+/// 任何时刻都必须是完整的一份（write_private 的 truncate 窗口会读到 0 字节/半截）。
+#[test]
+fn concurrent_dedupe_pages_stay_whole() {
+    use std::sync::Arc;
+    use std::sync::atomic::{AtomicBool, Ordering};
+
+    const LEN: usize = 256 * 1024;
+    let dir = tempfile::tempdir().unwrap();
+    let inbox = Inbox::for_test(dir.path());
+    let first = inbox
+        .create(page_input(&vec![b'z'; LEN], "csp", "same"))
+        .unwrap();
+    let id = first.item.id;
+    for _round in 0..20 {
+        let stop = Arc::new(AtomicBool::new(false));
+        std::thread::scope(|scope| {
+            for _ in 0..4 {
+                let inbox = inbox.clone();
+                let id = id.clone();
+                let stop = stop.clone();
+                scope.spawn(move || {
+                    while !stop.load(Ordering::Relaxed) {
+                        let (html, _csp) = inbox.page_bytes(&id).unwrap().unwrap();
+                        assert_eq!(html.len(), LEN, "并发写把页面截断了");
+                        assert!(
+                            html.iter().all(|byte| *byte == html[0]),
+                            "页面混进了另一份的字节"
+                        );
+                    }
+                });
+            }
+            for i in 0..32u8 {
+                let inbox = inbox.clone();
+                scope.spawn(move || {
+                    let body = vec![b'a' + i; LEN];
+                    inbox
+                        .create(page_input(&body, &format!("csp-{i}"), "same"))
+                        .unwrap();
+                });
+            }
+            // 写线程都结束后再停读者。
+            stop.store(true, Ordering::Relaxed);
+        });
+        let (html, _csp) = inbox.page_bytes(&id).unwrap().unwrap();
+        assert_eq!(html.len(), LEN);
+        assert!(html.iter().all(|byte| *byte == html[0]));
+    }
 }
