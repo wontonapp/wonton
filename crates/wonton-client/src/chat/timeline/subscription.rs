@@ -40,6 +40,8 @@ pub(crate) struct TimelineSource {
     /// 这个房间能显示的确认卡片。
     pub(crate) confirmations: watch::Receiver<Arc<Vec<ConfirmationView>>>,
     pub(crate) plugins: Arc<crate::plugins::PluginsLink>,
+    /// 推送里带来的正文预览（ADR-0118），打开着房间时来了新的也补一批。
+    pub(crate) push_previews: Arc<crate::push::PushPreviews>,
     pub(crate) previews: Previews,
     pub(crate) menus: Arc<std::sync::Mutex<Menus>>,
     pub(crate) room_view: watch::Receiver<Option<Arc<crate::pages::RoomPanelView>>>,
@@ -75,6 +77,7 @@ impl TimelineSubscription {
             support,
             bots: ledger,
             session,
+            push_previews,
         } = source;
         let (sender, receiver) = mpsc::unbounded_channel();
         let (cancelled, mut stop) = watch::channel(false);
@@ -108,6 +111,7 @@ impl TimelineSubscription {
                     &ledger,
                     &watched,
                     &session,
+                    &push_previews,
                 ) => {}
                 () = outbox.closed() => {}
                 _ = stop.wait_for(|cancelled| *cancelled) => {}

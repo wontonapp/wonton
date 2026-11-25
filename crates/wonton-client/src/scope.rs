@@ -29,7 +29,7 @@ use crate::onboarding::OnboardingLink;
 use crate::pages::PagesLink;
 use crate::peers::PeersLink;
 use crate::plugins::PluginsLink;
-use crate::push::PushLink;
+use crate::push::{PushLink, PushPreviews};
 use crate::push_method::PushMethodLink;
 use crate::settings::SettingsLink;
 pub(crate) use runtime::ScopeRuntime;
@@ -157,6 +157,8 @@ fn chat_links(
         dir,
         views,
     } = *shared;
+    // 推送写、时间线读，同一个实例（ADR-0118）。
+    let push_previews = Arc::new(PushPreviews::open(dir));
     let chat = ChatLink::new(
         handle.clone(),
         home.clone(),
@@ -165,6 +167,7 @@ fn chat_links(
         card_success,
         plugins.clone(),
         channels,
+        push_previews.clone(),
     )?;
     let push = PushLink::new(
         handle.clone(),
@@ -173,6 +176,7 @@ fn chat_links(
         dir,
         push_method.subscribe(),
         lock_screen.subscribe(),
+        push_previews,
     );
     let tabs = PagesLink::new(
         handle.clone(),

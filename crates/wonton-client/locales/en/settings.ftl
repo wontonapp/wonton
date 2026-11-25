@@ -64,6 +64,10 @@ push-fetch-timeout = { $seconds ->
 # $reason is the Matrix SDK's original error.
 push-fetch-failed = Can't get this message: { $reason }
 
+# Notification text for an attachment (ADR-0118): the type and the filename.
+push-preview-image = Photo { $filename }
+push-preview-file = File { $filename }
+
 push-core-closed = The client core has shut down.
 
 push-not-paired = You haven't connected to your home server yet.

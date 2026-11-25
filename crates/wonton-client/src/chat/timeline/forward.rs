@@ -2,6 +2,7 @@
 //! 输入状态和跳转，折成批次发出去；首批和清空重建也在这里收口。
 
 use std::sync::Arc;
+use std::collections::HashSet;
 
 use futures_util::StreamExt;
 
@@ -20,6 +21,7 @@ use super::super::read_mark::ReadMark;
 use super::super::reply::QuoteFetches;
 use super::super::side_chat::{SideChatsView, Support};
 use super::super::timeline_previews::{ensure_previews, preview_diffs};
+use super::push_body;
 use super::diffs::{View, apply, relinked_batch, send, side_chat_batch, start_batch};
 use super::rebuild::{back_pagination, log_rebuild};
 use super::recompute::{links_of, refreshed_agent_runs};
@@ -76,6 +78,7 @@ pub(super) async fn forward(
     ledger: &bots::Bots,
     live: &Live,
     session: &Arc<wonton_matrix::MatrixSession>,
+    push_previews: &crate::push::PushPreviews,
 ) {
     let runtime = Handle::current();
     let mut rebuilt_for: Option<wonton_matrix::OwnedEventId> = None;
@@ -84,6 +87,8 @@ pub(super) async fn forward(
         let fetches = QuoteFetches::default();
         let (entries, diffs) = room.entries().await;
         let mut entries: Vector<TimelineEntry> = entries.into_iter().collect();
+        let mut previewed = HashSet::new();
+        push_body::merge(&mut entries, push_previews, room.room_id(), session.user_id(), &mut previewed);
         let mut read = ReadMark::of(&entries);
         let mut statuses = std::pin::pin!(room.back_pagination_status().await);
         let status = match statuses.next().await {
@@ -111,6 +116,7 @@ pub(super) async fn forward(
         // 预览落定了就醒一次：把落定网址所在的条目重发。
         let mut preview_versions = previews.subscribe();
         let mut diffs = std::pin::pin!(diffs);
+        let mut push_preview_changes = push_previews.subscribe();
         // 正在输入、命令表和跳转请求（ADR-0109）。
         let mut typing_changes = live.typing.subscribe();
         let mut table_changes = live.tables.subscribe();
@@ -286,6 +292,22 @@ pub(super) async fn forward(
                     }
                     Batch::Sent(send(sender, &entries, diffs, &mut view, None), false)
                 }
+                changed = push_preview_changes.changed() => {
+                    if changed.is_err() {
+                        return;
+                    }
+                    // 打开着的房间来了新推送：预览直接补在末尾，壳点开就看到。
+                    let applied =
+                        push_body::merge(&mut entries, push_previews, room.room_id(), session.user_id(), &mut previewed);
+                    if applied.is_empty() {
+                        continue;
+                    }
+                    let items = applied
+                        .iter()
+                        .map(|entry| super::super::view::timeline_item(entry.clone(), &read, &links, &bots, &previews))
+                        .collect();
+                    Batch::Sent(send(sender, &entries, vec![TimelineDiff::Append { items }], &mut view, None), false)
+                }
                 changed = typing_changes.changed() => {
                     if changed.is_err() {
                         return;
@@ -328,6 +350,23 @@ pub(super) async fn forward(
                 Next::Continue => {
                     fetches.request(room, &entries);
                     ensure_previews(&previews, &entries, plugins);
+                    // 服务器的同一条消息到了：预览换成真正的事件，条目也拿掉。
+                    let removed = push_body::settle(
+                        &mut entries,
+                        push_previews,
+                        room.room_id(),
+                        &mut previewed,
+                    );
+                    if !removed.is_empty() {
+                        let diffs = removed
+                            .into_iter()
+                            .rev()
+                            .map(|index| TimelineDiff::Remove { index })
+                            .collect();
+                        if send(sender, &entries, diffs, &mut view, None).is_err() {
+                            return;
+                        }
+                    }
                 }
             }
         }

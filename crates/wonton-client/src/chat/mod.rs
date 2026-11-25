@@ -166,6 +166,8 @@ pub(crate) struct ChatLink {
     app_lock: crate::app_lock::AppLockLink,
     /// 锁屏上隐藏内容的类别（ADR-0101 §5）：后台通知照它设系统的可见性。
     lock_screen: watch::Receiver<crate::lock_screen::Hidden>,
+    /// 推送里带来的正文预览（ADR-0118）：打开房间时补进时间线。
+    push_previews: Arc<crate::push::PushPreviews>,
     /// 排队的草稿写入，见 [`draft::write_drafts`]。
     draft_writes: mpsc::UnboundedSender<DraftWrite>,
     /// 链接预览的按网址缓存和点掉的记录（ADR-0065），发送框和时间线共用。
@@ -303,6 +305,7 @@ impl ChatLink {
         card_success: CardSuccess,
         plugins: Arc<crate::plugins::PluginsLink>,
         channels: ChatChannels,
+        push_previews: Arc<crate::push::PushPreviews>,
     ) -> Result<Arc<Self>, CoreError> {
         let ChatChannels {
             view,
@@ -372,6 +375,7 @@ impl ChatLink {
             signing_proxy: Mutex::default(),
             external,
             mentions_watched: Mutex::new(HashSet::new()),
+            push_previews,
         });
         runtime.spawn(draft::write_drafts(Arc::downgrade(&chat), draft_receiver));
         if external {
@@ -687,6 +691,7 @@ impl ChatLink {
                 room_id: room_id.clone(),
                 confirmations: self.room_cards.subscribe(),
                 plugins: self.plugins.clone(),
+                push_previews: self.push_previews.clone(),
                 previews: self.previews.clone(),
                 menus: menus.clone(),
                 room_view,

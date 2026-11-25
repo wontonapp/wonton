@@ -56,6 +56,10 @@ push-fetch-timeout = { $seconds }秒以内にこのメッセージを取得で�
 # $reason はMatrix SDKの元のエラーです。
 push-fetch-failed = このメッセージを取得できません：{ $reason }
 
+# 添付ファイルの通知文（ADR-0118）：種類とファイル名。
+push-preview-image = 写真 { $filename }
+push-preview-file = ファイル { $filename }
+
 push-core-closed = クライアントコアが終了しました
 
 push-not-paired = まだ自宅サーバーに接続したことがありません

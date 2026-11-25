@@ -5,6 +5,7 @@
 
 mod diffs;
 mod forward;
+mod push_body;
 mod rebuild;
 mod recompute;
 #[cfg(feature = "test-hooks")]

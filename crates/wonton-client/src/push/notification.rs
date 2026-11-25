@@ -17,6 +17,7 @@ use wonton_protocol::{
     DeviceConfirmationPush, HomeStatus, MessageSummary, NOTICE_FIELD, NotificationCategory,
     PluginNotice, ProxySettings, PushConfirmation, PushContent, PushNotification,
 };
+use super::preview::{Preview, now_ms};
 
 use super::PushLink;
 use crate::chat::{LinkTargets, core_account, failure, fetch_card, summary, unread_total};
@@ -45,6 +46,15 @@ pub(crate) struct Payload {
     sender: Option<String>,
     sender_display_name: Option<String>,
     room_name: Option<String>,
+    /// 推送里带的正文（ADR-0118）：不加密房间的消息整条或开头一段；附件位置是文件名。
+    #[serde(default)]
+    body: Option<String>,
+    /// 消息类型，如 `m.text`、`m.image`；附件靠它写类型。
+    #[serde(default)]
+    msgtype: Option<String>,
+    /// 正文放不下被截断了：通知上标出来，点开房间后取全。
+    #[serde(default)]
+    truncated: bool,
     /// 新的联系人请求（ADR-0045）：不对应房间里的消息，`room_id`、`event_id` 为空。
     #[serde(default)]
     contact_request: Option<ContactRequestPush>,
@@ -111,9 +121,65 @@ impl Payload {
             unread_total: 0,
         }
     }
+
+    /// 推送里带了正文时通知上写什么：附件写类型和文件名，截断的带省略号。带了消息类型却没有正文的
+    /// （比如文件名丢了）返回空，走取消息那条路。
+    fn body_text(&self) -> Option<String> {
+        let body = self.body.as_deref().map(str::trim).filter(|body| !body.is_empty())?;
+        let mut text = match self.msgtype.as_deref() {
+            Some("image") => l10n!(CATALOG, language(), "push-preview-image", filename = body),
+            Some("file") | Some("audio") | Some("video") => {
+                l10n!(CATALOG, language(), "push-preview-file", filename = body)
+            }
+            _ => body.to_owned(),
+        };
+        if self.truncated {
+            text.push('…');
+        }
+        Some(text)
+    }
 }
 
 impl PushLink {
+    /// 推送里带了正文的通知（ADR-0118）：内容直接来自推送，顺带记进本机时间线的预览。
+    fn body_notification(
+        &self,
+        payload: &Payload,
+        room_id: &OwnedRoomId,
+        event_id: &OwnedEventId,
+        text: String,
+    ) -> PushNotification {
+        self.previews.remember(Preview {
+            room_id: room_id.to_string(),
+            event_id: event_id.to_string(),
+            sender: payload.sender.clone(),
+            sender_name: payload.sender_display_name.clone(),
+            room_name: payload.room_name.clone(),
+            body: text.clone(),
+            timestamp_ms: now_ms(),
+        });
+        PushNotification {
+            server_id: None,
+            room_id: room_id.to_string(),
+            event_id: event_id.to_string(),
+            sender: payload
+                .sender_display_name
+                .clone()
+                .or_else(|| payload.sender.clone()),
+            room_name: payload.room_name.clone(),
+            content: PushContent::Message {
+                summary: MessageSummary::Text { text },
+            },
+            category: NotificationCategory::Message,
+            confirmation: None,
+            contact_request: None,
+            thread_root: None,
+            hidden: false,
+            lock_screen_private: false,
+            unread_total: 0,
+        }
+    }
+
     /// 不用显示（按推送规则不该响、消息已撤回）时返回 `None`。返回前按设置补上锁屏是否隐藏和未读总数。
     pub(crate) async fn resolve(
         &self,
@@ -182,6 +248,11 @@ impl PushLink {
                     reason = e.to_string()
                 ))
             })?;
+        // 推送里带了正文（ADR-0118）：直接弹通知、写进本机时间线，不连家里。点开房间时预览就在，服务器的
+        // 同一条消息同步到以后换成真正的事件。
+        if let Some(text) = payload.body_text() {
+            return Ok(Some(self.body_notification(payload, &room_id, &event_id, text)));
+        }
         let unavailable = |reason, message| payload.unavailable(reason, message);
         let session = match self.wait_session().await {
             Ok(session) => session,
