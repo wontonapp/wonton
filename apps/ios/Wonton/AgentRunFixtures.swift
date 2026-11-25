@@ -1,5 +1,4 @@
 #if DEBUG
-// 只改壳的 PR 不编核心：核心产物按内容哈希取，见 .github/workflows/README.md 的“核心产物”。
 import SwiftUI
 import WontonClient
 
