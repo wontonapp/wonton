@@ -30,8 +30,11 @@ const STALL: Duration = Duration::from_secs(60);
 /// 字节发完后等多久：最后一个 PATCH 的回答要等核心把文件放进 `transfers`，大文件跨文件系统要复制。
 const PLACEMENT: Duration = Duration::from_secs(10 * 60);
 /// 发链接前等 Matrix 登录多久：App 重启后接着发时，恢复会话、第一次同步用不了一分钟。
+/// 停在登录失败上的等满这个期限再报，不无限等。
 /// 停在登录失败上的当场就走，不等。
 const CHAT_SIGN_IN: Duration = Duration::from_secs(60);
+/// 还没登录好时多久试一次：刚打开核心、登录还没开始时账号还是 `SignedOut`，一次 `NotReady` 不能当场判成链接没发出。
+const SIGN_IN_RETRY: Duration = Duration::from_millis(200);
 
 pub(super) async fn run(link: &Arc<FilesLink>, record: Record) -> Result<(), Problem> {
     let Job::Upload {
@@ -434,21 +437,37 @@ async fn what_while_down(api: &Api, file: &FileId, problem: Problem) -> Problem 
 }
 
 /// 传完后把这个房间的 Bot 加进访问范围，再把链接发进这个房间。App 被杀在这两步之间时，重启后再做一遍；授权本身可以重复，消息极少数
-/// 情况下会多发一条。隧道断着时等连上再做；Matrix 还没登录好（App 重启后接着发链接时常见）等它一小会儿，别让主人点重发；
-/// 其他的不自动再试，等主人点重发：聊天停在登录失败上、主人退出了房间这些情况，一直试也不会好。
+/// 情况下会多发一条。隧道断着时等连上再做；Matrix 还没登录好（App 重启后接着发链接时常见）在 [`CHAT_SIGN_IN`] 内按
+/// [`SIGN_IN_RETRY`] 重试，别让主人点重发；其他的不自动再试，等主人点重发：聊天停在登录失败上、主人退出了房间这些情况，一直试也不会好。
 async fn deliver(
     link: &Arc<FilesLink>,
     api: &Api,
     file: &FileId,
     room: &str,
 ) -> Result<(), Problem> {
+    let deadline = Instant::now() + CHAT_SIGN_IN;
     let sent = async {
-        api.grant(file, room).await?;
-        link.chat.signed_in_within(CHAT_SIGN_IN).await;
-        link.chat
-            .send_text_unopened(room, &file.link())
-            .await
-            .map_err(chat_problem)
+        loop {
+            let left = deadline.saturating_duration_since(Instant::now());
+            if left.is_zero() {
+                // 期限到了：按真正的错报出去，让主人决定点不点重发。
+                return try_deliver(link, api, file, room).await;
+            }
+            link.chat.signed_in_within(left).await;
+            let problem = match try_deliver(link, api, file, room).await {
+                Ok(()) => return Ok(()),
+                Err(problem) => problem,
+            };
+            // 只是还没登录好（本地代理还没拿到会话凭据、会话刚换掉）：期限内再试一拍；别的错照旧停。
+            if Instant::now() < deadline && waiting_for_sign_in(&problem) {
+                tokio::time::sleep(
+                    SIGN_IN_RETRY.min(deadline.saturating_duration_since(Instant::now())),
+                )
+                .await;
+                continue;
+            }
+            return Err(problem);
+        }
     };
     sent.await.map_err(|problem| match problem {
         Problem::Interrupted(_) if link.home.view().status != HomeStatus::Connected => problem,
@@ -457,6 +476,32 @@ async fn deliver(
             Problem::LinkNotSent(reason, message)
         }
     })
+}
+
+/// 试一次发链接：先把房间的 Bot 加进访问范围再发。授权可以重复，失败一分清是能再试的还是当场停的。
+async fn try_deliver(
+    link: &Arc<FilesLink>,
+    api: &Api,
+    file: &FileId,
+    room: &str,
+) -> Result<(), Problem> {
+    api.grant(file, room).await?;
+    link.chat
+        .send_text_unopened(room, &file.link())
+        .await
+        .map_err(chat_problem)
+}
+
+/// 这次失败是「还没登录好、等一会儿可能就好」：没登录（`NotReady` 归到 `ServiceUnavailable`），或者本地代理还没拿到
+/// 会话凭据（`Protocol`、`Unauthenticated` 的 407）。真的登录失败了也在 [`CHAT_SIGN_IN`] 内一直试到期限。
+fn waiting_for_sign_in(problem: &Problem) -> bool {
+    matches!(
+        problem,
+        Problem::Failed(
+            FileFailure::ServiceUnavailable | FileFailure::Protocol | FileFailure::Unauthenticated,
+            _
+        )
+    )
 }
 
 /// 聊天那边的错算传输的哪一类。`NotReady`（还没登录 Matrix）、`Unauthorized`、`Upstream` 说的是手机这边的
