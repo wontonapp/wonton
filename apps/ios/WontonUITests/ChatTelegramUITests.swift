@@ -531,27 +531,54 @@ final class ChatTelegramUITests: XCTestCase {
         XCTAssertTrue(app.buttons["chatRoom.!ui-fake-notes:home.example"].waitForExistence(timeout: 10),
                       "没回到会话列表\n\(app.debugDescription)")
         enter("chatRoom.!ui-fake-notes:home.example")
-        // 转发和附言都排在房间末尾，列表停在锚点时它们不进无障碍树。
-        if app.buttons["timelineDown"].exists { tap(app.buttons["timelineDown"]) }
+        jumpToNewest()
+        // 副本是最后一条、比整屏还高，贴底时它就在屏上；附言在它上面一条，往回翻一点就进树。
+        // 原件滚到顶上去了，所以不能按“两条 Fixture message 4”数，按先后比。
+        let copy = app.staticTexts.matching(NSPredicate(format: "label BEGINSWITH %@", "Fixture message 4")).firstMatch
         let arrived = text(startingWith: "Fixture forward comment")
-        XCTAssertTrue(arrived.waitForExistence(timeout: 10), "附言没进目标房间\n\(app.debugDescription)")
-        // 转发的副本跟在附言下面。列表懒加载，底下的行没画就不在树里：一段段往新的那边拖（dragUp）到它露出来。
-        // 原件滚到顶上去了，所以不能按“两条 Fixture message 3”数，按落在附言下面认。
-        let copies = app.staticTexts.matching(NSPredicate(format: "label BEGINSWITH %@", "Fixture message 3"))
-        func belowCaption() -> XCUIElement? {
-            copies.allElementsBoundByIndex.first { $0.frame.minY > arrived.frame.maxY }
-        }
-        XCTAssertTrue(
-            wait(10) {
-                if belowCaption() != nil { return true }
-                dragUp()
-                return false
-            },
-            "附言下面没有转发的消息\n\(app.debugDescription)"
-        )
-        XCTAssertNotNil(belowCaption(), "转发的消息没排在附言下面")
+        revealBackwards(arrived)
+        XCTAssertTrue(arrived.exists, "附言没进目标房间\n\(app.debugDescription)")
+        XCTAssertTrue(copy.exists, "附言下面没有转发的消息\n\(app.debugDescription)")
+        XCTAssertLessThan(arrived.frame.minY, copy.frame.minY, "转发的消息没排在附言下面")
         shot("forwarded-comment")
         darkShot("forwarded-comment-dark")
+    }
+
+    /// 转发带附言发给两个会话：两边各有一条附言压在自己的副本上面（ADR-0073 第 4 节、ADR-0109 第 9 节）。
+    /// 顺序按时间线里两条消息的先后比，只看都在不够。
+    func testForwardCommentToEveryRoomLandsAboveItsCopy() {
+        enter(Self.directRoom)
+        openForwardSheet()
+        let search = app.textFields["forwardSearch"]
+        focus(search)
+        search.typeText("am")
+        tap(app.buttons["forward-!ui-fake-call:home.example"])
+        // 清掉搜索再找另一个房间。
+        focus(search)
+        search.typeText(String(repeating: XCUIKeyboardKey.delete.rawValue, count: 2))
+        search.typeText("Notes")
+        tap(app.buttons["forward-!ui-fake-notes:home.example"])
+        let comment = element("forwardCaption")
+        XCTAssertTrue(wait(5) { comment.exists && comment.isHittable }, "选了会话，附言框不在屏幕内\n\(app.debugDescription)")
+        focus(comment)
+        comment.typeText("Fixture forward comment")
+        tap(app.buttons["forwardSend"])
+        XCTAssertTrue(app.textFields["forwardSearch"].waitForNonExistence(timeout: 5), "转发面板没收起")
+        for (id, name) in [("!ui-fake-call:home.example", "Family"), ("!ui-fake-notes:home.example", "Notes")] {
+            tap(app.buttons["Back"])
+            XCTAssertTrue(app.buttons["chatRoom.\(id)"].waitForExistence(timeout: 10),
+                          "没回到会话列表\n\(app.debugDescription)")
+            enter("chatRoom.\(id)")
+            jumpToNewest()
+            // 副本是最后一条、比整屏还高，贴底时它就在屏上；附言在它上面一条，往回翻一点就进树。
+            let copy = app.staticTexts.matching(NSPredicate(format: "label BEGINSWITH %@", "Fixture message 4")).firstMatch
+            let arrived = text(startingWith: "Fixture forward comment")
+            revealBackwards(arrived)
+            XCTAssertTrue(arrived.exists, "\(name) 里没有附言\n\(app.debugDescription)")
+            XCTAssertTrue(copy.exists, "\(name) 里没有副本\n\(app.debugDescription)")
+            XCTAssertLessThan(arrived.frame.minY, copy.frame.minY, "\(name) 里附言没排在副本上面")
+            shot("forward-comment-\(name.lowercased())")
+        }
     }
 
     /// 照片的字节还在取的时候就显示“正在发送”：面板已经收起，等待期间打的字发完留在输入框里（ADR-0109 第 9 节）。
@@ -736,10 +763,10 @@ final class ChatTelegramUITests: XCTestCase {
         XCTAssertTrue(app.buttons["replyCancel"].waitForExistence(timeout: 5), "点了“回复”没进入回复状态", file: file, line: line)
     }
 
-    /// 长按一条消息点“转发”，等转发面板出来。
+    /// 长按一条消息点“转发”，等转发面板出来。转第 4 条：第 3 条是照片，假数据只转发文字（`text_of` 拿不到照片的正文）。
     private func openForwardSheet() {
         waitForFloatingDateToFade()
-        message(3).press(forDuration: 1.2)
+        message(4).press(forDuration: 1.2)
         let forward = app.buttons["messageForward"]
         XCTAssertTrue(forward.waitForExistence(timeout: 5), "长按菜单里没有“转发”")
         forward.tap()
@@ -856,6 +883,16 @@ final class ChatTelegramUITests: XCTestCase {
             }
         }
         XCTFail("翻了 200 段也没找到 \(element)\n\(app.debugDescription)", file: file, line: line)
+    }
+
+    /// 回到底部：有“向下”就一直点，点没了就是贴底了。
+    private func jumpToNewest() {
+        for _ in 0..<20 where app.buttons["timelineDown"].exists { app.buttons["timelineDown"].tap() }
+    }
+
+    /// 从底部往回翻到 `element` 进了树为止。长消息比整屏还高、命不中，只看存在性。
+    private func revealBackwards(_ element: XCUIElement) {
+        for _ in 0..<40 where !element.exists { dragDown() }
     }
 
     /// 点一下输入框，等它真拿到键盘焦点；没拿到就重试。焦点还在上一个框里时 typeText 会打进那个框。
