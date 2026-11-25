@@ -269,6 +269,21 @@ impl FakeTimelines {
             fake.answer(item_id, key);
         }
     }
+
+    /// 界面测试里让一条订阅自己结束，和真核心遇到房间关了、旁聊根被撤回时一样：
+    /// 丢掉发送端，壳那边等着的 `next()` 立刻回 `None`。返回本来订没订着。
+    pub(super) fn end(&self, target: &TimelineTarget) -> bool {
+        match lock(&self.open)
+            .remove(&key_of(target))
+            .and_then(|fake| fake.upgrade())
+        {
+            Some(fake) => {
+                lock(&fake.senders).clear();
+                true
+            }
+            None => false,
+        }
+    }
 }
 
 struct FakeTimeline {
@@ -891,6 +906,20 @@ mod tests {
         assert!(!next(&second).await.diffs.is_empty());
         assert!(!next(&first).await.diffs.is_empty());
         // 后订的那份订阅时会给先订的那份也推一批，这里已经收过；两边的通道都没断。
+    }
+
+    /// 自己结束：发送端丢掉，壳的 `next()` 回 `None`；同一个目标再订时是一份新的。
+    #[tokio::test]
+    async fn end_closes_the_subscription() {
+        let fakes = FakeTimelines::default();
+        let subscription = fakes.subscribe(&target());
+        let _ = next(&subscription).await;
+
+        assert!(fakes.end(&target()));
+        assert!(subscription.next().await.is_none());
+        assert!(!fakes.end(&target()), "已经结束的不再算订着");
+        let renewed = fakes.subscribe(&target());
+        assert_eq!(next(&renewed).await.diffs.len(), 1, "重新订到的是新的一份");
     }
 
     /// 翻走以后后台陆续来三条，数字跟着涨；回到底部清掉，再翻走重新从 1 数起。

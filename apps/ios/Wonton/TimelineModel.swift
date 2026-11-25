@@ -102,7 +102,7 @@ final class TimelineModel {
             failure = Problem(title: String(localized: .Problem1.problemGenericTitle))
         }
         // 先不弹回列表：页留着才能读到 `roomScroll` 里的原因。
-        return false
+        return !Task.isCancelled
     }
 
     func setScroll(_ scroll: TimelineScroll) {
