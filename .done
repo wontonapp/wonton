@@ -15,6 +15,10 @@
 - `nice ~/wonton-dev/android-build.sh`（detekt、`:androidApp:testDebugUnitTest`、`assembleDebug`）：BUILD SUCCESSFUL。
 - 界面用例（模拟器 emulator-5566）：`:androidApp:connectedDebugAndroidTest` 过滤 `RoomAttachPanelTest` 10 条、`RoomEditTest` 3 条，13 passed 0 failed。
 - 附件区发送的“先停”没有新集成用例（要真附件、起栈成本高）：靠 `out_typing` 现成的两条单元测试和读代码确认。
-- iOS 没上模拟器/真机（这次只解冲突，没改界面结构）。
+- iOS 没上模拟器走查：这次只解冲突和拆函数，没改界面结构。
 
-head cd563b68（fix/973-rebase 的代码头，已 rebase 到 main c49f56b8；这条记录提交在它上面）。
+SwiftLint 返修（CI 红在 `ComposerView.swift:236` 圈复杂度 12 > 10）：`sendPicked` 拆出 `sendSideChatPhoto`（一张照片的发送和清草稿）和 `trailingAction`（照片之后还要不要另发），行为不变：附言仍只跟第一张真带走的照片、被拒留在草稿，附件区那条发送仍先收正在输入。
+
+SwiftLint 返修的验证（mini，名额 2）：`swiftlint lint --strict --no-cache` 全 235 个文件 0 violation；`xcodebuild build-for-testing`（`-only-testing:WontonTests`、arm64、iPhone 17 模拟器）：TEST BUILD SUCCEEDED。
+
+head 0c9dfa04（fix/973-rebase，基于 main c49f56b8；cd563b68 是解冲突的记录提交）。
