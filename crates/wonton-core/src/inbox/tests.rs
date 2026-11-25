@@ -11,6 +11,7 @@ use wonton_protocol::{
 use super::NewPage;
 use super::page::FixedClock;
 use super::store::{CreateInput, Inbox, InboxError};
+use super::{AdminSet, SystemClock};
 
 fn inbox() -> (Arc<Inbox>, FixedClock) {
     let dir = tempfile::tempdir().unwrap();
@@ -409,4 +410,28 @@ fn expired_pages_survive_until_cleanup() {
         inbox.page_bytes(&created.item.id).is_err(),
         "30 天后连页面一起删"
     );
+}
+
+/// 上次崩溃留下的临时文件不是条目：open 不读回，还顺手清掉。
+#[test]
+fn open_ignores_leftover_temp_files() {
+    let dir = tempfile::tempdir().unwrap();
+    let path = dir.path().to_owned();
+    let inbox = Inbox::for_test(&path);
+    let created = create(&inbox);
+    let item_path = path.join("items").join(format!("{}.json", created.item.id));
+    let temp_path = path
+        .join("items")
+        .join(format!("{}.json.tmp.999", created.item.id));
+    std::fs::copy(&item_path, &temp_path).unwrap();
+
+    let reopened = Inbox::open(
+        path.clone(),
+        std::sync::Arc::new(SystemClock),
+        std::sync::Arc::new(AdminSet::new("owner".into(), Vec::new())),
+    )
+    .unwrap();
+    let list = reopened.list("owner", crate::inbox::now_ms());
+    assert_eq!(list.items.len(), 1, "残留临时文件不能变成第二条");
+    assert!(!temp_path.exists(), "残留临时文件要清掉");
 }

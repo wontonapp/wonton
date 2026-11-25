@@ -197,6 +197,10 @@ mod atomic_tests {
         let written = std::fs::read(&path).unwrap();
         assert_eq!(written.len(), 4096);
         assert!(written.iter().all(|byte| *byte == written[0]));
-        assert_eq!(std::fs::read_dir(dir.path()).unwrap().count(), 1, "不留临时文件");
+        assert_eq!(
+            std::fs::read_dir(dir.path()).unwrap().count(),
+            1,
+            "不留临时文件"
+        );
     }
 }

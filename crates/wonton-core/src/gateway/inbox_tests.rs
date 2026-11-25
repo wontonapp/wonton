@@ -244,6 +244,25 @@ async fn worker_events_create_an_item_and_expose_the_answer() {
         )
         .await;
     assert_eq!(answered.status, 200, "{}", answered.text());
+    let failed = h
+        .send(
+            hyper::Method::POST,
+            crate::gateway::tests::CORE,
+            "/_wonton/api/inbox/workers/w-1/resolve",
+            &authed(TOKEN),
+            axum::body::Body::from(json!({"delivery": "failed", "error": "boom"}).to_string()),
+        )
+        .await;
+    assert_eq!(failed.status, 200, "{}", failed.text());
+    let after_failed = h
+        .get(
+            crate::gateway::tests::CORE,
+            "/_wonton/api/inbox/workers/w-1",
+            &authed(TOKEN),
+        )
+        .await;
+    assert_eq!(after_failed.json()["delivery"], "failed");
+
     let resolved = h
         .send(
             hyper::Method::POST,
@@ -254,6 +273,14 @@ async fn worker_events_create_an_item_and_expose_the_answer() {
         )
         .await;
     assert_eq!(resolved.status, 200, "{}", resolved.text());
+    let after_sent = h
+        .get(
+            crate::gateway::tests::CORE,
+            "/_wonton/api/inbox/workers/w-1",
+            &authed(TOKEN),
+        )
+        .await;
+    assert_eq!(after_sent.json()["delivery"], "sent");
 }
 
 #[allow(dead_code)]
