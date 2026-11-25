@@ -27,7 +27,7 @@ object PushKeys {
     private const val POINT_BYTES = 65
     private const val COORD_BYTES = 32
     private const val AUTH_BYTES = 16
-    private const val UNCOMPRESSED = 4
+    private const val UNCOMPRESSED: Byte = 4
 
     /** 登记给家里服务器的两样东西：未压缩的 P-256 公钥（65 字节）和认证密钥（16 字节），都是 base64url。 */
     data class Registration(val p256dh: String, val auth: String)
@@ -52,8 +52,8 @@ object PushKeys {
                 writeFixed(point.w.affineY, out, COORD_BYTES + 1)
             }
             prefs.edit()
-                .putString(PRIVATE, encode(secret))
-                .putString(PUBLIC, encode(public))
+                .putString(PRIVATE, encode(secret!!))
+                .putString(PUBLIC, encode(public!!))
                 .apply()
         }
         val auth = prefs.getString(AUTH, null)?.let(::decode)?.takeIf { it.size == AUTH_BYTES }
@@ -61,7 +61,7 @@ object PushKeys {
                 SecureRandom().nextBytes(bytes)
                 prefs.edit().putString(AUTH, encode(bytes)).apply()
             }
-        return Registration(encode(public), encode(auth))
+        return Registration(encode(public!!), encode(auth))
     }
 
     @Suppress("ReturnCount") // 每样材料缺失就返回，读起来比层层嵌套清楚。
