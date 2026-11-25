@@ -23,7 +23,7 @@
   `scroll` 是 `TimelineScroll::Bottom` 或 `TimelineScroll::Away`，跨过底部时发，不每一帧发。
 - 核心在每一批 `TimelineUpdate` 里给出 `viewport: TimelineViewport`：`Bottom`，或 `Away { new_messages }`。
   `new_messages` 是房间的未读数，和聊天列表那一行同一个数（SDK 的 `num_unread_messages`）。
-- 壳画不画按钮只看 `viewport`：`Away` 时在右下角画“回到底部”，`new_messages` 大于 0 时把数字写在按钮上，是 0 时只画箭头。
+- 壳画不画按钮只看 `viewport`：`Away` 时在右下角画“回到最新”，`new_messages` 大于 0 时把数字写在按钮上，是 0 时只画箭头。
   点按钮滚到最新一条，滚完报 `TimelineScroll::Bottom`，核心把 `new_messages` 归零。
 - 新消息不拽列表。`Away` 期间到了新消息，只让 `viewport` 和数字变大。
 
@@ -39,7 +39,7 @@
 - 空房间：`None`。
 - 给了落点、摆过去之前这一条没了（撤回、被裁掉）：壳停在最新一条。
 
-“以下是新消息”那一行不再决定落点，由 ADR-0121 的会话锚点画；SDK 的 `ReadMarker` 仍用来定位这条线。
+“以下是新消息”那一行不再决定落点，由 ADR-0121 的会话锚点画；SDK 的 `ReadMarker` 只用它的事件 ID 定位这条线、不画它。
 有没有未读看读位置之后还有没有消息（ADR-0121），不看未读数是不是 0，也不看 `ReadMarker` 在不在：免打扰房间的未读数可能是 0，
 而标记又会在读完时被删。
 

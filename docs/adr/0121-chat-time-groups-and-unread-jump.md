@@ -21,7 +21,7 @@
 2. **未读要有微信那样的一下回到最早未读**：进群停在最新（底部），右上角浮胶囊「↑ 26 条新消息」，点了跳回最早那条未读；这是基准，其余家只作对照。
 
 两件事都和现有决策冲突。ADR-0109 第 3 节把时间放在每条气泡里；ADR-0071 的“进房间停在哪”是停在已读位置（第一条未读），不是最新。
-本 ADR 修订这两处，保留 ADR-0109 的气泡、勾、跳转栈和 ADR-0071 的“回到底部”按钮，只改时间与落点。
+本 ADR 修订这两处，保留 ADR-0109 的气泡、勾、跳转栈和 ADR-0071 的“回到最新”按钮，只改时间与落点。
 
 六家的做法（细节和出处见调研页）：
 
@@ -38,7 +38,7 @@ Matrix 的事实源是现成的：`m.fully_read` 是房间 account data 里的�
 `m.mentions.user_ids` 里有本账号就是 @ 我。matrix-sdk 0.19.1 已经比较公开和私有回执、提供 `num_unread_mentions`，也提供 `fully_read_event_id()`。
 SDK 的 `__read_marker` 只能当分隔线的定位参照：它只在已读位置后面还有消息时插入，读完就删；拿它当“有没有未读”的判据会把读完的房间当成未读（ADR-0071 已写明）。
 
-现有代码里，核心已经算了 `TimelineMessage::starts_time_group`（15 分钟），但 ADR-0109 把它标成“已被 run 取代”，两端都没画。
+现有代码里，核心已经算了 `TimelineMessage::starts_time_group`（15 分钟），但 `crates/wonton-protocol/src/timeline.rs` 的注释把它标成“已被 run 取代”，两端都没画。
 `MessageRun` 的组间隔是 5 分钟、按发送者断。`read_position()` 只取本人最新回执，没取 `m.fully_read`；`mark_as_read` 两个都写。
 `TimelineContent::ReadMarker` 已经渲染成“以下是新消息”，两端都有；它由 SDK 的虚拟条目产生。
 
@@ -55,7 +55,7 @@ SDK 的 `__read_marker` 只能当分隔线的定位参照：它只在已读位�
 - 本地时区变了、或向前翻页后有更早的消息插进来，重算受影响的边界；别的时区用户看到的日期不同是正常的。
 - AgentRun 状态行不是气泡：它上面不写时间，也不当“上一条消息”；它前后的气泡仍按真实时间差分组。
 
-气泡组（`MessageRun`）的间隔同步从 5 分钟改成 30 分钟，边界与时间组一致：发送者变化、日期、非气泡条目、≥ 30 分钟都断组。这样时间行永远落在组首，不会出现“新圆角组却没有时间”的错位。
+气泡组（`MessageRun`）的间隔同步从 5 分钟改成 30 分钟：时间边界一致（日期、非气泡、≥ 30 分钟），另加发送者变化断气泡组。这样时间行落在时间组首，圆角组和它同界或更细，不会错位。
 
 ### 2. 未读的事实源
 
@@ -71,6 +71,7 @@ SDK 的 `__read_marker` 只能当分隔线的定位参照：它只在已读位�
 - **进房停在最新一条**，贴着输入框。ADR-0071 的 `anchor` 字段保留，但它的值改成最新一条，用于“落定之前不报 Bottom”；不再锚已读位置。
 - 订阅建好的第一批里，核心同时冻结**本会话锚点**：读位置之后的第一条可见条目（气泡或 Agent 状态行），以及它的条数和 @ 列表。锚点只在锚点那条被撤回/被裁掉时顺延到下一条；标记已读不动它，别的设备读了也不动它。
 - 锚点在列表里画一条 `ReadMarker`（“以下是新消息”），核心插、壳画；SDK 自己的那条在会话锚点存在时隐藏，避免两条。锚点之后没有消息了就一起收。
+- 本地历史不全、锚点还指不到本地任何消息时，`anchor_item_id` 为空：胶囊照常显示、条数先用 `num_unread_messages`，壳不发 `UnreadAnchorSeen`、不画分隔线；点跳由服务器分页解析出锚点后再补。
 - 锚点之后没有消息 = 没有未读，不显示胶囊；读位置比最新还新（全读完）也一样。
 - 会话锚点只活在这次进房；杀掉 App 再进，已读位置已经在底部，不会再有胶囊。这就是微信的行为，ADR 里写明，不假装能跨重启找回。
 
@@ -80,7 +81,7 @@ SDK 的 `__read_marker` 只能当分隔线的定位参照：它只在已读位�
 - 文案：普通“26 条新消息”；有 @“有人@你 · 26 条新消息”；超过 99 显示“99+ 条新消息”，读屏念全量。
 - 只由核心的 `unread_jump` 驱动：`count > 0` 才给；壳不自己数未读、不自己比回执。
 - 点击：有 @ 且还有没看过的 @ 时发 `JumpToNextMention`；否则发 `JumpToFirstUnread`。加载中忽略连点。
-- 消失：锚点任意一部分进入视野（壳报 `UnreadAnchorSeen`）、跳转成功、锚点被删且没有下一条、离开房间。
+- 消失：锚点是 `Some` 且任意一部分进入视野（壳报 `UnreadAnchorSeen`）、跳转成功、锚点被删且没有下一条、离开房间。
   回滚不重新出现，除非又来了新消息；不做成“未读开关”。
 - 读屏：整颗是一个按钮，标签“回到最早未读，26 条新消息”；@ 时“有人@你，26 条新消息”。跳转成功后焦点移到锚点那条。
 - 减少动态效果：跨三屏以上的跳转直接落位；高亮仍闪一次 1 秒。
@@ -93,7 +94,7 @@ SDK 的 `__read_marker` 只能当分隔线的定位参照：它只在已读位�
 1. 取会话锚点；没有就按第 2 节重新解析。
 2. 锚点已加载：下一批发 `TimelineFocus { item_id: 锚点, highlight: true }`，同时收胶囊。
 3. 锚点没加载：`UnreadJump.state = Loading`，向前分页，每页 30 条，最多 30 页；找到读位置那条的下一条就停。
-4. 翻到房间开头还没有、或离线/服务器失败：`state = Unavailable`，胶囊留着，壳弹轻提示“找不到最早未读，可能已被删除”或“连不上服务器，暂时回不到最早未读”。再点可重试。
+4. 翻到房间开头还没有：`state = Unavailable { reason: NotFound }`；离线或请求失败：`Unavailable { reason: Offline }`；服务器拒绝、解析失败：`Unavailable { reason: Other }`。胶囊都留着，壳按 reason 写提示（“找不到最早未读，可能已被删除”“连不上服务器，暂时回不到最早未读”，Other 用通用句）；再点可重试。
 5. 落地：锚点滚到导航栏下沿，分隔线在它上面；气泡背景用 `ratio.jumpHighlight` 闪 1 秒淡出；读屏焦点移到锚点。
 6. 跳之前的条目进 `back_to` 栈，第一下“回到最新”回栈顶，再回底部（ADR-0109 第 4 节不变）。
 7. 动画/手势期间再来消息不改变锚点；锚点被删则顺延，跳转中锚点消失就落到下一条。
@@ -121,7 +122,7 @@ SDK 的 `__read_marker` 只能当分隔线的定位参照：它只在已读位�
 ### 8. 本地层和离线
 
 - 按 ADR-0118：本地 SQLite 先出历史，读位置、`m.fully_read`、已读队列都在本地。进房先按本地锚点画；服务器同步下来更晚的消息就接在后面。
-- 离线时跳转只翻本地缓存；锚点在本地缓存里就直接跳，不在就 `Unavailable`（“连不上服务器，回不到最早未读”），联网后用户再点一次即可。
+- 离线时跳转只翻本地缓存；锚点在本地缓存里就直接跳，不在就 `Unavailable { reason: Offline }`（“连不上服务器，回不到最早未读”），联网后用户再点一次即可。
 - 离线标记已读是本地写，不假装服务器已经收到；房间角标以服务器回执为准，未同步时详情里显示“已读状态还没同步”。
 - 本地历史不全（刚装、刚加入、缓存被清）时，锚点可能指不到任何本地消息：停在最新，胶囊按 `num_unread_messages` 显示，点跳再走服务器分页；一条都拉不到就按第 5 节失败处理。
 
@@ -132,9 +133,10 @@ SDK 的 `__read_marker` 只能当分隔线的定位参照：它只在已读位�
 - `TimelineMessage::starts_time_group`：按第 1 节算。
 - `TimelineMessage::mentions_me: bool`（新字段）：这条的 `m.mentions` 包含我。
 - `TimelineUpdate::unread_jump: Option<UnreadJump>`（新字段），每个批次给当前值：
-  `UnreadJump { anchor_item_id: String, count: u32, mentions: u32, first_mention_item_id: Option<String>, state: UnreadJumpState }`。
-  `UnreadJumpState`：`Idle` / `Loading` / `Unavailable`，另加 `Other` 给旧壳/新核心兜底。
-- `TimelineAction::JumpToFirstUnread { target }`、`JumpToNextMention { target }`、`UnreadAnchorSeen { target, item_id }`。
+  `UnreadJump { anchor_item_id: Option<String>, count: u32, mentions: u32, first_mention_item_id: Option<String>, state: UnreadJumpState }`。
+  `anchor_item_id` 为空表示锚点还没解析出来（第 3 节）：壳只画胶囊、不发 `UnreadAnchorSeen`，点跳交给核心分页。
+  `UnreadJumpState`：`Idle` / `Loading` / `Unavailable { reason: UnreadJumpUnavailable }` / `Other`。
+  `UnreadJumpUnavailable`：`NotFound` / `Offline` / `Other`，壳按它选提示文案。
 - 分隔线条目、锚点解析、条数与 @ 计数、分页、聚焦、已读、同步、离线队列。
 
 壳负责：
@@ -175,7 +177,8 @@ SDK 的 `__read_marker` 只能当分隔线的定位参照：它只在已读位�
 2. **核心**：算时间组和 30 分钟的 run；冻结锚点、计数/@、分隔线、分页跳转、已读（`m.read`+`m.fully_read`）、本地队列、多设备重算。范围 `crates/wonton-matrix`、`crates/wonton-client`、本地存储迁移。验证（行为测试，给定事件序列）：
    - t=0、20 分、31 分、跨天、换发送者、夹说明行：断言 `starts_time_group` 与 `MessageRun`。
    - 读位置在中间：断言锚点=下一条、条数、@ 数；标记已读后锚点不变；滚过锚点后收胶囊；另一设备推进回执不动锚点；锚点删除后顺延。
-   - 跳转：已加载→`focus.highlight`；未加载→分页次数与落点；翻到开头→`Unavailable`；离线→`Unavailable`；读位置是表情/话题→时间戳兜底；@ 逐条跳完回普通态。
+   - 锚点未知（本地历史不全）：`anchor_item_id` 为 `None`，胶囊仍显示；壳不发 `UnreadAnchorSeen`，点跳才解析出锚点。
+   - 跳转：已加载→`focus.highlight`；未加载→分页次数与落点；翻到开头→`Unavailable { reason: NotFound }`；离线→`Unavailable { reason: Offline }`；读位置是表情/话题→时间戳兜底；@ 逐条跳完回普通态。
    - 已读：只在贴底+最新可见时发；防抖；离线入队；成功后未读数清零。
 3. **iOS**：胶囊、时间行、日期+时间合并、分隔线、跳转动画/高亮、读屏、减少动态、滚动上报、房间列表 @ 徽标。验证：快照各状态；UI 测试用 fake room 断言点击后 `focus` 和高亮；390×844 浅/深、VoiceOver。
 4. **Android**：同一套 Compose/Material，FAB 保留；TalkBack、返回栈。验证：同上的截图测试 + UI 测试；`gradlew test`。
