@@ -5,7 +5,7 @@
   [ADR-0009](0009-identity-pairing-sso.md)（Bot 主房间的端到端验证）、[ADR-0038](0038-multi-step-cards.md)（卡片的明文降级）、
   [ADR-0042](0042-multiple-servers.md)（推送内容）、[ADR-0045](0045-family-members.md)（邀请页的说法）、[ADR-0046](0046-device-verification.md)（删除）、
   [ADR-0049](0049-cloud-hosting.md)（托管的数据与隐私）、[ADR-0050](0050-cross-server-chat.md)（跨服务器的机密性）、[ADR-0087](0087-pairing-key-handoff.md)（配对不再交接密钥）、
-  [ADR-0101](0101-notifications.md)（通知里的正文）
+  [ADR-0101](0101-notifications.md)（通知里的正文）、[ADR-0096](0096-calls-matrixrtc-widget.md)（不加密房间里的通话）
 - 关联：本地层 `feat/chat-local-first`（卡 im-local-first），连接层 `feat/tunnel-fast-reconnect`（卡 im-fast-connect）
 
 用户看到的变化：收到的通知里直接有正文，不用点开也不用等连接；打开 App 先看到本机已有的聊天，不再空等隧道；点开通知到能说话快得多。
@@ -99,6 +99,7 @@
 | [ADR-0008](0008-model-gateway-magpie.md)、[ADR-0009](0009-identity-pairing-sso.md) 里 Hermes 的 `MATRIX_E2EE_MODE=required` | 改成 `off`（adapter 接受 `off`、`optional`、`required`，`off` 连加密依赖都不装）。主房间和好友房间不加密，Hermes 不用带 Matrix 密码学，也就没有自动建交叉签名这回事 |
 | 交叉签名、设备密钥、room key、`/keys` 相关客户端代码 | 客户端核心保留 matrix-sdk 的加解密能力，收到别的客户端（如 Element 用 https 直连）建的加密房间还能读；不再做任何面向用户的加密流程 |
 | `EncryptionStatus` 的模块与界面 | 删掉验证、备份、恢复密钥的部分，只留“有没有解不开的消息”（`Undecryptable`、`key_notice`）的读取；模块名照旧 |
+| 通话（[ADR-0096](0096-calls-matrixrtc-widget.md)）的媒体密钥 to-device | 走法不变（MatrixRTC + Element Call，媒体帧加密，SFU 和中继只见密文）；房间不加密后这些密钥不再套 Olm，家里的服务器读得到、也就解得出媒体，和聊天内容同一个边界。实际行为以卡 call-e2e-android 在不加密房间里的实测为准 |
 
 **代价要如实写**：
 
@@ -165,6 +166,7 @@
 ## 待验证
 
 - 各渠道的真实上限与截断行为：UnifiedPush（自建 ntfy）、FCM、APNs、HMS 的 4 KB 是不是按字节算、超了是截断还是整条拒收。要真机真通道各发一条超长正文。
+- 不加密房间里的通话：媒体帧加密还在不在、媒体密钥的 to-device 是不是明文、SFU 是否仍只看到密文，以卡 call-e2e-android 的实测为准（它要把聊天和通话都在不加密房间里跑通）。
 - 华为的高优先级透传权限能不能申请到、申请要多久；拿不到时退回通知栏消息的到达表现。
 - 小米、OPPO、vivo 的通知栏消息在 App 被杀、系统被杀后台之后的到达率（官方都说系统通道不受影响，要真机确认）。
 - iOS 通知扩展只解 CryptoKit 这一层的实际内存和耗时（应当远低于 ADR-0101 的 24 MB 约束，但要量）。
