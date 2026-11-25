@@ -285,12 +285,12 @@ async fn relay_edits_stay_local_when_the_table_cannot_be_saved_yet() {
     assert_eq!(view.relays.entries.len(), 1);
     assert!(view.relays.dirty);
 
-    // 丢弃回到核心最近给的那一份：一份都没拿到过就是空表。
+    // 丢弃回到核心最近给的那一份：一份都没拿到过就是空表，n0 回落到缺省（留）。
     home.relay_settings(wonton_protocol::RelaySettingsAction::Discard)
         .unwrap();
     let view = home.view();
     assert!(view.relays.entries.is_empty());
-    assert!(!view.relays.n0);
+    assert!(view.relays.n0);
     assert!(!view.relays.dirty);
 }
 
