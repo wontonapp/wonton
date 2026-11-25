@@ -267,19 +267,30 @@ abstract class RoomTelegramCase {
 
     protected fun forwardRows() = compose.onAllNodes(hasTestTag("forward-row"))
 
-    /** 房间打开了（顶栏是它的名字），并且时间线里有那条转发来的。房间刚开时落在老消息中间，点“向下”回最新。 */
-    protected fun forwardedInto(room: String, id: String): Boolean {
+    /**
+     * 房间打开了（顶栏是它的名字），并且时间线里有正文含 `text` 的条目。房间刚开时落在老消息中间，点“向下”回最新。
+     * 转发到的房间是现开的，副本的编号取决于这个房间之前发过多少条，按正文认比按编号稳。
+     */
+    protected fun forwardedInto(room: String, text: String): Boolean {
         val bar = compose.onAllNodes(
             hasText(room) and hasAnyAncestor(hasTestTag("room-bar")),
             useUnmergedTree = true,
         ).fetchSemanticsNodes()
         val open = bar.isNotEmpty()
-        fun seen() = compose.onAllNodes(hasTestTag("item-$id")).fetchSemanticsNodes().isNotEmpty()
-        if (open && !seen()) {
+        if (open && itemsWithText(text).isEmpty()) {
             runCatching { compose.onNodeWithContentDescription(string(R.string.room_scroll_to_bottom)).performClick() }
         }
-        return open && seen()
+        return open && itemsWithText(text).isNotEmpty()
     }
+
+    /** 时间线里正文含 `needle` 的条目。 */
+    protected fun itemsWithText(needle: String): List<SemanticsNode> = compose.onAllNodes(
+        SemanticsMatcher("含「$needle」的条目") { node ->
+            node.config.getOrNull(SemanticsProperties.TestTag)?.startsWith("item-") == true &&
+                texts(node).contains(needle)
+        },
+        useUnmergedTree = true,
+    ).fetchSemanticsNodes()
 
     /**
      * 把附件区里留着的附件一个个拿掉：一排照片会横着滚，先把行滚回开头再点第一个拿掉的按钮，
