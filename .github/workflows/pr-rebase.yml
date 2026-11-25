@@ -11,6 +11,8 @@ permissions:
   contents: write
   pull-requests: write
   issues: write
+  # gh workflow run 补跑 gate 要这个：只给了上面三个权限时 dispatch 会 403。
+  actions: write
 
 # 连着合几次只留最新那轮：rebase 的目标永远是当前 main，前一轮的目标已经过期。
 concurrency:
