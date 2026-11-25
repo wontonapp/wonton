@@ -44,6 +44,7 @@ pub(crate) mod link_preview;
 pub mod mailbox;
 pub mod matrix;
 pub mod mcp;
+pub mod media;
 pub mod members;
 pub mod net;
 pub mod oidc;

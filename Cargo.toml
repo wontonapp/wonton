@@ -40,6 +40,9 @@ reqwest = { version = "0.13.5", default-features = false }
 rcgen = { version = "0.14.10", default-features = false, features = ["aws_lc_rs", "pem"] }
 # Apache-2.0。MCP 的官方 Rust SDK（ADR-0006、ADR-0016）；各 crate 按需加客户端、服务器和传输的特性。
 rmcp = { version = "3.8.0", default-features = false }
+# MIT；SQLite 本体是公有领域。媒体任务、会话、队列和配额账本（ADR-0113）；0.40 复用锁定里的 libsqlite3-sys。
+# 默认的 wasm 后端在原生上多带 sqlite-wasm-rs，关掉默认特性；语句缓存要留着，逐项偏移是热路径。
+rusqlite = { version = "0.40.2", default-features = false, features = ["bundled", "cache"] }
 # ISC AND (Apache-2.0 OR ISC)。核心出站 TLS 和测试中继使用的证书校验与服务端配置。
 rustls = { version = "0.23.46", default-features = false, features = ["aws_lc_rs", "logging", "std", "tls12"] }
 # MIT OR Apache-2.0。比核心的发布版本：客户端判服务器太旧，核心自己读版本。
