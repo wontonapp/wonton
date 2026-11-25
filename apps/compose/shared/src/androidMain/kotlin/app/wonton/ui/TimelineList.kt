@@ -301,20 +301,22 @@ private fun TimelineRow(
  * 下面紧挨着同一天的分隔条目时也不出，那枚已经写了这一天（房间开头的 TimelineStart）。
  */
 internal fun dayMarksFor(items: List<TimelineItem>): Array<String?> {
+    // 列表在别处原地增删：先拍一份，别算到一半长度变了（日期和数组对不上会越界）。
+    val all = items.toList()
     // 没有时间的旁注跟着下面（更新）的那条算同一天，下标越小越新。
-    val days = arrayOfNulls<String>(items.size)
+    val days = arrayOfNulls<String>(all.size)
     var newer: String? = null
-    for (index in items.indices) {
-        newer = items[index].timestampMs?.let(::dateLabel) ?: newer
+    for (index in all.indices) {
+        newer = all[index].timestampMs?.let(::dateLabel) ?: newer
         days[index] = newer
     }
-    val marks = arrayOfNulls<String>(items.size)
-    for (index in items.indices) {
+    val marks = arrayOfNulls<String>(all.size)
+    for (index in all.indices) {
         val day = days[index]
         val own = day != null && day != days.getOrNull(index + 1)
-        val below = items.getOrNull(index - 1)
+        val below = all.getOrNull(index - 1)
         val belowWritesDay = below?.content is TimelineContent.DateDivider && days.getOrNull(index - 1) == day
-        if (own && !belowWritesDay && items[index].content !is TimelineContent.DateDivider) marks[index] = day
+        if (own && !belowWritesDay && all[index].content !is TimelineContent.DateDivider) marks[index] = day
     }
     return marks
 }
