@@ -251,33 +251,51 @@ private extension ComposerView {
                 )
                 continue
             }
-            if isSideChat {
-                // 附言只跟第一张试过的照片走；那一张被拒也留在草稿里，不跟后面的。
-                let carriesCaption = !captionSent
-                if await composer.sendImage(data, type, caption: carriesCaption ? caption : "", replyTo: replyTo) {
-                    replyTo = nil
-                    if carriesCaption {
-                        captionSent = true
-                        if draft.wrappedValue == original { draft.wrappedValue = "" }
-                    }
-                } else {
-                    allSent = false
-                }
-            } else {
+            if !isSideChat {
                 await composer.addImage(data, type)
+                continue
             }
+            // 附言只跟第一张试过的照片走；那一张被拒也留在草稿里，不跟后面的。
+            let carriesCaption = !captionSent
+            let sent = await sendSideChatPhoto(
+                (data, type), caption: caption, carriesCaption: carriesCaption,
+                replyTo: replyTo, original: original
+            )
+            guard sent else {
+                allSent = false
+                continue
+            }
+            replyTo = nil
+            captionSent = captionSent || carriesCaption
         }
-        guard allSent else { return }
-        let action: TimelineAction? = if !isSideChat {
-            .sendComposer(target: composer.target, body: caption, replyTo: replyTo)
-        } else if !captionSent && !caption.isEmpty {
-            .sendText(target: composer.target, body: caption, replyTo: replyTo)
-        } else {
-            nil
-        }
-        guard let action, model.send(.timeline(action: action)) else { return }
+        guard allSent,
+            let action = trailingAction(caption: caption, captionSent: captionSent, replyTo: replyTo)
+        else { return }
+        guard model.send(.timeline(action: action)) else { return }
         if draft.wrappedValue == original { draft.wrappedValue = "" }
         model.cancelReply(in: composer.target)
+    }
+
+    /// 旁聊里发一张照片：附言只让第一张成功的那张带走，草稿只在真带走了时清。
+    private func sendSideChatPhoto(
+        _ photo: (Data, UTType?),
+        caption: String,
+        carriesCaption: Bool,
+        replyTo: String?,
+        original: String
+    ) async -> Bool {
+        guard await composer.sendImage(photo.0, photo.1, caption: carriesCaption ? caption : "", replyTo: replyTo)
+        else { return false }
+        if carriesCaption, draft.wrappedValue == original { draft.wrappedValue = "" }
+        return true
+    }
+
+    /// 照片都处理完以后还要发的那一条：主对话把草稿当附言交给附件区整单发送；
+    /// 旁聊里只剩没跟照片走掉的附言当文字发，其余不发。
+    private func trailingAction(caption: String, captionSent: Bool, replyTo: String?) -> TimelineAction? {
+        if !isSideChat { return .sendComposer(target: composer.target, body: caption, replyTo: replyTo) }
+        guard !captionSent, !caption.isEmpty else { return nil }
+        return .sendText(target: composer.target, body: caption, replyTo: replyTo)
     }
 
     /// 不能聊时把原因写出去并返回 true；发送、菜单和照片直发都先过它。
