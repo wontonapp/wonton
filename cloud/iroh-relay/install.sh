@@ -138,6 +138,21 @@ ensure_cert() {
     sh "$DEPLOY_HOOK"
 }
 
+# 启动后自检：QAD 必须在所有网卡上监听（quic_bind_addr 放错节时上游静默忽略、只绑回环）。
+post_start_check() {
+    local qad
+    command -v ss >/dev/null || die "缺 ss（iproute2），装完没法自检 QAD"
+    qad=$(ss -lunH "sport = :7842" || true)
+    echo "$qad" | grep -qE '(\*|0\.0\.0\.0|\[::\]):7842' ||
+        die "UDP 7842 没有对外监听（QAD 需要）：$qad；检查 [tls] 节的 quic_bind_addr 和安全组"
+    echo "install: QAD 对外监听正常：$qad"
+    if grep -Eq '^[[:space:]]*access[[:space:]]*=[[:space:]]*"everyone"' "$ETC/config.toml"; then
+        echo "install: 准入 = everyone（公开，谁都能用）"
+    else
+        echo "install: 准入 = shared_token（默认拒绝；令牌在 $ETC/relay.env，只发自己的设备）"
+    fi
+}
+
 wait_healthy() {
     for _ in $(seq 1 20); do
         if curl --noproxy '*' -fsS -o /dev/null --max-time 2 "http://127.0.0.1:8742/healthz"; then
@@ -194,15 +209,20 @@ main() {
         install_vhost "$HERE/nginx/relay.808cbd.com.conf"
         systemctl restart wonton-iroh-relay.service
         wait_healthy
+        post_start_check
         curl --noproxy '*' -fsS --resolve "$DOMAIN:443:127.0.0.1" -o /dev/null -w "公网 vhost /healthz %{http_code}\n" "https://$DOMAIN/healthz"
     elif [[ -d $CERT_DIR ]]; then
         install_vhost "$HERE/nginx/relay.808cbd.com.conf"
         systemctl restart wonton-iroh-relay.service
         wait_healthy
+        post_start_check
     else
         install_vhost "$HERE/nginx/relay.bootstrap.conf"
-        systemctl restart wonton-iroh-relay.service || true
-        echo "install: 还没证书，服务会起不来；签好 $DOMAIN 的证书后 install.sh 重跑或 systemctl restart"
+        if systemctl restart wonton-iroh-relay.service; then
+            post_start_check
+        else
+            echo "install: 还没证书，服务起不来；签好 $DOMAIN 的证书后 install.sh 重跑"
+        fi
     fi
 
     echo "install: 完成（内测期准入是 shared_token：只把连接信息发给自己的设备，不公开注册）"

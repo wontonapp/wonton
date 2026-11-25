@@ -5,7 +5,7 @@
 # 依赖：docker、openssl、curl、cargo、jq。所有状态在 mktemp 目录里，退出时清理。
 # 用法：
 #   cloud/iroh-relay/test/relay-e2e.sh                 # 首次会下载官方二进制并编译上游 transfer 示例
-#   MIN_MBPS=50 cloud/iroh-relay/test/relay-e2e.sh     # 抬高吞吐门槛
+#   MIN_MBPS=1 cloud/iroh-relay/test/relay-e2e.sh      # 抬高吞吐门槛（默认限速 256 KiB/s ≈ 2 Mbps）
 #   KEEP=1 cloud/iroh-relay/test/relay-e2e.sh          # 保留临时目录看日志
 set -euo pipefail
 
@@ -13,7 +13,7 @@ HERE=$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)
 # shellcheck source=../release.env
 . "$HERE/release.env"
 
-MIN_MBPS=${MIN_MBPS:-20}
+MIN_MBPS=${MIN_MBPS:-1.5}
 TRANSFER_DURATION=${TRANSFER_DURATION:-30}
 QAD_PORT=${QAD_PORT:-7842}   # 客户端默认连 7842，测试里不能换
 HTTPS_PORT=${HTTPS_PORT:-443}
@@ -139,7 +139,7 @@ for mode in missing empty; do
 done
 pass "缺令牌/空令牌都拒绝启动"
 
-IROH_RELAY_ACCESS_TOKEN=$TOKEN RUST_LOG=iroh_relay=trace \
+IROH_RELAY_ACCESS_TOKEN=$TOKEN RUST_LOG=${RUST_LOG:-info} \
     "$RELAY_BIN" --dev --config-path "$TMP/relay.toml" >"$TMP/relay.log" 2>&1 &
 RELAY_PID=$!
 for _ in $(seq 1 40); do
@@ -151,6 +151,11 @@ curl --noproxy '*' -fsS -o /dev/null "http://127.0.0.1:$HTTP_PORT/healthz" || {
     die "中继没起来"
 }
 pass "中继 healthz"
+# 令牌不能出现在日志里（默认 info；debug/trace 会把整份配置 dump 出来，已知且写进 README）。
+if grep -qF -- "$TOKEN" "$TMP/relay.log"; then
+    die "令牌进了 info 日志"
+fi
+pass "令牌不在 info 日志"
 # 6a. QAD 必须对外监听（quic_bind_addr 若放错到顶层，上游会静默忽略、只绑回环）。
 qad=$(ss -lunH "sport = :$QAD_PORT" || true)
 echo "$qad" | grep -qE "(\*|0\.0\.0\.0):$QAD_PORT" ||
@@ -209,7 +214,9 @@ dur=$(jq -r .duration <<<"$done_line")
 mbps=$(awk -v s="$size" -v d="$dur" 'BEGIN { if (d <= 0) print 0; else printf "%.2f", s * 8 / d }')
 awk -v m="$mbps" -v min="$MIN_MBPS" 'BEGIN { exit !(m >= min) }' ||
     die "吞吐 $mbps Mbps 低于门槛 $MIN_MBPS Mbps"
-pass "经中继下载 ${size} 字节，${mbps} Mbps（门槛 $MIN_MBPS）"
+awk -v m="$mbps" 'BEGIN { exit !(m <= 2.5) }' ||
+    die "吞吐 $mbps Mbps 超过单连接限速上限（256 KiB/s ≈ 2 Mbps），[limits] 没生效？"
+pass "经中继下载 ${size} 字节，${mbps} Mbps（单连接限速内，门槛 $MIN_MBPS）"
 
 jq -e 'select(.kind == "PathStats") | .paths[] | select(.remote_addr | tostring | test("relay"; "i"))' \
     "$TMP/fetch.jsonl" >/dev/null || die "路径不是中继"
@@ -230,7 +237,7 @@ if jq -e 'select(.kind == "DownloadComplete")' "$TMP/bad.jsonl" >/dev/null 2>&1;
     die "错令牌也能下载（rc=$rc）"
 fi
 grep -qi 'denying client auth\|serverdeniedauth' "$TMP/relay.log" ||
-    echo "注意：日志里没找到 denial 字样，但行为已拒绝"
+    echo "注意：info 日志里没有 denial 行（上游是 trace），但行为已拒绝"
 pass "错令牌被拒（rc=$rc）"
 
 echo "全部通过"

@@ -75,10 +75,12 @@ bash install.sh --email ops@example.com   # 装服务、vhost、签证书
 - 准入令牌在 `/etc/wonton-iroh-relay/relay.env`（**0600**），systemd 经 `EnvironmentFile` 注入
   `IROH_RELAY_ACCESS_TOKEN`，上游用它整个覆盖配置里的 `shared_token` 列表。配置里留空列表，
   令牌缺失时中继拒绝启动（失败即停）。
-- `https_bind_addr` / `quic_bind_addr` 属于 `[tls]` 节（上游 `TlsConfig`）：上游对顶层未知键不报错，
-  放顶层会被静默忽略、QAD 只剩回环监听；e2e 会断言 UDP 7842 绑在 `0.0.0.0`。
+- **`https_bind_addr` / `quic_bind_addr` 必须写在 `[tls]` 节**（上游 `TlsConfig`）：上游对顶层未知键不报错，
+  放顶层会被静默忽略、QAD 只剩回环监听；e2e 和 `install.sh` 都会断言 UDP 7842 绑在 `0.0.0.0`。
 - **默认是拒绝所有人，不是 everyone**：`shared_token` 留空列表、又没有 `IROH_RELAY_ACCESS_TOKEN`（或令牌为空）时，
   进程直接拒绝启动（失败即停）；要放开必须显式改 `access = "everyone"`。
+- 每连接入方向默认限速 256 KiB/s（`[limits.client.rx]`，1 MiB 突发）：按实测 5 Mbps 出口取，单条连接最多占约 40%，
+  让一条大同步不至于饿死语音（语音双向约 1.2 Mbps）；只是公平保护，不是全局限额也不是按 endpoint 计量。
 - 内测期所有自己的设备共用一个令牌：令牌随配对码/连接信息下发，泄露后别人也能用这个中继，接受（ADR-0048）；
   只发自己的设备，不公开。收费时改成按 endpoint ID 的 http 回调，核心和协议不用改。
 - 轮换：`printf 'IROH_RELAY_ACCESS_TOKEN=%s\n' "$(openssl rand -hex 32)" > /etc/wonton-iroh-relay/relay.env && systemctl restart wonton-iroh-relay`。
@@ -101,6 +103,9 @@ bash install.sh --email ops@example.com   # 装服务、vhost、签证书
   `relayserver_bytes_sent_total` / `relayserver_bytes_recv_total`、`relayserver_connects_total` /
   `relayserver_disconnects_total`、`relayserver_send_packets_dropped_total`。
 - 健康检查：`curl --noproxy '*' http://127.0.0.1:8742/healthz`（200）。
+- **令牌默认不进日志**：systemd 单元固定 `RUST_LOG=info`，journal 里 grep 不到令牌。上游 1.4.1 在 debug/trace 下
+  启动时会 dump 整份配置、包含令牌，开 debug 排错时别把日志原样贴出去。
+  验收：`journalctl -u wonton-iroh-relay | grep -F -- "$(cut -d= -f2 /etc/wonton-iroh-relay/relay.env)"` 应无输出。
 
 ## 验收
 
@@ -149,11 +154,12 @@ cloud/iroh-relay/test/relay-e2e.sh
 
 - iroh-relay 1.4.1 没有全局接纳控制/排队（`accept_conn_limit` 还是 TODO）。所有流共享出口，超了就是 QUIC
   拥塞控制分带宽：每条流都变慢、RTT 变高、丢包重传，新连接更难建。它不会拒绝新通话，只会让所有人一起变差。
-- 运维：对 `rate(relayserver_bytes_sent_total[1m])` 设 4 Mbps（80%）告警，告警文字写"中继出口打满"；
-  `relayserver_send_packets_dropped_total` 在涨说明已经在丢。这是容量事实，不是故障。
+- 运维：对出口设 4 Mbps（5 Mbps 的 80%）告警，表达式 `rate(relayserver_bytes_sent_total[1m]) * 8 > 4e6`，
+  告警文字写"中继出口打满（拥塞，不是故障）"；`relayserver_send_packets_dropped_total` 在涨说明已经在丢。
+  这是容量事实，不是中继挂了。
 - 产品：连接详情里，路径是中继且 RTT/丢包升高时显示"中继拥塞"，不要显示"网络正常"；
   同步走中继时显示"经中继，较慢"，大文件建议稍后。
-- 想少互相饿死，可以给 `[limits.client.rx]` 配每连接 2 Mbps（`bytes_per_second = 256000`）的桶；
+- 默认已经开每连接 256 KiB/s 的公平限速；想更严可调到 128 KiB/s（`bytes_per_second = 131072`）。
   这是每连接入方向限速，不是全局配额。
 - 扩容：升阿里云出口带宽包或加第二台分流，2 vCPU 不用动。
 
