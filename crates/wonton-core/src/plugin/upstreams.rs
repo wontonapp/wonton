@@ -164,7 +164,7 @@ pub(super) fn core_aliases(public: &PublicUrls, manifest: &Manifest) -> Vec<Stri
     if granted(Permission::MatrixBot) {
         aliases.push(PLUGIN_MATRIX_HOST.to_owned());
     }
-    if granted(Permission::Models) {
+    if super::models::uses_models(manifest) {
         aliases.push(PLUGIN_MODELS_HOST.to_owned());
     }
     if granted(Permission::Tools) {
@@ -805,6 +805,7 @@ x-wonton:
         assert_eq!(
             core_aliases(&public(), &manifest),
             vec![
+                "models.wonton.internal",
                 "torrent_client.wonton.internal",
                 "x-acme.ledger.wonton.internal",
                 "jellyfin.wonton.internal",

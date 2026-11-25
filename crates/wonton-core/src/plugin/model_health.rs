@@ -10,7 +10,7 @@ use tokio::time::Instant;
 
 use super::languages::Languages;
 use super::manager::{InstallError, PluginManager};
-use super::manifest::{Manifest, Permission, PluginId};
+use super::manifest::{Manifest, PluginId};
 use super::models::{ModelsRoute, unavailable, uses_models};
 use super::store::{create_private_dir, read_json, write_json};
 use crate::http::{HttpError, RequestBody};
@@ -289,9 +289,10 @@ impl PluginManager {
             .filter(|id| {
                 plugins.get(id).is_some_and(|entry| {
                     entry.status == super::manager::PluginStatus::Running
-                        && entry.listed.as_ref().is_some_and(|listed| {
-                            listed.manifest.permissions.contains(&Permission::Models)
-                        })
+                        && entry
+                            .listed
+                            .as_ref()
+                            .is_some_and(|listed| super::models::uses_models(&listed.manifest))
                 })
             })
             .collect()
