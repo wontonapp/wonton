@@ -511,6 +511,36 @@
         }
       }
     },
+    "push.keysUnavailable": {
+      "comment": "Push unavailability line: the shared keychain holding the push keys can't be read.",
+      "extractionState": "manual",
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Push keys can't be read on this device"
+          }
+        },
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "この端末ではプッシュの鍵を読めません"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "这台设备读不到推送密钥"
+          }
+        },
+        "zh-Hant": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "這台裝置讀不到推播金鑰"
+          }
+        }
+      }
+    },
     "push.noPermission": {
       "comment": "Push unavailability line: notification permission was denied.",
       "extractionState": "manual",

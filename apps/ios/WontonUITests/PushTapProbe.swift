@@ -1,7 +1,7 @@
 import Foundation
 import XCTest
 
-/// fe-ios-push 的一次性探针（不进仓库）：推送横幅点开进对应会话。
+/// 推送横幅点开进对应会话的探针：夜跑没有推送循环，外层带 `WONTON_PUSH_PROBE=1` 时才跑。
 /// 前置（外层 e2e.sh）：先用 simctl launch 带配对码配好会话（数据目录固定后缀 pushprobe）并抓下密钥；
 /// 推送由外层的 shell 循环推（模拟器 SDK 的 Foundation 没有 Process，测试进程起不了 simctl）。
 final class PushTapProbe: XCTestCase {

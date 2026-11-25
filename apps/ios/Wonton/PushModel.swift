@@ -20,6 +20,8 @@ final class PushModel: NSObject, UNUserNotificationCenterDelegate {
     enum Unavailability {
         /// 没给通知权限：系统不会送通知。
         case permission
+        /// 读不到共享钥匙串里的推送密钥（未签名的构建、钥匙串访问组没生效）。
+        case keychain(String)
         /// 系统注册远程通知失败（APNs 不可用）。
         case apns(String)
         /// 构建配置里没有推送中继。
@@ -33,6 +35,8 @@ final class PushModel: NSObject, UNUserNotificationCenterDelegate {
             switch self {
             case .permission:
                 String(localized: .Settings.pushNoPermission)
+            case .keychain:
+                String(localized: .Settings.pushKeysUnavailable)
             case .noRelay, .apns:
                 String(localized: .Settings.pushNoService)
             case .relayUnreachable:
@@ -47,7 +51,8 @@ final class PushModel: NSObject, UNUserNotificationCenterDelegate {
             switch self {
             case .noRelay:
                 String(localized: .Settings.pushNoRelayDetail)
-            case let .apns(error), let .relayUnreachable(error), let .core(error):
+            case let .apns(error), let .relayUnreachable(error), let .core(error),
+                let .keychain(error):
                 error
             case .permission:
                 line
@@ -61,6 +66,8 @@ final class PushModel: NSObject, UNUserNotificationCenterDelegate {
     private var running = false
     private var token: Data?
     private var keys: PushKeys.Registration?
+    /// 密钥读不到的原因，进设置页的详情；`register` 半路被叫起来时也有话可说。
+    private var keychainError: String?
 
     init(core: ClientCore) {
         self.core = core
@@ -79,8 +86,12 @@ final class PushModel: NSObject, UNUserNotificationCenterDelegate {
         // 至少知道是哪一步坏了（未签名的构建读不了共享钥匙串，就是在这暴露的）。
         do {
             keys = try PushKeys.registration()
+            keychainError = nil
         } catch {
+            // Release 下没有控制台：原因进设置页，核心也别停在“未注册”还一个字不说。
             keys = nil
+            keychainError = String(describing: error)
+            setUnavailable(.keychain(keychainError ?? String(describing: error)))
             #if DEBUG
             if ProcessInfo.processInfo.environment["WONTON_DEV_PUSH_KEYS"] != nil {
                 print("PUSH_KEYS_ERR \(error)")
@@ -106,6 +117,10 @@ final class PushModel: NSObject, UNUserNotificationCenterDelegate {
             setUnavailable(.core(String(describing: error)))
             return
         }
+        // UI 用例要验“还没问过权限”的状态，得自己决定什么时候问（NotificationSettingsUITests）。
+        #if DEBUG
+        if ProcessInfo.processInfo.environment["WONTON_DEV_SKIP_PUSH_AUTH"] != nil { return }
+        #endif
         // 通知权限：系统设置里拒绝过就不再弹框，这里如实记录。
         let granted = (try? await UNUserNotificationCenter.current()
             .requestAuthorization(options: [.alert, .sound])) ?? false
@@ -140,7 +155,10 @@ final class PushModel: NSObject, UNUserNotificationCenterDelegate {
 
     /// 向中继要推送地址，把地址和公钥登记给核心。
     private func register(token: Data) async {
-        guard let keys else { return }
+        guard let keys else {
+            setUnavailable(.keychain(keychainError ?? String(localized: .Settings.pushKeysUnavailable)))
+            return
+        }
         guard let base = Self.relayURL else {
             setUnavailable(.noRelay)
             return

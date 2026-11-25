@@ -214,8 +214,10 @@ final class AppNavigation {
             pages.rejection = error.problem
             return false
         }
-        // 等切完：连上了就进房间，连不上（自动重试也失败）如实说。
+        // 等切完：连上了就进房间，连不上（自动重试也失败）如实说。屏幕上有旧对话框时不能拿
+        // `pages.rejection` 直接判，否则第一条更新就 break，什么都没打开。
         var settled = false
+        var refused = false
         for await home in chat.core.subscribeHome().updates() where home.serverId == server {
             if case .connected = home.status {
                 settled = true
@@ -224,10 +226,11 @@ final class AppNavigation {
                 pages.rejection = Problem(
                     title: String(localized: .Servers.serversNotificationUnreachable), detail: message
                 )
+                refused = true
             }
-            if settled || pages.rejection != nil { break }
+            if settled || refused { break }
         }
-        return settled && pages.rejection == nil
+        return settled && !refused
     }
 
     /// 链接要求进“其他服务器”。取走标记，调用方去改导航路径。

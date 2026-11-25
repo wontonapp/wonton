@@ -129,7 +129,7 @@ xcodebuild -project apps/ios/Wonton.xcodeproj -scheme Wonton -destination "id=<�
 那会把扩展的也改成同一个，签不过。换了 bundle ID 就是换了 App Group，数据目录跟着换，要重新配对。
 
 推送要一个中继地址（ADR-0003）：`WontonPushRelay` 默认为空，设置页会如实显示推送还没开通；验证推送时给 `xcodebuild` 加
-`INFOPLIST_KEY_WontonPushRelay=<中继地址>`。
+`WONTON_PUSH_RELAY=<中继地址>`（`INFOPLIST_KEY_WontonPushRelay` 盖不掉 Info.plist 文件里已有的同名键，实测）。
 
 用 `xcrun devicectl device install app --device <设备 UDID> <Wonton.app 路径>` 安装。第一次装要在手机的
 “设置 → 通用 → VPN 与设备管理”里信任开发者证书；第一次打开配对页时系统请求相机权限，第一次连家里的服务器时请求

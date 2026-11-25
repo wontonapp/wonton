@@ -113,10 +113,13 @@ targets:
         WontonAppGroup: group.$(WONTON_BUNDLE_ID)
         # 推送中继的地址（ADR-0003 的“渠道”）：中继为我们运营，是 App 构建配置，不是核心下发。
         # 没有配置时 App 如实显示“推送还没开通”，不假装已开启。
-        WontonPushRelay: ""
+        # 写进 Info.plist 文件的值压过 `INFOPLIST_KEY_WontonPushRelay`（实测），所以经下面的构建设置转一手：验证推送时
+        # `WONTON_PUSH_RELAY=<地址>` 就能盖掉这个空串。
+        WontonPushRelay: $(WONTON_PUSH_RELAY)
     settings:
       base:
         PRODUCT_BUNDLE_IDENTIFIER: $(WONTON_BUNDLE_ID)
+        WONTON_PUSH_RELAY: ""
         GENERATE_INFOPLIST_FILE: YES
         # OpenIntent（ADR-0100）同时编进 App 和小组件扩展，只有 App 进程里的实现能碰导航模型。
         SWIFT_ACTIVE_COMPILATION_CONDITIONS: "$(inherited) WONTON_APP"
@@ -202,6 +205,8 @@ targets:
     platform: iOS
     sources:
       - WontonPushExtension
+      # 锁定时藏内容的标记在 App Group 的数据目录里，和 App、分享扩展同一套（ADR-0102 §4）。
+      - Shared/AppGroup.swift
     info:
       path: WontonPushExtension/Info.plist
       properties:
@@ -230,6 +235,9 @@ targets:
       - WontonTests
       # 通知扩展的 RFC 8291 解密单测直接编译这份共享代码（扩展和测试目标各编一份，不进主 App）。
       - WontonPushExtension/WontonPush.swift
+      - WontonPushExtension/PushLock.swift
+      # PushLock 用它找组容器；扩展和测试目标各编一份（同 WontonPush.swift 的理由）。
+      - Shared/AppGroup.swift
     dependencies:
       - target: Wonton
       - package: WontonClient

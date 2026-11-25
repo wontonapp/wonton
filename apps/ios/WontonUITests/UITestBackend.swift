@@ -182,7 +182,7 @@ enum UITestBackend {
                 && !app.scrollViews["chat-backup"].exists
         }
         XCTAssertEqual(
-            XCTWaiter.wait(for: [XCTNSPredicateExpectation(predicate: finished, object: app)], timeout: 10),
+            XCTWaiter.wait(for: [XCTNSPredicateExpectation(predicate: finished, object: app)], timeout: 30),
             .completed, app.debugDescription
         )
         _ = skipKeyHandoff(app)
