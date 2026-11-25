@@ -6,8 +6,8 @@ use tempfile::TempDir;
 use wonton_protocol::media::view::QuotaEntry;
 use wonton_protocol::media::{
     FailedItem, ItemState, MediaFailure, MediaFailureCode, MediaItemRef, MediaKind, MediaTask,
-    PauseReason, PlaybackPlan, PlaybackSession, Progress, ProgressUnit, Queue, QueueMode, TaskId,
-    TaskKind, TaskState, TaskTarget, UploadItem,
+    PauseReason, PlaybackPlan, PlaybackSession, Progress, ProgressUnit, Queue, QueueMode,
+    StopReason, TaskId, TaskKind, TaskState, TaskTarget, UploadItem,
 };
 
 use super::store::{DEFAULT_PROVIDER_UPLOAD_LIMIT, Ledger, MediaStoreError, SCHEMA_V1, Store};
@@ -107,6 +107,7 @@ fn session(person: &str, id: u128) -> PlaybackSession {
             duration_ms: 180_000,
             expires_at: 1_700_000_100_000,
         }),
+        stop_reason: None,
     }
 }
 
@@ -166,10 +167,7 @@ fn a_created_session_reads_back_with_every_field() {
     let (_dir, store) = store();
     let session = session(ALICE, 2);
     store.create_session(&session).unwrap();
-    assert_eq!(
-        store.session(ALICE, session.id).unwrap(),
-        Some(session.clone())
-    );
+    assert_eq!(store.stored_session(session.id).unwrap().session, session);
     assert_eq!(store.sessions(Some(ALICE)).unwrap(), vec![session]);
 }
 
@@ -197,7 +195,8 @@ fn people_do_not_see_each_others_rows() {
     store.save_queue(ALICE, &queue).unwrap();
 
     assert!(store.task(BOB, task.id).unwrap().is_none());
-    assert!(store.session(BOB, session.id).unwrap().is_none());
+    // 会话按号读不分人，下面按人写才分。
+    assert!(store.stored_session(session.id).is_ok());
     assert!(store.queue(BOB).unwrap().is_none());
     assert!(store.item_offsets(BOB, task.id).unwrap().is_empty());
     assert!(store.tasks(Some(BOB), None, None).unwrap().is_empty());
@@ -207,6 +206,7 @@ fn people_do_not_see_each_others_rows() {
     assert_eq!(store.tasks(Some(ALICE), None, None).unwrap().len(), 1);
     assert_eq!(store.sessions(None).unwrap().len(), 1);
     assert_eq!(store.sessions(Some(ALICE)).unwrap().len(), 1);
+    let version = store.stored_session(session.id).unwrap().version;
 
     // 拿别人的名字写，落不到 A 的行上。
     task.person = BOB.into();
@@ -220,7 +220,10 @@ fn people_do_not_see_each_others_rows() {
     let mut session = session;
     session.person = BOB.into();
     session.position_ms = 1;
-    assert!(!store.save_session(&session).unwrap());
+    assert!(!store.save_session_cas(&session, version).unwrap());
+    let kept = store.stored_session(session.id).unwrap().session;
+    assert_eq!(kept.person, ALICE);
+    assert_eq!(kept.position_ms, 42_000);
 }
 
 #[test]
@@ -268,7 +271,10 @@ fn unknown_people_read_empty_without_creating_rows() {
     assert!(store.tasks(Some(ghost), None, None).unwrap().is_empty());
     assert!(store.tasks(None, None, None).unwrap().is_empty());
     assert!(store.item_offsets(ghost, ghost_task).unwrap().is_empty());
-    assert!(store.session(ghost, ghost_task).unwrap().is_none());
+    assert!(matches!(
+        store.stored_session(ghost_task),
+        Err(MediaStoreError::SessionNotFound { .. })
+    ));
     assert!(store.sessions(None).unwrap().is_empty());
     assert!(store.queue(ghost).unwrap().is_none());
 
@@ -374,7 +380,7 @@ fn reopening_the_directory_keeps_everything() {
 
     let store = Store::open(dir.path()).unwrap();
     assert_eq!(store.task(ALICE, task.id).unwrap(), Some(task));
-    assert_eq!(store.session(ALICE, session.id).unwrap(), Some(session));
+    assert_eq!(store.stored_session(session.id).unwrap().session, session);
     assert_eq!(store.queue(ALICE).unwrap(), Some(queue));
     assert_eq!(store.quota(ALICE).unwrap().provider_upload.used, 4096);
 }
@@ -635,7 +641,7 @@ fn a_version_1_database_is_migrated_and_still_reads_and_writes() {
     let version: i64 = conn
         .query_row("PRAGMA user_version", [], |row| row.get(0))
         .unwrap();
-    assert_eq!(version, 3);
+    assert_eq!(version, 4);
 }
 
 #[test]
@@ -648,4 +654,126 @@ fn a_newer_database_version_is_refused() {
 
     let err = Store::open(dir.path()).unwrap_err();
     assert!(matches!(err, MediaStoreError::TooNew { .. }), "{err}");
+}
+
+#[test]
+fn only_one_session_per_person_can_be_active() {
+    let (_dir, store) = store();
+    let first = session(ALICE, 1);
+    store.create_session(&first).unwrap();
+
+    let err = store.create_session(&session(ALICE, 2)).unwrap_err();
+    assert!(
+        matches!(err, MediaStoreError::ActiveSessionExists { .. }),
+        "{err}"
+    );
+    assert_eq!(
+        store.active_session(ALICE).unwrap().unwrap().session.id,
+        first.id
+    );
+
+    let tracked = store.stored_session(first.id).unwrap();
+    let mut stopped = first.clone();
+    stopped.state = TaskState::Cancelled;
+    stopped.stop_reason = Some(StopReason::TakenOver);
+    assert!(store.save_session_cas(&stopped, tracked.version).unwrap());
+    assert!(store.active_session(ALICE).unwrap().is_none());
+
+    store.create_session(&session(ALICE, 2)).unwrap();
+    assert_eq!(
+        store.active_session(ALICE).unwrap().unwrap().session.id,
+        TaskId::from_u128(2)
+    );
+    let old = store.stored_session(first.id).unwrap().session;
+    assert_eq!(old.stop_reason, Some(StopReason::TakenOver));
+    assert_eq!(old.position_ms, 42_000);
+}
+
+#[test]
+fn a_session_write_needs_the_version_that_was_read() {
+    let (_dir, store) = store();
+    let session = session(ALICE, 1);
+    store.create_session(&session).unwrap();
+    let mut stale = store.stored_session(session.id).unwrap();
+
+    let mut first = stale.session.clone();
+    first.position_ms = 1;
+    assert!(store.save_session_cas(&first, stale.version).unwrap());
+
+    stale.session.position_ms = 2;
+    assert!(
+        !store
+            .save_session_cas(&stale.session, stale.version)
+            .unwrap()
+    );
+    assert_eq!(
+        store
+            .stored_session(session.id)
+            .unwrap()
+            .session
+            .position_ms,
+        1
+    );
+    assert!(!store.save_session_cas(&stale.session, 99).unwrap());
+}
+
+#[test]
+fn a_missing_session_reports_its_id() {
+    let (_dir, store) = store();
+    let ghost = TaskId::from_u128(7);
+    let err = store.stored_session(ghost).unwrap_err();
+    assert!(
+        matches!(err, MediaStoreError::SessionNotFound { session, .. } if session == ghost),
+        "{err}"
+    );
+}
+
+#[test]
+fn a_version_1_database_is_migrated_to_session_versions_and_stop_reasons() {
+    let dir = tempfile::tempdir().unwrap();
+    let conn = rusqlite::Connection::open(dir.path().join("media.sqlite3")).unwrap();
+    conn.execute_batch(SCHEMA_V1).unwrap();
+    let insert = |id: u128, person: &str| {
+        conn.execute(
+            "INSERT INTO sessions (id, person, device, item, state, state_tag, position_ms, plan)
+             VALUES (?, ?, ?, ?, ?, ?, ?, NULL)",
+            rusqlite::params![
+                TaskId::from_u128(id).to_string(),
+                person,
+                PHONE,
+                serde_json::to_string(&media_item("track")).unwrap(),
+                serde_json::to_string(&TaskState::Running).unwrap(),
+                "running",
+                42_000,
+            ],
+        )
+        .unwrap();
+    };
+    insert(1, ALICE);
+    insert(2, ALICE);
+    insert(3, ALICE);
+    insert(4, BOB);
+    conn.pragma_update(None, "user_version", 1).unwrap();
+    drop(conn);
+
+    let store = Store::open(dir.path()).unwrap();
+    // 每人只留最新一条活动，旧的两条落接管终态。
+    for old in [1, 2] {
+        let stopped = store.stored_session(TaskId::from_u128(old)).unwrap();
+        assert_eq!(stopped.session.stop_reason, Some(StopReason::TakenOver));
+        assert_eq!(stopped.session.state, TaskState::Cancelled);
+        assert_eq!(stopped.version, 0);
+    }
+    assert_eq!(
+        store.active_session(ALICE).unwrap().unwrap().session.id,
+        TaskId::from_u128(3)
+    );
+    assert_eq!(
+        store.active_session(BOB).unwrap().unwrap().session.id,
+        TaskId::from_u128(4)
+    );
+    assert!(matches!(
+        store.create_session(&session(ALICE, 5)),
+        Err(MediaStoreError::ActiveSessionExists { .. })
+    ));
 }

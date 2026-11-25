@@ -2,6 +2,7 @@ use serde::{Deserialize, Serialize};
 use uuid::Uuid;
 
 use super::task::{DeviceId, Person, TaskState};
+use super::view::StopReason;
 use super::{DeviceProfile, MediaItemRef, Timestamp, known_or_other};
 
 /// 播放会话号，核心发。
@@ -193,6 +194,9 @@ pub struct PlaybackSession {
     pub position_ms: u64,
     /// 起播时带回的 plan；过期由核心重取
     pub plan: Option<PlaybackPlan>,
+    /// 停的原因，停了才有且不再变；活动会话为空
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub stop_reason: Option<StopReason>,
 }
 
 #[cfg(test)]
@@ -344,6 +348,7 @@ mod tests {
             state: TaskState::Running,
             position_ms: 12_500,
             plan: Some(plan()),
+            stop_reason: None,
         }
     }
 
@@ -351,6 +356,20 @@ mod tests {
     fn playback_session_roundtrips() {
         let session = session();
         assert_eq!(roundtrip(&session), session);
+    }
+
+    #[test]
+    fn a_stopped_session_carries_its_reason() {
+        let session = session();
+        assert!(
+            serde_json::to_value(&session)
+                .unwrap()
+                .get("stop_reason")
+                .is_none()
+        );
+        let mut stopped = session;
+        stopped.stop_reason = Some(StopReason::TakenOver);
+        assert_eq!(roundtrip(&stopped), stopped);
     }
 
     #[test]

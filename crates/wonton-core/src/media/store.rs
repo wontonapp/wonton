@@ -18,14 +18,14 @@ use serde::Serialize;
 use serde::de::DeserializeOwned;
 use wonton_protocol::media::TaskId;
 use wonton_protocol::media::view::{QuotaEntry, QuotaView};
-use wonton_protocol::media::{
-    MediaItemRef, PlaybackPlan, PlaybackSession, PlaybackSessionId, Queue,
-};
+use wonton_protocol::media::{PlaybackSessionId, Queue};
 
 mod schema;
+mod sessions;
 mod tasks;
 
-use schema::{QueueRow, SessionRow, classify, migrate, queue_row, session_row};
+use schema::{QueueRow, classify, migrate, queue_row};
+pub use sessions::StoredSession;
 
 #[cfg(test)]
 pub(crate) use schema::SCHEMA_V1;
@@ -70,6 +70,13 @@ pub enum MediaStoreError {
     TaskNotFound { path: PathBuf, task: TaskId },
     #[error("媒体库 {path} 里的任务 {task} 是下载，不能加条目")]
     TaskNotUpload { path: PathBuf, task: TaskId },
+    #[error("媒体库 {path} 里没有这条播放会话 {session}")]
+    SessionNotFound {
+        path: PathBuf,
+        session: PlaybackSessionId,
+    },
+    #[error("媒体库 {path} 里 {person} 已经有一条活动会话")]
+    ActiveSessionExists { path: PathBuf, person: String },
     #[error("配额 {ledger} 超限：已用 {used}，上限 {limit}，这次要 {want}")]
     QuotaExceeded {
         ledger: &'static str,
@@ -212,94 +219,6 @@ impl Store {
             path: self.path.clone(),
             raw: raw.to_owned(),
         })
-    }
-
-    pub fn create_session(&self, session: &PlaybackSession) -> Result<(), MediaStoreError> {
-        let conn = self.conn()?;
-        conn.execute(
-            "INSERT INTO sessions (id, person, device, item, state, state_tag, position_ms, plan)
-             VALUES (?, ?, ?, ?, ?, ?, ?, ?)",
-            params![
-                session.id.to_string(),
-                session.person,
-                session.device,
-                self.json("item", &session.item)?,
-                self.json("state", &session.state)?,
-                session.state.as_str(),
-                session.position_ms,
-                session
-                    .plan
-                    .as_ref()
-                    .map(|plan| self.json("plan", plan))
-                    .transpose()?,
-            ],
-        )
-        .map_err(|source| self.db_error(source))?;
-        Ok(())
-    }
-
-    pub fn session(
-        &self,
-        person: &str,
-        id: PlaybackSessionId,
-    ) -> Result<Option<PlaybackSession>, MediaStoreError> {
-        let conn = self.conn()?;
-        let row: Option<SessionRow> = conn
-            .query_row(
-                "SELECT id, person, device, item, state, position_ms, plan FROM sessions
-                 WHERE id = ? AND person = ?",
-                params![id.to_string(), person],
-                session_row,
-            )
-            .optional()
-            .map_err(|source| self.db_error(source))?;
-        row.map(|row| self.assemble_session(row)).transpose()
-    }
-
-    /// 列会话，按建立的先后；`person` 为空列所有人的。表里另存了状态标签，M9 用它找活动会话。
-    pub fn sessions(&self, person: Option<&str>) -> Result<Vec<PlaybackSession>, MediaStoreError> {
-        let conn = self.conn()?;
-        let mut stmt = conn
-            .prepare(
-                "SELECT id, person, device, item, state, position_ms, plan FROM sessions
-                 WHERE ? IS NULL OR person = ? ORDER BY rowid",
-            )
-            .map_err(|source| self.db_error(source))?;
-        let rows: Vec<SessionRow> = stmt
-            .query_map(params![person, person], session_row)
-            .map_err(|source| self.db_error(source))?
-            .collect::<Result<_, _>>()
-            .map_err(|source| self.db_error(source))?;
-        rows.into_iter()
-            .map(|row| self.assemble_session(row))
-            .collect()
-    }
-
-    /// 回写会话的位置与计划；返回是否落到了这个人的行上。
-    pub fn save_session(&self, session: &PlaybackSession) -> Result<bool, MediaStoreError> {
-        let conn = self.conn()?;
-        let changed = conn
-            .execute(
-                "UPDATE sessions SET device = ?, item = ?, state = ?, state_tag = ?, position_ms = ?,
-                                     plan = ?
-                 WHERE id = ? AND person = ?",
-                params![
-                    session.device,
-                    self.json("item", &session.item)?,
-                    self.json("state", &session.state)?,
-                    session.state.as_str(),
-                    session.position_ms,
-                    session
-                        .plan
-                        .as_ref()
-                        .map(|plan| self.json("plan", plan))
-                        .transpose()?,
-                    session.id.to_string(),
-                    session.person,
-                ],
-            )
-            .map_err(|source| self.db_error(source))?;
-        Ok(changed > 0)
     }
 
     pub fn queue(&self, person: &str) -> Result<Option<Queue>, MediaStoreError> {
@@ -494,22 +413,6 @@ impl Store {
         Ok(QuotaView {
             provider_upload: upload,
             device_offline: offline,
-        })
-    }
-
-    fn assemble_session(&self, row: SessionRow) -> Result<PlaybackSession, MediaStoreError> {
-        Ok(PlaybackSession {
-            id: self.parse_id(&row.id)?,
-            person: row.person,
-            device: row.device,
-            item: self.read_json::<MediaItemRef>("item", &row.item)?,
-            state: self.read_json("state", &row.state)?,
-            position_ms: row.position_ms as u64,
-            plan: row
-                .plan
-                .as_deref()
-                .map(|text| self.read_json::<PlaybackPlan>("plan", text))
-                .transpose()?,
         })
     }
 }

@@ -14,9 +14,8 @@ name: gate
 on:
   pull_request:
     types: [opened, synchronize, reopened, ready_for_review]
-  # 手动补一轮：pr-rebase（.github/workflows/pr-rebase.yml）用工作流自带的 GITHUB_TOKEN 强推分支，
-  # 这种推送不触发新工作流，PR 上会一条检查都没有。rebase 成功后由它 dispatch 这里补跑，
-  # 参数是分支名（`gh workflow run gate.yml --ref <branch>`）。
+  # 手动补一轮：用工作流自带的 GITHUB_TOKEN 推的提交不触发新工作流，PR 上会一条检查都没有，
+  # 这时手动跑 `gh workflow run gate.yml --ref <branch>`。
   workflow_dispatch:
   # main 上只跑 lint（密钥扫描这一个提交）；合后的慢测试在 rust-docker.yml、ios.yml 的 push 上。
   push:
