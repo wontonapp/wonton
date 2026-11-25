@@ -309,6 +309,7 @@ mod tests {
                 state: TaskState::Preparing,
                 position_ms: 0,
                 plan: None,
+                stop_reason: None,
             },
             queue: Queue {
                 revision: 0,
