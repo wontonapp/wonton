@@ -260,7 +260,7 @@ class RoomTelegramTest : RoomTelegramCase() {
     @Test
     fun groupTopKeepsFirstBubbleBelowTheBar() {
         openFamily()
-        // 26 是最早的一条，顶到列表头上就是它。
+        // 26 是最新的一条，往上甩到列表头上看它。
         scrollTo(26)
         repeat(3) {
             compose.onNodeWithTag("room-timeline").performTouchInput {

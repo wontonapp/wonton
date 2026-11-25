@@ -546,6 +546,10 @@ pub(super) fn text_message(
         actions.push(MessageAction::Edit { text: body.clone() });
     }
     actions.push(MessageAction::Forward);
+    // 撤回照真核心固定放最后：自己的消息才有。
+    if own {
+        actions.push(MessageAction::Redact);
+    }
     TimelineMessage {
         actions,
         event_id: Some(event_id),

@@ -162,6 +162,27 @@ class RoomQuoteFixTest {
     }
 
     @Test
+    fun deleteIsSeparatedFromTheOtherActions() {
+        scrollTo(11)
+        bubble(11).performTouchInput { longClick() }
+        // 撤回收在最后，前面一条分隔；其它操作之间不画线，别的消息也照旧只看得到底部那一条。
+        val delete = compose.onNodeWithText(string(R.string.message_delete_everyone)).fetchSemanticsNode().boundsInRoot
+        val dividers = compose.onAllNodes(hasTestTag("menu-divider"), useUnmergedTree = true).fetchSemanticsNodes()
+        check(dividers.size == 1) { "删除前面该只有一条分隔，实际 ${dividers.size} 条" }
+        val divider = dividers[0].boundsInRoot
+        check(divider.bottom <= delete.top + 1f) { "分隔没紧挨在删除上面：$divider 与 $delete" }
+        val metaDivider = compose.onNodeWithTag("menu-meta-divider", useUnmergedTree = true).fetchSemanticsNode()
+        check(metaDivider.boundsInRoot.top >= delete.bottom - 1f) {
+            "底部那条分隔跑到删除上面：${metaDivider.boundsInRoot} 与 $delete"
+        }
+        val above = compose.onAllNodes(
+            hasAnyAncestor(hasTestTag("message-menu")) and hasClickAction(),
+            useUnmergedTree = true,
+        ).fetchSemanticsNodes().filter { it.boundsInRoot.bottom <= divider.top + 1f }
+        check(above.isNotEmpty()) { "删除上面没有别的操作，没隔开" }
+    }
+
+    @Test
     fun redactedMessageStillOpensMenuWithSentTime() {
         scrollTo(REDACTED)
         bubble(REDACTED).performTouchInput { longClick() }

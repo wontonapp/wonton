@@ -201,7 +201,7 @@ private fun MenuSurface(
     ) {
         Column(Modifier.width(WontonTheme.size.menuWidth)) {
             // 顺序照核心给的 `actions`，核心和 App 分开升级时不认识的不显示。
-            message.actions.forEach { action ->
+            message.actions.forEachIndexed { index, action ->
                 val run: () -> Unit = when (action) {
                     is MessageAction.Copy -> {
                         {
@@ -224,8 +224,8 @@ private fun MenuSurface(
                     MessageAction.Redact -> redactLabel to WontonIcon.Trash
                 }
                 val destructive = action == MessageAction.Redact
-                // 分隔画在撤销前面，别和转发挨着误点；撤回收在最后，后面没项时不用再加一条。
-                if (destructive && action != message.actions.last()) HorizontalDivider()
+                // 撤回收在最后：在它前面隔一条线，别和转发挨着误点。
+                if (destructive && index > 0) HorizontalDivider(Modifier.testTag("menu-divider"))
                 DropdownMenuItem(
                     text = { Text(label) },
                     // 装饰：菜单项有文字。
@@ -252,7 +252,7 @@ private fun MenuSurface(
 /** 菜单最底下一段，和操作隔开：谁发的、什么时候；没有操作的消息也能在这里看到时间。 */
 @Composable
 private fun MenuMeta(message: TimelineMessage, time: String) {
-    HorizontalDivider()
+    HorizontalDivider(Modifier.testTag("menu-meta-divider"))
     Column(Modifier.padding(horizontal = WontonTheme.spacing.s16, vertical = WontonTheme.spacing.s12)) {
         Text(
             message.senderName,
