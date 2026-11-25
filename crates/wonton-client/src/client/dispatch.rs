@@ -194,6 +194,7 @@ impl ClientCore {
             | HomeAction::AppBackgrounded
             | HomeAction::NetworkChanged { .. }
             | HomeAction::RetryConnection) => self.lifecycle_action(scope, action),
+            HomeAction::RelaySettings { action } => scope.home.relay_settings(action),
         }
     }
 

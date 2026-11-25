@@ -92,6 +92,8 @@ fn paired() -> HomeViewModel {
         server_id: Some("cd".repeat(32)),
         status: HomeStatus::Connected,
         path: None,
+        current_relay: None,
+        relays: Default::default(),
         notice: None,
         details: ConnectionDetails::default(),
         proxy: None,

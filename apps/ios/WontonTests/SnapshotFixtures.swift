@@ -201,7 +201,7 @@ enum SnapshotFixtures {
             core: core,
             viewModel: HomeViewModel(
                 deviceId: String(repeating: "0", count: 64), serverId: nil, status: .notConfigured,
-                path: nil, notice: nil,
+                path: nil, currentRelay: nil, relays: RelaySettingsView(phase: .idle), notice: nil,
                 details: ConnectionDetails(
                     network: nil, relay: .unknown, server: .unknown, lastConnectedAtMs: nil,
                     handshakeMs: nil, disconnects: 0, failedDials: 0, sentPackets: 0, lostPackets: 0,

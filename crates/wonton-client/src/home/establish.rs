@@ -7,7 +7,7 @@ use std::sync::atomic::Ordering;
 use std::time::{Duration, Instant};
 
 use wonton_l10n::l10n;
-use wonton_protocol::{ConnectionCheck, HomeFailure, HomeStatus, ProxySettings};
+use wonton_protocol::{ConnectionCheck, HomeFailure, HomeStatus, ProxySettings, RelaySettingsView};
 use wonton_tunnel::TunnelStatus;
 use wonton_tunnel::relays::{FALLBACK_AFTER, RelayTable, spawn_tier_fallback};
 use wonton_tunnel::{LocalProxy, ProxyAccess, ProxyCredential, TunnelClient};
@@ -88,10 +88,14 @@ impl HomeLink {
             view.web_url = ticket.web_url().map(str::to_owned);
             view.status = HomeStatus::Connecting;
             view.path = None;
+            view.current_relay = None;
+            view.relays = RelaySettingsView::default();
             view.proxy = None;
             view.notice = None;
             view.just_recovered = false;
         });
+        // 换了服务器：上一台的快照不能留下，否则「丢弃」会回到别人的表。
+        *self.lock_relays() = Default::default();
         self.runtime.spawn(self.clone().establish(ticket));
     }
 

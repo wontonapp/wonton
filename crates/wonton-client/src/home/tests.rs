@@ -220,7 +220,107 @@ async fn a_direct_connect_is_saved_without_waiting_for_the_report() {
         tokio::time::sleep(Duration::from_millis(50)).await;
     };
     let ticket = Ticket::parse(&saved).unwrap();
-    assert_eq!(ticket.used_addrs(), [addr]);
+    // 端点可能同时绑了 IPv4 和通配 IPv6，iroh 先挑中哪条、报哪个本机地址是它的事：写盘的直连地址得落在
+    // 这台端点绑过的 socket 上（通配地址换成这台机器的任一地址都算），不能是猜的。
+    assert!(!ticket.used_addrs().is_empty(), "连上后要把直连路径写盘");
+    let bound = server.bound_sockets();
+    let is_bound = |used: &std::net::SocketAddr| {
+        bound.iter().any(|socket| {
+            socket.port() == used.port()
+                && (socket.ip().is_unspecified() || socket.ip() == used.ip())
+        })
+    };
+    assert!(
+        ticket.used_addrs().iter().all(is_bound),
+        "记下的直连地址要在这台端点绑过的 socket 上：{:?} vs {:?}",
+        ticket.used_addrs(),
+        bound
+    );
     assert!(ticket.server_addr().ip_addrs().any(|tried| *tried == addr));
     tunnel.shutdown().await;
+}
+
+/// 设置页的读失败挂在 `load_problem` 上（还没配对），不留一个空转的 Loading。
+#[tokio::test(start_paused = true)]
+async fn a_refresh_without_a_paired_server_reports_why() {
+    let (_dir, home, _method_rx) = paused_home().await;
+    home.relay_settings(wonton_protocol::RelaySettingsAction::Refresh)
+        .unwrap();
+    let view = home.view();
+    assert!(matches!(
+        view.relays.phase,
+        Some(wonton_protocol::RelaySettingsPhase::Failed { .. })
+    ));
+    assert!(view.relays.load_problem.is_some());
+}
+
+/// 加、改、删在本机立刻生效并标成待保存；没配对时存不了，改动留着。
+#[tokio::test(start_paused = true)]
+async fn relay_edits_stay_local_when_the_table_cannot_be_saved_yet() {
+    let (_dir, home, _method_rx) = paused_home().await;
+    home.relay_settings(wonton_protocol::RelaySettingsAction::Add {
+        url: "https://relay.example.org".into(),
+        token: None,
+        quic_port: None,
+        tier: None,
+    })
+    .unwrap();
+    home.relay_settings(wonton_protocol::RelaySettingsAction::SetN0 { on: true })
+        .unwrap();
+    let view = home.view();
+    assert_eq!(view.relays.entries.len(), 1);
+    assert!(view.relays.n0);
+    assert!(view.relays.dirty);
+    assert_eq!(
+        view.relays.phase,
+        Some(wonton_protocol::RelaySettingsPhase::Ready)
+    );
+
+    // 没有连接信息：保存当场失败，改动和待保存的标记都还在。
+    assert!(matches!(
+        home.relay_settings(wonton_protocol::RelaySettingsAction::Save),
+        Err(CoreError::NotReady { .. })
+    ));
+    let view = home.view();
+    assert_eq!(view.relays.entries.len(), 1);
+    assert!(view.relays.dirty);
+
+    // 丢弃回到核心最近给的那一份：一份都没拿到过就是空表，n0 回落到缺省（留）。
+    home.relay_settings(wonton_protocol::RelaySettingsAction::Discard)
+        .unwrap();
+    let view = home.view();
+    assert!(view.relays.entries.is_empty());
+    assert!(view.relays.n0);
+    assert!(!view.relays.dirty);
+}
+
+/// 中继路径带着中继地址，直连路径不带。
+#[test]
+fn only_a_relay_path_carries_the_relay_url() {
+    let url: iroh::RelayUrl = "https://relay.example.org".parse().unwrap();
+    let relayed = path_view(PathInfo {
+        connection_id: 1,
+        kind: PathKind::Relay,
+        remote: TransportAddr::Relay(url.clone()),
+        rtt: Duration::from_millis(42),
+        sent_packets: 0,
+        lost_packets: 0,
+        sent_bytes: 0,
+        lost_bytes: 0,
+    });
+    assert_eq!(relayed.relay_url.as_deref(), Some(url.to_string().as_str()));
+    assert!(relayed.relay);
+
+    let direct = path_view(PathInfo {
+        connection_id: 2,
+        kind: PathKind::Direct,
+        remote: TransportAddr::Ip("127.0.0.1:1".parse().unwrap()),
+        rtt: Duration::from_millis(1),
+        sent_packets: 0,
+        lost_packets: 0,
+        sent_bytes: 0,
+        lost_bytes: 0,
+    });
+    assert_eq!(direct.relay_url, None);
+    assert!(!direct.relay);
 }

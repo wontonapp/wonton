@@ -63,6 +63,8 @@ fn home() -> HomeViewModel {
         status: HomeStatus::Connected,
         just_recovered: false,
         path: None,
+        current_relay: None,
+        relays: Default::default(),
         notice: None,
         details: Default::default(),
         proxy: None,

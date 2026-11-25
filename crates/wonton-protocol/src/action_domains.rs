@@ -5,8 +5,8 @@ use crate::{
     EntryKind, FileId, FontStyle, FriendBlockScope, FriendBlockTarget, InstallPreview,
     MatrixOidcCallback, MatrixOidcLogin, MatrixPasswordLogin, NewPasswordRequest,
     NotificationCategory, OnboardingTip, PluginAudience, PushEndpoint, PushMethod,
-    PutDomainRequest, PutIngressRequest, Rgb, SecretString, ShareGrantUpdate, TabRef, TextSize,
-    ThemeMode, UploadSource,
+    PutDomainRequest, PutIngressRequest, RelaySettingsAction, Rgb, SecretString, ShareGrantUpdate,
+    TabRef, TextSize, ThemeMode, UploadSource,
 };
 
 /// 会话列表的操作。
@@ -96,6 +96,11 @@ pub enum HomeAction {
     },
     /// 主人点了“重试”：清零退避，立刻试一次。
     RetryConnection,
+    /// 中继表设置页（ADR-0048）上的操作：取表、加、改、删、挪档、设置 n0 兜底、保存、丢弃。
+    /// 进展和结果在 [`HomeViewModel::relays`](crate::HomeViewModel::relays)。
+    RelaySettings {
+        action: RelaySettingsAction,
+    },
 }
 
 /// Matrix 聊天、加密恢复、确认卡片和聊天布局的操作。
