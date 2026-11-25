@@ -39,8 +39,10 @@ enum UITestBackend {
     nonisolated(unsafe) private static var pairingCursor = 0
 
     /// 每次启动都用一个空的数据目录，再带上下一个没用过的配对码：不依赖模拟器上留下的会话。
+    /// 通知权限也统一交给用例自己问：启动自动弹框会吃掉各用例的第一个点击。
     static func passPairingCode(to app: XCUIApplication) throws {
         app.launchEnvironment["WONTON_DEV_DATA_SUFFIX"] = UUID().uuidString
+        app.launchEnvironment["WONTON_DEV_SKIP_PUSH_AUTH"] = "1"
         enableStateProbe(to: app)
         let codes = try codes()
         if !codes.isEmpty {

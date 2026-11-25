@@ -6,8 +6,8 @@ import XCTest
 /// 这台设备还没被问过通知权限时（模拟器刚建好就是这种）先弹系统的授权框，允许以后一样落到云吞的通知页——
 /// iOS 只给问过的 App 建这一页。行右侧写着系统里的状态。
 ///
-/// 启动时 App 自己会问权限，`WONTON_DEV_SKIP_PUSH_AUTH` 让 UI 用例自己挑时机：新模拟器上验“还没问过”，
-/// 同一台再跑一次时按已经允许的状态走。连开发栈（设置页上的“通知”行由核心给）：
+/// 启动时 App 自己会问权限，`UITestBackend.passPairingCode` 带的 `WONTON_DEV_SKIP_PUSH_AUTH` 让用例自己挑时机：
+/// 新模拟器上验“还没问过”，同一台再跑一次时按已经允许的状态走。连开发栈（设置页上的“通知”行由核心给）：
 ///
 ///     apps/ios/scripts/ui-test.sh <模拟器 UDID> test -only-testing:WontonUITests/NotificationSettingsUITests
 ///
@@ -24,7 +24,6 @@ final class NotificationSettingsUITests: XCTestCase {
         try UITestBackend.require()
         app = XCUIApplication()
         app.launchArguments += ["-AppleLanguages", "(en)", "-AppleLocale", "en_US"]
-        app.launchEnvironment["WONTON_DEV_SKIP_PUSH_AUTH"] = "1"
         UITestBackend.enableStateProbe(to: app)
         try UITestBackend.passPairingCode(to: app)
         app.launch()

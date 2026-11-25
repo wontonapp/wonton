@@ -8,7 +8,7 @@
 use std::fs;
 use std::path::{Path, PathBuf};
 use std::sync::{Arc, Mutex, MutexGuard};
-use std::time::Instant;
+use std::time::{Instant, SystemTime, UNIX_EPOCH};
 
 use serde::{Deserialize, Serialize};
 use tokio::sync::watch;
@@ -25,9 +25,13 @@ const SETTINGS_FILE: &str = "app-lock.json";
 const LOCKED_FILE: &str = "app-lock-locked.json";
 
 /// 标记文件的格式。扩展把读不懂的标记当锁着，宁可少露内容。
+///
+/// iOS 后台进程几秒就挂起，tokio 定时器不保证跑到；宽限没走完时 `locked` 写 false 并带上
+/// 到点自动算锁的墙钟毫秒（`locks_at_ms`），扩展按它自己判。没在等锁时 `locks_at_ms` 是 `u64::MAX`。
 #[derive(Serialize)]
 struct LockMarker {
     locked: bool,
+    locks_at_ms: u64,
 }
 
 /// 设置文件的格式。宽限存枚举，不存裸秒数：加档位时旧文件照样读得懂。
@@ -57,6 +61,18 @@ impl State {
             && self
                 .backgrounded_at
                 .is_some_and(|at| now.duration_since(at) >= self.timeout.span())
+    }
+
+    /// 宽限到点的墙钟毫秒；没在等锁时是 `u64::MAX`。
+    fn deadline_ms(&self, now: Instant) -> u64 {
+        let Some(at) = self.backgrounded_at else {
+            return u64::MAX;
+        };
+        let remaining = self
+            .timeout
+            .span()
+            .saturating_sub(now.saturating_duration_since(at));
+        wall_ms().saturating_add(remaining.as_millis() as u64)
     }
 
     fn view(&self, now: Instant) -> AppLockViewModel {
@@ -112,7 +128,10 @@ impl AppLockLink {
             writing: Mutex::new(()),
         }));
         // 进程刚起来、订阅还没发出去时，扩展也可能正好收到推送，标记要先落地。
-        link.write_marker(initially_locked);
+        link.write_marker(LockMarker {
+            locked: initially_locked,
+            locks_at_ms: if initially_locked { 0 } else { u64::MAX },
+        });
         link
     }
 
@@ -247,7 +266,18 @@ impl AppLockLink {
     /// 扩展那边宁可少露内容。
     fn publish(&self, state: &State, now: Instant) {
         let view = state.view(now);
-        self.write_marker(view.locked);
+        // 没当场锁、宽限还在走时写截止时刻：进程随时可能被系统挂起，不能只靠定时器。
+        self.write_marker(if view.locked {
+            LockMarker {
+                locked: true,
+                locks_at_ms: 0,
+            }
+        } else {
+            LockMarker {
+                locked: false,
+                locks_at_ms: state.deadline_ms(now),
+            }
+        });
         self.0.view.send_if_modified(|current| {
             let changed = *current != view;
             *current = view.clone();
@@ -255,8 +285,8 @@ impl AppLockLink {
         });
     }
 
-    fn write_marker(&self, locked: bool) {
-        let text = serde_json::to_vec(&LockMarker { locked })
+    fn write_marker(&self, marker: LockMarker) {
+        let text = serde_json::to_vec(&marker)
             .expect("the lock marker is a plain value and always serializes");
         if let Err(error) = write_private(&self.0.marker, &text) {
             tracing::warn!(
@@ -279,6 +309,13 @@ impl AppLockLink {
             .lock()
             .unwrap_or_else(|poisoned| poisoned.into_inner())
     }
+}
+
+fn wall_ms() -> u64 {
+    SystemTime::now()
+        .duration_since(UNIX_EPOCH)
+        .unwrap_or_default()
+        .as_millis() as u64
 }
 
 /// 没设过时是 `None`。
@@ -466,6 +503,31 @@ mod tests {
         assert!(marker(dir.path()));
         link.unlock();
         assert!(!marker(dir.path()));
+    }
+
+    /// 宽限没走完时标记带截止时刻：扩展不等定时器也能自己判到点。
+    #[test]
+    fn a_grace_marker_carries_its_deadline() {
+        let dir = tempfile::tempdir().unwrap();
+        let link = AppLockLink::new(dir.path());
+        link.set(true, AppLockTimeout::FiveMinutes).unwrap();
+        link.unlock();
+        link.backgrounded(None);
+        let read = || -> serde_json::Value {
+            let bytes = std::fs::read(dir.path().join(LOCKED_FILE)).unwrap();
+            serde_json::from_slice(&bytes).unwrap()
+        };
+        let value = read();
+        assert_eq!(value["locked"], false);
+        let due = value["locks_at_ms"].as_u64().unwrap();
+        let now = wall_ms();
+        assert!(due > now, "截止时刻要在将来");
+        assert!(due <= now + 5 * 60 * 1_000 + 5_000);
+        // 回到前台就不再等锁，截止时刻清掉。
+        link.foregrounded();
+        let value = read();
+        assert_eq!(value["locked"], false);
+        assert_eq!(value["locks_at_ms"].as_u64(), Some(u64::MAX));
     }
 
     #[test]
