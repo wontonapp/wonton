@@ -23,9 +23,7 @@ use super::lan::Lan;
 use super::languages::Languages;
 use super::lifecycle::LifecycleConfig;
 use super::listed::Listed;
-#[cfg(test)]
-use super::manifest::Permission;
-use super::manifest::{LocalizedText, Manifest, ManifestExt, PluginId};
+use super::manifest::{LocalizedText, Manifest, ManifestExt, Permission, PluginId};
 use super::mcp_server::{McpServer, ToolLimits};
 #[cfg(test)]
 use super::models::ModelsRoute;
@@ -366,6 +364,16 @@ impl PluginManager {
             }
             _ => ProviderState::NotReady(id.clone()),
         }
+    }
+
+    /// 已装插件的清单里有没有这项权限（不看主人当时是否授予）。
+    pub fn has_permission(&self, id: &PluginId, permission: &Permission) -> bool {
+        self.plugins
+            .read()
+            .expect("插件表锁中毒")
+            .get(id)
+            .and_then(|entry| entry.listed.as_ref())
+            .is_some_and(|listed| listed.manifest.permissions.contains(permission))
     }
 
     pub fn list(&self) -> Vec<PluginView> {

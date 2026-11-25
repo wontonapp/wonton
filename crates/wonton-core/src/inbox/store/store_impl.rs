@@ -145,6 +145,7 @@ impl Inbox {
     }
 
     /// 建一条条目。上限和频率按发送方算，超了就报，不截断。
+    #[allow(clippy::too_many_lines)]
     pub fn create(&self, mut input: CreateInput) -> Result<CreateReply, InboxError> {
         let now = self.now();
         let page = input.page.take();
@@ -160,7 +161,13 @@ impl Inbox {
         let sender_key = format!("{}:{}", sender_tag(&item.sender), item.sender.id);
         let mut inner = self.lock();
         if let Some(existing) = dedupe_target(&inner, &sender_key, item.dedupe_key.as_deref()) {
+            if let Some(page) = &page {
+                page::validate_size(page.html.len())?;
+            }
             let record = inner.records.get_mut(&existing).expect("刚找到的条目");
+            if let Some(page) = &page {
+                record.stored.csp = Some(page.csp.clone());
+            }
             record.stored.item.title = item.title;
             record.stored.item.body = item.body;
             record.stored.item.payload = item.payload;
@@ -179,6 +186,9 @@ impl Inbox {
             }
             let csp = record.stored.csp.clone();
             drop(inner);
+            if let Some(page) = &page {
+                self.write_page(&reopened.id, &page.html)?;
+            }
             self.write(&reopened, csp.as_deref())?;
             self.bump();
             return Ok(CreateReply {
@@ -330,7 +340,7 @@ impl Inbox {
             terminal_at_ms: terminal_at(item),
         };
         let bytes = serde_json::to_vec(&stored).map_err(|e| io(e.to_string()))?;
-        page::write_private(
+        page::write_atomic(
             &self.dir.join(ITEMS_DIR).join(format!("{}.json", item.id)),
             &bytes,
         )
@@ -434,6 +444,7 @@ impl Inbox {
     }
 
     /// 作答。幂等：同一个 `answer_id` 返回同一条；异步条目 60 秒内可换答案。
+    #[allow(clippy::too_many_lines)]
     pub fn answer(
         &self,
         viewer: &str,
@@ -518,13 +529,20 @@ impl Inbox {
             _ => InboxOutcome::Answered,
         });
         item.answered_by = Some(viewer.to_owned());
-        item.answered_at_ms = Some(now);
-        record.stored.handled_at_ms = Some(now);
+        if item.answered_at_ms.is_none() {
+            item.answered_at_ms = Some(now);
+        }
+        record.stored.handled_at_ms.get_or_insert(now);
         let waiters = std::mem::take(&mut record.waiters);
         let stored_item = item.clone();
         let csp = record.stored.csp.clone();
         drop(inner);
-        self.record_create_rate("", 0);
+        let sender_key = format!(
+            "{}:{}",
+            sender_tag(&stored_item.sender),
+            stored_item.sender.id
+        );
+        self.record_create_rate(&sender_key, now);
         self.write(&stored_item, csp.as_deref())?;
         self.bump();
         for waiter in waiters {
@@ -690,7 +708,7 @@ impl Inbox {
     /// 把到期的标记成过期、过保留期的归档/删掉。后台每 30 秒跑一次；测试直接调。
     pub fn sweep(&self, now: u64) {
         let mut inner = self.lock();
-        let mut changed = Vec::new();
+        let mut changed: Vec<(InboxItem, Option<String>)> = Vec::new();
         inner.records.retain(|id, record| {
             let item = &mut record.stored.item;
             if item.status == InboxStatus::Pending
@@ -698,7 +716,7 @@ impl Inbox {
             {
                 item.status = InboxStatus::Expired;
                 record.stored.terminal_at_ms = Some(now);
-                changed.push(item.clone());
+                changed.push((item.clone(), record.stored.csp.clone()));
                 return true;
             }
             if item.status == InboxStatus::Handled
@@ -709,7 +727,7 @@ impl Inbox {
             {
                 item.status = InboxStatus::Archived;
                 record.stored.terminal_at_ms = Some(now);
-                changed.push(item.clone());
+                changed.push((item.clone(), record.stored.csp.clone()));
                 return true;
             }
             if item.status == InboxStatus::Archived
@@ -728,6 +746,7 @@ impl Inbox {
                     .terminal_at_ms
                     .is_some_and(|at| now.saturating_sub(at) > 30 * DAY_MS)
             {
+                let _ = std::fs::remove_file(self.dir.join(PAGES_DIR).join(format!("{id}.html")));
                 let _ = std::fs::remove_file(self.dir.join(ITEMS_DIR).join(format!("{id}.json")));
                 return false;
             }
@@ -735,15 +754,16 @@ impl Inbox {
         });
         let changed_items = changed;
         drop(inner);
-        for item in changed_items {
-            let _ = self.write(&item, None);
+        for (item, csp) in changed_items {
+            let _ = self.write(&item, csp.as_deref());
         }
         self.bump();
     }
 
-    /// 阻塞地等某条条目的答案；异步条目也等它变 handled。
-    pub async fn wait(
+    /// 阻塞地等某条条目的答案；只有发送方能等，别的 Bot 知道 id 也读不到。
+    pub async fn wait_for_sender(
         &self,
+        sender_id: &str,
         id: &str,
         after_revision: Option<u64>,
     ) -> Result<InboxItem, InboxError> {
@@ -754,6 +774,9 @@ impl Inbox {
                 let inner = self.lock();
                 let record = inner.records.get(id).ok_or(InboxError::NotFound)?;
                 let item = &record.stored.item;
+                if item.sender.id != sender_id {
+                    return Err(InboxError::NotYours);
+                }
                 let reached = matches!(
                     item.status,
                     InboxStatus::Handled

@@ -8,7 +8,7 @@
 mod page;
 mod projection;
 mod store;
-mod tools;
+pub(crate) mod tools;
 
 pub use page::{FixedClock, PageTokens, policy};
 pub use projection::{confirmation_id, project_confirmation};

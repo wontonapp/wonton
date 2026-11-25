@@ -8,6 +8,7 @@ use wonton_protocol::{
     InboxStatus, InboxType, PagePayload,
 };
 
+use super::NewPage;
 use super::page::FixedClock;
 use super::store::{CreateInput, Inbox, InboxError};
 
@@ -310,4 +311,102 @@ fn snooze_removes_from_the_list() {
     assert!(inbox.list("owner", clock.get()).items.is_empty());
     clock.set(clock.get() + 3_600_000 + 1);
     assert_eq!(inbox.list("owner", clock.get()).items.len(), 1);
+}
+
+/// dedupe 命中要换新页面和 CSP，不是留着第一次的。
+#[test]
+fn dedupe_replaces_the_page_snapshot() {
+    let (inbox, _clock) = inbox();
+    let page = |html: &[u8], csp: &str, key: &str| CreateInput {
+        kind: InboxType::Page,
+        sender: InboxSender {
+            kind: InboxSenderKind::Agent,
+            id: "app.hermes".into(),
+            display_name: "Hermes".into(),
+            avatar: None,
+        },
+        recipient: InboxRecipient::Person {
+            username: "owner".into(),
+        },
+        title: "报告".into(),
+        body: String::new(),
+        level: None,
+        source: None,
+        blocking: false,
+        dedupe_key: Some(key.into()),
+        payload: wonton_protocol::InboxPayload::Page(PagePayload {
+            resource_uri: Some("ui://report".into()),
+            file_id: None,
+            caption: "报告".into(),
+            network_domains: Vec::new(),
+            actions: Vec::new(),
+        }),
+        expires_in_ms: None,
+        page: Some(NewPage {
+            html: html.to_vec(),
+            csp: csp.into(),
+        }),
+    };
+    let first = inbox.create(page(b"<p>1</p>", "csp-1", "same")).unwrap();
+    let second = inbox.create(page(b"<p>2</p>", "csp-2", "same")).unwrap();
+    assert_eq!(
+        first.item.id, second.item.id,
+        "同一个 dedupe 键要更新同一条"
+    );
+    let (_html, csp) = inbox.page_bytes(&second.item.id).unwrap().unwrap();
+    assert_eq!(csp, "csp-2");
+    assert_eq!(
+        inbox.page_bytes(&second.item.id).unwrap().unwrap().0,
+        b"<p>2</p>"
+    );
+}
+
+/// 过期后页面还留 30 天；30 天后 JSON 和 HTML 一起删。
+#[test]
+fn expired_pages_survive_until_cleanup() {
+    let (inbox, clock) = inbox();
+    let created = inbox
+        .create(CreateInput {
+            kind: InboxType::Page,
+            sender: InboxSender {
+                kind: InboxSenderKind::Agent,
+                id: "app.hermes".into(),
+                display_name: "Hermes".into(),
+                avatar: None,
+            },
+            recipient: InboxRecipient::Person {
+                username: "owner".into(),
+            },
+            title: "报告".into(),
+            body: String::new(),
+            level: None,
+            source: None,
+            blocking: false,
+            dedupe_key: None,
+            payload: wonton_protocol::InboxPayload::Page(PagePayload {
+                resource_uri: Some("ui://report".into()),
+                file_id: None,
+                caption: "报告".into(),
+                network_domains: Vec::new(),
+                actions: Vec::new(),
+            }),
+            expires_in_ms: Some(1000),
+            page: Some(NewPage {
+                html: b"<p>ok</p>".to_vec(),
+                csp: "csp".into(),
+            }),
+        })
+        .unwrap();
+    clock.set(clock.get() + 2000);
+    inbox.sweep(clock.get());
+    assert!(
+        inbox.page_bytes(&created.item.id).unwrap().is_some(),
+        "过期后还能看"
+    );
+    clock.set(clock.get() + 31 * 24 * 3600 * 1000);
+    inbox.sweep(clock.get());
+    assert!(
+        inbox.page_bytes(&created.item.id).is_err(),
+        "30 天后连页面一起删"
+    );
 }

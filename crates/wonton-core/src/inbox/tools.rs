@@ -25,6 +25,7 @@ use super::page;
 use super::store::{CreateInput, Inbox, InboxError, NewPage};
 use crate::mcp::audience::Subject;
 use crate::mcp::{Bus, Caller, ToolFailure};
+use crate::plugin::manifest::Permission;
 
 fn tool(name: &str, description: &str, input: Value) -> Tool {
     Tool::new(name.to_owned(), description.to_owned(), schema(input)).with_annotations(
@@ -158,7 +159,7 @@ pub(crate) async fn call(
         "inbox_recap" => recap(bus, &inbox, caller, value),
         "inbox_confirm" => confirm(bus, &inbox, caller, value),
         "inbox_notify" => notify(bus, &inbox, caller, value),
-        "inbox_wait" => wait(&inbox, &value).await,
+        "inbox_wait" => wait(&inbox, caller, &value).await,
         "inbox_cancel" => cancel(&inbox, caller, value),
         "inbox_update" => update(&inbox, caller, value),
         other => Err(ToolFailure::new(
@@ -196,11 +197,23 @@ fn recipient(
     audience: InboxAudience,
 ) -> Result<InboxRecipient, ToolFailure> {
     if audience == InboxAudience::Admins {
+        let core = caller.id.as_str() == "app.wonton.core";
+        if !core
+            && !bus
+                .plugins()
+                .has_permission(&caller.id, &Permission::Notify)
+        {
+            return Err(ToolFailure::new(
+                "permission_denied",
+                "发所有管理员要 notify 权限",
+            ));
+        }
         return Ok(InboxRecipient::Admins);
     }
-    let username = bus
-        .recipient(caller, Subject::Tool)
-        .ok_or_else(|| ToolFailure::new("permission_denied", "这个 Bot 没有归属人"))?;
+    let username = bus.recipient(caller, Subject::Tool).unwrap_or_else(|| {
+        // 确认表的约定：None 是主人；共享 Bot 和没有 Bot 的插件也落到主人。
+        bus.plugins().owner_name().to_owned()
+    });
     Ok(InboxRecipient::Person { username })
 }
 
@@ -444,10 +457,14 @@ fn notify(
     Ok(created_reply(created))
 }
 
-async fn wait(inbox: &Inbox, value: &Value) -> Result<CallToolResult, ToolFailure> {
+async fn wait(
+    inbox: &Inbox,
+    caller: &Caller,
+    value: &Value,
+) -> Result<CallToolResult, ToolFailure> {
     let request: InboxWaitRequest = parse(value.clone())?;
     let item = inbox
-        .wait(&request.item_id, request.after_revision)
+        .wait_for_sender(caller.id.as_str(), &request.item_id, request.after_revision)
         .await
         .map_err(failure)?;
     Ok(success_json(&json!({

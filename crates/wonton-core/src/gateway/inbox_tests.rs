@@ -260,3 +260,102 @@ async fn worker_events_create_an_item_and_expose_the_answer() {
 fn _use(a: Vec<(&'static str, &'static str)>) -> Vec<(&'static str, &'static str)> {
     a
 }
+
+/// worker 的两条读/写接口也要主人令牌或设备身份。
+#[tokio::test]
+async fn worker_reads_need_auth() {
+    let h = Harness::start(None).await;
+    let read = h
+        .get(
+            crate::gateway::tests::CORE,
+            "/_wonton/api/inbox/workers/w-1",
+            &[],
+        )
+        .await;
+    assert_eq!(read.status, 401);
+    let resolve = h
+        .send(
+            hyper::Method::POST,
+            crate::gateway::tests::CORE,
+            "/_wonton/api/inbox/workers/w-1/resolve",
+            &[],
+            axum::body::Body::from(json!({"delivery": "sent"}).to_string()),
+        )
+        .await;
+    assert_eq!(resolve.status, 401);
+}
+
+/// worker 的 done 不带 choices 也收；未知事件落 notice 而不是 400。
+#[tokio::test]
+async fn worker_done_without_choices_and_unknown_events() {
+    let h = Harness::start(None).await;
+    for (worker, event, kind) in [("w-done", "done", "notice"), ("w-weird", "later", "notice")] {
+        let body = json!({"worker_id": worker, "event": event, "body": "做完了"});
+        let response = h
+            .send(
+                hyper::Method::POST,
+                crate::gateway::tests::CORE,
+                "/_wonton/api/inbox/workers",
+                &authed(TOKEN),
+                axum::body::Body::from(body.to_string()),
+            )
+            .await;
+        assert_eq!(response.status, 200, "{}", response.text());
+        assert_eq!(response.json()["type"], kind);
+    }
+}
+
+/// 主人能看见发给自己的确认卡片，不再被列表按 viewer 过滤掉。
+#[tokio::test]
+async fn the_owner_sees_keeper_confirmations() {
+    let h = Harness::start(None).await;
+    let bus = h.gateway.mcp.as_ref().unwrap().bus.clone();
+    let draft = crate::mcp::Draft {
+        title: "装 Immich？".into(),
+        lines: Vec::new(),
+        choices: vec![
+            wonton_protocol::CardChoice {
+                answer: wonton_protocol::Answer::Approve,
+                label: "允许".into(),
+                choice_id: None,
+            },
+            wonton_protocol::CardChoice {
+                answer: wonton_protocol::Answer::Reject,
+                label: "拒绝".into(),
+                choice_id: None,
+            },
+        ],
+        scope: None,
+        plugin_id: None,
+        secret_inputs: Vec::new(),
+        settings: None,
+        category: None,
+        permissions: Vec::new(),
+        devices: Vec::new(),
+    };
+    let caller = crate::plugin::PluginId::parse("app.hermes").unwrap();
+    tokio::spawn(async move {
+        let _ = bus
+            .confirmations()
+            .ask_as(&caller, draft, crate::mcp::Audience::default())
+            .await;
+    });
+    tokio::time::sleep(std::time::Duration::from_millis(20)).await;
+
+    let list = h
+        .get(
+            crate::gateway::tests::CORE,
+            "/_wonton/api/inbox",
+            &authed(TOKEN),
+        )
+        .await;
+    assert_eq!(list.status, 200, "{}", list.text());
+    let items = list.json()["items"].as_array().unwrap().clone();
+    assert!(
+        items
+            .iter()
+            .any(|item| item["type"] == "confirm"
+                && item["id"].as_str().unwrap_or("").starts_with("c-")),
+        "{items:?}"
+    );
+}

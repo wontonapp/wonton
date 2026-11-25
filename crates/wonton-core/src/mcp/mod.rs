@@ -842,6 +842,8 @@ mod help_tests;
 #[cfg(test)]
 mod highest_tool_tests;
 #[cfg(test)]
+mod inbox_tools_tests;
+#[cfg(test)]
 mod install_gate_tests;
 #[cfg(test)]
 mod missing_sender_tests;

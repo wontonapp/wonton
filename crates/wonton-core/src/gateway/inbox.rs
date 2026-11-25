@@ -146,6 +146,11 @@ async fn list(
         Err(response) => return response,
     };
     let viewer = person.username.clone();
+    let keeper = if person.is_owner() {
+        gateway.owner.username().to_owned()
+    } else {
+        viewer.clone()
+    };
     let now = crate::inbox::now_ms();
     let mut revision = inbox.revision();
     if let Some(after) = query.after {
@@ -177,12 +182,13 @@ async fn list(
     let mut list = inbox.list(&viewer, now);
     if let Some(endpoint) = &gateway.mcp {
         let confirmations = endpoint.bus.confirmations();
-        let (pending, finished, _) = confirmations.list(Some(&viewer));
+        let recipient = (!person.is_owner()).then_some(viewer.as_str());
+        let (pending, finished, _) = confirmations.list(recipient);
         for card in pending.into_iter().chain(finished) {
             if !card_allowed_for(&gateway, &card, &viewer) {
                 continue;
             }
-            let item = confirm_item(&gateway, card, &viewer, now);
+            let item = confirm_item(&gateway, card, &keeper, now);
             let summary = crate::inbox::summarize_item(&item, &viewer);
             if item.status == InboxStatus::Pending
                 && (item.kind == InboxType::Choice || item.kind == InboxType::Confirm)
@@ -230,6 +236,11 @@ async fn detail(
     };
     let now = crate::inbox::now_ms();
     let viewer = person.username.clone();
+    let keeper = if person.is_owner() {
+        gateway.owner.username().to_owned()
+    } else {
+        viewer.clone()
+    };
     if let Some(card_id) = crate::inbox::confirmation_id(&id) {
         let Some(endpoint) = &gateway.mcp else {
             return fail(InboxError::ServiceUnavailable);
@@ -238,7 +249,7 @@ async fn detail(
             if !card_allowed_for(&gateway, &card, &viewer) {
                 return fail(InboxError::NotYours);
             }
-            let item = confirm_item(&gateway, card, &viewer, now);
+            let item = confirm_item(&gateway, card, &keeper, now);
             let pending = matches!(item.status, InboxStatus::Pending);
             let view = InboxView {
                 item,
@@ -327,7 +338,15 @@ async fn answer(
                     .into_response()
                 }
                 Err(error) => {
-                    error_response(StatusCode::CONFLICT, "already_answered", &error.to_string())
+                    use crate::mcp::AnswerError;
+                    let status = match error {
+                        AnswerError::NotFound => StatusCode::NOT_FOUND,
+                        AnswerError::Expired | AnswerError::AlreadyAnswered => StatusCode::CONFLICT,
+                        AnswerError::UnknownAnswer | AnswerError::Secrets(_) => {
+                            StatusCode::BAD_REQUEST
+                        }
+                    };
+                    error_response(status, error.kind(), &error.to_string())
                 }
             };
         }
@@ -572,14 +591,16 @@ async fn worker_event(
     Json(delivery).into_response()
 }
 
+#[allow(clippy::too_many_lines)]
 async fn worker_create(
     gateway: &Gateway,
     inbox: &Arc<Inbox>,
     person: &Person,
     event: &InboxWorkerEvent,
 ) -> Result<InboxItem, InboxError> {
-    let (title, body, payload) = match event.event {
+    let (kind, title, body, payload) = match event.event {
         InboxWorkerEventKind::Needs | InboxWorkerEventKind::Stuck => (
+            InboxType::Confirm,
             event.title.clone().unwrap_or_else(|| {
                 format!(
                     "{} 等你批准",
@@ -607,16 +628,30 @@ async fn worker_create(
                 ],
             }),
         ),
+        InboxWorkerEventKind::Done if event.choices.is_empty() => (
+            InboxType::Notice,
+            event.title.clone().unwrap_or_else(|| "做完了".into()),
+            event.body.clone().unwrap_or_default(),
+            InboxPayload::Notice(NoticePayload {
+                title: event.title.clone().unwrap_or_else(|| "做完了".into()),
+                body: event.body.clone().unwrap_or_default(),
+                level: InboxLevel::Info,
+                link: None,
+                action: None,
+            }),
+        ),
         InboxWorkerEventKind::Done => (
+            InboxType::Recap,
             event.title.clone().unwrap_or_else(|| "做完了".into()),
             event.body.clone().unwrap_or_default(),
             InboxPayload::Recap(RecapPayload {
                 summary: event.body.clone().unwrap_or_else(|| "worker 做完了".into()),
                 question: None,
-                actions: event.choices.clone(),
+                actions: event.choices.iter().take(2).cloned().collect::<Vec<_>>(),
             }),
         ),
         InboxWorkerEventKind::Other => (
+            InboxType::Notice,
             event.title.clone().unwrap_or_else(|| "worker 更新".into()),
             event.body.clone().unwrap_or_default(),
             InboxPayload::Notice(NoticePayload {
@@ -635,10 +670,7 @@ async fn worker_create(
         task: event.task.clone(),
     };
     let created = inbox.create(CreateInput {
-        kind: match event.event {
-            InboxWorkerEventKind::Needs | InboxWorkerEventKind::Stuck => InboxType::Confirm,
-            InboxWorkerEventKind::Done | InboxWorkerEventKind::Other => InboxType::Recap,
-        },
+        kind,
         sender: InboxSender {
             kind: InboxSenderKind::Worker,
             id: event.worker_id.clone(),
@@ -655,7 +687,10 @@ async fn worker_create(
         body,
         level: None,
         source: Some(source),
-        blocking: event.event == InboxWorkerEventKind::Needs,
+        blocking: matches!(
+            event.event,
+            InboxWorkerEventKind::Needs | InboxWorkerEventKind::Stuck
+        ),
         dedupe_key: Some(format!("worker:{}:{:?}", event.worker_id, event.event)),
         payload,
         expires_in_ms: event
@@ -669,10 +704,16 @@ async fn worker_create(
 
 async fn worker_answer(
     State(gateway): State<Arc<Gateway>>,
+    peer: Option<Extension<TunnelPeer>>,
+    headers: HeaderMap,
     Path(worker_id): Path<String>,
 ) -> Response {
     let inbox = match inbox(&gateway) {
         Ok(inbox) => inbox,
+        Err(response) => return response,
+    };
+    let _person = match person(&gateway, peer, &headers) {
+        Ok(person) => person,
         Err(response) => return response,
     };
     match inbox.latest_for_worker(&worker_id) {
@@ -691,11 +732,17 @@ async fn worker_answer(
 
 async fn worker_resolve(
     State(gateway): State<Arc<Gateway>>,
+    peer: Option<Extension<TunnelPeer>>,
+    headers: HeaderMap,
     Path(worker_id): Path<String>,
     body: Bytes,
 ) -> Response {
     let inbox = match inbox(&gateway) {
         Ok(inbox) => inbox,
+        Err(response) => return response,
+    };
+    let _person = match person(&gateway, peer, &headers) {
+        Ok(person) => person,
         Err(response) => return response,
     };
     let resolve: InboxWorkerResolve = match serde_json::from_slice(&body) {

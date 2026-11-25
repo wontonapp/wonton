@@ -92,6 +92,13 @@ pub fn write_private(path: &std::path::Path, bytes: &[u8]) -> Result<(), InboxEr
         .map_err(|e| InboxError::Io(e.to_string()))
 }
 
+/// 先写同目录临时文件再 rename，崩溃不会留半条 JSON。临时名带进程号。
+pub fn write_atomic(path: &std::path::Path, bytes: &[u8]) -> Result<(), InboxError> {
+    let tmp = path.with_extension(format!("json.tmp.{}", std::process::id()));
+    write_private(&tmp, bytes)?;
+    std::fs::rename(&tmp, path).map_err(|e| InboxError::Io(e.to_string()))
+}
+
 pub fn validate_size(bytes: usize) -> Result<(), InboxError> {
     if bytes > MAX_INBOX_PAGE_BYTES {
         return Err(InboxError::PayloadTooLarge);
