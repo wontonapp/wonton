@@ -1,6 +1,7 @@
 # ADR-0042 一台手机连多台服务器：同一时间连一台，各自保留数据，每台都推送
 
 - 状态：已接受（2026-11-06）。方向由主人确认（见“背景”）；修订 [ADR-0009](0009-identity-pairing-sso.md) 里“一个 App 可以连多台服务器”的做法和 [ADR-0003](0003-matrix-and-encrypted-push.md) 的推送内容
+- 由 [ADR-0118](0118-im-three-layers-push-with-body.md) 修订（2026-11-25）：推送明文里有了正文，`server` 字段照旧、更要紧
 
 ## 背景
 

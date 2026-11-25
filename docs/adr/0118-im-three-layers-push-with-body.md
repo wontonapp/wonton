@@ -2,9 +2,10 @@
 
 - 状态：已接受（2026-11-25），主人拍板（原话要点见“已定”）。修订 [ADR-0003](0003-matrix-and-encrypted-push.md) 的“推送里不带正文”和房间加密的前提，
   也修订 [ADR-0005](0005-native-clients-thick-core.md)（备份与恢复密钥）、[ADR-0008](0008-model-gateway-magpie.md)（Hermes 的 `MATRIX_E2EE_MODE`）、
-  [ADR-0009](0009-identity-pairing-sso.md)（Bot 主房间的端到端验证）、[ADR-0038](0038-multi-step-cards.md)（卡片的明文降级）、
+  [ADR-0009](0009-identity-pairing-sso.md)（Bot 主房间的端到端验证）、[ADR-0016](0016-mcp-bus-and-confirmations.md)（Wonton 私聊、卡片显示在会话里）、[ADR-0038](0038-multi-step-cards.md)（卡片的明文降级）、
   [ADR-0042](0042-multiple-servers.md)（推送内容）、[ADR-0045](0045-family-members.md)（邀请页的说法）、[ADR-0046](0046-device-verification.md)（删除）、
-  [ADR-0049](0049-cloud-hosting.md)（托管的数据与隐私）、[ADR-0050](0050-cross-server-chat.md)（跨服务器的机密性）、[ADR-0087](0087-pairing-key-handoff.md)（配对不再交接密钥）、
+  [ADR-0049](0049-cloud-hosting.md)（托管的数据与隐私）、[ADR-0050](0050-cross-server-chat.md)（跨服务器的机密性）、[ADR-0076](0076-device-verification-fallback.md)（删除）、
+  [ADR-0087](0087-pairing-key-handoff.md)（配对不再交接密钥）、
   [ADR-0101](0101-notifications.md)（通知里的正文）、[ADR-0096](0096-calls-matrixrtc-widget.md)（不加密房间里的通话）
 - 关联：本地层 `feat/chat-local-first`（卡 im-local-first），连接层 `feat/tunnel-fast-reconnect`（卡 im-fast-connect）
 

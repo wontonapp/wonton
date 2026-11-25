@@ -42,7 +42,9 @@
 - **iOS 的共享容器随 PR #402 落地**：数据目录搬进 App Group（[ADR-0097](0097-share-in.md)，`apps/ios/Shared/AppGroup.swift`）。
   本 ADR 排在它后面，复用 `AppGroup.dataDirectory()`，不再自己定路径。
 
-已定的两条地基（沿用，不改）：
+已定的两条地基（**都被 [ADR-0118](0118-im-three-layers-push-with-body.md) 修订**，下面按改前的样子留档）：
+
+> **被 ADR-0118 修订（2026-11-25）。** 不加密房间的推送带正文，手机在本机解开就直接显示；只有加密房间还是“没有正文、看不见的唤醒信号”。
 
 - 推送里**没有正文**，只有房间、事件、发送者（[ADR-0003](0003-matrix-and-encrypted-push.md)）。解密只在本机做，中继只看到密文。
 - 推送是**唤醒信号**，内容由核心在本机取回并解密（`resolve_push`，`crates/wonton-client/src/client/push_route.rs:42`，注释

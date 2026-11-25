@@ -188,11 +188,11 @@ Agent 私聊里的插件未就绪提示由客户端核心从插件列表与本�
 ### 推送
 
 1. App 把平台给的推送地址和本机的推送公钥（Web Push 的推送订阅）经隧道登记给核心，并在 Tuwunel 注册指向核心
-   推送代理的 pusher，不带 `format`：要 Tuwunel 的完整格式，正文才在推送里。
+   推送代理的 pusher。
 2. 有新消息时，Tuwunel 调用核心推送代理（Matrix Push Gateway 接口）。
 3. 核心按 pushkey 找到设备，把服务器 ID、房间、消息 ID、发送者、房间名和正文（不加密房间的完整格式里带着，附件只有类型和文件名）
-   一起，按 RFC 8291 用该设备的公钥加密，按 RFC 8030 发到推送地址。明文不超过 3 KiB，正文去换行后截到 120 个字符，
-   还放不下就按 房间名 → 发送者显示名 → 正文 的顺序丢字段（[ADR-0118](adr/0118-im-three-layers-push-with-body.md)）。
+   一起，按 RFC 8291 用该设备的公钥加密，按 RFC 8030 发到推送地址。明文总预算 3 KiB，套 JSON 的渠道（APNs、FCM、HMS）
+   再收紧到 2 KiB；截断、丢字段的顺序和 pusher 的 `format` 见 [ADR-0118](adr/0118-im-three-layers-push-with-body.md) §2。
 4. 推送地址来自 UnifiedPush 分发器（如 ntfy），或者是我们的中继为 FCM、APNs、HMS 令牌开的；中继校验发送方服务器
    身份并限速，再转发。
 5. App 在本机解开就直接显示正文：Android 在推送服务里，iOS 在通知扩展里用 CryptoKit 解完改写通知。加密房间（别的客户端建的）
