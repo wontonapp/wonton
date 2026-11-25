@@ -215,9 +215,9 @@ widget ID、用 `generate_webview_url` 得出地址。页面关掉、换房间�
 - **网页请求 Matrix 对外地址（真机）：** 见“验证结果”的设备门一条；`baseUrl` 取头像能否显示。
 - **Element Call 在顶层 WebView 里的 widget 模式：** 注入脚本拦下它发给自己的消息后，它的收发是否完整；`parentUrl` 设成页面自己的 origin 是否够。
 - **加密房间：** 每人的媒体密钥经加密 to-device 交换，两台 Wonton 设备和一台 Element X 三方互通。
-- **不加密房间（ADR-0118）：** 主人 2026-11-25 决定家里的房间以后不再端到端加密。Element Call 在不加密房间里的行为用冒烟的
-  `STAGE=plain` 记录（能不能通、媒体字节有没有），结果见下方。媒体帧加密还在不在、媒体密钥的 to-device 是否明文、
-  SFU 是否仍只见密文，由卡 call-e2e-android 实测，结果补在这里。
+- **不加密房间（ADR-0118）：** 主人 2026-11-25 决定家里的房间以后不再端到端加密。Element Call 在不加密房间里的连接性
+  （能不能通、媒体字节有没有）用冒烟的 `STAGE=plain` 记录，结果见下方；**还没测**的是媒体帧加密还在不在、
+  媒体密钥的 to-device 是否明文、SFU 是否仍只见密文这三项，由卡 call-e2e-android 补在这里。
 
 ## 验证结果
 

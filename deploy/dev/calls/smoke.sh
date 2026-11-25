@@ -50,6 +50,7 @@ esac
 failures=0
 # 组级 deadline：到点就 fail_group，别让一个卡死的步骤把整轮吞掉、也不出判决。
 GROUP_DEADLINE="${GROUP_DEADLINE:-600}"
+[[ $GROUP_DEADLINE =~ ^[0-9]+$ ]] || die "GROUP_DEADLINE 要是整数秒（当前 '$GROUP_DEADLINE'）"
 group_deadline_at=0
 deadline_hit() { (( group_deadline_at > 0 && SECONDS >= group_deadline_at )); }
 fail_group() {
@@ -365,7 +366,7 @@ create_room() {
     fi
 }
 
-wait_room_visible() { # 等 room_name 的行在两端列表出现（预算 40 分钟，每 2 分钟重启重渲染）
+wait_room_visible() { # 等 room_name 的行在两端列表出现（预算 40 分钟；每 30 秒重启重渲染 + 掉回配对页就重配）
     local d xml ok
     for i in $(seq 1 20); do
         for d in "$DEV_A" "$DEV_B"; do
@@ -1040,10 +1041,11 @@ capture_failure_evidence() { # <tag>：组失败时把两端 App 核心日志尾
 }
 
 run_group() { # run_group <a|b|c|plain> <说明> <配置函数>；任何一步不过都记一组失败，不再静默“完成”
-    local g=$1 keys="$EVIDENCE/members-$1.keys" before="$EVIDENCE/members-$1.before"
+    local g=$1 keys="$EVIDENCE/members-$1.keys" before="$EVIDENCE/members-$1.before" group_deadline_at=0
     log "== 组 $g：$2"
     "$3" || { fail_group "$g" "组 $g 配置失败"; return 1; }
-    # 配置（含 relay 组的 up/预热）不占组级 deadline；从这里开始媒体/判定阶段受 GROUP_DEADLINE 约束。
+    # 配置（含 relay 组的 up/预热）不占组级 deadline；从这里开始媒体/判定阶段受它约束。local 保证
+    # 提前 return 时自动消失，别把过期 deadline 留给后面的 kill/tcp/relay 组。
     group_deadline_at=$((SECONDS + GROUP_DEADLINE))
     log "组 $g 判定阶段 deadline ${GROUP_DEADLINE}s"
     clear_dialogs
@@ -1116,7 +1118,6 @@ run_group() { # run_group <a|b|c|plain> <说明> <配置函数>；任何一步�
         fail_group "$g" "挂断 60 秒后本轮成员还在通话里"
     fi
     shot "$DEV_A" "group-$g-after"
-    group_deadline_at=0
 }
 
 run_kill() { # 延迟 leave：B 正常挂断，再把 A 的 App 强杀，本轮两个成员都应消失
@@ -1162,10 +1163,11 @@ tcp) run_group b "只有 TCP" configure_tcp_only ;;
 relay) run_group c "只有中继" configure_relay_only ;;
 kill) run_kill ;;
 all)
-    run_group a "UDP 直连" configure_udp_only
-    run_kill
-    run_group b "只有 TCP" configure_tcp_only
-    run_group c "只有中继" configure_relay_only
+    # 一组失败也继续跑后面的组，最后按 failures 汇总退出码；否则第一组一挂后面根本没机会跑。
+    run_group a "UDP 直连" configure_udp_only || true
+    run_kill || true
+    run_group b "只有 TCP" configure_tcp_only || true
+    run_group c "只有中继" configure_relay_only || true
     ;;
 *) die "不认识的 STAGE=$stage" ;;
 esac
