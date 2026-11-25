@@ -127,7 +127,11 @@
 - 一个 issue 可以分几个 PR：最后一个写 `Closes #N`，合并时 GitHub 自动关掉 issue；之前的写 `Refs #N`，并在
   issue 里留言说明还剩什么。不写的话 issue 不会自己关，做完的和没做的混在一起。
 - PR 合并前只等快检查：格式、lint（Clippy、detekt、SwiftLint）、行数门禁、编译、不依赖 Docker 的单元测试，目标十分钟内
-  出结果。必需检查绿了就 `gh pr merge --auto --squash` 直接合，不要求 PR 先追上 `main`。
+  出结果。不要求 PR 先追上 `main`。
+- 合并要两样都有：必需检查绿了；PR 当前 head 上有非作者的复审通过。复审员在 PR 上评论一行
+  `复审通过 <head 前 8 位> 复审：<复审卡名>`，作者自己写的、审的不是当前 head 的都不算，推了新提交要重审。
+- 合并一律经维护者的 `safe-merge.sh`：它核对上面两样，过了才开 `gh pr merge --auto --squash`。不直接 `gh pr merge`，
+  也不自己开 auto-merge。
 - 改了 `crates/wonton-protocol` 的 PR，`main` 在分支切出之后又改过协议时，lint 的“改了协议的 PR 基于最新 main”一步失败：
   先 `git rebase origin/main`、解完冲突再推。只在 PR 的 CI 跑时判断一次；没改协议的 PR 不受影响。
 - 慢的合进 `main` 之后跑，不挡合并：Docker 集成测试、界面测试、镜像构建。新加的测试按这个分界放，哪个工作流在哪一边见
