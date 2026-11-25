@@ -14,11 +14,27 @@
 - `cargo fmt --all --check`、`git diff --check`、`check-conflict-markers.sh`、`check-file-size.sh`、`check-protocol-base.sh`、`check-ui-text.py`、`check-uniffi-comments.sh`、`check-shell-parity.py`：通过。
 - `nice ~/wonton-dev/android-build.sh`（detekt、`:androidApp:testDebugUnitTest`、`assembleDebug`）：BUILD SUCCESSFUL。
 - 界面用例（模拟器 emulator-5566）：`:androidApp:connectedDebugAndroidTest` 过滤 `RoomAttachPanelTest` 10 条、`RoomEditTest` 3 条，13 passed 0 failed。
-- 附件区发送的“先停”没有新集成用例（要真附件、起栈成本高）：靠 `out_typing` 现成的两条单元测试和读代码确认。
-- iOS 没上模拟器走查：这次只解冲突和拆函数，没改界面结构。
+- iOS 说明跟照片这条以前没用例，这次补了界面用例（见下）；附件区发送的“先停”补了单测，不靠读代码。
+- iOS 没上模拟器走查：这次只解冲突和改发送逻辑，没改界面结构。
 
-SwiftLint 返修（CI 红在 `ComposerView.swift:236` 圈复杂度 12 > 10）：`sendPicked` 拆出 `sendSideChatPhoto`（一张照片的发送和清草稿）和 `trailingAction`（照片之后还要不要另发），行为不变：附言仍只跟第一张真带走的照片、被拒留在草稿，附件区那条发送仍先收正在输入。
+SwiftLint 返修（CI 红在 `ComposerView.swift:236` 圈复杂度 12 > 10）：`sendPicked` 拆出 `sendSideChatPhoto`（一张照片的发送和清草稿）和 `trailingAction`（照片之后还要不要另发）。
 
-SwiftLint 返修的验证（mini，名额 2）：`swiftlint lint --strict --no-cache` 全 235 个文件 0 violation；`xcodebuild build-for-testing`（`-only-testing:WontonTests`、arm64、iPhone 17 模拟器）：TEST BUILD SUCCEEDED。
+复审 rv-973b：
+- 说明改成“第一张试过就算用过”：`carriesCaption = isSideChat && index == 0`，第一张取字节失败或被拒都不再让后面的带说明，被拒时草稿留着。Android 本来只给第 0 张贴、失败整单停（`PhotoSend.kt:46/53`），口径一致。
+- `stop_typing` 的调用从 `composer_action` 提到 `dispatch` 入口（假数据的拒绝也在它后面），主对话和旁聊按各自目标收；`ChatLink` 加了测试用的记录，新单测删掉那一步会红。
+- 界面用例补两条：说明只跟第一张、草稿清掉；第一张被拒时说明留在草稿、第二张照发且不带说明。`WONTON_UI_FAIL_SEND` 改成“拒前 n 次发送”，不写数字算 1。
+- `trailingAction` 的 `sendText` 分支只在一批照片一张都没进循环时走（面板要求至少选一张，所以界面上基本走不到），注释和 PR 正文写清了。
 
-head 0c9dfa04（fix/973-rebase，基于 main c49f56b8；cd563b68 是解冲突的记录提交）。
+Android 兜底：`TimelineList.dayMarksFor` 先拍一份列表再算日期（跑 `RoomAttachPanelTest` 撞到 `ArrayIndexOutOfBoundsException`，三次里两次红）。
+
+验证：
+- `cargo test -p wonton-client --features ui-fake --lib`：453 passed, 0 failed。新单测删掉 `dispatch` 里那一步单独跑过一次，转红。
+- `cargo clippy -p wonton-protocol -p wonton-client -p wonton-matrix --all-targets --locked -- -D warnings`：0 warning 0 error。
+- `cargo fmt --all --check`、`git diff --check`、冲突标记、行数、界面文字、uniffi 注释、壳对齐：通过。
+- mini 上 `swiftlint lint --strict --no-cache`（235 个文件）：0 violation。
+- Android `android-build.sh`（detekt、单元测试、assembleDebug）：BUILD SUCCESSFUL。
+- iOS 界面用例两条（`testSideChatCaptionGoesOnlyWithFirstPhoto`、`testSideChatRefusedFirstPhotoKeepsCaptionForLater`）在 iPhone 17 模拟器通过。
+- 同轮既有的 `testSideChatPhotoGridUsable` 单独重跑仍红：`openSideChat` 后停在主对话、`composerAttach` 点不到（两条新用例用同一助手是通过的）；没改到这条，记下不下结论。
+- Android 界面用例复核：`RoomAttachPanelTest` 10 条、`RoomEditTest` 3 条，13 passed 0 failed（`dayMarksFor` 修复后）。
+
+head 7e1045a0（fix/973-rebase，基于 main c49f56b8；.done 记录提交在两个修复提交上面）。
