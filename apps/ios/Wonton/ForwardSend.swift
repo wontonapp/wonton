@@ -9,13 +9,13 @@ extension ChatModel {
         // 只含空白当没有附言；值原样交给核心，首尾空白由核心 trim。
         let comment = comment.trimmingCharacters(in: .whitespacesAndNewlines)
         for room in rooms {
-            let ok = send(.timeline(action: .forwardMessage(
+            let sent = send(.timeline(action: .forwardMessage(
                 target: source,
                 itemId: itemId,
                 toRoomId: room.roomId,
                 comment: comment.isEmpty ? nil : comment
             )))
-            walkLog.notice("forward to \(room.roomId, privacy: .public) ok=\(ok, privacy: .public)")
+            walkLog.notice("forward to \(room.roomId, privacy: .public) ok=\(sent, privacy: .public)")
         }
         if rooms.count == 1, let only = rooms.first {
             openRoom(only.roomId)
