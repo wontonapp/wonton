@@ -7,7 +7,7 @@ final class AgentRunUITests: XCTestCase {
         continueAfterFailure = false
         let app = XCUIApplication()
         app.launchArguments += ["-AppleLanguages", "(en)", "-AppleLocale", "en_US", "wonton-agent-run-preview"]
-        app.launch()
+        UITestBackend.launch(app)
 
         let working = app.descendants(matching: .any)["agentRun-working"]
         XCTAssertTrue(working.waitForExistence(timeout: 10), "夹具屏没有工作中的状态行\n\(app.debugDescription)")

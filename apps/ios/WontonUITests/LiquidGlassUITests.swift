@@ -18,7 +18,7 @@ final class LiquidGlassUITests: XCTestCase {
     }
 
     func testMainEntrancesStayReachable() throws {
-        app.launch()
+        UITestBackend.launch(app)
         try reachChatList()
         try assertListAndCapture("01-chat-list")
 

@@ -32,7 +32,7 @@ final class ContentWindowWalkthroughTests: XCTestCase {
         app.launchEnvironment.removeValue(forKey: "WONTON_DEV_PAIRING_CODE")
         app.launchEnvironment["WONTON_UI_FAKE"] = "1"
         XCUIDevice.shared.orientation = .landscapeLeft
-        app.launch()
+        UITestBackend.launch(app)
         XCTAssertTrue(waitForMain(), app.debugDescription)
         let room = firstRoom()
         XCTAssertTrue(room.waitForExistence(timeout: 10), app.debugDescription)
@@ -48,7 +48,7 @@ final class ContentWindowWalkthroughTests: XCTestCase {
     func testRoomWindowSharesDraftAndRestoresTarget() throws {
         try UITestBackend.require()
         XCUIDevice.shared.orientation = .landscapeLeft
-        app.launch()
+        UITestBackend.launch(app)
         XCTAssertTrue(waitForMain(), app.debugDescription)
         let room = firstRoom()
         XCTAssertTrue(room.waitForExistence(timeout: 90), app.debugDescription)
@@ -91,7 +91,7 @@ final class ContentWindowWalkthroughTests: XCTestCase {
     func testPluginContentCloseLeavesMainPageOpen() throws {
         try UITestBackend.require()
         XCUIDevice.shared.orientation = .landscapeLeft
-        app.launch()
+        UITestBackend.launch(app)
         XCTAssertTrue(waitForMain(), app.debugDescription)
         button(["我的应用", "My Apps"]).tap()
         var page = button(["回显", "Who am I"])

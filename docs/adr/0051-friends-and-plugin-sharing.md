@@ -196,7 +196,7 @@ YunoHost、Sandstorm 给免费子域名但要求公网 IP；Home Assistant Cloud
 
 | 选项 | 主人要准备 | 花费 | 代价 |
 | --- | --- | --- | --- |
-| 自己的域名 + Cloudflare Tunnel | 一个域名，DNS 托管在 Cloudflare | 一个域名的年费 | Cloudflare 解开 TLS，看得到谁和谁、什么时候（消息本身端到端加密）；单个请求最大 100 MB |
+| 自己的域名 + Cloudflare Tunnel | 一个域名，DNS 托管在 Cloudflare | 一个域名的年费 | Cloudflare 解开 TLS，看得到谁和谁、什么时候，也读得到消息内容（ADR-0118 起房间不加密）；单个请求最大 100 MB |
 | 自己的域名 + 自己的小云服务器（自建 frps，ADR-0021 的“换成自己的域名”） | 一个域名，一台有公网 IP 的小云服务器 | 域名年费加小服务器的月费 | 要维护那台服务器 |
 | 不要名字（随机的 `.wonton.internal`，只和配对过的云吞来往） | 什么都不用 | 无 | 加不了 matrix.org 上的人；没配对时不和别的服务器通，配对过的照 [ADR-0112](0112-peer-cert-pinning.md) 互钉证书走；不再自签、不开 allow_invalid（2026-11-22 起） |
 
