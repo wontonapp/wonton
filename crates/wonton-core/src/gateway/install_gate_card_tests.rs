@@ -6,7 +6,7 @@ use serde_json::{Value, json};
 
 use super::super::tests::Harness;
 use super::super::upload_settings_tests::consent_package;
-use super::install_gate_owner_tests::{ask_admin_member, finished, pending_cards};
+use super::install_gate_owner_tests::{ask_admin_member, finished, member_post, pending_cards};
 use super::install_nvme_gate_tests::{
     answer_admin_card, disk_gate_fixture, disk_preview, pending_admin_card, spawn_member_request,
 };
@@ -20,14 +20,15 @@ fn spec() -> String {
     crate::plugin::store_info::SPEC_VERSION.to_string()
 }
 
-/// 提供方要 `docker.socket`（最高级），只在本地索引里；使用方 `requires` 它提供的能力。
+/// 提供方要 `docker.socket`（最高级），只在本地索引里，提供使用方缺的两项能力；使用方 `requires` 它们。
 fn provider_compose() -> String {
     format!(
         "services:\n  web:\n    image: nginx\n    expose: [8080]\n    volumes:\n      \
          - /var/run/docker.sock:/var/run/docker.sock\nx-wonton:\n  spec: '{}'\n  id: {PROVIDER}\n  \
          version: 1.0.0\n  kind: app\n  title: {{zh: 搜索, en: Search}}\n  \
          description: {{zh: 搜索, en: Search}}\n  permissions: [docker.socket]\n  provides:\n    \
-         x-acme.search: {{service: web, port: 8080}}\n",
+         x-acme.search: {{service: web, port: 8080}}\n    \
+         x-acme.lookup: {{service: web, port: 8080}}\n",
         spec()
     )
 }
@@ -36,7 +37,8 @@ fn consumer_compose() -> String {
     format!(
         "services:\n  web:\n    image: nginx\nx-wonton:\n  spec: '{}'\n  id: {CONSUMER}\n  \
          version: 1.0.0\n  kind: app\n  title: {{zh: 用搜索的, en: Consumer}}\n  \
-         description: {{zh: 用搜索的, en: Consumer}}\n  permissions: []\n  requires: [x-acme.search]\n",
+         description: {{zh: 用搜索的, en: Consumer}}\n  permissions: []\n  \
+         requires: [x-acme.search, x-acme.lookup]\n",
         spec()
     )
 }
@@ -69,10 +71,15 @@ fn installed(h: &Harness, id: &str) -> bool {
         .is_some()
 }
 
-/// 成员按来源装使用方，带上一起装的提供方：提供方的权限写进第一张卡，它要 `docker.socket`，
-/// 所以还有第二张；第二张拒了，两个都没装。
-#[tokio::test]
-async fn providers_installed_together_are_on_the_cards() {
+/// 索引里有一个提供使用方两项能力的插件，成员能把两者一起装。返回的检索目录要留到测试结束：
+/// 索引按路径读。
+async fn together_fixture() -> (
+    tempfile::TempDir,
+    Harness,
+    iroh::PublicKey,
+    wonton_protocol::InstallPreview,
+    wonton_protocol::InstallPreview,
+) {
     let index = tempfile::tempdir().unwrap();
     let provider = PluginPackage::parse(&provider_compose(), &Languages::default()).unwrap();
     crate::plugin::storefront::index::IndexEntry::of(
@@ -100,22 +107,45 @@ async fn providers_installed_together_are_on_the_cards() {
         )
         .await
         .unwrap();
-    let source = consumer.missing_requires[0].providers[0].source.clone();
     let offered = h
         .manager
-        .preview_source(&source, &Languages::default())
+        .preview_source(
+            &consumer.missing_requires[0].providers[0].source,
+            &Languages::default(),
+        )
         .await
         .unwrap();
+    (index, h, member, consumer, offered)
+}
+
+/// 成员按来源装使用方，带上一起装的提供方：提供方的 ID 和权限写进第一张卡，经它用到的两项能力并成
+/// 一行；它要 `docker.socket`，所以还有第二张；第二张拒了，两个都没装。
+#[tokio::test]
+async fn providers_installed_together_are_on_the_cards() {
+    let (_index, h, member, consumer, offered) = together_fixture().await;
     let request = json!({
         "source": consumer.source, "digest": consumer.digest, "plan": consumer.plan, "grant": [],
         "install_together": [{"id": PROVIDER, "request": {
-            "source": source, "digest": offered.digest, "plan": offered.plan,
+            "source": offered.source, "digest": offered.digest, "plan": offered.plan,
             "grant": ["docker.socket"],
         }}],
     });
     let waiting = spawn_member_request(&h, member, "/_wonton/api/plugins", request);
     let first = pending_admin_card(&h).await;
     assert!(has_permission(&first, "docker.socket", None), "{first}");
+    assert!(mentions(&first, PROVIDER), "提供方的 ID 写在卡上：{first}");
+    let connection: Vec<&str> = first["lines"]
+        .as_array()
+        .unwrap()
+        .iter()
+        .filter_map(|line| line["text"].as_str())
+        .filter(|text| text.contains("x-acme.search") || text.contains("x-acme.lookup"))
+        .collect();
+    assert_eq!(connection.len(), 1, "同一个提供方的两项能力写一行：{first}");
+    assert!(
+        connection[0].contains("x-acme.search, x-acme.lookup"),
+        "{first}"
+    );
     answer_admin_card(&h, &first, "approve").await;
     let second = pending_admin_card(&h).await;
     assert_ne!(first["id"], second["id"]);
@@ -187,4 +217,47 @@ async fn filled_settings_are_on_the_card() {
     assert_eq!(status, StatusCode::FORBIDDEN, "{body}");
     assert_eq!(pending_cards(&h).await, 0);
     assert!(!installed(&h, "app.consent"));
+}
+
+/// 请求里的提供方不在预览列出的提供方里：发卡前就回 400，管理员不会看到一张装不成的卡。
+#[tokio::test]
+async fn a_provider_the_preview_does_not_offer_stops_before_the_card() {
+    let (_index, h, member, consumer, offered) = together_fixture().await;
+    let request = json!({
+        "source": consumer.source, "digest": consumer.digest, "plan": consumer.plan, "grant": [],
+        "install_together": [{"id": "app.example.other", "request": {
+            "source": offered.source, "digest": offered.digest, "plan": offered.plan, "grant": [],
+        }}],
+    });
+    let (status, kind, body) = member_post(&h, member, "/_wonton/api/plugins", &request).await;
+    assert_eq!(status, StatusCode::BAD_REQUEST, "{body}");
+    assert_eq!(kind.as_deref(), Some("invalid_input"));
+    assert_eq!(pending_cards(&h).await, 0);
+}
+
+/// 请求带的计划不是门槛预览的（使用方、提供方的都算）：发卡前就回 409 `changed`，状态变了要重新预览。
+#[tokio::test]
+async fn a_stale_plan_stops_before_any_card() {
+    let (_index, h, member, consumer, offered) = together_fixture().await;
+    let stale = "sha256:0000000000000000000000000000000000000000000000000000000000000000";
+    let consumer_version = json!({
+        "source": consumer.source, "digest": consumer.digest, "plan": stale, "grant": [],
+    });
+    let (status, kind, body) =
+        member_post(&h, member, "/_wonton/api/plugins", &consumer_version).await;
+    assert_eq!(status, StatusCode::CONFLICT, "{body}");
+    assert_eq!(kind.as_deref(), Some("changed"));
+    assert_eq!(pending_cards(&h).await, 0);
+
+    let provider_version = json!({
+        "source": consumer.source, "digest": consumer.digest, "plan": consumer.plan, "grant": [],
+        "install_together": [{"id": PROVIDER, "request": {
+            "source": offered.source, "digest": offered.digest, "plan": stale, "grant": [],
+        }}],
+    });
+    let (status, kind, body) =
+        member_post(&h, member, "/_wonton/api/plugins", &provider_version).await;
+    assert_eq!(status, StatusCode::CONFLICT, "{body}");
+    assert_eq!(kind.as_deref(), Some("changed"));
+    assert_eq!(pending_cards(&h).await, 0);
 }

@@ -147,6 +147,7 @@ pub(super) async fn propose(
             return Err(ToolFailure::new("changed", provider.source.clone()));
         }
         disclose_provider(draft, &provider_preview, &provider_request, langs);
+        disclose_connections(draft, &preview, &provider_preview, &selected, langs);
         draft
             .permissions
             .extend(provider_preview.permissions.clone());
@@ -232,6 +233,46 @@ pub(crate) fn disclose_provider(
     }
     disclose_defaults(draft, preview, langs);
     draft.lines.extend(preview.notices.iter().cloned());
+}
+
+/// 使用方要经这个提供方用到的高权限能力（ADR-0053“X 能经 Y 使用 <能力>”）。`installing` 是这次请求
+/// 一起装的提供方 ID：一项能力连的是其中排在预览列表最前面的那个，别的提供方也能提供它时不写。
+/// 同一个提供方补几个能力写一行，能力名用 `", "` 连起来。和 [`disclose_provider`] 一起用：Bot 的
+/// MCP 卡片、要管理员批的 HTTP 卡片给主人看的是同一套。
+pub(crate) fn disclose_connections(
+    draft: &mut cards::Draft,
+    consumer: &InstallPreview,
+    provider: &InstallPreview,
+    installing: &BTreeSet<String>,
+    langs: &Languages,
+) {
+    let capabilities: Vec<&str> = consumer
+        .missing_requires
+        .iter()
+        .filter_map(|missing| {
+            let target = missing
+                .providers
+                .iter()
+                .find(|item| installing.contains(&item.id))?;
+            (target.id == provider.id && target.high_privilege)
+                .then_some(missing.capability.as_str())
+        })
+        .collect();
+    if capabilities.is_empty() {
+        return;
+    }
+    draft.lines.push(CardLine {
+        text: l10n::text(
+            langs,
+            "plugin-capability-connect",
+            &[
+                ("consumer", consumer.title.as_str().into()),
+                ("provider", provider.title.as_str().into()),
+                ("capability", capabilities.join(", ").into()),
+            ],
+        ),
+        emphasis: true,
+    });
 }
 
 fn disclose_defaults(draft: &mut cards::Draft, preview: &InstallPreview, langs: &Languages) {

@@ -1,8 +1,8 @@
 //! 要管理员批（`AskAdmin`）的装、升级请求在发卡之前的核对。卡片只写得出预览里的包和权限，
 //! 卡片表达不了的东西不能跟着请求过去：
 //!
-//! - 包：请求带的摘要要和门槛预览的一致。执行时拿同一个摘要核对重新取到的包，管理员批的和最后装的
-//!   就是同一个包；来源可变（GitHub latest、分支）时中间变了，停在 409 `changed`。
+//! - 包：请求带的摘要、计划要和门槛预览的一致。执行时拿同一个摘要核对重新取到的包，管理员批的和
+//!   最后装的就是同一个包、同一组连接；来源可变（GitHub latest、分支）或状态变了，停在 409 `changed`。
 //! - 权限：卡片写不出改权限（ADR-0057）。可选权限、设备、局域网开关和装着的不同
 //!   （新装时非空、非默认）直接回 403 `permission_required{owner}`，不发卡。密钥和设置只能补这个版本
 //!   要补的（还没填的密钥、没值也没默认值的必填项、过不了新 Schema 的项），改已有的值同样只限主人。
@@ -117,13 +117,15 @@ fn blocked(preview: &InstallPreview) -> Result<(), InstallError> {
     })
 }
 
-/// 新装：请求的摘要是门槛预览的包，并且这个包能装。
+/// 新装：请求的摘要是门槛预览的包，计划没变（请求没带计划的老调用方只比摘要），并且这个包能装。
+/// 计划变了执行时预检也会停；这里先在发卡前拦下，管理员批的那张卡和最后装的对得上。
 pub(super) fn matches_install_preview(
     preview: &InstallPreview,
     digest: &str,
+    plan: &str,
     langs: &Languages,
 ) -> Result<(), InstallError> {
-    if preview.digest != digest {
+    if preview.digest != digest || (!plan.is_empty() && preview.plan != plan) {
         return Err(InstallError::Changed(l10n::text(
             langs,
             "plugin-capability-plan-changed",

@@ -129,6 +129,24 @@ async fn capability_outbox_install_confirms_and_injects_each_plugins_own_secret(
     let (b, docker) = fixture(false, false).await;
     let call = b.s.spawn(INSTALL, json!({"dir": "consumer"}));
     let card = b.s.cards.wait_for(1).await;
+    let texts: Vec<&str> = card.lines.iter().map(|line| line.text.as_str()).collect();
+    assert!(
+        texts.iter().any(|text| text.contains(PROVIDER)),
+        "提供方的 ID 写在卡上：{texts:?}"
+    );
+    let connection: Vec<_> = texts
+        .iter()
+        .filter(|text| text.contains("x-acme.search") || text.contains("x-acme.lookup"))
+        .collect();
+    assert_eq!(
+        connection.len(),
+        1,
+        "同一个提供方的两项能力写一行：{texts:?}"
+    );
+    assert!(
+        connection[0].contains("x-acme.search, x-acme.lookup"),
+        "{texts:?}"
+    );
     assert_eq!(card.secret_inputs.len(), 2);
     for name in ["token".to_owned(), format!("{PROVIDER}/token")] {
         assert!(
