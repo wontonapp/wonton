@@ -50,7 +50,7 @@ impl ChatLink {
                     room_id
                 }
                 Some((room_id, _)) => room_id,
-                None => session.create_direct_chat(&bot, true).await?,
+                None => session.create_direct_chat(&bot, false).await?,
             };
             session.send_text_to(&room_id, &body).await?;
             onboarding::record_sent(&sent, room_id.to_string());

@@ -102,7 +102,7 @@ async fn a_bot_reply_wakes_a_killed_app_and_shows_the_decrypted_text() {
     let pushed = home
         .push
         .wait_for("推送代理收到 Bot 回复的通知", |received| {
-            received.notification["type"] == "m.room.encrypted"
+            received.notification["type"] == "m.room.message"
                 && received.notification["devices"][0]["pushkey"] == home.pushkey()
         })
         .await;
@@ -196,10 +196,10 @@ async fn a_push_that_cannot_be_fetched_says_why() {
     );
 }
 
-/// 推送只带房间和事件 ID，用不着读预览：主人自己建的私聊和 Bot 的主房间一样端到端加密。
+/// 推送只带房间和事件 ID，用不着读预览：主人自己建的私聊和 Bot 的主房间一样不加密。
 #[tokio::test(flavor = "multi_thread")]
 #[ignore = "需要 Docker，用 --include-ignored 运行"]
-async fn direct_chats_the_owner_starts_are_encrypted() {
+async fn direct_chats_the_owner_starts_are_not_encrypted() {
     let dir = tempfile::tempdir().unwrap();
     let phone = Phone::open(dir.path());
     let home = Home::start(&[phone.device_id()]).await;
@@ -222,7 +222,7 @@ async fn direct_chats_the_owner_starts_are_encrypted() {
                 .cloned()
         })
         .await;
-    assert!(room.is_encrypted, "{room:?}");
+    assert!(!room.is_encrypted, "{room:?}");
 }
 
 async fn wait_for_unregistered(home: &Home) {
@@ -281,7 +281,7 @@ async fn a_push_from_a_server_you_are_not_on_is_fetched_from_that_server() {
     let pushed = a
         .push
         .wait_for("A 的推送代理收到通知", |received| {
-            received.notification["type"] == "m.room.encrypted"
+            received.notification["type"] == "m.room.message"
                 && received.notification["devices"][0]["pushkey"] == a.pushkey()
         })
         .await;

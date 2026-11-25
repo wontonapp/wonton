@@ -43,7 +43,7 @@ fn plugin() -> InstalledPlugin {
     plugin
 }
 
-/// 起一台服务器、手机登录、Bot 拉主人进加密私聊，打开这个房间的时间线。
+/// 起一台服务器、手机登录、Bot 拉主人进私聊，打开这个房间的时间线。
 async fn in_the_bots_room(
     dir: &std::path::Path,
 ) -> (

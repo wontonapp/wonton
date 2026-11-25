@@ -41,9 +41,9 @@ async fn asking_joins_the_bots_chat_and_sends_the_question() {
     let bot = home.bot("hermes", "Hermes").await;
     let owner: OwnedUserId = OWNER.parse().unwrap();
     let room_id = bot
-        .create_direct_chat(&owner, true)
+        .create_direct_chat(&owner, false)
         .await
-        .expect("Bot 发起加密私聊");
+        .expect("Bot 发起私聊");
     let room = room_id.to_string();
     phone
         .wait_chat("收到 Bot 的邀请", |view| {

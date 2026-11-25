@@ -15,7 +15,7 @@ use matrix_sdk::{
             client::room::create_room::v3::{Request as CreateRoomRequest, RoomPreset},
             error::ErrorKind,
         },
-        events::{StateEventType, room::encryption::RoomEncryptionEventContent},
+        events::StateEventType,
         serde::Raw,
     },
 };
@@ -79,7 +79,7 @@ pub struct FriendChat {
 }
 
 impl super::MatrixSession {
-    /// 建一个带好友标记的私聊并邀请 `user_id`，返回房间 ID。加密、私聊标记和普通私聊一样。
+    /// 建一个带好友标记的私聊并邀请 `user_id`，返回房间 ID。私聊标记和普通私聊一样。
     pub async fn invite_friend(&self, user_id: &UserId) -> Result<OwnedRoomId> {
         // 建房时邀请失败，服务器只记日志：对方不存在时房间照样建出来、里面只有自己（Tuwunel 上实测）。
         // 资料查不到不证明账号不存在；别家服务器的资料查询不一定通，只查同服且不增添其他探测。
@@ -92,16 +92,11 @@ impl super::MatrixSession {
                 "无法取得 {user_id} 的资料，不能确认账号是否存在"
             )));
         }
-        let encryption = matrix_sdk::ruma::events::InitialStateEvent::with_empty_state_key(
-            RoomEncryptionEventContent::with_recommended_defaults(),
-        )
-        .to_raw_any();
         let mut request = CreateRoomRequest::new();
         request.creation_content = Some(
             serde_json::from_value::<Raw<_>>(json!({ FRIEND_CREATE_KEY: true }))
                 .expect("固定的 JSON 一定能读出 Raw"),
         );
-        request.initial_state = vec![encryption];
         request.is_direct = true;
         request.preset = Some(RoomPreset::TrustedPrivateChat);
         let room = self.client.create_room(request).await?;

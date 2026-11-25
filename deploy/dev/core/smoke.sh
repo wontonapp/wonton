@@ -2,9 +2,9 @@
 # M0 端到端冒烟：一条命令装好示例插件 → 健康检查通过 → 未登录的请求被拒 →
 # 像浏览器一样经核心网关打开插件并自动登录 → 核心不预装模型网关，申请 models 的插件照样装得上，请求报网关不可用，
 # 装上后转发、停掉报 503 →
-# 已配对设备经隧道打开插件，直接是主人 → 经隧道登录 Matrix，和回声 Bot 加密收发 →
+# 已配对设备经隧道打开插件，直接是主人 → 经隧道登录 Matrix，和回声 Bot 收发 →
 # 核心自己装好的默认 Agent Hermes 就绪后出现在主人的私聊里：还没选模型时提示去它网页的 Keys、Models 页，给它的
-# Bot 配一个指向宿主 magpie 的服务后和主人加密对话两轮 → 核心重启后恢复、不装回卸掉的 Hermes → 卸载干净。Hermes 一步要真实模型：开发机上要有在运行的 magpie，模型名经 WONTON_SMOKE_MODEL 传入
+# Bot 配一个指向宿主 magpie 的服务后和主人对话两轮 → 核心重启后恢复、不装回卸掉的 Hermes → 卸载干净。Hermes 一步要真实模型：开发机上要有在运行的 magpie，模型名经 WONTON_SMOKE_MODEL 传入
 # （magpie 里一个能对话的模型），宿主 magpie 不在 3425 时用 WONTON_SMOKE_MODEL_RELAY=<宿主上的地址:端口>。
 # Hermes 容器解析不到 host.docker.internal 时（Linux 的 Docker 不给插件容器加这条）经它自己网络网关上的 socat
 # 转发连，见 Hermes 段。凭据是冒烟按 Bot 名字新建的一次性网关凭据：限定到这次的模型，退出时按建 key 时记下的 id
@@ -359,7 +359,7 @@ reply="$(t -o /dev/null -D - -H "Authorization: Bearer $access" \
 ! grep -qi '^x-wonton-error' <<<"$reply" || fail "网关挡下了会话 ID 带 %2F 的请求：$reply"
 ok "会话 ID 带 %2F 的密钥备份请求转给了 Tuwunel（HTTP $(head -1 <<<"$reply" | cut -d' ' -f2)）"
 
-# 回声 Bot 的安装、加密收发、crypto store 丢失与重装恢复：smoke-echo-bot.sh。
+# 回声 Bot 的安装、收发、crypto store 丢失与重装恢复：smoke-echo-bot.sh。
 # 本机装了 shellcheck 就顺手检查一遍：它里面的变量都来自冒烟本体，SC2154 免不了，所以不作门槛。
 if command -v shellcheck >/dev/null; then shellcheck "$here/smoke-echo-bot.sh" || true; fi
 source "$here/smoke-echo-bot.sh"
@@ -382,7 +382,8 @@ ok "主人的 m.direct 里已经有和 Hermes 的私聊"
 expect "主人和 Hermes 都已经在私聊里" \
   "$(owner_api "/rooms/$hermes_room/joined_members" | python3 -c 'import json, sys; print(" ".join(sorted(json.load(sys.stdin)["joined"])))')" \
   "$hermes_user @owner:$WONTON_DEV_DOMAIN"
-expect "私聊是加密的" "$(owner_api "/rooms/$hermes_room/state/m.room.encryption/" | json algorithm)" m.megolm.v1.aes-sha2
+expect "私聊不加密" \
+  "$(owner_api "/rooms/$hermes_room/state" | python3 -c 'import json, sys; print(any(e["type"] == "m.room.encryption" for e in json.load(sys.stdin)))')" False
 # 主人加入私聊的时间（Tuwunel 的事件时间）和网关容器第一次过健康检查的时间（Docker 事件）在同一台主机上。
 ready_ns="$(awk '$2 == "health_status:" && $3 == "healthy" { print $1; exit }' "$hermes_events")"
 [[ -n "$ready_ns" ]] || fail "没有记到 Hermes 的网关容器过健康检查：$(cat "$hermes_events")"
@@ -480,7 +481,7 @@ probe_in_hermes_room() {
       --proxy "http://$credential@127.0.0.1:18008" --login-token "$jwt" --room "$hermes_room" --bot "$hermes_user" \
       --reply any "$@" >"$out" 2>&1 || rc=$?
     # 有一句正常回复就算过：探针偶尔把 404 当空回复、退出码还是 0。
-    if (( rc == 0 )) && grep -q '收到加密的回复：' "$out"; then return 0; fi
+    if (( rc == 0 )) && grep -q '收到明文的回复：' "$out"; then return 0; fi
     # 不是 404 的失败（含探针自己的报错）不再重来。
     if ! grep -q M_NOT_FOUND "$out"; then return "$rc"; fi
   done
@@ -530,7 +531,7 @@ for text in "你好，用一句话介绍你自己。" "我刚才让你做什么�
   ! grep -qE '还没有设置模型|模型设置|add an AI provider' "$said" || fail "有模型了，Hermes 不该再提示去 Keys 页设置：$(cat "$said")"
 done
 expect_hermes_memory "$said"
-ok "经隧道和 Hermes 加密对话两轮"
+ok "经隧道和 Hermes 对话两轮"
 rm -f "$said"
 
 fi

@@ -256,7 +256,13 @@ async fn approved_family_joins_once_and_power_levels_follow_role_assignment_and_
     {
         let state = f.fake.state();
         let created = &state.rooms[&room];
-        assert!(created.encrypted);
+        assert!(!created.encrypted, "家庭群不加密");
+        assert!(
+            !state.room_state[&room]
+                .events
+                .contains_key(&("m.room.encryption".to_owned(), String::new())),
+            "家庭群没有 m.room.encryption"
+        );
         assert_eq!(
             state.room_state[&room].events[&("m.room.create".to_owned(), String::new())]["room_version"],
             "12"

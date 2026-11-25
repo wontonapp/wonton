@@ -15,7 +15,7 @@ use wonton_protocol::{
 use super::PNG;
 use super::message_actions::join_group_room;
 use super::support::{Home, Phone, Timeline, WAIT};
-use super::{accept_the_bots_invite, bot_receives};
+use super::{accept_the_bots_encrypted_invite, accept_the_bots_invite, bot_receives};
 
 /// 假核心给这个网址回的预览；`title` 区分两个网址，图片在核心的缓存里。
 fn preview_body(final_url: &str, title: &str, image_id: Option<&str>) -> Value {
@@ -265,7 +265,7 @@ async fn a_sent_message_carries_the_preview_with_an_uploaded_image() {
 
     // 加密房间：图片是加密文件，对方凭句柄取回解密后的原图。事件里是裸的 EncryptedFile，
     // 媒体句柄外面还要包一层 `"file"`（同 `previews::bundled_image`）。
-    let encrypted_id = accept_the_bots_invite(&home, &phone, &bot).await;
+    let encrypted_id = accept_the_bots_encrypted_invite(&home, &phone, &bot).await;
     let encrypted = encrypted_id.to_string();
     let body = format!("看看 {url}");
     phone.dispatch(set_draft(&encrypted, body.clone())).unwrap();

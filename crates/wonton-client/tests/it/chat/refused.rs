@@ -41,7 +41,7 @@ async fn invited_by_the_bot(home: &Home, phone: &Phone) -> wonton_matrix::OwnedR
     let bot = home.bot("hermes", "Hermes").await;
     let owner = wonton_matrix::OwnedUserId::try_from(OWNER).unwrap();
     let room_id = bot
-        .create_direct_chat(&owner, true)
+        .create_direct_chat(&owner, false)
         .await
         .expect("Bot 发起私聊");
     phone

@@ -57,6 +57,7 @@ async fn a_friend_invite_is_direct_marked_and_named() {
     let (room_id, _alice, bob) = invited(&server, "alice", "bob").await;
     let row = wait_for_room(&bob, "再读一次邀请", &room_id, |_| true).await;
     assert!(row.is_friend, "邀请要带好友标记");
+    assert!(!row.is_encrypted, "好友私聊不加密");
 
     let invite = bob
         .friend_invite(&room_id)
@@ -98,7 +99,7 @@ async fn a_plain_direct_invite_is_not_a_friend_request() {
 #[tokio::test]
 #[ignore = "需要 Docker，用 --include-ignored 运行"]
 async fn a_bots_contact_invite_is_recognized_and_is_not_a_friend_request() {
-    // 和核心替 Bot 发的邀请同样的建法：create 内容带联系人标记，私聊、加密。
+    // 和核心替 Bot 发的邀请同样的建法：create 内容带联系人标记，私聊、不加密。
     let server = TestServer::start().await;
     let bot = server.login(&unique("hermes"), "Wonton contacts").await;
     let bob = server.login(&unique("bob"), "Bob 的手机").await;

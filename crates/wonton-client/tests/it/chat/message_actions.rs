@@ -11,7 +11,7 @@ use wonton_protocol::MessageAction;
 use wonton_protocol::{TimelineAction, TimelineTarget};
 
 use super::support::{Home, OWNER, Phone, Timeline};
-use super::{PNG, accept_the_bots_invite, bot_receives};
+use super::{PNG, accept_the_bots_encrypted_invite, accept_the_bots_invite, bot_receives};
 
 /// Bot 建一个不加密的群聊、邀请主人，主人加入。主人在里面是普通成员（power level 0）。
 pub(super) async fn join_group_room(phone: &Phone, bot: &MatrixSession, name: &str) -> OwnedRoomId {
@@ -266,7 +266,7 @@ async fn forwarded_messages_arrive_as_they_were() {
     phone.connect(&home);
     phone.signed_in().await;
     let bot = home.bot("hermes", "Hermes").await;
-    let direct = accept_the_bots_invite(&home, &phone, &bot).await;
+    let direct = accept_the_bots_encrypted_invite(&home, &phone, &bot).await;
     let group = join_group_room(&phone, &bot, "Group").await;
     let bot_direct = bot.open_room(&direct).await.expect("Bot 打开私聊");
     bot_direct

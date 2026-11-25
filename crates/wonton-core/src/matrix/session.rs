@@ -130,7 +130,7 @@ impl<'a> Session<'a> {
         self.set_avatar_url(Some(&uri)).await
     }
 
-    /// 建一个给自己和 `peer` 用的加密房间，返回房间 ID。先不邀请对方：Bot 装好了才交给主人（[`Self::invite`]）。
+    /// 建一个给自己和 `peer` 用的房间，返回房间 ID。先不邀请对方：Bot 装好了才交给主人（[`Self::invite`]）。
     ///
     /// 房间版本 12 里建房的人权限最高，不能写进 power_levels 的 `users`（Tuwunel 回 400）。`trusted_private_chat`
     /// 把建房时邀请的人也算作建房的人，之后邀请的不算，所以在 `users` 里给对方 100：对方要是建房的人，自己就踢不动
@@ -140,11 +140,6 @@ impl<'a> Session<'a> {
             "preset": "trusted_private_chat",
             "room_version": "12",
             "power_level_content_override": {"users": {peer: 100}},
-            "initial_state": [{
-                "type": "m.room.encryption",
-                "state_key": "",
-                "content": {"algorithm": "m.megolm.v1.aes-sha2"},
-            }],
         });
         let value = self
             .json(
