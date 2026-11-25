@@ -20,14 +20,29 @@ pub(super) fn merge(
     own_user: &UserId,
     previewed: &mut HashMap<String, TimelineEntry>,
 ) -> Vec<TimelineEntry> {
-    let present: HashSet<String> = message_ids(entries);
+    // 已经在列表里的（含预览自己）不重复补；“真正同步到了”的才算落定，预览自己不算。
+    let mut existing: HashSet<String> = HashSet::new();
+    let mut synced: HashSet<String> = HashSet::new();
+    for entry in entries.iter() {
+        let EntryKind::Message(message) = &entry.kind else {
+            continue;
+        };
+        let Some(id) = message.event_id.as_ref() else {
+            continue;
+        };
+        let id = id.to_string();
+        if previewed.get(&id) != Some(entry) {
+            synced.insert(id.clone());
+        }
+        existing.insert(id);
+    }
     let rows = previews.of(room_id, thread_root);
     if rows.is_empty() {
         return Vec::new();
     }
     let settled: Vec<String> = rows
         .iter()
-        .filter(|row| present.contains(&row.event_id))
+        .filter(|row| synced.contains(&row.event_id))
         .map(|row| row.event_id.clone())
         .collect();
     if !settled.is_empty() {
@@ -35,7 +50,7 @@ pub(super) fn merge(
     }
     let added: Vec<TimelineEntry> = rows
         .into_iter()
-        .filter(|row| !present.contains(&row.event_id))
+        .filter(|row| !existing.contains(&row.event_id))
         .map(|row| {
             let entry = entry(row, own_user, room_id);
             previewed.insert(entry.id.clone(), entry.clone());
@@ -96,15 +111,6 @@ pub(super) fn settle(
     removed
 }
 
-fn message_ids(entries: &Vector<TimelineEntry>) -> HashSet<String> {
-    entries
-        .iter()
-        .filter_map(|entry| match &entry.kind {
-            EntryKind::Message(message) => message.event_id.as_ref().map(ToString::to_string),
-            _ => None,
-        })
-        .collect()
-}
 fn entry(row: Preview, own_user: &UserId, room_id: &RoomId) -> TimelineEntry {
     let sender = row
         .sender
