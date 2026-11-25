@@ -9,7 +9,6 @@ relays-not-loaded = リレーテーブルをまだ読み込めていません。
 
 # テーブルは WONTON_RELAYS 環境変数で固定されていて、ここでは変更できません。
 relays-locked = リレーテーブルは環境変数で固定されていて、ここでは変更できません。
-relays-not-loaded = リレー表をまだ読み込めていません。保存する前に再読み込みしてください。
 
 # $reason はプロキシURLパーサーの元のエラーです。
 relays-invalid-proxy = ローカルプロキシのアドレスが無効です：{ $reason }

@@ -9,7 +9,6 @@ relays-not-loaded = 中繼表還沒載入出來，先重新整理一下。
 
 # 表由 WONTON_RELAYS 環境變數固定，這裡改不了。
 relays-locked = 中繼表由環境變數固定，這裡改不了。
-relays-not-loaded = 中繼表還沒載入好，先重新整理再儲存。
 
 # $reason 是代理位址解析器的原始錯誤。
 relays-invalid-proxy = 本機代理位址不合法：{ $reason }
