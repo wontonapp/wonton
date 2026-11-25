@@ -23,7 +23,7 @@ pub struct TimelineUpdate {
     /// 按顺序应用的增量；只有翻页状态或位置变化时为空。
     pub diffs: Vec<TimelineDiff>,
     pub back_pagination: BackPagination,
-    /// 列表该停在哪。壳按它画“回到底部”和按钮上的数字；新消息不把列表拽走。
+    /// 列表该停在哪。壳按它画“回到最新”和按钮上的数字；新消息不把列表拽走。
     pub viewport: TimelineViewport,
     /// 自己发出的新消息到了：壳应用这一批后回到底部，即使主人翻走了。
     /// 别人的消息和编辑只在原本贴底时跟随（[`TimelineViewport::Bottom`]），不能打断阅读。
@@ -32,14 +32,9 @@ pub struct TimelineUpdate {
     /// （`Reset` 里的 `TimelineItem::id`）摆到视野顶部，摆好之前不报 [`TimelineScroll::Bottom`]
     /// （报早了核心以为主人已经看到最新一条，会清掉落点）。
     ///
-    /// 锚点是已读位置，主人一眼看到“以下是新消息”；没有未读时是最新一条，空房间为空。这一条摆过去之前就没了
-    /// （撤回、被裁掉）时，壳停在最新一条。
-    ///
-    /// 这一批里有 [`TimelineContent::ReadMarker`] 就锚它自己（`__read_marker`），那一行正好在已读和新消息之间。
-    /// 没有这一行时（SDK 还没插上，或者未读多到落点被加载窗口截断）按本账号已读位置算：位置在这一批里就锚它后面
-    /// 第一条，不在就从末尾往回数未读条数、数不到就锚最早一条，让主人接着往前翻。
-    ///
-    /// 有没有未读另看未读数：有 `ReadMarker` 一定还有未读，没有它却可能只是读完了、未读被窗口截断或者标记还没插上。
+    /// 锚点是最新一条，进房停在底部看最新一句（ADR-0121）；空房间为空。这一条摆过去之前就没了（撤回、被裁掉）时，
+    /// 壳停在最新一条。未读的“以下是新消息”由 [`TimelineUpdate::unread_jump`](crate::TimelineUpdate::unread_jump)
+    /// 的会话锚点单独画，不再决定这里的落点。
     pub anchor: Option<String>,
     /// 打开的房间的面板（ADR-0052）：每一批都给当前的列表，空的时候壳画大加号。
     #[serde(default)]
@@ -184,7 +179,7 @@ pub enum KeyNotice {
 pub enum TimelineViewport {
     /// 贴着最新一条。新消息照常往这里来，已读回执照发。
     Bottom,
-    /// 翻到别处了，壳在右下角画“回到底部”按钮。`new_messages` 是房间的未读数（和聊天列表那一行同一个数）：
+    /// 翻到别处了，壳在右下角画“回到最新”按钮。`new_messages` 是房间的未读数（和聊天列表那一行同一个数）：
     /// 是 0 时只画按钮不写数字。点按钮滚到最新一条，壳随后报告 [`TimelineScroll::Bottom`]，`new_messages` 变回 0。
     Away { new_messages: u32 },
 }
@@ -393,6 +388,11 @@ pub struct TimelineMessage {
     #[serde(default)]
     #[cfg_attr(feature = "uniffi", uniffi(default = false))]
     pub mentions_me: bool,
+    /// 最早未读的那一条（ADR-0121）：壳在它上方画“以下是新消息”，并隐藏 SDK 自己的 `ReadMarker`，
+    /// 免得胶囊收掉后分隔线也跟着消失、或者出现两条。
+    #[serde(default)]
+    #[cfg_attr(feature = "uniffi", uniffi(default = false))]
+    pub unread_anchor: bool,
 }
 
 /// 自己发的消息下面那行小字写什么。
@@ -1149,6 +1149,7 @@ mod tests {
         TimelineContent::Message {
             message: TimelineMessage {
                 mentions_me: false,
+                unread_anchor: false,
                 event_id: Some("$event".into()),
                 sender_id: "@hermes:home.example".into(),
                 sender_name: "Hermes".into(),

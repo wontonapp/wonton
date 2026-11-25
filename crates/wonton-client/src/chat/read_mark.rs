@@ -12,7 +12,7 @@ use wonton_matrix::{EntryKind, SendStatus, TimelineEntry, Vector};
 use wonton_protocol::MessageReceipt;
 
 /// 两条消息隔了这么久，后一条上方就写一行时间。
-pub(super) const TIME_GROUP_GAP_MS: u64 = 15 * 60 * 1000;
+pub(super) const TIME_GROUP_GAP_MS: u64 = 30 * 60 * 1000;
 
 #[derive(Debug, Default, PartialEq, Eq)]
 pub(super) struct ReadMark {
@@ -116,15 +116,19 @@ fn own_sent_through(entries: &Vector<TimelineEntry>, through: &str) -> HashSet<S
     found
 }
 
-/// 上方写时间的那些条：和上一条消息隔了 [`TIME_GROUP_GAP_MS`] 以上的。日期分隔线后面第一条不算，分隔线带着它的
-/// 时间；Agent 的状态行不是气泡，时间不写在它上面，也不拿它当“上一条”。
+/// 上方写时间的那些条：和上一条消息隔了 [`TIME_GROUP_GAP_MS`] 以上的，以及上一条不是气泡的（日期、说明行、
+/// “以下是新消息”、旁聊卡片、房间开头）。日期分隔线后面第一条不算，分隔线带着它的时间；Agent 的状态行不是气泡，
+/// 时间不写在它上面，也不拿它当“上一条”。
 fn time_groups(entries: &Vector<TimelineEntry>) -> HashSet<String> {
     let mut found = HashSet::new();
     let mut previous: Option<u64> = None;
     let mut after_divider = false;
     for entry in entries {
         match &entry.kind {
-            EntryKind::DateDivider(_) => after_divider = true,
+            EntryKind::DateDivider(_) => {
+                previous = None;
+                after_divider = true;
+            }
             EntryKind::Message(message) if message.agent_run.is_none() => {
                 let apart = previous.is_none_or(|previous| {
                     message.timestamp_ms.saturating_sub(previous) >= TIME_GROUP_GAP_MS
@@ -135,7 +139,13 @@ fn time_groups(entries: &Vector<TimelineEntry>) -> HashSet<String> {
                 previous = Some(message.timestamp_ms);
                 after_divider = false;
             }
-            _ => {}
+            // 状态行和上一条消息之间不算断组。
+            EntryKind::Message(_) => {}
+            // 说明行、资料变化、“以下是新消息”、房间开头：下一句另起一组。
+            EntryKind::Notice(_)
+            | EntryKind::ProfileChange { .. }
+            | EntryKind::ReadMarker
+            | EntryKind::TimelineStart => previous = None,
         }
     }
     found
@@ -207,6 +217,20 @@ mod tests {
         TimelineEntry {
             id: id.to_owned(),
             kind: EntryKind::DateDivider(0),
+        }
+    }
+
+    fn notice(id: &str) -> TimelineEntry {
+        TimelineEntry {
+            id: id.to_owned(),
+            kind: EntryKind::Notice("某某加入了房间".into()),
+        }
+    }
+
+    fn read_marker(id: &str) -> TimelineEntry {
+        TimelineEntry {
+            id: id.to_owned(),
+            kind: EntryKind::ReadMarker,
         }
     }
 
@@ -311,5 +335,22 @@ mod tests {
     fn the_first_message_without_a_date_line_gets_the_time() {
         let entries = vec![message_at("a", true, &[], 5), message_at("b", true, &[], 6)];
         assert_eq!(timed(entries), vec!["a".to_owned()]);
+    }
+
+    /// ADR-0121：说明行和“以下是新消息”另起一组；换发送者但没超时间不另起。
+    #[test]
+    fn a_notice_or_read_marker_starts_a_group_but_a_sender_change_does_not() {
+        let entries = vec![
+            message_at("a", true, &[], 0),
+            message_at("b", false, &[], 1),
+            notice("n"),
+            message_at("c", true, &[], 2),
+            read_marker("r"),
+            message_at("d", false, &[], 3),
+        ];
+        assert_eq!(
+            timed(entries),
+            vec!["a".to_owned(), "c".to_owned(), "d".to_owned()]
+        );
     }
 }

@@ -205,3 +205,84 @@ fn a_revision_without_a_search_only_records_itself() {
     assert_eq!(jumps.state(), JumpState::Idle);
     assert_eq!(focus(&jumps), Some(("b".into(), true)));
 }
+
+fn mentioning(item_id: &str, event_id: &str) -> TimelineEntry {
+    let mut entry = entry(item_id, Some(event_id));
+    if let EntryKind::Message(message) = &mut entry.kind {
+        message.mentions_me = true;
+    }
+    entry
+}
+
+/// 行为：跳到读位置之后的第一条消息，说明行跳过；成功收胶囊、压返回栈。
+#[test]
+fn first_unread_is_the_message_after_the_read_position() {
+    let jumps = Jumps::new();
+    jumps.request_first_unread(Some("$a".into()), 1);
+    let items: Vector<TimelineEntry> = vec![
+        entry("a", Some("$a")),
+        entry("n", None),
+        entry("b", Some("$b")),
+        mentioning("c", "$c"),
+    ]
+    .into();
+    jumps.begin(&items);
+    assert_eq!(focus(&jumps), Some(("b".into(), true)));
+    assert!(jumps.take_dismiss_unread());
+    assert_eq!(jumps.state(), JumpState::Idle);
+    assert_eq!(jumps.back().as_deref(), Some("c"));
+}
+
+/// 行为：提及态跳过已经看过的 @，只给下一条；没有剩余 @ 时落回最早未读。
+#[test]
+fn next_mention_skips_seen_ones_and_falls_back() {
+    let jumps = Jumps::new();
+    jumps.request_next_mention(Some("$a".into()), 1);
+    let items: Vector<TimelineEntry> = vec![
+        entry("a", Some("$a")),
+        mentioning("b", "$b"),
+        mentioning("c", "$c"),
+    ]
+    .into();
+    jumps.begin(&items);
+    assert_eq!(focus(&jumps), Some(("b".into(), true)));
+    assert!(jumps.seen_mentions().contains("b"));
+    jumps.request_next_mention(Some("$a".into()), 1);
+    jumps.begin(&items);
+    assert_eq!(focus(&jumps), Some(("c".into(), true)));
+    assert!(jumps.seen_mentions().contains("c"));
+    // 都看过了：回到最早未读，不把胶囊卡住。
+    jumps.request_next_mention(Some("$a".into()), 1);
+    jumps.begin(&items);
+    assert_eq!(focus(&jumps), Some(("b".into(), true)));
+}
+
+/// 行为：读位置不在这一批、也还没到开头，先翻页；到开头后按未读数往回数兜底。
+#[test]
+fn a_missing_position_pages_then_counts_back() {
+    let items = entries(&[("a", Some("$a")), ("b", Some("$b")), ("c", Some("$c"))]);
+    let first = Wanted::FirstUnread {
+        position: Some("$outside".into()),
+        unread: 2,
+    };
+    assert!(matches!(
+        resolve(&items, &first, false, &HashSet::new()),
+        Target::Missing
+    ));
+    let found = resolve(&items, &first, true, &HashSet::new());
+    assert!(matches!(found, Target::Found(id) if id == "b"));
+}
+
+/// 行为：没有读位置时从最新往回数未读条数。
+#[test]
+fn no_position_uses_the_unread_count() {
+    let items = entries(&[("a", Some("$a")), ("b", Some("$b")), ("c", Some("$c"))]);
+    let wanted = Wanted::FirstUnread {
+        position: None,
+        unread: 1,
+    };
+    assert!(matches!(
+        resolve(&items, &wanted, false, &HashSet::new()),
+        Target::Found(id) if id == "c"
+    ));
+}

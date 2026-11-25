@@ -130,6 +130,8 @@ pub struct RoomInfo {
     pub latest: Option<LatestMessage>,
     /// 未读消息数，按本账号的已读回执在本机算出。
     pub unread_count: u64,
+    /// 未读里提到本账号的条数（ADR-0121 的「@」徽标）；话题里的提及也算在房间头上。
+    pub unread_mentions: u64,
     /// 房间里有人在通话，同 [`ChatRoom::call_active`](crate::ChatRoom::call_active)。
     pub call_active: bool,
 }
@@ -755,6 +757,7 @@ async fn room_info_in(room: &Room, state: RoomState) -> RoomInfo {
         membership: state.into(),
         latest: latest_message(room).await,
         unread_count: room.num_unread_messages() + crate::side_chat::threads_unread(room).await,
+        unread_mentions: room.num_unread_mentions(),
         call_active: room.has_active_room_call(),
     }
 }

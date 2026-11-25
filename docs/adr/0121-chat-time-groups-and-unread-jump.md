@@ -70,7 +70,7 @@ SDK 的 `__read_marker` 只能当分隔线的定位参照：它只在已读位�
 
 - **进房停在最新一条**，贴着输入框。ADR-0071 的 `anchor` 字段保留，但它的值改成最新一条，用于“落定之前不报 Bottom”；不再锚已读位置。
 - 订阅建好的第一批里，核心同时冻结**本会话锚点**：读位置之后的第一条可见条目（气泡或 Agent 状态行），以及它的条数和 @ 列表。锚点只在锚点那条被撤回/被裁掉时顺延到下一条；标记已读不动它，别的设备读了也不动它。
-- 锚点在列表里画一条 `ReadMarker`（“以下是新消息”），核心插、壳画；SDK 自己的那条在会话锚点存在时隐藏，避免两条。锚点之后没有消息了就一起收。
+- 锚点那条带 `TimelineMessage::unread_anchor`：壳在它上方画“以下是新消息”，并隐藏 SDK 自己的 `ReadMarker`，避免两条、也免得胶囊收掉后线跟着没。锚点之后没有消息了就一起收。
 - 本地历史不全、锚点还指不到本地任何消息时，`anchor_item_id` 为空：胶囊照常显示、条数先用 `num_unread_messages`，壳不发 `UnreadAnchorSeen`、不画分隔线；点跳由服务器分页解析出锚点后再补。
 - 锚点之后没有消息 = 没有未读，不显示胶囊；读位置比最新还新（全读完）也一样。
 - 会话锚点只活在这次进房；杀掉 App 再进，已读位置已经在底部，不会再有胶囊。这就是微信的行为，ADR 里写明，不假装能跨重启找回。
@@ -130,8 +130,8 @@ SDK 的 `__read_marker` 只能当分隔线的定位参照：它只在已读位�
 
 核心（Rust，ViewModel）负责：
 
-- `TimelineMessage::starts_time_group`：按第 1 节算。
 - `TimelineMessage::mentions_me: bool`（新字段）：这条的 `m.mentions` 包含我。
+- `TimelineMessage::unread_anchor: bool`（新字段）：这条是最早未读，壳在它上方画分隔线，并隐藏 SDK 的 `ReadMarker`。
 - `TimelineUpdate::unread_jump: Option<UnreadJump>`（新字段），每个批次给当前值：
   `UnreadJump { anchor_item_id: Option<String>, count: u32, mentions: u32, first_mention_item_id: Option<String>, state: UnreadJumpState }`。
   `anchor_item_id` 为空表示锚点还没解析出来（第 3 节）：壳只画胶囊、不发 `UnreadAnchorSeen`，点跳交给核心分页。
