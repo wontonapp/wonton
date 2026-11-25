@@ -266,6 +266,15 @@ mod tests {
 
     use super::*;
 
+    /// 每个字段都有默认值：uniffi 的 Kotlin/Swift 无参构造 `RelaySettingsView()` 靠这些默认值成立。
+    #[test]
+    fn an_empty_settings_view_uses_the_defaults() {
+        let view: RelaySettingsView = serde_json::from_str("{}").unwrap();
+        assert_eq!(view, RelaySettingsView::default());
+        assert_eq!(view.phase, None);
+        assert!(view.n0);
+    }
+
     #[test]
     fn unknown_source_and_state_fall_back_to_other() {
         assert_eq!(
