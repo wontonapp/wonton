@@ -11,7 +11,8 @@
 #     DEV_A=<设备 A 的 adb 串号> DEV_B=<设备 B 的 adb 串号> \
 #     EVIDENCE=<证据目录> deploy/dev/calls/smoke.sh
 #
-# 只跑某一步：STAGE=udp|tcp|relay|kill（默认 all：udp→kill→tcp→relay）。默认每轮新建加密房间，
+# 只跑某一步：STAGE=udp|tcp|relay|kill|plain（默认 all：udp→kill→tcp→relay）。默认每轮新建加密房间；
+# plain 用不加密房间跑 UDP 组（记录 Element Call 在不加密房间里的行为，供“房间不再端到端加密”的决定用）。
 # ROOM_ID=<房间> ROOM_NAME=<名字> 可复用已有房间（旧房间会积着上轮成员，判定要看本轮新增的两条）。
 # 插件包：PKG（worktree 内的相对路径，默认 deploy/dev/calls/plugin，由调用方放好）。
 set -euo pipefail
@@ -39,9 +40,12 @@ die() { log "失败：$*"; exit 1; }
 
 dev_sh() { "$HOME/wonton-dev/remote-dev.sh" --host "$HOST" "$STACK" "$@"; }
 stack() { timeout 60 ssh "$HOST-stack" "$1" "$STACK" "${@:2}"; }
-# 配对码里的直连地址要从 HOST 算：远端栈是本机回环，本机模拟器用 127.0.0.1 + adb reverse。
+# 配对码里的直连地址要从 HOST 算：本机模拟器用 10.0.2.2（加 adb reverse），远端栈取那台的局域网 IPv4。
 pair_addr=$HOST
-case $HOST in localhost|127.0.0.1|::1|"$(hostname)"|"$(hostname -f 2>/dev/null)") pair_addr=10.0.2.2 ;; esac
+case $HOST in localhost|127.0.0.1|::1|"$(hostname)"|"$(hostname -f 2>/dev/null)") pair_addr=10.0.2.2 ;;
+*) [[ $pair_addr =~ ^[0-9]+(\.[0-9]+){3}$ ]] || pair_addr=$(ssh -G "$HOST" 2>/dev/null | awk '$1 == "hostname" { print $2 }') ;;
+esac
+[[ $pair_addr =~ ^[0-9]+(\.[0-9]+){3}$ ]] || die "HOST=$HOST 解析不出 IPv4 直连地址"
 failures=0
 fail_group() { failures=$((failures + 1)); log "组 $1 失败：$2"; }
 compose_changed=0 direct_blocked=0
@@ -60,10 +64,10 @@ trap restore_defaults EXIT
 # 冒烟直接拿核心的 Ed25519 私钥在 <主机> 上签一次性 JWT 登 Tuwunel，再直接打 Tuwunel（容器地址当场查，别写死）。
 matrix_env() {
     local cache="$EVIDENCE/matrix-env" url
-    # 容器重建后 IP 会变：先用缓存的 URL 探一下，通不了就重新登录换地址。
+    # 容器重建后 IP 会变，缓存里的地址可能被别的服务接手（404 但仍连得上）：只有 200 才复用，其它一律重登。
     if [[ -s $cache ]]; then
         url=$(cut -d' ' -f1 <"$cache")
-        if [[ $(timeout 25 ssh "$HOST" "curl -s -m 5 -o /dev/null -w '%{http_code}' $url/_matrix/client/versions" || true) == 000 ]]; then
+        if [[ $(timeout 25 ssh "$HOST" "curl -s -m 5 -o /dev/null -w '%{http_code}' $url/_matrix/client/versions" || true) != 200 ]]; then
             rm -f "$cache"
         fi
     fi
@@ -190,7 +194,9 @@ pair() { # pair <a|b> <dev>
     fi
     # 每轮都从 pm clear 后的空数据起（见准备段），所以无条件配对；不再用页面文本猜“已配对”，
     # 全新安装先出 Loading/相机授权页时猜不准。
-    since=$(date -u +%Y-%m-%dT%H:%M:%S)
+    # docker logs --since 把不带时区的时间按本机时区解释，这里必须带 +08:00 这样的偏移，否则会把几小时前的
+    # 旧配对日志也圈进来，早退判据永远为真。
+    since=$(date +%Y-%m-%dT%H:%M:%S%:z)
     log="$EVIDENCE/pair-$1.raw"
     : > "$log"
     # wonton-core pair 一直挂着等设备连上，不能在命令替换里等：后台起，轮询日志取码。
@@ -218,6 +224,14 @@ pair() { # pair <a|b> <dev>
     # 首次“跳过”只点一次，不 break：跳过引导后还会出现配对确认弹窗。
     local skipped=0
     for _ in $(seq 1 120); do
+        # 页面可能一直停在 Loading；核心日志出现「设备扫码配对」就是成功了，不必等页面文字。
+        if timeout 30 ssh "$HOST" "docker logs --since '$since' wonton-$STACK 2>&1 | grep -q '设备扫码配对'"; then
+            kill "$pid" 2>/dev/null || true
+            timeout 25 ssh "$HOST" "adb -s $dev shell am force-stop app.wonton.android; \
+                adb -s $dev shell am start -n app.wonton.android/.MainActivity" >/dev/null || true
+            sleep 4
+            return 0
+        fi
         xml=$(ui "$dev" 2>/dev/null || true)
         if grep -q 'Saved it somewhere safe' <<<"$xml" || grep -q 'text="Saved"' <<<"$xml"; then
             tap_name "$dev" 'Saved' || true; sleep 2; continue
@@ -291,6 +305,12 @@ clear_dialogs() { # 设备验证、备份提示这类会话级弹层
             if grep -qE 'text="(Allow|允许)"' <<<"$xml" && grep -qiE 'camera|microphone|摄像头|麦克风' <<<"$xml"; then
                 tap_text "$d" "Allow" 2>/dev/null || tap_text "$d" "允许" 2>/dev/null || true; sleep 2; continue
             fi
+            if grep -q 'text="OK"' <<<"$xml"; then
+                tap_text "$d" "OK" >/dev/null 2>&1 || true; sleep 2; continue
+            fi
+            if grep -q 'text="Got it"' <<<"$xml"; then
+                tap_text "$d" "Got it" >/dev/null 2>&1 || true; sleep 2; continue
+            fi
             if grep -q 'text="Start verification"' <<<"$xml"; then
                 timeout 25 ssh "$HOST" "adb -s $d shell input keyevent BACK" || true
             elif grep -q "I don't have my other device" <<<"$xml"; then
@@ -312,14 +332,20 @@ clear_dialogs() { # 设备验证、备份提示这类会话级弹层
 }
 
 create_room() {
-    local body
+    local body algo
     room_name="call-smoke-$(date +%H%M%S)"
-    body=$(printf '{"name":"%s","preset":"private_chat","initial_state":[{"type":"m.room.encryption","state_key":"","content":{"algorithm":"m.megolm.v1.aes-sha2"}}]}' "$room_name")
+    if [[ ${stage:-} == plain ]]; then
+        algo=plain
+        body=$(printf '{"name":"%s","preset":"private_chat"}' "$room_name")
+    else
+        algo=megolm
+        body=$(printf '{"name":"%s","preset":"private_chat","initial_state":[{"type":"m.room.encryption","state_key":"","content":{"algorithm":"m.megolm.v1.aes-sha2"}}]}' "$room_name")
+    fi
     room_id=$(api POST /_matrix/client/v3/createRoom "$body" | tee -a "$EVIDENCE/room.log" | grep -o '"room_id":"[^"]*"' | cut -d'"' -f4 || true)
-    [[ -n $room_id ]] || die "建加密房间失败"
+    [[ -n $room_id ]] || die "建房间失败"
     # 空房间被 App 列表隐藏（16:30 实测：发一条消息后立刻出现）；种子消息让两端都能看到。
     api PUT "/_matrix/client/v3/rooms/$room_id/send/m.room.message/seed-$$-$(date +%N | tail -c 6)" '{"msgtype":"m.text","body":"seed"}' >/dev/null 2>&1 || log "种子消息失败，房间可能不出现在列表"
-    log "房间 $room_id"
+    log "房间 $room_id（$algo）"
     # 新房间进 App 列表的延迟实测 9~60 分钟（服务端→App 同步）：建房后立刻冷启动并等到行出现，
     # 别让 open_room 的窗口去赌。复用房间（ROOM_ID）时跳过。
     if [[ -z ${ROOM_ID:-} ]]; then
@@ -330,18 +356,20 @@ create_room() {
 wait_room_visible() { # 等 room_name 的行在两端列表出现（预算 40 分钟，每 2 分钟重启重渲染）
     local d xml ok
     for i in $(seq 1 20); do
-        if (( i % 2 == 1 )); then
-            for d in "$DEV_A" "$DEV_B"; do
-                timeout 25 ssh "$HOST" "adb -s $d shell am force-stop app.wonton.android; adb -s $d shell am start -n app.wonton.android/.MainActivity" >/dev/null 2>&1 || true
-            done
-        fi
-        sleep 115
+        for d in "$DEV_A" "$DEV_B"; do
+            timeout 25 ssh "$HOST" "adb -s $d shell am force-stop app.wonton.android; adb -s $d shell am start -n app.wonton.android/.MainActivity" >/dev/null 2>&1 || true
+        done
+        sleep 8
+        # 配对后常停在「另一台设备还没应答」的跨设备验证页，列表被盖住；to_list 会跳过它回列表。
+        to_list "$DEV_A" || true
+        to_list "$DEV_B" || true
         ok=1
         for d in "$DEV_A" "$DEV_B"; do
             xml=$(ui "$d" 2>/dev/null || true)
             grep -q "text=\"[^\"]*$room_name" <<<"$xml" || ok=0
         done
-        if [[ $ok == 1 ]]; then log "房间行两端可见（等了 $((i*2)) 分钟内）"; return 0; fi
+        if [[ $ok == 1 ]]; then log "房间行两端可见（第 $i 轮）"; return 0; fi
+        sleep 100
     done
     log "房间 40 分钟未在两端列表出现，继续尝试（open_room 里还会等）"
 }
@@ -350,7 +378,7 @@ wait_room_visible() { # 等 room_name 的行在两端列表出现（预算 40 �
 open_room() { # open_room <dev> <显示名片段>
     # 列表行按房间名找；房间名带时间戳，用前缀匹配。
     local dev=$1 name=$2 xml row b cs x1 y1 x2 y2
-    for i in $(seq 1 240); do
+    for i in $(seq 1 400); do
         # 列表 UI 不实时刷新：新建房间的行要等 App 重启才渲染出来（17:19 实测）。
         # 周期性重启一次，重渲染列表；房间行出现就往下走。
         if (( i % 60 == 0 )); then
@@ -358,6 +386,12 @@ open_room() { # open_room <dev> <显示名片段>
             sleep 12
         fi
         xml=$(ui "$dev" 2>/dev/null || true)
+        # 冷启动或房间打不开时核心/页面会盖一层弹窗，先点掉再找房名。
+        if grep -q 'text="OK"' <<<"$xml"; then tap_text "$dev" "OK" >/dev/null 2>&1 || true; sleep 2; continue; fi
+        if grep -q 'text="Got it"' <<<"$xml"; then tap_text "$dev" "Got it" >/dev/null 2>&1 || true; sleep 1; continue; fi
+        if grep -q 'text="Allow"' <<<"$xml" && grep -qiE 'camera|microphone' <<<"$xml"; then
+            tap_text "$dev" "Allow" >/dev/null 2>&1 || true; sleep 1; continue
+        fi
         # 焦点掉到桌面/系统 UI 时 dump 里常常认不出字，不能只靠页面文本判断。
         if ! app_fg "$dev" && ! grep -qE 'content-desc="(Sidebar|Collapse sidebar)"' <<<"$xml"; then
             timeout 25 ssh "$HOST" "adb -s $dev shell am start -n app.wonton.android/.MainActivity" >/dev/null 2>&1 || true
@@ -398,8 +432,13 @@ open_room() { # open_room <dev> <显示名片段>
         if [[ $name != call-smoke ]] && grep -q 'text="Element Call |' <<<"$xml"; then return 0; fi
         row=$(printf '%s' "$xml" | grep -oE 'text="[^"]*'"$name"'[^"]*"' | head -1) || true
         [[ -n $row ]] && break
-        timeout 25 ssh "$HOST" "adb -s $dev shell input swipe 250 1400 250 700 300" >/dev/null 2>&1 || true
-        sleep 1
+        # 列表不滚太狠：每 3 轮才向下试一屏，每 12 轮回顶部，免得把已经露出来的新房间刷过去。
+        if (( i % 12 == 0 )); then
+            for _ in 1 2 3; do timeout 25 ssh "$HOST" "adb -s $dev shell input swipe 250 700 250 1700 200" >/dev/null 2>&1 || true; done
+        elif (( i % 3 == 0 )); then
+            timeout 25 ssh "$HOST" "adb -s $dev shell input swipe 250 1400 250 700 300" >/dev/null 2>&1 || true
+        fi
+        sleep 2
     done
     if [[ -z ${row:-} ]]; then
         # 死前留档：最后一次 dump 原文与前台状态，别再盲猜循环里看到的是什么。
@@ -409,8 +448,18 @@ open_room() { # open_room <dev> <显示名片段>
     fi
     local label=${row#text=\"}; label=${label%\"}
     tap_name "$dev" "$label"
-    sleep 5
-    grep -qF "$name" <<<"$(ui "$dev")" || die "设备 $dev 没打开房间 $name"
+    sleep 4
+    # 进房后偶尔弹核心的「Not available right now / OK」（同步还没就绪），点掉再确认房名。
+    for _ in $(seq 1 12); do
+        xml=$(ui "$dev" 2>/dev/null || true)
+        grep -qF "$name" <<<"$xml" && return 0
+        grep -q 'text="OK"' <<<"$xml" && tap_text "$dev" "OK" >/dev/null 2>&1 || true
+        if grep -q 'text="Allow"' <<<"$xml" && grep -qiE 'camera|microphone' <<<"$xml"; then
+            tap_text "$dev" "Allow" >/dev/null 2>&1 || true
+        fi
+        sleep 2
+    done
+    die "设备 $dev 没打开房间 $name"
 }
 
 open_call() { # 顶栏的入口，通话中时是“通话中”
@@ -419,6 +468,8 @@ open_call() { # 顶栏的入口，通话中时是“通话中”
     for i in $(seq 1 20); do
         local xml desc bounds coords x1 y1 x2 y2 page
         xml=$(ui "$dev" 2>/dev/null || true)
+        if grep -q 'text="OK"' <<<"$xml"; then tap_text "$dev" "OK" >/dev/null 2>&1 || true; sleep 1; continue; fi
+        if grep -q 'text="Got it"' <<<"$xml"; then tap_text "$dev" "Got it" >/dev/null 2>&1 || true; sleep 1; continue; fi
         if grep -q 'text="End call"\|text="Element Call |' <<<"$xml"; then allow_media "$dev"; return 0; fi
         page=$(cdp "$( [[ $dev == "$DEV_B" ]] && echo b || echo a )" "$port" pick 2>/dev/null || true)
         if [[ -n $page ]] && cdp "$( [[ $dev == "$DEV_B" ]] && echo b || echo a )" "$port" eval "$page" 'document.readyState' 2>/dev/null | grep -q complete; then allow_media "$dev"; return 0; fi
@@ -454,29 +505,35 @@ open_call() { # 顶栏的入口，通话中时是“通话中”
 # 网页里的 Join：页面在 WebView 里，按钮靠 uiautomator 的文本也能看到。
 allow_media() { # 页面一加载就请求摄像头/麦克风：核心弹原生询问，答错一次就按拒绝记下来，后面全被拒
     local dev=$1 xml
-    [[ -f $EVIDENCE/.media-$dev-ok ]] && return 0
     for _ in $(seq 1 6); do
         xml=$(ui "$dev" 2>/dev/null || true)
+        # 首次打开会盖一层 “Got it” 介绍；不点掉，底下的 Join call 点不到。
+        if grep -q 'text="Got it"' <<<"$xml"; then
+            tap_text "$dev" "Got it" >/dev/null 2>&1 || true
+            sleep 1
+            continue
+        fi
         if grep -q 'text="Allow"' <<<"$xml" && grep -qiE 'camera|microphone' <<<"$xml"; then
             tap_text "$dev" "Allow" || true
             : > "$EVIDENCE/.media-$dev-ok"
             log "设备 $dev 已允许摄像头/麦克风"
-            return 0
         fi
+        [[ -f $EVIDENCE/.media-$dev-ok ]] && return 0
         sleep 1
     done
 }
 
 join_call() {
-    local dev=$1 port=9331 page txt i rect x y
-    [[ $dev == "$DEV_B" ]] && port=9334
+    local dev=$1 side=a port=9331 page txt i rect x y
+    [[ $dev == "$DEV_B" ]] && { side=b; port=9334; }
     allow_media "$dev"
     # 核心重启后隧道重连要几分钟，40 轮（~3 分钟）不够（relay 组实测），放宽到 100。
     for i in $(seq 1 100); do
-        page=$(cdp "$( [[ $dev == "$DEV_B" ]] && echo b || echo a )" "$port" pick 2>/dev/null || true)
+        page=$(cdp "$side" "$port" pick 2>/dev/null || true)
         if [[ -n $page ]]; then
+            page_dismiss "$side" "$port" "$page"
             # pipefail 下 cdp/ssh 瞬断会让赋值非零触发 set -e 静默死，轮询赋值一律容错。
-            txt=$(ptext "$( [[ $dev == "$DEV_B" ]] && echo b || echo a )" "$port" "$page") || true
+            txt=$(ptext "$side" "$port" "$page") || true
             grep -q 'End call' <<<"$txt" && return 0
             if grep -q 'Join call' <<<"$txt"; then
                 # 底栏是 WebView 内容：矩形由 premain 的 __joinRect 给出，点击走 CDP（合成点击对底栏无效）。
@@ -494,6 +551,12 @@ except Exception: pass' "$rect" 2>/dev/null || true)
                 fi
                 sleep 8; continue
             fi
+        fi
+        # 大 JS 包在限速的公网中继上会半截失败（ERR_CONTENT_LENGTH_MISMATCH），空页面重载一次再试。
+        if (( i % 20 == 0 )) && [[ -n $page ]]; then
+            cdp "$side" "$port" eval "$page" 'location.reload()' >/dev/null 2>&1 || true
+            sleep 5
+            continue
         fi
         (( i % 8 == 0 )) && open_call "$dev"
         sleep 2
@@ -521,6 +584,21 @@ cdp() { # cdp <a|b> <端口> <子命令> [参数]
 }
 # widget 页上的可见文本（CDP 一次 eval，不碰 uiautomator）。
 ptext() { cdp "$1" "$2" eval "$3" 'document.body.innerText' 2>/dev/null | tail -1; }
+
+# 点掉页面里的 “Got it” 介绍层（在 WebView 里，走 CDP 的鼠标事件）。
+page_dismiss() { # page_dismiss <a|b> <端口> <页面>
+    local pos x y
+    pos=$(cdp "$1" "$2" eval "$3" 'JSON.stringify(window.__gotItRect ? window.__gotItRect() : null)' 2>/dev/null) || return 0
+    x=$(python3 -c 'import json,sys
+try: print(json.loads(sys.argv[1])["x"])
+except Exception: pass' "$pos" 2>/dev/null || true)
+    y=$(python3 -c 'import json,sys
+try: print(json.loads(sys.argv[1])["y"])
+except Exception: pass' "$pos" 2>/dev/null || true)
+    [[ -n $x && -n $y ]] || return 0
+    cdp "$1" "$2" click "$3" "$x" "$y" >/dev/null 2>&1 || true
+    sleep 2
+}
 
 # 客户端上报的是不稳定前缀 org.matrix.msc3401.call.member，state_key 是成员 user id（可带设备后缀）。
 members() { # 房间全量 state 里挑 call.member：一个 state_key 算一个会话（content 为空也算，实测 22:2x 的两条就是空 content）。
@@ -701,8 +779,9 @@ block_direct() { # 模拟两端只能走中继：丢掉到私网直连候选的�
             iptables -I OUTPUT 1 -d 10.0.2.2 -p tcp -j ACCEPT
             iptables -I OUTPUT 1 -d 10.0.2.3 -j ACCEPT'" >/dev/null 2>&1 || true
         timeout 25 ssh "$HOST" "adb -s $d reverse tcp:$gw tcp:$gw; adb -s $d reverse tcp:$tunnel tcp:$tunnel" >/dev/null 2>&1 || true
-        # 网络变化要 App 回前台才会重拨。
-        timeout 25 ssh "$HOST" "adb -s $d shell am force-stop app.wonton.android; adb -s $d shell am start -n app.wonton.android/.MainActivity" >/dev/null 2>&1 || true
+        # 规则生效后 iroh 会自己把路径切到 relay；不要 force-stop，重拨会重新拉 EC 的大 JS 包，
+        # 公网中继限速时更容易把隧道打成 transport-unavailable。只把 App 带回前台。
+        timeout 25 ssh "$HOST" "adb -s $d shell am start -n app.wonton.android/.MainActivity" >/dev/null 2>&1 || true
     done
     direct_blocked=1
 }
@@ -719,34 +798,60 @@ unblock_direct() { # 去掉 block_direct 的规则，恢复直连
 }
 configure_relay_only() {
     log "路径：强制 n0 中继（宣告一个到不了的直连地址）"
-    dev_sh status --announce 10.0.2.99 >/dev/null || die "设置中继宣告地址失败"
+    # 重新 up 一次而不是 status：只有 up 会把 --announce 写进 .dev-announce 并传给核心，重起核心。
+    dev_sh up --announce 10.0.2.99 >/dev/null || die "带中继宣告地址重起核心失败"
+    # 名额重排后 up 会换端口（.dev-ports 也变）；以 stack-slot 现在发的端口为准，并把 App 记着的旧隧道
+    # 端口反向映射到新端口，否则 App 拨的还是旧隧道，永远连不回核心。
+    local old_tunnel=$tunnel
+    for i in $(seq 1 10); do
+        if read -r gw tunnel < <(timeout 25 ssh "$HOST" "~/wonton-dev/stack-slot.sh ports $STACK" 2>/dev/null) && [[ -n $tunnel ]]; then break; fi
+        sleep 2
+    done
+    timeout 25 ssh "$HOST" "printf '%s %s\n' '$gw' '$tunnel' > ~/wonton-dev/stacks/dev-$STACK/.dev-ports" || true
+    for d in "$DEV_A" "$DEV_B"; do timeout 25 ssh "$HOST" "adb -s $d reverse tcp:$old_tunnel tcp:$tunnel" >/dev/null 2>&1 || true; done
     timeout 300 ssh "$HOST-stack" restart "$STACK" core || die "重启核心失败"
+    timeout 10 ssh "$HOST" "docker inspect wonton-$STACK" 2>/dev/null | grep -q 'WONTON_ANNOUNCE_ADDRESSES=10.0.2.99' ||
+        log "警告：核心环境里没有 10.0.2.99 的宣告，靠 block_direct 兜底"
     # 重启后 remote-dev 可能丢 compose 的网络别名，core 一直起不来；必须等到网关、隧道和
     # Tuwunel 都能答，再往下走，否则失败会伪装成“房间不在列表/没进通话”。
     local i code ready=0
     for i in $(seq 1 90); do
         code=$(timeout 10 ssh "$HOST" "curl -s -m 3 -o /dev/null -w '%{http_code}' http://127.0.0.1:$gw/" || true)
-        if [[ $code != 000 ]] && dev_sh status 2>/dev/null | grep -q '已连接\|connected' &&
-            api GET /_matrix/client/versions >/dev/null 2>&1; then
+        # dev.sh status 里没有 “已连接” 字样（它只打容器状态），别把它当隧道判据；网关 + Tuwunel 都答就算通。
+        if [[ $code != 000 ]] && api GET /_matrix/client/versions >/dev/null 2>&1; then
             ready=1; break
         fi
         sleep 2
     done
     ((ready)) || die "核心重启后 180 秒仍没就绪（网关/隧道/Tuwunel 有一个不通；别名丢失见 README）"
+    # 先把房间和 EC 页面在直连下打开：公网中继会把超过约 100 KB 的 HTTP 响应流截断，
+    # EC 的入口 JS 有 325 KB，冷缓存下永远加载不完（ERR_CONTENT_LENGTH_MISMATCH）。
+    open_room "$DEV_A" "$room_name"; open_room "$DEV_B" "$room_name"
+    open_call "$DEV_A" || true; open_call "$DEV_B" || true
+    sleep 20
     block_direct
-    sleep 12
+    # 直连被丢掉后 iroh 自己切到 relay；等它切完再回房间。
+    sleep 30
     open_room "$DEV_A" "$room_name"; open_room "$DEV_B" "$room_name"
     sleep 3
 }
 
 # —— 准备 ——
 [[ -f $pkg/docker-compose.yml ]] || die "插件包不在 $pkg"
-timeout 25 ssh "$HOST" "docker ps --filter name=wonton-$STACK-- --format '{{.Names}}'" | grep -q 'app-element-call' ||
+# 容器前缀是 wonton-<实例>（项目名去掉标点加哈希，不等于栈名），只认服务段。
+timeout 25 ssh "$HOST" "docker ps --format '{{.Names}}'" | grep -q -- '--app-element-call--' ||
     die "栈里没装 app.element-call（先装默认 UDP 版）"
 log "预检"
 # dev.sh status 会跑 docker compose ps，在共用机上常常一卡几分钟；这里只看 .dev-ports 和网关是否回 HTTP（根路径 401/404 都算在）。
-read -r gw tunnel < <(timeout 25 ssh "$HOST" "cat ~/wonton-dev/stacks/dev-$STACK/.dev-ports")
+read -r gw tunnel < <(timeout 25 ssh "$HOST" "cat ~/wonton-dev/stacks/dev-$STACK/.dev-ports" 2>/dev/null)
 [[ -n ${gw:-} && -n ${tunnel:-} ]] || die "栈 $STACK 的 .dev-ports 没有（栈没起？）"
+if read -r ngw ntun < <(timeout 25 ssh "$HOST" "~/wonton-dev/stack-slot.sh ports $STACK" 2>/dev/null) && [[ -n ${ntun:-} ]]; then
+    old_tunnel=$tunnel; gw=$ngw; tunnel=$ntun
+    timeout 25 ssh "$HOST" "printf '%s %s\n' '$gw' '$tunnel' > ~/wonton-dev/stacks/dev-$STACK/.dev-ports" || true
+    if [[ $old_tunnel != "$tunnel" ]]; then
+        for d in "$DEV_A" "$DEV_B"; do timeout 25 ssh "$HOST" "adb -s $d reverse tcp:$old_tunnel tcp:$tunnel" >/dev/null 2>&1 || true; done
+    fi
+fi
 code=$(timeout 25 ssh "$HOST" "curl -s -o /dev/null -w '%{http_code}' http://127.0.0.1:$gw/" || true)
 [[ $code != 000 ]] || die "网关 127.0.0.1:$gw 不在"
 timeout 25 ssh "$HOST" "adb -s $DEV_A shell pm path app.wonton.android; adb -s $DEV_B shell pm path app.wonton.android" | grep -c package | grep -q 2 || die "App 没装上"
@@ -755,14 +860,9 @@ timeout 25 ssh "$HOST" "PYTHONPATH=$RCD/pylib python3 -c 'import websocket'" || 
 for d in "$DEV_A" "$DEV_B"; do
     timeout 25 ssh "$HOST" "adb -s $d reverse tcp:$gw tcp:$gw; adb -s $d reverse tcp:$tunnel tcp:$tunnel" >/dev/null
 done
-if [[ -n ${ROOM_ID:-} ]]; then
-    room_name=$ROOM_NAME room_id=$ROOM_ID
-    log "复用房间 $room_id"
-else
-    create_room
-fi
-# 每轮清空 App 数据再配对：全新安装会先出 Loading/授权页，靠页面文本猜“已配对”会跳过真需要配对的设备。
 rm -f "$EVIDENCE"/.media-*
+# 上一轮被 kill -9 时 EXIT trap 没跑，block_direct 的 DROP 会把这一轮的隧道端口一起挡住，先清掉。
+for d in "$DEV_A" "$DEV_B"; do timeout 25 ssh "$HOST" "adb -s $d root >/dev/null 2>&1; adb -s $d shell iptables -F OUTPUT" >/dev/null 2>&1 || true; done
 timeout 60 ssh "$HOST" "for d in $DEV_A $DEV_B; do
     adb -s \$d shell pm clear app.wonton.android >/dev/null
     adb -s \$d shell pm grant app.wonton.android android.permission.CAMERA
@@ -770,6 +870,13 @@ timeout 60 ssh "$HOST" "for d in $DEV_A $DEV_B; do
     adb -s \$d shell pm grant app.wonton.android android.permission.POST_NOTIFICATIONS
 done" || die "清空 App 数据或授权失败"
 pair a "$DEV_A"; pair b "$DEV_B"
+# 配对之后再建房：wait_room_visible 要看设备的房间列表，未配对时列表一直是空的。
+if [[ -n ${ROOM_ID:-} ]]; then
+    room_name=$ROOM_NAME room_id=$ROOM_ID
+    log "复用房间 $room_id"
+else
+    create_room
+fi
 # 屏幕一灭 uiautomator dump 与点按全部失效（轮 17-22 的爬行皆源于此）：保持常亮并唤醒。
 for d in "$DEV_A" "$DEV_B"; do
     timeout 25 ssh "$HOST" "adb -s $d shell settings put system screen_off_timeout 1800000; adb -s $d shell svc power stayon true; adb -s $d shell input keyevent 224" >/dev/null 2>&1 || true
@@ -858,7 +965,7 @@ ensure_media() { # 页面可能停在入口/大厅/静音：没有页就重新�
         n=$(cdp "$side" "$port" eval "$page" \
             '(async()=>{let n=0;for(const pc of (window.__pcs||[]))for(const s of pc.getSenders())if(s.track){s.track.enabled=true;n++}return n})()' 2>/dev/null |
             python3 -c 'import json,sys; print(json.load(sys.stdin).get("value") or "")' 2>/dev/null || true)
-        [[ $n =~ ^[1-9] ]] && { log "设备 $side 已打开 $n 条发送轨道"; return 0; }
+        [[ $n =~ ^[1-9] ]] && { page_dismiss "$side" "$port" "$page"; log "设备 $side 已打开 $n 条发送轨道"; return 0; }
         # 还在大厅（没有挂断键）就先加入。
         if ! cdp "$side" "$port" eval "$page" '!!document.querySelector("[data-testid=incall_leave]")' 2>/dev/null | grep -q true; then
             join_call "$dev" || true
@@ -970,6 +1077,7 @@ run_kill() { # 延迟 leave：B 正常挂断，再把 A 的 App 强杀，本轮�
 
 case "$stage" in
 udp) run_group a "UDP 直连" configure_udp_only ;;
+plain) run_group a "不加密房间（UDP 直连）" configure_udp_only ;;
 tcp) run_group b "只有 TCP" configure_tcp_only ;;
 relay) run_group c "只有中继" configure_relay_only ;;
 kill) run_kill ;;

@@ -207,12 +207,14 @@ widget ID、用 `generate_webview_url` 得出地址。页面关掉、换房间�
 
 ## 待验证
 
-- **三组 Android 端到端路径**：待两台设备在同一加密房间里验证 UDP、TCP 退路和公共中继；冒烟脚本尚未完成一次真实通话验证。2026-11-14 的预检见下方“本次 Android 现场”。
+- **三组 Android 端到端路径**：2026-11-25 在开发栈上实测，UDP 直连和只留 TCP 两组已通过；n0 中继组只到“隧道路径变成 relay + 双方 call.member”，LiveKit 媒体没连上（n0 公共中继限速，EC 入口 JS 325 KB 冷缓存下截断、warm 缓存下也连不上 SFU），细节见下方“本次 Android 现场（2026-11-25）”。三组没有全部通过，所以这篇还不改成已接受。
 - **iOS WKWebView：** `127.0.0.1` 的 ICE 候选、`requestMediaCaptureFor`、信令 WebSocket 经本地代理。不通按第 5 节的退路。
 - **delayed events 的上限**和 Element Call 的用法对不对得上。
 - **网页请求 Matrix 对外地址（真机）：** 见“验证结果”的设备门一条；`baseUrl` 取头像能否显示。
 - **Element Call 在顶层 WebView 里的 widget 模式：** 注入脚本拦下它发给自己的消息后，它的收发是否完整；`parentUrl` 设成页面自己的 origin 是否够。
 - **加密房间：** 每人的媒体密钥经加密 to-device 交换，两台 Wonton 设备和一台 Element X 三方互通。
+- **不加密房间：** 主人 2026-11-25 决定家里的房间以后不再端到端加密。Element Call 在不加密房间里的行为用冒烟的
+  `STAGE=plain` 记录（能不能通、媒体密钥怎么走），结果见下方。
 
 ## 验证结果
 
@@ -222,9 +224,13 @@ widget ID、用 `generate_webview_url` 得出地址。页面关掉、换房间�
 
 ### Android 冒烟脚本
 
-`deploy/dev/calls/smoke.sh` 在开发栈上跑三组媒体路径（UDP 直连、只剩插件 TCP 7881、强制 n0 中继）和一组 delayed leave。每组断言的判据是退出码：直连/TCP 组看两端选中候选对的 local 类型和协议，中继组看 App 隧道日志里的实际路径、双向音频和双向视频的收发字节都大于 0、本轮新增的两条 `call.member`、挂断后这两条不再活跃（内容清空）。统计来自页面自己的 `getStats`；本轮新增用房间 state 的前后差集，复用的旧房间里的旧成员不算。它取代 `deploy/dev/core/call-e2e.sh`（已删），前置和运行方法见同目录 README。
+`deploy/dev/calls/smoke.sh` 在开发栈上跑三组媒体路径（UDP 直连、只剩插件 TCP 7881、强制 n0 中继）、一组 delayed leave
+和一组不加密房间（`STAGE=plain`）。每组断言的判据是退出码：直连/TCP/plain 组看两端选中候选对的 local 类型和协议，
+中继组看 App 隧道日志里的实际路径；都要求双向音频和双向视频的收发字节都大于 0、本轮新增的两条 `call.member`、
+挂断后这两条不再活跃（内容清空）。统计来自页面自己的 `getStats`；本轮新增用房间 state 的前后差集，复用的旧房间里的旧成员不算。
+它取代 `deploy/dev/core/call-e2e.sh`（已删），前置和运行方法见同目录 README。
 
-2026-11-24 复审按旧脚本实测：三组都只是“跑完”退出 0，两端只有 WebRTC 连接、没有任何 RTP，挂断后两端仍在通话、成员不消失；旧判定还把 UDP 中继当直连、把 remote 候选当 relay。下面记录的是脚本修好前的 11-16 观察，本次修好后的复跑结果看 PR。
+2026-11-24 复审按旧脚本实测：三组都只是“跑完”退出 0，两端只有 WebRTC 连接、没有任何 RTP，挂断后两端仍在通话、成员不消失；旧判定还把 UDP 中继当直连、把 remote 候选当 relay。11-25 按修好的脚本复跑，结果见下方“本次 Android 现场（2026-11-25）”：UDP、TCP、plain 通过，n0 中继组因公共中继限速只到成员和 relay 隧道路径，媒体没通。
 
 ### 已有 Android WebView 媒体前置结果
 
@@ -267,6 +273,31 @@ App 端（两条模拟器设备、Debug、各自独立身份，同一加密房�
 ### 本次 Android 现场（2026-11-14）
 
 Linux + Docker、两台 API 36 Android 模拟器，Element Call v0.28.2、LiveKit v1.13.11、lk-jwt-service 0.10.0：首次安装在创建 JWT 容器时返回 HTTP 504、`docker_timed_out`，核心随后回滚。预拉插件镜像后，复用核心镜像 `eeb1c8f1-dirty` 的第二次安装返回 running/healthy；JWT 容器从 create 到 start 为 0.131 秒，到 healthy 为 5.169 秒（不含 create 请求前的等待）。两台设备的 Matrix 缓存均显示加入同一 Megolm 加密房间。复用的核心安装响应没有 `matrix_widget` 字段，主人设备打开 widget 时显示不能在房间中打开；另一设备停在连接错误页。当前检出核心镜像构建的二进制阶段成功，但锁定系统插件下载超时，未获得可验证的完整镜像。没有双向 RTP、挂断或 delayed leave 的实测结果。
+### 本次 Android 现场（2026-11-25）
+
+Linux + Docker、两台 API 36 Android 模拟器（同一台宿主）、Element Call v0.28.2、LiveKit v1.13.11、lk-jwt-service 0.10.0、
+开发栈 `call-e2e-adr`；两台设备各自独立身份，同一加密房间；Debug APK 由 `apps/compose` 当天构建、`pm grant` 相机和麦克风。
+脚本按 `STAGE=udp|tcp|plain|relay` 逐组跑，证据落在任务目录的 `evidence/`（`run.log` 带判决原文、`webrtc-*.jsonl` 是
+页面自己 `getStats` 的 15 个采样、`group-*.png/mp4` 是两端屏录）。
+
+- **UDP 直连组：通过。** 两端 `pair=prflx/udp->host`、`state=connected`；双向音频（a 收 193 057 / 发 78 874，b 收 41 979 / 发 255 031 字节）
+  和双向视频（a 收 1 943 975 / 发 17 924 996，b 收 5 258 741 / 发 1 779 788）都有字节；本轮两条 `call.member`，网页挂断后清空。
+  证据 `run.log` 21:19–21:21、`group-a-*.png/mp4`。
+- **只留插件 TCP 7881 组：通过。** 插件 compose 改成 `UDP_PORT=0` 并删掉 7882/udp 隧道后重装；两端 `pair=prflx/tcp->host`、
+  `state=connected`，双向音视频字节都大于 0（a 音频 27 259/42 867，b 音频 39 538/40 286，视频 a 1 062 674/1 103 904，
+  b 649 306/523 471）；成员与挂断同上。证据 `run.log` 21:51–21:54、`webrtc-*-b.jsonl`（tcp）、`group-b-*.png`。
+- **不加密房间（`STAGE=plain`）：通过。** 建房不带 `m.room.encryption`，其余同 UDP 组；两端 `prflx/udp->host`、media 字节双向，
+  EC 正常入会、挂断后成员清空。说明房间不加密时通话链路照常；本组没有单独的媒体密钥步骤（LiveKit 侧不做 E2EE），
+  主机和 Matrix 层仍是现状。证据 `run.log` 23:51–23:54、`webrtc-*-plain.jsonl`、`group-plain-*.png`。
+- **n0 公共中继组：未通过（到一半）。** 先直连把房间和 EC 页面打开（公网中继下 EC 的入口 JS 325 231 字节会在约 100 KB 处被截断，
+  `ERR_CONTENT_LENGTH_MISMATCH`，冷缓存永远起不来；核心日志同时报 `The relay is rate-limiting this endpoint`），再给两台设备加
+  iptables 丢掉到私网（10/8、172.16/12、192.168/16）和宿主隧道端口的包。之后两端核心日志的隧道路径都变成
+  `CheckedPath { remote: Relay(https://usw1-1.relay.n0.iroh.link/), relay: true }`（证据 `relay-path-5562.log`、`relay-path-5566.log`），
+  本轮两条 `call.member` 都出现（`run.log` 23:35:25），EC 靠 warm 缓存也能把页面挂起来；但 EC 报
+  `Failed to connect to Livekit server` / `InternalError`，`getStats` 拿不到选中候选对，媒体字节为 0，组判决没过。
+  直接原因是 n0 公共中继对单个 endpoint 限速：隧道流在 10–16 秒内被对端以 `transport-unavailable` 断开，大响应先断、
+  WebSocket 到 `/livekit/sfu` 也连不上。下一步要么给冒烟加自建 iroh relay（ADR-0048），要么等 n0 限速放宽后复跑。
+
 
 公共中继提示不属于通话媒体连通性的验收门槛。现有 `PortMappingWarning::PublicRelayBandwidth` 在 Android 插件详情的端口映射区域渲染，而不是 widget 通话页；这属于前端线缺口，relay 冒烟不因缺少该提示失败。
 
