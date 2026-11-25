@@ -1,269 +1,522 @@
-# ADR-0119 待处理面板：要用户选的事和要用户知道的通知，统一进核心里的一页
+# ADR-0119 收件箱：要用户决定和要用户知道的事，用五种条目进核心里的一页
 
-- 状态：提议（2026-11-25）。方向由主人定（11-25：工作助理和生活助理都该有一个主管理后台，让用户清楚知道要处理什么，
-  而不是只能翻对话；现在专门建一个“云吞”对话塞权限请求，不合理）。要主人拍板的取舍见“要主人拍板”
-- 取代：[ADR-0016](0016-mcp-bus-and-confirmations.md) 第 2 步里的“等你确认”列表（`GET /_wonton/api/confirmations` 的列表、
-  聊天列表里的入口和它的角标）。卡片本身、来源会话、回答接口都不变，只是列表和入口换成面板
-- 修订：[ADR-0047](0047-plugin-notices.md)（插件通知不再发进 Wonton 私聊）、[ADR-0056](0056-internal-mailbox.md)（应用来信同上）、
-  [ADR-0045](0045-family-members.md)（文件链接、家人加入的通知同上）、[ADR-0050](0050-cross-server-chat.md)（配对请求同上）、
-  [ADR-0101](0101-notifications.md) 第 3 节（应用角标的数里加上待处理条目）
-- 关联：[ADR-0003](0003-matrix-and-encrypted-push.md)（推送链路）、[ADR-0118](0118-im-three-layers-push-with-body.md)（推送带正文、房间不再端到端加密）、
-  [ADR-0038](0038-multi-step-cards.md)（问题卡片，M1 不做）、
-  [ADR-0088](0088-family-accounts.md)（管理员卡片）、[ADR-0102](0102-app-lock.md)（App 锁）、[ADR-0026](0026-design-system.md)/[ADR-0029](0029-platform-material.md)（外观）、
-  [ADR-0005](0005-native-clients-thick-core.md)（厚核心，壳只渲染）
-- 实施拆分：协议 → 核心 → 两端壳 → 拆私聊 → 派活事件（router 的 worker 桥），每步的范围和验证见任务结果文件 `~/wonton-dev/tasks/adr-inbox.result.md`。
+- 状态：已接受（2026-11-25 主人拍板：20 个问题全部按推荐；第 6 题“页面能不能跑脚本/联网”按 23:4x 补定：脚本可以跑，联网只按发送方声明的域名名单放行，卡上写明“会访问：xxx”，不写名单就完全断网。范围是收件箱，不做待办；条目要能承载选择卡、HTML 报告、收尾框等富元素。上一版“通知/待办”两段式作废。）
+- 取代：[ADR-0016](0016-mcp-bus-and-confirmations.md) 第 2 步里的“等你确认”列表（`GET /_wonton/api/confirmations` 的列表、聊天列表里的入口和它的角标）。确认卡片本身、来源会话、回答接口都不变，只是列表换成收件箱，确认变成其中一种 `confirm` 条目
+- 部分取代：[ADR-0038](0038-multi-step-cards.md) 的“问题卡片 M1 不做”。问题卡片作为 `choice` 条目进收件箱；`StepCard` 的形状、上限和答案词汇直接沿用，不再只在 Bot 聊天里出现
+- 修订：[ADR-0047](0047-plugin-notices.md)（插件通知不再发进 Wonton 私聊，改成 `notice` 条目）、[ADR-0056](0056-internal-mailbox.md)（应用来信同上）、[ADR-0045](0045-family-members.md)（文件链接、家人加入的通知同上）、[ADR-0050](0050-cross-server-chat.md)（配对请求同上）、[ADR-0101](0101-notifications.md) 第 3 节（应用角标的数里加上待回答的条目，算法按下文第 9 节改）
+- 关联：[ADR-0003](0003-matrix-and-encrypted-push.md)（推送链路）、[ADR-0118](0118-im-three-layers-push-with-body.md)（推送带正文、房间不再端到端加密；分支待合）、[ADR-0117](0117-bot-task-live-progress.md)（Bot 长任务进度）、[ADR-0082](0082-agent-run-status.md)（运行状态）、[ADR-0052](0052-chat-pull-panel.md)（MCP Apps 宿主、页面沙箱）、[ADR-0088](0088-family-accounts.md)（管理员卡片）、[ADR-0102](0102-app-lock.md)（App 锁）、[ADR-0026](0026-design-system.md)/[ADR-0029](0029-platform-material.md)（外观）、[ADR-0005](0005-native-clients-thick-core.md)（厚核心，壳只渲染）
+- 实施拆分：协议 → 核心表和安全宿主 → 两端壳 → Agent 工具 → Hermes/worker 桥 → 拆私聊，每步的范围和验证见任务结果文件 `~/wonton-dev/tasks/inbox-design.result.md`。
 
 ## 用户看到什么
 
-打开云吞，聊天列表最上面固定一行“待处理”，右边的数字是有几件事等你。点进去是一列：机器人想装个应用、家人想加好友，
-卡片上直接有按钮，当场就能点；派出去干的活回来了、卡住要你批准，也是这一列里的卡片；硬盘快满了、下载完了、应用发来一封找回密码的信，看一眼点“知道了”，带地址的另有“打开”。
-处理过的挪到最下面，写着谁在什么时候处理的，过一天自动消失。没有事情时这一行变灰，页面里写着“都处理完了”。聊天列表里
-只剩和机器人、和人的对话，原来那个“云吞”对话不再用来塞通知，旧消息还能从页面最下面翻回去。
+打开云吞，聊天列表最上面固定一行“收件箱”，右边的数字是有几件事等你。点进去是一列卡片：机器人问你一个问题（每题几个选项，推荐项排第一，最后永远有“其他”），选完点“提交”；一份报告或网页，卡片上一句说明，点开在 App 里看，看完在页面底下点“通过 / 退回”；一条两三句的收尾，最后问一句要不要继续；还有装插件的确认、家人加入、下载完成的通知。答完的卡片写“已回答”，一天后进“已处理”，三十天后归档。原来那个“云吞”私聊不再塞通知，旧消息从页面最下面翻回去。
+
+收件箱里只有五种东西（都不是任务）：
+
+| 类型 | 用户看到什么 | 用户做什么 |
+| --- | --- | --- |
+| `choice` | 一张卡，1–4 个问题；每题 2–4 个选项（或 0 个，直接自由回答），推荐项带“推荐”，最后有“其他”；每题可写备注 | 选、写、提交，或整张不回答 |
+| `page` | 一句说明 + 一个 HTML 页面或文件；点开在 App 里读 | 读，点页面底下的 0–3 个动作（通过、退回、打开等），或“知道了” |
+| `recap` | 两三句“现在是什么状态、还缺什么”，至多一个问题、1–2 个按钮 | 点按钮或“知道了” |
+| `confirm` | 熟悉的确认卡片（装插件、工具放行、受控发送、配对、家人加入） | 允许、拒绝、允许一段时间 |
+| `notice` | 一条只读通知（下载完成、备份失败、验证码信、磁盘将满） | 知道了、打开链接 |
+
+“收件箱”不是待办清单：没有 assignee、没有 done、没有项目。一条条目要么等你回答，要么等你读。Bot 要你“做点什么”时，发一张 `recap` 或 `page` 把要做的下一步写清楚，做完是 Bot 再发一条，不是用户勾任务。
 
 ## 背景
 
-主人 2026-11-25 的原话要点：助理类产品都该有一个类似“主管理后台”的地方，让用户清楚自己要处理哪些东西；有的要用户做选择，
-有的只要用户知道（点“已读 / 知道了”），本质上都是推给用户的通知，只是类型不同。这类往往重要、全局，不该只在对话流里出现。
+主人 2026-11-25 22:5x 的原话：“就是收件箱，但是这个收件箱能收的元素不只是一个只可以读的消息而已，而是有类似于你给我弹的这个卡片这种可以选，然后甚至是可以内置一个 HTML 的链接这类的比较丰富的一个元素，它的设计的主要目的是类似于我们现在在开发云吞这个项目可以通过一些其他的方式节省用户的精力，而不是让用户自己去翻聊天记录这种非常低效率的沟通方式。”
 
-现在的两套东西都不完整：
+这句话把范围从上一版的“通知 + 待办”收回到“收件箱”，但把**条目的丰富度**提上来了。参照物不是邮件，是协调会话现在和主人沟通的方式（Claude Code 桌面/手机端）：
 
-- **通知往对话里塞。** ADR-0016 曾把确认卡片发进“Wonton”私聊；卡片搬到会话里以后，私聊继续接插件通知
-  （`crates/wonton-core/src/gateway/notify.rs:93`）、应用来信（`crates/wonton-core/src/mailbox/delivery.rs:289-320`，每人一个私聊）、
-  文件链接、配对请求（`crates/wonton-core/src/peers/mod.rs:645-655`）、入口对账和联邦名单的失败（`crates/wonton-core/src/entry_runtime.rs:200`、
-  `crates/wonton-core/src/matrix/federation_config/mod.rs:124-131`）、频率超限提示（`gateway/notify.rs:491`）。私聊在聊天列表里就是一间
-  普通房间：清了以后找不回来，没读的混在消息里，长通知（一封信）挤占聊天流。
-- **“等你确认”列表只装卡片。** 它是 ADR-0016 第 6 条加的，列等回答和结束 24 小时内的卡片，另有 Bot 联系请求
-  （`crates/wonton-protocol/src/confirmation.rs:234-250`）。核心里有表、有版本号、长轮询、推送、按人过滤
-  （`crates/wonton-core/src/mcp/confirm.rs:480`、`crates/wonton-core/src/gateway/confirmations.rs:34`）；两端有页面
-  （`apps/ios/Wonton/ConfirmationsListView.swift:4`、`apps/compose/shared/src/androidMain/kotlin/app/wonton/ui/ConfirmationsScreen.kt:78`）、
-  聊天列表顶部的入口和角标（`apps/ios/Wonton/ChatListView.swift:98`、`ChatScreen.kt:238`）和全局提示条
-  （`apps/ios/Wonton/MainView.swift:206`）。这些都能接着用，缺的是把它扩成“所有推给用户的事”，和把对话从通知里摘出来。
+- `AskUserQuestion`：一张卡 1–4 个问题，每题 2–4 个选项，推荐项第一，永远有“其他”，每题可备注，选项可带预览；
+- `SendUserFile`：一份 HTML 或文件，带一句说明，`display: render` 在 App 内渲染，`attach` 当附件；
+- `wrap_up`：收尾框，两三句状态 + 至多一个问题 + 1–2 个按钮。
+
+这些问题和文件现在只能留在聊天记录里：主人要往上翻、找上下文、把答案打回聊天；Bot 也没法把“问题、选项、备注、报告、下一步按钮”结构化地交出去。收件箱要把这件事产品化：**发起方把要主人看或拍板的东西做成结构化条目推进来，主人就地处理，答案结构化地回到发起方。**
 
 已经有的地基，不用新造：
 
 - 条目在核心里、由核心给 ViewModel、壳只渲染（AGENTS.md“厚核心薄壳”）。
-- 按收件人过滤：卡片发给 Bot 的归属人，或所有管理员，谁先答算谁的（ADR-0088）；列表按请求者只列自己的
-  （`crates/wonton-core/src/mcp/confirm.rs:480-486`）。
-- 结束的卡片留 24 小时（`mcp/confirm.rs:38`）；拒绝、过期、已经被谁答了（`answered_by`）都已经有状态。
-- 推送按类别、没有表单的卡片能在通知上直接答（ADR-0101 第 1 节）；通知的分类开关和 App 锁（ADR-0101 第 5 节、ADR-0102）。
-- 聊天列表的入口、角标、零计数时的次要色、空态、提示条不重复显示的规则（ADR-0016 第 2 步、第 6 条）。
+- 推送、长轮询、按人过滤、到期、已回答/已过期、管理员谁先答算谁的（ADR-0016/0088）。
+- 问题卡片的形状、上限、答案词汇（ADR-0038），以及 MCP Apps 的沙箱宿主、CSP、`ui/open-link`、`tools/call`（ADR-0052）。
+- Bot 的回合状态和 `wonton__report_progress`（ADR-0082/0117）：进度是 Bot 的自述，核心只聚合，不核对。
+- 插件通知、来信、文件、配对请求都能写条目，只是现在写进私聊（`gateway/notify.rs:93`、`mailbox/delivery.rs:289-320`、`peers/mod.rs:645-655`、`entry_runtime.rs:200`、`federation_config/mod.rs:124-131`）。
+
+## 调研结论
+
+调研页在 `~/wonton-dev/tasks/inbox-design.html`，九家逐项对比，外加 Claude Code/Slack/Teams/Linear/GitHub 的富条目参照。对决策有用的五条：
+
+1. **富条目是一套协议，不是一条长消息。** Claude 用 `questions[]`、`display`、`recap + actions` 三种结构；Slack 用 block + action_id；Teams 用 Adaptive Card + `Action.Submit`。答案都按 id 回，不靠解析文本。
+2. **问题卡要限制形状。** Claude 1–4 题、2–4 项、header 12 字、永远“其他”、可备注、可预览。限制让模型一次写对，也让手机排得下。
+3. **网页要当不可信内容。** MCP Apps 的强制沙箱和 CSP：默认 `connect-src 'none'`、`script-src 'self' 'unsafe-inline'`；脚本可跑，联网只去声明的域；不碰 App 的 Cookie 和存储。
+4. **通知只放得下“一个决定”。** 无表单确认、单题少选项、收尾按钮可以直接在通知上点；多题、备注、页面必须打开。
+5. **答案要结构化、只答一次、可审计。** `{问题: 选中项/自填, 备注}`、`{action_id, comment}`、`acknowledge`；过期、撤回、已答都有明确状态。
+
+我们抄：Claude 的问题形状和 `render/attach`、`wrap_up` 的收尾、Slack 的 action_id 与“答完更新原条目”、Teams 的 `Action.Submit`/正负样式/输入校验、MCP Apps 的 CSP 默认。不抄：Slack 的 50 个 block 和整张 Block Kit、Teams 的完整 Adaptive Card schema、GitHub 的 diff 引擎、Linear 的 Triage 规则。
+
+### 上一版 12 个问题的处置
+
+| 原问题 | 处置 |
+| --- | --- |
+| 1. 面板范围 A/B/C | 改写：范围固定为收件箱；改成“只放这五种吗” |
+| 2. 用户能不能自己加待办 | 删除（不做待办） |
+| 3. 能不能交给 Bot 做 | 删除（收件箱没有任务状态） |
+| 4. 角标算什么 | 保留，改成“角标只算待回答的条目” |
+| 5. 云吞私聊 | 保留：隐藏 + 只读归档 |
+| 6. Bot 提问放哪 | 保留：M1 留聊天；`inbox_ask` 是新工具，不强制迁移 |
+| 7. 入口放哪 | 保留：顶部一行 + 侧边栏 |
+| 8. 和 Hermes Cron/worker 登记表的关系 | 保留并扩成第 5、6 节的桥 |
+| 9. 保留多久 | 保留：已处理 24 小时 + 归档 30 天 |
+| 10. Snooze | 保留：固定四档 |
+| 11. 完成可撤销 | 改写：答案能不能改 |
+| 12. know 是否进角标 | 保留：notice 不进角标 |
+
+上一版 5 条建议：私聊退休、入口位置、Bot 提问留聊天、角标、Snooze 全部保留；待办相关的两条（自己加待办、交给 Bot）删除。
+
+新增的富条目问题：谁能发、几张卡/几题/几选项、Other 和备注、页面脚本、页面来源和大小、通知上能答什么、答案能否改、动作条上限。见“要主人拍板”。
 
 ## 决策
 
-### 1. 一个条目，两类，核心里一张表
+### 1. 一个条目就是一条有类型、有生命周期、有答案的消息
 
-**条目在核心里**（`core/inbox`，权限 0600），由核心给 `InboxViewModel`，两端壳只渲染、把操作发回核心。
-一条条目有：ID、类型、状态、收件人、时间、到期时间、来源（Bot、插件、核心）、可选的来源会话（`origin`），以及按类型的载荷。
+**条目在核心里**（`core/inbox`，0600），由核心给 `InboxViewModel`，壳只渲染、把操作发回核心。一条条目有：
 
-**两类**：
+- `id`（核心分配，带类型前缀 `c-`/`q-`/`p-`/`r-`/`n-`）、`type`、`status`、`created_at`、`expires_at`；
+- `sender`（`kind: agent|worker|core|plugin`、`id`、`display_name`、`avatar`）和可选的 `source`（房间、线程、worker_id、任务、深链）；
+- `recipient`（一个人或所有管理员）、`read_by`、`answered_by`、`answered_at`；
+- `title`、`body`（纯文本兜底，给旧 App、通知和读屏）、`level`（notice）、可选的 `snooze_until`；
+- 类型载荷（下表）和 `actions`（0–3 个，带 `id`、`label`、`style`、`requires_comment`）；
+- `progress`（可选 0–1，给长任务更新）、`result`（给发送方看的结果引用）。
 
-| 类型 | 用户要做什么 | 载荷 |
-| --- | --- | --- |
-| `choose`（要选择） | 在一组按钮里选一个 | 标题、说明行、按钮；确认卡片本身就是一种 `choose` |
-| `know`（要知道） | 看一眼，点“知道了”（已读） | 标题、正文、可选的附件或链接、级别 |
+**五种类型和各自的限制**：
 
-类型是带 `Other` 的枚举（`#[serde(other)]`，AGENTS.md 的兼容规则）：壳不认识的新类型落到 `Other`，不显示；核心仍把它算进入口的数字，
-旧壳上表现为数字比看得到的条目多。
-条目按来源细分 `kind`（`Confirmation`、`Question`、`Notice`、`Mail`、`Alert`、`Result`、`Request`、`File`、`WorkerNeeds`、`WorkerDone`、`WorkerStuck`、`Other`），壳按 `kind` 选行和卡片的样式；
-`kind` 不决定能不能操作，操作只看 `choose`/`know` 和载荷里的按钮。
-
-**状态**：
-
-- `pending`：`choose` 等回答，`know` 未读。
-- `handled`：已处理。`choose` 带结果（同意、拒绝、执行成功、失败、结果不确定），`know` 是已读。带处理人和时间。
-- `expired`：到期没答。卡片沿用 10 分钟，其他 `choose` 跟来源的期限；`know` 不过期。
-- `handled_elsewhere`：发给所有管理员的条目被另一个管理员答了。显示“已由某人处理”，不能再点，仍是结果状态。
-
-**已读只属于个人**：`know` 条目发给多个人时各记各的已读；`handled` 是唯一的（谁先答算谁的）。
-
-**谁能看到**：收件人在创建时定下，之后不变，只有两种——一个人（Bot 的归属人、家人的自己那份）或所有管理员。
-列表按请求者过滤，家人看不到主人的、别人的，主人也不替家人看。管理员条目对每个管理员都出现，回答后其余人的那份变成
-`handled_elsewhere`。入口的数字只数自己的。
-
-**保留**：等回答的按来源的期限；处理过的留 24 小时（同卡片）；没人读的 `know` 30 天后丢弃；`choose` 过期后留 24 小时。
-等回答的卡片重启后靠期限显示成过期（ADR-0016），其余条目在盘上，重启后照原样列出。
-状态先落盘再改版本号；落盘失败时如实报错，不假装已处理。
-
-**接口**（`wonton-protocol` 的 `inbox` 模块）：
-
-- `GET /_wonton/api/inbox?after=<revision>`，长轮询 25 秒，返回 `InboxList { pending, unread, handled, revision }`；
-  `pending` 是等回答的 `choose`，`unread` 是没读的 `know`，`handled` 是 24 小时内处理过的（两类都在里面）；
-- `GET /_wonton/api/inbox/{id}` 取一条，点开通知时用；
-- `POST /_wonton/inbox/{id}/read`，`know` 标记已读；
-- `choose` 的回答沿用各自的接口：确认卡片还是 `POST /_wonton/confirmations/{id}`，配对、联系请求还是它们自己的接口；
-  条目的状态由结果的回写驱动，壳不直接改条目。
-
-ID 由核心分配，带来源前缀（`c-` 卡片、`n-` 其他），和 Matrix 事件 ID 无关。`revision` 是全局版本：任何一条新增、改状态、
-某人读了都加一。旧路径 `GET /_wonton/api/confirmations` 和 `confirmation_path` 由 `/_wonton/api/inbox` 取代，回答路径不变。
-
-### 2. 来源：现有的每一处都迁进来
-
-| 来源 | `kind` | 类 | 现在的去向 | 谁看得见 |
+| 类型 | 载荷 | 答案 | 默认期限 | 进角标 |
 | --- | --- | --- | --- | --- |
-| 插件工具、装/卸/升级、存文件、替 Bot 发消息、链上限、家人加入批准、好友批准 | `Confirmation` | `choose` | 会话里的卡片行 + 列表 | 归属人；要管理员批的是所有管理员 |
-| Bot 在对话里问的问题 | `Question` | `choose` | 聊天里的文字 | 归属人（问在哪个房间就带哪个 `origin`） |
-| 安装、升级的结果 | `Result` | `know` | 卡片原地变成结果；核心自己的升级和插件升级结果只进私聊 | 发起的人 |
-| 插件通知（下载完成、备份失败、证书到期、上游告警） | `Notice` | `know` | Wonton 私聊（`gateway/notify.rs`） | 归属人 |
-| 应用发来的信（找回密码、验证码） | `Mail` | `know` | Wonton 私聊（`mailbox/delivery.rs`） | 信头里的家里人 |
-| 入口对账失败和恢复、联邦名单失败、频率超限、磁盘不够升级 | `Alert` | `know` | Wonton 私聊（`entry_runtime.rs`、`federation_config`、`notify.rs`） | 主人 |
-| 好友、家人加入和移除、Bot 联系请求 | `Request` | `choose` | 列表（联系请求）、聊天（批准卡片） | 管理员；联系请求是 Bot 的归属人 |
-| 别的服务器发来的配对请求 | `Request` | `choose`（不过期） | Wonton 私聊（`peers/mod.rs`） | 主人 |
-| 文件发到另一台设备 | `File` | `know`（带“打开”） | Wonton 私聊 | 收件人 |
-| 家人加入、移除的告知 | `Notice` | `know` | Wonton 私聊 | 主人 |
-| worker 事件（做完、卡住、要确认） | `WorkerDone` / `WorkerStuck` / `WorkerNeeds` | `know` / `know` / `choose` | 只在 router 的对话里，模型自己记得 | router 服务的那个人（owner） |
-| 壳不认识的新类型 | `Other` | — | — | 收件人，不显示 |
+| `choice` | `questions`: 1–4 题；每题 `id` 必填、`header` ≤12 字、`question` ≤200 字、2–4 个 `options`（`id` 必填、`label` ≤40 字、`description` ≤100 字、`recommended?`、可选 `preview` ≤4 KiB），或者 0 个（只有输入框）；`multi_select`（默认 false）、`note_enabled`（默认 false）、`skippable`（默认 false）；永远有 `other`（≤2000 字） | `answers`: 每题 `{selected: [option_id], other?, note?, skipped?}`；整张 `decline` | 阻塞 10 分钟；异步 7 天 | 是 |
+| `page` | `resource_uri`（`ui://…`，MCP Apps 资源）或 `file_id`（附件）；`caption` ≤120 字；`network_domains?` 最多 20 个（`https://`、`wss://`，可 `https://*.example.com`）；`actions` 0–3（`id` 限 `[a-z0-9_-]{1,32}`，`label` ≤40 字，`style`: default/primary/destructive，`requires_comment?`） | `{action_id?, comment?}` 或 `acknowledge` | 30 天 | 有 `actions` 时是 |
+| `recap` | `summary` 2–3 句、≤400 字；`question?`；`actions` 1–2（同 page） | `{action_id}`、`acknowledge` 或 `decline` | 7 天 | 有问题/动作时是 |
+| `confirm` | `title`、`body` ≤2000 字、`detail?` ≤8000 字、`risk`（`high`/`very_high`/`highest`）；固定 `choices`（`approve`/`deny`；发送方支持时加 `session`/`always`） | 固定 choice | 10 分钟；配对不过期 | 是 |
+| `notice` | `title`、`body` ≤2000 字、`level`（`info`/`warning`/`critical`）、可选 `link`（只收 `https:`/`http:`/`wonton:`）、可选 1 个 `action`（同 page） | `acknowledge` 或 `action_id` | 30 天 | 否（只点未读） |
 
-`know` 的级别是 `info` / `warning` / `critical`，决定推不推、多急（第 4 节），不由壳猜。
-插件通知的载荷沿用 `PluginNotice`（ADR-0047），来信沿用 `PluginMail`（ADR-0056），文案仍由插件写、核心只补来源。
-核心自己的告警文字由核心按 App 的语言写（ADR-0043）。
+`title` 和 `caption` 都 ≤120 字；所有文本字段超限就报 `invalid_input`，不截断。`choice` 的 `preview` 是**静态** HTML 片段（去掉 `<script>`，≤4 KiB），由宿主放进沙箱渲染；CSP 固定为 `default-src 'none'; script-src 'none'; style-src 'unsafe-inline'; img-src 'self' data:; font-src 'self' data:; connect-src 'none'`，只允许内联样式和 `data:` 图片/字体，不能跑脚本、不能联网；要脚本或联网就用 `page`。
 
-**worker 事件。** 主人现在的做法是“协调会话 + 一群 worker”（herdr、tern 这类终端运行器）。worker 做完、卡住（等批准或等回答）、
-自己退出时，由中间层写一条条目，router 和主人都不用盯着终端：
+**生命周期**：
 
-- `WorkerNeeds`（`choose`）：worker 在等批准或等一个回答。显示 worker、任务、在哪（宿主、工作树、pane 或 session）和运行器给的选项；
-  tern 是 `approve allow|always|deny`，直接回；herdr 的批准是按键，条目给“打开”和“回车”“Esc”两个键。
-- `WorkerDone`（`know`）：做完或退出了，带结果地址（工作树、分支、PR、会话），另有“打开”。
-- `WorkerStuck`（`know`，`warning`）：超时、失联、连续出错，或者运行器的列表和登记表对不上。`WorkerNeeds` 的期限跟运行器自己的等待超时，超时后转 `WorkerStuck`。
+```
+pending ──answer──▶ handled ──24h──▶ archived ──30d──▶ 清理
+   ├──decline / acknowledge──▶ handled
+   ├──expires_at──▶ expired
+   └──sender cancel──▶ withdrawn
+```
 
-登记表（谁、做什么、在哪、状态）在 router 那一层，不进核心；条目带 `worker_id`，同一个 worker 的同一类事件只留最新的一条。
+- `handled` 带 `outcome`（answered / declined / acknowledged）和 `answered_by`；管理员条目被别人答了，其余人的那份变 `handled_elsewhere`。
+- `expired` 和 `withdrawn` 是终点：再答返回 409，页面显示“已过期 / 对方撤回”。过期后仍留在收件箱 30 天，不能答。
+- 一个条目只能答一次。同一个 `answer_id` 重试返回 200 和同一结果；不同 `answer_id` 再答返回 409 并附当前答案，例外只有一种：异步条目第一次 `handled` 后的 60 秒内。
+- 重答时旧答案保留为 `superseded`，`GET /inbox/{id}` 同时返回 `answer`（当前）和 `superseded_answers`（旧）；60 秒后旧答案只进审计。
+- 阻塞条目在发送方断开 60 秒后自动 `withdrawn`，写明“对方不再等这个回答”；异步条目不因断开撤回。
 
-**事件怎么来。** 两个运行器都没有推送接口，只有阻塞等待和状态查询：tern 有 `tern wait <session> --for done,needs`、`tern status -json`、
-`tern approve`，herdr 有 `herdr agent wait --until done,blocked`、`agent read`、`pane report-agent --state blocked|done`（官方集成的钩子）。
-所以中间层持一个 worker 桥：每个 worker 挂一条等待，命令返回就写条目再挂上；有钩子的以钩子为准。router 不轮询，模型不用记住派过谁。
+**谁能看见**：收件人在创建时定下，只有一个人（Agent 的归属人、家人自己）或所有管理员。列表按请求者过滤，家人看不到主人的、别人的，主人也不替家人看。管理员条目对每个管理员都出现，谁先答算谁的。
 
-接口：`POST /_wonton/api/inbox/workers`（主人令牌或经隧道的主人设备），请求体
-`{worker_id, event: done|stuck|needs, name, task, place, message?, expires_at_ms?}`。同意和拒绝由 router 用运行器自己的命令执行
-（`tern approve`、`agent send-keys`），结果回写条目；桥死了或宿主重启，登记表对账时补 `WorkerStuck`。
+**核心不做**：项目、看板、标签、assignee、due、重复规则、任务状态、多人分派。要做待办时另开 ADR。
 
-### 3. 和聊天的关系
+### 2. 谁能发、发多少
 
-- **通知不再进私聊。** `NoticeRoom` 的写入停掉：插件通知、来信、配对请求、失败告警、频率提示、文件链接、家人告知都只进面板。
-  私聊房间保留（旧消息、旧信里的链接还要能点），从聊天列表隐藏，面板最下面有一行“旧的通知记录”打开它；房间没有消息时这一行不出现。
-  ADR-0118 起房间都不加密，私聊的“不加密”不再是特例，旧记录和聊天同一个机密性边界。家人各自的私聊一样处理。
-- **确认卡片留在来源会话里的那一行。** 它是条目的一个投影，不是第二份事实：在会话里答和从面板里答是同一个请求、同一份回写；
-  一边答了，另一边和所有设备一起变。来源没核对出来的卡片没有这一行，只在面板里。
-- **会话里不加“有新待处理”的常驻提示。** 卡片行本身就是提示。全局提示条照旧（ADR-0016 第 5 条），只在主人不在面板、
-  也不在这张卡片的来源会话里时出现，点了进条目的来源会话，没有来源就进面板。
-- **Bot 的对话提问留在聊天，推荐不进面板。** 理由：答案要用到前面几轮的话，选项之外还要能自由打字；搬进面板等于把上下文也搬过去，
-  一次问答被劈成两半。M1 的提问是聊天里的文字，核心看不到，面板里没有它。ADR-0038 的问题卡片落地后，卡片形态的提问才成为
-  `Question` 条目（`choose`，带 `origin`，来源会话里同时有那一行），那时才进面板。
-
-### 4. 和通知的关系
-
-每条推送都带标题和正文，和消息推送同一条路（ADR-0118）：条目在核心里是明文，核心用设备公钥加密后交给中继，手机本机解开就显示；
-不依赖房间密文，也不起通知扩展解 Megolm。正文按 ADR-0118 的规则去换行、截到 120 个字符，放不下时按 来源名 → 标题 → 正文 丢字段，
-附件只写文件名。带表单、带密钥或正文更长的点开条目看全。
-
-推送和面板共用一份条目：**一个条目一条通知**，不重复推，也不为同一件事再发一条。
-
-| 条目 | 系统通知 | 通知上能做什么 |
+| 发送方 | 能发 | 通道 |
 | --- | --- | --- |
-| `Confirmation`（没有密钥、设置表单） | 确认类别，高 | “允许”“拒绝”，同 ADR-0101 第 1 节 |
-| `Confirmation`（带表单）、`Question` | 确认类别，高 | 只“打开”；表单和选项在条目里 |
-| `Request`（Bot 联系人、配对请求） | 确认类别，高 | “同意”“拒绝”；配对请求和已配对的服务器重名时只“打开” |
-| `Notice` `warning`/`critical`、`Alert` | 插件通知类别，按级别；`critical` 用 Time Sensitive | “知道了” |
-| `Notice` `info` | 不推，只进面板 | — |
-| `Mail`、`File` | 插件通知类别 | “打开” |
-| `WorkerNeeds` | 确认类别，高 | `tern approve` 的三个选项；herdr 给“打开”“回车”“Esc” |
-| `WorkerDone` | 插件通知类别，普通 | “打开” |
-| `WorkerStuck` | 插件通知类别，`warning` | “打开” |
+| 核心 | `confirm`、`notice`、系统 `choice` | 核心内部 |
+| 有 `tools` 权限的 Agent/插件 | `choice`、`page`、`recap`、`confirm` | MCP 总线 `wonton__inbox_*` |
+| 有 `notify` 权限的插件 | `notice` | `WONTON_NOTIFY_URL`（ADR-0047 不变） |
+| router（worker 桥） | `confirm`（worker 等批准）、`recap`/`notice`（完成、卡住） | `POST /_wonton/api/inbox/workers` |
+| 用户自己 | 不能直接发；只能答 | App |
 
-- **处理后各端同步消失**：回答或已读都会让 `revision` 变化，挂着的长轮询立刻回来；每台设备把这条通知撤下，条目挪进已处理。
-  在通知上答也算处理，和 App 里答一样。撤不掉的（App 被杀、分发器丢了）等下一次同步或到期，由核心的状态兜底。
-- **入口的数字和应用角标由核心算**：入口数字 = 待处理的 `choose` + 未读的 `know`。应用角标（ADR-0101 第 3 节）从“未读消息”
-  扩成“未读消息 + 待处理条目”，两者都清零才归零。打开面板不归零，逐条处理才减。
-- **隐私**：推送带正文，锁屏内容分类开关照旧（确认 / 通知 / 消息）管着；小米、OPPO、vivo 和 HMS 退回通知栏消息的渠道按 ADR-0118 只写“新消息”。
-  面板页面在 App 锁锁定期间不露内容（ADR-0102）。来信和文件只在收件人自己的面板里；机密性边界和聊天相同（ADR-0118：服务器 root、托管宿主、对方服务器读得到）。
+**上限**（按发送方算，超了报 `rate_limited`，不截断）：
 
-### 5. 入口、页面和空态
+- 同时挂着的 `choice`/`confirm`/`recap` 合计 5 条，`page` 3 条；超了 `too_many_pending`。
+- 新建 10 条/分钟、200 条/天；`notice` 沿用 ADR-0047 的 10 条/分钟、200 条/天。
+- 同一发送方带同一个 `dedupe_key` 只留一条：更新内容、重置期限，不新建。长任务用 `inbox_update` 更新同一条，不刷屏。
+- 页面大小 ≤1 MiB；附件 ≤20 MiB（走文件服务）。超了 `payload_too_large`。
+- `choice` 的 `questions` 和 `options` 数量固定，超了 `invalid_input`；不允许“发 8 个你挑”。
 
-- **入口**：聊天列表顶部固定一行，图标用 Phosphor 的托盘，标题“待处理”，右边数字；零计数时标题用次要色，仍能点。
-  侧边栏也有一行，位置在“新聊天”下面。iPad 内容栏打开这一页，左列的会话列表不动（ADR-0103）。
-- **页面**：标题“待处理”。从上到下：要处理（`pending` 的 `choose`，最早到期的在前）、新通知（未读的 `know`，新的在前）、
-  已处理（24 小时内，最近处理的在前）。“旧的通知记录”在最下面。第一版不做搜索、筛选、分组设置和“全部已读”。
-- **行**：图标（来源的 Bot 头像或插件图标，核心的用核心图标）、来源名、标题、一行说明、时间；`choose` 直接露出按钮，
-  点开是完整条目。长文字默认收起，点开再看。
-- **空态**：托盘里的勾图标和一句“都处理完了”，不加副标题；已处理为空时那一段不显示。
-- 外观全部用现有令牌和组件（ADR-0026、ADR-0029），不新增颜色；手机竖屏 390×844 下按钮不换行，长标题两行截断。
-  读屏读出类型（“要你选”“新通知”）、来源和状态。
+**谁看得见谁发的**：发送方必须是有 Bot 或插件身份的已装应用；核心账号不能伪造。收件人默认是发送 Bot 的归属人，要发所有管理员时带 `audience: admins`（只有核心和声明了 `admin_notice` 的插件能发）。家人自己的 Bot 只能发家人自己。
 
-### 6. 契约、提供方、消费方
+### 3. Agent 侧接口：MCP 工具
 
-- **契约**：`wonton-protocol` 的 `inbox` 模块（条目、类型、状态、`InboxList`、`InboxViewModel`、路径和已读请求）。契约测试：
-  未知类型落 `Other`、新增字段有默认值、管理员条目的 `handled_elsewhere`、按收件人过滤、`know` 的已读按人分开。
-- **提供方**：核心。现有来源（确认表、通知入口、来信投递、配对请求、联系人请求、升级流程）都改成写条目，不再写私聊。
-- **消费方**：两端的壳（页面、入口、通知动作）和客户端核心（长轮询、ViewModel、提示条）。
-- **换提供方不改消费方**：条目和 `kind` 是核心给的，壳按 `choose`/`know` 渲染；以后加告警来源（例如核心自己探磁盘）
-  不用改任何壳。
+核心在 MCP 总线上加一组自己的工具，名字都是 `wonton__inbox_*`。任何有 `tools` 权限的插件都能调，核心不认识具体的 Agent（ADR-0015）。
 
-## 要主人拍板
+```jsonc
+// wonton__inbox_ask：问题卡
+{
+  "title": "照片备份",             // 可选，卡片标题
+  "questions": [{
+    "id": "q0",
+    "header": "目标盘",
+    "question": "照片备份到哪块硬盘？",
+    "multi_select": false,
+    "options": [
+      { "id": "nas", "label": "NAS", "description": "容量大，慢一些", "recommended": true,
+        "preview": "<div>…</div>" },   // 可选，静态 HTML，≤4 KiB
+      { "id": "local", "label": "主机自带的硬盘" }
+    ],
+    "note_enabled": true,          // 可选备注
+    "skippable": true              // 可选跳过
+  }],
+  "blocking": true,
+  "expires_in_ms": 600000,
+  "dedupe_key": "photo-backup-1"
+}
+```
 
-1. **私聊退休**：通知不再进“云吞”对话，房间从聊天列表隐藏，旧记录留在面板底部。**建议保留、不删**：房间已经看不见，留着旧信里的链接和找回密码的记录；删了那些链接会断，真要删另开一个裁剪任务。
-2. **入口位置**：聊天列表顶部一行 + 侧边栏一行；不放回底栏（ADR-0095 已去掉底栏）。
-3. **Bot 提问**：留在聊天；ADR-0038 的问题卡片落地后再进面板。
-4. **应用角标**：未读消息 + 待处理条目一起算；只算消息的话，面板的数字会比角标大。
-5. **第一版不做**：稍后提醒（snooze）、搜索、按来源筛选、“全部已读”。
+返回（阻塞时等答案，异步时不 wait）：
 
-## 业内参考
+```jsonc
+{
+  "item_id": "q-01J…",
+  "status": "answered",            // answered | declined | expired | withdrawn | pending
+  "outcome": "answered",
+  "answers": [
+    { "question_id": "q0", "selected": ["nas"], "note": "用 2 号盘" }
+  ],
+  "answered_by": "…",
+  "answered_at": "…"
+}
+```
 
-| 做法 | 出处 | 抄什么、不抄什么 |
+其余工具：
+
+```jsonc
+// wonton__inbox_present：页面或附件
+{
+  "title": "备份报告",
+  "resource_uri": "ui://photos/report/42",  // 或 file_id
+  "caption": "这周的备份报告",
+  "network_domains": ["https://cdn.example.com"],  // 可选；不给就断网
+  "actions": [
+    { "id": "approve", "label": "通过", "style": "primary" },
+    { "id": "reject", "label": "退回", "style": "destructive", "requires_comment": true }
+  ],
+  "blocking": true,
+  "expires_in_ms": 2592000000
+}
+
+// wonton__inbox_recap：收尾
+{
+  "summary": "NAS 已挂载，证书还没配。要我继续配证书吗？",
+  "question": "继续吗？",
+  "actions": [
+    { "id": "continue", "label": "继续", "style": "primary" },
+    { "id": "stop", "label": "先停" }
+  ],
+  "blocking": true
+}
+
+// wonton__inbox_confirm：固定确认
+{
+  "title": "安装 Immich？",
+  "body": "需要 storage.share.photos 和 network.host。",
+  "detail": "…",                    // 原始命令/权限清单，折叠
+  "risk": "high",
+  "choices": ["approve", "deny", "always"],
+  "expires_in_ms": 600000
+}
+
+// wonton__inbox_notify：只读通知
+{ "title": "备份失败", "body": "…", "level": "warning", "link": "wonton://plugins/immich/backups" }
+
+// 异步取答案、更新、撤回
+wonton__inbox_wait    { "item_id": "q-01J…", "after_revision": 12 }
+wonton__inbox_update  { "item_id": "q-01J…", "summary": "还在传，2/3", "progress": 0.66 }
+wonton__inbox_cancel  { "item_id": "q-01J…", "reason": "任务提前结束" }
+```
+
+答案的形状：
+
+```jsonc
+{
+  "answer_id": "01J…",             // 客户端生成，幂等
+  "action": "submit",              // submit | decline | acknowledge | action | approve | deny | session | always
+  "answers": [{ "question_id": "q0", "selected": ["nas"], "other": null, "note": "2 号盘" }],
+  "action_id": null,
+  "comment": null
+}
+```
+
+- `selected` 是选项 id，不是 label；label 只在界面显示。`other` 是自填；`note` 是备注；单选最多一项，多选 0–4 项。
+- 每题默认必答；Agent 可以设 `skippable: true`，跳过就是 `{skipped: true}`。整张 `decline` 不带 `answers`。
+- `action_id` 必须在这条条目的 `actions` 里；页面/收尾的按钮就是这样回。`requires_comment` 时 `comment` 必填（≤200 字）。
+- `confirm` 的 `action` 直接用档名 `approve`/`deny`/`session`/`always`，不填 `action_id`；`acknowledge` 只对 `notice`、无动作的 `page`、无问题的 `recap` 有效。
+- 敏感操作分两种：核心自己的确认卡片（工具放行、装插件、受控发送）由核心在主人允许后继续那份挂起的调用；Agent 用 `inbox_confirm` 只是问一个固定选择，答案回到 Agent，执行由 Agent 侧再做。两种都走同一个 `confirm` 界面和审计，不能互相代替。
+
+**阻塞和异步**：
+
+- `blocking` 的默认值：`inbox_ask`/`inbox_confirm` 为 `true`，`inbox_present`/`inbox_recap` 为 `false`；发送方可以改。`blocking: true` 时工具一直等到 `handled`/`expired`/`withdrawn`，最长 24 小时；核心不主动断 MCP 会话，会话空闲期限要比条目期限长，或由桥定期续。
+- `blocking: false` 时立刻返回 `{status: "pending", item_id}`；Agent 之后用 `inbox_wait` 等，或者继续干别的。
+- 没有已配对设备时仍创建条目，返回 `pending` 并带 `warning: "no_device"`；不假装送达。主人上线后在收件箱看到。
+- 过期、拒绝、撤回都是**正常结果**，不是 `isError`；`isError` 只给发不出去、权限、超限、参数非法。
+- 页面资源在创建时由核心经总线 `resources/read` 取回、校验 MIME 和大小，失败就 `isError` 不建条目。条目存的是快照，发送方以后改页面不影响已发的条目。
+
+### 4. HTML 页面：从哪来、放哪、怎么打开
+
+**来源只有两种**：
+- `resource_uri`：发送方自己的 MCP 服务器提供的 MCP Apps 资源（`ui://…`，MIME 必须是 `text/html;profile=mcp-app`）。核心按发送方身份 `resources/read`，别的插件的资源不行；不能是公网 URL，M1 不嵌外部网页。
+- `file_id`：文件服务里的附件。HTML 文件和页面一样沙箱打开，HTML 文件也 ≤1 MiB；PDF/图片走系统查看器，附件 ≤20 MiB。附件 HTML 没有 MCP 元数据，联网名单要由 `inbox_present` 的 `network_domains` 给，不给就断网。
+
+**联网名单**：页面默认完全断网（`connect-src 'none'`、`frame-src 'none'`、`base-uri 'none'`，无外链资源）。发送方要联网，必须在 `_meta.ui.csp`（`ui://` 资源）或 `network_domains`（文件附件）里列域名；`ui://` 可以再用 `network_domains` 收紧。合并规则：`connectDomains` + `resourceDomains` 合成显示和资源名单（最多 20 个，只收 `https://` 和 `wss://`）；`frameDomains` 只进 `frame-src`，`baseUriDomains` 只进 `base-uri`（两者只收 `https://`）；这两类也进“会访问”显示名单。文件附件 M1 的 `network_domains` 只喂资源和 connect，要 frame/base 用 `ui://` 资源。不写路径；通配只允许 `https://*.example.com` 这种子域。核心把最终名单存进条目并生成 CSP：`https` 的资源域进 `script-src`/`img-src`/`style-src`/`font-src`/`media-src`，`https`/`wss` 的 `connectDomains` 进 `connect-src`。名单为空就是完全断网，只允许内联脚本、`data:` 图片和 `data:` 字体。页面运行时不能再加域。
+
+**存哪**：核心在发送时把 HTML 取回来，存进 `core/inbox/pages/<item-id>.html`（0600，最大 1 MiB，随条目 30 天后删）。不依赖发送方以后还在不在；发送方删了插件，页面还能打开，但页面里的 `tools/call` 会失败并显示“插件连不上”。页面不是 ADR-0052 的“插件页/面板页”，是条目自己的快照，故不进面板、不共享存储。
+
+**怎么打开**：App 当 MCP Apps 宿主，复用 ADR-0052 的沙箱宿主：
+
+- 单独的、不留持久存储的 WebView；页面放进 `sandbox` 的 iframe；按 MCP Apps 规范给 `allow-scripts` 和 `allow-same-origin`，不给 `allow-top-navigation`、`allow-popups`。
+- 核心按名单生成 CSP：名单为空时用 MCP Apps 的默认
+  `default-src 'none'; script-src 'self' 'unsafe-inline'; style-src 'self' 'unsafe-inline'; img-src 'self' data:; font-src 'self' data:; media-src 'self' data:; connect-src 'none'; frame-src 'none'; base-uri 'none'; form-action 'none'`；
+  有名单时把资源域追加到 `script-src`/`img-src`/`style-src`/`font-src`/`media-src`，`connectDomains` 追加到 `connect-src`，`frameDomains` 覆盖 `frame-src`，`baseUriDomains` 覆盖 `base-uri`。
+- 页面可以跑内联脚本（图表、折叠、表单校验）；页面要自带 CSS/JS，图片用 `data:` 或名单里的绝对地址，M1 不解析 `ui://` 子资源。外链脚本/图片/字体/CSS 和 `fetch`/WebSocket 都只在名单里；没声明的域直接被 CSP 拦。`permissions` 只透传 `clipboardWrite`；camera/mic/geolocation M1 不给。
+- 列表行和详情顶部都显示“会访问：a.com、b.com”；名单为空写“不联网”。锁屏通知写“会访问 N 个站点”或“不联网”。用户点“打开”前就能看见。
+- `ui://` 的名单只来自资源 `_meta.ui.csp`；`network_domains` 对 `ui://` 是可选的收紧名单（交集），多写的域被忽略，少写的域会被去掉。文件附件没有元数据，名单只认 `network_domains`。核心把最终名单校验、存快照。
+- 页面不能读 App 的 Cookie、钥匙串、文件；没有 `localStorage` 的跨条目持久化（WebView 每次打开都是干净 profile；`sessionStorage` 只在这一次打开有效）。
+- 外链一律 `ui/open-link` 交给系统浏览器；`target=_blank` 由宿主接住。页面自己不能做顶层跳转。
+- 页面可以经宿主调 `tools/call`，只限同一个 MCP 服务器上 `_meta.ui.visibility` 含 `app` 的工具，经核心总线转发；调用方记成发送方 Bot（ADR-0052 的例外，见 0052 状态行），敏感工具照常走确认。页面调用工具产生的确认是新的一条 `confirm`，嵌套最多一层。页面里的 `<a>` 由宿主接住、走 `ui/open-link`；`<form>` 不在页面里提交，只做本地校验。
+- 页面可以 `ui/message` 以主人名义在来源会话发一条消息，但**答案不走 `ui/message`**。
+
+**答案**：页面底下是 App 原生的动作条，不是页面自己画的提交按钮。动作来自条目的 `actions`，由核心校验 `action_id`；页面也可以 `postMessage` 一个 `ui/notifications/inbox-action` `{item_id, action_id, comment?}` 提前选好 `action_id`，但最终由原生条提交，核心按 `action_id` 再校验一次。答案只回核心，页面拿不到也能被审计。
+
+**和插件网页、ADR-0038 的关系**：页面复用 ADR-0052 的 MCP Apps 宿主和 CSP，但比插件网页更窄：无持久存储、无公网 URL、无顶层跳转、只活 30 天。问题卡直接复用 ADR-0038 的 `StepCard` 形状和 `AskUserQuestion` 上限，只是从“Bot 聊天里的面板”改成“收件箱里的 `choice` 条目”；原来的 `wonton__ask_owner` 改名为 `wonton__inbox_ask`，上限和选项形状沿用（字段名从 `steps` 改为 `questions`）；M1 没有外部用户，不做别名。
+
+### 5. 和 Hermes 的关系：通用工具 + 薄桥
+
+核心不为 Hermes 特殊处理（ADR-0015）。分两条路：
+
+**5.1 Wonton 自己的问题卡**：关掉 Hermes 自带的 `clarify` 工具集，模型改用核心的 `wonton__inbox_ask`。答案作为工具结果回到 Hermes 的模型，Hermes 继续干；Hermes 不需要知道收件箱存在。
+
+**5.2 Hermes 原生的批准/澄清**：Hermes 的网关发 `approval.request` / `clarify.request` 事件，用 `approval.respond` / `clarify.respond` 回答。`approval.pending` 是 Desktop 的补播请求（不是事件）：入参 `session_id`+`profile`，返回 `{approvals:[{request_id,…}]}`，桥在 attach 时用它补没收到的事件。一个薄的 Hermes 插件做桥（以我们镜像钉的 v0.22.7 源码为准：`gateway/session_pending_controls.py:38`/`:51` 发请求，`gateway/session_controls.py:842-852` 收回答，`acp_adapter/gateway_server.py` 的 `_answer_clarify`/`_answer_permission` 是调用样板）：
+
+- 订阅 `approval.request` / `clarify.request` 事件，把 `prompt_id`、`execution_generation`、`session_id`、命令或问题、`choices`/`multi_select` 写成 `confirm`/`choice` 条目（`clarify` 的 `choices` 为空就是 0 选项输入框；Hermes 的题一律设 `skippable: true`），`source` 带 `session_id`/`prompt_id`/`execution_generation`；条目的 `sender` 是 Hermes，`dedupe_key` 用 `prompt_id`。`approval.request` 的 `choices` 只映射它实际给的档：`once`→`approve`、`session`→`session`、`always`→`always`、`deny`→`deny`；没给的档不显示。
+- **`clarify.request` 是一题一个事件，不拆卡。** Hermes 的 `clarify` 工具一次可以带 5 题，但网关每题发一个 `clarify.request`；桥就每题建一条 `choice`（1 题），`dedupe_key` 用 `prompt_id`。4 题上限只约束 `inbox_ask`，不约束 Hermes 的原生事件。主人在收件箱按顺序答，每题答完立刻调一次 `clarify.respond`；Hermes 自己数到最后一题继续，桥不合并、不等全部。
+- 用户点跳过时，`answer` 发 `"\x00skipped"`（`tools/clarify_gateway.py:45` 的 `SKIPPED`；runner 在 `gateway/run_turn_runner.py:592` 存成 None 并继续下一题）；`decline` 是 `"\x00cancelled"`（同文件 `:46` 的 `CANCELLED`，runner 在 `run_turn_runner.py:580` 认）；`expired` 是空串 `""`（`gateway/run_turn_runner_clarify_delivery.py:115` 把它当没答、走 `timed_out`）；正常答案是选中项原文，默认 `submitted`。`clarify.respond` 没有 `outcome` 字段，outcome 是 Hermes runner 按这三种值推的，别在 RPC 里多加字段。
+- `clarify` 是阻塞条目，60 秒内不可重答（和全局一致）；要改只能等 Hermes 再问或另发一题。
+- 主人在收件箱答完，桥调 `approval.respond`（`{session_id, execution_generation, prompt_id, choice}`，`choice` 就是上面映射的档）或 `clarify.respond`（`{session_id, execution_generation, prompt_id, answer}`；`answer` 是字符串：选中项原文，`Other` 是自填文本，多选用 JSON 数组字符串）。Hermes 的网关按现有逻辑继续那一轮。`on_session_prompt` 这类 UI 层钩子只影响本地展示，桥以网关的 `*.request`/`*.settled` 事件为准。
+- 另一端先答了（本地 CLI/桌面）：网关广播 `approval.settled` / `clarify.settled`（`gateway/session_pending_controls.py:63`；ACP viewer 的 `_project` 也收这两种）；桥收到 `{prompt_id, execution_generation}` 后 `inbox_update` 成 `handled_elsewhere`，收件箱里撤下按钮。`clarify.lock` 是另一条 RPC（抢同一请求的回答权），不是广播事件。
+- Hermes 进程退出、轮次中断：桥在 60 秒后 `inbox_cancel`，条目写“Hermes 不再等这个回答”，不假装还阻塞。
+- 桥只做映射，不做权限判断：`always` 的持久化、`session` 的范围、危险命令的判断全在 Hermes；核心只把 choice 原样送回。
+
+`approval` 不拆卡：它是单个 `confirm`，答完直接 `approval.respond`，没有部分完成的问题。
+
+**5.3 异步**：Hermes 的 `clarify` 本身是阻塞工具，桥默认也用阻塞；`inbox_ask(blocking:false)` 只给愿意自己 `inbox_wait` 的 Agent。M1 不要求 Hermes 支持异步。
+
+`approval.respond` 和 `clarify.respond` 的参数名以 Hermes 源码为准（`session_id` + `execution_generation` + `prompt_id` + `choice`/`answer`），桥升级时跟着 Hermes 的网关协议走；核心不解析 Hermes 的字段。
+
+### 6. worker/router 怎么推
+
+worker 没有 MCP，用 HTTP，主人令牌或经隧道的设备身份：
+
+```http
+POST /_wonton/api/inbox/workers
+{
+  "worker_id": "w-01J…",
+  "event": "needs",                  // needs | done | stuck
+  "name": "herdr",
+  "task": "整理 2024 照片",
+  "place": "pane 3 / worktree photos",
+  "title": "worker 等你批准",
+  "body": "要删除 12 张重复照片",
+  "risk": "high",
+  "choices": [
+    { "id": "approve", "label": "允许", "style": "primary" },
+    { "id": "always", "label": "总是允许" },
+    { "id": "deny", "label": "拒绝", "style": "destructive" }
+  ],
+  "expires_at_ms": 1760000000000
+}
+```
+
+- `needs` → `confirm`；`done` → `notice` 或 `recap`（带结果链接，M1 不从 router 发 `page`）；`stuck` → `confirm`（重试/停止/打开）。worker 的 `confirm` 必须带 `risk`，没给按 `high`。
+- 同一个 `worker_id` 的同一类事件只留最新一条；连续 `stuck` 更新那一条，不每次刷一条。
+- 答案怎么回：条目详情给 runner 自己的按钮语义（`approve`→`tern approve allow`、`always`→`tern approve always`、`deny`→`tern approve deny`、herdr 的“回车/Esc”）。router 轮询 `GET /_wonton/api/inbox/workers/{worker_id}` 拿 `{status, answer}`；执行成功 `POST …/workers/{worker_id}/resolve {delivery:"sent"}`，执行失败 `{delivery:"failed", error}`，条目保持 pending 并显示“没送到，重试”。
+- router 不把登记表塞进核心：核心只存 `worker_id`、name、task、place、最后事件，App 不查 router；要交互就“打开终端”，走 router 的深链。
+- 桥死、宿主重启、登记表对不上：对账补 `WorkerStuck`，不自动把 worker 当完成。
+
+### 7. 消息、来信、配对、家人：现有来源怎么映射
+
+| 来源 | 类型 | 说明 |
 | --- | --- | --- |
-| 一个 “Needs you” 列表，每行写清要什么；决定就在卡片上；同一个请求在来源对话里也出现，两边是同一份写入 | Alma `Home`（“What is waiting on you arrives in the thread as Alma's own turns… The decision is the same one you would make in Tasks”）、`Tasks` 的 Needs you / Active / Backlog 分组（docs.alma.team/workspace/home、/workspace/tasks） | 抄“一个列表 + 要什么一行 + 卡片上决定 + 与来源对话同一份”；不抄 Active/Backlog/Suggested 三套分组，我们的条目只有待处理和已处理 |
-| 收件箱是唯一的通知中心，Done / 未读分开，Done 能回看 | Linear Inbox（linear.app/docs/inbox） | 抄 Priority 与其余分开（对应“要选择”和“要通知”）；不抄快捷键、搜索和 2000 条上限 |
-| Done、已读/未读、按原因筛选、保留期限 | GitHub 通知（docs.github.com/…/concepts/about-notifications） | 抄 Done 与未读分开、处理过的可回看；不抄按仓库/原因的多级筛选 |
-| 通知中心是 App 外的第二层：按应用分组、最多四个动作、Passive/Active/Time Sensitive 分级、角标只表示未读 | Apple HIG `Notifications`、`Managing notifications` | 抄按类型定紧急程度、动作只给能当场做完的、角标跟着未读走；不抄把任务说明塞进通知正文 |
+| 插件工具、装/卸/升级、存文件、受控发送、链上限 | `confirm` | 保持 ADR-0016/0024 的确认和审计；卡片在来源会话仍有一行投影，收件箱一份事实 |
+| Bot 在聊天里的提问 | `choice`（M1 仍可留聊天） | 用 `inbox_ask` 就进收件箱；不用就在聊天里问，不强制迁移 |
+| 安装、升级、发送、存文件的结果 | `recap` / `page` / `notice` | 有下一步用 `recap`，有报告用 `page`，只是告知用 `notice` |
+| 插件通知（下载完成、备份失败、证书到期） | `notice` | 级别沿用 ADR-0047；现有的 `WONTON_NOTIFY_URL` 调用仍返回 200，只是落成条目、不再写私聊，插件不用改 |
+| 应用来信（找回密码、验证码） | `notice` | 正文里给验证码，链接用 `ui/open-link` |
+| 文件发到另一台设备 | `page`（attach） | 附件卡，不再发私聊 |
+| 入口对账失败、联邦名单失败、磁盘将满、模型 key 失效 | `notice` | warning/critical，不占角标 |
+| 好友、家人加入/移除、Bot 联系请求 | `confirm` | 同意/拒绝/只聊天；管理员条目谁先答算谁的 |
+| 别的服务器配对请求 | `confirm` | 不过期；重置码是拒绝后的动作 |
+| 新设备登录、密钥过期 | `confirm` | critical，允许/拒绝/吊销 |
+| 插件更新可用、核心升级 | `notice` | 打开插件页/release notes |
+| Bot 建议的任务 | `choice` | “要不要我每周备份？”接受/忽略；没有任务状态 |
+| worker 完成、卡住、等批准 | `notice` / `recap` / `confirm` | 见第 6 节 |
+| 壳不认识的类型 | `Other` | 不显示但计数，旧壳只显示 `body` 兜底 |
+
+`notice` 的级别、频率上限、去重沿用 ADR-0047；`confirm` 的来源核对沿用 ADR-0016；`choice` 不授权，只问。
+
+`choice` / `page` / `recap` 只进收件箱，不在聊天里再放一行，避免两份事实；`confirm` 保留来源会话的卡片投影，两边同一份回写。
+
+### 8. 通知、锁屏和列表
+
+**三处各显示什么**：
+
+| 位置 | `choice` | `page` | `recap` | `confirm` | `notice` |
+| --- | --- | --- | --- | --- | --- |
+| 锁屏通知 | 发送方 + 第一题 + “共 N 题”；无表单≤3 选项时给按钮，否则“打开作答” | 发送方 + 标题 + “报告”；“打开” | 摘要前 2 句 + 问题；≤2 个按钮 | 标题 + 风险行；允许/拒绝（+总是/本会话） | 标题 + 摘要；有 action 给 action，另一个位置给“知道了”；有 link 且有空位给“打开” |
+| 收件箱列表 | 发送方、标题、第一题、“N 题”、“对方在等”/“只是告知”、到期倒计时 | 发送方、标题、说明、页图标 | 发送方、摘要、问题 | 发送方、标题、风险、“对方在等” | 发送方、标题、级别、未读点 |
+| 详情 | 完整题目、选项（推荐置顶）、其他、备注、提交/不回答 | 沙箱页面、动作条、来源 | 全文、问题、按钮 | 全文、风险、详情折叠、允许/拒绝 | 全文、链接、知道了 |
+
+**通知正文**按 ADR-0118 去换行、截 120 字；页面不塞 HTML，只给标题和说明；锁屏不露页面内容。通知类别：`confirm`/`choice`/`recap` 用确认类别，`blocking: true` 用 Time Sensitive；`notice` 用插件通知类别按级别；`info` 不推。
+
+**通知上的动作**：
+
+- `confirm`：允许/拒绝（发送方给了 `session`/`always` 才显示“本会话”/“总是”），直接答；失败留“没答上，点开重试”，条目仍 pending。
+- `choice`：只有单题、≤3 个选项、无备注要求时给选项按钮；多题/有备注只给“打开作答”。通知上点选项等于选那一项并提交，`other` 仍要打开。
+- `recap`：≤2 个 action 直接给按钮；否则打开。
+- `page`：只给“打开”；页面底下的动作在详情里。无动作页面给“知道了”。
+- `notice`：有 `action` 时给这个动作，另一个位置留给“知道了”；有 link 且仍有空位时再给“打开”。没有 action 时只给“知道了”（有 link 再加“打开”）。
+- 系统按钮最多 3 个（Apple 上限 4，留一个给“打开”）。核心保留的 `approve`/`deny`/`session`/`always`/`acknowledge`/`open` 由 App 本地化；插件自己的 `action_id` 用发送方给的 `label`（≤40 字），未知 id 用 label 兜底。
+- 答完立刻把通知从其他设备撤下（`revision` 长轮询）；答的动作也写审计。
+
+**列表**：按“阻塞且最快到期 → 阻塞 → 非阻塞问题 → 有动作的页面 → 通知 → 已处理”排；同组内按到期时间/时间倒序。阻塞条目显示“对方在等”和倒计时；非阻塞显示“只是告知”。第一版不做搜索、筛选、分组设置、全部已读。
+
+**手势**：右滑是主要动作（通知已读、页面已读、问题“稍后”），左滑是“更多”（不回答/删除/打开来源）；长按多选，批量“已读/归档”。批准/拒绝不藏进滑动。
+
+`snooze` 只对 `pending` 条目，只有四档：`hour`（+60 分钟）、`later_today`（本机时区今天 18:00；18:00 后按 +3 小时）、`tomorrow`（本机时区明天 09:00）、`next_week`（本机时区下周一 09:00）。App 传 `{preset, timezone_offset_min}`，核心算 `snooze_until`；没有偏移就用服务器时区。它只把条目挪出列表，**不延长 `expires_at`**；阻塞条目回来时可能已经过期，界面上写剩余时间。
+
+**空态**：托盘勾图标 + “都处理完了”，不加副标题；已处理为空时那一段不显示。读屏读出类型、发送方、是否阻塞、到期和按钮。
+
+### 9. 入口和角标
+
+- **入口**：标题就叫“收件箱”，聊天列表顶部固定一行，图标用 Phosphor 的托盘；侧边栏同一行在“新聊天”下面。不放回底栏（ADR-0095）。
+- **角标 = 待回答的条目**：`choice`、`confirm`、有问题的 `recap`、有动作的 `page`。`notice` 和无动作的 `page` 不进角标，只在列表里点未读。应用角标（ADR-0101 第 3 节）是“未读消息 + 这个数”，两者都清零才归零。
+- 打开收件箱不归零；逐条答、逐条读才减。全部处理完入口变灰、角标清零。
+- `blocking` 条目的角标和通知更醒目，但不额外计数；`handled_elsewhere` 立即从别人的角标里减。
+
+### 10. “云吞”私聊怎么处置
+
+- 停止写入，从聊天列表隐藏，房间保留为只读归档；收件箱最下面“旧的通知记录”打开。旧信里的找回密码链接、文件链接继续能点。
+- 家人各自的私聊同样处理；家人的旧记录只有家人自己看得到。
+- 第一版不删。90 天后另开裁剪任务：确认没有活跃链接、导出审计后再删。
+- 旧 App/旧核心：新 App 对旧核心收件箱 404，照实显示加载失败；旧 App 见到新 `type` 把 `body` 当普通消息显示，附“在最新版 App 回答”。
+
+### 11. 保留、归档、审计
+
+- 待回答的 `choice`/`confirm`：阻塞默认 10 分钟、异步 7 天，最长 24 小时；`page`/`recap` 7–30 天；`notice` 30 天。
+- `handled` 后留 24 小时可回看/撤销“已读”，之后进 `archived` 30 天；`expired`/`withdrawn` 留 30 天。
+- 页面快照随条目 30 天后删；附件按文件服务的保留策略。
+- 审计写：条目 id、类型、发送方、收件人、动作、`answer_id`、结果、投递状态（送到/撤不回/失败）、页面内容的 sha256，不写页面内容和自由文本（避免验证码进日志）；审计留 90 天。
+- 答案默认是最终的：阻塞条目的工具结果已经回去，不能再改；只有异步条目第一次 `handled` 后 60 秒内可以撤回重答。重答用新 `answer_id`，旧答案标 `superseded` 并留在 `superseded_answers`，`answer` 换成新答案；60 秒后再答返回 409 `answer_locked`。
+
+### 12. 契约、提供方、消费方
+
+- **契约**：`wonton-protocol` 的 `inbox` 模块（`InboxItem`、`InboxType`、`ChoicePayload`、`PagePayload`、`RecapPayload`、`ConfirmPayload`、`NoticePayload`、`InboxList`、`InboxViewModel`、路径、答案结构）。契约测试：未知类型落 `Other`、新增字段有默认值、管理员条目 `handled_elsewhere`、按收件人过滤、`notice` 已读按人分开、`choice` 过期不能答、`answer_id` 幂等、答案字段不合法 400、页面超过 1 MiB 拒绝。
+- **接口**：
+  - `GET /_wonton/api/inbox?after=<revision>`，长轮询 25 秒，返回 `InboxList { items, counts:{needing, unread_notices}, revision }`；
+  - `GET /_wonton/api/inbox/{id}` 取一条；
+  - `GET /_wonton/api/inbox/{id}/page?token=<短令牌>` 取页面（CSP 头、`text/html`）；token 5 分钟、绑条目，重载时 App 换新 token；
+  - `POST /_wonton/api/inbox/{id}/answer`、`/acknowledge`、`/read`、`/cancel`；`POST /_wonton/api/inbox/{id}/snooze` 体是 `{preset: "hour"|"later_today"|"tomorrow"|"next_week", timezone_offset_min?}`；
+  - `POST /_wonton/api/inbox` 核心内部建条目；`POST /_wonton/api/inbox/workers` 给 router，`GET /workers/{worker_id}` 取答案、`POST /workers/{worker_id}/resolve` 回投递结果；
+  - `confirm` 旧的回答接口 `POST /_wonton/confirmations/{id}` 继续可用，条目状态由回写驱动，壳不直接改条目。
+- **提供方**：核心。现有确认表、通知入口、来信投递、配对请求、联系人请求、升级流程都改成写条目，不再写私聊。
+- **消费方**：两端壳（收件箱页、通知动作、页面宿主）和客户端核心（长轮询、ViewModel、页面加载）。
+- **换提供方不改消费方**：类型和 `action_id` 是核心给的，壳按类型渲染；以后加 `form` 类型或新动作不用改壳骨架。
+- **鉴权**：用户操作只认经隧道的已配对设备或主人令牌；Agent 工具认 Bot 身份；worker 认主人令牌或 router 的隧道身份；页面 token 只读、5 分钟、绑定条目。
+- **推送**：一个条目一条通知；更新只替换不重弹；`notice` 的 `info` 不推；`critical` 用 Time Sensitive；正文只带标题和摘要，不带 HTML。
+- **隐私**：条目在核心里是明文，核心用设备公钥加密后交给中继（ADR-0118）；锁屏内容分类和 App 锁（ADR-0101 第 5 节、ADR-0102）照旧；页面在锁定期间不露内容。
+
+### 13. 第一版不做
+
+表单类型、公网 URL 页面、页面持久存储、页面自动提交、多人分派、项目/任务状态、搜索、筛选、分组设置、全部已读、富文本编辑器、附件内联预览（HTML 以外走系统查看器）、嵌套超过一层、Agent 自动放宽确认。
+
+## 拍板结果（2026-11-25）
+
+2026-11-25 主人拍板：下面 20 题全部按推荐；第 6 题 23:4x 补定为“脚本可跑、联网只按名单、卡上写明、无名单断网”。
+
+1. **收件箱只放这五种吗**：五种（`choice`/`page`/`recap`/`confirm`/`notice`，推荐）；再加 `form` 自由表单；再加 `task` 待办。**推荐五种**，先把结构跑通。
+2. **谁能发**：任何有 `tools` 权限的 Agent（推荐，配上限）；只有核心和声明了 `inbox` 的插件；每次主人点“允许这个 Bot 发”。**推荐第一种**。
+3. **一张卡最多几题**：1–4 题（Claude 的上限，推荐）；1–5 题（照顾 Hermes `clarify`）；1 题。**推荐 4 题**，多出来的让 Agent 拆两张；Hermes 原生事件一题一条，不受此限。
+4. **每题最多几个选项**：2–4 个，允许 0 个自由回答（推荐）；2–6 个；不限制。**推荐 4 个**，多了让 Agent 合并。
+5. **“其他”和备注**：每题永远有“其他”，备注可选（推荐）；“其他”永远有，备注必填；只在没有选项时给“其他”。**推荐第一种**。
+6. **页面能不能跑脚本**：脚本可以跑；联网只按发送方声明的域名名单放行，卡上写明“会访问：xxx”，不写名单就完全断网。**已按此定。**
+7. **页面从哪来**：只收 MCP Apps 的 `ui://` 资源 + 文件附件（推荐）；也收公网 URL；也收上传的 HTML 文件。**推荐第一种**，公网 URL 后加。
+8. **通知上能答什么**：无表单确认 + 单题≤3 选项 + 收尾按钮（推荐）；只有确认卡片；只给“打开”。**推荐第一种**。
+9. **答案能不能改**：提交即最终；异步条目 60 秒内可撤回（推荐）；发送方未读前都能改。**推荐第二种**（只给异步）。
+10. **入口叫什么**：收件箱（推荐，主人的词）；待处理；通知。**推荐收件箱**。
+11. **角标算什么**：待回答的条目（推荐）；全部未处理含通知；全部未读。**推荐第一种**；通知不进角标。
+12. **保留多久**：已处理 24 小时 + 归档 30 天（推荐）；7 天 + 90 天；页面永久。**推荐第一种**。
+13. **“云吞”私聊**：隐藏 + 只读归档（推荐）；保留为普通聊天；30 天后删除。**推荐隐藏 + 归档**，先不删。
+14. **Bot 在聊天里的提问**：留聊天（M1，推荐）；镜像到收件箱但回答仍在聊天；全部搬进收件箱。**推荐留聊天**，`inbox_ask` 是新工具，不强制迁移。
+15. **Snooze**：固定 1 小时 / 今天晚些 / 明天 / 下周（推荐）；自由日期；不做。**推荐固定四档**。
+16. **页面最大多大**：256 KiB；1 MiB（推荐）；5 MiB。**推荐 1 MiB**。
+17. **页面动作条最多几个**：0–3 个（推荐）；固定一个；不限制。**推荐 3 个**。
+18. **阻塞默认**：发送方选，`ask`/`confirm` 默认阻塞（推荐）；全部阻塞；全部异步。**推荐第一种**。
+19. **收尾框最长**：2–3 句（推荐）；5 句；不限。**推荐 3 句**。
+20. **通知能不能带一个动作**：可以（推荐）；只能“知道了”；不能动作。**推荐可以**，动作仍走 `action_id`。
 
 ## 没选的做法
 
-- **继续用“云吞”私聊，只加几个过滤器。** 私聊是 Matrix 房间，过滤和已读要自己再写一层；清了消息找不回来，长信件仍挤聊天流。
-  面板本来就得为卡片存在，扩它比再做一个视图省。
-- **每类一个页面**（通知页、来信页、请求页）。类型一多，用户要挨个翻；面板只分“要处理”和“要知道”。
-- **只做系统通知中心，不做 App 内页面。** 系统和分发器会把通知清掉，清掉就找不回来，ADR-0101 的失败路径也要卡片自己留住。
-- **把 Bot 提问也搬进面板。** 见第 3 节。
-- **把 `know` 也做成要点的确认。** 下载完成也要按一次按钮，处理量翻倍；`know` 只要求已读。
-- **入口只放在设置或侧边栏。** 主管理后台要一眼看到，放在聊天列表顶部才够近。
-- **条目照旧发一份进 Matrix 房间，让别的客户端也能看。** 一份事实变两份，读和答都要对账；别的 Matrix 客户端本来也答不了卡片。
-- **第一版就做稍后提醒、搜索、筛选。** 条目类型和量都还没跑过，先只留两段分组。
-- **管理员条目每人一份拷贝。** 一份条目、每人一份已读/回答状态才不会漂，回答后别人的那份直接变“已由某人处理”。
+- **只做纯文本通知。** 主人已经否了：问题、选项、报告、下一步都要结构化。
+- **把条目做成任务（assignee/due/status）。** 主人这次明确“就是收件箱”；任务层以后另开 ADR。
+- **页面用公网 URL。** 要处理登录、CSP、跨域和离线；M1 先只收 MCP Apps 资源和文件。
+- **页面存在发送方，不存核心。** 发送方删插件、重启、改页面后旧条目会烂；存快照 30 天，代价是核心多存最多 1 MiB。
+- **页面直接 POST 答案。** 页面没有隧道身份，答案只能经宿主；否则要给它发令牌、做重放保护。
+- **通知上直接做多题或填备注。** 系统通知装不下，而且 `Other` 需要键盘。
+- **一套自由表单 schema。** Teams Adaptive Card 已经证明可行，但第一版用 1–4 题选择题 + 备注就够；自由表单后加。
+- **让页面自己画提交按钮。** 每个插件各画一套，高度、禁用态、错误态都不一致；原生动作条统一。
+- **用 `ui/message` 当答案。** 消息会进聊天时间线，核心还得解析；答案走结构化接口。
+- **保留“云吞”私聊继续塞。** 私聊清了找不回来，长信挤聊天流，通知和收件箱两份事实。
+- **角标算所有通知。** 通知一多角标永远清不掉，用户会忽略；只算待回答的。
+- **一件事发好几条（进度一条、结果一条）。** 用 `dedupe_key` + `inbox_update` 更新同一条。
+- **让 Agent 设必答/必填。** 主人可能整张不回答；每题可跳过，`Other` 永远在。
 
 ## 代价与风险
 
-- **面板变成新的噪音源。** 插件通知、来信全进来以后，面板可能一天几十条。缓解：`info` 不推送；插件每分钟 10 条、每天 200 条
-  的上限照旧（ADR-0047）；`know` 30 天清掉。
-- **角标压力。** 未读消息加待处理可能让角标一直很大；只有真的处理或读才减，而不是打开 App。
-- **私聊退休会断旧链接。** 旧信里的找回密码地址不受影响（在消息正文里），但“去私聊找那封信”的习惯要换。
-- **核心多存一份正文。** 来信正文和附件在 `core/inbox` 里多留一阵（最长 30 天），磁盘占用和 Mailpit 的 7 天叠加。
-- **卡片的两个投影可能被看成两件事。** 靠同一 ID、同一回写和“处理一边两边一起变”的测试兜住。
-- **家人多、管理员多时**，管理员条目对每个管理员都推一条，同一件事会在几台设备上各弹一次；这是“谁先答算谁的”的代价（ADR-0088）。
-- **App 和核心分开升级时**：旧 App 见到新类型只显示角标不显示条目；新 App 对上旧核心时列表 404，照实显示加载失败。
-- **worker 桥是新增的单点。** 它挂了就没有事件；靠登记表对账补 `WorkerStuck`，桥本身要做成能被 supervisor 拉起的长驻进程。
+- **页面是新的攻击面。** 靠沙箱、CSP、无存储、短令牌、原生动作条兜；页面仍可能诱导点击，答案必须经核心校验 `action_id`。
+- **核心开始存内容。** 页面快照 1 MiB × 30 天，最坏几十 MB；用 `core/inbox/pages` 配额和清理兜底。
+- **富条目让模型更容易话多。** 一张卡 4 题、4 选项、页面、备注，可能比聊天更长；靠工具说明“一件事一张卡，简单事聊天里问”。
+- **Hermes 桥是新的单点。** 网关 RPC 变了要跟；桥死时条目会过期，但不会假装答了。桥做成能被 supervisor 拉起的长驻插件。
+- **页面动作和工具调用两套。** 页面里的按钮可能调工具（副作用），底下的动作只是答案；要在 UI 上分开写，避免用户以为“通过”已经执行。
+- **通知上误点。** 选项按钮直接提交；给 3 秒“已答，撤销”？M1 用 60 秒异步撤回，阻塞不可；误点要重新问。
+- **旧 App 答不了。** 旧 App 只看到 `body` 兜底和“在最新版 App 回答”；发卡片的 Bot 要接受这个降级。
+- **页面快照会过时。** 发送方后来改了页面，旧条目不变；这是“消息不变”的代价，条目里写明生成时间。
+- **家人看不到主人的、主人也看不到家人的。** 管理员条目靠 `handled_elsewhere` 收敛；家人多的家庭会重复推送，这是 ADR-0088 的代价。
+- **`notice` 仍可能刷屏。** 频率上限沿用 ADR-0047，`info` 不推、不占角标；批量已读。
+- **没有搜索。** 30 天后归档，找旧条目靠来源会话和类型；量上来再加。
 
 ## 待验证
-- 390×844 下入口行、带两个按钮的卡片、长标题两行；大字号不截断。
-- 家人 A 的条目不出现在家人 B 的面板；管理员条目在 A 答后 B 显示“已由 A 处理”且通知撤下。
-- 通知上答没有表单的卡片，答案执行、条目进已处理、另一台设备的通知消失。
-- worker 卡住时写一条 `WorkerNeeds`，在通知上允许后条目进已处理、worker 继续跑；worker 随后退出，`WorkerDone` 只留最新一条。
-- worker 桥被杀、宿主重启后，登记表对账能给失联的 worker 补 `WorkerStuck`。
-- 面板最下面“旧的通知记录”能打开旧私聊，隐藏后不再出现在聊天列表。
-- 来信 30 天、已处理 24 小时的清理；核心重启后条目还在、长轮询接着走。
-- 端到端：装插件、收一封应用来信、触发一条 `critical` 通知、另一台服务器发配对请求，四件事都只进面板、私聊为空；再让一个 worker 卡住，条目出现、在通知上允许后它继续跑，随后完成只剩一条“做完了”。
+
+- 390×844 下 4 题卡、4 选项、长 header、备注键盘、页面动作条；大字号不截断。
+- 通知上的允许/拒绝/单题选项能答；答完另一台设备撤下；答失败留“重试”。
+- 页面沙箱：内联脚本能跑；未声明的 `fetch` 被 CSP 拦；`ui/open-link` 走系统浏览器；页面调 `tools/call` 记成发送方 Bot；敏感工具另弹确认。
+- 页面快照 30 天清理；发送方删插件后页面还能打开、工具调用显示“插件连不上”。
+- Hermes 桥：`approval.request` 变 `confirm`、`clarify.request` 逐题变 `choice`；答完分别调 `approval.respond`/`clarify.respond`；本地 CLI 先答时收到 `*.settled` 变 `handled_elsewhere`；Hermes 退出 60 秒后 `withdrawn`。
+- worker `needs` 变 `confirm`；答完 router 轮询拿到并 `tern approve`；执行失败留 pending 和“没送到”。
+- 管理员条目 A 答后 B 显示“已由 A 处理”且通知撤下；家人 A 的条目不出现在家人 B 的收件箱。
+- 无设备时 `inbox_ask` 返回 `pending` + `no_device`，不假装送达；上线后能看到。
+- `answer_id` 重试幂等；不同 `answer_id` 409；过期/撤回后答 409。
+- 未知类型落 `Other`、旧壳不白屏；新增字段有默认值；页面 >1 MiB 拒绝。
+- 端到端：装插件、收一封应用来信、触发一条 `critical` 通知、另一台服务器发配对请求，四件事都只进收件箱、私聊为空；再发一张 4 题卡和一个带动作的 HTML 页面，答完都留结构化答案和审计。
 
 ## 查证来源
-- herdr CLI：https://herdr.dev/docs/cli-reference （`agent wait --until done,blocked`、`pane report-agent --state blocked|done`、`agent send-keys`、`pane read`）。
-- tern CLI：https://tern.build/docs/cli （`tern wait --for done,needs`、`tern status -json`、`tern approve allow|always|deny`）。
-- Alma `Home`：https://docs.alma.team/workspace/home （“What is waiting on you arrives in the thread… The decision is the same one”）。
-- Alma `Tasks`：https://docs.alma.team/workspace/tasks （Needs you / Active / Backlog、Snooze 一小时的选项、请求留在任务里）。
-- Linear Inbox：https://linear.app/docs/inbox （Priority 与其余分开、已读/未读、Done、2000 条上限）。
-- GitHub 通知：https://docs.github.com/en/subscriptions-and-notifications/concepts/about-notifications
-  （Done、已读/未读、按原因筛选、3 个月保留）；inbox 的操作页 https://docs.github.com/en/subscriptions-and-notifications/how-tos/viewing-and-triaging-notifications/managing-notifications-from-your-inbox 。
-- Apple HIG `Notifications`：https://developer.apple.com/design/human-interface-guidelines/notifications （最多四个动作、角标只表示未读、
-  同一件事不要重复通知）；`Managing notifications`：https://developer.apple.com/design/human-interface-guidelines/managing-notifications
-  （Passive/Active/Time Sensitive 的语义）。
-- 代码位置按正文里的路径和行号，取自分支切出时的 main `33f3fb54`。
+
+- 调研页（九家逐项对比、富条目参照、完整来源）：`~/wonton-dev/tasks/inbox-design.html`。
+- Claude Code `AskUserQuestion`：https://code.claude.com/docs/en/agent-sdk/user-input （1–4 题、2–4 选项、header 12 字、`Other`、备注、`preview`、答案按题目回）。
+- Claude Code `SendUserFile`：https://code.claude.com/docs/en/tools-reference （`display: render|attach`、caption）；工具说明：https://github.com/Piebald-AI/claude-code-system-prompts/blob/main/system-prompts/tool-description-senduserfile.md。
+- Claude Code `wrap_up`：https://github.com/Piebald-AI/claude-code-system-prompts/blob/main/system-prompts/tool-description-wrapup.md （2–3 句 recap、一个问题、按钮）；桌面端 next-step 框的问题：https://github.com/anthropics/claude-code/issues/103169。
+- MCP Apps 规范（CSP 默认、沙箱、`ui/open-link`、`tools/call`）：https://github.com/modelcontextprotocol/ext-apps/blob/main/specification/2026-01-26/apps.mdx 。
+- 现有 MCP Apps 宿主、页面安全：`docs/adr/0052-chat-pull-panel.md`（“Bot 往面板上放页面”“MCP Apps 界面怎么显示”）。
+- 问题卡形状和上限：`docs/adr/0038-multi-step-cards.md`（`wonton__ask_owner`、`StepCard`、超时不提交、Other 永远有）。
+- Hermes 本地源码（commit `b200f5bc`）：`tools/clarify_tool.py:6-7`（`MAX_CHOICES = 4`、`MAX_QUESTIONS = 5`）、`tools/clarify_gateway.py:45-46`（`SKIPPED = "\x00skipped"`、`CANCELLED = "\x00cancelled"`）、`tools/approval_prompt.py:37`（`once`/`session`/`always`/`deny`/`timeout`/`cancelled`）、`gateway/session_pending_controls.py:38/51/63`（`*.request`/`*.settled`、一题一个 `clarify.request`）、`gateway/session_controls.py:842-852`（两个 respond 的必填参数）、`gateway/run_turn_runner.py:580/592`、`gateway/run_turn_runner_clarify_delivery.py:115`（cancelled/timed_out 的约定值）、`acp_adapter/gateway_server.py` 的 `_project`/`_answer_clarify`/`_answer_permission`、`gateway/session_commands.py:516`（另一端先答后 settle 所有 viewer）。
+- Slack Block Kit：https://docs.slack.dev/reference/block-kit/blocks/ （最多 50 block、元素类型）；Actions block：https://docs.slack.dev/reference/block-kit/blocks/actions-block （最多 25 元素、`action_id`）；交互处理：https://docs.slack.dev/interactivity/handling-user-interaction/ （`payload`、3 秒 ack、`response_url` 30 分钟 5 次、`replace_original`）。
+- Teams Adaptive Cards：`Input.Text` https://learn.microsoft.com/en-us/adaptive-cards/schema-explorer/input-text （`id`、`isRequired`、`errorMessage`、`maxLength`）；`Action.Submit` https://learn.microsoft.com/en-us/adaptive-cards/schema-explorer/action-submit （收集输入、`style`、`mode`、`isEnabled`）；卡片版本/移动端上限：https://learn.microsoft.com/en-us/microsoftteams/platform/task-modules-and-cards/cards/cards-reference （移动端最高 1.6）。
+- Linear Inbox：https://linear.app/docs/inbox （读/未读、Snooze、删除、Priority/Other）。Linear Triage：https://linear.app/docs/triage （Accept/Decline/Duplicate/Snooze）。
+- GitHub PR review：https://docs.github.com/en/pull-requests/how-tos/review-pull-requests/reviewing-proposed-changes-in-a-pull-request （逐文件 review、Viewed、Approve/Request changes）；建议更改：https://docs.github.com/en/pull-requests/how-tos/review-pull-requests/incorporating-feedback-in-your-pull-request （建议、批量提交）。
+- Apple HIG `Notifications`：https://developer.apple.com/design/human-interface-guidelines/notifications （最多四个动作、角标只表示未读、不重复通知）。
 
 ## 关联
 
-ADR-0005（厚核心）、ADR-0015（小组件）、ADR-0016（确认卡片和列表）、ADR-0003/0101（推送和通知上的动作）、ADR-0038（问题卡片）、
-ADR-0118（推送带正文、房间不加密）、
-ADR-0043（语言）、ADR-0045/0088（家人、管理员）、ADR-0047（插件通知）、ADR-0050（配对请求）、ADR-0056（内部邮箱）、
-ADR-0095（没有底栏）、ADR-0102（App 锁）、ADR-0026/0029（外观）。
+ADR-0003（推送）、ADR-0005（厚核心）、ADR-0015（小组件）、ADR-0016（确认卡片）、ADR-0038（StepCard）、ADR-0045（家人）、ADR-0047（插件通知）、ADR-0050（配对请求）、ADR-0052（MCP Apps 宿主）、ADR-0056（内部邮箱）、ADR-0082（运行状态）、ADR-0088（管理员）、ADR-0095（没有底栏）、ADR-0101（通知动作/角标）、ADR-0102（App 锁）、ADR-0117（Bot 长任务）、ADR-0118（推送带正文、房间不加密）、ADR-0026/0029（外观）。
