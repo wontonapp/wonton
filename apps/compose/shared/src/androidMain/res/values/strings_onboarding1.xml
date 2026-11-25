@@ -10,6 +10,7 @@
     <string name="onboarding_pending_card_one">%1$s needs your approval</string>
     <!-- Problem title while installing: the device the app needs is unavailable. -->
     <string name="onboarding_problem_plugin_device_unavailable">The device you picked is unavailable. Pick another one.</string>
+    <string name="onboarding_problem_plugin_egress_proxy_waiting">The server\'s Internet proxy isn\'t ready yet. Retry once it is up; nothing to change.</string>
     <!-- Problem title while installing: a port the app opens on the local network is used by another container or program. -->
     <string name="onboarding_problem_plugin_lan_port_taken">The port this app opens on the local network is in use. Stop the container or program using it, then try again.</string>
     <!-- Problem title while installing: the home server doesn't support this app. -->
@@ -19,7 +20,7 @@
     <!-- Problem title in setup: too many requests to the recommendation source. -->
     <string name="onboarding_problem_store_rate_limited">Too many requests to the recommendation source. Try again later or skip.</string>
     <!-- Label next to a spinner while an install task is being prepared. -->
-    <string name="onboarding_review_preparing">Preparing</string>
+    <string name="onboarding_review_preparing">Getting ready</string>
     <!-- Dismissable tip after an app installed: it can be pinned to the bottom navigation bar. -->
     <string name="onboarding_tip_app_installed">Installed apps show up in My Apps in the sidebar.</string>
 </resources>

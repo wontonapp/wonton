@@ -226,7 +226,7 @@ async fn egress_plugin_singleton_reserves_even_during_concurrent_installs() {
     assert_eq!(m.list().len(), 1);
 }
 
-/// 代理连不上时：消费者的预览被拦，安装报 `egress_proxy_unavailable`。
+/// 代理连不上时：消费者的预览被拦，安装报 `egress_proxy_*`（坏是 `unavailable`、在等是 `waiting`）。
 async fn assert_consumer_blocked(m: &PluginManager, langs: &Languages) {
     let app = consumer("app.out");
     let preview = m
@@ -238,6 +238,123 @@ async fn assert_consumer_blocked(m: &PluginManager, langs: &Languages) {
         .unwrap()
         .manifest
         .permissions;
+    assert!(
+        m.install(&app, &grants, super::langs())
+            .await
+            .unwrap_err()
+            .kind()
+            .starts_with("egress_proxy")
+    );
+}
+
+#[tokio::test]
+async fn a_provider_that_is_still_being_installed_blocks_with_a_waiting_reason() {
+    let (docker, engine) = FakeDocker::start().await;
+    add_default_bridge(&docker);
+    let dir = tempfile::tempdir().unwrap();
+    let m = Arc::new(manager_with(engine, &dir).with_lan(lan()));
+    install(&m, &proxy_app("app.proxy")).await;
+    let langs = Languages::default();
+    m.set_egress_proxy(update(None, true, &[]), langs.clone())
+        .await
+        .unwrap();
+    // 刚选上的出网插件自己也在装：容器还没建，插件状态是安装中。
+    let id = PluginId::parse("app.proxy").unwrap();
+    m.plugins.write().unwrap().get_mut(&id).unwrap().status = PluginStatus::Installing;
+    m.engine
+        .remove_container("wonton-app-proxy--proxy")
+        .await
+        .unwrap();
+    m.probe_egress(&langs).await.unwrap();
+    let found = m.egress_problem().unwrap();
+    assert_eq!(found.reason, EgressFailure::Waiting);
+    assert!(found.message.contains("Test"), "{}", found.message);
+    assert!(
+        found.message.contains("being installed"),
+        "{}",
+        found.message
+    );
+    // 壳按类别换标题：等待要有自己的类别，别落到“代理用不了”。
+    let app = consumer("app.out");
+    let grants = PluginPackage::parse(&app, &super::langs())
+        .unwrap()
+        .manifest
+        .permissions;
+    assert_eq!(
+        m.install(&app, &grants, super::langs())
+            .await
+            .unwrap_err()
+            .kind(),
+        "egress_proxy_waiting"
+    );
+    assert_consumer_blocked(&m, &langs).await;
+}
+
+/// 出口插件在换版本时不是坏：等它换完，别按代理坏了报。
+#[tokio::test]
+async fn a_provider_that_is_upgrading_still_blocks_but_as_waiting() {
+    before_status(PluginStatus::Upgrading, "being upgraded").await;
+}
+
+/// 出口插件在卸载时不是坏：等它走完，别按代理坏了报。
+#[tokio::test]
+async fn a_provider_that_is_uninstalling_still_blocks_but_as_waiting() {
+    before_status(PluginStatus::Uninstalling, "being uninstalled").await;
+}
+
+/// 把出口插件摆到 `status`、核对一次，断言挡安装且说清在等它。
+async fn before_status(status: PluginStatus, expected: &str) {
+    let (docker, engine) = FakeDocker::start().await;
+    add_default_bridge(&docker);
+    let dir = tempfile::tempdir().unwrap();
+    let m = Arc::new(manager_with(engine, &dir).with_lan(lan()));
+    install(&m, &proxy_app("app.proxy")).await;
+    let langs = Languages::default();
+    m.set_egress_proxy(update(None, true, &[]), langs.clone())
+        .await
+        .unwrap();
+    let id = PluginId::parse("app.proxy").unwrap();
+    m.plugins.write().unwrap().get_mut(&id).unwrap().status = status;
+    m.probe_egress(&langs).await.unwrap();
+    let found = m.egress_problem().unwrap();
+    assert_eq!(found.reason, EgressFailure::Waiting);
+    assert!(found.message.contains("Test"), "{}", found.message);
+    assert!(found.message.contains(expected), "{}", found.message);
+    assert_consumer_blocked(&m, &langs).await;
+}
+
+#[tokio::test]
+async fn a_provider_that_stopped_running_names_the_page_to_look_at() {
+    let (docker, engine) = FakeDocker::start().await;
+    add_default_bridge(&docker);
+    let dir = tempfile::tempdir().unwrap();
+    let m = Arc::new(manager_with(engine, &dir).with_lan(lan()));
+    install(&m, &proxy_app("app.proxy")).await;
+    let langs = Languages::default();
+    m.set_egress_proxy(update(None, true, &[]), langs.clone())
+        .await
+        .unwrap();
+    let id = PluginId::parse("app.proxy").unwrap();
+    m.plugins.write().unwrap().get_mut(&id).unwrap().status = PluginStatus::Degraded {
+        reason: "启动失败".to_owned(),
+    };
+    docker.set_state(
+        "wonton-app-proxy--proxy",
+        json!({"Status": "exited", "Running": false, "ExitCode": 1}),
+    );
+    m.probe_egress(&langs).await.unwrap();
+    let found = m.egress_problem().unwrap();
+    assert_eq!(found.reason, EgressFailure::ProxyUnreachable);
+    assert!(found.message.contains("cannot serve"), "{}", found.message);
+    assert!(found.message.contains("exited"), "{}", found.message);
+    assert!(found.message.contains("exit code 1"), "{}", found.message);
+    assert!(found.message.contains("logs"), "{}", found.message);
+    // 真坏了是失败，不是等待。
+    let app = consumer("app.out");
+    let grants = PluginPackage::parse(&app, &super::langs())
+        .unwrap()
+        .manifest
+        .permissions;
     assert_eq!(
         m.install(&app, &grants, super::langs())
             .await
@@ -245,6 +362,7 @@ async fn assert_consumer_blocked(m: &PluginManager, langs: &Languages) {
             .kind(),
         "egress_proxy_unavailable"
     );
+    assert_consumer_blocked(&m, &langs).await;
 }
 
 #[tokio::test]
@@ -264,25 +382,32 @@ async fn egress_plugin_failures_block_consumers_but_allow_provider_install_upgra
         .await
         .unwrap();
     let name = "wonton-app-proxy--proxy";
-    for state in [
-        json!({"Status": "exited", "Running": false}),
-        json!({"Status": "running", "Running": true, "Health": {"Status": "starting"}}),
-        json!({"Status": "running", "Running": true, "Health": {"Status": "unhealthy"}}),
+    for (state, expected) in [
+        (
+            json!({"Status": "exited", "Running": false}),
+            EgressFailure::ProxyUnreachable,
+        ),
+        (
+            json!({"Status": "running", "Running": true, "Health": {"Status": "starting"}}),
+            EgressFailure::Waiting,
+        ),
+        (
+            json!({"Status": "running", "Running": true, "Health": {"Status": "unhealthy"}}),
+            EgressFailure::ProxyUnreachable,
+        ),
     ] {
         docker.set_state(name, state);
         m.probe_egress(&Languages::default()).await.unwrap();
-        assert_eq!(
-            m.egress_problem().unwrap().reason,
-            EgressFailure::ProxyUnreachable
-        );
+        let found = m.egress_problem().unwrap();
+        assert_eq!(found.reason, expected, "{}", found.message);
         assert_consumer_blocked(&m, &langs).await;
     }
+    // 状态还说在运行、容器却没了：没有谁会自己去起它，如实报出来。
     m.engine.remove_container(name).await.unwrap();
     m.probe_egress(&Languages::default()).await.unwrap();
-    assert_eq!(
-        m.egress_problem().unwrap().reason,
-        EgressFailure::ProxyUnreachable
-    );
+    let found = m.egress_problem().unwrap();
+    assert_eq!(found.reason, EgressFailure::ProxyUnreachable);
+    assert!(found.message.contains("no container"), "{}", found.message);
     docker.set_state(
         name,
         json!({"Status": "running", "Running": true, "Health": {"Status": "healthy"}}),
@@ -424,6 +549,7 @@ async fn egress_plugin_without_an_upstream_warns_but_does_not_block_installation
     let dir = tempfile::tempdir().unwrap();
     let script = Arc::new(Mutex::new(Scripted {
         via_relay: Some("TLS handshake failed".to_owned()),
+        via_relay_later: Vec::new(),
         direct: Some(wonton_protocol::EgressProblem {
             reason: EgressFailure::UpstreamFailed,
             message: "CONNECT succeeded; upstream TLS unavailable".to_owned(),
@@ -483,9 +609,10 @@ async fn egress_plugin_being_uninstalled_cannot_be_selected_even_at_the_same_man
     .await;
     hold.release();
     uninstall.await.unwrap().unwrap();
+    // 出口插件在卸载，挡是等着它走完。
     assert_eq!(
         selection.unwrap().unwrap_err().kind(),
-        "egress_proxy_unavailable"
+        "egress_proxy_waiting"
     );
     assert_eq!(
         m.egress_settings(&Languages::default()).unwrap().source,

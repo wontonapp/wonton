@@ -160,13 +160,13 @@ class PluginWebViewController {
 
 
     /**
-     * 系统返回：视频全屏先退出，网页历史里会换页的一步照常后退；同一文档里的记录（重定向、同地址）直接关页，
-     * 由调用方按 [PluginBackTarget.ClosePage] 发 ClosePage。
+     * 系统返回和胶囊菜单的“返回”：视频全屏先退出，网页历史里会换页的一步照常后退；同一文档里的记录
+     * （重定向、同地址）直接关页，由调用方经 [backOrClose] 发 ClosePage。
      */
     internal fun back(): PluginBackTarget {
         val step = history.step(view)
         val target = pluginBackTarget(customView != null, step)
-        // 复现用例靠这几项判断返回键走到哪一步（页面地址只留到路径，查询串里可能有 OAuth 授权码）。
+        // 复现用例靠这几项判断返回键走到哪一步；两个地址都经过 logUrl，日志里不会有授权码。
         val where = "sameDocument=${step?.sameDocument} previous=${step?.previous} page=${history.pagePath()}"
         Log.i(TAG, "back: target=$target $where")
         when (target) {
@@ -181,6 +181,8 @@ class PluginWebViewController {
 /**
  * 本页的历史足迹：当前地址，以及哪些地址是重定向来的（来源 → 落地，去掉片段）。
  * 判断“上一历史步会不会换页”用地址比较，不靠等：同一地址、或一条会跳回本页的重定向都算同一页。
+ * 重定向这一路是保险：Chromium 把服务端跳转的落地地址顶替进那一条历史，来源不在历史里，
+ * 模拟器上还没见它生效过（见 PR #903 的说明）。
  */
 internal class PageHistory {
     private var currentUrl: String? = null
@@ -209,7 +211,7 @@ internal class PageHistory {
     fun step(view: WebView?): HistoryStep? {
         val list = view?.takeIf { it.canGoBack() }?.copyBackForwardList()
         val previous = list?.getItemAtIndex(list.currentIndex - 1)?.url
-        return previous?.let { HistoryStep(sameDocument = isSameDocument(it), previous = it) }
+        return previous?.let { HistoryStep(sameDocument = isSameDocument(it), previous = logUrl(it)) }
     }
 
     internal fun isSameDocument(previous: String): Boolean {
@@ -218,7 +220,7 @@ internal class PageHistory {
     }
 
     /** 日志用：只到路径，去掉查询串（可能有授权码）和片段。 */
-    fun pagePath(): String? = currentUrl?.substringBefore('?')?.substringBefore('#')
+    fun pagePath(): String? = currentUrl?.let(::logUrl)
 
     fun clear() {
         currentUrl = null

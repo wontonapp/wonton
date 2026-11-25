@@ -55,6 +55,8 @@ pub mod family;
 mod family_private;
 mod family_room;
 mod files;
+mod friend_gate;
+mod friend_requests;
 mod friends;
 mod friends_wiring;
 mod health;
@@ -62,6 +64,7 @@ mod hosted;
 mod install_gate_cards;
 mod install_gate_checks;
 mod install_gates;
+mod invite_filter_guard;
 mod isolation;
 mod join_requests;
 mod lan;
@@ -154,6 +157,20 @@ pub use session::{APP_COOKIE, CORE_COOKIE};
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub struct TunnelPeer(pub EndpointId);
 
+/// 网关转给插件网页时的“打开者”，值是 Matrix 用户 ID（ADR-0045 第 6 节）。插件网页拿它当说话人：
+/// 上游自己的会话认不出走进来的是谁。只由网关写，客户端带的一律剥掉；插件把端口曝到宿主上时
+/// 绕过网关的直连可以伪造。方向与 `X-Wonton-On-Behalf-Of` 相反（那个是插件发给核心）。
+pub(super) const WEB_USER_HEADER: &str = "X-Wonton-Web-User";
+
+/// 本地用户的 Matrix 用户 ID。配置里还没有 Matrix 时按公开域名拼：`public.base_domain` 和 Matrix 的
+/// `server_name` 同出一个配置项，拼出来的和 `Matrix::user_id` 同形。
+pub(super) fn matrix_user_id(gateway: &Gateway, username: &str) -> String {
+    match &gateway.matrix {
+        Some(matrix) => matrix.user_id(username),
+        None => format!("@{username}:{}", gateway.public.base_domain),
+    }
+}
+
 /// 网关认出的人（ADR-0045）：经隧道的已配对设备看设备记录里的人，局域网浏览器的核心会话是主人。
 /// 认人只看隧道身份对应的设备记录，不读请求里的任何字段。
 #[derive(Clone, Debug, PartialEq, Eq)]
@@ -225,6 +242,8 @@ pub struct Gateway {
     pub upgrades: Option<Arc<crate::upgrade::service::Upgrades>>,
     pub peers: Option<Arc<crate::peers::Peers>>,
     pub(crate) friends: Option<Arc<Friends>>,
+    /// 公网上外人交的加好友请求（ADR-0088 第 98 行），只存内存。
+    pub(crate) friend_requests: friend_requests::Requests,
     /// Bot 的联系人（ADR-0045、ADR-0050）；没接 Matrix 的核心没有。
     contacts: Option<Arc<crate::contacts::Contacts>>,
     pub(crate) federation_blocks: Option<Arc<FederationBlocks>>,
@@ -311,6 +330,7 @@ impl Gateway {
             upgrades: None,
             peers: None,
             friends: None,
+            friend_requests: friend_requests::Requests::default(),
             contacts: None,
             federation_blocks: None,
             sharing: None,
@@ -569,11 +589,7 @@ impl Gateway {
     /// 这台设备的人在 `GET ME_PATH` 里看到的自己（ADR-0045 的 `Me`）。家人的记录找不到了就报错：
     /// 设备刚被移除时会这样，不编一个身份出来。
     pub(crate) fn me(&self, person: &Person) -> Result<wonton_protocol::Me, MissingMember> {
-        let user_id = self
-            .matrix
-            .as_ref()
-            .map(|m| m.user_id(&person.username))
-            .unwrap_or_else(|| format!("@{}:{}", person.username, self.public.base_domain));
+        let user_id = matrix_user_id(self, &person.username);
         if person.is_owner() {
             let profile = self.owner.profile();
             Ok(wonton_protocol::Me {
@@ -707,7 +723,7 @@ async fn dispatch(gateway: Arc<Gateway>, core: Router, req: Request) -> Response
             Err(never) => match never {},
         },
         HostKind::Auth => auth::request(&gateway, req).await,
-        HostKind::Matrix => matrix::client_request(&gateway, req).await,
+        HostKind::Matrix => matrix::client_request(gateway, req).await,
         HostKind::PluginMatrix => matrix::bot_request(&gateway, req).await,
         HostKind::PluginModels => models::request(&gateway, req).await,
         HostKind::PluginCapability(capability) => {
@@ -811,6 +827,8 @@ mod files_upload_tests;
 #[cfg(test)]
 mod first_run_tests;
 #[cfg(test)]
+mod friend_gate_tests;
+#[cfg(test)]
 mod friends_tests;
 #[cfg(test)]
 mod health_tests;
@@ -834,6 +852,8 @@ mod lan_api_tests;
 mod lan_tests;
 #[cfg(test)]
 mod limits_tests;
+#[cfg(test)]
+mod local_friends_tests;
 #[cfg(test)]
 mod matrix_invite_filter_tests;
 #[cfg(test)]
@@ -890,3 +910,5 @@ mod tunnel_tests;
 mod tusd_tests;
 #[cfg(test)]
 mod upload_settings_tests;
+#[cfg(test)]
+mod web_user_tests;

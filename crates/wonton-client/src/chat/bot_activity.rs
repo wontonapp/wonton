@@ -1,7 +1,7 @@
 use std::time::Duration;
 
 use tokio::time::Instant;
-use wonton_protocol::{BotActivity, BotActivityFacts};
+use wonton_protocol::{BotActivity, BotActivityFacts, BotChatAvailability};
 
 const MIN_HOLD: Duration = Duration::from_millis(1_500);
 const IDLE_QUIET: Duration = Duration::from_secs(2);
@@ -21,7 +21,8 @@ pub(super) fn synthesize(
     typing: bool,
     now: Instant,
 ) -> Activity {
-    let Some(facts) = facts else {
+    // 不能聊的 Bot 不拿插件进程状态冒充它的状态：它的计数和会话不属于这个人。
+    let Some(facts) = facts.filter(|facts| facts.chat == BotChatAvailability::Available) else {
         return Activity::default();
     };
     let target = if !facts.running {
@@ -75,6 +76,7 @@ mod tests {
             bot: Some("default".into()),
             user_id: "@bot:home".into(),
             running: true,
+            chat: BotChatAvailability::Available,
             model_requests: 0,
             tool_calls: 0,
             waiting: 0,

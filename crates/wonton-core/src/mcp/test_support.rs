@@ -75,10 +75,14 @@ impl ServerHandler for Notes {
         let search = Tool::new("search", "找笔记", schema())
             .with_annotations(ToolAnnotations::new().read_only(true))
             .with_meta(rmcp::model::MetaObject(
-                json!({"ui": {"visibility": ["app"]}})
-                    .as_object()
-                    .cloned()
-                    .unwrap_or_default(),
+                json!({
+                    "ui": {"visibility": ["app"]},
+                    "app.wonton/card": {"title": "T"},
+                    "app.wonton/files": ["photo"],
+                })
+                .as_object()
+                .cloned()
+                .unwrap_or_default(),
             ));
         let delete = Tool::new("delete", "删笔记", schema()).with_meta(rmcp::model::MetaObject(
             json!({"ui": {"visibility": ["app"]}})

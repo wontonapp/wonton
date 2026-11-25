@@ -103,7 +103,7 @@ class RoomPanelGestureTest {
         compose.onNodeWithText("Echo").performClick()
         compose.waitUntil(10_000) { compose.onAllNodes(hasSetTextAction()).fetchSemanticsNodes().size == 1 }
         openButton.assertDoesNotExist()
-        compose.onNodeWithTag("bot-profile-open").performClick()
+        compose.onNodeWithTag("roomTopBarAvatar").performClick()
         compose.onNodeWithTag("bot-profile").assertIsDisplayed()
         openButton.assertIsDisplayed()
         screenshot("bot-profile")
@@ -218,7 +218,7 @@ class RoomPanelGestureTest {
         assertRoomClosed(closedBottom)
         pull(64f * density, 40)
         assertRoomClosed(closedBottom)
-        compose.onNodeWithTag("bot-profile-open").performClick()
+        compose.onNodeWithTag("roomTopBarAvatar").performClick()
         compose.onNodeWithTag("bot-profile").assertIsDisplayed()
         openButton.performTouchInput { click() }
         awaitFull()
@@ -232,7 +232,7 @@ class RoomPanelGestureTest {
         backToRoom()
         assertRoomClosed(closedBottom)
         compose.onNodeWithText("Echo").assertIsDisplayed()
-        compose.onNodeWithTag("bot-profile-open").performClick()
+        compose.onNodeWithTag("roomTopBarAvatar").performClick()
         openButton.performTouchInput { click() }
         awaitFull()
         pressBack()
@@ -338,11 +338,11 @@ class RoomPanelGestureTest {
         compose.waitForIdle()
     }
 
-    /** 从 Bot 资料页的按钮打开房间面板，等到整页。 */
+    /** 点顶栏标题进 Bot 资料页，再从那里的按钮打开房间面板，等到整页。 */
     private fun openPanelFromProfile() {
         compose.onNodeWithText("Echo").performClick()
         compose.waitUntil(10_000) { compose.onAllNodes(hasSetTextAction()).fetchSemanticsNodes().size == 1 }
-        compose.onNodeWithTag("bot-profile-open").performClick()
+        compose.onNodeWithTag("roomTopBarTitle").performClick()
         compose.onNodeWithTag("bot-profile").assertIsDisplayed()
         openButton.performTouchInput { click() }
         awaitFull()

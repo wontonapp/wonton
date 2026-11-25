@@ -1,6 +1,6 @@
 //! 把 `wonton-matrix` 的结果转成 ViewModel：房间行、时间线条目和增量、加密状态、按原因分类的错误。
 
-use std::collections::HashSet;
+use std::collections::HashMap;
 
 use super::agent_run::BotsView;
 use super::links::LinkTargets;
@@ -14,10 +14,11 @@ use wonton_matrix::{
     SendStatus, TimelineEntry, UserId, VectorDiff, Verification,
 };
 use wonton_protocol::{
-    ChatFailure, ChatLayout, CoreError, DeviceVerification, EncryptionStatus, FileAttachment,
-    FileLinks, ImageCaption, ImageContent, KeyNotice, MediaHandle, MessageContent, MessageStatus,
-    MessageSummary, QuotedMessage, RecoveryStatus, RichBlock, RoomMembership, RoomPreview, RoomRow,
-    SendState, TimelineContent, TimelineDiff, TimelineItem, TimelineMessage, extract_file_links,
+    BotChatAvailability, ChatFailure, ChatLayout, CoreError, DeviceVerification, EncryptionStatus,
+    FileAttachment, FileLinks, ImageCaption, ImageContent, KeyNotice, MediaHandle, MessageContent,
+    MessageStatus, MessageSummary, QuotedMessage, RecoveryStatus, RichBlock, RoomMembership,
+    RoomPreview, RoomRow, SendState, TimelineContent, TimelineDiff, TimelineItem, TimelineMessage,
+    extract_file_links,
 };
 
 use crate::l10n::{CATALOG, language};
@@ -73,10 +74,14 @@ pub(crate) fn room_row(
     room: RoomInfo,
     core: &UserId,
     layout: ChatLayout,
-    bots: &HashSet<String>,
+    bots: &HashMap<String, BotChatAvailability>,
     side_chats: bool,
 ) -> RoomRow {
     let is_read_only = room.direct_user_id.as_deref() == Some(core);
+    let bot_chat = room
+        .direct_user_id
+        .as_ref()
+        .and_then(|user| bots.get(user.as_str()).copied());
     RoomRow {
         layout,
         room_id: room.room_id.to_string(),
@@ -84,6 +89,7 @@ pub(crate) fn room_row(
         is_direct: room.is_direct,
         direct_user_id: room.direct_user_id.map(|user| user.to_string()),
         plugin: None,
+        bot_chat,
         is_encrypted: room.is_encrypted,
         is_read_only,
         membership: match room.membership {
@@ -102,7 +108,11 @@ pub(crate) fn room_row(
 
 /// 预览。不是消息的事件（成员变化等）不做预览。旁聊的根、结果行和话题里的消息给旁聊的标题和状态
 /// （ADR-0093 §4）；只看这一条定不了“没收到结果”，那要看话题里的情况，预览里按结果行或开着算。
-fn preview(latest: LatestMessage, bots: &HashSet<String>, side_chats: bool) -> Option<RoomPreview> {
+fn preview(
+    latest: LatestMessage,
+    bots: &HashMap<String, BotChatAvailability>,
+    side_chats: bool,
+) -> Option<RoomPreview> {
     if matches!(&latest.body, MessageBody::Other { kind } if kind == "state") {
         return None;
     }
@@ -120,7 +130,9 @@ fn preview(latest: LatestMessage, bots: &HashSet<String>, side_chats: bool) -> O
     }
     // Agent 的状态行不进预览（ADR-0082）：状态对象在 SDK 的最新消息里读不到，只能按“Bot 发的提示消息”认，
     // 显示不出上一条就先空着，答案到了预览跟着换。
-    if matches!(&latest.body, MessageBody::Notice(_)) && bots.contains(latest.sender_id.as_str()) {
+    if matches!(&latest.body, MessageBody::Notice(_))
+        && bots.contains_key(latest.sender_id.as_str())
+    {
         return None;
     }
     let body = summary(latest.body, latest.is_own, &LinkTargets::default());
@@ -228,14 +240,18 @@ fn timeline_message(
     let body = message_content(message.body, message.is_own, links);
     let event_id = message.event_id.map(|id| id.to_string());
     let sender_id = message.sender.to_string();
-    let actions = message_actions(&body, event_id.as_deref(), message.can_redact, |event_id| {
-        QuotedMessage {
+    let actions = message_actions(
+        &body,
+        event_id.as_deref(),
+        message.can_redact,
+        message.is_own,
+        |event_id| QuotedMessage {
             event_id,
             sender_id: sender_id.clone(),
             sender_name: message.sender_name.clone(),
             content: quoted_content(&body),
-        }
-    });
+        },
+    );
     let send_state = send_state(message.status);
     TimelineMessage {
         event_id,
@@ -280,8 +296,13 @@ fn send_state(status: SendStatus) -> SendState {
             }),
         },
         SendStatus::Sent => SendState::Sent,
-        SendStatus::Failed { error, recoverable } => SendState::Failed {
-            message: error,
+        SendStatus::Failed {
+            failure,
+            error,
+            recoverable,
+        } => SendState::Failed {
+            failure,
+            details: Some(error),
             recoverable,
         },
     }
@@ -426,8 +447,14 @@ pub(crate) fn failure(error: &Error) -> ChatFailure {
         // 不让做这件事（没有权限、对方屏蔽、联邦不通），登录还有效，不能说成登录失效。
         Error::Forbidden { .. } => ChatFailure::Forbidden,
         Error::NotReady(_) => ChatFailure::NotReady,
-        Error::Upstream(_) => ChatFailure::Upstream,
-        Error::InvalidInput(_) => ChatFailure::InvalidInput,
+        Error::NotInvited(_) | Error::Upstream(_) | Error::CommentNotSent(_) => {
+            ChatFailure::Upstream
+        }
+        Error::InvalidInput(_)
+        | Error::NotInTimeline(_)
+        | Error::TooLarge(_)
+        | Error::UnsupportedType(_)
+        | Error::ReplyTarget(_) => ChatFailure::InvalidInput,
     }
 }
 
@@ -458,7 +485,7 @@ pub(crate) fn core_failure(failure: ChatFailure, reason: String) -> CoreError {
 mod tests {
     use super::*;
     use wonton_matrix::UploadProgress;
-    use wonton_protocol::{FileId, RichLinkKind};
+    use wonton_protocol::{BotChatUnavailable, FileId, RichLinkKind};
 
     fn encryption(
         recovery: RecoveryStatus,
@@ -655,5 +682,56 @@ mod tests {
                 reason: "对方公网访问关着".into()
             }
         );
+    }
+
+    fn direct_room(user: &str) -> RoomInfo {
+        RoomInfo {
+            room_id: "!r:s".parse().unwrap(),
+            name: "Room".into(),
+            is_direct: true,
+            direct_user_id: Some(user.parse().unwrap()),
+            is_encrypted: true,
+            membership: Membership::Joined,
+            is_friend: false,
+            latest: None,
+            unread_count: 0,
+            call_active: false,
+        }
+    }
+
+    #[test]
+    fn bot_direct_rooms_carry_the_availability_and_people_stay_plain() {
+        let mut bots = HashMap::new();
+        bots.insert(
+            "@private:s".to_owned(),
+            BotChatAvailability::Unavailable {
+                reason: BotChatUnavailable::OtherPrivateBot,
+            },
+        );
+        bots.insert(
+            "@revoked:s".to_owned(),
+            BotChatAvailability::Unavailable {
+                reason: BotChatUnavailable::GrantNotActive,
+            },
+        );
+        bots.insert("@unsure:s".to_owned(), BotChatAvailability::Unknown);
+        bots.insert("@mine:s".to_owned(), BotChatAvailability::Available);
+        let core: wonton_matrix::OwnedUserId = "@me:s".parse().unwrap();
+        for (user, expected) in [
+            ("@private:s", Some(bots["@private:s"])),
+            ("@revoked:s", Some(bots["@revoked:s"])),
+            ("@unsure:s", Some(bots["@unsure:s"])),
+            ("@mine:s", Some(bots["@mine:s"])),
+            ("@bob:s", None),
+        ] {
+            let row = room_row(
+                direct_room(user),
+                &core,
+                ChatLayout::default(),
+                &bots,
+                false,
+            );
+            assert_eq!(row.bot_chat, expected, "{user}");
+        }
     }
 }

@@ -277,6 +277,9 @@ login_with_password = false
 new_user_displayname_suffix = ""
 # 核心用它注册自己的管理账号（Synapse 兼容的管理接口）。
 registration_shared_secret = "{registration_secret}"
+# 服务器建 `#admins:<server>` 管理房间；核心的热加载在房间里发 `!admin server reload-config`（ADR-0116）。
+# 2.0 的分组名是 [global.admin.room] create，扁平键名仍兼容。
+create_admin_room = true
 # 私用名拿不到公共证书，仅封闭配对模式保留此例外（ADR-0051）；有名字但还没配入口的也不放宽。
 allow_invalid_tls_certificates = {private}
 
@@ -347,9 +350,13 @@ pub(crate) fn write_private(path: &Path, text: &str) -> anyhow::Result<()> {
     write_file(path, text, 0o600)
 }
 
-/// 先写临时文件再改名：中途失败不会留下写了一半的文件。
+/// 先删掉挡路的目录（旧版对账没写文件就建了容器，Docker 把缺的挂载源建成了目录，改名盖不过目录），
+/// 再写临时文件、改名：中途失败不会留下写了一半的文件。
 fn write_file(path: &Path, text: &str, mode: u32) -> anyhow::Result<()> {
     let tmp = path.with_extension("tmp");
+    if path.is_dir() {
+        fs::remove_dir_all(path).with_context(|| format!("替换目录 {}", path.display()))?;
+    }
     let mut file = fs::OpenOptions::new()
         .write(true)
         .create(true)

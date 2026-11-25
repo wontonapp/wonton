@@ -11,6 +11,7 @@ use wonton_protocol::{
 
 use super::audience::Subject;
 use super::audit::{AgentPermissionRecord, Decision};
+use super::chain_card::{Bound, bind_card};
 use super::confirm::{CANCELLED, Refusal};
 use super::{Bus, Caller, cards};
 use crate::l10n;
@@ -169,16 +170,23 @@ impl Bus {
         };
         asked.card.clone_from(&card.id);
         asked.settled = false;
-        // 请求报了会话、会话在链上：卡片认到这条链，停链时撤回，状态查询里报 waiting_permission。
-        asked.chain = card_chain(self, &caller, &asked.request).filter(|chain| {
-            let bound = self
-                .agent_chains()
-                .is_some_and(|chains| chains.ledger().bind_card(chain, &card.id).is_ok());
-            if !bound {
-                tracing::warn!(card = %card.id, %chain, "权限卡片没能认到链上");
-            }
-            bound
-        });
+        // 停链抢在开卡片和绑卡片之间时，停链那一遍已经收不到这张卡片了：绑上之后回查，是停的就当场撤回，
+        // 不等回答、也不让它挂在“等你确认”。绑到哪条链（请求里的会话那条，或回退认出的）就记给 `Drop` 的
+        // `resolve_chain`。
+        let session_chain = card_chain(self, &caller, &asked.request);
+        let binding = bind_card(
+            self,
+            &caller,
+            session_chain.as_deref(),
+            &card.id,
+            "权限卡片",
+        );
+        asked.chain = binding.chain;
+        if binding.outcome == Bound::Withdrawn {
+            asked.settled = true;
+            asked.audit(Decision::Withdrawn, None);
+            return Ok(AgentPermissionOutcome::Cancelled);
+        }
         match self.confirmations.deliver(&card, answered).await {
             Ok(chosen) => Ok(asked.answered(chosen.choice_id.as_deref()).await),
             Err(Refusal::Expired) => {

@@ -14,6 +14,9 @@ use serde::{Deserialize, Serialize};
 /// `GET`：[`RoleList`]。`POST`：请求体 [`RoleDraft`]，返回新建的 [`RoleDef`]。
 pub const ROLES_PATH: &str = "/_wonton/api/roles";
 
+/// 默认邀请角色的 ID：初始是“朋友”模板，权限最少（ADR-0088 第 4 节）。旧好友记录没有角色时也用它。
+pub const DEFAULT_INVITE_ROLE: &str = "friend";
+
 /// `PUT`：请求体 [`RoleDraft`]，返回 [`RoleDef`]。`DELETE`：还有人在用时回 409。
 pub fn role_path(role_id: &str) -> String {
     format!("{ROLES_PATH}/{role_id}")
@@ -213,6 +216,14 @@ impl Permissions {
         }
     }
 
+    /// 放行的权限项，按 [`PermissionItem::ALL`] 的顺序。给“这个角色能做什么”一页用。
+    pub fn granted_items(&self) -> Vec<PermissionItem> {
+        PermissionItem::ALL
+            .into_iter()
+            .filter(|item| self.allows(*item))
+            .collect()
+    }
+
     /// 主人的全部权限：主人有角色之外的一切（ADR-0088）。
     pub fn owner() -> Self {
         Self {
@@ -380,6 +391,26 @@ pub enum PermissionItem {
     Other,
 }
 
+impl PermissionItem {
+    /// 按 ADR-0088 表格的顺序列出的全部权限项，`Other` 除外。壳按它把能做的事写成一行行说明。
+    pub const ALL: [Self; 14] = [
+        Self::OpenApps,
+        Self::PluginAdmin,
+        Self::InstallApps,
+        Self::ModelSettings,
+        Self::ServerSettings,
+        Self::ManageMembers,
+        Self::AddFriends,
+        Self::ShareApps,
+        Self::Ai,
+        Self::PrivilegedTools,
+        Self::PrivateBot,
+        Self::SharedBots,
+        Self::LendOwnBot,
+        Self::Owner,
+    ];
+}
+
 /// 一条扫码加入的请求。
 #[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize)]
 #[cfg_attr(feature = "uniffi", derive(uniffi::Record))]
@@ -438,7 +469,7 @@ pub struct RolesViewModel {
     pub default_invite_role: Option<String>,
     /// 最近一次操作失败的原因；下一次成功时清空。
     #[serde(default)]
-    pub problem: Option<crate::PluginProblem>,
+    pub problem: Option<crate::FamilyProblem>,
 }
 
 /// 哪些角色能打开一个插件。“能打开哪些应用”是“全部”的角色总在里面。

@@ -15,7 +15,7 @@ use crate::plugin::languages::Languages;
 use crate::plugin::lifecycle::Undo;
 use crate::plugin::listed::Listed;
 use crate::plugin::manifest::{Manifest, ManifestExt, Permission, PluginId};
-use crate::plugin::models::ProviderState;
+use crate::plugin::models::{ProviderState, uses_models};
 use crate::plugin::package::PluginPackage;
 use crate::plugin::render::dry_run;
 use crate::plugin::store::EnabledPermission;
@@ -84,6 +84,13 @@ impl PluginManager {
         settings: std::collections::BTreeMap<String, serde_json::Value>,
         langs: &Languages,
     ) -> Result<PluginView, InstallError> {
+        // 网关正在起就先等它就绪，再拿依赖锁：起网关的 start 也要这把锁，锁里等只能等到两分钟超时。
+        // 没装（Absent）立即返回，下面的 provision 照旧用空变量装、靠以后的对账接上。
+        if uses_models(&package.manifest)
+            && let Err(error) = self.provider_when_ready(langs).await
+        {
+            tracing::info!(plugin = %package.manifest.id, error = %error, "模型网关没就绪，照样安装，变量留空等对账");
+        }
         let _dependencies = self.dependencies.changing.lock().await;
         let before = self.snapshot_capability_state()?;
         let consumers = self
@@ -241,6 +248,8 @@ impl PluginManager {
                     return Err(self.install_rollback_error(error, failures, langs));
                 }
                 self.changed();
+                // 装好立即补共享密码并落盘；失败只留待完成，插件已经装好。
+                self.reconcile_credentials(&manifest.id).await;
                 Ok((view, undo))
             }
             Err(error) => Err(error),
@@ -428,7 +437,7 @@ impl PluginManager {
         }
         drop(plugins);
         if self.egress_config()?.source == wonton_protocol::EgressProxySource::Plugin
-            && self.egress_provider(langs)?.id == *id
+            && self.egress_provider_id().as_ref() == Some(id)
         {
             return Err(InstallError::Conflict(l10n::text(
                 langs,
@@ -504,7 +513,7 @@ impl PluginManager {
     async fn begin_uninstall(&self, id: &PluginId, langs: &Languages) -> Result<(), InstallError> {
         let _changing = self.egress.changing.lock().await;
         if self.egress_config()?.source == wonton_protocol::EgressProxySource::Plugin
-            && self.egress_provider(langs)?.id == *id
+            && self.egress_provider_id().as_ref() == Some(id)
         {
             return Err(InstallError::Conflict(l10n::text(
                 langs,

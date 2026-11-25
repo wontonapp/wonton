@@ -2,6 +2,36 @@
   "sourceLanguage": "en",
   "version": "1.0",
   "strings": {
+    "friends.add.placeholder": {
+      "comment": "Keep this prompt short; the fictional format example belongs in the wrapping help.",
+      "extractionState": "manual",
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Paste an address or link"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "粘贴地址或链接"
+          }
+        },
+        "zh-Hant": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "貼上地址或連結"
+          }
+        },
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "アドレスかリンクを貼り付け"
+          }
+        }
+      }
+    },
     "friends.friend.badge": {
       "comment": "Marks a received request as a friend request; plain direct-chat invitations have no such line.",
       "extractionState": "manual",
@@ -182,96 +212,6 @@
         }
       }
     },
-    "friends.groups.join": {
-      "comment": "Separator between the names of the groups of one friend.",
-      "extractionState": "manual",
-      "localizations": {
-        "en": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "、"
-          }
-        },
-        "zh-Hans": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "、"
-          }
-        },
-        "zh-Hant": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "、"
-          }
-        },
-        "ja": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "、"
-          }
-        }
-      }
-    },
-    "friends.groups.new": {
-      "comment": "Starts a new group.",
-      "extractionState": "manual",
-      "localizations": {
-        "en": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "New Group"
-          }
-        },
-        "zh-Hans": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "新建分组"
-          }
-        },
-        "zh-Hant": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "新增分組"
-          }
-        },
-        "ja": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "グループを作成"
-          }
-        }
-      }
-    },
-    "friends.groups.delete.title": {
-      "comment": "Confirmation to delete a group. Argument: the group name.",
-      "extractionState": "manual",
-      "localizations": {
-        "en": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "Delete group “%@”?"
-          }
-        },
-        "zh-Hans": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "删除分组“%@”？"
-          }
-        },
-        "zh-Hant": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "刪除分組「%@」？"
-          }
-        },
-        "ja": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "グループ「%@」を削除しますか"
-          }
-        }
-      }
-    },
     "friends.block.server.field": {
       "comment": "Label of the server name field used to block a whole server.",
       "extractionState": "manual",
@@ -303,31 +243,31 @@
       }
     },
     "friends.error.invalidUserId.nextStep": {
-      "comment": "Shows the shape of a Matrix ID.",
+      "comment": "Ask for the person's real full address or user link instead of copying the example.",
       "extractionState": "manual",
       "localizations": {
         "en": {
           "stringUnit": {
             "state": "translated",
-            "value": "Use the full ID, like @bob:example.org."
+            "value": "Ask them for their real full friend address or user link; don't copy the example."
           }
         },
         "zh-Hans": {
           "stringUnit": {
             "state": "translated",
-            "value": "用完整 ID，比如 @bob:example.org。"
+            "value": "请向对方索要真实、完整的好友地址或用户链接，不要照抄示例。"
           }
         },
         "zh-Hant": {
           "stringUnit": {
             "state": "translated",
-            "value": "用完整 ID，例如 @bob:example.org。"
+            "value": "請向對方索取真實、完整的好友地址或使用者連結，不要照抄範例。"
           }
         },
         "ja": {
           "stringUnit": {
             "state": "translated",
-            "value": "完全な ID（例：@bob:example.org）を使ってください。"
+            "value": "例をそのまま使わず、相手に実際の完全な友だちアドレスかユーザーリンクを送ってもらってください。"
           }
         }
       }

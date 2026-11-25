@@ -46,14 +46,13 @@ impl PluginManager {
             };
             let (http, auth, username, public_rules) = match clients.http.as_ref() {
                 Some(http) => {
+                    // `app` 和没写验证方式的都是应用自己的账号；只有 `clients.tcp` 的插件同样按 `app` 列出。
                     let auth = if http.auth.gateway.is_some() {
                         ClientAuthKind::Gateway
                     } else if http.auth.credentials.is_some() {
                         ClientAuthKind::Credentials
-                    } else if http.auth.app.is_some() {
-                        ClientAuthKind::App
                     } else {
-                        ClientAuthKind::Other
+                        ClientAuthKind::App
                     };
                     let username = http.auth.credentials.as_ref().map(|credentials| {
                         credentials
@@ -76,7 +75,7 @@ impl PluginManager {
                     });
                     (true, auth, username, public_rules)
                 }
-                None => (false, ClientAuthKind::Other, None, None),
+                None => (false, ClientAuthKind::App, None, None),
             };
             let mut tcp_names: Vec<String> = clients
                 .tcp

@@ -601,6 +601,8 @@ pub enum PluginFailure {
     CoreUpgrading,
     /// 主人配的代理连不上或者拒绝了，出网插件装不上：要主人在代理设置里改地址，或者修好代理（ADR-0023）。
     EgressProxyUnavailable,
+    /// 出网插件或者它的出口容器还没就绪，预装和安装都挡住了：等它起来，不用改设置（#681）。
+    EgressProxyWaiting,
     /// 连不上远端 MCP 服务器：DNS、TLS、超时、拒连（ADR-0066）。
     RemoteUnavailable,
     /// 远端 MCP 服务器回 5xx 或者说了连接器听不懂的话（ADR-0066）。

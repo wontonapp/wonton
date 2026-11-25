@@ -114,6 +114,9 @@ final class BottomPin {
         })
     }
 
+    /// 壳自己滚（跳到原消息、摆进房间的落点）：和主人滚一样出浮动日期，停下后照常淡出。
+    func noteProgrammaticScroll() { noteScroll() }
+
     /// 主人发了东西：不管翻到哪，回到底部看结果。
     func pin() {
         isPinned = true
@@ -251,12 +254,24 @@ struct ScrollDebug: View {
     let viewport: String
     /// 走查用的额外一段（订阅次数、收到的批数），跟在自述后面。
     var extra = ""
+    /// 正在闪的那一行，没有为空：跳转被主人碰断时也要能走查闪光有没有发生。
+    var flashItem: String?
+    /// 闪过几次、最后闪的是哪一行：闪光只亮一秒多，测试按计数走、按最后一行核对位置。
+    var flashes: Int
+    var lastFlash: String?
+
+    /// 测试读的那一行：贴底状态、闪光读数；`extra` 是订阅侧的补充。
+    private var line: String {
+        let base = "\(pin.snapshot) flash=\(flashItem ?? "-") flashes=\(flashes)"
+            + " last=\(lastFlash ?? "-")"
+        return extra.isEmpty ? base : "\(base) \(extra)"
+    }
 
     var body: some View {
         // 滚动位置不是可观察的状态：只在房间重画时取一次的话，测试读到的是上一次重画时的位置。
         TimelineView(.periodic(from: .now, by: 0.25)) { _ in
             let tail = " kb=\(keyboard) ov=\(Int(overlayBottom)) ch=\(Int(composerHeight)) vp=\(viewport)"
-            Text(verbatim: extra.isEmpty ? pin.snapshot + tail : "\(pin.snapshot)\(tail) \(extra)")
+            Text(verbatim: "\(line)\(tail)")
                 .accessibilityIdentifier("roomScroll")
                 .allowsHitTesting(false)
                 // 小到看不见：垫在玻璃和材质底下时，再淡的字也会被透出来。

@@ -13,12 +13,12 @@ use std::net::{Ipv4Addr, TcpListener, TcpStream};
 use std::sync::LazyLock;
 
 use wonton_protocol::{
-    BackPagination, ChoiceSend, ChoicesState, ImageCaption, ImageContent, MediaHandle,
-    MessageAction, MessageChoice, MessageChoices, MessageContent, MessageGroup, MessageStatus,
-    PanelItem, PanelSource, QuotedContent, QuotedMessage, ReplyQuote, RichBlock, RichBlockKind,
-    RichLink, RichLinkKind, RichSpan, RoomCommand, SendState, SideChatCard, SideChatState, TabIcon,
-    TabLayout, TabPage, TabRef, TabState, TimelineContent, TimelineDiff, TimelineItem,
-    TimelineMessage, TimelineUpdate, TimelineViewport,
+    BackPagination, ChoiceSend, ChoicesState, ConfirmationView, ImageCaption, ImageContent,
+    MediaHandle, MessageAction, MessageChoice, MessageChoices, MessageContent, MessageGroup,
+    MessageStatus, PanelItem, PanelSource, QuotedContent, QuotedMessage, ReplyQuote, RichBlock,
+    RichBlockKind, RichLink, RichLinkKind, RichSpan, RoomCommand, SendFailure, SendState,
+    SideChatCard, SideChatState, TabIcon, TabLayout, TabPage, TabRef, TabState, TimelineContent,
+    TimelineDiff, TimelineItem, TimelineMessage, TimelineUpdate, TimelineViewport,
 };
 
 /// 主面板和房间面板里放的那一页。本机端口占不上时没有这一页。
@@ -62,11 +62,21 @@ pub(super) fn corner() -> Option<(TabRef, TabPage)> {
 /// 房间的第一批：全部条目，落点在第三条。之后的批次由 `ui_fake_timeline` 按壳的操作推。
 /// 通话中的那个群聊（`ui_fake::CALL_ROOM_ID`）另带顶栏的 widget 入口和“通话中”。
 /// Echo 一直在输入，带三条命令（ADR-0109 的命令表和正在输入）。
+/// 跨日的地方像核心一样先放一条日期分隔：第一条前和 `DAY_BREAK_INDEX` 前各一条；第一条前那条和它上面的
+/// `TimelineStart` 排在一起，和真核心翻到房间开头时的样子一样。
 pub(super) fn timeline(room_id: &str) -> TimelineUpdate {
     let in_call = room_id == super::ui_fake::CALL_ROOM_ID;
-    let items: Vec<TimelineItem> = (0..ITEMS).map(item).collect();
+    let mut items: Vec<TimelineItem> = Vec::with_capacity(ITEMS + 3);
+    items.push(timeline_start());
+    items.push(divider(TOP_INDEX));
+    for index in 0..ITEMS {
+        if index == DAY_BREAK_INDEX {
+            items.push(divider(index));
+        }
+        items.push(item(index));
+    }
     TimelineUpdate {
-        anchor: Some(items[2].id.clone()),
+        anchor: Some("ui-fake-2".into()),
         diffs: vec![TimelineDiff::Reset { items }],
         back_pagination: BackPagination::ReachedStart,
         viewport: TimelineViewport::Away { new_messages: 0 },
@@ -74,7 +84,18 @@ pub(super) fn timeline(room_id: &str) -> TimelineUpdate {
         panel: panel(),
         panel_selected: None,
         key_notice: None,
-        confirmations: Vec::new(),
+        // Echo 的房间里挂着一张等回答的确认卡片，输入框上方的入口由界面测试看。
+        confirmations: if room_id == super::ui_fake::ROOM_ID {
+            vec![ConfirmationView {
+                card: super::ui_fake_devices::card(),
+                sending: None,
+                sending_choice_id: None,
+                problem: None,
+                window: None,
+            }]
+        } else {
+            Vec::new()
+        },
         side_chat: None,
         widgets: if in_call {
             vec![super::ui_fake::call_widget()]
@@ -95,7 +116,61 @@ pub(super) fn timeline(room_id: &str) -> TimelineUpdate {
         focus: None,
         jump: wonton_protocol::JumpState::Idle,
         back_to: None,
+        editing: None,
     }
+}
+
+/// 挂在 [`SIDE_ROOT_INDEX`] 那条消息上的旁聊卡片。
+pub(super) fn side_card() -> SideChatCard {
+    SideChatCard {
+        root_event_id: format!("$ui-fake-{SIDE_ROOT_INDEX}"),
+        title: "Fixture side chat".into(),
+        reply_count: SIDE_ITEMS as u64,
+        unread_count: 0,
+        state: SideChatState::Open,
+    }
+}
+
+/// 旁聊里的一批：几条短回复，最底下一条是落点，顶上是这个旁聊的标题和状态。
+pub(super) fn side_timeline(room_id: &str) -> TimelineUpdate {
+    let items: Vec<TimelineItem> = (0..SIDE_ITEMS)
+        .map(|index| {
+            let own = index % 2 == 1;
+            let message = text_message(
+                &format!("side-{index}"),
+                if own { OWNER } else { ECHO },
+                FIRST_AT_MS + index as u64 * 60_000,
+                &[format!("Fixture side {index}")],
+            );
+            TimelineItem {
+                id: format!("side-{index}"),
+                content: TimelineContent::Message { message },
+            }
+        })
+        .collect();
+    let mut update = timeline(room_id);
+    update.anchor = items.last().map(|item| item.id.clone());
+    update.viewport = TimelineViewport::Bottom;
+    update.diffs = vec![TimelineDiff::Reset { items }];
+    update.side_chat = Some(side_card());
+    update.typing = Vec::new();
+    update
+}
+
+/// 刚开的旁聊的一批：只有主人发出去的第一句。假入口没有服务器，根和这条都由 `start_side_chat` 现造。
+pub(super) fn started_timeline(room_id: &str, body: &str) -> TimelineUpdate {
+    let message = text_message("side-new-0", OWNER, FIRST_AT_MS, &[body.to_owned()]);
+    let items = vec![TimelineItem {
+        id: "side-new-0".into(),
+        content: TimelineContent::Message { message },
+    }];
+    let mut update = timeline(room_id);
+    update.anchor = Some("side-new-0".into());
+    update.viewport = TimelineViewport::Bottom;
+    update.diffs = vec![TimelineDiff::Reset { items }];
+    update.side_chat = Some(side_card());
+    update.typing = Vec::new();
+    update
 }
 
 fn commands() -> Vec<RoomCommand> {
@@ -118,7 +193,7 @@ fn commands() -> Vec<RoomCommand> {
     .collect()
 }
 
-pub(super) const ITEMS: usize = 25;
+pub(super) const ITEMS: usize = 27;
 pub(super) const OWNER: &str = "@owner:home.example";
 pub(super) const ECHO: &str = "@echo:home.example";
 /// 最早一条的时间；下标每大一条晚一分钟（下标大 = 屏幕上更靠下 = 更晚）。
@@ -141,10 +216,10 @@ pub(super) fn at_ms(index: usize) -> u64 {
 pub(super) const REPLY_INDEX: usize = 21;
 /// Echo 带两个选项的那条。
 pub(super) const CHOICES_INDEX: usize = 22;
+/// 一条宽表格：比气泡宽，格子上的横向拖动要能滚表格、竖着滑照旧滑时间线。
+pub(super) const TABLE_INDEX: usize = 23;
 /// 一条“表情 + 一行字”的短消息，下一条长中文回复引用它：引用块要只有名字加一两行高。
 pub(super) const QUOTED_INDEX: usize = 19;
-/// 挂着旁聊卡片的那条（靠近底部，不撑高）：点卡片进旁聊（ADR-0093）。
-pub(super) const SIDE_CHAT_INDEX: usize = 21;
 /// 引用上一条的长中文回复：几段长短不一，有的末行写满，用来查时间戳和正文重叠、长段被截断。
 pub(super) const LONG_REPLY_INDEX: usize = 20;
 /// 一条只有 `wonton://` 链接的消息，带查询和结尾斜杠：点它要剥掉后就地打开“其他服务器”。
@@ -153,9 +228,22 @@ pub(super) const APP_LINK_INDEX: usize = 6;
 pub(super) const UNKNOWN_APP_LINK_INDEX: usize = 7;
 pub(super) const APP_LINK: &str = "wonton://settings/peers/?from=chat";
 pub(super) const UNKNOWN_APP_LINK: &str = "wonton:tab/from-the-future";
+/// 自己发的、发不出去的一条：旁边红色感叹号的点击范围要看它。
+pub(super) const FAILED_SEND_INDEX: usize = 24;
+/// Echo 带一个发送失败的选项：失败原因和重试要看它。
+pub(super) const FAILED_CHOICE_INDEX: usize = 25;
+/// 失败选项的原因，界面上应当收在“详情”里。
+pub(super) const FAILED_CHOICE_REASON: &str = "Server timed out while sending";
+/// 这条下面挂着一张旁聊卡，点进去是旁聊页：界面测试用它查顶栏下面的叠放顺序（ADR-0093）。
+/// 就挂在进房间的落点那条上，不用翻页；照片条不走 `decorate`，别选照片的下标。
+pub(super) const SIDE_CHAT_TOP_INDEX: usize = 2;
 // 中文假数据放在数据文件里：它是界面测试的输入，不是界面文字，界面文字检查（ADR-0043）只管源码里的字符串。
 const QUOTED_TEXT: &str = include_str!("ui_fake_text/quoted.txt");
 const LONG_REPLY: &str = include_str!("ui_fake_text/long_reply.txt");
+/// 带旁聊卡片的那条：点了进那个旁聊。
+pub(super) const SIDE_ROOT_INDEX: usize = 5;
+/// 旁聊里的条数。
+const SIDE_ITEMS: usize = 4;
 /// 每隔几条来一条比屏幕高的；最后一条也是。
 const TALL_EVERY: usize = 4;
 const TALL_PARAGRAPHS: usize = 60;
@@ -180,6 +268,24 @@ const PHOTO_COLORS: [[u8; 3]; 4] = [
     [150, 60, 120],
 ];
 
+/// 日期分隔：核心在跨日处发的虚拟条目，时间取那一天的第一条消息（`index` 就是它）。
+fn divider(index: usize) -> TimelineItem {
+    TimelineItem {
+        id: format!("ui-fake-day-{index}"),
+        content: TimelineContent::DateDivider {
+            timestamp_ms: at_ms(index),
+        },
+    }
+}
+
+/// 房间开头：SDK 固定放在最前面的条目，翻到头时它上面是那条分隔。
+fn timeline_start() -> TimelineItem {
+    TimelineItem {
+        id: "ui-fake-start".into(),
+        content: TimelineContent::TimelineStart,
+    }
+}
+
 /// 这一条消息的正文：几类固定样本，其余是一句普通的话或一条长回复，最后一条补上找底用的那句话。
 fn paragraphs(index: usize, last: bool) -> Vec<String> {
     let mut paragraphs = if index == CHOICES_INDEX {
@@ -191,8 +297,17 @@ fn paragraphs(index: usize, last: bool) -> Vec<String> {
         vec![APP_LINK.into()]
     } else if index == UNKNOWN_APP_LINK_INDEX {
         vec![UNKNOWN_APP_LINK.into()]
+    } else if index == FAILED_SEND_INDEX {
+        vec!["Fixture failed send".into()]
+    } else if index == FAILED_CHOICE_INDEX {
+        vec![
+            "Fixture choices with a failure".into(),
+            "⏳ = ask later\n🔁 = retry tomorrow".into(),
+        ]
     } else if index == QUOTED_INDEX {
         vec![QUOTED_TEXT.trim_end().into()]
+    } else if index == TABLE_INDEX {
+        vec!["Fixture table".into()]
     } else if index == LONG_REPLY_INDEX {
         LONG_REPLY
             .trim_end()
@@ -212,12 +327,71 @@ fn paragraphs(index: usize, last: bool) -> Vec<String> {
     paragraphs
 }
 
+/// 状态、回复、选项、旁聊卡片和两处失败标记：`item` 里只留正文。
+fn decorate(index: usize, own: bool, message: &mut TimelineMessage) {
+    let status = if index <= REPLY_INDEX {
+        MessageStatus::Read
+    } else {
+        MessageStatus::Sent
+    };
+    message.status =
+        (own && index != SENDING_INDEX && index != FAILED_SEND_INDEX).then_some(status);
+    if index == SENDING_INDEX {
+        message.send_state = SendState::Sending { progress: None };
+    }
+    if let Some(reply) = quote(index) {
+        message.reply = Some(reply);
+    }
+    if index == CHOICES_INDEX {
+        message.choices = Some(choices());
+    }
+    if index == SIDE_CHAT_TOP_INDEX {
+        message.side_chat = Some(SideChatCard {
+            root_event_id: message.event_id.clone().unwrap_or_default(),
+            title: "Fixture side chat".into(),
+            reply_count: 1,
+            unread_count: 0,
+            state: SideChatState::Open,
+        });
+    }
+    if index == FAILED_SEND_INDEX {
+        message.send_state = SendState::Failed {
+            failure: SendFailure::Upstream,
+            details: Some(FAILED_CHOICE_REASON.into()),
+            recoverable: true,
+        };
+    }
+    if index == FAILED_CHOICE_INDEX {
+        message.choices = Some(MessageChoices {
+            options: [("⏳", "ask later"), ("🔁", "retry tomorrow")]
+                .into_iter()
+                .map(|(key, label)| MessageChoice {
+                    key: key.into(),
+                    label: Some(label.into()),
+                    chosen: false,
+                    send: if key == "⏳" {
+                        ChoiceSend::Failed {
+                            message: FAILED_CHOICE_REASON.into(),
+                        }
+                    } else {
+                        ChoiceSend::Idle
+                    },
+                })
+                .collect(),
+            state: ChoicesState::Open,
+        });
+    }
+}
+
 fn item(index: usize) -> TimelineItem {
     if let Some(photo) = photo(index) {
         return photo;
     }
-    // 8..=10 都算 Echo 的，凑一组连发的消息给并排的气泡做样子，最后一条是自己还没送达的，其余一左一右轮流。
-    let own = (index % 2 == 1 && !(8..=10).contains(&index)) || index == SENDING_INDEX;
+    // 8..=10 都算 Echo 的，凑一组连发的消息给并排的气泡做样子，第 24 条是自己发不出去的一条，最后一条是自己还没送达的，
+    // 其余一左一右轮流。
+    let own = (index % 2 == 1 && !(8..=10).contains(&index))
+        || index == FAILED_SEND_INDEX
+        || index == SENDING_INDEX;
     let last = index + 1 == ITEMS;
     let paragraphs = paragraphs(index, last);
     let mut message = text_message(
@@ -234,65 +408,66 @@ fn item(index: usize) -> TimelineItem {
             kind: RichLinkKind::Other,
         });
     }
-    let status = if index <= REPLY_INDEX {
-        MessageStatus::Read
-    } else {
-        MessageStatus::Sent
-    };
-    message.status = (own && index != SENDING_INDEX).then_some(status);
-    if index == SENDING_INDEX {
-        message.send_state = SendState::Sending { progress: None };
+    if index == TABLE_INDEX
+        && let MessageContent::Text { blocks, .. } = &mut message.body
+    {
+        blocks.push(table());
     }
-    if index == REPLY_INDEX {
-        message.reply = Some(ReplyQuote::Ready {
-            message: QuotedMessage {
-                event_id: "$ui-fake-5".into(),
-                sender_id: OWNER.into(),
-                sender_name: "Owner".into(),
-                content: QuotedContent::Text {
-                    text: "Fixture message 5".into(),
-                },
-            },
-        });
-    }
-    if index == LONG_REPLY_INDEX {
-        message.reply = Some(ReplyQuote::Ready {
-            message: QuotedMessage {
-                event_id: format!("$ui-fake-{QUOTED_INDEX}"),
-                sender_id: OWNER.into(),
-                sender_name: "Owner".into(),
-                content: QuotedContent::Text {
-                    text: QUOTED_TEXT.trim_end().into(),
-                },
-            },
-        });
-    }
-    if index == CHOICES_INDEX {
-        message.choices = Some(MessageChoices {
-            options: [("✅", "approve once"), ("❌", "deny")]
-                .into_iter()
-                .map(|(key, label)| MessageChoice {
-                    key: key.into(),
-                    label: Some(label.into()),
-                    chosen: false,
-                    send: ChoiceSend::Idle,
-                })
-                .collect(),
-            state: ChoicesState::Open,
-        });
-    }
-    if index == SIDE_CHAT_INDEX {
-        message.side_chat = Some(SideChatCard {
-            root_event_id: message.event_id.clone().unwrap_or_default(),
-            title: "Fixture side chat".into(),
-            reply_count: 1,
-            unread_count: 0,
-            state: SideChatState::Open,
-        });
-    }
+    decorate(index, own, &mut message);
     TimelineItem {
         id: format!("ui-fake-{index}"),
         content: TimelineContent::Message { message },
+    }
+}
+
+/// 引用条：`REPLY_INDEX` 引用第 5 条，`LONG_REPLY_INDEX` 引用那条短消息，其余的没有。
+fn quote(index: usize) -> Option<ReplyQuote> {
+    let (quoted, text): (usize, &str) = match index {
+        REPLY_INDEX => (SIDE_ROOT_INDEX, "Fixture message 5"),
+        LONG_REPLY_INDEX => (QUOTED_INDEX, QUOTED_TEXT.trim_end()),
+        _ => return None,
+    };
+    Some(ReplyQuote::Ready {
+        message: QuotedMessage {
+            event_id: format!("$ui-fake-{quoted}"),
+            sender_id: OWNER.into(),
+            sender_name: "Owner".into(),
+            content: QuotedContent::Text { text: text.into() },
+        },
+    })
+}
+
+/// `TABLE_INDEX` 那条上挂的宽表格：比气泡宽，格子上的横向拖动要能滚表格。
+fn table() -> RichBlock {
+    RichBlock {
+        kind: RichBlockKind::Table {
+            rows: (0..4)
+                .map(|row| {
+                    (0..5)
+                        .map(|cell| format!("Fixture cell {row}-{cell} wide"))
+                        .collect()
+                })
+                .collect(),
+        },
+        depth: 0,
+        quoted: false,
+        spans: Vec::new(),
+    }
+}
+
+/// `CHOICES_INDEX` 那两个选项，等界面来点。
+fn choices() -> MessageChoices {
+    MessageChoices {
+        options: [("✅", "approve once"), ("❌", "deny")]
+            .into_iter()
+            .map(|(key, label)| MessageChoice {
+                key: key.into(),
+                label: Some(label.into()),
+                chosen: false,
+                send: ChoiceSend::Idle,
+            })
+            .collect(),
+        state: ChoicesState::Open,
     }
 }
 
@@ -331,19 +506,26 @@ pub(super) fn text_message(
     let body = paragraphs.join("\n\n");
     let event_id = format!("${id}");
     let sender_name = if own { "Owner" } else { "Echo" };
-    TimelineMessage {
-        actions: vec![
-            MessageAction::Copy { text: body.clone() },
-            MessageAction::Reply {
-                message: QuotedMessage {
-                    event_id: event_id.clone(),
-                    sender_id: sender.into(),
-                    sender_name: sender_name.into(),
-                    content: QuotedContent::Text { text: body.clone() },
-                },
+    let mut actions = vec![
+        MessageAction::Copy { text: body.clone() },
+        MessageAction::Reply {
+            message: QuotedMessage {
+                event_id: event_id.clone(),
+                sender_id: sender.into(),
+                sender_name: sender_name.into(),
+                content: QuotedContent::Text { text: body.clone() },
             },
-            MessageAction::Forward,
-        ],
+        },
+    ];
+    // ADR-0109 的菜单顺序是回复、复制、编辑、转发：前两条造的时候换了位，这里换回来。
+    actions.swap(0, 1);
+    // 编辑的规则照真核心的菜单：只有自己的文字消息给（`chat/menu.rs`），不看正文空不空。
+    if own {
+        actions.push(MessageAction::Edit { text: body.clone() });
+    }
+    actions.push(MessageAction::Forward);
+    TimelineMessage {
+        actions,
         event_id: Some(event_id),
         sender_id: sender.into(),
         sender_name: sender_name.into(),
@@ -418,20 +600,25 @@ fn photo_item(index: usize, position: usize, count: Option<u32>) -> TimelineItem
                 edited: false,
                 read_by: Vec::new(),
                 reply: None,
-                side_chat: None,
+                // 第 5 条也是旁聊的根：旁聊卡片挂在它的照片下面（ADR-0093 的走查）。
+                side_chat: (index == SIDE_ROOT_INDEX).then(side_card),
                 preview: None,
-                actions: vec![
-                    MessageAction::Copy { text: text.clone() },
-                    MessageAction::Reply {
-                        message: QuotedMessage {
-                            event_id,
-                            sender_id: sender_id.into(),
-                            sender_name: sender_name.into(),
-                            content: QuotedContent::Text { text },
+                actions: {
+                    let mut actions = vec![
+                        MessageAction::Copy { text: text.clone() },
+                        MessageAction::Reply {
+                            message: QuotedMessage {
+                                event_id,
+                                sender_id: sender_id.into(),
+                                sender_name: sender_name.into(),
+                                content: QuotedContent::Text { text },
+                            },
                         },
-                    },
-                    MessageAction::Forward,
-                ],
+                        MessageAction::Forward,
+                    ];
+                    actions.swap(0, 1);
+                    actions
+                },
                 group: count.map(|count| MessageGroup {
                     id: "000102030405060708090a0b0c0d0e0f".into(),
                     index: position as u32,
@@ -752,12 +939,13 @@ mod tests {
         let [TimelineDiff::Reset { items }] = update.diffs.as_slice() else {
             panic!("the first batch must be a reset");
         };
-        assert_eq!(items.len(), ITEMS);
+        assert_eq!(items.len(), ITEMS + 3);
         assert_ne!(
             update.anchor.as_deref(),
             items.last().map(|item| item.id.as_str())
         );
-        let TimelineContent::Message { message } = &items[ITEMS - 1].content else {
+        let Some(TimelineContent::Message { message }) = items.last().map(|item| &item.content)
+        else {
             panic!("the last item must be a message");
         };
         let MessageContent::Text { blocks, .. } = &message.body else {

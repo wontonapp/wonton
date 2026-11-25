@@ -46,7 +46,7 @@ mod clients;
 pub(crate) use clients::ClientPlugin;
 mod views;
 
-pub use views::{ClientsRoute, ClientsView, HostedRoute, PluginView, Route, StorageRoute};
+pub use views::{ClientsRoute, HostedRoute, PluginView, Route, StorageRoute};
 
 pub(super) use busy::{busy, detached};
 
@@ -104,10 +104,15 @@ pub struct PluginManager {
     pub(super) bot_web_routes: RwLock<BTreeMap<String, super::bot_web::BotRoute>>,
     /// 交给 App 的图标。
     pub(super) gallery: Gallery,
-    pub(super) plugins: RwLock<BTreeMap<PluginId, Entry>>,
+    pub(crate) plugins: RwLock<BTreeMap<PluginId, Entry>>,
     pub(super) failed_installs: RwLock<BTreeMap<PluginId, super::install_failure::FailedInstall>>,
     pub(super) dependencies: super::dependencies::Dependencies,
     pub(crate) client_passwords: Option<Arc<crate::clients::passwords::PasswordStore>>,
+    /// 跑应用的凭据命令；生产是 Docker，测试换成按队列给结果的假实现。
+    pub(crate) credential_exec: RwLock<Arc<dyn crate::clients::credentials::CredentialExec>>,
+    /// 每个插件一把异步锁：并发的启动/安装对账串行跑，第二个先看到第一个的结果。
+    pub(crate) credential_locks:
+        std::sync::Mutex<std::collections::BTreeMap<PluginId, Arc<tokio::sync::Mutex<()>>>>,
     /// 插件表每变一次加一：MCP 总线据此刷新工具列表（见 [`Self::changes`]）。
     changes: tokio::sync::watch::Sender<u64>,
     clients_gateway: std::sync::OnceLock<std::sync::Weak<crate::gateway::Gateway>>,
@@ -211,8 +216,13 @@ impl PluginManager {
                 None
             }
         };
+        let credential_exec: Arc<dyn crate::clients::credentials::CredentialExec> = Arc::new(
+            crate::clients::credentials::EngineExec::new(Arc::new(engine.clone())),
+        );
         Self {
             client_passwords,
+            credential_exec: RwLock::new(credential_exec),
+            credential_locks: Default::default(),
             engine,
             store,
             http,
@@ -434,6 +444,24 @@ impl PluginManager {
             .expect("插件表锁中毒")
             .get(id)
             .is_some_and(|entry| entry.system)
+    }
+
+    /// 随核心镜像附带、由核心自己维护的系统插件。从商店、来源或上传的同名 system 插件不算，
+    /// 它们和普通插件一样能经接口升级、卸载（ADR-0108）。
+    pub fn is_bundled_system(&self, id: &PluginId) -> bool {
+        self.is_system(id) && self.bundled_system_record(id)
+    }
+
+    /// 记录或内存集合表明这个插件随核心带。界面层拿着 entry 时也用它，和四道闸门同一套判定。
+    pub(super) fn bundled_system_record(&self, id: &PluginId) -> bool {
+        if self.bundled.read().expect("插件表锁中毒").contains(id) {
+            return true;
+        }
+        self.store
+            .load(id)
+            .ok()
+            .flatten()
+            .is_some_and(|record| record.bundled)
     }
 
     /// OIDC 客户端（ID 是插件的 `id`，Bot 的网页客户端按它的插件 ID 查）声明的管理员组和角色声明；

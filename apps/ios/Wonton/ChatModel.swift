@@ -34,7 +34,9 @@ final class ChatModel {
         set { draftStore.bodies = newValue }
     }
     var replies: [String: ReplyQuote] { draftStore.replies }
-    private(set) var replyFocusRevision = 0
+    var replyFocusRevision = 0
+    /// 进编辑态换进来的原文会触发一次草稿变化，那一次的“正在输入”不报（进编辑态就停，ADR-0109 第 8 节）。
+    var suppressNextTyping = false
     /// 聊天页打开的页面。
     var path: [ChatRoute] = []
     var visiting: VisitingRoom?
@@ -207,7 +209,9 @@ final class ChatModel {
         viewModel.rooms.first { $0.roomId == roomId }?.name ?? roomId
     }
 
-    /// 操作被核心收下返回真；被拒时原因弹出来，返回假。要保住草稿和回复对象的调用方看这个结果。
+    /// 操作被核心收下返回真；被拒时原因弹出来，返回假。
+    /// “被拒”只是 `dispatch` 当场拒绝：核心收下之后在发送队列里失败（附件传不上去等），这里照样返回真，
+    /// 由发送队列自己报错、重试，调用方这时清掉草稿和回复对象。
     @discardableResult
     func send(_ action: Action) -> Bool {
         do {

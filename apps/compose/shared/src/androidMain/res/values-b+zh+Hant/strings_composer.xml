@@ -12,6 +12,7 @@
     <string name="composer_photo">照片</string>
     <!-- Screen-reader label of the round send button at the right of the chat composer. -->
     <string name="composer_send">傳送</string>
+    <string name="composer_edit_confirm">確認</string>
     <string name="composer_file_unreadable">無法讀取這個檔案。請重新複製，或選擇其他檔案。</string>
     <string name="composer_tray_full">一次最多傳送 %1$d 個附件。</string>
     <string name="composer_attachment_remove">移除 %1$s</string>
@@ -40,4 +41,9 @@
     <string name="composer_stop_forbidden">你沒有權限停下這一輪。</string>
     <!-- One-line note above the chat composer: the stop request may not have reached the home server, so it is unknown whether the bot's turn stopped. The stop button stays for another try. -->
     <string name="composer_stop_uncertain">沒連上家裡的伺服器，不確定停下沒有。可以再試一次。</string>
+    <!-- 附件格式伺服器送不了時的說明列。無參數。 -->
+    <string name="composer_attachment_unsupported_type">這個格式傳不上去</string>
+    <!-- 要回覆的那則不在了、回覆被去掉時的說明列。無參數。 -->
+    <string name="composer_attachment_reply_target">要回覆的那則不在了，去掉回覆</string>
+
 </resources>

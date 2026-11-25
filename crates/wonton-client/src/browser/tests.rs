@@ -126,6 +126,7 @@ fn bot_view(plugin: &str, bot: &str, url: &str, isolated: bool) -> wonton_protoc
         cross_origin_isolated: isolated,
     };
     wonton_protocol::BotView {
+        availability: Default::default(),
         user_id: format!("@{}:{}:wonton.localhost", bot.plugin_id, bot.bot),
         web: Some(wonton_protocol::BotWebView::Ready { page: page.clone() }),
         web_page: Some(page),

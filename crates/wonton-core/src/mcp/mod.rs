@@ -707,7 +707,7 @@ impl Bus {
         .await
     }
 
-    /// 主人没同意：拒绝了、过期了，或者卡片发不出去。
+    /// 主人没同意：拒绝了、过期了、链被停了抢在投递前撤回卡片，或者卡片发不出去。
     fn refused(
         &self,
         caller: &Caller,
@@ -719,6 +719,7 @@ impl Bus {
         let decision = match refusal {
             confirm::Refusal::Rejected => Decision::Rejected,
             confirm::Refusal::Expired => Decision::Expired,
+            confirm::Refusal::Cancelled => Decision::Withdrawn,
             _ => Decision::Unconfirmed,
         };
         let message = refusal.message();

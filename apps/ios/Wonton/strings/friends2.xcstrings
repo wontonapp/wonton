@@ -122,66 +122,6 @@
         }
       }
     },
-    "friends.groups": {
-      "comment": "Section of friend groups.",
-      "extractionState": "manual",
-      "localizations": {
-        "en": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "Groups"
-          }
-        },
-        "zh-Hans": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "分组"
-          }
-        },
-        "zh-Hant": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "分組"
-          }
-        },
-        "ja": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "グループ"
-          }
-        }
-      }
-    },
-    "friends.groups.rename": {
-      "comment": "Renames the group.",
-      "extractionState": "manual",
-      "localizations": {
-        "en": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "Rename"
-          }
-        },
-        "zh-Hans": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "改名"
-          }
-        },
-        "zh-Hant": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "改名"
-          }
-        },
-        "ja": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "名前を変更"
-          }
-        }
-      }
-    },
     "friends.remove": {
       "comment": "Removes the friend; also the swipe action label.",
       "extractionState": "manual",
@@ -298,6 +238,36 @@
           "stringUnit": {
             "state": "translated",
             "value": "%lld 件の友だちリクエスト"
+          }
+        }
+      }
+    },
+    "friends.myCodeQrFailed": {
+      "comment": "Shown in place of the QR image when CoreImage cannot render it; the matrix.to link below stays usable.",
+      "extractionState": "manual",
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Couldn't create the QR code"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "二维码生成失败"
+          }
+        },
+        "zh-Hant": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "QR碼產生失敗"
+          }
+        },
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "QRコードを作成できません"
           }
         }
       }

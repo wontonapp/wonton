@@ -12,6 +12,8 @@
     <string name="composer_photo">Photo</string>
     <!-- Screen-reader label of the round send button at the right of the chat composer. -->
     <string name="composer_send">Send</string>
+    <!-- Screen-reader label of the check button that submits the edited text while a message is being edited. -->
+    <string name="composer_edit_confirm">Edit</string>
     <string name="composer_file_unreadable">Couldn\'t read this file. Copy it again or choose another file.</string>
     <!-- Shown when the attachment tray is full. Argument: the most attachments one message can carry. -->
     <string name="composer_tray_full">You can send up to %1$d attachments at a time.</string>
@@ -51,4 +53,8 @@
     <string name="composer_commands">Commands</string>
     <!-- Footer of the command menu: how many commands a Bot has beyond the listed ones. Argument: the count. -->
     <string name="composer_commands_more">%1$d more commands not listed</string>
+    <!-- Sheet line when an attachment has a format the server can't take. No arguments. -->
+    <string name="composer_attachment_unsupported_type">This format can\'t be uploaded</string>
+    <!-- Sheet line when the message being replied to is gone; the reply is dropped. No arguments. -->
+    <string name="composer_attachment_reply_target">The quoted message is gone, drop the reply</string>
 </resources>

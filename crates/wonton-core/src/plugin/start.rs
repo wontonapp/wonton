@@ -65,6 +65,12 @@ impl PluginManager {
             this.start(&started_id).await
         })
         .await?;
+        // 启动已成功：补共享密码、重试待完成的凭据操作、对账旧值；不拖启动返回。
+        let reconciling = Arc::clone(self);
+        let reconciled = id.clone();
+        tokio::spawn(async move {
+            reconciling.reconcile_credentials(&reconciled).await;
+        });
         if probe {
             closing.check_models_once(vec![id]).await;
         }
@@ -218,7 +224,7 @@ impl PluginManager {
                     && entry
                         .listed
                         .as_ref()
-                        .is_some_and(|l| super::model_health::needs_default_model(&l.manifest));
+                        .is_some_and(|l| super::models::uses_models(&l.manifest));
                 Ok((self.view(id, entry), probe))
             }
             Err(error) => {
@@ -373,10 +379,7 @@ impl PluginManager {
         if let (Some(upstream), Some(webui)) = (&deployed.upstream, &package.manifest.webui)
             && deployed.serving.contains(&webui.service)
         {
-            let container = self
-                .cfg
-                .instance
-                .container(&package.manifest.id.slug(), &webui.service);
+            let container = self.webui_container(&package.manifest, &webui.service);
             health::wait_webui(&self.http, upstream, &webui.path, &container, wait, langs).await?;
         }
         Ok(Started {

@@ -105,7 +105,9 @@ extension InstalledPlugin {
     var entries: [PluginEntry] {
         guard installFailure == nil else { return [] }
         var entries: [PluginEntry] = []
-        if kind == .agent, defaultBotVisibility == .visible, let bot = botUserId, !bot.isEmpty {
+        // 看不见身份（absent）也还有 id：私聊点得开，房间行会写不能聊的原因；没核实（unknown/没给）才不给入口。
+        if kind == .agent, let visibility = defaultBotVisibility, visibility != .unknown,
+           let bot = botUserId, !bot.isEmpty {
             entries.append(.chat(botUserId: bot))
         }
         if let url = linkUrl, let external = URL(string: url) {

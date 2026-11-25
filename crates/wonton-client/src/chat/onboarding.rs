@@ -72,6 +72,7 @@ mod tests {
             is_direct: direct_user_id.is_some(),
             direct_user_id: direct_user_id.map(str::to_owned),
             plugin: None,
+            bot_chat: None,
             is_encrypted: false,
             is_read_only: false,
             membership: RoomMembership::Joined,

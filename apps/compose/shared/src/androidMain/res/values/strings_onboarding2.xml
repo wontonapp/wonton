@@ -1,7 +1,7 @@
 <?xml version="1.0" encoding="utf-8"?>
 <resources>
-    <!-- Primary button that finishes setup. -->
-    <string name="onboarding_done">Done</string>
+    <!-- Primary button that finishes setup and starts the installs. -->
+    <string name="onboarding_done">Install these apps</string>
     <!-- Primary button after setup finished: leave setup and open chat. -->
     <string name="onboarding_enter_chat">Go to chat</string>
     <!-- Problem title in setup: the home server can't be reached. -->
@@ -19,11 +19,11 @@
     <!-- Problem title in setup: the recommendation source can't be reached. -->
     <string name="onboarding_problem_store_unreachable">Can\'t reach the recommendation source. Try again or skip.</string>
     <!-- Fallback when the core gives no reason why an app can't be installed. -->
-    <string name="onboarding_review_blocked">Can\'t install</string>
+    <string name="onboarding_review_blocked">Can\'t install this app</string>
     <!-- Row description in the review step: the already-configured models are kept. -->
-    <string name="onboarding_review_keep_current">Keep current</string>
+    <string name="onboarding_review_keep_current">Keep using the current one</string>
     <!-- Row description in the review step: finishing will not touch this. -->
-    <string name="onboarding_review_unchanged">Unchanged</string>
+    <string name="onboarding_review_unchanged">Keep as is</string>
     <!-- Row description in the review step: the model couldn't be reached during the test. -->
     <string name="onboarding_review_unreachable">Unreachable when tested</string>
     <!-- Busy label while a setup step or an install task is running. -->

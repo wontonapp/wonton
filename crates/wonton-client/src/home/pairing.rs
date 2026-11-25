@@ -8,7 +8,7 @@ use std::time::{Duration, Instant};
 use serde_json::json;
 use wonton_l10n::{Lang, l10n};
 use wonton_protocol::{
-    CoreError, JoinOutcome, PairingFailure, PairingStage, PairingStatus, RoleDef,
+    CoreError, JoinOutcome, JoinRoleView, PairingFailure, PairingStage, PairingStatus, RoleDef,
 };
 use wonton_tunnel::TunnelError;
 use wonton_tunnel::pair::{self, InvalidCode, PairResponse, PairingCode, RejectReason};
@@ -296,8 +296,7 @@ impl HomeLink {
             }
             Ok(PairResponse::Joining { outcome, role }) => {
                 tracing::info!(?outcome, "the home server answered the join request");
-                let (status, text) = joining(outcome, role.as_ref(), lang);
-                (Some(status), text)
+                (Some(joining(outcome, role.as_ref())), None)
             }
             Ok(PairResponse::Rejected { reason, message }) => {
                 let diagnostic = super::failure::redact(&code, &message);
@@ -531,7 +530,6 @@ enum PairingText {
     },
     Timeout(Duration),
     Aborted,
-    Pending(Option<String>),
     Setup,
 }
 
@@ -552,7 +550,6 @@ impl PairingText {
                 seconds = super::failure::seconds(*deadline)
             ),
             Self::Aborted => l10n!(CATALOG, lang, "home-pairing-aborted"),
-            Self::Pending(name) => pending_message(lang, name.as_deref()),
             Self::Setup => l10n!(CATALOG, lang, "home-pairing-setup-failed"),
         }
     }
@@ -597,38 +594,25 @@ fn failed(reason: PairingFailure, message: String) -> PairingStatus {
     }
 }
 
-fn joining(
-    outcome: JoinOutcome,
-    role: Option<&RoleDef>,
-    lang: Lang,
-) -> (PairingStatus, Option<PairingText>) {
+fn joining(outcome: JoinOutcome, role: Option<&RoleDef>) -> PairingStatus {
     match outcome {
-        JoinOutcome::Pending | JoinOutcome::Other => {
-            let name = role
-                .map(|role| role.name.trim())
-                .filter(|name| !name.is_empty())
-                .map(str::to_owned);
-            let text = PairingText::Pending(name);
-            (
-                failed(PairingFailure::PendingApproval, text.render(lang)),
-                Some(text),
-            )
-        }
-        JoinOutcome::Rejected => (failed(PairingFailure::JoinRejected, String::new()), None),
-        JoinOutcome::CodeUsed => (failed(PairingFailure::CodeUsed, String::new()), None),
+        // 不认识的加入结果按“等批”算：比报失败让被邀请的人重扫码稳。
+        JoinOutcome::Pending | JoinOutcome::Other => PairingStatus::JoinPending {
+            role: role.map(join_role),
+        },
+        JoinOutcome::Rejected => failed(PairingFailure::JoinRejected, String::new()),
+        JoinOutcome::CodeUsed => failed(PairingFailure::CodeUsed, String::new()),
         JoinOutcome::Approved => unreachable!("approved is handled above"),
     }
 }
 
-fn pending_message(lang: Lang, name: Option<&str>) -> String {
-    match name {
-        Some(name) => l10n!(
-            CATALOG,
-            lang,
-            "home-pairing-joining-pending-role",
-            role = name
-        ),
-        None => l10n!(CATALOG, lang, "home-pairing-joining-pending"),
+/// 加入页上给被邀请的人看的角色：名字、模板和这个角色放行的权限项。
+fn join_role(role: &RoleDef) -> JoinRoleView {
+    JoinRoleView {
+        role_id: role.id.clone(),
+        name: (!role.name.trim().is_empty()).then(|| role.name.trim().to_owned()),
+        template: role.template,
+        abilities: role.permissions.granted_items(),
     }
 }
 

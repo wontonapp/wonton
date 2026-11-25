@@ -1,6 +1,6 @@
 use hyper::{Method, StatusCode};
 use iroh::SecretKey;
-use serde_json::json;
+use serde_json::{Value, json};
 
 use super::app_with_contact_facts;
 use crate::gateway::family_tests::{bearer, send_as};
@@ -99,7 +99,8 @@ async fn default_identity_preserves_active_contacts_and_shared_bots() {
         stranger.json()["installed"]["default_bot_visibility"],
         "absent"
     );
-    assert!(!stranger.text().contains("@private:test"));
+    // 不能用也给出身份：插件页点得开私聊，房间行说为什么。
+    assert_eq!(stranger.json()["installed"]["bot_user_id"], "@private:test");
 
     let token = bearer();
     let as_owner = send_as(
@@ -132,14 +133,12 @@ async fn default_identity_preserves_active_contacts_and_shared_bots() {
     h.manager.bot_records_for_test(&plugin, &[]);
     let missing = send_as(&app, Some(devices[1]), Method::GET, CORE, path, &[], "").await;
     assert_eq!(missing.status, stranger.status, "{}", missing.text());
+    // Bot 记录都没了：身份和资格都无从核实。
     assert_eq!(
         missing.json()["installed"]["default_bot_visibility"],
-        stranger.json()["installed"]["default_bot_visibility"],
+        "unknown"
     );
-    assert_eq!(
-        missing.json()["installed"]["bot_user_id"],
-        stranger.json()["installed"]["bot_user_id"]
-    );
+    assert_eq!(missing.json()["installed"]["bot_user_id"], Value::Null);
 
     h.manager.bot_records_for_test(
         &plugin,

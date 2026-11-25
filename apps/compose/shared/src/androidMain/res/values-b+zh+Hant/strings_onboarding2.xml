@@ -1,7 +1,7 @@
 <?xml version="1.0" encoding="utf-8"?>
 <resources>
-    <!-- Primary button that finishes setup. -->
-    <string name="onboarding_done">完成</string>
+    <!-- Primary button that finishes setup and starts the installs. -->
+    <string name="onboarding_done">安裝這些應用程式</string>
     <!-- Primary button after setup finished: leave setup and open chat. -->
     <string name="onboarding_enter_chat">進入聊天</string>
     <!-- Problem title in setup: the home server can't be reached. -->
@@ -19,11 +19,11 @@
     <!-- Problem title in setup: the recommendation source can't be reached. -->
     <string name="onboarding_problem_store_unreachable">連不上推薦清單的來源，可以重試或跳過。</string>
     <!-- Fallback when the core gives no reason why an app can't be installed. -->
-    <string name="onboarding_review_blocked">無法安裝</string>
+    <string name="onboarding_review_blocked">裝不了這個應用程式</string>
     <!-- Row description in the review step: the already-configured models are kept. -->
-    <string name="onboarding_review_keep_current">使用目前的</string>
+    <string name="onboarding_review_keep_current">繼續用目前的</string>
     <!-- Row description in the review step: finishing will not touch this. -->
-    <string name="onboarding_review_unchanged">不變</string>
+    <string name="onboarding_review_unchanged">不改動</string>
     <!-- Row description in the review step: the model couldn't be reached during the test. -->
     <string name="onboarding_review_unreachable">測試時沒連上</string>
     <!-- Busy label while a setup step or an install task is running. -->

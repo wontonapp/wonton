@@ -7,7 +7,7 @@
     <!-- Problem title in setup: the model gateway on the home server isn't ready. -->
     <string name="onboarding_problem_model_gateway_not_ready">模型閘道還沒就緒，請重試或跳過這一步。</string>
     <!-- Problem title while installing: the home server's internet proxy can't be reached. -->
-    <string name="onboarding_problem_plugin_egress_proxy_unavailable">伺服器的代理伺服器連不上，請檢查後重試。</string>
+    <string name="onboarding_problem_plugin_egress_proxy_unavailable">伺服器的代理有問題，請檢查後重試。</string>
     <!-- Problem title while installing: no local network address is available for the app. -->
     <string name="onboarding_problem_plugin_lan_unavailable">沒有可用的區域網路位址，請檢查伺服器的網路設定。</string>
     <!-- Problem title while installing: the app and the home server versions don't work together. -->
@@ -15,5 +15,5 @@
     <!-- Problem title in setup: the recommendation source is turned off. -->
     <string name="onboarding_problem_store_disabled">推薦清單的來源已關閉，可以跳過。</string>
     <!-- Kind label above a review row: the apps that will be installed. -->
-    <string name="onboarding_review_section_apps">應用</string>
+    <string name="onboarding_review_section_apps">要安裝的應用程式</string>
 </resources>

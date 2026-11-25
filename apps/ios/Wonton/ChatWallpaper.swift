@@ -150,11 +150,28 @@ extension View {
 
 /// 聊天页浮着的圆钮：看上去 `size.chatControl` 大，点得到的范围是 `size.target`。标准的 `.glass` 按钮样式定不了
 /// 直径，和输入框、标题胶囊对不齐，所以自己铺玻璃（ADR-0107 的“标准样式表达不了的自绘可操作件”）。
+/// 有标识才往无障碍树上写：没有时不盖掉调用方自己加的标识。
+private struct OptionalIdentifier: ViewModifier {
+    let identifier: String?
+
+    init(_ identifier: String?) { self.identifier = identifier }
+
+    func body(content: Content) -> some View {
+        if let identifier {
+            content.accessibilityIdentifier(identifier)
+        } else {
+            content
+        }
+    }
+}
+
 struct ChatGlassButton: View {
     let icon: WontonIcon
     let label: String
     /// 主要动作（发送）给重点色，图标用页面底色。
     var prominent = false
+    /// 可达性树的稳定标识；只给界面测试要按它找的按钮。
+    var identifier: String?
     let action: () -> Void
     @Environment(\.wontonColors) private var colors
 
@@ -169,5 +186,6 @@ struct ChatGlassButton: View {
         }
         .buttonStyle(.plain)
         .accessibilityLabel(label)
+        .modifier(OptionalIdentifier(identifier))
     }
 }

@@ -4,6 +4,8 @@ import SwiftUI
 /// 单独一个视图：别的按钮要占这一格（比如 Agent 在跑时的“停止”）就换在这里，不动输入框的布局。
 struct ComposerSendSlot: View {
     let canSend: Bool
+    /// 正在编辑消息：这一格是确认（勾），不是发送（ADR-0109 第 10 节）。
+    var editing = false
     /// 附件的字节还在取：这一格换成转圈，等待期间还能接着打字。
     let isSending: Bool
     let send: () -> Void
@@ -18,7 +20,7 @@ struct ComposerSendSlot: View {
                     .frame(width: WontonTheme.size.chatControl, height: WontonTheme.size.chatControl)
                     .accessibilityIdentifier("composerSending")
             } else if canSend {
-                SendButton(action: send)
+                SendButton(editing: editing, action: send)
                     .transition(reduceMotion ? .opacity : .scale.combined(with: .opacity))
             }
         }
@@ -29,10 +31,17 @@ struct ComposerSendSlot: View {
 }
 
 private struct SendButton: View {
+    let editing: Bool
     let action: () -> Void
 
     var body: some View {
-        ChatGlassButton(icon: .send, label: String(localized: .Composer.composerSend), prominent: true, action: action)
-            .accessibilityIdentifier("composerSend")
+        ChatGlassButton(
+            icon: editing ? .check : .send,
+            label: editing
+                ? String(localized: .Composer.composerEditConfirm)
+                : String(localized: .Composer.composerSend),
+            prominent: true, action: action
+        )
+        .accessibilityIdentifier("composerSend")
     }
 }

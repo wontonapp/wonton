@@ -78,7 +78,37 @@ pub(crate) struct Outgoing {
     /// 已经交给发送队列的事件条数：交到一半断了，下次从这里接着交，不重复发。
     pub(crate) handed: usize,
     /// 停下来等主人处理的原因（附件传不上去、授权没成、发送队列拒收）。
-    pub(crate) failure: Option<String>,
+    #[serde(default, deserialize_with = "failure_or_old_string")]
+    pub(crate) failure: Option<OutgoingFailure>,
+}
+
+/// 旧的落盘里 `failure` 只是一句原文：按 `Other` 收下，别让整份状态解析失败。
+fn failure_or_old_string<'de, D>(deserializer: D) -> Result<Option<OutgoingFailure>, D::Error>
+where
+    D: serde::Deserializer<'de>,
+{
+    #[derive(serde::Deserialize)]
+    #[serde(untagged)]
+    enum Old {
+        Text(String),
+        New(OutgoingFailure),
+    }
+    Ok(
+        Option::<Old>::deserialize(deserializer)?.map(|value| match value {
+            Old::Text(details) => OutgoingFailure {
+                failure: wonton_protocol::SendFailure::Other,
+                details,
+            },
+            Old::New(failure) => failure,
+        }),
+    )
+}
+
+/// 这条待发消息为什么停下：类别给壳写一句话，原文进详情。
+#[derive(Clone, Debug, serde::Serialize, serde::Deserialize)]
+pub(crate) struct OutgoingFailure {
+    pub(crate) failure: wonton_protocol::SendFailure,
+    pub(crate) details: String,
 }
 
 impl Item {
@@ -126,8 +156,9 @@ impl Item {
 impl Outgoing {
     fn view(&self) -> OutgoingMessage {
         let state = match &self.failure {
-            Some(message) => SendState::Failed {
-                message: message.clone(),
+            Some(failure) => SendState::Failed {
+                failure: failure.failure,
+                details: Some(failure.details.clone()),
                 recoverable: false,
             },
             None => SendState::Sending {

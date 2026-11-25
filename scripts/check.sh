@@ -36,6 +36,7 @@ python3 -m unittest discover -q -s scripts/ui_text -t scripts
 python3 -m unittest discover -q -s scripts/install -t scripts
 python3 -m unittest discover -q -s scripts/dev_ports -t scripts
 python3 -m unittest discover -q -s scripts/shell_parity -t scripts
+python3 -m unittest discover -q -s scripts/licenses -t scripts -p '*_test.py'
 python3 deploy/dev/core/instance-label_test.py
 python3 deploy/dev/core/core-network_test.py
 python3 deploy/dev/core/dev_test.py
@@ -49,6 +50,8 @@ bash scripts/check-bundled-plugin-versions.sh
 
 bash scripts/check-uniffi-comments.sh
 bash scripts/check-uniffi-enum-sizes.sh
+# 许可清单和许可表必须能生成出完整内容（Android 那半要刚导出的 AboutLibraries JSON，本机没有时就跳过）。
+bash scripts/check-licenses.sh
 
 cargo fmt --all --check
 cargo clippy --workspace --all-targets --locked -- -D warnings

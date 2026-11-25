@@ -112,8 +112,45 @@ async fn invalid_plugin_ids_are_not_reported_as_missing_bots() {
     }
 }
 
+/// 列表和详情两个接口对同一个 Bot 给出的用户 ID 和可见性。
+const BOT_ENDPOINTS: [(&str, &str, &str); 2] = [
+    (
+        "/_wonton/api/plugins",
+        "/plugins/0/bot_user_id",
+        "/plugins/0/default_bot_visibility",
+    ),
+    (
+        "/_wonton/api/plugins/app.whoami",
+        "/installed/bot_user_id",
+        "/installed/default_bot_visibility",
+    ),
+];
+
+/// 两个接口都给出这个 Bot 的 ID，可见性都是 `expected`。
+async fn assert_bot_on_both_endpoints(
+    app: &axum::Router,
+    device: Option<iroh::EndpointId>,
+    bot: &str,
+    expected: &str,
+) {
+    for (path, pointer, visibility) in BOT_ENDPOINTS {
+        let reply = send_as(app, device, Method::GET, CORE, path, &[], "").await;
+        assert_eq!(reply.status, StatusCode::OK, "{}", reply.text());
+        assert_eq!(
+            reply.json().pointer(pointer).and_then(Value::as_str),
+            Some(bot),
+            "{path}"
+        );
+        assert_eq!(
+            reply.json().pointer(visibility).and_then(Value::as_str),
+            Some(expected),
+            "{path}"
+        );
+    }
+}
+
 #[tokio::test]
-async fn family_plugin_responses_hide_others_private_bot() {
+async fn family_plugin_responses_mark_others_private_bot_absent() {
     const OWNER_BOT: &str = "@owner-assistant:test";
     let h = Harness::start(None).await;
     let (app, _matrix_state) = app_with_contact_facts(&h).await;
@@ -146,28 +183,8 @@ async fn family_plugin_responses_hide_others_private_bot() {
         .add_if(member, None, Some("mia".into()), |_| true)
         .unwrap();
 
-    for (path, pointer) in [
-        ("/_wonton/api/plugins", "/plugins/0/bot_user_id"),
-        ("/_wonton/api/plugins/app.whoami", "/installed/bot_user_id"),
-    ] {
-        let own = send_as(&app, Some(owner), Method::GET, CORE, path, &[], "").await;
-        assert_eq!(own.status, StatusCode::OK, "{}", own.text());
-        assert_eq!(
-            own.json().pointer(pointer).and_then(Value::as_str),
-            Some(OWNER_BOT)
-        );
-
-        let other = send_as(&app, Some(member), Method::GET, CORE, path, &[], "").await;
-        assert_eq!(other.status, StatusCode::OK, "{}", other.text());
-        assert!(
-            other
-                .json()
-                .pointer(pointer)
-                .and_then(Value::as_str)
-                .is_none()
-        );
-        assert!(!other.text().contains(OWNER_BOT));
-    }
+    assert_bot_on_both_endpoints(&app, Some(owner), OWNER_BOT, "visible").await;
+    assert_bot_on_both_endpoints(&app, Some(member), OWNER_BOT, "absent").await;
 
     const MEMBER_BOT: &str = "@mia-assistant:test";
     h.manager.bot_records_for_test(
@@ -181,28 +198,8 @@ async fn family_plugin_responses_hide_others_private_bot() {
             "test-token",
         )],
     );
-    for (path, pointer) in [
-        ("/_wonton/api/plugins", "/plugins/0/bot_user_id"),
-        ("/_wonton/api/plugins/app.whoami", "/installed/bot_user_id"),
-    ] {
-        let own = send_as(&app, Some(member), Method::GET, CORE, path, &[], "").await;
-        assert_eq!(own.status, StatusCode::OK, "{}", own.text());
-        assert_eq!(
-            own.json().pointer(pointer).and_then(Value::as_str),
-            Some(MEMBER_BOT)
-        );
-
-        let other = send_as(&app, Some(owner), Method::GET, CORE, path, &[], "").await;
-        assert_eq!(other.status, StatusCode::OK, "{}", other.text());
-        assert!(
-            other
-                .json()
-                .pointer(pointer)
-                .and_then(Value::as_str)
-                .is_none()
-        );
-        assert!(!other.text().contains(MEMBER_BOT));
-    }
+    assert_bot_on_both_endpoints(&app, Some(member), MEMBER_BOT, "visible").await;
+    assert_bot_on_both_endpoints(&app, Some(owner), MEMBER_BOT, "absent").await;
 }
 
 #[tokio::test]

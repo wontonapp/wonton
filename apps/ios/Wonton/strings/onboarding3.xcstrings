@@ -3,31 +3,61 @@
   "version": "1.0",
   "strings": {
     "onboarding.done": {
-      "comment": "Primary button that finishes setup.",
+      "comment": "Primary button that finishes setup and starts the installs.",
       "extractionState": "manual",
       "localizations": {
         "en": {
           "stringUnit": {
             "state": "translated",
-            "value": "Done"
+            "value": "Install these apps"
           }
         },
         "zh-Hans": {
           "stringUnit": {
             "state": "translated",
-            "value": "完成"
+            "value": "装这些应用"
           }
         },
         "zh-Hant": {
           "stringUnit": {
             "state": "translated",
-            "value": "完成"
+            "value": "安裝這些應用程式"
           }
         },
         "ja": {
           "stringUnit": {
             "state": "translated",
-            "value": "完了"
+            "value": "これらのアプリをインストール"
+          }
+        }
+      }
+    },
+    "onboarding.gatewayMissing.nextStep": {
+      "comment": "Next step under the gateway problem.",
+      "extractionState": "manual",
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Try again, then open it."
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "重试后再打开。"
+          }
+        },
+        "zh-Hant": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "重試後再開啟。"
+          }
+        },
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "再試行してから開いてください。"
           }
         }
       }
@@ -152,6 +182,36 @@
         }
       }
     },
+    "onboarding.review.intro": {
+      "comment": "Sentence above the review list: finishing saves the settings and installs in the background with the listed permissions.",
+      "extractionState": "manual",
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "This saves these settings and installs the apps below with the access listed. You can leave while they install."
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "点下面的按钮会保存这些设置，并按下面的权限装这些应用。装的时候可以离开。"
+          }
+        },
+        "zh-Hant": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "點下面的按鈕會儲存這些設定，並按下面的權限安裝這些應用程式。安裝時可以離開。"
+          }
+        },
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "ボタンを押すと、これらの設定を保存し、下に書いた権限で以下のアプリをインストールします。インストール中はそのまま離れていてもかまいません。"
+          }
+        }
+      }
+    },
     "onboarding.review.preparing": {
       "comment": "Label next to a spinner while an install task is being prepared.",
       "extractionState": "manual",
@@ -159,7 +219,7 @@
         "en": {
           "stringUnit": {
             "state": "translated",
-            "value": "Preparing"
+            "value": "Getting ready"
           }
         },
         "zh-Hans": {
@@ -178,6 +238,36 @@
           "stringUnit": {
             "state": "translated",
             "value": "準備中"
+          }
+        }
+      }
+    },
+    "onboarding.review.sectionModel": {
+      "comment": "Kind label of the model row in the review step.",
+      "extractionState": "manual",
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Model for replies"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "回复用的模型"
+          }
+        },
+        "zh-Hant": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "回覆用的模型"
+          }
+        },
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "返信に使うモデル"
           }
         }
       }
@@ -219,85 +309,25 @@
         "en": {
           "stringUnit": {
             "state": "translated",
-            "value": "Review"
+            "value": "Almost there"
           }
         },
         "zh-Hans": {
           "stringUnit": {
             "state": "translated",
-            "value": "确认"
+            "value": "快好了"
           }
         },
         "zh-Hant": {
           "stringUnit": {
             "state": "translated",
-            "value": "確認"
+            "value": "快好了"
           }
         },
         "ja": {
           "stringUnit": {
             "state": "translated",
-            "value": "確認"
-          }
-        }
-      }
-    },
-    "onboarding.gatewayMissing.nextStep": {
-      "comment": "Next step under the gateway problem.",
-      "extractionState": "manual",
-      "localizations": {
-        "en": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "Try again, then open it."
-          }
-        },
-        "zh-Hans": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "重试后再打开。"
-          }
-        },
-        "zh-Hant": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "重試後再開啟。"
-          }
-        },
-        "ja": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "再試行してから開いてください。"
-          }
-        }
-      }
-    },
-    "onboarding.review.sectionModel": {
-      "comment": "Kind label of the model row in the review step.",
-      "extractionState": "manual",
-      "localizations": {
-        "en": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "Model"
-          }
-        },
-        "zh-Hans": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "模型"
-          }
-        },
-        "zh-Hant": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "模型"
-          }
-        },
-        "ja": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "モデル"
+            "value": "あと少し"
           }
         }
       }

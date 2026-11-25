@@ -161,10 +161,8 @@ fun TimelineItemView(
                     ?.let { stringResource(R.string.timeline_profile_rename, it, content.name) }
                     ?: stringResource(R.string.timeline_profile_avatar, content.name),
             )
-            is TimelineContent.DateDivider -> CenteredNote(
-                DateFormat.getDateTimeInstance(DateFormat.FULL, DateFormat.SHORT)
-                    .format(Date(content.timestampMs.toLong())),
-            )
+            is TimelineContent.DateDivider ->
+                DaySeparator(dateLabel(content.timestampMs.toLong()), Modifier.testTag("day-divider"))
             TimelineContent.ReadMarker -> Row(
                 verticalAlignment = Alignment.CenterVertically,
                 horizontalArrangement = Arrangement.spacedBy(WontonTheme.spacing.s8),
@@ -258,7 +256,7 @@ private fun MessageBubble(
                 Modifier.fillMaxWidth().then(pressable),
                 contentAlignment = if (isOwn) Alignment.CenterEnd else Alignment.CenterStart,
             ) {
-                // 有选项时这一列按气泡的自然宽度和按钮行撑开，按钮跟着列宽走、不越过气泡（ADR-0109 第 8 节）。
+                // 有选项时这一列按气泡的自然宽度和按钮行撑开，按钮跟着列宽走、不越过气泡（ADR-0109 第 9 节）。
                 Column(columnWrap(message.choices != null).widthIn(max = rowWidth)) {
                     // 群聊里别人的气泡左边先留出头像那一格，没有组尾头像的照样留，一组里的气泡起点才齐。
                     val avatarColumn = isGroup && !isOwn
@@ -417,7 +415,14 @@ private fun MessageFooter(message: TimelineMessage, modifier: Modifier) {
     val style = WontonTheme.typography.caption
     val color = (if (message.isOwn) colors.accentInkOnFill else colors.textSecondary).toColor()
     Row(modifier, horizontalArrangement = Arrangement.spacedBy(WontonTheme.spacing.s4)) {
-        if (message.edited) Text(stringResource(R.string.timeline_edited), style = style, color = color)
+        if (message.edited) {
+            Text(
+                stringResource(R.string.timeline_edited),
+                Modifier.testTag("message-edited"),
+                style = style,
+                color = color,
+            )
+        }
         // 还在发的时间换成一个钟表，发出去以后照常写时间。
         if (message.sendState is SendState.Sending) {
             Icon(
@@ -470,6 +475,18 @@ private fun TimeCapsule(message: TimelineMessage, modifier: Modifier) {
     }
 }
 
+/** 这一条是不是它那一组的最后一条：组尾才画尾巴。 */
+internal val TimelineItem.endsRun: Boolean
+    get() = message?.let { it.run == MessageRun.ALONE || it.run == MessageRun.LAST } == true
+
+/** 气泡后面闪光的不透明度，只在跳转落到这一条时用。 */
+private const val FLASH_ALPHA = 0.16f
+
+/** 脚注里钟表的轻重：和正文的墨色有区分。 */
+private const val FOOTER_ICON_ALPHA = 0.7f
+
+/** 图片上时间胶囊的底色。 */
+private val TIME_CAPSULE_BG = Color.Black.copy(alpha = 0.45f)
 @Composable
 private fun MessageBody(
     body: MessageContent,
@@ -511,15 +528,3 @@ private fun MessageBody(
 val TimelineMessage.replyAction: MessageAction.Reply?
     get() = actions.firstOrNull { it is MessageAction.Reply } as? MessageAction.Reply
 
-/** 这一条是不是它那一组的最后一条：组尾才画尾巴。 */
-internal val TimelineItem.endsRun: Boolean
-    get() = message?.let { it.run == MessageRun.ALONE || it.run == MessageRun.LAST } == true
-
-/** 气泡后面闪光的不透明度，只在跳转落到这一条时用。 */
-private const val FLASH_ALPHA = 0.16f
-
-/** 脚注里钟表的轻重：和正文的墨色有区分。 */
-private const val FOOTER_ICON_ALPHA = 0.7f
-
-/** 图片上时间胶囊的底色。 */
-private val TIME_CAPSULE_BG = Color.Black.copy(alpha = 0.45f)

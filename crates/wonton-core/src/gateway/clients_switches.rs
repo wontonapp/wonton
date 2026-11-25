@@ -182,10 +182,17 @@ async fn client_view(
         public_url,
         entries: entry_switches(&client),
         auth: client.auth,
-        username: client
-            .username
-            .as_deref()
-            .map(|username| username.replace("{user}", gateway.owner.username())),
+        username: match client.auth {
+            ClientAuthKind::Gateway => Some(gateway.owner.username().to_owned()),
+            _ => client.username.as_deref().map(|username| {
+                username
+                    .replace("{user}", gateway.owner.username())
+                    .replace(
+                        "{email}",
+                        &crate::owner::internal_email(gateway.owner.username()),
+                    )
+            }),
+        },
         passwords: password_summaries(gateway, &client, langs)?,
         public_rules: client.public_rules.clone(),
         blocked,
@@ -212,13 +219,18 @@ fn password_summaries(
         .as_ref()
         .ok_or_else(unavailable)?;
     store
-        .summaries(client.id.as_str(), |id| {
-            let id = id.parse::<iroh::EndpointId>().ok()?;
-            gateway
-                .tunnel
-                .devices
-                .get(&id)
-                .and_then(|device| device.name)
+        .summaries(client.id.as_str(), |device| {
+            if device == crate::clients::passwords::OWNER_TOKEN {
+                return Some(gateway.owner.username().to_owned());
+            }
+            Some(
+                device
+                    .parse::<iroh::EndpointId>()
+                    .ok()
+                    .and_then(|id| gateway.tunnel.devices.get(&id))
+                    .and_then(|device| device.name)
+                    .unwrap_or_else(|| device.to_owned()),
+            )
         })
         .map_err(|error| {
             tracing::error!(%error, "专用密码库读取失败");

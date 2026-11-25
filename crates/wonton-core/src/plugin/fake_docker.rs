@@ -4,6 +4,7 @@
 
 use std::collections::{BTreeMap, BTreeSet};
 use std::sync::{Arc, Mutex, MutexGuard};
+use std::time::Duration;
 
 use axum::body::Bytes;
 use axum::extract::{Request, State};
@@ -131,10 +132,10 @@ struct Resources {
     start_error: Option<String>,
     stop_error: Option<String>,
     create_error: Option<(String, String)>,
+    kill_error: Option<(String, String)>,
     remove_error: Option<(String, String)>,
     /// 按容器名让 inspect（`GET /containers/{name}/json`）一直报错。
     inspect_error: Option<(String, String)>,
-    kill_error: Option<(String, String)>,
     signals: BTreeMap<String, u32>,
     /// 网络名 → 最近一次把容器接入它的请求（`EndpointConfig.Aliases` 等）。
     connections: BTreeMap<String, Value>,
@@ -151,6 +152,8 @@ struct Resources {
     pull_error: Option<String>,
     /// 名字里有这段的镜像不受 `pull_error` 影响，还在本地。
     pull_spared: Option<String>,
+    /// 拉镜像的请求拖这么久才回，模拟拉不完（客户端先超时）。
+    pull_delay: Option<Duration>,
     /// 查不到的镜像：查它和用它创建容器都回 404。模拟 containerd 镜像存储下镜像记录被清掉（#666）。
     missing_images: BTreeSet<String>,
     /// Docker 登记的运行时；没设时只有 runc。
@@ -243,6 +246,15 @@ impl FakeDocker {
         docker.networks.insert(name.to_owned(), Labels::new());
         docker.network_bodies.insert(name.to_owned(), json!({}));
     }
+
+    /// 把已有网络的网段钉成给定值：真实网络建的时候就带了 IPAM，全新安装的 `edge` 就是默认网段。
+    pub fn pin_subnet(&self, name: &str, subnet: &str) {
+        self.lock().network_bodies.insert(
+            name.to_owned(),
+            json!({"IPAM": {"Config": [{"Subnet": subnet}]}}),
+        );
+    }
+
     /// 模拟主人手动删掉一个网络（或上一代核心清掉过）。
     pub fn remove_network(&self, name: &str) {
         let mut docker = self.lock();
@@ -431,6 +443,8 @@ impl FakeDocker {
         self.lock().inspect_error = message.map(|m| (container.to_owned(), m.to_owned()));
     }
 
+    /// 下一次 kill 失败；开关测试改用管理端口后暂时没调用方，留给以后按信号路径重测。
+    #[allow(dead_code)]
     pub fn fail_next_kill(&self, container: &str, message: &str) {
         self.lock().kill_error = Some((container.to_owned(), message.to_owned()));
     }
@@ -464,6 +478,11 @@ impl FakeDocker {
     /// 之后镜像都不在本地、拉取时 Docker 回 `message`（500）；`None` 恢复成镜像都在本地。
     pub fn fail_pulls(&self, message: Option<&str>) {
         self.lock().pull_error = message.map(str::to_owned);
+    }
+
+    /// 之后拉镜像的请求拖 `delay` 才回应，让客户端先超时。
+    pub fn slow_pulls(&self, delay: Duration) {
+        self.lock().pull_delay = Some(delay);
     }
 
     /// 同 [`Self::fail_pulls`]，但名字里有 `spared` 的镜像还在本地。
@@ -631,6 +650,13 @@ async fn handle(State(fake): State<FakeDocker>, request: Request) -> Response {
             });
         matches.then(|| docker.committed_create.take()).flatten()
     };
+    let pull_delay = fake.lock().pull_delay;
+    if method == Method::POST
+        && api_path(&uri) == "/images/create"
+        && let Some(delay) = pull_delay
+    {
+        tokio::time::sleep(delay).await;
+    }
     let response = serve(&fake, &method, &uri, &body);
     if let Some((name, hold)) = committed
         && response.status() == StatusCode::CREATED

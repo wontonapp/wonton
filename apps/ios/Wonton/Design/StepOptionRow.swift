@@ -16,7 +16,7 @@ struct StepOptionRow<Leading: View, Trailing: View>: View {
                 HStack(alignment: .top, spacing: WontonTheme.spacing.s12) {
                     Group {
                         if isSelected {
-                            WontonIcon.checkCircleFill.view()
+                            SelectedMark()
                         } else {
                             Circle()
                                 .strokeBorder(lineWidth: WontonTheme.size.hairline)
@@ -59,6 +59,36 @@ struct StepOptionRow<Leading: View, Trailing: View>: View {
                 shape.fill(Color(colors.surfaceSubtle))
             }
         }
+    }
+}
+
+/// 选中的圈勾。用形状画，不用 `WontonIcon` 的 Image：iOS 27 会把行里的 Image 露成
+/// 盖住整行的辅助功能元素，选中那一行的按钮就成了“点不到”（issue #793）。
+private struct SelectedMark: View {
+    @Environment(\.wontonColors) private var colors
+
+    var body: some View {
+        ZStack {
+            // 跟 checkCircleFill 图标同比例：24 点里圆占 19.5，勾 9 点、线宽 1.5。
+            Circle()
+                .fill(Color(colors.accentInkOnFill))
+                .padding(2)
+            Checkmark()
+                .stroke(Color(colors.accentFill),
+                        style: StrokeStyle(lineWidth: 1.5, lineCap: .round, lineJoin: .round))
+                .padding(7.5)
+        }
+        .frame(width: WontonTheme.size.icon, height: WontonTheme.size.icon)
+    }
+}
+
+private struct Checkmark: Shape {
+    func path(in rect: CGRect) -> Path {
+        var path = Path()
+        path.move(to: CGPoint(x: rect.minX, y: rect.midY))
+        path.addLine(to: CGPoint(x: rect.width * 0.4, y: rect.maxY))
+        path.addLine(to: CGPoint(x: rect.maxX, y: rect.minY))
+        return path
     }
 }
 

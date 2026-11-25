@@ -46,6 +46,7 @@ fn rooms() -> Vec<RoomRow> {
         is_direct: true,
         direct_user_id: Some("@agent:example.org".into()),
         plugin: None,
+        bot_chat: None,
         is_encrypted: true,
         is_read_only: false,
         membership: RoomMembership::Joined,

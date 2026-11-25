@@ -2,7 +2,8 @@
 
 - 状态：已接受（2026-11-13）。方向由主人定（11-13：先做 Android 四项，iOS 的推送链路在 Apple 付费开发者账号就绪后做，
   账号就绪前 iOS 只有"App 在前台时"和本地通知；锁屏默认显示消息内容，设置里按类别关；只有不带表单的确认卡片才在通知上
-  直接给"允许/拒绝"，带表单的点通知进 App；灵动岛和实时活动只给"等主人确认"的长任务）。细化
+  直接给"允许/拒绝"，带表单的点通知进 App；灵动岛和实时活动先给"等主人确认"的长任务，范围由
+  [ADR-0117](0117-bot-task-live-progress.md) 扩充到长任务的进度，扩充中）。细化
   [ADR-0003](0003-matrix-and-encrypted-push.md)，不推翻它。
 - 关联：[ADR-0003](0003-matrix-and-encrypted-push.md)（加密推送、推送代理、event_id_only）、
   [ADR-0016](0016-mcp-bus-and-confirmations.md)（确认卡片、卡片推送）、[ADR-0082](0082-agent-run-status.md)（Agent 运行状态）、
@@ -141,10 +142,11 @@ NSE 和分享扩展不同：分享扩展是前台、可等；NSE 只有 30 秒�
   具体机型）。
 - 局限：另一台设备读掉之后，本机 iOS 角标要等下一次推送或回前台才纠正；Android 圆点在通知被清掉后自行消失。
 
-### 4. 灵动岛 / 实时活动（等主人确认的 Agent 任务）
+### 4. 灵动岛 / 实时活动（等主人确认的 Agent 任务；长任务进度见 [ADR-0117](0117-bot-task-live-progress.md)）
 
-- 数据源已经够：`AgentRunState` 的 `Waiting`（等主人确认，`agent_run.rs:14-22`），加上会话名和开始时间。
-- 核心加 `runs_waiting()` 视图，只给 `Waiting` 的，最多 3 条。
+- 数据源现在由 [ADR-0117](0117-bot-task-live-progress.md) 的注册表统一给：`runs_waiting()` 并进去，就是它的列表里
+  `state == Waiting` 的部分。上限也从这里改：每台设备最多 2 条，`Waiting` 优先，两条都在等时新的回 `too_many`。
+  只收 ADR-0117 第 2 节放行的轮次（真人发起、满 30 秒或进 `Waiting`）：定时任务的等待还是普通确认通知，不上实时活动。
 - **什么时候开**：
   - iOS `Activity.request(attributes:content:pushType: .token)`，在 App 运行并看到某轮进入 `Waiting` 时开；主人答完
     （`Done`/`Failed`）结束（`end`）；Live Activity 最长活跃 8 小时，超过系统自动结束（Apple 文档）。
@@ -153,7 +155,10 @@ NSE 和分享扩展不同：分享扩展是前台、可等；NSE 只有 30 秒�
     需要更密的更新加 `NSSupportsLiveActivitiesFrequentUpdates` 并尊重 `frequentPushesEnabled`。
   - Android：`Waiting` 任务的常驻通知用 `Notification.ProgressStyle`（API 36）显示段/点；Android 16 起用
     `setRequestPromotedOngoing(true)` + ongoing + 清单里的 `POST_PROMOTED_NOTIFICATIONS`（普通权限）申请成为 Live Update。
-    Google 把"聊天消息"列为**不适合** Live Update，所以只给等主人确认的任务，普通进度仍是普通通知。
+    Google 把"聊天消息"列为**不适合** Live Update，所以只给等主人确认的任务和 ADR-0117 那种人当场发起、有起止的长任务，
+    普通进度仍是普通通知。
+- 长任务的进度源、节流、平台降级和锁屏按钮由 [ADR-0117](0117-bot-task-live-progress.md) 定义，本节的开、结束和预算对两者都适用；
+  它上面的按钮比第 1 节窄：只有核心补的"允许/拒绝"那一对，带自定义选项的卡片只给"打开"。
 - 灵动岛只在带灵动岛的机型上有；老机型就是锁屏实时活动，再老（iOS 16.1 以下）没有。
 
 ### 5. 隐私

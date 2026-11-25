@@ -13,13 +13,8 @@ struct FriendsView: View {
     @State private var scannedCode: String?
     @State private var newUserId = ""
     @FocusState private var addFocused: Bool
-    /// 删除好友、删除分组的确认框挂在整页上：挂在行上，滑动删除后行没了，弹窗跟着消失。
+    /// 删除好友的确认框挂在整页上：挂在行上，滑动删除后行没了，弹窗跟着消失。
     @State private var removing: FriendRow?
-    @State private var deletingGroup: FriendGroup?
-    /// 改名的分组；为空是新建。
-    @State private var editingGroup: FriendGroup?
-    @State private var groupName = ""
-    @State private var choosingGroups: FriendRow?
     @State private var serverName = ""
 
     init(core: ClientCore) {
@@ -57,31 +52,39 @@ struct FriendsView: View {
             ) { _ in
                 if let link = model.viewModel.myLink { MyFriendCodePanel(link: link) }
             }
-            .wontonSheet(
-                isPresented: isEditingGroup, title: groupPanelTitle, usesSystemPresentation: true
-            ) { close in
-                groupPanel(close)
-            }
-            .wontonSheet(
-                isPresented: Binding(
-                    get: { choosingGroups != nil }, set: { if !$0 { choosingGroups = nil } }
-                ),
-                title: String(localized: .Friends1.friendsGroupsChoose),
-                usesSystemPresentation: true
-            ) { _ in
-                groupsPanel
-            }
             .friendsRemoveDialog($removing, model: model)
-            .friendsGroupDeleteDialog($deletingGroup, model: model)
             .friendsRejectionDialog(model: model)
     }
 
     @ViewBuilder private var content: some View {
         if model.viewModel.friends.isEmpty, model.viewModel.incoming.isEmpty, model.viewModel.outgoing.isEmpty,
-           model.viewModel.groups.isEmpty, model.viewModel.blocked.isEmpty {
+           model.viewModel.blocked.isEmpty {
             emptyState
         } else {
             list
+        }
+    }
+
+    /// 空页：正在取就转圈；取到了就是一句话加加好友；取失败整页说明原因。
+    @ViewBuilder private var emptyState: some View {
+        switch model.viewModel.state {
+        case .loading:
+            LoadingView()
+        case .ready:
+            ScrollView {
+                VStack(spacing: WontonTheme.spacing.s12) {
+                    if model.viewModel.publicAccessOff {
+                        publicAccessNotice
+                            .padding(.horizontal, WontonTheme.spacing.pageInset)
+                            .padding(.top, WontonTheme.spacing.s12)
+                    }
+                    FriendsEmpty { showsAdd = true }
+                }
+            }
+        case let .failed(problem):
+            ProblemView(problem: friendsProblem(problem), retry: retry)
+        case .other:
+            ScrollView { FriendsEmpty { showsAdd = true } }
         }
     }
 
@@ -101,7 +104,6 @@ struct FriendsView: View {
             incomingSection
             outgoingSection
             friendsSection
-            groupsSection
             blockedSection
         }
         .listStyle(.plain)
@@ -166,9 +168,7 @@ struct FriendsView: View {
             ForEach(model.viewModel.friends, id: \.userId) { row in
                 FriendRowView(
                     row: row,
-                    groupNames: groupNames(row.groups),
                     remove: { removing = row },
-                    chooseGroups: { choosingGroups = row },
                     block: {
                         model.send(.friends(action: .blockFriend(
                             target: .user(userId: row.userId), scope: .invitations
@@ -192,41 +192,6 @@ struct FriendsView: View {
             }
         } header: {
             sectionHeader(.Friends1.friendsList)
-        }
-    }
-
-    private var groupsSection: some View {
-        Section {
-            ForEach(model.viewModel.groups, id: \.id) { group in
-                FriendGroupRowView(group: group) {
-                    groupName = group.name
-                    editingGroup = group
-                }
-                .listRowBackground(Color(colors.surfaceSubtle))
-                .listRowSeparatorTint(Color(colors.separator))
-                .swipeActions(edge: .trailing, allowsFullSwipe: false) {
-                    Button(role: .destructive) { deletingGroup = group } label: {
-                        Label(String(localized: .Common.commonRemove), systemImage: "trash")
-                    }
-                }
-            }
-            Button {
-                groupName = ""
-                editingGroup = FriendGroup(id: "", name: "")
-            } label: {
-                HStack(spacing: WontonTheme.spacing.s8) {
-                    WontonIcon.add.view(size: WontonTheme.size.iconSmall)
-                    Text(.Friends0.friendsGroupsNew)
-                        .wontonText(WontonTheme.typography.body)
-                    Spacer(minLength: 0)
-                }
-                .foregroundStyle(Color(colors.textPrimary))
-                .frame(minHeight: WontonTheme.size.target)
-            }
-            .listRowBackground(Color(colors.surfaceSubtle))
-            .listRowSeparatorTint(Color(colors.separator))
-        } header: {
-            sectionHeader(.Friends2.friendsGroups)
         }
     }
 
@@ -278,45 +243,6 @@ private extension FriendsView {
         )
     }
 
-    /// 空页：正在取就转圈；取到了就是一句话加加好友；取失败整页说明原因。
-    @ViewBuilder private var emptyState: some View {
-        switch model.viewModel.state {
-        case .loading:
-            LoadingView()
-        case .ready:
-            ScrollView {
-                VStack(spacing: WontonTheme.spacing.s12) {
-                    if model.viewModel.publicAccessOff {
-                        publicAccessNotice
-                            .padding(.horizontal, WontonTheme.spacing.pageInset)
-                            .padding(.top, WontonTheme.spacing.s12)
-                    }
-                    FriendsEmpty { showsAdd = true }
-                }
-            }
-        case let .failed(problem):
-            ProblemView(problem: friendsProblem(problem), retry: retry)
-        case .other:
-            ScrollView { FriendsEmpty { showsAdd = true } }
-        }
-    }
-
-    private var isEditingGroup: Binding<Bool> {
-        Binding(get: { editingGroup != nil }, set: { if !$0 { editingGroup = nil } })
-    }
-
-    /// 新建和改名共用一个面板，标题按有没有在改的组选。
-    private var groupPanelTitle: String {
-        editingGroup == nil
-            ? String(localized: .Friends0.friendsGroupsNew)
-            : String(localized: .Friends2.friendsGroupsRename)
-    }
-
-    /// 组 ID 换成人能看的分组名；组已被删掉的不显示。
-    private func groupNames(_ ids: [String]) -> [String] {
-        ids.compactMap { id in model.viewModel.groups.first { $0.id == id }?.name }
-    }
-
     private var normalizedUserId: String {
         newUserId.trimmingCharacters(in: .whitespacesAndNewlines)
     }
@@ -354,8 +280,11 @@ private extension FriendsView {
 
     private func addForm(_ close: @escaping (@escaping () -> Void) -> Void) -> some View {
         VStack(alignment: .leading, spacing: WontonTheme.spacing.s12) {
+            Text(.Friends3.friendsAddHelp)
+                .wontonText(WontonTheme.typography.supporting)
+                .foregroundStyle(Color(colors.textSecondary))
             TextField(String(localized: .Friends2.friendsAddField), text: $newUserId,
-                      prompt: Text(verbatim: "@bob:example.org"))
+                      prompt: Text(.Friends0.friendsAddPlaceholder))
                 .keyboardType(.asciiCapable)
                 .textInputAutocapitalization(.never)
                 .autocorrectionDisabled()
@@ -390,72 +319,6 @@ private extension FriendsView {
         guard canSubmitAdd else { return }
         model.send(.friends(action: .addFriend(userId: normalizedUserId)))
         close {}
-    }
-
-    private func groupPanel(_ close: @escaping (@escaping () -> Void) -> Void) -> some View {
-        let editing = editingGroup
-        return VStack(alignment: .leading, spacing: WontonTheme.spacing.s12) {
-            TextField(String(localized: .Friends1.friendsGroupsName), text: $groupName)
-                .submitLabel(.done)
-                .wontonField()
-            Button {
-                saveGroup(close)
-            } label: {
-                Text(.Common.commonSave).frame(maxWidth: .infinity)
-            }
-            .buttonStyle(WontonButtonStyle())
-            .disabled(groupName.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty)
-        }
-        .padding(.horizontal, WontonTheme.spacing.pageInset)
-        .padding(.vertical, WontonTheme.spacing.s16)
-        .task {
-            if let editing { groupName = editing.name }
-        }
-    }
-
-    /// 新建时 id 传空，改名时给现有 ID。
-    private func saveGroup(_ close: @escaping (@escaping () -> Void) -> Void) {
-        let name = groupName.trimmingCharacters(in: .whitespacesAndNewlines)
-        guard !name.isEmpty else { return }
-        model.send(.friends(action: .saveFriendGroup(
-            id: editingGroup?.id.isEmpty == false ? editingGroup?.id : nil, name: name
-        )))
-        close {}
-    }
-
-    /// 分组多选：点一下就把完整选择发过去，界面跟着核心的推送走。
-    private var groupsPanel: some View {
-        let row = choosingGroups.flatMap { chosen in
-            model.viewModel.friends.first { $0.userId == chosen.userId }
-        }
-        let selected = Set(row?.groups ?? [])
-        return VStack(alignment: .leading, spacing: WontonTheme.spacing.s12) {
-            if model.viewModel.groups.isEmpty {
-                Text(.Friends1.friendsGroupsEmpty)
-                    .wontonText(WontonTheme.typography.supporting)
-                    .foregroundStyle(Color(colors.textSecondary))
-            } else {
-                WontonGroup {
-                    ForEach(Array(model.viewModel.groups.enumerated()), id: \.offset) { index, group in
-                        if index > 0 { WontonSeparator() }
-                        StepOptionRow(title: group.name, isSelected: selected.contains(group.id)) {
-                            guard let row else { return }
-                            var ids = row.groups
-                            if let position = ids.firstIndex(of: group.id) {
-                                ids.remove(at: position)
-                            } else {
-                                ids.append(group.id)
-                            }
-                            model.send(.friends(action: .setFriendGroups(userId: row.userId, groups: ids)))
-                        } trailing: {
-                            EmptyView()
-                        }
-                    }
-                }
-            }
-        }
-        .padding(.horizontal, WontonTheme.spacing.pageInset)
-        .padding(.vertical, WontonTheme.spacing.s16)
     }
 
     private func blockServer() {
@@ -493,7 +356,7 @@ private extension FriendsView {
             return Problem(title: String(localized: .Problem2.problemTransportUnavailableTitle),
                            nextStep: String(localized: .Problem3.problemTransportUnavailableNextStep), detail: detail)
         case .upstream:
-            return Problem(title: String(localized: .Problem2.problemUpstreamTitle),
+            return Problem(title: String(localized: .Problem1.problemGenericTitle),
                            nextStep: String(localized: .Problem2.problemUpstreamNextStep), detail: detail)
         case .other:
             return Problem(title: String(localized: .Problem1.problemGenericTitle),
@@ -566,25 +429,6 @@ extension View {
                 WontonDialogAction(title: String(localized: .Friends2.friendsRemove), kind: .danger) {
                     if let row { model.send(.friends(action: .removeFriend(userId: row.userId))) }
                     removing.wrappedValue = nil
-                }
-            ]
-        )
-    }
-
-    /// 删除分组的确认框：组授权一起收回，组内好友保留。
-    func friendsGroupDeleteDialog(_ deleting: Binding<FriendGroup?>, model: FriendsModel) -> some View {
-        let group = deleting.wrappedValue
-        return wontonDialog(
-            String(localized: .Friends0.friendsGroupsDeleteTitle(group?.name ?? "")),
-            message: String(localized: .Friends3.friendsGroupsDeleteMessage),
-            isPresented: Binding(
-                get: { deleting.wrappedValue != nil }, set: { if !$0 { deleting.wrappedValue = nil } }
-            ),
-            actions: [
-                WontonDialogAction(title: String(localized: .Common.commonCancel)) { deleting.wrappedValue = nil },
-                WontonDialogAction(title: String(localized: .Common.commonRemove), kind: .danger) {
-                    if let group { model.send(.friends(action: .removeFriendGroup(id: group.id))) }
-                    deleting.wrappedValue = nil
                 }
             ]
         )

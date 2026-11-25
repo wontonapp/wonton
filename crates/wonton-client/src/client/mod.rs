@@ -8,12 +8,12 @@ use tokio::sync::watch;
 use wonton_l10n::l10n;
 use wonton_protocol::{
     AddedSource, AppLockTimeout, AppLockViewModel, AppearanceViewModel, AvatarUpload, ChatContact,
-    ChatViewModel, ComposerDraft, CoreError, FileCard, FileCardActions, FileFailure, FileId,
-    FileInfo, FileOperation, FileProblem, FriendsViewModel, HomeViewModel, InstallPreview,
-    LanChoice, LanSettings, Me, MediaHandle, MyAvatarProblem, OnboardingViewModel,
-    OwnerProfileUpdate, PagesViewModel, PeersViewModel, PluginDetail, PluginImage,
-    PluginsViewModel, RoomTransfers, SecretString, ServersViewModel, SessionListViewModel,
-    SettingsViewModel, StoreItem, TimelineTarget, TransfersViewModel,
+    ChatViewModel, ComposerDraft, CoreError, FamilyViewModel, FileCard, FileCardActions,
+    FileFailure, FileId, FileInfo, FileOperation, FileProblem, FriendsViewModel, HomeViewModel,
+    InstallPreview, LanChoice, LanSettings, LicensesViewModel, Me, MediaHandle, MyAvatarProblem,
+    OnboardingViewModel, OwnerProfileUpdate, PagesViewModel, PeersViewModel, PluginDetail,
+    PluginImage, PluginsViewModel, PrivacyViewModel, RoomTransfers, SecretString, ServersViewModel,
+    SessionListViewModel, SettingsViewModel, StoreItem, TimelineTarget, TransfersViewModel,
 };
 
 use crate::app_lock::AppLockLink;
@@ -26,12 +26,14 @@ use crate::scope::{Scope, Views, Visits};
 use crate::servers::ServerList;
 use crate::session_store::SessionStore;
 use crate::subscription::{
-    AppLockSubscription, AppearanceSubscription, ChatSubscription, FriendsSubscription,
-    HomeSubscription, OnboardingSubscription, PagesSubscription, PeersSubscription,
-    PluginsSubscription, ServersSubscription, SessionListSubscription, SettingsSubscription,
-    TransfersSubscription, UnreadSubscription,
+    AppLockSubscription, AppearanceSubscription, ChatSubscription, FamilySubscription,
+    FriendsSubscription, HomeSubscription, OnboardingSubscription, PagesSubscription,
+    PeersSubscription, PluginsSubscription, ServersSubscription, SessionListSubscription,
+    SettingsSubscription, TransfersSubscription, UnreadSubscription,
 };
 use switch::Replay;
+#[cfg(feature = "ui-fake")]
+use wonton_protocol::{AvatarImage, AvatarKind};
 
 pub use share_in::ShareInSubscription;
 
@@ -43,6 +45,7 @@ mod confirmations;
 mod dispatch;
 mod limits;
 mod media;
+mod my_avatar;
 mod page_color;
 mod pages;
 mod plugin_detail;
@@ -199,6 +202,16 @@ impl ClientCore {
         self.views().settings.borrow().clone()
     }
 
+    /// 关于页里的隐私说明，按当前语言返回。
+    pub fn privacy(&self) -> PrivacyViewModel {
+        crate::about::privacy()
+    }
+
+    /// 关于页里的开源许可：`licenses_json` 是 App 资源里构建时生成的清单，解析不了时返回 `InvalidInput`。
+    pub fn licenses(&self, licenses_json: String) -> Result<LicensesViewModel, CoreError> {
+        crate::about::licenses(&licenses_json)
+    }
+
     /// 订阅设置首页，语义同 [`subscribe_session_list`](Self::subscribe_session_list)。
     pub fn subscribe_settings(&self) -> Arc<SettingsSubscription> {
         Arc::new(SettingsSubscription::new(self.views().settings.subscribe()))
@@ -222,6 +235,16 @@ impl ClientCore {
     /// 订阅好友页，语义同 [`subscribe_session_list`](Self::subscribe_session_list)。
     pub fn subscribe_friends(&self) -> Arc<FriendsSubscription> {
         Arc::new(FriendsSubscription::new(self.views().friends.subscribe()))
+    }
+
+    /// 当前的成员页（ADR-0088），用于首帧渲染。
+    pub fn family(&self) -> FamilyViewModel {
+        self.views().family.borrow().clone()
+    }
+
+    /// 订阅成员页，语义同 [`subscribe_session_list`](Self::subscribe_session_list)。
+    pub fn subscribe_family(&self) -> Arc<FamilySubscription> {
+        Arc::new(FamilySubscription::new(self.views().family.subscribe()))
     }
 
     /// 当前的会话列表，用于首帧渲染。
@@ -264,13 +287,9 @@ impl ClientCore {
         Arc::new(UnreadSubscription::new(self.views().chat.subscribe()))
     }
 
-    /// 发起私聊时能直接选的人：已装插件的 Bot 在前，然后是私聊过的人。`query` 不为空时按名字和 ID 筛。
+    /// 发起私聊时能直接选的人：核心给的可聊 Bot 在前，然后是私聊过的人。`query` 不为空时按名字和 ID 筛。
     pub fn chat_contacts(&self, query: String) -> Vec<ChatContact> {
-        let installed = self.scope().plugins.view().installed;
-        let plugins = installed
-            .map(|installed| installed.plugins)
-            .unwrap_or_default();
-        self.scope().chat.contacts(&query, &plugins)
+        self.scope().chat.contacts(&query)
     }
 
     /// 把发起私聊时输入的用户名或 Matrix ID 变成完整的 ID：只输用户名时补上本账号的服务器。不合法时返回
@@ -299,7 +318,7 @@ impl ClientCore {
         // 假数据入口（`new_ui_fake`）没有后端：时间线是写死的，只对界面测试约定的操作再推一批。
         #[cfg(feature = "ui-fake")]
         if self.ui_fake.load(Ordering::SeqCst) {
-            return Ok(self.ui_fake_timelines.subscribe(&target.room_id));
+            return Ok(self.ui_fake_timelines.subscribe(&target));
         }
         let scope = self.scope();
         let chat = scope.chat.clone();
@@ -316,6 +335,11 @@ impl ClientCore {
     /// 一条时间线（主对话或旁聊）输入框里的草稿（正文和正在回复的消息），没打过字也没在回复时是
     /// `None`。每个旁聊各有一份，换房间、重启核心都还在，主人回来接着写。
     pub async fn draft(&self, target: TimelineTarget) -> Result<Option<ComposerDraft>, CoreError> {
+        // 假数据入口没有服务器，草稿由假时间线存（`ui_fake_timeline.rs`）。
+        #[cfg(feature = "ui-fake")]
+        if self.ui_fake.load(Ordering::SeqCst) {
+            return Ok(self.ui_fake_timelines.draft(&target));
+        }
         let scope = self.scope();
         let chat = scope.chat.clone();
         scope.run(async move { chat.draft(&target).await }).await
@@ -331,7 +355,7 @@ impl ClientCore {
     ) -> Result<String, CoreError> {
         #[cfg(feature = "ui-fake")]
         if self.ui_fake.load(Ordering::SeqCst) {
-            return Ok(ui_fake::new_thread_root());
+            return Ok(self.ui_fake_timelines.start_side_chat(&body));
         }
         let scope = self.scope();
         let chat = scope.chat.clone();
@@ -416,40 +440,63 @@ impl ClientCore {
                 permissions: None,
                 display_name: Some("Owner".into()),
                 email: None,
-                avatar: None,
+                avatar: Some(AvatarImage {
+                    media: MediaHandle {
+                        token: "m-owner-avatar".into(),
+                    },
+                    kind: AvatarKind::Still,
+                    width: None,
+                    height: None,
+                    poster: None,
+                }),
             });
         }
         let scope = self.scope();
-        let plugins = scope.plugins.clone();
-        scope.run(async move { plugins.me().await }).await
+        scope
+            .run({
+                let scope = scope.clone();
+                async move {
+                    let mut me = scope.plugins.me().await?;
+                    my_avatar::attach(&mut me, &scope).await;
+                    Ok(me)
+                }
+            })
+            .await
     }
 
     /// 保存资料（主人写 owner.json，家人写自己那条），名字同步成 Matrix 上的显示名。不合规则时返回
-    /// `InvalidInput`，原因由家里的服务器写好。保存后要重新取安装页的预览。
+    /// `InvalidInput`，原因由家里的服务器写好。保存后要重新取安装页的预览。返回的资料带服务器上的头像。
     pub async fn save_me(&self, update: OwnerProfileUpdate) -> Result<Me, CoreError> {
         let scope = self.scope();
-        let plugins = scope.plugins.clone();
-        let saved = scope
-            .run(async move { plugins.save_profile(update).await })
-            .await?;
-        if let Some(name) = saved.display_name.clone() {
-            scope.chat.set_owner_display_name(name);
-        }
-        Ok(saved)
+        scope
+            .run({
+                let scope = scope.clone();
+                async move {
+                    let mut saved = scope.plugins.save_profile(update).await?;
+                    if let Some(name) = saved.display_name.clone() {
+                        scope.chat.set_owner_display_name(name);
+                    }
+                    my_avatar::attach(&mut saved, &scope).await;
+                    Ok(saved)
+                }
+            })
+            .await
     }
 
     /// 换自己的头像：文件由壳按 [`max_avatar_edge`](Self::max_avatar_edge)、[`max_avatar_bytes`](Self::max_avatar_bytes)
     /// 裁好、压好，核心按文件头检查后传到 Matrix 的媒体库，再把 `mxc://` 写进自己的资料 `avatar_url`。资料只放静态图。
-    /// 成功返回新的 [`Me`]，壳不用再取一次；家人和主人一样能用。上传和写 `avatar_url` 还没接上之前报
-    /// [`MyAvatarProblem::NotReady`]，不安静地吞掉。
+    /// 成功返回新的 [`Me`]，壳不用再取一次；家人和主人一样能用。
     pub async fn set_my_avatar(&self, upload: AvatarUpload) -> Result<Me, MyAvatarProblem> {
-        let _ = upload;
-        Err(MyAvatarProblem::NotReady)
+        let scope = self.scope();
+        scope
+            .run_avatar(my_avatar::set(scope.clone(), upload))
+            .await
     }
 
     /// 清掉自己的头像，壳显示名字首字母。本来就没有头像时也算成功：清两次的结果一样。
     pub async fn clear_my_avatar(&self) -> Result<Me, MyAvatarProblem> {
-        Err(MyAvatarProblem::NotReady)
+        let scope = self.scope();
+        scope.run_avatar(my_avatar::clear(scope.clone())).await
     }
 
     /// 升级前的预览：升到已安装列表里提示的版本。

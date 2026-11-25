@@ -23,7 +23,7 @@ pub fn router(gateway: Arc<Gateway>) -> Router {
         let gateway = gateway.clone();
         async move {
             let head = req.method() == Method::HEAD;
-            let mut response = dispatch(&gateway, req).await;
+            let mut response = dispatch(gateway.clone(), req).await;
             if head {
                 if !response.headers().contains_key(header::CONTENT_LENGTH)
                     && let Some(length) = response.body().size_hint().exact()
@@ -38,16 +38,19 @@ pub fn router(gateway: Arc<Gateway>) -> Router {
     })
 }
 
-async fn dispatch(gateway: &Gateway, req: Request) -> Response {
+async fn dispatch(gateway: Arc<Gateway>, req: Request) -> Response {
     let Some(matrix) = &gateway.matrix else {
         return entry_federation::unavailable();
     };
     let server_name = matrix.server_name();
     if entry_federation::matches_host(&req, server_name) {
-        return entry_federation::dispatch(gateway, matrix, req).await;
+        if super::friend_requests::is_public(req.uri().path()) {
+            return super::friend_requests::request(gateway.clone(), req).await;
+        }
+        return entry_federation::dispatch(&gateway, matrix, req).await;
     }
     if let Some((label, kind)) = clients_entry::split_host(&req, server_name) {
-        return clients_entry::dispatch(gateway, req, label, kind).await;
+        return clients_entry::dispatch(&gateway, req, label, kind).await;
     }
     matrix_error(
         StatusCode::MISDIRECTED_REQUEST,

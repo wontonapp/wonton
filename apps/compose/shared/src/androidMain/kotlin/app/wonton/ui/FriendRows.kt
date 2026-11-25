@@ -24,7 +24,6 @@ import app.wonton.protocol.FriendsAction
 import app.wonton.protocol.FriendBlock
 import app.wonton.protocol.FriendBlockScope
 import app.wonton.protocol.FriendBlockTarget
-import app.wonton.protocol.FriendGroup
 import app.wonton.protocol.FriendRow
 import app.wonton.protocol.FriendsState
 import app.wonton.protocol.FriendsViewModel
@@ -46,11 +45,8 @@ internal fun FriendList(
     failed: FriendsState.Failed?,
     onRetry: () -> Unit,
     onAction: (Action) -> Unit,
-    onAdd: () -> Unit,
     onMenu: (FriendRow) -> Unit,
-    onNewGroup: () -> Unit,
-    onRenameGroup: (FriendGroup) -> Unit,
-    onDeleteGroup: (FriendGroup) -> Unit,
+    onAdd: () -> Unit,
     onBlockServer: () -> Unit,
 ) {
     Column(
@@ -62,7 +58,6 @@ internal fun FriendList(
         FriendPublicAccessNotice(friends)
         FriendRequestRows(friends, onAction)
         FriendRows(friends, onMenu, onAdd)
-        FriendGroups(friends, onNewGroup, onRenameGroup, onDeleteGroup)
         BlockedSection(friends.blocks(), friends.canBlockFederation, onBlockServer) {
             onAction(Action.Friends(FriendsAction.UnblockFriend(it.target, it.scope)))
         }
@@ -98,37 +93,13 @@ private fun FriendRequestRows(friends: FriendsViewModel, onAction: (Action) -> U
 private fun FriendRows(friends: FriendsViewModel, onMenu: (FriendRow) -> Unit, onAdd: () -> Unit) {
     if (friends.friends.isEmpty()) return
     FriendSection(stringResource(R.string.friends_list_title)) {
-        val names = friends.groups.associate { it.id to it.name }
         WontonGroup {
             friends.friends.forEachIndexed { index, row ->
                 if (index > 0) WontonSeparator()
-                FriendRowView(row, names) { onMenu(row) }
+                FriendRowView(row) { onMenu(row) }
             }
         }
         WontonRow(stringResource(R.string.friends_add), onClick = onAdd)
-    }
-}
-
-@Composable
-private fun FriendGroups(
-    friends: FriendsViewModel,
-    onNew: () -> Unit,
-    onRename: (FriendGroup) -> Unit,
-    onDelete: (FriendGroup) -> Unit,
-) {
-    FriendSection(stringResource(R.string.friends_groups_title)) {
-        WontonGroup {
-            friends.groups.forEachIndexed { index, group ->
-                if (index > 0) WontonSeparator()
-                GroupRow(group, { onRename(group) }, { onDelete(group) })
-            }
-            if (friends.groups.isNotEmpty()) WontonSeparator()
-            WontonRow(
-                stringResource(R.string.friends_group_new),
-                onClick = onNew,
-                titleTint = WontonTheme.colors.primary,
-            )
-        }
     }
 }
 
@@ -141,9 +112,8 @@ private fun FriendSection(title: String, content: @Composable () -> Unit) {
 }
 
 @Composable
-private fun FriendRowView(row: FriendRow, groupNames: Map<String, String>, onClick: () -> Unit) {
+private fun FriendRowView(row: FriendRow, onClick: () -> Unit) {
     val colors = WontonTheme.colors
-    val groups = row.groups.mapNotNull { groupNames[it] }
     Row(
         Modifier.fillMaxWidth().heightIn(min = WontonTheme.size.target)
             .clickable(role = Role.Button, onClick = onClick)
@@ -154,12 +124,6 @@ private fun FriendRowView(row: FriendRow, groupNames: Map<String, String>, onCli
         Column(Modifier.weight(1f), verticalArrangement = Arrangement.spacedBy(WontonTheme.spacing.s4)) {
             Text(row.name(), style = WontonTheme.typography.body, color = colors.textPrimary.toColor())
             Text(
-                groups.takeIf { it.isNotEmpty() }?.joinToString(stringResource(R.string.friends_group_separator))
-                    ?: stringResource(R.string.friends_no_group),
-                style = WontonTheme.typography.supporting,
-                color = colors.textSecondary.toColor(),
-            )
-            Text(
                 pluralStringResource(
                     R.plurals.friends_shared_plugins,
                     row.sharedPlugins.size,
@@ -169,24 +133,6 @@ private fun FriendRowView(row: FriendRow, groupNames: Map<String, String>, onCli
                 color = colors.textSecondary.toColor(),
             )
         }
-    }
-}
-
-@Composable
-private fun GroupRow(group: FriendGroup, onRename: () -> Unit, onDelete: () -> Unit) {
-    Row(
-        Modifier.fillMaxWidth().padding(horizontal = WontonTheme.spacing.s16, vertical = WontonTheme.spacing.s8),
-        verticalAlignment = Alignment.CenterVertically,
-        horizontalArrangement = Arrangement.spacedBy(WontonTheme.spacing.s8),
-    ) {
-        Text(
-            group.name,
-            Modifier.weight(1f),
-            style = WontonTheme.typography.body,
-            color = WontonTheme.colors.textPrimary.toColor(),
-        )
-        WontonSmallButton(stringResource(R.string.common_rename), onRename)
-        WontonSmallButton(stringResource(R.string.common_delete), onDelete, danger = true)
     }
 }
 

@@ -16,7 +16,7 @@ use super::super::manifest::Permission;
 use super::super::names::container_name;
 use super::super::{PluginId, PluginManager, PluginPackage, PluginStatus};
 use super::manager::manager_with;
-use super::{langs, package};
+use super::{env_of_container, langs, package};
 
 type Keys = Arc<Mutex<BTreeMap<String, String>>>;
 
@@ -113,10 +113,10 @@ async fn ok_server() -> u16 {
     port
 }
 
-fn provider(port: u16) -> PluginPackage {
+fn provider(port: u16, kind: &str) -> PluginPackage {
     let source = format!(
         "services:\n  magpie:\n    image: magpie\nx-wonton:\n  spec: '0.4'\n  id: system.models\n  version: 1.0.0\n  \
-         kind: system\n  title: {{zh: 模型, en: Models}}\n  description: {{zh: 模型, en: Models}}\n  \
+         kind: {kind}\n  title: {{zh: 模型, en: Models}}\n  description: {{zh: 模型, en: Models}}\n  \
          provides:\n    models:\n      service: magpie\n      port: {port}\n      \
          apis: {{openai: /v1, anthropic: /}}\n      default_model: group/default\n      credentials:\n        \
          issue: [sh, /wonton/credentials.sh, issue, '{{name}}']\n        \
@@ -187,7 +187,7 @@ async fn bed_with(route: Option<RouteState>) -> Bed {
         let port = gateway_with_route(keys, state).await;
         manager
             .install_checked(
-                provider(port),
+                provider(port, "system"),
                 &[],
                 &[],
                 false,
@@ -280,6 +280,101 @@ async fn model_settings_falls_back_to_the_default_bot_page_without_a_gateway() {
     assert_eq!(settings.plugin_id, bot.as_str());
     assert!(settings.web_url.is_some());
     assert!(!settings.has_configured_models);
+}
+
+#[tokio::test]
+async fn a_system_provider_installs_with_the_user_path_and_can_be_uninstalled() {
+    let bed = bed_with(None).await;
+    let keys = Keys::default();
+    bed.docker.on_exec(credential_script(keys.clone()));
+    let port = gateway_with_route(keys.clone(), Arc::new(Mutex::new(RouteReply::default()))).await;
+    let provider = provider(port, "system");
+    let provider_id = provider.manifest.id.clone();
+    bed.manager
+        .install(&provider.source, &[], langs())
+        .await
+        .unwrap();
+    bed.install_consumer().await;
+    let env = env_of_container(&bed.docker, &container_name("app-test", "web"));
+    assert_eq!(env["BASE"], "http://models.wonton.internal:8080/v1");
+    assert_eq!(env["MODEL"], "group/default");
+    assert_eq!(keys.lock().unwrap()["app.test"], env["KEY"]);
+
+    bed.manager
+        .uninstall(&Bed::consumer_id(), false, &langs())
+        .await
+        .unwrap();
+    bed.manager
+        .uninstall(&provider_id, false, &langs())
+        .await
+        .unwrap();
+    assert!(bed.manager.list().is_empty());
+}
+
+#[tokio::test]
+async fn an_app_provider_installs_through_the_manager_and_serves_consumers() {
+    let bed = bed_with(None).await;
+    let keys = Keys::default();
+    bed.docker.on_exec(credential_script(keys.clone()));
+    let port = gateway_with_route(keys.clone(), Arc::new(Mutex::new(RouteReply::default()))).await;
+    let provider = provider(port, "app");
+    let provider_id = provider.manifest.id.clone();
+    bed.manager
+        .install(&provider.source, &[], langs())
+        .await
+        .unwrap();
+    bed.install_consumer().await;
+    let env = env_of_container(&bed.docker, &container_name("app-test", "web"));
+    assert_eq!(env["BASE"], "http://models.wonton.internal:8080/v1");
+    assert_eq!(env["MODEL"], "group/default");
+    assert_eq!(keys.lock().unwrap()["app.test"], env["KEY"]);
+
+    bed.manager
+        .uninstall(&Bed::consumer_id(), false, &langs())
+        .await
+        .unwrap();
+    bed.manager
+        .uninstall(&provider_id, false, &langs())
+        .await
+        .unwrap();
+    assert!(bed.manager.list().is_empty());
+}
+
+#[tokio::test]
+async fn uninstalling_a_consumer_does_not_wait_for_a_stopped_gateway() {
+    let bed = bed_with(None).await;
+    let keys = Keys::default();
+    bed.docker.on_exec(credential_script(keys.clone()));
+    let port = gateway_with_route(keys.clone(), Arc::new(Mutex::new(RouteReply::default()))).await;
+    let provider = provider(port, "app");
+    let provider_id = provider.manifest.id.clone();
+    bed.manager
+        .install(&provider.source, &[], langs())
+        .await
+        .unwrap();
+    bed.install_consumer().await;
+    bed.manager.set(&provider_id, PluginStatus::Stopped, None);
+
+    bed.manager
+        .uninstall(&Bed::consumer_id(), false, &langs())
+        .await
+        .unwrap();
+    assert!(keys.lock().unwrap().contains_key("app.test"));
+    assert!(
+        bed.manager
+            .store
+            .model_keys()
+            .load(&Bed::consumer_id())
+            .unwrap()
+            .revoke_pending
+    );
+
+    bed.manager.set(&provider_id, PluginStatus::Running, None);
+    assert!(bed.manager.models_route().is_some());
+    assert_eq!(bed.manager.store.model_keys().all().unwrap().len(), 1);
+    let failures = bed.manager.reconcile_models().await;
+    assert!(failures.is_empty(), "{failures:?}");
+    assert!(!keys.lock().unwrap().contains_key("app.test"));
 }
 
 #[tokio::test]
@@ -443,6 +538,8 @@ async fn unreachable_model_list_reads_as_not_connected() {
 
     // 列表回来：签发对上账、探测通过，提示清掉。
     state.lock().unwrap().catalog_status = StatusCode::OK;
+    assert!(bed.manager.models_route().is_some());
+    assert_eq!(bed.manager.store.model_keys().all().unwrap().len(), 1);
     let failures = bed.manager.reconcile_models().await;
     assert!(failures.is_empty(), "{failures:?}");
     bed.manager
@@ -524,7 +621,7 @@ async fn a_restarted_core_probes_once_then_uses_only_catalogs() {
 }
 
 #[tokio::test]
-async fn subscription_agent_without_models_permission_is_left_alone() {
+async fn agent_without_models_permission_is_left_alone() {
     let state = Arc::new(Mutex::new(RouteReply::default()));
     let bed = bed_with_route(state.clone()).await;
     let source = package(
@@ -532,6 +629,21 @@ async fn subscription_agent_without_models_permission_is_left_alone() {
         "  agent: {protocol: matrix}\n  permissions: [matrix.bot]",
     )
     .replace("kind: app", "kind: agent");
+    // 默认路由缺模型时，没申请 models 的 Agent 的安装预览也不提“先接模型”：它用自己的模型接入。
+    let parsed = PluginPackage::parse(&source, &langs()).unwrap();
+    let preview = bed
+        .manager
+        .preview_install(&parsed, &langs())
+        .await
+        .unwrap();
+    assert!(
+        !preview
+            .notices
+            .iter()
+            .any(|n| n.text.contains("Connect a model provider")),
+        "{:?}",
+        preview.notices
+    );
     bed.manager
         .install(&source, &[Permission::MatrixBot], langs())
         .await
@@ -542,7 +654,7 @@ async fn subscription_agent_without_models_permission_is_left_alone() {
         Some(PluginStatus::Running)
     ));
     bed.manager.watch_containers().await;
-    // 订阅账号直连的 Agent 不受网关影响：不探测、没有提示、状态照常。
+    // 不经网关的 Agent 不受网关影响：不探测、没有提示、状态照常。
     assert_eq!(state.lock().unwrap().completions, 0);
     let detail = bed
         .manager

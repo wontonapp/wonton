@@ -10,7 +10,7 @@ struct OwnerProfileView: View {
     var body: some View {
         VStack(spacing: 0) {
             ScrollView {
-                OwnerProfileForm(state: form) { Task { await form.load(core: model.core) } }
+                OwnerProfileForm(state: form, core: model.core) { Task { await form.load(core: model.core) } }
                     .frame(maxWidth: .infinity, alignment: .leading)
                     .padding(WontonTheme.spacing.pageInset)
             }

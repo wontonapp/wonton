@@ -48,7 +48,8 @@ pub use ingress::{
     GateState, IngressKind, IngressSettings, PublicAccess, PublicSwitchState, PutIngressRequest,
 };
 pub use passwords::{
-    NewPasswordRequest, PasswordSummary, PasswordValue, PendingOp, RevokeDeviceRequest,
+    NewPasswordRequest, PASSWORD_ID_HEADER, PASSWORD_PENDING_HEADER, PasswordSummary,
+    PasswordValue, PendingOp, RevokeDeviceRequest,
 };
 pub use status::{
     Ban, ClientsStatus, PendingChange, PendingChangeKind, ProbeResult, PublicItem, PublicReach,

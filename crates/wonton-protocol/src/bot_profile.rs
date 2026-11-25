@@ -85,6 +85,36 @@ pub enum DefaultBotVisibility {
     Other,
 }
 
+/// 当前请求者能不能和这个 Bot 聊天（ADR-0045、ADR-0088）。身份可见不等于能聊：共享 Bot、别人的私人 Bot
+/// 都按归属、成立的联系人和角色算。`Unknown` 既不是能用也不是确定不能用，壳照常放行发送（进离线队列），
+/// 只多写一句还没核实。
+#[derive(Clone, Copy, Debug, Default, PartialEq, Eq, Serialize, Deserialize)]
+#[cfg_attr(feature = "uniffi", derive(uniffi::Enum))]
+#[serde(tag = "state", rename_all = "snake_case")]
+pub enum BotChatAvailability {
+    Available,
+    Unavailable {
+        reason: BotChatUnavailable,
+    },
+    /// 还核实不了（身份、记录、联系人或角色读不到，或者核心不可达、核心还是旧版）：壳照实说不知道，不拦发送。
+    #[default]
+    #[serde(other)]
+    Unknown,
+}
+
+/// 当前请求者不能和这个 Bot 聊天的原因，壳按它写文字。
+#[derive(Clone, Copy, Debug, PartialEq, Eq, Serialize, Deserialize)]
+#[cfg_attr(feature = "uniffi", derive(uniffi::Enum))]
+#[serde(rename_all = "snake_case")]
+pub enum BotChatUnavailable {
+    /// 别人的私人 Bot，没给这个人授权（从没授权、等主人同意、等对方接受都算）。
+    OtherPrivateBot,
+    /// 授权过，现在没有成立的联系人记录。
+    GrantNotActive,
+    #[serde(other)]
+    Other,
+}
+
 /// Bot 此刻在做什么，也是状态头像的状态（[`StateAvatars::states`] 的键）。客户端核心合成（规则见 ADR-0044），
 /// 壳按它选状态头像。
 #[derive(Clone, Copy, Debug, PartialEq, Eq, PartialOrd, Ord, Hash, Serialize, Deserialize)]
@@ -157,7 +187,7 @@ pub struct AvatarMedia {
     pub poster: Option<String>,
 }
 
-/// 头像文件的种类，壳按它选播放方式。不认识的取值按 [`Still`](Self::Still) 处理：旧 App 至少显示一帧图。
+/// 头像文件的种类，壳按它选播放方式。不认识的取值按 [`Still`](Self::Still) 处理，旧 App 只显示静态图。
 #[derive(Clone, Copy, Debug, Default, PartialEq, Eq, Serialize, Deserialize)]
 #[cfg_attr(feature = "uniffi", derive(uniffi::Enum))]
 #[serde(rename_all = "snake_case")]
@@ -171,7 +201,7 @@ pub enum AvatarKind {
     Video,
 }
 
-/// `kind` 是为以后加动图补的字段：旧核心不给，新核心以后可能给不认识的取值，都不能让整个头像解析失败。
+/// `kind` 可能缺、可能是不认识的取值（更新或更旧的核心），都落到 [`Still`](AvatarKind::Still)，不让整个头像解析失败。
 fn avatar_kind<'de, D: serde::Deserializer<'de>>(deserializer: D) -> Result<AvatarKind, D::Error> {
     Ok(match String::deserialize(deserializer)?.as_str() {
         "animated" => AvatarKind::Animated,
@@ -199,7 +229,10 @@ pub struct BotActivityFacts {
     pub bot: Option<String>,
     /// Bot 的 Matrix 用户 ID。
     pub user_id: String,
-    /// 插件在运行，健康检查过了。
+    /// 请求者能不能和它聊天；不能或不确定时，下面的活动和 `running` 已按请求者抹平（都为假/零）。
+    #[serde(default)]
+    pub chat: crate::BotChatAvailability,
+    /// 插件在运行，健康检查过了；不能聊时也按假给。
     pub running: bool,
     /// 经核心的模型网关入口、还没结束的请求数（流式的到最后一块为止）。
     pub model_requests: u32,
@@ -282,6 +315,9 @@ pub fn check_bot_name(name: &str) -> Result<(), BotNameProblem> {
 pub struct BotView {
     pub user_id: String,
     pub bot: BotRef,
+    /// 当前人能不能和它聊天；不能时 `activity` 为空，壳显示原因并禁用输入；未知时壳照常能发。
+    #[serde(default)]
+    pub availability: BotChatAvailability,
     /// 由当前请求者的身份决定；未核实、断线或切换账号时为空，不能借用插件的默认网页地址。
     #[serde(default)]
     pub web: Option<BotWebView>,
@@ -529,6 +565,7 @@ mod tests {
         };
         let mut bot = BotView {
             chat: Default::default(),
+            availability: Default::default(),
             user_id: "@b:h".into(),
             bot: BotRef {
                 plugin_id: "a.b".into(),
@@ -552,6 +589,30 @@ mod tests {
             bot.current_state_avatar().unwrap().media.token,
             "idle",
             "没设的状态用待机的"
+        );
+    }
+
+    #[test]
+    fn chat_availability_has_a_stable_wire_format() {
+        let unavailable = BotChatAvailability::Unavailable {
+            reason: BotChatUnavailable::GrantNotActive,
+        };
+        assert_eq!(
+            serde_json::to_value(unavailable).unwrap(),
+            json!({"state": "unavailable", "reason": "grant_not_active"})
+        );
+        assert_eq!(
+            serde_json::from_value::<BotChatAvailability>(json!({"state": "future"})).unwrap(),
+            BotChatAvailability::Unknown
+        );
+        assert_eq!(
+            serde_json::from_value::<BotChatAvailability>(
+                json!({"state": "unavailable", "reason": "future"})
+            )
+            .unwrap(),
+            BotChatAvailability::Unavailable {
+                reason: BotChatUnavailable::Other
+            }
         );
     }
 }

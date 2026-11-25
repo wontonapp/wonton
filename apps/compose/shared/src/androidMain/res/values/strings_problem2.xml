@@ -2,8 +2,10 @@
 <resources>
     <!-- No default agent identity is disclosable to this account. -->
     <string name="problem_default_agent_absent">No default assistant can be shown for this account. Ask the owner to check the settings.</string>
-    <!-- Problem title when the core rejected the input; the core's own reason is shown as the next step. -->
+    <!-- Problem title when the core rejected the input; the core's own reason goes into the details. -->
     <string name="problem_invalid_input_title">This can\'t be done</string>
+    <!-- Next step: check the input and try again. -->
+    <string name="problem_invalid_input_next_step">Check the input and try again.</string>
     <!-- Next step: look at the app again and approve it again. -->
     <string name="problem_plugin_changed_next_step">Review and approve it again.</string>
     <!-- Next step: the app is installed or installing, updating or uninstalling; wait for that to finish. -->

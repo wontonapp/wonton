@@ -1,9 +1,5 @@
 package app.wonton.ui
 
-import androidx.compose.animation.AnimatedVisibility
-import androidx.compose.animation.fadeIn
-import androidx.compose.animation.fadeOut
-import androidx.compose.foundation.background
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Box
@@ -18,9 +14,7 @@ import androidx.compose.foundation.lazy.LazyListState
 import androidx.compose.foundation.lazy.items
 import androidx.compose.foundation.lazy.itemsIndexed
 import androidx.compose.foundation.lazy.rememberLazyListState
-import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material3.CircularProgressIndicator
-import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.snapshotFlow
@@ -51,9 +45,6 @@ import app.wonton.protocol.TimelineTarget
 import app.wonton.ui.design.LocalWontonBottomInset
 import app.wonton.ui.design.LocalWontonTopInset
 import app.wonton.ui.design.WontonTheme
-import app.wonton.ui.design.toColor
-import java.text.DateFormat
-import java.util.Date
 import kotlinx.coroutines.Job
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.flow.distinctUntilChanged
@@ -78,10 +69,15 @@ internal fun TimelineList(
     modifier: Modifier,
     menuOpen: Boolean = false,
     headerHeight: Dp = 0.dp,
+    onScroll: () -> Unit = {},
 ) {
     val listState = rememberLazyListState()
     ScrollEffects(listState, timeline, target, sideChats.covered, onAction)
     FollowNewItems(listState, outgoing)
+    // 翻时间线时先把命令列表收起来（ADR-0109 第 7 节），列表让出来。
+    LaunchedEffect(listState) {
+        snapshotFlow { listState.isScrollInProgress }.filter { it }.collect { onScroll() }
+    }
     // 倒着排：第 0 项是最新的一条，贴着底部。
     val newestFirst = timeline.items.asReversed()
     val openCard: (String) -> Unit = { cardId -> timeline.openedConfirmation = cardId }
@@ -119,7 +115,7 @@ internal fun TimelineList(
                 if (item.isBlankAgentRun) return@itemsIndexed
                 Column {
                     // 跨日的那条上方放一行固定的日期：它自己占一行，不和气泡重叠。
-                    day?.let { label -> DaySeparator(label) }
+                    day?.let { label -> DaySeparator(label, Modifier.testTag("day-separator")) }
                     // 倒着排：下标大的是更早的一条。
                     TimelineRow(
                         item,
@@ -150,7 +146,7 @@ internal fun TimelineList(
                 }
             }
         }
-        DatePill(
+        FloatingDatePill(
             pill.held && pill.text != null,
             pill.text.orEmpty(),
             Modifier.align(Alignment.TopCenter).padding(
@@ -163,7 +159,7 @@ internal fun TimelineList(
             ),
         )
         // 跳转找不到那条消息时轻轻说一声，列表不动。
-        DatePill(
+        FloatingDatePill(
             timeline.jump == JumpState.UNAVAILABLE,
             stringResource(R.string.timeline_jump_unavailable),
             Modifier.align(Alignment.BottomCenter).padding(bottom = WontonTheme.spacing.s8),
@@ -299,11 +295,12 @@ private fun TimelineRow(
 }
 
 /**
- * 每个下标上方要不要来一行日期；跨日的那条才有。列表是倒排的（下标 0 贴着底部），屏幕上往下是越来越新：
+ * 每个下标上方要不要来一行日期；跨日的那条才有。列表是倒排的（下标 0 贴着底部），屏幕上往下是越来越新。
  * 一条和它正上方那条不是同一天（或者它就在最顶上、上面没有消息）时，分隔画在它上面、写它自己的日期，
- * 也就是它下面那条消息的日期。
+ * 也就是它下面那条消息的日期。跨日的日期由核心的分隔条目写，这里只兜底没有分隔条目的边界；
+ * 下面紧挨着同一天的分隔条目时也不出，那枚已经写了这一天（房间开头的 TimelineStart）。
  */
-private fun dayMarksFor(items: List<TimelineItem>): Array<String?> {
+internal fun dayMarksFor(items: List<TimelineItem>): Array<String?> {
     // 没有时间的旁注跟着下面（更新）的那条算同一天，下标越小越新。
     val days = arrayOfNulls<String>(items.size)
     var newer: String? = null
@@ -314,49 +311,26 @@ private fun dayMarksFor(items: List<TimelineItem>): Array<String?> {
     val marks = arrayOfNulls<String>(items.size)
     for (index in items.indices) {
         val day = days[index]
-        if (day != null && day != days.getOrNull(index + 1)) marks[index] = day
+        val own = day != null && day != days.getOrNull(index + 1)
+        val below = items.getOrNull(index - 1)
+        val belowWritesDay = below?.content is TimelineContent.DateDivider && days.getOrNull(index - 1) == day
+        if (own && !belowWritesDay && items[index].content !is TimelineContent.DateDivider) marks[index] = day
     }
     return marks
 }
 
-/** 日期分隔：一行居中、自己占高度。 */
+/** 日期分隔：一行居中、自己占高度；是核心的分隔条目还是兜底，由调用方给标签。 */
 @Composable
-private fun DaySeparator(label: String) {
-    Box(Modifier.fillMaxWidth().testTag("day-separator"), contentAlignment = Alignment.Center) {
-        Text(label, style = WontonTheme.typography.caption, color = WontonTheme.colors.textSecondary.toColor())
-    }
+internal fun DaySeparator(label: String, modifier: Modifier = Modifier) {
+    Box(modifier.fillMaxWidth(), contentAlignment = Alignment.Center) { DatePill(label) }
 }
 
-/** 浮在列表上的小胶囊（日期、跳转失败的提示）。 */
-@Composable
-private fun DatePill(visible: Boolean, text: String, modifier: Modifier) {
-    AnimatedVisibility(visible, modifier.testTag("date-pill"), fadeIn(), fadeOut()) {
-        Text(
-            text,
-            Modifier
-                .background(
-                    WontonTheme.colors.surfaceSubtle.toColor().copy(alpha = PILL_ALPHA),
-                    RoundedCornerShape(WontonTheme.radii.pill),
-                )
-                .padding(horizontal = WontonTheme.spacing.s12, vertical = WontonTheme.spacing.s4),
-            style = WontonTheme.typography.caption,
-            color = WontonTheme.colors.textSecondary.toColor(),
-        )
-    }
-}
-
-/** 浮在最上面的日期胶囊的半透明底。 */
-private const val PILL_ALPHA = 0.9f
-
-/** 最上面那条的日期，胶囊里写这个。 */
-private fun dateLabel(timestampMs: Long): String =
-    DateFormat.getDateInstance(DateFormat.MEDIUM).format(Date(timestampMs))
-
-/** 这条的发送时间；旁注类的条目没有。 */
+/** 这条的发送时间；没有时间的旁注为空，分隔条目写的是那一天的起点。 */
 private val TimelineItem.timestampMs: Long?
     get() = when (val body = content) {
         is TimelineContent.Message -> body.message.timestampMs.toLong()
         is TimelineContent.AgentRun -> body.timestampMs.toLong()
+        is TimelineContent.DateDivider -> body.timestampMs.toLong()
         else -> null
     }
 

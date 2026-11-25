@@ -12,6 +12,8 @@ use axum::Router;
 use hyper::{Method, StatusCode};
 use serde_json::json;
 use std::sync::Arc;
+use std::sync::atomic::{AtomicUsize, Ordering};
+use tokio::sync::Notify;
 
 #[path = "clients_switches_regression_tests.rs"]
 mod clients_switches_regression_tests;
@@ -22,13 +24,69 @@ struct Rig {
     app: Router,
     id: PluginId,
     install: std::path::PathBuf,
+    reloads: Arc<AtomicUsize>,
+    /// 要求“重载还卡着”的用例拿它控制假主进程：先 0 到达，再 1 放行。
+    gate: Option<(Arc<Notify>, Arc<Notify>)>,
+}
+
+/// 假入口主进程：每来一条连接记一次，回 `reply`；`gated` 时先报到达、等放行再回。
+/// 返回监听地址（入口的 reload_addr 就是它）、命中计数和放行/到达开关。
+async fn master(
+    reply: &'static str,
+    gated: bool,
+    // 从第几次到第几次之间回失败（0 起算，两端都含），给回的那种文本。
+    fails: Option<(&'static str, usize, usize)>,
+) -> (String, Arc<AtomicUsize>, Option<(Arc<Notify>, Arc<Notify>)>) {
+    let listener = tokio::net::TcpListener::bind("127.0.0.1:0").await.unwrap();
+    let addr = listener.local_addr().unwrap().to_string();
+    let hits = Arc::new(AtomicUsize::new(0));
+    let hit = hits.clone();
+    let gate = Arc::new(Notify::new());
+    let reached = Arc::new(Notify::new());
+    let (g, r) = (gate.clone(), reached.clone());
+    tokio::spawn(async move {
+        use tokio::io::{AsyncReadExt, AsyncWriteExt};
+        loop {
+            let Ok((mut socket, _)) = listener.accept().await else {
+                return;
+            };
+            hit.fetch_add(1, Ordering::SeqCst);
+            if gated {
+                r.notify_one();
+                g.notified().await;
+            }
+            let mut byte = [0u8; 1];
+            while socket.read_exact(&mut byte).await.is_ok() && byte[0] != b'\n' {}
+            let hits_now = hit.load(Ordering::SeqCst);
+            let failing = fails.is_some_and(|(_, from, to)| hits_now > from && hits_now <= to);
+            let text = match fails {
+                Some((text, _, _)) if failing => text,
+                _ => reply,
+            };
+            let _ = socket.write_all(text.as_bytes()).await;
+        }
+    });
+    let gate = gated.then_some((gate, reached));
+    (addr, hits, gate)
 }
 
 impl Rig {
     async fn start(lan: bool, ingress: bool, public: bool) -> Self {
+        Self::start_with_reload(lan, ingress, public, "Success=1\n", false, None).await
+    }
+
+    async fn start_with_reload(
+        lan: bool,
+        ingress: bool,
+        public: bool,
+        reply: &'static str,
+        gated: bool,
+        fails: Option<(&'static str, usize, usize)>,
+    ) -> Self {
         let h = Harness::start(None).await;
         let id = register(&h);
         let install = prepare_entry_files(&h);
+        let (reload_addr, reloads, gate) = master(reply, gated, fails).await;
         let entry = EntryContainers::new(
             h.docker.engine().await,
             install.clone(),
@@ -36,12 +94,12 @@ impl Rig {
             Instance::default(),
             Some("wonton-core".into()),
         )
-        .with_lan_forward_available(lan);
+        .with_lan_forward_available(lan)
+        .with_reload_addr(reload_addr);
         let domain = Domain::new(
             install.clone(),
             h.data_dir.clone(),
             h.docker.engine().await,
-            Instance::default(),
             None,
         );
         let gateway = Arc::new(
@@ -68,6 +126,8 @@ impl Rig {
             app,
             id,
             install,
+            reloads,
+            gate,
         }
     }
 
@@ -103,12 +163,7 @@ impl Rig {
     }
 
     fn reloads(&self) -> usize {
-        self.h
-            .docker
-            .writes()
-            .iter()
-            .filter(|call| call.as_str() == "POST /containers/wonton-entry/kill")
-            .count()
+        self.reloads.load(Ordering::SeqCst)
     }
 }
 
@@ -365,7 +420,15 @@ async fn opening_without_container_is_not_reported_as_success() {
 
 #[tokio::test]
 async fn reload_failure_rolls_back_switch() {
-    let rig = Rig::start(true, true, true).await;
+    let rig = Rig::start_with_reload(
+        true,
+        true,
+        true,
+        "Success=1\n",
+        false,
+        Some(("Success=0\n--\nsignal rejected\n", 1, usize::MAX)),
+    )
+    .await;
     assert_eq!(rig.switch("public", true).await.status, StatusCode::OK);
     let before = rig.crt_list("public");
     let guard = rig
@@ -375,9 +438,7 @@ async fn reload_failure_rolls_back_switch() {
         .unwrap()
         .unwrap()
         .revoked;
-    rig.h
-        .docker
-        .fail_next_kill("wonton-entry", "signal rejected");
+
     let reply = rig.switch("public", false).await;
     assert_eq!(reply.status, StatusCode::SERVICE_UNAVAILABLE);
     assert_eq!(reply.error_kind(), Some("ingress_unavailable"));
@@ -541,8 +602,9 @@ async fn unavailable_lan_is_not_reported_as_open() {
 
 #[tokio::test]
 async fn opening_is_not_published_until_reload_succeeds() {
-    let rig = Rig::start(true, true, true).await;
-    let hold = rig.h.docker.hold("POST /containers/wonton-entry/kill");
+    let rig = Rig::start_with_reload(true, true, true, "Success=1\n", true, None).await;
+    let hold = rig.gate.as_ref().unwrap().1.clone();
+    let release = rig.gate.as_ref().unwrap().0.clone();
     let gateway = rig.gateway.clone();
     let id = rig.id.clone();
     let opening = tokio::spawn(async move {
@@ -550,7 +612,7 @@ async fn opening_is_not_published_until_reload_succeeds() {
             .await
             .map_err(|error| error.message)
     });
-    tokio::time::timeout(std::time::Duration::from_secs(5), hold.reached())
+    tokio::time::timeout(std::time::Duration::from_secs(5), hold.notified())
         .await
         .unwrap();
     let state = rig
@@ -568,7 +630,7 @@ async fn opening_is_not_published_until_reload_succeeds() {
             .clients_entries
             .public
     );
-    hold.release();
+    release.notify_one();
     opening.await.unwrap().unwrap();
     assert!(
         rig.gateway
@@ -582,15 +644,32 @@ async fn opening_is_not_published_until_reload_succeeds() {
 }
 
 #[tokio::test]
+async fn a_reload_still_in_progress_is_retried() {
+    // 装机首次启动就对账时，入口的主进程可能刚起来、上一次重载还没完。
+    let rig = Rig::start_with_reload(
+        true,
+        true,
+        true,
+        "Success=1\n",
+        false,
+        Some(("Success=0\n--\nAnother reload is still in progress\n", 0, 1)),
+    )
+    .await;
+    assert_eq!(rig.switch("public", true).await.status, StatusCode::OK);
+    assert!(rig.reloads() >= 2, "第一次回过重载中，要再试");
+}
+
+#[tokio::test]
 async fn rejected_configuration_never_opens_entry() {
-    let rig = Rig::start(true, true, true).await;
-    rig.h.docker.on_exec(|_, command, _| {
-        if command.first().is_some_and(|program| program == "haproxy") {
-            (1, "invalid certificate".to_owned())
-        } else {
-            (0, String::new())
-        }
-    });
+    let rig = Rig::start_with_reload(
+        true,
+        true,
+        true,
+        "Success=0\n--\ninvalid certificate\n",
+        false,
+        Some(("Success=0\n--\ninvalid certificate\n", 0, usize::MAX)),
+    )
+    .await;
     let reply = rig.switch("public", true).await;
     assert_eq!(reply.status, StatusCode::SERVICE_UNAVAILABLE);
     assert_eq!(reply.error_kind(), Some("ingress_unavailable"));
@@ -603,7 +682,7 @@ async fn rejected_configuration_never_opens_entry() {
             .public
     );
     assert!(!rig.crt_list("public").contains("client.home.example.test"));
-    assert_eq!(rig.reloads(), 0);
+    assert_eq!(rig.reloads(), 2, "首发和回滚各问过一次入口");
 }
 
 #[tokio::test]

@@ -123,6 +123,22 @@ async fn the_official_index_turns_warnings_into_problems_and_wants_store_info() 
 }
 
 #[tokio::test]
+async fn kind_system_needs_the_official_flag() {
+    let yaml = compose(UNPINNED, "").replace("kind: app", "kind: system");
+    let dir = repo(&yaml);
+    let member = run(dir.path(), false).await.unwrap();
+    assert!(
+        member.problems.iter().any(|p| p.contains("kind system")),
+        "{member:?}"
+    );
+    let official = run(dir.path(), true).await.unwrap();
+    assert!(
+        !official.problems.iter().any(|p| p.contains("kind system")),
+        "{official:?}"
+    );
+}
+
+#[tokio::test]
 async fn webui_without_healthcheck_requires_0_15_and_only_exempts_the_web_service() {
     let pinned = format!("  web:\n    image: nginx:1.27@sha256:{}", "a".repeat(64));
     let complete = "  tags: {zh: [工具], en: [Tools]}\n  license: MIT\n  author: {name: Example}\n  notices: [NOTICE]";

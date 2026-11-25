@@ -254,7 +254,7 @@ async fn serve() -> anyhow::Result<()> {
     let listener = serve::open_listener(cfg.listen).await?;
 
     let upgrades = open_upgrades(&cfg, &engine);
-    let sharing_registries = sharing_start::Registries::open(&cfg)?;
+    let sharing_registries = sharing_start::Registries::open(&cfg, roles.clone())?;
     let (http, system_http, hydra, matrix) =
         serve::open_clients(&cfg, &engine, &sharing_registries).await?;
     let hydra_for_manager = hydra.as_ref().map(|(h, _)| h.clone());
@@ -316,7 +316,13 @@ async fn serve() -> anyhow::Result<()> {
     let forwarder = _forwarder.map(Arc::new);
     let sharing = sharing_registries.service(peers.clone(), forwarder.clone())?;
     // Tuwunel 的名单和 hosts 跟着配对走（ADR-0050）。
-    serve::spawn_federation_config(&engine, &cfg, &peers, &notices, federation_blocks.clone());
+    serve::spawn_federation_config(
+        matrix.as_ref(),
+        &cfg,
+        &peers,
+        &notices,
+        federation_blocks.clone(),
+    );
     let clients = serve::open_domain(&cfg, &engine, &notices)?;
     let contacts = serve::open_contacts(
         &cfg,
@@ -364,7 +370,12 @@ async fn serve() -> anyhow::Result<()> {
         tracing::warn!(%error, "启动时客户端入口配置未对上，运行循环会重试");
     }
     if let (Some(containers), Some(clients)) = (entry, clients) {
-        wonton_core::entry_runtime::spawn(containers, clients, notices.clone(), gateway.clone());
+        wonton_core::entry_runtime::spawn(
+            containers,
+            clients,
+            notices.clone(),
+            Some(gateway.clone()),
+        );
     }
     let _mail_worker = start_mailpit(&cfg, mailpit.as_ref(), system_http, gateway.clone())?;
     serve::run_gateway(

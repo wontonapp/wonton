@@ -276,8 +276,12 @@ fn reason(error: &wonton_matrix::Error) -> &'static str {
         Error::Unauthorized { .. } => "unauthorized",
         Error::Forbidden { .. } => "forbidden",
         Error::NotReady(_) => "not-ready",
-        Error::Upstream(_) => "upstream",
-        Error::InvalidInput(_) => "invalid-input",
+        Error::Upstream(_) | Error::CommentNotSent(_) => "upstream",
+        Error::InvalidInput(_) | Error::NotInTimeline(_) => "invalid-input",
+        Error::NotInvited(_) => "not-invited",
+        Error::TooLarge(_) => "too-large",
+        Error::UnsupportedType(_) => "unsupported-type",
+        Error::ReplyTarget(_) => "reply-target",
     }
 }
 
@@ -318,6 +322,10 @@ pub(super) struct Live {
     pub(super) typing: Arc<super::room_typing::Typing>,
     pub(super) tables: Arc<super::room_commands::Tables>,
     pub(super) jumps: Arc<Jumps>,
+    /// 本账号的“正在输入”节流。
+    pub(super) typing_out: Arc<super::out_typing::TypingOut>,
+    /// 这条订阅的编辑态。
+    pub(super) edit: Arc<super::edit::Edit>,
 }
 
 /// 测试用：不起订阅和任务的状态。
@@ -329,6 +337,8 @@ pub(super) fn seeded() -> Arc<Live> {
             OwnedRoomId::try_from("!room:home.example").unwrap(),
         ),
         jumps: Jumps::new(),
+        typing_out: super::out_typing::seeded(),
+        edit: Arc::new(super::edit::Edit::default()),
     })
 }
 
@@ -338,6 +348,8 @@ pub(super) fn live(runtime: &Handle, room: &Arc<ChatRoom>, room_id: OwnedRoomId)
         typing: super::room_typing::Typing::spawn(runtime, room),
         tables: super::room_commands::Tables::new(room_id),
         jumps: Jumps::new(),
+        typing_out: super::out_typing::TypingOut::new(runtime, room),
+        edit: Arc::new(super::edit::Edit::default()),
     })
 }
 

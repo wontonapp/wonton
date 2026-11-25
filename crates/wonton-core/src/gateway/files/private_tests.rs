@@ -108,6 +108,7 @@ async fn assert_own_mutations(h: &Home, peer: TunnelPeer, id: &wonton_protocol::
     assert!(
         h.f.files
             .authorize(id, &Accessor::Bot("helper".into()), &any_langs())
+            .await
             .is_ok()
     );
     assert_eq!(
@@ -124,6 +125,7 @@ async fn assert_own_mutations(h: &Home, peer: TunnelPeer, id: &wonton_protocol::
     assert!(
         h.f.files
             .authorize(id, &Accessor::Bot("helper".into()), &any_langs())
+            .await
             .is_err()
     );
     assert_eq!(

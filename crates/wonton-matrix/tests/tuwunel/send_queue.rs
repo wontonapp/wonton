@@ -731,7 +731,7 @@ async fn send_image(room: &ChatRoom, filename: &str) {
             height: 1,
         }),
     };
-    room.send_image(upload).await.expect("放进发送队列");
+    room.send_image(upload, None).await.expect("放进发送队列");
 }
 
 /// 发一张指定字节数、内容随便的“PNG”大图，带缩略图。媒体内容对 Matrix 不透明。
@@ -749,7 +749,7 @@ async fn send_big_image(room: &ChatRoom, bytes: usize) {
             height: 1,
         }),
     };
-    room.send_image(upload).await.expect("放进发送队列");
+    room.send_image(upload, None).await.expect("放进发送队列");
 }
 
 /// 等自己发的这条文字发送失败，返回它在时间线里的标识。

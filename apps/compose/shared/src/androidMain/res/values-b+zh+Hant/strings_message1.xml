@@ -11,4 +11,8 @@
     <string name="message_forward_search">搜尋聊天</string>
     <!-- Result line when the search in the forward sheet matches no room. Android only. -->
     <string name="message_forward_no_match">沒有叫這個的聊天</string>
+    <string name="message_choice_failed">沒送出去，再點一次重試</string>
+    <!-- Title of the bar above the input while editing a message. Android only. -->
+    <string name="message_edit_title">編輯訊息</string>
+
 </resources>
