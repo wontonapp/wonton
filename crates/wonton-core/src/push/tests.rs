@@ -108,7 +108,7 @@ impl Home {
         let device = SecretKey::generate().public();
         devices.add(device, None).unwrap();
         let server = SecretKey::generate().public();
-        let push = Push::open(dir.path().join("push.json"), devices.clone(), server).unwrap();
+        let push = Push::open(dir.path().join("push.json"), devices.clone(), server, None).unwrap();
         let service = PushService::start().await;
         let subscription = Subscription::new(&service.endpoint(), UA_PUBLIC, AUTH).unwrap();
         let pushkey = push.register(device, subscription).unwrap().pushkey;
@@ -430,7 +430,7 @@ async fn registrations_survive_a_restart_and_keep_their_pushkey() {
     assert_eq!(again.pushkey, home.pushkey, "换了推送地址，pushkey 不变");
 
     let path = home.dir.path().join("push.json");
-    let reopened = Push::open(&path, home.devices.clone(), home.server).unwrap();
+    let reopened = Push::open(&path, home.devices.clone(), home.server, None).unwrap();
     let registration = reopened.registration(&home.device).unwrap();
     assert_eq!(registration.pushkey, home.pushkey);
     assert_eq!(registration.subscription, moved);
@@ -444,7 +444,7 @@ async fn registrations_survive_a_restart_and_keep_their_pushkey() {
 
     assert!(reopened.unregister(&home.device).unwrap());
     assert!(!reopened.unregister(&home.device).unwrap());
-    let restarted = Push::open(&path, home.devices.clone(), home.server).unwrap();
+    let restarted = Push::open(&path, home.devices.clone(), home.server, None).unwrap();
     assert!(restarted.registration(&home.device).is_none());
 }
 
@@ -499,7 +499,7 @@ async fn a_confirmation_push_reaches_only_the_recipients_devices() {
         .add_if(alices, None, Some("alice".into()), |_| true)
         .unwrap();
     let server = SecretKey::generate().public();
-    let push = Push::open(dir.path().join("push.json"), devices, server).unwrap();
+    let push = Push::open(dir.path().join("push.json"), devices, server, None).unwrap();
     // 两台设备各对一个推送服务：收到请求的端口说明是哪台设备收到的。
     let for_owner = PushService::start().await;
     let for_alice = PushService::start().await;
@@ -558,7 +558,8 @@ async fn without_a_paired_device_nobody_can_confirm() {
     let dir = tempfile::tempdir().unwrap();
     let devices = Arc::new(Devices::open(dir.path().join("devices.json")).unwrap());
     let server = SecretKey::generate().public();
-    let push = Arc::new(Push::open(dir.path().join("push.json"), devices.clone(), server).unwrap());
+    let push =
+        Arc::new(Push::open(dir.path().join("push.json"), devices.clone(), server, None).unwrap());
     let confirmations = crate::mcp::Confirmations::new(
         Arc::new(crate::mcp::DevicePush::new(push)),
         Duration::from_secs(5),

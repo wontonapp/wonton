@@ -86,6 +86,8 @@ App 被杀后收不到任何消息。
 - M0：UnifiedPush 加自建 ntfy，不需要账号。推送地址由分发器给出，核心直接发给它，ntfy 就是中继。
 - M2：FCM、APNs 经我们运营的中继：中继为 App 的 FCM 或 APNs 令牌开一个推送地址，Web Push 进、gorush 出，用 VAPID
   （RFC 8292）认出发来推送的家里服务器并按它限速。App 换渠道时核心不用改。
+- 中继的部署件（gorush 包装、VAPID 校验、按服务器限速、nginx vhost、systemd 单元）在 `cloud/push-relay/`：
+  中继为 APNs 令牌开一个推送地址，只转发密文。核心设 `WONTON_PUSH_VAPID_KEY_FILE` 和 `WONTON_PUSH_VAPID_SUBJECT` 后带 VAPID 头。
 
 **设备的推送密钥**
 

@@ -103,6 +103,7 @@ impl Home {
                 dir.path().join("push.json"),
                 tunnel.devices.clone(),
                 tunnel.endpoint.id(),
+                None,
             )
             .unwrap(),
         );

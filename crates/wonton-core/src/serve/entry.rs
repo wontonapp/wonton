@@ -69,8 +69,17 @@ pub(crate) fn open_push(
     tunnel: &Tunnel,
     manager: &PluginManager,
 ) -> anyhow::Result<Push> {
+    // 两个变量由配置层保证成对出现：设了才带 VAPID 头，发到 ntfy 这类地址也照样带，没有副作用。
+    let vapid = match (&cfg.push_vapid_key, &cfg.push_vapid_subject) {
+        (Some(key), Some(subject)) => Some(
+            wonton_core::push::Vapid::from_key(key, subject.clone())
+                .map_err(anyhow::Error::msg)
+                .context("解析 WONTON_PUSH_VAPID_KEY")?,
+        ),
+        _ => None,
+    };
     let path = cfg.core_state_dir().join("push.json");
-    Push::open(&path, tunnel.devices.clone(), tunnel.endpoint.id())
+    Push::open(&path, tunnel.devices.clone(), tunnel.endpoint.id(), vapid)
         .and_then(|push| push.with_proxy(manager.core_proxy()))
         .with_context(|| format!("打开推送登记表 {}", path.display()))
 }

@@ -6,6 +6,7 @@
 
 mod notification;
 mod store;
+mod vapid;
 mod webpush;
 
 use std::path::PathBuf;
@@ -17,6 +18,7 @@ use wonton_protocol::{DeviceConfirmationPush, DevicePayload};
 
 pub use notification::{Notification, NotifyRequest, NotifyResponse};
 pub use store::{Registration, Subscription};
+pub use vapid::Vapid;
 
 use crate::device::{Device, Devices};
 use crate::plugin::egress::core_proxy::CoreProxy;
@@ -47,27 +49,32 @@ pub struct Push {
     registrations: Registrations,
     devices: Arc<Devices>,
     sender: WebPush,
+    /// 发往我们运营的中继时的服务器身份；发到 ntfy 这类不需要 VAPID 的地址时也照样带上，无副作用。
+    vapid: Option<Vapid>,
 }
 
 impl Push {
     /// 读取登记表（`core/push.json`）。`devices` 是隧道用的同一份设备登记表：已吊销的设备收不到推送。`server` 是
-    /// 隧道的 endpoint ID。
+    /// 隧道的 endpoint ID；`vapid` 是发往我们运营的中继时的服务器身份。
     pub fn open(
         path: impl Into<PathBuf>,
         devices: Arc<Devices>,
         server: EndpointId,
+        vapid: Option<Vapid>,
     ) -> Result<Self, PushError> {
         Ok(Self {
             server: server.to_string(),
             registrations: Registrations::open(path)?,
             devices,
             sender: WebPush::new(&CoreProxy::default())?,
+            vapid,
         })
     }
 
     /// 发推送走核心自己的代理（ADR-0023）。
     pub fn with_proxy(mut self, proxy: &CoreProxy) -> Result<Self, PushError> {
         self.sender = WebPush::new(proxy)?;
+        self.sender.set_vapid(self.vapid.take());
         Ok(self)
     }
 
