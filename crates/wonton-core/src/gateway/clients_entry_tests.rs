@@ -253,7 +253,9 @@ fn gateway(h: &Harness) -> Gateway {
         Arc::new(|| Languages::from_header(None)),
         h.tunnel.endpoint.clone(),
         0,
-        RelayTable::from_relays(Vec::new()),
+        Arc::new(crate::relay_settings::RelaySettings::for_table(
+            RelayTable::from_relays(Vec::new()),
+        )),
         tokio::sync::watch::channel(["192.0.2.10".parse().unwrap()].into()).1,
     );
     Gateway::new(

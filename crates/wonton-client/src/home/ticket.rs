@@ -334,6 +334,7 @@ mod tests {
                 vec![Relay {
                     url: "https://b.example./".parse().unwrap(),
                     token: Some(RelayToken::new("tok")),
+                    quic_port: None,
                     tier: 0,
                 }],
                 &[],

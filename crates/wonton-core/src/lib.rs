@@ -55,6 +55,7 @@ pub mod peers;
 pub mod plugin;
 pub mod private_home;
 pub mod push;
+pub mod relay_settings;
 pub mod roles;
 pub mod secret;
 pub mod share_identity;

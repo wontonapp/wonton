@@ -110,6 +110,7 @@ pub use push::router as push_router;
 pub(crate) use request_guards::{same_origin_path, with_cookie};
 pub(crate) use send_limits::Identity;
 pub use send_limits::{SendLimiter, SendLimits};
+mod relays_api;
 mod session;
 mod settings_api;
 mod sso;
@@ -901,6 +902,8 @@ mod proxy_sso_tests;
 mod push_tests;
 #[cfg(test)]
 mod registry_mirror_tests;
+#[cfg(test)]
+mod relays_api_tests;
 #[cfg(test)]
 mod secret_change_tests;
 #[cfg(test)]

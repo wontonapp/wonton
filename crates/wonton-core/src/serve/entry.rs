@@ -93,7 +93,15 @@ pub(crate) async fn bind_tunnel(
     let devices = Devices::open(cfg.core_state_dir().join("devices.json"))?;
     members.recover_pending_devices(&devices)?;
     let key = tunnel::load_or_create_key(&cfg.core_state_dir().join("tunnel-key"))?;
-    let endpoint = tunnel::bind(key, cfg.tunnel_port, &cfg.relays).await?;
+    let settings = std::sync::Arc::new(
+        wonton_core::relay_settings::RelaySettings::open(
+            wonton_core::relay_settings::Startup::from_config(cfg),
+        )
+        .await
+        .context("读中继表配置")?,
+    );
+    let (endpoint, fallback) = tunnel::bind(key, cfg.tunnel_port, &settings.table()).await?;
+    settings.attach(endpoint.clone(), fallback);
     tracing::info!(
         endpoint_id = %endpoint.id(),
         sockets = ?endpoint.bound_sockets(),
@@ -111,7 +119,7 @@ pub(crate) async fn bind_tunnel(
         owner_languages,
         endpoint,
         cfg.tunnel_port,
-        cfg.relays.clone(),
+        settings,
         addresses.clone(),
     );
     tunnel::spawn_announcing(tunnel.endpoint.clone(), tunnel.port, addresses);

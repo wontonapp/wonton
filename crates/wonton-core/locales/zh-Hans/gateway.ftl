@@ -83,6 +83,7 @@ gateway-denied = 这台设备没有配对或者已被移除，要重新配对；
 gateway-cross-site-api = 应用管理接口不接受其他网页发来的请求
 gateway-disk-space = 查磁盘空间失败：{ $error }
 gateway-invalid-lan-choice = 请求体不是局域网设置的选择：{ $error }
+gateway-invalid-relay-settings = 请求体不是中继表设置：{ $error }
 gateway-icon-not-found = 没有这张图片
 gateway-icon-failed = 图标处理不了：{ $error }
 
