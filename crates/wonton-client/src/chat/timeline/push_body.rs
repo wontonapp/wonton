@@ -92,28 +92,32 @@ pub(super) fn settle(
             _ => None,
         })
         .collect();
-    let stale: Vec<(String, String)> = previewed
+    // 在**没动过**的列表上取下标：壳按顺序 removeAt，所以降序删、降序发，才删得到各自的预览。
+    let mut stale: Vec<(usize, String, String)> = entries
         .iter()
-        .filter_map(|(id, entry)| {
-            let event = event_id_of(entry)?;
+        .enumerate()
+        .filter_map(|(index, entry)| {
+            let shown = previewed.get(&entry.id)?;
+            let event = event_id_of(shown)?;
             let settled = !live.contains(&event) || real.contains(&event);
-            settled.then(|| (id.clone(), event))
+            settled.then(|| (index, entry.id.clone(), event))
         })
         .collect();
-    let mut removed = Vec::new();
+    stale.sort_unstable_by_key(|entry| entry.0);
+    stale.reverse();
+    let removed: Vec<u32> = stale
+        .iter()
+        .map(|(index, _, _)| u32::try_from(*index).unwrap_or(u32::MAX))
+        .collect();
     let mut cleared = Vec::new();
-    for (id, event) in stale {
-        if let Some(index) = entries.iter().position(|entry| entry.id == id) {
-            removed.push(u32::try_from(index).unwrap_or(u32::MAX));
-            entries.remove(index);
-            cleared.push(event);
-        }
+    for (index, id, event) in stale {
+        entries.remove(index);
         previewed.remove(&id);
+        cleared.push(event);
     }
     if !cleared.is_empty() {
         previews.settle(&cleared);
     }
-    removed.sort_unstable();
     removed
 }
 

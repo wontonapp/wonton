@@ -376,7 +376,6 @@ pub(super) async fn forward(
                     if !removed.is_empty() {
                         let diffs = removed
                             .into_iter()
-                            .rev()
                             .map(|index| TimelineDiff::Remove { index })
                             .collect();
                         if send(sender, &entries, diffs, &mut view, None).is_err() {

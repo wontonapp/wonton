@@ -172,6 +172,42 @@ fn a_counter_id_real_event_removes_the_preview_by_event_id() {
     assert_eq!(text(&entries[0]), Some("真事件"));
 }
 
+/// 两条预览不相邻、又同时落定：下标要在没动过的列表上取，按降序删、按降序交给壳，
+/// 否则壳按序 removeAt 会删到别的行（[P_a, R_a, P_b, R_b] 删 1、0 会留下 P_b）。
+#[test]
+fn two_settled_previews_remove_their_own_rows() {
+    let dir = tempfile::tempdir().unwrap();
+    let previews = PushPreviews::open(dir.path());
+    previews.remember(preview("$a", "甲"));
+    previews.remember(preview("$b", "乙"));
+    let mut entries = Vector::new();
+    let mut previewed = HashMap::new();
+    push_body::merge(
+        &mut entries,
+        &previews,
+        &room(),
+        None,
+        &own(),
+        &mut previewed,
+    );
+    assert_eq!(entries.len(), 2);
+    // 真事件按 SDK 的顺序插在预览之间：[P_a, R_a, P_b, R_b]。
+    entries.insert(1, real("0", "$a", "甲真"));
+    entries.push_back(real("1", "$b", "乙真"));
+    assert_eq!(
+        entries.iter().map(|e| e.id.as_str()).collect::<Vec<_>>(),
+        ["__push_$a", "0", "__push_$b", "1"]
+    );
+
+    let removed = push_body::settle(&mut entries, &previews, &room(), None, &mut previewed);
+    assert_eq!(removed, vec![2, 0], "降序发，壳按序 removeAt 才删得对");
+    assert_eq!(
+        entries.iter().map(|e| e.id.as_str()).collect::<Vec<_>>(),
+        ["0", "1"]
+    );
+    assert!(previews.of(&room(), None).is_empty());
+}
+
 #[test]
 fn a_side_chat_preview_stays_in_its_side_chat() {
     let dir = tempfile::tempdir().unwrap();
