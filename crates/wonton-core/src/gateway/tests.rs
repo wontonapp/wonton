@@ -142,6 +142,13 @@ fn test_bus(
         Arc::new(crate::mcp::audit::Audit::new(data_dir.join("audit.jsonl"))),
     );
     bus.attach_people("wonton-test".to_owned(), members.clone(), roles.clone());
+    let inbox = crate::inbox::Inbox::open(
+        data_dir.join("inbox"),
+        Arc::new(crate::inbox::SystemClock),
+        Arc::new(crate::inbox::AdminSet::new("owner".into(), Vec::new())),
+    )
+    .unwrap();
+    bus.attach_inbox(inbox);
     bus.endpoint()
 }
 

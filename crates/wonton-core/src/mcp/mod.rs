@@ -6,7 +6,7 @@ mod agent_cards;
 mod agent_install;
 mod agent_permission;
 mod apps;
-mod audience;
+pub(crate) mod audience;
 pub mod audit;
 mod authoring_tools;
 mod bot_access;
@@ -123,6 +123,8 @@ pub struct Bus {
     friends: OnceLock<Arc<crate::friends::Friends>>,
     /// Bot 钉进主面板的同意卡片的等待：每个（插件）最多一张。
     pin_cards: Mutex<HashSet<PluginId>>,
+    /// 收件箱（ADR-0119）。没接时收件箱工具和接口如实报不可用。
+    inbox: OnceLock<Arc<crate::inbox::Inbox>>,
     /// 旧协议（2026-07-28 之前）的会话：工具列表变了要逐个通知。
     peers: Mutex<Vec<Peer<RoleServer>>>,
 }
@@ -159,6 +161,7 @@ impl Bus {
             agent_chains: OnceLock::new(),
             friends: OnceLock::new(),
             pin_cards: Mutex::new(HashSet::new()),
+            inbox: OnceLock::new(),
             peers: Mutex::new(Vec::new()),
         });
         bus.watch_plugins();
@@ -257,6 +260,22 @@ impl Bus {
     /// 插件的 MCP 客户端：文件服务读资源也用它，一个插件一条连接。
     pub fn upstreams(&self) -> Arc<Upstreams> {
         self.upstreams.clone()
+    }
+
+    /// 插件管理器：收件箱取发送方的 MCP 服务读页面用。
+    pub fn plugins(&self) -> &Arc<PluginManager> {
+        &self.plugins
+    }
+
+    /// 接上收件箱。没接时收件箱工具和接口如实报不可用。
+    pub fn attach_inbox(&self, inbox: Arc<crate::inbox::Inbox>) {
+        if self.inbox.set(inbox).is_err() {
+            tracing::warn!("收件箱接了两次，用先接上的");
+        }
+    }
+
+    pub fn inbox(&self) -> Option<Arc<crate::inbox::Inbox>> {
+        self.inbox.get().cloned()
     }
 
     pub fn confirmations(&self) -> &Confirmations {

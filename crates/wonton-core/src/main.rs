@@ -292,6 +292,7 @@ async fn serve() -> anyhow::Result<()> {
         server_name,
         members.clone(),
         roles.clone(),
+        push.clone(),
     );
     bus.attach_help(serve::help_docs(&cfg, manager.clone(), upgrades.clone()));
     let host = Arc::new(

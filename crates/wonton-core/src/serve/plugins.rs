@@ -119,9 +119,55 @@ pub(crate) fn attach_identity(
     server_name: String,
     members: Arc<Members>,
     roles: Arc<Roles>,
+    push: Arc<wonton_core::push::Push>,
 ) {
-    bus.attach_people(server_name, members, roles);
+    bus.attach_people(server_name, members.clone(), roles.clone());
     bus.attach_matrix(matrix.cloned(), cfg.username.clone());
+    let admins = Arc::new(MemberAdmins {
+        owner: cfg.username.clone(),
+        members,
+        roles,
+    });
+    let dir = cfg.core_state_dir().join("inbox");
+    match wonton_core::inbox::Inbox::open(dir, Arc::new(wonton_core::inbox::SystemClock), admins) {
+        Ok(inbox) => {
+            inbox.attach_devices(Arc::new(PushDevices(push)));
+            bus.attach_inbox(inbox);
+        }
+        Err(error) => tracing::warn!(%error, "收件箱打不开，收件箱工具和接口不可用"),
+    }
+}
+
+struct PushDevices(Arc<wonton_core::push::Push>);
+
+impl wonton_core::inbox::DevicePresence for PushDevices {
+    fn has_devices(&self, person: Option<&str>) -> bool {
+        self.0.has_devices(person)
+    }
+}
+
+/// 管理员名单：主人，或有“管理成员”权限的已加入成员。
+struct MemberAdmins {
+    owner: String,
+    members: Arc<Members>,
+    roles: Arc<Roles>,
+}
+
+impl wonton_core::inbox::AdminRoster for MemberAdmins {
+    fn is_admin(&self, username: &str) -> bool {
+        if username == self.owner {
+            return true;
+        }
+        let Some(member) = self.members.get(username) else {
+            return false;
+        };
+        if member.status != wonton_protocol::MemberStatus::Joined {
+            return false;
+        }
+        self.roles
+            .get(&member.role_id)
+            .is_some_and(|role| role.permissions.manage_members)
+    }
 }
 
 /// MCP 总线（ADR-0016）：开卡时给收件人的设备发推送，之后状态变化只改确认表，设备从

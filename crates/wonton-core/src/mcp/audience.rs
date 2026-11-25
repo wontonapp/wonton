@@ -22,7 +22,7 @@ const MAX_ID: usize = 255;
 
 /// 卡片问的是哪类事，决定发给谁（ADR-0045 的权限表）。
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
-pub(super) enum Subject {
+pub(crate) enum Subject {
     /// 调插件的工具、Agent 自己的工具：发给 Bot 的归属人。
     Tool,
     /// 会删、会覆盖的工具调用，在“删除要管理员批”的封顶下：发给所有管理员（ADR-0088 第 5 节）。
@@ -74,7 +74,7 @@ struct OriginRecord<'a> {
 
 impl Bus {
     /// 卡片普通收件人的用户名；`None` 是主人。管理员卡片另在 [`Self::audience`] 里冻结完整名单。
-    pub(super) fn recipient(&self, caller: &Caller, subject: Subject) -> Option<String> {
+    pub(crate) fn recipient(&self, caller: &Caller, subject: Subject) -> Option<String> {
         let BotKeeper::User { username } = &caller.bot.as_ref()?.keeper else {
             return None;
         };
@@ -285,7 +285,7 @@ impl Bus {
         }
     }
 
-    fn plugin_admins(&self) -> Vec<String> {
+    pub(crate) fn plugin_admins(&self) -> Vec<String> {
         self.people
             .get()
             .map(|people| {

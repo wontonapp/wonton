@@ -302,7 +302,7 @@ pub fn routes(gateway: Arc<Gateway>) -> Router {
             "/_wonton/api/pairing-codes/first",
             post(devices::first_pairing_code),
         )
-        .merge(confirmation_routes())
+        .merge(confirmation_routes().merge(super::inbox::routes()))
         .merge(chain_routes())
         .merge(files::routes(gateway.clone()))
         .fallback(|headers: HeaderMap| async move {
