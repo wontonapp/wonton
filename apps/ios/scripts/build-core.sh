@@ -4,6 +4,8 @@
 # 用法：apps/ios/scripts/build-core.sh [debug|release]
 # 环境变量 WONTON_IOS_TARGETS 指定 Rust target，默认真机加 Apple 芯片模拟器；
 # CI 只构建模拟器：WONTON_IOS_TARGETS=aarch64-apple-ios-sim。
+# 环境变量 WONTON_CORE_PREBUILT=1 表示 XCFramework 和 Swift 绑定已经取回来了（CI 按内容哈希拿到同一份核心的产物，
+# 见 .github/workflows/README.md 的“核心产物”）：不编核心，只补许可清单和版本号；产物缺了直接报错。
 #
 # 要能在 macOS 自带的 bash 3.2 下运行：不要展开可能为空的数组（set -u 会报 unbound variable）。
 set -euo pipefail
@@ -53,6 +55,19 @@ cd "$repo_root"
 
 # 与 project.yml 的部署版本一致，避免链接时的版本警告。
 export IPHONEOS_DEPLOYMENT_TARGET=17.0
+
+if [ "${WONTON_CORE_PREBUILT:-}" = 1 ]; then
+  # 缺了不能悄悄从头编：那样拿到的产物慢、对不上“命中”这件事，问题被藏起来。
+  set -- "$xcframework"/*-simulator/libwonton_client.a
+  slice="${1%/libwonton_client.a}"
+  # Info.plist 在 xcframework 根上，不在切片里。
+  { [ -f "$1" ] && [ -f "$xcframework/Info.plist" ] && [ -f "$slice/Headers/module.modulemap" ]; } ||
+    { echo "WONTON_CORE_PREBUILT=1，但取回来的产物不完整：要有 $xcframework/Info.plist 和 $xcframework/*-simulator 下的 libwonton_client.a、Headers/module.modulemap" >&2; exit 1; }
+  set -- "$generated_dir"/*.swift
+  [ -f "$1" ] || { echo "WONTON_CORE_PREBUILT=1，但取回来的产物里没有 $generated_dir/*.swift" >&2; exit 1; }
+  echo "用取回来的核心产物（$xcframework 与 ${generated_dir}），不编核心"
+  exit 0
+fi
 
 libraries=()
 for target in "${targets[@]}"; do

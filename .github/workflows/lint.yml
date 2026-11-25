@@ -126,6 +126,9 @@ jobs:
       - name: 生成绑定的 crate 的文档注释能进 Swift 和 Kotlin 的块注释
         if: steps.changes.outputs.source == 'true'
         run: bash scripts/check-uniffi-comments.sh
+      - name: 核心产物的键：改了任何一个输入都要变
+        if: steps.changes.outputs.source == 'true'
+        run: python3 -m unittest discover -s scripts/core_artifacts -t scripts -p '*_test.py'
       - name: 两个壳的对齐检查自己的用例
         if: steps.changes.outputs.source == 'true'
         run: python3 -m unittest discover -s scripts/shell_parity -t scripts

@@ -10,7 +10,8 @@ Kotlin Multiplatform 工程：共享 UI 模块、Android 应用，以及桌面�
   UniFFI 的 Kotlin 绑定，`.so` 和绑定都不提交。
 - `androidApp/`：Android 应用，只有 `Application`（持有唯一的核心实例）和 `Activity`，以及把下载好的文件交给系统打开的
   `FileProvider`（ADR-0020）。
-- `scripts/build-core.sh`：被 `buildRustCore` 调用，一般不需要手动运行。
+- `scripts/build-core.sh`：被 `buildRustCore` 调用，一般不需要手动运行。环境变量 `WONTON_CORE_PREBUILT=1` 时任务不跑，
+  直接用已经放进输出目录的 `.so` 和 Kotlin 绑定（CI 按内容哈希取回 main 上编好的那份，见 `.github/workflows/README.md`）。
 
 UniFFI 的 Kotlin 绑定依赖 JNA，只能编译到 JVM 类目标，不能放进 `commonMain`。所以绑定和界面暂时
 放在 `shared/src/androidMain`；M2 加桌面端时，新增 JVM 目标，把它们移到 Android 与桌面共用的

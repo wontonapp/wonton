@@ -13,6 +13,9 @@ name: ios
 #   不挡合并；连续合并时只跑最新那次（新的取消旧的，结果只对旧提交有意义），红了按那次提交标题里的 (#N) 找到弄红的 PR。
 # 两半合起来是 wonton-client 在工作区里的全部依赖（cargo tree -p wonton-client --features bindgen --target all），
 # 加了依赖要同步改。只改测试的（crates 下的 tests/、benches/、tests.rs、*_tests.rs）编不进 iOS App，排除掉。
+#
+# 核心里一行没改时用 main 上按内容哈希取回的预编译产物（XCFramework 和 Swift 绑定），不编核心；规则见
+# workflows/README.md 的“核心产物”。键对不上就照旧现编，不存在拿别的键的产物顶替。
 on:
   workflow_call:
   push:
@@ -26,13 +29,17 @@ on:
       - "vendor/**"
       - "Cargo.lock"
       - "rust-toolchain.toml"
+      # 核心产物的键和产物怎么编：改了它们，main 上的这份产物就过期，靠这次运行重编。
+      - "scripts/core_artifacts/**"
+      - "apps/ios/scripts/**"
+      - ".github/workflows/cache.yml"
       - "!**/*.md"
       - "!crates/**/tests/**"
       - "!crates/**/benches/**"
       - "!crates/**/tests.rs"
       - "!crates/**/*_tests.rs"
   schedule:
-    # 每天全量兜底：两个各自绿的 PR 合在一起才出的错由这次发现。
+    # 每天全量兜底：两个各自绿的 PR 合在一起才出的错由这次发现。这轮不取预编译产物、强制现编，环境坏了也能暴露。
     - cron: "30 4 * * *"
   workflow_dispatch:
 
@@ -46,6 +53,12 @@ env:
   # 同 rust.yml：不留增量编译的缓存，调试信息只留行号。
   CARGO_INCREMENTAL: "0"
   CARGO_PROFILE_DEV_DEBUG: line-tables-only
+  # 核心产物只按这个 target 编（CI 只跑模拟器）。
+  WONTON_IOS_TARGETS: aarch64-apple-ios-sim
+  # 产物用它编、键也算它：钉死版本，别跟机器上默认装的是哪个走。
+  XCODE_VERSION: "27.1"
+  # 这几行要和 cache.yml 的 iOS 作业一模一样：rust-cache 和核心产物的键都从这些变量算，少一个、换个值两边就对不上。
+  CARGO_PROFILE_RELEASE_DEBUG: line-tables-only
 
 permissions:
   contents: read
@@ -79,7 +92,8 @@ jobs:
     name: 模拟器构建
     runs-on: xcode-27
     # 编 Rust 核心在托管 runner 上波动很大：2026-11-19 同样命中缓存，这一步 15–30 分钟，整个作业 28–45 分钟，
-    # 45 分钟时常被超时取消、日志里没有错误。公开仓库的 macOS 分钟不花钱，放宽到 70 分钟。
+    # 45 分钟时常被超时取消、日志里没有错误。公开仓库的 macOS 分钟不花钱，放宽到 70 分钟；只改壳、命中预编译产物时
+    # 不编核心，整个作业几分钟。
     timeout-minutes: 70
     env:
       XCODEGEN_VERSION: "2.46.0"
@@ -101,6 +115,33 @@ jobs:
           if ! xcodebuild -version | head -1 | grep -q "Xcode 27.1"; then
             sudo xcode-select -s /Applications/Xcode_27.1.app
           fi
+      - name: 核心产物的键
+        id: core
+        # 先取进变量再拼：写在 $(…) 里的话 key.py 失败也算绿，键会变成空的前缀。
+        run: |
+          key=$(python3 scripts/core_artifacts/key.py ios)
+          echo "key=ios-core-$key" >> "$GITHUB_OUTPUT"
+      - name: 找 main 上编好的核心产物
+        id: corecache
+        # 定时那轮不取，强制现编：rustup、Xcode、cargo-ndk 这些环境坏了要每天有人发现。
+        if: github.event_name != 'schedule'
+        uses: actions/cache/restore@0057852bfaa89a56745cba8c7296529d2fc39830 # v4
+        with:
+          path: |
+            apps/ios/WontonClient/build/WontonClientFFI.xcframework
+            apps/ios/WontonClient/Sources/WontonClient/Generated
+          key: ${{ steps.core.outputs.key }}
+      # 命中就跳过编核心（下面 rustup、rust-cache、build-core 的编译部分都跟着跳过）；产物缺了当场停。
+      - name: 核对取回来的产物
+        if: steps.corecache.outputs.cache-hit == 'true'
+        run: |
+          # 缺一样就停在这里，不让 xcodebuild 报看不懂的“找不到模块”。
+          xcframework=apps/ios/WontonClient/build/WontonClientFFI.xcframework
+          slice=$(ls -d "$xcframework"/*-simulator)
+          echo "取回来的产物：$slice"
+          # Info.plist 在 xcframework 根上，不在切片里。
+          ls "$slice"/libwonton_client.a "$slice"/Headers/module.modulemap "$xcframework"/Info.plist
+          ls apps/ios/WontonClient/Sources/WontonClient/Generated/*.swift
       - name: 挑这台机器上有的模拟器运行时
         run: |
           # 自托管 mini 没有 iOS 27.0 运行时（装运行时要 sudo，mini 没配免密），托管镜像有；有 27.1 就用 27.1，
@@ -162,10 +203,12 @@ jobs:
           echo "SIMULATOR_UDID=$udid" >> "$GITHUB_ENV"
           nohup xcrun simctl bootstatus "$udid" -b > "$RUNNER_TEMP/simulator-boot.log" 2>&1 &
       - name: 安装 rust-toolchain.toml 指定的工具链和 iOS 模拟器 target
+        if: steps.corecache.outputs.cache-hit != 'true'
         run: |
           rustup toolchain install
           rustup target add aarch64-apple-ios-sim
-      - uses: Swatinem/rust-cache@d1527c8f67ef9af357290475d4af4b0fab8f12e0 # v2
+      - if: steps.corecache.outputs.cache-hit != 'true'
+        uses: Swatinem/rust-cache@d1527c8f67ef9af357290475d4af4b0fab8f12e0 # v2
         with:
           # macOS 的产物和 Linux 作业不通用，单独一个 key。
           # 只读：同一份 key 由 cache.yml 的 iOS 作业在 push 时编好写回。这里也写的话，
@@ -182,8 +225,18 @@ jobs:
           echo "$RUNNER_TEMP/xcodegen/xcodegen/bin" >> "$GITHUB_PATH"
       - name: 编译 Rust 核心并生成 Swift 绑定
         env:
-          WONTON_IOS_TARGETS: aarch64-apple-ios-sim
+          # 命中 main 上的产物时只补许可清单和版本号，不编核心。
+          WONTON_CORE_PREBUILT: ${{ steps.corecache.outputs.cache-hit == 'true' && '1' || '' }}
         run: apps/ios/scripts/build-core.sh debug
+      - name: 存下这次编的核心产物
+        # PR 存进本分支的作用域，同一个 PR 再推就命中；main 上由 cache.yml 存，所有 PR 都能取。
+        if: steps.corecache.outputs.cache-hit != 'true'
+        uses: actions/cache/save@0057852bfaa89a56745cba8c7296529d2fc39830 # v4
+        with:
+          path: |
+            apps/ios/WontonClient/build/WontonClientFFI.xcframework
+            apps/ios/WontonClient/Sources/WontonClient/Generated
+          key: ${{ steps.core.outputs.key }}
       - name: 生成 Xcode 工程
         run: xcodegen generate --spec apps/ios/project.yml
       # 只编 WontonTests：UI 测试（WontonUITests）在夜跑里跑，这里不编。

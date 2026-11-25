@@ -34,6 +34,10 @@ abstract class BuildRustCore : Exec() {
     @get:OutputDirectory
     abstract val symbolsDir: DirectoryProperty
 
+    /** CI 已经把同一份核心的产物取回来了：`1` 时跳过编译（.github/workflows/README.md 的“核心产物”）。 */
+    @get:Input
+    abstract val prebuilt: Property<String>
+
     /** 每个 ABI 一个 .so，产物只有这些；目录本身仍要声明，AGP 拿它当生成的 jniLibs 源目录。 */
     @get:OutputFiles
     abstract val libraries: ConfigurableFileCollection
@@ -82,6 +86,7 @@ val buildRustCore = tasks.register<BuildRustCore>("buildRustCore") {
     minSdk.set(libs.versions.android.minSdk.map { it.toInt() })
     abis.set(providers.gradleProperty("wonton.abis").map { value -> value.split(" ").filter { it.isNotBlank() } })
     kotlinDir.set(layout.buildDirectory.dir("generated/uniffi/kotlin"))
+    prebuilt.set(providers.environmentVariable("WONTON_CORE_PREBUILT").orElse(""))
     symbolsDir.set(layout.buildDirectory.dir("outputs/native-symbols"))
     val script = rootDir.resolve("scripts/build-core.sh")
     executable = script.path
@@ -103,6 +108,12 @@ val buildRustCore = tasks.register<BuildRustCore>("buildRustCore") {
     // 这两个环境变量决定 .so 里带不带调试信息，CI 设了；默认不算任务输入，切换后 Gradle 会判 UP-TO-DATE 拿旧的。
     inputs.property("devDebug", providers.environmentVariable("CARGO_PROFILE_DEV_DEBUG").orElse(""))
     inputs.property("releaseDebug", providers.environmentVariable("CARGO_PROFILE_RELEASE_DEBUG").orElse(""))
+    // 取回来的产物在输出目录里就别再编一遍；置了却有 .so 不在（缓存残缺、ABI 对不上）就还是现编。
+    // 只碰任务自己的属性，不碰脚本里的对象，配置缓存才存得下。
+    onlyIf { task ->
+        val core = task as BuildRustCore
+        core.prebuilt.get() != "1" || !core.libraries.files.all { library -> library.isFile }
+    }
 }
 
 kotlin {

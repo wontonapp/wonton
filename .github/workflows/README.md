@@ -146,7 +146,8 @@ PR 合并前只等快检查：格式、Clippy、detekt、SwiftLint、行数门�
 
 ## 缓存
 
-- 缓存只在 main 上写，PR 和定时运行只读：仓库公开，外部 PR 写的条目会把 main 的挤掉。
+- 缓存主要写在 main 上，PR 和定时运行只读：仓库公开，外部 PR 写的条目会把 main 的挤掉。
+  （核心产物是例外，PR 现编的那份只存在本分支作用域，见下面“核心产物”。）
   main 上不跑快检查（`rust`、`android` 只由 PR 上的 `gate` 和定时运行，`ios` 在 main 上只跑部分路径），所以另开 `cache.yml`：push 到 main 或手动触发时，用和 PR 作业**完全相同**
   的 rust-cache key 前缀、缓存目录和编译目标只编不跑（测试二进制、Clippy、iOS 模拟器核心、Android 核心、
   桥镜像）。改这几个工作流的 rust-cache 参数（`shared-key`、`workspaces`、环境变量）时要和 `cache.yml`
@@ -162,7 +163,33 @@ PR 合并前只等快检查：格式、Clippy、detekt、SwiftLint、行数门�
   actions 缓存：main-image 每次合并写回，发版只读；桥镜像的预构建只读：层缓存只由 `cache.yml` 的桥镜像作业排队写回，
   `rust-docker` 的预构建和测试只恢复，构建完 `--load` 回本机给测试用。Dockerfile 用 cargo-chef 把依赖编进独立的依赖层：清单不变就不重编依赖，
   缓存要 `mode=max` 才存得下这一层。
-- actions 缓存上限 10 GB，只剩 rust-cache 在用，超了按最久未用逐出。
+- actions 缓存上限 10 GB，用它的有 rust-cache 和下面的核心产物缓存，超了按最久未用逐出。
+
+## 核心产物（App 不再从头编核心）
+
+只改壳（`apps/ios`、`apps/compose`）或文档的 PR 不编 Rust 核心，直接用 main 上同一份核心源码编好的产物：
+iOS 是 XCFramework 和 Swift 绑定，Android 是 .so 和 Kotlin 绑定。键是对核心输入取的内容哈希，
+只在 `scripts/core_artifacts/key.py` 一处算：
+
+- 算进去的：`crates/**`、`vendor/**`（`.md` 不算，见下）、`.cargo/**`、`Cargo.toml`、`Cargo.lock`、
+  `rust-toolchain.toml`、两个 `build-core.sh`、`generate-swift-bindings.sh`、Android 的 `gradle.properties`、
+  `libs.versions.toml`、`shared/build.gradle.kts`，`CARGO_*`、`WONTON_*` 等相关环境变量，`.github/workflows` 里
+  编产物的三个工作流（命令、cargo-ndk 版本、镜像、保存路径写在那里），探针取到的 Xcode 和模拟器 SDK 版本、
+  工作流里钉死的 NDK 版本 `ANDROID_NDK_VERSION`（iOS 不看 NDK），以及键脚本自己。**新增会影响核心产物的输入必须加进去**，漏了壳会链接旧绑定。
+- 已列出的输入有测试兜底：`scripts/core_artifacts/key_test.py` 对每个输入文件、每个输入目录、每项配方和探针都验
+  “改了键必变”，同时验无关文件（Swift、Kotlin、`.md`、文档）不改键。改了源码类文件时 lint 跑它（纯 `.md` 和草稿 PR 上不跑）；
+  测试只认已经列进 `key.py` 的输入，**新加一个会变产物的输入却忘了列入，测试抓不到**。
+- 命中规则只有“同一个键”：`actions/cache` 精确匹配 `ios-core-<哈希>`、`android-core-<哈希>`，不带
+  `restore-keys`。没命中就现编，编好存到同一个键上，不拿别的键的产物顶替；键算不出来（缺输入）时整步失败。
+- 产物由 `cache.yml` 在 main 上存：`changes` 的 `core` 或对应的壳路径命中时现编一份存上，没命中时这条空跑。
+  PR 现编的产物存在本分支的作用域里，同一个 PR 再推就命中；main 上存的条目所有 PR 都取得到。
+- 取回来的产物先核对（iOS 要 `-simulator` 切片里的 `.a`、`Info.plist`、`module.modulemap` 和绑定 `.swift`；
+  Android 要 `gradle.properties` 里每个 ABI 的 `.so` 和绑定 `.kt`），缺了当场停，不静默失败。
+- 缓存条目 7 天不用会被逐出，这时下一次只改壳的 PR 会现编（只是慢），编完又重新存上。
+- 产物只覆盖 CI 用的那份配方：模拟器 `aarch64-apple-ios-sim`、Debug、`arm64-v8a`，假数据入口随 Debug 打开。
+  release 核心和 `x86_64` 的模拟器包由各作业自己编。
+- 定时运行不取产物、强制现编：环境（rustup、Xcode、NDK、cargo-ndk）坏了和缓存条目坏了要每天有人发现。
+  手动触发照常先取。
 
 ## 安全（仓库公开后对外部 PR 也会执行）
 
