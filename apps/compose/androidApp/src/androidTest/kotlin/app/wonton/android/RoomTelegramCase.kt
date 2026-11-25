@@ -278,7 +278,11 @@ abstract class RoomTelegramCase {
         ).fetchSemanticsNodes()
         val open = bar.isNotEmpty()
         if (open && itemsWithText(text).isEmpty()) {
-            runCatching { compose.onNodeWithContentDescription(string(R.string.room_scroll_to_bottom)).performClick() }
+            // 名字后面可能还带着新消息数，按前缀认。
+            runCatching {
+                compose.onNodeWithContentDescription(string(R.string.room_scroll_to_bottom), substring = true)
+                    .performClick()
+            }
         }
         return open && itemsWithText(text).isNotEmpty()
     }

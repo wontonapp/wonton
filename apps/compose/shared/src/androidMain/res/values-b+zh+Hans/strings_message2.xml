@@ -24,4 +24,5 @@
     <string name="message_link_no_handler">请安装能打开此类链接的 App，再试一次。</string>
     <!-- Item in the message menu: edit the text of your own message. Android only. -->
     <string name="message_edit">编辑</string>
+    <string name="message_sending">发送中</string>
 </resources>

@@ -30,4 +30,6 @@
     <string name="message_image_share_failed">没能分享这张图片</string>
     <string name="message_summary_redacted">[已撤回]</string>
     <string name="message_link_open_failed">无法打开这个链接</string>
+    <string name="message_sent_at">发送时间 %1$s</string>
+    <string name="message_read">已读</string>
 </resources>

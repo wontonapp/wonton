@@ -87,6 +87,9 @@ class RoomDraft(
         save()
     }
 
+    /** 命令发出去了：只收回复条，正文草稿一个字不动，主人那句还在（ADR-0109）。 */
+    fun commandSent() = sent(keepBody = true)
+
     private fun save() = onAction(
         Action.Timeline(
             TimelineAction.SetDraft(target, body.value, quoted.value?.eventId),

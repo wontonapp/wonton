@@ -312,6 +312,7 @@ impl Outbox {
                 jump: self.live.jumps.state(),
                 back_to: self.live.jumps.back(),
                 editing: self.live.edit.card(),
+                focus_revision: self.live.jumps.revision(),
             })
             .map_err(|_| ())
     }
