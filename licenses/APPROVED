@@ -21,6 +21,7 @@ MIT-0               | Rust crate | 可以，可以不留署名
 BSD-1-Clause        | Rust crate | 可以，署名放许可页
 MPL-2.0             | Rust crate（as_variant、async-rx 等） | 可以，改了它们的文件才要开源源码，这里没改
 LGPL-2.1-or-later   | Android 依赖（JNA） | 可以，独立 jar、没改，动态链接
+ASDKL               | Android 依赖（play-services、firebase 基础库） | 可以，Google 的 SDK 条款，许可页附链接
 
 Android 依赖由 Gradle 的 AboutLibraries 收集，它的 strictMode 用同一张表挡：
 任何依赖带进来清单外的许可（含 GPL/AGPL）构建就失败。

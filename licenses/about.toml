@@ -21,6 +21,10 @@ accepted = [
     "MPL-2.0",
     # 只在 Android 侧用到（JNA），Rust 侧目前没有；和 APPROVED 保持同一张表。
     "LGPL-2.1-or-later",
+    # Android SDK 的条款（play-services、firebase 基础库随包带进来），同上。
+    # cargo-about 0.9.3 的 SPDX 表没有 ASDKL，写成 LicenseRef-；generate-licenses.py 比声明时会去掉前缀，
+    # 和 APPROVED、licenses/texts/ASDKL.txt 的 id 保持一致。
+    "LicenseRef-ASDKL",
 ]
 
 # 只列的 .so 里真正链进去的：build script、测试用的 crate 不进清单。

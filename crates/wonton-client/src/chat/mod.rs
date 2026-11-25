@@ -166,6 +166,8 @@ pub(crate) struct ChatLink {
     app_lock: crate::app_lock::AppLockLink,
     /// 锁屏上隐藏内容的类别（ADR-0101 §5）：后台通知照它设系统的可见性。
     lock_screen: watch::Receiver<crate::lock_screen::Hidden>,
+    /// 推送里带来的正文预览（ADR-0118）：打开房间时补进时间线。
+    push_previews: Arc<crate::push::PushPreviews>,
     /// 排队的草稿写入，见 [`draft::write_drafts`]。
     draft_writes: mpsc::UnboundedSender<DraftWrite>,
     /// 链接预览的按网址缓存和点掉的记录（ADR-0065），发送框和时间线共用。
@@ -249,6 +251,8 @@ pub(crate) struct ChatChannels {
     pub(crate) session_out: watch::Sender<Option<Arc<MatrixSession>>>,
     /// 外部 Matrix 账号的槽位（ADR-0051）：不跟着家里的连接走，直连 homeserver，用登录时存下的状态恢复。
     pub(crate) external: bool,
+    /// 推送里带来的正文预览（ADR-0118）：推送写、时间线读，同一个实例。
+    pub(crate) push_previews: Arc<crate::push::PushPreviews>,
 }
 
 /// 还没登录时的加密状态：只知道本机存没存着恢复密钥。
@@ -312,6 +316,7 @@ impl ChatLink {
             lock_screen,
             session_out,
             external,
+            push_previews,
         } = channels;
         let storage = ChatStorage::open(data_dir)?;
         let view = Self::initial_view(view, initial_encryption(&storage)?);
@@ -372,6 +377,7 @@ impl ChatLink {
             signing_proxy: Mutex::default(),
             external,
             mentions_watched: Mutex::new(HashSet::new()),
+            push_previews,
         });
         runtime.spawn(draft::write_drafts(Arc::downgrade(&chat), draft_receiver));
         if external {
@@ -687,6 +693,8 @@ impl ChatLink {
                 room_id: room_id.clone(),
                 confirmations: self.room_cards.subscribe(),
                 plugins: self.plugins.clone(),
+                push_previews: self.push_previews.clone(),
+                thread_root: key.thread_root.clone(),
                 previews: self.previews.clone(),
                 menus: menus.clone(),
                 room_view,

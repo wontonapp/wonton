@@ -89,7 +89,8 @@ jobs:
         if: steps.corecache.outputs.cache-hit != 'true'
         run: |
           rustup toolchain install
-          rustup target add aarch64-linux-android
+          # x86_64 只给 Robolectric 单测用。
+          rustup target add aarch64-linux-android x86_64-linux-android
       # 工具链装在 rust-cache 前面：它的键取自当前 rustc 的版本。（rust-cache 不碰 ~/.rustup，它只缓存 ~/.cargo 和 target；
       # 11-24 那两次红灯是 wonton-client 的编译错，cargo-ndk 打的“缺 target”提示不是原因。）
       - if: steps.corecache.outputs.cache-hit != 'true'

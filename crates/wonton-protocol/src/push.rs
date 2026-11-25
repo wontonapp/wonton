@@ -205,6 +205,9 @@ pub struct DevicePayload {
     /// 正文被截掉了：手机先显示这段，点开后再取全。
     #[serde(default, skip_serializing_if = "std::ops::Not::not")]
     pub truncated: bool,
+    /// 消息在旁聊里时的话题根（ADR-0093）：通知点开进那个旁聊，预览也只补在那个旁聊里。
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub thread_root: Option<String>,
     /// 新的联系人请求（ADR-0045）：不对应房间里的消息，`room_id`、`event_id` 为空。
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub contact_request: Option<crate::ContactRequestPush>,
@@ -484,6 +487,21 @@ mod tests {
     }
 
     /// 不认识的类型落 `Other`。
+    /// 旁聊里的消息带上话题根：手机点通知直接进旁聊，预览也只补在旁聊里。
+    #[test]
+    fn a_side_chat_message_carries_its_root() {
+        let mut payload = message(Some("在旁聊里".into()), PushMessageType::Text);
+        payload.thread_root = Some("$root".into());
+        let encoded = serde_json::to_value(&payload).unwrap();
+        assert_eq!(encoded["thread_root"], "$root");
+        assert!(
+            serde_json::to_value(message(None, PushMessageType::Text))
+                .unwrap()
+                .get("thread_root")
+                .is_none()
+        );
+    }
+
     #[test]
     fn unknown_message_types_fall_to_other() {
         assert_eq!(
@@ -504,6 +522,7 @@ mod tests {
             body,
             msgtype: Some(msgtype),
             truncated: false,
+            thread_root: None,
             contact_request: None,
         }
     }

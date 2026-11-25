@@ -56,6 +56,10 @@ push-fetch-timeout = { $seconds } 秒內無法取回這則訊息
 # $reason 是 Matrix SDK 的原始錯誤。
 push-fetch-failed = 無法取得這則訊息：{ $reason }
 
+# 附件通知上的文字（ADR-0118）：類型和檔名。
+push-preview-image = 圖片 { $filename }
+push-preview-file = 檔案 { $filename }
+
 push-core-closed = 用戶端核心已關閉
 
 push-not-paired = 還沒有連上過家用伺服器

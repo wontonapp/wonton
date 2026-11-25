@@ -48,6 +48,7 @@ fn rig() -> (Arc<ChatLink>, tempfile::TempDir) {
             app_lock: crate::app_lock::AppLockLink::new(dir.path()),
             session_out: watch::Sender::new(None),
             external: false,
+            push_previews: Arc::new(crate::push::PushPreviews::open(dir.path())),
         },
     )
     .unwrap();

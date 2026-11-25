@@ -29,7 +29,7 @@ use crate::onboarding::OnboardingLink;
 use crate::pages::PagesLink;
 use crate::peers::PeersLink;
 use crate::plugins::PluginsLink;
-use crate::push::PushLink;
+use crate::push::{PushLink, PushPreviews};
 use crate::push_method::PushMethodLink;
 use crate::settings::SettingsLink;
 pub(crate) use runtime::ScopeRuntime;
@@ -157,6 +157,7 @@ fn chat_links(
         dir,
         views,
     } = *shared;
+    let push_previews = channels.push_previews.clone();
     let chat = ChatLink::new(
         handle.clone(),
         home.clone(),
@@ -173,6 +174,7 @@ fn chat_links(
         dir,
         push_method.subscribe(),
         lock_screen.subscribe(),
+        push_previews,
     );
     let tabs = PagesLink::new(
         handle.clone(),
@@ -322,6 +324,7 @@ impl Scope {
             let plugins = plugins.clone();
             Arc::new(move |plugin_id: &str| plugins.card_succeeded(plugin_id))
         };
+        let push_previews = Arc::new(PushPreviews::open(dir));
         let channels = crate::chat::ChatChannels {
             view: views.map(|v| v.chat.clone()),
             confirmations: views.map(|v| v.confirmations.clone()),
@@ -330,6 +333,7 @@ impl Scope {
             lock_screen: lock_screen.subscribe(),
             session_out: session_out.0.clone(),
             external,
+            push_previews,
         };
         let shared = Shared {
             slot,

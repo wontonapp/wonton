@@ -1,6 +1,7 @@
 //! 订阅的转发循环：逐路等来 SDK 增量、房间信息、面板、插件表、加密状态、翻页、位置、确认卡片、预览、
 //! 输入状态和跳转，折成批次发出去；首批和清空重建也在这里收口。
 
+use std::collections::HashMap;
 use std::sync::Arc;
 
 use futures_util::StreamExt;
@@ -21,6 +22,7 @@ use super::super::reply::QuoteFetches;
 use super::super::side_chat::{SideChatsView, Support};
 use super::super::timeline_previews::{ensure_previews, preview_diffs};
 use super::diffs::{View, apply, relinked_batch, send, side_chat_batch, start_batch};
+use super::push_body;
 use super::rebuild::{back_pagination, log_rebuild};
 use super::recompute::{links_of, refreshed_agent_runs};
 
@@ -76,6 +78,8 @@ pub(super) async fn forward(
     ledger: &bots::Bots,
     live: &Live,
     session: &Arc<wonton_matrix::MatrixSession>,
+    push_previews: &crate::push::PushPreviews,
+    thread_root: Option<&wonton_matrix::OwnedEventId>,
 ) {
     let runtime = Handle::current();
     let mut rebuilt_for: Option<wonton_matrix::OwnedEventId> = None;
@@ -84,6 +88,15 @@ pub(super) async fn forward(
         let fetches = QuoteFetches::default();
         let (entries, diffs) = room.entries().await;
         let mut entries: Vector<TimelineEntry> = entries.into_iter().collect();
+        let mut previewed = HashMap::new();
+        push_body::merge(
+            &mut entries,
+            push_previews,
+            room.room_id(),
+            thread_root.map(|root| root.as_str()),
+            session.user_id(),
+            &mut previewed,
+        );
         let mut read = ReadMark::of(&entries);
         let mut statuses = std::pin::pin!(room.back_pagination_status().await);
         let status = match statuses.next().await {
@@ -111,6 +124,7 @@ pub(super) async fn forward(
         // 预览落定了就醒一次：把落定网址所在的条目重发。
         let mut preview_versions = previews.subscribe();
         let mut diffs = std::pin::pin!(diffs);
+        let mut push_preview_changes = push_previews.subscribe();
         // 正在输入、命令表和跳转请求（ADR-0109）。
         let mut typing_changes = live.typing.subscribe();
         let mut table_changes = live.tables.subscribe();
@@ -129,205 +143,245 @@ pub(super) async fn forward(
         loop {
             view.refresh_unread(room, &bots).await;
             let sent = tokio::select! {
-                batch = diffs.next() => {
-                    let Some(batch) = batch else { return };
-                    apply(room, &mut entries, &mut read, plugins, sender, &mut view, &bots, &previews, batch)
-                }
-                update = room_info.recv() => {
-                    match update {
-                        Ok(update) if update.room_id.as_str() == room.room_id().as_str() => {}
-                        Ok(_) => continue,
-                        Err(broadcast::error::RecvError::Lagged(_)) => {}
-                        Err(broadcast::error::RecvError::Closed) => return,
+                    batch = diffs.next() => {
+                        let Some(batch) = batch else { return };
+                        apply(room, &mut entries, &mut read, plugins, sender, &mut view, &bots, &previews, batch)
                     }
-                    view.refresh_unread(room, &bots).await;
-                    let unread_moved =
-                        view.scroll != TimelineScroll::Bottom && view.unread != view.sent_unread;
-                    if !unread_moved && view.call == view.sent_call && !view.bots_changed() {
-                        continue;
-                    }
-                    Batch::Sent(send(sender, &entries, Vec::new(), &mut view, None), false)
-                }
-                _ = check.tick() => {
-                    match room.missed_cached_event(rebuilt_for.as_deref()).await {
-                        Some(missed) => {
-                            log_rebuild(room, "missed-cached-event", Some(&missed));
-                            rebuilt_for = Some(missed.id);
-                            Batch::Sent(Ok(()), true)
+                    update = room_info.recv() => {
+                        match update {
+                            Ok(update) if update.room_id.as_str() == room.room_id().as_str() => {}
+                            Ok(_) => continue,
+                            Err(broadcast::error::RecvError::Lagged(_)) => {}
+                            Err(broadcast::error::RecvError::Closed) => return,
                         }
-                        // 旁聊的未读、状态（“没收到结果”按时间到）、头部也按秒重算。
-                        None => {
-                            // 命令表不在同步的必需状态里，收到新表不会叫醒这里：按秒对一次表（内部限了间隔）。
-                            live.tables.refresh(&runtime, session);
-                            // 成员进出不产生时间线条目，在场的 AI 按秒对一次表：变了补发一批空的。
-                            if view.bots_changed() {
-                                Batch::Sent(
-                                    send(sender, &entries, Vec::new(), &mut view, None),
-                                    false,
-                                )
-                            } else {
-                                match side_chat_batch(room, support, &entries, &read, plugins, sender, &mut view, &mut bots, &previews).await {
-                                    Some(batch) => batch,
-                                    None => continue,
-                                }
-                            }
-                        },
-                    }
-                }
-                changed = room_view.changed() => {
-                    if changed.is_err() {
-                        return;
-                    }
-                    // 面板、红点或 widget 入口变了：增量是空的，壳只更新那几个字段。
-                    Batch::Sent(send(sender, &entries, Vec::new(), &mut view, None), false)
-                }
-                changed = plugin_changes.changed() => {
-                    if changed.is_err() {
-                        return;
-                    }
-                    // 插件表变了：链接的类别跟着变；「清单已就绪」也在这里翻面。装了插件但一个 Bot
-                    // 都没有时 Bot 列表不变、chat 不醒，就靠这一路把就绪带进名单，变了补发一批空的。
-                    // 就绪先单独取（原因见首批那段）：不在 chat 的读锁里锁账本。
-                    let ready = ledger.ready();
-                    let new_bots =
-                        BotsView::of(&chat.borrow_and_update(), &sender.confirmations(), ready)
-                            .with_side_chats(bots.side_chats().clone());
-                    view.refresh_unread(room, &new_bots).await;
-                    let relinked =
-                        relinked_batch(&entries, &read, plugins, sender, &mut view, &new_bots, &previews);
-                    bots = new_bots;
-                    if let Some(batch) = relinked {
-                        batch
-                    } else if view.bots_changed() {
+                        view.refresh_unread(room, &bots).await;
+                        let unread_moved =
+                            view.scroll != TimelineScroll::Bottom && view.unread != view.sent_unread;
+                        if !unread_moved && view.call == view.sent_call && !view.bots_changed() {
+                            continue;
+                        }
                         Batch::Sent(send(sender, &entries, Vec::new(), &mut view, None), false)
-                    } else {
-                        continue;
                     }
-                }
-                next = statuses.next() => {
-                    let Some(next) = next else { return };
-                    let next = back_pagination(next);
-                    if next == view.status {
-                        continue;
+                    _ = check.tick() => {
+                        match room.missed_cached_event(rebuilt_for.as_deref()).await {
+                            Some(missed) => {
+                                log_rebuild(room, "missed-cached-event", Some(&missed));
+                                rebuilt_for = Some(missed.id);
+                                Batch::Sent(Ok(()), true)
+                            }
+                            // 旁聊的未读、状态（“没收到结果”按时间到）、头部也按秒重算。
+                            None => {
+                                // 命令表不在同步的必需状态里，收到新表不会叫醒这里：按秒对一次表（内部限了间隔）。
+                                live.tables.refresh(&runtime, session);
+                                // 成员进出不产生时间线条目，在场的 AI 按秒对一次表：变了补发一批空的。
+                                if view.bots_changed() {
+                                    Batch::Sent(
+                                        send(sender, &entries, Vec::new(), &mut view, None),
+                                        false,
+                                    )
+                                } else {
+                                    match side_chat_batch(room, support, &entries, &read, plugins, sender, &mut view, &mut bots, &previews).await {
+                                        Some(batch) => batch,
+                                        None => continue,
+                                    }
+                                }
+                            },
+                        }
                     }
-                    view.status = next;
-                    Batch::Sent(send(sender, &entries, Vec::new(), &mut view, None), false)
-                }
-                changed = scrolled.changed() => {
-                    if changed.is_err() {
-                        return;
+                    changed = room_view.changed() => {
+                        if changed.is_err() {
+                            return;
+                        }
+                        // 面板、红点或 widget 入口变了：增量是空的，壳只更新那几个字段。
+                        Batch::Sent(send(sender, &entries, Vec::new(), &mut view, None), false)
                     }
-                    let next = *scrolled.borrow_and_update();
-                    if next == view.scroll {
-                        continue;
+                    changed = plugin_changes.changed() => {
+                        if changed.is_err() {
+                            return;
+                        }
+                        // 插件表变了：链接的类别跟着变；「清单已就绪」也在这里翻面。装了插件但一个 Bot
+                        // 都没有时 Bot 列表不变、chat 不醒，就靠这一路把就绪带进名单，变了补发一批空的。
+                        // 就绪先单独取（原因见首批那段）：不在 chat 的读锁里锁账本。
+                        let ready = ledger.ready();
+                        let new_bots =
+                            BotsView::of(&chat.borrow_and_update(), &sender.confirmations(), ready)
+                                .with_side_chats(bots.side_chats().clone());
+                        view.refresh_unread(room, &new_bots).await;
+                        let relinked =
+                            relinked_batch(&entries, &read, plugins, sender, &mut view, &new_bots, &previews);
+                        bots = new_bots;
+                        if let Some(batch) = relinked {
+                            batch
+                        } else if view.bots_changed() {
+                            Batch::Sent(send(sender, &entries, Vec::new(), &mut view, None), false)
+                        } else {
+                            continue;
+                        }
                     }
-                    view.scroll = next;
-                    view.refresh_unread(room, &bots).await;
-                    Batch::Sent(send(sender, &entries, Vec::new(), &mut view, None), false)
-                }
-                changed = chat.changed() => {
-                    if changed.is_err() {
-                        return;
+                    next = statuses.next() => {
+                        let Some(next) = next else { return };
+                        let next = back_pagination(next);
+                        if next == view.status {
+                            continue;
+                        }
+                        view.status = next;
+                        Batch::Sent(send(sender, &entries, Vec::new(), &mut view, None), false)
                     }
-                    // 加密状态变了入口跟着变；Bot 列表或活动变了，AgentRun 条目跟着重算（ADR-0082）。
-                    // 就绪先单独取（原因见首批那段）：不在 chat 的读锁里锁账本。
-                    let ready = ledger.ready();
-                    let new_bots =
-                        BotsView::of(&chat.borrow_and_update(), &sender.confirmations(), ready)
-                            .with_side_chats(bots.side_chats().clone());
-                    let diffs = refreshed_agent_runs(
-                        &entries,
-                        &read,
-                        &links_of(plugins),
-                        &bots,
-                        &new_bots,
-                        &previews,
-                    );
-                    view.refresh_unread(room, &new_bots).await;
-                    // 名单先存下来再判断跳不跳：改动已经被 borrow_and_update 消费掉，不存就丢了，
-                    // 之后的批次会拿旧名单算（diff 为空和 bots_changed 不成立时尤其会走到 continue）。
-                    bots = new_bots;
-                    if diffs.is_empty()
-                        && sender.key_notice(&entries) == view.notice
-                        && !view.bots_changed()
-                    {
-                        continue;
+                    changed = scrolled.changed() => {
+                        if changed.is_err() {
+                            return;
+                        }
+                        let next = *scrolled.borrow_and_update();
+                        if next == view.scroll {
+                            continue;
+                        }
+                        view.scroll = next;
+                        view.refresh_unread(room, &bots).await;
+                        Batch::Sent(send(sender, &entries, Vec::new(), &mut view, None), false)
                     }
-                    Batch::Sent(send(sender, &entries, diffs, &mut view, None), false)
-                }
-                changed = confirmations.changed() => {
-                    if changed.is_err() {
-                        return;
+                    changed = chat.changed() => {
+                        if changed.is_err() {
+                            return;
+                        }
+                        // 加密状态变了入口跟着变；Bot 列表或活动变了，AgentRun 条目跟着重算（ADR-0082）。
+                        // 就绪先单独取（原因见首批那段）：不在 chat 的读锁里锁账本。
+                        let ready = ledger.ready();
+                        let new_bots =
+                            BotsView::of(&chat.borrow_and_update(), &sender.confirmations(), ready)
+                                .with_side_chats(bots.side_chats().clone());
+                        let diffs = refreshed_agent_runs(
+                            &entries,
+                            &read,
+                            &links_of(plugins),
+                            &bots,
+                            &new_bots,
+                            &previews,
+                        );
+                        view.refresh_unread(room, &new_bots).await;
+                        // 名单先存下来再判断跳不跳：改动已经被 borrow_and_update 消费掉，不存就丢了，
+                        // 之后的批次会拿旧名单算（diff 为空和 bots_changed 不成立时尤其会走到 continue）。
+                        bots = new_bots;
+                        if diffs.is_empty()
+                            && sender.key_notice(&entries) == view.notice
+                            && !view.bots_changed()
+                        {
+                            continue;
+                        }
+                        Batch::Sent(send(sender, &entries, diffs, &mut view, None), false)
                     }
-                    // 确认卡片变了（新卡片、回答的进展、到期）：每一批都带现在的列表，壳换输入栏上方那几行；
-                    // 等回答的卡片变了，AgentRun 条目跟着重算（ADR-0082）。
-                    let new_bots = bots.with_waiting_cards(&sender.confirmations());
-                    let diffs = refreshed_agent_runs(
-                        &entries,
-                        &read,
-                        &links_of(plugins),
-                        &bots,
-                        &new_bots,
-                        &previews,
-                    );
-                    bots = new_bots;
-                    Batch::Sent(send(sender, &entries, diffs, &mut view, None), false)
-                }
-                changed = preview_versions.changed() => {
-                    if changed.is_err() {
-                        return;
+                    changed = confirmations.changed() => {
+                        if changed.is_err() {
+                            return;
+                        }
+                        // 确认卡片变了（新卡片、回答的进展、到期）：每一批都带现在的列表，壳换输入栏上方那几行；
+                        // 等回答的卡片变了，AgentRun 条目跟着重算（ADR-0082）。
+                        let new_bots = bots.with_waiting_cards(&sender.confirmations());
+                        let diffs = refreshed_agent_runs(
+                            &entries,
+                            &read,
+                            &links_of(plugins),
+                            &bots,
+                            &new_bots,
+                            &previews,
+                        );
+                        bots = new_bots;
+                        Batch::Sent(send(sender, &entries, diffs, &mut view, None), false)
                     }
-                    // 预览取回来了：落定网址所在的条目重发一遍，别的条目不动。
-                    let settled = previews.take_settled();
-                    let links = links_of(plugins);
-                    let diffs = preview_diffs(&entries, &read, &links, &bots, &previews, &settled);
-                    if diffs.is_empty() {
-                        continue;
+                    changed = preview_versions.changed() => {
+                        if changed.is_err() {
+                            return;
+                        }
+                        // 预览取回来了：落定网址所在的条目重发一遍，别的条目不动。
+                        let settled = previews.take_settled();
+                        let links = links_of(plugins);
+                        let diffs = preview_diffs(&entries, &read, &links, &bots, &previews, &settled);
+                        if diffs.is_empty() {
+                            continue;
+                        }
+                        Batch::Sent(send(sender, &entries, diffs, &mut view, None), false)
                     }
-                    Batch::Sent(send(sender, &entries, diffs, &mut view, None), false)
-                }
-                changed = typing_changes.changed() => {
-                    if changed.is_err() {
-                        return;
+                    changed = push_preview_changes.changed() => {
+                        if changed.is_err() {
+                            return;
+                        }
+                        // 打开着的房间来了新推送：预览直接补在末尾，壳点开就看到。
+                        let applied =
+                            push_body::merge(
+                &mut entries,
+                push_previews,
+                room.room_id(),
+                thread_root.map(|root| root.as_str()),
+                session.user_id(),
+                &mut previewed,
+            );
+                        if applied.is_empty() {
+                            continue;
+                        }
+                        let items = applied
+                            .iter()
+                            .map(|entry| super::super::view::timeline_item(entry.clone(), &read, &links, &bots, &previews))
+                            .collect();
+                        Batch::Sent(send(sender, &entries, vec![TimelineDiff::Append { items }], &mut view, None), false)
                     }
-                    // 一样的名单不重复发。
-                    if !live.typing.take_changed() {
-                        continue;
+                    changed = typing_changes.changed() => {
+                        if changed.is_err() {
+                            return;
+                        }
+                        // 一样的名单不重复发。
+                        if !live.typing.take_changed() {
+                            continue;
+                        }
+                        Batch::Sent(send(sender, &entries, Vec::new(), &mut view, None), false)
                     }
-                    Batch::Sent(send(sender, &entries, Vec::new(), &mut view, None), false)
-                }
-                changed = table_changes.changed() => {
-                    if changed.is_err() {
-                        return;
+                    changed = table_changes.changed() => {
+                        if changed.is_err() {
+                            return;
+                        }
+                        if !live.tables.take_changed() {
+                            continue;
+                        }
+                        Batch::Sent(send(sender, &entries, Vec::new(), &mut view, None), false)
                     }
-                    if !live.tables.take_changed() {
-                        continue;
+                    changed = edit_changes.changed() => {
+                        if changed.is_err() {
+                            return;
+                        }
+                        if !live.edit.take_changed() {
+                            continue;
+                        }
+                        Batch::Sent(send(sender, &entries, Vec::new(), &mut view, None), false)
                     }
-                    Batch::Sent(send(sender, &entries, Vec::new(), &mut view, None), false)
-                }
-                changed = edit_changes.changed() => {
-                    if changed.is_err() {
-                        return;
+                    changed = jump_changes.changed() => {
+                        if changed.is_err() {
+                            return;
+                        }
+                        live.jumps.tick(&runtime, room, &entries);
+                        Batch::Sent(send(sender, &entries, Vec::new(), &mut view, None), false)
                     }
-                    if !live.edit.take_changed() {
-                        continue;
-                    }
-                    Batch::Sent(send(sender, &entries, Vec::new(), &mut view, None), false)
-                }
-                changed = jump_changes.changed() => {
-                    if changed.is_err() {
-                        return;
-                    }
-                    live.jumps.tick(&runtime, room, &entries);
-                    Batch::Sent(send(sender, &entries, Vec::new(), &mut view, None), false)
-                }
-            };
+                };
             match settle(sent, room, &entries, sender, &mut view).await {
                 Next::End => return,
                 Next::Rebuild => continue 'outer,
                 Next::Continue => {
                     fetches.request(room, &entries);
                     ensure_previews(&previews, &entries, plugins);
+                    // 服务器的同一条消息到了：预览换成真正的事件，条目也拿掉。
+                    let removed = push_body::settle(
+                        &mut entries,
+                        push_previews,
+                        room.room_id(),
+                        thread_root.map(|root| root.as_str()),
+                        &mut previewed,
+                    );
+                    if !removed.is_empty() {
+                        let diffs = removed
+                            .into_iter()
+                            .map(|index| TimelineDiff::Remove { index })
+                            .collect();
+                        if send(sender, &entries, diffs, &mut view, None).is_err() {
+                            return;
+                        }
+                    }
                 }
             }
         }

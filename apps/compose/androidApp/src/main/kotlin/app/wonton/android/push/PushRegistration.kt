@@ -52,6 +52,11 @@ class PushRegistration(
 
     private fun register() {
         if (core.settings().pushMethod == PushMethod.KEEPALIVE) return
+        // 有谷歌服务、构建里配了 Firebase 项目的机器走 FCM（ADR-0003 的“渠道”）；其余用 UnifiedPush 分发器。
+        if (FcmPush.configured && googlePlayServices(activity)) {
+            activity.lifecycleScope.launch { FcmPush.register(activity, core) }
+            return
+        }
         UnifiedPush.tryUseCurrentOrDefaultDistributor(activity) { found ->
             if (found) {
                 UnifiedPush.register(activity, messageForDistributor = "Wonton")
@@ -60,4 +65,8 @@ class PushRegistration(
             }
         }
     }
+
+    private fun googlePlayServices(context: android.content.Context): Boolean =
+        com.google.android.gms.common.GoogleApiAvailability.getInstance()
+            .isGooglePlayServicesAvailable(context) == com.google.android.gms.common.ConnectionResult.SUCCESS
 }

@@ -125,6 +125,8 @@ App 被杀后收不到任何消息。
 - 只有计数、没有事件的通知（Tuwunel 在未读数变化时发）不转发。
 - 发给设备的明文（加密前）是 Matrix 推送通知的子集，加上发推送的服务器：
   `{"server", "room_id", "event_id", "sender", "sender_display_name", "room_name", "prio"}`，只有前三项一定有。
+  ADR-0118 起不加密房间再带可选的 `body`、`msgtype`、`truncated`（截断过）和 `thread_root`（旁聊）：手机直接显示，
+  不再为了正文取消息。
   `server` 是核心隧道的 endpoint ID，手机配了多台服务器时靠它找到该连哪台（ADR-0042）。
 - Web Push 请求带 `Content-Encoding: aes128gcm`、`TTL: 86400`，`Urgency` 为 `high`（`prio` 为 `low` 时为
   `normal`）。
@@ -145,16 +147,21 @@ App 被杀后收不到任何消息。
 `ClientCore::resolve_push`，核心取回消息、解密，给出要显示的通知。通知里核心只给类别和原文（消息摘要、邀请、
 取不到正文的原因），占位、“有人邀请你”这些话由壳按 App 的语言写（ADR-0043）。
 
-> **被 ADR-0118 修订。** 不加密房间的推送明文里直接有正文（`body`、`msgtype`），`resolve_push` 不再为了正文去取一次；加密房间才照旧走这里。
+> **被 ADR-0118 修订。** 不加密房间的推送明文里直接有正文（`body`、`msgtype`、旁聊的 `thread_root`），
+> `resolve_push` 不再为了正文去取一次；加密房间才照旧走这里。
 
-**Android**（`apps/compose/androidApp` 的 `push` 包，UnifiedPush 连接库 3.3）
+**Android**（`apps/compose/androidApp` 的 `push` 包）
 
-- 启动时先申请通知权限，再向分发器登记；没有分发器、没给通知权限、分发器拒绝或注销了本 App，都用
-  `PushUnavailable` 照实告诉核心。
-- 连接库解不开推送时，会把原文当明文交过来（`PushMessage.decrypted` 为假），App 丢掉这种推送：只有家里的服务器知道
-  本机的公钥和认证密钥，解不开就不是它发的。
-- 收到推送后自己拿一个唤醒锁，等核心取回消息再弹通知；同一个房间的通知合并成一条。锁屏隐藏敏感内容时，显示不带
+- 两条接收通道：有谷歌服务、构建里配了 Firebase 项目的机器走 FCM 的高优先级 data 消息，其余用 UnifiedPush 连接库
+  3.3 和分发器。两条都把推送地址和本机公钥登记给核心（`SetPushEndpoint`），都只把推送当密文。
+- 推送的密钥在设备上生成（P-256 密钥对和认证密钥，私钥不出设备）。UnifiedPush 由连接库生成和保管；FCM 由 App 的
+  `PushKeys` 生成和保管，`WebPushDecrypt` 按 RFC 8291 解开。解不开是私钥对不上，丢掉不显示成正常消息。
+- FCM 的推送地址由我们运营的中继开（和 APNs 同一个约定）：App `POST <中继>/v1/fcm {"token": …}` 换回一个 Web Push
+  地址，中继把它转成 gorush 的 Android data 推送。中继和谷歌只见密文。
+- 收到推送后自己拿一个唤醒锁，交给核心出通知；同一个房间的通知合并成一条。锁屏隐藏敏感内容时，显示不带
   发送者和正文的版本。
+- 带正文的推送由核心直接出通知，顺手写进本机时间线（ADR-0118）：点开房间时预览就在，服务器的同一条消息同步到以后
+  换成真正的事件。
 - 按类别分渠道：聊天消息、等你确认和插件通知（ADR-0047）各一个系统通知渠道，主人从设置的“通知”页进入对应渠道分别开关；两者保持高重要性，不降低原来消息通知的级别。
 
 **iOS（M0-3 起有模拟器验证，真机经 APNs 等 Apple 开发者账号）**

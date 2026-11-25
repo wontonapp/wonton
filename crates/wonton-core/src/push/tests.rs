@@ -230,6 +230,7 @@ async fn a_paired_device_gets_the_body_encrypted_and_the_push_service_does_not()
             body: Some(SECRET_BODY.into()),
             msgtype: Some(PushMessageType::Text),
             truncated: false,
+            thread_root: None,
             contact_request: None,
         },
         "设备解开后拿到正文和类型"
