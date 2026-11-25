@@ -38,7 +38,7 @@ STACK=call-smoke HOST=192.0.2.10 DEV_A=emulator-5560 DEV_B=emulator-5562 \
   EVIDENCE=$HOME/wonton-dev/research/call-smoke deploy/dev/calls/smoke.sh
 ```
 
-- `STAGE=udp|tcp|relay|kill|plain` 只跑一组；默认 `all` 按 udp → kill → tcp → relay 走完。`plain` 用不加密房间跑 UDP 组，记录 Element Call 在不加密房间里的行为。
+- `STAGE=udp|tcp|relay|kill|plain` 只跑一组；默认 `all` 按 udp → kill → tcp → relay 走完，**一组失败也继续跑后面的组**，最后按失败组数汇总退出码。`plain` 用不加密房间跑 UDP 组，记录 Element Call 在不加密房间里的行为。
 - `relay` 组会先在直连下把房间和 Element Call 页面打开（EC 入口 JS 有 325 KB，公网中继会把约 100 KB 以上的 HTTP 响应流截断成 `ERR_CONTENT_LENGTH_MISMATCH`，冷缓存下 EC 永远起不来），再下 iptables 规则；拔掉直连后**不要重启 App**，让 iroh 自己把路径切到 relay。n0 公共中继会对 endpoint 限速，隧道流会反复 `transport-unavailable`，中继组的媒体能不能通取决于限速；2026-11-25 只到 `CheckedPath { relay: true }` + 两条 `call.member`，LiveKit 没连上。
 - 每次跑都从远端 `stack-slot.sh ports <栈名>` 重新读网关和隧道端口（名额重排会换端口，旧 `.dev-ports` 会让配对和网关都连不上）。
 - `ROOM_ID`/`ROOM_NAME` 复用房间（脚本只比对**本轮新增**的 `call.member`，旧成员不影响判定）；不给就新建。
