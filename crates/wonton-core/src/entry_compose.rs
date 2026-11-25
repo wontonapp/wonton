@@ -559,6 +559,17 @@ mod tests {
             json!({"aliases": ["tuwunel.wonton.internal"]})
         );
         assert!(compose["services"]["tuwunel"]["networks"]["edge"].is_null());
+        // 给 Tuwunel 加上新网络不能顶掉核心自己的两张网络：入口和隧道还按各自的别名找核心。
+        assert_eq!(
+            compose["services"]["core"]["networks"]["clients"],
+            json!({"aliases": ["entry-gateway.wonton.internal"]})
+        );
+        assert!(
+            compose["services"]["core"]["networks"]["core"]["aliases"]
+                .as_array()
+                .unwrap()
+                .contains(&json!("tunnel.wonton.internal"))
+        );
     }
 
     /// 主网关从一开始就不在入口地址上接连接：已攻破的入口读不到首次配对码。
