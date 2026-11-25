@@ -8,7 +8,9 @@ use tokio::sync::watch;
 use tokio::task::JoinHandle;
 use wonton_client::{Action, HomeStatus, Network};
 
-use super::support::{Home, Phone, WEB_URL, get, wait_until_ticket_has};
+use super::support::{
+    Home, Phone, WEB_URL, get, wait_until_leading_direct_addr, wait_until_ticket_has,
+};
 
 const WAIT: Duration = Duration::from_secs(30);
 
@@ -144,7 +146,7 @@ async fn later_direct_path_survives_restart(empty_report: bool) {
             view.status == HomeStatus::Connected && view.path.is_some_and(|path| !path.relay)
         })
         .await;
-    wait_until_ticket_has(dir.path(), gate.addr).await;
+    wait_until_leading_direct_addr(dir.path(), gate.addr).await;
     if empty_report {
         let updated: serde_json::Value =
             serde_json::from_slice(&std::fs::read(&path).unwrap()).unwrap();

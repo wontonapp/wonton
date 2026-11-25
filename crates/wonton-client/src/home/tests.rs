@@ -167,3 +167,60 @@ async fn a_failed_write_keeps_the_old_value() {
         "写失败时缓存保持原值"
     );
 }
+
+/// 一连上直连路径就写盘，不等 `/_wonton/api/tunnel` 的报告：推送唤醒的进程常常活不到报告回来，
+/// 那一次学到的地址不能因此丢掉（ADR-0004 的“上次连上的地址”）。
+#[tokio::test]
+async fn a_direct_connect_is_saved_without_waiting_for_the_report() {
+    let dir = tempfile::tempdir().unwrap();
+    let storage = Storage::open(dir.path(), dir.path()).unwrap();
+    let (_method_tx, method_rx) = watch::channel(PushMethod::default());
+    let home = HomeLink::new(
+        tokio::runtime::Handle::current(),
+        wonton_tunnel::sharing::ProxyHub::bind().await.unwrap(),
+        storage,
+        Network::DirectOnly,
+        None,
+        method_rx,
+    )
+    .unwrap();
+    let device = home.view().device_id.parse().unwrap();
+    let server = iroh::Endpoint::builder(iroh::endpoint::presets::Minimal)
+        .bind_addr((std::net::Ipv4Addr::LOCALHOST, 0))
+        .unwrap()
+        .bind()
+        .await
+        .unwrap();
+    let addr = server.bound_sockets()[0];
+    let upstream = tokio::net::TcpListener::bind((std::net::Ipv4Addr::LOCALHOST, 0))
+        .await
+        .unwrap();
+    let upstream = upstream.local_addr().unwrap();
+    let tunnel = wonton_tunnel::TunnelServer::spawn(
+        server.clone(),
+        wonton_tunnel::Allowlist::new([device]),
+        upstream,
+    );
+    let text = format!(
+        r#"{{"server": {{"endpoint_id": "{}", "direct_addrs": ["{addr}"]}},
+            "base_domain": "wonton.localhost"}}"#,
+        server.id()
+    );
+    home.connect(&text).unwrap();
+
+    let deadline = Instant::now() + Duration::from_secs(20);
+    let saved = loop {
+        if home.view().status == HomeStatus::Connected {
+            let text = std::fs::read_to_string(dir.path().join("home-ticket.json")).unwrap();
+            if text.contains("used_addrs") {
+                break text;
+            }
+        }
+        assert!(Instant::now() < deadline, "20 秒内没连上并写盘");
+        tokio::time::sleep(Duration::from_millis(50)).await;
+    };
+    let ticket = Ticket::parse(&saved).unwrap();
+    assert_eq!(ticket.used_addrs(), [addr]);
+    assert!(ticket.server_addr().ip_addrs().any(|tried| *tried == addr));
+    tunnel.shutdown().await;
+}
