@@ -12,16 +12,25 @@ use super::super::read_mark::ReadMark;
 use super::super::view::timeline_item;
 
 /// 记下这次重建时间线的原因，失败时能从日志看出是哪条路。
+///
+/// target 钉成时间线模块：按日志认重建原因的地方（测试的原因捕获、排查时的过滤规则）认的是这个 target，
+/// 它不跟着这段代码在哪个文件里走。
 pub(super) fn log_rebuild(room: &ChatRoom, reason: &'static str, missed: Option<&MissedEvent>) {
     match missed {
         Some(missed) => tracing::info!(
+            target: "wonton_client::chat::timeline",
             room_id = %room.room_id(),
             reason,
             event_id = %missed.id,
             absent = ?missed.absent,
             "rebuilding the timeline"
         ),
-        None => tracing::info!(room_id = %room.room_id(), reason, "rebuilding the timeline"),
+        None => tracing::info!(
+            target: "wonton_client::chat::timeline",
+            room_id = %room.room_id(),
+            reason,
+            "rebuilding the timeline"
+        ),
     }
 }
 
