@@ -12,7 +12,7 @@ use axum::{Extension, Json};
 use hyper::{HeaderMap, StatusCode};
 use serde::Deserialize;
 use wonton_protocol::inbox::{
-    INBOX_WAIT_SECS, InboxAnswerInput, InboxDelivery, InboxItem, InboxPageView, InboxView,
+    INBOX_WAIT_SECS, InboxAnswerInput, InboxItem, InboxPageView, InboxView,
     InboxWorkerAnswer, InboxWorkerEvent, InboxWorkerEventKind, InboxWorkerResolve,
 };
 use wonton_protocol::{
