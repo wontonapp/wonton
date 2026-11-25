@@ -22,7 +22,7 @@
 | 编号 | 目标 | 改哪 | 依赖 | 大小 | 先红后绿的行为测试 | 并行 |
 | --- | --- | --- | --- | --- | --- | --- |
 | M7 | `media` 存储层：任务/会话/队列/配额账本落 SQLite，按人分 | `crates/wonton-core/src/media/store.rs` | M1–M4 | L | 建任务→读回→按人隔离（B 读不到 A 的）；配额超限拒写 | 与 M8 并行 |
-| M8 | 任务状态机服务：合法转移、退避计时、终态不可逆 | `media/task_service.rs` | M3、M7 | L | 构造网络错→断言 `WaitingNetwork` 与退避序列；六次后 `Failed{network}`；手动重试清计数 | 不与 M7 并行同一文件 |
+| M8 | 任务状态机服务：合法转移、退避计时、终态不可逆 | `media/task_service.rs` | M3、M7 | L | 构造网络错→断言 `WaitingNetwork` 与退避序列；七次后 `Failed{network}`；手动重试清计数 | 不与 M7 并行同一文件 |
 | M9 | 播放会话服务：一人一活动会话、接管发 `media.session.taken_over`、位置节流 | `media/session_service.rs` | M4、M7 | L | 第二设备 `play` → 旧设备收事件、新设备成活动；5 秒三次上报只转出一次 | 与 M8 并行 |
 | M10 | 队列表服务：所有操作带 `revision`，不等回 409 带快照 | `media/queue_service.rs` | M4、M9 | M | 两边读同一 `revision` 后先写一方，后写方得 409 与当前快照 | 靠 M9 |
 | M11 | 提供方客户端与凭据：按 `X-Wonton-User` 取凭据、转发、失败封解成 `MediaFailure` | `media/provider.rs`、`plugin/capabilities.rs` 的客户端 | M5、M7 | L | 假提供方回 401 → 任务 `Failed{authentication_required}` 不退避；缺凭据报 `permission_denied` | 靠 M7 |

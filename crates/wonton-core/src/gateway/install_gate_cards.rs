@@ -1,6 +1,7 @@
 //! 装、升级门槛（[`super::install_gates`]）发给管理员的卡片：按预览写第一张；选了 NVMe、生效的权限里
-//! 有最高级时再加一张最高级的第二张（ADR-0036）。请求里成员挑的设备、填的设置和密钥、一起装的提供方
-//! 都写进第一张，管理员批的就是执行要交出去的。卡片前的核对在 [`super::install_gate_checks`]。
+//! 有最高级时再加一张最高级的第二张（ADR-0036）。请求里成员挑的设备、填的设置和密钥、一起装的提供方和
+//! 经它用到的高权限能力都写进第一张，管理员批的就是执行要交出去的。卡片前的核对在
+//! [`super::install_gate_checks`]。
 
 use wonton_protocol::{
     Answer, CardChoice, CardLine, InstallPreview, PermissionLine, PermissionRisk, PluginDevice,
@@ -10,7 +11,9 @@ use wonton_protocol::{
 use super::Gateway;
 use super::install_gate_checks;
 use crate::l10n;
-use crate::mcp::{Draft, disclose_provider, highest_confirm_for, mark_nvme_risk};
+use crate::mcp::{
+    Draft, disclose_connections, disclose_provider, highest_confirm_for, mark_nvme_risk,
+};
 use crate::plugin::InstallError;
 use crate::plugin::languages::Languages;
 
@@ -212,38 +215,9 @@ pub(super) fn filled_lines<'a>(
     lines
 }
 
-/// 使用方要经一起装的提供方用到的高权限能力（ADR-0053“X 能经 Y 使用 <能力>”）。
-fn connection_lines(
-    consumer: &InstallPreview,
-    provider: &InstallPreview,
-    langs: &Languages,
-) -> Vec<CardLine> {
-    consumer
-        .missing_requires
-        .iter()
-        .filter(|missing| {
-            missing
-                .providers
-                .iter()
-                .any(|item| item.id == provider.id && item.high_privilege)
-        })
-        .map(|missing| CardLine {
-            text: l10n::text(
-                langs,
-                "plugin-capability-connect",
-                &[
-                    ("consumer", consumer.title.as_str().into()),
-                    ("provider", provider.title.as_str().into()),
-                    ("capability", missing.capability.as_str().into()),
-                ],
-            ),
-            emphasis: true,
-        })
-        .collect()
-}
-
-/// 按来源安装的卡片：一起装的提供方也逐个预览，摘要要和请求一致、能装。提供方的标题、权限、选的设备、
-/// 填的密钥和设置都写进第一张卡（同 Agent 卡片的写法）；它有最高级权限或选了 NVMe 时并进第二张。
+/// 按来源安装的卡片：一起装的提供方要在预览列的提供方里，也逐个预览，摘要和计划要和请求一致、能装。
+/// 提供方的标题、权限、选的设备、填的密钥和设置、经它用到的高权限能力都写进第一张卡（同 Agent 卡片的
+/// 写法）；它有最高级权限或选了 NVMe 时并进第二张。
 pub(super) async fn source_admin_cards(
     gateway: &Gateway,
     request: &wonton_protocol::InstallRequest,
@@ -251,14 +225,38 @@ pub(super) async fn source_admin_cards(
     langs: &Languages,
 ) -> Result<(Draft, Option<Draft>), InstallError> {
     let (mut first, mut second) = admin_cards(preview, &request.devices, (false, &[]), langs)?;
+    // 执行侧按请求的顺序取第一个能提供的提供方，卡片写的是同一个；同一个 id 请求两次时执行侧才 400，
+    // 卡片只写一次。
+    let mut installing: Vec<String> = Vec::new();
+    for provider in &request.install_together {
+        if !installing.contains(&provider.id) {
+            installing.push(provider.id.clone());
+        }
+    }
     first.lines.extend(filled_lines(
         preview,
         request.secrets.keys(),
         &request.settings,
         langs,
     ));
-    for provider in &request.install_together {
+    for id in &installing {
+        let provider = request
+            .install_together
+            .iter()
+            .find(|provider| &provider.id == id)
+            .expect("刚按请求排的提供方");
         let inner = &provider.request;
+        if !preview
+            .missing_requires
+            .iter()
+            .any(|missing| missing.providers.iter().any(|item| item.id == provider.id))
+        {
+            return Err(InstallError::Invalid(l10n::text(
+                langs,
+                "plugin-capability-install-selection",
+                &[],
+            )));
+        }
         let item = gateway.plugins.preview_source(&inner.source, langs).await?;
         if item.id != provider.id {
             return Err(InstallError::Changed(l10n::text(
@@ -267,9 +265,10 @@ pub(super) async fn source_admin_cards(
                 &[],
             )));
         }
-        install_gate_checks::matches_install_preview(&item, &inner.digest, langs)?;
+        install_gate_checks::matches_install_preview(&item, &inner.digest, &inner.plan, langs)?;
         let chosen = chosen(&item, &inner.devices, (false, &[]), langs)?;
         disclose_provider(&mut first, &item, inner, langs);
+        disclose_connections(&mut first, preview, &item, &installing, langs);
         first.lines.extend(chosen.lines);
         first.lines.extend(filled_lines(
             &item,
@@ -277,7 +276,6 @@ pub(super) async fn source_admin_cards(
             &inner.settings,
             langs,
         ));
-        first.lines.extend(connection_lines(preview, &item, langs));
         match highest(&item, &chosen.nvme, langs) {
             Some(highest) => {
                 // 选了 NVMe 时用按最高级标过的那份，否则就是预览的权限行。

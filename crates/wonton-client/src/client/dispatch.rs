@@ -114,13 +114,8 @@ impl ClientCore {
                     self.dispatch_ui_fake_agent(action);
                     Ok(())
                 }
-                // 深色截图要的主题照走真设置；字号、字体和配对等假状态在别的 ViewModel 里，不受影响。
-                Action::Settings { action } => {
-                    if let SettingsAction::SetThemeMode { mode } = action {
-                        self.appearance.set_theme_mode(mode)?;
-                    }
-                    Ok(())
-                }
+                // 外观和语言全在本机，假数据下也要照实落盘，否则设置页点了没反应。
+                Action::Settings { action } => self.settings_action(&self.scope(), action),
                 _ => Ok(()),
             };
         }

@@ -1,15 +1,11 @@
 package app.wonton.ui
 
-import androidx.compose.animation.AnimatedVisibility
-import androidx.compose.animation.fadeIn
-import androidx.compose.animation.fadeOut
 import androidx.compose.foundation.background
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
 import androidx.compose.ui.Modifier
-import androidx.compose.ui.platform.testTag
 import app.wonton.ui.design.WontonTheme
 import app.wonton.ui.design.toColor
 import java.text.DateFormat
@@ -29,14 +25,6 @@ internal fun DatePill(text: String, modifier: Modifier = Modifier) {
         style = WontonTheme.typography.caption,
         color = WontonTheme.colors.textSecondary.toColor(),
     )
-}
-
-/** 浮在列表上的胶囊（日期、跳转失败的提示）。 */
-@Composable
-internal fun FloatingDatePill(visible: Boolean, text: String, modifier: Modifier) {
-    AnimatedVisibility(visible, modifier.testTag("date-pill"), fadeIn(), fadeOut()) {
-        DatePill(text)
-    }
 }
 
 /** 胶囊的半透明底。 */

@@ -35,6 +35,9 @@ fn key_of(target: &TimelineTarget) -> Key {
     (target.room_id.clone(), target.thread_root.clone())
 }
 
+/// 假核心找不到原消息时多久放弃。调大一点，测试才能靠“第二下有没有重新派”把时序分开。
+const GIVE_UP: std::time::Duration = std::time::Duration::from_millis(2_000);
+
 /// 开着的假时间线，按目标和旁聊根找。
 #[derive(Default)]
 pub(super) struct FakeTimelines {
@@ -89,7 +92,23 @@ impl FakeTimelines {
         let mut first = fake.lock().base.clone();
         fake.push(&mut first);
         let scrolled = fake.clone();
-        TimelineSubscription::seeded(receiver, Box::new(move |scroll| scrolled.scrolled(scroll)))
+        let status_fake = Arc::downgrade(&fake);
+        let status = Box::new(move || match status_fake.upgrade() {
+            Some(fake) => {
+                let senders = lock(&fake.senders).len();
+                format!(
+                    "senders={senders} away={} bursting={}",
+                    fake.away.load(Ordering::SeqCst),
+                    fake.bursting.load(Ordering::SeqCst)
+                )
+            }
+            None => "fake gone".into(),
+        });
+        TimelineSubscription::seeded(
+            receiver,
+            Box::new(move |scroll| scrolled.scrolled(scroll)),
+            status,
+        )
     }
 
     /// 留着等房间打开：跟转发共用一条，谁先来谁先显示。
@@ -180,6 +199,7 @@ impl FakeTimelines {
         }
         let target = match &action {
             TimelineAction::JumpToMessage { target, .. }
+            | TimelineAction::RegisterFocusRevision { target, .. }
             | TimelineAction::JumpBack { target }
             | TimelineAction::StartEdit { target, .. }
             | TimelineAction::CancelEdit { target }
@@ -209,6 +229,9 @@ impl FakeTimelines {
                 ..
             } => fake.jump_to(&event_id, from_item_id),
             TimelineAction::JumpBack { .. } => fake.jump_back(),
+            TimelineAction::RegisterFocusRevision { revision, .. } => {
+                fake.register_revision(revision)
+            }
             TimelineAction::SetTimelineScroll { scroll, .. } => fake.scrolled(scroll),
             // 只发了照片、没写附言时正文是空的，假时间线不画空的一行。
             TimelineAction::SendText { body, mentions, .. } if !body.is_empty() => {
@@ -277,6 +300,8 @@ struct State {
     draft: Saved,
     /// 正在编辑哪条，以及进入编辑态之前的草稿。
     editing: Option<Editing>,
+    /// 壳报的跳转序号，每批原样带回。
+    revision: u32,
 }
 
 /// 存下的一份草稿。
@@ -318,6 +343,7 @@ impl FakeTimeline {
                 draft: Saved::default(),
                 editing: None,
                 sent: 0,
+                revision: 0,
             }),
         };
         if !pending.is_empty() {
@@ -353,16 +379,43 @@ impl FakeTimeline {
 
     /// 一批空的：只带外壳状态，加上 `change` 改的字段。
     fn batch(&self, change: impl FnOnce(&mut TimelineUpdate)) {
+        // 位置照当下的状态现算：base 里的是进房时的快照，照抄它会让按钮在存草稿、发消息时闪回 0 条。
+        let viewport = if self.away.load(Ordering::SeqCst) {
+            TimelineViewport::Away {
+                new_messages: self.arriving.load(Ordering::SeqCst),
+            }
+        } else {
+            TimelineViewport::Bottom
+        };
         let mut update = TimelineUpdate {
             diffs: Vec::new(),
             anchor: None,
+            viewport,
             ..self.lock().base.clone()
         };
         change(&mut update);
+        update.focus_revision = self.lock().revision;
         self.push(&mut update);
     }
 
-    fn jump_to(&self, event_id: &str, from_item_id: String) {
+    fn register_revision(&self, revision: u32) {
+        self.lock().revision = revision;
+    }
+
+    /// 找不到原消息时先报加载，停一会儿再说找不到（真核心这时在往前翻页）。期间壳又报了新序号就作废这一跳。
+    /// 假核心找不到原消息时多久放弃。壳里“加载中/放弃”的时序只能靠它，测试也按它算等待上限。
+    fn give_up_later(self: &Arc<Self>, revision: u32) {
+        let this = Arc::clone(self);
+        std::thread::spawn(move || {
+            std::thread::sleep(GIVE_UP);
+            if this.lock().revision != revision {
+                return;
+            }
+            this.batch(|update| update.jump = JumpState::Unavailable);
+        });
+    }
+
+    fn jump_to(self: &Arc<Self>, event_id: &str, from_item_id: String) {
         let target = self
             .lock()
             .items
@@ -376,7 +429,9 @@ impl FakeTimeline {
                 _ => None,
             });
         let Some(item_id) = target else {
-            self.batch(|update| update.jump = JumpState::Unavailable);
+            let revision = self.lock().revision;
+            self.batch(|update| update.jump = JumpState::Loading);
+            self.give_up_later(revision);
             return;
         };
         self.lock().back.push(from_item_id);
@@ -433,16 +488,23 @@ impl FakeTimeline {
     }
 
     /// 翻走以后后台陆续来三条，走查用：数字一条条涨，回到底部清掉，再翻走再排一轮。
+    /// `WONTON_UI_FAKE_ARRIVALS` 改条数（看 99+ 角标要上百条），多于三条时挤在一秒多里来完。
     fn start_arrivals(self: &Arc<Self>) {
         if self.bursting.swap(true, Ordering::SeqCst) {
             return;
         }
+        let total = std::env::var("WONTON_UI_FAKE_ARRIVALS")
+            .ok()
+            .and_then(|value| value.parse::<usize>().ok())
+            .filter(|total| *total > 0)
+            .unwrap_or(ARRIVALS.len());
+        let pause = if total > ARRIVALS.len() { 120 } else { 700 };
         let fake = Arc::downgrade(self);
         let arrivals = async move {
-            for body in ARRIVALS {
-                tokio::time::sleep(Duration::from_millis(700)).await;
+            for index in 0..total {
+                tokio::time::sleep(Duration::from_millis(pause)).await;
                 let Some(fake) = fake.upgrade() else { return };
-                fake.arrive(body);
+                fake.arrive(ARRIVALS[index % ARRIVALS.len()]);
             }
             if let Some(fake) = fake.upgrade() {
                 fake.bursting.store(false, Ordering::SeqCst);
@@ -831,6 +893,146 @@ mod tests {
         // 后订的那份订阅时会给先订的那份也推一批，这里已经收过；两边的通道都没断。
     }
 
+    /// 翻走以后后台陆续来三条，数字跟着涨；回到底部清掉，再翻走重新从 1 数起。
+    #[tokio::test(start_paused = true)]
+    async fn arrivals_count_only_while_away() {
+        let fakes = FakeTimelines::default();
+        let subscription = fakes.subscribe(&target());
+        let _ = next(&subscription).await;
+
+        subscription.set_scroll(TimelineScroll::Away);
+        for expected in 1..=3 {
+            let update = next(&subscription).await;
+            assert_eq!(
+                update.viewport,
+                TimelineViewport::Away {
+                    new_messages: expected
+                }
+            );
+            assert!(!update.scroll_to_bottom, "来消息不该把壳拉到底");
+        }
+
+        subscription.set_scroll(TimelineScroll::Bottom);
+        assert_eq!(next(&subscription).await.viewport, TimelineViewport::Bottom);
+
+        subscription.set_scroll(TimelineScroll::Away);
+        assert_eq!(
+            next(&subscription).await.viewport,
+            TimelineViewport::Away { new_messages: 1 }
+        );
+    }
+
+    /// 停在别处以后打草稿、发消息那几批也带着当时的条数：照抄第一批的 0 会让按钮的数字先闪回 0。
+    #[tokio::test(start_paused = true)]
+    async fn away_count_survives_draft_and_send_batches() {
+        let fakes = FakeTimelines::default();
+        let subscription = fakes.subscribe(&target());
+        let _ = next(&subscription).await;
+        subscription.set_scroll(TimelineScroll::Away);
+        let _ = next(&subscription).await;
+        let _ = next(&subscription).await;
+
+        // 后台可能又挤进来一条，所以只断“还是 Away 且数字没掉回 0”。
+        let assert_kept = |update: &TimelineUpdate| {
+            let TimelineViewport::Away { new_messages } = update.viewport else {
+                panic!("停在别处却报贴底：{:?}", update.viewport);
+            };
+            assert!(new_messages > 0, "条数闪回了 0");
+        };
+        fakes.timeline_action(TimelineAction::SetDraft {
+            target: target(),
+            body: "草稿".into(),
+            reply_to: None,
+        });
+        assert_kept(&next(&subscription).await);
+        fakes.timeline_action(TimelineAction::SendText {
+            target: target(),
+            body: "发出的字".into(),
+            reply_to: None,
+            mentions: Vec::new(),
+        });
+        assert_kept(&next(&subscription).await);
+    }
+
+    /// 壳在 Swift 线程上报位置，那里没有 Tokio 上下文；后台的三条也得排得起来（排不起来会在壳里 panic）。
+    #[tokio::test(start_paused = true)]
+    async fn scroll_from_a_thread_without_runtime_still_starts_arrivals() {
+        let fakes = FakeTimelines::new(Handle::current());
+        let subscription = fakes.subscribe(&target());
+        let _ = next(&subscription).await;
+
+        let reported = subscription.clone();
+        std::thread::spawn(move || reported.set_scroll(TimelineScroll::Away))
+            .join()
+            .unwrap();
+
+        assert_eq!(
+            next(&subscription).await.viewport,
+            TimelineViewport::Away { new_messages: 1 }
+        );
+    }
+
+    /// 壳订阅走的是 Swift 线程，那里没有 Tokio 上下文：起后台那几条用的必须是核心的运行时而非当前上下文。
+    #[test]
+    fn subscribe_from_a_thread_without_runtime_still_fills_the_first_batch() {
+        let runtime = tokio::runtime::Builder::new_current_thread()
+            .enable_all()
+            .build()
+            .unwrap();
+        let fakes = Arc::new(FakeTimelines::new(runtime.handle().clone()));
+
+        let subscribing = fakes.clone();
+        let subscription = std::thread::spawn(move || subscribing.subscribe(&target()))
+            .join()
+            .unwrap();
+
+        runtime.block_on(async {
+            let first = tokio::time::timeout(Duration::from_secs(2), subscription.next())
+                .await
+                .expect("第一批该马上到")
+                .expect("假房间一直开着");
+            assert!(!first.diffs.is_empty());
+        });
+    }
+
+    /// 壳里的 `reportPosition` 每动一下几何就往这报：从外面线程连报一串，订阅不能被自己报没了。
+    #[tokio::test]
+    async fn shell_position_reports_from_a_foreign_thread_keep_the_subscription_alive() {
+        let dir = tempfile::tempdir().unwrap();
+        let core =
+            crate::client::ClientCore::new_ui_fake(dir.path().to_string_lossy().into_owned())
+                .unwrap();
+        let subscription = core.subscribe_timeline(target()).await.unwrap();
+        let _ = tokio::time::timeout(std::time::Duration::from_secs(2), subscription.next()).await;
+
+        let reported = subscription.clone();
+        std::thread::spawn(move || {
+            for _ in 0..40 {
+                reported.set_scroll(TimelineScroll::Away);
+                reported.set_scroll(TimelineScroll::Bottom);
+            }
+            reported.set_scroll(TimelineScroll::Away);
+        })
+        .join()
+        .unwrap();
+
+        // 连报一大串以后订阅还活着，最后那条「翻走」还能收到后台来的一条。
+        let mut saw_bottom = false;
+        let update = loop {
+            let update =
+                tokio::time::timeout(std::time::Duration::from_secs(2), subscription.next())
+                    .await
+                    .expect("订阅自己断了");
+            let update = update.expect("订阅自己断了");
+            match update.viewport {
+                TimelineViewport::Away { new_messages } => break new_messages,
+                TimelineViewport::Bottom => saw_bottom = true,
+            }
+        };
+        assert!(saw_bottom, "中间的到底批次该到");
+        assert_eq!(update, 1);
+    }
+
     /// 发送（附件区整单）前先收“正在输入”，主对话和旁聊都按各自的目标收；被拒的发送也照样先收。
     #[tokio::test]
     async fn send_composer_stops_typing_first() {
@@ -1144,8 +1346,8 @@ mod tests {
         let last = message(&items, &items.last().unwrap().id.clone());
         assert!(last.is_own);
         assert_eq!(last.run, MessageRun::Last);
-        // 23 和后面还没送达的 24 都是自己发的，同属一组。
-        assert_eq!(message(&items, "ui-fake-23").run, MessageRun::First);
+        // 24、25、26 和后面刚发出去的 27 都是自己发的，同属一组；26 夹在 25 和 27 之间。
+        assert_eq!(message(&items, "ui-fake-26").run, MessageRun::Middle);
     }
 
     /// 旁聊是按根消息开的另一份时间线：第一批是旁聊那四条，发出去的照片只落在旁聊里。

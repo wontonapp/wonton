@@ -121,18 +121,57 @@ enum UITestBackend {
         return false
     }
 
+    /// 下一个还没用过的码（用完最后一个就复用）；没有码时为 nil。
+    static func nextCodeValue() -> String? {
+        guard let all = try? codes(), !all.isEmpty else { return nil }
+        let value = all[min(pairingCursor, all.count - 1)]
+        pairingCursor += 1
+        return value
+    }
+
+    /// 配对握手断了（隧道抖动）时 App 会停在「这个配对码已经用过了」的页面：
+    /// 同一串码重试没用，换下一个码重新提交，最多两次。
+    static func recoverPairing(_ app: XCUIApplication) {
+        for _ in 0..<2 {
+            // 独立失败页（pairing-refusal）和失败进度页（pairing-progress）都有同一个「Scan again」。
+            let again = app.buttons["pairing-scan-again"]
+            let end = Date().addingTimeInterval(2)
+            while Date() < end, !again.exists { usleep(200_000) }
+            guard again.exists, again.isHittable else { return }
+            again.tap()
+            guard let field = textField(app, "pairing-code", timeout: 5), let code = nextCodeValue() else { return }
+            field.tap()
+            field.typeText(code)
+            let submit = app.buttons["pairing-submit"]
+            if !submit.isHittable { app.swipeUp() }
+            guard submit.waitForExistence(timeout: 5) else { return }
+            submit.tap()
+        }
+    }
+
+    private static func textField(_ app: XCUIApplication, _ id: String, timeout: TimeInterval) -> XCUIElement? {
+        let field = app.textFields[id]
+        return field.waitForExistence(timeout: timeout) ? field : nil
+    }
+
     /// 等核心结束 Checking，而不是等一个不一定出现的按钮或猜测一段安静时间。
     static func settleKeyHandoff(_ app: XCUIApplication, timeout: TimeInterval = 90) {
         let state = app.descendants(matching: .any)["key-handoff-test-state"].firstMatch
-        let resolved = NSPredicate { _, _ in
+        func entered() -> Bool {
             app.buttons["key-handoff-skip"].isHittable
                 || app.scrollViews["chat-backup"].exists
                 || (state.exists && state.value as? String == "settled")
         }
-        let result = XCTWaiter.wait(
-            for: [XCTNSPredicateExpectation(predicate: resolved, object: app)], timeout: timeout
-        )
-        guard result == .completed else {
+        // 配对失败页可能在等待中途才出现，所以边等边看，出现了就换码重来。
+        let deadline = Date().addingTimeInterval(timeout)
+        while Date() < deadline, !entered() {
+            if app.descendants(matching: .any)["pairing-refusal"].exists
+                || app.buttons["pairing-scan-again"].exists {
+                recoverPairing(app)
+            }
+            usleep(300_000)
+        }
+        guard entered() else {
             XCTFail("交接判定未完成：\(app.debugDescription)")
             return
         }
