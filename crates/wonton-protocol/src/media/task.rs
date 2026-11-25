@@ -81,6 +81,7 @@ impl TaskState {
         }
     }
 
+    /// 终态（`Done`/`Partial`/`Failed`/`Cancelled`），不可逆。
     pub fn is_terminal(&self) -> bool {
         matches!(
             self,
