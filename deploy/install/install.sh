@@ -26,8 +26,9 @@
 #   WONTON_ANNOUNCE_ADDRESSES  告诉手机去连的私有地址，逗号分隔，每项可以带前缀（192.0.2.20/24）；端口改绑 0.0.0.0。
 #                       桌面虚拟机（Docker Desktop、OrbStack、WSL2、Lima）里的启动器用它。默认不设，设成空就取消
 #   WONTON_RELAYS      中继表：档位用 ; 分开、前面的档优先，同档用 , 分开；令牌写在地址的
-#                       userinfo（https://TOKEN@host），n0 代表 iroh 内置的 n0 公共中继。默认不设：用 n0。
-#                       设成空就取消，回到 n0
+#                       userinfo（https://TOKEN@host#QUIC端口），n0 代表 iroh 内置的 n0 公共中继，
+#                       no-n0 去掉 n0 兜底。默认不设：只用 n0，主人能在设置页加中继（写数据目录的
+#                       core/relays.json，权限 0600）。设了这项设置页只读，适合部署时固定。设成空就取消
 #   WONTON_DOH_URL       配了出网代理时，链接预览经代理解析域名用的 DoH 服务器，默认 https://1.1.1.1/dns-query
 #   WONTON_EGRESS_PROXY  出网插件和核心经这个代理访问外网，http://、https:// 或 socks5://，可以带用户名和密码，特殊字符写成
 #                       百分号编码。测不通时安装失败。默认不设：第一次安装时检测一次，主人在 App 里改。设成空就取消
@@ -162,6 +163,9 @@ lan_addresses=${WONTON_LAN_ADDRESSES-$(saved WONTON_LAN_ADDRESSES)}
 announce_addresses=${WONTON_ANNOUNCE_ADDRESSES-$(saved WONTON_ANNOUNCE_ADDRESSES)}
 # 不用 `:-`：环境变量设成空就是取消上次的设置，回到 n0。
 relays=${WONTON_RELAYS-$(saved WONTON_RELAYS)}
+relay_list_url=${WONTON_RELAY_LIST_URL-$(saved WONTON_RELAY_LIST_URL)}
+relay_list_pubkey=${WONTON_RELAY_LIST_PUBKEY-$(saved WONTON_RELAY_LIST_PUBKEY)}
+relays_file=${WONTON_RELAYS_FILE-$(saved WONTON_RELAYS_FILE)}
 egress_proxy=${WONTON_EGRESS_PROXY-$(saved WONTON_EGRESS_PROXY)}
 doh_url=${WONTON_DOH_URL-$(saved WONTON_DOH_URL)}
 egress_detected=$(saved WONTON_EGRESS_PROXY_DETECTED)
@@ -611,6 +615,10 @@ WONTON_EGRESS_PROXY=$egress_proxy
 WONTON_DOH_URL=$doh_url
 EOF
   [ -z "$entry_bind" ] || echo "WONTON_ENTRY_BIND=$entry_bind" >>"$env_file.tmp"
+  # 签名列表和主人配置文件的位置：设了才记，没设时核心用自己的默认值。
+  [ -z "$relay_list_url" ] || echo "WONTON_RELAY_LIST_URL=$relay_list_url" >>"$env_file.tmp"
+  [ -z "$relay_list_pubkey" ] || echo "WONTON_RELAY_LIST_PUBKEY=$relay_list_pubkey" >>"$env_file.tmp"
+  [ -z "$relays_file" ] || echo "WONTON_RELAYS_FILE=$relays_file" >>"$env_file.tmp"
   [ -z "$entry_port" ] || echo "WONTON_ENTRY_PORT=$entry_port" >>"$env_file.tmp"
   # 设了才写：没设时核心用自己的默认值，.env 里不记常用默认。
   if [ -n "$install_timeout" ]; then

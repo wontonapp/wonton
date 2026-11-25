@@ -135,6 +135,11 @@ netlink-packet-core = "0.9.0"
 netlink-packet-route = "0.33.0"
 netlink-sys = { version = "0.9.0", default-features = false }
 
+# 写中继表配置文件：同目录临时文件写完再改名。
+tempfile = { workspace = true }
+# MIT。验签名的中继列表（ADR-0048）：minisign 公钥和签名，只验不签。
+minisign-verify = "0.3.0"
+
 [dev-dependencies]
 # 分享冒烟示例要用客户端的发现逻辑。
 wonton-client = { path = "../wonton-client" }
@@ -142,7 +147,8 @@ wonton-client = { path = "../wonton-client" }
 wonton-tunnel = { path = "../wonton-tunnel", features = ["test-hooks"] }
 # 测试中继：iroh 的 run_relay_server 和跳过 TLS 校验（只用于本机测试）。
 iroh = { workspace = true, features = ["test-utils"] }
-tempfile = { workspace = true }
+# MIT。测试里生成 minisign 密钥对和签名，造签名列表的夹具。
+minisign = "0.10.0"
 # MIT OR Apache-2.0。按 TOML 语义验证 Tuwunel 的联邦配置。
 toml = "1.1"
 # MIT。排空上限的测试用暂停的时钟推进时间，不真等 2 秒。

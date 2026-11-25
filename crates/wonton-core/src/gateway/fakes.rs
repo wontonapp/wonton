@@ -274,7 +274,9 @@ pub(super) async fn loopback_tunnel_with_members(
         Arc::new(|| Languages::from_header(None)),
         loopback_endpoint(SecretKey::generate()).await,
         0,
-        RelayTable::builtin_n0(),
+        Arc::new(crate::relay_settings::RelaySettings::for_table(
+            RelayTable::builtin_n0(),
+        )),
         tokio::sync::watch::channel(lan).1,
     )
 }

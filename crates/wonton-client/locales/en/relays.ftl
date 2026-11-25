@@ -5,6 +5,7 @@ relays-not-connected = You're not connected to your home server yet.
 
 # The relay table is being saved; edits wait for it to finish.
 relays-busy = The relay table is being saved; try again in a moment.
+relays-not-loaded = The relay table hasn't been loaded yet; refresh it first.
 
 # The table comes from the WONTON_RELAYS environment variable and is read-only.
 relays-locked = This relay table is fixed by an environment variable and can't be changed here.

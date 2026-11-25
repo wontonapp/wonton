@@ -42,6 +42,11 @@ services:
       WONTON_TUNNEL_PORT: ${WONTON_TUNNEL_PORT:?}
       # 中继表（ADR-0048）：不设时用 n0 的公共中继。
       WONTON_RELAYS: ${WONTON_RELAYS:-}
+      # 签名的中继列表和它的验签公钥（可选）。
+      WONTON_RELAY_LIST_URL: ${WONTON_RELAY_LIST_URL:-}
+      WONTON_RELAY_LIST_PUBKEY: ${WONTON_RELAY_LIST_PUBKEY:-}
+      # 主人配置文件的位置；不设时用数据目录里的 core/relays.json。
+      WONTON_RELAYS_FILE: ${WONTON_RELAYS_FILE:-}
       WONTON_CORE_CONTAINER: ${WONTON_CORE_CONTAINER:-wonton-core}
       WONTON_INSTANCE: ${WONTON_INSTANCE:-}
       # 宿主的 /dev 挂在这里（下面的 volumes）：核心据此检测显卡设备和它们所属的组（ADR-0018）。
