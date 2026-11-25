@@ -1,24 +1,25 @@
 #!/usr/bin/env python3
-"""ADR-0120 现状盘点的统计：按页数两个壳的行数、近一段时间的改动。
+"""ADR-0120 现状盘点的统计：按页数两个壳的行数和近一段时间的改动。
 
-口径：
-- “提交”是 `git log --since <日期> <rev> -- apps/ios apps/compose` 里的提交。
-- “（提交，页面）对”是同一个范围里每个提交落在某页的次数；一个提交改了同一页的多个文件只算 1，
-  改了多页时每页各算 1。合计的对数等于表里各页之和。
-- “两端同改”是对里同一个提交同时改了该页的 iOS 和 Android 文件。
+只统计 `--rev` 可达的历史；`--rev` 必填，免得默认的 main 因本地分支停在哪而漂。
+`--since` 只是再缩小时间窗口。
+
+两套口径都打，别混：
+- 按提交：范围里的提交数，和其中同时改了 apps/ios 和 apps/compose 的提交数。
+- 按（提交，页面）对：同一个提交落在某页算 1 个对，改了多页时每页各算 1。表的各页之和等于合计。
+- 表的 iOS 提交、Android 提交两列两端各算一次：同一个提交两端都改了，两列各记 1。
+- “两端同改”是同时改了该页 iOS 和 Android 文件的提交。
 - 行数是该页 iOS 或 Android 文件的物理行数之和（含空行和注释），文件不存在按 0 算。
 
 用法（仓库根目录）：
 
     python3 scripts/adr-shell-pages.py --rev 225ea5cb --since 2026-10-25
-
---rev 默认 main，--since 默认不动（全部历史）。
 """
+
 
 from __future__ import annotations
 
 import argparse
-import collections
 import os
 import subprocess
 import sys
@@ -189,7 +190,7 @@ def git(*args: str) -> str:
 
 def main() -> int:
     parser = argparse.ArgumentParser(description=__doc__, formatter_class=argparse.RawDescriptionHelpFormatter)
-    parser.add_argument("--rev", default="main")
+    parser.add_argument("--rev", required=True, help="只统计这个 rev 可达的历史，例如 225ea5cb")
     parser.add_argument("--since", default=None)
     args = parser.parse_args()
 
@@ -208,25 +209,31 @@ def main() -> int:
 
     both_commits = sum(1 for files in commits if any(f.startswith("apps/ios/") for f in files)
                        and any(f.startswith("apps/compose/") for f in files))
-    print(f"提交 {len(commits)} 个；两端同改的提交 {both_commits} 个（{both_commits * 100 // max(len(commits), 1)}%）")
+    total = max(len(commits), 1)
+    print(f"口径一（按提交）：提交 {len(commits)} 个；两端同改的提交 {both_commits} 个"
+          f"（{both_commits * 100 // total}%）")
 
     rows = []
     for page, (ios, android) in PAGES.items():
-        ios_files = [IOS + name + ".swift" for name in ios]
-        android_files = [ANDROID + name + ".kt" for name in android]
-        ios_lines = sum(sum(1 for _ in open(path, errors="ignore")) for path in ios_files if os.path.exists(path))
-        android_lines = sum(sum(1 for _ in open(path, errors="ignore")) for path in android_files
+        ios_files = set(IOS + name + ".swift" for name in ios)
+        android_files = set(ANDROID + name + ".kt" for name in android)
+        ios_lines = sum(sum(1 for _ in open(path, errors="ignore")) for path in sorted(ios_files)
+                        if os.path.exists(path))
+        android_lines = sum(sum(1 for _ in open(path, errors="ignore")) for path in sorted(android_files)
                             if os.path.exists(path))
-        pairs = [files for files in commits if files & set(ios_files + android_files)]
-        both = sum(1 for files in pairs if files & set(ios_files) and files & set(android_files))
-        rows.append((len(pairs), both, ios_lines, android_lines, page))
+        pairs = sum(1 for files in commits if files & (ios_files | android_files))
+        both_pairs = sum(1 for files in commits if files & ios_files and files & android_files)
+        ios_commits = sum(1 for files in commits if files & ios_files)
+        android_commits = sum(1 for files in commits if files & android_files)
+        rows.append((pairs, both_pairs, ios_commits, android_commits, ios_lines, android_lines, page))
 
-    print(f"（提交，页面）对 {sum(r[0] for r in rows)} 个；两端同改的对 {sum(r[1] for r in rows)} 个")
+    print(f"口径二（按（提交，页面）对）：对 {sum(r[0] for r in rows)} 个；"
+          f"两端同改的对 {sum(r[1] for r in rows)} 个")
     print()
-    print("| 页面 | iOS 行 | Android 行 | 近月（提交，页面）对 | 其中两端同改 |")
-    print("| --- | --- | --- | --- | --- |")
-    for pairs, both, ios_lines, android_lines, page in sorted(rows, reverse=True):
-        print(f"| {page} | {ios_lines} | {android_lines} | {pairs} | {both} |")
+    print("| 页面 | iOS 行 | Android 行 | iOS 提交 | Android 提交 | （提交，页面）对 | 其中两端同改 |")
+    print("| --- | --- | --- | --- | --- | --- | --- |")
+    for pairs, both_pairs, ios_commits, android_commits, ios_lines, android_lines, page in sorted(rows, reverse=True):
+        print(f"| {page} | {ios_lines} | {android_lines} | {ios_commits} | {android_commits} | {pairs} | {both_pairs} |")
     return 0
 
 
