@@ -68,23 +68,28 @@ impl Notification {
     }
 
     /// 推送里带的正文和类型；加密房间没有正文。附件只带类型和文件名，不带 URL 和缩略图；邀请按“有人邀请你”
-    /// 处理（`content` 里没有正文）；不认识的消息类型落 `Other`（ADR-0118）。
+    /// 处理（`content` 里没有正文）；不认识的消息类型落 `Other`（ADR-0118）。缺 `content` 或缺 `msgtype` 的通知
+    /// 只发唤醒信号，不能整条丢掉（ADR-0118 §2）。
     fn body(&self) -> Option<(Option<String>, Option<PushMessageType>)> {
         self.event_id.as_ref()?;
         self.room_id.as_ref()?;
         Some(match self.event_type.as_deref() {
             Some("m.room.encrypted") => (None, None),
-            Some("m.room.member") => {
-                let content = self.content.as_ref()?;
-                if content.membership.as_deref() == Some("invite") {
+            Some("m.room.member") => match self.content.as_ref() {
+                None => (None, None),
+                Some(content) if content.membership.as_deref() == Some("invite") => {
                     (None, Some(PushMessageType::Invite))
-                } else {
-                    (content.body.clone(), Some(PushMessageType::Other))
                 }
-            }
+                Some(content) => (content.body.clone(), Some(PushMessageType::Other)),
+            },
             Some("m.room.message") => {
-                let content = self.content.as_ref()?;
-                let (msgtype, attachment) = match content.msgtype.as_deref()? {
+                let Some(content) = self.content.as_ref() else {
+                    return Some((None, None));
+                };
+                let Some(msgtype) = content.msgtype.as_deref() else {
+                    return Some((None, None));
+                };
+                let (msgtype, attachment) = match msgtype {
                     "m.text" | "m.notice" | "m.emote" => (PushMessageType::Text, false),
                     "m.image" => (PushMessageType::Image, true),
                     "m.audio" => (PushMessageType::Audio, true),
@@ -132,6 +137,19 @@ mod tests {
                 "type": event_type, "sender": "@hermes:wonton.localhost",
                 "sender_display_name": "Hermes", "room_name": "Hermes 主房间", "prio": "high",
                 "content": content,
+                "devices": [{"app_id": "app.wonton.android", "pushkey": pushkey}],
+            }
+        }))
+        .unwrap()
+    }
+
+    /// 同 [`request`]，但不带 `content`。
+    fn request_without_content(event_type: &str, pushkey: &str) -> NotifyRequest {
+        serde_json::from_value(json!({
+            "notification": {
+                "event_id": "$reply-1", "room_id": "!bot:wonton.localhost",
+                "type": event_type, "sender": "@hermes:wonton.localhost",
+                "sender_display_name": "Hermes", "room_name": "Hermes 主房间", "prio": "high",
                 "devices": [{"app_id": "app.wonton.android", "pushkey": pushkey}],
             }
         }))
@@ -199,6 +217,44 @@ mod tests {
         let payload = pushed.notification.payload("s").unwrap();
         assert_eq!(payload.body, None);
         assert_eq!(payload.msgtype, Some(PushMessageType::Invite));
+    }
+
+    /// 没有 `content` 的通知（计数的、加密房间、别的服务器上的老版本核心）照旧只发唤醒信号，不能整条丢掉。
+    #[test]
+    fn a_message_without_content_still_wakes() {
+        let pushed = request_without_content("m.room.message", "k");
+        let payload = pushed
+            .notification
+            .payload("s")
+            .expect("缺 content 也要发唤醒");
+        assert_eq!(payload.event_id, "$reply-1");
+        assert_eq!(payload.room_id, "!bot:wonton.localhost");
+        assert_eq!(payload.body, None);
+        assert_eq!(payload.msgtype, None);
+    }
+
+    /// `m.room.message` 的 `content` 没有 `msgtype`：认不出类型，只发唤醒信号。
+    #[test]
+    fn a_message_without_msgtype_still_wakes() {
+        let pushed = request("m.room.message", json!({"body": "家"}), "k");
+        let payload = pushed
+            .notification
+            .payload("s")
+            .expect("缺 msgtype 也要发唤醒");
+        assert_eq!(payload.body, None);
+        assert_eq!(payload.msgtype, None);
+    }
+
+    /// `m.room.member` 没有 `content`：不知道是不是邀请，只发唤醒信号。
+    #[test]
+    fn a_member_event_without_content_still_wakes() {
+        let pushed = request_without_content("m.room.member", "k");
+        let payload = pushed
+            .notification
+            .payload("s")
+            .expect("缺 content 也要发唤醒");
+        assert_eq!(payload.body, None);
+        assert_eq!(payload.msgtype, None);
     }
 
     #[test]

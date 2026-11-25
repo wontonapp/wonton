@@ -2,7 +2,7 @@
 //! 核心把通知加密给这台设备，按 Web Push 发到它的推送地址。
 //!
 //! 核心只经标准接口和别的组件说话（ADR-0015）：Tuwunel 调的是 Matrix Push Gateway API，推送服务收的是
-//! Web Push（RFC 8030、RFC 8291）。推送里没有正文：聊天是端到端加密的，App 经隧道取回消息后在本机解密。
+//! Web Push（RFC 8030、RFC 8291）。不加密房间的推送带正文和类型；加密房间只有密文，App 经隧道取回消息后在本机解密。
 
 mod notification;
 mod store;
