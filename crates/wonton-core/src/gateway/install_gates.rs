@@ -254,7 +254,12 @@ where
                     .plugins
                     .preview_source(&request.source, &langs)
                     .await?;
-                install_gate_checks::matches_install_preview(&preview, &request.digest, &langs)?;
+                install_gate_checks::matches_install_preview(
+                    &preview,
+                    &request.digest,
+                    &request.plan,
+                    &langs,
+                )?;
                 let (first, second) =
                     source_admin_cards(gateway, request, &preview, &langs).await?;
                 Ok::<_, InstallError>((first, second, preview.title))

@@ -26,7 +26,7 @@ final class ChatTelegramUITests: XCTestCase {
         if ProcessInfo.processInfo.environment["WONTON_DARK"] == "1" {
             XCUIDevice.shared.appearance = .dark
         }
-        app.launch()
+        UITestBackend.launch(app)
     }
 
     /// 向左拖一条消息，松手后输入框上方出现回复条。
@@ -244,7 +244,7 @@ final class ChatTelegramUITests: XCTestCase {
         app.terminate()
         XCUIDevice.shared.appearance = .dark
         addTeardownBlock { XCUIDevice.shared.appearance = .light }
-        app.launch()
+        UITestBackend.launch(app)
         enter(Self.directRoom)
         waitForFloatingDateToFade()
         shot("direct-dark")
@@ -253,7 +253,7 @@ final class ChatTelegramUITests: XCTestCase {
         _ = selectTwo(first, second)
         shot("attach-selected-dark")
         app.terminate()
-        app.launch()
+        UITestBackend.launch(app)
         enter(Self.directRoom)
         openSideChat()
         shot("side-chat-dark")
@@ -267,13 +267,13 @@ final class ChatTelegramUITests: XCTestCase {
         XCTAssertTrue(wait(5) { photo.isSelected }, "深色下旁聊的相册选不上照片")
         shot("side-chat-multi-dark")
         app.terminate()
-        app.launch()
+        UITestBackend.launch(app)
         enter(Self.directRoom)
         openForwardSheet()
         selectTwoRooms()
         shot("forward-sheet-dark")
         app.terminate()
-        app.launch()
+        UITestBackend.launch(app)
         enter(Self.groupRoom)
         waitForFloatingDateToFade()
         shot("group-dark")
@@ -354,6 +354,52 @@ final class ChatTelegramUITests: XCTestCase {
         XCTAssertFalse(app.buttons["dialogOk"].exists, "发照片弹了错误")
     }
 
+    /// 旁聊的说明只跟第一张照片：发两张时第一张带说明、第二张不带，草稿清掉。
+    func testSideChatCaptionGoesOnlyWithFirstPhoto() {
+        enter(Self.directRoom)
+        waitForFloatingDateToFade()
+        openSideChat()
+        let field = input
+        focus(field)
+        field.typeText("Fixture first caption")
+        XCTAssertTrue(openSideAttach().isEnabled, "旁聊里照片点不了，上限还是 0 个")
+        let photos = (0..<2).map { app.buttons["attachPhoto.\($0)"] }
+        XCTAssertTrue(photos[1].waitForExistence(timeout: 15), "旁聊的附件面板里没有两张照片\n\(app.debugDescription)")
+        for photo in photos { photo.tap() }
+        XCTAssertTrue(wait(5) { photos.allSatisfy { $0.isSelected } }, "一张面板里选不上两张")
+        sendPickedPhotos()
+        XCTAssertTrue(
+            text(startingWith: "Fixture first caption").waitForExistence(timeout: 20),
+            "第一张没带上说明\n\(app.debugDescription)"
+        )
+        XCTAssertTrue(text(startingWith: "photo").waitForExistence(timeout: 20), "第二张没发出去\n\(app.debugDescription)")
+        let captions = app.staticTexts.matching(NSPredicate(format: "label BEGINSWITH %@", "Fixture first caption"))
+        XCTAssertEqual(captions.count, 1, "说明跟了不止一张\n\(app.debugDescription)")
+        XCTAssertEqual(field.value as? String, "", "说明随照片发出去了，草稿没清")
+    }
+
+    /// 第一张被拒：说明留在草稿里，第二张照发但不带说明。
+    func testSideChatRefusedFirstPhotoKeepsCaptionForLater() {
+        app.terminate()
+        app.launchEnvironment["WONTON_UI_FAIL_SEND"] = "1"
+        app.launch()
+        enter(Self.directRoom)
+        waitForFloatingDateToFade()
+        openSideChat()
+        let field = input
+        focus(field)
+        field.typeText("Fixture kept caption")
+        XCTAssertTrue(openSideAttach().isEnabled, "旁聊里照片点不了，上限还是 0 个")
+        let photos = (0..<2).map { app.buttons["attachPhoto.\($0)"] }
+        XCTAssertTrue(photos[1].waitForExistence(timeout: 15), "旁聊的附件面板里没有两张照片\n\(app.debugDescription)")
+        for photo in photos { photo.tap() }
+        XCTAssertTrue(wait(5) { photos.allSatisfy { $0.isSelected } }, "一张面板里选不上两张")
+        sendPickedPhotos()
+        XCTAssertTrue(text(startingWith: "photo").waitForExistence(timeout: 20), "第一张被拒以后第二张没发出去\n\(app.debugDescription)")
+        XCTAssertFalse(text(startingWith: "Fixture kept caption").exists, "说明跟了第二张，本该留在草稿里\n\(app.debugDescription)")
+        XCTAssertEqual(field.value as? String, "Fixture kept caption", "第一张被拒后草稿没了")
+    }
+
     /// 宽表格上横拖不抢回复：从右往左拖是表格自己滚，回复条不出现；从左往右拖才进回复。
     func testTableScrollsSidewaysWithoutStartingReply() {
         enter(Self.directRoom)
@@ -391,7 +437,7 @@ final class ChatTelegramUITests: XCTestCase {
         if ProcessInfo.processInfo.environment["WONTON_DARK"] == "1" {
             XCUIDevice.shared.appearance = .dark
         }
-        app.launch()
+        UITestBackend.launch(app)
         enter(Self.groupRoom)
         let title = app.staticTexts["Family"]
         XCTAssertTrue(title.waitForExistence(timeout: 10), "顶栏没有房间名\n\(app.debugDescription)")
@@ -491,7 +537,7 @@ final class ChatTelegramUITests: XCTestCase {
     func testRejectedSendKeepsCaptionPhotoAndReply() {
         app.terminate()
         app.launchEnvironment["WONTON_UI_TEST_FAIL_ATTACHMENT"] = "1"
-        app.launch()
+        UITestBackend.launch(app)
         enter(Self.directRoom)
         // 旁聊里是另一份假时间线（Fixture side N），回复落点旁边那条。
         startReply(on: text(startingWith: "Fixture side 1"))
@@ -585,7 +631,7 @@ final class ChatTelegramUITests: XCTestCase {
     func testPhotoBytesWaitShowsSendingAndKeepsTextTypedMeanwhile() {
         app.terminate()
         app.launchEnvironment["WONTON_UI_PHOTO_DELAY_MS"] = "4000"
-        app.launch()
+        UITestBackend.launch(app)
         enter(Self.directRoom)
         let (first, _) = openAttachSheet()
         first.tap()
@@ -608,7 +654,7 @@ final class ChatTelegramUITests: XCTestCase {
     func testSideChatRejectedSendKeepsDraftAndReply() {
         app.terminate()
         app.launchEnvironment["WONTON_UI_FAIL_SEND"] = "1"
-        app.launch()
+        UITestBackend.launch(app)
         enter(Self.directRoom)
         // 卡片就挂在进房落点那条：没画出来往上挪一两段，不用横穿整条时间线；
         // 底下可能被附件提示盖住，交给 revealClearOfHint 挪到提示上面。
@@ -698,12 +744,12 @@ final class ChatTelegramUITests: XCTestCase {
         shot("group-top")
         // 再进一次，停在最新一条：群聊平常的样子。
         app.terminate()
-        app.launch()
+        UITestBackend.launch(app)
         enter(Self.groupRoom)
         waitForFloatingDateToFade()
         shot("group")
         app.terminate()
-        app.launch()
+        UITestBackend.launch(app)
         enter(Self.directRoom)
         XCTAssertFalse(avatar.exists, "私聊里画了发送者头像")
     }

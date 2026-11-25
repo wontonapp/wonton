@@ -123,7 +123,7 @@ Queued → Preparing → Running ⇄ Paused{reason} / WaitingNetwork / WaitingPo
 ```
 
 - `Paused{reason}` 是用户或 Agent 主动暂停，带原因（`user`、`agent`、`low_battery`…）。
-- `WaitingNetwork`/`WaitingPower` 是系统条件不满足，条件恢复自动回 `Running`，不算用户暂停。
+- `WaitingNetwork`/`WaitingPower` 是系统条件不满足，条件恢复自动回队（`Queued`），到点重试走同一条，不算用户暂停。
 - `Partial` 只给上传，且上传的目标是一**批**：一个备份任务带 `items: Vec<UploadItem>`（相对路径、大小、校验和、拍摄时间），逐项有 `Queued/Running/Done/Failed{failure}/Skipped`；失败项进任务的 `partial_failures`，全成 `Done`、全败 `Failed`、部分成 `Partial`。相册备份就是“一次备份 = 一个任务 + N 个 item”，不拆成几百个任务。
 - 终态不可逆；再跑就是新任务（`retry_of` 指向父任务）。
 
@@ -137,7 +137,7 @@ Queued → Preparing → Running ⇄ Paused{reason} / WaitingNetwork / WaitingPo
 | 下载 | `.part` 文件加 `Range`/`If-Range`，带 ETag | 服务器支持 `Range` 就续，不支持（206 缺失或 ETag 变了）就从 0 |
 | 播放 | 服务器核记的 `position` | 新会话从 `position` 起播；提供方不支持 seek 则从头 |
 
-**重试与退避。** 只对“可能自己好”的失败重试：1/2/4/8/16/32/60 秒，最多 6 次，之后转 `Failed`。权限错、格式不支持、空间不足不退避，直接失败。每个任务独立计时，不在全局排一个队。
+**重试与退避。** 只对“可能自己好”的失败重试：1/2/4/8/16/32/60 秒，最多 7 次，之后转 `Failed`。权限错、格式不支持、空间不足不退避，直接失败。每个任务独立计时，不在全局排一个队。
 
 **失败分类。** 以 `wonton-protocol/src/file/mod.rs:97-142` 的 `FileFailure` 为底，**保留它的本地、传输、协议、上游四组**（`local_source_unavailable`、`local_permission_denied`、`local_storage_full`、`local_io`、`transport_unavailable`、`protocol`、`plugin_unavailable`、`upstream_error`），再加 `AuthenticationRequired`、`UnsupportedByDevice`、`RateLimited`、`MediaGone`、`ServerStorageFull`。服务端空间不足和手机空间不足分成两个码，壳才知道该去清哪边；`device_no_response` 只出现在工具结果里，不进任务失败枚举。失败即停，不藏错误：状态转 `Failed{failure}`，失败原文和类别都进视图与事件（`media.task.failed`），Agent 能看到完整原因。
 
@@ -178,6 +178,7 @@ Queued → Preparing → Running ⇄ Paused{reason} / WaitingNetwork / WaitingPo
 - 计划里带音轨和字幕轨两份 `MediaTrack` 列表，`ControlOp` 有 `SetAudio`/`SetSubtitle`（字幕可 `None`）：这两个由核心**重新向提供方要 plan** 再下发，新 plan 到位前客户端继续用旧轨，失败保留旧轨并报错；可 seek 范围以 plan 的 `seekable` 与 `duration` 为准。
 - 队列改动（入队、插队、移除、跳转、清空、模式切换）都带本次读到的 `revision`，并在成功时把整条队列用 `PUT /queue` 推给提供方（`savePlayQueue` 的翻法），需要时带 `position` 与 `mode`；核心比对不相等就回 `409 stale_revision` 连同当前队列快照，客户端重新拉一次再重放操作。选 409 不选“服务端自动合并”：Agent 与两台手机同时改队列时自动合并会出谁也预料不到的次序，宁可让调用方重试。
 - **一人同时只有一个活动会话。** 另一台设备发 `play` 时走接管：旧设备收到 `media.session.taken_over` 事件，壳停声、上报最后位置、转入只读。选“一人多活动会话”就得回答“锁屏上显示哪一个、scrobble 记给谁”，第一版不值得。
+- 会话的终态带 `stop_reason`（`user`/`agent`/`taken_over`/`finished`/`error`），停了不再改；重复的停止只把位置往后推。库里按人建一条唯一索引，只允许一条停因为空的活动会话。
 - 位置上报：播放中每 5 秒一次，另外在 pause/seek/stop 各报一次；核心按会话节流后再转给提供方（Subsonic `scrobble`、Jellyfin `Sessions/Playing/Progress`）。节流放在核心不放在壳，免得每个壳各写一份、重试风暴直接打到插件。位置就是本会话的断点恢复点，恢复时以最近一次上报为准，不重头。
 - 锁屏、通知栏、耳机按键由壳接系统：Android **只保留一个** `MediaSessionService`，现有的 `PageMediaService` 被新的播放服务吸收、页面媒体降为它的一个 renderer；iOS 走 `MPNowPlayingInfoCenter` + `MPRemoteCommandCenter`，壳把按键翻成第 3 节的 `MediaAction` 回给核心。控制逻辑不在壳里重复实现。
 - 画中画（PiP）两端壳各做一份，核心只保证进 PiP、出 PiP 不会停会话。
@@ -314,12 +315,12 @@ Agent（Hermes，家里服务器上）与壳走同一条核心 API，不给 Agen
 | `local_permission_denied` | 系统权限没给 | “去授权”，带跳转设置 | 不退避 |
 | `local_storage_full` | 手机空间不足 | “手机空间不足”，列占用与清理 | 不退避 |
 | `local_io` | 本地读写失败 | “本机出错”，带重试 | 1 次 |
-| `transport_unavailable` | 没有网、隧道断 | 进 `WaitingNetwork`，恢复后从断点续 | 1/2/4/8/16/32/60 秒，最多六次 |
+| `transport_unavailable` | 没有网、隧道断 | 进 `WaitingNetwork`，恢复后从断点续 | 1/2/4/8/16/32/60 秒，最多七次 |
 | `protocol` | 上游回了看不懂的东西 | “对不上”，带重试 | 同上 |
 | `authentication_required` | 上游凭据失效或被收回 | “需要重新登录”，带跳转入口 | 不退避 |
 | `permission_denied` | 上游拒了这个人的权限 | “没有权限” | 不退避 |
 | `unsupported_by_device` | 格式或 `DeviceProfile` 不被接受 | “这台设备放不了”，给转码按钮 | 不退避 |
-| `rate_limited` | 提供方回 429 | “限速中，N 秒后重试” | 按 `retry_after`，不计入六次 |
+| `rate_limited` | 提供方回 429 | “限速中，N 秒后重试” | 按 `retry_after`，不计入七次 |
 | `media_gone` | 文件被删或移走 | “已不在库里”，该项标 `Failed` | 不退避 |
 | `plugin_unavailable` | 插件没装/没起来 | “插件没在跑”，带重试 | 1/2/4 秒，最多三次 |
 | `upstream_error` | 上游 5xx | “服务器出错”，带重试 | 同传输 |

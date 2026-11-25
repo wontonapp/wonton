@@ -129,6 +129,24 @@ async fn capability_outbox_install_confirms_and_injects_each_plugins_own_secret(
     let (b, docker) = fixture(false, false).await;
     let call = b.s.spawn(INSTALL, json!({"dir": "consumer"}));
     let card = b.s.cards.wait_for(1).await;
+    let texts: Vec<&str> = card.lines.iter().map(|line| line.text.as_str()).collect();
+    assert!(
+        texts.iter().any(|text| text.contains(PROVIDER)),
+        "提供方的 ID 写在卡上：{texts:?}"
+    );
+    let connection: Vec<_> = texts
+        .iter()
+        .filter(|text| text.contains("x-acme.search") || text.contains("x-acme.lookup"))
+        .collect();
+    assert_eq!(
+        connection.len(),
+        1,
+        "同一个提供方的两项能力写一行：{texts:?}"
+    );
+    assert!(
+        connection[0].contains("x-acme.search, x-acme.lookup"),
+        "{texts:?}"
+    );
     assert_eq!(card.secret_inputs.len(), 2);
     for name in ["token".to_owned(), format!("{PROVIDER}/token")] {
         assert!(
@@ -350,4 +368,76 @@ async fn capability_confirmation_does_not_recompute_the_approved_plan() {
     let result = call.await.unwrap();
     assert!(failed(&result), "{result:?}");
     assert_not_installed(&b, &docker);
+}
+
+const EARLIER_PROVIDER: &str = "app.example.aaa";
+const LATER_PROVIDER: &str = "app.example.zzz";
+
+/// 多提供方用例的提供方：标题就是 ID，卡片按标题写提供方，断言照着 ID 对。`search` 决定补不补第一项
+/// 能力；`docker.socket` 声明成可选、默认关，够高权限、又不多一张第二张卡。
+fn two_provider_compose(id: &str, search: bool) -> String {
+    let provides = if search {
+        "    x-acme.search: {service: web, port: 8080}\n    \
+         x-acme.lookup: {service: web, port: 8080}\n"
+    } else {
+        "    x-acme.lookup: {service: web, port: 8080}\n"
+    };
+    format!(
+        "services:\n  web:\n    image: nginx\n    expose: [8080]\n    volumes:\n      \
+         - /var/run/docker.sock:/var/run/docker.sock\nx-wonton:\n  spec: '{}'\n  id: {id}\n  \
+         version: 1.0.0\n  kind: app\n  title: {{zh: {id}, en: {id}}}\n  \
+         description: {{zh: {id}, en: {id}}}\n  permissions: []\n  optional_permissions:\n    \
+         docker.socket:\n      off_loss: {{zh: 无容器管理, en: No container management}}\n  \
+         provides:\n{provides}",
+        crate::plugin::store_info::SPEC_VERSION,
+    )
+}
+
+/// 索引里靠前的提供方只补第二项能力，靠后的两项都补。
+async fn two_providers_fixture() -> (Bench, FakeDocker) {
+    let (docker, engine) = FakeDocker::start().await;
+    let s = setup(engine, Duration::from_secs(60)).await;
+    s.bus.plugins.note_person_languages("owner", Some("en"));
+    let outbox = s.bus.plugins.app_data_dir(&s.caller.id).join("outbox");
+    fs::create_dir_all(&outbox).unwrap();
+    let b = Bench { s, outbox };
+    for (id, repo, search) in [
+        (EARLIER_PROVIDER, "aaa", false),
+        (LATER_PROVIDER, "zzz", true),
+    ] {
+        publish(
+            &b,
+            PluginPackage::parse(&two_provider_compose(id, search), &Languages::default()).unwrap(),
+            repo,
+        );
+    }
+    let (services, manifest) = plain(CONSUMER, "1.0.0", "");
+    let manifest = format!("{manifest}  requires: [x-acme.search, x-acme.lookup]\n");
+    b.write_package("consumer", services, &manifest);
+    (b, docker)
+}
+
+/// Bot 的卡片和网关卡一样：一项能力只写会连上的那个提供方，两项能力一行。执行时连的是请求里排最前
+/// 的提供方，也就是索引里靠后、两项都补的那个；索引里靠前、只补后一项的提供方不再单独写一行。
+#[tokio::test]
+async fn capability_card_names_the_provider_the_install_will_use() {
+    let (b, _docker) = two_providers_fixture().await;
+    let call = b.s.spawn(INSTALL, json!({"dir": "consumer"}));
+    let card = b.s.cards.wait_for(1).await;
+    let texts: Vec<&str> = card.lines.iter().map(|line| line.text.as_str()).collect();
+    let connection: Vec<_> = texts
+        .iter()
+        .filter(|text| text.contains("x-acme.search") || text.contains("x-acme.lookup"))
+        .collect();
+    assert_eq!(connection.len(), 1, "{texts:?}");
+    assert!(
+        connection[0].contains("x-acme.search, x-acme.lookup"),
+        "{texts:?}"
+    );
+    assert!(
+        connection[0].contains(LATER_PROVIDER),
+        "写靠后、真会连上的那个：{texts:?}"
+    );
+    b.s.answer(&card.id, Answer::Approve).unwrap();
+    assert!(!failed(&call.await.unwrap()));
 }

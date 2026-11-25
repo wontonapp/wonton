@@ -17,7 +17,7 @@ final class ImageViewerPagingUITests: XCTestCase {
         app.launchArguments += ["-AppleLanguages", "(en)", "-AppleLocale", "en_US", "-ApplePersistenceIgnoreState", "YES"]
         app.launchEnvironment["WONTON_DEV_DATA_SUFFIX"] = UUID().uuidString
         app.launchEnvironment["WONTON_UI_FAKE"] = "1"
-        app.launch()
+        UITestBackend.launch(app)
     }
 
     /// 从第一张翻到最后一张：页码跟着走，到头向右滑回弹，向左滑到第三张停住。

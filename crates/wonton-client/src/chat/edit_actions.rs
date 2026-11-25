@@ -1,4 +1,4 @@
-//! 编辑消息和正在输入（ADR-0109 第 8、9 节）：壳的 `StartEdit`、`CancelEdit`、`EditMessage`、`SetTyping` 落在核心这一侧。
+//! 编辑消息和正在输入（ADR-0109 第 8、10 节）：壳的 `StartEdit`、`CancelEdit`、`EditMessage`、`SetTyping` 落在核心这一侧。
 //!
 //! 编辑态在订阅上，换了房间（订阅释放）就没了；原草稿在进入编辑态时存下来，取消和发送成功后原样恢复；编辑途中又打了字就不盖。
 
@@ -6,7 +6,7 @@ use std::sync::Arc;
 
 use wonton_l10n::l10n;
 use wonton_matrix::Draft;
-use wonton_protocol::CoreError;
+use wonton_protocol::{CoreError, TimelineTarget};
 
 use super::draft::DraftWrite;
 use super::{ChatLink, TimelineKey, invalid, lock};
@@ -125,5 +125,17 @@ impl ChatLink {
     pub(super) fn set_typing(&self, key: &TimelineKey, typing: bool) -> Result<(), CoreError> {
         self.live(key)?.typing_out.set(typing);
         Ok(())
+    }
+
+    /// 输入框里要发送了（包括附件区整单）：先收掉这条时间线的“正在输入”。附件区那条发送路不走 `timeline_action`，
+    /// 由 `dispatch` 统一在发送前叫，真路径和假数据都一样。
+    pub(crate) fn stop_typing(&self, target: &TimelineTarget) {
+        if let Ok(key) = TimelineKey::parse(target) {
+            #[cfg(all(test, feature = "ui-fake"))]
+            lock(&self.typing_stops).push(key.clone());
+            if let Ok(live) = self.live(&key) {
+                live.typing_out.set(false);
+            }
+        }
     }
 }

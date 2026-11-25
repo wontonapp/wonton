@@ -4,6 +4,7 @@
 - 补充：[ADR-0016](0016-mcp-bus-and-confirmations.md)（卡片和回答的接口）、[ADR-0034](0034-onboarding-and-help.md)（引导的外观）、[ADR-0035](0035-acp-bridge.md)（`elicitation/create`）、[ADR-0036](0036-plugin-privileges.md)（最高级“多点一步”的做法）
 - 由 [ADR-0108](0108-hermes-default-kernel.md) 修订（主人 2026-11-15）：ACP 桥已删除，文中桥处理 `elicitation/create`、给桥用的 `POST /agent/questions`
   和对各家 ACP 适配器的估算只作历史
+- 由 [ADR-0118](0118-im-three-layers-push-with-body.md) 修订（2026-11-25）：房间不再端到端加密，题目和答案是明文不再是降级，和全库一致
 
 ## 背景
 
@@ -121,6 +122,8 @@ Agent ◀──工具结果─── 核心 ◀──经隧道 POST 答案──
 - **推送和普通消息一样。** 编辑由 `.m.rule.suppress_edits` 挡住，不再响（ADR-0016）。
 - **令牌。** Bot 的账号本来就是核心建的，核心一直能登录它（`Matrix::login`），不多给权力。
 - **没有房间时如实报错。** 插件没有 Bot，或者主人退出了这个私聊，工具返回 `isError: true`，不发给没人看的房间。
+
+> **被 ADR-0118 修订。** 房间不再加密，全库都是明文，这条降级消失。原文留作历史：
 
 **代价：题目和答案的文字是明文，存在 Matrix 服务器的数据库里，而这个房间其他消息是端到端加密的。** 这是这个方案唯一的降级。范围有限：
 

@@ -61,7 +61,7 @@ fn focus(jumps: &Jumps) -> Option<(String, bool)> {
 #[test]
 fn a_loaded_message_is_focused_and_the_origin_is_kept() {
     let jumps = Jumps::new();
-    jumps.request("$1".into(), "a".into());
+    jumps.request("$1".into(), "a".into(), 0);
     jumps.begin(&entries(&[("a", Some("$0")), ("b", Some("$1"))]));
     assert_eq!(jumps.state(), JumpState::Idle);
     assert_eq!(focus(&jumps), Some(("b".into(), true)));
@@ -75,9 +75,9 @@ fn a_loaded_message_is_focused_and_the_origin_is_kept() {
 fn two_jumps_come_back_in_reverse_order() {
     let jumps = Jumps::new();
     let all = entries(&[("a", Some("$0")), ("b", Some("$1")), ("c", Some("$2"))]);
-    jumps.request("$1".into(), "a".into());
+    jumps.request("$1".into(), "a".into(), 0);
     jumps.begin(&all);
-    jumps.request("$2".into(), "b".into());
+    jumps.request("$2".into(), "b".into(), 0);
     jumps.begin(&all);
     assert_eq!(jumps.back().as_deref(), Some("b"));
     jumps.request_back();
@@ -107,7 +107,7 @@ fn coming_back_with_an_empty_stack_scrolls_to_bottom() {
 #[test]
 fn scrolling_to_bottom_clears_the_stack() {
     let jumps = Jumps::new();
-    jumps.request("$0".into(), "a".into());
+    jumps.request("$0".into(), "a".into(), 0);
     jumps.begin(&entries(&[("a", Some("$0"))]));
     assert_eq!(jumps.back().as_deref(), Some("a"));
     jumps.scrolled(TimelineScroll::Bottom);
@@ -119,7 +119,7 @@ fn scrolling_to_bottom_clears_the_stack() {
 #[test]
 fn deleted_items_leave_the_stack() {
     let jumps = Jumps::new();
-    jumps.request("$1".into(), "a".into());
+    jumps.request("$1".into(), "a".into(), 0);
     jumps.begin(&entries(&[("a", Some("$0")), ("b", Some("$1"))]));
     jumps.progress(&entries(&[("b", Some("$1"))]));
     assert_eq!(jumps.back(), None);
@@ -132,7 +132,7 @@ fn deleted_items_leave_the_stack() {
 #[test]
 fn an_unloaded_message_waits_and_focuses_when_it_arrives() {
     let jumps = Jumps::new();
-    jumps.request("$9".into(), "a".into());
+    jumps.request("$9".into(), "a".into(), 0);
     jumps.begin(&entries(&[("a", Some("$0"))]));
     assert_eq!(jumps.state(), JumpState::Loading);
     assert_eq!(focus(&jumps), None);
@@ -146,11 +146,11 @@ fn an_unloaded_message_waits_and_focuses_when_it_arrives() {
 #[test]
 fn giving_up_marks_the_message_unavailable() {
     let jumps = Jumps::new();
-    jumps.request("$9".into(), "a".into());
+    jumps.request("$9".into(), "a".into(), 0);
     jumps.begin(&entries(&[("a", Some("$0"))]));
     jumps.give_up();
     assert_eq!(jumps.state(), JumpState::Unavailable);
-    jumps.request("$8".into(), "a".into());
+    jumps.request("$8".into(), "a".into(), 0);
     jumps.begin(&entries(&[("a", Some("$0"))]));
     assert_eq!(jumps.state(), JumpState::Loading);
 }
@@ -159,7 +159,7 @@ fn giving_up_marks_the_message_unavailable() {
 #[test]
 fn scrolling_back_to_a_place_clears_the_marker() {
     let jumps = Jumps::new();
-    jumps.request("$9".into(), "a".into());
+    jumps.request("$9".into(), "a".into(), 0);
     jumps.begin(&entries(&[]));
     jumps.give_up();
     jumps.scrolled(TimelineScroll::Away);
@@ -170,11 +170,38 @@ fn scrolling_back_to_a_place_clears_the_marker() {
 #[test]
 fn scrolling_during_a_search_keeps_looking() {
     let jumps = Jumps::new();
-    jumps.request("$9".into(), "a".into());
+    jumps.request("$9".into(), "a".into(), 0);
     jumps.begin(&entries(&[("a", Some("$0"))]));
     jumps.scrolled(TimelineScroll::Away);
     assert_eq!(jumps.state(), JumpState::Loading);
     jumps.progress(&entries(&[("a", Some("$0")), ("z", Some("$9"))]));
     assert_eq!(jumps.state(), JumpState::Idle);
     assert_eq!(focus(&jumps), Some(("z".into(), true)));
+}
+
+/// 行为：同一条再点一下，壳先报新序号，把上一次还在找的停下。
+#[test]
+fn a_new_revision_stops_the_search_in_flight() {
+    let jumps = Jumps::new();
+    jumps.request("$9".into(), "a".into(), 0);
+    jumps.begin(&entries(&[("a", Some("$0"))]));
+    assert_eq!(jumps.state(), JumpState::Loading);
+    jumps.register_revision(1);
+    assert_eq!(jumps.state(), JumpState::Idle);
+    // 旧落点作废：壳不会拿它先滚一下，停下来的那次再翻页也不会突然跳出来。
+    assert_eq!(focus(&jumps), None);
+    jumps.progress(&entries(&[("a", Some("$0")), ("z", Some("$9"))]));
+    assert_eq!(focus(&jumps), None);
+}
+
+/// 行为：没在找的时候报序号只记下来，状态和焦点都不动。
+#[test]
+fn a_revision_without_a_search_only_records_itself() {
+    let jumps = Jumps::new();
+    jumps.request("$1".into(), "a".into(), 0);
+    jumps.begin(&entries(&[("a", Some("$0")), ("b", Some("$1"))]));
+    jumps.register_revision(7);
+    assert_eq!(jumps.revision(), 7);
+    assert_eq!(jumps.state(), JumpState::Idle);
+    assert_eq!(focus(&jumps), Some(("b".into(), true)));
 }

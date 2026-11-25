@@ -76,6 +76,9 @@ final class TimelineModel {
             return false
         }
         self.subscription = subscription
+        let state = subscription.debugStatus()
+        let startLine = "observe start room=\(self.roomId) n=\(self.debugSubscribes) status=\(state)"
+        walkLog.notice("\(startLine, privacy: .public)")
         defer {
             subscription.cancel()
             if self.subscription === subscription { self.subscription = nil }
@@ -91,17 +94,19 @@ final class TimelineModel {
         }
         // 走查：订阅结束的原因（取消还是自己断了），挂在 `ScrollDebug` 里。
         debugEnded = Task.isCancelled ? "cancelled" : "ended"
-        walkLog.notice(
-            "timeline ended cancelled=\(Task.isCancelled, privacy: .public) room=\(self.roomId, privacy: .public)"
-        )
+        // 状态在结束时重取：用开始时的快照会和同一行的 cancelled、上面的 debugEnded 对不上。
+        let endLine = "timeline ended cancelled=\(Task.isCancelled) room=\(self.roomId)"
+            + " status=\(subscription.debugStatus())"
+        walkLog.notice("\(endLine, privacy: .public)")
         if !Task.isCancelled {
             failure = Problem(title: String(localized: .Problem1.problemGenericTitle))
         }
         // 先不弹回列表：页留着才能读到 `roomScroll` 里的原因。
-        return false
+        return !Task.isCancelled
     }
 
     func setScroll(_ scroll: TimelineScroll) {
+        walkLog.notice("report \(String(describing: scroll), privacy: .public)")
         subscription?.setScroll(scroll: scroll)
     }
 

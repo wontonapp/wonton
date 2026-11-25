@@ -197,8 +197,12 @@ impl PluginManager {
     ) -> Result<PreparedInstall, InstallError> {
         let manifest = &package.manifest;
         crate::plugin::install_entry::check_runtime(manifest, langs)?;
+        // 摘要对不上就是变过了。计划只在请求带了才比：空计划是老调用方，和确认门槛一样只按摘要；
+        // 带了计划的仍严格要求原样带回。`enforce_plan` 只由使用方的能力声明决定，批次里的提供方沿用使用方的值。
         if package.digest() != request.digest
-            || (enforce_plan && self.dependency_plan(&package)? != request.plan)
+            || (enforce_plan
+                && !request.plan.is_empty()
+                && self.dependency_plan(&package)? != request.plan)
         {
             return Err(InstallError::Changed(l10n::text(
                 langs,

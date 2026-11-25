@@ -88,9 +88,10 @@ import kotlinx.coroutines.launch
  * 文件上传只认房间，旁聊里不给选文件。
  *
  * [commands] 是各 Bot 的斜杠命令（ADR-0054）：输入“/”时按名字前缀在输入框上方列出来，点一条就把 [RoomCommand.text]
- * 原样发出去。[dropCommand] 非空时发的是它（草稿整句就是一条完整命令，正文里的空行不算），否则发草稿。
+ * 原样发出去，发出去后草稿一个字不动、只收回复条（ADR-0109）。[dropCommand] 非空时发的是它（草稿整句就是一条完整命令，正文里的空行不算），否则发草稿。
  */
 @OptIn(ExperimentalFoundationApi::class)
+@Suppress("CyclomaticComplexMethod")
 @Composable
 fun Composer(
     target: TimelineTarget,
@@ -106,6 +107,7 @@ fun Composer(
     menuOpen: Boolean,
     onMenuChange: (Boolean) -> Unit,
     onReplyCancel: () -> Unit,
+    onQuoteJump: (String) -> Unit,
     onEditCancel: () -> Unit,
     onRestoreDraft: (String, ReplyQuote?) -> Unit,
     onTyping: (Boolean) -> Unit,
@@ -153,14 +155,31 @@ fun Composer(
     val send = rememberComposerSend(target, edit, reply, viaTray, core, onTyping, onSent, onReject)
     // 退出编辑态后把核心恢复的草稿读回来（编辑途中又打了字时，核心给的就是新打的）。
     RestoreDraftOnEditEnd(edit, target, core, onRestoreDraft)
+    // 点完命令把焦点要回输入框：菜单项自己在点的时候会抢焦点，等这一轮重组收完（菜单收掉）再要，
+    // 键盘才不会跟着菜单一起收，主人能接着打在草稿里的话。
+    var refocus by remember { mutableStateOf(0) }
+    LaunchedEffect(refocus) { if (refocus > 0) focusRequester.requestFocus() }
+    // 刚点出去的那句还原本样留在输入框里：列表先别按“/”自己弹回来，动一个字才恢复（和 iOS 的 sentSlash 一样）。
+    var sentSlash by remember { mutableStateOf<String?>(null) }
+    // 草稿还是刚发出去的那一句时先压住，动了字才恢复。
+    if (sentSlash != null && sentSlash != draft) sentSlash = null
+    val commandSent: () -> Unit = {
+        onCommandSent()
+        sentSlash = draft
+        onMenuChange(false)
+        refocus++
+    }
     val agentStop by produceState<RoomAgentStop>(RoomAgentStop.Idle, core, target) {
         core.agentStopUpdates(target).collect { value = it }
     }
     // 命令列表由“/”或菜单键打开，菜单键本身不动草稿；返回键和翻时间线先收列表（ADR-0109 第 7 节）。
     val query = commandQuery(draft, commands)
-    LaunchedEffect(draft) { onMenuChange(draft.startsWith("/")) }
-    // 草稿没以“/”开头时菜单键给整张表；以“/”开头时只给匹配的那几条。
-    val shown = if (draft.startsWith("/")) query else commands
+    val auto = if (sentSlash != null) emptyList() else query
+    LaunchedEffect(draft) {
+        onMenuChange(draft.startsWith("/") && auto.isNotEmpty())
+    }
+    // 草稿没以“/”开头时菜单键给整张表；以“/”开头时只给匹配的那几条；刚发出去的那句先压住。
+    val shown = if (draft.startsWith("/")) auto else commands
     val listShown = menuOpen && shown.isNotEmpty()
     BackHandler(enabled = listShown) { onMenuChange(false) }
     ComposerStack(
@@ -176,7 +195,8 @@ fun Composer(
         commands = shown,
         commandsOmitted = commandsOmitted,
         target = target,
-        onCommandSent = onCommandSent,
+        onCommandSent = commandSent,
+        onQuoteJump = onQuoteJump,
         onReject = onReject,
         listShown = listShown,
         onPicked = { onMenuChange(false) },
@@ -198,7 +218,8 @@ fun Composer(
         onTyping = onTyping,
         dropCommand = dropCommand,
         onAction = onAction,
-        onMenu = { onMenuChange(!menuOpen) },
+        // 点菜单键时放开刚发出去那句的压制，列表按现在的草稿来。
+        onMenu = { sentSlash = null; onMenuChange(!menuOpen) },
     )
     attach.chooser()
 }
@@ -219,6 +240,7 @@ private fun ComposerStack(
     edit: ComposerEdit?,
     core: ClientCore,
     onReplyCancel: () -> Unit,
+    onQuoteJump: (String) -> Unit,
     onEditCancel: () -> Unit,
     attachments: List<ComposerAttachment>,
     onAction: (Action) -> Unit,
@@ -235,7 +257,7 @@ private fun ComposerStack(
     if (edit != null) {
         ComposerEditBar(edit, onEditCancel)
     } else if (reply != null) {
-        ComposerReply(reply, core, onReplyCancel)
+        ComposerReply(reply, core, onReplyCancel, onQuoteJump)
     }
     ComposerTray(attachments, roomId, core, onAction)
     if (listShown) {

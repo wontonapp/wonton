@@ -41,14 +41,15 @@ ADR-0004 否掉公网隧道的理由（流量都经过我们的服务器，带�
 | 组件 | 做什么 | 能拿到什么 | 网络 |
 | --- | --- | --- | --- |
 | 连接器（frpc，容器） | 向外连中继，把连接交给入口容器 | frp 登录令牌 | `wonton-relay`（只出网）、`wonton-edge` |
-| 入口容器（HAProxy） | 终止 TLS、读 PROXY v2、按来源限速和封禁、转普通 HTTP 给核心 | 只有证书目录（只读） | `wonton-edge`、`wonton-lanfwd`、`wonton-clients` |
+| 入口容器（HAProxy） | 终止 TLS、读 PROXY v2、按来源限速和封禁、转普通 HTTP 给核心；配对的联邦前端把客户端 API 直给 Tuwunel，联邦、key 和发现文件仍给核心 | 只有证书目录（只读） | `wonton-edge`、`wonton-lanfwd`、`wonton-clients` |
 | 局域网转发（HAProxy，TCP 模式） | 发布 8483，按来源过滤，带 PROXY v2 把连接转给入口容器，不解 TLS | 什么密钥都没有 | `wonton-lanpub`、`wonton-lanfwd` |
 | 证书续期（lego，一次性容器） | 申请和续期证书 | acme-dns 凭据、ACME 账号钥匙、核心给的 CSR，拿不到证书私钥 | 只出网 |
 | 核心 | 生成上面这些的配置和证书钥匙、验证专用密码、按名字找插件；给入口容器开专用监听端口，监听地址由部署注入 `WONTON_ENTRY_LISTEN` | 全部（本来就有 Docker socket） | `core`、`wonton-clients`、各插件网络 |
+| Tuwunel | Matrix 服务器：客户端 API、联邦；三个发现文件之外的客户端 API 不再经核心，联邦和 key 由核心转发过来 | 自己的数据库和用户的签名密钥 | `core`、`wonton-clients`（配对前端按 `tuwunel.wonton.internal` 直连） |
 
 **网络规则，不是可选项：**
 
-- **面向公网的 TLS 和协议解析不进核心。** 核心挂着 Docker socket，攻破它就是宿主 root（ADR-0011）。入口容器不挂 Docker socket，以非 root 运行，去掉全部能力，根文件系统只读（实测，见[验证结果](0021-verification.md)）。它被攻破时，泄露的是证书私钥和经过它的第三方 App 流量，够得着的只有核心的专用监听端口（实测连不上局域网转发和 frpc 的管理端口）。
+- **面向公网的 TLS 和协议解析不进核心。** 核心挂着 Docker socket，攻破它就是宿主 root（ADR-0011）。入口容器不挂 Docker socket，以非 root 运行，去掉全部能力，根文件系统只读（实测，见[验证结果](0021-verification.md)）。它被攻破时，泄露的是证书私钥和经过它的第三方 App 流量；够得着的是核心的专用监听端口（只放行入口用途的路由：插件入口名、联邦、key、发现文件、好友请求）和 `clients` 上 Tuwunel 的整个 HTTP 面（客户端 API、联邦、要管理员令牌的管理接口，ADR-0050），仍然连不上局域网转发和 frpc 的管理端口（实测）。核心的 HTTP 解析和 Tuwunel 的解析都在攻击面里。
 - **连接器绝不进 `core` 网络。** 那里有 Hydra 的 4445 管理端口和 Tuwunel。`wonton-edge` 是内部网络，只有连接器和入口容器；连接器只在 `wonton-relay` 上能出网。
 - **入口容器连不上宿主。** `wonton-edge`、`wonton-lanfwd` 和 `wonton-clients` 都是内部网络，并设 `gateway_mode_ipv4` 和 `gateway_mode_ipv6` 为 `isolated`：宿主一侧没有地址，容器的路由表里只有这几个子网（实测）。关掉地址伪装的网络里，容器连得上宿主自己的地址（ADR-0019 实测），连得上 sshd、`${WONTON_PORT}`、隧道端口和 `network.lan` 插件的端口，所以入口容器不进 `wonton-lanpub`，由局域网转发发布 8483。这样解析公网 TLS 和 HTTP 的只有连不上宿主的容器。局域网转发、连接器和 lego 仍然连得上宿主，代价见“代价与风险”。
 - **公网和局域网分两条路进入口容器。** 被攻破的 frpc 如果够得着局域网前端，就能带着任意来源发 PROXY v2，拿到 `X-Wonton-Entry: lan`，绕过公网开关和 `public`，按来源封禁也失效。所以局域网转发到入口容器单独用 `wonton-lanfwd`，连接器不在上面；每个前端绑一个接口，不只靠对端 IP 区分（实测连接器连不到）。
@@ -627,7 +628,7 @@ M1 做局域网直连和主人自己的域名（在 App 里配，ADR-0089），�
 - **控制连接和 HTTPS 共用 443 时第一个字节不标准**，见“中继”。
 - **frp 还在 0.x，又是公网服务。** 一个 frps 崩溃影响所有家（v0.71.0 修过[客户端能触发的服务端崩溃](https://github.com/fatedier/frp/releases/tag/v0.71.0)）。限制功能面，及时升级，frpc 的版本跟核心发布走。
 - **宿主的 Docker 配了代理时**（`~/.docker/config.json`，国内很常见），环境变量注入容器，frpc 经代理连 frps，登录失败，只报 `session shutdown`（实测）。连接器要显式清掉这些变量。
-- **入口容器被攻破时**证书私钥和经过的明文（包括专用密码）都泄露。它连不上宿主，但核心的 HTTP 解析还在攻击面里。
+- **入口容器被攻破时**证书私钥和经过的明文（包括专用密码）都泄露。它连不上宿主，但核心的 HTTP 解析还在攻击面里，还能直连 `clients` 上 Tuwunel 的整个 HTTP 面（ADR-0050）。
 - **局域网转发、连接器和 lego 连得上宿主。** 局域网转发在关掉地址伪装的网络里（实测），连接器和 lego 在普通桥接上，都连得上宿主的 sshd、`${WONTON_PORT}`、隧道端口和 `network.lan` 插件的端口，受宿主防火墙约束。核心不改宿主的防火墙（ADR-0019），所以留着这个缺口。三者都不解析公网来的 TLS 和 HTTP：局域网转发只收局域网来的连接，只转字节；连接器转公网的字节，还和中继讲 frp 协议，被攻破就能把宿主的端口经中继暴露出去；lego 只出网。路由器转发模式下，接公网连接的 TCP 转发容器也连得上宿主。
 - **重建局域网转发会断开局域网上的第三方连接。** 地址变化时发生，很少。
 - **第三方 App 看到错误时，我们帮不了。** 它们只会说“连不上”或“证书错误”。所以 Wonton App 要把入口的状态写清楚。

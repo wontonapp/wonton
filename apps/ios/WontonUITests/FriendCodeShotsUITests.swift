@@ -56,7 +56,7 @@ final class FriendCodeShotsUITests: XCTestCase {
         } else {
             app.launchEnvironment.removeValue(forKey: "WONTON_QR_FAIL")
         }
-        app.launch()
+        UITestBackend.launch(app)
         UITestBackend.settleKeyHandoff(app)
     }
 

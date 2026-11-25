@@ -123,6 +123,7 @@ pub struct InstallRequest {
     /// 预览给的 `digest`；对不上时得到 409 `changed`。
     pub digest: String,
     /// 预览给的 `plan`，不解析、不重建。所有层的摘要、计划、输入与授权都核对后才能产生安装副作用。
+    /// 可空：老的调用方不带计划，执行时只按摘要，与确认门槛一致。
     #[serde(default)]
     pub plan: String,
     /// 主人选择的范围；省略时按全局（[`PluginScope::All`]）安装。

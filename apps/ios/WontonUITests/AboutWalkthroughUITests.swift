@@ -11,7 +11,7 @@ final class AboutWalkthroughUITests: XCTestCase {
         app = XCUIApplication()
         app.launchArguments += ["-AppleLanguages", "(en)", "-AppleLocale", "en_US"]
         try UITestBackend.passPairingCode(to: app)
-        app.launch()
+        UITestBackend.launch(app)
     }
 
     private func shot(_ name: String) {
@@ -103,7 +103,7 @@ final class AboutWalkthroughUITests: XCTestCase {
     func testLicensesMissing() throws {
         app.terminate()
         app.launchEnvironment["WONTON_LICENSES_MISSING"] = "1"
-        app.launch()
+        UITestBackend.launch(app)
         openAbout()
         tap("Open source licenses", "开源许可")
         XCTAssertNotNil(button("Retry", "重试"), "缺清单时没给重试\n\(app.debugDescription)")

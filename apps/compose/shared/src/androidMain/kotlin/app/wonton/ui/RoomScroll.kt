@@ -18,13 +18,14 @@ import androidx.compose.ui.Modifier
 import app.wonton.protocol.Action
 import app.wonton.protocol.BackPagination
 import app.wonton.protocol.TimelineAction
-import app.wonton.protocol.TimelineFocus
 import app.wonton.protocol.TimelineItem
 import app.wonton.protocol.TimelineScroll
 import app.wonton.protocol.TimelineTarget
 import app.wonton.protocol.TimelineViewport
 import app.wonton.ui.design.ScrollToBottomAction
 import kotlinx.coroutines.flow.distinctUntilChanged
+import kotlinx.coroutines.flow.filterNotNull
+import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.launch
 
 /// 进房间停在上次看的位置（ADR-0071）：落点行先贴到底边，量出它的高度，再把它顶到视野顶部，它后面的新消息
@@ -75,33 +76,62 @@ internal fun ScrollEffects(
     // 进房间的落点摆好之前：不跟随、不报方向、不标已读（ADR-0071）。时间线清空重建后闸门重开，按新落点重摆。
     val placed = remember(timeline.clears) { mutableStateOf(false) }
     val following = remember(target) { mutableStateOf(true) }
-    JumpToFocus(listState, timeline.focus, newestFirst, target, onAction) { following.value = false }
+    JumpToFocus(listState, timeline, newestFirst, target, onAction, onLanded = { timeline.jumpQuote = null }) {
+        following.value = false
+    }
     PlaceAtAnchor(listState, timeline, newestFirst, target, placed, following, onAction)
     ReportAtBottom(listState, timeline, target, covered, placed, following, onAction)
 }
 
-/** 跳转落到的位置：滚到中间，停在不跟随的位置，让“返回”按钮出来。 */
+/**
+ * 跳转落到的位置：滚到中间，停在不跟随的位置，让“返回”按钮出来。
+ * 只按核心每次跳转加一的序号重启：同一条原消息连点两下也要重新滚一次。
+ * 跳转途中来的新批次会改写焦点，拿焦点当键就会被取消在半路；所以这里只等这一跳的落点自己出现
+ * （翻页找到以后才来），中途的批次不再打断。被新一跳取消时不动 `jumpQuote`，它归新那一跳。
+ * 先画一帧再动手，装转圈的那一帧里落在旧位置上的点击，滚到的还是这一次的落点。
+ */
 @Composable
 private fun JumpToFocus(
     listState: LazyListState,
-    focus: TimelineFocus?,
+    timeline: TimelineState,
     newestFirst: List<TimelineItem>,
     target: TimelineTarget,
     onAction: (Action) -> Unit,
+    onLanded: () -> Unit,
     stopFollowing: () -> Unit,
 ) {
-    LaunchedEffect(focus) {
-        val id = focus?.itemId ?: return@LaunchedEffect
-        val index = newestFirst.indexOfFirst { it.id == id }
-        if (index < 0) return@LaunchedEffect
-        stopFollowing()
-        listState.scrollToItem(index)
-        withFrameNanos { }
-        val item = listState.layoutInfo.visibleItemsInfo.firstOrNull { it.index == index } ?: return@LaunchedEffect
-        listState.scrollToItem(index, (listState.layoutInfo.viewportSize.height - item.size) / 2)
-        if (!listState.isAtBottom()) onAction(scrollAction(target, TimelineScroll.AWAY))
+    LaunchedEffect(timeline.focusRevision) {
+        val revision = timeline.focusRevision
+        val id = snapshotFlow { timeline.focus?.itemId }.filterNotNull().first()
+        try {
+            stopFollowing()
+            withFrameNanos { }
+            val index = newestFirst.indexOfFirst { it.id == id }
+            if (index >= 0) {
+                listState.scrollToItem(index)
+                // 条目刚变可见时可能还没量出高度，等它进布局再居中；超过几帧就别再等。
+                var item = listState.layoutInfo.visibleItemsInfo.firstOrNull { it.index == index }
+                var waited = 0
+                while (item == null && waited < CENTER_FRAMES) {
+                    withFrameNanos { }
+                    item = listState.layoutInfo.visibleItemsInfo.firstOrNull { it.index == index }
+                    waited++
+                }
+                if (item != null) {
+                    // 反序列表里正偏移是往上滚过条目：长的往中间挪要正数，短的往回补要负数。
+                    listState.scrollToItem(index, (item.size - listState.layoutInfo.viewportSize.height) / 2)
+                    if (!listState.isAtBottom()) onAction(scrollAction(target, TimelineScroll.AWAY))
+                }
+            }
+        } finally {
+            // 只有还在这一次跳转里才收：新一跳已经把 `jumpQuote` 换成它自己的了。
+            if (timeline.focusRevision == revision) onLanded()
+        }
     }
 }
+
+/** 落点居中前最多等几帧，等条目量出高度。 */
+private const val CENTER_FRAMES = 5
 
 /** 时间线变了：头一次摆落点，之后跟着新消息到底（ADR-0071）。 */
 @Composable
@@ -187,7 +217,10 @@ internal fun ScrollToBottomButton(
             count = (timeline.viewport as? TimelineViewport.Away)?.newMessages?.toInt() ?: 0,
             onClick = {
                 // 跳转过去还没看回去过：先退回跳走的那条，退到没得退了才回最新的一条。
+                // 退回也是一次跳转，先报序号，落点效果才认得出这一次（它会等焦点）。
                 if (timeline.backTo != null) {
+                    timeline.jumpSeq++
+                    onAction(Action.Timeline(TimelineAction.RegisterFocusRevision(target, timeline.jumpSeq.toUInt())))
                     onAction(Action.Timeline(TimelineAction.JumpBack(target)))
                 } else {
                     scope.launch {

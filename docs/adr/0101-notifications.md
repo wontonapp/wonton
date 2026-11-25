@@ -1,10 +1,12 @@
 # ADR-0101 通知：回复与按钮、解密正文、未读角标、实时活动
 
-- 状态：已接受（2026-11-13）。方向由主人定（11-13：先做 Android 四项，iOS 的推送链路在 Apple 付费开发者账号就绪后做，
-  账号就绪前 iOS 只有"App 在前台时"和本地通知；锁屏默认显示消息内容，设置里按类别关；只有不带表单的确认卡片才在通知上
+- 状态：已接受（2026-11-13）。方向由主人定（11-13：先做 Android 四项，iOS 的推送链路在 Apple 付费开发者账号就绪后做；
+  账号就绪前的 iOS 部分——登记、加密推送、通知扩展解密、App 锁隐藏——已在模拟器上实现并验证，只差真机经 APNs。
+  锁屏默认显示消息内容，设置里按类别关；只有不带表单的确认卡片才在通知上
   直接给"允许/拒绝"，带表单的点通知进 App；灵动岛和实时活动先给"等主人确认"的长任务，范围由
   [ADR-0117](0117-bot-task-live-progress.md) 扩充到长任务的进度，扩充中）。细化
   [ADR-0003](0003-matrix-and-encrypted-push.md)，不推翻它。
+- 由 [ADR-0118](0118-im-three-layers-push-with-body.md) 修订（2026-11-25）：房间不再端到端加密，推送明文里直接有正文，第 2 节的通知扩展只解 CryptoKit 那一层、不起核心；锁屏内容的开关照旧。
 - 关联：[ADR-0003](0003-matrix-and-encrypted-push.md)（加密推送、推送代理、event_id_only）、
   [ADR-0016](0016-mcp-bus-and-confirmations.md)（确认卡片、卡片推送）、[ADR-0082](0082-agent-run-status.md)（Agent 运行状态）、
   [ADR-0093](0093-side-chats.md)（旁聊，推送带 `thread_root`）、[ADR-0097](0097-share-in.md)（iOS App Group 数据目录，PR #402）、
@@ -40,7 +42,9 @@
 - **iOS 的共享容器随 PR #402 落地**：数据目录搬进 App Group（[ADR-0097](0097-share-in.md)，`apps/ios/Shared/AppGroup.swift`）。
   本 ADR 排在它后面，复用 `AppGroup.dataDirectory()`，不再自己定路径。
 
-已定的两条地基（沿用，不改）：
+已定的两条地基（**都被 [ADR-0118](0118-im-three-layers-push-with-body.md) 修订**，下面按改前的样子留档）：
+
+> **被 ADR-0118 修订（2026-11-25）。** 不加密房间的推送带正文，手机在本机解开就直接显示；只有加密房间还是“没有正文、看不见的唤醒信号”。
 
 - 推送里**没有正文**，只有房间、事件、发送者（[ADR-0003](0003-matrix-and-encrypted-push.md)）。解密只在本机做，中继只看到密文。
 - 推送是**唤醒信号**，内容由核心在本机取回并解密（`resolve_push`，`crates/wonton-client/src/client/push_route.rs:42`，注释
@@ -94,8 +98,12 @@ Android 今天就是对的：推送在服务进程里被核心解密（`WontonPu
 `PushContent::Unavailable` 带原因，壳写"取不到内容"（`PushNotifications.kt:114-117`，`R.string.push_unavailable`）。
 要补的只是把原因按类别分细。
 
-iOS 新建 **Notification Service Extension**，在其中解 Megolm 密文。这是 ADR-0003 待验证项
-（"iOS 通知扩展的内存限制下解密的可行性（优先用系统自带的加密能力，不在扩展里跑完整核心）"，ADR-0003:46）的答案，不推翻它：
+iOS 新建 **Notification Service Extension**，用 CryptoKit 解开 Web Push 那层（P-256 + AES-GCM），把推送里的正文写进通知。
+
+> **被 ADR-0118 修订。** 房间不再加密，推送明文里就是正文（ADR-0118 第 2 节），下面的 Megolm 解密、核心库、跨进程存储锁和隧道所有权都不再需要。
+> 这同时回答了 ADR-0003 那条“iOS 通知扩展内存限制下解密的可行性”的待验证项：要解的东西只剩系统自带能力。
+
+原文（扩展里解 Megolm，留作历史和对遗留加密房间的参考）：
 
 - Web Push（RFC 8291）那层确实不用核心，系统 `CryptoKit` 的 P-256 + AES-GCM 就能解，和 ADR-0003 写的一致；
 - 但**正文是 Megolm**，系统没有对应能力，解密只能在 Rust 核心一侧做。所以"不跑完整核心"落地成：NSE 链接同一个核心库，
@@ -134,6 +142,7 @@ NSE 和分享扩展不同：分享扩展是前台、可等；NSE 只有 30 秒�
 
 - **核心算，壳只写系统角标**。核心加 `unread_total()`（所有房间 `unread_count` 之和，邀请按 1 计）和一个订阅；
   `RoomRow.unread_count` 还是唯一事实源，不新造计数。
+  待处理面板的条目也算进这个数，见 [ADR-0119](0119-pending-inbox.md)（2026-11-25 提议）。
 - 清零只发生在**真的读过**：房间被打开、回执发出去（`chat_room.rs:535-547`），角标跟着收；App 只是被打开不归零。总数为 0 时角标写 0。
 - iOS：NSE 里写 `content.badge`（Element X 同期做法是每条 +1，但我们是核心给的绝对数，避免多设备各自加法漂移），
   App 回前台和清零时用 `setBadgeCount`。
@@ -201,9 +210,10 @@ NSE 和分享扩展不同：分享扩展是前台、可等；NSE 只有 30 秒�
 
 ## 没选的做法
 
-- **通知里带正文，中继直接给（像商业 IM）**：改 ADR-0003 的结论，端到端加密的房间就只能走明文预览，且中继能看到全部内容。
-  没选，但可以作为以后"按房间开关预览"的扩展。
-- **回复/按钮由 NSE 直接发 Matrix 请求**：NSE 里反正要起核心，再写一遍签名、重试、E2EE 加密是第二套事实源。没选。
+- **通知里带正文，中继直接给（像商业 IM）**：采纳（[ADR-0118](0118-im-three-layers-push-with-body.md)）。房间不再端到端加密，推送带正文，中继和推送服务仍只见密文。
+  原否决理由（留作历史）：改 ADR-0003 的结论，端到端加密的房间就只能走明文预览，且中继能看到全部内容。
+  当时的“留作以后按房间开关预览”没做，改为全库不加密。
+- **回复/按钮由 NSE 直接发 Matrix 请求**：回复要在 App 进程里走核心的发送队列和隧道，再写一遍签名、重试是第二套事实源。没选。
   例外是确认卡片：它根本不经 Matrix（卡片只在核心里），只能打核心接口。
 - **iOS 点按钮改成"打开 App 再答"**（`UNNotificationActionOptions.foreground`）：动作可靠，但会打断主人、跳走当前界面，
   和"在通知里答"的诉求相反。留着做兜底（`foreground` 只在冷启动起不来时用）。

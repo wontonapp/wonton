@@ -170,6 +170,9 @@ pub(crate) struct ChatLink {
     draft_writes: mpsc::UnboundedSender<DraftWrite>,
     /// 链接预览的按网址缓存和点掉的记录（ADR-0065），发送框和时间线共用。
     previews: previews::Previews,
+    /// 测试用：`stop_typing` 收到的目标，确认发送前真的叫过。
+    #[cfg(all(test, feature = "ui-fake"))]
+    typing_stops: Mutex<Vec<TimelineKey>>,
     /// App 在后台：保持连接下同步到的该通知的消息收集进 `background_notifications`。
     background: AtomicBool,
     verification: Mutex<Option<verification::Control>>,
@@ -358,6 +361,8 @@ impl ChatLink {
             lock_screen,
             draft_writes,
             previews: previews::Previews::new(),
+            #[cfg(all(test, feature = "ui-fake"))]
+            typing_stops: Mutex::default(),
             background: AtomicBool::new(false),
             verification: Mutex::new(None),
             handoff_armed: AtomicBool::new(false),
@@ -556,7 +561,13 @@ impl ChatLink {
                 from_item_id,
             } => {
                 let subscription = self.subscription(&TimelineKey::parse(&target)?)?;
-                subscription.jump_to(&event_id, &from_item_id);
+                let revision = subscription.jumps_revision();
+                subscription.jump_to(&event_id, &from_item_id, revision);
+                Ok(())
+            }
+            TimelineAction::RegisterFocusRevision { target, revision } => {
+                self.subscription(&TimelineKey::parse(&target)?)?
+                    .register_focus_revision(revision);
                 Ok(())
             }
             TimelineAction::JumpBack { target } => {
@@ -698,6 +709,12 @@ impl ChatLink {
             .get(key)
             .and_then(|open| open.subscription.upgrade())
             .ok_or_else(|| target::not_subscribed(key))
+    }
+
+    /// 测试用：`stop_typing` 收到的目标。
+    #[cfg(all(test, feature = "ui-fake"))]
+    pub(super) fn typing_stops_for_test(&self) -> Vec<TimelineKey> {
+        lock(&self.typing_stops).clone()
     }
 
     /// 凭句柄下载媒体原文件（加密附件在本机解密）。

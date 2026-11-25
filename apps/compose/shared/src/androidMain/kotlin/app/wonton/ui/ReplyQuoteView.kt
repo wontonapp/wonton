@@ -15,6 +15,8 @@ import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.shape.RoundedCornerShape
+import androidx.compose.material3.CircularProgressIndicator
+import androidx.compose.material3.Icon
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.getValue
@@ -22,6 +24,7 @@ import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.layout.ContentScale
+import androidx.compose.ui.platform.testTag
 import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.semantics.Role
 import androidx.compose.ui.text.font.FontStyle
@@ -35,6 +38,7 @@ import app.wonton.ui.design.WontonIconButton
 import app.wonton.ui.design.WontonTheme
 import app.wonton.ui.design.toColor
 import app.wonton.ui.icons.Close
+import app.wonton.ui.icons.Reply
 import app.wonton.ui.icons.WontonIcon
 
 /** 引用的是哪条消息：回复状态、草稿都靠它。 */
@@ -47,7 +51,8 @@ val ReplyQuote.eventId: String
 
 /**
  * 消息上方引用的原消息（ADR-0073 第 2 节）：按类别画，不自己摘要。`onTint` 是自己的气泡里的前景色，`null` 用正文的墨色。
- * `onClick` 拿到引用那条的事件 ID，点了跳过去（ADR-0109）。
+ * `onClick` 拿到引用那条的事件 ID，点了跳过去（ADR-0109）；原消息还没取到时也照样能点，只是跳转本身不能再叠加。
+ * `loading` 是正在跳到这条引用的原消息；`composer` 是输入框上方那条回复状态，多一个回跳箭头、摘要只占一行。
  */
 @Composable
 fun QuotedMessageRow(
@@ -55,19 +60,30 @@ fun QuotedMessageRow(
     core: ClientCore,
     modifier: Modifier = Modifier,
     onTint: Color? = null,
+    loading: Boolean = false,
+    composer: Boolean = false,
     onClick: (String) -> Unit = {},
 ) {
     val colors = WontonTheme.colors
     val name = onTint ?: colors.textPrimary.toColor()
+    val lines = if (composer) 1 else 2
     val secondary = (onTint ?: colors.textSecondary.toColor()).copy(alpha = WontonTheme.ratio.secondaryContent)
     Row(
         modifier.fillMaxWidth().height(IntrinsicSize.Min)
-            .clickable(enabled = quote is ReplyQuote.Ready, role = Role.Button) {
-                (quote as? ReplyQuote.Ready)?.let { onClick(it.message.eventId) }
-            },
+            .clickable(enabled = !loading, role = Role.Button) { onClick(quote.eventId) },
         horizontalArrangement = Arrangement.spacedBy(WontonTheme.spacing.s8),
+        verticalAlignment = Alignment.CenterVertically,
     ) {
         Box(Modifier.width(WontonTheme.size.quoteBar).fillMaxHeight().background(secondary, RoundedCornerShape(1.dp)))
+        if (composer) {
+            Icon(
+                WontonIcon.Reply,
+                // 整条都可点，箭头只是提示这里能跳回去。
+                contentDescription = null,
+                tint = secondary,
+                modifier = Modifier.size(WontonTheme.size.iconSmall),
+            )
+        }
         Column(Modifier.weight(1f), verticalArrangement = Arrangement.spacedBy(WontonTheme.spacing.s4)) {
             when (quote) {
                 is ReplyQuote.Ready -> {
@@ -78,7 +94,7 @@ fun QuotedMessageRow(
                         maxLines = 1,
                         overflow = TextOverflow.Ellipsis,
                     )
-                    QuotedContentLine(quote.message.content, core, secondary)
+                    QuotedContentLine(quote.message.content, core, secondary, lines)
                 }
                 // 核心正在向服务器取原消息，取到之前画一条占位。
                 is ReplyQuote.Loading -> Box(
@@ -96,17 +112,24 @@ fun QuotedMessageRow(
                 )
             }
         }
+        if (loading) {
+            CircularProgressIndicator(
+                Modifier.size(WontonTheme.size.iconSmall).testTag("quote-loading"),
+                color = secondary,
+                strokeWidth = 1.5.dp,
+            )
+        }
     }
 }
 
 @Composable
-private fun QuotedContentLine(content: QuotedContent, core: ClientCore, secondary: Color) {
+private fun QuotedContentLine(content: QuotedContent, core: ClientCore, secondary: Color, lines: Int) {
     when (content) {
         is QuotedContent.Text -> Text(
             content.text,
             style = WontonTheme.typography.supporting,
             color = secondary,
-            maxLines = 2,
+            maxLines = lines,
             overflow = TextOverflow.Ellipsis,
         )
         is QuotedContent.Image -> {
@@ -160,9 +183,9 @@ private fun Thumbnail(thumbnail: MediaHandle, core: ClientCore, secondary: Color
     } ?: Box(Modifier.size(THUMBNAIL).background(secondary, PLACEHOLDER_SHAPE))
 }
 
-/** 输入框上方的回复状态：引用原消息，带叉可以取消。发送时把事件 ID 交回核心。 */
+/** 输入框上方的回复状态：点引用跳回原消息，带叉可以取消。发送时把事件 ID 交回核心。 */
 @Composable
-fun ComposerReply(quote: ReplyQuote, core: ClientCore, onCancel: () -> Unit) {
+fun ComposerReply(quote: ReplyQuote, core: ClientCore, onCancel: () -> Unit, onJump: (String) -> Unit) {
     Row(
         Modifier.fillMaxWidth().padding(
             start = WontonTheme.spacing.s16,
@@ -171,7 +194,13 @@ fun ComposerReply(quote: ReplyQuote, core: ClientCore, onCancel: () -> Unit) {
         ),
         verticalAlignment = Alignment.CenterVertically,
     ) {
-        QuotedMessageRow(quote, core, Modifier.weight(1f))
+        QuotedMessageRow(
+            quote,
+            core,
+            Modifier.weight(1f).testTag("composer-quote"),
+            composer = true,
+            onClick = onJump,
+        )
         WontonIconButton(WontonIcon.Close, stringResource(R.string.message_reply_cancel), onCancel)
     }
 }

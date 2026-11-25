@@ -9,7 +9,7 @@ use rusqlite::Row;
 
 use super::MediaStoreError;
 
-pub(super) const CURRENT_VERSION: i64 = 2;
+pub(super) const CURRENT_VERSION: i64 = 4;
 
 /// 第 1 版：最初的五张表。逐项条目单独成表，偏移一次只改一行。
 pub(crate) const SCHEMA_V1: &str = "
@@ -89,7 +89,30 @@ DROP TABLE quota;
 ALTER TABLE quota_v2 RENAME TO quota;
 ";
 
-pub(super) const MIGRATIONS: &[(i64, &str)] = &[(1, SCHEMA_V1), (2, MIGRATE_V2)];
+/// 第 3 版：任务的下一次自动重试时间（M8）；等待网络的任务按它找。
+pub(super) const MIGRATE_V3: &str = "
+ALTER TABLE tasks ADD COLUMN next_attempt_at INTEGER;
+CREATE INDEX IF NOT EXISTS tasks_due ON tasks(state_tag, next_attempt_at);
+";
+
+/// 第 4 版：会话记停因，写每次加版本号；一人同时只能有一条活动会话（停因为空的）。
+/// 建索引前把同一个人多出来的活动会话按旧到新置成接管终态，留 rowid 最大的一条。
+pub(super) const MIGRATE_V4: &str = "
+ALTER TABLE sessions ADD COLUMN stop_reason TEXT;
+ALTER TABLE sessions ADD COLUMN version INTEGER NOT NULL DEFAULT 0;
+UPDATE sessions
+SET state = '\"cancelled\"', state_tag = 'cancelled', stop_reason = 'taken_over'
+WHERE stop_reason IS NULL
+  AND rowid NOT IN (SELECT max(rowid) FROM sessions WHERE stop_reason IS NULL GROUP BY person);
+CREATE UNIQUE INDEX sessions_one_active ON sessions(person) WHERE stop_reason IS NULL;
+";
+
+pub(super) const MIGRATIONS: &[(i64, &str)] = &[
+    (1, SCHEMA_V1),
+    (2, MIGRATE_V2),
+    (3, MIGRATE_V3),
+    (4, MIGRATE_V4),
+];
 
 /// 把库补到 [`CURRENT_VERSION`]；比核心新的库拒绝打开，免得更新的核心写坏后被旧版改。
 pub(super) fn migrate(conn: &rusqlite::Connection, path: &Path) -> Result<(), MediaStoreError> {
@@ -128,6 +151,7 @@ pub(super) struct TaskRow {
     pub retry_of: Option<String>,
     pub created_at: i64,
     pub partial_failures: String,
+    pub next_attempt_at: Option<i64>,
 }
 
 pub(super) struct SessionRow {
@@ -138,6 +162,7 @@ pub(super) struct SessionRow {
     pub state: String,
     pub position_ms: i64,
     pub plan: Option<String>,
+    pub stop_reason: Option<String>,
 }
 
 pub(super) struct QueueRow {
@@ -161,6 +186,7 @@ pub(super) fn row_to_task(row: &Row<'_>) -> rusqlite::Result<TaskRow> {
         retry_of: row.get(8)?,
         created_at: row.get(9)?,
         partial_failures: row.get(10)?,
+        next_attempt_at: row.get(11)?,
     })
 }
 
@@ -173,7 +199,13 @@ pub(super) fn session_row(row: &Row<'_>) -> rusqlite::Result<SessionRow> {
         state: row.get(4)?,
         position_ms: row.get(5)?,
         plan: row.get(6)?,
+        stop_reason: row.get(7)?,
     })
+}
+
+/// 会话行连同写版本（第 9 列）。
+pub(super) fn session_and_version(row: &Row<'_>) -> rusqlite::Result<(SessionRow, u64)> {
+    Ok((session_row(row)?, row.get::<_, i64>(8)? as u64))
 }
 
 pub(super) fn queue_row(row: &Row<'_>) -> rusqlite::Result<QueueRow> {

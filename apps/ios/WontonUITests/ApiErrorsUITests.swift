@@ -13,7 +13,7 @@ final class ApiErrorsUITests: XCTestCase {
         continueAfterFailure = false
         let app = XCUIApplication()
         app.launchArguments += ["-AppleLanguages", "(en)", "-AppleLocale", "en_US", "wonton-problem-preview"]
-        app.launch()
+        UITestBackend.launch(app)
 
         let notReady = app.descendants(matching: .any)["problemFixture-notReady"]
         XCTAssertTrue(notReady.waitForExistence(timeout: 10), "夹具屏没有出错页\n\(app.debugDescription)")
@@ -49,7 +49,7 @@ final class ApiErrorsUITests: XCTestCase {
         continueAfterFailure = false
         let app = XCUIApplication()
         app.launchArguments += ["-AppleLanguages", "(en)", "-AppleLocale", "en_US", "wonton-problem-preview"]
-        app.launch()
+        UITestBackend.launch(app)
         XCTAssertTrue(
             app.descendants(matching: .any)["problemFixture-notReady"].waitForExistence(timeout: 10),
             "夹具屏没有出错页"

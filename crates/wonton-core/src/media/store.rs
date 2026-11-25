@@ -1,6 +1,7 @@
 //! 媒体任务、播放会话、队列与配额账本的 SQLite 存储（ADR-0113 第 3 节）。
 //!
-//! 写和按编号读都带 `person`，按人隔离在这里做；只有 `tasks(None)`、`sessions(None)` 是列所有人的。
+//! 写和按编号读都带 `person`，按人隔离在这里做；只有 `tasks(None)`、`sessions(None)` 是列所有人的，
+//! `task_any` 是服务层手里只有任务号时的入口。
 //! 带枚举的列（种类、目标、状态、逐项状态、播放计划）按 JSON 文本存，其余拆列；上传的逐项进度是单独
 //! 一张表，改偏移只写一行，不重写整个任务。
 //!
@@ -12,22 +13,19 @@ use std::path::{Path, PathBuf};
 use std::sync::{Mutex, MutexGuard};
 use std::time::Duration;
 
-use rusqlite::types::Value;
-use rusqlite::{Connection, OptionalExtension, params, params_from_iter};
+use rusqlite::{Connection, OptionalExtension, params};
 use serde::Serialize;
 use serde::de::DeserializeOwned;
 use wonton_protocol::media::TaskId;
 use wonton_protocol::media::view::{QuotaEntry, QuotaView};
-use wonton_protocol::media::{
-    MediaItemRef, MediaTask, PlaybackPlan, PlaybackSession, PlaybackSessionId, Queue, TaskKind,
-    TaskState, TaskTarget, UploadItem,
-};
+use wonton_protocol::media::{PlaybackSessionId, Queue};
 
 mod schema;
+mod sessions;
+mod tasks;
 
-use schema::{
-    QueueRow, SessionRow, TaskRow, classify, migrate, queue_row, row_to_task, session_row,
-};
+use schema::{QueueRow, classify, migrate, queue_row};
+pub use sessions::StoredSession;
 
 #[cfg(test)]
 pub(crate) use schema::SCHEMA_V1;
@@ -68,10 +66,17 @@ pub enum MediaStoreError {
     InvalidId { path: PathBuf, raw: String },
     #[error("媒体库 {path} 的写锁被上一次 panic 弄坏了")]
     Poisoned { path: PathBuf },
-    #[error("媒体库 {path} 里没有这个人的任务 {task}")]
+    #[error("媒体库 {path} 里没有任务 {task}")]
     TaskNotFound { path: PathBuf, task: TaskId },
     #[error("媒体库 {path} 里的任务 {task} 是下载，不能加条目")]
     TaskNotUpload { path: PathBuf, task: TaskId },
+    #[error("媒体库 {path} 里没有这条播放会话 {session}")]
+    SessionNotFound {
+        path: PathBuf,
+        session: PlaybackSessionId,
+    },
+    #[error("媒体库 {path} 里 {person} 已经有一条活动会话")]
+    ActiveSessionExists { path: PathBuf, person: String },
     #[error("配额 {ledger} 超限：已用 {used}，上限 {limit}，这次要 {want}")]
     QuotaExceeded {
         ledger: &'static str,
@@ -167,20 +172,25 @@ impl Store {
         })
     }
 
-    fn conn(&self) -> Result<MutexGuard<'_, Connection>, MediaStoreError> {
+    /// 库文件路径。
+    pub fn path(&self) -> &Path {
+        &self.path
+    }
+
+    pub(super) fn conn(&self) -> Result<MutexGuard<'_, Connection>, MediaStoreError> {
         self.conn.lock().map_err(|_| MediaStoreError::Poisoned {
             path: self.path.clone(),
         })
     }
 
-    fn db_error(&self, source: rusqlite::Error) -> MediaStoreError {
+    pub(super) fn db_error(&self, source: rusqlite::Error) -> MediaStoreError {
         MediaStoreError::Database {
             path: self.path.clone(),
             source,
         }
     }
 
-    fn json(
+    pub(super) fn json(
         &self,
         column: &'static str,
         value: &impl Serialize,
@@ -192,7 +202,7 @@ impl Store {
         })
     }
 
-    fn read_json<T: DeserializeOwned>(
+    pub(super) fn read_json<T: DeserializeOwned>(
         &self,
         column: &'static str,
         text: &str,
@@ -204,316 +214,11 @@ impl Store {
         })
     }
 
-    fn parse_id(&self, raw: &str) -> Result<TaskId, MediaStoreError> {
+    pub(super) fn parse_id(&self, raw: &str) -> Result<TaskId, MediaStoreError> {
         TaskId::parse_str(raw).map_err(|_| MediaStoreError::InvalidId {
             path: self.path.clone(),
             raw: raw.to_owned(),
         })
-    }
-
-    /// 存一条任务；上传的逐项条目和目标一起落库，目标列里只留空的条目表。
-    pub fn create_task(&self, task: &MediaTask) -> Result<(), MediaStoreError> {
-        let mut conn = self.conn()?;
-        let tx = conn.transaction().map_err(|source| self.db_error(source))?;
-        let target = match &task.target {
-            TaskTarget::Upload(_) => TaskTarget::Upload(Vec::new()),
-            other => other.clone(),
-        };
-        tx.execute(
-            "INSERT INTO tasks (id, person, device, kind, target, state, state_tag, progress,
-                                retry_count, retry_of, created_at, partial_failures)
-             VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)",
-            params![
-                task.id.to_string(),
-                task.person,
-                task.device,
-                kind_raw(&task.kind),
-                self.json("target", &target)?,
-                self.json("state", &task.state)?,
-                task.state.as_str(),
-                self.json("progress", &task.progress)?,
-                task.retry_count,
-                task.retry_of.map(|id| id.to_string()),
-                task.created_at,
-                self.json("partial_failures", &task.partial_failures)?,
-            ],
-        )
-        .map_err(|source| self.db_error(source))?;
-        if let TaskTarget::Upload(items) = &task.target {
-            self.insert_items(&tx, &task.person, task.id, items, 0)?;
-        }
-        tx.commit().map_err(|source| self.db_error(source))?;
-        Ok(())
-    }
-
-    /// 按人读一条任务；不是这个人的行当作没有。
-    pub fn task(&self, person: &str, id: TaskId) -> Result<Option<MediaTask>, MediaStoreError> {
-        let conn = self.conn()?;
-        match self.task_row(&conn, person, id)? {
-            Some(row) => Ok(Some(self.assemble_task(&conn, row)?)),
-            None => Ok(None),
-        }
-    }
-
-    /// 列任务；`person` 为空列所有人的，`kind`/`state` 为空不筛。
-    pub fn tasks(
-        &self,
-        person: Option<&str>,
-        kind: Option<&TaskKind>,
-        state: Option<&TaskState>,
-    ) -> Result<Vec<MediaTask>, MediaStoreError> {
-        let conn = self.conn()?;
-        let mut sql = String::from(
-            "SELECT id, person, device, kind, target, state, progress, retry_count, retry_of,
-                    created_at, partial_failures FROM tasks",
-        );
-        let mut filters: Vec<&str> = Vec::new();
-        let mut values: Vec<Value> = Vec::new();
-        if let Some(person) = person {
-            filters.push("person = ?");
-            values.push(Value::Text(person.to_owned()));
-        }
-        if let Some(kind) = kind {
-            filters.push("kind = ?");
-            values.push(Value::Text(kind_raw(kind).to_owned()));
-        }
-        if let Some(state) = state {
-            filters.push("state_tag = ?");
-            values.push(Value::Text(state.as_str().to_owned()));
-        }
-        if !filters.is_empty() {
-            sql.push_str(" WHERE ");
-            sql.push_str(&filters.join(" AND "));
-        }
-        sql.push_str(" ORDER BY created_at, id");
-        let mut stmt = conn.prepare(&sql).map_err(|source| self.db_error(source))?;
-        let rows: Vec<TaskRow> = stmt
-            .query_map(params_from_iter(values), row_to_task)
-            .map_err(|source| self.db_error(source))?
-            .collect::<Result<_, _>>()
-            .map_err(|source| self.db_error(source))?;
-        rows.into_iter()
-            .map(|row| self.assemble_task(&conn, row))
-            .collect()
-    }
-
-    /// 回写任务的状态、进度等普通字段；返回是否落到了这个人的行上。
-    ///
-    /// **不写逐项条目**：`target` 里带的 `UploadItem` 会被忽略，条目只认 `create_task`、`enqueue_items`、
-    /// `save_item` 写的行。改了某一项要另外调 [`Self::save_item`]。
-    pub fn save_task(&self, task: &MediaTask) -> Result<bool, MediaStoreError> {
-        let conn = self.conn()?;
-        let target = match &task.target {
-            TaskTarget::Upload(_) => TaskTarget::Upload(Vec::new()),
-            other => other.clone(),
-        };
-        let changed = conn
-            .execute(
-                "UPDATE tasks SET device = ?, kind = ?, target = ?, state = ?, state_tag = ?,
-                                  progress = ?, retry_count = ?, retry_of = ?, created_at = ?,
-                                  partial_failures = ?
-                 WHERE id = ? AND person = ?",
-                params![
-                    task.device,
-                    kind_raw(&task.kind),
-                    self.json("target", &target)?,
-                    self.json("state", &task.state)?,
-                    task.state.as_str(),
-                    self.json("progress", &task.progress)?,
-                    task.retry_count,
-                    task.retry_of.map(|id| id.to_string()),
-                    task.created_at,
-                    self.json("partial_failures", &task.partial_failures)?,
-                    task.id.to_string(),
-                    task.person,
-                ],
-            )
-            .map_err(|source| self.db_error(source))?;
-        Ok(changed > 0)
-    }
-
-    /// 往上传任务末尾加条目。
-    pub fn enqueue_items(
-        &self,
-        person: &str,
-        task: TaskId,
-        items: &[UploadItem],
-    ) -> Result<(), MediaStoreError> {
-        let mut conn = self.conn()?;
-        let tx = conn.transaction().map_err(|source| self.db_error(source))?;
-        let kind: Option<String> = tx
-            .query_row(
-                "SELECT kind FROM tasks WHERE id = ? AND person = ?",
-                params![task.to_string(), person],
-                |row| row.get(0),
-            )
-            .optional()
-            .map_err(|source| self.db_error(source))?;
-        match kind.as_deref() {
-            Some("upload") => {}
-            Some(_) => {
-                return Err(MediaStoreError::TaskNotUpload {
-                    path: self.path.clone(),
-                    task,
-                });
-            }
-            None => {
-                return Err(MediaStoreError::TaskNotFound {
-                    path: self.path.clone(),
-                    task,
-                });
-            }
-        }
-        let start: i64 = tx
-            .query_row(
-                "SELECT COALESCE(MAX(position) + 1, 0) FROM task_items
-                 WHERE person = ? AND task_id = ?",
-                params![person, task.to_string()],
-                |row| row.get(0),
-            )
-            .map_err(|source| self.db_error(source))?;
-        self.insert_items(&tx, person, task, items, start)?;
-        tx.commit().map_err(|source| self.db_error(source))?;
-        Ok(())
-    }
-
-    /// 任务里每一项的已收字节，按加入顺序。
-    pub fn item_offsets(
-        &self,
-        person: &str,
-        task: TaskId,
-    ) -> Result<Vec<(String, u64)>, MediaStoreError> {
-        let conn = self.conn()?;
-        let mut stmt = conn
-            .prepare(
-                "SELECT item_id, upload_offset FROM task_items
-                 WHERE person = ? AND task_id = ? ORDER BY position, item_id",
-            )
-            .map_err(|source| self.db_error(source))?;
-        let rows = stmt
-            .query_map(params![person, task.to_string()], |row| {
-                Ok((row.get::<_, String>(0)?, row.get::<_, i64>(1)? as u64))
-            })
-            .map_err(|source| self.db_error(source))?;
-        rows.collect::<Result<_, _>>()
-            .map_err(|source| self.db_error(source))
-    }
-
-    /// 回写一项的偏移与状态；返回是否落到了这个人的行上。
-    pub fn save_item(
-        &self,
-        person: &str,
-        task: TaskId,
-        item: &UploadItem,
-    ) -> Result<bool, MediaStoreError> {
-        let conn = self.conn()?;
-        let changed = conn
-            .execute(
-                "UPDATE task_items SET path = ?, size = ?, checksum = ?, taken_at = ?, state = ?,
-                                       upload_offset = ?
-                 WHERE person = ? AND task_id = ? AND item_id = ?",
-                params![
-                    item.path,
-                    item.size,
-                    item.checksum,
-                    item.taken_at,
-                    self.json("state", &item.state)?,
-                    item.upload_offset,
-                    person,
-                    task.to_string(),
-                    item.item_id,
-                ],
-            )
-            .map_err(|source| self.db_error(source))?;
-        Ok(changed > 0)
-    }
-
-    pub fn create_session(&self, session: &PlaybackSession) -> Result<(), MediaStoreError> {
-        let conn = self.conn()?;
-        conn.execute(
-            "INSERT INTO sessions (id, person, device, item, state, state_tag, position_ms, plan)
-             VALUES (?, ?, ?, ?, ?, ?, ?, ?)",
-            params![
-                session.id.to_string(),
-                session.person,
-                session.device,
-                self.json("item", &session.item)?,
-                self.json("state", &session.state)?,
-                session.state.as_str(),
-                session.position_ms,
-                session
-                    .plan
-                    .as_ref()
-                    .map(|plan| self.json("plan", plan))
-                    .transpose()?,
-            ],
-        )
-        .map_err(|source| self.db_error(source))?;
-        Ok(())
-    }
-
-    pub fn session(
-        &self,
-        person: &str,
-        id: PlaybackSessionId,
-    ) -> Result<Option<PlaybackSession>, MediaStoreError> {
-        let conn = self.conn()?;
-        let row: Option<SessionRow> = conn
-            .query_row(
-                "SELECT id, person, device, item, state, position_ms, plan FROM sessions
-                 WHERE id = ? AND person = ?",
-                params![id.to_string(), person],
-                session_row,
-            )
-            .optional()
-            .map_err(|source| self.db_error(source))?;
-        row.map(|row| self.assemble_session(row)).transpose()
-    }
-
-    /// 列会话，按建立的先后；`person` 为空列所有人的。表里另存了状态标签，M9 用它找活动会话。
-    pub fn sessions(&self, person: Option<&str>) -> Result<Vec<PlaybackSession>, MediaStoreError> {
-        let conn = self.conn()?;
-        let mut stmt = conn
-            .prepare(
-                "SELECT id, person, device, item, state, position_ms, plan FROM sessions
-                 WHERE ? IS NULL OR person = ? ORDER BY rowid",
-            )
-            .map_err(|source| self.db_error(source))?;
-        let rows: Vec<SessionRow> = stmt
-            .query_map(params![person, person], session_row)
-            .map_err(|source| self.db_error(source))?
-            .collect::<Result<_, _>>()
-            .map_err(|source| self.db_error(source))?;
-        rows.into_iter()
-            .map(|row| self.assemble_session(row))
-            .collect()
-    }
-
-    /// 回写会话的位置与计划；返回是否落到了这个人的行上。
-    pub fn save_session(&self, session: &PlaybackSession) -> Result<bool, MediaStoreError> {
-        let conn = self.conn()?;
-        let changed = conn
-            .execute(
-                "UPDATE sessions SET device = ?, item = ?, state = ?, state_tag = ?, position_ms = ?,
-                                     plan = ?
-                 WHERE id = ? AND person = ?",
-                params![
-                    session.device,
-                    self.json("item", &session.item)?,
-                    self.json("state", &session.state)?,
-                    session.state.as_str(),
-                    session.position_ms,
-                    session
-                        .plan
-                        .as_ref()
-                        .map(|plan| self.json("plan", plan))
-                        .transpose()?,
-                    session.id.to_string(),
-                    session.person,
-                ],
-            )
-            .map_err(|source| self.db_error(source))?;
-        Ok(changed > 0)
     }
 
     pub fn queue(&self, person: &str) -> Result<Option<Queue>, MediaStoreError> {
@@ -709,153 +414,6 @@ impl Store {
             provider_upload: upload,
             device_offline: offline,
         })
-    }
-
-    fn insert_items(
-        &self,
-        conn: &Connection,
-        person: &str,
-        task: TaskId,
-        items: &[UploadItem],
-        start: i64,
-    ) -> Result<(), MediaStoreError> {
-        let mut stmt = conn
-            .prepare(
-                "INSERT INTO task_items (person, task_id, item_id, position, path, size, checksum,
-                                         taken_at, state, upload_offset)
-                 VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)",
-            )
-            .map_err(|source| self.db_error(source))?;
-        for (offset, item) in items.iter().enumerate() {
-            stmt.execute(params![
-                person,
-                task.to_string(),
-                item.item_id,
-                start + offset as i64,
-                item.path,
-                item.size,
-                item.checksum,
-                item.taken_at,
-                self.json("state", &item.state)?,
-                item.upload_offset,
-            ])
-            .map_err(|source| self.db_error(source))?;
-        }
-        Ok(())
-    }
-
-    fn task_row(
-        &self,
-        conn: &Connection,
-        person: &str,
-        id: TaskId,
-    ) -> Result<Option<TaskRow>, MediaStoreError> {
-        conn.query_row(
-            "SELECT id, person, device, kind, target, state, progress, retry_count, retry_of,
-                    created_at, partial_failures FROM tasks WHERE id = ? AND person = ?",
-            params![id.to_string(), person],
-            row_to_task,
-        )
-        .optional()
-        .map_err(|source| self.db_error(source))
-    }
-
-    fn assemble_task(&self, conn: &Connection, row: TaskRow) -> Result<MediaTask, MediaStoreError> {
-        let mut target: TaskTarget = self.read_json("target", &row.target)?;
-        if let TaskTarget::Upload(items) = &mut target {
-            *items = self.items(conn, &row.person, &row.id)?;
-        }
-        Ok(MediaTask {
-            id: self.parse_id(&row.id)?,
-            kind: kind_from_raw(&row.kind),
-            person: row.person,
-            device: row.device,
-            target,
-            state: self.read_json("state", &row.state)?,
-            progress: self.read_json("progress", &row.progress)?,
-            retry_count: row.retry_count as u8,
-            retry_of: row
-                .retry_of
-                .as_deref()
-                .map(|raw| self.parse_id(raw))
-                .transpose()?,
-            created_at: row.created_at as u64,
-            partial_failures: self.read_json("partial_failures", &row.partial_failures)?,
-        })
-    }
-
-    fn items(
-        &self,
-        conn: &Connection,
-        person: &str,
-        task: &str,
-    ) -> Result<Vec<UploadItem>, MediaStoreError> {
-        let mut stmt = conn
-            .prepare(
-                "SELECT item_id, path, size, checksum, taken_at, state, upload_offset
-                 FROM task_items WHERE person = ? AND task_id = ? ORDER BY position, item_id",
-            )
-            .map_err(|source| self.db_error(source))?;
-        let rows = stmt
-            .query_map(params![person, task], |row| {
-                Ok((
-                    row.get::<_, String>(0)?,
-                    row.get::<_, String>(1)?,
-                    row.get::<_, i64>(2)? as u64,
-                    row.get::<_, Option<String>>(3)?,
-                    row.get::<_, Option<i64>>(4)?,
-                    row.get::<_, String>(5)?,
-                    row.get::<_, i64>(6)? as u64,
-                ))
-            })
-            .map_err(|source| self.db_error(source))?;
-        rows.map(|row| {
-            let (item_id, path, size, checksum, taken_at, state, upload_offset) =
-                row.map_err(|source| self.db_error(source))?;
-            Ok(UploadItem {
-                item_id,
-                path,
-                size,
-                checksum,
-                taken_at: taken_at.map(|value| value as u64),
-                state: self.read_json("state", &state)?,
-                upload_offset,
-            })
-        })
-        .collect()
-    }
-
-    fn assemble_session(&self, row: SessionRow) -> Result<PlaybackSession, MediaStoreError> {
-        Ok(PlaybackSession {
-            id: self.parse_id(&row.id)?,
-            person: row.person,
-            device: row.device,
-            item: self.read_json::<MediaItemRef>("item", &row.item)?,
-            state: self.read_json("state", &row.state)?,
-            position_ms: row.position_ms as u64,
-            plan: row
-                .plan
-                .as_deref()
-                .map(|text| self.read_json::<PlaybackPlan>("plan", text))
-                .transpose()?,
-        })
-    }
-}
-
-/// 种类按原值存（没有载荷），筛选直接比字符串；带载荷的状态才走 JSON。
-fn kind_raw(kind: &TaskKind) -> &str {
-    match kind {
-        TaskKind::Upload => "upload",
-        TaskKind::Download => "download",
-        TaskKind::Other(raw) => raw,
-    }
-}
-
-fn kind_from_raw(raw: &str) -> TaskKind {
-    match raw {
-        "upload" => TaskKind::Upload,
-        "download" => TaskKind::Download,
-        other => TaskKind::Other(other.to_owned()),
     }
 }
 

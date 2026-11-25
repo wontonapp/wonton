@@ -225,6 +225,12 @@ fn without_federation_only_the_probe_name_stays_in_the_public_list() {
     );
     assert!(rendered.lan_crt_list.is_empty());
     assert!(!rendered.config.contains("frontend paired"));
+    // 没有配对联邦就没有 8449，Tuwunel 后端也只给配对前端用。
+    assert!(
+        !rendered.config.contains("backend tuwunel"),
+        "{}",
+        rendered.config
+    );
 }
 
 #[test]

@@ -29,4 +29,6 @@
     <string name="message_link_no_handler">Install an app that can open this type of link, then try again.</string>
     <!-- Item in the message menu: edit the text of your own message. Android only. -->
     <string name="message_edit">Edit</string>
+    <!-- Read-out state of an own message still on its way to the server. No arguments. -->
+    <string name="message_sending">Sending</string>
 </resources>

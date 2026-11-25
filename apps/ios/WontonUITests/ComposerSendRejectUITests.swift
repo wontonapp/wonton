@@ -18,7 +18,7 @@ final class ComposerSendRejectUITests: XCTestCase {
         app.launchEnvironment["WONTON_DEV_DATA_SUFFIX"] = UUID().uuidString
         app.launchEnvironment["WONTON_UI_FAKE"] = "1"
         app.launchEnvironment["WONTON_UI_TEST_FAIL_ATTACHMENT"] = "1"
-        app.launch()
+        UITestBackend.launch(app)
     }
 
     /// 附件区里有一张没传上去的图时点发送：核心拒收，原因弹出来，字、回复条和附件原样留着。

@@ -1,7 +1,6 @@
 //! 用户操作分到各个作用域（ADR-0042）：这里是唯一的领域解包点。
 
-#[cfg(feature = "ui-fake")]
-use std::sync::atomic::Ordering;
+use std::sync::atomic::{AtomicUsize, Ordering};
 
 use wonton_l10n::l10n;
 use wonton_protocol::{
@@ -15,6 +14,9 @@ use super::*;
 use crate::agent_chains::actions::Effect;
 use crate::l10n::{CATALOG, language};
 
+/// 假数据下已经试过几次发送，`WONTON_UI_FAIL_SEND` 按它数前几次该拒。
+static UI_FAKE_SENDS: AtomicUsize = AtomicUsize::new(0);
+
 #[uniffi::export]
 impl ClientCore {
     /// 假数据入口下照走真逻辑的时间线操作：拿掉附件只动本机的附件区，发送照样要过核心的检查。
@@ -22,18 +24,23 @@ impl ClientCore {
     /// 只有走输入框的 `SendComposer` 查附件区：真核心的 `send_text` / `send_image` 都不看它
     /// （`chat/send.rs`），命令和旁聊贴图有空附件失败也照发。
     fn dispatch_ui_fake_composer(&self, action: &TimelineAction) -> Result<(), CoreError> {
-        // `WONTON_UI_FAIL_SEND`：界面测试要的“发送被拒”，三种发送都照附件传不上去的样子拒掉。
-        if std::env::var_os("WONTON_UI_FAIL_SEND").is_some()
-            && matches!(
-                action,
-                TimelineAction::SendText { .. }
-                    | TimelineAction::SendImage { .. }
-                    | TimelineAction::SendComposer { .. }
-            )
-        {
-            return Err(CoreError::InvalidInput {
-                reason: l10n!(CATALOG, language(), "composer-has-failed"),
-            });
+        // `WONTON_UI_FAIL_SEND=<n>`：接下来 n 次发送都照附件传不上去的样子拒掉；数字缺省或不是数字时算 1，
+        // 够测“第一张被拒、后面的照发”。没有这个变量就都照发。
+        let is_send = matches!(
+            action,
+            TimelineAction::SendText { .. }
+                | TimelineAction::SendImage { .. }
+                | TimelineAction::SendComposer { .. }
+        );
+        if is_send {
+            let failed = UI_FAKE_SENDS.fetch_add(1, Ordering::SeqCst);
+            let limit = std::env::var("WONTON_UI_FAIL_SEND")
+                .map_or(0, |value| value.trim().parse().unwrap_or(1));
+            if failed < limit {
+                return Err(CoreError::InvalidInput {
+                    reason: l10n!(CATALOG, language(), "composer-has-failed"),
+                });
+            }
         }
         match action {
             TimelineAction::RemoveAttachment { .. } => {
@@ -74,6 +81,13 @@ impl ClientCore {
 
     /// 处理一个操作。领域子枚举只在这里解包，运行时仍只有一个入口。
     pub fn dispatch(&self, action: Action) -> Result<(), CoreError> {
+        // 发送（包括附件区整单）先停“正在输入”：假数据里发送被拒也算试过发送，所以要排在拒绝之前。
+        if let Action::Timeline {
+            action: TimelineAction::SendComposer { target, .. },
+        } = &action
+        {
+            self.scope().chat.stop_typing(target);
+        }
         #[cfg(feature = "ui-fake")]
         if self.ui_fake.load(Ordering::SeqCst) {
             return match action {
@@ -100,13 +114,8 @@ impl ClientCore {
                     self.dispatch_ui_fake_agent(action);
                     Ok(())
                 }
-                // 深色截图要的主题照走真设置；字号、字体和配对等假状态在别的 ViewModel 里，不受影响。
-                Action::Settings { action } => {
-                    if let SettingsAction::SetThemeMode { mode } = action {
-                        self.appearance.set_theme_mode(mode)?;
-                    }
-                    Ok(())
-                }
+                // 外观和语言全在本机，假数据下也要照实落盘，否则设置页点了没反应。
+                Action::Settings { action } => self.settings_action(&self.scope(), action),
                 _ => Ok(()),
             };
         }

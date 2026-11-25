@@ -32,7 +32,7 @@ final class PairingSizeUITests: XCTestCase {
 
     /// 打了一半的设备名退出、重开还在：配对页按返回/被系统收掉都不该丢输入。
     func testDeviceNameSurvivesRelaunch() {
-        app.launch()
+        UITestBackend.launch(app)
         waitForPairingForm()
         let field = element("pairing-device-name")
         field.tap()
@@ -40,7 +40,7 @@ final class PairingSizeUITests: XCTestCase {
         XCTAssertTrue((field.value as? String ?? "").contains("zz-ipad"), "打进去的字没进设备名：\(field.value ?? "")")
 
         app.terminate()
-        app.launch()
+        UITestBackend.launch(app)
         waitForPairingForm()
         let restored = element("pairing-device-name")
         XCTAssertTrue(
@@ -54,7 +54,7 @@ final class PairingSizeUITests: XCTestCase {
         app.launchArguments += [
             "-UIPreferredContentSizeCategoryName", "UICTContentSizeCategoryAccessibilityExtraExtraExtraLarge"
         ]
-        app.launch()
+        UITestBackend.launch(app)
         waitForPairingForm()
 
         let shot = XCTAttachment(screenshot: XCUIScreen.main.screenshot())

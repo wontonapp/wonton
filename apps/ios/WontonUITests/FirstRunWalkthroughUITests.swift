@@ -47,7 +47,7 @@ final class FirstRunWalkthroughUITests: XCTestCase {
         app.launchArguments += ["-AppleLanguages", "(en)", "-AppleLocale", "en_US"]
         app.launchEnvironment["WONTON_DEV_DATA_SUFFIX"] = UUID().uuidString
         UITestBackend.enableStateProbe(to: app)
-        app.launch()
+        UITestBackend.launch(app)
 
         try pair(code: codes[codeIndex])
         settleHandoff()

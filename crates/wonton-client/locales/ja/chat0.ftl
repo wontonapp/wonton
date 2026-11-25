@@ -116,5 +116,3 @@ chat-window-ended =
     }
 
 chat-choice-send-failed-rejected = 送れませんでした：自宅サーバーに拒否されました。（{ $error }）
-
-chat-op-typing-failed = 入力中を伝えられませんでした：{ $error }

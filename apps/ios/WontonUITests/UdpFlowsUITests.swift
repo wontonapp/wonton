@@ -59,7 +59,7 @@ final class UdpFlowsUITests: XCTestCase {
             "wonton-quality-preview-\(scenario)", "-AppleLanguages", "(en)", "-AppleLocale", "en_US"
         ]
         app.launchEnvironment["WONTON_DEV_DATA_SUFFIX"] = UUID().uuidString
-        app.launch()
+        UITestBackend.launch(app)
         return app
     }
 

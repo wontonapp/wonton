@@ -11,6 +11,11 @@ pub type Person = String;
 /// 设备标识。
 pub type DeviceId = String;
 
+/// 发一个新任务号。
+pub fn new_task_id() -> TaskId {
+    TaskId::new_v4()
+}
+
 /// 上传与下载。新版本新加的类型落在 `Other`。
 #[derive(Debug, Clone, PartialEq)]
 #[cfg_attr(feature = "uniffi", derive(uniffi::Enum))]
@@ -76,15 +81,17 @@ impl TaskState {
         }
     }
 
-    fn is_terminal(&self) -> bool {
+    /// 终态（`Done`/`Partial`/`Failed`/`Cancelled`），不可逆。
+    pub fn is_terminal(&self) -> bool {
         matches!(
             self,
             Self::Done | Self::Partial | Self::Failed(_) | Self::Cancelled
         )
     }
 
-    /// 能不能从自己变到 `to`。排队和准备阶段可以直接取消（`Queued` 也行，见接口清单）；终态不可逆，
-    /// 再跑就是新任务。未知状态（`Other`）的规则只有服务端知道：可以进它，从它出来算非法。
+    /// 能不能从自己变到 `to`。排队和准备阶段可以直接取消（`Queued` 也行，见接口清单）；等待条件和暂停中
+    /// 可以回队、互换原因，也能直接失败；终态不可逆，再跑就是新任务。未知状态（`Other`）的规则只有服务端
+    /// 知道：可以进它，从它出来算非法。
     pub fn transition(self, to: Self) -> Result<Self, IllegalTransition> {
         let legal = match (&self, &to) {
             (Self::Other(_), Self::Other(_)) => true,
@@ -113,7 +120,13 @@ impl TaskState {
                     )
                     | (
                         Self::Paused(_) | Self::WaitingNetwork | Self::WaitingPower,
-                        Self::Running | Self::Paused(_) | Self::Cancelled
+                        Self::Queued
+                            | Self::Running
+                            | Self::Paused(_)
+                            | Self::WaitingNetwork
+                            | Self::WaitingPower
+                            | Self::Failed(_)
+                            | Self::Cancelled
                     )
             ),
         };
@@ -281,6 +294,14 @@ impl MediaFailureCode {
             | Self::ServerStorageFull => Backoff::None,
         }
     }
+
+    /// 这类失败是不是等等就可能自己好；`SystemPause` 与不退避的都算不是。
+    pub fn backoff_is_retryable(&self) -> bool {
+        matches!(
+            self.backoff(),
+            Backoff::Once | Backoff::Standard | Backoff::ThreeTimes | Backoff::RetryAfter
+        )
+    }
 }
 
 /// 一个失败类别的退避档。退避由核心算，不过壳。
@@ -289,13 +310,13 @@ impl MediaFailureCode {
 pub enum Backoff {
     /// 不退避：直接失败，或者跳过这一项。
     None,
-    /// 1 秒一次。
+    /// 1 秒一次；次数按任务共用 `retry_count`，别的码先退过就一次都退不了。
     Once,
-    /// 1/2/4/8/16/32/60 秒，最多六次。
+    /// 1/2/4/8/16/32/60 秒，最多七次。
     Standard,
     /// 1/2/4 秒，最多三次。
     ThreeTimes,
-    /// 按失败体里的 `retry_after_secs`，不计入六次。
+    /// 按失败体里的 `retry_after_secs`（至少 1 秒），不计入七次。
     RetryAfter,
     /// 进 `Paused`，不算失败，恢复时从断点续。
     SystemPause,
@@ -316,6 +337,9 @@ pub struct MediaTask {
     pub progress: Progress,
     pub retry_count: u8,
     pub retry_of: Option<TaskId>,
+    /// 下一次自动重试的秒级 Unix 时间；只在 `WaitingNetwork` 时有值，由核心算。
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub next_attempt_at: Option<u64>,
     pub created_at: Timestamp,
     /// 只在上传里有；逐项失败原文
     pub partial_failures: Vec<FailedItem>,
@@ -548,10 +572,19 @@ mod tests {
             (paused(), running()),
             (paused(), TaskState::Paused(PauseReason::Agent)),
             (paused(), TaskState::Cancelled),
+            (paused(), queued()),
             (waiting_network(), running()),
             (waiting_network(), paused()),
+            (waiting_network(), queued()),
+            (waiting_network(), waiting_network()),
+            (
+                waiting_network(),
+                TaskState::Failed(failure(MediaFailureCode::TransportUnavailable)),
+            ),
             (waiting_network(), TaskState::Cancelled),
             (waiting_power(), running()),
+            (waiting_power(), queued()),
+            (waiting_power(), waiting_power()),
             (waiting_power(), paused()),
             (waiting_power(), TaskState::Cancelled),
         ];
@@ -663,6 +696,7 @@ mod tests {
             },
             retry_count: 2,
             retry_of: Some(Uuid::nil()),
+            next_attempt_at: Some(1_700_000_010),
             created_at: 1_700_000_000_000,
             partial_failures: vec![FailedItem {
                 item_id: "i1".into(),

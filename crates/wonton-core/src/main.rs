@@ -272,7 +272,8 @@ async fn serve() -> anyhow::Result<()> {
         mailpit.clone(),
     )
     .await?;
-    let (friends, federation_blocks) = serve::open_friends(&cfg)?;
+    let friends = sharing_registries.friends.clone();
+    let federation_blocks = serve::open_federation_blocks(&cfg)?;
     let audit = Arc::new(Audit::new(cfg.core_state_dir().join("audit.jsonl")));
     let notices = serve::notice_room(&cfg, matrix.as_ref(), serve::owner_languages(&manager));
     // 隧道先起：确认卡片的开卡推送要用推送登记表和 endpoint ID（ADR-0016）。

@@ -196,7 +196,7 @@ YunoHost、Sandstorm 给免费子域名但要求公网 IP；Home Assistant Cloud
 
 | 选项 | 主人要准备 | 花费 | 代价 |
 | --- | --- | --- | --- |
-| 自己的域名 + Cloudflare Tunnel | 一个域名，DNS 托管在 Cloudflare | 一个域名的年费 | Cloudflare 解开 TLS，看得到谁和谁、什么时候（消息本身端到端加密）；单个请求最大 100 MB |
+| 自己的域名 + Cloudflare Tunnel | 一个域名，DNS 托管在 Cloudflare | 一个域名的年费 | Cloudflare 解开 TLS，看得到谁和谁、什么时候，也读得到消息内容（ADR-0118 起房间不加密）；单个请求最大 100 MB |
 | 自己的域名 + 自己的小云服务器（自建 frps，ADR-0021 的“换成自己的域名”） | 一个域名，一台有公网 IP 的小云服务器 | 域名年费加小服务器的月费 | 要维护那台服务器 |
 | 不要名字（随机的 `.wonton.internal`，只和配对过的云吞来往） | 什么都不用 | 无 | 加不了 matrix.org 上的人；没配对时不和别的服务器通，配对过的照 [ADR-0112](0112-peer-cert-pinning.md) 互钉证书走；不再自签、不开 allow_invalid（2026-11-22 起） |
 
@@ -224,7 +224,7 @@ YunoHost、Sandstorm 给免费子域名但要求公网 IP；Home Assistant Cloud
 | 同上 | `trusted_servers = []`，只向对方直取签名密钥 | 保留，或按需加 matrix.org 作公证服务器 |
 | ADR-0050“联邦流量”的转发组件（`wonton-tunnel` 的 `federation`） | 不认识的 SNI、不在名单里的服务器出站直接断开 | 配对过的照旧走 iroh；其余不经转发组件，Tuwunel 直接走公网 |
 | 核心的地址映射（hosts） | 配对过的服务器名指向转发组件 | 照旧，只放配对过的 |
-| `gateway/matrix.rs`、ADR-0009 | 网关不转发 `/_matrix/federation/`、`/_matrix/key/` | 公网入口上的服务器名主机 8484 只答三个发现文件（`.well-known/matrix/server`、`.well-known/matrix/client`、`.well-known/wonton`），把 `/_matrix/federation/`、`/_matrix/key/` 转给 Tuwunel；经 iroh 进来的配对前端（8449）把这两类和三个发现文件仍交给核心，其余路径（客户端 API）直给 Tuwunel 的客户端端口 |
+| `gateway/matrix.rs`、ADR-0009 | 网关不转发 `/_matrix/federation/`、`/_matrix/key/` | 公网入口上的服务器名主机 8484 只答三个发现文件（`.well-known/matrix/server`、`.well-known/matrix/client`、`.well-known/wonton`），把 `/_matrix/federation/`、`/_matrix/key/` 转给 Tuwunel；经 iroh 进来的配对前端（8449）把这两类和三个发现文件仍交给核心，其余路径（客户端 API）直给 Tuwunel 的客户端端口。核心自己的 `/_wonton/*` 在入口上都没有入口：`/_wonton/clients/status` 在主网关和 8449 上都回 404（主网关没登记这条路由，配对前端把它当客户端 API 交给 Tuwunel） |
 | ADR-0050“状态” | 连不上的原因按名单和转发组件分 | 配对过的照旧；别的服务器只能看 Tuwunel 的出站结果 |
 | ADR-0045 的网关房间规则 | “联邦关着，公开房间只多一条绕过邀请的路” | 理由改成“会被搜到、被刷”；加上发邀请、发消息的限频 |
 | ADR-0003 推送 | 只有本机 Tuwunel 的 pusher 指向核心 | 加 Sygnal，给别家账号的 App 用 |

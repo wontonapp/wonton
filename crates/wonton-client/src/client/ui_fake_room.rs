@@ -75,8 +75,14 @@ pub(super) fn timeline(room_id: &str) -> TimelineUpdate {
         }
         items.push(item(index));
     }
+    // 走查进房落点用：`WONTON_UI_FAKE_ANCHOR=last` 让落点就是最新一条，`placeAnchor` 走贴底那一支。
+    let anchor = if std::env::var("WONTON_UI_FAKE_ANCHOR").as_deref() == Ok("last") {
+        items.last().map(|item| item.id.clone())
+    } else {
+        Some("ui-fake-2".into())
+    };
     TimelineUpdate {
-        anchor: Some("ui-fake-2".into()),
+        anchor,
         diffs: vec![TimelineDiff::Reset { items }],
         back_pagination: BackPagination::ReachedStart,
         viewport: TimelineViewport::Away { new_messages: 0 },
@@ -117,6 +123,7 @@ pub(super) fn timeline(room_id: &str) -> TimelineUpdate {
         jump: wonton_protocol::JumpState::Idle,
         back_to: None,
         editing: None,
+        focus_revision: 0,
     }
 }
 
@@ -222,6 +229,12 @@ pub(super) const TABLE_INDEX: usize = 23;
 pub(super) const QUOTED_INDEX: usize = 19;
 /// 引用上一条的长中文回复：几段长短不一，有的末行写满，用来查时间戳和正文重叠、长段被截断。
 pub(super) const LONG_REPLY_INDEX: usize = 20;
+/// 引用一条不在房间里的消息：跳到它要翻到房间开头，最后给“找不到”。
+pub(super) const MISSING_QUOTE_INDEX: usize = 18;
+/// 名字很长的发送者：群聊里名字只许占一行。
+pub(super) const LONG_NAME_INDEX: usize = 22;
+/// 删除的消息：菜单里没有任何动作，只剩发送时间；顺便看读屏念不念“已编辑”。
+pub(super) const REDACTED_INDEX: usize = 17;
 /// 一条只有 `wonton://` 链接的消息，带查询和结尾斜杠：点它要剥掉后就地打开“其他服务器”。
 pub(super) const APP_LINK_INDEX: usize = 6;
 /// 认不得的 `wonton:` 链接（单斜杠写法）：点它要提示一句，不开白页。
@@ -249,6 +262,8 @@ const TALL_EVERY: usize = 4;
 const TALL_PARAGRAPHS: usize = 60;
 /// 最后一条消息的最后一段：UI 测试按它找真正的底。
 const LAST_LINE: &str = "Fixture last line";
+/// 第 22 条的发送者名字，长到一行放不下。
+const LONG_NAME: &str = "Echo the group bot with a really long account name";
 /// 最后一条是自己刚发、还没送达的：待发脚注“已保存，等待送达”和时钟由它验。
 const SENDING_INDEX: usize = ITEMS - 1;
 
@@ -342,6 +357,11 @@ fn decorate(index: usize, own: bool, message: &mut TimelineMessage) {
     if let Some(reply) = quote(index) {
         message.reply = Some(reply);
     }
+    if index == MISSING_QUOTE_INDEX {
+        message.reply = Some(ReplyQuote::Unavailable {
+            event_id: "$ui-fake-missing".into(),
+        });
+    }
     if index == CHOICES_INDEX {
         message.choices = Some(choices());
     }
@@ -383,8 +403,54 @@ fn decorate(index: usize, own: bool, message: &mut TimelineMessage) {
     }
 }
 
+/// 带链接的两条：正文就是那个 `wonton:` 地址。
+fn link_url(index: usize) -> Option<&'static str> {
+    match index {
+        APP_LINK_INDEX => Some(APP_LINK),
+        UNKNOWN_APP_LINK_INDEX => Some(UNKNOWN_APP_LINK),
+        _ => None,
+    }
+}
+
+/// 把正文换成一行链接：这两条是照片消息，链接得挂在照片的说明上，所以要等挑完条目再说。
+fn set_link(item: &mut TimelineItem, url: &str) {
+    let TimelineContent::Message { message } = &mut item.content else {
+        return;
+    };
+    let block = RichBlock {
+        kind: RichBlockKind::Paragraph,
+        depth: 0,
+        quoted: false,
+        spans: vec![RichSpan {
+            text: url.into(),
+            link: Some(RichLink {
+                url: url.into(),
+                kind: RichLinkKind::Other,
+            }),
+            ..RichSpan::default()
+        }],
+    };
+    match &mut message.body {
+        MessageContent::Text { body, blocks, .. } => {
+            *body = url.into();
+            blocks.clear();
+            blocks.push(block);
+        }
+        MessageContent::Image { image } => {
+            image.caption = Some(ImageCaption {
+                body: url.into(),
+                blocks: vec![block],
+            });
+        }
+        _ => {}
+    }
+}
+
 fn item(index: usize) -> TimelineItem {
-    if let Some(photo) = photo(index) {
+    if let Some(mut photo) = photo(index) {
+        if let Some(url) = link_url(index) {
+            set_link(&mut photo, url);
+        }
         return photo;
     }
     // 8..=10 都算 Echo 的，凑一组连发的消息给并排的气泡做样子，第 24 条是自己发不出去的一条，最后一条是自己还没送达的，
@@ -400,24 +466,28 @@ fn item(index: usize) -> TimelineItem {
         at_ms(index),
         &paragraphs,
     );
-    if (index == APP_LINK_INDEX || index == UNKNOWN_APP_LINK_INDEX)
-        && let MessageContent::Text { blocks, .. } = &mut message.body
-    {
-        blocks[0].spans[0].link = Some(RichLink {
-            url: paragraphs[0].clone(),
-            kind: RichLinkKind::Other,
-        });
-    }
     if index == TABLE_INDEX
         && let MessageContent::Text { blocks, .. } = &mut message.body
     {
         blocks.push(table());
     }
+    if index == LONG_NAME_INDEX {
+        message.sender_name = LONG_NAME.into();
+    }
+    if index == REDACTED_INDEX {
+        message.body = MessageContent::Redacted;
+        message.actions.clear();
+        message.edited = true;
+    }
     decorate(index, own, &mut message);
-    TimelineItem {
+    let mut item = TimelineItem {
         id: format!("ui-fake-{index}"),
         content: TimelineContent::Message { message },
+    };
+    if let Some(url) = link_url(index) {
+        set_link(&mut item, url);
     }
+    item
 }
 
 /// 引用条：`REPLY_INDEX` 引用第 5 条，`LONG_REPLY_INDEX` 引用那条短消息，其余的没有。
@@ -524,6 +594,10 @@ pub(super) fn text_message(
         actions.push(MessageAction::Edit { text: body.clone() });
     }
     actions.push(MessageAction::Forward);
+    // 撤回照真核心固定放最后：自己的消息才有。
+    if own {
+        actions.push(MessageAction::Redact);
+    }
     TimelineMessage {
         actions,
         event_id: Some(event_id),
@@ -557,7 +631,7 @@ fn photo_item(index: usize, position: usize, count: Option<u32>) -> TimelineItem
         token: format!("{PHOTO_TOKEN}-{position}"),
     };
     // 说明文字就是原来这条的文字消息：现有走查按 “Fixture message N” 找这一条，
-    // 长按菜单（回复、转发）和引用也靠它，换成照片后这些还得照旧。
+    // 长按菜单（回复、转发）和引用也靠它，换成照片后这些还得照旧。6、7 说明会被 `set_link` 换成链接地址。
     let own = index != PHOTO_SOLO_INDEX;
     let text = format!("Fixture message {index}");
     let blocks = vec![RichBlock {
@@ -931,6 +1005,34 @@ mod tests {
             "{} must load",
             image.media.token
         );
+    }
+
+    #[test]
+    fn link_messages_show_the_url_on_their_own_line() {
+        for (index, url) in [
+            (APP_LINK_INDEX, APP_LINK),
+            (UNKNOWN_APP_LINK_INDEX, UNKNOWN_APP_LINK),
+        ] {
+            let item = item(index);
+            let TimelineContent::Message { message } = item.content else {
+                panic!("item {index} must be a message");
+            };
+            // 6、7 是照片：链接挂在说明上，不能落在挑照片之前那条被丢掉的文字消息上。
+            let MessageContent::Image { image } = message.body else {
+                panic!("item {index} must be a photo");
+            };
+            let caption = image.caption.expect("the link must be the caption");
+            assert_eq!(caption.body, url);
+            assert_eq!(caption.blocks[0].spans[0].text, url);
+            let link = caption.blocks[0].spans[0]
+                .link
+                .as_ref()
+                .expect("the span carries the link");
+            assert_eq!(
+                (link.url.as_str(), link.kind.clone()),
+                (url, RichLinkKind::Other)
+            );
+        }
     }
 
     #[test]
