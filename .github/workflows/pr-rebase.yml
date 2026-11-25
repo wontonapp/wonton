@@ -54,7 +54,12 @@ jobs:
             git checkout --quiet -B "$branch" "refs/remotes/origin/$branch"
             if git rebase --quiet origin/main; then
               git push --quiet --force-with-lease="refs/heads/$branch:refs/remotes/origin/$branch" \
-                origin "HEAD:refs/heads/$branch" && touched=$((touched + 1))
+                origin "HEAD:refs/heads/$branch" && {
+                touched=$((touched + 1))
+                # 这里推分支用的是工作流自带的 GITHUB_TOKEN，它推的分支不触发 gate，PR 上会一条检查都没有。
+                # 补一轮：dispatch gate 到这个分支。失败不拦，push 事件那条路兜底。
+                gh workflow run gate.yml --ref "$branch" || echo "gate 没 dispatch 起来：$branch"
+              }
               echo "rebase 成功：#$num $branch"
               continue
             fi
