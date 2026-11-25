@@ -120,6 +120,85 @@ class RoomAttachPanelTest : RoomTelegramCase() {
         clearTray()
     }
 
+    /**
+     * 回形针打开相册网格，点两张以后底下换成附言条，写了附言点发送：面板收起、附件区不留东西，
+     * 时间线里出现带这张附言的消息。相册里没有照片时先放两张进去；照片只在本机相册里。
+     * 附件区存在盘上、进程之间留着：先把剩下的拿掉。
+     */
+    @Test
+    fun attachSheetSendsPhotosWithNote() {
+        val core = (compose.activity.application as WontonApplication).core.getOrThrow()
+        ensureAlbumPhotos()
+        clearTray()
+        compose.onNodeWithContentDescription(string(R.string.composer_attach)).performClick()
+        compose.waitUntil(10_000) { compose.onAllNodes(hasTestTag("album-grid")).fetchSemanticsNodes().size == 1 }
+        compose.waitUntil(10_000) { compose.onAllNodes(hasTestTag("album-photo")).fetchSemanticsNodes().size >= 2 }
+        compose.onAllNodes(hasTestTag("album-photo"))[0].performClick()
+        compose.onAllNodes(hasTestTag("album-photo"))[1].performClick()
+        compose.waitUntil(10_000) { compose.onAllNodes(hasTestTag("attach-send")).fetchSemanticsNodes().isNotEmpty() }
+        val field = compose.onNode(hasSetTextAction() and hasAnyAncestor(hasTestTag("attach-send")))
+        field.performTextInput("两张都发")
+        compose.waitForIdle()
+        val shown = compose.onAllNodes(hasText("两张都发", substring = true)).fetchSemanticsNodes().size
+        check(shown > 0) { "输入框里没进去：${field.fetchSemanticsNode().config}" }
+        screenshot("attach-sheet")
+        sheetSend("attach-send").performClick()
+        compose.waitUntil(10_000) {
+            compose.onAllNodes(hasTestTag("attach-send")).fetchSemanticsNodes().isEmpty()
+        }
+        runCatching {
+            compose.onNodeWithContentDescription(string(R.string.room_scroll_to_bottom), substring = true)
+                .performClick()
+        }
+        compose.waitUntil(10_000) {
+            compose.onAllNodes(hasText("两张都发", substring = true)).fetchSemanticsNodes().isNotEmpty()
+        }
+        val vm = runBlocking { core.subscribeComposer(TimelineTarget(ECHO_ROOM, null)).use { it.next()!! } }
+        check(vm.attachments.isEmpty()) { "附件区还剩 ${vm.attachments.size} 条" }
+        screenshot("attach-sent")
+        check(trayTiles() == 0) { "附件区里还剩着照片" }
+        compose.onNode(hasSetTextAction()).assertIsDisplayed()
+    }
+
+    /**
+     * 附件区里有一张没传上去的照片时点发送：核心拒收，字、附件和回复对象都得留着，原因说出来。
+     * 现在发送一律当成功，字丢了、回复也收了。
+     */
+    @Test
+    fun rejectedSendKeepsDraftAndReply() {
+        val core = (compose.activity.application as WontonApplication).core.getOrThrow()
+        ensureAlbumPhotos()
+        clearTray()
+        // 面板选完就发，先在核心那边定好：下一张进附件区的照片上传失败。
+        core.failNextAttachmentForTest(TimelineTarget(ECHO_ROOM, null))
+        compose.onNodeWithContentDescription(string(R.string.composer_attach)).performClick()
+        compose.waitUntil(10_000) { compose.onAllNodes(hasTestTag("album-photo")).fetchSemanticsNodes().isNotEmpty() }
+        compose.onAllNodes(hasTestTag("album-photo"))[0].performClick()
+        compose.waitUntil(10_000) { compose.onAllNodes(hasTestTag("attach-send")).fetchSemanticsNodes().isNotEmpty() }
+        sheetSend("attach-send").performClick()
+        compose.waitUntil(10_000) {
+            compose.onAllNodes(hasTestTag("attach-send")).fetchSemanticsNodes().isEmpty()
+        }
+        compose.waitUntil(10_000) { trayTiles() == 1 }
+        // 回一条，附件已经在附件区里标成失败了。
+        scrollTo(15)
+        item(15).performTouchInput {
+            val middle = height / 2f
+            swipe(Offset(width * 0.8f, middle), Offset(width * 0.3f, middle), durationMillis = 300)
+        }
+        compose.onNodeWithContentDescription(string(R.string.message_reply_cancel)).assertIsDisplayed()
+        compose.onNode(hasSetTextAction()).performTextInput("先发这句")
+        compose.onNodeWithContentDescription(string(R.string.composer_send)).performClick()
+        // 被拒的原因写在弹窗里，点“确定”收掉。
+        compose.waitUntil(10_000) {
+            compose.onAllNodes(hasText("Retry or remove it first", substring = true)).fetchSemanticsNodes().isNotEmpty()
+        }
+        compose.onNodeWithText(string(R.string.design_ok)).performClick()
+        compose.onNode(hasText("先发这句")).assertIsDisplayed()
+        check(trayTiles() == 1) { "附件被吃掉了" }
+        compose.onNodeWithContentDescription(string(R.string.message_reply_cancel)).assertIsDisplayed()
+    }
+
     /** 转码期间又打的字留着：发出去的是按下时的那句附言，等的时候补的字回到输入框。 */
     @Test
     fun textTypedWhileSendingStaysInTheInput() {

@@ -85,8 +85,8 @@ internal const val MAX_TRAY_ITEMS = 12
 
 /**
  * Telegram 样式的聊天页（ADR-0109）用例的公共夹具：只用 Debug 的假核心和它固定的房间，不连家里的服务器。
- * 按负责的面分给 `RoomTelegramTest`（时间线）、`RoomCommandMenuTest`（命令菜单）、`RoomAttachPanelTest`（附件、转发面板）
- * 和 `RoomEditTest`（编辑消息）继承。
+ * 按负责的面分给 `RoomTelegram*Test`（回复、时间线、选项、失败、头像、顶栏、待确认等）、`RoomCommandMenuTest`（命令菜单）
+ * 和 `RoomAttachPanelTest`（附件、转发面板）、`RoomEditTest`（编辑消息）继承。
  */
 @RunWith(AndroidJUnit4::class)
 abstract class RoomTelegramCase {

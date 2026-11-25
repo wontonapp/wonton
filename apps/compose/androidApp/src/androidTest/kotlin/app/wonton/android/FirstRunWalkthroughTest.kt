@@ -204,7 +204,7 @@ class FirstRunWalkthroughTest {
         shot("19-hermes-room")
     }
 
-    /// 气泡（自己的和对方的都有这个 testTag），和 RoomTelegramTest 一样走未合并的树。
+    /// 气泡（自己的和对方的都有这个 testTag），和同目录的消息测试一样走未合并的树。
     private fun bubbles(): List<SemanticsNode> =
         compose.onAllNodes(hasTestTag("bubble"), useUnmergedTree = true)
             .fetchSemanticsNodes(atLeastOneRootRequired = false)
