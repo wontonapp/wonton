@@ -413,10 +413,12 @@ fn unknown_payload_is_other() {
     let item_json = json!({
         "id": "f-1", "type": "form", "status": "pending", "created_at_ms": 1,
         "sender": {"kind": "agent", "id": "app.hermes", "display_name": "Hermes"},
-        "title": "表单", "payload": {"type": "other"},
+        "title": "表单",
+        "payload": {"type": "form", "payload": {"fields": [{"id": "name", "label": "名字"}]}},
         "raw_payload": {"type": "form", "payload": {"fields": []}}
     });
     let item: InboxItem = serde_json::from_value(item_json).unwrap();
+    assert!(matches!(item.payload, InboxPayload::Other(_)));
     assert_eq!(item.raw_payload.unwrap()["type"], "form");
     let mut mismatch = choice_item();
     mismatch.kind = InboxType::Page;
