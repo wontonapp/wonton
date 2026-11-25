@@ -560,6 +560,7 @@ fn label(added: &Added) -> String {
         Added::ValueAt(pathed, value) => format!("x-wonton.{}: {value}", path(pathed)),
         Added::GenericProvides => "x-wonton.provides.<能力>".to_owned(),
         Added::Permission(name) => format!("permission {name}"),
+        Added::RetiredPermission(name) => format!("permission {name} 退役"),
         Added::ServiceKey(key) => format!("services {key}"),
         Added::Variable(name) => format!("variable {name}"),
         Added::NetworkModeService => "network_mode: service:<服务名>".to_owned(),
@@ -664,6 +665,7 @@ const EXPECTED: &[(&str, &str)] = &[
     // 0.16
     ("0.16", "x-wonton.provides.<名字>.operations"),
     ("0.16", "x-wonton.provides.<名字>.kinds"),
+    ("0.16", "permission models 退役"),
 ];
 
 #[test]
@@ -706,4 +708,15 @@ fn the_table_matches_the_expected_per_version_list() {
         generated, expected,
         "spec_floor 表和期望清单不一致：先改这份清单，再同步 wonton-docs 的 plugin-spec.md“各版本新增的字段”"
     );
+}
+
+/// 0.16 起 `models` 只走能力依赖：写在 `permissions` 里报错并给出改法，0.15 及更早照收。
+#[test]
+fn permission_models_is_retired_from_0_16() {
+    let manifest = json!({"permissions": ["models"]});
+    let found = problems(&document("0.16", manifest.clone(), plain()));
+    assert_eq!(found.len(), 1, "{found:?}");
+    assert!(found[0].contains("permission models"), "{found:?}");
+    assert!(found[0].contains("wants: [models]"), "{found:?}");
+    assert!(problems(&document("0.15", manifest, plain())).is_empty());
 }

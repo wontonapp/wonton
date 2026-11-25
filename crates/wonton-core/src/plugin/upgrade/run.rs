@@ -769,7 +769,7 @@ impl PluginManager {
         {
             tracing::warn!(plugin = %id, error = %e, "删新版本不用的 OIDC 客户端失败");
         }
-        if !manifest.permissions.contains(&Permission::Models)
+        if !super::super::models::uses_models(manifest)
             && let Err(e) = self.revoke_models(id, langs).await
         {
             tracing::warn!(plugin = %id, error = %e, "吊销新版本不用的模型网关凭据失败");
