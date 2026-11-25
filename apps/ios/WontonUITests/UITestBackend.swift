@@ -51,17 +51,19 @@ enum UITestBackend {
         }
     }
 
-    /// 启动 App。通知权限框统一在这里关掉：它在启动后弹，会吃掉各用例的第一个点击；
-    /// 要问权限的用例自己调 `NotificationPermission`。
-    static func launch(_ app: XCUIApplication) {
-        app.launchEnvironment["WONTON_DEV_SKIP_PUSH_AUTH"] = "1"
+    /// 启动 App。通知权限框默认在这里关掉：它在启动后弹，会吃掉各用例的第一个点击；
+    /// 要用框的用例传 `skipPushAuth: false`（推送探针要等权限框）。
+    static func launch(_ app: XCUIApplication, skipPushAuth: Bool = true) {
+        if skipPushAuth {
+            app.launchEnvironment["WONTON_DEV_SKIP_PUSH_AUTH"] = "1"
+        }
         app.launch()
     }
 
     /// 配到离开配对页为止。启动时带的码可能已经被上一条用了：在失败面点“再扫一次”换下一个码；
     /// 已经配上就什么都不做。返回时配对页已经不在，后续断言各自等自己那一屏。
     @MainActor
-    static func pairIfNeeded(_ app: XCUIApplication) throws {
+    static func pairIfNeeded(_ app: XCUIApplication, onAttempt: ((Int) -> Void)? = nil) throws {
         let codes = try codes()
         try XCTSkipIf(codes.isEmpty, "需要开发栈：没有 PAIRING_CODE")
         let field = app.descendants(matching: .any)["pairing-code"].firstMatch
@@ -74,6 +76,7 @@ enum UITestBackend {
             if app.staticTexts["Continue on your other device"].exists { return true }
             if app.buttons["key-handoff-skip"].exists { return true }
             if app.buttons["Skip"].exists { return true }
+            if app.buttons["Apps"].exists || app.buttons["应用"].exists { return true }
             let pairing = field.exists || again.exists || progress.exists
             return !pairing && app.buttons["Sidebar"].exists
         }
@@ -90,6 +93,7 @@ enum UITestBackend {
                 } else {
                     field.typeText(code)
                 }
+                onAttempt?(index)
                 let pair = app.buttons["pairing-submit"]
                 XCTAssertTrue(pair.waitForExistence(timeout: 10), app.debugDescription)
                 pair.tap()
