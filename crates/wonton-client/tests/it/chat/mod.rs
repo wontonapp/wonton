@@ -365,7 +365,7 @@ async fn accept_the_bots_invite_with(
                 .cloned()
         })
         .await;
-    assert!(!joined.is_encrypted);
+    assert_eq!(joined.is_encrypted, encrypted);
     assert_eq!(
         joined.direct_user_id.as_deref(),
         Some(bot.user_id().as_str())

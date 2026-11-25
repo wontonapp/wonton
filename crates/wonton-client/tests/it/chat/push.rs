@@ -1,5 +1,5 @@
 //! 推送：手机把推送订阅登记给家里、注册 pusher；App 被杀后 Bot 回复，Tuwunel 推给推送代理；推送唤醒的进程
-//! 一创建核心就把推送交给它，核心等会话从本机恢复，经隧道取回消息、在本机解密，给出通知（ADR-0003）。
+//! 一创建核心就把推送交给它，核心等会话从本机恢复，经隧道取回消息（加密房间里的密文在本机解密），给出通知（ADR-0003）。
 
 use std::time::Duration;
 
@@ -94,7 +94,7 @@ async fn a_bot_reply_wakes_a_killed_app_and_shows_the_decrypted_text() {
     let bot = home.bot("hermes", "Hermes").await;
     let room_id = accept_the_bots_invite(&home, &phone, &bot).await;
 
-    // App 被杀，Bot 这时回复：房间密钥经 to-device 发给手机，手机还没收到。
+    // App 被杀，Bot 这时回复。
     drop(phone);
     let bot_room = bot.open_room(&room_id).await.expect("Bot 打开私聊");
     let sent = bot_room.send_text("你的快递到了", &[]).await;

@@ -12,7 +12,7 @@ use wonton_protocol::{
     BotActivityFacts, SideChatCard, SideChatState, TimelineAction, TimelineTarget,
 };
 
-use super::accept_the_bots_invite;
+use super::accept_the_bots_encrypted_invite;
 use super::bot_receives;
 use super::support::{Home, Phone, Timeline, ToDeviceHold};
 use crate::plugins::rig::running;
@@ -78,7 +78,7 @@ async fn finish_setup(
                 .then_some(())
         })
         .await;
-    let room = accept_the_bots_invite(&home, &phone, &bot).await;
+    let room = accept_the_bots_encrypted_invite(&home, &phone, &bot).await;
     let bot_room = bot.open_room(&room).await.expect("Bot 打开房间");
     bot_room
         .send_state_event_raw(

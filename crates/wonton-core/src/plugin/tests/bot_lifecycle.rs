@@ -123,7 +123,12 @@ async fn a_bot_plugin_gets_its_own_matrix_identity_through_the_core() {
     {
         let state = bed.tuwunel.state();
         let room = &state.rooms[&env["ROOM"]];
-        assert!(room.encrypted && room.members.contains("@owner:test"));
+        assert!(!room.encrypted && room.members.contains("@owner:test"));
+        assert!(
+            !state.room_state[&env["ROOM"]]
+                .events
+                .contains_key(&("m.room.encryption".to_owned(), String::new()))
+        );
         let name = state.user("@echo:test").display_name.as_deref();
         assert_eq!(name, Some("回声"));
     }
