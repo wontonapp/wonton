@@ -24,7 +24,7 @@ Agent 能调用它们，有网页的插件在 App 里像小程序一样使用。
 1. 在干净的 Debian 或 Ubuntu + Docker 主机上（amd64 和 arm64 各一台）执行一行安装命令，10 分钟内
    装完；浏览器打开局域网页面，能看到配对二维码和运行状态。
 2. iOS / Android App 扫码配对成为主人；手机切到蜂窝网络后仍可正常使用。
-3. 使用 Hermes 自带的供应商接入，以其支持的 API key 或订阅登录接好模型后，默认 Bot 能收发加密文字、图片和文件；不安装 Magpie 也能完成这条链路（ADR-0108）。
+3. 使用 Hermes 自带的供应商接入，以其支持的 API key 或订阅登录接好模型后，默认 Bot 能收发文字、图片和文件（ADR-0118 起房间不加密）；不安装 Magpie 也能完成这条链路（ADR-0108）。
 4. 插件商店：官方目录至少包含 Immich、Navidrome、Paperless-ngx、Ollama、Syncthing、Samba，热门应用
    转成官方插件，不做 CasaOS 导入；安装前展示并确认权限；插件网页在 App 内打开，支持 OIDC 的应用自动登录。
 5. 对 Bot 说“帮我装某个应用”，Bot 在聊天里发确认按钮，主人确认后完成安装并回报结果。

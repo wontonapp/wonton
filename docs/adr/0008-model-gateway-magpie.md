@@ -1,6 +1,7 @@
 # ADR-0008 模型网关：magpie
 
 - 状态：通用模型网关合同保留；Magpie 的系统插件地位、默认安装前置与 Agent 统一模型入口已被 [ADR-0108](0108-hermes-default-kernel.md) 取代（主人 2026-11-15）。Hermes 改用其自带供应商接入，核心与默认装机不依赖 Magpie；下文相关预装、默认组与配置入口记录旧方案及其验证条件。
+- 由 [ADR-0118](0118-im-three-layers-push-with-body.md) 修订（2026-11-25）：房间不再端到端加密，Hermes 的 `MATRIX_E2EE_MODE` 从 `required` 改成 `off`，下文验证结果里的加密对话和交叉签名按改前的记录看
 
 ## 背景
 
