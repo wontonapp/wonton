@@ -122,6 +122,48 @@ async fn a_bot_reply_is_pushed_through_the_proxy_and_decrypted_by_the_woken_phon
     wait_until_no_pushers(&woken).await;
 }
 
+/// 不加密的房间：Tuwunel 的完整格式里带着正文和消息类型，核心照发即可（ADR-0118 §2）。
+#[tokio::test]
+#[ignore = "需要 Docker，用 --include-ignored 运行"]
+async fn an_unencrypted_room_push_carries_the_body() {
+    let gateway = PushGateway::start().await;
+    let server = TestServer::with_push_gateway(&gateway).await;
+    let phone = server.login(&unique("owner"), "手机").await;
+    let bot = server.login(&unique("hermes"), "Hermes").await;
+    bot.set_display_name("Hermes")
+        .await
+        .expect("Bot 设置显示名");
+    phone.start_sync().await.expect("手机开始同步");
+    let pushkey = random_hex(32);
+    phone
+        .set_pusher(&pusher(&pushkey, PushGateway::URL))
+        .await
+        .expect("注册 pusher");
+    let room_id = direct_chat(&bot, &phone, false).await;
+
+    // App 被杀：手机停止同步。Bot 回复时通知里直接带正文。
+    phone.stop_sync().await;
+    drop(phone);
+    let bot_room = bot.open_room(&room_id).await.expect("Bot 打开私聊");
+    bot_room
+        .send_text("你的快递到了", &[])
+        .await
+        .expect("Bot 回复");
+
+    let pushed = gateway
+        .wait_for("推送网关收到不加密消息的正文", |r| {
+            r.notification["type"] == "m.room.message"
+                && r.notification["devices"][0]["pushkey"] == pushkey
+        })
+        .await;
+    let notification = &pushed.notification;
+    assert_eq!(notification["content"]["body"], "你的快递到了");
+    assert_eq!(notification["content"]["msgtype"], "m.text");
+    assert_eq!(notification["room_id"], room_id.as_str());
+    assert_eq!(notification["sender_display_name"], "Hermes");
+    assert_eq!(notification["sender"], bot.user_id().as_str());
+}
+
 /// 一条通知在收到的顺序里的位置。
 fn gateway_index(gateway: &PushGateway, received: &Received) -> usize {
     gateway
