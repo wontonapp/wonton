@@ -391,7 +391,12 @@ pub fn relay_from_item(item: &str, tier: u8) -> Result<Relay, String> {
         }
     };
     // `https://@host`：写了 userinfo 却是空的，多半是令牌丢了，报出来而不是当没写。
-    let authority = item.split_once("://").map_or(item, |(_, rest)| rest);
+    // 只看 authority 段；query 里的 `@` 不是 userinfo。
+    let after_scheme = item.split_once("://").map_or(item, |(_, rest)| rest);
+    let authority_end = after_scheme
+        .find(['/', '?', '#'])
+        .unwrap_or(after_scheme.len());
+    let authority = &after_scheme[..authority_end];
     if authority.contains('@') && url.username().is_empty() && url.password().is_none() {
         return Err(format!("{}：令牌不能是空的", redact_item(item)));
     }
