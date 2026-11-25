@@ -246,9 +246,9 @@ class HandlerTest(unittest.TestCase):
             request.add_header(name, value)
         try:
             with urllib.request.urlopen(request, timeout=5) as response:
-                return response.status, response.read()
+                return response.status, response.headers
         except urllib.error.HTTPError as error:
-            return error.code, error.read()
+            return error.code, error.headers
 
     def fcm_post(self, path: str = f"/push/{FCM}", body: bytes = b"cipher"):
         request = urllib.request.Request(self.base + path, data=body, method="POST")
@@ -256,9 +256,9 @@ class HandlerTest(unittest.TestCase):
         request.add_header("Authorization", vapid(self.key))
         try:
             with urllib.request.urlopen(request, timeout=5) as response:
-                return response.status, response.read()
+                return response.status, response.headers
         except urllib.error.HTTPError as error:
-            return error.code, error.read()
+            return error.code, error.headers
 
     def test_maps_web_push_to_fcm_data(self):
         status, _ = self.fcm_post()
@@ -327,6 +327,19 @@ class HandlerTest(unittest.TestCase):
     def test_unregistered_is_410(self):
         FakeGorush.answer = {"logs": [{"error": "Unregistered"}]}
         self.assertEqual(self.post()[0], 410)
+
+    def test_unavailable_is_503_with_retry_after(self):
+        FakeGorush.answer = {"logs": [{"error": "Unavailable"}]}
+        status, headers = self.post()
+        self.assertEqual(status, 503)
+        self.assertEqual(headers.get("Retry-After"), "1")
+        # 中继自己写回的头要从 _classify 的 Reply 里透传出来。
+        FakeGorush.answer = {"logs": [{"error": "TooManyRequests"}]}
+        self.assertEqual(self.fcm_post()[0], 503)
+
+    def test_message_too_big_is_413(self):
+        FakeGorush.answer = {"logs": [{"error": "MessageTooBig"}]}
+        self.assertEqual(self.fcm_post()[0], 413)
 
     def test_provider_error_is_502(self):
         FakeGorush.answer = {"logs": [{"error": "InvalidProviderToken"}]}

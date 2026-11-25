@@ -274,6 +274,7 @@ class Verifier:
 class Reply:
     status: int
     body: bytes
+    headers: dict[str, str] | None = None
 
 
 class Gorush:
@@ -520,7 +521,7 @@ class Handler(BaseHTTPRequestHandler):
         self.send_response(reply.status)
         self.send_header("Content-Type", "application/json")
         self.send_header("Content-Length", str(len(reply.body)))
-        for name, value in (headers or {}).items():
+        for name, value in {**(reply.headers or {}), **(headers or {})}.items():
             self.send_header(name, value)
         self.end_headers()
         self.wfile.write(reply.body)

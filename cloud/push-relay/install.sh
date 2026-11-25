@@ -92,6 +92,12 @@ install_vhost() {
     systemctl reload nginx
 }
 
+# 没有服务账号时只说一句：gorush 默认关着 Android，APNs 不受影响。
+fcm_hint() {
+    [[ -e "$ETC/fcm-service-account.json" ]] && return
+    echo "install: 没有 FCM 服务账号，gorush 的 Android 保持关闭（见 README 的“FCM 配置”）"
+}
+
 # certbot 会把推送证书装到主人的 808cbd 块上（它的 server_name 有 *.808cbd.com），换回主人自己的证书。
 restore_owner_cert() {
     local owner=/etc/nginx/sites-available/$OWNER_DOMAIN

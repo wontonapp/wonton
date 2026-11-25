@@ -30,10 +30,10 @@ Tuwunel ──pushkey──▶ 核心（加密给设备的公钥）
 
 | Web Push             | APNs                                        |
 | -------------------- | ------------------------------------------- |
-| 正文（aes128gcm）    | `data.wonton`：不带填充的 base64url          |
+| 正文（aes128gcm）    | APNs：`data.wonton`（不带填充的 base64url）；FCM 同字段 |
 | `Urgency: high`      | `apns-priority: 10`，其余 `5`                |
 | `TTL: n`             | `apns-expiration: now+n`，`0` 原样为 0，缺省 86400 |
-| `Topic: t`           | `collapse_id` / `collapse_key`（截到 64 字节） |
+| `Topic: t`           | `collapse_id`（APNs，截到 64 字节）；gorush 1.22 的 Android 路径还不支持折叠 |
 | 固定                 | `apns-push-type: alert`、`mutable-content: 1`、`content-available: 1`；`aps.alert.body` 是兜底正文（配置里的 `alert`），扩展解出后覆盖 |
 
 正文上限 2816 字节：APNs 一条 4 KiB，外壳约 200 字节，base64 又把密文撑大 4/3，再大就撞 APNs 的上限。
@@ -46,9 +46,15 @@ FCM 的 `Unregistered`、`NotRegistered`、`InvalidRegistration`），核心据�
 
 ## FCM 配置
 
-Android 的 FCM 需要在 Firebase 控制台建项目，把服务器密钥填进 `gorush.yml` 的 `android.api_key`，把
-`google-services` 的项目号、应用 ID、API key、sender ID 经 `wonton.fcm*` 构建参数编进 App（见
-`apps/compose/androidApp/build.gradle.kts`）。缺任何一项时 App 的 `FcmPush.configured` 为假，退回 UnifiedPush。
+FCM 用 Firebase 的**服务账号**（`gorush.yml` 的 `android.credential`），不是旧版服务器密钥：
+
+1. Firebase 控制台建项目，项目设置 → 服务账号 → 生成新的私钥，下载 JSON。
+2. 把 JSON 放到 `/etc/wonton-push-relay/fcm-service-account.json`，属主 `root:wonton-push`、`0640`。
+3. 把 `gorush.yml` 的 `android.enabled` 改成 `true`，重启 `wonton-push-gorush`。
+4. App 侧把 `google-services` 的项目号、应用 ID、API key、sender ID 和 `wonton.pushRelay` 经构建参数编进去（见
+   `apps/compose/androidApp/build.gradle.kts`）；缺任何一项时 `FcmPush.configured` 为假，退回 UnifiedPush。
+
+默认 `android.enabled: false`：没有服务账号时打开它，gorush 会在启动时 Fatal，连 APNs 一起停。
 
 ## 鉴权
 

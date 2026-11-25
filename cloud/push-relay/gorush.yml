@@ -12,9 +12,10 @@ api:
   push_uri: "/api/push"
   health_uri: "/healthz"
 android:
-  enabled: true
-  # Firebase 控制台的服务器密钥（云消息 → 服务器密钥）。没有时 APNs 照常，FCM 推送会回 502。
-  api_key: "CHANGE_ME"
+  # 默认关：没有服务账号文件时打开，gorush 会在启动时 Fatal，APNs 也一起起不来。
+  # 放好服务账号 JSON 再改成 true（见 README 的“FCM 配置”）。
+  enabled: false
+  key_path: "/etc/wonton-push-relay/fcm-service-account.json"
   max_retry: 1
 huawei:
   enabled: false
