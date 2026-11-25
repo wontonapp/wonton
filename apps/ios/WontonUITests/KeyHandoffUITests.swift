@@ -14,7 +14,7 @@ final class KeyHandoffUITests: XCTestCase {
         let app = XCUIApplication()
         app.launchArguments += ["-AppleLanguages", "(en)", "-AppleLocale", "en_US"]
         try UITestBackend.passPairingCode(to: app)
-        app.launch()
+        UITestBackend.launch(app)
         try UITestBackend.pairIfNeeded(app)
 
         // 配对、登录 Matrix、查对方设备都经开发栈。

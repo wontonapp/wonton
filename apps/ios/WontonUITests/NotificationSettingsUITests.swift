@@ -26,7 +26,7 @@ final class NotificationSettingsUITests: XCTestCase {
         app.launchArguments += ["-AppleLanguages", "(en)", "-AppleLocale", "en_US"]
         UITestBackend.enableStateProbe(to: app)
         try UITestBackend.passPairingCode(to: app)
-        app.launch()
+        UITestBackend.launch(app)
     }
 
     @MainActor

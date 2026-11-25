@@ -26,7 +26,7 @@ final class ChatTelegramUITests: XCTestCase {
         if ProcessInfo.processInfo.environment["WONTON_DARK"] == "1" {
             XCUIDevice.shared.appearance = .dark
         }
-        app.launch()
+        UITestBackend.launch(app)
     }
 
     /// 向左拖一条消息，松手后输入框上方出现回复条。
@@ -244,7 +244,7 @@ final class ChatTelegramUITests: XCTestCase {
         app.terminate()
         XCUIDevice.shared.appearance = .dark
         addTeardownBlock { XCUIDevice.shared.appearance = .light }
-        app.launch()
+        UITestBackend.launch(app)
         enter(Self.directRoom)
         waitForFloatingDateToFade()
         shot("direct-dark")
@@ -253,7 +253,7 @@ final class ChatTelegramUITests: XCTestCase {
         _ = selectTwo(first, second)
         shot("attach-selected-dark")
         app.terminate()
-        app.launch()
+        UITestBackend.launch(app)
         enter(Self.directRoom)
         openSideChat()
         shot("side-chat-dark")
@@ -267,13 +267,13 @@ final class ChatTelegramUITests: XCTestCase {
         XCTAssertTrue(wait(5) { photo.isSelected }, "深色下旁聊的相册选不上照片")
         shot("side-chat-multi-dark")
         app.terminate()
-        app.launch()
+        UITestBackend.launch(app)
         enter(Self.directRoom)
         openForwardSheet()
         selectTwoRooms()
         shot("forward-sheet-dark")
         app.terminate()
-        app.launch()
+        UITestBackend.launch(app)
         enter(Self.groupRoom)
         waitForFloatingDateToFade()
         shot("group-dark")
@@ -391,7 +391,7 @@ final class ChatTelegramUITests: XCTestCase {
         if ProcessInfo.processInfo.environment["WONTON_DARK"] == "1" {
             XCUIDevice.shared.appearance = .dark
         }
-        app.launch()
+        UITestBackend.launch(app)
         enter(Self.groupRoom)
         let title = app.staticTexts["Family"]
         XCTAssertTrue(title.waitForExistence(timeout: 10), "顶栏没有房间名\n\(app.debugDescription)")
@@ -491,7 +491,7 @@ final class ChatTelegramUITests: XCTestCase {
     func testRejectedSendKeepsCaptionPhotoAndReply() {
         app.terminate()
         app.launchEnvironment["WONTON_UI_TEST_FAIL_ATTACHMENT"] = "1"
-        app.launch()
+        UITestBackend.launch(app)
         enter(Self.directRoom)
         // 旁聊里是另一份假时间线（Fixture side N），回复落点旁边那条。
         startReply(on: text(startingWith: "Fixture side 1"))
@@ -585,7 +585,7 @@ final class ChatTelegramUITests: XCTestCase {
     func testPhotoBytesWaitShowsSendingAndKeepsTextTypedMeanwhile() {
         app.terminate()
         app.launchEnvironment["WONTON_UI_PHOTO_DELAY_MS"] = "4000"
-        app.launch()
+        UITestBackend.launch(app)
         enter(Self.directRoom)
         let (first, _) = openAttachSheet()
         first.tap()
@@ -608,7 +608,7 @@ final class ChatTelegramUITests: XCTestCase {
     func testSideChatRejectedSendKeepsDraftAndReply() {
         app.terminate()
         app.launchEnvironment["WONTON_UI_FAIL_SEND"] = "1"
-        app.launch()
+        UITestBackend.launch(app)
         enter(Self.directRoom)
         // 卡片就挂在进房落点那条：没画出来往上挪一两段，不用横穿整条时间线；
         // 底下可能被附件提示盖住，交给 revealClearOfHint 挪到提示上面。
@@ -698,12 +698,12 @@ final class ChatTelegramUITests: XCTestCase {
         shot("group-top")
         // 再进一次，停在最新一条：群聊平常的样子。
         app.terminate()
-        app.launch()
+        UITestBackend.launch(app)
         enter(Self.groupRoom)
         waitForFloatingDateToFade()
         shot("group")
         app.terminate()
-        app.launch()
+        UITestBackend.launch(app)
         enter(Self.directRoom)
         XCTAssertFalse(avatar.exists, "私聊里画了发送者头像")
     }

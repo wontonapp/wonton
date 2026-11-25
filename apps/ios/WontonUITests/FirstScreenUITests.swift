@@ -14,7 +14,7 @@ final class FirstScreenUITests: XCTestCase {
 
     func testFreshInstallShowsPairingScreen() throws {
         continueAfterFailure = false
-        app.launch()
+        UITestBackend.launch(app)
         XCTAssertTrue(
             app.descendants(matching: .any)["pairing-code"].firstMatch.waitForExistence(timeout: 20),
             "全新安装没有落在配对页"
@@ -29,7 +29,7 @@ final class FirstScreenUITests: XCTestCase {
     @MainActor
     func testUnpairedSidebarEntriesKeepPairingAndRetryAvailable() throws {
         app.launchEnvironment.removeValue(forKey: "WONTON_UI_FAKE")
-        app.launch()
+        UITestBackend.launch(app)
         let code = app.descendants(matching: .any)["pairing-code"].firstMatch
         XCTAssertTrue(code.waitForExistence(timeout: 10), app.debugDescription)
 
@@ -85,7 +85,7 @@ final class FirstScreenUITests: XCTestCase {
     func testFakeDataShowsChatList() throws {
         continueAfterFailure = false
         app.launchEnvironment["WONTON_UI_FAKE"] = "1"
-        app.launch()
+        UITestBackend.launch(app)
         XCTAssertTrue(
             app.staticTexts["Echo"].waitForExistence(timeout: 20),
             "假数据没进聊天列表\n\(app.debugDescription)"

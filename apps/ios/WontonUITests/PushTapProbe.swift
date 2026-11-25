@@ -69,13 +69,13 @@ final class PushTapProbe: XCTestCase {
 
     /// 第一段：走完引导、点掉权限框，等同步，聊天列表在（外层随后推、截图，杀 App 再推）。
     func test1GrantPermissionAndWaitSync() throws {
-        app.launch()
+        UITestBackend.launch(app)
         waitChatList()
     }
 
     /// 第二段：外层的推送循环正在跑，App 一进后台横幅就来；点开，验收进了房间。
     func test2TapBannerOpensTheRoom() throws {
-        app.launch()
+        UITestBackend.launch(app)
         waitChatList()
         XCUIDevice.shared.press(.home)
         let banner = springboard().staticTexts["Hermes"]

@@ -19,7 +19,7 @@ final class InstallingRowUITests: XCTestCase {
         // 模拟器的系统语言是中文也行：钉成英文，标记和查询对得上。
         app.launchArguments += ["-AppleLanguages", "(en)", "-AppleLocale", "en_US"]
         UITestBackend.enableStateProbe(to: app)
-        app.launch()
+        UITestBackend.launch(app)
     }
 
     private func shot(_ name: String) {

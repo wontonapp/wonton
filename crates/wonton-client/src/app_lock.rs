@@ -520,9 +520,12 @@ mod tests {
         let value = read();
         assert_eq!(value["locked"], false);
         let due = value["locks_at_ms"].as_u64().unwrap();
-        let now = wall_ms();
-        assert!(due > now, "截止时刻要在将来");
-        assert!(due <= now + 5 * 60 * 1_000 + 5_000);
+        // 距现在正好是剩下的五分钟宽限（毫秒）；窗口收紧能抓住单位写错。
+        let remaining = due.saturating_sub(wall_ms());
+        assert!(
+            (4 * 60_000..=5 * 60_000 + 5_000).contains(&remaining),
+            "截止时刻应落在五分钟宽限里，实际 {remaining} 毫秒"
+        );
         // 回到前台就不再等锁，截止时刻清掉。
         link.foregrounded();
         let value = read();

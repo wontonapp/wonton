@@ -11,7 +11,7 @@ final class AgentRunChoicesUITests: XCTestCase {
         continueAfterFailure = false
         let app = XCUIApplication()
         app.launchArguments += ["-AppleLanguages", "(en)", "-AppleLocale", "en_US", "wonton-agent-run-preview"]
-        app.launch()
+        UITestBackend.launch(app)
 
         let first = app.buttons["agentRun-choice-once"]
         XCTAssertTrue(first.waitForExistence(timeout: 10), "夹具屏没有选项行\n\(app.debugDescription)")
@@ -58,7 +58,7 @@ final class AgentRunChoicesUITests: XCTestCase {
             "-UIPreferredContentSizeCategoryName", "UICTContentSizeCategoryAccessibilityXXXL",
             "wonton-agent-run-preview", "wonton-agent-run-preview-narrow"
         ]
-        app.launch()
+        UITestBackend.launch(app)
 
         let first = app.buttons["agentRun-choice-once"]
         XCTAssertTrue(first.waitForExistence(timeout: 10), "夹具屏没有选项行\n\(app.debugDescription)")

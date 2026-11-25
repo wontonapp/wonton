@@ -80,7 +80,7 @@ final class PairingFailureUITests: XCTestCase {
             ? ["-AppleLanguages", "(zh-Hans)", "-AppleLocale", "zh_CN"]
             : ["-AppleLanguages", "(en)", "-AppleLocale", "en_US"]
         app.launchEnvironment["WONTON_DEV_DATA_SUFFIX"] = UUID().uuidString
-        app.launch()
+        UITestBackend.launch(app)
         passOnboarding(app)
         let field = app.descendants(matching: .any)["pairing-code"].firstMatch
         // 失败面的判据用 scan-again：失败面源码里有 pairing-failure 标识，但运行时 a11y 树不暴露它
