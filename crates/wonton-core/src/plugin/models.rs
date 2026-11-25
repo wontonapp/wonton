@@ -199,8 +199,14 @@ fn credential_names(
     (shared.then(|| id.clone()), bots)
 }
 
+/// 用了模型网关：能力依赖里写了 `models`（规范只允许放 `wants`），或老清单的 `permissions: [models]`。
 pub(super) fn uses_models(manifest: &Manifest) -> bool {
-    manifest.permissions.contains(&Permission::Models)
+    manifest
+        .wants
+        .iter()
+        .chain(&manifest.requires)
+        .any(|name| name == super::capabilities::MODELS.name)
+        || manifest.permissions.contains(&Permission::Models)
 }
 
 /// 网关接口的基础地址：经核心在插件网络里的别名，不带末尾的 `/`。

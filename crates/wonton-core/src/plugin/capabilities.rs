@@ -53,7 +53,8 @@ pub enum Credentials {
     Required,
 }
 
-/// 模型网关（ADR-0008）：专用字段照旧在 `provides.models`，使用方申请 `models` 权限。
+/// 模型网关（ADR-0008）：专用字段照旧在 `provides.models`，使用方写 `wants: [models]`（老清单的
+/// `models` 权限继续收）。
 pub const MODELS: Capability = Capability {
     name: "models",
     interface: "OpenAI 兼容 API（provides.models.apis），凭据按使用方隔离",
@@ -314,6 +315,16 @@ pub fn validate(manifest: &Manifest, langs: &Languages) -> Result<(), ManifestEr
             &[("capability", name.as_str().into())],
         )));
     }
+    // `models` 只走 `wants`：网关不是安装门槛，提供方自己也提供时同样可以 wants。
+    if manifest.requires.iter().any(|name| name == MODELS.name)
+        && !is_self_provided(manifest, MODELS.name)
+    {
+        return Err(ManifestError::Invalid(text(
+            langs,
+            "plugin-capability-models-in-requires",
+            &[],
+        )));
+    }
     // ADR-0061 第 9 节：提供方可以 requires 自己也提供的能力（按名字比，不写死某个能力），别的照旧拒。
     for name in &manifest.requires {
         if manifest.provides.is_some() && !is_self_provided(manifest, name) {
@@ -433,7 +444,7 @@ fn first_duplicate(names: &[String]) -> Option<&str> {
     })
 }
 
-/// 模型网关使用方迁移单独切换；通用能力已由连接记录兑现。
+/// 还装不了的依赖形态：托管能力只由静态网页兑现，容器插件要它没人给。`models` 已由模型网关兑现。
 pub fn unsupported_model_dependency(
     manifest: &Manifest,
     langs: &Languages,
@@ -447,7 +458,7 @@ pub fn unsupported_model_dependency(
         .requires
         .iter()
         .chain(&manifest.wants)
-        .any(|name| name == MODELS.name || hosted_for_container(name))
+        .any(hosted_for_container)
     {
         return Ok(());
     }
@@ -524,9 +535,35 @@ mod tests {
 
     #[test]
     fn known_capability_names_pass() {
-        validate(&manifest(&["models"], &[], false), &Languages::default()).unwrap();
+        validate(&manifest(&["jellyfin"], &[], false), &Languages::default()).unwrap();
         validate(&manifest(&[], &["models"], false), &Languages::default()).unwrap();
         validate(&manifest(&[], &[], false), &Languages::default()).unwrap();
+    }
+
+    /// 网关不是安装门槛：`models` 只走 `wants`；提供方自己提供它时照 ADR-0061 第 9 节可以 requires。
+    #[test]
+    fn models_never_in_requires() {
+        let e = validate(&manifest(&["models"], &[], false), &Languages::default()).unwrap_err();
+        assert!(e.to_string().contains("wants"), "{e}");
+        let provider: Manifest = serde_json::from_value(serde_json::json!({
+            "spec": "0.6",
+            "id": "app.example",
+            "version": "1.0.0",
+            "kind": "system",
+            "title": {"en": "Example"},
+            "description": {"en": "Example plugin"},
+            "permissions": [],
+            "requires": ["models"],
+            "provides": {"models": {
+                "service": "magpie",
+                "port": 8080,
+            "apis": {"openai": "/v1"},
+                "default_model": "group/default",
+                "credentials": {"issue": ["issue", "{name}"], "revoke": ["revoke", "{name}"]}
+            }},
+        }))
+        .unwrap();
+        validate(&provider, &Languages::default()).unwrap();
     }
 
     #[test]
@@ -558,16 +595,16 @@ mod tests {
     #[test]
     fn a_capability_cannot_be_both_required_and_wanted() {
         let e = validate(
-            &manifest(&["models"], &["models"], false),
+            &manifest(&["jellyfin"], &["jellyfin"], false),
             &Languages::default(),
         )
         .unwrap_err();
-        assert!(e.to_string().contains("models"));
+        assert!(e.to_string().contains("jellyfin"));
     }
 
     #[test]
     fn providers_cannot_require() {
-        let e = validate(&manifest(&["models"], &[], true), &Languages::default()).unwrap_err();
+        let e = validate(&manifest(&["jellyfin"], &[], true), &Languages::default()).unwrap_err();
         // 文字按语言协商，断言只看行为：提供能力的插件不能 requires。
         drop(e);
     }
@@ -586,11 +623,11 @@ mod tests {
     #[test]
     fn duplicates_are_refused() {
         let e = validate(
-            &manifest(&["models", "models"], &[], false),
+            &manifest(&["jellyfin", "jellyfin"], &[], false),
             &Languages::default(),
         )
         .unwrap_err();
-        assert!(e.to_string().contains("models"));
+        assert!(e.to_string().contains("jellyfin"));
     }
 
     fn manifest_with_provides(provides: serde_json::Value) -> Manifest {

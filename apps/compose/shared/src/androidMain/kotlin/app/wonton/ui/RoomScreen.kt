@@ -48,7 +48,9 @@ import app.wonton.protocol.PageAction
 import app.wonton.protocol.Action
 import app.wonton.protocol.BackPagination
 import app.wonton.protocol.BotView
+import app.wonton.protocol.BotChatAvailability
 import app.wonton.protocol.BotRef
+import app.wonton.protocol.ComposerEdit
 import app.wonton.protocol.ComposerViewModel
 import app.wonton.protocol.CoreException
 import app.wonton.protocol.ConfirmationView
@@ -57,7 +59,6 @@ import app.wonton.protocol.KeyNotice
 import app.wonton.protocol.MessageContent
 import app.wonton.protocol.PanelItem
 import app.wonton.protocol.RoomCommand
-import app.wonton.protocol.RoomMembership
 import app.wonton.protocol.RoomPlugin
 import app.wonton.protocol.RoomRow
 import app.wonton.protocol.RoomWidget
@@ -132,6 +133,9 @@ internal class TimelineState {
     var confirmations by mutableStateOf<List<ConfirmationView>>(emptyList())
     var openedConfirmation by mutableStateOf<String?>(null)
 
+    /** 输入框正在编辑哪条（ADR-0109 第 10 节），每一批都带当前值。 */
+    var editing by mutableStateOf<ComposerEdit?>(null)
+
     /** 群里在场的 AI（本账号认识的 Bot 的 Matrix 用户 ID）；私聊不算。null 是成员名单还没取全、
      * 在场的算不准，别下“群里没有 AI”的结论；空列表才是确定没有。 */
     var roomBots by mutableStateOf<List<String>?>(null)
@@ -191,6 +195,7 @@ internal fun RoomRoute(
     isDirect: Boolean,
     isReadOnly: Boolean,
     bot: BotView?,
+    botChat: BotChatAvailability?,
     bots: List<BotView>,
     plugins: PluginsState,
     rooms: List<RoomRow>,
@@ -223,6 +228,7 @@ internal fun RoomRoute(
                 if (update.jump == JumpState.UNAVAILABLE) timeline.jumpQuote = null
                 timeline.focusRevision = update.focusRevision.toInt()
                 timeline.backTo = update.backTo
+                timeline.editing = update.editing
                 timeline.typing = update.typing
                 timeline.commands = update.commands
                 timeline.commandsOmitted = update.commandsOmitted.toInt()
@@ -264,6 +270,7 @@ internal fun RoomRoute(
             isDirect,
             isReadOnly,
             bot,
+            botChat,
             bots,
             plugins,
             rooms,
@@ -291,6 +298,7 @@ private fun RoomScreen(
     isDirect: Boolean,
     isReadOnly: Boolean,
     bot: BotView?,
+    botChat: BotChatAvailability?,
     bots: List<BotView>,
     plugins: PluginsState,
     rooms: List<RoomRow>,
@@ -307,6 +315,9 @@ private fun RoomScreen(
     val openMenu = { item: TimelineItem, message: TimelineMessage, bounds: Rect ->
         menu = MessageMenuTarget(item.id, message, bounds)
     }
+    val botNotice = botChatNotice(botChat)
+    // 资格未知（离线、核心还没给）照常能发，进离线队列；只有确定的不能用才禁用。
+    val botCanSend = botChat !is BotChatAvailability.Unavailable
     val visible = messageMenuBounds()
     val roomId = target.roomId
     val draft = rememberRoomDraft(core, target, onAction)
@@ -337,6 +348,8 @@ private fun RoomScreen(
                         roomAi = if (isDirect) emptyList() else timeline.roomBots?.mapNotNull { id ->
                             bots.firstOrNull { it.userId == id }
                         },
+                        botNotice = botNotice,
+                        botCanSend = botCanSend,
                         plugins = plugins,
                         onOpenBotProfile = onOpenBotProfile,
                     )
@@ -410,6 +423,11 @@ private fun RoomOverlays(
             core = core,
             groupImages = opened.message.group?.let { groups[opened.message.senderId to it.id] },
             onReply = draft::replyTo,
+            onEdit = { text ->
+                onAction(Action.Timeline(TimelineAction.SetTyping(target, false)))
+                draft.startEditing(text)
+                onAction(Action.Timeline(TimelineAction.StartEdit(target, opened.itemId)))
+            },
             onForward = { onForward(opened.itemId) },
             onRedact = { onRedact(opened) },
             onDismiss = onMenuDismiss,
@@ -420,10 +438,12 @@ private fun RoomOverlays(
             rooms = rooms.filter { it.forwardTarget(target.roomId) },
             bots = bots,
             plugins = plugins,
-            // 核心一次只发一个房间：挨个发；只选了一个才跟过去，选几个留在原房间。
-            onSend = { rows ->
+            // 核心一次只发一个房间：挨个带上附言派发；只选了一个才跟过去，选几个留在原房间。
+            onSend = { rows, comment ->
+                // 壳先 trim 判空白，只含空白当没有；核心还会再 trim 一遍。
+                val note = comment.trim().ifEmpty { null }
                 rows.forEach { row ->
-                    onAction(Action.Timeline(TimelineAction.ForwardMessage(target, itemId, row.roomId)))
+                    onAction(Action.Timeline(TimelineAction.ForwardMessage(target, itemId, row.roomId, note)))
                 }
                 if (rows.size == 1) onOpenRoom(rows.first().roomId)
             },
@@ -537,6 +557,8 @@ private fun Conversation(
     backdrop: RoomBackdrop,
     roomAi: List<BotView>?,
     plugins: PluginsState,
+    botNotice: Int?,
+    botCanSend: Boolean,
     onOpenBotProfile: (BotRef) -> Unit,
 ) {
     val density = LocalDensity.current
@@ -602,31 +624,42 @@ private fun Conversation(
                 timeline.notice?.let { KeyNoticeRow(it, onOpenBackup) }
                 TransfersStrip(target.roomId, core)
                 RoomConfirmationRow(timeline.confirmations) { timeline.openedConfirmation = it }
+                botNotice?.let { BotChatNoticeRow(it) }
             }
             if (!isReadOnly) {
                 Composer(
                     target = target,
                     draft = draft.text,
                     reply = draft.reply,
+                    edit = timeline.editing,
                     focusToken = draft.focusToken,
                     composer = composer,
                     core = core,
-                    onDraftChange = draft::change,
+                    onDraftChange = { text ->
+                        draft.change(text)
+                        onAction(Action.Timeline(TimelineAction.SetTyping(target, text.isNotEmpty())))
+                    },
                     onSent = draft::sent,
-                    onCommandSent = { draft.sent(keepBody = true) },
+                    onCommandSent = draft::commandSent,
                     menuOpen = commandMenuShown,
                     onMenuChange = { commandMenuShown = it },
                     onReplyCancel = draft::stopReplying,
-                    onQuoteJump = { eventId ->
-                        // “回来”的落脚点是跳之前最靠下的那条，不是目的地自己（ADR-0109）。列表空时退到最后一条。
-                        val from = timeline.bottomMostItemId()
-                        timeline.jumpTo(eventId, from, target, onAction)
+                    onQuoteJump = { timeline.jumpTo(it, timeline.bottomMostItemId(), target, onAction) },
+                    onEditCancel = {
+                        onAction(Action.Timeline(TimelineAction.SetTyping(target, false)))
+                        onAction(Action.Timeline(TimelineAction.CancelEdit(target)))
                     },
-                    onAction = onAction,
+                    onRestoreDraft = draft::restore,
+                    onTyping = { typing ->
+                        onAction(Action.Timeline(TimelineAction.SetTyping(target, typing)))
+                    },
                     onReject = onReject,
+                    onAction = onAction,
                     commands = timeline.commands,
                     commandsOmitted = timeline.commandsOmitted,
                     // 草稿整句就是一条完整命令（没有多写的正文）时发核心给的整句，不自己拼。
+                    enabled = botCanSend,
+                    disabledProblem = botChatBlockedProblem(botCanSend, botNotice),
                     dropCommand = timeline.commands.firstOrNull { it.text == draft.text.trim() }?.text,
                 )
             }
@@ -672,10 +705,6 @@ private val KeyNotice.text: Int
         KeyNotice.VERIFY_WITH_OTHER_DEVICE -> R.string.timeline_key_notice_verify
         KeyNotice.OTHER -> R.string.timeline_undecryptable_notice
     }
-
-/** 转发能去的房间：别的、已经加入、能发的房间。 */
-private fun RoomRow.forwardTarget(roomId: String): Boolean =
-    this.roomId != roomId && membership == RoomMembership.JOINED && !isReadOnly
 
 /** 撤回对所有人生效，发出去之前先确认。 */
 @Composable

@@ -6,7 +6,8 @@ import app.wonton.protocol.TimelineTarget
 
 /**
  * 跳到引用的那条原消息。正在跳的途中再点不派第二次；落到原消息才停。
- * 先把本次跳转的序号报给核心，同一条原消息连点两下，核心也当成新的一次。
+ * 先把本次跳转的序号报给核心，同一条原消息连点两下，核心也当成新的一次。`fromId` 是“回来”的落脚点：
+ * 调方给 [`bottomMostItemId`]——跳之前最靠下的那条，不是目的地自己（ADR-0109）；列表空时退到最后一条。
  */
 internal fun TimelineState.jumpTo(
     eventId: String,

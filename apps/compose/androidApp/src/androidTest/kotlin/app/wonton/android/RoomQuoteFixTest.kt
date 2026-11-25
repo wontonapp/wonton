@@ -326,11 +326,12 @@ class RoomQuoteFixTest {
             .performClick()
         compose.waitUntil(10_000) { visible(REPLY) }
         // 返回落点是跳之前最靠下的那条，不是目的地自己：按一下“向下”就该离开原消息。
+        // 名字后面可能还带着新消息数，按前缀认。
         val down = string(R.string.room_scroll_to_bottom)
         compose.waitUntil(10_000) {
-            compose.onAllNodes(hasContentDescription(down)).fetchSemanticsNodes().isNotEmpty()
+            compose.onAllNodes(hasContentDescription(down, substring = true)).fetchSemanticsNodes().isNotEmpty()
         }
-        compose.onNodeWithContentDescription(down).performClick()
+        compose.onNodeWithContentDescription(down, substring = true).performClick()
         compose.waitUntil(10_000) { !visible(REPLY) }
     }
 

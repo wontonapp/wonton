@@ -477,13 +477,12 @@ impl PluginManager {
         entry: &BotEntry,
     ) -> Result<BotVars, InstallError> {
         let manifest = &package.manifest;
-        let model_key = (manifest.permissions.contains(&Permission::Models)
-            && manifest.bots.is_some())
-        .then(|| {
-            let name = format!("{}/{bot}", manifest.id);
-            self.store.model_keys().stored_key(&manifest.id, &name)
-        })
-        .flatten();
+        let model_key = (super::models::uses_models(manifest) && manifest.bots.is_some())
+            .then(|| {
+                let name = format!("{}/{bot}", manifest.id);
+                self.store.model_keys().stored_key(&manifest.id, &name)
+            })
+            .flatten();
         let (ai_level, keeper_read_only) = self.bot_levels(&entry.keeper);
         Ok(BotVars {
             model_key,

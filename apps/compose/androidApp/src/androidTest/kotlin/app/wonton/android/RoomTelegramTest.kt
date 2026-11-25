@@ -30,6 +30,7 @@ import androidx.compose.ui.test.onNodeWithTag
 import androidx.compose.ui.test.onNodeWithText
 import androidx.compose.ui.test.performClick
 import androidx.compose.ui.test.performScrollTo
+import androidx.compose.ui.test.performScrollToKey
 import androidx.compose.ui.test.performTextInput
 import androidx.compose.ui.test.performTouchInput
 import androidx.compose.ui.test.swipe
@@ -73,7 +74,7 @@ class RoomTelegramTest : RoomTelegramCase() {
         compose.waitUntil(10_000) { visible(5) && !visible(21) }
         screenshot("jump-highlight")
         // 离开底部时“向下”先退回跳之前的那条，不直接回最新。
-        compose.onNodeWithContentDescription(string(R.string.room_scroll_to_bottom)).performClick()
+        compose.onNodeWithContentDescription(string(R.string.room_scroll_to_bottom), substring = true).performClick()
         compose.waitUntil(10_000) { visible(21) }
         screenshot("jump-back")
     }
@@ -314,10 +315,11 @@ class RoomTelegramTest : RoomTelegramCase() {
         for (position in 1 until dates.size) {
             check(dates[position].after(dates[position - 1])) { "日期没随消息往下变晚：$dates" }
         }
-        // 列表最顶上那条的上面也有分隔，写它自己的日期。
-        scrollTo(0)
+        // 列表最顶上那条的上面也有分隔，写它自己的日期。分隔本体在它上面一点，滚到房间开头才进得了屏幕。
+        compose.onNodeWithTag("room-timeline").performScrollToKey("ui-fake-start")
+        compose.waitForIdle()
         val firstOfList = bubble(0).fetchSemanticsNode()
-        val aboveFirst = compose.onAllNodes(hasTestTag("day-separator"), useUnmergedTree = true)
+        val aboveFirst = compose.onAllNodes(daySeparator(), useUnmergedTree = true)
             .fetchSemanticsNodes()
             .lastOrNull { it.boundsInRoot.bottom <= firstOfList.boundsInRoot.top + 1f }
         checkNotNull(aboveFirst) { "列表最顶上那条的上面没有日期分隔" }
@@ -335,7 +337,7 @@ class RoomTelegramTest : RoomTelegramCase() {
         for (index in listOf(11, 12, 10, 13, 9)) {
             scrollTo(index)
             compose.waitForIdle()
-            separators = compose.onAllNodes(hasTestTag("day-separator"), useUnmergedTree = true)
+            separators = compose.onAllNodes(daySeparator(), useUnmergedTree = true)
                 .fetchSemanticsNodes()
             seen += "$index:${separators.size} "
             if (separators.isNotEmpty()) break
@@ -344,6 +346,9 @@ class RoomTelegramTest : RoomTelegramCase() {
         return separators to compose.onAllNodes(hasTestTag("bubble"), useUnmergedTree = true)
             .fetchSemanticsNodes().sortedBy { it.boundsInRoot.top }
     }
+
+    /** 日期分隔：核心在跨日处发的分隔条目（`day-divider`），或壳兜底画的那一行（`day-separator`）。 */
+    private fun daySeparator() = hasTestTag("day-separator") or hasTestTag("day-divider")
 
     /** 分隔夹在前一天最后一条和后一天第一条之间：下面紧挨的那条是它写的这一天，上面那条是更早的一天。 */
     private fun separatorIsAboveTheOneItNames(separator: SemanticsNode, bubbles: List<SemanticsNode>) {
@@ -369,7 +374,7 @@ class RoomTelegramTest : RoomTelegramCase() {
     private fun noSeparatorBetweenTheSameDay() {
         val bubbles = compose.onAllNodes(hasTestTag("bubble"), useUnmergedTree = true)
             .fetchSemanticsNodes().sortedBy { it.boundsInRoot.top }
-        val separators = compose.onAllNodes(hasTestTag("day-separator"), useUnmergedTree = true)
+        val separators = compose.onAllNodes(daySeparator(), useUnmergedTree = true)
             .fetchSemanticsNodes()
         val sameDay = bubbles.zipWithNext().filter { (above, below) ->
             val a = fixtureIndexOf(above)
@@ -481,7 +486,10 @@ class RoomTelegramTest : RoomTelegramCase() {
         compose.waitUntil(10_000) {
             compose.onAllNodes(hasTestTag("attach-send")).fetchSemanticsNodes().isEmpty()
         }
-        runCatching { compose.onNodeWithContentDescription(string(R.string.room_scroll_to_bottom)).performClick() }
+        runCatching {
+            compose.onNodeWithContentDescription(string(R.string.room_scroll_to_bottom), substring = true)
+                .performClick()
+        }
         compose.waitUntil(10_000) {
             compose.onAllNodes(hasText("两张都发", substring = true)).fetchSemanticsNodes().isNotEmpty()
         }

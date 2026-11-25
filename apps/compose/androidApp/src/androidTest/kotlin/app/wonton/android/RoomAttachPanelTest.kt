@@ -25,6 +25,7 @@ import androidx.compose.ui.test.onNodeWithTag
 import androidx.compose.ui.test.onNodeWithText
 import androidx.compose.ui.test.performClick
 import androidx.compose.ui.test.performScrollTo
+import androidx.compose.ui.test.performScrollToIndex
 import androidx.compose.ui.test.performTextClearance
 import androidx.compose.ui.test.performTextInput
 import androidx.compose.ui.test.performTouchInput
@@ -190,10 +191,7 @@ class RoomAttachPanelTest : RoomTelegramCase() {
         watch.cancel()
     }
 
-    /**
-     * 转发面板：搜索能收窄列表，勾上两个房间后一起发出去，谁也没跳走，两个房间都有一条转发来的。
-     * 附言按定案拿出去，等壳切换接上 `ForwardMessage.comment`。
-     */
+    /** 转发面板：搜索能收窄列表，勾上两个房间后一起发出去，谁也没跳走，两个房间都有一条转发来的。 */
     @Test
     fun forwardPickerSendsToEveryTarget() {
         openForward()
@@ -219,12 +217,12 @@ class RoomAttachPanelTest : RoomTelegramCase() {
         if (hasBack()) compose.onNodeWithContentDescription(string(R.string.design_back)).performClick()
         // 到了聊天列表，依次进 Family 和 Notes，两边都得有转发来的那条。
         compose.onNodeWithText("Family").performClick()
-        compose.waitUntil(10_000) { forwardedInto("Family", "ui-fake-forwarded-1") }
+        compose.waitUntil(10_000) { forwardedInto("Family", "Fixture message 11") }
         compose.onNodeWithContentDescription(string(R.string.design_back)).performClick()
         compose.waitForIdle()
         if (hasBack()) compose.onNodeWithContentDescription(string(R.string.design_back)).performClick()
         compose.onNodeWithText("Notes").performClick()
-        compose.waitUntil(10_000) { forwardedInto("Notes", "ui-fake-forwarded-1") }
+        compose.waitUntil(10_000) { forwardedInto("Notes", "Fixture message 11") }
     }
 
     /** 只勾一个时发完跟过去：那个房间打开，转发也在。 */
@@ -234,7 +232,49 @@ class RoomAttachPanelTest : RoomTelegramCase() {
         compose.waitUntil(10_000) { forwardRows().fetchSemanticsNodes().size == 2 }
         compose.onNode(hasTestTag("forward-row") and hasText("Family")).performClick()
         sheetSend("forward-send").performClick()
-        compose.waitUntil(10_000) { forwardedInto("Family", "ui-fake-forwarded-1") }
+        compose.waitUntil(10_000) { forwardedInto("Family", "Fixture message 11") }
+    }
+
+    /**
+     * 转发带附言：勾上的每个房间都排一条附言，压在自己的副本上面（ADR-0073 第 4 节）。顺序按时间线里的先后比，
+     * 只看两边都在不够：附言晚一步就成了副本在前。
+     */
+    @Test
+    fun forwardCommentLandsAboveTheCopyInEveryTarget() {
+        openForward()
+        compose.waitUntil(10_000) { forwardRows().fetchSemanticsNodes().size == 2 }
+        compose.onNode(hasTestTag("forward-row") and hasText("Family")).performClick()
+        compose.onNode(hasTestTag("forward-row") and hasText("Notes")).performClick()
+        compose.onNode(hasSetTextAction() and hasAnyAncestor(hasTestTag("forward-send")))
+            .performTextInput("先说这句")
+        settleKeyboard()
+        sheetSend("forward-send").performClick()
+        // 勾了两个：留在原房间，谁也没跳走。
+        compose.waitForIdle()
+        compose.onNodeWithContentDescription(string(R.string.design_back)).performClick()
+        compose.waitForIdle()
+        if (hasBack()) compose.onNodeWithContentDescription(string(R.string.design_back)).performClick()
+        for (room in listOf("Family", "Notes")) {
+            compose.onNodeWithText(room).performClick()
+            // 房间开在落点，附言和副本排在末尾：列表是倒着的，0 就是最新，滚过去等它们组合出来。
+            compose.waitUntil(10_000) {
+                if (itemsWithText("Fixture message 11").isEmpty()) {
+                    runCatching { compose.onNodeWithTag("room-timeline").performScrollToIndex(0) }
+                }
+                itemsWithText("先说这句").isNotEmpty() && itemsWithText("Fixture message 11").isNotEmpty()
+            }
+            // 同一段文字可能被前面的用例转进来过：只认排在附言下面的那份副本。
+            val note = itemsWithText("先说这句").single()
+            val below = itemsWithText("Fixture message 11").filter { it.boundsInRoot.top > note.boundsInRoot.top }
+            check(below.isNotEmpty()) {
+                "$room 里附言下面没有副本：附言 ${note.boundsInRoot}，" +
+                    "副本 ${itemsWithText("Fixture message 11").map { it.boundsInRoot }}"
+            }
+            screenshot("forward-comment-$room")
+            compose.onNodeWithContentDescription(string(R.string.design_back)).performClick()
+            compose.waitForIdle()
+            if (hasBack()) compose.onNodeWithContentDescription(string(R.string.design_back)).performClick()
+        }
     }
 
     /** 旁聊里一摞能选好几张（和 Telegram 的十张一样），发送键跟着选中数启用。 */

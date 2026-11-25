@@ -440,14 +440,11 @@ private fun MessageFooter(message: TimelineMessage, modifier: Modifier, inBody: 
             Text(
                 stringResource(R.string.timeline_edited),
                 // 字就在正文末尾的占位里，读屏顺着正文念；这里再念一遍就重了。
-                Modifier.clearAndSetSemantics { testTag = "messageEdited" },
-=======
                 if (inBody) {
                     Modifier.clearAndSetSemantics { testTag = "messageEdited" }
                 } else {
                     Modifier.testTag("messageEdited")
                 },
->>>>>>> 68016bf25 (fix(android): 聊天页脚注念得到时间、跳转不再卡住、照片说明可点)
                 style = style,
                 color = color,
             )

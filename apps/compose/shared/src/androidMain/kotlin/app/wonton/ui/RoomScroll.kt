@@ -5,16 +5,7 @@ import androidx.compose.animation.fadeIn
 import androidx.compose.animation.fadeOut
 import androidx.compose.animation.scaleIn
 import androidx.compose.animation.scaleOut
-import androidx.compose.foundation.layout.Box
-import androidx.compose.foundation.layout.offset
-import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.lazy.LazyListState
-import androidx.compose.material.icons.Icons
-import androidx.compose.material.icons.filled.KeyboardArrowDown
-import androidx.compose.material3.Badge
-import androidx.compose.material3.FloatingActionButton
-import androidx.compose.material3.Icon
-import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.MutableState
@@ -23,12 +14,7 @@ import androidx.compose.runtime.remember
 import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.runtime.snapshotFlow
 import androidx.compose.runtime.withFrameNanos
-import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
-import androidx.compose.ui.res.stringResource
-import androidx.compose.ui.semantics.contentDescription
-import androidx.compose.ui.semantics.semantics
-import androidx.compose.ui.unit.dp
 import app.wonton.protocol.Action
 import app.wonton.protocol.BackPagination
 import app.wonton.protocol.TimelineAction
@@ -36,8 +22,7 @@ import app.wonton.protocol.TimelineItem
 import app.wonton.protocol.TimelineScroll
 import app.wonton.protocol.TimelineTarget
 import app.wonton.protocol.TimelineViewport
-import app.wonton.ui.design.WontonTheme
-import app.wonton.ui.design.toColor
+import app.wonton.ui.design.ScrollToBottomAction
 import kotlinx.coroutines.flow.distinctUntilChanged
 import kotlinx.coroutines.flow.filterNotNull
 import kotlinx.coroutines.flow.first
@@ -228,14 +213,8 @@ internal fun ScrollToBottomButton(
         exit = fadeOut() + scaleOut(targetScale = BUTTON_APPEAR_SCALE),
         modifier = modifier,
     ) {
-        val away = timeline.viewport as? TimelineViewport.Away
-        val count = away?.newMessages?.toInt() ?: 0
-        val label = if (count > 0) {
-            stringResource(R.string.room_scroll_to_bottom_count, count)
-        } else {
-            stringResource(R.string.room_scroll_to_bottom)
-        }
-        FloatingActionButton(
+        ScrollToBottomAction(
+            count = (timeline.viewport as? TimelineViewport.Away)?.newMessages?.toInt() ?: 0,
             onClick = {
                 // 跳转过去还没看回去过：先退回跳走的那条，退到没得退了才回最新的一条。
                 // 退回也是一次跳转，先报序号，落点效果才认得出这一次（它会等焦点）。
@@ -251,35 +230,12 @@ internal fun ScrollToBottomButton(
                     }
                 }
             },
-            modifier = Modifier
-                .size(WontonTheme.size.floatingActionButton)
-                .semantics { contentDescription = label },
-            containerColor = WontonTheme.colors.accentFill.toColor(),
-            contentColor = WontonTheme.colors.accentInkOnFill.toColor(),
-        ) {
-            // 角标叠在圆钮外面：FAB 的 Surface 会按圆形裁剪内容，放进 BadgedBox 超出的部分会被切掉。
-            Box {
-                // 装饰：圆钮外层已经带了名字。
-                Icon(Icons.Filled.KeyboardArrowDown, contentDescription = null)
-                if (count > 0) {
-                    Badge(
-                        modifier = Modifier
-                            .align(Alignment.TopEnd)
-                            .offset(x = 6.dp, y = (-6).dp),
-                    ) {
-                        Text(if (count > BADGE_COUNT_MAX) "$BADGE_COUNT_MAX+" else count.toString())
-                    }
-                }
-            }
-        }
+        )
     }
 }
 
-/** 按钮随 Away 进出时的起始缩放。 */
+/// 按钮随 Away 进出时的起始缩放。
 private const val BUTTON_APPEAR_SCALE = 0.6f
-
-/** 角标数字超过这个数就写“99+”。 */
-private const val BADGE_COUNT_MAX = 99
 
 /** 第 0 项是最新的一条，贴着底边、没滑出去才算停在底部。 */
 private fun LazyListState.isAtBottom(): Boolean =
