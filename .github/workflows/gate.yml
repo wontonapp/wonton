@@ -95,6 +95,9 @@ jobs:
               - "crates/wonton-protocol/**"
               - ".github/workflows/ios.yml"
               - ".github/workflows/gate.yml"
+              # 核心产物的键和产物怎么编（cache.yml）：改了就对不上，得真编一遍。
+              - "scripts/core_artifacts/**"
+              - ".github/workflows/cache.yml"
               - "!**/*.md"
               - "!crates/**/tests/**"
               - "!crates/**/benches/**"
@@ -116,6 +119,8 @@ jobs:
               - "rust-toolchain.toml"
               - ".github/workflows/android.yml"
               - ".github/workflows/gate.yml"
+              - "scripts/core_artifacts/**"
+              - ".github/workflows/cache.yml"
               - "!**/*.md"
 
   lint:
