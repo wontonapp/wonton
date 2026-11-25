@@ -770,6 +770,22 @@ async fn a_pushed_body_is_in_the_timeline_until_the_real_event_arrives() {
     let home = Home::start(&[phone.device_id()]).await;
     phone.connect(&home);
     phone.signed_in().await;
+
+    // 默认的保持连接方式不注册 pusher：后面要等 Bot 那条真消息经 Tuwon 推到推送代理，得先切成 UnifiedPush 并登记。
+    phone.use_unified_push().await;
+    phone
+        .dispatch(Action::Push {
+            action: wonton_protocol::PushAction::SetPushEndpoint {
+                endpoint: endpoint(),
+            },
+        })
+        .unwrap();
+    phone
+        .wait_chat("推送已登记", |view| {
+            (view.push == PushStatus::Registered).then_some(())
+        })
+        .await;
+
     let bot = home.bot("hermes", "Hermes").await;
     let room_id = accept_the_bots_invite(&home, &phone, &bot).await;
 

@@ -125,15 +125,22 @@ impl Payload {
         }
     }
 
-    /// 推送里带了正文时通知上写什么：附件写类型和文件名，截断的带省略号。带了消息类型却没有正文的
-    /// （比如文件名丢了）返回空，走取消息那条路。
+    /// 推送里带了正文时通知上写什么：附件写类型和文件名，截断的带省略号。没带正文（比如文件名丢了）
+    /// 返回空，走取消息那条路。
+    ///
+    /// 类型认两种写法：核心的推送明文里是 `PushMessageType` 的小写（`image`），Matrix 的 `content.msgtype`
+    /// 是带前缀的 `m.image`；去掉 `m.` 之后按同一个词比。
     fn body_text(&self) -> Option<String> {
         let body = self
             .body
             .as_deref()
             .map(str::trim)
             .filter(|body| !body.is_empty())?;
-        let mut text = match self.msgtype.as_deref() {
+        let msgtype = self
+            .msgtype
+            .as_deref()
+            .map(|t| t.strip_prefix("m.").unwrap_or(t));
+        let mut text = match msgtype {
             Some("image") => l10n!(CATALOG, language(), "push-preview-image", filename = body),
             Some("file") | Some("audio") | Some("video") => {
                 l10n!(CATALOG, language(), "push-preview-file", filename = body)
