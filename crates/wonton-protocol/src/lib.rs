@@ -313,8 +313,8 @@ pub use port_mapping::{
     MappedPort, PluginPortMapping, PortMappingState, PortMappingWarning, UdpFlowStats,
 };
 pub use push::{
-    NotificationCategory, PushConfirmation, PushContent, PushEndpoint, PushMethod,
-    PushNotification, PushStatus,
+    DevicePayload, MAX_BODY_CHARS, MAX_PLAINTEXT_BYTES, NotificationCategory, PushConfirmation,
+    PushContent, PushEndpoint, PushMessageType, PushMethod, PushNotification, PushStatus,
 };
 pub use registry_mirror::{
     RegistryFailure, RegistryMirrorSettings, RegistryMirrorTest, RegistryMirrorTestRequest,
