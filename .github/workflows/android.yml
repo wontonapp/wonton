@@ -60,7 +60,10 @@ jobs:
           for abi in $abis; do
             ls "apps/compose/shared/build/generated/jniLibs/buildRustCore/$abi/libwonton_client.so"
           done
-          ls apps/compose/shared/build/generated/uniffi/kotlin/*.kt
+          # 绑定在 package 子目录里（app/wonton/...），要用 find，不能只看顶层。
+          kotlin=$(find apps/compose/shared/build/generated/uniffi/kotlin -name '*.kt' | head -5)
+          [ -n "$kotlin" ] || { echo "取回来的产物里没有 Kotlin 绑定"; exit 1; }
+          echo "$kotlin"
           echo "WONTON_CORE_PREBUILT=1" >> "$GITHUB_ENV"
       - uses: actions/setup-java@b6effb05e454b25005698d916606bdc6ffcbf961 # v5
         with:
