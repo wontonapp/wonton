@@ -55,6 +55,8 @@ async fn removing_a_network_or_a_volume_outlasts_the_limit_of_ordinary_requests(
 #[tokio::test]
 async fn a_request_docker_does_not_answer_in_time_is_not_reported_as_docker_being_unavailable() {
     let (docker, engine) = impatient().await;
+    // 创建现在走慢请求客户端；两条都压到 1 秒，超时类别用例不用等五分钟。
+    let engine = engine.with_slow_request_limit_for_test(Duration::from_secs(1));
     docker.hold("POST /containers/create");
     let error = engine
         .create_container("x", ContainerCreateBody::default())
@@ -65,4 +67,18 @@ async fn a_request_docker_does_not_answer_in_time_is_not_reported_as_docker_bein
         InstallError::from(error),
         InstallError::DockerTimedOut(_)
     ));
+}
+
+/// 宿主满载时 Docker 建一个容器可能超过普通请求的时限（11-14 的 GATEWAY_TIMEOUT/docker_timed_out 现场）；
+/// 创建和停、删一样用长时限，慢到超过普通时限的创建照样成功。
+#[tokio::test]
+async fn creating_a_container_outlasts_the_limit_of_ordinary_requests() {
+    let (docker, engine) = impatient().await;
+    let hold = docker.hold_committed_create("x");
+    let (created, ()) = tokio::join!(
+        engine.create_container("x", ContainerCreateBody::default()),
+        answer_late(hold)
+    );
+    created.unwrap();
+    assert_eq!(docker.containers(), ["x"]);
 }

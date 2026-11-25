@@ -242,7 +242,9 @@ async fn docker_request_timeout_keeps_its_category_and_cleans_started_resources(
     let (docker, engine) = FakeDocker::start().await;
     let dir = tempfile::tempdir().unwrap();
     let manager = Arc::new(manager_with(
-        engine.with_request_limit_for_test(Duration::from_secs(1)),
+        engine
+            .with_request_limit_for_test(Duration::from_secs(1))
+            .with_slow_request_limit_for_test(Duration::from_secs(1)),
         &dir,
     ));
     let held = docker.hold("POST /containers/wonton-app-test--app/start");
@@ -284,7 +286,9 @@ async fn a_create_timeout_removes_the_container_docker_already_created() {
     let (docker, engine) = FakeDocker::start().await;
     let dir = tempfile::tempdir().unwrap();
     let manager = Arc::new(manager_with(
-        engine.with_request_limit_for_test(Duration::from_secs(1)),
+        engine
+            .with_request_limit_for_test(Duration::from_secs(1))
+            .with_slow_request_limit_for_test(Duration::from_secs(1)),
         &dir,
     ));
     let held = docker.hold_committed_create("wonton-app-test--app");
@@ -315,7 +319,9 @@ async fn a_create_timeout_whose_leftover_cannot_be_removed_reports_the_cleanup_e
     let (docker, engine) = FakeDocker::start().await;
     let dir = tempfile::tempdir().unwrap();
     let manager = Arc::new(manager_with(
-        engine.with_request_limit_for_test(Duration::from_secs(1)),
+        engine
+            .with_request_limit_for_test(Duration::from_secs(1))
+            .with_slow_request_limit_for_test(Duration::from_secs(1)),
         &dir,
     ));
     docker.fail_remove("wonton-app-test--app", Some("cleanup rejected"));
@@ -353,7 +359,9 @@ async fn a_create_timeout_does_not_rollback_a_same_name_container_it_did_not_cre
     let (docker, engine) = FakeDocker::start().await;
     let dir = tempfile::tempdir().unwrap();
     let manager = Arc::new(manager_with(
-        engine.with_request_limit_for_test(Duration::from_secs(1)),
+        engine
+            .with_request_limit_for_test(Duration::from_secs(1))
+            .with_slow_request_limit_for_test(Duration::from_secs(1)),
         &dir,
     ));
     let held = docker.hold("POST /containers/create");
@@ -383,7 +391,9 @@ async fn a_create_timeout_with_unverifiable_result_reports_the_rollback_unfinish
     let (docker, engine) = FakeDocker::start().await;
     let dir = tempfile::tempdir().unwrap();
     let manager = Arc::new(manager_with(
-        engine.with_request_limit_for_test(Duration::from_secs(1)),
+        engine
+            .with_request_limit_for_test(Duration::from_secs(1))
+            .with_slow_request_limit_for_test(Duration::from_secs(1)),
         &dir,
     ));
     let held = docker.hold_committed_create("wonton-app-test--app");
