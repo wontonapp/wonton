@@ -38,4 +38,9 @@
     <string name="push_task_waiting_title">%1$s が確認を待っています</string>
     <!-- Same with several waiting cards. Arguments: count, the earliest card's title. -->
     <string name="push_task_waiting_title_many">%1$d 件のタスクが確認を待っています（1 件目：%2$s）</string>
+    <string name="push_no_relay">プッシュリレーが設定されていません。Wontonが終了していたり画面がロックされていると、新着メッセージが届きません</string>
+    <string name="push_relay_unreachable">プッシュリレーに接続できません：%1$s</string>
+    <string name="push_relay_status">プッシュリレーが%1$dを返しました</string>
+    <string name="push_fcm_unavailable">Googleプッシュを利用できません：%1$s</string>
+    <string name="push_fcm_keys_failed">端末のプッシュキーを使えません：%1$s</string>
 </resources>

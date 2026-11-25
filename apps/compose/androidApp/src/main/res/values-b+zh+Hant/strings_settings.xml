@@ -38,4 +38,9 @@
     <string name="push_task_waiting_title">%1$s 在等你確認</string>
     <!-- Same with several waiting cards. Arguments: count, the earliest card's title. -->
     <string name="push_task_waiting_title_many">%1$d 個任務在等你確認，第一個是 %2$s</string>
+    <string name="push_no_relay">沒有設定推送中繼：雲吞被關閉或螢幕鎖定時收不到新訊息</string>
+    <string name="push_relay_unreachable">連不上推送中繼：%1$s</string>
+    <string name="push_relay_status">推送中繼回了 %1$d</string>
+    <string name="push_fcm_unavailable">谷歌推送無法使用：%1$s</string>
+    <string name="push_fcm_keys_failed">用不了裝置上的推送金鑰：%1$s</string>
 </resources>

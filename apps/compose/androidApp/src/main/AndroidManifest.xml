@@ -114,6 +114,14 @@
                 <action android:name="org.unifiedpush.android.connector.PUSH_EVENT" />
             </intent-filter>
         </service>
+        <!-- 谷歌推送（FCM）的高优先级 data 消息（ADR-0003 的“渠道”）；密文在 App 里解。 -->
+        <service
+            android:name=".push.WontonFcmService"
+            android:exported="false">
+            <intent-filter>
+                <action android:name="com.google.firebase.MESSAGING_EVENT" />
+            </intent-filter>
+        </service>
         <!-- “保持连接”的前台服务（ADR-0003）。subtype 写给 Google Play 的 specialUse 声明用，也写进了 ADR-0003。 -->
         <service
             android:name=".keepalive.KeepaliveService"

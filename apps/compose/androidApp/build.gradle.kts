@@ -255,6 +255,17 @@ android {
         ndk {
             abiFilters += providers.gradleProperty("wonton.abis").get().split(" ").filter { it.isNotBlank() }
         }
+        // FCM（ADR-0003 的“渠道”）：这些值来自 Firebase 项目和我们的推送中继，属于构建参数。没配时
+        // `FcmPush.configured` 为假，App 用 UnifiedPush 分发器，不假装推送已经开通。
+        buildConfigField("String", "FCM_APP_ID", "\"${providers.gradleProperty("wonton.fcmAppId").getOrElse("")}\"")
+        buildConfigField("String", "FCM_PROJECT_ID", "\"${providers.gradleProperty("wonton.fcmProjectId").getOrElse("")}\"")
+        buildConfigField("String", "FCM_API_KEY", "\"${providers.gradleProperty("wonton.fcmApiKey").getOrElse("")}\"")
+        buildConfigField("String", "FCM_SENDER_ID", "\"${providers.gradleProperty("wonton.fcmSenderId").getOrElse("")}\"")
+        buildConfigField("String", "PUSH_RELAY", "\"${providers.gradleProperty("wonton.pushRelay").getOrElse("")}\"")
+    }
+
+    buildFeatures {
+        buildConfig = true
     }
 
     buildTypes {
@@ -318,6 +329,7 @@ dependencies {
     implementation(libs.androidx.work.runtime)
     // Apache-2.0（连带的 Tink 也是）。接 UnifiedPush 分发器：在本机生成 Web Push 密钥对，按 RFC 8291 解开推送。
     implementation(libs.unifiedpush.connector)
+    implementation(libs.firebase.messaging)
     implementation(libs.rustls.platform.verifier)
 
     testImplementation(libs.junit)
