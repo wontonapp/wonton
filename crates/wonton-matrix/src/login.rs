@@ -26,7 +26,7 @@ use matrix_sdk::{
 };
 use wonton_protocol::{MatrixLoginFailure, MatrixLoginMethod};
 
-use crate::{SavedSession, StoreConfig, session::client_builder};
+use crate::{SavedSession, StoreConfig, session::client_builder, store_holder::StoreLease};
 
 /// 登录失败：类别给界面，`detail` 只写日志。
 #[derive(Clone, Debug, PartialEq, Eq, thiserror::Error)]
@@ -63,6 +63,8 @@ pub struct OidcStart {
 pub struct PendingLogin {
     client: Client,
     methods: Vec<MatrixLoginMethod>,
+    /// 这个 Client 在存储锁上的租约，跟着 PendingLogin 一起放：它在的时候，同存储新开的 Client 换名字。
+    _store_lease: Option<StoreLease>,
 }
 
 impl PendingLogin {
@@ -75,7 +77,8 @@ impl PendingLogin {
     ) -> Result<Self, LoginError> {
         let target = target(input, allow_http)?;
         crate::platform_tls::check_url(&target).map_err(|reason| transport(&reason))?;
-        let client = client_builder(store, None, false)
+        let (builder, lease) = client_builder(store, None, false);
+        let client = builder
             .server_name_or_homeserver_url(&target)
             .sliding_sync_version_builder(VersionBuilder::DiscoverNative)
             .build()
@@ -101,7 +104,11 @@ impl PendingLogin {
                 "neither password nor OAuth 2.0 login is offered",
             ));
         }
-        Ok(Self { client, methods })
+        Ok(Self {
+            client,
+            methods,
+            _store_lease: lease,
+        })
     }
 
     /// 发现得到的 homeserver 基础地址。
