@@ -31,7 +31,7 @@
 
 - 优先使用成熟的开源组件和开放标准（Matrix、iroh、MCP、ACP、OIDC、Subsonic、Compose）。
   要自研时，先在 PR 或 ADR 里写明现成方案为什么不行。
-- 新建的独立组件（服务端插件、运维工具、网页）按合适的语言选，Go、TS 都行，不必用 Rust；
+- 新建的独立组件（服务端插件、运维工具、网页）按合适的语言选，Go、TS、Python 都行，不必用 Rust；
   客户端核心和服务器核心保持 Rust。
 - 新增依赖要写明许可证。链接进我们二进制的代码禁止 AGPL/GPL；作为独立容器运行的插件
   （如 Immich、Navidrome）不受此限。

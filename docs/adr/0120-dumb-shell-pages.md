@@ -32,12 +32,14 @@
 ## 背景
 
 主人在 2026-11-25 拍板不重写 Rust。一个功能今天要同时改核心、UniFFI 绑定、Swift 和 Kotlin 四处；
-实测近一个月（10-25 至 11-25，main）`apps/` 下 276 个提交里 141 个两端一起改（51%）。只改核心或只改壳的
+实测近一个月（10-25 至 11-25，基线 `225ea5cb`）`apps/` 下的改动：276 个提交里 141 个两端一起改（51%）；
+按页拆开、同一提交改多页也各计一次，是 614 个（提交，页面）对，其中 251 对两端同改。口径和命令见
+`scripts/adr-shell-pages.py`（`python3 scripts/adr-shell-pages.py --rev 225ea5cb --since 2026-10-25`）。
 PR 中位 1.5–6.6 小时，核心加两个壳一起改的慢两到三倍，被复审打回的约 3 倍。
 
-两端一起改最多的是页面壳：聊天房间 71 次（两端同改 32）、插件详情 55 次（32）、插件网页 52 次（15）、
-聊天面板 32 次（6）、应用首页 31 次（13）、聊天列表 31 次（11）、输入框 31 次（10）。反过来，已经是
-“核心给数据、壳排”的设置页只有 19 次（8）、表单 4 次（2）、关于 1 次（1）。数据见文末“现状盘点”。
+两端同改最集中的是页面壳：聊天房间 71 对（两端同改 32 对）、插件详情 55（32）、插件网页 52（15）、
+聊天面板 32（6）、应用首页 31（13）、聊天列表 31（11）、输入框 31（10）。反过来，已经由核心给数据的页
+只有 19（8）、表单 4（2）、关于 1（1）。数据见文末“现状盘点”。
 
 也就是说：**壳里的页面代码就是成本**；今天已经有半套地基，缺的是“壳不为每个新页面再写一遍”：
 设置首页的 `SettingsViewModel`、`StoreListing`、`PeersViewModel`、`PluginSettingsView` 都已经由核心给
@@ -78,7 +80,7 @@ PageEmpty { kind: PageEmptyKind, action?: Action }
 | Card | 标题 + 正文 + 按钮，可带角标 | `StepCardFrame` |
 | Paragraph | 标题 + 段落正文，不做 Markdown | `Text` 排版 |
 | Search | 搜索框（商店、列表） | `WontonSearchField` |
-| Chips | 单选过滤（商店分类） | `WontonPills` |
+| Chips | 单选过滤（商店分类） | `WontonChip`（`Design/WontonPills`） |
 | Progress | 有长度的进度、批量结果（安装、升级） | 现有进展条 |
 | Empty / Error | 空态和错误态，带重试动作 | `ProblemRow` 系列 |
 | Icon / Avatar / Image | 前置图形 | 现有图标与 `PluginIcon`、`BotAvatar` |
@@ -88,7 +90,7 @@ PageEmpty { kind: PageEmptyKind, action?: Action }
 ### 3. 动作
 
 每个可点的行、按钮、字段带一个动作，来自页面自己的动作枚举（今天已经有 `SettingsAction`、
-`PluginsAction`、`PageAction` 这些），经 `Action.Pages` 一个入口回核心。壳只做“把动作原样发回去”，
+`PluginAction`、`PageAction` 这些），经 `Action.Pages` 一个入口回核心。壳只做“把动作原样发回去”，
 不解释。要确认的动作带一句确认文字，确认页由壳呈现（ADR-0024 的三类不变）。
 
 ### 4. 哪些页面继续手写（白名单）
@@ -140,16 +142,18 @@ PageEmpty { kind: PageEmptyKind, action?: Action }
   再定义一层样式，等于在两套外观体系之间再做一次映射。卡片可借鉴的“`fallback` 写进格式”抄了
   （第 5 节）。<https://adaptivecards.microsoft.com/schemas/adaptive-card.json>
 - **Slack Block Kit**：blocks/elements/composition objects，一条消息最多 50 个块、弹窗 100 个；是
-  Slack 的界面概念（Home tab、modal），没有表单校验、没有页面动作。
-  <https://docs.slack.dev/block-kit/>
+  Slack 的界面概念（Home tab、modal），校验只到字段长度和数值范围（`plain_text_input` 的
+  `min_length`/`max_length`、`number_input` 的 `min_value`/`max_value`），没有跨字段和提交门的校验、
+  没有页面动作和页面栈。 <https://docs.slack.dev/block-kit/>
 - **Google Remote Compose**（Apache-2.0，`androidx.compose.remote`，2026-11-18 还是 `1.0.0-alpha24`）：
   文档 + player 的结构值得抄，但 player 只有 Android（App 小组件、Wear OS），iOS 端要自己写 player
   （未核实有第三方）；而且 player 是在画布上画，不产出我们已有的原生控件，ADR-0029 的平台材质要重做一遍。
   <https://developer.android.com/develop/ui/compose/system/remote-compose>、
   <https://developer.android.com/jetpack/androidx/releases/compose-remote>
 - **JSON Forms / JSON Schema 渲染**：只管表单；字段种类、问题行、未知项的做法 ADR-0077 已经有了，不重复引入。
-- **Matrix 小部件 / Shopify remote-dom**（Apache-2.0）：都是“把第三方代码放进沙箱、经消息传 UI 树”，
-  适合插件自带界面；我们的插件页面已经走 WebView + MCP Apps，原生页再引一层 JS 运行时换不回原生体验。
+- **Matrix 小部件 / Shopify remote-dom**（matrix-widget-api 是 Apache-2.0，remote-dom 是 MIT）：
+  都是“把第三方代码放进沙箱、经消息传 UI 树”，适合插件自带界面；我们的插件页面已经走 WebView + MCP Apps，
+  原生页再引一层 JS 运行时换不回原生体验。
   <https://github.com/matrix-org/matrix-widget-api>、<https://github.com/Shopify/remote-dom>
 - **Rust 侧的现成 crate**：`ferro-json-ui`（MIT）、`raui-json-renderer`（MIT/Apache-2.0）都是给自家渲染器
   用的 JSON UI，编进 SwiftUI/Compose 用不上，只当先例看。
@@ -203,10 +207,12 @@ PageEmpty { kind: PageEmptyKind, action?: Action }
 
 ## 现状盘点（2026-11-25 的 main，`225ea5cb`）
 
-统计口径：`git log --since=2026-10-25 -- apps/ios apps/compose`，按页归组该页的壳文件和组件文件；
-“两端同改”是同一个提交里同时改了该页的 iOS 和 Android 文件。“核心给什么”是今天的现状。
+统计：`python3 scripts/adr-shell-pages.py --rev 225ea5cb --since 2026-10-25`（脚本在仓库里，口径见脚本头）。
+合计 276 个提交，其中 141 个两端同改（51%）；按页拆开是 614 个（提交，页面）对，其中 251 对两端同改。
+下表是这个脚本的输出；“近月（提交，页面）对”是范围里改了该页的提交数，同一提交改多页时每页各计 1。
+“核心给什么”是今天的现状。
 
-| 页面 | iOS 行 | Android 行 | 近月改动 | 其中两端同改 | 核心给什么 | 结论 |
+| 页面 | iOS 行 | Android 行 | 近月（提交，页面）对 | 其中两端同改 | 核心给什么 | 结论 |
 | --- | --- | --- | --- | --- | --- | --- |
 | 聊天房间（时间线） | 3051 | 2918 | 71 | 32 | 时间线增量、消息、卡片 | 手写 |
 | 插件详情（含 Bot 资料、联系人、共享、密钥、权限） | 2902 | 3190 | 55 | 32 | 各节 ViewModel | 按节迁 |
@@ -225,6 +231,7 @@ PageEmpty { kind: PageEmptyKind, action?: Action }
 | 核心升级 | 633 | 604 | 6 | 3 | 状态 ViewModel | 迁 |
 | 应用首页 | 618 | 549 | 31 | 13 | 网格 ViewModel | 迁 |
 | 聊天列表 | 574 | 802 | 31 | 11 | 会话列表 | 手写 |
+| 输入框 | 1708 | 1701 | 31 | 10 | 发送、附件、草稿 | 手写 |
 | 插件设置（表单） | 550 | 610 | 4 | 2 | `SettingsForm` 字段描述 | 改字段组件 |
 | 设备验证 | 473 | 485 | 7 | 4 | 状态 ViewModel | 迁 |
 | 我的应用 | 361 | 691 | 11 | 4 | 设置 ViewModel | 迁 |
