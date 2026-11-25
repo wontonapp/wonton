@@ -6,16 +6,23 @@
 use std::sync::{Arc, Mutex};
 use std::time::Duration;
 
-use wonton_protocol::{ChatAccount, ChatFailure, ChatSync, ProxySettings};
+use wonton_protocol::{ChatAccount, ChatFailure, ChatSync, HomeStatus, ProxySettings};
 
 use super::{Active, ChatLink, failure, lock};
 
 /// 登录到哪里：经家里的本地代理登录配对的服务器，或者直连外部 Matrix 账号的 homeserver（ADR-0051）。
+/// `HomeOffline` 是本机还有那台服务器的会话、本地代理却还没起来（隧道没通）：先不带代理恢复，代理来了再由带代理的
+/// 那次接上。
 #[derive(Clone, PartialEq, Eq)]
 pub(super) enum Target {
     Home(ProxySettings),
+    HomeOffline,
     External,
 }
+
+/// 隧道正在建时，离线恢复最多先等这么久本地代理：等到了就一次恢复带代理，省掉在同一个存储上恢复两次（两次是
+/// 两套设备身份，对方要重新认一遍密钥）。真连不上就用本机存下的会话先恢复。
+const OFFLINE_GRACE: Duration = Duration::from_millis(500);
 
 /// 第一次重试前等这么久，之后每次翻倍，最多等 [`MAX_BACKOFF`]。
 const FIRST_BACKOFF: Duration = Duration::from_secs(1);
@@ -61,9 +68,17 @@ impl ChatLink {
         if lock(&self.relogin.0).generation != generation {
             return;
         }
+        // 正在（或已经）用这个代理登录：隧道刚通、代理刚到，本机那次恢复也是用它，不用再换一次会话。
+        // 失败过（包括设备被吊销）不算，那要重新登录。
+        if let Target::Home(proxy) = &target
+            && lock(&self.signing_proxy).as_ref() == Some(proxy)
+            && !matches!(self.view.borrow().account, ChatAccount::Failed { .. })
+        {
+            return;
+        }
         // 等锁时可能又换了连接：这个代理已经没了，不能凭它动下一台服务器的登录状态。外部账号的槽位一个槽位一个账号，
         // 账号数据按槽位记。
-        let server_id = match &target {
+        let (server_id, proxy) = match &target {
             Target::Home(proxy) => {
                 let home = self.home.view();
                 let Some(server_id) = home
@@ -72,14 +87,29 @@ impl ChatLink {
                 else {
                     return;
                 };
-                server_id
+                (server_id, Some(proxy.clone()))
             }
-            Target::External => String::new(),
+            // 没有本地代理：隧道多半正在建，给它一小会儿，代理到了就直接用代理登录。真没有代理就用本机存着的那台
+            // 会话先恢复出来（请求连不上按传输错误失败）。没有能恢复的会话就交给带代理的那次。
+            Target::HomeOffline => {
+                let home = self.home.view();
+                let proxy = match (home.proxy, home.status) {
+                    (None, HomeStatus::Connecting) => self.home.wait_for_proxy(OFFLINE_GRACE).await,
+                    (proxy, _) => proxy,
+                };
+                let Some(server_id) = home.server_id.filter(|id| self.has_local_session(id)) else {
+                    return;
+                };
+                (server_id, proxy)
+            }
+            Target::External => (String::new(), None),
         };
         if let Some(old) = active.take() {
             self.forget_current().await;
             drop(old);
         }
+        *lock(&self.signing_proxy) = proxy.clone();
+        tracing::info!(server = %server_id, proxy = proxy.is_some(), "Matrix sign-in starting");
         // 账号数据跟着服务器走：断线时先留着，换服务器才清。
         if self.layouts.adopt(&server_id) {
             self.view
@@ -88,13 +118,14 @@ impl ChatLink {
         self.view
             .send_modify(|view| view.account = ChatAccount::SigningIn);
         let signed_in = match &target {
-            Target::Home(proxy) => self.sign_in(proxy, server_id).await,
             Target::External => self.sign_in_external().await,
+            _ => self.sign_in(proxy.as_ref(), server_id).await,
         };
         let session = match signed_in {
             Ok(session) => Arc::new(session),
             Err((reason, message)) => {
                 tracing::info!("Matrix sign-in failed: {message}");
+                *lock(&self.signing_proxy) = None;
                 drop(active);
                 self.sign_in_failed(generation, target, reason, message);
                 return;
@@ -177,6 +208,7 @@ impl ChatLink {
         if active.take().is_some() {
             self.forget_current().await;
         }
+        *lock(&self.signing_proxy) = None;
         self.view.send_modify(|view| {
             view.account = ChatAccount::SignedOut;
             view.sync = ChatSync::Idle;

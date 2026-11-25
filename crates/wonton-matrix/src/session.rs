@@ -25,33 +25,54 @@ use tokio::{
 
 use crate::rooms::RoomSubscriptions;
 pub use crate::saved::SavedSession;
-use crate::{Error, Result, send_queue};
+use crate::{Error, Result, send_queue, store_holder::holder_for};
 
 /// Tuwunel 的 JWT 登录类型。
 const JWT_LOGIN_TYPE: &str = "org.matrix.login.jwt";
 
-/// 房间列表的两个连接号，轮换着用：上次用哪个记在存储目录下的文件里，这次用另一个，服务端那边的旧会话
-/// 就不会挡住新连接。都是 13 个字符，SDK 只收 16 个以内，测试守着。
-const ROOM_LIST_CONN_IDS: [&str; 2] = ["room-list-a", "room-list-b"];
+/// 房间列表的连接号，轮换着用：上次用哪个记在存储目录下的文件里，这次用下一个，服务端那边的旧会话就不会挡住新连接
+/// （它按（设备，连接号）一条一条地处理 Sliding Sync，同一个号的长轮询要排队）。三个号够同一个进程里先后开两个
+/// 会话（先离线恢复、代理来了再带代理恢复）也各用各的。都是 13 个字符，SDK 只收 16 个以内，测试守着。
+const ROOM_LIST_CONN_IDS: [&str; 3] = ["room-list-a", "room-list-b", "room-list-c"];
 /// 记上次用的连接号的文件名，和 Matrix 存储放在同一个目录（归客户端核心所有）。
 const ROOM_LIST_CONN_FILE: &str = "room-list-conn";
 
-/// 这次用哪个连接号，并记下来。没有记录（第一次启动）从第一个开始；连着两次都在 30 秒内崩溃时，第三个实例会
-/// 轮回到第一个连接号，死掉那条长轮询可能还挂在上面，最多再等它一轮（30 秒），不会卡死。内存存储没有目录，
-/// 按进程里的调用次数轮换，够一个进程里几个会话分开。
+/// 本进程给每个存储用的上一个连接号：同一个进程里再开一个会话时从它接着往下轮，不和服务端上刚停下那条撞号。
+static ROOM_LIST_CONN_ID: std::sync::LazyLock<
+    std::sync::Mutex<std::collections::HashMap<PathBuf, &'static str>>,
+> = std::sync::LazyLock::new(std::sync::Mutex::default);
+
+/// 这次用哪个连接号，并记下来（内存里给本进程的下一个会话，存储里给下一个进程）。没有记录（第一次启动）从第一个
+/// 开始。内存存储没有目录，按进程里的调用次数轮换，够一个进程里几个会话分开。
 async fn next_room_list_conn_id(store: &StoreConfig) -> &'static str {
     let StoreConfig::Sqlite { path, .. } = store else {
         static NEXT: AtomicUsize = AtomicUsize::new(0);
         return ROOM_LIST_CONN_IDS[NEXT.fetch_add(1, Ordering::Relaxed) % ROOM_LIST_CONN_IDS.len()];
     };
-    let previous = tokio::fs::read_to_string(path.join(ROOM_LIST_CONN_FILE))
-        .await
-        .unwrap_or_default();
-    let next = if previous.trim() == ROOM_LIST_CONN_IDS[0] {
-        ROOM_LIST_CONN_IDS[1]
-    } else {
-        ROOM_LIST_CONN_IDS[0]
+    let cached = ROOM_LIST_CONN_ID
+        .lock()
+        .unwrap_or_else(|poisoned| poisoned.into_inner())
+        .get(path)
+        .copied();
+    let previous: Option<String> = match cached {
+        Some(previous) => Some(previous.to_owned()),
+        None => tokio::fs::read_to_string(path.join(ROOM_LIST_CONN_FILE))
+            .await
+            .ok(),
     };
+    let index = previous
+        .as_deref()
+        .and_then(|previous| {
+            ROOM_LIST_CONN_IDS
+                .iter()
+                .position(|id| *id == previous.trim())
+        })
+        .map_or(0, |index| index + 1);
+    let next = ROOM_LIST_CONN_IDS[index % ROOM_LIST_CONN_IDS.len()];
+    ROOM_LIST_CONN_ID
+        .lock()
+        .unwrap_or_else(|poisoned| poisoned.into_inner())
+        .insert(path.clone(), next);
     if let Err(error) = tokio::fs::write(path.join(ROOM_LIST_CONN_FILE), next).await {
         tracing::warn!("could not record the room list connection id: {error}");
     }
@@ -435,6 +456,7 @@ async fn build_client(config: &SessionConfig, versions: VersionBuilder) -> Resul
 
 /// 除了服务器地址以外的客户端设置，登录（[`crate::login`]）和会话共用。`cross_signing` 为假时登录后不自动建交叉签名：
 /// 用现成账号登录时由之后恢复的会话来建，登录用的客户端用完就停，不在半路上传一半。
+///
 pub(crate) fn client_builder(
     store: &StoreConfig,
     proxy: Option<&str>,
@@ -458,18 +480,13 @@ pub(crate) fn client_builder(
     if let Some(proxy) = proxy {
         builder = builder.proxy(proxy);
     }
-    let path = match store {
-        StoreConfig::InMemory => None,
-        StoreConfig::Sqlite { path, .. } => Some(path.as_path()),
-    };
-    builder = builder.cross_process_store_config(CrossProcessLockConfig::multi_process(
-        crate::store_holder::holder_for(path),
-    ));
     match store {
         StoreConfig::InMemory => builder,
-        StoreConfig::Sqlite { path, passphrase } => {
-            builder.sqlite_store(path, passphrase.as_deref())
-        }
+        StoreConfig::Sqlite { path, passphrase } => builder
+            .cross_process_store_config(CrossProcessLockConfig::multi_process(holder_for(Some(
+                path,
+            ))))
+            .sqlite_store(path, passphrase.as_deref()),
     }
 }
 
@@ -512,12 +529,20 @@ mod tests {
         for id in ROOM_LIST_CONN_IDS {
             assert!(id.len() <= 16, "{id} 太长");
         }
-        assert_ne!(ROOM_LIST_CONN_IDS[0], ROOM_LIST_CONN_IDS[1]);
+        for id in ROOM_LIST_CONN_IDS {
+            assert_eq!(
+                ROOM_LIST_CONN_IDS
+                    .iter()
+                    .filter(|other| **other == id)
+                    .count(),
+                1
+            );
+        }
     }
 
-    /// 连接号两次启动换一个，第三次回到第一个（崩溃循环时最多再等一轮长轮询）。存储里只留一条记录。
+    /// 每次会话换一个号，同一个进程里先后两个也不撞（前一个的长轮询可能还挂着）；下一个进程从这一轮之后接着换。
     #[tokio::test]
-    async fn room_list_conn_ids_rotate() {
+    async fn room_list_conn_ids_rotate_per_session() {
         let dir = tempfile::tempdir().unwrap();
         let store = StoreConfig::Sqlite {
             path: dir.path().to_owned(),
@@ -527,11 +552,23 @@ mod tests {
         let second = next_room_list_conn_id(&store).await;
         let third = next_room_list_conn_id(&store).await;
         assert_ne!(first, second);
-        assert_eq!(first, third);
+        assert_ne!(second, third);
+        assert_ne!(first, third);
         assert_eq!(
             std::fs::read_to_string(dir.path().join(ROOM_LIST_CONN_FILE)).unwrap(),
             third
         );
+        // 下一个进程接着这一轮往后换，不回到刚才那个。
+        forget_chosen_conn_ids();
+        assert_ne!(next_room_list_conn_id(&store).await, third);
+    }
+
+    /// 下一个进程：忘掉本进程选过的号。
+    fn forget_chosen_conn_ids() {
+        ROOM_LIST_CONN_ID
+            .lock()
+            .unwrap_or_else(|poisoned| poisoned.into_inner())
+            .clear();
     }
 
     #[tokio::test]
