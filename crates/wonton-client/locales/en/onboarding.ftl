@@ -40,6 +40,7 @@ home-proxy-start-failed = The app couldn't start its local connection proxy. Try
 
 home-tunnel-closed = The tunnel client has closed.
 
+
 home-lan-unsupported = This version of the client core doesn't support local network settings.
 
 home-port-mapping-save-failed = Couldn't save the port mapping switch: { $error }
