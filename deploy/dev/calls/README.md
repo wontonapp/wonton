@@ -44,8 +44,10 @@ STACK=call-smoke HOST=192.0.2.10 DEV_A=emulator-5560 DEV_B=emulator-5562 \
 - `ROOM_ID`/`ROOM_NAME` 复用房间（脚本只比对**本轮新增**的 `call.member`，旧成员不影响判定）；不给就新建。
 - `PKG` 改插件包相对路径。
 - 同一 `EVIDENCE` 同时只允许一份在跑（`.lock`）。
+- 每组有组级 deadline（`GROUP_DEADLINE`，默认 600 秒，从配置完成后起算）：卡在开房间、join、`ensure_media` 任一步，到点就 `fail_group` 出判决并留错因，不被一步卡死吞掉整轮。
+- 失败时（relay 组）自动把两端 App 核心日志尾、logcat 关键行（`ERR_CONTENT_LENGTH`、`Failed to connect`、`transport-unavailable`）和核心容器日志尾落成 `failure-*-*.log`；`check_tunnel_relay` 无论过没过都把最近 `CheckedPath` 和错因写 `relay-path-<a|b>.log`。中继组先判路径、再做媒体断言，路径证据不会被媒体卡住拖没。
 
-证据都写进 `EVIDENCE`：`run.log`（判定原文）、`webrtc-*.jsonl`（15 个采样，判定看最大值）、`group-*.png`/`group-*.mp4`、`permissions.log`、`members.log`、`pair-*.raw`。退出码：0 全部通过；1 有组失败或前置失败。
+证据都写进 `EVIDENCE`：`run.log`（判定原文）、`webrtc-*-<组>.jsonl`（15 个采样，判定看最大值；plain 组也是自己的前缀）、`group-<组>-*.png`/`group-<组>-*.mp4`、`permissions.log`、`members.log`、`pair-*.raw`、`relay-path-<a|b>.log`、失败时的 `failure-*-*.log`。退出码：0 全部通过；1 有组失败或前置失败。
 
 ## 已知环境问题
 

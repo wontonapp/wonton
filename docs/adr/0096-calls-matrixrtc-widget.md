@@ -289,14 +289,18 @@ Linux + Docker、两台 API 36 Android 模拟器（同一台宿主）、Element 
 - **不加密房间（`STAGE=plain`）：通过。** 建房不带 `m.room.encryption`，其余同 UDP 组；两端 `prflx/udp->host`、media 字节双向，
   EC 正常入会、挂断后成员清空。说明房间不加密时通话链路照常；本组没有单独的媒体密钥步骤（LiveKit 侧不做 E2EE），
   主机和 Matrix 层仍是现状。证据 `run.log` 23:51–23:54、`webrtc-*-plain.jsonl`、`group-plain-*.png`。
-- **n0 公共中继组：未通过（到一半）。** 先直连把房间和 EC 页面打开（公网中继下 EC 的入口 JS 325 231 字节会在约 100 KB 处被截断，
-  `ERR_CONTENT_LENGTH_MISMATCH`，冷缓存永远起不来；核心日志同时报 `The relay is rate-limiting this endpoint`），再给两台设备加
-  iptables 丢掉到私网（10/8、172.16/12、192.168/16）和宿主隧道端口的包。之后两端核心日志的隧道路径都变成
-  `CheckedPath { remote: Relay(https://usw1-1.relay.n0.iroh.link/), relay: true }`（证据 `relay-path-5562.log`、`relay-path-5566.log`），
-  本轮两条 `call.member` 都出现（`run.log` 23:35:25），EC 靠 warm 缓存也能把页面挂起来；但 EC 报
-  `Failed to connect to Livekit server` / `InternalError`，`getStats` 拿不到选中候选对，媒体字节为 0，组判决没过。
-  直接原因是 n0 公共中继对单个 endpoint 限速：隧道流在 10–16 秒内被对端以 `transport-unavailable` 断开，大响应先断、
-  WebSocket 到 `/livekit/sfu` 也连不上。下一步要么给冒烟加自建 iroh relay（ADR-0048），要么等 n0 限速放宽后复跑。
+- **n0 公共中继组：未通过（到一半）。** 先直连把房间和 EC 页面打开做 warm 缓存再下规则（不加这一步时，EC 入口 JS 325 231 字节
+  在 relay 下会在约 100 KB 处被截断成 `ERR_CONTENT_LENGTH_MISMATCH`，冷缓存永远起不来），再给两台设备加
+  iptables 丢掉到私网（10/8、172.16/12、192.168/16）和宿主隧道端口的包。之后 5566 的 App 核心日志里出现
+  `CheckedPath { remote: Relay(https://usw1-1.relay.n0.iroh.link/), relay: true }`（`relay-path-5566.log`），
+  5562 落盘的最近三条仍是 `relay: false`（当时脚本只留尾部三条，更早的 true 行没留住），所以这一轮的路径证据只坐实了 B 端；
+  复跑时脚本会把两端 `CheckedPath` 和错因无条件追加到 `relay-path-<a|b>.log`。本轮两条 `call.member` 都出现（`run.log` 23:35:25），
+  EC 靠 warm 缓存也能把页面挂起来；但 EC 报 `Failed to connect to Livekit server` / `InternalError`，
+  `getStats` 拿不到选中候选对，媒体字节为 0，组判决没过。
+  直接原因是 n0 公共中继对单个 endpoint 限速（核心容器日志 `The relay is rate-limiting this endpoint`，复跑会落进
+  `failure-c-core.log`）：隧道流在 10–16 秒内被对端以 `transport-unavailable` 断开，大响应先断、WebSocket 到 `/livekit/sfu`
+  也连不上；EC 的 console 错误（`ERR_CONTENT_LENGTH_MISMATCH`、`Failed to connect`）复跑会落进 `failure-c-console-*.log`。
+  下一步要么给冒烟加自建 iroh relay（ADR-0048），要么等 n0 限速放宽后复跑。
 
 
 公共中继提示不属于通话媒体连通性的验收门槛。现有 `PortMappingWarning::PublicRelayBandwidth` 在 Android 插件详情的端口映射区域渲染，而不是 widget 通话页；这属于前端线缺口，relay 冒烟不因缺少该提示失败。

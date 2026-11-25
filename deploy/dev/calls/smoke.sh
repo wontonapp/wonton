@@ -15,6 +15,7 @@
 # plain 用不加密房间跑 UDP 组（记录 Element Call 在不加密房间里的行为，供“房间不再端到端加密”的决定用）。
 # ROOM_ID=<房间> ROOM_NAME=<名字> 可复用已有房间（旧房间会积着上轮成员，判定要看本轮新增的两条）。
 # 插件包：PKG（worktree 内的相对路径，默认 deploy/dev/calls/plugin，由调用方放好）。
+# 每组有组级 deadline：GROUP_DEADLINE=秒（默认 600），从判定阶段起算，到点就 fail_group 出判决，不被卡死的步骤吞掉。
 set -euo pipefail
 shopt -s inherit_errexit
 
@@ -47,7 +48,18 @@ case $HOST in localhost|127.0.0.1|::1|"$(hostname)"|"$(hostname -f 2>/dev/null)"
 esac
 [[ $pair_addr =~ ^[0-9]+(\.[0-9]+){3}$ ]] || die "HOST=$HOST 解析不出 IPv4 直连地址"
 failures=0
-fail_group() { failures=$((failures + 1)); log "组 $1 失败：$2"; }
+# 组级 deadline：到点就 fail_group，别让一个卡死的步骤把整轮吞掉、也不出判决。
+GROUP_DEADLINE="${GROUP_DEADLINE:-600}"
+group_deadline_at=0
+deadline_hit() { (( group_deadline_at > 0 && SECONDS >= group_deadline_at )); }
+fail_group() {
+    failures=$((failures + 1))
+    log "组 $1 失败：$2"
+    deadline_hit && log "组 $1 已过组级 deadline ${GROUP_DEADLINE}s"
+    if [[ $1 == c ]] && declare -F capture_failure_evidence >/dev/null; then
+        capture_failure_evidence "$1"
+    fi
+}
 compose_changed=0 direct_blocked=0
 restore_defaults() {
     restore_compose
@@ -379,6 +391,7 @@ open_room() { # open_room <dev> <显示名片段>
     # 列表行按房间名找；房间名带时间戳，用前缀匹配。
     local dev=$1 name=$2 xml row b cs x1 y1 x2 y2
     for i in $(seq 1 400); do
+        deadline_hit && { log "open_room $dev 组级超时"; return 1; }
         # 列表 UI 不实时刷新：新建房间的行要等 App 重启才渲染出来（17:19 实测）。
         # 周期性重启一次，重渲染列表；房间行出现就往下走。
         if (( i % 60 == 0 )); then
@@ -459,13 +472,15 @@ open_room() { # open_room <dev> <显示名片段>
         fi
         sleep 2
     done
-    die "设备 $dev 没打开房间 $name"
+    log "设备 $dev 没打开房间 $name（组级超时或页面没起）"
+    return 1
 }
 
 open_call() { # 顶栏的入口，通话中时是“通话中”
     local dev=$1 port=9331
     [[ $dev == "$DEV_B" ]] && port=9334
     for i in $(seq 1 20); do
+        deadline_hit && { log "open_call $dev 组级超时"; return 1; }
         local xml desc bounds coords x1 y1 x2 y2 page
         xml=$(ui "$dev" 2>/dev/null || true)
         if grep -q 'text="OK"' <<<"$xml"; then tap_text "$dev" "OK" >/dev/null 2>&1 || true; sleep 1; continue; fi
@@ -529,6 +544,7 @@ join_call() {
     allow_media "$dev"
     # 核心重启后隧道重连要几分钟，40 轮（~3 分钟）不够（relay 组实测），放宽到 100。
     for i in $(seq 1 100); do
+        deadline_hit && { log "设备 $dev join_call 组级超时（page=${page:-无}）"; return 1; }
         page=$(cdp "$side" "$port" pick 2>/dev/null || true)
         if [[ -n $page ]]; then
             page_dismiss "$side" "$port" "$page"
@@ -561,7 +577,8 @@ except Exception: pass' "$rect" 2>/dev/null || true)
         (( i % 8 == 0 )) && open_call "$dev"
         sleep 2
     done
-    die "设备 $dev 没进通话（$page）"
+    log "设备 $dev 没进通话（$page）"
+    return 1
 }
 
 # CDP 客户端跑在 $HOST 上（栈副本目录里，见上方推送）；ssh -L 在部分机器上被禁，不用转发端口。
@@ -630,6 +647,7 @@ for e in events:
 wait_new_members() { # <房间> <本轮开始前的 keys> <本轮 keys 文件> <期望条数> <秒>：只认本轮新增
     local i after
     for i in $(seq 1 "$5"); do
+        deadline_hit && { log "wait_new_members 组级超时"; return 1; }
         after=$(active_members "$1" || true)
         comm -13 "$2" <(printf '%s\n' "$after" | sort -u) | grep '@' > "$3" || true
         if [[ $(wc -l <"$3") -ge $4 ]]; then
@@ -661,7 +679,7 @@ stats() { # stats <a|b> <端口> <组名>：一端采样落盘（判定在 check
     [[ -s $EVIDENCE/webrtc-$1-$3.jsonl ]] || return 1
 }
 
-check_media_path() { # <组 a|b|c>：两端都必须走指定路径，且双向音频和视频都真正有字节
+check_media_path() { # <组 a|b|c|plain>：两端都必须走指定路径，且双向音频和视频都真正有字节
     python3 - "$1" "$EVIDENCE/webrtc-a-$1.jsonl" "$EVIDENCE/webrtc-b-$1.jsonl" <<'PEOF' | tee -a "$EVIDENCE/run.log"
 import json, sys
 group, *files = sys.argv[1:]
@@ -697,7 +715,9 @@ for side, path in zip("ab", files):
           f" rtt={sel.get('rtt')} 收音频={media[('inbound', 'audio')]} 发音频={media[('outbound', 'audio')]}"
           f" 收视频={media[('inbound', 'video')]} 发视频={media[('outbound', 'video')]}")
     # 中继组看的是隧道路径（见 check_tunnel_relay），WebRTC 的 local 候选在 ICE-lite 下恒是 host/prflx。
+    # plain 是“不加密房间”的 UDP 组，路径判据和 a 相同。
     if {"a": proto == "udp" and kind != "relay",
+        "plain": proto == "udp" and kind != "relay",
         "b": proto == "tcp" and kind != "relay",
         "c": True}[group] is False:
         bad.append(f"设备 {side}: 路径是 {kind}/{proto}，不是 {group}")
@@ -722,18 +742,24 @@ raise SystemExit(1 if bad else 0)
 PEOF
 }
 check_tunnel_relay() { # <a|b>：App 核心日志里最近一次隧道路径必须是 relay（中继组真正的判据）
-    local side=$1 dev last
+    local side=$1 dev last errs
     [[ $side == a ]] && dev=$DEV_A || dev=$DEV_B
     # 回前台会重查一次隧道；不这样拿到的可能是阻断直连之前的旧路径。
     timeout 25 ssh "$HOST" "adb -s $dev shell input keyevent 3; adb -s $dev shell am start -n app.wonton.android/.MainActivity" >/dev/null 2>&1 || true
     sleep 8
     last=$(timeout 25 ssh "$HOST" "adb -s $dev shell 'run-as app.wonton.android tail -n 400 files/core.log'" 2>/dev/null |
         grep 'CheckedPath' | tail -1 || true)
+    # 不管过没过都落盘：路径判据和出错原因（中继限速、transport-unavailable、EC 连不上）都要能复查。
+    timeout 25 ssh "$HOST" "adb -s $dev shell 'run-as app.wonton.android tail -n 400 files/core.log'" 2>/dev/null |
+        grep -E 'CheckedPath|transport-unavailable|rate-limit|Failed to connect' | tail -8 \
+        >> "$EVIDENCE/relay-path-$side.log" || true
     if grep -q 'relay: true' <<<"$last"; then
         log "设备 $side 隧道走中继：$last"
         return 0
     fi
-    log "设备 $side 隧道没走中继：${last:-没有路径日志}"
+    errs=$(timeout 25 ssh "$HOST" "adb -s $dev shell 'run-as app.wonton.android tail -n 200 files/core.log'" 2>/dev/null |
+        grep -iE 'transport-unavailable|rate-limit|Failed to connect|tunnel check failed' | tail -3 || true)
+    log "设备 $side 隧道没走中继：${last:-没有路径日志}${errs:+；错因：$(tr '\n' ' ' <<<"$errs")}"
     return 1
 }
 
@@ -743,17 +769,17 @@ configure_tcp_only() {
     local dc=$pkg/docker-compose.yml
     [[ -f $dc.orig ]] || cp "$dc" "$dc.orig"
     sed -i 's/^      UDP_PORT: "7882"$/      UDP_PORT: "0"/' "$dc"
-    grep -q '^      UDP_PORT: "0"$' "$dc" || die "compose 里没找到 UDP_PORT: \"7882\"，sed 没生效"
+    grep -q '^      UDP_PORT: "0"$' "$dc" || { log "compose 里没找到 UDP_PORT: \"7882\"，sed 没生效"; return 1; }
     # 插件 compose 里 livekit 的 UDP 端口映射也去掉：隧道不再转发 7882。
     sed -i '/service: livekit, port: 7882, protocol: udp/d' "$dc"
-    ! grep -q 'port: 7882, protocol: udp' "$dc" || die "compose 里的 7882/udp 隧道行没删掉"
+    ! grep -q 'port: 7882, protocol: udp' "$dc" || { log "compose 里的 7882/udp 隧道行没删掉"; return 1; }
     compose_changed=1
     # remote-dev install 只收 worktree 相对路径，pkg 保持相对（绝对化会被拒）。
     # 同版本已装会被拒：先幂等卸载（未装时静默），ssh 闪断已由落盘+响亮 die 兜住。
     dev_sh uninstall app.element-call >/dev/null 2>&1 || true
     # install 的审查确认读 stdin，setsid 的 /dev/null 会让它 EOF 静默弃装——喂 y。
     echo y | "$HOME/wonton-dev/remote-dev.sh" --host "$HOST" "$STACK" install "$pkg" >"$EVIDENCE/install-tcp.log" 2>&1 ||
-        die "插件重装失败（组 tcp，见 install-tcp.log）"
+        { log "插件重装失败（组 tcp，见 install-tcp.log）"; return 1; }
     sleep 20
 }
 restore_compose() { # 把就地改过的插件 compose 还原（副本在插件仓库外，git checkout 无效）
@@ -799,7 +825,7 @@ unblock_direct() { # 去掉 block_direct 的规则，恢复直连
 configure_relay_only() {
     log "路径：强制 n0 中继（宣告一个到不了的直连地址）"
     # 重新 up 一次而不是 status：只有 up 会把 --announce 写进 .dev-announce 并传给核心，重起核心。
-    dev_sh up --announce 10.0.2.99 >/dev/null || die "带中继宣告地址重起核心失败"
+    dev_sh up --announce 10.0.2.99 >/dev/null || { log "带中继宣告地址重起核心失败"; return 1; }
     # 名额重排后 up 会换端口（.dev-ports 也变）；以 stack-slot 现在发的端口为准，并把 App 记着的旧隧道
     # 端口反向映射到新端口，否则 App 拨的还是旧隧道，永远连不回核心。
     local old_tunnel=$tunnel
@@ -809,7 +835,7 @@ configure_relay_only() {
     done
     timeout 25 ssh "$HOST" "printf '%s %s\n' '$gw' '$tunnel' > ~/wonton-dev/stacks/dev-$STACK/.dev-ports" || true
     for d in "$DEV_A" "$DEV_B"; do timeout 25 ssh "$HOST" "adb -s $d reverse tcp:$old_tunnel tcp:$tunnel" >/dev/null 2>&1 || true; done
-    timeout 300 ssh "$HOST-stack" restart "$STACK" core || die "重启核心失败"
+    timeout 300 ssh "$HOST-stack" restart "$STACK" core || { log "重启核心失败"; return 1; }
     timeout 10 ssh "$HOST" "docker inspect wonton-$STACK" 2>/dev/null | grep -q 'WONTON_ANNOUNCE_ADDRESSES=10.0.2.99' ||
         log "警告：核心环境里没有 10.0.2.99 的宣告，靠 block_direct 兜底"
     # 重启后 remote-dev 可能丢 compose 的网络别名，core 一直起不来；必须等到网关、隧道和
@@ -823,16 +849,19 @@ configure_relay_only() {
         fi
         sleep 2
     done
-    ((ready)) || die "核心重启后 180 秒仍没就绪（网关/隧道/Tuwunel 有一个不通；别名丢失见 README）"
+    ((ready)) || { log "核心重启后 180 秒仍没就绪（网关/隧道/Tuwunel 有一个不通；别名丢失见 README）"; return 1; }
     # 先把房间和 EC 页面在直连下打开：公网中继会把超过约 100 KB 的 HTTP 响应流截断，
     # EC 的入口 JS 有 325 KB，冷缓存下永远加载不完（ERR_CONTENT_LENGTH_MISMATCH）。
-    open_room "$DEV_A" "$room_name"; open_room "$DEV_B" "$room_name"
+    open_room "$DEV_A" "$room_name" || { log "中继组：a 打不开房间"; return 1; }
+    open_room "$DEV_B" "$room_name" || { log "中继组：b 打不开房间"; return 1; }
+    # 页面打开后等 EC 的 JS 包进缓存；open_call 失败不影响后面 block（join 还会再试）。
     open_call "$DEV_A" || true; open_call "$DEV_B" || true
     sleep 20
     block_direct
     # 直连被丢掉后 iroh 自己切到 relay；等它切完再回房间。
     sleep 30
-    open_room "$DEV_A" "$room_name"; open_room "$DEV_B" "$room_name"
+    open_room "$DEV_A" "$room_name" || { log "中继组：block 后 a 回不了房间"; return 1; }
+    open_room "$DEV_B" "$room_name" || { log "中继组：block 后 b 回不了房间"; return 1; }
     sleep 3
 }
 
@@ -955,6 +984,7 @@ ensure_media() { # 页面可能停在入口/大厅/静音：没有页就重新�
     [[ $side == b ]] && { dev=$DEV_B; port=9334; }
     allow_media "$dev"
     for _ in $(seq 1 20); do
+        deadline_hit && { log "设备 $side ensure_media 组级超时（page=${page:-无}）"; return 1; }
         allow_media "$dev"
         page=$(cdp "$side" "$port" pick 2>/dev/null || true)
         if [[ -z $page ]]; then
@@ -984,19 +1014,53 @@ for x, y in json.loads(sys.argv[1]): print(round(x), round(y))' "$rects" 2>/dev/
     return 1
 }
 
-run_group() { # run_group <a|b|c> <说明> <配置函数>；任何一步不过都记一组失败，不再静默“完成”
+capture_failure_evidence() { # <tag>：组失败时把两端 App 核心日志尾和 logcat 关键行落盘，别让结论只活在终端里
+    local tag=$1 d side
+    for d in "$DEV_A" "$DEV_B"; do
+        if [[ $d == "$DEV_B" ]]; then side=b; else side=a; fi
+        timeout 25 ssh "$HOST" "adb -s $d shell run-as app.wonton.android tail -n 200 files/core.log" \
+            > "$EVIDENCE/failure-$tag-app-$side.log" 2>&1 || true
+        timeout 25 ssh "$HOST" "adb -s $d shell logcat -d" 2>/dev/null |
+            grep -iE 'chromium|ERR_CONTENT_LENGTH|Failed to connect|transport-unavailable|relay is rate-limiting|Element Call' \
+            > "$EVIDENCE/failure-$tag-console-$side.log" 2>&1 || true
+    done
+    timeout 25 ssh "$HOST" "docker logs --tail 200 wonton-$STACK" 2>/dev/null |
+        grep -iE 'CheckedPath|relay|rate-limit|transport-unavailable|tunnel_stream_aborted' \
+        > "$EVIDENCE/failure-$tag-core.log" 2>&1 || true
+}
+
+run_group() { # run_group <a|b|c|plain> <说明> <配置函数>；任何一步不过都记一组失败，不再静默“完成”
     local g=$1 keys="$EVIDENCE/members-$1.keys" before="$EVIDENCE/members-$1.before"
     log "== 组 $g：$2"
-    "$3" || die "组 $g 配置失败"
+    "$3" || { fail_group "$g" "组 $g 配置失败"; return 1; }
+    # 配置（含 relay 组的 up/预热）不占组级 deadline；从这里开始媒体/判定阶段受 GROUP_DEADLINE 约束。
+    group_deadline_at=$((SECONDS + GROUP_DEADLINE))
+    log "组 $g 判定阶段 deadline ${GROUP_DEADLINE}s"
     clear_dialogs
     for d in "$DEV_A" "$DEV_B"; do timeout 25 ssh "$HOST" "adb -s $d shell input keyevent BACK" || true; done
     sleep 3
-    open_room "$DEV_A" "$room_name"; open_room "$DEV_B" "$room_name"
+    if ! open_room "$DEV_A" "$room_name"; then
+        fail_group "$g" "a 打不开房间（组级超时或页面没起）"
+        return 1
+    fi
+    if ! open_room "$DEV_B" "$room_name"; then
+        fail_group "$g" "b 打不开房间（组级超时或页面没起）"
+        return 1
+    fi
+    deadline_hit && { fail_group "$g" "组级超时 ${GROUP_DEADLINE}s（开房间阶段）"; return 1; }
     active_members "$room_id" | sort -u > "$before" || true
     # 包裹器挂 getStats 原型，须在通话建立、页面稳定后注入（pre-join 注入会被 EC 重置，05:2x 实测）。
-    open_call "$DEV_A"; join_call "$DEV_A"; inject_stats a || fail_group "$g" "a 注入失败"
+    open_call "$DEV_A"
+    if ! join_call "$DEV_A"; then
+        fail_group "$g" "a 没进通话（组级超时或页面没起）"
+    fi
+    inject_stats a || fail_group "$g" "a 注入失败"
     sleep 15
-    open_call "$DEV_B"; join_call "$DEV_B"; inject_stats b || fail_group "$g" "b 注入失败"
+    open_call "$DEV_B"
+    if ! join_call "$DEV_B"; then
+        fail_group "$g" "b 没进通话（组级超时或页面没起）"
+    fi
+    inject_stats b || fail_group "$g" "b 注入失败"
     join_call "$DEV_A" || true
     # 只认本轮新增的 state_key：房间复用时会积着上轮的成员。
     if wait_new_members "$room_id" "$before" "$keys" 2 60; then
@@ -1004,11 +1068,17 @@ run_group() { # run_group <a|b|c> <说明> <配置函数>；任何一步不过�
     else
         fail_group "$g" "60 秒内没有两条本轮新增的 call.member"
     fi
+    # 中继组先判隧道路径：路径是 relay 组真正的判据，别等媒体断言卡住后连它一起没落盘。
+    if [[ $g == c ]]; then
+        check_tunnel_relay a || fail_group "$g" "a 的隧道没走中继"
+        check_tunnel_relay b || fail_group "$g" "b 的隧道没走中继"
+    fi
+    deadline_hit && { fail_group "$g" "组级超时 ${GROUP_DEADLINE}s（成员/路径阶段）"; return 1; }
     stack logs core 400 2>/dev/null | grep 'call.member' | tail -5 >> "$EVIDENCE/members.log" || true
     ensure_media a || fail_group "$g" "a 没有开麦/开摄像头"
     ensure_media b || fail_group "$g" "b 没有开麦/开摄像头"
     sleep 15
-    if [[ $g == a ]]; then
+    if [[ $g == a || $g == plain ]]; then
         # 两端同时录 20 秒：媒体路径的样子落成视频证据。
         rec "$DEV_A" "group-$g-a"; rec "$DEV_B" "group-$g-b"; sleep 22
         fetch_rec "$DEV_A" "group-$g-a"; fetch_rec "$DEV_B" "group-$g-b"
@@ -1022,12 +1092,9 @@ run_group() { # run_group <a|b|c> <说明> <配置函数>；任何一步不过�
     if [[ -s $EVIDENCE/webrtc-a-$g.jsonl && -s $EVIDENCE/webrtc-b-$g.jsonl ]] && check_media_path "$g"; then
         log "组 $g 判定：路径和双向音视频都成立"
     else
-        fail_group "$g" "两端路径或双向音视频不符（看 webrtc-*.jsonl）"
+        fail_group "$g" "两端路径或双向音视频不符（看 webrtc-*-$g.jsonl）"
     fi
-    if [[ $g == c ]]; then
-        check_tunnel_relay a || fail_group "$g" "a 的隧道没走中继"
-        check_tunnel_relay b || fail_group "$g" "b 的隧道没走中继"
-    fi
+    deadline_hit && { fail_group "$g" "组级超时 ${GROUP_DEADLINE}s（媒体/统计阶段）"; return 1; }
     timeout 25 ssh "$HOST" "adb -s $DEV_A shell cmd media_session volume --stream 3 --set 0" >/dev/null 2>&1 || true
     hangup "$DEV_A" || fail_group "$g" "a 找不到挂断按钮"
     hangup "$DEV_B" || fail_group "$g" "b 找不到挂断按钮"
@@ -1037,6 +1104,7 @@ run_group() { # run_group <a|b|c> <说明> <配置函数>；任何一步不过�
         fail_group "$g" "挂断 60 秒后本轮成员还在通话里"
     fi
     shot "$DEV_A" "group-$g-after"
+    group_deadline_at=0
 }
 
 run_kill() { # 延迟 leave：B 正常挂断，再把 A 的 App 强杀，本轮两个成员都应消失
@@ -1077,7 +1145,7 @@ run_kill() { # 延迟 leave：B 正常挂断，再把 A 的 App 强杀，本轮�
 
 case "$stage" in
 udp) run_group a "UDP 直连" configure_udp_only ;;
-plain) run_group a "不加密房间（UDP 直连）" configure_udp_only ;;
+plain) run_group plain "不加密房间（UDP 直连）" configure_udp_only ;;
 tcp) run_group b "只有 TCP" configure_tcp_only ;;
 relay) run_group c "只有中继" configure_relay_only ;;
 kill) run_kill ;;
