@@ -97,8 +97,12 @@ pub fn write_private(path: &std::path::Path, bytes: &[u8]) -> Result<(), InboxEr
 pub fn write_atomic(path: &std::path::Path, bytes: &[u8]) -> Result<(), InboxError> {
     use std::sync::atomic::{AtomicU64, Ordering};
     static COUNTER: AtomicU64 = AtomicU64::new(0);
-    let tmp = path.with_extension(format!(
-        "json.tmp.{}.{}",
+    let name = path
+        .file_name()
+        .and_then(|name| name.to_str())
+        .unwrap_or("page");
+    let tmp = path.with_file_name(format!(
+        "{name}.tmp.{}.{}",
         std::process::id(),
         COUNTER.fetch_add(1, Ordering::Relaxed)
     ));
@@ -180,27 +184,29 @@ mod tests {
 mod atomic_tests {
     use super::*;
 
-    /// 同一进程并发写同一条目：临时名各不相同，最后文件必须是完整的一份。
+    /// 同一进程并发写同一条目/同一页面：临时名各不相同，最后文件必须是完整的一份。
     #[test]
     fn concurrent_writes_do_not_collide() {
-        let dir = tempfile::tempdir().unwrap();
-        let path = dir.path().join("item.json");
-        std::thread::scope(|scope| {
-            for i in 0..16u8 {
-                let path = &path;
-                scope.spawn(move || {
-                    let body = vec![b'a' + i; 4096];
-                    write_atomic(path, &body).unwrap();
-                });
-            }
-        });
-        let written = std::fs::read(&path).unwrap();
-        assert_eq!(written.len(), 4096);
-        assert!(written.iter().all(|byte| *byte == written[0]));
-        assert_eq!(
-            std::fs::read_dir(dir.path()).unwrap().count(),
-            1,
-            "不留临时文件"
-        );
+        for name in ["item.json", "page.html"] {
+            let dir = tempfile::tempdir().unwrap();
+            let path = dir.path().join(name);
+            std::thread::scope(|scope| {
+                for i in 0..16u8 {
+                    let path = &path;
+                    scope.spawn(move || {
+                        let body = vec![b'a' + i; 4096];
+                        write_atomic(path, &body).unwrap();
+                    });
+                }
+            });
+            let written = std::fs::read(&path).unwrap();
+            assert_eq!(written.len(), 4096);
+            assert!(written.iter().all(|byte| *byte == written[0]));
+            assert_eq!(
+                std::fs::read_dir(dir.path()).unwrap().count(),
+                1,
+                "不留临时文件"
+            );
+        }
     }
 }

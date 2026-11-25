@@ -49,6 +49,19 @@ impl Inbox {
                 },
             );
         }
+        // 页面快照的残留临时文件：同样不是页面，清掉。
+        if let Ok(pages) = std::fs::read_dir(dir.join(PAGES_DIR)) {
+            for entry in pages.flatten() {
+                let path = entry.path();
+                if !path
+                    .file_name()
+                    .and_then(|name| name.to_str())
+                    .is_some_and(|name| name.ends_with(".html"))
+                {
+                    let _ = std::fs::remove_file(&path);
+                }
+            }
+        }
         let revision = 1 + records.len() as u64;
         let (revision_tx, _) = watch::channel(revision);
         Ok(Arc::new(Self {
@@ -365,7 +378,7 @@ impl Inbox {
     }
 
     fn write_page(&self, id: &str, html: &[u8]) -> Result<(), InboxError> {
-        page::write_private(&self.dir.join(PAGES_DIR).join(format!("{id}.html")), html)
+        page::write_atomic(&self.dir.join(PAGES_DIR).join(format!("{id}.html")), html)
     }
 
     /// 页面快照；没有页面时 `None`。

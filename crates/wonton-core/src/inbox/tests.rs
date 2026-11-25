@@ -424,6 +424,12 @@ fn open_ignores_leftover_temp_files() {
         .join("items")
         .join(format!("{}.json.tmp.999", created.item.id));
     std::fs::copy(&item_path, &temp_path).unwrap();
+    let page_path = path.join("pages").join(format!("{}.html", created.item.id));
+    let page_tmp = path
+        .join("pages")
+        .join(format!("{}.html.tmp.999", created.item.id));
+    std::fs::write(&page_path, b"<p>ok</p>").unwrap();
+    std::fs::copy(&page_path, &page_tmp).unwrap();
 
     let reopened = Inbox::open(
         path.clone(),
@@ -433,5 +439,7 @@ fn open_ignores_leftover_temp_files() {
     .unwrap();
     let list = reopened.list("owner", crate::inbox::now_ms());
     assert_eq!(list.items.len(), 1, "残留临时文件不能变成第二条");
-    assert!(!temp_path.exists(), "残留临时文件要清掉");
+    assert!(!temp_path.exists(), "条目残留临时文件要清掉");
+    assert!(!page_tmp.exists(), "页面残留临时文件要清掉");
+    assert!(page_path.exists(), "真正的页面要留着");
 }
