@@ -7,6 +7,7 @@
 //! 路径和工具名是核心与 App、插件之间的契约：改这里要同时改网关、MCP 总线和服务端实现。
 
 use serde::{Deserialize, Serialize};
+use serde_json::Value;
 
 /// `GET <核心地址>/_wonton/api/inbox`：列表，带 `after=<revision>` 时长轮询，最多 [`INBOX_WAIT_SECS`] 秒。
 pub const INBOX_PATH: &str = "/_wonton/api/inbox";
@@ -350,7 +351,7 @@ pub enum InboxRecipient {
 }
 
 /// 条目载荷。`type` 和条目的类型必须一致。
-#[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize)]
+#[derive(Clone, Debug, PartialEq, Eq, Serialize)]
 #[cfg_attr(feature = "uniffi", derive(uniffi::Enum))]
 #[serde(tag = "type", content = "payload", rename_all = "snake_case")]
 pub enum InboxPayload {
@@ -359,9 +360,38 @@ pub enum InboxPayload {
     Recap(RecapPayload),
     Confirm(ConfirmPayload),
     Notice(NoticePayload),
-    /// 更新的核心给出的类型：壳只显示 `body` 和“知道了”。
-    #[serde(other)]
-    Other,
+    /// 更新的核心给出的类型：原样收住载荷，核心重启后也能 round-trip，壳只显示 `body` 和“知道了”。
+    Other(Value),
+}
+
+#[cfg(feature = "uniffi")]
+uniffi::custom_type!(Value, String, {
+    remote,
+    lower: |value| value.to_string(),
+    try_lift: |text| serde_json::from_str(&text).map_err(Into::into),
+});
+
+impl<'de> Deserialize<'de> for InboxPayload {
+    fn deserialize<D>(deserializer: D) -> Result<Self, D::Error>
+    where
+        D: serde::Deserializer<'de>,
+    {
+        let value = Value::deserialize(deserializer)?;
+        let kind = value
+            .get("type")
+            .and_then(Value::as_str)
+            .unwrap_or_default();
+        let payload = value.get("payload").cloned().unwrap_or(Value::Null);
+        let parsed = match kind {
+            "choice" => serde_json::from_value(payload).map(Self::Choice),
+            "page" => serde_json::from_value(payload).map(Self::Page),
+            "recap" => serde_json::from_value(payload).map(Self::Recap),
+            "confirm" => serde_json::from_value(payload).map(Self::Confirm),
+            "notice" => serde_json::from_value(payload).map(Self::Notice),
+            _ => return Ok(Self::Other(payload)),
+        };
+        parsed.map_err(serde::de::Error::custom)
+    }
 }
 
 /// `choice` 的载荷：1–4 题，每题 2–4 个选项或 0 个（自由回答）。
@@ -388,7 +418,7 @@ pub struct InboxQuestion {
     #[serde(default)]
     pub options: Vec<InboxOption>,
     /// 可以写备注（默认允许；设为 false 时只有选项）。
-    #[serde(default = "default_true")]
+    #[serde(default)]
     pub note_enabled: bool,
     /// 可以跳过（默认否）。
     #[serde(default)]
@@ -441,7 +471,6 @@ pub struct PagePayload {
 
 /// `recap` 的载荷：两三句状态、至多一个问题、1–2 个按钮。
 #[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize)]
-#[cfg_attr(feature = "uniffi", derive(uniffi::Record))]
 #[cfg_attr(feature = "uniffi", derive(uniffi::Record))]
 pub struct RecapPayload {
     /// 2–3 句，≤400 字。
@@ -778,7 +807,7 @@ impl InboxPayload {
             Self::Recap(_) => InboxType::Recap,
             Self::Confirm(_) => InboxType::Confirm,
             Self::Notice(_) => InboxType::Notice,
-            Self::Other => InboxType::Other,
+            Self::Other(_) => InboxType::Other,
         }
     }
 }

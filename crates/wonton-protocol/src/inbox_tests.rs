@@ -152,7 +152,7 @@ fn old_items_without_optional_fields_parse() {
     assert_eq!(parsed.expires_at_ms, None);
     assert!(!parsed.blocking);
     assert!(parsed.answer.is_none());
-    assert!(parsed.payload.kind() == InboxType::Choice);
+    assert_eq!(parsed.payload.kind(), InboxType::Choice);
 }
 
 /// 契约：题目和答案的上限按字符数算，超了报字段，不截断。
@@ -390,8 +390,15 @@ fn ids_have_a_stable_shape() {
 /// 契约：未知载荷类型解析成 Other；类型和载荷不一致的条目校验失败。
 #[test]
 fn unknown_payload_is_other() {
-    let payload: InboxPayload = serde_json::from_value(json!({"type": "form"})).unwrap();
-    assert_eq!(payload, InboxPayload::Other);
+    let payload: InboxPayload = serde_json::from_value(json!({
+        "type": "form",
+        "payload": {"fields": [{"id": "name", "label": "名字"}]}
+    }))
+    .unwrap();
+    let InboxPayload::Other(raw) = payload else {
+        panic!("未知类型要落到 Other")
+    };
+    assert_eq!(raw["fields"][0]["label"], "名字");
     let mut mismatch = choice_item();
     mismatch.kind = InboxType::Page;
     assert_eq!(
@@ -408,4 +415,50 @@ fn optional_fields_stay_off_the_wire() {
     assert!(value.get("answer").is_none());
     let parsed: InboxItem = serde_json::from_value(value).unwrap();
     assert_eq!(parsed, choice_item());
+}
+
+/// 契约：备注默认不收；题目没开 note_enabled 时答案带 note 要报字段。
+#[test]
+fn notes_are_opt_in() {
+    let mut item = choice_item();
+    let InboxPayload::Choice(payload) = &mut item.payload else {
+        unreachable!()
+    };
+    payload.questions[0].note_enabled = false;
+    let input = |note: &str| InboxAnswerInput {
+        answer_id: "a1".into(),
+        action: InboxAnswerAction::Submit,
+        answers: vec![InboxQuestionAnswer {
+            question_id: "q0".into(),
+            selected: vec!["nas".into()],
+            note: Some(note.into()),
+            ..Default::default()
+        }],
+        action_id: None,
+        comment: None,
+    };
+    assert_eq!(
+        validate_answer(&item, &input("用 2 号盘"))
+            .unwrap_err()
+            .field(),
+        "answers.note"
+    );
+    let json = json!({
+        "id": "q0", "header": "目标盘", "question": "备份到哪？",
+        "options": [{"id": "a", "label": "A"}, {"id": "b", "label": "B"}]
+    });
+    let question: InboxQuestion = serde_json::from_value(json).unwrap();
+    assert!(
+        !question.note_enabled,
+        "旧数据缺 note_enabled 时默认不收备注"
+    );
+    let long = "备".repeat(MAX_INBOX_NOTE_CHARS + 1);
+    let InboxPayload::Choice(payload) = &mut item.payload else {
+        unreachable!()
+    };
+    payload.questions[0].note_enabled = true;
+    assert_eq!(
+        validate_answer(&item, &input(&long)).unwrap_err().field(),
+        "answers.note"
+    );
 }

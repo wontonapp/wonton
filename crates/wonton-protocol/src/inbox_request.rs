@@ -182,3 +182,81 @@ pub struct InboxUpdateRequest {
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub progress: Option<f32>,
 }
+
+/// worker/router 报上来的事件（ADR-0119 第 6 节）。
+#[derive(Clone, Copy, Debug, Default, PartialEq, Eq, Serialize, Deserialize)]
+#[cfg_attr(feature = "uniffi", derive(uniffi::Enum))]
+#[serde(rename_all = "snake_case")]
+pub enum InboxWorkerEventKind {
+    /// 卡住了，要主人批准/拍板。
+    #[default]
+    Needs,
+    /// 做完了。
+    Done,
+    /// 出错了，要人看一眼。
+    Stuck,
+    #[serde(other)]
+    Other,
+}
+
+/// `POST /_wonton/api/inbox/workers` 的请求体。
+#[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize)]
+#[cfg_attr(feature = "uniffi", derive(uniffi::Record))]
+pub struct InboxWorkerEvent {
+    pub worker_id: String,
+    #[serde(default)]
+    pub event: InboxWorkerEventKind,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub name: Option<String>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub task: Option<String>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub place: Option<String>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub title: Option<String>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub body: Option<String>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub risk: Option<crate::inbox::InboxRisk>,
+    #[serde(default)]
+    pub choices: Vec<crate::inbox::InboxAction>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub expires_at_ms: Option<u64>,
+}
+
+/// router 的投递结果：成功或失败原因。
+#[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize)]
+#[cfg_attr(feature = "uniffi", derive(uniffi::Record))]
+pub struct InboxWorkerResolve {
+    #[serde(default)]
+    pub delivery: InboxDelivery,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub error: Option<String>,
+}
+
+#[derive(Clone, Copy, Debug, Default, PartialEq, Eq, Serialize, Deserialize)]
+#[cfg_attr(feature = "uniffi", derive(uniffi::Enum))]
+#[serde(rename_all = "snake_case")]
+pub enum InboxDelivery {
+    #[default]
+    Sent,
+    Failed,
+    #[serde(other)]
+    Other,
+}
+
+/// router 轮询答案时拿到的：条目状态和答案。
+#[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize)]
+#[cfg_attr(feature = "uniffi", derive(uniffi::Record))]
+pub struct InboxWorkerAnswer {
+    pub worker_id: String,
+    pub item_id: String,
+    pub status: crate::inbox::InboxStatus,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub answer: Option<crate::inbox::InboxAnswer>,
+    /// 交给 router 执行时用的动作：approve / deny / session / always。
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub confirm_action: Option<crate::inbox::ConfirmAction>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub delivery: Option<InboxDelivery>,
+}

@@ -10,9 +10,10 @@ use crate::inbox::{
     InboxType, MAX_INBOX_ACTION_LABEL_CHARS, MAX_INBOX_ACTIONS, MAX_INBOX_BODY_CHARS,
     MAX_INBOX_CAPTION_CHARS, MAX_INBOX_COMMENT_CHARS, MAX_INBOX_DEDUPE_KEY_CHARS,
     MAX_INBOX_DETAIL_CHARS, MAX_INBOX_DISPLAY_NAME_CHARS, MAX_INBOX_HEADER_CHARS,
-    MAX_INBOX_NETWORK_DOMAINS, MAX_INBOX_OPTION_DESCRIPTION_CHARS, MAX_INBOX_OPTION_LABEL_CHARS,
-    MAX_INBOX_OPTIONS, MAX_INBOX_OTHER_CHARS, MAX_INBOX_QUESTION_CHARS, MAX_INBOX_QUESTIONS,
-    MAX_INBOX_SENDER_ID_CHARS, MAX_INBOX_SUMMARY_CHARS, MAX_INBOX_TITLE_CHARS, MIN_INBOX_OPTIONS,
+    MAX_INBOX_NETWORK_DOMAINS, MAX_INBOX_NOTE_CHARS, MAX_INBOX_OPTION_DESCRIPTION_CHARS,
+    MAX_INBOX_OPTION_LABEL_CHARS, MAX_INBOX_OPTIONS, MAX_INBOX_OTHER_CHARS,
+    MAX_INBOX_QUESTION_CHARS, MAX_INBOX_QUESTIONS, MAX_INBOX_SENDER_ID_CHARS,
+    MAX_INBOX_SUMMARY_CHARS, MAX_INBOX_TITLE_CHARS, MIN_INBOX_OPTIONS,
 };
 
 /// 一个字段不合法。
@@ -177,7 +178,7 @@ pub fn validate_item(item: &InboxItem) -> Result<(), InboxInvalid> {
             }
             Ok(())
         }
-        (InboxType::Other, InboxPayload::Other) => Ok(()),
+        (InboxType::Other, InboxPayload::Other(_)) => Ok(()),
         (kind, payload) => Err(InboxInvalid::Mismatch {
             field: format!("{kind:?} 的条目的载荷是 {:?}", payload.kind()),
         }),
@@ -486,7 +487,7 @@ pub fn validate_answer_input(input: &InboxAnswerInput) -> Result<(), InboxInvali
             long("answers.other", other, MAX_INBOX_OTHER_CHARS)?;
         }
         if let Some(note) = &answer.note {
-            long("answers.note", note, MAX_INBOX_OTHER_CHARS)?;
+            long("answers.note", note, MAX_INBOX_NOTE_CHARS)?;
         }
     }
     Ok(())
@@ -509,7 +510,7 @@ pub fn validate_answer(item: &InboxItem, input: &InboxAnswerInput) -> Result<(),
             }
         }
         InboxPayload::Confirm(payload) => validate_confirm_answer(payload, input),
-        InboxPayload::Other => Ok(()),
+        InboxPayload::Other(_) => Ok(()),
     }
 }
 
@@ -541,6 +542,9 @@ fn validate_choice_answer(
                 return Err(Invalid::field("answers.skipped", "这题不能跳过"));
             }
             continue;
+        }
+        if answer.note.is_some() && !question.note_enabled {
+            return Err(Invalid::field("answers.note", "这题不收备注"));
         }
         if question.options.is_empty() {
             if !answer.selected.is_empty() && !question.multi_select && answer.selected.len() > 1 {
@@ -634,7 +638,7 @@ fn validate_confirm_answer(
 /// 判断一条条目是不是还没处理、可以答的结构。
 #[must_use]
 pub fn answerable(item: &InboxItem) -> bool {
-    matches!(item.status, InboxStatus::Pending) && !matches!(item.payload, InboxPayload::Other)
+    matches!(item.status, InboxStatus::Pending) && !matches!(item.payload, InboxPayload::Other(_))
 }
 
 struct Invalid;
