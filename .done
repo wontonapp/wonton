@@ -8,4 +8,7 @@
 
 验证：
 - `cargo fmt --all --check`、`git diff --check`、`check-conflict-markers.sh`、`check-ui-text.py`、`check-uniffi-comments.sh`、`check-shell-parity.py`：通过。
-- 待补：cargo check/clippy（改了 composer.rs、edit_actions.rs）。
+- `cargo check -p wonton-client --all-targets`：0 error。
+- `cargo clippy -p wonton-protocol -p wonton-client -p wonton-matrix --all-targets --locked -- -D warnings`：0 warning 0 error。
+- 附件区发送的“先停”没有新集成用例（要真附件、起栈成本高）：靠 `out_typing` 现成的两条单元测试和读代码确认。
+- head 83890c16；#973 已 rebase 到 main 09870283。
