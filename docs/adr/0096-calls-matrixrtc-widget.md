@@ -286,20 +286,22 @@ Linux + Docker、两台 API 36 Android 模拟器（同一台宿主）、Element 
 - **只留插件 TCP 7881 组：通过。** 插件 compose 改成 `UDP_PORT=0` 并删掉 7882/udp 隧道后重装；两端 `pair=prflx/tcp->host`、
   `state=connected`，双向音视频字节都大于 0（a 音频 27 259/42 867，b 音频 39 538/40 286，视频 a 1 062 674/1 103 904，
   b 649 306/523 471）；成员与挂断同上。证据 `run.log` 21:51–21:54、`webrtc-*-b.jsonl`（tcp）、`group-b-*.png`。
-- **不加密房间（`STAGE=plain`）：通过。** 建房不带 `m.room.encryption`，其余同 UDP 组；两端 `prflx/udp->host`、media 字节双向，
-  EC 正常入会、挂断后成员清空。说明房间不加密时通话链路照常；本组没有单独的媒体密钥步骤（LiveKit 侧不做 E2EE），
-  主机和 Matrix 层仍是现状。证据 `run.log` 23:51–23:54、`webrtc-*-plain.jsonl`、`group-plain-*.png`。
-- **n0 公共中继组：未通过（到一半）。** 先直连把房间和 EC 页面打开做 warm 缓存再下规则（不加这一步时，EC 入口 JS 325 231 字节
+- **不加密房间（`STAGE=plain`）：通过，跑了两次。** 建房不带 `m.room.encryption`，其余同 UDP 组；两次都两端 `prflx/udp->host`、
+  media 字节双向，EC 正常入会、挂断后成员清空。说明房间不加密时通话链路照常；本组没有单独的媒体密钥步骤（LiveKit 侧不做 E2EE），
+  主机和 Matrix 层仍是现状。证据 `run.log` 23:51–23:54 与 11-26 01:06–01:09、`webrtc-*-plain.jsonl`、`group-plain-*.png`。
+- **n0 公共中继组：未通过（时好时坏）。** 先直连把房间和 EC 页面打开做 warm 缓存再下规则（不加这一步时，EC 入口 JS 325 231 字节
   在 relay 下会在约 100 KB 处被截断成 `ERR_CONTENT_LENGTH_MISMATCH`，冷缓存永远起不来），再给两台设备加
-  iptables 丢掉到私网（10/8、172.16/12、192.168/16）和宿主隧道端口的包。之后 5566 的 App 核心日志里出现
-  `CheckedPath { remote: Relay(https://usw1-1.relay.n0.iroh.link/), relay: true }`（`relay-path-5566.log`），
-  5562 落盘的最近三条仍是 `relay: false`（当时脚本只留尾部三条，更早的 true 行没留住），所以这一轮的路径证据只坐实了 B 端；
-  复跑时脚本会把两端 `CheckedPath` 和错因无条件追加到 `relay-path-<a|b>.log`。本轮两条 `call.member` 都出现（`run.log` 23:35:25），
-  EC 靠 warm 缓存也能把页面挂起来；但 EC 报 `Failed to connect to Livekit server` / `InternalError`，
-  `getStats` 拿不到选中候选对，媒体字节为 0，组判决没过。
-  直接原因是 n0 公共中继对单个 endpoint 限速（核心容器日志 `The relay is rate-limiting this endpoint`，复跑会落进
-  `failure-c-core.log`）：隧道流在 10–16 秒内被对端以 `transport-unavailable` 断开，大响应先断、WebSocket 到 `/livekit/sfu`
-  也连不上；EC 的 console 错误（`ERR_CONTENT_LENGTH_MISMATCH`、`Failed to connect`）复跑会落进 `failure-c-console-*.log`。
+  iptables 丢掉到私网（10/8、172.16/12、192.168/16）和宿主隧道端口的包。11-26 复跑时两端 App 核心日志都落下了
+  `CheckedPath { remote: Relay(https://euc1-1.relay.n0.iroh.link/), relay: true }`（`relay-path-a.log`、`relay-path-b.log`），
+  这一轮最后跑到 `state=connected`、双向音频有字节、判据“路径和双向音视频都成立”，只是 `call.member` 晚到和收尾超过时限。
+  另一次把 deadline 压到 180 秒的复跑按新顺序先判路径、两端 `relay: true` 都落盘，双方成员在 178 秒到齐，
+  `02:10:18 组 c 判定：路径和双向音视频都成立`（媒体确实通了），随后仍因合并阶段超过 180 秒被 deadline 判失败；
+  默认 600 秒下这条链路有希望全绿，但三组“稳定通过”还没拿到，状态仍是提议。
+  直接原因是 n0 公共中继对单个 endpoint 限速（核心容器日志 `The relay is rate-limiting this endpoint`，已在
+  `failure-c-core.log`）：隧道流会在 10–16 秒内被对端以 `transport-unavailable` 断开，大响应先断、WebSocket 到
+  `/livekit/sfu` 也连不上；EC 的 console 错误（`ERR_CONTENT_LENGTH_MISMATCH`、`Failed to connect`）在
+  `failure-c-console-*.log`。冒烟据此改成“先判隧道路径、再等成员/媒体，全程受组级 deadline”，路径证据不再被媒体卡住拖没
+  （见 `deploy/dev/calls/smoke.sh` 的 `GROUP_DEADLINE` 和 `check_tunnel_relay`）。
   下一步要么给冒烟加自建 iroh relay（ADR-0048），要么等 n0 限速放宽后复跑。
 
 

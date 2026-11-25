@@ -375,13 +375,20 @@ wait_room_visible() { # 等 room_name 的行在两端列表出现（预算 40 �
         # 配对后常停在「另一台设备还没应答」的跨设备验证页，列表被盖住；to_list 会跳过它回列表。
         to_list "$DEV_A" || true
         to_list "$DEV_B" || true
+        # 配对后 App 偶尔会被重启抢成「Paste the pairing code」的空配对页（核心日志已配对、App 没落盘）：
+        # 直接就地重配一次，别等 40 分钟。
+        for d in "$DEV_A" "$DEV_B"; do
+            if grep -q 'text="Paste the pairing code"' <<<"$(ui "$d" 2>/dev/null || true)"; then
+                pair "$( [[ $d == "$DEV_B" ]] && echo b || echo a )" "$d" >/dev/null 2>&1 || true
+            fi
+        done
         ok=1
         for d in "$DEV_A" "$DEV_B"; do
             xml=$(ui "$d" 2>/dev/null || true)
             grep -q "text=\"[^\"]*$room_name" <<<"$xml" || ok=0
         done
         if [[ $ok == 1 ]]; then log "房间行两端可见（第 $i 轮）"; return 0; fi
-        sleep 100
+        sleep 30
     done
     log "房间 40 分钟未在两端列表出现，继续尝试（open_room 里还会等）"
 }
@@ -390,6 +397,8 @@ wait_room_visible() { # 等 room_name 的行在两端列表出现（预算 40 �
 open_room() { # open_room <dev> <显示名片段>
     # 列表行按房间名找；房间名带时间戳，用前缀匹配。
     local dev=$1 name=$2 xml row b cs x1 y1 x2 y2
+    # App 冷启动会回到上次的界面（可能在别的房间里，没有列表）：先退回聊天列表再找行。
+    to_list "$dev" >/dev/null 2>&1 || true
     for i in $(seq 1 400); do
         deadline_hit && { log "open_room $dev 组级超时"; return 1; }
         # 列表 UI 不实时刷新：新建房间的行要等 App 重启才渲染出来（17:19 实测）。
@@ -645,8 +654,9 @@ for e in events:
 }
 
 wait_new_members() { # <房间> <本轮开始前的 keys> <本轮 keys 文件> <期望条数> <秒>：只认本轮新增
-    local i after
-    for i in $(seq 1 "$5"); do
+    local until after
+    until=$((SECONDS + $5))
+    while (( SECONDS < until )); do
         deadline_hit && { log "wait_new_members 组级超时"; return 1; }
         after=$(active_members "$1" || true)
         comm -13 "$2" <(printf '%s\n' "$after" | sort -u) | grep '@' > "$3" || true
@@ -1062,16 +1072,18 @@ run_group() { # run_group <a|b|c|plain> <说明> <配置函数>；任何一步�
     fi
     inject_stats b || fail_group "$g" "b 注入失败"
     join_call "$DEV_A" || true
-    # 只认本轮新增的 state_key：房间复用时会积着上轮的成员。
-    if wait_new_members "$room_id" "$before" "$keys" 2 60; then
-        log "组 $g 本轮成员：$(tr '\n' ' ' <"$keys")"
-    else
-        fail_group "$g" "60 秒内没有两条本轮新增的 call.member"
-    fi
-    # 中继组先判隧道路径：路径是 relay 组真正的判据，别等媒体断言卡住后连它一起没落盘。
+    # 中继组先判隧道路径：路径是 relay 组真正的判据，别等成员/媒体卡住后连它一起没落盘。
     if [[ $g == c ]]; then
         check_tunnel_relay a || fail_group "$g" "a 的隧道没走中继"
         check_tunnel_relay b || fail_group "$g" "b 的隧道没走中继"
+    fi
+    # 只认本轮新增的 state_key：房间复用时会积着上轮的成员。中继组 call.member 会晚到（EC 要先把
+    # LiveKit 连上才发成员事件），给 3 分钟；直连组仍是 60 秒。
+    member_wait=60; [[ $g == c ]] && member_wait=180
+    if wait_new_members "$room_id" "$before" "$keys" 2 "$member_wait"; then
+        log "组 $g 本轮成员：$(tr '\n' ' ' <"$keys")"
+    else
+        fail_group "$g" "${member_wait} 秒内没有两条本轮新增的 call.member"
     fi
     deadline_hit && { fail_group "$g" "组级超时 ${GROUP_DEADLINE}s（成员/路径阶段）"; return 1; }
     stack logs core 400 2>/dev/null | grep 'call.member' | tail -5 >> "$EVIDENCE/members.log" || true
