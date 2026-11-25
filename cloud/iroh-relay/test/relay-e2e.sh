@@ -130,7 +130,7 @@ for mode in missing empty; do
         env -u IROH_RELAY_ACCESS_TOKEN timeout 10 "$RELAY_BIN" --dev --config-path "$TMP/relay.toml" \
             >"$TMP/relay-$mode.log" 2>&1 || rc=$?
     else
-        IROH_RELAY_ACCESS_TOKEN= timeout 10 "$RELAY_BIN" --dev --config-path "$TMP/relay.toml" \
+        env IROH_RELAY_ACCESS_TOKEN= timeout 10 "$RELAY_BIN" --dev --config-path "$TMP/relay.toml" \
             >"$TMP/relay-$mode.log" 2>&1 || rc=$?
     fi
     [[ $rc -ne 0 ]] || die "令牌 $mode 时中继也起来了（默认放开了？）"
