@@ -27,16 +27,24 @@ impl Queue {
     }
 }
 
-/// 队列的播放顺序。
-#[derive(Serialize, Deserialize, Debug, Clone, Copy, PartialEq)]
+/// 队列的播放顺序。新版本新加的模式落在 `Other`。
+#[derive(Debug, Clone, PartialEq)]
 #[cfg_attr(feature = "uniffi", derive(uniffi::Enum))]
-#[serde(rename_all = "snake_case")]
 pub enum QueueMode {
     Sequential,
     Shuffle,
     RepeatAll,
     RepeatOne,
+    /// 新版本新加的模式，原值在里。
+    Other(String),
 }
+
+known_or_other!(QueueMode {
+    Sequential => "sequential",
+    Shuffle => "shuffle",
+    RepeatAll => "repeat_all",
+    RepeatOne => "repeat_one",
+});
 
 /// 起播入参；切轨用同一 `item`、当前 `position_ms` 和新轨号重取。
 #[derive(Serialize, Deserialize, Debug, Clone, PartialEq)]
@@ -230,6 +238,15 @@ mod tests {
             ..queue()
         };
         assert_eq!(roundtrip(&queue), queue);
+    }
+
+    #[test]
+    fn unknown_queue_mode_falls_to_other_and_keeps_reading() {
+        let mut json = serde_json::to_value(queue()).unwrap();
+        json["mode"] = serde_json::json!("random");
+        let back: Queue = serde_json::from_value(json.clone()).unwrap();
+        assert_eq!(back.mode, QueueMode::Other("random".into()));
+        assert_eq!(serde_json::to_value(&back).unwrap(), json);
     }
 
     #[test]
