@@ -96,7 +96,7 @@
 | `choice` | `questions`: 1–4 题；每题 `id` 必填、`header` ≤12 字、`question` ≤200 字、2–4 个 `options`（`id` 必填、`label` ≤40 字、`description` ≤100 字、`recommended?`、可选 `preview` ≤4 KiB），或者 0 个（只有输入框）；`multi_select`（默认 false）、`note_enabled`（默认 false）、`skippable`（默认 false）；永远有 `other`（≤2000 字） | `answers`: 每题 `{selected: [option_id], other?, note?, skipped?}`；整张 `decline` | 阻塞 10 分钟；异步 7 天 | 是 |
 | `page` | `resource_uri`（`ui://…`，MCP Apps 资源）或 `file_id`（附件）；`caption` ≤120 字；`network_domains?` 最多 20 个（`https://`、`wss://`，可 `https://*.example.com`）；`actions` 0–3（`id` 限 `[a-z0-9_-]{1,32}`，`label` ≤40 字，`style`: default/primary/destructive，`requires_comment?`） | `{action_id?, comment?}` 或 `acknowledge` | 30 天 | 有 `actions` 时是 |
 | `recap` | `summary` 2–3 句、≤400 字；`question?`；`actions` 1–2（同 page） | `{action_id}`、`acknowledge` 或 `decline` | 7 天 | 有问题/动作时是 |
-| `confirm` | `title`、`body` ≤2000 字、`detail?` ≤8000 字、`risk`（`high`/`very_high`/`highest`）；固定 `choices`（`approve`/`deny`，可加 `always`） | 固定 choice | 10 分钟；配对不过期 | 是 |
+| `confirm` | `title`、`body` ≤2000 字、`detail?` ≤8000 字、`risk`（`high`/`very_high`/`highest`）；固定 `choices`（`approve`/`deny`；发送方支持时加 `session`/`always`） | 固定 choice | 10 分钟；配对不过期 | 是 |
 | `notice` | `title`、`body` ≤2000 字、`level`（`info`/`warning`/`critical`）、可选 `link`（只收 `https:`/`http:`/`wonton:`）、可选 1 个 `action`（同 page） | `acknowledge` 或 `action_id` | 30 天 | 否（只点未读） |
 
 `title` 和 `caption` 都 ≤120 字；所有文本字段超限就报 `invalid_input`，不截断。`choice` 的 `preview` 是**静态** HTML 片段（去掉 `<script>`，≤4 KiB），由宿主放进沙箱渲染；CSP 固定为 `default-src 'none'; script-src 'none'; style-src 'unsafe-inline'; img-src 'self' data:; font-src 'self' data:; connect-src 'none'`，只允许内联样式和 `data:` 图片/字体，不能跑脚本、不能联网；要脚本或联网就用 `page`。
@@ -112,7 +112,7 @@ pending ──answer──▶ handled ──24h──▶ archived ──30d─�
 
 - `handled` 带 `outcome`（answered / declined / acknowledged）和 `answered_by`；管理员条目被别人答了，其余人的那份变 `handled_elsewhere`。
 - `expired` 和 `withdrawn` 是终点：再答返回 409，页面显示“已过期 / 对方撤回”。过期后仍留在收件箱 30 天，不能答。
-- 一个条目只能答一次。同一个 `answer_id` 重试返回 200 和同一结果；不同 `answer_id` 再答返回 409 并附当前答案，唯一例外是异步条目第一次 `handled` 后的 60 秒内可以重答（见第 11 节）。
+- 一个条目只能答一次。同一个 `answer_id` 重试返回 200 和同一结果；不同 `answer_id` 再答返回 409 并附当前答案，例外只有两种：异步条目第一次 `handled` 后的 60 秒内，或拆开的 Hermes 组还有 sibling 没答时（组未合并前，60 秒内）。
 - 重答时旧答案保留为 `superseded`，`GET /inbox/{id}` 同时返回 `answer`（当前）和 `superseded_answers`（旧）；60 秒后旧答案只进审计。
 - 阻塞条目在发送方断开 60 秒后自动 `withdrawn`，写明“对方不再等这个回答”；异步条目不因断开撤回。
 
@@ -234,7 +234,7 @@ wonton__inbox_cancel  { "item_id": "q-01J…", "reason": "任务提前结束" }
 ```jsonc
 {
   "answer_id": "01J…",             // 客户端生成，幂等
-  "action": "submit",              // submit | decline | acknowledge | action
+  "action": "submit",              // submit | decline | acknowledge | action | approve | deny | session | always
   "answers": [{ "question_id": "q0", "selected": ["nas"], "other": null, "note": "2 号盘" }],
   "action_id": null,
   "comment": null
@@ -244,7 +244,7 @@ wonton__inbox_cancel  { "item_id": "q-01J…", "reason": "任务提前结束" }
 - `selected` 是选项 id，不是 label；label 只在界面显示。`other` 是自填；`note` 是备注；单选最多一项，多选 0–4 项。
 - 每题默认必答；Agent 可以设 `skippable: true`，跳过就是 `{skipped: true}`。整张 `decline` 不带 `answers`。
 - `action_id` 必须在这条条目的 `actions` 里；页面/收尾的按钮就是这样回。`requires_comment` 时 `comment` 必填（≤200 字）。
-- `acknowledge` 只对 `notice`、无动作的 `page`、无问题的 `recap` 有效。
+- `confirm` 的 `action` 直接用档名 `approve`/`deny`/`session`/`always`，不填 `action_id`；`acknowledge` 只对 `notice`、无动作的 `page`、无问题的 `recap` 有效。
 - 敏感操作分两种：核心自己的确认卡片（工具放行、装插件、受控发送）由核心在主人允许后继续那份挂起的调用；Agent 用 `inbox_confirm` 只是问一个固定选择，答案回到 Agent，执行由 Agent 侧再做。两种都走同一个 `confirm` 界面和审计，不能互相代替。
 
 **阻塞和异步**：
@@ -289,15 +289,15 @@ wonton__inbox_cancel  { "item_id": "q-01J…", "reason": "任务提前结束" }
 
 **5.1 Wonton 自己的问题卡**：关掉 Hermes 自带的 `clarify` 工具集，模型改用核心的 `wonton__inbox_ask`。答案作为工具结果回到 Hermes 的模型，Hermes 继续干；Hermes 不需要知道收件箱存在。
 
-**5.2 Hermes 原生的批准/澄清**：Hermes 的网关已经有 `approval.pending`、`approval.respond`、`clarify.respond` 这套 RPC（本地源码 `gateway/session_controls.py:238`、`acp_adapter/gateway_server.py:1202`）。一个薄的 Hermes 插件做桥：
+**5.2 Hermes 原生的批准/澄清**：Hermes 的网关发 `approval.request` / `clarify.request` 事件，用 `approval.respond` / `clarify.respond` 回答。`approval.pending` 是 Desktop 的补播请求（不是事件）：入参 `session_id`+`profile`，返回 `{approvals:[{request_id,…}]}`，桥在 attach 时用它补没收到的事件。一个薄的 Hermes 插件做桥（以我们镜像钉的 v0.22.7 源码为准：`gateway/session_pending_controls.py:38`/`:51` 发请求，`gateway/session_controls.py:842-852` 收回答，`acp_adapter/gateway_server.py:1170`/`:1202` 是调用样板）：
 
-- 订阅网关的 `approval.pending` / `clarify` 请求，把 `prompt_id`/`clarify_id`、`session_id`、命令或问题、选项写成 `confirm`/`choice` 条目，`source` 带 `session_id` 和 `prompt_id`；条目的 `sender` 是 Hermes，`dedupe_key` 用 `prompt_id`。
+- 订阅 `approval.request` / `clarify.request` 事件，把 `prompt_id`、`execution_generation`、`session_id`、命令或问题、`choices`/`multi_select` 写成 `confirm`/`choice` 条目（`clarify` 的 `choices` 为空就是 0 选项输入框），`source` 带 `session_id`/`prompt_id`/`execution_generation`；条目的 `sender` 是 Hermes，`dedupe_key` 用 `prompt_id`。`approval.request` 的 `choices` 只映射它实际给的档：`once`→`approve`、`session`→`session`、`always`→`always`、`deny`→`deny`；没给的档不显示。
 - Hermes 的 `clarify` 允许 5 题，超过 4 时桥按 4+1 拆成两张，`dedupe_key` 用 `prompt_id` 加同一前缀，`group_id` 用 `prompt_id`、`group_index` 为 0/1，答案按题目顺序合并回；不截断。
-- 拆开的组只在**两张都 handled** 时才回 Hermes：合并 `answers` 后一次 `clarify.respond`，`outcome: "submitted"`。只有一张答了、另一张还 pending 时，先答的那张把答案存在自己的 item 里，桥不调 RPC；可以重答（60 秒内）就更新它。
-- 任一张 `decline`：整个组按 `cancelled` 回，带上已答的 `answers`，另一张 `inbox_cancel`；任一张 `expired`：按 `timed_out` 回，带上已答的 `answers`，另一张 `inbox_cancel`。两张都 `decline` 也是 `cancelled`，没有答案。
-- 合并回 Hermes 后 60 秒内重答：桥再发一次 `clarify.respond`（同一 `clarify_id`，`answers` 为完整一组）。网关若已经结束这一轮、不再送模型，收件箱和审计里仍保留新答案并标 `late_correction`；桥不假装 Hermes 收到了。
-- 主人在收件箱答完，桥调 `approval.respond`（`choice` 取 `once`/`session`/`always`/`deny`）或 `clarify.respond`（`response` 是选中项的原文，`Other` 是自填文本，多选是 JSON 数组）。Hermes 的网关按现有逻辑继续那一轮。`on_session_prompt` 这类 UI 层钩子只影响本地展示，桥以网关的 `approval.pending`/`clarify` 为准。
-- 另一端先答了（本地 CLI/桌面）：`approval.settled` / `clarify.lock` 会把结果广播给所有 viewer（`gateway/session_commands.py:516`）；桥收到后 `inbox_update` 成 `handled_elsewhere`，收件箱里撤下按钮。
+- 拆开的组只在**两张都 handled** 时才回 Hermes：合并 `answers` 后一次 `clarify.respond`。这是阻塞条目的一个明确例外：组还没合并前（有 sibling 仍 pending），已答的那张在 60 秒内可以重答，桥更新同一个 item，旧答案 `superseded`；一旦组回给 Hermes，不再改。回 Hermes 的 `outcome` 用 Hermes 的词 `submitted`，收件箱自己的 outcome 仍是 answered。
+- 任一张 `decline`：整个组按 Hermes 的 `cancelled` 回，带上已答的 `answers`，另一张 `inbox_cancel`；任一张 `expired`：按 Hermes 的 `timed_out` 回，带上已答的 `answers`，另一张 `inbox_cancel`。两张都 `decline` 也是 `cancelled`，没有答案。回 Hermes 的 outcome 词和收件箱 item 的 outcome 分开写，不混用。
+- 合并回 Hermes 后不再重答（阻塞条目）。如果组是异步建的（M1 不要求），才考虑 `late_correction`。
+- 主人在收件箱答完，桥调 `approval.respond`（`{session_id, execution_generation, prompt_id, choice}`，`choice` 就是上面映射的档）或 `clarify.respond`（`{session_id, execution_generation, prompt_id, answer}`；`answer` 是字符串：选中项原文，`Other` 是自填文本，多选用 JSON 数组字符串）。Hermes 的网关按现有逻辑继续那一轮。`on_session_prompt` 这类 UI 层钩子只影响本地展示，桥以网关的 `*.request`/`*.settled` 事件为准。
+- 另一端先答了（本地 CLI/桌面）：网关广播 `approval.settled` / `clarify.settled`（`gateway/session_pending_controls.py:63`；ACP viewer 也收这两种，`acp_adapter/gateway_server.py:973`）；桥收到 `{prompt_id, execution_generation}` 后 `inbox_update` 成 `handled_elsewhere`，收件箱里撤下按钮。`clarify.lock` 是另一条 RPC（抢同一请求的回答权），不是广播事件。
 - Hermes 进程退出、轮次中断：桥在 60 秒后 `inbox_cancel`，条目写“Hermes 不再等这个回答”，不假装还阻塞。
 - 桥只做映射，不做权限判断：`always` 的持久化、`session` 的范围、危险命令的判断全在 Hermes；核心只把 choice 原样送回。
 
@@ -305,7 +305,7 @@ wonton__inbox_cancel  { "item_id": "q-01J…", "reason": "任务提前结束" }
 
 **5.3 异步**：Hermes 的 `clarify` 本身是阻塞工具，桥默认也用阻塞；`inbox_ask(blocking:false)` 只给愿意自己 `inbox_wait` 的 Agent。M1 不要求 Hermes 支持异步。
 
-`approval.respond` 和 `clarify.respond` 的参数名以 Hermes 源码为准（`session_id` + `prompt_id`/`clarify_id` + `choice`/`response`），桥升级时跟着 Hermes 的网关协议走；核心不解析 Hermes 的字段。
+`approval.respond` 和 `clarify.respond` 的参数名以 Hermes 源码为准（`session_id` + `execution_generation` + `prompt_id` + `choice`/`answer`），桥升级时跟着 Hermes 的网关协议走；核心不解析 Hermes 的字段。
 
 ### 6. worker/router 怎么推
 
@@ -366,7 +366,7 @@ POST /_wonton/api/inbox/workers
 
 | 位置 | `choice` | `page` | `recap` | `confirm` | `notice` |
 | --- | --- | --- | --- | --- | --- |
-| 锁屏通知 | 发送方 + 第一题 + “共 N 题”；无表单≤3 选项时给按钮，否则“打开作答” | 发送方 + 标题 + “报告”；“打开” | 摘要前 2 句 + 问题；≤2 个按钮 | 标题 + 风险行；允许/拒绝（+总是） | 标题 + 正文摘要；“知道了”/“打开” |
+| 锁屏通知 | 发送方 + 第一题 + “共 N 题”；无表单≤3 选项时给按钮，否则“打开作答” | 发送方 + 标题 + “报告”；“打开” | 摘要前 2 句 + 问题；≤2 个按钮 | 标题 + 风险行；允许/拒绝（+总是/本会话） | 标题 + 摘要；有 action 给 action，另一个位置给“知道了”；有 link 且有空位给“打开” |
 | 收件箱列表 | 发送方、标题、第一题、“N 题”、“对方在等”/“只是告知”、到期倒计时 | 发送方、标题、说明、页图标 | 发送方、摘要、问题 | 发送方、标题、风险、“对方在等” | 发送方、标题、级别、未读点 |
 | 详情 | 完整题目、选项（推荐置顶）、其他、备注、提交/不回答 | 沙箱页面、动作条、来源 | 全文、问题、按钮 | 全文、风险、详情折叠、允许/拒绝 | 全文、链接、知道了 |
 
@@ -374,12 +374,12 @@ POST /_wonton/api/inbox/workers
 
 **通知上的动作**：
 
-- `confirm`：允许/拒绝（+总是），直接答；失败留“没答上，点开重试”，条目仍 pending。
+- `confirm`：允许/拒绝（发送方给了 `session`/`always` 才显示“本会话”/“总是”），直接答；失败留“没答上，点开重试”，条目仍 pending。
 - `choice`：只有单题、≤3 个选项、无备注要求时给选项按钮；多题/有备注只给“打开作答”。通知上点选项等于选那一项并提交，`other` 仍要打开。
 - `recap`：≤2 个 action 直接给按钮；否则打开。
 - `page`：只给“打开”；页面底下的动作在详情里。无动作页面给“知道了”。
 - `notice`：有 `action` 时给这个动作，另一个位置留给“知道了”；有 link 且仍有空位时再给“打开”。没有 action 时只给“知道了”（有 link 再加“打开”）。
-- 系统按钮最多 3 个（Apple 上限 4，留一个给“打开”）。核心保留的 `approve`/`deny`/`always`/`acknowledge`/`open` 由 App 本地化；插件自己的 `action_id` 用发送方给的 `label`（≤40 字），未知 id 用 label 兜底。
+- 系统按钮最多 3 个（Apple 上限 4，留一个给“打开”）。核心保留的 `approve`/`deny`/`session`/`always`/`acknowledge`/`open` 由 App 本地化；插件自己的 `action_id` 用发送方给的 `label`（≤40 字），未知 id 用 label 兜底。
 - 答完立刻把通知从其他设备撤下（`revision` 长轮询）；答的动作也写审计。
 
 **列表**：按“阻塞且最快到期 → 阻塞 → 非阻塞问题 → 有动作的页面 → 通知 → 已处理”排；同组内按到期时间/时间倒序。阻塞条目显示“对方在等”和倒计时；非阻塞显示“只是告知”。第一版不做搜索、筛选、分组设置、全部已读。
@@ -410,7 +410,7 @@ POST /_wonton/api/inbox/workers
 - `handled` 后留 24 小时可回看/撤销“已读”，之后进 `archived` 30 天；`expired`/`withdrawn` 留 30 天。
 - 页面快照随条目 30 天后删；附件按文件服务的保留策略。
 - 审计写：条目 id、类型、发送方、收件人、动作、`answer_id`、结果、投递状态（送到/撤不回/失败）、页面内容的 sha256，不写页面内容和自由文本（避免验证码进日志）；审计留 90 天。
-- 答案默认是最终的：阻塞条目的工具结果已经回去，不能再改；异步条目第一次 `handled` 后 60 秒内可以撤回重答。重答用新 `answer_id`，旧答案标 `superseded` 并留在 `superseded_answers`，`answer` 换成新答案；60 秒后再答返回 409 `answer_locked`。
+- 答案默认是最终的：阻塞条目的工具结果已经回去，不能再改；唯一例外是拆开的 Hermes 组在 sibling 还 pending 时（组未合并前 60 秒内）。异步条目第一次 `handled` 后 60 秒内也可以撤回重答。重答用新 `answer_id`，旧答案标 `superseded` 并留在 `superseded_answers`，`answer` 换成新答案；60 秒后再答返回 409 `answer_locked`。
 
 ### 12. 契约、提供方、消费方
 
@@ -494,7 +494,7 @@ POST /_wonton/api/inbox/workers
 - 通知上的允许/拒绝/单题选项能答；答完另一台设备撤下；答失败留“重试”。
 - 页面沙箱：内联脚本能跑；未声明的 `fetch` 被 CSP 拦；`ui/open-link` 走系统浏览器；页面调 `tools/call` 记成发送方 Bot；敏感工具另弹确认。
 - 页面快照 30 天清理；发送方删插件后页面还能打开、工具调用显示“插件连不上”。
-- Hermes 桥：`approval.pending` 变 `confirm`；答完调 `approval.respond`；本地 CLI 先答时条目变 `handled_elsewhere`；Hermes 退出 60 秒后 `withdrawn`。
+- Hermes 桥：`approval.request` 变 `confirm`、`clarify.request` 变 `choice`（5 题拆 4+1）；答完分别调 `approval.respond`/`clarify.respond`；本地 CLI 先答时收到 `*.settled` 变 `handled_elsewhere`；Hermes 退出 60 秒后 `withdrawn`。
 - worker `needs` 变 `confirm`；答完 router 轮询拿到并 `tern approve`；执行失败留 pending 和“没送到”。
 - 管理员条目 A 答后 B 显示“已由 A 处理”且通知撤下；家人 A 的条目不出现在家人 B 的收件箱。
 - 无设备时 `inbox_ask` 返回 `pending` + `no_device`，不假装送达；上线后能看到。
