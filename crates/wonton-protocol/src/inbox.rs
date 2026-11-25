@@ -444,7 +444,7 @@ pub struct InboxQuestion {
     /// 选项；0 个表示只有自由输入。
     #[serde(default)]
     pub options: Vec<InboxOption>,
-    /// 可以写备注（默认允许；设为 false 时只有选项）。
+    /// 可以写备注（默认不收；打开后答案才带 note）。
     #[serde(default)]
     pub note_enabled: bool,
     /// 可以跳过（默认否）。
@@ -608,7 +608,7 @@ pub struct InboxItem {
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub result: Option<String>,
     pub payload: InboxPayload,
-    /// 更新的核心给出的未知载荷原文；[`InboxPayload::Other`] 时才有，旧壳忽略。
+    /// 更新的核心把不认识的载荷原文放这里（[`InboxPayload::Other`] 时），旧壳忽略。
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub raw_payload: Option<Value>,
     #[serde(default, skip_serializing_if = "Option::is_none")]
