@@ -92,17 +92,17 @@ pub(super) fn settle(
             _ => None,
         })
         .collect();
-    let stale: Vec<(String, String, TimelineEntry)> = previewed
+    let stale: Vec<(String, String)> = previewed
         .iter()
         .filter_map(|(id, entry)| {
             let event = event_id_of(entry)?;
             let settled = !live.contains(&event) || real.contains(&event);
-            settled.then(|| (id.clone(), event, entry.clone()))
+            settled.then(|| (id.clone(), event))
         })
         .collect();
     let mut removed = Vec::new();
     let mut cleared = Vec::new();
-    for (id, event, shown) in stale {
+    for (id, event) in stale {
         if let Some(index) = entries.iter().position(|entry| entry.id == id) {
             removed.push(u32::try_from(index).unwrap_or(u32::MAX));
             entries.remove(index);
