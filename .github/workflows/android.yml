@@ -53,7 +53,9 @@ jobs:
             apps/compose/shared/build/generated/uniffi/kotlin
           key: ${{ steps.core.outputs.key }}
       - name: 装产物用的 NDK（版本钉死，不跟镜像自带哪个走）
+        # 命中时产物已经在输出目录里，不用为了编它装 NDK（省掉一次 ~1 GB 下载）。
         # 镜像上装了哪个 NDK 逐台不同；钉死一份，同一份源码在哪台 runner 上都算同一个键。已装好时不重新下。
+        if: steps.corecache.outputs.cache-hit != 'true'
         run: |
           sdk="${ANDROID_HOME:-$ANDROID_SDK_ROOT}"
           ndk="$sdk/ndk/$ANDROID_NDK_VERSION"
