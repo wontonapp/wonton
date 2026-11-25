@@ -220,13 +220,19 @@ async fn a_direct_connect_is_saved_without_waiting_for_the_report() {
         tokio::time::sleep(Duration::from_millis(50)).await;
     };
     let ticket = Ticket::parse(&saved).unwrap();
-    // 端点可能同时绑了 IPv4 和全局 IPv6，iroh 先挑中哪条是它的事：写盘的直连地址得是这台端点绑过的地址，
-    // 不能是猜的。
+    // 端点可能同时绑了 IPv4 和通配 IPv6，iroh 先挑中哪条、报哪个本机地址是它的事：写盘的直连地址得落在
+    // 这台端点绑过的 socket 上（通配地址换成这台机器的任一地址都算），不能是猜的。
     assert!(!ticket.used_addrs().is_empty(), "连上后要把直连路径写盘");
     let bound = server.bound_sockets();
+    let is_bound = |used: &std::net::SocketAddr| {
+        bound.iter().any(|socket| {
+            socket.port() == used.port()
+                && (socket.ip().is_unspecified() || socket.ip() == used.ip())
+        })
+    };
     assert!(
-        ticket.used_addrs().iter().all(|used| bound.contains(used)),
-        "记下的直连地址要在这台端点绑过的地址里：{:?} 不在 {:?}",
+        ticket.used_addrs().iter().all(is_bound),
+        "记下的直连地址要在这台端点绑过的 socket 上：{:?} vs {:?}",
         ticket.used_addrs(),
         bound
     );
