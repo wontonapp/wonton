@@ -2,7 +2,7 @@
 //! 核心把通知加密给这台设备，按 Web Push 发到它的推送地址。
 //!
 //! 核心只经标准接口和别的组件说话（ADR-0015）：Tuwunel 调的是 Matrix Push Gateway API，推送服务收的是
-//! Web Push（RFC 8030、RFC 8291）。推送里没有正文：聊天是端到端加密的，App 经隧道取回消息后在本机解密。
+//! Web Push（RFC 8030、RFC 8291）。不加密房间的推送带正文和类型；加密房间只有密文，App 经隧道取回消息后在本机解密。
 
 mod notification;
 mod store;
@@ -13,9 +13,9 @@ use std::sync::Arc;
 
 use iroh::EndpointId;
 use serde_json::json;
-use wonton_protocol::DeviceConfirmationPush;
+use wonton_protocol::{DeviceConfirmationPush, DevicePayload};
 
-pub use notification::{DevicePayload, Notification, NotifyRequest, NotifyResponse};
+pub use notification::{Notification, NotifyRequest, NotifyResponse};
 pub use store::{Registration, Subscription};
 
 use crate::device::{Device, Devices};
@@ -98,7 +98,9 @@ impl Push {
     /// 处理 Tuwunel 的一次通知，返回不再有效的 pushkey（推送网关响应的 `rejected`）。推送服务暂时不可用时返回
     /// [`PushError::Unavailable`]，推送代理据此回 502，Tuwunel 稍后重试。
     pub async fn notify(&self, notification: &Notification) -> Result<Vec<String>, PushError> {
-        let payload = notification.payload(&self.server);
+        let mut payload = notification.payload(&self.server);
+        let plaintext = payload.as_mut().map(DevicePayload::encode);
+        let event = notification.event_id.clone().unwrap_or_default();
         let mut rejected = Vec::new();
         let mut unavailable = None;
         for device in &notification.devices {
@@ -113,14 +115,15 @@ impl Push {
                 continue;
             }
             // 只有计数的通知不转发：App 不靠它更新什么，转发只会白白唤醒手机。
-            let Some(payload) = &payload else { continue };
-            let plaintext = serde_json::to_vec(payload).expect("推送内容总能序列化");
+            let Some(plaintext) = &plaintext else {
+                continue;
+            };
             match self
                 .deliver(
                     &registration,
-                    plaintext,
+                    plaintext.clone(),
                     notification.urgency(),
-                    &payload.event_id,
+                    &event,
                 )
                 .await
             {
@@ -142,7 +145,7 @@ impl Push {
         user: Option<&str>,
         request: wonton_protocol::ContactRequestPush,
     ) {
-        let payload = DevicePayload {
+        let mut payload = DevicePayload {
             server: self.server.clone(),
             room_id: String::new(),
             event_id: String::new(),
@@ -150,9 +153,12 @@ impl Push {
             sender_display_name: request.display_name.clone(),
             room_name: None,
             prio: None,
+            body: None,
+            msgtype: None,
+            truncated: false,
             contact_request: Some(request),
         };
-        let plaintext = serde_json::to_vec(&payload).expect("推送内容总能序列化");
+        let plaintext = payload.encode();
         for device in self.devices_of(user) {
             let Some(registration) = self.registrations.get(&device.id) else {
                 continue;
