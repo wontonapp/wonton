@@ -102,8 +102,9 @@ impl TryFrom<(TaskState, TaskState)> for TaskState { type Error = IllegalTransit
 // Queued → Preparing | Cancelled（排队中也能直接取消）
 // Preparing → Running | Done | Partial | Failed | Cancelled
 // Running → Paused | WaitingNetwork | WaitingPower | Done | Partial | Failed | Cancelled
-// Paused | WaitingNetwork | WaitingPower → Running | Paused（换原因） | Cancelled
-// 非终态 → Other，Other → Other；终态不可逆；其余（含 Any → Queued/Preparing、Queued → Running）非法。
+// Paused | WaitingNetwork | WaitingPower → Queued | Running | Paused（换原因） | WaitingNetwork | WaitingPower | Failed | Cancelled
+// 非终态 → Other，Other → Other；终态不可逆；其余（含 Any → Preparing、Queued → Running、终态 → Queued）非法。
+// 条件恢复和到点重试都走 `resume`，回 `Queued`；`due(at)` 只列到点的 `WaitingNetwork` 任务，不认领。
 
 #[derive(Debug, Clone, PartialEq)]
 pub enum PauseReason { User, Agent, LowBattery, SuspendedBySystem, Other(String) }
@@ -140,6 +141,8 @@ pub enum MediaFailureCode {
 impl MediaFailureCode {
     /// 这类失败该等多久再退避。`Other` 按不退避算，交给壳显示原文。
     pub fn backoff(&self) -> Backoff;
+    /// 这类失败是不是等等就可能自己好；`SystemPause` 与不退避的都算不是。
+    pub fn backoff_is_retryable(&self) -> bool;
 }
 
 /// 一个失败类别的退避档。退避由核心算，不过壳。
@@ -164,6 +167,8 @@ pub struct MediaTask {
     pub progress: Progress,
     pub retry_count: u8,
     pub retry_of: Option<TaskId>,
+    /// 下一次自动重试的秒级 Unix 时间；只在 `WaitingNetwork` 时有值，由核心算。
+    pub next_attempt_at: Option<u64>,
     pub created_at: Timestamp,
     /// 只在上传里有；逐项失败原文
     pub partial_failures: Vec<FailedItem>,

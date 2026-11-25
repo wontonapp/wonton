@@ -9,7 +9,7 @@ use rusqlite::Row;
 
 use super::MediaStoreError;
 
-pub(super) const CURRENT_VERSION: i64 = 2;
+pub(super) const CURRENT_VERSION: i64 = 3;
 
 /// 第 1 版：最初的五张表。逐项条目单独成表，偏移一次只改一行。
 pub(crate) const SCHEMA_V1: &str = "
@@ -89,7 +89,13 @@ DROP TABLE quota;
 ALTER TABLE quota_v2 RENAME TO quota;
 ";
 
-pub(super) const MIGRATIONS: &[(i64, &str)] = &[(1, SCHEMA_V1), (2, MIGRATE_V2)];
+/// 第 3 版：任务的下一次自动重试时间（M8）；等待网络的任务按它找。
+pub(super) const MIGRATE_V3: &str = "
+ALTER TABLE tasks ADD COLUMN next_attempt_at INTEGER;
+CREATE INDEX IF NOT EXISTS tasks_due ON tasks(state_tag, next_attempt_at);
+";
+
+pub(super) const MIGRATIONS: &[(i64, &str)] = &[(1, SCHEMA_V1), (2, MIGRATE_V2), (3, MIGRATE_V3)];
 
 /// 把库补到 [`CURRENT_VERSION`]；比核心新的库拒绝打开，免得更新的核心写坏后被旧版改。
 pub(super) fn migrate(conn: &rusqlite::Connection, path: &Path) -> Result<(), MediaStoreError> {
@@ -128,6 +134,7 @@ pub(super) struct TaskRow {
     pub retry_of: Option<String>,
     pub created_at: i64,
     pub partial_failures: String,
+    pub next_attempt_at: Option<i64>,
 }
 
 pub(super) struct SessionRow {
@@ -161,6 +168,7 @@ pub(super) fn row_to_task(row: &Row<'_>) -> rusqlite::Result<TaskRow> {
         retry_of: row.get(8)?,
         created_at: row.get(9)?,
         partial_failures: row.get(10)?,
+        next_attempt_at: row.get(11)?,
     })
 }
 
