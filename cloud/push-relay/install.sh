@@ -156,6 +156,7 @@ main() {
     install_files
     install_gorush "$offline_binary"
     ensure_fake_key
+    fcm_hint
     install_vhost
 
     systemctl daemon-reload

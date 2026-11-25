@@ -46,7 +46,7 @@ FCM 的 `Unregistered`、`NotRegistered`、`InvalidRegistration`），核心据�
 
 ## FCM 配置
 
-FCM 用 Firebase 的**服务账号**（`gorush.yml` 的 `android.credential`），不是旧版服务器密钥：
+FCM 用 Firebase 的**服务账号**（`gorush.yml` 的 `android.key_path`），不是旧版服务器密钥：
 
 1. Firebase 控制台建项目，项目设置 → 服务账号 → 生成新的私钥，下载 JSON。
 2. 把 JSON 放到 `/etc/wonton-push-relay/fcm-service-account.json`，属主 `root:wonton-push`、`0640`。
