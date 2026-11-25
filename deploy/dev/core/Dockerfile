@@ -72,6 +72,8 @@ ARG WONTON_VERSION
 # 和令牌不进公开构建。要预置时 `dev.sh build --build-arg WONTON_BUILTIN_RELAYS=…`；它只在构建时生效，
 # 运行时的同名环境变量不参与。
 ARG WONTON_BUILTIN_RELAYS
+ENV WONTON_BUILTIN_RELAYS=$WONTON_BUILTIN_RELAYS
+
 RUN cargo build --release --locked --target "$(cat /rust-target)" -p wonton-core \
     && cp "target/$(cat /rust-target)/release/wonton-core" /usr/local/bin/wonton-core \
     && if [ "$TARGETARCH" = "$BUILDARCH" ]; then \
