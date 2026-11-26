@@ -73,6 +73,7 @@ async fn invite(phone: &Phone, bot: &MatrixSession, name: &str) -> String {
                 .cloned()
         })
         .await;
+    phone.wait_ready().await;
     phone
         .dispatch(Action::Chat {
             action: wonton_protocol::ChatAction::JoinRoom {

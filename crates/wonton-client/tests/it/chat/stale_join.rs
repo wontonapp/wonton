@@ -50,6 +50,7 @@ async fn a_join_the_server_reports_as_invited_still_ends_joined() {
                 .map(|_| ())
         })
         .await;
+    phone.wait_ready().await;
     phone
         .dispatch(Action::Chat {
             action: wonton_protocol::ChatAction::JoinRoom {

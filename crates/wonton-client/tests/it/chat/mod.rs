@@ -320,6 +320,7 @@ async fn accept_the_bots_invite_with(
     bot: &MatrixSession,
     encrypted: bool,
 ) -> OwnedRoomId {
+    phone.wait_ready().await;
     wait_for_owner_device_keys(home, phone, bot).await;
     let owner: OwnedUserId = OWNER.parse().unwrap();
     let room_id = bot
@@ -375,6 +376,7 @@ async fn accept_the_bots_invite_with(
 
 /// 收发文字和图片：时间线按增量更新，图片凭句柄取到原图。
 async fn chat_with_the_bot(phone: &Phone, bot: &MatrixSession, room_id: &OwnedRoomId) {
+    phone.wait_ready().await;
     let bot_room = bot.open_room(room_id).await.expect("Bot 打开私聊");
     bot_room
         .send_text("你好，主人", &[])
@@ -501,6 +503,7 @@ async fn read_and_wait_for_recovery(phone: &Phone, room_id: &OwnedRoomId) -> Sec
         room_id: room_id.to_string(),
         thread_root: None,
     };
+    phone.wait_ready().await;
     let timeline = phone.subscribe_timeline(target.clone()).await.unwrap();
     timeline.set_scroll(wonton_client::TimelineScroll::Bottom);
     phone

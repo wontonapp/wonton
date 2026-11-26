@@ -41,6 +41,7 @@ pub(super) async fn invite_to_group_room(
 }
 
 pub(super) async fn join(phone: &Phone, room_id: &OwnedRoomId) {
+    phone.wait_ready().await;
     phone
         .dispatch(Action::Chat {
             action: wonton_protocol::ChatAction::JoinRoom {

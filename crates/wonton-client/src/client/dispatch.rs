@@ -254,6 +254,7 @@ impl ClientCore {
             | ChatAction::DenyVerification { .. }
             | ChatAction::CancelDeviceVerification { .. }
             | ChatAction::DismissChatProblem
+            | ChatAction::CheckReady
             | ChatAction::AnswerConfirmation { .. }
             | ChatAction::StopConfirmationWindow { .. }
             | ChatAction::RetryConfirmations

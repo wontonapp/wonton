@@ -99,6 +99,7 @@ pub(crate) async fn joined_direct_chat(phone: &Phone, peer: &MatrixSession) -> O
                 .then_some(())
         })
         .await;
+    phone.wait_ready().await;
     phone
         .dispatch(Action::Chat {
             action: wonton_protocol::ChatAction::JoinRoom {

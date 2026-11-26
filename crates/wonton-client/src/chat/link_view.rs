@@ -194,6 +194,8 @@ impl ChatLink {
                 self.view.send_modify(|view| view.problem = None);
                 Ok(())
             }
+            // 只取一次会话：没登录就是 NotReady，有就什么都不做。
+            ChatAction::CheckReady => self.current().map(drop),
             ChatAction::JoinRoom { room_id } => {
                 let (session, room_id) = self.target(&room_id)?;
                 self.spawn_op("chat-op-join-failed", async move {
