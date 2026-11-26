@@ -11,8 +11,8 @@
         "timestamp" : 1795479697.003
       }
     ],
-    "testIdentifier" : "ChatTelegramUITests/testPluginBannerSitsAboveSideChatTitle()",
-    "testIdentifierURL" : "test://com.apple.xcode/Wonton/WontonUITests/ChatTelegramUITests/testPluginBannerSitsAboveSideChatTitle"
+    "testIdentifier" : "ChatTelegramLayoutUITests/testPluginBannerSitsAboveSideChatTitle()",
+    "testIdentifierURL" : "test://com.apple.xcode/Wonton/WontonUITests/ChatTelegramLayoutUITests/testPluginBannerSitsAboveSideChatTitle"
   },
   {
     "attachments" : [
@@ -26,7 +26,7 @@
         "timestamp" : 1795479734.642
       }
     ],
-    "testIdentifier" : "ChatTelegramUITests/testQuoteSummaryKeepsBothLines()",
-    "testIdentifierURL" : "test://com.apple.xcode/Wonton/WontonUITests/ChatTelegramUITests/testQuoteSummaryKeepsBothLines"
+    "testIdentifier" : "ChatTelegramReplyQuoteUITests/testQuoteSummaryKeepsBothLines()",
+    "testIdentifierURL" : "test://com.apple.xcode/Wonton/WontonUITests/ChatTelegramReplyQuoteUITests/testQuoteSummaryKeepsBothLines"
   }
 ]
