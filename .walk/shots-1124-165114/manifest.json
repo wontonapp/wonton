@@ -11,8 +11,8 @@
         "timestamp" : 1795510527.654
       }
     ],
-    "testIdentifier" : "ChatTelegramUITests/testComposerReplySummaryKeepsBothLines()",
-    "testIdentifierURL" : "test://com.apple.xcode/Wonton/WontonUITests/ChatTelegramUITests/testComposerReplySummaryKeepsBothLines"
+    "testIdentifier" : "ChatTelegramReplyQuoteUITests/testComposerReplySummaryKeepsBothLines()",
+    "testIdentifierURL" : "test://com.apple.xcode/Wonton/WontonUITests/ChatTelegramReplyQuoteUITests/testComposerReplySummaryKeepsBothLines"
   },
   {
     "attachments" : [
@@ -26,8 +26,8 @@
         "timestamp" : 1795510558.999
       }
     ],
-    "testIdentifier" : "ChatTelegramUITests/testPluginBannerSitsAboveSideChatTitle()",
-    "testIdentifierURL" : "test://com.apple.xcode/Wonton/WontonUITests/ChatTelegramUITests/testPluginBannerSitsAboveSideChatTitle"
+    "testIdentifier" : "ChatTelegramLayoutUITests/testPluginBannerSitsAboveSideChatTitle()",
+    "testIdentifierURL" : "test://com.apple.xcode/Wonton/WontonUITests/ChatTelegramLayoutUITests/testPluginBannerSitsAboveSideChatTitle"
   },
   {
     "attachments" : [
@@ -41,8 +41,8 @@
         "timestamp" : 1795510630.928
       }
     ],
-    "testIdentifier" : "ChatTelegramUITests/testQuoteSummaryKeepsBothLines()",
-    "testIdentifierURL" : "test://com.apple.xcode/Wonton/WontonUITests/ChatTelegramUITests/testQuoteSummaryKeepsBothLines"
+    "testIdentifier" : "ChatTelegramReplyQuoteUITests/testQuoteSummaryKeepsBothLines()",
+    "testIdentifierURL" : "test://com.apple.xcode/Wonton/WontonUITests/ChatTelegramReplyQuoteUITests/testQuoteSummaryKeepsBothLines"
   },
   {
     "attachments" : [
@@ -74,7 +74,7 @@
         "timestamp" : 1795510643.173
       }
     ],
-    "testIdentifier" : "ChatTelegramUITests/testSideChatRejectedSendKeepsDraftAndReply()",
-    "testIdentifierURL" : "test://com.apple.xcode/Wonton/WontonUITests/ChatTelegramUITests/testSideChatRejectedSendKeepsDraftAndReply"
+    "testIdentifier" : "ChatTelegramSideChatUITests/testSideChatRejectedSendKeepsDraftAndReply()",
+    "testIdentifierURL" : "test://com.apple.xcode/Wonton/WontonUITests/ChatTelegramSideChatUITests/testSideChatRejectedSendKeepsDraftAndReply"
   }
 ]

@@ -46,7 +46,7 @@ if [ $build -ne 0 ]; then xcrun simctl shutdown "$udid"; exit 1; fi
 bid=$(/usr/libexec/PlistBuddy -c "Print CFBundleIdentifier" "$WONTON_DERIVED_DATA/Build/Products/Debug-iphonesimulator/Wonton.app/Info.plist" 2>/dev/null)
 [ -n "$bid" ] && xcrun simctl privacy "$udid" grant photos "$bid" && echo "photos granted to $bid"
 only=""
-for class in ${BOTMODE_TESTS:-ChatTelegramUITests MessageTimeUITests ChatPanelUITests SidebarUITests MainNavigationUITests}; do
+for class in ${BOTMODE_TESTS:-ChatTelegramAttachUITests ChatTelegramComposerUITests ChatTelegramForwardUITests ChatTelegramLayoutUITests ChatTelegramReplyQuoteUITests ChatTelegramSideChatUITests MessageTimeUITests ChatPanelUITests SidebarUITests MainNavigationUITests}; do
   only="$only -only-testing:WontonUITests/$class"
 done
 python3 "$HOME/wonton-dev/mini-sims.py" touch "$udid" >/dev/null 2>&1 || true
@@ -66,7 +66,7 @@ echo "test-exit=$test 日志 $PWD/$w/$stamp.test.log 结果 $PWD/$w/$stamp.xcres
 xcrun simctl ui "$udid" appearance dark
 # 刚建好的模拟器上外观设置要过一会儿才读到：不确认就开跑会拍到浅色。
 for _ in $(seq 1 10); do [ "$(xcrun simctl ui "$udid" appearance)" = dark ] && break; sleep 0.5; done
-TEST_RUNNER_WONTON_DARK=1 xcodebuild test-without-building -project apps/ios/Wonton.xcodeproj -scheme Wonton   -destination "platform=iOS Simulator,id=$udid" -derivedDataPath "$WONTON_DERIVED_DATA"   -resultBundlePath "$w/$stamp-dark.xcresult" -parallel-testing-enabled NO -testLanguage en -testRegion US   -collect-test-diagnostics never   -only-testing:WontonUITests/ChatTelegramUITests/testQuoteSummaryKeepsBothLines   -only-testing:WontonUITests/ChatTelegramUITests/testPluginBannerSitsAboveSideChatTitle   > "$w/$stamp.dark.log" 2>&1
+TEST_RUNNER_WONTON_DARK=1 xcodebuild test-without-building -project apps/ios/Wonton.xcodeproj -scheme Wonton   -destination "platform=iOS Simulator,id=$udid" -derivedDataPath "$WONTON_DERIVED_DATA"   -resultBundlePath "$w/$stamp-dark.xcresult" -parallel-testing-enabled NO -testLanguage en -testRegion US   -collect-test-diagnostics never   -only-testing:WontonUITests/ChatTelegramReplyQuoteUITests/testQuoteSummaryKeepsBothLines   -only-testing:WontonUITests/ChatTelegramLayoutUITests/testPluginBannerSitsAboveSideChatTitle   > "$w/$stamp.dark.log" 2>&1
 dark=$?
 echo "dark-exit=$dark 日志 $PWD/$w/$stamp.dark.log"
 xcrun simctl ui "$udid" appearance light
