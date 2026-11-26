@@ -129,7 +129,7 @@ async fn family_without_a_ready_bot_falls_back_to_the_default_bot() {
     signed_in(&home, &phone).await;
     let bot = home.bot("hermes", "Hermes").await;
     let owner: OwnedUserId = OWNER.parse().unwrap();
-    let _room = bot.create_direct_chat(&owner, false).await.unwrap();
+    let room = bot.create_direct_chat(&owner, false).await.unwrap();
     set_own_bot(
         &home,
         &phone,
