@@ -66,7 +66,7 @@ services:
       WONTON_HOME_FRPS_METRICS_USER: wonton
       WONTON_HOME_FRPS_METRICS_PASSWORD_FILE: /secrets/frps-metrics-password
       WONTON_HOME_SYSTEM_TOKEN_FILE: /secrets/system-frpc-token
-      WONTON_HOME_SYSTEM_DOMAINS: ${WONTON_PUSH_HOST:?},${WONTON_RELAY_HOST:?},${WONTON_NAMES_HOST:?},${WONTON_OMARCHY_HOST:?},${WONTON_DOMAIN:?},www.${WONTON_DOMAIN:?}
+      WONTON_HOME_SYSTEM_DOMAINS: ${WONTON_PUSH_HOST:?},${WONTON_RELAY_HOST:?},${WONTON_NAMES_HOST:?},${WONTON_OMARCHY_HOST:?},${WONTON_DOMAIN:?},www.${WONTON_DOMAIN:?},omarchy.${WONTON_DOMAIN:?}
     volumes:
       - ${WONTON_ENTRY_ROOT:?}/state:/state
       - ${WONTON_ENTRY_ROOT:?}/secrets:/secrets:ro

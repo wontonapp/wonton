@@ -779,7 +779,7 @@ fn system_frpc_template_names_are_bare_valid_labels() {
         .filter_map(|line| line.trim().strip_prefix("name = \""))
         .map(|name| name.trim_end_matches('"'))
         .collect();
-    assert_eq!(names.len(), 9, "{names:?}");
+    assert_eq!(names.len(), 11, "{names:?}");
     for name in names {
         assert!(crate::config::valid_label(name), "{name}");
     }
@@ -793,4 +793,5 @@ fn production_compose_carries_acme_url_caa_and_metrics_password_file() {
     assert!(
         text.contains("WONTON_HOME_FRPS_METRICS_PASSWORD_FILE: /secrets/frps-metrics-password")
     );
+    assert!(text.contains(",omarchy.${WONTON_DOMAIN:?}"));
 }

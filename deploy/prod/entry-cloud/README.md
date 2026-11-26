@@ -110,7 +110,7 @@ dig +short @127.0.0.1 "ns-auth.$WONTON_DOMAIN" A
 dig +short @127.0.0.1 "auth.$WONTON_DOMAIN" NS
 ```
 
-逐条比对旧区清单（apex、www、push、relay、oma、`*`、CAA）后才改注册商。
+逐条比对旧区清单（apex、www、push、relay、oma、omarchy、`*`、CAA）后才改注册商。
 
 证书全部走 HTTP-01（`webroot`），不依赖 DNS 切换：
 
@@ -118,9 +118,12 @@ dig +short @127.0.0.1 "auth.$WONTON_DOMAIN" NS
 certbot certonly --webroot -w /var/www/letsencrypt \
   -d "$WONTON_DOMAIN" -d "www.$WONTON_DOMAIN" \
   --email "$WONTON_ACME_EMAIL" --agree-tos --non-interactive
-for h in "$WONTON_NAMES_HOST" "$WONTON_PUSH_HOST" "$WONTON_RELAY_HOST" "$WONTON_OMARCHY_HOST"; do
+for h in "$WONTON_NAMES_HOST" "$WONTON_PUSH_HOST" "$WONTON_RELAY_HOST"; do
   certbot certonly --webroot -w /var/www/letsencrypt -d "$h" --email "$WONTON_ACME_EMAIL" --agree-tos --non-interactive
 done
+certbot certonly --webroot -w /var/www/letsencrypt \
+  -d "$WONTON_OMARCHY_HOST" -d "omarchy.$WONTON_DOMAIN" \
+  --email "$WONTON_ACME_EMAIL" --agree-tos --non-interactive
 systemctl reload nginx
 certbot renew --dry-run
 ```

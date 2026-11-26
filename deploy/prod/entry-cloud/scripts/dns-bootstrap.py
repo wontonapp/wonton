@@ -90,13 +90,14 @@ def main() -> None:
         rr(f"*.{DOMAIN}.", "A", 60, [PUBLIC_IP]),
         rr(f"www.{DOMAIN}.", "A", 60, [PUBLIC_IP]),
         rr(f"oma.{DOMAIN}.", "A", 60, [PUBLIC_IP]),
+        rr(f"omarchy.{DOMAIN}.", "A", 60, [PUBLIC_IP]),
         rr(f"auth.{DOMAIN}.", "NS", 60, [f"ns-auth.{DOMAIN}."]),
         rr(f"{DOMAIN}.", "CAA", 60, [
             '0 issue "letsencrypt.org"',
             '0 issuewild "letsencrypt.org"',
         ]),
     ]
-    for label, host in (("push", PUSH), ("relay", RELAY), ("names", NAMES), ("omarchy", OMARCHY)):
+    for label, host in (("push", PUSH), ("relay", RELAY), ("names", NAMES)):
         if host == DOMAIN or host.endswith("." + DOMAIN):
             rrsets.append(rr(f"{host}.", "A", 60, [PUBLIC_IP]))
         else:
