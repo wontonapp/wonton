@@ -40,12 +40,22 @@ fn for_room<'a>(
         return None;
     }
     let user = room.direct_user_id.as_deref()?;
-    let plugin = plugins
-        .installed
-        .as_ref()?
-        .plugins
-        .iter()
-        .find(|plugin| plugin.bot_user_id.as_deref() == Some(user))?;
+    let installed = plugins.installed.as_ref()?;
+    let plugin = room
+        .bot
+        .as_ref()
+        .and_then(|bot| {
+            installed
+                .plugins
+                .iter()
+                .find(|plugin| plugin.id == bot.bot.plugin_id)
+        })
+        .or_else(|| {
+            installed
+                .plugins
+                .iter()
+                .find(|plugin| plugin.bot_user_id.as_deref() == Some(user))
+        })?;
     if matches!(plugin.status, PluginState::Running { .. }) {
         return None;
     }

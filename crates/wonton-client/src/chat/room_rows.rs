@@ -75,10 +75,15 @@ impl ChatLink {
                         support.ensure(&runtime, &session, &room.room_id);
                     }
                 }
+                let chat = chat.upgrade();
                 let mut rows: Vec<_> = latest
                     .iter()
                     .cloned()
                     .map(|room| {
+                        let bot = room.direct_user_id.as_deref().and_then(|user| {
+                            chat.as_ref()
+                                .and_then(|chat| chat.bots.room_bot(user.as_str()))
+                        });
                         let layout = match &room.direct_user_id {
                             Some(user) => compose(
                                 &settings,
@@ -88,7 +93,7 @@ impl ChatLink {
                             None => compose(&settings, None),
                         };
                         let side_chats = support.supports(&room.room_id, &bot_users);
-                        room_row(room, &core, layout, &availability, side_chats)
+                        room_row(room, &core, layout, &availability, bot, side_chats)
                     })
                     .collect();
                 super::plugin_status::refresh(&mut rows, &plugins.borrow());
@@ -96,8 +101,9 @@ impl ChatLink {
                 let bot = lock(&default_bot).clone();
                 let rows = room_order.replace(rows, bot.as_deref());
                 view.send_modify(|view| view.rooms = rows);
-                if let Some(chat) = chat.upgrade() {
+                if let Some(chat) = chat {
                     chat.installs.refresh();
+                    chat.bots.publish_contacts();
                 }
             }
         })

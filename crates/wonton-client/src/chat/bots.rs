@@ -9,12 +9,14 @@ use tokio::sync::{Notify, watch};
 use tokio::time::Instant;
 use wonton_matrix::{MatrixSession, UserProfile};
 use wonton_protocol::{
-    AVATARS_FIELD, AvatarImage, AvatarKind, AvatarMedia, BotActivity, BotActivityFacts,
-    BotChatAvailability, BotRef, BotView, ChatForm, ChatViewModel, HomeStatus, InstalledPlugins,
-    MediaHandle, StateAvatar, StateAvatars,
+    AVATARS_FIELD, AvatarImage, AvatarKind, AvatarMedia, BotAccess, BotActivity, BotActivityFacts,
+    BotChatAvailability, BotRef, BotView, ChatForm, ChatViewModel, CoreError, HomeStatus,
+    InstalledPlugins, MediaHandle, RoomBot, SharedBot, SharedBotsState, SharedBotsView,
+    StateAvatar, StateAvatars,
 };
 
 use super::bot_activity::{Activity, synthesize};
+use super::contacts;
 use super::layout::{self, Layouts};
 use super::lock;
 use crate::home::HomeLink;
@@ -104,6 +106,10 @@ pub(super) struct Local {
     pub records: HashMap<BotRef, Record>,
     pub report: Option<wonton_protocol::BotActivityReport>,
     pub web_generation: u64,
+    /// 核心的 Bot 可达清单。`None` 是还没取到或旧核心没有这个接口，退回按活动快照猜。
+    pub shared: Option<Vec<SharedBot>>,
+    /// 每次取清单的代号：迟到的旧响应不盖新结果。
+    pub shared_serial: u64,
 }
 
 impl Local {
@@ -187,6 +193,13 @@ impl Bots {
 
     pub fn set_session(self: &Arc<Self>, session: Option<Arc<MatrixSession>>) {
         self.epoch.fetch_add(1, Ordering::SeqCst);
+        {
+            // 换人后上一份清单是别人的可达性：先作废，迟到结果也不能回写。
+            let mut local = lock(&self.local);
+            local.shared = None;
+            local.shared_serial = self.refresh_serial.fetch_add(1, Ordering::SeqCst) + 1;
+        }
+        self.publish_contacts();
         self.clear_activity();
         let issued = {
             let mut own = lock(&self.own_epoch);
@@ -286,6 +299,8 @@ impl Bots {
             }
             Err(problem) => view.own_private_bot_problem = Some(problem),
         });
+        drop(own);
+        self.publish_contacts();
     }
 
     pub fn foregrounded(self: &Arc<Self>) {
@@ -316,6 +331,106 @@ impl Bots {
         for id in ids {
             self.refresh(&id);
         }
+        self.refresh_shared();
+    }
+
+    /// 取当前人的 Bot 可达清单：单飞、按代号丢迟到结果；失败时留上一份，不清空。
+    fn refresh_shared(self: &Arc<Self>) {
+        if self.session.borrow().is_none() {
+            return;
+        }
+        let serial = {
+            let mut local = lock(&self.local);
+            local.shared_serial = self.refresh_serial.fetch_add(1, Ordering::SeqCst) + 1;
+            local.shared_serial
+        };
+        let plugins = self.plugins.clone();
+        let bots = self.clone();
+        self.runtime.spawn(async move {
+            let outcome = plugins.shared_bots().await;
+            let mut local = lock(&bots.local);
+            if !Self::apply_shared_result(&mut local, serial, outcome) {
+                return;
+            }
+            drop(local);
+            bots.publish_contacts();
+            bots.changed.notify_one();
+        });
+    }
+
+    /// 把一次清单结果写进本地。代号不匹配（换过人/换过会话）和取数失败都保留旧值；
+    /// 旧核心的 404 是 `Ok(None)`，清空而不是当失败。整份不可信时行按 Unknown 用。
+    fn apply_shared_result(
+        local: &mut Local,
+        serial: u64,
+        outcome: Result<Option<SharedBotsView>, CoreError>,
+    ) -> bool {
+        if local.shared_serial != serial {
+            return false;
+        }
+        match outcome {
+            Ok(Some(view)) => local.shared = Some(Self::rows_from_view(view)),
+            Ok(None) => local.shared = None,
+            // 取不到就留上一份，界面别因为一次断线把能选的 Bot 全撤掉。
+            Err(_) => return false,
+        }
+        true
+    }
+
+    /// 整份清单不可信时每一行都按 Unknown 用：壳照常能发，但不把上一轮的结论当本轮。
+    fn rows_from_view(mut view: SharedBotsView) -> Vec<SharedBot> {
+        if view.state != SharedBotsState::Ready {
+            for row in &mut view.bots {
+                row.access = BotAccess::Unknown;
+            }
+        }
+        view.bots
+    }
+
+    /// 房间里的对方是 Bot 时给出身份和可用性：以核心的可达清单为准；外站 Bot、旧核心或清单还没到时退回活动快照，
+    /// 退不出仍是 `None`（当普通人，输入照常）。
+    pub(super) fn room_bot(&self, user_id: &str) -> Option<RoomBot> {
+        if let Some(row) = lock(&self.local).shared.as_ref().and_then(|shared| {
+            shared
+                .iter()
+                .find(|row| row.user_id.as_deref() == Some(user_id))
+        }) {
+            return Some(RoomBot {
+                bot: row.bot.clone(),
+                user_id: user_id.to_owned(),
+                title: row.title.clone(),
+                access: row.access,
+            });
+        }
+        let view = self.view.borrow();
+        let bot = view.bots.iter().find(|bot| bot.user_id == user_id)?;
+        Some(RoomBot {
+            bot: bot.bot.clone(),
+            user_id: user_id.to_owned(),
+            title: bot.name.clone(),
+            access: bot.availability.into(),
+        })
+    }
+
+    /// 把当前能选的人合成进 ViewModel；壳只按搜索词过滤，不自己拼。
+    pub(super) fn publish_contacts(&self) {
+        let contacts = {
+            let local = lock(&self.local);
+            let view = self.view.borrow();
+            contacts::assemble(
+                &view.bots,
+                local.shared.as_deref(),
+                &view.rooms,
+                view.own_private_bot.as_ref(),
+            )
+        };
+        self.view.send_if_modified(|view| {
+            if view.shared_contacts == contacts {
+                return false;
+            }
+            view.shared_contacts = contacts;
+            true
+        });
     }
 
     pub fn refresh(self: &Arc<Self>, id: &BotRef) {
@@ -848,5 +963,88 @@ mod tests {
         assert!(local.ready());
         local.report = None;
         assert!(!local.ready());
+    }
+}
+
+#[cfg(test)]
+mod shared_rows_tests {
+    use super::*;
+
+    fn row(access: BotAccess) -> SharedBot {
+        SharedBot {
+            bot: BotRef {
+                plugin_id: "app.bot".into(),
+                bot: "default".into(),
+            },
+            user_id: Some("@bot:test".into()),
+            title: "Bot".into(),
+            icon: None,
+            access,
+        }
+    }
+
+    #[test]
+    fn not_ready_downgrades_every_row_to_unknown() {
+        let view = SharedBotsView {
+            state: SharedBotsState::Unknown,
+            bots: vec![
+                row(BotAccess::Own),
+                row(BotAccess::Unusable {
+                    reason: wonton_protocol::BotChatUnavailable::AppNotShared,
+                }),
+            ],
+        };
+        let rows = Bots::rows_from_view(view);
+        assert!(rows.iter().all(|row| row.access == BotAccess::Unknown));
+    }
+
+    #[test]
+    fn failed_or_stale_results_keep_the_previous_list() {
+        let mut local = Local::default();
+        local.shared = Some(vec![row(BotAccess::Own)]);
+        local.shared_serial = 2;
+        assert!(!Bots::apply_shared_result(
+            &mut local,
+            1,
+            Ok(Some(SharedBotsView {
+                state: SharedBotsState::Ready,
+                bots: vec![row(BotAccess::Shared)],
+            })),
+        ));
+        assert_eq!(local.shared.as_ref().unwrap()[0].access, BotAccess::Own);
+        assert!(!Bots::apply_shared_result(
+            &mut local,
+            2,
+            Err(CoreError::Upstream {
+                reason: "offline".into(),
+            }),
+        ));
+        assert!(local.shared.is_some());
+        assert!(Bots::apply_shared_result(&mut local, 2, Ok(None)));
+        assert!(local.shared.is_none());
+    }
+
+    #[test]
+    fn not_ready_result_writes_rows_as_unknown() {
+        let mut local = Local::default();
+        local.shared_serial = 7;
+        assert!(Bots::apply_shared_result(
+            &mut local,
+            7,
+            Ok(Some(SharedBotsView {
+                state: SharedBotsState::Unknown,
+                bots: vec![row(BotAccess::Shared)],
+            })),
+        ));
+        assert_eq!(local.shared.unwrap()[0].access, BotAccess::Unknown);
+    }
+
+    #[test]
+    fn ready_keeps_the_reasons() {
+        let view = SharedBotsView {
+            state: SharedBotsState::Ready,
+            bots: vec![row(BotAccess::Shared)],
+        };
+        assert_eq!(Bots::rows_from_view(view)[0].access, BotAccess::Shared);
     }
 }

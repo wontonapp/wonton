@@ -116,3 +116,4 @@ chat-window-ended =
     }
 
 chat-choice-send-failed-rejected = 没发出去：家里服务器拒收。（{ $error }）
+chat-my-bot = 我的 Bot

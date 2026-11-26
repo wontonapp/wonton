@@ -23,6 +23,10 @@ pub struct ChatViewModel {
     pub installing_bots: Vec<BotInstallRow>,
     /// 房间，按最近活动排序：最近有消息的在前，正在发送的在最前。
     pub rooms: Vec<RoomRow>,
+    /// 新建聊天里的可选的人和 Bot（不能用的也留着，带 [`ChatContact::access`] 的原因）：
+    /// 核心按当前权限把装着的 Bot、本人 Bot 和私聊过的人合成一表，能用的在前；壳只按搜索词过滤。
+    #[serde(default)]
+    pub shared_contacts: Vec<ChatContact>,
     /// 最近一次在后台失败的操作（加入房间、发起私聊、设置恢复等）；壳显示后用
     /// [`ChatAction::DismissChatProblem`](crate::ChatAction::DismissChatProblem) 清掉。
     pub problem: Option<ChatProblem>,
@@ -172,12 +176,20 @@ pub struct PendingConfirmation {
 #[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize)]
 #[cfg_attr(feature = "uniffi", derive(uniffi::Record))]
 pub struct ChatContact {
+    /// Matrix 用户 ID。Bot 记录还没建出来（`BotMissing`）时为空：这时只能看见，还不能发起。
     pub user_id: String,
     pub name: String,
+    /// 对方是 Bot 时的精确 Bot 身份；普通人联系人为空。
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    #[cfg_attr(feature = "uniffi", uniffi(default = None))]
+    pub bot: Option<crate::BotRef>,
     /// 选这个人开新旁聊时在哪个房间开（ADR-0093 §4）：和这个人已有的、有支持声明的私聊。
     /// 为空时壳走 `StartDirectChat` 先建私聊。
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub side_chat_room_id: Option<String>,
+    /// 对方是 Bot 时当前请求人的 [`BotAccess`]；普通人联系人为空。
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub access: Option<crate::BotAccess>,
 }
 
 /// 本设备的 Matrix 账号。
@@ -363,6 +375,18 @@ pub enum RecoveryStatus {
     Incomplete,
 }
 
+/// 房间里的 Bot 对方：精确到插件里的 Bot 名，和当前请求人能不能聊。
+#[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize)]
+#[cfg_attr(feature = "uniffi", derive(uniffi::Record))]
+pub struct RoomBot {
+    pub bot: crate::BotRef,
+    /// Bot 的 Matrix 用户 ID。
+    pub user_id: String,
+    /// 插件名，按请求人的语言挑过。
+    pub title: String,
+    pub access: crate::BotAccess,
+}
+
 /// 房间列表里的一行。
 #[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize)]
 #[cfg_attr(feature = "uniffi", derive(uniffi::Record))]
@@ -385,6 +409,11 @@ pub struct RoomRow {
     #[serde(default, skip_serializing_if = "Option::is_none")]
     #[cfg_attr(feature = "uniffi", uniffi(default = None))]
     pub bot_chat: Option<crate::BotChatAvailability>,
+    /// 私聊对方是谁、凭什么能用（[`crate::BotAccess`]）。`bot_chat` 只有能不能，这里还带精确的 Bot 身份和原因；
+    /// 插件没开给当前人时也靠它画出“为什么用不了”。不是 Bot 的私聊为空。
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    #[cfg_attr(feature = "uniffi", uniffi(default = None))]
+    pub bot: Option<RoomBot>,
     /// 是否开了端到端加密。
     pub is_encrypted: bool,
     /// 只读的房间（和核心账号的通知私聊）：没有人读这里的消息，壳不显示输入框，发文字和图片会被拒绝。
@@ -575,6 +604,7 @@ mod tests {
                 direct_user_id: Some("@hermes:home.example".into()),
                 plugin: None,
                 bot_chat: None,
+                bot: None,
                 is_encrypted: true,
                 is_read_only: false,
                 membership: RoomMembership::Invited,
@@ -587,6 +617,7 @@ mod tests {
                 side_chats: false,
                 unread_count: 2,
             }],
+            shared_contacts: Vec::new(),
             problem: Some(ChatProblem {
                 reason: ChatFailure::Unauthorized,
                 message: "加入房间失败".into(),

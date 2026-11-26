@@ -337,9 +337,35 @@ async fn own_bot_and_active_contact_do_not_depend_on_open_apps() {
         &contacted,
         json!({"@alice:test": {"kind": "person", "state": "active", "updated_at_ms": 1}}),
     ));
+    assert_eq!(access(&fixture, alice, &contacted), BotAccess::Contact);
+}
+
+#[tokio::test]
+async fn a_missing_record_is_bot_missing_even_without_a_known_caller() {
+    let fixture = Fixture::new().await;
+    let facts = fixture.facts(None, &bot("missing"));
+    assert!(facts.bot.is_none());
     assert_eq!(
-        access(&fixture, alice, &contacted),
-        BotAccess::Contact
+        fixture.facts(None, &bot("missing")).caller,
+        CallerFacts::Unknown
+    );
+    assert_eq!(
+        access_of(&fixture.gateway, &bot("missing"), &facts),
+        BotAccess::Unusable {
+            reason: BotChatUnavailable::BotMissing
+        }
+    );
+}
+
+#[tokio::test]
+async fn a_missing_record_is_bot_missing_for_an_unknown_caller_too() {
+    let fixture = Fixture::new().await;
+    let facts = fixture.facts(None, &bot("missing"));
+    assert_eq!(
+        chat_availability(&fixture.gateway, &facts),
+        BotChatAvailability::Unavailable {
+            reason: BotChatUnavailable::BotMissing
+        }
     );
 }
 
