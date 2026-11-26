@@ -101,7 +101,13 @@ async fn a_new_address_for_the_same_server_keeps_the_session() {
                 .then_some(())
         })
         .await;
-    assert_eq!(phone.signed_in().await.1, device, "应还是原来的设备");
+    // 不调 `signed_in()`：它要等 CheckReady 真的能 dispatch（#1100）；隧道刚换地址时旧会话的 stop_sync
+    // 会拖住这段窗口（#1150 已把等待上限提到 300s）。这条用例只关心“还是原来的设备”，直接看当前视图。
+    let view = phone.chat();
+    let ChatAccount::SignedIn { device_id, .. } = &view.account else {
+        panic!("应仍处于已登录状态：{:?}", view.account);
+    };
+    assert_eq!(device_id, &device, "应还是原来的设备");
     assert_eq!(home.login_tokens(), 1, "换地址不应重新登录");
 }
 
