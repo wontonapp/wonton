@@ -177,7 +177,7 @@ impl PluginManager {
         }
         let settled = {
             let _commands = store.commands.lock().await;
-            self.settle_model_command().await?
+            self.settle_model_command(None).await?
         };
         if !settled {
             return Ok(());
@@ -203,9 +203,7 @@ impl PluginManager {
         let result = async {
             let mut recognized = true;
             for name in &names {
-                let Some(value) = file.keys.get(name.as_str()) else {
-                    return Ok(());
-                };
+                let value = file.keys.get(name.as_str()).ok_or_else(|| missing(name))?;
                 if self.verify(route, value, &langs).await?.is_none() {
                     recognized = false;
                     break;
@@ -248,11 +246,20 @@ impl PluginManager {
     }
 
     /// 上一条命令的记录没了（容器重启丢掉）或者创建了没启动：都算结局已定，剩下的事实靠重新验证。
-    pub(super) async fn settle_model_command(&self) -> Result<bool, InstallError> {
+    /// 没有按时间猜的逃生口：只有验证能解；容器重启、换掉或 404 都算已定。
+    pub(super) async fn settle_model_command(
+        &self,
+        container_id: Option<&str>,
+    ) -> Result<bool, InstallError> {
         let store = self.store.model_keys();
         let Some(pending) = store.pending()? else {
             return Ok(true);
         };
+        // 网关容器换掉了（重建/重装）：上一条命令所在的容器已经没了，剩下的事实靠重新验证。
+        if container_id.is_some_and(|current| current != pending.container_id) {
+            store.clear_pending()?;
+            return Ok(true);
+        }
         if !self.engine.exec_finished(&pending.exec_id).await? {
             return Ok(false);
         }

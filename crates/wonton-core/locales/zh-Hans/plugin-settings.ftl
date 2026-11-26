@@ -292,6 +292,7 @@ plugin-settings-models-gateway-not-running = 模型网关 { $id } 没在运行
 plugin-settings-models-gateway-absent = 没有装模型网关（声明 provides.models 的系统应用）
 plugin-settings-models-revoke-not-running = 模型网关没在运行，吊销不了 { $id } 的凭据
 plugin-settings-models-revoke-provider-not-running = 模型网关 { $provider } 没在运行，吊销不了 { $id } 的凭据
+plugin-settings-models-reconcile-failed = 模型网关凭据对账失败：{ $error }
 plugin-settings-models-credential-rejected = 模型网关 { $provider } 不认服务器签发的凭据 { $name }：签发后请求模型列表仍然 401
 plugin-settings-models-unreachable = 模型网关 { $provider } 不可达：{ $error }
 plugin-settings-models-list-error = 模型网关 { $provider } 回答模型列表时出错：HTTP { $status }

@@ -58,6 +58,7 @@ impl PluginManager {
             return None;
         }
         let (has_keys, problem, route) = self.store.model_keys().hint_basis(id, langs);
+        // 上次的失败原因比“网关没就绪”更具体，先给；恢复后重试成功会清掉。
         if problem.is_some() {
             return Some(wonton_protocol::PluginHint {
                 category: Category::ModelsNotConnected,
