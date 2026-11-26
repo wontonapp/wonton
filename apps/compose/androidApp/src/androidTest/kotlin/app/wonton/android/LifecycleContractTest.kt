@@ -25,10 +25,13 @@ import org.junit.runner.RunWith
 class LifecycleContractTest {
     private val compose = createAndroidComposeRule<MainActivity>()
 
+    // 配对页的扫码框一启动就请求相机。没给的话系统权限框会把 Activity 按下 PAUSED，
+    // 常常赶在测试记下 from 之前发生，这时 moveToState(STARTED) 因为状态已经是 STARTED 而空转。
+    // 相机也先授好，让测试自己制造这次前后台切换。
     private val permissions: TestRule = if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.TIRAMISU) {
-        GrantPermissionRule.grant(Manifest.permission.POST_NOTIFICATIONS)
+        GrantPermissionRule.grant(Manifest.permission.POST_NOTIFICATIONS, Manifest.permission.CAMERA)
     } else {
-        GrantPermissionRule.grant()
+        GrantPermissionRule.grant(Manifest.permission.CAMERA)
     }
 
     @get:Rule
@@ -39,6 +42,9 @@ class LifecycleContractTest {
         val core = (compose.activity.application as WontonApplication).core
         check(core.isSuccess)
         val log = File(compose.activity.filesDir, "core.log")
+        // 先把状态拉回 RESUMED 再记 from：启动时可能已经有别的系统框把 Activity 按到 PAUSED 并写过一行，
+        // 那样随后那次 moveToState(STARTED) 就看不到新的切换了。
+        compose.activityRule.scenario.moveToState(Lifecycle.State.RESUMED)
         val from = log.length()
 
         compose.activityRule.scenario.moveToState(Lifecycle.State.STARTED)
