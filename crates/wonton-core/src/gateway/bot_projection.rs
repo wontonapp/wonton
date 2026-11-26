@@ -70,7 +70,7 @@ pub(super) fn identity(
     // 有本人私人 Bot 的人，默认 Agent 就是它：引导、插件详情、桌面小组件三处同一条。
     // 角色里没有私人 Bot、或者自己选了不要的人拿到的结果是 NotApplicable，继续走插件的默认 Bot。
     if !person.is_owner()
-        && let Some(answer) = private_bot_identity(gateway, peer, headers, person)?
+        && let Some(answer) = private_bot_identity(gateway, peer, headers, person, id)?
     {
         return Ok(answer);
     }
@@ -134,6 +134,7 @@ fn private_bot_identity(
     peer: Option<TunnelPeer>,
     headers: &HeaderMap,
     expected: &Person,
+    plugin: &PluginId,
 ) -> Result<Option<(Option<String>, DefaultBotVisibility)>, Box<Response>> {
     let Ok((_, result)) =
         super::private_bot::result_for_person(gateway, peer.map(Extension), headers, expected)
@@ -143,6 +144,10 @@ fn private_bot_identity(
     let OwnPrivateBotResult::Ready(identity) = result else {
         return Ok(None);
     };
+    // 私人 Bot 只属于它自己的插件；别的插件继续用自己的默认 Bot，免得多份 Bot 视图全指向同一个用户。
+    if identity.bot.plugin_id != plugin.as_str() {
+        return Ok(None);
+    }
     // 和用默认 Bot 时一样，在交出身份前后各核一次请求者。
     if let Some(denied) = api::plugin_denied(gateway, peer.map(Extension), headers) {
         return Err(Box::new(denied));

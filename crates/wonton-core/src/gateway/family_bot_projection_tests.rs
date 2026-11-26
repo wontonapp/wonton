@@ -16,6 +16,7 @@ struct PrivateBotFixture {
     app: axum::Router,
     _matrix_state: tempfile::TempDir,
     plugin: PluginId,
+    other_plugin: PluginId,
     devices: Vec<iroh::EndpointId>,
 }
 
@@ -43,7 +44,18 @@ async fn installed_whoami_with_private_bot() -> PrivateBotFixture {
         PluginStatus::Running,
         None,
     );
+    // 第二个 Agent 插件也有自己的默认 Bot：私人 Bot 不能让它的 Bot 从列表里消失。
+    h.manager.register_for_test(
+        PluginPackage::manifest_of(
+            &source.replace("app.whoami", "app.other"),
+            &Languages::default(),
+        )
+        .unwrap(),
+        PluginStatus::Running,
+        None,
+    );
     let plugin = PluginId::parse("app.whoami").unwrap();
+    let other_plugin = PluginId::parse("app.other").unwrap();
     let mut devices = Vec::new();
     for name in ["mia", "lee"] {
         h.members
@@ -76,6 +88,7 @@ async fn installed_whoami_with_private_bot() -> PrivateBotFixture {
         app,
         _matrix_state: matrix_state,
         plugin,
+        other_plugin,
         devices,
     }
 }
@@ -87,6 +100,7 @@ async fn default_identity_preserves_active_contacts_and_shared_bots() {
         app,
         _matrix_state,
         plugin,
+        other_plugin,
         devices,
     } = installed_whoami_with_private_bot().await;
     let path = "/_wonton/api/plugins/app.whoami";
@@ -196,8 +210,8 @@ async fn assert_mismatched_homeserver_is_an_error(
     assert!(!reply.text().contains("@private:elsewhere"));
 }
 
-/// 有私人 Bot 的家人：默认 Agent 是自己的 Bot。角色里没有私人 Bot 的人：还是插件的默认 Bot。
-/// 有私人 Bot、还在建的人：身份显示为待核实，不静默退回默认 Bot。
+/// 有私人 Bot 的家人：默认 Agent 是自己 Bot 所在的那个插件。别的插件和没有私人 Bot 权限的人都用默认 Bot。
+/// 有私人 Bot、还在建的人：插件默认 Bot 先顶上，不让用户没 Bot 可用。
 #[tokio::test]
 async fn a_private_bot_member_defaults_to_their_own_bot() {
     let PrivateBotFixture {
@@ -205,6 +219,7 @@ async fn a_private_bot_member_defaults_to_their_own_bot() {
         app,
         _matrix_state,
         plugin,
+        other_plugin,
         devices,
     } = installed_whoami_with_private_bot().await;
     let private = wonton_protocol::BotRef {
@@ -240,6 +255,31 @@ async fn a_private_bot_member_defaults_to_their_own_bot() {
     assert_eq!(own.json()["installed"]["bot_user_id"], "@mia-bot:test");
     assert_eq!(own.json()["installed"]["default_bot_visibility"], "visible");
 
+    // 别的插件不被私人 Bot 覆盖：它自己的默认 Bot 仍在。
+    h.manager.bot_records_for_test(
+        &other_plugin,
+        &[(
+            "default",
+            "@other-bot:test",
+            wonton_protocol::BotKeeper::User {
+                username: "owner".into(),
+            },
+            "other-token",
+        )],
+    );
+    let other = send_as(
+        &app,
+        Some(devices[0]),
+        Method::GET,
+        CORE,
+        "/_wonton/api/plugins/app.other",
+        &[],
+        "",
+    )
+    .await;
+    assert_eq!(other.status, StatusCode::OK, "{}", other.text());
+    assert_eq!(other.json()["installed"]["bot_user_id"], "@other-bot:test");
+
     // 能看这个应用、但角色里没有私人 Bot 的人：还是插件的默认 Bot。
     let mut permissions = h.roles.get("admin").unwrap().permissions;
     permissions.private_bot = false;
@@ -255,7 +295,55 @@ async fn a_private_bot_member_defaults_to_their_own_bot() {
     assert_eq!(shared.status, StatusCode::OK, "{}", shared.text());
     assert_eq!(shared.json()["installed"]["bot_user_id"], "@private:test");
 
-    // 有私人 Bot、还在建：不说成“就是默认 Bot”，也不把插件列表打成错误。
+    // 有 Ready 私人 Bot 的成员被换成没有私人 Bot 权限的角色：即便有记录也退回默认 Bot。
+    h.members.set_role("mia", &role.id).unwrap();
+    let demoted = send_as(&app, Some(devices[0]), Method::GET, CORE, path, &[], "").await;
+    assert_eq!(demoted.status, StatusCode::OK, "{}", demoted.text());
+    assert_eq!(demoted.json()["installed"]["bot_user_id"], "@private:test");
+
+    // 自己不想要私人 Bot 的人：有记录也退回插件默认 Bot。
+    h.members
+        .invite(MemberRecord {
+            role_id: "admin".into(),
+            wants_private_bot: false,
+            ..MemberRecord::for_test("noe")
+        })
+        .unwrap();
+    h.members.mark_joined("noe").unwrap();
+    let noe_device = SecretKey::generate().public();
+    h.tunnel
+        .devices
+        .add_if(noe_device, None, Some("noe".into()), |_| true)
+        .unwrap();
+    h.manager.bot_records_for_test(
+        &plugin,
+        &[
+            (
+                "default",
+                "@private:test",
+                wonton_protocol::BotKeeper::User {
+                    username: "owner".into(),
+                },
+                "owner-token",
+            ),
+            (
+                "user-noe",
+                "@noe-bot:test",
+                wonton_protocol::BotKeeper::User {
+                    username: "noe".into(),
+                },
+                "noe-token",
+            ),
+        ],
+    );
+    let unwilling = send_as(&app, Some(noe_device), Method::GET, CORE, path, &[], "").await;
+    assert_eq!(unwilling.status, StatusCode::OK, "{}", unwilling.text());
+    assert_eq!(
+        unwilling.json()["installed"]["bot_user_id"],
+        "@private:test"
+    );
+
+    // 有私人 Bot、还在建：插件默认 Bot 先顶上，不让用户没 Bot 可用。
     h.members
         .invite(MemberRecord {
             role_id: "admin".into(),
