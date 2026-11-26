@@ -45,6 +45,19 @@ chat-ask-invalid-bot-id = 預設 Agent 的 ID 格式不對。
 # 已有私訊的聊天室 ID 剖析失敗時顯示。
 chat-ask-invalid-room-id = 私訊的聊天室 ID 無效。
 
+# 詢問預設 Bot 失敗時顯示。主句由殼寫，這裡是預設收起的詳情；類別名見 docs/glossary.md。
+chat-ask-failed-no-bot = 沒有可以問的 Bot。
+chat-ask-failed-bot-not-ready = 這個 Bot 還沒準備好。
+chat-ask-failed-bot-problem = 這個 Bot 的主房間壞了。
+chat-ask-failed-not-in-room = 這個房間不是和 Bot 的私訊。
+chat-ask-failed-read-only-room = 這是通知頻道，到不了 Bot。
+chat-ask-failed-contact-required = 這個 Bot 還沒把你當聯絡人。
+chat-ask-failed-transport = 連不上家裡的伺服器。
+chat-ask-failed-forbidden = Bot 沒有收下這句話。
+chat-ask-failed-not-ready = 還沒準備好。
+chat-ask-failed-upstream = 家裡的伺服器出錯了。
+chat-ask-failed-other = 這句話沒能送出去。
+
 chat-invalid-action = 不是聊天操作
 
 # 殼送出這個核心不認得的回答時顯示。

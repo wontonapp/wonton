@@ -3,7 +3,7 @@
 //! 字段都在 `chat` 的子模块之间共用：别的文件要读写哪个，就在这儿标 `pub(super)`。
 
 use std::collections::HashSet;
-use std::sync::atomic::AtomicBool;
+use std::sync::atomic::{AtomicBool, AtomicU64};
 use std::sync::{Arc, Mutex};
 
 use tokio::runtime::Handle;
@@ -63,6 +63,9 @@ pub(crate) struct ChatLink {
     pub(super) card_success: CardSuccess,
     /// 正在重置恢复。途中 SDK 会报“未设置”，不能覆盖“处理中”或触发自动开启。
     pub(super) resetting_recovery: AtomicBool,
+
+    /// 最近一次“问 Bot”的序号；慢的旧动作不覆盖新回执，dismiss 也靠它作废旧回执。
+    pub(super) ask_seq: AtomicU64,
     /// 主人的默认 Agent 在 Matrix 上的用户 ID，聊天列表里它的房间排第一。
     pub(super) default_bot: Arc<Mutex<Option<String>>>,
     /// 房间列表的基准顺序，显示时把默认 Agent 的房间提到最前。

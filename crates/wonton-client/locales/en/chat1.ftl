@@ -49,6 +49,20 @@ chat-ask-invalid-bot-id = The default agent's ID isn't formatted correctly.
 # Shown when a saved direct chat's room ID doesn't parse.
 chat-ask-invalid-room-id = The direct chat's room ID isn't valid.
 
+# Shown when asking the default Bot fails. The shell writes the main sentence; this is the
+# default-collapsed detail. Keep the category names in docs/glossary.md.
+chat-ask-failed-no-bot = There is no Bot you can ask.
+chat-ask-failed-bot-not-ready = This Bot isn't ready yet.
+chat-ask-failed-bot-problem = This Bot's home room is broken.
+chat-ask-failed-not-in-room = This room isn't a chat with a Bot.
+chat-ask-failed-read-only-room = This is a notification channel and doesn't reach a Bot.
+chat-ask-failed-contact-required = This Bot doesn't have you as a contact yet.
+chat-ask-failed-transport = Can't reach your home server.
+chat-ask-failed-forbidden = The Bot didn't accept the message.
+chat-ask-failed-not-ready = Not ready yet.
+chat-ask-failed-upstream = Your home server had a problem.
+chat-ask-failed-other = The message couldn't be sent.
+
 chat-invalid-action = Not a chat action.
 
 # Shown when the shell sends an answer this core doesn't know.

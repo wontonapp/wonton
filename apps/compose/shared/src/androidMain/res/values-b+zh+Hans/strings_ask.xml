@@ -1,0 +1,14 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <string name="chat_ask_failed_no_bot">没有可以问的 Bot。</string>
+    <string name="chat_ask_failed_bot_not_ready">这个 Bot 还没准备好。</string>
+    <string name="chat_ask_failed_bot_problem">这个 Bot 的主房间坏了。</string>
+    <string name="chat_ask_failed_not_in_room">这个房间不是和 Bot 的私聊。</string>
+    <string name="chat_ask_failed_read_only_room">这是通知频道，到不了 Bot。</string>
+    <string name="chat_ask_failed_contact_required">这个 Bot 还没把你当联系人。</string>
+    <string name="chat_ask_failed_transport">连不上家里的服务器。</string>
+    <string name="chat_ask_failed_forbidden">Bot 没有收下这句话。</string>
+    <string name="chat_ask_failed_not_ready">还没准备好。</string>
+    <string name="chat_ask_failed_upstream">家里的服务器出错了。</string>
+    <string name="chat_ask_failed_other">这句话没能发出去。</string>
+</resources>

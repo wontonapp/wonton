@@ -9,14 +9,28 @@ import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.runtime.setValue
 import app.wonton.client.ClientCore
 import app.wonton.protocol.Action
-import app.wonton.protocol.ChatAction
+import app.wonton.protocol.AskFailure
+import app.wonton.protocol.AskState
 import app.wonton.protocol.BotRef
+import app.wonton.protocol.ChatAction
 import app.wonton.protocol.ChatContact
 import app.wonton.protocol.ChatViewModel
 import app.wonton.protocol.CoreException
+import app.wonton.protocol.OwnPrivateBotView
 import app.wonton.protocol.RoomMembership
 import app.wonton.protocol.RoomRow
 import app.wonton.protocol.TabRef
+
+/** 一次“问 Bot”的回执还没到时记着的请求；只认这个动作 ID 的回执。 */
+private data class PendingAsk(val id: UInt, val text: String, val roomId: String?)
+
+/** 问 Bot 失败的原因和重试要用的原文；关掉就收起。 */
+data class AskFailureBanner(
+    val text: String,
+    val roomId: String?,
+    val reason: AskFailure,
+    val detail: String,
+)
 
 /**
  * 聊天页打开的房间。应用页和应用商店里点 Agent 插件时直接打开和它的 Bot 的私聊，关掉房间回到点的那一页。
@@ -55,6 +69,85 @@ class ChatNavigation(
     var startingChat by startingChat
     var botProfile by mutableStateOf<BotRef?>(null)
     var showingConfirmations by mutableStateOf(false)
+
+    /** 问 Bot 的动作 ID、待处理回执和失败提示；只认自己发起的动作对应的回执。 */
+    inner class AskNavigation {
+        var askFailure by mutableStateOf<AskFailureBanner?>(null)
+        private var pendingAsk: PendingAsk? = null
+        private var askRequestId: UInt = 0u
+
+        /** 当前开着的房间能不能原样当作“问 Bot”的目标：Bot 私聊、本人 Bot 的主房间，或者只读的通知房。 */
+        fun currentBotRoomId(viewModel: ChatViewModel): String? {
+            val id = openRoom
+            val row = id?.let { room -> viewModel.rooms.firstOrNull { it.roomId == room } }
+            val own = viewModel.ownPrivateBot
+            return when {
+                id == null || row == null -> null
+                row.isReadOnly || row.botChat != null -> id
+                own is OwnPrivateBotView.Ready && row.directUserId == own.userId -> id
+                viewModel.bots.any { it.userId == row.directUserId } -> id
+                else -> null
+            }
+        }
+
+        /** 发起一次“问 Bot”；`roomId` 是当前房间，没有就 null，由核心按自己的顺序解析并写回执。 */
+        fun startAsk(core: ClientCore, text: String, roomId: String?): Problem? {
+            askFailure = null
+            core.send(Action.Chat(ChatAction.DismissChatProblem))
+            askRequestId += 1u
+            val id = askRequestId
+            pendingAsk = PendingAsk(id, text, roomId)
+            val rejection = core.send(
+                Action.Chat(ChatAction.AskAgent(text = text, roomId = roomId, requestId = id))
+            )
+            if (rejection != null) pendingAsk = null
+            return rejection
+        }
+
+        /** 重试上一次失败：沿用同一个房间，换一个新的动作 ID。 */
+        fun retryAsk(core: ClientCore): Problem? {
+            val failure = askFailure ?: return null
+            askFailure = null
+            val rejection = startAsk(core, failure.text, failure.roomId)
+            if (rejection != null) askFailure = failure
+            return rejection
+        }
+
+        /** 回执对上了就按状态开房间或留提示；Pending 不动。 */
+        fun settleAsk(viewModel: ChatViewModel) {
+            val pending = pendingAsk ?: return
+            val receipt = viewModel.ask
+            if (receipt == null || receipt.requestId != pending.id) return
+            pendingAsk = null
+            when (receipt.state) {
+                AskState.PENDING -> {}
+                AskState.SENT -> {
+                    val roomId = receipt.roomId
+                    if (roomId != null) {
+                        if (viewModel.rooms.any { it.roomId == roomId && it.membership == RoomMembership.JOINED }) {
+                            show(roomId, TabRef.Chat)
+                        } else {
+                            awaitedPeer = null
+                            awaitedRoom = roomId
+                            awaitedSideChat = null
+                            openRoom = null
+                            returnTab = null
+                            selectTab(TabRef.Chat)
+                        }
+                    }
+                }
+                AskState.FAILED -> askFailure = AskFailureBanner(
+                    text = pending.text,
+                    roomId = pending.roomId,
+                    reason = receipt.problem?.reason ?: AskFailure.OTHER,
+                    detail = receipt.problem?.detail ?: "",
+                )
+                AskState.OTHER -> {}
+            }
+        }
+    }
+
+    val ask = AskNavigation()
 
     fun openConfirmations() {
         reset()
@@ -186,6 +279,7 @@ class ChatNavigation(
     }
 
     fun onUpdate(viewModel: ChatViewModel) {
+        ask.settleAsk(viewModel)
         val awaited = awaitedRoom
         if (awaited != null && viewModel.rooms.any { it.roomId == awaited && it.membership == RoomMembership.JOINED }) {
             awaitedRoom = null

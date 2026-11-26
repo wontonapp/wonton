@@ -1,3 +1,4 @@
+import Foundation
 import Observation
 import WontonClient
 
@@ -83,6 +84,7 @@ final class ChatModel {
         for await _ in core.subscribeChat().updates() {
             // 系统 Intent 可在订阅消费前改状态，不能用队列中的旧快照覆盖它。
             viewModel = core.chat()
+            settleAsk()
             draftStore.selectServer(core.servers().servers.first(where: \.current)?.id)
             openAwaitedChat()
         }
@@ -293,14 +295,90 @@ final class ChatModel {
         }
     }
 
-    /// AskAgent 已在核心里发起或加入房间；这里只等订阅里的房间出现，避免重复建房。
-    func openAskedAgentChat(with peer: String) {
-        path = []
-        visiting = nil
-        awaitedPeer = peer
-        awaitedFrom = .chat
-        viewModel = core.chat()
-        openAwaitedChat()
+    /// 一次“问 Bot”的回执还没到时记着的请求；只认这个 ID 的回执。
+    private struct PendingAsk {
+        let id: UInt32
+        let text: String
+        let roomId: String?
+    }
+
+    /// 失败后留在聊天页上方的提示，带重试要用的原文和房间。
+    struct AskFailureBanner: Identifiable {
+        let id = UUID()
+        let text: String
+        let roomId: String?
+        let reason: AskFailure
+        let detail: String
+    }
+
+    private var pendingAsk: PendingAsk?
+    private var askRequestId: UInt32 = 0
+    /// 最近一次问 Bot 失败的原因；成功或开始重试时清掉。
+    var askFailure: AskFailureBanner?
+
+    /// 当前打开的房间能不能原样当作“问 Bot”的目标：Bot 私聊、本人 Bot 的主房间，或者只读的通知房
+    /// （只读的交给核心回明确原因，不静默换成默认 Bot）。
+    var currentBotRoomId: String? {
+        let id: String?
+        if case let .room(roomId) = path.last { id = roomId } else { id = visiting?.roomId }
+        guard let id, let row = viewModel.rooms.first(where: { $0.roomId == id }) else { return nil }
+        if row.isReadOnly || row.botChat != nil { return id }
+        if let direct = row.directUserId {
+            if case let .some(.ready(_, userId, _, _)) = viewModel.ownPrivateBot, userId == direct {
+                return id
+            }
+            if viewModel.bots.contains(where: { $0.userId == direct }) { return id }
+        }
+        return nil
+    }
+
+    /// 发起一次“问 Bot”：`roomId` 是当前房间，没有就 nil，由核心按自己的顺序解析。
+    func startAsk(text: String, roomId: String?) throws {
+        askFailure = nil
+        // 旧回执先清掉，免得同一个操作 ID 对上上一次的残留。
+        _ = try? core.dispatch(action: .chat(action: .dismissChatProblem))
+        askRequestId &+= 1
+        let id = askRequestId
+        pendingAsk = PendingAsk(id: id, text: text, roomId: roomId)
+        do {
+            try core.dispatch(
+                action: .chat(action: .askAgent(text: text, roomId: roomId, requestId: id))
+            )
+        } catch {
+            pendingAsk = nil
+            throw error
+        }
+    }
+
+    /// 重试上一次失败：沿用同一个房间，换一个新的动作 ID。
+    func retryAsk() throws {
+        guard let failure = askFailure else { return }
+        try startAsk(text: failure.text, roomId: failure.roomId)
+    }
+
+    /// 回执对上了就按状态开房间或留提示；Pending 不动。
+    private func settleAsk() {
+        guard let pending = pendingAsk,
+              let receipt = viewModel.ask,
+              receipt.requestId == pending.id
+        else { return }
+        switch receipt.state {
+        case .pending:
+            return
+        case .sent:
+            pendingAsk = nil
+            if let roomId = receipt.roomId { openRoom(id: roomId) }
+        case .failed:
+            pendingAsk = nil
+            askFailure = AskFailureBanner(
+                text: pending.text,
+                roomId: pending.roomId,
+                reason: receipt.problem?.reason ?? .other,
+                detail: receipt.problem?.detail ?? ""
+            )
+        case .other:
+            pendingAsk = nil
+        }
     }
 
     private func show(_ roomId: String, from origin: AppTab) {

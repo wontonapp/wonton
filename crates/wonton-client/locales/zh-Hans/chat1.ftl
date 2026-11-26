@@ -45,6 +45,19 @@ chat-ask-invalid-bot-id = 默认 Agent 的 ID 格式不对。
 # 已有私聊的房间 ID 解析不了时显示。
 chat-ask-invalid-room-id = 私聊的房间 ID 不合法。
 
+# 问默认 Bot 失败时显示。主句由壳写，这里是默认收起的详情；类别名见 docs/glossary.md。
+chat-ask-failed-no-bot = 没有可以问的 Bot。
+chat-ask-failed-bot-not-ready = 这个 Bot 还没准备好。
+chat-ask-failed-bot-problem = 这个 Bot 的主房间坏了。
+chat-ask-failed-not-in-room = 这个房间不是和 Bot 的私聊。
+chat-ask-failed-read-only-room = 这是通知频道，到不了 Bot。
+chat-ask-failed-contact-required = 这个 Bot 还没把你当联系人。
+chat-ask-failed-transport = 连不上家里的服务器。
+chat-ask-failed-forbidden = Bot 没有收下这句话。
+chat-ask-failed-not-ready = 还没准备好。
+chat-ask-failed-upstream = 家里的服务器出错了。
+chat-ask-failed-other = 这句话没能发出去。
+
 chat-invalid-action = 不是聊天操作
 
 # 壳给了这个核心不认识的回答时显示。

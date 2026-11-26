@@ -52,6 +52,10 @@ struct MainView: View {
         .onPreferenceChange(ChatPanelOpenKey.self) { showsPanel = $0 }
         .onChange(of: horizontalSizeClass) { _, _ in showsSidebar = false }
         .overlay { if chat.isOpeningChat { ProgressView() } }
+        .overlay(alignment: .bottom) {
+            AskFailureBar(model: chat)
+                .padding(.bottom, WontonTheme.size.bottomBar + WontonTheme.spacing.s12)
+        }
         #if DEBUG
         .overlay(alignment: .topLeading) { KeyHandoffTestState(model: chat) }
         #endif
