@@ -48,9 +48,21 @@ class AndroidAssumptionTest(unittest.TestCase):
             parse(
                 """<testsuite name="app.WontonTest" tests="1">
   <testcase classname="app.WontonTest" name="needsStack">
-    <failure>org.junit.AssumptionViolatedException: \u9700\u8981 -e HISTORY_TEXT_B64
+    <failure>org.junit.AssumptionViolatedException: 需要 -e HISTORY_TEXT_B64
 \tat org.junit.Assume.assumeTrue(Assume.java:68)
 </failure>
+  </testcase>
+</testsuite>"""
+            ),
+            [],
+        )
+
+    def test_junit5_test_aborted_is_skipped(self):
+        self.assertEqual(
+            parse(
+                """<testsuite name="app.WontonTest" tests="1">
+  <testcase classname="app.WontonTest" name="needsStack">
+    <failure type="org.opentest4j.TestAbortedException" message="需要开发栈"/>
   </testcase>
 </testsuite>"""
             ),
