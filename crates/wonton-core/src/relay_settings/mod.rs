@@ -31,7 +31,7 @@ use wonton_protocol::{
 };
 use wonton_tunnel::relays::{
     Relay, RelayTable, RelayToken, TierFallbackHandle, canonical_url, is_public_relay, n0_relays,
-    relay_from_item,
+    relay_from_item, relay_url_text,
 };
 
 use crate::config::Config;
@@ -183,7 +183,7 @@ impl OwnerFile {
                 .relays()
                 .iter()
                 .map(|relay| OwnerEntry {
-                    url: relay.url.to_string(),
+                    url: relay_url_text(&relay.url),
                     token: relay.token.as_ref().map(|token| token.expose().to_owned()),
                     quic_port: relay.quic_port,
                     tier: relay.tier,
@@ -403,7 +403,7 @@ impl RelaySettings {
             .relays()
             .iter()
             .map(|relay| RelaySettingEntry {
-                url: relay.url.to_string(),
+                url: relay_url_text(&relay.url),
                 token: relay
                     .token
                     .as_ref()

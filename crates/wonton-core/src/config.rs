@@ -323,7 +323,7 @@ impl Config {
             )?,
             tunnel_port: parse(&get, "WONTON_TUNNEL_PORT", 0)?,
             relays: parse_relays(&get)?,
-            builtin_relays: builtin_relays()?,
+            builtin_relays: builtin_relays(&get)?,
             relay_list_url: relay_list_var(
                 &get,
                 "WONTON_RELAY_LIST_URL",
@@ -385,10 +385,18 @@ fn parse_relays(get: &impl Fn(&str) -> Option<String>) -> Result<Option<OwnerLay
 }
 
 /// 编译进来的默认中继（`WONTON_BUILTIN_RELAYS`，构建参数）。空着就是不预置我们自己的中继。
-fn builtin_relays() -> Result<RelayTable, ConfigError> {
-    match option_env!("WONTON_BUILTIN_RELAYS").filter(|text| !text.trim().is_empty()) {
+fn builtin_relays(get: &impl Fn(&str) -> Option<String>) -> Result<RelayTable, ConfigError> {
+    // 运行时环境变量优先（容器部署照 `.env` 填要生效），退回构建时写死的值。
+    let text = get("WONTON_BUILTIN_RELAYS")
+        .filter(|text| !text.trim().is_empty())
+        .or_else(|| {
+            option_env!("WONTON_BUILTIN_RELAYS")
+                .filter(|text| !text.trim().is_empty())
+                .map(str::to_owned)
+        });
+    match text {
         Some(text) => {
-            RelayTable::parse(text).map_err(|reason| invalid("WONTON_BUILTIN_RELAYS", &reason))
+            RelayTable::parse(&text).map_err(|reason| invalid("WONTON_BUILTIN_RELAYS", &reason))
         }
         None => Ok(RelayTable::default()),
     }
