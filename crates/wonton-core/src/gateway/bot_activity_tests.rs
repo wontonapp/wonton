@@ -369,7 +369,7 @@ async fn a_family_device_sees_the_private_bot_without_its_activity() {
     assert_eq!(
         bot.chat,
         wonton_protocol::BotChatAvailability::Unavailable {
-            reason: wonton_protocol::BotChatUnavailable::OwnerPrivate
+            reason: wonton_protocol::BotChatUnavailable::AppNotShared,
         }
     );
 }

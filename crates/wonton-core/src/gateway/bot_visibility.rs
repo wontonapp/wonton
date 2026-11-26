@@ -135,7 +135,8 @@ fn access_of(gateway: &Gateway, bot: &BotRef, facts: &BotIdentityAndContactFacts
         };
     };
     // 自己的 Bot 和已经成立的联系人不靠 `open_apps` 才成立：Matrix 那边照样收。
-    if matches!(&record.listing.keeper, BotKeeper::User { username } if username == &person.username) {
+    if matches!(&record.listing.keeper, BotKeeper::User { username } if username == &person.username)
+    {
         return BotAccess::Own;
     }
     let contact = match &facts.contact {
@@ -160,6 +161,16 @@ fn access_of(gateway: &Gateway, bot: &BotRef, facts: &BotIdentityAndContactFacts
     if matches!(contact, Some(BotAccess::Contact)) {
         return BotAccess::Contact;
     }
+    // 插件没开给这个人：就算 Bot 是自己或家里的，插件页和联系人里都拿不到它。
+    if !gateway
+        .permissions(person)
+        .open_apps
+        .allows_plugin(&bot.plugin_id)
+    {
+        return BotAccess::Unusable {
+            reason: BotChatUnavailable::AppNotShared,
+        };
+    }
     let role_shared_bots = if person.is_owner() {
         true
     } else {
@@ -170,19 +181,7 @@ fn access_of(gateway: &Gateway, bot: &BotRef, facts: &BotIdentityAndContactFacts
             .is_some_and(|role| role.permissions.shared_bots)
     };
     match &record.listing.keeper {
-        BotKeeper::Household if role_shared_bots => {
-            if gateway
-                .permissions(person)
-                .open_apps
-                .allows_plugin(&bot.plugin_id)
-            {
-                BotAccess::Shared
-            } else {
-                BotAccess::Unusable {
-                    reason: BotChatUnavailable::AppNotShared,
-                }
-            }
-        }
+        BotKeeper::Household if role_shared_bots => BotAccess::Shared,
         BotKeeper::Household => contact.unwrap_or(BotAccess::Unusable {
             reason: BotChatUnavailable::RoleLacksSharedBots,
         }),
