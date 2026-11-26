@@ -89,6 +89,9 @@ pub(super) async fn forward(
         let (entries, diffs) = room.entries().await;
         let mut entries: Vector<TimelineEntry> = entries.into_iter().collect();
         let mut previewed = HashMap::new();
+        // 先订阅再补预览：补完之后才到的推送靠 watch 的版本变化叫醒下面那一支；反过来的话，
+        // 补和订阅之间到的推送会漏掉（订阅只从当前版本往后算），这一条预览就一直补不进来。
+        let mut push_preview_changes = push_previews.subscribe();
         push_body::merge(
             &mut entries,
             push_previews,
@@ -124,7 +127,6 @@ pub(super) async fn forward(
         // 预览落定了就醒一次：把落定网址所在的条目重发。
         let mut preview_versions = previews.subscribe();
         let mut diffs = std::pin::pin!(diffs);
-        let mut push_preview_changes = push_previews.subscribe();
         // 正在输入、命令表和跳转请求（ADR-0109）。
         let mut typing_changes = live.typing.subscribe();
         let mut table_changes = live.tables.subscribe();

@@ -25,7 +25,10 @@ use tokio::{
 
 use crate::rooms::RoomSubscriptions;
 pub use crate::saved::SavedSession;
-use crate::{Error, Result, send_queue, store_holder::holder_for};
+use crate::{
+    Error, Result, send_queue,
+    store_holder::{StoreLease, holder_for},
+};
 
 /// Tuwunel 的 JWT 登录类型。
 const JWT_LOGIN_TYPE: &str = "org.matrix.login.jwt";
@@ -163,6 +166,8 @@ pub struct MatrixSession {
     invited_seen: std::sync::Mutex<std::collections::BTreeMap<OwnedRoomId, u64>>,
     /// 叫醒房间列表重算一遍：话题回执只改话题的未读，SDK 不当成房间的变化（ADR-0093 §4）。
     pub(crate) rooms_changed: Arc<Notify>,
+    /// 这个 Client 在存储锁上的租约（[`StoreLease`]）：活着期间同存储的新 Client 换名字，落了以后下一个接着用这个名字。
+    _store_lease: Option<StoreLease>,
 }
 
 impl Drop for MatrixSession {
@@ -177,7 +182,7 @@ impl MatrixSession {
     /// 账号在首次登录时由 Tuwunel 自动创建。登录时申请刷新令牌：访问令牌按服务器的
     /// `access_token_ttl` 过期，SDK 遇到过期会自动换新，并发出 [`SessionEvent::TokensRefreshed`]。
     pub async fn login_with_jwt(config: &SessionConfig, jwt: &str) -> Result<Self> {
-        let client = build_client(config, VersionBuilder::DiscoverNative).await?;
+        let (client, lease) = build_client(config, VersionBuilder::DiscoverNative).await?;
         let data = JsonObject::from_iter([("token".to_owned(), jwt.into())]);
         let response = client
             .matrix_auth()
@@ -188,7 +193,7 @@ impl MatrixSession {
             .await
             // Tuwunel 拒绝 JWT（过期、签发方不对、伪造）回 403 `M_FORBIDDEN`：登录被拒说的是身份。
             .map_err(|error| Error::from(error).into_unauthorized())?;
-        Self::with_client(client, response.user_id, response.device_id, config).await
+        Self::with_client(client, lease, response.user_id, response.device_id, config).await
     }
 
     /// 用核心交给 Bot 的访问令牌恢复设备；令牌只用于本次进程，不写进 Matrix 状态库。
@@ -201,7 +206,7 @@ impl MatrixSession {
         }
         let (user_id, device_id) = access_token_identity(config, token).await?;
         let marker = reconcile_store(config, &device_id).await?;
-        let client = build_client(config, VersionBuilder::DiscoverNative).await?;
+        let (client, lease) = build_client(config, VersionBuilder::DiscoverNative).await?;
         client
             .matrix_auth()
             .restore_session(
@@ -219,7 +224,7 @@ impl MatrixSession {
             )
             .await
             .map_err(|error| Error::Upstream(format!("恢复 Matrix 会话失败：{error}")))?;
-        let session = Self::with_client(client, user_id, device_id.clone(), config).await?;
+        let session = Self::with_client(client, lease, user_id, device_id.clone(), config).await?;
         if let Some(marker) = marker {
             tokio::fs::write(&marker, device_id.as_str())
                 .await
@@ -234,15 +239,16 @@ impl MatrixSession {
     /// 恢复本身照样成功，第一次请求时才报错，并发出 [`SessionEvent::TokenRejected`]。
     pub async fn restore(config: &SessionConfig, saved: SavedSession) -> Result<Self> {
         // 不查服务器版本：冷启动没网也要能打开本地的房间和消息。登录时已经查过这台服务器。
-        let client = build_client(config, VersionBuilder::Native).await?;
+        let (client, lease) = build_client(config, VersionBuilder::Native).await?;
         let user_id = saved.user_id().to_owned();
         let device_id = saved.device_id().to_owned();
         saved.restore_into(&client).await?;
-        Self::with_client(client, user_id, device_id, config).await
+        Self::with_client(client, lease, user_id, device_id, config).await
     }
 
     async fn with_client(
         client: Client,
+        lease: Option<StoreLease>,
         user_id: OwnedUserId,
         device_id: OwnedDeviceId,
         config: &SessionConfig,
@@ -278,6 +284,7 @@ impl MatrixSession {
             subscriptions: tokio::sync::Mutex::default(),
             verifications: Arc::default(),
             invited_seen: std::sync::Mutex::default(),
+            _store_lease: lease,
         })
     }
 
@@ -444,14 +451,19 @@ async fn reconcile_store(config: &SessionConfig, device_id: &DeviceId) -> Result
     Ok(Some(marker))
 }
 
-async fn build_client(config: &SessionConfig, versions: VersionBuilder) -> Result<Client> {
+async fn build_client(
+    config: &SessionConfig,
+    versions: VersionBuilder,
+) -> Result<(Client, Option<StoreLease>)> {
     crate::platform_tls::check_url(&config.homeserver_url).map_err(Error::Transport)?;
-    client_builder(&config.store, config.proxy.as_deref(), true)
+    let (builder, lease) = client_builder(&config.store, config.proxy.as_deref(), true);
+    let client = builder
         .homeserver_url(&config.homeserver_url)
         .sliding_sync_version_builder(versions)
         .build()
         .await
-        .map_err(client_build_error)
+        .map_err(client_build_error)?;
+    Ok((client, lease))
 }
 
 /// 除了服务器地址以外的客户端设置，登录（[`crate::login`]）和会话共用。`cross_signing` 为假时登录后不自动建交叉签名：
@@ -461,7 +473,7 @@ pub(crate) fn client_builder(
     store: &StoreConfig,
     proxy: Option<&str>,
     cross_signing: bool,
-) -> ClientBuilder {
+) -> (ClientBuilder, Option<StoreLease>) {
     let mut builder = Client::builder()
         .handle_refresh_tokens()
         // 事件缓存按话题分开记、主对话的未读不算话题回复，话题的未读按话题回执另算（ADR-0093 §4）。
@@ -480,14 +492,21 @@ pub(crate) fn client_builder(
     if let Some(proxy) = proxy {
         builder = builder.proxy(proxy);
     }
-    match store {
-        StoreConfig::InMemory => builder,
-        StoreConfig::Sqlite { path, passphrase } => builder
-            .cross_process_store_config(CrossProcessLockConfig::multi_process(holder_for(Some(
-                path,
-            ))))
-            .sqlite_store(path, passphrase.as_deref()),
+    // 持有者名和它的租约只在 SQLite 存储上要：只放内存的存储不和别人共用，名字无所谓。
+    let (holder, lease) = match store {
+        StoreConfig::InMemory => (None, None),
+        StoreConfig::Sqlite { path, .. } => {
+            let (holder, lease) = holder_for(Some(path.as_path()));
+            (Some(holder), lease)
+        }
+    };
+    if let Some(holder) = holder {
+        builder = builder.cross_process_store_config(CrossProcessLockConfig::multi_process(holder));
     }
+    if let StoreConfig::Sqlite { path, passphrase } = store {
+        builder = builder.sqlite_store(path, passphrase.as_deref());
+    }
+    (builder, lease)
 }
 
 fn client_build_error(error: ClientBuildError) -> Error {

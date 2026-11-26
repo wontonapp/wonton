@@ -228,21 +228,21 @@ impl ChatLink {
     }
 }
 
-/// 等登录出结果：登录好了返回真；停在要用户处理的失败上、或者一直没动静过了期限，返回假。
-/// （传完文件发链接时用：App 重启后 Matrix 可能还没登录好，等它，别让主人点重发。）
-pub(super) async fn signed_in_within(
+/// 等登录「开始」，最多 `wait`：刚打开 App、壳还没开始连时账号是 `SignedOut`；登录失败、下一次重连还没排上时是
+/// `Failed`。两种都等它一会儿，别一次没登录就判死。已经登录、正在登录/重连就立刻返回真。
+pub(super) async fn sign_in_started_within(
     mut view: tokio::sync::watch::Receiver<super::ChatViewModel>,
     wait: std::time::Duration,
 ) -> bool {
     let deadline = std::time::Instant::now() + wait;
     loop {
         match view.borrow().account {
-            ChatAccount::SignedIn { .. } => return true,
-            // 没在登录、也不会自己登录的，等也没用。
-            ChatAccount::SignedOut | ChatAccount::Failed { .. } => return false,
-            _ => {}
+            ChatAccount::SignedIn { .. }
+            | ChatAccount::SigningIn
+            | ChatAccount::Reconnecting { .. } => return true,
+            // `SignedOut`/`Failed` 等下一次变化：壳可能马上开始连，失败后也可能马上重连。
+            ChatAccount::SignedOut | ChatAccount::Failed { .. } => {}
         }
-        // 等变化也卡在期限内：一直没动静（登录卡住了）就到期走人。
         let Some(remaining) = deadline.checked_duration_since(std::time::Instant::now()) else {
             return false;
         };
@@ -251,6 +251,39 @@ pub(super) async fn signed_in_within(
             .is_err()
         {
             return false;
+        }
+    }
+}
+
+/// 等账号登录好，最多 `wait`。登录失败的间隙会自己重连：看到 `Failed` 后最多再等 `failed_grace`，等不到就返回，
+/// 别为一次停下的登录把整个期限等满。
+pub(super) async fn wait_signed_in(
+    mut view: tokio::sync::watch::Receiver<super::ChatViewModel>,
+    wait: std::time::Duration,
+    failed_grace: std::time::Duration,
+) {
+    let deadline = std::time::Instant::now() + wait;
+    let mut failed_until: Option<std::time::Instant> = None;
+    loop {
+        match view.borrow().account {
+            ChatAccount::SignedIn { .. } => return,
+            ChatAccount::Failed { .. } => {
+                let until = *failed_until.get_or_insert(std::time::Instant::now() + failed_grace);
+                if std::time::Instant::now() >= until {
+                    return;
+                }
+            }
+            _ => failed_until = None,
+        }
+        let next = failed_until.map_or(deadline, |failed| deadline.min(failed));
+        let Some(remaining) = next.checked_duration_since(std::time::Instant::now()) else {
+            return;
+        };
+        if tokio::time::timeout(remaining, view.changed())
+            .await
+            .is_err()
+        {
+            return;
         }
     }
 }

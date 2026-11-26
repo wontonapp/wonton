@@ -16,6 +16,16 @@ impl ChatLink {
         self.view.subscribe()
     }
 
+    /// 账号没停在「没登录」：登录着、正在登录或重连，都会自己往前走，发链接值得再试；`SignedOut`/`Failed` 没人会动。
+    pub(crate) fn sign_in_in_progress(&self) -> bool {
+        matches!(
+            self.view.borrow().account,
+            ChatAccount::SignedIn { .. }
+                | ChatAccount::SigningIn
+                | ChatAccount::Reconnecting { .. }
+        )
+    }
+
     pub(crate) fn sharing_sessions(&self) -> watch::Receiver<Option<Arc<MatrixSession>>> {
         self.bots.session.subscribe()
     }
