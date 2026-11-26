@@ -14,16 +14,12 @@ impl EntryContainers {
         public_access: bool,
         public_labels: Vec<String>,
         lan_labels: Vec<String>,
+        // 有家名服务时 frpc 同一个 proxy 同时登记家名和 `*.<家>`：插件子域在中继上按通配名字
+        // 落到入口，入口再按 crt-list 的标签挑；没有家名服务时连接器本来就是 HAProxy。
     ) -> Result<(), EntryError> {
         let mut applied_model = self.operation.lock().await;
         if self.core_container.is_none() {
             return Err(EntryError::CoreNotInContainer);
-        }
-        if public_access && !public_labels.is_empty() && settings.registration.is_some() {
-            return Err(config_error(
-                "应用公网入口",
-                anyhow::anyhow!("家名 frpc 目前只转发联邦域名，不能转发插件子域名"),
-            ));
         }
         let core = self.core_container.as_deref().expect("已检查核心容器");
         let (_, networks) = self.networks(core).await?;

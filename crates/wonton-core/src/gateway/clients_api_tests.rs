@@ -158,6 +158,38 @@ impl Rig {
         .await
     }
 
+    async fn public_access(&self, enabled: bool) -> crate::gateway::tests::Reply {
+        let bearer = format!("Bearer {TOKEN}");
+        send_as(
+            &self.app,
+            None,
+            Method::PUT,
+            CORE,
+            &wonton_protocol::clients_public_access_path(),
+            &[
+                ("authorization", &bearer),
+                ("x-wonton-clients", "1"),
+                ("content-type", "application/json"),
+            ],
+            &json!({"enabled": enabled}).to_string(),
+        )
+        .await
+    }
+
+    async fn public_access_read(&self) -> crate::gateway::tests::Reply {
+        let bearer = format!("Bearer {TOKEN}");
+        send_as(
+            &self.app,
+            None,
+            Method::GET,
+            CORE,
+            &wonton_protocol::clients_public_access_path(),
+            &[("authorization", &bearer), ("x-wonton-clients", "1")],
+            "",
+        )
+        .await
+    }
+
     fn crt_list(&self, kind: &str) -> String {
         std::fs::read_to_string(self.install.join(format!("entry/certs/{kind}.crt-list"))).unwrap()
     }
@@ -452,6 +484,31 @@ async fn reload_failure_rolls_back_switch() {
     );
     assert_eq!(rig.crt_list("public"), before);
     assert!(*guard.borrow(), "回滚不能复活已经关闭的连接");
+}
+
+#[tokio::test]
+async fn public_access_switch_controls_public_names() {
+    // 入口种类配好了但总开关关着：公网开关能打开，名字却不进 crt-list，请求回 403。
+    let rig = Rig::start(false, true, false).await;
+    let opened = rig.switch("public", true).await;
+    assert_eq!(opened.status, StatusCode::OK, "{}", opened.text());
+    assert!(!rig.crt_list("public").contains("client.home.example.test"));
+
+    let reply = rig.public_access(true).await;
+    assert_eq!(reply.status, StatusCode::OK, "{}", reply.text());
+    assert!(rig.crt_list("public").contains("client.home.example.test"));
+    assert_eq!(
+        rig.public_access_read().await.json()["enabled"],
+        serde_json::json!(true)
+    );
+
+    let reply = rig.public_access(false).await;
+    assert_eq!(reply.status, StatusCode::OK, "{}", reply.text());
+    assert!(!rig.crt_list("public").contains("client.home.example.test"));
+    assert_eq!(
+        rig.public_access_read().await.json()["enabled"],
+        serde_json::json!(false)
+    );
 }
 
 #[tokio::test]

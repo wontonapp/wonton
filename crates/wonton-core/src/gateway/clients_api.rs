@@ -13,7 +13,7 @@ use hyper::StatusCode;
 use hyper::header::{AUTHORIZATION, CACHE_CONTROL, HeaderValue};
 use wonton_protocol::{CLIENTS_ERROR_HEADER, ClientsErrorBody, ClientsFailure, ClientsProblem};
 
-use super::{Gateway, TunnelPeer, api, clients_domain, clients_switches};
+use super::{Gateway, TunnelPeer, api, clients_domain, clients_public_access, clients_switches};
 use crate::l10n;
 use crate::plugin::languages::Languages;
 
@@ -29,6 +29,7 @@ pub fn routes(gateway: Arc<Gateway>) -> Router<Arc<Gateway>> {
             get(clients_domain::providers),
         )
         .merge(super::clients_passwords::routes())
+        .merge(clients_public_access::routes())
         .layer(axum::extract::DefaultBodyLimit::max(16 << 10))
         .layer(middleware::from_fn_with_state(
             gateway,

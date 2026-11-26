@@ -88,8 +88,56 @@ async fn credentials_entry_stays_closed_until_first_issue() {
 
     home.manager.issue_new(&id, "手机", None).await.unwrap();
     assert!(verifier.lock().unwrap().issued);
+    // 没发过密码时不能开；发过以后没带 Authorization 的请求（应用自己的登录）原样转给应用。
     let opened = home.get(&public, "/", &entry_public()).await;
-    assert_eq!(opened.status, StatusCode::UNAUTHORIZED);
+    assert_eq!(opened.status, StatusCode::OK, "{}", opened.text());
+    assert_eq!(home.upstream_hits()[0].value("authorization"), None);
+}
+
+#[tokio::test]
+async fn credentials_pass_through_missing_and_bearer() {
+    let home = Home::start().await;
+    home.register(CREDENTIALS_APP, "credapp", false, true);
+    let id = crate::plugin::manifest::PluginId::parse("io.wonton.test.credentials").unwrap();
+    let verifier = verifier();
+    home.manager.set_credential_exec(verifier.clone());
+    let issued = home.manager.issue_new(&id, "手机", None).await.unwrap();
+    let crate::clients::pending::Issue::Done(issued) = issued else {
+        panic!("插件在跑，应该发出去");
+    };
+    *verifier.lock().unwrap().value.lock().unwrap() = issued.value.clone();
+
+    let public = home.host("credapp");
+    let anonymous = home
+        .get(&public, "/.well-known/immich", &entry_public())
+        .await;
+    assert_eq!(anonymous.status, StatusCode::OK, "{}", anonymous.text());
+    assert_eq!(home.upstream_hits()[0].value("authorization"), None);
+
+    let bearer = "Bearer eyJhbGciOi.immich.session";
+    let token = home
+        .get(
+            &public,
+            "/api/assets",
+            &[("x-wonton-entry", "public"), ("authorization", bearer)],
+        )
+        .await;
+    assert_eq!(token.status, StatusCode::OK, "{}", token.text());
+    assert_eq!(home.upstream_hits()[1].value("authorization"), Some(bearer));
+
+    let wrong = base64::engine::general_purpose::STANDARD.encode("me@example.com:wrong");
+    let denied = home
+        .get(
+            &public,
+            "/",
+            &[
+                ("x-wonton-entry", "public"),
+                ("authorization", &format!("Basic {wrong}")),
+            ],
+        )
+        .await;
+    assert_eq!(denied.status, StatusCode::UNAUTHORIZED);
+    assert_eq!(home.upstream_hits().len(), 2);
 }
 
 #[tokio::test]

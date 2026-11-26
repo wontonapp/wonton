@@ -44,6 +44,7 @@ mod clients_api;
 mod clients_domain;
 mod clients_entry;
 mod clients_passwords;
+mod clients_public_access;
 mod clients_switches;
 mod confirmations;
 mod core_routes;
@@ -375,6 +376,11 @@ impl Gateway {
 
     pub(crate) fn public_access_enabled(&self) -> bool {
         self.public_access.load(Ordering::Relaxed)
+    }
+
+    /// 总开关运行时改（ADR-0090）：持久化由调用方负责，这里只改网关里的闸门。
+    pub(crate) fn set_public_access(&self, enabled: bool) {
+        self.public_access.store(enabled, Ordering::Relaxed);
     }
 
     #[must_use]

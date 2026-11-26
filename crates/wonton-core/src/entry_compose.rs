@@ -182,7 +182,7 @@ fn write_connector(dir: &Path, config: &Config) -> anyhow::Result<()> {
         "serverAddr":home.relay.host,"serverPort":home.relay.port,"user":home.home,
         "metadatas":{"token":home.frp_token},"loginFailExit":true,
         "transport":{"tls":{"enable":true,"disableCustomTLSFirstByte":false,"serverName":home.relay.server_name,"trustedCaFile":"/config/relay-ca.pem"},"heartbeatInterval":30,"heartbeatTimeout":90},
-        "proxies":[{"name":"matrix","type":"https","localIP":"entry-edge.wonton.internal","localPort":8443,"customDomains":[home.domain],"transport":{"proxyProtocolVersion":"v2"}}]
+        "proxies":[{"name":"matrix","type":"https","localIP":"entry-edge.wonton.internal","localPort":8443,"customDomains":[home.domain,format!("*.{}",home.domain)],"transport":{"proxyProtocolVersion":"v2"}}]
     });
     crate::install::write_private(
         &directory.join("frpc.json"),
@@ -335,6 +335,55 @@ mod tests {
             dns_env_file: None,
             external_certificate: false,
         }
+    }
+
+    fn registration() -> crate::home_service::Registration {
+        let dns = || crate::home_service::AcmeDnsCredentials {
+            username: "u".to_owned(),
+            password: "p".to_owned(),
+            subdomain: "s".to_owned(),
+            fulldomain: "f".to_owned(),
+        };
+        crate::home_service::Registration {
+            home: "k3f9qzab".to_owned(),
+            domain: "k3f9qzab.homes.test".to_owned(),
+            frp_token: "token".to_owned(),
+            acme_dns: dns(),
+            lan_acme_dns: dns(),
+            acme_dns_url: "https://acme.test".to_owned(),
+            relay: crate::home_service::Relay {
+                host: "relay.test".to_owned(),
+                port: 443,
+                server_name: "relay.test".to_owned(),
+            },
+            suspended: false,
+        }
+    }
+
+    /// 一个 proxy 同时登记家名和插件子域通配：家名还走联邦，插件子域由入口按 crt-list 挑。
+    #[test]
+    fn frpc_registers_the_home_and_one_plugin_wildcard() {
+        let dir = tempfile::tempdir().unwrap();
+        let ca = dir.path().join("relay-ca.pem");
+        std::fs::write(&ca, "ca").unwrap();
+        let registration = registration();
+        sync(
+            dir.path(),
+            &Config {
+                domain: &registration.domain,
+                connector: "connector.wonton.internal",
+                registration: Some(&registration),
+                relay_ca: Some(&ca),
+            },
+        )
+        .unwrap();
+        let frpc: Value =
+            serde_json::from_slice(&std::fs::read(dir.path().join("entry/frpc.json")).unwrap())
+                .unwrap();
+        assert_eq!(
+            frpc["proxies"][0]["customDomains"],
+            json!(["k3f9qzab.homes.test", "*.k3f9qzab.homes.test"])
+        );
     }
 
     fn tuwenel(rendered: &str) -> Value {

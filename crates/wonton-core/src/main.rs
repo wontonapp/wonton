@@ -339,6 +339,14 @@ async fn serve() -> anyhow::Result<()> {
     // 调用链（ADR-0061 第 10 节）：账本、出箱和设置接上总线和网关。上限卡片从这里发。
     let agent_chains = serve::open_agent_chains(&cfg, &bus)?;
     bus.attach_agent_chains(agent_chains.clone());
+    // 公网访问总开关（ADR-0090）：默认关，只有主人能开；入口种类配好没有决定总开关能不能开。
+    let public_access = wonton_core::clients::public_access::load(&cfg.data_dir);
+    let public_ingress_configured = entry.as_ref().is_some_and(|entry| {
+        wonton_core::entry_settings::EntrySettings::load(entry.install_dir())
+            .ok()
+            .flatten()
+            .is_some()
+    });
     let upgrades_after_serve = upgrades.clone();
     let gateway = open_gateway(
         &cfg,
@@ -365,6 +373,8 @@ async fn serve() -> anyhow::Result<()> {
         contacts,
         clients.clone(),
         entry.clone(),
+        public_access,
+        public_ingress_configured,
         agent_chains,
     );
     manager.attach_clients_gateway(&gateway);
@@ -418,6 +428,8 @@ fn open_gateway(
     contacts: Option<Arc<wonton_core::contacts::Contacts>>,
     clients: Option<Arc<wonton_core::clients::domain::Domain>>,
     entry: Option<wonton_core::entry_containers::EntryContainers>,
+    public_access: bool,
+    public_ingress_configured: bool,
     agent_chains: Arc<AgentChains>,
 ) -> Arc<Gateway> {
     Arc::new(
@@ -452,7 +464,9 @@ fn open_gateway(
         .with_federation_blocks(federation_blocks)
         .with_sharing(Some(sharing))
         .with_clients(clients)
-        .with_entry(entry),
+        .with_entry(entry)
+        .with_public_access(public_access)
+        .with_public_ingress_configured(public_ingress_configured),
     )
 }
 
