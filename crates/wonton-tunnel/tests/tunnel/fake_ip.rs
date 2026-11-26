@@ -6,6 +6,11 @@
 //!
 //! 环境要 198.18.0.1 和 10.255.0.1 在本机、客户端（127.0.0.3）到服务端（10.255.0.1）的包被丢掉，普通 CI 给不出来：
 //! 用 `scripts/fake-ip-netns.sh` 在无特权网络命名空间里跑，没设 `WONTON_FAKE_IP_NETNS` 时直接跳过。
+//!
+//! **现在 CI 和 1k 都跑不了**：CI 不设 `WONTON_FAKE_IP_NETNS`，两个用例直接 return（nextest 仍报 2 passed、0.00s，
+//! 是“跳过”不是“验过”）；1k 上 `unshare -U` 能过、`unshare -U -r` 被 apparmor_restrict_unprivileged_userns 拦
+//! （`write failed /proc/self/uid_map: Operation not permitted`）。要真跑：在允许 unshare 的机器上
+//! `WONTON_FAKE_IP_NETNS=1 bash scripts/fake-ip-netns.sh`，或按脚本说明给它 root。
 
 use std::net::{Ipv4Addr, SocketAddr};
 use std::sync::Arc;
@@ -180,6 +185,11 @@ async fn a_detour_through_a_fake_address_does_not_keep_the_connection() {
     let rig = rig(true).await;
     let seen = rig.paths_seen().await;
     let published = TransportAddr::Ip(rig.published.unwrap());
+    assert_eq!(
+        seen.first(),
+        Some(&published),
+        "第一个到达的路径就该是真直连（假地址被滤掉、没机会先回包）：{seen:?}"
+    );
     assert_eq!(
         seen.last(),
         Some(&published),
