@@ -548,7 +548,10 @@ extension View {
     /// 状态栏那一块也是；更早的系统没有这个效果，栏和状态栏垫一层系统材质，不然字压在内容上读不清。
     @ViewBuilder func wontonTopBar<Bar: View>(@ViewBuilder _ bar: () -> Bar) -> some View {
         if #available(iOS 26, *) {
-            safeAreaBar(edge: .top, spacing: 0, content: bar)
+            // 栏和滚动视图是同一个容器里的兄弟，滚起来时系统会把滚动视图的层挪到后面进场的栏上面，
+            // 栏里的按钮还在、却点不到（辅助功能树里滚动视图排在栏后面，iOS 26.5 模拟器实测）。
+            // 显式压在上面，层怎么重排都点得到。
+            safeAreaBar(edge: .top, spacing: 0) { bar().zIndex(1) }
         } else {
             safeAreaInset(edge: .top, spacing: 0) {
                 bar().background(.ultraThinMaterial, ignoresSafeAreaEdges: .top)

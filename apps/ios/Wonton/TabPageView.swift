@@ -144,6 +144,9 @@ struct TabPageView: View {
                         PageExitHintMemory.current.remember()
                         showsExitHint = false
                     }
+                    // 网页是 UIKit 的视图，重新打开这一页时它会被重新插到兄弟层的最后，盖住引导的按钮
+                    // （辅助功能树里 WebView 排在引导后面，iOS 26.5 模拟器实测）。显式压上去。
+                    .zIndex(1)
                 }
             }
             .background { Color(colors.canvas).ignoresSafeArea(.container) }
