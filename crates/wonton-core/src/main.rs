@@ -110,6 +110,13 @@ async fn open_peers_and_federation(
         },
     )
     .context("读取服务器配对记录")?;
+    // 本机对外出示的证书（ADR-0112）：装了证书材料就必须读得出来，读不出来按启动失败。
+    match std::env::var_os("WONTON_PEER_TLS_DIR").filter(|dir| !dir.is_empty()) {
+        Some(dir) => {
+            peers.set_own_certificate(peers::load_own_certificate(std::path::Path::new(&dir))?)
+        }
+        None => tracing::info!("没有 WONTON_PEER_TLS_DIR，配对不互换证书"),
+    }
     // 联邦转发：入站协议挂在隧道的 endpoint 上，出站是给 Tuwunel 用的 CONNECT 代理。上游地址按连接现
     // 解析（入口容器运行时会被对账重建，启动时钉死 SocketAddr 会在重建后断流）。
     let protocol = FederationProtocol::new(

@@ -218,7 +218,6 @@ impl Peers {
                     phase: Phase::Paired,
                     last_connected_ms: None,
                     peer_pin: Vec::new(),
-                    peer_entry: super::PeerEntry::None,
                     pin_state: PinState::starting_now(),
                 },
             );

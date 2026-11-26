@@ -72,7 +72,6 @@ impl Peers {
                 phase: Phase::AwaitingPeer,
                 last_connected_ms: None,
                 peer_pin: Vec::new(),
-                peer_entry: super::PeerEntry::None,
                 pin_state: super::PinState::starting_now(),
             };
             inner.peers.insert(record.server_name.clone(), record);

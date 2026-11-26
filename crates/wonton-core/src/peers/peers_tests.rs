@@ -30,7 +30,7 @@ use wonton_tunnel::federation::{
 use wonton_tunnel::peer_pair::{PEER_PAIR_ALPN, PeerCertificate, PeerIdentity, deliver_decision};
 use wonton_tunnel::relays::RelayTable;
 
-use super::{OwnIdentity, OwnerNotices, PeerEntry, PeerRequest, Peers, PinState};
+use super::{OwnIdentity, OwnerNotices, PeerRequest, Peers, PinState};
 use crate::device::Devices;
 use crate::members::Members;
 
@@ -686,7 +686,6 @@ async fn pending_rows_do_not_expire() {
         phase: super::Phase::AwaitingPeer,
         last_connected_ms: None,
         peer_pin: Vec::new(),
-        peer_entry: PeerEntry::None,
         pin_state: PinState::default(),
     };
     std::fs::write(
@@ -748,7 +747,6 @@ async fn pins_start_pending_and_follow_certificates() {
         let record = inner.peers.values().next().unwrap();
         assert_eq!(record.pin_state, pending);
         assert!(record.peer_pin.is_empty());
-        assert_eq!(record.peer_entry, PeerEntry::None);
     }
 
     let first = certificate("a.example.internal");
@@ -811,7 +809,6 @@ async fn old_records_read_as_pending_on_the_current_version() {
         }
     );
     assert!(record.peer_pin.is_empty());
-    assert_eq!(record.peer_entry, PeerEntry::None);
     drop(inner);
 
     let stored: serde_json::Value =
@@ -822,7 +819,7 @@ async fn old_records_read_as_pending_on_the_current_version() {
     );
 }
 
-/// 老版本写的记录形状（没有 peer_pin、peer_entry、pin_state）。
+/// 老版本写的记录形状（没有 peer_pin、pin_state）。
 fn legacy_record(endpoint_id: &str) -> serde_json::Value {
     serde_json::json!({
         "server_name": "old.example.internal",
@@ -866,5 +863,110 @@ async fn pairing_exchanges_certificates() {
     assert_eq!(
         b.peers.lock().peers["a.example.internal"].pin_state,
         PinState::Pinned
+    );
+}
+
+/// 本机证书接上得晚（配对先成立、安装产物后到）：已经有、还没 pin 的配对现在补发一次。
+#[tokio::test]
+async fn attaching_the_certificate_late_sends_it_to_an_unpinned_pairing() {
+    let a = TestCore::start("Alex", "a.example.internal").await;
+    let b = TestCore::start("Alice", "b.example.internal").await;
+    pair(&a, &b).await;
+    assert!(pins(&a.peers, "b.example.internal").is_empty());
+
+    let b_certificate = certificate("b.example.internal");
+    b.set_certificate(b_certificate.clone());
+    assert!(b.peers.own_certificate().is_some());
+
+    a.wait_for(
+        |core| !pins(&core.peers, "b.example.internal").is_empty(),
+        "补发的证书",
+    )
+    .await;
+    assert_eq!(pins(&a.peers, "b.example.internal"), vec![b_certificate]);
+}
+
+/// 探活/连上成功时再送一次：配对后那几次没送到（对方离线）也补得上，不靠运气。
+#[tokio::test]
+async fn a_connected_probe_resends_a_certificate_that_never_arrived() {
+    let a = TestCore::start("Alex", "a.example.internal").await;
+    let b = TestCore::start("Alice", "b.example.internal").await;
+    let b_certificate = certificate("b.example.internal");
+    b.set_certificate(b_certificate.clone());
+    pair(&a, &b).await;
+    a.wait_for(
+        |core| !pins(&core.peers, "b.example.internal").is_empty(),
+        "第一次送达",
+    )
+    .await;
+    // 模拟对方从没收到：清掉 a 手里的 pin，转回待钉。
+    {
+        let mut inner = a.peers.lock();
+        let record = inner.peers.get_mut("b.example.internal").unwrap();
+        record.peer_pin.clear();
+        record.pin_state = PinState::Pending {
+            since_version: "0.8.0".to_owned(),
+        };
+    }
+
+    let (states, rx) = watch::channel(BTreeMap::new());
+    b.peers.attach_forwarder(rx);
+    states.send_replace(BTreeMap::from([(
+        "a.example.internal".to_owned(),
+        TunnelPeerStatus::Connected,
+    )]));
+    a.wait_for(
+        |core| !pins(&core.peers, "b.example.internal").is_empty(),
+        "连上后补发",
+    )
+    .await;
+    assert_eq!(pins(&a.peers, "b.example.internal"), vec![b_certificate]);
+}
+
+/// 首次握手里看到的证书按升级专用 TOFU 钉住：只对还没有 pin 的已配对记录，钉过就不覆盖。
+#[tokio::test]
+async fn the_first_handshake_certificate_pins_only_an_unpinned_pairing() {
+    let a = TestCore::start("Alex", "a.example.internal").await;
+    let b = TestCore::start("Alice", "b.example.internal").await;
+    pair(&a, &b).await;
+
+    let first = certificate("a.example.internal");
+    assert!(b.peers.tofu_pin("a.example.internal", &first));
+    assert_eq!(pins(&b.peers, "a.example.internal"), vec![first]);
+    assert_eq!(
+        b.peers.lock().peers["a.example.internal"].pin_state,
+        PinState::Pinned
+    );
+
+    let second = certificate("a.example.internal");
+    assert!(!b.peers.tofu_pin("a.example.internal", &second));
+    assert_eq!(pins(&b.peers, "a.example.internal").len(), 1);
+}
+
+/// 窗口已到期、还没 pin 的已配对记录如实报出来；没到期、已钉住的都不报。
+#[tokio::test]
+async fn expired_windows_are_reported_and_pinned_ones_are_not() {
+    let a = TestCore::start("Alex", "a.example.internal").await;
+    let b = TestCore::start("Alice", "b.example.internal").await;
+    pair(&a, &b).await;
+    {
+        let mut inner = a.peers.lock();
+        let record = inner.peers.get_mut("b.example.internal").unwrap();
+        record.pin_state = PinState::Pending {
+            since_version: "0.8.0".to_owned(),
+        };
+    }
+    assert!(a.peers.expired_pending_on("0.9.0").is_empty(), "还没到期");
+    assert_eq!(a.peers.expired_pending_on("0.10.0"), ["b.example.internal"]);
+
+    a.peers
+        .lock()
+        .peers
+        .get_mut("b.example.internal")
+        .unwrap()
+        .pin_state = PinState::Pinned;
+    assert!(
+        a.peers.expired_pending_on("0.10.0").is_empty(),
+        "钉住就不报"
     );
 }

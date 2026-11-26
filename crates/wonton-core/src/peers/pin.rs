@@ -3,10 +3,13 @@
 //! - 配对成立后经已认证的配对通道互换证书，收到就钉；`ack` 到了只留新的。
 //! - 旧 pin 满 7 天宽限期丢掉，最新的那张永远留着；删配对删记录，pin 一起没。
 //! - 只认已配对的、或在等这个 endpoint 的配对发来的证书（证书可能赶在配对结果前面到）。
-//! - 本机证书由安装产物经 [`Peers::set_own_certificate`] 接上，还没接上时安静地不发。
+//! - 本机证书由安装产物经 [`load_own_certificate`] 读进 [`Peers::set_own_certificate`]，还没接上时安静地不发。
 
+use std::path::Path;
 use std::sync::Arc;
 use std::time::Duration;
+
+use anyhow::Context as _;
 
 use iroh::EndpointId;
 use serde::{Deserialize, Serialize};
@@ -26,15 +29,27 @@ const CERTIFICATE_RETRY_PAUSE: Duration = Duration::from_secs(3);
 /// 本机的自签叶证书从哪里取：安装产物接上之后给值，还没生成时为空。
 pub type OwnCertificate = Arc<dyn Fn() -> Option<PeerCertificate> + Send + Sync>;
 
-/// 对方有没有配公网入口（ADR-0112 §7）。经配对消息双向同步，旧记录缺省为没有。
-#[derive(Debug, Clone, Copy, Default, PartialEq, Eq, Serialize, Deserialize)]
-#[serde(rename_all = "snake_case")]
-pub enum PeerEntry {
-    /// 没配入口：联邦经双方核心终结的 iroh 隧道，按钉住的证书校。
-    #[default]
-    None,
-    /// 配了公网入口：入站投到入口的公共证书，出站仍按 pin。
-    Public,
+/// 安装产物里的本机对外证书叫什么（`peer.pem`，PEM 编码）。
+const PEER_CERTIFICATE_FILE: &str = "peer.pem";
+
+/// 读安装产物里的本机对外证书（[`PEER_CERTIFICATE_FILE`]）：读不出来、不是证书都按错，由启动流程当启动
+/// 失败。`dir` 是 `WONTON_PEER_TLS_DIR`。
+pub fn load_own_certificate(dir: &Path) -> anyhow::Result<OwnCertificate> {
+    let path = dir.join(PEER_CERTIFICATE_FILE);
+    let pem = std::fs::read(&path).with_context(|| format!("读取 {}", path.display()))?;
+    let der = rustls_pemfile::certs(&mut pem.as_slice())
+        .next()
+        .with_context(|| format!("{} 里没有证书", path.display()))?
+        .with_context(|| format!("解析 {}", path.display()))?;
+    let certificate = PeerCertificate::from_der(der.as_ref().to_vec())
+        .map_err(anyhow::Error::msg)
+        .with_context(|| format!("解析 {}", path.display()))?;
+    anyhow::ensure!(
+        certificate.validate(),
+        "{} 的指纹和它自己的公钥对不上",
+        path.display()
+    );
+    Ok(Arc::new(move || Some(certificate.clone())))
 }
 
 /// 对方证书的钉扎状态（ADR-0112 §5b）。
@@ -65,6 +80,38 @@ impl PinState {
             since_version: crate::build_info::version().to_owned(),
         }
     }
+
+    /// 这条记录的待钉窗口到期没有（[`window_expired`]）。已钉住的记录没有窗口。
+    pub fn window_expired(&self, current_version: &str) -> bool {
+        match self {
+            Self::Pinned => false,
+            Self::Pending { since_version } => window_expired(since_version, current_version),
+        }
+    }
+}
+
+/// 待钉窗口是否已到期（ADR-0112 §5b：窗口 = 两个核心版本）。`since_version` 是窗口起点，`current_version`
+/// 是现在的核心版本：次版本涨到起点 +2（或主版本更大）就到期；主版本相同、次版本没涨够时没到期，降级
+/// （当前比起点旧）也没到期。
+///
+/// 开发构建（`dev`、`dev+<sha>`）没有可比的版本：任意一端不是 `主.次[.补]` 一律按**没到期**算——窗口
+/// 保持打开，放宽着也不断线；日志里如实报不知道先后。
+pub fn window_expired(since_version: &str, current_version: &str) -> bool {
+    let (Some((since_major, since_minor)), Some((current_major, current_minor))) =
+        (major_minor(since_version), major_minor(current_version))
+    else {
+        return false;
+    };
+    current_major > since_major
+        || (current_major == since_major && current_minor >= since_minor + 2)
+}
+
+/// `主.次` 两个数字；补丁号可省。开发构建和非数字版本回 `None`。
+fn major_minor(version: &str) -> Option<(u64, u64)> {
+    let mut parts = version.split('.');
+    let major = parts.next()?.parse().ok()?;
+    let minor = parts.next()?.parse().ok()?;
+    Some((major, minor))
 }
 
 /// 钉住的一张对方证书。轮换期里旧的和新的一起放，新的在后。
@@ -196,5 +243,108 @@ impl Peers {
             let peers = self.clone();
             tokio::spawn(async move { peers.send_certificate(&server_name, true).await });
         }
+    }
+
+    /// 握手时看到的对方叶按“升级专用 TOFU”钉住（ADR-0112 §5b）：只对还没有任何 pin 的已配对记录，钉住后
+    /// 转严格。返回钉没钉。
+    pub fn tofu_pin(self: &Arc<Self>, server_name: &str, certificate: &PeerCertificate) -> bool {
+        if !certificate.validate() {
+            tracing::warn!(server = %server_name, "握手里的证书和指纹对不上，不钉");
+            return false;
+        }
+        let mut inner = self.lock();
+        let Some(record) = inner.peers.get_mut(server_name) else {
+            return false;
+        };
+        if record.phase != Phase::Paired || !record.peer_pin.is_empty() {
+            return false;
+        }
+        record.peer_pin.push(PeerPin {
+            certificate: certificate.clone(),
+            pinned_at_ms: now_ms(),
+        });
+        record.pin_state = PinState::Pinned;
+        if let Err(e) = self.save(&inner) {
+            tracing::error!(error = %e, "配对记录写不进去");
+        }
+        drop(inner);
+        let peers = self.clone();
+        let server_name = server_name.to_owned();
+        tokio::spawn(async move { peers.send_certificate(&server_name, false).await });
+        true
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    fn certificate(name: &str) -> PeerCertificate {
+        let key = rcgen::KeyPair::generate().unwrap();
+        let params = rcgen::CertificateParams::new(vec![name.to_owned()]).unwrap();
+        PeerCertificate::from_der(params.self_signed(&key).unwrap().der().to_vec()).unwrap()
+    }
+
+    /// 窗口是两个次版本：次版本 +2 到期，主版本更大也到期；没涨够、降级都没到期。
+    #[test]
+    fn the_window_expires_after_two_minor_releases() {
+        assert!(!window_expired("0.8.0", "0.8.9"));
+        assert!(!window_expired("0.8.0", "0.9.9"));
+        assert!(window_expired("0.8.0", "0.10.0"));
+        assert!(window_expired("0.9.9", "1.0.0"));
+        assert!(!window_expired("0.10.0", "0.9.0"), "降级不算到期");
+    }
+
+    /// 开发构建没法比版本：任意一端不是版本号就按没到期算，窗口保持打开。
+    #[test]
+    fn a_dev_build_leaves_the_window_open() {
+        for (since, current) in [
+            ("dev", "0.10.0"),
+            ("dev+abc123", "0.10.0"),
+            ("0.8.0", "dev+abc123"),
+            ("dev", "dev"),
+        ] {
+            assert!(!window_expired(since, current), "{since} → {current}");
+        }
+        assert!(!window_expired("", "0.10.0"), "还没补上起点");
+    }
+
+    #[test]
+    fn pending_follows_the_window_and_pinned_has_none() {
+        let pending = PinState::Pending {
+            since_version: "0.8.0".to_owned(),
+        };
+        assert!(!pending.window_expired("0.9.0"));
+        assert!(pending.window_expired("0.10.0"));
+        assert!(!PinState::Pinned.window_expired("99.0.0"));
+    }
+
+    #[test]
+    fn a_certificate_keeps_its_own_fingerprint() {
+        let certificate = certificate("home.example");
+        assert!(certificate.validate());
+        assert!(PeerCertificate::from_der(certificate.der_bytes().unwrap()).is_ok());
+    }
+
+    #[test]
+    fn the_install_output_loads_into_a_provider() {
+        let dir = tempfile::tempdir().unwrap();
+        let key = rcgen::KeyPair::generate().unwrap();
+        let params = rcgen::CertificateParams::new(vec!["home.example".to_owned()]).unwrap();
+        std::fs::write(
+            dir.path().join(PEER_CERTIFICATE_FILE),
+            params.self_signed(&key).unwrap().pem(),
+        )
+        .unwrap();
+        let provider = load_own_certificate(dir.path()).unwrap();
+        assert!(provider().expect("接上之后有值").validate());
+    }
+
+    #[test]
+    fn a_missing_or_unreadable_certificate_is_an_error() {
+        let dir = tempfile::tempdir().unwrap();
+        assert!(load_own_certificate(dir.path()).is_err());
+        std::fs::write(dir.path().join(PEER_CERTIFICATE_FILE), "not a certificate").unwrap();
+        assert!(load_own_certificate(dir.path()).is_err());
     }
 }

@@ -45,7 +45,7 @@ mod code;
 pub mod pairing;
 mod pin;
 use pin::prune_expired_pins;
-pub use pin::{OwnCertificate, PeerEntry, PeerPin, PinState};
+pub use pin::{OwnCertificate, PeerPin, PinState, load_own_certificate, window_expired};
 #[cfg(test)]
 mod peers_tests;
 mod scanning;
@@ -94,9 +94,6 @@ pub struct PeerRecord {
     /// 钉住的对方证书（ADR-0112）：旧的和新的一起收，最新的在最后。
     #[serde(default)]
     pub peer_pin: Vec<PeerPin>,
-    /// 对方走哪条入口（ADR-0112 §7）。
-    #[serde(default)]
-    pub peer_entry: PeerEntry,
     /// 证书的钉扎状态和待钉窗口的起点。
     #[serde(default)]
     pub pin_state: PinState,
@@ -287,6 +284,7 @@ impl Peers {
         if created_token {
             stored.token = Some(code::issue());
         }
+        let version = crate::build_info::version();
         // 老记录没有窗口起点：从这次启动的核心版本补上（ADR-0112 §5b）。离线期间过了宽限期的
         // 旧 pin 顺手丢掉，只留最新一张。
         let mut stored_changed = false;
@@ -298,6 +296,17 @@ impl Peers {
                 stored_changed = true;
             }
             stored_changed |= prune_expired_pins(&mut record.peer_pin);
+            if let PinState::Pending { since_version } = &record.pin_state
+                && !since_version.is_empty()
+                && window_expired(since_version, version)
+            {
+                tracing::warn!(
+                    server = %record.server_name,
+                    since_version,
+                    version,
+                    "待钉窗口已到期，对端还没升级；握手仍按证书名字放行"
+                );
+            }
         }
         let paired: BTreeSet<String> = stored
             .peers
@@ -517,8 +526,34 @@ impl Peers {
         });
     }
 
+    /// 窗口已到期、还没拿到对方证书的已配对服务器（ADR-0112 §5b）：如实报“对端还没升级”。
+    pub fn expired_pending(&self) -> Vec<String> {
+        self.expired_pending_on(crate::build_info::version())
+    }
+
+    /// 同 [`Self::expired_pending`]，按给出的当前版本判（测试用，免得开发构建的版本不可排序）。
+    pub fn expired_pending_on(&self, current_version: &str) -> Vec<String> {
+        let inner = self.lock();
+        inner
+            .peers
+            .values()
+            .filter(|record| {
+                if record.phase != Phase::Paired || !record.peer_pin.is_empty() {
+                    return false;
+                }
+                let PinState::Pending { since_version } = &record.pin_state else {
+                    return false;
+                };
+                !since_version.is_empty() && window_expired(since_version, current_version)
+            })
+            .map(|record| record.server_name.clone())
+            .collect()
+    }
+
     /// 转发组件报“已连上”：记下时刻。同一段连接上反复报（数据往返也确认连接）时，同一毫秒不重复写盘。
-    fn note_connected(&self, server_name: &str) {
+    /// 还没拿到对方证书的已配对记录顺手再送一次本机证书：配对后那几发送不到（对方离线、还在重启）时，
+    /// 等下一次连上补（ADR-0112 §5b 的送达不靠运气）。
+    fn note_connected(self: &Arc<Self>, server_name: &str) {
         let mut inner = self.lock();
         let Some(record) = inner.peers.get_mut(server_name) else {
             return;
@@ -528,8 +563,15 @@ impl Peers {
             return;
         }
         record.last_connected_ms = Some(now);
+        let resend = record.phase == Phase::Paired && record.peer_pin.is_empty();
         if let Err(e) = self.save(&inner) {
             tracing::error!(error = %e, "配对记录写不进去");
+        }
+        drop(inner);
+        if resend {
+            let peers = self.clone();
+            let server_name = server_name.to_owned();
+            tokio::spawn(async move { peers.send_certificate(&server_name, false).await });
         }
     }
 
