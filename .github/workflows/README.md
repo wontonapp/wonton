@@ -18,7 +18,7 @@ PR 合并前等的是快检查：格式、Clippy、detekt、SwiftLint、行数�
 - `rust-docker.yml`：依赖 Docker 的集成测试。改了它路径范围（核心的聊天、存储、推送等代码）的 PR 由 `gate.yml` 的 `docker` 作业
   调用、算合并门槛，`gate 汇总` 等它的结果，草稿 PR 不跑；`push` 到 `main` 时仍按同一份路径触发，每次合并单独跑一遍、
   不互相取消，红了能按那次提交标题里的 `(#N)` 找到弄红的 PR。`chat::push_method::background_messages_are_collected_and_cleared_on_foreground`
-  已知会在同步慢时 60 秒超时（PR #1081 首次跑实测），在 `.config/nextest.toml` 的 docker 档案里单独配了重试；根因查清再撤。
+  已知会在同步慢时 60 秒超时（PR #1081 首次跑实测），红了先手动重跑；根因另开卡修，这里不加 retry。
 - `ios.yml` 的模拟器构建（WontonTests）在只改了 wonton-client 依赖的其余 crate、依赖版本或工具链时：这些不改导出给
   Swift 的接口，很少弄坏 iOS。改到 Swift 这边或接口（`apps/ios`、设计生成、`wonton-protocol`、`wonton-client`）的
   PR 上照常跑、算必需检查：iOS 在 PR 上红的多半是这几处，挪到合后会让 main 一天红好几次。范围和理由写在 `ios.yml` 开头。
