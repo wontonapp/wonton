@@ -13,12 +13,16 @@ use std::collections::HashMap;
 use std::sync::{Arc, Mutex};
 use std::time::{SystemTime, UNIX_EPOCH};
 
-use wonton_protocol::media::{
-    ControlOp, IllegalTransition, MediaFailure, MediaFailureCode, PauseReason, PlaybackPlan,
-    PlaybackRequest, PlaybackSession, PlaybackSessionId, Queue, QueueMode, StopReason, TaskState,
-};
+use wonton_protocol::media::{IllegalTransition, PlaybackSessionId};
 
 use super::store::{MediaStoreError, Store};
+
+mod control;
+mod position;
+mod start;
+mod state;
+mod stop;
+mod takeover;
 
 /// 真实的毫秒级 Unix 时钟，节流基准用它。
 pub fn unix_now_ms() -> u64 {
@@ -47,9 +51,6 @@ pub struct SessionService {
     last_progress: Mutex<HashMap<PlaybackSessionId, u64>>,
 }
 
-/// 位置上报间隔：同一会话两次落库至少隔这么久，`pause`/`seek`/`stop` 不受限。
-const PROGRESS_INTERVAL_MS: u64 = 5_000;
-
 impl SessionService {
     pub fn new(store: Arc<Store>) -> Self {
         Self::with_clock(store, unix_now_ms)
@@ -63,323 +64,6 @@ impl SessionService {
             last_progress: Mutex::new(HashMap::new()),
         }
     }
-
-    /// 起播。这个人已有活动会话时接管：旧的置 `TakenOver` 并保留它最后的位置，返回旧会话号。
-    pub fn start(
-        &self,
-        request: &PlaybackRequest,
-        plan: PlaybackPlan,
-    ) -> Result<(PlaybackSession, Option<PlaybackSessionId>), SessionServiceError> {
-        let mut session = PlaybackSession {
-            id: PlaybackSessionId::new_v4(),
-            person: request.person.clone(),
-            device: request.device.clone(),
-            item: request.item.clone(),
-            state: TaskState::Running,
-            position_ms: request.position_ms,
-            plan: Some(plan),
-            stop_reason: None,
-        };
-        session.position_ms = clamp_to_duration(&session, request.position_ms);
-        for _ in 0..3 {
-            let taken_over = match self.take_over(&request.person)? {
-                Takeover::Landed(taken_over) => taken_over,
-                Takeover::Raced => continue,
-            };
-            match self.store.create_session(&session) {
-                Ok(()) => return Ok((session, taken_over)),
-                Err(MediaStoreError::ActiveSessionExists { .. }) => continue,
-                Err(error) => return Err(error.into()),
-            }
-        }
-        Err(SessionServiceError::ConcurrentChange {
-            session: session.id,
-        })
-    }
-
-    /// 控制一条活动会话；停了或不属于这个人的会话报 `IllegalTransition`，这一版核心不认识的动作报
-    /// `UnsupportedControl`。
-    pub fn control(
-        &self,
-        session: PlaybackSessionId,
-        ctl: ControlOp,
-    ) -> Result<PlaybackSession, SessionServiceError> {
-        if let ControlOp::Other(raw) = &ctl {
-            return Err(SessionServiceError::UnsupportedControl(raw.clone()));
-        }
-        let mut stored = self.store.stored_session(session)?;
-        for _ in 0..3 {
-            self.ensure_active(&stored.session, &ctl)?;
-            let queue = self.apply(&mut stored.session, &ctl)?;
-            if self
-                .store
-                .save_session_cas(&stored.session, stored.version)?
-            {
-                if let Some(queue) = queue {
-                    self.store.save_queue(&stored.session.person, &queue)?;
-                }
-                if matches!(ctl, ControlOp::Pause | ControlOp::SeekMs(_)) {
-                    self.mark_progress(session, (self.clock)());
-                }
-                return Ok(stored.session);
-            }
-            stored = self.store.stored_session(session)?;
-        }
-        Err(SessionServiceError::ConcurrentChange { session })
-    }
-
-    /// 位置上报。落了回 `true`；被节流、会话已停或重读后仍落不上回 `false`。
-    pub fn progress(
-        &self,
-        session: PlaybackSessionId,
-        position_ms: u64,
-        wall_clock: u64,
-    ) -> Result<bool, SessionServiceError> {
-        let mut stored = self.store.stored_session(session)?;
-        for _ in 0..2 {
-            if !is_active(&stored.session) || self.throttled(session, wall_clock) {
-                return Ok(false);
-            }
-            stored.session.position_ms = clamp_to_duration(&stored.session, position_ms);
-            if self
-                .store
-                .save_session_cas(&stored.session, stored.version)?
-            {
-                self.mark_progress(session, wall_clock);
-                return Ok(true);
-            }
-            stored = self.store.stored_session(session)?;
-        }
-        Ok(false)
-    }
-
-    /// 停一条会话；已经停了再停只把位置往后推，原因和终态保留第一次的。
-    pub fn stop(
-        &self,
-        session: PlaybackSessionId,
-        position_ms: u64,
-        reason: StopReason,
-    ) -> Result<PlaybackSession, SessionServiceError> {
-        let mut stored = self.store.stored_session(session)?;
-        for _ in 0..3 {
-            let position_ms = clamp_to_duration(&stored.session, position_ms);
-            let already = stored.session.stop_reason.is_some();
-            if already || stored.session.state.is_terminal() {
-                let mut changed = false;
-                if !already {
-                    stored.session.stop_reason = Some(reason.clone());
-                    changed = true;
-                }
-                if position_ms > stored.session.position_ms {
-                    stored.session.position_ms = position_ms;
-                    changed = true;
-                }
-                if !changed {
-                    self.last_progress.lock().unwrap().remove(&session);
-                    return Ok(stored.session);
-                }
-            } else {
-                stored.session.state = stopped_state(&stored.session.state, &reason)?;
-                stored.session.stop_reason = Some(reason.clone());
-                stored.session.position_ms = position_ms;
-            }
-            if self
-                .store
-                .save_session_cas(&stored.session, stored.version)?
-            {
-                self.last_progress.lock().unwrap().remove(&session);
-                return Ok(stored.session);
-            }
-            stored = self.store.stored_session(session)?;
-        }
-        Err(SessionServiceError::ConcurrentChange { session })
-    }
-
-    /// 这个人此刻的活动会话。
-    pub fn active(&self, person: &str) -> Result<Option<PlaybackSession>, SessionServiceError> {
-        Ok(self
-            .store
-            .active_session(person)?
-            .map(|stored| stored.session))
-    }
-
-    /// 把一条活动会话置 `TakenOver` 落库；被别人抢先改了就回 `Raced`。
-    fn take_over(&self, person: &str) -> Result<Takeover, SessionServiceError> {
-        let Some(stored) = self.store.active_session(person)? else {
-            return Ok(Takeover::Landed(None));
-        };
-        let mut session = stored.session;
-        if !session.state.is_terminal() {
-            session.state = stopped_state(&session.state, &StopReason::TakenOver)?;
-        }
-        session.stop_reason = Some(StopReason::TakenOver);
-        if !self.store.save_session_cas(&session, stored.version)? {
-            return Ok(Takeover::Raced);
-        }
-        self.last_progress.lock().unwrap().remove(&session.id);
-        Ok(Takeover::Landed(Some(session.id)))
-    }
-
-    fn ensure_active(
-        &self,
-        session: &PlaybackSession,
-        ctl: &ControlOp,
-    ) -> Result<(), SessionServiceError> {
-        if is_active(session) {
-            return Ok(());
-        }
-        let to = match ctl {
-            ControlOp::Pause => TaskState::Paused(PauseReason::User),
-            ControlOp::Play | ControlOp::Resume | ControlOp::SeekMs(_) => TaskState::Running,
-            ControlOp::Next | ControlOp::Prev | ControlOp::Volume(_) => TaskState::Running,
-            ControlOp::SetAudio(_) | ControlOp::SetSubtitle(_) => TaskState::Running,
-            // `control` 已经在门口拒了未知动作，这里的终态只用来凑 `IllegalTransition` 的提示。
-            ControlOp::Other(_) => TaskState::Running,
-        };
-        Err(IllegalTransition {
-            from: session.state.clone(),
-            to,
-        }
-        .into())
-    }
-
-    /// 按控制动作改会话；换曲顺带把改过的队列交回去，等会话落库后再存。
-    fn apply(
-        &self,
-        session: &mut PlaybackSession,
-        ctl: &ControlOp,
-    ) -> Result<Option<Queue>, SessionServiceError> {
-        match ctl {
-            ControlOp::Play | ControlOp::Resume => {
-                if session.state != TaskState::Running {
-                    session.state = session.state.clone().transition(TaskState::Running)?;
-                }
-            }
-            ControlOp::Pause => {
-                session.state = session
-                    .state
-                    .clone()
-                    .transition(TaskState::Paused(PauseReason::User))?;
-            }
-            ControlOp::SeekMs(position_ms) => {
-                session.position_ms = clamp_to_duration(session, *position_ms);
-            }
-            ControlOp::Next => return self.step(session, true),
-            ControlOp::Prev => return self.step(session, false),
-            ControlOp::Volume(_) => {}
-            ControlOp::SetAudio(index) => {
-                if let Some(plan) = &mut session.plan {
-                    for track in &mut plan.audio {
-                        track.selected = track.index == *index;
-                    }
-                }
-            }
-            ControlOp::SetSubtitle(index) => {
-                if let Some(plan) = &mut session.plan {
-                    for track in &mut plan.subtitles {
-                        track.selected = Some(track.index) == *index;
-                    }
-                }
-            }
-            // `control` 已经在门口拒了未知动作，走到这里只可能是新加的调用点。
-            ControlOp::Other(_) => {}
-        }
-        Ok(None)
-    }
-
-    /// 队列里前一处或后一处，到头不回绕（`repeat_all` 往后回第一首）。新计划由核心重取。
-    fn step(
-        &self,
-        session: &mut PlaybackSession,
-        forward: bool,
-    ) -> Result<Option<Queue>, SessionServiceError> {
-        let Some(mut queue) = self.store.queue(&session.person)? else {
-            return Ok(None);
-        };
-        if queue.entries.is_empty() {
-            return Ok(None);
-        }
-        let last = queue.entries.len() - 1;
-        let current = queue.cursor.unwrap_or(0).min(last);
-        let next = if forward {
-            if current < last {
-                current + 1
-            } else if queue.mode == QueueMode::RepeatAll {
-                0
-            } else {
-                current
-            }
-        } else {
-            current.saturating_sub(1)
-        };
-        if next == current && queue.cursor == Some(current) {
-            return Ok(None);
-        }
-        queue.cursor = Some(next);
-        queue.bump();
-        session.item = queue.entries[next].clone();
-        session.position_ms = 0;
-        session.plan = None;
-        Ok(Some(queue))
-    }
-
-    fn throttled(&self, session: PlaybackSessionId, wall_clock: u64) -> bool {
-        match self.last_progress.lock().unwrap().get(&session) {
-            Some(last) => wall_clock < last.saturating_add(PROGRESS_INTERVAL_MS),
-            None => false,
-        }
-    }
-
-    fn mark_progress(&self, session: PlaybackSessionId, wall_clock: u64) {
-        self.last_progress
-            .lock()
-            .unwrap()
-            .insert(session, wall_clock);
-    }
-}
-
-enum Takeover {
-    Landed(Option<PlaybackSessionId>),
-    Raced,
-}
-
-fn is_active(session: &PlaybackSession) -> bool {
-    session.stop_reason.is_none() && !session.state.is_terminal()
-}
-
-fn clamp_to_duration(session: &PlaybackSession, position_ms: u64) -> u64 {
-    match session.plan.as_ref().map(|plan| plan.duration_ms) {
-        Some(duration) if duration > 0 => position_ms.min(duration),
-        _ => position_ms,
-    }
-}
-
-/// 停播原因对应的终态；`Finished`/`Error` 从暂停、等条件过来时先回 `Running` 再走。认不得的原因按
-/// `Cancelled` 收尾：核心说了也不算完成或失败，原值留在 `stop_reason` 里给上层看。
-fn stopped_state(from: &TaskState, reason: &StopReason) -> Result<TaskState, IllegalTransition> {
-    let to = match reason {
-        StopReason::Finished => TaskState::Done,
-        StopReason::Error => TaskState::Failed(MediaFailure {
-            code: MediaFailureCode::UpstreamError,
-            message: "播放出错".into(),
-            retry_after_secs: None,
-        }),
-        StopReason::User | StopReason::Agent | StopReason::TakenOver | StopReason::Other(_) => {
-            TaskState::Cancelled
-        }
-    };
-    if matches!(from, TaskState::Other(_)) {
-        return Ok(to);
-    }
-    if matches!(to, TaskState::Done | TaskState::Failed(_))
-        && matches!(
-            from,
-            TaskState::Paused(_) | TaskState::WaitingNetwork | TaskState::WaitingPower
-        )
-    {
-        return from.clone().transition(TaskState::Running)?.transition(to);
-    }
-    from.clone().transition(to)
 }
 
 #[cfg(test)]
@@ -390,8 +74,8 @@ mod tests {
 
     use tempfile::TempDir;
     use wonton_protocol::media::{
-        ControlOp, DeviceProfile, MediaItemRef, MediaKind, MediaTrack, ProviderStream, QueueMode,
-        StopReason, TrackKind,
+        ControlOp, DeviceProfile, MediaItemRef, MediaKind, MediaTrack, PlaybackPlan,
+        PlaybackRequest, PlaybackSession, ProviderStream, Queue, QueueMode, StopReason, TrackKind,
     };
 
     use super::*;
