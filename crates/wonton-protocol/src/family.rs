@@ -56,6 +56,10 @@ pub const GATEWAY_REFUSAL_HEADER: &str = "x-wonton-error";
 /// `M_FORBIDDEN` 的其余字段也会丢掉，只有自定义的 `errcode` 原样留在错误里，Bot 一侧靠它认出类别。
 pub const HOP_LIMIT_ERRCODE: &str = "APP.WONTON.HOP_LIMIT";
 
+/// 网关在 403 响应体的 `errcode` 里写 [`GatewayRefusal`] 的前缀（`APP.WONTON.CONTACT_REQUIRED`）。
+/// 响应头 [`GATEWAY_REFUSAL_HEADER`] 照旧写，给读得到头的一方用；客户端 SDK 读不到头，靠 `errcode`。
+pub const GATEWAY_REFUSAL_ERRCODE_PREFIX: &str = "APP.WONTON.";
+
 /// 这台设备的人在这台服务器上的身份。
 #[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize)]
 #[cfg_attr(feature = "uniffi", derive(uniffi::Record))]
@@ -262,7 +266,12 @@ impl TryFrom<PrivateBotIdentityFields> for PrivateBotIdentity {
 #[cfg_attr(feature = "uniffi", derive(uniffi::Enum))]
 #[serde(rename_all = "snake_case")]
 pub enum PrivateBotRoomProblem {
+    /// 主房间记录不是合法的房间 ID。
     Invalid,
+    /// Bot 记着主房间，但它还没加入那个房间：等它进房间再发。
+    NotJoined,
+    /// Bot 还没有主房间记录：可以给它建一个私聊。
+    Missing,
     #[serde(other)]
     Other,
 }
@@ -323,6 +332,37 @@ impl GatewayRefusal {
             Self::ShareExpired => "share_expired",
             Self::Other => "other",
         }
+    }
+
+    /// 网关在 403 响应体 `errcode` 里写的完整错误码。Matrix SDK 读不到响应头，客户端靠它认类别。
+    pub fn errcode(self) -> &'static str {
+        match self {
+            Self::ContactRequired => "APP.WONTON.CONTACT_REQUIRED",
+            Self::PublicRoom => "APP.WONTON.PUBLIC_ROOM",
+            Self::HopLimit => HOP_LIMIT_ERRCODE,
+            Self::ShareIdentity => "APP.WONTON.SHARE_IDENTITY",
+            Self::ShareRequired => "APP.WONTON.SHARE_REQUIRED",
+            Self::ShareRevoked => "APP.WONTON.SHARE_REVOKED",
+            Self::ShareExpired => "APP.WONTON.SHARE_EXPIRED",
+            Self::Other => "APP.WONTON.OTHER",
+        }
+    }
+
+    /// 从 `errcode` 认回类别；不是网关拒绝的码时为空（按普通 403 处理）。
+    pub fn from_errcode(errcode: &str) -> Option<Self> {
+        Some(
+            match errcode.strip_prefix(GATEWAY_REFUSAL_ERRCODE_PREFIX)? {
+                "CONTACT_REQUIRED" => Self::ContactRequired,
+                "PUBLIC_ROOM" => Self::PublicRoom,
+                "HOP_LIMIT" => Self::HopLimit,
+                "SHARE_IDENTITY" => Self::ShareIdentity,
+                "SHARE_REQUIRED" => Self::ShareRequired,
+                "SHARE_REVOKED" => Self::ShareRevoked,
+                "SHARE_EXPIRED" => Self::ShareExpired,
+                "OTHER" => Self::Other,
+                _ => return None,
+            },
+        )
     }
 }
 
@@ -774,6 +814,31 @@ mod tests {
                 json!(refusal.as_str())
             );
         }
+    }
+
+    #[test]
+    fn refusal_errcodes_round_trip_and_ignore_foreign_codes() {
+        for refusal in [
+            GatewayRefusal::ContactRequired,
+            GatewayRefusal::PublicRoom,
+            GatewayRefusal::HopLimit,
+            GatewayRefusal::ShareIdentity,
+            GatewayRefusal::ShareRequired,
+            GatewayRefusal::ShareRevoked,
+            GatewayRefusal::ShareExpired,
+            GatewayRefusal::Other,
+        ] {
+            assert_eq!(
+                GatewayRefusal::from_errcode(refusal.errcode()),
+                Some(refusal)
+            );
+            assert!(
+                refusal
+                    .errcode()
+                    .starts_with(GATEWAY_REFUSAL_ERRCODE_PREFIX)
+            );
+        }
+        assert_eq!(GatewayRefusal::from_errcode("M_FORBIDDEN"), None);
     }
 
     #[test]

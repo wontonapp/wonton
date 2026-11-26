@@ -96,6 +96,7 @@ mod tests {
 
     fn signed_in() -> watch::Sender<ChatViewModel> {
         watch::Sender::new(ChatViewModel {
+            ask: None,
             account: ChatAccount::SignedIn {
                 user_id: "@owner:wonton.localhost".to_owned(),
                 device_id: "PHONE".to_owned(),
