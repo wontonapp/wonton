@@ -182,6 +182,8 @@ fn terminal_exempt(permission: &Permission) -> bool {
             normalize_capability(name).as_deref() == Some("SYS_ADMIN")
         }
         Permission::DockerSocket => true,
+        // `security_opt` 也只给终端服务：AppArmor 的 docker-default 不让容器挂 FUSE。
+        Permission::SecurityOpt => true,
         _ => false,
     }
 }
