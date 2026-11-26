@@ -46,11 +46,13 @@
 - 接口是 `GET`、`PUT /_wonton/api/onboarding`，鉴权同 `owner-profile`：主人令牌，或者经隧道的已配对设备，且不是别的网页发起的。Bot 不能调。
 - 状态和判断都在客户端核心：`OnboardingViewModel` 给出当前步骤、列表和状态，壳只渲染，操作发回核心。行为测试覆盖步骤的顺序、跳过和各种失败。
 
-### 选 Agent
+### 选 Agent（历史，已由 #788 去掉）
+
+这一步已不在引导里：默认 Bot 由默认安装里的 Agent 插件确定，主人不在引导里选；下面 `onboarding.agents`、`primary_agent`、`agent.login` 都是当时的写法。
 
 一页列表，每行是纯文字的名字和接模型的方式，如“Codex：ChatGPT 账号或模型设置”。默认选择第一项可用的助手；已经设置过的优先沿用。
 
-引导和默认助手设置对用户称“助手”；选中行用勾选标志和中性背景，不能安装的选项单独显示原因并禁用，已安装的 Agent 不因安装限制而被禁选。
+引导对用户称“助手”；选中行用勾选标志和中性背景，没装的选项装不了时显示原因并禁用，已安装的应用不因安装限制而被禁选。
 
 - **名单来自官方索引的 `onboarding.agents`**（见“推荐清单”），加上已经装着的 Agent，不用发 App。只列在真实主机上冒烟通过的 Agent 插件。第一批 Hermes、OpenClaw；ACP 桥做好后 Codex、Claude Code、omp；再后面 Kimi Code、Qwen Code、OpenCode（ADR-0079，不收录 Google 的命令行 Agent）。这里只列官方的，社区的 Agent 在商店里。
 - **名字用文字，图标不用官方标志。** 标志由各家的商标规则约束，Claude Code 的条款只允许用纯文字说“运行 Claude Code”。新的 Agent 插件统一用首字母图标。
