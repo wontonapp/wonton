@@ -10,6 +10,7 @@ import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.text.style.TextAlign
+import app.wonton.protocol.PluginFailure
 import app.wonton.protocol.StoreLoadState
 import app.wonton.ui.design.WontonButton
 import app.wonton.ui.design.WontonButtonKind
@@ -18,7 +19,7 @@ import app.wonton.ui.design.toColor
 
 /** 商店内容尚不可用：等待连接不是正在加载，也不代表已确定离线。 */
 @Composable
-internal fun StorePlaceholder(plugins: PluginsState) {
+internal fun StorePlaceholder(plugins: PluginsState, onPair: () -> Unit) {
     val reload = { plugins.refreshStore(force = true) }
     Column(Modifier.fillMaxSize()) {
         StoreRefreshRejection(plugins)
@@ -30,6 +31,7 @@ internal fun StorePlaceholder(plugins: PluginsState) {
             StoreLoadState.WaitingForConnection -> StoreLoadMessage(
                 stringResource(R.string.store_waiting_for_connection),
             )
+            StoreLoadState.NotPaired -> notPairedMessage(onPair)
             StoreLoadState.Loading -> Column(Modifier.fillMaxSize()) {
                 Column(Modifier.weight(1f)) {
                     ListSkeleton(WontonTheme.size.storeIcon, slowHint = stringResource(R.string.store_pending))
@@ -41,7 +43,12 @@ internal fun StorePlaceholder(plugins: PluginsState) {
                     kind = WontonButtonKind.SECONDARY,
                 )
             }
-            is StoreLoadState.Failed -> ProblemView(load.problem.problem, reload)
+            is StoreLoadState.Failed ->
+                if (load.problem.reason == PluginFailure.NOT_PAIRED) {
+                    notPairedMessage(onPair)
+                } else {
+                    ProblemView(load.problem.problem, reload)
+                }
             StoreLoadState.Ready -> Unit
         }
     }
@@ -51,11 +58,19 @@ internal fun StorePlaceholder(plugins: PluginsState) {
 @Composable
 internal fun StoreLoadProblems(plugins: PluginsState) {
     Column {
-        val load = plugins.viewModel.storeLoad
-        if (load is StoreLoadState.Failed) {
-            Column(Modifier.padding(WontonTheme.spacing.pageInset)) {
+        when (val load = plugins.viewModel.storeLoad) {
+            StoreLoadState.NotPaired -> Column(Modifier.padding(WontonTheme.spacing.pageInset)) {
+                ProblemRow(
+                    Problem(
+                        titleRes = R.string.problem_not_paired_title,
+                        nextStepRes = R.string.problem_not_paired_next_step,
+                    )
+                ) { plugins.refreshStore(force = true) }
+            }
+            is StoreLoadState.Failed -> Column(Modifier.padding(WontonTheme.spacing.pageInset)) {
                 ProblemRow(load.problem.problem) { plugins.refreshStore(force = true) }
             }
+            else -> Unit
         }
         StoreRefreshRejection(plugins)
     }
@@ -71,7 +86,12 @@ private fun StoreRefreshRejection(plugins: PluginsState) {
 }
 
 @Composable
-private fun StoreLoadMessage(text: String, onLoad: (() -> Unit)? = null) {
+private fun StoreLoadMessage(
+    text: String,
+    detail: String? = null,
+    onLoad: (() -> Unit)? = null,
+    loadLabel: String = stringResource(R.string.store_load),
+) {
     Column(
         Modifier.fillMaxSize().padding(WontonTheme.spacing.s32),
         verticalArrangement = Arrangement.spacedBy(WontonTheme.spacing.s12, Alignment.CenterVertically),
@@ -82,8 +102,25 @@ private fun StoreLoadMessage(text: String, onLoad: (() -> Unit)? = null) {
             style = WontonTheme.typography.supporting.copy(textAlign = TextAlign.Center),
             color = WontonTheme.colors.textSecondary.toColor(),
         )
+        detail?.let {
+            Text(
+                it,
+                style = WontonTheme.typography.supporting.copy(textAlign = TextAlign.Center),
+                color = WontonTheme.colors.textSecondary.toColor(),
+            )
+        }
         onLoad?.let {
-            WontonButton(stringResource(R.string.store_load), it, kind = WontonButtonKind.SECONDARY)
+            WontonButton(loadLabel, it, kind = WontonButtonKind.SECONDARY)
         }
     }
+}
+
+@Composable
+private fun notPairedMessage(onPair: () -> Unit) {
+    StoreLoadMessage(
+        stringResource(R.string.problem_not_paired_title),
+        detail = stringResource(R.string.problem_not_paired_next_step),
+        onLoad = onPair,
+        loadLabel = stringResource(R.string.store_go_pair),
+    )
 }

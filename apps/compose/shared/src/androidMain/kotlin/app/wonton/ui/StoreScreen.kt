@@ -47,6 +47,7 @@ import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
+import app.wonton.protocol.HomeAction
 import app.wonton.protocol.PluginAction
 import app.wonton.protocol.Action
 import app.wonton.protocol.AddedSource
@@ -106,6 +107,7 @@ private fun StoreScreen(plugins: PluginsState, navigation: PluginNavigation, onB
             query,
             tag,
             onTag = { tag = it },
+            onPair = { plugins.send(Action.Home(HomeAction.AddServer)) },
         )
     }
     val viewModel = plugins.viewModel
@@ -124,6 +126,7 @@ private fun StoreContent(
     query: String,
     tag: String?,
     onTag: (String?) -> Unit,
+    onPair: () -> Unit,
 ) {
     val viewModel = plugins.viewModel
     val store = viewModel.store
@@ -147,7 +150,7 @@ private fun StoreContent(
                     modifier = Modifier.fillMaxWidth().weight(1f),
                 ) {
                     if (store == null) {
-                        StorePlaceholder(plugins)
+                        StorePlaceholder(plugins, onPair)
                     } else {
                         StoreList(
                             plugins,

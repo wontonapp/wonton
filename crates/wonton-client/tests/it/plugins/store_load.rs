@@ -4,7 +4,7 @@ use std::time::Duration;
 
 use axum::http::Method;
 use tokio::sync::watch;
-use wonton_client::{Action, PluginFailure, StoreLoadState};
+use wonton_client::{Action, HomeStatus, PluginFailure, StoreLoadState};
 use wonton_protocol::PluginAction;
 
 use super::rig::{Canned, Rig, WAIT, core_error, listing, running};
@@ -73,6 +73,46 @@ async fn waiting_for_connection_preserves_a_requested_force_refresh() {
             .len(),
         1
     );
+}
+
+#[tokio::test]
+async fn an_unpaired_phone_asks_for_pairing_instead_of_connection_failure() {
+    let rig = Rig::new().await.without_periodic_checks();
+    assert_eq!(rig.app.home().status, HomeStatus::NotConfigured);
+
+    // 还没配对：状态直接是 NotPaired，不发请求等超时。
+    refresh_store(&rig, false);
+    let view = rig
+        .wait_for(|view| view.store_load == StoreLoadState::NotPaired)
+        .await;
+    assert!(view.store.is_none());
+    assert!(rig.core.seen(&Method::GET, STORE).is_empty());
+
+    // 已安装列表也走同一个 api()：类别是还没配对，不是连不上。
+    refresh_installed(&rig);
+    let view = rig
+        .wait_for(|view| {
+            view.problem
+                .as_ref()
+                .is_some_and(|problem| problem.reason == PluginFailure::NotPaired)
+        })
+        .await;
+    assert_eq!(view.problem.unwrap().reason, PluginFailure::NotPaired);
+    assert!(rig.core.seen(&Method::GET, INSTALLED).is_empty());
+}
+
+#[tokio::test]
+async fn pairing_later_loads_a_store_that_waited_for_it() {
+    let rig = Rig::new().await.without_periodic_checks();
+    refresh_store(&rig, false);
+    rig.wait_for(|view| view.store_load == StoreLoadState::NotPaired)
+        .await;
+    rig.connected().await;
+    let view = rig
+        .wait_for(|view| view.store_load == StoreLoadState::Ready && !view.refreshing)
+        .await;
+    assert_eq!(view.store, Some(listing()));
+    assert_eq!(rig.core.seen(&Method::GET, STORE).len(), 1);
 }
 
 #[tokio::test]

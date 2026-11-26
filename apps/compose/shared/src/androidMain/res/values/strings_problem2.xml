@@ -31,6 +31,8 @@
     <string name="problem_store_other_title">The app list may be incomplete</string>
     <!-- Problem title: the source is answering too many requests. -->
     <string name="problem_store_rate_limited_title">Too many requests</string>
+    <!-- Next step under the not-paired problem: scan the home server's QR code, then retry. -->
+    <string name="problem_not_paired_next_step">Scan the QR code on your home server to pair this phone, then come back.</string>
     <!-- Next step under the can't-reach-the-server problem. -->
     <string name="problem_transport_unavailable_next_step">Check your network and try again once you\'re connected.</string>
     <!-- Next step: update the home server first. Used when the server is too old. -->

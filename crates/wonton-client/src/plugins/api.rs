@@ -651,6 +651,16 @@ pub(super) fn not_connected() -> PluginProblem {
     }
 }
 
+/// 这台手机还没有配对信息：不是连不上，是还没配对，壳据此引导去配对。
+pub(super) fn not_paired() -> PluginProblem {
+    PluginProblem {
+        reason: PluginFailure::NotPaired,
+        min_version: None,
+        message: l10n!(CATALOG, language(), "plugins-api-not-paired"),
+        settings: None,
+    }
+}
+
 fn upgrade_error(status: u16, body: &[u8]) -> CoreUpgradeProblem {
     let detail = serde_json::from_slice::<ErrorBody>(body)
         .ok()
@@ -710,6 +720,8 @@ pub(crate) fn to_core_error(problem: PluginProblem) -> CoreError {
         | PluginFailure::TimedOut
         // 记录不可用：现在做不了。壳按类别出「重新安装」的下一步（#198 的核心行为、#230 的 iOS 壳）。
         | PluginFailure::RecordUnusable => CoreError::NotReady { reason },
+        // 还没配对家里的服务器：前置条件不满足，配对后再试。
+        PluginFailure::NotPaired => CoreError::NotReady { reason },
         PluginFailure::SourceUnavailable | PluginFailure::Upstream | PluginFailure::Protocol => {
             CoreError::Upstream { reason }
         }

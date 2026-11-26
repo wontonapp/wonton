@@ -26,6 +26,41 @@ final class FirstScreenUITests: XCTestCase {
         add(shot)
     }
 
+    /// 没配对时商店不报“连不上家里的服务器”：说清楚还没配对，并给去配对的入口。
+    func testUnpairedStoreAsksToPairInsteadOfReportingConnectionFailure() throws {
+        try assertUnpairedStoreAsksToPair(shotName: "unpaired-store-light", scheme: "light")
+    }
+
+    func testUnpairedStoreAsksToPairInDarkMode() throws {
+        try assertUnpairedStoreAsksToPair(shotName: "unpaired-store-dark", scheme: "dark")
+    }
+
+    /// 系统外观切换在这代模拟器运行时不一定生效（见 WontonTheme.shotColorScheme），走查用环境变量钉住。
+    private func assertUnpairedStoreAsksToPair(shotName: String, scheme: String) throws {
+        app.launchEnvironment["WONTON_SHOT_SCHEME"] = scheme
+        UITestBackend.launch(app)
+        XCTAssertTrue(
+            app.descendants(matching: .any)["pairing-code"].firstMatch.waitForExistence(timeout: 20),
+            "全新安装没有落在配对页")
+        let row = try XCTUnwrap(
+            UITestSidebar.row(app, labels: ["Store", "商店", "ストア"], timeout: 15),
+            app.debugDescription)
+        row.tap()
+        XCTAssertTrue(
+            app.staticTexts["Not paired with your home server yet"].waitForExistence(timeout: 10),
+            app.debugDescription)
+        XCTAssertTrue(app.buttons["Pair now"].exists)
+        XCTAssertFalse(app.staticTexts["Can't reach your home server"].exists)
+        let shot = XCTAttachment(screenshot: XCUIScreen.main.screenshot())
+        shot.name = shotName
+        shot.lifetime = .keepAlways
+        add(shot)
+        app.buttons["Pair now"].tap()
+        XCTAssertTrue(
+            app.descendants(matching: .any)["pairing-code"].firstMatch.waitForExistence(timeout: 10),
+            "Pair now 没回到配对页")
+    }
+
     @MainActor
     func testUnpairedSidebarEntriesKeepPairingAndRetryAvailable() throws {
         app.launchEnvironment.removeValue(forKey: "WONTON_UI_FAKE")
