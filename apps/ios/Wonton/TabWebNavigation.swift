@@ -41,8 +41,23 @@ extension TabWebSession: WKNavigationDelegate {
 
     func webView(_ webView: WKWebView, didStartProvisionalNavigation navigation: WKNavigation!) {
         AppTrace.event("didStartProvisionalNavigation", "\(placed)")
+        history.started(webView.url?.absoluteString)
         ready = hasContent
         navigationURL = webView.url
+    }
+
+    /// 主框架提交了这次导航：记下当前地址，后面比较“上一步是不是同一页”用。
+    func webView(_ webView: WKWebView, didCommit navigation: WKNavigation!) {
+        history.visited(webView.url?.absoluteString)
+    }
+
+    /// 同文档导航（hash、pushState/replaceState）：地址变了，但没换文档。
+    func webView(
+        _ webView: WKWebView, didSameDocumentNavigation navigation: WKNavigation!,
+        navigationType: WKNavigationType
+    ) {
+        history.visited(webView.url?.absoluteString)
+        canGoBack = webView.canGoBack
     }
 
     func webView(_ webView: WKWebView, didFinish navigation: WKNavigation!) {
@@ -58,6 +73,7 @@ extension TabWebSession: WKNavigationDelegate {
             loginLanding = TabReloadTarget.landing(url)
         }
         canGoBack = webView.canGoBack
+        history.finished(webView.url?.absoluteString)
         if parked {
             missedFinish = true
         } else {

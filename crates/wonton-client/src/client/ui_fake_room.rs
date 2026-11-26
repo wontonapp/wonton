@@ -752,7 +752,7 @@ fn bitmap(width: u32, height: u32, bgr: [u8; 3]) -> Vec<u8> {
 
 /// 面板里的那张网页。播放按钮放一段现场拼成 WAV 的两分钟轻方波，页面把播放位置写在 `#audio` 里：
 /// 面板收起时页面的声音断没断，界面测试看这个位置还在不在走。
-const PAGE: &str = r#"<!doctype html>
+const PAGE: &str = r##"<!doctype html>
 <html><head><meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
 <title>Player</title>
@@ -765,7 +765,7 @@ html, body { margin: 0; background: #101418; color: #fff; font: 17px system-ui; 
 </style></head>
 <body>
 <div id="library">Fixture library</div>
-<div id="player"><p>Fixture player</p><p id="audio">Fixture audio idle</p></div>
+<div id="player"><p>Fixture player</p><p id="audio">Fixture audio idle</p><p id="path">Fixture path</p><p id="loads">Fixture load</p><button id="same" onclick="history.pushState({}, '', '/same'); history.replaceState({}, '', '/')">Fixture same document</button><a href="#/album" id="fragment">Fixture fragment</a> <a href="/corner-cover">Fixture cover</a></div>
 <button id="close" aria-label="Fixture close" onclick="this.setAttribute('aria-label', 'Fixture closed')">×</button>
 <button id="play" aria-label="Fixture play" onclick="play()">▶</button>
 <script>
@@ -788,11 +788,20 @@ function report() {
 }
 function play() { audio.src = tone(120); audio.play().then(report, report); }
 audio.addEventListener('pause', () => { pauses += 1; report(); });
+function showPath() {
+  document.getElementById('path').textContent = 'Fixture path ' + location.pathname + location.hash;
+}
+addEventListener('hashchange', showPath);
+addEventListener('popstate', showPath);
+showPath();
+const loads = (Number(sessionStorage.getItem('loads')) || 0) + 1;
+sessionStorage.setItem('loads', String(loads));
+document.getElementById('loads').textContent = 'Fixture load ' + loads;
 audio.addEventListener('timeupdate', report);
 document.addEventListener('visibilitychange', report);
 setInterval(report, 500);
 </script>
-</body></html>"#;
+</body></html>"##;
 
 /// 整页的那张网页。`{viewport}` 换成有没有 `viewport-fit=cover`；`#probe` 写着是哪一份、页面自己量到的安全区和视口高度，
 /// 界面测试失败时带进报错里。页面比屏幕长，滚下去以后固定的栏还在原位。
@@ -814,7 +823,8 @@ html, body { margin: 0; background: #17324d; color: #fff; font: 17px system-ui; 
 <body>
 <div id="bar">Fixture bar</div>
 <button id="menu" aria-label="Fixture corner" onclick="this.setAttribute('aria-label', 'Fixture corner tapped')">≡</button>
-<div id="body"><p id="probe">Fixture probe</p><a href="/corner-cover">Fixture cover</a>
+<div id="body"><p id="probe">Fixture probe</p><p id="path">Fixture path</p><a href="/corner-cover">Fixture cover</a>
+<button id="same" onclick="history.pushState({}, '', '/same'); history.replaceState({}, '', '/')">Fixture same document</button>
 <button onclick="recolor('#9d4edd')">Fixture recolor</button>
 <button onclick="recolor(null)">Fixture unthemed</button>
 <button onclick="mismatch()">Fixture mismatch</button>
@@ -843,6 +853,7 @@ function probe() {
   const fit = document.querySelector('meta[name=viewport]').content.includes('cover') ? 'cover' : 'plain';
   document.getElementById('probe').textContent = 'Fixture probe ' + fit + ' safe ' + style.top + ' ' + style.bottom +
     ' inner ' + innerHeight + ' client ' + document.documentElement.clientHeight + ' menu ' + Math.round(menu.top);
+  document.getElementById('path').textContent = 'Fixture path ' + location.pathname;
   box.remove();
 }
 probe();
@@ -884,7 +895,8 @@ fn serve(mut stream: TcpStream) {
     let mut request = [0; 2048];
     let read = stream.read(&mut request).unwrap_or(0);
     let line = String::from_utf8_lossy(&request[..read]);
-    let body = body(line.split_whitespace().nth(1).unwrap_or("/"));
+    let path = line.split_whitespace().nth(1).unwrap_or("/");
+    let body = body(path);
     let _ = write!(
         stream,
         "HTTP/1.1 200 OK\r\ncontent-type: text/html; charset=utf-8\r\ncontent-length: {}\r\nconnection: close\r\n\r\n{body}",
