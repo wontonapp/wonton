@@ -1,6 +1,7 @@
 package app.wonton.ui
 
 import android.widget.Toast
+import androidx.activity.ComponentActivity
 import androidx.activity.compose.BackHandler
 import androidx.activity.compose.LocalActivity
 import androidx.compose.foundation.background
@@ -132,6 +133,7 @@ private fun AppContent(
     val view = pages.viewModel
     val draft = LocalTabDraft.current
     val shown = pages.current
+    val activity = LocalActivity.current as? ComponentActivity
     // 栈顶是插件网页时整页归网页；其余都是原生的（聊天根、应用网格）。设置盖在什么上面都算原生。
     val opened = view.stack.lastOrNull()
     val pluginShown = !view.showsApps && opened != null && !opened.tab.isNativeRoot()
@@ -207,9 +209,15 @@ private fun AppContent(
                 if (panel != null) {
                     ChatPanelHost(panel, pages, home, appearance, onDraft = onDraft, onDetails = nav::detail)
                 }
-                Box(Modifier.fillMaxSize().graphicsLayer {
-                    translationY = (panel?.shiftPx ?: 0f) * (panel?.sign ?: 1f)
-                }) {
+                // 左边缘 24dp 内右滑 = 返回：聊天根本来有开抽屉的条，开着侧边栏时那条不在，由这里收侧边栏。
+                // 包在页面外面，手指在这一截里点一下照样落到底下的行和按钮上。
+                EdgeBackSwipe(
+                    enabled = showsSidebar || !edgeSwipe,
+                    onBack = { activity?.onBackPressedDispatcher?.onBackPressed() },
+                    modifier = Modifier.fillMaxSize().graphicsLayer {
+                        translationY = (panel?.shiftPx ?: 0f) * (panel?.sign ?: 1f)
+                    },
+                ) {
                     page()
                     if (panel?.level == PanelLevel.PEEK) ChatPanelStrip(panel)
                 }

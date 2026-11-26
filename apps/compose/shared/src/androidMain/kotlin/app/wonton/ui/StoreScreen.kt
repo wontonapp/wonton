@@ -325,6 +325,7 @@ private fun StoreRow(item: StoreItem, plugins: PluginsState, navigation: PluginN
         Row(
             Modifier.fillMaxWidth()
                 .clickable { navigation.detail = PluginRoute.Store(item.source) }
+                .cancelClickOnDrag()
                 .padding(horizontal = WontonTheme.spacing.pageInset, vertical = ROW_GAP),
             horizontalArrangement = Arrangement.spacedBy(WontonTheme.spacing.s12),
             verticalAlignment = Alignment.CenterVertically,
