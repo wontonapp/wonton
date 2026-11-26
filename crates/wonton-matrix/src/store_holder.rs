@@ -17,12 +17,22 @@ use std::collections::HashMap;
 use std::path::{Path, PathBuf};
 use std::sync::atomic::{AtomicUsize, Ordering};
 use std::sync::{Arc, LazyLock, Mutex, Weak};
+use std::time::{SystemTime, UNIX_EPOCH};
 
 /// 只放内存的存储（`None`）不和别人共用，名字无所谓。
 const DEFAULT: &str = "main";
 
-/// 本进程发过几个新名字；和进程号一起保证不和别的进程、本进程别的 Client 撞名。
+/// 本进程发过几个新名字；和进程号、启动时刻一起保证不和别的进程、本进程别的 Client 撞名。
 static NAMED: AtomicUsize = AtomicUsize::new(0);
+
+/// 本进程启动时取一次的熵：容器里每个进程的 PID 都是 1，只靠 PID 的话升级时新旧两个容器在同一个卷上第一次都叫
+/// `wonton-1-0`，SDK 当成同一个持有者、generation 不加、事件和 Olm 不重读（#1047 的 bug 回来）。取启动时刻的
+/// 纳秒：同一个进程里只取一次，名字对同进程稳定、对别的进程不同。
+static NONCE: LazyLock<u64> = LazyLock::new(|| {
+    SystemTime::now()
+        .duration_since(UNIX_EPOCH)
+        .map_or(0, |since| since.as_nanos() as u64)
+});
 
 /// 每个存储上最近一个 Client 的名字，和它还在不在。
 static LAST: LazyLock<Mutex<HashMap<PathBuf, Last>>> = LazyLock::new(Mutex::default);
@@ -68,8 +78,9 @@ pub(crate) fn holder_for(store: Option<&Path>) -> (String, Option<StoreLease>) {
 
 fn fresh() -> String {
     format!(
-        "wonton-{}-{}",
+        "wonton-{}-{:016x}-{}",
         std::process::id(),
+        *NONCE,
         NAMED.fetch_add(1, Ordering::Relaxed)
     )
 }
@@ -83,6 +94,17 @@ mod tests {
     fn the_first_client_on_a_store_gets_a_process_unique_name() {
         let (holder, _lease) = holder_for(Some(Path::new("/stores/first")));
         assert_ne!(holder, DEFAULT);
+    }
+
+    /// 容器里每个进程的 PID 都是 1：名字不能只有 `<pid>-<计数器>`，否则升级时新旧两个容器在同一个卷上第一次都叫
+    /// `wonton-1-0`，SDK 当成同一个持有者、generation 不加、事件和 Olm 不重读（#1047 的 bug 回来）。
+    #[test]
+    fn the_name_is_not_only_the_pid_and_a_counter() {
+        let (holder, _lease) = holder_for(Some(Path::new("/stores/pid-collision")));
+        let old_form = holder
+            .strip_prefix(&format!("wonton-{}-", std::process::id()))
+            .is_some_and(|rest| rest.chars().all(|c| c.is_ascii_digit()));
+        assert!(!old_form, "名字只有 PID 和计数器，容器里会撞：{holder}");
     }
 
     /// 挨着活着的 Client 建的：换一个本进程独有的新名字，generation 才会递增。
