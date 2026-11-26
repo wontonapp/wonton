@@ -29,7 +29,11 @@ fn onboarding(default_bot: &str) -> serde_json::Value {
 
 /// 主人的手机先登录。登录会建出主人的 Matrix 账号，Bot 才能和它建私聊。
 async fn signed_in(home: &Home, phone: &Phone) {
-    home.set_onboarding(onboarding("@hermes:wonton.localhost"));
+    signed_in_with_onboarding(home, phone, onboarding("@hermes:wonton.localhost")).await;
+}
+
+async fn signed_in_with_onboarding(home: &Home, phone: &Phone, view: serde_json::Value) {
+    home.set_onboarding(view);
     let _owner = home.bot("owner", "Owner").await;
     phone.connect(home);
     phone.signed_in().await;
@@ -118,7 +122,7 @@ async fn family_ask_goes_to_the_own_bot_home_room() {
 
 #[tokio::test(flavor = "multi_thread")]
 #[ignore = "需要 Docker，用 --include-ignored 运行"]
-async fn family_without_a_ready_bot_fails_with_no_bot() {
+async fn family_without_a_ready_bot_falls_back_to_the_default_bot() {
     let dir = tempdir();
     let phone = Phone::open(dir.path());
     let home = Home::start(&[phone.device_id()]).await;
@@ -143,12 +147,71 @@ async fn family_without_a_ready_bot_fails_with_no_bot() {
         })
         .unwrap();
     phone
-        .wait_chat("回执说没有可用的 Bot", |view| {
+        .wait_chat("回执发到默认 Bot", |view| {
             view.ask
                 .as_ref()
                 .is_some_and(|receipt| {
                     receipt.request_id == Some(8)
-                        && receipt.state == AskState::Failed
+                        && receipt.state == AskState::Sent
+                        && receipt.room_id.as_deref() == Some(room.as_str())
+                })
+                .then_some(())
+        })
+        .await;
+    let mut timeline = Timeline::open(&phone, room.as_str()).await;
+    timeline
+        .until("问题发进了默认 Bot 的私聊", |item| {
+            match &item.content {
+                TimelineContent::Message { message } => match &message.body {
+                    MessageContent::Text { body, .. } if body == "在吗" => Some(()),
+                    _ => None,
+                },
+                _ => None,
+            }
+        })
+        .await;
+    assert!(phone.core.chat().problem.is_none());
+}
+
+#[tokio::test(flavor = "multi_thread")]
+#[ignore = "需要 Docker，用 --include-ignored 运行"]
+async fn family_without_a_ready_bot_or_default_is_no_bot() {
+    let dir = tempdir();
+    let phone = Phone::open(dir.path());
+    let home = Home::start(&[phone.device_id()]).await;
+    signed_in_with_onboarding(
+        &home,
+        &phone,
+        json!({
+            "step": "finished",
+            "default_bot_plugin": {"id": "hermes", "visibility": "absent"},
+            "needs": [],
+            "prompts": [],
+            "catalog_problem": null
+        }),
+    )
+    .await;
+    set_own_bot(
+        &home,
+        &phone,
+        json!({"requester_user_id": OWNER, "result": {"state": "absent"}}),
+    );
+    wait_own_bot(&phone, false).await;
+    phone
+        .dispatch(Action::Chat {
+            action: ChatAction::AskAgent {
+                text: "在吗".to_owned(),
+                room_id: None,
+                request_id: Some(13),
+            },
+        })
+        .unwrap();
+    phone
+        .wait_chat("回执说没有可用的 Bot", |view| {
+            view.ask
+                .as_ref()
+                .is_some_and(|receipt| {
+                    receipt.state == AskState::Failed
                         && receipt.room_id.is_none()
                         && receipt
                             .problem

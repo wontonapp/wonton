@@ -279,19 +279,20 @@ fn own_or_default_attempt(
         });
     }
     match &view.own_private_bot {
-        // 有私人 Bot、正在建：不静默换成默认 Bot。
-        Some(OwnPrivateBotView::Absent) => Err(ask_problem(AskFailure::NoBot, None)),
-        // 主人、角色里没有私人 Bot 的人、或者旧核心不给这个键：用默认 Bot。
-        Some(OwnPrivateBotView::NotApplicable | OwnPrivateBotView::Other) | None => {
-            match default_bot {
-                DefaultBot::Visible(bot) => default_attempt(view, bot.clone()),
-                DefaultBot::Absent => Err(ask_problem(AskFailure::NoBot, None)),
-                DefaultBot::Unknown => match &view.own_private_bot_problem {
-                    Some(problem) => Err(ask_problem(own_bot_failure(problem.category), None)),
-                    None => Err(ask_problem(AskFailure::BotNotReady, None)),
-                },
-            }
-        }
+        // 主人、角色里没有私人 Bot 的人、旧核心的 Absent、或者旧核心不给这个键：用默认 Bot。
+        // 旧核心对“角色里没有私人 Bot”的人和“正在建”的人都回 absent，只能靠有没有默认 Bot 分开。
+        Some(
+            OwnPrivateBotView::Absent | OwnPrivateBotView::NotApplicable | OwnPrivateBotView::Other,
+        )
+        | None => match default_bot {
+            DefaultBot::Visible(bot) => default_attempt(view, bot.clone()),
+            DefaultBot::Absent => Err(ask_problem(AskFailure::NoBot, None)),
+            DefaultBot::Unknown => match &view.own_private_bot_problem {
+                Some(problem) => Err(ask_problem(own_bot_failure(problem.category), None)),
+                None => Err(ask_problem(AskFailure::BotNotReady, None)),
+            },
+        },
+        // Ready 在上面按 own 处理过了；到这里只可能是状态刚变、own 没取到。
         Some(OwnPrivateBotView::Ready { .. }) => Err(ask_problem(AskFailure::BotNotReady, None)),
     }
 }
@@ -363,7 +364,7 @@ fn own_bot_failure(category: OwnBotFailure) -> AskFailure {
     }
 }
 
-/// 失败原因配一句按类别写的中文/日文/英文详情；有原始错误时另起一行，给默认收起的“详情”。
+/// 失败类别配原始错误，给默认收起的“详情”；没有原始错误时为空，主句由壳按类别写。
 fn ask_problem(reason: AskFailure, error: Option<&Error>) -> AskProblem {
     let key = match reason {
         AskFailure::NoBot => "chat-ask-failed-no-bot",
@@ -378,12 +379,11 @@ fn ask_problem(reason: AskFailure, error: Option<&Error>) -> AskProblem {
         AskFailure::Upstream => "chat-ask-failed-upstream",
         AskFailure::Other => "chat-ask-failed-other",
     };
-    let mut detail = l10n!(CATALOG, language(), key);
-    if let Some(error) = error {
-        detail.push('\n');
-        detail.push_str(&error.to_string());
+    let _ = key;
+    AskProblem {
+        reason,
+        detail: error.map(ToString::to_string).unwrap_or_default(),
     }
-    AskProblem { reason, detail }
 }
 
 #[cfg(test)]

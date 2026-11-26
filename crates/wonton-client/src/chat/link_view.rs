@@ -46,7 +46,6 @@ impl ChatLink {
             ChatViewModel {
                 ask: None,
                 chat_layout_default: Default::default(),
-                ask: None,
                 account: ChatAccount::SignedOut,
                 sync: ChatSync::Idle,
                 encryption,

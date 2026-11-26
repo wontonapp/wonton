@@ -10,12 +10,16 @@ final class AskAgentUITests: XCTestCase {
         app.launchArguments += ["-AppleLanguages", "(en)", "-AppleLocale", "en_US", "-ApplePersistenceIgnoreState", "YES"]
         app.launchEnvironment["WONTON_DEV_DATA_SUFFIX"] = UUID().uuidString
         app.launchEnvironment["WONTON_UI_FAKE"] = "1"
-        app.launchEnvironment["WONTON_UI_FAKE_ASK"] = "contact_required_once"
         app.launchEnvironment["WONTON_UI_TEST_ASK_ON_LAUNCH"] = "1"
+    }
+
+    private func launch(ask: String) {
+        app.launchEnvironment["WONTON_UI_FAKE_ASK"] = ask
         UITestBackend.launch(app)
     }
 
     func testAskFailureExplainsAndRetryOpensTheAskedRoom() {
+        launch(ask: "contact_required_once")
         let reason = app.staticTexts["This Bot doesn't have you as a contact yet."]
         XCTAssertTrue(reason.waitForExistence(timeout: 20), "没有失败提示\n\(app.debugDescription)")
         XCTAssertTrue(app.otherElements["askFailureBar"].exists, "失败提示没有标识\n\(app.debugDescription)")
@@ -25,6 +29,14 @@ final class AskAgentUITests: XCTestCase {
         XCTAssertTrue(app.textViews["Message"].waitForExistence(timeout: 8),
                       "重试成功后没有打开回执房间\n\(app.debugDescription)")
         shot("ask-retried")
+    }
+
+    /// 旧核心不写回执：壳等一小会儿没回执，自己打开默认 Agent 的私聊。
+    func testOldCoreWithoutReceiptStillOpensTheDefaultAgent() {
+        launch(ask: "silent")
+        XCTAssertTrue(app.textViews["Message"].waitForExistence(timeout: 8),
+                      "旧核心没有回执时没打开默认 Agent\n\(app.debugDescription)")
+        XCTAssertFalse(app.otherElements["askFailureBar"].exists)
     }
 
     private func shot(_ name: String) {

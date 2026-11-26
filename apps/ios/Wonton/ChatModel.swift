@@ -313,6 +313,8 @@ final class ChatModel {
 
     private var pendingAsk: PendingAsk?
     private var askRequestId: UInt32 = 0
+    /// 没收到回执（旧核心）时，等这么短就按旧行为自己找默认 Bot 的私聊打开。
+    private var askFallback: Task<Void, Never>?
     /// 最近一次问 Bot 失败的原因；成功或开始重试时清掉。
     var askFailure: AskFailureBanner?
 
@@ -348,12 +350,71 @@ final class ChatModel {
             pendingAsk = nil
             throw error
         }
+        askFallback?.cancel()
+        askFallback = Task { [weak self] in
+            try? await Task.sleep(for: .milliseconds(2000))
+            guard !Task.isCancelled else { return }
+            await self?.legacyOpenDefaultAgent(id: id)
+        }
     }
 
-    /// 重试上一次失败：沿用同一个房间，换一个新的动作 ID。
+    /// 旧核心不写回执：到点还没对上就按旧行为打开默认 Agent 的私聊，别让用户停在列表。
+    private func legacyOpenDefaultAgent(id: UInt32) async {
+        guard pendingAsk?.id == id else { return }
+        let onboarding = core.onboarding()
+        guard onboarding.defaultBotVisibility == .visible,
+              let peer = onboarding.defaultBotUserId, !peer.isEmpty else {
+            askFallback = nil
+            if let pending = pendingAsk, pending.id == id {
+                askFailure = AskFailureBanner(
+                    text: pending.text,
+                    roomId: pending.roomId,
+                    reason: .botNotReady,
+                    detail: String(localized: .Chat1.chatAskFailedBotNotReady)
+                )
+            }
+            return
+        }
+        // 旧核心对空 text 会报“消息不能为空”；打开私聊后把它收掉。
+        if pendingAsk?.text.isEmpty == true {
+            try? core.dispatch(action: .chat(action: .dismissChatProblem))
+        }
+        if let room = viewModel.rooms.first(where: { $0.directUserId == peer }) {
+            await openOrJoin(room)
+        } else {
+            do {
+                try core.dispatch(action: .chat(action: .startDirectChat(userId: peer)))
+                awaitedPeer = peer
+                awaitedFrom = .chat
+                openAwaitedChat()
+            } catch {
+                askFailure = AskFailureBanner(
+                    text: pendingAsk?.text ?? "",
+                    roomId: pendingAsk?.roomId,
+                    reason: .other,
+                    detail: error.localizedDescription
+                )
+            }
+        }
+    }
+
+    /// 旧核心的私聊：已加入直接开，收到邀请先接受。
+    private func openOrJoin(_ room: RoomRow) async {
+        if room.membership == .invited {
+            try? core.dispatch(action: .chat(action: .joinRoom(roomId: room.roomId)))
+        }
+        openRoom(id: room.roomId)
+    }
+
+    /// 重试上一次失败：沿用同一个房间，换一个新的动作 ID。同步失败（旧核心）时把提示条留回来。
     func retryAsk() throws {
         guard let failure = askFailure else { return }
-        try startAsk(text: failure.text, roomId: failure.roomId)
+        do {
+            try startAsk(text: failure.text, roomId: failure.roomId)
+        } catch {
+            askFailure = failure
+            throw error
+        }
     }
 
     /// 回执对上了就按状态开房间或留提示；Pending 不动。
@@ -362,6 +423,8 @@ final class ChatModel {
               let receipt = viewModel.ask,
               receipt.requestId == pending.id
         else { return }
+        askFallback?.cancel()
+        askFallback = nil
         switch receipt.state {
         case .pending:
             return

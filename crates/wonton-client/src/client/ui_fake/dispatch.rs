@@ -6,9 +6,6 @@ use wonton_protocol::{
     AskFailure, AskProblem, AskReceipt, AskState, ChatAction, CoreError, OpenPage, PageAction,
     PanelItem, PanelScope, PanelSource, TabRef,
 };
-};
-use super::super::ClientCore;
-use super::tabs::fake_open;
 
 /// 假数据下问过几次 Bot；`WONTON_UI_FAKE_ASK=contact_required_once` 用它只让第一次失败。
 static UI_FAKE_ASKS: AtomicUsize = AtomicUsize::new(0);
@@ -117,6 +114,9 @@ impl ClientCore {
                 let fail =
                     mode == "contact_required" || (mode == "contact_required_once" && attempt == 0);
                 let room = room_id.or_else(|| Some(super::chat::ROOM_ID.to_owned()));
+                if mode == "silent" {
+                    return;
+                }
                 self.views().chat.send_modify(|view| {
                     view.ask = Some(AskReceipt {
                         request_id,

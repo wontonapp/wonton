@@ -6,6 +6,8 @@ import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.saveable.rememberSaveable
+import android.os.Handler
+import android.os.Looper
 import androidx.compose.runtime.setValue
 import app.wonton.client.ClientCore
 import app.wonton.protocol.Action
@@ -16,6 +18,7 @@ import app.wonton.protocol.ChatAction
 import app.wonton.protocol.ChatContact
 import app.wonton.protocol.ChatViewModel
 import app.wonton.protocol.CoreException
+import app.wonton.protocol.DefaultBotVisibility
 import app.wonton.protocol.OwnPrivateBotView
 import app.wonton.protocol.RoomMembership
 import app.wonton.protocol.RoomRow
@@ -75,6 +78,8 @@ class ChatNavigation(
         var askFailure by mutableStateOf<AskFailureBanner?>(null)
         private var pendingAsk: PendingAsk? = null
         private var askRequestId: UInt = 0u
+        private val legacyHandler = Handler(Looper.getMainLooper())
+        private var legacyOpen: Runnable? = null
 
         /** 当前开着的房间能不能原样当作“问 Bot”的目标：Bot 私聊、本人 Bot 的主房间，或者只读的通知房。 */
         fun currentBotRoomId(viewModel: ChatViewModel): String? {
@@ -100,8 +105,34 @@ class ChatNavigation(
             val rejection = core.send(
                 Action.Chat(ChatAction.AskAgent(text = text, roomId = roomId, requestId = id))
             )
-            if (rejection != null) pendingAsk = null
+            if (rejection != null) {
+                pendingAsk = null
+            } else {
+                scheduleLegacyOpen(core, id)
+            }
             return rejection
+        }
+
+        /// 旧核心不会写回执：等一会儿还没对上就按旧行为打开默认 Agent 的私聊。
+        private fun scheduleLegacyOpen(core: ClientCore, id: UInt) {
+            legacyOpen?.let(legacyHandler::removeCallbacks)
+            val open = Runnable { legacyOpenDefaultAgent(core, id) }
+            legacyOpen = open
+            legacyHandler.postDelayed(open, 2000)
+        }
+
+        private fun legacyOpenDefaultAgent(core: ClientCore, id: UInt) {
+            if (pendingAsk?.id != id) return
+            val onboarding = core.onboarding()
+            val peer = onboarding.defaultBotUserId
+            if (onboarding.defaultBotVisibility != DefaultBotVisibility.VISIBLE || peer.isNullOrEmpty()) {
+                askFailure = AskFailureBanner(text = "", roomId = null, reason = AskFailure.BOT_NOT_READY, detail = "")
+                return
+            }
+            if (pendingAsk?.text.isNullOrEmpty()) {
+                core.send(Action.Chat(ChatAction.DismissChatProblem))
+            }
+            openDirectChat(core, peer, acceptInvite = true)
         }
 
         /** 重试上一次失败：沿用同一个房间，换一个新的动作 ID。 */
@@ -118,6 +149,8 @@ class ChatNavigation(
             val pending = pendingAsk ?: return
             val receipt = viewModel.ask
             if (receipt == null || receipt.requestId != pending.id) return
+            legacyOpen?.let(legacyHandler::removeCallbacks)
+            legacyOpen = null
             pendingAsk = null
             when (receipt.state) {
                 AskState.PENDING -> {}
