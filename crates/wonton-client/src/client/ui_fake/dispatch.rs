@@ -3,7 +3,6 @@
 use wonton_protocol::{ChatAction, CoreError, OpenPage, PageAction, TabRef};
 
 use super::super::ClientCore;
-use super::super::ui_fake_devices;
 use super::tabs::fake_open;
 
 impl ClientCore {
@@ -51,9 +50,9 @@ impl ClientCore {
             ..
         } = action
         {
-            self.views()
-                .confirmations
-                .send_if_modified(|view| ui_fake_devices::answer(view, &id, answer, &devices));
+            self.views().confirmations.send_if_modified(|view| {
+                super::super::ui_fake_devices::answer(view, &id, answer, &devices)
+            });
         }
     }
 }
