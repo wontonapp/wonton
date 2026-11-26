@@ -2,7 +2,8 @@
 """夜跑失败上报：按失败的测试开 issue；同一条测试已经有开着的 issue 就在上面留言。
 
 两个端用同一份：iOS 从 .xcresult 里取失败的用例，Android 从 JUnit XML 里取。没有解析到失败用例
-（构建或前置步骤炸了）时报一条作业级 issue。`GH_TOKEN` 由工作流给，仓库用 `--repo` 传。
+（构建或前置步骤炸了）时报一条作业级 issue。JUnit 的 assumption 跳过（AGP 记成 failure/error，type、
+message 或正文带 AssumptionViolatedException）不算失败。`GH_TOKEN` 由工作流给，仓库用 `--repo` 传。
 """
 
 import argparse
@@ -14,6 +15,9 @@ import xml.etree.ElementTree as ET
 from pathlib import Path
 
 TITLE_PREFIX = "夜跑失败："
+
+# JUnit 4 的 assumption（含旧 internal 包和子类）与 JUnit 5 的 TestAbortedException。
+ASSUMPTION_EXCEPTIONS = ("AssumptionViolatedException", "TestAbortedException")
 
 
 def ios_failures(bundle: str) -> list[str]:
@@ -45,11 +49,17 @@ def android_failures(results_dir: str) -> list[str]:
     failures: list[str] = []
     for path in Path(results_dir).rglob("TEST-*.xml"):
         for case in ET.parse(path).getroot().iter("testcase"):
-            if case.find("failure") is None and case.find("error") is None:
+            problems = [*case.findall("failure"), *case.findall("error")]
+            if all(problem_is_assumption(problem) for problem in problems):
                 continue
             suite = case.get("classname", "").rsplit(".", 1)[-1]
             failures.append(f"{suite}.{case.get('name', '')}")
     return failures
+
+
+def problem_is_assumption(problem: ET.Element) -> bool:
+    text = " ".join((problem.get("type", ""), problem.get("message", ""), problem.text or ""))
+    return any(name in text for name in ASSUMPTION_EXCEPTIONS)
 
 
 def gh(*args: str) -> str:
@@ -57,7 +67,7 @@ def gh(*args: str) -> str:
 
 
 def main() -> int:
-    parser = argparse.ArgumentParser()
+    parser = argparse.ArgumentParser(description="夜跑失败上报；JUnit 的 assumption 跳过不算失败。")
     parser.add_argument("--repo", required=True)
     parser.add_argument("--platform", required=True, choices=["ios", "android"])
     parser.add_argument("--run-url", required=True)
