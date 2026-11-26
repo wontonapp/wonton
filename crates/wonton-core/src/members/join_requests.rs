@@ -19,6 +19,9 @@ pub(super) struct StoredJoin {
     pub(super) request: JoinRequest,
     endpoint: EndpointId,
     code_hash: String,
+    /// 换码后被改写掉的旧 hash：旧码交回来也要按这条记录回答。
+    #[serde(default)]
+    retired_code_hashes: Vec<String>,
     expires_at_ms: u64,
     decision: Decision,
 }
@@ -78,7 +81,17 @@ impl Members {
         now: u64,
         devices: &Devices,
     ) -> Result<Option<JoinCheck>, MembersError> {
-        let Some(index) = stored.joins.iter().position(|join| join.code_hash == hash) else {
+        // 换过码的旧码也要找到这条记录：旧码交回按记录回答，不是“未知”。
+        let recorded = |join: &StoredJoin| {
+            join.code_hash == hash || join.retired_code_hashes.iter().any(|old| old == hash)
+        };
+        // 同一台设备自己的记录优先，别被别的设备的旧记录抢先。
+        let index = stored
+            .joins
+            .iter()
+            .position(|join| join.endpoint == endpoint && recorded(join))
+            .or_else(|| stored.joins.iter().position(recorded));
+        let Some(index) = index else {
             return Ok(None);
         };
         let join = &stored.joins[index];
@@ -162,6 +175,9 @@ impl Members {
         }) {
             let role_id = member.role_id.clone();
             let mut next = stored.clone();
+            // 改写前把旧 hash 留下：旧码交回来还按这条记录回答。
+            let retired = next.joins[index].code_hash.clone();
+            next.joins[index].retired_code_hashes.push(retired);
             next.joins[index].code_hash = hash;
             // 新码的过期时间可能比旧码晚，请求跟着新码走。
             next.joins[index].expires_at_ms = expires_at_ms;
@@ -190,6 +206,7 @@ impl Members {
             request,
             endpoint,
             code_hash: hash,
+            retired_code_hashes: Vec::new(),
             expires_at_ms,
             decision: if joined {
                 Decision::Approved

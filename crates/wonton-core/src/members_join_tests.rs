@@ -239,3 +239,39 @@ fn rejection_is_reported_once_and_voiding_keeps_the_request() {
     assert!(devices.contains(&endpoint));
     assert_eq!(members.get("alice").unwrap().status, MemberStatus::Joined);
 }
+
+#[test]
+fn reused_request_still_answers_the_retired_code_as_used() {
+    let dir = tempfile::tempdir().unwrap();
+    let members = Members::open(dir.path().join("members.json")).unwrap();
+    let devices = Devices::open(dir.path().join("devices.json")).unwrap();
+    members.invite(MemberRecord::for_test("alice")).unwrap();
+    let first = members.issue_pairing_code("alice").unwrap();
+    let phone = SecretKey::generate().public();
+    members
+        .request_join(first.secret.expose(), phone, "手机", &devices)
+        .unwrap();
+    // 同一台设备换用新码重交，复用原来那条请求。
+    let second = members.issue_pairing_code("alice").unwrap();
+    assert_eq!(
+        members
+            .request_join(second.secret.expose(), phone, "手机", &devices)
+            .unwrap(),
+        JoinCheck::Pending("friend".into())
+    );
+    // 复用之后旧码仍按记录回答：别的设备交回是“码已用过”。
+    let other = SecretKey::generate().public();
+    assert_eq!(
+        members
+            .request_join(first.secret.expose(), other, "另一台", &devices)
+            .unwrap(),
+        JoinCheck::CodeUsed
+    );
+    // 同一台设备重交旧码还是“等批准”。
+    assert_eq!(
+        members
+            .request_join(first.secret.expose(), phone, "手机", &devices)
+            .unwrap(),
+        JoinCheck::Pending("friend".into())
+    );
+}
