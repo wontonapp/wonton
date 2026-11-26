@@ -5,9 +5,9 @@
     <!-- Next step under the refused problem: the sign-in is fine; the server refused this one action. -->
     <string name="problem_forbidden_next_step">You\'re still signed in. You may not have permission for this, they may have blocked you, or their server can\'t reach yours yet.</string>
     <!-- Next step: check the proxy on the home server, or change the address in the internet proxy settings. -->
-    <string name="problem_plugin_egress_proxy_unavailable_next_step">Check the proxy on your home server, or change the address in the Internet proxy settings.</string>
+    <string name="problem_plugin_egress_proxy_unavailable_next_step">Look at the proxy app\'s logs on its install page, or check the Internet proxy settings and try again.</string>
     <!-- Problem title: the app can't reach the internet through the internet proxy. -->
-    <string name="problem_plugin_egress_proxy_unavailable_title">Can\'t reach the proxy</string>
+    <string name="problem_plugin_egress_proxy_unavailable_title">The proxy is broken</string>
     <!-- Problem title: the app and the home server versions don't match. -->
     <string name="problem_plugin_protocol_title">Wonton and your home server aren\'t compatible</string>
     <!-- Next step: uninstall the app (its data can be kept) and install it again. -->
@@ -28,4 +28,9 @@
     <string name="problem_unauthorized_title">Your home server doesn\'t recognize this device</string>
     <!-- Next step under the server-error problem. Also used for other problems that only say to try later. -->
     <string name="problem_upstream_next_step">Try again later.</string>
+    <string name="problem_plugin_health_timeout_next_step">The service was still not ready when the deadline passed. Retrying the install once the host has calmed down usually works; a service answering 5xx all along may also be failing on its own. The details name the service, how long it waited, its last state and recent probes.</string>
+    <!-- Problem title when a chat can't start because the other server turned its public access off. -->
+    <string name="problem_peer_public_access_off_title">The other server\'s public access is off</string>
+    <!-- Problem title when a chat can't start because the other server isn't paired with this one. -->
+    <string name="problem_server_not_paired_title">The other server isn\'t paired</string>
 </resources>

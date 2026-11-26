@@ -22,7 +22,7 @@ const MAX_ID: usize = 255;
 
 /// 卡片问的是哪类事，决定发给谁（ADR-0045 的权限表）。
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
-pub(super) enum Subject {
+pub(crate) enum Subject {
     /// 调插件的工具、Agent 自己的工具：发给 Bot 的归属人。
     Tool,
     /// 会删、会覆盖的工具调用，在“删除要管理员批”的封顶下：发给所有管理员（ADR-0088 第 5 节）。
@@ -74,7 +74,7 @@ struct OriginRecord<'a> {
 
 impl Bus {
     /// 卡片普通收件人的用户名；`None` 是主人。管理员卡片另在 [`Self::audience`] 里冻结完整名单。
-    pub(super) fn recipient(&self, caller: &Caller, subject: Subject) -> Option<String> {
+    pub(crate) fn recipient(&self, caller: &Caller, subject: Subject) -> Option<String> {
         let BotKeeper::User { username } = &caller.bot.as_ref()?.keeper else {
             return None;
         };
@@ -103,17 +103,12 @@ impl Bus {
         )
     }
 
-    /// 共享 Bot 没有进行中的轮次时的封顶：能用人（角色“用共享 Bot”为“能”）里最低的级别，主人算在内。
-    pub(crate) fn shared_bot_ai(&self) -> AiLevel {
-        crate::ai_level::shared_bot_ai(
-            self.people
-                .get()
-                .map(|people| (&*people.members, &*people.roles)),
-        )
-    }
-
-    /// 这次调用的封顶（ADR-0088 第 5 节、ADR-0083 第 5 节）：有进行中的轮次时按轮次里级别最低的人算，
-    /// 没有时私人 Bot 按归属人、共享 Bot 按能用人里最低的。没有 Bot 的工具插件按主人的自动化算。
+    /// 这次调用的封顶（ADR-0088 第 5 节、ADR-0083 第 5 节）：报了说话人按这个人算；没报时按进行中的轮次里
+    /// 级别最低的人算；两样都没有（[`Self::speaker_missing`]）按只读。没有 Bot 的工具插件按主人的自动化算。
+    /// 说话人本身是本机 Bot 的账号时按它那轮所在链的发起人算（ADR-0061 第 10 节）。
+    ///
+    /// 说不出替谁办事时不按 Bot 归属人或共享 Bot 的能用人算：插件取不到身份不带头、开链失败没报上轮次，
+    /// 这一轮就会拿到归属人（主人的 Bot 就是主人）的权限，等于身份升级。按只读失败即停，Agent 照实转告。
     pub(crate) fn ai_cap(&self, caller: &Caller) -> AiLevel {
         if let Some(level) = caller.ai_level {
             return strict_ai(level);
@@ -123,25 +118,27 @@ impl Bus {
         };
         if let Some(sender) = &caller.sender {
             return match sender {
-                TurnSender::Local(user_id) => localpart(user_id)
-                    .map_or(AiLevel::ReadOnly, |username| self.person_ai(username)),
+                TurnSender::Local(user_id) => {
+                    if self.plugins.bot_by_user(user_id).is_some() {
+                        self.bot_speaker_ai(caller, user_id)
+                    } else {
+                        localpart(user_id)
+                            .map_or(AiLevel::ReadOnly, |username| self.person_ai(username))
+                    }
+                }
                 TurnSender::Unknown => AiLevel::ReadOnly,
             };
         }
         match &bot.keeper {
-            BotKeeper::User { username } => {
+            BotKeeper::User { .. } | BotKeeper::Household => {
                 let turns = self.live_turn_ais(caller);
-                match turns.into_iter().reduce(lower) {
-                    Some(lowest) => lowest,
-                    None => self.person_ai(username),
-                }
-            }
-            BotKeeper::Household => {
-                let turns = self.live_turn_ais(caller);
-                match turns.into_iter().reduce(lower) {
-                    Some(lowest) => lowest,
-                    None => self.shared_bot_ai(),
-                }
+                turns.into_iter().reduce(lower).unwrap_or_else(|| {
+                    tracing::warn!(
+                        plugin = caller.id.as_str(),
+                        "这次调用没说替谁办事（没带说话人请求头，也没有进行中的轮次），AI 动手按只读封顶"
+                    );
+                    AiLevel::ReadOnly
+                })
             }
             BotKeeper::Other => {
                 tracing::warn!(
@@ -151,6 +148,40 @@ impl Bus {
                 AiLevel::ReadOnly
             }
         }
+    }
+
+    /// 说话的人本身是本机 Bot 的账号（Bot 之间传话）：按它那一轮所在链的发起人算。先看这次调用认下的链，
+    /// 认不下时看它其余的进行中轮次，几轮分不清时取最严。找不到链、链代表认不出时按只读。
+    fn bot_speaker_ai(&self, caller: &Caller, sender: &str) -> AiLevel {
+        let Some(chains) = self.agent_chains.get() else {
+            return AiLevel::ReadOnly;
+        };
+        let ledger = chains.ledger();
+        let Some(bot) = caller.bot.as_ref().map(|identity| BotRef {
+            plugin_id: caller.id.to_string(),
+            bot: identity.bot.clone(),
+        }) else {
+            return AiLevel::ReadOnly;
+        };
+        let turns: Vec<_> = ledger
+            .live_turns(&bot)
+            .into_iter()
+            .filter(|turn| turn.sender == sender)
+            .collect();
+        let picked: Vec<_> = match caller.chain.as_deref() {
+            Some(chain) if turns.iter().any(|turn| turn.chain == chain) => {
+                turns.iter().filter(|turn| turn.chain == chain).collect()
+            }
+            _ => turns.iter().collect(),
+        };
+        picked
+            .into_iter()
+            .filter_map(|turn| ledger.chain_user(&turn.chain))
+            .map(|user| {
+                localpart(&user).map_or(AiLevel::ReadOnly, |username| self.person_ai(username))
+            })
+            .reduce(lower)
+            .unwrap_or(AiLevel::ReadOnly)
     }
 
     /// 进行中的轮次各自代表的级别。说话的人认不出时按最严，不用链代表的人替代（ChainSessionInfo 的 `sender`
@@ -188,6 +219,21 @@ impl Bus {
                 })
             })
             .collect()
+    }
+
+    /// 有 Bot 记录的调用方说不出这次替谁办事：没报说话人，这个 Bot 也没有进行中的轮次。
+    pub(super) fn speaker_missing(&self, caller: &Caller) -> bool {
+        caller.bot.is_some() && caller.sender.is_none() && self.live_turn_ais(caller).is_empty()
+    }
+
+    /// 封顶只读时的拒绝（权限缺失）。说不出替谁办事的写明这一点，Agent 能照实转告，不当成角色不够。
+    pub(super) fn read_only_refusal(&self, caller: &Caller, refused: &str) -> super::ToolFailure {
+        let why = if self.speaker_missing(caller) {
+            "这次调用没说替谁办事（没带说话人请求头，也没有进行中的轮次），AI 动手按只读"
+        } else {
+            "这次的 AI 动手级别是只读"
+        };
+        super::ToolFailure::new("permission_denied", format!("{why}，{refused}，没有执行"))
     }
 
     fn person_ai_option(&self, username: &str) -> Option<AiLevel> {
@@ -239,7 +285,7 @@ impl Bus {
         }
     }
 
-    fn plugin_admins(&self) -> Vec<String> {
+    pub(crate) fn plugin_admins(&self) -> Vec<String> {
         self.people
             .get()
             .map(|people| {
@@ -377,7 +423,7 @@ impl Bus {
         }
     }
 
-    /// 请冻结收件人确认，等到回答或者过期。
+    /// 请冻结收件人确认，等到回答或者过期。卡片认到调用头里的链，停链时随停撤回。
     pub(super) async fn ask_for(
         &self,
         caller: &Caller,
@@ -385,7 +431,14 @@ impl Bus {
         draft: Draft,
     ) -> Result<Ticket, Refusal> {
         let audience = self.audience(caller, subject).await;
-        self.confirmations.ask_as(&caller.id, draft, audience).await
+        let (card, answered) = self.confirmations.open_as(&caller.id, draft, audience)?;
+        // 停链抢在开卡片和绑卡片之间时，停链那一遍已经收不到这张卡片了：绑上之后回查，是停的就当场撤回。
+        if super::chain_card::bind_card(self, caller, None, &card.id, "工具卡片").outcome
+            == super::chain_card::Bound::Withdrawn
+        {
+            return Err(Refusal::Cancelled);
+        }
+        self.confirmations.wait(card, answered).await
     }
 
     /// Bot 的主房间是它和归属人的私聊（共享 Bot 是和主人的）：收件人是这个人时，主房间就是两边都在的房间。

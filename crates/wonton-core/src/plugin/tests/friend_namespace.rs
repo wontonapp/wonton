@@ -22,7 +22,9 @@ async fn a_checked_friend_name_stays_reserved_across_matrix_accounts_and_bots() 
     let mut manager = manager_with(crate::plugin::docker::Engine::unreachable_for_test(), &dir);
     manager.matrix = Some(matrix);
     let friends = Arc::new(Friends::open(dir.path().join("friends.json")).unwrap());
-    let shares = Arc::new(Shares::open(dir.path().join("shares.json"), friends.clone()).unwrap());
+    let roles = Arc::new(crate::roles::Roles::initial_for_test());
+    let shares =
+        Arc::new(Shares::open(dir.path().join("shares.json"), friends.clone(), roles).unwrap());
     manager.attach_sharing(friends.clone(), shares);
     let owner = crate::owner::OwnerStore::for_test(
         dir.path(),

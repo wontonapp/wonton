@@ -20,14 +20,20 @@ object WontonSpacing {
     val pageInset = 16.dp
     val sectionGap = 24.dp
     val runGap = 2.dp
-    val groupGap = 8.dp
+    val groupGap = 6.dp
+    val bubbleEdge = 4.dp
+    val bubbleInsetX = 11.dp
+    val bubbleInsetY = 6.dp
+    val bubbleOpposite = 36.dp
+    val chatFloatInset = 8.dp
 }
 
 object WontonRadii {
     val control = 12.dp
     val card = 16.dp
-    val bubble = 17.dp
-    val bubbleJoined = 6.dp
+    val bubble = 16.dp
+    val bubbleJoined = 8.dp
+    val webXs = 6.dp
     val pill = 999.dp
     val bar = 22.dp
     val barItem = 16.dp
@@ -68,7 +74,14 @@ object WontonSize {
     val hairline = 1.dp
     val quoteBar = 2.dp
     val bubbleTail = 6.dp
+    val bubbleTailRise = 9.dp
+    val chatControl = 44.dp
+    val choiceButton = 42.dp
+    val datePill = 22.dp
+    val commandAvatar = 28.dp
     val messageAvatar = 34.dp
+    val commandMenu = 240.dp
+    val attachTab = 76.dp
 }
 
 object WontonRatio {
@@ -78,6 +91,12 @@ object WontonRatio {
     val codeFill = 0.1f
     val bubbleWidth = 0.8f
     val composerLines = 6f
+    val wallTint = 0.16f
+    val wallPattern = 0.14f
+    val serviceFill = 0.32f
+    val serviceFillDark = 0.16f
+    val jumpHighlight = 0.2f
+    val tabHighlight = 0.14f
 }
 
 object WontonGesture {
@@ -111,4 +130,11 @@ class WontonTypography(fontFamily: FontFamily?) {
     val body = TextStyle(fontFamily = fontFamily, fontSize = 16.sp, lineHeight = 22.sp, fontWeight = FontWeight.Normal)
     val supporting = TextStyle(fontFamily = fontFamily, fontSize = 14.sp, lineHeight = 20.sp, fontWeight = FontWeight.Normal)
     val caption = TextStyle(fontFamily = fontFamily, fontSize = 12.sp, lineHeight = 16.sp, fontWeight = FontWeight.Normal)
+    val message = TextStyle(fontFamily = fontFamily, fontSize = 16.sp, lineHeight = 21.sp, fontWeight = FontWeight.Normal)
+    val messageMeta = TextStyle(fontFamily = fontFamily, fontSize = 11.sp, lineHeight = 13.sp, fontWeight = FontWeight.Normal)
+    val senderName = TextStyle(fontFamily = fontFamily, fontSize = 14.sp, lineHeight = 18.sp, fontWeight = FontWeight.SemiBold)
+    val choice = TextStyle(fontFamily = fontFamily, fontSize = 15.sp, lineHeight = 20.sp, fontWeight = FontWeight.Medium)
+    val datePill = TextStyle(fontFamily = fontFamily, fontSize = 13.sp, lineHeight = 16.sp, fontWeight = FontWeight.Medium)
+    val barTitle = TextStyle(fontFamily = fontFamily, fontSize = 17.sp, lineHeight = 22.sp, fontWeight = FontWeight.SemiBold)
+    val barStatus = TextStyle(fontFamily = fontFamily, fontSize = 13.sp, lineHeight = 16.sp, fontWeight = FontWeight.Normal)
 }

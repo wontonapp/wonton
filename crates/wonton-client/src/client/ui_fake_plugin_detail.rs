@@ -1,6 +1,6 @@
 //! 假数据入口里写死的已装应用详情（ADR-0036）：Home Hub 一个串口不在了，USB 整类，两块硬盘里一块是系统盘，
 //! 还分享给了一位好友；Budget 一份分享都没有；别的应用带着安装失败装着时，给一份“安装失败”详情。
-//! 没有后端，其余应用的详情照旧取不到，界面测试看“设备”“分享的家人”和安装失败这几页怎么画。
+//! 没有后端；商店来源（Photo Vault、Home Music）的详情也在这里出。界面测试看“设备”“分享的家人”和安装失败这几页怎么画。
 
 use wonton_protocol::{
     Gate, InstalledPlugin, PluginDetail, PluginDetailRoute, PluginDeviceKind, PluginFailure,
@@ -28,6 +28,9 @@ pub(super) fn detail(
     route: &PluginDetailRoute,
     installed: Option<InstalledPlugin>,
 ) -> Option<PluginDetail> {
+    if let Some(detail) = super::ui_fake_store::detail(route) {
+        return Some(detail);
+    }
     let PluginDetailRoute::Installed { id } = route else {
         return None;
     };
@@ -65,13 +68,19 @@ fn budget(installed: Option<InstalledPlugin>) -> PluginDetail {
     detail
 }
 
-fn app(id: &str, title: &str, summary: &str, installed: Option<InstalledPlugin>) -> PluginDetail {
+pub(super) fn app(
+    id: &str,
+    title: &str,
+    summary: &str,
+    installed: Option<InstalledPlugin>,
+) -> PluginDetail {
     PluginDetail {
         source: None,
         id: id.into(),
         title: title.into(),
         summary: summary.into(),
         about: None,
+        setup: None,
         icon: None,
         screenshots: Vec::new(),
         tags: Vec::new(),
@@ -126,6 +135,7 @@ fn hub(installed: Option<InstalledPlugin>) -> PluginDetail {
         installed,
     );
     detail.has_web = true;
+    detail.setup = Some("Sign in as admin, then change the password.".into());
     detail.problems = vec![PluginProblem {
         reason: PluginFailure::DeviceUnavailable,
         message: GONE.into(),

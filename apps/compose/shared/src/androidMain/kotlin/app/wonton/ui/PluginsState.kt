@@ -115,13 +115,18 @@ sealed interface PluginEntry {
     data class Browser(val url: String) : PluginEntry
 }
 
+/** 能开私聊的 Bot：只有 Agent 插件、有 id 且核实过（absent 也算）时给。 */
+private val InstalledPlugin.chatBot: String?
+    get() {
+        if (kind != PluginKind.AGENT || botUserId.isNullOrEmpty()) return null
+        val visibility = defaultBotVisibility ?: return null
+        return botUserId.takeIf { visibility != DefaultBotVisibility.UNKNOWN }
+    }
+
 /** 打开它的方式，第一种是点图标时用的。都没有时点开看详情。 */
 val InstalledPlugin.entries: List<PluginEntry>
     get() = buildList {
-        val bot = botUserId
-        if (kind == PluginKind.AGENT && defaultBotVisibility == DefaultBotVisibility.VISIBLE && !bot.isNullOrEmpty()) {
-            add(PluginEntry.Chat(bot))
-        }
+        chatBot?.let { add(PluginEntry.Chat(it)) }
         linkUrl?.let { add(PluginEntry.Browser(it)) }
         tabChoices.firstOrNull()?.let { add(PluginEntry.Web(it.tab)) }
     }

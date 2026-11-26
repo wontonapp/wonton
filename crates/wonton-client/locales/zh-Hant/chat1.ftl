@@ -96,3 +96,6 @@ chat-draft-read-interrupted = 草稿的讀取被打斷了
 
 chat-choice-send-failed = 沒發出去：連不上家裡伺服器。（{ $error }）
 chat-op-agent-answer-failed = 回答選項失敗：{ $error }
+
+# 附言没进发送队列或没被服务器收下，转发也没发。
+chat-forward-comment-failed = 附言沒發出去，因此沒有轉傳：{ $error }

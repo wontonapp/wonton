@@ -3,7 +3,6 @@ package app.wonton.ui
 import androidx.compose.animation.AnimatedVisibility
 import androidx.compose.animation.fadeIn
 import androidx.compose.animation.fadeOut
-import androidx.compose.foundation.background
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Box
@@ -17,14 +16,13 @@ import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.LazyListState
 import androidx.compose.foundation.lazy.items
 import androidx.compose.foundation.lazy.itemsIndexed
-import androidx.compose.foundation.lazy.rememberLazyListState
-import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material3.CircularProgressIndicator
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.snapshotFlow
 import androidx.compose.runtime.getValue
+import androidx.compose.runtime.mutableIntStateOf
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
@@ -34,12 +32,12 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.geometry.Rect
 import androidx.compose.ui.platform.testTag
 import androidx.compose.ui.res.stringResource
-import androidx.compose.ui.unit.Dp
 import androidx.compose.ui.unit.dp
 import app.wonton.client.ClientCore
 import app.wonton.protocol.Action
 import app.wonton.protocol.BackPagination
 import app.wonton.protocol.ChatAction
+import app.wonton.protocol.ImageContent
 import app.wonton.protocol.JumpState
 import app.wonton.protocol.OutgoingMessage
 import app.wonton.protocol.TimelineAction
@@ -50,9 +48,6 @@ import app.wonton.protocol.TimelineTarget
 import app.wonton.ui.design.LocalWontonBottomInset
 import app.wonton.ui.design.LocalWontonTopInset
 import app.wonton.ui.design.WontonTheme
-import app.wonton.ui.design.toColor
-import java.text.DateFormat
-import java.util.Date
 import kotlinx.coroutines.Job
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.flow.distinctUntilChanged
@@ -76,15 +71,24 @@ internal fun TimelineList(
     onReply: (TimelineMessage) -> Unit,
     modifier: Modifier,
     menuOpen: Boolean = false,
-    headerHeight: Dp = 0.dp,
+    onScroll: () -> Unit = {},
 ) {
-    val listState = rememberLazyListState()
+    val listState = timeline.list
     ScrollEffects(listState, timeline, target, sideChats.covered, onAction)
     FollowNewItems(listState, outgoing)
+    // 翻时间线时先把命令列表收起来（ADR-0109 第 7 节），列表让出来。
+    LaunchedEffect(listState) {
+        snapshotFlow { listState.isScrollInProgress }.filter { it }.collect { onScroll() }
+    }
     // 倒着排：第 0 项是最新的一条，贴着底部。
     val newestFirst = timeline.items.asReversed()
     val openCard: (String) -> Unit = { cardId -> timeline.openedConfirmation = cardId }
+    // 同一次发送的多张照片（ADR-0094）：查看器在同组里翻页用。items 是原地增删的同一份列表，
+    // remember 的键要跟批号（revision）走；拿 items 本身当键永远等于自己，收组就只在空表上算一次。
+    val imageGroups = remember(timeline.revision) { timeline.items.imageGroups() }
     val pill = rememberDatePill(listState, newestFirst)
+    val landing = remember { JumpLandingState() }
+    LandingHint(timeline, landing)
     val inset = LocalWontonTopInset.current
     PaginateOnTop(listState, timeline, target, onAction)
     Box(modifier) {
@@ -115,7 +119,7 @@ internal fun TimelineList(
                 if (item.isBlankAgentRun) return@itemsIndexed
                 Column {
                     // 跨日的那条上方放一行固定的日期：它自己占一行，不和气泡重叠。
-                    day?.let { label -> DaySeparator(label) }
+                    day?.let { label -> DaySeparator(label, Modifier.testTag("day-separator")) }
                     // 倒着排：下标大的是更早的一条。
                     TimelineRow(
                         item,
@@ -130,6 +134,9 @@ internal fun TimelineList(
                         onOpenMenu = onOpenMenu,
                         onReply = onReply,
                         openCard = openCard,
+                        groupImages = item.message?.let { message ->
+                            message.group?.id?.let { imageGroups[message.senderId to it] }
+                        },
                     )
                 }
             }
@@ -143,23 +150,19 @@ internal fun TimelineList(
                 }
             }
         }
-        DatePill(
+        FloatingPill(
             pill.held && pill.text != null,
             pill.text.orEmpty(),
-            Modifier.align(Alignment.TopCenter).padding(
-                // 有状态行时列表已经让开了它，胶囊只躲顶栏那一层；没有状态行时躲顶栏本身。
-                top = if (headerHeight > 0.dp) {
-                    WontonTheme.spacing.s4
-                } else {
-                    LocalWontonTopInset.current + WontonTheme.spacing.s4
-                },
-            ),
+            // 列表本身已经让开了顶栏（状态行也算在里面），胶囊只再躲开一点。
+            Modifier.align(Alignment.TopCenter).padding(top = WontonTheme.spacing.s4),
         )
-        // 跳转找不到那条消息时轻轻说一声，列表不动。
-        DatePill(
-            timeline.jump == JumpState.UNAVAILABLE,
+        // 找不到原消息时轻轻说一声，两秒后自己收；胶囊不接指针（没挂点击），压着的条目照样点得到。
+        FloatingPill(
+            landing.shows,
             stringResource(R.string.timeline_jump_unavailable),
-            Modifier.align(Alignment.BottomCenter).padding(bottom = WontonTheme.spacing.s8),
+            Modifier.align(Alignment.BottomCenter)
+                .padding(bottom = LocalWontonBottomInset.current + WontonTheme.spacing.s8),
+            tag = "jump-hint",
         )
         ScrollToBottomButton(
             timeline,
@@ -201,6 +204,30 @@ private fun PaginateOnTop(
             .distinctUntilChanged()
             .filter { it }
             .collect { onAction(Action.Timeline(TimelineAction.PaginateBackwards(target))) }
+    }
+}
+
+/** 跳转找不到原消息时的那句提示：触发时显示，两秒后自己收掉，不用点。 */
+private class JumpLandingState {
+    var missing by mutableIntStateOf(0)
+    var shows by mutableStateOf(false)
+}
+
+@Composable
+private fun LandingHint(timeline: TimelineState, landing: JumpLandingState) {
+    // 一跳就收掉上一次的提示，别压在列表上挡第二下。
+    LaunchedEffect(timeline.jump) {
+        when (timeline.jump) {
+            JumpState.LOADING, JumpState.UNAVAILABLE -> landing.shows = false
+            JumpState.IDLE, JumpState.OTHER -> {}
+        }
+        if (timeline.jump == JumpState.UNAVAILABLE) landing.missing++
+    }
+    LaunchedEffect(landing.missing) {
+        if (landing.missing == 0) return@LaunchedEffect
+        landing.shows = true
+        delay(WontonTheme.motion.jumpHighlight.toLong() + WontonTheme.motion.datePillHold.toLong())
+        landing.shows = false
     }
 }
 
@@ -252,6 +279,7 @@ private fun TimelineRow(
     onOpenMenu: (TimelineItem, TimelineMessage, Rect) -> Unit,
     onReply: (TimelineMessage) -> Unit,
     openCard: (String) -> Unit,
+    groupImages: List<ImageContent>?,
 ) {
     val joinsPrevious = item.joins(previous)
     Box(
@@ -275,16 +303,16 @@ private fun TimelineRow(
                 onAction(Action.Chat(ChatAction.AnswerAgentChoice(target.roomId, item.id, key)))
             },
             onOpenSideChat = sideChats.onOpen,
-            onJumpQuote = { eventId ->
-                onAction(Action.Timeline(TimelineAction.JumpToMessage(target, eventId, item.id)))
-            },
+            onJumpQuote = { eventId -> timeline.jumpTo(eventId, item.id, target, onAction) },
             onAnswerChoice = { key ->
                 onAction(Action.Chat(ChatAction.AnswerAgentChoice(target.roomId, item.id, key)))
             },
             focused = timeline.focus?.itemId == item.id,
             emphasize = timeline.focus?.highlight == true,
+            jumpQuote = timeline.jumpQuote,
             flushesPrevious = previous?.flushesWith(next = item) == true,
             flushesNext = item.flushesWith(next = next),
+            groupImages = groupImages,
         )
     }
 }
@@ -292,56 +320,48 @@ private fun TimelineRow(
 /**
  * 每个下标上方要不要来一行日期；跨日的那条才有。列表是倒排的（下标 0 贴着底部），屏幕上往下是越来越新：
  * 一条和它正上方那条不是同一天（或者它就在最顶上、上面没有消息）时，分隔画在它上面、写它自己的日期，
- * 也就是它下面那条消息的日期。
+ * 也就是它下面那条消息的日期。跨日的日期由核心的分隔条目写，这里只兜底没有分隔条目的边界；
+ * 下面紧挨着同一天的分隔条目时也不出，那枚已经写了这一天（房间开头的 TimelineStart）。
  */
-private fun dayMarksFor(items: List<TimelineItem>): Array<String?> {
+internal fun dayMarksFor(items: List<TimelineItem>): Array<String?> {
+    // 算的途中列表还会长（发送回显）：长度先定下来，两个循环按同一份下标走，别拿变了长度的 `indices`。
+    val size = items.size
     // 没有时间的旁注跟着下面（更新）的那条算同一天，下标越小越新。
-    val days = arrayOfNulls<String>(items.size)
+    val days = arrayOfNulls<String>(size)
     var newer: String? = null
-    for (index in items.indices) {
+    for (index in 0 until size) {
         newer = items[index].timestampMs?.let(::dateLabel) ?: newer
         days[index] = newer
     }
-    val marks = arrayOfNulls<String>(items.size)
-    for (index in items.indices) {
+    val marks = arrayOfNulls<String>(size)
+    for (index in 0 until size) {
         val day = days[index]
-        if (day != null && day != days.getOrNull(index + 1)) marks[index] = day
+        val own = day != null && day != days.getOrNull(index + 1)
+        val below = items.getOrNull(index - 1)
+        val belowWritesDay = below?.content is TimelineContent.DateDivider && days.getOrNull(index - 1) == day
+        if (own && !belowWritesDay && items[index].content !is TimelineContent.DateDivider) marks[index] = day
     }
     return marks
 }
 
 /** 日期分隔：一行居中、自己占高度。 */
 @Composable
-private fun DaySeparator(label: String) {
-    Box(Modifier.fillMaxWidth().testTag("day-separator"), contentAlignment = Alignment.Center) {
-        Text(label, style = WontonTheme.typography.caption, color = WontonTheme.colors.textSecondary.toColor())
-    }
+internal fun DaySeparator(label: String, modifier: Modifier = Modifier) {
+    Box(modifier.fillMaxWidth(), contentAlignment = Alignment.Center) { DatePill(label) }
 }
 
 /** 浮在列表上的小胶囊（日期、跳转失败的提示）。 */
 @Composable
-private fun DatePill(visible: Boolean, text: String, modifier: Modifier) {
-    AnimatedVisibility(visible, modifier.testTag("date-pill"), fadeIn(), fadeOut()) {
-        Text(
-            text,
-            Modifier
-                .background(
-                    WontonTheme.colors.surfaceSubtle.toColor().copy(alpha = PILL_ALPHA),
-                    RoundedCornerShape(WontonTheme.radii.pill),
-                )
-                .padding(horizontal = WontonTheme.spacing.s12, vertical = WontonTheme.spacing.s4),
-            style = WontonTheme.typography.caption,
-            color = WontonTheme.colors.textSecondary.toColor(),
-        )
+private fun FloatingPill(visible: Boolean, text: String, modifier: Modifier, tag: String = "date-pill") {
+    // `modifier` 里的 `align` 是给外面那个 Box 的父数据；`AnimatedVisibility` 自己的布局会把它吃掉，
+    // 所以先套一层普通 `Box`，`align` 挂在它上面；tag 只在露着时挂，收掉以后按 tag 找就是空的。
+    val shown = if (visible) modifier.testTag(tag) else modifier
+    Box(shown) {
+        AnimatedVisibility(visible, enter = fadeIn(), exit = fadeOut()) {
+            DatePill(text)
+        }
     }
 }
-
-/** 浮在最上面的日期胶囊的半透明底。 */
-private const val PILL_ALPHA = 0.9f
-
-/** 最上面那条的日期，胶囊里写这个。 */
-private fun dateLabel(timestampMs: Long): String =
-    DateFormat.getDateInstance(DateFormat.MEDIUM).format(Date(timestampMs))
 
 /** 这条的发送时间；旁注类的条目没有。 */
 private val TimelineItem.timestampMs: Long?
@@ -355,5 +375,5 @@ private val TimelineItem.timestampMs: Long?
 private val LazyListState.topVisibleItem: Int
     get() = layoutInfo.visibleItemsInfo.lastOrNull()?.index ?: 0
 
-private val TimelineItem.isBlankAgentRun
+internal val TimelineItem.isBlankAgentRun
     get() = (content as? TimelineContent.AgentRun)?.isBlank == true

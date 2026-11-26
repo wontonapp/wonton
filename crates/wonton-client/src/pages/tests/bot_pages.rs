@@ -6,17 +6,18 @@ fn bot(name: &str, url: &str) -> BotView {
         plugin_id: "app.shared".into(),
         bot: name.into(),
     };
-    BotView {
-        user_id: format!("@{name}:home"),
+    let page = BotWebPage {
         bot: bot.clone(),
+        url: url.into(),
+        cross_origin_isolated: false,
+    };
+    BotView {
+        availability: Default::default(),
+        user_id: format!("@{name}:home"),
+        bot,
         name: name.into(),
-        web: Some(BotWebView::Ready {
-            page: BotWebPage {
-                bot,
-                url: url.into(),
-                cross_origin_isolated: false,
-            },
-        }),
+        web: Some(BotWebView::Ready { page: page.clone() }),
+        web_page: Some(page),
         avatar: None,
         state_avatars: Vec::new(),
         activity: None,

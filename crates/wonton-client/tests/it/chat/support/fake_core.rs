@@ -145,6 +145,16 @@ async fn respond(core: &Core, head: &str, body: &[u8]) -> Option<(u16, String)> 
     if let Some(reply) = super::friends::respond(core, head, body) {
         return Some(reply);
     }
+    if head.starts_with("get /_wonton/api/me ") {
+        return Some((200, core.me.lock().unwrap().to_string()));
+    }
+    if head.starts_with("put /_wonton/api/me ") {
+        let update: Value = serde_json::from_slice(body).unwrap_or(Value::Null);
+        let mut me = core.me.lock().unwrap();
+        me["display_name"] = update["display_name"].clone();
+        me["email"] = update["email"].clone();
+        return Some((200, me.to_string()));
+    }
     if head.starts_with("get /_wonton/api/confirmations") {
         return confirmations(core, head).await;
     }

@@ -120,13 +120,22 @@ plugin-settings-egress-disconnected = 代理 { $address } 断开了连接：{ $e
 plugin-settings-egress-not-http = 代理 { $address } 回的不是 HTTP
 plugin-settings-egress-auth-407 = 代理 { $address } 回 407：要用户名和密码，或者写错了
 plugin-settings-egress-status = 代理 { $address } 回 { $code }
-plugin-settings-egress-relay-not-running = 出网容器没有在运行
+plugin-settings-egress-relay-starting = 出网容器 { $container } 还没接上出网网络：它还在启动，接上以后安装就能过去
+plugin-settings-egress-relay-restarting = 服务器的出网容器没有在运行。已经在重新起它；一直起不来看安装页
+plugin-settings-egress-relay-image = 拉不到出网容器的镜像：{ $error }。核对镜像地址和标签后再试
+plugin-settings-egress-relay-slow = 服务器的出网容器还没起来：Docker 没有及时回话（{ $error }）。可能还在拉镜像，会接着试
 plugin-settings-egress-relay-detail = 直接连代理是通的，经出网容器不通：{ $detail }。查看容器 { $container } 的日志
 plugin-settings-egress-diagnose-exit = 查原因的容器以 { $code } 退出：{ $reason }
 plugin-settings-egress-provider-missing = 没有装能做出网代理的应用
 plugin-settings-egress-provider-manifest = 代理插件 { $id } 的声明读不出来
 plugin-settings-egress-provider-conflict = 已经装了代理插件 { $id }：同一时间只能有一个
-plugin-settings-egress-provider-not-running = 代理插件没在运行：{ $detail }
+plugin-settings-egress-provider-installing = 代理插件 { $title } 还在安装。它起来以后要用外网的应用就能用，先不用管
+plugin-settings-egress-provider-upgrading = 代理插件 { $title } 正在换新版本。换好以后要用外网的应用就能用，先不用管
+plugin-settings-egress-provider-uninstalling = 代理插件 { $title } 正在卸载
+plugin-settings-egress-provider-starting = 代理插件 { $title } 在运行，还在启动（容器 { $container }）。先不用管
+plugin-settings-egress-provider-unhealthy = 代理插件 { $title } 在运行，但健康检查不过（容器 { $container }）。去安装页查看它的日志
+plugin-settings-egress-provider-stopped = 代理插件 { $title } 用不了：容器 { $container } 的状态是 { $status }，退出码 { $code }。先看安装页的日志，再核对它的配置
+plugin-settings-egress-provider-no-container = 代理插件 { $title } 的容器 { $container } 不见了。去安装页重新起它
 plugin-settings-egress-relay-cidr-overlap = 网段 { $cidr } 和出网容器接入的 Docker 网络重叠，没有放行：放行的话它会直接拨到别的应用
 plugin-settings-egress-token-unreadable = 服务 { $service } 把 Matrix 令牌写在 command 或 configs 里，读不回来
 plugin-settings-egress-token-reinstall = 重装应用（可以不删数据）后会签发新设备，Bot 要重新建加密身份
@@ -169,7 +178,6 @@ plugin-settings-store-source-plugin-missing = 索引 { $provider } 里没有 { $
 plugin-settings-store-community-partial = 有的没读到：{ $missing }
 plugin-settings-store-community-page-failed = 搜索结果的第 { $page } 页（{ $error }）
 plugin-settings-store-community-unavailable = 取不到社区应用：{ $error }
-plugin-settings-store-system-app = 系统应用只能随服务器预装
 plugin-settings-store-permission-unsupported = 服务器还不支持权限 { $permission }
 plugin-settings-store-index-newer = 索引的格式是 { $format }，这个版本的服务器只读得懂 { $supported }：更新服务器后才能用新的索引
 plugin-settings-store-index-invalid = 索引读不懂：{ $error }
@@ -301,11 +309,15 @@ plugin-settings-store-index-fetch-failed = 取不到官方索引：{ $error }
 
 # ── 健康检查（health.rs）───────────────────────────────────────────────────
 
-plugin-settings-health-timeout = 容器 { $container } 在期限内没有就绪（最后状态：{ $state }）
-plugin-settings-health-unhealthy = 容器 { $container } 健康检查失败
+plugin-settings-health-container = 容器 { $container }
+plugin-settings-health-state = { $container } 最后状态：{ $state }
+plugin-settings-health-timeout = { $waiting } 等了 { $waited } 秒（时限 { $budget } 秒）还没等来 { $pending } 就绪（{ $states }）
+plugin-settings-health-timeout-next = 下一步：时限对声明了健康检查的服务已经放宽到启动宽限加它自己的重试窗，没声明的就是安装期限；主机空下来后重试安装通常能过。服务一直答 5xx 则可能是它自己起得来但报错，看下面的探针和日志。
+plugin-settings-health-target = 服务
+plugin-settings-health-list-separator = 、
 plugin-settings-health-exited = 容器 { $container } 已退出（退出码 { $code }）
 plugin-settings-health-no-healthcheck = 容器 { $container } 被要求 service_healthy，但没有配置健康检查
-plugin-settings-health-webui-timeout = 网页入口 { $url } 在期限内没有响应：{ $last_error }
+plugin-settings-health-webui-state = { $method } 最后一次响应：{ $error }
 plugin-settings-health-log-tail = 最近日志：
 plugin-settings-health-probes = 最近探针：
 plugin-settings-health-probe-line = [退出码 { $code }] { $output }
@@ -330,6 +342,7 @@ plugin-settings-bot-device-name = Wonton 应用 { $id }（{ $bot }）
 plugin-settings-bot-account-deactivated = Bot 账号 { $user } 已停用：选择删除数据卸载这个应用后重装，会分配新账号
 plugin-settings-bot-device-record-missing = 没有 Bot { $bot } 的设备记录：重装应用（可以不删数据）
 plugin-settings-bot-device-revoked = Bot { $user } 的设备已被吊销，应用拿着的 Matrix 令牌失效了：重装应用（可以不删数据）重新签发
+plugin-settings-bot-sync-stalled = Bot 已经 { $seconds } 秒没经核心收到消息了：它可能还在运行、健康检查也说正常，但消息进不来。重启应用；还不行就重装（可以不删数据）
 
 # ── 局域网检测、出网容器和商店索引的补充（lan/detect.rs、docker_limits.rs、egress、storefront）──
 

@@ -9,6 +9,7 @@ use tokio::time::Instant;
 
 use super::super::compose::DependCondition;
 use super::super::health::{self, Target};
+use super::super::health_gate::Wait;
 use super::super::languages::Languages;
 use super::super::lifecycle::Undo;
 use super::super::manager::{Deployed, InstallError, PluginManager};
@@ -120,19 +121,17 @@ impl PluginManager {
             affected.insert(container.name.clone());
             true
         });
-        let deadline = Instant::now() + self.cfg.install_timeout;
+        let now = Instant::now();
+        let wait = Wait {
+            at: now + self.cfg.install_timeout,
+            budget: self.cfg.install_timeout,
+            started: now,
+        };
         for container in std::mem::take(&mut plan.containers) {
             let restart = services.contains(&container.service);
             plan.containers.push(container);
-            self.resume_device_container(
-                &package.manifest,
-                &ctx,
-                &mut plan,
-                restart,
-                deadline,
-                langs,
-            )
-            .await?;
+            self.resume_device_container(&package.manifest, &ctx, &mut plan, restart, wait, langs)
+                .await?;
             plan.containers.clear();
         }
         self.reconcile_running(&package, &record).await
@@ -144,7 +143,7 @@ impl PluginManager {
         ctx: &InstallContext,
         plan: &mut Deployment,
         restart: bool,
-        deadline: Instant,
+        wait: Wait,
         langs: &Languages,
     ) -> Result<(), InstallError> {
         let container = &plan.containers[0];
@@ -153,7 +152,7 @@ impl PluginManager {
             self.rewrite_image_healthchecks(ctx, plan).await?;
             let mut undo = Undo::default();
             self.prepare_dirs(ctx, &plan.dirs, &mut undo, langs)?;
-            self.start_containers(Some(manifest), plan, None, &mut undo, deadline, langs)
+            self.start_containers(Some(manifest), plan, None, &mut undo, wait, langs)
                 .await?;
             return Ok(());
         };
@@ -180,8 +179,14 @@ impl PluginManager {
         if completed || (!restart && state.running == Some(true)) {
             return Ok(());
         }
-        self.wait_dependencies(Some(manifest), &container.depends_on, deadline, langs)
-            .await?;
+        self.wait_dependencies(
+            Some(manifest),
+            &container.depends_on,
+            &container.name,
+            wait,
+            langs,
+        )
+        .await?;
         if restart {
             self.engine
                 .restart_container(&container.name, langs)
@@ -201,7 +206,7 @@ impl PluginManager {
             &container.name,
             target,
             webui.as_ref(),
-            deadline,
+            wait,
             langs,
         )
         .await?;

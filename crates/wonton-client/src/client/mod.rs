@@ -1,38 +1,39 @@
 use std::path::PathBuf;
 #[cfg(feature = "ui-fake")]
 use std::sync::RwLockReadGuard;
-#[cfg(feature = "ui-fake")]
 use std::sync::atomic::{AtomicBool, Ordering};
 use std::sync::{Arc, Mutex, RwLock};
 
 use tokio::sync::watch;
 use wonton_l10n::l10n;
 use wonton_protocol::{
-    AddedSource, AppLockTimeout, AppLockViewModel, AppearanceViewModel, ChatContact, ChatViewModel,
-    ComposerDraft, CoreError, FileCard, FileCardActions, FileFailure, FileId, FileInfo,
-    FileOperation, FileProblem, FriendsViewModel, HomeViewModel, InstallPreview, LanChoice,
-    LanSettings, Me, MediaHandle, OnboardingViewModel, OwnerProfileUpdate, PagesViewModel,
-    PeersViewModel, PluginDetail, PluginImage, PluginsViewModel, RoomTransfers, SecretString,
-    ServersViewModel, SessionListViewModel, SettingsViewModel, StoreItem, TimelineTarget,
-    TransfersViewModel,
+    AddedSource, AppLockTimeout, AppLockViewModel, AppearanceViewModel, AvatarUpload, ChatContact,
+    ChatViewModel, ComposerDraft, CoreError, FamilyViewModel, FileCard, FileCardActions,
+    FileFailure, FileId, FileInfo, FileOperation, FileProblem, FriendsViewModel, HomeViewModel,
+    InstallPreview, LanChoice, LanSettings, LicensesViewModel, Me, MediaHandle, MyAvatarProblem,
+    OnboardingViewModel, OwnerProfileUpdate, PagesViewModel, PeersViewModel, PluginDetail,
+    PluginImage, PluginsViewModel, PrivacyViewModel, RoomTransfers, SecretString, ServersViewModel,
+    SessionListViewModel, SettingsViewModel, StoreItem, TimelineTarget, TransfersViewModel,
 };
 
 use crate::app_lock::AppLockLink;
 use crate::appearance::AppearanceLink;
 use crate::chat::TimelineSubscription;
 use crate::files::FileOpener;
-use crate::home::Network;
+use crate::home::{Network, path_settings};
 use crate::l10n::{CATALOG, language};
 use crate::scope::{Scope, Views, Visits};
 use crate::servers::ServerList;
 use crate::session_store::SessionStore;
 use crate::subscription::{
-    AppLockSubscription, AppearanceSubscription, ChatSubscription, FriendsSubscription,
-    HomeSubscription, OnboardingSubscription, PagesSubscription, PeersSubscription,
-    PluginsSubscription, ServersSubscription, SessionListSubscription, SettingsSubscription,
-    TransfersSubscription, UnreadSubscription,
+    AppLockSubscription, AppearanceSubscription, ChatSubscription, FamilySubscription,
+    FriendsSubscription, HomeSubscription, OnboardingSubscription, PagesSubscription,
+    PeersSubscription, PluginsSubscription, ServersSubscription, SessionListSubscription,
+    SettingsSubscription, TransfersSubscription, UnreadSubscription,
 };
 use switch::Replay;
+#[cfg(feature = "ui-fake")]
+use wonton_protocol::{AvatarImage, AvatarKind};
 
 pub use share_in::ShareInSubscription;
 
@@ -44,6 +45,7 @@ mod confirmations;
 mod dispatch;
 mod limits;
 mod media;
+mod my_avatar;
 mod page_color;
 mod pages;
 mod plugin_detail;
@@ -69,6 +71,10 @@ mod ui_fake_plugin_detail;
 #[cfg(feature = "ui-fake")]
 mod ui_fake_room;
 #[cfg(feature = "ui-fake")]
+mod ui_fake_settings;
+#[cfg(feature = "ui-fake")]
+mod ui_fake_store;
+#[cfg(feature = "ui-fake")]
 mod ui_fake_timeline;
 mod widget;
 
@@ -85,6 +91,8 @@ pub struct ClientCore {
     appearance: AppearanceLink,
     servers: Arc<ServerList>,
     root: PathBuf,
+    /// 代理 TUN 的假地址是否排除出选路，读页和 bind 都读这个缓存，不读盘；文件仍是真相。
+    fake_ip_exclusion: AtomicBool,
     network: Network,
     scope: RwLock<Arc<Scope>>,
     /// 壳订阅的 ViewModel 发送端。有假数据入口时整组换成独立的发送端，包一层锁；没有这个 feature 时保持
@@ -156,6 +164,19 @@ impl ClientCore {
         self.app_lock.unlock();
     }
 
+    /// 打开后选路优先真直连和中继，把代理 TUN 的假地址（198.18.0.0/15）放到最后，只在别无他路时走它。
+    /// 存在本机、所有服务器共用，写不了时返回 `Storage`；改动立刻重建 endpoint 生效。
+    pub fn set_fake_ip_exclusion(&self, enabled: bool) -> Result<(), CoreError> {
+        self.scope().home.set_fake_ip_exclusion(enabled)?;
+        self.fake_ip_exclusion.store(enabled, Ordering::SeqCst);
+        Ok(())
+    }
+
+    /// 代理的假地址是否排除出选路，默认关。
+    pub fn fake_ip_exclusion(&self) -> bool {
+        self.fake_ip_exclusion.load(Ordering::SeqCst)
+    }
+
     /// 当前的外观（用户的设置和颜色令牌），用于首帧渲染。
     pub fn appearance(&self) -> AppearanceViewModel {
         self.appearance.view()
@@ -181,6 +202,16 @@ impl ClientCore {
         self.views().settings.borrow().clone()
     }
 
+    /// 关于页里的隐私说明，按当前语言返回。
+    pub fn privacy(&self) -> PrivacyViewModel {
+        crate::about::privacy()
+    }
+
+    /// 关于页里的开源许可：`licenses_json` 是 App 资源里构建时生成的清单，解析不了时返回 `InvalidInput`。
+    pub fn licenses(&self, licenses_json: String) -> Result<LicensesViewModel, CoreError> {
+        crate::about::licenses(&licenses_json)
+    }
+
     /// 订阅设置首页，语义同 [`subscribe_session_list`](Self::subscribe_session_list)。
     pub fn subscribe_settings(&self) -> Arc<SettingsSubscription> {
         Arc::new(SettingsSubscription::new(self.views().settings.subscribe()))
@@ -204,6 +235,16 @@ impl ClientCore {
     /// 订阅好友页，语义同 [`subscribe_session_list`](Self::subscribe_session_list)。
     pub fn subscribe_friends(&self) -> Arc<FriendsSubscription> {
         Arc::new(FriendsSubscription::new(self.views().friends.subscribe()))
+    }
+
+    /// 当前的成员页（ADR-0088），用于首帧渲染。
+    pub fn family(&self) -> FamilyViewModel {
+        self.views().family.borrow().clone()
+    }
+
+    /// 订阅成员页，语义同 [`subscribe_session_list`](Self::subscribe_session_list)。
+    pub fn subscribe_family(&self) -> Arc<FamilySubscription> {
+        Arc::new(FamilySubscription::new(self.views().family.subscribe()))
     }
 
     /// 当前的会话列表，用于首帧渲染。
@@ -246,13 +287,9 @@ impl ClientCore {
         Arc::new(UnreadSubscription::new(self.views().chat.subscribe()))
     }
 
-    /// 发起私聊时能直接选的人：已装插件的 Bot 在前，然后是私聊过的人。`query` 不为空时按名字和 ID 筛。
+    /// 发起私聊时能直接选的人：核心给的可聊 Bot 在前，然后是私聊过的人。`query` 不为空时按名字和 ID 筛。
     pub fn chat_contacts(&self, query: String) -> Vec<ChatContact> {
-        let installed = self.scope().plugins.view().installed;
-        let plugins = installed
-            .map(|installed| installed.plugins)
-            .unwrap_or_default();
-        self.scope().chat.contacts(&query, &plugins)
+        self.scope().chat.contacts(&query)
     }
 
     /// 把发起私聊时输入的用户名或 Matrix ID 变成完整的 ID：只输用户名时补上本账号的服务器。不合法时返回
@@ -281,7 +318,7 @@ impl ClientCore {
         // 假数据入口（`new_ui_fake`）没有后端：时间线是写死的，只对界面测试约定的操作再推一批。
         #[cfg(feature = "ui-fake")]
         if self.ui_fake.load(Ordering::SeqCst) {
-            return Ok(self.ui_fake_timelines.subscribe(&target.room_id));
+            return Ok(self.ui_fake_timelines.subscribe(&target));
         }
         let scope = self.scope();
         let chat = scope.chat.clone();
@@ -298,6 +335,11 @@ impl ClientCore {
     /// 一条时间线（主对话或旁聊）输入框里的草稿（正文和正在回复的消息），没打过字也没在回复时是
     /// `None`。每个旁聊各有一份，换房间、重启核心都还在，主人回来接着写。
     pub async fn draft(&self, target: TimelineTarget) -> Result<Option<ComposerDraft>, CoreError> {
+        // 假数据入口没有服务器，草稿由假时间线存（`ui_fake_timeline.rs`）。
+        #[cfg(feature = "ui-fake")]
+        if self.ui_fake.load(Ordering::SeqCst) {
+            return Ok(self.ui_fake_timelines.draft(&target));
+        }
         let scope = self.scope();
         let chat = scope.chat.clone();
         scope.run(async move { chat.draft(&target).await }).await
@@ -311,6 +353,10 @@ impl ClientCore {
         room_id: String,
         body: String,
     ) -> Result<String, CoreError> {
+        #[cfg(feature = "ui-fake")]
+        if self.ui_fake.load(Ordering::SeqCst) {
+            return Ok(self.ui_fake_timelines.start_side_chat(&body));
+        }
         let scope = self.scope();
         let chat = scope.chat.clone();
         scope
@@ -320,6 +366,13 @@ impl ClientCore {
 
     /// 取图片等媒体的原文件（时间线里给出的句柄）。核心负责下载、解密和缓存。
     pub async fn load_media(&self, media: MediaHandle) -> Result<Vec<u8>, CoreError> {
+        // 假数据入口没有后端：假房间图片的字节直接在这给，不进下载。
+        #[cfg(feature = "ui-fake")]
+        if self.ui_fake.load(Ordering::SeqCst)
+            && let Some(bytes) = ui_fake_room::media(&media.token)
+        {
+            return Ok(bytes);
+        }
         let scope = self.scope();
         let chat = scope.chat.clone();
         scope.run(async move { chat.load_media(media).await }).await
@@ -387,25 +440,63 @@ impl ClientCore {
                 permissions: None,
                 display_name: Some("Owner".into()),
                 email: None,
+                avatar: Some(AvatarImage {
+                    media: MediaHandle {
+                        token: "m-owner-avatar".into(),
+                    },
+                    kind: AvatarKind::Still,
+                    width: None,
+                    height: None,
+                    poster: None,
+                }),
             });
         }
         let scope = self.scope();
-        let plugins = scope.plugins.clone();
-        scope.run(async move { plugins.me().await }).await
+        scope
+            .run({
+                let scope = scope.clone();
+                async move {
+                    let mut me = scope.plugins.me().await?;
+                    my_avatar::attach(&mut me, &scope).await;
+                    Ok(me)
+                }
+            })
+            .await
     }
 
     /// 保存资料（主人写 owner.json，家人写自己那条），名字同步成 Matrix 上的显示名。不合规则时返回
-    /// `InvalidInput`，原因由家里的服务器写好。保存后要重新取安装页的预览。
+    /// `InvalidInput`，原因由家里的服务器写好。保存后要重新取安装页的预览。返回的资料带服务器上的头像。
     pub async fn save_me(&self, update: OwnerProfileUpdate) -> Result<Me, CoreError> {
         let scope = self.scope();
-        let plugins = scope.plugins.clone();
-        let saved = scope
-            .run(async move { plugins.save_profile(update).await })
-            .await?;
-        if let Some(name) = saved.display_name.clone() {
-            scope.chat.set_owner_display_name(name);
-        }
-        Ok(saved)
+        scope
+            .run({
+                let scope = scope.clone();
+                async move {
+                    let mut saved = scope.plugins.save_profile(update).await?;
+                    if let Some(name) = saved.display_name.clone() {
+                        scope.chat.set_owner_display_name(name);
+                    }
+                    my_avatar::attach(&mut saved, &scope).await;
+                    Ok(saved)
+                }
+            })
+            .await
+    }
+
+    /// 换自己的头像：文件由壳按 [`max_avatar_edge`](Self::max_avatar_edge)、[`max_avatar_bytes`](Self::max_avatar_bytes)
+    /// 裁好、压好，核心按文件头检查后传到 Matrix 的媒体库，再把 `mxc://` 写进自己的资料 `avatar_url`。资料只放静态图。
+    /// 成功返回新的 [`Me`]，壳不用再取一次；家人和主人一样能用。
+    pub async fn set_my_avatar(&self, upload: AvatarUpload) -> Result<Me, MyAvatarProblem> {
+        let scope = self.scope();
+        scope
+            .run_avatar(my_avatar::set(scope.clone(), upload))
+            .await
+    }
+
+    /// 清掉自己的头像，壳显示名字首字母。本来就没有头像时也算成功：清两次的结果一样。
+    pub async fn clear_my_avatar(&self) -> Result<Me, MyAvatarProblem> {
+        let scope = self.scope();
+        scope.run_avatar(my_avatar::clear(scope.clone())).await
     }
 
     /// 升级前的预览：升到已安装列表里提示的版本。
@@ -726,6 +817,7 @@ impl ClientCore {
         );
         let servers_for_login = servers.clone();
         let share_in = Arc::new(crate::share_in::ShareInLink::new(&root));
+        let fake_ip_exclusion = path_settings::exclude_fake_ip(&root);
         let core = Arc::new(Self {
             state: watch::Sender::new(SessionStore::default()),
             app_lock,
@@ -739,6 +831,7 @@ impl ClientCore {
             servers,
             root,
             network,
+            fake_ip_exclusion: AtomicBool::new(fake_ip_exclusion),
             replay: Mutex::default(),
             switching,
             #[cfg(feature = "test-hooks")]
@@ -750,7 +843,9 @@ impl ClientCore {
             #[cfg(feature = "ui-fake")]
             ui_fake: AtomicBool::new(false),
             #[cfg(feature = "ui-fake")]
-            ui_fake_timelines: ui_fake_timeline::FakeTimelines::default(),
+            ui_fake_timelines: ui_fake_timeline::FakeTimelines::new(
+                scope.handle().expect("the scope was just built"),
+            ),
         });
         let switch: std::sync::Weak<Self> = Arc::downgrade(&core);
         core.matrix_login.bind(switch);

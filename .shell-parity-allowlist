@@ -14,6 +14,7 @@ PushAction.SetPushEndpoint | 推送按 ADR-0003 先只在 Android 上做
 PushAction.PushUnavailable | 推送按 ADR-0003 先只在 Android 上做
 PushAction.SetPushMethod | 推送按 ADR-0003 先只在 Android 上做
 ClientCore.resolve_push | 推送按 ADR-0003 先只在 Android 上做
+ClientCore.push_server_slot | 点开推送时按 endpoint 找服务器，只有 iOS 的壳在系统通知点开时用；Android 的推送进程自己带着服务器
 ChatViewModel.push | 推送按 ADR-0003 先只在 Android 上做
 ChatViewModel.background_notifications | 保持连接方式下的系统通知，推送按 ADR-0003 先只在 Android 上做
 ChatViewModel.settled_confirmations | 撤下已回答卡片的系统通知，推送按 ADR-0003 先只在 Android 上做

@@ -6,6 +6,7 @@ use wonton_core::friends::Friends;
 use wonton_core::gateway::Gateway;
 use wonton_core::gateway::sharing::{Sharing, SharingHandler};
 use wonton_core::peers::Peers;
+use wonton_core::roles::Roles;
 use wonton_core::share_identity::{IdentityVerifier, MatrixServerName};
 use wonton_core::shares::Shares;
 use wonton_tunnel::federation::FederationForwarder;
@@ -21,14 +22,18 @@ pub(crate) struct Registries {
 }
 
 impl Registries {
-    pub fn open(cfg: &Config) -> anyhow::Result<Self> {
+    pub fn open(cfg: &Config, roles: Arc<Roles>) -> anyhow::Result<Self> {
         let friends = Arc::new(
             Friends::open(cfg.core_state_dir().join("friends.json"))
                 .context("opening accepted Matrix friend registry")?,
         );
         let shares = Arc::new(
-            Shares::open(cfg.core_state_dir().join("shares.json"), friends.clone())
-                .context("opening plugin share grants")?,
+            Shares::open(
+                cfg.core_state_dir().join("shares.json"),
+                friends.clone(),
+                roles,
+            )
+            .context("opening plugin share grants")?,
         );
         Ok(Self { friends, shares })
     }

@@ -6,8 +6,13 @@
     <string name="message_quote_undecryptable">暗号化されたメッセージ</string>
     <string name="message_summary_undecryptable">[暗号化されたメッセージ]</string>
     <string name="message_link_browser">ブラウザで開く</string>
+    <string name="message_link_update_app">このリンクを開くにはアプリを更新してください</string>
     <!-- Search field above the room list that picks where a message is forwarded to. Android only. -->
     <string name="message_forward_search">チャットを検索</string>
     <!-- Result line when the search in the forward sheet matches no room. Android only. -->
     <string name="message_forward_no_match">その名前のチャットはありません</string>
+    <string name="message_choice_failed">送信できませんでした。もう一度タップしてください</string>
+    <!-- Title of the bar above the input while editing a message. Android only. -->
+    <string name="message_edit_title">メッセージを編集</string>
+    <string name="message_delivered">配信済み</string>
 </resources>

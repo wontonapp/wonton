@@ -47,11 +47,13 @@ fn photos_and_a_file(root: &Path) {
 
 fn room(id: &str, direct: Option<&str>) -> RoomRow {
     RoomRow {
+        unread_mentions: 0,
         room_id: id.into(),
         name: id.trim_start_matches('!').into(),
         is_direct: direct.is_some(),
         direct_user_id: direct.map(str::to_owned),
         plugin: None,
+        bot_chat: None,
         is_encrypted: true,
         is_read_only: false,
         membership: RoomMembership::Joined,

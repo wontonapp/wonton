@@ -7,7 +7,7 @@ use wonton_client::{
     TimelineItem, VerificationStage,
 };
 
-use super::super::accept_the_bots_invite;
+use super::super::accept_the_bots_encrypted_invite;
 use super::super::support::{Phone, Timeline};
 use super::{Devices, assert_recovered, compare, confirm_and_observe, flow_at};
 use wonton_protocol::{TimelineAction, TimelineTarget};
@@ -23,7 +23,7 @@ const HISTORY: [&str; 3] = [
 async fn sas_recovers_open_history_in_place_and_survives_restart() {
     let devices = Devices::new(true).await;
     let bot = devices.home.bot("hermes", "Hermes").await;
-    let room_id = accept_the_bots_invite(&devices.home, &devices.first, &bot).await;
+    let room_id = accept_the_bots_encrypted_invite(&devices.home, &devices.first, &bot).await;
     let bot_room = bot.open_room(&room_id).await.unwrap();
     let mut first_timeline = Timeline::open(&devices.first, room_id.as_str()).await;
     for body in HISTORY {

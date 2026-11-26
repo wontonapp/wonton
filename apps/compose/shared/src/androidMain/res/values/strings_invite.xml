@@ -6,15 +6,17 @@
     <string name="invite_expires_in">Expires in %1$s</string>
     <!-- Notice title when the pairing code couldn't be fetched; the core's reason is shown below. -->
     <string name="invite_failed_title">Couldn\'t get a pairing code</string>
-    <!-- Explanation under the QR code: what the new device's owner should do. The code works only once. -->
-    <string name="invite_instructions">Open Wonton on the new device and scan this code to add it. The code works only once.</string>
-    <!-- Label above the pairing code as text, for when the QR code can't be scanned. -->
+    <!-- Explanation under the QR code: what the new device's owner should do, and what it can see. The code works only once. -->
+    <string name="invite_instructions">Open Wonton on the new device and scan this code to add it as your device. It can access what you can access. Without a key handoff from your other device, earlier messages may not be readable. The code works only once.</string>
+    <!-- Collapsed row that reveals the full pairing code as text, for when the QR code can't be scanned. -->
     <string name="invite_paste_fallback">If you can\'t scan, paste this text</string>
+    <!-- Clipboard label when the pairing code is copied. -->
+    <string name="invite_clip_label">Pairing code</string>
     <!-- Accessibility label of the QR code image with the pairing code. -->
     <string name="invite_qr_label">Pairing QR code</string>
     <!-- Button under the expired notice: get a new code. -->
     <string name="invite_renew">Get a new code</string>
-    <!-- Shown next to a spinner while the pairing code is being requested. -->
+    <!-- Shown next to a spinner while the code is being requested. -->
     <string name="invite_requesting">Asking your home server for a pairing code…</string>
     <!-- Button under the failed notice: request a pairing code again. -->
     <string name="invite_try_again">Try again</string>

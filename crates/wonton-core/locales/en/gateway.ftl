@@ -55,7 +55,6 @@ gateway-entry-header-invalid = The entry gateway didn't label this request corre
 gateway-entry-closed = This entry is turned off; the owner can turn it on in the Wonton app
 gateway-entry-public-denied = This path isn't available on the public address
 gateway-entry-setup-pending = Finish the app's first-time setup on its web page first, then try again
-gateway-entry-auth-unsupported = Signing in with a Wonton-issued password isn't supported for this app yet
 gateway-entry-auth-required = Sign in with the app password issued in Wonton
 gateway-entry-auth-revoked = This app password was revoked; issue a new one in Wonton
 gateway-entry-state-unavailable = Can't read this app's entry settings; the owner can check them in Wonton
@@ -90,6 +89,7 @@ gateway-icon-failed = Can't process the icon: { $error }
 # Devices and pairing codes.
 gateway-devices-not-found = This device isn't registered
 gateway-devices-invalid-id = The request body should be {"{"}"endpoint_id": "<64 hex digits>"{"}"}
+gateway-devices-invalid-body = The request body should be {"{"}"keep_shared_passwords": true|false{"}"} or empty
 gateway-devices-invalid-addrs = The request body should be {"{"}"direct_addrs": ["IP:port"]{"}"}: { $error }
 gateway-devices-already-paired = This server already has paired devices, so it won't issue a first-pairing code
 gateway-devices-no-addresses = The tunnel isn't connected to a relay yet and the request gave no direct addresses, so the code has no reachable address
@@ -97,6 +97,7 @@ gateway-devices-no-addresses = The tunnel isn't connected to a relay yet and the
 # Model gateway.
 gateway-models-permission = The app { $id } hasn't requested models permission
 gateway-plugin-network-only = This address is only for apps on the plugin network
+gateway-restoring = The core is still starting the apps, try again shortly
 gateway-models-down = The model gateway isn't running
 
 # Onboarding.
@@ -170,6 +171,14 @@ clients-unavailable = The core isn't running in its container, so domain setting
 clients-passwords-unavailable = The app password storage can't be read right now
 clients-password-label-invalid = Give the client a name of 1-128 characters without line breaks
 clients-password-not-found = This app password doesn't exist any more
+clients-plugin-unavailable = This app isn't installed
+clients-password-shared = App password
+clients-credentials-shared-exists = This app already has its one shared password
+clients-credentials-timeout = The command in the app timed out; it may already have taken effect and will be retried
+clients-credentials-unavailable = The app isn't running, so passwords can't be issued right now
+clients-credentials-missing-command = The app manifest has no { $op } command
+clients-credentials-failed = The command in the app failed: { $error }
+gateway-entry-credentials-not-issued = The app has no password yet, so its entry stays closed
 clients-domain-read-failed = Couldn't read the domain settings: { $error }
 gateway-chains-disabled = The home server doesn't have the call chain ledger enabled
 
@@ -187,8 +196,62 @@ gateway-agent-acp-token-missing = {$provider} has no provider token yet; reinsta
 gateway-agent-acp-provider-unreachable = The agent runtime did not take over this connection: {$detail}
 
 gateway-install-rejected = An administrator declined; the { $action } was not done
+
+# Friend invitations gated by the inviter role (ADR-0088): the card goes to the administrators, the invite is released on approval.
+gateway-friend-invite-title = Friend request awaiting approval
+gateway-friend-invite-to = { $inviter } wants to add { $friend } as a friend
+gateway-friend-invite-rejected = An administrator declined this friend request
+gateway-friend-invite-expired = No administrator answered this friend request in time
 gateway-install-expired = No administrator answered in time; the { $action } was not done
 gateway-install-card-device = Device handed to it: { $device }
 gateway-install-card-secret = Secret filled in by the request: { $title }
 gateway-install-card-setting = Setting filled in by the request: { $title } = { $value }
 gateway-install-changed = The permissions, devices or settings of { $id } changed after the card was sent, so it was not upgraded. Please ask again.
+clients-switch-container = The core is not running in a container, so the entry network is unavailable
+clients-switch-domain = Configure a domain and a valid certificate before opening this entry
+clients-switch-lan = LAN access is unavailable because the LAN forwarder is not ready
+clients-switch-setup = Complete the app's initial registration on its website first
+clients-switch-app-unavailable = The app is not running, so its setup cannot be checked
+clients-switch-credentials = The app has not issued a password successfully
+clients-switch-ingress = No public entry type is configured
+clients-switch-kind = The entry must be lan or public
+clients-switch-uninstalled = The client app has been uninstalled
+clients-switch-failed = Could not apply the client entry setting: { $error }
+clients-switch-domain-read = Could not read the domain and certificate state: { $error }
+clients-switch-no-route = Client plugin { $plugin } has no usable entry
+clients-switch-service-down = The service of client plugin { $plugin } is not running
+clients-switch-setup-check = Could not check the app's initial registration: { $error }
+clients-switch-not-found = Client plugin { $plugin } is not installed or declares no entry
+clients-switch-settings-read = Could not read the entry settings: { $error }
+clients-switch-settings-missing = The entry settings are missing, so the entry model cannot be confirmed and applied
+clients-switch-apply = Could not write or reload the entry configuration: { $error }
+clients-switch-record-read = Could not read the client entry record of { $plugin }: { $error }
+clients-switch-no-label = Client plugin { $plugin } has no entry label
+clients-switch-label-conflict = Entry label { $label } is used twice
+clients-switch-records-read = Could not read the plugin records: { $error }
+clients-switch-rollback-entry = Rolling back the entry configuration also failed: { $error }
+clients-switch-rollback-switch = Rolling back the switch also failed: { $error }
+# Friend requests from outside servers: the public page files one, an administrator answers, the person is recorded in allowed_users.
+gateway-friend-request-title = Friend request
+gateway-friend-request-intro = This server lets people from other servers in only after an administrator approves. Leave your Matrix ID; the answer shows up here.
+gateway-friend-request-you = Your Matrix ID
+gateway-friend-request-to = Their Matrix ID
+gateway-friend-request-target = Adding { $target }
+gateway-friend-request-submit = Send request
+gateway-friend-request-waiting = Request sent; waiting for an administrator (for { $target }).
+gateway-friend-request-approved = An administrator approved. Send the invitation again.
+gateway-friend-request-open = Their role needs no approval any more. Just send the invitation again.
+gateway-friend-request-forbidden = This member cannot add friends by role. Ask an administrator to invite them.
+gateway-friend-request-denied = An administrator declined this friend request.
+gateway-friend-request-expired = No administrator answered in time. Try again later.
+gateway-friend-request-changed = Their account or permissions changed. Try again later or let them add you.
+gateway-friend-request-unavailable = This server cannot answer right now. Try again later.
+gateway-friend-request-duplicate = A request for this person is already waiting.
+gateway-friend-request-too-many = Too many requests are waiting. Try again later.
+gateway-friend-request-local = People on the same server need no request; just invite them.
+gateway-friend-request-unknown = This server has no such person.
+gateway-friend-request-invalid = Enter a full Matrix ID such as @bob:example.org.
+gateway-friend-request-invalid-method = This address only takes GET and POST.
+gateway-friend-request-again = Send another
+gateway-friend-request-card-title = Someone outside wants to add a friend
+gateway-friend-request-card-to = wants to add { $target } as a friend

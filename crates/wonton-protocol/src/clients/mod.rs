@@ -30,6 +30,7 @@ mod passwords;
 mod status;
 #[cfg(test)]
 mod tests;
+mod view;
 
 pub use domain::{
     CaaState, CertificateState, CredentialEntry, DnsProviderPreset, DomainSettings, LanRecordState,
@@ -47,10 +48,15 @@ pub use ingress::{
     GateState, IngressKind, IngressSettings, PublicAccess, PublicSwitchState, PutIngressRequest,
 };
 pub use passwords::{
-    NewPasswordRequest, PasswordSummary, PasswordValue, PendingOp, RevokeDeviceRequest,
+    NewPasswordRequest, PASSWORD_ID_HEADER, PASSWORD_PENDING_HEADER, PasswordSummary,
+    PasswordValue, PendingOp, RevokeDeviceRequest,
 };
 pub use status::{
     Ban, ClientsStatus, PendingChange, PendingChangeKind, ProbeResult, PublicItem, PublicReach,
+};
+pub use view::{
+    ClientsBlocked, ClientsGuests, ClientsPassword, ClientsSettingsViewModel, ClientsState,
+    ClientsViewModel,
 };
 
 /// 所有第三方客户端接口都要带的请求头，值是 `1`；不带的请求（跨站）过不了。
@@ -61,9 +67,9 @@ pub fn clients_path() -> String {
     "/_wonton/clients".into()
 }
 
-/// `PUT`：开或关一个入口，请求体是 [`SetEntryRequest`]。`entry` 取 [`EntryKind::as_path_segment`]：
-/// 局域网是 `lan`，公网是 `public`，`clients.tcp` 是清单里的名字。`credentials` 还没成功发过密码时回 409
-/// [`ClientsFailure::Conflict`](crate::ClientsFailure)。
+/// `PUT`：开或关一个入口，请求体是 [`SetEntryRequest`]。`entry` 只有 `lan` 和 `public`；
+/// `clients.tcp` 的转发还没接，名单里的名字先不认。`credentials` 还没成功发过密码时回 409
+/// [`ClientsFailure::Conflict`](crate::ClientsFailure::Conflict)。
 pub fn clients_entry_path(id: &str, entry: &str) -> String {
     format!("{}/{id}/entries/{entry}", clients_path())
 }
@@ -101,11 +107,13 @@ pub fn clients_public_access_path() -> String {
 }
 
 /// `GET`：这个插件的访客链接，响应是 `Vec<`[`GuestLink`]`>`。`POST`：新建，请求体是 [`NewGuestLinkRequest`]。
+/// 局域网和公网入口都关着时 `POST` 回 409 [`ClientsFailure::EntryClosed`](crate::ClientsFailure)。
 pub fn clients_guests_path(id: &str) -> String {
     format!("{}/{id}/guests", clients_path())
 }
 
 /// `GET`：取地址，响应是 [`GuestLink`]，每次取记审计。`DELETE`：收回，下一个请求就失效。
+/// 已经失效的链接（收回、过期、总开关关着）在入口页面上回 403（页面正文，不是 API），访客接口回 409。
 pub fn clients_guest_path(id: &str, guest: &str) -> String {
     format!("{}/{id}/guests/{guest}", clients_path())
 }

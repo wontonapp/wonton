@@ -6,7 +6,7 @@ use wonton_client::{CoreError, PairingFailure, PairingStatus};
 use wonton_tunnel::pair::{PairingCode, PairingSecret, SECRET_LEN};
 use wonton_tunnel::relays::{Relay, RelayToken};
 
-use super::{Home, Phone};
+use super::support::{Home, Phone};
 
 #[test]
 fn invalid_pairing_input_and_server_rejection_keep_diagnostics_secret_safe() {
@@ -106,11 +106,13 @@ fn rejection_code(home: &Home) -> Rejection {
     code.relays.push(Relay {
         url: "https://relay.example.com/".parse().unwrap(),
         token: Some(RelayToken::new(token)),
+        quic_port: None,
         tier: 0,
     });
     code.relays.push(Relay {
         url: "https://relay.example.com/".parse().unwrap(),
         token: Some(RelayToken::new("30")),
+        quic_port: None,
         tier: 1,
     });
     let query_canary = "query-canary-707";
@@ -118,6 +120,7 @@ fn rejection_code(home: &Home) -> Rejection {
     code.relays.push(Relay {
         url: query_url.parse().unwrap(),
         token: None,
+        quic_port: None,
         tier: 2,
     });
     // 合法取值各自只出现一种写法：JSON 转义的 `/` 与 `-`、两层百分号后再转义、解码后的 URL 分量。
@@ -132,6 +135,7 @@ fn rejection_code(home: &Home) -> Rejection {
         code.relays.push(Relay {
             url: "https://relay.example.com/".parse().unwrap(),
             token: Some(RelayToken::new(token)),
+            quic_port: None,
             tier,
         });
     }
@@ -143,6 +147,7 @@ fn rejection_code(home: &Home) -> Rejection {
         code.relays.push(Relay {
             url: url.parse().unwrap(),
             token: None,
+            quic_port: None,
             tier,
         });
     }
@@ -322,6 +327,7 @@ async fn assert_decoding_over_budget() {
         code.relays.push(Relay {
             url: url.parse().unwrap(),
             token: None,
+            quic_port: None,
             tier,
         });
     }
@@ -388,6 +394,7 @@ async fn assert_duplicate_forms() {
     code.relays.push(Relay {
         url: "https://relay.example.com/".parse().unwrap(),
         token: Some(RelayToken::new("dupe space707")),
+        quic_port: None,
         tier: 0,
     });
     code.relays.push(Relay {
@@ -395,6 +402,7 @@ async fn assert_duplicate_forms() {
             .parse()
             .unwrap(),
         token: None,
+        quic_port: None,
         tier: 1,
     });
     // query 在前：反向顺序同样要命中。
@@ -403,11 +411,13 @@ async fn assert_duplicate_forms() {
             .parse()
             .unwrap(),
         token: None,
+        quic_port: None,
         tier: 2,
     });
     code.relays.push(Relay {
         url: "https://relay.example.com/".parse().unwrap(),
         token: Some(RelayToken::new("dupe2 space707")),
+        quic_port: None,
         tier: 3,
     });
     let issued = code.to_uri();

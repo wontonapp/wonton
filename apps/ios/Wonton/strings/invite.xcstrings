@@ -153,37 +153,37 @@
       }
     },
     "invite.instructions": {
-      "comment": "Explanation under the QR code: what the new device's owner should do. The code works only once.",
+      "comment": "Explanation under the QR code: what the new device's owner should do, what the added device can access, and that earlier messages stay unreadable until keys are handed over. The code works only once.",
       "extractionState": "manual",
       "localizations": {
         "en": {
           "stringUnit": {
             "state": "translated",
-            "value": "Open Wonton on the new device and scan this code to add it. The code works only once."
+            "value": "Open Wonton on the new device and scan this code to add it as your device. It can access what you can access. Without a key handoff from your other device, earlier messages may not be readable. The code works only once."
           }
         },
         "zh-Hans": {
           "stringUnit": {
             "state": "translated",
-            "value": "在新设备上打开云吞 App 扫这个码，它就成为你的设备。码只能用一次。"
+            "value": "在新设备上打开云吞 App 扫这个码，它就成为你的设备，能访问你能访问的内容。没交接密钥的话，以前的消息不保证能看到。码只能用一次。"
           }
         },
         "zh-Hant": {
           "stringUnit": {
             "state": "translated",
-            "value": "在新裝置上開啟雲吞並掃描這個 QR 碼，就能新增這台裝置。QR 碼只能使用一次。"
+            "value": "在新裝置上開啟雲吞並掃描這個 QR 碼，它就會成為你的裝置，可以存取你能存取的內容。沒有交接金鑰的話，以前的訊息不保證看得到。QR 碼只能使用一次。"
           }
         },
         "ja": {
           "stringUnit": {
             "state": "translated",
-            "value": "新しいデバイスでWontonを開いてこのコードをスキャンすると、デバイスを追加できます。コードは1回だけ使えます。"
+            "value": "新しいデバイスでWontonを開いてこのコードをスキャンすると、あなたのデバイスとして追加され、あなたがアクセスできる内容にアクセスできます。鍵の引き継ぎがない場合、以前のメッセージは読めないことがあります。コードは1回だけ使えます。"
           }
         }
       }
     },
     "invite.pasteFallback": {
-      "comment": "Label above the pairing code as text, for when the QR code can't be scanned.",
+      "comment": "Collapsed row that reveals the full pairing code as text, for when the QR code can't be scanned.",
       "extractionState": "manual",
       "localizations": {
         "en": {

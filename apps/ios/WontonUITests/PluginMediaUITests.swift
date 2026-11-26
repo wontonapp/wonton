@@ -44,7 +44,7 @@ final class PluginMediaUITests: XCTestCase {
         app = XCUIApplication()
         app.launchArguments += ["wonton-media-capture-test"]
         try UITestBackend.passPairingCode(to: app)
-        app.launch()
+        UITestBackend.launch(app)
         XCTAssertTrue(waitPaired(timeout: 40), "配对没完成（配对码过期、用过或连不上开发栈）\n\(app.debugDescription)")
         passOnboarding()
         UITestBackend.settleKeyHandoff(app)

@@ -30,8 +30,9 @@ use ipnet::Ipv4Net;
 /// （moby#48724），内部网络也才有 `isolated` 网关模式。
 pub const MIN_ENGINE_MAJOR: u32 = 28;
 
-/// 停、删容器和删网络、卷的时限，比 bollard 默认的 120 秒长。磁盘慢时 Docker 删一个容器的层要两分钟以上，事后手动删只要
-/// 2 秒（根盘满载的主机上实测，Docker 29.7.2），SD 卡这样的低配主机上也一样。
+/// 创建、停、删容器和删网络、卷的时限，比 bollard 默认的 120 秒长。磁盘慢时 Docker 删一个容器的层要两分钟以上，
+/// 事后手动删只要 2 秒（根盘满载的主机上实测，Docker 29.7.2），SD 卡这样的低配主机上也一样；创建容器同样受满盘拖慢
+/// （11-14 的安装 504）。宿主满载时建容器超过 120 秒，默认时限就会把还活着的操作误报成超时。
 const SLOW_REQUEST: Duration = Duration::from_secs(300);
 
 pub(super) const GATEWAY_MODES: [&str; 2] = [
@@ -209,6 +210,8 @@ const MEDIA_TYPE_LIST: &str = "application/vnd.docker.distribution.manifest.list
 
 #[derive(Clone)]
 pub struct Engine {
+    /// 慢请求（停、删、创建容器）的时限，见 [`SLOW_REQUEST`]。测试改短用。
+    slow_request: Duration,
     pub(crate) docker: Docker,
     /// 一次性容器一个跑完再跑下一个：局域网检测和出口容器的探测都可能同时要跑，容器名是固定的。
     pub(super) one_shot: Arc<tokio::sync::Mutex<()>>,
@@ -273,6 +276,7 @@ impl Engine {
     fn new(docker: Docker) -> Self {
         Self {
             docker,
+            slow_request: SLOW_REQUEST,
             one_shot: Arc::default(),
             reserved_creation: Arc::default(),
             held_subnets: Arc::default(),
@@ -335,7 +339,7 @@ impl Engine {
 
     /// Docker 可能处理很久的请求用这个客户端，见 [`SLOW_REQUEST`]。
     fn patient(&self) -> Docker {
-        self.docker.clone().with_timeout(SLOW_REQUEST)
+        self.docker.clone().with_timeout(self.slow_request)
     }
 
     /// 测试用：换掉普通请求的时限，不用真等两分钟。
@@ -343,6 +347,15 @@ impl Engine {
     pub(crate) fn with_request_limit_for_test(self, limit: Duration) -> Self {
         Self {
             docker: self.docker.with_timeout(limit),
+            ..self
+        }
+    }
+
+    /// 测试用：换掉慢请求的时限，让超时用例不用等五分钟。
+    #[cfg(test)]
+    pub(crate) fn with_slow_request_limit_for_test(self, limit: Duration) -> Self {
+        Self {
+            slow_request: limit,
             ..self
         }
     }
@@ -508,7 +521,7 @@ impl Engine {
         }
         let options = CreateContainerOptionsBuilder::default().name(name).build();
         let response = self
-            .docker
+            .patient()
             .create_container(Some(options), body)
             .await
             .map_err(|e| {

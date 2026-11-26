@@ -13,6 +13,8 @@ final class AppNavigation {
     let home: HomeModel
     let plugins: PluginsModel
     let pages: PagesModel
+    /// 推送：登记和通知点开的跳转都在这里（ADR-0003 的“设计：加密推送”）。
+    let push: PushModel
     let onboarding: OnboardingModel
     let shareIn: ShareInModel
     private(set) var presentationRevision = 0
@@ -28,6 +30,7 @@ final class AppNavigation {
         self.home = home
         self.plugins = plugins
         pages = PagesModel(core: chat.core)
+        push = PushModel(core: chat.core)
         onboarding = OnboardingModel(core: chat.core)
         shareIn = ShareInModel(core: chat.core)
         Self.shared = self
@@ -47,6 +50,11 @@ final class AppNavigation {
 
     func receive(_ url: URL) {
         guard let link = parseAppLink(url: url.absoluteString) else { return }
+        handle(link)
+    }
+
+    /// 链接已经由核心解析过：分享和页面各有入口，其余交给请求队列（冷启动时等导航就绪）。
+    private func handle(_ link: AppLink) {
         // 分享扩展打开 App（ADR-0097）：没配对、引导没走完也认领，分享页自己引导去配对。
         if case let .share(token) = link {
             shareIn.claim(token)
@@ -81,10 +89,18 @@ final class AppNavigation {
         }
     }
 
-    /// 聊天里的一条链接：类别由核心判断，壳只按类别开（ADR-0065）。外部和认不出的地址用 Safari 在 App 内打开，
-    /// 插件进插件页，matrix.to 在 App 里跳用户或房间，邮件和电话交给系统。
+    /// 聊天里的一条链接：类别由核心判断，壳只按类别开（ADR-0065）。`wonton:` 交给上面的 App 链接表就地打开
+    /// （ADR-0041），认不得的提示一句；外部地址用 Safari 在 App 内打开，插件进插件页，matrix.to 在 App 里跳
+    /// 用户或房间，邮件和电话交给系统。
     func openLink(_ link: RichLink) {
         switch link.kind {
+        case .other where link.url.hasPrefix("wonton:"):
+            guard let normalized = normalizedAppLink(link.url),
+                  let appLink = parseAppLink(url: normalized) else {
+                pages.rejection = Problem(title: String(localized: .Message2.messageLinkUpdateApp))
+                return
+            }
+            handle(appLink)
         case .external, .other:
             guard let url = URL(string: link.url) else { return }
             safari = SafariTarget(url: url)
@@ -111,6 +127,15 @@ final class AppNavigation {
             guard let url = URL(string: link.url) else { return }
             UIApplication.shared.open(url)
         }
+    }
+
+    /// `wonton:` 地址归一：查询、片段和多余的斜杠不参与选页，`wonton:` 后面补回 `//`。不是 App 链接时返回 nil。
+    private func normalizedAppLink(_ url: String) -> String? {
+        guard url.hasPrefix("wonton:"), let colon = url.firstIndex(of: ":") else { return nil }
+        var path = String(url[url.index(after: colon)...].prefix { $0 != "?" && $0 != "#" })
+        while path.hasPrefix("/") { path.removeFirst() }
+        while path.hasSuffix("/") { path.removeLast() }
+        return "wonton:" + "//" + path
     }
 
     /// 链接和 Intent 都会把 App 打开，所以交给 App 执行、出错用 App 的对话框说。冷启动时连上家里的服务器可能要十几秒以上，
@@ -161,6 +186,51 @@ final class AppNavigation {
             opensSettings = true
             presentationRevision += 1
         }
+    }
+
+    /// 点开推送通知：通知来自哪台服务器就切到哪台（ADR-0042 的“推送带上服务器 ID”），进了聊天页打开那个房间。
+    /// 切不过去（服务器已从手机上移除、或者连不上）时如实说，不假装打开了。
+    func openPushRoom(server: String?, roomId: String) {
+        request { navigation in
+            guard try await navigation.navigationReady() else { return }
+            if let server, !(await navigation.switchPushServer(server)) { return }
+            try navigation.select(.chat)
+            // 没有来源会话的卡片（核心自己发起的，ADR-0016）room_id 为空：落在会话列表，待确认的卡片就在那里。
+            if !roomId.isEmpty { navigation.chat.openRoom(id: roomId) }
+        }
+    }
+
+    /// 切到通知来自的那台服务器并等它连上；已在这台就直接过。连不上时已把原因写进 `pages.rejection`。
+    private func switchPushServer(_ server: String) async -> Bool {
+        // 通知里的 server 是 endpoint ID；已连着的记录在 `home.serverId` 里（配对票据里的 endpoint ID，同一个东西）。
+        if home.viewModel.serverId == server { return true }
+        guard let slot = chat.core.pushServerSlot(server: server) else {
+            pages.rejection = Problem(title: String(localized: .Servers.serversNotificationUnreachable), detail: server)
+            return false
+        }
+        do {
+            try chat.core.dispatch(action: .home(action: .switchServer(id: slot)))
+        } catch {
+            pages.rejection = error.problem
+            return false
+        }
+        // 等切完：连上了就进房间，连不上（自动重试也失败）如实说。屏幕上有旧对话框时不能拿
+        // `pages.rejection` 直接判，否则第一条更新就 break，什么都没打开。
+        var settled = false
+        var refused = false
+        for await home in chat.core.subscribeHome().updates() where home.serverId == server {
+            if case .connected = home.status {
+                settled = true
+            }
+            if case let .disconnected(_, message) = home.status {
+                pages.rejection = Problem(
+                    title: String(localized: .Servers.serversNotificationUnreachable), detail: message
+                )
+                refused = true
+            }
+            if settled || refused { break }
+        }
+        return settled && !refused
     }
 
     /// 链接要求进“其他服务器”。取走标记，调用方去改导航路径。

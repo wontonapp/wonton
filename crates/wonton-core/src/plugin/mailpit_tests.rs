@@ -133,6 +133,44 @@ async fn notify_install_restore_rebuild_and_uninstall_manage_smtp_endpoint() {
 }
 
 #[tokio::test]
+async fn uninstall_tolerates_mailpit_being_removed_mid_detach() {
+    let (docker, engine) = FakeDocker::start().await;
+    let dir = tempfile::tempdir().unwrap();
+    compose(&engine, "core", "home", "core").await;
+    compose(&engine, "mail", "home", "mailpit").await;
+    let manager = manager(engine, &dir);
+    let langs = crate::plugin::languages::Languages::from_header(Some("en"));
+    manager
+        .install(source(), &[Permission::Notify], langs.clone())
+        .await
+        .unwrap();
+    let network = "wonton-app-test";
+    // Compose 正在换掉 Mailpit：旧容器标了删除，卸载时断开被 Docker 拒绝；再被 inspect 两次之后
+    // 容器连同端点才没（删网络要等端点消失）。
+    docker.mark_removing("mail", 2);
+    let inspects = docker.inspect_count("mail");
+    manager
+        .uninstall(&PluginId::parse("app.test").unwrap(), false, &langs)
+        .await
+        .unwrap();
+    assert!(!docker.networks().contains(&network.to_owned()));
+    let writes = docker.writes();
+    let disconnect = writes
+        .iter()
+        .rposition(|call| call == "POST /networks/wonton-app-test/disconnect")
+        .unwrap();
+    let remove = writes
+        .iter()
+        .rposition(|call| call == "DELETE /networks/wonton-app-test")
+        .unwrap();
+    assert!(disconnect < remove);
+    // 断开之后确实等过：端点没掉之后才删的网络。
+    assert!(docker.inspect_count("mail") >= inspects + 2);
+    assert!(docker.removed_at("mail").unwrap() <= remove);
+    assert!(!docker.containers().contains(&"mail".into()));
+}
+
+#[tokio::test]
 async fn failed_install_detaches_mailpit_before_rolling_back_network() {
     let (docker, engine) = FakeDocker::start().await;
     let dir = tempfile::tempdir().unwrap();

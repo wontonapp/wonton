@@ -249,7 +249,7 @@ final class PageInsetsUITests: XCTestCase {
         app.launchEnvironment["WONTON_DEV_DATA_SUFFIX"] = dataSuffix
         app.launchEnvironment["WONTON_UI_FAKE"] = "1"
         if appPage { app.launchEnvironment["WONTON_UI_URL_AS_APP_PAGE"] = "1" }
-        app.launch()
+        UITestBackend.launch(app)
         XCTAssertTrue(waitHittable(sidebarButton, timeout: 20), "没进主界面\n\(app.debugDescription)")
         // UI 测试读不到安全区。
         rootBarTop = hittable(sidebarButton)?.frame.minY ?? 0

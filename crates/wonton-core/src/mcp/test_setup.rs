@@ -241,6 +241,36 @@ x-wonton:
   permissions: []
 ";
 
+/// 有 `notify` 和 `tools` 的插件：收件箱发所有管理员要 `notify`。
+pub(super) const NOTIFY: &str = "name: notes
+services:
+  mcp:
+    image: example/notes
+x-wonton:
+  spec: '0.4'
+  id: app.example.notes
+  version: 0.1.0
+  kind: app
+  title: {zh: 笔记, en: Notes}
+  description: {zh: 记笔记, en: Notes}
+  mcp: {service: mcp, port: 8080, transport: streamable-http}
+  permissions: [notify, tools]
+";
+
+pub(super) async fn setup_notify() -> Setup {
+    let (docker, engine) = FakeDocker::start().await;
+    let setup = setup_with(
+        engine,
+        Duration::from_secs(5),
+        super::confirm::DEFAULT_WINDOW,
+        Upstreams::new(),
+        NOTIFY,
+    )
+    .await;
+    let _ = docker;
+    setup
+}
+
 /// 装上 [`OPTIONAL`] 的管理器和总线：记录已经写好，可以直接开关。
 pub(super) async fn setup_optional() -> Setup {
     let (docker, engine) = FakeDocker::start().await;

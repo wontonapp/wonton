@@ -34,12 +34,16 @@ final class ChatModel {
         set { draftStore.bodies = newValue }
     }
     var replies: [String: ReplyQuote] { draftStore.replies }
-    private(set) var replyFocusRevision = 0
+    var replyFocusRevision = 0
+    /// 进编辑态换进来的原文会触发一次草稿变化，那一次的“正在输入”不报（进编辑态就停，ADR-0109 第 8 节）。
+    var suppressNextTyping = false
     /// 聊天页打开的页面。
     var path: [ChatRoute] = []
     var visiting: VisitingRoom?
     /// 开着的旁聊：房间 ID → 旁聊根的事件 ID。一个房间同时最多一个（ADR-0093）。
     var sideChats: [String: String] = [:]
+    /// 走查：最近一次收起旁聊是谁收的（`bar`/`ended`/`gone`/`hint`）。
+    var debugClosed = ""
     /// 正在写第一句的房间：开新旁聊的面板开着。
     var composingSideChat: String?
     /// 新建聊天选的 AI 不支持旁聊、打开的是主对话的房间（ADR-0093 §7）。
@@ -154,17 +158,9 @@ final class ChatModel {
         saveDraft(target)
     }
 
-    /// 转发到另一个房间，随后打开它。
-    func forward(_ itemId: String, from roomId: String, to target: String) {
-        send(.timeline(action: TimelineAction.forwardMessage(
-            target: TimelineTarget(roomId: roomId, threadRoot: nil),
-            itemId: itemId, toRoomId: target
-        )))
-        openRoom(target)
-    }
-
     /// 换了房间还在同一页：从应用页打开的就留在应用页，否则留在聊天页。
     func openRoom(_ roomId: String) {
+        walkLog.notice("open room=\(roomId, privacy: .public)")
         if let visiting {
             guard visiting.roomId != roomId else { return }
             self.visiting = VisitingRoom(tab: visiting.tab, roomId: roomId)
@@ -179,7 +175,9 @@ final class ChatModel {
         composingSideChat = nil
     }
 
-    func closeSideChat(in roomId: String) {
+    func closeSideChat(in roomId: String, why: String = "") {
+        debugClosed = why
+        walkLog.notice("side chat closed why=\(why, privacy: .public)")
         sideChats[roomId] = nil
     }
 
@@ -211,11 +209,17 @@ final class ChatModel {
         viewModel.rooms.first { $0.roomId == roomId }?.name ?? roomId
     }
 
-    func send(_ action: Action) {
+    /// 操作被核心收下返回真；被拒时原因弹出来，返回假。
+    /// “被拒”只是 `dispatch` 当场拒绝：核心收下之后在发送队列里失败（附件传不上去等），这里照样返回真，
+    /// 由发送队列自己报错、重试，调用方这时清掉草稿和回复对象。
+    @discardableResult
+    func send(_ action: Action) -> Bool {
         do {
             try core.dispatch(action: action)
+            return true
         } catch {
             rejection = error.problem
+            return false
         }
     }
 

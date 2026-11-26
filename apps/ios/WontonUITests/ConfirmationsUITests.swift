@@ -13,7 +13,7 @@ final class ConfirmationsUITests: XCTestCase {
         app = XCUIApplication()
         app.launchArguments += ["-AppleLanguages", "(en)", "-AppleLocale", "en_US"]
         try UITestBackend.passPairingCode(to: app)
-        app.launch()
+        UITestBackend.launch(app)
     }
 
     func testListAndRoomCards() throws {

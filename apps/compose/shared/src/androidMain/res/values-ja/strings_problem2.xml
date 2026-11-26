@@ -2,12 +2,15 @@
 <resources>
     <string name="problem_default_agent_absent">このアカウントに表示できる既定のアシスタントがありません。オーナーに設定を確認してもらってください。</string>
     <string name="problem_invalid_input_title">この操作は実行できません</string>
+    <!-- Next step: check the input and try again. -->
+    <string name="problem_invalid_input_next_step">入力を確認して、もう一度お試しください。</string>
     <!-- Next step: look at the app again and approve it again. -->
     <string name="problem_plugin_changed_next_step">内容をもう一度確認してください。</string>
     <!-- Next step: the app is installed or installing, updating or uninstalling; wait for that to finish. -->
     <string name="problem_plugin_conflict_next_step">インストール済みか、インストール・アップデート・アンインストールの途中です。終わるまでお待ちください。</string>
     <!-- Next step: try after the update finishes. -->
     <string name="problem_plugin_core_upgrading_next_step">アップデートが終わってからもう一度お試しください。</string>
+    <string name="problem_plugin_health_timeout_title">アプリはまだ準備できていません</string>
     <!-- Next step: contact the app's author. -->
     <string name="problem_plugin_invalid_next_step">アプリの作者に連絡してください。</string>
     <!-- Problem title: the app's package is broken. -->
@@ -32,4 +35,8 @@
     <string name="problem_upgrade_server_next_step">まず自宅サーバーをアップデートしてください。</string>
     <!-- Problem title used for plugin, chat and connection failures: the home server itself reported an error. -->
     <string name="problem_upstream_title">自宅サーバーでエラーが発生しました</string>
+    <!-- Next step when the other server's public access is off: wait, then send again. -->
+    <string name="problem_peer_public_access_off_next_step">相手がオンに戻してからもう一度送ってください。メッセージはその後で届きます。</string>
+    <!-- Next step when the other server isn't paired: pair it first. -->
+    <string name="problem_server_not_paired_next_step">「他のサーバー」でペアリングしてから、チャットを開いてください。</string>
 </resources>

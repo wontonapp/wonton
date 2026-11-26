@@ -1,5 +1,8 @@
 //! 专用密码的管理接口（ADR-0021「在 App 里」）：挂在 [`super::clients_api`] 的中间件后面，
-//! 只有主人（令牌或已配对设备）能调。值每次取都记审计、具体到设备；吊销下一个请求生效。
+//! 只有主人（令牌或已配对设备）能调。值每次取都记审计、具体到设备。
+//!
+//! 签发、换值、吊销都先落盘再跑应用里的命令：命令成功才算数，插件没在跑回 202、命令失败回 502，
+//! 记录留在待完成，插件下次启动重试，值在此之前照旧能用。
 
 use std::sync::Arc;
 
@@ -16,10 +19,26 @@ use super::Gateway;
 use super::TunnelPeer;
 use super::api::{acted_by, languages};
 use super::clients_api::{failure, no_store, unavailable};
+use crate::clients::credentials::CredentialError;
 use crate::clients::passwords::PasswordError;
+use crate::clients::pending::{Issue, IssueError, Settle};
 use crate::l10n;
 use crate::plugin::languages::Languages;
 use wonton_protocol::ClientsFailure;
+
+/// 回给客户端的登录名：清单模板里的 `{user}` 换主人、`{email}` 换主人派生出的内部邮箱；
+/// 没写就是主人。
+fn credential_username(
+    credentials: &wonton_protocol::manifest::CredentialsAuth,
+    owner: &str,
+) -> String {
+    credentials
+        .username
+        .clone()
+        .unwrap_or_else(|| "{user}".to_owned())
+        .replace("{user}", owner)
+        .replace("{email}", &crate::owner::internal_email(owner))
+}
 
 pub fn routes() -> Router<Arc<Gateway>> {
     Router::new()
@@ -33,7 +52,7 @@ pub fn routes() -> Router<Arc<Gateway>> {
         )
 }
 
-/// `POST`：给插件新建一个专用密码，回 `201` 和值。
+/// `POST`：写真值并跑应用的签发命令。成功 `201`、插件没在跑 `202`、命令失败 `502`（值都已落盘）。
 async fn create(
     State(gateway): State<Arc<Gateway>>,
     peer: Option<Extension<TunnelPeer>>,
@@ -42,9 +61,21 @@ async fn create(
     Json(request): Json<NewPasswordRequest>,
 ) -> Response {
     let langs = languages(&headers);
-    let Some(store) = &gateway.plugins.client_passwords else {
+    let Some(_store) = &gateway.plugins.client_passwords else {
         return unavailable(&langs);
     };
+    let Ok(id) = crate::plugin::PluginId::parse(&plugin) else {
+        return failure(
+            ClientsFailure::InvalidInput,
+            &l10n::text(&langs, "clients-password-not-found", &[]),
+        );
+    };
+    if !gateway.plugins.is_installed(&id) {
+        return failure(
+            ClientsFailure::PluginUnavailable,
+            &l10n::text(&langs, "clients-plugin-unavailable", &[]),
+        );
+    }
     // 设备身份：经隧道的已配对设备记 ID（吊销按它连带），名字给界面显示。
     let device = peer.as_ref().map(|Extension(peer)| {
         let name = gateway
@@ -54,32 +85,110 @@ async fn create(
             .and_then(|device| device.name);
         (peer.0.to_string(), name)
     });
-    match store.create(
-        &plugin,
-        &request.label,
-        device
-            .as_ref()
-            .map(|(id, name)| (id.as_str(), name.as_deref())),
-    ) {
-        Ok(created) => no_store(
-            (
-                StatusCode::CREATED,
-                Json(PasswordValue {
-                    username: gateway.plugins.owner_username(),
-                    password: SecretString::new(created.value),
-                }),
-            )
-                .into_response(),
+    let username = gateway
+        .plugins
+        .credentials_auth(&id)
+        .map(|credentials| credential_username(&credentials, &gateway.plugins.owner_username()))
+        .unwrap_or_else(|| gateway.plugins.owner_username());
+    let outcome = gateway
+        .plugins
+        .issue_new(
+            &id,
+            &request.label,
+            device
+                .as_ref()
+                .map(|(id, name)| (id.as_str(), name.as_deref())),
+        )
+        .await;
+    match outcome {
+        Ok(Issue::Done(issued)) => issued_response(
+            &gateway,
+            &plugin,
+            &username,
+            peer.as_ref(),
+            &headers,
+            issued,
+            false,
         ),
-        Err(PasswordError::InvalidLabel) => failure(
+        Ok(Issue::Deferred(issued)) => issued_response(
+            &gateway,
+            &plugin,
+            &username,
+            peer.as_ref(),
+            &headers,
+            issued,
+            true,
+        ),
+        Ok(Issue::Failed { issued, error }) => {
+            if let Some(audit) = &gateway.audit {
+                audit.record(&serde_json::json!({
+                    "event": "client_password_issue_failed",
+                    "plugin": plugin,
+                    "id": &issued.id,
+                    "error": error.detail(),
+                    "by": acted_by(&gateway, peer.as_ref(), &headers),
+                }));
+            }
+            let mut response = credential_failure(&langs, error);
+            response.headers_mut().insert(
+                wonton_protocol::PASSWORD_ID_HEADER,
+                issued.id.parse().expect("记录 ID 是 ASCII"),
+            );
+            no_store(response)
+        }
+        Err(IssueError::Store) => unavailable(&langs),
+        Err(IssueError::SharedExists) => failure(
+            ClientsFailure::Conflict,
+            &l10n::text(&langs, "clients-credentials-shared-exists", &[]),
+        ),
+        Err(IssueError::Password(PasswordError::InvalidLabel)) => failure(
             ClientsFailure::InvalidInput,
             &l10n::text(&langs, "clients-password-label-invalid", &[]),
         ),
-        Err(error) => storage_failure(&langs, error),
+        Err(IssueError::Password(error)) => storage_failure(&langs, error),
     }
 }
 
-/// `GET`：取值；每次都记审计、具体到设备（ADR-0021「在 App 里」）。
+fn issued_response(
+    gateway: &Gateway,
+    plugin: &str,
+    username: &str,
+    peer: Option<&Extension<TunnelPeer>>,
+    headers: &HeaderMap,
+    issued: crate::clients::pending::Issued,
+    deferred: bool,
+) -> Response {
+    if let Some(audit) = &gateway.audit {
+        audit.record(&serde_json::json!({
+            "event": "client_password_issue",
+            "plugin": plugin,
+            "id": issued.id,
+            "pending": deferred,
+            "by": acted_by(gateway, peer, headers),
+        }));
+    }
+    let status = if deferred {
+        StatusCode::ACCEPTED
+    } else {
+        StatusCode::CREATED
+    };
+    let value_pending = deferred && issued.value.is_empty();
+    let response = (
+        status,
+        Json(PasswordValue {
+            username: username.to_owned(),
+            password: SecretString::new(issued.value),
+        }),
+    )
+        .into_response();
+    if value_pending {
+        // `generates` 的待换：值还在应用那边，别让客户端把空串当值。
+        return with_pending(response, wonton_protocol::PendingOp::Rotate);
+    }
+    no_store(response)
+}
+
+/// `GET`：取值；每次都记审计、具体到设备。待完成的记录用响应头标出来，值照旧给。
 async fn read_value(
     State(gateway): State<Arc<Gateway>>,
     peer: Option<Extension<TunnelPeer>>,
@@ -102,13 +211,26 @@ async fn read_value(
                     "by": acted_by(&gateway, peer.as_ref(), &headers),
                 }));
             }
-            no_store(
-                Json(PasswordValue {
-                    username: gateway.plugins.owner_username(),
-                    password: SecretString::new(value),
+            let pending = store
+                .snapshot(&plugin, &id)
+                .ok()
+                .and_then(|snapshot| crate::plugin::PluginManager::pending_op(&snapshot.state));
+            let username = crate::plugin::PluginId::parse(&plugin)
+                .ok()
+                .and_then(|id| gateway.plugins.credentials_auth(&id))
+                .map(|credentials| {
+                    credential_username(&credentials, &gateway.plugins.owner_username())
                 })
-                .into_response(),
-            )
+                .unwrap_or_else(|| gateway.plugins.owner_username());
+            let response = Json(PasswordValue {
+                username,
+                password: SecretString::new(value),
+            })
+            .into_response();
+            match pending {
+                Some(pending) => with_pending(response, pending),
+                None => no_store(response),
+            }
         }
         Err(PasswordError::NotFound) => failure(
             ClientsFailure::InvalidInput,
@@ -118,23 +240,83 @@ async fn read_value(
     }
 }
 
-/// `DELETE`：吊销；下一个请求就失效，已升级的连接立即断。
+/// `DELETE /_wonton/clients/{plugin}/passwords/{id}`：吊销；`per_client: false` 时换成新值。
+/// 完成 `200`，插件没在跑 `202`，失败 `502`；只有 `202` 带
+/// [`PENDING_HEADER`](wonton_protocol::PASSWORD_PENDING_HEADER) 标出没做完的吊销或换值。吊销设备走 `devices.rs`，不经过这里。
 async fn revoke(
     State(gateway): State<Arc<Gateway>>,
     headers: HeaderMap,
     Path((plugin, id)): Path<(String, String)>,
 ) -> Response {
     let langs = languages(&headers);
-    let Some(store) = &gateway.plugins.client_passwords else {
+    let Some(_store) = &gateway.plugins.client_passwords else {
         return unavailable(&langs);
     };
-    match store.revoke(&plugin, &id) {
-        Ok(()) => StatusCode::OK.into_response(),
+    let Ok(plugin_id) = crate::plugin::PluginId::parse(&plugin) else {
+        return failure(
+            ClientsFailure::InvalidInput,
+            &l10n::text(&langs, "clients-password-not-found", &[]),
+        );
+    };
+    if !gateway.plugins.is_installed(&plugin_id) {
+        return failure(
+            ClientsFailure::PluginUnavailable,
+            &l10n::text(&langs, "clients-plugin-unavailable", &[]),
+        );
+    }
+    match gateway.plugins.settle_password(&plugin_id, &id).await {
+        Ok(Settle::Done) => no_store(StatusCode::OK.into_response()),
+        Ok(Settle::Deferred(op)) => with_pending(StatusCode::ACCEPTED.into_response(), op),
+        Ok(Settle::Failed(error)) => credential_failure(&langs, error),
         Err(PasswordError::NotFound) => failure(
             ClientsFailure::InvalidInput,
             &l10n::text(&langs, "clients-password-not-found", &[]),
         ),
         Err(error) => storage_failure(&langs, error),
+    }
+}
+
+/// 标出还没做完的操作，值照旧照给。
+fn with_pending(mut response: Response, op: wonton_protocol::PendingOp) -> Response {
+    let marker = match op {
+        wonton_protocol::PendingOp::Revoke => "revoke",
+        wonton_protocol::PendingOp::Rotate => "rotate",
+        wonton_protocol::PendingOp::Other => "other",
+    };
+    response.headers_mut().insert(
+        wonton_protocol::PASSWORD_PENDING_HEADER,
+        marker.parse().expect("静态标记"),
+    );
+    no_store(response)
+}
+
+/// 应用里的命令失败：`502`，带标准错误输出；超时说明可能已经生效，会重试。
+fn credential_failure(langs: &Languages, error: CredentialError) -> Response {
+    match error {
+        CredentialError::Timeout => failure(
+            ClientsFailure::CredentialsFailed,
+            &l10n::text(langs, "clients-credentials-timeout", &[]),
+        ),
+        CredentialError::Unavailable => failure(
+            ClientsFailure::PluginUnavailable,
+            &l10n::text(langs, "clients-credentials-unavailable", &[]),
+        ),
+        CredentialError::Missing(op) => failure(
+            ClientsFailure::CredentialsFailed,
+            &l10n::text(
+                langs,
+                "clients-credentials-missing-command",
+                &[("op", format!("{op:?}").to_lowercase().into())],
+            ),
+        ),
+        CredentialError::Failed { stderr, .. } => failure(
+            ClientsFailure::CredentialsFailed,
+            &l10n::text(
+                langs,
+                "clients-credentials-failed",
+                &[("error", stderr.into())],
+            ),
+        ),
     }
 }
 

@@ -16,7 +16,7 @@ use hyper::{Method, StatusCode};
 use iroh::SecretKey;
 use rmcp::model::{
     CallToolRequest, CallToolRequestParams, ClientCapabilities, ClientConfig, ClientRequest,
-    Implementation,
+    Implementation, MetaObject, RequestMetaObject,
 };
 use rmcp::service::{PeerRequestOptions, RoleClient, RunningService};
 use rmcp::transport::StreamableHttpClientTransport;
@@ -562,6 +562,23 @@ async fn only_plugin_networks_with_the_tools_permission_get_in() {
     );
 }
 
+/// 核心还在恢复、来源还没登记：和网关的 Bot 门一样答可重试的 503，不答 403。上游按状态码分永久和暂时
+/// （`_classify_mcp_failure`），403 会把它打进 auth park，一 park 就是 300 秒一次的自探；同一个来源恢复后再来才答 403。
+#[tokio::test]
+async fn an_unregistered_source_while_restoring_is_retryable() {
+    let home = start(None).await;
+    let restoring = home.manager.restoring_guard();
+    let response = post_from_plugin_network(&home, "/mcp").await;
+    assert_eq!(response.status(), StatusCode::SERVICE_UNAVAILABLE);
+    assert_eq!(
+        response.headers()[header::RETRY_AFTER],
+        HeaderValue::from_static("5")
+    );
+    drop(restoring);
+    let response = post_from_plugin_network(&home, "/mcp").await;
+    assert_eq!(response.status(), StatusCode::FORBIDDEN);
+}
+
 /// MCP 总线的文字按主人的语言写（ADR-0043）：Agent 的调用没有请求头，用 owner_languages；
 /// 期望值由目录格式化出来比，ja 和 en 要真的不同。
 #[tokio::test]
@@ -685,6 +702,54 @@ async fn bus_meta_carries_the_keeper_identity_and_capabilities() {
     assert!(
         !last.contains_key(wonton_protocol::TOOL_CALL_CAPABILITIES_META),
         "共享 Bot 不带能力：{last:?}"
+    );
+}
+
+/// ADR-0114 卡 0 实验（rmcp 会不会丢 `_meta`）：插件工具的 `_meta` 经核心到 Agent 原样保留；
+/// 核心自己往 `tools/call` 的 `_meta` 里写的身份键也能到插件，调用方自己塞的键到不了。
+/// 结论回写 ADR 待验证第 4 条；`app.wonton/card`、`app.wonton/files` 走 tools/list 可行。
+#[tokio::test]
+async fn tool_meta_survives_the_bus_and_core_call_meta_reaches_the_plugin() {
+    let home = bus_home_with_bot_records().await;
+    let alice = agent_at_token(&home, "alice").await;
+    let listed = alice.peer().list_tools(None).await.unwrap();
+    let search = listed
+        .tools
+        .iter()
+        .find(|tool| tool.name == "app-example-notes__search")
+        .unwrap_or_else(|| {
+            panic!(
+                "工具: {:?}",
+                listed.tools.iter().map(|t| &t.name).collect::<Vec<_>>()
+            )
+        });
+    println!("Agent 看到的工具 _meta: {:?}", search.meta);
+    let meta = search.meta.as_ref().expect("工具 _meta 应到 Agent");
+    assert_eq!(meta.0.get("app.wonton/card"), Some(&json!({"title": "T"})));
+    assert_eq!(meta.0.get("app.wonton/files"), Some(&json!(["photo"])));
+
+    // 核心自己写进 `_meta` 的身份键到得了插件；调用方自己塞的 `app.wonton/card` 现在会被核心丢掉。
+    let mut params = CallToolRequestParams::new("app-example-notes__search")
+        .with_arguments(json!({"name": "x"}).as_object().cloned().unwrap());
+    params.meta = Some(RequestMetaObject(MetaObject(
+        json!({"app.wonton/card": {"title": "T"}})
+            .as_object()
+            .cloned()
+            .unwrap(),
+    )));
+    alice.peer().call_tool(params).await.unwrap();
+    let metas = home.notes.received_meta.lock().unwrap().clone();
+    let last = metas.last().expect("调用送达插件").as_ref().unwrap();
+    println!("插件收到的 _meta 键: {:?}", last.keys().collect::<Vec<_>>());
+    assert_eq!(
+        last.get(wonton_protocol::TOOL_CALL_USER_META)
+            .and_then(Value::as_str),
+        Some("alice"),
+        "核心写的身份 _meta 应到插件"
+    );
+    assert!(
+        !last.contains_key("app.wonton/card"),
+        "调用方自己塞的 _meta 现在到不了插件：{last:?}"
     );
 }
 

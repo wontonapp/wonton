@@ -1,0 +1,110 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "type": "object",
+  "additionalProperties": false,
+  "x-wonton-order": [
+    "feishu_enabled",
+    "feishu_app_id",
+    "dingtalk_enabled",
+    "dingtalk_client_id",
+    "wecom_enabled",
+    "wecom_bot_id",
+    "qq_enabled",
+    "qq_app_id",
+    "weixin_enabled"
+  ],
+  "properties": {
+    "feishu_enabled": {
+      "type": "boolean",
+      "default": false,
+      "x-wonton-title": {
+        "zh": "飞书",
+        "en": "Feishu"
+      }
+    },
+    "feishu_app_id": {
+      "type": "string",
+      "default": "",
+      "x-wonton-title": {
+        "zh": "飞书 App ID",
+        "en": "Feishu App ID"
+      },
+      "x-wonton-description": {
+        "zh": "在飞书开放平台建应用后，从「凭证与基础信息」复制；密钥在下面的「插件密钥」里填",
+        "en": "Copy from Credentials & Basic Info after creating an app on the Feishu open platform; fill the secret under Plugin secrets below"
+      }
+    },
+    "dingtalk_enabled": {
+      "type": "boolean",
+      "default": false,
+      "x-wonton-title": {
+        "zh": "钉钉",
+        "en": "DingTalk"
+      }
+    },
+    "dingtalk_client_id": {
+      "type": "string",
+      "default": "",
+      "x-wonton-title": {
+        "zh": "钉钉 Client ID（AppKey）",
+        "en": "DingTalk Client ID (AppKey)"
+      },
+      "x-wonton-description": {
+        "zh": "在钉钉开发者后台建应用后，从「凭证与基础信息」复制；机器人能力选「Stream 模式」，密钥在下面的「插件密钥」里填",
+        "en": "Copy from Credentials & Basic Info after creating an app in the DingTalk developer console; pick Stream mode for the robot capability, fill the secret under Plugin secrets below"
+      }
+    },
+    "wecom_enabled": {
+      "type": "boolean",
+      "default": false,
+      "x-wonton-title": {
+        "zh": "企业微信",
+        "en": "WeCom"
+      }
+    },
+    "wecom_bot_id": {
+      "type": "string",
+      "default": "",
+      "x-wonton-title": {
+        "zh": "企业微信机器人 ID",
+        "en": "WeCom bot ID"
+      },
+      "x-wonton-description": {
+        "zh": "在企业管理后台建「智能机器人」后，从机器人的凭据页复制；密钥在下面的「插件密钥」里填",
+        "en": "Copy from the bot's credentials page after creating an AI bot in the WeCom admin console; fill the secret under Plugin secrets below"
+      }
+    },
+    "qq_enabled": {
+      "type": "boolean",
+      "default": false,
+      "x-wonton-title": {
+        "zh": "QQ 机器人",
+        "en": "QQ bot"
+      }
+    },
+    "qq_app_id": {
+      "type": "string",
+      "default": "",
+      "x-wonton-title": {
+        "zh": "QQ 机器人 App ID",
+        "en": "QQ bot App ID"
+      },
+      "x-wonton-description": {
+        "zh": "在 q.qq.com 建机器人后复制 App ID，并打开消息意图；密钥在下面的「插件密钥」里填",
+        "en": "Copy the App ID after creating a bot at q.qq.com and enable the message intents; fill the secret under Plugin secrets below"
+      }
+    },
+    "weixin_enabled": {
+      "type": "boolean",
+      "default": false,
+      "x-wonton-title": {
+        "zh": "个人微信",
+        "en": "Personal WeChat"
+      },
+      "x-wonton-description": {
+        "zh": "先按插件说明在服务器的终端里扫码登录，再打开这个开关",
+        "en": "Scan to log in from a terminal on the server first (see the plugin notes), then enable"
+      }
+    }
+  }
+}

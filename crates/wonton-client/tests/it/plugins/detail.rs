@@ -19,6 +19,7 @@ pub(super) fn detail() -> PluginDetail {
         title: format!("标题 {ID}"),
         summary: String::new(),
         about: None,
+        setup: None,
         icon: None,
         screenshots: Vec::new(),
         tags: Vec::new(),

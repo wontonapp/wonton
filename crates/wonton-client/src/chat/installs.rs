@@ -428,6 +428,7 @@ mod tests {
 
     fn room(bot: &str) -> RoomRow {
         RoomRow {
+            unread_mentions: 0,
             layout: ChatLayout::default(),
             call_active: false,
             room_id: format!("!{bot}:home"),
@@ -435,6 +436,7 @@ mod tests {
             is_direct: true,
             direct_user_id: Some(bot.into()),
             plugin: None,
+            bot_chat: None,
             is_encrypted: true,
             is_read_only: false,
             membership: RoomMembership::Joined,

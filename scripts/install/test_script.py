@@ -252,11 +252,11 @@ class InstallTest(unittest.TestCase):
         self.assertEqual(env["WONTON_CORE_SOURCE"], reference)
 
     def test_missing_given_name_configuration_stops_at_init(self):
-        self.digests["ghcr.io/geraldpeng6/wonton-core:beta"] = [
-            "ghcr.io/geraldpeng6/wonton-core@sha256:" + "e" * 64
+        self.digests["ghcr.io/wontonapp/wonton-core:beta"] = [
+            "ghcr.io/wontonapp/wonton-core@sha256:" + "e" * 64
         ]
 
-        result = self.run_install(entry=False, WONTON_CORE_IMAGE="ghcr.io/geraldpeng6/wonton-core:beta")
+        result = self.run_install(entry=False, WONTON_CORE_IMAGE="ghcr.io/wontonapp/wonton-core:beta")
 
         self.assertNotEqual(result.returncode, 0)
         log = (self.state / "log").read_text()
@@ -264,13 +264,13 @@ class InstallTest(unittest.TestCase):
         self.assertFalse((self.install_dir / ".env").exists())
 
     def test_none_mode_acme_coordinates_are_written_to_the_install_env(self):
-        self.digests["ghcr.io/geraldpeng6/wonton-core:beta"] = [
-            "ghcr.io/geraldpeng6/wonton-core@sha256:" + "f" * 64
+        self.digests["ghcr.io/wontonapp/wonton-core:beta"] = [
+            "ghcr.io/wontonapp/wonton-core@sha256:" + "f" * 64
         ]
 
         result = self.run_install(
             entry=False,
-            WONTON_CORE_IMAGE="ghcr.io/geraldpeng6/wonton-core:beta",
+            WONTON_CORE_IMAGE="ghcr.io/wontonapp/wonton-core:beta",
             WONTON_MATRIX_NAME_MODE="none",
             WONTON_ACME_DIRECTORY="https://pebble.test/dir",
             WONTON_ACME_ACCEPT_TERMS="true",
@@ -284,19 +284,64 @@ class InstallTest(unittest.TestCase):
         self.assertEqual(env["WONTON_ACME_ACCEPT_TERMS"], "true")
         self.assertEqual(env["WONTON_ACME_RESOLVERS"], "192.0.2.53:53")
 
-    def test_none_mode_without_acme_coordinates_stops(self):
-        self.digests["ghcr.io/geraldpeng6/wonton-core:beta"] = [
-            "ghcr.io/geraldpeng6/wonton-core@sha256:" + "1" * 64
+    def test_none_mode_install_defaults_the_acme_directory(self):
+        # 不用名字的安装没有 entry/settings.json，运行时的 ACME 目录只能从环境读（clients/domain.rs 的 acme()）：
+        # 没给就落到 Let's Encrypt 正式地址，别让新用户去填一个看不懂的变量。订户协议不读环境，
+        # 由主人在 App 勾选，勾之前核心不联系 CA。
+        self.digests["ghcr.io/wontonapp/wonton-core:stable"] = [
+            "ghcr.io/wontonapp/wonton-core@sha256:" + "9" * 64
         ]
+        result = self.run_install(entry=False, WONTON_MATRIX_NAME_MODE="none")
 
+        self.assertEqual(result.returncode, 0, result.stderr)
+        env = self.env()
+        self.assertEqual(
+            env["WONTON_ACME_DIRECTORY"],
+            "https://acme-v02.api.letsencrypt.org/directory",
+        )
+        self.assertNotIn("WONTON_ACME_ACCEPT_TERMS", env)
+
+    def test_none_mode_keeps_an_explicit_acme_directory(self):
+        # 测试、内部 CA 用别的目录：默认值不能盖掉给的。
+        self.digests["ghcr.io/wontonapp/wonton-core:stable"] = [
+            "ghcr.io/wontonapp/wonton-core@sha256:" + "8" * 64
+        ]
         result = self.run_install(
             entry=False,
-            WONTON_CORE_IMAGE="ghcr.io/geraldpeng6/wonton-core:beta",
             WONTON_MATRIX_NAME_MODE="none",
+            WONTON_ACME_DIRECTORY="https://pebble.test/dir",
         )
 
-        self.assertNotEqual(result.returncode, 0)
-        self.assertIn("WONTON_ACME_DIRECTORY", result.stderr)
+        self.assertEqual(result.returncode, 0, result.stderr)
+        self.assertEqual(self.env()["WONTON_ACME_DIRECTORY"], "https://pebble.test/dir")
+
+    def test_rerun_without_the_name_mode_keeps_a_nameless_install_going(self):
+        # 升级就是再跑一次（README 的“退回”命令只带 digest），不给任何入口变量：init 容器经 --env-file 读到记下的
+        # 模式和证书坐标，none 安装不会退回去要名字要的东西。
+        self.digests["ghcr.io/wontonapp/wonton-core:stable"] = [
+            "ghcr.io/wontonapp/wonton-core@sha256:" + "7" * 64
+        ]
+        result = self.run_install(entry=False, WONTON_MATRIX_NAME_MODE="none")
+        self.assertEqual(result.returncode, 0, result.stderr)
+
+        result = self.run_install(entry=False)
+
+        self.assertEqual(result.returncode, 0, result.stderr)
+        self.assertEqual(
+            self.env()["WONTON_ACME_DIRECTORY"],
+            "https://acme-v02.api.letsencrypt.org/directory",
+        )
+
+    def test_readme_install_command_matches_the_script_default_image(self):
+        # 公开文档指向的仓库和脚本默认镜像必须是同一个命名空间：issue #143 就是一边换了一边没换。
+        readme = (SCRIPT.parent / "README.md").read_text()
+        command = next(
+            line for line in readme.splitlines() if "install.sh" in line and "curl" in line
+        )
+        url = command.split()[2]
+        self.assertRegex(url, r"^https://raw\.githubusercontent\.com/[^/]+/wonton-install/main/install\.sh$")
+        owner = url.split("/")[3]
+        self.assertIn(f"ghcr.io/{owner}/wonton-core:stable", SCRIPT.read_text())
 
     def test_rerun_keeps_recorded_entry_inputs(self):
         self.digests["ghcr.io/wontonapp/wonton-core:stable"] = [
@@ -368,6 +413,34 @@ class InstallTest(unittest.TestCase):
         result = self.run_install(WONTON_INSTALL_TIMEOUT_SECS="")
         self.assertEqual(result.returncode, 0, result.stderr)
         self.assertNotIn("WONTON_INSTALL_TIMEOUT_SECS", self.env())
+
+    def test_relay_fragment_and_vapid_survive_a_rerun(self):
+        self.digests["ghcr.io/wontonapp/wonton-core:stable"] = [
+            "ghcr.io/wontonapp/wonton-core@sha256:" + "d" * 64
+        ]
+        relays = "https://token@relay.example.org#7843;n0"
+        builtin = "https://relay.example.org#7843,n0"
+
+        # QUIC 端口是 #端口：fits_env 不能把 # 当 shell 特殊字符挡掉。
+        result = self.run_install(
+            WONTON_RELAYS=relays,
+            WONTON_BUILTIN_RELAYS=builtin,
+            WONTON_PUSH_VAPID_KEY="cHJpdmF0ZQ",
+            WONTON_PUSH_VAPID_SUBJECT="mailto:ops@example.com",
+        )
+        self.assertEqual(result.returncode, 0, result.stderr)
+        env = self.env()
+        self.assertEqual(env["WONTON_RELAYS"], relays)
+        self.assertEqual(env["WONTON_BUILTIN_RELAYS"], builtin)
+
+        # 升级重写 .env 时经 saved 读回，不用再给。
+        result = self.run_install(entry=False)
+        self.assertEqual(result.returncode, 0, result.stderr)
+        env = self.env()
+        self.assertEqual(env["WONTON_RELAYS"], relays)
+        self.assertEqual(env["WONTON_BUILTIN_RELAYS"], builtin)
+        self.assertEqual(env["WONTON_PUSH_VAPID_KEY"], "cHJpdmF0ZQ")
+        self.assertEqual(env["WONTON_PUSH_VAPID_SUBJECT"], "mailto:ops@example.com")
 
     def pull_failure(self, error, **extra):
         result = self.run_install(FAKE_DOCKER_PULL_ERROR=error, **extra)

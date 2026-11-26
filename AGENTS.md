@@ -31,6 +31,8 @@
 
 - 优先使用成熟的开源组件和开放标准（Matrix、iroh、MCP、ACP、OIDC、Subsonic、Compose）。
   要自研时，先在 PR 或 ADR 里写明现成方案为什么不行。
+- 新建的独立组件（服务端插件、运维工具、网页）按合适的语言选，Go、TS、Python 都行，不必用 Rust；
+  客户端核心和服务器核心保持 Rust。
 - 新增依赖要写明许可证。链接进我们二进制的代码禁止 AGPL/GPL；作为独立容器运行的插件
   （如 Immich、Navidrome）不受此限。
 - 插件优先拉上游官方镜像；上游没有镜像时，可以装上游的发布物（npm、deb 等），或从上游固定的版本或提交原样构建镜像。
@@ -77,8 +79,9 @@
 - 提交前运行 `bash scripts/check.sh`（行数门禁、冲突标记检查、格式、Clippy、测试），和 CI 的 Rust 部分一致；Swift、Kotlin 的检查在各自的工作流里。
 - 依赖 Docker 的测试标 `#[ignore = "需要 Docker，…"]`。`check.sh` 连得上 Docker 就一起运行，连不上就跳过并打印手动运行的
   命令。跳过不等于通过：PR 说明里写明没跑。CI 分两处跑：PR 上的“Rust”跑默认的测试，故意让 Docker 不可用，保证它们
-  不依赖 Docker，是合并门槛；“Rust Docker 测试”运行这些标了 `#[ignore]` 的，合进 `main` 之后才跑，不挡合并，
-  Docker 不可用即失败。合并前想先跑，在 Actions 页对自己的分支手动触发 `rust-docker`。
+  不依赖 Docker，是合并门槛；“Rust Docker 测试”跑这些标了 `#[ignore]` 的，改了相关路径的 PR 上由 gate 当合并门槛跑，
+  合后和定时照常兜底，Docker 不可用即失败。规则和取舍见 [.github/workflows/README.md](.github/workflows/README.md)。
+  合并前想先跑，在 Actions 页对自己的分支手动触发 `rust-docker`。
 - CI 用 `plugin check-index` 检查官方索引（wonton-store）里的每个清单这份核心都读得懂、都渲染得出来（不再注入的变量当场失败）。
   改清单写法或注入变量的 PR 要先让索引换成新核心读得懂的写法，否则 CI 失败。
 - 没有 `/var/run/docker.sock`（OrbStack、Colima 等）时，`check.sh` 从当前 Docker context 取 `DOCKER_HOST`；
@@ -127,10 +130,16 @@
 - 一个 issue 可以分几个 PR：最后一个写 `Closes #N`，合并时 GitHub 自动关掉 issue；之前的写 `Refs #N`，并在
   issue 里留言说明还剩什么。不写的话 issue 不会自己关，做完的和没做的混在一起。
 - PR 合并前只等快检查：格式、lint（Clippy、detekt、SwiftLint）、行数门禁、编译、不依赖 Docker 的单元测试，目标十分钟内
-  出结果。必需检查绿了就 `gh pr merge --auto --squash` 直接合，不要求 PR 先追上 `main`。
+  出结果。不要求 PR 先追上 `main`。
+- 合并一律经维护者的 `~/wonton-dev/safe-merge.sh`，不直接 `gh pr merge`，也不自己开 auto-merge。它按顺序拒三种情况，
+  都过了才开 `gh pr merge --auto --squash`：
+  - 复审：PR 当前 head 上最后一条复审结论不是通过。复审员在 PR 上评论一行 `复审通过 <head 前 8 位> 复审：<复审员卡名>`；
+    作者卡写的、审的不是当前 head 的都不算，推了新提交要重审，通过之后又来一条“复审要改”也算没过。
+  - 冻结：改到冻结路径（`merge-freeze.json` 里登记的，如发版前的 `crates/`、`apps/`）且不在放行名单。
+  - 协议排队：改了 `crates/wonton-protocol` 的 PR 串行合，不是队首就报排位等着，轮到时自动合。
 - 改了 `crates/wonton-protocol` 的 PR，`main` 在分支切出之后又改过协议时，lint 的“改了协议的 PR 基于最新 main”一步失败：
   先 `git rebase origin/main`、解完冲突再推。只在 PR 的 CI 跑时判断一次；没改协议的 PR 不受影响。
-- 慢的合进 `main` 之后跑，不挡合并：Docker 集成测试、界面测试、镜像构建。新加的测试按这个分界放，哪个工作流在哪一边见
+- 慢的合进 `main` 之后跑，不挡合并：界面测试、镜像构建。新加的测试按这个分界放，哪个工作流在哪一边见
   [.github/workflows/README.md](.github/workflows/README.md)。
 - 必需检查只有 `gate` 工作流末尾的“gate 汇总”一个：PR 要等的检查都由 `gate.yml` 调用，它的 `changes` 作业判断改动范围，
   没改到的重作业报 skipped。新的快检查加进 `gate` 调用的工作流，规则集不用动。

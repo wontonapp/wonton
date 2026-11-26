@@ -24,6 +24,7 @@ impl PluginManager {
                     plugin_id: id.to_string(),
                     bot: Some(name.clone()),
                     user_id: bot.account.user_id.clone(),
+                    chat: Default::default(),
                     running,
                     model_requests: 0,
                     tool_calls: 0,

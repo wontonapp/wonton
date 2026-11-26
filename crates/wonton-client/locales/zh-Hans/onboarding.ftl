@@ -40,6 +40,7 @@ home-proxy-start-failed = App 无法启动本地连接代理，请重试。
 
 home-tunnel-closed = 隧道客户端已关闭
 
+
 home-lan-unsupported = 这个版本的客户端核心不支持局域网设置
 
 home-port-mapping-save-failed = 端口映射的开关存不下：{ $error }
@@ -61,9 +62,6 @@ home-pairing-setup-failed = 设备已配对，但无法设置连接。请打开�
 
 # 可读配对详情。$reason 已本地化；elapsed 是实际总耗时，stage 是每个交换阶段的限时，单位均为秒。
 home-pairing-failed-detail = { $reason }本次总耗时 { $elapsed_seconds } 秒，配对交换的每个阶段限时 { $stage_seconds } 秒。
-
-home-pairing-joining-pending = 这是加入用的码，正在等管理员同意。
-home-pairing-joining-pending-role = 这是加入用的码，正在等管理员同意。同意后加入的角色是“{ $role }”。
 
 # 失败类别不嵌入底层错误原文；原始信息保留在诊断中。
 home-failure-transport = 无法建立与家里服务器的连接，或连接已中断。请检查手机和服务器的网络后重试。

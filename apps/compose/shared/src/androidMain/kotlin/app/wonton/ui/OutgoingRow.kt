@@ -26,6 +26,7 @@ import androidx.compose.ui.semantics.Role
 import app.wonton.client.ClientCore
 import app.wonton.protocol.Action
 import app.wonton.protocol.OutgoingMessage
+import app.wonton.protocol.SendFailure
 import app.wonton.protocol.SendState
 import app.wonton.protocol.TimelineAction
 import app.wonton.protocol.TimelineTarget
@@ -134,7 +135,8 @@ private fun OutgoingFooter(message: OutgoingMessage, roomId: String, onAction: (
                     tint = colors.textOnAccentFill.toColor(),
                 )
                 Text(
-                    stringResource(R.string.timeline_send_failed, state.message),
+                    state.details.takeIf { state.failure == SendFailure.OTHER }
+                        ?: stringResource(state.failure.text),
                     style = style,
                     color = colors.textOnAccentFill.toColor(),
                 )
@@ -163,6 +165,6 @@ private fun OutgoingFooter(message: OutgoingMessage, roomId: String, onAction: (
     if (actions.isEmpty()) {
         choosing = false
     } else {
-        WontonActionSheet(actions, { choosing = false })
+        WontonActionSheet(actions, { choosing = false }, title = (message.state as? SendState.Failed)?.details)
     }
 }

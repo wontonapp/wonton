@@ -120,13 +120,22 @@ plugin-settings-egress-disconnected = 代理 { $address } 中斷了連線：{ $e
 plugin-settings-egress-not-http = 代理 { $address } 回的不是 HTTP
 plugin-settings-egress-auth-407 = 代理 { $address } 回 407：要使用者名稱和密碼，或者寫錯了
 plugin-settings-egress-status = 代理 { $address } 回 { $code }
-plugin-settings-egress-relay-not-running = 代理容器沒有在執行
+plugin-settings-egress-relay-starting = 出網容器 { $container } 還沒接上出網網路：它還在啟動，接上以後安裝就能過去
+plugin-settings-egress-relay-restarting = 伺服器的出網容器沒有在執行。已經在重新啟動它；一直起不來看安裝頁
+plugin-settings-egress-relay-image = 拉不到出網容器的映像：{ $error }。核對映像位址和標籤後再試
+plugin-settings-egress-relay-slow = 伺服器的出網容器還沒起來：Docker 沒有及時回話（{ $error }）。可能還在拉映像，會接著試
 plugin-settings-egress-relay-detail = 直接連代理是通的，經代理容器不通：{ $detail }。查看容器 { $container } 的記錄檔
 plugin-settings-egress-diagnose-exit = 查原因的容器以 { $code } 結束：{ $reason }
 plugin-settings-egress-provider-missing = 沒有安裝能做出網代理的應用程式
 plugin-settings-egress-provider-manifest = 讀不出代理應用程式 { $id } 的宣告
 plugin-settings-egress-provider-conflict = 已經安裝了代理應用程式 { $id }：同一時間只能有一個
-plugin-settings-egress-provider-not-running = 代理應用程式沒有在執行：{ $detail }
+plugin-settings-egress-provider-installing = 代理應用程式 { $title } 還在安裝。它起來以後要用外網的應用程式就能用，先不用管
+plugin-settings-egress-provider-upgrading = 代理應用程式 { $title } 正在換新版本。換好以後要用外網的應用程式就能用，先不用管
+plugin-settings-egress-provider-uninstalling = 代理應用程式 { $title } 正在解除安裝
+plugin-settings-egress-provider-starting = 代理應用程式 { $title } 在執行，還在啟動（容器 { $container }）。先不用管
+plugin-settings-egress-provider-unhealthy = 代理應用程式 { $title } 在執行，但健康檢查不過（容器 { $container }）。去安裝頁查看它的記錄檔
+plugin-settings-egress-provider-stopped = 代理應用程式 { $title } 用不了：容器 { $container } 的狀態是 { $status }，結束代碼 { $code }。先看安裝頁的日誌，再核對它的設定
+plugin-settings-egress-provider-no-container = 代理應用程式 { $title } 的容器 { $container } 不見了。去安裝頁重新啟動它
 plugin-settings-egress-relay-cidr-overlap = 網段 { $cidr } 和代理容器接入的 Docker 網路重疊，沒有放行：放行的話它會直接撥到別的應用程式
 plugin-settings-egress-token-unreadable = 服務 { $service } 把 Matrix 權杖寫在 command 或 configs 裡，讀不回來
 plugin-settings-egress-token-reinstall = 重新安裝應用程式（可以不刪資料）後會簽發新裝置，Bot 要重新建立加密身分
@@ -169,7 +178,6 @@ plugin-settings-store-source-plugin-missing = 索引 { $provider } 裡沒有 { $
 plugin-settings-store-community-partial = 有的沒讀到：{ $missing }
 plugin-settings-store-community-page-failed = 搜尋結果的第 { $page } 頁（{ $error }）
 plugin-settings-store-community-unavailable = 取不到社群應用程式：{ $error }
-plugin-settings-store-system-app = 系統應用程式只能隨家用伺服器預先安裝
 plugin-settings-store-permission-unsupported = 家用伺服器還不支援權限 { $permission }
 plugin-settings-store-index-newer = 索引的格式是 { $format }，這個版本的家用伺服器只看得懂 { $supported }：更新家用伺服器後才能用新的索引
 plugin-settings-store-index-invalid = 無法讀取索引：{ $error }
@@ -301,11 +309,15 @@ plugin-settings-store-index-fetch-failed = 取不到官方索引：{ $error }
 
 # ── 健康檢查（health.rs）───────────────────────────────────────────────────
 
-plugin-settings-health-timeout = 容器 { $container } 在期限內沒有就緒（最後狀態：{ $state }）
-plugin-settings-health-unhealthy = 容器 { $container } 健康檢查失敗
+plugin-settings-health-container = 容器 { $container }
+plugin-settings-health-state = { $container } 最後狀態：{ $state }
+plugin-settings-health-timeout = { $waiting } 等了 { $waited } 秒（時限 { $budget } 秒）還沒等來 { $pending } 就緒（{ $states }）
+plugin-settings-health-timeout-next = 下一步：時限對宣告了健康檢查的服務已經放寬到啟動寬限加它自己的重試窗，沒宣告的就是安裝期限；主機空下來後重試安裝通常能過。服務一直回 5xx 則可能是它自己起得來但報錯，看下面的探針和日誌。
+plugin-settings-health-target = 服務
+plugin-settings-health-list-separator = 、
 plugin-settings-health-exited = 容器 { $container } 已結束（結束代碼 { $code }）
 plugin-settings-health-no-healthcheck = 容器 { $container } 被要求 service_healthy，但沒有設定健康檢查
-plugin-settings-health-webui-timeout = 網頁入口 { $url } 在期限內沒有回應：{ $last_error }
+plugin-settings-health-webui-state = { $method } 最後一次回應：{ $error }
 plugin-settings-health-log-tail = 最近日誌：
 plugin-settings-health-probes = 最近探針：
 plugin-settings-health-probe-line = [結束代碼 { $code }] { $output }
@@ -330,6 +342,7 @@ plugin-settings-bot-device-name = Wonton 應用程式 { $id }（{ $bot }）
 plugin-settings-bot-account-deactivated = Bot 帳號 { $user } 已停用：選擇刪除資料解除安裝這個應用程式後重裝，會分配新帳號
 plugin-settings-bot-device-record-missing = 沒有 Bot { $bot } 的裝置記錄：重裝應用程式（可以不刪資料）
 plugin-settings-bot-device-revoked = Bot { $user } 的裝置已被吊銷，應用程式拿著的 Matrix 權杖失效了：重裝應用程式（可以不刪資料）重新簽發
+plugin-settings-bot-sync-stalled = Bot 已經 { $seconds } 秒沒經核心收到訊息了：它可能還在執行、健康檢查也說正常，但訊息進不來。重新啟動應用程式；還不行就重裝（可以不刪資料）
 
 # ── 區網偵測、出口容器和商店索引的補充（lan/detect.rs、docker_limits.rs、egress、storefront）──
 

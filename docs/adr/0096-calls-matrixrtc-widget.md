@@ -1,7 +1,8 @@
 # ADR-0096 音视频通话：MatrixRTC + LiveKit，Element Call 作为 Matrix widget 跑在插件页里
 
-- 状态：提议（2026-11-12）；正式接受待三组真实通话路径均通过
+- 状态：提议（2026-11-12）；正式接受待三组真实通话路径均通过。路线（同 Element X：MatrixRTC + LiveKit + Element Call 网页嵌进 App）由主人 2026-11-08 定
 - 细化 [ADR-0014](0014-reserved-capabilities.md) 的“实时通话”：只定房间里的音视频通话；和 Bot 通话、屏幕共享、来电响铃不在这篇
+- 由 [ADR-0118](0118-im-three-layers-push-with-body.md) 修订（2026-11-25）：房间不再端到端加密。通话走法不变、媒体仍加密，媒体密钥的 to-device 在不加密房间里不再套 Olm；不加密房间里的那一组由卡 call-e2e-android 实测
 - 用 [ADR-0072](0072-tunnel-udp.md) 的 UDP 隧道，和 [ADR-0033](0033-plugin-tabs.md) 的插件页、桥、摄像头和麦克风授权
 
 ## 背景
@@ -15,7 +16,8 @@ MSC4157 delayed events、MSC4515 RTC transports）替它收发事件。Element X
 
 - **隧道**：ADR-0072 把 LiveKit 列为用例，插件声明 `tunnel.ports`，App 在手机本机 `127.0.0.1` 同号映射。2026-11-11 在
   Android WebView 里实测通过（ADR-0072“验证结果”）：UDP 直连、TCP 7881 退路、n0 公共中继三组都连上，中继组首帧 6.3 秒、
-  码率贴着约 1 Mbit/s。iOS WKWebView 没验。
+  码率贴着约 1 Mbit/s。iOS 的 WKWebView 2026-11-25 用最小页面在同一台机器上验过回环候选，`127.0.0.1` 和 `::1` 都照用
+  （见“验证结果”），真机没验。
 - **插件页**：WebView、桥（MCP Apps 的 JSON-RPC，注入脚本接住页面发给自己的 `postMessage` 转给核心）、摄像头和麦克风的
   逐插件授权（ADR-0033“插件网页的摄像头和麦克风”）。
 - **matrix-sdk 0.19.1**（`vendor/matrix-sdk`）带 widget 驱动（`experimental-widgets` feature）：`WidgetDriver::new(WidgetSettings)`
@@ -115,7 +117,7 @@ matrix_widget:
   Element Call 的 `m.call.member` 就这样写）。核心批准时按当前登录的账号收窄，页面改不了别人的状态。写成测试。
   SDK 的过滤只认确切的 `state_key`、表达不了前缀，所以页面点名的 `state_key` 按上面的规则核，页面要“任意 `state_key`”时
   只批 `#<自己的用户 ID>` 这一条；要别的自己的 `state_key`，页面得点名请求（Element Call 就是点名的）。
-- to-device：按事件类型列。加密房间里驱动自动加密发送、只转交加密收到的（0.19.1 `widget/matrix.rs`）。
+- to-device：按事件类型列。加密房间里驱动自动加密发送、只转交加密收到的（0.19.1 `widget/matrix.rs`）；不加密房间按明文 to-device 发（ADR-0118）。
 - `send.delayed_event`、`update_delayed_event`、`rtc_transports`、`requires_client`、`download_file`。
 - 不给：别的房间（`timeline:` 能力）。页面只拿到打开它的那个房间。
 - **OpenID：** 驱动对 `get_openid` 不查能力，直接向服务器要令牌（0.19.1 `widget/machine/mod.rs`）。所以声明了 `matrix_widget`
@@ -171,8 +173,8 @@ widget ID、用 `generate_webview_url` 得出地址。页面关掉、换房间�
 - 壳不解析 widget 报文，只把字符串交给核心、把核心给的脚本注入回去，同现有的桥。
 - 界面文字（入口按钮、“通话中”、中继提示、确认页的能力类别）进各平台的本地化资源，四种语言。
 
-**iOS 的回环候选：** WKWebView 的 WebRTC 能不能用 `127.0.0.1` 的 ICE 候选没验（WebKit 历史上过滤回环候选）。不通时的退路，
-按顺序试：
+**iOS 的回环候选：** iOS 26.5 模拟器的 WKWebView（WebKit 605.1.15）里验过：`127.0.0.1`、`::1` 的 host 候选原样进 ICE，
+页面 0.2 秒连上同一台机器上的 LiveKit，选中的就是回环候选对（见“验证结果”）。真机没验。真机上不通时的退路，按顺序试：
 
 1. 映射另监听一个 WebKit 不当回环过滤的本机地址，LiveKit 改报这个地址（要先验 WebKit 认不认、iOS 上绑不绑得上）；
 2. iOS 改用 LiveKit 的原生 Swift SDK 自画通话页，信令和授权照旧走 MatrixRTC，第 2 节的 widget 能力在 iOS 上用不上，工作量
@@ -207,12 +209,15 @@ widget ID、用 `generate_webview_url` 得出地址。页面关掉、换房间�
 
 ## 待验证
 
-- **三组 Android 端到端路径**：待两台设备在同一加密房间里验证 UDP、TCP 退路和公共中继；冒烟脚本尚未完成一次真实通话验证。2026-11-14 的预检见下方“本次 Android 现场”。
-- **iOS WKWebView：** `127.0.0.1` 的 ICE 候选、`requestMediaCaptureFor`、信令 WebSocket 经本地代理。不通按第 5 节的退路。
+- **三组 Android 端到端路径**：2026-11-25 在开发栈上实测，UDP 直连和只留 TCP 两组已通过；n0 中继组时好时坏——隧道路径能到 relay、媒体也通过过一次，但 EC 在 relay 下起得慢，成员/媒体常撞组级 deadline 或限速断开，细节见下方“本次 Android 现场（2026-11-25）”。三组没有全部通过，所以这篇还不改成已接受。
+- **iOS WKWebView：** 真机上的回环候选（模拟器已验，见“验证结果”）、`requestMediaCaptureFor`、信令经本地代理、完整 App 里的 Element Call 页面。真机上回环候选不通时按第 5 节的退路。
 - **delayed events 的上限**和 Element Call 的用法对不对得上。
 - **网页请求 Matrix 对外地址（真机）：** 见“验证结果”的设备门一条；`baseUrl` 取头像能否显示。
 - **Element Call 在顶层 WebView 里的 widget 模式：** 注入脚本拦下它发给自己的消息后，它的收发是否完整；`parentUrl` 设成页面自己的 origin 是否够。
 - **加密房间：** 每人的媒体密钥经加密 to-device 交换，两台 Wonton 设备和一台 Element X 三方互通。
+- **不加密房间（ADR-0118）：** 主人 2026-11-25 决定家里的房间以后不再端到端加密。Element Call 在不加密房间里的连接性
+  （能不能通、媒体字节有没有）用冒烟的 `STAGE=plain` 记录，结果见下方；**还没测**的是媒体帧加密还在不在、
+  媒体密钥的 to-device 是否明文、SFU 是否仍只见密文这三项，由卡 call-e2e-android 补在这里。
 
 ## 验证结果
 
@@ -222,9 +227,13 @@ widget ID、用 `generate_webview_url` 得出地址。页面关掉、换房间�
 
 ### Android 冒烟脚本
 
-`deploy/dev/core/call-e2e.sh` 尝试从已登录同一加密房间的两台 Android 设备打开 widget，采集 WebRTC 统计并检查挂断和断线退场；需要本地 call 插件、Debug APK 和设备。一次完整通话尚未验证，不能把脚本输出当作三条路径的验收结果。
+`deploy/dev/calls/smoke.sh` 在开发栈上跑三组媒体路径（UDP 直连、只剩插件 TCP 7881、强制 n0 中继）、一组 delayed leave
+和一组不加密房间（`STAGE=plain`）。每组断言的判据是退出码：直连/TCP/plain 组看两端选中候选对的 local 类型和协议，
+中继组看 App 隧道日志里的实际路径；都要求双向音频和双向视频的收发字节都大于 0、本轮新增的两条 `call.member`、
+挂断后这两条不再活跃（内容清空）。统计来自页面自己的 `getStats`；本轮新增用房间 state 的前后差集，复用的旧房间里的旧成员不算。
+它取代 `deploy/dev/core/call-e2e.sh`（已删），前置和运行方法见同目录 README。
 
-当前脚本的 relay 模式不能证明强制走公共中继：设备配对和连接地址由调用方准备，WebRTC 的回环 ICE 候选也不能证明隧道的实际路径。UDP/TCP 组同样需要核对选中的候选协议。实际通话、路径判定和 delayed leave 均待实测。
+2026-11-24 复审按旧脚本实测：三组都只是“跑完”退出 0，两端只有 WebRTC 连接、没有任何 RTP，挂断后两端仍在通话、成员不消失；旧判定还把 UDP 中继当直连、把 remote 候选当 relay。11-25 按修好的脚本复跑，结果见下方“本次 Android 现场（2026-11-25）”：UDP、TCP、plain 通过，n0 中继组因公共中继限速只到成员和 relay 隧道路径，媒体没通。
 
 ### 已有 Android WebView 媒体前置结果
 
@@ -248,14 +257,81 @@ Tuwunel v2.0.0、lk-jwt-service 0.9.0、livekit-server v1.13.11，Linux + Docker
 - full access 的服务器名换到令牌后，授权服务建 LiveKit 房间成功。
 - 网关测试：真实 Tuwunel 发的 OpenID 令牌经 `/_wonton/matrix-rtc/sfu/get` 换回 LiveKit 令牌，假令牌 401，没装提供方 503
   （`gateway/matrix_rtc_docker_tests.rs`）。
-- 设备门：App 的本地代理按主机放行家里服务器的域名，插件页请求 `matrix.<base>/_wonton/matrix-rtc` 带着隧道身份到网关，
-  过得了设备门；预检和 CORS 由授权服务自己答。这条只从代码和网关测试得出，没在真机上跑。
+App 端（两条模拟器设备、Debug、各自独立身份，同一加密房间）：
+
+- 页面在入会后默认静音、相机也关：脚本直接打开发送轨道，判定要求双向音频和双向视频的收发字节都大于 0。11-16 观察到过
+  LiveKit `participant active` + `mediaTrack published`；11-24 复审只看连接建立、没有 RTP，修好后的脚本才把媒体变成门槛。
+- 相机、麦克风在入会时已授权（`granted`）：APK 装好后 `pm grant`。
+- UDP 直连组：两端选中候选对的 local 类型是 udp 且不是 relay。不能只看 `protocol=udp`：UDP 中继也是它。
+- 只留插件 TCP 组：两端 local 协议是 tcp（7881）。
+- 强制 n0 中继组：脚本先把两台设备到私网候选（10/8、172.16/12、192.168/16，模拟器自己的 DNS 和宿主别名除外）的
+  包丢掉，再看 App 核心日志里最近一次隧道路径 `CheckedPath { relay: true, remote: Relay(...) }`。LiveKit 是 ICE-lite、
+  没有 TURN，WebRTC 的 local 候选恒是 host/prflx，所以隧道路径才是中继组的判据。强制中继时还可能出
+  `PortMappingWarning::PublicRelayBandwidth` 轻提示。
+- 插件页请求按主机放行，经隧道身份过设备门到网关，再反代到插件；预检和 CORS 由授权服务自己答。
+- 房间里本轮新增两条 `org.matrix.msc3401.call.member`，`state_key` 是成员 user id 加 `_<device>`；判定用房间 state 的前后差集。
+- 网页里点挂断后关闭页面：Element Call 把本设备的 `call.member` 内容清空（键本身不删，房间判定按“内容为空＝不在通话”），脚本轮询本轮两条 60 秒内都不再活跃，超时失败。
+- `force-stop`：LiveKit 在约 30 秒后看到参与者断开（`PEER_CONNECTION_DISCONNECTED`），但当前 lk-jwt 0.10.0 没有在随后 60 秒内代发 delayed leave，`call.member` 要等事件自带的 `expires`（4 小时）过期才失效。脚本在强杀后等 60 秒，没清掉只记录，不算失败。
 
 ### 本次 Android 现场（2026-11-14）
 
 Linux + Docker、两台 API 36 Android 模拟器，Element Call v0.28.2、LiveKit v1.13.11、lk-jwt-service 0.10.0：首次安装在创建 JWT 容器时返回 HTTP 504、`docker_timed_out`，核心随后回滚。预拉插件镜像后，复用核心镜像 `eeb1c8f1-dirty` 的第二次安装返回 running/healthy；JWT 容器从 create 到 start 为 0.131 秒，到 healthy 为 5.169 秒（不含 create 请求前的等待）。两台设备的 Matrix 缓存均显示加入同一 Megolm 加密房间。复用的核心安装响应没有 `matrix_widget` 字段，主人设备打开 widget 时显示不能在房间中打开；另一设备停在连接错误页。当前检出核心镜像构建的二进制阶段成功，但锁定系统插件下载超时，未获得可验证的完整镜像。没有双向 RTP、挂断或 delayed leave 的实测结果。
+### 本次 Android 现场（2026-11-25）
+
+Linux + Docker、两台 API 36 Android 模拟器（同一台宿主）、Element Call v0.28.2、LiveKit v1.13.11、lk-jwt-service 0.10.0、
+开发栈 `call-e2e-adr`；两台设备各自独立身份，同一加密房间；Debug APK 由 `apps/compose` 当天构建、`pm grant` 相机和麦克风。
+脚本按 `STAGE=udp|tcp|plain|relay` 逐组跑，证据落在任务目录的 `evidence/`（`run.log` 带判决原文、`webrtc-*.jsonl` 是
+页面自己 `getStats` 的 15 个采样、`group-*.png/mp4` 是两端屏录）。
+
+- **UDP 直连组：通过。** 两端 `pair=prflx/udp->host`、`state=connected`；双向音频（a 收 193 057 / 发 78 874，b 收 41 979 / 发 255 031 字节）
+  和双向视频（a 收 1 943 975 / 发 17 924 996，b 收 5 258 741 / 发 1 779 788）都有字节；本轮两条 `call.member`，网页挂断后清空。
+  证据 `run.log` 21:19–21:21、`group-a-*.png/mp4`。
+- **只留插件 TCP 7881 组：通过。** 插件 compose 改成 `UDP_PORT=0` 并删掉 7882/udp 隧道后重装；两端 `pair=prflx/tcp->host`、
+  `state=connected`，双向音视频字节都大于 0（a 音频 27 259/42 867，b 音频 39 538/40 286，视频 a 1 062 674/1 103 904，
+  b 649 306/523 471）；成员与挂断同上。证据 `run.log` 21:51–21:54、`webrtc-*-b.jsonl`（tcp）、`group-b-*.png`。
+- **不加密房间（`STAGE=plain`）：通过，跑了两次。** 建房不带 `m.room.encryption`，其余同 UDP 组；两次都两端 `prflx/udp->host`、
+  media 字节双向，EC 正常入会、挂断后成员清空。说明房间不加密时通话链路照常；本组没有单独的媒体密钥步骤（LiveKit 侧不做 E2EE），
+  主机和 Matrix 层仍是现状。证据 `run.log` 23:51–23:54 与 11-26 01:06–01:09、`webrtc-*-plain.jsonl`、`group-plain-*.png`。
+- **n0 公共中继组：未通过（时好时坏）。** 先直连把房间和 EC 页面打开做 warm 缓存再下规则（不加这一步时，EC 入口 JS 325 231 字节
+  在 relay 下会在约 100 KB 处被截断成 `ERR_CONTENT_LENGTH_MISMATCH`，冷缓存永远起不来），再给两台设备加
+  iptables 丢掉到私网（10/8、172.16/12、192.168/16）和宿主隧道端口的包。11-26 复跑时两端 App 核心日志都落下了
+  `CheckedPath { remote: Relay(https://euc1-1.relay.n0.iroh.link/), relay: true }`（`relay-path-a.log`、`relay-path-b.log`），
+  这一轮最后跑到 `state=connected`、双向音频有字节、判据“路径和双向音视频都成立”，只是 `call.member` 晚到和收尾超过时限。
+  另一次把 deadline 压到 180 秒的复跑按新顺序先判路径、两端 `relay: true` 都落盘，双方成员在 178 秒到齐，
+  `02:10:18 组 c 判定：路径和双向音视频都成立`（媒体确实通了），随后仍因合并阶段超过 180 秒被 deadline 判失败；
+  默认 600 秒下这条链路有希望全绿，但三组“稳定通过”还没拿到，状态仍是提议。
+  直接原因是 n0 公共中继对单个 endpoint 限速（核心容器日志 `The relay is rate-limiting this endpoint`，已在
+  `failure-c-core.log`）：隧道流会在 10–16 秒内被对端以 `transport-unavailable` 断开，大响应先断、WebSocket 到
+  `/livekit/sfu` 也连不上；EC 的 console 错误（`ERR_CONTENT_LENGTH_MISMATCH`、`Failed to connect`）在
+  `failure-c-console-*.log`。冒烟据此改成“先判隧道路径、再等成员/媒体，全程受组级 deadline”，路径证据不再被媒体卡住拖没
+  （见 `deploy/dev/calls/smoke.sh` 的 `GROUP_DEADLINE` 和 `check_tunnel_relay`）。
+  下一步要么给冒烟加自建 iroh relay（ADR-0048），要么等 n0 限速放宽后复跑。
+
 
 公共中继提示不属于通话媒体连通性的验收门槛。现有 `PortMappingWarning::PublicRelayBandwidth` 在 Android 插件详情的端口映射区域渲染，而不是 widget 通话页；这属于前端线缺口，relay 冒烟不因缺少该提示失败。
+
+### iOS WKWebView 的回环候选（2026-11-25）
+
+mini（Apple silicon、macOS 27.0、Xcode 27.1）、iOS 26.5 模拟器、iPhone 17 Pro。最小的 Swift 宿主 App
+（`deploy/dev/experiments/ios-loopback-ice`）用 WKWebView 打开 `http://127.0.0.1:8000` 上的页面，页面 UA 报
+`AppleWebKit/605.1.15`；页面用 livekit-client 2.23.0 连同一台机器上的 LiveKit v1.13.11（`ws://127.0.0.1:7880`）。
+服务器按 App 映射的样子只报回环地址：`rtc.node_ip` 改写候选、`rtc.interfaces` 只留一张网卡。`127.0.0.1` 那一组跑了两遍，
+四组全部连上，页面日志、服务器日志和截图留在实验目录的 `results/`：
+
+| 服务器只绑 | 报出的远端候选 | 结果 | ICE 连上 | DTLS | 选中的候选对 |
+| --- | --- | --- | --- | --- | --- |
+| `en0`（对照） | en0 的地址 | 连上 | 0.35 s | connected | 远端 udp 7882 host、本端 prflx，往返 3 ms |
+| `lo0` | `127.0.0.1`（udp 7882、tcp 7881） | 连上，两次 | 0.16、0.19 s | connected | 同上，往返 1–2 ms |
+| `lo0` | `::1` | 连上 | 0.17 s | connected | 同上，往返 1 ms |
+
+- WebKit 把 `127.0.0.1` 的 host 候选原样进 ICE（`addIceCandidate` 的候选串就是 `127.0.0.1 7882 typ host`），没有过滤；
+  页面里的 `http`/`ws` 到回环也没被 ATS 或混合内容拦。
+- 选中的候选对都是远端 `udp 7882 host`、本端 `prflx`，DTLS 连上后两边各有约 1.4 KB 的 SCTP 数据，往返 1–3 ms：数据确实
+  走回环，不是恰好用了别的网卡。
+- WebKit 报自己的 host 候选用 mDNS 名字（`<uuid>.local`）。模拟器和服务器同机，服务器能解析；真机上服务器解析不了手机的
+  `.local`，但两端都能从对端打来的包学到 prflx，回环候选对不依赖它。
+- 没验：真机、媒体捕获权限、完整 App 里 Element Call 页面和信令经本地代理的端到端路径。真机上回环候选不通时按第 5 节的
+  退路。
 
 ## 和其他 ADR 的关系
 

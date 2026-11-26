@@ -27,9 +27,8 @@ import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.semantics.Role
 import androidx.compose.ui.unit.dp
 import app.wonton.protocol.BotView
-import androidx.compose.foundation.layout.imePadding
 import app.wonton.protocol.RoomRow
-import app.wonton.ui.design.WontonButton
+import app.wonton.ui.design.SheetSendBar
 import app.wonton.ui.design.WontonRow
 import app.wonton.ui.design.WontonSearchField
 import app.wonton.ui.design.WontonSeparator
@@ -40,17 +39,19 @@ import app.wonton.ui.icons.Check
 import app.wonton.ui.icons.WontonIcon
 
 /**
- * 转发先选房间：上面搜，中间挨个勾，底下发。列的是聊天列表里已经加入、能发的房间，勾几个就发给几个。
+ * 转发先选房间：上面搜，中间挨个勾，底下写附言再发。列的是聊天列表里已经加入、能发的房间，勾几个就发给几个。
+ * 附言跟着转发交给核心的 `ForwardMessage.comment`：核心在每个房间先发附言、服务器确认后才发副本，顺序由核心保证。
  */
 @Composable
 fun ForwardSheet(
     rooms: List<RoomRow>,
     bots: List<BotView>,
     plugins: PluginsState,
-    onSend: (List<RoomRow>) -> Unit,
+    onSend: (List<RoomRow>, String) -> Unit,
     onDismiss: () -> Unit,
 ) {
     var query by remember { mutableStateOf("") }
+    var note by remember { mutableStateOf("") }
     val picked = remember { mutableStateListOf<String>() }
     val needle = query.trim()
     val shown = remember(rooms, needle) { rooms.filter { it.name.contains(needle, ignoreCase = true) } }
@@ -78,18 +79,18 @@ fun ForwardSheet(
                 }
             }
         }
-        // 面板不吃键盘，搜索框弹出键盘后发送按钮会落到键盘底下，这里把按钮顶上去。
-        Box(Modifier.padding(WontonTheme.spacing.s16).imePadding()) {
-            WontonButton(
-                stringResource(R.string.composer_send),
-                onClick = {
-                    val sending = shown.filter { it.roomId in picked }
-                    close { onSend(sending) }
-                },
-                modifier = Modifier.fillMaxWidth().testTag("forward-send"),
-                enabled = picked.isNotEmpty(),
-            )
-        }
+        // 附言条自己带 imePadding，键盘弹起时跟着上来。
+        SheetSendBar(
+            note = note,
+            onNoteChange = { note = it },
+            count = picked.size,
+            hint = stringResource(R.string.sheet_note_hint),
+            onSend = {
+                val sending = rooms.filter { it.roomId in picked }
+                close { onSend(sending, note) }
+            },
+            sendTag = "forward-send",
+        )
     }
 }
 

@@ -17,7 +17,7 @@ final class NavidromeMediaWalkthroughUITests: XCTestCase {
         executionTimeAllowance = 300
         app = XCUIApplication()
         try UITestBackend.passPairingCode(to: app)
-        app.launch()
+        UITestBackend.launch(app)
         XCTAssertTrue(waitPaired(timeout: 40), "配对没完成\n\(app.debugDescription)")
         passOnboarding()
         UITestBackend.settleKeyHandoff(app)

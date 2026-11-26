@@ -9,6 +9,7 @@ use wonton_client::{
     ChatTextScale, CodeOverflow, RoomMembership,
 };
 use wonton_matrix::{MatrixSession, OwnedUserId};
+use wonton_protocol::BotChatAvailability;
 use wonton_protocol::{BotActivityFacts, PluginChat};
 
 use super::support::{Home, OWNER, Phone, WAIT};
@@ -72,6 +73,7 @@ async fn invite(phone: &Phone, bot: &MatrixSession, name: &str) -> String {
                 .cloned()
         })
         .await;
+    phone.wait_ready().await;
     phone
         .dispatch(Action::Chat {
             action: wonton_protocol::ChatAction::JoinRoom {
@@ -118,6 +120,7 @@ fn set_plugins(home: &Home, writer: &MatrixSession, chatty: &MatrixSession) {
                 plugin_id: id.into(),
                 bot: Some("default".into()),
                 user_id: bot.user_id().to_string(),
+                chat: BotChatAvailability::Available,
                 running: true,
                 model_requests: 0,
                 tool_calls: 0,

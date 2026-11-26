@@ -92,6 +92,8 @@ fn paired() -> HomeViewModel {
         server_id: Some("cd".repeat(32)),
         status: HomeStatus::Connected,
         path: None,
+        current_relay: None,
+        relays: Default::default(),
         notice: None,
         details: ConnectionDetails::default(),
         proxy: None,
@@ -146,12 +148,14 @@ fn signed_in(rooms: Vec<RoomRow>) -> ChatViewModel {
 fn agent(activity: Option<BotActivity>) -> BotView {
     BotView {
         chat: Default::default(),
+        availability: Default::default(),
         user_id: AGENT.into(),
         bot: BotRef {
             plugin_id: "hermes".into(),
             bot: "default".into(),
         },
         web: None,
+        web_page: None,
         name: "Hermes".into(),
         avatar: None,
         state_avatars: Vec::new(),
@@ -163,6 +167,7 @@ fn agent(activity: Option<BotActivity>) -> BotView {
 
 fn room(name: &str, peer: Option<&str>, unread: u64) -> RoomRow {
     RoomRow {
+        unread_mentions: 0,
         layout: Default::default(),
         call_active: false,
         room_id: format!("!{name}:home.example"),
@@ -170,6 +175,7 @@ fn room(name: &str, peer: Option<&str>, unread: u64) -> RoomRow {
         is_direct: peer.is_some(),
         direct_user_id: peer.map(str::to_owned),
         plugin: None,
+        bot_chat: None,
         is_encrypted: true,
         is_read_only: false,
         membership: RoomMembership::Joined,

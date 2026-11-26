@@ -197,6 +197,7 @@ async fn a_code_with_a_dotted_relay_url_pairs_over_a_ca_verified_relay() {
         vec![Relay {
             url: server_url.parse().unwrap(),
             token: None,
+            quic_port: None,
             tier: 0,
         }],
         ca.clone(),
@@ -215,6 +216,7 @@ async fn a_code_with_a_dotted_relay_url_pairs_over_a_ca_verified_relay() {
         relays: vec![Relay {
             url: dotted.parse().unwrap(),
             token: None,
+            quic_port: None,
             tier: 0,
         }],
         direct_addrs: Vec::new(),

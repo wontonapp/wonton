@@ -9,4 +9,5 @@ link-preview-timeout = The site didn't answer within { $detail }
 link-preview-not-html = The link isn't a web page: { $detail }
 link-preview-no-preview = The page has no title, description or image: { $detail }
 link-preview-too-many-requests = This device asked for too many previews; try again in a minute
+link-preview-interrupted = The preview didn’t finish loading; try again
 link-preview-image-gone = The preview image has expired; get the preview again

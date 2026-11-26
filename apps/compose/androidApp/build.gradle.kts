@@ -4,6 +4,7 @@ plugins {
     alias(libs.plugins.android.application)
     alias(libs.plugins.compose.compiler)
     alias(libs.plugins.detekt)
+    alias(libs.plugins.aboutlibraries)
 }
 
 /**
@@ -122,8 +123,94 @@ configurations.configureEach {
 val versionScript = rootDir.parentFile.parentFile.resolve("scripts/app-version.sh")
 require(versionScript.isFile) { "找不到版本号脚本 ${versionScript.path}（rootDir=${rootDir.path}）" }
 
+/**
+ * 生成关于页“开源许可”用的 assets/licenses.json：Rust crate 经 cargo-about 从 Cargo.lock 取，
+ * Android 依赖读 AboutLibraries 刚导出的 aboutlibraries.json，许可全文一并带上。
+ */
+abstract class GenerateLicenses : DefaultTask() {
+    @get:InputFile
+    abstract val script: RegularFileProperty
+
+    @get:InputFile
+    abstract val androidExport: RegularFileProperty
+
+    @get:InputFile
+    abstract val approved: RegularFileProperty
+
+    /** 脚本按自己的路径定位仓库根，这里只当工作目录；不拿它当输入。 */
+    @get:Internal
+    abstract val repo: DirectoryProperty
+
+    /**
+     * 只把脚本要读的文件列成输入：整个仓库还含 target/ 和 build/，cargo 并发写它们会让 Gradle
+     * 判“输入不可读”（删掉的 .o），build/ 里的输出还会和本任务形成隐式依赖。
+     */
+    @get:InputFiles
+    @get:PathSensitive(PathSensitivity.RELATIVE)
+    abstract val sources: ConfigurableFileCollection
+
+    @get:OutputDirectory
+    abstract val outDir: DirectoryProperty
+
+    @get:Inject
+    abstract val exec: ExecOperations
+
+    @TaskAction
+    fun generate() {
+        outDir.get().asFile.mkdirs()
+        exec.exec {
+            commandLine(
+                "python3",
+                script.get().asFile.absolutePath,
+                "--platform",
+                "android",
+                "--android-export",
+                androidExport.get().asFile.absolutePath,
+                "--out",
+                outDir.get().asFile.absolutePath,
+            )
+            workingDir = repo.get().asFile
+        }
+    }
+}
+
+/** 仓库根：androidApp 在 apps/compose/androidApp。 */
+val repoRoot = rootDir.parentFile.parentFile
+
+/** licenses/APPROVED 里的许可 id（每行第一段），和 Rust 侧 cargo-about 的 accepted 是同一张表。 */
+val approvedLicenses = providers.fileContents(layout.projectDirectory.file("../../../licenses/APPROVED")).asText.map { text ->
+    text.lineSequence().filter { "|" in it && !it.startsWith("格式") }
+        .map { it.substringBefore('|').trim() }.filter { it.isNotEmpty() }.toList()
+}
+
+aboutLibraries {
+    // 许可全文由插件取（SPDX 文本，取过就进 Gradle 缓存）；离线模式下它不回填文本，所以不开。
+    offlineMode = false
+    license {
+        // 依赖里出现 APPROVED 之外（含 GPL、AGPL）的许可就让构建失败，等人看过再补。
+        strictMode = com.mikepenz.aboutlibraries.plugin.StrictMode.FAIL
+        allowedLicenses.addAll(approvedLicenses.get())
+        additionalLicenses.addAll(approvedLicenses.get())
+    }
+}
+
 extensions.configure<ApplicationAndroidComponentsExtension> {
     onVariants { variant ->
+        val generateLicenses = tasks.register<GenerateLicenses>("generateLicenses${variant.name.replaceFirstChar { it.uppercase() }}") {
+            script.set(repoRoot.resolve("scripts/generate-licenses.py"))
+            approved.set(repoRoot.resolve("licenses/APPROVED"))
+            repo.set(repoRoot)
+            sources.from(
+                project.fileTree(repoRoot) { include("Cargo.lock", "crates/*/Cargo.toml", "licenses/**") },
+            )
+            androidExport.set(
+                layout.buildDirectory.file("generated/aboutLibraries/${variant.name}/res/raw/aboutlibraries.json"),
+            )
+            // 同一个文件来自 AboutLibraries 的导出任务；它的输出路径就是上面这个约定位置。
+            dependsOn("prepareLibraryDefinitions${variant.name.replaceFirstChar { it.uppercase() }}")
+        }
+        variant.sources.assets?.addGeneratedSourceDirectory(generateLicenses, GenerateLicenses::outDir)
+
         val buildType = variant.buildType
         val wontonVersionProperty = providers.gradleProperty("wontonVersion").orNull
         val appVersion = providers.exec {
@@ -168,6 +255,45 @@ android {
         ndk {
             abiFilters += providers.gradleProperty("wonton.abis").get().split(" ").filter { it.isNotBlank() }
         }
+        // FCM（ADR-0003 的“渠道”）：这些值来自 Firebase 项目和我们的推送中继，属于构建参数。没配时
+        // `FcmPush.configured` 为假，App 用 UnifiedPush 分发器，不假装推送已经开通。
+        buildConfigField("String", "FCM_APP_ID", "\"${providers.gradleProperty("wonton.fcmAppId").getOrElse("")}\"")
+        buildConfigField("String", "FCM_PROJECT_ID", "\"${providers.gradleProperty("wonton.fcmProjectId").getOrElse("")}\"")
+        buildConfigField("String", "FCM_API_KEY", "\"${providers.gradleProperty("wonton.fcmApiKey").getOrElse("")}\"")
+        buildConfigField("String", "FCM_SENDER_ID", "\"${providers.gradleProperty("wonton.fcmSenderId").getOrElse("")}\"")
+        buildConfigField("String", "PUSH_RELAY", "\"${providers.gradleProperty("wonton.pushRelay").getOrElse("")}\"")
+    }
+
+    buildFeatures {
+        buildConfig = true
+    }
+
+    buildTypes {
+        release {
+            // 直装包要小：R8 删掉没人用的类和成员，顺带缩资源。反射入口的 keep 规则在 proguard-rules.pro。
+            isMinifyEnabled = true
+            isShrinkResources = true
+            proguardFiles(getDefaultProguardFile("proguard-android-optimize.txt"), "proguard-rules.pro")
+        }
+    }
+
+    packaging {
+        resources {
+            // 只有 META-INF 里的许可证和版本文件，运行时用不到。
+            excludes += setOf(
+                "META-INF/LICENSE*",
+                "META-INF/NOTICE*",
+                "META-INF/AL2.0",
+                "META-INF/LGPL2.1",
+                "META-INF/*.version",
+                "META-INF/*.kotlin_module",
+            )
+        }
+        // 压缩 .so：默认按 4 KB 对齐、不压缩存进 APK，几个大 .so 就让包大一截。打开后安装时解出来，
+        // 下载量按压缩后算；代价是设备上要多占解压出的 .so（arm64 约 110 MB），不打开则直接映射 APK 里的副本。
+        jniLibs {
+            useLegacyPackaging = true
+        }
     }
 
     testOptions {
@@ -203,6 +329,8 @@ dependencies {
     implementation(libs.androidx.work.runtime)
     // Apache-2.0（连带的 Tink 也是）。接 UnifiedPush 分发器：在本机生成 Web Push 密钥对，按 RFC 8291 解开推送。
     implementation(libs.unifiedpush.connector)
+    implementation(libs.firebase.messaging)
+    implementation(libs.play.services.base)
     implementation(libs.rustls.platform.verifier)
 
     testImplementation(libs.junit)

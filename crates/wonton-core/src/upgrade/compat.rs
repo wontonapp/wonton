@@ -16,7 +16,6 @@ use super::state::problem;
 use crate::l10n;
 use crate::plugin::compat::{self, Verdict};
 use crate::plugin::languages::Languages;
-use crate::plugin::manifest::PluginKind;
 use crate::plugin::package::PluginPackage;
 use crate::plugin::package_files::COMPOSE_FILE;
 use crate::plugin::store::{InstalledRecord, Store};
@@ -99,12 +98,12 @@ fn readable(data_dir: &Path, langs: &Languages) -> Result<Vec<(String, Installed
         let Ok(record) = file.record else {
             continue;
         };
-        let Ok(package) = PluginPackage::with_files(&record.source, record.files.clone(), langs)
+        let Ok(_package) = PluginPackage::with_files(&record.source, record.files.clone(), langs)
         else {
             continue;
         };
-        // 系统插件跟着核心镜像走，新核心放行后自己会升级它们（ADR-0025）。
-        if package.manifest.kind == PluginKind::System {
+        // 随核心镜像带的系统插件跟着新核心走，不由接口升级（ADR-0025）；从商店或来源装的不跳。
+        if record.bundled {
             continue;
         }
         packages.push((record.id.to_string(), record));
@@ -122,7 +121,8 @@ fn materialize(root: &Path, packages: &[(String, InstalledRecord)]) -> Result<Ve
         for (path, data) in &record.files {
             let target = dir.join(path);
             // 记录里的路径是安装时校验过的相对路径；材料化再挡一次目录穿越。
-            if !target.starts_with(&dir) {
+            // `Path::starts_with` 不展开 `..`，要单独看路径里有没有。
+            if !target.starts_with(&dir) || path.split('/').any(|part| part == "..") {
                 return Err(format!("{id}：{path}"));
             }
             if let Some(parent) = target.parent() {
@@ -208,3 +208,7 @@ fn failed(message: String) -> CoreUpgradeCompat {
         problem: problem(Failure::Upstream, message),
     }
 }
+
+#[cfg(test)]
+#[path = "compat_tests.rs"]
+mod compat_tests;

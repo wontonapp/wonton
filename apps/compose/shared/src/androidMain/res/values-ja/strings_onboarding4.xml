@@ -7,7 +7,7 @@
     <!-- Problem title in setup: the model gateway on the home server isn't ready. -->
     <string name="onboarding_problem_model_gateway_not_ready">モデルゲートウェイの準備ができていません。再試行するか、このステップをスキップしてください。</string>
     <!-- Problem title while installing: the home server's internet proxy can't be reached. -->
-    <string name="onboarding_problem_plugin_egress_proxy_unavailable">サーバーのプロキシに接続できません。確認してから再試行してください。</string>
+    <string name="onboarding_problem_plugin_egress_proxy_unavailable">サーバーのプロキシに問題があります。確認してから再試行してください。</string>
     <!-- Problem title while installing: no local network address is available for the app. -->
     <string name="onboarding_problem_plugin_lan_unavailable">利用できるローカルネットワークのアドレスがありません。サーバーのネットワーク設定を確認してください。</string>
     <!-- Problem title while installing: the app and the home server versions don't work together. -->
@@ -15,5 +15,5 @@
     <!-- Problem title in setup: the recommendation source is turned off. -->
     <string name="onboarding_problem_store_disabled">おすすめの提供元が無効になっています。スキップできます。</string>
     <!-- Kind label above a review row: the apps that will be installed. -->
-    <string name="onboarding_review_section_apps">アプリ</string>
+    <string name="onboarding_review_section_apps">インストールするアプリ</string>
 </resources>

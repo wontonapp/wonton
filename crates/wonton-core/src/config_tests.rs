@@ -290,3 +290,88 @@ fn plugin_network_pool_is_validated_before_startup() {
         "10.214.0.0/16"
     );
 }
+
+#[test]
+fn vapid_needs_both_the_key_and_the_subject() {
+    let base = [("WONTON_DATA_DIR", "/d")];
+    let with = |pairs: &[(&str, &str)]| {
+        let mut settings = base.to_vec();
+        settings.extend_from_slice(pairs);
+        config(&settings)
+    };
+    let both = with(&[
+        ("WONTON_PUSH_VAPID_KEY", "cHJpdmF0ZQ"),
+        ("WONTON_PUSH_VAPID_SUBJECT", "mailto:ops@example.com"),
+    ])
+    .unwrap();
+    assert_eq!(both.push_vapid_key.as_deref(), Some("cHJpdmF0ZQ"));
+    assert_eq!(
+        both.push_vapid_subject.as_deref(),
+        Some("mailto:ops@example.com")
+    );
+    assert!(
+        with(&[("WONTON_PUSH_VAPID_KEY", "k")])
+            .unwrap_err()
+            .to_string()
+            .contains("SUBJECT")
+    );
+    assert!(
+        with(&[("WONTON_PUSH_VAPID_SUBJECT", "mailto:a@b")])
+            .unwrap_err()
+            .to_string()
+            .contains("VAPID_KEY")
+    );
+    assert!(
+        with(&[
+            ("WONTON_PUSH_VAPID_KEY", "inline"),
+            ("WONTON_PUSH_VAPID_KEY_FILE", "/k"),
+            ("WONTON_PUSH_VAPID_SUBJECT", "mailto:a@b"),
+        ])
+        .unwrap_err()
+        .to_string()
+        .contains("只能设一个")
+    );
+    let dir = tempfile::tempdir().unwrap();
+    let file = dir.path().join("vapid.key");
+    std::fs::write(&file, "  ZnJvbWZpbGU \n").unwrap();
+    let from_file = with(&[
+        ("WONTON_PUSH_VAPID_KEY_FILE", file.to_str().unwrap()),
+        ("WONTON_PUSH_VAPID_SUBJECT", "mailto:a@b"),
+    ])
+    .unwrap();
+    assert_eq!(from_file.push_vapid_key.as_deref(), Some("ZnJvbWZpbGU"));
+    assert!(
+        with(&[
+            ("WONTON_PUSH_VAPID_KEY_FILE", "/nope/vapid.key"),
+            ("WONTON_PUSH_VAPID_SUBJECT", "mailto:a@b"),
+        ])
+        .unwrap_err()
+        .to_string()
+        .contains("读不了")
+    );
+    assert!(with(&[]).unwrap().push_vapid_key.is_none());
+}
+
+#[test]
+fn builtin_relays_can_come_from_the_runtime_environment() {
+    let cfg = config(&[
+        ("WONTON_DATA_DIR", "/data"),
+        ("WONTON_BUILTIN_RELAYS", "https://relay.example.org#7843"),
+    ])
+    .unwrap();
+    let relay = cfg
+        .builtin_relays
+        .relays()
+        .iter()
+        .find(|relay| {
+            wonton_tunnel::relays::relay_url_text(&relay.url) == "https://relay.example.org/"
+        })
+        .expect("运行时环境变量里的默认中继");
+    assert_eq!(relay.quic_port, Some(7843));
+
+    let bad = config(&[
+        ("WONTON_DATA_DIR", "/data"),
+        ("WONTON_BUILTIN_RELAYS", "http://relay.example.org"),
+    ]);
+    assert!(bad.is_err());
+}

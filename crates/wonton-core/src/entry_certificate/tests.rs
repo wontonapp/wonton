@@ -308,3 +308,64 @@ fn preparation_reads_the_registered_v5_account_uri_and_requires_its_key() {
     fs::remove_file(account_dir.join("wonton.key")).unwrap();
     assert!(manager.account_uri().is_err());
 }
+
+/// 只认叶证书的 DNS SAN，转小写；CA 证书自己 SAN 里的名字不算。
+#[test]
+fn published_names_take_the_leaf_dns_sans_lowercased() {
+    let dir = tempfile::tempdir().unwrap();
+    let mut ca_params = rcgen::CertificateParams::new(vec!["ca.example.test".to_owned()]).unwrap();
+    ca_params.is_ca = rcgen::IsCa::Ca(rcgen::BasicConstraints::Unconstrained);
+    let ca = ca_params
+        .self_signed(&KeyPair::generate().unwrap())
+        .unwrap();
+    let leaf = rcgen::generate_simple_self_signed(vec!["Old.Example.Test".to_owned()]).unwrap();
+    let path = dir.path().join("site.pem");
+    fs::write(&path, format!("{}{}", ca.pem(), leaf.cert.pem())).unwrap();
+    assert_eq!(published_names(&path), ["old.example.test"]);
+    assert!(published_names(&dir.path().join("missing.pem")).is_empty());
+}
+
+#[test]
+fn certificate_names_cover_their_domain() {
+    let names = vec![
+        "home.example.test".to_owned(),
+        "probe.home.example.test".to_owned(),
+    ];
+    assert!(covers(&names, "home.example.test"));
+    assert!(covers(&names, "HOME.Example.Test"), "名字不分大小写");
+    assert!(!covers(&names, "new.example.test"));
+    assert!(!covers(&names, "example.test"), "父域不在证书的名字里");
+    let wildcard = vec!["*.example.test".to_owned()];
+    assert!(covers(&wildcard, "home.example.test"), "通配符认证下一层");
+    assert!(covers(&wildcard, "HOME.EXAMPLE.TEST"));
+    assert!(!covers(&wildcard, "example.test"), "通配符不认证本名");
+    assert!(!covers(&wildcard, "a.home.example.test"), "通配符只认一层");
+}
+
+#[test]
+fn the_served_suffix_waits_on_the_published_certificate() {
+    let old = vec![
+        "probe.old.example.test".to_owned(),
+        "old.example.test".to_owned(),
+    ];
+    assert_eq!(served_suffix(&[], "new.example.test"), "new.example.test");
+    assert_eq!(
+        served_suffix(&["Home.Example.Test".to_owned()], "home.example.test"),
+        "home.example.test"
+    );
+    assert_eq!(
+        served_suffix(&old, "new.example.test"),
+        "old.example.test",
+        "新证书没来之前先服务旧名字"
+    );
+    assert_eq!(
+        served_suffix(&["*.old.example.test".to_owned()], "new.example.test"),
+        "new.example.test",
+        "只有通配符名字时按设置"
+    );
+    assert_eq!(
+        served_suffix(&["*.example.test".to_owned()], "home.example.test",),
+        "home.example.test",
+        "通配符认证的名字算覆盖"
+    );
+}

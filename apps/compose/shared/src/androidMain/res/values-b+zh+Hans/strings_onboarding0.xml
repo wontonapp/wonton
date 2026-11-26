@@ -12,14 +12,16 @@
     <string name="onboarding_problem_store_index_too_new">推荐清单需要更新的服务器，可以升级或跳过。</string>
     <!-- Problem title in setup: the recommendation source hit an error. -->
     <string name="onboarding_problem_store_upstream">推荐清单的来源出错了，可以重试或跳过。</string>
-    <!-- Checkmark icon for a finished install task. -->
+    <!-- Checkmark icon for a finished row (an app or a saved setting). -->
     <string name="onboarding_review_done">完成</string>
     <!-- Kind label above a review row: the profile that will be saved. -->
-    <string name="onboarding_review_section_profile">资料</string>
-    <!-- Kind label above a review row: the model. -->
-    <string name="onboarding_review_section_model">模型</string>
+    <string name="onboarding_review_section_profile">你的资料</string>
+    <!-- Kind label above a review row: the model that will answer. -->
+    <string name="onboarding_review_section_model">回复用的模型</string>
     <!-- Label while an install task waits for others to finish. -->
-    <string name="onboarding_review_waiting">排队</string>
+    <string name="onboarding_review_waiting">等前面的装完</string>
+    <!-- Sentence above the review list: finishing saves the settings and installs in the background with the listed permissions. -->
+    <string name="onboarding_review_intro">点下面的按钮会保存这些设置，并按下面的权限装这些应用。装的时候可以离开。</string>
     <!-- Card title at the top of the model step in setup: connect a model provider. -->
     <string name="onboarding_step_model">接模型</string>
 </resources>

@@ -207,9 +207,21 @@ async fn expanded_url_secret_reaches_remote_but_not_connector_errors() {
         "/private-url-secret/mcp?api_key=private-query-secret"
     );
     drop(remote);
+    // 用一个还占着的端口模拟“连得上但连接立刻被关”：只 drop 服务器会让端口被别人重新绑上，
+    // 偶尔拿到 404。自己 bind 后 accept 即关，端口一直占着。
+    let dead = tokio::net::TcpListener::bind("127.0.0.1:0").await.unwrap();
+    let dead_url = format!(
+        "http://{}/private-url-secret/mcp?api_key=private-query-secret",
+        dead.local_addr().unwrap()
+    );
+    tokio::spawn(async move {
+        while let Ok((socket, _)) = dead.accept().await {
+            drop(socket);
+        }
+    });
     let response = client()
         .post(format!("{}/mcp", connector.url()))
-        .headers(headers(&url, json!({})))
+        .headers(headers(&dead_url, json!({})))
         .body("{}")
         .send()
         .await

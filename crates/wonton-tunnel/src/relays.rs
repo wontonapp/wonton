@@ -23,6 +23,7 @@ use iroh::endpoint::default_relay_mode;
 use iroh::endpoint::presets;
 use iroh::tls::CaTlsConfig;
 use iroh::{Endpoint, RelayConfig, RelayMap, RelayMode, RelayUrl, SecretKey, Watcher};
+use iroh_relay::RelayQuicConfig;
 use percent_encoding::percent_decode_str;
 use serde::{Deserialize, Serialize};
 use url::Url;
@@ -42,12 +43,17 @@ pub const FALLBACK_AFTER: Duration = Duration::from_secs(30);
 /// 回退判定多久看一次 iroh 的家中继状态。阈值是秒级的，1 秒的粒度够了。
 const POLL_INTERVAL: Duration = Duration::from_secs(1);
 
-/// 一台中继：地址、可选的准入令牌、档位（数字小的优先）。
+/// 一台中继：地址、可选的准入令牌、可选的 QUIC 端口、档位（数字小的优先）。
 #[derive(Clone, PartialEq, Eq, Serialize, Deserialize)]
 pub struct Relay {
     pub url: RelayUrl,
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub token: Option<RelayToken>,
+    /// QUIC 地址发现的 UDP 端口；空着用 iroh 的默认端口（[`iroh::defaults::DEFAULT_RELAY_QUIC_PORT`]）。
+    ///
+    /// 老配对码、连接信息里没有这个字段，缺的按默认端口处理，所以加了 `serde(default)`。
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub quic_port: Option<u16>,
     pub tier: u8,
 }
 
@@ -56,23 +62,32 @@ impl Relay {
     /// 而且得是 https，令牌不走明文。
     pub fn validate(&self) -> Result<(), String> {
         if !self.url.username().is_empty() || self.url.password().is_some() {
-            return Err(format!("{}：地址里不能带 userinfo，令牌要单独放", self.url));
+            return Err(format!(
+                "{}：地址里不能带 userinfo，令牌要单独放",
+                relay_url_text(&self.url)
+            ));
         }
         if self.url.scheme() != "https" {
-            return Err(format!("{}：中继地址要用 https", self.url));
+            return Err(format!("{}：中继地址要用 https", relay_url_text(&self.url)));
         }
         if let Some(token) = &self.token
             && token.expose().is_empty()
         {
-            return Err(format!("{}：令牌不能是空的", self.url));
+            return Err(format!("{}：令牌不能是空的", relay_url_text(&self.url)));
+        }
+        if self.quic_port == Some(0) {
+            return Err(format!("{}：QUIC 端口不能是 0", relay_url_text(&self.url)));
         }
         Ok(())
     }
 
     /// iroh 认识的中继配置。自建中继按 ADR-0048 的部署约定开 QUIC 地址发现（UDP 7842），和 iroh
     /// 对 n0 中继的默认一样。
-    fn relay_config(&self) -> RelayConfig {
+    pub fn relay_config(&self) -> RelayConfig {
         let mut config = RelayConfig::from(self.url.clone());
+        if let Some(port) = self.quic_port {
+            config.quic = Some(RelayQuicConfig::new(port));
+        }
         if let Some(token) = &self.token {
             config = config.with_auth_token(token.expose());
         }
@@ -85,6 +100,7 @@ impl fmt::Debug for Relay {
         f.debug_struct("Relay")
             .field("url", &self.url)
             .field("token", &self.token)
+            .field("quic_port", &self.quic_port)
             .field("tier", &self.tier)
             .finish()
     }
@@ -113,9 +129,13 @@ impl fmt::Debug for RelayToken {
 }
 
 /// 中继表：按档位排好的中继，前面的档优先。同一地址只出现一次，后面的项盖过前面的（ADR-0048）。
-#[derive(Debug, Clone, PartialEq, Eq)]
+///
+/// `remove` 是覆盖层的删除标记（`!https://…`）：[`overlay`](Self::overlay) 先把这些地址从底表删掉，
+/// 再放自己这一层的项。主人配置里有内置项想删掉时用。
+#[derive(Debug, Clone, Default, PartialEq, Eq)]
 pub struct RelayTable {
     relays: Vec<Relay>,
+    remove: Vec<RelayUrl>,
 }
 
 impl RelayTable {
@@ -123,6 +143,7 @@ impl RelayTable {
     pub fn builtin_n0() -> Self {
         Self {
             relays: n0_relays(0).collect(),
+            remove: Vec::new(),
         }
     }
 
@@ -131,12 +152,34 @@ impl RelayTable {
     pub fn from_relays(relays: Vec<Relay>) -> Self {
         let mut relays: Vec<_> = relays.into_iter().map(canonical_relay).collect();
         relays.sort_by_key(|relay| relay.tier);
-        Self { relays }
+        Self {
+            relays,
+            remove: Vec::new(),
+        }
+    }
+
+    /// 记录要删掉的地址。合并时先删，再放自己的项。
+    pub fn with_remove(mut self, remove: Vec<RelayUrl>) -> Self {
+        for url in remove {
+            let url = canonical_url(url);
+            if !self.remove.contains(&url) {
+                self.remove.push(url);
+            }
+        }
+        self
+    }
+
+    /// 要删掉的地址。
+    pub fn remove(&self) -> &[RelayUrl] {
+        &self.remove
     }
 
     /// 解析 [`RELAYS_VAR`] 的值。写得不合法时说清是哪一项、为什么，不静默跳过。
+    ///
+    /// `!https://relay.example.org` 是删除标记：把这一项从更早的来源里删掉。`#7843` 是 QUIC 端口。
     pub fn parse(text: &str) -> Result<Self, String> {
         let mut relays: Vec<Relay> = Vec::new();
+        let mut remove: Vec<RelayUrl> = Vec::new();
         for (index, tier_text) in text.split(';').enumerate() {
             let tier = u8::try_from(index).map_err(|_| "档位太多".to_owned())?;
             for item in tier_text.split(',') {
@@ -146,8 +189,14 @@ impl RelayTable {
                 }
                 if item == N0 {
                     relays.extend(n0_relays(tier));
+                } else if let Some(url) = item.strip_prefix('!') {
+                    if url == N0 {
+                        remove.extend(n0_relays(0).map(|relay| relay.url));
+                    } else {
+                        remove.push(relay_from_item(url, tier)?.url);
+                    }
                 } else {
-                    relays.push(relay_from_url(item, tier)?);
+                    relays.push(relay_from_item(item, tier)?);
                 }
             }
         }
@@ -159,7 +208,7 @@ impl RelayTable {
             }
             unique.push(relay);
         }
-        Ok(Self::from_relays(unique))
+        Ok(Self::from_relays(unique).with_remove(remove))
     }
 
     /// 全部的表项，档位在前。
@@ -184,6 +233,81 @@ impl RelayTable {
         let end = self.relays.partition_point(|relay| relay.tier <= tier);
         &self.relays[start..end]
     }
+
+    /// 把自己这一层盖在 `base` 上：先删 `remove` 里的地址和同 URL 的旧项，再追加自己的项。结果按
+    /// 档位稳定排序，不是就地把项挪到新位置。
+    pub fn overlay(&self, base: &RelayTable) -> RelayTable {
+        let mut relays: Vec<Relay> = base
+            .relays
+            .iter()
+            .filter(|relay| {
+                !self.remove.contains(&relay.url)
+                    && !self.relays.iter().any(|own| own.url == relay.url)
+            })
+            .cloned()
+            .collect();
+        relays.extend(self.relays.iter().cloned().map(canonical_relay));
+        let mut unique: Vec<Relay> = Vec::new();
+        for relay in relays {
+            if let Some(taken) = unique.iter().position(|old| old.url == relay.url) {
+                unique.remove(taken);
+            }
+            unique.push(relay);
+        }
+        let mut remove = base.remove.clone();
+        for url in &self.remove {
+            if !remove.contains(url) {
+                remove.push(url.clone());
+            }
+        }
+        RelayTable {
+            relays: RelayTable::from_relays(unique).relays,
+            remove,
+        }
+    }
+
+    /// 删掉这些地址（连同它们自己的项）。和 [`overlay`](Self::overlay) 的删除标记一样，合并时还盖底表。
+    pub fn without_urls(&self, urls: &[RelayUrl]) -> RelayTable {
+        let relays = self
+            .relays
+            .iter()
+            .filter(|relay| !urls.contains(&relay.url))
+            .cloned()
+            .collect();
+        let mut remove = self.remove.clone();
+        for url in urls {
+            if !remove.contains(url) {
+                remove.push(url.clone());
+            }
+        }
+        RelayTable { relays, remove }
+    }
+
+    /// 需要 n0 兜底时把 n0 放在最后一档。已经显式写了 n0（或者显式删了某台）就不重复加。
+    pub fn with_n0_last(&self, enabled: bool) -> RelayTable {
+        if !enabled {
+            return self.clone();
+        }
+        let n0: Vec<Relay> = n0_relays(0)
+            .filter(|relay| {
+                !self.remove.contains(&relay.url)
+                    && !self.relays.iter().any(|own| own.url == relay.url)
+            })
+            .collect();
+        if n0.is_empty() {
+            return self.clone();
+        }
+        let tier = self
+            .relays
+            .last()
+            .map_or(0, |relay| relay.tier.saturating_add(1));
+        let mut relays = self.relays.clone();
+        relays.extend(n0.into_iter().map(|relay| Relay { tier, ..relay }));
+        RelayTable {
+            relays: RelayTable::from_relays(relays).relays,
+            remove: self.remove.clone(),
+        }
+    }
 }
 
 /// 从中继表项建 iroh 的 [`RelayMap`]：只放前 `tiers` 档。
@@ -193,6 +317,26 @@ pub fn relay_map(relays: &[Relay], tiers: usize) -> RelayMap {
         .filter(|relay| (relay.tier as usize) < tiers)
         .map(|relay| Arc::new(relay.relay_config()))
         .collect()
+}
+
+/// 给界面、发现文件和日志用的规范化文字：根路径保留 `/`，非根路径去掉尾斜杠（`/relay/` → `/relay`）。
+///
+/// `Url` 序列化（以及 iroh 1.5 的 `RelayUrl`）会给非根路径补尾斜杠；配对码、连接状态和设置页
+/// 统一成这里的一种写法才互相相等。
+pub fn relay_url_text(url: &RelayUrl) -> String {
+    url_text(&url.clone().into())
+}
+
+/// 同 [`relay_url_text`]，参数是已经去过 userinfo/查询/片段的 [`Url`]。
+///
+/// 只看路径部分的斜杠，`?`/`#` 前面也照样去掉（`/relay/?x=1` → `/relay?x=1`）；根路径的 `/` 保留。
+pub fn url_text(url: &Url) -> String {
+    let mut text = url.as_str().to_owned();
+    let cut = text.find(['?', '#']).unwrap_or(text.len());
+    if cut > 0 && text.as_bytes()[cut - 1] == b'/' && url.path() != "/" {
+        text.remove(cut - 1);
+    }
+    text
 }
 
 /// 中继域名不带 FQDN 尾点，使配对码、中继表和连接状态使用同一个 key（#200）。
@@ -233,43 +377,85 @@ pub fn is_public_relay(url: &RelayUrl) -> bool {
     N0.contains(&canonical_url(url.clone()))
 }
 
-/// 解析一项中继地址：`https://TOKEN@relay.example.org`。令牌取 userinfo 的用户名（按百分号编码
-/// 解码），解析后从地址里去掉。
-fn relay_from_url(item: &str, tier: u8) -> Result<Relay, String> {
-    let mut url = Url::parse(item).map_err(|e| format!("{item}：不是合法的地址：{e}"))?;
+/// 报错时打的地址：userinfo 里的令牌换成 `<redacted>`，令牌不进日志。
+fn redact_item(item: &str) -> String {
+    let Some((scheme, rest)) = item.split_once("://") else {
+        return item.to_owned();
+    };
+    // userinfo 只在 authority 里；query 里的 `@` 不算。
+    let end = rest.find(['/', '?', '#']).unwrap_or(rest.len());
+    let (authority, tail) = rest.split_at(end);
+    let authority = match authority.split_once('@') {
+        Some((_, host)) => format!("<redacted>@{host}"),
+        None => authority.to_owned(),
+    };
+    format!("{scheme}://{authority}{tail}")
+}
+
+/// 解析一项中继地址：`https://TOKEN@relay.example.org#7843`。令牌取 userinfo 的用户名（按百分号编码
+/// 解码），解析后从地址里去掉；`#` 后面是 QUIC 端口，空着用默认端口。
+pub fn relay_from_item(item: &str, tier: u8) -> Result<Relay, String> {
+    let mut url =
+        Url::parse(item).map_err(|e| format!("{}：不是合法的地址：{e}", redact_item(item)))?;
     if url.scheme() != "https" {
-        return Err(format!("{item}：中继地址要用 https"));
+        return Err(format!("{}：中继地址要用 https", redact_item(item)));
     }
+    let quic_port = match url.fragment() {
+        None => None,
+        Some(fragment) => {
+            let port = fragment
+                .parse::<u16>()
+                .map_err(|_| format!("{}：`#` 后面要写端口号，比如 #7843", redact_item(item)))?;
+            if port == 0 {
+                return Err(format!("{}：QUIC 端口不能是 0", redact_item(item)));
+            }
+            url.set_fragment(None);
+            Some(port)
+        }
+    };
     // `https://@host`：写了 userinfo 却是空的，多半是令牌丢了，报出来而不是当没写。
-    let authority = item.split_once("://").map_or(item, |(_, rest)| rest);
+    // 只看 authority 段；query 里的 `@` 不是 userinfo。
+    let after_scheme = item.split_once("://").map_or(item, |(_, rest)| rest);
+    let authority_end = after_scheme
+        .find(['/', '?', '#'])
+        .unwrap_or(after_scheme.len());
+    let authority = &after_scheme[..authority_end];
     if authority.contains('@') && url.username().is_empty() && url.password().is_none() {
-        return Err(format!("{item}：令牌不能是空的"));
+        return Err(format!("{}：令牌不能是空的", redact_item(item)));
     }
     let token = match (url.username(), url.password()) {
         ("", None) => None,
-        (_, Some(_)) => return Err(format!("{item}：令牌写在用户名里，不能有密码")),
+        (_, Some(_)) => {
+            return Err(format!(
+                "{}：令牌写在用户名里，不能有密码",
+                redact_item(item)
+            ));
+        }
         (name, None) => {
             let decoded = percent_decode_str(name)
                 .decode_utf8()
-                .map_err(|_| format!("{item}：令牌不是合法的 UTF-8"))?;
+                .map_err(|_| format!("{}：令牌不是合法的 UTF-8", redact_item(item)))?;
             if decoded.is_empty() {
-                return Err(format!("{item}：令牌不能是空的"));
+                return Err(format!("{}：令牌不能是空的", redact_item(item)));
             }
             Some(RelayToken::new(decoded.into_owned()))
         }
     };
     url.set_username("")
-        .map_err(|_| format!("{item}：去不掉 userinfo"))?;
-    Ok(Relay {
+        .map_err(|_| format!("{}：去不掉 userinfo", redact_item(item)))?;
+    let relay = Relay {
         url: canonical_url(RelayUrl::from(url)),
         token,
+        quic_port,
         tier,
-    })
+    };
+    relay.validate()?;
+    Ok(relay)
 }
 
 /// `n0` 关键字那一组：iroh 认的默认中继（设了 `IROH_FORCE_STAGING_RELAYS` 时是 n0 的预发环境，
 /// 和 `presets::N0` 的选择一致）。
-fn n0_relays(tier: u8) -> impl Iterator<Item = Relay> {
+pub fn n0_relays(tier: u8) -> impl Iterator<Item = Relay> {
     default_relay_mode()
         .relay_map()
         .relays::<Vec<_>>()
@@ -278,6 +464,8 @@ fn n0_relays(tier: u8) -> impl Iterator<Item = Relay> {
             // iroh 内置的主机名带 FQDN 尾点，规范成我们的一种写法（canonical_url 的说明）。
             url: canonical_url(config.url.clone()),
             token: None,
+            // n0 自己开的 QUIC 端口就是 iroh 的默认端口，不单独写。
+            quic_port: None,
             tier,
         })
 }
@@ -307,6 +495,12 @@ impl TierFallback {
             enabled: 1,
             all_down_since: None,
         }
+    }
+
+    /// 表换了以后从头算：只留最优先一档，全断计时清零。
+    pub fn reset(&mut self) {
+        self.enabled = 1;
+        self.all_down_since = None;
     }
 
     /// 已启用到第几档（`enabled` 档 0..n 都在 endpoint 的中继表里）。
@@ -370,14 +564,23 @@ impl Default for TierFallback {
 
 /// 分档回退任务的手柄：看当前启用到第几档，测试和排障用。任务自己看着 endpoint 关掉结束，手柄
 /// 丢了它也照跑。
-#[derive(Debug, Clone)]
+#[derive(Debug)]
 pub struct TierFallbackHandle {
     enabled: tokio::sync::watch::Receiver<u8>,
+    /// 换表用：回退任务每拍读最新一份，换表也算一次重置。
+    tables: tokio::sync::watch::Sender<RelayTable>,
+    /// 回退任务。丢掉句柄不 abort：任务自己盯到 endpoint 关闭才结束，误丢不会悄悄关掉回退。
+    _task: tokio::task::JoinHandle<()>,
 }
 
 impl TierFallbackHandle {
     pub fn enabled_tiers(&self) -> u8 {
         *self.enabled.borrow()
+    }
+
+    /// 换一张表：下一拍用新表，并从最优先一档重新算。
+    pub fn set_table(&self, table: RelayTable) {
+        self.tables.send_replace(table);
     }
 
     /// 等启用档数变成 `tiers`。
@@ -513,8 +716,10 @@ pub fn spawn_tier_fallback(
     probe_tls: Option<CaTlsConfig>,
 ) -> TierFallbackHandle {
     let (enabled, watching) = tokio::sync::watch::channel(1);
-    tokio::spawn(async move {
+    let (tables, mut table_rx) = tokio::sync::watch::channel(table);
+    let task = tokio::spawn(async move {
         let mut fallback = TierFallback::new();
+        let mut table = table_rx.borrow().clone();
         // 长寿命探针：只在回退激活期间存在，档位变了只增删差集。单台中继一个 endpoint 是为了让
         // 家中继状态直接等于那台的结论（见 `Probes`）。
         let mut probe = Probes::new();
@@ -525,6 +730,12 @@ pub fn spawn_tier_fallback(
             if endpoint.is_closed() {
                 probe.close().await;
                 return;
+            }
+            // 主人刚换了表：从头算，探针集合跟着新表对齐（probe_signal 会 retain）。
+            if table_rx.has_changed().unwrap_or(false) {
+                table = table_rx.borrow_and_update().clone();
+                fallback.reset();
+                enabled.send_replace(1);
             }
             let connected: Vec<RelayUrl> = endpoint
                 .home_relay_status()
@@ -578,7 +789,11 @@ pub fn spawn_tier_fallback(
             enabled.send_replace(fallback.enabled_tiers() as u8);
         }
     });
-    TierFallbackHandle { enabled: watching }
+    TierFallbackHandle {
+        enabled: watching,
+        tables,
+        _task: task,
+    }
 }
 
 #[cfg(test)]

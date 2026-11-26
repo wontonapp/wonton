@@ -1,11 +1,12 @@
 //! 房间列表接进 ViewModel：排序、把主人的 Bot 排前面、按合成好的显示方式填每一行。
 
-use std::collections::HashSet;
+use std::collections::{HashMap, HashSet};
 use std::sync::Arc;
 
 use futures_util::StreamExt;
 use tokio::task::JoinHandle;
 use wonton_matrix::MatrixSession;
+use wonton_protocol::BotChatAvailability;
 
 use super::ChatLink;
 use super::core_account;
@@ -50,17 +51,20 @@ impl ChatLink {
                     }
                     Ok(()) = layouts.changed() => {}
                     Ok(()) = declarations.changed() => {}
+                    // Bot 的资格变了（授权、角色、断线）：已打开的行跟着换原因。
+                    () = bots.changed.notified() => {}
                 }
                 if !ready {
                     continue;
                 }
                 let settings = layouts.borrow_and_update().clone();
-                let bot_users: HashSet<String> = view
+                let availability: HashMap<String, BotChatAvailability> = view
                     .borrow()
                     .bots
                     .iter()
-                    .map(|bot| bot.user_id.clone())
+                    .map(|bot| (bot.user_id.clone(), bot.availability))
                     .collect();
+                let bot_users: HashSet<String> = availability.keys().cloned().collect();
                 // 和 Bot 的私聊取一次旁聊的支持声明（ADR-0093 §1）；进房间时再取。
                 for room in &latest {
                     if room
@@ -84,7 +88,7 @@ impl ChatLink {
                             None => compose(&settings, None),
                         };
                         let side_chats = support.supports(&room.room_id, &bot_users);
-                        room_row(room, &core, layout, &bot_users, side_chats)
+                        room_row(room, &core, layout, &availability, side_chats)
                     })
                     .collect();
                 super::plugin_status::refresh(&mut rows, &plugins.borrow());

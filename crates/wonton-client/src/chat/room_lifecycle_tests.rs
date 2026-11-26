@@ -1,14 +1,18 @@
-use super::*;
 use std::future::Future;
 use std::pin::Pin;
+use std::sync::Arc;
 use std::sync::atomic::{AtomicUsize, Ordering};
 use std::time::Duration;
 
 use axum::{Json, Router, extract::State, http::StatusCode, routing::get};
 use serde_json::{Value, json};
+use tokio::runtime::Handle;
+use tokio::sync::{mpsc, watch};
+use wonton_matrix::{OwnedRoomId, Vector};
+use wonton_protocol::{BackPagination, PushMethod, TimelineTarget, TimelineViewport};
 
+use crate::chat::menu::Outbox;
 use crate::chat::{ChatChannels, ChatLink, target::TimelineOpening};
-use wonton_protocol::{PushMethod, TimelineTarget};
 
 fn rig() -> (Arc<ChatLink>, tempfile::TempDir) {
     let dir = tempfile::tempdir().unwrap();
@@ -44,6 +48,7 @@ fn rig() -> (Arc<ChatLink>, tempfile::TempDir) {
             app_lock: crate::app_lock::AppLockLink::new(dir.path()),
             session_out: watch::Sender::new(None),
             external: false,
+            push_previews: Arc::new(crate::push::PushPreviews::open(dir.path())),
         },
     )
     .unwrap();
@@ -103,6 +108,7 @@ async fn a_timeline_does_not_receive_another_rooms_panel() {
             None,
             false,
             None,
+            None,
         )
         .unwrap();
     let update = updates.try_recv().unwrap();
@@ -117,6 +123,7 @@ async fn a_timeline_does_not_receive_another_rooms_panel() {
             TimelineViewport::Bottom,
             None,
             false,
+            None,
             None,
         )
         .unwrap();
@@ -593,4 +600,35 @@ async fn foregrounded_without_a_session_clears_both_own_bot_slots() {
     let view = watch.borrow_and_update();
     assert!(view.own_private_bot.is_none());
     assert!(view.own_private_bot_problem.is_none());
+}
+
+/// Outbox 把通话状态原样带进 update（房间那边由集成用例 `call_active_follows_the_room` 覆盖）。
+#[tokio::test]
+async fn outbox_forwards_call_active() {
+    let (chat, _dir) = rig();
+    let room: OwnedRoomId = "!room:example.com".parse().unwrap();
+    let (sender, mut updates) = mpsc::unbounded_channel();
+    let room_view = watch::channel(None).1;
+    let outbox = Outbox::new(
+        sender,
+        Arc::default(),
+        room_view,
+        chat.view.subscribe(),
+        room,
+        watch::Sender::new(Arc::new(Vec::new())).subscribe(),
+        crate::chat::jump::seeded(),
+    );
+    outbox
+        .send(
+            &Vector::new(),
+            Vec::new(),
+            BackPagination::Idle,
+            TimelineViewport::Bottom,
+            None,
+            true,
+            None,
+            None,
+        )
+        .unwrap();
+    assert!(updates.try_recv().unwrap().call_active);
 }

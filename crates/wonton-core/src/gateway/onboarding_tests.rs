@@ -216,7 +216,7 @@ async fn the_default_bot_plugin_comes_from_the_default_install_not_the_catalog()
 }
 
 #[tokio::test]
-async fn onboarding_hides_other_peoples_private_bot_from_a_family_admin() {
+async fn onboarding_marks_other_peoples_private_bot_absent_for_a_family_admin() {
     const OWNER_BOT: &str = "@owner-agent:test";
     let index = tempfile::tempdir().unwrap();
     let agent = write_catalog(index.path());
@@ -268,11 +268,15 @@ async fn onboarding_hides_other_peoples_private_bot_from_a_family_admin() {
                     .json()
                     .pointer("/default_bot_plugin/bot_user_id")
                     .and_then(Value::as_str),
-                allowed.then_some(OWNER_BOT),
+                Some(OWNER_BOT),
             );
-            if !allowed {
-                assert!(!reply.text().contains(OWNER_BOT));
-            }
+            assert_eq!(
+                reply
+                    .json()
+                    .pointer("/default_bot_plugin/visibility")
+                    .and_then(Value::as_str),
+                Some(if allowed { "visible" } else { "absent" }),
+            );
         }
     }
 }

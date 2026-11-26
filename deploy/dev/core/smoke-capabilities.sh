@@ -14,7 +14,10 @@ done
 [[ -n "${WONTON_DEV_CORE_SUBNET:-}" ]] || fail '先经 stack-slot.sh acquire -- 运行，见 README'
 [[ "$(openssl version)" == OpenSSL\ [3-9]* ]] || fail '需要 OpenSSL 3+'
 case "${DOCKER_HOST:-}" in ssh://* | tcp://*) fail '仅支持目标主机的本机 Docker' ;; esac
+# shellcheck source=deploy/dev/core/dev-guard.sh
+source "$here/dev-guard.sh"
 export WONTON_DEV_PROJECT="${WONTON_DEV_PROJECT:-wonton-capability-$(date +%s)-$$}"
+dev_guard_check "$WONTON_DEV_PROJECT"
 [[ "$WONTON_DEV_PROJECT" =~ ^wonton-capability-[a-z0-9-]+$ ]] || fail '项目名须为 wonton-capability-<唯一后缀>'
 export WONTON_DEV_INSTANCE="cp$(openssl rand -hex 6)"
 export WONTON_DEV_PORT="${WONTON_DEV_PORT:-18571}"
@@ -25,6 +28,7 @@ export WONTON_DEV_DATA="$work/data" WONTON_DEV_SECRETS="$work/secrets"
 export WONTON_DEV_DEFAULT_PLUGINS= WONTON_DEV_OWNER_PROFILE=off
 unset WONTON_OWNER_NAME WONTON_EGRESS_PROXY WONTON_EGRESS_PROXY_DETECTED
 # Only definitions: dev.sh returns when sourced. Keep its TLS/federation preparation.
+# shellcheck source=deploy/dev/core/dev.sh
 source "$here/dev.sh"
 python_image=python:3.13.9-alpine3.22@sha256:e5fa639e49b85986c4481e28faa2564b45aa8021413f31026c3856e5911618b1
 export WONTON_CAPABILITY_PYTHON_IMAGE="$python_image"
@@ -54,6 +58,7 @@ cleanup() {
     docker rm -f "$resource" >/dev/null 2>&1 || failed=1
   done
   if (( started )); then compose down --volumes --remove-orphans >/dev/null 2>&1 || failed=1; fi
+  remove_core_network || failed=1
   for resource in $(docker network ls -q --filter "label=wonton.instance=$WONTON_DEV_INSTANCE"); do
     docker network rm "$resource" >/dev/null 2>&1 || failed=1
   done
@@ -99,15 +104,11 @@ services:
       WONTON_STORE_COMMUNITY: "off"
     volumes:
       - $work/index:/wonton-capability-index
-networks:
-  core:
-    ipam:
-      config:
-        - subnet: $WONTON_DEV_CORE_SUBNET
 EOF
 # Fixture packages/index are real local files; index-entry is from the tested image.
 python3 "$here/smoke-capabilities.py" prepare "$work"
 started=1
+ensure_core_network
 compose up -d --no-build --wait >"$work/up.log" 2>&1 || fail 'Compose 启动或健康检查失败'
 docker run -d --name "$probe" --network "container:$core" --entrypoint python3 \
   "$python_image" -c 'import time; time.sleep(3600)' >/dev/null

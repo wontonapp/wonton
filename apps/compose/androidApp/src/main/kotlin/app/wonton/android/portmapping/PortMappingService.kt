@@ -110,7 +110,7 @@ class PortMappingService : Service() {
             getString(R.string.mapping_notification_title_multiple, titles.size)
         }
         return Notification.Builder(this, CHANNEL_ID)
-            .setSmallIcon(R.drawable.launch_glyph)
+            .setSmallIcon(R.drawable.notification_glyph)
             .setContentTitle(title)
             .setContentIntent(open)
             .setCategory(Notification.CATEGORY_SERVICE)

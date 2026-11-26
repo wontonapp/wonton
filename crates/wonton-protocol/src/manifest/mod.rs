@@ -167,7 +167,7 @@ pub struct Manifest {
     pub bots: Option<BotServices>,
     #[serde(default)]
     pub agent: Option<AgentSpec>,
-    /// 系统插件给其他插件提供的能力，见规范“模型网关”。
+    /// 给其他插件提供的能力，见规范“模型网关”。
     #[serde(default)]
     pub provides: Option<Provides>,
     /// 依赖的能力：索引里没有提供方就装不上（ADR-0053）。

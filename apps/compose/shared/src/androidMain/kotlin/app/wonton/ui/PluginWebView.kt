@@ -97,6 +97,8 @@ class PluginWebViewController {
     /** 页面自己的顶栏颜色（[PageThemeColor]）；没有可用的颜色时是 null。 */
     var pageColor: Color? by mutableStateOf(null)
         internal set
+    /** 本页的历史足迹；[back] 用它认出不会换页的一步。 */
+    internal val history = PageHistory()
     private var customViewCallback: WebChromeClient.CustomViewCallback? = null
 
     internal fun onPermissionRequest(request: PermissionRequest) {
@@ -128,8 +130,8 @@ class PluginWebViewController {
     internal fun release(owner: WebView) {
         if (view !== owner) return
         view = null
+        history.clear()
         canGoBack = false
-        pageColor = null
         closeCustomView()
         pendingFileChooser?.onReceiveValue(null)
         pendingFileChooser = null
@@ -154,6 +156,76 @@ class PluginWebViewController {
 
     internal fun updateHistory() {
         canGoBack = view?.canGoBack() == true
+    }
+
+
+    /**
+     * 系统返回和胶囊菜单的“返回”：视频全屏先退出，网页历史里会换页的一步照常后退；同一文档里的记录
+     * （重定向、同地址）直接关页，由调用方经 [backOrClose] 发 ClosePage。
+     */
+    internal fun back(): PluginBackTarget {
+        val step = history.step(view)
+        val target = pluginBackTarget(customView != null, step)
+        // 复现用例靠这几项判断返回键走到哪一步；两个地址都经过 logUrl，日志里不会有授权码。
+        val where = "sameDocument=${step?.sameDocument} previous=${step?.previous} page=${history.pagePath()}"
+        Log.i(TAG, "back: target=$target $where")
+        when (target) {
+            PluginBackTarget.CloseCustomView -> closeCustomView()
+            PluginBackTarget.History -> view?.goBack()
+            PluginBackTarget.ClosePage -> Unit
+        }
+        return target
+    }
+}
+
+/**
+ * 本页的历史足迹：当前地址，以及哪些地址是重定向来的（来源 → 落地，去掉片段）。
+ * 判断“上一历史步会不会换页”用地址比较，不靠等：同一地址、或一条会跳回本页的重定向都算同一页。
+ * 重定向这一路是保险：Chromium 把服务端跳转的落地地址顶替进那一条历史，来源不在历史里，
+ * 模拟器上还没见它生效过（见 PR #903 的说明）。
+ */
+internal class PageHistory {
+    private var currentUrl: String? = null
+    /** 正在加载的文档地址；加载完和最终地址不同就是一条重定向。 */
+    private var startedUrl: String? = null
+    private val redirects = mutableMapOf<String, String>()
+
+    fun started(url: String) {
+        startedUrl = url
+        currentUrl = url
+    }
+
+    fun finished(url: String) {
+        val started = startedUrl ?: return
+        startedUrl = null
+        val from = started.substringBefore('#')
+        val to = url.substringBefore('#')
+        if (from != to) redirects[from] = to
+    }
+
+    fun visited(url: String?) {
+        if (url != null) currentUrl = url
+    }
+
+    /** 当前页前面最近的一步；没有历史、或拿不到它的地址时 null。 */
+    fun step(view: WebView?): HistoryStep? {
+        val list = view?.takeIf { it.canGoBack() }?.copyBackForwardList()
+        val previous = list?.getItemAtIndex(list.currentIndex - 1)?.url
+        return previous?.let { HistoryStep(sameDocument = isSameDocument(it), previous = logUrl(it)) }
+    }
+
+    internal fun isSameDocument(previous: String): Boolean {
+        val current = currentUrl ?: return false
+        return previous == current || redirects[previous.substringBefore('#')] == current.substringBefore('#')
+    }
+
+    /** 日志用：只到路径，去掉查询串（可能有授权码）和片段。 */
+    fun pagePath(): String? = currentUrl?.let(::logUrl)
+
+    fun clear() {
+        currentUrl = null
+        startedUrl = null
+        redirects.clear()
     }
 }
 
@@ -511,6 +583,7 @@ private class ProxyAuthClient(
 
     override fun doUpdateVisitedHistory(view: WebView, url: String?, isReload: Boolean) {
         if (url != null) currentUrl = url
+        controller.history.visited(url)
         controller.updateHistory()
     }
 
@@ -527,6 +600,7 @@ private class ProxyAuthClient(
 
     override fun onPageStarted(view: WebView, url: String, favicon: Bitmap?) {
         controller.closeCustomView()
+        controller.history.started(url)
         if (url == failedUrl) {
             // HTTP 错误回调已到达并标记本轮失败：保持失败和隐藏，不当作新加载开始。
             currentUrl = url
@@ -592,6 +666,7 @@ private class ProxyAuthClient(
         // 只记到路径：查询串和片段里可能有 OAuth 授权码等秘密（例如 /login/generic_oauth?code=…）。
         val page = Uri.parse(url).buildUpon().clearQuery().fragment(null).build()
         Log.i(TAG, "page finished loading, page=$page")
+        controller.history.finished(url)
         controller.updateHistory()
         // 出错的加载也会走到这里。
         if (!failedThisLoad) {

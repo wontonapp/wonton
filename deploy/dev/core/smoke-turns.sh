@@ -255,7 +255,7 @@ sent_ok="$(marker approved)"
 sent_rejected="$(marker rejected)"
 sent_stopped="$(marker stopped)"
 before="$(chain_ids)"
-# 妈妈的手机一直开着等这条私聊：设备要在 Hermes 发之前就在，Hermes 才会给它加密。她先说的一句也开了她自己的一轮。
+# 妈妈的手机一直开着等这条私聊：设备要在 Hermes 发之前就在，Hermes 才会发到它。她先说的一句也开了她自己的一轮。
 probe_as_mom "$mom_heard" --wait 1500 --match "$sent_ok" --text "你好" &
 mom_listening=$!
 mom_chain="$(new_chain "$before" "$(mxid mom)" "$mom_room")" ||
@@ -289,8 +289,8 @@ card_id="$(pending_card)" || fail "Hermes 发私聊没有发确认卡片：$(cat
 expect "主人批准，并在一段时间内放行发给妈妈的私聊" "$(answer_with allow_window "$card_id")" 200
 wait "$mom_listening" ||
   fail "妈妈没收到批准的私聊：$(cat "$mom_heard")；审计：$(sent_audit "$sent_ok")；Hermes 的日志：$(hermes_chain_log)"
-grep -q "收到加密的回复：.*$sent_ok" "$mom_heard" || fail "妈妈收到的不是批准的那句：$(cat "$mom_heard")"
-ok "妈妈的手机收到了 Hermes 发来的加密私聊，正文是主人批准的那句"
+grep -q "收到明文的回复：.*$sent_ok" "$mom_heard" || fail "妈妈收到的不是批准的那句：$(cat "$mom_heard")"
+ok "妈妈的手机收到了 Hermes 发来的私聊，正文是主人批准的那句"
 wait "$asking" || true
 # 出箱按先后发：批准的那条到了，前面拒绝的、撤回的要发也早发了。
 expect "审计：批准的那条发出了一次" "$(sent_audit "$sent_ok" | grep -c '^allowed 已发出')" 1

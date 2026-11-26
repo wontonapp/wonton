@@ -1,6 +1,6 @@
 import XCTest
 
-/// 长按消息的菜单里查得到这一条的发送时间（盲测 #699）：时间按组展示、不贴在气泡上，菜单是单条时间的入口。
+/// 长按消息的菜单底部查得到这一条的完整发送日期和时间（盲测 #699；气泡里只有时分，ADR-0109）。
 /// 不要后端：用 `WONTON_UI_FAKE` 的假数据。
 final class MessageTimeUITests: XCTestCase {
     private var app: XCUIApplication!
@@ -14,7 +14,7 @@ final class MessageTimeUITests: XCTestCase {
         app.launchArguments += ["-AppleLanguages", "(en)", "-AppleLocale", "en_US"]
         app.launchEnvironment["WONTON_DEV_DATA_SUFFIX"] = UUID().uuidString
         app.launchEnvironment["WONTON_UI_FAKE"] = "1"
-        app.launch()
+        UITestBackend.launch(app)
 
         app.staticTexts["Echo"].tap()
         // 落点在第 2 条附近，第 4 条是整屏的高消息：message 5 在折叠线下面，message 3 一定在屏上。

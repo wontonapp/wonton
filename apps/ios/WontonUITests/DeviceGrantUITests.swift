@@ -69,7 +69,7 @@ final class DeviceGrantUITests: XCTestCase {
         app.launchArguments += ["-AppleLanguages", "(en)", "-AppleLocale", "en_US"]
         app.launchEnvironment["WONTON_DEV_DATA_SUFFIX"] = dataSuffix
         app.launchEnvironment["WONTON_UI_FAKE"] = "1"
-        app.launch()
+        UITestBackend.launch(app)
         XCTAssertTrue(
             waitHittable(app.buttons.matching(UITestSidebar.button), timeout: 20), "没进主界面\n\(app.debugDescription)"
         )

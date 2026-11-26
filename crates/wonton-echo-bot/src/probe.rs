@@ -7,9 +7,10 @@
 //!                [--redacted <秒>] [--token-only <任意值>] [--store <目录>] [--device-id <设备 ID>]
 //! ```
 //!
-//! 用核心签的登录令牌登录一台临时设备（密钥只在内存里；给了 `--store` 就存下来，同一台设备接着用），确认房间是
-//! 加密的，按顺序发每条 `--text`，每发一条等 Bot 回一条：`--reply echo`（默认）要求回 `回声：<原文>`，`--reply any` 只要回了文字就行（如 Hermes 这种模型
-//! 驱动的 Bot）。回复必须是加密消息。`--settle` 时收到回复后接着收，直到 Bot 这么多秒不再说话：Bot 先说一句再去
+//! 用核心签的登录令牌登录一台临时设备（密钥只在内存里；给了 `--store` 就存下来，同一台设备接着用），
+//! 按顺序发每条 `--text`，每发一条等 Bot 回一条：`--reply echo`（默认）要求回 `回声：<原文>`，`--reply any`
+//! 只要回了文字就行（如 Hermes 这种模型驱动的 Bot）。回复的加密状态要和房间一致（加密房间里的必须加密，
+//! 不加密房间里的必须是明文）。`--settle` 时收到回复后接着收，直到 Bot 这么多秒不再说话：Bot 先说一句再去
 //! 调要等主人确认的工具时，这样才收得到它最后的回答。结束时退出登录，设备一起删掉；给了 `--store` 时不退出，
 //! 设备留着给下次用。
 
@@ -264,15 +265,15 @@ async fn converse(client: &Client, options: &Options) -> anyhow::Result<()> {
         .get_room(&options.room)
         .filter(|room| room.state() == RoomState::Joined)
         .with_context(|| format!("主人不在房间 {} 里", options.room))?;
-    if !room.latest_encryption_state().await?.is_encrypted() {
-        bail!("房间 {} 没有加密", options.room);
+    let encrypted_room = room.latest_encryption_state().await?.is_encrypted();
+    // 加密房间：新设备的密钥要真的上服务器，对方才收得到这台设备的消息。先等这个设备的密钥传完，再问一次对方的设备表。
+    if encrypted_room {
+        client
+            .encryption()
+            .wait_for_e2ee_initialization_tasks()
+            .await;
+        ensure_recipient_devices(client, &options.bot).await?;
     }
-    // 新设备的密钥要真的上服务器，对方才收得到这台设备的消息：先等这个设备的密钥传完，再问一次对方的设备表。
-    client
-        .encryption()
-        .wait_for_e2ee_initialization_tasks()
-        .await;
-    ensure_recipient_devices(client, &options.bot).await?;
     let (sender, mut replies) = mpsc::unbounded_channel::<Message>();
     let (room_id, bot) = (options.room.clone(), options.bot.clone());
     let thread = Arc::new(Mutex::new(thread_root(options)?));
@@ -365,6 +366,7 @@ async fn send_round(
     round: usize,
     text: &str,
 ) -> anyhow::Result<()> {
+    let encrypted_room = room.latest_encryption_state().await?.is_encrypted();
     let mut content = RoomMessageEventContent::text_plain(text);
     if let Some(mention) = &options.mention {
         content.mentions = Some(Mentions::with_user_ids([mention.clone()]));
@@ -402,21 +404,46 @@ async fn send_round(
     .flatten()
     .with_context(|| {
         format!(
-            "第 {round} 轮：{} 秒内没收到 {} 的回复（Bot 没在运行，或者解不开这台设备的加密消息）",
+            "第 {round} 轮：{} 秒内没收到 {} 的回复（Bot 没在运行，或者收不到这台设备的消息）",
             wait.as_secs(),
             options.bot
         )
     })?;
-    if !encrypted {
-        bail!("第 {round} 轮：回复没有加密");
+    let mode = if encrypted_room { "加密" } else { "明文" };
+    if encrypted != encrypted_room {
+        bail!(
+            "第 {round} 轮：房间{}，回复{}",
+            if encrypted_room {
+                "加密"
+            } else {
+                "不加密"
+            },
+            if encrypted {
+                "却是密文"
+            } else {
+                "却是明文"
+            }
+        );
     }
-    println!("第 {round} 轮：收到加密的回复：{body}");
+    println!("第 {round} 轮：收到{mode}的回复：{body}");
     if let Some(settle) = options.settle {
         while let Ok(Some((body, encrypted))) = tokio::time::timeout(settle, replies.recv()).await {
-            if !encrypted {
-                bail!("第 {round} 轮：回复没有加密");
+            if encrypted != encrypted_room {
+                bail!(
+                    "第 {round} 轮：房间{}，回复{}",
+                    if encrypted_room {
+                        "加密"
+                    } else {
+                        "不加密"
+                    },
+                    if encrypted {
+                        "却是密文"
+                    } else {
+                        "却是明文"
+                    }
+                );
             }
-            println!("第 {round} 轮：又收到加密的回复：{body}");
+            println!("第 {round} 轮：又收到{mode}的回复：{body}");
         }
     }
     Ok(())

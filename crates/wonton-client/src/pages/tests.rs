@@ -249,6 +249,8 @@ fn home(server: &str) -> HomeViewModel {
         server_id: Some(server.to_owned()),
         status: HomeStatus::Connected,
         path: None,
+        current_relay: None,
+        relays: Default::default(),
         notice: None,
         details: Default::default(),
         proxy: None,

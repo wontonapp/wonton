@@ -2,6 +2,66 @@
   "sourceLanguage": "en",
   "version": "1.0",
   "strings": {
+    "composer.attachment.unsupportedType": {
+      "comment": "Attachment failed because the server doesn't know the file type.",
+      "extractionState": "manual",
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "This format can't be uploaded"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "这个格式传不上去"
+          }
+        },
+        "zh-Hant": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "這個格式傳不上去"
+          }
+        },
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "この形式はアップロードできません"
+          }
+        }
+      }
+    },
+    "composer.attachment.replyTarget": {
+      "comment": "Attachment failed because the message being replied to is gone.",
+      "extractionState": "manual",
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "The quoted message is gone, drop the reply"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "要回复的那条不在了，去掉回复"
+          }
+        },
+        "zh-Hant": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "要回覆的那則不在了，去掉回覆"
+          }
+        },
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "返信元がありません。返信を外してください"
+          }
+        }
+      }
+    },
     "composer.attach": {
       "comment": "Icon button at the left of the chat composer: opens the attachment menu (photo or file). Also its screen-reader label.",
       "extractionState": "manual",
@@ -178,6 +238,36 @@
           "stringUnit": {
             "state": "translated",
             "value": "送信"
+          }
+        }
+      }
+    },
+    "composer.editConfirm": {
+      "comment": "Screen-reader label of the check button that submits the edited text while a message is being edited.",
+      "extractionState": "manual",
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Edit"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "确认"
+          }
+        },
+        "zh-Hant": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "確認"
+          }
+        },
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "確定"
           }
         }
       }
@@ -688,6 +778,156 @@
           "stringUnit": {
             "state": "translated",
             "value": "自宅サーバに接続できず、停止できたか分かりません。もう一度お試しください。"
+          }
+        }
+      }
+    },
+    "composer.photoAccessDenied": {
+      "comment": "Shown in the attachment sheet when photo library access is denied, above the Open Settings button.",
+      "extractionState": "manual",
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Wonton has no access to your photos. Allow it in Settings to pick photos here."
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "云吞没有访问照片的权限。在设置里允许后，就能在这里选照片。"
+          }
+        },
+        "zh-Hant": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "雲吞沒有取用照片的權限。在設定裡允許後，就能在這裡選照片。"
+          }
+        },
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Wontonに写真へのアクセス権がありません。設定で許可すると、ここで写真を選べます。"
+          }
+        }
+      }
+    },
+    "composer.commands": {
+      "comment": "Text and screen-reader label of the capsule button left of the attach button in the chat composer: opens the list of the bot's slash commands.",
+      "extractionState": "manual",
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Menu"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "菜单"
+          }
+        },
+        "zh-Hant": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "選單"
+          }
+        },
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "メニュー"
+          }
+        }
+      }
+    },
+    "composer.commandsOmitted": {
+      "comment": "Last line of the slash-command list when some commands were cut off. %lld is how many are not listed.",
+      "extractionState": "manual",
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "%lld more commands not listed"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "还有 %lld 条命令没列出"
+          }
+        },
+        "zh-Hant": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "還有 %lld 條指令未列出"
+          }
+        },
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "ほかに %lld 件のコマンドがあります"
+          }
+        }
+      }
+    },
+    "composer.attachOnlyMain": {
+      "comment": "Shown above the composer in a side chat: photos go out right away, files belong in the main chat. ADR-0093, ADR-0109 §9.",
+      "extractionState": "manual",
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Photos in a side chat are sent right away; files go in the main chat."
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "旁聊里照片直接发，不进附件区；文件去主对话。"
+          }
+        },
+        "zh-Hant": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "旁聊裡照片直接發，不進附件區；檔案去主對話。"
+          }
+        },
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "サイドチャットの写真はすぐ送信されます。ファイルはメインのチャットで。"
+          }
+        }
+      }
+    },
+    "composer.openMainChat": {
+      "comment": "Button on that hint: leaves the side chat and opens the main chat.",
+      "extractionState": "manual",
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Open the main chat"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "打开主对话"
+          }
+        },
+        "zh-Hant": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "打開主對話"
+          }
+        },
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "メインのチャットを開く"
           }
         }
       }

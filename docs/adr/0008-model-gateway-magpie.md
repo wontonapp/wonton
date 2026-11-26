@@ -1,6 +1,7 @@
 # ADR-0008 模型网关：magpie
 
 - 状态：通用模型网关合同保留；Magpie 的系统插件地位、默认安装前置与 Agent 统一模型入口已被 [ADR-0108](0108-hermes-default-kernel.md) 取代（主人 2026-11-15）。Hermes 改用其自带供应商接入，核心与默认装机不依赖 Magpie；下文相关预装、默认组与配置入口记录旧方案及其验证条件。
+- 由 [ADR-0118](0118-im-three-layers-push-with-body.md) 修订（2026-11-25）：房间不再端到端加密，Hermes 的 `MATRIX_E2EE_MODE` 从 `required` 改成 `off`，下文验证结果里的加密对话和交叉签名按改前的记录看
 
 ## 背景
 
@@ -125,7 +126,7 @@ Web UI；支持列表里有 Hermes Agent。
 
 M0-4 的检查改由核心完成，复跑：`deploy/dev/core/smoke.sh` 的“Hermes”一步。环境同上，Hermes Agent v0.22.5。
 
-- 安装：`dev.sh install <Hermes 插件仓库目录>` 把插件包目录打成 tar 上传（带 `config.yaml`），核心代 Bot 登录、建主房间、
+- 安装：`dev.sh install <Hermes 插件仓库目录>` 把插件包目录打成 tar 上传（带 `config.yaml`），核心代 Bot 登录、和主人建主房间、
   签发凭据 `com.nousresearch.hermes/default`（Bot 服务用 Bot 的凭据，见插件规范“模型网关”），8 秒装好并通过健康
   检查（Matrix 已连上）。Hermes 只凭注入的变量工作，`config.yaml` 没为 Wonton 改过。
 - 对话：主人的一台新设备经隧道在加密私聊里问两轮，两轮都收到加密回复，第二轮记得第一轮的问题，两轮共约 8.6 秒

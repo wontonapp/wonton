@@ -1,20 +1,22 @@
 name: gate
 
 # 合并门槛：PR 合并前要等的检查都在这一个工作流里，规则集只要求末尾的“gate 汇总”一个检查。
-# - changes：一个作业按改动范围给出 rust、ios、android 三个开关（之前三个工作流各起一个）。
+# - changes：一个作业按改动范围给出 rust、ios、android、docker 四个开关（之前三个工作流各起一个）。
 # - lint：轻检查，不按路径过滤，草稿 PR 也跑。
-# - rust、ios、android：重作业在各自的工作流里（workflow_call），这里按开关调用；定时、手动和合后的运行
-#   还是那几个工作流自己触发。
+# - rust、ios、android、docker：重作业在各自的工作流里（workflow_call），这里按开关调用；定时、手动和合后的运行
+#   还是那几个工作流自己触发（docker 在 main 上由 rust-docker.yml 自己的 push 按路径跑，这里不跑）。
 # - 汇总：needs 全部作业，任一失败或取消就红，成功和跳过算过；草稿 PR 上重作业全被跳过，汇总自己也判红——
 #   否则「跳过算过」会让 gate 汇总在草稿阶段显示绿，gh pr merge --auto 转 ready 后立刻看到已绿的必需检查就合了，
 #   重作业一次没跑（11-13 #470 21:59Z 就这样合进了 main）。转 ready 的新 run 才给真结果。
 # 一次推送只起 changes、lint、汇总三个轻作业加改到的重作业（之前是三个改动范围、四个汇总加 lint），
 # 省下的是 runner 名额和排队，重作业本身不变。
-# 路径不写在触发器上：必需检查在每个 PR 上都要有结果，工作流没触发的话检查一直“等待中”，PR 合不了。
 on:
   pull_request:
     types: [opened, synchronize, reopened, ready_for_review]
-  # main 上只跑 lint（密钥扫描这一个提交）；合后的慢测试在 rust-docker.yml、ios.yml 的 push 上。
+  # 手动补一轮：用工作流自带的 GITHUB_TOKEN 推的提交不触发新工作流，PR 上会一条检查都没有，
+  # 这时手动跑 `gh workflow run gate.yml --ref <branch>`。
+  workflow_dispatch:
+  # main 上跑 lint（密钥扫描这一个提交）和全量 rust；ios/android 交给夜间兜底，docker 交给 rust-docker.yml 自己的 push。
   push:
     branches: [main]
 
@@ -31,8 +33,9 @@ jobs:
     name: 改动范围
     # PR 用 REST 列改动文件，不用检出代码；草稿 PR 跳过，重作业跟着跳过。
     # push（合进 main）也进这个作业：main 上 rust 一律全跑——合后必须真验一遍，之前只在每天 3 点的定时里跑，
-    # 合进 main 的提交到那时之前一次单测都没有（11-13 #470 就是这样合进去的）。ios/android 合后仍交给夜间兜底。
-    if: (github.event_name == 'pull_request' && github.event.pull_request.draft == false) || github.event_name == 'push'
+    # 合进 main 的提交到那时之前一次单测都没有（11-13 #470 就是这样合进去的）。ios/android 合后仍交给夜间兜底；
+    # docker 合后由 rust-docker.yml 自己的 push 跑，这里不重复触发。
+    if: (github.event_name == 'pull_request' && github.event.pull_request.draft == false) || github.event_name == 'push' || github.event_name == 'workflow_dispatch'
     runs-on: ubuntu-24.04
     timeout-minutes: 5
     permissions:
@@ -43,19 +46,24 @@ jobs:
       rust: ${{ steps.pushrun.outputs.rust || steps.filter.outputs.rust }}
       ios: ${{ steps.pushrun.outputs.ios || steps.filter.outputs.ios }}
       android: ${{ steps.pushrun.outputs.android || steps.filter.outputs.android }}
+      docker: ${{ steps.pushrun.outputs.docker || steps.filter.outputs.docker }}
     steps:
-      - name: main push：rust 全跑
+      - name: main push：rust 全跑，docker 交给 rust-docker.yml
         id: pushrun
         if: github.event_name == 'push'
         run: |
           echo "rust=true" >> "$GITHUB_OUTPUT"
           echo "ios=false" >> "$GITHUB_OUTPUT"
           echo "android=false" >> "$GITHUB_OUTPUT"
+          echo "docker=false" >> "$GITHUB_OUTPUT"
       # MIT
       - uses: dorny/paths-filter@ceb8a2b8f2d89434be7ff52d3de7ec3738c5cc9d # v4.0.3
         id: filter
-        if: github.event_name == 'pull_request'
+        if: github.event_name != 'push'
         with:
+          # 只在这个工作流被 dispatch 时给：按 ref 和 main 比文件；PR 上留空，dorny 自己用 PR 的 base/head。
+          base: ${{ github.event_name == 'workflow_dispatch' && 'main' || '' }}
+          ref: ${{ github.event_name == 'workflow_dispatch' && github.ref_name || '' }}
           # 和 GitHub 自己的 paths 一样按文件判断：命中任意一条正向规则、且不命中任何 ! 排除项才算改到。
           predicate-quantifier: some-with-excludes
           filters: |
@@ -88,6 +96,9 @@ jobs:
               - "crates/wonton-protocol/**"
               - ".github/workflows/ios.yml"
               - ".github/workflows/gate.yml"
+              # 核心产物的键和产物怎么编（cache.yml）：改了就对不上，得真编一遍。
+              - "scripts/core_artifacts/**"
+              - ".github/workflows/cache.yml"
               - "!**/*.md"
               - "!crates/**/tests/**"
               - "!crates/**/benches/**"
@@ -109,14 +120,41 @@ jobs:
               - "rust-toolchain.toml"
               - ".github/workflows/android.yml"
               - ".github/workflows/gate.yml"
+              - "scripts/core_artifacts/**"
+              - ".github/workflows/cache.yml"
+              - "!**/*.md"
+
+            # Docker 集成测试：和 rust-docker.yml 的 push 触发器同一份路径范围，改一处要改另一处。
+            # PR 上由下面的 docker 作业调用、算合并门槛；main 上 rust-docker.yml 自己的 push 跑。
+            # 改了 gate.yml、rust-docker.yml 本身也要重跑一遍：gate 和 docker 的接线改了得真验。
+            docker:
+              - "crates/wonton-client/**"
+              - "crates/wonton-core/**"
+              - "crates/wonton-matrix/**"
+              # 测试和预热读的部署文件（include_str! 和 Dockerfile）；新的 include_str! 指向 deploy/ 时要补。
+              - "deploy/install/**"
+              - "deploy/dev/core/compose.yaml"
+              - "deploy/dev/core/Dockerfile"
+              - "deploy/dev/matrix/**"
+              # 预拉测试镜像的清单。
+              - "scripts/mirror-test-images.sh"
+              - "plugins/**"
+              - "Cargo.toml"
+              - "vendor/**"
+              - "Cargo.lock"
+              - "clippy.toml"
+              - ".config/nextest.toml"
+              - "rust-toolchain.toml"
+              - ".github/workflows/rust-docker.yml"
+              - ".github/workflows/gate.yml"
               - "!**/*.md"
 
   lint:
     name: lint
     uses: ./.github/workflows/lint.yml
 
-  # 重作业的 if 以 !cancelled() 开头：只要这轮没被取消就按开关判断；开关只有 changes 跑了才有值，
-  # 草稿 PR 和 push 上 changes 跳过，这三个跟着跳过。
+  # 重作业的 if 以 !cancelled() 开头：只要这轮没被取消就按开关判断。开关只有 changes 跑了才有值：
+  # 草稿 PR 上 changes 跳过，这些跟着跳过；push 上 pushrun 直接给值。
   rust:
     name: rust
     needs: changes
@@ -135,12 +173,24 @@ jobs:
     if: ${{ !cancelled() && needs.changes.outputs.android == 'true' }}
     uses: ./.github/workflows/android.yml
 
+  # Docker 集成测试。PR 上算合并门槛（changes 的 docker 开关）；main 上不经过这里：
+  # rust-docker.yml 自己的 push 按同一份路径跑，红了按提交标题里的 (#N) 找到弄红的 PR。
+  docker:
+    name: docker
+    needs: changes
+    if: ${{ !cancelled() && needs.changes.outputs.docker == 'true' }}
+    permissions:
+      contents: read
+      # 拉 ghcr 上的测试镜像副本。
+      packages: read
+    uses: ./.github/workflows/rust-docker.yml
+
   # 必需检查只有这一个：任一作业失败或被取消就红，成功和跳过算过。规则集按这个名字配，
   # 草稿 PR 上重作业全被跳过时它也照样起来并报通过。范围判断失败时它的 result 是 failure，汇总跟着红，
   # 不会伪装成没改动。
   summary:
     name: gate 汇总
-    needs: [changes, lint, rust, ios, android]
+    needs: [changes, lint, rust, ios, android, docker]
     if: always()
     runs-on: ubuntu-24.04
     timeout-minutes: 5
@@ -150,7 +200,7 @@ jobs:
       - name: 草稿 PR 不跑重作业
         if: github.event_name == 'pull_request' && github.event.pull_request.draft
         run: |
-          echo "::error::草稿 PR：rust/android/ios 重作业按设计没跑，这份汇总不算数——转 ready 会重跑，以那次为准"
+          echo "::error::草稿 PR：rust/android/ios/docker 重作业按设计没跑，这份汇总不算数——转 ready 会重跑，以那次为准"
           exit 1
       - name: 各作业的结果
         run: |

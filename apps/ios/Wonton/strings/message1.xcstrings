@@ -2,6 +2,66 @@
   "sourceLanguage": "en",
   "version": "1.0",
   "strings": {
+    "message.sendFailure.offline": {
+      "comment": "Send failed because the phone can't reach the server.",
+      "extractionState": "manual",
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Not connected"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "连不上"
+          }
+        },
+        "zh-Hant": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "連不上"
+          }
+        },
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "接続できません"
+          }
+        }
+      }
+    },
+    "message.sendFailure.replyTarget": {
+      "comment": "Send failed because the message being replied to is gone.",
+      "extractionState": "manual",
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "The quoted message is gone"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "要回复的那条不在了"
+          }
+        },
+        "zh-Hant": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "要回覆的那則不在了"
+          }
+        },
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "返信元のメッセージがありません"
+          }
+        }
+      }
+    },
     "message.keyNoticeRecovery": {
       "comment": "One-line hint beside undecryptable history: the account has a key backup.",
       "extractionState": "manual",
@@ -328,36 +388,6 @@
           "stringUnit": {
             "state": "translated",
             "value": "未対応のメッセージ（%@）"
-          }
-        }
-      }
-    },
-    "message.sendFailed": {
-      "comment": "Send state that needs a decision. Argument: the core's reason.",
-      "extractionState": "manual",
-      "localizations": {
-        "en": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "Send failed: %@"
-          }
-        },
-        "zh-Hans": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "发送失败：%@"
-          }
-        },
-        "zh-Hant": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "傳送失敗：%@"
-          }
-        },
-        "ja": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "送信に失敗しました：%@"
           }
         }
       }

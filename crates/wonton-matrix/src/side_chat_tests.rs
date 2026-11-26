@@ -149,3 +149,43 @@ fn activity_skips_status_messages_and_follows_their_edits() {
     assert!(!finished.running);
     assert_eq!(finished.last_reply_ms, Some(20));
 }
+
+/// 解不开的加密事件也带着话题关系：算回复和最后一条，表情回应照旧不算。
+#[test]
+fn encrypted_thread_events_count_before_the_key_arrives() {
+    let own: OwnedUserId = "@owner:s".parse().unwrap();
+    let encrypted = |id: &str, sender: &str, ts: u64, rel: Value| {
+        RawEvent::parse(
+            &json!({
+                "type": "m.room.encrypted",
+                "event_id": id,
+                "sender": sender,
+                "origin_server_ts": ts,
+                "content": {"algorithm": "m.megolm.v1.aes-sha2", "ciphertext": "x", "m.relates_to": rel},
+            })
+            .to_string(),
+        )
+        .expect("加密事件读得懂")
+    };
+    let events = vec![
+        encrypted(
+            "$r",
+            "@bot:s",
+            10,
+            json!({"rel_type": "m.thread", "event_id": "$root"}),
+        ),
+        encrypted(
+            "$like",
+            "@owner:s",
+            20,
+            json!({"rel_type": "m.annotation", "event_id": "$r", "key": "👍"}),
+        ),
+    ];
+    let activity = activity_of(&events, &own);
+    assert_eq!(activity.replies, 1);
+    assert_eq!(activity.last_reply_ms, Some(10));
+    assert_eq!(
+        events[0].thread_root(),
+        Some("$root".parse::<OwnedEventId>().unwrap())
+    );
+}

@@ -12,7 +12,7 @@ SwiftUI 原生壳，外加通知扩展（解密推送）和小组件扩展（ADR
   跟手、翻页的小圆点，页面按全页大小放着不缩放，面板里的 WKWebView 和底栏的各一份；`PanelEditor` 增删面板里的页面。`PairingView` 是扫码配对页，
   `QRScannerView` 用 VisionKit 的 `DataScannerViewController` 识别二维码，`QRCameraArea` 按相机权限包着它，配对、服务器互加和加好友的扫码页共用；加好友扫到或粘贴的原文原样交给核心的 `AddFriend`，“我的二维码”画核心给的 `my_link`；`InviteView` 是“添加设备”，用 Core Image
   把核心要来的配对码画成二维码。`HomeView` 是侧边栏进入的“应用”页，商店入口独立放在已装插件网格上方，有更新时显示数量；连接和“添加设备”在设置的“家里的服务器”里。`StoreView`、
-  `PluginDetailView`、`InstallConfirmView` 是商店、详情和安装确认页（ADR-0017）。`SettingsModel` 订阅核心的设置首页，`SettingsView` 按核心的分组渲染，外观、通知和关于在二级页（ADR-0028）；`NotificationSettingsView` 只提供系统通知设置入口并说明这个版本收不到推送，不放无效的类别开关。`EgressSettingsView` 是“家里的服务器”里的出网代理设置，也放着插件网页局域网端口的开关（ADR-0023）。`CoreUpgradeView` 是“家里的服务器”里的升级服务器（ADR-0025）。
+  `PluginDetailView`、`InstallConfirmView` 是商店、详情和安装确认页（ADR-0017）。`SettingsModel` 订阅核心的设置首页，`SettingsView` 按核心的分组渲染，外观、通知和关于在二级页（ADR-0028）；`NotificationSettingsView` 提供系统通知设置入口，并按核心的状态和原因显示推送登记结果，不放无效的类别开关。`EgressSettingsView` 是“家里的服务器”里的出网代理设置，也放着插件网页局域网端口的开关（ADR-0023）。`CoreUpgradeView` 是“家里的服务器”里的升级服务器（ADR-0025）。
   “家里的服务器”顶部始终显示服务器列表和“添加服务器”，当前这台带勾，点另一台切换。长按可改名或移除；移除前确认只删手机上的聊天记录和文件，不影响服务器。添加时配对页左上角可取消，首次配对不显示取消（ADR-0042）。
   默认名由壳按核心给的固定编号和 App 语言显示，自定义名字原样显示；改名预填显示名，只在主人保存时写回（ADR-0043）。
   配对页和服务器列表的“添加服务器”下面是“用 Matrix 账号登录”（`MatrixLoginView`，ADR-0051），没有服务器的人从配对页进：按核心发现的方式给浏览器登录或密码表单，浏览器登录用
@@ -25,6 +25,7 @@ SwiftUI 原生壳，外加通知扩展（解密推送）和小组件扩展（ADR
   控制按钮的 OpenIntent 同时编进 App 和扩展（App 侧 `WONTON_APP` 编译条件），由 App 进程执行。`Wonton/SystemEntryModel`
   在 App 进程里订阅核心的快照：每写一份刷新 WidgetKit 时间线，并把系统搜索条目同步进 Core Spotlight——只放名字，
   不放消息和未读数（ADR-0100 决策 4）。
+- `WontonPushExtension/`：通知服务扩展（ADR-0003）。只在本机按 RFC 8291 解开推送、填发送者和会话，不跑完整核心；解不开也发一条通用通知。密钥存在和 App 共用的 App Group 钥匙串里，点开后的取消息由 App 做。
 - `WontonClient/`：Rust 核心的 Swift 包。`build/WontonClientFFI.xcframework` 和
   `Sources/WontonClient/Generated/` 由脚本生成，不提交；手写的只有把订阅包装成 `AsyncStream`
   等几行胶水代码。Rust 静态库依赖的系统框架由包声明，App 和测试目标不各自补链接选项。
@@ -35,7 +36,8 @@ SwiftUI 原生壳，外加通知扩展（解密推送）和小组件扩展（ADR
   房间窗口保留完整聊天操作，插件窗口关闭胶囊只清空本窗口页面；系统关窗才销毁窗口。
   所有窗口共用一个核心、连接和房间草稿，时间线订阅与 WebView 各自独立；切换服务器后，旧服务器窗口提示切回，
   不把旧目标交给新服务器。系统重复打开的完整主窗口仍共享页面栈，链接和快捷指令只路由到主窗口。
-- `scripts/build-core.sh`：编译 Rust 核心、生成 XCFramework 和 Swift 绑定。
+- `scripts/build-core.sh`：编译 Rust 核心、生成 XCFramework 和 Swift 绑定。`WONTON_CORE_PREBUILT=1` 时不编核心，
+  只补许可清单和版本号，用现成的产物（CI 按内容哈希取回 main 上编好的那份，见 `.github/workflows/README.md`）。
 
 插件的可选权限在安装预览中本地选择，升级沿用核心预览的开关；提交包含最高风险或未知风险权限时另行确认主机控制权。
 详情开关只显示服务器返回的状态，打开最高风险或未知风险需两步确认，关闭需一次确认；失败可重试原目标。
@@ -122,10 +124,13 @@ xcodegen generate --spec apps/ios/project.yml
 xcodebuild -project apps/ios/Wonton.xcodeproj -scheme Wonton -destination "id=<设备 UDID>" -allowProvisioningUpdates DEVELOPMENT_TEAM=<团队 ID> WONTON_BUNDLE_ID=<自己的 bundle ID> build
 ```
 
-`WONTON_BUNDLE_ID` 一个设置管四个标识：App 是它本身，分享扩展是 `<它>.share`，小组件扩展是 `<它>.widget`，App Group 是
-`group.<它>`，自动签名（`-allowProvisioningUpdates`）时 Xcode 自己注册，免费的个人团队也行。不要直接改
+`WONTON_BUNDLE_ID` 一个设置管五个标识：App 是它本身，分享扩展是 `<它>.share`，小组件扩展是 `<它>.widget`，推送扩展是 `<它>.push`，App Group 是
+`group.<它>`，自动签名（`-allowProvisioningUpdates`）时 Xcode 自己注册，免费的个人团队也能装，但推送能力要付费的开发者账号。不要直接改
 `PRODUCT_BUNDLE_IDENTIFIER`：
 那会把扩展的也改成同一个，签不过。换了 bundle ID 就是换了 App Group，数据目录跟着换，要重新配对。
+
+推送要一个中继地址（ADR-0003）：`WontonPushRelay` 默认为空，设置页会如实显示推送还没开通；验证推送时给 `xcodebuild` 加
+`WONTON_PUSH_RELAY=<中继地址>`（`INFOPLIST_KEY_WontonPushRelay` 盖不掉 Info.plist 文件里已有的同名键，实测）。
 
 用 `xcrun devicectl device install app --device <设备 UDID> <Wonton.app 路径>` 安装。第一次装要在手机的
 “设置 → 通用 → VPN 与设备管理”里信任开发者证书；第一次打开配对页时系统请求相机权限，第一次连家里的服务器时请求
@@ -156,6 +161,15 @@ SIMCTL_CHILD_WONTON_DEV_PAIRING_CODE="$(deploy/dev/core/dev.sh pair | tail -n 1)
 [回声 Bot 示例插件](../../plugins/examples/echo-bot/README.md)。
 
 图片上传进度未知不等于 0%：已知比例时显示线性条，未知时显示转圈。
+
+## 首次打开走查
+
+`WontonUITests/FirstRunWalkthroughUITests` 走一遍新用户路径（配对页输入码、交接和备份层、引导、列表、和 Hermes 的第一句、
+长按菜单、`/`、侧栏），浅色和深色各一例，每步留截图。两例都是新设备（每例换数据目录），**每例要一个码**，一例只给它一个码时
+那一例会 `XCTSkip`；没有一个码时整类跳过。
+
+用 `mini-walkthrough.sh up <名字> <检出> --host 194` 起栈和模拟器，`build` 一次，再 `test <名字> FirstRunWalkthroughUITests`
+（它的 `test` 会按用例数现取码）。已知软失败在 `knownIssues` 里放行，新问题照红。
 
 ## 检查
 
@@ -205,6 +219,39 @@ apps/ios/scripts/ui-test.sh <模拟器 UDID> test \
 测试启动时经 `passPairingCode` 设置 `WONTON_UI_TEST_STATE=1`；自行启动的调用方也要设置。Debug 只读 AX 标识
 只暴露登录、同步和交接类别，不含密钥、不改核心状态；真正验证 SAS 交接的 `KeyHandoffUITests` 不调用跳过前置。
 
+`KeyHandoffUITests`（加设备时交接密钥，ADR-0087）和 `SasResetUITests`（没有可信设备时用恢复密钥或重置，ADR-0076）
+要一台在跑“添加设备”的旧设备和准备好的账号状态。旧设备按 [`deploy/dev/core/README.md`](../../deploy/dev/core/README.md)
+的“交接聊天密钥”一节用 `key-handoff-old-device` 示例扮演：
+
+- 示例的 `KEY_HANDOFF_HISTORY_TEXT` 必须和传给用例的 `HISTORY_TEXT` 是同一串：不设时示例自己按时间戳生成，
+  两边必然对不上，明文断言也就作废。用例没拿到 `HISTORY_TEXT` 会打印一行。恢复和重置两条的 `RECOVERY_KEY`
+  取示例写在码文件旁的 `.recovery`。
+- 码从哪来：示例把给新设备的邀请码写进你传给它的码文件（示例页开着时会自动接第一个确认请求），也可以现取
+  `dev.sh pair <地址>` 的码。一条用例一个码；`PAIRING_CODE` 给逗号分隔的一串，只有前一个已用/过期、用例退回
+  失败面时才用下一个，跑整个类时给够条数。
+- 两条恢复路径跑前先把设备删掉：`dev.sh devices` 看设备 ID，逐个 `dev.sh revoke <ID>`（含示例那台）；
+  重置那条用上一台已删、手里的密钥已作废的状态。栈在别的机器上时这两个命令要在那套栈上跑
+  （`ssh <机>-stack dev <栈名> devices` / `revoke <ID>`），在调用机直接跑会打到本机 Docker。
+- 交接那条要比较两端表情：示例打出 `表情：` 那行后，把后面的 7 个符号（一个空格分隔，用例按空格拆）写进 App 容器的
+  `Documents/sas-emoji.txt`。用例只等 120 秒，得用命令写；在 mini 上跑时这三条经 `ssh mini-ios light <名字> -- …` 执行：
+
+```bash
+symbols=$(grep '^表情：' <示例日志> | tail -n 1 | sed 's/^表情：//')
+appdir=$(xcrun simctl get_app_container <UDID> app.wonton.ios data)
+printf '%s' "$symbols" > "$appdir/Documents/sas-emoji.txt"
+```
+
+粘贴板要过 iOS 的粘贴许可，读不到。用例从屏幕一次取 7 个符号按纵坐标排，和文件按序比对。
+
+```bash
+TEST_RUNNER_KEY_HANDOFF=1 TEST_RUNNER_HISTORY_TEXT='<历史>' PAIRING_CODE='<码>,<码>' \
+  apps/ios/scripts/ui-test.sh <UDID> test -only-testing:WontonUITests/KeyHandoffUITests
+TEST_RUNNER_RECOVERY_KEY='<恢复密钥>' TEST_RUNNER_HISTORY_TEXT='<历史>' PAIRING_CODE='<码>,<码>' \
+  apps/ios/scripts/ui-test.sh <UDID> test -only-testing:WontonUITests/SasResetUITests
+```
+
+断言依赖的截图是 `handoff-compare`、`history-undecryptable`、`history-decrypted`、`new-key`，留在 xcresult 里。
+
 ```bash
 PAIRING_CODE="$(deploy/dev/core/dev.sh pair <地址> | tail -n 1)" apps/ios/scripts/ui-test.sh <模拟器 UDID> test \
   -only-testing:WontonUITests/BotProfileUITests
@@ -215,7 +262,9 @@ PAIRING_CODE="$(deploy/dev/core/dev.sh pair <地址> | tail -n 1)" apps/ios/scri
 用例实际请求回环端口，检查开页、进后台、回前台和关页的可达性，并附上详情页截图；不把状态文案当作网络验证。
 
 界面截图回归在 `WontonTests/SnapshotTests`：真实界面配固定假数据（同目录的 `SnapshotFixtures`，Debug 专用），逐像素比较
-`WontonTests/__Snapshots__/` 下的参考图。参考图绑定模拟器型号和系统版本，语言、地区和时区由 scheme 钉住；怎么重录、
-失败产物在哪见 [`.github/workflows/README.md`](../../.github/workflows/README.md)。新增截图先挑有代表性的界面，不逐页全录。
+`WontonTests/__Snapshots__/` 下的参考图。参考图绑定模拟器型号标识（`SIMULATOR_MODEL_IDENTIFIER`）和系统版本，
+语言、地区和时区由 scheme 钉住。工作流用 `TEST_RUNNER_SNAPSHOT_MODEL`、`TEST_RUNNER_SNAPSHOT_OS` 把参考型号和
+版本交给测试：对的照常比，不对在 CI 上失败。本机没有这两个变量时整类跳过，跳过原因里写着参考图录在哪、当前是什么。
+怎么重录、失败产物在哪见 [`.github/workflows/README.md`](../../.github/workflows/README.md)。新增截图先挑有代表性的界面，不逐页全录。
 
 Bundle ID `app.wonton.ios` 是临时的，上架前确定正式的。

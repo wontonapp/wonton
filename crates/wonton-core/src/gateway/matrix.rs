@@ -2,9 +2,10 @@
 //!
 //! | 方法 | 地址 | 说明 |
 //! | --- | --- | --- |
-//! | POST | `<base>/_wonton/matrix/login-token` | 签一个 Tuwunel 登录用的一次性 JWT，连同 homeserver 地址；发令牌前写好新账号默认的邀请过滤（[`crate::matrix::invite_filter`]） |
+//! | POST | `<base>/_wonton/matrix/login-token` | 签一个 Tuwunel 登录用的一次性 JWT，连同 homeserver 地址；发令牌前按“加好友”权限项写好账号的邀请过滤（[`crate::matrix::invite_filter`]） |
 //! | 任意 | `matrix.<base>/_matrix/client/…`、`/_matrix/media/…` | Matrix 客户端接口，转发给 Tuwunel |
 //! | 任意 | `matrix.<base>/_wonton/matrix-rtc/…` | MatrixRTC 授权服务，转给 `matrix_rtc` 的提供方（[`super::matrix_rtc`]） |
+//! | 任意 | `matrix.<base>/_matrix/client/…`（Bot 令牌） | 插件 Bot 的 Matrix 请求，按 Bot 身份转发：核心还在恢复插件、或问不到 Tuwunel 时回带 `Retry-After` 的可重试 503，确实认不出令牌才回 403 |
 //!
 //! 登录令牌能换出主人的 Matrix 账号，所以接口只认隧道身份（局域网浏览器的核心会话不行），用 `POST` 让核心
 //! 域名上的跨站修改拦截对它生效，也不发 CORS 头，插件网页读不到响应。核心没有接 Tuwunel 时两个入口都如实报
@@ -20,6 +21,7 @@ use hyper::{Method, StatusCode};
 use serde::{Deserialize, Serialize};
 use serde_json::json;
 
+use super::Identity;
 use super::api::error_response;
 use super::chain_mentions;
 use super::send_limits::hop_card;
@@ -67,13 +69,15 @@ pub async fn login_token(
             UNAVAILABLE,
         );
     };
+    let add_friends = gateway.permissions(&person).add_friends;
     let localpart = person.username;
-    // 账号第一次登录时 Tuwunel 才建号，默认的邀请过滤也只能这时候写；写不进去就不发令牌，别让人带着没有过滤的账号上线。
-    if let Err(error) = matrix.ensure_default_invite_filter(&localpart).await {
+    // 账号第一次登录时 Tuwunel 才建号，过滤也只能这时候写；写不进去就不发令牌，别让人带着没过滤的账号上线。
+    // 内容按“加好友”这一项：要管理员批或不能的，家外的邀请在这里就挡住（ADR-0088 第 9 节）。
+    if let Err(error) = matrix.ensure_invite_filter(&localpart, add_friends).await {
         return error_response(
             StatusCode::SERVICE_UNAVAILABLE,
             KIND_UNAVAILABLE,
-            &format!("写默认的邀请过滤失败：{error}"),
+            &format!("写邀请过滤失败：{error}"),
         );
     }
     Json(LoginToken {
@@ -89,7 +93,7 @@ pub async fn login_token(
 
 /// `matrix.<base>`：只有已配对设备、只有客户端接口。错误按 Matrix 的格式给出，客户端的 SDK 能照常处理；
 /// 不在这里用 `401`，免得 SDK 当成自己的访问令牌失效。
-pub async fn client_request(gateway: &Gateway, req: Request) -> Response {
+pub async fn client_request(gateway: Arc<Gateway>, req: Request) -> Response {
     if gateway
         .device_user(req.extensions().get().copied())
         .is_none()
@@ -102,8 +106,33 @@ pub async fn client_request(gateway: &Gateway, req: Request) -> Response {
         );
     }
     if super::matrix_rtc::is_prefixed(req.uri().path()) {
-        return super::matrix_rtc::request(gateway, req).await;
+        return super::matrix_rtc::request(&gateway, req).await;
     }
+    // 出站的邀请先过“加好友”这一项（ADR-0088）：AskAdmin 在这里挂住，等卡片答完再继续；
+    // 后台任务要持有网关，所以进来的是 Arc。
+    match super::friend_gate::check(&gateway, req).await {
+        super::friend_gate::Outcome::Pass(req) => {
+            // 受限成员的设备不许改邀请过滤的账号数据，核心写的名单才守得住（ADR-0088 第 9 节）。
+            let req = match super::invite_filter_guard::check(&gateway, req) {
+                Ok(req) => req,
+                Err(refused) => return *refused,
+            };
+            deliver_client_request(&gateway, req).await
+        }
+        super::friend_gate::Outcome::Stop(response) => response,
+        super::friend_gate::Outcome::Hold(waited) => waited.await.unwrap_or_else(|_| {
+            matrix_error(
+                StatusCode::SERVICE_UNAVAILABLE,
+                "M_UNKNOWN",
+                "confirmation_unavailable",
+                "等管理员回答的连接断了",
+            )
+        }),
+    }
+}
+
+/// 门槛之后的共同下游：房间规则、说话计数、每人的邀请和消息频率，然后转发给 Tuwunel。
+pub(super) async fn deliver_client_request(gateway: &Gateway, req: Request) -> Response {
     let req = match room_rules::check(req).await {
         Ok(req) => req,
         Err(refused) => return *refused,
@@ -140,6 +169,16 @@ pub async fn bot_request(gateway: &Gateway, req: Request) -> Response {
             );
         }
         None => {
+            // 恢复时来源还没登记（每个插件是轮到它恢复才登记），排在后面的 Bot 的请求会先落在这里：
+            // 这时候一样是可重试的，答 403 上游就停了同步。
+            if gateway.plugins.restoring() {
+                return super::api::retry_later(matrix_error(
+                    StatusCode::SERVICE_UNAVAILABLE,
+                    "M_UNKNOWN",
+                    "restoring",
+                    "核心正在恢复插件，稍后重试",
+                ));
+            }
             return matrix_error(
                 StatusCode::FORBIDDEN,
                 "M_FORBIDDEN",
@@ -153,39 +192,18 @@ pub async fn bot_request(gateway: &Gateway, req: Request) -> Response {
     if req.method() == Method::GET && req.uri().path() == "/_matrix/client/versions" {
         return forward_client_api(gateway, req).await;
     }
-    // 令牌认 Bot：令牌是谁，必须且只是这个插件记录在案的 Bot。
-    let token = req
-        .headers()
-        .get(hyper::header::AUTHORIZATION)
-        .and_then(|v| v.to_str().ok())
-        .and_then(|v| v.strip_prefix("Bearer "));
-    let Some(token) = token else {
-        return matrix_error(
-            StatusCode::FORBIDDEN,
-            "M_FORBIDDEN",
-            "unauthenticated",
-            "Bot 的请求要带它的 Matrix 访问令牌",
-        );
-    };
-    match gateway.bot_user_of_token(token).await {
-        Some(user) if gateway.plugins.is_bot_user(&source.id, &user) => {}
-        Some(user) => {
-            tracing::warn!(plugin = %source.id, bot = %user, "插件拿别的 Bot 的令牌转发请求");
-            return matrix_error(
-                StatusCode::FORBIDDEN,
-                "M_FORBIDDEN",
-                "unauthenticated",
-                "这个令牌不是这个插件自己的 Bot 的",
-            );
-        }
-        None => {
-            return matrix_error(
-                StatusCode::FORBIDDEN,
-                "M_FORBIDDEN",
-                "unauthenticated",
-                "认不出这个访问令牌是谁",
-            );
-        }
+    // 核心刚起来、插件还在恢复：来源要等恢复才登记，Tuwunel 也可能还没就绪。这时的令牌本身没错，
+    // 答 503 让适配器重试（`bot_user_of_token` 只会给 403，上游把她当永久错误停掉同步）。
+    if gateway.plugins.restoring() {
+        return super::api::retry_later(matrix_error(
+            StatusCode::SERVICE_UNAVAILABLE,
+            "M_UNKNOWN",
+            "restoring",
+            "核心正在恢复插件，稍后重试",
+        ));
+    }
+    if let Err(refused) = check_bot_token(gateway, &source, req.headers()).await {
+        return *refused;
     }
     // Bot 只能注册指向推送代理的 pusher，见 `pushers`。
     let req = if pushers::is_pushers_set(req.method(), req.uri().path()) {
@@ -217,11 +235,68 @@ pub async fn bot_request(gateway: &Gateway, req: Request) -> Response {
     let pending = sent
         .as_ref()
         .and_then(|sent| chain_mentions::prepare(gateway, sent));
+    let is_sync = is_sync_request(req.method(), req.uri().path());
     let response = forward_client_api(gateway, req).await;
+    // 同步是 Bot 还能收到消息的唯一证据：记下来，插件健康时才不会被上游写死的 connected 骗过去
+    // （见 [`crate::plugin::PluginManager::stalled_bot_sync`]）。
+    if is_sync && response.status().is_success() {
+        gateway.plugins.note_bot_sync(&source.id);
+    }
     match pending {
         Some(pending) => chain_mentions::after_send(gateway, pending, response).await,
         None => response,
     }
+}
+
+/// 令牌是谁，必须且只是这个插件记录在案的 Bot。真认不出（whoami 401/403）与问不到（Tuwunel 没连上、5xx）
+/// 分开答：只有前者是永久错误。
+async fn check_bot_token(
+    gateway: &Gateway,
+    source: &super::super::plugin::sources::Source,
+    headers: &hyper::HeaderMap,
+) -> Result<(), Box<Response>> {
+    let token = headers
+        .get(hyper::header::AUTHORIZATION)
+        .and_then(|v| v.to_str().ok())
+        .and_then(|v| v.strip_prefix("Bearer "));
+    let Some(token) = token else {
+        return Err(Box::new(matrix_error(
+            StatusCode::FORBIDDEN,
+            "M_FORBIDDEN",
+            "unauthenticated",
+            "Bot 的请求要带它的 Matrix 访问令牌",
+        )));
+    };
+    match gateway.bot_identity(token).await {
+        Identity::Bot(user) if gateway.plugins.is_bot_user(&source.id, &user) => Ok(()),
+        Identity::Bot(user) => {
+            tracing::warn!(plugin = %source.id, bot = %user, "插件拿别的 Bot 的令牌转发请求");
+            Err(Box::new(matrix_error(
+                StatusCode::FORBIDDEN,
+                "M_FORBIDDEN",
+                "unauthenticated",
+                "这个令牌不是这个插件自己的 Bot 的",
+            )))
+        }
+        Identity::Unknown => Err(Box::new(matrix_error(
+            StatusCode::FORBIDDEN,
+            "M_FORBIDDEN",
+            "unauthenticated",
+            "认不出这个访问令牌是谁",
+        ))),
+        // 问不到不等于令牌失效：Tuwunel 一起在重启、网络没通都会到这里。
+        Identity::Unavailable => Err(Box::new(super::api::retry_later(matrix_error(
+            StatusCode::SERVICE_UNAVAILABLE,
+            "M_UNKNOWN",
+            "unavailable",
+            "问不到 Tuwunel 这个令牌是谁，稍后重试",
+        )))),
+    }
+}
+
+/// 长轮询同步：上游的 `sync` 循环（`/_matrix/client/v3/sync?since=…&timeout=30000`）。
+fn is_sync_request(method: &Method, path: &str) -> bool {
+    *method == Method::GET && path.ends_with("/sync")
 }
 
 /// 只转发客户端接口，先挡住可能被上游读成别的路径的写法。
@@ -254,6 +329,7 @@ async fn forward_client_api(gateway: &Gateway, req: Request) -> Response {
         );
     };
     let fwd = proxy::Forwarded {
+        web_user: None,
         client: client_addr(&req),
         scheme: &gateway.public.scheme,
     };

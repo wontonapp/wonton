@@ -25,6 +25,14 @@ struct AgentPluginStatusBanner: View {
             }
         }
         .padding(.horizontal, WontonTheme.spacing.pageInset)
+        // 走查用：一张透明的元素铺在横幅上，`Group` 自己不是无障碍元素，光挂标识查不到；铺开的还能给出横幅的位置。
+        // 它不吃触摸：横幅里的“详情”、启动钮要照常点得到。只在 Debug 包里挂。
+        #if DEBUG
+        .overlay {
+            Color.clear.accessibilityElement().accessibilityIdentifier("pluginStatusBanner")
+                .allowsHitTesting(false)
+        }
+        #endif
     }
 
     @ViewBuilder private var status: some View {

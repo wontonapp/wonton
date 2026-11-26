@@ -120,13 +120,22 @@ plugin-settings-egress-disconnected = The proxy at { $address } closed the conne
 plugin-settings-egress-not-http = The proxy at { $address } didn't answer with HTTP
 plugin-settings-egress-auth-407 = The proxy at { $address } answered 407: it needs a username and password, or they're wrong
 plugin-settings-egress-status = The proxy at { $address } answered { $code }
-plugin-settings-egress-relay-not-running = The proxy container isn't running
+plugin-settings-egress-relay-starting = The egress container { $container } hasn't joined the egress network yet. It is still starting; installs go through once it is connected
+plugin-settings-egress-relay-restarting = The server's egress container isn't running. It is started again; if that keeps failing, look at the install page
+plugin-settings-egress-relay-image = The egress container image could not be pulled: { $error }. Check the registry address and tag, then try again
+plugin-settings-egress-relay-slow = The server's egress container has not come up yet: Docker did not answer in time ({ $error }). It may still be pulling the image; it keeps trying
 plugin-settings-egress-relay-detail = The proxy is reachable directly but not through the proxy container: { $detail }. Check the logs of container { $container }
 plugin-settings-egress-diagnose-exit = The diagnose container exited with code { $code }: { $reason }
 plugin-settings-egress-provider-missing = No app that can act as the Internet proxy is installed
 plugin-settings-egress-provider-manifest = Can't read the declaration of proxy app { $id }
 plugin-settings-egress-provider-conflict = Proxy app { $id } is already installed: there can only be one at a time
-plugin-settings-egress-provider-not-running = The proxy app isn't running: { $detail }
+plugin-settings-egress-provider-installing = The proxy app { $title } is still being installed. Apps that need the internet work once it is up; nothing to do for now
+plugin-settings-egress-provider-upgrading = The proxy app { $title } is being upgraded. Apps that need the internet work again once it is back; nothing to do for now
+plugin-settings-egress-provider-uninstalling = The proxy app { $title } is being uninstalled
+plugin-settings-egress-provider-starting = The proxy app { $title } is running and still starting (container { $container }). Nothing to do for now
+plugin-settings-egress-provider-unhealthy = The proxy app { $title } is running but fails its health check (container { $container }). Look at its logs on the install page
+plugin-settings-egress-provider-stopped = The proxy app { $title } cannot serve: its container { $container } is in state { $status }, exit code { $code }. Look at its logs on the install page, then check its configuration
+plugin-settings-egress-provider-no-container = The proxy app { $title } has no container { $container } any more. Start it again on the install page
 plugin-settings-egress-relay-cidr-overlap = Bypass range { $cidr } overlaps the Docker network the proxy container is on, so it wasn't allowed: allowing it would let it reach other apps directly
 plugin-settings-egress-token-unreadable = Service { $service } put the Matrix token in command or configs, so it can't be read back
 plugin-settings-egress-token-reinstall = Reinstalling the app (keeping its data) issues a new device, and the bot has to rebuild its encrypted identity
@@ -169,7 +178,6 @@ plugin-settings-store-source-plugin-missing = Index { $provider } has no { $id }
 plugin-settings-store-community-partial = Some couldn't be read: { $missing }
 plugin-settings-store-community-page-failed = Page { $page } of the search results ({ $error })
 plugin-settings-store-community-unavailable = Can't fetch community apps: { $error }
-plugin-settings-store-system-app = System apps only come preinstalled with the home server
 plugin-settings-store-permission-unsupported = The home server doesn't support the { $permission } permission yet
 plugin-settings-store-index-newer = The index format is { $format }; this version of the home server only understands { $supported }. Update the home server to use the new index
 plugin-settings-store-index-invalid = Can't read the index: { $error }
@@ -301,11 +309,15 @@ plugin-settings-store-index-fetch-failed = The official index could not be fetch
 
 # ── Health checks (health.rs) ──────────────────────────────────────────────
 
-plugin-settings-health-timeout = The container { $container } did not become ready within the deadline (last state: { $state })
-plugin-settings-health-unhealthy = The container { $container } failed its health check
+plugin-settings-health-container = container { $container }
+plugin-settings-health-state = last state of { $container }: { $state }
+plugin-settings-health-timeout = { $waiting } waited { $waited } s of { $budget } s and { $pending } never became ready ({ $states })
+plugin-settings-health-timeout-next = Next step: for a service that declares a health check the deadline already stretches past its start period and retry window (without one it is the install deadline itself), so retrying once the host has calmed down usually works. A service answering 5xx all along may be up but failing on its own; see the probes and logs below.
+plugin-settings-health-target = the service
+plugin-settings-health-list-separator = { ", " }
 plugin-settings-health-exited = The container { $container } has exited (exit code { $code })
 plugin-settings-health-no-healthcheck = The container { $container } is required to be service_healthy but has no health check configured
-plugin-settings-health-webui-timeout = The web entry { $url } did not respond within the deadline: { $last_error }
+plugin-settings-health-webui-state = { $method } last answered: { $error }
 plugin-settings-health-log-tail = Recent logs:
 plugin-settings-health-probes = Recent probes:
 plugin-settings-health-probe-line = [exit code { $code }] { $output }
@@ -330,6 +342,7 @@ plugin-settings-bot-device-name = Wonton app { $id } (bot { $bot })
 plugin-settings-bot-account-deactivated = The bot account { $user } has been deactivated: uninstall this app choosing to delete its data and reinstall, and a new account will be assigned
 plugin-settings-bot-device-record-missing = There is no device record for bot { $bot }: reinstall the app (you can keep its data)
 plugin-settings-bot-device-revoked = The bot { $user }'s device has been revoked, so the Matrix token the app holds no longer works: reinstall it (you can keep its data) to get a new one
+plugin-settings-bot-sync-stalled = The bot has not received messages through the core for { $seconds } seconds: it can still be running and healthy while nothing arrives. Restart the app; if that does not help, reinstall it (you can keep its data)
 
 # ── LAN detection, the egress container and the store index (lan/detect.rs, docker_limits.rs, egress, storefront) ──
 

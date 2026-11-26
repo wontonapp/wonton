@@ -4,6 +4,7 @@
 mod adopt;
 mod dependencies;
 mod offers;
+mod record;
 mod run;
 
 use std::sync::Arc;
@@ -323,13 +324,13 @@ impl PluginManager {
         }
     }
 
-    /// 能升级的插件的记录。系统插件随核心升级，接口升不了。
+    /// 能升级的插件的记录。随核心带的系统插件随核心升级，接口升不了；来源和商店装的照常升。
     fn upgradable_record(
         &self,
         id: &PluginId,
         langs: &Languages,
     ) -> Result<InstalledRecord, InstallError> {
-        if self.is_system(id) {
+        if self.is_bundled_system(id) {
             return Err(InstallError::Unsupported(crate::l10n::text(
                 langs,
                 "plugin-settings-upgrade-system-app",

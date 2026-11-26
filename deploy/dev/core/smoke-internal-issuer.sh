@@ -22,11 +22,14 @@ set -euo pipefail
 here="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 repo="$(cd "$here/../../.." && pwd)"
 dev="$here/dev.sh"
+# shellcheck source=deploy/dev/core/dev-guard.sh
+source "$here/dev-guard.sh"
 plugins_dir="${PLUGINS:-$(cd "$repo/.." && pwd)/plat-727-plugins}"
 
 export WONTON_DEV_INSTANCE=p727issuer
 # 核心容器名就是项目名。插件仓库的探针按 `wonton-<实例名>--core` 找核心，项目名取成同一个。
 export WONTON_DEV_PROJECT="wonton-$WONTON_DEV_INSTANCE--core"
+dev_guard_check "$WONTON_DEV_PROJECT"
 export WONTON_DEV_PORT="${WONTON_DEV_PORT:-18491}"
 export WONTON_DEV_TUNNEL_PORT="${WONTON_DEV_TUNNEL_PORT:-18493}"
 export WONTON_DEV_DOMAIN=wonton.localhost

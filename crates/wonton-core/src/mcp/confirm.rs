@@ -305,6 +305,15 @@ impl Confirmations {
         audience: Audience,
     ) -> Result<Ticket, Refusal> {
         let (card, answered) = self.open_audience(caller, draft, audience)?;
+        self.wait(card, answered).await
+    }
+
+    /// 等一张已经开出来的卡片的回答，把回答变成 [`Ticket`]。给要先绑链、再等回答的调用方用。
+    pub(super) async fn wait(
+        &self,
+        card: ConfirmationCard,
+        answered: oneshot::Receiver<Chosen>,
+    ) -> Result<Ticket, Refusal> {
         let chosen = self.deliver(&card, answered).await?;
         match chosen.answer {
             answer @ (Answer::Approve | Answer::ApproveWider | Answer::AllowWindow) => {

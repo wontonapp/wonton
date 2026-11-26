@@ -57,15 +57,15 @@ fn validate(snapshot: &Snapshot) -> Result<(), String> {
         match &grant.recipient {
             ShareRecipient::Friend { user_id } => {
                 ruma_common::UserId::parse(user_id).map_err(|e| e.to_string())?;
-                if !stored.direct_generation.is_some_and(|generation| {
-                    generation > 0 && generation <= stored.friend_revision
-                }) {
+                if !stored
+                    .direct_generation
+                    .is_some_and(|generation| generation > 0)
+                {
                     return Err("invalid direct friendship generation".into());
                 }
             }
-            ShareRecipient::Group { group_id }
-                if !group_id.is_empty() && stored.direct_generation.is_none() => {}
-            _ => return Err("invalid grant recipient/binding".into()),
+            // 更新核心不认识的收件方（旧版组授权落成 `Other`）：留在文件里，当作不生效的授权，不挡启动。
+            ShareRecipient::Other => {}
         }
     }
     if snapshot.revocations.len() > MAX_REVOCATIONS {

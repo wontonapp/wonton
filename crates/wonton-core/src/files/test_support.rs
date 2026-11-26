@@ -39,6 +39,10 @@ pub struct FakeHost {
     /// 房间到 Bot。
     pub rooms: Mutex<BTreeMap<String, Vec<String>>>,
     /// 发给主人的消息。
+    /// 房间到当前成员（用户名）。
+    pub members: Mutex<BTreeMap<String, Vec<String>>>,
+    /// 为真时查房间成员失败。
+    pub members_unknown: std::sync::atomic::AtomicBool,
     pub notices: Mutex<Vec<String>>,
     /// 发不出去。
     pub notices_broken: std::sync::atomic::AtomicBool,
@@ -217,6 +221,36 @@ impl FileHost for FakeHost {
         Ok(rooms.get(room).cloned().unwrap_or_default())
     }
 
+    fn member_of_any_room<'a>(
+        &'a self,
+        who: &'a Accessor,
+        rooms: &'a std::collections::BTreeSet<String>,
+    ) -> BoxFuture<'a, Result<bool, Failure>> {
+        async move {
+            let username = match who {
+                Accessor::Owner => "owner",
+                Accessor::User(name) => name.as_str(),
+                Accessor::Bot(_) => return Ok(false),
+            };
+            if self
+                .members_unknown
+                .load(std::sync::atomic::Ordering::SeqCst)
+            {
+                return Err(Failure::new(
+                    FileFailure::ServiceUnavailable,
+                    "查不到房间成员",
+                ));
+            }
+            let members = self.members.lock().unwrap();
+            Ok(rooms.iter().any(|room| {
+                members
+                    .get(room)
+                    .is_some_and(|people| people.iter().any(|name| name == username))
+            }))
+        }
+        .boxed()
+    }
+
     fn notify_owner<'a>(&'a self, text: &'a str) -> BoxFuture<'a, Result<(), Failure>> {
         async move {
             if self
@@ -376,6 +410,7 @@ impl Fixture {
                 source: FileSource::Device,
                 origin,
                 access,
+                rooms: Default::default(),
                 owner_granted: Default::default(),
                 registered: None,
                 created_at: now_secs(),

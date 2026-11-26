@@ -1,4 +1,4 @@
-//! 房间里的斜杠命令表（ADR-0054，[ADR-0109](../../../docs/adr/0109-chat-like-telegram.md) §7）：读各 Bot 写的状态事件，
+//! 房间里的斜杠命令表（ADR-0054，[ADR-0109](../../../docs/adr/0109-chat-like-telegram.md) §8）：读各 Bot 写的状态事件，
 //! 合成给壳画的菜单。
 
 use std::collections::HashMap;

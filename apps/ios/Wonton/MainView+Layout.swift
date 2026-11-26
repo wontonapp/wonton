@@ -51,7 +51,7 @@ extension MainView {
     }
 
     /// “全部应用”这一层（网格、商店、插件详情），配对后才有：和插件页层一样是盖在根页面上的导航栈，
-    /// 栈空时透明且不挡下面，所以左边缘右滑是系统的交互式返回，设置的盖子也照常从主界面弹。
+    /// 栈空时透明且不挡下面，所以左边缘右滑能驱动返回转场，设置的盖子也照常从主界面弹。
     @ViewBuilder private var appsLayer: some View {
         if isPaired {
             HomeView(

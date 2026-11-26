@@ -183,6 +183,11 @@ private fun DetailContent(
             }
         }
         detail.about?.let { Text(it, style = WontonTheme.typography.body, color = colors.textPrimary.toColor()) }
+        detail.setup?.let {
+            DetailSection(stringResource(R.string.plugin_setup_title)) {
+                Text(it, style = WontonTheme.typography.body, color = colors.textPrimary.toColor())
+            }
+        }
         installed?.let { InstalledDetailSections(detail, plugins, navigation, onToggled, owner, secretsInView) }
         if (installed != null) detail.shares?.let { PluginSharesSection(detail.id, it, plugins, onToggled) }
         DetailSections(detail, plugins, onToggled)

@@ -32,6 +32,9 @@ pub struct PluginsViewModel {
     /// 有新版本可升级的应用：商店页更新图标的角标、"全部更新"弹窗和侧边栏的红点都是它。顺序同已安装列表。
     #[serde(default)]
     pub updatable: Vec<UpdatablePlugin>,
+    /// 本设备最近一批“全部更新”的逐项进展与结果；清除后为空。
+    #[serde(default)]
+    pub update_batch: Option<super::store::StoreUpdateBatch>,
     /// 主人点了一键装、一键升级（ [`PluginAction::InstallNow`](crate::PluginAction::InstallNow) 一类）、核心正在取预览的插件 ID：
     /// 行尾按钮转圈。取完要么开始（进 [`PluginsViewModel::tasks`]），要么要主人拿主意（进 [`PluginsViewModel::confirmation`]）。
     #[serde(default)]
@@ -40,9 +43,6 @@ pub struct PluginsViewModel {
     /// [`PluginAction::UpgradePlugin`](crate::PluginAction::UpgradePlugin)），或者关掉（[`PluginAction::DismissStoreConfirmation`](crate::PluginAction::DismissStoreConfirmation)）。
     #[serde(default)]
     pub confirmation: Option<StoreConfirmation>,
-    /// 角色页（ADR-0088）：主人建、改、删角色，给成员和好友分配，设默认邀请角色。
-    #[serde(default)]
-    pub roles: crate::RolesViewModel,
     /// 出网代理的设置页。
     pub egress: EgressViewModel,
     /// Docker Hub 镜像加速的设置页。

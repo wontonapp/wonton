@@ -80,12 +80,15 @@ fn same_prefix(a: u128, b: u128, bits: u8, prefix: u8) -> bool {
 pub struct Source {
     pub id: PluginId,
     pub permissions: Vec<Permission>,
+    /// 用了模型网关（`wants: [models]` 或老清单的 `models` 权限）：`models.wonton.internal` 只转发它的请求。
+    pub models: bool,
 }
 
 /// 一个插件网络：地址段和插件得到授权的权限。
 struct Network {
     subnets: Vec<Subnet>,
     permissions: Vec<Permission>,
+    models: bool,
 }
 
 /// 已安装插件的网络地址段。插件网络建好时登记（容器启动前，安装过程中的 Bot 就能用），卸载后注销。
@@ -95,10 +98,17 @@ pub struct Sources {
 }
 
 impl Sources {
-    pub fn insert(&self, id: &PluginId, subnets: Vec<Subnet>, permissions: Vec<Permission>) {
+    pub fn insert(
+        &self,
+        id: &PluginId,
+        subnets: Vec<Subnet>,
+        permissions: Vec<Permission>,
+        models: bool,
+    ) {
         let network = Network {
             subnets,
             permissions,
+            models,
         };
         self.plugins
             .write()
@@ -118,6 +128,7 @@ impl Sources {
             .map(|(id, network)| Source {
                 id: id.clone(),
                 permissions: network.permissions.clone(),
+                models: network.models,
             })
     }
 }

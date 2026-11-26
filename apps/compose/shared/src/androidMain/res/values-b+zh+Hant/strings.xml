@@ -116,8 +116,8 @@
     <string name="owner_secrets_problem_other">無法載入金鑰。請重試。</string>
     <!-- 附件面板：底下的切換，把手機相簿列成照片格狀。 -->
     <string name="attach_album">相簿</string>
-    <!-- 附件面板：把選中的照片放進待發的按鈕。參數：張數。 -->
-    <string name="attach_add">加入 %1$d</string>
+    <!-- 附件面板：選中照片後底下的附言輸入框，附言隨照片一起發出去。 -->
+    <string name="sheet_note_hint">新增附言</string>
     <!-- 附件面板：相簿裡還沒有照片。 -->
     <string name="attach_album_empty">相簿裡沒有照片</string>
     <!-- 附件面板：沒給相簿權限。 -->
@@ -126,4 +126,16 @@
     <string name="attach_open_settings">去設定</string>
     <!-- 相簿裡選中一張照片後，勾上的讀屏標籤。 -->
     <string name="attach_selected">已選</string>
+    <!-- Section heading for the profile photo. -->
+    <string name="owner_profile_avatar">頭像</string>
+    <!-- Next step when the core is too old to set an avatar. -->
+    <string name="owner_profile_avatar_not_ready_next">更新 App 或家中的核心後再試</string>
+    <!-- Title when the core is too old to set an avatar. -->
+    <string name="owner_profile_avatar_not_ready">這個版本還改不了頭像</string>
+    <string name="owner_profile_avatar_not_logged_in_next">稍後再試</string>
+    <string name="owner_profile_avatar_not_logged_in">聊天還沒登入好</string>
+    <!-- Button that opens the photo picker. -->
+    <string name="owner_profile_avatar_pick">選擇照片</string>
+    <!-- Button that removes the profile photo. -->
+    <string name="owner_profile_avatar_remove">移除頭像</string>
 </resources>

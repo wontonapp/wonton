@@ -48,4 +48,13 @@
     <string name="store_update_all">全部更新</string>
     <!-- 打开那个面板的工具栏下载图标的读屏描述。 -->
     <string name="store_update_all_a11y">全部更新，%1$d 个</string>
+    <string name="store_update_batch_running">正在更新应用 · 已完成 %1$d/%2$d</string>
+    <string name="store_update_batch_finished">更新结果：成功 %1$d · 失败 %2$d · 待处理 %3$d</string>
+    <string name="store_update_batch_clear">清除结果</string>
+    <string name="store_update_batch_target">目标版本：%1$s</string>
+    <string name="store_update_batch_queued">等待更新</string>
+    <string name="store_update_batch_checking">正在检查更新</string>
+    <string name="store_update_batch_needs_decision">需要确认</string>
+    <string name="store_update_batch_review">查看并确认</string>
+    <string name="store_update_batch_review_app">查看并确认 %1$s 的更新</string>
 </resources>

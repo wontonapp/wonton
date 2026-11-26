@@ -11,8 +11,10 @@
 
 ## 预装插件
 
-模型网关 [magpie](https://github.com/geraldpeng6/wonton-plugin-magpie) 是系统插件；默认 Agent
-[Hermes](https://github.com/wontonapp/wonton-plugin-hermes) 只在首次启动时安装，主人卸载后不再装回。
+默认 Agent [Hermes](https://github.com/wontonapp/wonton-plugin-hermes) 只在首次启动时安装，主人卸载后不再装回；
+模型用它自带的供应商接入。模型网关 [magpie](https://github.com/geraldpeng6/wonton-plugin-magpie) 是商店里的普通插件，
+不预装（ADR-0108）。系统插件和默认插件各装各的，系统插件一直装不上也不挡默认插件；系统插件（`kind: system`，只给
+官方）现在也不限于预装，从商店装和卸载都走普通流程。
 核心镜像构建时运行 `wonton-core plugin fetch-locked plugins/system.lock <目标目录>`，只取插件包文件，核对提交与
 ADR-0017 定义的包摘要；包随镜像发布，首次启动不从 GitHub 取包。
 
@@ -27,8 +29,8 @@ ADR-0017 定义的包摘要；包随镜像发布，首次启动不从 GitHub 取
 
 `crates/wonton-core/src/plugin/tests/model_gateway_contract/` 把消费方契约与提供方适配器分开。
 消费方只使用注入的地址、凭据和不透明的默认模型 ID；测试替身故意使用不同的命令、接口基础路径和模型 ID。
-系统网关适配器读取 `system.lock` 对应提交的包并核对摘要，执行包内声明的凭据、服务商管理命令和默认模型维护服务。
-这证明实现之间的接口约束，不改变系统插件的安装或替换规则。
+magpie 适配器读取测试里钉住的插件包（来源、提交和包摘要写在 `magpie.rs`），执行包内声明的凭据、服务商管理命令和
+默认模型维护服务。升级 magpie 时改那一行。
 
 ```sh
 cargo test -p wonton-core --lib model_gateway_contract

@@ -41,10 +41,13 @@ if [ -n "${PAIRING_CODE:-}" ]; then
 fi
 
 root=$(cd "$(dirname "$0")/../../.." && pwd)
+# `-xctestrun` 指编好的测试包，xcodebuild 不接受它和 `-project`、`-scheme` 一起给（早编过时用这条跑得快）。
+project_args=(-project "$root/apps/ios/Wonton.xcodeproj" -scheme Wonton -configuration Debug)
+for arg in "$@"; do
+  [[ $arg == -xctestrun ]] && project_args=()
+done
 TEST_RUNNER_PAIRING_CODE="${PAIRING_CODE:-}" exec xcodebuild "$action" \
-  -project "$root/apps/ios/Wonton.xcodeproj" \
-  -scheme Wonton \
-  -configuration Debug \
+  ${project_args[@]+"${project_args[@]}"} \
   -destination "id=$udid" \
   CODE_SIGNING_ALLOWED=NO \
   "$@"

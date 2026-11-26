@@ -19,8 +19,8 @@ use tracing_subscriber::filter::filter_fn;
 use tracing_subscriber::layer::SubscriberExt as _;
 use tracing_subscriber::util::SubscriberInitExt as _;
 use wonton_client::{
-    Action, ChatAccount, ChatSync, ChatViewModel, ClientCore, InstalledPlugin, InstalledPlugins,
-    Network, OnboardingViewModel, PushMethod,
+    Action, ChatAccount, ChatSync, ChatViewModel, ClientCore, CoreError, InstalledPlugin,
+    InstalledPlugins, Network, OnboardingViewModel, PushMethod,
 };
 use wonton_matrix::MatrixSession;
 pub use wonton_matrix::testkit::ToDeviceHold;
@@ -47,6 +47,10 @@ use fake_core::fake_core;
 pub(super) use io::{read_body, relay};
 
 pub const WAIT: Duration = Duration::from_secs(60);
+/// 探针的间隔。探针只在本地看会话装没装好，不碰网络；隔一会儿再看是给换服务器、重连留插进来的空档。
+const SIGNED_IN_PROBE: Duration = Duration::from_millis(25);
+/// 探通之后还要把这一份会话盯住这么久，没被换掉、也没断开，才算真的就位：隧道刚抖过时会话会马上又被收起来。
+const SIGNED_IN_SETTLE: Duration = Duration::from_secs(3);
 pub(super) const BASE_DOMAIN: &str = "wonton.localhost";
 /// 和 deploy/dev/matrix/tuwunel.toml 的 server_name 一致。
 pub const OWNER: &str = "@owner:wonton.localhost";
@@ -207,6 +211,8 @@ struct Core {
     sync_recording_released: watch::Sender<bool>,
     /// 引导状态：没有就是没有这个接口（404）。
     onboarding: Mutex<Option<Value>>,
+    /// `GET /_wonton/api/me` 的资料，`PUT` 改名字和邮箱。
+    me: Mutex<Value>,
     /// “添加设备”发的配对码（`POST /_wonton/api/pairing-codes`），隧道起来后填上；每次要码换一个新 secret。
     issued_pairing_code: Mutex<Option<String>>,
     /// 发过多少个配对码，用它在每次回应里换一个新 secret。
@@ -253,14 +259,11 @@ pub(crate) struct FakeFile {
     pub name: String,
 }
 
-impl Home {
-    pub async fn start(devices: &[EndpointId]) -> Self {
-        init_test_logging();
-        let push = PushGateway::start().await;
-        let matrix = TestServer::with_push_gateway(&push).await;
-        let core = Arc::new(Core {
-            tuwunel: matrix.url.trim_start_matches("http://").to_owned(),
-            issuer: matrix.issuer.clone(),
+impl Core {
+    fn new(tuwunel: String, issuer: Issuer) -> Self {
+        Self {
+            tuwunel,
+            issuer,
             login_tokens: AtomicUsize::new(0),
             failing_login_tokens: AtomicUsize::new(0),
             matrix_unavailable: AtomicBool::new(false),
@@ -298,6 +301,17 @@ impl Home {
             sync_recording_held: watch::Sender::new(None),
             sync_recording_released: watch::Sender::new(false),
             onboarding: Mutex::default(),
+            me: Mutex::new(serde_json::json!({
+                "user_id": OWNER,
+                "username": "owner",
+                "is_owner": true,
+                "role_id": null,
+                "role_name": null,
+                "permissions": null,
+                "display_name": null,
+                "email": null,
+                "avatar": null,
+            })),
             issued_pairing_code: Mutex::default(),
             pairing_codes_issued: AtomicUsize::new(0),
             installed: Mutex::default(),
@@ -318,7 +332,19 @@ impl Home {
             link_previews: Mutex::default(),
             link_preview_images: Mutex::default(),
             link_preview_requests: AtomicUsize::new(0),
-        });
+        }
+    }
+}
+
+impl Home {
+    pub async fn start(devices: &[EndpointId]) -> Self {
+        init_test_logging();
+        let push = PushGateway::start().await;
+        let matrix = TestServer::with_push_gateway(&push).await;
+        let core = Arc::new(Core::new(
+            matrix.url.trim_start_matches("http://").to_owned(),
+            matrix.issuer.clone(),
+        ));
         let (addr, task) = fake_core(core.clone()).await;
         let tunnel_key = SecretKey::generate();
         let endpoint = loopback_endpoint(tunnel_key.clone(), 0).await;
@@ -470,8 +496,9 @@ impl Home {
         self.core.layout_down.store(down, Ordering::SeqCst);
     }
 
-    /// 下一个带着 `stale` 房间加入事件的同步应答起，每个这样的应答都被改写成还是受邀（同步重启后 SDK 会
-    /// 重发房间状态，会话里多条连接都会带回它），直到 [`Self::clear_join_report_as_invited`] 清除。
+    /// arm 起之后、有任何一条同步应答带过 `stale` 房间的加入事件（连接被丢弃也算）起，每个这样的应答都被改写
+    /// 成还是受邀（同步重启后 SDK 会重发房间状态，会话里多条连接都会带回它），直到
+    /// [`Self::clear_join_report_as_invited`] 清除。
     pub fn report_join_as_invited(&self, stale: StaleJoin) {
         self.core.stale_join.send_replace(Some(stale));
     }
@@ -841,16 +868,80 @@ impl Phone {
     }
 
     /// 等登录并同步起来，返回用户 ID 和设备 ID。
+    ///
+    /// 返回时调用方可以直接 `dispatch`：视图显示“已登录”、同步在跑还不够。换服务器或者隧道刚抖过时，旧视图会先留着，
+    /// 新的一次登录正要把旧会话收起来，这时 `dispatch` 会回 `NotReady`。所以这里不只看视图，还拿一个不碰房间的小动作
+    /// （[`Self::probe_dispatch`]）探到本地会话真的装好、并且安稳一阵没被换掉，才返回；中途断了就接着等下一次。
     pub async fn signed_in(&self) -> (String, String) {
-        self.wait_chat("登录并开始同步", |view| {
-            match (&view.account, &view.sync) {
-                (ChatAccount::SignedIn { user_id, device_id }, ChatSync::Running) => {
-                    Some((user_id.clone(), device_id.clone()))
-                }
-                _ => None,
+        let deadline = tokio::time::Instant::now() + WAIT;
+        let mut last = None;
+        loop {
+            let now = tokio::time::Instant::now();
+            if now >= deadline {
+                panic!(
+                    "登录并可以 dispatch：{WAIT:?} 内没有等到，最后一次 dispatch：{last:?}\n当前：{:#?}",
+                    self.chat()
+                );
             }
+            let Some(ids) = signed_in_ids(&self.chat()) else {
+                tokio::time::sleep(SIGNED_IN_PROBE.min(deadline - now)).await;
+                continue;
+            };
+            match self.probe_dispatch() {
+                Ok(()) if self.settle(&ids, deadline).await => return ids,
+                Ok(()) => {}
+                Err(error) => last = Some(error.to_string()),
+            }
+            tokio::time::sleep(SIGNED_IN_PROBE.min(deadline - now)).await;
+        }
+    }
+
+    /// 探一次本地会话装好没有：`CheckReady` 只取一次会话，没登录就 `NotReady`，登录了什么都不做。
+    /// 不依赖房间，也不像改显示方式那样顺带写账号数据。
+    fn probe_dispatch(&self) -> Result<(), CoreError> {
+        self.dispatch(Action::Chat {
+            action: wonton_protocol::ChatAction::CheckReady,
         })
-        .await
+    }
+
+    /// 等聊天会话真的能 dispatch：订阅时间线、进房间这类夹具入口先叫它，别在登录或者重连的窗口里吃 `NotReady`。
+    ///
+    /// 拿 [`wonton_protocol::ChatAction::CheckReady`] 探：没登录就 `NotReady`，登录了什么都不做。探通以后隔一个
+    /// 间隔再探一次，躲开“刚探通就被下一次重连收走”；超时 `WAIT` 就带着最后一次错误和当前视图 panic。
+    pub async fn wait_ready(&self) {
+        let deadline = tokio::time::Instant::now() + WAIT;
+        let mut last = None;
+        loop {
+            match self.probe_dispatch() {
+                Ok(()) => {
+                    tokio::time::sleep(SIGNED_IN_PROBE).await;
+                    if self.probe_dispatch().is_ok() {
+                        return;
+                    }
+                }
+                Err(error) => last = Some(error.to_string()),
+            }
+            let now = tokio::time::Instant::now();
+            if now >= deadline {
+                panic!(
+                    "聊天会话可以 dispatch 之前超时（{WAIT:?}，最后一次 dispatch：{last:?}）\n当前：{:#?}",
+                    self.chat()
+                );
+            }
+            tokio::time::sleep(SIGNED_IN_PROBE.min(deadline - now)).await;
+        }
+    }
+
+    /// 这一份会话（同一用户、同一设备）要一直还在，直到窗口过完，才算稳下来。
+    async fn settle(&self, ids: &(String, String), deadline: tokio::time::Instant) -> bool {
+        let until = (tokio::time::Instant::now() + SIGNED_IN_SETTLE).min(deadline);
+        while tokio::time::Instant::now() < until {
+            if signed_in_ids(&self.chat()).as_ref() != Some(ids) {
+                return false;
+            }
+            tokio::time::sleep(SIGNED_IN_PROBE.min(until - tokio::time::Instant::now())).await;
+        }
+        signed_in_ids(&self.chat()).as_ref() == Some(ids)
     }
 
     /// 这些测试登记推送端点，走的是 UnifiedPush：默认方式是保持连接（ADR-0003），先切过去才登记得了。
@@ -889,3 +980,13 @@ impl Phone {
 }
 
 pub use super::timeline::Timeline;
+
+/// 视图里“已登录、同步在跑”的用户和设备；别的状态都算还没就位。
+fn signed_in_ids(view: &ChatViewModel) -> Option<(String, String)> {
+    match (&view.account, &view.sync) {
+        (ChatAccount::SignedIn { user_id, device_id }, ChatSync::Running) => {
+            Some((user_id.clone(), device_id.clone()))
+        }
+        _ => None,
+    }
+}

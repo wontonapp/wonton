@@ -100,7 +100,7 @@ async fn assert_health_timeout_logged(events: Events) {
     let mut manager = manager_with(engine, &dir);
     manager.cfg.install_timeout = Duration::ZERO;
     let error = manager.install(&source(), &[], langs()).await.unwrap_err();
-    assert_eq!(error.kind(), "unhealthy", "{error}");
+    assert_eq!(error.kind(), "health_timeout", "{error}");
     let failed = failure(&manager);
     assert_eq!(failed["stage"], "waiting_for_bot");
     let recorded = events.0.lock().unwrap();
@@ -110,7 +110,9 @@ async fn assert_health_timeout_logged(events: Events) {
                 && fields
                     .get("plugin")
                     .is_some_and(|value| value == "app.test")
-                && fields.get("kind").is_some_and(|value| value == "unhealthy")
+                && fields
+                    .get("kind")
+                    .is_some_and(|value| value == "health_timeout")
                 && fields
                     .get("stage")
                     .is_some_and(|value| value == "WaitingForBot")
@@ -240,7 +242,9 @@ async fn docker_request_timeout_keeps_its_category_and_cleans_started_resources(
     let (docker, engine) = FakeDocker::start().await;
     let dir = tempfile::tempdir().unwrap();
     let manager = Arc::new(manager_with(
-        engine.with_request_limit_for_test(Duration::from_secs(1)),
+        engine
+            .with_request_limit_for_test(Duration::from_secs(1))
+            .with_slow_request_limit_for_test(Duration::from_secs(1)),
         &dir,
     ));
     let held = docker.hold("POST /containers/wonton-app-test--app/start");
@@ -282,7 +286,9 @@ async fn a_create_timeout_removes_the_container_docker_already_created() {
     let (docker, engine) = FakeDocker::start().await;
     let dir = tempfile::tempdir().unwrap();
     let manager = Arc::new(manager_with(
-        engine.with_request_limit_for_test(Duration::from_secs(1)),
+        engine
+            .with_request_limit_for_test(Duration::from_secs(1))
+            .with_slow_request_limit_for_test(Duration::from_secs(1)),
         &dir,
     ));
     let held = docker.hold_committed_create("wonton-app-test--app");
@@ -313,7 +319,9 @@ async fn a_create_timeout_whose_leftover_cannot_be_removed_reports_the_cleanup_e
     let (docker, engine) = FakeDocker::start().await;
     let dir = tempfile::tempdir().unwrap();
     let manager = Arc::new(manager_with(
-        engine.with_request_limit_for_test(Duration::from_secs(1)),
+        engine
+            .with_request_limit_for_test(Duration::from_secs(1))
+            .with_slow_request_limit_for_test(Duration::from_secs(1)),
         &dir,
     ));
     docker.fail_remove("wonton-app-test--app", Some("cleanup rejected"));
@@ -351,7 +359,9 @@ async fn a_create_timeout_does_not_rollback_a_same_name_container_it_did_not_cre
     let (docker, engine) = FakeDocker::start().await;
     let dir = tempfile::tempdir().unwrap();
     let manager = Arc::new(manager_with(
-        engine.with_request_limit_for_test(Duration::from_secs(1)),
+        engine
+            .with_request_limit_for_test(Duration::from_secs(1))
+            .with_slow_request_limit_for_test(Duration::from_secs(1)),
         &dir,
     ));
     let held = docker.hold("POST /containers/create");
@@ -381,7 +391,9 @@ async fn a_create_timeout_with_unverifiable_result_reports_the_rollback_unfinish
     let (docker, engine) = FakeDocker::start().await;
     let dir = tempfile::tempdir().unwrap();
     let manager = Arc::new(manager_with(
-        engine.with_request_limit_for_test(Duration::from_secs(1)),
+        engine
+            .with_request_limit_for_test(Duration::from_secs(1))
+            .with_slow_request_limit_for_test(Duration::from_secs(1)),
         &dir,
     ));
     let held = docker.hold_committed_create("wonton-app-test--app");

@@ -35,19 +35,14 @@ impl PagesLink {
         })
     }
 
-    /// 关掉当前页。
+    /// 关掉当前页。没有开着的页时什么也不做：关页可以重复（连点两下关闭、关掉页面后紧跟一次返回），
+    /// 不该因此弹出“没有打开的页面”。
     pub(super) fn close_page(&self) -> Result<(), CoreError> {
         self.runtime_change(|state, _| {
             if state.shows_apps {
                 state.shows_apps = false;
-                return Ok(());
-            }
-            if state.stack.pop().is_none() {
-                return Err(invalid(&l10n!(
-                    CATALOG,
-                    language(),
-                    "tabs-view-no-page-open"
-                )));
+            } else {
+                state.stack.pop();
             }
             Ok(())
         })

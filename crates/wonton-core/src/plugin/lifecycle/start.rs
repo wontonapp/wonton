@@ -9,6 +9,7 @@ use super::super::compose::DependCondition;
 use super::super::configs;
 use super::super::docker::EngineError;
 use super::super::health::{self, Target};
+use super::super::health_gate::Wait;
 use super::super::install_notes::note_dropped_capabilities;
 use super::super::languages::Languages;
 use super::super::manager::{Health, InstallError, PluginManager};
@@ -29,12 +30,13 @@ impl PluginManager {
         plan: &Deployment,
         id: Option<&PluginId>,
         undo: &mut Undo,
-        deadline: Instant,
+        wait: Wait,
         langs: &Languages,
     ) -> Result<Health, InstallError> {
         for container in &plan.containers {
             // 容器起不来时，失败可能来自核心默认去掉的能力（宿主网络的 NET_RAW），错误里点名。
-            Box::pin(self.wait_dependencies(manifest, &container.depends_on, deadline, langs))
+            let deps = &container.depends_on;
+            Box::pin(self.wait_dependencies(manifest, deps, &container.name, wait, langs))
                 .await
                 .map_err(|e| note_dropped_capabilities(e, container, langs))?;
             Box::pin(self.launch_container(container, plan, undo, langs)).await?;
@@ -58,13 +60,13 @@ impl PluginManager {
                 &container.name,
                 finished,
                 None,
-                deadline,
+                wait,
                 langs,
             ))
             .await
             .map_err(|e| note_dropped_capabilities(e, container, langs))?;
         }
-        self.wait_ready_containers(manifest, plan, deadline, langs)
+        self.wait_ready_containers(manifest, plan, wait, langs)
             .await
     }
 

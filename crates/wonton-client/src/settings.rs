@@ -3,10 +3,10 @@
 use tokio::runtime::Handle;
 use tokio::sync::watch;
 use wonton_protocol::{
-    AppLockViewModel, ChatViewModel, FriendsState, FriendsViewModel, HomeStatus, HomeViewModel,
-    NotificationCategory, NotificationCategorySetting, PeersState, PeersViewModel,
-    PluginsViewModel, PushMethod, PushStatus, RecoveryStatus, ServerName, ServersViewModel,
-    SettingsEntry, SettingsSection, SettingsViewModel,
+    AppLockViewModel, ChatViewModel, FamilyViewModel, FriendsState, FriendsViewModel, HomeStatus,
+    HomeViewModel, MemberStatus, NotificationCategory, NotificationCategorySetting, PeersState,
+    PeersViewModel, PluginsViewModel, PushMethod, PushStatus, RecoveryStatus, ServerName,
+    ServersViewModel, SettingsEntry, SettingsSection, SettingsViewModel,
 };
 
 use crate::scope::reuse;
@@ -26,6 +26,7 @@ impl SettingsLink {
         mut plugins: watch::Receiver<PluginsViewModel>,
         mut peers: watch::Receiver<PeersViewModel>,
         mut friends: watch::Receiver<FriendsViewModel>,
+        mut family: watch::Receiver<FamilyViewModel>,
         mut servers: watch::Receiver<ServersViewModel>,
         mut method: watch::Receiver<PushMethod>,
         mut app_lock: watch::Receiver<AppLockViewModel>,
@@ -37,6 +38,7 @@ impl SettingsLink {
                        plugins: &watch::Receiver<PluginsViewModel>,
                        peers: &watch::Receiver<PeersViewModel>,
                        friends: &watch::Receiver<FriendsViewModel>,
+                       family: &watch::Receiver<FamilyViewModel>,
                        servers: &watch::Receiver<ServersViewModel>,
                        method: &watch::Receiver<PushMethod>,
                        lock_screen: &watch::Receiver<crate::lock_screen::Hidden>,
@@ -58,6 +60,7 @@ impl SettingsLink {
                 plugins.borrow().core_upgrade.is_prompting(),
                 peer_count,
                 friends_count(&friends.borrow()),
+                members_summary(&family.borrow()),
                 &app_lock.borrow(),
             )
         };
@@ -69,6 +72,7 @@ impl SettingsLink {
                 &plugins,
                 &peers,
                 &friends,
+                &family,
                 &servers,
                 &method,
                 &lock_screen,
@@ -84,6 +88,7 @@ impl SettingsLink {
                     changed = plugins.changed() => if changed.is_err() { break },
                     changed = peers.changed() => if changed.is_err() { break },
                     changed = friends.changed() => if changed.is_err() { break },
+                    changed = family.changed() => if changed.is_err() { break },
                     changed = servers.changed() => if changed.is_err() { break },
                     changed = method.changed() => if changed.is_err() { break },
                     changed = app_lock.changed() => if changed.is_err() { break },
@@ -95,6 +100,7 @@ impl SettingsLink {
                     &plugins,
                     &peers,
                     &friends,
+                    &family,
                     &servers,
                     &method,
                     &lock_screen,
@@ -138,6 +144,22 @@ fn friends_count(view: &FriendsViewModel) -> Option<(u32, u32)> {
     ))
 }
 
+/// 成员入口的人数：还没移除的人数、待处理的加入请求数。要有“管理成员”才给这一项。
+fn members_summary(view: &FamilyViewModel) -> Option<(u32, u32)> {
+    view.access.manages_members().then(|| {
+        let count = view
+            .members
+            .members
+            .iter()
+            .filter(|member| member.status != MemberStatus::Removed)
+            .count();
+        (
+            u32::try_from(count).unwrap_or(u32::MAX),
+            u32::try_from(view.join_requests.requests.len()).unwrap_or(u32::MAX),
+        )
+    })
+}
+
 /// 常用的放前面：资料和服务器各占一组，然后是这台手机上的外观、语言、底栏和通知，再是聊天相关的，最后是很少点的。
 /// 资料、服务器、默认 Agent 和引导都存在服务器上，没配对时不出现。
 /// “其他服务器”只给主人：核心的配对接口只让主人设备读，列表取到过（`Some`）才说明这台设备是主人的，
@@ -153,6 +175,7 @@ fn settings_view(
     upgrade: bool,
     peers: Option<usize>,
     friends: Option<(u32, u32)>,
+    members: Option<(u32, u32)>,
     app_lock: &AppLockViewModel,
 ) -> SettingsViewModel {
     let paired = !matches!(status, HomeStatus::NotConfigured);
@@ -195,6 +218,9 @@ fn settings_view(
             count: friends_count,
             requests,
         });
+        if let Some((count, requests)) = members {
+            groups[0].push(SettingsEntry::Members { count, requests });
+        }
         if let Some(peers_count) = peers {
             // “其他服务器”和服务器管理是一类：放在服务器的同一组里。
             groups[1].push(SettingsEntry::Peers {
@@ -216,7 +242,9 @@ fn settings_view(
 #[cfg(test)]
 mod tests {
     use super::*;
-    use wonton_protocol::AppLockTimeout;
+    use wonton_protocol::{
+        AppLockTimeout, FamilyAccess, JoinRequestRow, MemberRow, MemberStatus, Permissions,
+    };
 
     fn no_lock() -> AppLockViewModel {
         AppLockViewModel::default()
@@ -242,6 +270,7 @@ mod tests {
                 false,
                 Some(0),
                 None,
+                None,
                 &no_lock(),
             );
             let all = entries(&view);
@@ -263,6 +292,7 @@ mod tests {
             &crate::lock_screen::Hidden::default(),
             &PushStatus::NoEndpoint,
             false,
+            None,
             None,
             None,
             &no_lock(),
@@ -310,6 +340,7 @@ mod tests {
             true,
             None,
             None,
+            None,
             &no_lock(),
         );
         assert_eq!(
@@ -349,6 +380,7 @@ mod tests {
                 false,
                 None,
                 friends,
+                None,
                 &no_lock(),
             )
         };
@@ -375,6 +407,57 @@ mod tests {
         );
     }
 
+    /// 成员入口要有“管理成员”才有，人数不含已移除的，并带待处理的请求数。
+    #[test]
+    fn the_members_entry_needs_the_permission_and_counts_people() {
+        let view = |access: FamilyAccess, members: u32, requests: u32| {
+            let mut family = FamilyViewModel {
+                access,
+                ..FamilyViewModel::default()
+            };
+            family.members.members = (0..members)
+                .map(|index| MemberRow {
+                    username: format!("m{index}"),
+                    user_id: format!("@m{index}:x"),
+                    display_name: String::new(),
+                    email: None,
+                    status: if index == 0 {
+                        MemberStatus::Removed
+                    } else {
+                        MemberStatus::Joined
+                    },
+                    role_id: "friend".into(),
+                    role_name: None,
+                    role_template: None,
+                    private_bot: None,
+                    code: None,
+                })
+                .collect();
+            family.join_requests.requests = (0..requests)
+                .map(|index| JoinRequestRow {
+                    id: format!("r{index}"),
+                    username: format!("r{index}"),
+                    display_name: String::new(),
+                    role_id: "friend".into(),
+                    role_name: None,
+                    role_template: None,
+                    device_name: String::new(),
+                    requested_at_ms: 0,
+                })
+                .collect();
+            members_summary(&family)
+        };
+        let member = |manage: bool| FamilyAccess {
+            permissions: Some(Permissions {
+                manage_members: manage,
+                ..Permissions::strictest()
+            }),
+            ..FamilyAccess::default()
+        };
+        assert_eq!(view(member(false), 2, 1), None);
+        assert_eq!(view(member(true), 3, 2), Some((2, 2)));
+    }
+
     /// “其他服务器”跟着配对列表走：列表取到过（这台设备是主人的）才给，台数是已配对的数量。
     #[test]
     fn the_peers_entry_follows_the_peers_list() {
@@ -388,6 +471,7 @@ mod tests {
                 &PushStatus::NoEndpoint,
                 false,
                 peers,
+                None,
                 None,
                 &no_lock(),
             )
@@ -424,6 +508,8 @@ mod tests {
             server_id: Some("server".into()),
             status: HomeStatus::Connected,
             path: None,
+            current_relay: None,
+            relays: Default::default(),
             notice: None,
             details: Default::default(),
             proxy: None,
@@ -437,6 +523,7 @@ mod tests {
         let (_plugins, plugins_rx) = watch::channel(PluginsViewModel::default());
         let (_peers, peers_rx) = watch::channel(peers_view_model());
         let (_friends, friends_rx) = watch::channel(friends_view_model());
+        let (_family, family_rx) = watch::channel(FamilyViewModel::default());
         let (_servers, servers_rx) = watch::channel(ServersViewModel::default());
         let (_method, method_rx) = watch::channel(PushMethod::default());
         let (_lock_screen_tx, lock_screen_rx) =
@@ -448,6 +535,7 @@ mod tests {
             plugins_rx,
             peers_rx,
             friends_rx,
+            family_rx,
             servers_rx,
             method_rx,
             app_lock_rx,
@@ -478,6 +566,8 @@ mod tests {
             server_id: Some("server".into()),
             status,
             path: None,
+            current_relay: None,
+            relays: Default::default(),
             notice: None,
             details: Default::default(),
             proxy: None,
@@ -492,6 +582,7 @@ mod tests {
         let (plugins_tx, plugins_rx) = watch::channel(PluginsViewModel::default());
         let (peers_tx, peers_rx) = watch::channel(peers_view_model());
         let (_friends_tx, friends_rx) = watch::channel(friends_view_model());
+        let (_family_tx, family_rx) = watch::channel(FamilyViewModel::default());
         let (_servers_tx, servers_rx) = watch::channel(ServersViewModel::default());
         let (_method_tx, method_rx) = watch::channel(PushMethod::default());
         let (_app_lock_tx, app_lock_rx) = watch::channel(AppLockViewModel::default());
@@ -504,6 +595,7 @@ mod tests {
             plugins_rx,
             peers_rx,
             friends_rx,
+            family_rx,
             servers_rx,
             method_rx,
             app_lock_rx,
@@ -591,7 +683,6 @@ mod tests {
         FriendsViewModel {
             state: FriendsState::Loading,
             friends: Vec::new(),
-            groups: Vec::new(),
             incoming: Vec::new(),
             outgoing: Vec::new(),
             blocked: Vec::new(),

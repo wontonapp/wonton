@@ -262,7 +262,6 @@ plugin-install-prv-permission-needs-egress = The egress.proxy permission needs p
 plugin-install-prv-egress-needs-network = provides.egress_proxy needs the network.egress permission
 plugin-install-prv-egress-port = provides.egress_proxy.port can't be 0
 plugin-install-prv-empty = provides must declare at least one capability
-plugin-install-prv-models-system-only = Only kind: system apps can declare provides.models
 plugin-install-prv-models-port = provides.models.port can't be 0
 plugin-install-prv-models-apis-path = Paths in provides.models.apis must start with /
 plugin-install-prv-models-default-model = provides.models.default_model can't be empty
@@ -519,8 +518,9 @@ plugin-install-img-worker-host-exited = The image helper exited: { $error }
 plugin-install-img-worker-host-not-ready = The image helper did not get ready: { $error }
 plugin-install-img-worker-host-protocol = The image helper speaks protocol version { $got }, this core speaks { $want }
 
-## 预装（启动时随服务器带的包）失败的原因。
+## 预装（启动时随服务器带的包）进行不下去的原因。
 plugin-install-preinstall-retrying = Preinstall failed (tried { $attempts } time(s), will retry automatically)
+plugin-install-preinstall-waiting = The proxy isn't ready yet (will retry automatically)
 plugin-install-preinstall-failed = Preinstall failed
 
 # ── Capability dependencies (capabilities.rs, ADR-0053) ───────────────────
@@ -531,10 +531,12 @@ plugin-capability-no-consumer = { $capability } has no consumer declaration and 
 plugin-capability-duplicate = capability { $capability } is listed twice in { $field }
 plugin-capability-in-both-lists = capability { $capability } cannot be in both requires and wants
 plugin-capability-provider-requires = { $capability } is not provided by this plugin: a provider can only require capabilities it provides itself
+plugin-capability-models-in-requires = models is optional: write wants: [models] instead of requires
 plugin-capability-port-zero = provides.{ $capability }.port must not be 0
 plugin-capability-credentials-required = provides.{ $capability } must declare credentials: each consumer gets a credential of its own
 plugin-capability-credentials-forbidden = provides.{ $capability } must not declare credentials: this capability serves only requests forwarded by the core
 plugin-capability-credentials-argv = provides.{ $capability }.credentials.{ $field } must be a non-empty argv naming the credential with { $placeholder }
+plugin-capability-media-source-empty = provides.{ $capability }.{ $field } must list at least one value
 plugin-capability-service-unknown = { $field } refers to service `{ $service }`, which doesn't exist in the compose file
 plugin-capability-service-not-forwardable = { $field } must not point at a network_mode: none service: the core forwards into it and issues credentials there
 plugin-install-capability-deps-unsupported = this core does not support dependencies between plugins yet; upgrade the core before installing

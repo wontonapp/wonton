@@ -2,6 +2,7 @@ use std::time::Duration;
 
 use axum::http::Method;
 use wonton_client::{Action, BotActivity, BotProfileFailure, CoreError};
+use wonton_protocol::BotChatAvailability;
 use wonton_protocol::{BotActivityFacts, BotActivityReport, BotRef};
 
 use super::rig::{Rig, WAIT, running};
@@ -133,13 +134,24 @@ async fn plugin_refresh_does_not_switch_between_bots_of_the_same_plugin() {
         })
     })
     .await;
-    let bots = wait(&rig, |bots| bots.len() == 1).await;
-    assert_eq!(bots[0].bot.bot, "default");
-    assert_eq!(bots[0].user_id, "@default:home");
-    assert_eq!(bots[0].name, before[1].name);
-    assert_eq!(bots[0].avatar, before[1].avatar);
-    assert_eq!(bots[0].state_avatars, before[1].state_avatars);
-    assert_eq!(bots[0].activity, Some(BotActivity::Idle));
+    // 插件重建只按安装记录做默认 Bot；报告里还有的 alice 按保留规则留在列表里，默认 Bot 不因此被换成 alice。
+    let bots = wait(&rig, |bots| {
+        bots.len() == 2 && bots.iter().any(|bot| bot.bot.bot == "default")
+    })
+    .await;
+    let updated = bots
+        .iter()
+        .find(|bot| bot.bot.bot == "default")
+        .expect("默认 Bot 还在");
+    assert_eq!(updated.user_id, "@default:home");
+    assert_eq!(updated.name, before[1].name);
+    assert_eq!(updated.avatar, before[1].avatar);
+    assert_eq!(updated.state_avatars, before[1].state_avatars);
+    assert_eq!(updated.activity, Some(BotActivity::Idle));
+    assert!(
+        bots.iter().any(|bot| bot.bot.bot == "alice"),
+        "报告里的 alice 保留到下一份报告"
+    );
 }
 
 fn facts(bot: Option<&str>, user_id: &str) -> BotActivityFacts {
@@ -147,6 +159,7 @@ fn facts(bot: Option<&str>, user_id: &str) -> BotActivityFacts {
         plugin_id: "app.bot".into(),
         bot: bot.map(str::to_owned),
         user_id: user_id.into(),
+        chat: BotChatAvailability::Available,
         running: true,
         model_requests: 0,
         tool_calls: 0,

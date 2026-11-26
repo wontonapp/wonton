@@ -32,15 +32,10 @@ fn plugin() -> SharedPlugin {
 }
 
 #[test]
-fn grants_preserve_person_group_and_optional_expiry() {
-    for recipient in [
-        ShareRecipient::Friend {
-            user_id: "@bob:matrix.org".into(),
-        },
-        ShareRecipient::Group {
-            group_id: "players".into(),
-        },
-    ] {
+fn grants_preserve_person_and_optional_expiry() {
+    for recipient in [ShareRecipient::Friend {
+        user_id: "@bob:matrix.org".into(),
+    }] {
         for expires_at_ms in [None, Some(1_793_000_000_000)] {
             let grant = ShareGrant {
                 id: "grant-1".into(),

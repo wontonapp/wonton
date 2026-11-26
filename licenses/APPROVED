@@ -1,0 +1,27 @@
+链接进 App 二进制的第三方代码，许可必须在这个文件里逐条登记过；没登记就报错，等人看过再补。
+格式：许可 id | 用了它的组件（来源）| 结论
+
+cargo-about 的 accepted（licenses/about.toml）和这里的 id 一一对应，生成时按这里挑。
+
+MIT                 | Rust crate | 可以，署名放许可页
+Apache-2.0          | Rust crate | 可以，署名放许可页
+Apache-2.0 WITH LLVM-exception | Rust crate（compiler_builtins 等） | 可以，Apache-2.0 加 LLVM 例外
+ISC                 | Rust crate | 可以，署名放许可页
+BSD-2-Clause        | Rust crate | 可以，署名放许可页
+BSD-3-Clause        | Rust crate | 可以，署名放许可页
+0BSD                | Rust crate | 可以，可以不留署名
+Zlib                | Rust crate | 可以，署名放许可页
+BSL-1.0             | Rust crate | 可以，署名放许可页
+Unicode-3.0         | Rust crate（ICU、idna 等） | 可以，许可页附全文
+Unicode-DFS-2016    | Rust crate | 可以，许可页附全文
+CDLA-Permissive-2.0 | Rust crate（webpki-roots） | 可以，许可页附全文
+Unlicense           | Rust crate | 可以，等同公有领域
+CC0-1.0             | Rust crate | 可以，等同公有领域
+MIT-0               | Rust crate | 可以，可以不留署名
+BSD-1-Clause        | Rust crate | 可以，署名放许可页
+MPL-2.0             | Rust crate（as_variant、async-rx 等） | 可以，改了它们的文件才要开源源码，这里没改
+LGPL-2.1-or-later   | Android 依赖（JNA） | 可以，独立 jar、没改，动态链接
+ASDKL               | Android 依赖（play-services、firebase 基础库） | 可以，Google 的 SDK 条款，许可页附链接
+
+Android 依赖由 Gradle 的 AboutLibraries 收集，它的 strictMode 用同一张表挡：
+任何依赖带进来清单外的许可（含 GPL/AGPL）构建就失败。

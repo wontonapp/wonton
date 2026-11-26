@@ -76,18 +76,17 @@ pub async fn check_package(
         digest: package.digest(),
         ..Report::default()
     };
-    if m.kind == PluginKind::System {
-        report
-            .warnings
-            .push("kind: system plugins can only be preinstalled with the home server; users can't install them"
-                .to_owned());
-    }
     for permission in m.permissions.iter().filter(|p| !supported(p)) {
         report
             .problems
             .push(format!(
                 "permission {permission} isn't supported by this home server yet; update the home server or drop the permission"
             ));
+    }
+    if m.kind == PluginKind::System && !official {
+        report.problems.push(
+            "kind system is for official system plugins; use app for a plugin people install themselves, and run with --official when the official index will carry it".to_owned(),
+        );
     }
     match dry_run(package, &Languages::default()) {
         Ok(plan) => check_services(&plan, m, official, &mut report),

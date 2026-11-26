@@ -6,6 +6,7 @@ pub(crate) mod support;
 
 mod quality;
 mod rebuild;
+mod relays;
 mod retry;
 mod slow_dial;
 mod stuck_bind;

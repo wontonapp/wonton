@@ -270,6 +270,7 @@ private struct RecoveryKeySection: View {
                 .padding(WontonTheme.spacing.s12)
                 .frame(maxWidth: .infinity, alignment: .leading)
                 .background(RoundedRectangle(cornerRadius: WontonTheme.radii.control).fill(Color(colors.surfaceSubtle)))
+                .accessibilityIdentifier("recovery-key-value")
             Text(.ChatBackup0.chatBackupSaveKeyNote)
                 .wontonText(WontonTheme.typography.supporting)
                 .foregroundStyle(Color(colors.textSecondary))

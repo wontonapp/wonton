@@ -55,8 +55,6 @@ func recipientName(_ recipient: ShareRecipient, in view: FriendsViewModel?) -> S
     switch recipient {
     case let .friend(userId):
         return view?.friends.first { $0.userId == userId }?.displayName.flatMap { $0.isEmpty ? nil : $0 } ?? userId
-    case let .group(groupId):
-        return view?.groups.first { $0.id == groupId }?.name ?? groupId
     case .other: return String(localized: .Share2.shareUnknown)
     }
 }

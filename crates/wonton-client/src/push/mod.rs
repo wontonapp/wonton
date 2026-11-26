@@ -6,10 +6,12 @@
 //! 和公钥记在槽位里（见 `record`），给不是当前这台的服务器用。
 
 mod notification;
+pub(crate) mod preview;
 pub(crate) mod record;
 mod registration;
 
 pub(crate) use notification::{Payload, push_notification};
+pub(crate) use preview::{Preview, PushPreviews};
 
 use std::path::{Path, PathBuf};
 
@@ -42,7 +44,8 @@ pub(crate) struct PushLink {
     chat: Arc<ChatLink>,
     /// 槽位目录。
     dir: PathBuf,
-    /// 收新消息的方式（ADR-0003）：保持连接时不登记推送，家里的登记和 pusher 都删掉。
+    /// 推送里带来的正文预览，时间线打开房间时补进去（ADR-0118）。
+    previews: Arc<PushPreviews>,
     method: watch::Receiver<PushMethod>,
     /// 锁屏上隐藏内容的类别（ADR-0101 §5）：通知照它设系统可见性。
     lock_screen: watch::Receiver<crate::lock_screen::Hidden>,
@@ -66,10 +69,12 @@ impl PushLink {
         dir: &Path,
         method: watch::Receiver<PushMethod>,
         lock_screen: watch::Receiver<crate::lock_screen::Hidden>,
+        previews: Arc<PushPreviews>,
     ) -> Arc<Self> {
         let push = Arc::new(Self {
             runtime: runtime.clone(),
             home,
+            previews,
             chat: chat.clone(),
             dir: dir.to_owned(),
             method: method.clone(),

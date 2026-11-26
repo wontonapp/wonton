@@ -14,6 +14,8 @@ import androidx.compose.ui.hapticfeedback.HapticFeedback
 import androidx.compose.ui.hapticfeedback.HapticFeedbackType
 import androidx.compose.ui.platform.LocalHapticFeedback
 import app.wonton.ui.design.WontonTheme
+import app.wonton.protocol.Action
+import app.wonton.protocol.PageAction
 import app.wonton.protocol.PanelItem
 import app.wonton.protocol.PanelScope
 import app.wonton.protocol.TabRef
@@ -53,6 +55,8 @@ internal fun levelAfterPeekDrag(pushes: Boolean, closes: Boolean, hasPages: Bool
 internal class ChatPanelState(
     val edge: PanelEdge,
     val scope: PanelScope,
+    /** 面板页的动作出口：关页时由当前页弹栈。 */
+    private val tabs: PagesState,
     private val haptics: HapticFeedback,
     private val coroutine: CoroutineScope,
 ) {
@@ -205,14 +209,23 @@ internal class ChatPanelState(
         selection = tab
     }
 
-    /** 返回键：整页时先退网页历史和视频全屏，到头退回第 1 级；第 1 级收回第 0 级。 */
+    /** 返回键：整页时按网页自己的判定后退或关页；第 1 级收回第 0 级。 */
     fun back() {
-        when (level) {
-            PanelLevel.FULL -> {
-                val handled = controller?.closeCustomView() == true || controller?.goBack() == true
-                if (!handled) move(PanelLevel.PEEK)
-            }
-            else -> move(PanelLevel.CLOSED)
+        if (level != PanelLevel.FULL) {
+            move(PanelLevel.CLOSED)
+            return
+        }
+        val current = controller
+        if (current == null) closePage() else current.backOrClose(::closePage)
+    }
+
+    /** 面板页不是栈上的页，核心的 ClosePage 关不到它；关页就是把选中项从面板里摘掉（页签还在）。 */
+    internal fun closePage() {
+        val tab = selection
+        if (tab != null && pages.any { it.tab == tab }) {
+            tabs.send(Action.Pages(PageAction.RemovePanelPage(scope, tab)))
+        } else {
+            tabs.send(Action.Pages(PageAction.ClosePage))
         }
     }
 
@@ -251,10 +264,10 @@ internal class ChatPanelState(
 internal val LocalChatPanel = compositionLocalOf<ChatPanelState?> { null }
 
 @Composable
-internal fun rememberChatPanelState(edge: PanelEdge, scope: PanelScope): ChatPanelState {
+internal fun rememberChatPanelState(edge: PanelEdge, scope: PanelScope, tabs: PagesState): ChatPanelState {
     val haptics = LocalHapticFeedback.current
     val coroutine = rememberCoroutineScope()
-    return remember(edge, scope) { ChatPanelState(edge, scope, haptics, coroutine) }
+    return remember(edge, scope, tabs) { ChatPanelState(edge, scope, tabs, haptics, coroutine) }
 }
 
 

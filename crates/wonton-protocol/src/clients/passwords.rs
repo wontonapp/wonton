@@ -49,6 +49,13 @@ pub struct PasswordValue {
     pub password: SecretString,
 }
 
+/// 这个密码有一个还没做完的吊销或换值时的响应头，值为 `revoke` 或 `rotate`。取值 `200` 和吊销 `202` 会带它；
+/// 吊销做完的 `200` 不带。
+pub const PASSWORD_PENDING_HEADER: &str = "x-wonton-password-value-pending";
+
+/// 新建失败（502）的响应头：已经落盘的记录 ID，重试对照它，不用再建一条。
+pub const PASSWORD_ID_HEADER: &str = "x-wonton-password-id";
+
 /// 吊销一台设备（`DELETE /_wonton/api/devices/{endpoint_id}`）的请求体；不带请求体时字段取默认值。
 #[derive(Clone, Copy, Debug, Default, PartialEq, Eq, Serialize, Deserialize)]
 #[cfg_attr(feature = "uniffi", derive(uniffi::Record))]

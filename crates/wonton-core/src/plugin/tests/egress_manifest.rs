@@ -138,17 +138,11 @@ fn egress_manifest_plugin_can_have_other_bot_services() {
 }
 
 #[test]
-fn egress_manifest_models_remain_system_only() {
+fn egress_manifest_app_can_also_provide_models() {
     let models = "  provides:\n    models:\n      service: proxy\n      port: 8080\n      \
         apis: {openai: /v1}\n      default_model: default\n      credentials:\n        \
         issue: [issue, '{name}']\n        revoke: [revoke, '{name}']";
-    let source = source("", models);
-    assert!(PluginPackage::parse(&source, &super::langs()).is_err());
-    PluginPackage::parse(
-        &source.replace("kind: app", "kind: system"),
-        &super::langs(),
-    )
-    .unwrap();
+    PluginPackage::parse(&source("", models), &super::langs()).unwrap();
 }
 
 #[test]

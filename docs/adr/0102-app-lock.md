@@ -31,7 +31,8 @@ App 锁要复用这套验证，并回答：什么时候锁、设置存哪谁判�
 
 - 前后台信号已经到核心：`HomeAction::AppForegrounded` / `HomeAction::AppBackgrounded`（`crates/wonton-protocol/src/action_domains.rs`）。
   iOS 由 `apps/ios/Wonton/WontonApp.swift` 的 `scenePhase` 发出（:41-46），Android 由
-  `apps/compose/androidApp/src/main/kotlin/app/wonton/android/MainActivity.kt` 的 `onResume` / `onStop` 发出。
+  `apps/compose/androidApp/src/main/kotlin/app/wonton/android/MainActivity.kt` 的 `onResume` / `onPause` 发出：
+  `onPause` 是失去可交互的那一刻，关屏和系统对话框到不了 `onStop`。
 - 本机设置文件的成熟模式：`appearance.json`（`crates/wonton-client/src/appearance/mod.rs`）、`push-method.json`
   （`crates/wonton-client/src/push_method.rs`，落盘成功才发布新值）。
 - 设置首页由核心的 `SettingsViewModel.sections[].entries[]` 给出，不认识的入口落 `SettingsEntry::Other` 被旧壳忽略
@@ -106,8 +107,8 @@ App 锁要复用这套验证，并回答：什么时候锁、设置存哪谁判�
   `crates/wonton-client/src/chat/background.rs`）带"藏内容"标记，壳照 ADR-0003 的 hidden 版本画（标题 App 名、正文"有新消息"）。
   **已弹出的通知不追溯撤回**（主人 11-13 定）："通知自己消失"容易被当成数据丢失，撤回还要两端各写一套通知管理。
   iOS 的推送链路以 Apple 付费开发者账号为前提（[ADR-0101](0101-notifications.md) 的实施顺序）：通知扩展和主 App 是两个进程，
-  扩展不能问核心——PR #402 把数据目录搬进 App Group 容器之后，核心把锁定标记写进组容器、扩展发通知前读它，是顺路的做法，
-  随 ADR-0101 的 NSE 实现时验证。
+  扩展不能问核心——PR #402 把数据目录搬进 App Group 容器之后，核心把锁定标记（`app-lock-locked.json`）写进组容器，
+  扩展发通知前读它，锁着时标题换成 App 名，不露发送者、房间名和确认卡片的标题。标记读不懂、组容器拿不到时按锁着办。
 - **小组件**：云吞没有小组件。规则先写死：App 锁开着且锁定时，小组件不显示任何消息内容，只显示"已锁定"或占位；
   数据面由核心同一状态驱动。
 - **分享进云吞**（PR #402 / [ADR-0097](0097-share-in.md)）：分享的**写入**不要求解锁——iOS 扩展只往收件目录复制文件，

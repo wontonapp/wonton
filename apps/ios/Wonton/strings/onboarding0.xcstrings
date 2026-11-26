@@ -313,7 +313,7 @@
       }
     },
     "onboarding.review.done": {
-      "comment": "Checkmark icon for a finished install task.",
+      "comment": "Checkmark icon for a finished row (an app or a saved setting).",
       "extractionState": "manual",
       "localizations": {
         "en": {
@@ -325,19 +325,79 @@
         "zh-Hans": {
           "stringUnit": {
             "state": "translated",
-            "value": "已完成"
+            "value": "完成"
           }
         },
         "zh-Hant": {
           "stringUnit": {
             "state": "translated",
-            "value": "已完成"
+            "value": "完成"
           }
         },
         "ja": {
           "stringUnit": {
             "state": "translated",
             "value": "完了"
+          }
+        }
+      }
+    },
+    "onboarding.review.sectionApps": {
+      "comment": "Kind label of the app rows in the review step.",
+      "extractionState": "manual",
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Apps to install"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "要装的应用"
+          }
+        },
+        "zh-Hant": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "要安裝的應用程式"
+          }
+        },
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "インストールするアプリ"
+          }
+        }
+      }
+    },
+    "onboarding.review.sectionProfile": {
+      "comment": "Kind label of the profile row in the review step.",
+      "extractionState": "manual",
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Your profile"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "你的资料"
+          }
+        },
+        "zh-Hant": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "你的資料"
+          }
+        },
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "あなたのプロフィール"
           }
         }
       }
@@ -398,66 +458,6 @@
           "stringUnit": {
             "state": "translated",
             "value": "完了"
-          }
-        }
-      }
-    },
-    "onboarding.review.sectionProfile": {
-      "comment": "Kind label of the profile row in the review step.",
-      "extractionState": "manual",
-      "localizations": {
-        "en": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "Profile"
-          }
-        },
-        "zh-Hans": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "资料"
-          }
-        },
-        "zh-Hant": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "資料"
-          }
-        },
-        "ja": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "プロフィール"
-          }
-        }
-      }
-    },
-    "onboarding.review.sectionApps": {
-      "comment": "Kind label of the app rows in the review step.",
-      "extractionState": "manual",
-      "localizations": {
-        "en": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "Apps"
-          }
-        },
-        "zh-Hans": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "应用"
-          }
-        },
-        "zh-Hant": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "應用"
-          }
-        },
-        "ja": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "アプリ"
           }
         }
       }

@@ -1,4 +1,5 @@
 #if DEBUG
+// 只改壳的 PR 不编核心：核心产物按内容哈希取，见 .github/workflows/README.md 的“核心产物”。
 import SwiftUI
 import WontonClient
 
@@ -55,7 +56,7 @@ enum AgentRunFixtures {
 
     /// 位置参数构造：夹具的字面量不落在 `label:` 参数位上（界面文字检查的规则二）。
     private static func choice(_ key: String, _ label: String) -> AgentRunChoice {
-        AgentRunChoice(key: key, label: label)
+        AgentRunChoice(key: key, label: label, chosen: false, send: .idle)
     }
 
     static var working: AnyView { row(state: .working, step: "Reading files") }

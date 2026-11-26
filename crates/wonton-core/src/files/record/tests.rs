@@ -22,6 +22,7 @@ fn bot_record(id: FileId, bot: &str, origin: Origin, now: u64) -> FileRecord {
         },
         origin,
         access: [Accessor::Bot(bot.into())].into(),
+        rooms: [format!("!room:{bot}")].into_iter().collect(),
         owner_granted: Default::default(),
         registered: None,
         created_at: now,
@@ -55,6 +56,7 @@ fn records_survive_a_restart() {
         panic!("重启后记录应该还在");
     };
     assert_eq!(found.origin, record.origin);
+    assert_eq!(found.rooms, record.rooms);
     assert!(found.access.contains(&Accessor::Owner));
     assert_eq!(found.expires_at, None);
 }

@@ -9,20 +9,25 @@ import androidx.compose.runtime.setValue
 import androidx.compose.ui.test.junit4.createComposeRule
 import androidx.compose.ui.test.onNodeWithTag
 import androidx.compose.ui.test.onNodeWithText
+import androidx.compose.ui.test.onRoot
 import androidx.compose.ui.test.performClick
+import androidx.compose.ui.unit.dp
 import androidx.test.ext.junit.runners.AndroidJUnit4
 import androidx.test.platform.app.InstrumentationRegistry
-import app.wonton.protocol.AppearanceViewModel
+import app.wonton.protocol.AgentRunChoice
 import app.wonton.protocol.AgentRunState
+import app.wonton.protocol.AppearanceViewModel
+import app.wonton.protocol.ChoiceSend
 import app.wonton.protocol.FontStyle
 import app.wonton.protocol.Rgb
-import app.wonton.protocol.TimelineContent
 import app.wonton.protocol.TextSize
 import app.wonton.protocol.ThemeColors
 import app.wonton.protocol.ThemeMode
+import app.wonton.protocol.TimelineContent
 import app.wonton.ui.AgentRunRowView
 import app.wonton.ui.R
 import app.wonton.ui.design.WontonTheme
+import kotlin.math.abs
 import org.junit.After
 import org.junit.Assert.assertEquals
 import org.junit.Before
@@ -106,12 +111,44 @@ class AgentRunRowTest {
         assertEquals("card-1", openedCardId)
     }
 
+    @Test
+    fun askingChipsWrapIntoEqualPairs() {
+        val choices = listOf("Allow once", "Allow for this session", "Deny").mapIndexed { index, label ->
+            AgentRunChoice(
+                key = "k$index",
+                label = label,
+                chosen = false,
+                send = ChoiceSend.Idle,
+            )
+        }
+        compose.setContent {
+            WontonTheme(previewAppearance()) {
+                AgentRunRowView(fixture(AgentRunState.Waiting, choices = choices), {}, {})
+            }
+        }
+        compose.waitForIdle()
+        val root = compose.onRoot().fetchSemanticsNode().boundsInRoot
+        val boxes = listOf("k0", "k1", "k2").map {
+            compose.onNodeWithTag("asking-choice-$it").fetchSemanticsNode().boundsInRoot
+        }
+        // 两个等宽胶囊靠像素对齐，取整可能差到 1px 上下。
+        check(abs(boxes[0].top - boxes[1].top) <= 2f) { "前两个没有并排：${boxes[0]} / ${boxes[1]}" }
+        check(boxes[2].top >= boxes[0].bottom) { "第三个没有换行：${boxes[2]} vs ${boxes[0]}" }
+        check(abs(boxes[0].width - boxes[1].width) <= 2f) { "并排两个不等宽：${boxes[0].width} / ${boxes[1].width}" }
+        val gap = with(compose.density) { 8.dp.toPx() }
+        check(abs(boxes[2].width - (boxes[0].width + gap + boxes[1].width)) <= 2f) {
+            "单独一个没有占满一行：${boxes[2].width}"
+        }
+        check(boxes.all { it.right <= root.right + 0.5f }) { "选项出界：$boxes vs $root" }
+    }
+
     private fun fixture(
         state: AgentRunState,
         step: String? = null,
         steps: UInt? = null,
         cardId: String? = null,
         timestampMs: ULong = 0uL,
+        choices: List<AgentRunChoice> = emptyList(),
     ) = TimelineContent.AgentRun(
         run = null,
         state = state,
@@ -122,9 +159,10 @@ class AgentRunRowTest {
         end = null,
         body = "",
         cardId = cardId,
-        choices = emptyList(),
+        choices = choices,
         senderName = "Echo",
         timestampMs = timestampMs,
+        unreadAnchor = false,
     )
 
     private fun waiting() = fixture(AgentRunState.Waiting, cardId = "card-1")

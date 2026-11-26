@@ -9,7 +9,7 @@ impl ClientCore {
         wonton_protocol::MAX_PLUGIN_ARCHIVE_BYTES
     }
 
-    /// 头像的边长上限（像素）。壳按它把主人选的图裁成方形、缩放。
+    /// 头像的边长上限（像素）。壳按它把这个人选的图裁成方形、缩放。
     pub fn max_avatar_edge(&self) -> u32 {
         wonton_protocol::MAX_AVATAR_EDGE
     }

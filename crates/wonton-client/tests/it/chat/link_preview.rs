@@ -15,7 +15,7 @@ use wonton_protocol::{
 use super::PNG;
 use super::message_actions::join_group_room;
 use super::support::{Home, Phone, Timeline, WAIT};
-use super::{accept_the_bots_invite, bot_receives};
+use super::{accept_the_bots_encrypted_invite, accept_the_bots_invite, bot_receives};
 
 /// 假核心给这个网址回的预览；`title` 区分两个网址，图片在核心的缓存里。
 fn preview_body(final_url: &str, title: &str, image_id: Option<&str>) -> Value {
@@ -265,7 +265,7 @@ async fn a_sent_message_carries_the_preview_with_an_uploaded_image() {
 
     // 加密房间：图片是加密文件，对方凭句柄取回解密后的原图。事件里是裸的 EncryptedFile，
     // 媒体句柄外面还要包一层 `"file"`（同 `previews::bundled_image`）。
-    let encrypted_id = accept_the_bots_invite(&home, &phone, &bot).await;
+    let encrypted_id = accept_the_bots_encrypted_invite(&home, &phone, &bot).await;
     let encrypted = encrypted_id.to_string();
     let body = format!("看看 {url}");
     phone.dispatch(set_draft(&encrypted, body.clone())).unwrap();
@@ -385,6 +385,39 @@ async fn a_message_without_a_preview_is_fetched_once_and_deduplicated() {
         })
         .await;
     assert_eq!(home.link_preview_requests(), 1, "重画又请求了一次");
+}
+
+#[tokio::test(flavor = "multi_thread")]
+#[ignore = "需要 Docker，用 --include-ignored 运行"]
+async fn the_same_draft_bytes_ask_the_core_only_once() {
+    let dir = tempfile::tempdir().unwrap();
+    let phone = Phone::open(dir.path());
+    let home = Home::start(&[phone.device_id()]).await;
+    phone.connect(&home);
+    phone.signed_in().await;
+    let bot = home.bot("hermes", "Hermes").await;
+    let room_id = join_group_room(&phone, &bot, "草稿去重").await;
+    let room = room_id.to_string();
+    let url = "https://example.com/a";
+    home.set_link_preview(url, 200, preview_body(url, "第一个", Some("img")));
+    home.set_link_preview_image("img", "image/png", PNG);
+    let body = format!("看看 {url}");
+    let want = ready_card(url, "第一个", "img");
+
+    // 同一份草稿（字节没变）打三次，每次都读回：第一次取，后面命中，不再问核心。
+    for _ in 0..3 {
+        phone.dispatch(set_draft(&room, body.clone())).unwrap();
+        let draft = phone
+            .draft(TimelineTarget {
+                room_id: room.clone(),
+                thread_root: None,
+            })
+            .await
+            .unwrap()
+            .expect("草稿应该在");
+        assert_eq!(draft.preview, Some(want.clone()));
+    }
+    assert_eq!(home.link_preview_requests(), 1, "同一份草稿重复取了");
 }
 
 #[tokio::test(flavor = "multi_thread")]

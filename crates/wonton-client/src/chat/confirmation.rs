@@ -538,6 +538,8 @@ fn answer_error(problem: &ChatProblem) -> CoreError {
         ChatFailure::InvalidInput => CoreError::InvalidInput { reason: message },
         ChatFailure::NotReady => CoreError::NotReady { reason: message },
         ChatFailure::TransportUnavailable => CoreError::TransportUnavailable { reason: message },
+        ChatFailure::ServerNotPaired => CoreError::NotReady { reason: message },
+        ChatFailure::PeerPublicAccessOff => CoreError::TransportUnavailable { reason: message },
         ChatFailure::Unauthorized | ChatFailure::Forbidden => {
             CoreError::Unauthorized { reason: message }
         }

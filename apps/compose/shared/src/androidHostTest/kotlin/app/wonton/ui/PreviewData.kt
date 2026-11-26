@@ -5,10 +5,15 @@
 package app.wonton.ui
 
 import androidx.compose.foundation.background
+import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
+import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.fillMaxSize
+import androidx.compose.foundation.layout.padding
+import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.tooling.preview.Preview
 import app.wonton.protocol.AppearanceViewModel
 import app.wonton.protocol.ChatAccount
@@ -33,9 +38,13 @@ import app.wonton.protocol.FontStyle
 import app.wonton.protocol.HomePath
 import app.wonton.protocol.HomeStatus
 import app.wonton.protocol.HomeViewModel
+import app.wonton.protocol.InstallFailure
+import app.wonton.protocol.InstallStage
 import app.wonton.protocol.InstalledPlugin
 import app.wonton.protocol.InstalledPlugins
 import app.wonton.protocol.PendingConfirmation
+import app.wonton.protocol.PeerRow
+import app.wonton.protocol.PeerStatus
 import app.wonton.protocol.PluginKind
 import app.wonton.protocol.PluginRuntime
 import app.wonton.protocol.PluginState
@@ -45,7 +54,12 @@ import app.wonton.protocol.PushStatus
 import app.wonton.protocol.RecoveryNextStep
 import app.wonton.protocol.RecoveryStatus
 import app.wonton.protocol.RegistryMirrorViewModel
-import app.wonton.protocol.RolesViewModel
+import app.wonton.protocol.RelayCurrent
+import app.wonton.protocol.RelaySettingEntry
+import app.wonton.protocol.RelaySettingsPhase
+import app.wonton.protocol.RelaySettingsView
+import app.wonton.protocol.RelaySource
+import app.wonton.protocol.RelayState
 import app.wonton.protocol.RoomMembership
 import app.wonton.protocol.RoomPlugin
 import app.wonton.protocol.RoomRow
@@ -57,6 +71,9 @@ import app.wonton.protocol.TextSize
 import app.wonton.protocol.ThemeColors
 import app.wonton.protocol.ThemeMode
 import app.wonton.protocol.UdpFlowStats
+import app.wonton.ui.R
+import app.wonton.ui.design.WontonGroup
+import app.wonton.ui.design.WontonSeparator
 import app.wonton.ui.design.WontonTheme
 import app.wonton.ui.design.toColor
 
@@ -130,11 +147,44 @@ internal fun previewAppearance(dark: Boolean = false) = AppearanceViewModel(
 private const val DEVICE_ID = "6f1d3c47a90b5e28d34c1a7b0e965f2c8d4a13b6e075c9f2a8b4d61e3c05f7a9"
 private const val SERVER_ID = "b71e5048c29a6d3f"
 
+/** 中继设置预览：一台内置中继正在用，一条主人自己配的排在后面。 */
+internal fun previewRelays() = RelaySettingsView(
+    phase = RelaySettingsPhase.Idle,
+    entries = listOf(
+        RelaySettingEntry(
+            url = "https://relay.example.org/",
+            token = null,
+            quicPort = null,
+            tier = 0u.toUByte(),
+            source = RelaySource.BUILTIN,
+            state = RelayState.Connected,
+            editable = true,
+        ),
+        RelaySettingEntry(
+            url = "https://relay.example.net/",
+            token = "wonton-relay-token",
+            quicPort = 7842u.toUShort(),
+            tier = 1u.toUByte(),
+            source = RelaySource.SETTINGS,
+            state = RelayState.Unknown,
+            editable = true,
+        ),
+    ),
+)
+
 internal fun previewHome() = HomeViewModel(
     deviceId = DEVICE_ID,
     serverId = SERVER_ID,
     status = HomeStatus.Connected,
-    path = HomePath(relay = true, publicRelay = false, lan = false, rttMs = 48u),
+    path = HomePath(
+        relay = true,
+        publicRelay = false,
+        lan = false,
+        rttMs = 48u,
+        relayUrl = "https://relay.example.org/",
+    ),
+    currentRelay = RelayCurrent(url = "https://relay.example.org/", rttMs = 48u),
+    relays = previewRelays(),
     notice = null,
     details = ConnectionDetails(
         network = DeviceNetwork.WIFI,
@@ -251,8 +301,10 @@ internal fun previewInstalled() = InstalledPlugins(
     upgradeCheck = null,
 )
 
-internal fun previewPlugins() = PluginsViewModel(
-    installed = InstalledPlugins(plugins = emptyList(), upgradeCheck = null),
+internal fun previewPlugins(
+    installed: InstalledPlugins = InstalledPlugins(plugins = emptyList(), upgradeCheck = null),
+) = PluginsViewModel(
+    installed = installed,
     store = null,
     storeLoad = StoreLoadState.NotRequested,
     sidebar = SidebarViewModel(apps = emptyList(), moreApps = false, updates = 0u, settingsBadge = false),
@@ -261,6 +313,7 @@ internal fun previewPlugins() = PluginsViewModel(
     tasks = emptyList(),
     starts = emptyList(),
     updatable = emptyList(),
+    updateBatch = null,
     pending = emptyList(),
     confirmation = null,
     egress = EgressViewModel(
@@ -298,7 +351,6 @@ internal fun previewPlugins() = PluginsViewModel(
     portMappings = emptyList(),
     ownerSecrets = null,
     mediaGrants = emptyList(),
-    roles = RolesViewModel(loading = false, roles = emptyList(), defaultInviteRole = null, problem = null),
 )
 
 internal fun previewCard() = PendingConfirmation(
@@ -423,6 +475,41 @@ internal fun ChatFailurePreview() {
     }
 }
 
+/// 已安装列表里带着这次装失败的那个插件：降级行让位给失败卡，不再说“应用已安装”。
+@Preview(name = "Agent 降级且已装失败", locale = "en", widthDp = 390, heightDp = 200)
+@Composable
+internal fun AgentDegradedInstalledFailurePreview() {
+    PreviewFrame {
+        AgentPluginStatusBanner(
+            plugin = RoomPlugin(
+                pluginId = "app.example.hub",
+                status = PluginState.Degraded(reason = "container app-example-hub exited with code 137"),
+                start = null,
+                canStart = false,
+            ),
+            title = "Home Hub",
+            plugins = previewPlugins().copy(
+                installed = previewInstalled().copy(
+                    plugins = previewInstalled().plugins.map {
+                        it.copy(
+                            id = "app.example.hub",
+                            installFailure = InstallFailure(
+                                kind = "pulling_images",
+                                message = "拉取镜像超时",
+                                stage = InstallStage.PULLING_IMAGES,
+                                failedPluginId = "app.example.hub",
+                                cleanupErrors = emptyList(),
+                                retryable = true,
+                            ),
+                        )
+                    },
+                ),
+            ),
+            onAction = {},
+        )
+    }
+}
+
 /** AI 管家聊天页顶部的应用状态卡（降级）：说清应用是什么状态，核心写的原因收进详情。 */
 @Preview(name = "Agent 降级提示", locale = "en", widthDp = 390, heightDp = 200)
 @Composable
@@ -436,6 +523,38 @@ internal fun AgentDegradedPreview() {
                 canStart = false,
             ),
             title = "Home Hub",
+            plugins = previewPlugins(),
+            onAction = {},
+        )
+    }
+}
+
+/** 同上的降级卡，但插件是安装失败回滚的：已经不是“已安装”，不再带那句说明。 */
+@Preview(name = "Agent 安装失败提示", locale = "en", widthDp = 390, heightDp = 200)
+@Composable
+internal fun AgentInstallFailedPreview() {
+    val failed = previewInstalled().plugins.first().copy(
+        id = "app.example.hub",
+        title = "Home Hub",
+        installFailure = InstallFailure(
+            kind = "upstream",
+            message = "container app-example-hub exited with code 137",
+            stage = InstallStage.STARTING,
+            failedPluginId = "app.example.hub",
+            cleanupErrors = emptyList(),
+            retryable = true,
+        ),
+    )
+    PreviewFrame {
+        AgentPluginStatusBanner(
+            plugin = RoomPlugin(
+                pluginId = failed.id,
+                status = PluginState.Degraded(reason = "container app-example-hub exited with code 137"),
+                start = null,
+                canStart = false,
+            ),
+            title = failed.title,
+            plugins = previewPlugins(InstalledPlugins(plugins = listOf(failed), upgradeCheck = null)),
             onAction = {},
         )
     }
@@ -465,3 +584,53 @@ internal fun ProblemViewPreview() {
         )
     }
 }
+
+/** “其他服务器”页：连上的不写状态，公网访问关着的那一行说清原因；深色版看令牌。 */
+@Preview(name = "对方公网关", locale = "en", widthDp = 390, heightDp = 240)
+@Composable
+internal fun PeersPublicAccessOffPreview() {
+    PreviewFrame { PeersPreviewList() }
+}
+
+@Preview(name = "对方公网关（深色）", locale = "en", widthDp = 390, heightDp = 240)
+@Composable
+internal fun PeersPublicAccessOffDarkPreview() {
+    PreviewFrame(dark = true) { PeersPreviewList() }
+}
+
+@Composable
+private fun PeersPreviewList() {
+    Column(
+        Modifier
+            .fillMaxSize()
+            .padding(WontonTheme.spacing.s24),
+        verticalArrangement = Arrangement.spacedBy(WontonTheme.spacing.s12),
+    ) {
+        Text(
+            stringResource(R.string.peers_title),
+            color = WontonTheme.colors.textSecondary.toColor(),
+        )
+        WontonGroup {
+            rows.forEachIndexed { index, row ->
+                if (index > 0) WontonSeparator()
+                PeerRowView(row, onRemove = {})
+            }
+        }
+    }
+}
+
+private val rows: List<PeerRow>
+    get() = listOf(
+        row("lin7c3d", "Lin", PeerStatus.CONNECTED, null),
+        row("sam5e8f", "Sam", PeerStatus.PUBLIC_ACCESS_OFF, "endpoint 3c4d5e6f"),
+        row("mai2a9b", "Mai", PeerStatus.OFFLINE, "endpoint 0"),
+    )
+
+private fun row(handle: String, name: String, status: PeerStatus, detail: String?) = PeerRow(
+    serverName = "$handle.wonton",
+    ownerUserId = "@$handle:$handle.wonton",
+    ownerDisplayName = name,
+    status = status,
+    lastConnectedMs = 1_762_800_000_000uL,
+    detail = detail,
+)

@@ -11,6 +11,16 @@ pub enum Attempt {
 }
 
 pub fn parse_authorization(headers: &HeaderMap, username: &str) -> Attempt {
+    parse(headers, Some(username))
+}
+
+/// `credentials` 用：清单里的用户名只是提示给主人，客户端可能发别的（如自己的邮箱），
+/// 所以只要求 Basic 用户名非空，真正校验交给应用里的 `verify`。
+pub fn parse_password(headers: &HeaderMap) -> Attempt {
+    parse(headers, None)
+}
+
+fn parse(headers: &HeaderMap, username: Option<&str>) -> Attempt {
     let Some(value) = headers.get(hyper::header::AUTHORIZATION) else {
         return Attempt::Missing;
     };
@@ -39,7 +49,7 @@ pub fn parse_authorization(headers: &HeaderMap, username: &str) -> Attempt {
     let Some((user, password)) = decoded.split_once(':') else {
         return Attempt::Invalid;
     };
-    if user != username || password.is_empty() {
+    if user.is_empty() || password.is_empty() || username.is_some_and(|wanted| wanted != user) {
         return Attempt::Invalid;
     }
     Attempt::Password(password.to_owned())
@@ -66,5 +76,13 @@ mod tests {
         );
         headers.insert("authorization", "Basic invalid".parse().unwrap());
         assert_eq!(parse_authorization(&headers, "owner"), Attempt::Invalid);
+
+        // credentials：用户名只看非空，邮箱也放行。
+        let email = base64::engine::general_purpose::STANDARD.encode("me@example.com:secret");
+        headers.insert("authorization", format!("Basic {email}").parse().unwrap());
+        assert_eq!(parse_password(&headers), Attempt::Password("secret".into()));
+        let empty = base64::engine::general_purpose::STANDARD.encode(":secret");
+        headers.insert("authorization", format!("Basic {empty}").parse().unwrap());
+        assert_eq!(parse_password(&headers), Attempt::Invalid);
     }
 }

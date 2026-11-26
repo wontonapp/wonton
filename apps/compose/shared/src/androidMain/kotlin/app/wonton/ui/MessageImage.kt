@@ -45,6 +45,7 @@ fun MessageImage(
     core: ClientCore,
     sendState: SendState,
     onLongPress: (() -> Unit)? = null,
+    groupImages: List<ImageContent>? = null,
 ) {
     val shown = image.thumbnail ?: image.media
     val preview by loadedImage(core, shown)
@@ -59,7 +60,7 @@ fun MessageImage(
         Modifier.widthIn(max = WontonTheme.size.messageImage)
             .aspectRatio(image.ratio())
             .clip(RoundedCornerShape(WontonTheme.radii.control))
-            // 点开看图；长按给消息菜单（图片盖满气泡，菜单的手势要从这里来）。
+            // 点开看图；长按给消息菜单（照片盖满气泡，菜单的手势要从这里来）。
             .combinedClickable(onClick = { showingViewer = true }, onLongClick = { onLongPress?.invoke() }),
         contentAlignment = Alignment.Center,
     ) {
@@ -72,7 +73,7 @@ fun MessageImage(
         }
     }
     if (showingViewer) {
-        ImageViewer(image, core) { showingViewer = false }
+        ImageViewer(image, groupImages, core) { showingViewer = false }
     }
 }
 
@@ -106,17 +107,23 @@ internal fun loadedImage(core: ClientCore, media: MediaHandle, retryKey: Int = 0
     remember(media) { mutableStateOf<Result<ImageBitmap>?>(null) }.also { state ->
         val formatUnsupported = stringResource(R.string.message_image_format_unsupported)
         LaunchedEffect(media, retryKey) {
-            state.value = null
-            state.value = try {
-                val bytes = core.loadMedia(media)
-                withContext(Dispatchers.Default) {
-                    val source = ImageDecoder.createSource(ByteBuffer.wrap(bytes))
-                    Result.success(ImageDecoder.decodeBitmap(source).asImageBitmap())
-                }
-            } catch (failure: CoreException) {
-                Result.failure(failure)
-            } catch (failure: IOException) {
-                Result.failure(IllegalStateException(formatUnsupported, failure))
-            }
+            state.value = decodeOriginalMedia(core, media, formatUnsupported)
         }
     }
+
+/** 取原图并解码；格式不认识时用 [formatUnsupported] 的说明。失败按类别包好交回调用方。 */
+internal suspend fun decodeOriginalMedia(
+    core: ClientCore,
+    media: MediaHandle,
+    formatUnsupported: String,
+): Result<ImageBitmap> = try {
+    val bytes = core.loadMedia(media)
+    withContext(Dispatchers.Default) {
+        val source = ImageDecoder.createSource(ByteBuffer.wrap(bytes))
+        Result.success(ImageDecoder.decodeBitmap(source).asImageBitmap())
+    }
+} catch (failure: CoreException) {
+    Result.failure(failure)
+} catch (failure: IOException) {
+    Result.failure(IllegalStateException(formatUnsupported, failure))
+}

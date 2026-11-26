@@ -253,7 +253,9 @@ fn gateway(h: &Harness) -> Gateway {
         Arc::new(|| Languages::from_header(None)),
         h.tunnel.endpoint.clone(),
         0,
-        RelayTable::from_relays(Vec::new()),
+        Arc::new(crate::relay_settings::RelaySettings::for_table(
+            RelayTable::from_relays(Vec::new()),
+        )),
         tokio::sync::watch::channel(["192.0.2.10".parse().unwrap()].into()).1,
     );
     Gateway::new(
@@ -270,6 +272,7 @@ fn gateway(h: &Harness) -> Gateway {
         HttpClient::new(),
         tunnel,
     )
+    .with_public_access(true)
 }
 
 /// 假插件后端：记录收到的请求；`/auth/` 开头回 401，`/spoof` 自己带计数头，`/ws` 支持协议升级。
@@ -405,3 +408,6 @@ mod clients_entry_race_tests;
 
 #[path = "clients_entry_setup_tests.rs"]
 mod clients_entry_setup_tests;
+
+#[path = "clients_entry_credentials_tests.rs"]
+mod clients_entry_credentials_tests;

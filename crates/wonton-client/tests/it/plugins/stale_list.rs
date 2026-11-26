@@ -4,7 +4,9 @@ use std::time::Duration;
 
 use axum::http::Method;
 
-use wonton_client::{Action, InstalledPlugins, PluginTaskState, StoreListing, StoreSection};
+use wonton_client::{
+    Action, InstalledPlugin, InstalledPlugins, PluginTaskState, StoreListing, StoreSection,
+};
 
 use super::rig::{Canned, Rig, item, running};
 
@@ -47,14 +49,21 @@ fn store_listing() -> StoreListing {
     }
 }
 
+/// 从商店装的应用带来源；本地装的应用（无来源）核心升不了，不算可更新。
+fn from_store(id: &str) -> InstalledPlugin {
+    let mut plugin = running(id);
+    plugin.source = Some(format!("github:owner/{id}@v1.0.0"));
+    plugin
+}
+
 #[tokio::test]
 async fn a_late_stale_list_does_not_bring_the_uninstalled_plugin_back() {
     let rig = Rig::new().await.without_periodic_checks();
-    let magpie = running("app.usemagpie.magpie");
-    let mut miniflux = running("app.miniflux.miniflux");
+    let magpie = from_store("app.usemagpie.magpie");
+    let mut miniflux = from_store("app.miniflux.miniflux");
     miniflux.web_url = Some("http://app-miniflux.wonton.localhost:18480/".to_owned());
     let l0 = vec![magpie, miniflux];
-    let l1 = vec![running("app.usemagpie.magpie")];
+    let l1 = vec![from_store("app.usemagpie.magpie")];
     rig.core.set_lists(vec![l0.clone(), l1.clone()]);
     rig.core.answer_always(
         Method::GET,

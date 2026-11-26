@@ -22,7 +22,11 @@ struct Server {
 
 impl Server {
     async fn start(router: Router) -> Self {
-        let listener = tokio::net::TcpListener::bind("127.0.0.1:0").await.unwrap();
+        Self::start_on("127.0.0.1:0", router).await
+    }
+
+    async fn start_on(addr: &str, router: Router) -> Self {
+        let listener = tokio::net::TcpListener::bind(addr).await.unwrap();
         let url = format!("http://{}", listener.local_addr().unwrap());
         let task = tokio::spawn(async move { axum::serve(listener, router).await.unwrap() });
         Self { url, task }
@@ -314,17 +318,21 @@ async fn registry_probe_total_timeout_includes_manifest_body() {
 async fn registry_probe_redirect_strips_authorization() {
     let received = Arc::new(AtomicUsize::new(0));
     let calls = received.clone();
-    let destination = Server::start(Router::new().route(
-        "/manifest",
-        get(move |headers: HeaderMap| {
-            let calls = calls.clone();
-            async move {
-                assert!(!headers.contains_key("authorization"));
-                calls.fetch_add(1, Ordering::SeqCst);
-                CONTENT
-            }
-        }),
-    ))
+    // 目标主机用另一个回环字面地址，主机名变了才剥离 Authorization；不用 localhost，免得靠宿主解析和 IPv6。
+    let destination = Server::start_on(
+        "127.0.0.2:0",
+        Router::new().route(
+            "/manifest",
+            get(move |headers: HeaderMap| {
+                let calls = calls.clone();
+                async move {
+                    assert!(!headers.contains_key("authorization"));
+                    calls.fetch_add(1, Ordering::SeqCst);
+                    CONTENT
+                }
+            }),
+        ),
+    )
     .await;
     let token_server = Server::start(Router::new().route(
         "/token",
@@ -335,10 +343,7 @@ async fn registry_probe_redirect_strips_authorization() {
     ))
     .await;
     let realm = format!("{}/token", token_server.url);
-    let destination_url = format!(
-        "{}/manifest",
-        destination.url.replace("127.0.0.1", "localhost")
-    );
+    let destination_url = format!("{}/manifest", destination.url);
     let server = Server::start(Router::new().route(
         "/manifest",
         get(move |headers: HeaderMap| {

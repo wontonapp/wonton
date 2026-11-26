@@ -35,14 +35,14 @@ struct OutgoingRow: View {
                 }
                 if !message.body.isEmpty {
                     Text(message.body)
-                        .wontonText(WontonTheme.typography.body)
+                        .wontonText(WontonTheme.typography.message)
                         .foregroundStyle(Color(colors.textOnAccentFill))
                 }
                 footer
             }
             .padding(.horizontal, WontonTheme.spacing.s12)
             .padding(.vertical, WontonTheme.spacing.s8)
-            .accentFill(shape)
+            .background(shape.fill(Color(colors.accentFill)))
         }
         .accessibilityIdentifier("outgoingMessage")
     }
@@ -79,18 +79,20 @@ struct OutgoingRow: View {
                         composer.cancel(message)
                     }
                 ])
-            case let .failed(reason, _):
+            case let .failed(failure, details, _):
                 Button {
                     isChoosingFailed = true
                 } label: {
                     HStack(spacing: WontonTheme.spacing.s4) {
                         WontonIcon.warningCircle.view(size: WontonTheme.size.iconTiny)
-                        Text(.Message1.messageSendFailed(reason))
+                        Text(failure == .other
+                            ? details ?? String(localized: failure.text)
+                            : String(localized: failure.text))
                     }
                     .foregroundStyle(Color(colors.textOnAccentFill))
                 }
                 .buttonStyle(.plain)
-                .wontonActionSheet(isPresented: $isChoosingFailed, actions: [
+                .wontonActionSheet(isPresented: $isChoosingFailed, title: details, actions: [
                     WontonSheetAction(title: String(localized: .Message1.messageResend), icon: .refresh) {
                         composer.retry(message)
                     },

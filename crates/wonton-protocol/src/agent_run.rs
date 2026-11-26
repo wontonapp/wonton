@@ -5,6 +5,8 @@
 
 use serde::{Deserialize, Serialize};
 
+use crate::ChoiceSend;
+
 /// 一轮任务的状态。`Working`、`Waiting`、`Done`、`Failed` 是 MSC4564 的四个值；`Uncertain` 由客户端核心
 /// 合成：Bot 离线或活动未知时，还停在 `Working`、`Waiting` 的状态行按它显示，不转圈（ADR-0082 第 4 节）。
 #[derive(Clone, Debug, PartialEq, Eq)]
@@ -119,6 +121,12 @@ pub struct AgentRunChoice {
     pub key: String,
     /// 按钮文字，Bot 给的原话，原样显示，不翻译。
     pub label: String,
+    /// 我加过这个表情（包括我的其他设备）：壳把它画成选中，其余选项不能再点。
+    #[serde(default)]
+    pub chosen: bool,
+    /// 我刚点的这一个还在发，或者没发出去。其余为 [`ChoiceSend::Idle`]。
+    #[serde(default)]
+    pub send: ChoiceSend,
 }
 
 #[cfg(test)]
@@ -222,6 +230,7 @@ mod tests {
                 choices: Vec::new(),
                 sender_name: "Hermes".into(),
                 timestamp_ms: 1_793_000_000_000,
+                unread_anchor: false,
             },
         };
         let value = serde_json::to_value(&item).unwrap();
@@ -234,5 +243,46 @@ mod tests {
         assert_eq!(value["content"]["choices"], serde_json::json!([]));
         assert_eq!(value["content"]["sender_name"], "Hermes");
         assert_eq!(value["content"]["timestamp_ms"], 1_793_000_000_000u64);
+    }
+
+    /// 契约：状态行选项带“已选、在发、失败”，和消息上的选项用同一种发送状态类型；老核心少了这两个字段时
+    /// 落到未选、没在发。
+    #[test]
+    fn status_choices_carry_chosen_and_send_state() {
+        let choice = AgentRunChoice {
+            key: "allow".into(),
+            label: "允许一次".into(),
+            chosen: true,
+            send: ChoiceSend::Failed {
+                message: "连不上".into(),
+            },
+        };
+        let json = serde_json::to_value(&choice).unwrap();
+        assert_eq!(
+            json,
+            serde_json::json!({
+                "key": "allow",
+                "label": "允许一次",
+                "chosen": true,
+                "send": {"type": "failed", "message": "连不上"},
+            })
+        );
+        assert_eq!(
+            serde_json::from_value::<AgentRunChoice>(json).unwrap(),
+            choice
+        );
+        assert_eq!(
+            serde_json::from_value::<AgentRunChoice>(serde_json::json!({
+                "key": "deny",
+                "label": "拒绝",
+            }))
+            .unwrap(),
+            AgentRunChoice {
+                key: "deny".into(),
+                label: "拒绝".into(),
+                chosen: false,
+                send: ChoiceSend::Idle,
+            }
+        );
     }
 }

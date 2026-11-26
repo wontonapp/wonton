@@ -2,6 +2,8 @@
 set -euo pipefail
 root=$(CDPATH= cd -- "$(dirname -- "$0")" && pwd)
 cd "$root"
+# shellcheck source=deploy/dev/core/dev-guard.sh
+source "$root/../core/dev-guard.sh"
 
 compose() {
   local files=(-f compose.yaml)
@@ -40,6 +42,11 @@ case "${1:-}" in
     exec python3 "$root/prepare.py"
     ;;
   up)
+    project="${COMPOSE_PROJECT_NAME:-}"
+    if [[ -z $project && -f $root/.runtime/stack.env ]]; then
+      project=$(sed -n 's/^COMPOSE_PROJECT_NAME=//p' "$root/.runtime/stack.env")
+    fi
+    dev_guard_check "${project:-wonton-entry-cloud}"
     python3 "$root/prepare.py"
     load_env
     # 一次性的记录种子单独起：和网络同一批创建时，它的容器可能拿不到地址（实测 ENETUNREACH）。
@@ -65,10 +72,12 @@ case "${1:-}" in
     ;;
   down)
     load_env
+    dev_guard_check "$COMPOSE_PROJECT_NAME"
     compose down
     ;;
   destroy)
     load_env
+    dev_guard_check "$COMPOSE_PROJECT_NAME"
     compose down --volumes
     rm -rf -- "$root/.runtime"
     ;;

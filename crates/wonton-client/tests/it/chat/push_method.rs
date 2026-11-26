@@ -10,9 +10,9 @@ use wonton_matrix::ChatRoom;
 use wonton_protocol::SettingsEntry;
 use wonton_protocol::{TimelineAction, TimelineTarget};
 
-use super::accept_the_bots_invite;
 use super::push::endpoint;
 use super::support::{Home, Phone, ToDeviceHold, WAIT};
+use super::{accept_the_bots_encrypted_invite, accept_the_bots_invite};
 
 /// 自己带出去的那条会同步回来，但不该进后台通知；同一条别的照常收集。
 async fn own_message_is_not_notified(phone: &Phone, bot_room: &ChatRoom, room_id: &str) {
@@ -368,7 +368,7 @@ async fn a_late_room_key_replaces_the_unavailable_background_notification() {
     // 手机只收到解不开的消息。重放之后密钥才到，和密钥晚到是同一件事。
     let hold = ToDeviceHold::start(&home.matrix.url).await;
     let bot = home.bot_via(hold.url(), "hermes", "Hermes").await;
-    let room_id = accept_the_bots_invite(&home, &phone, &bot).await;
+    let room_id = accept_the_bots_encrypted_invite(&home, &phone, &bot).await;
 
     phone
         .dispatch(Action::Home {

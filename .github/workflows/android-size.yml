@@ -1,0 +1,90 @@
+name: android-size
+
+# Release APK 体积门禁，合进 main 之后跑，不挡合并：它要编一份 release 核心，冷缓存十几分钟，比 gate 里的快检查慢。
+# 每天定时兜底一次，也可以手动触发。只在失败时留映射表和符号（mapping.txt 一百多 MB，每个 PR 都存太占产物存储）。
+on:
+  push:
+    branches: [main]
+    # 不是必需检查，路径直接写在触发器上；范围和 gate.yml 的 android 一样，只改 .md 的不跑。
+    paths:
+      - "apps/compose/**"
+      - "apps/ios/Wonton/Assets.xcassets/**"
+      - "apps/ios/Wonton/Design/Generated/**"
+      - "design/**"
+      - "scripts/generate-design.py"
+      - "scripts/check-apk-size.sh"
+      - "crates/wonton-client/**"
+      - "crates/wonton-matrix/**"
+      - "crates/wonton-protocol/**"
+      - "crates/wonton-tunnel/**"
+      - "Cargo.toml"
+      - "vendor/**"
+      - "Cargo.lock"
+      - "rust-toolchain.toml"
+      - ".github/workflows/android-size.yml"
+      - "!**/*.md"
+  schedule:
+    - cron: "10 4 * * *"
+  workflow_dispatch:
+
+# 同一分支又推了新提交，旧的取消：结果只对旧提交有意义。定时跑完为止。
+concurrency:
+  group: "${{ github.event_name == 'schedule' && 'android-size-nightly' || format('android-size-{0}', github.ref) }}"
+  cancel-in-progress: ${{ github.event_name != 'schedule' }}
+
+env:
+  CARGO_INCREMENTAL: "0"
+  CARGO_PROFILE_DEV_DEBUG: line-tables-only
+  # Release 的符号要能还原到行：崩溃分析只靠它，剥掉的是打包进 APK 的那份。
+  CARGO_PROFILE_RELEASE_DEBUG: line-tables-only
+
+permissions:
+  contents: read
+
+jobs:
+  release-size:
+    name: Release APK 体积
+    runs-on: ubuntu-24.04
+    timeout-minutes: 60
+    steps:
+      - uses: actions/checkout@fbc6f3992d24b796d5a048ff273f7fcc4a7b6c09 # v5
+        with:
+          persist-credentials: false
+      - uses: actions/setup-java@b6effb05e454b25005698d916606bdc6ffcbf961 # v5
+        with:
+          distribution: temurin
+          java-version: "21"
+      - name: 安装 rust-toolchain.toml 指定的工具链和 Android target
+        run: |
+          rustup toolchain install
+          rustup target add aarch64-linux-android
+      - uses: taiki-e/install-action@cfdb7ed4ccc7c7dce37759eae89dc5674b469b39 # v2
+        with:
+          tool: cargo-ndk@4.1.2
+      - uses: Swatinem/rust-cache@d1527c8f67ef9af357290475d4af4b0fab8f12e0 # v2
+        with:
+          # 和 android.yml 同一个 key：cache.yml 在 main 上编好的 release 核心在这里增量链接。
+          shared-key: rust-android
+          save-if: false
+      - uses: gradle/actions/setup-gradle@0723195856401067f7a2779048b490ace7a47d7c # v5.0.2
+      - name: 编手机架构的 Release APK
+        working-directory: apps/compose
+        # 不传 -Pwonton.rustProfile：assembleRelease 默认用 release 核心（shared/build.gradle.kts）。
+        # 默认 ABI 里的 x86_64 只给 Robolectric 单测，体积档只编手机要的 arm64。
+        run: ./gradlew --no-daemon :androidApp:assembleRelease -PwontonVersion=0.0.0 -Pwonton.abis=arm64-v8a
+      # 上限是修后大小 +15%：留得下正常的依赖和代码增长，挡得住符号没剥、R8 没开、多打进一个 ABI 这类成倍的回退。
+      - name: 检查体积
+        run: bash scripts/check-apk-size.sh apps/compose/androidApp/build/outputs/apk/release/androidApp-release-unsigned.apk
+        env:
+          WONTON_MAX_APK_MB: "53"
+      # 超大或崩了也要拿到符号，才查得出为什么。
+      - name: 保留符号和映射表
+        if: failure()
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4.6.2
+        with:
+          name: android-release-symbols-${{ github.run_attempt }}
+          path: |
+            apps/compose/shared/build/outputs/native-symbols
+            apps/compose/androidApp/build/outputs/mapping/release
+          retention-days: 14
+          if-no-files-found: ignore

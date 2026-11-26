@@ -57,7 +57,7 @@
       "size": "40x40"
     },
     {
-      "filename": "light-60@2x.png",
+      "filename": "light-40@3x.png",
       "idiom": "universal",
       "platform": "ios",
       "scale": "2x",
@@ -222,7 +222,7 @@
           "value": "dark"
         }
       ],
-      "filename": "dark-60@2x.png",
+      "filename": "dark-40@3x.png",
       "idiom": "universal",
       "platform": "ios",
       "scale": "2x",
@@ -305,18 +305,6 @@
       "platform": "ios",
       "scale": "2x",
       "size": "83.5x83.5"
-    },
-    {
-      "appearances": [
-        {
-          "appearance": "luminosity",
-          "value": "dark"
-        }
-      ],
-      "filename": "dark-1024.png",
-      "idiom": "universal",
-      "platform": "ios",
-      "size": "1024x1024"
     },
     {
       "appearances": [
@@ -429,7 +417,7 @@
           "value": "tinted"
         }
       ],
-      "filename": "tinted-60@2x.png",
+      "filename": "tinted-40@3x.png",
       "idiom": "universal",
       "platform": "ios",
       "scale": "2x",
@@ -512,18 +500,6 @@
       "platform": "ios",
       "scale": "2x",
       "size": "83.5x83.5"
-    },
-    {
-      "appearances": [
-        {
-          "appearance": "luminosity",
-          "value": "tinted"
-        }
-      ],
-      "filename": "tinted-1024.png",
-      "idiom": "universal",
-      "platform": "ios",
-      "size": "1024x1024"
     }
   ],
   "info": {

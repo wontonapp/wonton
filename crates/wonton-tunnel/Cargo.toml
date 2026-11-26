@@ -18,7 +18,11 @@ bytes = "1.12.1"
 getrandom = { workspace = true }
 # MIT OR Apache-2.0。解析本地代理和联邦出站代理收到的第一个请求头（hyper 用的同一个解析器）。
 httparse = "1.10.1"
-iroh = { workspace = true }
+# `unstable-custom-transports` 只为 `EndpointBuilder::path_selector`（排除代理 TUN 的假地址）；
+# 上游不保证这组 API 的语义，升级 iroh 时先看 `endpoint::transports` 有没有变。
+iroh = { workspace = true, features = ["unstable-custom-transports"] }
+# MIT OR Apache-2.0。中继的 QUIC 端口要直接给出 `RelayQuicConfig`，iroh 根没 re-export 这个类型。
+iroh-relay = "1.4.1"
 # MIT OR Apache-2.0。中继令牌写在地址的 userinfo 里，按百分号编码解码。
 percent-encoding = { workspace = true }
 # MIT OR Apache-2.0。配对请求和回应的 JSON。

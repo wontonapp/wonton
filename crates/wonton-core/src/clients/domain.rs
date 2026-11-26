@@ -23,7 +23,6 @@ use crate::entry_certificate::{CertificateConfig, CertificateManager, validate_d
 use crate::entry_settings::{EntrySettings, parse_resolvers};
 use crate::matrix::NoticeRoom;
 use crate::plugin::docker::Engine;
-use crate::plugin::names::{Instance, LABEL_COMPONENT, LABEL_MANAGED_BY};
 
 const DOMAIN_FILE: &str = "entry/domain.json";
 const DNS_ENV_FILE: &str = "entry/secrets/dns.env";
@@ -84,18 +83,18 @@ pub struct Saved {
 pub struct Domain {
     install_dir: PathBuf,
     data_dir: PathBuf,
-    engine: Engine,
-    /// 核心的实例名：入口容器按组件标签找时用它限定自己这套，别热加载别家的入口。
-    instance: Instance,
+    pub(crate) engine: Engine,
     notices: Option<Arc<NoticeRoom>>,
     /// 串行化签发；同时来两次就排队，后一次用最新的设置。
     issuance: Mutex<()>,
     /// 已经排队的签发数；大于零时证书状态是 `issuing`。
-    pending: AtomicUsize,
+    pub(crate) pending: AtomicUsize,
     /// 设置文件的读写锁，签发不占着它。
     writes: Mutex<()>,
     /// CAA 结果的短缓存（后缀加账号为键，60 秒）：设置页刷新别每次都等 DNS。
     caa_cache: Mutex<Option<(std::time::Instant, String, CaaState)>>,
+    /// 新证书发布后叫醒续期循环：下一轮对账按新证书重写入口配置再重载。
+    refresh: tokio::sync::Notify,
 }
 
 struct Acme {
@@ -112,19 +111,18 @@ impl Domain {
         install_dir: PathBuf,
         data_dir: PathBuf,
         engine: Engine,
-        instance: Instance,
         notices: Option<Arc<NoticeRoom>>,
     ) -> Arc<Self> {
         Arc::new(Self {
             install_dir,
             data_dir,
             engine,
-            instance,
             notices,
             issuance: Mutex::new(()),
             pending: AtomicUsize::new(0),
             writes: Mutex::new(()),
             caa_cache: Mutex::new(None),
+            refresh: tokio::sync::Notify::new(),
         })
     }
 
@@ -257,6 +255,8 @@ impl Domain {
         Ok(DomainSettings {
             suffix: fixed.clone().or(store.suffix.clone()),
             suffix_editable: fixed.is_none(),
+            home: None,
+            tail: None,
             provider: store.provider.clone(),
             credentials_set: store.has_credentials(),
             terms_accepted: store.terms_accepted,
@@ -382,7 +382,18 @@ impl Domain {
 
     /// 准入条件够了就排一次签发；续期循环和保存都走这里。
     fn spawn_issue(self: &Arc<Self>) {
-        let Ok(store) = self.effective() else { return };
+        let store = match self.effective() {
+            Ok(store) => store,
+            Err(error) => {
+                tracing::warn!(%error, "域名设置读不了，这一轮跳过续期");
+                let text = format!("{error:#}");
+                let this = self.clone();
+                tokio::spawn(async move {
+                    this.notify("entry-domain-unreadable", &text).await;
+                });
+                return;
+            }
+        };
         if !self.ready(&store) {
             return;
         }
@@ -439,14 +450,9 @@ impl Domain {
         }
         match result {
             Ok(()) => {
-                let loaded = async {
-                    crate::entry_compose::prepare_permissions(&self.install_dir)?;
-                    self.reload_entry().await
-                }
-                .await;
-                if let Err(error) = loaded {
-                    tracing::error!(%error, "入口证书热加载失败");
-                    self.notify("entry-certificate-reload-failed", &error.to_string())
+                if let Err(error) = self.refresh_entry().await {
+                    tracing::error!(%error, "入口证书更新没写出去");
+                    self.notify("entry-certificate-reload-failed", &format!("{error:#}"))
                         .await;
                 }
             }
@@ -456,6 +462,24 @@ impl Domain {
                     .await;
             }
         }
+    }
+
+    /// 证书发布了：先把新证书的权限交给入口用户，再叫醒续期循环。那轮对账先按新证书写配置、
+    /// 再发 USR2；反过来的顺序会让入口拿旧名字的 crt-list 去读新证书。
+    async fn refresh_entry(&self) -> Result<()> {
+        crate::entry_compose::prepare_permissions(&self.install_dir)?;
+        self.notify_refresh();
+        Ok(())
+    }
+
+    /// 叫醒续期循环立刻对一次账（新证书已发布）。
+    pub(crate) fn notify_refresh(&self) {
+        self.refresh.notify_one();
+    }
+
+    /// 等到一张新证书发布；续期循环收到就立刻对一次账。
+    pub async fn refreshed(&self) {
+        self.refresh.notified().await;
     }
 
     /// 装机路径：同步签发一次，失败让安装停下。主人自己放 `site.pem` 的装机只核对文件在不在。
@@ -537,26 +561,6 @@ impl Domain {
             text.push('\n');
         }
         crate::install::write_private(&path, &text)
-    }
-
-    /// 入口容器在就让它重读证书，不在就只发布。
-    async fn reload_entry(&self) -> Result<()> {
-        // 入口容器由核心按组件标签建（C5）：`wonton.core.component=entry` + 本实例，不再是 compose 服务。
-        let found = self
-            .engine
-            .labeled(LABEL_MANAGED_BY, "core", |labels| {
-                self.instance.owns(labels)
-                    && labels.get(LABEL_COMPONENT).map(String::as_str) == Some("entry")
-            })
-            .await
-            .context("找入口容器")?;
-        let Some(container) = found.containers.first() else {
-            return Ok(());
-        };
-        self.engine
-            .kill_container(container, "SIGUSR2")
-            .await
-            .map_err(Into::into)
     }
 
     fn certificate_state(&self, store: &Store) -> CertificateState {
@@ -663,6 +667,20 @@ impl Domain {
 
 fn invalid(error: anyhow::Error) -> DomainError {
     DomainError::Invalid(format!("{error:#}"))
+}
+
+/// 域名设置文件里的后缀（还没配就是 None）。入口对账按它判断有没有要服务的名字；
+/// 文件名和格式由这个模块管，别处不重复解析。
+pub(crate) fn stored_suffix(install_dir: &Path) -> Result<Option<String>> {
+    let path = install_dir.join(DOMAIN_FILE);
+    match std::fs::read(&path) {
+        Ok(bytes) => {
+            let store: Store = serde_json::from_slice(&bytes).with_context(|| "读不了域名设置")?;
+            Ok(store.suffix)
+        }
+        Err(error) if error.kind() == std::io::ErrorKind::NotFound => Ok(None),
+        Err(error) => Err(error).with_context(|| format!("读取 {}", path.display())),
+    }
 }
 
 fn now_ms() -> u64 {

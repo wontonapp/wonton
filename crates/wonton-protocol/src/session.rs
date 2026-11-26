@@ -24,7 +24,8 @@ mod tests {
     use crate::{
         Action, ConnectionCheck, ConnectionDetails, ConnectionNotice, ConnectionQuality, CoreError,
         DeviceInvite, DeviceNetwork, HomeAction, HomeFailure, HomePath, HomeStatus, HomeViewModel,
-        PairingFailure, PairingStatus, ProxySettings, SecretString, SessionAction,
+        PairingFailure, PairingStatus, ProxySettings, RelayCurrent, RelaySettingsView,
+        SecretString, SessionAction,
     };
 
     /// 契约：ViewModel、操作和错误都能经 JSON 往返，供将来的 Web 端经 WebSocket 收发。
@@ -60,11 +61,17 @@ mod tests {
                 reason: HomeFailure::Unauthorized,
                 message: "服务端拒绝了本设备".into(),
             },
+            current_relay: Some(RelayCurrent {
+                url: "https://relay.example.org/".into(),
+                rtt_ms: None,
+            }),
+            relays: RelaySettingsView::default(),
             path: Some(HomePath {
                 relay: false,
                 public_relay: false,
                 lan: true,
                 rtt_ms: 3,
+                relay_url: Some("https://relay.example.org/".into()),
             }),
             notice: Some(ConnectionNotice::ServerOffline { retrying: true }),
             details: ConnectionDetails {

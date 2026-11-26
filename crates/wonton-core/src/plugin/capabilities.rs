@@ -53,7 +53,8 @@ pub enum Credentials {
     Required,
 }
 
-/// 模型网关（ADR-0008）：专用字段照旧在 `provides.models`，使用方申请 `models` 权限。
+/// 模型网关（ADR-0008）：专用字段照旧在 `provides.models`，使用方写 `wants: [models]`（老清单的
+/// `models` 权限继续收）。
 pub const MODELS: Capability = Capability {
     name: "models",
     interface: "OpenAI 兼容 API（provides.models.apis），凭据按使用方隔离",
@@ -128,6 +129,17 @@ pub const PERSONAL_DATA: Capability = Capability {
     hosted: None,
 };
 
+/// 媒体源（ADR-0113）：列条目、上传、取播放计划，核心是使用方。与 `jellyfin`（Seerr 之类窄用途）并存，
+/// 同一个插件可以两样都提供。路径和失败信封在 `wonton-protocol::media`。
+pub const MEDIA_SOURCE: Capability = Capability {
+    name: wonton_protocol::media::MEDIA_CAPABILITY,
+    interface: "媒体源：GET /_wonton/capabilities 自报 operations 与 kinds，条目、上传、播放计划各走 /items、/uploads、/playback；\
+                每个请求带 X-Wonton-User，失败回 MediaFailure 信封",
+    credentials: Credentials::Required,
+    high_privilege: false,
+    hosted: None,
+};
+
 /// 远端 MCP（ADR-0066 第 3 节）：核心不直接外连，交给提供这个能力的连接器；没有包内目录，提供方不写 `mount`。
 pub const REMOTE_MCP: Capability = Capability {
     name: "remote_mcp",
@@ -175,6 +187,7 @@ pub const ALL: &[Capability] = &[
     REMOTE_MCP,
     MATRIX_RTC,
     PERSONAL_DATA,
+    MEDIA_SOURCE,
 ];
 
 pub fn lookup(name: &str) -> Option<&'static Capability> {
@@ -302,6 +315,16 @@ pub fn validate(manifest: &Manifest, langs: &Languages) -> Result<(), ManifestEr
             &[("capability", name.as_str().into())],
         )));
     }
+    // `models` 只走 `wants`：网关不是安装门槛，提供方自己也提供时同样可以 wants。
+    if manifest.requires.iter().any(|name| name == MODELS.name)
+        && !is_self_provided(manifest, MODELS.name)
+    {
+        return Err(ManifestError::Invalid(text(
+            langs,
+            "plugin-capability-models-in-requires",
+            &[],
+        )));
+    }
     // ADR-0061 第 9 节：提供方可以 requires 自己也提供的能力（按名字比，不写死某个能力），别的照旧拒。
     for name in &manifest.requires {
         if manifest.provides.is_some() && !is_self_provided(manifest, name) {
@@ -370,6 +393,23 @@ fn validate_provides(provides: &Provides, langs: &Languages) -> Result<(), Manif
             }
             _ => {}
         }
+        if name == wonton_protocol::media::MEDIA_CAPABILITY {
+            for (field, empty) in [
+                ("operations", service.operations.is_empty()),
+                ("kinds", service.kinds.is_empty()),
+            ] {
+                if empty {
+                    return Err(ManifestError::Invalid(text(
+                        langs,
+                        "plugin-capability-media-source-empty",
+                        &[
+                            ("capability", name.as_str().into()),
+                            ("field", field.into()),
+                        ],
+                    )));
+                }
+            }
+        }
         if let Some(credentials) = &service.credentials {
             for (field, argv) in [
                 ("issue", &credentials.issue),
@@ -404,7 +444,7 @@ fn first_duplicate(names: &[String]) -> Option<&str> {
     })
 }
 
-/// 模型网关使用方迁移单独切换；通用能力已由连接记录兑现。
+/// 还装不了的依赖形态：托管能力只由静态网页兑现，容器插件要它没人给。`models` 已由模型网关兑现。
 pub fn unsupported_model_dependency(
     manifest: &Manifest,
     langs: &Languages,
@@ -418,7 +458,7 @@ pub fn unsupported_model_dependency(
         .requires
         .iter()
         .chain(&manifest.wants)
-        .any(|name| name == MODELS.name || hosted_for_container(name))
+        .any(hosted_for_container)
     {
         return Ok(());
     }
@@ -495,9 +535,35 @@ mod tests {
 
     #[test]
     fn known_capability_names_pass() {
-        validate(&manifest(&["models"], &[], false), &Languages::default()).unwrap();
+        validate(&manifest(&["jellyfin"], &[], false), &Languages::default()).unwrap();
         validate(&manifest(&[], &["models"], false), &Languages::default()).unwrap();
         validate(&manifest(&[], &[], false), &Languages::default()).unwrap();
+    }
+
+    /// 网关不是安装门槛：`models` 只走 `wants`；提供方自己提供它时照 ADR-0061 第 9 节可以 requires。
+    #[test]
+    fn models_never_in_requires() {
+        let e = validate(&manifest(&["models"], &[], false), &Languages::default()).unwrap_err();
+        assert!(e.to_string().contains("wants"), "{e}");
+        let provider: Manifest = serde_json::from_value(serde_json::json!({
+            "spec": "0.6",
+            "id": "app.example",
+            "version": "1.0.0",
+            "kind": "system",
+            "title": {"en": "Example"},
+            "description": {"en": "Example plugin"},
+            "permissions": [],
+            "requires": ["models"],
+            "provides": {"models": {
+                "service": "magpie",
+                "port": 8080,
+            "apis": {"openai": "/v1"},
+                "default_model": "group/default",
+                "credentials": {"issue": ["issue", "{name}"], "revoke": ["revoke", "{name}"]}
+            }},
+        }))
+        .unwrap();
+        validate(&provider, &Languages::default()).unwrap();
     }
 
     #[test]
@@ -529,16 +595,16 @@ mod tests {
     #[test]
     fn a_capability_cannot_be_both_required_and_wanted() {
         let e = validate(
-            &manifest(&["models"], &["models"], false),
+            &manifest(&["jellyfin"], &["jellyfin"], false),
             &Languages::default(),
         )
         .unwrap_err();
-        assert!(e.to_string().contains("models"));
+        assert!(e.to_string().contains("jellyfin"));
     }
 
     #[test]
     fn providers_cannot_require() {
-        let e = validate(&manifest(&["models"], &[], true), &Languages::default()).unwrap_err();
+        let e = validate(&manifest(&["jellyfin"], &[], true), &Languages::default()).unwrap_err();
         // 文字按语言协商，断言只看行为：提供能力的插件不能 requires。
         drop(e);
     }
@@ -557,11 +623,11 @@ mod tests {
     #[test]
     fn duplicates_are_refused() {
         let e = validate(
-            &manifest(&["models", "models"], &[], false),
+            &manifest(&["jellyfin", "jellyfin"], &[], false),
             &Languages::default(),
         )
         .unwrap_err();
-        assert!(e.to_string().contains("models"));
+        assert!(e.to_string().contains("jellyfin"));
     }
 
     fn manifest_with_provides(provides: serde_json::Value) -> Manifest {
@@ -661,5 +727,66 @@ mod tests {
             e.to_string()
                 .contains("provides.x-acme.ledger.credentials.issue")
         );
+    }
+    fn media_source_provider(extra: serde_json::Value) -> Manifest {
+        let mut provider = serde_json::json!({
+            "service": "sidecar",
+            "port": 8090,
+            "operations": ["upload", "list"],
+            "kinds": ["photo"],
+            "credentials": {"issue": ["i", "{name}"], "revoke": ["r", "{name}"]},
+        });
+        if let serde_json::Value::Object(extra) = extra {
+            provider.as_object_mut().unwrap().extend(extra);
+        }
+        manifest_with_provides(serde_json::json!({"media_source": provider}))
+    }
+
+    #[test]
+    fn media_source_is_registered_and_requires_credentials() {
+        let capability = lookup(wonton_protocol::media::MEDIA_CAPABILITY).unwrap();
+        assert!(matches!(capability.credentials, Credentials::Required));
+        assert!(!capability.high_privilege);
+        assert!(capability.hosted.is_none());
+        assert_eq!(wonton_protocol::media::MEDIA_CAPABILITY, "media_source");
+    }
+
+    #[test]
+    fn media_source_providers_must_declare_credentials() {
+        let manifest = manifest_with_provides(serde_json::json!({
+            "media_source": {
+                "service": "sidecar",
+                "port": 8090,
+                "operations": ["upload"],
+                "kinds": ["photo"],
+            },
+        }));
+        let e = validate(&manifest, &Languages::default()).unwrap_err();
+        assert!(e.to_string().contains("media_source"));
+        assert!(e.to_string().contains("credentials"));
+    }
+
+    #[test]
+    fn media_source_providers_must_list_operations_and_kinds() {
+        validate(
+            &media_source_provider(serde_json::json!({})),
+            &Languages::default(),
+        )
+        .unwrap();
+
+        for field in ["operations", "kinds"] {
+            let manifest = media_source_provider(serde_json::json!({field: serde_json::json!([])}));
+            let e = validate(&manifest, &Languages::default()).unwrap_err();
+            assert!(e.to_string().contains("media_source"), "{e}");
+            assert!(e.to_string().contains(field), "{e}");
+        }
+    }
+
+    #[test]
+    fn media_source_may_list_an_operation_this_core_does_not_know() {
+        let manifest = media_source_provider(
+            serde_json::json!({"operations": ["upload", "transcode"], "kinds": ["photo"]}),
+        );
+        validate(&manifest, &Languages::default()).unwrap();
     }
 }

@@ -5,3 +5,4 @@ entry-certificate-reload-failed = 續期後的入口憑證未能載入。請檢�
 entry-certificate-renew-failed = 入口憑證續期失敗，仍在使用原憑證：{ $error }
 entry-reconcile-failed = 公網入口對帳失敗。恢復之前，公網入口和聯邦 TLS 可能不可用：{ $error }
 entry-reconcile-recovered = 公網入口對帳成功，已恢復可用。
+entry-domain-unreadable = 網域設定讀不了，這一輪跳過續期。請檢查入口設定：{ $error }

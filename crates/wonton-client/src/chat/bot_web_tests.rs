@@ -2,7 +2,9 @@ use super::*;
 use std::sync::Mutex;
 use std::sync::atomic::AtomicU64;
 use tokio::sync::{Notify, watch};
-use wonton_protocol::{BotActivityFacts, BotView, BotWebPage, ChatViewModel, HomeStatus};
+use wonton_protocol::{
+    BotActivityFacts, BotChatAvailability, BotView, BotWebPage, ChatViewModel, HomeStatus,
+};
 
 use crate::chat::bot_activity::Activity;
 use crate::chat::bots::{Local, Record};
@@ -61,6 +63,8 @@ fn home() -> HomeViewModel {
         status: HomeStatus::Connected,
         just_recovered: false,
         path: None,
+        current_relay: None,
+        relays: Default::default(),
         notice: None,
         details: Default::default(),
         proxy: None,
@@ -79,6 +83,7 @@ fn record() -> Record {
             plugin_id: "app.bot".into(),
             bot: Some("alice".into()),
             user_id: "@opaque:home".into(),
+            chat: BotChatAvailability::Available,
             running: true,
             model_requests: 0,
             tool_calls: 0,
@@ -106,9 +111,11 @@ fn request() -> Request {
 
 fn profile(id: BotRef, user: &str) -> BotView {
     BotView {
+        availability: Default::default(),
         bot: id,
         user_id: user.into(),
         web: None,
+        web_page: None,
         name: "Bot".into(),
         avatar: None,
         state_avatars: vec![],
@@ -194,10 +201,17 @@ fn two_bots_publish_only_their_own_readiness_and_clear_errors_on_the_same_watch(
     );
     for response in [Some(ready(bot("default"))), Some(BotWebView::Other), None] {
         sender.send_if_modified(|view| apply(view, &local, &request, response));
-        assert!(subscription.borrow_and_update().bots[1].web.is_none());
+        let bots = subscription.borrow_and_update();
+        assert!(bots.bots[1].web.is_none());
+        assert!(bots.bots[1].web_page.is_none());
     }
     local.clear_runtime();
-    sender.send_modify(|view| view.bots.iter_mut().for_each(|bot| bot.web = None));
+    sender.send_modify(|view| {
+        view.bots.iter_mut().for_each(|bot| {
+            bot.web = None;
+            bot.web_page = None;
+        })
+    });
     assert!(!apply(
         &mut sender.borrow().clone(),
         &local,
@@ -211,6 +225,63 @@ fn two_bots_publish_only_their_own_readiness_and_clear_errors_on_the_same_watch(
             .iter()
             .all(|bot| bot.web.is_none())
     );
+}
+
+#[test]
+fn the_page_a_profile_can_open_follows_the_bot_itself() {
+    let request = request();
+    let mut local = Local {
+        web_generation: 3,
+        ..Default::default()
+    };
+    local.records.insert(request.bot.clone(), record());
+    let mut view = ChatViewModel {
+        bots: vec![profile(request.bot.clone(), &request.user)],
+        ..empty_view()
+    };
+    let denied = Some(BotWebView::Unavailable {
+        reason: BotWebFailure::NotShared,
+    });
+    // 服务器给了这个 Bot 的网页：入口拿到地址，重复的应答不再改视图。
+    let BotWebView::Ready { page } = ready(request.bot.clone()) else {
+        unreachable!()
+    };
+    assert!(apply(
+        &mut view,
+        &local,
+        &request,
+        Some(ready(request.bot.clone()))
+    ));
+    assert_eq!(view.bots[0].web_page.as_ref(), Some(&page));
+    assert!(!apply(
+        &mut view,
+        &local,
+        &request,
+        Some(ready(request.bot.clone()))
+    ));
+    // 别人的网页：地址跟着清掉，入口不能借别人的。
+    assert!(apply(
+        &mut view,
+        &local,
+        &request,
+        Some(ready(bot("default")))
+    ));
+    assert_eq!(view.bots[0].web, None);
+    assert_eq!(view.bots[0].web_page, None);
+    // 认识不了的取值：同样不能打开。
+    assert!(!apply(&mut view, &local, &request, Some(BotWebView::Other)));
+    assert_eq!(view.bots[0].web_page, None);
+    // 家人没被开放：地址跟着原因一起清掉，入口不留。
+    assert!(apply(&mut view, &local, &request, denied));
+    assert_eq!(view.bots[0].web_page, None);
+    assert_eq!(
+        view.bots[0].web,
+        Some(BotWebView::Unavailable {
+            reason: BotWebFailure::NotShared
+        })
+    );
+    assert!(apply(&mut view, &local, &request, None));
+    assert_eq!(view.bots[0].web_page, None);
 }
 
 #[test]

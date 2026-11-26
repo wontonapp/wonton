@@ -8,6 +8,8 @@
 extern crate self as wonton_core;
 
 #[cfg(test)]
+mod restart_contract_tests;
+#[cfg(test)]
 pub mod test_docker;
 #[cfg(test)]
 mod test_docker_check;
@@ -36,12 +38,14 @@ pub mod gateway;
 pub mod help;
 pub mod home_service;
 pub mod http;
+pub mod inbox;
 pub mod install;
 pub(crate) mod l10n;
 pub(crate) mod link_preview;
 pub mod mailbox;
 pub mod matrix;
 pub mod mcp;
+pub mod media;
 pub mod members;
 pub mod net;
 pub mod oidc;
@@ -51,6 +55,7 @@ pub mod peers;
 pub mod plugin;
 pub mod private_home;
 pub mod push;
+pub mod relay_settings;
 pub mod roles;
 pub mod secret;
 pub mod share_identity;

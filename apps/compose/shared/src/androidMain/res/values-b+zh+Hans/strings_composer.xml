@@ -12,6 +12,7 @@
     <string name="composer_photo">照片</string>
     <!-- Screen-reader label of the round send button at the right of the chat composer. -->
     <string name="composer_send">发送</string>
+    <string name="composer_edit_confirm">确认</string>
     <string name="composer_file_unreadable">无法读取这个文件。请重新复制，或选择其他文件。</string>
     <string name="composer_tray_full">一次最多发 %1$d 个附件。</string>
     <string name="composer_attachment_remove">移除 %1$s</string>
@@ -40,4 +41,9 @@
     <string name="composer_commands">命令</string>
     <!-- 命令菜单末尾：某个 Bot 还有几条没有列出。参数：条数。 -->
     <string name="composer_commands_more">还有 %1$d 条命令没列出</string>
+    <!-- 附件格式服务器发不了时的说明行。无参数。 -->
+    <string name="composer_attachment_unsupported_type">这个格式传不上去</string>
+    <!-- 要回复的那条不在了、回复被去掉时的说明行。无参数。 -->
+    <string name="composer_attachment_reply_target">要回复的那条不在了，去掉回复</string>
+
 </resources>

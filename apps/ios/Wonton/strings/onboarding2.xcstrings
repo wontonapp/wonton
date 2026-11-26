@@ -219,25 +219,25 @@
         "en": {
           "stringUnit": {
             "state": "translated",
-            "value": "Keep Current"
+            "value": "Keep using the current one"
           }
         },
         "zh-Hans": {
           "stringUnit": {
             "state": "translated",
-            "value": "用现在的"
+            "value": "继续用现在的"
           }
         },
         "zh-Hant": {
           "stringUnit": {
             "state": "translated",
-            "value": "使用目前的"
+            "value": "繼續用目前的"
           }
         },
         "ja": {
           "stringUnit": {
             "state": "translated",
-            "value": "現在のものを使用"
+            "value": "今のものをそのまま使います"
           }
         }
       }

@@ -40,12 +40,16 @@ reqwest = { version = "0.13.5", default-features = false }
 rcgen = { version = "0.14.10", default-features = false, features = ["aws_lc_rs", "pem"] }
 # Apache-2.0。MCP 的官方 Rust SDK（ADR-0006、ADR-0016）；各 crate 按需加客户端、服务器和传输的特性。
 rmcp = { version = "3.8.0", default-features = false }
+# MIT；SQLite 本体是公有领域。媒体任务、会话、队列和配额账本（ADR-0113）；0.40 复用锁定里的 libsqlite3-sys。
+# 默认的 wasm 后端在原生上多带 sqlite-wasm-rs，关掉默认特性；语句缓存要留着，逐项偏移是热路径。fallible_uint 给 u64 的绑定和读取（超出 i64 时运行时报错，我们的时间戳和字节数到不了）。
+rusqlite = { version = "0.40.2", default-features = false, features = ["bundled", "cache", "fallible_uint"] }
 # ISC AND (Apache-2.0 OR ISC)。核心出站 TLS 和测试中继使用的证书校验与服务端配置。
 rustls = { version = "0.23.46", default-features = false, features = ["aws_lc_rs", "logging", "std", "tls12"] }
 # MIT OR Apache-2.0。比核心的发布版本：客户端判服务器太旧，核心自己读版本。
 semver = "1.0.28"
 serde = { version = "1.0.229", features = ["derive"] }
 serde_json = "1.0.154"
+serde_urlencoded = "0.7.1"
 sha2 = "0.10"
 # MIT OR Apache-2.0。MCP SSE 事件边界。
 sse-stream = "0.2.6"
@@ -66,6 +70,8 @@ uniffi = "0.32.2"
 url = "2.5.8"
 # Apache-2.0 OR MIT。
 unic-langid = "0.9.6"
+# Apache-2.0 OR MIT。媒体任务号和播放会话号。
+uuid = { version = "1.29.0", features = ["serde", "v4"] }
 
 # 依赖不带调试信息，崩溃栈里还有函数名：25 个测试二进制从 5.3 GB 降到 3.3 GB，target 目录少三分之一（2026-11-05 实测）。
 [profile.dev.package."*"]

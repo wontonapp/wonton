@@ -137,6 +137,7 @@ fn for_server(req: &Request, server_name: &str) -> bool {
 async fn forward(gateway: &Gateway, authority: &str, req: Request) -> Response {
     let langs = super::api::languages(req.headers());
     let fwd = proxy::Forwarded {
+        web_user: None,
         client: client_addr(&req),
         scheme: "https",
     };

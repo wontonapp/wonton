@@ -1,8 +1,16 @@
-use super::*;
-use wonton_matrix::{Message, MessageBody, SendStatus};
+use wonton_matrix::{Message, MessageBody, SendStatus, TimelineEntry, Vector};
 use wonton_protocol::{
-    BotRef, BotView, ChatViewModel, MessageContent, RichLinkKind, TimelineContent,
+    BotRef, BotView, ChatViewModel, MessageContent, RichLinkKind, TimelineContent, TimelineDiff,
 };
+
+use crate::chat::agent_run::BotsView;
+use crate::chat::links::LinkTargets;
+use crate::chat::previews::Previews;
+use crate::chat::read_mark::ReadMark;
+
+use super::diffs::relinked;
+use super::rebuild::move_read_mark;
+use super::recompute::room_bots;
 
 fn text_entry(id: &str, body: &str) -> TimelineEntry {
     TimelineEntry {
@@ -188,12 +196,14 @@ fn chat_view(bots: &[&str]) -> ChatViewModel {
             .iter()
             .map(|user_id| BotView {
                 chat: Default::default(),
+                availability: Default::default(),
                 user_id: (*user_id).to_owned(),
                 bot: BotRef {
                     plugin_id: "app.hermes".into(),
                     bot: "default".into(),
                 },
                 web: None,
+                web_page: None,
                 name: "Hermes".into(),
                 avatar: None,
                 state_avatars: Vec::new(),

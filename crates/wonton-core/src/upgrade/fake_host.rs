@@ -194,7 +194,7 @@ impl FakeHost {
     }
 }
 
-fn output(exit_code: i64, stdout: &str, stderr: &str) -> OneShotOutput {
+pub(crate) fn output(exit_code: i64, stdout: &str, stderr: &str) -> OneShotOutput {
     OneShotOutput {
         exit_code,
         stdout: stdout.to_owned(),

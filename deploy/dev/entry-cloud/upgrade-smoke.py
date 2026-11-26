@@ -22,7 +22,7 @@ from pathlib import Path
 HERE = Path(__file__).resolve().parent
 CLOUD = HERE
 sys.path.insert(0, str(CLOUD))
-from smoke_support import SLOT, Home, curl, free_port, run, wait_for  # noqa: E402
+from smoke_support import SLOT, Home, curl, free_port, guard, run, wait_for  # noqa: E402
 
 HEAD = Path(os.environ["HEAD_BINARY"]).resolve()
 MAIN = Path(os.environ["MAIN_BINARY"]).resolve()
@@ -259,6 +259,7 @@ def start_phone(home):
 def main():
     root = Path(tempfile.mkdtemp(prefix="wonton-fr88-"))
     print("Artifacts: " + str(root), flush=True)
+    guard("wonton-fr-entry")
     env = dict(os.environ, COMPOSE_PROJECT_NAME="wonton-fr-entry", WONTON_HOME_ZONE="homes.test")
     if HOME_BINARY:
         env["WONTON_HOME_BINARY"] = str(HOME_BINARY)

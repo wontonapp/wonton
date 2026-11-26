@@ -19,9 +19,20 @@ configFiles:
 settings:
   base:
     SWIFT_VERSION: "6.0"
-    # App 的 bundle ID；分享扩展是 `<它>.share`，App Group 是 `group.<它>`（ADR-0097）。真机用自己的团队签名时只改这一个，
-    # 三个标识跟着变（见 README）；直接改 PRODUCT_BUNDLE_IDENTIFIER 会把扩展的也改成同一个，签不过。
+    # App 的 bundle ID；分享扩展是 `<它>.share`，小组件扩展是 `<它>.widget`，推送扩展是 `<它>.push`，App Group 是
+    # `group.<它>`（ADR-0097）。真机用自己的团队签名时只改这一个，这些标识跟着变（见 README）；直接改
+    # PRODUCT_BUNDLE_IDENTIFIER 会把扩展的也改成同一个，签不过。
     WONTON_BUNDLE_ID: app.wonton.ios
+  configs:
+    # Release 产物体积：#887。调试信息留在 dSYM 里，装进 App 的二进制把符号全剥掉（atos 用 dSYM 解地址）。
+    Release:
+      ENABLE_TESTABILITY: NO
+      ENABLE_PREVIEWS: NO
+      SWIFT_OPTIMIZATION_LEVEL: "-Osize"
+      DEAD_CODE_STRIPPING: YES
+      DEPLOYMENT_POSTPROCESSING: YES
+      STRIP_INSTALLED_PRODUCT: YES
+      STRIP_STYLE: all
 packages:
   WontonClient:
     path: WontonClient
@@ -39,14 +50,21 @@ targets:
       # 系统入口（ADR-0100）：快照解码、链接和 OpenIntent 与小组件扩展共用；App 进程里由 SystemEntryModel
       # 订阅核心刷新 WidgetKit 时间线和 Spotlight。
       - SystemEntry
+      # 推送密钥和通知扩展共用（两边都要读写共享钥匙串）。
+      - WontonPushExtension/PushKeys.swift
     dependencies:
       - package: WontonClient
       - target: ShareExtension
       - target: WidgetExtension
+      # 通知服务扩展：推送在本机解开（ADR-0003 的“设计：加密推送”），加进 App 才会被嵌进包里。
+      - target: WontonPushExtension
     # 数据目录在 App Group 的容器里，分享扩展才放得进收件目录（ADR-0097）。
+    # 推送密钥放在和通知扩展共享的钥匙串里，经 App Group 共享（ADR-0003 的“设备的推送密钥”）。
+    # aps-environment 真机注册远程通知要用；模拟器不检查，等 Apple 开发者账号到位后自然生效。
     entitlements:
       path: Wonton/Wonton.entitlements
       properties:
+        aps-environment: development
         com.apple.security.application-groups:
           - group.$(WONTON_BUNDLE_ID)
     # 版本号靠生成工程时写出的 Version.xcconfig（或 xcodebuild 显式传参）。两源皆空时 Release 会落到
@@ -67,6 +85,7 @@ targets:
       path: Wonton/Info.plist
       properties:
         UIBackgroundModes: [audio]
+        LSApplicationQueriesSchemes: [App-prefs, app-settings]
         UISupportedInterfaceOrientations~ipad:
           - UIInterfaceOrientationPortrait
           - UIInterfaceOrientationLandscapeLeft
@@ -93,6 +112,7 @@ targets:
         NSCameraUsageDescription: Wonton uses the camera to scan the pairing QR code from your home server.
         # 插件网页要麦克风时弹（ADR-0033）；各语言版本在 InfoPlist.xcstrings。
         NSMicrophoneUsageDescription: Wonton uses the microphone for voice input on app pages.
+        NSPhotoLibraryUsageDescription: Wonton shows your recent photos so you can pick the ones to send.
         NSPhotoLibraryAddUsageDescription: Wonton saves photos from your chats to your photo library.
         # 没有这一句，LocalAuthentication 不用面容 ID，直接要设备密码（App 锁、看恢复密钥，ADR-0102）。
         NSFaceIDUsageDescription: Wonton uses Face ID to unlock the app and to confirm it's you before showing your recovery key.
@@ -101,9 +121,15 @@ targets:
           UIImageName: LaunchGlyph
           UIImageRespectsSafeAreaInsets: false
         WontonAppGroup: group.$(WONTON_BUNDLE_ID)
+        # 推送中继的地址（ADR-0003 的“渠道”）：中继为我们运营，是 App 构建配置，不是核心下发。
+        # 没有配置时 App 如实显示“推送还没开通”，不假装已开启。
+        # 写进 Info.plist 文件的值压过 `INFOPLIST_KEY_WontonPushRelay`（实测），所以经下面的构建设置转一手：验证推送时
+        # `WONTON_PUSH_RELAY=<地址>` 就能盖掉这个空串。
+        WontonPushRelay: $(WONTON_PUSH_RELAY)
     settings:
       base:
         PRODUCT_BUNDLE_IDENTIFIER: $(WONTON_BUNDLE_ID)
+        WONTON_PUSH_RELAY: ""
         GENERATE_INFOPLIST_FILE: YES
         # OpenIntent（ADR-0100）同时编进 App 和小组件扩展，只有 App 进程里的实现能碰导航模型。
         SWIFT_ACTIVE_COMPILATION_CONDITIONS: "$(inherited) WONTON_APP"
@@ -184,11 +210,44 @@ targets:
         SWIFT_EMIT_LOC_STRINGS: NO
         TARGETED_DEVICE_FAMILY: "1"
 
+  WontonPushExtension:
+    type: app-extension
+    platform: iOS
+    sources:
+      - WontonPushExtension
+      # 锁定时藏内容的标记在 App Group 的数据目录里，和 App、分享扩展同一套（ADR-0102 §4）。
+      - Shared/AppGroup.swift
+    info:
+      path: WontonPushExtension/Info.plist
+      properties:
+        NSExtension:
+          NSExtensionPointIdentifier: com.apple.usernotifications.service
+          NSExtensionPrincipalClass: $(PRODUCT_MODULE_NAME).NotificationService
+        # 和 App、分享扩展同一套：钥匙串访问组跟着 bundle ID 走，代码里不写死（AppGroup.swift 同源）。
+        WontonAppGroup: group.$(WONTON_BUNDLE_ID)
+    entitlements:
+      path: WontonPushExtension/WontonPushExtension.entitlements
+      properties:
+        com.apple.security.application-groups:
+          - group.$(WONTON_BUNDLE_ID)
+    settings:
+      base:
+        PRODUCT_BUNDLE_IDENTIFIER: $(WONTON_BUNDLE_ID).push
+        GENERATE_INFOPLIST_FILE: YES
+        STRING_CATALOG_GENERATE_SYMBOLS: YES
+        SWIFT_EMIT_LOC_STRINGS: NO
+        TARGETED_DEVICE_FAMILY: "1"
+
   WontonTests:
     type: bundle.unit-test
     platform: iOS
     sources:
       - WontonTests
+      # 通知扩展的 RFC 8291 解密单测直接编译这份共享代码（扩展和测试目标各编一份，不进主 App）。
+      - WontonPushExtension/WontonPush.swift
+      - WontonPushExtension/PushLock.swift
+      # PushLock 用它找组容器；扩展和测试目标各编一份（同 WontonPush.swift 的理由）。
+      - Shared/AppGroup.swift
     dependencies:
       - target: Wonton
       - package: WontonClient

@@ -182,6 +182,36 @@
         }
       }
     },
+    "servers.notificationUnreachable": {
+      "comment": "Dialog title when a push notification's server can't be opened.",
+      "extractionState": "manual",
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Can't connect to this notification's server"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "连不上通知所在的服务器"
+          }
+        },
+        "zh-Hant": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "無法連上這則通知所屬的伺服器"
+          }
+        },
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "この通知のサーバーに接続できません"
+          }
+        }
+      }
+    },
     "servers.remove.message": {
       "comment": "Body of the server removal confirmation. Only this phone's chat history and files are deleted; data on the server is unaffected. No arguments; wraps in a dialog.",
       "extractionState": "manual",

@@ -41,6 +41,7 @@ internal const val UI_FAKE_EXTRA = "wonton_ui_fake"
 /** Debug 才认：当作整页应用的返回引导已经看过，界面测试和冒烟脚本不用每次先点掉它。 */
 internal const val UI_PAGE_HINT_SEEN_EXTRA = "wonton_ui_page_hint_seen"
 
+@Suppress("TooManyFunctions") // 生命周期回调、意图分发和两个前台服务都在唯一的 Activity 入口里，拆开要到处传上下文。
 open class MainActivity : AppCompatActivity() {
     private val requests = IncomingRequests()
     private val shareIntake = ShareIntake()
@@ -200,10 +201,16 @@ open class MainActivity : AppCompatActivity() {
         }.also { it.start() }
     }
 
+    override fun onPause() {
+        super.onPause()
+        // 失去可交互就布防挂起检测（ADR-0032 的门控）：关屏、系统对话框只走到 onPause，onStop 要等完全不可见才来，
+        // 可能一直不来。回到前台由 onResume 重新检查。
+        (application as WontonApplication).core.getOrNull()?.send(Action.Home(HomeAction.AppBackgrounded))
+    }
+
     override fun onStop() {
         super.onStop()
         networkWatcher?.stop()
         networkWatcher = null
-        (application as WontonApplication).core.getOrNull()?.send(Action.Home(HomeAction.AppBackgrounded))
     }
 }

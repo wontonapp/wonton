@@ -31,7 +31,7 @@ pub enum Decision {
     Expired,
     /// 没能请主人确认（发不出卡片、等待的请求太多）。
     Unconfirmed,
-    /// Agent 没等主人回答就断开了（ADR-0035）。
+    /// 卡片没等回答就撤回了：Agent 断开（ADR-0035），或者停链抢在投递之前（ADR-0061 第 10 节）。
     Withdrawn,
 }
 

@@ -30,7 +30,8 @@ final class RoomPanelGestureUITests: XCTestCase {
 
         pullUp(above: field)
         XCTAssertFalse(app.otherElements["chatPanel"].exists, "到底后上滑打开了面板")
-        tap(app.buttons["panelOpen"])
+        XCTAssertFalse(app.buttons["panelOpen"].exists, "房间顶栏还有打开面板的按钮")
+        openPanelFromProfile()
         let panel = app.otherElements["chatPanel"]
         XCTAssertTrue(panel.waitForExistence(timeout: 5), "房间按钮没有打开面板")
         XCTAssertTrue(wait(5) { panel.value as? String == "full" }, "有页面的房间按钮没有直接进入整页")
@@ -44,7 +45,7 @@ final class RoomPanelGestureUITests: XCTestCase {
         let safeTop = app.buttons["Back"].frame.minY
         tap(app.buttons.matching(NSPredicate(format: "label BEGINSWITH %@", "Back to bottom")).firstMatch)
         Thread.sleep(forTimeInterval: 2)
-        tap(app.buttons["panelOpen"])
+        openPanelFromProfile()
         XCTAssertTrue(app.webViews.staticTexts["Fixture player"].waitForExistence(timeout: 20), "面板网页没加载出来")
         XCTAssertTrue(wait(5) { !self.onScreen(field) }, "有页面的房间按钮没有直接进入整页")
         shot("11-room-full")
@@ -69,10 +70,21 @@ extension RoomPanelGestureUITests {
         app.launchArguments += ["-AppleLanguages", "(en)", "-AppleLocale", "en_US"]
         app.launchEnvironment["WONTON_DEV_DATA_SUFFIX"] = UUID().uuidString
         app.launchEnvironment["WONTON_UI_FAKE"] = "1"
-        app.launch()
+        UITestBackend.launch(app)
     }
 
     /// 进假数据里的房间，返回输入框。
+    /// 房间面板的入口在 Bot 资料页（ADR-0052）：点顶栏头像进资料页，再点“打开面板”。
+    private func openPanelFromProfile() {
+        tap(app.buttons["roomTopBarAvatar"])
+        let entry = app.buttons["botProfilePanelOpen"]
+        XCTAssertTrue(entry.waitForExistence(timeout: 20), "Bot 资料页没有打开面板的按钮\n\(app.debugDescription)")
+        for _ in 0..<4 where !entry.isHittable {
+            app.swipeUp()
+        }
+        entry.tap()
+    }
+
     private func enterRoom() -> XCUIElement {
         tap(app.staticTexts["Echo"])
         let field = app.textViews["Message"]

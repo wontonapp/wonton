@@ -8,7 +8,7 @@ import UniformTypeIdentifiers
 /// 用 `-only-testing` 分开跑：
 ///
 /// - `testPasteImageSends`（发送方）：把一张 PNG 放进剪贴板（测试进程和 App 同在模拟器上，写的就是设备剪贴板），
-///   长按输入框 → 粘贴进附件区 → 点发送，断言时间线里出现图片消息、“发送中”标记消失。
+///   长按输入框 → 粘贴进附件区 → 点发送，断言时间线里出现图片消息、待发标记消失。
 /// - `testPeerShowsImage`（对方，同一账号的另一台设备）：打开聊天，等图片消息出现在时间线里并截图。
 final class PasteUITests: XCTestCase {
     private var app: XCUIApplication!
@@ -74,7 +74,7 @@ final class PasteUITests: XCTestCase {
     private func launch() throws {
         app = XCUIApplication()
         try UITestBackend.passPairingCode(to: app)
-        app.launch()
+        UITestBackend.launch(app)
         let start = waitAnyButton(["Skip", "跳过", "Next", "下一步", "Done", "完成"], timeout: 25)
             ?? waitAnyButton(["Skip", "跳过", "Next", "下一步", "Done", "完成"], timeout: 60)
         XCTAssertNotNil(start, "既没到标签栏也没到引导页")
@@ -175,12 +175,22 @@ final class PasteUITests: XCTestCase {
         }
     }
 
-    /// 等自己这条消息的“发送中”标记消失（传完就没有状态文字）。
+    /// 等自己这条消息的待发标记消失：上传中有进度（“Sending 42%”），传完是“Saved, not delivered yet”，
+    /// 送达后两种都不再出现。发出后先等回显（标记或图片气泡），免得第一轮还没回显就当成传完了。
     private func waitSendingDone(deadline: Date) {
+        var sawPending = false
         while Date() < deadline {
-            let sending = waitFor([app.staticTexts], "Sending", timeout: 1)
-                ?? waitFor([app.staticTexts], "发送中", timeout: 1)
-            if sending == nil { return }
+            let labels = app.staticTexts.allElementsBoundByIndex.map { $0.label }
+            let pending = labels.contains {
+                $0.hasPrefix("Sending") || $0.hasPrefix("发送中")
+                    || $0 == "Saved, not delivered yet" || $0 == "已保存，等待送达"
+            }
+            if pending {
+                sawPending = true
+            } else if sawPending || hasLargeImage() {
+                return
+            }
+            _ = app.wait(for: .runningForeground, timeout: 1)
         }
     }
 

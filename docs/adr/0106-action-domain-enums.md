@@ -38,6 +38,7 @@ pub enum Action {
     Family { action: FamilyAction },
     Friends { action: FriendsAction },
     Sharing { action: SharingAction },
+    Clients { action: ClientsAction },
     Timeline { action: TimelineAction },
     Agent { action: AgentAction },
 }
@@ -90,11 +91,12 @@ Agent 动作由同步 `dispatch` 发起后在后台完成：即时连接错误�
 | `PeerAction` | `RefreshPeers`、`ShowPeerCode`、`HidePeerCode`、`ResetPeerCode`、`ScanPeerCode`、`ApprovePeerRequest`、`RejectPeerRequest`、`UnrejectPeerRequest`、`RemovePeer` |
 | `BotContactAction` | `RefreshBotContacts`、`RequestBotContact`、`RequestPersonContact`、`ApproveBotContact`、`RejectBotContact`、`RemoveBotContact` |
 | `FamilyAction` | `RefreshRoles`、`CreateRole`、`UpdateRole`、`DeleteRole`、`SetDefaultRole`、`AssignMemberRole`、`AssignFriendRole` |
-| `FriendsAction` | `RefreshFriends`、`AddFriend`、`ApproveFriendRequest`、`RejectFriendRequest`、`CancelFriendRequest`、`RemoveFriend`、`BlockFriend`、`UnblockFriend`、`SaveFriendGroup`、`RemoveFriendGroup`、`SetFriendGroups` |
+| `FriendsAction` | `RefreshFriends`、`AddFriend`、`ApproveFriendRequest`、`RejectFriendRequest`、`CancelFriendRequest`、`RemoveFriend`、`BlockFriend`、`UnblockFriend` |
 | `SharingAction` | `CreatePluginShare`、`UpdatePluginShare`、`RevokePluginShare`、`RefreshSharedApps`、`OpenSharedApp` |
+| `ClientsAction` | `Refresh`、`SetEntry`、`SaveDomain`、`DnsProviders`、`SaveIngress`、`SetPublicAccess`、`RefreshGuests`、`CreateGuest`、`GetGuest`、`RevokeGuest`、`RefreshStatus`、`CreatePassword`、`GetPassword`、`RevokePassword`、`Unban` |
 | `AgentAction` | `StopChain`、`SetAgentLimits`（由原独立 `AgentChainAction` 改名并纳入 `Action::Agent`） |
 
-`SetPluginAudience` 归入 `PluginAction`。详情页需要等待保存并取回更新后的详情，因此保留请求–应答方法，参数直接传插件 ID 和授权，不解包顶层 `Action`。
+`SetPluginAudience` 归入 `PluginAction`。详情页需要等待保存并取回更新后的详情，因此保留请求–应答方法，参数直接传插件 ID 和授权，不解包顶层 `Action`。自己的头像同理走 `set_my_avatar`、`clear_my_avatar`：资料页本来就在 await 地读写 `me()`、`saveMe`，这两个调用成功直接返回新的 `Me`，失败返回 `MyAvatarProblem` 的类别。
 
 这些边界按核心分发责任划分，而不是按某一页的 UI 结构划分：`dispatch.rs` 把会话、服务器/连接、聊天、推送、引导、文件、外观、页面、跨服务器、联系人、好友/家庭和分享分成不同路由；插件安装、商店、出口、镜像和核心升级也由插件链路统一处理。这样子枚举的操作和负责它们的核心作用域一一对应，迁移后可把 `Action` 的通配拒绝分支缩小为各领域的穷举匹配。
 

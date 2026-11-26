@@ -10,17 +10,26 @@ s32 = 32
 s48 = 48
 pageInset = 16
 sectionGap = 24
-# 聊天气泡照 Telegram（ADR-0109，估计值）：组内两条之间、组与组之间。
+# 聊天气泡照 Telegram（ADR-0109 第 9 节）：组内两条之间、组与组之间。
 runGap = 2
-groupGap = 8
+groupGap = 6
+# 气泡那一行离屏幕边；正文离气泡边（左右、上下）；气泡对面至少留出的空（屏宽减它就是气泡最宽）。
+bubbleEdge = 4
+bubbleInsetX = 11
+bubbleInsetY = 6
+bubbleOpposite = 36
+# 浮在聊天内容上的玻璃层（顶栏、输入栏、命令列表）离屏幕边。
+chatFloatInset = 8
 
 # 圆角可以分平台（ADR-0029）。
 [radii]
 control = { ios = 14, android = 12 }
 card = { ios = 20, android = 16 }
-# 气泡照 Telegram（ADR-0109，估计值）：大圆角；组内贴近发送者一侧的小圆角。
-bubble = 17
-bubbleJoined = 6
+# 气泡照 Telegram（ADR-0109 第 9 节）：大圆角；组内贴近发送者一侧的小圆角。
+bubble = 16
+bubbleJoined = 8
+# 网页变量 --border-radius-xs 的值（ADR-0033），和气泡分开，气泡改形状不动网页。
+webXs = 6
 pill = 999
 bar = { ios = 999, android = 22 }
 barItem = { ios = 999, android = 16 }
@@ -59,10 +68,21 @@ grabberWidth = 36
 grabberHeight = 4
 hairline = 1
 quoteBar = 2
-# 气泡尾巴伸出气泡的宽度（ADR-0109，估计值）。
+# 气泡尾巴伸出气泡的宽度，尾巴从底边往上占的高度（ADR-0109 第 9 节）。
 bubbleTail = 6
+bubbleTailRise = 9
+# 聊天页浮着的玻璃圆钮、标题胶囊、输入框一行时的高度，顶栏头像的直径。
+chatControl = 44
+# 消息下选项按钮的高度；日期胶囊的高度；命令列表里 Bot 头像的直径。
+choiceButton = 42
+datePill = 22
+commandAvatar = 28
 # 群聊里别人组尾气泡旁边的头像（ADR-0109，估计值）。
 messageAvatar = 34
+# “/”命令列表最高这么高，再多就在里面滚（ADR-0109，估计值）。
+commandMenu = 240
+# 附件面板底下那排切换里一项的宽（ADR-0109，估计值）。
+attachTab = 76
 
 [ratio]
 pluginIconRadius = 0.2237
@@ -72,6 +92,16 @@ codeFill = 0.1
 # 气泡最大宽度占可用宽度；输入框最多长到几行（ADR-0109，估计值）。
 bubbleWidth = 0.8
 composerLines = 6
+# 聊天背景：重点色盖在底色上的浓度、图案线条的浓度（ADR-0109 第 9 节）。
+wallTint = 0.16
+wallPattern = 0.14
+# 压在聊天背景上的日期胶囊、说明行和选项按钮的半透明底：浅色主题盖黑、深色主题盖白。
+serviceFill = 0.32
+serviceFillDark = 0.16
+# 跳到原消息后整行闪的重点色浓度。
+jumpHighlight = 0.2
+# 附件面板那排切换里当前一项垫的重点色浓度（ADR-0109，估计值）。
+tabHighlight = 0.14
 
 [typography]
 screenTitle = { size = 28, line = 34, weight = "bold", relativeTo = "title" }
@@ -80,6 +110,14 @@ itemTitle = { size = 17, line = 24, weight = "medium", relativeTo = "headline" }
 body = { size = 16, line = 22, weight = "regular", relativeTo = "body" }
 supporting = { size = 14, line = 20, weight = "regular", relativeTo = "subheadline" }
 caption = { size = 12, line = 16, weight = "regular", relativeTo = "caption" }
+# 聊天页（ADR-0109 第 9 节）：气泡正文、气泡右下角的时间、群聊里的名字、选项按钮、日期胶囊、顶栏的标题和状态行。
+message = { size = 16, line = 21, weight = "regular", relativeTo = "body" }
+messageMeta = { size = 11, line = 13, weight = "regular", relativeTo = "caption2" }
+senderName = { size = 14, line = 18, weight = "semibold", relativeTo = "subheadline" }
+choice = { size = 15, line = 20, weight = "medium", relativeTo = "subheadline" }
+datePill = { size = 13, line = 16, weight = "medium", relativeTo = "footnote" }
+barTitle = { size = 17, line = 22, weight = "semibold", relativeTo = "headline" }
+barStatus = { size = 13, line = 16, weight = "regular", relativeTo = "footnote" }
 
 # 毫秒。系统“减少动态”打开时一律改用 reduced 的淡入淡出。
 [motion]
@@ -132,7 +170,7 @@ replyMax = 88
 "--wonton-accent-fill" = { color = "accent_fill" }
 "--wonton-accent-ink" = { color = "accent_ink" }
 "--wonton-accent-ink-on-fill" = { color = "accent_ink_on_fill" }
-"--border-radius-xs" = { radius = "bubbleJoined" }
+"--border-radius-xs" = { radius = "webXs" }
 "--border-radius-md" = { radius = "control" }
 "--border-radius-lg" = { radius = "card" }
 "--border-radius-full" = { radius = "pill" }

@@ -148,9 +148,52 @@ impl HomeLink {
             }
             *current = Some(new_text);
         }
-        tracing::info!(direct_addrs = ?updated.direct_addrs(), "saved the server's new addresses");
+        tracing::info!(
+            direct_addrs = ?updated.direct_addrs(),
+            used = ?updated.used_addrs(),
+            "saved the server's new addresses"
+        );
         client.set_server_addr(updated.server_addr());
         true
+    }
+
+    /// 把正在使用的直连路径立刻记进存下的连接信息，一次往返都不用等：推送唤醒的进程可能在
+    /// `/_wonton/api/tunnel` 回来之前就被冻结或杀掉，那一次连接学到的地址不能因此丢掉。
+    /// 选中中继时什么都不记。
+    pub(super) async fn remember_path(self: &Arc<Self>) {
+        let Some((_, client)) = self.current_link().await else {
+            return;
+        };
+        let Some(TransportAddr::Ip(addr)) = client.path().map(|path| path.remote) else {
+            return;
+        };
+        let Some(text) = self.lock_ticket().clone() else {
+            return;
+        };
+        let Ok(ticket) = Ticket::parse(&text) else {
+            return;
+        };
+        let Some(updated) = ticket.with_used(addr) else {
+            return;
+        };
+        let Ok(new_text) = serde_json::to_string(&updated) else {
+            tracing::warn!("could not serialize the connection info");
+            return;
+        };
+        {
+            let mut current = self.lock_ticket();
+            // 记的这段时间里换了服务器。
+            if current.as_deref() != Some(text.as_str()) {
+                return;
+            }
+            if let Err(e) = self.storage.save_ticket(&new_text) {
+                tracing::warn!("could not save the connected address: {e:?}");
+                return;
+            }
+            *current = Some(new_text);
+        }
+        tracing::info!(%addr, "saved the connected direct address");
+        client.set_server_addr(updated.server_addr());
     }
 
     /// 存着的连接信息还是不是 `text`。
@@ -228,6 +271,7 @@ pub(super) async fn follow_connection(
             Published::Tick(tick) => tick,
         };
         if connected && (!was_connected || changed_to_direct) {
+            link.remember_path().await;
             link.spawn_address_refresh();
         } else if !connected {
             link.stop_address_refresh();

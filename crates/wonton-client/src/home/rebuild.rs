@@ -48,7 +48,7 @@ impl HomeLink {
         true
     }
 
-    async fn rebuild_endpoint(self: Arc<Self>, trigger: &'static str) {
+    pub(super) async fn rebuild_endpoint(self: Arc<Self>, trigger: &'static str) {
         // 触发到执行之间可能换过连接信息（重新配对、连别的服务器）：重建总是用现在这条。
         let Some(text) = self.lock_ticket().clone() else {
             return;

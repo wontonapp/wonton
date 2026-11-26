@@ -232,7 +232,8 @@ async fn a_webui_returning_503_rolls_back_every_install_resource() {
         )
         .await
         .unwrap_err();
-    assert_eq!(error.kind(), "unhealthy", "{error}");
+    // #886 起健康门按检查的判定窗等，等满才是超时；503 仍在报告里点名。
+    assert_eq!(error.kind(), "health_timeout", "{error}");
     assert!(error.to_string().contains("503"), "{error}");
     assert_resources_removed(&engine, &names).await;
     let store = Store::open(dir.path().join("plugins")).unwrap();

@@ -4,15 +4,19 @@ import app.wonton.client.PluginInstallAction
 import app.wonton.client.storeInstallAction
 import android.icu.text.CompactDecimalFormat
 import androidx.compose.foundation.background
+import androidx.compose.runtime.CompositionLocalProvider
+import app.wonton.ui.design.LocalWontonTopInset
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.offset
 import androidx.compose.foundation.layout.Box
+import androidx.compose.foundation.layout.BoxWithConstraints
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.PaddingValues
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
+import androidx.compose.foundation.layout.heightIn
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.shape.CircleShape
@@ -47,24 +51,23 @@ import app.wonton.protocol.PluginAction
 import app.wonton.protocol.Action
 import app.wonton.protocol.AddedSource
 import app.wonton.protocol.PluginOperation
+import app.wonton.protocol.PluginTask
 import app.wonton.protocol.PluginTaskState
 import app.wonton.protocol.PluginTrust
+import app.wonton.protocol.PluginsViewModel
 import app.wonton.protocol.StoreItem
 import app.wonton.protocol.StoreListing
 import app.wonton.protocol.StoreLoadState
 import app.wonton.protocol.StoreConfirmation
+import app.wonton.protocol.StoreUpdateState
 import app.wonton.protocol.UpdatablePlugin
 import app.wonton.protocol.StoreSection
 import app.wonton.ui.design.wontonContentPaddingValues
 import app.wonton.ui.design.WontonChip
-import app.wonton.ui.design.WontonIconButton
-import app.wonton.ui.design.WontonPushedBar
 import app.wonton.ui.design.WontonScreen
-import app.wonton.ui.design.WontonSearchField
 import app.wonton.ui.design.WontonSmallButton
 import app.wonton.ui.design.WontonTheme
 import app.wonton.ui.design.toColor
-import app.wonton.ui.icons.Add
 import app.wonton.ui.icons.StarFill
 import app.wonton.ui.icons.WontonIcon
 import java.util.Locale
@@ -85,80 +88,135 @@ private fun StoreScreen(plugins: PluginsState, navigation: PluginNavigation, onB
     var query by rememberSaveable { mutableStateOf("") }
     var tag by remember { mutableStateOf<String?>(null) }
     var showsUpdateAll by remember { mutableStateOf(false) }
-    val viewModel = plugins.viewModel
-    val store = viewModel.store
-    val row: @Composable (StoreItem) -> Unit = { StoreRow(it, plugins, navigation) }
     WontonScreen(
         bar = {
-            Column {
-                WontonPushedBar(stringResource(R.string.store_title), onBack, showsStatusLine = true) {
-                    if (viewModel.updatable.isNotEmpty()) {
-                        UpdateAllButton(viewModel.updatable.size) { showsUpdateAll = true }
-                    }
-                    WontonIconButton(
-                        WontonIcon.Add,
-                        stringResource(R.string.store_add_source),
-                        { navigation.addingSource = true },
-                    )
-                }
-                WontonSearchField(
-                    query,
-                    { query = it },
-                    stringResource(R.string.store_search_prompt),
-                    Modifier.padding(
-                        start = WontonTheme.spacing.pageInset,
-                        end = WontonTheme.spacing.pageInset,
-                        bottom = WontonTheme.spacing.s8,
-                    ),
-                )
-            }
+            StoreToolbar(
+                plugins,
+                navigation,
+                query,
+                { query = it },
+                { showsUpdateAll = true },
+                onBack,
+            )
         },
     ) {
-        Column(Modifier.fillMaxSize()) {
-            PullToRefreshBox(
-                // 首次加载由 StorePlaceholder 展示骨架，不再叠加下拉刷新指示器。
-                isRefreshing = viewModel.storeLoad is StoreLoadState.Loading && store != null,
-                onRefresh = { plugins.refreshStore(force = true) },
-                modifier = Modifier.fillMaxSize(),
-            ) {
-                if (store == null) {
-                    StorePlaceholder(plugins)
-                } else {
-                    LazyColumn(
-                        Modifier.fillMaxSize(),
-                        contentPadding = wontonContentPaddingValues(bottom = WontonTheme.spacing.s8),
-                    ) {
-                        items(viewModel.tasks, key = { "task:${it.id}" }) { task ->
-                            Box(Modifier.padding(horizontal = WontonTheme.spacing.pageInset, vertical = ROW_GAP)) {
-                                TaskRow(
-                                    task,
-                                    plugins,
-                                    { navigation.confirmation = reconfirmation(task, plugins) },
-                                    navigation.checkInstalled,
-                                )
-                            }
-                        }
-                        item(key = "store-load-problems") { StoreLoadProblems(plugins) }
-                        if (query.isEmpty()) {
-                            listing(
-                                store,
-                                tag,
-                                onTag = { tag = it },
-                                onRetry = { plugins.refreshStore(force = true) },
-                            ) { row(it) }
-                        } else {
-                            results(plugins.core.searchStore(query)) { row(it) }
-                        }
+        StoreContent(
+            plugins,
+            navigation,
+            query,
+            tag,
+            onTag = { tag = it },
+        )
+    }
+    val viewModel = plugins.viewModel
+    if (showsUpdateAll && viewModel.updatable.isNotEmpty()) {
+        UpdateAllSheet(plugins, viewModel.updatable, onDismiss = { showsUpdateAll = false }) {
+            plugins.send(Action.Plugins(PluginAction.UpgradeAll))
+        }
+    }
+}
+
+@OptIn(ExperimentalMaterial3Api::class)
+@Composable
+private fun StoreContent(
+    plugins: PluginsState,
+    navigation: PluginNavigation,
+    query: String,
+    tag: String?,
+    onTag: (String?) -> Unit,
+) {
+    val viewModel = plugins.viewModel
+    val store = viewModel.store
+    val batch = viewModel.updateBatch
+    val batchTasks = batch?.items.orEmpty().mapNotNull {
+        (it.state as? app.wonton.protocol.StoreUpdateState.Task)?.task
+    }
+    val row: @Composable (StoreItem) -> Unit = { StoreRow(it, plugins, navigation) }
+    val topInset = LocalWontonTopInset.current
+    BoxWithConstraints(Modifier.fillMaxSize().padding(top = if (batch != null) topInset else 0.dp)) {
+        val batchMaxHeight = maxHeight * 0.45f
+        CompositionLocalProvider(LocalWontonTopInset provides if (batch != null) 0.dp else topInset) {
+            Column(Modifier.fillMaxSize()) {
+                batch?.let {
+                    StoreUpdateBatchSection(it, plugins, navigation, Modifier.heightIn(max = batchMaxHeight))
+                }
+                PullToRefreshBox(
+                    // 首次加载由 StorePlaceholder 展示骨架，不再叠加下拉刷新指示器。
+                    isRefreshing = viewModel.storeLoad is StoreLoadState.Loading && store != null,
+                    onRefresh = { plugins.refreshStore(force = true) },
+                    modifier = Modifier.fillMaxWidth().weight(1f),
+                ) {
+                    if (store == null) {
+                        StorePlaceholder(plugins)
+                    } else {
+                        StoreList(
+                            plugins,
+                            navigation,
+                            viewModel,
+                            store,
+                            batchTasks,
+                            query,
+                            tag,
+                            onTag,
+                            row,
+                        )
                     }
                 }
             }
         }
     }
+}
 
-    // 全部更新只确认这一次（主人 2026-11-09 定）：列出可更新的应用，点“全部更新”逐个升级。
-    if (showsUpdateAll && viewModel.updatable.isNotEmpty()) {
-        UpdateAllSheet(plugins, viewModel.updatable, onDismiss = { showsUpdateAll = false }) {
-            plugins.send(Action.Plugins(PluginAction.UpgradeAll))
+@Composable
+private fun StoreList(
+    plugins: PluginsState,
+    navigation: PluginNavigation,
+    viewModel: PluginsViewModel,
+    store: StoreListing,
+    batchTasks: List<PluginTask>,
+    query: String,
+    tag: String?,
+    onTag: (String?) -> Unit,
+    row: @Composable (StoreItem) -> Unit,
+) {
+    LazyColumn(
+        Modifier.fillMaxSize(),
+        contentPadding = wontonContentPaddingValues(bottom = WontonTheme.spacing.s8),
+    ) {
+        items(
+            viewModel.tasks.filterNot { it in batchTasks },
+            key = { "task:${it.id}" },
+        ) { task ->
+            Box(Modifier.padding(horizontal = WontonTheme.spacing.pageInset, vertical = ROW_GAP)) {
+                TaskRow(
+                    task,
+                    plugins,
+                    { navigation.confirmation = reconfirmation(task, plugins) },
+                    navigation.checkInstalled,
+                )
+            }
+        }
+        item(key = "store-load-problems") { StoreLoadProblems(plugins) }
+        if (query.isEmpty()) {
+            listing(
+                store,
+                tag,
+                onTag = onTag,
+                onRetry = { plugins.refreshStore(force = true) },
+            ) { row(it) }
+        } else {
+            val found = plugins.core.searchStore(query)
+            if (found.isEmpty()) {
+                item(key = "nothing") {
+                    Text(
+                        stringResource(R.string.store_no_results),
+                        Modifier.fillMaxWidth().padding(WontonTheme.spacing.s32),
+                        style = WontonTheme.typography.body.copy(textAlign = TextAlign.Center),
+                        color = WontonTheme.colors.textSecondary.toColor(),
+                    )
+                }
+            }
+            items(found, key = { "found:${it.source}" }) { row(it) }
         }
     }
 }
@@ -172,7 +230,19 @@ private fun LazyListScope.listing(
 ) {
     val present = store.allPlugins.flatMap { it.tags }.distinct()
     if (present.size > 1) {
-        item(key = "tags") { TagChips(present, tag, onTag) }
+        item(key = "tags") {
+            LazyRow(
+                contentPadding = PaddingValues(horizontal = WontonTheme.spacing.pageInset),
+                horizontalArrangement = Arrangement.spacedBy(WontonTheme.spacing.s8),
+            ) {
+                item {
+                    WontonChip(stringResource(R.string.store_tag_all), tag == null) { onTag(null) }
+                }
+                items(present) { value ->
+                    WontonChip(value, tag == value) { onTag(value) }
+                }
+            }
+        }
     }
     section(R.string.store_section_reviewed, store.official, tag, onRetry, row)
     added(store.added, tag, onRetry, row)
@@ -244,42 +314,13 @@ private fun LazyListScope.section(
     unreadable("section:$titleRes", content.unreadable)
 }
 
-private fun LazyListScope.results(found: List<StoreItem>, row: @Composable (StoreItem) -> Unit) {
-    if (found.isEmpty()) {
-        item(key = "nothing") {
-            Text(
-                stringResource(R.string.store_no_results),
-                Modifier.fillMaxWidth().padding(WontonTheme.spacing.s32),
-                style = WontonTheme.typography.body.copy(textAlign = TextAlign.Center),
-                color = WontonTheme.colors.textSecondary.toColor(),
-            )
-        }
-    }
-    items(found, key = { "found:${it.source}" }) { row(it) }
-}
-
-@Composable
-private fun TagChips(
-    tags: List<String>,
-    selected: String?,
-    onSelect: (String?) -> Unit,
-) {
-    LazyRow(
-        contentPadding = PaddingValues(horizontal = WontonTheme.spacing.pageInset),
-        horizontalArrangement = Arrangement.spacedBy(WontonTheme.spacing.s8),
-    ) {
-        item { WontonChip(stringResource(R.string.store_tag_all), selected == null) { onSelect(null) } }
-        items(tags) { tag ->
-            WontonChip(tag, selected == tag) { onSelect(tag) }
-        }
-    }
-}
-
 /** 商店里的一个插件：点开看详情，行尾的按钮安装、更新或打开。 */
 @Composable
 private fun StoreRow(item: StoreItem, plugins: PluginsState, navigation: PluginNavigation) {
     val colors = WontonTheme.colors
     val installFailure = plugins.viewModel.installed?.plugins?.firstOrNull { it.id == item.id }?.installFailure
+    // 同一条失败批次里已经在行下显示过，不再重复一行红字。
+    val inBatch = plugins.viewModel.updateBatch?.items?.any { it.app.pluginId == item.id } == true
     Column {
         Row(
             Modifier.fillMaxWidth()
@@ -315,7 +356,9 @@ private fun StoreRow(item: StoreItem, plugins: PluginsState, navigation: PluginN
         }
         // 一键操作在取预览时失败：行下面一行红字配“重试”，不弹窗（ADR-0017）。
         plugins.viewModel.tasks.firstOrNull { it.id == item.id }
-            ?.takeIf { !plugins.viewModel.hasRunningTask(item.id) && item.id !in plugins.viewModel.pending }
+            ?.takeIf {
+                !inBatch && !plugins.viewModel.hasRunningTask(item.id) && item.id !in plugins.viewModel.pending
+            }
             ?.let { task ->
                 val state = task.state
                 if (state is PluginTaskState.Failed) {
@@ -403,6 +446,13 @@ private fun ItemTags(item: StoreItem) {
     }
 }
 
+/**
+ * 行尾给不给“更新”：装着的是旧版本，而且升得动——上传的包看来源，预装插件看核心查到的报价。
+ * 两样都没有时升级接口会报“应用没找到”。
+ */
+fun storeRowShowsUpdate(installed: String?, version: String, hasSource: Boolean, hasOffer: Boolean): Boolean =
+    installed != version && (hasSource || hasOffer)
+
 private sealed interface StoreButton {
     data class Get(val title: String, val enabled: Boolean, val perform: () -> Unit) : StoreButton
 
@@ -411,16 +461,20 @@ private sealed interface StoreButton {
     data object Hidden : StoreButton
 }
 
-/** 行尾的按钮：没装的“获取”，装着旧版本的“更新”，装着的“打开”；正在装、升级、卸载时转圈。 */
+/** 行尾的按钮：没装的“获取”，装着旧版本的“更新”，装着的“打开”；正在装、升级、卸载和批次内排队、检查时转圈。 */
 @Composable
 private fun storeButton(item: StoreItem, plugins: PluginsState, navigation: PluginNavigation): StoreButton {
     val viewModel = plugins.viewModel
     val installed = item.installedVersion
     val plugin = viewModel.installed?.plugins?.firstOrNull { it.id == item.id }
     val entry = plugin?.entries?.firstOrNull()
+    val queued = viewModel.updateBatch?.items?.any {
+        it.app.pluginId == item.id &&
+            (it.state is StoreUpdateState.Queued || it.state is StoreUpdateState.Checking)
+    } == true
     return when {
-        // 取预览、装、升、卸都在转圈。
-        viewModel.hasRunningTask(item.id) || item.id in viewModel.pending -> StoreButton.Busy
+        // 取预览、装、升、卸都在转圈；批次里排队、检查的也转，这时点了本来就静默无效。
+        queued || viewModel.hasRunningTask(item.id) || item.id in viewModel.pending -> StoreButton.Busy
         plugin?.installFailure != null || viewModel.tasks.any {
             it.id == item.id && it.operation == PluginOperation.INSTALL && it.state is PluginTaskState.Uncertain
         } -> StoreButton.Hidden
@@ -432,7 +486,14 @@ private fun storeButton(item: StoreItem, plugins: PluginsState, navigation: Plug
         ) {
             plugins.send(Action.Plugins(PluginAction.InstallNow(source = item.source)))
         }
-        installed != item.version -> StoreButton.Get(stringResource(R.string.store_update), enabled = true) {
+        // 上传的包（没有来源）核心升不了，不给“更新”：点了只会报“应用没找到”。预装插件没有来源，
+        // 但核心查到新版本时有报价，照样能升。
+        storeRowShowsUpdate(
+            installed, item.version, plugin?.source != null, plugin?.upgrade != null,
+        ) -> StoreButton.Get(
+            stringResource(R.string.store_update),
+            enabled = true,
+        ) {
             plugins.send(Action.Plugins(PluginAction.UpgradeNow(pluginId = item.id)))
         }
         entry != null -> StoreButton.Get(stringResource(R.string.store_open), enabled = true) { navigation.open(entry) }

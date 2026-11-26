@@ -5,7 +5,7 @@
 //! | GET | `/_wonton/files/{id}` | 文件信息 |
 //! | GET、HEAD | `/_wonton/files/{id}/content` | 字节。支持 `Range`、`If-Range`，带强 `ETag` |
 //! | GET | `/_wonton/files/{id}/thumbnail` | 长边 800 像素的 JPEG |
-//! | POST | `/_wonton/files/{id}/grants` | 请求体 `{"room": …}`，返回 `{"bots": […]}`：把这个房间的 Bot 加进访问范围 |
+//! | POST | `/_wonton/files/{id}/grants` | 请求体 `{"room": …}`，返回 `{"bots": […]}`：把这个房间的 Bot 加进访问范围，还记下房间和授权人 |
 //! | DELETE | `/_wonton/files/{id}/grants/{bot}` | 把这个 Bot 移出访问范围 |
 //! | POST | `/_wonton/files/{id}/send-to-devices` | 把链接发到“Wonton”私聊 |
 //! | DELETE | `/_wonton/files/{id}` | 删掉编号，设备上传的文件核对后连文件一起删 |
@@ -318,7 +318,7 @@ async fn thumbnail(
     let langs = languages(&headers);
     let jpeg = async {
         let parsed = parse_id(&id, &langs)?;
-        let record = caller.files.authorize(&parsed, &caller.who, &langs)?;
+        let record = caller.files.authorize(&parsed, &caller.who, &langs).await?;
         caller.files.thumbnail(&record, &langs).await
     };
     respond(jpeg.await.map(|jpeg| {
@@ -386,7 +386,7 @@ async fn content(
     };
     let served = async {
         let parsed = parse_id(&id, &langs)?;
-        let record = caller.files.authorize(&parsed, &caller.who, &langs)?;
+        let record = caller.files.authorize(&parsed, &caller.who, &langs).await?;
         let content = caller.files.content(&record, request, &langs).await?;
         let (mut response, range) = match content {
             Content::File(opened) => local_file(opened, &method, &headers, &langs).await,

@@ -5,7 +5,7 @@ use wonton_protocol::{InstallRequest, PluginScope, SecretValues};
 use super::{InstallError, Languages, PluginManager, generic, service};
 use crate::l10n;
 use crate::plugin::installation::InstallDecision;
-use crate::plugin::manifest::{ManifestExt, PluginKind};
+use crate::plugin::manifest::ManifestExt;
 use crate::plugin::package::PluginPackage;
 use crate::plugin::secrets::Secrets;
 use crate::plugin::store::OpenedBy;
@@ -197,19 +197,16 @@ impl PluginManager {
     ) -> Result<PreparedInstall, InstallError> {
         let manifest = &package.manifest;
         crate::plugin::install_entry::check_runtime(manifest, langs)?;
+        // 摘要对不上就是变过了。计划只在请求带了才比：空计划是老调用方，和确认门槛一样只按摘要；
+        // 带了计划的仍严格要求原样带回。`enforce_plan` 只由使用方的能力声明决定，批次里的提供方沿用使用方的值。
         if package.digest() != request.digest
-            || (enforce_plan && self.dependency_plan(&package)? != request.plan)
+            || (enforce_plan
+                && !request.plan.is_empty()
+                && self.dependency_plan(&package)? != request.plan)
         {
             return Err(InstallError::Changed(l10n::text(
                 langs,
                 "plugin-capability-plan-changed",
-                &[],
-            )));
-        }
-        if manifest.kind == PluginKind::System {
-            return Err(InstallError::Unsupported(l10n::text(
-                langs,
-                "install-system-preinstalled",
                 &[],
             )));
         }

@@ -49,6 +49,10 @@ async fn the_detail_page_shows_the_setup_step_too() {
     let detail = m
         .installed_detail(&PluginId::parse("app.test").unwrap(), &zh())
         .unwrap();
+    assert_eq!(
+        detail.setup.as_deref(),
+        Some("把公钥加到宿主的 authorized_keys")
+    );
     assert_eq!(detail.notices[0].text, "把公钥加到宿主的 authorized_keys");
     assert!(detail.notices[0].emphasis, "{:?}", detail.notices);
 }

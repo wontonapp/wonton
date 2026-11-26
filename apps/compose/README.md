@@ -10,7 +10,8 @@ Kotlin Multiplatform 工程：共享 UI 模块、Android 应用，以及桌面�
   UniFFI 的 Kotlin 绑定，`.so` 和绑定都不提交。
 - `androidApp/`：Android 应用，只有 `Application`（持有唯一的核心实例）和 `Activity`，以及把下载好的文件交给系统打开的
   `FileProvider`（ADR-0020）。
-- `scripts/build-core.sh`：被 `buildRustCore` 调用，一般不需要手动运行。
+- `scripts/build-core.sh`：被 `buildRustCore` 调用，一般不需要手动运行。环境变量 `WONTON_CORE_PREBUILT=1` 时任务不跑，
+  直接用已经放进输出目录的 `.so` 和 Kotlin 绑定（CI 按内容哈希取回 main 上编好的那份，见 `.github/workflows/README.md`）。
 
 UniFFI 的 Kotlin 绑定依赖 JNA，只能编译到 JVM 类目标，不能放进 `commonMain`。所以绑定和界面暂时
 放在 `shared/src/androidMain`；M2 加桌面端时，新增 JVM 目标，把它们移到 Android 与桌面共用的
@@ -42,8 +43,8 @@ SDK 位置写在 `apps/compose/local.properties`（`sdk.dir=...`，不提交）�
 ./gradlew :androidApp:assembleDebug
 ```
 
-默认只编译 `arm64-v8a`（真机和 Apple 芯片上的模拟器）。要别的 ABI 或 release 构建，用
-`-Pwonton.abis="arm64-v8a x86_64"`、`-Pwonton.rustProfile=release`。
+默认只编译 `arm64-v8a`（真机和 Apple 芯片上的模拟器）。要别的 ABI 用 `-Pwonton.abis="arm64-v8a x86_64"`。
+`assembleRelease` 这类 Release 变体的任务默认用 release 核心；`-Pwonton.rustProfile` 只在要强制某一种时传。
 
 ### 版本号
 
@@ -54,6 +55,11 @@ SDK 位置写在 `apps/compose/local.properties`（`sdk.dir=...`，不提交）�
 ```bash
 WONTON_VERSION=0.2.4 ./gradlew :androidApp:assembleRelease
 ```
+
+Release 包剥掉 `.so` 的符号表，安装时解压（`useLegacyPackaging`：下载量按压缩后算，设备上多占解压出的 `.so`）。
+原样的符号留在 `shared/build/outputs/native-symbols/<ABI>/`，R8 的映射表在
+`androidApp/build/outputs/mapping/release/mapping.txt`：崩溃栈要还原成函数名和行号就靠这两个。它们不进仓库，也别删上一次的。
+CI 的体积作业（`android-size.yml`）只在失败时传这两个（mapping.txt 一百多 MB，每次都存太占产物存储）。
 
 Gradle 也认 `-PwontonVersion=0.2.4`（透传给同一脚本；远程构建通道只透传它）。在自己带 tag 的检出上不传时
 取最近的发版 tag；都拿不到时 Debug 构建用 `0.0.0 (0)`。构建号由版本号算出（`major*1000000 + minor*1000 +
@@ -173,6 +179,57 @@ Debug 构建默认编译 debug 的 Rust 核心，加上 matrix-sdk 后 `.so` 将
 界面时用 `-Pwonton.rustProfile=release`。
 
 聊天列表右下角的 Material 3 加号按钮进入“发起私聊”；列表底部留出按钮空间，最后一行可以滚动到按钮上方。
+
+## 首次打开走查
+
+`androidTest/.../FirstRunWalkthroughTest`（`light`/`dark` 两个阶段）从没配对、没走过引导的设备开始走一遍新用户路径：
+配对页输入配对码、交接和备份层、引导、空列表、和 Hermes 的第一句、长按菜单、`/`、侧栏各入口，每步留一张截图。
+用真核心和真入口，不走 `ui-fake`。
+
+- 栈：开发栈（`remote-dev.sh`/`stack-slot.sh` 起的），**别连正式安装**；配对码从自己那套栈现取（10 分钟、单次）。
+- 两个 APK 必须同一台机器上编：本机和 194 的 debug keystore 不同，混着装会签名不符、`am instrument` 直接被拒。
+- 没传 `-e code` 时用例 `Assume` 跳过（nightly 的安卓作业不带参数，见 `nightly-ui.yml`）。
+- 已知软失败在用例的 `knownIssues` 里放行（现在只有“没配模型时 `/` 没有命令菜单”），新问题照红。
+- 截图由用例写进设备相册 `Pictures/WontonUITests/`；侧栏只验入口存在和点得开，进页面以后的内容属于各页面自己的测试。
+
+```bash
+code=$(ssh 194-stack dev <栈名> pair 192.168.0.194:<隧道端口> | grep -o 'wonton://pair[^[:space:]]*' | tail -1)
+adb shell "am instrument -w -r -e class app.wonton.android.FirstRunWalkthroughTest \
+  -e phase light -e code '$code' app.wonton.android.test/androidx.test.runner.AndroidJUnitRunner"
+```
+
+## 加设备交接与恢复走查
+
+连开发栈的界面走查在 `androidApp/src/androidTest`。`SasWalkTest` 跑加设备交接（配对 → SAS → 历史解密）和没有可信设备时的
+两条恢复路径（ADR-0087、ADR-0076），栈按 [`deploy/dev/core/README.md`](../../deploy/dev/core/README.md) 的
+“交接聊天密钥”一节备好旧设备（`key-handoff-old-device` 示例，用户名不同时用 `KEY_HANDOFF_BOT_USER` 指定它的用户 ID）。
+
+- 每跑一次成一个新设备：配对码只能用一次，配对页也只在没配对的 App 上出现。每条用例单独 `am instrument` 一次，
+  跑前 `adb shell pm clear app.wonton.android`，现取一个新码。
+- 交接那条要比两端表情：示例打出 `表情：` 那行后，把后面的 7 个符号（一个空格分隔，用例按空格拆）写进
+  `/sdcard/Android/data/app.wonton.android/files/sas-emoji.txt`。用例只等 120 秒，得用命令写：
+
+```bash
+symbols=$(grep '^表情：' <示例日志> | tail -n 1 | sed 's/^表情：//')
+printf '%s' "$symbols" | adb -s <串号> shell 'cat > /sdcard/Android/data/app.wonton.android/files/sas-emoji.txt'
+```
+
+  也可以先把符号存成文件再 `adb -s <串号> push <文件> /sdcard/Android/data/app.wonton.android/files/sas-emoji.txt`。
+- 恢复和重置两条先 `dev.sh devices` 看设备 ID，逐个 `dev.sh revoke <ID>`（含示例那台）；重置那条用上一台已删、
+  钥匙作废的状态，`RECOVERY_KEY_B64` 取示例写在码文件旁的 `.recovery`。栈不在本机时这两个命令经
+  `ssh <机>-stack dev <栈名> devices` / `revoke <ID>` 在那套栈上跑，别在调用机直接跑。
+- 历史必须两端同一串：示例的 `KEY_HANDOFF_HISTORY_TEXT` 和 `HISTORY_TEXT_B64` 解出来的要完全一致，不设时示例
+  自己按时间戳造一句，明文断言必红。
+- 历史和密钥都经 base64 传，照这样拼参数：
+
+```bash
+CODE_B64=$(printf %s '<码>' | base64 -w0)
+HISTORY_B64=$(printf %s '<历史>' | base64 -w0)
+RECOVERY_KEY_B64=$(printf %s '<恢复密钥>' | base64 -w0)
+adb shell am instrument -w -e PAIRING_CODE_B64 "$CODE_B64" -e HISTORY_TEXT_B64 "$HISTORY_B64" \
+  -e RECOVERY_KEY_B64 "$RECOVERY_KEY_B64" \
+  -e class app.wonton.android.SasWalkTest#<用例> app.wonton.android.test/androidx.test.runner.AndroidJUnitRunner
+```
 
 ## 检查
 

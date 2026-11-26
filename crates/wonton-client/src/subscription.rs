@@ -1,10 +1,10 @@
 use tokio::sync::{Mutex, watch};
 use wonton_protocol::{
     AgentChainsViewModel, AppLockViewModel, AppearanceViewModel, BotContactsViewModel,
-    ChatViewModel, ComposerViewModel, ConfirmationsViewModel, FriendsViewModel, HomeViewModel,
-    OnboardingViewModel, PagesViewModel, PeersViewModel, PluginsViewModel, RoomAgentStop,
-    ServersViewModel, SessionListViewModel, SettingsViewModel, TimelineTarget, TransfersViewModel,
-    WidgetSnapshot,
+    ChatViewModel, ComposerViewModel, ConfirmationsViewModel, FamilyViewModel, FriendsViewModel,
+    HomeViewModel, OnboardingViewModel, PagesViewModel, PeersViewModel, PluginsViewModel,
+    RoomAgentStop, ServersViewModel, SessionListViewModel, SettingsViewModel, TimelineTarget,
+    TransfersViewModel, WidgetSnapshot,
 };
 
 use crate::agent_chains::room_stop::{self, Attempts};
@@ -510,6 +510,33 @@ impl FriendsSubscription {
     }
 }
 
+/// 成员页（ADR-0088）的订阅，用法同 [`SessionListSubscription`]。
+#[derive(uniffi::Object)]
+pub struct FamilySubscription {
+    updates: Updates<FamilyViewModel>,
+}
+
+impl FamilySubscription {
+    pub(crate) fn new(receiver: watch::Receiver<FamilyViewModel>) -> Self {
+        Self {
+            updates: Updates::new(receiver),
+        }
+    }
+}
+
+#[uniffi::export]
+impl FamilySubscription {
+    /// 等待下一份 ViewModel，语义同 [`SessionListSubscription::next`]。
+    pub async fn next(&self) -> Option<FamilyViewModel> {
+        self.updates.next(FamilyViewModel::clone).await
+    }
+
+    /// 取消订阅，语义同 [`SessionListSubscription::cancel`]。
+    pub fn cancel(&self) {
+        self.updates.cancel();
+    }
+}
+
 /// 一条时间线的停止控件的订阅，用法同 [`SessionListSubscription`]。链列表每次长轮询回来都会变，
 /// 控件多半没变：只在算出来的值和上一次给的不一样时才返回。
 #[derive(uniffi::Object)]
@@ -645,11 +672,13 @@ mod unread_tests {
 
     fn room(unread_count: u64, membership: RoomMembership) -> RoomRow {
         RoomRow {
+            unread_mentions: 0,
             room_id: "!room:example.org".into(),
             name: String::new(),
             is_direct: false,
             direct_user_id: None,
             plugin: None,
+            bot_chat: None,
             is_encrypted: true,
             is_read_only: false,
             membership,

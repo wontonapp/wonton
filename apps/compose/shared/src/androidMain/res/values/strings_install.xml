@@ -37,7 +37,7 @@
     <!-- Button in the install preview when the app needs profile details you haven't filled in yet. -->
     <string name="install_fill_profile">Complete profile</string>
     <!-- Section title above the permissions the app asks for, in the install preview and the detail page. -->
-    <string name="install_permissions">Permissions</string>
+    <string name="install_permissions">What it can use</string>
     <!-- Section title above the release notes in the install preview. -->
     <string name="install_release_notes">What\'s new</string>
     <string name="install_audience_admin">Administrators</string>

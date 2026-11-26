@@ -1,0 +1,106 @@
+# Wonton 给 Hermes 的初始配置：首次启动时由 init 服务写成数据目录里的 config.yaml，之后不覆盖
+# （Hermes 自己也会改写它，比如 /model）。
+#
+# 不写 model：模型用 Hermes 自带的供应商接入，主人在插件网页的 Keys 页填 API key 或登录订阅、
+# 在 Models 页选模型，Hermes 自己写回这份配置。没选模型时 wonton 插件回一句去哪里设，不调模型。
+# 辅助任务（压缩、视觉、审批守卫等）用上游默认的 auto：跟随主模型，只走主人配了的 fallback，不猜别的服务商。
+
+# Matrix 的行为设置（身份和令牌由核心经环境变量注入）。只收发消息：不加处理中的表情回应、
+# 房间里不自动开线程，重启前后也不往聊天里发状态消息。
+# Matrix 的 reply_to_mode 在 v0.23.4 仍无效；适配器给回复附上触发消息的引用。
+platforms:
+  matrix:
+    reactions: false
+    auto_thread: false
+    gateway_restart_notification: false
+    # 斜杠命令管理员（DM 范围）：!approvals 和 !yolo 只认名单里的人。核心注入的 WONTON_MATRIX_ALLOWED_USERS
+    # 是 Bot 听的人（逗号分隔，第一个是归属人）；init 只取第一个 ID 写进来，家人加进听名单也拿不到审批开关。
+    allow_admin_from: "${WONTON_MATRIX_ALLOWED_USERS}"
+
+# 只收发消息：Matrix 里不展示工具调用和推理，也不发中途的一句话，一轮结束才发完整回答。要主人确认的工具
+# （装卸插件等）由核心出确认卡片，卡片自己出现在发起的聊天里，不靠中途消息提醒。
+display:
+  # Bot 忙时收到的新消息直接递进当前这一轮（Hermes 的 steer）：主人补充的话和当前的问题一起回答，
+  # 不用等上一轮答完；递不进去（这轮不在跑、带了语音以外的附件）时照旧排队，一条不丢。
+  # 只收发消息：并入当前回答时不另外发提示（display.busy_ack_enabled 关着）。
+  busy_input_mode: steer
+  busy_ack_enabled: false
+  # 后台的自我整理照常跑，只是不把“💾 Self-improvement review”这类提示发进聊天。
+  memory_notifications: "off"
+  platforms:
+    matrix:
+      tool_progress: "off"
+      show_reasoning: false
+      # 中途不再一句一条（每句都响铃）：模型调用工具前说的话不发出去，一轮结束才发完整回答。
+      # 要主人确认的操作由核心的确认卡片单独出现，不经这里。
+      interim_assistant_messages: false
+      long_running_notifications: false
+      busy_ack_detail: false
+      streaming: false
+
+# 群聊里每个人各自一段会话，互不共享上下文。
+group_sessions_per_user: true
+
+# 主人还没有设备时发进加密房间的低磁盘提问，配对后也解不开；显式关闭只是不再询问，自动清理仍按上游默认关闭。
+sessions:
+  auto_prune: false
+
+# 主人没当场回答时 Hermes 等多久（秒）。上游 v0.23.x 把默认从 1 小时改成 90 秒（按终端里用户就在跟前的场景调），
+# 云吞的聊天是异步的，主人可能过一阵才看手机，这里钉回 1 小时；0 或更小是不限时。
+# init 只对缺这项的已有 Bot 补包里的值，主人自己写过的值不动（见 init_config.py 第 9 块）。
+agent:
+  clarify_timeout: 3600
+
+# 危险命令先经上游审批：显式写 smart（与上游默认一致，不依赖默认值）。命中上游危险规则的命令由辅助模型的
+# 「守卫」逐条评估：明显安全的放行，明确破坏性的拒绝，拿不准或守卫不可用的升级成人工审批，在发起的聊天里等
+# 主人回答；300 秒没人回答按拒绝处理（上游 fail-closed）。要每条命中危险规则的命令都人工放行，私聊发
+# `!approvals manual`；这个切换和 `!yolo` 只有管理员名单里的人能改（见 platforms.matrix.allow_admin_from）。
+# 经 Wonton MCP 的操作不走这里，仍由核心出确认卡片。
+approvals:
+  mode: smart
+  # 守卫默认规则：上游 tools/approval_smart.py 把这段文本逐字拼进守卫模型的 system prompt（trusted 通道，
+  # v0.23.4）。英文书写、沿用上游 approval.py 的分类词，守卫照它把这几类判成 ESCALATE 转人工，不再自动放行。
+  # 守卫只看得到上游危险规则命中的命令：普通 sudo、doas、crontab、docker run/start/rm、compose up、
+  # 非递归 rm/rmdir 上游不命中，不会因此出卡片。init 只在本项缺失或为空时补同一份默认（取自包里的
+  # config.yaml），主人自己写的规则不动。
+  smart_policy: |
+    The following categories are always the owner's call: if the command does any of
+    these, respond ESCALATE (never APPROVE), even if it looks routine.
+    1. Privilege escalation: any command run through sudo or doas.
+    2. System configuration: writing or editing files under /etc, changing service state
+       with systemctl (start, stop, restart, reload, enable, disable, mask), editing
+       crontabs, or modifying shell startup files (~/.bashrc, ~/.zshrc, ~/.profile and
+       similar).
+    3. Container lifecycle: creating, starting, stopping, restarting, killing or removing
+       containers (docker/podman run/start/stop/restart/kill/rm), or bringing compose
+       stacks up or down.
+    4. Deletion outside the workspace: rm, rmdir, find -delete or similar removals whose
+       targets are not inside the agent's working directory (relative paths are inside;
+       absolute paths elsewhere are outside).
+    Everything not listed here follows the base rules above.
+
+# Wonton 的 Hermes 插件（包里的 wonton/，init 服务放进数据目录）：还没选模型时直接告诉主人去插件网页的 Keys 和
+# Models 页设置，不把上游“去终端跑 hermes model”的报错发进聊天。
+plugins:
+  enabled: [wonton]
+
+# 工具经核心的 MCP 总线（插件规范的“工具与 MCP 总线”），地址由核心注入（WONTON_MCP_URL）。装卸插件和会改数据的
+# 工具要主人在 Wonton App 里确认，调用一直等到主人回答再加上执行的时间。主人正在操作这个插件时先停住最多 10 分钟，
+# 卡片再等最多 10 分钟，所以 MCP 调用和工具调用的超时都放宽到 30 分钟（默认 300 秒和 420 秒）。
+mcp_servers:
+  wonton:
+    url: ${WONTON_MCP_URL}
+    timeout: 1800
+
+# 关掉上游自带的 Obsidian 笔记技能：它的职责是把笔记存进 Obsidian 库，没配 OBSIDIAN_VAULT_PATH 时落到
+# 这个 Bot 数据目录里的 ~/Documents/Obsidian Vault——主人从任何界面都看不到这个目录，让记到 Wonton 应用
+# （如 Memos）的内容就这样悄悄存丢。云吞里记笔记用 Memos 的工具（见 wonton 插件每轮带的引导）。
+# 主人想用 Obsidian 库：改数据目录 config.yaml 的这份名单，并把 OBSIDIAN_VAULT_PATH 指到看得见的存储。
+# init 对缺这项的已有 Bot 补同一份（见 init_config.py），主人自己写过的名单不动。
+skills:
+  disabled: [obsidian]
+
+timeouts:
+  tools:
+    sequential_call: 1800
+    concurrent_batch: 1800

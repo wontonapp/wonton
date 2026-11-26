@@ -126,6 +126,7 @@ async fn forward_between_windows(
                 },
                 item_id,
                 to_room_id: second_id.to_owned(),
+                comment: None,
             },
         })
         .unwrap();

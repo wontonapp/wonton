@@ -4,6 +4,13 @@
     <string name="settings_appearance">外观</string>
     <string name="settings_nav_bar">底栏</string>
     <string name="settings_about">关于</string>
+    <string name="settings_privacy">隐私</string>
+    <string name="settings_licenses">开源许可</string>
+    <plurals name="settings_licenses_value">
+        <item quantity="other">%1$d 项许可</item>
+    </plurals>
+    <string name="settings_licenses_problem">许可清单没能载入。</string>
+    <string name="settings_licenses_text">全文</string>
     <string name="settings_version">版本</string>
     <string name="settings_toolbar">设置</string>
     <string name="settings_toolbar_update">设置，有新版本</string>

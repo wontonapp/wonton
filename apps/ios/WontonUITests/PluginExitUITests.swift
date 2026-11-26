@@ -121,18 +121,13 @@ final class PluginExitUITests: XCTestCase {
         app.launchArguments += ["-AppleLanguages", "(en)", "-AppleLocale", "en_US"] + arguments
         app.launchEnvironment["WONTON_DEV_DATA_SUFFIX"] = dataSuffix
         app.launchEnvironment["WONTON_UI_FAKE"] = "1"
-        app.launch()
+        UITestBackend.launch(app)
         XCTAssertTrue(waitHittable(sidebarButton, timeout: 20), "没进主界面\n\(app.debugDescription)")
     }
 
-    /// 按 HOME 再点回来。回到前台的头一瞬间界面还在归位，这时合成的点按不生效（iOS 27.1 模拟器实测：立刻点
-    /// 胶囊没反应、当时侧边栏按钮的位置还在变，等 1.5 秒再点就收起）；人手没这么快，等停稳再点。
+    /// 见 `UITestLifecycle`：等停稳再点。不把归位算进阈值的调用方传 `linger: 0`。
     private func backgroundAndReturn(file: StaticString = #filePath, line: UInt = #line) {
-        XCUIDevice.shared.press(.home)
-        _ = app.wait(for: .runningBackgroundSuspended, timeout: 5)
-        app.activate()
-        XCTAssertTrue(app.wait(for: .runningForeground, timeout: 10), "没切回来", file: file, line: line)
-        Thread.sleep(forTimeInterval: 1.5)
+        UITestLifecycle.backgroundAndReturn(app, file: file, line: line)
     }
 
     private var sidebarButton: XCUIElementQuery { app.buttons.matching(UITestSidebar.button) }

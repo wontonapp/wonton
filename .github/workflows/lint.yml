@@ -27,6 +27,12 @@ jobs:
       # ADR 多半是只改文档的 PR，不能挂在结构门禁后面（那些步骤只改文档时跳过）。
       - name: ADR 的文件名和标题编号一致、不重号
         run: python3 scripts/adr-index.py --check
+      # 公开仓库里的 install.sh 是用户的唯一安装入口，只能从主仓库同步过去；对不上就红，见 deploy/install/README.md。
+      # 检出只有两个提交，第二行记的提交本地没有，检查经 API 读主仓库那份文件，所以要带 token。
+      - name: 公开仓库的 install.sh 和主仓库一致
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: bash scripts/install/check-public-copy.sh
       - name: 装 gitleaks（版本和 sha256 固定）
         run: |
           curl -fsSL --retry 3 -o gitleaks.tar.gz \
@@ -84,12 +90,21 @@ jobs:
       - name: 界面文字检查自己的用例
         if: steps.changes.outputs.source == 'true'
         run: python3 -m unittest discover -s scripts/ui_text -t scripts
+      - name: 许可清单和许可表能生成出完整内容（iOS/Rust 那半）
+        if: steps.changes.outputs.source == 'true'
+        run: bash scripts/check-licenses.sh
+      - name: 许可表检查自己的用例
+        if: steps.changes.outputs.source == 'true'
+        run: python3 -m unittest discover -s scripts/licenses -t scripts -p '*_test.py'
       - name: 开发栈端口检查自己的用例
         if: steps.changes.outputs.source == 'true'
         run: python3 -m unittest discover -s scripts/dev_ports -t scripts
       - name: dev.sh 实例标签的用例
         if: steps.changes.outputs.source == 'true'
         run: python3 deploy/dev/core/instance-label_test.py
+      - name: dev.sh 的 core 网络建一次、不重建（假 docker）
+        if: steps.changes.outputs.source == 'true'
+        run: python3 deploy/dev/core/core-network_test.py
       - name: dev.sh 的 logs 和 diag（假 docker，不用真的 Docker）
         if: steps.changes.outputs.source == 'true'
         run: python3 deploy/dev/core/dev_test.py
@@ -99,6 +114,9 @@ jobs:
       - name: smoke.sh 分段运行（步骤名、SMOKE_UNTIL、SMOKE_ONLY）
         if: steps.changes.outputs.source == 'true'
         run: python3 deploy/dev/core/smoke-lib_test.py
+      - name: 开发栈和冒烟脚本不碰正式安装的栈（假 docker）
+        if: steps.changes.outputs.source == 'true'
+        run: python3 deploy/dev/core/dev-guard_test.py
       - name: 开发栈端口只绑 127.0.0.1
         if: steps.changes.outputs.source == 'true'
         run: python3 scripts/check-dev-compose-ports.py
@@ -108,6 +126,9 @@ jobs:
       - name: 生成绑定的 crate 的文档注释能进 Swift 和 Kotlin 的块注释
         if: steps.changes.outputs.source == 'true'
         run: bash scripts/check-uniffi-comments.sh
+      - name: 核心产物的键：改了任何一个输入都要变
+        if: steps.changes.outputs.source == 'true'
+        run: python3 -m unittest discover -s scripts/core_artifacts -t scripts -p '*_test.py'
       - name: 两个壳的对齐检查自己的用例
         if: steps.changes.outputs.source == 'true'
         run: python3 -m unittest discover -s scripts/shell_parity -t scripts

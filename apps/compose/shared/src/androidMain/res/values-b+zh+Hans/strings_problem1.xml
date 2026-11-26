@@ -5,9 +5,9 @@
     <!-- Next step under the refused problem: the sign-in is fine; the server refused this one action. -->
     <string name="problem_forbidden_next_step">登录没有问题。可能是没有权限、对方屏蔽了你，或者对方的服务器还不能和家里的服务器互通。</string>
     <!-- Next step: check the proxy on the home server, or change the address in the internet proxy settings. -->
-    <string name="problem_plugin_egress_proxy_unavailable_next_step">检查家里服务器上的代理，或者在出网代理设置里改地址后再试。</string>
+    <string name="problem_plugin_egress_proxy_unavailable_next_step">去代理插件的安装页查看日志，或者检查出网代理设置后再试。</string>
     <!-- Problem title: the app can't reach the internet through the internet proxy. -->
-    <string name="problem_plugin_egress_proxy_unavailable_title">代理连不上</string>
+    <string name="problem_plugin_egress_proxy_unavailable_title">代理用不了</string>
     <!-- Problem title: the app and the home server versions don't match. -->
     <string name="problem_plugin_protocol_title">App 和家里的服务器版本对不上</string>
     <!-- Next step: uninstall the app (its data can be kept) and install it again. -->
@@ -28,4 +28,9 @@
     <string name="problem_unauthorized_title">家里的服务器不认这台设备</string>
     <!-- Next step under the server-error problem. Also used for other problems that only say to try later. -->
     <string name="problem_upstream_next_step">稍后再试。</string>
+    <string name="problem_plugin_health_timeout_next_step">到时限服务还没就绪。主机空下来后重试安装通常就能过；服务一直答 5xx 也可能是它自己有问题。详情里有是哪个服务、等了多久、最后状态和最近的探针。</string>
+    <!-- Problem title when a chat can't start because the other server turned its public access off. -->
+    <string name="problem_peer_public_access_off_title">对方服务器的公网访问已关</string>
+    <!-- Problem title when a chat can't start because the other server isn't paired with this one. -->
+    <string name="problem_server_not_paired_title">对方服务器还没配对</string>
 </resources>

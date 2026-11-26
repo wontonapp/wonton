@@ -1,5 +1,5 @@
-# 正式安装的云吞：核心、身份提供方（Ory Hydra）和 Matrix 服务器（Tuwunel）。系统插件（模型网关 magpie）由核心启动后
-# 自己装上（WONTON_SYSTEM_PLUGINS），然后装一次默认 Agent Hermes（WONTON_DEFAULT_PLUGINS）。
+# 正式安装的云吞：核心、身份提供方（Ory Hydra）和 Matrix 服务器（Tuwunel）。核心启动后自己装上系统插件
+# （WONTON_SYSTEM_PLUGINS），并且不等它们，装一次默认 Agent Hermes（WONTON_DEFAULT_PLUGINS）。
 #
 # 这份文件编进核心的二进制，由 `wonton-core init` 和密钥一起写到安装目录，随核心镜像一起升级；变量来自安装目录的
 # .env，由安装脚本写好（deploy/install/install.sh）。
@@ -42,6 +42,13 @@ services:
       WONTON_TUNNEL_PORT: ${WONTON_TUNNEL_PORT:?}
       # 中继表（ADR-0048）：不设时用 n0 的公共中继。
       WONTON_RELAYS: ${WONTON_RELAYS:-}
+      # 内置表的运行时覆盖；不设时用构建进镜像的默认值。
+      WONTON_BUILTIN_RELAYS: ${WONTON_BUILTIN_RELAYS:-}
+      # 签名的中继列表和它的验签公钥（可选）。
+      WONTON_RELAY_LIST_URL: ${WONTON_RELAY_LIST_URL:-}
+      WONTON_RELAY_LIST_PUBKEY: ${WONTON_RELAY_LIST_PUBKEY:-}
+      # 主人配置文件的位置；不设时用数据目录里的 core/relays.json。
+      WONTON_RELAYS_FILE: ${WONTON_RELAYS_FILE:-}
       WONTON_CORE_CONTAINER: ${WONTON_CORE_CONTAINER:-wonton-core}
       WONTON_INSTANCE: ${WONTON_INSTANCE:-}
       # 宿主的 /dev 挂在这里（下面的 volumes）：核心据此检测显卡设备和它们所属的组（ADR-0018）。
@@ -78,6 +85,9 @@ services:
       WONTON_FEDERATION_LISTEN: federation-proxy.wonton.internal:8448
       # 推送直连核心在 core 网络上的 80 端口，不经联邦 CONNECT 代理，也不发布到宿主。
       WONTON_PUSH_LISTEN: push.wonton.internal:80
+      # 发往我们运营的推送中继时的 VAPID 身份（ADR-0003 的 M2，cloud/push-relay）；不设时不带 VAPID 头。
+      WONTON_PUSH_VAPID_KEY: ${WONTON_PUSH_VAPID_KEY:-}
+      WONTON_PUSH_VAPID_SUBJECT: ${WONTON_PUSH_VAPID_SUBJECT:-}
       # 通话插件（matrix_rtc 的提供方）验 OpenID 令牌时连服务器名的 443，核心在它的网络里以这个名字答（ADR-0096）。
       WONTON_MATRIX_RTC_LISTEN: 0.0.0.0:443
       WONTON_SYSTEM_PLUGINS: /usr/share/wonton/system-plugins
@@ -273,14 +283,18 @@ services:
 
   tuwunel:
     image: ghcr.io/matrix-construct/tuwunel:v2.0.0@sha256:3dde1e9b3503c68218f95415ec3ebff522bd945065ba76019d408543540d1730
-    restart: unless-stopped
+    # 热加载走管理房间命令（ADR-0116），核心不再给这个容器发信号；`restart: always` 仍然要写：Docker 重启、
+    # 崩溃都要自己回来，`unless-stopped` 会被历史上任何一次 kill 记成“手动停过”（HasBeenManuallyStopped），重启后
+    # 不再拉起，核心连不上 Matrix 一直崩。停止信号要写明：没写时 Docker 把任何信号都当成停止信号，停掉重启管理器。
+    restart: always
+    stop_signal: SIGTERM
     # 升级后首次启动可能在迁移数据库，不能被 10 秒后强杀（见 Tuwunel 的 docker.md）。
     stop_grace_period: 5m
     # 配对代理范围与黑名单在第二份配置一起热加载（ADR-0051）；私用名另有允许名单。
     command: ["-c", "/etc/tuwunel/tuwunel.toml", "-c", "/etc/tuwunel/wonton-fed.toml"]
     environment:
       <<: *no-proxy
-      # 配置和 JWT 公钥都在文件里：轮换签发密钥时核心改写它、发 SIGUSR1 热加载（ADR-0009）。
+      # 配置和 JWT 公钥都在文件里：轮换签发密钥时核心改写它，下一步热加载一起重读（ADR-0009）。
       TUWUNEL_CONFIG: /etc/tuwunel/tuwunel.toml
       # MatrixRTC 的授权服务固定在 Matrix 对外地址的这个前缀下，网关转给通话插件（ADR-0096）：装卸插件不改这里。
       TUWUNEL_WELL_KNOWN__LIVEKIT_URL: http://matrix.${WONTON_BASE_DOMAIN}:${WONTON_PORT}/_wonton/matrix-rtc
@@ -289,7 +303,8 @@ services:
       # 只挂 Tuwunel 自己的文件：`secrets/` 根上还有核心的 `matrix-jwt.pem`、`hydra-secret`/`hydra.env`，
       # 联邦容器读不到才对（ADR-0051）。整目录一次挂完，不用在只读目录里再建挂载点。
       - ${WONTON_INSTALL_DIR}/secrets/tuwunel:/etc/tuwunel:ro
-    # 不发布任何端口；公网联邦经过隔离入口容器和核心的专用监听。
+    # 不发布任何端口：有入口时公网联邦经过隔离入口容器（TLS 在那里终止）和核心的专用监听；没有入口时
+    # 只有内部的 8008/8448，对端经 iroh 投进来的流落在 8448（ADR-0090）。
     networks:
       core:
         aliases: [tuwunel.wonton.internal]

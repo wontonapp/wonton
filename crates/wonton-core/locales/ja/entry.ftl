@@ -5,3 +5,4 @@ entry-certificate-reload-failed = 更新された入口証明書を読み込め�
 entry-certificate-renew-failed = 入口証明書の更新に失敗しました。既存の証明書を引き続き使用しています：{ $error }
 entry-reconcile-failed = 公開エントリの reconciliation に失敗しました。回復するまで、公開エントリとフェデレーション TLS が利用できない可能性があります：{ $error }
 entry-reconcile-recovered = 公開エントリの reconciliation が成功し、再び利用可能になりました。
+entry-domain-unreadable = ドメイン設定を読み込めないため、今回の更新をスキップします。入口設定を確認してください：{ $error }

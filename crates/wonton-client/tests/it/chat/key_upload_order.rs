@@ -22,7 +22,7 @@ use std::time::Duration;
 use wonton_client::MessageSummary;
 
 use super::support::{Home, Phone, WAIT};
-use super::{accept_the_bots_invite, chat_with_the_bot};
+use super::{accept_the_bots_encrypted_invite, chat_with_the_bot};
 
 #[tokio::test(flavor = "multi_thread")]
 #[ignore = "需要 Docker，用 --include-ignored 运行"]
@@ -49,7 +49,7 @@ async fn the_bot_waits_for_the_owners_device_keys_before_its_first_message() {
     });
 
     let bot = home.bot("hermes", "Hermes").await;
-    let room_id = accept_the_bots_invite(&home, &phone, &bot).await;
+    let room_id = accept_the_bots_encrypted_invite(&home, &phone, &bot).await;
 
     // (b) 的探测：等这个房间的 preview 变成 Undecryptable（订阅的第一项是当前状态，之后是每次变化）。
     let room = room_id.to_string();

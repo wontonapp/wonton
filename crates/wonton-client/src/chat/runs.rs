@@ -9,7 +9,7 @@ use std::collections::{HashMap, HashSet};
 use wonton_protocol::{MessageContent, MessageRun, TimelineContent, TimelineDiff, TimelineItem};
 
 /// 前后两条隔得超过这么久就不算一组（ADR-0109 的估计值）。
-pub(crate) const RUN_GAP_MS: u64 = 5 * 60 * 1000;
+pub(crate) const RUN_GAP_MS: u64 = 30 * 60 * 1000;
 
 /// 一条能不能和相邻的连成一组。
 enum Link<'a> {
@@ -201,6 +201,8 @@ mod tests {
             id: id.to_owned(),
             content: TimelineContent::Message {
                 message: TimelineMessage {
+                    mentions_me: false,
+                    unread_anchor: false,
                     event_id: Some(format!("${id}")),
                     sender_id: sender.to_owned(),
                     sender_name: sender.to_owned(),
@@ -265,19 +267,36 @@ mod tests {
     }
 
     #[test]
-    fn a_gap_longer_than_five_minutes_or_a_divider_splits_the_run() {
+    fn a_gap_longer_than_thirty_minutes_or_a_divider_splits_the_run() {
         use MessageRun::*;
         let items = [
             message("a", "@bot", 0),
             message("b", "@bot", 5),
             message("c", "@bot", 11),
-            divider("d"),
-            message("e", "@bot", 12),
+            message("d", "@bot", 31),
+            divider("x"),
+            message("e", "@bot", 32),
         ];
         assert_eq!(
             runs_of(&items),
-            [Some(First), Some(Last), Some(Alone), None, Some(Alone)]
+            [
+                Some(First),
+                Some(Middle),
+                Some(Middle),
+                Some(Last),
+                None,
+                Some(Alone)
+            ]
         );
+    }
+
+    #[test]
+    fn a_sender_change_or_a_long_gap_starts_a_new_run() {
+        use MessageRun::*;
+        let items = [message("a", "@bot", 0), message("b", "@bot", 31)];
+        assert_eq!(runs_of(&items), [Some(Alone), Some(Alone)]);
+        let items = [message("a", "@bot", 0), message("b", "@me", 1)];
+        assert_eq!(runs_of(&items), [Some(Alone), Some(Alone)]);
     }
 
     #[test]

@@ -483,7 +483,7 @@
       }
     },
     "store.updateAllTitle": {
-      "comment": "Title of the update-all dialog listing the apps to update. Argument: the count.",
+      "comment": "Title of the initial update-all sheet listing apps and target versions. Argument: the count.",
       "extractionState": "manual",
       "localizations": {
         "en": {
@@ -679,7 +679,7 @@
       }
     },
     "store.updateAll": {
-      "comment": "Confirm button of the update-all dialog.",
+      "comment": "Confirm button of the initial update-all sheet.",
       "extractionState": "manual",
       "localizations": {
         "en": {

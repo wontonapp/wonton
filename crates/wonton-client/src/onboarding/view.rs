@@ -143,7 +143,8 @@ fn project_default_bot_visibility(
             {
                 DefaultBotVisibility::Visible
             }
-            None | Some((Some(DefaultBotVisibility::Absent), None)) => DefaultBotVisibility::Absent,
+            // 核心给了身份、但这个人不能用也是确定的“不可见”：别退成“还在核实”。
+            None | Some((Some(DefaultBotVisibility::Absent), _)) => DefaultBotVisibility::Absent,
             _ => DefaultBotVisibility::Unknown,
         }
     }
@@ -242,6 +243,7 @@ mod tests {
             },
             installing_bots: Vec::new(),
             rooms: vec![RoomRow {
+                unread_mentions: 0,
                 layout: Default::default(),
                 call_active: false,
                 room_id: room_id.to_owned(),
@@ -249,6 +251,7 @@ mod tests {
                 is_direct: true,
                 direct_user_id: bot.map(str::to_owned),
                 plugin: None,
+                bot_chat: None,
                 is_encrypted: true,
                 is_read_only: false,
                 membership: wonton_protocol::RoomMembership::Joined,
@@ -360,7 +363,6 @@ mod tests {
         for (visibility, id) in [
             (Some(DefaultBotVisibility::Visible), Some("not-a-matrix-id")),
             (Some(DefaultBotVisibility::Visible), None),
-            (Some(DefaultBotVisibility::Absent), Some("@private:home")),
             (None, Some("@private:home")),
         ] {
             let mut data = onboarding();
@@ -379,5 +381,24 @@ mod tests {
             assert!(view.default_bot_user_id.is_none());
             assert!(view.chat_prompts.is_empty());
         }
+    }
+
+    #[test]
+    fn absent_default_bot_keeps_its_identity_but_is_not_a_chat_target() {
+        let mut data = onboarding();
+        let default = data.default_bot_plugin.as_mut().unwrap();
+        default.visibility = Some(DefaultBotVisibility::Absent);
+        default.bot_user_id = Some("@private:home".into());
+        let state = LocalState {
+            onboarding: Some(data),
+            ..LocalState::default()
+        };
+        let view = render(&state, &storage::Records::default()).0;
+        assert_eq!(
+            view.default_bot_visibility,
+            Some(DefaultBotVisibility::Absent)
+        );
+        assert!(view.default_bot_user_id.is_none());
+        assert!(view.chat_prompts.is_empty());
     }
 }

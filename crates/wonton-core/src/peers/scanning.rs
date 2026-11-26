@@ -60,7 +60,11 @@ impl Peers {
             let record = PeerRecord {
                 server_name: code.server_name.clone(),
                 endpoint_id: code.server_id,
-                relays: code.relay_urls.iter().map(|url| url.to_string()).collect(),
+                relays: code
+                    .relay_urls
+                    .iter()
+                    .map(wonton_tunnel::relays::relay_url_text)
+                    .collect(),
                 addrs: Vec::new(),
                 owner_user_id: String::new(),
                 owner_display_name: String::new(),

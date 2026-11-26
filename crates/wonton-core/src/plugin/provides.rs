@@ -1,7 +1,7 @@
 //! 插件给其他插件提供的能力（`provides`）。
 
 use super::languages::Languages;
-use super::manifest::{Manifest, ManifestError, Permission, PluginKind};
+use super::manifest::{Manifest, ManifestError, Permission};
 use crate::l10n::text;
 
 pub use wonton_protocol::manifest::{
@@ -60,16 +60,10 @@ pub fn validate(manifest: &Manifest, langs: &Languages) -> Result<(), ManifestEr
     {
         return Err(invalid(&text(langs, "plugin-install-prv-empty", &[])));
     }
+    // 不限定 `kind: system`：模型网关是能装能卸的普通插件（ADR-0108），提供方看得到使用方的请求，主人装它就是信它。
     let Some(models) = &provides.models else {
         return Ok(());
     };
-    if manifest.kind != PluginKind::System {
-        return Err(invalid(&text(
-            langs,
-            "plugin-install-prv-models-system-only",
-            &[],
-        )));
-    }
     validate_models(models, langs)
 }
 

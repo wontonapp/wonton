@@ -20,4 +20,5 @@
     <string name="onboarding_step_apps">Choose apps</string>
     <!-- Card title at the top of the profile step in setup. -->
     <string name="onboarding_step_profile">Your profile</string>
+    <string name="onboarding_problem_plugin_health_timeout">The service was still not ready at the deadline; try again once the server settles.</string>
 </resources>

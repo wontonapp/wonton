@@ -289,6 +289,8 @@ private val AttachmentFailure.text: Int
         AttachmentFailure.TOO_LARGE -> R.string.composer_attachment_too_large
         AttachmentFailure.SOURCE_UNAVAILABLE -> R.string.composer_attachment_source_unavailable
         AttachmentFailure.STORAGE_FULL -> R.string.composer_attachment_storage_full
+        AttachmentFailure.UNSUPPORTED_TYPE -> R.string.composer_attachment_unsupported_type
+        AttachmentFailure.REPLY_TARGET -> R.string.composer_attachment_reply_target
         AttachmentFailure.REJECTED -> R.string.composer_attachment_rejected
         AttachmentFailure.UPSTREAM -> R.string.composer_attachment_upstream
         AttachmentFailure.LOCAL_STORAGE -> R.string.composer_attachment_local_storage

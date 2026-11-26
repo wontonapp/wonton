@@ -38,3 +38,37 @@ description = "测试里的本地 Hydra 地址带占位用户名密码（user:se
 condition = "AND"
 paths = ['''^crates/wonton-core/src/config_tests\.rs$''']
 regexes = ['''user:secret@hydra''']
+
+[[allowlists]]
+description = "matrix 的 Tuwunel 测试夹具：源文件里只写 `{private}` 占位符（运行时现生成密钥），带转义的 \\n 写进临时目录；真 PEM 后面是换行加 base64，不会命中。paths 里的 invite_filter、profile 两个测试文件不在这条提交里，改到时会用上"
+condition = "AND"
+paths = ['''^crates/wonton-core/src/matrix/(bot|invite_filter)_docker_tests\.rs$''', '''^crates/wonton-core/src/matrix/profile_tuwunel_tests\.rs$''']
+regexes = ['''-----BEGIN PRIVATE KEY-----\\n''']
+
+[[allowlists]]
+description = "入口热加载演练里现场生成的 JWT 密钥只写 PEM 空头，后面紧跟 {} 占位；真 PEM 头后面是换行加 base64，不会命中"
+condition = "AND"
+paths = ['''^crates/wonton-core/src/matrix/federation_config/tests\.rs$''']
+regexes = ['''-----BEGIN PRIVATE KEY-----\\n\{\}''']
+
+[[allowlists]]
+description = "index.json 的 files 是插件包内文件的 sha256，文件名带 credentials 或 api 的（credentials.sh、wonton/dashboard/api.py）会被 generic-api-key 当成密钥；上报的值就是 64 位小写十六进制摘要，只放行这个形状"
+condition = "AND"
+paths = ['''^deploy/dev/core/store/index\.json$''']
+regexes = ['''^[0-9a-f]{64}$''']
+
+[[allowlists]]
+description = "deploy/dev/calls/pylib 是随仓库原样带的 websocket-client 1.8.0（Apache-2.0，见同目录 LICENSE）；命中的是上游测试文件里的 key/nonce 夹具，不是我们的凭据"
+paths = ['''^deploy/dev/calls/pylib/''']
+
+[[allowlists]]
+description = "中继 README 里演示 WebSocket 握手用的 RFC 6455 文中的示例 nonce（和上面同值），不是凭据"
+condition = "AND"
+paths = ['''^cloud/iroh-relay/README\.md$''']
+regexes = ['''dGhlIHNhbXBsZSBub25jZQ==''']
+
+[[allowlists]]
+description = "relay.env.example 里的准入令牌占位值（大写字母加下划线），装机时会被真正的 64 位十六进制替换"
+condition = "AND"
+paths = ['''^cloud/iroh-relay/relay\.env\.example$''']
+regexes = ['''REPLACE_WITH_64_HEX_CHARS''']

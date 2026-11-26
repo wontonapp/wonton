@@ -12,7 +12,7 @@
 
 延迟只在 Bot 的进程里计时：还没到点 Bot 就重启（包括重装插件），这条就不发了；秒数不是整数、没跟文字时当普通文字回。
 
-数据卷被删、容器重建没挂卷时 crypto store 会丢：服务器还留着旧身份签的一次性密钥，Olm 会话建不起来，加密房间里的消息解不开。重装插件换新设备后恢复收发。
+数据卷被删、容器重建没挂卷时 crypto store 会丢：服务器还留着旧身份签的一次性密钥，Olm 会话建不起来，已有加密房间里的消息解不开。重装插件换新设备后恢复收发；新建的房间不加密，不受影响。
 
 镜像在本地构建（`pull_policy: never`），然后像别的示例一样安装：
 
@@ -21,8 +21,8 @@ docker build -f deploy/dev/core/Dockerfile --target echo-bot -t wonton-echo-bot:
 deploy/dev/core/dev.sh install plugins/examples/echo-bot
 ```
 
-装好后 App 里会出现和“回声”的加密私聊。`echo-bot probe` 在冒烟测试里扮演主人的设备，经隧道发一条加密消息、
-等回声，用法见 `crates/wonton-echo-bot/src/probe.rs`。
+装好后 App 里会出现和“回声”的私聊。`echo-bot probe` 在冒烟测试里扮演主人的设备，经隧道发一条消息、等回声，
+用法见 `crates/wonton-echo-bot/src/probe.rs`。
 
 ## 图标
 

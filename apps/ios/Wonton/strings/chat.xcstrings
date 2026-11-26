@@ -1071,6 +1071,246 @@
           }
         }
       }
+    },
+    "room.typing": {
+      "comment": "Status line under the title of a one-to-one chat while the other side is typing. Replaces the connection status.",
+      "extractionState": "manual",
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "typing…"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "正在输入…"
+          }
+        },
+        "zh-Hant": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "正在輸入…"
+          }
+        },
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "入力中…"
+          }
+        }
+      }
+    },
+    "room.typingOne": {
+      "comment": "Status line under the title of a group chat while one member is typing. %@ is their display name.",
+      "extractionState": "manual",
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "%@ is typing…"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "%@ 正在输入…"
+          }
+        },
+        "zh-Hant": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "%@ 正在輸入…"
+          }
+        },
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "%@ が入力中…"
+          }
+        }
+      }
+    },
+    "room.typingMany": {
+      "comment": "Status line under the title of a group chat while several members are typing. %1$@ is the first one's display name, %2$lld is how many others.",
+      "extractionState": "manual",
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "%1$@ and %2$lld more are typing…"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "%1$@ 和另外 %2$lld 人正在输入…"
+          }
+        },
+        "zh-Hant": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "%1$@ 和另外 %2$lld 人正在輸入…"
+          }
+        },
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "%1$@ ほか %2$lld 人が入力中…"
+          }
+        }
+      }
+    },
+    "room.jumpUnavailable": {
+      "comment": "Brief hint shown after tapping a quoted message when the original can no longer be found (deleted, or the server can't return it).",
+      "extractionState": "manual",
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Can't find the original message"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "找不到原消息了"
+          }
+        },
+        "zh-Hant": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "找不到原訊息了"
+          }
+        },
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "元のメッセージが見つかりません"
+          }
+        }
+      }
+    },
+    "room.botOtherPrivate": {
+      "comment": "Above the composer in a DM with a family member's private Bot, which the current person, owner included, has no grant for.",
+      "extractionState": "manual",
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "This is another family member's private Bot. Its owner hasn't given access."
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "这是家里人的私人 Bot，主人还没给授权。"
+          }
+        },
+        "zh-Hant": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "這是家裡人的私人 Bot，主人還沒給授權。"
+          }
+        },
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "これは家族の他の人のプライベート Bot です。持ち主はまだ利用を許可していません。"
+          }
+        }
+      }
+    },
+    "room.botGrantRevoked": {
+      "comment": "Above the composer in a DM with a Bot the person could use before and whose grant was removed.",
+      "extractionState": "manual",
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Access to this Bot was removed."
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "这个 Bot 的授权已经收回。"
+          }
+        },
+        "zh-Hant": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "這個 Bot 的授權已經收回。"
+          }
+        },
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "この Bot へのアクセスは取り消されました。"
+          }
+        }
+      }
+    },
+    "room.botUnavailable": {
+      "comment": "Above the composer in a DM with a Bot that is known but currently unusable for another reason.",
+      "extractionState": "manual",
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "This Bot can't be used right now."
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "这个 Bot 现在用不了。"
+          }
+        },
+        "zh-Hant": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "這個 Bot 現在用不了。"
+          }
+        },
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "この Bot は今使えません。"
+          }
+        }
+      }
+    },
+    "room.botUnknown": {
+      "comment": "Above the composer when the app can't check yet whether the person may message this Bot.",
+      "extractionState": "manual",
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Couldn't check yet whether this Bot can be messaged."
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "还没核实这个 Bot 能不能发。"
+          }
+        },
+        "zh-Hant": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "還沒核實這個 Bot 能不能發。"
+          }
+        },
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "この Bot に送れるかまだ確かめていません。"
+          }
+        }
+      }
     }
   }
 }

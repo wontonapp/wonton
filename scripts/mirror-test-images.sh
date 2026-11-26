@@ -49,7 +49,7 @@ refs=$(
     # Tuwunel：wonton-matrix 的 testkit 从开发栈的 compose 解析镜像（test_docker_check 照它扫），
     # compose 里的引用变了这里跟着变，缺了它 Docker 测试跑到一半才拉不到镜像。
     sed -nE 's/^ *image: +//p' deploy/dev/matrix/compose.yaml
-    # 系统网关：契约适配器从锁包声明解析镜像，字面量扫描无法发现。
+    # magpie：契约适配器从钉住的插件包解析镜像，字面量扫描无法发现。
     echo 'ghcr.io/yetone/magpie:0.1.1327@sha256:85e5b25a9b72ffc4de4bccb94743f4afb17a86a74d90b6260c03f29268d2f45e'
   } | grep -E ':' | grep -vE '[{}]' | sort -u
 )

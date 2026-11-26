@@ -38,8 +38,12 @@ import androidx.compose.ui.layout.positionInRoot
 import androidx.compose.ui.platform.ClipEntry
 import androidx.compose.ui.platform.LocalClipboard
 import androidx.compose.ui.platform.LocalDensity
+import androidx.compose.ui.platform.LocalLayoutDirection
+import androidx.compose.ui.platform.LocalWindowInfo
+import androidx.compose.ui.platform.testTag
 import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.semantics.clearAndSetSemantics
+import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.Constraints
 import androidx.compose.ui.unit.IntOffset
 import androidx.compose.ui.unit.IntRect
@@ -49,15 +53,19 @@ import androidx.compose.ui.window.Popup
 import androidx.compose.ui.window.PopupPositionProvider
 import androidx.compose.ui.window.PopupProperties
 import app.wonton.client.ClientCore
+import app.wonton.protocol.ImageContent
 import app.wonton.protocol.MessageAction
 import app.wonton.protocol.QuotedMessage
 import app.wonton.protocol.TimelineMessage
 import app.wonton.ui.design.WontonTheme
 import app.wonton.ui.design.toColor
+import app.wonton.ui.icons.Compose
 import app.wonton.ui.icons.Copy
 import app.wonton.ui.icons.Reply
 import app.wonton.ui.icons.Trash
 import app.wonton.ui.icons.WontonIcon
+import java.text.DateFormat
+import java.util.Date
 import kotlin.math.roundToInt
 import kotlinx.coroutines.launch
 
@@ -71,6 +79,22 @@ private object WindowOrigin : PopupPositionProvider {
     ) = IntOffset.Zero
 }
 
+/** 菜单能画在哪儿：窗口减去系统栏和键盘。弹层是另一个窗口，在里面拿不到这些，在这里算好传进去。 */
+@Composable
+internal fun messageMenuBounds(): Rect {
+    // 横屏时导航栏或挖孔在侧边，左右也要让。
+    val windowSize = LocalWindowInfo.current.containerSize
+    val density = LocalDensity.current
+    val safe = WindowInsets.safeDrawing
+    val direction = LocalLayoutDirection.current
+    return Rect(
+        safe.getLeft(density, direction).toFloat(),
+        safe.getTop(density).toFloat(),
+        (windowSize.width - safe.getRight(density, direction)).toFloat(),
+        (windowSize.height - safe.getBottom(density).toFloat()),
+    )
+}
+
 /// 消息预览留在原来的位置，菜单贴着它：下面放得下放下面，放不下翻到上面，两头都夹在可视区里。
 /// `bubble` 是气泡在屏幕上的位置（根坐标），`visible` 是能用的那一片（同样坐标，已经让开系统栏和键盘）。
 @Composable
@@ -79,7 +103,9 @@ fun MessageMenu(
     bubble: Rect,
     visible: Rect,
     core: ClientCore,
+    groupImages: List<ImageContent>? = null,
     onReply: (QuotedMessage) -> Unit,
+    onEdit: (String) -> Unit,
     onForward: () -> Unit,
     onRedact: () -> Unit,
     onDismiss: () -> Unit,
@@ -105,9 +131,9 @@ fun MessageMenu(
                 content = {
                     // 预览不接受操作，读屏也不再念一遍。
                     Box(Modifier.width(width).clearAndSetSemantics {}) {
-                        BubbleSurface(message, core, false, false, Modifier, {})
+                        BubbleSurface(message, core, false, false, Modifier, {}, groupImages = groupImages)
                     }
-                    MenuSurface(message, onReply, onForward, onRedact, onDismiss)
+                    MenuSurface(message, onReply, onEdit, onForward, onRedact, onDismiss)
                 },
                 modifier = Modifier
                     .fillMaxSize()
@@ -145,6 +171,7 @@ fun MessageMenu(
 private fun MenuSurface(
     message: TimelineMessage,
     reply: (QuotedMessage) -> Unit,
+    edit: (String) -> Unit,
     forward: () -> Unit,
     redact: () -> Unit,
     onDismiss: () -> Unit,
@@ -155,6 +182,7 @@ private fun MenuSurface(
     // 剪贴板条目的标签：别的 App 粘贴时可能显示。
     val clipLabel = stringResource(R.string.message_clip_label)
     val replyLabel = stringResource(R.string.message_reply)
+    val editLabel = stringResource(R.string.message_edit)
     val forwardLabel = stringResource(R.string.message_forward)
     // 管理员也能撤别人的消息：写明是谁的，免得以为撤的是自己的。
     val redactLabel = if (message.isOwn) {
@@ -163,14 +191,17 @@ private fun MenuSurface(
         stringResource(R.string.message_delete_others, message.senderName)
     }
     val danger = WontonTheme.colors.danger.toColor()
+    val format = DateFormat.getDateTimeInstance(DateFormat.MEDIUM, DateFormat.SHORT)
+    val time = format.format(Date(message.timestampMs.toLong()))
     Surface(
+        Modifier.testTag("message-menu"),
         shape = MaterialTheme.shapes.medium,
         color = WontonTheme.colors.surface.toColor(),
         shadowElevation = WontonTheme.size.menuElevation,
     ) {
         Column(Modifier.width(WontonTheme.size.menuWidth)) {
             // 顺序照核心给的 `actions`，核心和 App 分开升级时不认识的不显示。
-            message.actions.forEach { action ->
+            message.actions.forEachIndexed { index, action ->
                 val run: () -> Unit = when (action) {
                     is MessageAction.Copy -> {
                         {
@@ -180,19 +211,21 @@ private fun MenuSurface(
                         }
                     }
                     is MessageAction.Reply -> { { reply(action.message) } }
+                    is MessageAction.Edit -> ({ edit(action.text) })
                     MessageAction.Forward -> forward
                     MessageAction.Redact -> redact
                 }
                 val (label, icon) = when (action) {
                     is MessageAction.Copy -> copyLabel to WontonIcon.Copy
                     is MessageAction.Reply -> replyLabel to WontonIcon.Reply
+                    is MessageAction.Edit -> editLabel to WontonIcon.Compose
                     // 转发是回复的镜像：同一个箭头左右翻过来（`WontonIcon.Forward` 是“进下一层”的尖角，不是转发）。
                     MessageAction.Forward -> forwardLabel to WontonIcon.Reply
                     MessageAction.Redact -> redactLabel to WontonIcon.Trash
                 }
                 val destructive = action == MessageAction.Redact
-                // 隔开前面的项，别和转发挨着误点。
-                if (destructive) HorizontalDivider()
+                // 撤回收在最后：在它前面隔一条线，别和转发挨着误点。
+                if (destructive && index > 0) HorizontalDivider(Modifier.testTag("menu-divider"))
                 DropdownMenuItem(
                     text = { Text(label) },
                     // 装饰：菜单项有文字。
@@ -211,6 +244,28 @@ private fun MenuSurface(
                     },
                 )
             }
+            MenuMeta(message, time)
         }
+    }
+}
+
+/** 菜单最底下一段，和操作隔开：谁发的、什么时候；没有操作的消息也能在这里看到时间。 */
+@Composable
+private fun MenuMeta(message: TimelineMessage, time: String) {
+    HorizontalDivider(Modifier.testTag("menu-meta-divider"))
+    Column(Modifier.padding(horizontal = WontonTheme.spacing.s16, vertical = WontonTheme.spacing.s12)) {
+        Text(
+            message.senderName,
+            style = WontonTheme.typography.caption,
+            color = WontonTheme.colors.textSecondary.toColor(),
+            maxLines = 1,
+            overflow = TextOverflow.Ellipsis,
+        )
+        Text(
+            stringResource(R.string.message_sent_at, time),
+            Modifier.testTag("message-sent-at"),
+            style = WontonTheme.typography.supporting,
+            color = WontonTheme.colors.textPrimary.toColor(),
+        )
     }
 }

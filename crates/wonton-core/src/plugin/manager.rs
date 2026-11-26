@@ -4,6 +4,7 @@
 use std::collections::{BTreeMap, BTreeSet};
 use std::net::IpAddr;
 use std::path::PathBuf;
+use std::sync::atomic::Ordering;
 use std::sync::{Arc, RwLock};
 use std::time::{SystemTime, UNIX_EPOCH};
 
@@ -22,9 +23,7 @@ use super::lan::Lan;
 use super::languages::Languages;
 use super::lifecycle::LifecycleConfig;
 use super::listed::Listed;
-#[cfg(test)]
-use super::manifest::Permission;
-use super::manifest::{LocalizedText, Manifest, ManifestExt, PluginId};
+use super::manifest::{LocalizedText, Manifest, ManifestExt, Permission, PluginId};
 use super::mcp_server::{McpServer, ToolLimits};
 #[cfg(test)]
 use super::models::ModelsRoute;
@@ -41,9 +40,11 @@ use crate::l10n;
 use crate::matrix::Matrix;
 
 pub(super) mod busy;
+mod clients;
+pub(crate) use clients::ClientPlugin;
 mod views;
 
-pub use views::{ClientsRoute, ClientsView, HostedRoute, PluginView, Route, StorageRoute};
+pub use views::{ClientsRoute, HostedRoute, PluginView, Route, StorageRoute};
 
 pub(super) use busy::{busy, detached};
 
@@ -101,12 +102,18 @@ pub struct PluginManager {
     pub(super) bot_web_routes: RwLock<BTreeMap<String, super::bot_web::BotRoute>>,
     /// 交给 App 的图标。
     pub(super) gallery: Gallery,
-    pub(super) plugins: RwLock<BTreeMap<PluginId, Entry>>,
+    pub(crate) plugins: RwLock<BTreeMap<PluginId, Entry>>,
     pub(super) failed_installs: RwLock<BTreeMap<PluginId, super::install_failure::FailedInstall>>,
     pub(super) dependencies: super::dependencies::Dependencies,
     pub(crate) client_passwords: Option<Arc<crate::clients::passwords::PasswordStore>>,
+    /// 跑应用的凭据命令；生产是 Docker，测试换成按队列给结果的假实现。
+    pub(crate) credential_exec: RwLock<Arc<dyn crate::clients::credentials::CredentialExec>>,
+    /// 每个插件一把异步锁：并发的启动/安装对账串行跑，第二个先看到第一个的结果。
+    pub(crate) credential_locks:
+        std::sync::Mutex<std::collections::BTreeMap<PluginId, Arc<tokio::sync::Mutex<()>>>>,
     /// 插件表每变一次加一：MCP 总线据此刷新工具列表（见 [`Self::changes`]）。
     changes: tokio::sync::watch::Sender<u64>,
+    clients_gateway: std::sync::OnceLock<std::sync::Weak<crate::gateway::Gateway>>,
     pub(crate) activity: Arc<crate::bot_activity::BotActivity>,
     pub(crate) clients: Arc<crate::clients::state::State>,
     /// 随核心附带的插件（预装目录里的插件包），见 [`super::preinstall`]。
@@ -115,6 +122,9 @@ pub struct PluginManager {
     pub(super) default_bot_plugin: RwLock<Option<PluginId>>,
     /// 局域网端口开在哪里，见 [`super::lan`]。
     pub(super) lan: Lan,
+    #[cfg(test)]
+    pub(super) recovery_metadata_hold:
+        std::sync::Mutex<Option<super::recovery_replace::MetadataHold>>,
     /// 出网插件走哪个代理，见 [`super::egress`]。
     pub(super) egress: Egress,
     /// 宿主主机名（`WONTON_HOST_NAME`）；只在取到时缓存，失败下次安装再取，见 [`super::host_check`]。
@@ -137,9 +147,25 @@ pub struct PluginManager {
     /// Bot 已成立的联系人（ADR-0045），注入 `WONTON_MATRIX_ALLOWED_USERS` 时加在归属人后面。见
     /// [`super::contacts`]。
     pub(super) contact_source: std::sync::OnceLock<super::contacts::ContactSource>,
+    /// 正在恢复已装插件的层数（核心刚起来、网关已经在接连接），见 [`Self::restoring_guard`]。
+    restoring: std::sync::atomic::AtomicUsize,
+    /// 各插件的 Bot 最后一次同步成功的时间，见 [`Self::note_bot_sync`]。
+    bot_syncs: RwLock<BTreeMap<PluginId, tokio::time::Instant>>,
+}
+
+/// 恢复期间的标记，落地时清掉（出错、panic 也一样）。
+pub(crate) struct Restoring<'a>(&'a PluginManager);
+
+impl Drop for Restoring<'_> {
+    fn drop(&mut self) {
+        self.0.restoring.fetch_sub(1, Ordering::AcqRel);
+    }
 }
 
 pub(super) use super::grant::{check_permissions, supported};
+
+/// Bot 的长轮询最长挂 30 秒：超过这么久没有一次成功的同步，就是停了，不是正好在等消息。
+const STALLED_SYNC_SECS: u64 = 120;
 
 pub(crate) fn now_secs() -> u64 {
     SystemTime::now()
@@ -180,11 +206,21 @@ impl PluginManager {
             Storefront::new(github.clone(), StoreConfig::default(), store.index_cache());
         let dependencies = super::dependencies::Dependencies::open(store.capabilities_path());
         let clients = Arc::new(crate::clients::state::State::new(&store));
-        let client_passwords = crate::clients::passwords::PasswordStore::open(&cfg.data_dir)
-            .map(Arc::new)
-            .ok();
+        let client_passwords = match crate::clients::passwords::PasswordStore::open(&cfg.data_dir) {
+            Ok(passwords) => Some(Arc::new(passwords)),
+            // 打开失败时客户端列表和开关都会报密码库不可用；留下原因，不然只能看到那句报错。
+            Err(error) => {
+                tracing::error!(%error, "客户端密码库打开失败");
+                None
+            }
+        };
+        let credential_exec: Arc<dyn crate::clients::credentials::CredentialExec> = Arc::new(
+            crate::clients::credentials::EngineExec::new(Arc::new(engine.clone())),
+        );
         Self {
             client_passwords,
+            credential_exec: RwLock::new(credential_exec),
+            credential_locks: Default::default(),
             engine,
             store,
             http,
@@ -209,10 +245,13 @@ impl PluginManager {
             dependencies,
             changes: tokio::sync::watch::Sender::new(0),
             clients,
+            clients_gateway: std::sync::OnceLock::new(),
             activity: Arc::default(),
             bundled: RwLock::new(BTreeSet::new()),
             default_bot_plugin: RwLock::new(None),
             lan,
+            #[cfg(test)]
+            recovery_metadata_hold: Default::default(),
             egress: Egress::default(),
             host_name: tokio::sync::OnceCell::new(),
             registry_mirror: Default::default(),
@@ -226,6 +265,8 @@ impl PluginManager {
             person_members: std::sync::OnceLock::new(),
             person_roles: RwLock::new(Arc::new(crate::roles::Roles::initial())),
             contact_source: std::sync::OnceLock::new(),
+            restoring: std::sync::atomic::AtomicUsize::new(0),
+            bot_syncs: RwLock::new(BTreeMap::new()),
         }
     }
 
@@ -303,6 +344,12 @@ impl PluginManager {
         self.sources.find(ip)
     }
 
+    /// 测试用：摘掉一个插件的来源，模拟它还没轮到恢复、来源没登记。
+    #[cfg(test)]
+    pub(crate) fn forget_source(&self, id: &PluginId) {
+        self.sources.remove(id);
+    }
+
     /// 模型网关现在的状态：没装、装了没在运行（或者网关服务不可用）、可用。
     pub(super) fn models_provider(&self) -> ProviderState {
         let plugins = self.plugins.read().expect("插件表锁中毒");
@@ -317,6 +364,16 @@ impl PluginManager {
             }
             _ => ProviderState::NotReady(id.clone()),
         }
+    }
+
+    /// 已装插件的清单里有没有这项权限（不看主人当时是否授予）。
+    pub fn has_permission(&self, id: &PluginId, permission: &Permission) -> bool {
+        self.plugins
+            .read()
+            .expect("插件表锁中毒")
+            .get(id)
+            .and_then(|entry| entry.listed.as_ref())
+            .is_some_and(|listed| listed.manifest.permissions.contains(permission))
     }
 
     pub fn list(&self) -> Vec<PluginView> {
@@ -395,6 +452,24 @@ impl PluginManager {
             .expect("插件表锁中毒")
             .get(id)
             .is_some_and(|entry| entry.system)
+    }
+
+    /// 随核心镜像附带、由核心自己维护的系统插件。从商店、来源或上传的同名 system 插件不算，
+    /// 它们和普通插件一样能经接口升级、卸载（ADR-0108）。
+    pub fn is_bundled_system(&self, id: &PluginId) -> bool {
+        self.is_system(id) && self.bundled_system_record(id)
+    }
+
+    /// 记录或内存集合表明这个插件随核心带。界面层拿着 entry 时也用它，和四道闸门同一套判定。
+    pub(super) fn bundled_system_record(&self, id: &PluginId) -> bool {
+        if self.bundled.read().expect("插件表锁中毒").contains(id) {
+            return true;
+        }
+        self.store
+            .load(id)
+            .ok()
+            .flatten()
+            .is_some_and(|record| record.bundled)
     }
 
     /// OIDC 客户端（ID 是插件的 `id`，Bot 的网页客户端按它的插件 ID 查）声明的管理员组和角色声明；
@@ -484,7 +559,8 @@ impl PluginManager {
     ) {
         let id = PluginId::parse(id).unwrap();
         let subnet = super::sources::Subnet::parse(subnet).unwrap();
-        self.sources.insert(&id, vec![subnet], permissions);
+        let models = permissions.contains(&Permission::Models);
+        self.sources.insert(&id, vec![subnet], permissions, models);
     }
 
     pub(super) fn set(
@@ -549,12 +625,55 @@ impl PluginManager {
         }
     }
 
+    /// 恢复期间为真：网关据此把 Bot 的请求答成可重试的 503，不答 403（上游适配器见 403 就停同步）。
+    ///
+    /// 数层数而不是一个位：两段恢复叠在一起时，先结束的那段不能把还在进行的那段说成恢复了。
+    pub(crate) fn restoring(&self) -> bool {
+        self.restoring.load(Ordering::Acquire) > 0
+    }
+
+    /// 从现在起 [`Self::restoring`] 为真，落地时清掉。
+    pub(crate) fn restoring_guard(&self) -> Restoring<'_> {
+        self.restoring.fetch_add(1, Ordering::AcqRel);
+        Restoring(self)
+    }
+
+    /// 这个插件的 Bot 刚同步成功过一次。
+    ///
+    /// 记的是时间不是“健康”：Bot 走了长轮询，进程活着、健康检查说 connected 都可能只是状态文件的残影，
+    /// 只有还经核心同步才算真的收得到消息（见 [`Self::stalled_bot_sync`]）。
+    pub(crate) fn note_bot_sync(&self, id: &PluginId) {
+        self.bot_syncs
+            .write()
+            .expect("Bot 同步时间的锁中毒")
+            .insert(id.clone(), tokio::time::Instant::now());
+    }
+
+    /// 这个插件的 Bot 多久没同步了（秒），超过 [`STALLED_SYNC_SECS`] 才算停了。从没同步过的给 `None`：
+    /// 不用长轮询的 Bot 插件不该被这条检查报异常。
+    pub(crate) fn stalled_bot_sync(&self, id: &PluginId) -> Option<u64> {
+        let syncs = self.bot_syncs.read().expect("Bot 同步时间的锁中毒");
+        let age = syncs.get(id)?.elapsed().as_secs();
+        (age > STALLED_SYNC_SECS).then_some(age)
+    }
+
+    /// 这个插件换了一份新实例（安装、启动、恢复重建、卸载）：上一次实例的同步时间不再说明问题。
+    ///
+    /// 不重置的话，停用超过两分钟的插件一启动就会被 [`Self::check_bot_sync`] 判成异常，Bot 还没来得及同步。
+    pub(crate) fn forget_bot_sync(&self, id: &PluginId) {
+        self.bot_syncs
+            .write()
+            .expect("Bot 同步时间的锁中毒")
+            .remove(id);
+    }
+
     /// 核心启动时：按记录恢复插件状态，把 OIDC 客户端同步到身份提供方。
     /// 单个插件恢复失败（包括它的记录损坏）只把它标为异常，不影响核心和其他插件启动。
     ///
     /// 这里是一个插件接一个插件串行的：漂移重建只等 `install_timeout`，不让一个起不来的慢插件把排在后面
     /// 的所有插件拖住几十分钟（见 [`super::health_gate::Gate`]）。超时保留续建账本，后台按间隔重试。
     pub async fn restore(&self) -> Result<(), InstallError> {
+        let _restoring = self.restoring_guard();
         let langs = self.owner_languages();
         self.prune_orphaned_bot_web().await?;
         let files = self.store.load_all()?;
@@ -583,6 +702,7 @@ impl PluginManager {
                                     None,
                                 ),
                             );
+                            self.forget_bot_sync(&file.id);
                             priority
                         }
                         Err(_) => 2,

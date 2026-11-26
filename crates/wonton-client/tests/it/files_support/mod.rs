@@ -546,8 +546,10 @@ impl World {
         self.wait_connected().await;
     }
 
-    /// 家里的服务器没了时打开手机：连不上，正好试离线的卡片。
+    /// 家里的服务器没了时打开手机：连不上，正好试离线的卡片。连接信息一起删掉：
+    /// 留着的话，进程一起来后台就开始重连，本地代理先于连接建好，`proxy` 不是空的。
     pub async fn start_phone_without_home(&mut self) {
+        std::fs::remove_file(self.dir.path().join("phone/servers/1/home-ticket.json")).unwrap();
         self.phone = Some(open_phone(self.dir.path()));
     }
 

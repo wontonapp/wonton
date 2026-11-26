@@ -17,7 +17,7 @@ use crate::files::FilesLink;
 use crate::home::{HomeLink, Network, Storage};
 use crate::lock_screen::LockScreenLink;
 use crate::plugins::PluginsLink;
-use crate::push::PushLink;
+use crate::push::{PushLink, PushPreviews};
 use crate::push_method::PushMethodLink;
 use crate::servers::ServerList;
 
@@ -63,6 +63,7 @@ impl Visit {
             let noop: crate::chat::CardSuccess = Arc::new(|_: &str| Box::pin(async {}));
             noop
         };
+        let push_previews = Arc::new(PushPreviews::open(dir));
         let chat = ChatLink::new(
             handle.clone(),
             home.clone(),
@@ -78,6 +79,7 @@ impl Visit {
                 lock_screen: lock_screen.subscribe(),
                 session_out: watch::channel(None).0,
                 external: false,
+                push_previews: push_previews.clone(),
             },
         )?;
         chat.backgrounded();
@@ -88,6 +90,7 @@ impl Visit {
             dir,
             push_method.subscribe(),
             lock_screen.subscribe(),
+            push_previews,
         );
         Ok(Arc::new(Self {
             slot: slot.to_owned(),

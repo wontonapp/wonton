@@ -7,9 +7,10 @@
     <!-- Notice title when the pairing code couldn't be fetched; the core's reason is shown below. -->
     <string name="invite_failed_title">没要到配对码</string>
     <!-- Explanation under the QR code: what the new device's owner should do. The code works only once. -->
-    <string name="invite_instructions">在新设备上打开云吞 App 扫这个码，它就成为你的设备。码只能用一次。</string>
-    <!-- Label above the pairing code as text, for when the QR code can't be scanned. -->
+    <string name="invite_instructions">在新设备上打开云吞 App 扫这个码，它就成为你的设备，能看到你能看到的东西。别的设备没把密钥交出来时，以前的消息可能读不了。码只能用一次。</string>
+    <!-- Collapsed row that reveals the full pairing code as text, for when the QR code can't be scanned. -->
     <string name="invite_paste_fallback">不能扫码时粘贴这段文字</string>
+    <string name="invite_clip_label">配对码</string>
     <!-- Accessibility label of the QR code image with the pairing code. -->
     <string name="invite_qr_label">配对二维码</string>
     <!-- Button under the expired notice: get a new code. -->

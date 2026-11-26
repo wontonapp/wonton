@@ -55,7 +55,6 @@ gateway-entry-header-invalid = 入口网关没有给这个请求打上正确的�
 gateway-entry-closed = 这个入口没有打开，主人可以在 Wonton 应用里打开
 gateway-entry-public-denied = 公网地址上访问不了这个路径
 gateway-entry-setup-pending = 请先在这个应用的网页上完成首次注册，然后再试
-gateway-entry-auth-unsupported = 这个应用还不支持用云吞发的密码登录
 gateway-entry-auth-required = 请用在云吞里给这个应用发的专用密码登录
 gateway-entry-auth-revoked = 这个专用密码已吊销，请在云吞里重新生成一个
 gateway-entry-state-unavailable = 读不到这个应用的入口设置，请主人在云吞里检查
@@ -90,6 +89,7 @@ gateway-icon-failed = 图标处理不了：{ $error }
 # 设备和配对码。
 gateway-devices-not-found = 没有登记这台设备
 gateway-devices-invalid-id = 请求体应为 {"{"}"endpoint_id": "<64 位十六进制>"{"}"}
+gateway-devices-invalid-body = 请求体应为 {"{"}"keep_shared_passwords": true|false{"}"} 或空
 gateway-devices-invalid-addrs = 请求体应为 {"{"}"direct_addrs": ["IP:端口"]{"}"}：{ $error }
 gateway-devices-already-paired = 服务器上已经有配对的设备，不再发首次配对码
 gateway-devices-no-addresses = 隧道还没连上中继，请求里也没给直连地址，码里没有能连的地址
@@ -97,6 +97,7 @@ gateway-devices-no-addresses = 隧道还没连上中继，请求里也没给直�
 # 模型网关。
 gateway-models-permission = 应用 { $id } 没有申请 models 权限
 gateway-plugin-network-only = 这个地址只给插件网络里的应用用
+gateway-restoring = 核心还在恢复应用，稍后重试
 gateway-models-down = 模型网关没在运行
 
 # 引导。
@@ -170,6 +171,14 @@ clients-unavailable = 核心没有跑在装好的容器里，域名设置用不�
 clients-passwords-unavailable = 现在读不到专用密码的存放处
 clients-password-label-invalid = 给客户端起个 1-128 个字符、不带换行的名字
 clients-password-not-found = 这个专用密码已经不存在了
+clients-plugin-unavailable = 这个应用没有安装
+clients-password-shared = 应用密码
+clients-credentials-shared-exists = 这个应用已经有它唯一的共享密码
+clients-credentials-timeout = 应用里的命令超时，可能已经生效，会重试
+clients-credentials-unavailable = 插件没在运行，现在发不了密码
+clients-credentials-missing-command = 清单里没有 { $op } 命令
+clients-credentials-failed = 应用里的命令失败：{ $error }
+gateway-entry-credentials-not-issued = 应用还没有密码，入口先不开
 clients-domain-read-failed = 域名设置读不了：{ $error }
 gateway-chains-disabled = 家里的服务器没有启用调用链账本
 
@@ -187,8 +196,62 @@ gateway-agent-acp-token-missing = {$provider} 还没有提供方令牌，重新�
 gateway-agent-acp-provider-unreachable = Agent 运行时没有接起这条连接：{$detail}
 
 gateway-install-rejected = 管理员没有同意，没有{$action}
+
+# 加好友按邀请人的角色（ADR-0088）：卡片发给管理员，同意后邀请才发出。
+gateway-friend-invite-title = 好友请求待批
+gateway-friend-invite-to = { $inviter } 想加 { $friend } 为好友
+gateway-friend-invite-rejected = 管理员没有同意这次加好友
+gateway-friend-invite-expired = 没有管理员在时间内回答这次加好友
 gateway-install-expired = 管理员没有在期限内回答，没有{$action}
 gateway-install-card-device = 交给它的设备：{ $device }
 gateway-install-card-secret = 请求里填了密钥：{ $title }
 gateway-install-card-setting = 请求里填的设置：{ $title } = { $value }
 gateway-install-changed = 卡片发出后 { $id } 的权限、设备或设置已经改过，没有升级。请重新发起。
+clients-switch-container = 核心没有运行在容器里，无法接入入口网络
+clients-switch-domain = 请先配置域名和有效证书，再打开入口
+clients-switch-lan = 局域网入口还没开放：局域网转发容器尚未就绪
+clients-switch-setup = 请先在应用网页完成首次注册
+clients-switch-app-unavailable = 应用没有运行，无法检查首次注册状态
+clients-switch-credentials = 应用还没有成功发过一次密码
+clients-switch-ingress = 公网入口种类还没有配置
+clients-switch-kind = 入口必须是 lan 或 public
+clients-switch-uninstalled = 客户端应用已经卸载
+clients-switch-failed = 无法应用客户端入口设置：{ $error }
+clients-switch-domain-read = 读取域名和证书状态失败：{ $error }
+clients-switch-no-route = 客户端插件 { $plugin } 的入口不可用
+clients-switch-service-down = 客户端插件 { $plugin } 的服务没有运行
+clients-switch-setup-check = 检查应用首次注册状态失败：{ $error }
+clients-switch-not-found = 客户端插件 { $plugin } 没有安装或没有声明入口
+clients-switch-settings-read = 读取入口设置失败：{ $error }
+clients-switch-settings-missing = 入口设置不存在，无法确认并应用入口模型
+clients-switch-apply = 入口配置写入或重载失败：{ $error }
+clients-switch-record-read = 读取客户端入口记录 { $plugin }：{ $error }
+clients-switch-no-label = 客户端插件 { $plugin } 没有入口标签
+clients-switch-label-conflict = 入口标签 { $label } 冲突
+clients-switch-records-read = 读取插件记录失败：{ $error }
+clients-switch-rollback-entry = 回滚入口配置也失败：{ $error }
+clients-switch-rollback-switch = 回滚开关也失败：{ $error }
+# 家外的人要加管理员批的成员：公网落地页交请求，管理员点头后记进对方的 allowed_users。
+gateway-friend-request-title = 加好友请求
+gateway-friend-request-intro = 这台服务器要管理员同意才放外面的服务器的人进来。留下你的 Matrix ID，结果会显示在这里。
+gateway-friend-request-you = 你的 Matrix ID
+gateway-friend-request-to = 对方的 Matrix ID
+gateway-friend-request-target = 想加 { $target } 为好友
+gateway-friend-request-submit = 送出请求
+gateway-friend-request-waiting = 请求送出了，正在等管理员回答（对方：{ $target }）。
+gateway-friend-request-approved = 管理员同意了。回去重新送一次邀请就能进来。
+gateway-friend-request-open = 对方的角色已经不用审批，直接重新送邀请就好。
+gateway-friend-request-forbidden = 这个成员的角色不能加好友，请让管理员邀请。
+gateway-friend-request-denied = 管理员没有同意这次加好友。
+gateway-friend-request-expired = 没有管理员在时间内回答，稍后再来送一次。
+gateway-friend-request-changed = 对方的人或权限变了，稍后再试或让对方来加你。
+gateway-friend-request-unavailable = 这台服务器暂时答不了，稍后再试。
+gateway-friend-request-duplicate = 这个人已经有一条请求在等。
+gateway-friend-request-too-many = 在等的请求太多了，稍后再来。
+gateway-friend-request-local = 同一个服务器上的人不用审批，直接邀请就好。
+gateway-friend-request-unknown = 这台服务器上没有这个人。
+gateway-friend-request-invalid = 要填完整的 Matrix ID，像 @bob:example.org。
+gateway-friend-request-invalid-method = 这个地址只接受 GET 和 POST。
+gateway-friend-request-again = 再交一条
+gateway-friend-request-card-title = 家外的人想加好友
+gateway-friend-request-card-to = 想加 { $target } 为好友

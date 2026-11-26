@@ -1,7 +1,7 @@
 //! 核心 HTTP 健康探测：网页服务可省略容器探针，显式健康路径保留；2xx–4xx 算存活。
-
 use std::sync::Arc;
 use std::sync::atomic::{AtomicU16, Ordering};
+use std::time::Duration;
 
 use axum::Router;
 use axum::http::StatusCode;
@@ -199,6 +199,32 @@ async fn an_implicit_probe_does_not_override_a_container_healthcheck() {
         seen(&manager),
         (PluginStatus::Running, Some(Health::Unknown))
     );
+}
+
+#[tokio::test]
+async fn a_kept_container_healthcheck_is_what_the_timeout_names() {
+    let port = entry_web(Arc::new(AtomicU16::new(200))).await;
+    let (docker, _dir, mut manager) = install_running().await;
+    manager.cfg.install_timeout = Duration::from_secs(1);
+    docker.set_state(
+        &container_name("app-test", "web"),
+        json!({"Status": "running", "Running": true, "Health": {"Status": "starting"}}),
+    );
+    let source = automatic_compose(
+        port,
+        "",
+        "    healthcheck:\n      test: [CMD, nginx, -t]\n      interval: 1s\n      retries: 1\n",
+    );
+    let error = manager
+        .install(&source, &[], super::langs())
+        .await
+        .unwrap_err()
+        .to_string();
+    assert!(
+        error.contains("and the service never became ready"),
+        "{error}"
+    );
+    assert!(!error.contains("and http://"), "{error}");
 }
 
 #[tokio::test]

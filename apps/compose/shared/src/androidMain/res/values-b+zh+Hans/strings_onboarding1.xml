@@ -10,6 +10,7 @@
     <string name="onboarding_pending_card_one">%1$s，等你确认</string>
     <!-- Problem title while installing: the device the app needs is unavailable. -->
     <string name="onboarding_problem_plugin_device_unavailable">选择的设备不可用，请重新选择。</string>
+    <string name="onboarding_problem_plugin_egress_proxy_waiting">服务器的代理还没就绪，等它起来后重试，不用改设置。</string>
     <!-- Problem title while installing: a port the app opens on the local network is used by another container or program. -->
     <string name="onboarding_problem_plugin_lan_port_taken">这个应用要开的端口被占用，停掉占着它的容器或程序再试。</string>
     <!-- Problem title while installing: the home server doesn't support this app. -->

@@ -53,6 +53,12 @@ struct Inner {
     handing: HashSet<String>,
     /// @ 列表的候选，按房间；由聊天那边跟着成员和 Bot 名单补。
     mentions: HashMap<String, Vec<ComposerMention>>,
+    /// 假数据入口（`ui-fake`）下，下次放进附件区的东西要标成上传失败的房间。
+    fail_next: HashSet<String>,
+    /// 假数据入口（`ui-fake`）下，界面测试叫停的那间：下一张照片进附件区以后在这里等，等的一头在下面。
+    holds: HashMap<String, std::sync::mpsc::Receiver<()>>,
+    /// 上面那些叫停的放手一头，[`ComposerLink::release_held_for_test`] 用它把等着的放走。
+    hold_releases: HashMap<String, std::sync::mpsc::Sender<()>>,
 }
 
 impl Inner {
@@ -248,12 +254,16 @@ impl ComposerLink {
         }
     }
 
-    /// 只推给壳不存盘：上传进度变得很频繁，重启后反正从头算。
+    /// 只推给壳不存盘：上传进度变得很频繁，重启后反正从头算。失败是等主人处理的稳定态，进度和等联网不能把它盖掉
+    /// （重试走 [`restart`](Self::restart)，先把状态改成上传中再起 worker）。
     fn show(&self, room: &str, id: &str, state: AttachmentState) {
         let mut inner = self.lock();
         let Some(item) = inner.state.item_mut(room, id) else {
             return;
         };
+        if matches!(item.state, AttachmentState::Failed { .. }) {
+            return;
+        }
         item.state = state;
         Self::publish(&inner, room);
     }
@@ -296,7 +306,18 @@ impl ComposerLink {
             self.disk.forget(&id);
             return Err(error);
         }
-        self.start_worker(room, &id);
+        if self.lock().fail_next.remove(room) {
+            self.show(
+                room,
+                &id,
+                AttachmentState::Failed {
+                    reason: AttachmentFailure::Upstream,
+                    message: "ui-fake: upload failed on purpose".into(),
+                },
+            );
+        } else {
+            self.start_worker(room, &id);
+        }
         Ok(id)
     }
 
@@ -322,7 +343,13 @@ impl ComposerLink {
         check_image_type(&image)?;
         self.check_room_has_space(room)?;
         let item = self.image_item(image)?;
-        self.add(room, item)
+        let id = self.add(room, item)?;
+        // 界面测试叫停时停在照片已经进附件区、还没发这一步；先放开锁，放行的调用还要进来。
+        let wait = self.lock().holds.remove(room);
+        if let Some(wait) = wait {
+            let _ = wait.recv();
+        }
+        Ok(id)
     }
 
     /// 同 [`add_image_offline`](Self::add_image_offline)，文件那侧。
@@ -494,6 +521,28 @@ impl ComposerLink {
         })
     }
 
+    /// 假数据入口（`ui-fake`）：下一条放进附件区的东西直接标成上传失败。
+    /// 相册面板选完就发，没有机会在中间把它标红。
+    pub(crate) fn fail_next_for_test(&self, room: &str) {
+        self.lock().fail_next.insert(room.to_owned());
+    }
+
+    /// 假数据入口（`ui-fake`）：下一张放进附件区的照片在进附件区以后停住，直到 [`Self::release_held_for_test`]。
+    /// 转码和发送之间只有很短一段，界面测试靠它停在那里看点两下、等的时候又打字的样子。
+    pub(crate) fn hold_next_for_test(&self, room: &str) {
+        let (release, wait) = std::sync::mpsc::channel();
+        let mut inner = self.lock();
+        inner.holds.insert(room.to_owned(), wait);
+        inner.hold_releases.insert(room.to_owned(), release);
+    }
+
+    /// 放走 [`Self::hold_next_for_test`] 停住的那张照片。
+    pub(crate) fn release_held_for_test(&self, room: &str) {
+        if let Some(release) = self.lock().hold_releases.remove(room) {
+            let _ = release.send(());
+        }
+    }
+
     /// 假数据入口（`ui-fake`）没有真上传，界面测试靠它把附件标成上传失败，走到被拒的分支。
     pub(crate) fn fail_for_test(&self, room: &str, id: &str) -> Result<(), CoreError> {
         let found = {
@@ -512,6 +561,15 @@ impl ComposerLink {
             }
         });
         Ok(())
+    }
+
+    /// 假数据入口（`ui-fake`）没有真发送：发出去以后把附件区清掉，和真发送一样；存不上只记日志。
+    pub(crate) fn clear_for_test(&self, room: &str) {
+        self.record(room, |state| {
+            if let Some(room) = state.rooms.get_mut(room) {
+                room.tray.clear();
+            }
+        });
     }
 
     pub(crate) fn send(

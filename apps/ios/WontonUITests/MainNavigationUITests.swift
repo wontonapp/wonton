@@ -16,7 +16,7 @@ final class MainNavigationUITests: XCTestCase {
         app.launchArguments += ["-AppleLanguages", "(en)", "-AppleLocale", "en_US"]
         app.launchEnvironment["WONTON_DEV_DATA_SUFFIX"] = UUID().uuidString
         app.launchEnvironment["WONTON_UI_FAKE"] = "1"
-        app.launch()
+        UITestBackend.launch(app)
         XCTAssertTrue(waitHittable(sidebarButton, timeout: 20), "没进主界面\n\(app.debugDescription)")
     }
 
@@ -66,6 +66,12 @@ final class MainNavigationUITests: XCTestCase {
         XCTAssertTrue(waitGone(gear), "第二次点应用图标没进详情页\n\(app.debugDescription)")
         tap(button("Back"), "详情页的返回键")
         XCTAssertTrue(waitHittable(gear), "详情页点返回没回应用页\n\(app.debugDescription)")
+
+        // 手指落在离窗口左边约 22 点处（app 坐标 10 点）也要返回（#685）。
+        tap(notes, "应用图标")
+        XCTAssertTrue(waitGone(gear), "第三次点应用图标没进详情页\n\(app.debugDescription)")
+        midEdgeSwipeBack()
+        XCTAssertTrue(waitHittable(gear), "详情页从边缘里侧右滑没回应用页\n\(app.debugDescription)")
     }
 
     // MARK: 商店
@@ -88,6 +94,45 @@ final class MainNavigationUITests: XCTestCase {
         assertOnChatRoot("从商店退两层")
     }
 
+    func testStoreDetailEdgeSwipeReturnsToStore() {
+        openFromSidebar("Store", "商店")
+        XCTAssertTrue(waitHittable(storeTitle), "侧边栏的商店没进商店\n\(app.debugDescription)")
+        let row = text("Photo Vault")
+        tap(row, "商店里的第一项")
+        let detailMark = text("Every photo the household takes, on the home server")
+        XCTAssertTrue(waitHittable(detailMark), "商店行没打开详情\n\(app.debugDescription)")
+
+        midEdgeSwipeBack()
+        XCTAssertTrue(
+            waitHittable(storeTitle), "商店详情从边缘里侧右滑没回商店\n\(app.debugDescription)"
+        )
+        XCTAssertTrue(waitGone(detailMark), "商店详情没关掉\n\(app.debugDescription)")
+        edgeSwipeBack()
+        XCTAssertTrue(waitHittable(appsPage), "商店左边缘右滑没回应用页\n\(app.debugDescription)")
+    }
+
+    /// #685：手指落在商店某一行的边上往里拖，原来被行当成点按、开了详情。
+    func testStoreRowEdgeDragPopsInsteadOfOpeningRow() {
+        openApps()
+        tap(button("Store"), "应用页的商店入口")
+        XCTAssertTrue(waitHittable(storeTitle), "商店入口没进商店\n\(app.debugDescription)")
+
+        // 拖之前在第二行上起手（issue 里被误开的是它下面那一行）。XCUITest 的坐标以 app.frame 为原点，
+        // 这里发的 app 坐标在窗口坐标左边 12 点：dx 8 到窗口 20，落在行链接（16 起）上，也在 24 点识别区里。
+        let row = text("Home Music")
+        XCTAssertTrue(waitHittable(row), "商店行没画出来\n\(app.debugDescription)")
+        let line = row.element(boundBy: 0)
+        let start = app.coordinate(withNormalizedOffset: .zero)
+            .withOffset(CGVector(dx: 8, dy: line.frame.midY))
+        swipeBack(from: start)
+
+        XCTAssertTrue(waitHittable(appsPage), "商店行上从边缘里侧右滑没回应用页\n\(app.debugDescription)")
+        XCTAssertTrue(
+            waitGone(text("The household's records, playable from anywhere")),
+            "商店行把右滑当成点按、开了详情\n\(app.debugDescription)"
+        )
+    }
+
     // MARK: 设置
 
     func testSettingsFromSidebar() {
@@ -105,6 +150,12 @@ final class MainNavigationUITests: XCTestCase {
         tap(appearance, "设置里的外观")
         tap(subpageBack, "外观页的返回键")
         XCTAssertTrue(waitHittable(settingsClose), "设置的下一层点返回没返回\n\(app.debugDescription)")
+
+        // 手指实际落点：离窗口左边约 22 点（app 坐标 10 点）起手也要返回（#685）。
+        tap(appearance, "设置里的外观")
+        XCTAssertTrue(waitHittable(subpageBack), "外观页没再次打开\n\(app.debugDescription)")
+        midEdgeSwipeBack()
+        XCTAssertTrue(waitHittable(settingsClose), "外观页从边缘里侧右滑没返回\n\(app.debugDescription)")
 
         tap(settingsClose, "设置的关闭")
         assertOnChatRoot("关掉设置")
@@ -144,6 +195,12 @@ final class MainNavigationUITests: XCTestCase {
         XCTAssertTrue(waitHittable(back), "第二次没进聊天页\n\(app.debugDescription)")
         edgeSwipeBack()
         assertOnChatRoot("聊天页左边缘右滑")
+
+        // 手指落在离窗口左边约 22 点处（app 坐标 10 点）也要返回（#685）。
+        tap(room, "聊天列表里的房间")
+        XCTAssertTrue(waitHittable(back), "第三次没进聊天页\n\(app.debugDescription)")
+        midEdgeSwipeBack()
+        assertOnChatRoot("聊天页从边缘里侧右滑")
     }
 
     func testNewChatFromSidebarAndChatList() {
@@ -232,12 +289,31 @@ final class MainNavigationUITests: XCTestCase {
     /// 和真机上一样的返回手势：从屏幕左边缘往右拖。上一个转场（推入、返回、盖子收起）还在走时系统不认返回手势，
     /// 所以先等画面停下来。辅助功能给的位置是终值，看不出转场走没走完，只能看屏幕。
     private func edgeSwipeBack(file: StaticString = #filePath, line: UInt = #line) {
+        swipeBack(
+            from: app.coordinate(withNormalizedOffset: CGVector(dx: 0.005, dy: 0.5)),
+            file: file, line: line
+        )
+    }
+
+    /// 手指落在离屏幕边缘约 22 点处：0.005 只有约 2 点，人的手指落不了那么准（#685）。
+    private func midEdgeSwipeBack(file: StaticString = #filePath, line: UInt = #line) {
+        swipeBack(
+            from: app.coordinate(withNormalizedOffset: .zero)
+                .withOffset(CGVector(dx: 10, dy: app.frame.height / 2)),
+            file: file, line: line
+        )
+    }
+
+    private func swipeBack(from start: XCUICoordinate, file: StaticString = #filePath, line: UInt = #line) {
+        print("EDGE-TEST appFrame=\(app.frame) start=\(start)")
         XCTAssertTrue(waitTopBarStill(), "顶栏一直在动，转场没走完\n\(app.debugDescription)", file: file, line: line)
         // 拖到头停一下再松手：松手时速度是零，返回成不成只看拖过的距离（过半就成）。不停的话要看松手那一刻
         // 算出来的速度，模拟器一卡，拖到一半的转场会弹回去（录屏里看得到）。
-        app.coordinate(withNormalizedOffset: CGVector(dx: 0.005, dy: 0.5))
-            .press(forDuration: 0.05, thenDragTo: app.coordinate(withNormalizedOffset: CGVector(dx: 0.85, dy: 0.5)),
-                   withVelocity: .default, thenHoldForDuration: 0.2)
+        start.press(
+            forDuration: 0.05,
+            thenDragTo: app.coordinate(withNormalizedOffset: CGVector(dx: 0.85, dy: 0.5)),
+            withVelocity: .default, thenHoldForDuration: 0.2
+        )
     }
 
     /// 连着两次截屏，顶栏那一条一模一样才算停稳。只比顶栏：状态栏的时钟、页面里的转圈会自己变。

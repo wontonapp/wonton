@@ -198,7 +198,7 @@ ADR-0012 定了“核心拉起一次性的升级器容器，失败回滚”，�
 手动退回（已定 9）给 `install.sh` 一个旧 digest，不改 `WONTON_CORE_SOURCE`，并按“核心管理的其他组件”处理目标不支持的组件：
 
 ```bash
-curl -fsSL <安装脚本地址> | sudo WONTON_CORE_PIN=<旧 digest> sh
+curl -fsSL https://raw.githubusercontent.com/wontonapp/wonton-install/main/install.sh | sudo WONTON_CORE_PIN=<旧 digest> sh
 ```
 
 退回后照样跟渠道，App 会再提示有新版本，不点就不动。

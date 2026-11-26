@@ -106,6 +106,9 @@ pub struct FileRecord {
     pub source: FileSource,
     pub origin: Origin,
     pub access: BTreeSet<Accessor>,
+    /// 分享进了哪些房间：这些房间当前的成员也能看（访问时向 Matrix 核对）。
+    #[serde(default, skip_serializing_if = "BTreeSet::is_empty")]
+    pub rooms: BTreeSet<String>,
     /// 主人亲手授权的 Bot（App 调 `grants`）。它们不再依赖来源插件的授权，要收回就单独收（ADR-0020 的“鉴权”）。
     #[serde(default, skip_serializing_if = "BTreeSet::is_empty")]
     pub owner_granted: BTreeSet<String>,
@@ -313,6 +316,26 @@ impl Registry {
                 record.expires_at = None;
             }
             record.access.insert(accessor);
+            (Some(record.clone()), Some(record))
+        })
+    }
+
+    /// 把访问者加进范围，并记下分享进了这个房间，和 `grant` 一样清掉过期。
+    pub fn grant_room(
+        &self,
+        id: &FileId,
+        accessor: Accessor,
+        room: &str,
+        now: u64,
+    ) -> Result<Option<FileRecord>, RegistryError> {
+        self.change(|records| {
+            let Some(record) = records.by_id.get(id).filter(|r| !r.expired(now)) else {
+                return (None, None);
+            };
+            let mut record = record.clone();
+            record.expires_at = None;
+            record.access.insert(accessor);
+            record.rooms.insert(room.to_owned());
             (Some(record.clone()), Some(record))
         })
     }

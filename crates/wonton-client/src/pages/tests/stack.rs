@@ -48,8 +48,10 @@ async fn closing_a_page_pops_the_top_and_root_pages_clear_the_stack() {
         .unwrap();
     assert!(rig.view().stack.is_empty());
 
-    let nothing = rig.tabs.dispatch(PageAction::ClosePage).unwrap_err();
-    assert!(matches!(nothing, CoreError::InvalidInput { .. }));
+    // 栈空时再关一次：安静的什么也不做，页面栈不会因此变动。
+    rig.tabs.dispatch(PageAction::ClosePage).unwrap();
+    assert!(rig.view().stack.is_empty());
+    assert_eq!(rig.view().root, TabRef::Chat);
 }
 
 #[tokio::test]
@@ -183,9 +185,18 @@ async fn restart_comes_back_to_the_root_and_keeps_the_panel() {
             .collect::<Vec<_>>(),
         vec![page_tab()]
     );
-    // 没有页面开着：关页被拒，不会把别的东西弹掉。
-    let nothing = restarted.dispatch(PageAction::ClosePage).unwrap_err();
-    assert!(matches!(nothing, CoreError::InvalidInput { .. }));
+    // 没有页面开着：关的什么也不做，不会把别的东西（这里是面板）弹掉。
+    restarted.dispatch(PageAction::ClosePage).unwrap();
+    assert!(restarted.view().stack.is_empty());
+    assert_eq!(
+        restarted
+            .view()
+            .panel
+            .iter()
+            .map(|item| item.tab.clone())
+            .collect::<Vec<_>>(),
+        vec![page_tab()]
+    );
 }
 
 #[tokio::test]

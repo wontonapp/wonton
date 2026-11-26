@@ -64,12 +64,13 @@ struct MainView: View {
         })
 
         .fullScreenCover(isPresented: $showsSettings) {
+            // 参数多，闭包先写成带类型的局部量，不写时整条表达式类型检查会超时。
+            let openPlugin: (PluginEntry) -> Void = { showsSettings = false; open($0) }
+            let checkInstalled: () -> Void = { showsSettings = false; pages.open(.apps) }
+            // 设置里的应用行进了详情后，“打开”和“查看已安装”都要先收起设置，再走主界面这一层。
             SettingsTab(model: settings, appearance: appearance, appLock: lock, chat: chat,
-                        home: home, plugins: plugins,
-                        // 设置里的应用行进了详情后，“打开”和“查看已安装”都要先收起设置，再走主界面这一层。
-                        open: { showsSettings = false; open($0) },
-                        checkInstalled: { showsSettings = false; pages.open(.apps) },
-                        isModal: true)
+                        home: home, plugins: plugins, open: openPlugin,
+                        checkInstalled: checkInstalled, push: navigation.push, isModal: true)
         }
         .wontonDialog(problem: pages.rejection, isPresented: Binding(
             get: { pages.rejection != nil }, set: { if !$0 { pages.rejection = nil } }
@@ -106,6 +107,7 @@ struct MainView: View {
         .task { await chat.files.observe() }
         .task { await settings.observe() }
         .environment(pages)
+        .task { await navigation.push.start() }
         .environment(onboarding)
         .environment(\.panelDeps, PanelDependencies(
             pages: pages, home: home, plugins: plugins, chat: chat, appearance: appearance,
@@ -188,7 +190,10 @@ struct MainView: View {
                 } else {
                     // 没配对时配对失败从 HomeView 的配对页接手过来：照那一页留着侧边栏按钮，失败了也能去别的入口。
                     PairingView(model: home)
-                        .wontonRootScreen(String(localized: .Pairing.pairingTitle), hasActions: false) { EmptyView() }
+                        .wontonPairingRootScreen(
+                            String(localized: .Pairing.pairingTitle),
+                            hasActions: false
+                        ) { EmptyView() }
                 }
             }
             .wontonDialog(problem: home.rejection, isPresented: Binding(

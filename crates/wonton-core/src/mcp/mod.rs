@@ -6,7 +6,7 @@ mod agent_cards;
 mod agent_install;
 mod agent_permission;
 mod apps;
-mod audience;
+pub(crate) mod audience;
 pub mod audit;
 mod authoring_tools;
 mod bot_access;
@@ -60,7 +60,7 @@ pub use cards::Draft;
 pub use cards::text as card_text;
 pub(crate) use cards::{highest_confirm_for, mark_nvme_risk};
 pub use confirm::{AnswerError, Audience, Confirmations, Notifier, Recipients, Refusal, Ticket};
-pub(crate) use dependencies::disclose_provider;
+pub(crate) use dependencies::{disclose_connections, disclose_provider};
 pub use notifier::DevicePush;
 pub use server::{Caller, TurnSender};
 use takeover::Takeovers;
@@ -123,6 +123,8 @@ pub struct Bus {
     friends: OnceLock<Arc<crate::friends::Friends>>,
     /// Bot 钉进主面板的同意卡片的等待：每个（插件）最多一张。
     pin_cards: Mutex<HashSet<PluginId>>,
+    /// 收件箱（ADR-0119）。没接时收件箱工具和接口如实报不可用。
+    inbox: OnceLock<Arc<crate::inbox::Inbox>>,
     /// 旧协议（2026-07-28 之前）的会话：工具列表变了要逐个通知。
     peers: Mutex<Vec<Peer<RoleServer>>>,
 }
@@ -159,6 +161,7 @@ impl Bus {
             agent_chains: OnceLock::new(),
             friends: OnceLock::new(),
             pin_cards: Mutex::new(HashSet::new()),
+            inbox: OnceLock::new(),
             peers: Mutex::new(Vec::new()),
         });
         bus.watch_plugins();
@@ -257,6 +260,22 @@ impl Bus {
     /// 插件的 MCP 客户端：文件服务读资源也用它，一个插件一条连接。
     pub fn upstreams(&self) -> Arc<Upstreams> {
         self.upstreams.clone()
+    }
+
+    /// 插件管理器：收件箱取发送方的 MCP 服务读页面用。
+    pub fn plugins(&self) -> &Arc<PluginManager> {
+        &self.plugins
+    }
+
+    /// 接上收件箱。没接时收件箱工具和接口如实报不可用。
+    pub fn attach_inbox(&self, inbox: Arc<crate::inbox::Inbox>) {
+        if self.inbox.set(inbox).is_err() {
+            tracing::warn!("收件箱接了两次，用先接上的");
+        }
+    }
+
+    pub fn inbox(&self) -> Option<Arc<crate::inbox::Inbox>> {
+        self.inbox.get().cloned()
     }
 
     pub fn confirmations(&self) -> &Confirmations {
@@ -584,10 +603,7 @@ impl Bus {
         let cap = self.ai_cap(caller);
         let tool_level = risky::classify(definition);
         if risky::capped(cap, tool_level) {
-            return Err(ToolFailure::new(
-                "permission_denied",
-                "这次的 AI 动手级别是只读，这个工具会改或删数据，没有执行",
-            ));
+            return Err(self.read_only_refusal(caller, "这个工具会改或删数据"));
         }
         let highest = self.plugins.requires_root_confirmation(&server.id);
         let subject = if cap == AiLevel::AdminApprovesDeletes && tool_level == AiLevel::SelfConfirms
@@ -710,7 +726,7 @@ impl Bus {
         .await
     }
 
-    /// 主人没同意：拒绝了、过期了，或者卡片发不出去。
+    /// 主人没同意：拒绝了、过期了、链被停了抢在投递前撤回卡片，或者卡片发不出去。
     fn refused(
         &self,
         caller: &Caller,
@@ -722,6 +738,7 @@ impl Bus {
         let decision = match refusal {
             confirm::Refusal::Rejected => Decision::Rejected,
             confirm::Refusal::Expired => Decision::Expired,
+            confirm::Refusal::Cancelled => Decision::Withdrawn,
             _ => Decision::Unconfirmed,
         };
         let message = refusal.message();
@@ -825,7 +842,11 @@ mod help_tests;
 #[cfg(test)]
 mod highest_tool_tests;
 #[cfg(test)]
+mod inbox_tools_tests;
+#[cfg(test)]
 mod install_gate_tests;
+#[cfg(test)]
+mod missing_sender_tests;
 #[cfg(test)]
 mod optional_permission_tests;
 #[cfg(test)]

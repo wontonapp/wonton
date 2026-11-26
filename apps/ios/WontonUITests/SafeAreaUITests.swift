@@ -4,6 +4,7 @@ import XCTest
 /// Uses the existing no-backend fixture; run on a portrait, home-indicator iPhone in either system appearance.
 /// Capture every entry before comparing pixels so a failing baseline still exports the complete walkthrough.
 final class SafeAreaUITests: XCTestCase {
+    private var rootButtonFrame: CGRect = .zero
     private var app: XCUIApplication!
 
     override func setUpWithError() throws {
@@ -13,7 +14,7 @@ final class SafeAreaUITests: XCTestCase {
         app.launchArguments += ["-AppleLanguages", "(en)", "-AppleLocale", "en_US"]
         app.launchEnvironment["WONTON_DEV_DATA_SUFFIX"] = UUID().uuidString
         app.launchEnvironment["WONTON_UI_FAKE"] = "1"
-        app.launch()
+        UITestBackend.launch(app)
     }
 
     override func tearDownWithError() throws {
@@ -24,19 +25,24 @@ final class SafeAreaUITests: XCTestCase {
         var captures: [Capture] = []
         let sidebar = app.buttons.matching(UITestSidebar.button).firstMatch
         XCTAssertTrue(sidebar.waitForExistence(timeout: 10))
-        let rootButtonFrame = sidebar.frame
+        rootButtonFrame = sidebar.frame
         captures.append(try capture("list"))
 
         sidebar.tap()
+        // The scrim covers the shifted main page and only exists while the sidebar is open; its frame is
+        // the page frame, sampled after the spring has settled rather than while it is still moving.
         let collapse = app.buttons["Collapse sidebar"].firstMatch
         XCTAssertTrue(collapse.waitForExistence(timeout: 10))
         XCTAssertTrue(collapse.isHittable)
         let settings = app.buttons["Settings"].firstMatch
         XCTAssertTrue(settings.waitForExistence(timeout: 10))
         let settingsButtonFrame = settings.frame
-        captures.append(try capture("sidebar-open", sidebarOpen: true))
+        let pageFrame = try XCTUnwrap(waitForStableFrame(collapse, timeout: 10), app.debugDescription)
+        XCTAssertGreaterThan(pageFrame.minX, app.frame.width * 0.6, "shifted page=\(pageFrame)")
+        captures.append(try capture("sidebar-open", pageLeft: pageFrame.minX))
 
         collapse.tap()
+        // The scrim only exists while progress > 0, so its disappearance means the page is back at rest.
         XCTAssertTrue(collapse.waitForNonExistence(timeout: 10))
         captures.append(try capture("sidebar-closed"))
 
@@ -52,13 +58,18 @@ final class SafeAreaUITests: XCTestCase {
         // The apps entry is a full-screen cover without a fixture-backed dismissal action.
         // Relaunch the same fixture rather than relying on core navigation mutations it does not implement.
         app.terminate()
-        app.launch()
+        UITestBackend.launch(app)
         XCTAssertTrue(sidebar.waitForExistence(timeout: 10))
         let settingsEntry = try XCTUnwrap(UITestSidebar.row(app, labels: ["Settings"]))
         settingsEntry.tap()
-        let close = app.buttons["Close"].firstMatch
-        XCTAssertTrue(close.waitForExistence(timeout: 10))
-        XCTAssertTrue(close.isHittable)
+        // The chat list's backup-reminder dismiss button is labelled Close too and stays in the tree
+        // behind the cover, so skip it by identifier; the cover slides in, so wait until its button
+        // stops moving before capturing.
+        let close = app.buttons.matching(NSPredicate(
+            format: "label == %@ AND identifier != %@", "Close", "chat-backup-reminder-dismiss"
+        )).firstMatch
+        XCTAssertTrue(close.waitForExistence(timeout: 10), app.debugDescription)
+        XCTAssertNotNil(waitForStableFrame(close, timeout: 10), app.debugDescription)
         captures.append(try capture("settings"))
 
         // These are layout assertions, not copy assertions. Backgrounds may extend; controls must not.
@@ -78,13 +89,28 @@ final class SafeAreaUITests: XCTestCase {
         return false
     }
 
+    /// Waits until the element's frame stops changing and returns it; accessibility frames follow
+    /// SwiftUI transitions, so this is the observable "animation finished" condition.
+    private func waitForStableFrame(_ element: XCUIElement, timeout: TimeInterval) -> CGRect? {
+        let deadline = Date().addingTimeInterval(timeout)
+        var last = CGRect.null
+        repeat {
+            let frame = element.frame
+            if !frame.isEmpty, frame == last { return frame }
+            last = frame
+            RunLoop.current.run(until: Date().addingTimeInterval(0.1))
+        } while Date() < deadline
+        return nil
+    }
+
     private struct Capture {
         let name: String
         let image: CGImage
-        let sidebarOpen: Bool
+        /// Left edge of the shifted main page; only set while the sidebar is open.
+        let pageLeft: CGFloat?
     }
 
-    private func capture(_ entry: String, sidebarOpen: Bool = false) throws -> Capture {
+    private func capture(_ entry: String, pageLeft: CGFloat? = nil) throws -> Capture {
         // XCUIScreen, not app.screenshot(): status bar and home-indicator pixels are part of the contract.
         let screenshot = XCUIScreen.main.screenshot()
         let image = try XCTUnwrap(screenshot.image.cgImage)
@@ -93,27 +119,27 @@ final class SafeAreaUITests: XCTestCase {
         attachment.name = name
         attachment.lifetime = .keepAlways
         add(attachment)
-        return Capture(name: name, image: image, sidebarOpen: sidebarOpen)
+        return Capture(name: name, image: image, pageLeft: pageLeft)
     }
 
     private func assertContinuousBackground(_ captured: Capture) throws {
         // Five-pixel patches in the page margin avoid the clock, island, home indicator and page content:
         // 2% of the width is 8pt, inside the 16pt page inset, so buttons and cards never reach it.
-        let columns: [CGFloat] = captured.sidebarOpen ? [0.02] : [0.02, 0.98]
+        var columns: [CGFloat] = [0.02, 0.98]
+        var edges: [CGFloat] = [0.02, 0.98]
+        if let pageLeft = captured.pageLeft {
+            // The sidebar covers the screen's left edge and clips the page's right one, so sample the
+            // shifted page's own 16pt page inset instead: 3.5pt inside the page edge, patch clear of the
+            // 40pt rounded corner. 7% / 93% of the height keep it in the page's top and bottom safe
+            // margins, clear of the clock, the island and the home indicator.
+            columns = [(pageLeft + 3.5) / app.frame.width]
+            edges = [0.07, 0.93]
+        }
         for column in columns {
             let middle = try patch(captured.image, x: column, y: 0.5)
-            for edge: CGFloat in [0.02, 0.98] {
+            for edge in edges {
                 let systemArea = try patch(captured.image, x: column, y: edge)
                 assertMatches(systemArea, middle, context: "\(captured.name) x=\(column), y=\(edge)")
-            }
-        }
-        if captured.sidebarOpen {
-            // The shifted main page must remain a single rounded, dimmed canvas, including its former
-            // safe areas. These samples are inside the scaled page, away from its rounded corners.
-            let middle = try patch(captured.image, x: 0.94, y: 0.5)
-            for edge: CGFloat in [0.07, 0.93] {
-                let pageEdge = try patch(captured.image, x: 0.94, y: edge)
-                assertMatches(pageEdge, middle, context: "\(captured.name) main preview y=\(edge)")
             }
         }
     }

@@ -1,4 +1,4 @@
-use super::record::{Accessor, Lookup, Origin};
+use super::record::{Accessor, FileRecord, Lookup, Origin};
 use super::share_fs::Deleted;
 use super::{DELETED_UNSYNCED, Failure, FileEvent, Files, share_failure};
 use crate::l10n;
@@ -43,8 +43,8 @@ impl Files {
         self.delete_for(Accessor::Owner, id, device, langs).await
     }
 
-    /// 把这个房间的 Bot 加进访问范围，返回加了哪些。房间里没有 Bot 时也会清掉过期：App 授权之后马上发链接，这时链接就算发出去了。
-    /// 和到期清理排同一个队：清理已经取了过期名单也不会在授权之后把文件删掉。
+    /// 把这个房间的 Bot 加进访问范围，并记下这个房间和授权的人（它现在的家人成员也能看），返回加了哪些 Bot。房间里没有 Bot 时也会清掉过期：
+    /// App 授权之后马上发链接，这时链接就算发出去了。和到期清理排同一个队：清理已经取了过期名单也不会在授权之后把文件删掉。
     pub async fn grant_room_for(
         self: &Arc<Self>,
         who: Accessor,
@@ -54,13 +54,13 @@ impl Files {
     ) -> Result<Vec<String>, Failure> {
         let (task, room, langs) = (id.clone(), room.to_owned(), langs.clone());
         let turn = self.uploads.turn(id).await;
-        let bots = self
-            .blocking(move |files| {
-                files.authorize(&task, &who, &langs)?;
-                // 主人已经在范围里，`grant` 也负责清掉过期时间（ADR-0020 的“生命周期”）。
+        let granted = async {
+            self.authorize(&task, &who, &langs).await?;
+            self.blocking(move |files| {
+                // 授权的人已经在范围里，这里顺便清掉过期时间（ADR-0020 的“生命周期”）。
                 files
                     .registry
-                    .grant(&task, who, now_secs())?
+                    .grant_room(&task, who, &room, now_secs())?
                     .ok_or_else(|| Failure::unknown(&langs))?;
                 let bots = files.host.bots_in_room(&room)?;
                 for bot in &bots {
@@ -71,9 +71,11 @@ impl Files {
                 }
                 Ok(bots)
             })
-            .await;
+            .await
+        }
+        .await;
         drop(turn);
-        bots
+        granted
     }
 
     /// 单独收回一个 Bot 的访问：来源插件的授权收回时，主人亲手授权过的 Bot 不受影响，要靠这个。这个 Bot 再经工具找到同一个文件时，
@@ -86,8 +88,8 @@ impl Files {
         langs: &Languages,
     ) -> Result<(), Failure> {
         let (id, bot, langs) = (id.clone(), bot.to_owned(), langs.clone());
+        self.authorize(&id, &who, &langs).await?;
         self.blocking(move |files| {
-            files.authorize(&id, &who, &langs)?;
             files
                 .registry
                 .revoke_bot(&id, &bot)?
@@ -107,16 +109,18 @@ impl Files {
         let (task, langs) = (id.clone(), langs.clone());
         let notify = who.clone();
         let turn = self.uploads.turn(id).await;
-        let granted = self
-            .blocking(move |files| {
-                files.authorize(&task, &who, &langs)?;
+        let granted = async {
+            self.authorize(&task, &who, &langs).await?;
+            self.blocking(move |files| {
                 files
                     .registry
                     .grant(&task, who, now_secs())?
                     .ok_or_else(|| Failure::unknown(&langs))?;
                 Ok(())
             })
-            .await;
+            .await
+        }
+        .await;
         drop(turn);
         granted?;
         self.host.notify_person(&notify, &id.link()).await
@@ -139,9 +143,14 @@ impl Files {
             let _turn = files.uploads.turn(&id).await;
             let task = id.clone();
             let langs = langs.clone();
-            let removed = files
-                .blocking(move |files| files.delete_now(&task, &who, &langs))
-                .await;
+            let removed = match files.authorize(&task, &who, &langs).await {
+                Ok(record) => {
+                    files
+                        .blocking(move |files| files.delete_record_now(&record, &langs))
+                        .await
+                }
+                Err(e) => Err(e),
+            };
             let outcome = match &removed {
                 Ok(outcome) => outcome,
                 Err(e) => e.kind.as_str(),
@@ -161,13 +170,12 @@ impl Files {
     }
 
     /// 返回审计要写的结果。目录没能确认落盘时记录也照删：文件这时已经没了，留着记录主人就删不掉这个编号，断电后文件回来的话审计里有据可查。
-    pub(super) fn delete_now(
+    pub(super) fn delete_record_now(
         &self,
-        id: &FileId,
-        who: &Accessor,
+        record: &FileRecord,
         langs: &Languages,
     ) -> Result<&'static str, Failure> {
-        let record = self.authorize(id, who, langs)?;
+        let id = &record.id;
         // 删失败了记录留着：文件还在，主人可以再删一次。
         let removed = match &record.origin {
             Origin::Upload {

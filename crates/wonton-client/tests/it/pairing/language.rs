@@ -5,7 +5,7 @@ use wonton_client::{Action, PairingFailure, PairingStatus};
 use wonton_protocol::{JoinOutcome, Permissions, RoleDef, RoleTemplate, SettingsAction};
 use wonton_tunnel::pair::RejectReason;
 
-use super::{Home, Phone};
+use super::support::{Home, Phone};
 use crate::home::support::Gate;
 
 struct AutoGate(Gate);
@@ -89,7 +89,7 @@ async fn assert_replaced_scope_does_not_overwrite_pairing_failure() {
     let b = Home::start().await;
     set_language(&phone, "en");
     phone.pair(&a.code(None)).unwrap();
-    phone.wait_for(super::paired).await;
+    phone.wait_for(super::support::paired).await;
     tokio::time::timeout(Duration::from_secs(30), async {
         let servers = phone.subscribe_servers();
         while let Some(view) = servers.next().await {
@@ -264,13 +264,17 @@ async fn assert_other_failures_refresh(phone: &Phone, home: &Home) {
         permissions: Permissions::strictest(),
         people: 0,
     };
+    gate.0.open();
     phone
         .pair(&home.join_code(JoinOutcome::Pending, Some(role)))
         .unwrap();
-    gate.0.open();
-    let (english, japanese) = assert_refresh(phone, PairingFailure::PendingApproval).await;
-    assert!(english.contains("Member"));
-    assert!(japanese.contains("Member"));
+    let view = phone
+        .wait_for(|view| matches!(view.pairing, Some(PairingStatus::JoinPending { .. })))
+        .await;
+    let Some(PairingStatus::JoinPending { role: Some(role) }) = view.pairing else {
+        panic!("the role must come with the pending join")
+    };
+    assert_eq!(role.name.as_deref(), Some("Member"));
 }
 
 async fn assert_setup_failure_refreshes() {

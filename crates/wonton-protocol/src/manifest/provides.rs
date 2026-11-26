@@ -2,6 +2,8 @@ use std::collections::BTreeMap;
 
 use serde::{Deserialize, Serialize};
 
+use crate::media::{MediaKind, MediaOperation};
+
 /// 插件给其他插件提供的能力（ADR-0053）：`models` 和 `egress_proxy` 有专用字段，其余能力（核心定义的
 /// 或第三方的）按能力名放进 [`Self::capabilities`]。
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
@@ -28,6 +30,12 @@ pub struct ProviderService {
     /// 托管能力（ADR-0080）：核心把这项能力的总目录挂到容器里的这个绝对路径。
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub mount: Option<String>,
+    /// 自报能做的操作；核心仍以 `/_wonton/capabilities` 为准，这里给安装预检。
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub operations: Vec<MediaOperation>,
+    /// 自报的内容种类。
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub kinds: Vec<MediaKind>,
 }
 
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
@@ -76,5 +84,72 @@ impl ModelsProvider {
     /// 执行凭据命令的服务。
     pub fn credentials_service(&self) -> &str {
         self.credentials.service.as_deref().unwrap_or(&self.service)
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    fn media_source(extra: &str) -> String {
+        format!(
+            r#"{{"service": "sidecar", "port": 8090, "credentials": {{"issue": ["i", "{{name}}"], "revoke": ["r", "{{name}}"]}}{extra}}}"#
+        )
+    }
+
+    #[test]
+    fn media_lists_roundtrip_and_default_to_empty() {
+        let json = media_source(r#", "operations": ["upload", "list"], "kinds": ["photo"]"#);
+        let provider: ProviderService = serde_json::from_str(&json).unwrap();
+        assert_eq!(
+            provider.operations,
+            vec![MediaOperation::Upload, MediaOperation::List]
+        );
+        assert_eq!(provider.kinds, vec![MediaKind::Photo]);
+        let back = serde_json::to_value(&provider).unwrap();
+        assert_eq!(back["operations"], serde_json::json!(["upload", "list"]));
+        assert_eq!(back["kinds"], serde_json::json!(["photo"]));
+
+        let provider: ProviderService = serde_json::from_str(&media_source("")).unwrap();
+        assert!(provider.operations.is_empty());
+        assert!(provider.kinds.is_empty());
+        let back = serde_json::to_value(&provider).unwrap();
+        assert!(back.get("operations").is_none());
+        assert!(back.get("kinds").is_none());
+    }
+
+    #[test]
+    fn unknown_media_list_values_fall_to_other() {
+        let json = media_source(
+            r#", "operations": ["upload", "transcode"], "kinds": ["photo", "hologram"]"#,
+        );
+        let provider: ProviderService = serde_json::from_str(&json).unwrap();
+        assert_eq!(
+            provider.operations,
+            vec![
+                MediaOperation::Upload,
+                MediaOperation::Other("transcode".into())
+            ]
+        );
+        assert_eq!(
+            provider.kinds,
+            vec![MediaKind::Photo, MediaKind::Other("hologram".into())]
+        );
+        let back = serde_json::to_value(&provider).unwrap();
+        assert_eq!(
+            back["operations"],
+            serde_json::json!(["upload", "transcode"])
+        );
+        assert_eq!(back["kinds"], serde_json::json!(["photo", "hologram"]));
+    }
+
+    #[test]
+    fn credentials_need_both_commands() {
+        let json =
+            r#"{"service": "sidecar", "port": 8090, "credentials": {"issue": ["i", "{name}"]}}"#;
+        assert!(serde_json::from_str::<ProviderService>(json).is_err());
+        let json =
+            r#"{"service": "sidecar", "port": 8090, "credentials": {"revoke": ["r", "{name}"]}}"#;
+        assert!(serde_json::from_str::<ProviderService>(json).is_err());
     }
 }

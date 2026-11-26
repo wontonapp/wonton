@@ -15,6 +15,7 @@ import androidx.compose.ui.unit.dp
 import app.wonton.protocol.AgentRunChoice
 import app.wonton.protocol.AgentRunEnd
 import app.wonton.protocol.AgentRunState
+import app.wonton.protocol.ChoiceSend
 import app.wonton.protocol.TimelineContent
 
 /**
@@ -48,6 +49,7 @@ object AgentRunRowFixtures {
         senderName = senderName,
         // 0 = 不带发送时间：已等待那行不显示，参考图不吃真实时钟。
         timestampMs = timestampMs,
+        unreadAnchor = false,
     )
 
     val working = row(AgentRunState.Working, step = "Reading files")
@@ -61,8 +63,18 @@ object AgentRunRowFixtures {
         AgentRunState.Waiting,
         senderName = "Hermes",
         choices = listOf(
-            AgentRunChoice(key = "yes", label = "Yes, go ahead"),
-            AgentRunChoice(key = "no", label = "No, stop"),
+            AgentRunChoice(
+                key = "yes",
+                label = "Yes, go ahead",
+                chosen = false,
+                send = ChoiceSend.Idle,
+            ),
+            AgentRunChoice(
+                key = "no",
+                label = "No, stop",
+                chosen = false,
+                send = ChoiceSend.Idle,
+            ),
         ),
     )
     val doneWithSteps = row(AgentRunState.Done, steps = 5u)

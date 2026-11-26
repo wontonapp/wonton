@@ -9,8 +9,9 @@ use serde_json::{Value, json};
 use wonton_client::{Action, Answer, MessageContent, TimelineContent};
 use wonton_matrix::testkit::eventually;
 use wonton_matrix::{ChatRoom, MatrixSession, Membership, RelationType};
+use wonton_protocol::BotChatAvailability;
 use wonton_protocol::{
-    AgentRunChoice, AgentRunState, BotActivityFacts, TimelineAction, TimelineTarget,
+    AgentRunChoice, AgentRunState, BotActivityFacts, ChoiceSend, TimelineAction, TimelineTarget,
 };
 
 use super::confirmation::{in_ten_minutes, joined_direct_chat, send};
@@ -101,6 +102,7 @@ async fn setup() -> Setup {
         plugin_id: PLUGIN.to_owned(),
         bot: Some("default".into()),
         user_id: hermes.user_id().to_string(),
+        chat: BotChatAvailability::Available,
         running: true,
         model_requests: 0,
         tool_calls: 0,
@@ -337,6 +339,7 @@ async fn an_offline_bot_shows_uncertain_until_it_is_back() {
         plugin_id: PLUGIN.to_owned(),
         bot: Some("default".into()),
         user_id: hermes.user_id().to_string(),
+        chat: BotChatAvailability::Available,
         running: false,
         model_requests: 0,
         tool_calls: 0,
@@ -464,7 +467,9 @@ async fn choices_answer_with_a_reaction_only_when_tapped() {
         choices,
         vec![AgentRunChoice {
             key: "allow".into(),
-            label: "继续".into()
+            label: "继续".into(),
+            chosen: false,
+            send: ChoiceSend::Idle,
         }]
     );
 

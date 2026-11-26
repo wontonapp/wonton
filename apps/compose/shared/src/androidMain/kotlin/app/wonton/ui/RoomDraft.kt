@@ -58,19 +58,37 @@ class RoomDraft(
         save()
     }
 
+    /** 进入编辑态：把原正文换进输入框、收掉回复；核心随后存草稿，这里不自己写。 */
+    fun startEditing(text: String) {
+        body.value = text
+        quoted.value = null
+        focusToken++
+        touched = true
+    }
+
+    /** 退出编辑态后用核心恢复的草稿换回来。 */
+    fun restore(text: String, reply: ReplyQuote?) {
+        body.value = text
+        quoted.value = reply
+        touched = true
+    }
+
     fun stopReplying() {
         quoted.value = null
         touched = true
         save()
     }
 
-    /** 字和附件发出去了：草稿整个清掉，别让回复对象留下来。 */
-    fun sent() {
-        body.value = ""
+    /** 字和附件发出去了：草稿整个清掉，别让回复对象留下来。命令不动已经打了一半的字（`keepBody`）。 */
+    fun sent(keepBody: Boolean = false) {
+        if (!keepBody) body.value = ""
         quoted.value = null
         touched = true
         save()
     }
+
+    /** 命令发出去了：只收回复条，正文草稿一个字不动，主人那句还在（ADR-0109）。 */
+    fun commandSent() = sent(keepBody = true)
 
     private fun save() = onAction(
         Action.Timeline(

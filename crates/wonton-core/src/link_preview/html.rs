@@ -12,10 +12,13 @@ use html5ever::tokenizer::{
     BufferQueue, CharacterTokens, EndTag, StartTag, Tag, TagToken, Token, TokenSink,
     TokenSinkResult, Tokenizer, TokenizerOpts,
 };
+use unicode_segmentation::UnicodeSegmentation;
 
-/// 标题、摘要截到这么多字：卡片上显示不了更多。
-const MAX_TITLE_CHARS: usize = 300;
-const MAX_DESCRIPTION_CHARS: usize = 1000;
+/// 卡片文字的上限，按字素算：卡片照 Telegram 的形状，标题 2 行、摘要 3 行、站名 1 行；390 宽、正文 15 号
+/// 一行约放得下 40 个拉丁字素，汉字占两倍宽，多出来的由客户端按行数截掉。
+const MAX_TITLE_GRAPHEMES: usize = 80;
+const MAX_DESCRIPTION_GRAPHEMES: usize = 120;
+const MAX_SITE_NAME_GRAPHEMES: usize = 40;
 /// 按 HTML 规范，`<meta charset>` 只在前 1024 字节里找。
 const CHARSET_PRESCAN: usize = 1024;
 
@@ -88,13 +91,15 @@ impl Found {
                 .og_title
                 .or(self.twitter_title)
                 .or(self.title)
-                .and_then(|t| clean(&t, MAX_TITLE_CHARS)),
+                .and_then(|t| clean(&t, MAX_TITLE_GRAPHEMES)),
             description: self
                 .og_description
                 .or(self.twitter_description)
                 .or(self.description)
-                .and_then(|t| clean(&t, MAX_DESCRIPTION_CHARS)),
-            site_name: self.site_name.and_then(|t| clean(&t, MAX_TITLE_CHARS)),
+                .and_then(|t| clean(&t, MAX_DESCRIPTION_GRAPHEMES)),
+            site_name: self
+                .site_name
+                .and_then(|t| clean(&t, MAX_SITE_NAME_GRAPHEMES)),
             image: self
                 .image
                 .map(|t| t.trim().to_owned())
@@ -158,10 +163,10 @@ impl Found {
     }
 }
 
-/// 合并空白，截到 `max` 个字符；空的算没有。
-fn clean(text: &str, max: usize) -> Option<String> {
+/// 合并空白，按字素截到 `max` 个（组合字符、emoji 序列不切一半）；空的算没有。
+fn clean(text: &str, max_graphemes: usize) -> Option<String> {
     let joined = text.split_whitespace().collect::<Vec<_>>().join(" ");
-    let cut: String = joined.chars().take(max).collect();
+    let cut: String = joined.graphemes(true).take(max_graphemes).collect();
     (!cut.is_empty()).then_some(cut)
 }
 
@@ -229,5 +234,35 @@ mod tests {
         page.extend_from_slice(b"</title></head>");
         assert_eq!(parse(&page, None).title.as_deref(), Some("你好"));
         assert_eq!(parse(&page, Some("GB2312")).title.as_deref(), Some("你好"));
+    }
+
+    #[test]
+    fn card_text_is_cut_on_graphemes() {
+        // 组合字符和 emoji 序列的一个字素不止一个 char：按字符截会把它们切开，按字素截不会。
+        let combining = "e\u{301}".repeat(MAX_TITLE_GRAPHEMES + 10);
+        let emoji = "👨‍👩‍👧‍👦".repeat(MAX_DESCRIPTION_GRAPHEMES + 10);
+        let page = format!(
+            r#"<html><head><meta property="og:title" content="{combining}">
+            <meta property="og:description" content="{emoji}">
+            <meta property="og:site_name" content="{}"></head></html>"#,
+            "站".repeat(MAX_SITE_NAME_GRAPHEMES + 10)
+        );
+        let head = parse(page.as_bytes(), None);
+        let title = head.title.unwrap();
+        assert_eq!(title.graphemes(true).count(), MAX_TITLE_GRAPHEMES);
+        assert_eq!(title.chars().count(), MAX_TITLE_GRAPHEMES * 2);
+        let description = head.description.unwrap();
+        assert_eq!(
+            description.graphemes(true).count(),
+            MAX_DESCRIPTION_GRAPHEMES
+        );
+        assert!(
+            description.ends_with('👦'),
+            "结尾不是完整的 emoji 家族，切在了中间：{description:?}"
+        );
+        assert_eq!(
+            head.site_name.unwrap().graphemes(true).count(),
+            MAX_SITE_NAME_GRAPHEMES
+        );
     }
 }

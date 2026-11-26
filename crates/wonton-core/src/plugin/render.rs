@@ -335,26 +335,23 @@ pub(super) fn dry_run_context(package: &PluginPackage) -> InstallContext {
 }
 
 fn dry_run_models(manifest: &Manifest) -> Option<ModelVars> {
-    manifest
-        .permissions
-        .contains(&Permission::Models)
-        .then(|| ModelVars {
-            base_url: "http://models.wonton.internal/v1".into(),
-            anthropic_url: Some("http://models.wonton.internal".into()),
-            gemini_url: Some("http://models.wonton.internal".into()),
-            plugin_key: Some("dry-run".into()),
-            bot_keys: manifest
-                .bots
-                .as_ref()
-                .map(|_| {
-                    BTreeMap::from([(
-                        super::bot_services::DEFAULT_BOT.to_owned(),
-                        "dry-run".into(),
-                    )])
-                })
-                .unwrap_or_default(),
-            default_model: "dry-run".into(),
-        })
+    super::models::uses_models(manifest).then(|| ModelVars {
+        base_url: "http://models.wonton.internal/v1".into(),
+        anthropic_url: Some("http://models.wonton.internal".into()),
+        gemini_url: Some("http://models.wonton.internal".into()),
+        plugin_key: Some("dry-run".into()),
+        bot_keys: manifest
+            .bots
+            .as_ref()
+            .map(|_| {
+                BTreeMap::from([(
+                    super::bot_services::DEFAULT_BOT.to_owned(),
+                    "dry-run".into(),
+                )])
+            })
+            .unwrap_or_default(),
+        default_model: "dry-run".into(),
+    })
 }
 
 fn dry_run_lan(manifest: &Manifest, slug: &str) -> Option<LanGrant> {
@@ -437,10 +434,7 @@ fn dry_run_bots(
     }
     let vars = BotVars {
         dependencies: capabilities.clone(),
-        model_key: manifest
-            .permissions
-            .contains(&Permission::Models)
-            .then(|| "dry-run".into()),
+        model_key: super::models::uses_models(manifest).then(|| "dry-run".into()),
         matrix: Some(MatrixVars {
             homeserver: "http://matrix.wonton.internal".into(),
             user_id: "@dry-run:wonton.invalid".into(),
@@ -546,6 +540,14 @@ fn render_service_containers(
             devices: ctx.devices.as_ref(),
         };
         let mut plan = container_plan(name, service, bot, mounts, ctx, options, langs)?;
+        // 拿到显卡的服务总有这个变量（ADR-0099），插件不必为了它自己的判断再写一行占位环境。
+        if let Some(grant) = gpu {
+            let env = plan.body.env.get_or_insert_with(Vec::new);
+            let prefix = "WONTON_GPU_VENDOR=";
+            if !env.iter().any(|value| value.starts_with(prefix)) {
+                env.push(format!("{prefix}{}", grant.vendor.key()));
+            }
+        }
         if let Some(grant) = &ctx.lan {
             lan::publish(name, service, grant, &mut plan.body, langs)?;
         }

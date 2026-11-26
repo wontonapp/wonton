@@ -56,6 +56,7 @@ pub enum PeerStatus {
     /// 对方拒绝了我的配对请求。
     Declined,
     /// 自己的公网访问总开关关着，暂时联系不到对方（ADR-0090 第 2 节）；重新打开后对方重试才到。
+    /// 对方的总开关关着是另一回事，发起私聊时落 [`ChatFailure::PeerPublicAccessOff`](crate::ChatFailure)。
     PublicAccessOff,
     /// 比这个 App 新的核心给的状态。
     #[serde(other)]

@@ -13,6 +13,7 @@ import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.platform.testTag
 import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.text.input.KeyboardCapitalization
 import app.wonton.client.ClientCore
@@ -59,7 +60,7 @@ internal fun NewSideChatSheet(core: ClientCore, roomId: String, onStarted: (Stri
             WontonTextField(
                 value = body,
                 onValueChange = { body = it },
-                modifier = Modifier.fillMaxWidth(),
+                modifier = Modifier.fillMaxWidth().testTag("side-chat-field"),
                 placeholder = stringResource(R.string.side_chat_placeholder),
                 maxLines = FIRST_MESSAGE_MAX_LINES,
                 enabled = !sending,

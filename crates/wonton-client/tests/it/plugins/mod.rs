@@ -5,17 +5,22 @@ mod agent_stop;
 mod ask_every_update;
 mod audience;
 mod bots;
+mod cached_views;
 mod capability_install;
 mod chat_rows;
 mod connection;
 mod core_upgrade;
 mod detail;
+mod dropped_results;
 mod egress;
+mod failure_categories;
 mod now;
+mod offline_tasks;
 mod onboarding;
 mod owner_secrets;
 mod registry_mirror;
 pub mod rig;
+mod server_switch;
 mod share_recipients;
 mod stale_list;
 mod store_load;
@@ -34,7 +39,9 @@ use rig::{
     CONNECT_BACKSTOP, Canned, IMAGE, Rig, WAIT, core_error, installed, item, listing, preview,
     running,
 };
-use wonton_protocol::{SecretInput, SecretString};
+use wonton_protocol::{
+    AvatarMediaProblem, AvatarUpload, MyAvatarProblem, SecretInput, SecretString,
+};
 
 /// 兜底预算，不是节奏：按生产常数推导——三次成功读取最坏 3 × (3s 间隔 + 30s 读取限时) = 99s，
 /// 之后 settle 自己在最后一次成功读取 120s 后转不确定（UNREACHABLE_LIMIT），合计 219s；取 240s。
@@ -400,6 +407,36 @@ async fn saving_the_profile_sends_it_and_keeps_the_reason_it_was_refused() {
     let sent = rig.core.seen(&Method::PUT, PROFILE);
     assert!(sent[1].body.contains("me@example.com"), "{}", sent[1].body);
     assert!(!sent[1].from_page);
+}
+
+#[tokio::test]
+async fn avatar_bytes_are_checked_before_the_upload() {
+    let rig = Rig::new().await;
+    let upload = AvatarUpload {
+        mime_type: "image/jpeg".to_owned(),
+        data: vec![1, 2, 3],
+        poster: None,
+    };
+    assert_eq!(
+        rig.app.set_my_avatar(upload).await.unwrap_err(),
+        MyAvatarProblem::MediaRejected {
+            problem: AvatarMediaProblem::Format
+        }
+    );
+    // 字节先过检查，这一步还没连上 Matrix，清头像说聊天还没登录。
+    assert!(matches!(
+        rig.app.clear_my_avatar().await.unwrap_err(),
+        MyAvatarProblem::NotLoggedIn { .. }
+    ));
+    let png = AvatarUpload {
+        mime_type: "image/png".to_owned(),
+        data: include_bytes!("../../../../wonton-matrix/tests/tuwunel/fixtures/2x2.png").to_vec(),
+        poster: None,
+    };
+    assert!(matches!(
+        rig.app.set_my_avatar(png).await.unwrap_err(),
+        MyAvatarProblem::NotLoggedIn { .. }
+    ));
 }
 
 #[tokio::test]

@@ -8,7 +8,9 @@ use tokio::sync::watch;
 use tokio::task::JoinHandle;
 use wonton_client::{Action, HomeStatus, Network};
 
-use super::support::{Home, Phone, WEB_URL, get, wait_until_ticket_has};
+use super::support::{
+    Home, Phone, WEB_URL, get, wait_until_leading_direct_addr, wait_until_ticket_has,
+};
 
 const WAIT: Duration = Duration::from_secs(30);
 
@@ -118,7 +120,8 @@ async fn later_direct_path_survives_restart(empty_report: bool) {
         .unwrap();
     phone
         .wait_for(|view| {
-            view.status == HomeStatus::Connected && view.path.is_some_and(|path| path.relay)
+            view.status == HomeStatus::Connected
+                && view.path.as_ref().is_some_and(|path| path.relay)
         })
         .await;
     wait_until_ticket_has(dir.path(), reported).await;
@@ -141,10 +144,11 @@ async fn later_direct_path_survives_restart(empty_report: bool) {
     gate.enabled.send_replace(true);
     phone
         .wait_for(|view| {
-            view.status == HomeStatus::Connected && view.path.is_some_and(|path| !path.relay)
+            view.status == HomeStatus::Connected
+                && view.path.as_ref().is_some_and(|path| !path.relay)
         })
         .await;
-    wait_until_ticket_has(dir.path(), gate.addr).await;
+    wait_until_leading_direct_addr(dir.path(), gate.addr).await;
     if empty_report {
         let updated: serde_json::Value =
             serde_json::from_slice(&std::fs::read(&path).unwrap()).unwrap();
@@ -162,7 +166,7 @@ async fn later_direct_path_survives_restart(empty_report: bool) {
     let view = restarted
         .wait_for(|view| view.status == HomeStatus::Connected && view.proxy.is_some())
         .await;
-    assert!(view.path.is_some_and(|path| !path.relay));
+    assert!(view.path.as_ref().is_some_and(|path| !path.relay));
     let (status, body) = get(&view.proxy.unwrap(), WEB_URL, "/after-relay-outage", true).await;
     assert_eq!((status, body.as_str()), (200, "/after-relay-outage"));
     drop(restarted);

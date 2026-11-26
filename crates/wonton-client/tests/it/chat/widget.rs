@@ -12,7 +12,7 @@ use wonton_client::{
 };
 use wonton_matrix::OwnedUserId;
 
-use super::accept_the_bots_invite;
+use super::accept_the_bots_encrypted_invite;
 use super::support::{Home, OWNER, Phone, Timeline, WAIT};
 use page::WidgetPage;
 
@@ -43,7 +43,7 @@ fn plugin() -> InstalledPlugin {
     plugin
 }
 
-/// 起一台服务器、手机登录、Bot 拉主人进加密私聊，打开这个房间的时间线。
+/// 起一台服务器、手机登录、Bot 拉主人进私聊，打开这个房间的时间线。
 async fn in_the_bots_room(
     dir: &std::path::Path,
 ) -> (
@@ -60,7 +60,7 @@ async fn in_the_bots_room(
     phone.connect(&home);
     let (_, device) = phone.signed_in().await;
     let bot = home.bot("hermes", "Hermes").await;
-    let room_id = accept_the_bots_invite(&home, &phone, &bot).await;
+    let room_id = accept_the_bots_encrypted_invite(&home, &phone, &bot).await;
     let room = room_id.to_string();
     let timeline = Timeline::open(&phone, &room).await;
     (home, phone, bot, room, device, timeline)

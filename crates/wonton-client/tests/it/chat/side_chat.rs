@@ -3,16 +3,18 @@
 
 use serde_json::json;
 use wonton_client::{
-    Action, CoreError, MessageContent, TimelineContent, TimelineItem, TimelineScroll,
+    Action, CoreError, ImageThumbnail, ImageUpload, MessageContent, MessageSummary,
+    TimelineContent, TimelineItem, TimelineScroll,
 };
 use wonton_matrix::{ChatRoom, MatrixSession, MessageBody, OwnedRoomId};
+use wonton_protocol::BotChatAvailability;
 use wonton_protocol::{
     BotActivityFacts, SideChatCard, SideChatState, TimelineAction, TimelineTarget,
 };
 
+use super::accept_the_bots_encrypted_invite;
 use super::bot_receives;
-use super::confirmation::joined_direct_chat;
-use super::support::{Home, Phone, Timeline};
+use super::support::{Home, Phone, Timeline, ToDeviceHold};
 use crate::plugins::rig::running;
 
 const PLUGIN: &str = "app.bot";
@@ -32,6 +34,25 @@ async fn setup() -> Setup {
     let phone = Phone::open(dir.path());
     let home = Home::start(&[phone.device_id()]).await;
     let bot = home.bot("hermes", "Hermes").await;
+    finish_setup(dir, phone, home, bot).await
+}
+
+async fn setup_with_held_bot() -> (Setup, ToDeviceHold) {
+    let dir = tempfile::tempdir().unwrap();
+    let phone = Phone::open(dir.path());
+    let home = Home::start(&[phone.device_id()]).await;
+    let hold = ToDeviceHold::start(&home.matrix.url).await;
+    let bot = home.bot_via(hold.url(), "hermes", "Hermes").await;
+    let setup = finish_setup(dir, phone, home, bot).await;
+    (setup, hold)
+}
+
+async fn finish_setup(
+    dir: tempfile::TempDir,
+    phone: Phone,
+    home: Home,
+    bot: MatrixSession,
+) -> Setup {
     let mut installed = running(PLUGIN);
     installed.bot_user_id = Some(bot.user_id().to_string());
     installed.default_bot_visibility = Some(wonton_protocol::DefaultBotVisibility::Visible);
@@ -40,6 +61,7 @@ async fn setup() -> Setup {
         plugin_id: PLUGIN.to_owned(),
         bot: Some("default".into()),
         user_id: bot.user_id().to_string(),
+        chat: BotChatAvailability::Available,
         running: true,
         model_requests: 0,
         tool_calls: 0,
@@ -56,7 +78,7 @@ async fn setup() -> Setup {
                 .then_some(())
         })
         .await;
-    let room = joined_direct_chat(&phone, &bot).await;
+    let room = accept_the_bots_encrypted_invite(&home, &phone, &bot).await;
     let bot_room = bot.open_room(&room).await.expect("Bot 打开房间");
     bot_room
         .send_state_event_raw(
@@ -109,6 +131,13 @@ fn has_text(items: &[TimelineItem], text: &str) -> bool {
     })
 }
 
+fn has_image(items: &[TimelineItem]) -> bool {
+    items.iter().any(|item| {
+        matches!(&item.content, TimelineContent::Message { message }
+            if matches!(message.body, MessageContent::Image { .. }))
+    })
+}
+
 fn result_states(items: &[TimelineItem], root: &str) -> Vec<SideChatState> {
     items
         .iter()
@@ -142,6 +171,24 @@ async fn room_unread(phone: &Phone, room: &OwnedRoomId, want: u64) {
         .await;
 }
 
+/// 列表预览是旁聊的标题（密钥到、事件解开了才进得了最新事件，见 [`a_late_room_key_redecrypts_a_thread_reply`]）。
+async fn preview_side_chat(phone: &Phone, room: &OwnedRoomId, title: &str) {
+    phone
+        .wait_chat("预览是旁聊标题", |view| {
+            view.rooms
+                .iter()
+                .any(|row| {
+                    row.room_id == room.as_str()
+                        && row.preview.as_ref().is_some_and(|preview| {
+                            matches!(&preview.body, MessageSummary::SideChat { title: shown, .. }
+                                if shown == title)
+                        })
+                })
+                .then_some(())
+        })
+        .await;
+}
+
 #[tokio::test(flavor = "multi_thread")]
 #[ignore = "需要 Docker，用 --include-ignored 运行"]
 async fn a_side_chat_is_a_card_in_the_main_timeline_with_its_own_timeline() {
@@ -157,6 +204,7 @@ async fn a_side_chat_is_a_card_in_the_main_timeline_with_its_own_timeline() {
     );
 
     // 开旁聊：根是卡片，第一句话进了话题。
+    setup.phone.wait_ready().await;
     let root = setup
         .phone
         .start_side_chat(
@@ -235,6 +283,308 @@ async fn a_side_chat_is_a_card_in_the_main_timeline_with_its_own_timeline() {
     room_unread(&setup.phone, &setup.room, 0).await;
 }
 
+/// 旁聊里 Bot 回复的房间密钥晚到：回复先按解不开的事件处理——旁聊时间线里是占位，主对话卡片照样带回复数和
+/// 未读、房间未读算上它；密钥到后同一条回复换成正文，计数不翻倍，列表预览出标题。
+///
+/// 根由主人自己发：根是 Bot 发的密文时 SDK 不给根的 `thread_replies`，卡片根本不出（见“底座的问题”），
+/// 计数就没法断言。根也是密文那一半由 matrix 单测 `an_undecryptable_thread_reply_counts_toward_the_room_unread`
+/// 直接钉住。密钥没到时列表预览也停在更早的事件上（matrix-sdk 的最新事件不收 `m.room.encrypted`），
+/// 出标题只在密钥到了之后断言。
+#[tokio::test(flavor = "multi_thread")]
+#[ignore = "需要 Docker，用 --include-ignored 运行"]
+async fn a_late_room_key_redecrypts_a_thread_reply() {
+    let (setup, hold) = setup_with_held_bot().await;
+    let mut main = open_main(&setup).await;
+    // 扣下 Bot 的 to-device：它的房间密钥到不了手机，回复是密文。
+    hold.hold(true);
+    setup.phone.wait_ready().await;
+    let root = setup
+        .phone
+        .start_side_chat(setup.room.to_string(), "整理照片".to_owned())
+        .await
+        .expect("开旁聊");
+    main.until("主对话里有旁聊卡", |item| card(item, &root))
+        .await;
+    let root_id: wonton_matrix::OwnedEventId = root.parse().unwrap();
+    bot_receives(
+        &setup.bot_room,
+        "Bot 在话题里收到第一句",
+        |message| (message.thread_root.as_ref() == Some(&root_id)).then_some(()),
+    )
+    .await;
+
+    let mut thread = Timeline::open_target(&setup.phone, setup.room.as_str(), Some(&root)).await;
+    setup
+        .bot_room
+        .send_text_in_thread(&root_id, "迟到的密钥也能解开")
+        .await
+        .expect("Bot 发旁聊回复");
+    thread
+        .until("旁聊里先出现解不开的事件", |item| {
+            matches!(&item.content, TimelineContent::Message { message }
+                if message.body == MessageContent::Undecryptable)
+            .then_some(())
+        })
+        .await;
+
+    // 密钥没到：解不开的回复也进回复数，卡片的未读和房间的未读都算上它。
+    main.until("卡片先带上回复数和未读", |item| {
+        card(item, &root).filter(|card| card.reply_count == 2 && card.unread_count == 1)
+    })
+    .await;
+    room_unread(&setup.phone, &setup.room, 1).await;
+
+    hold.replay().await;
+    thread
+        .until("密钥重放后旁聊里有回复", |item| {
+            matches!(&item.content, TimelineContent::Message { message }
+                if matches!(&message.body, MessageContent::Text { body, .. }
+                    if body == "迟到的密钥也能解开"))
+            .then_some(())
+        })
+        .await;
+    let shown = main
+        .until("卡片还是两句回复", |item| {
+            card(item, &root).filter(|card| card.reply_count == 2)
+        })
+        .await;
+    // 同一事件换成明文不重复计数，预览换成旁聊标题。
+    assert_eq!(shown.unread_count, 1);
+    room_unread(&setup.phone, &setup.room, 1).await;
+    preview_side_chat(&setup.phone, &setup.room, "整理照片").await;
+}
+
+/// 旁聊时间线在事件到达之前打开：主人自己的第一句（本地回显或稍后的同步回声）和 Bot 的回复
+/// （正常解密到达）都要进旁聊。真实端到端里旁聊时间线在卡片出现后马上打开，之后的每一批都是空的。
+///
+/// 这条的前半（第一句和回复与打开同时发）是冒烟：回复可能在建时间线读缓存之前就到了，落不进修复覆盖的窗口。
+/// 所以后半把回复当成被 SDK 丢掉的活事件清掉，断言补检会清屏（原因 `missed-cached-event`）并把它重建回来。
+/// 补检判定本身（宽限、去重）真正的确定性守卫在 matrix 的 `chat_room/bootstrap_tests/thread.rs`
+/// `a_cached_thread_event_the_timeline_lost_is_reported_as_missed`。
+#[tokio::test(flavor = "multi_thread")]
+#[ignore = "需要 Docker，用 --include-ignored 运行"]
+async fn an_early_opened_side_chat_receives_the_first_message_and_the_reply() {
+    let setup = setup().await;
+    let mut main = open_main(&setup).await;
+    setup.phone.wait_ready().await;
+    let root = setup
+        .phone
+        .start_side_chat(
+            setup.room.to_string(),
+            "整理照片\n把上周的都放进相册".to_owned(),
+        )
+        .await
+        .expect("开旁聊");
+    main.until("主对话里有旁聊卡", |item| card(item, &root))
+        .await;
+    let root_id = root.parse().unwrap();
+
+    // 卡片一出现就打开旁聊，不等第一句的回显；Bot 的回复和打开同时来：同步落在构建途中也要进得来。
+    // 第一句的正文和根（标题）不同，才分得清真是第一句进来了，而不是根被当成了它。
+    bot_receives(
+        &setup.bot_room,
+        "Bot 在话题里收到第一句",
+        |message| (message.thread_root.as_ref() == Some(&root_id)).then_some(()),
+    )
+    .await;
+    let sending = setup.bot_room.send_text_in_thread(&root_id, "在整理了");
+    let opening = Timeline::open_target(&setup.phone, setup.room.as_str(), Some(&root));
+    let (sent, mut thread) = tokio::join!(sending, opening);
+    sent.expect("Bot 在话题里回");
+    thread
+        .until_items("旁聊里有主人自己发的那一句", |items| {
+            has_text(items, "整理照片\n把上周的都放进相册").then_some(())
+        })
+        .await;
+    thread
+        .until("旁聊里出现 Bot 的回复", |item| {
+            matches!(&item.content, TimelineContent::Message { message }
+                if matches!(&message.body, MessageContent::Text { body, .. }
+                    if body == "在整理了"))
+            .then_some(())
+        })
+        .await;
+    // 根（标题）不是条目；第一句和回复都算进了卡片，房间里只多出 Bot 那一条未读。
+    assert!(
+        thread
+            .side_chat
+            .as_ref()
+            .is_some_and(|side| side.title == "整理照片")
+    );
+    let card = main
+        .until("卡片上有两句回复和一条未读", |item| {
+            card(item, &root).filter(|card| card.reply_count == 2 && card.unread_count == 1)
+        })
+        .await;
+    assert_eq!(card.title, "整理照片");
+    room_unread(&setup.phone, &setup.room, 1).await;
+    // 把回复当活事件被 SDK 丢掉：只清 SDK 时间线、缓存不动，这次清空对壳无声，只有补检会让壳清屏。
+    setup
+        .phone
+        .test_clear_timeline(TimelineTarget {
+            room_id: setup.room.to_string(),
+            thread_root: Some(root.clone()),
+        })
+        .await
+        .expect("清空旁聊时间线");
+    thread.until_cleared().await;
+    assert!(
+        !has_text(&thread.items, "在整理了"),
+        "壳清屏后回复先消失：{}",
+        thread.cleared_reasons()
+    );
+    assert!(
+        thread.cleared_reasons().contains("missed-cached-event"),
+        "清空来自补检：{}",
+        thread.cleared_reasons()
+    );
+    thread
+        .until("重画后回复回来", |item| {
+            matches!(&item.content, TimelineContent::Message { message }
+                if matches!(&message.body, MessageContent::Text { body, .. }
+                    if body == "在整理了"))
+            .then_some(())
+        })
+        .await;
+}
+
+/// 旁聊里发的照片只进旁聊：主对话里不出现，Bot 收到的带话题根。
+#[tokio::test(flavor = "multi_thread")]
+#[ignore = "需要 Docker，用 --include-ignored 运行"]
+async fn an_image_sent_in_a_side_chat_stays_in_the_thread() {
+    let setup = setup().await;
+    let mut main = open_main(&setup).await;
+    setup.phone.wait_ready().await;
+    let root = setup
+        .phone
+        .start_side_chat(setup.room.to_string(), "整理照片".to_owned())
+        .await
+        .expect("开旁聊");
+    main.until("主对话里有旁聊卡", |item| card(item, &root))
+        .await;
+    let root_id = root.parse().unwrap();
+    bot_receives(
+        &setup.bot_room,
+        "Bot 在话题里收到第一句",
+        |message| (message.thread_root.as_ref() == Some(&root_id)).then_some(()),
+    )
+    .await;
+    let mut thread = Timeline::open_target(&setup.phone, setup.room.as_str(), Some(&root)).await;
+    setup
+        .phone
+        .dispatch(Action::Timeline {
+            action: TimelineAction::SendImage {
+                target: TimelineTarget {
+                    room_id: setup.room.to_string(),
+                    thread_root: Some(root.clone()),
+                },
+                image: ImageUpload {
+                    filename: "dot.png".to_owned(),
+                    mime_type: "image/png".to_owned(),
+                    data: super::PNG.to_vec(),
+                    width: Some(2),
+                    height: Some(2),
+                    thumbnail: Some(ImageThumbnail {
+                        mime_type: "image/png".to_owned(),
+                        data: super::THUMBNAIL.to_vec(),
+                        width: 1,
+                        height: 1,
+                    }),
+                },
+                caption: None,
+                reply_to: None,
+            },
+        })
+        .unwrap();
+    thread
+        .until("旁聊里有照片", |item| {
+            has_image(std::slice::from_ref(item)).then_some(())
+        })
+        .await;
+    bot_receives(&setup.bot_room, "Bot 收到话题里的照片", |message| {
+        (message.thread_root.as_ref() == Some(&root_id)
+            && matches!(message.body, MessageBody::Image(_)))
+        .then_some(())
+    })
+    .await;
+    // 照片算第二条回复；卡片的状态不受影响。等卡片处理到这条再断言主对话里没有照片。
+    main.until("卡片把照片算进回复数", |item| {
+        card(item, &root).filter(|card| card.reply_count == 2)
+    })
+    .await;
+    assert!(
+        !has_image(&main.items),
+        "照片不在主对话里：{:#?}",
+        main.items
+    );
+}
+
+/// 活事件被 SDK 丢掉（缓存里在、时间线里没有）：补检发现后让壳清屏重画，回复跟着重建回来。
+#[tokio::test(flavor = "multi_thread")]
+#[ignore = "需要 Docker，用 --include-ignored 运行"]
+async fn a_thread_reply_lost_from_the_timeline_is_rebuilt_back() {
+    let setup = setup().await;
+    let mut main = open_main(&setup).await;
+    setup.phone.wait_ready().await;
+    let root = setup
+        .phone
+        .start_side_chat(setup.room.to_string(), "整理照片".to_owned())
+        .await
+        .expect("开旁聊");
+    main.until("主对话里有旁聊卡", |item| card(item, &root))
+        .await;
+    let root_id = root.parse().unwrap();
+    bot_receives(
+        &setup.bot_room,
+        "Bot 在话题里收到第一句",
+        |message| (message.thread_root.as_ref() == Some(&root_id)).then_some(()),
+    )
+    .await;
+    let mut thread = Timeline::open_target(&setup.phone, setup.room.as_str(), Some(&root)).await;
+    setup
+        .bot_room
+        .send_text_in_thread(&root_id, "会丢的回复")
+        .await
+        .expect("Bot 在话题里回");
+    thread
+        .until("旁聊里有 Bot 的回复", |item| {
+            matches!(&item.content, TimelineContent::Message { message }
+                if matches!(&message.body, MessageContent::Text { body, .. }
+                    if body == "会丢的回复"))
+            .then_some(())
+        })
+        .await;
+
+    // 像 SDK 丢掉活事件那样只清时间线，事件缓存不动：宽限内不报，过了宽限补检发现、壳清屏重画，回复回来。
+    setup
+        .phone
+        .test_clear_timeline(TimelineTarget {
+            room_id: setup.room.to_string(),
+            thread_root: Some(root.clone()),
+        })
+        .await
+        .expect("清空旁聊时间线");
+    thread.until_cleared().await;
+    assert!(
+        !has_text(&thread.items, "会丢的回复"),
+        "壳清屏后回复先消失：{}",
+        thread.cleared_reasons()
+    );
+    assert!(
+        thread.cleared_reasons().contains("missed-cached-event"),
+        "清空来自补检：{}",
+        thread.cleared_reasons()
+    );
+    thread
+        .until("重画后回复回来", |item| {
+            matches!(&item.content, TimelineContent::Message { message }
+                if matches!(&message.body, MessageContent::Text { body, .. }
+                    if body == "会丢的回复"))
+            .then_some(())
+        })
+        .await;
+}
+
 /// 像壳一样：列表在底部时（先报告到底）发已读。
 async fn mark_read(phone: &Phone, timeline: &mut Timeline, room: &str, thread_root: Option<&str>) {
     timeline.report_scroll(TimelineScroll::Bottom).await;
@@ -290,6 +640,7 @@ async fn a_root_that_fails_to_send_leaves_no_side_chat() {
     let setup = setup().await;
     let mut main = open_main(&setup).await;
 
+    setup.phone.wait_ready().await;
     let empty = setup
         .phone
         .start_side_chat(setup.room.to_string(), "  \n ".to_owned())
@@ -300,6 +651,7 @@ async fn a_root_that_fails_to_send_leaves_no_side_chat() {
     );
 
     setup.home.fail_sends(true);
+    setup.phone.wait_ready().await;
     let failed = setup
         .phone
         .start_side_chat(setup.room.to_string(), "整理照片".to_owned())

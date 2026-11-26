@@ -61,7 +61,7 @@ pub(crate) fn strict_ai(level: AiLevel) -> AiLevel {
     }
 }
 
-/// 两级里低的那个：封顶取进行中的轮次和能用人里最低的级别。
+/// 两级里低的那个：共享 Bot 的能用人、进行中的轮次都按最低的级别封顶。
 pub(crate) fn lower(a: AiLevel, b: AiLevel) -> AiLevel {
     let rank = |level: AiLevel| match level {
         AiLevel::ReadOnly | AiLevel::Other => 0,

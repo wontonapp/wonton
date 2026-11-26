@@ -1,6 +1,7 @@
 # ADR-0051 好友：云吞是标准的 Matrix 服务器，和整个生态互通，插件按人分享
 
 - 状态：已接受（2026-11-08）：主人定了方向“完全 Matrix 那套，跟生态互通”，默认用我们送的名字，开工时间、迁移、花钱和推送见“已定”。
+  第 5 条的“两种模式不互通，不做配对证书钉扎”被 [ADR-0112](0112-peer-cert-pinning.md) 取代（2026-11-22）。
   2026-11-06 的版本（App 里一把好友密钥、访客通道 `wonton/guest/0`）和 2026-11-07 的两稿（好友在邀请人的服务器上开账号、好友只限配对过的服务器）都不要了。
   2026-11-12 主人重新定：没有 Matrix 账号的朋友，主人发邀请码就能在自己的服务器上开账号，推翻本篇的“不让人住在邀请人那里”；好友的分组、分享按角色算，插件看到的身份改成能力。见 [ADR-0088](0088-family-accounts.md)。
   别家账号（matrix.org 等）的好友照本篇
@@ -89,6 +90,8 @@ YunoHost、Sandstorm 给免费子域名但要求公网 IP；Home Assistant Cloud
 - **加好友**：主人在 App 里点“加好友”，输入对方的 Matrix ID 或扫他的二维码（`https://matrix.to/#/@bob:B`）。App 发一个标准的私聊邀请
   （`is_direct`），`m.room.create` 的内容里带 `app.wonton.friend: true`，标明“这是好友请求”。不用状态事件：Tuwunel 不给受邀者读
   房间状态，邀请里带的只有 create、name 这类固定状态，create 内容受邀者接受前就看得到，建完也改不了。对方用任何 Matrix 客户端都看得到这个邀请。
+- 地址由对方提供，输入区的示例只说明格式，不代表真实账号。资料不可取得不能证明账号不存在；
+  HTTP 禁止只说明请求未获允许，不据此认定对方本人拒绝。原因不明时保持不确定，不增加存在性探测。
 - **同意**就是接受邀请：对方加入私聊，主人的 App 看到后把他记进好友名单。**拒绝**就是拒绝邀请。没理会，就一直是待处理的邀请。
 - 反过来，别人发来的私聊邀请出现在云吞 App 的“请求”里（和服务器配对的请求放在一起的那一节，ADR-0050），不混在聊天列表里；
   带 `app.wonton.friend` 的标为“好友请求”。接受就成为好友。
@@ -193,9 +196,9 @@ YunoHost、Sandstorm 给免费子域名但要求公网 IP；Home Assistant Cloud
 
 | 选项 | 主人要准备 | 花费 | 代价 |
 | --- | --- | --- | --- |
-| 自己的域名 + Cloudflare Tunnel | 一个域名，DNS 托管在 Cloudflare | 一个域名的年费 | Cloudflare 解开 TLS，看得到谁和谁、什么时候（消息本身端到端加密）；单个请求最大 100 MB |
+| 自己的域名 + Cloudflare Tunnel | 一个域名，DNS 托管在 Cloudflare | 一个域名的年费 | Cloudflare 解开 TLS，看得到谁和谁、什么时候，也读得到消息内容（ADR-0118 起房间不加密）；单个请求最大 100 MB |
 | 自己的域名 + 自己的小云服务器（自建 frps，ADR-0021 的“换成自己的域名”） | 一个域名，一台有公网 IP 的小云服务器 | 域名年费加小服务器的月费 | 要维护那台服务器 |
-| 不要名字（随机的 `.wonton.internal`，只和配对过的云吞来往） | 什么都不用 | 无 | 加不了 matrix.org 上的人；和有名字的云吞也不通（对方要验证书，它只有自签证书）；以后要互通只能重装聊天数据、所有人换新账号 |
+| 不要名字（随机的 `.wonton.internal`，只和配对过的云吞来往） | 什么都不用 | 无 | 加不了 matrix.org 上的人；没配对时不和别的服务器通，配对过的照 [ADR-0112](0112-peer-cert-pinning.md) 互钉证书走；不再自签、不开 allow_invalid（2026-11-22 起） |
 
 **我们要准备的**（邀请制开始前一周再买，见“已定（主人 2026-11-08）”；开发期间用测试域名和我们自己的机器）：
 
@@ -217,11 +220,11 @@ YunoHost、Sandstorm 给免费子域名但要求公网 IP；Home Assistant Cloud
 | ADR-0009“Matrix 的服务器名”、`wonton-core` 的 `install.rs` | 默认随机生成 `<24 位>.wonton.internal` | 安装时向家名服务注册，用 `<家>.<域名>`；高级选项填自己的域名或不要名字 |
 | ADR-0021 | 家名只给第三方 App 的入口用，云端部分排在 M2；证书是 `*.<家>.<域名>` | 家名同时是 Matrix 服务器名，安装时就要注册；证书加上 `<家>.<域名>` 本身；中继多转这个名字（联邦），算进这个家的配额 |
 | ADR-0050“联邦流量”、`matrix/federation_config` | `allowed_remote_server_names_experimental` 只写配对过的服务器 | 填了域名的服务器不写这个名单（开放），黑名单写 `forbidden_remote_server_names` |
-| 同上，`install.rs` 和 `deploy/dev/matrix/federation.toml` | 自签证书、`allow_invalid_tls_certificates = true`（对所有出站请求都生效） | 有名字模式设为 `false`，用有效证书；经 iroh 进来的联邦流也交给入口容器，用同一张证书。显式不要名字的模式保留自签证书和 `true`，仅限封闭配对联邦 |
+| 同上，`install.rs` 和 `deploy/dev/matrix/federation.toml` | 自签证书、`allow_invalid_tls_certificates = true`（对所有出站请求都生效） | 有名字模式设为 `false`，用有效证书；经 iroh 进来的联邦流也交给入口容器，用同一张证书。有名字但还没配入口的安装既不自签也不放宽验证：Tuwunel 只留明文，由核心在隧道两端终结 TLS（[ADR-0112](0112-peer-cert-pinning.md)），配对过的就能通；配好入口重新安装后改走 8449、按公共根校验（[ADR-0090](0090-public-access.md) 的公网访问默认关）。私用名安装 2026-11-22 起也改成核心终结 TLS、不自签、不开 `true`（窗口期见 ADR-0112 §5b，[ADR-0112](0112-peer-cert-pinning.md)） |
 | 同上 | `trusted_servers = []`，只向对方直取签名密钥 | 保留，或按需加 matrix.org 作公证服务器 |
 | ADR-0050“联邦流量”的转发组件（`wonton-tunnel` 的 `federation`） | 不认识的 SNI、不在名单里的服务器出站直接断开 | 配对过的照旧走 iroh；其余不经转发组件，Tuwunel 直接走公网 |
 | 核心的地址映射（hosts） | 配对过的服务器名指向转发组件 | 照旧，只放配对过的 |
-| `gateway/matrix.rs`、ADR-0009 | 网关不转发 `/_matrix/federation/`、`/_matrix/key/` | 公网入口上的服务器名主机转发这两条给 Tuwunel，并提供 `.well-known/matrix/server`、`.well-known/matrix/client`、`.well-known/wonton` |
+| `gateway/matrix.rs`、ADR-0009 | 网关不转发 `/_matrix/federation/`、`/_matrix/key/` | 公网入口上的服务器名主机 8484 只答三个发现文件（`.well-known/matrix/server`、`.well-known/matrix/client`、`.well-known/wonton`），把 `/_matrix/federation/`、`/_matrix/key/` 转给 Tuwunel；经 iroh 进来的配对前端（8449）把这两类和三个发现文件仍交给核心，其余路径（客户端 API）直给 Tuwunel 的客户端端口。核心自己的 `/_wonton/*` 在入口上都没有入口：`/_wonton/clients/status` 在主网关和 8449 上都回 404（主网关没登记这条路由，配对前端把它当客户端 API 交给 Tuwunel） |
 | ADR-0050“状态” | 连不上的原因按名单和转发组件分 | 配对过的照旧；别的服务器只能看 Tuwunel 的出站结果 |
 | ADR-0045 的网关房间规则 | “联邦关着，公开房间只多一条绕过邀请的路” | 理由改成“会被搜到、被刷”；加上发邀请、发消息的限频 |
 | ADR-0003 推送 | 只有本机 Tuwunel 的 pusher 指向核心 | 加 Sygnal，给别家账号的 App 用 |
@@ -312,7 +315,7 @@ YunoHost、Sandstorm 给免费子域名但要求公网 IP；Home Assistant Cloud
 3. 主域名和香港的转发机器在邀请制开始前一周再买。开发期间只用本地 Pebble、DNS 和 `.test` 名字；家名服务、中继、DNS 和 ACME directory 都由配置给（见“可配置、不捆绑”），
    买了以后换配置，不改代码；测试 CA 显式加入信任，不关闭证书验证。
 4. 用别家 Matrix 账号登录的人，推送由我们运营：Sygnal 和现有的推送中继（ADR-0003）放在一起。
-5. TLS 和联邦按安装模式分：有名字的服务器开放联邦、严格验证证书，关掉 `allow_invalid_tls_certificates`；不要名字的服务器保留 ADR-0050 的封闭联邦、自签证书和 TLS 例外。两种模式不互通，不做配对证书钉扎。
+5. TLS 和联邦按安装模式分：有名字的服务器开放联邦、严格验证证书，关掉 `allow_invalid_tls_certificates`；不要名字的服务器没配对时仍是 ADR-0050 的封闭联邦（2026-11-22 起不再自签、不再开 allow_invalid，配对过的走 [ADR-0112](0112-peer-cert-pinning.md) 在核心终结 TLS 并互钉证书；没配对的照旧不互通）。
 
 ## 验证
 

@@ -261,7 +261,6 @@ plugin-install-prv-permission-needs-egress = egress.proxy 权限必须声明 pro
 plugin-install-prv-egress-needs-network = provides.egress_proxy 必须申请 network.egress 权限
 plugin-install-prv-egress-port = provides.egress_proxy.port 不能为 0
 plugin-install-prv-empty = provides 至少声明一项能力
-plugin-install-prv-models-system-only = 只有 kind: system 的插件能声明 provides.models
 plugin-install-prv-models-port = provides.models.port 不能为 0
 plugin-install-prv-models-apis-path = provides.models.apis 的路径必须以 / 开头
 plugin-install-prv-models-default-model = provides.models.default_model 不能为空
@@ -518,8 +517,9 @@ plugin-install-img-worker-host-exited = 处理图片的助手退出了：{ $erro
 plugin-install-img-worker-host-not-ready = 处理图片的助手没有就绪：{ $error }
 plugin-install-img-worker-host-protocol = 处理图片的助手用的协议版本是 { $got }，核心是 { $want }
 
-## 预装（启动时随服务器带的包）失败的原因。
+## 预装（启动时随服务器带的包）进行不下去的原因。
 plugin-install-preinstall-retrying = 预装失败（已试 { $attempts } 次，稍后自动重试）
+plugin-install-preinstall-waiting = 代理还没就绪（会自动重试）
 plugin-install-preinstall-failed = 预装失败
 
 # ── 能力依赖（capabilities.rs，ADR-0053）──────────────────────────────────
@@ -530,10 +530,12 @@ plugin-capability-no-consumer = { $capability } 没有使用方声明，不能�
 plugin-capability-duplicate = { $field } 里的能力 { $capability } 写了两次
 plugin-capability-in-both-lists = 能力 { $capability } 不能同时在 requires 和 wants 里
 plugin-capability-provider-requires = { $capability } 不是这个插件自己提供的能力：提供方只能 requires 自己也提供的能力
+plugin-capability-models-in-requires = models 是可选能力：写 wants: [models]，不放 requires
 plugin-capability-port-zero = provides.{ $capability }.port 不能为 0
 plugin-capability-credentials-required = provides.{ $capability } 要声明 credentials：给每个使用方签一个只属于它的凭据
 plugin-capability-credentials-forbidden = provides.{ $capability } 不能声明 credentials：这个能力的提供方只认经核心转发来的请求
 plugin-capability-credentials-argv = provides.{ $capability }.credentials.{ $field } 是非空的 argv，并用 { $placeholder } 指明凭据名
+plugin-capability-media-source-empty = provides.{ $capability }.{ $field } 至少要写一项
 plugin-capability-service-unknown = { $field } 引用的服务 `{ $service }` 在 compose 里不存在
 plugin-capability-service-not-forwardable = { $field } 不能指向 network_mode: none 的服务：核心要转发进去、在里面签发凭据
 plugin-install-capability-deps-unsupported = 这个核心还不支持插件之间的依赖，升级核心后再装

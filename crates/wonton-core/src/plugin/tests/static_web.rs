@@ -153,6 +153,8 @@ fn server_only_fields_are_rejected_not_ignored() {
     doc["services"] = json!({"web": {"image": "nginx"}});
     assert!(matches!(parse(&doc), Err(PackageError::Service { .. })));
     let doc = static_web(json!({"requires": ["models"]}));
+    assert!(rejected(&doc).contains("models"));
+    let doc = static_web(json!({"requires": ["torrent_client"]}));
     assert!(rejected(&doc).contains("web_storage"));
     assert!(parse(&static_web(json!({"requires": ["web_storage"]}))).is_ok());
 }

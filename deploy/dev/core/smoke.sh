@@ -1,14 +1,15 @@
 #!/usr/bin/env bash
 # M0 端到端冒烟：一条命令装好示例插件 → 健康检查通过 → 未登录的请求被拒 →
-# 像浏览器一样经核心网关打开插件并自动登录 → 核心预装模型网关，使用方拿到自己的凭据 →
-# 已配对设备经隧道打开插件，直接是主人 → 经隧道登录 Matrix，和回声 Bot 加密收发 →
-# 核心自己装好的默认 Agent Hermes 就绪后出现在主人的私聊里：没有模型时提示去“模型设置”，加了 provider 后经模型网关和
-# 主人加密对话两轮 → 停链打断 Hermes 正在跑的一轮；批准的私聊经出箱发到家人手里；核心按说话人请求头认人 →
-# 网关代登录打开“模型设置”网页 → 核心重启后恢复、不装回卸掉的 Hermes → 卸载干净。
-# Hermes 一步要真实模型：开发机上要有在运行的 magpie。冒烟的 magpie 容器直连宿主 3425，
-# 凭据是冒烟自己新建的一次性网关凭据：限定到这次的模型，退出时按建 key 时记下的 id 删掉
-# （失败退出也删），凭据不进日志、不写进仓库。
-# 模型名经 WONTON_SMOKE_MODEL 传入：开发机 magpie 里一个能对话的模型。
+# 像浏览器一样经核心网关打开插件并自动登录 → 核心不预装模型网关，申请 models 的插件照样装得上，请求报网关不可用，
+# 装上后转发、停掉报 503 →
+# 已配对设备经隧道打开插件，直接是主人 → 经隧道登录 Matrix，和回声 Bot 收发 →
+# 核心自己装好的默认 Agent Hermes 就绪后出现在主人的私聊里：还没选模型时提示去它网页的 Keys、Models 页，给它的
+# Bot 配一个指向宿主 magpie 的服务后和主人对话两轮 → 停链打断 Hermes 正在跑的一轮；批准的私聊经出箱发到家人手里；核心按说话人请求头认人 →
+# 网关代登录打开“模型设置”网页 → 核心重启后恢复、不装回卸掉的 Hermes → 卸载干净。Hermes 一步要真实模型：开发机上要有在运行的 magpie，模型名经 WONTON_SMOKE_MODEL 传入
+# （magpie 里一个能对话的模型），宿主 magpie 不在 3425 时用 WONTON_SMOKE_MODEL_RELAY=<宿主上的地址:端口>。
+# Hermes 容器解析不到 host.docker.internal 时（Linux 的 Docker 不给插件容器加这条）经它自己网络网关上的 socat
+# 转发连，见 Hermes 段。凭据是冒烟按 Bot 名字新建的一次性网关凭据：限定到这次的模型，退出时按建 key 时记下的 id
+# 删掉（失败退出也删），凭据不进日志、不写进仓库。
 #
 #   deploy/dev/core/smoke.sh    本机 Docker；要设 WONTON_SMOKE_MODEL，见上
 #   DOCKER_HOST=ssh://$DEV_HOST deploy/dev/core/smoke.sh  远端 Linux 主机（远端只需要 Docker，DEV_HOST 是它的 SSH 目标）
@@ -26,6 +27,8 @@ dev="$here/dev.sh"
 
 # shellcheck source=deploy/dev/core/smoke-lib.sh
 source "$here/smoke-lib.sh"
+# shellcheck source=deploy/dev/core/dev-guard.sh
+source "$here/dev-guard.sh"
 
 # 带实例名：下面的清理只动这个实例的插件，同一台 Docker 上别的核心不受影响。冒烟一次只跑一个。
 # 只有 SMOKE_ONLY 对着已有的栈跑时才认外面给的项目、实例、域名和数据目录。
@@ -37,6 +40,7 @@ export WONTON_DEV_PROJECT="${WONTON_DEV_PROJECT:-wonton-smoke}" WONTON_DEV_INSTA
 export WONTON_DEV_PORT="${WONTON_DEV_PORT:-18481}"
 export WONTON_DEV_TUNNEL_PORT="${WONTON_DEV_TUNNEL_PORT:-18483}"
 export WONTON_DEV_DOMAIN="${WONTON_DEV_DOMAIN:-wonton.localhost}" WONTON_DEV_DATA="${WONTON_DEV_DATA:-/tmp/wonton-smoke}"
+if [[ -z "${SMOKE_ONLY:-}" ]]; then dev_guard_check "$WONTON_DEV_PROJECT"; fi
 # 核心镜像和隧道客户端镜像用同一个提交号构建，共用 Dockerfile 里的编译阶段。
 WONTON_BUILD_COMMIT="$("$dev" commit)"
 export WONTON_BUILD_COMMIT
@@ -56,6 +60,7 @@ mom_probe_store="$WONTON_DEV_DATA/mom-probe-store"
 mkdir -p "$probe_store" "$mom_probe_store"
 curl_image="curlimages/curl:8.23.0"
 busybox_image="public.ecr.aws/docker/library/busybox:1.37"
+socat_image="alpine/socat:1.8.0.3"
 core_url="http://$WONTON_DEV_DOMAIN:$WONTON_DEV_PORT"
 grafana_url="http://app-grafana.$WONTON_DEV_DOMAIN:$WONTON_DEV_PORT"
 whoami_url="http://app-whoami.$WONTON_DEV_DOMAIN:$WONTON_DEV_PORT"
@@ -67,12 +72,13 @@ hermes_network="wonton-$WONTON_DEV_INSTANCE--com-nousresearch-hermes"
 grafana="$grafana_network--grafana"
 echo_bot="wonton-$WONTON_DEV_INSTANCE--agent-echo--bot"
 magpie="$magpie_network--magpie"
+model_relay="$WONTON_DEV_PROJECT-model-relay"
 model_client="wonton-$WONTON_DEV_INSTANCE--app-model-client--client"
 # Hermes 声明了 bots（x-wonton.bots），gateway 是 Bot 服务：容器按 Bot 一份。
 hermes="$hermes_network--gateway--default"
 # 排在 matrix 步骤外面：SMOKE_ONLY 跳过那一步时后面也要用。
 hermes_env() { docker inspect "$hermes" --format '{{range .Config.Env}}{{println .}}{{end}}' | sed -n "s/^$1=//p"; }
-plugins=(app.grafana app.whoami agent.echo ai.usemagpie.magpie app.model-client com.nousresearch.hermes app.wonton.files org.navidrome.navidrome)
+plugins=(app.grafana app.whoami agent.echo app.model-client ai.usemagpie.magpie com.nousresearch.hermes app.wonton.files org.navidrome.navidrome)
 
 # shellcheck source=deploy/dev/core/smoke-cleanup.sh
 source "$here/smoke-cleanup.sh"
@@ -94,13 +100,16 @@ direct_rooms() {
   owner_api "/user/@owner:$WONTON_DEV_DOMAIN/account_data/m.direct" |
     python3 -c 'import json, sys; print("\n".join(json.load(sys.stdin).get(sys.argv[1], [])))' "$1"
 }
+# 从 Hermes 自己的容器真连一次：地址、凭据、防火墙都得通。
 hermes_models() {
-  docker exec "$hermes" sh -c 'curl -fsS --max-time 30 -H "Authorization: Bearer $WONTON_MODEL_API_KEY" "$WONTON_MODEL_BASE_URL/models"' |
+  docker exec "$hermes" sh -c "curl -fsS --max-time 30 -H 'Authorization: Bearer $hermes_key' '$model_url/models'" |
     python3 -c 'import json, sys; print(" ".join(sorted(m["id"] for m in json.load(sys.stdin)["data"])))'
 }
 plugin_state() {
   "$dev" list | awk -v id="$1" '$1 == id { print $2; found = 1 } END { if (!found) print "absent" }'
 }
+# 主人的一台新设备经隧道在私聊里发话，收 Hermes 的回答：$1 输出文件，其余是探针参数。
+# 新设备偶发 404 M_NOT_FOUND（登录后服务器说没见过这台设备）：用同一台重发一次，不重发已发过的旧消息。
 probe_in_hermes_room() {
   local out="$1" jwt rc=0 attempt
   shift
@@ -112,28 +121,42 @@ probe_in_hermes_room() {
       --homeserver "$matrix_url" --proxy "http://$credential@127.0.0.1:18008" --login-token "$jwt" \
       --room "$hermes_room" --bot "$hermes_user" --device-id "$probe_device" --store /probe \
       --reply any "$@" >"$out" 2>&1 || rc=$?
-    # 有一句正常回复就算过：探针偶尔把 404 当空回复、退出码还是 0。
-    if (( rc == 0 )) && grep -q '收到加密的回复：' "$out"; then return 0; fi
+    # 有一句正常回复就算过：探针偶发 404 当空回复、退出码还是 0。
+    if (( rc == 0 )) && grep -q '收到明文的回复：' "$out"; then return 0; fi
     # 不是 404 的失败（含探针自己的报错）不再重来。
     if ! grep -q M_NOT_FOUND "$out"; then return "$rc"; fi
   done
   return 1
 }
 talk_to_hermes() { probe_in_hermes_room "$1" --wait 180 --text "$2"; }
-ask_hermes() { probe_in_hermes_room "$1" --wait 300 --settle 180 --text "$2"; }
+# Hermes 在网关里缓存配置，它自己保存配置（装插件换工具时实测）会把 model.context_length 从磁盘盖回去，
+# 之后一轮就按 32768 撞它 64k 的下限。让它动手前对一遍，不是 64k 就重新写；会话令牌每轮重取（网关可能重启）。
+ensure_hermes_context() {
+  hermes_token="$(docker exec "$hermes" sh -c 'curl -fsS http://127.0.0.1:9119/' |
+    sed -n 's/.*__HERMES_SESSION_TOKEN__="\([^"]*\)".*/\1/p')"
+  [[ -n "$hermes_token" ]] || fail "Hermes 的页面没有给出会话令牌"
+  [[ "$(docker exec "$hermes" sh -c 'curl -sS --max-time 30 http://127.0.0.1:9119/api/model/info' | json effective_context_length)" == 65536 ]] && return 0
+  docker exec "$hermes" sh -c "curl -sS --max-time 30 -X PUT http://127.0.0.1:9119/api/config \
+    -H 'X-Hermes-Session-Token: $hermes_token' -H 'content-type: application/json' \
+    -H 'Origin: http://127.0.0.1:9119' -d '{\"config\":{\"model\":{\"context_length\":65536}}}'" >/dev/null ||
+    fail "Hermes 的上下文设不进去"
+}
+ask_hermes() { ensure_hermes_context; probe_in_hermes_room "$1" --wait 1200 --settle 180 --text "$2"; }
+# 确认卡片（ADR-0016）：卡片不再进 Matrix 房间，从核心的“等你确认”列表取；等人回答的在前，已经结束的在
+# 后面，拼成一行“ID 状态 ”（每项后面带空格，只有一张卡时 `*" pending "*` 也匹配得上）。
 latest_card() {
-  t -sS -H "Authorization: Bearer $access" "$core_url/_wonton/api/confirmations" | python3 -c 'import json, sys
+  t "$core_url/_wonton/api/confirmations" | python3 -c 'import json, sys
 d = json.load(sys.stdin)
-cards = d.get("confirmations") or d.get("finished") or []
-if cards:
-    print(cards[0]["id"], cards[0]["state"]["type"])'
+cards = d.get("confirmations", []) + d.get("finished", [])
+print(" ".join("{} {}".format(c["id"], c["state"]["type"]) for c in cards) + " ")'
 }
 answer() { "$@" -sS -o /dev/null -w '%{http_code}' -X POST -H 'content-type: application/json' -d '{"answer": "approve"}'; }
+# 等核心的待确认列表里出现卡片，输出卡片 ID。
 pending_card() {
   local card=""
-  for _ in $(seq 240); do
+  for _ in $(seq 900); do
     card="$(latest_card)"
-    [[ "$card" == *" pending" ]] && { echo "${card%% *}"; return 0; }
+    [[ "$card" == *" pending "* ]] && { echo "${card%% *}"; return 0; }
     sleep 1
   done
   return 1
@@ -166,13 +189,15 @@ from_whoami() {
 if step preflight "预检"; then
 docker version --format '   Docker {{.Server.Version}} {{.Server.Os}}/{{.Server.Arch}}'
 for id in "${plugins[@]}"; do
+  # 默认 Agent 由核心启动时自己装：对着已有的栈跑（SMOKE_ONLY）时它已经在，是正常的。
+  [[ $id != com.nousresearch.hermes ]] || continue
   [[ -z "$(labeled "$id")" ]] || fail "Docker 上已经有插件 $id 的资源，先卸载它再跑冒烟"
 done
 ok "没有残留的示例插件资源"
 fi
 # 对着已有的栈跑时不拆栈，只删自己起的探针容器。
 if [[ -n "${SMOKE_ONLY:-}" ]]; then
-  trap '[[ -z "${events_pid:-}" ]] || kill "$events_pid" 2>/dev/null; docker rm -f "$browser" "$phone" "$mom_phone" >/dev/null 2>&1 || true' EXIT
+  trap '[[ -z "${events_pid:-}" ]] || kill "$events_pid" 2>/dev/null; [[ -z "${host_model_key_id:-}" ]] || ( host_magpie gateway-key remove "$host_model_key_id" ) >/dev/null 2>&1 || true; docker rm -f "$browser" "$phone" "$mom_phone" "$model_relay" >/dev/null 2>&1 || true' EXIT
 else trap cleanup EXIT; fi
 
 if step core "启动核心和身份提供方（项目 $core，端口 $WONTON_DEV_PORT）"; then
@@ -287,9 +312,8 @@ printf '%s' "$("$dev" token)" |
   python3 "$here/smoke-oidc.py" "$browser" "$grafana" "$core_url" "$grafana_url"
 
 fi
-if step models "模型网关（models）：核心预装 magpie，给使用方签发只属于它的凭据，经 models.wonton.internal 转发"; then
-for _ in $(seq 180); do [[ "$(plugin_state ai.usemagpie.magpie)" == running ]] && break; sleep 1; done
-expect "核心在后台预装了模型网关" "$(plugin_state ai.usemagpie.magpie)" running
+if step models "不预装模型网关：申请 models 的插件照样装得上；没有网关时请求报网关不可用"; then
+expect "核心没有预装模型网关" "$(plugin_state ai.usemagpie.magpie)" absent
 client_file="$(mktemp)"
 cat >"$client_file" <<'YAML'
 services:
@@ -309,22 +333,49 @@ x-wonton:
   description: { zh: 冒烟用的模型网关使用方, en: Model gateway consumer for the smoke test }
   permissions: [models]
 YAML
-installed="$("$dev" install "$client_file" --yes 2>/dev/null)" || fail "使用方安装失败：$installed"
-rm -f "$client_file"
+install_err="$(mktemp)"
+installed="$("$dev" install "$client_file" --yes 2>"$install_err")" || fail "使用方安装失败：$(cat "$install_err")"
+rm -f "$client_file" "$install_err"
 expect "使用方安装完成" "$(json status.state <<<"$installed")" running
 client_env() { docker inspect "$model_client" --format '{{range .Config.Env}}{{println .}}{{end}}' | sed -n "s/^$1=//p"; }
-model_key="$(client_env KEY)"
-expect "使用方经核心在插件网络里的别名访问模型网关" "$(client_env BASE)" "http://models.wonton.internal:$WONTON_DEV_PORT/v1"
-expect "默认模型由网关决定" "$(client_env MODEL)" group/wonton-default
-in_client() { curl_in "$model_client" -sS -o /dev/null -w '%{http_code}' "$@" "$(client_env BASE)/models"; }
-expect "凭据能用" "$(in_client -H "Authorization: Bearer $model_key")" 200
-expect "不带凭据被网关拒绝" "$(in_client)" 401
+expect "没有网关时模型变量是空的" "$(client_env BASE)|$(client_env KEY)|$(client_env MODEL)" "||"
+# 凭据按使用方的变量带上：magpie 对非回环、没凭据的请求回 401（契约测试 consumer.rs 同样带 Bearer）。
+request_models() {
+  local -a auth=()
+  local key
+  key="$(client_env KEY)"
+  [[ -z "$key" ]] || auth=(-H "Authorization: Bearer $key")
+  docker exec "$model_client" curl -sS "${auth[@]}" -o /tmp/models.json -w '%{http_code}' \
+    http://models.wonton.internal:$WONTON_DEV_PORT/v1/models
+}
+expect "没有网关：核心报网关不可用" "$(request_models)" 503
+expect "错误类别" "$(docker exec "$model_client" cat /tmp/models.json | json error.kind)" models_unavailable
+# 从开发索引里把网关按包装一遍：核心现在接受 kind: system，网页和凭据都由核心照常创出来。
+magpie_dir="$(mktemp -d)"
+python3 - "$here/store" "$magpie_dir" <<'PY'
+import json
+import pathlib
+import re
+import sys
+
+store, out = map(pathlib.Path, sys.argv[1:])
+blobs = store / "blobs"
+entries = json.loads((store / "index.json").read_text())["plugins"]
+entry = next(e for e in entries if re.search(r"^\s+id:\s*ai\.usemagpie\.magpie\s*$", e["compose"], re.M))
+(out / "docker-compose.yml").write_text(entry["compose"])
+for path, digest in entry["files"].items():
+    (out / path).parent.mkdir(parents=True, exist_ok=True)
+    (out / path).write_bytes((blobs / digest).read_bytes())
+PY
+installed="$("$dev" install "$magpie_dir" --yes 2>/dev/null)" || fail "模型网关安装失败：$installed"
+rm -rf "$magpie_dir"
+for _ in $(seq 180); do [[ "$(plugin_state ai.usemagpie.magpie)" == running ]] && break; sleep 1; done
+expect "从商店装上了模型网关" "$(plugin_state ai.usemagpie.magpie)" running
+expect "有网关：模型列表转给网关" "$(request_models)" 200
 # 网关里的使用方凭据。健康探测凭据（`<网关>/health`）是核心自己的，不算使用方。
 gateway_keys() { docker exec "$magpie" magpie gateway-key list | awk 'NR > 1 && $2 !~ /\/health$/ { print $2 }'; }
-# 核心同时在后台装默认 Agent，网关里可能已经有 Hermes 的凭据，这里只看使用方的。
 expect "网关里的凭据以使用方命名" "$(gateway_keys | grep -cx app.model-client)" 1
-expect "卸载使用方" "$("$dev" uninstall app.model-client --purge | json data_removed)" true
-expect "卸载时在网关里吊销凭据" "$(gateway_keys | grep -cx app.model-client)" 0
+model_key="$(client_env KEY)"
 # 吊销后旧凭据换不到上游：网关前面加一个假上游（来什么都回 200 和固定的模型列表、记下收到的凭据），用旧凭据请求，
 # 假上游不能收到网关替它配的上游凭据。不断言网关回哪个状态码：magpie 0.1.1327 碰到不认识的凭据不在本地回 401，
 # 转发出去回 502（2026-11-07 实测），把客户端自己的凭据原样转给上游也说得通；那是 magpie 自己的行为，
@@ -352,6 +403,17 @@ revoked_code="$(docker run --rm --network "container:$core" "$curl_image" --nopr
 expect "吊销后旧凭据换不到网关的上游凭据（网关回 HTTP $revoked_code）" "$(docker exec "$fake_upstream" grep -c "$fake_key" /tmp/auth.log)" 0
 docker exec "$magpie" magpie provider rm smoke-fake >/dev/null || fail "删不掉假上游"
 docker rm -f "$fake_upstream" >/dev/null
+docker stop "$magpie" >/dev/null
+# 核心把停掉的网关记成 degraded 之后才不再转发，否则请求会先撞到已停的地址回 502。
+for _ in $(seq 60); do [[ "$(plugin_state ai.usemagpie.magpie)" != running ]] && break; sleep 1; done
+expect "网关停了" "$(plugin_state ai.usemagpie.magpie)" degraded
+expect "网关没启动：核心报网关不可用" "$(request_models)" 503
+expect "错误类别" "$(docker exec "$model_client" cat /tmp/models.json | json error.kind)" models_unavailable
+# 后面的 Hermes、MCP、files、model-page、restart 几步还要用这个网关，重新起来放着，最后一步再卸。
+docker start "$magpie" >/dev/null
+for _ in $(seq 60); do [[ "$(docker inspect -f '{{.State.Health.Status}}' "$magpie")" == healthy ]] && break; sleep 1; done
+expect "网关重新启动" "$(docker inspect -f '{{.State.Health.Status}}' "$magpie")" healthy
+expect "卸载使用方" "$("$dev" uninstall app.model-client --purge | json data_removed)" true
 
 fi
 if step tunnel "已配对设备经隧道打开插件：不用登录，直接是主人"; then
@@ -421,7 +483,9 @@ reply="$(t -o /dev/null -D - -H "Authorization: Bearer $access" \
 ok "会话 ID 带 %2F 的密钥备份请求转给了 Tuwunel（HTTP $(head -1 <<<"$reply" | cut -d' ' -f2)）"
 
 # 回声 Bot 的安装、加密收发、crypto store 丢失与重装恢复：smoke-echo-bot.sh。
+# 本机装了 shellcheck 就顺手检查一遍：它里面的变量都来自冒烟本体，SC2154 免不了，所以不作门槛。
 # shellcheck source=deploy/dev/core/smoke-echo-bot.sh
+if command -v shellcheck >/dev/null; then shellcheck "$here/smoke-echo-bot.sh" || true; fi
 source "$here/smoke-echo-bot.sh"
 
 fi
@@ -443,7 +507,8 @@ ok "主人的 m.direct 里已经有和 Hermes 的私聊"
 expect "主人和 Hermes 都已经在私聊里" \
   "$(owner_api "/rooms/$hermes_room/joined_members" | python3 -c 'import json, sys; print(" ".join(sorted(json.load(sys.stdin)["joined"])))')" \
   "$hermes_user @owner:$WONTON_DEV_DOMAIN"
-expect "私聊是加密的" "$(owner_api "/rooms/$hermes_room/state/m.room.encryption/" | json algorithm)" m.megolm.v1.aes-sha2
+expect "私聊不加密" \
+  "$(owner_api "/rooms/$hermes_room/state" | python3 -c 'import json, sys; print(any(e["type"] == "m.room.encryption" for e in json.load(sys.stdin)))')" False
 # 主人加入私聊的时间（Tuwunel 的事件时间）和网关容器第一次过健康检查的时间（Docker 事件）在同一台主机上。
 ready_ns="$(awk '$2 == "health_status:" && $3 == "healthy" { print $1; exit }' "$hermes_events")"
 [[ -n "$ready_ns" ]] || fail "没有记到 Hermes 的网关容器过健康检查：$(cat "$hermes_events")"
@@ -454,53 +519,109 @@ after_ms=$((joined_ms - ready_ns / 1000000))
 ((after_ms >= 0)) || fail "Hermes 就绪之前 $((-after_ms)) 毫秒，主人就进了私聊"
 ((after_ms < 30000)) || fail "Hermes 就绪 $((after_ms / 1000)) 秒后私聊才出现"
 ok "Hermes 就绪后 $(printf '%d.%03d' $((after_ms / 1000)) $((after_ms % 1000))) 秒，私聊出现（主人加入了它）"
-expect "Hermes 的凭据以它的 Bot 命名" "$(gateway_keys)" com.nousresearch.hermes/default
-# Hermes 用它的凭据经核心问网关有哪些模型，和它的提示插件看到的一样。
-expect "还没有 provider：网关里一个模型也没有" "$(hermes_models)" ""
-# 主人的一台新设备经隧道在私聊里发话，收 Hermes 的回答：$1 输出文件，其余是探针参数。
-# 新设备偶发 404 M_NOT_FOUND（登录后服务器说没见过这台设备）：这种失败换一台新设备重发一次，不重发已发过的旧消息。
+# Hermes v0.8.0 起不申请 models：模型走它自己的供应商接入（网页的 Keys、Models 页）。这里按主人的做法给它的
+# Bot 配一个 OpenAI 兼容服务指向宿主的 magpie；凭据按 Bot 命名建在宿主 magpie 上，限定到这次的模型，
+# cleanup 按建 key 时记下的 id 删掉（失败退出也删），凭据不进日志、不写进仓库。不读取、不复制宿主 magpie 的
+# 配置和密钥。Hermes 容器能解析 host.docker.internal 就直接连（Docker Desktop、OrbStack 给所有容器这个名字）；
+# Linux 的 Docker 不给，解析不到时在宿主机上起一个 socat 转发（监听所有地址），用 Hermes 自己网络的网关地址
+# 连，宿主的 magpie 照旧只监听回环也行。
+#
+# 用 busybox 的 ping 探名字：解析失败打 “bad address”，能解析就先打一行 PING 再等回包（ICMP 被挡不影响
+# 判断），所以只看第一行。两样都没有说明探针自己坏了（镜像拉不下来、网络不在），不能悄悄改走转发。
+host_name_resolves() {
+  local out
+  out="$(docker run --rm --network "$hermes_network" "$busybox_image" \
+    sh -c 'ping -c1 -W1 host.docker.internal 2>&1' 2>&1)" || true
+  if grep -q 'bad address' <<<"$out"; then return 1; fi
+  if head -1 <<<"$out" | grep -q '^PING'; then return 0; fi
+  fail "探 host.docker.internal 失败：$out"
+}
+
+# 宿主 magpie 的 CLI：设了 WONTON_SMOKE_HOST_MAGPIE 就一律进那个容器；否则宿主上装了 magpie 就用它，
+# 再不然找发布 3425 的容器。
+host_magpie() {
+  local container="${WONTON_SMOKE_HOST_MAGPIE:-}"
+  if [[ -n "$container" ]]; then docker exec -i "$container" magpie "$@"; return; fi
+  if command -v magpie >/dev/null; then magpie "$@"; return; fi
+  container="$(docker ps --filter publish=3425 --format '{{.Names}}' | head -1)"
+  [[ -n "$container" ]] || fail "找不到宿主 magpie：宿主上放一个发布 3425 的 magpie 容器，或设 WONTON_SMOKE_HOST_MAGPIE=<容器名>"
+  docker exec -i "$container" magpie "$@"
+}
+
+model_port=3425
+if [[ -n "${WONTON_SMOKE_MODEL_RELAY:-}" ]]; then
+  # 宿主上已经有转发（magpie 不在 3425）：两个分支都直接用它，容器本身到得了宿主地址。
+  model_host="${WONTON_SMOKE_MODEL_RELAY%:*}"
+  model_port="${WONTON_SMOKE_MODEL_RELAY##*:}"
+  [[ -n "$model_host" && "$model_host" != "$model_port" && "$model_port" =~ ^[0-9]+$ ]] ||
+    fail "WONTON_SMOKE_MODEL_RELAY 要写成 <地址>:<端口>：$WONTON_SMOKE_MODEL_RELAY"
+elif host_name_resolves; then
+  model_host=host.docker.internal
+else
+  model_host="$(docker network inspect "$hermes_network" --format '{{(index .IPAM.Config 0).Gateway}}')"
+  model_port=13425
+  # 宿主的防火墙要放行插件网段到这个端口（默认的 DOCKER-USER 链放行 docker 网桥到宿主的流量）。
+  # KEEP=1 的上一轮会把转发留着（它不在 compose 项目里），先删掉同名的再起。
+  docker rm -f "$model_relay" >/dev/null 2>&1 || true
+  docker run -d --rm --name "$model_relay" --network host "$socat_image" \
+    "TCP-LISTEN:$model_port,fork,reuseaddr" "TCP:127.0.0.1:3425" >/dev/null ||
+    fail "起不了到宿主 magpie（127.0.0.1:3425）的转发"
+  # 端口被占时 docker run -d 照样返回 0：看容器还在不在。
+  [[ "$(docker inspect -f '{{.State.Running}}' "$model_relay" 2>/dev/null)" == true ]] ||
+    fail "转发没起来：$(docker logs "$model_relay" 2>&1 | tail -3)"
+fi
+model_url="http://$model_host:$model_port/v1"
+hermes_key="$(openssl rand -hex 24)"
+host_model_key_name="com.nousresearch.hermes/default"
+# 同名 add 是追加（旧的在前），按前后列表的差集挑出刚建的那条，别动到宿主上原有的同名凭据。
+keys_before="$(host_magpie gateway-key list 2>/dev/null | awk 'NR > 1 { print $1 }' | sort)" ||
+  fail "建凭据前读不到宿主 magpie 的凭据列表"
+host_magpie gateway-key add "$host_model_key_name" --key - <<<"$hermes_key" >/dev/null ||
+  fail "宿主 magpie 建不了 Hermes 的网关凭据"
+host_model_key_id="$(comm -13 <(printf '%s\n' "$keys_before") \
+  <(host_magpie gateway-key list | awk 'NR > 1 { print $1 }' | sort) | grep . | tail -1)" ||
+  fail "建了凭据但读不到凭据列表"
+[[ -n "$host_model_key_id" ]] || fail "建了凭据但列表里没有新的一条"
+host_magpie gateway-key models "$host_model_key_id" "$model" >/dev/null || fail "Hermes 的凭据限定模型失败"
+expect "宿主上的凭据以 Hermes 的 Bot 命名" \
+  "$(host_magpie gateway-key list | awk -v i="$host_model_key_id" '$1 == i { print $2 }')" "$host_model_key_name"
+expect "宿主上的凭据只放行这次的模型" "$(host_magpie gateway-key models "$host_model_key_id" | sed 's/^[^:]*: //')" "only $model"
+# 从 Hermes 自己的容器真连一次：地址、凭据、防火墙都得通。
+[[ " $(hermes_models) " == *" $model "* ]] || fail "Hermes 容器里列不到宿主 magpie 的模型：$(hermes_models)"
+ok "从 Hermes 的容器经 $model_host:$model_port 能列出宿主 magpie 的模型"
 # 回复和用量的断言在 smoke-hermes.sh 里。
 # shellcheck source=deploy/dev/core/smoke-hermes.sh
 source "$here/smoke-hermes.sh"
 said="$(mktemp)"
 talk_to_hermes "$said" "你好" || fail "Hermes 没有回答：$(cat "$said")"
 grep '^第' "$said" | sed 's/^/   · /'
-# Hermes v0.6.6 起默认说英文，提示里用的是 “Apps → Models”，两种写法都认。
-grep -qE '模型设置|add a model provider' "$said" || fail "没有模型时 Hermes 应提示去模型设置添加：$(cat "$said")"
-ok "没有模型时，Hermes 提示主人去模型设置添加模型服务商"
-# 模型只经开发机上的 magpie：冒烟的 magpie 容器直连宿主 3425，不读取、不复制主人 magpie 的配置和密钥。
-# 地址按 Docker 的种类定：OrbStack 和 Docker Desktop 的网络网关在虚拟机里，到不了宿主上的 magpie，
-# 用 host.docker.internal；其余用插件网络的网关地址。凭据是本冒烟新建的一次性网关凭据：限定到这次的
-# 模型，cleanup 按建 key 时记下的 id 删掉（失败退出也删），凭据不进日志、不写进仓库。
-case "$(docker info --format '{{.OperatingSystem}}')" in
-  *"Docker Desktop"* | *OrbStack*) model_host=host.docker.internal ;;
-  *) model_host="$(docker network inspect "$magpie_network" --format '{{(index .IPAM.Config 0).Gateway}}')" ;;
-esac
-model_url="http://$model_host:3425/v1"
-model_no_proxy="host.docker.internal,localhost,127.0.0.1,$model_host"
-model_key="$(openssl rand -hex 24)"
-host_model_key_name="wonton-smoke-core-$$"
-magpie gateway-key add "$host_model_key_name" --key - <<<"$model_key" >/dev/null \
-  || fail "宿主 magpie 建不了一次性网关凭据"
-host_model_key_id="$(magpie gateway-key list 2>/dev/null | awk -v n="$host_model_key_name" '$2 == n { print $1; exit }')" \
-  || fail "建了凭据但读不到凭据列表"
-[[ -n "$host_model_key_id" ]] || fail "建了凭据但在列表里找不到它"
-magpie gateway-key models "$host_model_key_id" "$model" >/dev/null || fail "一次性凭据限定模型失败"
-
-# 只加 provider，不建路由组：默认路由组由 magpie 插件建好，成员跟着 provider 变。
-# 模型名去掉上游的 provider 前缀（`zcode/GLM-5.3-Flash` → `GLM-5.3-Flash`）：带斜杠时插件把它当成别的
-# provider 的模型，`models=` 挑不中，模型目录和默认组都是空的（magpie 0.1.1327 实测）。
-docker exec -e no_proxy="$model_no_proxy" -e NO_PROXY="$model_no_proxy" "$magpie" \
-  magpie provider add upstream url="$model_url" key="$model_key" \
-  models="${model##*/}" >/dev/null || fail "magpie 连不上开发机上的 magpie（$model_url）"
-# 默认组由插件里的 default-model 服务每两秒按 provider 对一次，这里等它，和上面等 Navidrome 扫描一样。
-for _ in $(seq 15); do
-  [[ " $(hermes_models) " == *" group/wonton-default "* ]] && break
-  sleep 1
-done
-[[ " $(hermes_models) " == *" group/wonton-default "* ]] ||
-  fail "加了 provider，默认路由组应当可用：$(hermes_models)"
-ok "加了 provider，默认路由组自动有了它的模型，不用手动建组"
+# Hermes 默认说英文；这里是它 v0.8.0 的原文，旧版和中文用“模型设置”，都认。
+grep -qE '还没有设置模型|模型设置|add an AI provider' "$said" || fail "没有模型时 Hermes 应提示去 Keys 页添加模型服务商：$(cat "$said")"
+ok "没有模型时，Hermes 提示主人去 Keys 页添加模型服务商"
+# 给 Hermes 配 provider：走它自己网页背后的接口。接口要页面注入的会话令牌，从首页 HTML 里取。
+hermes_token="$(docker exec "$hermes" sh -c 'curl -fsS http://127.0.0.1:9119/' |
+  sed -n 's/.*__HERMES_SESSION_TOKEN__="\([^"]*\)".*/\1/p')"
+[[ -n "$hermes_token" ]] || fail "Hermes 的页面没有给出会话令牌"
+endpoint="$(printf '{"name":"宿主 magpie","base_url":"%s","model":"%s","api_key":"%s","api_mode":"chat_completions","context_length":65536,"make_default":true}' \
+  "$model_url" "$model" "$hermes_key" |
+  docker exec -i "$hermes" sh -c "curl -sS --max-time 120 -X POST http://127.0.0.1:9119/api/providers/custom-endpoints \
+    -H 'X-Hermes-Session-Token: $hermes_token' -H 'content-type: application/json' \
+    -H 'Origin: http://127.0.0.1:9119' --data-binary @-")"
+expect "加了 provider，Hermes 拿它当当前模型" "$(json ok <<<"$endpoint") $(json current.model <<<"$endpoint")" "true $model"
+# Hermes 要求模型至少 64k 上下文；magpie 对没标上下文的上游回 32768。冒烟按上游实际的窗口把
+# model.context_length 设成 64k——运行时只读这一个，provider 条目上的那个只用于显示。
+docker exec "$hermes" sh -c "curl -sS --max-time 30 -X PUT http://127.0.0.1:9119/api/config \
+  -H 'X-Hermes-Session-Token: $hermes_token' -H 'content-type: application/json' \
+  -H 'Origin: http://127.0.0.1:9119' -d '{\"config\":{\"model\":{\"context_length\":65536}}}'" >/dev/null ||
+  fail "Hermes 的上下文设不进去"
+expect "Hermes 用放宽后的上下文" \
+  "$(docker exec "$hermes" sh -c 'curl -sS --max-time 30 http://127.0.0.1:9119/api/model/info' | json effective_context_length)" 65536
+ok "Hermes 的模型设置指向宿主的 magpie"
+# 后面“模型设置”网页那一步要在插件网关里看得到、开关得了一个上游：用 Hermes 这条凭据加一个指向宿主 magpie
+# 的 provider（Hermes 自己不经过它，但网页得有内容）。插件网关经自己的网络网关连转发，no_proxy 带上它。
+docker exec -e no_proxy="$model_host,localhost,127.0.0.1" -e NO_PROXY="$model_host,localhost,127.0.0.1" "$magpie" \
+  magpie provider add upstream url="$model_url" key="$hermes_key" models="${model#*/}" >/dev/null ||
+  fail "插件网关加不上指向宿主 magpie 的上游（$model_url）"
 round=0
 for text in "你好，用一句话介绍你自己。" "我刚才让你做什么？"; do
   round=$((round + 1))
@@ -508,10 +629,10 @@ for text in "你好，用一句话介绍你自己。" "我刚才让你做什么�
   talk_to_hermes "$said" "$text" || fail "和 Hermes 的对话失败：$(cat "$said")"
   grep '^第' "$said" | sed "s/^第 1 轮/第 $round 轮/; s/^/   · /"
   expect_model_reply "$said" "$round_start" "$round"
-  ! grep -qE '模型设置|Apps → Models' "$said" || fail "有模型了，Hermes 不该再提示去模型设置：$(cat "$said")"
+  ! grep -qE '还没有设置模型|模型设置|add an AI provider' "$said" || fail "有模型了，Hermes 不该再提示去 Keys 页设置：$(cat "$said")"
 done
 expect_hermes_memory "$said"
-ok "经隧道和 Hermes 加密对话两轮"
+ok "经隧道和 Hermes 对话两轮"
 rm -f "$said"
 
 fi
@@ -530,14 +651,14 @@ asked="$(mktemp)"
 ask_hermes "$asked" "帮我装一下官方插件里的“文件搜索”。" &
 asking=$!
 card=""
-for _ in $(seq 240); do
+for _ in $(seq 900); do
   card="$(latest_card)"
-  [[ "$card" == *" pending" ]] && break
+  [[ "$card" == *" pending "* ]] && break
   sleep 1
 done
-[[ "$card" == *" pending" ]] || fail "确认表里没有出现待确认的卡片（$card）：$(cat "$asked")"
+[[ "$card" == *" pending "* ]] || fail "待确认列表里没有出现卡片（$card）：$(cat "$asked")"
 card_id="${card%% *}"
-ok "Hermes 发起安装，核心在确认表里发了卡片，还没有装"
+ok "Hermes 发起安装，核心发了确认卡片，还没有装"
 expect "插件还没装" "$(plugin_state app.wonton.files)" absent
 confirm_url="$core_url/_wonton/confirmations/$card_id"
 # 按 IP 打核心接口必须带域名 Host：IP 只回局域网状态页，API 一律 404（防 DNS 重绑定，dev.sh 头部有完整说明）。
@@ -548,8 +669,9 @@ expect "局域网浏览器（有核心会话）答不了确认" "$(answer b "$co
 expect "主人的手机经隧道确认" "$(answer t "$confirm_url")" 200
 for _ in $(seq 180); do [[ "$(plugin_state app.wonton.files)" == running ]] && break; sleep 1; done
 expect "主人确认后装好了文件搜索" "$(plugin_state app.wonton.files)" running
-for _ in $(seq 30); do [[ "$(latest_card)" == *" succeeded" ]] && break; sleep 1; done
-expect "卡片更新成装好了" "$(latest_card)" "$card_id succeeded"
+for _ in $(seq 30); do [[ "$(latest_card)" == *"$card_id succeeded"* ]] && break; sleep 1; done
+[[ "$(latest_card)" == *"$card_id succeeded"* ]] || fail "卡片没有更新成装好了：$(latest_card)"
+ok "卡片更新成装好了"
 wait "$asking" || fail "Hermes 没有回答安装的结果：$(cat "$asked")"
 grep '^第' "$asked" | sed 's/^/   · /'
 [[ "$(grep -c '^第' "$asked")" -ge 1 ]] || fail "Hermes 没有说话：$(cat "$asked")"
@@ -590,6 +712,7 @@ outbox="$WONTON_DEV_DATA/apps/$(tr . - <<<com.nousresearch.hermes)/outbox"
 # WONTON_SMOKE_SONG_URL：换成真的下载一首歌，经 Hermes 出网。默认由它自己生成，不依赖外面的服务。
 song_ext=wav
 if [[ -n "${WONTON_SMOKE_SONG_URL:-}" ]]; then song_ext="${WONTON_SMOKE_SONG_URL##*.}"; fi
+
 ask_hermes "$asked" "$(song_task "smoke-a.$song_ext")，放在 outbox 目录里，然后存进共享文件夹 music 的子目录 冒烟。" &
 asking=$!
 card_id="$(pending_card)" || fail "存文件没有发确认卡片：$(cat "$asked")"
@@ -603,7 +726,7 @@ expect "Hermes 的详情页列出这个路径" "$(save_grants)" "music/冒烟"
 ask_hermes "$asked" "$(song_task "smoke-b.$song_ext")，放在 outbox 目录里，然后存进共享文件夹 music 的子目录 冒烟/第二张。" ||
   fail "Hermes 没有回答第二次存文件的结果：$(cat "$asked")"
 expect "子文件夹不再问，直接放进去" "$(docker exec "$core" ls "$shares/music/冒烟/第二张")" "smoke-b.$song_ext"
-[[ "$(latest_card)" == "$card_id succeeded" ]] || fail "第二次存文件又发了卡片：$(latest_card)"
+[[ "$(latest_card)" == *"$card_id succeeded"* ]] || fail "第二次存文件又发了卡片：$(latest_card)"
 expect "撤销授权" "$(t -o /dev/null -w '%{http_code}' -X DELETE "$core_url/_wonton/api/plugins/com.nousresearch.hermes/save-grants?folder=music%2F%E5%86%92%E7%83%9F")" 200
 expect "详情页不再列它" "$(save_grants)" ""
 ask_hermes "$asked" "$(song_task "smoke-c.$song_ext")，放在 outbox 目录里，然后存进共享文件夹 music 的子目录 冒烟。" &
@@ -635,7 +758,12 @@ expect "卸载 Hermes：吊销 Bot 的设备、停用账号" \
   "$(json bots.0.devices_removed <<<"$report") $(json bots.0.deactivated <<<"$report")" "1 true"
 expect "Hermes 的 Matrix 令牌失效" \
   "$(t -o /dev/null -w '%{http_code}' -H "Authorization: Bearer $hermes_token" "$matrix_url/_matrix/client/v3/account/whoami")" 401
-expect "网关里 Hermes 的凭据吊销了" "$(gateway_keys)" ""
+# 凭据是冒烟按 Bot 的名字直接建在宿主 magpie 上的（Hermes 不申请 models，核心不管它），冒烟自己删。
+# 宿主上可能还有同名旧条：按 id 认，删完旧条还在也不能算失败。
+host_magpie gateway-key remove "$host_model_key_id" >/dev/null || fail "删不掉 Hermes 在宿主 magpie 上的凭据"
+expect "宿主 magpie 上只删了冒烟建的凭据" \
+  "$(host_magpie gateway-key list | awk -v i="$host_model_key_id" '$1 == i')" ""
+host_model_key_id=""
 expect "卸载 Hermes：存文件的授权清掉了" "$(docker exec "$core" find "$WONTON_DEV_DATA" -path '*save-grants*' -name 'com.nousresearch.hermes.json')" ""
 
 fi
@@ -732,6 +860,11 @@ expect "主人卸掉的 Hermes，核心重启后不装回来" "$(plugin_state co
 
 fi
 if step uninstall "卸载干净"; then
+# 从镜像里现装的网关后面几步一直在用，到这一步才卸。
+gateway_report="$("$dev" uninstall ai.usemagpie.magpie --purge)"
+expect "删除了网关容器" "$(json containers <<<"$gateway_report" | grep -c magpie)" 1
+expect "删除了网关网络" "$(json networks <<<"$gateway_report")" "[\"$magpie_network\"]"
+expect "删除了网关数据" "$(json data_removed <<<"$gateway_report")" true
 started=$(date +%s)
 report="$("$dev" uninstall app.grafana --purge)"
 uninstall_seconds=$(($(date +%s) - started))

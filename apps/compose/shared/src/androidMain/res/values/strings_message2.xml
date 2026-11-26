@@ -18,6 +18,8 @@
     <string name="message_image_save">Save to gallery</string>
     <!-- Notice after the picture was saved into the gallery. Android only. -->
     <string name="message_image_saved">Saved to the gallery</string>
+    <!-- Page counter in the fullscreen viewer while paging through one send's photos, like "2 / 5". Android only. -->
+    <string name="message_image_page">%1$d / %2$d</string>
     <!-- Placeholder for a message that only has file links, in the chat list preview and in notifications. -->
     <string name="message_summary_files">[File]</string>
     <!-- Placeholder for a photo message, in the chat list preview and in notifications. -->
@@ -25,4 +27,8 @@
     <string name="message_image_permission_denied">Android denied access. Check this app\'s permissions in Settings and try again.</string>
     <string name="message_link_share_failed">Couldn\'t share this link</string>
     <string name="message_link_no_handler">Install an app that can open this type of link, then try again.</string>
+    <!-- Item in the message menu: edit the text of your own message. Android only. -->
+    <string name="message_edit">Edit</string>
+    <!-- Read-out state of an own message still on its way to the server. No arguments. -->
+    <string name="message_sending">Sending</string>
 </resources>

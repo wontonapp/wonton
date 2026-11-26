@@ -40,6 +40,7 @@ home-proxy-start-failed = アプリのローカル接続プロキシを起動で
 
 home-tunnel-closed = トンネルクライアントが閉じられました
 
+
 home-lan-unsupported = このバージョンのクライアントコアはローカルネットワーク設定に対応していません
 
 home-port-mapping-save-failed = ポートマッピングの設定を保存できませんでした：{ $error }
@@ -61,9 +62,6 @@ home-pairing-setup-failed = デバイスはペアリングされましたが、�
 
 # 読みやすい詳細。$reason は翻訳済み。elapsed は実際の合計時間、stage は交換の各段階の制限時間で、どちらも秒です。
 home-pairing-failed-detail = { $reason }合計経過時間は { $elapsed_seconds } 秒です。ペアリング交換の各段階の制限時間は { $stage_seconds } 秒です。
-
-home-pairing-joining-pending = 参加用のコードです。管理者の承認を待っています。
-home-pairing-joining-pending-role = 参加用のコードです。管理者の承認を待っています。承認されると { $role } として参加します。
 
 # 失敗の種類だけを表示し、元のエラーは診断情報に残します。
 home-failure-transport = 自宅サーバーへの接続を確立できないか、接続が切断されました。端末とサーバーのネットワークを確認して再試行してください。

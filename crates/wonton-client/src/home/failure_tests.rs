@@ -11,6 +11,7 @@ fn code() -> PairingCode {
         relays: vec![Relay {
             url: "https://relay.example.com".parse().unwrap(),
             token: None,
+            quic_port: None,
             tier: 0,
         }],
         base_domain: "wonton.localhost".into(),

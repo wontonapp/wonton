@@ -98,8 +98,9 @@ impl PluginManager {
         network: &str,
     ) -> Result<(), InstallError> {
         let subnets = self.engine.network_subnets(network).await?;
+        let models = super::super::models::uses_models(manifest);
         self.sources
-            .insert(&manifest.id, subnets, manifest.permissions.clone());
+            .insert(&manifest.id, subnets, manifest.permissions.clone(), models);
         Ok(())
     }
 }

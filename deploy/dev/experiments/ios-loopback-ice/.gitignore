@@ -1,0 +1,5 @@
+results/
+CallLoopback.app/
+livekit-server
+.livekit-src/
+shot-*.png

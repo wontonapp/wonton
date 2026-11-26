@@ -50,4 +50,9 @@
     <string name="push_task_waiting_title">%1$s is waiting for you</string>
     <!-- Same with several waiting cards. Arguments: count, the earliest card's title. -->
     <string name="push_task_waiting_title_many">%1$d tasks are waiting for you, first %2$s</string>
+    <string name="push_no_relay">No push relay configured: new messages can\'t arrive while Wonton is closed or the screen is locked</string>
+    <string name="push_relay_unreachable">Can\'t reach the push relay: %1$s</string>
+    <string name="push_relay_status">The push relay answered %1$d</string>
+    <string name="push_fcm_unavailable">Google push isn\'t available: %1$s</string>
+    <string name="push_fcm_keys_failed">Couldn\'t use the device push keys: %1$s</string>
 </resources>

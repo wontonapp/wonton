@@ -16,6 +16,7 @@ use tokio::net::TcpListener;
 use web_push_native::{Auth, p256};
 
 use super::*;
+use wonton_protocol::{DevicePayload, MAX_BODY_CHARS, PushMessageType};
 
 /// RFC 8291 附录 A 里设备（用户代理）的密钥。
 const UA_PRIVATE: &str = "q1dXpw3UpT5VOmu_cf_v6ih07Aems3njxI-JWgLcM94";
@@ -23,7 +24,7 @@ const UA_PUBLIC: &str =
     "BCVxsr7N_eNgVRqvHtD0zTZsEc6-VV-JvLexhqUzORcxaOzi6-AYWXvTBHm4bjyPjs7Vd8pZGH6SRpkNtoIAiw4";
 const AUTH: &str = "BTBZMqHH6r4Tts7J_aSIgg";
 
-/// Tuwunel 完整格式里带着的正文，不能出现在任何发出去的推送里。
+/// Tuwunel 完整格式里带着的正文：进推送明文，推送服务只看到密文。
 const SECRET_BODY: &str = "今晚的会议改到八点";
 
 struct Received {
@@ -107,7 +108,7 @@ impl Home {
         let device = SecretKey::generate().public();
         devices.add(device, None).unwrap();
         let server = SecretKey::generate().public();
-        let push = Push::open(dir.path().join("push.json"), devices.clone(), server).unwrap();
+        let push = Push::open(dir.path().join("push.json"), devices.clone(), server, None).unwrap();
         let service = PushService::start().await;
         let subscription = Subscription::new(&service.endpoint(), UA_PUBLIC, AUTH).unwrap();
         let pushkey = push.register(device, subscription).unwrap().pushkey;
@@ -147,6 +148,36 @@ fn decrypt(body: &[u8]) -> DevicePayload {
     serde_json::from_slice(&plaintext).unwrap()
 }
 
+/// RFC 8291 第 5 节和附录 A 的测试向量：核心用的实现要能按标准加密，标准加密的（RFC 里那份固定的
+/// 密文）也要解得开。Swift 通知扩展解的是同一种格式，它的单测用同一组向量。
+#[test]
+fn rfc_8291_vector_round_trips() {
+    let plaintext = b"When I grow up, I want to be a watermelon";
+    let ua_public =
+        p256::PublicKey::from_sec1_bytes(&URL_SAFE_NO_PAD.decode(UA_PUBLIC).unwrap()).unwrap();
+    let auth = Auth::clone_from_slice(&URL_SAFE_NO_PAD.decode(AUTH).unwrap());
+
+    let body = web_push_native::encrypt(plaintext.to_vec(), &ua_public, &auth).unwrap();
+    let secret = p256::SecretKey::from_slice(&URL_SAFE_NO_PAD.decode(UA_PRIVATE).unwrap()).unwrap();
+    assert_eq!(
+        web_push_native::decrypt(body, &secret, &auth).unwrap(),
+        plaintext.to_vec()
+    );
+
+    let rfc = URL_SAFE_NO_PAD
+        .decode(
+            "DGv6ra1nlYgDCS1FRnbzlwAAEABBBP4z9KsN6nGRTbVYI_c7VJSPQTBtkgcy27mlmlMoZIIgDll6e3vCYLocInmYWAm\
+             S6TlzAC8wEqKK6PBru3jl7A_yl95bQpu6cVPTpK4Mqgkf1CXztLVBSt2Ks3oZwbuwXPXLWyouBWLVWGNWQexSgSxsj_\
+             Qulcy4a-fN",
+        )
+        .unwrap();
+    // 密文的 keyid 是应用服务器的公钥，收方（设备）用自己的私钥解：和上面同一把。
+    assert_eq!(
+        web_push_native::decrypt(rfc, &secret, &auth).unwrap(),
+        plaintext.to_vec()
+    );
+}
+
 fn contains(haystack: &[u8], needle: &str) -> bool {
     haystack
         .windows(needle.len())
@@ -154,7 +185,7 @@ fn contains(haystack: &[u8], needle: &str) -> bool {
 }
 
 #[tokio::test]
-async fn a_paired_device_gets_an_encrypted_notification_without_the_message_content() {
+async fn a_paired_device_gets_the_body_encrypted_and_the_push_service_does_not() {
     let home = Home::start().await;
 
     let rejected = home
@@ -171,13 +202,15 @@ async fn a_paired_device_gets_an_encrypted_notification_without_the_message_cont
     assert_eq!(push.headers["content-encoding"], "aes128gcm");
     assert_eq!(push.headers["ttl"], "86400");
     assert_eq!(push.headers["urgency"], "high");
-    // 推送服务看到的只有密文：房间、事件、发送者都看不出来。
+    // 推送服务看到的只有密文：房间、事件、发送者、正文、类型都看不出来。
     for plaintext in [
         "!bot:wonton.localhost",
         "$reply-1",
         "@hermes",
         "Hermes",
+        "Hermes 主房间",
         SECRET_BODY,
+        "\"msgtype\":\"text\"",
     ] {
         assert!(
             !contains(&push.body, plaintext),
@@ -194,10 +227,111 @@ async fn a_paired_device_gets_an_encrypted_notification_without_the_message_cont
             sender_display_name: Some("Hermes".into()),
             room_name: Some("Hermes 主房间".into()),
             prio: Some("high".into()),
+            body: Some(SECRET_BODY.into()),
+            msgtype: Some(PushMessageType::Text),
+            truncated: false,
+            thread_root: None,
             contact_request: None,
         },
-        "设备解开后拿到房间和事件，没有正文"
+        "设备解开后拿到正文和类型"
     );
+    assert!(push.body.len() <= 4_096, "密文 {} 字节", push.body.len());
+}
+
+/// 任意事件类型和内容的一条通知。
+fn notification_with(pushkey: &str, event_type: &str, content: serde_json::Value) -> Notification {
+    let request: NotifyRequest = serde_json::from_value(json!({
+        "notification": {
+            "event_id": "$reply-1", "room_id": "!bot:wonton.localhost",
+            "type": event_type, "sender": "@hermes:wonton.localhost",
+            "sender_display_name": "Hermes", "room_name": "Hermes 主房间",
+            "content": content,
+            "devices": [{"app_id": "app.wonton.android", "pushkey": pushkey}],
+        }
+    }))
+    .unwrap();
+    request.notification
+}
+
+/// 长正文只放开头 120 个字符，标记已截断；加密后的请求仍在 4 KB 以内。
+#[tokio::test]
+async fn a_long_body_is_cut_and_marked_truncated() {
+    let home = Home::start().await;
+    let long = "今晚的会议改到八点，".repeat(60);
+    let notice = notification_with(
+        &home.pushkey,
+        "m.room.message",
+        json!({"msgtype": "m.text", "body": long}),
+    );
+    home.push.notify(&notice).await.unwrap();
+
+    let received = home.service.take();
+    let plaintext = decrypt(&received[0].body);
+    let body = plaintext.body.unwrap();
+    assert_eq!(body.chars().count(), MAX_BODY_CHARS);
+    assert!(long.starts_with(body.as_str()));
+    assert!(plaintext.truncated);
+    assert_eq!(plaintext.msgtype, Some(PushMessageType::Text));
+    assert!(received[0].body.len() <= 4_096);
+    assert!(!contains(&received[0].body, &body));
+}
+
+/// 房间名和发送者显示名太长时先丢它们，正文和固定字段留着，密文仍在 4 KB 以内。
+#[tokio::test]
+async fn oversized_names_are_dropped_before_the_body() {
+    let home = Home::start().await;
+    let mut notice = notification(&home.pushkey);
+    notice.room_name = Some("房".repeat(4_000));
+    notice.sender_display_name = Some("名".repeat(4_000));
+    home.push.notify(&notice).await.unwrap();
+
+    let received = home.service.take();
+    let plaintext = decrypt(&received[0].body);
+    assert_eq!(plaintext.room_name, None);
+    assert_eq!(plaintext.sender_display_name, None);
+    assert_eq!(plaintext.body.as_deref(), Some(SECRET_BODY));
+    assert!(!plaintext.truncated, "正文没动过");
+    assert!(received[0].body.len() <= 4_096);
+}
+
+/// 附件只带类型和文件名，不带 URL 和缩略图。
+#[tokio::test]
+async fn an_attachment_push_carries_the_type_and_file_name_only() {
+    let home = Home::start().await;
+    let notice = notification_with(
+        &home.pushkey,
+        "m.room.message",
+        json!({
+            "msgtype": "m.image", "body": "猫.jpg", "filename": "猫.jpg",
+            "url": "mxc://wonton.localhost/abc", "info": {"w": 10, "h": 10},
+        }),
+    );
+    home.push.notify(&notice).await.unwrap();
+
+    let received = home.service.take();
+    let plaintext = decrypt(&received[0].body);
+    assert_eq!(plaintext.msgtype, Some(PushMessageType::Image));
+    assert_eq!(plaintext.body.as_deref(), Some("猫.jpg"));
+    assert!(!contains(&received[0].body, "mxc://"));
+    assert!(!contains(&received[0].body, "猫.jpg"));
+}
+
+/// 加密房间的通知只有密文：没有正文和类型，手机取回后再解密。
+#[tokio::test]
+async fn an_encrypted_event_is_only_a_wake_signal() {
+    let home = Home::start().await;
+    let notice = notification_with(
+        &home.pushkey,
+        "m.room.encrypted",
+        json!({"ciphertext": {"a": "aes-sha2", "body": "密文正文"}}),
+    );
+    home.push.notify(&notice).await.unwrap();
+
+    let received = home.service.take();
+    let plaintext = decrypt(&received[0].body);
+    assert_eq!(plaintext.body, None);
+    assert_eq!(plaintext.msgtype, None);
+    assert!(!contains(&received[0].body, "密文正文"));
 }
 
 #[tokio::test]
@@ -297,7 +431,7 @@ async fn registrations_survive_a_restart_and_keep_their_pushkey() {
     assert_eq!(again.pushkey, home.pushkey, "换了推送地址，pushkey 不变");
 
     let path = home.dir.path().join("push.json");
-    let reopened = Push::open(&path, home.devices.clone(), home.server).unwrap();
+    let reopened = Push::open(&path, home.devices.clone(), home.server, None).unwrap();
     let registration = reopened.registration(&home.device).unwrap();
     assert_eq!(registration.pushkey, home.pushkey);
     assert_eq!(registration.subscription, moved);
@@ -311,7 +445,7 @@ async fn registrations_survive_a_restart_and_keep_their_pushkey() {
 
     assert!(reopened.unregister(&home.device).unwrap());
     assert!(!reopened.unregister(&home.device).unwrap());
-    let restarted = Push::open(&path, home.devices.clone(), home.server).unwrap();
+    let restarted = Push::open(&path, home.devices.clone(), home.server, None).unwrap();
     assert!(restarted.registration(&home.device).is_none());
 }
 
@@ -366,7 +500,7 @@ async fn a_confirmation_push_reaches_only_the_recipients_devices() {
         .add_if(alices, None, Some("alice".into()), |_| true)
         .unwrap();
     let server = SecretKey::generate().public();
-    let push = Push::open(dir.path().join("push.json"), devices, server).unwrap();
+    let push = Push::open(dir.path().join("push.json"), devices, server, None).unwrap();
     // 两台设备各对一个推送服务：收到请求的端口说明是哪台设备收到的。
     let for_owner = PushService::start().await;
     let for_alice = PushService::start().await;
@@ -425,7 +559,8 @@ async fn without_a_paired_device_nobody_can_confirm() {
     let dir = tempfile::tempdir().unwrap();
     let devices = Arc::new(Devices::open(dir.path().join("devices.json")).unwrap());
     let server = SecretKey::generate().public();
-    let push = Arc::new(Push::open(dir.path().join("push.json"), devices.clone(), server).unwrap());
+    let push =
+        Arc::new(Push::open(dir.path().join("push.json"), devices.clone(), server, None).unwrap());
     let confirmations = crate::mcp::Confirmations::new(
         Arc::new(crate::mcp::DevicePush::new(push)),
         Duration::from_secs(5),

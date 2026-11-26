@@ -45,17 +45,16 @@ pub(super) async fn open_clients(
     Ok((http, system_http, hydra, matrix))
 }
 
-pub(super) fn open_friends(
+/// 联邦黑名单。好友名单由 `sharing_start::Registries` 开一份，网关和分享服务共用，避免两边各开一份、删好友只有一边知道。
+pub(super) fn open_federation_blocks(
     cfg: &Config,
-) -> anyhow::Result<(Arc<Friends>, Option<Arc<FederationBlocks>>)> {
-    let friends = Arc::new(Friends::open(cfg.core_state_dir().join("friends.json"))?);
-    let blocks = match (&cfg.install_dir, &cfg.core_container) {
+) -> anyhow::Result<Option<Arc<FederationBlocks>>> {
+    Ok(match (&cfg.install_dir, &cfg.core_container) {
         (Some(_), Some(_)) => Some(Arc::new(FederationBlocks::open(
             cfg.core_state_dir().join("federation-blocks.json"),
         )?)),
         _ => None,
-    };
-    Ok((friends, blocks))
+    })
 }
 
 /// Bot 的联系人（ADR-0045、ADR-0050）：要 Matrix 和服务器配对，没接 Matrix 的核心没有。
@@ -167,4 +166,5 @@ pub(super) fn spawn_plugin_monitors(
     manager.spawn_device_watch();
     manager.spawn_mailpit_watch();
     manager.spawn_clients_setup_watch(notices);
+    manager.spawn_credential_watch();
 }

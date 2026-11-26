@@ -1,6 +1,7 @@
 # ADR-0009 身份、配对与单点登录
 
 - 状态：已接受（2026-10-28），M0 选型已定（见验证结果）；加设备和找回的做法 2026-10-29 改定（见决策和理由）；小程序单点登录的默认做法和主人用户名的规则由 ADR-0022 修订；一个 App 连多台服务器的做法由 ADR-0042 定；家人的账号、设备和配对码由 [ADR-0045](0045-family-members.md) 定；Matrix 的服务器名 2026-11-06 改成每台唯一（见“补充：Matrix 的服务器名”），默认改用 ADR-0021 的家名、对整个 Matrix 开放联邦见 [ADR-0051](0051-friends-and-plugin-sharing.md)；插件后端访问签发方的地址由 ADR-0063 取代
+- 由 [ADR-0118](0118-im-three-layers-push-with-body.md) 修订（2026-11-25）：Bot 的主房间不再加密，Hermes 的 `MATRIX_E2EE_MODE` 改 `off`，下文验证结果里“加密回声”“加密对话”和自动建交叉签名按改前的记录看
 
 ## 背景
 
@@ -36,7 +37,8 @@
 
 ## 验证结果（M0-2）
 
-JWT 登录可行，按下面的方案实现。验证版本：Tuwunel v1.9.4、matrix-sdk 0.19.1。可复跑：
+JWT 登录可行，按下面的方案实现。验证版本：Tuwunel v1.9.4、matrix-sdk 0.19.1；Bot 主房间的 JWT 登录另在
+v2.0.0 上随那一节复跑（只验证能登录）。可复跑：
 `cargo test -p wonton-matrix --test tuwunel -- --include-ignored login`；签发逻辑见
 `crates/wonton-matrix/src/testkit/issuer.rs`，Tuwunel 配置见 `deploy/dev/matrix/tuwunel.toml`。
 
@@ -72,7 +74,7 @@ JWT 登录可行，按下面的方案实现。验证版本：Tuwunel v1.9.4、ma
 - 客户端判断“被吊销”看 SDK 的令牌失效事件（`soft_logout = false`），不看错误码：令牌失效后 SDK 会先用
   刷新令牌重试，Tuwunel 对已作废的刷新令牌返回 403 `M_FORBIDDEN`，而规范要求 401 `M_UNKNOWN_TOKEN`。
 - 还没用掉的登录 JWT 不能单独吊销，只能等它过期，或者轮换签发密钥：`[global.jwt]` 可热加载，核心改写
-  配置文件里的 `key` 后给 Tuwunel 发 `SIGUSR1`，旧密钥签的令牌立即失效，不用重启。因此生产环境的公钥
+  配置文件里的 `key` 后让 Tuwunel 重读（ADR-0116），旧密钥签的令牌立即失效，不用重启。因此生产环境的公钥
   写在核心生成的配置文件里，不放环境变量（运行中的容器改不了环境变量）。
 
 ## 验证结果（M0-6）
@@ -343,7 +345,7 @@ iOS 用成功通知触感，Android 11 起用确认触感、Android 10 用虚拟
 
 ## 验证结果（M1，核心接入 Tuwunel）
 
-Tuwunel 成为核心管理的组件，上面的接口按设计工作。验证版本：Tuwunel v1.9.4。可复跑：`deploy/dev/core/smoke.sh`
+Tuwunel 成为核心管理的组件，上面的接口按设计工作。验证版本：Tuwunel v1.9.4（JWT 登录另在 v2.0.0 上复跑，见 M0-2 和“Bot 账号”一节）。可复跑：`deploy/dev/core/smoke.sh`
 （“已配对设备经隧道登录 Matrix”一步）；管理账号的几种情况在假 Tuwunel 上测（`cargo test -p wonton-core matrix`）。
 
 - 部署：Tuwunel 只在核心的私有网络里（`deploy/dev/core/compose.yaml`），App 和 Bot 都经核心网关访问它。核心的
@@ -366,9 +368,11 @@ Tuwunel 成为核心管理的组件，上面的接口按设计工作。验证版
 
 ## 验证结果（M1，Bot 账号）
 
-声明了 `matrix.bot` 的插件由核心代 Bot 登录、建主房间，规则见插件规范的“Matrix Bot”。验证版本：Tuwunel v1.9.4、
-matrix-sdk 0.19.1。可复跑：`deploy/dev/core/smoke.sh`（“回声 Bot”一步）；分配、沿用、回滚和清理的各种情况在
-假 Tuwunel 上测（`cargo test -p wonton-core bot`），假 Tuwunel 的行为按下面的实测写。
+声明了 `matrix.bot` 的插件由核心代 Bot 登录、和主人建主房间，规则见插件规范的“Matrix Bot”。验证版本：Tuwunel v1.9.4、
+matrix-sdk 0.19.1；主房间的建房、邀请、退出和撤回另在 v2.0.0 上复跑（见下面“重装后是谁把 Bot 拉进主房间”）。可复跑：`deploy/dev/core/smoke.sh`（“回声 Bot”一步）；分配、沿用、回滚和清理的各种情况在
+假 Tuwunel 上测（`cargo test -p wonton-core bot`），假 Tuwunel 的行为按下面的实测写。重装后是谁把 Bot 拉进主房间、
+撤回能不能踢掉房主只能在真实 Tuwunel 上看（`cargo test -p wonton-core --lib matrix::bot_docker_tests -- --ignored`）：
+假 Tuwunel 不模拟 `additional_creators` 和房主语义。
 
 - Tuwunel 的管理接口（一次性容器里逐个调过）：
   - 吊销设备（`DELETE /_synapse/admin/v2/users/{user}/devices/{device}`）后，令牌立即得到 401 `M_UNKNOWN_TOKEN`；
@@ -378,14 +382,25 @@ matrix-sdk 0.19.1。可复跑：`deploy/dev/core/smoke.sh`（“回声 Bot”一
   - 查账号在不在：`GET /_synapse/admin/v2/users/{user}` 对已有的账号（包括停用的、没有设备的）回 200 和
     `deactivated` 等字段，不存在回 404 `M_NOT_FOUND`；`/_synapse/admin/v1/whois` 对不存在的用户也回 200，不能用。
     JWT 登录对已有的账号是直接登录进去，所以分配 Bot 用户名时先查，已有的一律跳过，只有插件记录在案的 Bot 能沿用。
-- 主房间：`createRoom` 用 `trusted_private_chat`，`initial_state` 里带 `m.room.encryption`，建出来就是加密房间。
-  Tuwunel 默认建房间版本 12：建房的人权限最高，写进 power_levels 的 `users` 就回 400 `M_INVALID_PARAM`；这个预设把建房时
-  邀请的人也算作建房的人（`additional_creators`），建房的人踢不动这样的人（403）。所以建房时不邀请，用
-  `power_level_content_override` 只给主人 100，房间版本写明 12：版本 11 里这个 `users` 整个换掉默认值，Bot 只剩 0，
-  建房失败。成员状态（`/state/m.room.member/{用户}`）对从没进过的人回 404 `M_NOT_FOUND`，注册没注册都一样；邀请后
-  是 `invite`，踢掉后是 `leave`。Bot 退出后查成员回 403 `M_FORBIDDEN`。由 Bot 建，插件装好后才交给主人：
-  核心用 JWT 临时登录主人的一台设备，Bot 邀请主人，主人加入房间、写入自己的 `m.direct`（没写过时读出来是 404
-  `M_NOT_FOUND`），再退出登录，这台设备随之删除。主人在 App 里直接看到和 Bot 的私聊，不用接受邀请。
+- 主房间：由主人建、主人邀请 Bot、Bot 接受。邀请必须来自主人——插件适配器按注入的允许名单
+  （归属人和联系人）收邀请，Bot 自己不在名单里，由 Bot 邀请自己会被适配器当成陌生人丢掉。建房和邀请都跑在
+  主人的会话里（JWT 临时登录），邀请单独调：建房之后的独立邀请让 `hand_over` 不用分辨房间里的邀请是建房时带来的
+  还是后来补的。建房用 `trusted_private_chat`，`initial_state` 里带 `m.room.encryption`，建出来就是加密房间；
+  权限上两人都是建房的人（`creation_content.additional_creators` 带上 Bot），各自自带 100；建房的人不能写进
+  `power_level_content_override.users`（400，`M_INVALID_PARAM: creator user IDs are not allowed in the users field`），
+  所以两人都不写。建房的人也踢不动另一个建房的人（Bot 踢主人回 403），撤回时改成主人自己退出房间，结果同样是
+  `leave`。房间版本写明 12：`additional_creators` 从版本 12 才有，写低了 Bot 不是建房的人。成员状态
+  （`/state/m.room.member/{用户}`）对从没进过的人回 404 `M_NOT_FOUND`，注册没注册都一样；邀请后是 `invite`，
+  踢掉后是 `leave`。Bot 退出后查成员回 403 `M_FORBIDDEN`，所以成员状态一律用 Bot 的会话读（它在房间里），
+  主人退出过时用他的会话读不稳。
+  房间建好、主人还在里面时就出现在主人的聊天列表里：列表是服务器给的全部没退出的房间，不看 `m.direct`，
+  所以注册、邀请、Bot 接受之后主人马上退出，房间从列表里消失。建房之后的步骤算一个整体：邀请、Bot 接受、退出
+  哪一步失败，主人也退出（`leave_room`）；`createRoom` 的响应丢掉时，按这次建房号在新出现的房间里认出它，也让
+  主人退出。退出成功，房间就只剩服务器上一间没人认领的房，重试另建一间。插件装好、健康检查通过后 `hand_over` 才用 JWT
+  登录主人的一台设备，把主人请回房间、把房间写进双方的 `m.direct`（没写过时读出来是 404 `M_NOT_FOUND`），再退出
+  登录。主人在 App 里直接看到和 Bot 的私聊，不用接受邀请；安装在交付之前失败时清理尽力而为，扫描或退出失败时
+  照样报原错误、房间留在列表里，主人看得见、删得掉（撤回重试时 `m.direct` 也一起去掉）。
+  已知代价：两人都是建房的人，App 也没有“移出成员”的入口，主人想结束这段私聊只能自己退出房间。
 - 端到端（`smoke.sh`）：回声 Bot 只凭注入的令牌恢复会话（`whoami` 取设备 ID），经 `matrix.wonton.internal` 同步，
   安装时就过了健康检查。主人的一台新设备经隧道和手机的本地代理登录，在主房间里发加密消息，一两秒内收到 Bot 的
   加密回声：matrix-sdk 默认把房间密钥发给房间里的所有设备，不要求先验证。
@@ -397,6 +412,20 @@ matrix-sdk 0.19.1。可复跑：`deploy/dev/core/smoke.sh`（“回声 Bot”一
 - 第二个 Bot：Hermes Agent v0.22.5 按同样的规则装上，用户名是 `hermes`，只凭注入的令牌连上 Matrix
   （`MATRIX_E2EE_MODE=required`），在主房间里和主人的新设备加密对话两轮（模型的部分见 ADR-0008）。核心没有为它
   开任何特例。
+
+## 验证结果（M1，重装后是谁把 Bot 拉进主房间）
+
+`--purge` 卸载会吊销设备、停用账号，主人也退出主房间，重装后旧房间不能再交出去。在 v2.0.0 上逐个容器复跑
+（`cargo test -p wonton-core --lib matrix::bot_docker_tests -- --ignored`，超时或失败时整条用例红）。
+
+- 重装：新房间照样由主人建、主人邀请，`m.room.create` 的 `sender` 是主人，`additional_creators` 里是 Bot；
+  邀请被接受后成员状态变成 `join`，邀请人只能从 Bot 的房间历史（`/rooms/{room}/messages`，`dir=b`）里翻出来，
+  是主人、不是 Bot 自己。
+- 建房和邀请在同一个主人会话里连着做完，邀请成功后没人再动成员状态；主人紧接着退出，重装出来的房间交给新 Bot。
+- 建房这一步成功之后的任何一步失败（邀请、Bot 接受），以及 `createRoom` 的响应丢掉，主人也退出，都能在假 Tuwunel
+  上复跑，不只邀请失败（`cargo test -p wonton-core matrix::tests::a_`，含 `a_failed_invite`、`a_failed_join` 和
+  `a_lost_create_room_response_leaves_no_room_for_the_owner`）。
+- 撤回仍然是主人自己退出（Bot 踢建房的人回 403），成员状态是 `leave`。
 
 ## 验证结果（M1，网关代登录）
 

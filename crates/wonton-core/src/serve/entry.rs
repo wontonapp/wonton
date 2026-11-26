@@ -29,7 +29,6 @@ pub(crate) fn open_domain(
         dir.clone(),
         cfg.data_dir.clone(),
         engine.clone(),
-        cfg.instance.clone(),
         notices.clone(),
     )))
 }
@@ -49,7 +48,8 @@ pub(crate) async fn start_entry_runtime(
         cfg.core_container.clone(),
     );
     // 读不了设置（JSON 坏、解析器非法）是"不确定"：不按"无设置"删掉在跑的入口容器，交给运行循环
-    // 带退避重试；只有确实没有设置（Ok(None)）才按"不要"对账。
+    // 带退避重试。Ok(None) 不代表不要入口：“不要名字”的安装本来就没有设置文件，对账按 App 里配的
+    // 域名和证书决定。
     match wonton_core::entry_settings::EntrySettings::load(dir) {
         Err(error) => {
             tracing::warn!(%error, "入口设置读不了，现有入口容器不动，运行循环会带退避重试");
@@ -69,8 +69,17 @@ pub(crate) fn open_push(
     tunnel: &Tunnel,
     manager: &PluginManager,
 ) -> anyhow::Result<Push> {
+    // 两个变量由配置层保证成对出现：设了才带 VAPID 头，发到 ntfy 这类地址也照样带，没有副作用。
+    let vapid = match (&cfg.push_vapid_key, &cfg.push_vapid_subject) {
+        (Some(key), Some(subject)) => Some(
+            wonton_core::push::Vapid::from_key(key, subject.clone())
+                .map_err(anyhow::Error::msg)
+                .context("解析 WONTON_PUSH_VAPID_KEY")?,
+        ),
+        _ => None,
+    };
     let path = cfg.core_state_dir().join("push.json");
-    Push::open(&path, tunnel.devices.clone(), tunnel.endpoint.id())
+    Push::open(&path, tunnel.devices.clone(), tunnel.endpoint.id(), vapid)
         .and_then(|push| push.with_proxy(manager.core_proxy()))
         .with_context(|| format!("打开推送登记表 {}", path.display()))
 }
@@ -84,7 +93,15 @@ pub(crate) async fn bind_tunnel(
     let devices = Devices::open(cfg.core_state_dir().join("devices.json"))?;
     members.recover_pending_devices(&devices)?;
     let key = tunnel::load_or_create_key(&cfg.core_state_dir().join("tunnel-key"))?;
-    let endpoint = tunnel::bind(key, cfg.tunnel_port, &cfg.relays).await?;
+    let settings = std::sync::Arc::new(
+        wonton_core::relay_settings::RelaySettings::open(
+            wonton_core::relay_settings::Startup::from_config(cfg),
+        )
+        .await
+        .context("读中继表配置")?,
+    );
+    let (endpoint, fallback) = tunnel::bind(key, cfg.tunnel_port, &settings.table()).await?;
+    settings.attach(endpoint.clone(), fallback);
     tracing::info!(
         endpoint_id = %endpoint.id(),
         sockets = ?endpoint.bound_sockets(),
@@ -102,7 +119,7 @@ pub(crate) async fn bind_tunnel(
         owner_languages,
         endpoint,
         cfg.tunnel_port,
-        cfg.relays.clone(),
+        settings,
         addresses.clone(),
     );
     tunnel::spawn_announcing(tunnel.endpoint.clone(), tunnel.port, addresses);

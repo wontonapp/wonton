@@ -16,12 +16,12 @@ final class RoomPresenter {
 
     enum CoverContent {
         case player(FileInfo)
-        case original(ImageContent)
+        case original(PhotoGroup, startIndex: Int)
     }
 
     struct Cover: Identifiable {
         let id = UUID()
-        let content: CoverContent
+        var content: CoverContent
     }
 
     /// 等着下完的那个文件现在的按钮。带上文件：换了一个文件等，不算这个文件的下载结束了。
@@ -62,8 +62,27 @@ final class RoomPresenter {
         }
     }
 
-    func showOriginal(_ image: ImageContent) {
-        cover = Cover(content: .original(image))
+    /// 从点开的那张起翻；单张也带着组键，之后组里补上的照片能跟着出来。
+    func showOriginal(_ image: ImageContent, group: PhotoGroup?) {
+        let resolved = group ?? PhotoGroup(senderId: "", id: "", images: [image])
+        cover = Cover(content: .original(resolved, startIndex: resolved.images.firstIndex(of: image) ?? 0))
+    }
+
+    /// 时间线变了：查看器里那组按现有的重取；当前那张没了就停原位置，整组没了就关掉。
+    func refreshOriginal(_ groups: [PhotoGroupKey: [ImageContent]]) {
+        guard case let .original(group, startIndex) = cover?.content else { return }
+        // 单张没有组键，原样留着。
+        let images = groups[PhotoGroupKey(senderId: group.senderId, id: group.id)] ?? group.images
+        guard !images.isEmpty else {
+            cover = nil
+            return
+        }
+        let shown = group.images.indices.contains(startIndex) ? group.images[startIndex] : nil
+        let kept = shown.flatMap { images.firstIndex(of: $0) }
+        cover?.content = .original(
+            PhotoGroup(senderId: group.senderId, id: group.id, images: images),
+            startIndex: kept ?? min(startIndex, images.count - 1),
+        )
     }
 
     func closeCoverToOpenElsewhere(_ info: FileInfo) {
@@ -120,8 +139,8 @@ struct RoomPresentations: ViewModifier {
                 case let .player(info):
                     FilePlayer(info: info) { presenter.closeCoverToOpenElsewhere(info) }
                         .environment(presenter.files)
-                case let .original(image):
-                    ImageViewer(image: image, core: presenter.files.core)
+                case let .original(group, startIndex):
+                    ImageViewer(images: group.images, startIndex: startIndex, core: presenter.files.core)
                 }
             }
     }

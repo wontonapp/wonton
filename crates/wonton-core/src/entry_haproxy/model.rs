@@ -8,6 +8,8 @@ pub const PAIRED_BIND: &str = "entry.wonton.internal:8449";
 /// 运行时接口（`show table`、`clear table`）：只在 `wonton-clients` 上的地址可达。
 pub const RUNTIME_SOCKET: &str = "entry.wonton.internal:9999";
 pub const GATEWAY_ADDRESS: &str = "entry-gateway.wonton.internal:8484";
+/// Tuwunel 的明文客户端端口。入口在 `clients` 网络上按这个别名找它，不经核心转发。
+pub const TUWUNEL_ADDRESS: &str = "tuwunel.wonton.internal:8008";
 
 /// `wonton-edge` 的子网：连接器要固定地址，`tcp-request connection` 的条件在连接层求值，
 /// 那里只认 IP、不解析名字。入口自己也固定在这个网段里。
@@ -65,7 +67,7 @@ pub struct Model {
 }
 
 impl Model {
-    /// 只有联邦、没有任何插件标签的形状：`entry_compose::write` 生成配置用；按开关和服务生成的完整模型还没接上。
+    /// 装机时生成的联邦基础模型；插件标签由持久开关派生。
     pub fn federation_only(suffix: &str, federation: &str) -> Self {
         Self {
             suffix: suffix.to_owned(),

@@ -6,16 +6,21 @@ import WontonClient
 /// 图片全屏查看器（消息里的原图）：双指缩放、双击放大还原、放大后拖动、下滑关闭；
 /// 顶栏上保存进相册和分享（ADR-0026：相册和分享面板走系统能力）。保存和分享都用
 /// 下载到的原图字节，不经 UIImage 重新编码，动图存出来还是动图。
+/// 同一次发送的多张照片左右滑或点两侧翻页，顶栏显示页码，到头不循环；放大后横拖先滚图片。
 struct ImageViewer: View {
-    let image: ImageContent
+    /// 同一次发送里的照片，单张时和原来的单图查看器一样。
+    let images: [ImageContent]
     let core: ClientCore
+    @State private var index: Int
+    /// 每张照片各留一份下载结果和重试次数，翻过的照片不用重下。
+    /// 键是媒体的 token：组里删掉一张、下标前移以后也不会串成别的照片。
+    @State private var originals: [String: LoadOutcome] = [:]
+    @State private var attempts: [String: Int] = [:]
 
     @Environment(\.dismiss) private var dismiss
     @Environment(\.openURL) private var openURL
     @Environment(\.scenePhase) private var scenePhase
     @Environment(\.wontonColors) private var colors
-    @State private var original: LoadOutcome?
-    @State private var attempt = 0
     @State private var share: SharedFile?
     @State private var saveProblem: SaveProblem?
     @State private var justSaved = false
@@ -24,31 +29,38 @@ struct ImageViewer: View {
     /// 下滑关闭的进度：背景随之变透明，露出后面的房间。
     @State private var dragDimming: CGFloat = 0
 
+    init(images: [ImageContent], startIndex: Int, core: ClientCore) {
+        self.images = images
+        self.core = core
+        _index = State(initialValue: min(max(startIndex, 0), max(images.count - 1, 0)))
+    }
+
     var body: some View {
         NavigationStack {
             Group {
-                switch original {
-                case let .loaded(loaded):
-                    viewer(loaded)
-                case let .failed(problem):
-                    loadProblem(problem)
-                case nil:
-                    // loadMedia 不带进度回调，原图在下载时只有不确定的进度。
-                    ProgressView().tint(.white)
+                if images.count > 1 {
+                    // 翻页用系统的分页阈值（约半屏才翻、跟手带惯性）；Android 自己实现的是过四分之一屏或轻弹就翻。
+                    TabView(selection: $index) {
+                        ForEach(images.indices, id: \.self) { index in
+                            page(index)
+                        }
+                    }
+                    .tabViewStyle(.page(indexDisplayMode: .never))
+                } else {
+                    page(0)
                 }
             }
             .frame(maxWidth: .infinity, maxHeight: .infinity)
             .background(Color.black.opacity(1 - dragDimming).ignoresSafeArea())
-            .navigationTitle(image.filename)
+            .navigationTitle(images[shown].filename)
             .navigationBarTitleDisplayMode(.inline)
             .toolbarColorScheme(.dark, for: .navigationBar)
             .toolbarBackground(Color.black.opacity(1 - dragDimming), for: .navigationBar)
             .toolbarBackground(.visible, for: .navigationBar)
-            .toolbar { actions }
-        }
-        .task(id: attempt) {
-            original = nil
-            original = await Self.load(image.media, from: core)
+            .toolbar {
+                actions
+                title
+            }
         }
         .sheet(item: $share) { ShareSheet(url: $0.url) }
         .onChange(of: scenePhase) { _, phase in
@@ -61,10 +73,62 @@ struct ImageViewer: View {
                 }
             }
         }
+        .onChange(of: images) { old, fresh in
+            // 组里删了一张（或整组没了）：停在同一张，没了就停原位置，整组没了就关掉。
+            guard !fresh.isEmpty else { return dismiss() }
+            let media = old.indices.contains(index) ? old[index].media : nil
+            if let media, let kept = fresh.firstIndex(where: { $0.media == media }) { index = kept }
+            index = min(max(index, 0), fresh.count - 1)
+        }
     }
 
-    private func viewer(_ loaded: Original) -> some View {
-        ZoomableImage(image: loaded.image, name: image.filename, dimming: $dragDimming) { dismiss() }
+    /// 缓存键：这一页媒体的 token。
+    private func cacheKey(_ page: Int) -> String { images[page].media.token }
+
+    /// 一页：下载中、下载到的原图、或按类别的问题，各自重试。
+    private func page(_ page: Int) -> some View {
+        Group {
+            switch originals[cacheKey(page)] {
+            case let .loaded(loaded):
+                viewer(loaded, page: page)
+            case let .failed(problem):
+                loadProblem(problem) { retry(page) }
+            case nil:
+                // loadMedia 不带进度回调，原图在下载时只有不确定的进度。
+                ProgressView().tint(.white)
+            }
+        }
+        .tag(page)
+        .task(id: attempts[cacheKey(page), default: 0]) {
+            await load(page)
+        }
+    }
+
+    private func load(_ page: Int) async {
+        let key = cacheKey(page)
+        guard originals[key] == nil else { return }
+        let outcome = await Self.load(images[page].media, from: core)
+        guard !Task.isCancelled else { return }
+        originals[key] = outcome
+    }
+
+    /// 点两侧边翻页，到头停住不回绕。
+    private func turnPage(_ delta: Int) {
+        index = min(max(shown + delta, 0), images.count - 1)
+    }
+
+    private func retry(_ page: Int) {
+        let key = cacheKey(page)
+        originals[key] = nil
+        attempts[key, default: 0] += 1
+    }
+
+    private func viewer(_ loaded: Original, page: Int) -> some View {
+        ZoomableImage(
+            image: loaded.image, name: images[page].filename,
+            allowsPaging: images.count > 1, dimming: $dragDimming,
+            onPage: turnPage
+        ) { dismiss() }
             .overlay(alignment: .bottom) {
                 if let saveProblem {
                     saveNotice(saveProblem)
@@ -73,29 +137,55 @@ struct ImageViewer: View {
             }
     }
 
+    /// 多张时顶栏中间是页码；单张只靠导航标题的文件名，和原来一样。
+    @ToolbarContentBuilder private var title: some ToolbarContent {
+        if images.count > 1 {
+            ToolbarItem(placement: .principal) {
+                Text(.Viewer.viewerPage(shown + 1, images.count))
+                    .accessibilityIdentifier("viewerPage")
+            }
+        }
+    }
+
+    /// 当前这张的原图；还没下完或下失败时没有，顶栏按钮就先禁用。
+    private var currentOriginal: Original? {
+        if case let .loaded(loaded) = originals[images[shown].media.token] { return loaded }
+        return nil
+    }
+
+    /// 时间线在查看器开着时删了照片：先夹回有效范围再取，别越界。
+    private var shown: Int { min(max(index, 0), max(images.count - 1, 0)) }
+
+    /// 保存和分享常驻：翻页时目标页还没下完，按钮也不整组消失。
     @ToolbarContentBuilder private var actions: some ToolbarContent {
         ToolbarItem(placement: .topBarLeading) {
             Button { dismiss() } label: { WontonIcon.close.view() }
                 .accessibilityLabel(Text(.Common.commonClose))
         }
-        if case let .loaded(loaded) = original {
-            ToolbarItemGroup(placement: .topBarTrailing) {
-                Button { save(loaded) } label: {
-                    (justSaved ? WontonIcon.checkCircleFill : WontonIcon.download).view()
-                }
-                .accessibilityLabel(Text(.Viewer.viewerSavePhoto))
-                Button { share(loaded) } label: { WontonIcon.share.view() }
-                    .accessibilityLabel(Text(.Viewer.viewerShare))
+        ToolbarItemGroup(placement: .topBarTrailing) {
+            Button {
+                if let currentOriginal { save(currentOriginal) }
+            } label: {
+                (justSaved ? WontonIcon.checkCircleFill : WontonIcon.download).view()
             }
+            .accessibilityLabel(Text(.Viewer.viewerSavePhoto))
+            .disabled(currentOriginal == nil)
+            Button {
+                if let currentOriginal { share(currentOriginal) }
+            } label: {
+                WontonIcon.share.view()
+            }
+            .accessibilityLabel(Text(.Viewer.viewerShare))
+            .disabled(currentOriginal == nil)
         }
     }
 
-    private func loadProblem(_ problem: Problem) -> some View {
+    private func loadProblem(_ problem: Problem, retry: @escaping () -> Void) -> some View {
         VStack(spacing: WontonTheme.spacing.s12) {
             WontonNotice(icon: .imageBroken, title: problem.title, lines: problem.nextStep.map { [$0] } ?? []) {
                 if let detail = problem.detail { ProblemDetail(text: detail) }
             }
-            Button(.Common.commonRetry) { attempt += 1 }
+            Button(.Common.commonRetry, action: retry)
                 .buttonStyle(WontonButtonStyle(kind: .secondary))
         }
         .padding(WontonTheme.spacing.pageInset)
@@ -169,7 +259,7 @@ struct ImageViewer: View {
 
     private func share(_ original: Original) {
         do {
-            share = SharedFile(url: try Self.temporaryImageURL(image, data: original.data))
+            share = SharedFile(url: try Self.temporaryImageURL(images[shown], data: original.data))
         } catch {
             saveProblem = SaveProblem(
                 problem: Problem(
@@ -229,11 +319,18 @@ private struct SaveProblem {
 private struct ZoomableImage: UIViewRepresentable {
     let image: UIImage
     let name: String
+    /// 一组有多张：原大小时横拖交给外层 TabView 翻页，点两侧边也翻页。
+    let allowsPaging: Bool
     @Binding var dimming: CGFloat
+    /// 点了左边或右边：-1 上一张、+1 下一张。
+    let onPage: (Int) -> Void
     let onClose: () -> Void
 
     func makeCoordinator() -> ZoomableCoordinator {
-        ZoomableCoordinator(image: image, name: name, dimming: $dimming, onClose: onClose)
+        ZoomableCoordinator(
+            image: image, name: name, allowsPaging: allowsPaging, dimming: $dimming,
+            onPage: onPage, onClose: onClose
+        )
     }
 
     func makeUIView(context: Context) -> ZoomScrollView {
@@ -241,23 +338,34 @@ private struct ZoomableImage: UIViewRepresentable {
     }
 
     func updateUIView(_ scrollView: ZoomScrollView, context: Context) {
-        context.coordinator.update(dimming: $dimming, onClose: onClose)
+        context.coordinator.update(
+            image, allowsPaging: allowsPaging, dimming: $dimming, onPage: onPage, onClose: onClose,
+        )
     }
 }
 
 @MainActor
 final class ZoomableCoordinator: NSObject, UIScrollViewDelegate, UIGestureRecognizerDelegate {
     private let imageView = UIImageView()
-    private let image: UIImage
+    private let leftTap = UITapGestureRecognizer()
+    private let rightTap = UITapGestureRecognizer()
+    private var image: UIImage
+    private var allowsPaging: Bool
     private var dimming: Binding<CGFloat>
+    private var onPage: (Int) -> Void
     private var onClose: () -> Void
     private weak var scrollView: ZoomScrollView?
     /// 下滑关闭进行中：图片的位置归手势管，布局和居中先让开。
     private var isDraggingToClose = false
 
-    init(image: UIImage, name: String, dimming: Binding<CGFloat>, onClose: @escaping () -> Void) {
+    init(
+        image: UIImage, name: String, allowsPaging: Bool,
+        dimming: Binding<CGFloat>, onPage: @escaping (Int) -> Void, onClose: @escaping () -> Void
+    ) {
         self.image = image
+        self.allowsPaging = allowsPaging
         self.dimming = dimming
+        self.onPage = onPage
         self.onClose = onClose
         super.init()
         imageView.image = image
@@ -268,6 +376,7 @@ final class ZoomableCoordinator: NSObject, UIScrollViewDelegate, UIGestureRecogn
 
     func makeScrollView() -> ZoomScrollView {
         let scrollView = ZoomScrollView()
+        scrollView.allowsPaging = allowsPaging
         scrollView.delegate = self
         scrollView.minimumZoomScale = 1
         scrollView.showsVerticalScrollIndicator = false
@@ -277,6 +386,14 @@ final class ZoomableCoordinator: NSObject, UIScrollViewDelegate, UIGestureRecogn
         let doubleTap = UITapGestureRecognizer(target: self, action: #selector(doubleTapped(_:)))
         doubleTap.numberOfTapsRequired = 2
         scrollView.addGestureRecognizer(doubleTap)
+
+        // 点两侧边翻页：只收下在左右四分之一里的点按，双击先认走。
+        for (tap, delta) in [(leftTap, -1), (rightTap, 1)] {
+            scrollView.addGestureRecognizer(tap)
+            tap.addTarget(self, action: delta < 0 ? #selector(tappedLeft) : #selector(tappedRight))
+            tap.delegate = self
+            tap.require(toFail: doubleTap)
+        }
         let dragToClose = UIPanGestureRecognizer(target: self, action: #selector(draggedToClose(_:)))
         dragToClose.delegate = self
         scrollView.addGestureRecognizer(dragToClose)
@@ -288,16 +405,38 @@ final class ZoomableCoordinator: NSObject, UIScrollViewDelegate, UIGestureRecogn
         return scrollView
     }
 
-    func update(dimming: Binding<CGFloat>, onClose: @escaping () -> Void) {
+    func update(_ image: UIImage, allowsPaging: Bool, dimming: Binding<CGFloat>, onPage: @escaping (Int) -> Void,
+                onClose: @escaping () -> Void) {
+        if self.image !== image { self.image = image; imageView.image = image }
+        self.allowsPaging = allowsPaging
         self.dimming = dimming
+        self.onPage = onPage
         self.onClose = onClose
+        scrollView?.allowsPaging = allowsPaging
     }
 
     func viewForZooming(in scrollView: UIScrollView) -> UIView? { imageView }
 
     func scrollViewDidZoom(_ scrollView: UIScrollView) {
         centerIfNeeded()
+        // 放大后外层 TabView 的分页手势照样收事件，长横拖会翻页：放大时把外层停掉，回到原大小再开。
+        let zoomed = scrollView.zoomScale > scrollView.minimumZoomScale + 0.01
+        outerPagingScroll?.isScrollEnabled = !zoomed
     }
+
+    /// 外层分页用的滚动视图（TabView 内部那个）：沿父视图往上找，跳过自己。
+    private var outerPagingScroll: UIScrollView? {
+        var view = scrollView?.superview
+        while let current = view {
+            if let scroll = current as? UIScrollView, scroll !== scrollView { return scroll }
+            view = current.superview
+        }
+        return nil
+    }
+
+    @objc private func tappedLeft() { onPage(-1) }
+
+    @objc private func tappedRight() { onPage(1) }
 
     @objc private func doubleTapped(_ tap: UITapGestureRecognizer) {
         guard let scrollView else { return }
@@ -315,7 +454,17 @@ final class ZoomableCoordinator: NSObject, UIScrollViewDelegate, UIGestureRecogn
         )
     }
 
+    /// 只有左右三分之一里的点按是翻页（和 Android 一样），中间的点按留给缩放；放大后点按不翻页。
+    func gestureRecognizer(_ gestureRecognizer: UIGestureRecognizer, shouldReceive touch: UITouch) -> Bool {
+        guard gestureRecognizer === leftTap || gestureRecognizer === rightTap, let scrollView else { return true }
+        guard allowsPaging, scrollView.zoomScale <= scrollView.minimumZoomScale + 0.01 else { return false }
+        let locationX = touch.location(in: scrollView).x
+        let edge = scrollView.bounds.width / 3
+        return gestureRecognizer === leftTap ? locationX < edge : locationX > scrollView.bounds.width - edge
+    }
+
     func gestureRecognizerShouldBegin(_ gestureRecognizer: UIGestureRecognizer) -> Bool {
+        if gestureRecognizer === leftTap || gestureRecognizer === rightTap { return allowsPaging }
         guard let pan = gestureRecognizer as? UIPanGestureRecognizer, let scrollView else { return false }
         // 放大后拖动是滚动；只在原大小时往下拖才关。
         if scrollView.zoomScale > scrollView.minimumZoomScale + 0.01 { return false }
@@ -395,6 +544,18 @@ final class ZoomableCoordinator: NSObject, UIScrollViewDelegate, UIGestureRecogn
 /// 布局回调：UIScrollViewDelegate 没有布局时机，转屏和首次布局靠它把图片铺回去。
 final class ZoomScrollView: UIScrollView {
     var onLayoutSubviews: (() -> Void)?
+    /// 一组有多张：原大小时的横拖自己不要，交给外层翻页；放大后照常滚。
+    var allowsPaging = false
+
+    override func gestureRecognizerShouldBegin(_ gestureRecognizer: UIGestureRecognizer) -> Bool {
+        if gestureRecognizer === panGestureRecognizer, allowsPaging,
+           zoomScale <= minimumZoomScale + 0.01,
+           let pan = gestureRecognizer as? UIPanGestureRecognizer {
+            let velocity = pan.velocity(in: self)
+            return abs(velocity.x) <= abs(velocity.y)
+        }
+        return super.gestureRecognizerShouldBegin(gestureRecognizer)
+    }
 
     override func layoutSubviews() {
         super.layoutSubviews()

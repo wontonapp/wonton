@@ -135,4 +135,6 @@
     <!-- Device verification (ADR-0046): confirm a new device with an already-verified one. -->
     <!-- Dialog button that closes a finished verification result. -->
     <string name="common_ok">OK</string>
+    <!-- Root page: the first Back only arms the exit, this says a second one leaves the app. -->
+    <string name="common_back_exit_hint">Press Back again to leave Wonton</string>
 </resources>

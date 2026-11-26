@@ -193,7 +193,9 @@ async fn an_unpullable_image_fails_the_start_as_image_pull_failed() {
 #[tokio::test]
 async fn a_start_timeout_for_a_vanished_container_settles_and_can_be_retried() {
     let (docker, engine) = FakeDocker::start().await;
-    let engine = engine.with_request_limit_for_test(Duration::from_secs(1));
+    let engine = engine
+        .with_request_limit_for_test(Duration::from_secs(1))
+        .with_slow_request_limit_for_test(Duration::from_secs(1));
     let dir = tempfile::tempdir().unwrap();
     let manager = Arc::new(manager_with(engine.clone(), &dir));
     let installed = manager
@@ -247,7 +249,9 @@ async fn a_start_timeout_for_a_vanished_container_settles_and_can_be_retried() {
 #[tokio::test]
 async fn an_install_start_timeout_for_a_vanished_container_rebuilds_it() {
     let (docker, engine) = FakeDocker::start().await;
-    let engine = engine.with_request_limit_for_test(Duration::from_secs(1));
+    let engine = engine
+        .with_request_limit_for_test(Duration::from_secs(1))
+        .with_slow_request_limit_for_test(Duration::from_secs(1));
     let dir = tempfile::tempdir().unwrap();
     let manager = Arc::new(manager_with(engine.clone(), &dir));
 
@@ -278,7 +282,9 @@ fn installed_id(manager: &super::super::PluginManager) -> super::super::PluginId
 #[tokio::test]
 async fn a_second_start_timeout_with_the_container_gone_is_a_definite_failure() {
     let (docker, engine) = FakeDocker::start().await;
-    let engine = engine.with_request_limit_for_test(Duration::from_secs(1));
+    let engine = engine
+        .with_request_limit_for_test(Duration::from_secs(1))
+        .with_slow_request_limit_for_test(Duration::from_secs(1));
     let dir = tempfile::tempdir().unwrap();
     let manager = Arc::new(manager_with(engine.clone(), &dir));
 

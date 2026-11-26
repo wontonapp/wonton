@@ -7,7 +7,7 @@ use crate::plugin::store::Store;
 use crate::plugin::{PluginId, PluginManager};
 use std::sync::Arc;
 use std::time::Duration;
-use wonton_protocol::{BotKeeper, MemberStatus};
+use wonton_protocol::{BotKeeper, FileFailure, MemberStatus};
 
 struct Fixture {
     host: CoreHost,
@@ -169,5 +169,22 @@ async fn only_joined_members_with_private_home_permission_can_use_files() {
         f.host
             .check_person(&Accessor::User("joined".into()))
             .is_err()
+    );
+}
+
+#[tokio::test]
+async fn a_host_without_matrix_cannot_tell_room_members() {
+    let f = Fixture::new();
+    let rooms = ["!room:test".to_owned()].into();
+    let failure = f
+        .host
+        .member_of_any_room(&Accessor::User("joined".into()), &rooms)
+        .await
+        .unwrap_err();
+    assert_eq!(failure.kind, FileFailure::ServiceUnavailable);
+    assert!(
+        failure.message.contains("isn't connected to Matrix"),
+        "{}",
+        failure.message
     );
 }

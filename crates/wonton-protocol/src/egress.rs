@@ -77,7 +77,10 @@ pub struct EgressProblem {
 #[cfg_attr(feature = "uniffi", derive(uniffi::Enum))]
 #[serde(rename_all = "snake_case")]
 pub enum EgressFailure {
-    /// 出口容器不在运行或者镜像拉不到。挡安装。
+    /// 出口还在就绪的路上（出网插件正在装或正启动、出口容器刚建在接网络、镜像正在拉）。挡安装，
+    /// 不过几秒到一分钟就来一次，本来就会过去。
+    Waiting,
+    /// 出口容器起不来，或者 Docker 直接报错。挡安装。
     RelayFailed,
     /// 连不上代理地址：被拒绝或者没响应。挡安装。
     ProxyUnreachable,
@@ -265,6 +268,7 @@ mod tests {
             assert_eq!(serde_json::to_value(source).unwrap(), json!(text));
         }
         for (failure, text) in [
+            (EgressFailure::Waiting, "waiting"),
             (EgressFailure::RelayFailed, "relay_failed"),
             (EgressFailure::ProxyUnreachable, "proxy_unreachable"),
             (EgressFailure::ProxyRejected, "proxy_rejected"),

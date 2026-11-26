@@ -449,6 +449,7 @@ async fn a_bot_plugin_can_change_its_limits() {
             relays: Vec::new(),
             firewalled: false,
             proxied: false,
+            bundled: false,
             oidc_client_secret: None,
             installed_at: 1,
             entry_label: None,

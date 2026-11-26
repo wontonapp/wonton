@@ -15,10 +15,10 @@ import androidx.compose.foundation.layout.heightIn
 import androidx.compose.foundation.layout.ime
 import androidx.compose.foundation.layout.navigationBars
 import androidx.compose.foundation.layout.padding
-import androidx.compose.foundation.layout.safeDrawing
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.union
 import androidx.compose.foundation.layout.windowInsetsPadding
+import androidx.compose.foundation.lazy.LazyListState
 import androidx.compose.foundation.lazy.items
 import androidx.compose.material3.Icon
 import androidx.compose.material3.Text
@@ -40,8 +40,6 @@ import androidx.compose.ui.draw.blur
 import androidx.compose.ui.layout.onSizeChanged
 import androidx.compose.ui.geometry.Rect
 import androidx.compose.ui.platform.LocalDensity
-import androidx.compose.ui.platform.LocalLayoutDirection
-import androidx.compose.ui.platform.LocalWindowInfo
 import androidx.compose.ui.platform.testTag
 import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.semantics.Role
@@ -50,7 +48,9 @@ import app.wonton.protocol.PageAction
 import app.wonton.protocol.Action
 import app.wonton.protocol.BackPagination
 import app.wonton.protocol.BotView
+import app.wonton.protocol.BotChatAvailability
 import app.wonton.protocol.BotRef
+import app.wonton.protocol.ComposerEdit
 import app.wonton.protocol.ComposerViewModel
 import app.wonton.protocol.CoreException
 import app.wonton.protocol.ConfirmationView
@@ -59,7 +59,6 @@ import app.wonton.protocol.KeyNotice
 import app.wonton.protocol.MessageContent
 import app.wonton.protocol.PanelItem
 import app.wonton.protocol.RoomCommand
-import app.wonton.protocol.RoomMembership
 import app.wonton.protocol.RoomPlugin
 import app.wonton.protocol.RoomRow
 import app.wonton.protocol.RoomWidget
@@ -86,7 +85,6 @@ import app.wonton.ui.design.WontonTheme
 import app.wonton.ui.design.toColor
 import app.wonton.ui.icons.Compose
 import app.wonton.ui.icons.Home
-import app.wonton.ui.icons.Info
 import app.wonton.ui.icons.LockKey
 import app.wonton.ui.icons.WontonIcon
 import kotlinx.coroutines.currentCoroutineContext
@@ -97,6 +95,7 @@ private const val TAG = "RoomScreen"
 
 internal class TimelineState {
     val items = mutableStateListOf<TimelineItem>()
+    val list = LazyListState()
     var backPagination by mutableStateOf(BackPagination.IDLE)
 
     /** 收到第一批（全部条目）之后才能翻页：核心要先打开这个房间的时间线。 */
@@ -134,6 +133,9 @@ internal class TimelineState {
     var confirmations by mutableStateOf<List<ConfirmationView>>(emptyList())
     var openedConfirmation by mutableStateOf<String?>(null)
 
+    /** 输入框正在编辑哪条（ADR-0109 第 10 节），每一批都带当前值。 */
+    var editing by mutableStateOf<ComposerEdit?>(null)
+
     /** 群里在场的 AI（本账号认识的 Bot 的 Matrix 用户 ID）；私聊不算。null 是成员名单还没取全、
      * 在场的算不准，别下“群里没有 AI”的结论；空列表才是确定没有。 */
     var roomBots by mutableStateOf<List<String>?>(null)
@@ -142,6 +144,12 @@ internal class TimelineState {
     var focus by mutableStateOf<TimelineFocus?>(null)
     /** 跳转的进展（ADR-0109）：加载中原消息时在引用上转圈，找不到时轻提示。 */
     var jump by mutableStateOf(JumpState.IDLE)
+    /** 正在跳的那条引用（原消息的事件 ID）；只在加载中非空，落地或失败就收掉。 */
+    var jumpQuote by mutableStateOf<String?>(null)
+    /** 壳报给核心的跳转序号，每发起一次加一。 */
+    var jumpSeq by mutableIntStateOf(0)
+    /** 核心收下的跳转序号：同一条引用连点两下，落点一样也要重新滚。 */
+    var focusRevision by mutableIntStateOf(0)
     /** 跳之前那一条（栈顶）：留着时“向下”按钮先退回到它。 */
     var backTo by mutableStateOf<String?>(null)
     /** 正在输入的其他人（显示名），顶栏状态行用。 */
@@ -187,6 +195,7 @@ internal fun RoomRoute(
     isDirect: Boolean,
     isReadOnly: Boolean,
     bot: BotView?,
+    botChat: BotChatAvailability?,
     bots: List<BotView>,
     plugins: PluginsState,
     rooms: List<RoomRow>,
@@ -215,7 +224,11 @@ internal fun RoomRoute(
                 timeline.roomBots = update.roomBots
                 timeline.focus = update.focus
                 timeline.jump = update.jump
+                // 找不到就收转圈；落地由列表滚完那一下收，滚之前第二下仍算重复点。
+                if (update.jump == JumpState.UNAVAILABLE) timeline.jumpQuote = null
+                timeline.focusRevision = update.focusRevision.toInt()
                 timeline.backTo = update.backTo
+                timeline.editing = update.editing
                 timeline.typing = update.typing
                 timeline.commands = update.commands
                 timeline.commandsOmitted = update.commandsOmitted.toInt()
@@ -257,6 +270,7 @@ internal fun RoomRoute(
             isDirect,
             isReadOnly,
             bot,
+            botChat,
             bots,
             plugins,
             rooms,
@@ -276,22 +290,6 @@ internal fun RoomRoute(
 private class MessageMenuTarget(val itemId: String, val message: TimelineMessage, val bubble: Rect)
 
 @Composable
-private fun messageMenuBounds(): Rect {
-    // 菜单能画在哪儿：窗口减去系统栏和键盘。弹层是另一个窗口，在里面拿不到这些，在这里算好传进去。
-    // 横屏时导航栏或挖孔在侧边，左右也要让。
-    val windowSize = LocalWindowInfo.current.containerSize
-    val density = LocalDensity.current
-    val safe = WindowInsets.safeDrawing
-    val direction = LocalLayoutDirection.current
-    return Rect(
-        safe.getLeft(density, direction).toFloat(),
-        safe.getTop(density).toFloat(),
-        (windowSize.width - safe.getRight(density, direction)).toFloat(),
-        (windowSize.height - safe.getBottom(density)).toFloat(),
-    )
-}
-
-@Composable
 private fun RoomScreen(
     core: ClientCore,
     target: TimelineTarget,
@@ -300,6 +298,7 @@ private fun RoomScreen(
     isDirect: Boolean,
     isReadOnly: Boolean,
     bot: BotView?,
+    botChat: BotChatAvailability?,
     bots: List<BotView>,
     plugins: PluginsState,
     rooms: List<RoomRow>,
@@ -316,6 +315,9 @@ private fun RoomScreen(
     val openMenu = { item: TimelineItem, message: TimelineMessage, bounds: Rect ->
         menu = MessageMenuTarget(item.id, message, bounds)
     }
+    val botNotice = botChatNotice(botChat)
+    // 资格未知（离线、核心还没给）照常能发，进离线队列；只有确定的不能用才禁用。
+    val botCanSend = botChat !is BotChatAvailability.Unavailable
     val visible = messageMenuBounds()
     val roomId = target.roomId
     val draft = rememberRoomDraft(core, target, onAction)
@@ -346,6 +348,8 @@ private fun RoomScreen(
                         roomAi = if (isDirect) emptyList() else timeline.roomBots?.mapNotNull { id ->
                             bots.firstOrNull { it.userId == id }
                         },
+                        botNotice = botNotice,
+                        botCanSend = botCanSend,
                         plugins = plugins,
                         onOpenBotProfile = onOpenBotProfile,
                     )
@@ -411,12 +415,19 @@ private fun RoomOverlays(
     onRedact: (MessageMenuTarget?) -> Unit,
 ) {
     menu?.let { opened ->
+        val groups = remember(timeline.revision) { timeline.items.imageGroups() }
         MessageMenu(
             message = opened.message,
             bubble = opened.bubble,
             visible = visible,
             core = core,
+            groupImages = opened.message.group?.let { groups[opened.message.senderId to it.id] },
             onReply = draft::replyTo,
+            onEdit = { text ->
+                onAction(Action.Timeline(TimelineAction.SetTyping(target, false)))
+                draft.startEditing(text)
+                onAction(Action.Timeline(TimelineAction.StartEdit(target, opened.itemId)))
+            },
             onForward = { onForward(opened.itemId) },
             onRedact = { onRedact(opened) },
             onDismiss = onMenuDismiss,
@@ -427,10 +438,14 @@ private fun RoomOverlays(
             rooms = rooms.filter { it.forwardTarget(target.roomId) },
             bots = bots,
             plugins = plugins,
-            // 核心一次只发一个房间：挨个发，发完打开第一个选中的。
-            onSend = { rows ->
-                rows.forEach { onAction(Action.Timeline(TimelineAction.ForwardMessage(target, itemId, it.roomId))) }
-                rows.firstOrNull()?.let { onOpenRoom(it.roomId) }
+            // 核心一次只发一个房间：挨个带上附言派发；只选了一个才跟过去，选几个留在原房间。
+            onSend = { rows, comment ->
+                // 壳先 trim 判空白，只含空白当没有；核心还会再 trim 一遍。
+                val note = comment.trim().ifEmpty { null }
+                rows.forEach { row ->
+                    onAction(Action.Timeline(TimelineAction.ForwardMessage(target, itemId, row.roomId, note)))
+                }
+                if (rows.size == 1) onOpenRoom(rows.first().roomId)
             },
             onDismiss = { onForward(null) },
         )
@@ -469,7 +484,7 @@ private fun RoomPanelEffects(timeline: TimelineState, draft: RoomDraft) {
 
 /**
  * 顶栏。和 Bot 的私聊显示 Bot 的状态头像和名字（ADR-0044），名字下面常空着，有人正在输入时写那一行（ADR-0109），
- * 群聊的标题居中；支持旁聊的房间带开旁聊的按钮。面板的入口不在这里，在 Bot 资料页。
+ * 群聊的标题居中；支持旁聊的房间带开旁聊的按钮。私聊点名字或头像进 Bot 资料页（面板也从那里进）。
  * 旁聊页的标题是旁聊的标题（ADR-0093），状态在顶栏下面一行。
  * 房间里装着 widget（通话）时带它的入口：点了全屏打开 widget 页，关掉回到这个房间（ADR-0096）。
  */
@@ -488,14 +503,17 @@ private fun RoomBar(
     onOpenWidget: (RoomWidget) -> Unit,
 ) {
     if (target.threadRoot != null) {
-        WontonPushedBar(header?.title ?: stringResource(R.string.side_chat), onClose, showsStatus = true)
+        WontonPushedBar(
+            header?.title?.takeIf { it.isNotBlank() } ?: stringResource(R.string.side_chat),
+            onClose,
+            showsStatus = true,
+        )
         return
     }
     val barTitle = if (isDirect) bot?.name ?: title else title
-    val barAvatar: (@Composable () -> Unit)? = if (isDirect && bot != null) {
-        { BotAvatar(bot, plugins, WontonTheme.size.avatar) }
-    } else {
-        null
+    val profileBot = bot?.takeIf { isDirect }
+    val barAvatar: (@Composable () -> Unit)? = profileBot?.let {
+        { BotAvatar(it, plugins, WontonTheme.size.avatar) }
     }
     WontonPushedBar(
         barTitle,
@@ -503,17 +521,11 @@ private fun RoomBar(
         showsStatus = true,
         showsStatusLine = true,
         avatar = barAvatar,
+        avatarClick = profileBot?.let { open -> { onOpenBotProfile(open.bot) } },
+        avatarLabel = stringResource(R.string.bot_profile_open),
         centeredTitle = !isDirect,
         actions = {
             RoomCallEntry(call, onOpenWidget)
-            if (isDirect && bot != null) {
-                Box(Modifier.testTag("bot-profile-open")) {
-                    WontonIconButton(
-                        WontonIcon.Info, stringResource(R.string.bot_profile_open),
-                        { onOpenBotProfile(bot.bot) },
-                    )
-                }
-            }
             if (sideChats.supported) {
                 WontonIconButton(
                     WontonIcon.Compose,
@@ -545,6 +557,8 @@ private fun Conversation(
     backdrop: RoomBackdrop,
     roomAi: List<BotView>?,
     plugins: PluginsState,
+    botNotice: Int?,
+    botCanSend: Boolean,
     onOpenBotProfile: (BotRef) -> Unit,
 ) {
     val density = LocalDensity.current
@@ -553,7 +567,8 @@ private fun Conversation(
     val barInset = LocalWontonTopInset.current
     val panelVisible = LocalChatPanel.current?.visible == true
     val bottomInsets = if (panelVisible) WindowInsets.ime else WindowInsets.ime.union(WindowInsets.navigationBars)
-    val menuOpen = commandQuery(draft.text, timeline.commands).isNotEmpty()
+    // 命令列表开没开：输入区的菜单键改它，翻时间线先收起来，好把列表让出去；“向下”钮开着时不画。
+    var commandMenuShown by remember { mutableStateOf(false) }
     BoxWithConstraints(Modifier.fillMaxSize().windowInsetsPadding(bottomInsets)) {
         Column(Modifier.fillMaxSize()) {
             // 状态行自己占一行，占多高时间线就让开多高，不浮在气泡上；气泡只从它的下沿下面消失。
@@ -562,7 +577,7 @@ private fun Conversation(
                     .onSizeChanged { headerHeight = it.height }
                     .testTag("room-header"),
             ) {
-                AgentPluginStatusBanner(plugin, title, onAction)
+                AgentPluginStatusBanner(plugin, title, plugins.viewModel, onAction)
                 timeline.sideChat?.let { SideChatHeaderLine(it.state) }
                 if (sideChats.unsupportedHint) NoSideChatsHint()
                 // 群里能用的 AI；私聊不显示，Bot 本来就在顶栏（ADR-0044）。
@@ -589,8 +604,8 @@ private fun Conversation(
                             onOpenMenu = onOpenMenu,
                             onReply = { message -> message.replyAction?.let { draft.replyTo(it.message) } },
                             modifier = Modifier.fillMaxSize().recordRoomBackdrop(backdrop),
-                            menuOpen = menuOpen,
-                            headerHeight = with(density) { headerHeight.toDp() },
+                            menuOpen = commandMenuShown,
+                            onScroll = { commandMenuShown = false },
                         )
                     }
                 }
@@ -609,23 +624,42 @@ private fun Conversation(
                 timeline.notice?.let { KeyNoticeRow(it, onOpenBackup) }
                 TransfersStrip(target.roomId, core)
                 RoomConfirmationRow(timeline.confirmations) { timeline.openedConfirmation = it }
+                botNotice?.let { BotChatNoticeRow(it) }
             }
             if (!isReadOnly) {
                 Composer(
                     target = target,
                     draft = draft.text,
                     reply = draft.reply,
+                    edit = timeline.editing,
                     focusToken = draft.focusToken,
                     composer = composer,
                     core = core,
-                    onDraftChange = draft::change,
+                    onDraftChange = { text ->
+                        draft.change(text)
+                        onAction(Action.Timeline(TimelineAction.SetTyping(target, text.isNotEmpty())))
+                    },
                     onSent = draft::sent,
+                    onCommandSent = draft::commandSent,
+                    menuOpen = commandMenuShown,
+                    onMenuChange = { commandMenuShown = it },
                     onReplyCancel = draft::stopReplying,
-                    onAction = onAction,
+                    onQuoteJump = { timeline.jumpTo(it, timeline.bottomMostItemId(), target, onAction) },
+                    onEditCancel = {
+                        onAction(Action.Timeline(TimelineAction.SetTyping(target, false)))
+                        onAction(Action.Timeline(TimelineAction.CancelEdit(target)))
+                    },
+                    onRestoreDraft = draft::restore,
+                    onTyping = { typing ->
+                        onAction(Action.Timeline(TimelineAction.SetTyping(target, typing)))
+                    },
                     onReject = onReject,
+                    onAction = onAction,
                     commands = timeline.commands,
                     commandsOmitted = timeline.commandsOmitted,
                     // 草稿整句就是一条完整命令（没有多写的正文）时发核心给的整句，不自己拼。
+                    enabled = botCanSend,
+                    disabledProblem = botChatBlockedProblem(botCanSend, botNotice),
                     dropCommand = timeline.commands.firstOrNull { it.text == draft.text.trim() }?.text,
                 )
             }
@@ -671,10 +705,6 @@ private val KeyNotice.text: Int
         KeyNotice.VERIFY_WITH_OTHER_DEVICE -> R.string.timeline_key_notice_verify
         KeyNotice.OTHER -> R.string.timeline_undecryptable_notice
     }
-
-/** 转发能去的房间：别的、已经加入、能发的房间。 */
-private fun RoomRow.forwardTarget(roomId: String): Boolean =
-    this.roomId != roomId && membership == RoomMembership.JOINED && !isReadOnly
 
 /** 撤回对所有人生效，发出去之前先确认。 */
 @Composable

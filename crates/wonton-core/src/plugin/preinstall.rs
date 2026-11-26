@@ -11,6 +11,7 @@ use std::path::{Path, PathBuf};
 use std::time::Duration;
 
 use serde::{Deserialize, Serialize};
+use wonton_protocol::EgressFailure;
 
 use super::languages::Languages;
 use super::manager::{InstallError, PluginManager, PluginStatus, PluginView, now_secs};
@@ -34,6 +35,9 @@ impl Default for Backoff {
         }
     }
 }
+
+/// 出口还没就绪时最多等这么久再试：它自己会往前走，等太久反而错过就绪的那一刻（#681）。
+const WAITING_MAX: Duration = Duration::from_secs(60);
 
 /// 预装一个插件包的结果。
 pub(super) enum Outcome {
@@ -163,6 +167,8 @@ fn retryable(e: &InstallError) -> bool {
         // 核心起不了处理图片的子进程，和插件包里的图片无关。
         | InstallError::ImagesUnavailable(_)
         | InstallError::Unhealthy(_)
+        // 服务还在起：宿主空下来再试就能过（#682）。
+        | InstallError::TimedOut(_)
         | InstallError::Storage(_)
         | InstallError::SourceUnavailable(_)
         | InstallError::CoreUpgrading(_) => true,
@@ -207,6 +213,40 @@ impl PluginManager {
             .write()
             .expect("插件表锁中毒")
             .insert(id.clone());
+    }
+
+    /// 预装随核心附带的插件：系统插件装完（或停下）先给模型网关的使用方对一次账（凭据的值在核心，网关的数据丢了也能
+    /// 补回来）；默认插件同时装，不等它们，两边都结束后再对一次账。默认 Agent 用自己的模型接入（ADR-0108），系统插件
+    /// 一直重试装不上也不能把它挡在外面（#643、#681）。
+    pub async fn preinstall_bundled(
+        &self,
+        system: Option<&Path>,
+        defaults: Option<&Path>,
+        backoff: Backoff,
+    ) {
+        let system = async {
+            if let Some(dir) = system
+                && let Err(e) = self.ensure_system(dir, backoff).await
+            {
+                tracing::error!(error = %e, "预装系统插件失败");
+            }
+            for (plugin, error) in self.reconcile_models().await {
+                tracing::error!(%plugin, %error, "模型网关凭据对账失败");
+            }
+        };
+        let defaults = async {
+            if let Some(dir) = defaults
+                && let Err(e) = self.ensure_defaults(dir, backoff).await
+            {
+                tracing::error!(error = %e, "预装默认插件失败");
+            }
+        };
+        // 两条 await 链都搬上堆：预装、升级的链贴着测试线程的栈上限（见 system.rs）。
+        tokio::join!(Box::pin(system), Box::pin(defaults));
+        // 默认插件装得比系统插件晚，装完再对一次账：声明了 models 的默认 Bot 这时才拿得到凭据并按新变量重建。
+        for (plugin, error) in self.reconcile_models().await {
+            tracing::error!(%plugin, %error, "默认插件接上模型网关失败");
+        }
     }
 
     /// 装上 `dir` 里还没装过的默认插件，一个装完（或停下）再装下一个。系统插件不放这里。
@@ -269,6 +309,14 @@ impl PluginManager {
                 }
                 Err(e) => e,
             };
+            // 出口还在就绪的路上：报“等着”而不是“重试”，并保持一分钟内一次的短间隔。
+            let waiting = matches!(
+                e,
+                InstallError::EgressProxyUnavailable {
+                    reason: EgressFailure::Waiting,
+                    ..
+                }
+            );
             if let InstallError::Conflict(_) = e {
                 tracing::warn!(plugin = %id, error = %e, "插件已经存在，不再预装");
                 return Outcome::Stopped;
@@ -289,13 +337,18 @@ impl PluginManager {
                 return Outcome::Stopped;
             }
             tracing::warn!(plugin = %id, attempts, retry_in = ?wait, error = %e, "预装失败，稍后重试");
+            let langs = self.owner_languages();
             let reason = format!(
                 "{}：{e}",
-                crate::l10n::text(
-                    &self.owner_languages(),
-                    "plugin-install-preinstall-retrying",
-                    &[("attempts", attempts.to_string().into())],
-                )
+                if waiting {
+                    crate::l10n::text(&langs, "plugin-install-preinstall-waiting", &[])
+                } else {
+                    crate::l10n::text(
+                        &langs,
+                        "plugin-install-preinstall-retrying",
+                        &[("attempts", attempts.to_string().into())],
+                    )
+                }
             );
             // 先订阅再标异常：标完之后主人马上卸掉它，也能收到通知。
             let changes = self.changes();
@@ -312,7 +365,11 @@ impl PluginManager {
                     }
                 };
             }
-            wait = (wait * 2).min(backoff.max);
+            wait = if waiting {
+                (wait * 2).min(WAITING_MAX).max(backoff.first)
+            } else {
+                (wait * 2).min(backoff.max)
+            };
         }
     }
 

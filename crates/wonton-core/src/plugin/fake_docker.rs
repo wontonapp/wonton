@@ -4,6 +4,7 @@
 
 use std::collections::{BTreeMap, BTreeSet};
 use std::sync::{Arc, Mutex, MutexGuard};
+use std::time::Duration;
 
 use axum::body::Bytes;
 use axum::extract::{Request, State};
@@ -103,6 +104,9 @@ struct Resources {
     created: BTreeMap<String, Value>,
     /// 容器名 → 被创建过的次数：重建会计数，断言“容器（别的 Bot 的）没被动过”用。
     creation_count: BTreeMap<String, u32>,
+    /// 标了删除、删除还没做完的容器 → 再被 inspect 几次才连同端点一起没：接出网络被 Docker 拒绝，
+    /// 等够了次数容器和端点一起消失，模拟 Docker 删容器的异步过程。
+    removing: BTreeMap<String, u32>,
     /// 网络名 → 标签。
     networks: BTreeMap<String, Labels>,
     /// 网络名 → 创建时的请求（`Internal`、`Options` 等）。
@@ -114,6 +118,10 @@ struct Resources {
     volumes: BTreeMap<String, Labels>,
     /// 收到的写操作，按顺序，如 `POST /containers/x/start`。
     writes: Vec<String>,
+    /// 容器名 → 被 inspect 的次数。
+    inspect_count: BTreeMap<String, u32>,
+    /// 容器名 → 端点没掉那一刻 `writes` 的条数：断言删网络发生在端点消失之后用。
+    removed_at: BTreeMap<String, usize>,
     /// 写进容器的归档：容器名 → 归档内容。
     archives: BTreeMap<String, Vec<u8>>,
     /// 容器里能经归档接口读到的路径：（容器名，路径）→ 内容。
@@ -124,9 +132,11 @@ struct Resources {
     start_error: Option<String>,
     stop_error: Option<String>,
     create_error: Option<(String, String)>,
+    kill_error: Option<(String, String)>,
     remove_error: Option<(String, String)>,
     /// 按容器名让 inspect（`GET /containers/{name}/json`）一直报错。
     inspect_error: Option<(String, String)>,
+    signals: BTreeMap<String, u32>,
     /// 网络名 → 最近一次把容器接入它的请求（`EndpointConfig.Aliases` 等）。
     connections: BTreeMap<String, Value>,
     /// 每个网络最近一次主动接入（`connect`）的别名；创建时带的端点不算。
@@ -142,6 +152,8 @@ struct Resources {
     pull_error: Option<String>,
     /// 名字里有这段的镜像不受 `pull_error` 影响，还在本地。
     pull_spared: Option<String>,
+    /// 拉镜像的请求拖这么久才回，模拟拉不完（客户端先超时）。
+    pull_delay: Option<Duration>,
     /// 查不到的镜像：查它和用它创建容器都回 404。模拟 containerd 镜像存储下镜像记录被清掉（#666）。
     missing_images: BTreeSet<String>,
     /// Docker 登记的运行时；没设时只有 runc。
@@ -234,6 +246,15 @@ impl FakeDocker {
         docker.networks.insert(name.to_owned(), Labels::new());
         docker.network_bodies.insert(name.to_owned(), json!({}));
     }
+
+    /// 把已有网络的网段钉成给定值：真实网络建的时候就带了 IPAM，全新安装的 `edge` 就是默认网段。
+    pub fn pin_subnet(&self, name: &str, subnet: &str) {
+        self.lock().network_bodies.insert(
+            name.to_owned(),
+            json!({"IPAM": {"Config": [{"Subnet": subnet}]}}),
+        );
+    }
+
     /// 模拟主人手动删掉一个网络（或上一代核心清掉过）。
     pub fn remove_network(&self, name: &str) {
         let mut docker = self.lock();
@@ -370,17 +391,34 @@ impl FakeDocker {
         docker.states.insert(container.to_owned(), state);
     }
 
-    /// 容器从 Docker 里不见了（被外部删掉）。
+    /// 容器从 Docker 里不见了（被外部删掉）：连创建记录和归档一起清，模拟它没出现过。
     pub fn remove(&self, container: &str) {
         let mut docker = self.lock();
-        docker.containers.remove(container);
-        docker.states.remove(container);
+        drop_container(&mut docker, container);
         docker.created.remove(container);
-        docker.restartable.remove(container);
         docker.archives.remove(container);
-        for endpoints in docker.endpoints.values_mut() {
-            endpoints.remove(container);
-        }
+    }
+
+    /// 容器被标了删除（`docker rm` 或 Compose 换容器）：端点还在，断开被 Docker 拒绝；
+    /// 再被 inspect `inspects_left` 次之后容器连同端点一起没。
+    pub fn mark_removing(&self, container: &str, inspects_left: u32) {
+        self.lock()
+            .removing
+            .insert(container.to_owned(), inspects_left);
+    }
+
+    /// 这个容器被 inspect 过的次数。
+    pub fn inspect_count(&self, container: &str) -> u32 {
+        self.lock()
+            .inspect_count
+            .get(container)
+            .copied()
+            .unwrap_or_default()
+    }
+
+    /// 容器连端点一起没掉时已发生的写操作条数；还没没掉时 `None`。
+    pub fn removed_at(&self, container: &str) -> Option<usize> {
+        self.lock().removed_at.get(container).copied()
     }
 
     pub fn fail_stops(&self, message: Option<&str>) {
@@ -403,6 +441,12 @@ impl FakeDocker {
     /// 让这个容器的 inspect（`GET /containers/{name}/json`）一直报这个错；`None` 恢复。
     pub fn fail_inspect(&self, container: &str, message: Option<&str>) {
         self.lock().inspect_error = message.map(|m| (container.to_owned(), m.to_owned()));
+    }
+
+    /// 下一次 kill 失败；开关测试改用管理端口后暂时没调用方，留给以后按信号路径重测。
+    #[allow(dead_code)]
+    pub fn fail_next_kill(&self, container: &str, message: &str) {
+        self.lock().kill_error = Some((container.to_owned(), message.to_owned()));
     }
 
     pub fn fail_remove(&self, container: &str, message: Option<&str>) {
@@ -434,6 +478,11 @@ impl FakeDocker {
     /// 之后镜像都不在本地、拉取时 Docker 回 `message`（500）；`None` 恢复成镜像都在本地。
     pub fn fail_pulls(&self, message: Option<&str>) {
         self.lock().pull_error = message.map(str::to_owned);
+    }
+
+    /// 之后拉镜像的请求拖 `delay` 才回应，让客户端先超时。
+    pub fn slow_pulls(&self, delay: Duration) {
+        self.lock().pull_delay = Some(delay);
     }
 
     /// 同 [`Self::fail_pulls`]，但名字里有 `spared` 的镜像还在本地。
@@ -549,6 +598,21 @@ impl FakeDocker {
     }
 }
 
+/// 容器连同端点、状态一起从假 Docker 里没掉，记下当时的写操作条数。`created` / `archives` 是历史记录
+/// （最近一次创建请求、一次性容器写下的东西），容器没了也留着，测试靠它们看它怎么被建的。
+fn drop_container(docker: &mut Resources, name: &str) {
+    docker.removing.remove(name);
+    docker.containers.remove(name);
+    docker.states.remove(name);
+    docker.restartable.remove(name);
+    for endpoints in docker.endpoints.values_mut() {
+        endpoints.remove(name);
+    }
+    docker
+        .removed_at
+        .insert(name.to_owned(), docker.writes.len());
+}
+
 async fn handle(State(fake): State<FakeDocker>, request: Request) -> Response {
     let _resumed = fake.gate.clone().read_owned().await;
     let (method, uri) = (request.method().clone(), request.uri().clone());
@@ -586,6 +650,13 @@ async fn handle(State(fake): State<FakeDocker>, request: Request) -> Response {
             });
         matches.then(|| docker.committed_create.take()).flatten()
     };
+    let pull_delay = fake.lock().pull_delay;
+    if method == Method::POST
+        && api_path(&uri) == "/images/create"
+        && let Some(delay) = pull_delay
+    {
+        tokio::time::sleep(delay).await;
+    }
     let response = serve(&fake, &method, &uri, &body);
     if let Some((name, hold)) = committed
         && response.status() == StatusCode::CREATED

@@ -43,8 +43,6 @@
     <string name="timeline_sending">Saved, not delivered yet</string>
     <!-- Footer label of a message that failed but retries by itself. No arguments. -->
     <string name="timeline_send_failed_retrying">Not sent, retrying</string>
-    <!-- Footer label of a message that failed for good. Argument: the core's reason. -->
-    <string name="timeline_send_failed">Not sent: %1$s</string>
     <!-- Action that sends a failed message again. No arguments; short label. -->
     <string name="timeline_resend">Send again</string>
     <!-- Body placeholder of a message this device can't decrypt. No arguments. -->
@@ -158,12 +156,12 @@
     <string name="bot_state_offline">Offline</string>
     <string name="bot_avatar_pick_state">Change the %1$s picture</string>
     <string name="bot_profile_open">View Bot profile</string>
-    <string name="bot_identity_title">Bot identity</string>
     <string name="bot_identity_value">Plugin: %1$s\nBot: %2$s</string>
+    <string name="bot_details_account">Account: %1$s</string>
+    <string name="bot_details_web">Web page: %1$s</string>
     <string name="bot_profile_read_only">This Bot\'s profile is read-only. Profile editing is only available for the default Bot.</string>
     <string name="bot_profile_missing">This Bot\'s profile is no longer available.</string>
-    <string name="bot_web_title">Bot webpage</string>
-    <string name="bot_web_open">Open Bot webpage</string>
+    <string name="bot_web_open">Open the web version (English)</string>
     <string name="bot_web_unauthenticated">Sign in to the server to open this Bot\'s webpage.</string>
     <string name="bot_web_not_shared">The server owner has not shared this Bot\'s webpage with family.</string>
     <string name="bot_web_permission_denied">This identity is not allowed to open Bot webpages.</string>
@@ -190,4 +188,26 @@
     <string name="timeline_typing_more">%1$s and %2$d more are typing…</string>
     <!-- Light hint when the jumped-to message can't be found. No arguments. -->
     <string name="timeline_jump_unavailable">That message isn\'t here anymore</string>
+    <!-- Footer beside a failed message when the connection is down. No arguments. -->
+    <string name="timeline_send_failure_offline">Not connected</string>
+    <!-- Footer beside a failed message when the file is over the server's upload limit. No arguments. -->
+    <string name="timeline_send_failure_too_large">Too large, send it as a file</string>
+    <!-- Footer beside a failed message when the server can't take this format. No arguments. -->
+    <string name="timeline_send_failure_unsupported_type">This format can\'t be sent</string>
+    <!-- Footer beside a failed message when the quoted message is gone. No arguments. -->
+    <string name="timeline_send_failure_reply_target">The quoted message is gone</string>
+    <!-- Footer beside a failed message when the home server refuses it. No arguments. -->
+    <string name="timeline_send_failure_rejected">Your server refused it</string>
+    <!-- Footer beside a failed message when the home server errors. No arguments. -->
+    <string name="timeline_send_failure_upstream">Server problem</string>
+    <!-- Footer beside a failed message whose kind the core can't classify yet. No arguments; the raw reason replaces it when there is one. -->
+    <string name="timeline_send_failure_other">Send failed</string>
+    <!-- This DM is a family member's private Bot; the current person, owner included, has no grant. -->
+    <string name="room_bot_other_private">This is another family member\'s private Bot. Its owner hasn\'t given access.</string>
+    <!-- The person was a contact of the Bot, and the grant no longer exists. -->
+    <string name="room_bot_grant_revoked">Access to this Bot was removed.</string>
+    <!-- The Bot is known but currently unusable for an unclassified reason. -->
+    <string name="room_bot_unavailable">This Bot can\'t be used right now.</string>
+    <!-- Eligibility could not be checked yet, e.g. offline; do not claim it works. -->
+    <string name="room_bot_unknown">Couldn\'t check yet whether this Bot can be messaged.</string>
 </resources>

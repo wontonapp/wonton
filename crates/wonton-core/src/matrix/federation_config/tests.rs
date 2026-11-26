@@ -2,11 +2,16 @@ use std::collections::BTreeSet;
 use std::process::Command;
 use std::time::Duration;
 
+use aws_lc_rs::encoding::AsDer;
+use aws_lc_rs::signature::{Ed25519KeyPair, KeyPair};
+use base64::Engine as _;
+use base64::engine::general_purpose::STANDARD;
 use hyper::{Method, StatusCode};
 
 use super::{allowlist_toml, files::regex_escape};
+use crate::config::MatrixConfig;
 use crate::http::{HttpClient, RequestBody};
-use crate::plugin::docker::Engine;
+use crate::matrix::Matrix;
 
 /// Tuwunel：本地按标签拉；CI 经 `WONTON_TEST_IMAGES` 指到镜像仓库副本（wonton-test-images）。
 pub(super) fn image() -> String {
@@ -14,7 +19,7 @@ pub(super) fn image() -> String {
 }
 const WAIT: Duration = Duration::from_secs(15);
 
-/// 真实 Tuwunel（v1.9.4）：两份配置里的名单生效，原地重写第二份后发 SIGUSR1，
+/// 真实 Tuwunel（v1.9.4）：两份配置里的名单生效，原地重写第二份后经管理房间命令热加载，
 /// 名单外的邀请被拒、名单内的放行（ADR-0050）。这里的服务器经 Docker 网络别名互相直连，
 /// 经核心转发组件的出站在 `proxy_tests.rs`。
 #[test]
@@ -86,23 +91,85 @@ fn the_real_server_hot_reloads_the_allowlist_from_the_second_file() {
             .unwrap_err();
         assert!(error.contains("not allowed"), "{error}");
 
-        // 重写第二份成空名单 + SIGUSR1：名单内的也被拒。
+        // 重写第二份成空名单 + 管理房间命令：名单内的也被拒。
         std::fs::write(fed_path, allowlist_toml(&BTreeSet::new())).unwrap();
-        cluster.signal_usr1(0).await;
+        cluster.reload(0, &registration_secret).await;
         let fresh = register_user_on(&cluster, 1, "v1", &registration_secret).await;
         let room = create_room(self_server, &self_user).await;
         expect_invite_rejected(&cluster, &self_user, &room, &fresh.user_id).await;
 
-        // 改回名单 + SIGUSR1：放行恢复，对端能加入。
+        // 改回名单 + 管理房间命令：放行恢复，对端能加入。
         std::fs::write(
             fed_path,
             allowlist_toml(&BTreeSet::from([peer_name.clone()])),
         )
         .unwrap();
-        cluster.signal_usr1(0).await;
+        cluster.reload(0, &registration_secret).await;
         let fresh = register_user_on(&cluster, 1, "v2", &registration_secret).await;
         let room = create_room(self_server, &self_user).await;
         expect_invite_accepted(&cluster, &self_user, &room, &fresh).await;
+    });
+}
+
+/// 核心自己经管理房间命令重读（ADR-0116）：同一个接口 `FederationConfig` 用的是它。
+#[test]
+#[ignore = "需要 Docker，跑一遍约一分钟"]
+fn the_real_server_reloads_the_admin_room_command() {
+    let runtime = tokio::runtime::Builder::new_multi_thread()
+        .enable_all()
+        .build()
+        .unwrap();
+    runtime.block_on(async {
+        let self_name = format!("{}.wonton.internal", &crate::secret::random_token()[..24]);
+        let peer_name = format!("{}.wonton.internal", &crate::secret::random_token()[..24]);
+        let registration_secret = crate::secret::random_token();
+        let dir = tempfile::tempdir().unwrap();
+        std::fs::write(
+            dir.path().join("self.toml"),
+            cluster_config(&self_name, &[], &registration_secret),
+        )
+        .unwrap();
+        std::fs::write(
+            dir.path().join("fed.toml"),
+            allowlist_toml(&BTreeSet::from([peer_name.clone()])),
+        )
+        .unwrap();
+        std::fs::write(
+            dir.path().join("peer.toml"),
+            cluster_config(&peer_name, &[&self_name], &registration_secret),
+        )
+        .unwrap();
+        let cluster = Cluster::start(
+            &dir,
+            &[("self.toml", Some("fed.toml")), ("peer.toml", None)],
+        )
+        .await;
+        let self_server = &cluster.servers[0];
+        let fed_path = self_server.fed_path.as_ref().expect("本机才有 fed.toml");
+
+        let state = tempfile::tempdir().unwrap();
+        let matrix = Matrix::connect(
+            &cluster.matrix_config(0, &registration_secret),
+            state.path(),
+            HttpClient::new(),
+        )
+        .await
+        .unwrap();
+        let self_user = register_user_on(&cluster, 0, "u0", &registration_secret).await;
+        let peer_user = register_user_on(&cluster, 1, "v0", &registration_secret).await;
+
+        // 名单里有对端：跨机邀请成立。
+        let room = create_room(self_server, &self_user).await;
+        invite(self_server, &self_user, &room, &peer_user.user_id)
+            .await
+            .unwrap();
+
+        // 换成空名单，靠管理房间命令重读：名单内的也被拒。
+        std::fs::write(fed_path, allowlist_toml(&BTreeSet::new())).unwrap();
+        matrix.reload_config().await.unwrap();
+        let fresh = register_user_on(&cluster, 1, "v1", &registration_secret).await;
+        let room = create_room(self_server, &self_user).await;
+        expect_invite_rejected(&cluster, &self_user, &room, &fresh.user_id).await;
     });
 }
 
@@ -120,8 +187,12 @@ fn cluster_config(server_name: &str, peers: &[&str], registration_secret: &str) 
              allow_federation = true\ntrusted_servers = []\nip_range_denylist = []\n\
              allow_registration = false\n\
              registration_shared_secret = \"{registration_secret}\"\n\
+             create_admin_room = true\n\
              allow_invalid_tls_certificates = true\n\
              allowed_remote_server_names_experimental = [{list}]\n\
+             \n[global.jwt]\nenable = true\nformat = \"EDDSA\"\nalgorithm = \"EdDSA\"\n\
+             require_exp = true\nregister_user = true\nissuer = [\"wonton-core\"]\n\
+             audience = [\"tuwunel\"]\n\
              \n[global.tls]\n\
              certs = \"/etc/tuwunel/tls/tls.crt\"\n\
              key = \"/etc/tuwunel/tls/tls.key\"\n\
@@ -208,6 +279,7 @@ async fn register_user_on(
         &server.address,
         registration_secret,
         user,
+        false,
     )
     .await
 }
@@ -248,7 +320,10 @@ async fn expect_invite_accepted(cluster: &Cluster, inviter: &Account, room: &str
 pub(super) struct ClusterServer {
     pub(super) name: String,
     pub(super) address: String,
+    pub(super) server_name: String,
     pub(super) fed_path: Option<std::path::PathBuf>,
+    /// 核心管理账号登 JWT 用的私钥。
+    pub(super) jwt_key: String,
 }
 
 /// 一组测试容器和它们的专用网络，Drop 时全部删掉。
@@ -301,7 +376,18 @@ impl Cluster {
             tls.signing_key.serialize_pem(),
         )
         .unwrap();
+        // 核心的管理账号用 JWT 登录，Tuwunel 要知道对应的公钥。
+        let pair = Ed25519KeyPair::generate().unwrap();
+        let jwt_key = format!(
+            "-----BEGIN PRIVATE KEY-----\n{}\n-----END PRIVATE KEY-----\n",
+            STANDARD.encode(pair.to_pkcs8().unwrap().as_ref())
+        );
+        let jwt_public = STANDARD.encode(pair.public_key().as_der().unwrap().as_ref());
         let mut docker_args = docker_run_args(dir, network, index, &name, &server_name, file);
+        docker_args.push("--env".to_owned());
+        docker_args.push(format!(
+            "TUWUNEL_JWT__KEY=-----BEGIN PUBLIC KEY-----\n{jwt_public}\n-----END PUBLIC KEY-----\n"
+        ));
         // 镜像名后面的都是 tuwunel 自己的命令行。
         let mut command_args = vec!["-c".to_owned(), "/etc/tuwunel/tuwunel.toml".to_owned()];
         let fed_path = match fed {
@@ -350,18 +436,35 @@ impl Cluster {
         let server = ClusterServer {
             name,
             address,
+            server_name,
             fed_path,
+            jwt_key,
         };
         wait_ready(&server.address).await;
         server
     }
 
-    async fn signal_usr1(&self, index: usize) {
-        let engine = Engine::connect().expect("连接 Docker");
-        engine
-            .kill_container(&self.servers[index].name, "SIGUSR1")
-            .await
-            .expect("发 SIGUSR1");
+    /// 连编号 `index` 的核心侧配置（客户端接口走映射到宿主回环的端口）。
+    fn matrix_config(&self, index: usize, registration_secret: &str) -> MatrixConfig {
+        MatrixConfig {
+            url: self.servers[index].address.clone(),
+            server_name: self.servers[index].server_name.clone(),
+            jwt_key: self.servers[index].jwt_key.clone(),
+            registration_secret: registration_secret.to_owned(),
+        }
+    }
+
+    /// 经管理房间命令热加载：走产品里同一个 `Matrix::connect`，核心的管理账号自己加入后发命令。
+    async fn reload(&self, index: usize, registration_secret: &str) {
+        let state = tempfile::tempdir().unwrap();
+        let matrix = Matrix::connect(
+            &self.matrix_config(index, registration_secret),
+            state.path(),
+            HttpClient::new(),
+        )
+        .await
+        .expect("核心连上 Tuwunel");
+        matrix.reload_config().await.expect("热加载命令被接受");
     }
 }
 
@@ -404,6 +507,7 @@ pub(super) async fn register_user(
     base: &str,
     shared_secret: &str,
     user: &str,
+    admin: bool,
 ) -> Account {
     use aws_lc_rs::hmac;
     let (status, value) = http
@@ -418,8 +522,9 @@ pub(super) async fn register_user(
     assert_eq!(status, StatusCode::OK, "{value}");
     let nonce = value["nonce"].as_str().expect("有 nonce").to_owned();
     let password = crate::secret::random_token();
-    // 普通账号的签名字段以 notadmin 结尾，管理账号才是 admin（admin.rs）。
-    let message = [nonce.as_str(), user, password.as_str(), "notadmin"].join("\0");
+    // 签名字段最后一栏是管理员标记（admin.rs）。
+    let role = if admin { "admin" } else { "notadmin" };
+    let message = [nonce.as_str(), user, password.as_str(), role].join("\0");
     let key = hmac::Key::new(
         hmac::HMAC_SHA1_FOR_LEGACY_USE_ONLY,
         shared_secret.as_bytes(),

@@ -408,6 +408,8 @@ impl PluginManager {
         if storage_need(manifest).is_some() || had_storage {
             hosted.push(WEB_STORAGE.name.to_owned());
         }
+        // 与普通部署和卸载共用分配锁，避免两个插件得到相同标签。
+        let _allocating = self.bot_allocation.lock().await;
         let record = InstalledRecord {
             lifecycle: old.map_or_else(super::recovery::running, |old| old.lifecycle.clone()),
             settings: Default::default(),
@@ -424,6 +426,7 @@ impl PluginManager {
             relays: Vec::new(),
             firewalled: false,
             proxied: false,
+            bundled: false,
             oidc_client_secret: None,
             installed_at: old.map_or_else(now_secs, |old| old.installed_at),
             origin: package.origin.clone(),

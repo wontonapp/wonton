@@ -41,6 +41,23 @@ impl MatrixSession {
         Ok(())
     }
 
+    /// 离开房间里的通话：同一个 `m.call.member` 状态键发空内容，和 Element Call 的离开一样。
+    pub async fn leave_call(&self, room_id: &RoomId) -> Result<()> {
+        let room = self.room(room_id)?;
+        let key = CallMemberStateKey::new(
+            self.user_id().to_owned(),
+            Some(format!("{}_m.call", self.device_id())),
+            true,
+        );
+        room.send_state_event_raw(
+            "org.matrix.msc3401.call.member",
+            key.as_ref(),
+            Value::Object(Default::default()),
+        )
+        .await?;
+        Ok(())
+    }
+
     /// 给 `user` 的 `device` 发一条加密的 to-device。对方的设备密钥本机还不知道时没送出去，返回 `false`。
     pub async fn send_encrypted_to_device(
         &self,

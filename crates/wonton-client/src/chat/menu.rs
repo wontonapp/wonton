@@ -12,7 +12,7 @@ use wonton_matrix::{EntryKind, MessageBody, OwnedEventId, OwnedRoomId, TimelineE
 use wonton_protocol::{
     BackPagination, ChatViewModel, ConfirmationView, CoreError, KeyNotice, MessageAction,
     MessageContent, QuotedMessage, TimelineContent, TimelineDiff, TimelineItem, TimelineUpdate,
-    TimelineViewport,
+    TimelineViewport, UnreadJump,
 };
 
 use super::jump::Live;
@@ -24,6 +24,7 @@ pub(super) fn message_actions(
     body: &MessageContent,
     event_id: Option<&str>,
     can_redact: bool,
+    is_own: bool,
     quote: impl FnOnce(String) -> QuotedMessage,
 ) -> Vec<MessageAction> {
     let mut actions = Vec::new();
@@ -37,15 +38,14 @@ pub(super) fn message_actions(
             .map(|caption| (&caption.body, &caption.blocks)),
         _ => None,
     };
-    if let Some((text, blocks)) = copied
-        && !text.trim().is_empty()
-    {
-        actions.push(MessageAction::Copy {
+    let copied = copied
+        .filter(|(text, _)| !text.trim().is_empty())
+        .map(|(_text, blocks)| MessageAction::Copy {
             text: rich::copy_text(blocks),
         });
-    }
     // 没发出去的走“重发”“取消发送”，不进这个菜单。
     let Some(event_id) = event_id else {
+        actions.extend(copied);
         return actions;
     };
     let redacted = matches!(body, MessageContent::Redacted);
@@ -53,6 +53,10 @@ pub(super) fn message_actions(
         actions.push(MessageAction::Reply {
             message: quote(event_id.to_owned()),
         });
+    }
+    actions.extend(copied);
+    if is_own && let MessageContent::Text { body: text, .. } = body {
+        actions.push(MessageAction::Edit { text: text.clone() });
     }
     if matches!(
         body,
@@ -162,6 +166,16 @@ impl Menus {
         }
         entry.event_id.as_deref()?.parse().ok()
     }
+
+    /// 菜单里有 `Edit` 的那条消息的事件 ID 和现在的正文。
+    fn edit_of(&self, item_id: &str) -> Option<(OwnedEventId, String)> {
+        let entry = self.items.iter().find(|entry| entry.id == item_id)?;
+        let text = entry.actions.iter().find_map(|action| match action {
+            MessageAction::Edit { text } => Some(text.clone()),
+            _ => None,
+        })?;
+        Some((entry.event_id.as_deref()?.parse().ok()?, text))
+    }
 }
 
 fn is_own_message(item: &TimelineItem) -> bool {
@@ -182,7 +196,7 @@ pub(super) struct Outbox {
     side_chat: Mutex<Option<wonton_protocol::SideChatCard>>,
     /// 壳那边的列表，给每条消息填组内位置（ADR-0109）。
     runs: Mutex<super::Runs>,
-    /// 正在输入、命令表和跳转的栈（ADR-0109 §4、§7）。
+    /// 正在输入、命令表和跳转的栈（ADR-0109 §4、§8）。
     pub(super) live: Arc<Live>,
 }
 
@@ -257,6 +271,7 @@ impl Outbox {
         anchor: Option<String>,
         call_active: bool,
         room_bots: Option<Vec<String>>,
+        unread_jump: Option<UnreadJump>,
     ) -> Result<(), ()> {
         lock(&self.runs).apply(&mut diffs);
         let scroll_to_bottom = lock(&self.menus).apply(&diffs) || self.live.jumps.take_bottom();
@@ -278,6 +293,7 @@ impl Outbox {
         let (commands, omitted) = self.live.tables.values();
         self.sender
             .send(TimelineUpdate {
+                unread_jump,
                 diffs,
                 back_pagination,
                 viewport,
@@ -297,6 +313,8 @@ impl Outbox {
                 focus: self.live.jumps.take_focus(),
                 jump: self.live.jumps.state(),
                 back_to: self.live.jumps.back(),
+                editing: self.live.edit.card(),
+                focus_revision: self.live.jumps.revision(),
             })
             .map_err(|_| ())
     }
@@ -331,6 +349,29 @@ impl ChatLink {
             ))
         })
     }
+
+    /// 这条消息的编辑目标和正文；房间没订阅是未就绪，菜单里没有编辑是输入非法。
+    pub(super) fn menu_edit(
+        &self,
+        key: &TimelineKey,
+        item_id: &str,
+    ) -> Result<(OwnedEventId, String), CoreError> {
+        let open = lock(&self.open);
+        if open.get(key).is_none() {
+            return Err(super::target::not_subscribed(key));
+        }
+        let found = open
+            .matching(key)
+            .filter_map(|timeline| timeline.menus.upgrade())
+            .find_map(|menus| lock(&menus).edit_of(item_id));
+        found.ok_or_else(|| {
+            invalid(&l10n!(
+                CATALOG,
+                language(),
+                "chat-message-action-unavailable"
+            ))
+        })
+    }
 }
 
 #[cfg(test)]
@@ -338,18 +379,24 @@ mod tests {
     use super::*;
     use wonton_protocol::QuotedContent;
 
-    fn kinds(body: &MessageContent, event_id: Option<&str>, can_redact: bool) -> Vec<&'static str> {
+    fn kinds(
+        body: &MessageContent,
+        event_id: Option<&str>,
+        can_redact: bool,
+        is_own: bool,
+    ) -> Vec<&'static str> {
         let quote = |event_id| QuotedMessage {
             event_id,
             sender_id: "@bot:x".to_owned(),
             sender_name: "Bot".to_owned(),
             content: QuotedContent::Other,
         };
-        message_actions(body, event_id, can_redact, quote)
+        message_actions(body, event_id, can_redact, is_own, quote)
             .iter()
             .map(|action| match action {
                 MessageAction::Copy { .. } => "copy",
                 MessageAction::Reply { .. } => "reply",
+                MessageAction::Edit { .. } => "edit",
                 MessageAction::Forward => "forward",
                 MessageAction::Redact => "redact",
             })
@@ -364,21 +411,21 @@ mod tests {
         }
     }
 
-    /// 行为：菜单按 ADR-0073 的顺序和规则给；本地回显只能复制，已撤回的什么都没有，撤回看权限。
+    /// 行为：菜单按 ADR-0109 的顺序（回复、复制、编辑、转发、删除）和规则给；本地回显只能复制，已撤回的什么都没有，撤回看权限。
     #[test]
     fn the_menu_follows_send_state_content_and_power() {
-        assert_eq!(kinds(&text(), None, true), ["copy"]);
+        assert_eq!(kinds(&text(), None, true, true), ["copy"]);
         assert_eq!(
-            kinds(&text(), Some("$a"), false),
-            ["copy", "reply", "forward"]
+            kinds(&text(), Some("$a"), false, false),
+            ["reply", "copy", "forward"]
         );
         assert_eq!(
-            kinds(&text(), Some("$a"), true),
-            ["copy", "reply", "forward", "redact"]
+            kinds(&text(), Some("$a"), true, true),
+            ["reply", "copy", "edit", "forward", "redact"]
         );
-        assert!(kinds(&MessageContent::Redacted, Some("$a"), true).is_empty());
+        assert!(kinds(&MessageContent::Redacted, Some("$a"), true, true).is_empty());
         assert_eq!(
-            kinds(&MessageContent::Undecryptable, Some("$a"), true),
+            kinds(&MessageContent::Undecryptable, Some("$a"), true, false),
             ["reply", "redact"]
         );
     }
@@ -390,6 +437,8 @@ mod tests {
             id: id.to_owned(),
             content: TimelineContent::Message {
                 message: wonton_protocol::TimelineMessage {
+                    mentions_me: false,
+                    unread_anchor: false,
                     event_id: Some(format!("${id}:x")),
                     sender_id: "@bot:x".to_owned(),
                     sender_name: "Bot".to_owned(),
@@ -488,6 +537,8 @@ mod tests {
             id: id.to_owned(),
             content: TimelineContent::Message {
                 message: wonton_protocol::TimelineMessage {
+                    mentions_me: false,
+                    unread_anchor: false,
                     event_id: None,
                     sender_id: "@owner:example.com".into(),
                     sender_name: "Owner".into(),
@@ -521,6 +572,7 @@ mod tests {
                     away,
                     None,
                     false,
+                    None,
                     None,
                 )
                 .unwrap()

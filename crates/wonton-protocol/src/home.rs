@@ -1,6 +1,6 @@
 use serde::{Deserialize, Serialize};
 
-use crate::SecretString;
+use crate::{PermissionItem, RelayCurrent, RelaySettingsView, RoleTemplate, SecretString};
 
 /// 和家里服务器的连接：隧道状态，以及 WebView 和 HTTP 客户端要用的本地代理。壳只渲染，不做推导。
 #[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize)]
@@ -13,6 +13,14 @@ pub struct HomeViewModel {
     pub status: HomeStatus,
     /// 当前连接走的路径；没有可用连接时为空。
     pub path: Option<HomePath>,
+    /// 当前这条连接经哪台中继；直连或没连上时为空。设置页用它标出正在用的那台。
+    #[serde(default)]
+    #[cfg_attr(feature = "uniffi", uniffi(default = None))]
+    pub current_relay: Option<RelayCurrent>,
+    /// 中继表设置页（ADR-0048）。没打开过设置页时为空，壳按 Idle 处理。
+    #[serde(default)]
+    #[cfg_attr(feature = "uniffi", uniffi(default))]
+    pub relays: RelaySettingsView,
     /// 要告诉主人的连接状态；连接正常时为空。壳只按它显示，不看 `status` 里的原文（ADR-0032）。
     pub notice: Option<ConnectionNotice>,
     /// 连接页的诊断和指标。
@@ -77,6 +85,9 @@ pub enum PairingStatus {
     /// 配上了：服务器登记了这台设备，连接信息存下了，连接正在建立。壳看到它就离开配对页；
     /// 取消不会到这一步。下一次开始配对、或者连接信息被重置时清掉。
     Paired,
+    /// 扫的是加入别人家的码，管理员还没同意：被邀请的人看到的加入页。`role` 是邀请时定的角色和这个角色
+    /// 能做的事；核心没带角色时为空。管理员同意后用同一个码再试一次就配上，拒绝或码作废时转到 [`Self::Failed`]。
+    JoinPending { role: Option<JoinRoleView> },
     Failed {
         reason: PairingFailure,
         /// 按 App 语言写的失败说明，只放进默认收起的“详情”；壳按 `reason` 写标题和下一步。
@@ -84,6 +95,18 @@ pub enum PairingStatus {
         /// 原始错误和连接地址，只在用户主动打开的可复制诊断中显示，不含配对密钥。
         diagnostic: Option<String>,
     },
+}
+
+/// 加入谁家、拿什么角色、这个角色能做什么：被邀请的人在加入页上看到的，点“加入”以前就能看懂。
+#[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize)]
+#[cfg_attr(feature = "uniffi", derive(uniffi::Record))]
+pub struct JoinRoleView {
+    pub role_id: String,
+    /// 主人给角色起的名字；模板没改过名时为空，壳按 [`template`](Self::template) 本地化。
+    pub name: Option<String>,
+    pub template: Option<RoleTemplate>,
+    /// 这个角色放行的权限项，按 [`PermissionItem::ALL`] 的顺序；每一项由壳写成一句人话。
+    pub abilities: Vec<PermissionItem>,
 }
 
 /// 配对失败的原因，壳据此提示主人下一步。
@@ -97,8 +120,6 @@ pub enum PairingFailure {
     Expired,
     /// 服务器不再接受这种码，例如已经有配对的设备时的首次配对码。要在已配对的设备上添加，或在服务器上另发一个码。
     Closed,
-    /// 这是加入别人家的码：管理员还没同意。管理员同意后用同一个码再试一次；`message` 里写的是加入后的角色。
-    PendingApproval,
     /// 管理员拒绝加入请求，需要管理员重新邀请。
     JoinRejected,
     /// 邀请码已由其他设备使用或已经作废，需要重新邀请。
@@ -257,17 +278,21 @@ pub struct ConnectionDetails {
 }
 
 /// 连接当前走的路径。
-#[derive(Clone, Copy, Debug, PartialEq, Eq, Serialize, Deserialize)]
+#[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize)]
 #[cfg_attr(feature = "uniffi", derive(uniffi::Record))]
 pub struct HomePath {
     /// 经中继转发；否则是局域网或打洞成功的直连。
     pub relay: bool,
     /// 中继是 n0 公共中继（带宽不够传画面）；直连或自建中继为假。
     pub public_relay: bool,
-    /// 直连的对端是局域网地址。
+    /// 直连的对端是局域网地址；经代理 TUN 的假地址（198.18.0.0/15）也算。
     pub lan: bool,
     /// 往返时间估计，毫秒。
     pub rtt_ms: u32,
+    /// 经哪台中继（只有 `relay` 为真时才有）。
+    #[serde(default)]
+    #[cfg_attr(feature = "uniffi", uniffi(default = None))]
+    pub relay_url: Option<String>,
 }
 
 /// 本地代理：HTTP 代理地址和本次启动的会话凭据（`Proxy-Authorization: Basic`）。凭据只给本 App 的
@@ -301,6 +326,15 @@ mod tests {
     use super::*;
 
     /// 上一版的 JSON 里没有质量字段和窗口数字，新核心要读得懂，缺的按不知道处理。
+    /// 上一版的路径 JSON 里没有 `relay_url`，新核心要读得懂，缺的按直连处理。
+    #[test]
+    fn a_path_without_a_relay_url_reads_as_a_direct_path() {
+        let path: HomePath =
+            serde_json::from_str(r#"{"relay":false,"public_relay":false,"lan":true,"rtt_ms":3}"#)
+                .unwrap();
+        assert_eq!(path.relay_url, None);
+    }
+
     #[test]
     fn details_without_quality_fields_read_as_unknown() {
         let details: ConnectionDetails = serde_json::from_str(

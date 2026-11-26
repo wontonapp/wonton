@@ -1,4 +1,4 @@
-//! 真 HAProxy（[`super::super::entry_compose::HAPROXY_IMAGE`]）跑渲染结果：先用 `-c` 校验三种模型，
+//! 真 HAProxy（[`HAPROXY_IMAGE`]）跑渲染结果：先用 `-c` 校验三种模型，
 //! 再起一个入口、两个连接器和一个假后端，验证对上一条条的实测行为。
 
 use std::path::Path;
@@ -8,14 +8,11 @@ use std::time::{Duration, Instant};
 use super::Model;
 use super::model::Trust;
 use super::render::render;
+use crate::entry_compose::HAPROXY_IMAGE;
 use crate::plugin::docker::Engine;
 use crate::plugin::names::LABEL_INSTANCE;
 use crate::test_docker::{Names, ensure_image};
 
-/// 和 `entry_compose::HAPROXY_IMAGE` 相同；`scripts/mirror-test-images.sh` 只认本文件里的字面量，
-/// 两边由 [`image_matches_the_entry_image`] 锁住。
-const IMAGE: &str =
-    "haproxy:3.2.8-alpine@sha256:8c6b55d891584afded3ab1b91063a703ecc8ff2481302b691773648ffa806226";
 /// 客户端容器用的 curl（Apache-2.0）。宿主 curl 经 PROXY 声明的来源永远是网桥地址，
 /// 分不出「另一个来源」，封禁按来源隔离要两个固定地址的客户端。
 const CURL: &str = "curlimages/curl:8.11.1@sha256:c1fe1679c34d9784c1b0d1e5f62ac0a79fca01fb6377cdd33e90473c6f9f9a69";
@@ -105,7 +102,7 @@ fn owned(args: &[String]) -> Vec<&str> {
     args.iter().map(String::as_str).collect()
 }
 
-const BACKEND_CONFIG: &str = "global\ndefaults\n  mode http\n  timeout connect 5s\n  timeout client 60s\n  timeout server 60s\nfrontend b\n  bind [::]:8484\n  http-request set-var(txn.fail) str(1) if { req.hdr(x-fail) -m found }\n  http-after-response set-header X-Wonton-Auth-Failure 1 if { var(txn.fail) -m found }\n  http-request return status 200 content-type text/plain lf-string \"entry=%[req.hdr(X-Wonton-Entry)] real=%[req.hdr(X-Real-IP)] fwd=%[req.hdr(X-Forwarded-For)] und=%[req.hdr(X_Remote_User)]\"\n";
+const BACKEND_CONFIG: &str = "global\ndefaults\n  mode http\n  timeout connect 5s\n  timeout client 60s\n  timeout server 60s\nfrontend b\n  bind [::]:8484\n  http-request set-var(txn.fail) str(1) if { req.hdr(x-fail) -m found }\n  http-after-response set-header X-Wonton-Auth-Failure 1 if { var(txn.fail) -m found }\n  http-request return status 200 content-type text/plain lf-string \"entry=%[req.hdr(X-Wonton-Entry)] real=%[req.hdr(X-Real-IP)] fwd=%[req.hdr(X-Forwarded-For)] host=%[req.hdr(Host)] und=%[req.hdr(X_Remote_User)]\"\n";
 
 /// 连接器：PROXY v2 模式下带 `send-proxy-v2`；头信任模式（Cloudflare）是普通 TCP 转发，不带 PROXY 头。
 fn connector_config(proxy: bool) -> String {
@@ -338,7 +335,7 @@ impl Chain {
         let dir = tempfile::tempdir().unwrap();
         let certs = dir.path().join("certs");
         let engine = connected_engine();
-        let image = ensure_image(&engine, &wonton_test_images::image(IMAGE)).await;
+        let image = ensure_image(&engine, &wonton_test_images::image(HAPROXY_IMAGE)).await;
         let image_curl = ensure_image(&engine, &wonton_test_images::image(CURL)).await;
         let mut names = Names::new();
         let setup = setup_network(&mut names);
@@ -448,7 +445,10 @@ fn check_model(trust: Trust) {
     let dir = tempfile::tempdir().unwrap();
     let engine = connected_engine();
     let runtime = tokio::runtime::Runtime::new().unwrap();
-    let image = runtime.block_on(ensure_image(&engine, &wonton_test_images::image(IMAGE)));
+    let image = runtime.block_on(ensure_image(
+        &engine,
+        &wonton_test_images::image(HAPROXY_IMAGE),
+    ));
     let mut names = Names::new();
     let network = names.oneshot_network("check");
     let (subnet4, subnet6) = subnets(names.name());
@@ -513,11 +513,6 @@ fn check_model(trust: Trust) {
 }
 
 #[test]
-fn image_matches_the_entry_image() {
-    assert_eq!(IMAGE, crate::entry_compose::HAPROXY_IMAGE);
-}
-
-#[test]
 #[ignore = "需要 Docker，起来回跑的 HAProxy 和两个连接器"]
 fn rendered_configs_pass_haproxy_check() {
     check_model(Trust::ProxyV2);
@@ -573,8 +568,9 @@ fn entry_container_enforces_both_frontends() {
     );
     assert_eq!(status, 421);
     let host = format!("Host: {name}:8443");
-    let (status, _, _, _) = chain.request(&name, From::A, &chain.connector4, &["-H", &host]);
+    let (status, _, body, _) = chain.request(&name, From::A, &chain.connector4, &["-H", &host]);
     assert_eq!(status, 200);
+    assert!(body.contains(&format!("host={name}:8443")), "{body}");
 
     // 不经过连接器（没有 PROXY 头）进不到 HTTP。
     let entry4 = chain.entry4.clone();

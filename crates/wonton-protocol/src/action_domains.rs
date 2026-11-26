@@ -2,10 +2,11 @@ use serde::{Deserialize, Serialize};
 
 use crate::{
     Answer, AvatarUpload, BotActivity, BotRef, ChatLayoutChoice, ChatLayoutTarget, DeviceNetwork,
-    FileId, FontStyle, FriendBlockScope, FriendBlockTarget, InstallPreview, MatrixOidcCallback,
-    MatrixOidcLogin, MatrixPasswordLogin, NotificationCategory, OnboardingTip, PluginAudience,
-    PushEndpoint, PushMethod, Rgb, SecretString, ShareGrantUpdate, TabRef, TextSize, ThemeMode,
-    UploadSource,
+    EntryKind, FileId, FontStyle, FriendBlockScope, FriendBlockTarget, InstallPreview,
+    MatrixOidcCallback, MatrixOidcLogin, MatrixPasswordLogin, NewPasswordRequest,
+    NotificationCategory, OnboardingTip, PluginAudience, PushEndpoint, PushMethod,
+    PutDomainRequest, PutIngressRequest, RelaySettingsAction, Rgb, SecretString, ShareGrantUpdate,
+    TabRef, TextSize, ThemeMode, UploadSource,
 };
 
 /// 会话列表的操作。
@@ -95,6 +96,11 @@ pub enum HomeAction {
     },
     /// 主人点了“重试”：清零退避，立刻试一次。
     RetryConnection,
+    /// 中继表设置页（ADR-0048）上的操作：取表、加、改、删、挪档、设置 n0 兜底、保存、丢弃。
+    /// 进展和结果在 [`HomeViewModel::relays`](crate::HomeViewModel::relays)。
+    RelaySettings {
+        action: RelaySettingsAction,
+    },
 }
 
 /// Matrix 聊天、加密恢复、确认卡片和聊天布局的操作。
@@ -161,6 +167,9 @@ pub enum ChatAction {
     SkipKeyHandoff,
     /// 清掉 `ChatViewModel::problem`。
     DismissChatProblem,
+    /// 只确认会话装好没有：没登录返回 `NotReady`，登录了什么都不做、直接成功。给壳和测试在真正 dispatch 前自查
+    /// （例如等到登录真的能用再发第一条），不碰房间、不写账号数据。
+    CheckReady,
     /// 按卡片上的 `answer`、`choice_id` 回答；结果在 [`ConfirmationView`](crate::ConfirmationView)，已经在发或已答完时不重复发送。
     /// 答案为 `Unknown` 返回 `InvalidInput`；服务器未连接时返回 `NotReady`。
     AnswerConfirmation {
@@ -286,8 +295,12 @@ pub enum PluginAction {
     /// 主人点了"更新"，同 [`PluginAction::InstallNow`]，对装着的应用升级到提示的版本。
     UpgradeNow { plugin_id: String },
     /// 主人在商店页点了"全部更新"：逐个升级 [`PluginsViewModel::updatable`](crate::PluginsViewModel::updatable) 里的应用，
-    /// 不用拿主意的直接开始；要拿主意的排进 [`PluginsViewModel::confirmation`](crate::PluginsViewModel::confirmation)，一次一条。
+    /// 不用拿主意的直接开始；需要决定的留在批次行内，由主人打开确认页。
     UpgradeAll,
+    /// 打开批次中一项需要主人决定的更新；不重新取预览。
+    ReviewStoreUpdate { plugin_id: String },
+    /// 清除已结束的批次结果，不取消更新，不清除无关任务。
+    DismissStoreUpdates,
     /// 主人关掉了一键操作的确认页，没装也没升。还有排着队的就放下一条进来，没有就清空。
     DismissStoreConfirmation,
     /// 主人在插件网页的标题栏上点了“我来操作”。正在操作别的插件时，那个先交还。
@@ -544,11 +557,44 @@ pub enum BotContactAction {
     RemoveBotContact { bot: BotRef, user_id: String },
 }
 
-/// 家庭成员角色操作。
+/// 家庭成员角色的操作。自己的头像不走动作：资料页本来就 await 地读写 `me()`、`saveMe`，
+/// 头像也一样由 `set_my_avatar` 这类直接返回 `Me` 的调用做，失败原因由 [`MyAvatarProblem`](crate::MyAvatarProblem) 分类。
 #[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize)]
 #[cfg_attr(feature = "uniffi", derive(uniffi::Enum))]
 #[serde(tag = "type", rename_all = "snake_case")]
 pub enum FamilyAction {
+    /// 打开成员页：取自己、成员、角色和加入请求，并在页面开着时跟上新的请求。
+    RefreshFamily,
+    /// 离开成员页，停掉刷新。
+    LeaveFamily,
+    /// 邀请一个人：记成“已邀请”并出一张码，码放进 [`FamilyViewModel::invite`](crate::FamilyViewModel::invite)。
+    /// 只有主人能填 `role_id`；管理员留空，新人拿默认角色。
+    InviteMember {
+        display_name: String,
+        #[cfg_attr(feature = "uniffi", uniffi(default = None))]
+        username: Option<String>,
+        private_bot: bool,
+        #[cfg_attr(feature = "uniffi", uniffi(default = None))]
+        role_id: Option<String>,
+    },
+    /// 重发邀请码，之前的不再有效；新码放进 `invite`。
+    ResendMemberCode { username: String },
+    /// 作废这个人的邀请码，不出新的。
+    RevokeMemberCode { username: String },
+    /// 移除一个人：吊销设备、停用账号；`delete_home` 删私人空间，`keep_bot_data` 留 Bot 的数据。
+    RemoveMember {
+        username: String,
+        delete_home: bool,
+        keep_bot_data: bool,
+    },
+    /// 关掉刚出的邀请码那一屏。
+    DismissMemberInvite,
+    /// 重新取一遍加入请求。
+    RefreshJoinRequests,
+    /// 同意一条加入请求：设备登记在这个人名下。
+    ApproveJoinRequest { id: String },
+    /// 拒绝一条加入请求：连同邀请码一起作废。
+    RejectJoinRequest { id: String },
     /// 取全部角色和默认邀请角色；只有主人能用。
     RefreshRoles,
     /// 新建角色，名字和权限项见 [`RoleDraft`](crate::RoleDraft)；成功后进角色列表。
@@ -568,7 +614,7 @@ pub enum FamilyAction {
     AssignFriendRole { user_id: String, role_id: String },
 }
 
-/// 好友、好友组和屏蔽操作。
+/// 好友和屏蔽操作。
 #[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize)]
 #[cfg_attr(feature = "uniffi", derive(uniffi::Enum))]
 #[serde(tag = "type", rename_all = "snake_case")]
@@ -588,7 +634,7 @@ pub enum FriendsAction {
     CancelFriendRequest {
         room_id: String,
     },
-    /// 同时收回这个人所有插件访问（包含组授权），不退出私聊。
+    /// 同时收回这个人所有插件访问，不退出私聊。
     RemoveFriend {
         user_id: String,
     },
@@ -599,20 +645,6 @@ pub enum FriendsAction {
     UnblockFriend {
         target: FriendBlockTarget,
         scope: FriendBlockScope,
-    },
-    /// 新建组时 id 为空，修改时给现有组 ID；名字去掉首尾空白后不能为空。
-    SaveFriendGroup {
-        id: Option<String>,
-        name: String,
-    },
-    /// 删除组时同时收回该组授权，不删除组内好友。
-    RemoveFriendGroup {
-        id: String,
-    },
-    /// 完整替换好友的分组，不重复包含同一个组 ID。
-    SetFriendGroups {
-        user_id: String,
-        groups: Vec<String>,
     },
 }
 
@@ -642,4 +674,59 @@ pub enum SharingAction {
         owner_user_id: String,
         plugin_id: String,
     },
+}
+
+/// 公网访问、入口和访客链接的操作（ADR-0021、ADR-0089、ADR-0090）。
+#[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize)]
+#[cfg_attr(feature = "uniffi", derive(uniffi::Enum))]
+#[serde(tag = "type", rename_all = "snake_case")]
+pub enum ClientsAction {
+    /// 取客户端入口列表（`GET` [`clients_path`](crate::clients_path)），结果在
+    /// [`ClientsViewModel::plugins`](crate::ClientsViewModel::plugins)。
+    Refresh,
+    /// 开或关一个入口（`PUT` [`clients_entry_path`](crate::clients_entry_path)）；`kind` 是哪个入口。
+    /// [`EntryKind::Other`](crate::EntryKind::Other) 拼不出路径段：照常显示这一行，但把开关置灰、不发请求。
+    SetEntry {
+        id: String,
+        kind: EntryKind,
+        enabled: bool,
+    },
+    /// 保存后缀、服务商和凭据（`PUT` [`clients_domain_path`](crate::clients_domain_path)）。
+    SaveDomain { request: PutDomainRequest },
+    /// 取服务商预设（`GET` [`dns_providers_path`](crate::dns_providers_path)），结果在
+    /// [`ClientsSettingsViewModel::providers`](crate::ClientsSettingsViewModel::providers)。
+    DnsProviders,
+    /// 换公网入口（`PUT` [`clients_ingress_path`]）；旧连接器先撤掉。
+    SaveIngress { request: PutIngressRequest },
+    /// 公网访问总开关（`PUT` [`clients_public_access_path`](crate::clients_public_access_path)）。
+    SetPublicAccess { enabled: bool },
+    /// 取一个应用的访客链接（`GET` [`clients_guests_path`]）。
+    RefreshGuests { id: String },
+    /// 新建一条访客链接（`POST` [`clients_guests_path`](crate::clients_guests_path)）。
+    CreateGuest {
+        id: String,
+        label: String,
+        ttl_seconds: u32,
+        path: Option<String>,
+    },
+    /// 取一条访客链接的完整地址（`GET` [`clients_guest_path`]），每次取记审计；
+    /// 列表里的 `url` 为空，只有这一条带。结果并进 [`ClientsGuests`]。
+    GetGuest { id: String, guest: String },
+    /// 收回一条访客链接（`DELETE` [`clients_guest_path`]）；下一个请求就失效。
+    RevokeGuest { id: String, guest: String },
+    /// 取入口、证书、闸门和自检（`GET` [`clients_status_path`](crate::clients_status_path)）。
+    RefreshStatus,
+    /// 新建一个专用密码（`POST` [`clients_passwords_path`]）；值先放进
+    /// [`ClientsViewModel::password`](crate::ClientsViewModel::password)，刷新后才有这一条。`per_client: false` 的插件再建回 409。
+    CreatePassword {
+        id: String,
+        request: NewPasswordRequest,
+    },
+    /// 取一个密码的值（`GET` [`clients_password_path`]），每次取值记审计；值放进
+    /// [`ClientsViewModel::password`]。
+    GetPassword { id: String, password: String },
+    /// 吊销一个密码（`DELETE` [`clients_password_path`]）；`per_client: false` 时是换值。
+    RevokePassword { id: String, password: String },
+    /// 提前解除一个来源的封禁（`DELETE` [`clients_ban_path`]）；`source` 的写法同 [`Ban`]。
+    Unban { source: String },
 }

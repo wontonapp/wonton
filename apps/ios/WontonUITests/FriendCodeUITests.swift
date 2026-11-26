@@ -14,7 +14,8 @@ final class FriendCodeUITests: XCTestCase {
         app = XCUIApplication()
         app.launchArguments = ["-AppleLanguages", "(en)", "-AppleLocale", "en_US"]
         try UITestBackend.passPairingCode(to: app)
-        app.launch()
+        UITestBackend.launch(app)
+        UITestBackend.settleKeyHandoff(app)
     }
 
     func testMyCodeShowsQR() throws {
@@ -25,6 +26,106 @@ final class FriendCodeUITests: XCTestCase {
         XCTAssertTrue(link.waitForExistence(timeout: 10), "没有链接")
         XCTAssertTrue(link.label.hasPrefix("https://matrix.to/#/@"), "链接不是 matrix.to 用户链接：\(link.label)")
         shot("my-code")
+    }
+
+    /// “我的二维码”的系统分享：出保存/复制图片项，保存到相册不崩、能回面板、能取消。
+    /// 期望链接落 runner 沙盒固定文件，宿主机解码保存图后比对。
+    /// 系统项/取消/权限框按设备语言配中英标签，权限框只点一次 Allow/允许。
+    func testShareMyCodeQR() throws {
+        openAddFriend()
+        tapButton("My QR Code", timeout: 40)
+        let link = app.staticTexts["friends-my-link"]
+        XCTAssertTrue(link.waitForExistence(timeout: 10), "QR_SHARE_LINK_MISSING")
+        let expectedLink = link.label
+        // 落盘前只做布尔断言，不把载荷放进失败消息。
+        XCTAssertFalse(expectedLink.isEmpty, "QR_EXPECTED_LINK_EMPTY")
+        XCTAssertTrue(expectedLink.hasPrefix("https://matrix.to/#/@"), "QR_EXPECTED_LINK_PREFIX")
+        // 固定文件名、无结尾换行；内容只进 runner 沙盒和宿主私有管道，不进附件、命令参数或日志。
+        let expectedURL = FileManager.default
+            .urls(for: .documentDirectory, in: .userDomainMask)[0]
+            .appendingPathComponent("qr-expected-link.txt")
+        XCTAssertTrue(
+            FileManager.default.createFile(atPath: expectedURL.path, contents: Data(expectedLink.utf8)),
+            "QR_EXPECTED_WRITE_FAILED"
+        )
+        XCTAssertTrue(app.images["My QR Code"].exists, "没有二维码")
+        let share = app.buttons["friends-my-share"]
+        XCTAssertTrue(share.waitForExistence(timeout: 10), "没有分享入口")
+        shot("share-panel")
+        share.tap()
+        // iOS 26 分享表的活动项是 Cell（attempt2 AX 树：Cell identifier 'actionGroupCell' label 'Save Image'），按设备语言配中英标签。
+        guard let save = waitCell(["Save Image", "存储图像"], timeout: 10) else {
+            return XCTFail("QR_SHARE_SAVE_CELL_UNAVAILABLE")
+        }
+        shot("share-sheet")
+        save.tap()
+        // 全新模拟器第一次保存必弹相册加权限：等面板回归或 Allow/允许，alert 只点一次；弹两个或没有 Allow 都算失败。
+        var allowedOnce = false
+        var saved = false
+        let deadline = Date().addingTimeInterval(10)
+        while Date() < deadline {
+            if qrPanelBack(expectedLink) { saved = true; break }
+            if app.alerts.firstMatch.exists {
+                guard let allow = ["Allow", "允许"].map({ app.alerts.buttons[$0].firstMatch })
+                    .first(where: { $0.exists && $0.isHittable }) else { break }
+                if allowedOnce { break }
+                allow.tap()
+                allowedOnce = true
+            }
+            _ = app.wait(for: .runningForeground, timeout: 1)
+        }
+        XCTAssertTrue(saved, "QR_SHARE_SAVE_RETURN_FAILED")
+        shot("after-save")
+        share.tap()
+        // 先确认分享表真的出现（有 Save Image Cell），再取消；否则可能滑在还没弹出的空屏上。
+        guard let sheetItem = waitCell(["Save Image", "存储图像"], timeout: 10) else {
+            return XCTFail("QR_SHARE_CANCEL_SHEET_MISSING")
+        }
+        // iOS 26 分享表 AX 里没有 Cancel/取消 Button（1116 定点实测，10s 轮询无果）：
+        // 先按原断言轮询 2s，没有就下滑关闭。
+        if let cancel = waitButton(["Cancel", "取消"], timeout: 2), cancel.isEnabled, cancel.isHittable {
+            cancel.tap()
+        } else {
+            sheetItem.swipeDown(velocity: .fast)
+        }
+        // 取消后分享表要真的关掉：≤5s 内 Save Image Cell 消失，否则算取消不可用。
+        XCTAssertTrue(
+            app.cells["Save Image"].firstMatch.waitForNonExistence(timeout: 5),
+            "QR_SHARE_CANCEL_UNAVAILABLE"
+        )
+        XCTAssertTrue(waitForQRPanel(expectedLink), "QR_SHARE_CANCEL_RETURN_FAILED")
+        shot("after-cancel")
+    }
+
+    private func waitForQRPanel(_ expectedLink: String) -> Bool {
+        let deadline = Date().addingTimeInterval(10)
+        repeat {
+            if qrPanelBack(expectedLink) { return true }
+            _ = app.wait(for: .runningForeground, timeout: 1)
+        } while Date() < deadline
+        return false
+    }
+
+    /// 保存/取消后面板要原样回来：链接没变，分享入口仍在、可点。
+    private func qrPanelBack(_ expectedLink: String) -> Bool {
+        let link = app.staticTexts["friends-my-link"]
+        let share = app.buttons["friends-my-share"]
+        return app.state == .runningForeground
+            && link.exists && link.isHittable && link.label == expectedLink
+            && share.exists && share.isEnabled && share.isHittable
+    }
+
+    /// 系统分享表的活动项按设备语言可能是英文或中文，逐个标签找（app 内标签仍英文单值）。
+    private func waitCell(_ labels: [String], timeout: TimeInterval) -> XCUIElement? {
+        let deadline = Date().addingTimeInterval(timeout)
+        repeat {
+            for label in labels {
+                let cell = app.cells[label].firstMatch
+                if cell.exists && cell.isHittable && cell.isEnabled { return cell }
+            }
+            _ = app.wait(for: .runningForeground, timeout: 1)
+        } while Date() < deadline
+        return nil
     }
 
     func testPastedLinkSendsRequest() throws {
@@ -111,27 +212,32 @@ final class FriendCodeUITests: XCTestCase {
         add.tap()
     }
 
-    /// 配对后走到设置：能跳过的引导和“在另一台设备继续”都跳过，设置在侧栏里，侧栏收着就先打开。最多 90 秒。
+    /// 配对后走到设置：跳过引导和“在另一台设备继续”，等交接结束，再从侧栏打开设置。最多 90 秒。
     private func openSettings() -> Bool {
         let deadline = Date().addingTimeInterval(90)
-        var sidebarTapped = Date.distantPast
         while Date() < deadline {
+            // ADR-0095：页面入口都在侧栏；引导结束后还可能自动进了一个房间，先退出来。
             let settings = app.buttons["Settings"].firstMatch
             if settings.exists && settings.isHittable {
                 settings.tap()
                 return true
             }
-            if let skip = ["Later", "Skip", "Done", "Next"]
+            let sidebar = app.buttons.matching(UITestSidebar.button).firstMatch
+            if sidebar.exists && sidebar.isHittable {
+                sidebar.tap()
+                continue
+            }
+            let back = app.buttons["Back"].firstMatch
+            if back.exists && back.isHittable {
+                back.tap()
+                continue
+            }
+            if let skip = ["Later", "Skip", "Done", "Next", "Go to Chat"]
                 .map({ app.buttons[$0].firstMatch })
                 .first(where: { $0.exists && $0.isHittable && $0.isEnabled }) {
                 skip.tap()
-            } else {
-                let sidebar = app.buttons["Sidebar"].firstMatch
-                if sidebar.exists && sidebar.isHittable && Date().timeIntervalSince(sidebarTapped) > 6 {
-                    sidebar.tap()
-                    sidebarTapped = Date()
-                }
             }
+            UITestBackend.settleKeyHandoff(app)
             _ = app.wait(for: .runningForeground, timeout: 1)
         }
         return false

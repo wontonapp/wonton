@@ -1,6 +1,6 @@
 #!/usr/bin/env bash
 # 引导和帮助的端到端冒烟（ADR-0034，GOAL M1 第 12、13 项）：官方索引读得懂 → 引导如实报错或如实推荐 →
-# 帮助文档跟着索引更新、半途失败不切换、min_core 挡住旧核心 → 模型网关的三种错误原因各不相同。
+# 帮助文档跟着索引更新、半途失败不切换、min_core 挡住旧核心。
 # 真实的核心和真实的 MCP 总线，不 mock；索引和文档 blob 都在本地，场景里换索引不需要外网。
 #
 #   deploy/dev/core/smoke-onboarding.sh
@@ -8,16 +8,15 @@
 # 在要测的主机上直接执行：场景里在本机改索引目录，核心把同一路径绑定挂载进去，DOCKER_HOST 指向远端时核心
 # 看到的是远端那边的空目录。
 # 使用独立的 compose 项目、端口和临时数据目录，结束时清理全部容器、网络、卷和数据；KEEP=1 保留现场。
-# 不读不打印任何 key。官方索引取自 wonton-store 的 main，文档 blob 按 sha256 从 GitHub 取：GitHub 连不上时
-# 给脚本 export https_proxy。模型网关的三种错误里，「错的 key」和「断网」要经出口容器到真实上游：
-# WONTON_SMOKE_EGRESS_PROXY 指向宿主上能上网的代理（如 http://host.docker.internal:<宿主代理端口>），不设时这两个
-# 用例跳过（脚本会说明原因），网关没启动的用例照跑。构建核心镜像经 dev.sh，需要外网下载依赖时设
-# WONTON_DEV_BUILD_PROXY。
+# 官方索引取自 wonton-store 的 main，文档 blob 按 sha256 从 GitHub 取：GitHub 连不上时给脚本 export https_proxy。
+# 构建核心镜像经 dev.sh，需要外网下载依赖时设 WONTON_DEV_BUILD_PROXY。
 set -euo pipefail
 
 here="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 repo="$(cd "$here/../../.." && pwd)"
 dev="$here/dev.sh"
+# shellcheck source=deploy/dev/core/dev-guard.sh
+source "$here/dev-guard.sh"
 
 export WONTON_DEV_PROJECT=wonton-onboarding-smoke
 # 带实例名：清理只动这个实例的资源。冒烟一次只跑一个。
@@ -28,8 +27,14 @@ export WONTON_DEV_DOMAIN=wonton.localhost
 export WONTON_DEV_DATA="/tmp/wonton-onboarding-smoke-$(date +%s)-$$"
 # 不预装默认 Agent：引导的 Agent 名单应来自官方索引，不是本机装了什么。
 export WONTON_DEV_DEFAULT_PLUGINS=''
-# 出网代理（ADR-0023）：模型网关的上游经出口容器走。要不要设见文件头的说明。
+# 出网代理（ADR-0023）：要出网的插件经出口容器走。要不要设见文件头的说明。
 export WONTON_EGRESS_PROXY="${WONTON_SMOKE_EGRESS_PROXY:-}"
+# 这个脚本的密钥放在检出目录（不带进正式安装的状态目录）；dev.sh 在 source 时就按它定好变量。
+export WONTON_DEV_SECRETS="$here/.secrets"
+# core 网络由 dev.sh 建和删（网络在 compose 文件里是 external，见 dev.sh 的 ensure_core_network）。
+# shellcheck source=deploy/dev/core/dev.sh
+source "$here/dev.sh"
+dev_guard_check "$WONTON_DEV_PROJECT"
 WONTON_BUILD_COMMIT="$("$dev" commit)"
 export WONTON_BUILD_COMMIT
 core="$WONTON_DEV_PROJECT"
@@ -38,13 +43,10 @@ curl_image="curlimages/curl:8.23.0"
 core_url="http://$WONTON_DEV_DOMAIN:$WONTON_DEV_PORT"
 store="$WONTON_DEV_DATA/store"
 probe="wonton-$WONTON_DEV_INSTANCE--app-onboarding-probe--probe"
-magpie="wonton-$WONTON_DEV_INSTANCE--ai-usemagpie-magpie--magpie"
-# 出口容器的名字和它自己的网络同名（ADR-0023）。
-relay="wonton-$WONTON_DEV_INSTANCE--egress"
 # 核心镜像报的版本号：取官方索引的 min_core（一台刚好够新的核心，ADR-0025/0034）。索引没写时退回 0.1.0。
 # 写成 0.0.0 之类更旧的版本，min_core 的比较会把正常场景也挡住——那属于场景 5。
 core_version=0.1.0
-plugins=(ai.usemagpie.magpie app.onboarding.probe)
+plugins=(app.onboarding.probe)
 
 step() {
   step_now="$*"
@@ -85,11 +87,11 @@ json_len() { python3 -c 'import json,sys; print(len(json.load(sys.stdin)))'; }
 cleanup() {
   local status=$?
   if [[ "${KEEP:-}" == 1 ]]; then
-    echo "保留现场：项目 $core，数据目录 $WONTON_DEV_DATA（清理：WONTON_DEV_PROJECT=$core WONTON_DEV_DATA=$WONTON_DEV_DATA docker compose -p $core -f $here/compose.yaml down -v --remove-orphans）"
+    echo "保留现场：项目 $core，数据目录 $WONTON_DEV_DATA"
+    echo "清理：WONTON_DEV_PROJECT=$core WONTON_DEV_DATA=$WONTON_DEV_DATA docker compose -p $core -f $here/compose.yaml down -v --remove-orphans"
+    echo "     docker ps -aq --filter label=wonton.instance=$WONTON_DEV_INSTANCE | xargs docker rm -f >/dev/null; docker network rm ${core}_core"
     return
   fi
-  # 先停出口容器：它挂在每个出网插件的网络里，不摘掉，插件网络删不掉。
-  docker rm -f "$relay" >/dev/null 2>&1 || true
   docker rm -f "$probe" >/dev/null 2>&1 || true
   # 中途失败时插件可能还在：先删插件容器，再停核心栈，最后删网络、卷和数据。
   local id resource
@@ -97,11 +99,12 @@ cleanup() {
     for resource in $(docker ps -aq --filter "label=wonton.plugin=$id" --filter "label=wonton.instance=$WONTON_DEV_INSTANCE"); do docker rm -f "$resource" >/dev/null 2>&1 || true; done
   done
   docker compose -p "$core" -f "$here/compose.yaml" down -v --remove-orphans >/dev/null 2>&1 || true
+  # 删不掉时 remove_core_network 已经在标准错误上说了原因，清理流程接着走完。
+  remove_core_network || true
   for id in "${plugins[@]}"; do
     for resource in $(docker network ls -q --filter "label=wonton.plugin=$id" --filter "label=wonton.instance=$WONTON_DEV_INSTANCE"); do docker network rm "$resource" >/dev/null 2>&1 || true; done
     for resource in $(docker volume ls -q --filter "label=wonton.plugin=$id" --filter "label=wonton.instance=$WONTON_DEV_INSTANCE"); do docker volume rm "$resource" >/dev/null 2>&1 || true; done
   done
-  docker network rm "$relay" >/dev/null 2>&1 || true
   docker run --rm --user 0 --entrypoint rm -v /tmp:/host-tmp "$curl_image" \
     -rf "/host-tmp/$(basename "$WONTON_DEV_DATA")" >/dev/null 2>&1 || true
   if [[ $status == 0 ]]; then echo "已清理"; else echo "冒烟失败，已清理（KEEP=1 可保留现场）" >&2; fi
@@ -223,7 +226,6 @@ docker version --format '   Docker {{.Server.Version}} {{.Server.Os}}/{{.Server.
 [[ -z "$(docker ps -aq --filter "label=wonton.instance=$WONTON_DEV_INSTANCE")" ]] ||
   fail "Docker 上已经有实例 $WONTON_DEV_INSTANCE 的资源：先清掉再跑冒烟"
 ok "没有残留的本实例资源"
-[[ -n "$WONTON_EGRESS_PROXY" ]] || echo "   （未设 WONTON_SMOKE_EGRESS_PROXY：模型网关的「错的 key」和「断网」两个用例会跳过）"
 
 step "取官方索引和文档 blob（wonton-store main，本地 $store）"
 mkdir -p "$store"
@@ -239,21 +241,11 @@ step "构建核心镜像（版本号 $core_version，满足索引的 min_core）
   -t "$core_image" -f "$here/Dockerfile" "$repo" >/dev/null
 ok "镜像 $core_image"
 
-step "准备 Hydra 和 Matrix 的密钥（这个脚本自己用检出目录的 .secrets，没有才生成；dev.sh 的密钥在状态目录，互不相干）"
-secrets="$here/.secrets"
-mkdir -p "$secrets" && chmod 700 "$secrets"
-if [[ ! -s "$secrets/hydra-system-secret" ]]; then
-  od -An -N32 -tx1 /dev/urandom | tr -d ' \n' >"$secrets/hydra-system-secret"
-fi
-export WONTON_DEV_HYDRA_SECRET="$(cat "$secrets/hydra-system-secret")"
-if [[ ! -s "$secrets/matrix-jwt.pem" ]]; then
-  (umask 077 && openssl genpkey -algorithm ed25519 -out "$secrets/matrix-jwt.pem")
-  openssl pkey -in "$secrets/matrix-jwt.pem" -pubout -out "$secrets/matrix-jwt.pub.pem"
-  od -An -N32 -tx1 /dev/urandom | tr -d ' \n' >"$secrets/matrix-shared-secret"
-fi
-export WONTON_DEV_MATRIX_JWT_KEY="$(cat "$secrets/matrix-jwt.pem")"
-export WONTON_DEV_MATRIX_JWT_PUBLIC_KEY="$(cat "$secrets/matrix-jwt.pub.pem")"
-export WONTON_DEV_MATRIX_SECRET="$(cat "$secrets/matrix-shared-secret")"
+step "准备 Hydra 和 Matrix 的密钥（这个脚本照旧用检出目录的 .secrets，密钥由 dev.sh 的准备函数生成）"
+mkdir -p "$WONTON_DEV_SECRETS"
+ensure_secret
+ensure_matrix_secrets
+ensure_dev_federation
 mkdir -p "$WONTON_DEV_DATA"
 cat >"$WONTON_DEV_DATA/compose-override.yaml" <<YAML
 services:
@@ -266,6 +258,7 @@ services:
 YAML
 
 step "启动核心（项目 $core，端口 $WONTON_DEV_PORT）"
+ensure_core_network
 docker compose -p "$core" -f "$here/compose.yaml" -f "$WONTON_DEV_DATA/compose-override.yaml" \
   up -d --no-build --wait >/dev/null
 token="$(docker exec "$core" cat "$WONTON_DEV_DATA/core/owner-token")"
@@ -367,46 +360,6 @@ expect "文档没切换" "$(json docs_commit <<<"$page")" "$updated_commit"
 body="$(help_json '{"topic":"devices","lang":"zh"}')"
 expect_contains "正文还是旧文档的" "$(json body <<<"$body")" "冒烟标记"
 ok "min_core 99.0.0 挡住了版本 $core_version 的核心，文档停在 $updated_commit"
-
-step "模型网关：三种错误的原因各不相同（ADR-0034）"
-plugin_state() {
-  "$dev" list | awk -v id="$1" '$1 == id { print $2; found = 1 } END { if (!found) print "absent" }'
-}
-for _ in $(seq 180); do [[ "$(plugin_state ai.usemagpie.magpie)" == running ]] && break; sleep 1; done
-expect "核心在后台预装了模型网关" "$(plugin_state ai.usemagpie.magpie)" running
-# 把一个假 key 交给核心保存：核心转给网关，网关到真实上游验证，退出码决定核心报哪种错误。
-save_key() {
-  api PUT "/_wonton/api/models/providers/$1" '{"key":"not-a-real-key"}'
-}
-
-if [[ -n "$WONTON_EGRESS_PROXY" ]]; then
-  save_key deepseek
-  expect "错的 key：上游拒绝" "$CODE" 400
-  expect "错误类别" "$(json error.kind <<<"$REPLY")" invalid_input
-  expect_contains "原因说清 key 没保存" "$REPLY" "拒绝了 key"
-else
-  echo "   （跳过「错的 key」：没设 WONTON_SMOKE_EGRESS_PROXY，上游到不了，401 和断网没法区分）"
-fi
-
-if [[ -n "$WONTON_EGRESS_PROXY" ]]; then
-  docker stop "$relay" >/dev/null
-  save_key moonshot-cn
-  docker start "$relay" >/dev/null
-  expect "断网：连不上上游" "$CODE" 502
-  expect "错误类别" "$(json error.kind <<<"$REPLY")" upstream_unavailable
-  expect_contains "原因说清 key 已保存" "$REPLY" "连接失败"
-else
-  echo "   （跳过「断网」：没设 WONTON_SMOKE_EGRESS_PROXY，没有出口容器可停）"
-fi
-
-docker stop "$magpie" >/dev/null
-save_key deepseek
-docker start "$magpie" >/dev/null
-for _ in $(seq 60); do [[ "$(plugin_state ai.usemagpie.magpie)" == running ]] && break; sleep 1; done
-expect "网关没启动：核心报网关不可用" "$CODE" 503
-expect "错误类别" "$(json error.kind <<<"$REPLY")" models_unavailable
-expect_contains "原因指向网关本身" "$REPLY" "模型网关"
-ok "三种错误：invalid_input / upstream_unavailable / models_unavailable，原因各不相同"
 
 step "收尾"
 echo "全部通过"

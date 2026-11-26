@@ -1,6 +1,5 @@
 {
   "sourceLanguage": "en",
-  "version": "1.0",
   "strings": {
     "appLock.lockedTitle": {
       "comment": "锁定页的标题。",
@@ -10,6 +9,12 @@
           "stringUnit": {
             "state": "translated",
             "value": "Wonton is locked"
+          }
+        },
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Wonton はロックされています"
           }
         },
         "zh-Hans": {
@@ -22,12 +27,6 @@
           "stringUnit": {
             "state": "translated",
             "value": "雲吞已鎖定"
-          }
-        },
-        "ja": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "Wonton はロックされています"
           }
         }
       }
@@ -42,6 +41,12 @@
             "value": "Set a screen lock on this device to turn the app lock on."
           }
         },
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "画面ロックが設定されていないため、App ロックをオンにできません。システム設定で設定してください。"
+          }
+        },
         "zh-Hans": {
           "stringUnit": {
             "state": "translated",
@@ -52,12 +57,6 @@
           "stringUnit": {
             "state": "translated",
             "value": "裝置沒有設定螢幕鎖定，無法開啟 App 鎖。請到系統設定設定一個。"
-          }
-        },
-        "ja": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "画面ロックが設定されていないため、App ロックをオンにできません。システム設定で設定してください。"
           }
         }
       }
@@ -72,6 +71,12 @@
             "value": "This device has no screen lock. Set one up in the system settings to unlock."
           }
         },
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "画面ロックが設定されていません。システム設定で設定するとロックを解除できます。"
+          }
+        },
         "zh-Hans": {
           "stringUnit": {
             "state": "translated",
@@ -82,12 +87,6 @@
           "stringUnit": {
             "state": "translated",
             "value": "裝置沒有設定螢幕鎖定。請到系統設定設定一個就能解鎖。"
-          }
-        },
-        "ja": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "画面ロックが設定されていません。システム設定で設定するとロックを解除できます。"
           }
         }
       }
@@ -102,6 +101,12 @@
             "value": "Open system settings"
           }
         },
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "システム設定を開く"
+          }
+        },
         "zh-Hans": {
           "stringUnit": {
             "state": "translated",
@@ -112,12 +117,6 @@
           "stringUnit": {
             "state": "translated",
             "value": "前往系統設定"
-          }
-        },
-        "ja": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "システム設定を開く"
           }
         }
       }
@@ -132,6 +131,12 @@
             "value": "Lock after leaving the app"
           }
         },
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "離れてからロックするまで"
+          }
+        },
         "zh-Hans": {
           "stringUnit": {
             "state": "translated",
@@ -142,12 +147,6 @@
           "stringUnit": {
             "state": "translated",
             "value": "離開後多久鎖上"
-          }
-        },
-        "ja": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "離れてからロックするまで"
           }
         }
       }
@@ -162,6 +161,12 @@
             "value": "After 15 minutes"
           }
         },
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "15 分後"
+          }
+        },
         "zh-Hans": {
           "stringUnit": {
             "state": "translated",
@@ -172,12 +177,6 @@
           "stringUnit": {
             "state": "translated",
             "value": "15 分鐘後"
-          }
-        },
-        "ja": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "15 分後"
           }
         }
       }
@@ -192,6 +191,12 @@
             "value": "After 5 minutes"
           }
         },
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "5 分後"
+          }
+        },
         "zh-Hans": {
           "stringUnit": {
             "state": "translated",
@@ -202,12 +207,6 @@
           "stringUnit": {
             "state": "translated",
             "value": "5 分鐘後"
-          }
-        },
-        "ja": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "5 分後"
           }
         }
       }
@@ -222,6 +221,12 @@
             "value": "Right away"
           }
         },
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "すぐ"
+          }
+        },
         "zh-Hans": {
           "stringUnit": {
             "state": "translated",
@@ -232,12 +237,6 @@
           "stringUnit": {
             "state": "translated",
             "value": "立即"
-          }
-        },
-        "ja": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "すぐ"
           }
         }
       }
@@ -252,6 +251,12 @@
             "value": "After 1 minute"
           }
         },
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "1 分後"
+          }
+        },
         "zh-Hans": {
           "stringUnit": {
             "state": "translated",
@@ -262,12 +267,6 @@
           "stringUnit": {
             "state": "translated",
             "value": "1 分鐘後"
-          }
-        },
-        "ja": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "1 分後"
           }
         }
       }
@@ -282,6 +281,12 @@
             "value": "App lock"
           }
         },
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "App ロック"
+          }
+        },
         "zh-Hans": {
           "stringUnit": {
             "state": "translated",
@@ -292,12 +297,6 @@
           "stringUnit": {
             "state": "translated",
             "value": "App 鎖"
-          }
-        },
-        "ja": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "App ロック"
           }
         }
       }
@@ -312,6 +311,12 @@
             "value": "Unlock"
           }
         },
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "ロック解除"
+          }
+        },
         "zh-Hans": {
           "stringUnit": {
             "state": "translated",
@@ -322,12 +327,6 @@
           "stringUnit": {
             "state": "translated",
             "value": "解鎖"
-          }
-        },
-        "ja": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "ロック解除"
           }
         }
       }
@@ -342,6 +341,12 @@
             "value": "Verify your identity to keep using Wonton"
           }
         },
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Wonton を使い続けるには認証してください"
+          }
+        },
         "zh-Hans": {
           "stringUnit": {
             "state": "translated",
@@ -353,11 +358,95 @@
             "state": "translated",
             "value": "驗證身分後繼續使用雲吞"
           }
+        }
+      }
+    },
+    "notification.allowed": {
+      "comment": "Status on the system notification row: notifications are allowed in the system.",
+      "extractionState": "manual",
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Allowed"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "已允许"
+          }
+        },
+        "zh-Hant": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "已允許"
+          }
         },
         "ja": {
           "stringUnit": {
             "state": "translated",
-            "value": "Wonton を使い続けるには認証してください"
+            "value": "許可済み"
+          }
+        }
+      }
+    },
+    "notification.push": {
+      "comment": "Title of the push row on the notification settings page.",
+      "extractionState": "manual",
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Push"
+          }
+        },
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "プッシュ通知"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "推送"
+          }
+        },
+        "zh-Hant": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "推送"
+          }
+        }
+      }
+    },
+    "notification.denied": {
+      "comment": "Status on the system notification row: notifications are not allowed (never asked yet counts too).",
+      "extractionState": "manual",
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Not allowed"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "未允许"
+          }
+        },
+        "zh-Hant": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "未允許"
+          }
+        },
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "許可なし"
           }
         }
       }
@@ -372,6 +461,12 @@
             "value": "System Notifications"
           }
         },
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "システム通知"
+          }
+        },
         "zh-Hans": {
           "stringUnit": {
             "state": "translated",
@@ -382,12 +477,6 @@
           "stringUnit": {
             "state": "translated",
             "value": "系統通知"
-          }
-        },
-        "ja": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "システム通知"
           }
         }
       }
@@ -402,6 +491,12 @@
             "value": "Notifications"
           }
         },
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "通知"
+          }
+        },
         "zh-Hans": {
           "stringUnit": {
             "state": "translated",
@@ -409,12 +504,6 @@
           }
         },
         "zh-Hant": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "通知"
-          }
-        },
-        "ja": {
           "stringUnit": {
             "state": "translated",
             "value": "通知"
@@ -422,32 +511,602 @@
         }
       }
     },
-    "notification.unsupported": {
-      "comment": "Explanation under the row while this platform gets no push.",
+    "push.keysUnavailable": {
+      "comment": "Push unavailability line: the shared keychain holding the push keys can't be read.",
       "extractionState": "manual",
       "localizations": {
         "en": {
           "stringUnit": {
             "state": "translated",
-            "value": "This version of Wonton can't receive push notifications yet"
-          }
-        },
-        "zh-Hans": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "这个版本的云吞还收不到推送"
-          }
-        },
-        "zh-Hant": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "這個版本的雲吞還收不到推播"
+            "value": "Push keys can't be read on this device"
           }
         },
         "ja": {
           "stringUnit": {
             "state": "translated",
-            "value": "このバージョンのWontonはまだプッシュ通知を受け取れません"
+            "value": "この端末ではプッシュの鍵を読めません"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "这台设备读不到推送密钥"
+          }
+        },
+        "zh-Hant": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "這台裝置讀不到推播金鑰"
+          }
+        }
+      }
+    },
+    "push.noPermission": {
+      "comment": "Push unavailability line: notification permission was denied.",
+      "extractionState": "manual",
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "No notification permission: new messages can't show while Wonton is closed or the screen is locked"
+          }
+        },
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "通知の権限がありません。Wontonが終了していたり画面がロックされていると、新着メッセージを表示できません"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "没有通知权限：云吞被杀或锁屏时弹不出新消息"
+          }
+        },
+        "zh-Hant": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "沒有通知權限：雲吞被關閉或螢幕鎖定時彈不出新訊息"
+          }
+        }
+      }
+    },
+    "push.noRelayDetail": {
+      "comment": "Reason recorded in the core when the push relay isn't configured.",
+      "extractionState": "manual",
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "This version doesn't have a push service configured yet"
+          }
+        },
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "このバージョンにはプッシュサービスが設定されていません"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "这个版本还没有配置推送服务"
+          }
+        },
+        "zh-Hant": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "這個版本還沒有配置推送服務"
+          }
+        }
+      }
+    },
+    "push.noService": {
+      "comment": "Push unavailability line: there is no push service (relay) for this build, or the system can't register remote notifications.",
+      "extractionState": "manual",
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Push isn't set up yet (no push service)"
+          }
+        },
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "プッシュ通知はまだ使えません（プッシュサービスなし）"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "推送还没开通（缺推送服务）"
+          }
+        },
+        "zh-Hant": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "推播還沒開通（缺推送服務）"
+          }
+        }
+      }
+    },
+    "push.registerRejected": {
+      "comment": "Push unavailability line: the core rejected the registration on the spot.",
+      "extractionState": "manual",
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Push registration was rejected"
+          }
+        },
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "プッシュの登録が完了しませんでした"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "推送登记没有成功"
+          }
+        },
+        "zh-Hant": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "推送登記沒有成功"
+          }
+        }
+      }
+    },
+    "push.relayUnreachable": {
+      "comment": "Push unavailability line: the push service (relay) can't be reached right now.",
+      "extractionState": "manual",
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Can't reach the push service right now"
+          }
+        },
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "プッシュサービスに一時的に接続できません"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "推送服务暂时连不上"
+          }
+        },
+        "zh-Hant": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "推送服務暫時連不上"
+          }
+        }
+      }
+    },
+    "push.status.failed.forbidden": {
+      "comment": "Push status line when registering failed because the home server refused it.",
+      "extractionState": "manual",
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Registration failed. Your home server refused it"
+          }
+        },
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "登録に失敗しました。自宅サーバーに拒否されました"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "注册失败，家里的服务器拒绝了"
+          }
+        },
+        "zh-Hant": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "註冊失敗，家用伺服器拒絕了"
+          }
+        }
+      }
+    },
+    "push.status.failed.invalidInput": {
+      "comment": "Push status line when registering failed because the push address is invalid.",
+      "extractionState": "manual",
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Registration failed. The push address is invalid"
+          }
+        },
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "登録に失敗しました。プッシュアドレスが正しくありません"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "注册失败，推送地址无效"
+          }
+        },
+        "zh-Hant": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "註冊失敗，推送位址無效"
+          }
+        }
+      }
+    },
+    "push.status.failed.notReady": {
+      "comment": "Push status line when registering failed because the chat connection isn't ready.",
+      "extractionState": "manual",
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Registration failed. Wait until the chat connection is ready"
+          }
+        },
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "登録に失敗しました。チャットの接続が整うまでお待ちください"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "注册失败，请等聊天连接就绪"
+          }
+        },
+        "zh-Hant": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "註冊失敗，請等聊天連線就緒"
+          }
+        }
+      }
+    },
+    "push.status.failed.transport": {
+      "comment": "Push status line when registering failed because the home server can't be reached.",
+      "extractionState": "manual",
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Registration failed. Try again once the home server is reachable"
+          }
+        },
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "登録に失敗しました。自宅サーバーに接続できたらもう一度お試しください"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "注册失败，连上家里的服务器后重试"
+          }
+        },
+        "zh-Hant": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "註冊失敗，連上家用伺服器後重試"
+          }
+        }
+      }
+    },
+    "push.status.failed.unauthorized": {
+      "comment": "Push status line when registering failed because this device isn't recognized.",
+      "extractionState": "manual",
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Registration failed. Pair again"
+          }
+        },
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "登録に失敗しました。ペアリングをやり直してください"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "注册失败，请重新配对"
+          }
+        },
+        "zh-Hant": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "註冊失敗，請重新配對"
+          }
+        }
+      }
+    },
+    "push.status.failed.upstream": {
+      "comment": "Push status line when registering failed because the home server hit an error.",
+      "extractionState": "manual",
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Registration failed. Your home server hit an error"
+          }
+        },
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "登録に失敗しました。自宅サーバーでエラーが発生しました"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "注册失败，家里的服务器出错了"
+          }
+        },
+        "zh-Hant": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "註冊失敗，家用伺服器出錯了"
+          }
+        }
+      }
+    },
+    "push.status.notSet": {
+      "comment": "Push status line: no push address is registered yet.",
+      "extractionState": "manual",
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Not registered"
+          }
+        },
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "未登録"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "未注册"
+          }
+        },
+        "zh-Hant": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "未註冊"
+          }
+        }
+      }
+    },
+    "push.status.registered": {
+      "comment": "Push status line: the push address is registered.",
+      "extractionState": "manual",
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Registered"
+          }
+        },
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "登録済み"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "已注册"
+          }
+        },
+        "zh-Hant": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "已註冊"
+          }
+        }
+      }
+    },
+    "push.status.registering": {
+      "comment": "Push status line: the push address is being registered.",
+      "extractionState": "manual",
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Registering"
+          }
+        },
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "登録中"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "正在注册"
+          }
+        },
+        "zh-Hant": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "正在註冊"
+          }
+        }
+      }
+    },
+    "push.status.unavailable": {
+      "comment": "Push status line: no push can arrive, reason unknown to the shell.",
+      "extractionState": "manual",
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Push notifications aren't arriving"
+          }
+        },
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "プッシュ通知が届きません"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "收不到推送"
+          }
+        },
+        "zh-Hant": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "收不到推播"
+          }
+        }
+      }
+    },
+    "push.value.notSet": {
+      "comment": "Short push state value on the settings list.",
+      "extractionState": "manual",
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Not on"
+          }
+        },
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "未設定"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "未开启"
+          }
+        },
+        "zh-Hant": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "未開啟"
+          }
+        }
+      }
+    },
+    "push.value.on": {
+      "comment": "Short push state value on the settings list.",
+      "extractionState": "manual",
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "On"
+          }
+        },
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "オン"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "已开启"
+          }
+        },
+        "zh-Hant": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "已開啟"
+          }
+        }
+      }
+    },
+    "push.value.registering": {
+      "comment": "Short push state value on the settings list.",
+      "extractionState": "manual",
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Registering"
+          }
+        },
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "登録中"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "注册中"
+          }
+        },
+        "zh-Hant": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "註冊中"
+          }
+        }
+      }
+    },
+    "push.value.unavailable": {
+      "comment": "Short push state value on the settings list.",
+      "extractionState": "manual",
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Not receiving"
+          }
+        },
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "受信できません"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "收不到"
+          }
+        },
+        "zh-Hant": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "收不到"
           }
         }
       }
@@ -462,6 +1121,12 @@
             "value": "About"
           }
         },
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Wontonについて"
+          }
+        },
         "zh-Hans": {
           "stringUnit": {
             "state": "translated",
@@ -473,11 +1138,225 @@
             "state": "translated",
             "value": "關於"
           }
+        }
+      }
+    },
+    "settings.privacy": {
+      "comment": "Settings row and navigation title for the privacy statement.",
+      "extractionState": "manual",
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Privacy"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "隐私"
+          }
+        },
+        "zh-Hant": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "隱私"
+          }
         },
         "ja": {
           "stringUnit": {
             "state": "translated",
-            "value": "Wontonについて"
+            "value": "プライバシー"
+          }
+        }
+      }
+    },
+    "settings.licenses": {
+      "comment": "Settings row and navigation title for the bundled open source license list.",
+      "extractionState": "manual",
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Open source licenses"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "开源许可"
+          }
+        },
+        "zh-Hant": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "開源授權"
+          }
+        },
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "オープンソースライセンス"
+          }
+        }
+      }
+    },
+    "settings.licenses.value": {
+      "comment": "Value of the licenses row: how many distinct licenses the list covers. Argument: the count.",
+      "extractionState": "manual",
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "%#@count@"
+          },
+          "substitutions": {
+            "count": {
+              "argNum": 1,
+              "formatSpecifier": "lld",
+              "variations": {
+                "plural": {
+                  "one": {
+                    "stringUnit": {
+                      "state": "translated",
+                      "value": "%lld license"
+                    }
+                  },
+                  "other": {
+                    "stringUnit": {
+                      "state": "translated",
+                      "value": "%lld licenses"
+                    }
+                  }
+                }
+              }
+            }
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "%#@count@"
+          },
+          "substitutions": {
+            "count": {
+              "argNum": 1,
+              "formatSpecifier": "lld",
+              "variations": {
+                "plural": {
+                  "other": {
+                    "stringUnit": {
+                      "state": "translated",
+                      "value": "%lld 项许可"
+                    }
+                  }
+                }
+              }
+            }
+          }
+        },
+        "zh-Hant": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "%#@count@"
+          },
+          "substitutions": {
+            "count": {
+              "argNum": 1,
+              "formatSpecifier": "lld",
+              "variations": {
+                "plural": {
+                  "other": {
+                    "stringUnit": {
+                      "state": "translated",
+                      "value": "%lld 項授權"
+                    }
+                  }
+                }
+              }
+            }
+          }
+        },
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "%#@count@"
+          },
+          "substitutions": {
+            "count": {
+              "argNum": 1,
+              "formatSpecifier": "lld",
+              "variations": {
+                "plural": {
+                  "other": {
+                    "stringUnit": {
+                      "state": "translated",
+                      "value": "%lld 件"
+                    }
+                  }
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "settings.licenses.problem": {
+      "comment": "Shown when the bundled license list can't be read.",
+      "extractionState": "manual",
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "The license list couldn't be loaded."
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "许可清单没能载入。"
+          }
+        },
+        "zh-Hant": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "授權清單沒能載入。"
+          }
+        },
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "ライセンス一覧を読み込めませんでした。"
+          }
+        }
+      }
+    },
+    "settings.licenses.text": {
+      "comment": "Row that opens the full text of one license.",
+      "extractionState": "manual",
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Full text"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "全文"
+          }
+        },
+        "zh-Hant": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "全文"
+          }
+        },
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "全文"
           }
         }
       }
@@ -492,6 +1371,12 @@
             "value": "Language"
           }
         },
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "言語"
+          }
+        },
         "zh-Hans": {
           "stringUnit": {
             "state": "translated",
@@ -502,12 +1387,6 @@
           "stringUnit": {
             "state": "translated",
             "value": "語言"
-          }
-        },
-        "ja": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "言語"
           }
         }
       }
@@ -522,6 +1401,12 @@
             "value": "Change Wonton’s language in system Settings"
           }
         },
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Wonton の言語はシステム設定で変更します"
+          }
+        },
         "zh-Hans": {
           "stringUnit": {
             "state": "translated",
@@ -532,12 +1417,6 @@
           "stringUnit": {
             "state": "translated",
             "value": "改雲吞的語言要去系統設定"
-          }
-        },
-        "ja": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "Wonton の言語はシステム設定で変更します"
           }
         }
       }
@@ -552,6 +1431,12 @@
             "value": "Tap Language on Wonton’s page in system Settings. Wonton restarts with the new language."
           }
         },
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "システム設定の Wonton ページで「言語」をタップしてください。変更後、Wonton は再起動します。"
+          }
+        },
         "zh-Hans": {
           "stringUnit": {
             "state": "translated",
@@ -562,42 +1447,6 @@
           "stringUnit": {
             "state": "translated",
             "value": "在系統設定的「雲吞」頁點「語言」，改完雲吞會重新啟動。"
-          }
-        },
-        "ja": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "システム設定の Wonton ページで「言語」をタップしてください。変更後、Wonton は再起動します。"
-          }
-        }
-      }
-    },
-    "settings.restartOnboarding": {
-      "comment": "Settings row that shows the setup steps again.",
-      "extractionState": "manual",
-      "localizations": {
-        "en": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "Redo Setup"
-          }
-        },
-        "zh-Hans": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "重看引导"
-          }
-        },
-        "zh-Hant": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "重看初始設定"
-          }
-        },
-        "ja": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "セットアップをやり直す"
           }
         }
       }
@@ -630,6 +1479,37 @@
           }
         }
       }
+    },
+    "settings.restartOnboarding": {
+      "comment": "Settings row that shows the setup steps again.",
+      "extractionState": "manual",
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Redo Setup"
+          }
+        },
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "セットアップをやり直す"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "重看引导"
+          }
+        },
+        "zh-Hant": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "重看初始設定"
+          }
+        }
+      }
     }
-  }
+  },
+  "version": "1.0"
 }

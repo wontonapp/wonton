@@ -1,7 +1,8 @@
 name: android
 
 # detekt、单元测试、Debug 构建和界面参考图比对。PR 上由 gate.yml 按改动范围调用（合并门槛，范围写在那边的
-# changes 里），不自己挂 pull_request；每天定时、手动触发时自己跑全量。
+# changes 里），不自己挂 pull_request；每天定时、手动触发时自己跑全量。Release APK 体积门禁在 android-size.yml，合进 main 之后跑，不挡合并。
+# 核心里一行没改时用 main 上按内容哈希取回的预编译产物，不编核心（见 workflows/README.md 的“核心产物”）。
 on:
   workflow_call:
   schedule:
@@ -16,6 +17,11 @@ concurrency:
 env:
   CARGO_INCREMENTAL: "0"
   CARGO_PROFILE_DEV_DEBUG: line-tables-only
+  # 这个作业只编 Debug；Release 那行留着，和 cache.yml 的 key 对齐（rust-cache 把 CARGO_ 开头的变量算进 key）。
+  # Release 的符号要能还原到行：崩溃分析只靠它，剥掉的是打包进 APK 的那份。
+  CARGO_PROFILE_RELEASE_DEBUG: line-tables-only
+  # 产物用它编、键也算它：钉死版本，别跟镜像漂。
+  ANDROID_NDK_VERSION: "27.0.12077973"
 
 permissions:
   contents: read
@@ -29,29 +35,96 @@ jobs:
       - uses: actions/checkout@fbc6f3992d24b796d5a048ff273f7fcc4a7b6c09 # v5
         with:
           persist-credentials: false
+      # 核心里一行没改（只改了壳）就拿 main 上同一份核心编好的产物，不编核心；规则见 workflows/README.md 的“核心产物”。
+      - name: 核心产物的键
+        id: core
+        # 先取进变量再拼：写在 $(…) 里的话 key.py 失败也算绿，键会变成空的前缀。
+        run: |
+          key=$(python3 scripts/core_artifacts/key.py android)
+          echo "key=android-core-$key" >> "$GITHUB_OUTPUT"
+      - name: 找 main 上编好的核心产物
+        id: corecache
+        # 定时那轮不取，强制现编：rustup、NDK、cargo-ndk 这些环境坏了要每天有人发现。
+        if: github.event_name != 'schedule'
+        uses: actions/cache/restore@0057852bfaa89a56745cba8c7296529d2fc39830 # v4
+        with:
+          path: |
+            apps/compose/shared/build/generated/jniLibs/buildRustCore
+            apps/compose/shared/build/generated/uniffi/kotlin
+          key: ${{ steps.core.outputs.key }}
+      - name: 装产物用的 NDK（版本钉死，不跟镜像自带哪个走）
+        # 命中时产物已经在输出目录里，不用为了编它装 NDK（省掉一次 ~1 GB 下载）。
+        # 镜像上装了哪个 NDK 逐台不同；钉死一份，同一份源码在哪台 runner 上都算同一个键。已装好时不重新下。
+        if: steps.corecache.outputs.cache-hit != 'true'
+        run: |
+          sdk="${ANDROID_HOME:-$ANDROID_SDK_ROOT}"
+          ndk="$sdk/ndk/$ANDROID_NDK_VERSION"
+          if [ ! -d "$ndk" ]; then
+            echo "SDK 里现有：$(ls "$sdk/ndk" 2>/dev/null | tr '\n' ' ')，装 $ANDROID_NDK_VERSION"
+            sm=$(command -v sdkmanager || echo "$sdk/cmdline-tools/latest/bin/sdkmanager")
+            yes | "$sm" --install "ndk;$ANDROID_NDK_VERSION" > /dev/null
+          fi
+          echo "ANDROID_NDK_HOME=$ndk" >> "$GITHUB_ENV"
+
+      # 命中就一路跳过编核心；产物缺了当场停，不让 Kotlin 编译报一串看不懂的错。
+      - name: 核对取回来的产物
+        if: steps.corecache.outputs.cache-hit == 'true'
+        run: |
+          # 要编的 ABI 由 gradle.properties 定，逐个都得有 .so；缺了当场停，别等真机上崩。
+          abis=$(sed -n 's/^wonton\.abis=//p' apps/compose/gradle.properties)
+          [ -n "$abis" ] || { echo "gradle.properties 里没有 wonton.abis"; exit 1; }
+          for abi in $abis; do
+            ls "apps/compose/shared/build/generated/jniLibs/buildRustCore/$abi/libwonton_client.so"
+          done
+          # 绑定在 package 子目录里（app/wonton/...），要用 find，不能只看顶层。
+          kotlin=$(find apps/compose/shared/build/generated/uniffi/kotlin -name '*.kt' | head -5)
+          [ -n "$kotlin" ] || { echo "取回来的产物里没有 Kotlin 绑定"; exit 1; }
+          echo "$kotlin"
+          echo "WONTON_CORE_PREBUILT=1" >> "$GITHUB_ENV"
       - uses: actions/setup-java@b6effb05e454b25005698d916606bdc6ffcbf961 # v5
         with:
           distribution: temurin
           java-version: "21"
       - name: 安装 rust-toolchain.toml 指定的工具链和 Android target
+        if: steps.corecache.outputs.cache-hit != 'true'
         run: |
           rustup toolchain install
-          rustup target add aarch64-linux-android
-      - uses: taiki-e/install-action@cfdb7ed4ccc7c7dce37759eae89dc5674b469b39 # v2
-        with:
-          tool: cargo-ndk@4.1.2
-      - uses: Swatinem/rust-cache@d1527c8f67ef9af357290475d4af4b0fab8f12e0 # v2
+          # x86_64 只给 Robolectric 单测用。
+          rustup target add aarch64-linux-android x86_64-linux-android
+      # 工具链装在 rust-cache 前面：它的键取自当前 rustc 的版本。（rust-cache 不碰 ~/.rustup，它只缓存 ~/.cargo 和 target；
+      # 11-24 那两次红灯是 wonton-client 的编译错，cargo-ndk 打的“缺 target”提示不是原因。）
+      - if: steps.corecache.outputs.cache-hit != 'true'
+        uses: Swatinem/rust-cache@d1527c8f67ef9af357290475d4af4b0fab8f12e0 # v2
         with:
           # 只读：同一份 key 由 cache.yml 的 Android 作业在 push 时编好写回。这里也写的话，
           # 一次 main 合并会编两遍、两条运行抢着写同一个 key。
           shared-key: rust-android
           save-if: false
+      - if: steps.corecache.outputs.cache-hit != 'true'
+        uses: taiki-e/install-action@cfdb7ed4ccc7c7dce37759eae89dc5674b469b39 # v2
+        with:
+          tool: cargo-ndk@4.1.2
+
       - name: 设计生成结果和 design/ 一致
         run: python3 scripts/generate-design.py --check
       - uses: gradle/actions/setup-gradle@0723195856401067f7a2779048b490ace7a47d7c # v5.0.2
       - name: detekt（函数 ≤ 100 行）、单元测试与 Debug APK
         working-directory: apps/compose
         run: ./gradlew detekt :androidApp:testDebugUnitTest :androidApp:assembleDebug
+      - name: 存下这次编的核心产物
+        # PR 存进本分支的作用域，同一个 PR 再推就命中；main 上由 cache.yml 存，所有 PR 都能取。
+        if: steps.corecache.outputs.cache-hit != 'true'
+        uses: actions/cache/save@0057852bfaa89a56745cba8c7296529d2fc39830 # v4
+        with:
+          path: |
+            apps/compose/shared/build/generated/jniLibs/buildRustCore
+            apps/compose/shared/build/generated/uniffi/kotlin
+          key: ${{ steps.core.outputs.key }}
+      # 许可清单：用刚导出的 AboutLibraries JSON 跑一遍生成和校验，挡住许可表、全文或收集断掉。
+      - name: 许可清单和许可表
+        env:
+          LICENSES_REQUIRE_ANDROID: "1"
+        run: bash scripts/check-licenses.sh
       # 界面参考图：预览用固定假数据，在 JVM 上渲染，不加载 .so。重录在 snapshots-record.yml，这里只比对。
       - name: 比对界面参考图
         working-directory: apps/compose

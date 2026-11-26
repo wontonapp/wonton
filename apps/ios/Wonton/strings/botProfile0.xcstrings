@@ -2,14 +2,14 @@
   "sourceLanguage": "en",
   "version": "1.0",
   "strings": {
-    "botProfile.identity": {
-      "comment": "Section identifying the plugin, Bot and Matrix account.",
+    "botProfile.details.web": {
+      "comment": "Collapsed details: the webpage address of the Bot.",
       "extractionState": "manual",
       "localizations": {
-        "en": {"stringUnit": {"state": "translated", "value": "Identity"}},
-        "zh-Hans": {"stringUnit": {"state": "translated", "value": "身份"}},
-        "zh-Hant": {"stringUnit": {"state": "translated", "value": "身分"}},
-        "ja": {"stringUnit": {"state": "translated", "value": "アカウント"}}
+        "en": {"stringUnit": {"state": "translated", "value": "Web page: %@"}},
+        "zh-Hans": {"stringUnit": {"state": "translated", "value": "网页：%@"}},
+        "zh-Hant": {"stringUnit": {"state": "translated", "value": "網頁：%@"}},
+        "ja": {"stringUnit": {"state": "translated", "value": "ウェブページ：%@"}}
       }
     },
     "botProfile.name": {
@@ -433,13 +433,13 @@
       }
     },
     "botProfile.web.open": {
-      "comment": "Button that opens the webpage belonging to a Bot.",
+      "comment": "Button that opens the webpage belonging to a Bot. Its interface is in English.",
       "extractionState": "manual",
       "localizations": {
-        "en": {"stringUnit": {"state": "translated", "value": "Open Bot webpage"}},
-        "zh-Hans": {"stringUnit": {"state": "translated", "value": "打开 Bot 网页"}},
-        "zh-Hant": {"stringUnit": {"state": "translated", "value": "開啟 Bot 網頁"}},
-        "ja": {"stringUnit": {"state": "translated", "value": "Bot のウェブページを開く"}}
+        "en": {"stringUnit": {"state": "translated", "value": "Open the web version (English)"}},
+        "zh-Hans": {"stringUnit": {"state": "translated", "value": "打开网页版（英文）"}},
+        "zh-Hant": {"stringUnit": {"state": "translated", "value": "開啟網頁版（英文）"}},
+        "ja": {"stringUnit": {"state": "translated", "value": "ウェブ版で開く（英語）"}}
       }
     },
     "botProfile.web.unauthenticated": {

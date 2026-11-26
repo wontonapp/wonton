@@ -15,9 +15,14 @@
     <string name="message_image_save">アルバムに保存</string>
     <string name="message_image_saved">アルバムに保存しました</string>
     <string name="message_image_share">共有</string>
+    <!-- 全画面ビューアで同じ送信の写真を切り替えるときのページ表示。Android 専用。 -->
+    <string name="message_image_page">%1$d / %2$d</string>
     <string name="message_summary_files">[ファイル]</string>
     <string name="message_summary_image">[画像]</string>
     <string name="message_image_permission_denied">Android がアクセスを拒否しました。設定でこのアプリの権限を確認して、もう一度お試しください。</string>
     <string name="message_link_share_failed">このリンクを共有できませんでした</string>
     <string name="message_link_no_handler">この種類のリンクを開けるアプリをインストールして、もう一度お試しください。</string>
+    <!-- Item in the message menu: edit the text of your own message. Android only. -->
+    <string name="message_edit">編集</string>
+    <string name="message_sending">送信中</string>
 </resources>

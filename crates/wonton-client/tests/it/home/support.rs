@@ -10,6 +10,7 @@ use std::time::Duration;
 use base64::{Engine as _, engine::general_purpose::STANDARD};
 use iroh::endpoint::presets;
 use iroh::{Endpoint, EndpointId, SecretKey};
+use serde_json::json;
 use tokio::io::{AsyncReadExt, AsyncWriteExt};
 use tokio::net::{TcpListener, TcpStream, UdpSocket};
 use tokio::task::JoinHandle;
@@ -90,6 +91,12 @@ pub(crate) struct Home {
     upstream: SocketAddr,
     /// 上游对 `/_wonton/api/tunnel` 的回答；空着时和别的路径一样回显。
     pub(super) tunnel_info: Arc<Mutex<Option<String>>>,
+    /// 上游对 `/_wonton/api/relays` 的回答（状态码、正文）：GET 回它，PUT 记下请求体后也回它。
+    pub(super) relay_reply: Arc<Mutex<(u16, String)>>,
+    /// 上游收到的 `/_wonton/api/relays` PUT 请求体。
+    pub(super) relay_puts: Arc<Mutex<Vec<String>>>,
+    /// 上游回 `/_wonton/api/relays` 之前先等这么久：让测试把请求捏在 Loading 里。
+    pub(super) relay_delay: Arc<Mutex<Duration>>,
     /// 还要让多少次 `/_wonton/api/tunnel` 失败。
     fail_tunnel: Arc<AtomicUsize>,
     _upstream_task: JoinHandle<()>,
@@ -104,8 +111,21 @@ impl Home {
 
     pub(super) async fn on(devices: &[EndpointId], key: SecretKey, endpoint: Endpoint) -> Self {
         let tunnel_info = Arc::new(Mutex::new(None));
+        let relay_reply = Arc::new(Mutex::new((
+            200,
+            r#"{"entries":[],"n0":false,"locked_by_env":false,"warnings":[]}"#.to_string(),
+        )));
+        let relay_puts = Arc::new(Mutex::new(Vec::new()));
+        let relay_delay = Arc::new(Mutex::new(Duration::ZERO));
         let fail_tunnel = Arc::new(AtomicUsize::new(0));
-        let (upstream, task) = path_echo(tunnel_info.clone(), fail_tunnel.clone()).await;
+        let (upstream, task) = path_echo(
+            tunnel_info.clone(),
+            fail_tunnel.clone(),
+            relay_reply.clone(),
+            relay_puts.clone(),
+            relay_delay.clone(),
+        )
+        .await;
         let allowlist = Allowlist::new(devices.iter().copied());
         Self {
             server: Some(TunnelServer::spawn(endpoint, allowlist.clone(), upstream)),
@@ -115,6 +135,9 @@ impl Home {
             tunnel_info,
             fail_tunnel,
             _upstream_task: task,
+            relay_reply,
+            relay_puts,
+            relay_delay,
         }
     }
 
@@ -255,26 +278,55 @@ async fn loopback_endpoint(key: SecretKey, port: u16) -> Endpoint {
     }
 }
 
+/// 等连接信息里的直连候选包含 `addr`。候选只由核心的报告写；`used_addrs`（本机实际连通过的路径）
+/// 里出现不算，那条是当选路切到直连时立刻写的，早于报告。
 pub(super) async fn wait_until_ticket_has(dir: &std::path::Path, addr: SocketAddr) {
+    wait_for_candidate(dir, addr, false).await;
+}
+
+/// 等直连候选的第一条变成 `addr`：调用方接下来断言的就是第一条。
+pub(super) async fn wait_until_leading_direct_addr(dir: &std::path::Path, addr: SocketAddr) {
+    wait_for_candidate(dir, addr, true).await;
+}
+
+async fn wait_for_candidate(dir: &std::path::Path, addr: SocketAddr, leading: bool) {
     let deadline = tokio::time::Instant::now() + WAIT;
-    let wanted = addr.to_string();
+    let wanted = json!(addr);
     let has_it = || {
-        std::fs::read_to_string(dir.join("servers/1/home-ticket.json"))
-            .is_ok_and(|text| text.contains(&wanted))
+        direct_candidates(dir).is_some_and(|addrs| match addrs.first() {
+            Some(first) if leading => *first == wanted,
+            _ => addrs.contains(&wanted),
+        })
     };
     while !has_it() {
         assert!(
             tokio::time::Instant::now() < deadline,
-            "连接信息里一直没有 {wanted}"
+            "连接信息{}里一直没有 {addr}：{:?}",
+            if leading {
+                "的第一条直连候选"
+            } else {
+                "的直连候选"
+            },
+            direct_candidates(dir)
         );
         tokio::time::sleep(Duration::from_millis(10)).await;
     }
 }
 
-/// 上游：每个请求回 200，正文是请求路径；`/_wonton/api/tunnel` 有 `tunnel_info` 时回它，`fail_tunnel` 还没用完时回 503。
+/// 连接信息里的直连候选；文件还没写、或者不是 JSON 时是 `None`。
+fn direct_candidates(dir: &std::path::Path) -> Option<Vec<serde_json::Value>> {
+    let bytes = std::fs::read(dir.join("servers/1/home-ticket.json")).ok()?;
+    let ticket: serde_json::Value = serde_json::from_slice(&bytes).ok()?;
+    ticket["server"]["direct_addrs"].as_array().cloned()
+}
+/// 上游：每个请求回 200，正文是请求路径；`/_wonton/api/tunnel` 有 `tunnel_info` 时回它，`fail_tunnel` 还没用完时回 503；
+/// `/_wonton/api/relays` 回 `relay_reply` 并记下 PUT 的请求体。
 async fn path_echo(
     tunnel_info: Arc<Mutex<Option<String>>>,
     fail_tunnel: Arc<AtomicUsize>,
+    relay_reply: Arc<Mutex<(u16, String)>>,
+    relay_puts: Arc<Mutex<Vec<String>>>,
+    relay_delay: Arc<Mutex<Duration>>,
 ) -> (SocketAddr, JoinHandle<()>) {
     let listener = TcpListener::bind((Ipv4Addr::LOCALHOST, 0)).await.unwrap();
     let addr = listener.local_addr().unwrap();
@@ -283,6 +335,9 @@ async fn path_echo(
             let (mut tcp, _) = listener.accept().await.unwrap();
             let tunnel_info = tunnel_info.clone();
             let fail_tunnel = fail_tunnel.clone();
+            let relay_reply = relay_reply.clone();
+            let relay_puts = relay_puts.clone();
+            let relay_delay = relay_delay.clone();
             tokio::spawn(async move {
                 let mut head = Vec::new();
                 while !head.ends_with(b"\r\n\r\n") {
@@ -293,7 +348,22 @@ async fn path_echo(
                     head.push(byte[0]);
                 }
                 let head = String::from_utf8_lossy(&head).into_owned();
-                let path = head.split_whitespace().nth(1).unwrap_or("/").to_owned();
+                let mut request_line = head.split_whitespace();
+                let method = request_line.next().unwrap_or("GET").to_owned();
+                let path = request_line.next().unwrap_or("/").to_owned();
+                let body = read_body(&mut tcp, &head).await;
+                if path == "/_wonton/api/relays" {
+                    if method == "PUT" {
+                        relay_puts.lock().unwrap().push(body);
+                    }
+                    let delay = *relay_delay.lock().unwrap();
+                    if !delay.is_zero() {
+                        tokio::time::sleep(delay).await;
+                    }
+                    let (status, body) = relay_reply.lock().unwrap().clone();
+                    write_response(&mut tcp, status, "", &body).await;
+                    return;
+                }
                 let tunnel_request = path == "/_wonton/api/tunnel";
                 let fails_left = tunnel_request
                     && fail_tunnel
@@ -302,28 +372,43 @@ async fn path_echo(
                         })
                         .is_ok();
                 if fails_left {
-                    tcp.write_all(
-                        b"HTTP/1.1 503 Service Unavailable\r\ncontent-length: 0\r\nconnection: close\r\n\r\n",
-                    )
-                    .await
-                    .ok();
-                    tcp.shutdown().await.ok();
+                    write_response(&mut tcp, 503, "Service Unavailable", "").await;
                     return;
                 }
                 let reported = tunnel_info.lock().unwrap().clone();
-                let body = reported
-                    .filter(|_| path == "/_wonton/api/tunnel")
-                    .unwrap_or(path);
-                let response = format!(
-                    "HTTP/1.1 200 OK\r\ncontent-length: {}\r\nconnection: close\r\n\r\n{body}",
-                    body.len()
-                );
-                tcp.write_all(response.as_bytes()).await.ok();
-                tcp.shutdown().await.ok();
+                let body = reported.filter(|_| tunnel_request).unwrap_or(path);
+                write_response(&mut tcp, 200, "OK", &body).await;
             });
         }
     });
     (addr, task)
+}
+
+/// 按 `content-length` 读完请求体；没有这个头就是空的。
+async fn read_body(tcp: &mut TcpStream, head: &str) -> String {
+    let length = head
+        .lines()
+        .find_map(|line| {
+            let (name, value) = line.split_once(':')?;
+            name.eq_ignore_ascii_case("content-length")
+                .then(|| value.trim().parse::<usize>().ok())
+                .flatten()
+        })
+        .unwrap_or(0);
+    let mut body = vec![0u8; length];
+    if length > 0 {
+        tcp.read_exact(&mut body).await.ok();
+    }
+    String::from_utf8_lossy(&body).into_owned()
+}
+
+async fn write_response(tcp: &mut TcpStream, status: u16, reason: &str, body: &str) {
+    let response = format!(
+        "HTTP/1.1 {status} {reason}\r\ncontent-length: {}\r\nconnection: close\r\n\r\n{body}",
+        body.len()
+    );
+    tcp.write_all(response.as_bytes()).await.ok();
+    tcp.shutdown().await.ok();
 }
 
 /// 像 Android WebView 一样经本地代理发一个 GET（绝对形式的请求行），返回状态码和正文。

@@ -252,7 +252,8 @@ fn path_state(probe: Option<&EgressProbe>) -> EgressPathState {
         EgressFailure::RelayFailed
         | EgressFailure::ProxyUnreachable
         | EgressFailure::ProxyRejected => EgressPathState::Failed { message },
-        EgressFailure::UpstreamFailed | EgressFailure::Other => {
+        // 还没就绪、代理连不上外面：都还没到能说失败的时候。
+        EgressFailure::Waiting | EgressFailure::UpstreamFailed | EgressFailure::Other => {
             EgressPathState::Uncertain { message }
         }
     }

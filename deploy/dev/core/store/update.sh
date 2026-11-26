@@ -9,10 +9,14 @@ here="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 repo="$(cd "$here/../../../.." && pwd)"
 # 引导清单跟着 wonton-store 的这个提交，不跟 main。要换引导时改这里。
 store_commit=ee59c022fab39fbf1415945c53cd556b82321429
+# shellcheck source=deploy/dev/core/dev-guard.sh
+source "$here/../dev-guard.sh"
+dev_guard_check wonton-dev-store
 # Agent 只收 Hermes：别的 Agent 插件还是 `agent.protocol: acp` 的旧清单，核心按新协议读不懂，等它们改完再加回来。
 plugins=(
   geraldpeng6/wonton-plugin-files@v0.2.2
-  wontonapp/wonton-plugin-hermes@v0.6.6
+  wontonapp/wonton-plugin-hermes@v0.8.2
+  geraldpeng6/wonton-plugin-magpie@v0.6.4
   geraldpeng6/wonton-plugin-immich@v0.2.0
   geraldpeng6/wonton-plugin-navidrome@v0.1.1
   geraldpeng6/wonton-plugin-paperless-ngx@v0.1.2
@@ -30,7 +34,8 @@ git init -q "$work/store"
 git -C "$work/store" fetch -q --depth 1 https://github.com/wontonapp/wonton-store.git "$store_commit"
 git -C "$work/store" checkout -q FETCH_HEAD
 onboarding="$work/store/onboarding.json"
-cargo build -q --manifest-path "$repo/Cargo.toml" -p wonton-core
+# 在仓库根目录编：cargo 的排队垫片按 cwd 判断能不能分到编译机，带绝对的 --manifest-path 分不出去。
+(cd "$repo" && cargo build -q -p wonton-core)
 core="${CARGO_TARGET_DIR:-$repo/target}/debug/wonton-core"
 for plugin in "${plugins[@]}"; do
   name="${plugin%@*}"

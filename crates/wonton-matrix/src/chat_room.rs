@@ -179,24 +179,40 @@ impl ChatRoom {
     /// 编辑（`m.replace`）、表情回应（`m.annotation`）、撤回不会在时间线里单独成一项，跳过不比；还解不开的加密事件不知道
     /// 会不会成项，也当候选，跟别的一样走宽限。thread 回复照常算一项。
     ///
+    /// 主对话和平铺看房间缓存，旁聊看自己这个话题的缓存：话题时间线的事件不在房间缓存对得上的位置。
+    ///
     /// 缺席按本机单调时钟从第一次看到算起（[`MissedEvent::absent`]），事件回到时间线就忘掉。
     pub async fn missed_cached_event(&self, seen: Option<&EventId>) -> Option<MissedEvent> {
         /// 往回看几条就放弃（流式回复一次能连出好几条编辑）。
         const LOOK_BACK: usize = 5;
-        // 话题时间线的事件在话题缓存里，房间缓存对不上它；话题时间线不比。
-        if matches!(self.focus, Focus::Thread(_)) {
-            return None;
-        }
-        let Ok((cache, _handles)) = self
-            .room
-            .client()
-            .event_cache()
-            .room(self.room.room_id())
-            .await
-        else {
-            return None;
+        // 话题时间线的事件在话题缓存里，按这条时间线看的那一段取缓存。
+        let events = match &self.focus {
+            Focus::Thread(root) => {
+                let Ok((thread, _handles)) = self
+                    .room
+                    .client()
+                    .event_cache()
+                    .thread(self.room.room_id(), root)
+                    .await
+                else {
+                    return None;
+                };
+                // 订阅取一份当前的列表；这个订阅只用来取列表，马上放掉。
+                thread.subscribe().await.ok()?.0
+            }
+            Focus::Flat | Focus::Main => {
+                let Ok((cache, _handles)) = self
+                    .room
+                    .client()
+                    .event_cache()
+                    .room(self.room.room_id())
+                    .await
+                else {
+                    return None;
+                };
+                cache.events().await.ok()?
+            }
         };
-        let events = cache.events().await.ok()?;
         let rules = self.room.clone_info().room_version_rules_or_default();
         let timeline = self.timeline().await;
         let now = Instant::now();
@@ -271,13 +287,12 @@ impl ChatRoom {
 
     /// 发送文字，`mentions` 是输入框里选中的人（写进 `m.mentions` 和正文的胶囊，见 [`Self::mention_content`]）。
     /// 消息先以本地回显出现在时间线里，发送结果见 [`Message::status`]。
-    pub async fn send_text(&self, body: &str, mentions: &[String]) -> Result<()> {
+    pub async fn send_text(&self, body: &str, mentions: &[String]) -> Result<SendHandle> {
         ensure_recipient_devices(&self.room).await?;
         let names = self.names();
         let users = crate::mentions::selected(mentions, &names);
         let content = self.mention_content(body, &users);
-        self.timeline().await.send(content.into()).await?;
-        Ok(())
+        Ok(self.timeline().await.send(content.into()).await?)
     }
 
     /// 现在这份成员和显示名。
@@ -421,18 +436,18 @@ impl ChatRoom {
         Ok(())
     }
 
-    /// 回答一条消息的选项（ADR-0109 第 7 节）：以本账号加选项那个表情，不往聊天里发消息。发送者自己先放的
+    /// 回答一条消息的选项（ADR-0109 第 8 节）：以本账号加选项那个表情，不往聊天里发消息。发送者自己先放的
     /// 表情就是选项；私聊或提到了本账号的才能答，答过一条后其余不能再答。还在发或发失败的先撤掉再发。
     ///
-    /// 也回答 MSC4564 的状态消息（ADR-0082），它的选项在状态对象里、不靠表情。
-    /// 条目不在时间线里、选项没有了、不是问我的、已经答过时报 `InvalidInput`。
+    /// 也回答 MSC4564 的状态消息（ADR-0082）：它的选项在状态对象里，点下去照样加那个表情，已选也照表情回填。
+    /// 条目不在时间线里、选项没有了、不是问我的、已经答过、状态行已经不在等待时报 `InvalidInput`。
     pub async fn answer_agent_choice(&self, item_id: &str, key: &str) -> Result<()> {
         let timeline = self.timeline().await;
         let items = timeline.items().await;
         let item = items
             .iter()
             .find(|item| item.unique_id().0 == item_id)
-            .ok_or_else(|| Error::InvalidInput("这条消息不在时间线里".to_owned()))?;
+            .ok_or_else(|| Error::NotInTimeline("这条消息不在时间线里".to_owned()))?;
         let event = item
             .as_event()
             .ok_or_else(|| Error::InvalidInput("这条不是消息".to_owned()))?;
@@ -443,8 +458,26 @@ impl ChatRoom {
             .agent_run
             .as_ref()
             .is_some_and(|status| status.choices.iter().any(|choice| choice.key == key));
-        let mut retry = false;
-        if !status_choice {
+        let retry = if status_choice {
+            let status = message
+                .agent_run
+                .as_ref()
+                .expect("status_choice 说明有状态");
+            // 状态行只在“等待”时有效：跑完了、失败了再点就是过期的回答。
+            if status.state != wonton_protocol::AgentRunState::Waiting {
+                return Err(Error::InvalidInput("这条状态行已经不在等待".to_owned()));
+            }
+            if status.choices.iter().any(|choice| choice.chosen) {
+                return Err(Error::InvalidInput("这条已经答过了".to_owned()));
+            }
+            if !message.is_direct && !message.mentions_me {
+                return Err(Error::InvalidInput("这条不是问我的".to_owned()));
+            }
+            status
+                .choices
+                .iter()
+                .any(|choice| choice.key == key && matches!(choice.send, ChoiceSend::Failed { .. }))
+        } else {
             let choices = message
                 .choices()
                 .ok_or_else(|| Error::InvalidInput("这条没有选项".to_owned()))?;
@@ -463,8 +496,8 @@ impl ChatRoom {
                 }
                 ChoicesState::Other => {}
             }
-            retry = matches!(option.send, ChoiceSend::Failed { .. });
-        }
+            matches!(option.send, ChoiceSend::Failed { .. })
+        };
         let event_id = event
             .event_id()
             .map(ToOwned::to_owned)

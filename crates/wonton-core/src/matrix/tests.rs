@@ -6,8 +6,9 @@ use std::os::unix::fs::PermissionsExt;
 
 use serde_json::json;
 
+use super::api::MatrixError;
 use super::fake::{Fake, User, start};
-use super::{Avatar, BotSpec, Matrix};
+use super::{Avatar, BotAccount, BotSpec, Matrix};
 use crate::config::MatrixConfig;
 use crate::http::HttpClient;
 use crate::plugin::languages::Languages;
@@ -27,8 +28,14 @@ async fn the_admin_account_is_registered_once_and_its_token_kept_private() {
     let mode = std::fs::metadata(&saved).unwrap().permissions().mode() & 0o777;
     assert_eq!(mode, 0o600);
     assert_eq!(first.admin_user_id(), "@wonton-core:test");
+    // 管理账号被服务器邀请进管理房间；核心连上就加入，热加载用这个账号发命令。
+    assert!(
+        fake.state().rooms[super::fake::ADMIN_ROOM_ID]
+            .members
+            .contains("@wonton-core:test")
+    );
 
-    // 核心重启：令牌还有效就沿用，不再注册。
+    // 核心重启：令牌还有效就沿用，不再注册；管理房间已经进去了，也不再有写请求。
     let again = connect(&dir, &config).await;
     assert_eq!(again.admin_token, first.admin_token);
     assert_eq!(fake.state().registrations, 1);
@@ -56,7 +63,7 @@ async fn a_wrong_shared_secret_is_refused_by_tuwunel() {
 
 #[tokio::test]
 async fn an_account_that_is_not_a_server_admin_stops_the_core() {
-    // 管理账号的用户名先被 JWT 登录建成了普通账号：注册报 M_USER_IN_USE，登录能拿到令牌，但调不了管理接口。
+    // 管理账号的用户名先被 JWT 登录建成了普通账号：注册报 M_USER_IN_USE，登录能拿到令牌，但没被邀请进管理房间。
     let (fake, config) = start().await;
     fake.state()
         .users
@@ -66,7 +73,6 @@ async fn an_account_that_is_not_a_server_admin_stops_the_core() {
         panic!("管理账号不是服务器管理员时核心不能启动");
     };
     assert_eq!(error.errcode(), "M_FORBIDDEN", "{error}");
-    assert!(error.to_string().contains("服务器管理员"), "{error}");
 }
 
 fn spec<'a>(localpart: &'a str, taken: &'a BTreeSet<String>) -> BotSpec<'a> {
@@ -86,7 +92,7 @@ fn members(fake: &Fake, room: &str) -> BTreeSet<String> {
 }
 
 #[tokio::test]
-async fn a_bot_gets_an_account_a_device_and_an_encrypted_room_it_hands_to_the_owner_later() {
+async fn a_bot_gets_an_account_a_device_and_a_room_it_hands_to_the_owner_later() {
     let (fake, config) = start().await;
     let dir = tempfile::tempdir().unwrap();
     let matrix = connect(&dir, &config).await;
@@ -123,13 +129,24 @@ async fn a_bot_gets_an_account_a_device_and_an_encrypted_room_it_hands_to_the_ow
                 .as_deref()
                 .is_some_and(|u| u.starts_with("mxc://"))
         );
-        // 主房间：加密的房间，插件装好之前只有 Bot 在里面，主人那边什么都没有。
+        // 主房间：主人建的不加密房间，主人邀请、Bot 接受之后主人退出。房间列表只要没退出的房间，交付（写
+        // m.direct）之前这条私聊就不在主人的列表里。
         let room = &state.rooms[&home];
-        assert!(room.encrypted, "主房间要加密");
+        assert!(!room.encrypted, "主房间不加密");
+        assert!(
+            !state.room_state[&home]
+                .events
+                .contains_key(&("m.room.encryption".to_owned(), String::new())),
+            "主房间没有 m.room.encryption"
+        );
         assert_eq!(room.members, BTreeSet::from(["@echo:test".to_owned()]));
-        assert!(room.invited.is_empty(), "插件装好之前不邀请主人");
+        assert!(room.left.contains("@owner:test"), "主人建完就退出了");
+        assert!(room.invited.is_empty(), "邀请已经被 Bot 接受");
+        assert_eq!(state.room_state[&home].creator, "@owner:test");
         assert_eq!(profile.direct, None);
-        assert!(!state.users.contains_key("@owner:test"));
+        assert_eq!(state.user("@owner:test").direct, None);
+        // 建房间用的主人设备已经退出。
+        assert!(state.devices("@owner:test").is_empty());
     }
 
     // 插件装好后交给主人：主人在里面，双方的 m.direct 都记着它。
@@ -156,6 +173,59 @@ async fn a_bot_gets_an_account_a_device_and_an_encrypted_room_it_hands_to_the_ow
             .hand_over("owner", &bot, &Languages::default())
             .await
             .unwrap()
+    );
+}
+
+#[tokio::test]
+async fn a_direct_room_is_created_without_encryption() {
+    let (fake, config) = start().await;
+    let dir = tempfile::tempdir().unwrap();
+    let matrix = connect(&dir, &config).await;
+    let owner = matrix.login("owner", "手机").await.unwrap();
+    let room = matrix
+        .session(&owner)
+        .create_direct_room("@echo:test")
+        .await
+        .unwrap();
+    let state = fake.state();
+    assert!(!state.rooms[&room].encrypted, "私聊不加密");
+    assert!(
+        !state.room_state[&room]
+            .events
+            .contains_key(&("m.room.encryption".to_owned(), String::new())),
+        "私聊没有 m.room.encryption"
+    );
+    assert_eq!(
+        state.room_state[&room].events[&("m.room.power_levels".to_owned(), String::new())]["users"]
+            ["@echo:test"],
+        100,
+        "对方仍是高权限"
+    );
+}
+
+#[tokio::test]
+async fn a_bot_contact_room_is_created_without_encryption() {
+    let (fake, config) = start().await;
+    let dir = tempfile::tempdir().unwrap();
+    let matrix = connect(&dir, &config).await;
+    let bot = matrix.login("hermes", "Wonton contacts").await.unwrap();
+    let room = matrix
+        .session(&bot)
+        .invite_as_contact("@owner:test")
+        .await
+        .unwrap();
+    let state = fake.state();
+    assert!(!state.rooms[&room].encrypted, "联系人私聊不加密");
+    assert!(
+        !state.room_state[&room]
+            .events
+            .contains_key(&("m.room.encryption".to_owned(), String::new())),
+        "联系人私聊没有 m.room.encryption"
+    );
+    assert!(state.rooms[&room].invited.contains("@owner:test"));
+    assert_eq!(
+        state.user("@hermes:test").direct,
+        Some(json!({"@owner:test": [&room]}))
     );
 }
 
@@ -198,7 +268,14 @@ async fn reinstalling_keeps_the_account_and_home_room_unless_the_owner_left_it()
         .unwrap();
     assert_eq!(again.account, first.account, "沿用账号和主房间");
     assert_ne!(again.device_id, first.device_id, "每次安装一台新设备");
-    assert_eq!(fake.state().rooms.len(), 1);
+    assert_eq!(
+        fake.state()
+            .rooms
+            .keys()
+            .filter(|id| id.as_str() != super::fake::ADMIN_ROOM_ID)
+            .count(),
+        1
+    );
     assert_eq!(
         fake.state().user("@echo:test").display_name.as_deref(),
         Some("主人改过的名字")
@@ -210,7 +287,7 @@ async fn reinstalling_keeps_the_account_and_home_room_unless_the_owner_left_it()
     assert_eq!(fake.state().display_name_writes, 1);
     assert!(fake.state().media.is_empty());
 
-    // 主人退出了主房间：再装时新建一个，不往没人看的房间里发。
+    // 主人退出了已经交出去的房间：再装时新建一个，不往主人结束掉的私聊里发。
     {
         let mut state = fake.state();
         let room = state.rooms.get_mut(&first.account.home_room).unwrap();
@@ -245,7 +322,7 @@ async fn a_home_room_never_handed_to_the_owner_is_kept_for_the_next_install() {
     let dir = tempfile::tempdir().unwrap();
     let matrix = connect(&dir, &config).await;
     let taken = BTreeSet::new();
-    // 上次安装在交给主人之前就失败了：房间里只有 Bot。
+    // 上次安装在交给主人之前就失败了：房间建好了但没写进主人的 m.direct。
     let first = matrix.provision_bot(&spec("echo", &taken)).await.unwrap();
     let previous = first.account.clone();
     let again = matrix
@@ -256,7 +333,7 @@ async fn a_home_room_never_handed_to_the_owner_is_kept_for_the_next_install() {
         .await
         .unwrap();
     assert_eq!(again.account, first.account, "重试不另建房间");
-    // 交到一半：主人只收到了邀请。
+    // 交到一半：主人被重新邀请过一次。
     fake.state()
         .rooms
         .get_mut(&first.account.home_room)
@@ -271,7 +348,14 @@ async fn a_home_room_never_handed_to_the_owner_is_kept_for_the_next_install() {
         .await
         .unwrap();
     assert_eq!(third.account, first.account);
-    assert_eq!(fake.state().rooms.len(), 1);
+    assert_eq!(
+        fake.state()
+            .rooms
+            .keys()
+            .filter(|id| id.as_str() != super::fake::ADMIN_ROOM_ID)
+            .count(),
+        1
+    );
     assert!(
         matrix
             .hand_over("owner", &third, &Languages::default())
@@ -279,6 +363,36 @@ async fn a_home_room_never_handed_to_the_owner_is_kept_for_the_next_install() {
             .unwrap()
     );
     assert_eq!(members(&fake, &first.account.home_room).len(), 2);
+}
+
+#[tokio::test]
+async fn an_abandoned_home_room_is_recovered_without_the_install_record() {
+    let (fake, config) = start().await;
+    let dir = tempfile::tempdir().unwrap();
+    let matrix = connect(&dir, &config).await;
+    let first = matrix
+        .provision_bot(&spec("echo", &BTreeSet::new()))
+        .await
+        .unwrap();
+    // 记录里只留下账号、房间还没写（建房响应丢了）：只能靠建房时写下的标记捡回来。
+    let mut previous = first.account.clone();
+    previous.home_room.clear();
+    let again = matrix
+        .provision_bot(&BotSpec {
+            previous: Some(&previous),
+            ..spec("echo", &BTreeSet::new())
+        })
+        .await
+        .unwrap();
+    assert_eq!(again.account, first.account, "捡回上次的房间");
+    assert_eq!(
+        fake.state()
+            .rooms
+            .keys()
+            .filter(|id| id.as_str() != super::fake::ADMIN_ROOM_ID)
+            .count(),
+        1
+    );
 }
 
 #[tokio::test]
@@ -333,6 +447,173 @@ async fn a_bot_that_cannot_get_its_home_room_leaves_no_device_behind() {
     assert!(
         fake.state().devices("@echo:test").is_empty(),
         "没建好的 Bot 设备要吊销"
+    );
+}
+
+#[tokio::test]
+async fn a_failed_invite_leaves_the_owner_out_of_the_room() {
+    let (fake, config) = start().await;
+    let dir = tempfile::tempdir().unwrap();
+    let matrix = connect(&dir, &config).await;
+    fake.state().refuse_invites = true;
+    let taken = BTreeSet::new();
+    let err = matrix
+        .provision_bot(&spec("echo", &taken))
+        .await
+        .unwrap_err();
+    assert_eq!(err.errcode(), "M_UNKNOWN", "{err}");
+    let first_room = fake
+        .state()
+        .rooms
+        .keys()
+        .find(|id| id.as_str() != super::fake::ADMIN_ROOM_ID)
+        .unwrap()
+        .clone();
+    {
+        let state = fake.state();
+        assert_eq!(
+            state
+                .rooms
+                .keys()
+                .filter(|id| id.as_str() != super::fake::ADMIN_ROOM_ID)
+                .count(),
+            1
+        );
+        let room = &state.rooms[&first_room];
+        assert!(
+            !room.members.contains("@owner:test"),
+            "建房成功后失败，主人要退出，房间不留在他列表里"
+        );
+        assert!(room.left.contains("@owner:test"), "主人是以退出结束的");
+        assert_eq!(state.user("@owner:test").direct, None);
+        assert!(state.devices("@echo:test").is_empty());
+    }
+    // 邀请恢复后重装：另建一间，旧的那间已经没人再看一眼。
+    fake.state().refuse_invites = false;
+    let again = matrix.provision_bot(&spec("echo", &taken)).await.unwrap();
+    assert_eq!(again.account.user_id, "@echo-2:test");
+    // 旧房间还留在服务器上，但主人已经退出、不在他的列表里。
+    assert_ne!(again.account.home_room, first_room);
+    assert!(!members(&fake, &first_room).contains("@owner:test"));
+    assert_eq!(
+        fake.state()
+            .rooms
+            .keys()
+            .filter(|id| id.as_str() != super::fake::ADMIN_ROOM_ID)
+            .count(),
+        2
+    );
+}
+
+#[tokio::test]
+async fn a_failed_join_leaves_the_owner_out_of_the_room() {
+    let (fake, config) = start().await;
+    let dir = tempfile::tempdir().unwrap();
+    let matrix = connect(&dir, &config).await;
+    fake.state().refuse_joins = true;
+    let taken = BTreeSet::new();
+    let err = matrix
+        .provision_bot(&spec("echo", &taken))
+        .await
+        .unwrap_err();
+    assert_eq!(err.errcode(), "M_UNKNOWN", "{err}");
+    let first_room = fake
+        .state()
+        .rooms
+        .keys()
+        .find(|id| id.as_str() != super::fake::ADMIN_ROOM_ID)
+        .unwrap()
+        .clone();
+    {
+        let state = fake.state();
+        let room = &state.rooms[&first_room];
+        assert!(
+            !room.members.contains("@owner:test"),
+            "Bot 进来失败时主人也要退出，房间不留在他列表里"
+        );
+        assert!(room.left.contains("@owner:test"), "主人是以退出结束的");
+        assert!(
+            room.invited.contains("@echo:test"),
+            "邀请已经发出去了，留在旧房间上"
+        );
+        assert_eq!(state.user("@owner:test").direct, None);
+        assert!(state.devices("@echo:test").is_empty());
+    }
+    // 加入恢复后重装：同一个账号，另建一间；旧房间上的邀请留着，主人也看不到它。
+    fake.state().refuse_joins = false;
+    let previous = BotAccount {
+        user_id: "@echo:test".into(),
+        home_room: String::new(),
+    };
+    let again = matrix
+        .provision_bot(&BotSpec {
+            previous: Some(&previous),
+            ..spec("echo", &taken)
+        })
+        .await
+        .unwrap();
+    assert_eq!(again.account.user_id, "@echo:test");
+    assert_ne!(again.account.home_room, first_room);
+    assert!(!members(&fake, &first_room).contains("@owner:test"));
+    assert_eq!(
+        fake.state()
+            .rooms
+            .keys()
+            .filter(|id| id.as_str() != super::fake::ADMIN_ROOM_ID)
+            .count(),
+        2
+    );
+}
+
+#[tokio::test]
+async fn a_lost_create_room_response_leaves_no_room_for_the_owner() {
+    let (fake, config) = start().await;
+    let dir = tempfile::tempdir().unwrap();
+    let matrix = connect(&dir, &config).await;
+    // 服务端会建好房间，但客户端拿不到响应：room_id 丢了，原来的清理块碰不到这间房。
+    fake.state().drop_next_room_create = true;
+    let taken = BTreeSet::new();
+    let err = matrix
+        .provision_bot(&spec("echo", &taken))
+        .await
+        .unwrap_err();
+    assert!(matches!(err, MatrixError::Unavailable { .. }), "{err}");
+    let first_room = fake
+        .state()
+        .rooms
+        .keys()
+        .find(|id| id.as_str() != super::fake::ADMIN_ROOM_ID)
+        .unwrap()
+        .clone();
+    {
+        let state = fake.state();
+        assert_eq!(
+            state
+                .rooms
+                .keys()
+                .filter(|id| id.as_str() != super::fake::ADMIN_ROOM_ID)
+                .count(),
+            1
+        );
+        let room = &state.rooms[&first_room];
+        assert!(
+            !room.members.contains("@owner:test"),
+            "响应丢了、主人却是成员时要按标记退出"
+        );
+        assert!(room.left.contains("@owner:test"), "主人是以退出结束的");
+        assert!(state.devices("@echo:test").is_empty());
+    }
+    // 重试另建一间，旧的那间主人已经退出、不在列表里。
+    let again = matrix.provision_bot(&spec("echo", &taken)).await.unwrap();
+    assert_ne!(again.account.home_room, first_room);
+    assert!(!members(&fake, &first_room).contains("@owner:test"));
+    assert_eq!(
+        fake.state()
+            .rooms
+            .keys()
+            .filter(|id| id.as_str() != super::fake::ADMIN_ROOM_ID)
+            .count(),
+        2
     );
 }
 

@@ -16,6 +16,9 @@ secrets="$here/.secrets"
 private_key="$secrets/jwt-ed25519.pem"
 public_key="$secrets/jwt-ed25519.pub.pem"
 base_url="http://127.0.0.1:${WONTON_DEV_MATRIX_PORT:-8008}"
+# compose.yaml 把项目名写死成 wonton-dev-matrix，撞不上正式安装；守卫在这里是为了以后改成按目录推名字时还能挡住。
+# shellcheck source=deploy/dev/core/dev-guard.sh
+source "$here/../core/dev-guard.sh"
 
 die() {
   echo "$*" >&2
@@ -91,13 +94,20 @@ login() {
 
 case "${1:-}" in
   up)
+    dev_guard_check wonton-dev-matrix
     ensure_keys
     ensure_tls_cert
     compose up -d --wait
     echo "Tuwunel 已就绪：$base_url"
     ;;
-  down) compose down ;;
-  reset) compose down --volumes ;;
+  down)
+    dev_guard_check wonton-dev-matrix
+    compose down
+    ;;
+  reset)
+    dev_guard_check wonton-dev-matrix
+    compose down --volumes
+    ;;
   status) compose ps ;;
   logs) compose logs -f tuwunel ;;
   jwt) mint_jwt "${2:?用法：$0 jwt <用户名>}" ;;

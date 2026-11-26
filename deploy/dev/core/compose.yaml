@@ -80,7 +80,11 @@ services:
       WONTON_ANNOUNCE_ADDRESSES: ${WONTON_DEV_ANNOUNCE_ADDRESSES:-}
       # 中继表（ADR-0048）：默认 n0 的公共中继，要用本地测试中继时自己设。
       WONTON_RELAYS: ${WONTON_DEV_RELAYS:-}
+      WONTON_BUILTIN_RELAYS: ${WONTON_BUILTIN_RELAYS:-}
       WONTON_PUSH_LISTEN: push.wonton.internal:80
+      # 发往我们运营的推送中继时的 VAPID 身份（ADR-0003 的 M2，cloud/push-relay）；不设时不带 VAPID 头。
+      WONTON_PUSH_VAPID_KEY: ${WONTON_PUSH_VAPID_KEY:-}
+      WONTON_PUSH_VAPID_SUBJECT: ${WONTON_PUSH_VAPID_SUBJECT:-}
       # 通话插件验 OpenID 令牌时连服务器名的 443（ADR-0096）。
       WONTON_MATRIX_RTC_LISTEN: 0.0.0.0:443
       # 系统服务都用带点的别名：核心也接在每个插件网络上，插件的服务名会成为那里的别名。服务名不能带点，这些名字抢不走；
@@ -93,7 +97,7 @@ services:
       WONTON_MAILPIT_URL: http://mailpit.wonton.internal:8025
       WONTON_MATRIX_JWT_KEY: ${WONTON_DEV_MATRIX_JWT_KEY:?请用 deploy/dev/core/dev.sh up 启动}
       WONTON_MATRIX_REGISTRATION_SECRET: ${WONTON_DEV_MATRIX_SECRET:?请用 deploy/dev/core/dev.sh up 启动}
-      # 核心启动后在后台预装镜像里的系统插件（模型网关 magpie），再装一次默认 Agent（Hermes）。不要默认 Agent 时
+      # 核心启动后在后台预装镜像里的系统插件，并且不等它们，装一次默认 Agent（Hermes）。不要默认 Agent 时
       # （它的镜像有 4 GB）把 WONTON_DEV_DEFAULT_PLUGINS 设成空。
       WONTON_SYSTEM_PLUGINS: /usr/share/wonton/system-plugins
       WONTON_DEFAULT_PLUGINS: ${WONTON_DEV_DEFAULT_PLUGINS-/usr/share/wonton/default-plugins}
@@ -275,12 +279,14 @@ services:
       start_interval: 1s
 
   # Matrix 服务器；开发栈保留和正式安装相同的联邦端口、TLS 和 CONNECT 代理接线。
-  # 联邦名单、黑名单和出站代理范围在第二份 TOML，由核心原地重写、SIGUSR1 热加载（ADR-0050、ADR-0051）；
-  # 单文件挂载钉住 inode，核心只做原地截断写。
+  # 联邦名单、黑名单和出站代理范围在第二份 TOML，由核心原地重写、在管理房间命令里热加载（ADR-0050、ADR-0051、
+  # ADR-0116）；单文件挂载钉住 inode，核心只做原地截断写。
   tuwunel:
     labels: *owner-labels
     image: ghcr.io/matrix-construct/tuwunel:v2.0.0
-    restart: unless-stopped
+    # 热加载不让 Docker 发信号；`always` 保证 Docker 重启后自己回来，见 deploy/install/compose.yaml。
+    restart: always
+    stop_signal: SIGTERM
     stop_grace_period: 5m
     environment:
       <<: *no-proxy
@@ -326,7 +332,11 @@ services:
       start_interval: 1s
 
 networks:
+  # 网络由 dev.sh 建、由它删：compose 自己管时，渲染出来的配置和现有的对不上就删了重建，
+  # 重建后接回去的容器没有别名，`hydra.wonton.internal` 这类名字就丢了（#187）。
   core:
+    external: true
+    name: ${WONTON_DEV_PROJECT:-wonton-dev-core}_core
 
 volumes:
   hydra:

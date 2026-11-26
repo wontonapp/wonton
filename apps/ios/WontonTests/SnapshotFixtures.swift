@@ -77,15 +77,15 @@ enum SnapshotFixtures {
                     core: core, showsSender: true)
                 row(message(id: "m2", sender: "Owner", isOwn: true,
                             text: "Good. Bring the tables to the drawing room tomorrow.",
-                            readBy: ["Ada Lovelace"], receipt: .read),
+                            readBy: ["Ada Lovelace"], status: .read),
                     core: core, showsSender: true)
                 row(TimelineItem(id: "run", content: .agentRun(
                     run: nil, state: .done, step: nil, steps: 3, progress: nil,
                     result: "Checked the card sequence", end: nil, body: "", cardId: nil, choices: [],
-                    senderName: "Ada", timestampMs: 0
+                    senderName: "Ada", timestampMs: 0, unreadAnchor: false
                 )), core: core, showsSender: false)
                 row(message(id: "m3", sender: "Owner", isOwn: true, text: "And the punched cards.",
-                            minutesLater: 40, receipt: .delivered, startsTimeGroup: true),
+                            minutesLater: 40, status: .sent),
                     core: core, showsSender: true)
                 row(TimelineItem(id: "read", content: .readMarker), core: core, showsSender: false)
             }
@@ -106,6 +106,7 @@ enum SnapshotFixtures {
             // 参考图不点行：打开与查看已安装不会发生，给空闭包。
             open: { _ in },
             checkInstalled: {},
+            push: PushModel(core: core),
             isModal: true
         )
         .environment(OnboardingModel(core: core))
@@ -169,8 +170,7 @@ enum SnapshotFixtures {
     private static func row(_ item: TimelineItem, core: ClientCore, showsSender: Bool) -> some View {
         TimelineRow(
             item: item, core: core, showsSender: showsSender,
-            joinsPrevious: false, joinsNext: false,
-            retry: {}, cancel: {}, cardAction: { _ in }, reply: { _ in }, forward: {}, redact: {}
+            retry: {}, cancel: {}, cardAction: { _ in }, reply: { _ in }, edit: { _ in }, forward: {}, redact: {}
         )
     }
 
@@ -180,7 +180,7 @@ enum SnapshotFixtures {
 
     private static func message(
         id: String, sender: String, isOwn: Bool, text: String, readBy: [String] = [],
-        minutesLater: UInt64 = 0, receipt: MessageReceipt? = nil, startsTimeGroup: Bool = false
+        minutesLater: UInt64 = 0, status: MessageStatus? = nil
     ) -> TimelineItem {
         let senderId = isOwn ? "@owner:home.example" : "@ada:home.example"
         return TimelineItem(id: id, content: .message(message: TimelineMessage(
@@ -192,7 +192,7 @@ enum SnapshotFixtures {
                 ])
             ], files: []),
             edited: false, readBy: readBy, reply: nil, sideChat: nil, preview: nil, actions: [.copy(text: text)],
-            receipt: receipt, startsTimeGroup: startsTimeGroup, run: .alone
+            run: .alone, status: status
         )))
     }
 
@@ -201,7 +201,7 @@ enum SnapshotFixtures {
             core: core,
             viewModel: HomeViewModel(
                 deviceId: String(repeating: "0", count: 64), serverId: nil, status: .notConfigured,
-                path: nil, notice: nil,
+                path: nil, currentRelay: nil, relays: RelaySettingsView(phase: .idle), notice: nil,
                 details: ConnectionDetails(
                     network: nil, relay: .unknown, server: .unknown, lastConnectedAtMs: nil,
                     handshakeMs: nil, disconnects: 0, failedDials: 0, sentPackets: 0, lostPackets: 0,

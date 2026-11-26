@@ -5,6 +5,8 @@ name: cache
 # 所以缓存一直存不下来，每个作业都在冷编。这个工作流补上这一步：用和 PR 作业完全相同的 rust-cache 前缀、
 # 缓存目录和编译目标，只编不跑。
 #
+# 顺便把两端的核心产物（XCFramework/Swift 绑定、.so/Kotlin 绑定）按内容哈希存成缓存：PR 和定时运行按同一个键取，
+# 命中就不编核心。键对不上（改了核心、换了工具链）就在这边现编一份存上。规则见 workflows/README.md 的“核心产物”。
 # 手动触发也会写：换分支验证缓存能不能被恢复时用它，写完的条目在分支自己的作用域里，不影响 main。
 on:
   push:
@@ -20,6 +22,10 @@ on:
 env:
   CARGO_INCREMENTAL: "0"
   CARGO_PROFILE_DEV_DEBUG: line-tables-only
+  # Release 的符号要能还原到行：崩溃分析只靠它，剥掉的是打包进 APK 的那份。
+  CARGO_PROFILE_RELEASE_DEBUG: line-tables-only
+  # 产物用它编、键也算它：钉死版本，别跟镜像漂。
+  ANDROID_NDK_VERSION: "27.0.12077973"
 
 permissions:
   contents: read
@@ -58,6 +64,26 @@ jobs:
               - ".github/workflows/cache.yml"
               - ".github/workflows/rust.yml"
               - "!**/*.md"
+            core:
+              - "crates/**"
+              - "vendor/**"
+              - ".cargo/**"
+              - "Cargo.toml"
+              - "Cargo.lock"
+              - "rust-toolchain.toml"
+              # 产物怎么编、编成什么（和 scripts/core_artifacts/key.py 的输入清单一一对应）。
+              - "apps/ios/scripts/build-core.sh"
+              - "apps/ios/scripts/generate-swift-bindings.sh"
+              - "apps/compose/scripts/build-core.sh"
+              - "apps/compose/shared/build.gradle.kts"
+              - "apps/compose/gradle.properties"
+              - "apps/compose/gradle/libs.versions.toml"
+              - "scripts/core_artifacts/**"
+              # 产物怎么编写在三个工作流里（命令、cargo-ndk 版本、镜像、保存路径）。
+              - ".github/workflows/ios.yml"
+              - ".github/workflows/android.yml"
+              - ".github/workflows/cache.yml"
+              - "!**/*.md"
             ios:
               - "apps/ios/**"
               - "design/**"
@@ -90,10 +116,12 @@ jobs:
               - "rust-toolchain.toml"
               - ".github/workflows/cache.yml"
               - ".github/workflows/android.yml"
+              - ".github/workflows/android-size.yml"
     outputs:
       rust: ${{ steps.filter.outputs.rust }}
       ios: ${{ steps.filter.outputs.ios }}
       android: ${{ steps.filter.outputs.android }}
+      core: ${{ steps.filter.outputs.core }}
 
   rust:
     name: 测试二进制（只编不跑）
@@ -152,36 +180,69 @@ jobs:
   ios:
     name: iOS 模拟器核心（只编不跑）
     needs: changes
-    if: ${{ !cancelled() && (github.event_name != 'push' || needs.changes.outputs.ios == 'true') }}
+    if: ${{ !cancelled() && (github.event_name != 'push' || needs.changes.outputs.ios == 'true' || needs.changes.outputs.core == 'true') }}
     concurrency:
       group: cache-ios-${{ github.ref }}
       cancel-in-progress: false
     runs-on: xcode-27
     timeout-minutes: 45
+    # 加上顶层的 CARGO_*，这些要和 ios.yml 的环境变量一模一样：核心产物的键从它们算，差一个两边就对不上。
     env:
       WONTON_IOS_TARGETS: aarch64-apple-ios-sim
+      # 产物用它编、键也算它：钉死版本，别跟机器上默认装的是哪个走。
+      XCODE_VERSION: "27.1"
     steps:
       - uses: actions/checkout@fbc6f3992d24b796d5a048ff273f7fcc4a7b6c09 # v5
         with:
           persist-credentials: false
       - name: 用 Xcode 27.1（和开发机 mini 上的一致）
-        run: sudo xcode-select -s /Applications/Xcode_27.1.app
+        run: |
+          # 迷你机自托管 runner 的 sudo 可能没配免密；已经选好 27.1 时跳过，免得整条作业死在选 Xcode 上。
+          if ! xcodebuild -version | head -1 | grep -q "Xcode 27.1"; then
+            sudo xcode-select -s /Applications/Xcode_27.1.app
+          fi
+      # 核心里一行没改（这条由 ios 的路径触发）时不用再编一遍，缓存里的 rust 依赖层也还是同一份。
+      - name: 核心产物的键
+        id: core
+        # 先取进变量再拼：写在 $(…) 里的话 key.py 失败也算绿，键会变成空的前缀。
+        run: |
+          key=$(python3 scripts/core_artifacts/key.py ios)
+          echo "key=ios-core-$key" >> "$GITHUB_OUTPUT"
+      - name: 已经有这份核心的产物吗
+        id: corecache
+        uses: actions/cache/restore@0057852bfaa89a56745cba8c7296529d2fc39830 # v4
+        with:
+          path: |
+            apps/ios/WontonClient/build/WontonClientFFI.xcframework
+            apps/ios/WontonClient/Sources/WontonClient/Generated
+          key: ${{ steps.core.outputs.key }}
       - name: 安装 rust-toolchain.toml 指定的工具链和 iOS 模拟器 target
+        if: steps.corecache.outputs.cache-hit != 'true'
         run: |
           rustup toolchain install
           rustup target add aarch64-apple-ios-sim
-      - uses: Swatinem/rust-cache@d1527c8f67ef9af357290475d4af4b0fab8f12e0 # v2
+      - if: steps.corecache.outputs.cache-hit != 'true'
+        uses: Swatinem/rust-cache@d1527c8f67ef9af357290475d4af4b0fab8f12e0 # v2
         with:
           shared-key: rust-ios
           save-if: ${{ github.ref == 'refs/heads/main' || github.event_name == 'workflow_dispatch' }}
       - name: 编译 Rust 核心
         # 和 ios.yml 的模拟器构建同一步（绑定和 XCFramework 也一起生成，很快）。
+        if: steps.corecache.outputs.cache-hit != 'true'
         run: apps/ios/scripts/build-core.sh debug
+      - name: 存成所有运行都取得到的核心产物
+        if: steps.corecache.outputs.cache-hit != 'true'
+        uses: actions/cache/save@0057852bfaa89a56745cba8c7296529d2fc39830 # v4
+        with:
+          path: |
+            apps/ios/WontonClient/build/WontonClientFFI.xcframework
+            apps/ios/WontonClient/Sources/WontonClient/Generated
+          key: ${{ steps.core.outputs.key }}
 
   android:
     name: Android 核心（只编不跑）
     needs: changes
-    if: ${{ !cancelled() && (github.event_name != 'push' || needs.changes.outputs.android == 'true') }}
+    if: ${{ !cancelled() && (github.event_name != 'push' || needs.changes.outputs.android == 'true' || needs.changes.outputs.core == 'true') }}
     concurrency:
       group: cache-android-${{ github.ref }}
       cancel-in-progress: false
@@ -195,6 +256,34 @@ jobs:
         with:
           distribution: temurin
           java-version: "21"
+      - name: 装产物用的 NDK（版本钉死，不跟镜像自带哪个走）
+        # 这里不判命中：这个作业还要编 x86_64 和 release 两份，它们总要 NDK（命中判断在 android.yml，那里命中就跳过这一步）。
+        # 镜像上装了哪个 NDK 逐台不同；钉死一份，同一份源码在哪台 runner 上都算同一个键。已装好时不重新下。
+        run: |
+          sdk="${ANDROID_HOME:-$ANDROID_SDK_ROOT}"
+          ndk="$sdk/ndk/$ANDROID_NDK_VERSION"
+          if [ ! -d "$ndk" ]; then
+            echo "SDK 里现有：$(ls "$sdk/ndk" 2>/dev/null | tr '\n' ' ')，装 $ANDROID_NDK_VERSION"
+            sm=$(command -v sdkmanager || echo "$sdk/cmdline-tools/latest/bin/sdkmanager")
+            yes | "$sm" --install "ndk;$ANDROID_NDK_VERSION" > /dev/null
+          fi
+          echo "ANDROID_NDK_HOME=$ndk" >> "$GITHUB_ENV"
+
+      # 手机包（arm64-v8a Debug）那份按内容哈希存出来，给 PR 和定时运行取；x86_64 和 release 的两份只进 rust 缓存。
+      - name: 核心产物的键
+        id: core
+        # 先取进变量再拼：写在 $(…) 里的话 key.py 失败也算绿，键会变成空的前缀。
+        run: |
+          key=$(python3 scripts/core_artifacts/key.py android)
+          echo "key=android-core-$key" >> "$GITHUB_OUTPUT"
+      - name: 已经有这份核心的产物吗
+        id: corecache
+        uses: actions/cache/restore@0057852bfaa89a56745cba8c7296529d2fc39830 # v4
+        with:
+          path: |
+            apps/compose/shared/build/generated/jniLibs/buildRustCore
+            apps/compose/shared/build/generated/uniffi/kotlin
+          key: ${{ steps.core.outputs.key }}
       - name: 安装 rust-toolchain.toml 指定的工具链和 Android target
         run: |
           rustup toolchain install
@@ -210,9 +299,23 @@ jobs:
       - uses: gradle/actions/setup-gradle@0723195856401067f7a2779048b490ace7a47d7c # v5.0.2
       - name: 编译 Rust 核心
         # 走 android.yml 同一条 Gradle 任务，ABI、minSdk 和那边一致；不跑 detekt 和单元测试。
+        if: steps.corecache.outputs.cache-hit != 'true'
         working-directory: apps/compose
         run: ./gradlew :shared:buildRustCore
+      # 这一份要在下面 x86_64 和 release 之前存：jniLibs 目录是同一个，后面的构建会先删掉目录。
+      - name: 存成所有运行都取得到的核心产物
+        if: steps.corecache.outputs.cache-hit != 'true'
+        uses: actions/cache/save@0057852bfaa89a56745cba8c7296529d2fc39830 # v4
+        with:
+          path: |
+            apps/compose/shared/build/generated/jniLibs/buildRustCore
+            apps/compose/shared/build/generated/uniffi/kotlin
+          key: ${{ steps.core.outputs.key }}
       - name: 编译 Rust 核心（模拟器的 x86_64；夜跑机器用）
         # 夜跑在 x86_64 模拟器上跑，ABI 和上面的手机包不同，缓存里两套都要有。
         working-directory: apps/compose
         run: ./gradlew :shared:buildRustCore -Pwonton.abis=x86_64
+      - name: 编译 Rust 核心（release；android-size.yml 的 APK 体积作业用）
+        # 体积门禁要编一份 release 核心，放在这里随 main 的缓存一起编好，那边只增量链接。
+        working-directory: apps/compose
+        run: ./gradlew :shared:buildRustCore -Pwonton.abis=arm64-v8a -Pwonton.rustProfile=release

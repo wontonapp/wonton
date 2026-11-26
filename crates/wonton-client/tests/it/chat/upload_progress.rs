@@ -29,6 +29,7 @@ async fn upload_progress_advances_to_sent_and_a_cancelled_image_disappears() {
     phone
         .dispatch(Action::Timeline {
             action: TimelineAction::SendImage {
+                caption: None,
                 target: TimelineTarget {
                     room_id: room.clone(),
                     thread_root: None,
@@ -54,7 +55,7 @@ async fn upload_progress_advances_to_sent_and_a_cancelled_image_disappears() {
                     None
                 }
                 SendState::Sent => Some(()),
-                SendState::Failed { message, .. } => panic!("发送失败：{message}"),
+                SendState::Failed { details, .. } => panic!("发送失败：{details:?}"),
             }
         })
         .await;
@@ -66,6 +67,7 @@ async fn upload_progress_advances_to_sent_and_a_cancelled_image_disappears() {
     phone
         .dispatch(Action::Timeline {
             action: TimelineAction::SendImage {
+                caption: None,
                 target: TimelineTarget {
                     room_id: room.clone(),
                     thread_root: None,

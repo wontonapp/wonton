@@ -10,8 +10,9 @@ use std::sync::Arc;
 use tokio::sync::watch;
 use wonton_protocol::{
     AgentChainsViewModel, BotContactsViewModel, ChatViewModel, ConfirmationsViewModel, CoreError,
-    FriendsViewModel, HomeViewModel, OnboardingViewModel, PagesViewModel, PeersViewModel,
-    PluginsViewModel, ServersViewModel, SettingsViewModel, TransfersViewModel,
+    FamilyViewModel, FriendsViewModel, HomeViewModel, MyAvatarProblem, OnboardingViewModel,
+    PagesViewModel, PeersViewModel, PluginsViewModel, ServersViewModel, SettingsViewModel,
+    TransfersViewModel,
 };
 
 use crate::agent_chains::AgentChainsLink;
@@ -19,6 +20,7 @@ use crate::app_lock::AppLockLink;
 use crate::bot_contacts::BotContactsLink;
 use crate::chat::{CardSuccess, ChatLink};
 use crate::composer::{ComposerLink, uplink::LiveUplink};
+use crate::family::FamilyLink;
 use crate::files::FilesLink;
 use crate::friends::FriendsLink;
 use crate::home::{HomeLink, Network, Storage};
@@ -27,7 +29,7 @@ use crate::onboarding::OnboardingLink;
 use crate::pages::PagesLink;
 use crate::peers::PeersLink;
 use crate::plugins::PluginsLink;
-use crate::push::PushLink;
+use crate::push::{PushLink, PushPreviews};
 use crate::push_method::PushMethodLink;
 use crate::settings::SettingsLink;
 pub(crate) use runtime::ScopeRuntime;
@@ -50,6 +52,7 @@ pub(crate) struct Scope {
     pub(crate) onboarding: Arc<OnboardingLink>,
     pub(crate) peers: Arc<PeersLink>,
     pub(crate) friends: Arc<FriendsLink>,
+    pub(crate) family: Arc<FamilyLink>,
     pub(crate) bot_contacts: Arc<BotContactsLink>,
     pub(crate) settings: SettingsLink,
     pub(crate) shared_apps: Arc<crate::sharing::SharedAppsLink>,
@@ -78,6 +81,7 @@ pub(crate) struct Views {
     pub(crate) onboarding: watch::Sender<OnboardingViewModel>,
     pub(crate) peers: watch::Sender<PeersViewModel>,
     pub(crate) friends: watch::Sender<FriendsViewModel>,
+    pub(crate) family: watch::Sender<FamilyViewModel>,
     pub(crate) bot_contacts: watch::Sender<BotContactsViewModel>,
     pub(crate) settings: watch::Sender<SettingsViewModel>,
 }
@@ -96,6 +100,7 @@ impl Views {
             onboarding: scope.onboarding.sender(),
             peers: scope.peers.sender(),
             friends: scope.friends.sender(),
+            family: scope.family.sender(),
             bot_contacts: scope.bot_contacts.sender(),
             settings: scope.settings.sender(),
         }
@@ -152,6 +157,7 @@ fn chat_links(
         dir,
         views,
     } = *shared;
+    let push_previews = channels.push_previews.clone();
     let chat = ChatLink::new(
         handle.clone(),
         home.clone(),
@@ -168,6 +174,7 @@ fn chat_links(
         dir,
         push_method.subscribe(),
         lock_screen.subscribe(),
+        push_previews,
     );
     let tabs = PagesLink::new(
         handle.clone(),
@@ -202,11 +209,19 @@ fn chat_links(
     })
 }
 
+/// 好友、成员和设置这几条链接一起建，名字只在这里拼一次。
+type PeopleLinks = (
+    Arc<PeersLink>,
+    Arc<FriendsLink>,
+    Arc<FamilyLink>,
+    SettingsLink,
+);
+
 fn people_links(
     shared: &Shared<'_>,
     servers: watch::Receiver<ServersViewModel>,
     chat: &Arc<ChatLink>,
-) -> Result<(Arc<PeersLink>, Arc<FriendsLink>, SettingsLink), CoreError> {
+) -> Result<PeopleLinks, CoreError> {
     let Shared {
         slot: _,
         handle,
@@ -226,6 +241,12 @@ fn people_links(
         dir,
         views.map(|v| v.friends.clone()),
     )?;
+    let family = FamilyLink::new(
+        handle.clone(),
+        home.clone(),
+        plugins.clone(),
+        views.map(|v| v.family.clone()),
+    );
     let settings = SettingsLink::new(
         handle,
         home.subscribe(),
@@ -233,13 +254,14 @@ fn people_links(
         plugins.subscribe(),
         peers.subscribe(),
         friends.subscribe(),
+        family.subscribe(),
         servers,
         push_method.subscribe(),
         app_lock.subscribe(),
         lock_screen.subscribe(),
         views.map(|v| v.settings.clone()),
     );
-    Ok((peers, friends, settings))
+    Ok((peers, friends, family, settings))
 }
 
 impl Scope {
@@ -302,6 +324,7 @@ impl Scope {
             let plugins = plugins.clone();
             Arc::new(move |plugin_id: &str| plugins.card_succeeded(plugin_id))
         };
+        let push_previews = Arc::new(PushPreviews::open(dir));
         let channels = crate::chat::ChatChannels {
             view: views.map(|v| v.chat.clone()),
             confirmations: views.map(|v| v.confirmations.clone()),
@@ -310,6 +333,7 @@ impl Scope {
             lock_screen: lock_screen.subscribe(),
             session_out: session_out.0.clone(),
             external,
+            push_previews,
         };
         let shared = Shared {
             slot,
@@ -362,8 +386,9 @@ impl Scope {
             onboarding: links.onboarding,
             peers: people.0,
             friends: people.1,
+            family: people.2,
             bot_contacts,
-            settings: people.2,
+            settings: people.3,
             shared_apps,
             browser,
             #[cfg(feature = "test-hooks")]
@@ -401,6 +426,14 @@ impl Scope {
         task: impl Future<Output = Result<T, CoreError>> + Send + 'static,
     ) -> Result<T, CoreError> {
         self.runtime.run(task).await
+    }
+
+    /// 同 [`run`](Self::run)，但保留 [`MyAvatarProblem`] 的类别。
+    pub(crate) async fn run_avatar<T: Send + 'static>(
+        &self,
+        task: impl Future<Output = Result<T, MyAvatarProblem>> + Send + 'static,
+    ) -> Result<T, MyAvatarProblem> {
+        self.runtime.run_avatar(task).await
     }
 
     pub(crate) fn spawn(&self, task: impl Future<Output = ()> + Send + 'static) {

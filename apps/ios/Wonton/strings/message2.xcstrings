@@ -32,6 +32,36 @@
         }
       }
     },
+    "message.linkUpdateApp": {
+      "comment": "Shown when a message links to a wonton:// page this app version doesn't know.",
+      "extractionState": "manual",
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Update the app to open this link"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "更新 App 后才能打开这个链接"
+          }
+        },
+        "zh-Hant": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "更新 App 後才能開啟這個連結"
+          }
+        },
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "このリンクを開くにはアプリを更新してください"
+          }
+        }
+      }
+    },
     "message.copy": {
       "comment": "Item in the message menu: copy the message text. Android only.",
       "extractionState": "manual",
@@ -303,31 +333,31 @@
       }
     },
     "message.sending": {
-      "comment": "Marker on a message that's still uploading.",
+      "comment": "Footer label of a message saved on this device but not yet confirmed delivered by the server (queued or in flight).",
       "extractionState": "manual",
       "localizations": {
         "en": {
           "stringUnit": {
             "state": "translated",
-            "value": "Sending"
+            "value": "Saved, not delivered yet"
           }
         },
         "zh-Hans": {
           "stringUnit": {
             "state": "translated",
-            "value": "发送中"
+            "value": "已保存，等待送达"
           }
         },
         "zh-Hant": {
           "stringUnit": {
             "state": "translated",
-            "value": "傳送中"
+            "value": "已儲存，等待送達"
           }
         },
         "ja": {
           "stringUnit": {
             "state": "translated",
-            "value": "送信中"
+            "value": "保存済み、未配信"
           }
         }
       }
@@ -459,7 +489,7 @@
         "en": {
           "stringUnit": {
             "state": "translated",
-            "value": "Send failed, retrying automatically"
+            "value": "Not sent, retrying"
           }
         },
         "zh-Hans": {
@@ -568,6 +598,156 @@
           "stringUnit": {
             "state": "translated",
             "value": "送信を取り消す"
+          }
+        }
+      }
+    },
+    "message.sendFailure.tooLarge": {
+      "comment": "Send failed because the file is over the server's upload limit.",
+      "extractionState": "manual",
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Too large, send it as a file"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "太大了，改用文件发"
+          }
+        },
+        "zh-Hant": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "太大了，改送檔案"
+          }
+        },
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "大きすぎます。ファイルで送ってください"
+          }
+        }
+      }
+    },
+    "message.sendFailure.unsupportedType": {
+      "comment": "Send failed because the server doesn't know the file type.",
+      "extractionState": "manual",
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "This format can't be sent"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "这个格式发不了"
+          }
+        },
+        "zh-Hant": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "這個格式送不了"
+          }
+        },
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "この形式は送れません"
+          }
+        }
+      }
+    },
+    "message.sendFailure.upstream": {
+      "comment": "Send failed because the server had a problem.",
+      "extractionState": "manual",
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Server problem"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "服务器出错了"
+          }
+        },
+        "zh-Hant": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "伺服器出錯了"
+          }
+        },
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "サーバーの問題"
+          }
+        }
+      }
+    },
+    "message.sendFailure.other": {
+      "comment": "Send failed for a reason the shell doesn't know.",
+      "extractionState": "manual",
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Send failed"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "发送失败"
+          }
+        },
+        "zh-Hant": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "傳送失敗"
+          }
+        },
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "送信できませんでした"
+          }
+        }
+      }
+    },
+    "message.editTitle": {
+      "comment": "Title of the bar above the input while editing a message.",
+      "extractionState": "manual",
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Editing message"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "编辑消息"
+          }
+        },
+        "zh-Hant": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "編輯訊息"
+          }
+        },
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "メッセージを編集"
           }
         }
       }

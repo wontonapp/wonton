@@ -1,6 +1,6 @@
 # ADR-0081 用户自己电脑上的 Agent：电脑只当远端 ACP 运行时，桥和令牌留在服务器
 
-- 状态：电脑 ACP 运行时产品路线已被 [ADR-0108](0108-hermes-default-kernel.md) 取代（主人 2026-11-15）。下文接口、连接程序、主机注册与验证保留作历史依据，不作为继续维护 Wonton 多运行时的要求；Hermes 原生委派不等于本篇的远端电脑 Agent 已获支持。
+- 状态：电脑 ACP 运行时产品路线已被 [ADR-0108](0108-hermes-default-kernel.md) 取代（主人 2026-11-15）。下文接口、连接程序、主机注册与验证保留作历史依据，不作为继续维护 Wonton 多运行时的要求；Hermes 原生委派不等于本篇的远端电脑 Agent 已获支持。2026-11-26 部分取代（[ADR-0123](0123-hubs-and-managed-devices.md)）：设备执行面改为设备守护进程 + herdr，ACP 只是权限协议之一；“电脑是远端执行面、桥和令牌留在枢纽”不变
 - 延伸 [ADR-0061](0061-agent-runtime-and-frontends.md)：运行时的 Agent 进程可以在服务器外。
   [ADR-0011](0011-security-model.md)、[ADR-0036](0036-plugin-privileges.md) 的“Agent 拿不到宿主 shell”只管服务器宿主，用户电脑按本篇
 
@@ -13,6 +13,8 @@
 这和现有安全原则正面冲突：ADR-0011、ADR-0036 写着 Agent 只在容器里跑、拿不到宿主 shell；电脑上的 Agent 天然有这个用户的
 全部文件、终端和已登录的账号，谁能指挥这个 Bot，谁就能在这台电脑上执行命令。服务器宿主的规矩不改；“自己的电脑”是新的一类，
 默认关，靠第 5、6 节约束。
+
+> ADR-0123 起，设备执行面是守护进程 + herdr，不再是“每个 Bot 一个 ACP 网关”；ACP 只在权限回答等局部沿用，下文 ACP 接口与验证保留作历史依据。[ADR-0124](0124-client-react-pwa-electron.md) 的 Electron 客户端、本机 Agent 主机、被控端三角色是另一层；同一台电脑可以同时是受管设备又开着 Electron，设备密钥和 Agent 主机身份是两把钥匙。
 
 ## 决策
 

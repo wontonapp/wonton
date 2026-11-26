@@ -25,33 +25,57 @@ use tokio::{
 
 use crate::rooms::RoomSubscriptions;
 pub use crate::saved::SavedSession;
-use crate::{Error, Result, send_queue};
+use crate::{
+    Error, Result, send_queue,
+    store_holder::{StoreLease, holder_for},
+};
 
 /// Tuwunel 的 JWT 登录类型。
 const JWT_LOGIN_TYPE: &str = "org.matrix.login.jwt";
 
-/// 房间列表的两个连接号，轮换着用：上次用哪个记在存储目录下的文件里，这次用另一个，服务端那边的旧会话
-/// 就不会挡住新连接。都是 13 个字符，SDK 只收 16 个以内，测试守着。
-const ROOM_LIST_CONN_IDS: [&str; 2] = ["room-list-a", "room-list-b"];
+/// 房间列表的连接号，轮换着用：上次用哪个记在存储目录下的文件里，这次用下一个，服务端那边的旧会话就不会挡住新连接
+/// （它按（设备，连接号）一条一条地处理 Sliding Sync，同一个号的长轮询要排队）。三个号够同一个进程里先后开两个
+/// 会话（先离线恢复、代理来了再带代理恢复）也各用各的。都是 13 个字符，SDK 只收 16 个以内，测试守着。
+const ROOM_LIST_CONN_IDS: [&str; 3] = ["room-list-a", "room-list-b", "room-list-c"];
 /// 记上次用的连接号的文件名，和 Matrix 存储放在同一个目录（归客户端核心所有）。
 const ROOM_LIST_CONN_FILE: &str = "room-list-conn";
 
-/// 这次用哪个连接号，并记下来。没有记录（第一次启动）从第一个开始；连着两次都在 30 秒内崩溃时，第三个实例会
-/// 轮回到第一个连接号，死掉那条长轮询可能还挂在上面，最多再等它一轮（30 秒），不会卡死。内存存储没有目录，
-/// 按进程里的调用次数轮换，够一个进程里几个会话分开。
+/// 本进程给每个存储用的上一个连接号：同一个进程里再开一个会话时从它接着往下轮，不和服务端上刚停下那条撞号。
+static ROOM_LIST_CONN_ID: std::sync::LazyLock<
+    std::sync::Mutex<std::collections::HashMap<PathBuf, &'static str>>,
+> = std::sync::LazyLock::new(std::sync::Mutex::default);
+
+/// 这次用哪个连接号，并记下来（内存里给本进程的下一个会话，存储里给下一个进程）。没有记录（第一次启动）从第一个
+/// 开始。内存存储没有目录，按进程里的调用次数轮换，够一个进程里几个会话分开。
 async fn next_room_list_conn_id(store: &StoreConfig) -> &'static str {
     let StoreConfig::Sqlite { path, .. } = store else {
         static NEXT: AtomicUsize = AtomicUsize::new(0);
         return ROOM_LIST_CONN_IDS[NEXT.fetch_add(1, Ordering::Relaxed) % ROOM_LIST_CONN_IDS.len()];
     };
-    let previous = tokio::fs::read_to_string(path.join(ROOM_LIST_CONN_FILE))
-        .await
-        .unwrap_or_default();
-    let next = if previous.trim() == ROOM_LIST_CONN_IDS[0] {
-        ROOM_LIST_CONN_IDS[1]
-    } else {
-        ROOM_LIST_CONN_IDS[0]
+    let cached = ROOM_LIST_CONN_ID
+        .lock()
+        .unwrap_or_else(|poisoned| poisoned.into_inner())
+        .get(path)
+        .copied();
+    let previous: Option<String> = match cached {
+        Some(previous) => Some(previous.to_owned()),
+        None => tokio::fs::read_to_string(path.join(ROOM_LIST_CONN_FILE))
+            .await
+            .ok(),
     };
+    let index = previous
+        .as_deref()
+        .and_then(|previous| {
+            ROOM_LIST_CONN_IDS
+                .iter()
+                .position(|id| *id == previous.trim())
+        })
+        .map_or(0, |index| index + 1);
+    let next = ROOM_LIST_CONN_IDS[index % ROOM_LIST_CONN_IDS.len()];
+    ROOM_LIST_CONN_ID
+        .lock()
+        .unwrap_or_else(|poisoned| poisoned.into_inner())
+        .insert(path.clone(), next);
     if let Err(error) = tokio::fs::write(path.join(ROOM_LIST_CONN_FILE), next).await {
         tracing::warn!("could not record the room list connection id: {error}");
     }
@@ -142,6 +166,8 @@ pub struct MatrixSession {
     invited_seen: std::sync::Mutex<std::collections::BTreeMap<OwnedRoomId, u64>>,
     /// 叫醒房间列表重算一遍：话题回执只改话题的未读，SDK 不当成房间的变化（ADR-0093 §4）。
     pub(crate) rooms_changed: Arc<Notify>,
+    /// 这个 Client 在存储锁上的租约（[`StoreLease`]）：活着期间同存储的新 Client 换名字，落了以后下一个接着用这个名字。
+    _store_lease: Option<StoreLease>,
 }
 
 impl Drop for MatrixSession {
@@ -156,7 +182,7 @@ impl MatrixSession {
     /// 账号在首次登录时由 Tuwunel 自动创建。登录时申请刷新令牌：访问令牌按服务器的
     /// `access_token_ttl` 过期，SDK 遇到过期会自动换新，并发出 [`SessionEvent::TokensRefreshed`]。
     pub async fn login_with_jwt(config: &SessionConfig, jwt: &str) -> Result<Self> {
-        let client = build_client(config, VersionBuilder::DiscoverNative).await?;
+        let (client, lease) = build_client(config, VersionBuilder::DiscoverNative).await?;
         let data = JsonObject::from_iter([("token".to_owned(), jwt.into())]);
         let response = client
             .matrix_auth()
@@ -167,7 +193,7 @@ impl MatrixSession {
             .await
             // Tuwunel 拒绝 JWT（过期、签发方不对、伪造）回 403 `M_FORBIDDEN`：登录被拒说的是身份。
             .map_err(|error| Error::from(error).into_unauthorized())?;
-        Self::with_client(client, response.user_id, response.device_id, config).await
+        Self::with_client(client, lease, response.user_id, response.device_id, config).await
     }
 
     /// 用核心交给 Bot 的访问令牌恢复设备；令牌只用于本次进程，不写进 Matrix 状态库。
@@ -180,7 +206,7 @@ impl MatrixSession {
         }
         let (user_id, device_id) = access_token_identity(config, token).await?;
         let marker = reconcile_store(config, &device_id).await?;
-        let client = build_client(config, VersionBuilder::DiscoverNative).await?;
+        let (client, lease) = build_client(config, VersionBuilder::DiscoverNative).await?;
         client
             .matrix_auth()
             .restore_session(
@@ -198,7 +224,7 @@ impl MatrixSession {
             )
             .await
             .map_err(|error| Error::Upstream(format!("恢复 Matrix 会话失败：{error}")))?;
-        let session = Self::with_client(client, user_id, device_id.clone(), config).await?;
+        let session = Self::with_client(client, lease, user_id, device_id.clone(), config).await?;
         if let Some(marker) = marker {
             tokio::fs::write(&marker, device_id.as_str())
                 .await
@@ -213,15 +239,16 @@ impl MatrixSession {
     /// 恢复本身照样成功，第一次请求时才报错，并发出 [`SessionEvent::TokenRejected`]。
     pub async fn restore(config: &SessionConfig, saved: SavedSession) -> Result<Self> {
         // 不查服务器版本：冷启动没网也要能打开本地的房间和消息。登录时已经查过这台服务器。
-        let client = build_client(config, VersionBuilder::Native).await?;
+        let (client, lease) = build_client(config, VersionBuilder::Native).await?;
         let user_id = saved.user_id().to_owned();
         let device_id = saved.device_id().to_owned();
         saved.restore_into(&client).await?;
-        Self::with_client(client, user_id, device_id, config).await
+        Self::with_client(client, lease, user_id, device_id, config).await
     }
 
     async fn with_client(
         client: Client,
+        lease: Option<StoreLease>,
         user_id: OwnedUserId,
         device_id: OwnedDeviceId,
         config: &SessionConfig,
@@ -257,6 +284,7 @@ impl MatrixSession {
             subscriptions: tokio::sync::Mutex::default(),
             verifications: Arc::default(),
             invited_seen: std::sync::Mutex::default(),
+            _store_lease: lease,
         })
     }
 
@@ -423,23 +451,29 @@ async fn reconcile_store(config: &SessionConfig, device_id: &DeviceId) -> Result
     Ok(Some(marker))
 }
 
-async fn build_client(config: &SessionConfig, versions: VersionBuilder) -> Result<Client> {
+async fn build_client(
+    config: &SessionConfig,
+    versions: VersionBuilder,
+) -> Result<(Client, Option<StoreLease>)> {
     crate::platform_tls::check_url(&config.homeserver_url).map_err(Error::Transport)?;
-    client_builder(&config.store, config.proxy.as_deref(), true)
+    let (builder, lease) = client_builder(&config.store, config.proxy.as_deref(), true);
+    let client = builder
         .homeserver_url(&config.homeserver_url)
         .sliding_sync_version_builder(versions)
         .build()
         .await
-        .map_err(client_build_error)
+        .map_err(client_build_error)?;
+    Ok((client, lease))
 }
 
 /// 除了服务器地址以外的客户端设置，登录（[`crate::login`]）和会话共用。`cross_signing` 为假时登录后不自动建交叉签名：
 /// 用现成账号登录时由之后恢复的会话来建，登录用的客户端用完就停，不在半路上传一半。
+///
 pub(crate) fn client_builder(
     store: &StoreConfig,
     proxy: Option<&str>,
     cross_signing: bool,
-) -> ClientBuilder {
+) -> (ClientBuilder, Option<StoreLease>) {
     let mut builder = Client::builder()
         .handle_refresh_tokens()
         // 事件缓存按话题分开记、主对话的未读不算话题回复，话题的未读按话题回执另算（ADR-0093 §4）。
@@ -458,19 +492,21 @@ pub(crate) fn client_builder(
     if let Some(proxy) = proxy {
         builder = builder.proxy(proxy);
     }
-    let path = match store {
-        StoreConfig::InMemory => None,
-        StoreConfig::Sqlite { path, .. } => Some(path.as_path()),
-    };
-    builder = builder.cross_process_store_config(CrossProcessLockConfig::multi_process(
-        crate::store_holder::holder_for(path),
-    ));
-    match store {
-        StoreConfig::InMemory => builder,
-        StoreConfig::Sqlite { path, passphrase } => {
-            builder.sqlite_store(path, passphrase.as_deref())
+    // 持有者名和它的租约只在 SQLite 存储上要：只放内存的存储不和别人共用，名字无所谓。
+    let (holder, lease) = match store {
+        StoreConfig::InMemory => (None, None),
+        StoreConfig::Sqlite { path, .. } => {
+            let (holder, lease) = holder_for(Some(path.as_path()));
+            (Some(holder), lease)
         }
+    };
+    if let Some(holder) = holder {
+        builder = builder.cross_process_store_config(CrossProcessLockConfig::multi_process(holder));
     }
+    if let StoreConfig::Sqlite { path, passphrase } = store {
+        builder = builder.sqlite_store(path, passphrase.as_deref());
+    }
+    (builder, lease)
 }
 
 fn client_build_error(error: ClientBuildError) -> Error {
@@ -512,12 +548,20 @@ mod tests {
         for id in ROOM_LIST_CONN_IDS {
             assert!(id.len() <= 16, "{id} 太长");
         }
-        assert_ne!(ROOM_LIST_CONN_IDS[0], ROOM_LIST_CONN_IDS[1]);
+        for id in ROOM_LIST_CONN_IDS {
+            assert_eq!(
+                ROOM_LIST_CONN_IDS
+                    .iter()
+                    .filter(|other| **other == id)
+                    .count(),
+                1
+            );
+        }
     }
 
-    /// 连接号两次启动换一个，第三次回到第一个（崩溃循环时最多再等一轮长轮询）。存储里只留一条记录。
+    /// 每次会话换一个号，同一个进程里先后两个也不撞（前一个的长轮询可能还挂着）；下一个进程从这一轮之后接着换。
     #[tokio::test]
-    async fn room_list_conn_ids_rotate() {
+    async fn room_list_conn_ids_rotate_per_session() {
         let dir = tempfile::tempdir().unwrap();
         let store = StoreConfig::Sqlite {
             path: dir.path().to_owned(),
@@ -527,11 +571,23 @@ mod tests {
         let second = next_room_list_conn_id(&store).await;
         let third = next_room_list_conn_id(&store).await;
         assert_ne!(first, second);
-        assert_eq!(first, third);
+        assert_ne!(second, third);
+        assert_ne!(first, third);
         assert_eq!(
             std::fs::read_to_string(dir.path().join(ROOM_LIST_CONN_FILE)).unwrap(),
             third
         );
+        // 下一个进程接着这一轮往后换，不回到刚才那个。
+        forget_chosen_conn_ids();
+        assert_ne!(next_room_list_conn_id(&store).await, third);
+    }
+
+    /// 下一个进程：忘掉本进程选过的号。
+    fn forget_chosen_conn_ids() {
+        ROOM_LIST_CONN_ID
+            .lock()
+            .unwrap_or_else(|poisoned| poisoned.into_inner())
+            .clear();
     }
 
     #[tokio::test]

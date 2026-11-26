@@ -22,6 +22,9 @@ pub struct TimelineTarget {
 /// 原来直接放在 [`crate::Action`] 上；`Action` 的 UniFFI 元数据一个类型只有 32 KiB，成组的
 /// 操作整组搬进嵌套枚举，嵌套枚举有自己的 32 KiB（ADR-0093 §5）。以后要加一组相关操作，同样
 /// 先搬成一个嵌套枚举，不在 `Action` 上逐个加变体。
+///
+/// 变体和带载荷的字段只追加在末尾：UniFFI 按声明顺序读写，旧壳二进制和新核心分开升级时，插在中间会让后面的
+/// 变体号、字段对不上。JSON 的形状不受顺序影响。
 #[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize)]
 #[cfg_attr(feature = "uniffi", derive(uniffi::Enum))]
 #[serde(tag = "type", rename_all = "snake_case")]
@@ -44,20 +47,32 @@ pub enum TimelineAction {
         mentions: Vec<String>,
     },
     /// 发送图片。上传和发送的进展、`reply_to` 同 [`TimelineAction::SendText`]。
+    ///
+    /// `caption` 是图片下面带的一段话。旁聊里贴图（ADR-0109 第 10 节）用它把输入框里已经打的字一起发出去，
+    /// 发完清掉草稿；主时间线有附件区，贴图走 [`TimelineAction::SendComposer`]。
     SendImage {
         target: TimelineTarget,
         image: ImageUpload,
         #[cfg_attr(feature = "uniffi", uniffi(default = None))]
         reply_to: Option<String>,
+        // 追加在末尾：旧壳按顺序读写字段，插在中间会把 `reply_to` 读成 `caption`。
+        #[cfg_attr(feature = "uniffi", uniffi(default = None))]
+        caption: Option<String>,
     },
     /// 把一条消息转发到另一个房间（ADR-0073）：照原样再发一条，不带“转发自”，加密附件不重新上传。`item_id` 同
     /// [`TimelineAction::RetrySend`]，只能转发菜单里有 [`MessageAction::Forward`](crate::MessageAction::Forward) 的消息。
-    /// 进展在目标房间的时间线里（本地回显、发送状态），壳随后打开目标房间。目标是 `to_room_id` 的主时间线，
-    /// 不往旁聊里转发。
+    /// 带 `comment` 时附言在同一目标房间先发、服务器确认后才转发（ADR-0073 第 4 节），壳只派发这一个动作；附言发不出去
+    /// （连发送队列都进不去，或服务器不可恢复地拒绝）就不转发，失败经
+    /// [`CoreError::Upstream`](crate::CoreError::Upstream) 进 `problem`。进展在目标房间的时间线里（本地回显、发送状态），
+    /// 壳随后打开目标房间。目标是 `to_room_id` 的主时间线，不往旁聊里转发。
     ForwardMessage {
         target: TimelineTarget,
         item_id: String,
         to_room_id: String,
+        /// 转发附言；`None` 只转发，首尾空白由核心去掉再发，只含空白也当作没有。旧 JSON/旧壳不带时按没有附言处理。
+        #[serde(default)]
+        #[cfg_attr(feature = "uniffi", uniffi(default = None))]
+        comment: Option<String>,
     },
     /// 撤回一条已经发出去的消息（Matrix 的 redaction），所有人那里都变成 [`MessageContent::Redacted`](crate::MessageContent::Redacted)。
     /// 只能撤回菜单里有 [`MessageAction::Redact`](crate::MessageAction::Redact) 的消息；还没发出去的用
@@ -146,20 +161,73 @@ pub enum TimelineAction {
     /// [`TimelineUpdate::focus`](crate::TimelineUpdate::focus) 是它。那一条已经不在列表里了（撤回、被裁掉）时继续弹，
     /// 栈空了就回到底部（[`TimelineUpdate::scroll_to_bottom`](crate::TimelineUpdate::scroll_to_bottom)）。
     JumpBack { target: TimelineTarget },
+    /// 壳每次发起跳转前报一个只增的序号，和 [`TimelineAction::JumpToMessage`](crate::TimelineAction::JumpToMessage)
+    /// 一前一后发。核心把它放在 [`TimelineUpdate::focus_revision`](crate::TimelineUpdate::focus_revision) 里：
+    /// 同一条原消息连点两下时，落点和上一次一样，壳靠序号也知道要重新滚。还在找的时候先报序号，会停下上一次的翻页。
+    RegisterFocusRevision {
+        target: TimelineTarget,
+        revision: u32,
+    },
     /// 去掉发送框当前的链接预览（ADR-0065）。行为细节在 `ClientCore::draft` 的返回和
     /// [`LinkPreviewState`](crate::LinkPreviewState) 上：这条草稿不再出预览，第一个链接换成别的或草稿发出去就作废。
     /// 旁聊的输入框也有链接预览，预览状态和主时间线的分开。
     DismissLinkPreview { target: TimelineTarget },
+    /// 进入编辑态（ADR-0109 第 10 节）：只能编辑菜单里有 [`MessageAction::Edit`](crate::MessageAction::Edit) 的消息。
+    /// 壳已经用 [`MessageAction::Edit`](crate::MessageAction::Edit) 的 `text` 换掉了输入框，发它之前抽空把光标放到末尾。
+    /// 核心把现在的草稿（正文和回复对象）存下来，换成正被编辑的那条的正文，记进
+    /// [`TimelineUpdate::editing`](crate::TimelineUpdate::editing) 供壳画编辑条。
+    /// 已经在编辑别的消息时直接换过去，不叠加；取消后恢复的仍是最初进入编辑态之前的草稿。
+    ///
+    /// 取消（[`TimelineAction::CancelEdit`]）后壳用 [`ClientCore::draft`](crate::ClientCore::draft) 重读核心恢复的草稿。
+    StartEdit {
+        target: TimelineTarget,
+        item_id: String,
+    },
+    /// 退出编辑态、不发这条修改：恢复进入编辑态之前的草稿（正文和回复对象）。没在编辑时什么也不做。
+    CancelEdit { target: TimelineTarget },
+    /// 确认这次修改（[`TimelineAction::StartEdit`] 之后），矩阵上发到 `event_id`（现在这条），正文换成 `body`（空正文
+    /// 返回 `InvalidInput`）。发出去的事件在所有人那里整条替换成新正文（ADR-0109 第 10 节）；成功后清掉编辑态、草稿
+    /// 换回进入编辑态之前的，失败时编辑态留着、失败原因进 `ChatViewModel::problem`。新正文按
+    /// ADR-0054 的 Markdown 记成格式化正文。
+    EditMessage {
+        target: TimelineTarget,
+        event_id: String,
+        body: String,
+    },
+    /// 壳报告输入框在不在打字（ADR-0109 第 8 节）：正文有变化发 `true`，输入框失焦、清空、发送或进出编辑态后发
+    /// `false`。核心按需转发成“正在输入”到服务器，同一条时间线里至少隔 5 秒才再发一次，停止输入 5 秒后自动转成
+    /// “停了”；主人离开这条时间线（订阅释放）也由核心发“停了”。节流和计时都在核心，壳不用自己算。
+    SetTyping {
+        target: TimelineTarget,
+        typing: bool,
+    },
+    /// 点右上角的“回到最早未读”胶囊（ADR-0121）：核心取本次进房的会话锚点，已加载就下一批发
+    /// [`TimelineUpdate::focus`](crate::TimelineUpdate::focus)；没加载就往前分页，找到再给。找不到按
+    /// [`UnreadJumpUnavailable`](crate::UnreadJumpUnavailable) 的类别放进
+    /// [`UnreadJump::state`](crate::UnreadJump::state)。要先订阅这条时间线。
+    JumpToFirstUnread { target: TimelineTarget },
+    /// 胶囊在“有人@你”状态时点它：跳到未读里最早一条还没看过的 @；没有剩下的一律回到
+    /// [`TimelineAction::JumpToFirstUnread`](crate::TimelineAction::JumpToFirstUnread)。
+    JumpToNextMention { target: TimelineTarget },
+    /// 壳看到锚点条目进入视野：核心收掉胶囊和会话锚点。`item_id` 是
+    /// [`UnreadJump::anchor_item_id`](crate::UnreadJump::anchor_item_id)；锚点还没解析出来时壳不发。
+    UnreadAnchorSeen {
+        target: TimelineTarget,
+        item_id: String,
+    },
 }
 
 #[cfg(test)]
 mod tests {
-    use serde_json::{Value, json};
+    use serde_json::json;
 
     use super::*;
 
-    fn target() -> Value {
-        json!({"room_id": "!a:home.example"})
+    fn target() -> TimelineTarget {
+        TimelineTarget {
+            room_id: "!a:home.example".into(),
+            thread_root: None,
+        }
     }
 
     /// 契约：旧壳不带 `mentions` 时按没选人处理；带上时原样到核心。
@@ -174,10 +242,7 @@ mod tests {
         assert!(matches!(old, TimelineAction::SendText { mentions, .. } if mentions.is_empty()));
 
         let action = TimelineAction::SendComposer {
-            target: TimelineTarget {
-                room_id: "!a:home.example".into(),
-                thread_root: None,
-            },
+            target: target(),
             body: "@Hermes你好".into(),
             reply_to: None,
             mentions: vec!["@hermes:home.example".into()],
@@ -198,5 +263,150 @@ mod tests {
         assert!(
             matches!(again, TimelineAction::SendComposer { mentions, .. } if mentions.is_empty())
         );
+    }
+
+    /// 旧壳转发时不带 `comment`，按没有附言处理；带了就原样到核心。
+    #[test]
+    fn forward_comment_is_optional_and_round_trips() {
+        let old: TimelineAction = serde_json::from_value(json!({
+            "type": "forward_message",
+            "target": target(),
+            "item_id": "$a",
+            "to_room_id": "!b:home.example",
+        }))
+        .unwrap();
+        assert!(matches!(
+            old,
+            TimelineAction::ForwardMessage { comment: None, .. }
+        ));
+
+        let action = TimelineAction::ForwardMessage {
+            target: TimelineTarget {
+                room_id: "!a:home.example".into(),
+                thread_root: None,
+            },
+            item_id: "$a".into(),
+            to_room_id: "!b:home.example".into(),
+            comment: Some("看这个".into()),
+        };
+        let json = serde_json::to_value(&action).unwrap();
+        assert_eq!(json["comment"], "看这个");
+        assert_eq!(
+            serde_json::from_value::<TimelineAction>(json).unwrap(),
+            action
+        );
+    }
+
+    /// 契约：编辑、正在输入、未读跳转的操作能经 JSON 往返，壳照线上的字段名发就认。
+    #[test]
+    fn edit_typing_and_unread_actions_round_trip_through_json() {
+        for (action, json) in [
+            (
+                TimelineAction::StartEdit {
+                    target: target(),
+                    item_id: "item-1".into(),
+                },
+                serde_json::json!({
+                    "type": "start_edit",
+                    "target": {"room_id": "!a:home.example"},
+                    "item_id": "item-1",
+                }),
+            ),
+            (
+                TimelineAction::CancelEdit { target: target() },
+                serde_json::json!({"type": "cancel_edit", "target": {"room_id": "!a:home.example"}}),
+            ),
+            (
+                TimelineAction::EditMessage {
+                    target: target(),
+                    event_id: "$event".into(),
+                    body: "改过的话".into(),
+                },
+                serde_json::json!({
+                    "type": "edit_message",
+                    "target": {"room_id": "!a:home.example"},
+                    "event_id": "$event",
+                    "body": "改过的话",
+                }),
+            ),
+            (
+                TimelineAction::SetTyping {
+                    target: target(),
+                    typing: true,
+                },
+                serde_json::json!({
+                    "type": "set_typing",
+                    "target": {"room_id": "!a:home.example"},
+                    "typing": true,
+                }),
+            ),
+            (
+                TimelineAction::JumpToFirstUnread { target: target() },
+                serde_json::json!({
+                    "type": "jump_to_first_unread",
+                    "target": {"room_id": "!a:home.example"},
+                }),
+            ),
+            (
+                TimelineAction::JumpToNextMention { target: target() },
+                serde_json::json!({
+                    "type": "jump_to_next_mention",
+                    "target": {"room_id": "!a:home.example"},
+                }),
+            ),
+            (
+                TimelineAction::UnreadAnchorSeen {
+                    target: target(),
+                    item_id: "__eid_$event".into(),
+                },
+                serde_json::json!({
+                    "type": "unread_anchor_seen",
+                    "target": {"room_id": "!a:home.example"},
+                    "item_id": "__eid_$event",
+                }),
+            ),
+        ] {
+            assert_eq!(serde_json::to_value(&action).unwrap(), json);
+            assert_eq!(
+                serde_json::from_value::<TimelineAction>(json).unwrap(),
+                action
+            );
+        }
+    }
+
+    /// 契约：图片的说明文字能经 JSON 往返；老形状没有 `caption`、只带 `reply_to` 时，回复对象不会被读成说明。
+    #[test]
+    fn image_caption_round_trips_and_may_be_absent() {
+        let image = ImageUpload {
+            filename: "a.jpg".into(),
+            mime_type: "image/jpeg".into(),
+            data: vec![1, 2],
+            width: None,
+            height: None,
+            thumbnail: None,
+        };
+        let action = TimelineAction::SendImage {
+            target: target(),
+            image: image.clone(),
+            reply_to: Some("$r".into()),
+            caption: Some("说明".into()),
+        };
+        let json = serde_json::to_value(&action).unwrap();
+        assert_eq!(json["caption"], "说明");
+        assert_eq!(
+            serde_json::from_value::<TimelineAction>(json.clone()).unwrap(),
+            action
+        );
+        let old = serde_json::json!({
+            "type": "send_image",
+            "target": {"room_id": "!a:home.example"},
+            "image": serde_json::to_value(image).unwrap(),
+            "reply_to": "$r",
+        });
+        let parsed = serde_json::from_value::<TimelineAction>(old).unwrap();
+        assert!(matches!(
+            parsed,
+            TimelineAction::SendImage { caption: None, reply_to: Some(reply), .. } if reply == "$r"
+        ));
     }
 }

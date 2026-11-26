@@ -1,5 +1,5 @@
 # 最小的 Matrix Bot 示例插件：把名单里的人发来的文字原样回过去，加密房间里也一样（crates/wonton-echo-bot）。
-# 核心安装时代 Bot 登录、建好和主人的加密私聊，只把令牌交给插件；插件不能出网，只经核心在插件网络里的
+# 核心安装时代 Bot 登录、建好和主人的私聊，只把令牌交给插件；插件不能出网，只经核心在插件网络里的
 # 别名 matrix.wonton.internal 访问 Matrix。镜像在本地构建，见同目录的 README。
 name: echo-bot
 services:

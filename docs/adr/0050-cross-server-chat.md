@@ -1,6 +1,8 @@
 # ADR-0050 跨服务器聊天：配对过的两台服务器经 iroh 互相联邦
 
-- 状态：已接受（2026-11-06）；配对 2026-11-07 改成长效码加请求（见“服务器配对”“码和请求的安全”）
+- 状态：已接受（2026-11-06），“不终结 TLS”被 [ADR-0112](0112-peer-cert-pinning.md) 取代（2026-11-22）；配对 2026-11-07 改成长效码加请求（见“服务器配对”“码和请求的安全”）
+  配对请求的提醒从“Wonton”私聊改到收件箱（[ADR-0119](0119-pending-inbox.md)，2026-11-25 已接受）。
+- 由 [ADR-0118](0118-im-three-layers-push-with-body.md) 修订（2026-11-25）：房间不再端到端加密，对方服务器的盘上是明文，见“信任落在哪”
 
 ## 背景
 
@@ -27,7 +29,7 @@ ADR-0045 的“跨机（M3）留的位置”已经定了方向：Matrix 联邦�
 
 | 事项 | 结果 |
 | --- | --- |
-| 名单制联邦 `allowed_remote_server_names_experimental` | 可行。名单外出站、入站都是 403。名单是正则（点要转义），标了可热加载：原地重写配置文件加 `SIGUSR1` 秒级生效，不用重启。配置文件是 bind mount 时不能用 `sed -i`（换了 inode，容器读不到） |
+| 名单制联邦 `allowed_remote_server_names_experimental` | 可行。名单外出站、入站都是 403。名单是正则（点要转义），标了可热加载：原地重写配置文件后用管理房间命令让 Tuwunel 重读（ADR-0116），秒级生效，不用重启。配置文件是 bind mount 时不能用 `sed -i`（换了 inode，容器读不到） |
 | 不查 DNS 固定对方地址 | Tuwunel 没有静态解析配置。`/etc/hosts` 有效（hickory 会读），Docker 网络别名也有效，出站代理（`proxy`）也有效（见“验证”）。伪造 `.well-known` 自己就要先解析对方的名字，不能单独用 |
 | TLS | 官方镜像带 `direct_tls`，`[global.tls]` 挂自签证书即可。`.wonton.internal` 拿不到公共证书，Tuwunel 又只认内置的 Mozilla 根，所以发送方必须开隐藏选项 `allow_invalid_tls_certificates = true`（只管出站） |
 | 签名密钥 | `trusted_servers = []`（默认是 `["matrix.org"]`）时只向对方直取 `/_matrix/key/v2/server`，不碰公共 notary。没有预置对方公钥的配置或命令。对方换整套密钥，联邦自动恢复，旧密钥按 ID 留着，旧事件照样能验 |
@@ -141,7 +143,7 @@ ADR-0045 的“跨机（M3）留的位置”已经定了方向：Matrix 联邦�
 - `[[global.proxy.by_domain]]`：`url` 是核心的代理，`include` 为空（所有域名：服务器名可以是安装时指定的任意名字），
   `exclude` 推送代理 `push.wonton.internal`。Tuwunel 的其他出站因此也只能到配对过的服务器。
 - `allowed_remote_server_names_experimental`：`peers.json` 里的服务器名，转义成正则；没有配对时是一个谁也匹配不上的式子。
-- 改名单：原地重写配置文件，向 Tuwunel 发 `SIGUSR1`，不用重启。
+- 改名单：原地重写配置文件，用管理房间命令 `!admin server reload-config` 让 Tuwunel 重读，不用重启（ADR-0116）。经 Docker kill 接口发的非停止信号会被当成停止处理、把容器记成手动停过，`unless-stopped` 的容器在守护进程重启后不再拉起；`SIGUSR1` 留作人工入口，容器仍写 `restart: always` 和 `stop_signal: SIGTERM`（见 `deploy/install/compose.yaml`）。
 - 网关照旧不转发 `/_matrix/federation/` 和 `/_matrix/key/`：联邦只经 iroh 进来。
 
 ### 信任落在哪
@@ -149,7 +151,7 @@ ADR-0045 的“跨机（M3）留的位置”已经定了方向：Matrix 联邦�
 - TLS 不再认证对方：自签，而且出站不校验。它只是规范要求的形式，加上单机内的那一段传输。
 - **认证对方服务器**靠 iroh 握手认出的 endpoint ID（服务器名单），加上 Matrix 每个请求的 X-Matrix 签名。
   签名用的公钥向对方服务器名直取，而这个名字只会被转发到配对时绑定的 endpoint ID。所以配对过的 P 冒充不了另一台配对过的 Q。
-- **机密性**靠 iroh（QUIC 加密，两端按 endpoint ID 认证）。房间内容照旧端到端加密，联邦和中继都看不到。
+- **机密性**靠 iroh（QUIC 加密，两端按 endpoint ID 认证）。房间内容不加密（ADR-0118）：联邦和中继看不到，但两台服务器的盘上都是明文，对方家的 root 读得到。
 
 ### 谁能和谁说话
 
@@ -294,7 +296,7 @@ Tuwunel 分不清对方离线、没配对、拒绝我们，由核心按转发组
 
 - 只换传输，不换 Matrix：私聊、群、加密、补发都是现成的，实测在名单制下全部可用。
 - 复用 `wonton-tunnel` 和同一个 endpoint：不多开端口，不多一套身份，取消配对即断连接。
-- 不终结 TLS：转发组件不碰联邦内容，按 CONNECT 里的服务器名选路就够，代码最少。
+- 不终结 TLS（2026-11-22 起改为配对过的两台云吞在核心终结 TLS 并互钉证书，见 [ADR-0112](0112-peer-cert-pinning.md)；没配对、走公网入口的仍不终结）。
 - 由核心判断离线、拒绝和没配对：Tuwunel 给不出，转发组件本来就知道。
 
 ## 没选的做法

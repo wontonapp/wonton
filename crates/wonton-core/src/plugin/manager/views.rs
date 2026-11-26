@@ -15,7 +15,9 @@ use super::super::manifest_clients::ClientsHttp;
 use super::super::manifest_static::content_security_policy;
 use super::super::proxy_auth::ProxyAuth;
 use super::super::upstreams::Endpoint;
+
 use super::PluginManager;
+use crate::clients::passwords::State;
 
 #[derive(Debug, Clone, Serialize)]
 pub struct PluginView {
@@ -36,17 +38,6 @@ pub struct ClientsRoute {
     pub http: ClientsHttp,
     /// 核心访问 `clients.http.service` 的地址；服务容器不在（插件没运行）时为空。
     pub upstream: Option<Endpoint>,
-}
-
-/// App 里显示的第三方客户端入口和网关认证信息。
-#[derive(Debug, Clone)]
-pub struct ClientsView {
-    pub id: PluginId,
-    pub label: String,
-    pub route: ClientsRoute,
-    pub switches: crate::clients::state::ClientsEntries,
-    pub entry_label: Option<String>,
-    pub tcp_names: Vec<String>,
 }
 
 /// 网关查询用的路由信息。
@@ -171,54 +162,91 @@ impl PluginManager {
         })
     }
 
-    pub fn client_views(&self) -> Result<Vec<ClientsView>, super::super::store::StoreError> {
-        let langs = self.owner_languages();
-        let plugins = self.plugins.read().expect("插件表锁中毒");
-        let mut views = Vec::new();
-        for (id, entry) in plugins.iter() {
-            let Some(listed) = entry.listed.as_ref() else {
-                continue;
-            };
-            let Some(clients) = listed.manifest.clients.as_ref() else {
-                continue;
-            };
-            let Some(http) = clients.http.as_ref() else {
-                continue;
-            };
-            let record = self.store.load(id)?;
-            views.push(ClientsView {
-                id: id.clone(),
-                label: langs.pick_owned(&listed.manifest.title),
-                route: ClientsRoute {
-                    upstream: entry
-                        .clients
-                        .as_ref()
-                        .and_then(|route| route.upstream.clone()),
-                    http: http.clone(),
-                },
-                switches: record
-                    .as_ref()
-                    .map_or_else(Default::default, |record| record.clients_entries),
-                entry_label: record
-                    .as_ref()
-                    .and_then(|record| record.entry_label.clone()),
-                tcp_names: clients
-                    .tcp
-                    .as_deref()
-                    .unwrap_or_default()
-                    .iter()
-                    .map(|tcp| tcp.name.clone())
-                    .collect(),
-            });
-        }
-        Ok(views)
-    }
-
-    pub fn client_view(
+    /// 清单声明的 `credentials`（插件没装、不是这个模式时为空）。
+    pub(crate) fn credentials_auth(
         &self,
         id: &PluginId,
-    ) -> Result<Option<ClientsView>, super::super::store::StoreError> {
-        Ok(self.client_views()?.into_iter().find(|view| view.id == *id))
+    ) -> Option<wonton_protocol::manifest::CredentialsAuth> {
+        let plugins = self.plugins.read().expect("插件表锁中毒");
+        let http = plugins
+            .get(id)?
+            .listed
+            .as_ref()?
+            .manifest
+            .clients
+            .as_ref()?
+            .http
+            .as_ref()?;
+        http.auth.credentials.clone()
+    }
+
+    /// 有没完成的凭据操作的运行中插件：后台重试的对象。
+    pub(crate) fn plugins_with_pending_credentials(&self) -> Vec<PluginId> {
+        let Some(store) = &self.client_passwords else {
+            return Vec::new();
+        };
+        let plugins = self.plugins.read().expect("插件表锁中毒");
+        plugins
+            .iter()
+            .filter(|(_, entry)| {
+                matches!(
+                    entry.status,
+                    PluginStatus::Running | PluginStatus::Degraded { .. }
+                )
+            })
+            .filter(|(id, _)| {
+                store
+                    .snapshots(id.as_str())
+                    .iter()
+                    .any(|snapshot| snapshot.state != State::Ready)
+            })
+            .map(|(id, _)| id.clone())
+            .collect()
+    }
+
+    /// 现在能不能跑凭据命令：插件在运行、`clients.http` 的服务在跑，而且确实用 `credentials`。
+    pub(crate) fn credential_target(
+        &self,
+        id: &PluginId,
+    ) -> Option<crate::clients::credentials::CredentialTarget> {
+        let plugins = self.plugins.read().expect("插件表锁中毒");
+        let entry = plugins.get(id)?;
+        if !matches!(
+            entry.status,
+            PluginStatus::Running | PluginStatus::Degraded { .. }
+        ) {
+            return None;
+        }
+        let http = entry
+            .listed
+            .as_ref()?
+            .manifest
+            .clients
+            .as_ref()?
+            .http
+            .as_ref()?;
+        if !entry.serving.contains(&http.service) {
+            return None;
+        }
+        let credentials = http.auth.credentials.clone()?;
+        let service = credentials.service.as_deref().unwrap_or(&http.service);
+        if !entry.serving.contains(service) {
+            return None;
+        }
+        Some(crate::clients::credentials::CredentialTarget {
+            container: self.cfg.instance.container(&id.slug(), service),
+            credentials,
+        })
+    }
+
+    /// `credentials` 的入口能不能开：成功发过一次密码才真；不用这个模式的插件不受限。
+    pub(crate) fn credentials_ready(&self, id: &PluginId) -> bool {
+        if self.credentials_auth(id).is_none() {
+            return true;
+        }
+        self.client_passwords
+            .as_ref()
+            .is_some_and(|store| store.issued(id.as_str()))
     }
 
     pub fn gateway_auth_headers(

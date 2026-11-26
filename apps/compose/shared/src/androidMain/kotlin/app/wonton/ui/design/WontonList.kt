@@ -7,6 +7,7 @@ import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
+import androidx.compose.foundation.layout.RowScope
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.heightIn
@@ -43,7 +44,10 @@ fun WontonGroup(content: @Composable () -> Unit) {
     }
 }
 
-/** 列表行，有 `onClick` 时能点。[badgeCount] 大于 0 时在行尾显示数字角标。 */
+/**
+ * 列表行，有 `onClick` 时能点。[badgeCount] 大于 0 时在行尾显示数字角标。
+ * [valueOneLine] 让值只占一行、由标题折行让位；默认相反（值折行、标题不动）。
+ */
 @Composable
 fun WontonRow(
     title: String,
@@ -53,6 +57,7 @@ fun WontonRow(
     titleTint: Rgb? = null,
     badge: Boolean = false,
     badgeCount: Int? = null,
+    valueOneLine: Boolean = false,
     onClick: (() -> Unit)? = null,
 ) {
     val colors = WontonTheme.colors
@@ -75,16 +80,8 @@ fun WontonRow(
         verticalAlignment = Alignment.CenterVertically,
         horizontalArrangement = Arrangement.spacedBy(WontonTheme.spacing.s12),
     ) {
-        Text(title, style = WontonTheme.typography.body, color = (titleTint ?: colors.textPrimary).toColor())
-        Box(Modifier.weight(1f), contentAlignment = Alignment.CenterEnd) {
-            value?.let {
-                Text(
-                    it,
-                    style = WontonTheme.typography.body.copy(textAlign = TextAlign.End),
-                    color = (valueTint ?: colors.textSecondary).toColor(),
-                )
-            }
-        }
+        Title(title, titleTint, oneLine = valueOneLine && value != null)
+        RowValue(value, valueTint, oneLine = valueOneLine && value != null)
         countedBadge?.let {
             Box(
                 Modifier.background(colors.primary.toColor(), CircleShape)
@@ -111,6 +108,34 @@ fun WontonRow(
                 contentDescription = null,
                 modifier = Modifier.size(WontonTheme.size.iconSmall),
                 tint = colors.textSecondary.toColor(),
+            )
+        }
+    }
+}
+
+@Composable
+private fun RowScope.Title(title: String, titleTint: Rgb?, oneLine: Boolean) {
+    Text(
+        title,
+        Modifier.then(if (oneLine) Modifier.weight(1f) else Modifier),
+        style = WontonTheme.typography.body,
+        color = (titleTint ?: WontonTheme.colors.textPrimary).toColor(),
+    )
+}
+
+@Composable
+private fun RowScope.RowValue(value: String?, valueTint: Rgb?, oneLine: Boolean) {
+    Box(
+        Modifier.then(if (oneLine) Modifier else Modifier.weight(1f)),
+        contentAlignment = Alignment.CenterEnd,
+    ) {
+        value?.let {
+            Text(
+                it,
+                style = WontonTheme.typography.body.copy(textAlign = TextAlign.End),
+                color = (valueTint ?: WontonTheme.colors.textSecondary).toColor(),
+                maxLines = if (oneLine) 1 else Int.MAX_VALUE,
+                softWrap = !oneLine,
             )
         }
     }

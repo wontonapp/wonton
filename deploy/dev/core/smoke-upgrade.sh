@@ -11,6 +11,8 @@ set -euo pipefail
 
 here="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 repo="$(cd "$here/../../.." && pwd)"
+# shellcheck source=deploy/dev/core/dev-guard.sh
+source "$here/dev-guard.sh"
 prefix=core-upgrade-smoke
 port="${SMOKE_PORT:-15480}"
 tunnel_port="${SMOKE_TUNNEL_PORT:-15482}"
@@ -63,6 +65,8 @@ cleanup() {
 egress_network_existed="$(docker network ls -q --filter name=^wonton-egress$)"
 trap cleanup EXIT
 
+# 下面自己查主机上有没有真装；项目名和 deploy/install/compose.yaml 的 name 一样是故意的。
+dev_guard_check wonton --take-over
 if [[ -n "$(docker ps -aq --filter label=com.docker.compose.project=wonton)" ]] ||
   docker inspect wonton-updater >/dev/null 2>&1; then
   fail "这台主机上有项目名是 wonton 的容器或者 wonton-updater，冒烟会碰到它们，换一台主机"

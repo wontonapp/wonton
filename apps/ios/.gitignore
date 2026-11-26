@@ -4,6 +4,8 @@ Wonton/Info.plist
 Wonton/Wonton.entitlements
 ShareExtension/Info.plist
 ShareExtension/ShareExtension.entitlements
+WontonPushExtension/Info.plist
+WontonPushExtension/WontonPushExtension.entitlements
 
 # 由 scripts/build-core.sh 生成
 WontonClient/build/

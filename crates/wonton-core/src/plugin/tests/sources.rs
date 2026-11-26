@@ -100,7 +100,8 @@ fn upgrade_request(preview: &InstallPreview) -> UpgradeRequest {
 #[tokio::test]
 async fn an_uploaded_package_is_confirmed_and_installed_like_any_other_source() {
     let (_github, _docker, m, _dir) = manager().await;
-    let compose = hello("1.0.0", "  author: {name: 张三}\n");
+    // 上传的系统插件和普通插件一样能卸、能换版本，信任是本地来源。
+    let compose = hello("1.0.0", "  author: {name: 张三}\n").replace("kind: app", "kind: system");
     let preview = m.preview_upload(package(&compose), &zh()).await.unwrap();
 
     let source = preview.source.clone().unwrap();
@@ -120,6 +121,15 @@ async fn an_uploaded_package_is_confirmed_and_installed_like_any_other_source() 
     let installed = m.installed_plugin(&id(), &zh()).unwrap();
     assert_eq!(installed.trust, PluginTrust::Local);
     assert_eq!(installed.provider, None);
+    assert!(installed.removable);
+
+    // 预装任务还没把 ID 放进集合时，记录上的 bundled 标记也要让视图按系统插件显示。
+    let mut record = m.store.load(&id()).unwrap().unwrap();
+    record.bundled = true;
+    m.store.save(&record).unwrap();
+    let installed = m.installed_plugin(&id(), &zh()).unwrap();
+    assert!(!installed.removable);
+    assert_eq!(installed.trust, PluginTrust::System);
 
     let gone = m.fetch_source(&source).await.unwrap_err();
     assert_eq!(gone.kind(), "not_found", "装上之后不再暂存：{gone}");

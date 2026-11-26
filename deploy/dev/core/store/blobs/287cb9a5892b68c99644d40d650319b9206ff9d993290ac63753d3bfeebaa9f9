@@ -1,0 +1,137 @@
+# magpie 模型网关：官方系统插件（kind: system），核心不再预装，主人从商店装。
+#
+# 本插件提供 models：声明了 models 权限的插件经核心转发访问它，各自拿到一个只属于自己的网关凭据
+# （magpie 的 gateway key，可单独限模型、限额度、吊销，用量按凭据名归属），由 credentials.sh 签发。
+#
+# 用户在“模型设置”小程序（magpie 自带网页，3430 端口）里配置 provider 和 key，key 只存在本插件的数据目录。
+# 网页由网关代登录（sso: proxy）：网关认出主人后代为带上网页密钥的 Cookie，主人不用输密码，浏览器也拿不到密钥。
+name: magpie
+
+# 锁定 stable 渠道的版本（每周一更新）；升级前回归。
+x-image: &image ghcr.io/yetone/magpie:0.1.1327@sha256:85e5b25a9b72ffc4de4bccb94743f4afb17a86a74d90b6260c03f29268d2f45e
+
+services:
+  magpie:
+    image: *image
+    restart: unless-stopped
+    # 镜像固定以 uid 65532 运行，不认 PUID/PGID；写明 user，核心据此把数据目录交给它。
+    user: "65532:65532"
+    # 同一个进程同时提供网关（3425）和网页（3430）。网页入口先按插件的部署策略固定版本行为
+    # （关掉自动更新和 Update 气泡，见 web.sh），再把页面交给注入代理（inject.pl：页面头收窄，
+    # 见 layout.css），本体挪到容器内的 3431。
+    entrypoint: [sh, /wonton/web.sh]
+    command: ["web", "--addr", "0.0.0.0:3430", "--no-open"]
+    environment:
+      TZ: ${TZ}
+      # 网关监听在容器网卡上：来自其他容器的请求必须带启用中的网关凭据，否则 401。
+      # 容器内回环不需要凭据：核心只经容器网卡转发，也不让别的容器共用本容器的网络命名空间。
+      MAGPIE_ADDR: 0.0.0.0:3425
+      # 网页的登录密钥，由核心生成（x-wonton.secrets.web_key）。
+      MAGPIE_WEB_KEY: ${WONTON_SECRET_WEB_KEY}
+    volumes:
+      - ${WONTON_APP_DATA}/config:/config
+    configs:
+      # 网页入口（web.sh）：设置固定版本的更新策略再起 magpie 本体。
+      - source: web
+        target: /wonton/web.sh
+      - source: inject
+        target: /wonton/inject.pl
+      - source: layout
+        target: /wonton/layout.css
+      # 核心签发、吊销网关凭据时在本容器里执行（x-wonton.provides.models.credentials）。
+      - source: credentials
+        target: /wonton/credentials.sh
+    healthcheck:
+      test: ["CMD", "/magpie", "healthcheck"]
+      interval: 30s
+      timeout: 5s
+      start_period: 1m
+      start_interval: 1s
+
+  # 维护默认路由组 wonton-default（注入给各插件的默认模型）：provider 变了就重新挑模型，主人改过
+  # 就不再动它，见 default-model.sh。只读写 magpie 的配置目录，用缓存的模型目录，不联网。
+  default-model:
+    image: *image
+    user: "65532:65532"
+    entrypoint: [sh, /wonton/default-model.sh]
+    volumes:
+      - ${WONTON_APP_DATA}/config:/config
+    configs:
+      - source: default_model
+        target: /wonton/default-model.sh
+    network_mode: none
+    restart: unless-stopped
+    # 镜像自带的健康检查查网关端口，这个容器不跑网关；改成看上一次维护成没成功。
+    healthcheck:
+      test: ["CMD-SHELL", "test -f /tmp/default-model.ok"]
+      interval: 30s
+      timeout: 5s
+      start_period: 1m
+      start_interval: 1s
+    depends_on:
+      magpie:
+        condition: service_healthy
+
+configs:
+  web:
+    file: ./web.sh
+  inject:
+    file: ./inject.pl
+  layout:
+    file: ./layout.css
+  credentials:
+    file: ./credentials.sh
+  default_model:
+    file: ./default-model.sh
+
+x-wonton:
+  spec: "0.15"
+  id: ai.usemagpie.magpie
+  version: 0.6.4
+  kind: system
+  title: { zh: 模型设置（magpie）, en: Models (magpie) }
+  description:
+    zh: 家里所有 AI 功能的总开关：在这里填一次 AI 服务商的 key，所有 Bot 和应用就都能用上 AI。
+    en: "The one place to set up AI for your home: add an AI provider's key once, and every bot and app can use it."
+  icon: icon.png
+  notices: [NOTICE]
+  tags: { zh: [系统, AI], en: [System, AI] }
+  author: { name: geraldpeng6 }
+  license: MIT
+  release_notes:
+    zh: 核心不再预装，从商店安装和卸载都走普通流程。
+    en: The home server no longer preinstalls it; install it from the store like any other plugin.
+    ja: コアはもうプリインストールせず、ストアからの導入と削除は通常の手順になります。
+    zh-Hant: 核心不再預裝，從商店安裝和卸載都走一般流程。
+  webui:
+    service: magpie
+    port: 3430
+    # magpie 的网页认名为 magpie_web_<监听端口> 的 Cookie，值就是网页密钥（MAGPIE_WEB_KEY）。
+    # 监听端口是容器里的 3431（inject.pl 占着发布的 3430），名字跟它，不跟发布端口。
+    sso: proxy
+    proxy:
+      cookies:
+        magpie_web_3431: "{secret:web_key}"
+  provides:
+    models:
+      service: magpie
+      port: 3425
+      # magpie 在根路径上同时提供 Anthropic Messages（/v1/messages）和 Gemini（/v1beta/…）。
+      apis:
+        openai: /v1
+        anthropic: /
+        gemini: /
+      # 注入给各插件的 WONTON_MODEL_DEFAULT：default-model 维护的路由组，主人可以在网页里改。
+      default_model: group/wonton-default
+      credentials:
+        issue: [sh, /wonton/credentials.sh, issue, "{name}"]
+        revoke: [sh, /wonton/credentials.sh, revoke, "{name}"]
+  secrets:
+    web_key:
+      generate: { bytes: 32 }
+  permissions:
+    # 访问上游 provider。
+    - network.egress
+  requirements:
+    arch: [amd64, arm64]
+    memory: 256M

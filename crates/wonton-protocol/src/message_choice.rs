@@ -1,4 +1,4 @@
-//! 消息下面的选项按钮（ADR-0109 第 7 节）：Bot 在自己发的消息上先放的表情，就是这条消息的选项。
+//! 消息下面的选项按钮（ADR-0109 第 8 节）：Bot 在自己发的消息上先放的表情，就是这条消息的选项。
 //!
 //! 核心不认表情的意思，也不看是哪个 Bot。按钮文字取自正文里以这个表情开头的一行；点一个经
 //! [`ChatAction::AnswerAgentChoice`](crate::ChatAction::AnswerAgentChoice) 以本人身份加这个表情，不往聊天里发消息。
@@ -45,17 +45,16 @@ pub enum ChoicesState {
 }
 
 /// 我点的这个选项发出去没有。
-#[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize)]
+#[derive(Clone, Debug, Default, PartialEq, Eq, Serialize, Deserialize)]
 #[cfg_attr(feature = "uniffi", derive(uniffi::Enum))]
 #[serde(tag = "type", rename_all = "snake_case")]
 pub enum ChoiceSend {
+    #[default]
     Idle,
     /// 在发：按钮上画加载，不能再点。
     Sending,
     /// 没发出去：按钮上画失败，点它再发一次。`message` 是原因，壳收进详情。
-    Failed {
-        message: String,
-    },
+    Failed { message: String },
     /// 更新的核心给出的取值：当作 [`ChoiceSend::Idle`]。
     #[serde(other)]
     Other,

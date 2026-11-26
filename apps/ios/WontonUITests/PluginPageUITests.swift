@@ -42,6 +42,40 @@ final class PluginPageUITests: XCTestCase {
         )
     }
 
+    /// 回前台后立刻打开插件页：首个非空内容 2 秒内出现（取证的修前红、修后绿）。10 轮“后台 30 秒 → 回前台 →
+    /// 打开”，2 秒从 `open()` 返回（点按之后）算；看的是 WebView 的 DOM，skeleton 可能还盖着。
+    ///
+    /// 2 秒盯的是页面自己（和第 1 轮真红时 5.25 秒里那 2 秒空白同量级）；点按侧边栏、等抽屉展开这些是 XCTest 的
+    /// 合成输入，模拟器上稳定要 3 秒上下，另用一条宽的总时限兜住整条路的回归。
+    func testContentWithinTwoSecondsAfterResume() throws {
+        // 夜跑的 -maximum-test-execution-time-allowance 是 600：留出余量。
+        executionTimeAllowance = 580
+        try launch(arguments: [])
+        // 先开一次关掉：全新设备的插件列表和网页都是冷的，枚举前把“我的应用”和隧道预热好，
+        // 免得第 1 轮把冷启动算进去。
+        open(Self.resumeApp)
+        XCTAssertTrue(app.webViews.firstMatch.waitForExistence(timeout: 30), "预热时网页没出来")
+        swipeBack()
+        XCTAssertTrue(UITestSidebar.waitForMain(app, timeout: 10), "预热后回不到聊天")
+        var slow: [String] = []
+        for round in 1...10 {
+            UITestLifecycle.backgroundAndReturn(app, linger: 0, background: 30)
+            let started = Date()
+            open(Self.resumeApp)
+            let opened = Date().timeIntervalSince(started)
+            let shown = waitForFirstContent(timeout: 2)
+            let total = Date().timeIntervalSince(started)
+            let elapsed = String(format: "%.2f", total)
+            print("resume \(round): \(elapsed) s visible=\(shown) open=\(String(format: "%.2f", opened))")
+            if !shown { slow.append("\(round):\(elapsed)") }
+            XCTAssertLessThan(total, 6, "第 \(round) 轮整条路（含点按）超过 6 秒")
+            shot("resume-\(round)")
+            swipeBack()
+            XCTAssertTrue(UITestSidebar.waitForMain(app, timeout: 10), "第 \(round) 轮回不到聊天")
+        }
+        XCTAssertTrue(slow.isEmpty, "回前台 2 秒内没有内容的轮次（轮:秒）：\(slow.joined(separator: " "))")
+    }
+
     private func walk(_ name: String, arguments: [String] = []) throws {
         try launch(arguments: arguments)
         open(name)
@@ -72,6 +106,22 @@ final class PluginPageUITests: XCTestCase {
         swipeBack()
         XCTAssertTrue(UITestSidebar.waitForMain(app, timeout: 10), "\(name) 第二次左边缘右滑后没回到聊天")
         shot("\(name)-04-edge-back")
+    }
+
+    /// 回前台用例用的应用：栈上装的是 whoami 示例插件，页面极小，内容就是回显。
+    private static let resumeApp = "Who am I"
+
+    /// 网页里出现第一个非空内容：文字、图片或按钮。轮询间隔要远小于 2 秒。
+    private func waitForFirstContent(timeout: TimeInterval) -> Bool {
+        let deadline = Date().addingTimeInterval(timeout)
+        while Date() < deadline {
+            let web = app.webViews.firstMatch
+            if web.exists, web.staticTexts.count > 0 || web.images.count > 0 || web.buttons.count > 0 {
+                return true
+            }
+            Thread.sleep(forTimeInterval: 0.05)
+        }
+        return false
     }
 
     private func open(_ name: String) {
@@ -118,7 +168,7 @@ final class PluginPageUITests: XCTestCase {
             app.launchEnvironment["WONTON_DEV_PAIRING_CODE"] = code
         }
         UITestBackend.enableStateProbe(to: app)
-        app.launch()
+        UITestBackend.launch(app)
         if app.launchEnvironment["WONTON_DEV_PAIRING_CODE"] != nil {
             XCTAssertTrue(waitPaired(timeout: 40), "配对没完成（配对码过期、用过或连不上开发栈）\n\(app.debugDescription)")
         }
@@ -129,7 +179,7 @@ final class PluginPageUITests: XCTestCase {
         }
         UITestBackend.settleKeyHandoff(app)
         XCTAssertTrue(app.scrollViews.firstMatch.waitForExistence(timeout: 15), "没到聊天页\n\(app.debugDescription)")
-        XCTAssertTrue(UITestSidebar.waitForMain(app, timeout: 5), "聊天页上没有侧边栏按钮\n\(app.debugDescription)")
+        XCTAssertTrue(UITestSidebar.waitForMain(app, timeout: 30), "聊天页上没有侧边栏按钮\n\(app.debugDescription)")
     }
 
     private static let onboardingButtons = [

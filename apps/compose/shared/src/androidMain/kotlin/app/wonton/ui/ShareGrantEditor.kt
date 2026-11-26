@@ -146,13 +146,6 @@ private fun ShareRecipientChoices(
                 { onSelect(choice) }, value = friend.userId.takeIf { friend.displayName != null })
         }
     }
-    if (recipients.groups.isNotEmpty()) {
-        Text(stringResource(R.string.share_groups), style = WontonTheme.typography.sectionTitle)
-        recipients.groups.forEach { group ->
-            val choice = ShareRecipient.Group(group.id)
-            WontonRadioRow(group.name, selected == choice, enabled, { onSelect(choice) })
-        }
-    }
 }
 
 @Composable

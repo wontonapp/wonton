@@ -13,6 +13,7 @@ use tokio::net::TcpListener;
 use wonton_protocol::{ShareGrantUpdate, ShareRecipient};
 
 use super::Fixture;
+use crate::gateway::WEB_USER_HEADER;
 use crate::gateway::tests::TOKEN;
 use crate::plugin::languages::Languages;
 use crate::plugin::{PluginPackage, PluginStatus, proxy_auth::ProxyAuth};
@@ -144,6 +145,21 @@ async fn the_friend_is_signed_in_with_its_fixed_name_and_the_user_role() {
     assert_eq!(
         received(&body, "authorization"),
         vec![format!("Bearer {TOKEN}")]
+    );
+}
+
+#[tokio::test]
+async fn the_friend_is_the_speaker_on_the_shared_page() {
+    let f = Fixture::new().await;
+    register(&f).await;
+    let headers = [(WEB_USER_HEADER, "@mallory:example.test")];
+    let reply = f.get_with(GAME_HOST, "/", &headers).await;
+    assert_eq!(reply.status, StatusCode::OK);
+    let body = reply.json().to_string();
+    // 浏览器带的同名头换掉，写的是打开这一页的好友。
+    assert_eq!(
+        received(&body, WEB_USER_HEADER),
+        vec![f.peer.user_id.clone()]
     );
 }
 

@@ -2,8 +2,9 @@
 
 use futures_util::{Stream, stream};
 use matrix_sdk::ruma::{
-    OwnedUserId, RoomId, UserId,
+    OwnedMxcUri, OwnedUserId, RoomId, UserId,
     events::room::member::{MembershipState, OriginalSyncRoomMemberEvent},
+    profile::{ProfileFieldName, ProfileFieldValue},
 };
 use serde_json::{Map, Value};
 use tokio::sync::{broadcast::error::RecvError, mpsc};
@@ -30,6 +31,27 @@ impl MatrixSession {
             avatar_url,
             fields,
         })
+    }
+
+    /// 改自己的全局头像；传 `None` 清掉。返回服务器读回的值，不信任本地拼的地址。
+    pub async fn set_own_avatar_url(&self, url: Option<&str>) -> Result<Option<String>> {
+        // 两条路由的路径和请求体都相同；用 MSC4133 的 `set_profile_field` 是因为 ruma 已把
+        // `set_avatar_url` 标为弃用（“Use the set_profile_field endpoint instead”）。
+        match url {
+            Some(url) => {
+                self.client
+                    .account()
+                    .set_profile_field(ProfileFieldValue::AvatarUrl(OwnedMxcUri::from(url)))
+                    .await?
+            }
+            None => {
+                self.client
+                    .account()
+                    .delete_profile_field(ProfileFieldName::AvatarUrl)
+                    .await?
+            }
+        }
+        Ok(self.fetch_user_profile(self.user_id()).await?.avatar_url)
     }
 
     /// 观察已同步房间的资料变化；不改变选中的房间或它的订阅。

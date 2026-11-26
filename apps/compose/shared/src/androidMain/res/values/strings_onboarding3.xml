@@ -13,7 +13,7 @@
     <!-- Problem title while installing: the home server is updating itself right now. -->
     <string name="onboarding_problem_plugin_core_upgrading">Your home server is updating. Try again when it finishes.</string>
     <!-- Problem title in the review step: it's unknown whether the app installed. The reason is in the collapsed details. -->
-    <string name="onboarding_review_uncertain">Install result unknown. Check the app\'s page.</string>
+    <string name="onboarding_review_uncertain">Not sure whether it installed. Check the app\'s page.</string>
     <!-- Secondary button on the setup error screen: leave setup without finishing. -->
     <string name="onboarding_skip_anyway">Skip for now</string>
     <!-- Card title after setup finished. -->
@@ -21,5 +21,5 @@
     <!-- Card title fallback in setup when the step is unknown. -->
     <string name="onboarding_step_other">Setup</string>
     <!-- Card title at the top of the review step in setup: check everything before finishing. -->
-    <string name="onboarding_step_review">Review</string>
+    <string name="onboarding_step_review">Almost there</string>
 </resources>

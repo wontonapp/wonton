@@ -2,13 +2,17 @@
 #[path = "people_tests.rs"]
 mod people_tests;
 
-use super::{Accessor, CoreHost, Failure, FileHost, NoticeRoom, notice_failure};
-use crate::{device::Devices, matrix::Matrix, members::Members, roles::Roles};
-use iroh::EndpointId;
-use std::collections::HashMap;
+use std::collections::{BTreeSet, HashMap};
 use std::path::PathBuf;
 use std::sync::{Arc, Mutex};
+
+use futures_util::FutureExt;
+use futures_util::future::BoxFuture;
+use iroh::EndpointId;
 use wonton_protocol::{FileFailure, MemberStatus};
+
+use super::{Accessor, CoreHost, Failure, FileHost, NoticeRoom, notice_failure};
+use crate::{device::Devices, matrix::Matrix, members::Members, roles::Roles};
 
 pub(super) struct People {
     members: Arc<Members>,
@@ -85,6 +89,59 @@ impl CoreHost {
             return Err(denied());
         }
         Ok(())
+    }
+
+    /// 向 Matrix 核对 `who` 是不是这些房间中某一间的当前成员。核心自己不在的房间（不是它
+    /// 管的家庭群）查不到成员，跳过；其它查询失败都是查不到，不是不在。后面的房间已经有答案时
+    /// 以答案为准，只有一间都没命中、又至少失败过一次才报错。
+    pub(super) fn member_of_file_rooms<'a>(
+        &'a self,
+        who: &'a Accessor,
+        rooms: &'a BTreeSet<String>,
+    ) -> BoxFuture<'a, Result<bool, Failure>> {
+        async move {
+            let people = self.people()?;
+            let username = match who {
+                Accessor::Owner => people.owner.clone(),
+                Accessor::User(username) => username.clone(),
+                Accessor::Bot(_) => return Ok(false),
+            };
+            let langs = self.plugins.owner_languages();
+            let unknown = |error: String| {
+                Failure::new(
+                    FileFailure::ServiceUnavailable,
+                    crate::l10n::text(
+                        &langs,
+                        "files-room-members-unknown",
+                        &[("error", error.into())],
+                    ),
+                )
+            };
+            let matrix = people.matrix.as_ref().ok_or_else(|| {
+                Failure::new(
+                    FileFailure::ServiceUnavailable,
+                    crate::l10n::text(&langs, "files-room-members-unconfigured", &[]),
+                )
+            })?;
+            let wanted = matrix.user_id(&username);
+            let core = matrix.core_session();
+            let mut failed = None;
+            for room in rooms {
+                match core.joined_members(room).await {
+                    Ok(members) if members.iter().any(|id| id == &wanted) => return Ok(true),
+                    Ok(_) => {}
+                    Err(e) if matches!(e.errcode(), "M_FORBIDDEN" | "M_NOT_FOUND") => {}
+                    Err(e) => {
+                        failed.get_or_insert_with(|| e.to_string());
+                    }
+                }
+            }
+            match failed {
+                Some(error) => Err(unknown(error)),
+                None => Ok(false),
+            }
+        }
+        .boxed()
     }
 
     pub(super) fn upload_file_person(&self, device: &str) -> Result<(String, Accessor), Failure> {

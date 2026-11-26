@@ -26,7 +26,9 @@ impl Gateway {
             .filter(|member| member.status == MemberStatus::Removed)
         {
             for device in self.tunnel.devices.of_user(&member.username) {
-                super::devices::revoke_device(self, &device.id).map_err(storage)?;
+                super::devices::revoke_device(self, &device.id, false)
+                    .await
+                    .map_err(storage)?;
             }
         }
         self.sync_family_room().await?;
@@ -40,6 +42,21 @@ impl Gateway {
             .iter()
             .filter(|member| member.status == MemberStatus::Joined)
         {
+            // “加好友”要管理员批或不能的，家外的邀请在 Tuwunel 就挡住（ADR-0088 第 9 节）；角色改了在这里跟着换。
+            // 失败整次同步失败：操作方拿到 503，可重试，不静默吞掉。
+            if let Some(matrix) = self.matrix.as_ref() {
+                let add_friends = self
+                    .roles
+                    .get(&member.role_id)
+                    .ok_or_else(|| {
+                        InstallError::Invalid(format!("Unknown role: {}", member.role_id))
+                    })?
+                    .permissions
+                    .add_friends;
+                matrix
+                    .sync_invite_filter(&member.username, add_friends)
+                    .await?;
+            }
             self.provision_member(member).await?;
         }
         Ok(())

@@ -17,19 +17,11 @@ use wonton_protocol::{
 };
 
 use super::api::{acted_by, denied, error_response, languages, plugin_denied, requester};
-use super::{Gateway, Person, TunnelPeer};
+use super::{Gateway, TunnelPeer};
 use crate::contacts::Contacts;
 use crate::l10n;
 use crate::mcp::{AnswerError, Confirmations};
 use crate::plugin::languages::Languages;
-
-fn person_user_id(gateway: &Gateway, person: &Person) -> String {
-    gateway
-        .matrix
-        .as_ref()
-        .map(|matrix| matrix.user_id(&person.username))
-        .unwrap_or_else(|| format!("@{}:{}", person.username, gateway.public.base_domain))
-}
 
 fn mcp_unavailable(langs: &Languages) -> Response {
     error_response(
@@ -173,7 +165,7 @@ pub async fn answer(
     body: Bytes,
 ) -> Response {
     let answerer_user_id = match requester(&gateway, peer, &headers) {
-        Ok(person) => person_user_id(&gateway, &person),
+        Ok(person) => super::matrix_user_id(&gateway, &person.username),
         Err(response) => return *response,
     };
     let langs = languages(&headers);

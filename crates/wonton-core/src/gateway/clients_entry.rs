@@ -1,6 +1,9 @@
 //! 8484 上插件主机名的转发（ADR-0021「核心给入口容器开一个专用监听端口」、ADR-0090）：开关、入口头、
 //! 公网路径规则、`setup_done`、头和 Cookie 的清理都在这里。对端是不是入口容器由 `entry_runtime` 的
 //! `trusted_entry` 中间件把关；`/_wonton/` 前缀在插件主机名上归核心（ADR-0080），一律 404。
+//!
+//! `auth.credentials` 的入口：先要求已经成功发过密码（否则 409），再用应用的 `verify` 判 HTTP
+//! `Basic`；没有 `verify` 时值匹配即放行。`.clients` 的网关验证在 C7，这里只管凭据。
 
 use std::net::{IpAddr, SocketAddr};
 
@@ -112,7 +115,7 @@ pub(super) async fn dispatch(
             format,
         );
     };
-    if !resolved.switches.of(kind) {
+    if !resolved.switches.of(kind) || (kind == Kind::Public && !gateway.public_access_enabled()) {
         return pages::error(
             StatusCode::FORBIDDEN,
             "entry_closed",
@@ -204,6 +207,7 @@ async fn forward_to_plugin(
     // 关开关断的是这个入口已有的连接：守卫从这进转发层，已升级的连接立即断。
     req.extensions_mut().insert(cancel);
     let forwarded = proxy::Forwarded {
+        web_user: None,
         client,
         scheme: "https",
     };
@@ -297,7 +301,7 @@ fn public_rules_reject(
 }
 
 /// `auth` 的验证（ADR-0021「专用密码」、ADR-0022）：`gateway` 用 Basic/Bearer 对专用密码（C16），
-/// `credentials` 是 C17 还没实现；`app` 先过 `setup_done`，注册没完成 409，查不出 503。
+/// `credentials` 在应用里验证，`app` 先过 `setup_done`，注册没完成 409，查不出 503。
 #[allow(clippy::result_large_err)] // 网关的错误响应直接回给 HTTP 层。
 async fn auth_reject(
     gateway: &Gateway,
@@ -311,13 +315,49 @@ async fn auth_reject(
         return gateway_authenticate(gateway, route, req, langs, format);
     }
     if clients.http.auth.credentials.is_some() {
-        // C17：核心发的专用密码。
-        return Err(unsupported(langs, format));
+        // 密码库打不开是 503；还没成功发过密码才是 409 等 App 里签发（ADR-0021「专用密码」）。
+        let Some(store) = &gateway.plugins.client_passwords else {
+            return Err(plugin_unavailable(route, langs, format));
+        };
+        if !gateway.plugins.credentials_ready(&route.id) {
+            return Err(pages::error(
+                StatusCode::CONFLICT,
+                "conflict",
+                &l10n::text(langs, "gateway-entry-credentials-not-issued", &[]),
+                langs,
+                format,
+            ));
+        }
+        return match gateway_auth::parse_password(req.headers()) {
+            Attempt::Missing => Err(denied(langs, format, false)),
+            Attempt::Invalid => Err(denied(langs, format, true)),
+            Attempt::Password(value) => {
+                let matched = store
+                    .match_password(route.id.as_str(), &value)
+                    .map_err(|error| {
+                        tracing::error!(plugin = %route.id, "读专用密码库失败：{error}");
+                        plugin_unavailable(route, langs, format)
+                    })?;
+                let Some((snapshot, revoke)) = matched else {
+                    return Err(denied(langs, format, true));
+                };
+                match gateway.plugins.verify_password(&route.id, &snapshot).await {
+                    // 应用自己的验证命令通过；Authorization 原样留给应用。
+                    crate::clients::credentials::Verify::Valid => Ok(Some(EntryPass {
+                        revoke,
+                        headers: Vec::new(),
+                    })),
+                    crate::clients::credentials::Verify::Invalid => {
+                        Err(denied(langs, format, true))
+                    }
+                    crate::clients::credentials::Verify::Unknown => {
+                        Err(plugin_unavailable(route, langs, format))
+                    }
+                }
+            }
+        };
     }
-    if clients.http.auth.app.is_none() {
-        // 清单校验保证三种恰好一种；都缺的清单到不了运行时，这里不兜底。
-        return Err(unsupported(langs, format));
-    }
+    // 清单校验保证三种验证方式恰好一种；`gateway` 和 `credentials` 上面已处理，剩下的是 `app`。
     use crate::plugin::clients_entry::SetupCheck;
     match gateway
         .plugins
@@ -341,16 +381,6 @@ async fn auth_reject(
             Err(plugin_unavailable(route, langs, format))
         }
     }
-}
-
-fn unsupported(langs: &Languages, format: pages::Format) -> Response {
-    pages::error(
-        StatusCode::NOT_IMPLEMENTED,
-        "unsupported",
-        &l10n::text(langs, "gateway-entry-auth-unsupported", &[]),
-        langs,
-        format,
-    )
 }
 
 /// 通过验证后带给转发层的：吊销守卫和按清单模板代加的身份头。

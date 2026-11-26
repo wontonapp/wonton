@@ -32,6 +32,8 @@ hyper = { version = "1.12.0", features = ["client", "http1", "server"] }
 hyper-util = { workspace = true, features = ["client-legacy", "client-proxy", "http1", "tokio"] }
 # MIT OR Apache-2.0。链接预览只用它的分词器读网页的 `<head>`（ADR-0065）。
 html5ever = "0.39.0"
+# MIT OR Apache-2.0。链接预览按字素截断卡片文字，组合字符和 emoji 序列不切一半（ADR-0065）。
+unicode-segmentation = "1.13.3"
 # MIT OR Apache-2.0。链接预览经代理用 DoH 解析域名时编解码 DNS 报文（ADR-0065）。
 hickory-proto = { version = "0.26.3", default-features = false }
 # (Apache-2.0 OR MIT) AND BSD-3-Clause。链接预览解码 GBK、Shift_JIS 这些非 UTF-8 网页。
@@ -46,23 +48,16 @@ rustls-native-certs = "0.8.5"
 # MIT OR Apache-2.0。插件的图标和截图（ADR-0017，只收 PNG 和 JPEG）、文件的缩略图（ADR-0020，另收 GIF 和 WebP）解码、
 # 缩放后重新编码。
 image = { version = "0.25.10", default-features = false, features = ["png", "jpeg", "gif", "webp"] }
-# MIT OR Apache-2.0。头像逐行 PNG、流式 GIF、WebP 时长和帧校验；复用 image 已用的解析器。
-png = "0.18.1"
-gif = "0.14.2"
-image-webp = "0.2.4"
-# MIT OR Apache-2.0 OR Zlib。image 的 JPEG 包装会复制全部输入且关闭严格校验，头像直接借用其底层解析器。
-zune-core = "0.5.3"
-zune-jpeg = "0.5.15"
 # MIT。`view_file` 抽 PDF 的文字层（ADR-0104）：纯 Rust，传递依赖 lopdf 等也都是 MIT 或 Apache-2.0。以会 panic 出名，
 # 只在图片助手的子进程里调用。
 pdf-extract = "0.12.1"
-# MPL-2.0。Mozilla 的 MP4 轨道解析器支持 avc1 和 avc3。
-mp4parse = "0.17.0"
 # 算插件网络里留给核心的地址和出口容器的名单。
 ipnet = { workspace = true, features = ["serde"] }
 iroh = { workspace = true, features = ["unstable-net-report"] }
 # MIT。签发 Tuwunel 登录用的 JWT（EdDSA）。
 jsonwebtoken = { workspace = true }
+# 头像字节检查，和客户端共用一份。
+wonton-avatar = { path = "../wonton-avatar" }
 # Apache-2.0 OR MIT。核心给 App 的文字（ADR-0043）：Fluent 目录和语言协商。
 wonton-l10n = { path = "../wonton-l10n" }
 # MIT OR Apache-2.0。解码共享文件夹引用的路径，编码下载的文件名。
@@ -98,12 +93,16 @@ serde = { workspace = true }
 serde-saphyr = { version = "2.0.0", default-features = false, features = ["deserialize", "serialize"] }
 # MIT OR Apache-2.0。插件清单和服务反序列化失败时，报错带上字段路径。
 serde_path_to_error = "0.1.20"
+# MIT OR Apache-2.0。公开的加好友请求页解析表单。
+serde_urlencoded = { workspace = true }
 serde_json = { workspace = true }
 shlex = "2.0.1"
 # Apache-2.0 OR MIT。检查 SVG 图标的样式表：和 usvg 用同一个解析器（Cargo.lock 里只有一份）。
 simplecss = "0.2.2"
 # Apache-2.0。按 SPDX 许可证列表校验清单的 `license`。
 spdx = "0.13.6"
+# MIT；SQLite 本体是公有领域。媒体库（ADR-0113）。
+rusqlite = { workspace = true }
 # 经 Docker 的归档接口往容器里写 configs、读插件写下的密钥。
 tar = { version = "0.4.46", default-features = false }
 thiserror = { workspace = true }
@@ -116,8 +115,9 @@ tracing-subscriber = { workspace = true, features = ["env-filter", "fmt"] }
 # MIT OR Apache-2.0。按 Unicode 类别过滤文件名里看不见的字符。
 unicode-properties = { version = "0.1.5", default-features = false, features = ["general-category"] }
 url = { workspace = true }
+# 任务号、会话号由 wonton-protocol 的 `TaskId` 等别名带出来，不直接依赖 uuid。
 # MIT OR Apache-2.0。推送内容按 RFC 8291 加密给设备（RustCrypto 的 P-256、HKDF、AES-GCM）；不用 VAPID。
-web-push-native = { version = "0.5.0", default-features = false }
+web-push-native = { version = "0.5.0", default-features = false, features = ["vapid"] }
 wonton-protocol = { path = "../wonton-protocol" }
 wonton-tunnel = { path = "../wonton-tunnel" }
 # MIT OR Apache-2.0。gost、socat 的镜像引用经它读 `WONTON_TEST_IMAGES`（CI 指到镜像仓库副本），没设时原样返回。
@@ -135,6 +135,11 @@ netlink-packet-core = "0.9.0"
 netlink-packet-route = "0.33.0"
 netlink-sys = { version = "0.9.0", default-features = false }
 
+# 写中继表配置文件：同目录临时文件写完再改名。
+tempfile = { workspace = true }
+# MIT。验签名的中继列表（ADR-0048）：minisign 公钥和签名，只验不签。
+minisign-verify = "0.3.0"
+
 [dev-dependencies]
 # 分享冒烟示例要用客户端的发现逻辑。
 wonton-client = { path = "../wonton-client" }
@@ -142,9 +147,12 @@ wonton-client = { path = "../wonton-client" }
 wonton-tunnel = { path = "../wonton-tunnel", features = ["test-hooks"] }
 # 测试中继：iroh 的 run_relay_server 和跳过 TLS 校验（只用于本机测试）。
 iroh = { workspace = true, features = ["test-utils"] }
-tempfile = { workspace = true }
+# MIT。测试里生成 minisign 密钥对和签名，造签名列表的夹具。
+minisign = "0.10.0"
 # MIT OR Apache-2.0。按 TOML 语义验证 Tuwunel 的联邦配置。
 toml = "1.1"
+# MIT。排空上限的测试用暂停的时钟推进时间，不真等 2 秒。
+tokio = { workspace = true, features = ["test-util"] }
 # MIT。测试里和 Tuwunel 的 WebSocket 客户端对话（核心生产代码用不到）。
 tokio-websockets = { version = "0.13.3", default-features = false, features = ["server"] }
 

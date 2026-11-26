@@ -289,6 +289,16 @@ impl Home {
         .await
     }
 
+    /// Bot 的长轮询同步。
+    pub(super) async fn bot_sync(&self) -> (StatusCode, HeaderMap, Value) {
+        self.bot(
+            Method::GET,
+            "/_matrix/client/v3/sync?timeout=0",
+            Value::Null,
+        )
+        .await
+    }
+
     /// Bot 在房间里说一句话。
     pub(super) async fn bot_says(&self, room: &str, txn: &str) -> (StatusCode, HeaderMap, Value) {
         self.bot(
@@ -417,7 +427,11 @@ async fn public_create_room_is_refused_on_both_entries() {
             assert_eq!(responded["errcode"], "M_FORBIDDEN", "{from}");
             assert_eq!(home.refusal(&headers), Some("public_room"), "{from}");
             assert!(
-                home.fake.state().rooms.is_empty(),
+                home.fake
+                    .state()
+                    .rooms
+                    .keys()
+                    .all(|id| id.as_str() == crate::matrix::fake::ADMIN_ROOM_ID),
                 "{from}：上游不该收到请求"
             );
         }
@@ -440,7 +454,16 @@ async fn private_create_room_is_forwarded() {
             .as_str()
             .is_some_and(|id| id.starts_with('!'))
     );
-    assert_eq!(home.fake.state().rooms.len(), 1, "上游建了房间");
+    assert_eq!(
+        home.fake
+            .state()
+            .rooms
+            .keys()
+            .filter(|id| id.as_str() != crate::matrix::fake::ADMIN_ROOM_ID)
+            .count(),
+        1,
+        "上游建了房间"
+    );
 }
 
 #[tokio::test]

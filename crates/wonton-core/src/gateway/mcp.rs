@@ -43,6 +43,15 @@ pub async fn request(gateway: &Gateway, mut req: Request) -> Response {
             );
         }
         None => {
+            // 还在恢复、来源没登记（每个插件是轮到它恢复才登记）：和 Bot 门一样答可重试的 503。上游的 MCP
+            // 客户端把 403 当永久错误、请求重连才回来；503 才走它自己的退避重试（见 ADR-0111）。
+            if gateway.plugins.restoring() {
+                return super::api::retry_later(error_response(
+                    StatusCode::SERVICE_UNAVAILABLE,
+                    "restoring",
+                    &l10n::text(&langs, "gateway-restoring", &[]),
+                ));
+            }
             return error_response(
                 StatusCode::FORBIDDEN,
                 "unauthenticated",

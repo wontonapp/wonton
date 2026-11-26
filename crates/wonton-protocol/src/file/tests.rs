@@ -508,6 +508,7 @@ fn upload_to(room: Option<&str>, state: TransferState) -> Transfer {
 
 fn room_row(room_id: &str, name: &str) -> RoomRow {
     RoomRow {
+        unread_mentions: 0,
         layout: Default::default(),
         call_active: false,
         room_id: room_id.into(),
@@ -515,6 +516,7 @@ fn room_row(room_id: &str, name: &str) -> RoomRow {
         is_direct: true,
         direct_user_id: None,
         plugin: None,
+        bot_chat: None,
         is_encrypted: true,
         is_read_only: false,
         membership: crate::RoomMembership::Joined,

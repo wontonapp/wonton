@@ -15,7 +15,6 @@ use hyper::header::ACCEPT_LANGUAGE;
 use super::api::error_response;
 use super::{Gateway, client_addr, proxy};
 use crate::l10n;
-use crate::plugin::Permission;
 use crate::plugin::languages::Languages;
 
 pub async fn request(gateway: &Gateway, req: Request) -> Response {
@@ -26,7 +25,7 @@ pub async fn request(gateway: &Gateway, req: Request) -> Response {
     );
     let source = client_addr(&req).and_then(|addr| gateway.plugins.source(addr.ip()));
     let source = match source {
-        Some(source) if source.permissions.contains(&Permission::Models) => source,
+        Some(source) if source.models => source,
         Some(source) => {
             return error_response(
                 StatusCode::FORBIDDEN,
@@ -54,6 +53,7 @@ pub async fn request(gateway: &Gateway, req: Request) -> Response {
         );
     };
     let fwd = proxy::Forwarded {
+        web_user: None,
         client: client_addr(&req),
         scheme: "http",
     };

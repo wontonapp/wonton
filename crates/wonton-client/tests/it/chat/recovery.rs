@@ -6,9 +6,9 @@ use wonton_client::{
 use wonton_matrix::testkit::eventually;
 use wonton_matrix::{Recovery, Verification};
 
-use super::accept_the_bots_invite;
 use super::support::{Home, Phone, Timeline, WAIT};
 use super::verification::{available, cancelled, compare};
+use super::{accept_the_bots_encrypted_invite, accept_the_bots_invite};
 
 /// 第二台设备存在之前就发出的消息：它自己的设备密钥不在这条消息的收信人里。
 const HISTORY: &str = "第二台设备配对之前发的消息";
@@ -75,7 +75,7 @@ async fn a_second_device_keeps_the_existing_backup_and_recovers_with_the_first_d
         .unwrap();
     // 私聊和一条消息都在第二台设备存在之前：它进房间时这条历史解不开。
     let bot = home.bot("hermes", "Hermes").await;
-    let room_id = accept_the_bots_invite(&home, &first, &bot).await;
+    let room_id = accept_the_bots_encrypted_invite(&home, &first, &bot).await;
     bot.open_room(&room_id)
         .await
         .expect("Bot 打开私聊")

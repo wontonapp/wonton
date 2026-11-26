@@ -1,5 +1,7 @@
 <?xml version="1.0" encoding="utf-8"?>
 <resources>
+    <!-- Keep the fictional example in wrapping help, not the single-line input prompt. -->
+    <string name="friends_add_help">請對方把完整好友位址傳給你；使用雲吞時，可在好友頁載入成功後從「新增 → 我的QR碼」複製連結。\n僅為格式範例，非真實帳號：@bob:example.org</string>
     <!-- Title of the friends page and the settings row that opens it. -->
     <string name="friends_title">好友</string>
     <string name="friends_scan_code">掃描對方的碼</string>

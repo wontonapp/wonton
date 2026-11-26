@@ -255,8 +255,13 @@ struct ChatDialogs: ViewModifier {
             )
     }
 
+    /// 房间页（含盖在上面的旁聊）把失败写在输入栏上方：房间的盖层是系统呈现，底下的这个弹窗盖不上去，
+    /// 两处同时弹还会把盖层挤掉。
     private var isShowingRejection: Binding<Bool> {
-        Binding(get: { model.rejection != nil }, set: { if !$0 { model.rejection = nil } })
+        Binding(
+            get: { model.rejection != nil && model.path.isEmpty && model.visiting == nil },
+            set: { if !$0 { model.rejection = nil } }
+        )
     }
 
     private var isShowingProblem: Binding<Bool> {

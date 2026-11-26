@@ -1,4 +1,4 @@
-//! 按插件、好友或组授权；接收方只得到分享的网页，不得到管理操作（ADR-0051）。
+//! 按插件、好友授权；接收方只得到分享的网页，不得到管理操作（ADR-0051：能看到哪些应用按对方角色的“能打开哪些应用”）。
 
 use serde::{Deserialize, Serialize};
 
@@ -21,7 +21,7 @@ pub enum AppsAction {
 pub struct PluginShares {
     /// 清单声明了 `webui.accounts: per_user`（应用按登录的人分开数据）；false 不禁止分享，但授权确认必须提示账号和数据风险。
     pub per_user_accounts: bool,
-    /// 当前有效授权涉及的不同好友数；组与直接授权重叠只算一次，已到期不算。
+    /// 当前有效授权涉及的不同好友数；已到期不算。
     pub friend_count: u32,
     pub grants: Vec<ShareGrant>,
 }
@@ -43,8 +43,6 @@ pub struct ShareGrant {
 pub enum ShareRecipient {
     /// 完整 Matrix 用户 ID，必须已经是好友。
     Friend { user_id: String },
-    /// [`crate::FriendGroup::id`]；组成员变化后有效访问随之变化，不复制成永久的个人授权。
-    Group { group_id: String },
     #[serde(other)]
     Other,
 }

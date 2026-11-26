@@ -106,6 +106,7 @@ impl Files {
                 source,
                 origin,
                 access: [Accessor::Bot(bot.name.clone())].into(),
+                rooms: Default::default(),
                 owner_granted: Default::default(),
                 registered,
                 created_at: now,
@@ -123,7 +124,9 @@ impl Files {
         bot: &str,
         langs: &Languages,
     ) -> Result<FileRecord, Failure> {
-        let record = self.authorize(id, &Accessor::Bot(bot.to_owned()), langs)?;
+        let record = self
+            .authorize(id, &Accessor::Bot(bot.to_owned()), langs)
+            .await?;
         match &record.origin {
             Origin::Share { reference } if record.owner_granted.contains(bot) => {
                 self.open_share(reference.clone(), langs).await?;
@@ -189,7 +192,8 @@ impl Files {
         bot: &str,
         langs: &Languages,
     ) -> Result<FileRecord, Failure> {
-        self.authorize(id, &Accessor::Bot(bot.to_owned()), langs)?;
+        self.authorize(id, &Accessor::Bot(bot.to_owned()), langs)
+            .await?;
         let recipient = self.host.bot_person(bot)?;
         let (id, langs) = (id.clone(), langs.clone());
         self.blocking(move |files| {

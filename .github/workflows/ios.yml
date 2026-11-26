@@ -13,6 +13,9 @@ name: ios
 #   不挡合并；连续合并时只跑最新那次（新的取消旧的，结果只对旧提交有意义），红了按那次提交标题里的 (#N) 找到弄红的 PR。
 # 两半合起来是 wonton-client 在工作区里的全部依赖（cargo tree -p wonton-client --features bindgen --target all），
 # 加了依赖要同步改。只改测试的（crates 下的 tests/、benches/、tests.rs、*_tests.rs）编不进 iOS App，排除掉。
+#
+# 核心里一行没改时用 main 上按内容哈希取回的预编译产物（XCFramework 和 Swift 绑定），不编核心；规则见
+# workflows/README.md 的“核心产物”。键对不上就照旧现编，不存在拿别的键的产物顶替。
 on:
   workflow_call:
   push:
@@ -26,13 +29,17 @@ on:
       - "vendor/**"
       - "Cargo.lock"
       - "rust-toolchain.toml"
+      # 核心产物的键和产物怎么编：改了它们，main 上的这份产物就过期，靠这次运行重编。
+      - "scripts/core_artifacts/**"
+      - "apps/ios/scripts/**"
+      - ".github/workflows/cache.yml"
       - "!**/*.md"
       - "!crates/**/tests/**"
       - "!crates/**/benches/**"
       - "!crates/**/tests.rs"
       - "!crates/**/*_tests.rs"
   schedule:
-    # 每天全量兜底：两个各自绿的 PR 合在一起才出的错由这次发现。
+    # 每天全量兜底：两个各自绿的 PR 合在一起才出的错由这次发现。这轮不取预编译产物、强制现编，环境坏了也能暴露。
     - cron: "30 4 * * *"
   workflow_dispatch:
 
@@ -46,6 +53,12 @@ env:
   # 同 rust.yml：不留增量编译的缓存，调试信息只留行号。
   CARGO_INCREMENTAL: "0"
   CARGO_PROFILE_DEV_DEBUG: line-tables-only
+  # 核心产物只按这个 target 编（CI 只跑模拟器）。
+  WONTON_IOS_TARGETS: aarch64-apple-ios-sim
+  # 产物用它编、键也算它：钉死版本，别跟机器上默认装的是哪个走。
+  XCODE_VERSION: "27.1"
+  # 这几行要和 cache.yml 的 iOS 作业一模一样：rust-cache 和核心产物的键都从这些变量算，少一个、换个值两边就对不上。
+  CARGO_PROFILE_RELEASE_DEBUG: line-tables-only
 
 permissions:
   contents: read
@@ -79,14 +92,17 @@ jobs:
     name: 模拟器构建
     runs-on: xcode-27
     # 编 Rust 核心在托管 runner 上波动很大：2026-11-19 同样命中缓存，这一步 15–30 分钟，整个作业 28–45 分钟，
-    # 45 分钟时常被超时取消、日志里没有错误。公开仓库的 macOS 分钟不花钱，放宽到 70 分钟。
+    # 45 分钟时常被超时取消、日志里没有错误。公开仓库的 macOS 分钟不花钱，放宽到 70 分钟；只改壳、命中预编译产物时
+    # 不编核心，整个作业几分钟。
     timeout-minutes: 70
     env:
       XCODEGEN_VERSION: "2.46.0"
-      # 参考图绑定这台模拟器和这个系统版本：改了就整体重录（打 record-snapshots 标签）。系统版本取 Xcode 27.1 支持的，
-      # 设备取装机列表里的普通 iPhone。模拟器名字带空格，走变量拼进 -destination。
+      # 设备取装机列表里的普通 iPhone，模拟器名字带空格，走变量拼进 -destination。
+      # `SIMULATOR_MODEL` 是型号标识（SIMULATOR_MODEL_IDENTIFIER），iPhone18,3 就是 iPhone 17；测试按它和
+      # 系统版本核对，不符就在 CI 上失败。系统版本不写死，下一步按机器挑；测试步骤把两个值和 enforce 开关交给测试进程。
+      # 参考图绑定这个组合，换了就整体重录（打 record-snapshots 标签）。
       SIMULATOR_NAME: iPhone 17
-      SIMULATOR_OS: "27.0"
+      SIMULATOR_MODEL: "iPhone18,3"
       # 截图测试并行会同时开好几个窗口、失败时也不好定位，单台模拟器顺序跑；日期按 UTC、en_US 排版，参考图才可复现。
       TZ: UTC
     steps:
@@ -94,27 +110,105 @@ jobs:
         with:
           persist-credentials: false
       - name: 用 Xcode 27.1（和开发机 mini 上的一致）
-        run: sudo xcode-select -s /Applications/Xcode_27.1.app
+        run: |
+          # 迷你机自托管 runner 的 sudo 可能没配免密；已经选好 27.1 时跳过，免得整条作业死在选 Xcode 上。
+          if ! xcodebuild -version | head -1 | grep -q "Xcode 27.1"; then
+            sudo xcode-select -s /Applications/Xcode_27.1.app
+          fi
+      - name: 核心产物的键
+        id: core
+        # 先取进变量再拼：写在 $(…) 里的话 key.py 失败也算绿，键会变成空的前缀。
+        run: |
+          key=$(python3 scripts/core_artifacts/key.py ios)
+          echo "key=ios-core-$key" >> "$GITHUB_OUTPUT"
+      - name: 找 main 上编好的核心产物
+        id: corecache
+        # 定时那轮不取，强制现编：rustup、Xcode、cargo-ndk 这些环境坏了要每天有人发现。
+        if: github.event_name != 'schedule'
+        uses: actions/cache/restore@0057852bfaa89a56745cba8c7296529d2fc39830 # v4
+        with:
+          path: |
+            apps/ios/WontonClient/build/WontonClientFFI.xcframework
+            apps/ios/WontonClient/Sources/WontonClient/Generated
+          key: ${{ steps.core.outputs.key }}
+      # 命中就跳过编核心（下面 rustup、rust-cache、build-core 的编译部分都跟着跳过）；产物缺了当场停。
+      - name: 核对取回来的产物
+        if: steps.corecache.outputs.cache-hit == 'true'
+        run: |
+          # 缺一样就停在这里，不让 xcodebuild 报看不懂的“找不到模块”。
+          xcframework=apps/ios/WontonClient/build/WontonClientFFI.xcframework
+          slice=$(ls -d "$xcframework"/*-simulator)
+          echo "取回来的产物：$slice"
+          # Info.plist 在 xcframework 根上，不在切片里。
+          ls "$slice"/libwonton_client.a "$slice"/Headers/module.modulemap "$xcframework"/Info.plist
+          ls apps/ios/WontonClient/Sources/WontonClient/Generated/*.swift
+      - name: 挑这台机器上有的模拟器运行时
+        run: |
+          # 自托管 mini 没有 iOS 27.0 运行时（装运行时要 sudo，mini 没配免密），托管镜像有；有 27.1 就用 27.1，
+          # 没有就取机器上最新的 iOS 版本。参考图跟着这里挑出的版本录（record-snapshots），换机器要重录。
+          version=$(xcrun simctl list runtimes -j | python3 -c '
+          import json, sys
+          runtimes = json.load(sys.stdin)["runtimes"]
+          have = [r["identifier"].rsplit("iOS-", 1)[1].replace("-", ".")
+                  for r in runtimes
+                  if r.get("isAvailable") and "SimRuntime.iOS-" in r["identifier"]]
+          if not have:
+              raise SystemExit("这台机器没有可用的 iOS 模拟器运行时")
+          pick = "27.1" if "27.1" in have else max(have, key=lambda v: tuple(map(int, v.split("."))))
+          print(pick)')
+          echo "用 iOS $version"
+          echo "SIMULATOR_OS=$version" >> "$GITHUB_ENV"
       # 模拟器冷启动要三分多钟（11-12 实测：test-without-building 开始后 3 分 25 秒才认到模拟器，测试本身 2 秒），
       # 放在后台先启动，和下面编 Rust 核心、构建测试重叠；跑测试前再等它启动完。
       - name: 后台启动模拟器
         run: |
-          udid=$(xcrun simctl list devices available -j | python3 -c '
+          # 设备的 CoreSimulator 库是按用户分的，还可能留着上一轮坏掉的设备：先全停，按名字找到的先擦掉再用。
+          # 机器上没这个型号就退到这个运行时支持的第一种 iPhone；后面一律按 UDID 指定目标。型号标识从设备本身取。
+          xcrun simctl shutdown all || true
+          runtime="com.apple.CoreSimulator.SimRuntime.iOS-$(echo "$SIMULATOR_OS" | tr . -)"
+          IFS=$'\t' read -r name type <<EOF
+          $(xcrun simctl list runtimes -j | SIMULATOR_NAME="$SIMULATOR_NAME" RUNTIME="$runtime" python3 -c '
+          import json, os, sys
+          runtimes = json.load(sys.stdin)["runtimes"]
+          hit = [r for r in runtimes if r["identifier"] == os.environ["RUNTIME"] and r.get("isAvailable")]
+          if not hit:
+              raise SystemExit("这台机器没有 " + os.environ["RUNTIME"])
+          types = [t for t in hit[0].get("supportedDeviceTypes", []) if "iPhone" in t["name"]]
+          print("可选机型: " + ", ".join(t["name"] for t in types), file=sys.stderr)
+          pick = next((t for name in ["iPhone 17 Pro", "iPhone 17", "iPhone 16 Pro", "iPhone 16"]
+                       for t in types if t["name"] == name), types[0] if types else None)
+          if pick is None:
+              raise SystemExit("这个运行时没有 iPhone 机型")
+          want = os.environ["SIMULATOR_NAME"]
+          print((want if any(t["name"] == want for t in types) else pick["name"]) + "\t" + pick["identifier"])')
+          EOF
+          if [ "$name" != "$SIMULATOR_NAME" ]; then echo "::notice::用 $name（这台机器上没有 $SIMULATOR_NAME）"; fi
+          udid=$(xcrun simctl list devices available -j | SIMULATOR_NAME="$name" SIMULATOR_OS="$SIMULATOR_OS" python3 -c '
           import json, os, sys
           runtime = "com.apple.CoreSimulator.SimRuntime.iOS-" + os.environ["SIMULATOR_OS"].replace(".", "-")
-          names = [d["udid"] for d in json.load(sys.stdin)["devices"].get(runtime, []) if d["name"] == os.environ["SIMULATOR_NAME"]]
+          devices = json.load(sys.stdin)["devices"]
+          names = [d["udid"] for d in devices.get(runtime, []) if d["name"] == os.environ["SIMULATOR_NAME"]]
           print(names[0] if names else "")')
-          if [ -z "$udid" ]; then
-            echo "::error::找不到模拟器 $SIMULATOR_NAME（iOS $SIMULATOR_OS），runner 镜像变了要改 SIMULATOR_NAME/SIMULATOR_OS 并重录参考图"
-            exit 1
+          if [ -n "$udid" ]; then
+            xcrun simctl erase "$udid" || true
+            xcrun simctl boot "$udid" || udid=""
           fi
+          if [ -z "$udid" ]; then
+            echo "::notice::没有能用的 $name（iOS $SIMULATOR_OS），现建一台"
+            udid=$(xcrun simctl create "$name" "$type" "$runtime")
+            xcrun simctl boot "$udid"
+          fi
+          model=$(xcrun simctl getenv "$udid" SIMULATOR_MODEL_IDENTIFIER || true)
+          echo "SIMULATOR_MODEL=${model:-$SIMULATOR_MODEL}" >> "$GITHUB_ENV"
           echo "SIMULATOR_UDID=$udid" >> "$GITHUB_ENV"
           nohup xcrun simctl bootstatus "$udid" -b > "$RUNNER_TEMP/simulator-boot.log" 2>&1 &
       - name: 安装 rust-toolchain.toml 指定的工具链和 iOS 模拟器 target
+        if: steps.corecache.outputs.cache-hit != 'true'
         run: |
           rustup toolchain install
           rustup target add aarch64-apple-ios-sim
-      - uses: Swatinem/rust-cache@d1527c8f67ef9af357290475d4af4b0fab8f12e0 # v2
+      - if: steps.corecache.outputs.cache-hit != 'true'
+        uses: Swatinem/rust-cache@d1527c8f67ef9af357290475d4af4b0fab8f12e0 # v2
         with:
           # macOS 的产物和 Linux 作业不通用，单独一个 key。
           # 只读：同一份 key 由 cache.yml 的 iOS 作业在 push 时编好写回。这里也写的话，
@@ -131,8 +225,18 @@ jobs:
           echo "$RUNNER_TEMP/xcodegen/xcodegen/bin" >> "$GITHUB_PATH"
       - name: 编译 Rust 核心并生成 Swift 绑定
         env:
-          WONTON_IOS_TARGETS: aarch64-apple-ios-sim
+          # 命中 main 上的产物时只补许可清单和版本号，不编核心。
+          WONTON_CORE_PREBUILT: ${{ steps.corecache.outputs.cache-hit == 'true' && '1' || '' }}
         run: apps/ios/scripts/build-core.sh debug
+      - name: 存下这次编的核心产物
+        # PR 存进本分支的作用域，同一个 PR 再推就命中；main 上由 cache.yml 存，所有 PR 都能取。
+        if: steps.corecache.outputs.cache-hit != 'true'
+        uses: actions/cache/save@0057852bfaa89a56745cba8c7296529d2fc39830 # v4
+        with:
+          path: |
+            apps/ios/WontonClient/build/WontonClientFFI.xcframework
+            apps/ios/WontonClient/Sources/WontonClient/Generated
+          key: ${{ steps.core.outputs.key }}
       - name: 生成 Xcode 工程
         run: xcodegen generate --spec apps/ios/project.yml
       # 只编 WontonTests：UI 测试（WontonUITests）在夜跑里跑，这里不编。
@@ -143,7 +247,7 @@ jobs:
             -project apps/ios/Wonton.xcodeproj \
             -scheme Wonton \
             -configuration Debug \
-            -destination "platform=iOS Simulator,name=$SIMULATOR_NAME,OS=$SIMULATOR_OS" \
+            -destination "platform=iOS Simulator,id=$SIMULATOR_UDID" \
             -only-testing:WontonTests \
             -derivedDataPath "$RUNNER_TEMP/DerivedData" \
             ARCHS=arm64 \
@@ -155,12 +259,17 @@ jobs:
       # 录制模式由 scheme 的环境变量切（`Wonton` 是 never）：只比较、缺图也报错，不在 CI 里悄悄补图；
       # 重录在 snapshots-record.yml。每个用例 10 秒够渲染，卡住最多 60 秒；失败不加自动重试，先把原因查清。
       - name: 单元测试和截图测试
+        env:
+          TEST_RUNNER_SNAPSHOT_ENFORCE: "1"
         run: |
+          # 运行时和型号是上一步按机器挑的，不进 `${{ env }}`，交给测试进程得用 shell 变量。
+          export TEST_RUNNER_SNAPSHOT_MODEL="$SIMULATOR_MODEL"
+          export TEST_RUNNER_SNAPSHOT_OS="$SIMULATOR_OS"
           xcodebuild test-without-building \
             -project apps/ios/Wonton.xcodeproj \
             -scheme Wonton \
             -configuration Debug \
-            -destination "platform=iOS Simulator,name=$SIMULATOR_NAME,OS=$SIMULATOR_OS" \
+            -destination "platform=iOS Simulator,id=$SIMULATOR_UDID" \
             -only-testing:WontonTests \
             -parallel-testing-enabled NO \
             -testLanguage en \

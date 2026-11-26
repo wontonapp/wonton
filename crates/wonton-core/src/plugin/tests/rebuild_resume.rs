@@ -47,7 +47,9 @@ fn upgraded(engine: super::super::docker::Engine, dir: &tempfile::TempDir) -> Pl
 #[tokio::test]
 async fn a_committed_create_really_times_out_and_leaves_one_created_resource() {
     let (docker, engine) = FakeDocker::start().await;
-    let engine = engine.with_request_limit_for_test(Duration::from_secs(1));
+    let engine = engine
+        .with_request_limit_for_test(Duration::from_secs(1))
+        .with_slow_request_limit_for_test(Duration::from_secs(1));
     let hold = docker.hold_committed_create(APP);
     let result = engine
         .create_container(APP, ContainerCreateBody::default())
@@ -83,7 +85,9 @@ async fn a_committed_create_really_times_out_and_leaves_one_created_resource() {
 #[tokio::test]
 async fn a_committed_create_timeout_during_drift_recovers_after_restart_without_losing_data() {
     let (docker, engine) = FakeDocker::start().await;
-    let engine = engine.with_request_limit_for_test(Duration::from_secs(1));
+    let engine = engine
+        .with_request_limit_for_test(Duration::from_secs(1))
+        .with_slow_request_limit_for_test(Duration::from_secs(1));
     let dir = tempfile::tempdir().unwrap();
     let manager = manager_with(engine.clone(), &dir);
     manager.install(&app(), &[], super::langs()).await.unwrap();
@@ -188,7 +192,9 @@ async fn concurrent_start_and_watch_do_not_duplicate_a_replacement() {
 #[tokio::test]
 async fn a_partial_replacement_redelivers_configs_and_completes_one_shots_before_serving() {
     let (docker, engine) = FakeDocker::start().await;
-    let engine = engine.with_request_limit_for_test(Duration::from_secs(1));
+    let engine = engine
+        .with_request_limit_for_test(Duration::from_secs(1))
+        .with_slow_request_limit_for_test(Duration::from_secs(1));
     let dir = tempfile::tempdir().unwrap();
     let init = "wonton-app-test--init";
     docker.set_start_state(
@@ -290,7 +296,9 @@ async fn fake_stop_is_observable_and_start_preserves_configured_health() {
 async fn committed_create_fault_is_named_one_shot_and_isolated_per_fake() {
     let (faulty, engine) = FakeDocker::start().await;
     let (other, other_engine) = FakeDocker::start().await;
-    let engine = engine.with_request_limit_for_test(Duration::from_secs(1));
+    let engine = engine
+        .with_request_limit_for_test(Duration::from_secs(1))
+        .with_slow_request_limit_for_test(Duration::from_secs(1));
     let hold = faulty.hold_committed_create(APP);
     other_engine
         .create_container(APP, ContainerCreateBody::default())
@@ -321,7 +329,9 @@ async fn committed_create_fault_is_named_one_shot_and_isolated_per_fake() {
 #[tokio::test]
 async fn a_missing_container_start_can_resume_a_committed_create_timeout() {
     let (docker, engine) = FakeDocker::start().await;
-    let engine = engine.with_request_limit_for_test(Duration::from_secs(1));
+    let engine = engine
+        .with_request_limit_for_test(Duration::from_secs(1))
+        .with_slow_request_limit_for_test(Duration::from_secs(1));
     let dir = tempfile::tempdir().unwrap();
     let manager = Arc::new(manager_with(engine, &dir));
     let installed = manager.install(&app(), &[], super::langs()).await.unwrap();
@@ -566,7 +576,9 @@ async fn failed_explicit_stop_keeps_stopped_intent_and_never_queues_start() {
 #[tokio::test]
 async fn starting_journal_redelivers_configs_after_a_create_completed_before_delivery() {
     let (docker, engine) = FakeDocker::start().await;
-    let engine = engine.with_request_limit_for_test(Duration::from_secs(1));
+    let engine = engine
+        .with_request_limit_for_test(Duration::from_secs(1))
+        .with_slow_request_limit_for_test(Duration::from_secs(1));
     let dir = tempfile::tempdir().unwrap();
     let source = format!(
         "configs:\n  seed:\n    content: 'must be delivered'\n{}",

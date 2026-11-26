@@ -41,11 +41,13 @@ fn plugin(status: PluginState) -> InstalledPlugin {
 
 fn rooms() -> Vec<RoomRow> {
     vec![RoomRow {
+        unread_mentions: 0,
         room_id: "!dm:example.org".into(),
         name: "Agent".into(),
         is_direct: true,
         direct_user_id: Some("@agent:example.org".into()),
         plugin: None,
+        bot_chat: None,
         is_encrypted: true,
         is_read_only: false,
         membership: RoomMembership::Joined,

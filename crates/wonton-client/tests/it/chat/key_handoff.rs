@@ -11,7 +11,7 @@ use wonton_client::{
 use wonton_matrix::{ChatRoom, OwnedRoomId};
 use wonton_protocol::{TimelineAction, TimelineTarget};
 
-use super::accept_the_bots_invite;
+use super::accept_the_bots_encrypted_invite;
 use super::support::{Home, Phone, Timeline, WAIT};
 
 const HISTORY: [&str; 2] = ["before adding a device one", "before adding a device two"];
@@ -240,7 +240,7 @@ async fn a_paired_phone_gets_the_keys_from_the_add_device_page_without_the_recov
     let home = Home::start(&[old.device_id()]).await;
     old_phone(&home, &old, true).await;
     let bot = home.bot("hermes", "Hermes").await;
-    let room_id = accept_the_bots_invite(&home, &old, &bot).await;
+    let room_id = accept_the_bots_encrypted_invite(&home, &old, &bot).await;
     let bot_room = bot.open_room(&room_id).await.unwrap();
     let mut old_timeline = Timeline::open(&old, room_id.as_str()).await;
     for body in HISTORY {
@@ -600,7 +600,7 @@ async fn phone_with_undecryptable_history() -> (
     let home = Home::start(&[old.device_id()]).await;
     old_phone(&home, &old, true).await;
     let bot = home.bot("hermes", "Hermes").await;
-    let room_id = accept_the_bots_invite(&home, &old, &bot).await;
+    let room_id = accept_the_bots_encrypted_invite(&home, &old, &bot).await;
     let bot_room = bot.open_room(&room_id).await.unwrap();
     let mut old_timeline = Timeline::open(&old, room_id.as_str()).await;
     for body in HISTORY {
@@ -623,6 +623,7 @@ async fn phone_with_undecryptable_history() -> (
             .then_some(())
     })
     .await;
+    new.wait_ready().await;
     let subscription = new
         .subscribe_timeline(TimelineTarget {
             room_id: room_id.as_str().to_owned(),

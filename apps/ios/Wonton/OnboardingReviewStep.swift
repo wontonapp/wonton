@@ -5,9 +5,13 @@ struct OnboardingReviewStep: View {
     let review: OnboardingReview
     let plugins: PluginsModel
     let send: (Action) -> Void
+    @Environment(\.wontonColors) private var colors
 
     var body: some View {
         VStack(alignment: .leading, spacing: WontonTheme.spacing.s16) {
+            Text(String(localized: .Onboarding3.onboardingReviewIntro))
+                .wontonText(WontonTheme.typography.body)
+                .foregroundStyle(Color(colors.textSecondary))
             ForEach(review.items, id: \.id) { item in
                 OnboardingReviewRow(item: item, plugins: plugins) {
                     send(.onboarding(action: .retryOnboardingItem(id: item.id)))

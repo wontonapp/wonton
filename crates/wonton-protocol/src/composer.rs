@@ -101,6 +101,10 @@ pub enum AttachmentFailure {
     SourceUnavailable,
     /// 家里服务器的磁盘放不下。
     StorageFull,
+    /// 这个格式发不了：服务器认不出，或者本来就不是图片。
+    UnsupportedType,
+    /// 要回复的那条不在了：不在这个房间里，或者已经被删得拿不到。去掉回复再发。
+    ReplyTarget,
     /// 家里的服务器拒收：没有权限、请求不合规则。
     Rejected,
     /// 家里的服务器出错。
@@ -125,7 +129,7 @@ pub struct OutgoingMessage {
     /// 点发送的时间，Unix 毫秒。
     pub timestamp_ms: u64,
     /// `Sending` 的 `progress` 是全部附件合起来的比例。有附件传不上去、授权没成时是 `Failed`（`recoverable` 为假），
-    /// 原因在 `message` 里，失败的附件也标着 [`AttachmentState::Failed`]。
+    /// 类别在 `failure` 里，原文在 `details` 里，失败的附件也标着 [`AttachmentState::Failed`]。
     pub state: SendState,
 }
 
@@ -193,6 +197,8 @@ impl MessageGroup {
 #[cfg(test)]
 mod tests {
     use serde_json::json;
+
+    use crate::SendFailure;
 
     use super::*;
 
@@ -279,7 +285,8 @@ mod tests {
                 }],
                 timestamp_ms: 1_793_000_000_000,
                 state: SendState::Failed {
-                    message: "有附件传不上去".into(),
+                    failure: SendFailure::Other,
+                    details: Some("有附件传不上去".into()),
                     recoverable: false,
                 },
             }],

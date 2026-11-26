@@ -87,6 +87,7 @@ impl Pending {
                 username: self.username.clone(),
             },
             access: [self.accessor.clone()].into(),
+            rooms: Default::default(),
             owner_granted: Default::default(),
             registered: None,
             created_at: now_secs(),

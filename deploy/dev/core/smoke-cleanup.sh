@@ -30,7 +30,8 @@ cleanup() {
   local status=$?
   [[ -z "${events_pid:-}" ]] || kill "$events_pid" 2>/dev/null || true
   # 一次性网关凭据按建 key 时记下的 id 删（失败退出也删，KEEP 也删）；没建过（id 为空）就什么都不做。
-  [[ -z "${host_model_key_id:-}" ]] || magpie gateway-key remove "$host_model_key_id" >/dev/null 2>&1 || true
+  # host_magpie 里的 fail 是 exit，子壳兜住，后面的容器、网络、数据目录照删。
+  [[ -z "${host_model_key_id:-}" ]] || ( host_magpie gateway-key remove "$host_model_key_id" ) >/dev/null 2>&1 || true
   if [[ "${KEEP:-}" == 1 ]]; then
     echo "保留现场：项目 $core，数据目录 $WONTON_DEV_DATA（清理：WONTON_DEV_PROJECT=$core WONTON_DEV_DATA=$WONTON_DEV_DATA $dev reset）"
     return
@@ -45,6 +46,7 @@ cleanup() {
   remove_container "$phone"
   remove_container "$mom_phone"
   [[ -z "${fake_upstream:-}" ]] || remove_container "$fake_upstream"
+  [[ -z "${model_relay:-}" ]] || remove_container "$model_relay"
   # 中途失败时插件和核心可能都还在：先把这套实例的容器全删完（核心也就停了），网络和卷才删得掉。
   for resource in $(instance_containers); do remove_container "$resource"; done
   # 核心自己建的出口网络、卷和数据目录也在这里删；单步失败不影响后面的。

@@ -12,14 +12,16 @@
     <string name="onboarding_problem_store_index_too_new">おすすめの表示には新しい自宅サーバーが必要です。アップデートするか、スキップしてください。</string>
     <!-- Problem title in setup: the recommendation source hit an error. -->
     <string name="onboarding_problem_store_upstream">おすすめの提供元でエラーが発生しました。再試行するかスキップできます。</string>
-    <!-- Checkmark icon for a finished install task. -->
+    <!-- Checkmark icon for a finished row (an app or a saved setting). -->
     <string name="onboarding_review_done">完了</string>
     <!-- Kind label above a review row: the profile that will be saved. -->
-    <string name="onboarding_review_section_profile">プロフィール</string>
-    <!-- Kind label above a review row: the model. -->
-    <string name="onboarding_review_section_model">モデル</string>
+    <string name="onboarding_review_section_profile">あなたのプロフィール</string>
+    <!-- Kind label above a review row: the model that will answer. -->
+    <string name="onboarding_review_section_model">返信に使うモデル</string>
     <!-- Label while an install task waits for others to finish. -->
-    <string name="onboarding_review_waiting">待機中</string>
+    <string name="onboarding_review_waiting">前のアプリの完了待ち</string>
+    <!-- Sentence above the review list: finishing saves the settings and installs in the background with the listed permissions. -->
+    <string name="onboarding_review_intro">ボタンを押すと、これらの設定を保存し、下に書いた権限で以下のアプリをインストールします。インストール中はそのまま離れていてもかまいません。</string>
     <!-- Card title at the top of the model step in setup: connect a model provider. -->
     <string name="onboarding_step_model">モデルの接続</string>
 </resources>

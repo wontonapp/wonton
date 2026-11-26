@@ -54,6 +54,7 @@ pub(super) async fn request(gateway: &Gateway, capability: &str, mut req: Reques
     };
     authenticate_caller(req.headers_mut(), &source.id.to_string(), bot.as_ref());
     let fwd = proxy::Forwarded {
+        web_user: None,
         client: client_addr(&req),
         scheme: "http",
     };

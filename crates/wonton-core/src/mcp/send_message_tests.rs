@@ -1,10 +1,12 @@
 //! `wonton__send_message` 的行为测试（ADR-0061 第 9 节）：名单、卡片、批准入队、按收件人放宽。
 
 use std::sync::Arc;
+use std::time::Duration;
 
 use serde_json::{Value, json};
 use wonton_protocol::{
-    Answer, BotKeeper, BotRef, ChainTurnReport, ConfirmationCategory, ConfirmationState,
+    AgentChainStatus, Answer, BotKeeper, BotRef, ChainTurnReport, ConfirmationCategory,
+    ConfirmationState,
 };
 
 use super::test_setup::{self, Setup};
@@ -306,6 +308,85 @@ fn bot_ref() -> BotRef {
     }
 }
 
+/// 主人停掉这一轮：卡片认在链上，链一停就撤回，等着的工具调用如实结束（ADR-0061 第 10 节）。
+///
+/// 工具的调用头里没有这一轮（插件没认出身份）：卡片按这个 Bot 最近活着的那一轮认链。
+/// 同一个人前面那一轮还开着（另一台设备），卡片要认在后的这一轮上，不能落到前一轮。
+#[tokio::test]
+async fn stopping_the_chain_withdraws_the_asking_card() {
+    let send = send_setup().await;
+    send.s.members.invite(member("mom", "妈妈")).unwrap();
+    let earlier = chain_caller(&send, "sess-earlier", "@owner:wonton.localhost");
+    let earlier_chain = earlier.chain.clone().unwrap();
+
+    let mut caller = chain_caller(&send, "sess-owner", "@owner:wonton.localhost");
+    let chain = caller.chain.clone().unwrap();
+    caller.chain = None;
+    caller.session = None;
+
+    let asking = send.s.spawn_as(
+        &caller,
+        TOOL,
+        json!({"recipient": "mom", "body": "停了再说"}),
+    );
+    let card = send.s.cards.wait_for(1).await;
+    send.s.bus.stop_chain(&chain).await.unwrap();
+
+    let result = tokio::time::timeout(Duration::from_secs(5), asking)
+        .await
+        .expect("停链以后等着的那次调用没结束（卡片没撤回）")
+        .unwrap();
+    assert!(failed(&result));
+    assert_eq!(failure_kind(&result).as_deref(), Some("chain_stopped"));
+    let state = send.s.bus.confirmations().card(&card.id).unwrap().state;
+    assert!(
+        matches!(state, ConfirmationState::Failed { .. }),
+        "卡片撤回成结果：{state:?}"
+    );
+    // 停下的是后开的那条，前一轮还在跑：卡片没落到前一轮上。
+    assert_eq!(
+        send.chains.ledger().row(&earlier_chain).unwrap().status,
+        AgentChainStatus::Running
+    );
+}
+
+/// 同一个人开着两轮（两台设备）：光按说话人分不开，调用头报的那一轮说了算。
+#[tokio::test]
+async fn a_call_header_picks_its_own_turn_among_two() {
+    let send = send_setup().await;
+    send.s.members.invite(member("mom", "妈妈")).unwrap();
+    // 调用头指的是先开的那一轮：按时间挑会挑错，头说了算。
+    let mut caller = chain_caller(&send, "sess-this", "@owner:wonton.localhost");
+    let chain = caller.chain.clone().unwrap();
+    let other = chain_caller(&send, "sess-other", "@owner:wonton.localhost");
+    let other_chain = other.chain.clone().unwrap();
+    caller.chain = None;
+    caller.session = None;
+    let (from_header, session) = session_header_chain(&send, &caller, "sess-this");
+    caller.chain = Some(from_header);
+    caller.session = Some(session);
+
+    let asking = send.s.spawn_as(
+        &caller,
+        TOOL,
+        json!({"recipient": "mom", "body": "停了再说"}),
+    );
+    let card = send.s.cards.wait_for(1).await;
+    send.s.bus.stop_chain(&chain).await.unwrap();
+
+    let result = asking.await.unwrap();
+    assert!(failed(&result));
+    assert_eq!(failure_kind(&result).as_deref(), Some("chain_stopped"));
+    assert!(matches!(
+        send.s.bus.confirmations().card(&card.id).unwrap().state,
+        ConfirmationState::Failed { .. }
+    ));
+    assert_eq!(
+        send.chains.ledger().row(&other_chain).unwrap().status,
+        AgentChainStatus::Running
+    );
+}
+
 fn chain_caller(send: &Send, session: &str, sender: &str) -> Caller {
     let mut caller = send.caller.clone();
     caller.sender = Some(
@@ -338,4 +419,76 @@ fn chain_caller(send: &Send, session: &str, sender: &str) -> Caller {
         .unwrap();
     caller.chain = Some(grant.chain);
     caller
+}
+
+/// 按调用头里的会话找这一轮的链，和网关进来时做的一样。
+fn session_header_chain(send: &Send, caller: &Caller, session: &str) -> (String, String) {
+    let mut headers = hyper::HeaderMap::new();
+    headers.insert(wonton_protocol::SESSION_HEADER, session.parse().unwrap());
+    super::server::chain_session(&send.s.bus, caller, Some(&headers))
+        .expect("调用头里的会话认得出来")
+}
+
+/// 卡片开出来、认到链之后，停链抢在绑卡之前插进来：绑上就要立刻撤回，批准不再生效。
+#[tokio::test]
+async fn a_card_bound_after_the_stop_is_withdrawn() {
+    let send = send_setup().await;
+    send.s.members.invite(member("mom", "妈妈")).unwrap();
+    let caller = chain_caller(&send, "sess-owner", "@owner:wonton.localhost");
+    let chain = caller.chain.clone().unwrap();
+    let mut bare = caller.clone();
+    bare.chain = None;
+    bare.session = None;
+    // 复刻 ask_and_enqueue 的空隙：开卡片 → 认链 →（停链插进来）→ 绑卡。
+    let draft = super::Draft {
+        title: "发给妈妈".into(),
+        lines: vec![super::cards::line("停了再说")],
+        choices: vec![wonton_protocol::CardChoice {
+            answer: Answer::Approve,
+            label: "批准".into(),
+            choice_id: None,
+        }],
+        scope: None,
+        plugin_id: Some(ID.into()),
+        secret_inputs: Vec::new(),
+        settings: None,
+        category: None,
+        permissions: Vec::new(),
+        devices: Vec::new(),
+    };
+    let (card, _answered) = send
+        .s
+        .bus
+        .confirmations()
+        .open_as(&bare.id, draft, super::Audience::default())
+        .unwrap();
+    let resolved = send.chains.ledger().live_turn_chain(
+        bare.id.as_str(),
+        "main",
+        Some("@owner:wonton.localhost"),
+    );
+    assert_eq!(resolved.as_deref(), Some(chain.as_str()), "先认到了这一轮");
+    let stop = send.s.bus.stop_chain(&chain).await.unwrap();
+    assert!(stop.cards.is_empty(), "停链时这张卡片还没绑上");
+
+    // 停链之后才轮到绑卡：绑上立刻撤回，不等 deliver。
+    assert_eq!(
+        super::chain_card::bind_card(&send.s.bus, &bare, Some(&chain), &card.id, "发消息卡片")
+            .outcome,
+        super::chain_card::Bound::Withdrawn,
+        "停链后绑上的卡片要当场撤回"
+    );
+    let state = send.s.bus.confirmations().card(&card.id).unwrap().state;
+    assert!(
+        matches!(state, ConfirmationState::Failed { .. }),
+        "卡片撤回成结果：{state:?}"
+    );
+    // 批准不再生效。
+    assert!(matches!(
+        send.s
+            .bus
+            .confirmations()
+            .answer(&card.id, Answer::Approve, None),
+        Err(super::AnswerError::AlreadyAnswered)
+    ));
 }

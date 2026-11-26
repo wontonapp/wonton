@@ -82,10 +82,10 @@ async fn two_accounts_exchange_text_and_images() {
     send_and_receive_image(&bob_room, (&alice, &alice_room), photo).await;
 }
 
-/// 比服务器上传上限大的图片按输入非法拒绝，不是笼统的上游出错。
+/// 比服务器上传上限大的图片按“太大”拒绝，不是笼统的上游出错。
 #[tokio::test]
 #[ignore = "需要 Docker，用 --include-ignored 运行"]
-async fn an_image_over_the_upload_limit_is_refused_as_invalid_input() {
+async fn an_image_over_the_upload_limit_is_refused_as_too_large() {
     // Tuwunel 不接受低于 10 MB 的上限。
     let server = TestServer::container(&[("TUWUNEL_MAX_REQUEST_SIZE", "10485760")]).await;
     let alice = server.login(&unique("alice"), "Alice 的手机").await;
@@ -105,9 +105,9 @@ async fn an_image_over_the_upload_limit_is_refused_as_invalid_input() {
         height: Some(3072),
         thumbnail: None,
     };
-    let refused = room.send_image(photo).await;
+    let refused = room.send_image(photo, None).await;
     assert!(
-        matches!(refused, Err(Error::InvalidInput(_))),
+        matches!(refused, Err(Error::TooLarge(_))),
         "超过上限的图片：{refused:?}"
     );
 }
@@ -352,7 +352,7 @@ async fn send_and_receive_image(
     (receiver, to): (&MatrixSession, &ChatRoom),
     upload: ImageUpload,
 ) {
-    from.send_image(upload.clone()).await.expect("发图片");
+    from.send_image(upload.clone(), None).await.expect("发图片");
     let image = eventually(
         "对方收到图片",
         to.message_updates().await,
@@ -372,6 +372,100 @@ async fn send_and_receive_image(
         .await
         .expect("下载图片");
     assert!(downloaded == upload.data, "下载到的图片与原图不一致");
+}
+
+/// 旁聊里贴图带的那句话（ADR-0109 第 10 节）写进事件的 `body`，对方看到的图片带着同一句。
+#[tokio::test]
+#[ignore = "需要 Docker，用 --include-ignored 运行"]
+async fn an_image_caption_reaches_the_event_body() {
+    let server = TestServer::start().await;
+    let alice = server.login(&unique("alice"), "Alice 的手机").await;
+    let bob = server.login(&unique("bob"), "Bob 的手机").await;
+    alice.start_sync().await.expect("Alice 开始同步");
+    bob.start_sync().await.expect("Bob 开始同步");
+    let room_id = alice
+        .create_direct_chat(bob.user_id(), false)
+        .await
+        .expect("Alice 建私聊");
+    eventually("Bob 收到邀请", bob.rooms().await.unwrap(), |rooms| {
+        rooms
+            .iter()
+            .find(|room| room.room_id == room_id && room.membership == Membership::Invited)
+            .map(|_| ())
+    })
+    .await;
+    bob.join_room(&room_id).await.expect("Bob 加入私聊");
+    let alice_room = alice.open_room(&room_id).await.expect("Alice 打开私聊");
+    let bob_room = bob.open_room(&room_id).await.expect("Bob 打开私聊");
+
+    let upload = ImageUpload {
+        filename: "shot.png".to_owned(),
+        mime_type: "image/png".to_owned(),
+        data: PNG.to_vec(),
+        width: Some(2),
+        height: Some(2),
+        thumbnail: None,
+    };
+    alice_room
+        .send_image(upload, Some("看这个"))
+        .await
+        .expect("发带说明的图片");
+    let image = eventually(
+        "Bob 收到图片",
+        bob_room.message_updates().await,
+        |messages| {
+            messages
+                .iter()
+                .find_map(|message| image_named(message, "shot.png"))
+        },
+    )
+    .await;
+    assert_eq!(image.caption.as_deref(), Some("看这个"));
+}
+
+/// 编辑一条已经发出去的文字（ADR-0109 第 10 节）：两边都整条换成新正文，时间线里标成改过，不新增一条。
+#[tokio::test]
+#[ignore = "需要 Docker，用 --include-ignored 运行"]
+async fn an_edit_replaces_the_text_on_both_sides() {
+    let server = TestServer::start().await;
+    let alice = server.login(&unique("alice"), "Alice 的手机").await;
+    let bob = server.login(&unique("bob"), "Bob 的手机").await;
+    alice.start_sync().await.expect("Alice 开始同步");
+    bob.start_sync().await.expect("Bob 开始同步");
+    let room_id = alice
+        .create_direct_chat(bob.user_id(), false)
+        .await
+        .expect("Alice 建私聊");
+    eventually("Bob 收到邀请", bob.rooms().await.unwrap(), |rooms| {
+        rooms
+            .iter()
+            .find(|room| room.room_id == room_id && room.membership == Membership::Invited)
+            .map(|_| ())
+    })
+    .await;
+    bob.join_room(&room_id).await.expect("Bob 加入私聊");
+    let alice_room = alice.open_room(&room_id).await.expect("Alice 打开私聊");
+    let bob_room = bob.open_room(&room_id).await.expect("Bob 打开私聊");
+
+    alice_room.send_text("第一版", &[]).await.expect("发文字");
+    let sent = wait_for_text(&alice_room, "Alice 的文字已送达", alice.user_id(), "第一版").await;
+    let event_id = sent
+        .event_id
+        .clone()
+        .expect("服务器给了事件 ID")
+        .to_string();
+    alice_room
+        .edit_message(&event_id, "第二版")
+        .await
+        .expect("编辑");
+    let edited = wait_for_text(&bob_room, "Bob 看到新正文", alice.user_id(), "第二版").await;
+    assert!(edited.edited);
+    assert_eq!(
+        edited.event_id.as_ref().map(ToString::to_string).as_deref(),
+        Some(event_id.as_str())
+    );
+    let own = wait_for_text(&alice_room, "Alice 这边也换了", alice.user_id(), "第二版").await;
+    assert!(own.edited);
 }
 
 pub fn image_named(message: &Message, filename: &str) -> Option<ImageContent> {

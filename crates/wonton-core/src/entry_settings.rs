@@ -98,10 +98,8 @@ impl EntrySettings {
                     saved.domain
                 );
             }
-            ensure!(
-                setting("WONTON_MATRIX_NAME_MODE").as_deref() != Some("none"),
-                "有名字的服务器不能改成不要名字"
-            );
+            // 设置已经写下了，服务名和入口都定了。再跑安装时 `init.env` 会把上次的 `none` 一起带进来，
+            // 不能当成“改成不要名字”拒掉（升级会走到这里）。
             return Ok(Some(saved));
         }
         let recorded = install_dir.join("secrets/matrix-server-name");
@@ -299,5 +297,41 @@ mod tests {
         write_settings(r#""dns.internal""#);
         let error = EntrySettings::load(dir.path()).err().unwrap();
         assert!(format!("{error:#}").contains("dns.internal"), "{error:#}");
+    }
+
+    /// 升级会把上次 `init.env` 里的 `WONTON_MATRIX_NAME_MODE=none` 一起带进 `core init`；
+    /// 设置已经写下时不能拒（“有名字的服务器不能改成不要名字”）。
+    #[tokio::test]
+    async fn saved_settings_survive_a_repeated_none_mode_install() {
+        struct Env(Option<std::ffi::OsString>);
+        impl Drop for Env {
+            fn drop(&mut self) {
+                unsafe {
+                    match &self.0 {
+                        Some(value) => std::env::set_var("WONTON_MATRIX_NAME_MODE", value),
+                        None => std::env::remove_var("WONTON_MATRIX_NAME_MODE"),
+                    }
+                }
+            }
+        }
+        let _env = Env(std::env::var_os("WONTON_MATRIX_NAME_MODE"));
+        unsafe { std::env::set_var("WONTON_MATRIX_NAME_MODE", "none") };
+
+        let dir = tempfile::tempdir().unwrap();
+        std::fs::create_dir_all(dir.path().join("entry")).unwrap();
+        std::fs::write(
+            dir.path().join("entry/settings.json"),
+            r#"{"domain":"abcdefgh.wonton.internal","service_url":null,"service_ca":null,"relay_ca":null,
+                "registration":null,"acme_directory":"https://acme.test/dir","acme_ca":null,
+                "acme_resolvers":[],"acme_email":null,"acme_accept_terms":true,"acme_network":"bridge",
+                "dns_provider":null,"dns_env_file":null,"external_certificate":true}"#,
+        )
+        .unwrap();
+
+        let settings = EntrySettings::select(dir.path(), dir.path())
+            .await
+            .unwrap()
+            .expect("沿用已写的设置");
+        assert_eq!(settings.domain, "abcdefgh.wonton.internal");
     }
 }

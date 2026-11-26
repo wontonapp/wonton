@@ -12,6 +12,7 @@ use crate::plugin::lan::announce::Announced;
 use crate::plugin::names::Instance;
 use crate::plugin::network_pool::{self, NetworkPool};
 use crate::plugin::storefront::StoreConfig;
+use crate::relay_settings::OwnerLayer;
 use url::Url;
 use wonton_tunnel::relays::RelayTable;
 
@@ -137,10 +138,23 @@ pub struct Config {
     pub install_timeout: Duration,
     /// 隧道入口（iroh）的 UDP 端口，IPv4 和 IPv6 同端口；0 表示由系统分配。
     pub tunnel_port: u16,
-    /// 中继表（`WONTON_RELAYS`，ADR-0048）。不设时用 n0 的公共中继。
-    pub relays: RelayTable,
+    /// 主人配置的中继表（`WONTON_RELAYS`，ADR-0048）。设了它设置页只读。
+    pub relays: Option<OwnerLayer>,
+    /// 编译进核心的内置中继（`WONTON_BUILTIN_RELAYS`，构建参数）。
+    pub builtin_relays: RelayTable,
+    /// 签名的中继列表地址和验签公钥（`WONTON_RELAY_LIST_URL`、`WONTON_RELAY_LIST_PUBKEY`）。
+    pub relay_list_url: Option<String>,
+    pub relay_list_pubkey: Option<String>,
+    /// 主人自己的中继表文件（`WONTON_RELAYS_FILE`）。不设时是数据目录里的 `core/relays.json`，
+    /// `none` 表示不用文件；`WONTON_RELAYS` 设了时文件被忽略。
+    pub relay_settings_file: Option<PathBuf>,
     /// 推送代理的专用监听（`WONTON_PUSH_LISTEN`），不设就不开；主机名在启动时解析。
     pub push_listen: Option<String>,
+    /// 我们的推送中继要求的 VAPID 私钥（`WONTON_PUSH_VAPID_KEY` 或 `WONTON_PUSH_VAPID_KEY_FILE`，
+    /// 不带填充的 base64url 标量）。和 `push_vapid_subject` 一起设才生效。
+    pub push_vapid_key: Option<String>,
+    /// VAPID 的 `sub`（`WONTON_PUSH_VAPID_SUBJECT`），`mailto:` 或 `https:`。
+    pub push_vapid_subject: Option<String>,
     /// `matrix_rtc` 提供方网络里服务器名别名的 TLS 监听（`WONTON_MATRIX_RTC_LISTEN`，ADR-0096），不设就不开。
     /// 授权服务按 Matrix 的服务器发现连 443，正式安装写 `0.0.0.0:443`：核心在容器里，只经插件网络到达。
     pub matrix_rtc_listen: Option<String>,
@@ -176,6 +190,20 @@ fn doh_url(get: &impl Fn(&str) -> Option<String>) -> Result<Option<Url>, ConfigE
                 .map_err(|e| invalid("WONTON_DOH_URL", &e))
         })
         .transpose()
+}
+
+/// 我们运营的中继要的 VAPID 身份（ADR-0003 的 M2）：私钥文件和 `sub` 要么都设，要么都不设。
+fn vapid_settings(
+    get: &impl Fn(&str) -> Option<String>,
+) -> Result<(Option<String>, Option<String>), ConfigError> {
+    let key = secret_value(get, "WONTON_PUSH_VAPID_KEY", "WONTON_PUSH_VAPID_KEY_FILE")?;
+    let subject = get("WONTON_PUSH_VAPID_SUBJECT");
+    match (key, subject) {
+        (Some(key), Some(subject)) => Ok((Some(key), Some(subject))),
+        (None, None) => Ok((None, None)),
+        (Some(_), None) => Err(invalid("WONTON_PUSH_VAPID_SUBJECT", "设了私钥就要一起设")),
+        (None, Some(_)) => Err(invalid("WONTON_PUSH_VAPID_KEY", "设了 sub 就要一起设")),
+    }
 }
 
 /// 局域网地址的两个覆盖变量（ADR-0019）：`WONTON_LAN_ADDRESSES` 和 `WONTON_ANNOUNCE_ADDRESSES`。
@@ -236,6 +264,7 @@ impl Config {
             }
         };
         let matrix = matrix_config(&get, &base_domain)?;
+        let relay_settings_file = relay_settings_file(&get, &data_dir);
         check_owner_settings(&get)?;
         let owner_name = get("WONTON_OWNER_NAME");
         let username = owner_name
@@ -244,6 +273,7 @@ impl Config {
         let core_container = get("WONTON_CORE_CONTAINER");
         let host_dev = host_dev(get("WONTON_HOST_DEV"), core_container.is_none())?;
         let host_udev = host_udev(get("WONTON_HOST_UDEV"), core_container.is_none())?;
+        let (push_vapid_key, push_vapid_subject) = vapid_settings(&get)?;
         let LanOverrides {
             fixed: lan_addresses,
             announce: announce_addresses,
@@ -293,7 +323,13 @@ impl Config {
             )?,
             tunnel_port: parse(&get, "WONTON_TUNNEL_PORT", 0)?,
             relays: parse_relays(&get)?,
+            builtin_relays: builtin_relays(&get)?,
+            relay_list_url: relay_list_var(&get, "WONTON_RELAY_LIST_URL"),
+            relay_list_pubkey: relay_list_var(&get, "WONTON_RELAY_LIST_PUBKEY"),
+            relay_settings_file,
             push_listen: get("WONTON_PUSH_LISTEN").filter(|value| !value.is_empty()),
+            push_vapid_key,
+            push_vapid_subject,
             matrix_rtc_listen: get("WONTON_MATRIX_RTC_LISTEN").filter(|value| !value.is_empty()),
             federation_listen: get("WONTON_FEDERATION_LISTEN")
                 .unwrap_or_else(|| "0.0.0.0:8448".into()),
@@ -330,11 +366,55 @@ fn invalid(name: &'static str, message: &str) -> ConfigError {
     }
 }
 
-/// `WONTON_RELAYS`：不设时用 n0 的公共中继，写不合法当场报错（ADR-0048）。
-fn parse_relays(get: &impl Fn(&str) -> Option<String>) -> Result<RelayTable, ConfigError> {
-    match get(wonton_tunnel::relays::RELAYS_VAR) {
-        Some(text) => RelayTable::parse(&text).map_err(|reason| invalid("WONTON_RELAYS", &reason)),
-        None => Ok(RelayTable::builtin_n0()),
+/// `WONTON_RELAYS`：不设时读文件里的主人配置（ADR-0048），写不合法当场报错。
+fn parse_relays(get: &impl Fn(&str) -> Option<String>) -> Result<Option<OwnerLayer>, ConfigError> {
+    match get(wonton_tunnel::relays::RELAYS_VAR).filter(|text| !text.trim().is_empty()) {
+        Some(text) => OwnerLayer::parse(&text)
+            .map(Some)
+            .map_err(|reason| invalid("WONTON_RELAYS", &reason)),
+        None => Ok(None),
+    }
+}
+
+/// 编译进来的默认中继（`WONTON_BUILTIN_RELAYS`，构建参数）。空着就是不预置我们自己的中继。
+fn builtin_relays(get: &impl Fn(&str) -> Option<String>) -> Result<RelayTable, ConfigError> {
+    // 运行时环境变量优先（容器部署照 `.env` 填要生效），退回构建时写死的值。
+    let text = get("WONTON_BUILTIN_RELAYS")
+        .filter(|text| !text.trim().is_empty())
+        .or_else(|| {
+            option_env!("WONTON_BUILTIN_RELAYS")
+                .filter(|text| !text.trim().is_empty())
+                .map(str::to_owned)
+        });
+    match text {
+        Some(text) => {
+            RelayTable::parse(&text).map_err(|reason| invalid("WONTON_BUILTIN_RELAYS", &reason))
+        }
+        None => Ok(RelayTable::default()),
+    }
+}
+
+/// 签名列表的地址和公钥：环境变量优先，其次是构建时内置的默认值。
+fn relay_list_var(get: &impl Fn(&str) -> Option<String>, name: &'static str) -> Option<String> {
+    // 编译期常量名不能拼在 `option_env!` 里，按运行时读到的是哪个变量挑。
+    let builtin = match name {
+        "WONTON_RELAY_LIST_URL" => option_env!("WONTON_BUILTIN_RELAY_LIST_URL"),
+        _ => option_env!("WONTON_BUILTIN_RELAY_LIST_PUBKEY"),
+    };
+    get(name)
+        .filter(|value| !value.trim().is_empty())
+        .or_else(|| builtin.map(str::to_owned))
+}
+
+/// 主人配置文件的路径：`none` 关掉，不设用数据目录里的 `core/relays.json`。
+fn relay_settings_file(
+    get: &impl Fn(&str) -> Option<String>,
+    data_dir: &std::path::Path,
+) -> Option<PathBuf> {
+    match get("WONTON_RELAYS_FILE") {
+        Some(value) if value.trim().eq_ignore_ascii_case("none") => None,
+        Some(value) if !value.trim().is_empty() => Some(PathBuf::from(value.trim())),
+        _ => Some(data_dir.join("core").join("relays.json")),
     }
 }
 

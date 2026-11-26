@@ -5,12 +5,14 @@
 files-not-found = No such file
 files-moved-or-deleted = The file was moved or deleted
 files-not-shared = This file isn't shared with you
+files-room-members-unknown = Can't check who's in the room right now: { $error }. Try again later
+files-room-members-unconfigured = Can't check who's in the room right now: the home server isn't connected to Matrix yet
 files-share-expired = This file ID's share has expired; look the file up again
 files-changed = The file changed after it was registered, so what you saw may not be the current content; look it up again
 files-share-not-authorized = The app { $plugin } isn't authorized for the shared folder { $share }
 files-mcp-gone = The app { $plugin } is running but no longer provides MCP service, so this resource can't be read
 files-plugin-unavailable = The app { $plugin } it came from was uninstalled or isn't running
-files-notify-no-matrix = The home server isn't connected to Matrix (WONTON_MATRIX_URL), so it can't send to the "Wonton" chat
+files-notify-no-matrix = The home server isn't connected to Matrix (WONTON_MATRIX_URL) yet, so it can't send to the "Wonton" chat
 files-matrix-send-failed = Can't send to the "Wonton" chat: { $error }
 files-upstream-not-own = { $service } isn't a service of the app { $plugin }
 

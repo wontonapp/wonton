@@ -376,7 +376,9 @@ impl TestCore {
             Arc::new(|| Languages::from_header(None)),
             endpoint,
             0,
-            RelayTable::builtin_n0(),
+            Arc::new(crate::relay_settings::RelaySettings::for_table(
+                RelayTable::builtin_n0(),
+            )),
             watch::channel(BTreeSet::from(["127.0.0.1".parse().unwrap()])).1,
         );
         let peers = Peers::open(
@@ -680,7 +682,9 @@ async fn pending_rows_do_not_expire() {
         Arc::new(|| Languages::from_header(None)),
         endpoint,
         0,
-        RelayTable::builtin_n0(),
+        Arc::new(crate::relay_settings::RelaySettings::for_table(
+            RelayTable::builtin_n0(),
+        )),
         watch::channel(BTreeSet::from(["127.0.0.1".parse().unwrap()])).1,
     );
     let peers = Peers::open(

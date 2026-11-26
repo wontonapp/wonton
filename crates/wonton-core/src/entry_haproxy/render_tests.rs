@@ -193,12 +193,14 @@ fn federation_only_model_matches_the_previous_configuration() {
         "frontend public\n  bind entry-edge.wonton.internal:8443 ssl crt-list /certs/public.crt-list strict-sni expose-fd listeners\n",
         "  tcp-request connection reject unless { src 10.90.0.2 }\n  tcp-request connection expect-proxy layer4 if { src 10.90.0.2 }\n",
         "  http-request deny deny_status 421 unless { hdr(host),field(1,:),lower,strcmp(txn.sni) eq 0 }\n",
-        "  http-request del-header Forwarded\n  http-request del-header X-Forwarded-For\n  http-request del-header X-Forwarded-Host\n  http-request del-header X-Forwarded-Proto\n",
+        "  http-request del-header Forwarded\n  http-request del-header X-Forwarded-For\n  http-request del-header X-Forwarded-Host\n",
+        "  http-request del-header X-Forwarded-Proto\n  http-request del-header X-Forwarded-Port\n  http-request del-header X-Forwarded-Prefix\n",
         "  http-request del-header X-Real-IP\n  http-request del-header X-Wonton-Entry\n",
         "  http-request set-header X-Real-IP %[src]\n  http-request set-header X-Wonton-Entry public\n",
         "  default_backend gateway\n",
-        "frontend paired\n  bind entry.wonton.internal:8449 ssl crt /certs/site.pem strict-sni expose-fd listeners\n  acl correct_sni ssl_fc_sni -i home.example\n  http-request deny deny_status 421 unless correct_sni\n  http-request deny deny_status 421 unless { hdr(host),lower -i home.example home.example:443 home.example:8448 }\n  http-request set-header Host home.example\n  default_backend gateway\n",
+        "frontend paired\n  bind entry.wonton.internal:8449 ssl crt /certs/site.pem strict-sni expose-fd listeners\n  acl correct_sni ssl_fc_sni -i home.example\n  http-request deny deny_status 421 unless correct_sni\n  http-request deny deny_status 421 unless { hdr(host),lower -i home.example home.example:443 home.example:8448 }\n  http-request set-header X-Wonton-Entry paired\n  use_backend gateway if { path_beg /_matrix/federation/ }\n  use_backend gateway if { path_beg /_matrix/key/ }\n  use_backend gateway if { path /.well-known/matrix/server }\n  use_backend gateway if { path /.well-known/matrix/client }\n  use_backend gateway if { path /.well-known/wonton }\n  default_backend tuwunel\n",
         "backend gateway\n  server core entry-gateway.wonton.internal:8484 resolvers docker init-addr libc,none\n",
+        "backend tuwunel\n  server tuwunel tuwunel.wonton.internal:8008 resolvers docker init-addr libc,none\n",
         "resolvers docker\n  nameserver docker 127.0.0.11:53\n  resolve_retries 1\n  timeout resolve 1s\n  timeout retry 1s\n  hold valid 10s\n",
         "option http-restrict-req-hdr-names delete\n",
     ] {
@@ -223,6 +225,12 @@ fn without_federation_only_the_probe_name_stays_in_the_public_list() {
     );
     assert!(rendered.lan_crt_list.is_empty());
     assert!(!rendered.config.contains("frontend paired"));
+    // 没有配对联邦就没有 8449，Tuwunel 后端也只给配对前端用。
+    assert!(
+        !rendered.config.contains("backend tuwunel"),
+        "{}",
+        rendered.config
+    );
 }
 
 #[test]

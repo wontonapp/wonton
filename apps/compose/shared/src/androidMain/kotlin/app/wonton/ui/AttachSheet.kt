@@ -19,7 +19,6 @@ import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.PaddingValues
 import androidx.compose.foundation.layout.Row
-import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.aspectRatio
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
@@ -34,7 +33,6 @@ import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material3.Icon
 import androidx.compose.material3.Text
-import androidx.compose.material3.TextButton
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
@@ -60,9 +58,10 @@ import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import androidx.core.content.ContextCompat
 import app.wonton.ui.R
-import app.wonton.ui.design.toColor
+import app.wonton.ui.design.SheetSendBar
 import app.wonton.ui.design.WontonSheet
 import app.wonton.ui.design.WontonTheme
+import app.wonton.ui.design.toColor
 import app.wonton.ui.icons.Check
 import app.wonton.ui.icons.File
 import app.wonton.ui.icons.Image
@@ -80,14 +79,17 @@ private const val ALBUM_LIMIT = 300
 private const val ALBUM_COLUMNS = 3
 
 /**
- * 回形针打开的底部面板：上面是相册的照片网格，点一张选一张；底下是相册和文件的切换，选好了点加入。
- * 相册权限只在真的要看网格时问。旁聊里照片直接发，文件不加（见 `Composer`）。
+ * 回形针打开的底部面板：上面是相册的照片网格，点一张选一张；没选时底下是相册和文件的切换，
+ * 选了就换成附言条，点发送直接发出去（照 Telegram）。转码期间发送键灰着，附言照常能改，后补的字留下来（ADR-0109）。
+ * 附言就是输入框的草稿，面板里改的正是那一份。相册权限只在真的要看网格时问。旁聊里只有相册，文件不加（见 `Composer`）。
  */
 @Composable
 internal fun AttachmentSheet(
     remaining: Int,
     allowFiles: Boolean,
-    onPhotos: (List<Uri>) -> Unit,
+    note: String,
+    onNote: (String) -> Unit,
+    onSend: (List<Uri>, String) -> Unit,
     onFiles: () -> Unit,
     onDismiss: () -> Unit,
 ) {
@@ -113,7 +115,8 @@ internal fun AttachmentSheet(
         }
     }
     val selected = remember { mutableStateListOf<Uri>() }
-    val colors = WontonTheme.colors
+    // 转码和进附件区要一会儿，键先灰掉，再点一下不会拿同一份选中重发一遍。
+    var sending by remember { mutableStateOf(false) }
     WontonSheet(onDismiss, title = stringResource(R.string.composer_attach)) { close ->
         Column(Modifier.fillMaxWidth()) {
             Box(Modifier.fillMaxWidth().heightIn(max = 420.dp)) {
@@ -125,29 +128,33 @@ internal fun AttachmentSheet(
                     }
                 }
             }
-            Row(
-                Modifier.fillMaxWidth()
-                    .padding(horizontal = WontonTheme.spacing.pageInset, vertical = WontonTheme.spacing.s8),
-                verticalAlignment = Alignment.CenterVertically,
-                horizontalArrangement = Arrangement.spacedBy(WontonTheme.spacing.s8),
-            ) {
-                SheetTab(stringResource(R.string.attach_album), WontonIcon.Image, selected = true) {}
-                if (allowFiles) {
-                    SheetTab(stringResource(R.string.composer_file), WontonIcon.File, selected = false) {
-                        close(onFiles)
-                    }
-                }
-                Spacer(Modifier.weight(1f))
-                if (selected.isNotEmpty()) {
-                    TextButton(
-                        onClick = { close { onPhotos(selected.toList()) } },
-                        modifier = Modifier.testTag("attach-add"),
-                    ) {
-                        Text(
-                            stringResource(R.string.attach_add, selected.size),
-                            style = WontonTheme.typography.itemTitle,
-                            color = colors.accentInk.toColor(),
-                        )
+            if (selected.isNotEmpty()) {
+                SheetSendBar(
+                    note,
+                    onNote,
+                    selected.size,
+                    stringResource(R.string.sheet_note_hint),
+                    onSend = {
+                        if (!sending) {
+                            sending = true
+                            onSend(selected.toList(), note.trim())
+                        }
+                    },
+                    busy = sending,
+                    sendTag = "attach-send",
+                )
+            } else {
+                Row(
+                    Modifier.fillMaxWidth()
+                        .padding(horizontal = WontonTheme.spacing.pageInset, vertical = WontonTheme.spacing.s8),
+                    verticalAlignment = Alignment.CenterVertically,
+                    horizontalArrangement = Arrangement.spacedBy(WontonTheme.spacing.s8),
+                ) {
+                    SheetTab(stringResource(R.string.attach_album), WontonIcon.Image, selected = true) {}
+                    if (allowFiles) {
+                        SheetTab(stringResource(R.string.composer_file), WontonIcon.File, selected = false) {
+                            close(onFiles)
+                        }
                     }
                 }
             }

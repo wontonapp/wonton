@@ -1,0 +1,30 @@
+name: share smoke second
+services:
+  web:
+    image: wonton-share-multiplayer:smoke
+    command: ["python3", "/app.py"]
+    configs:
+      - source: app
+        target: /app.py
+configs:
+  app:
+    file: ./app.py
+x-wonton:
+  spec: '0.13'
+  id: app.share-other
+  version: 0.1.0
+  kind: app
+  license: MIT
+  title: {zh: 分享冒烟二号, en: Share smoke two}
+  description: {zh: 只有一页的第二个插件, en: A second plugin with one page}
+  webui:
+    service: web
+    port: 8000
+    accounts: per_user
+    sso: proxy
+    proxy:
+      headers:
+        X-Remote-User: '{user}'
+        X-Remote-Name: '{name}'
+        X-Remote-Role: '{role}'
+  permissions: []

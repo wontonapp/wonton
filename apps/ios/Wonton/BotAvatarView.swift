@@ -59,7 +59,7 @@ struct AvatarMediaView: View {
 }
 
 /// 静止图：字节经 `loadMedia` 解码，按媒体地址放进全局 NSCache（ADR-0044）。
-private struct StillAvatarImage: View {
+struct StillAvatarImage: View {
     let media: MediaHandle
     let core: ClientCore
     let size: CGFloat

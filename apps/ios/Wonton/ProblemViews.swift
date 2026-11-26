@@ -101,6 +101,12 @@ extension PluginFailure {
                 .Problem1.problemPluginEgressProxyUnavailableNextStep,
                 detail
             )
+        case .egressProxyWaiting:
+            categorizedProblem(
+                .Problem1.problemPluginEgressProxyWaitingTitle,
+                .Problem2.problemPluginEgressProxyWaitingNextStep,
+                detail
+            )
         case .protocol:
             categorizedProblem(
                 .Problem0.problemPluginProtocolTitle,
@@ -113,6 +119,11 @@ extension PluginFailure {
                 detail)
         case .serverTooOld:
             categorizedProblem(.Problem3.problemPluginServerTooOldTitle, .Problem0.problemUpgradeServerNextStep, detail)
+        case .timedOut:
+            categorizedProblem(
+                .Problem2.problemPluginHealthTimeoutTitle,
+                .Problem0.problemPluginHealthTimeoutNextStep,
+                detail)
         // 比这个壳新的类别：先按服务器出错说。
         default: categorizedProblem(.Problem2.problemUpstreamTitle, .Problem2.problemUpstreamNextStep, detail)
         }
@@ -165,10 +176,30 @@ extension ChatFailure {
                 nextStep: String(localized: .Problem2.problemUpstreamNextStep),
                 detail: detail
             )
+        case .serverNotPaired:
+            return Problem(
+                title: String(localized: .Problem2.problemServerNotPairedTitle),
+                nextStep: String(localized: .Problem3.problemServerNotPairedNextStep),
+                detail: detail
+            )
+        case .peerPublicAccessOff:
+            return Problem(
+                title: String(localized: .Problem3.problemPeerPublicAccessOffTitle),
+                nextStep: String(localized: .Problem0.problemPeerPublicAccessOffNextStep),
+                detail: detail
+            )
         case .notReady:
-            return Problem(title: String(localized: .Problem0.problemNotReadyTitle), nextStep: detail)
+            return Problem(
+                title: String(localized: .Problem0.problemNotReadyTitle),
+                nextStep: String(localized: .Problem2.problemUpstreamNextStep),
+                detail: detail
+            )
         case .invalidInput:
-            return Problem(title: String(localized: .Problem2.problemInvalidInputTitle), nextStep: detail)
+            return Problem(
+                title: String(localized: .Problem2.problemInvalidInputTitle),
+                nextStep: String(localized: .Problem3.problemInvalidInputNextStep),
+                detail: detail
+            )
         case .other:
             return Problem(
                 title: String(localized: .Problem1.problemGenericTitle),
@@ -344,6 +375,44 @@ extension AvatarMediaProblem {
     }
 }
 
+extension MyAvatarProblem {
+    /// 设自己的头像没成：类别由核心给，文字写在这里（ADR-0043）。
+    var problem: Problem {
+        switch self {
+        case .NotReady:
+            return Problem(
+                title: String(localized: .Peers.ownerProfileAvatarNotReady),
+                nextStep: String(localized: .Peers.ownerProfileAvatarNotReadyNext)
+            )
+        case let .NotLoggedIn(reason):
+            return Problem(
+                title: String(localized: .Peers.ownerProfileAvatarNotLoggedIn),
+                nextStep: String(localized: .Peers.ownerProfileAvatarNotLoggedInNext),
+                detail: reason
+            )
+        case let .MediaRejected(problem):
+            return Problem(title: problem.problem)
+        case let .TransportUnavailable(reason):
+            return Problem(
+                title: String(localized: .Problem2.problemTransportUnavailableTitle),
+                nextStep: String(localized: .Problem3.problemTransportUnavailableNextStep),
+                detail: reason
+            )
+        case let .Upstream(reason):
+            return Problem(
+                title: String(localized: .Problem2.problemUpstreamTitle),
+                nextStep: String(localized: .Problem2.problemUpstreamNextStep),
+                detail: reason
+            )
+        case .Other:
+            return Problem(
+                title: String(localized: .Problem2.problemUpstreamTitle),
+                nextStep: String(localized: .Problem2.problemUpstreamNextStep)
+            )
+        }
+    }
+}
+
 extension StoreProblem {
     var problem: Problem {
         switch reason {
@@ -391,6 +460,7 @@ extension StoreProblem {
 extension Error {
     var problem: Problem {
         let detail = String(describing: self)
+        if let avatar = self as? MyAvatarProblem { return avatar.problem }
         guard let error = self as? CoreError else {
             return Problem(
                 title: String(localized: .Problem1.problemGenericTitle),

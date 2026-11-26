@@ -51,8 +51,8 @@ percent-encoding = { workspace = true }
 palette = { version = "0.7.7", default-features = false, features = ["std"] }
 # MIT。把 Bot 发的 Markdown 排成气泡里的块和片段。
 pulldown-cmark = { version = "0.13.6", default-features = false }
-# MIT OR Apache-2.0。经本地代理调核心的接口；matrix-sdk 已经用它。文件上传下载要流式读写。
-reqwest = { workspace = true, features = ["stream"] }
+# MIT OR Apache-2.0。经本地代理调核心的接口；matrix-sdk 已经用它。文件上传下载要流式读写，中继表设置按 JSON 发请求体。
+reqwest = { workspace = true, features = ["stream", "json"] }
 serde = { workspace = true }
 serde_json = { workspace = true }
 # 都是 MIT OR Apache-2.0。以设备密钥为键推出浏览器入口的标签和端口（`src/browser`）。
@@ -67,6 +67,8 @@ uniffi = { workspace = true }
 url = { workspace = true }
 # MIT OR Apache-2.0. Explicit discovery roots must be valid CA certificates.
 x509-parser = "0.18.1"
+# MIT OR Apache-2.0。自己的头像按文件头检查（和核心共用一份规则）。
+wonton-avatar = { path = "../wonton-avatar" }
 wonton-l10n = { path = "../wonton-l10n" }
 wonton-matrix = { path = "../wonton-matrix" }
 wonton-protocol = { path = "../wonton-protocol", features = ["uniffi"] }

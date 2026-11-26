@@ -365,8 +365,8 @@ fn invalidate(outer: &mut InstallRequest, decision: InvalidDecision) {
         InvalidDecision::UnknownDevice => inner.devices.push("not-a-device".into()),
         InvalidDecision::UnknownScope => inner.scope = Some(PluginScope::Other),
         InvalidDecision::Digest => inner.digest = format!("sha256:{}", "0".repeat(64)),
-        InvalidDecision::InnerPlan => inner.plan.clear(),
-        InvalidDecision::OuterPlan => outer.plan.clear(),
+        InvalidDecision::InnerPlan => inner.plan = "stale".into(),
+        InvalidDecision::OuterPlan => outer.plan = "stale".into(),
         InvalidDecision::NestedInstall => inner.install_together.push(duplicate),
         InvalidDecision::NestedConnection => inner.connect_plugins.push("app.test".into()),
     }
@@ -419,6 +419,31 @@ async fn every_nested_decision_is_validated_before_any_provider_or_secret_is_ins
             _ => assert_eq!(error.kind(), "invalid_input", "{decision:?}: {error}"),
         }
         assert_no_install(&bed);
+    }
+}
+
+// 老调用方不带计划：执行侧和确认门槛一样只比摘要，照常装完提供方和消费方。
+#[tokio::test]
+async fn an_outer_request_without_plan_installs_on_the_digest_alone() {
+    let bed = bed().await;
+    let mut outer = transaction(&bed, "app.test", &["x-acme.search", "x-acme.ledger"]).await;
+    assert!(!outer.plan.is_empty());
+    outer.plan.clear();
+    bed.manager.install_source(&outer).await.unwrap();
+    for plugin in ["app.search", "app.ledger", "app.test"] {
+        assert!(bed.manager.is_installed(&id(plugin)), "{plugin}");
+    }
+}
+
+#[tokio::test]
+async fn an_inner_request_without_plan_installs_on_the_digest_alone() {
+    let bed = bed().await;
+    let mut outer = transaction(&bed, "app.test", &["x-acme.search"]).await;
+    assert!(!outer.install_together[0].request.plan.is_empty());
+    outer.install_together[0].request.plan.clear();
+    bed.manager.install_source(&outer).await.unwrap();
+    for plugin in ["app.search", "app.test"] {
+        assert!(bed.manager.is_installed(&id(plugin)), "{plugin}");
     }
 }
 

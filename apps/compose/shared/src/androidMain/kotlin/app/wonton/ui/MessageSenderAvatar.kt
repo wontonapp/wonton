@@ -15,6 +15,7 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.layout.ContentScale
 import androidx.compose.ui.platform.testTag
+import androidx.compose.ui.text.style.TextOverflow
 import app.wonton.client.ClientCore
 import app.wonton.protocol.TimelineMessage
 import app.wonton.ui.design.WontonTheme
@@ -50,8 +51,15 @@ internal fun SenderAvatarCell(message: TimelineMessage, core: ClientCore, joinsN
     }
 }
 
-/** 一组的第一条上面写发送者名字。 */
+/** 一组的第一条上面写发送者名字；名字再长也只占一行，不把气泡撑宽。 */
 @Composable
-internal fun SenderNameLine(name: String) {
-    Text(name, style = WontonTheme.typography.caption, color = WontonTheme.colors.textSecondary.toColor())
+internal fun SenderNameLine(name: String, modifier: Modifier = Modifier) {
+    Text(
+        name,
+        modifier,
+        style = WontonTheme.typography.caption,
+        color = WontonTheme.colors.textSecondary.toColor(),
+        maxLines = 1,
+        overflow = TextOverflow.Ellipsis,
+    )
 }

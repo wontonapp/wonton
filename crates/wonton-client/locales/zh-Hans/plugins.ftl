@@ -222,7 +222,6 @@ tabs-widget-not-declared = 这个插件不能在房间里打开。
 tabs-widget-not-pinnable = 在房间里打开的插件不能固定。
 
 tabs-view-not-a-page = 只有插件页面能在这里打开。
-tabs-view-no-page-open = 现在没有打开着的插件页面。
 
 # 出错页默认收起的"详情"（ADR-0032）：核心按 App 语言写，错误码收在里面。
 tabs-load-details-transport = 连不上家里的服务器。连上后，页面会自动重新加载。

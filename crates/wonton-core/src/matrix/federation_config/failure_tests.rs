@@ -2,20 +2,29 @@
 
 use std::collections::BTreeSet;
 use std::os::unix::fs::{MetadataExt, PermissionsExt};
+use std::path::Path;
+use std::sync::Arc;
 
 use super::{FILE, FailureKind, FederationConfig, config_toml};
-use crate::plugin::docker::Engine;
+use crate::http::HttpClient;
+use crate::matrix::Matrix;
+use crate::matrix::fake::{self, Fake};
 
 const SERVER: &str = "home.example.org";
 
-fn config(install_dir: &std::path::Path) -> FederationConfig {
-    FederationConfig {
-        engine: Engine::unreachable_for_test(),
+async fn config(install_dir: &Path) -> (FederationConfig, Fake) {
+    let (fake, matrix_config) = fake::start().await;
+    let state = tempfile::tempdir().unwrap();
+    let matrix = Matrix::connect(&matrix_config, state.path(), HttpClient::new())
+        .await
+        .unwrap();
+    let config = FederationConfig {
+        matrix: Arc::new(matrix),
         install_dir: install_dir.to_owned(),
-        core_container: Some("wonton-core".to_owned()),
         notice: None,
-        server_name: SERVER.to_owned(),
-    }
+        server_name: matrix_config.server_name,
+    };
+    (config, fake)
 }
 
 fn paired() -> BTreeSet<String> {
@@ -27,8 +36,10 @@ async fn a_missing_list_file_is_written_from_the_pairings() {
     let dir = tempfile::tempdir().unwrap();
     std::fs::create_dir_all(dir.path().join("secrets/tuwunel")).unwrap();
 
-    // Docker 不可达，热加载这一步失败；文件那一步不算失败。
-    let failure = config(dir.path())
+    // 假服务器拒收下一条消息：热加载这一步失败；文件那一步不算失败。
+    let (config, fake) = config(dir.path()).await;
+    fake.state().refuse_next_send = true;
+    let failure = config
         .apply_inner(&paired(), &BTreeSet::new())
         .await
         .unwrap_err();
@@ -57,9 +68,8 @@ async fn an_existing_list_file_is_rewritten_in_place() {
     .unwrap();
     let inode = std::fs::metadata(&path).unwrap().ino();
 
-    let _ = config(dir.path())
-        .apply_inner(&paired(), &BTreeSet::new())
-        .await;
+    let (config, _fake) = config(dir.path()).await;
+    let _ = config.apply_inner(&paired(), &BTreeSet::new()).await;
 
     assert_eq!(std::fs::metadata(&path).unwrap().ino(), inode);
     assert_eq!(
@@ -72,7 +82,8 @@ async fn an_existing_list_file_is_rewritten_in_place() {
 async fn an_incomplete_install_is_a_write_failure() {
     let dir = tempfile::tempdir().unwrap();
 
-    let failure = config(dir.path())
+    let (config, _fake) = config(dir.path()).await;
+    let failure = config
         .apply_inner(&paired(), &BTreeSet::new())
         .await
         .unwrap_err();
@@ -87,7 +98,8 @@ async fn an_invalid_server_name_is_reported_before_touching_the_file() {
     std::fs::create_dir_all(dir.path().join("secrets/tuwunel")).unwrap();
     let blocked = BTreeSet::from(["Not A Name".to_owned()]);
 
-    let failure = config(dir.path())
+    let (config, _fake) = config(dir.path()).await;
+    let failure = config
         .apply_inner(&BTreeSet::new(), &blocked)
         .await
         .unwrap_err();

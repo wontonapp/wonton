@@ -497,10 +497,11 @@ async fn pin(
     }
     // 同意要等主人：放进独立任务，Agent 断开、这次调用被取消时卡片照样等，答应后页面照样钉上。
     let bus = bus.clone();
+    let caller = caller.clone();
     let context = context.clone();
     let task = tokio::spawn(async move {
         let _guard = PinCardGuard::new(&bus, &context.plugin)?;
-        confirm_main(&bus, &context).await?;
+        confirm_main(&bus, &caller, &context).await?;
         save_pin(&bus, &context, pin, true).await?;
         Ok(answer)
     });
@@ -569,7 +570,13 @@ impl Drop for PinCardGuard {
 
 /// 第一次往主面板钉：请主人确认，等到主人回答。同一个插件同时只问一张。
 /// 卡片显示在这个会话里（ADR-0016）：发起者是这个 Bot，来源是它收到调用的房间。
-async fn confirm_main(bus: &Arc<Bus>, context: &BotContext) -> Result<(), ToolFailure> {
+///
+/// 卡片认到调用方的链（ADR-0061 第 10 节）：停链时随停撤回，批准了也不再钉。
+async fn confirm_main(
+    bus: &Arc<Bus>,
+    caller: &Caller,
+    context: &BotContext,
+) -> Result<(), ToolFailure> {
     let langs = bus.owner_languages();
     let requester = wonton_protocol::ConfirmationRequester::Bot {
         bot: wonton_protocol::BotRef {
@@ -589,24 +596,37 @@ async fn confirm_main(bus: &Arc<Bus>, context: &BotContext) -> Result<(), ToolFa
         origin,
         category: None,
     };
-    let asked = bus
-        .confirmations
-        .ask_as(&context.plugin, cards_for(&context.name, &langs), audience)
-        .await;
-    match asked {
-        Ok(ticket) => {
-            bus.confirmations
-                .finish(
-                    ticket,
-                    ConfirmationState::Succeeded {
-                        message: l10n::text(&bus.owner_languages(), "panel-pin-allowed", &[]),
-                    },
-                )
-                .await;
-            Ok(())
-        }
-        Err(refusal) => Err(ToolFailure::new(refusal.kind(), refusal.message())),
+    let (card, answered) =
+        match bus
+            .confirmations
+            .open_as(&context.plugin, cards_for(&context.name, &langs), audience)
+        {
+            Ok(opened) => opened,
+            Err(refusal) => return Err(refused(&refusal)),
+        };
+    // 停链抢在开卡片和绑卡片之间时，停链那一遍已经收不到这张卡片了：绑上之后回查，是停的就当场撤回。
+    if super::chain_card::bind_card(bus, caller, None, &card.id, "钉页卡片").outcome
+        == super::chain_card::Bound::Withdrawn
+    {
+        return Err(refused(&super::Refusal::Cancelled));
     }
+    let ticket = match bus.confirmations.wait(card, answered).await {
+        Ok(ticket) => ticket,
+        Err(refusal) => return Err(refused(&refusal)),
+    };
+    bus.confirmations
+        .finish(
+            ticket,
+            ConfirmationState::Succeeded {
+                message: l10n::text(&bus.owner_languages(), "panel-pin-allowed", &[]),
+            },
+        )
+        .await;
+    Ok(())
+}
+
+fn refused(refusal: &super::Refusal) -> ToolFailure {
+    ToolFailure::new(refusal.kind(), refusal.message())
 }
 
 fn cards_for(name: &str, langs: &Languages) -> super::Draft {

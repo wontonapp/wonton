@@ -5,12 +5,14 @@
 files-not-found = 沒有這個檔案
 files-moved-or-deleted = 檔案已被移動或刪除
 files-not-shared = 這個檔案沒有分享給你
+files-room-members-unknown = 暫時查不到群組裡現在有誰：{ $error }，稍後再試
+files-room-members-unconfigured = 暫時查不到群組裡現在有誰：家用伺服器還沒接入 Matrix
 files-share-expired = 這個編號的分享過期了，再找一次檔案
 files-changed = 檔案登記後改過，你看過的可能不是現在的內容，再找一次
 files-share-not-authorized = 應用程式 { $plugin } 沒有共用資料夾 { $share } 的授權
 files-mcp-gone = 應用程式 { $plugin } 在執行，但不再提供 MCP 服務，讀不了這個資源
 files-plugin-unavailable = 來源應用程式 { $plugin } 解除安裝了或沒有在執行
-files-notify-no-matrix = 家用伺服器沒有接入 Matrix（WONTON_MATRIX_URL），發不到「Wonton」私訊
+files-notify-no-matrix = 家用伺服器還沒接入 Matrix（WONTON_MATRIX_URL），發不到「Wonton」私訊
 files-matrix-send-failed = 發不到「Wonton」私訊：{ $error }
 files-upstream-not-own = { $service } 不是應用程式 { $plugin } 自己的服務
 

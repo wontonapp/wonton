@@ -666,6 +666,73 @@ async fn uninstalling_needs_the_owner_and_never_removes_the_caller_itself() {
 }
 
 #[tokio::test]
+async fn a_source_installed_system_plugin_can_be_uninstalled_by_a_bot() {
+    let (_docker, engine) = FakeDocker::start().await;
+    let s = setup(engine, Duration::from_secs(60)).await;
+    let id = "app.example.system";
+    let package = PluginPackage::parse(
+        &official_package(id, "系统应用", "").replace("kind: app", "kind: system"),
+        &Languages::from_header(Some("zh-Hans")),
+    )
+    .unwrap();
+    let permissions = package.manifest.permissions.clone();
+    s.manager
+        .install_package(
+            package,
+            &permissions,
+            Languages::from_header(Some("zh-Hans")),
+        )
+        .await
+        .unwrap();
+    let mut record = s
+        .manager
+        .store()
+        .load(&PluginId::parse(id).unwrap())
+        .unwrap()
+        .unwrap();
+    record.origin = Some(crate::plugin::github_source::Origin {
+        repo: "github:acme/system".into(),
+        tag: Some("v1.0.0".into()),
+        commit: "0".repeat(40),
+        trust: Default::default(),
+        index: None,
+    });
+    s.manager.store().save(&record).unwrap();
+
+    let call = s.spawn("wonton__uninstall_plugin", json!({"id": id}));
+    let card = s.cards.wait_for(1).await;
+    s.answer(&card.id, Answer::Approve).unwrap();
+    let result = call.await.unwrap();
+    assert!(!failed(&result), "{result:?}");
+}
+
+#[tokio::test]
+async fn an_uploaded_system_plugin_can_be_uninstalled_by_a_bot() {
+    let (_docker, engine) = FakeDocker::start().await;
+    let s = setup(engine, Duration::from_secs(60)).await;
+    let id = "app.example.uploaded";
+    let package = PluginPackage::parse(
+        &official_package(id, "上传的系统应用", "").replace("kind: app", "kind: system"),
+        &Languages::from_header(Some("zh-Hans")),
+    )
+    .unwrap();
+    let permissions = package.manifest.permissions.clone();
+    s.manager
+        .install_package(
+            package,
+            &permissions,
+            Languages::from_header(Some("zh-Hans")),
+        )
+        .await
+        .unwrap();
+
+    let call = s.spawn("wonton__uninstall_plugin", json!({"id": id}));
+    let card = s.cards.wait_for(1).await;
+    s.answer(&card.id, Answer::Approve).unwrap();
+    assert!(!failed(&call.await.unwrap()));
+}
+
+#[tokio::test]
 async fn plugin_resources_are_read_with_a_size_limit() {
     let server = McpServer {
         id: PluginId::parse("app.example.notes").unwrap(),

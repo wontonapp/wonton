@@ -55,7 +55,6 @@ gateway-entry-header-invalid = 入口ゲートウェイがこのリクエスト�
 gateway-entry-closed = この入口は開いていません。オーナーがWontonアプリで開けられます
 gateway-entry-public-denied = 公開アドレスからはこのパスにアクセスできません
 gateway-entry-setup-pending = まずこのアプリのウェブページで初回登録を済ませてから、もう一度お試しください
-gateway-entry-auth-unsupported = このアプリはまだ、Wontonが発行したパスワードでのログインに対応していません
 gateway-entry-auth-required = Wontonで発行したこのアプリのパスワードでサインインしてください
 gateway-entry-auth-revoked = このパスワードは取り消されました。Wontonで新しく発行してください
 gateway-entry-state-unavailable = このアプリの入口設定を読み取れません。オーナーがWontonで確認してください
@@ -90,6 +89,7 @@ gateway-icon-failed = アイコンを処理できません：{ $error }
 # デバイスとペアリングコード。
 gateway-devices-not-found = このデバイスは登録されていません
 gateway-devices-invalid-id = リクエストボディは{"{"}"endpoint_id": "<64桁の16進数>"{"}"}の形式にしてください
+gateway-devices-invalid-body = リクエストボディは{"{"}"keep_shared_passwords": true|false{"}"}か空にしてください
 gateway-devices-invalid-addrs = リクエストボディは{"{"}"direct_addrs": ["IP:ポート"]{"}"}の形式にしてください：{ $error }
 gateway-devices-already-paired = このサーバーには既にペアリング済みのデバイスがあるため、初回ペアリングコードは発行しません
 gateway-devices-no-addresses = トンネルがまだリレーに接続しておらず、リクエストにも直接接続用のアドレスがないため、コードに接続できるアドレスがありません
@@ -97,6 +97,7 @@ gateway-devices-no-addresses = トンネルがまだリレーに接続してお�
 # モデルゲートウェイ。
 gateway-models-permission = アプリ{ $id }はmodels権限を申請していません
 gateway-plugin-network-only = このアドレスは、プラグインネットワーク内のアプリ専用です
+gateway-restoring = コアがまだアプリを起動しているところです。少し待ってやり直してください
 gateway-models-down = モデルゲートウェイが起動していません
 
 # セットアップ。
@@ -170,6 +171,14 @@ clients-unavailable = コアがコンテナで実行されていないため、�
 clients-passwords-unavailable = 今はアプリのパスワードの保存先を読み取れません
 clients-password-label-invalid = クライアントには改行を含まない1〜128文字の名前を付けてください
 clients-password-not-found = このアプリのパスワードはもう存在しません
+clients-plugin-unavailable = このアプリはインストールされていません
+clients-password-shared = アプリのパスワード
+clients-credentials-shared-exists = このアプリには共有パスワードがすでにあります
+clients-credentials-timeout = アプリ内のコマンドがタイムアウトしました。すでに反映されている可能性があり、再試行します
+clients-credentials-unavailable = アプリが実行されていないため、今はパスワードを発行できません
+clients-credentials-missing-command = マニフェストに { $op } コマンドがありません
+clients-credentials-failed = アプリ内のコマンドが失敗しました：{ $error }
+gateway-entry-credentials-not-issued = アプリのパスワードがまだないため、入口は閉じたままです
 clients-domain-read-failed = ドメイン設定を読めませんでした：{ $error }
 gateway-chains-disabled = 自宅サーバーで呼び出しの連鎖の台帳が有効になっていません
 
@@ -187,8 +196,62 @@ gateway-agent-acp-token-missing = {$provider} にはまだ提供者トークン�
 gateway-agent-acp-provider-unreachable = Agent ランタイムがこの接続を引き受けませんでした：{$detail}
 
 gateway-install-rejected = 管理者が承認しなかったため、{$action}は行われませんでした
+
+# 招待側のロールによるフレンド申請の管理（ADR-0088）：カードは管理者へ、承認後に招待を送る。
+gateway-friend-invite-title = フレンド申請が承認待ち
+gateway-friend-invite-to = { $inviter } が { $friend } をフレンドに追加したがっています
+gateway-friend-invite-rejected = 管理者がこのフレンド申請を承認しませんでした
+gateway-friend-invite-expired = 管理者は時間内にこのフレンド申請に答えませんでした
 gateway-install-expired = 管理者が期限内に回答しなかったため、{$action}は行われませんでした
 gateway-install-card-device = 渡すデバイス：{ $device }
 gateway-install-card-secret = リクエストで入力されたシークレット：{ $title }
 gateway-install-card-setting = リクエストで入力された設定：{ $title } = { $value }
 gateway-install-changed = カードの送信後に { $id } の権限、デバイス、設定が変更されたため、アップグレードしませんでした。もう一度リクエストしてください。
+clients-switch-container = コアがコンテナ内で動作していないため、入口ネットワークを利用できません
+clients-switch-domain = 入口を開く前にドメインと有効な証明書を設定してください
+clients-switch-lan = LAN 転送コンテナの準備ができていないため、LAN 入口は利用できません
+clients-switch-setup = 先にアプリのウェブページで初回登録を完了してください
+clients-switch-app-unavailable = アプリが動作していないため、初回登録の状態を確認できません
+clients-switch-credentials = アプリがまだパスワードを正常に発行していません
+clients-switch-ingress = 公開入口の種類が設定されていません
+clients-switch-kind = 入口には lan または public を指定してください
+clients-switch-uninstalled = クライアントアプリはアンインストールされています
+clients-switch-failed = クライアント入口の設定を適用できませんでした：{ $error }
+clients-switch-domain-read = ドメインと証明書の状態を読み取れません：{ $error }
+clients-switch-no-route = クライアントプラグイン { $plugin } に使える入口がありません
+clients-switch-service-down = クライアントプラグイン { $plugin } のサービスが動作していません
+clients-switch-setup-check = アプリの初回登録の状態を確認できません：{ $error }
+clients-switch-not-found = クライアントプラグイン { $plugin } はインストールされていないか、入口を宣言していません
+clients-switch-settings-read = 入口の設定を読み取れません：{ $error }
+clients-switch-settings-missing = 入口の設定がないため、入口モデルを確認して適用できません
+clients-switch-apply = 入口の設定を書き込みまたは再読み込みできません：{ $error }
+clients-switch-record-read = { $plugin } のクライアント入口の記録を読み取れません：{ $error }
+clients-switch-no-label = クライアントプラグイン { $plugin } に入口ラベルがありません
+clients-switch-label-conflict = 入口ラベル { $label } が重複しています
+clients-switch-records-read = プラグインの記録を読み取れません：{ $error }
+clients-switch-rollback-entry = 入口設定のロールバックにも失敗しました：{ $error }
+clients-switch-rollback-switch = スイッチのロールバックにも失敗しました：{ $error }
+# 外のサーバーの人からのフレンド申請：公開ページで受け付け、管理者が答え、承認した人を allowed_users に記録する。
+gateway-friend-request-title = フレンド申請
+gateway-friend-request-intro = このサーバーは、管理者が承認するまで他のサーバーの人を通しません。自分の Matrix ID を残してください。結果はここに出ます。
+gateway-friend-request-you = 自分の Matrix ID
+gateway-friend-request-to = 相手の Matrix ID
+gateway-friend-request-target = { $target } を追加したい
+gateway-friend-request-submit = リクエストを送る
+gateway-friend-request-waiting = リクエストを送りました。管理者の回答を待っています（相手：{ $target }）。
+gateway-friend-request-approved = 管理者が承認しました。もう一度招待を送ってください。
+gateway-friend-request-open = 相手の役割はもう承認不要です。招待を送り直すだけです。
+gateway-friend-request-forbidden = このメンバーは役割上フレンドを追加できません。管理者に招待してもらってください。
+gateway-friend-request-denied = 管理者はこのフレンド申請を承認しませんでした。
+gateway-friend-request-expired = 時間内に管理者が答えませんでした。あとでもう一度どうぞ。
+gateway-friend-request-changed = 相手のアカウントや権限が変わりました。あとで試すか、相手から追加してもらってください。
+gateway-friend-request-unavailable = このサーバーはいま答えられません。あとでどうぞ。
+gateway-friend-request-duplicate = この人へのリクエストがすでに待っています。
+gateway-friend-request-too-many = 待っているリクエストが多すぎます。あとでどうぞ。
+gateway-friend-request-local = 同じサーバーの人は承認不要です。そのまま招待してください。
+gateway-friend-request-unknown = このサーバーにその人はいません。
+gateway-friend-request-invalid = @bob:example.org のような完全な Matrix ID を入れてください。
+gateway-friend-request-invalid-method = このアドレスは GET と POST だけです。
+gateway-friend-request-again = もう一つ送る
+gateway-friend-request-card-title = 外の人がフレンドを追加したがっています
+gateway-friend-request-card-to = { $target } をフレンドに追加したがっています

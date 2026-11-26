@@ -11,6 +11,13 @@ use super::names::LABEL_PLUGIN;
 use super::render::{Deployment, InstallContext};
 use tokio::time::Instant;
 
+#[cfg(test)]
+pub(super) struct MetadataHold {
+    pub id: PluginId,
+    pub read: tokio::sync::oneshot::Sender<super::store::InstalledRecord>,
+    pub resume: tokio::sync::oneshot::Receiver<()>,
+}
+
 impl PluginManager {
     pub(super) async fn replace_recorded(
         &self,
@@ -57,16 +64,34 @@ impl PluginManager {
                 self.engine.remove_container(&container.name).await?;
             }
         }
-        let deadline = gate.deadline(plan, ctx.install_limit, Instant::now());
-        Box::pin(self.start_containers(None, plan, None, &mut Undo::default(), deadline, langs))
+        let wait = gate.deadline(plan, ctx.install_limit, Instant::now());
+        Box::pin(self.start_containers(None, plan, None, &mut Undo::default(), wait, langs))
             .await?;
         self.recovery_stage(id, PluginRecoveryStage::Reconciling)?;
         let mut record = self
             .store
             .load(id)?
             .ok_or_else(|| InstallError::not_installed(langs, id))?;
+        #[cfg(test)]
+        self.pause_recovery_metadata_for_test(&record).await;
         record.proxied = ctx.egress.is_some();
         self.store.save_metadata(&record)?;
         Ok(())
+    }
+
+    #[cfg(test)]
+    async fn pause_recovery_metadata_for_test(&self, record: &super::store::InstalledRecord) {
+        let hold = {
+            let mut slot = self.recovery_metadata_hold.lock().unwrap();
+            if slot.as_ref().is_some_and(|hold| hold.id == record.id) {
+                slot.take()
+            } else {
+                None
+            }
+        };
+        if let Some(hold) = hold {
+            let _ = hold.read.send(record.clone());
+            let _ = hold.resume.await;
+        }
     }
 }

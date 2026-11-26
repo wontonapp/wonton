@@ -160,7 +160,7 @@ impl OwnIdentity {
             relays: tunnel
                 .relays()
                 .iter()
-                .map(|relay| relay.url.to_string())
+                .map(|relay| wonton_tunnel::relays::relay_url_text(&relay.url))
                 .collect(),
             addrs: tunnel.direct_addrs(),
         }
@@ -384,7 +384,7 @@ impl Peers {
     }
 
     /// 已配对的服务器名，配对和删除时即时更新。给 Tuwunel 的配置（联邦名单和 `/etc/hosts`）订阅；
-    /// 名单变化后由订阅方改 Tuwunel 的配置并发 `SIGUSR1`（fed-tuwunel-config 的任务）。
+    /// 名单变化后由订阅方改 Tuwunel 的配置并让它重读（管理房间命令，fed-tuwunel-config 的任务）。
     pub fn paired_names(&self) -> watch::Receiver<BTreeSet<String>> {
         self.names.subscribe()
     }

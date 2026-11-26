@@ -260,26 +260,7 @@ struct AgentRunRow: View {
                     .wontonText(WontonTheme.typography.supporting)
             }
             .foregroundStyle(Color(colors.accentInk))
-            HStack(spacing: WontonTheme.spacing.s8) {
-                ForEach(choices, id: \.key) { choice in
-                    Button {
-                        answerChoice(choice.key)
-                    } label: {
-                        Text(choice.label)
-                            .wontonText(WontonTheme.typography.supporting)
-                            .foregroundStyle(Color(colors.accentInk))
-                            .padding(.horizontal, WontonTheme.spacing.s12)
-                            .frame(minHeight: WontonTheme.size.chip)
-                            .overlay(
-                                Capsule().strokeBorder(Color(colors.accentInk), lineWidth: WontonTheme.size.hairline)
-                            )
-                            .frame(minHeight: WontonTheme.size.target)
-                            .contentShape(Rectangle())
-                    }
-                    .buttonStyle(.plain)
-                    .accessibilityIdentifier("agentRun-choice-\(choice.key)")
-                }
-            }
+            AgentRunChoices(choices: choices, state: state, answer: answerChoice)
         }
     }
 

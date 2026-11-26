@@ -48,7 +48,9 @@ impl TestCore {
             Arc::new(|| crate::plugin::languages::Languages::from_header(None)),
             endpoint,
             0,
-            RelayTable::builtin_n0(),
+            Arc::new(crate::relay_settings::RelaySettings::for_table(
+                RelayTable::builtin_n0(),
+            )),
             watch::channel(BTreeSet::from(["127.0.0.1".parse().unwrap()])).1,
         );
         let owner_name = Arc::new(Mutex::new(name.to_owned()));

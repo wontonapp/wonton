@@ -1,0 +1,6 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!-- 由 scripts/make-app-icon.py 从 design/app-icon/mascot/ 生成，不要手改。 -->
+<resources>
+    <color name="app_icon_gradient_top">#7EBAF0</color>
+    <color name="app_icon_gradient_bottom">#FFFFFF</color>
+</resources>

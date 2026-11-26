@@ -102,7 +102,7 @@ extension PanelGestureUITests {
         app.launchArguments += ["-AppleLanguages", "(en)", "-AppleLocale", "en_US"] + arguments
         app.launchEnvironment["WONTON_DEV_DATA_SUFFIX"] = UUID().uuidString
         app.launchEnvironment["WONTON_UI_FAKE"] = "1"
-        app.launch()
+        UITestBackend.launch(app)
         let sidebar = app.buttons.matching(UITestSidebar.button).firstMatch
         XCTAssertTrue(sidebar.waitForExistence(timeout: 20), "没进主界面\n\(app.debugDescription)")
         // 顶栏按钮紧挨着状态栏下沿：UI 测试读不到安全区，拿它当状态栏的高度。

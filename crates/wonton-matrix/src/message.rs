@@ -111,6 +111,8 @@ pub enum SendStatus {
     Sent,
     /// 发送失败。
     Failed {
+        /// 哪一类失败。界面按它写一句话，原文在 `error`。
+        failure: wonton_protocol::SendFailure,
         /// 失败原因。
         error: String,
         /// 是否可恢复。可恢复的（连不上、超时、服务器暂时出错）由会话隔一段时间自动重发；不可恢复的（服务器拒收）
@@ -365,7 +367,8 @@ pub(crate) fn message(event: &EventTimelineItem, names: &MemberNames) -> Option<
     let mentions_me = names
         .own()
         .is_some_and(|own| mentions.iter().any(|user| user.as_str() == own.as_str()));
-    Some(Message {
+    let reactions = reactions(event, names);
+    let mut message = Message {
         event_id: event.event_id().map(ToOwned::to_owned),
         sender: event.sender().to_owned(),
         sender_name: sender_name(event, names),
@@ -390,10 +393,14 @@ pub(crate) fn message(event: &EventTimelineItem, names: &MemberNames) -> Option<
             .as_ref()
             .map(|details| reply_to(details, names)),
         can_redact: names.can_redact(event),
-        reactions: reactions(event, names),
+        reactions,
         is_direct: names.direct(),
         mentions_me,
-    })
+    };
+    if let Some(status) = message.agent_run.as_mut() {
+        status.mark_answers(&message.reactions);
+    }
+    Some(message)
 }
 
 /// 发送者的显示名：事件上带的资料还没加载到时，用本机已有的成员显示名，都没有时用 [`fallback_name`]。
@@ -416,7 +423,7 @@ pub(crate) fn fallback_name(user: &UserId) -> &str {
 }
 
 impl Message {
-    /// 这条消息的选项（ADR-0109 第 7 节）：发送者自己先放的表情就是选项，核心不认表情的含义。发送者选完会撤掉
+    /// 这条消息的选项（ADR-0109 第 8 节）：发送者自己先放的表情就是选项，核心不认表情的含义。发送者选完会撤掉
     /// 自己放的表情，这时正文里还有对应行的、我加过的表情照样算。正在发和发失败的不算选上。
     ///
     /// 自己的消息、没有选项时是 `None`。选项按 SDK 给的回应顺序，没有谁先谁后的记录。
@@ -517,6 +524,30 @@ fn reactions(event: &EventTimelineItem, names: &MemberNames) -> Vec<Reaction> {
         .collect()
 }
 
+/// 发送失败算哪一类：连不上、服务器暂时不可用是“连不上”，服务器拒收是“拒收”，其余按原因分。
+fn failure(error: &matrix_sdk::Error) -> wonton_protocol::SendFailure {
+    failure_of(crate::Error::from(error))
+}
+
+/// 已分类的错误换成界面用的类别。
+fn failure_of(error: crate::Error) -> wonton_protocol::SendFailure {
+    use crate::Error;
+    use wonton_protocol::SendFailure;
+    match error {
+        Error::Transport(_) | Error::NotReady(_) => SendFailure::Offline,
+        Error::Unauthorized { .. }
+        | Error::Forbidden { .. }
+        | Error::NotInvited(_)
+        | Error::InvalidInput(_) => SendFailure::Rejected,
+        Error::TooLarge(_) => SendFailure::TooLarge,
+        Error::UnsupportedType(_) => SendFailure::UnsupportedType,
+        Error::ReplyTarget(_) => SendFailure::ReplyTarget,
+        // 附言没发出去、消息不在这份时间线里：这一层拿不到更细的原因，落到“别的”。
+        Error::CommentNotSent(_) | Error::NotInTimeline(_) => SendFailure::Other,
+        Error::Upstream(_) => SendFailure::Upstream,
+    }
+}
+
 fn status(state: Option<&EventSendState>) -> SendStatus {
     match state {
         None | Some(EventSendState::Sent { .. }) => SendStatus::Sent,
@@ -530,6 +561,7 @@ fn status(state: Option<&EventSendState>) -> SendStatus {
             error,
             is_recoverable,
         }) => SendStatus::Failed {
+            failure: failure(error),
             error: error.to_string(),
             recoverable: *is_recoverable,
         },
@@ -775,5 +807,37 @@ mod tests {
         let mut own = message("✅ = approve", &[("✅", None)]);
         own.is_own = true;
         assert_eq!(own.choices(), None);
+    }
+}
+
+#[cfg(test)]
+mod failure_tests {
+    use super::*;
+    use crate::Error;
+    use wonton_protocol::SendFailure;
+
+    #[test]
+    fn send_errors_keep_their_category_for_the_bubble() {
+        for (error, failure) in [
+            (Error::Transport("断".into()), SendFailure::Offline),
+            (Error::NotReady("还没".into()), SendFailure::Offline),
+            (
+                Error::Forbidden {
+                    errcode: "M_FORBIDDEN".into(),
+                    message: "不让".into(),
+                },
+                SendFailure::Rejected,
+            ),
+            (Error::InvalidInput("不对".into()), SendFailure::Rejected),
+            (Error::TooLarge("太大".into()), SendFailure::TooLarge),
+            (
+                Error::UnsupportedType("格式".into()),
+                SendFailure::UnsupportedType,
+            ),
+            (Error::ReplyTarget("没了".into()), SendFailure::ReplyTarget),
+            (Error::Upstream("崩了".into()), SendFailure::Upstream),
+        ] {
+            assert_eq!(failure_of(error), failure);
+        }
     }
 }

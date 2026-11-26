@@ -38,6 +38,8 @@ enum Added {
     ProxyRole,
     /// 没有显式健康路径或有效 compose 健康检查的长期网页服务。
     AutomaticWebuiHealth,
+    /// 从这一版起不再写的权限：`spec` 写到这一版还写着它，就报错让插件改。
+    RetiredPermission(&'static str),
 }
 
 const V0_7: SpecVersion = SpecVersion::new(0, 7);
@@ -49,9 +51,10 @@ const V0_12: SpecVersion = SpecVersion::new(0, 12);
 const V0_13: SpecVersion = SpecVersion::new(0, 13);
 const V0_14: SpecVersion = SpecVersion::new(0, 14);
 const V0_15: SpecVersion = SpecVersion::new(0, 15);
+const V0_16: SpecVersion = SpecVersion::new(0, 16);
 
-/// 0.6 以后才有的写法。新加清单字段时在这里加一行，规范的“各版本新增的字段”同步加；漏改时
-/// spec_floor_tests 里照规范手抄的期望清单测试会红。
+/// 0.6 以后才有的写法，以及从某一版起不再写的写法。新加清单字段或退役写法时在这里加一行，规范的
+/// “各版本新增的字段”同步加；漏改时 spec_floor_tests 里照规范手抄的期望清单测试会红。
 const TABLE: &[(SpecVersion, Added)] = &[
     (V0_7, Added::Field(&["webui", "cross_origin_isolated"])),
     (V0_7, Added::Field(&["webui", "oidc", "post_logout_paths"])),
@@ -117,6 +120,9 @@ const TABLE: &[(SpecVersion, Added)] = &[
     (V0_15, Added::Field(&["remote_mcp"])),
     (V0_15, Added::AutomaticWebuiHealth),
     (V0_15, Added::Variable("WONTON_BOT_AI_LEVEL")),
+    (V0_16, Added::Field(&["provides", "*", "operations"])),
+    (V0_16, Added::Field(&["provides", "*", "kinds"])),
+    (V0_16, Added::RetiredPermission("models")),
 ];
 
 /// 清单（整份 compose 文档）里用到、但 `spec` 写得太低的写法，一处一条。`spec` 读不出来时不查：解析那一步已经报过。
@@ -135,7 +141,14 @@ pub fn problems(document: &Value) -> Vec<String> {
         .unwrap_or_default();
     let mut variables = variable_places(document, declared);
     let mut problems = Vec::new();
-    for (since, added) in TABLE.iter().filter(|(since, _)| declared < *since) {
+    for (since, added) in TABLE {
+        let applies = match added {
+            Added::RetiredPermission(_) => declared >= *since,
+            _ => declared < *since,
+        };
+        if !applies {
+            continue;
+        }
         let found = match added {
             Added::Variable(name) => variables
                 .remove(name)
@@ -146,10 +159,15 @@ pub fn problems(document: &Value) -> Vec<String> {
             _ => places(added, manifest, &services, &permissions),
         };
         for place in found {
-            problems.push(format!(
-                "{place} needs spec \"{since}\" or later, but the manifest says spec \"{declared}\"; \
-                 raise spec so that older home servers say \"update the home server\" instead of \"unknown field\""
-            ));
+            problems.push(match added {
+                Added::RetiredPermission(name) => format!(
+                    "{place} was replaced in spec \"{since}\": write `wants: [{name}]` and remove it from permissions"
+                ),
+                _ => format!(
+                    "{place} needs spec \"{since}\" or later, but the manifest says spec \"{declared}\"; \
+                     raise spec so that older home servers say \"update the home server\" instead of \"unknown field\""
+                ),
+            });
         }
     }
     problems
@@ -214,7 +232,7 @@ fn places(
             })
             .map(|(name, _)| format!("x-wonton.provides.{name}"))
             .collect(),
-        Added::Permission(name) => permissions
+        Added::Permission(name) | Added::RetiredPermission(name) => permissions
             .contains(name)
             .then(|| format!("permission {name}"))
             .into_iter()

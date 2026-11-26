@@ -271,10 +271,9 @@ internal class WebPageState(val place: PlacedTab, val pages: PagesState) {
         null
     }
 
-    /** 返回：视频全屏 → 网页历史 → 关掉当前页（核心弹栈）。 */
+    /** 返回：全屏视频先退出，网页历史里会换页的一步照常后退，剩下的一步关掉当前页（核心弹栈）。 */
     fun back() {
-        if (controller.closeCustomView() || controller.goBack()) return
-        pages.send(Action.Pages(PageAction.ClosePage))
+        controller.backOrClose { pages.send(Action.Pages(PageAction.ClosePage)) }
     }
 
     fun loadStarted() {

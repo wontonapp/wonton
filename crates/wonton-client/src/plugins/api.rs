@@ -173,7 +173,7 @@ pub(super) fn proxied_client(
 
 impl CoreApi {
     /// `/_wonton/api/<segments…>?<query…>`：片段和参数都做转义，插件 ID 和来源里的字符不会改变路径。
-    fn url(&self, segments: &[&str], query: &[(&str, &str)]) -> Url {
+    pub(crate) fn url(&self, segments: &[&str], query: &[(&str, &str)]) -> Url {
         let mut url = self.base.clone();
         url.path_segments_mut()
             .expect("home server URL is http")
@@ -186,14 +186,16 @@ impl CoreApi {
         url
     }
 
-    async fn exchange(
+    /// 发一次请求，回状态码、`X-Wonton-Error` 类别（没有为空）和响应体。成员接口自己按类别分错误，
+    /// 不套用插件的分类。传输失败仍然是 [`PluginProblem`]，由调用方转成自己的类别。
+    pub(crate) async fn exchange_detail(
         &self,
         method: Method,
         url: Url,
         body: Option<Vec<u8>>,
         content_type: &str,
         timeout: Duration,
-    ) -> Result<(u16, Vec<u8>), PluginProblem> {
+    ) -> Result<(u16, Option<String>, Vec<u8>), PluginProblem> {
         let mut request = self.client.request(method, url).timeout(timeout);
         if !self.languages.is_empty() {
             request = request.header(ACCEPT_LANGUAGE, &self.languages);
@@ -203,8 +205,27 @@ impl CoreApi {
         }
         let response = request.send().await.map_err(|e| transport(&e, timeout))?;
         let status = response.status().as_u16();
+        let kind = response
+            .headers()
+            .get("x-wonton-error")
+            .and_then(|value| value.to_str().ok())
+            .map(str::to_owned);
         let bytes = response.bytes().await.map_err(|e| transport(&e, timeout))?;
-        Ok((status, bytes.to_vec()))
+        Ok((status, kind, bytes.to_vec()))
+    }
+
+    async fn exchange(
+        &self,
+        method: Method,
+        url: Url,
+        body: Option<Vec<u8>>,
+        content_type: &str,
+        timeout: Duration,
+    ) -> Result<(u16, Vec<u8>), PluginProblem> {
+        let (status, _, bytes) = self
+            .exchange_detail(method, url, body, content_type, timeout)
+            .await?;
+        Ok((status, bytes))
     }
 
     async fn send(
@@ -683,7 +704,10 @@ pub(crate) fn to_core_error(problem: PluginProblem) -> CoreError {
         | PluginFailure::LanUnavailable
         | PluginFailure::LanPortTaken
         | PluginFailure::EgressProxyUnavailable
+        | PluginFailure::EgressProxyWaiting
         | PluginFailure::CoreUpgrading
+        // 服务还在起，现在做不了，缓过来再试就能过（#682）。
+        | PluginFailure::TimedOut
         // 记录不可用：现在做不了。壳按类别出「重新安装」的下一步（#198 的核心行为、#230 的 iOS 壳）。
         | PluginFailure::RecordUnusable => CoreError::NotReady { reason },
         PluginFailure::SourceUnavailable | PluginFailure::Upstream | PluginFailure::Protocol => {

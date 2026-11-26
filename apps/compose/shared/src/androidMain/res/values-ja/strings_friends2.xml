@@ -1,5 +1,7 @@
 <?xml version="1.0" encoding="utf-8"?>
 <resources>
+    <!-- Keep the fictional example in wrapping help, not the single-line input prompt. -->
+    <string name="friends_add_help">相手に完全な友だちアドレスを送ってもらってください。Wonton なら「友だち」ページの読み込みに成功した後、「追加 → 自分のQRコード」からリンクをコピーできます。\n形式の例（実際のアカウントではありません）：@bob:example.org</string>
     <!-- Title of the friends page and the settings row that opens it. -->
     <string name="friends_title">友だち</string>
     <string name="friends_scan_code">相手のコードをスキャン</string>

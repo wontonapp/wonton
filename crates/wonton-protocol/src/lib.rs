@@ -8,6 +8,7 @@
 #[cfg(feature = "uniffi")]
 uniffi::setup_scaffolding!();
 
+mod about;
 mod action;
 mod action_domains;
 mod agent_chain;
@@ -35,11 +36,15 @@ mod family;
 mod file;
 mod friends;
 mod home;
+pub mod inbox;
+pub mod inbox_request;
+pub mod inbox_validate;
 mod lan;
 mod link;
 mod link_preview;
 pub mod manifest;
 mod matrix_login;
+pub mod media;
 mod message_choice;
 mod message_layout;
 mod onboarding;
@@ -54,9 +59,11 @@ mod plugin_notice;
 mod port_mapping;
 mod push;
 mod registry_mirror;
+mod relays;
 mod reply;
 mod roles;
 mod secret;
+mod send_state;
 mod server_version;
 mod servers;
 mod session;
@@ -72,11 +79,14 @@ mod timeline_jump;
 mod verification;
 mod widget;
 
+pub use about::{
+    LicenseComponent, LicenseGroup, LicensesViewModel, PrivacySection, PrivacyViewModel,
+};
 pub use action::Action;
 pub use action_domains::{
-    BotAction, BotContactAction, ChatAction, FamilyAction, FileAction, FriendsAction, HomeAction,
-    OnboardingAction, PageAction, PeerAction, PluginAction, PushAction, SessionAction,
-    SettingsAction, SharingAction,
+    BotAction, BotContactAction, ChatAction, ClientsAction, FamilyAction, FileAction,
+    FriendsAction, HomeAction, OnboardingAction, PageAction, PeerAction, PluginAction, PushAction,
+    SessionAction, SettingsAction, SharingAction,
 };
 pub use agent_chain::{
     AGENT_CHAINS_API_PATH, AGENT_CHAINS_PATH, AGENT_CHAINS_WAIT_SECS, AGENT_LIMITS_PATH,
@@ -114,11 +124,11 @@ pub use bot_contacts::{
 pub use bot_profile::{
     AVATARS_FIELD, AccessSource, AvatarChange, AvatarImage, AvatarKind, AvatarMedia,
     AvatarMediaProblem, AvatarUpload, BOT_ACTIVITY_PATH, BOT_ACTIVITY_WAIT_SECS, BotActivity,
-    BotActivityFacts, BotActivityReport, BotNameProblem, BotPluginAccess, BotPluginAccessUpdate,
-    BotProfileFailure, BotProfileProblem, BotProfileUpdate, BotProfileUpdated, BotView,
-    DefaultBotVisibility, MAX_AVATAR_BYTES, MAX_AVATAR_DURATION_MS, MAX_AVATAR_EDGE,
-    MAX_BOT_NAME_CHARS, StateAvatar, StateAvatars, bot_plugin_access_path, bot_profile_path,
-    check_bot_name,
+    BotActivityFacts, BotActivityReport, BotChatAvailability, BotChatUnavailable, BotNameProblem,
+    BotPluginAccess, BotPluginAccessUpdate, BotProfileFailure, BotProfileProblem, BotProfileUpdate,
+    BotProfileUpdated, BotView, DefaultBotVisibility, MAX_AVATAR_BYTES, MAX_AVATAR_DURATION_MS,
+    MAX_AVATAR_EDGE, MAX_BOT_NAME_CHARS, StateAvatar, StateAvatars, bot_plugin_access_path,
+    bot_profile_path, check_bot_name,
 };
 pub use bot_web::{
     BOT_WEB_LABEL_PREFIX, BotWebFailure, BotWebPage, BotWebView, bot_web_label, bot_web_path,
@@ -136,13 +146,15 @@ pub use chat_layout::{
 };
 pub use clients::{
     Ban, CLIENTS_ERROR_HEADER, CLIENTS_HEADER, CaaState, CertificateState, ClientAuthKind,
-    ClientsErrorBody, ClientsFailure, ClientsPlugin, ClientsProblem, ClientsStatus,
-    CredentialEntry, DnsProviderPreset, DomainSettings, EntryBlock, EntryKind, EntrySwitch,
-    GUEST_LINKS_MAX, GUEST_TTL_DEFAULT, GUEST_TTL_MAX, GateState, GuestLink, IngressKind,
-    IngressSettings, LanRecordState, NewGuestLinkRequest, NewPasswordRequest, PasswordSummary,
-    PasswordValue, PendingChange, PendingChangeKind, PendingOp, ProbeResult, PublicAccess,
-    PublicItem, PublicReach, PublicRuleMode, PublicRules, PublicSwitchState, PutDomainRequest,
-    PutIngressRequest, RevokeDeviceRequest, SetEntryRequest, clients_ban_path, clients_domain_path,
+    ClientsBlocked, ClientsErrorBody, ClientsFailure, ClientsGuests, ClientsPassword,
+    ClientsPlugin, ClientsProblem, ClientsSettingsViewModel, ClientsState, ClientsStatus,
+    ClientsViewModel, CredentialEntry, DnsProviderPreset, DomainSettings, EntryBlock, EntryKind,
+    EntrySwitch, GUEST_LINKS_MAX, GUEST_TTL_DEFAULT, GUEST_TTL_MAX, GateState, GuestLink,
+    IngressKind, IngressSettings, LanRecordState, NewGuestLinkRequest, NewPasswordRequest,
+    PASSWORD_ID_HEADER, PASSWORD_PENDING_HEADER, PasswordSummary, PasswordValue, PendingChange,
+    PendingChangeKind, PendingOp, ProbeResult, PublicAccess, PublicItem, PublicReach,
+    PublicRuleMode, PublicRules, PublicSwitchState, PutDomainRequest, PutIngressRequest,
+    RevokeDeviceRequest, SetEntryRequest, clients_ban_path, clients_domain_path,
     clients_entry_path, clients_guest_path, clients_guests_path, clients_ingress_path,
     clients_password_path, clients_passwords_path, clients_path, clients_public_access_path,
     clients_status_path, dns_providers_path,
@@ -179,9 +191,11 @@ pub use error::{CoreError, set_core_error_formatter};
 pub use family::FAMILY_ROOM_SYNC_PATH;
 pub use family::MEMBER_SYNC_PATH;
 pub use family::{
-    BotKeeper, BotRef, FAMILY_ROOM_EVENT, GATEWAY_REFUSAL_HEADER, GatewayRefusal,
-    HOP_LIMIT_ERRCODE, ME_PATH, MEMBER_PAIRING_CODE_TTL_SECS, MEMBERS_PATH, MY_PRIVATE_BOT_PATH,
-    Me, Member, MemberInvite, MemberList, MemberPairingCode, MemberRemoval, MemberStatus,
+    BotKeeper, BotRef, FAMILY_ROOM_EVENT, FamilyAccess, FamilyFailure, FamilyProblem,
+    FamilyViewModel, GATEWAY_REFUSAL_HEADER, GatewayRefusal, HOP_LIMIT_ERRCODE, JoinRequestRow,
+    JoinRequestsViewModel, ME_PATH, MEMBER_PAIRING_CODE_TTL_SECS, MEMBERS_PATH,
+    MY_PRIVATE_BOT_PATH, Me, Member, MemberCode, MemberInvite, MemberInviteView, MemberList,
+    MemberPairingCode, MemberRemoval, MemberRow, MemberStatus, MembersViewModel, MyAvatarProblem,
     NewSharedBot, OwnPrivateBotResponse, OwnPrivateBotResult, PrivateBotIdentity,
     PrivateBotRoomProblem, Role, SHARED_BOTS_PATH, TOOL_CALL_USER_META, member_pairing_code_path,
     member_removal_path,
@@ -195,13 +209,18 @@ pub use file::{
 };
 pub use friends::{
     FRIEND_EVENT, FriendBlock, FriendBlockScope, FriendBlockTarget, FriendEvent, FriendFailure,
-    FriendGroup, FriendProblem, FriendRequest, FriendRequestKind, FriendRow, FriendsList,
-    FriendsState, FriendsViewModel, INVITE_FILTER_EVENT, RemovedFriend,
+    FriendProblem, FriendRequest, FriendRequestKind, FriendRow, FriendsList, FriendsState,
+    FriendsViewModel, INVITE_FILTER_EVENT, RemovedFriend,
 };
 pub use home::{
     ConnectionCheck, ConnectionDetails, ConnectionNotice, ConnectionQuality, DeviceInvite,
-    DeviceNetwork, HomeFailure, HomePath, HomeStatus, HomeViewModel, PairingFailure, PairingStage,
-    PairingStatus, ProxySettings,
+    DeviceNetwork, HomeFailure, HomePath, HomeStatus, HomeViewModel, JoinRoleView, PairingFailure,
+    PairingStage, PairingStatus, ProxySettings,
+};
+pub use inbox::*;
+pub use inbox_validate::{
+    InboxInvalid, answerable, normalize_network_domain, ordered_selection, validate_action_id,
+    validate_answer, validate_answer_input, validate_item, validate_link, validate_network_domains,
 };
 pub use lan::{
     LanAddress, LanChoice, LanFailure, LanInterface, LanInterfaceKind, LanPlugin, LanPort,
@@ -265,7 +284,9 @@ pub use plugin::StoreLoadState;
 pub use plugin::StoreUnreadable;
 pub use plugin::hint::{PluginHint, PluginHintCategory};
 pub use plugin::ports::{PortProtocol, PortSpec, TunnelSpec};
-pub use plugin::store::{StoreConfirmation, UpdatablePlugin};
+pub use plugin::store::{
+    StoreConfirmation, StoreUpdateBatch, StoreUpdateItem, StoreUpdateState, UpdatablePlugin,
+};
 pub use plugin::{
     AddSourceRequest, AddedSource, AddedTools, AskEveryUpdate, BlockedCategory, BotSwitch,
     CapabilityDefaultChoice, CapabilityProvider, CapabilityProviderRef, CapabilityProviderSettings,
@@ -301,25 +322,30 @@ pub use port_mapping::{
     MappedPort, PluginPortMapping, PortMappingState, PortMappingWarning, UdpFlowStats,
 };
 pub use push::{
-    NotificationCategory, PushConfirmation, PushContent, PushEndpoint, PushMethod,
-    PushNotification, PushStatus,
+    DevicePayload, MAX_BODY_CHARS, MAX_PLAINTEXT_BYTES, NotificationCategory, PushConfirmation,
+    PushContent, PushEndpoint, PushMessageType, PushMethod, PushNotification, PushStatus,
 };
 pub use registry_mirror::{
     RegistryFailure, RegistryMirrorSettings, RegistryMirrorTest, RegistryMirrorTestRequest,
     RegistryMirrorTests, RegistryMirrorUpdate, RegistryMirrorViewModel, RegistryProbe,
     RegistryProblem,
 };
-pub use reply::{ComposerDraft, QuotedContent, QuotedMessage, ReplyQuote};
+pub use relays::{
+    RelayCurrent, RelaySettingEntry, RelaySettingUpdate, RelaySettingsAction, RelaySettingsPhase,
+    RelaySettingsSnapshot, RelaySettingsUpdate, RelaySettingsView, RelaySource, RelayState,
+};
+pub use reply::{ComposerDraft, ComposerEdit, QuotedContent, QuotedMessage, ReplyQuote};
 pub use roles::{
     AdminScope, AiLevel, AppScope, BOT_AI_LEVEL_ENV, CAPABILITIES_HEADER, Capability,
-    DEFAULT_INVITE_ROLE_PATH, Gate, JOIN_REQUESTS_PATH, JoinOutcome, JoinRequest, JoinRequestList,
-    OIDC_USER_GROUP, PERMISSION_REQUIRED, PermissionItem, PermissionRequired, Permissions,
-    PluginAudience, PluginAudienceChoice, PluginAudienceNotice, PluginAudienceView, ROLES_PATH,
-    RoleAssignment, RoleDef, RoleDraft, RoleList, RoleTemplate, RolesViewModel,
-    TOOL_CALL_CAPABILITIES_META, friend_role_path, join_request_approve_path,
+    DEFAULT_INVITE_ROLE, DEFAULT_INVITE_ROLE_PATH, Gate, JOIN_REQUESTS_PATH, JoinOutcome,
+    JoinRequest, JoinRequestList, OIDC_USER_GROUP, PERMISSION_REQUIRED, PermissionItem,
+    PermissionRequired, Permissions, PluginAudience, PluginAudienceChoice, PluginAudienceNotice,
+    PluginAudienceView, ROLES_PATH, RoleAssignment, RoleDef, RoleDraft, RoleList, RoleTemplate,
+    RolesViewModel, TOOL_CALL_CAPABILITIES_META, friend_role_path, join_request_approve_path,
     join_request_reject_path, member_role_path, plugin_audience_path, role_path,
 };
 pub use secret::SecretString;
+pub use send_state::{SendFailure, SendState};
 pub use server_version::{is_older, minimum_server_version};
 pub use servers::{ServerKind, ServerName, ServerRow, ServersViewModel};
 pub use session::{SessionListViewModel, SessionRow};
@@ -347,8 +373,9 @@ pub use sidebar::{SidebarApp, SidebarBadge, SidebarOpen, SidebarViewModel};
 pub use timeline::{
     BackPagination, FileAttachment, ImageCaption, ImageContent, KeyNotice, MatrixTarget,
     MediaHandle, MessageAction, MessageContent, MessageReceipt, RichBlock, RichBlockKind, RichLink,
-    RichLinkKind, RichSpan, SendState, TimelineContent, TimelineDiff, TimelineItem,
-    TimelineMessage, TimelineScroll, TimelineUpdate, TimelineViewport,
+    RichLinkKind, RichSpan, TimelineContent, TimelineDiff, TimelineItem, TimelineMessage,
+    TimelineScroll, TimelineUpdate, TimelineViewport, UnreadJump, UnreadJumpState,
+    UnreadJumpUnavailable,
 };
 pub use timeline_action::{TimelineAction, TimelineTarget};
 pub use timeline_jump::{JumpState, TimelineFocus};

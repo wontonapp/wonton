@@ -91,6 +91,7 @@ Docker 的健康检查和容器共用环境变量，没有单独的设置。busy
 
 - **镜像自带的 `HEALTHCHECK` 同样改写**：compose 没写 `test` 时从镜像取。`interval`、`timeout`、`start_period`、`start_interval`、`retries` 原样带上，compose 写了的以 compose 为准。`NONE` 不改。
 - 这些都写成渲染层的行为测试。实测过的写法见“验证结果”。
+- Agent 生成应用的模板（`plugin-guide/assets`）用 `CMD wget` 配 `-T 3` 写健康检查，交给改写加 `-Y off`，照抄就是对的。
 - 这只管健康检查；入口脚本里用 busybox wget 访问内部地址的，作者自己加 `-Y off`，插件规范写明。
 
 ### 不认代理变量的程序
@@ -188,15 +189,17 @@ gost -C /etc/gost/gost.yaml
 
 | 原因 | 判断 | 写给主人的提示 | 影响 |
 | --- | --- | --- | --- |
-| `relay_failed` | 出口容器不在运行、镜像拉不到 | Docker 的原文 | 挡安装 |
-| `proxy_unreachable` | 从 `wonton-egress` 网络连不上代理地址：被拒绝，或 5 秒没响应 | 被拒绝：端口没人听，或者只监听回环地址；没响应：宿主防火墙要放行 Docker 网段到这个端口 | 挡安装 |
+| `waiting` | 还没到能下结论的时候：出口容器刚建、刚起、还没接上 `wonton-egress` 网络（核对会再起它），或者镜像还没拉完（Docker 没在时限内回话） | 说清在等什么，Docker 的原文 | 挡安装（重试间隔压到一分钟内，见下） |
+| `relay_failed` | 镜像拉完了还是拉不下来（registry 拒了、标签不存在：重试也还是它）、Docker 报错 | Docker 的原文 | 挡安装 |
+| `proxy_unreachable` | 从 `wonton-egress` 网络连不上代理地址：被拒绝，或 5 秒没响应；代理插件自己的容器不在跑、没了，或健康检查不过 | 被拒绝：端口没人听，或者只监听回环地址；没响应：宿主防火墙要放行 Docker 网段到这个端口；容器不在：状态、退出码和日志，指去安装页 | 挡安装 |
 | `proxy_rejected` | 连上了，代理回 407 或其他非 2xx | 代理的状态码；407 就写要用户名和密码 | 挡安装 |
 | `upstream_failed` | CONNECT 成功，但 TLS 握手失败或超时 | 代理本身是通的，它连不上外面 | 只提示 |
 
 - **5 秒是探测自己的超时。** 插件经 gost 等的是 gost 默认的 15 秒，不改它：配置文件里写在 handler 下的 `dialTimeout`、`timeout` 不起作用（实测），写到别处的参数对长连接的影响没测，代理又很少这样坏。
 - **探测必须做完 TLS 握手。** mihomo 对 `CONNECT` 先回 200，连不上目标时才断开（实测）。只看 CONNECT，代理的出口坏了也显示正常。
 - **`upstream_failed` 只提示，不挡安装。** 探测只试了一个网站，它不通不等于插件要连的地方都不通。这时状态写成不确定，不写正常。
-- **挡安装**：预览的 `blocked` 写明原因，安装报 `egress_proxy_unavailable`（HTTP 422）。
+- **挡安装**：预览的 `blocked` 写明原因，安装报 `egress_proxy_unavailable`（HTTP 422）；`waiting` 报自己的 `egress_proxy_waiting`（同为 422），壳据此说“在等”。
+- **`waiting` 和失败分开。** 经 gost 的探测分不出“还在起步”和“坏了”，所以步骤机械、本来就是等的那种状态算 `waiting`：出口容器刚建、刚起、还没接上网络，镜像还没拉完（Docker 没在时限内回话），容器的健康检查还是 `starting`。`waiting` 也挡安装，但预装按一分钟内一次的间隔重试，不当成失败报给主人（#681）。出口容器被删会自动重建，所以也算 `waiting`；Docker 直接报错才算 `relay_failed`。代理插件自己的容器不在跑、或者没了，是等不回来的（没有谁会自动起它），算 `proxy_unreachable`，正文指去安装页。
 - **运行中坏了：** 设置页和局域网状态页显示原因。插件不标异常：它可能根本没在用外网，状态标错反而误导。
 
 插件自己看到的和探测对得上，这也写进插件规范，作者排查时用：

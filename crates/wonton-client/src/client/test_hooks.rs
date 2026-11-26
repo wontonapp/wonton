@@ -76,6 +76,15 @@ impl ClientCore {
     ) -> wonton_protocol::HomeViewModel {
         self.scope().home.test_sample_quality(elapsed).await
     }
+
+    /// 像 SDK 丢掉活事件那样清掉一条已打开时间线的条目：缓存还在，补检会把它重建回来。
+    #[doc(hidden)]
+    pub async fn test_clear_timeline(
+        &self,
+        target: wonton_protocol::TimelineTarget,
+    ) -> Result<(), crate::CoreError> {
+        self.scope().chat.test_clear_timeline(&target).await
+    }
 }
 
 impl ClientCore {

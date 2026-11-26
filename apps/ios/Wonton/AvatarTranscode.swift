@@ -66,7 +66,7 @@ enum AvatarTranscode {
         core: ClientCore
     ) throws -> AvatarUpload? {
         let frames = CGImageSourceCreateWithData(data as CFData, nil).map { CGImageSourceGetCount($0) } ?? 0
-        guard item.isGIF || frames > 1 else { return nil }
+        guard slot.allowsAnimated, item.isGIF || frames > 1 else { return nil }
         let (square, edge) = squareEdge(data)
         if square, edge <= Int(core.maxAvatarEdge()), data.count <= Int(core.maxAvatarBytes()),
            let mime = item.supportedContentTypes.first?.preferredMIMEType {

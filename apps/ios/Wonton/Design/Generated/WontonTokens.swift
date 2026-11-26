@@ -12,14 +12,20 @@ enum WontonSpacing {
     static let pageInset: CGFloat = 16
     static let sectionGap: CGFloat = 24
     static let runGap: CGFloat = 2
-    static let groupGap: CGFloat = 8
+    static let groupGap: CGFloat = 6
+    static let bubbleEdge: CGFloat = 4
+    static let bubbleInsetX: CGFloat = 11
+    static let bubbleInsetY: CGFloat = 6
+    static let bubbleOpposite: CGFloat = 36
+    static let chatFloatInset: CGFloat = 8
 }
 
 enum WontonRadii {
     static let control: CGFloat = 14
     static let card: CGFloat = 20
-    static let bubble: CGFloat = 17
-    static let bubbleJoined: CGFloat = 6
+    static let bubble: CGFloat = 16
+    static let bubbleJoined: CGFloat = 8
+    static let webXs: CGFloat = 6
     static let pill: CGFloat = 999
     static let bar: CGFloat = 999
     static let barItem: CGFloat = 999
@@ -60,7 +66,14 @@ enum WontonSize {
     static let hairline: CGFloat = 1
     static let quoteBar: CGFloat = 2
     static let bubbleTail: CGFloat = 6
+    static let bubbleTailRise: CGFloat = 9
+    static let chatControl: CGFloat = 44
+    static let choiceButton: CGFloat = 42
+    static let datePill: CGFloat = 22
+    static let commandAvatar: CGFloat = 28
     static let messageAvatar: CGFloat = 34
+    static let commandMenu: CGFloat = 240
+    static let attachTab: CGFloat = 76
 }
 
 enum WontonRatio {
@@ -70,6 +83,12 @@ enum WontonRatio {
     static let codeFill: CGFloat = 0.1
     static let bubbleWidth: CGFloat = 0.8
     static let composerLines: CGFloat = 6
+    static let wallTint: CGFloat = 0.16
+    static let wallPattern: CGFloat = 0.14
+    static let serviceFill: CGFloat = 0.32
+    static let serviceFillDark: CGFloat = 0.16
+    static let jumpHighlight: CGFloat = 0.2
+    static let tabHighlight: CGFloat = 0.14
 }
 
 enum WontonGesture {
@@ -103,4 +122,11 @@ extension WontonTextStyle {
     static let body = WontonTextStyle(size: 16, line: 22, weight: .regular, relativeTo: .body)
     static let supporting = WontonTextStyle(size: 14, line: 20, weight: .regular, relativeTo: .subheadline)
     static let caption = WontonTextStyle(size: 12, line: 16, weight: .regular, relativeTo: .caption)
+    static let message = WontonTextStyle(size: 16, line: 21, weight: .regular, relativeTo: .body)
+    static let messageMeta = WontonTextStyle(size: 11, line: 13, weight: .regular, relativeTo: .caption2)
+    static let senderName = WontonTextStyle(size: 14, line: 18, weight: .semibold, relativeTo: .subheadline)
+    static let choice = WontonTextStyle(size: 15, line: 20, weight: .medium, relativeTo: .subheadline)
+    static let datePill = WontonTextStyle(size: 13, line: 16, weight: .medium, relativeTo: .footnote)
+    static let barTitle = WontonTextStyle(size: 17, line: 22, weight: .semibold, relativeTo: .headline)
+    static let barStatus = WontonTextStyle(size: 13, line: 16, weight: .regular, relativeTo: .footnote)
 }

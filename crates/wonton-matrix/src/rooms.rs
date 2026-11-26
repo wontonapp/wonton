@@ -130,6 +130,8 @@ pub struct RoomInfo {
     pub latest: Option<LatestMessage>,
     /// 未读消息数，按本账号的已读回执在本机算出。
     pub unread_count: u64,
+    /// 未读里提到本账号的条数（ADR-0121 的「@」徽标）；话题里的提及也算在房间头上。
+    pub unread_mentions: u64,
     /// 房间里有人在通话，同 [`ChatRoom::call_active`](crate::ChatRoom::call_active)。
     pub call_active: bool,
 }
@@ -152,7 +154,8 @@ pub struct LatestMessage {
 }
 
 impl MatrixSession {
-    /// 和另一个用户建一个私聊房间并邀请对方，返回房间 ID。`encrypted` 决定是否开端到端加密。
+    /// 和另一个用户建一个私聊房间并邀请对方，返回房间 ID。新建的私聊不加密；`encrypted` 为真时照旧建加密房间，
+    /// 用来覆盖已有的加密房间。
     pub async fn create_direct_chat(&self, peer: &UserId, encrypted: bool) -> Result<OwnedRoomId> {
         // 建房时邀请失败，服务器只记日志：对方不存在时房间照样建出来，里面只有自己（Tuwunel 上实测）。
         if let Err(error) = self.client.account().fetch_user_profile_of(peer).await
@@ -754,6 +757,7 @@ async fn room_info_in(room: &Room, state: RoomState) -> RoomInfo {
         membership: state.into(),
         latest: latest_message(room).await,
         unread_count: room.num_unread_messages() + crate::side_chat::threads_unread(room).await,
+        unread_mentions: room.num_unread_mentions(),
         call_active: room.has_active_room_call(),
     }
 }

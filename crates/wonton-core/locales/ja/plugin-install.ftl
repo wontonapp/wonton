@@ -261,7 +261,6 @@ plugin-install-prv-permission-needs-egress = egress.proxy権限にはprovides.eg
 plugin-install-prv-egress-needs-network = provides.egress_proxyにはnetwork.egress権限の申請が必要です
 plugin-install-prv-egress-port = provides.egress_proxy.portを0にはできません
 plugin-install-prv-empty = providesには少なくとも1つの能力の宣言が必要です
-plugin-install-prv-models-system-only = provides.modelsを宣言できるのはkind: systemのアプリだけです
 plugin-install-prv-models-port = provides.models.portを0にはできません
 plugin-install-prv-models-apis-path = provides.models.apisのパスは/で始まる必要があります
 plugin-install-prv-models-default-model = provides.models.default_modelを空にはできません
@@ -518,8 +517,9 @@ plugin-install-img-worker-host-exited = 画像処理のヘルパーが終了し�
 plugin-install-img-worker-host-not-ready = 画像処理のヘルパーが準備できませんでした：{ $error }
 plugin-install-img-worker-host-protocol = 画像処理のヘルパーのプロトコルバージョンは { $got } ですが、コアは { $want } です
 
-## 预装（启动时随服务器带的包）失败的原因。
+## 预装（启动时随服务器带的包）进行不下去的原因。
 plugin-install-preinstall-retrying = プリインストールに失敗しました（{ $attempts } 回試行、自動で再試行します）
+plugin-install-preinstall-waiting = プロキシがまだ準備できていません（自動で再試行します）
 plugin-install-preinstall-failed = プリインストールに失敗しました
 
 # ── 能力依存（capabilities.rs、ADR-0053）──────────────────────────────────
@@ -530,10 +530,12 @@ plugin-capability-no-consumer = { $capability } には利用者宣言がなく�
 plugin-capability-duplicate = { $field } の能力 { $capability } が重複しています
 plugin-capability-in-both-lists = 能力 { $capability } を requires と wants の両方に入れられません
 plugin-capability-provider-requires = { $capability } はこのプラグイン自身が提供している能力ではありません：能力を提供するプラグインは自分も提供している能力しか requires できません
+plugin-capability-models-in-requires = models は任意です：requires ではなく wants: [models] と書いてください
 plugin-capability-port-zero = provides.{ $capability }.port は 0 にできません
 plugin-capability-credentials-required = provides.{ $capability } には credentials の宣言が必要です。利用者ごとに専用の資格情報を発行するためです
 plugin-capability-credentials-forbidden = provides.{ $capability } には credentials を宣言できません。この能力の提供元はコアが転送した要求だけを受け付けます
 plugin-capability-credentials-argv = provides.{ $capability }.credentials.{ $field } は空でない argv で、{ $placeholder } で資格情報名を指し示す必要があります
+plugin-capability-media-source-empty = provides.{ $capability }.{ $field } には少なくとも 1 つの値を指定してください
 plugin-capability-service-unknown = { $field } が参照するサービス `{ $service }` が compose ファイルにありません
 plugin-capability-service-not-forwardable = { $field } は network_mode: none のサービスを指せません。コアが転送し、そこで資格情報を発行するためです
 plugin-install-capability-deps-unsupported = このコアはプラグイン間の依存関係にまだ対応していません。コアを更新してからインストールしてください

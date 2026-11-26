@@ -28,7 +28,15 @@ enum QualityPreviews {
     static func fakeHome(relay: Bool) -> HomeViewModel {
         HomeViewModel(
             deviceId: "0", serverId: nil, status: .connected,
-            path: HomePath(relay: relay, publicRelay: false, lan: false, rttMs: 1_240), notice: nil,
+            path: HomePath(
+                relay: relay, publicRelay: false, lan: false, rttMs: 1_240,
+                relayUrl: relay ? "https://relay.example.org/" : nil
+            ),
+            currentRelay: relay
+                ? RelayCurrent(url: "https://relay.example.org/", rttMs: 1_240)
+                : nil,
+            relays: fakeRelays(),
+            notice: nil,
             details: ConnectionDetails(
                 network: .wifi, relay: .ok, server: .ok, lastConnectedAtMs: 1_794_000_000_000,
                 handshakeMs: 120, disconnects: 0, failedDials: 0, sentPackets: 900, lostPackets: 66,
@@ -36,6 +44,23 @@ enum QualityPreviews {
                 lastFailure: nil, diagnostic: nil, addressesStale: false, udpFlows: [], udpBufferEvictedDatagrams: nil
             ),
             proxy: nil, webUrl: nil, pairing: nil, invite: nil, keepConnection: false, justRecovered: false
+        )
+    }
+
+    /// 中继设置预览：一台内置中继正在用，一条主人自己配的排在后面。
+    static func fakeRelays() -> RelaySettingsView {
+        RelaySettingsView(
+            phase: .idle,
+            entries: [
+                RelaySettingEntry(
+                    url: "https://relay.example.org/", token: nil, quicPort: nil, tier: 0,
+                    source: .builtin, state: .connected, editable: true
+                ),
+                RelaySettingEntry(
+                    url: "https://relay.example.net/", token: "wonton-relay-token", quicPort: 7_842, tier: 1,
+                    source: .settings, state: .unknown, editable: true
+                )
+            ]
         )
     }
 }

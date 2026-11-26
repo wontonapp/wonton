@@ -65,4 +65,8 @@ enum SettingsRoute: Hashable {
     case notifications
     case appLock
     case about
+    case privacy
+    case licenses
+    /// 打开某个许可的全文，按许可 id 找（两个 id 可能同名）。
+    case licenseText(String)
 }

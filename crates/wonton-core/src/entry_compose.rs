@@ -7,9 +7,12 @@ use anyhow::Context;
 use serde_json::{Value, json};
 
 use crate::entry_settings::EntrySettings;
+use crate::home_service::Registration;
 
+/// 入口和连接器的镜像。3.2.8-alpine 的构建开了 pthread 模拟，`-S` 打 Usage，所以用 3.4-alpine。
+/// `scripts/mirror-test-images.sh` 从这里的字面量取测试镜像；测试直接用这个常量，不再抄一份。
 pub const HAPROXY_IMAGE: &str =
-    "haproxy:3.2.8-alpine@sha256:8c6b55d891584afded3ab1b91063a703ecc8ff2481302b691773648ffa806226";
+    "haproxy:3.4-alpine@sha256:8aa6458a9d22a8364a2d2ee9ce93de0cc4a2789e3cf63f0b44adc972863724d7";
 
 pub fn render(
     base: &str,
@@ -45,10 +48,14 @@ pub fn render(
         .push(json!(
             "${WONTON_INSTALL_DIR}/secrets/tuwunel:${WONTON_INSTALL_DIR}/secrets/tuwunel"
         ));
-    // 网络和核心在这几张网络上的绑定不管有没有入口设置都渲染：启动时就能定下 8484 绑在哪、主网关排除哪个地址；
-    // 容器本身由核心按设置建（`entry_containers`）。
+    // 网络和核心在这几张网络上的绑定不看设置：启动时就能定下 8484 绑在哪、主网关排除哪个地址；
+    // 容器和入口配置由核心按有没有要服务的名字和已发布的证书管（`entry_containers`）。
     compose["services"]["core"]["networks"]["clients"] =
         json!({"aliases":["entry-gateway.wonton.internal"]});
+    // 配对前端的客户端 API 直给 Tuwunel（入口的 `paired` 前端）：入口在新后端上按这个别名找它，所以 Tuwunel
+    // 也要接进 clients。clients 是隔离网络，Tuwunel 仍然连不到宿主。
+    compose["services"]["tuwunel"]["networks"]["clients"] =
+        json!({"aliases":["tuwunel.wonton.internal"]});
     compose["services"]["core"]["environment"]["WONTON_ENTRY_LISTEN"] =
         json!("entry-gateway.wonton.internal:8484");
     // 隧道只绑核心在 core 网络上的地址（ADR-0021）：被攻破的入口容器在 clients 网络上发到隧道端口的包
@@ -77,6 +84,10 @@ pub fn render(
     // 连接器只经这张普通桥接出网。
     compose["networks"]["relay"] = json!({});
     let Some(settings) = settings else {
+        // 没有入口：联邦流直接落到 Tuwunel 的 8448（私用名有自签的 TLS；有名字没入口时它只有明文，
+        // 对端会停在 TLS 握手，配好入口重新安装才换成入口的 8449）。
+        compose["services"]["core"]["environment"]["WONTON_MATRIX_FEDERATION_ADDR"] =
+            json!("tuwunel.wonton.internal:8448");
         return Ok(serde_json::to_string_pretty(&compose)?);
     };
     // 配了解析器时核心和 lego 都用它：入口的 ACME 目录、acme-dns 和 CAA 都靠这些名字。
@@ -93,36 +104,15 @@ pub fn render(
     Ok(serde_json::to_string_pretty(&compose)?)
 }
 
-pub fn write(install_dir: &Path, settings: &EntrySettings) -> anyhow::Result<()> {
-    write_model(
-        install_dir,
-        &crate::entry_haproxy::Model::federation_only(&settings.domain, &settings.domain),
-    )?;
-    let directory = install_dir.join("entry");
-    if let Some(home) = &settings.registration {
-        let trusted_ca = settings
-            .relay_ca
-            .as_ref()
-            .context("中继连接必须配置 WONTON_FRP_CA_FILE（校验 frps 证书）")?;
-        let ca = std::fs::read_to_string(trusted_ca)?;
-        crate::install::write_private(&directory.join("relay-ca.pem"), &ca)?;
-        let frpc = json!({
-            "serverAddr":home.relay.host,"serverPort":home.relay.port,"user":home.home,
-            "metadatas":{"token":home.frp_token},"loginFailExit":true,
-            "transport":{"tls":{"enable":true,"disableCustomTLSFirstByte":false,"serverName":home.relay.server_name,"trustedCaFile":"/config/relay-ca.pem"},"heartbeatInterval":30,"heartbeatTimeout":90},
-            "proxies":[{"name":"matrix","type":"https","localIP":"entry-edge.wonton.internal","localPort":8443,"customDomains":[home.domain],"transport":{"proxyProtocolVersion":"v2"}}]
-        });
-        crate::install::write_private(
-            &directory.join("frpc.json"),
-            &serde_json::to_string_pretty(&frpc)?,
-        )?;
-    } else {
-        crate::install::write_private(
-            &directory.join("connector.cfg"),
-            "global\n  maxconn 1024\ndefaults\n  mode tcp\n  timeout connect 5s\n  timeout client 60s\n  timeout server 60s\nfrontend public\n  bind :8443\n  default_backend entry\nbackend entry\n  server entry entry-edge.wonton.internal:8443 send-proxy-v2\n",
-        )?;
-    }
-    prepare_permissions(install_dir)
+/// 连接器的固定配置：路由器把公网端口转到宿主，连接器在宿主上收、带 PROXY 头交给入口。
+pub const CONNECTOR_CONFIG: &str = "global\n  maxconn 1024\ndefaults\n  mode tcp\n  timeout connect 5s\n  timeout client 60s\n  timeout server 60s\nfrontend public\n  bind :8443\n  default_backend entry\nbackend entry\n  server entry entry-edge.wonton.internal:8443 send-proxy-v2\n";
+
+/// 一轮要写的入口配置：实际服务的后缀、连接器地址和家名服务。
+pub struct Config<'a> {
+    pub domain: &'a str,
+    pub connector: &'a str,
+    pub registration: Option<&'a Registration>,
+    pub relay_ca: Option<&'a Path>,
 }
 
 /// 按给定模型重写入口配置和两份 crt-list（对账发现网络地址和装机时不一样时用）。落盘和权限照旧。
@@ -130,7 +120,7 @@ pub fn write_model(install_dir: &Path, model: &crate::entry_haproxy::Model) -> a
     let directory = install_dir.join("entry");
     std::fs::create_dir_all(&directory)?;
     let rendered = crate::entry_haproxy::render(model).map_err(anyhow::Error::msg)?;
-    crate::install::write_private(&directory.join("haproxy.cfg"), &rendered.config)?;
+    write_mounted_config(&directory.join("haproxy.cfg"), &rendered.config)?;
     std::fs::create_dir_all(directory.join("certs"))?;
     crate::install::write_private(
         &directory.join("certs/public.crt-list"),
@@ -141,6 +131,157 @@ pub fn write_model(install_dir: &Path, model: &crate::entry_haproxy::Model) -> a
         &rendered.lan_crt_list,
     )?;
     Ok(())
+}
+
+/// 入口模型：只有联邦，连接器地址按实际网段。
+fn model(config: &Config) -> crate::entry_haproxy::Model {
+    let mut model = crate::entry_haproxy::Model::federation_only(config.domain, config.domain);
+    model.connectors = vec![config.connector.to_owned()];
+    model
+}
+
+/// 内容有变才重写入口配置和两份 crt-list，返回是否写了：容器每轮都读这些文件。
+fn refresh_model(dir: &Path, config: &Config) -> anyhow::Result<bool> {
+    let directory = dir.join("entry");
+    std::fs::create_dir_all(directory.join("certs"))?;
+    let rendered = crate::entry_haproxy::render(&model(config)).map_err(anyhow::Error::msg)?;
+    let mut changed = false;
+    for (name, content) in [
+        ("haproxy.cfg", &rendered.config),
+        ("certs/public.crt-list", &rendered.public_crt_list),
+        ("certs/lan.crt-list", &rendered.lan_crt_list),
+    ] {
+        let path = directory.join(name);
+        if std::fs::read_to_string(&path).ok().as_deref() == Some(content.as_str()) {
+            continue;
+        }
+        // haproxy.cfg 是单文件挂载：改名会让容器继续看旧 inode；crt-list 在挂载的目录里，可以换新文件。
+        if name == "haproxy.cfg" {
+            write_mounted_config(&path, content)?;
+        } else {
+            crate::install::write_private(&path, content)?;
+        }
+        changed = true;
+    }
+    Ok(changed)
+}
+
+/// 连接器配置：有家名服务写 frpc 和它校验 frps 用的 CA，否则写路由器转发的 HAProxy 配置。
+fn write_connector(dir: &Path, config: &Config) -> anyhow::Result<()> {
+    let directory = dir.join("entry");
+    let Some(home) = config.registration else {
+        crate::install::write_private(&directory.join("connector.cfg"), CONNECTOR_CONFIG)?;
+        return Ok(());
+    };
+    let trusted_ca = config
+        .relay_ca
+        .context("中继连接必须配置 WONTON_FRP_CA_FILE（校验 frps 证书）")?;
+    let ca = std::fs::read_to_string(trusted_ca)?;
+    crate::install::write_private(&directory.join("relay-ca.pem"), &ca)?;
+    let frpc = json!({
+        "serverAddr":home.relay.host,"serverPort":home.relay.port,"user":home.home,
+        "metadatas":{"token":home.frp_token},"loginFailExit":true,
+        "transport":{"tls":{"enable":true,"disableCustomTLSFirstByte":false,"serverName":home.relay.server_name,"trustedCaFile":"/config/relay-ca.pem"},"heartbeatInterval":30,"heartbeatTimeout":90},
+        "proxies":[{"name":"matrix","type":"https","localIP":"entry-edge.wonton.internal","localPort":8443,"customDomains":[home.domain],"transport":{"proxyProtocolVersion":"v2"}}]
+    });
+    crate::install::write_private(
+        &directory.join("frpc.json"),
+        &serde_json::to_string_pretty(&frpc)?,
+    )
+}
+
+/// 写入口配置和连接器配置，返回入口配置有没有变。
+pub fn sync(dir: &Path, config: &Config) -> anyhow::Result<bool> {
+    let changed = refresh_model(dir, config)?;
+    write_connector(dir, config)?;
+    prepare_permissions(dir)?;
+    Ok(changed)
+}
+
+pub fn write(install_dir: &Path, settings: &EntrySettings) -> anyhow::Result<()> {
+    // 已发布的证书还不认识新后缀时按旧名字写，别让入口拿着对不上的 crt-list 起。
+    let names =
+        crate::entry_certificate::published_names(&install_dir.join("entry/certs/site.pem"));
+    let domain = crate::entry_certificate::served_suffix(&names, &settings.domain);
+    sync(
+        install_dir,
+        &Config {
+            domain: &domain,
+            connector: crate::entry_haproxy::CONNECTOR_ADDRESS,
+            registration: settings.registration.as_ref(),
+            relay_ca: settings.relay_ca.as_deref(),
+        },
+    )?;
+    Ok(())
+}
+
+// 单文件 bind mount 固定 inode，重命名会让运行中的容器继续看到旧配置。
+fn write_mounted_config(path: &Path, text: &str) -> anyhow::Result<()> {
+    use std::io::Write;
+    use std::os::unix::fs::OpenOptionsExt;
+    // 上一版把要写的文件漏了时 Docker 会在宿主侧把挂载源建成目录；改名换不掉目录，先删掉。
+    if path.is_dir() {
+        std::fs::remove_dir_all(path).with_context(|| format!("替换目录 {}", path.display()))?;
+    }
+    let mut file = std::fs::OpenOptions::new()
+        .write(true)
+        .create(true)
+        .truncate(true)
+        .mode(0o600)
+        .open(path)?;
+    file.write_all(text.as_bytes())?;
+    file.sync_all()?;
+    Ok(())
+}
+
+/// 一次入口配置变更的旧内容；某一文件写失败也必须逐个恢复全部文件。
+pub(crate) struct ModelSnapshot(Vec<(std::path::PathBuf, Option<String>)>);
+
+impl ModelSnapshot {
+    pub(crate) fn read(install_dir: &Path) -> anyhow::Result<Self> {
+        let mut files = Vec::new();
+        for name in ["haproxy.cfg", "certs/public.crt-list", "certs/lan.crt-list"] {
+            let path = install_dir.join("entry").join(name);
+            // 旧版把挂载源建成了目录：和“还没有这个文件”一样，回滚时按文件重写。
+            if path.is_dir() {
+                files.push((path, None));
+                continue;
+            }
+            let content = match std::fs::read_to_string(&path) {
+                Ok(content) => Some(content),
+                Err(error) if error.kind() == std::io::ErrorKind::NotFound => None,
+                Err(error) => return Err(error.into()),
+            };
+            files.push((path, content));
+        }
+        Ok(Self(files))
+    }
+
+    pub(crate) fn restore(self, install_dir: &Path) -> anyhow::Result<()> {
+        let mut failures = Vec::new();
+        for (path, content) in self.0 {
+            let result = match content {
+                Some(content) if path.ends_with("haproxy.cfg") => {
+                    write_mounted_config(&path, &content)
+                }
+                Some(content) => crate::install::write_private(&path, &content),
+                None if path.is_dir() => std::fs::remove_dir_all(&path).map_err(Into::into),
+                None => match std::fs::remove_file(&path) {
+                    Ok(()) => Ok(()),
+                    Err(error) if error.kind() == std::io::ErrorKind::NotFound => Ok(()),
+                    Err(error) => Err(error.into()),
+                },
+            };
+            if let Err(error) = result {
+                failures.push(format!("{}: {error:#}", path.display()));
+            }
+        }
+        if let Err(error) = prepare_permissions(install_dir) {
+            failures.push(format!("恢复权限: {error:#}"));
+        }
+        anyhow::ensure!(failures.is_empty(), "{}", failures.join("；"));
+        Ok(())
+    }
 }
 
 pub fn prepare_permissions(dir: &Path) -> anyhow::Result<()> {
@@ -406,6 +547,31 @@ mod tests {
         );
     }
 
+    /// 配对前端的客户端 API 直给 Tuwunel：入口按这个别名在 clients 上找它，后端才不会 503。
+    #[test]
+    fn tuwunel_joins_the_clients_network_for_the_paired_frontend() {
+        let dir = tempfile::tempdir().unwrap();
+        let compose: Value =
+            serde_json::from_str(&render(crate::install::COMPOSE, None, dir.path()).unwrap())
+                .unwrap();
+        assert_eq!(
+            compose["services"]["tuwunel"]["networks"]["clients"],
+            json!({"aliases": ["tuwunel.wonton.internal"]})
+        );
+        assert!(compose["services"]["tuwunel"]["networks"]["edge"].is_null());
+        // 给 Tuwunel 加上新网络不能顶掉核心自己的两张网络：入口和隧道还按各自的别名找核心。
+        assert_eq!(
+            compose["services"]["core"]["networks"]["clients"],
+            json!({"aliases": ["entry-gateway.wonton.internal"]})
+        );
+        assert!(
+            compose["services"]["core"]["networks"]["core"]["aliases"]
+                .as_array()
+                .unwrap()
+                .contains(&json!("tunnel.wonton.internal"))
+        );
+    }
+
     /// 主网关从一开始就不在入口地址上接连接：已攻破的入口读不到首次配对码。
     #[test]
     fn main_listener_excludes_clients_address_from_start() {
@@ -439,6 +605,11 @@ mod tests {
             std::fs::read_to_string(dir.path().join("entry/certs/lan.crt-list"))
                 .unwrap()
                 .is_empty()
+        );
+        assert!(
+            std::fs::read_to_string(dir.path().join("entry/connector.cfg"))
+                .unwrap()
+                .contains("send-proxy-v2")
         );
     }
 

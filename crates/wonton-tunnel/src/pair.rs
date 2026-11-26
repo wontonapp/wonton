@@ -340,6 +340,7 @@ mod tests {
             relays: vec![crate::relays::Relay {
                 url: "https://relay.example.com/".parse().unwrap(),
                 token: Some(crate::relays::RelayToken::new("tok")),
+                quic_port: None,
                 tier: 0,
             }],
             direct_addrs: vec![

@@ -19,8 +19,11 @@ done
 [[ "$(openssl version)" == OpenSSL\ [3-9]* ]] || fail '需要 OpenSSL 3+'
 [[ -n "${WONTON_DEV_CORE_SUBNET:-}" ]] || fail '先经 stack-slot.sh acquire -- 运行，见 README'
 case "${DOCKER_HOST:-}" in ssh://* | tcp://*) fail '仅支持本机 Docker；请在目标主机运行' ;; esac
+# shellcheck source=deploy/dev/core/dev-guard.sh
+source "$here/dev-guard.sh"
 # An explicit project lets the caller register the exact stack with stack-slot.
 export WONTON_DEV_PROJECT="${WONTON_DEV_PROJECT:-wonton-mailbox-$(date +%s)-$$}"
+dev_guard_check "$WONTON_DEV_PROJECT"
 [[ "$WONTON_DEV_PROJECT" =~ ^wonton-mailbox-[a-z0-9-]+$ ]] || fail '项目名须为 wonton-mailbox-<唯一后缀>'
 export WONTON_DEV_INSTANCE="mb$(openssl rand -hex 6)"
 export WONTON_DEV_PORT="${WONTON_DEV_PORT:-18561}"
@@ -40,6 +43,9 @@ plugin_id=app.mailbox-smoke
 plugin="wonton-$WONTON_DEV_INSTANCE--app-mailbox-smoke--sender"
 python_image=python:3.13.9-alpine3.22@sha256:e5fa639e49b85986c4481e28faa2564b45aa8021413f31026c3856e5911618b1
 started=0
+# core 网络由 dev.sh 建和删（网络在 compose 文件里是 external，见 dev.sh 的 ensure_core_network）。
+# shellcheck source=deploy/dev/core/dev.sh
+source "$here/dev.sh"
 compose() { docker compose -f "$here/compose.yaml" -f "$work/override.yaml" "$@"; }
 cleanup() {
   local status=$? resource
@@ -60,6 +66,7 @@ cleanup() {
     docker rm -f "$resource" >/dev/null 2>&1
   done
   if [[ "$started" == 1 ]]; then compose down --volumes --remove-orphans >/dev/null 2>&1; fi
+  remove_core_network
   for resource in $(docker network ls -q --filter "label=wonton.instance=$WONTON_DEV_INSTANCE"); do
     docker network rm "$resource" >/dev/null 2>&1
   done
@@ -104,11 +111,6 @@ services:
     environment:
       WONTON_SYSTEM_PLUGINS: ""
       WONTON_DEFAULT_PLUGINS: ""
-networks:
-  core:
-    ipam:
-      config:
-        - subnet: $WONTON_DEV_CORE_SUBNET
 EOF
 cat >"$work/plugin.yaml" <<EOF
 services:
@@ -136,6 +138,7 @@ export WONTON_BUILD_COMMIT
   -t "wonton-core:$WONTON_CORE_IMAGE_TAG" -f "$here/Dockerfile" "$repo" >"$work/build.log" 2>&1 ||
   fail '核心构建失败，详情见退出时保留的私有日志'
 started=1
+ensure_core_network
 compose up -d --no-build --wait >"$work/up.log" 2>&1 || fail 'Compose 启动或健康检查失败'
 docker run -d --name "$probe" --network "container:$core" --entrypoint python3 \
   "$python_image" -c 'import time; time.sleep(3600)' >/dev/null

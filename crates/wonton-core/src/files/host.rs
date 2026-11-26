@@ -1,5 +1,6 @@
 //! 文件服务要核心别的部分做的事：找插件的服务、读插件的资源、认房间里的 Bot、给主人发消息。
 
+use std::collections::BTreeSet;
 use std::sync::Arc;
 
 use futures_util::FutureExt;
@@ -48,6 +49,12 @@ pub trait FileHost: Send + Sync {
     fn share_granted(&self, plugin: &PluginId, share: &str) -> Result<bool, Failure>;
     /// 这个房间里的 Bot 的名字。
     fn bots_in_room(&self, room: &str) -> Result<Vec<String>, Failure>;
+    /// `who` 是不是这些房间中某一间的当前成员。查不到任何一间时是错误，不是 `false`。
+    fn member_of_any_room<'a>(
+        &'a self,
+        who: &'a Accessor,
+        rooms: &'a BTreeSet<String>,
+    ) -> BoxFuture<'a, Result<bool, Failure>>;
     /// 在和主人的“Wonton”私聊里发一条文字。
     fn notify_owner<'a>(&'a self, text: &'a str) -> BoxFuture<'a, Result<(), Failure>>;
 }
@@ -179,6 +186,13 @@ impl FileHost for CoreHost {
         self.plugins
             .bots_in_room(room)
             .map_err(|e| Failure::internal(e.to_string()))
+    }
+    fn member_of_any_room<'a>(
+        &'a self,
+        who: &'a Accessor,
+        rooms: &'a BTreeSet<String>,
+    ) -> BoxFuture<'a, Result<bool, Failure>> {
+        self.member_of_file_rooms(who, rooms).boxed()
     }
 
     fn notify_owner<'a>(&'a self, text: &'a str) -> BoxFuture<'a, Result<(), Failure>> {

@@ -127,8 +127,8 @@
     <string name="owner_secrets_problem_other">Couldn\'t load the keys. Try again.</string>
     <!-- Attachment sheet: bottom tab that shows the phone's album as a photo grid. -->
     <string name="attach_album">Album</string>
-    <!-- Attachment sheet: button that puts the picked photos into the message. Argument: how many. -->
-    <string name="attach_add">Add %1$d</string>
+    <!-- Attachment sheet: caption field at the bottom once photos are selected; the caption is sent with the photos. -->
+    <string name="sheet_note_hint">Add a message</string>
     <!-- Attachment sheet: the album has no photos. -->
     <string name="attach_album_empty">No photos in your album</string>
     <!-- Attachment sheet: the album permission was denied. -->
@@ -137,4 +137,18 @@
     <string name="attach_open_settings">Open Settings</string>
     <!-- Screen-reader label of the check on a picked album photo. -->
     <string name="attach_selected">Picked</string>
+    <!-- Section heading for the profile photo. -->
+    <string name="owner_profile_avatar">Avatar</string>
+    <!-- Next step when the core is too old to set an avatar. -->
+    <string name="owner_profile_avatar_not_ready_next">Update the app or your home\'s core and try again</string>
+    <!-- Title when the core is too old to set an avatar. -->
+    <string name="owner_profile_avatar_not_ready">This version can\'t change your avatar yet</string>
+    <!-- Next step when chat is not signed in yet. -->
+    <string name="owner_profile_avatar_not_logged_in_next">Try again in a moment</string>
+    <!-- Title when chat is not signed in yet. -->
+    <string name="owner_profile_avatar_not_logged_in">Chat isn\'t signed in yet</string>
+    <!-- Button that opens the photo picker. -->
+    <string name="owner_profile_avatar_pick">Choose Photo</string>
+    <!-- Button that removes the profile photo. -->
+    <string name="owner_profile_avatar_remove">Remove Avatar</string>
 </resources>

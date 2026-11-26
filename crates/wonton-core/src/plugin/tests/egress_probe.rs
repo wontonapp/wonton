@@ -64,7 +64,19 @@ struct Rig {
 
 impl Rig {
     async fn new(in_container: bool, env: Option<&str>) -> Self {
+        Self::with_request_limit(in_container, env, None).await
+    }
+
+    async fn with_request_limit(
+        in_container: bool,
+        env: Option<&str>,
+        limit: Option<std::time::Duration>,
+    ) -> Self {
         let (docker, engine) = FakeDocker::start().await;
+        let engine = match limit {
+            Some(limit) => engine.with_request_limit_for_test(limit),
+            None => engine,
+        };
         add_default_bridge(&docker);
         let dir = tempfile::tempdir().unwrap();
         let host: Host = Arc::new(Mutex::new(Ok(office())));
@@ -154,17 +166,78 @@ async fn the_relay_failing_while_the_proxy_answers_points_at_the_relay() {
 }
 
 #[tokio::test]
+async fn a_relay_still_joining_the_network_is_not_reported_as_a_failure() {
+    let rig = Rig::proxied().await;
+    rig.m.probe_egress(&Languages::default()).await.unwrap();
+    // 容器在跑，可还没拿到网络里的地址：正是刚启动、还在接网络的时候。
+    rig.docker
+        .set_state(RELAY, json!({"Status": "running", "Running": true}));
+    rig.docker
+        .add_endpoint(RELAY, RELAY, json!({"IPAMConfig": {"IPv4Address": ""}}));
+    rig.m.probe_egress(&Languages::default()).await.unwrap();
+    let found = rig.m.egress_problem().unwrap();
+    assert_eq!(found.reason, EgressFailure::Waiting);
+    assert!(found.message.contains("network"), "{}", found.message);
+    assert!(!found.message.contains("not running"), "{}", found.message);
+
+    // 拿到地址就好：探针不会再停在这一步。
+    rig.docker.add_endpoint(
+        RELAY,
+        RELAY,
+        json!({"IPAMConfig": {"IPv4Address": "172.30.0.9"}}),
+    );
+    rig.m.probe_egress(&Languages::default()).await.unwrap();
+    assert_eq!(rig.m.egress_problem(), None);
+}
+
+#[tokio::test]
+async fn a_relay_that_was_just_recreated_and_listens_a_moment_later_is_not_a_failure() {
+    let rig = Rig::proxied().await;
+    // 没有出口容器：这一探会把它建起来。刚起的 gost 还没监听，第一次连不上，一秒后通。
+    {
+        let mut script = rig.script.lock().unwrap();
+        script.via_relay_later = vec![Some("Connection refused".to_owned()), None];
+    }
+    rig.m.probe_egress(&Languages::default()).await.unwrap();
+    assert_eq!(rig.m.egress_problem(), None);
+    assert_eq!(rig.script.lock().unwrap().via_relay_later.len(), 0);
+}
+
+#[tokio::test]
 async fn a_relay_image_that_cannot_be_pulled_is_reported_with_dockers_words() {
     let rig = Rig::proxied().await;
     rig.docker.fail_pulls(Some("pull access denied"));
     rig.m.probe_egress(&Languages::default()).await.unwrap();
     let found = rig.m.egress_problem().unwrap();
+    // 拉完了、失败了：是坏，不是还在路上；带上 Docker 的原话，界面指去看镜像名。
     assert_eq!(found.reason, EgressFailure::RelayFailed);
     assert!(
         found.message.contains("pull access denied"),
         "{}",
         found.message
     );
+    assert!(found.message.contains("image"), "{}", found.message);
+}
+
+#[tokio::test]
+async fn a_pull_docker_never_answers_is_reported_as_waiting() {
+    let rig = Rig::with_request_limit(
+        false,
+        Some("http://proxy.lan:7899"),
+        Some(std::time::Duration::from_millis(300)),
+    )
+    .await;
+    rig.docker.slow_pulls(std::time::Duration::from_secs(30));
+    rig.m.probe_egress(&Languages::default()).await.unwrap();
+    let found = rig.m.egress_problem().unwrap();
+    // 拉镜像没回话（国内连 Docker Hub 常见）：可能还在下，报等待，下次核对再看。
+    assert_eq!(found.reason, EgressFailure::Waiting);
+    assert!(
+        found.message.contains("Docker did not answer"),
+        "{}",
+        found.message
+    );
+    assert!(found.message.contains("keeps trying"), "{}", found.message);
 }
 
 #[tokio::test]

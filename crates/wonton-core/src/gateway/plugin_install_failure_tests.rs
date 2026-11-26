@@ -3,6 +3,7 @@ use hyper::{Method, StatusCode};
 use serde_json::json;
 
 use super::tests::{CORE, Harness, TOKEN};
+use crate::plugin::names::container_name;
 
 #[tokio::test]
 async fn failed_install_remains_queryable_until_explicitly_cleared() {
@@ -136,4 +137,48 @@ async fn confirmed_install_can_be_retried_after_rollback() {
         .await;
     assert_eq!(detail.status, StatusCode::OK, "{}", detail.text());
     assert!(detail.json()["installed"]["install_failure"].is_null());
+}
+
+/// 服务到时限还在启动：504 和单独的类别，报告点名服务。截图里的“稍后再试”说不清是慢还是坏（#682）。
+#[tokio::test]
+async fn a_service_still_starting_at_the_deadline_answers_gateway_timeout() {
+    let home = Harness::start(None).await;
+    let bearer = format!("Bearer {TOKEN}");
+    let headers = [("authorization", bearer.as_str())];
+    // 测试的安装期限是 5 秒；健康检查的判定窗（1 秒 × 1 次）比它短，时限就按 5 秒。
+    let package = "services:\n  app:\n    image: nginx\n    healthcheck:\n      test: ['CMD', 'true']\n      interval: 1s\n      retries: 1\nx-wonton:\n  spec: '0.5'\n  id: app.timeout\n  version: 1.0.0\n  kind: app\n  title: {en: Timeout}\n  description: {en: Timeout}\n  permissions: []\n";
+    home.docker.set_state(
+        &container_name("app-timeout", "app"),
+        json!({"Status": "running", "Running": true, "Health": {"Status": "starting"}}),
+    );
+    let response = home
+        .send(
+            Method::POST,
+            CORE,
+            "/_wonton/api/plugins",
+            &headers,
+            Body::from(package),
+        )
+        .await;
+    assert_eq!(
+        response.status,
+        StatusCode::GATEWAY_TIMEOUT,
+        "{}",
+        response.text()
+    );
+    assert_eq!(response.error_kind(), Some("health_timeout"));
+    let message = response.json()["error"]["message"].clone();
+    let message = message.as_str().unwrap();
+    assert!(
+        message.contains(&container_name("app-timeout", "app")),
+        "{message}"
+    );
+    assert!(message.contains("of 5 s"), "{message}");
+    let detail = home
+        .get(CORE, "/_wonton/api/plugins/app.timeout", &headers)
+        .await;
+    let failure = detail.json()["installed"]["install_failure"].clone();
+    assert_eq!(failure["kind"], "health_timeout");
+    // 直装这条链不带重试要的原包（见 install_checked：retry 传 None）。
+    assert!(failure.get("retryable").is_none());
 }

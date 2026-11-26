@@ -1,0 +1,25 @@
+[package]
+name = "wonton-avatar"
+description = "头像文件的实际字节检查：格式、尺寸和时长"
+version.workspace = true
+edition.workspace = true
+rust-version.workspace = true
+license.workspace = true
+publish.workspace = true
+
+# 依赖许可证均为 MIT 或 Apache-2.0（另注明的除外），不引入核心那五个解析器以外的东西。
+[dependencies]
+# MIT OR Apache-2.0。按文件头判图片格式。
+image = { version = "0.25.10", default-features = false, features = ["png", "jpeg", "gif", "webp"] }
+# MIT OR Apache-2.0。逐行 PNG、流式 GIF、WebP 时长和帧校验。
+png = "0.18.1"
+gif = "0.14.2"
+image-webp = "0.2.4"
+zune-core = "0.5.3"
+zune-jpeg = "0.5.15"
+# MPL-2.0。Mozilla 的 MP4 轨道解析器。
+mp4parse = "0.17.0"
+wonton-protocol = { path = "../wonton-protocol" }
+
+[lints]
+workspace = true

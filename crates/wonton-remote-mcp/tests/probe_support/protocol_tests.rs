@@ -1,6 +1,5 @@
-use std::time::Duration;
-
 use axum::http::{Method, StatusCode};
+
 use serde_json::json;
 
 use super::probe_support::{Options, Server, config, initialize, probe, simple};
@@ -199,21 +198,29 @@ async fn probe_rejected_ping_reply_fails_safely_and_cleans_session() {
 
 #[tokio::test]
 async fn probe_ping_reply_uses_the_shared_handshake_deadline() {
+    // The initialize step alone already eats most of the budget, so the reply to
+    // the server's ping has to finish inside the same budget. A per-step budget
+    // would let the reply wait a whole budget of its own and then go on to
+    // tools/list, which a shared one never reaches.
     let remote = Server::remote(Options {
         sse: true,
         server_request: Some(json!({"jsonrpc":"2.0","id":"health","method":"ping"})),
-        delay_method: Some("server-response"),
+        delay_all: std::time::Duration::from_secs(1),
+        hanging_tools_body: true,
         ..Options::default()
     })
     .await;
     let mut config = config();
-    config.probe_timeout = Duration::from_millis(150);
+    config.probe_timeout = std::time::Duration::from_millis(1_700);
     let result = probe(&remote.url, config, "none", json!({})).await;
     assert_eq!(result["outcome"], "unreachable", "{result}");
     let requests = remote.requests();
-    assert_eq!(requests.len(), 3);
+    let methods: Vec<_> = requests
+        .iter()
+        .map(|request| request.method.clone())
+        .collect();
+    assert_eq!(methods, [Method::POST, Method::POST, Method::DELETE]);
     assert_eq!(requests[1].body["id"], "health");
-    assert_eq!(requests[2].method, Method::DELETE);
     assert_eq!(requests[2].headers["mcp-session-id"], "probe-session");
 }
 

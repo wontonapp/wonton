@@ -3,12 +3,13 @@
 use std::time::Duration;
 
 use hyper::Uri;
-use hyper::header::HeaderValue;
+use hyper::header::{AUTHORIZATION, HeaderValue};
 use web_push_native::p256::PublicKey;
 use web_push_native::{Auth, WebPushBuilder};
 
 use super::PushError;
 use super::store::Subscription;
+use super::vapid::Vapid;
 use crate::plugin::egress::core_proxy::CoreProxy;
 
 /// 推送服务替离线的设备留多久（RFC 8030 的 `TTL`）。隔了一天的新消息通知意义不大，App 打开时会同步到。
@@ -35,6 +36,8 @@ pub enum Delivery {
 
 pub struct WebPush {
     client: reqwest::Client,
+    /// 设了才会给推送签 VAPID：_ntfy_ 这类本地/自建服务不需要，我们的中继要求。
+    vapid: Option<Vapid>,
 }
 
 impl WebPush {
@@ -46,7 +49,14 @@ impl WebPush {
             .redirect(reqwest::redirect::Policy::none())
             .build()
             .map_err(|e| PushError::Client(e.to_string()))?;
-        Ok(Self { client })
+        Ok(Self {
+            client,
+            vapid: None,
+        })
+    }
+
+    pub fn set_vapid(&mut self, vapid: Option<Vapid>) {
+        self.vapid = vapid;
     }
 
     pub async fn send(
@@ -59,6 +69,8 @@ impl WebPush {
             .endpoint
             .parse()
             .map_err(|e| PushError::Invalid(format!("推送地址不合法：{e}")))?;
+        // VAPID 的 `aud` 是推送服务的源（scheme 和 host），和推送地址一起留着。
+        let aud = endpoint.clone();
         let key = PublicKey::from_sec1_bytes(&subscription.public_key())
             .map_err(|_| PushError::Invalid("p256dh 不是 P-256 曲线上的点".to_owned()))?;
         let auth = Auth::clone_from_slice(&subscription.auth_secret());
@@ -69,6 +81,10 @@ impl WebPush {
         request
             .headers_mut()
             .insert("urgency", HeaderValue::from_static(urgency));
+        if let Some(vapid) = &self.vapid {
+            let authorization = vapid.header(&aud, TTL).map_err(PushError::Client)?;
+            request.headers_mut().insert(AUTHORIZATION, authorization);
+        }
         let request = reqwest::Request::try_from(request)
             .map_err(|e| PushError::Invalid(format!("推送请求不合法：{e}")))?;
         let host = subscription.endpoint_host();

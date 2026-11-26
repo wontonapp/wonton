@@ -51,8 +51,8 @@
 # WONTON_DEV_OWNER_PROFILE（设成 off 时不替你填资料，测还没填的情形用）、
 # WONTON_DEV_LAN_ADDRESSES（插件的局域网端口只开在这些地址上，即核心的 WONTON_LAN_ADDRESSES；默认核心自动选）、
 # WONTON_DEV_ANNOUNCE_ADDRESSES（告诉手机去连的地址，即核心的 WONTON_ANNOUNCE_ADDRESSES，可以带前缀；设了就绑 0.0.0.0）、
-# WONTON_DEV_CORE_SUBNET（核心网络用这个子网，如 10.214.1.0/24；不设由 Docker 从默认地址池分。默认池只有约 30 个网络，
-# 几套开发栈共用一台 Docker 时会用光；设了就要在这套栈的整个生命里一直设着，换了值 compose 会要求重建网络）、
+# WONTON_DEV_CORE_SUBNET（用这个子网建 core 网络，如 10.214.1.0/24；不设由 Docker 从默认地址池分。默认池只有约 30 个网络，
+# 几套开发栈共用一台 Docker 时会用光。网络已经在了就沿用它的子网，要换得先 down）、
 # WONTON_TASK、WONTON_TTL（打在这套栈容器上的 com.wonton.task、com.wonton.ttl 标签：归哪个任务、到期时刻 ISO 8601；
 # 共用开发机的回收脚本按它们认主，没设时不打值）。
 # 所有 HTTP 请求都在一个与核心共享网络的 curl 容器里发出，所以 DOCKER_HOST 指向远端主机时同样可用。
@@ -63,6 +63,9 @@ set -euo pipefail
 here="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 repo="$(cd "$here/../../.." && pwd)"
 # 本检出（这个 deploy/dev/core）在跑的 compose 项目：compose 自己会打 working_dir 标签，拿它反查。
+# shellcheck source=deploy/dev/core/dev-guard.sh
+. "$here/dev-guard.sh"
+
 detect_project() {
   docker ps -a --filter "label=com.docker.compose.project.working_dir=$here" \
     --format '{{.Label "com.docker.compose.project"}}' 2>/dev/null | sort -u
@@ -138,7 +141,19 @@ if [[ -z "${WONTON_DEV_DATA:-}" ]]; then
 fi
 export WONTON_DEV_DATA
 # 宿主网络中继的套接字目录：`sun_path` 只有 108 字节，检出目录再深也不能用它，放在短的运行目录里，按实例分开。
-export WONTON_DEV_RELAY="${WONTON_DEV_RELAY:-${XDG_RUNTIME_DIR:-/run/user/$(id -u)}/wonton-dev/$WONTON_DEV_INSTANCE}"
+# ssh 进来的会话可能带着别人的 XDG_RUNTIME_DIR（不经 systemd 登录时 /run/user/<自己> 也不存在），选第一个自己能写的。
+if [[ -z ${WONTON_DEV_RELAY:-} ]]; then
+  # 写权限要在整条路径上试（/run/user/<自己> 归自己，底下的 wonton-dev 可能是别人建的）。
+  for relay_base in "${XDG_RUNTIME_DIR:-}" "/run/user/$(id -u)" "${TMPDIR:-/tmp}"; do
+    [[ -n $relay_base ]] || continue
+    if mkdir -p "$relay_base/wonton-dev/$WONTON_DEV_INSTANCE" 2>/dev/null; then
+      WONTON_DEV_RELAY="$relay_base/wonton-dev/$WONTON_DEV_INSTANCE"
+      break
+    fi
+  done
+  WONTON_DEV_RELAY=${WONTON_DEV_RELAY:-${TMPDIR:-/tmp}/wonton-dev/$WONTON_DEV_INSTANCE}
+fi
+export WONTON_DEV_RELAY
 core="$WONTON_DEV_PROJECT"
 base_url="http://$WONTON_DEV_DOMAIN:$WONTON_DEV_PORT"
 # 核心给插件容器、网络和卷打的标签（crates/wonton-core/src/plugin/names.rs）。实例标签只有设了实例名的核心才打，
@@ -210,17 +225,85 @@ EOF2
   chmod 644 "$path"
 }
 
+# core 网络由这里建、由这里删，compose 里声明成 external 只在起栈时把容器接上去。
+# compose 自己管时，渲染出来的网络配置和现有的有一处不同（子网换过、这次没设）就删了重建；
+# 重建后它把已经跑着的系统服务接回去时不带别名（2026-11-20 实测），hydra.wonton.internal 这些名字就丢了，
+# 核心再也解析不到，一直重试（#187）。网络归脚本以后 compose 只接容器，不再动它。
+core_network() { printf '%s_core' "$WONTON_DEV_PROJECT"; }
+
+# compose 靠这两个标签认网络：project 是它自己的，network 必须是 core（核心按同样的标签认自己的网络）。
+ensure_core_network() {
+  local network project subnet
+  network="$(core_network)"
+  if docker network inspect "$network" >/dev/null 2>&1; then
+    project="$(docker network inspect -f '{{index .Labels "com.docker.compose.project"}}' "$network")"
+    if [[ -n $project && $project != "$WONTON_DEV_PROJECT" ]]; then
+      die "网络 $network 已经在了，却属于 compose 项目 $project：换一个项目名，或先把那套拆掉"
+    fi
+    # 已经在了就沿用，不重建：换子网要拆整栈，起栈时再换只会让别名再丢一遍。
+    subnet="$(docker network inspect -f '{{range .IPAM.Config}}{{.Subnet}}{{end}}' "$network")"
+    if [[ -n ${WONTON_DEV_CORE_SUBNET:-} && -n $subnet && $subnet != "$WONTON_DEV_CORE_SUBNET" ]]; then
+      echo "dev.sh：网络 $network 已经在了，子网是 $subnet，沿用（要换成 $WONTON_DEV_CORE_SUBNET 先 down）" >&2
+    fi
+    return 0
+  fi
+  local -a flags=(--label "com.docker.compose.project=$WONTON_DEV_PROJECT" --label com.docker.compose.network=core)
+  [[ -z ${WONTON_DEV_CORE_SUBNET:-} ]] || flags+=(--subnet "$WONTON_DEV_CORE_SUBNET")
+  # 输出先接住：子网撞上别的网络时 Docker 只说“Pool overlaps”，得自己找出撞的是哪张网。
+  local out
+  if ! out="$(docker network create "${flags[@]}" "$network" 2>&1)"; then
+    [[ $out == *overlaps* ]] || die "建不了网络 $network：$out"
+    local -a clash=()
+    [[ -z ${WONTON_DEV_CORE_SUBNET:-} ]] || while read -r name; do clash+=("$name"); done < <(overlapping_networks "$WONTON_DEV_CORE_SUBNET")
+    if (( ${#clash[@]} )); then
+      # ${clash[*]} 用空格连起来，不再补尾空格（多张网撞上时也这么列）。
+      die "子网 $WONTON_DEV_CORE_SUBNET 和网络 ${clash[*]}撞了：给这套栈换一个子网（WONTON_DEV_CORE_SUBNET=…）再 up，或先把那套 down"
+    fi
+    if [[ -n ${WONTON_DEV_CORE_SUBNET:-} ]]; then
+      die "子网 $WONTON_DEV_CORE_SUBNET 撞上了别的网络（Docker：$out）：换一个子网（WONTON_DEV_CORE_SUBNET=…），或先把占着它的那套 down"
+    fi
+    die "Docker 的默认地址池没有空位了（Docker：$out）：用 WONTON_DEV_CORE_SUBNET=10.214.N.0/24 指定一个没人用的子网再 up；占着地址池的那几套先 down 也行"
+  fi
+}
+
+# 有哪些网络的子网和给的那个重叠：撞子网时要报名字。
+overlapping_networks() {
+  local want="$1" name subnet found
+  for name in $(docker network ls --format '{{.Name}}'); do
+    subnet="$(docker network inspect -f '{{range .IPAM.Config}}{{.Subnet}} {{end}}' "$name" 2>/dev/null)" || continue
+    for found in $subnet; do
+      subnets_overlap "$want" "$found" && printf '%s（%s）\n' "$name" "$found"
+    done
+  done
+}
+
+subnets_overlap() {
+  python3 - "$1" "$2" <<'EOF'
+import ipaddress, sys
+try:
+    a = ipaddress.ip_network(sys.argv[1], strict=False)
+    b = ipaddress.ip_network(sys.argv[2], strict=False)
+except ValueError:
+    sys.exit(1)
+sys.exit(0 if a.overlaps(b) else 1)
+EOF
+}
+
+# 删不掉要让调用方知道（失败即停）：插件容器还接在上面时 Docker 拒删，报了拆完就是假话。
+remove_core_network() {
+  local network
+  network="$(core_network)"
+  docker network inspect "$network" >/dev/null 2>&1 || return 0
+  docker network rm "$network" >/dev/null && return 0
+  echo "dev.sh：删不掉网络 $network：还有容器接在上面（没有实例名的项目，down 不删插件容器）。删掉这些容器后再 down，或 docker network rm $network" >&2
+  return 1
+}
+
 compose() {
   ensure_secret
   ensure_matrix_secrets
   ensure_dev_federation
-  local files=(-f "$here/compose.yaml")
-  if [[ -n ${WONTON_DEV_CORE_SUBNET:-} ]]; then
-    local override="$secrets/$WONTON_DEV_PROJECT.subnet.yaml"
-    printf 'networks:\n  core:\n    ipam:\n      config:\n        - subnet: %s\n' "$WONTON_DEV_CORE_SUBNET" >"$override"
-    files+=(-f "$override")
-  fi
-  docker compose "${files[@]}" "$@"
+  docker compose -f "$here/compose.yaml" "$@"
 }
 
 
@@ -709,12 +792,14 @@ case "${1:-}" in
       (( ${#pending[@]} )) || pending=(share-smoke)
       exec bash "$0" "${pending[@]}" "${@:2}"
     fi
+    dev_guard_check "$core"
     # 端口冲突在构建之前查出来：compose 要到绑定时才报，那时已经构建完了。
     "$here/port-preflight.sh" "$core" "$WONTON_DEV_PORT" "$WONTON_DEV_TUNNEL_PORT" || exit 1
     case "${DOCKER_HOST:-}" in ssh://* | tcp://*) ;; *) mkdir -p "$WONTON_DEV_DATA" ;; esac
     mkdir -p "$WONTON_DEV_RELAY" || die "建不了中继套接字目录 $WONTON_DEV_RELAY，换一个短的（WONTON_DEV_RELAY）"
     export WONTON_BUILD_COMMIT="${WONTON_BUILD_COMMIT:-$(build_commit)}"
     mkdir -p "$here/.data" && printf '%s' "$WONTON_DEV_PORT" > "$here/.data/dev-port"
+    ensure_core_network
     if [[ -n "${WONTON_DEV_BUILD_PROXY:-}" ]]; then
       build_image -q --target dev --build-arg WONTON_BUILD_COMMIT -t "wonton-core:${WONTON_CORE_IMAGE_TAG:-dev}" -f "$here/Dockerfile" "$repo" >/dev/null
       compose up -d --wait
@@ -727,6 +812,7 @@ case "${1:-}" in
   commit) build_commit ;;
   build) build_image "${@:2}" ;;
   down)
+    dev_guard_check "$core"
     # 项目名没对上（没带环境变量、检出里又是别的实例）就拆默认项目其实拆的是别人的栈：先认本检出在跑的项目。
     # 项目名是自动认的、又认成了默认名：默认名全机共用，可能正是别的检出的栈（kh-walk 事故）。不许拆，除非显式指定。
     if [[ ${WONTON_DEV_PROJECT_AUTO:-} == 1 && $core == wonton-dev-core ]]; then
@@ -748,13 +834,16 @@ case "${1:-}" in
     # 中继套接字跟着栈走，栈拆了就没用了。
     rm -rf -- "$WONTON_DEV_RELAY"
     # 核心退出时不停插件容器，compose down 也管不到它们，这里按实例标签清；默认项目分不出来，只提示。
+    # 插件容器挂在 core 网络上，删完它们网络才删得掉：网络放在最后，删不掉时由它让 down 返回非零。
     if [[ -n "$WONTON_DEV_INSTANCE" ]]; then
       remove_instance_resources
     else
       note_plugin_leftovers
     fi
+    remove_core_network
     ;;
   reset)
+    dev_guard_check "$core"
     remove_entry_components
     compose down --volumes
     rm -rf -- "$WONTON_DEV_RELAY"
@@ -770,6 +859,8 @@ case "${1:-}" in
       wipe_data
     fi
     reset_secrets
+    # 数据和密钥都清了，网络最后删：还有容器接着时删不掉，由它让 reset 返回非零，别报拆完了。
+    remove_core_network
     echo
     if [[ "${2:-}" == --keep-tunnel-identity ]]; then
       echo "隧道身份和设备登记保留（core/tunnel-key、core/devices.json）：endpoint ID 不变，已配对的设备不用重新配对（家人设备的用户名记录随核心数据删了）。"

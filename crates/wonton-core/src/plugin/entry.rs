@@ -62,13 +62,13 @@ impl Health {
     }
 }
 
-pub(super) struct Entry {
+pub(crate) struct Entry {
     pub(super) version: String,
     pub(super) title: LocalizedText,
     /// `kind: system`：由安装器预装。
     pub(super) system: bool,
     pub(super) has_webui: bool,
-    pub(super) status: PluginStatus,
+    pub(crate) status: PluginStatus,
     /// 安装或升级做到了哪一步；不在安装、升级时为空。
     pub(super) install_progress: Option<InstallProgress>,
     pub(super) health: Option<Health>,

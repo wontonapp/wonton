@@ -13,7 +13,7 @@
       }
     },
     "problem.notReady.title": {
-      "comment": "Problem title when the core says the action can't run yet; the core's own reason is shown as the next step.",
+      "comment": "Problem title when the core says the action can't run yet; the core's own reason goes into Details.",
       "extractionState": "manual",
       "localizations": {
         "en": {
@@ -40,6 +40,16 @@
             "value": "まだ実行できません"
           }
         }
+      }
+    },
+    "problem.plugin.healthTimeout.nextStep": {
+      "comment": "The service was still not ready at the deadline; retry once the host settles.",
+      "extractionState": "manual",
+      "localizations": {
+        "en": { "stringUnit": { "state": "translated", "value": "The service was still not ready when the deadline passed. Retrying the install once the host has calmed down usually works; a service answering 5xx all along may also be failing on its own. The details name the service, how long it waited, its last state and recent probes." } },
+        "zh-Hans": { "stringUnit": { "state": "translated", "value": "到时限服务还没就绪。主机空下来后重试安装通常就能过；服务一直答 5xx 也可能是它自己有问题。详情里有是哪个服务、等了多久、最后状态和最近的探针。" } },
+        "zh-Hant": { "stringUnit": { "state": "translated", "value": "到時限服務還沒就緒。主機空下來後重試安裝通常就能過；服務一直回 5xx 也可能是它自己有問題。詳情裡有是哪個服務、等了多久、最後狀態和最近的探針。" } },
+        "ja": { "stringUnit": { "state": "translated", "value": "制限時間になってもサービスはまだ準備できていませんでした。ホストが空いてからインストールをやり直せば通るのが普通です。ずっと 5xx を返すならサービス自身の不調かもしれません。詳細に、どのサービスをどれだけ待ったか、最後の状態と最近のプローブが出ます。" } }
       }
     },
     "problem.plugin.lanUnavailable.title": {
@@ -458,6 +468,36 @@
           "stringUnit": {
             "state": "translated",
             "value": "まず自宅サーバをアップデートしてください。"
+          }
+        }
+      }
+    },
+    "problem.peerPublicAccessOff.nextStep": {
+      "comment": "What to do when the other server's public access is off: wait, then send again.",
+      "extractionState": "manual",
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Wait for them to turn it back on, then send again. Messages arrive after that."
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "等对方重新打开后再发；消息会在那之后补到。"
+          }
+        },
+        "zh-Hant": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "等對方重新打開後再傳；訊息會在那之後補到。"
+          }
+        },
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "相手がオンに戻してからもう一度送ってください。メッセージはその後で届きます。"
           }
         }
       }

@@ -40,6 +40,7 @@ home-proxy-start-failed = The app couldn't start its local connection proxy. Try
 
 home-tunnel-closed = The tunnel client has closed.
 
+
 home-lan-unsupported = This version of the client core doesn't support local network settings.
 
 home-port-mapping-save-failed = Couldn't save the port mapping switch: { $error }
@@ -61,9 +62,6 @@ home-pairing-setup-failed = The device paired, but its connection couldn't be se
 
 # Readable pairing details. $reason is localized; elapsed is total time, stage is the limit for each exchange stage, both in seconds.
 home-pairing-failed-detail = { $reason } Total elapsed: { $elapsed_seconds } seconds. Each pairing exchange stage has a { $stage_seconds }-second limit.
-
-home-pairing-joining-pending = This is a joining code: waiting for an admin to approve.
-home-pairing-joining-pending-role = This is a joining code: waiting for an admin to approve. Once approved, you join as { $role }.
 
 # Failure categories without underlying error text; raw details stay in Diagnostics.
 home-failure-transport = The connection to your home server couldn't be established or was interrupted. Check both networks and try again.

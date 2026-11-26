@@ -1,8 +1,17 @@
 # 正式安装
 
-在装好 Docker Engine 28 以上的 Linux 主机（amd64、arm64）上用 root 执行 `install.sh`，装好核心、身份提供方
-（Ory Hydra）和 Matrix 服务器（Tuwunel）；核心启动后在后台自己装上系统插件（模型网关 magpie），再装一次默认 Agent
-Hermes（ADR-0007），授予它 `models`、`matrix.bot`、`tools`、`network.egress`。装好后浏览器用主机的
+在装好 Docker Engine 28 以上的 Linux 主机（amd64、arm64）上用 root 执行公开仓库里的脚本，装好核心、身份提供方
+（Ory Hydra）和 Matrix 服务器（Tuwunel）：
+
+```sh
+curl -fsSL https://raw.githubusercontent.com/wontonapp/wonton-install/main/install.sh | sudo sh
+```
+
+脚本副本放在公开仓库 [`wontonapp/wonton-install`](https://github.com/wontonapp/wonton-install)（主仓库私有），
+那份副本对应的提交记在本目录的 `public-copy`，两边不一样 CI 会失败，见[公开仓库里的副本](#公开仓库里的副本)。
+
+核心启动后在后台装一次默认 Agent Hermes（ADR-0007、ADR-0108），授予它 `matrix.bot`、`tools`、`network.egress`；
+模型在 Hermes 自己的网页里接。装好后浏览器用主机的
 IP 打开 `http://<IP>:8480/`，是局域网状态页：运行状态，以及还没有设备时的首次配对二维码。
 
 安装输出是终端时，最后显示同一个首次配对码，第一台设备配上后结束；`curl | sudo sh` 的标准输入是管道，不影响这个体验。
@@ -13,10 +22,10 @@ IP 打开 `http://<IP>:8480/`，是局域网状态页：运行状态，以及还
 手动运行配对命令时，终端放不下完整二维码就只显示文本配对码，并提示需要的最少列数和当前列数；可把窗口拉宽后重新运行，
 或直接在 App 里粘贴文本码。二维码使用 L 级纠错，保留四模块静区；输出到管道或文件时仍显示二维码，不按终端宽度隐藏。
 
-Hermes 装好后，聊天列表里就有和它的加密私聊。它的镜像要下载约 1 GB（解开约 4 GB），全新主机上要等 5 分钟左右，
-还没装好时插件列表和局域网状态页上是“安装中”；拉不下镜像时两处都写明原因，核心隔一阵自动重试。在“模型设置”里
-添加任意一家模型服务商的 key，Hermes 就能回答；没添加时它会提示去添加（ADR-0008）。主人卸掉 Hermes 后，核心不会
-再自动装它。
+Hermes 装好后，聊天列表里就有和它的私聊。它的镜像要下载约 1 GB（解开约 4 GB），全新主机上要等 5 分钟左右，
+还没装好时插件列表和局域网状态页上是“安装中”；拉不下镜像时两处都写明原因，核心隔一阵自动重试。在 Hermes 自己的
+网页里接模型（Keys 页填 key 或登录订阅、Models 页选模型），它就能回答；没接时它会提示去接（ADR-0108）。主人卸掉
+Hermes 后，核心不会再自动装它。
 
 - `install.sh`：检查系统和 Docker，拉核心镜像，在镜像里执行 `wonton-core init` 注册服务器名、准备证书、生成密钥和配置，写 `.env`，
   最后用镜像里的 compose 启动 Tuwunel 等服务，等到都健康。可调的环境变量写在脚本开头和下面。
@@ -38,13 +47,14 @@ Mailpit 收取 `notify` 插件发给主人和已加入家人的内部邮件（[A
 
 ```sh
 # 不要名字：以后不能改；要和外面的 Matrix 互通得清空聊天数据重装
-curl -fsSL <安装地址>/install.sh | sudo WONTON_MATRIX_NAME_MODE=none sh
+curl -fsSL https://raw.githubusercontent.com/wontonapp/wonton-install/main/install.sh | sudo WONTON_MATRIX_NAME_MODE=none sh
 # 用自己的域名：证书按下表准备
-curl -fsSL <安装地址>/install.sh | sudo WONTON_MATRIX_SERVER_NAME=chat.example.com sh
+curl -fsSL https://raw.githubusercontent.com/wontonapp/wonton-install/main/install.sh | sudo WONTON_MATRIX_SERVER_NAME=chat.example.com sh
 ```
 
 先配置服务、邀请码和证书输入，
-`init` 完成注册和证书准备后才启动 Tuwunel；缺配置、注册或签证书失败就停止。家名服务没有内置的公共默认地址，ACME 也没有默认 CA。
+`init` 完成注册和证书准备后才启动 Tuwunel；缺配置、注册或签证书失败就停止。家名服务没有内置的公共默认地址；
+“不要名字”的安装证书用 Let's Encrypt 正式地址，订户协议不在这条命令里同意，由主人在 App 里勾选，勾选之前核心不联系 CA（ADR-0089）。
 开发只用[本地 entry-cloud](../dev/entry-cloud/) 的 Pebble、DNS 和 `.test` 名字，并显式信任测试 CA。
 
 | 输入 | 用途 |
@@ -53,8 +63,8 @@ curl -fsSL <安装地址>/install.sh | sudo WONTON_MATRIX_SERVER_NAME=chat.examp
 | `WONTON_CLIENT_INVITE_FILE` | 存放邀请码的文件，读取后去掉首尾空白；不把邀请码本身放进环境变量或命令行 |
 | `WONTON_CLIENT_CA_FILE` | 家名服务的 PEM CA 文件；使用测试或私有 CA 时提供，未给时用系统信任 |
 | `WONTON_FRP_CA_FILE` | frps 的 PEM CA 文件；送名字时必填，用于校验连接器到中继的 TLS 证书 |
-| `WONTON_ACME_DIRECTORY` | 显式指定 ACME directory 的 HTTPS URL；使用 ACME 签证书时必填 |
-| `WONTON_ACME_ACCEPT_TERMS=true` | 运营者明确接受所选 CA 的条款后才设置；ACME 模式缺少此确认就停止 |
+| `WONTON_ACME_DIRECTORY` | ACME directory 的 HTTPS URL；不要名字的安装默认 Let's Encrypt 正式地址，送名字和用自己的域名时必填 |
+| `WONTON_ACME_ACCEPT_TERMS=true` | 装机时就代替主人同意所选 CA 的条款。不要名字的安装可以不给，给了也没用：核心从 `entry/settings.json` 读，这种装法没有这个文件，条款到 App 里勾。送名字和用自己的域名时必填，缺了安装停下 |
 | `WONTON_ACME_CA_FILE` | ACME 和 acme-dns 使用的 PEM CA 文件；测试 CA 显式传入，不关闭 TLS 验证 |
 | `WONTON_ACME_RESOLVERS` | 可选 DNS 解析器，逗号分隔的 IP 或 IP:端口（端口可省略，默认 53），每项首尾空白忽略，例如 `192.0.2.10,198.51.100.10:5353`；安装容器、挑战记录和 CAA 查询都经它 |
 | `WONTON_ACME_EMAIL` | 可选 ACME 账号联系邮箱 |
@@ -86,12 +96,13 @@ ACME 为服务器名本身、`*.<服务器名>` 和 `*.lan.<服务器名>` 签�
 送的名字会先把 ACME 账号 URI 绑定到家名服务的 CAA，并查询生效后才下单。备份时保留整个 `entry/` 和 `entry-input/`，不要单独删私钥或账号文件。
 
 核心启动时和此后每 24 小时使用 `entry/settings.json` 保存的 directory、条款确认、网络、CA、DNS 解析器及 provider/凭据输入调用证书流程，
-成功后原子发布 `entry/certs/site.pem`，给入口容器发 `SIGUSR2` 热加载。签发失败保留原证书并通知主人；热加载失败也单独通知。
+成功后原子发布 `entry/certs/site.pem`，在入口 HAProxy 的主进程管理端口上发 `reload`（ADR-0116）。签发失败保留原证书并通知主人；
+热加载失败也单独通知。
 `init` 发现已有 `site.pem` 就沿用，重新执行安装不会重新选择证书配置。
 
 外部证书的 `site.pem` 必须包含证书链和对应的 PEM 私钥，覆盖入口所用的服务器名；Wonton 不替它续期。
-主人负责在到期前更新此文件，保持入口容器可读的所有者和权限，并执行
-`docker kill -s SIGUSR2 wonton-entry` 热加载。
+主人负责在到期前更新此文件，保持入口容器可读的所有者和权限，再让入口重读。镜像没有 shell，人工入口仍是发信号：
+`docker kill -s SIGUSR2 wonton-entry`。非停止信号会被 Docker 记成手动停过，重启策略是 `always`，Docker 重启后照样回来。
 
 入口容器（`wonton-entry`）和连接器（`wonton-connector`）不在 Compose 里：核心按 `entry/settings.json` 启动时和此后每隔一阵
 经 Docker API 对账建、删它们，改了 `.env` 里的发布地址或端口会重建。升级到带这个行为的核心后第一次启动会自动按已有设置
@@ -127,17 +138,17 @@ ACME 为服务器名本身、`*.<服务器名>` 和 `*.lan.<服务器名>` 签�
 退回旧版本时带上它的 digest，之后照样跟渠道。有当时升级留下的备份就恢复核心数据和安装目录，备份之后写的数据会丢，要在终端里确认一次：
 
 ```bash
-curl -fsSL <安装脚本地址> | sudo WONTON_CORE_PIN=sha256:… sh
+curl -fsSL https://raw.githubusercontent.com/wontonapp/wonton-install/main/install.sh | sudo WONTON_CORE_PIN=sha256:… sh
 ```
 
 ## 拉不到镜像
 
-核心、Tuwunel 和 magpie 的镜像在 GHCR，Hydra、tusd 和 Hermes 的在 Docker Hub；国内的主机常常连不上 Docker Hub 或 GHCR。
+核心和 Tuwunel 的镜像在 GHCR，Hydra、tusd 和 Hermes 的在 Docker Hub；国内的主机常常连不上 Docker Hub 或 GHCR。
 安装脚本拉不到镜像、且 Docker 报的是拨号超时一类的网络错误时，会直接说明连不上镜像仓库，并给出给 Docker daemon 配代理
 的做法（systemd drop-in），配好后重新执行安装命令即可；别的拉取失败（认证、清单不存在、磁盘满这些）按原样报。
 
 装 Docker 本身也常被网络卡住：用官方 `get.docker.com` 时，脚本内部的下载不会带你的代理环境变量（`sudo` 会剥掉），要
-`sudo env https_proxy=http://代理地址:端口 sh get-docker.sh`，或先给 apt 配代理。magpie 和 Hermes 由核心拉：拉不到时
+`sudo env https_proxy=http://代理地址:端口 sh get-docker.sh`，或先给 apt 配代理。Hermes 由核心拉：拉不到时
 插件列表里如实显示原因，核心隔一段时间（最长 10 分钟）自动重试，配好代理后不用重装。国内的镜像仓库按 ADR-0012 以后加上。
 
 安装前脚本会看一眼 Docker 数据目录所在盘的剩余空间，不到 8 GB 时提醒一次（Hermes 的镜像约 4.3 GB；已有的镜像越多要得
@@ -152,6 +163,30 @@ curl -fsSL <安装脚本地址> | sudo WONTON_CORE_PIN=sha256:… sh
 配了代理时，链接预览经代理用 DoH 解析域名，服务器默认 `https://1.1.1.1/dns-query`，要换就设 `WONTON_DOH_URL`（ADR-0065）。
 
 拉镜像不走这个代理，走 Docker 守护进程自己的配置，见上一节。
+
+## 公开仓库里的副本
+
+公开仓库里的 `install.sh` 是本目录这份的原样副本，只从主仓库往那边拷，那边不直接改。公开仓库的 `README.md`
+是给用户看的短说明，单独维护，跟着改。
+
+- `deploy/install/public-copy` 四行：第一行是公开仓库 main 上的提交（用户装到的副本），第二行是主仓库里含这份内容的提交，
+  第三行是 `install.sh` 的 blob（`git hash-object deploy/install/install.sh`），第四行是待合的公开同步分支上的提交，
+  公开 main 已含这份内容时留空。`scripts/install/check-public-copy.sh` 在 `lint` 里每次都跑：第三行要等于工作树这份的 hash；
+  公开 main 那份要跟它逐字节相同，或者第四行那条分支里的内容相同、且这条提交有一个开着的公开 PR。内容对不上时还会要求
+  第一行在公开仓库 main 上（同步分支合了就被删，分支上的提交迟早不可达）；第二行在仓库里且有这份内容，这条每次都查。
+  检查经 API 读。本地跑要带 token：`GH_TOKEN=$(gh auth token) bash scripts/install/check-public-copy.sh`。
+- 两边 PR 谁先合都行，先后都能走通：检查对着公开 main，或者对着第四行记的待合分支放行；公开 main 已含这份内容就直接绿，
+  第一行这时落在 main 后面、第四行成了旧数据都不要紧，跑 `sync-public.sh` 会一并换掉。发版时在公开 PR 合了以后，同一个克隆
+  `git switch main && git pull`，再跑一次 `sync-public.sh`：内容相同、不推分支，只把第一行换成合并后的 main 提交、清空第四行。
+- 步骤：
+  1. 改 `install.sh`，提交。
+  2. 在公开仓库的克隆里执行 `scripts/install/sync-public.sh <克隆目录>`：它把这个文件拷过去、推一个同步分支，把四行写成
+     公开 main、这次提交、这份内容的 blob 和待合分支。把改动连同 `public-copy` 提交，然后在公开仓库开草稿 PR。
+  3. 两边 PR 谁先合都行。公开 PR 合了之后，同一个克隆 `git switch main && git pull`，再跑一次 `sync-public.sh`：
+     内容相同，不推分支，只把第一行换成合并后的 main 提交、清空第四行。把这个改动提交上去。
+  4. 合主仓库的 PR。第二行到这时仍是分支上的提交，PR 合掉之后它也还在仓库里，够检查用。
+- 只在真脱同步时红：改了 `install.sh` 没重跑 `sync-public.sh`、待合分支被改掉或删掉、公开 PR 被关掉。
+- 公开仓库里只有这两份文件，别的（ADR、源码、compose）都只在主仓库，那边的说明里不放相对链接。
 
 ## 在本机测
 
@@ -178,3 +213,8 @@ amd64 用 `orb create --arch amd64 …` 和 `docker buildx build --platform linu
 
 安装脚本会把镜像写成仓库 digest，本机 `docker build` 出来的镜像要带仓库 digest（containerd 镜像存储会带；经典存储不带，
 得先推到一个 registry 再拉）。没有时脚本停下并说明，不会退回写标签。
+
+## 发版前演练
+
+发版前在 [vm/](vm/README.md) 的 amd64 虚拟机里按正式方式重装一遍，再用 `vm/docker-restart-check.sh` 重启 Docker
+守护进程（主人 apt 升级 docker-ce 时就会这样）：Compose 项目里的服务都要自己回来，核心不再反复重启。

@@ -44,6 +44,7 @@ mod clients_api;
 mod clients_domain;
 mod clients_entry;
 mod clients_passwords;
+mod clients_switches;
 mod confirmations;
 mod core_routes;
 mod core_upgrade;
@@ -54,13 +55,17 @@ pub mod family;
 mod family_private;
 mod family_room;
 mod files;
+mod friend_gate;
+mod friend_requests;
 mod friends;
 mod friends_wiring;
 mod health;
 mod hosted;
+mod inbox;
 mod install_gate_cards;
 mod install_gate_checks;
 mod install_gates;
+mod invite_filter_guard;
 mod isolation;
 mod join_requests;
 mod lan;
@@ -103,7 +108,9 @@ mod web_storage;
 pub use entry::router as entry_router;
 pub use push::router as push_router;
 pub(crate) use request_guards::{same_origin_path, with_cookie};
+pub(crate) use send_limits::Identity;
 pub use send_limits::{SendLimiter, SendLimits};
+mod relays_api;
 mod session;
 mod settings_api;
 mod sso;
@@ -112,6 +119,7 @@ mod tool_policy;
 
 use std::net::SocketAddr;
 use std::sync::Arc;
+use std::sync::atomic::{AtomicBool, Ordering};
 
 use axum::Router;
 use axum::extract::{ConnectInfo, Request};
@@ -150,6 +158,20 @@ pub use session::{APP_COOKIE, CORE_COOKIE};
 /// 局域网 TCP 请求里没有，客户端也没法用请求头伪造。
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub struct TunnelPeer(pub EndpointId);
+
+/// 网关转给插件网页时的“打开者”，值是 Matrix 用户 ID（ADR-0045 第 6 节）。插件网页拿它当说话人：
+/// 上游自己的会话认不出走进来的是谁。只由网关写，客户端带的一律剥掉；插件把端口曝到宿主上时
+/// 绕过网关的直连可以伪造。方向与 `X-Wonton-On-Behalf-Of` 相反（那个是插件发给核心）。
+pub(super) const WEB_USER_HEADER: &str = "X-Wonton-Web-User";
+
+/// 本地用户的 Matrix 用户 ID。配置里还没有 Matrix 时按公开域名拼：`public.base_domain` 和 Matrix 的
+/// `server_name` 同出一个配置项，拼出来的和 `Matrix::user_id` 同形。
+pub(super) fn matrix_user_id(gateway: &Gateway, username: &str) -> String {
+    match &gateway.matrix {
+        Some(matrix) => matrix.user_id(username),
+        None => format!("@{username}:{}", gateway.public.base_domain),
+    }
+}
 
 /// 网关认出的人（ADR-0045）：经隧道的已配对设备看设备记录里的人，局域网浏览器的核心会话是主人。
 /// 认人只看隧道身份对应的设备记录，不读请求里的任何字段。
@@ -222,6 +244,8 @@ pub struct Gateway {
     pub upgrades: Option<Arc<crate::upgrade::service::Upgrades>>,
     pub peers: Option<Arc<crate::peers::Peers>>,
     pub(crate) friends: Option<Arc<Friends>>,
+    /// 公网上外人交的加好友请求（ADR-0088 第 98 行），只存内存。
+    pub(crate) friend_requests: friend_requests::Requests,
     /// Bot 的联系人（ADR-0045、ADR-0050）；没接 Matrix 的核心没有。
     contacts: Option<Arc<crate::contacts::Contacts>>,
     pub(crate) federation_blocks: Option<Arc<FederationBlocks>>,
@@ -232,6 +256,14 @@ pub struct Gateway {
     pub(crate) app_calls: Arc<mcp_apps::AppCalls>,
     /// 自己的域名和证书（ADR-0089）；核心没跑在装好的容器里时是空。
     pub(crate) domain: Option<Arc<crate::clients::domain::Domain>>,
+    /// 客户端开关写入和入口配置刷新串行化，避免并发请求互相覆盖。
+    pub(crate) clients_apply: tokio::sync::Mutex<()>,
+    /// 启动流程创建的入口容器；客户端开关使用同一个实例应用模型。
+    pub(crate) entry: Option<crate::entry_containers::EntryContainers>,
+    /// 公网访问总开关，默认关闭；插件开关保留但模型不生成公网标签。
+    pub(crate) public_access: Arc<AtomicBool>,
+    /// C12 入口种类配置完成与否；C7 只读取，连接器由后续 PR 接入。
+    pub(crate) public_ingress_configured: bool,
     sessions: session::SessionStore,
     /// 调用链（ADR-0061 第 10 节）：账本、出箱和设置，见 [`agent_chains::AgentChains`]。
     pub(crate) agent_chains: Option<Arc<agent_chains::AgentChains>>,
@@ -300,6 +332,7 @@ impl Gateway {
             upgrades: None,
             peers: None,
             friends: None,
+            friend_requests: friend_requests::Requests::default(),
             contacts: None,
             federation_blocks: None,
             sharing: None,
@@ -308,6 +341,10 @@ impl Gateway {
             link_previews,
             app_calls: Arc::default(),
             domain: None,
+            clients_apply: tokio::sync::Mutex::new(()),
+            entry: None,
+            public_access: Arc::new(AtomicBool::new(false)),
+            public_ingress_configured: false,
             sessions: session::SessionStore::default(),
             agent_chains: None,
         }
@@ -317,6 +354,27 @@ impl Gateway {
     pub fn with_clients(mut self, domain: Option<Arc<crate::clients::domain::Domain>>) -> Self {
         self.domain = domain;
         self
+    }
+    #[must_use]
+    pub fn with_entry(mut self, entry: Option<crate::entry_containers::EntryContainers>) -> Self {
+        self.entry = entry;
+        self
+    }
+
+    #[must_use]
+    pub fn with_public_access(self, enabled: bool) -> Self {
+        self.public_access.store(enabled, Ordering::Relaxed);
+        self
+    }
+
+    #[must_use]
+    pub fn with_public_ingress_configured(mut self, configured: bool) -> Self {
+        self.public_ingress_configured = configured;
+        self
+    }
+
+    pub(crate) fn public_access_enabled(&self) -> bool {
+        self.public_access.load(Ordering::Relaxed)
     }
 
     #[must_use]
@@ -419,8 +477,16 @@ impl Gateway {
     /// 访问令牌是谁（Matrix 用户 ID）：`whoami`，按令牌的哈希缓存（和发送限制共用一份，见
     /// [`send_limits::SendLimiter`]）。没接入 Matrix 或认不出时是 `None`。
     pub(crate) async fn bot_user_of_token(&self, token: &str) -> Option<String> {
+        match self.bot_identity(token).await {
+            Identity::Bot(user) => Some(user),
+            Identity::Unknown | Identity::Unavailable => None,
+        }
+    }
+
+    /// 同 [`Self::bot_user_of_token`]，但分得开令牌失效和问不到 Tuwunel。
+    pub(crate) async fn bot_identity(&self, token: &str) -> Identity {
         self.send_limits
-            .user_id(
+            .identify(
                 token,
                 send_limits::token_hash(token),
                 self.matrix.as_deref(),
@@ -525,11 +591,7 @@ impl Gateway {
     /// 这台设备的人在 `GET ME_PATH` 里看到的自己（ADR-0045 的 `Me`）。家人的记录找不到了就报错：
     /// 设备刚被移除时会这样，不编一个身份出来。
     pub(crate) fn me(&self, person: &Person) -> Result<wonton_protocol::Me, MissingMember> {
-        let user_id = self
-            .matrix
-            .as_ref()
-            .map(|m| m.user_id(&person.username))
-            .unwrap_or_else(|| format!("@{}:{}", person.username, self.public.base_domain));
+        let user_id = matrix_user_id(self, &person.username);
         if person.is_owner() {
             let profile = self.owner.profile();
             Ok(wonton_protocol::Me {
@@ -541,6 +603,7 @@ impl Gateway {
                 permissions: None,
                 display_name: profile.display_name,
                 email: profile.email,
+                avatar: None,
             })
         } else {
             let record = self
@@ -568,6 +631,7 @@ impl Gateway {
                 role_id: Some(record.role_id),
                 display_name: Some(record.display_name),
                 email: record.email,
+                avatar: None,
             })
         }
     }
@@ -661,7 +725,7 @@ async fn dispatch(gateway: Arc<Gateway>, core: Router, req: Request) -> Response
             Err(never) => match never {},
         },
         HostKind::Auth => auth::request(&gateway, req).await,
-        HostKind::Matrix => matrix::client_request(&gateway, req).await,
+        HostKind::Matrix => matrix::client_request(gateway, req).await,
         HostKind::PluginMatrix => matrix::bot_request(&gateway, req).await,
         HostKind::PluginModels => models::request(&gateway, req).await,
         HostKind::PluginCapability(capability) => {
@@ -765,9 +829,13 @@ mod files_upload_tests;
 #[cfg(test)]
 mod first_run_tests;
 #[cfg(test)]
+mod friend_gate_tests;
+#[cfg(test)]
 mod friends_tests;
 #[cfg(test)]
 mod health_tests;
+#[cfg(test)]
+mod inbox_tests;
 #[cfg(test)]
 mod install_gate_tests;
 #[cfg(test)]
@@ -789,11 +857,15 @@ mod lan_tests;
 #[cfg(test)]
 mod limits_tests;
 #[cfg(test)]
+mod local_friends_tests;
+#[cfg(test)]
 mod matrix_invite_filter_tests;
 #[cfg(test)]
 mod matrix_rtc_docker_tests;
 #[cfg(test)]
 mod matrix_rtc_tests;
+#[cfg(test)]
+mod matrix_sync_restart_tests;
 #[cfg(test)]
 mod mcp_takeover_tests;
 #[cfg(test)]
@@ -831,6 +903,8 @@ mod push_tests;
 #[cfg(test)]
 mod registry_mirror_tests;
 #[cfg(test)]
+mod relays_api_tests;
+#[cfg(test)]
 mod secret_change_tests;
 #[cfg(test)]
 mod tests;
@@ -842,3 +916,5 @@ mod tunnel_tests;
 mod tusd_tests;
 #[cfg(test)]
 mod upload_settings_tests;
+#[cfg(test)]
+mod web_user_tests;

@@ -1,6 +1,7 @@
 package app.wonton.android
 
 import android.app.Application
+import app.wonton.android.push.FcmPush
 import app.wonton.client.ClientCore
 import app.wonton.client.configureUniFfiCallbackThreads
 import app.wonton.protocol.CoreException
@@ -21,6 +22,8 @@ open class WontonApplication : Application(), PageMediaCoreOwner {
         syncAppLocalesFromSystem(this)
         installSystemDns()
         installCertificateVerifier()
+        // 推送唤醒的进程一创建就要能收 FCM，赶在任何消息到达之前初始化。
+        FcmPush.initialize(this)
     }
 
     /** Debug 壳可在核心第一次取用前选择测试启动方式；生产实现不读取启动参数。 */

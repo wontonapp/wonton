@@ -53,6 +53,30 @@ fn with_images(need: &str, vendors: &[&str], images: &str) -> String {
     ))
 }
 
+/// 清单不引用厂商变量时也照样注入给拿到显卡的服务（ADR-0099），别的服务没有。
+#[tokio::test]
+async fn the_vendor_variable_is_injected_without_the_compose_asking_for_it() {
+    let host = FakeHost::amd();
+    let (docker, m, _dir) = on(&host, &["runc"]).await;
+    let source = package(
+        &format!("  comfy:\n    image: {GENERIC}\n  web:\n    image: nginx"),
+        "  gpu: {services: [comfy]}\n  permissions: [devices.gpu]\n  requirements: {gpu: {need: required}}\n",
+    );
+    m.install(&source, &granted(), super::langs())
+        .await
+        .unwrap();
+    assert!(
+        env_of(&docker, "comfy").contains(&"WONTON_GPU_VENDOR=amd".to_owned()),
+        "{:?}",
+        env_of(&docker, "comfy")
+    );
+    assert!(
+        !env_of(&docker, "web")
+            .iter()
+            .any(|value| value.starts_with("WONTON_GPU_VENDOR="))
+    );
+}
+
 async fn on(host: &FakeHost, runtimes: &[&str]) -> (FakeDocker, PluginManager, tempfile::TempDir) {
     let (docker, engine) = FakeDocker::start().await;
     docker.set_runtimes(runtimes);

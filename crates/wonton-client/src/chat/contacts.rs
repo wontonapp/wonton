@@ -4,7 +4,9 @@ use std::collections::HashSet;
 
 use wonton_l10n::l10n;
 use wonton_matrix::{OwnedUserId, UserId};
-use wonton_protocol::{ChatContact, CoreError, InstalledPlugin, RoomMembership, RoomRow};
+use wonton_protocol::{
+    BotChatAvailability, BotView, ChatContact, CoreError, RoomMembership, RoomRow,
+};
 
 use super::{ChatLink, invalid};
 use crate::l10n::{CATALOG, language};
@@ -16,18 +18,16 @@ impl ChatLink {
         Ok(user.to_string())
     }
 
-    pub(crate) fn contacts(&self, query: &str, plugins: &[InstalledPlugin]) -> Vec<ChatContact> {
-        contacts(query, plugins, &self.view.borrow().rooms)
+    pub(crate) fn contacts(&self, query: &str) -> Vec<ChatContact> {
+        let view = self.view.borrow();
+        contacts(query, &view.bots, &view.rooms)
     }
 }
 
-/// 已装插件的 Bot 在前，然后是私聊过的人（按最近活动）。通知房间只读，它的对方不算。`query` 不为空时只留名字或
-/// ID 里含它的，不分大小写。
-pub(crate) fn contacts(
-    query: &str,
-    plugins: &[InstalledPlugin],
-    rooms: &[RoomRow],
-) -> Vec<ChatContact> {
+/// 核心给的可聊 Bot 在前，然后是私聊过的人（按最近活动）；对方是当前不能用的 Bot 时不再当人列一次。
+/// 资格未知（离线、老核心）照常算可聊：发出去的会进离线队列，服务器也不拦。
+/// 通知房间只读，它的对方不算。`query` 不为空时只留名字或 ID 里含它的，不分大小写。
+pub(crate) fn contacts(query: &str, bots: &[BotView], rooms: &[RoomRow]) -> Vec<ChatContact> {
     // 和对方的私聊里对方声明了支持旁聊，发起时就在那个房间里开旁聊（ADR-0093 §4）；否则壳走 StartDirectChat。
     let side_chat_room = |user_id: &str| {
         rooms
@@ -39,17 +39,26 @@ pub(crate) fn contacts(
             })
             .map(|room| room.room_id.clone())
     };
-    let bots = plugins.iter().filter_map(|plugin| {
-        let user_id = plugin.bot_user_id.clone()?;
-        Some(ChatContact {
-            side_chat_room_id: side_chat_room(&user_id),
-            user_id,
-            name: plugin.title.clone(),
-        })
-    });
+    let candidates = bots
+        .iter()
+        .filter(|bot| !matches!(&bot.availability, BotChatAvailability::Unavailable { .. }))
+        .map(|bot| ChatContact {
+            side_chat_room_id: side_chat_room(&bot.user_id),
+            user_id: bot.user_id.clone(),
+            name: bot.name.clone(),
+        });
     let peers = rooms
         .iter()
         .filter(|room| room.membership == RoomMembership::Joined && !room.is_read_only)
+        .filter(|room| {
+            let Some(user_id) = room.direct_user_id.as_deref() else {
+                return false;
+            };
+            !bots.iter().any(|bot| {
+                bot.user_id == user_id
+                    && matches!(&bot.availability, BotChatAvailability::Unavailable { .. })
+            })
+        })
         .filter_map(|room| {
             let user_id = room.direct_user_id.clone()?;
             Some(ChatContact {
@@ -60,7 +69,8 @@ pub(crate) fn contacts(
         });
     let query = query.trim().to_lowercase();
     let mut seen = HashSet::new();
-    bots.chain(peers)
+    candidates
+        .chain(peers)
         .filter(|contact| seen.insert(contact.user_id.clone()))
         .filter(|contact| {
             contact.name.to_lowercase().contains(&query) || contact.user_id.contains(&query)
@@ -98,7 +108,6 @@ pub(crate) fn resolve_user(input: &str, own: &UserId) -> Result<OwnedUserId, Cor
 #[cfg(test)]
 mod tests {
     use super::*;
-    use wonton_protocol::{PluginKind, PluginState, PluginTrust};
 
     fn resolved(input: &str) -> Result<String, CoreError> {
         let own: OwnedUserId = "@owner:wonton.localhost".parse().unwrap();
@@ -129,43 +138,29 @@ mod tests {
         }
     }
 
-    fn plugin(title: &str, bot: Option<&str>) -> InstalledPlugin {
-        InstalledPlugin {
+    fn bot(title: &str, user: &str, availability: BotChatAvailability) -> BotView {
+        BotView {
+            user_id: user.to_owned(),
+            bot: wonton_protocol::BotRef {
+                plugin_id: "app.bot".into(),
+                bot: "default".into(),
+            },
+            availability,
+            web: None,
+            web_page: None,
+            name: title.to_owned(),
+            avatar: None,
+            state_avatars: Vec::new(),
+            activity: None,
+            saving: false,
+            problem: None,
             chat: Default::default(),
-            id: title.to_owned(),
-            title: title.to_owned(),
-            summary: String::new(),
-            version: "1".to_owned(),
-            revision: "1".to_owned(),
-            kind: PluginKind::Agent,
-            runtime: Default::default(),
-            icon: None,
-            trust: PluginTrust::Official,
-            source: None,
-            provider: None,
-            via_index: None,
-            written_by: None,
-            declares_tools: false,
-            status: PluginState::Installing,
-            web_url: None,
-            link_url: None,
-            cross_origin_isolated: false,
-            tabs: Vec::new(),
-            bot_user_id: bot.map(str::to_owned),
-            default_bot_visibility: bot.map(|_| wonton_protocol::DefaultBotVisibility::Visible),
-            upgrade: None,
-            removable: true,
-            notices: Vec::new(),
-            enabled_root_permissions: Vec::new(),
-            install_progress: None,
-            install_failure: None,
-            tunnel_ports: Vec::new(),
-            matrix_widget: None,
         }
     }
 
     fn room(name: &str, peer: Option<&str>, read_only: bool) -> RoomRow {
         RoomRow {
+            unread_mentions: 0,
             layout: Default::default(),
             call_active: false,
             room_id: format!("!{name}:s"),
@@ -173,6 +168,7 @@ mod tests {
             is_direct: peer.is_some(),
             direct_user_id: peer.map(str::to_owned),
             plugin: None,
+            bot_chat: None,
             is_encrypted: true,
             is_read_only: read_only,
             membership: RoomMembership::Joined,
@@ -183,8 +179,17 @@ mod tests {
     }
 
     #[test]
-    fn bots_come_first_and_everyone_once() {
-        let plugins = [plugin("Hermes", Some("@hermes:s")), plugin("相册", None)];
+    fn available_bots_come_first_and_everyone_once() {
+        let bots = [
+            bot("Hermes", "@hermes:s", BotChatAvailability::Available),
+            bot(
+                "（归档的）",
+                "@old:s",
+                BotChatAvailability::Unavailable {
+                    reason: wonton_protocol::BotChatUnavailable::GrantNotActive,
+                },
+            ),
+        ];
         let rooms = [
             room("Wonton", Some("@wonton-core:s"), true),
             room("Bob", Some("@bob:s"), false),
@@ -192,14 +197,38 @@ mod tests {
             room("一个群", None, false),
         ];
         let names = |query| -> Vec<String> {
-            contacts(query, &plugins, &rooms)
+            contacts(query, &bots, &rooms)
                 .into_iter()
-                .map(|contact| contact.name)
+                .map(|c| c.name)
                 .collect()
         };
         assert_eq!(names(""), ["Hermes", "Bob"]);
         assert_eq!(names("HER"), ["Hermes"]);
         assert_eq!(names("@bob"), ["Bob"]);
         assert!(names("没有这个人").is_empty());
+    }
+
+    #[test]
+    fn unavailable_bot_stays_out_and_unknown_stays_in_as_one_contact() {
+        let bots = [
+            bot(
+                "主人的助手",
+                "@private:s",
+                BotChatAvailability::Unavailable {
+                    reason: wonton_protocol::BotChatUnavailable::OtherPrivateBot,
+                },
+            ),
+            bot("还没核实", "@unsure:s", BotChatAvailability::Unknown),
+        ];
+        let rooms = [
+            room("主人的助手", Some("@private:s"), false),
+            room("还没核实", Some("@unsure:s"), false),
+        ];
+        let names: Vec<_> = contacts("", &bots, &rooms)
+            .into_iter()
+            .map(|c| c.name)
+            .collect();
+        // 未知的照常能发起（断网会进离线队列），房间也不再当人重复列一次。
+        assert_eq!(names, ["还没核实"]);
     }
 }

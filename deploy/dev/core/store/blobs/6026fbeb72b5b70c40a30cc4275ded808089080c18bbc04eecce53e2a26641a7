@@ -1,0 +1,34 @@
+magpie 标志
+===========
+
+图标：magpie 上游矢量标志
+来源：https://github.com/yetone/magpie/blob/50265256ba56ac164a680da0689e1c6d90dac471/build/icon/magpie.svg
+许可证来源：https://github.com/yetone/magpie/blob/50265256ba56ac164a680da0689e1c6d90dac471/LICENSE
+版权：Copyright (c) 2026 yetone
+处理：icon.svg 保留原始字节；icon.png 等比缩放、加白色不透明背景并栅格化为 512×512 PNG，不改色、不变形。
+商标：Magpie 名称和标志属于上游项目及其权利人 yetone。图标仅用于识别应用，不表示其对 Wonton 的认可或背书；MIT 许可证不授予商标权。
+LICENSE.icon 保留同一份上游 MIT 许可全文；本 NOTICE 随插件包分发。
+
+上游许可证全文
+
+MIT License
+
+Copyright (c) 2026 yetone
+
+Permission is hereby granted, free of charge, to any person obtaining a copy
+of this software and associated documentation files (the "Software"), to deal
+in the Software without restriction, including without limitation the rights
+to use, copy, modify, merge, publish, distribute, sublicense, and/or sell
+copies of the Software, and to permit persons to whom the Software is
+furnished to do so, subject to the following conditions:
+
+The above copyright notice and this permission notice shall be included in all
+copies or substantial portions of the Software.
+
+THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR
+IMPLIED, INCLUDING BUT NOT LIMITED TO THE WARRANTIES OF MERCHANTABILITY,
+FITNESS FOR A PARTICULAR PURPOSE AND NONINFRINGEMENT. IN NO EVENT SHALL THE
+AUTHORS OR COPYRIGHT HOLDERS BE LIABLE FOR ANY CLAIM, DAMAGES OR OTHER
+LIABILITY, WHETHER IN AN ACTION OF CONTRACT, TORT OR OTHERWISE, ARISING FROM,
+OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE
+SOFTWARE.

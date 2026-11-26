@@ -12,8 +12,29 @@ use std::{
 use axum::http::{Method, StatusCode};
 use probe_support::{Options, Server, config, initialize, probe, simple};
 use serde_json::{Value, json};
-use tokio::net::TcpListener;
+use tokio::net::TcpSocket;
 use wonton_remote_mcp::{Config, ResolveFuture, Resolver};
+
+/// 127.0.0.1 上一个保证没人能接管的端口：socket 只 bind 不 listen，存活期间端口归我们；
+/// 没有 listener 收连接，内核直接回 RST，连接结果就是“被拒绝”。
+fn refused_address() -> (std::net::SocketAddr, TcpSocket) {
+    let socket = TcpSocket::new_v4().unwrap();
+    socket.bind("127.0.0.1:0".parse().unwrap()).unwrap();
+    let address = socket.local_addr().unwrap();
+    (address, socket)
+}
+
+// A 150 ms budget does not reliably cover a loopback handshake: with 13 tasks
+// competing for one core the initialize request needed 0.23–0.46 s to reach the
+// test server, and a loaded CI runner took over 0.44 s. The deadline then fires
+// before the session is negotiated, so the cleanup DELETE asserted below never
+// happens. The budget only has to outlive scheduling jitter; the timeout itself
+// is still forced by the 60 s server delays and hanging bodies.
+const PROBE_BUDGET: Duration = Duration::from_secs(2);
+// Latency bound for a whole deadline test: the budget, cleanup's own one-second
+// cap, and one more second for scheduler jitter. Anything longer means the
+// timeout is not enforced at all.
+const PROBE_LIMIT: Duration = Duration::from_secs(4);
 
 async fn successful_handshake(sse: bool, delete_status: StatusCode) {
     let remote = Server::remote(Options {
@@ -431,12 +452,8 @@ async fn probe_tls_failure_unreachable() {
 
 #[tokio::test]
 async fn probe_connection_refused_unreachable() {
-    let listener = TcpListener::bind("127.0.0.1:0").await.unwrap();
-    let url = format!(
-        "http://{}/mcp?token=private-url-secret",
-        listener.local_addr().unwrap()
-    );
-    drop(listener);
+    let (address, _socket) = refused_address();
+    let url = format!("http://{address}/mcp?token=private-url-secret");
     let result = probe(&url, config(), "none", json!({})).await;
     assert_eq!(result["outcome"], "unreachable");
     assert!(!result.to_string().contains("private-url-secret"));
@@ -450,11 +467,15 @@ async fn probe_timeout_unreachable() {
     })
     .await;
     let mut config = config();
-    config.probe_timeout = Duration::from_millis(150);
+    config.probe_timeout = PROBE_BUDGET;
     let started = Instant::now();
     let result = probe(&remote.url, config, "none", json!({})).await;
     assert_eq!(result["outcome"], "unreachable");
-    assert!(started.elapsed() < Duration::from_secs(2));
+    assert!(
+        started.elapsed() < PROBE_LIMIT,
+        "took {:?}",
+        started.elapsed()
+    );
 }
 
 #[tokio::test]
@@ -465,11 +486,15 @@ async fn probe_deadline_covers_response_body() {
     })
     .await;
     let mut config = config();
-    config.probe_timeout = Duration::from_millis(150);
+    config.probe_timeout = PROBE_BUDGET;
     let started = Instant::now();
     let result = probe(&remote.url, config, "none", json!({})).await;
     assert_eq!(result["outcome"], "unreachable");
-    assert!(started.elapsed() < Duration::from_secs(2));
+    assert!(
+        started.elapsed() < PROBE_LIMIT,
+        "took {:?}",
+        started.elapsed()
+    );
     let cleanup = remote.requests().pop().unwrap();
     assert_eq!(cleanup.method, Method::DELETE);
     assert_eq!(cleanup.headers["mcp-session-id"], "probe-session");
@@ -477,25 +502,31 @@ async fn probe_deadline_covers_response_body() {
 
 #[tokio::test]
 async fn probe_deadline_is_shared_by_all_handshake_steps() {
+    // Each step on its own fits the budget; only their sum does not. A per-step
+    // budget would send all three handshake requests, a shared one stops after
+    // the initialized notification, before tools/list.
     let remote = Server::remote(Options {
-        delay_all: Duration::from_millis(60),
+        delay_all: Duration::from_secs(1),
+        hanging_tools_body: true,
         ..Options::default()
     })
     .await;
     let mut config = config();
-    config.probe_timeout = Duration::from_millis(150);
+    config.probe_timeout = Duration::from_millis(1_700);
     let result = probe(&remote.url, config, "none", json!({})).await;
     assert_eq!(result["outcome"], "unreachable");
-    assert!(remote.requests().len() >= 2);
+    let methods: Vec<_> = remote
+        .requests()
+        .iter()
+        .map(|request| request.method.clone())
+        .collect();
+    assert_eq!(methods, [Method::POST, Method::POST, Method::DELETE]);
 }
 
 #[tokio::test]
 async fn probe_proxy_down_is_proxy_unavailable() {
-    let listener = TcpListener::bind("127.0.0.1:0").await.unwrap();
-    let proxy = format!("http://{}", listener.local_addr().unwrap())
-        .parse()
-        .unwrap();
-    drop(listener);
+    let (address, _socket) = refused_address();
+    let proxy = format!("http://{address}").parse().unwrap();
     let config = Config {
         proxy: Some(proxy),
         resolver: Arc::new(PublicResolver),
@@ -528,11 +559,15 @@ async fn probe_deadline_covers_sse_body() {
     })
     .await;
     let mut config = config();
-    config.probe_timeout = Duration::from_millis(150);
+    config.probe_timeout = PROBE_BUDGET;
     let started = Instant::now();
     let result = probe(&remote.url, config, "none", json!({})).await;
     assert_eq!(result["outcome"], "unreachable");
-    assert!(started.elapsed() < Duration::from_secs(2));
+    assert!(
+        started.elapsed() < PROBE_LIMIT,
+        "took {:?}",
+        started.elapsed()
+    );
     assert_eq!(remote.requests().last().unwrap().method, Method::DELETE);
 }
 
@@ -544,12 +579,16 @@ async fn probe_deadline_covers_session_delete() {
     })
     .await;
     let mut config = config();
-    config.probe_timeout = Duration::from_millis(150);
+    config.probe_timeout = PROBE_BUDGET;
     let started = Instant::now();
     let result = probe(&remote.url, config, "none", json!({})).await;
     assert_eq!(result["outcome"], "unreachable");
     assert_eq!(remote.requests().last().unwrap().method, Method::DELETE);
-    assert!(started.elapsed() < Duration::from_secs(2));
+    assert!(
+        started.elapsed() < PROBE_LIMIT,
+        "took {:?}",
+        started.elapsed()
+    );
 }
 
 #[tokio::test]
@@ -629,7 +668,7 @@ async fn probe_deadline_still_deletes_negotiated_session() {
     for options in cases {
         let remote = Server::remote(options).await;
         let mut config = config();
-        config.probe_timeout = Duration::from_millis(150);
+        config.probe_timeout = PROBE_BUDGET;
         let result = probe(&remote.url, config, "none", json!({})).await;
         assert_eq!(result["outcome"], "unreachable");
         assert!(result.get("tools").is_none());

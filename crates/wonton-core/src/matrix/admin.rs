@@ -34,7 +34,7 @@ pub async fn admin_token(
     {
         return Ok(token);
     }
-    let token = match register(api, shared_secret).await {
+    let token = match register(api, shared_secret, ADMIN_LOCALPART).await {
         Ok(token) => token,
         Err(e) if e.errcode() == "M_USER_IN_USE" => {
             let jwt = issuer.login_token(ADMIN_LOCALPART);
@@ -46,9 +46,13 @@ pub async fn admin_token(
     Ok(token)
 }
 
-/// 共享密钥注册：先取一次性的 nonce，再用 HMAC-SHA1 签 `nonce\0用户名\0密码\0admin`。密码随机生成、不保存：
-/// Tuwunel 不接受密码登录，管理账号之后也用 JWT 登录。
-async fn register(api: &Api, shared_secret: &str) -> Result<String, MatrixError> {
+/// 共享密钥注册一个管理员（admin 恒为 true）：先取一次性的 nonce，再用 HMAC-SHA1 签 `nonce\0用户名\0密码\0admin`。
+/// 密码随机生成、不保存：Tuwunel 不接受密码登录，管理员之后都用 JWT 登录。
+pub(super) async fn register(
+    api: &Api,
+    shared_secret: &str,
+    localpart: &str,
+) -> Result<String, MatrixError> {
     let path = "/_synapse/admin/v1/register";
     let nonce = api
         .json(Method::GET, path, None, None, "取注册 nonce")
@@ -59,10 +63,10 @@ async fn register(api: &Api, shared_secret: &str) -> Result<String, MatrixError>
     let password = random_token();
     let body = json!({
         "nonce": nonce,
-        "username": ADMIN_LOCALPART,
+        "username": localpart,
         "password": password,
         "admin": true,
-        "mac": registration_mac(shared_secret, nonce, ADMIN_LOCALPART, &password),
+        "mac": registration_mac(shared_secret, nonce, localpart, &password),
     });
     let value = api
         .json(Method::POST, path, None, Some(&body), "注册管理账号")

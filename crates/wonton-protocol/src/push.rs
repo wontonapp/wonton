@@ -147,9 +147,143 @@ pub enum PushContent {
     },
 }
 
+/// APNs/FCM 的载荷上限。
+const CHANNEL_LIMIT: usize = 4096;
+/// RFC 8291 的固定开销：salt 16 + rs 4 + idlen 1 + 公钥 65 + 认证标签 16 + 分隔符 1。
+const RFC8291_OVERHEAD: usize = 103;
+/// 密文套进 APNs/FCM 的 JSON 时，aps 等外层字段和包壳的位置。
+const JSON_ENVELOPE: usize = 512;
+
+/// 推送明文（序列化后的完整 JSON）允许的字节数。按最窄的渠道反推：密文要套进 APNs/FCM 的 JSON、再按 base64 涨
+/// 三分之一；UnifiedPush 直接把密文当请求体，按这里更小的值发也放得下（1–4096 字节，明文上限 3993）。
+pub const MAX_PLAINTEXT_BYTES: usize = 2 * 1024;
+const _: () = assert!(
+    (MAX_PLAINTEXT_BYTES + RFC8291_OVERHEAD).div_ceil(3) * 4 + JSON_ENVELOPE <= CHANNEL_LIMIT,
+    "the plaintext no longer fits the push budget after base64"
+);
+
+/// 正文最多留多少个字符。长消息只放开头一段，剩下的点开后再取；截断处不加省略号。
+pub const MAX_BODY_CHARS: usize = 120;
+
+/// 消息类型（ADR-0118）。附件消息的正文是文件名、类型放在 `msgtype` 里，不带 URL 和缩略图；不认识的落 `Other`。
+#[derive(Clone, Copy, Debug, PartialEq, Eq, Serialize, Deserialize)]
+#[cfg_attr(feature = "uniffi", derive(uniffi::Enum))]
+#[serde(rename_all = "snake_case")]
+pub enum PushMessageType {
+    Text,
+    Image,
+    Audio,
+    Video,
+    File,
+    /// 通话邀请、通话通知（`m.call.*`）。
+    Call,
+    /// 有人邀请主人加入房间（`m.room.member` 的 `invite`，没有正文）。
+    Invite,
+    Other,
+}
+
+/// 发给设备的推送明文（加密前）。字段名是和 App 之间的契约（ADR-0003 的“接口：推送”，ADR-0118 加正文）。
+#[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize)]
+pub struct DevicePayload {
+    /// 发推送的这台服务器的 endpoint ID（配对码里的那个）：手机配了多台服务器，靠它知道该连哪台去取消息。
+    pub server: String,
+    pub room_id: String,
+    pub event_id: String,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub sender: Option<String>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub sender_display_name: Option<String>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub room_name: Option<String>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub prio: Option<String>,
+    /// 正文；附件消息是文件名，最长 [`MAX_BODY_CHARS`] 个字符，换行合并成空格。加密房间、邀请和只有计数的通知没有。
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub body: Option<String>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub msgtype: Option<PushMessageType>,
+    /// 正文被截掉了：手机先显示这段，点开后再取全。
+    #[serde(default, skip_serializing_if = "std::ops::Not::not")]
+    pub truncated: bool,
+    /// 消息在旁聊里时的话题根（ADR-0093）：通知点开进那个旁聊，预览也只补在那个旁聊里。
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub thread_root: Option<String>,
+    /// 新的联系人请求（ADR-0045）：不对应房间里的消息，`room_id`、`event_id` 为空。
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub contact_request: Option<crate::ContactRequestPush>,
+}
+
+impl DevicePayload {
+    /// 把正文收进预算后序列化成发给设备的字节：换行合并成空格、最多 [`MAX_BODY_CHARS`] 个字符；还放不下时按
+    /// 房间名 → 发送者显示名 → 正文 的顺序丢（ADR-0118 §2），`server`、`room_id`、`event_id`、`sender` 一定留着。
+    pub fn encode(&mut self) -> Vec<u8> {
+        self.fit_body();
+        let mut encoded = self.to_bytes();
+        for dropped in 0..2 {
+            if encoded.len() <= MAX_PLAINTEXT_BYTES {
+                return encoded;
+            }
+            match dropped {
+                0 => self.room_name = None,
+                _ => self.sender_display_name = None,
+            }
+            encoded = self.to_bytes();
+        }
+        if encoded.len() <= MAX_PLAINTEXT_BYTES {
+            return encoded;
+        }
+        self.cut_body_to_fit(encoded)
+    }
+
+    /// 换行合并成空格，再截到 [`MAX_BODY_CHARS`] 个字符（按 UTF-8 字符边界切）。
+    fn fit_body(&mut self) {
+        let Some(body) = &self.body else { return };
+        let flattened = body.replace(['\n', '\r'], " ");
+        if flattened.chars().count() <= MAX_BODY_CHARS {
+            self.body = Some(flattened);
+            return;
+        }
+        self.body = Some(flattened.chars().take(MAX_BODY_CHARS).collect());
+        self.truncated = true;
+    }
+
+    /// 正文还是太长：二分出放得下的最长前缀。整段都放不下时只留固定字段。
+    fn cut_body_to_fit(&mut self, encoded: Vec<u8>) -> Vec<u8> {
+        let Some(body) = self.body.clone() else {
+            return encoded;
+        };
+        // 标记本身也占字节，量的时候就要算进去。
+        self.truncated = true;
+        let chars: Vec<char> = body.chars().collect();
+        let (mut low, mut high) = (0, chars.len());
+        let mut best = self.to_bytes();
+        while low < high {
+            let middle = (low + high).div_ceil(2);
+            self.body = Some(chars[..middle].iter().collect());
+            let candidate = self.to_bytes();
+            if candidate.len() <= MAX_PLAINTEXT_BYTES {
+                low = middle;
+                best = candidate;
+            } else {
+                high = middle - 1;
+            }
+        }
+        if low == 0 {
+            self.body = None;
+            return self.to_bytes();
+        }
+        best
+    }
+
+    fn to_bytes(&self) -> Vec<u8> {
+        serde_json::to_vec(self).expect("a push payload always serializes")
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use serde::de::DeserializeOwned;
+    use serde_json::json;
 
     use super::*;
     use crate::{Action, PushAction};
@@ -256,5 +390,140 @@ mod tests {
 
     fn round_trip<T: Serialize + DeserializeOwned>(value: &T) -> T {
         serde_json::from_str(&serde_json::to_string(value).unwrap()).unwrap()
+    }
+
+    /// 最窄的渠道是套进 APNs/FCM 的 JSON、密文再 base64（ADR-0118 §2）：4 KB 外限、base64 涨三分之一、
+    /// RFC 8291 的头部和认证标签。明文预算按这些反推，留出 aps 等外层字段的位置后必须放得下。
+    #[test]
+    fn the_body_budget_fits_the_narrowest_channel() {
+        let ciphertext = MAX_PLAINTEXT_BYTES + RFC8291_OVERHEAD;
+        assert!(ciphertext.div_ceil(3) * 4 + JSON_ENVELOPE <= CHANNEL_LIMIT);
+        const { assert!(MAX_PLAINTEXT_BYTES == 2 * 1024) };
+        // UnifiedPush 直接把密文当请求体：1–4096 字节，明文上限 3993。
+        assert!(ciphertext <= CHANNEL_LIMIT);
+    }
+
+    #[test]
+    fn a_body_longer_than_the_budget_is_cut_without_an_ellipsis() {
+        let mut payload = message(Some("快".repeat(3_000)), PushMessageType::Text);
+        // 房间 ID 不能丢，挤占预算；正文是唯一能让步的字段。
+        payload.room_id = format!("!{}:example.org", "r".repeat(1_800));
+        let encoded = payload.encode();
+        assert!(encoded.len() <= MAX_PLAINTEXT_BYTES, "{}", encoded.len());
+        assert!(payload.truncated);
+        let body = payload.body.as_ref().unwrap();
+        assert!(body.chars().count() < MAX_BODY_CHARS);
+        assert!(!body.ends_with('…') && !body.ends_with("..."), "{body}");
+        // UTF-8 边界切开也还是合法的正文。
+        assert!(body.chars().all(|c| c == '快'));
+    }
+
+    #[test]
+    fn newlines_become_spaces_and_the_body_stops_at_120_chars() {
+        let mut payload = message(
+            Some(format!("{}\n{}", "第一行".repeat(50), "第二行".repeat(50))),
+            PushMessageType::Text,
+        );
+        let encoded = payload.encode();
+        assert!(encoded.len() <= MAX_PLAINTEXT_BYTES);
+        let body = payload.body.as_ref().unwrap();
+        assert_eq!(body.chars().count(), MAX_BODY_CHARS);
+        assert!(!body.contains('\n'));
+        assert!(payload.truncated);
+    }
+
+    /// 附件消息的正文是文件名，类型在 `msgtype` 里，不带 URL 和缩略图。
+    #[test]
+    fn an_attachment_carries_its_type_and_file_name_only() {
+        let mut payload = message(Some("猫.jpg".into()), PushMessageType::Image);
+        let encoded = payload.encode();
+        let value: serde_json::Value = serde_json::from_slice(&encoded).unwrap();
+        assert_eq!(value["msgtype"], "image");
+        assert_eq!(value["body"], "猫.jpg");
+        assert!(value.get("url").is_none());
+        assert!(value.get("thumbnail").is_none());
+    }
+
+    /// 还放不下时先丢房间名、再丢发送者显示名；`server`、`room_id`、`event_id`、`sender` 一定留着。
+    #[test]
+    fn oversized_names_are_dropped_before_the_body() {
+        let mut payload = message(Some("短句".into()), PushMessageType::Text);
+        payload.room_name = Some("房".repeat(4_000));
+        payload.sender_display_name = Some("名".repeat(4_000));
+        let encoded = payload.encode();
+        assert!(encoded.len() <= MAX_PLAINTEXT_BYTES, "{}", encoded.len());
+        assert!(payload.room_name.is_none(), "先丢房间名");
+        assert!(payload.sender_display_name.is_none(), "再丢发送者显示名");
+        assert_eq!(payload.body.as_deref(), Some("短句"), "正文留着");
+        assert_eq!(payload.sender.as_deref(), Some("@a:example.org"));
+        assert_eq!(payload.room_id, "!r:example.org");
+        assert_eq!(payload.event_id, "$e");
+        assert!(!payload.truncated, "正文没动过");
+    }
+
+    /// 契约：字段名固定，没有的可选字段不出现；`truncated` 只在真截断时出现。
+    #[test]
+    fn a_wake_only_payload_has_neither_body_nor_msgtype() {
+        let mut payload = message(None, PushMessageType::Other);
+        payload.msgtype = None;
+        let value: serde_json::Value = serde_json::from_slice(&payload.encode()).unwrap();
+        assert_eq!(
+            value,
+            json!({
+                "server": "server-endpoint-id",
+                "room_id": "!r:example.org",
+                "event_id": "$e",
+                "sender": "@a:example.org",
+                "sender_display_name": "Alice",
+                "room_name": "家里",
+                "prio": "high",
+            })
+        );
+        let mut with = message(Some("你好".into()), PushMessageType::Text);
+        let value: serde_json::Value = serde_json::from_slice(&with.encode()).unwrap();
+        assert_eq!(value["body"], "你好");
+        assert_eq!(value["msgtype"], "text");
+        assert!(value.get("truncated").is_none());
+    }
+
+    /// 不认识的类型落 `Other`。
+    /// 旁聊里的消息带上话题根：手机点通知直接进旁聊，预览也只补在旁聊里。
+    #[test]
+    fn a_side_chat_message_carries_its_root() {
+        let mut payload = message(Some("在旁聊里".into()), PushMessageType::Text);
+        payload.thread_root = Some("$root".into());
+        let encoded = serde_json::to_value(&payload).unwrap();
+        assert_eq!(encoded["thread_root"], "$root");
+        assert!(
+            serde_json::to_value(message(None, PushMessageType::Text))
+                .unwrap()
+                .get("thread_root")
+                .is_none()
+        );
+    }
+
+    #[test]
+    fn unknown_message_types_fall_to_other() {
+        assert_eq!(
+            serde_json::to_value(PushMessageType::Other).unwrap(),
+            "other"
+        );
+    }
+
+    fn message(body: Option<String>, msgtype: PushMessageType) -> DevicePayload {
+        DevicePayload {
+            server: "server-endpoint-id".into(),
+            room_id: "!r:example.org".into(),
+            event_id: "$e".into(),
+            sender: Some("@a:example.org".into()),
+            sender_display_name: Some("Alice".into()),
+            room_name: Some("家里".into()),
+            prio: Some("high".into()),
+            body,
+            msgtype: Some(msgtype),
+            truncated: false,
+            thread_root: None,
+            contact_request: None,
+        }
     }
 }

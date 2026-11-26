@@ -17,10 +17,14 @@ use super::{
 };
 use crate::bot_activity::Guard;
 use crate::l10n;
-use crate::plugin::manifest::{Manifest, Permission, PluginKind};
+use crate::plugin::manifest::{Manifest, Permission};
 use crate::plugin::render::dry_run;
 use crate::plugin::storefront::index::Listed;
 use crate::plugin::{InstallError, PluginId, PluginPackage};
+use wonton_protocol::{
+    INBOX_ASK_TOOL, INBOX_CANCEL_TOOL, INBOX_CONFIRM_TOOL, INBOX_NOTICE_TOOL, INBOX_PRESENT_TOOL,
+    INBOX_RECAP_TOOL, INBOX_UPDATE_TOOL, INBOX_WAIT_TOOL,
+};
 
 const LIST: &str = "list_plugins";
 pub(super) const SEARCH: &str = "search_catalog";
@@ -117,6 +121,7 @@ pub fn definitions() -> Vec<Tool> {
     tools.extend(profile_tools::definitions());
     tools.extend(people_tools::definitions());
     tools.extend(panel_tools::definitions());
+    tools.extend(crate::inbox::definitions());
     tools.push(send_message_tool::definition());
     tools
 }
@@ -158,6 +163,13 @@ pub async fn call(
         }
         panel_tools::PIN | panel_tools::UNPIN | panel_tools::LIST => {
             return panel_tools::call(bus, caller, tool, args, activity).await;
+        }
+        INBOX_ASK_TOOL | INBOX_PRESENT_TOOL | INBOX_RECAP_TOOL | INBOX_CONFIRM_TOOL
+        | INBOX_NOTICE_TOOL | INBOX_WAIT_TOOL | INBOX_CANCEL_TOOL | INBOX_UPDATE_TOOL => {
+            return match crate::inbox::call(bus, caller, tool, args).await {
+                Ok(result) => result,
+                Err(failure) => bus.deny(caller, &name, &value, &failure),
+            };
         }
         _ => Err(ToolFailure::new(
             "invalid_input",
@@ -212,16 +224,11 @@ fn list(bus: &Bus) -> Value {
     json!({ "plugins": plugins })
 }
 
-/// 官方索引里 Bot 能看到的插件（系统插件随核心预装，哪种来源都装不了），和读索引时遇到的问题。一个都读不到又
-/// 有问题时报错，免得 Bot 以为索引是空的。
+/// 官方索引里 Bot 能看到的插件，和读索引时遇到的问题。一个都读不到又有问题时报错，免得 Bot 以为索引是空的。
 async fn official(bus: &Bus) -> Result<(Vec<Listed>, Option<String>), ToolFailure> {
     let (index, problem) = bus.plugins.official_index().await;
     let problem = problem.map(|p| p.details);
-    let listed: Vec<Listed> = index
-        .plugins
-        .into_iter()
-        .filter(|l| l.manifest.kind != PluginKind::System)
-        .collect();
+    let listed = index.plugins;
     match problem {
         Some(problem) if listed.is_empty() => Err(ToolFailure::new(
             "source_unavailable",
@@ -459,10 +466,10 @@ async fn uninstall(
         if id == caller.id {
             return Err(ToolFailure::new("invalid_input", "不能卸载自己"));
         }
-        if bus.plugins.is_system(&id) {
+        if bus.plugins.is_bundled_system(&id) {
             return Err(ToolFailure::new(
                 "unsupported",
-                format!("{id} 是系统插件，不能卸载"),
+                format!("{id} 是随核心带的系统插件，不能卸载"),
             ));
         }
         Ok((id, langs.pick_owned(&view.title)))

@@ -1,0 +1,6 @@
+{
+  "name": "wonton",
+  "label": "Wonton",
+  "tab": { "hidden": true },
+  "api": "api.py"
+}

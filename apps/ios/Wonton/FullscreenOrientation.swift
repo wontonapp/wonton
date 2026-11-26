@@ -23,4 +23,17 @@ final class FullscreenOrientation: NSObject, UIApplicationDelegate, ObservableOb
             }
         }
     }
+
+    // 远程通知的注册结果只有一个 delegate 收得到（本类），转给推送模型。
+    func application(
+        _ application: UIApplication, didRegisterForRemoteNotificationsWithDeviceToken deviceToken: Data
+    ) {
+        PushModel.shared?.registered(token: deviceToken)
+    }
+
+    func application(
+        _ application: UIApplication, didFailToRegisterForRemoteNotificationsWithError error: Error
+    ) {
+        PushModel.shared?.registrationFailed(error)
+    }
 }

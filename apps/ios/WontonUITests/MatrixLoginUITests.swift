@@ -20,7 +20,7 @@ final class MatrixLoginUITests: MatrixLoginFlow {
 
     func testCancelMismatchedCallbackAndRetry() throws {
         let stub = try XCTUnwrap(stub)
-        app.launch()
+        UITestBackend.launch(app)
         openMatrixLogin()
         let server = app.textFields["matrix-login-server"]
         // 点在右端，光标落在 matrix.org 后面，再删干净换成桩的地址。
@@ -74,7 +74,7 @@ final class MatrixLoginLiveUITests: MatrixLoginFlow {
     }
 
     func testOidcOpensMatrixOrgAndForeignCallbackFails() throws {
-        app.launch()
+        UITestBackend.launch(app)
         openMatrixLogin()
         XCTAssertEqual(app.textFields["matrix-login-server"].value as? String, "matrix.org")
 

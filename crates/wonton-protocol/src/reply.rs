@@ -67,6 +67,19 @@ pub struct ComposerDraft {
     pub preview: Option<crate::LinkPreviewState>,
 }
 
+/// 输入框正在编辑的那条消息（[`crate::TimelineUpdate::editing`]）。正文不在这里：壳从
+/// [`MessageAction::Edit`](crate::MessageAction::Edit) 的 `text` 预填，其他设备上改过的正文以它为准。
+#[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize)]
+#[cfg_attr(feature = "uniffi", derive(uniffi::Record))]
+pub struct ComposerEdit {
+    /// 时间线里的条目 ID。
+    pub item_id: String,
+    /// 被编辑消息的事件 ID，确认时作为 [`TimelineAction::EditMessage`](crate::TimelineAction::EditMessage) 的 `event_id` 交回。
+    pub event_id: String,
+    /// 原正文的一行摘要，编辑条上显示；完整的正文在 [`MessageAction::Edit`](crate::MessageAction::Edit) 里。
+    pub summary: String,
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;

@@ -16,7 +16,7 @@ final class PortMappingUITests: XCTestCase {
         app = XCUIApplication()
         app.launchArguments += ["-AppleLanguages", "(en)", "-AppleLocale", "en_US"]
         try UITestBackend.passPairingCode(to: app)
-        app.launch()
+        UITestBackend.launch(app)
         // 先等核心给交接结论（配对没完成时盖层上的 Skip 点了不会落到备份页），再关本机引导。
         dismissKeyHandoff()
         passOnboarding()

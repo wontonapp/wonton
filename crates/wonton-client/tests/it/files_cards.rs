@@ -143,7 +143,7 @@ async fn a_downloaded_file_still_has_a_card_without_the_connection() {
         })
         .unwrap();
 
-    // 家里的服务器没了，App 重开：连不上，手机上的文件还在。
+    // 家里的服务器没了，App 重开、连接信息也丢了：连不上，手机上的文件还在。
     world.stop_phone();
     world.stop_server();
     world.start_phone_without_home().await;

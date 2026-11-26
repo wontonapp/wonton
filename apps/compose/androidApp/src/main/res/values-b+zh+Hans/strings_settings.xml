@@ -38,4 +38,9 @@
     <string name="push_task_waiting_title">%1$s 在等你确认</string>
     <!-- Same with several waiting cards. Arguments: count, the earliest card's title. -->
     <string name="push_task_waiting_title_many">%1$d 个任务在等你确认，第一个是 %2$s</string>
+    <string name="push_no_relay">没有配置推送中继：云吞被杀或锁屏时收不到新消息</string>
+    <string name="push_relay_unreachable">连不上推送中继：%1$s</string>
+    <string name="push_relay_status">推送中继回了 %1$d</string>
+    <string name="push_fcm_unavailable">谷歌推送不可用：%1$s</string>
+    <string name="push_fcm_keys_failed">用不了设备上的推送密钥：%1$s</string>
 </resources>

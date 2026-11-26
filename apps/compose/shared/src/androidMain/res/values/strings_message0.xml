@@ -33,4 +33,8 @@
     <!-- Placeholder for a message the sender deleted. -->
     <string name="message_summary_redacted">[Message deleted]</string>
     <string name="message_link_open_failed">Couldn\'t open this link</string>
+    <!-- Menu line under the actions: when the message was sent. Argument: local time. -->
+    <string name="message_sent_at">Sent at %1$s</string>
+    <!-- Read-out state of an own message someone has read. No arguments. -->
+    <string name="message_read">Read</string>
 </resources>

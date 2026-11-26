@@ -120,13 +120,22 @@ plugin-settings-egress-disconnected = プロキシ{ $address }が接続を切断
 plugin-settings-egress-not-http = プロキシ{ $address }の応答がHTTPではありません
 plugin-settings-egress-auth-407 = プロキシ{ $address }が407を返しました：ユーザー名とパスワードが必要か、誤っています
 plugin-settings-egress-status = プロキシ{ $address }が{ $code }を返しました
-plugin-settings-egress-relay-not-running = プロキシコンテナが動いていません
+plugin-settings-egress-relay-starting = 出網コンテナ{ $container }はまだ出網ネットワークに接続していません。起動中で、接続できればインストールは通ります
+plugin-settings-egress-relay-restarting = サーバーの出網コンテナが動いていません。再起動しています。何度も失敗する場合はインストールページを確認してください
+plugin-settings-egress-relay-image = 出網コンテナのイメージを取得できません: { $error }。イメージのアドレスとタグを確認してからもう一度お試しください
+plugin-settings-egress-relay-slow = サーバーの出網コンテナがまだ起動していません: Docker が時間内に応答しませんでした（{ $error }）。まだイメージを取得中の可能性があります。引き続き試します
 plugin-settings-egress-relay-detail = プロキシには直接接続できますが、プロキシコンテナ経由では接続できません：{ $detail }。コンテナ{ $container }のログを確認してください
 plugin-settings-egress-diagnose-exit = 原因を調べるコンテナが終了コード{ $code }で終了しました：{ $reason }
 plugin-settings-egress-provider-missing = プロキシとして動作できるアプリがインストールされていません
 plugin-settings-egress-provider-manifest = プロキシアプリ{ $id }の宣言を読み取れません
 plugin-settings-egress-provider-conflict = プロキシアプリ{ $id }が既にインストールされています。同時に1つだけです
-plugin-settings-egress-provider-not-running = プロキシアプリが動いていません：{ $detail }
+plugin-settings-egress-provider-installing = プロキシアプリ{ $title }はまだインストール中です。起動すればインターネットを使うアプリが使えます。今は何もしなくて大丈夫です
+plugin-settings-egress-provider-upgrading = プロキシアプリ{ $title }は新しいバージョンに更新中です。戻ればインターネットを使うアプリがまた使えます。今は何もしなくて大丈夫です
+plugin-settings-egress-provider-uninstalling = プロキシアプリ{ $title }をアンインストールしています
+plugin-settings-egress-provider-starting = プロキシアプリ{ $title }は実行中で、まだ起動中です（コンテナ{ $container }）。今は何もしなくて大丈夫です
+plugin-settings-egress-provider-unhealthy = プロキシアプリ{ $title }は実行中ですが、ヘルスチェックに失敗しています（コンテナ{ $container }）。インストールページでログを確認してください
+plugin-settings-egress-provider-stopped = プロキシアプリ{ $title }は使えません: コンテナ{ $container }の状態は{ $status }、終了コード{ $code }です。まずインストールページのログを見て、設定を確認してください
+plugin-settings-egress-provider-no-container = プロキシアプリ { $title } のコンテナ { $container } が見つかりません。インストールページから起動し直してください
 plugin-settings-egress-relay-cidr-overlap = ネットワーク範囲{ $cidr }がプロキシコンテナの接続先Dockerネットワークと重なっているため、許可しませんでした。許可すると他のアプリに直接接続してしまいます
 plugin-settings-egress-token-unreadable = サービス{ $service }がMatrixトークンをcommandやconfigsに書いているため、読み戻せません
 plugin-settings-egress-token-reinstall = アプリを（データを残して）再インストールすると新しいデバイスが発行され、ボットは暗号化IDを再構築する必要があります
@@ -169,7 +178,6 @@ plugin-settings-store-source-plugin-missing = インデックス{ $provider }に
 plugin-settings-store-community-partial = 読めなかったものがあります：{ $missing }
 plugin-settings-store-community-page-failed = 検索結果の{ $page }ページ目（{ $error }）
 plugin-settings-store-community-unavailable = コミュニティのアプリを取得できません：{ $error }
-plugin-settings-store-system-app = システムアプリは自宅サーバーに同梱されているものだけです
 plugin-settings-store-permission-unsupported = この自宅サーバーは権限{ $permission }にまだ対応していません
 plugin-settings-store-index-newer = インデックスの形式は{ $format }です。このバージョンの自宅サーバーが読めるのは{ $supported }までです。新しいインデックスを使うには自宅サーバーをアップデートしてください
 plugin-settings-store-index-invalid = インデックスを読み込めません：{ $error }
@@ -301,11 +309,15 @@ plugin-settings-store-index-fetch-failed = 公式インデックスを取得で�
 
 # ── ヘルスチェック（health.rs）───────────────────────────────────────────
 
-plugin-settings-health-timeout = コンテナ{ $container }が制限時間内に準備できませんでした（最後の状態：{ $state }）
-plugin-settings-health-unhealthy = コンテナ{ $container }のヘルスチェックが失敗しました
+plugin-settings-health-container = コンテナ{ $container }
+plugin-settings-health-state = { $container }の最後の状態：{ $state }
+plugin-settings-health-timeout = { $waiting }は{ $waited }秒待っても（制限{ $budget }秒）{ $pending }が準備できません（{ $states }）
+plugin-settings-health-timeout-next = 次の一手：ヘルスチェックを宣言したサービスには、制限時間を起動猶予とそれ自身のリトライ期間まで広げてあります（宣言が無ければインストール期限そのもの）。ホストが空いてからインストールをやり直せば通るのが普通です。ずっと 5xx を返すならサービス自身の不調かもしれません。下のプローブとログを見てください。
+plugin-settings-health-target = サービス
+plugin-settings-health-list-separator = 、
 plugin-settings-health-exited = コンテナ{ $container }が終了しました（終了コード{ $code }）
 plugin-settings-health-no-healthcheck = コンテナ{ $container }はservice_healthyが求められていますが、ヘルスチェックが設定されていません
-plugin-settings-health-webui-timeout = Webページの入り口{ $url }が制限時間内に応答しませんでした：{ $last_error }
+plugin-settings-health-webui-state = { $method } の最後の応答：{ $error }
 plugin-settings-health-log-tail = 最近のログ：
 plugin-settings-health-probes = 最近のプローブ：
 plugin-settings-health-probe-line = [終了コード{ $code }] { $output }
@@ -330,6 +342,7 @@ plugin-settings-bot-device-name = Wontonアプリ{ $id }（ボット{ $bot }）
 plugin-settings-bot-account-deactivated = ボットのアカウント{ $user }は停止済みです。データを削除してこのアプリをアンインストールし、再インストールすると新しいアカウントが割り当てられます
 plugin-settings-bot-device-record-missing = ボット{ $bot }のデバイスの記録がありません。アプリを再インストールしてください（データは削除しなくてかまいません）
 plugin-settings-bot-device-revoked = ボット{ $user }のデバイスが取り消されたため、アプリが持っているMatrixトークンは無効になりました。アプリを再インストールすると（データは削除しなくてかまいません）再発行されます
+plugin-settings-bot-sync-stalled = ボットは{ $seconds }秒のあいだコア経由でメッセージを受け取っていません。プロセスが動いて健康に見えても届いていません。アプリを再起動してください。直らなければ再インストールしてください（データは削除しなくてかまいません）
 
 # ── LAN検出・送信コンテナ・ストアインデックスの補足（lan/detect.rs、docker_limits.rs、egress、storefront）──
 

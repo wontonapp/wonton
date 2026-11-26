@@ -1,6 +1,8 @@
 #!/usr/bin/env python3
 """从 design/ 生成原生令牌、图标、噪点和客户端网页令牌映射。--check 只比对，不一致时失败。"""
 
+# 这个脚本不在核心产物的键里：它只改生成的界面代码，不碰 Rust 核心（见 .github/workflows/README.md 的“核心产物”）。
+
 import hashlib
 import json
 import os

@@ -1,4 +1,4 @@
-//! 成员的显示名和房间的正在输入状态（ADR-0109 §7）。
+//! 成员的显示名和房间的正在输入状态（ADR-0109 §8）。
 
 use futures_util::{Stream, stream};
 use matrix_sdk::ruma::{OwnedUserId, UserId};

@@ -17,6 +17,10 @@ final class TimelineModel {
     private(set) var notice: KeyNotice?
     /// 时间线被清空重建的次数：重建的 Reset 里带新落点，视图要重新摆。
     private(set) var generation = 0
+    /// 走查用（DEBUG）：订阅任务进来了几次、收到了几批，挂在 `ScrollDebug` 的自述里。
+    private(set) var debugSubscribes = 0
+    private(set) var debugUpdates = 0
+    private(set) var debugEnded = ""
     /// 房间面板里的页面（ADR-0052）：列表为空时壳画大加号。每一批都带当前值。
     private(set) var panel: [PanelItem] = []
     /// 房间面板上次看的那一页（本机记住，不同步）。
@@ -29,6 +33,19 @@ final class TimelineModel {
     /// 群里在场的 AI（本账号认识的 Bot 的 Matrix 用户 ID）；私聊不算。nil 是成员名单还没取全、
     /// 在场的算不准，别下“群里没有 AI”的结论；空列表才是确定没有。
     private(set) var roomBots: [String]?
+    /// 输入框正在编辑哪条（ADR-0109 第 10 节）；不在编辑时为空。
+    private(set) var editing: ComposerEdit?
+    /// 正在输入的人的显示名，不含自己（ADR-0109）。
+    private(set) var typing: [String] = []
+    /// 房间里各 Bot 的斜杠命令和被截掉的条数（ADR-0054、ADR-0109）：空的时候没有“菜单”按钮，敲“/”也不弹列表。
+    private(set) var commands: [RoomCommand] = []
+    private(set) var commandsOmitted: UInt32 = 0
+    /// 跳到原消息的进展和“向下”按钮先回到的那一条（ADR-0109 第 4 节）。
+    private(set) var jump: JumpState = .idle
+    private(set) var backTo: String?
+    /// 核心要壳滚到的那一条；每来一次 `focusRevision` 加一，视图按它滚。
+    private(set) var focus: TimelineFocus?
+    private(set) var focusRevision = 0
     private(set) var failure: Problem?
     /// 打不开时点“重试”加一，视图按它重新订阅。
     var attempt = 0
@@ -48,6 +65,7 @@ final class TimelineModel {
     /// 在视图的 `.task` 里调用：订阅时间线，视图消失时订阅随之结束。
     func observe(pin: BottomPin) async -> Bool {
         failure = nil
+        debugSubscribes += 1
         let subscription: TimelineSubscription
         do {
             subscription = try await core.subscribeTimeline(
@@ -58,6 +76,9 @@ final class TimelineModel {
             return false
         }
         self.subscription = subscription
+        let state = subscription.debugStatus()
+        let startLine = "observe start room=\(self.roomId) n=\(self.debugSubscribes) status=\(state)"
+        walkLog.notice("\(startLine, privacy: .public)")
         defer {
             subscription.cancel()
             if self.subscription === subscription { self.subscription = nil }
@@ -65,24 +86,38 @@ final class TimelineModel {
         guard !Task.isCancelled else { return false }
         for await update in subscription.updates() {
             guard !Task.isCancelled else { break }
+            debugUpdates += 1
+            walkLog.notice(
+                "update diffs=\(update.diffs.count, privacy: .public) have=\(self.items.count, privacy: .public)"
+            )
             apply(update, pin: pin)
         }
+        // 走查：订阅结束的原因（取消还是自己断了），挂在 `ScrollDebug` 里。
+        debugEnded = Task.isCancelled ? "cancelled" : "ended"
+        // 状态在结束时重取：用开始时的快照会和同一行的 cancelled、上面的 debugEnded 对不上。
+        let endLine = "timeline ended cancelled=\(Task.isCancelled) room=\(self.roomId)"
+            + " status=\(subscription.debugStatus())"
+        walkLog.notice("\(endLine, privacy: .public)")
         if !Task.isCancelled {
             failure = Problem(title: String(localized: .Problem1.problemGenericTitle))
         }
+        // 先不弹回列表：页留着才能读到 `roomScroll` 里的原因。
         return !Task.isCancelled
     }
 
     func setScroll(_ scroll: TimelineScroll) {
+        walkLog.notice("report \(String(describing: scroll), privacy: .public)")
         subscription?.setScroll(scroll: scroll)
     }
 
     private func apply(_ update: TimelineUpdate, pin: BottomPin) {
-        if !prepends(update.diffs) { pin.prepareForUpdate() }
+        // 这一批要滚到别处时不保留更新前的位置：保留会把跳转拉回去。
+        if update.focus == nil, !prepends(update.diffs) { pin.prepareForUpdate() }
         if update.scrollToBottom { pin.pin() }
         for diff in update.diffs {
             apply(diff)
         }
+        editing = update.editing
         backPagination = update.backPagination
         confirmations = update.confirmations
         viewport = update.viewport
@@ -93,6 +128,15 @@ final class TimelineModel {
         widgets = update.widgets
         callActive = update.callActive
         roomBots = update.roomBots
+        typing = update.typing
+        commands = update.commands
+        commandsOmitted = update.commandsOmitted
+        jump = update.jump
+        backTo = update.backTo
+        if let focus = update.focus {
+            self.focus = focus
+            focusRevision += 1
+        }
         if let anchor = update.anchor { self.anchor = anchor }
         if isLoaded { pin.stick() }
         isLoaded = true

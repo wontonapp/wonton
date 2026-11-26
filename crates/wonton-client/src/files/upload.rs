@@ -29,9 +29,14 @@ const CHUNK: usize = 256 * 1024;
 const STALL: Duration = Duration::from_secs(60);
 /// 字节发完后等多久：最后一个 PATCH 的回答要等核心把文件放进 `transfers`，大文件跨文件系统要复制。
 const PLACEMENT: Duration = Duration::from_secs(10 * 60);
-/// 发链接前等 Matrix 登录多久：App 重启后接着发时，恢复会话、第一次同步用不了一分钟。
-/// 停在登录失败上的当场就走，不等。
+/// 正在登录时等它出结果最多多久：App 重启后接着发时，恢复会话、第一次同步用不了一分钟。
+/// 只对「正在登录」等满这个期限；没在登录的等 [`SIGN_IN_START_GRACE`] 就发。
 const CHAT_SIGN_IN: Duration = Duration::from_secs(60);
+/// 刚打开 App 时等登录「开始」多久：壳还没连、账号还是 `SignedOut`，给它一点时间进登录，别当场判成链接没发出。
+/// 真的没登录（一直 `SignedOut`）等完这一段就发一次、按错报出去，不白等满 [`CHAT_SIGN_IN`]。
+const SIGN_IN_START_GRACE: Duration = Duration::from_secs(2);
+/// 正在登录时多久试一次：等的时候会话可能刚被下一次重连换掉，别一次 `NotReady` 就判死。
+const SIGN_IN_RETRY: Duration = Duration::from_millis(200);
 
 pub(super) async fn run(link: &Arc<FilesLink>, record: Record) -> Result<(), Problem> {
     let Job::Upload {
@@ -434,21 +439,50 @@ async fn what_while_down(api: &Api, file: &FileId, problem: Problem) -> Problem 
 }
 
 /// 传完后把这个房间的 Bot 加进访问范围，再把链接发进这个房间。App 被杀在这两步之间时，重启后再做一遍；授权本身可以重复，消息极少数
-/// 情况下会多发一条。隧道断着时等连上再做；Matrix 还没登录好（App 重启后接着发链接时常见）等它一小会儿，别让主人点重发；
-/// 其他的不自动再试，等主人点重发：聊天停在登录失败上、主人退出了房间这些情况，一直试也不会好。
+/// 情况下会多发一条。隧道断着时等连上再做；刚打开 App、壳还没开始连（账号 `SignedOut`，或上一次登录失败等重连的
+/// `Failed`）时先给它 [`SIGN_IN_START_GRACE`] 等登录开始，等不到就当场发、按错报出去，不白等满 60 秒；登录一旦开始就
+/// 等它出结果（最多 [`CHAT_SIGN_IN`]）。其他的不自动再试，等主人点重发：聊天停在登录失败上、主人退出了房间这些情况，一直试也不会好。
 async fn deliver(
     link: &Arc<FilesLink>,
     api: &Api,
     file: &FileId,
     room: &str,
 ) -> Result<(), Problem> {
+    let deadline = Instant::now() + CHAT_SIGN_IN;
     let sent = async {
-        api.grant(file, room).await?;
-        link.chat.signed_in_within(CHAT_SIGN_IN).await;
-        link.chat
-            .send_text_unopened(room, &file.link())
-            .await
-            .map_err(chat_problem)
+        // 刚打开 App 时壳还没开始连：先等登录开始一小会儿。
+        if !link.chat.sign_in_started_within(SIGN_IN_START_GRACE).await {
+            // 没在登录：没有谁会替它登录，当场发一次、按错报出去，不白等满 60 秒。
+            return try_deliver(link, api, file, room).await;
+        }
+        // 账号没停住（登录着/正在登录/重连）：等它出结果，等到了就发；失败停下（纯 SignedOut/Failed）就发一次、按错报出去。
+        loop {
+            if link.chat.sign_in_in_progress() {
+                let left = deadline.saturating_duration_since(Instant::now());
+                if left.is_zero() {
+                    break;
+                }
+                link.chat.wait_signed_in(left, SIGN_IN_START_GRACE).await;
+            }
+            let problem = match try_deliver(link, api, file, room).await {
+                Ok(()) => return Ok(()),
+                Err(problem) => problem,
+            };
+            // 等的时候会话可能刚被下一次重连换掉（视图说登录着、`current()` 里还没有会话）：账号没停住、还没到期就再试一拍。
+            if Instant::now() < deadline
+                && link.chat.sign_in_in_progress()
+                && waiting_for_sign_in(&problem)
+            {
+                tokio::time::sleep(
+                    SIGN_IN_RETRY.min(deadline.saturating_duration_since(Instant::now())),
+                )
+                .await;
+                continue;
+            }
+            return Err(problem);
+        }
+        // 期限到了：最后发一次，按真正的错报出去。
+        try_deliver(link, api, file, room).await
     };
     sent.await.map_err(|problem| match problem {
         Problem::Interrupted(_) if link.home.view().status != HomeStatus::Connected => problem,
@@ -457,6 +491,32 @@ async fn deliver(
             Problem::LinkNotSent(reason, message)
         }
     })
+}
+
+/// 试一次发链接：先把房间的 Bot 加进访问范围再发。授权可以重复，失败一分清是能再试的还是当场停的。
+async fn try_deliver(
+    link: &Arc<FilesLink>,
+    api: &Api,
+    file: &FileId,
+    room: &str,
+) -> Result<(), Problem> {
+    api.grant(file, room).await?;
+    link.chat
+        .send_text_unopened(room, &file.link())
+        .await
+        .map_err(chat_problem)
+}
+
+/// 这次失败是「正在登录、等一会儿可能就好」那类：没登录（`NotReady` 归到 `ServiceUnavailable`），或者本地代理还没拿到
+/// 会话凭据（`Protocol`、`Unauthenticated` 的 407）。调用方只在真的在登录时用它决定要不要再试一拍。
+fn waiting_for_sign_in(problem: &Problem) -> bool {
+    matches!(
+        problem,
+        Problem::Failed(
+            FileFailure::ServiceUnavailable | FileFailure::Protocol | FileFailure::Unauthenticated,
+            _
+        )
+    )
 }
 
 /// 聊天那边的错算传输的哪一类。`NotReady`（还没登录 Matrix）、`Unauthorized`、`Upstream` 说的是手机这边的

@@ -14,9 +14,11 @@ mod invite;
 mod link;
 mod pairing;
 mod pairing_code;
+pub(crate) mod path_settings;
 mod quality;
 mod rebuild;
 mod refresh;
+mod relays;
 mod storage;
 mod ticket;
 
@@ -33,7 +35,7 @@ use url::Url;
 use wonton_l10n::l10n;
 use wonton_protocol::{
     ConnectionCheck, ConnectionDetails, CoreError, DeviceNetwork, HomeFailure, HomePath,
-    HomeStatus, HomeViewModel, ProxySettings, PushMethod,
+    HomeStatus, HomeViewModel, ProxySettings, PushMethod, RelayCurrent, RelaySettingsView,
 };
 use wonton_tunnel::relays::is_public_relay;
 use wonton_tunnel::{PathInfo, PathKind, TunnelClient, TunnelError, TunnelStatus};
@@ -97,10 +99,14 @@ pub(crate) struct HomeLink {
     page_media: AtomicBool,
     /// 收新消息的方式是保持连接（ADR-0003）：壳的前台服务让进程和隧道在后台活着，核心不停探测和自动重连。
     keep_connection: AtomicBool,
+    /// 代理 TUN 的假地址是否排除出选路，绑定的时候读这个缓存，不读盘（文件仍是真相，换作用域时重建）。
+    fake_ip_exclusion: AtomicBool,
     /// 媒体停下后延迟释放保活的任务，重新播放时取消。
     media_release: std::sync::Mutex<Option<tokio::task::JoinHandle<()>>>,
     /// 每次媒体状态变化加一。释放任务醒来后只认自己那次，被后来的播放抢先时不覆盖。
     media_generation: AtomicU64,
+    /// 中继表设置的最近一份核心快照和作废在途回应的代数（ADR-0048）。
+    relays: std::sync::Mutex<relays::RelaysState>,
     /// 定时检查开着。只有测试会关：要证明重连是某个动作促成的，不是碰巧赶上下一次检查。
     periodic_checks: watch::Sender<bool>,
     /// 每来一次网络变化加一，合并连着来的回调。
@@ -153,6 +159,8 @@ impl HomeLink {
                 server_id: None,
                 status: HomeStatus::NotConfigured,
                 path: None,
+                current_relay: None,
+                relays: RelaySettingsView::default(),
                 notice: None,
                 details: ConnectionDetails::default(),
                 proxy: None,
@@ -163,6 +171,7 @@ impl HomeLink {
                 just_recovered: false,
             },
         );
+        let fake_ip_exclusion = path_settings::exclude_fake_ip(storage.root());
         let home = Arc::new(Self {
             runtime,
             hub,
@@ -181,9 +190,11 @@ impl HomeLink {
             background: watch::Sender::new(false),
             app_backgrounded: AtomicBool::new(false),
             page_media: AtomicBool::new(false),
+            fake_ip_exclusion: AtomicBool::new(fake_ip_exclusion),
             keep_connection: AtomicBool::new(false),
             media_release: std::sync::Mutex::new(None),
             media_generation: AtomicU64::new(0),
+            relays: std::sync::Mutex::default(),
             periodic_checks: watch::Sender::new(true),
             network_changes: AtomicU64::new(0),
             addresses_stale: AtomicBool::new(false),
@@ -583,8 +594,19 @@ impl HomeLink {
             if connected && !stats_due {
                 withheld |= preserve_samples(&mut details, &mut path, view);
             }
+            // 设置页要标出正在用的那台；中继路径才有。压住的样本已经回到 path 上，这里不再单独限流。
+            let current_relay = connected
+                .then_some(path.as_ref())
+                .flatten()
+                .and_then(|path| {
+                    path.relay_url.clone().map(|url| RelayCurrent {
+                        url,
+                        rtt_ms: Some(path.rtt_ms),
+                    })
+                });
             let changed = view.status != status
                 || view.path != path
+                || view.current_relay != current_relay
                 || view.notice != notice
                 || view.just_recovered != just_recovered
                 || view.details != details;
@@ -592,6 +614,7 @@ impl HomeLink {
             view.path = path;
             view.notice = notice;
             view.just_recovered = just_recovered;
+            view.current_relay = current_relay;
             view.details = details;
             changed
         });
@@ -721,11 +744,19 @@ fn path_view(path: PathInfo) -> HomePath {
         TransportAddr::Relay(url) => is_public_relay(url),
         _ => false,
     };
+    // 只有中继路径才挂着中继地址；直连路径的对端就是服务器的 IP。
+    let relay_url = match &path.remote {
+        TransportAddr::Relay(url) if path.kind == PathKind::Relay => {
+            Some(wonton_tunnel::relays::relay_url_text(url))
+        }
+        _ => None,
+    };
     HomePath {
         relay: path.kind == PathKind::Relay,
         public_relay,
         lan: path.is_lan(),
         rtt_ms: u32::try_from(path.rtt.as_millis()).unwrap_or(u32::MAX),
+        relay_url,
     }
 }
 

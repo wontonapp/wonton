@@ -1,0 +1,44 @@
+# fix-802：#802 返修（侧聊说明、附件区发送先收正在输入）
+
+#802 与其后的 #804 都已合入，正在输入的节流/自动停、ADR 节号和文案键在 main 上已经齐了。这一支只留 main 上还缺的三处：
+
+1. iOS 侧聊附件面板的说明只跟第一张试过的照片走；那一张被拒就留在草稿里，不跟后面的照片。说明随照片真发出去才清草稿，不再一张贴一遍、也不再另发一条 `SendText`。合入版每张都清“待发说明”，第一张被拒时后面的照片会带空说明，晚一张失败又会让输入框里的说明留成重复的一句。
+2. 附件区那条发送（`SendComposer`）不走 `timeline_action`，发送前自己先收“正在输入”（`ChatLink::stop_typing`），补上 ADR-0109 第 8 节“发送先停”里漏的一端。
+3. `edit_actions` 模块注释的 ADR 节号 9 改 10（编辑是第 10 节）；删掉没人再用的 `chat-op-typing-failed` 四条文案。
+
+与 main 的冲突（#973 返修）：已 rebase 到 main c49f56b8，`git merge origin/main` 报 Already up to date。main 侧的新行为保住：#1015 的 `ForwardMessage { .., comment }` 仍由 `chat/mod.rs` 交给 `forward_message(.., comment.as_deref())` 一次派发，`ui_fake_timeline` 也是先落附言再转发；本 PR 上面三条都在。
+
+验证（本机 194，cargo 经 cargo-slot）：
+- `cargo test -p wonton-client --features ui-fake --lib`：452 passed, 0 failed。
+- `cargo clippy -p wonton-protocol -p wonton-client -p wonton-matrix --all-targets --locked -- -D warnings`：0 warning 0 error。
+- `cargo fmt --all --check`、`git diff --check`、`check-conflict-markers.sh`、`check-file-size.sh`、`check-protocol-base.sh`、`check-ui-text.py`、`check-uniffi-comments.sh`、`check-shell-parity.py`：通过。
+- `nice ~/wonton-dev/android-build.sh`（detekt、`:androidApp:testDebugUnitTest`、`assembleDebug`）：BUILD SUCCESSFUL。
+- 界面用例（模拟器 emulator-5566）：`:androidApp:connectedDebugAndroidTest` 过滤 `RoomAttachPanelTest` 10 条、`RoomEditTest` 3 条，13 passed 0 failed。
+- iOS 说明跟照片这条以前没用例，这次补了界面用例（见下）；附件区发送的“先停”补了单测，不靠读代码。
+- iOS 没上模拟器走查：这次只解冲突和改发送逻辑，没改界面结构。
+
+SwiftLint 返修（CI 红在 `ComposerView.swift:236` 圈复杂度 12 > 10）：`sendPicked` 拆出 `sendSideChatPhoto`（一张照片的发送和清草稿）和 `trailingAction`（照片之后还要不要另发）。
+
+复审 rv-973b：
+- 说明改成“第一张试过就算用过”：`carriesCaption = isSideChat && index == 0`，第一张取字节失败或被拒都不再让后面的带说明，被拒时草稿留着。Android 本来只给第 0 张贴、失败整单停（`PhotoSend.kt:46/53`），口径一致。
+- `stop_typing` 的调用从 `composer_action` 提到 `dispatch` 入口（假数据的拒绝也在它后面），主对话和旁聊按各自目标收；`ChatLink` 加了测试用的记录，新单测删掉那一步会红。
+- 界面用例补两条：说明只跟第一张、草稿清掉；第一张被拒时说明留在草稿、第二张照发且不带说明。`WONTON_UI_FAIL_SEND` 改成“拒前 n 次发送”，不写数字算 1。
+- `trailingAction` 的 `sendText` 分支只在一批照片一张都没进循环时走（面板要求至少选一张，所以界面上基本走不到），注释和 PR 正文写清了。
+
+Android 兜底：`TimelineList.dayMarksFor` 先拍一份列表再算日期（跑 `RoomAttachPanelTest` 撞到 `ArrayIndexOutOfBoundsException`，三次里两次红）。
+
+验证：
+- `cargo test -p wonton-client --features ui-fake --lib`：453 passed, 0 failed。新单测删掉 `dispatch` 里那一步单独跑过一次，转红。
+- `cargo clippy -p wonton-protocol -p wonton-client -p wonton-matrix --all-targets --locked -- -D warnings`：0 warning 0 error。
+- `cargo fmt --all --check`、`git diff --check`、冲突标记、行数、界面文字、uniffi 注释、壳对齐：通过。
+- mini 上 `swiftlint lint --strict --no-cache`（235 个文件）：0 violation。
+- Android `android-build.sh`（detekt、单元测试、assembleDebug）：BUILD SUCCESSFUL。
+- iOS 界面用例两条（`testSideChatCaptionGoesOnlyWithFirstPhoto`、`testSideChatRefusedFirstPhotoKeepsCaptionForLater`）在 iPhone 17 模拟器通过。
+- 同轮既有的 `testSideChatPhotoGridUsable` 单独重跑仍红：`openSideChat` 后停在主对话、`composerAttach` 点不到（两条新用例用同一助手是通过的）；没改到这条，记下不下结论。
+- Android 界面用例复核：`RoomAttachPanelTest` 10 条、`RoomEditTest` 3 条，13 passed 0 failed（`dayMarksFor` 修复后）。
+
+已合 main 4d151ac8（#875）：冲突两处——`TimelineList.kt` 的 `dayMarksFor` main 已用固定 `size` 修过同一个越界，取 main 的（我们的快照版多余）；`ui_fake_timeline.rs` 的用例相邻冲突两条都留。`#1015` 的 `ForwardMessage.comment` 一次派发、本 PR 的说明和发送先停在合并后都在（`comment.as_deref()`、`dispatch` 里的 `stop_typing`、`isSideChat && index == 0`）。
+
+验证（合并后）：rust `--lib` 460 passed、clippy 0 warning、fmt/行数/界面文字/uniffi/壳对齐、iOS SwiftLint 0、`android-build.sh`（detekt/单测/assemble）成功、`RoomAttachPanelTest` 10 passed。`RoomEditTest` 3 条里 2 passed（`editShowsBarAndCancelRestoresDraft`、`foreignMessageMenuHasNoEdit`），`confirmReplacesTextAndShowsEdited` 红两次；在纯 main（4d151ac8）上同样红，不是这次合并带来的。
+
+head 9222249a（合并提交，基于 main 4d151ac8；之前的修复提交都在）。

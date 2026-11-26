@@ -4,9 +4,9 @@
 
 ## 一句话
 
-家里一台 Linux + Docker 主机上跑着一个薄的 Rust 核心容器，它用 Docker 管理所有插件；自托管的
-Matrix 服务器（Tuwunel）是所有会话的事实源；Agent 和插件都以 Matrix bot 的身份和人对话；手机上的
-原生 App 由一个厚的 Rust 客户端核心驱动，经 iroh 隧道连回家；推送经我们运营的中继转发密文。
+家里一台常开的枢纽（Linux + Docker 主机，或者 Mac、Windows 上的内置 Linux 虚拟机）上跑着一个薄的 Rust 核心容器，它用 Docker
+管理所有插件；其他电脑作为受管设备挂在枢纽下，在自己的工作区里跑 Agent。自托管的 Matrix 服务器（Tuwunel）是所有会话的事实源；
+Agent 和插件都以 Matrix bot 的身份和人对话；手机上的原生 App 由一个厚的 Rust 客户端核心驱动，经 iroh 隧道连回家；推送经我们运营的中继转发密文。
 
 ## 组件总览
 
@@ -20,12 +20,18 @@ flowchart LR
     WebView --> ClientCore
   end
 
-  subgraph Home["家里的 Linux + Docker 主机"]
-    Core["wonton-core\n插件管理 · 网关与配对 · 推送代理\nMCP 总线 · 密钥与存储授权"]
+  subgraph Home["家里的枢纽（Linux + Docker 或内置 Linux 虚拟机）"]
+    Core["wonton-core\n插件管理 · 网关与配对 · 推送代理\nMCP 总线 · 密钥与存储授权 · 调度器"]
     Tuwunel["Tuwunel\nMatrix homeserver"]
-    Agent["Hermes\n唯一默认内核 · 多个 Bot"]
+    Agent["Hermes\n唯一默认内核 · 主 Agent · 多个 profile"]
     Magpie["magpie（可选插件）\n通用模型网关"]
     Plugins["其他插件\nImmich · Navidrome · Paperless …"]
+  end
+
+  subgraph Devices["受管设备（Mac / Windows / Linux）"]
+    DeviceAgent["设备守护进程\n入网 · 拉起任务 · 权限桥 · 收产物"]
+    Herdr["herdr\n工作区 · pane · 用户自己装的 Agent"]
+    DeviceAgent --> Herdr
   end
 
   subgraph Cloud["我们运营的云端（不存业务数据）"]
@@ -38,6 +44,7 @@ flowchart LR
   Providers["Hermes 自带供应商\nAPI key / 订阅登录"]
 
   ClientCore <-->|"iroh 隧道"| Core
+  Core <-->|"iroh 隧道 · 设备密钥"| DeviceAgent
   Core --> Tuwunel
   Agent <--> Tuwunel
   Agent --> Providers
@@ -53,21 +60,27 @@ flowchart LR
   Core -.->|"商店与插件包"| GitHub
 ```
 
-### 家里的服务器
+### 枢纽（家里的服务器）
 
 | 容器 | 类型 | 职责 |
 | --- | --- | --- |
-| `wonton-core` | 核心 | 插件管理器（经 Docker API 安装、升级、启停、健康检查、日志；Docker Hub、ghcr、quay 的镜像可以经加速地址按摘要拉，按仓库分名单，ADR-0074）；网关与配对（iroh 入口、HTTP 反向代理、设备与用户、会话鉴权）；推送代理；MCP 总线；密钥库与存储授权。系统服务里唯一挂载 Docker socket 的容器（升级器见下；声明了 `docker.socket` 的插件见 ADR-0036）。 |
+| `wonton-core` | 核心 | 插件管理器（经 Docker API 安装、升级、启停、健康检查、日志；Docker Hub、ghcr、quay 的镜像可以经加速地址按摘要拉，按仓库分名单，ADR-0074）；网关与配对（iroh 入口、HTTP 反向代理、设备与用户、会话鉴权）；推送代理；MCP 总线；密钥库与存储授权；调度器（设备注册表、任务表、派活、产物核对）。系统服务里唯一挂载 Docker socket 的容器（升级器见下；声明了 `docker.socket` 的插件见 ADR-0036）。 |
 | `tusd` | 核心组件 | 设备上传文件的可续传接口（tus），只在核心的私有网络里，鉴权和编号由核心决定（ADR-0020）。 |
 | `wonton-egress` | 核心组件（配了代理才有） | 出口容器：把出网插件的请求转给主人的代理（ADR-0023），或者装着的代理插件（ADR-0039）。 |
 | `tuwunel` | 核心组件 | Matrix homeserver，默认关闭联邦。会话、历史、多端同步、家人群聊的事实源。 |
 | `hydra` | 核心组件 | OIDC 提供方，插件的单点登录（ADR-0009）。 |
 | `mailpit` | 核心组件 | 收插件应用发的信（SMTP），接入申请了 `notify` 的插件网络，只收发给家里人的内部邮箱；核心取走后转进聊天（ADR-0056）。 |
-| 第三方 App 入口 | 核心组件（主人打开才有） | 入口容器、局域网转发、连接器和 lego，由核心管理（ADR-0021）。连接器是 TCP 转发、frpc 或 cloudflared，主人在设置里选，公网访问有总开关（ADR-0090）；lego 用主人的 DNS 服务商（ADR-0089）。 |
+| 第三方 App 入口 | 核心组件（有要服务的名字和证书才有） | 入口容器、局域网转发、连接器和 lego，由核心管理（ADR-0021）。名字来自装机设置或 App 里配的自己的域名，“不要名字”的装法也能只靠后者；证书签出来才建入口，续期按天跑、条款没勾不联系 CA。连接器是 TCP 转发、frpc 或 cloudflared，主人在设置里选，公网访问有总开关（ADR-0090）；lego 用主人的 DNS 服务商（ADR-0089）。 |
 | `hermes` | 默认插件（可卸载） | 唯一默认 Agent，走原生 Matrix；各家人的私人 Bot、共享 Bot 保留独立身份与数据边界。核心按普通默认插件机制装一次，卸掉不重装；安装和运行不以 Magpie 为前置（ADR-0108）。 |
 | `magpie` | 可选普通插件 | 通用模型网关；核心和默认装机不依赖它，不再承担 Agent 的模型入口。通用网关合同及其使用方的凭据与授权边界保留（ADR-0008、ADR-0108）。 |
 | 其他 | 可选插件 | Immich、Navidrome、Paperless-ngx、Ollama、Syncthing、Samba 等。 |
 | `wonton-updater` | 一次性容器 | 升级核心时拉起，用核心自己的镜像：拉新镜像、重建核心、健康检查，失败回滚（ADR-0025）。 |
+
+### 受管设备
+
+受管设备是挂在某个枢纽下的电脑（Mac、Windows、Linux），不跑核心、不跑 Tuwunel、不是 Matrix 用户。设备上只跑两样：
+我们签名的设备守护进程（入网、拿任务、转发权限、收产物）和 herdr（一个任务一个工作区、一个 pane，跑用户自己装的 Agent）。
+设备归属人批准工作区根；任务记录、会话、审批和产物核对都在枢纽。见 [ADR-0123](adr/0123-hubs-and-managed-devices.md)。
 
 ### 云端
 
@@ -87,7 +100,7 @@ flowchart LR
 | 端 | 技术 | 说明 |
 | --- | --- | --- |
 | iOS | SwiftUI | 外加通知扩展（解密推送）；录屏扩展留给 M2 的屏幕共享。 |
-| Android | Jetpack Compose | 默认“保持连接”前台服务；UnifiedPush 是设置里的高级选项，推送服务内本地解密（ADR-0003）。 |
+| Android | Jetpack Compose | 默认“保持连接”前台服务；推送是设置里的高级选项：有谷歌服务走 FCM，其余用 UnifiedPush，一律在推送服务内本地解密（ADR-0003）。 |
 | 桌面（M2） | Compose Multiplatform | 与 Android 共享 UI 模块。 |
 | Web（M3） | Compose 编译到 Web | 核心在服务器上运行，浏览器经 WebSocket 收发。 |
 | 客户端核心 | Rust + UniFFI | matrix-rust-sdk、iroh、本地代理、状态、ViewModel（含设置首页 `SettingsViewModel`）、行为测试；壳经一个 `ClientCore.dispatch(Action)` 入口提交按领域包装的操作。 |
@@ -109,7 +122,7 @@ iPad 内容窗口共享进程内的 `ClientCore`，不复制主页面栈。每�
 端口自动映射取主页面与内容页的可见集合，最后一个页面关闭才释放；应用前后台与网络变化由进程级监听上报。
 
 账号槽位既可以是配对的 Wonton，也可以是外部 Matrix 账号；导航条目和应用页操作由客户端核心给出，
-壳不按槽位种类自行隐藏。好友身份、分组、插件分享和 OpenID 连接的边界见 [ADR-0051](adr/0051-friends-and-plugin-sharing.md)；
+壳不按槽位种类自行隐藏。好友身份、插件分享和 OpenID 连接的边界见 [ADR-0051](adr/0051-friends-and-plugin-sharing.md)；
 其接口契约在 `wonton-protocol` 的 `friends`、`sharing`、`share_transport`、`matrix_login` 模块。
 
 分享页的身份是 `TabRef::SharedApp { owner_user_id, plugin_id }`，与本机插件及其他来源的同名插件隔离。
@@ -123,13 +136,20 @@ iPad 内容窗口共享进程内的 `ClientCore`，不复制主页面栈。每�
 `PluginsViewModel.owner_secrets` 只保留展开中的临时显示状态，不写入缓存；收起、离页、进入后台或换服务器时清除，
 晚到的请求不能重新显示。再次展开重新取列表和值，复制由原生壳使用系统剪贴板完成。
 
-服务端 `friends` 模块持有 `core/friends.json`：Matrix 好友、本机插件用户名、分组及最后打开分享时间。
+服务端 `friends` 模块持有 `core/friends.json`：Matrix 好友、本机插件用户名、各自的角色（ADR-0088）及最后打开分享时间。
 Matrix 邀请流程只在对方同意后调用存储 API；本机账号分配须同时保留好友墓碑里的用户名，避免和插件账号混淆。
-授权消费者先订阅完整快照再校验，连接与授权绑定 `access_generation` 和分组成员代次；删好友再加回、移出组再加回都不能恢复旧连接。
+授权消费者先订阅完整快照再校验，连接与授权绑定 `access_generation`；删好友再加回不能恢复旧连接。
+出站邀请按邀请人的“加好友”权限项在网关的 Matrix 代理处判断：家里人不受限，`AskAdmin` 记管理员卡片并挂住请求。
+同意后在 `member_sync` 锁里复核设备归属和当前角色，仍要批才把这次获批的人写进邀请人的 `allowed_users`，写不进去
+不发出、回 503；拒绝和过期分别回 403、408（ADR-0088 第 3 节）。家外先发来的邀请在 Tuwunel 就被挡住、核心看不到，
+所以服务器名上另有一个公开落地页（`/_wonton/friend-request`，也认根路径）收请求：填发起人和对方，开同一张管理员卡片，
+批准后同样写 `allowed_users`，对方重发邀请即可；同服务器的人和角色已放开的人不用交请求。结果按真实原因回给页面，
+待批条数有上限，结果只存内存。
 服务端另有一组分享组件：`friends` 存好友和固定用户名，`shares` 存授权，`share_identity` 按 Matrix 服务器名认人，
 `gateway::sharing` 校验每次请求并在授权失效时拆掉长连接，`wonton-tunnel::sharing` 是 `wonton/share/0` 的两端。
+分享只能发对方角色 `open_apps` 范围里的应用，越界回 400；角色改了，授权立刻按新范围生效，不用重建连接。
 `wonton/share/0` 连接经 OpenID 认证后只拿到授权里的插件；认证前不转发任何网页请求。好友打开网页时由网关按
-`{user}`（固定用户名）、`{name}`、`{role}=friend` 填身份，`sso: oidc` 只发 `groups=["friend"]`。
+`{user}`（固定用户名）、`{name}`、`{role}=user` 填身份，`sso: oidc` 只发 `groups=["user"]`。
 
 ## 主要链路
 
@@ -144,7 +164,7 @@ Matrix 邀请流程只在对方同意后调用存储 API；本机账号分配须
 4. 之后 App 每次启动都经隧道连回；服务器换了网络，App 通过发现服务找到它。
 5. 以后加设备，在已配对的 App 里点“添加设备”出码给新设备扫；设备都丢了，在服务器终端执行 `sudo wonton pair`。
    信任边界是服务器终端和已配对的设备，能接触局域网不算可信（理由见 ADR-0009）。
-6. 显示名和邮箱在 App 里填，存在核心里，单点登录从那里取显示名（ADR-0030）；插件拿到的邮箱是每人一个、不变的内部邮箱，应用发来的信转进这个人的 Wonton 私聊（ADR-0056）。
+6. 显示名和邮箱在 App 里填，存在核心里，单点登录从那里取显示名（ADR-0030）；资料里的头像就是 Matrix 上这个人的 `avatar_url`，换头像由客户端把自己的会话传文件、写好这个字段，核心只读服务器上的那份。插件拿到的邮箱是每人一个、不变的内部邮箱，应用发来的信进这个人的待处理面板（ADR-0056、ADR-0119）。
 
 ### 新用户引导
 
@@ -161,7 +181,12 @@ Matrix 邀请流程只在对方同意后调用存储 API；本机账号分配须
 ### 聊天
 
 App 的 Matrix 客户端请求进入客户端核心的本地代理，经 iroh 隧道到核心网关，再转给 Tuwunel。
+
+打开 App 先用本机存下的会话：本机有这台服务器的登录状态就立刻恢复，房间和已有历史从本机出，不等隧道；请求连不上时状态如实显示“传输不可用”，同步自己退避重试，隧道通了再经本地代理接着同步。首次登录才等本地代理就绪。
+
 Hermes 以对应 Bot 的 Matrix 身份收到消息，通过上游自带的供应商接入调模型、经 Wonton MCP 总线调受管工具，再把回复发回房间，由 Sliding Sync 同步到所有设备。模型接入和原生委派的边界见 [ADR-0108](adr/0108-hermes-default-kernel.md)。
+
+Bot 的请求按令牌认是哪个 Bot，只有 whoami 说令牌不认（401 和 403 都算，后者是账号停用之类的真失效）才回 403；核心还在恢复插件、或问不到 Tuwunel 时回带 `Retry-After` 的 503，让上游的重试活下来（[ADR-0111](adr/0111-bot-request-retryable-restart.md)）。网关顺手记下每次成功的同步，插件的健康检查超过 120 秒没同步就标 `Degraded` 并写明原因：上游的 `/health/detailed` 只看平台状态，同步循环停了也报 connected。
 
 Agent 私聊里的插件未就绪提示由客户端核心从插件列表与本设备的启动请求合成：停止、启动中和按类别的启动失败分开显示，
 只在停止且没有启动请求进行中时提供启动动作。启动后重新读取服务器列表，不以按钮点击或启动响应伪造运行状态；
@@ -172,19 +197,28 @@ Agent 私聊里的插件未就绪提示由客户端核心从插件列表与本�
 从系统分享面板分享进来的照片、文件和文字由壳放进数据目录的收件目录（iOS 由分享扩展写进 App Group），核心认领后出分享页，
 主人选好聊天点发送，作为一条待发消息走同一套发送（[ADR-0097](adr/0097-share-in.md)）。
 
+跨服务器发起私聊失败时，“对方服务器还没配对”和“对方服务器的公网访问关着”是两个 `ChatFailure` 类别，壳分别提示先去配对和稍后再发
+（[ADR-0050](adr/0050-cross-server-chat.md)、[ADR-0090](adr/0090-public-access.md)）；两者都不能并成“没有权限”。类别和两端的提示已就位，
+核心还没产出这两个类别，跨服务器失败仍按 Matrix 原文归进别的类别，由 C5 接。
+
 ### 推送
 
 1. App 把平台给的推送地址和本机的推送公钥（Web Push 的推送订阅）经隧道登记给核心，并在 Tuwunel 注册指向核心
    推送代理的 pusher。
 2. 有新消息时，Tuwunel 调用核心推送代理（Matrix Push Gateway 接口）。
-3. 核心用该设备的公钥加密通知（房间、消息 ID 和发送者；聊天是端到端加密的，推送里没有正文），按 Web Push
-   （RFC 8030、8291）发到推送地址。
+3. 核心按 pushkey 找到设备，把服务器 ID、房间、消息 ID、发送者、房间名和正文（不加密房间的完整格式里带着，附件只有类型和文件名）
+   一起，按 RFC 8291 用该设备的公钥加密，按 RFC 8030 发到推送地址。明文总预算 3 KiB，套 JSON 的渠道（APNs、FCM、HMS）
+   再收紧到 2 KiB；截断、丢字段的顺序和 pusher 的 `format` 见 [ADR-0118](adr/0118-im-three-layers-push-with-body.md) §2。
 4. 推送地址来自 UnifiedPush 分发器（如 ntfy），或者是我们的中继为 FCM、APNs、HMS 令牌开的；中继校验发送方服务器
    身份并限速，再转发。
-5. App 在本机解开通知，经隧道取回这条消息、在本机解密后显示。中继和苹果、谷歌只看到密文。设计见
-   [ADR-0003](adr/0003-matrix-and-encrypted-push.md) 的“设计：加密推送”。
+5. App 在本机解开就直接显示正文：Android 在推送服务里，iOS 在通知扩展里用 CryptoKit 解完改写通知。加密房间（别的客户端建的）
+   没有正文，经隧道取回本条消息后补上，取不到就照实说原因。中继、推送服务、苹果、谷歌都只看得到密文。
+   系统直接展示、应用解不了的渠道（小米、OPPO、vivo、HMS 的退回）只写“新消息”，点开再取。设计见
+   [ADR-0118](adr/0118-im-three-layers-push-with-body.md) 和 [ADR-0003](adr/0003-matrix-and-encrypted-push.md) 的“设计：加密推送”。
 6. 通知上直接回消息、答没有表单的确认卡片：动作回到核心现有的发送和回答路径，进程被系统收走也能重新拉起核心。
    未读总数由核心给，壳写成启动器角标；等确认的长任务挂一条常驻通知；锁屏上给不给看内容按类别在设置里选（ADR-0101）。
+7. 要主人决定的事和要主人知道的通知（问题卡、页面/报告、收尾、确认卡片、插件通知、应用来信、请求、告警）由核心的收件箱统一显示，
+   不再发进 Wonton 私聊；条目在核心里，壳只渲染（[ADR-0119](adr/0119-pending-inbox.md)，已接受）。
 
 ### 小程序
 
@@ -197,7 +231,10 @@ App 打开插件网页时，WebView 以客户端核心的本地代理为 HTTP �
 进入时自动登录，身份是当前这个人（主人和家人各有账号）；`groups` 只有通用的 `user`，在这个应用里当管理员的人
 加 `plugin_admin` 和清单的 `admin_groups`，清单声明了 `role_claim` 就按管理员与否填对应的值。声明 `sso: proxy` 时，
 由网关代为带上当前人的用户名或应用自己的密钥，`{role}` 只有 `admin` 和 `user` 两种，网关同时注入 `X-Wonton-Capabilities`
-能力头，页面自己带的同名头先删掉（ADR-0088 第 8 节）。
+能力头，页面自己带的同名头先删掉（ADR-0088 第 8 节）。认出人并过了 `open_apps` 的请求另带 `X-Wonton-Web-User`，
+值是当前这个人的 Matrix 用户 ID，普通页和 Bot 页一样，客户端的同名头先删掉；插件自己网络里的直转、没登录、没授权和 OIDC 回调不带。
+好友经分享连接打开共享页时也带，值是好友自己，按分享授权判，不看 `open_apps`。
+只有经网关的请求有，插件把网页端口曝到宿主上时可以伪造（[ADR-0045](adr/0045-family-members.md#网页里的说话人)）。
 
 每 Bot 网页不改清单：`webui.service` 属于 `bots.services` 时，每个 Bot 一份 UI 和独立 origin。
 默认 Bot 沿用插件 slug；非默认 Bot 用 `bot--<Bot 名>-<截短的插件 slug>-<8 位 SHA-256 十六进制摘要>`，
@@ -206,6 +243,12 @@ App 打开插件网页时，WebView 以客户端核心的本地代理为 HTTP �
 入口仍原样追加 `webui.path`，精确命名算法见插件规范，不从主机名反推 Bot 身份。
 Bot 服务的 `WONTON_APP_URL`、OIDC 回调登记和精确主机 Cookie 跟随对应 origin，不设父域 Cookie。
 网页复用插件级的 `open_apps` 授权，不按 Bot 归属或聊天参与者另行放行；好友沿用已支持的插件分享授权。
+聊天资格和网页授权分开算：核心按请求者、Bot 归属和已成立的联系人算出 `BotChatAvailability`
+（本人的、角色允许的共享 Bot、已成立联系人可用；别人的私人 Bot 里从没授权、等同意的算“没授权”，
+拒绝过、对方已不存在的算“授权已撤”；读不明为未知）。
+`open_apps` 只决定网页，不证明任何私人 Bot 能聊。同一份结果喂默认 Bot 字段、活动快照（不能用的人的计数清零）、
+新建聊天候选和侧栏；旧私聊、固定项和深链接都不清房间、不换 Bot，房间行带原因，App 只在确定不能用时禁用输入框
+并写一句为什么，未知（离线、旧核心）照常发进离线队列，普通 Matrix 发送不在服务器层拦。
 开放的是同一个 Bot 的应用及登录入口，家人可能读取、修改同一应用状态；是否按人隔离由上游账号模型决定，
 共用会话凭据时须明确提示共用登录状态，不把多用户应用一概视为同一个登录。
 Agent／插件网络来源在 `self_request` 例外前拒绝；默认与非默认 Bot 主机名仍在自己的插件网络解析到网关，
@@ -220,6 +263,7 @@ Bot 页使用 `TabRef::Bot { bot: BotRef, path: Option<String> }`，不保存 UR
 聊天已有的 `BotView` watch 通道接入 `PagesLink`，网页状态变化时重算 `PagesViewModel` 的 `TabPage`；
 URL 只来自精确匹配该 `BotRef` 的 Ready 页面，不读 `plugin.web_url`，桥和媒体以 `TabPage.url` 的精确 origin 为准。
 `BotView.web: None` 没有验证可用的 URL；未知、缺失或错误时不发页面 URL，断连或身份变化时清空，不猜 URL 或回退默认 Bot。
+资料页要显示地址、决定有没有入口，读和 `web` 同时写的 `BotView.web_page`（只在属于这个 Bot 的 Ready 页面时非空），壳不自己解析 `web`。
 Bot 页复用既有页面容器、桥、媒体和 `--wonton-*`，不另造壳层 WebView、不省略桥。
 
 插件整体异常时网关按服务看：清单 `webui` 指向的服务现在能用（容器在运行、健康检查没失败）就照常转发，网页里
@@ -234,6 +278,7 @@ MCP 服务和模型网关同一条规则，局域网端口本来就直连各自�
 
 三条不经隧道的路，都要清单声明：第三方 App、外部回调和访客链接经公网子域名或局域网直连到入口容器（ADR-0021、ADR-0090）；插件把清单列出的端口发布到
 局域网（`network.lan`，ADR-0019），网页端口要主人打开 `lan_webui`（ADR-0023）；出网插件经出口容器走主人的代理或代理插件（ADR-0023、ADR-0039）。
+入口按 SNI 和 `Host` 分前端；前端在转发前盖 `X-Wonton-Entry` 标记（取前端名），核心据此区分来源。公网、局域网两个前端整体交给核心；经 iroh 进来的已配对服务器走配对前端，只有联邦、key 和三个发现文件交给核心，其余客户端 API 直给 Tuwunel（ADR-0051）。
 宿主网络的插件按 ADR-0036 由核心配中继，网页和 MCP 经插件数据目录里的 unix 套接字进网关和总线，宿主防火墙不用改。
 插件之间按能力依赖，使用方连 `<能力>.wonton.internal`，由核心按确认记录转发给选用的提供方：HTTP 能力经网关（ADR-0053），
 `mqtt` 这类 TCP 能力经核心的四层中继（ADR-0092）。插件网络之间不互通。
@@ -277,7 +322,10 @@ Bot 组。网页、MCP 和局域网端口登记在目标上；核心等目标运
 Agent 通过 MCP 调用核心 MCP 总线。总线按 Bot 放行：主人对某个 Bot 单独关掉的插件，这个 Bot 看不到、调不了它的工具
 （[ADR-0066](adr/0066-plugin-forms.md) 第 5 节）。每个调用还按发起人角色的“AI 动手”级别封顶：只读角色只能看到并调用标了
 `readOnlyHint: true` 的插件工具；“删除要管理员批”时会改工具的卡片给归属人，会删或覆盖的卡片给管理员；“改动自己确认”
-照常确认并可按 ADR-0024 放宽。共享 Bot 有进行中的轮次时按其中最低级别，没有轮次时按能用它的人里最低级别；查不到人或角色按最严的只读处理并记日志。
+照常确认并可按 ADR-0024 放宽。共享 Bot 有进行中的轮次时按其中最低级别。Agent 没说替谁办事（没带说话人请求头、这个 Bot 也没有进行中的轮次）时一律按只读，
+不按归属人、也不按能用它的人里最低：说不出替谁办事就拿到归属人（主人的 Bot 就是主人）的权限，等于身份升级
+（[ADR-0088](adr/0088-family-accounts.md) 第 5 节）。查不到人或角色按最严的只读处理并记日志。
+说话人是本机另一个 Bot 的账号时，按它所在链的发起人封顶（ADR-0061 第 10 节），不按 Bot 账号本身，认不出它所在的链按只读。
 Bot 的容器按 Bot 注入 `WONTON_BOT_AI_LEVEL`（单 Bot 的插件在插件级变量里，值是主人的“改动自己确认”）：私人 Bot 是归属人角色的级别，
 共享 Bot 是能用人里最低的；Agent 插件按上游能力落实这项限制，核心总线仍独立校验，不把上游审批当作 Wonton 授权。
 工具调用转给插件时，私人 Bot 的 `_meta` 带归属人的
@@ -285,7 +333,8 @@ Bot 的容器按 Bot 注入 `WONTON_BOT_AI_LEVEL`（单 Bot 的插件在插件�
 `["plugin_admin"]`）；共享 Bot 和界面的调用不带人也不带能力，插件按全家共用的数据处理
 （[ADR-0088](adr/0088-family-accounts.md) 第 8 节）。敏感操作（装卸插件、删文件、改设置、对外发送）不会直接执行：核心记下一张确认卡片并按收件人推送（归属人，或按上面级别给管理员），App 把它显示在发起的会话里和“等你确认”列表里
 （卡片不进 Matrix 房间，来源会话由 Agent 一侧报、核心核对），主人在 App 里点确认（经隧道请求核心）后才执行，并写审计日志，
-最后把结果返回给 Agent（ADR-0016）。主人可以调整插件工具的确认（ADR-0024）。Agent 有事要主人定时，在 Bot 私聊里用文字问（ADR-0038）。
+一轮里开出的卡片认在这条链上（按调用头的 `wonton-session`，没带时按这个 Bot 最近活着、报的又是同一个人的那一轮，说话人认不出时在候选里不按人过滤，
+认不出就不认）：主人停掉这一轮，卡片随之撤回，等着的一方拿到 `cancelled`，批准了也不再执行。Agent 有事要主人定时，在 Bot 私聊里用文字问（ADR-0038）。
 
 Wonton 受管资源仍由核心确认，主人设定的自动放行范围不变；Agent 容器内自身工具与原生委派按上游审批，须说明能读取本 Bot 数据和凭据的风险，不宣称所有动作均由核心逐步审批。受控发送保留收件人、全文确认、来源身份与实际投递回报，不能用 Hermes 裸发送替代（ADR-0108）。
 
@@ -296,7 +345,7 @@ Bot 用 `wonton__get_profile`、`wonton__set_profile` 读写自己的资料，�
 核心提供文件服务：每个文件一个编号，指向共享文件夹里的原文件、插件的资源或设备上传的文件。工具结果里的文件，总线换成编号交给 Agent；Agent 分享后拿到一个
 `wonton://file/<编号>` 链接，放进回复。App 认出链接显示成卡片，字节经隧道走 HTTP（下载用 `Range`，上传用 tus）。
 设备上传放进上传者的 `core/home/<用户名>/transfers`，不放共享文件夹；文件信息、内容、缩略图和操作都核对访问者，
-主人也不能读取成员未分享给自己的文件。App 之间互传仍用同一种链接，并发到上传者自己的 Wonton 私聊（ADR-0045）。
+主人也不能读取成员未分享给自己的文件。App 之间互传仍用同一种链接，并发进这个人自己的待处理面板（ADR-0045、ADR-0119）。
 
 ### 链接预览
 
@@ -319,9 +368,19 @@ Bot 用 `wonton__get_profile`、`wonton__set_profile` 读写自己的资料，�
 管理接口可查询意图与恢复日志。持久化、旧记录边界、单飞退避及 Docker 超时的处理见
 [ADR-0105](adr/0105-plugin-runtime-recovery.md)。
 
+### 派活到受管设备
+
+主 Agent 经核心的 MCP 工具 `wonton__dispatch_task` 把任务交给调度器：交代自包含、指定或让调度器按设备能力、负载和授权挑一台。
+工具立刻回任务编号，进度、审批和产物经收件箱和任务视图回；`wonton__task_status` 只读，`wonton__task_cancel` 幂等取消。
+调度器只把任务投给在线且被授权的设备；设备离线就排队、过期作废并通知，不在任务中途换设备重跑。
+设备守护进程在本地工作区拉起 herdr 和用户自己装的 Agent，Agent 的权限挡位由它自己的设置决定，权限请求转成收件箱的确认条目
+（允许一次、总是允许、拒绝、拒绝并说明，超时自动拒）。产物带回枢纽核对，结论由主 Agent 说，设备 Agent 不以自己的身份进房间。见 [ADR-0123](adr/0123-hubs-and-managed-devices.md)。
+
 ## Bot 与 Agent
 
 - Bot = 一个 Matrix 身份 + 一个驱动它的 Agent 插件。核心分配身份、权限与受管工具，不承载 Agent 循环或供应商适配；模型网关是按声明使用的通用能力，不是默认 Hermes 的模型前置。
+- 一个人恰好一个主 Agent（第一个私人 Bot，profile 名由核心生成），可自建更多 profile；每个 profile 是独立 Matrix 账号和私聊。会话（主对话、旁聊）共享 profile 的记忆和技能，profile 之间不共享。见 [ADR-0122](adr/0122-primary-agent-and-profiles.md)。
+- 设备上的 Agent 不是 Wonton Bot：没有 Matrix 身份，由主 Agent 以自己的身份在会话里转述；任务会话、审批和产物在枢纽。
 - 名字、静态头像和状态头像组以 Matrix 资料为准；主人经隧道接口修改，Agent 可经自身 Matrix 身份或核心工具修改。清单只初始化新账号的名字和静态头像，状态头像只补不存在的字段。核心写入共用 `PluginManager::profile_revisions()` 的版本表，见 [ADR-0044](adr/0044-bot-profile-and-status-avatars.md)。
 - 唯一默认内核为 Hermes，使用其原生 Matrix、MCP 和供应商接入。调用 Codex、Claude Code 等走 Hermes 自带 ACP 委派，不再建设 Wonton ACP 桥、`agent_acp` 网关或逐家登录与模式适配；OpenClaw 只作替换备选，不同时维护两套默认体验；其他 Agent 插件由作者按插件规范自己做，只走社区来源，不进官方索引（[ADR-0108](adr/0108-hermes-default-kernel.md)）。
 - 原生委派不自动创建另一个 Wonton Bot，也不继承另一个 Bot 的身份或权限。任务、透明记忆、晨报与提醒复用 Hermes 既有能力；App 的具体交互不在本篇固定。旧 ACP 专用资产与通用底座的拆分边界见 ADR-0108。
@@ -332,7 +391,16 @@ Bot 用 `wonton__get_profile`、`wonton__set_profile` 读写自己的资料，�
 - 成员邀请按角色发码：主人可选角色，其他有“管理成员”的人只能用默认邀请角色。扫码交码先记绑定设备的加入请求，
   管理员批准时才登记设备；同设备在邀请码的 24 小时期限内重试幂等，其他设备不能复用，被拒绝后要重新邀请。
   已加入的成员给自己添加设备不再审批。见 [ADR-0088](adr/0088-family-accounts.md)。
-- 批准加入后，核心为非朋友模板的成员建立或加入加密家庭群，写入内容非空的 `app.wonton.family` 状态；只认管理账号创建且带标记的群，
+- 没有 Matrix 账号的朋友走同一套邀请（ADR-0088 第 4 节）：管理员按“朋友”模板邀请，账号进 `members`、
+  配设备和建本机 Matrix 账号都同家人成员，移除时账号停用也一样；朋友模板没有私人 Bot，邀请时带着要直接拒绝。
+  权限按角色算，和家人成员是同一套：“朋友”模板下除能打开哪些应用、在哪些应用里当管理员、AI 动手外都是“不能”。
+- “加好友”要管理员批或不能的成员，核心把他账号数据里的 MSC4155 名单写成“本服务器的照常、家外的一律挡住”
+  （`allowed_servers` 放本服务器、`blocked_servers` 放 `*`；allowed_servers 在 blocked_servers 之前求值），
+  外来邀请在 Tuwunel 就被拒。批准过的人记进 `allowed_users`（求值在个人屏蔽之前），角色放开时留着、回到受限角色照样生效。
+  发登录令牌前按角色对齐一次（账号还没建就建号写上）；角色分配、角色权限修改和
+  成员重同步时也按角色对齐，同步失败照成员同步一样 503、可重试。这类成员的设备改不了这份账号数据（网关 403）；
+  角色放开时核心把自己写的名单拿掉，成员自己写的屏蔽保留。见 [ADR-0088](adr/0088-family-accounts.md) 第 9 节。
+- 批准加入后，核心为非朋友模板的成员建立或加入家庭群（ADR-0118 起不加密），写入内容非空的 `app.wonton.family` 状态；只认管理账号创建且带标记的群，
   不按群名收编历史房间。没有群且仍有家人时重建。朋友模板不自动入群，换成朋友模板或移除成员时踢出。
   主人和有“管理成员”权限的人在房间里为 100，其余为 0；管理账号作为 v12 创建者保留隐含最高权限，不写入 `users`。
   批准、成员角色分配、角色权限修改和移除都等同步结束再返回成功；同步失败回 503 并记日志，已落盘的成员与角色记录不回滚。
@@ -347,12 +415,18 @@ Bot 用 `wonton__get_profile`、`wonton__set_profile` 读写自己的资料，�
   删除家目录也删除指向它的上传编号（包括已分享的）；保留家目录则保留编号及原有分享范围。目录或编号清理失败时不报告移除完成。
   保留 Bot 数据时保存无令牌的移除记录，之后明确删除仍可停用原账号；保留的 Bot 名不能被重新分配。
   `POST /_wonton/api/members/sync` 由管理员补齐整套成员设置与移除收尾；失败返回 503、日志保留原因，不回滚已保存的成员记录。
+- 客户端核心的成员页（`FamilyViewModel`）把成员、角色和加入请求分成三份状态，各自的加载和失败互不影响；
+  自己的资料和权限项放在 `FamilyAccess`，没有“管理成员”的人取不到成员和请求，页面按权限藏起邀请、批准和移除。
+  访问过的角色名随成员和请求一起给，管理员读不到角色表时只显示 `role_id`。页面开着时每几秒重取，离开即停。
+  被邀请的人扫码后停在配对的 `PairingStatus::JoinPending`，带上角色和它放行的权限项，由一个“加入”页讲清楚再等管理员批准。
 - 核心经隧道的 `GET /_wonton/api/bots/activity?after=<rev>` 长轮询给出各 Bot 的运行、模型请求、工具调用和待确认事实，客户端核心结合 Matrix typing 合成状态（[ADR-0044](adr/0044-bot-profile-and-status-avatars.md)）。
 
 ## 安全模型
 
 - Agent 是不可信执行者：每个私人或共享 Bot 运行在独立容器与数据边界里，只看得到自己的工作区和被授权的文件夹，没有 Docker socket，
   也没有宿主 root。同容器内的 profile 不是抵挡自身 shell 读取的隔离边界。
+- 受管设备是不可信执行面：设备可能被拿走或入侵，只有任务工作区和设备密钥，没有 Matrix 令牌和住户凭据；设备报的“做完了”按产物哈希核对，
+  任务中途掉线标不确定、不自动换设备重跑（[ADR-0123](adr/0123-hubs-and-managed-devices.md)）。
 - 插件权限写在清单里，安装时确认。高权限声明了就给，按风险分三级提示；Docker socket、特权模式这类等于交出宿主 root
   的单独确认；Agent 和 Bot 插件拿不到它们（ADR-0036）。
   显卡由核心按宿主实际有的显卡交给清单指定的服务（ADR-0018）。
@@ -366,6 +440,7 @@ crates/
   wonton-protocol/   核心 API、ViewModel、插件清单类型：跨端唯一事实源，生成 Swift/Kotlin 类型
   wonton-tunnel/     iroh 隧道，服务端与客户端共用
   wonton-matrix/     Matrix 客户端封装（matrix-rust-sdk），供客户端核心使用
+  wonton-avatar/     头像文件的文件头检查、文件预览的视频探测，核心和客户端共用
   wonton-l10n/       Fluent 目录、语言协商与资源一致性检查，客户端与服务器共用
   wonton-core/       服务端核心
   wonton-client/     客户端厚核心，UniFFI 导出
@@ -396,6 +471,8 @@ scripts/             CI 与开发脚本
 | Docker 管理 | bollard | Apache-2.0 | 已定 |
 | 默认 Agent | Hermes Agent，原版官方镜像 | MIT | 单一默认内核；OpenClaw 仅替换备选（ADR-0108） |
 | Agent 接入与委派 | Hermes 原生 Matrix；调用其他 Agent 用 Hermes 原生 ACP 委派 | Apache-2.0（ACP 规范） | 不再自建 ACP 桥（ADR-0108） |
+| 受管设备的执行器 | herdr（固定版本、按摘要安装；只当本机执行器，多机由 iroh 隧道承担） | Apache-2.0 | 提议，见 ADR-0123；控制面接口稳定性待验证 |
+| 设备守护进程与设备协议 | 我们自己的 Rust 小进程；任务协议在核心与设备之间，iroh 隧道 + 设备密钥 | 本仓库 | 提议，见 ADR-0123 |
 | 模型接入与可选网关 | Hermes 自带供应商接入；magpie 是普通可选插件 | Hermes、magpie：MIT | 核心和默认装机不依赖 magpie（ADR-0108） |
 | MCP 总线 | 官方 Rust SDK rmcp，在核心里做最小聚合 | Apache-2.0 | 已定（ADR-0006） |
 | 插件商店 | 插件仓库按 GitHub topic 发现，官方索引是一个仓库（参考 magpie） | — | 已定（ADR-0017） |
@@ -423,3 +500,4 @@ scripts/             CI 与开发脚本
 - **第三方 IM 渠道（M2）**：渠道插件，基于 Hermes 自带的平台或 mautrix 桥。
 - **Web 端（M3）**：核心接口保持可序列化（操作进、ViewModel 出），为浏览器远程使用留路。
 - **跨机 Bot 通信（M3）**：插件实现，Matrix 联邦走 iroh 或 A2A。
+- **跨枢纽派活与远程桌面（M3 起）**：跨枢纽仍走 Matrix 联邦或 Bot 联系人，不经过设备协议；远程桌面另写 ADR，设备只跑 Agent（ADR-0123）。

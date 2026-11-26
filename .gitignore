@@ -11,8 +11,13 @@ dist/
 .env.local
 *.local.toml
 *.key
+# remote-dev 在远端副本上的运行数据
+.dev-ports
 # iOS 的版本号，xcodegen 生成工程时由 scripts/app-version.sh 写出
 apps/ios/Version.xcconfig
+apps/ios/Wonton/licenses.json
+# build-core.sh 生成的 Swift 绑定（CI 按内容哈希取回）
+apps/ios/WontonClient/Sources/WontonClient/Generated/
 
 # 调试产物（截图、录屏、测试结果放在仓库外）
 *.xcresult
@@ -25,3 +30,6 @@ plugin-pr.md
 
 # Python 缓存（scripts/ 下的检查脚本）
 __pycache__/
+
+# 通话冒烟用的插件包副本（真身在插件仓库，脚本用 PKG 指过来）
+deploy/dev/calls/plugin/

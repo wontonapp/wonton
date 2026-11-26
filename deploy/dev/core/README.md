@@ -25,9 +25,8 @@ deploy/dev/core/dev.sh reset                 # 停掉并删除数据、密钥、
 `dev.sh status` 查询状态，避免把客户端超时当成安装结果。
 
 `down` 后插件记录和卷都还在，容器没了；再 `up` 时核心只核对、不重建，插件在 `list` 里是 `degraded`。要接着用就
-重新装一次：普通插件先 `uninstall <ID>`（不带 `--purge`，卷和数据留着）再 `install <包>`；系统插件（模型网关
-`ai.usemagpie.magpie`）接口装不了，`uninstall <ID>` 之后重启核心（再 `down` 后 `up`，或 `reset --keep-tunnel-identity`），
-核心启动时从镜像重装。
+重新装一次：先 `uninstall <ID>`（不带 `--purge`，卷和数据留着）再 `install <包>`。系统插件也走这个流程；
+模型网关 magpie 不在锁文件里，卸载后重启核心不会从镜像装回，要用再从商店装。
 
 浏览器打开 `http://app-grafana.wonton.localhost:18480`，用主人令牌登录一次，之后自动进入 Grafana，
 不会看到 Grafana 自己的登录页。`*.localhost` 由浏览器和 curl 自动解析到本机，不用改 hosts。命令行里
@@ -36,11 +35,20 @@ Cookie 罐路径，curl 加 `-b` 复用。
 
 - 端口 `WONTON_DEV_PORT`（默认 18480），基础域名 `WONTON_DEV_DOMAIN`（默认项目用 `wonton.localhost`，其他项目默认用 `<项目名>.wonton.localhost`）。
   端口也是浏览器看到的地址的一部分，改端口后要重新安装 SSO 插件；需要并行栈时可显式覆盖基础域名。
+- core 网络 `<项目名>_core` 由 `dev.sh` 建一次（子网用 `WONTON_DEV_CORE_SUBNET`，不设由 Docker 从默认地址池分），
+  compose 里是 external，只负责把容器接上去。网络已经在了就沿用；换子网要先 `down`。子网和别的网络撞了时 `up` 报出
+  撞的是哪张网，换一个子网或先把那套 `down`。
+  `down`、`reset` 先删插件容器再删网络（容器还接着时 Docker 拒删）；没删掉时 `down` 返回非零，别当成拆完了。
+  不让 compose 管它是因为：渲染出来的配置和现有的对不上时它会删了重建，重建后接回去的系统服务不带别名
+  （`hydra.wonton.internal` 等），核心再也解析不到，一直重试（#187）。
 - 一台 Docker 上跑几套：每套设自己的 `WONTON_DEV_PROJECT`、端口和 `WONTON_DEV_DATA`。`up` 在构建之前查网关和隧道端口
   （`port-preflight.sh`）：别的项目的容器发布了、或本机已有 socket 时直接失败，说明谁占着，并给出往后第一个空的端口。
   实例名 `WONTON_DEV_INSTANCE` 默认取项目名（去掉开头的 `wonton-` 和非字母数字，最多 16 个字符；去了标点时在截短后的名字后面接项目名哈希的前 5 位
   十六进制，只差标点的两个项目名不会得到同一个实例名），插件的资源名和标签都带上它，各管各的。
   默认项目 `wonton-dev-core` 没有实例名。已有数据的环境换了实例名，插件要重装；想留着旧的资源名，把它设成空。
+  同一台主机上正式装过云吞（`deploy/install`，项目名 `wonton`）时脚本不去碰它：项目名是 `wonton`、项目的容器是在
+  `/opt/wonton`（`WONTON_INSTALL_DIR`）起的、或当前目录在 `/opt/wonton` 里，都算那套栈，`up`、`down`、`reset` 和冒烟
+  在标准错误上一句话说明后以退出码 2 停下，一条写命令都不发；升级冒烟例外，它本来就装一套同名项目。
   数据目录同时当作安装目录（`WONTON_INSTALL_DIR`）：联邦名单和整台服务器黑名单由核心原地重写并热加载。
   没有实例名时 `down`、`reset` 按标签分不出插件资源是这套栈的还是同一台 Docker 上正式安装的，只列出、不删，
   并打出要手删的命令。
@@ -106,7 +114,11 @@ deploy/dev/core/dev.sh devices                 # 已登记的设备；revoke <en
 
 加设备时交接聊天密钥（ADR-0087）没有第二台 App 时，用真实的客户端核心扮演旧设备：
 `cargo run -p wonton-client --example key-handoff-old-device -- <数据目录> <配对码> <写码的文件>` 登录、开好备份后打开
-“添加设备”，把给新设备的码写进文件；对表情时打印表情并替主人点“相同”，之后留两分钟回答新设备要密钥。
+“添加设备”，等加密历史真的进了房间预览才把给新设备的码写进文件；对表情时另起一行按序打印符号（外面拿它跟新设备屏幕上
+的比），并替主人点“相同”，之后留两分钟回答新设备要密钥。恢复密钥另外写进 `<写码的文件>.recovery`。
+历史句用 `KEY_HANDOFF_HISTORY_TEXT` 换（走查要和 App 那边同一个字符串）——
+它先往默认 Bot 的私聊发一句加密历史，给恢复密钥恢复和历史解密留证据；问不到默认 Bot（没装、没就绪）时用
+`KEY_HANDOFF_BOT_USER` 给它的 Matrix 用户 ID。历史发不出去示例直接退，不写码。
 
 在本机用隧道客户端示例扮演手机：`cargo run -p wonton-tunnel --example tunnel-client -- pair '<配对码>'` 用配对码
 登记它（`-- id` 输出它的 ID）。`--auth` 和 App 一样起带会话凭据的 HTTP 正向代理，启动时打印凭据：
@@ -137,15 +149,15 @@ curl --noproxy '' -x http://127.0.0.1:18008 -U wonton:<密码> -H 'content-type:
 
 核心镜像构建时按 [`plugins/system.lock`](../../../plugins/system.lock) 从独立仓库取包并核对提交和摘要；升级只改
 锁文件对应的一行，详见 [插件目录说明](../../../plugins/README.md#预装插件)。启动时从镜像内的
-`/usr/share/wonton/system-plugins` 预装 magpie（`WONTON_SYSTEM_PLUGINS`），再从
-`/usr/share/wonton/default-plugins` 装一次 Hermes（`WONTON_DEFAULT_PLUGINS`），首次启动无需联网取插件包；规则见插件规范的“预装插件”。不要 Hermes 时用
-`WONTON_DEV_DEFAULT_PLUGINS= dev.sh up` 起核心。声明了 `models` 的插件经 `models.wonton.internal` 访问 magpie，凭据由
-核心签发。“模型设置”网页（`http://ai-usemagpie-magpie.wonton.localhost:18480/`）由网关代登录：登录过核心的浏览器和
-已配对设备直接打开，不用输 magpie 的网页密钥。也可以用 magpie 的命令行配置 provider，比如指向开发机上已在运行的
-magpie；上游地址别写 `http://host.docker.internal:3425`——核心不给插件容器加 host-gateway（有意的
-隔离），Linux 上这个名字解析不了。用[端到端冒烟](#端到端冒烟)一节的 socat 中继（`WONTON_SMOKE_MODEL_RELAY` 指向只监听
-回环的 magpie），宿主防火墙要放行插件网段到中继端口（13425）。加了 provider，默认路由组 `wonton-default` 自动有了它的
-模型（ADR-0008）。
+`/usr/share/wonton/default-plugins` 装一次 Hermes（`WONTON_DEFAULT_PLUGINS`），首次启动无需联网取插件包；规则见插件规范的“预装插件”。
+不要 Hermes 时用 `WONTON_DEV_DEFAULT_PLUGINS= dev.sh up` 起核心。模型在 Hermes 自己的网页里接（Keys 页填 key 或登录订阅，
+Models 页选模型），不经核心。模型网关 magpie 不预装，要在开发里试网关时从商店装；声明了 `models` 的插件经
+`models.wonton.internal` 访问它，凭据由核心签发（ADR-0008）。装上 magpie 后，“模型设置”网页
+（`http://ai-usemagpie-magpie.wonton.localhost:18480/`）由网关代登录：登录过核心的浏览器和已配对设备直接打开，
+不用输 magpie 的网页密钥。也可以用 magpie 的命令行配置 provider，比如指向开发机上已在运行的 magpie。手动配置时
+上游地址别写 `http://host.docker.internal:3425`：核心不给插件容器加 host-gateway（有意的隔离），Linux 上这个名字
+解析不了；[端到端冒烟](#端到端冒烟)自己会按能不能解析选地址，解析不到时在插件网络的网关上起 socat 转发（宿主防火墙
+要放行插件网段到 13425）。加了 provider，默认路由组 `wonton-default` 自动有了它的模型（ADR-0008）。
 
 ## MCP 总线
 
@@ -181,37 +193,7 @@ Tuwunel 直连核心在 `core` 网络上的推送专用监听，与正式安装�
 
 ### MatrixRTC 通话冒烟（ADR-0096）
 
-`call-e2e.sh` 尝试在两台 Android 设备／模拟器上打开 Element Call widget 并采集 WebRTC 统计；录屏和 CDP 数据保存在仓库外的 `~/wonton-dev/research/call-e2e/`。脚本尚未完成真实通话验证，结果不能代替对三种路径、双向媒体、挂断和 delayed leave 的现场验收。
-
-先准备两台以不同账号配对到同一开发栈、登录同一个加密房间的 Android Debug WebView 设备，以及带 widget 桥的 Debug APK。外部 Matrix 账号的登录涉及浏览器 OIDC 或密码，脚本不把账号和密钥放进命令行，也不伪造登录状态。复用已经准备好的开发栈时，调用方负责申请和释放栈名额。
-
-例如，复用已有栈时设置其项目名、实例名、端口和数据目录：
-
-```bash
-export CALL_PLUGIN=/path/to/wonton-plugin-call
-export CALL_SERIAL_A=127.0.0.1:5561
-export CALL_SERIAL_B=127.0.0.1:5563
-export CALL_ROOM='!room:server.example'
-export CALL_APK=/path/to/androidApp-debug.apk
-export CALL_EXISTING_STACK=1
-export CALL_REUSE_PLUGIN=1
-export CALL_PROJECT=wonton-call-e2e
-export CALL_INSTANCE=call-e2e
-export CALL_PORT=18680
-export CALL_TUNNEL_PORT=18682
-export CALL_DATA_DIR=/path/to/existing-stack-data
-
-CALL_MODE=udp deploy/dev/core/call-e2e.sh
-# TCP 模式要求已安装的插件只声明 TCP；切换配置时去掉 CALL_REUSE_PLUGIN，脚本会重新安装插件。
-# CALL_MODE=tcp deploy/dev/core/call-e2e.sh
-# CALL_MODE=relay deploy/dev/core/call-e2e.sh
-```
-
-`CALL_REUSE_PLUGIN=1` 会检查已安装插件的 widget 与端口声明，不卸载插件；TCP 模式要求没有 UDP 声明。关闭这个选项时，TCP 模式复制插件包并移除 UDP 端口声明，不改原包。录屏按 180 秒分段，脚本结束或失败时导出到每台设备各自的 `*-screenrecord/` 目录；导出失败会保留设备上的文件并报错。
-
-`CALL_BUILD=1` 会经 `android-build.sh` 构建 Debug APK。设备配对和账号准备由调用方完成；已配对设备保存的连接地址不会被脚本改变。relay 模式不会自动强制或验证公共中继，必须另行配置网络并核实两端实际隧道路由。UDP/TCP 模式也必须核对选中的 ICE 候选协议。公共中继提示属于前端另行验收。`CALL_KEEP_STACK=1` 保留脚本自己启动的栈和名额，检查完后需调用 `dev.sh reset` 并释放名额。
-
-脚本依赖 Bash、Python 3、ADB、Docker Compose、`jq` 和 `screenrecord`；不需要安装 Python WebSocket 包。
+用 `deploy/dev/calls/smoke.sh`：两台 Android 设备／模拟器装 Debug APK、同一开发栈上的加密房间里跑三条媒体路径，按退出码判定路径、双向音视频、本轮成员和挂断。前置（插件包、远程栈、PyJWT、模拟器）和用法见 `deploy/dev/calls/README.md`。它取代原来的 `call-e2e.sh`。
 
 内部邮箱有单独的一条（ADR-0056），**在目标主机的本机 Docker 上运行**，由调用方申请并释放栈名额：
 
@@ -273,21 +255,22 @@ DOCKER_HOST=ssh://$DEV_HOST deploy/dev/core/smoke.sh  # 远端 Linux 主机
 （设备由隧道客户端示例扮演，跑在核心的网络命名空间里）；没有 OIDC 的
 插件收不到网关 Cookie 和伪造的转发头；已配对设备经隧道拿到 Matrix 登录令牌、登录 Tuwunel，局域网拿不到
 令牌也进不了 `matrix.<基础域名>`，管理接口和绕路到它的路径都不转发；回声 Bot（`plugins/examples/echo-bot`）装好后
-有自己的账号、显示名和加密主房间，主人的一台新设备经隧道发加密消息能收到它的加密回声，卸载后它的令牌立即
-失效，不删数据重装沿用账号和主房间，删除数据时账号停用；核心预装了模型网关，使用方拿到只属于自己的凭据，
-经 `models.wonton.internal` 能用、卸载后凭据被吊销；核心在主人配对之前就自己装好了 Hermes，它过了健康检查
-之后，和它的加密私聊才出现在主人的聊天列表里，还没有 provider 时 Hermes 回提示去“模型设置”添加，命令行加了 provider（不建路由组）
-之后，主人的新设备经隧道和它加密对话两轮：逐轮检查 magpie 用量在 Hermes 凭据名下新增了至少一条成功且有输出 token 的请求，
+有自己的账号、显示名和私聊主房间，主人的一台新设备经隧道发消息能收到它的回声，卸载后它的令牌立即
+失效，不删数据重装沿用账号和主房间，删除数据时账号停用；核心不预装模型网关，申请 `models` 的插件没有网关时照样
+装得上、拿到空变量；核心在主人配对之前就自己装好了 Hermes，它不经模型网关，过了健康检查
+之后，和它的私聊才出现在主人的聊天列表里，还没接模型时 Hermes 回提示去它网页的 Keys、Models 页；冒烟给它的 Bot
+在宿主 magpie 上建一条限定模型的凭据，再经 Hermes 自己的接口把宿主 magpie 配成它的 provider，之后主人的新设备
+经隧道和它对话两轮：逐轮检查宿主 magpie 用量在 Hermes 凭据名下新增了至少一条成功且有输出 token 的请求，
 第二轮回复必须提到第一轮让它“介绍”或“自己”；本轮没有成功调用就带回复原文停止，不依赖 Hermes 的报错措辞。
-删除数据卸载后 Bot 账号停用、凭据吊销；“模型设置”网页由网关代登录，局域网
-浏览器登录过核心、已配对设备经隧道都直接打开并能改设置，没登录和别的插件网页发来的请求被拒，网页密钥不出现在任何
-响应和 Cookie 罐里；对 Hermes 说装文件搜索，核心在 Wonton 房间里发确认卡片，Hermes 的插件网络和局域网浏览器都答不了，
+删除数据卸载后 Bot 账号停用、冒烟的凭据删掉；“模型设置”网页由网关代登录，局域网浏览器登录过核心、已配对设备经
+隧道都直接打开并能改设置，没登录和别的插件网页发来的请求被拒，网页密钥不出现在任何响应和 Cookie 罐里；对 Hermes
+说装文件搜索，核心在确认列表里发卡片，Hermes 的插件网络和局域网浏览器都答不了，
 主人的手机确认后才装好，Hermes 再经 MCP 总线在授权的文件夹里找到文件，审计记下这两次调用；主人在 App 里停掉 Hermes 正在跑的一轮（终端里的命令），命令被停掉、链不再显示在跑，之后 Hermes 照常回答；妈妈作为家人加入、成为 Hermes 的联系人后，Hermes 发给她的私聊主人拒绝的不发、卡片等着时停链的撤回不发、批准的经出箱发到她的手机，审计如实记下；妈妈说的那一轮链代表她，她让发的私聊不沾主人的放行时段，以 Hermes 的身份直接问总线时，说话人请求头决定按谁的权限给工具，没带时按这一轮的会话、再按在跑的轮次里最严的、都没有才按归属人；没申请 `matrix.bot`、
 `models`、`tools` 的插件进不了对应的内部地址；
 核心重启后插件恢复，卸掉的 Hermes 不会被装回来；卸载后容器、网络、卷、应用数据和 OIDC 客户端都没有残留。
 结束时清理全部资源，`KEEP=1` 保留现场。Hermes 一步要真实模型：开发机上要有在运行的 magpie，模型名经
-`WONTON_SMOKE_MODEL` 传入（magpie 里一个能对话的模型；`/v1/models` 里的 id 带 provider 前缀，冒烟在交给
-插件前会去掉了它），冒烟里的 magpie 经 `host.docker.internal:3425` 用它，
+`WONTON_SMOKE_MODEL` 传入：填 `/v1/models` 里的 id（带 provider 前缀），magpie 里一个能对话的模型。
+Hermes 怎么连宿主见下面「远端主机」一段；
 不读取开发机 magpie 的配置和密钥。
 
 远端主机拉不到 Docker Hub 时，先把镜像从本机传过去（以 amd64 主机为例），传完删掉本机的 amd64 副本。核心镜像的 Rust、
@@ -306,7 +289,7 @@ done
 镜像，摘要对不上，核心还会去拉。整个索引传过去（本机有的平台都带上），再在远端打上标签：
 
 ```bash
-image=nousresearch/hermes-agent:v0.22.5@sha256:9c5561579f3ffdf333401797094ac3a743738d6c25d40f4331c7bf77b694238d
+image=nousresearch/hermes-agent:v0.23.4@sha256:ef0650d523ee1b5ab32c779acabc446d9936869a9932591553688a62bcf0c42f
 docker pull --platform linux/amd64 "$image"
 docker save "$image" | ssh "$DEV_HOST" docker load
 ssh "$DEV_HOST" docker tag "sha256:${image#*@sha256:}" "${image%@*}"
@@ -316,13 +299,16 @@ ssh "$DEV_HOST" docker tag "sha256:${image#*@sha256:}" "${image%@*}"
 链接预览经代理用的 DoH 服务器用 `WONTON_DOH_URL` 换（默认 `https://1.1.1.1/dns-query`，ADR-0065）。
 
 远端主机直连 crates.io、GitHub 太慢时，构建镜像经那台主机自己的代理（`WONTON_DEV_BUILD_PROXY`，构建用宿主网络）。
-Linux 主机上容器里没有 `host.docker.internal`，冒烟用 `WONTON_SMOKE_MODEL_RELAY` 指向那台主机上只监听回环地址的
-magpie，`WONTON_SMOKE_MODEL` 选它提供的模型。冒烟在主机网络里起一个 socat 转发，监听在冒烟 magpie 插件网络的网关上、
-只接受冒烟的 magpie，结束时删掉；主机的防火墙要放行插件网络连这个端口（13425），否则 Hermes 一步连不上模型：
+Linux 的 Docker 不给容器加 `host.docker.internal`，冒烟自己判：Hermes 容器能解析这个名字就用它，解析不到就在
+宿主机上起一个 socat 转发，监听在所有地址上，结束时删掉，Hermes 经它自己网络的网关地址连。宿主 magpie 不在 3425
+时直接用 `WONTON_SMOKE_MODEL_RELAY=<宿主上的地址:端口>`：设了它冒烟就用这个地址（两种宿主都一样），不再自己起转发；
+自己起转发时主机的防火墙要放行插件网段到 13425，否则 Hermes 一步连不上模型。`WONTON_SMOKE_MODEL` 填
+`/v1/models` 里的 id（带 provider 前缀）。宿主 magpie 在容器里时冒烟按发布 3425 的容器找它；名字不同设
+`WONTON_SMOKE_HOST_MAGPIE=<容器名>`（宿主上同时有 `magpie` 也进那个容器）：
 
 ```bash
 DOCKER_HOST=ssh://$DEV_HOST WONTON_DEV_BUILD_PROXY=http://127.0.0.1:7899 WONTON_DEV_BUILD_JOBS=16 \
-  WONTON_SMOKE_MODEL_RELAY=127.0.0.1:3425 WONTON_SMOKE_MODEL='<开发机 magpie 里的模型名>' deploy/dev/core/smoke.sh
+  WONTON_SMOKE_MODEL='<开发机 magpie 的 /v1/models 里的 id（带 provider 前缀）>' deploy/dev/core/smoke.sh
 ```
 
 ## 在宿主上直接运行核心

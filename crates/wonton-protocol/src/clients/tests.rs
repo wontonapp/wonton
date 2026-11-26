@@ -5,7 +5,10 @@ use serde::de::DeserializeOwned;
 use serde_json::json;
 
 use super::*;
-use crate::SecretString;
+use crate::{
+    Action, ClientsAction, ClientsBlocked, ClientsGuests, ClientsProblem, ClientsSettingsViewModel,
+    ClientsState, ClientsViewModel, SecretString,
+};
 
 /// 双向：JSON 解析成类型，类型再写回同一份 JSON。
 fn round_trip<T>(value: serde_json::Value, expected: T)
@@ -73,6 +76,8 @@ fn domain() -> DomainSettings {
     DomainSettings {
         suffix: Some("example.test".into()),
         suffix_editable: true,
+        home: None,
+        tail: None,
         provider: Some("desec".into()),
         credentials_set: true,
         terms_accepted: true,
@@ -141,6 +146,93 @@ fn status() -> ClientsStatus {
     }
 }
 
+fn guest_link() -> GuestLink {
+    GuestLink {
+        id: "g1".into(),
+        label: "聚会".into(),
+        expires_at_ms: 3,
+        path: Some("/room".into()),
+        last_used_at_ms: Some(2),
+        url: Some("https://scribble.example.test/_wonton/guest/T".into()),
+    }
+}
+
+fn password() -> ClientsPassword {
+    ClientsPassword {
+        plugin_id: "app.immich.photos".into(),
+        password: Some("pw1".into()),
+        value: Some(PasswordValue {
+            username: "owner".into(),
+            password: SecretString::new("SECRET"),
+        }),
+        problem: None,
+    }
+}
+
+fn provider_preset() -> DnsProviderPreset {
+    DnsProviderPreset {
+        code: "desec".into(),
+        name: "deSEC".into(),
+        credential_vars: vec!["DESEC_TOKEN".into()],
+        signup_url: Some("https://desec.example.test".into()),
+        recommended: true,
+    }
+}
+
+fn clients_view() -> ClientsViewModel {
+    ClientsViewModel {
+        state: ClientsState::Ready,
+        core_in_container: true,
+        plugins: vec![plugin()],
+        domain: Some(domain()),
+        ingress: Some(ingress()),
+        public_access: PublicAccess { enabled: false },
+        gates: Some(gates()),
+        self_probe: ProbeResult::ConnectorDown,
+        public_now: status().public_now,
+        public_reach: PublicReach::PublicAccessOff,
+        bans: status().bans,
+        pending: status().pending,
+        password: Some(password()),
+        guests: vec![ClientsGuests {
+            plugin_id: "app.scribble".into(),
+            links: vec![guest_link()],
+            problem: None,
+        }],
+        blocked: vec![ClientsBlocked {
+            plugin_id: "app.immich.photos".into(),
+            kind: EntryKind::Public,
+            reason: EntryBlock::PublicAccessOff,
+        }],
+        saving: false,
+        problem: Some(ClientsProblem {
+            kind: ClientsFailure::PublicAccessOff,
+            message: "公网访问关着".into(),
+        }),
+    }
+}
+
+fn clients_settings() -> ClientsSettingsViewModel {
+    ClientsSettingsViewModel {
+        state: ClientsState::Ready,
+        core_in_container: true,
+        public_access: PublicAccess { enabled: true },
+        public_reach: PublicReach::Reachable,
+        gates: Some(gates()),
+        ingress: Some(ingress()),
+        domain: Some(domain()),
+        providers: Some(vec![provider_preset()]),
+        providers_problem: None,
+        can_enable: true,
+        open_apps: 1,
+        closing: status().public_now,
+        bans: status().bans,
+        pending: status().pending,
+        saving: false,
+        problem: None,
+    }
+}
+
 #[test]
 fn every_response_round_trips() {
     round_trip(json!([plugin_serde()]), vec![plugin()]);
@@ -177,6 +269,174 @@ fn every_response_round_trips() {
         },
     );
     round_trip(serde_json::to_value(status()).unwrap(), status());
+    round_trip(serde_json::to_value(password()).unwrap(), password());
+}
+
+#[test]
+fn clients_actions_round_trip_inside_actions() {
+    let actions = [
+        ClientsAction::Refresh,
+        ClientsAction::SetEntry {
+            id: "app.immich.photos".into(),
+            kind: EntryKind::Public,
+            enabled: true,
+        },
+        ClientsAction::SetEntry {
+            id: "app.immich.photos".into(),
+            kind: EntryKind::Other,
+            enabled: false,
+        },
+        ClientsAction::SaveDomain {
+            request: PutDomainRequest {
+                suffix: Some("example.test".into()),
+                provider: "desec".into(),
+                credentials: vec![CredentialEntry {
+                    name: "DESEC_TOKEN".into(),
+                    value: SecretString::new("SECRET"),
+                }],
+                accept_terms: true,
+            },
+        },
+        ClientsAction::SaveIngress {
+            request: PutIngressRequest::OurRelay {},
+        },
+        ClientsAction::SetPublicAccess { enabled: false },
+        ClientsAction::RefreshGuests {
+            id: "app.scribble".into(),
+        },
+        ClientsAction::CreateGuest {
+            id: "app.scribble".into(),
+            label: "聚会".into(),
+            ttl_seconds: GUEST_TTL_DEFAULT,
+            path: Some("/room".into()),
+        },
+        ClientsAction::GetGuest {
+            id: "app.scribble".into(),
+            guest: "g1".into(),
+        },
+        ClientsAction::RevokeGuest {
+            id: "app.scribble".into(),
+            guest: "g1".into(),
+        },
+        ClientsAction::RefreshStatus,
+        ClientsAction::CreatePassword {
+            id: "app.immich.photos".into(),
+            request: NewPasswordRequest {
+                label: "家里的 iPad".into(),
+            },
+        },
+        ClientsAction::GetPassword {
+            id: "app.immich.photos".into(),
+            password: "pw1".into(),
+        },
+        ClientsAction::RevokePassword {
+            id: "app.immich.photos".into(),
+            password: "pw1".into(),
+        },
+        ClientsAction::Unban {
+            source: "2001:db8::/64".into(),
+        },
+        ClientsAction::DnsProviders,
+    ];
+
+    for action in actions {
+        let action = Action::Clients { action };
+        round_trip(serde_json::to_value(&action).unwrap(), action);
+    }
+}
+
+#[test]
+fn clients_actions_use_the_clients_domain_and_type_tags() {
+    assert_eq!(
+        serde_json::to_value(Action::Clients {
+            action: ClientsAction::Refresh,
+        })
+        .unwrap(),
+        json!({"domain": "clients", "action": {"type": "refresh"}})
+    );
+    assert_eq!(
+        serde_json::to_value(Action::Clients {
+            action: ClientsAction::SetPublicAccess { enabled: true },
+        })
+        .unwrap(),
+        json!({"domain": "clients", "action": {"type": "set_public_access", "enabled": true}})
+    );
+    assert_eq!(
+        serde_json::to_value(Action::Clients {
+            action: ClientsAction::RevokeGuest {
+                id: "app.scribble".into(),
+                guest: "g1".into(),
+            },
+        })
+        .unwrap(),
+        json!({
+            "domain": "clients",
+            "action": {"type": "revoke_guest", "id": "app.scribble", "guest": "g1"},
+        })
+    );
+}
+
+#[test]
+fn our_relay_ingress_is_not_seen_as_other() {
+    round_trip(json!("our_relay"), IngressKind::OurRelay);
+    parses_as_other::<IngressKind>(json!("another"));
+    round_trip(json!("other"), IngressKind::Other);
+    let request = PutIngressRequest::OurRelay {};
+    assert_eq!(
+        serde_json::to_value(&request).unwrap(),
+        json!({"kind": "our_relay"})
+    );
+    round_trip(json!({"kind": "our_relay"}), request);
+}
+
+#[test]
+fn unknown_entry_kind_inside_set_entry_is_other() {
+    let action: Action = serde_json::from_value(json!({
+        "domain": "clients",
+        "action": {
+            "type": "set_entry", "id": "app.immich.photos",
+            "kind": {"kind": "future"}, "enabled": false,
+        },
+    }))
+    .unwrap();
+    assert_eq!(
+        action,
+        Action::Clients {
+            action: ClientsAction::SetEntry {
+                id: "app.immich.photos".into(),
+                kind: EntryKind::Other,
+                enabled: false,
+            },
+        }
+    );
+}
+
+#[test]
+fn home_and_tail_are_optional_and_round_trip() {
+    let mut named = domain();
+    named.home = Some("alice".into());
+    named.tail = Some("808cbd.com".into());
+    round_trip(serde_json::to_value(&named).unwrap(), named);
+
+    let mut old = serde_json::to_value(domain()).unwrap();
+    let object = old.as_object_mut().unwrap();
+    object.remove("home");
+    object.remove("tail");
+    let parsed: DomainSettings = serde_json::from_value(old).unwrap();
+    assert_eq!(parsed.home, None);
+    assert_eq!(parsed.tail, None);
+}
+
+#[test]
+fn clients_view_models_round_trip() {
+    round_trip(
+        serde_json::to_value(clients_view()).unwrap(),
+        clients_view(),
+    );
+    round_trip(
+        serde_json::to_value(clients_settings()).unwrap(),
+        clients_settings(),
+    );
 }
 
 /// `plugin()` 的 JSON，用记录的写法手写一遍，防止字段名悄悄改掉。
@@ -285,6 +545,7 @@ fn unknown_kinds_are_other() {
     parses_as_other::<ProbeResult>(json!("future"));
     parses_as_other::<PendingChangeKind>(json!("future"));
     parses_as_other::<ClientsFailure>(json!("future"));
+    parses_as_other::<ClientsState>(json!({"state": "future"}));
 }
 
 #[test]
@@ -306,6 +567,10 @@ fn paths_are_stable() {
     assert_eq!(
         clients_entry_path("app.immich.photos", "lan"),
         "/_wonton/clients/app.immich.photos/entries/lan"
+    );
+    assert_eq!(
+        clients_entry_path("app.scribble", "ssh"),
+        "/_wonton/clients/app.scribble/entries/ssh"
     );
     assert_eq!(
         clients_passwords_path("app.immich.photos"),
@@ -405,4 +670,5 @@ from_other! {
     ProbeResult => ProbeResult::Other,
     PendingChangeKind => PendingChangeKind::Other,
     ClientsFailure => ClientsFailure::Other,
+    ClientsState => ClientsState::Other,
 }

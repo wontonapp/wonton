@@ -271,7 +271,12 @@ fn matrix_problem(error: Error) -> BotProfileProblem {
         Error::Unauthorized { errcode, message } | Error::Forbidden { errcode, message } => {
             (BotProfileFailure::Upstream, format!("{errcode}: {message}"))
         }
-        Error::Upstream(detail) | Error::InvalidInput(detail) => {
+        Error::NotInvited(detail)
+        | Error::Upstream(detail)
+        | Error::InvalidInput(detail)
+        | Error::NotInTimeline(detail) => (BotProfileFailure::Upstream, detail),
+        Error::CommentNotSent(failure) => (BotProfileFailure::Upstream, failure.to_string()),
+        Error::TooLarge(detail) | Error::UnsupportedType(detail) | Error::ReplyTarget(detail) => {
             (BotProfileFailure::Upstream, detail)
         }
     };

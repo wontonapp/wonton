@@ -51,9 +51,10 @@ pub(super) async fn forward(
     upstream: &Endpoint,
     hosted: &HostedRoute,
     mut req: Request,
+    web_user: Option<&str>,
     langs: &Languages,
-    format: pages::Format,
 ) -> Response {
+    let format = pages::Format::of(req.headers());
     mark(req.headers_mut(), route.id.as_str());
     let retry = hosted
         .fallback
@@ -61,14 +62,14 @@ pub(super) async fn forward(
         .filter(|_| matches!(*req.method(), Method::GET | Method::HEAD))
         .and_then(|fallback| fallback_request(&req, fallback));
     let client = client_addr(&req);
-    let mut response = match send(gateway, route, upstream, req, client, langs).await {
+    let mut response = match send(gateway, route, upstream, req, client, web_user, langs).await {
         Ok(response) => response,
         Err(error) => return error.response(route.id.as_str(), langs, format),
     };
     if response.status() == StatusCode::NOT_FOUND
         && let Some(again) = retry
     {
-        response = match send(gateway, route, upstream, again, client, langs).await {
+        response = match send(gateway, route, upstream, again, client, web_user, langs).await {
             Ok(response) => response,
             Err(error) => return error.response(route.id.as_str(), langs, format),
         };
@@ -84,9 +85,11 @@ pub(super) async fn send(
     upstream: &Endpoint,
     req: Request,
     client: Option<std::net::SocketAddr>,
+    web_user: Option<&str>,
     langs: &Languages,
 ) -> Result<Response, proxy::ForwardError> {
     let fwd = proxy::Forwarded {
+        web_user,
         client,
         scheme: &gateway.public.scheme,
     };

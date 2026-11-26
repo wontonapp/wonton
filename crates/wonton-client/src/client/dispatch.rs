@@ -1,7 +1,6 @@
 //! 用户操作分到各个作用域（ADR-0042）：这里是唯一的领域解包点。
 
-#[cfg(feature = "ui-fake")]
-use std::sync::atomic::Ordering;
+use std::sync::atomic::{AtomicUsize, Ordering};
 
 use wonton_l10n::l10n;
 use wonton_protocol::{
@@ -15,24 +14,80 @@ use super::*;
 use crate::agent_chains::actions::Effect;
 use crate::l10n::{CATALOG, language};
 
+/// 假数据下已经试过几次发送，`WONTON_UI_FAIL_SEND` 按它数前几次该拒。
+static UI_FAKE_SENDS: AtomicUsize = AtomicUsize::new(0);
+
 #[uniffi::export]
 impl ClientCore {
-    /// 假数据入口下照走真逻辑的时间线操作：拿掉附件只动本机的附件区，和真核心一样。
+    /// 假数据入口下照走真逻辑的时间线操作：拿掉附件只动本机的附件区，发送照样要过核心的检查。
+    ///
+    /// 只有走输入框的 `SendComposer` 查附件区：真核心的 `send_text` / `send_image` 都不看它
+    /// （`chat/send.rs`），命令和旁聊贴图有空附件失败也照发。
     fn dispatch_ui_fake_composer(&self, action: &TimelineAction) -> Result<(), CoreError> {
+        // `WONTON_UI_FAIL_SEND=<n>`：接下来 n 次发送都照附件传不上去的样子拒掉；数字缺省或不是数字时算 1，
+        // 够测“第一张被拒、后面的照发”。没有这个变量就都照发。
+        let is_send = matches!(
+            action,
+            TimelineAction::SendText { .. }
+                | TimelineAction::SendImage { .. }
+                | TimelineAction::SendComposer { .. }
+        );
+        if is_send {
+            let failed = UI_FAKE_SENDS.fetch_add(1, Ordering::SeqCst);
+            let limit = std::env::var("WONTON_UI_FAIL_SEND")
+                .map_or(0, |value| value.trim().parse().unwrap_or(1));
+            if failed < limit {
+                return Err(CoreError::InvalidInput {
+                    reason: l10n!(CATALOG, language(), "composer-has-failed"),
+                });
+            }
+        }
         match action {
             TimelineAction::RemoveAttachment { .. } => {
                 self.composer_action(&self.scope(), action.clone())
             }
-            // 假数据入口下发送不落到真核心，附件失败时的拒绝在这里照样生效。
-            TimelineAction::SendComposer { target, .. } => {
-                self.scope().composer.reject_if_failed(&target.room_id)
+            // 假数据没有真上传，附件区的失败由 `fail_attachment_for_test` 写；被拒就中止，不往假时间线补。
+            // 过了拒绝才有附言：补进假时间线、清附件区，返回 Ok 让外层继续开假链。
+            TimelineAction::SendComposer { target, body, .. } => {
+                #[cfg(not(feature = "ui-fake"))]
+                let _ = body;
+                self.scope().composer.reject_if_failed(&target.room_id)?;
+                self.scope().composer.clear_for_test(&target.room_id);
+                #[cfg(feature = "ui-fake")]
+                if !body.is_empty() {
+                    self.ui_fake_timelines
+                        .timeline_action(TimelineAction::SendText {
+                            target: target.clone(),
+                            body: body.clone(),
+                            reply_to: None,
+                            mentions: Vec::new(),
+                        });
+                }
+                Ok(())
             }
             _ => Ok(()),
         }
     }
 
+    /// 假数据下的服务器开关：设置里“添加服务器”换成配对页，取消退出。
+    #[cfg_attr(not(feature = "ui-fake"), allow(dead_code))]
+    fn dispatch_ui_fake_home(&self, action: HomeAction) {
+        match action {
+            HomeAction::AddServer => self.servers.seed_adding_ui_fake(true),
+            HomeAction::CancelAddServer => self.servers.seed_adding_ui_fake(false),
+            _ => {}
+        }
+    }
+
     /// 处理一个操作。领域子枚举只在这里解包，运行时仍只有一个入口。
     pub fn dispatch(&self, action: Action) -> Result<(), CoreError> {
+        // 发送（包括附件区整单）先停“正在输入”：假数据里发送被拒也算试过发送，所以要排在拒绝之前。
+        if let Action::Timeline {
+            action: TimelineAction::SendComposer { target, .. },
+        } = &action
+        {
+            self.scope().chat.stop_typing(target);
+        }
         #[cfg(feature = "ui-fake")]
         if self.ui_fake.load(Ordering::SeqCst) {
             return match action {
@@ -43,16 +98,24 @@ impl ClientCore {
                     Ok(())
                 }
                 Action::Plugins { action } => self.dispatch_ui_fake_plugins(action),
-                // 假时间线（跳转、发字）和停止钮的假运行段都要看到同一个操作。
+                // 假时间线（跳转、发字）和停止钮的假运行段都要看到同一个操作。发送的检查放在前面：
+                // 先过发送的拒绝和附件区的检查：被拒的发送不进假时间线、不开假链，也不回显；收下了才记假时间线（发附言的顺带补一条）。
                 Action::Timeline { action } => {
+                    self.dispatch_ui_fake_composer(&action)?;
                     self.ui_fake_timelines.timeline_action(action.clone());
-                    self.dispatch_ui_fake_timeline(action.clone());
-                    self.dispatch_ui_fake_composer(&action)
+                    self.dispatch_ui_fake_timeline(action);
+                    Ok(())
+                }
+                Action::Home { action } => {
+                    self.dispatch_ui_fake_home(action);
+                    Ok(())
                 }
                 Action::Agent { action } => {
                     self.dispatch_ui_fake_agent(action);
                     Ok(())
                 }
+                // 外观和语言全在本机，假数据下也要照实落盘，否则设置页点了没反应。
+                Action::Settings { action } => self.settings_action(&self.scope(), action),
                 _ => Ok(()),
             };
         }
@@ -71,9 +134,13 @@ impl ClientCore {
             Action::Pages { action } => self.page_action(&scope, action),
             Action::Peers { action } => scope.peers.dispatch(action),
             Action::BotContacts { action } => scope.bot_contacts.dispatch(action),
-            Action::Family { action } => scope.plugins.dispatch_roles(action),
+            Action::Family { action } => scope.family.dispatch(action),
             Action::Friends { action } => scope.friends.dispatch(action),
             Action::Sharing { action } => self.dispatch_sharing(&scope, action),
+            // 公网访问的模块还没接；接上之前如实报还没就绪，不静默当成功。
+            Action::Clients { .. } => Err(CoreError::NotReady {
+                reason: "clients module is not wired yet".into(),
+            }),
             Action::Timeline { action } => self.timeline_action(&scope, action),
             Action::Agent { action } => self.agent_action(&scope, action),
         }
@@ -123,6 +190,7 @@ impl ClientCore {
             | HomeAction::StartMatrixOidc { .. }
             | HomeAction::CompleteMatrixOidc { .. }
             | HomeAction::CancelMatrixLogin { .. }) => self.matrix_login.dispatch(action),
+            HomeAction::RelaySettings { action } => scope.home.relay_settings(action),
             action @ (HomeAction::AppForegrounded
             | HomeAction::AppBackgrounded
             | HomeAction::NetworkChanged { .. }
@@ -186,6 +254,7 @@ impl ClientCore {
             | ChatAction::DenyVerification { .. }
             | ChatAction::CancelDeviceVerification { .. }
             | ChatAction::DismissChatProblem
+            | ChatAction::CheckReady
             | ChatAction::AnswerConfirmation { .. }
             | ChatAction::StopConfirmationWindow { .. }
             | ChatAction::RetryConfirmations
@@ -263,6 +332,10 @@ impl ClientCore {
             PluginAction::InstallNow { source } => scope.plugins.install_now(source),
             PluginAction::UpgradeNow { plugin_id } => scope.plugins.upgrade_now(plugin_id),
             PluginAction::UpgradeAll => scope.plugins.upgrade_all(),
+            PluginAction::ReviewStoreUpdate { plugin_id } => {
+                scope.plugins.review_store_update(&plugin_id)
+            }
+            PluginAction::DismissStoreUpdates => scope.plugins.dismiss_store_updates(),
             PluginAction::DismissStoreConfirmation => {
                 scope.plugins.dismiss_confirmation();
                 Ok(())
@@ -408,11 +481,13 @@ impl ClientCore {
     fn lifecycle_action(&self, scope: &Scope, action: HomeAction) -> Result<(), CoreError> {
         match action {
             HomeAction::AppForegrounded => {
+                tracing::info!("the shell reports the app came to the foreground");
                 self.app_lock.foregrounded();
                 scope.foregrounded();
                 Ok(())
             }
             HomeAction::AppBackgrounded => {
+                tracing::info!("the shell reports the app went to the background");
                 scope.backgrounded();
                 self.app_lock.backgrounded(scope.handle());
                 Ok(())

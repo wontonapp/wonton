@@ -1,4 +1,6 @@
-//! 链用到上限的卡片（ADR-0061 第 10 节）：发给链代表的人和链上各 Bot 的归属人，同一人只发一张。
+//! 链卡片：用到上限的卡片（ADR-0061 第 10 节）和卡片认链的公共逻辑。
+//!
+//! 上限卡片发给链代表的人和链上各 Bot 的归属人，同一人只发一张。
 //! 全部选“再给一份”才放开（轮数加一份默认上限）；任一人选“先停着”就停整条链。
 //!
 //! 卡片由账本的“用到上限”回调在后台拉起：回调在账本锁外、同步调用，卡片在这里等回答。
@@ -8,12 +10,12 @@ use std::sync::Arc;
 
 use futures_util::stream::{FuturesUnordered, StreamExt};
 use wonton_protocol::{
-    AgentChainRow, Answer, BotRef, CardChoice, ChainLimitKind, ConfirmationCategory,
-    ConfirmationRequester,
+    AgentChainRow, AgentChainStatus, Answer, BotRef, CardChoice, ChainLimitKind,
+    ConfirmationCategory, ConfirmationRequester, ConfirmationState,
 };
 
 use super::cards::{Draft, line};
-use super::{Audience, Bus};
+use super::{Audience, Bus, Caller, TurnSender};
 use crate::agent_chain::ChainLimitEvent;
 use crate::l10n;
 use crate::plugin::PluginId;
@@ -45,14 +47,7 @@ async fn send(bus: &Arc<Bus>, event: &ChainLimitEvent) -> Result<(), SendError> 
     let total = recipients.len();
     let mut asking = FuturesUnordered::new();
     for recipient in recipients {
-        asking.push(ask_one(
-            bus,
-            chains.clone(),
-            &caller,
-            &row,
-            event,
-            recipient,
-        ));
+        asking.push(ask_one(bus, &caller, &row, event, recipient));
     }
     let mut approved = 0;
     while let Some(answered) = asking.next().await {
@@ -78,7 +73,6 @@ async fn send(bus: &Arc<Bus>, event: &ChainLimitEvent) -> Result<(), SendError> 
 /// 问一个人，返回他是否放行。
 async fn ask_one(
     bus: &Arc<Bus>,
-    chains: Arc<crate::gateway::agent_chains::AgentChains>,
     caller: &PluginId,
     row: &AgentChainRow,
     event: &ChainLimitEvent,
@@ -105,8 +99,9 @@ async fn ask_one(
             return false;
         }
     };
-    if let Err(error) = chains.ledger().bind_card(&row.chain, &card.id) {
-        tracing::warn!(%error, card = %card.id, "上限卡片没能认到链上");
+    // 链已经停了（另一张卡片先选了“先停着”）就不再等。
+    if bind_chain(bus, &row.chain, &card.id, "上限卡片").outcome == Bound::Withdrawn {
+        return false;
     }
     match bus.confirmations().deliver(&card, answered).await {
         Ok(chosen) => chosen.answer == Answer::Approve,
@@ -204,12 +199,131 @@ fn draft(row: &AgentChainRow, kind: ChainLimitKind, langs: &Languages) -> Draft 
     }
 }
 
-/// 链停下时撤回链上还等着的卡片：等待方拿到 `cancelled`，卡片在列表里显示撤回原因。
+/// 卡片认链的结果。
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub(super) enum Bound {
+    /// 卡片在链上等回答。
+    Waiting,
+    /// 停链抢在绑卡之前：卡片刚被撤回，调用方按 [`super::Refusal::Cancelled`] 回、不要执行。
+    Withdrawn,
+    /// 没绑上（没有链、链服务没接上或账本出错）：卡片照常等，只是停链撤回不了它。
+    Unbound,
+}
+
+/// [`bind_card`] 的结果：认到哪条链、卡片落成什么。
+pub(super) struct Binding {
+    pub outcome: Bound,
+    /// 绑上的链；没绑上时是 `None`。调用方要按它回写卡片所属的链。
+    pub chain: Option<String>,
+}
+
+impl Binding {
+    fn unbound() -> Self {
+        Self {
+            outcome: Bound::Unbound,
+            chain: None,
+        }
+    }
+}
+
+/// 这次调用认得到哪条链：调用头报的那条（[`Caller::chain`]）；没报时按这个 Bot 最近活着、
+/// 说话人对得上的一轮认（[`crate::agent_chain::Chains::live_turn_chain`]）。
+/// 认不出是 `Ok(None)`；链服务没接上分开报 `Err(())`。
+fn caller_chain(bus: &Bus, caller: &Caller) -> Result<Option<String>, ()> {
+    let chains = bus.agent_chains().ok_or(())?;
+    if let Some(chain) = &caller.chain {
+        return Ok(Some(chain.clone()));
+    }
+    let sender = match &caller.sender {
+        Some(TurnSender::Local(sender)) => Some(sender.as_str()),
+        _ => None,
+    };
+    let Some(bot) = caller.bot.as_ref() else {
+        return Ok(None);
+    };
+    Ok(chains
+        .ledger()
+        .live_turn_chain(caller.id.as_str(), &bot.bot, sender))
+}
+
+/// 把卡片认到 `chain`（给 `Some` 时）或这次调用认得到的链上，见 [`bind_chain`]。
+///
+/// `what` 是日志里的卡片类别。认不出链时卡片照发，只是停链撤回不了它。
+pub(super) fn bind_card(
+    bus: &Bus,
+    caller: &Caller,
+    chain: Option<&str>,
+    card: &str,
+    what: &str,
+) -> Binding {
+    let chain = match chain {
+        Some(chain) => Some(chain.to_owned()),
+        None => match caller_chain(bus, caller) {
+            Ok(chain) => chain,
+            Err(()) => {
+                tracing::warn!(card = %card, "调用链的服务没接上，{what}不入链：停链撤回不了它");
+                return Binding::unbound();
+            }
+        },
+    };
+    match chain {
+        Some(chain) => bind_chain(bus, &chain, card, what),
+        None => {
+            tracing::warn!(card = %card, "{what}认不出是哪一轮，卡片不入链：停链撤回不了它");
+            Binding::unbound()
+        }
+    }
+}
+
+/// 把卡片绑到链上，绑上之后回查一眼链状态。
+///
+/// 停链和在开卡片、绑卡片的空隙里插进来时，`stop()` 已经收完待撤的卡片，没人再来撤这一张：
+/// 这里自己撤回，别让它挂在“等你确认”、批准了还执行。
+pub(super) fn bind_chain(bus: &Bus, chain: &str, card: &str, what: &str) -> Binding {
+    let Some(chains) = bus.agent_chains() else {
+        tracing::warn!(card = %card, %chain, "调用链的服务没接上，{what}不入链：停链撤回不了它");
+        return Binding::unbound();
+    };
+    let ledger = chains.ledger();
+    if let Err(error) = ledger.bind_card(chain, card) {
+        tracing::warn!(%error, card = %card, %chain, "{what}没能认到链上");
+        return Binding::unbound();
+    }
+    let chain = chain.to_owned();
+    if ledger.status(&chain) != Some(AgentChainStatus::Stopped) {
+        return Binding {
+            outcome: Bound::Waiting,
+            chain: Some(chain),
+        };
+    }
+    let _ = ledger.resolve_card(card);
+    let outcome = if withdraw_card(bus, card) {
+        Bound::Withdrawn
+    } else {
+        // 撤不到：人抢在撤回之前答了（批了照常执行），或停链那一遍已经比这里先撤过。
+        // 卡片已经是 `Failed` 就是后者：等待方拿到 `Cancelled`，不再给它发一遍通知。
+        match bus.confirmations.card(card).map(|card| card.state) {
+            Some(ConfirmationState::Failed { .. }) => Bound::Withdrawn,
+            _ => Bound::Waiting,
+        }
+    };
+    Binding {
+        outcome,
+        chain: Some(chain),
+    }
+}
+
+/// 撤回一张卡片：等待方拿到 `cancelled`，卡片在列表里显示撤回原因。已经不在等时返回假。
+fn withdraw_card(bus: &Bus, card: &str) -> bool {
+    let langs = bus.languages_for(bus.confirmations.recipient(card).flatten().as_deref());
+    let message = l10n::text(&langs, "chat-chain-stopped-card", &[]);
+    bus.confirmations.cancel(card, &message)
+}
+
+/// 链停下时撤回链上还等着的卡片。
 pub(super) fn withdraw_cards(bus: &Bus, outcome: &crate::agent_chain::ChainStopOutcome) {
     for card in &outcome.cards {
-        let langs = bus.languages_for(bus.confirmations.recipient(card).flatten().as_deref());
-        let message = l10n::text(&langs, "chat-chain-stopped-card", &[]);
-        if !bus.confirmations.cancel(card, &message) {
+        if !withdraw_card(bus, card) {
             tracing::info!(card = %card, "卡片已经不在等，不用撤回");
         }
     }

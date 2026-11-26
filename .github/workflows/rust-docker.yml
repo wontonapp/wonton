@@ -1,17 +1,14 @@
 name: rust-docker
 
 # 依赖 Docker 的集成测试（标了 #[ignore] 的都在 wonton-core、wonton-client、wonton-matrix 里）。
+# 改了下面路径范围里的代码的 PR 合并前必须跑过它（11-26 早会 N8）；push 到 main 和每天定时仍按同一份路径跑兜底。
+# 规则和取舍见 .github/workflows/README.md“合并门槛和合后测试”。
+# 路径范围写两处（下面的 push.paths 和 gate.yml 的 docker 过滤）：改一处要改另一处。
 # 镜像清单检查和官方索引检查用不到 Docker，在 rust.yml 的测试里跑，不占这个作业的时间。
 # 测试镜像拉的是 ghcr.io/<owner>/test-images
 # 的副本（test-images.yml 每周和每次 main 合并时同步），托管 runner 的出口 IP 拉不动 Docker Hub 和 ECR Public。
-#
-# 合进 main 之后才跑，不挂 PR、不是必需检查：PR 只等十分钟内出结果的快检查，
-# 这个作业慢得多（2026-11-12 实测 PR 上中位 24 分钟）。
-# 每次合并单独跑一遍、不互相取消：红了按这次提交标题里的 (#N) 找到弄红的 PR，
-# 中间那几次被取消的话，红的那次可能带着好几个 PR，点不准名。
-# 合并前想先跑一遍：在 Actions 页对 PR 的分支手动触发（workflow_dispatch），结果不进 PR 的检查。
-# 路径写在触发器上：不是必需检查，没触发就是没改到。
 on:
+  workflow_call:
   push:
     branches: [main]
     paths:
@@ -34,12 +31,20 @@ on:
       - ".config/nextest.toml"
       - "rust-toolchain.toml"
       - ".github/workflows/rust-docker.yml"
+      # gate.yml 里 docker 作业的接线：改了要真验一遍。
+      - ".github/workflows/gate.yml"
       # 排除项要放在最后：GitHub 按顺序判断，后面的规则覆盖前面的。
       - "!**/*.md"
   schedule:
     # 每天全量兜底：上游测试镜像、索引这类不随提交变的输入变了也能发现。
     - cron: "30 3 * * *"
   workflow_dispatch:
+
+# 非 PR 用每次 run 唯一的组：GitHub 的同一并发组只留一个 running + 一个 pending，新的 pending 会顶掉旧的 pending，
+# 连着合 PR 时中间那次就被丢了、不满足“每次合并单独跑一遍、不互相取消”。PR 上按 ref 成组，新的取消旧的（gate 也会整轮取消）。
+concurrency:
+  group: rust-docker-${{ github.event_name == 'pull_request' && github.ref || github.run_id }}
+  cancel-in-progress: ${{ github.event_name == 'pull_request' }}
 
 env:
   CARGO_INCREMENTAL: "0"

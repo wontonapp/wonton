@@ -6,7 +6,7 @@ use wonton_client::{Action, ChatAccount, ChatFailure, ChatSync, MessageSummary};
 use wonton_protocol::TimelineTarget;
 
 use super::support::{Home, Phone};
-use super::{accept_the_bots_invite, chat_with_the_bot};
+use super::{accept_the_bots_encrypted_invite, accept_the_bots_invite, chat_with_the_bot};
 
 /// 从 A 改配到 B：不拿 A 的令牌去 B（那样会显示“已被吊销”），登录成新设备，聊天能用，重启后还在 B 上。
 #[tokio::test(flavor = "multi_thread")]
@@ -74,7 +74,7 @@ async fn a_new_address_for_the_same_server_keeps_the_session() {
     phone.connect(&home);
     let (_, device) = phone.signed_in().await;
     let bot = home.bot("hermes", "Hermes").await;
-    let room_id = accept_the_bots_invite(&home, &phone, &bot).await;
+    let room_id = accept_the_bots_encrypted_invite(&home, &phone, &bot).await;
     let bot_room = bot.open_room(&room_id).await.expect("Bot 打开私聊");
 
     // 旧地址已经不通，所以手机只能经新地址收到这条消息；预览能显示正文，说明房间密钥也在。
@@ -118,6 +118,7 @@ async fn switching_back_keeps_the_first_servers_chat() {
     let (_, on_a) = phone.signed_in().await;
     let a_bot = a.bot("hermes", "Hermes").await;
     let a_room = accept_the_bots_invite(&a, &phone, &a_bot).await;
+    phone.wait_ready().await;
     let timeline = phone
         .subscribe_timeline(TimelineTarget {
             room_id: a_room.to_string(),

@@ -13,7 +13,7 @@ use wonton_protocol::{EgressFailure, EgressProbe, EgressProblem};
 
 use super::address::ProxyAddress;
 use super::check::{self, TARGET, URL_VAR};
-use super::provider::provides_proxy;
+use super::provider::{STATUS_RECHECK, provides_proxy};
 use crate::l10n;
 use crate::plugin::lan::detect::with_replaced_note;
 use crate::plugin::lan::probe::NOBODY_USER;
@@ -46,8 +46,10 @@ pub enum Prober {
 #[cfg(test)]
 #[derive(Debug, Clone, Default)]
 pub struct Scripted {
-    /// 经出口容器访问外面失败的原因。
+    /// 经出口容器访问外面失败的原因；`via_relay_later` 用完才回到它。
     pub via_relay: Option<String>,
+    /// 后面几次经出口容器探测的结果：重建容器后“过一秒才通”的情况用。
+    pub via_relay_later: Vec<Option<String>>,
     /// 核心直接连代理的结果。
     pub direct: Option<EgressProblem>,
 }
@@ -57,11 +59,18 @@ impl Prober {
         match self {
             Self::Real => check::fetch(relay, TARGET.url, VIA_RELAY_TIMEOUT).await,
             #[cfg(test)]
-            Self::Fixed(script) => match script.lock().expect("探测脚本锁中毒").via_relay.clone()
-            {
-                Some(reason) => Err(reason),
-                None => Ok(()),
-            },
+            Self::Fixed(script) => {
+                let mut script = script.lock().expect("探测脚本锁中毒");
+                let next = if script.via_relay_later.is_empty() {
+                    script.via_relay.clone()
+                } else {
+                    script.via_relay_later.remove(0)
+                };
+                match next {
+                    Some(reason) => Err(reason),
+                    None => Ok(()),
+                }
+            }
             #[cfg(test)]
             Self::Fine => Ok(()),
         }
@@ -92,6 +101,13 @@ fn relay_failed(message: String) -> EgressProblem {
     }
 }
 
+fn waiting(message: String) -> EgressProblem {
+    EgressProblem {
+        reason: EgressFailure::Waiting,
+        message,
+    }
+}
+
 /// 这个结果挡不挡安装。只看到一个网站不通，不等于插件要连的地方都不通，所以 `upstream_failed` 不挡。
 pub(crate) fn blocks(problem: &EgressProblem) -> bool {
     problem.reason != EgressFailure::UpstreamFailed
@@ -105,6 +121,11 @@ pub(in crate::plugin) fn fresh(probe: &EgressProbe) -> bool {
 impl PluginManager {
     /// 探测两条路径，记下结果，结论变了写日志。请求带得来语言时按它写，后台按主人的语言写（ADR-0043）。
     pub async fn probe_egress(&self, langs: &Languages) -> Result<(), InstallError> {
+        let before = self
+            .egress
+            .plugin_path()
+            .and_then(|probe| probe.problem)
+            .map(|problem| problem.reason);
         let config = self.egress_config()?;
         let Some(proxy) = &config.url else {
             self.egress.record_probes(None, None);
@@ -125,6 +146,8 @@ impl PluginManager {
         let probed_at_ms = now_ms();
         if let Some(problem) = &plugin {
             tracing::warn!(reason = ?problem.reason, message = %problem.message, "插件经代理出不去");
+        } else if let Some(reason) = before {
+            tracing::info!(?reason, "经代理出网恢复");
         }
         self.egress.record_probes(
             Some(EgressProbe {
@@ -146,33 +169,65 @@ impl PluginManager {
     ) -> Result<Option<EgressProblem>, InstallError> {
         let name = self.cfg.instance.egress();
         // 每次都核对：出口容器可能被删了，核心换了容器后也要重新接上它的网络。
-        match self.reconcile_relay().await {
-            Err(
-                e @ (InstallError::ImagePull(_)
-                | InstallError::Docker(_)
-                | InstallError::DockerTimedOut(_)),
-            ) => {
+        let rebuilt = match self.reconcile_relay().await {
+            // 拉取以确定的方式失败（registry 拒了、tag 不存在这类），重试也还是它。
+            Err(e @ InstallError::ImagePull(_)) => {
+                return Ok(Some(relay_failed(l10n::text(
+                    langs,
+                    "plugin-settings-egress-relay-image",
+                    &[("error", e.to_string().into())],
+                ))));
+            }
+            // Docker 没在时限内回话：可能只是镜像还没拉下来。
+            Err(e @ InstallError::DockerTimedOut(_)) => {
+                return Ok(Some(waiting(l10n::text(
+                    langs,
+                    "plugin-settings-egress-relay-slow",
+                    &[("error", e.to_string().into())],
+                ))));
+            }
+            Err(e @ InstallError::Docker(_)) => {
                 return Ok(Some(relay_failed(e.to_string())));
             }
             result => result?,
+        };
+        let created = self.engine.inspect_container(&name).await?;
+        if created.is_some_and(|info| info.state.and_then(|s| s.running) != Some(true)) {
+            // 核对没报错、这里却没在跑：核对会重新把它起来。
+            return Ok(Some(waiting(l10n::text(
+                langs,
+                "plugin-settings-egress-relay-restarting",
+                &[],
+            ))));
         }
         let Some(address) = self.engine.endpoint_address(&name, &name).await? else {
-            return Ok(Some(relay_failed(l10n::text(
+            // 容器刚建、刚起：还没接上网络。
+            return Ok(Some(waiting(l10n::text(
                 langs,
-                "plugin-settings-egress-relay-not-running",
-                &[],
+                "plugin-settings-egress-relay-starting",
+                &[("container", name.clone().into())],
             ))));
         };
         let relay = format!("http://{address}:3128");
-        let Err(detail) = self.egress.prober().via_relay(&relay).await else {
-            return Ok(None);
+        let error = self.egress.prober().via_relay(&relay).await;
+        // 刚重建的容器：gost 这时可能还没开始监听，接不上不代表出口坏了。等一秒再试，通了就不算失败。
+        let error = match error {
+            Ok(()) => return Ok(None),
+            Err(_) if rebuilt => {
+                tokio::time::sleep(STATUS_RECHECK).await;
+                match self.egress.prober().via_relay(&relay).await {
+                    Ok(()) => return Ok(None),
+                    Err(detail) => detail,
+                }
+            }
+            Err(detail) => detail,
         };
         let found = self.diagnose(proxy, langs).await?;
         Ok(Some(found.unwrap_or_else(|| {
             relay_failed(l10n::text(
                 langs,
                 "plugin-settings-egress-relay-detail",
-                &[("detail", detail.into()), ("container", name.into())],
+                &[("detail", error.into()), ("container", name.into())],
             ))
         })))
     }

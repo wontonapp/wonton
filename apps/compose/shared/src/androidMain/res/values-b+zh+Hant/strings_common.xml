@@ -134,4 +134,5 @@
     <string name="core_upgrade_upgrading_to">正在更新到 %1$s…</string>
     <!-- Device verification (ADR-0046): confirm a new device with an already-verified one. -->
     <string name="common_ok">好</string>
+    <string name="common_back_exit_hint">再按一次離開雲吞</string>
 </resources>

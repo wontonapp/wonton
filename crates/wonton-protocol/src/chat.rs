@@ -237,8 +237,12 @@ pub enum ChatFailure {
     TransportUnavailable,
     /// 登录失效：登录凭据无效或过期、设备已被吊销、账号已停用。要重新登录或配对。
     Unauthorized,
-    /// 登录有效，但服务器不让做这件事：没有权限、对方屏蔽了自己、对方的服务器不和这台互通。不是要重新登录。
+    /// 登录有效，但服务器不让做这件事：没有权限、对方屏蔽了自己。不是要重新登录。
     Forbidden,
+    /// 对方服务器还没和这台配对（ADR-0050）：跨服务器的私聊要先在“其他服务器”里配对。
+    ServerNotPaired,
+    /// 对方服务器的公网访问关着（ADR-0090 第 2 节）：经公网才联系得到的对方暂时收不到，要等对方重新打开。
+    PeerPublicAccessOff,
     /// 前置条件不满足：服务器缺少必需的能力，或者要操作的房间还没同步到本机。
     NotReady,
     /// 服务器或 Matrix SDK 出错。
@@ -376,6 +380,11 @@ pub struct RoomRow {
     #[serde(default, skip_serializing_if = "Option::is_none")]
     #[cfg_attr(feature = "uniffi", uniffi(default = None))]
     pub plugin: Option<crate::RoomPlugin>,
+    /// 私聊对方是 Bot 时当前人能不能聊（[`crate::BotChatAvailability`]）；不是 Bot 的私聊为空。
+    /// 不可用时房间和历史都留着，壳禁用输入并写原因。
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    #[cfg_attr(feature = "uniffi", uniffi(default = None))]
+    pub bot_chat: Option<crate::BotChatAvailability>,
     /// 是否开了端到端加密。
     pub is_encrypted: bool,
     /// 只读的房间（和核心账号的通知私聊）：没有人读这里的消息，壳不显示输入框，发文字和图片会被拒绝。
@@ -395,6 +404,10 @@ pub struct RoomRow {
     #[serde(default)]
     #[cfg_attr(feature = "uniffi", uniffi(default = false))]
     pub call_active: bool,
+    /// 未读里提到我的条数（ADR-0121）：大于 0 时房间行的徽标换成「@」。
+    #[serde(default)]
+    #[cfg_attr(feature = "uniffi", uniffi(default = 0))]
+    pub unread_mentions: u64,
 }
 
 /// 本账号在房间里的成员状态。
@@ -553,6 +566,7 @@ mod tests {
                 },
             }],
             rooms: vec![RoomRow {
+                unread_mentions: 0,
                 layout: Default::default(),
                 call_active: false,
                 room_id: "!bot:home.example".into(),
@@ -560,6 +574,7 @@ mod tests {
                 is_direct: true,
                 direct_user_id: Some("@hermes:home.example".into()),
                 plugin: None,
+                bot_chat: None,
                 is_encrypted: true,
                 is_read_only: false,
                 membership: RoomMembership::Invited,
@@ -647,6 +662,7 @@ mod tests {
                         room_id: "!a:home.example".into(),
                         thread_root: None,
                     },
+                    caption: None,
                     image: image.clone(),
                     reply_to: None,
                 },
@@ -753,5 +769,31 @@ mod tests {
         let status: EncryptionStatus = serde_json::from_value(value).unwrap();
         assert!(!status.can_reset);
         assert_eq!(status.recovery_next_step, RecoveryNextStep::None);
+    }
+
+    /// 契约：跨服务器私聊失败的两个原因各有自己的取值，不并进 `Forbidden`/`Other`；
+    /// 不认识的取值才落 `Other`。
+    #[test]
+    fn cross_server_problems_keep_their_category() {
+        for (wire, expected) in [
+            ("server_not_paired", ChatFailure::ServerNotPaired),
+            ("peer_public_access_off", ChatFailure::PeerPublicAccessOff),
+        ] {
+            let problem: ChatProblem = serde_json::from_value(serde_json::json!({
+                "reason": wire,
+                "message": "发起私聊失败",
+            }))
+            .unwrap();
+            assert_eq!(problem.reason, expected);
+            assert_eq!(
+                serde_json::to_value(expected).unwrap(),
+                serde_json::json!(wire)
+            );
+            assert_eq!(round_trip(&problem), problem);
+        }
+        assert_eq!(
+            serde_json::from_value::<ChatFailure>(serde_json::json!("hibernating")).unwrap(),
+            ChatFailure::Other
+        );
     }
 }

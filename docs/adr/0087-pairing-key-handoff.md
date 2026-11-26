@@ -4,6 +4,7 @@
   恢复密钥只在旧设备都不在时用。三点取舍见文末“已定”
 - 修订：[ADR-0046](0046-device-verification.md) 的入口（新设备不再从“输入恢复密钥”提醒进确认）和“不自动接受请求”；
   [ADR-0076](0076-device-verification-fallback.md) 的“QR 先不做”。确认方式本身、秘密交换、`KeysMissing` 和重置的规则不变
+- 由 [ADR-0118](0118-im-three-layers-push-with-body.md) 删除（2026-11-25）：房间不加密，配对后不再交接聊天密钥，也没有恢复密钥这一步
 
 ## 背景
 

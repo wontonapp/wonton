@@ -116,8 +116,8 @@
     <string name="owner_secrets_problem_other">キーを読み込めませんでした。もう一度お試しください。</string>
     <!-- 添付シート：下端のタブ。端末のアルバムを写真グリッドで開く。 -->
     <string name="attach_album">アルバム</string>
-    <!-- 添付シート：選んだ写真を送る前に加えるボタン。引数：枚数。 -->
-    <string name="attach_add">%1$d枚を追加</string>
+    <!-- 添付シート：写真を選ぶと下に出るひとこと欄。写真と一緒に送信される。 -->
+    <string name="sheet_note_hint">ひとこと添える</string>
     <!-- 添付シート：アルバムに写真がない。 -->
     <string name="attach_album_empty">アルバムに写真がありません</string>
     <!-- 添付シート：アルバムの権限が拒否された。 -->
@@ -126,4 +126,16 @@
     <string name="attach_open_settings">設定を開く</string>
     <!-- 選んだ写真のチェックの読み上げラベル。 -->
     <string name="attach_selected">選択済み</string>
+    <!-- Section heading for the profile photo. -->
+    <string name="owner_profile_avatar">アバター</string>
+    <!-- Next step when the core is too old to set an avatar. -->
+    <string name="owner_profile_avatar_not_ready_next">アプリか自宅のコアを更新してからやり直してください</string>
+    <!-- Title when the core is too old to set an avatar. -->
+    <string name="owner_profile_avatar_not_ready">このバージョンではまだアバターを変更できません</string>
+    <string name="owner_profile_avatar_not_logged_in_next">しばらくしてからやり直してください</string>
+    <string name="owner_profile_avatar_not_logged_in">チャットがまだサインインしていません</string>
+    <!-- Button that opens the photo picker. -->
+    <string name="owner_profile_avatar_pick">写真を選ぶ</string>
+    <!-- Button that removes the profile photo. -->
+    <string name="owner_profile_avatar_remove">アバターを削除</string>
 </resources>

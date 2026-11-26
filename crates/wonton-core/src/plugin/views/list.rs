@@ -116,6 +116,8 @@ impl PluginManager {
     ) -> InstalledPlugin {
         let manifest = entry.listed.as_ref().map(|l| &l.manifest);
         let origin = entry.listed.as_ref().and_then(|l| l.origin.as_ref());
+        // 随核心带的才是系统插件；商店、来源和上传的 system 包和普通插件一样能卸、能换版本。
+        let bundled = entry.system && self.bundled_system_record(id);
         let (upgrade, mut notices) =
             self.upgrades
                 .listing(id, &entry.version, &entry.status, langs);
@@ -164,7 +166,7 @@ impl PluginManager {
                 .as_ref()
                 .and_then(|l| l.icon.as_ref())
                 .map(IconSource::paths),
-            trust: if entry.system {
+            trust: if bundled {
                 PluginTrust::System
             } else {
                 trust(origin)
@@ -193,7 +195,7 @@ impl PluginManager {
             bot_user_id: None,
             default_bot_visibility: None,
             upgrade,
-            removable: !entry.system,
+            removable: !bundled,
             notices,
             enabled_root_permissions: Vec::new(),
             install_progress: entry.install_progress.clone(),

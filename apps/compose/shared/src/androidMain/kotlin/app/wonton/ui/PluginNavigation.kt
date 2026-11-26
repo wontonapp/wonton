@@ -234,6 +234,7 @@ fun TaskRow(
     plugins: PluginsState,
     onReview: () -> Unit,
     onCheckInstalled: () -> Unit,
+    showsDismiss: Boolean = true,
 ) {
     Row(
         Modifier.fillMaxWidth(),
@@ -250,7 +251,7 @@ fun TaskRow(
         }
         if (task.state is PluginTaskState.Running) {
             CircularProgressIndicator(Modifier.size(WontonTheme.size.icon), strokeWidth = SPINNER_STROKE)
-        } else {
+        } else if (showsDismiss) {
             WontonIconButton(
                 WontonIcon.Close,
                 stringResource(R.string.common_close),

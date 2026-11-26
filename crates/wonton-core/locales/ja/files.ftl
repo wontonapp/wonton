@@ -5,12 +5,14 @@
 files-not-found = そのファイルはありません
 files-moved-or-deleted = ファイルは移動されたか、削除されました
 files-not-shared = このファイルはあなたと共有されていません
+files-room-members-unknown = 今グループに誰がいるか確認できません：{ $error }。しばらくしてからもう一度お試しください
+files-room-members-unconfigured = 今グループに誰がいるか確認できません：自宅サーバーがまだMatrixに接続していません
 files-share-expired = このファイルIDの共有は期限切れです。ファイルをもう一度取得してください
 files-changed = ファイルは登録後に変更されたため、表示した内容が現在のものとは違う可能性があります。もう一度取得してください
 files-share-not-authorized = アプリ{ $plugin }には共有フォルダー{ $share }の権限がありません
 files-mcp-gone = アプリ{ $plugin }は実行中ですが、MCPサービスを提供しなくなったため、このリソースを読み取れません
 files-plugin-unavailable = 元のアプリ{ $plugin }がアンインストールされたか、起動していません
-files-notify-no-matrix = 自宅サーバーはMatrix（WONTON_MATRIX_URL）に接続していないため、「Wonton」の個人チャットに送れません
+files-notify-no-matrix = 自宅サーバーはまだMatrix（WONTON_MATRIX_URL）に接続していないため、「Wonton」の個人チャットに送れません
 files-matrix-send-failed = 「Wonton」の個人チャットに送れません：{ $error }
 files-upstream-not-own = { $service }はアプリ{ $plugin }自身のサービスではありません
 

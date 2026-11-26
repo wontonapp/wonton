@@ -1,7 +1,7 @@
 //! `entry_certificate_contract`：同一组断言跑两个 DNS provider（lego `httpreq` 和 `acme-dns`）。
 //!
 //! 真 Pebble、`pebble-challtestsrv` 和一个只在测试里存在的 HTTP 写入器充当 DNS 服务商；入口是一条真的
-//! HAProxy，USR2 用正在下载的连接验证。要 Docker，标 `#[ignore]`。
+//! HAProxy，热加载用正在下载的连接验证。要 Docker，标 `#[ignore]`。
 
 use std::path::{Path, PathBuf};
 use std::process::{Command, Stdio};
@@ -639,7 +639,7 @@ async fn case(provider: Provider) -> (Vec<u8>, Vec<u8>) {
         mount.target.as_deref() == Some("/request/site.csr") && mount.read_only == Some(true)
     }));
 
-    // USR2 不新起连接也不断掉正在下载的。
+    // 热加载不新起连接也不断掉正在下载的。
     let entry = names.oneshot_container("entry");
     let certs = install.join("entry/certs");
     let mut model = Model::federation_only(ZONE, ZONE);
@@ -668,7 +668,15 @@ async fn case(provider: Provider) -> (Vec<u8>, Vec<u8>) {
         ],
         &haproxy,
         "haproxy",
-        &["-W", "-db", "-f", "/config/haproxy.cfg"],
+        // 和产品一样开主进程管理端口（-S）：热加载走它，expose-fd 靠它把监听套接字交给新进程。
+        &[
+            "-W",
+            "-db",
+            "-f",
+            "/config/haproxy.cfg",
+            "-S",
+            &format!("{entry_ip}:8404"),
+        ],
     );
     tokio::time::sleep(Duration::from_millis(800)).await;
     let roots = dir.path().join("roots.pem");
@@ -685,8 +693,10 @@ async fn case(provider: Provider) -> (Vec<u8>, Vec<u8>) {
         .unwrap();
     std::fs::write(&roots, roots_text).unwrap();
     let output = dir.path().join("download");
-    let mut child = Command::new("curl")
-        .args([
+    let through = |extra: &[&str]| {
+        let resolve = format!("probe.{ZONE}:8443:{connector_ip}");
+        let url = format!("https://probe.{ZONE}:8443/slow");
+        let mut args = vec![
             "-sS",
             "--noproxy",
             "*",
@@ -697,25 +707,71 @@ async fn case(provider: Provider) -> (Vec<u8>, Vec<u8>) {
             "--cacert",
             roots.to_str().unwrap(),
             "--resolve",
-            &format!("probe.{ZONE}:8443:{connector_ip}"),
-            &format!("https://probe.{ZONE}:8443/slow"),
-            "-o",
-            output.to_str().unwrap(),
-            "-w",
-            "%{size_download}",
-        ])
-        .stdout(Stdio::piped())
-        .spawn()
-        .unwrap();
-    tokio::time::sleep(Duration::from_millis(500)).await;
+            resolve.as_str(),
+            url.as_str(),
+        ];
+        args.extend_from_slice(extra);
+        let mut command = Command::new("curl");
+        command.args(&args);
+        command
+            .stdout(Stdio::piped())
+            .stderr(Stdio::inherit())
+            .spawn()
+            .unwrap()
+    };
+    // 连接器的 DNS 解析是懒的（init-addr libc,none）：先打通一次，别把解析慢记成重载丢包。
+    for _ in 0..60 {
+        if through(&["-o", "/dev/null", "--max-time", "3"])
+            .wait()
+            .unwrap()
+            .success()
+        {
+            break;
+        }
+        tokio::time::sleep(Duration::from_millis(300)).await;
+    }
+    let mut child = through(&[
+        "-Sv",
+        "-o",
+        output.to_str().unwrap(),
+        "-w",
+        "%{size_download}",
+    ]);
+
+    // 等第一个字节真的落盘再重载：没被 accept 的连接在监听套接字换手时不会跟着走，
+    // 固定 sleep 会让“下载中”有时其实还没开始。
+    for _ in 0..100 {
+        if std::fs::metadata(&output).map(|m| m.len()).unwrap_or(0) > 0 {
+            break;
+        }
+        tokio::time::sleep(Duration::from_millis(50)).await;
+    }
     let (_, status) = docker(&["inspect", "-f", "{{.State.Status}}", &entry]);
     if status.trim() != "running" {
         let (_, logs) = docker(&["logs", "--tail", "30", &entry]);
-        panic!("入口在收 USR2 前已退出：\n{logs}");
+        panic!("入口在热加载前已退出：\n{logs}");
     }
-    engine.kill_container(&entry, "SIGUSR2").await.unwrap();
+    crate::entry_containers::reload_haproxy(&format!("{entry_ip}:8404"))
+        .await
+        .unwrap();
     let result = child.wait().unwrap();
-    assert!(result.success(), "USR2 后下载失败");
+    if !result.success() {
+        let (_, elogs) = docker(&["logs", "--timestamps", "--tail", "40", &entry]);
+        let (_, clogs) = docker(&["logs", "--timestamps", "--tail", "20", &connector]);
+        let (_, info) = docker(&[
+            "inspect",
+            "-f",
+            "{{.State.Status}} {{.RestartCount}}",
+            &entry,
+        ]);
+        panic!(
+            "热加载后下载失败: {info}
+entry:
+{elogs}
+connector:
+{clogs}"
+        );
+    }
     let body = std::fs::read_to_string(&output).unwrap();
     assert_eq!(body.lines().count(), 10, "连接被截断：{body:?}");
 

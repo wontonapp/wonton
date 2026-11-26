@@ -506,7 +506,7 @@ impl PluginManager {
         Ok(self.matrix()?.hand_over(owner, bot, &langs).await?)
     }
 
-    /// 安装在交出主房间之后失败了：收回它，归属人那边不留一个没有 Bot 应答的私聊。
+    /// 安装失败回滚：收回主房间，归属人退出、双方的 `m.direct` 都去掉，不留一条没有 Bot 应答的私聊。
     pub(super) async fn withdraw_home_room(&self, bot: &ProvisionedBot) -> Result<(), String> {
         let matrix = self.matrix().map_err(|e| e.to_string())?;
         let langs = self.owner_languages();
@@ -616,7 +616,19 @@ impl PluginManager {
                 )));
             }
         }
-        Ok(())
+        self.check_bot_sync(&manifest.id)
+    }
+
+    /// Bot 经核心的同步停了就报异常：容器活着、上游的健康检查也还报 connected，只有这里看得出来它收不到消息。
+    pub(crate) fn check_bot_sync(&self, id: &PluginId) -> Result<(), InstallError> {
+        let Some(age) = self.stalled_bot_sync(id) else {
+            return Ok(());
+        };
+        Err(InstallError::Unhealthy(crate::l10n::text(
+            &self.owner_languages(),
+            "plugin-settings-bot-sync-stalled",
+            &[("seconds", age.to_string().into())],
+        )))
     }
 
     /// 这个房间里的 Bot 的名字（Matrix 用户名）。M1 的 Bot 只在自己的主房间里，核心不在别的房间里，也查不了成员。

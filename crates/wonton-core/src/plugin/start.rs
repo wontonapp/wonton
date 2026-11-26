@@ -10,7 +10,7 @@ use wonton_protocol::PluginRecoveryStage;
 use super::compose::DependCondition;
 use super::docker::EngineError;
 use super::health::{self, Target};
-use super::health_gate::Gate;
+use super::health_gate::{Gate, Wait};
 use super::languages::Languages;
 use super::manager::{
     Deployed, Entry, Health, InstallError, PluginManager, PluginStatus, PluginView, busy, detached,
@@ -65,6 +65,12 @@ impl PluginManager {
             this.start(&started_id).await
         })
         .await?;
+        // 启动已成功：补共享密码、重试待完成的凭据操作、对账旧值；不拖启动返回。
+        let reconciling = Arc::clone(self);
+        let reconciled = id.clone();
+        tokio::spawn(async move {
+            reconciling.reconcile_credentials(&reconciled).await;
+        });
         if probe {
             closing.check_models_once(vec![id]).await;
         }
@@ -218,7 +224,7 @@ impl PluginManager {
                     && entry
                         .listed
                         .as_ref()
-                        .is_some_and(|l| super::model_health::needs_default_model(&l.manifest));
+                        .is_some_and(|l| super::models::uses_models(&l.manifest));
                 Ok((self.view(id, entry), probe))
             }
             Err(error) => {
@@ -327,12 +333,20 @@ impl PluginManager {
             });
         }
         // 没有渲染计划：等待时限从生效的 healthcheck（在容器配置里）算，和安装、升级同一条规则。
-        let deadline = match gate {
+        let wait = match gate {
             Gate::StartPeriod => self.wait_deadline(&package).await?,
-            Gate::InstallTimeout => Instant::now() + self.cfg.install_timeout,
+            Gate::InstallTimeout => {
+                let now = Instant::now();
+                Wait {
+                    at: now + self.cfg.install_timeout,
+                    budget: self.cfg.install_timeout,
+                    started: now,
+                }
+            }
         };
         if let ContainersState::Stopped = state {
             self.set(id, PluginStatus::Installing, None);
+            self.forget_bot_sync(id);
             // 网络被删了（开发栈 down、Docker 数据丢了）就先按安装的规格重建，核对才能把核心接回去。
             self.ensure_network(&package.manifest).await?;
             // 复用恢复核对，先把核心接回网络；依赖核心内部别名的服务才能启动。
@@ -348,7 +362,7 @@ impl PluginManager {
             };
             if !replaced {
                 self.recovery_stage(id, PluginRecoveryStage::Starting)?;
-                self.start_resident_containers(&package, &record, deadline, langs)
+                self.start_resident_containers(&package, &record, wait, langs)
                     .await?;
             }
         } else if self.recovery_pending(id) {
@@ -365,7 +379,8 @@ impl PluginManager {
         if let (Some(upstream), Some(webui)) = (&deployed.upstream, &package.manifest.webui)
             && deployed.serving.contains(&webui.service)
         {
-            health::wait_webui(&self.http, upstream, &webui.path, deadline, langs).await?;
+            let container = self.webui_container(&package.manifest, &webui.service);
+            health::wait_webui(&self.http, upstream, &webui.path, &container, wait, langs).await?;
         }
         Ok(Started {
             health: deployed.health,
@@ -380,7 +395,7 @@ impl PluginManager {
     }
 
     /// 启动不重渲染计划：生效的 healthcheck（安装时把镜像自带的并了进去）在容器配置里，等待时限据此算。
-    async fn wait_deadline(&self, package: &PluginPackage) -> Result<Instant, InstallError> {
+    async fn wait_deadline(&self, package: &PluginPackage) -> Result<Wait, InstallError> {
         let slug = package.manifest.id.slug();
         let bot_services = super::bot_services::bot_services(&package.manifest);
         let bots = self.bot_names(&package.manifest.id);
@@ -413,7 +428,7 @@ impl PluginManager {
         &self,
         package: &PluginPackage,
         record: &InstalledRecord,
-        deadline: Instant,
+        wait: Wait,
         langs: &Languages,
     ) -> Result<(), InstallError> {
         let id = &package.manifest.id;
@@ -469,8 +484,14 @@ impl PluginManager {
                     (name_of(dependency, dep_bot), condition)
                 })
                 .collect();
-            self.wait_dependencies(Some(&package.manifest), &deps, deadline, langs)
-                .await?;
+            self.wait_dependencies(
+                Some(&package.manifest),
+                &deps,
+                &name_of(service, *bot),
+                wait,
+                langs,
+            )
+            .await?;
             let name = name_of(service, *bot);
             if let StartSettled::Missing = self.start_settled(&name).await? {
                 return Err(container_gone_after_start_timeout(langs, &name));
@@ -485,7 +506,7 @@ impl PluginManager {
                 &name,
                 Target::Ready,
                 webui_health.as_ref(),
-                deadline,
+                wait,
                 langs,
             )
             .await?;

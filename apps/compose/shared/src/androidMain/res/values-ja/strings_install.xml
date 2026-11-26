@@ -37,7 +37,7 @@
     <!-- Button in the install preview when the app needs profile details you haven't filled in yet. -->
     <string name="install_fill_profile">プロフィールを入力</string>
     <!-- Section title above the permissions the app asks for, in the install preview and the detail page. -->
-    <string name="install_permissions">権限</string>
+    <string name="install_permissions">使うもの</string>
     <!-- Section title above the release notes in the install preview. -->
     <string name="install_release_notes">更新内容</string>
     <string name="install_audience_admin">管理者</string>

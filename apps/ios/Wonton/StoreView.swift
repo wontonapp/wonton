@@ -24,52 +24,33 @@ struct StoreView: View {
                 ProblemRow(problem: rejection.problem) { model.refreshStore(force: true) }
                     .padding(WontonTheme.spacing.pageInset)
             }
-            ScrollView {
-                LazyVStack(alignment: .leading, spacing: 0) {
-                    ForEach(model.viewModel.tasks, id: \.id) { task in
-                        TaskRow(model: model, task: task, review: {
-                            confirmation = model.reconfirmation(for: task)
-                        }, checkInstalled: { goToInstalledApps() })
-                        .padding(.horizontal, WontonTheme.spacing.pageInset)
-                        .padding(.vertical, WontonTheme.spacing.s8)
+            GeometryReader { geometry in
+                VStack(spacing: 0) {
+                    if let batch = model.viewModel.updateBatch {
+                        StoreUpdateAllResults(
+                            model: model, batch: batch,
+                            maximumHeight: geometry.size.height * 0.45,
+                            review: { confirmation = model.reconfirmation(for: $0) },
+                            checkInstalled: goToInstalledApps
+                        )
                     }
-                    if let store = model.viewModel.store {
-                        if case let .failed(problem) = model.viewModel.storeLoad {
-                            ProblemRow(problem: problem.problem) {
-                                model.refreshStore(force: true)
-                            }
-                            .padding(WontonTheme.spacing.pageInset)
-                        }
-                        if query.isEmpty {
-                            listing(store)
-                        } else {
-                            results
-                        }
-                    }
+                    catalog
                 }
             }
-            .scrollDismissesKeyboard(.immediately)
-            .overlay {
-                if model.viewModel.store == nil { placeholder }
-            }
-            .refreshable { model.refreshStore(force: true) }
         }
         .wontonPushedScreen(String(localized: .Store.storeTitle), showsStatusLine: true, usesSystemToolbar: true) {
             HStack(spacing: 0) {
-                if model.viewModel.updatable.count > 0 {
+                if !isUpdatingAll, model.viewModel.updatable.count > 0 {
                     UpdateAllButton(count: model.viewModel.updatable.count) { showsUpdateAll = true }
                 }
                 WontonIconButton(icon: .add, label: String(localized: .Store.storeAddSource)) { isAddingSource = true }
             }
         }
         .fullScreenCover(item: $confirmation) { InstallConfirmView(model: model, confirmation: $0) }
-        .confirmationDialog(
-            String(localized: .Store.storeUpdateAllTitle(count: model.viewModel.updatable.count)),
-            isPresented: $showsUpdateAll,
-            titleVisibility: .visible
-        ) {
-            Button(String(localized: .Store.storeUpdateAll)) { model.send(.plugins(action: .upgradeAll)) }
-            Button(String(localized: .Common.commonCancel), role: .cancel) {}
+        .sheet(isPresented: $showsUpdateAll) {
+            StoreUpdateAllConfirmation(model: model, apps: model.viewModel.updatable) {
+                showsUpdateAll = false
+            }
         }
         .fullScreenCover(isPresented: $isAddingSource, onDismiss: {
             confirmation = chosen
@@ -80,7 +61,51 @@ struct StoreView: View {
         .task { model.refreshStore(force: false) }
     }
 
-    /// 没有商店内容时，只在核心正在请求时显示骨架。
+    private var isUpdatingAll: Bool { model.viewModel.updateBatch?.finished == false }
+
+    private var otherTasks: [PluginTask] {
+        let batchTasks = model.viewModel.updateBatch?.items.compactMap { item -> PluginTask? in
+            if case let .task(task) = item.state { return task }
+            return nil
+        } ?? []
+        return model.viewModel.tasks.filter { !batchTasks.contains($0) }
+    }
+}
+
+extension StoreView {
+    private var catalog: some View {
+        ScrollView {
+            LazyVStack(alignment: .leading, spacing: 0) {
+                ForEach(otherTasks, id: \.id) { task in
+                    TaskRow(model: model, task: task, review: {
+                        confirmation = model.reconfirmation(for: task)
+                    }, checkInstalled: { goToInstalledApps() })
+                    .padding(.horizontal, WontonTheme.spacing.pageInset)
+                    .padding(.vertical, WontonTheme.spacing.s8)
+                }
+                if let store = model.viewModel.store {
+                    if case let .failed(problem) = model.viewModel.storeLoad {
+                        ProblemRow(problem: problem.problem) {
+                            model.refreshStore(force: true)
+                        }
+                        .padding(WontonTheme.spacing.pageInset)
+                    }
+                    if query.isEmpty {
+                        listing(store)
+                    } else {
+                        results
+                    }
+                }
+            }
+        }
+        .scrollDismissesKeyboard(.immediately)
+        .overlay {
+            if model.viewModel.store == nil { placeholder }
+        }
+        .refreshable { model.refreshStore(force: true) }
+    }
+
+    /// 还没取到商店：取不到的原因和下一步，或者正在取。
     @ViewBuilder private var placeholder: some View {
         switch model.viewModel.storeLoad {
         case .notRequested:
@@ -207,27 +232,36 @@ struct StoreView: View {
         StoreItemRow(model: model, item: item, button: button(for: item), failure: failure(for: item))
     }
 
-    /// 一键操作在取预览或开始之前出的错：行下面一行红字配“重试”，不弹窗（ADR-0017）。
+    /// 一键操作在取预览或开始之前出的错：行下面一行红字配“重试”，不弹窗（ADR-0017）。批次里已经列过的
+    /// 那条不再重复。
     private func failure(for item: StoreItem) -> PluginTaskState? {
-        guard !model.isWorking(on: item.id), !model.viewModel.pending.contains(item.id),
+        let inBatch = model.viewModel.updateBatch?.items.contains { $0.app.pluginId == item.id } ?? false
+        guard !inBatch, !model.isWorking(on: item.id), !model.viewModel.pending.contains(item.id),
               case let .failed(reason, message) = model.viewModel.tasks.first(where: { $0.id == item.id })?.state
         else { return nil }
         return .failed(reason: reason, message: message)
     }
 
-    /// 行尾的按钮：没装的“获取”，装着旧版本的“更新”，装着的“打开”；取预览和装、升级、卸载时转圈。点了就开始，不跳页。
+    /// 行尾的按钮：没装的“获取”，装着旧版本的“更新”，装着的“打开”；取预览、装、升级、卸载和批次里排队、
+    /// 检查时转圈。点了就开始，不跳页。
     /// 有失败安装（或一键安装结果不确定）时不给按钮：行下的红字带下一步，重试走保留的决定。
     private func button(for item: StoreItem) -> StoreButton {
-        if model.isWorking(on: item.id) || model.viewModel.pending.contains(item.id) {
+        let queued = model.viewModel.updateBatch?.items.contains { entry in
+            guard entry.app.pluginId == item.id else { return false }
+            if case .queued = entry.state { return true }
+            if case .checking = entry.state { return true }
+            return false
+        } ?? false
+        if queued || model.isWorking(on: item.id) || model.viewModel.pending.contains(item.id) {
             return .busy
         }
-        let plugin = model.viewModel.installed?.plugins.first { $0.id == item.id }
+        let installed = model.viewModel.installed?.plugins.first { $0.id == item.id }
         let uncertainInstall = model.viewModel.tasks.contains { task in
             guard task.id == item.id, task.operation == .install else { return false }
             if case .uncertain = task.state { return true }
             return false
         }
-        if plugin?.installFailure != nil || uncertainInstall {
+        if installed?.installFailure != nil || uncertainInstall {
             return .hidden
         }
         guard let version = item.installedVersion else {
@@ -239,12 +273,16 @@ struct StoreView: View {
                 model.send(.plugins(action: .installNow(source: item.source)))
             }
         }
-        if version != item.version {
+        if storeRowShowsUpdate(
+            installed: version, version: item.version,
+            hasSource: installed?.source != nil, hasOffer: installed?.upgrade != nil
+        ) {
+            // 上传的包（没有来源）核心升不了，不给“更新”：点了只会报“应用没找到”。预装插件没有来源，
+            // 但核心查到新版本时有报价，照样能升。
             return .get(title: String(localized: .Store.storeUpdate)) {
                 model.send(.plugins(action: .upgradeNow(pluginId: item.id)))
             }
         }
-        let installed = model.viewModel.installed?.plugins.first { $0.id == item.id }
         guard let entry = installed?.entries.first else { return .hidden }
         return .get(title: String(localized: .Store.storeOpen)) { open(entry) }
     }
@@ -284,6 +322,12 @@ private struct TagChips: View {
             .padding(.horizontal, WontonTheme.spacing.pageInset)
         }
     }
+}
+
+/// 行尾给不给“更新”：装着的是旧版本，而且升得动——上传的包看来源，预装插件看核心查到的报价。
+/// 两样都没有时升级接口会报“应用没找到”。
+func storeRowShowsUpdate(installed: String?, version: String, hasSource: Bool, hasOffer: Bool) -> Bool {
+    installed != version && (hasSource || hasOffer)
 }
 
 enum StoreButton {

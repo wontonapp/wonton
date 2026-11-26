@@ -30,7 +30,10 @@ extension View {
                         message: message,
                         detail: detail,
                         actions: actions ?? [
-                            WontonDialogAction(title: String(localized: .Design.designOk), perform: onDismiss ?? {})
+                            WontonDialogAction(
+                                title: String(localized: .Design.designOk), perform: onDismiss ?? {},
+                                identifier: "dialogOk"
+                            )
                         ],
                         close: { isPresented.wrappedValue = false },
                         dismiss: onDismiss ?? {}

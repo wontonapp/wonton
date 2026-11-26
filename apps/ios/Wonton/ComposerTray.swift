@@ -134,6 +134,7 @@ struct AttachmentTile: View {
             }
             .buttonStyle(.plain)
             .accessibilityLabel(Text(.Composer.composerAttachmentFailed))
+            .accessibilityIdentifier("composerAttachmentFailed")
         }
     }
 }
@@ -195,6 +196,8 @@ extension AttachmentFailure {
         case .tooLarge: .Composer.composerAttachmentTooLarge
         case .sourceUnavailable: .Composer.composerAttachmentSourceUnavailable
         case .storageFull: .Composer.composerAttachmentStorageFull
+        case .unsupportedType: .Composer.composerAttachmentUnsupportedType
+        case .replyTarget: .Composer.composerAttachmentReplyTarget
         case .rejected: .Composer.composerAttachmentRejected
         case .upstream: .Composer.composerAttachmentUpstream
         case .localStorage: .Composer.composerAttachmentLocalStorage

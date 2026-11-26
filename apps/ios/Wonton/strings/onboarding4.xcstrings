@@ -159,25 +159,55 @@
         "en": {
           "stringUnit": {
             "state": "translated",
-            "value": "Can't Install"
+            "value": "Can't install this app"
           }
         },
         "zh-Hans": {
           "stringUnit": {
             "state": "translated",
-            "value": "装不了"
+            "value": "装不了这个应用"
           }
         },
         "zh-Hant": {
           "stringUnit": {
             "state": "translated",
-            "value": "無法安裝"
+            "value": "裝不了這個應用程式"
           }
         },
         "ja": {
           "stringUnit": {
             "state": "translated",
-            "value": "インストールできません"
+            "value": "このアプリはインストールできません"
+          }
+        }
+      }
+    },
+    "onboarding.review.unchanged": {
+      "comment": "Second line of a review row the user did not change: finishing will not touch it.",
+      "extractionState": "manual",
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Keep as is"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "不改动"
+          }
+        },
+        "zh-Hant": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "不改動"
+          }
+        },
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "変更しません"
           }
         }
       }
@@ -189,25 +219,25 @@
         "en": {
           "stringUnit": {
             "state": "translated",
-            "value": "Queued"
+            "value": "Waiting its turn"
           }
         },
         "zh-Hans": {
           "stringUnit": {
             "state": "translated",
-            "value": "排队"
+            "value": "等前面的装完"
           }
         },
         "zh-Hant": {
           "stringUnit": {
             "state": "translated",
-            "value": "排隊中"
+            "value": "等前面的裝完"
           }
         },
         "ja": {
           "stringUnit": {
             "state": "translated",
-            "value": "待機中"
+            "value": "前のアプリの完了待ち"
           }
         }
       }
@@ -268,36 +298,6 @@
           "stringUnit": {
             "state": "translated",
             "value": "プロフィール"
-          }
-        }
-      }
-    },
-    "onboarding.review.unchanged": {
-      "comment": "Second line of a review row the user did not change: finishing will not touch it.",
-      "extractionState": "manual",
-      "localizations": {
-        "en": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "Unchanged"
-          }
-        },
-        "zh-Hans": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "不变"
-          }
-        },
-        "zh-Hant": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "不變"
-          }
-        },
-        "ja": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "変更なし"
           }
         }
       }

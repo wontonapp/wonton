@@ -4,6 +4,8 @@ import UIKit
 /// 用 Core Image 画二维码：每个模块放大成整数个像素，缩放时不会糊。
 enum QRImage {
     static func make(_ text: String) -> UIImage? {
+        // 走查钩子：截图“取码失败”提示时不让 CoreImage 出图。
+        if ProcessInfo.processInfo.environment["WONTON_QR_FAIL"] != nil { return nil }
         let filter = CIFilter.qrCodeGenerator()
         filter.message = Data(text.utf8)
         filter.correctionLevel = "M"

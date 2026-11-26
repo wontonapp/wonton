@@ -123,7 +123,12 @@ async fn a_bot_plugin_gets_its_own_matrix_identity_through_the_core() {
     {
         let state = bed.tuwunel.state();
         let room = &state.rooms[&env["ROOM"]];
-        assert!(room.encrypted && room.members.contains("@owner:test"));
+        assert!(!room.encrypted && room.members.contains("@owner:test"));
+        assert!(
+            !state.room_state[&env["ROOM"]]
+                .events
+                .contains_key(&("m.room.encryption".to_owned(), String::new()))
+        );
         let name = state.user("@echo:test").display_name.as_deref();
         assert_eq!(name, Some("回声"));
     }
@@ -217,9 +222,11 @@ async fn a_failed_install_leaves_the_owner_no_chat_and_keeps_the_home_room_for_n
         let room = &state.rooms[&failed["ROOM"]];
         assert_eq!(room.members, BTreeSet::from(["@echo:test".to_owned()]));
         assert!(
-            room.invited.is_empty(),
-            "没装好的 Bot 不出现在主人的聊天列表里"
+            room.left.contains("@owner:test"),
+            "主人建完就退出了，房间不在主人的聊天列表里"
         );
+        assert!(room.invited.is_empty(), "邀请已经被 Bot 接受");
+        assert_eq!(state.user("@owner:test").direct, None, "没交付，不算私聊");
     }
 
     bed.docker
@@ -233,7 +240,14 @@ async fn a_failed_install_leaves_the_owner_no_chat_and_keeps_the_home_room_for_n
         "重试沿用上次建好的主房间"
     );
     let state = bed.tuwunel.state();
-    assert_eq!(state.rooms.len(), 1);
+    assert_eq!(
+        state
+            .rooms
+            .keys()
+            .filter(|id| id.as_str() != crate::matrix::fake::ADMIN_ROOM_ID)
+            .count(),
+        1
+    );
     assert!(state.rooms[&failed["ROOM"]].members.contains("@owner:test"));
 }
 

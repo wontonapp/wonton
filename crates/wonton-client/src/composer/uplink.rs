@@ -155,12 +155,21 @@ fn matrix_error(error: &wonton_matrix::Error) -> UplinkError {
     let message = error.to_string();
     match error {
         Error::Transport(_) | Error::NotReady(_) => UplinkError::Offline(message),
-        // 类型在放进附件区时就核对过，这里的输入非法只剩比服务器的上传上限大。
-        Error::InvalidInput(_) => UplinkError::Failed(AttachmentFailure::TooLarge, message),
+        // 类型在放进附件区时就核对过；这里的“输入非法”是服务器对请求本身的拒绝，不是太大。
+        Error::InvalidInput(_) | Error::NotInTimeline(_) => {
+            UplinkError::Failed(AttachmentFailure::Rejected, message)
+        }
+        Error::TooLarge(_) => UplinkError::Failed(AttachmentFailure::TooLarge, message),
+        Error::UnsupportedType(_) => {
+            UplinkError::Failed(AttachmentFailure::UnsupportedType, message)
+        }
+        Error::ReplyTarget(_) => UplinkError::Failed(AttachmentFailure::ReplyTarget, message),
         Error::Unauthorized { .. } | Error::Forbidden { .. } => {
             UplinkError::Failed(AttachmentFailure::Rejected, message)
         }
-        Error::Upstream(_) => UplinkError::Failed(AttachmentFailure::Upstream, message),
+        Error::NotInvited(_) | Error::Upstream(_) | Error::CommentNotSent(_) => {
+            UplinkError::Failed(AttachmentFailure::Upstream, message)
+        }
     }
 }
 

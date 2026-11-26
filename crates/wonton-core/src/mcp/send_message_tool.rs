@@ -18,6 +18,8 @@ use super::Refusal;
 use super::audience::Subject;
 use super::audit::{Basis, Decision, Grounds};
 use super::cards::{Draft, line};
+use super::chain_card::{Bound, bind_card};
+use super::confirm::CANCELLED;
 use super::{
     Bus, Caller, Outcome, ToolFailure, TurnSender, core_tools, with_confirmation, with_failure,
 };
@@ -189,12 +191,9 @@ async fn ask_and_enqueue(
         session = caller.session.as_deref().unwrap_or("-"),
         "发出的私聊卡片挂在谁和哪条链上"
     );
-    // 卡片认到这条链：链被停时随停撤回（等的人拿到 cancelled，不入队）。
-    if let Some(chain) = &caller.chain
-        && let Some(chains) = bus.agent_chains()
-        && let Err(error) = chains.ledger().bind_card(chain, &card.id)
-    {
-        tracing::warn!(%error, card = %card.id, chain, "发消息卡片没能认到链上");
+    // 卡片认到这条链：链被停时随停撤回（等的人拿到 chain_stopped，不入队）。
+    // 停链抢在认链和绑卡之间时，停链那一遍已经收不到这张卡片了：绑上之后回查，是停的就当场撤回。
+    if bind_card(&bus, &caller_placeholder, None, &card.id, "发消息卡片").outcome == Bound::Withdrawn {
     }
     match bus.confirmations().deliver(&card, answered).await {
         Ok(chosen)
@@ -228,7 +227,11 @@ async fn ask_and_enqueue(
                 .await;
             with_confirmation(outcome.result, "card")
         }
-        // 拒绝时卡片状态已经发布过（[`Confirmations::deliver`]）。
+        // 拒绝时卡片状态已经发布过（[`Confirmations::deliver`]）；链被停撤回来的等待报“已取消”，
+        // 模型才知道不是主人拒的。
+        Ok(chosen) if chosen.choice_id.as_deref() == Some(CANCELLED) => {
+            bus.refused(&caller, &name, &args, &Refusal::Cancelled, None)
+        }
         Ok(_) => bus.refused(&caller, &name, &args, &Refusal::Rejected, None),
         Err(refusal) => bus.refused(&caller, &name, &args, &refusal, None),
     }

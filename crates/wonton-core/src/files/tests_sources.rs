@@ -213,14 +213,17 @@ async fn error_texts_follow_the_requested_language() {
         .register_share(&hermes(), share("photos/a.jpg"), None, None, &any_langs())
         .await
         .unwrap();
-    let not_shared = |langs: Languages| {
-        f.files
+    let files = &f.files;
+    let record = &record;
+    let not_shared = |langs: Languages| async move {
+        files
             .authorize(&record.id, &Accessor::Bot("other".into()), &langs)
+            .await
             .unwrap_err()
             .message
     };
-    let ja = not_shared(Languages::from_header(Some("ja")));
-    let french = not_shared(Languages::from_header(Some("fr-FR")));
+    let ja = not_shared(Languages::from_header(Some("ja"))).await;
+    let french = not_shared(Languages::from_header(Some("fr-FR"))).await;
     // Bot 看不见别人的分享，一律按编号不认识回（防探测）：files-not-found。
     let expected = |tag: &str| CATALOG.format(CATALOG.negotiate(&[tag]), "files-not-found", &[]);
     assert_eq!(ja, expected("ja"));

@@ -26,9 +26,11 @@ internal fun OwnerProfileForm(
     email: String,
     onEmail: (String) -> Unit,
     problem: Problem?,
+    avatar: @Composable () -> Unit,
     modifier: Modifier = Modifier,
 ) {
     Column(modifier, verticalArrangement = Arrangement.spacedBy(WontonTheme.spacing.sectionGap)) {
+        avatar()
         OwnerProfileFields(name, onName, email, onEmail)
         problem?.let { ProblemNotice(it) }
         WontonGroup { WontonRow(stringResource(R.string.owner_profile_username), profile.username) }

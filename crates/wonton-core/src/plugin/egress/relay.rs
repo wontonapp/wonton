@@ -90,7 +90,9 @@ impl PluginManager {
         self.ensure_host_cidrs().await?;
         let _pass = self.egress.pass.lock().await;
         // 同 lifecycle.rs deploy_inner 的减帧：sync_relay 往下到 bollard 的反序列化很深。
-        Box::pin(self.sync_relay(proxy, &config, Some(network))).await
+        Box::pin(self.sync_relay(proxy, &config, Some(network)))
+            .await
+            .map(|_| ())
     }
 
     /// 卸载或回滚时，删网络之前断开：Docker 不让删还有端点的网络。
@@ -108,8 +110,8 @@ impl PluginManager {
         Ok(())
     }
 
-    /// 核心启动时和设置变了时：按设置建好或者删掉出口容器。
-    pub async fn reconcile_relay(&self) -> Result<(), InstallError> {
+    /// 核心启动时和设置变了时：按设置建好或者删掉出口容器。回这次是不是重建过容器（刚起的还没在监听）。
+    pub async fn reconcile_relay(&self) -> Result<bool, InstallError> {
         let config = self.egress_config()?;
         self.ensure_host_cidrs().await?;
         let _pass = self.egress.pass.lock().await;
@@ -126,6 +128,7 @@ impl PluginManager {
                 self.relay_files()
                     .remove(&self.owner_languages())
                     .map_err(InstallError::Storage)
+                    .map(|()| false)
             }
         }
     }
@@ -135,7 +138,7 @@ impl PluginManager {
         proxy: &ProxyAddress,
         config: &EgressConfig,
         extra: Option<&str>,
-    ) -> Result<(), InstallError> {
+    ) -> Result<bool, InstallError> {
         let name = self.cfg.instance.egress();
         let labels = self.cfg.instance.component_labels();
         self.ensure_relay_network().await?;
@@ -180,7 +183,8 @@ impl PluginManager {
                 .map_err(InstallError::Storage)?;
         }
         self.write_relay_lists(config).await?;
-        if !same || !current || !running {
+        let started = !same || !current || !running;
+        if started {
             let relay = Relay {
                 name: &name,
                 labels: &labels,
@@ -199,7 +203,8 @@ impl PluginManager {
         if let Some(core) = &self.cfg.core_container {
             self.connect_relay_network(core, &name).await?;
         }
-        self.write_relay_lists(config).await
+        self.write_relay_lists(config).await?;
+        Ok(started)
     }
 
     /// 安装器的代理预检也经核心分配网络，启动后沿用已建的出口网络。
