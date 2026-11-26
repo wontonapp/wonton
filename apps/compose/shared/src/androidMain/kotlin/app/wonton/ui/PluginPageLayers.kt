@@ -13,6 +13,7 @@ import androidx.compose.foundation.layout.systemBars
 import androidx.compose.foundation.layout.union
 import androidx.compose.foundation.layout.windowInsetsPadding
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.MutableState
 import androidx.compose.runtime.remember
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.unit.Dp
@@ -35,7 +36,7 @@ internal fun PageLayers(
     appearance: AppearanceViewModel, viewport: TabViewport, active: Boolean, parked: Boolean,
     takeover: PageTakeover?,
     bannerTop: Dp, onDetails: (String) -> Unit, onDraft: (String) -> Unit, openLink: (String) -> Unit,
-    admitted: Boolean = true, disclosure: @Composable () -> Unit = {},
+    browserAttempted: MutableState<Boolean>, admitted: Boolean = true, disclosure: @Composable () -> Unit = {},
 ) {
     val environment = viewport.environment
     val script = remember(page.url, appearance, environment, parked) {
@@ -63,7 +64,8 @@ internal fun PageLayers(
             state.controller.customView?.let { video ->
                 AndroidView(factory = { video }, modifier = Modifier.fillMaxSize())
             }
-            PageOverlays(state, page, pages, connection, viewport, bannerTop, takeover, onDetails)
+            PageOverlays(state, page, pages, connection, viewport, bannerTop, takeover, onDetails,
+                browserAttempted, admitted)
         }
     }
 }
@@ -72,6 +74,7 @@ internal fun PageLayers(
 private fun PageOverlays(
     state: WebPageState, page: TabPage, pages: PagesState, connection: SharedPageConnection,
     viewport: TabViewport, bannerTop: Dp, takeover: PageTakeover?, onDetails: (String) -> Unit,
+    browserAttempted: MutableState<Boolean>, browserAllowed: Boolean,
 ) {
     val inset = PaddingValues(top = viewport.chromeTop, bottom = viewport.bottom)
     val shared = connection.shared
@@ -79,7 +82,8 @@ private fun PageOverlays(
         SharedPageStatus(page, shared, connection.source, pages, state.problem, connection.supported,
             state.covers(page), inset)
     } else {
-        PageStatusOverlay(state, page, state.tab, connection.supported, page.opensInBrowser, inset, onDetails)
+        PageStatusOverlay(state, page, state.tab, connection.supported, page.opensInBrowser, inset, onDetails,
+            browserAttempted, browserAllowed)
     }
     val capsule: (@Composable () -> Unit)? = if (viewport.capsule) {
         {
