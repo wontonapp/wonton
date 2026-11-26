@@ -24,6 +24,8 @@
     <!-- 通知設定ページのスイッチ：オン = フォアグラウンドサービスがホームサーバーとのトンネルを維持し、新着メッセージはアプリがローカル通知で表示する。オフ = UnifiedPush で通知（ADR-0003）。 -->
     <string name="notification_title">通知</string>
     <string name="notification_system">システム通知</string>
+    <string name="notification_permission_allowed">許可済み</string>
+    <string name="notification_permission_denied">許可なし</string>
     <string name="notification_push">プッシュ通知</string>
     <string name="notification_channel_message">チャットメッセージ</string>
     <string name="notification_channel_confirmation">確認待ち</string>

@@ -174,8 +174,8 @@ private fun SettingsEntryRow(
             stringResource(R.string.notification_title),
             // 摘要和通知页的“系统通知”一行同源：收不收得到提醒只看系统有没有允许，推送注册状态在通知页里说。
             stringResource(
-                if (notificationsEnabled()) R.string.notification_value_on
-                else R.string.notification_value_system_blocked,
+                if (notificationsEnabled()) R.string.notification_permission_allowed
+                else R.string.notification_permission_denied,
             ),
             showsForward = true,
             onClick = { onSubpage(SettingsSubpage.NOTIFICATIONS) },

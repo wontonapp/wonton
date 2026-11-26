@@ -24,6 +24,8 @@
     <!-- 通知设置页的开关：开 = 前台服务让和家里服务器的隧道在后台不断，新消息由 App 弹本地通知；关 = 走 UnifiedPush 推送（ADR-0003）。 -->
     <string name="notification_title">通知</string>
     <string name="notification_system">系统通知</string>
+    <string name="notification_permission_allowed">已允许</string>
+    <string name="notification_permission_denied">未允许</string>
     <string name="notification_push">推送</string>
     <string name="notification_channel_message">聊天消息</string>
     <string name="notification_channel_confirmation">等你确认</string>

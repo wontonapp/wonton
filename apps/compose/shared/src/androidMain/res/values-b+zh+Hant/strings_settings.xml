@@ -24,6 +24,8 @@
     <!-- 通知設定頁的開關：開 = 前台服務讓和家用伺服器的隧道在後台不斷，新訊息由 App 彈本機通知；關 = 走 UnifiedPush 推送（ADR-0003）。 -->
     <string name="notification_title">通知</string>
     <string name="notification_system">系統通知</string>
+    <string name="notification_permission_allowed">已允許</string>
+    <string name="notification_permission_denied">未允許</string>
     <string name="notification_push">推送</string>
     <string name="notification_channel_message">聊天訊息</string>
     <string name="notification_channel_confirmation">等你確認</string>

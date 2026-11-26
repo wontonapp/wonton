@@ -19,7 +19,6 @@ import androidx.compose.runtime.Composable
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
-import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.runtime.setValue
 import androidx.compose.material3.Text
 import androidx.compose.ui.Alignment
@@ -117,8 +116,8 @@ fun NotificationSettingsScreen(core: ClientCore, settings: SettingsViewModel, on
                 WontonRow(
                     stringResource(R.string.notification_system),
                     stringResource(
-                        if (enabled) R.string.notification_value_on
-                        else R.string.notification_value_system_blocked,
+                        if (enabled) R.string.notification_permission_allowed
+                        else R.string.notification_permission_denied,
                     ),
                     showsForward = true,
                     onClick = openSystem,
@@ -257,22 +256,34 @@ private val PushStatus.notificationStatus: String
     }
 
 /**
- * 系统通知的入口：通知开着时去系统设置管理；没允许时第一次按 Android 规范弹授权框，弹过了
- * （系统对再次请求不再弹框，只会静默拒绝）就带去系统设置开。
+ * 系统通知的入口（#677）：允许了、或系统不会弹框（13 以前、没有宿主注入）就直接去系统页；没允许就先按
+ * Android 规范弹授权框，允许、拒绝都照样去系统页——拒绝以后开关就在那页，不把人留在原地再点一次。
  */
 @Composable
 internal fun openSystemNotifications(context: Context, enabled: Boolean): () -> Unit {
-    var asked by rememberSaveable { mutableStateOf(false) }
     val permission = LocalNotificationPermission.current
     val canAsk = permission != null && Build.VERSION.SDK_INT >= Build.VERSION_CODES.TIRAMISU
     return {
-        if (enabled || asked || !canAsk) {
-            context.startActivity(
-                Intent(Settings.ACTION_APP_NOTIFICATION_SETTINGS)
-                    .putExtra(Settings.EXTRA_APP_PACKAGE, context.packageName),
-            )
-        } else {
-            permission?.request { granted -> if (!granted) asked = true }
-        }
+        notificationEntry(
+            enabled = enabled,
+            canAsk = canAsk,
+            ask = { onResult -> permission?.request(onResult) },
+            openSettings = {
+                context.startActivity(
+                    Intent(Settings.ACTION_APP_NOTIFICATION_SETTINGS)
+                        .putExtra(Settings.EXTRA_APP_PACKAGE, context.packageName),
+                )
+            },
+        )
     }
+}
+
+/** [openSystemNotifications] 的分支本身，不经过 Compose：弹不弹框、弹完去哪。 */
+internal fun notificationEntry(
+    enabled: Boolean,
+    canAsk: Boolean,
+    ask: ((Boolean) -> Unit) -> Unit,
+    openSettings: () -> Unit,
+) {
+    if (enabled || !canAsk) openSettings() else ask { openSettings() }
 }

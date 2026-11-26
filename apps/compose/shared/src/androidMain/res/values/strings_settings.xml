@@ -43,8 +43,12 @@
     <string name="shortcut_agent_chat">Ask a Bot</string>
     <!-- Title of the notification settings page. -->
     <string name="notification_title">Notifications</string>
-    <!-- Row title on the notification settings page that opens the system notification settings for Wonton. -->
+    <!-- Row title on the notification settings page; asks for the permission if needed, then opens the system settings. -->
     <string name="notification_system">System notifications</string>
+    <!-- Value on the system notification row: notifications are allowed in the system settings. -->
+    <string name="notification_permission_allowed">Allowed</string>
+    <!-- Value on the system notification row: notifications are not allowed (never asked yet counts too). -->
+    <string name="notification_permission_denied">Not allowed</string>
     <!-- Row title on the notification settings page that shows the UnifiedPush registration status. -->
     <string name="notification_push">Push</string>
     <!-- Notification channel name for new chat messages. Shown in the system notification settings. -->
