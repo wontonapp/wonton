@@ -7,7 +7,6 @@ use wonton_protocol::{
     PanelItem, PanelScope, PanelSource, TabRef,
 };
 };
-
 use super::super::ClientCore;
 use super::tabs::fake_open;
 
