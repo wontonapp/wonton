@@ -12,7 +12,6 @@ import { compareVersions, getReactNativeOs, markDeviceAcquisitionFailure, unwrap
 import { computeBitrate, debounce, monitorFrequency } from './e2ee-frame.mjs';
 import { DeviceManager } from './device.mjs';
 import { DEFAULT_DIMENSIONS_TIMEOUT, LocalTrackRecorder, PRE_CONNECT_BUFFER_TIMEOUT, isRecordingSupported } from './recorder.mjs';
-import { LocalVideoTrack } from './local-video-track.mjs';
 
 
 class LocalTrack extends Track {
@@ -1025,18 +1024,7 @@ class LocalTrack extends Track {
       return trackIsSilent;
     });
   }
-}/** @internal */
-function mediaTrackToLocalTrack(mediaStreamTrack, constraints, loggerOptions) {
-  switch (mediaStreamTrack.kind) {
-    case 'audio':
-      return new LocalAudioTrack(mediaStreamTrack, constraints, false, undefined, loggerOptions);
-    case 'video':
-      return new LocalVideoTrack(mediaStreamTrack, constraints, false, loggerOptions);
-    default:
-      throw new TrackInvalidError("unsupported track type: ".concat(mediaStreamTrack.kind));
-  }
-}
-/* @internal */
+}/* @internal */
 const presets169 = Object.values(VideoPresets);
 /* @internal */
 const presets43 = Object.values(VideoPresets43);
@@ -1392,4 +1380,4 @@ function getDefaultDegradationPreference(track) {
       return 'balanced';
   }
 }const refreshSubscribedCodecAfterNewCodec = 5000;
-export { LocalAudioTrack, LocalTrack, ScalabilityMode, computeDefaultScreenShareSimulcastPresets, computeStartTargetBitrate, computeTrackBackupEncodings, computeVideoEncodings, defaultSimulcastLayers, defaultSimulcastPresets169, defaultSimulcastPresets43, determineAppropriateEncoding, encodingsFromPresets, getDefaultDegradationPreference, mediaTrackToLocalTrack, presets169, presets43, presetsForResolution, presetsScreenShare, refreshSubscribedCodecAfterNewCodec, sortPresets, videoRids };
+export { LocalAudioTrack, LocalTrack, ScalabilityMode, computeDefaultScreenShareSimulcastPresets, computeStartTargetBitrate, computeTrackBackupEncodings, computeVideoEncodings, defaultSimulcastLayers, defaultSimulcastPresets169, defaultSimulcastPresets43, determineAppropriateEncoding, encodingsFromPresets, getDefaultDegradationPreference, presets169, presets43, presetsForResolution, presetsScreenShare, refreshSubscribedCodecAfterNewCodec, sortPresets, videoRids };

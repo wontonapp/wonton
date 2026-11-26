@@ -11,7 +11,8 @@ import { ScreenSharePresets, constraintsForOptions, extractProcessorsFromOptions
 import { Track, isSafari17Based } from './track.mjs';
 import { isAudioTrack, isVideoTrack, unwrapConstraint } from './utils-misc.mjs';
 import { audioDefaults, videoDefaults } from './pc-transport.mjs';
-import { LocalAudioTrack, mediaTrackToLocalTrack } from './local-track.mjs';
+import { LocalAudioTrack } from './local-track.mjs';
+import { mediaTrackToLocalTrack } from './local-track-factory.mjs';
 import { LocalVideoTrack } from './local-video-track.mjs';
 
 class TrackPublication extends eventsExports.EventEmitter {

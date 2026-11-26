@@ -138,4 +138,7 @@ export { version } from './livekit/browser.mjs';
 export { videoCodecs } from './livekit/util.mjs';
 export { writeRbsp } from './livekit/e2ee-crypto.mjs';
 
+// 纯副作用 import：与原 bundle 相同，模块求值时安装 WebRTC adapter 的 chrome/firefox/safari shim
+import './livekit/adapter-sdp.mjs';
+
 //# sourceMappingURL=livekit-client.esm.mjs.map
