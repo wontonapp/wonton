@@ -8,7 +8,7 @@ App 里的文字按这里写（ADR-0043）。翻译不逐句对照原文：先�
 | --- | --- | --- | --- | --- |
 | 云吞 | Wonton | 雲吞 | Wonton | App 名字 |
 | 家里的服务器 | home server | 家用伺服器 | 自宅サーバー | 装着 Wonton 的那台主机，对用户只说这个，不说“核心” |
-| 枢纽 | hub | 樞紐 | ハブ | 架构术语：一户一台常开的服务器；界面上仍叫“家里的服务器” |
+| 枢纽 | hub | 樞紐 | ハブ | 架构术语：一户一台常开的服务器；界面不出现“枢纽”，一律叫“家里的服务器” |
 | 应用 | app | iOS：App；Android：應用程式 | アプリ | 装在家里服务器上的插件，对用户都叫应用 |
 | App（手机上的 Wonton） | Wonton | 雲吞 | Wonton | 除简体外都直接写名字，免得和上一行的“应用”撞 |
 | 插件 | plugin | 外掛程式 | プラグイン | 只在给开发者看的地方用（插件作者、插件包） |
@@ -18,7 +18,7 @@ App 里的文字按这里写（ADR-0043）。翻译不逐句对照原文：先�
 | 配对 | pair | 配對 | ペアリング | 手机和家里的服务器建立信任 |
 | 添加设备 | Add Device | 新增裝置 | デバイスを追加 | 让另一台手机配对同一台服务器 |
 | 设备 | device | 裝置 | デバイス | |
-| 受管设备 / 受管电脑 | managed device | 受管裝置 | 管理対象デバイス | 挂在枢纽下、跑 Agent 的电脑；界面上叫“电脑” |
+| 受管设备 / 受管电脑 | managed device | 受管裝置 | 管理対象デバイス | 挂在枢纽下、跑 Agent 的电脑；界面不出现“受管设备”，显示电脑自己的名字（如“某某的 MacBook”） |
 | 主机 | computer | 主機 | ホスト | 跑家里服务器的那台机器，讲安装命令时用 |
 | 底栏 | iOS：Tab Bar；Android：Navigation bar | iOS：標籤列；Android：底部導覽列 | iOS：タブバー；Android：ナビゲーションバー | |
 | 固定到底栏 | iOS：Add to Tab Bar；Android：Pin to navigation bar | iOS：加到標籤列；Android：固定到底部導覽列 | iOS：タブバーに追加；Android：ナビゲーションバーに追加 | |
@@ -26,8 +26,8 @@ App 里的文字按这里写（ADR-0043）。翻译不逐句对照原文：先�
 | 引导 | Setup（动词 Set Up） | 初始設定 | セットアップ | 配对后的几步 |
 | 你的资料 | Your Profile | 個人資料 | プロフィール | |
 | Agent | agent | Agent | エージェント | 驱动 Bot 的程序 |
-| 主 Agent | primary agent | 主 Agent | メインエージェント | 一个人默认的那个 Agent，就是他的第一个私人 Bot；界面上叫“主助手” |
-| 分身（profile） | profile | 分身 | プロフィール | 用户另建的独立身份，独立 Matrix 账号和私聊；英文界面用 Profile |
+| 主 Agent | primary agent | 主 Agent | メインエージェント | 一个人默认的那个 Agent，就是他的第一个私人 Bot；名字由用户起，界面身份标签叫“主管”（英文界面 Lead） |
+| 分身（profile） | profile | 分身 | プロフィール | 用户另建的独立身份，独立 Matrix 账号和私聊；界面一律叫“分身”，不出现 profile，英文界面用 Profile |
 | 派活 | dispatch | 派活 | 仕事を渡す | 让某台设备上的 Agent 去干一件事 |
 | 工作区 | workspace | 工作區 | ワークスペース | 设备上给一个任务专用的目录 |
 | 默认 Agent | Default Agent | 預設 Agent | デフォルトのエージェント | |

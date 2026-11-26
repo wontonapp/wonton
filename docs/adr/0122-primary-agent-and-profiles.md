@@ -1,6 +1,6 @@
 # ADR-0122 一人一个主 Agent，多 profile 各是一个独立账号和私聊
 
-- 状态：提议（2026-11-26 主人早会定 H3 方向，按 H3 起草；要主人拍板的项见“要主人拍板”）
+- 状态：提议（2026-11-26 主人早会定 H3 方向，按 H3 起草；2026-11-26 主人拍板界面叫“分身”、主 Agent 的身份标签叫“主管”、名字由用户起；其余要主人拍板的项见“要主人拍板”）
 - 补充：[ADR-0110](0110-one-hermes-container-per-person.md) 的 profile 模型，明确主 Agent、profile、会话三层，主 Agent 是第一个非默认 profile；不改运行组、一容器一人、加密设备唯一和四条 Bot 命令
 - 关联：[ADR-0093](0093-side-chats.md)（辅助对话就是旁聊）、[ADR-0044](0044-bot-profile-and-status-avatars.md)（Bot 资料）、[ADR-0045](0045-family-members.md)（归属人）、[ADR-0088](0088-family-accounts.md)（角色与权限按 Bot）、[ADR-0108](0108-hermes-default-kernel.md)（默认内核）、[ADR-0123](0123-hubs-and-managed-devices.md)（运行位置与派活）
 
@@ -30,7 +30,7 @@ ADR-0110 已经定了“一个 Bot 就是一个具名 profile”、同一个人�
 | profile | 用户另外建的独立 Bot | 另一个 Matrix 账号、另一个私聊 | 同上，但身份、记忆、技能、定时任务各是各的 |
 | 会话 | 主 Agent 或某个 profile 里的一条时间线 | 私聊里的主时间线，或一个话题（旁聊） | 同 profile 的记忆、技能、配置 |
 
-- **主 Agent 不是默认 profile。** ADR-0110 的“默认 profile 只当宿主、不承载 Bot”照旧；主 Agent 是此人名下第一个非默认 profile，名字按 ADR-0110 的规则由核心生成（`alice`、`alice-2`……）。默认 profile 永远只当宿主。
+- **主 Agent 不是默认 profile。** ADR-0110 的“默认 profile 只当宿主、不承载 Bot”照旧；主 Agent 是此人名下第一个非默认 profile。它的名字由用户在创建时自己起，核心生成唯一、不可改的 slug 作 Matrix localpart 和 profile 名；界面上它的身份标签是“主管”。默认 profile 永远只当宿主。
 - **主 Agent 唯一。** 每人在自己的运行组里恰好一个；可以换（指定另一个 profile 当主 Agent）；角色不能空：停用主 Agent 前必须先设另一个 profile 为主 Agent，删主 Agent 之前同样先换。
 - **辅助对话是会话，不是 profile。** 就是 ADR-0093 的旁聊：同一个私聊里的一个 Matrix 话题，新上下文、同一个人格、共享这个 profile 的记忆和技能，结束时在主对话里留一行结果；一次旁聊在 Matrix 上是一个话题，不是一个房间、更不是一个新账号。
 - **profile 是身份，不是会话。** 建 profile 就是建一个 Bot：新 Matrix 账号、新私聊、新 profile 目录，配置、密钥、记忆、会话、技能、定时任务各是各的。
@@ -44,7 +44,7 @@ ADR-0110 已经定了“一个 Bot 就是一个具名 profile”、同一个人�
 
 ### 3. 用户怎么建、怎么切换
 
-- 建 profile 在“我的 Agent”里：起显示名、选头像、写一句话介绍，核心给 slug 和 Matrix 账号；slug 此后不改，显示名和头像可改（ADR-0044）。
+- 建 profile 在“我的 Agent”里：起显示名、选头像、写一句话介绍，核心给 slug 和 Matrix 账号；slug 此后不改，显示名和头像可改（ADR-0044）。界面里一律叫“分身”，不出现 profile 一词。
 - 主 Agent 和每个 profile 都是聊天列表里独立的一行；点谁进谁的私聊。没有“在同一个私聊里切 profile”的形态，Matrix 上本来就是两个账号。
 - 换主 Agent：在 profile 的资料页点“设为主 Agent”，核心把标记从旧的主 Agent 上挪走；旧的主 Agent 降为普通 profile，不删除。
 - profile 可以停用（ADR-0110 的停用标记）：停用后不回话、不出现在新聊天入口，数据还在。主 Agent 停用前必须先换（第 1 节），停用期间系统入口始终有落款。
@@ -97,13 +97,12 @@ ADR-0110 已经定了“一个 Bot 就是一个具名 profile”、同一个人�
 
 ## 要主人拍板
 
-1. **界面词**：profile 在中文界面叫“分身”“档案”还是“身份”？英文界面是否直接用 Profile？主角色的词是否叫“主助手”而不是“主 Agent”？
-2. **profile 能不能共享给家人**：第一版 profile 都是私人的；共享只发生在“共享 Bot”上，还是允许把一个 profile 拉进家庭群？
-3. **辅助对话能不能从 profile 里开**：主 Agent 开旁聊是默认；profile 里是否也允许旁聊，还是 profile 本身就是“另一个对话”、不需要再套一层？
-4. **新建 profile 要不要从主 Agent 复制记忆/技能**：默认空、默认复制、还是建的时候选？
-5. **换主 Agent 后旧主 Agent 的旁聊**：留在旧 profile 里只读，还是并到新主 Agent？
-6. **删除主 Agent 的默认动作**：强制先选继任，还是允许“删了自动从最大的 profile 里挑一个”？
-7. **profile 是否也出现在“新建聊天”的收件人列表里**：出现会让列表变长，不出现则用户只能从“我的 Agent”进入。
+1. **profile 能不能共享给家人**：第一版 profile 都是私人的；共享只发生在“共享 Bot”上，还是允许把一个 profile 拉进家庭群？
+2. **辅助对话能不能从 profile 里开**：主 Agent 开旁聊是默认；profile 里是否也允许旁聊，还是 profile 本身就是“另一个对话”、不需要再套一层？
+3. **新建 profile 要不要从主 Agent 复制记忆/技能**：默认空、默认复制、还是建的时候选？
+4. **换主 Agent 后旧主 Agent 的旁聊**：留在旧 profile 里只读，还是并到新主 Agent？
+5. **删除主 Agent 的默认动作**：强制先选继任，还是允许“删了自动从最大的 profile 里挑一个”？
+6. **profile 是否也出现在“新建聊天”的收件人列表里**：出现会让列表变长，不出现则用户只能从“我的 Agent”进入。
 
 ## 关联
 
