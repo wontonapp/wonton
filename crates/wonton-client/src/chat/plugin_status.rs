@@ -40,19 +40,20 @@ fn for_room<'a>(
         return None;
     }
     let installed = plugins.installed.as_ref()?;
-    let plugin = match room.bot.as_ref() {
-        Some(bot) => installed
+    let by_bot = room.bot.as_ref().and_then(|bot| {
+        installed
             .plugins
             .iter()
-            .find(|plugin| plugin.id == bot.bot.plugin_id)?,
-        None => {
-            let user = room.direct_user_id.as_deref()?;
-            installed
-                .plugins
-                .iter()
-                .find(|plugin| plugin.bot_user_id.as_deref() == Some(user))?
-        }
-    };
+            .find(|plugin| plugin.id == bot.bot.plugin_id)
+    });
+    // Bot 的身份还在、插件却已不在已装列表：退回按私聊对方认，别让一行状态整个消失。
+    let plugin = by_bot.or_else(|| {
+        let user = room.direct_user_id.as_deref()?;
+        installed
+            .plugins
+            .iter()
+            .find(|plugin| plugin.bot_user_id.as_deref() == Some(user))
+    })?;
     if matches!(plugin.status, PluginState::Running { .. }) {
         return None;
     }
