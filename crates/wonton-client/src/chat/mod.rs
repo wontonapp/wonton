@@ -770,10 +770,14 @@ impl ChatLink {
         Ok(())
     }
 
-    /// App 重启后马上要发消息时用（传完文件发链接）：等登录出结果。登录好了返回真；停在要用户处理的失败上、
-    /// 或者一直没动静过了期限，返回假。
-    pub(crate) async fn signed_in_within(&self, wait: Duration) -> bool {
-        send::signed_in_within(self.subscribe(), wait).await
+    /// 等登录开始（最多 `wait`）：App 刚打开时壳还没开始连，账号是 `SignedOut`；等一小会儿，别当场判断没登录。
+    pub(crate) async fn sign_in_started_within(&self, wait: Duration) -> bool {
+        send::sign_in_started_within(self.subscribe(), wait).await
+    }
+
+    /// 等账号登录好（最多 `wait`）。登录失败的间隙会自己重连，看到失败后再等 `failed_grace`，等不到就返回。
+    pub(crate) async fn wait_signed_in(&self, wait: Duration, failed_grace: Duration) {
+        send::wait_signed_in(self.subscribe(), wait, failed_grace).await
     }
 
     fn start_direct_chat(self: &Arc<Self>, user_id: &str) -> Result<(), CoreError> {
