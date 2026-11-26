@@ -19,6 +19,9 @@ files-api-tunnel-unavailable = The tunnel isn't available ({ $code })
 # $status is the unchanged HTTP status code.
 files-api-status = Your home server returned HTTP { $status }
 
+# One line in the collapsed details. $status is the raw HTTP status; $said is the upload service's own error, verbatim.
+files-api-status-said = Your home server returned HTTP { $status }: { $said }
+
 # Shown when the original file changed since it was chosen.
 files-upload-source-changed = The original file has changed. Choose it again.
 

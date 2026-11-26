@@ -252,7 +252,14 @@ pub(super) fn classify(status: StatusCode, headers: &HeaderMap, body: &[u8]) -> 
             ),
         );
     }
-    unnamed(status)
+    unnamed(status, tusd_said(body))
+}
+
+/// tusd 的错误是一行 `ERR_…: 说明` 的纯文本，核心原样转过来（tus 协议的一部分）。不是这个样子的不当成它的话。
+fn tusd_said(body: &[u8]) -> Option<&str> {
+    let said = std::str::from_utf8(body).ok()?.trim();
+    let (code, _) = said.split_once(':')?;
+    (code.starts_with("ERR_") && !said.contains('\n')).then_some(said)
 }
 
 /// 上传创建之后和下载的请求碰上 `service_unavailable`：整套服务重启时，有几秒隧道通了而 tusd 还没起来。暂停后接着传，不算失败，不然主人要
@@ -264,14 +271,23 @@ pub(super) fn pausable(problem: Problem) -> Problem {
     }
 }
 
-/// 没写类别的响应：tusd 转发过来的，或者路上的代理给的。
-fn unnamed(status: StatusCode) -> Problem {
-    let message = l10n!(
-        CATALOG,
-        language(),
-        "files-api-status",
-        status = status.as_u16()
-    );
+/// 没写类别的响应：tusd 转发过来的，或者路上的代理给的。tusd 写了原因的话放进详情，只有状态码看不出是什么错。
+fn unnamed(status: StatusCode, said: Option<&str>) -> Problem {
+    let message = match said {
+        Some(said) => l10n!(
+            CATALOG,
+            language(),
+            "files-api-status-said",
+            status = status.as_u16(),
+            said = said
+        ),
+        None => l10n!(
+            CATALOG,
+            language(),
+            "files-api-status",
+            status = status.as_u16()
+        ),
+    };
     match status {
         StatusCode::NOT_FOUND | StatusCode::GONE => {
             Problem::Failed(FileFailure::FileUnknown, message)

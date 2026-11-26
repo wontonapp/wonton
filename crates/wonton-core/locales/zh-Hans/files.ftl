@@ -86,6 +86,7 @@ files-tusd-required = 上传接口要带 Tus-Resumable: 1.0.0
 files-tusd-timeout = tusd 迟迟没有回应，稍后再试
 files-tusd-gone = tusd 已经没有这个上传的数据了，要重传
 files-upload-disconnected = 创建这个上传的请求已经断开了
+files-upload-hook-slow = 家里的服务器太忙，没来得及开始这次上传，稍后再试
 files-upload-length-required = 上传要在创建时声明长度（Upload-Length）
 files-upload-filename-required = 上传要在 Upload-Metadata 里带 filename
 files-upload-finished = 这个上传已经传完了；要删文件用 DELETE /_wonton/files/{ $id }

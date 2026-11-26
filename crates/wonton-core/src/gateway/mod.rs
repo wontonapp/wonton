@@ -817,6 +817,8 @@ mod family_rules_tests;
 #[cfg(test)]
 mod family_tests;
 #[cfg(test)]
+mod files_create_tests;
+#[cfg(test)]
 mod files_plugin_tests;
 #[cfg(test)]
 mod files_revoke_tests;

@@ -6,6 +6,7 @@
 //! tusd 的 pre-finish 钩子有 15 秒的硬超时，放不下跨卷复制，所以放文件走 post-finish；它不等钩子就回客户端，
 //! 网关要在最后一个 PATCH 的响应之前等 [`Files::finish_upload`]，204 才等于文件可用（实测见 ADR-0020 的“验证结果”）。
 
+mod creating;
 #[cfg(test)]
 mod private_tests;
 mod room;
@@ -153,6 +154,7 @@ pub(super) struct Uploads {
     abandoning: Mutex<HashSet<FileId>>,
     /// 客户端拿到编号之前就走了的上传和当时的时间。tusd 的 pre-create 钩子可能还在路上，它写下待完成记录的话要白占 24 小时。
     withdrawn: Mutex<HashMap<FileId, u64>>,
+    creating: creating::Creating,
     /// 测试用：拿着写锁时，清理在标为作废之后卡住，就像存储不回答。
     #[cfg(test)]
     abandon_stalled: tokio::sync::RwLock<()>,
@@ -171,6 +173,7 @@ impl Uploads {
             finishing: Mutex::default(),
             abandoning: Mutex::default(),
             withdrawn: Mutex::default(),
+            creating: creating::Creating::default(),
             #[cfg(test)]
             abandon_stalled: tokio::sync::RwLock::default(),
         })
@@ -302,6 +305,7 @@ impl Files {
         langs: &Languages,
     ) -> Result<FileId, Failure> {
         let invalid = |why: &str| Failure::new(FileFailure::InvalidInput, why);
+        let _creating = self.uploads.creating.enter(upload.id);
         // 排队：查“客户端走了没有”和写记录不能夹在 [`Self::upload_unclaimed`] 中间。
         let _turn = self.uploads.turn(upload.id).await;
         if self.uploads.take_withdrawn(upload.id) {

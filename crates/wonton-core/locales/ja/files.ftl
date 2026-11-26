@@ -86,6 +86,7 @@ files-tusd-required = アップロードAPIにはTus-Resumable: 1.0.0が必要�
 files-tusd-timeout = tusdからの応答がありません。しばらくしてからもう一度お試しください
 files-tusd-gone = tusdにこのアップロードのデータはもうありません。もう一度アップロードしてください
 files-upload-disconnected = このアップロードを作成したリクエストは既に切断されています
+files-upload-hook-slow = 自宅サーバーが混み合っていて、このアップロードを開始できませんでした。しばらくしてからもう一度お試しください
 files-upload-length-required = アップロードは作成時に長さを宣言する必要があります（Upload-Length）
 files-upload-filename-required = アップロードはUpload-Metadataにfilenameを含める必要があります
 files-upload-finished = このアップロードは既に完了しています。ファイルを削除するにはDELETE /_wonton/files/{ $id }を使ってください
