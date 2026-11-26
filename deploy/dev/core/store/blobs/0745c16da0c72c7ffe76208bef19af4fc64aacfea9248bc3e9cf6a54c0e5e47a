@@ -6,7 +6,7 @@
 # 不同人的 Bot 不能共用一个容器。
 name: hermes
 
-x-image: &image nousresearch/hermes-agent:v0.22.7@sha256:e6d81ae52ebf6a43efa529701405509f20054ba818f179ddd748bed4f8af584c
+x-image: &image nousresearch/hermes-agent:v0.23.4@sha256:ef0650d523ee1b5ab32c779acabc446d9936869a9932591553688a62bcf0c42f
 
 services:
   # 每次创建容器时（安装、升级、重建）把 Wonton 的 Hermes 插件（wonton/）放进这个 Bot 的数据目录，覆盖旧版本；包里的
@@ -221,7 +221,7 @@ configs:
 x-wonton:
   spec: "0.12"
   id: com.nousresearch.hermes
-  version: 0.8.1
+  version: 0.8.2
   kind: agent
   title: { zh: AI 管家（Hermes）, en: All-Purpose Bot (Hermes) }
   description:
@@ -251,10 +251,10 @@ x-wonton:
 
       CN office-IM channels (Feishu, DingTalk, WeCom, QQ bot, personal WeChat) are enabled one by one in the plugin's settings: create a bot app on the platform's console, fill in the app ID and secret, and turn the switch on. These chats live only in that IM, not in the Wonton app's chat page; personal WeChat supports direct messages only and needs a one-time scan login from a terminal on the server (steps in the plugin README). Telegram is configured on the Channels page of the Hermes web page and uses Wonton's outbound proxy.
   release_notes:
-    zh: "模型改用 Hermes 自带的接入，不再经模型网关 magpie：升级后请打开它的网页，在 Keys 页新加一个模型服务商，填它的 key 或登录订阅，再在 Models 页选模型。修好了停链、发私聊和认人：在 App 里停链能马上打断手头的事，批准过的私聊会真的发出去，别人派活过来时它知道是谁；链到上限或者已经停了时，会回一句话说清原因。网页控制台里，它现在按打开这页的人说话，不再一直是只读的。"
-    zh-Hant: "模型改用 Hermes 自帶的接入，不再經模型閘道 magpie：升級後請打開它的網頁，在 Keys 頁新加一個模型服務商，填入它的金鑰或登入訂閱，再在 Models 頁選模型。修好了停鏈、發私聊和認人：在 App 裡停鏈能馬上打斷手頭的事，批准過的私聊會真的發出去，別人派活過來時它知道是誰；鏈到上限或者已經停了時，會回一句話說清原因。網頁控制台裡，它現在按打開這頁的人說話，不再一直是唯讀的。"
-    en: "Models now use Hermes's own setup instead of the magpie model gateway: after updating, open its web page, add a model provider under Keys, fill in its key or sign in, then pick a model under Models. Fixed stopping, sending and knowing who is talking: stopping a chain in the app now interrupts what it is doing, approved direct messages really go out, and it knows who sent work down a chain; when a chain is at its limit or has been stopped, it answers with a short line saying why. In the web console it now talks as whoever opened the page instead of staying read-only."
-    ja: "モデルは magpie モデルゲートウェイを経由せず、Hermes 自身の設定を使います。更新後はウェブページを開き、Keys でモデルプロバイダーを追加してキーを入力するかログインし、Models でモデルを選んでください。停止・送信・相手の識別を直しました。アプリでチェーンを止めると作業がすぐ中断され、承認済みの DM は実際に送られ、チェーンで仕事を回してきた相手も分かります。上限や停止のときは理由を一言返します。Web コンソールでは、ページを開いた人として話すようになり、読み取り専用のままではなくなりました。"
+    zh: "升级到官方 Hermes v0.23.4：IM 适配器、审批卡片和 MCP 客户端跟着上游更新；回答问题的等待时间保持云吞原来的 1 小时（上游新版默认 90 秒）。"
+    zh-Hant: "升級到官方 Hermes v0.23.4：IM 適配器、審批卡片和 MCP 客戶端跟著上游更新；回答問題的等待時間保持雲吞原來的 1 小時（上游新版預設 90 秒）。"
+    en: "Upgrades to official Hermes v0.23.4: IM adapters, approval cards and the MCP client follow upstream; questions keep Wonton's one-hour wait (upstream's new default is 90 seconds)."
+    ja: "公式 Hermes v0.23.4 に更新：IM アダプター、承認カード、MCP クライアントを上流に追従させました。質問への回答待ちは Wonton 従来の 1 時間のままです（上流の新しい既定は 90 秒）。"
   agent:
     protocol: matrix
   bot:

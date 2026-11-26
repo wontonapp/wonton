@@ -1,7 +1,7 @@
 # 每次创建容器时把数据目录里的 config.yaml 修到和注入值一致（Hermes 自己也会改写它），
 # 另把包里 config.yaml 定的默认值补给已有 Bot。
 #
-# 1) gateway.trust_env：Matrix 适配器 v0.22.5–v0.22.7 解析代理时不传目标主机，NO_PROXY 不生效；继承
+# 1) gateway.trust_env：Matrix 适配器 v0.22.5–v0.23.4 解析代理时不传目标主机，NO_PROXY 不生效；继承
 #    HTTPS_PROXY 会把内部的 matrix.wonton.internal 发给出口代理而被 403 拒绝，所以关闭网关的环境代理。
 # 2) plugins.enabled：网页控制台的后端（dashboard/api.py）只在名单里有 wonton 时才载入；老安装缺这项、或主人关过
 #    插件，重建时在这里补回，和 Hermes 的启用命令一样从 disabled 里撤掉。
@@ -17,6 +17,8 @@
 #    只认旧包写的 true，主人自己改过的不动。
 # 8) 国内 IM 渠道开关（飞书、钉钉、企业微信、QQ、个人微信，插件设置里每渠道一个）：开关关着在 config.yaml 写显式
 #    停用（优先于凭据），开关打开撤掉，启用与否由 Hermes 按凭据判定（见 apply 里的第 8 块）。
+# 9) agent.clarify_timeout：上游 v0.23.x 把默认从 1 小时改成 90 秒（按终端里用户就在跟前的场景调），云吞是异步
+#    聊天，老 Bot 缺这项时补包里的 1 小时；主人自己写过的不动（见 apply 里的第 9 块）。
 # 注入值要在已有 Bot 重建时更新，所以在这里处理；其余默认值从包里的 config.yaml 取。
 # `hermes config set` 在这里用不了：它降权运行，而这时数据目录还属于 root。
 import os
@@ -160,6 +162,17 @@ def apply(config, seed) -> bool:
             if entry.get("enabled") is not False:
                 entry["enabled"] = False
                 changed = True
+
+    # 9) agent.clarify_timeout：见文件头。只补缺失的项，主人自己写过的值不动。
+    seed_timeout = (seed.get("agent") or {}).get("clarify_timeout")
+    if isinstance(seed_timeout, int) and seed_timeout > 0:
+        agent = config.get("agent")
+        if not isinstance(agent, dict):
+            agent = {}
+            config["agent"] = agent
+        if "clarify_timeout" not in agent:
+            agent["clarify_timeout"] = seed_timeout
+            changed = True
 
     return changed
 

@@ -289,7 +289,7 @@ done
 镜像，摘要对不上，核心还会去拉。整个索引传过去（本机有的平台都带上），再在远端打上标签：
 
 ```bash
-image=nousresearch/hermes-agent:v0.22.5@sha256:9c5561579f3ffdf333401797094ac3a743738d6c25d40f4331c7bf77b694238d
+image=nousresearch/hermes-agent:v0.23.4@sha256:ef0650d523ee1b5ab32c779acabc446d9936869a9932591553688a62bcf0c42f
 docker pull --platform linux/amd64 "$image"
 docker save "$image" | ssh "$DEV_HOST" docker load
 ssh "$DEV_HOST" docker tag "sha256:${image#*@sha256:}" "${image%@*}"
