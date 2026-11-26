@@ -139,7 +139,11 @@ struct ClientsDomainView: View {
             if await model.save(.clients(action: action)) { dismiss() }
         }
     }
+}
 
+@MainActor
+@Observable
+final class ClientsDomainModel {
     private(set) var viewModel: ClientsDomainViewModel
     /// 核心当场拒绝的原因（校验没过）；失败由界面自己的提示条展示。
     var rejection: Problem?

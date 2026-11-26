@@ -191,8 +191,3 @@ extension ClientsDomainView {
             .fixedSize(horizontal: false, vertical: true)
     }
 }
-
-@MainActor
-@Observable
-final class ClientsDomainModel {
-}
