@@ -333,6 +333,8 @@ plugin-settings-secret-not-text = アプリのシークレット{ $name }がテ�
 plugin-settings-secret-invalid = アプリのシークレット{ $name }：コンテナ{ $container }の{ $path }は{ $reason }
 plugin-settings-secret-not-regular = 通常のファイルではありません
 plugin-settings-secret-too-big = 64 KiBを超えています
+plugin-settings-secret-not-collected = 書かれていません（インストールが終わる前にサービスが書くはずです。collect.path を確認してください）
+plugin-settings-secret-no-container = 起動していません（サービスが起動していないか、collect.service が間違っています）
 
 # ── 外部プラグインのBot（bots.rs）────────────────────────────────────────
 

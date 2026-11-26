@@ -11,8 +11,8 @@
     <!-- Next step: try after the update finishes. -->
     <string name="problem_plugin_core_upgrading_next_step">アップデートが終わってからもう一度お試しください。</string>
     <string name="problem_plugin_health_timeout_title">アプリはまだ準備できていません</string>
-    <!-- Next step: contact the app's author. -->
-    <string name="problem_plugin_invalid_next_step">アプリの作者に連絡してください。</string>
+    <!-- Next step: read the reason in Details; a key the app must write being missing needs the app's author. -->
+    <string name="problem_plugin_invalid_next_step">「詳細」に理由が出ます。アプリが書くべき鍵が無い場合は、アプリの作者に連絡してください。</string>
     <!-- Problem title: the app's package is broken. -->
     <string name="problem_plugin_invalid_title">このアプリのパッケージに問題があります</string>
     <!-- Next step: stop the container or program using this port, then try again. -->

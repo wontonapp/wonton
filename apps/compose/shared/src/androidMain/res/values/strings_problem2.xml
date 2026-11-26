@@ -13,8 +13,8 @@
     <!-- Next step: try after the update finishes. -->
     <string name="problem_plugin_core_upgrading_next_step">Try again after the update finishes.</string>
     <string name="problem_plugin_health_timeout_title">The app is not ready yet</string>
-    <!-- Next step: contact the app's author. -->
-    <string name="problem_plugin_invalid_next_step">Contact the app\'s author.</string>
+    <!-- Next step: read the reason in Details; a key the app must write being missing needs the app's author. -->
+    <string name="problem_plugin_invalid_next_step">See Details for the reason; if the reason is a key the app must write being missing, contact the app\'s author.</string>
     <!-- Problem title: the app's package is broken. -->
     <string name="problem_plugin_invalid_title">This app\'s package has a problem</string>
     <!-- Next step: stop the container or program using this port, then try again. -->

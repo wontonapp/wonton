@@ -5,7 +5,7 @@
 //! 自己的 `{secret:<名字>}`（`secrets` 里由核心生成的一项），其余文字原样保留。
 //! LAN 账号模板没有请求者角色，拒绝 `{role}`；MCP 只接受插件密钥，不接受人的身份。
 
-use std::collections::{BTreeMap, HashMap};
+use std::collections::{BTreeMap, BTreeSet, HashMap};
 
 use super::manifest::{Manifest, ManifestError, SecretSpec, Sso};
 use super::secrets::Secrets;
@@ -546,21 +546,26 @@ impl McpHeaders {
 }
 
 /// 同上，但头里引用了还没填的用户填写密钥时不算错：头先空着，插件照样装，必填的由总线按未就绪拒绝并点名
-/// （ADR-0064）；填齐后重建容器，这时再解析。其余的解析错误照旧上报。
+/// （ADR-0064）；填齐后重建容器，这时再解析。其余的解析错误照旧上报：引用到的 `collect` 项没值，
+/// 对端服务已经跑完却说不出为什么，不能跟着用户的输入一起埋掉。
 pub fn resolve_mcp_headers_or_pending(
     manifest: &Manifest,
     secrets: &Secrets,
     langs: &Languages,
 ) -> Result<McpHeaders, String> {
     let resolved = resolve_mcp_headers(manifest, secrets, langs);
-    if resolved.is_err() && !pending_input_refs(manifest, secrets, langs).is_empty() {
-        return Ok(McpHeaders::default());
+    if resolved.is_err() {
+        let missing = missing_refs(manifest, secrets, langs);
+        if !missing.is_empty() && missing.iter().all(|(_, input)| *input) {
+            return Ok(McpHeaders::default());
+        }
     }
     resolved
 }
 
-/// `mcp.headers` 里引用到、还没有值的 `input` 项。模板写法已经在清单校验里查过，这里解析不出来就跳过。
-fn pending_input_refs(manifest: &Manifest, secrets: &Secrets, langs: &Languages) -> Vec<String> {
+/// `mcp.headers` 里引用到、还没有值的密钥，带“是不是用户填写项”。模板写法已经在清单校验里查过，
+/// 这里解析不出来就跳过。
+fn missing_refs(manifest: &Manifest, secrets: &Secrets, langs: &Languages) -> Vec<(String, bool)> {
     let Some(mcp) = &manifest.mcp else {
         return Vec::new();
     };
@@ -569,15 +574,33 @@ fn pending_input_refs(manifest: &Manifest, secrets: &Secrets, langs: &Languages)
         .filter_map(|template| parse(template, langs).ok())
         .flatten()
         .filter_map(|part| match part {
-            Part::Secret(name)
-                if matches!(manifest.secrets.get(&name), Some(SecretSpec::Input(_)))
-                    && !secrets.contains_key(&name) =>
-            {
-                Some(name)
+            Part::Secret(name) if !secrets.contains_key(&name) => {
+                let input = matches!(manifest.secrets.get(&name), Some(SecretSpec::Input(_)));
+                Some((name, input))
             }
             _ => None,
         })
         .collect()
+}
+
+/// `mcp.headers` 引用的密钥名。这些项安装/升级时必须已经有值（规范“MCP 调用”节），其余 `collect` 项缺了
+/// 可以等核心下次核对再收（“插件生成、核心保管”节）。
+pub fn mcp_header_secret_refs(manifest: &Manifest, langs: &Languages) -> BTreeSet<String> {
+    manifest
+        .mcp
+        .as_ref()
+        .map(|mcp| {
+            mcp.headers
+                .values()
+                .filter_map(|template| parse(template, langs).ok())
+                .flatten()
+                .filter_map(|part| match part {
+                    Part::Secret(name) => Some(name),
+                    _ => None,
+                })
+                .collect()
+        })
+        .unwrap_or_default()
 }
 
 fn mcp_invalid(message: String, langs: &Languages) -> ManifestError {
@@ -811,6 +834,33 @@ mod tests {
             .cloned()
             .expect("填了就有头");
         assert_eq!(value, "Bearer abc");
+    }
+
+    /// 同一份头里既有没填的用户输入、又有没收到的 `collect` 项：`collect` 是部署问题，不能说“等用户填”
+    /// 整条吞掉，要报错并点名那个 `collect` 项。
+    #[test]
+    fn a_pending_input_does_not_hide_a_missing_collected_key() {
+        let manifest = manifest(
+            "  mcp: {service: web, port: 80, transport: streamable-http, headers: {A-Token: '{secret:pat}', Authorization: 'Bearer {secret:token}'}}\n  \
+             secrets: {token: {input: {title: {en: Token}}}, pat: {collect: {service: web, path: /run/token}}}",
+        );
+        let langs = Languages::default();
+        assert!(validate_mcp_headers(&manifest, &langs).is_ok());
+        // 两个都没值：旧实现把“有没填的 input”当理由整条放行空头；新实现要点名那个 collect 项。
+        let error = resolve_mcp_headers_or_pending(&manifest, &Secrets::new(), &langs).unwrap_err();
+        assert!(error.contains("pat"), "{error}");
+        // 只收下 collect 项、input 仍空着：仍算等用户填，不报错。
+        let only_pat: Secrets = [("pat".to_owned(), b"tok".to_vec())].into();
+        let pending = resolve_mcp_headers_or_pending(&manifest, &only_pat, &langs).unwrap();
+        assert!(pending.custom_headers().is_empty(), "等用户填时先空着");
+        // 都齐了照常注入两个头。
+        let both: Secrets = [
+            ("token".to_owned(), b"abc".to_vec()),
+            ("pat".to_owned(), b"tok".to_vec()),
+        ]
+        .into();
+        let resolved = resolve_mcp_headers_or_pending(&manifest, &both, &langs).unwrap();
+        assert_eq!(resolved.custom_headers().len(), 2);
     }
 
     /// 契约：`mcp.headers` 引用没声明的密钥是清单错误。清单解析时就校验头，所以在解析完的清单上改出来再验。
