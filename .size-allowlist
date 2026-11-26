@@ -1,2 +1,2 @@
 # 源码文件行数门禁例外（只免掉 2000 行代码的失败）：<路径> | <原因> | <到期日 YYYY-MM-DD>
-deploy/dev/experiments/ios-loopback-ice/site/vendor/livekit-client.esm.mjs | livekit-client@2.23.0 的原样 ESM 产物，不拆 | 2027-05-31
+deploy/dev/experiments/ios-loopback-ice/site/vendor/livekit/room.mjs | livekit-client@2.23.0 的单个 Room 类 2077 行代码，按类拆要改行为 | 2027-03-01
