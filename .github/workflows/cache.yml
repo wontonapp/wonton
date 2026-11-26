@@ -186,7 +186,8 @@ jobs:
       group: cache-ios-${{ github.ref }}
       cancel-in-progress: false
     runs-on: xcode-27
-    timeout-minutes: 45
+    # 70 分钟，和 ios.yml 的模拟器构建一样：这个作业要编 debug 和 release 两份核心，45 分钟不够。
+    timeout-minutes: 70
     # 加上顶层的 CARGO_*，这些要和 ios.yml 的环境变量一模一样：核心产物的键从它们算，差一个两边就对不上。
     env:
       WONTON_IOS_TARGETS: aarch64-apple-ios-sim

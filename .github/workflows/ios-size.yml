@@ -1,12 +1,14 @@
 name: ios-size
 
-# Release App 体积门禁，合进 main 之后跑，不挡合并：要编一份 release 核心、归档一份 App，冷缓存二十多分钟，比 PR 要等的
+# Release App 体积门禁，合进 main 之后跑，不挡合并：要编一份 release 核心、归档一份 App，冷缓存十几分钟，比 PR 要等的
 # 快检查（ios.yml）慢。每天定时兜底一次，也可以手动触发。失败时留 dSYM 和体积报告（dSYM 是崩溃栈还原函数名和行号的
 # 唯一来源，剥掉的只是装进 App 的那份符号）。
 on:
   push:
     branches: [main]
-    # 不是必需检查，路径直接写在触发器上；范围和 gate.yml 的 ios 一样，只改 .md 的不跑。
+    # 不是必需检查，路径直接写在触发器上。比 gate.yml 的 ios 范围多了两处：能改核心代码本身或依赖清单的
+    # （crates、Cargo.*、vendor、工具链），和决定产物怎么编、从哪取缓存的（cache.yml、ios.yml、本文、体积脚本）。
+    # 少了 core_artifacts/（这里不走核心产物缓存，每次现编）和 gate.yml（不经过 gate）。和 gate 一样排除测试与 .md。
     paths:
       - "apps/ios/**"
       - "design/**"
@@ -22,7 +24,13 @@ on:
       - "rust-toolchain.toml"
       - "scripts/check-app-size.sh"
       - ".github/workflows/ios-size.yml"
+      - ".github/workflows/cache.yml"
+      - ".github/workflows/ios.yml"
       - "!**/*.md"
+      - "!crates/**/tests/**"
+      - "!crates/**/benches/**"
+      - "!crates/**/tests.rs"
+      - "!crates/**/*_tests.rs"
   schedule:
     - cron: "45 4 * * *"
   workflow_dispatch:
@@ -37,6 +45,9 @@ concurrency:
 env:
   CARGO_INCREMENTAL: "0"
   CARGO_PROFILE_DEV_DEBUG: line-tables-only
+  # 和 ios.yml、cache.yml 同一个值：rust-cache 的键里带它，缺了这条就恢复不到 main 上预编的 release 核心；
+  # Release 的符号也只留行号，dSYM 才还原得到 file:line（剥掉的只是装进 App 的那份）。
+  CARGO_PROFILE_RELEASE_DEBUG: line-tables-only
 
 permissions:
   contents: read
@@ -45,7 +56,7 @@ jobs:
   release-size:
     name: Release App 体积
     runs-on: xcode-27
-    # 编核心（release 冷缓存十几到三十多分钟）加归档、量体积。超时把日志留下来看卡在哪一步。
+    # 编核心（release 冷缓存十几分钟）加归档、量体积。超时把日志留下来看卡在哪一步。
     timeout-minutes: 90
     steps:
       - uses: actions/checkout@fbc6f3992d24b796d5a048ff273f7fcc4a7b6c09 # v5

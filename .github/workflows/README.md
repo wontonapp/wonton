@@ -24,7 +24,7 @@ PR 合并前等的是快检查：格式、Clippy、detekt、SwiftLint、行数�
   PR 上照常跑、算必需检查：iOS 在 PR 上红的多半是这几处，挪到合后会让 main 一天红好几次。范围和理由写在 `ios.yml` 开头。
   合进 main 的连续运行只留最新那次（`cancel-in-progress`）：结果只对旧提交有意义，iOS 的作业一次要编十几分钟，
   留着旧的在争名额；被取消的旧提交按提交标题里的 `(#N)` 归到它的 PR。
-- `ios-size.yml`：Release App 体积门禁。要编一份 release 核心、归档一份 App（二十分钟上下），只按 `push` 到 main 的
+- `ios-size.yml`：Release App 体积门禁。要编一份 release 核心、归档一份 App（冷缓存十几分钟），只按 `push` 到 main 的
   iOS 路径、每天定时和手动触发；失败留 dSYM 和体积报告，供还原崩溃栈。
 - `main-image.yml`：核心镜像构建。
 - `nightly-ui.yml`：两端的界面测试（XCUITest、设备上的 androidTest），只定时和手动。
