@@ -123,16 +123,28 @@ final class SafeAreaUITests: XCTestCase {
     }
 
     private func assertContinuousBackground(_ captured: Capture) throws {
-        // Five-pixel patches in the page margin avoid the clock, island, home indicator and page content:
-        // 2% of the width is 8pt, inside the 16pt page inset, so buttons and cards never reach it.
-        var columns: [CGFloat] = [0.02, 0.98]
+        // Three-pixel-wide patches in the page margin avoid the clock, island, home indicator and page
+        // content: the page's 16pt `spacing.pageInset` gutter stays empty, so 10pt in still leaves 6pt.
+        // Percentage-of-screen-width sampling cannot work (#856): on a 320pt-wide screen the system clock
+        // spans 5%–15% of the width and the notification icons 17%–28%, so samples must land inside the
+        // 16pt pageInset, 3px wide — the same rule as Android.
+        // The patch starts on the 10pt line, converted to device pixels (1pt = `scale` px); patches are
+        // addressed by their centre, so the column adds half a 3px patch.
+        let scale = CGFloat(captured.image.width) / app.frame.width
+        let inset = 10 * scale + 1.5
+        var columns: [CGFloat] = [
+            inset / CGFloat(captured.image.width),
+            1 - inset / CGFloat(captured.image.width),
+        ]
         var edges: [CGFloat] = [0.02, 0.98]
         if let pageLeft = captured.pageLeft {
             // The sidebar covers the screen's left edge and clips the page's right one, so sample the
-            // shifted page's own 16pt page inset instead: 3.5pt inside the page edge, patch clear of the
-            // 40pt rounded corner. 7% / 93% of the height keep it in the page's top and bottom safe
-            // margins, clear of the clock, the island and the home indicator.
-            columns = [(pageLeft + 3.5) / app.frame.width]
+            // shifted page's own 16pt page inset instead: 10pt inside the page edge, patch clear of the
+            // 40pt rounded corner. Percentage-of-screen-width sampling would hit the clock or icons
+            // (#856: 5%–15% and 17%–28% of a 320pt screen); 3px wide inside the 16pt inset is Android's
+            // rule. 7% / 93% of the height keep it in the page's top and bottom safe margins, clear of
+            // the clock, the island and the home indicator.
+            columns = [((pageLeft * scale) + inset) / CGFloat(captured.image.width)]
             edges = [0.07, 0.93]
         }
         for column in columns {
@@ -153,20 +165,22 @@ final class SafeAreaUITests: XCTestCase {
     }
 
     private func patch(_ image: CGImage, x normalizedX: CGFloat, y normalizedY: CGFloat) throws -> [UInt8] {
-        let side = 5
-        let area = CGRect(x: Int(CGFloat(image.width) * normalizedX) - side / 2,
-                          y: Int(CGFloat(image.height) * normalizedY) - side / 2,
-                          width: side, height: side)
+        // Three device pixels wide by five tall: the width keeps the 10pt sample inside the 16pt gutter,
+        // the height keeps a thin horizontal seam from slipping between samples.
+        let width = 3, height = 5
+        let area = CGRect(x: Int(CGFloat(image.width) * normalizedX) - width / 2,
+                          y: Int(CGFloat(image.height) * normalizedY) - height / 2,
+                          width: width, height: height)
         let cropped = try XCTUnwrap(image.cropping(to: area))
         let space = try XCTUnwrap(CGColorSpace(name: CGColorSpace.sRGB))
-        var bytes = [UInt8](repeating: 0, count: side * side * 4)
+        var bytes = [UInt8](repeating: 0, count: width * height * 4)
         try bytes.withUnsafeMutableBytes { buffer in
             let context = try XCTUnwrap(CGContext(
-                data: buffer.baseAddress, width: side, height: side, bitsPerComponent: 8,
-                bytesPerRow: side * 4, space: space,
+                data: buffer.baseAddress, width: width, height: height, bitsPerComponent: 8,
+                bytesPerRow: width * 4, space: space,
                 bitmapInfo: CGBitmapInfo.byteOrder32Big.rawValue | CGImageAlphaInfo.premultipliedLast.rawValue
             ))
-            context.draw(cropped, in: CGRect(x: 0, y: 0, width: side, height: side))
+            context.draw(cropped, in: CGRect(x: 0, y: 0, width: width, height: height))
         }
         // Keep every RGB sample: an average could hide a thin seam within a patch.
         return bytes.enumerated().compactMap { index, byte in index % 4 == 3 ? nil : byte }
