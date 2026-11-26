@@ -3,3 +3,4 @@
 federation-update-invalid-name = 能和你的服务器互通的名单没有更新：里面有不合法的服务器名。下次配对或屏蔽变化、或服务器重启时会自动重试。
 federation-update-write-failed = 能和你的服务器互通的名单没能保存到服务器上。下次配对变化或服务器重启时会自动重试。
 federation-update-reload-failed = 能和你的服务器互通的名单已保存，但聊天服务还没用上。下次配对变化或服务器重启时会自动重试。
+federation-window-closed = 证书校验的放宽窗口已关掉：还没升级的老对端仍标成待升级，升级后会自动转严格。

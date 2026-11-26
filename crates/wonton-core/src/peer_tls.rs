@@ -123,6 +123,9 @@ pub(crate) fn ensure(
     } else {
         report.created.push(trust);
     }
+    // 材料写完后确认 CA 私钥和证书能一起读成签发者（隧道出站按 CONNECT 的名字现签都走这里）：现在坏了
+    // 就报，别等第一次联邦出站才发现。
+    let _ = ca_issuer(&dir)?;
     Ok(dir)
 }
 
@@ -180,7 +183,6 @@ fn old_cert_key(cert: &Path) -> PathBuf {
 }
 
 /// 本机 CA 的签发者，给 CONNECT 的目标名现签证书用。CA 证书按同一组参数重建：验证只看名字和公钥。
-#[allow(dead_code)] // 隧道出站接线（people-pin-2）来取；当前只有测试用到。
 pub(crate) fn ca_issuer(dir: &Path) -> anyhow::Result<Issuer<'static, KeyPair>> {
     let pem = fs::read_to_string(dir.join(CA_KEY)).context("读本机 CA 私钥")?;
     let key = KeyPair::from_pem(&pem).context("解析本机 CA 私钥")?;

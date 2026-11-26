@@ -22,6 +22,8 @@ async fn config() -> (FederationConfig, Fake, tempfile::TempDir, tempfile::TempD
     let config = FederationConfig {
         matrix: Arc::new(matrix),
         install_dir: install.path().to_owned(),
+        data_dir: state.path().to_owned(),
+        window_applied: std::sync::Mutex::new(None),
         notice: None,
         server_name: matrix_config.server_name,
     };
@@ -69,4 +71,66 @@ async fn a_missing_admin_membership_is_a_reload_failure() {
         .await
         .unwrap_err();
     assert_eq!(failure.kind, FailureKind::Reload);
+}
+
+/// 配对都钉住了：窗口关掉 `allow_invalid` 并热加载一次；状态没再变就不重复写、不重复加载。
+#[tokio::test]
+async fn a_finished_window_closes_the_relaxed_check_and_reloads_once() {
+    let (config, fake, _state, install) = config().await;
+    let toml = install.path().join("secrets/tuwunel/tuwunel.toml");
+    std::fs::write(&toml, "[global]\nallow_invalid_tls_certificates = true\n").unwrap();
+    std::fs::create_dir_all(config.data_dir.join("core")).unwrap();
+    std::fs::write(
+        config.data_dir.join("core/peers.json"),
+        serde_json::json!({"peers": {"pinned.example": {
+            "phase": "paired",
+            "pin_state": "pinned",
+            "peer_pin": [{"der": "MIIB", "spki_sha256": "00", "pinned_at_ms": 1}]
+        }}})
+        .to_string(),
+    )
+    .unwrap();
+
+    config.apply_window().await;
+    assert!(
+        std::fs::read_to_string(&toml)
+            .unwrap()
+            .contains("allow_invalid_tls_certificates = false")
+    );
+    let reloads = || {
+        fake.state()
+            .sent
+            .iter()
+            .filter(|(_, content)| content["body"] == RELOAD_COMMAND)
+            .count()
+    };
+    assert_eq!(reloads(), 1);
+    config.apply_window().await;
+    assert_eq!(reloads(), 1, "状态没变不重复热加载");
+}
+
+/// 还有没钉住、窗口还没到期的对端：放宽窗口要开着（文件被改回 true）。
+#[tokio::test]
+async fn an_unpinned_peer_keeps_the_window_open() {
+    let (config, _fake, _state, install) = config().await;
+    let toml = install.path().join("secrets/tuwunel/tuwunel.toml");
+    std::fs::write(&toml, "[global]\nallow_invalid_tls_certificates = false\n").unwrap();
+    std::fs::create_dir_all(config.data_dir.join("core")).unwrap();
+    std::fs::write(
+        config.data_dir.join("core/peers.json"),
+        serde_json::json!({"peers": {"old.example": {
+            "phase": "paired",
+            "pin_state": {"pending": {"since_version": "0.8.0"}},
+            "peer_pin": []
+        }}})
+        .to_string(),
+    )
+    .unwrap();
+
+    config.apply_window().await;
+    assert!(
+        std::fs::read_to_string(&toml)
+            .unwrap()
+            .contains("allow_invalid_tls_certificates = true")
+    );
 }

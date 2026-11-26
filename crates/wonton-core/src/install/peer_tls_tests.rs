@@ -263,7 +263,11 @@ fn only_unpinned_paired_records_keep_the_legacy_window_open() {
         )
     };
 
-    fs::write(&store, paired(r#","pin_state":"pending""#, "")).unwrap();
+    fs::write(
+        &store,
+        paired(r#","pin_state":{"pending":{"since_version":"0.8.0"}}"#, ""),
+    )
+    .unwrap();
     install(dir.path(), Some("home.example"), data.path());
     assert!(
         config().contains("allow_invalid_tls_certificates = true"),
@@ -272,7 +276,10 @@ fn only_unpinned_paired_records_keep_the_legacy_window_open() {
 
     fs::write(
         &store,
-        paired(r#","pin_state":"pinned""#, r#","peer_pin":["aa","bb"]"#),
+        paired(
+            r#","pin_state":"pinned""#,
+            r#","peer_pin":[{"der":"MIIB","spki_sha256":"00","pinned_at_ms":1}]"#,
+        ),
     )
     .unwrap();
     init_with(dir.path(), Some("home.example"), Some(data.path()), None).unwrap();
@@ -366,5 +373,40 @@ fn an_upgrade_reads_the_data_dir_and_image_from_the_recorded_env() {
     assert_eq!(
         fs::read_to_string(peer_dir(dir.path()).join("system-roots.source")).unwrap(),
         "from-env\n"
+    );
+}
+
+/// 复审补测：`legacy_window` 读的是 1121 真实写出的记录形状（`peer_pin` 是对象数组、`pin_state` 是
+/// externally tagged 的 `{"pending":…}`），不是这里测试手写的字符串占位。解析失败会让升级时 `init`
+/// 直接报错。窗口该开着（有待钉记录）。
+#[test]
+fn review_legacy_window_reads_the_real_pin_shape() {
+    let data = tempfile::tempdir().unwrap();
+    let store = data.path().join("core/peers.json");
+    fs::create_dir_all(store.parent().unwrap()).unwrap();
+    let record = serde_json::json!({
+        "peers": {
+            "old.example": {
+                "server_name": "old.example",
+                "endpoint_id": "a".repeat(52),
+                "relays": [],
+                "addrs": [],
+                "owner_user_id": "@o:old.example",
+                "owner_display_name": "Old",
+                "paired_at_ms": 1,
+                "phase": "paired",
+                "peer_pin": [{
+                    "der": "MIIB",
+                    "spki_sha256": "00".repeat(32),
+                    "pinned_at_ms": 1
+                }],
+                "pin_state": {"pending": {"since_version": "0.8.0"}}
+            }
+        }
+    });
+    fs::write(&store, record.to_string()).unwrap();
+    assert!(
+        legacy_window(Some(data.path())).unwrap(),
+        "有待钉记录时窗口该开着"
     );
 }

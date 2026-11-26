@@ -21,6 +21,8 @@ async fn config(install_dir: &Path) -> (FederationConfig, Fake) {
     let config = FederationConfig {
         matrix: Arc::new(matrix),
         install_dir: install_dir.to_owned(),
+        data_dir: state.path().to_owned(),
+        window_applied: std::sync::Mutex::new(None),
         notice: None,
         server_name: matrix_config.server_name,
     };

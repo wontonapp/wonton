@@ -6,7 +6,7 @@
 //!   `secrets/matrix-server-name`，之后不能改，要的和记下的不一致时拒绝（ADR-0009 的“Matrix 的服务器名”）。
 //! - 密钥在 `secrets/`（0700，文件 0600），主机上不需要 openssl。
 
-use std::collections::{BTreeMap, BTreeSet};
+use std::collections::BTreeSet;
 use std::fs;
 use std::io::Write;
 use std::os::unix::fs::{OpenOptionsExt, PermissionsExt};
@@ -329,39 +329,12 @@ fn saved(dir: &Path, key: &str) -> Option<String> {
         .filter(|value| !value.is_empty())
 }
 
-/// 升级前就有、还没钉住证书的配对（ADR-0112 §5b）：有这类记录时先把 `allow_invalid` 留着。
+/// 升级前就有、还没钉住证书的配对（ADR-0112 §5b）：有这类记录、且窗口没过期时先把 `allow_invalid` 留着。
 ///
 /// 记录在数据目录的 `core/peers.json`。读不出、读不懂时按失败停下：窗口该不该开是安全取舍，不猜。
+/// 运行期由 [`crate::matrix::FederationConfig`] 按同一判据（[`crate::peer_window`]）关掉。
 fn legacy_window(data_dir: Option<&Path>) -> anyhow::Result<bool> {
-    #[derive(serde::Deserialize, Default)]
-    struct Stored {
-        #[serde(default)]
-        peers: BTreeMap<String, Record>,
-    }
-
-    #[derive(serde::Deserialize, Default)]
-    struct Record {
-        phase: Option<crate::peers::Phase>,
-        #[serde(default)]
-        peer_pin: Vec<String>,
-        pin_state: Option<String>,
-    }
-
-    let Some(data_dir) = data_dir else {
-        return Ok(false);
-    };
-    let path = data_dir.join("core/peers.json");
-    let text = match fs::read_to_string(&path) {
-        Ok(text) => text,
-        Err(e) if e.kind() == std::io::ErrorKind::NotFound => return Ok(false),
-        Err(e) => return Err(e).with_context(|| format!("读取 {}", path.display())),
-    };
-    let stored: Stored =
-        serde_json::from_str(&text).with_context(|| format!("解析 {}", path.display()))?;
-    Ok(stored.peers.values().any(|record| {
-        record.phase == Some(crate::peers::Phase::Paired)
-            && (record.pin_state.as_deref() != Some("pinned") || record.peer_pin.is_empty())
-    }))
+    Ok(crate::peer_window::window_state(data_dir, crate::build_info::version())?.needed)
 }
 
 /// 联邦名单的初值（`secrets/tuwunel/wonton-fed.toml`，ADR-0050）。只在还没有时创建：第一次
