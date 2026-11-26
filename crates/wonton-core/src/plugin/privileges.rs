@@ -174,6 +174,18 @@ impl ServiceError {
     }
 }
 
+/// 一个声明了终端服务的插件（ADR-0125）可以申请的两项最高权限：`SYS_ADMIN` 只用来在
+/// 终端容器里挂 FUSE，docker socket 只用来 `docker exec` 进那个容器。
+fn terminal_exempt(permission: &Permission) -> bool {
+    match permission {
+        Permission::Capability { name } => {
+            normalize_capability(name).as_deref() == Some("SYS_ADMIN")
+        }
+        Permission::DockerSocket => true,
+        _ => false,
+    }
+}
+
 /// 清单级别的权限约束。
 pub fn validate_manifest(manifest: &Manifest, langs: &Languages) -> Result<(), ManifestError> {
     let restricted = manifest.kind == PluginKind::Agent
@@ -184,7 +196,7 @@ pub fn validate_manifest(manifest: &Manifest, langs: &Languages) -> Result<(), M
             matches!(
                 risk(permission),
                 Some(CapabilityRisk::VeryHigh | CapabilityRisk::Highest)
-            )
+            ) && !(manifest.terminal.is_some() && terminal_exempt(permission))
         })
     {
         return Err(ManifestError::Invalid(text(

@@ -77,6 +77,7 @@ impl ManifestExt for Manifest {
         super::store_info::validate(self, langs)?;
         super::manifest_agent::validate(self)?;
         validate_bots(self)?;
+        validate_terminal(self)?;
         super::privileges::validate_manifest(self, langs)?;
         super::privileges::validate_optional(self, langs)?;
         super::gpu::validate(self, langs)?;
@@ -105,6 +106,25 @@ impl ManifestExt for Manifest {
             .iter()
             .try_for_each(|(n, s)| super::secret_spec::validate_secret(n, s))
     }
+}
+
+/// Bot 的终端服务（ADR-0125）：声明它就必须有 `bots`，且 `service` 是 `bots.services` 的一项。
+fn validate_terminal(manifest: &Manifest) -> Result<(), ManifestError> {
+    let Some(terminal) = &manifest.terminal else {
+        return Ok(());
+    };
+    let Some(bots) = &manifest.bots else {
+        return Err(ManifestError::Invalid(
+            "声明了 terminal 就必须声明 bots：终端服务每个 Bot 一个容器".to_owned(),
+        ));
+    };
+    if terminal.service.is_empty() || !bots.services.contains(&terminal.service) {
+        return Err(ManifestError::Invalid(format!(
+            "terminal.service {} 不在 bots.services 里",
+            terminal.service
+        )));
+    }
+    Ok(())
 }
 
 fn validate_tunnel(manifest: &Manifest) -> Result<(), ManifestError> {
