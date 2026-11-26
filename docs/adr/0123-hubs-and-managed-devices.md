@@ -52,7 +52,7 @@ T3 Code 把“运行环境（Environment）、访问端点（AccessEndpoint）�
 2. **herdr**：固定版本、按摘要安装（Apache-2.0）。一个任务一个 workspace、一个 tab、一个 pane；pane 里跑用户自己装的 Agent（Claude Code、Codex、omp 等），herdr 负责终端、会话、状态和断线保活。
 3. **用户自己装的 Agent CLI**：用设备上的登录和配置，不经过 Wonton 的模型网关。守护进程不代理模型流量。
 
-设备上**不跑**：核心、Tuwunel、Matrix 客户端、profile 记忆。设备 Agent 用自己的工作区、自己的登录、自己的技能；邻居的 profile 和记忆留在枢纽（M4）。
+设备守护进程**不跑**：核心、Tuwunel、Matrix 客户端、profile 记忆。设备 Agent 用自己的工作区、自己的登录、自己的技能；邻居的 profile 和记忆留在枢纽（M4）。
 
 和 [ADR-0081](0081-local-agent-host.md)、[ADR-0124](0124-client-react-pwa-electron.md) 的 Electron 三角色不是一回事：受管设备是枢纽下的执行面（守护进程 + herdr，执行派活），不是 Matrix 客户端；Electron 包是客户端、本机 Agent 主机、被控端三个角色，本机 Agent 主机是 Bot 的 ACP 运行身份，被控端是远程桌面。同一台电脑可以同时是受管设备又开着 Electron：设备守护进程用设备密钥，Agent 主机用主机身份，两把钥匙、两个开关，不复用；设备守护进程不跑 Matrix 客户端，Electron 的客户端和主机是另一组进程。本 ADR 与 #1084 都改 0081 和 ARCHITECTURE：先合一个、另一个 rebase，合完核对 `0081:3-4` 自洽。
 
@@ -113,7 +113,7 @@ T3 Code 把“运行环境（Environment）、访问端点（AccessEndpoint）�
 | --- | --- | --- |
 | `read_only` | 读文件、跑只读命令，不写工作区 | Claude Code `--permission-mode plan`；Codex `--sandbox read-only` |
 | `standard` | 工作区读写、装依赖、跑测试（默认） | Claude Code `--permission-mode default`；Codex `--sandbox workspace-write` |
-| `trusted` | 任意命令、网络和包管理，仍按原生审批逐次问 | Claude Code `--permission-mode acceptEdits`；Codex `--sandbox danger-full-access` |
+| `trusted` | 任意命令、网络和包管理，按原生模式自动接受编辑/命令，仍受原生开关约束 | Claude Code `--permission-mode acceptEdits`；Codex `--sandbox danger-full-access` |
 
 - `device: "auto"` 由调度器按第 7 节挑；挑不出来回 `no_device` 和候选原因（离线、没装这个 Agent、没有目录、负载高、没授权），不静默换到枢纽本地。
 - 返回是异步的：工具立刻回 `task_id`，进度、审批、产物经 `wonton__task_status` 和收件箱回；主 Agent 不阻塞等结果。

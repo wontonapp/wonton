@@ -27,7 +27,7 @@ App 里的文字按这里写（ADR-0043）。翻译不逐句对照原文：先�
 | 你的资料 | Your Profile | 個人資料 | プロフィール | |
 | Agent | agent | Agent | エージェント | 驱动 Bot 的程序 |
 | 主 Agent | primary agent | 主 Agent | メインエージェント | 一个人默认的那个 Agent，就是他的第一个私人 Bot；名字由用户起，界面身份标签叫“主管”（英文界面 Lead，暂定） |
-| 分身（profile） | profile | 分身 | プロフィール | 用户另建的独立身份，独立 Matrix 账号和私聊；界面一律叫“分身”，不出现 profile，英文界面用 Profile |
+| 分身（私人 profile） | profile | 分身 | プロフィール | 用户另建的独立身份，独立 Matrix 账号和私聊；界面一律叫“分身”，不出现 profile，英文界面用 Profile；共享 Bot 也是 profile，但不是分身 |
 | 派活 | dispatch | 派活 | 仕事を渡す | 让某台设备上的 Agent 去干一件事 |
 | 工作区 | workspace | 工作區 | ワークスペース | 设备上给一个任务专用的目录 |
 | 默认 Agent | Default Agent | 預設 Agent | デフォルトのエージェント | |
