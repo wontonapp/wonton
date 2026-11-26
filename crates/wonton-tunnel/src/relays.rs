@@ -316,6 +316,23 @@ pub fn relay_map(relays: &[Relay], tiers: usize) -> RelayMap {
         .collect()
 }
 
+/// 给界面、发现文件和日志用的规范化文字：根路径保留 `/`，非根路径去掉尾斜杠（`/relay/` → `/relay`）。
+///
+/// `RelayUrl` 的 `Display` 会省略根路径的 `/`，`Url` 的序列化又会给非根路径补尾斜杠；两边统一成
+/// 这里的一种写法，配对码、连接状态和设置页才对得上。
+pub fn relay_url_text(url: &RelayUrl) -> String {
+    url_text(&url.clone().into())
+}
+
+/// 同 [`relay_url_text`]，参数是已经去过 userinfo/查询/片段的 [`Url`]。
+pub fn url_text(url: &Url) -> String {
+    let mut text = url.as_str().to_owned();
+    if text.ends_with('/') && url.path() != "/" {
+        text.pop();
+    }
+    text
+}
+
 /// 中继域名不带 FQDN 尾点，使配对码、中继表和连接状态使用同一个 key（#200）。
 ///
 /// iroh 内置中继带尾点，webpki 允许它作为 TLS 参照名；用户报告在其网络中去掉尾点才能配对。

@@ -746,7 +746,9 @@ fn path_view(path: PathInfo) -> HomePath {
     };
     // 只有中继路径才挂着中继地址；直连路径的对端就是服务器的 IP。
     let relay_url = match &path.remote {
-        TransportAddr::Relay(url) if path.kind == PathKind::Relay => Some(url.to_string()),
+        TransportAddr::Relay(url) if path.kind == PathKind::Relay => {
+            Some(wonton_tunnel::relays::relay_url_text(url))
+        }
         _ => None,
     };
     HomePath {

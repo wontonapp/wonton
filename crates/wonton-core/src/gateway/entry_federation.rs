@@ -115,7 +115,7 @@ fn discovery(gateway: &Gateway, server_name: &str, path: &str) -> Response {
                 .relays()
                 .into_iter()
                 .filter_map(|relay| {
-                    let mut url: url::Url = relay.url.into();
+                    let mut url: url::Url = relay.url.clone().into();
                     if url.scheme() != "https" {
                         return None;
                     }
@@ -124,12 +124,7 @@ fn discovery(gateway: &Gateway, server_name: &str, path: &str) -> Response {
                     url.set_password(None).ok()?;
                     url.set_query(None);
                     url.set_fragment(None);
-                    // `Url` 的序列化会给非空路径补尾斜杠，配对码和连接信息用不带的那种；GET/HEAD 一致。
-                    let mut text = url.as_str().to_owned();
-                    if text.ends_with('/') && url.path() != "/" {
-                        text.pop();
-                    }
-                    Some(text)
+                    Some(wonton_tunnel::relays::url_text(&url))
                 })
                 .collect(),
         })

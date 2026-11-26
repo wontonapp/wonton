@@ -308,7 +308,10 @@ fn only_a_relay_path_carries_the_relay_url() {
         sent_bytes: 0,
         lost_bytes: 0,
     });
-    assert_eq!(relayed.relay_url.as_deref(), Some(url.to_string().as_str()));
+    assert_eq!(
+        relayed.relay_url.as_deref(),
+        Some(wonton_tunnel::relays::relay_url_text(&url).as_str())
+    );
     assert!(relayed.relay);
 
     let direct = path_view(PathInfo {

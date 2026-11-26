@@ -363,7 +363,9 @@ fn builtin_relays_can_come_from_the_runtime_environment() {
         .builtin_relays
         .relays()
         .iter()
-        .find(|relay| relay.url.as_str() == "https://relay.example.org/")
+        .find(|relay| {
+            wonton_tunnel::relays::relay_url_text(&relay.url) == "https://relay.example.org/"
+        })
         .expect("运行时环境变量里的默认中继");
     assert_eq!(relay.quic_port, Some(7843));
 
