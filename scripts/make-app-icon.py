@@ -1,9 +1,9 @@
 #!/usr/bin/env python3
-"""从 design/app-icon/mascot/cutout.png 生成两端的 App 图标。
+"""从 design/app-icon/mascot/cutout.png 生成两端的 App 图标和启动屏。
 
-形状、角度、神态都不改：主人原图抠出来的角色原样缩放居中，放在蓝到白的渐变底上。
+形状、角度、神态都不改：主人原图抠出来的角色原样缩放居中。App 图标放在蓝到白的渐变底上，
 iOS 出浅色、深色、着色三套，Android 出自适应图标的前景、背景、单色。
-启动屏的字形仍由 generate-app-icon.py 从 SVG 出，两边互不覆盖。
+启动屏只放角色本身，iOS 出浅色、深色两张，Android 出一张和通知栏的单色剪影。
 
 要 Pillow（pip install pillow）。渲染不依赖 Chrome 版本，CI 不比对，改完把生成结果一起提交。
 """
@@ -44,6 +44,17 @@ FILL = 0.80
 ANDROID_FILL = 0.52
 # Android 自适应图标画布 108dp，这里按 4 倍出图。
 ANDROID_SIDE = 432
+
+# 启动屏的底色：米白和墨色。App 图标铺蓝白渐变，启动屏只放角色本身，不铺方底。
+LAUNCH_PAPER = (243, 237, 226)
+LAUNCH_INK = (30, 27, 24)
+# 启动屏画布在 iOS 上的边长（pt），角色占其中 0.8。
+LAUNCH_POINTS = 160
+# Android 12 把启动图标画在 288dp 的画布上，只露出中间 192dp 的圆：108dp 视口里角色最长边
+# 留在 192/288*108 ≈ 0.6 以内，圆边切不到绒毛。
+ANDROID_LAUNCH_FILL = 0.60
+# 启动屏按 288dp 画布的 3 倍出图，3 倍屏上不放大。
+ANDROID_LAUNCH_SIDE = 864
 # 单色版里视为“五官”的亮度上限，和挖空处的最小面积（像素）。
 FACE_DARK = 110
 FACE_MIN_AREA = 150
@@ -135,10 +146,10 @@ def keep_blobs(mask, min_area):
     return out
 
 
-def android_monochrome(body):
+def android_monochrome(body, fill=ANDROID_FILL):
     # 单色版只用透明度：身体是白色剪影，眼睛和嘴挖空，系统按主题上色。
     # 剪影取抠图的 alpha，不按亮度切：毛边的深浅是绒毛本身，拿来切边一圈毛刺。
-    layer = place(ANDROID_SIDE, ANDROID_FILL, body, shadow=False)
+    layer = place(ANDROID_SIDE, fill, body, shadow=False)
     mask = layer.split()[-1].point(lambda v: 255 if v > 128 else 0)
     mask = mask.filter(ImageFilter.MaxFilter(5)).filter(ImageFilter.MinFilter(5))
     # 往里收 4px 再找五官，边缘的绒毛不参与，碎点按面积扔掉
@@ -175,8 +186,7 @@ def write_text(path, content):
     path.write_text(content)
 
 
-def ios_app_icon():
-    body = character()
+def ios_app_icon(body):
     directory = XCASSETS / "AppIcon.appiconset"
     replace_dir(directory)
     variants = [("light", None, ios_light), ("dark", DARK, ios_dark), ("tinted", TINTED, ios_tinted)]
@@ -210,32 +220,98 @@ def ios_app_icon():
     write_json(directory / "Contents.json", {"images": images, **XCASSETS_INFO})
 
 
-def android():
-    body = character()
-    write_text(RES / "values/app_icon_gradient.xml", android_colors())
+def ios_launch(body):
+    background = XCASSETS / "LaunchBackground.colorset"
+    replace_dir(background)
+    write_json(
+        background / "Contents.json",
+        {
+            "colors": [
+                {"color": color_components(hex_color(LAUNCH_PAPER)), "idiom": "universal"},
+                {"appearances": DARK, "color": color_components(hex_color(LAUNCH_INK)), "idiom": "universal"},
+            ],
+            **XCASSETS_INFO,
+        },
+    )
+    glyph = XCASSETS / "LaunchGlyph.imageset"
+    replace_dir(glyph)
+    images = []
+    for name, appearances in [("light", None), ("dark", DARK)]:
+        extra = {"appearances": appearances} if appearances else {}
+        for scale in (2, 3):
+            side = LAUNCH_POINTS * scale
+            filename = f"{name}@{scale}x.png"
+            place(side, FILL, body, shadow=False).save(glyph / filename, optimize=True)
+            images.append({**extra, "filename": filename, "idiom": "universal", "scale": f"{scale}x"})
+    write_json(glyph / "Contents.json", {"images": images, **XCASSETS_INFO})
+
+
+def android(body):
+    write_text(
+        RES / "values/app_icon_gradient.xml",
+        android_colors(
+            [("app_icon_gradient_top", hex_color(TOP)), ("app_icon_gradient_bottom", hex_color(BOTTOM))]
+        ),
+    )
     write_text(RES / "drawable/ic_launcher_background.xml", android_background_shape())
     obsolete = RES / "drawable/ic_launcher_foreground.xml"
     if obsolete.exists():
         obsolete.unlink()
     (RES / "drawable-nodpi").mkdir(parents=True, exist_ok=True)
     android_foreground(body).save(RES / "drawable-nodpi/ic_launcher_foreground.png")
-    android_monochrome(body).save(RES / "drawable-nodpi/ic_launcher_monochrome.png")
+    monochrome = android_monochrome(body)
+    monochrome.save(RES / "drawable-nodpi/ic_launcher_monochrome.png")
+    # 通知栏小图标单独出：自适应图标 0.52 的安全区在 24dp 的通知图标里太小。
+    android_monochrome(body, FILL).save(RES / "drawable-nodpi/notification_glyph.png", optimize=True)
     write_text(RES / "mipmap-anydpi/ic_launcher.xml", android_adaptive_icon())
+    android_launch(body)
 
 
-def android_colors():
-    return (
-        '<?xml version="1.0" encoding="utf-8"?>\n'
-        + XML_BANNER
-        + "<resources>\n"
-        + f'    <color name="app_icon_gradient_top">{hex_color(TOP)}</color>\n'
-        + f'    <color name="app_icon_gradient_bottom">{hex_color(BOTTOM)}</color>\n'
-        + "</resources>\n"
-    )
+def android_colors(entries):
+    lines = "".join(f'    <color name="{name}">{value.upper()}</color>\n' for name, value in entries)
+    return f'<?xml version="1.0" encoding="utf-8"?>\n{XML_BANNER}<resources>\n{lines}</resources>\n'
 
 
 def hex_color(rgb):
     return "#%02X%02X%02X" % rgb
+
+
+def color_components(value):
+    red, green, blue = value[1:3], value[3:5], value[5:7]
+    return {
+        "color-space": "srgb",
+        "components": {"alpha": "1.000", "blue": f"0x{blue.upper()}", "green": f"0x{green.upper()}", "red": f"0x{red.upper()}"},
+    }
+
+
+def android_bool(value):
+    return (
+        '<?xml version="1.0" encoding="utf-8"?>\n'
+        + XML_BANNER
+        + "<resources>\n"
+        + f'    <bool name="launch_light_system_bars">{value}</bool>\n</resources>\n'
+    )
+
+
+def android_launch(body):
+    # 启动屏的底色随深色模式翻转；图标不翻，桌面上的图标不该跟着系统外观变。
+    write_text(
+        RES / "values/app_icon_colors.xml",
+        android_colors([("launch_background", hex_color(LAUNCH_PAPER))]),
+    )
+    write_text(
+        RES / "values-night/app_icon_colors.xml",
+        android_colors([("launch_background", hex_color(LAUNCH_INK))]),
+    )
+    write_text(RES / "values/app_icon_bools.xml", android_bool("true"))
+    write_text(RES / "values-night/app_icon_bools.xml", android_bool("false"))
+    obsolete = RES / "drawable/launch_glyph.xml"
+    if obsolete.exists():
+        obsolete.unlink()
+    (RES / "drawable-nodpi").mkdir(parents=True, exist_ok=True)
+    place(ANDROID_LAUNCH_SIDE, ANDROID_LAUNCH_FILL, body, shadow=False).save(
+        RES / "drawable-nodpi/launch_glyph.png", optimize=True
+    )
 
 
 def android_background_shape():
@@ -264,9 +340,11 @@ def android_adaptive_icon():
 
 
 def main():
-    ios_app_icon()
-    android()
-    print("App 图标已生成")
+    body = character()
+    ios_app_icon(body)
+    ios_launch(body)
+    android(body)
+    print("App 图标和启动屏已生成")
 
 
 if __name__ == "__main__":

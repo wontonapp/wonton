@@ -131,11 +131,11 @@ MIT，每个图标都有线框和实心。未选中用 Regular，选中用 Fill�
 
 Phosphor 没有专门的服务器图形，用 `hard-drives`。App 内的开源许可页列出 Phosphor 的版本和许可证。
 
-### 占位图、插件图标和 App 图标
+### 占位图、插件图标、App 图标和启动屏
 
 - **插件占位图：** 两端同一种，`accentFill` 加噪点，上面是同一个 Phosphor Fill 图形。不用首字，也不按名字配色。
 - **插件图标：** 用上游官方标志，规则只写在 [plugin-spec](../plugin-spec.md) 的“图标用什么”一节。核心保留透明通道，图标的透明部分由 App 垫白，否则透明底的黑色标志在深色模式下看不见。主人一度想按 Wonton 的风格全部重画，看过样例后改了：飞牛也用原标志，原版不滥用就行。
-- **App 图标：** 甲骨文“云”，墨色字配米白底，字形是公有领域的矢量稿，出处见 [design/app-icon](../../design/app-icon/README.md)。主人否掉了早先极简线条勾出云吞的方向。定稿是矢量 SVG，由脚本导出两端需要的尺寸，包括 iOS 的深色和着色版本、Android 自适应图标的 monochrome 图层。图像模型只用来出方向，不用它的位图做定稿。
+- **App 图标和启动屏：** 用主人原图的云朵角色（`design/app-icon/mascot/cutout.png`），形状、角度、神态都不改。App 图标把角色居中放在蓝到白的渐变底上，出 iOS 的浅色、深色、着色和 Android 自适应图标的前景、背景、monochrome 图层；启动屏只放角色本身，底色是米白和深色。出处见 [design/app-icon](../../design/app-icon/README.md)。主人否掉了早先极简线条勾出云吞的方向；角色来自主人原图，不是图像模型生成的位图。
 
 ## 理由
 
