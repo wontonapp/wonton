@@ -2,11 +2,11 @@ use serde::{Deserialize, Serialize};
 
 use crate::{
     Answer, AvatarUpload, BotActivity, BotRef, ChatLayoutChoice, ChatLayoutTarget, CredentialEntry,
-    DeviceNetwork, EntryKind, FileId, FontStyle, FriendBlockScope, FriendBlockTarget, InstallPreview,
-    MatrixOidcCallback, MatrixOidcLogin, MatrixPasswordLogin, NewPasswordRequest,
+    DeviceNetwork, EntryKind, FileId, FontStyle, FriendBlockScope, FriendBlockTarget,
+    InstallPreview, MatrixOidcCallback, MatrixOidcLogin, MatrixPasswordLogin, NewPasswordRequest,
     NotificationCategory, OnboardingTip, PluginAudience, PushEndpoint, PushMethod,
-    PutIngressRequest, RelaySettingsAction, Rgb, SecretString, ShareGrantUpdate,
-    TabRef, TextSize, ThemeMode, UploadSource,
+    PutIngressRequest, RelaySettingsAction, Rgb, SecretString, ShareGrantUpdate, TabRef, TextSize,
+    ThemeMode, UploadSource,
 };
 
 /// 会话列表的操作。

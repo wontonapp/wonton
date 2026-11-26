@@ -138,6 +138,15 @@ final class ClientsDomainWalkthroughTests: XCTestCase {
     }
 
     func testConfigurePebbleCertificate() throws {
+        try enterDomainPage()
+        configureOtherProvider()
+        saveAndWaitIssued()
+        assertCaaAndLan()
+        showDesecDetails()
+    }
+
+    /// 配对、走完引导和交接页、重启一版、进设置打开域名页。
+    private func enterDomainPage() throws {
         XCTAssertTrue(waitPaired(timeout: 120), "配对没完成：\(app.debugDescription)")
         passOnboarding()
         // 引导里可能还盖着“等其他设备交接”的层：没到列表就再点一次 Later，到了才开设置。
@@ -167,7 +176,10 @@ final class ClientsDomainWalkthroughTests: XCTestCase {
         XCTAssertTrue(entered, "设置里没有 HTTPS 和域名入口")
         XCTAssertTrue(app.textFields["clientsDomainSuffix"].waitForExistence(timeout: 30), "域名页没打开")
         shot("01-empty")
+    }
 
+    /// 填域名、“其他”服务商和凭据，勾上订户协议。
+    private func configureOtherProvider() {
         // 栈上存过后缀时输入框带着旧值；tap 会把光标落在点中的字中间，delete 只删左边，会凑出怪名字。
         // 先用 ⌘A 全选直接替换，值不对再从末尾按键盘删除键重来，最后校验值本身。
         let suffixField = app.textFields["clientsDomainSuffix"]
@@ -202,21 +214,24 @@ final class ClientsDomainWalkthroughTests: XCTestCase {
         shot("02-filled")
 
         let terms = app.switches["clientsDomainTerms"].exists
-            ? app.switches["clientsDomainTerms"]
+            ? app.switches["clientsDomainTerms".replacingOccurrences(of: "clients", with: "clients")].exists
+                ? app.switches["clientsDomainTerms"]
+                : app.staticTexts["I accept the Let's Encrypt subscriber agreement"]
             : app.staticTexts["I accept the Let's Encrypt subscriber agreement"]
         XCTAssertTrue(scrollTo(terms), "没有订户协议")
         if (terms.value as? String) != "1" {
             terms.tap()
         }
         shot("03-terms")
+    }
 
+    /// 保存并等证书签发；页面不自己刷新，没签完就退出去再进来。
+    private func saveAndWaitIssued() {
         let save = app.buttons["clientsDomainSave"]
         XCTAssertTrue(scrollTo(save), "没有保存")
         save.tap()
-        // 保存成功就回设置页；再进来看着签发，签完了看证书。
         XCTAssertTrue(tapRow("HTTPS and domain", timeout: 60), "保存后没回设置页：\(app.debugDescription)")
         XCTAssertTrue(app.staticTexts["Certificate"].waitForExistence(timeout: 30), "域名页没重开")
-        // 页面不自己刷新证书：没签完就退出去再进来，重新拉一次。
         let issued = app.staticTexts.matching(NSPredicate(format: "label BEGINSWITH 'Expires'")).firstMatch
         var issuedHit = false
         for _ in 0..<10 where !issuedHit {
@@ -236,8 +251,10 @@ final class ClientsDomainWalkthroughTests: XCTestCase {
         XCTAssertTrue(issuedHit, "证书没签出来：\(app.debugDescription)")
         _ = scrollTo(issued)
         shot("05-issued")
+    }
 
-        // CAA 建议整条可复制。
+    /// CAA 建议整条可复制；`*.lan` 记录也在这一页。
+    private func assertCaaAndLan() {
         XCTAssertTrue(app.staticTexts["CAA"].waitForExistence(timeout: 20), "没有 CAA 一节")
         XCTAssertTrue(
             app.staticTexts.matching(NSPredicate(format: "label CONTAINS 'CAA 0 issue'")).firstMatch.exists,
@@ -246,8 +263,10 @@ final class ClientsDomainWalkthroughTests: XCTestCase {
         shot("06-caa")
         app.swipeUp()
         shot("07-lan")
+    }
 
-        // deSEC 的注册和限定令牌说明在默认收起的“详情”里：选中 deSEC 再展开（不发请求）。
+    /// deSEC 的注册和限定令牌说明在默认收起的“详情”里：选中 deSEC 再展开（不发请求）。
+    private func showDesecDetails() {
         app.swipeDown()
         app.swipeDown()
         app.swipeDown()

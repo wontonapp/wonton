@@ -28,10 +28,9 @@ use crate::servers::ServerList;
 use crate::session_store::SessionStore;
 use crate::subscription::{
     AppLockSubscription, AppearanceSubscription, ChatSubscription, ClientsDomainSubscription,
-    FamilySubscription,
-    FriendsSubscription, HomeSubscription, OnboardingSubscription, PagesSubscription,
-    PeersSubscription, PluginsSubscription, ServersSubscription, SessionListSubscription,
-    SettingsSubscription, TransfersSubscription, UnreadSubscription,
+    FamilySubscription, FriendsSubscription, HomeSubscription, OnboardingSubscription,
+    PagesSubscription, PeersSubscription, PluginsSubscription, ServersSubscription,
+    SessionListSubscription, SettingsSubscription, TransfersSubscription, UnreadSubscription,
 };
 use switch::Replay;
 #[cfg(feature = "ui-fake")]
