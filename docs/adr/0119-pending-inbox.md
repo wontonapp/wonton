@@ -1,6 +1,6 @@
 # ADR-0119 收件箱：要用户决定和要用户知道的事，用五种条目进核心里的一页
 
-- 状态：已接受（2026-11-25 主人拍板：20 个问题全部按推荐；第 6 题“页面能不能跑脚本/联网”按 23:4x 补定：脚本可以跑，联网只按发送方声明的域名名单放行，卡上写明“会访问：xxx”，不写名单就完全断网。范围是收件箱，不做待办；条目要能承载选择卡、HTML 报告、收尾框等富元素。上一版“通知/待办”两段式作废。）
+- 状态：已接受（2026-11-25 主人拍板：20 个问题全部按推荐；第 6 题“页面能不能跑脚本/联网”按 23:4x 补定：脚本可以跑，联网只按发送方声明的域名名单放行，卡上写明“会访问：xxx”，不写名单就完全断网。范围是收件箱，不做待办；条目要能承载选择卡、HTML 报告、收尾框等富元素。上一版“通知/待办”两段式作废。2026-11-26 补 `confirm` 的 `comment`/`requires_comment`（[ADR-0123](0123-hubs-and-managed-devices.md)）。）
 - 取代：[ADR-0016](0016-mcp-bus-and-confirmations.md) 第 2 步里的“等你确认”列表（`GET /_wonton/api/confirmations` 的列表、聊天列表里的入口和它的角标）。确认卡片本身、来源会话、回答接口都不变，只是列表换成收件箱，确认变成其中一种 `confirm` 条目
 - 部分取代：[ADR-0038](0038-multi-step-cards.md) 的“问题卡片 M1 不做”。问题卡片作为 `choice` 条目进收件箱；`StepCard` 的形状、上限和答案词汇直接沿用，不再只在 Bot 聊天里出现
 - 修订：[ADR-0047](0047-plugin-notices.md)（插件通知不再发进 Wonton 私聊，改成 `notice` 条目）、[ADR-0056](0056-internal-mailbox.md)（应用来信同上）、[ADR-0045](0045-family-members.md)（文件链接、家人加入的通知同上）、[ADR-0050](0050-cross-server-chat.md)（配对请求同上）、[ADR-0101](0101-notifications.md) 第 3 节（应用角标的数里加上待回答的条目，算法按下文第 9 节改）
@@ -96,7 +96,7 @@
 | `choice` | `questions`: 1–4 题；每题 `id` 必填、`header` ≤12 字、`question` ≤200 字、2–4 个 `options`（`id` 必填、`label` ≤40 字、`description` ≤100 字、`recommended?`、可选 `preview` ≤4 KiB），或者 0 个（只有输入框）；`multi_select`（默认 false）、`note_enabled`（默认 false）、`skippable`（默认 false）；永远有 `other`（≤2000 字） | `answers`: 每题 `{selected: [option_id], other?, note?, skipped?}`；整张 `decline` | 阻塞 10 分钟；异步 7 天 | 是 |
 | `page` | `resource_uri`（`ui://…`，MCP Apps 资源）或 `file_id`（附件）；`caption` ≤120 字；`network_domains?` 最多 20 个（`https://`、`wss://`，可 `https://*.example.com`）；`actions` 0–3（`id` 限 `[a-z0-9_-]{1,32}`，`label` ≤40 字，`style`: default/primary/destructive，`requires_comment?`） | `{action_id?, comment?}` 或 `acknowledge` | 30 天 | 有 `actions` 时是 |
 | `recap` | `summary` 2–3 句、≤400 字；`question?`；`actions` 1–2（同 page） | `{action_id}`、`acknowledge` 或 `decline` | 7 天 | 有问题/动作时是 |
-| `confirm` | `title`、`body` ≤2000 字、`detail?` ≤8000 字、`risk`（`high`/`very_high`/`highest`）；固定 `choices`（`approve`/`deny`；发送方支持时加 `session`/`always`） | 固定 choice | 10 分钟；配对不过期 | 是 |
+| `confirm` | `title`、`body` ≤2000 字、`detail?` ≤8000 字、`risk`（`high`/`very_high`/`highest`，定义见 ADR-0036）；固定 `choices`（`approve`/`deny`；发送方支持时加 `session`/`always`，最多四个）；`requires_comment?`（为 true 时 `deny` 的答案必须带非空 `comment`，核心校验，壳不能绕过）；`always_ttl?`（`task`（默认）或 `7d`，只在含 `always` 时有效） | 固定 choice；`deny` 的答案带 `comment`（拒绝并说明，≤200 字）；`always` 可带 `always_ttl` | 10 分钟；配对不过期 | 是 |
 | `notice` | `title`、`body` ≤2000 字、`level`（`info`/`warning`/`critical`）、可选 `link`（只收 `https:`/`http:`/`wonton:`）、可选 1 个 `action`（同 page） | `acknowledge` 或 `action_id` | 30 天 | 否（只点未读） |
 
 `title` 和 `caption` 都 ≤120 字；所有文本字段超限就报 `invalid_input`，不截断。`choice` 的 `preview` 是**静态** HTML 片段（去掉 `<script>`，≤4 KiB），由宿主放进沙箱渲染；CSP 固定为 `default-src 'none'; script-src 'none'; style-src 'unsafe-inline'; img-src 'self' data:; font-src 'self' data:; connect-src 'none'`，只允许内联样式和 `data:` 图片/字体，不能跑脚本、不能联网；要脚本或联网就用 `page`。
@@ -243,7 +243,8 @@ wonton__inbox_cancel  { "item_id": "q-01J…", "reason": "任务提前结束" }
 
 - `selected` 是选项 id，不是 label；label 只在界面显示。`other` 是自填；`note` 是备注；单选最多一项，多选 0–4 项。
 - 每题默认必答；Agent 可以设 `skippable: true`，跳过就是 `{skipped: true}`。整张 `decline` 不带 `answers`。
-- `action_id` 必须在这条条目的 `actions` 里；页面/收尾的按钮就是这样回。`requires_comment` 时 `comment` 必填（≤200 字）。
+- `action_id` 必须在这条条目的 `actions` 里；页面/收尾的按钮就是这样回。`requires_comment` 时答案里的 `comment` 必填（≤200 字，核心校验；`confirm` 上只在 `deny` 时生效）。
+- `always_ttl` 只对 `always` 生效：默认 `task`（本任务内有效），`7d` 表示 7 天后失效；核心按发送方给的键（例如设备、来源会话、命令签名）和到期时间记录，换工作区是否重新问由发送方定义。
 - `confirm` 的 `action` 直接用档名 `approve`/`deny`/`session`/`always`，不填 `action_id`；`acknowledge` 只对 `notice`、无动作的 `page`、无问题的 `recap` 有效。
 - 敏感操作分两种：核心自己的确认卡片（工具放行、装插件、受控发送）由核心在主人允许后继续那份挂起的调用；Agent 用 `inbox_confirm` 只是问一个固定选择，答案回到 Agent，执行由 Agent 侧再做。两种都走同一个 `confirm` 界面和审计，不能互相代替。
 

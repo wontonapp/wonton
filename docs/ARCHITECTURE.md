@@ -4,9 +4,9 @@
 
 ## 一句话
 
-家里一台 Linux + Docker 主机上跑着一个薄的 Rust 核心容器，它用 Docker 管理所有插件；自托管的
-Matrix 服务器（Tuwunel）是所有会话的事实源；Agent 和插件都以 Matrix bot 的身份和人对话；手机上的
-原生 App 由一个厚的 Rust 客户端核心驱动，经 iroh 隧道连回家；推送经我们运营的中继转发密文。
+家里一台常开的枢纽（Linux + Docker 主机，或者 Mac、Windows 上的内置 Linux 虚拟机）上跑着一个薄的 Rust 核心容器，它用 Docker
+管理所有插件；其他电脑作为受管设备挂在枢纽下，在自己的工作区里跑 Agent。自托管的 Matrix 服务器（Tuwunel）是所有会话的事实源；
+Agent 和插件都以 Matrix bot 的身份和人对话；手机上的原生 App 由一个厚的 Rust 客户端核心驱动，经 iroh 隧道连回家；推送经我们运营的中继转发密文。
 
 ## 组件总览
 
@@ -20,12 +20,18 @@ flowchart LR
     WebView --> ClientCore
   end
 
-  subgraph Home["家里的 Linux + Docker 主机"]
-    Core["wonton-core\n插件管理 · 网关与配对 · 推送代理\nMCP 总线 · 密钥与存储授权"]
+  subgraph Home["家里的枢纽（Linux + Docker 或内置 Linux 虚拟机）"]
+    Core["wonton-core\n插件管理 · 网关与配对 · 推送代理\nMCP 总线 · 密钥与存储授权 · 调度器"]
     Tuwunel["Tuwunel\nMatrix homeserver"]
-    Agent["Hermes\n唯一默认内核 · 多个 Bot"]
+    Agent["Hermes\n唯一默认内核 · 主 Agent · 多个 profile"]
     Magpie["magpie（可选插件）\n通用模型网关"]
     Plugins["其他插件\nImmich · Navidrome · Paperless …"]
+  end
+
+  subgraph Devices["受管设备（Mac / Windows / Linux）"]
+    DeviceAgent["设备守护进程\n入网 · 拉起任务 · 权限桥 · 收产物"]
+    Herdr["herdr\n工作区 · pane · 用户自己装的 Agent"]
+    DeviceAgent --> Herdr
   end
 
   subgraph Cloud["我们运营的云端（不存业务数据）"]
@@ -38,6 +44,7 @@ flowchart LR
   Providers["Hermes 自带供应商\nAPI key / 订阅登录"]
 
   ClientCore <-->|"iroh 隧道"| Core
+  Core <-->|"iroh 隧道 · 设备密钥"| DeviceAgent
   Core --> Tuwunel
   Agent <--> Tuwunel
   Agent --> Providers
@@ -53,11 +60,11 @@ flowchart LR
   Core -.->|"商店与插件包"| GitHub
 ```
 
-### 家里的服务器
+### 枢纽（家里的服务器）
 
 | 容器 | 类型 | 职责 |
 | --- | --- | --- |
-| `wonton-core` | 核心 | 插件管理器（经 Docker API 安装、升级、启停、健康检查、日志；Docker Hub、ghcr、quay 的镜像可以经加速地址按摘要拉，按仓库分名单，ADR-0074）；网关与配对（iroh 入口、HTTP 反向代理、设备与用户、会话鉴权）；推送代理；MCP 总线；密钥库与存储授权。系统服务里唯一挂载 Docker socket 的容器（升级器见下；声明了 `docker.socket` 的插件见 ADR-0036）。 |
+| `wonton-core` | 核心 | 插件管理器（经 Docker API 安装、升级、启停、健康检查、日志；Docker Hub、ghcr、quay 的镜像可以经加速地址按摘要拉，按仓库分名单，ADR-0074）；网关与配对（iroh 入口、HTTP 反向代理、设备与用户、会话鉴权）；推送代理；MCP 总线；密钥库与存储授权；调度器（设备注册表、任务表、派活、产物核对）。系统服务里唯一挂载 Docker socket 的容器（升级器见下；声明了 `docker.socket` 的插件见 ADR-0036）。 |
 | `tusd` | 核心组件 | 设备上传文件的可续传接口（tus），只在核心的私有网络里，鉴权和编号由核心决定（ADR-0020）。 |
 | `wonton-egress` | 核心组件（配了代理才有） | 出口容器：把出网插件的请求转给主人的代理（ADR-0023），或者装着的代理插件（ADR-0039）。 |
 | `tuwunel` | 核心组件 | Matrix homeserver，默认关闭联邦。会话、历史、多端同步、家人群聊的事实源。 |
@@ -68,6 +75,12 @@ flowchart LR
 | `magpie` | 可选普通插件 | 通用模型网关；核心和默认装机不依赖它，不再承担 Agent 的模型入口。通用网关合同及其使用方的凭据与授权边界保留（ADR-0008、ADR-0108）。 |
 | 其他 | 可选插件 | Immich、Navidrome、Paperless-ngx、Ollama、Syncthing、Samba 等。 |
 | `wonton-updater` | 一次性容器 | 升级核心时拉起，用核心自己的镜像：拉新镜像、重建核心、健康检查，失败回滚（ADR-0025）。 |
+
+### 受管设备
+
+受管设备是挂在某个枢纽下的电脑（Mac、Windows、Linux），不跑核心、不跑 Tuwunel、不是 Matrix 用户。设备上只跑两样：
+我们签名的设备守护进程（入网、拿任务、转发权限、收产物）和 herdr（一个任务一个工作区、一个 pane，跑用户自己装的 Agent）。
+设备归属人批准工作区根；任务记录、会话、审批和产物核对都在枢纽。见 [ADR-0123](adr/0123-hubs-and-managed-devices.md)。
 
 ### 云端
 
@@ -355,9 +368,19 @@ Bot 用 `wonton__get_profile`、`wonton__set_profile` 读写自己的资料，�
 管理接口可查询意图与恢复日志。持久化、旧记录边界、单飞退避及 Docker 超时的处理见
 [ADR-0105](adr/0105-plugin-runtime-recovery.md)。
 
+### 派活到受管设备
+
+主 Agent 经核心的 MCP 工具 `wonton__dispatch_task` 把任务交给调度器：交代自包含、指定或让调度器按设备能力、负载和授权挑一台。
+工具立刻回任务编号，进度、审批和产物经收件箱和任务视图回；`wonton__task_status` 只读，`wonton__task_cancel` 幂等取消。
+调度器只把任务投给在线且被授权的设备；设备离线就排队、过期作废并通知，不在任务中途换设备重跑。
+设备守护进程在本地工作区拉起 herdr 和用户自己装的 Agent，Agent 的权限挡位由它自己的设置决定，权限请求转成收件箱的确认条目
+（允许一次、总是允许、拒绝、拒绝并说明，超时自动拒）。产物带回枢纽核对，结论由主 Agent 说，设备 Agent 不以自己的身份进房间。见 [ADR-0123](adr/0123-hubs-and-managed-devices.md)。
+
 ## Bot 与 Agent
 
 - Bot = 一个 Matrix 身份 + 一个驱动它的 Agent 插件。核心分配身份、权限与受管工具，不承载 Agent 循环或供应商适配；模型网关是按声明使用的通用能力，不是默认 Hermes 的模型前置。
+- 一个人恰好一个主 Agent（第一个私人 Bot，profile 名由核心生成），可自建更多 profile；每个 profile 是独立 Matrix 账号和私聊。会话（主对话、旁聊）共享 profile 的记忆和技能，profile 之间不共享。见 [ADR-0122](adr/0122-primary-agent-and-profiles.md)。
+- 设备上的 Agent 不是 Wonton Bot：没有 Matrix 身份，由主 Agent 以自己的身份在会话里转述；任务会话、审批和产物在枢纽。
 - 名字、静态头像和状态头像组以 Matrix 资料为准；主人经隧道接口修改，Agent 可经自身 Matrix 身份或核心工具修改。清单只初始化新账号的名字和静态头像，状态头像只补不存在的字段。核心写入共用 `PluginManager::profile_revisions()` 的版本表，见 [ADR-0044](adr/0044-bot-profile-and-status-avatars.md)。
 - 唯一默认内核为 Hermes，使用其原生 Matrix、MCP 和供应商接入。调用 Codex、Claude Code 等走 Hermes 自带 ACP 委派，不再建设 Wonton ACP 桥、`agent_acp` 网关或逐家登录与模式适配；OpenClaw 只作替换备选，不同时维护两套默认体验；其他 Agent 插件由作者按插件规范自己做，只走社区来源，不进官方索引（[ADR-0108](adr/0108-hermes-default-kernel.md)）。
 - 原生委派不自动创建另一个 Wonton Bot，也不继承另一个 Bot 的身份或权限。任务、透明记忆、晨报与提醒复用 Hermes 既有能力；App 的具体交互不在本篇固定。旧 ACP 专用资产与通用底座的拆分边界见 ADR-0108。
@@ -402,6 +425,8 @@ Bot 用 `wonton__get_profile`、`wonton__set_profile` 读写自己的资料，�
 
 - Agent 是不可信执行者：每个私人或共享 Bot 运行在独立容器与数据边界里，只看得到自己的工作区和被授权的文件夹，没有 Docker socket，
   也没有宿主 root。同容器内的 profile 不是抵挡自身 shell 读取的隔离边界。
+- 受管设备是不可信执行面：设备可能被拿走或入侵，只有任务工作区和设备密钥，没有 Matrix 令牌和住户凭据；设备报的“做完了”按产物哈希核对，
+  任务中途掉线标不确定、不自动换设备重跑（[ADR-0123](adr/0123-hubs-and-managed-devices.md)）。
 - 插件权限写在清单里，安装时确认。高权限声明了就给，按风险分三级提示；Docker socket、特权模式这类等于交出宿主 root
   的单独确认；Agent 和 Bot 插件拿不到它们（ADR-0036）。
   显卡由核心按宿主实际有的显卡交给清单指定的服务（ADR-0018）。
@@ -446,6 +471,8 @@ scripts/             CI 与开发脚本
 | Docker 管理 | bollard | Apache-2.0 | 已定 |
 | 默认 Agent | Hermes Agent，原版官方镜像 | MIT | 单一默认内核；OpenClaw 仅替换备选（ADR-0108） |
 | Agent 接入与委派 | Hermes 原生 Matrix；调用其他 Agent 用 Hermes 原生 ACP 委派 | Apache-2.0（ACP 规范） | 不再自建 ACP 桥（ADR-0108） |
+| 受管设备的执行器 | herdr（固定版本、按摘要安装；只当本机执行器，多机由 iroh 隧道承担） | Apache-2.0 | 提议，见 ADR-0123；控制面接口稳定性待验证 |
+| 设备守护进程与设备协议 | 我们自己的 Rust 小进程；任务协议在核心与设备之间，iroh 隧道 + 设备密钥 | 本仓库 | 提议，见 ADR-0123 |
 | 模型接入与可选网关 | Hermes 自带供应商接入；magpie 是普通可选插件 | Hermes、magpie：MIT | 核心和默认装机不依赖 magpie（ADR-0108） |
 | MCP 总线 | 官方 Rust SDK rmcp，在核心里做最小聚合 | Apache-2.0 | 已定（ADR-0006） |
 | 插件商店 | 插件仓库按 GitHub topic 发现，官方索引是一个仓库（参考 magpie） | — | 已定（ADR-0017） |
@@ -473,3 +500,4 @@ scripts/             CI 与开发脚本
 - **第三方 IM 渠道（M2）**：渠道插件，基于 Hermes 自带的平台或 mautrix 桥。
 - **Web 端（M3）**：核心接口保持可序列化（操作进、ViewModel 出），为浏览器远程使用留路。
 - **跨机 Bot 通信（M3）**：插件实现，Matrix 联邦走 iroh 或 A2A。
+- **跨枢纽派活与远程桌面（M3 起）**：跨枢纽仍走 Matrix 联邦或 Bot 联系人，不经过设备协议；远程桌面另写 ADR，设备只跑 Agent（ADR-0123）。
