@@ -35,6 +35,7 @@ async fn forward(
             web_user: None,
             client: None,
             scheme: "http",
+            external_url: None,
         },
         LIMIT,
         &Languages::from_header(None),

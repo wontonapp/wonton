@@ -187,6 +187,7 @@ fn install_contexts_print_no_tokens_or_secrets() {
         config_store: "/data/core/configs".into(),
         shares: Default::default(),
         app_url: None,
+        external_url: None,
         oidc: Some(OidcVars {
             issuer: "http://auth".into(),
             client_id: "app.test".into(),

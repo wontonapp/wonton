@@ -57,6 +57,7 @@ pub(super) async fn request(gateway: &Gateway, capability: &str, mut req: Reques
         web_user: None,
         client: client_addr(&req),
         scheme: "http",
+        external_url: None,
     };
     let name = route.provider.to_string();
     let target = proxy::Target {

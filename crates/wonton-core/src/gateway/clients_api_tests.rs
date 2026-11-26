@@ -31,7 +31,7 @@ struct Rig {
 
 /// 假入口主进程：每来一条连接记一次，回 `reply`；`gated` 时先报到达、等放行再回。
 /// 返回监听地址（入口的 reload_addr 就是它）、命中计数和放行/到达开关。
-async fn master(
+pub(crate) async fn master(
     reply: &'static str,
     gated: bool,
     // 从第几次到第几次之间回失败（0 起算，两端都含），给回的那种文本。
@@ -195,7 +195,7 @@ fn register(h: &Harness) -> PluginId {
     id
 }
 
-fn prepare_entry_files(h: &Harness) -> std::path::PathBuf {
+pub(crate) fn prepare_entry_files(h: &Harness) -> std::path::PathBuf {
     let install = h.data_dir.join("entry-test");
     std::fs::create_dir_all(install.join("entry/certs")).unwrap();
     let tls = rcgen::generate_simple_self_signed(vec![

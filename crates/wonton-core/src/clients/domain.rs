@@ -131,6 +131,12 @@ impl Domain {
         Ok(EntrySettings::load(&self.install_dir)?.map(|settings| settings.domain))
     }
 
+    /// 现在生效的后缀：装机定的名字优先，其次设置里填的。只读设置，不查证书和 CAA。
+    pub fn suffix(&self) -> Result<Option<String>> {
+        let store = self.effective()?;
+        Ok(self.fixed_suffix()?.or(store.suffix))
+    }
+
     /// 现在的设置：有设置文件用文件，否则用装机环境的初值。
     fn effective(&self) -> Result<Store> {
         let mut store = match std::fs::read(self.install_dir.join(DOMAIN_FILE)) {

@@ -84,6 +84,11 @@ impl PluginPackage {
         self.services.contains_key(name)
     }
 
+    /// 有服务引用了 `WONTON_EXTERNAL_URL`：入口开关变了要重建它们（ADR-0089 第 5 节）。
+    pub(super) fn references_external_url(&self) -> bool {
+        super::manifest_clients::references_external_url(&self.services)
+    }
+
     /// 只有 compose 文本的插件包：引用了包里的文件时失败。
     pub fn parse(source: &str, langs: &Languages) -> Result<Self, PackageError> {
         Self::with_files(source, PackageFiles::new(), langs)

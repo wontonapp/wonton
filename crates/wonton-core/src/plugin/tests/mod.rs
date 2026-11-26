@@ -40,6 +40,7 @@ mod egress_plugin_docker;
 mod egress_probe;
 mod egress_relay;
 mod egress_switch;
+mod external_url;
 mod friend_namespace;
 mod github;
 mod gpu;

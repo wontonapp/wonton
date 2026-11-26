@@ -123,6 +123,11 @@ pub fn injected_vars(manifest: &Manifest, ctx: &InstallContext) -> Vars {
         set("WONTON_APP_URL", url.clone());
         set("WONTON_APP_HOST", app_host(url));
     }
+    if super::manifest_clients::served(manifest)
+        && let Some(url) = &ctx.external_url
+    {
+        set(crate::clients::external_url::VAR, url.clone());
+    }
     for (name, value) in &ctx.secrets {
         set(&secret_var(name), value.clone());
     }

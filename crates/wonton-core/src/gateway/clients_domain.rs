@@ -57,6 +57,8 @@ pub async fn save_domain(
             return failure(ClientsFailure::Conflict, &message);
         }
     };
+    // 后缀变了：入口快照里的规范对外地址要按新后缀重算（ADR-0089 第 5 节），不等证书换完。
+    gateway.plugins.publish_client_entries();
     let Ok(view) = clients.view().await else {
         return failure(
             ClientsFailure::Other,

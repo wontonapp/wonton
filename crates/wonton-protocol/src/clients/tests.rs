@@ -69,6 +69,7 @@ fn plugin() -> ClientsPlugin {
             paths: vec!["/webhook".into()],
         }),
         blocked: Some(EntryBlock::PublicAccessOff),
+        effect: None,
     }
 }
 

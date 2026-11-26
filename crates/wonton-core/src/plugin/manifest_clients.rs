@@ -68,13 +68,17 @@ pub fn validate_external_url(
     referenced: bool,
     langs: &Languages,
 ) -> Result<(), ManifestError> {
-    let served = manifest.clients.as_ref().is_some_and(|c| c.http.is_some())
-        || manifest.webui.as_ref().is_some_and(|webui| webui.guests);
-    let problems = (referenced && !served)
+    let problems = (referenced && !served(manifest))
         .then(|| l10n::text(langs, "plugin-settings-clients-external-url", &[]))
         .into_iter()
         .collect();
     finish(problems)
+}
+
+/// 清单能开出入口：`clients.http` 或 `webui.guests`。只有它们拿得到 `WONTON_EXTERNAL_URL`。
+pub fn served(manifest: &Manifest) -> bool {
+    manifest.clients.as_ref().is_some_and(|c| c.http.is_some())
+        || manifest.webui.as_ref().is_some_and(|webui| webui.guests)
 }
 
 fn validate_http(

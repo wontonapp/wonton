@@ -33,6 +33,7 @@ pub mod docker_exec;
 mod docker_limits;
 pub mod egress;
 mod entry;
+pub(crate) mod external_url;
 pub mod gallery;
 pub mod github;
 pub mod github_source;

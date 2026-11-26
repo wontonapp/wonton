@@ -171,6 +171,7 @@ async fn forward(gateway: &Gateway, authority: &str, req: Request) -> Response {
         web_user: None,
         client: client_addr(&req),
         scheme: "https",
+        external_url: None,
     };
     let endpoint = crate::plugin::upstreams::Endpoint::Tcp(authority.to_owned());
     let target = proxy::Target {
