@@ -68,6 +68,7 @@ fn empty_chat() -> ChatViewModel {
         chat_layout_default: Default::default(),
         installing_bots: Vec::new(),
         rooms: Vec::new(),
+        shared_contacts: Vec::new(),
         problem: None,
         pending_confirmations: Vec::new(),
         settled_confirmations: Vec::new(),
