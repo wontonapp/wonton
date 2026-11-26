@@ -139,7 +139,7 @@ pub use chat::{
     ChatAccount, ChatContact, ChatFailure, ChatProblem, ChatSync, ChatViewModel,
     DeviceVerification, EncryptionStatus, ImageThumbnail, ImageUpload, MessageSummary,
     OwnBotFailure, OwnBotProblem, OwnPrivateBotView, PendingConfirmation, RecoveryNextStep,
-    RecoveryStatus, RoomMembership, RoomPreview, RoomRow,
+    RecoveryStatus, RoomBot, RoomMembership, RoomPreview, RoomRow,
 };
 pub use chat_layout::{
     BotChatSettings, CHAT_LAYOUT_EVENT, ChatForm, ChatLayout, ChatLayoutChoice, ChatLayoutSettings,
