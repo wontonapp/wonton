@@ -292,7 +292,7 @@ async fn app_scope_and_shared_bots_gate_access_before_contacts() {
 
 #[tokio::test]
 async fn own_bot_and_active_contact_do_not_depend_on_open_apps() {
-    let fixture = Fixture::new().await;
+    let mut fixture = Fixture::new().await;
     let alice = fixture.member("alice", "@alice:test");
     let own = bot("alice-bot");
     let contacted = bot("bob-bot");
