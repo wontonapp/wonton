@@ -59,7 +59,11 @@ pub struct FakeExec {
     pub container: String,
     pub cmd: Vec<String>,
     pub stdin: Vec<u8>,
+    /// 服务端真的把命令跑起来过；创建了没启动的是 `false`。
+    started: bool,
     exit_code: Option<i64>,
+    /// 创建顺序：exec id 是随机串，按它找“最后一条”会挑错。
+    created: u64,
 }
 
 /// 容器里的一个路径。
@@ -139,8 +143,10 @@ struct Resources {
     aliases: BTreeMap<String, Vec<String>>,
     /// 网络名 → 容器名 → 它在网络里的端点（Docker 的 `EndpointSettings` 写法）。
     endpoints: BTreeMap<String, BTreeMap<String, Value>>,
-    /// exec ID → 这次执行，按创建顺序编号。
+    /// exec ID → 这次执行。按创建顺序编号在 `next_exec` 里单独记，不靠 id 排序。
     execs: BTreeMap<String, FakeExec>,
+    /// 下一条 exec 的创建序号：`finish_last_exec` 按它挑“最后创建”，id 是随机串。
+    next_exec: u64,
     /// 没设时命令都以 0 退出。
     exec_handler: Option<ExecHandler>,
     exec_output_handler: Option<ExecOutputHandler>,
@@ -168,6 +174,8 @@ struct Resources {
     hold: Option<Hold>,
     /// 下一个同名容器先创建为 Created，再扣住 HTTP 回答。
     committed_create: Option<(String, Hold)>,
+    /// 下一次 exec 启动回这个错误，以及服务端是否已经把命令跑起来了（结局未知，见 `fail_next_exec_start`）。
+    exec_start_error: Option<(String, bool)>,
     /// 由 stop 或故障注入设置的状态，下次正常 start 可以恢复；set_state 不受影响。
     restartable: BTreeMap<String, Option<Value>>,
     /// `GET /version`、`/info` 报告的架构；没设时 `x86_64`。

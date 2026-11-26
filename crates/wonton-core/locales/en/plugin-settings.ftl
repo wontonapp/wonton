@@ -303,6 +303,10 @@ plugin-settings-models-connect-first = Connect a model provider in Models before
 plugin-settings-models-not-ready = The model gateway { $provider } is not ready: { $error }
 plugin-settings-models-command-rejected = The model gateway { $provider } rejected the credential command ({ $command }, exit code { $code }): { $stderr }
 
+plugin-settings-models-command-outcome-unknown = The result of the model gateway's previous credential command is not known yet
+plugin-settings-models-credential-container-missing = The model gateway { $gateway } has no credential container
+plugin-settings-models-credential-missing = The model gateway consumer { $id } is missing the credential { $name }
+
 # ── Store index (storefront) ───────────────────────────────────────────────
 
 plugin-settings-store-index-fetch-failed = The official index could not be fetched: { $error }

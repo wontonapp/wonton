@@ -197,10 +197,15 @@ fn others(
                 .unwrap()
         }
         (&Method::GET, ["exec", id, "json"]) if docker.execs.contains_key(*id) => {
-            let code = docker.execs[*id].exit_code;
+            let exec = &docker.execs[*id];
+            let running = exec.exit_code.is_none() && exec.started;
             json_reply(
                 StatusCode::OK,
-                json!({"ExitCode": code, "Running": code.is_none()}),
+                json!({
+                    "ExitCode": exec.exit_code,
+                    "Running": running,
+                    "Pid": if running { 4242 } else { 0 },
+                }),
             )
         }
         _ => return None,

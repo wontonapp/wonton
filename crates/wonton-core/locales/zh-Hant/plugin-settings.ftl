@@ -303,6 +303,10 @@ plugin-settings-models-connect-first = 先在「模型設定」接上模型，Bo
 plugin-settings-models-not-ready = 模型閘道 { $provider } 未就緒：{ $error }
 plugin-settings-models-command-rejected = 模型閘道 { $provider } 拒絕了憑證命令（{ $command }，結束代碼 { $code }）：{ $stderr }
 
+plugin-settings-models-command-outcome-unknown = 模型閘道上一次憑證命令的結果還沒確定
+plugin-settings-models-credential-container-missing = 模型閘道 { $gateway } 的憑證容器不存在
+plugin-settings-models-credential-missing = 模型閘道使用方 { $id } 缺少憑證 { $name }
+
 # ── 商店索引（storefront）──────────────────────────────────────────────────
 
 plugin-settings-store-index-fetch-failed = 取不到官方索引：{ $error }
