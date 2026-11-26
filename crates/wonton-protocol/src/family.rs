@@ -268,7 +268,8 @@ impl TryFrom<PrivateBotIdentityFields> for PrivateBotIdentity {
 pub enum PrivateBotRoomProblem {
     /// 主房间记录不是合法的房间 ID。
     Invalid,
-    /// Bot 记着主房间，但它还没加入那个房间：等它进房间再发。
+    /// Bot 记着主房间，但它还没加入那个房间：等它进房间再发。服务端暂时还不产出，
+    /// 客户端先按 `view.rooms` 的成员状态判。
     NotJoined,
     /// Bot 还没有主房间记录：可以给它建一个私聊。
     Missing,
