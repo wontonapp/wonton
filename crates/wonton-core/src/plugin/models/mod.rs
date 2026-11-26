@@ -36,9 +36,10 @@ pub(crate) const COMMAND_TIMEOUT: Duration = Duration::from_secs(30);
 
 pub(crate) use errors::{gateway_absent, gateway_not_running};
 pub(super) use errors::{reconcile_failed, unavailable};
+pub(super) use keys::KeyFile;
 pub use keys::ModelKeyStore;
 pub(super) use keys::uses_models;
-use keys::{KeyFile, Keys, credential_names};
+use keys::{Keys, credential_names};
 use route::base_url;
 pub use route::{ModelsRoute, ProviderState};
 use vars::empty_model_vars;

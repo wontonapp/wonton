@@ -427,3 +427,13 @@ impl PluginManager {
         Ok((key, catalog))
     }
 }
+
+#[cfg(test)]
+mod tests {
+    /// 兄弟模块经 `super::models::KeyFile` 取凭据文件：再导出保持 `pub(super)`，别退回私有的 `use`。
+    #[test]
+    fn models_key_file_reachable_from_sibling() {
+        fn takes(_: Option<crate::plugin::models::KeyFile>) {}
+        takes(None);
+    }
+}
