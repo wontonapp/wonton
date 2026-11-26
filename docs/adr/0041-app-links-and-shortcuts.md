@@ -16,7 +16,7 @@ App 里能直接打开的地方是 `AppLink`，写成 `wonton://` 链接。编�
 
 | 链接 | 打开 |
 | --- | --- |
-| `wonton://tab/home`、`/tab/agent`、`/tab/apps` | 主界面三页，落地到那一页、弹空页面栈（[ADR-0115](0115-home-and-agent-debut.md)） |
+| `wonton://tab/home`、`/tab/agent`、`/tab/apps` | 主界面三页，落地到那一页、弹空页面栈（[ADR-0124](0124-home-and-agent-debut.md)） |
 | `wonton://rooms` | 所有会话列表页（`TabRef::Rooms`），侧边栏那一行的同一个 |
 | `wonton://tab/plugin/<插件>`、`/tab/plugin/<插件>/<页面>` | 插件页；没钉在底栏上的也整页盖在主界面上打开 |
 | `wonton://new-chat` | 发起私聊 |

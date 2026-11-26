@@ -1,4 +1,4 @@
-# ADR-0115 首页、Agent 的云朵形象与第一次出场
+# ADR-0124 首页、Agent 的云朵形象与第一次出场
 
 - 状态：已接受（2026-11-21）。首页、底栏、出场都是主人 2026-11-21 看着一段界面参考定的；云朵形象、颜色值加素材库、垫圆底由主人在同日定
 - 补充：[ADR-0095](0095-no-tab-bar.md)（根页面、底栏）、[ADR-0026](0026-design-system.md)（Agent 身份色、App 图标）、[ADR-0044](0044-bot-profile-and-status-avatars.md)（头像由核心按素材合成，状态从 4 个加到 6 个）、[ADR-0016](0016-mcp-bus-and-confirmations.md)（首页的待确认卡片）
