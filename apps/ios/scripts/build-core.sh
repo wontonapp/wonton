@@ -17,6 +17,9 @@ case "$profile" in
   *) echo "未知的构建类型：${profile}（只支持 debug 或 release）" >&2; exit 2 ;;
 esac
 
+# 安装包体积（#887）：Swift 侧用 -Osize，Rust 侧对应 opt-level=s。只影响 iOS 的 release，不动别的平台。
+if [ "$cargo_profile" = release ]; then export CARGO_PROFILE_RELEASE_OPT_LEVEL=s; fi
+
 # 假数据入口（cargo feature ui-fake）：Debug 默认带上（原生壳只在 Debug 里调它），Release 不带，发布包
 # 编不进去。WONTON_UI_FAKE=1/0 强制开/关，夜跑的 UI 测试显式传 1。
 ui_fake_args=()

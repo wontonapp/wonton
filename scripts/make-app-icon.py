@@ -184,10 +184,14 @@ def ios_app_icon():
     for name, appearances, draw in variants:
         extra = {"appearances": appearances} if appearances else {}
         full = draw(body)
+        by_pixels = {}
         for points, scale in IOS_SIZES:
             side = round(float(points) * scale)
-            filename = f"{name}-{points}@{scale}x.png"
-            full.resize((side, side), Image.LANCZOS).save(directory / filename, optimize=True)
+            # 同像素的尺寸（40@3x 和 60@2x 都是 120px）只存一份文件，两条都指过去。
+            filename = by_pixels.get(side) or f"{name}-{points}@{scale}x.png"
+            if side not in by_pixels:
+                full.resize((side, side), Image.LANCZOS).save(directory / filename, optimize=True)
+                by_pixels[side] = filename
             images.append(
                 {
                     **extra,
@@ -198,9 +202,11 @@ def ios_app_icon():
                     "size": f"{points}x{points}",
                 }
             )
-        filename = f"{name}-1024.png"
-        full.save(directory / filename, optimize=True)
-        images.append({**extra, "filename": filename, "idiom": "universal", "platform": "ios", "size": "1024x1024"})
+        # 1024 只给商店校验用，默认外观一份就够；dark/tinted 的 1024 可选，不放省约 1 MB。
+        if appearances is None:
+            filename = f"{name}-1024.png"
+            full.save(directory / filename, optimize=True)
+            images.append({**extra, "filename": filename, "idiom": "universal", "platform": "ios", "size": "1024x1024"})
     write_json(directory / "Contents.json", {"images": images, **XCASSETS_INFO})
 
 

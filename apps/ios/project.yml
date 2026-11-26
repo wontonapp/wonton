@@ -23,6 +23,16 @@ settings:
     # `group.<它>`（ADR-0097）。真机用自己的团队签名时只改这一个，这些标识跟着变（见 README）；直接改
     # PRODUCT_BUNDLE_IDENTIFIER 会把扩展的也改成同一个，签不过。
     WONTON_BUNDLE_ID: app.wonton.ios
+  configs:
+    # Release 产物体积：#887。调试信息留在 dSYM 里，装进 App 的二进制把符号全剥掉（atos 用 dSYM 解地址）。
+    Release:
+      ENABLE_TESTABILITY: NO
+      ENABLE_PREVIEWS: NO
+      SWIFT_OPTIMIZATION_LEVEL: "-Osize"
+      DEAD_CODE_STRIPPING: YES
+      DEPLOYMENT_POSTPROCESSING: YES
+      STRIP_INSTALLED_PRODUCT: YES
+      STRIP_STYLE: all
 packages:
   WontonClient:
     path: WontonClient
