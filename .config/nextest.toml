@@ -25,6 +25,11 @@ retries = 0
 # Docker 测试起容器、拉镜像，一条几百秒也算正常；10 分钟还没完就杀掉。
 slow-timeout = { period = "120s", terminate-after = 5 }
 
+# 已知抖动：等 Bot 第二条消息会超过 60s 超时（PR #1081 的 CI 首次跑实测，重跑就过）；根因查清再撤。
+[[profile.docker.overrides]]
+filter = 'test(background_messages_are_collected_and_cleared_on_foreground)'
+retries = 2
+
 [test-groups]
 compose = { max-threads = 2 }
 

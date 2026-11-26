@@ -17,7 +17,8 @@ PR 合并前等的是快检查：格式、Clippy、detekt、SwiftLint、行数�
 
 - `rust-docker.yml`：依赖 Docker 的集成测试。改了它路径范围（核心的聊天、存储、推送等代码）的 PR 由 `gate.yml` 的 `docker` 作业
   调用、算合并门槛，`gate 汇总` 等它的结果，草稿 PR 不跑；`push` 到 `main` 时仍按同一份路径触发，每次合并单独跑一遍、
-  不互相取消，红了能按那次提交标题里的 `(#N)` 找到弄红的 PR。
+  不互相取消，红了能按那次提交标题里的 `(#N)` 找到弄红的 PR。`chat::push_method::background_messages_are_collected_and_cleared_on_foreground`
+  已知会在同步慢时 60 秒超时（PR #1081 首次跑实测），在 `.config/nextest.toml` 的 docker 档案里单独配了重试；根因查清再撤。
 - `ios.yml` 的模拟器构建（WontonTests）在只改了 wonton-client 依赖的其余 crate、依赖版本或工具链时：这些不改导出给
   Swift 的接口，很少弄坏 iOS。改到 Swift 这边或接口（`apps/ios`、设计生成、`wonton-protocol`、`wonton-client`）的
   PR 上照常跑、算必需检查：iOS 在 PR 上红的多半是这几处，挪到合后会让 main 一天红好几次。范围和理由写在 `ios.yml` 开头。
@@ -30,14 +31,15 @@ PR 合并前等的是快检查：格式、Clippy、detekt、SwiftLint、行数�
   组件发布仍须先取得对应范围的许可。
 
 合后的测试红了，谁合的谁 30 分钟内修，修不好 revert（见 AGENTS.md“Git 与协作”）。快慢的分界按“能不能十分钟内
-出结果”定：新加的测试要起容器、走界面流程（UI 测试）或要构建镜像的，放进合后的工作流，不放进必需检查。
+出结果”定：新加的测试要起容器、走界面流程（UI 测试）或要构建镜像的，放进合后的工作流，不放进必需检查；
+Docker 集成测试例外：新加的 Docker 测试进 `rust-docker` 套件，改到相关路径的 PR 合并前跑，UI 测试和镜像构建仍放合后。
 
 ## 必需检查：gate 汇总
 
 - 规则集只配一个检查：`gate.yml` 末尾的 `gate 汇总`。`gate` 里一个 `changes` 作业按改动范围给出 `rust`、`ios`、
   `android`、`docker` 四个开关，再用 `workflow_call` 调用 `lint.yml` 和改到的那几个重工作流（`docker` 调 `rust-docker.yml`）；汇总 `needs` 全部、`if: always()`，
   任一依赖 failure 或 cancelled 就红，success 和 skipped 算过。汇总只干这一件事（一小段 shell，不引第三方 action），
-  草稿 PR 上也起来报一个通过。
+  草稿 PR 上也起来报结果，重作业全被跳过时判红。
 - 一次推送只起 `changes`、`lint`、汇总三个轻作业，加改到的重作业。之前四个工作流各有自己的改动范围和汇总，一次推送
   八个轻作业，各占一台 runner。
 - 被调用的作业检查名是“调用方 / 作业名”（如 `rust / 格式`）。Rust 测试分片被跳过时 matrix 不展开，检查名会留成带
