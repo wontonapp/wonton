@@ -85,7 +85,7 @@ pub(crate) fn assemble(
                 user_id: row.user_id.clone().unwrap_or_default(),
                 name,
                 bot: Some(row.bot.clone()),
-                access: Some(row.access),
+                access: row.access,
             });
         }
     }
@@ -98,7 +98,7 @@ pub(crate) fn assemble(
             user_id: user_id.clone(),
             name: name_of(user_id, &l10n!(CATALOG, language(), "chat-my-bot")),
             bot: Some(bot.clone()),
-            access: Some(BotAccess::Own),
+            access: BotAccess::Own,
         });
     }
     for bot in bots {
@@ -116,7 +116,7 @@ pub(crate) fn assemble(
             user_id: bot.user_id.clone(),
             name: bot.name.clone(),
             bot: Some(bot.bot.clone()),
-            access: Some(bot.availability.into()),
+            access: bot.availability.into(),
         });
     }
     for room in rooms {
@@ -143,15 +143,15 @@ pub(crate) fn assemble(
             user_id,
             name: room.name.clone(),
             bot: None,
-            access: None,
+            access: BotAccess::Unknown,
         });
     }
     contacts.sort_by_key(|contact| match contact.access {
-        Some(BotAccess::Own) => 0,
-        Some(BotAccess::Shared) => 1,
-        Some(BotAccess::Contact) => 2,
-        Some(BotAccess::Unknown) | None => 3,
-        Some(BotAccess::Unusable { .. }) => 4,
+        BotAccess::Own => 0,
+        BotAccess::Shared => 1,
+        BotAccess::Contact => 2,
+        BotAccess::Unknown => 3,
+        BotAccess::Unusable { .. } => 4,
     });
     contacts
 }

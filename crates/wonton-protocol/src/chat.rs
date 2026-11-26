@@ -264,9 +264,9 @@ pub struct ChatContact {
     /// 为空时壳走 `StartDirectChat` 先建私聊。
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub side_chat_room_id: Option<String>,
-    /// 对方是 Bot 时当前请求人的 [`BotAccess`]；普通人联系人为空。
-    #[serde(default, skip_serializing_if = "Option::is_none")]
-    pub access: Option<crate::BotAccess>,
+    /// 对方是 Bot 时当前请求人的 [`BotAccess`]；普通人联系人默认 [`BotAccess::Unknown`]。
+    #[serde(default)]
+    pub access: crate::BotAccess,
 }
 
 /// 本设备的 Matrix 账号。
