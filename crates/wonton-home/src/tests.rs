@@ -589,10 +589,15 @@ async fn system_identity_is_limited_to_operator_allowlist() {
     let https = json!({"proxy_type":"https","proxy_name":"system.push","custom_domains":["push.homes.test"]});
     let admitted = fixture.hook("NewProxy", "system", token, https).await;
     assert_eq!(admitted["reject"], false);
-    assert_eq!(admitted["content"]["bandwidth_limit"], "5MB");
+    assert_eq!(admitted["content"]["bandwidth_limit"], "20MB");
     let external = json!({"proxy_type":"http","proxy_name":"system.omarchy","custom_domains":["omarchy.online"]});
     assert_eq!(
         fixture.hook("NewProxy", "system", token, external).await["reject"],
+        false
+    );
+    let multi = json!({"proxy_type":"https","proxy_name":"system.multi","custom_domains":["push.homes.test","omarchy.online"]});
+    assert_eq!(
+        fixture.hook("NewProxy", "system", token, multi).await["reject"],
         false
     );
     let unknown =
@@ -695,5 +700,97 @@ async fn wildcard_proxy_still_uses_one_of_five_slots() {
             )
             .await["reject"],
         true
+    );
+}
+
+struct EnvRestore(Vec<&'static str>);
+
+impl EnvRestore {
+    fn set(key: &'static str, value: &str) -> Self {
+        // SAFETY: only tests in this module read env; from_env is not called elsewhere.
+        unsafe { std::env::set_var(key, value) };
+        Self(vec![key])
+    }
+
+    fn add(mut self, key: &'static str, value: &str) -> Self {
+        unsafe { std::env::set_var(key, value) };
+        self.0.push(key);
+        self
+    }
+}
+
+impl Drop for EnvRestore {
+    fn drop(&mut self) {
+        for key in &self.0 {
+            unsafe { std::env::remove_var(key) };
+        }
+    }
+}
+
+#[test]
+fn config_from_env_parses_operator_system_identity() {
+    let dir = tempfile::tempdir().unwrap();
+    let token = dir.path().join("system-token");
+    std::fs::write(&token, "sys\n").unwrap();
+    let pdns_key = dir.path().join("pdns-key");
+    std::fs::write(&pdns_key, "pdns\n").unwrap();
+    let metrics = dir.path().join("metrics-password");
+    std::fs::write(&metrics, "metrics\n").unwrap();
+
+    let _guard = EnvRestore::set("WONTON_HOME_ZONE", "homes.test")
+        .add(
+            "WONTON_HOME_STATE",
+            dir.path().join("state.json").to_str().unwrap(),
+        )
+        .add("WONTON_HOME_RELAY_IP", "203.0.113.10")
+        .add("WONTON_HOME_RELAY_HOST", "relay.homes.test")
+        .add("WONTON_HOME_RELAY_PORT", "443")
+        .add("WONTON_HOME_RELAY_SERVER_NAME", "relay.homes.test")
+        .add("WONTON_HOME_ACME_URL", "https://names.homes.test/acme")
+        .add("WONTON_HOME_ACME_INTERNAL_URL", "http://127.0.0.1:8054")
+        .add("WONTON_HOME_PDNS_URL", "http://127.0.0.1:8084")
+        .add("WONTON_HOME_PDNS_KEY_FILE", pdns_key.to_str().unwrap())
+        .add("WONTON_HOME_CAA_ISSUER", "letsencrypt.org")
+        .add(
+            "WONTON_HOME_FRPS_METRICS_URL",
+            "http://127.0.0.1:7500/metrics",
+        )
+        .add("WONTON_HOME_FRPS_METRICS_USER", "wonton")
+        .add(
+            "WONTON_HOME_FRPS_METRICS_PASSWORD_FILE",
+            metrics.to_str().unwrap(),
+        )
+        .add("WONTON_HOME_SYSTEM_TOKEN_FILE", token.to_str().unwrap())
+        .add(
+            "WONTON_HOME_SYSTEM_DOMAINS",
+            "push.homes.test,omarchy.online",
+        );
+    let config = crate::config::Config::from_env().unwrap();
+    let system = config.system.expect("system identity parsed");
+    assert_eq!(system.domains, ["push.homes.test", "omarchy.online"]);
+    assert!(crate::store::matches("sys", &system.token_hash));
+}
+
+#[test]
+fn system_frpc_template_names_are_bare_valid_labels() {
+    let text = include_str!("../../../deploy/prod/entry-cloud/templates/system-frpc.toml.tmpl");
+    let names: Vec<&str> = text
+        .lines()
+        .filter_map(|line| line.trim().strip_prefix("name = \""))
+        .map(|name| name.trim_end_matches('"'))
+        .collect();
+    assert_eq!(names.len(), 9, "{names:?}");
+    for name in names {
+        assert!(crate::config::valid_label(name), "{name}");
+    }
+}
+
+#[test]
+fn production_compose_carries_acme_url_caa_and_metrics_password_file() {
+    let text = include_str!("../../../deploy/prod/entry-cloud/compose.yaml");
+    assert!(text.contains("WONTON_HOME_CAA_ISSUER: letsencrypt.org"));
+    assert!(text.contains("WONTON_HOME_ACME_URL: https://${WONTON_NAMES_HOST}/acme"));
+    assert!(
+        text.contains("WONTON_HOME_FRPS_METRICS_PASSWORD_FILE: /secrets/frps-metrics-password")
     );
 }

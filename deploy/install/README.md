@@ -58,7 +58,9 @@ curl -fsSL https://raw.githubusercontent.com/wontonapp/wonton-install/main/insta
 开发只用[本地 entry-cloud](../dev/entry-cloud/) 的 Pebble、DNS 和 `.test` 名字，并显式信任测试 CA。
 
 运营者不想把服务域名写进公开安装器时，可以在自己的服务域名上托管一层很薄的 bootstrap：
-它只设置 `WONTON_CLIENT_SERVICE` 和 `WONTON_CLIENT_INVITE_FILE`，再执行上面的公开安装器。
+它只设置 `WONTON_CLIENT_SERVICE`、`WONTON_CLIENT_INVITE_FILE`、`WONTON_ACME_DIRECTORY`、
+`WONTON_ACME_ACCEPT_TERMS`、`WONTON_FRP_CA_FILE`（后两个指向 `/relay-ca.pem` 下载的 CA），
+再执行上面的公开安装器。
 参考 `deploy/prod/entry-cloud/templates/bootstrap/install.sh` 与 `/i/<邀请码>` 形式；
 公开安装脚本仍然不认识任何具体域名。
 

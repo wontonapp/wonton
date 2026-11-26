@@ -7,8 +7,7 @@ server {
 }
 
 server {
-    listen 127.0.0.1:4443 ssl proxy_protocol;
-    http2 on;
+    listen 127.0.0.1:4443 ssl proxy_protocol http2;
     server_name @NAMES_HOST@;
 
     ssl_certificate /etc/letsencrypt/live/@NAMES_HOST@/fullchain.pem;
@@ -25,6 +24,13 @@ server {
         default_type text/x-shellscript;
     }
 
+    # Public CA material for the home entry's frpc (not a secret).
+    location = /relay-ca.pem {
+        alias @WONTON_ENTRY_ROOT@/frps/ca.crt;
+        add_header Cache-Control "no-store";
+        default_type application/x-pem-file;
+    }
+
     # One URL per invite: /i/<code> returns a tiny script that runs the
     # upstream installer with both service and invite already wired.
     location ~ "^/i/(?<code>[A-Za-z0-9_-]{8,128})$" {
@@ -33,8 +39,12 @@ server {
         return 200 '#!/bin/sh
 set -eu
 printf "%s" "$1" > /run/wonton-entry-invite
+curl -fsSL https://@NAMES_HOST@/relay-ca.pem -o /run/wonton-entry-relay-ca.pem
 export WONTON_CLIENT_SERVICE=https://@NAMES_HOST@
 export WONTON_CLIENT_INVITE_FILE=/run/wonton-entry-invite
+export WONTON_ACME_DIRECTORY=https://acme-v02.api.letsencrypt.org/directory
+export WONTON_ACME_ACCEPT_TERMS=true
+export WONTON_FRP_CA_FILE=/run/wonton-entry-relay-ca.pem
 curl -fsSL https://raw.githubusercontent.com/wontonapp/wonton-install/main/install.sh | sh
 ';
     }

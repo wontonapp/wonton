@@ -15,7 +15,7 @@ transport.tls.serverName = "@RELAY_HOST@"
 transport.tls.trustedCaFile = "/etc/frps-tls/ca.crt"
 
 [[proxies]]
-name = "system.push-https"
+name = "push-https"
 type = "https"
 customDomains = ["@PUSH_HOST@"]
 localIP = "127.0.0.1"
@@ -23,7 +23,7 @@ localPort = 4443
 transport.proxyProtocolVersion = "v2"
 
 [[proxies]]
-name = "system.push-http"
+name = "push-http"
 type = "http"
 customDomains = ["@PUSH_HOST@"]
 localIP = "127.0.0.1"
@@ -31,7 +31,7 @@ localPort = 4080
 transport.proxyProtocolVersion = "v2"
 
 [[proxies]]
-name = "system.relay-https"
+name = "relay-https"
 type = "https"
 customDomains = ["@RELAY_HOST@"]
 localIP = "127.0.0.1"
@@ -39,7 +39,7 @@ localPort = 4443
 transport.proxyProtocolVersion = "v2"
 
 [[proxies]]
-name = "system.omarchy-https"
+name = "omarchy-https"
 type = "https"
 customDomains = ["@OMARCHY_HOST@"]
 localIP = "127.0.0.1"
@@ -47,7 +47,7 @@ localPort = 4443
 transport.proxyProtocolVersion = "v2"
 
 [[proxies]]
-name = "system.omarchy-http"
+name = "omarchy-http"
 type = "http"
 customDomains = ["@OMARCHY_HOST@"]
 localIP = "127.0.0.1"
@@ -55,7 +55,7 @@ localPort = 4080
 transport.proxyProtocolVersion = "v2"
 
 [[proxies]]
-name = "system.names-https"
+name = "names-https"
 type = "https"
 customDomains = ["@NAMES_HOST@"]
 localIP = "127.0.0.1"
@@ -63,7 +63,7 @@ localPort = 4443
 transport.proxyProtocolVersion = "v2"
 
 [[proxies]]
-name = "system.names-http"
+name = "names-http"
 type = "http"
 customDomains = ["@NAMES_HOST@"]
 localIP = "127.0.0.1"
@@ -71,7 +71,7 @@ localPort = 4080
 transport.proxyProtocolVersion = "v2"
 
 [[proxies]]
-name = "system.apex-https"
+name = "apex-https"
 type = "https"
 customDomains = ["@DOMAIN@", "www.@DOMAIN@"]
 localIP = "127.0.0.1"
@@ -79,7 +79,7 @@ localPort = 4443
 transport.proxyProtocolVersion = "v2"
 
 [[proxies]]
-name = "system.apex-http"
+name = "apex-http"
 type = "http"
 customDomains = ["@DOMAIN@", "www.@DOMAIN@"]
 localIP = "127.0.0.1"

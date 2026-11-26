@@ -48,7 +48,8 @@ ClientHello 选出代理，然后把**原始字节**连同 PROXY v2 送到 frpc�
    `FRPS_IMAGE` / `FRPC_IMAGE` / `PDNS_IMAGE` / `DNSDIST_IMAGE` / `ACME_DNS_IMAGE`
    全部改成按 digest 固定。
 
-1. Ubuntu 24.04+，root，Docker Engine + compose 插件，`nginx`、`certbot`、
+1. Ubuntu 24.04+，root，Docker Engine + compose 插件，`nginx`（**≥1.24**；模板用 1.24 也认的
+   `listen … http2` 写法，1.25+ 会提示 deprecation 但不影响）、`certbot`、
    `python3-certbot-nginx`、`openssl`、`curl`、`dnsutils` 已装。
 2. 域名注册商（阿里云）把 `@DOMAIN@` 的 NS 改成 `ns-auth.@DOMAIN@`、
    `ns2-auth.@DOMAIN@`，并在注册商登记这两个名字的 glue A = `@PUBLIC_IP@`。
@@ -114,7 +115,10 @@ dig +short @127.0.0.1 "auth.$WONTON_DOMAIN" NS
 证书全部走 HTTP-01（`webroot`），不依赖 DNS 切换：
 
 ```sh
-for h in "$WONTON_NAMES_HOST" "$WONTON_PUSH_HOST" "$WONTON_RELAY_HOST" "$WONTON_OMARCHY_HOST" "$WONTON_DOMAIN" "www.$WONTON_DOMAIN"; do
+certbot certonly --webroot -w /var/www/letsencrypt \
+  -d "$WONTON_DOMAIN" -d "www.$WONTON_DOMAIN" \
+  --email "$WONTON_ACME_EMAIL" --agree-tos --non-interactive
+for h in "$WONTON_NAMES_HOST" "$WONTON_PUSH_HOST" "$WONTON_RELAY_HOST" "$WONTON_OMARCHY_HOST"; do
   certbot certonly --webroot -w /var/www/letsencrypt -d "$h" --email "$WONTON_ACME_EMAIL" --agree-tos --non-interactive
 done
 systemctl reload nginx
@@ -158,6 +162,10 @@ install -m 644 "$ROOT"/bootstrap/install.sh /var/www/  # 可选：给不带邀�
 
 对方执行 `curl -fsSL "https://names.@DOMAIN@/i/<code>" | sudo sh`。脚本把服务地址
 和邀请写进安装器，用户不需要知道域名，也不需要第二次粘贴。
+
+`/i` 脚本（和静态 `/install.sh`）会先从 `/relay-ca.pem` 下载 frps 的 CA，并导出安装器
+强制要求的 `WONTON_ACME_DIRECTORY`、`WONTON_ACME_ACCEPT_TERMS`、`WONTON_FRP_CA_FILE`；
+缺一个安装器就会在装任何东西前停下。`/relay-ca.pem` 就是 `$ROOT/frps/ca.crt`，是公开材料。
 
 ### 7. 备份计时器
 

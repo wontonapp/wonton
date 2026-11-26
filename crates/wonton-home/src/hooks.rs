@@ -155,7 +155,7 @@ pub async fn handle(State(app): State<Arc<App>>, Json(mut request): Json<Hook>) 
         }
         runtime.proxies.insert(name.to_owned(), label.to_owned());
         runtime.proxy_reservations.insert(name.to_owned(), now());
-        request.content["bandwidth_limit"] = json!("5MB");
+        request.content["bandwidth_limit"] = json!(if is_system { "20MB" } else { "5MB" });
         request.content["bandwidth_limit_mode"] = json!("server");
         return Json(json!({"reject":false,"unchange":false,"content":request.content}));
     }

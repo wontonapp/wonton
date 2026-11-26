@@ -57,13 +57,14 @@ services:
       WONTON_HOME_RELAY_HOST: ${WONTON_RELAY_HOST:?}
       WONTON_HOME_RELAY_PORT: "443"
       WONTON_HOME_RELAY_SERVER_NAME: ${WONTON_RELAY_HOST:?}
-      WONTON_HOME_ACME_URL: https://acme-v02.api.letsencrypt.org/directory
+      WONTON_HOME_ACME_URL: https://${WONTON_NAMES_HOST}/acme
       WONTON_HOME_ACME_INTERNAL_URL: http://${WONTON_ACME_DNS_API:-127.0.0.1:8054}
       WONTON_HOME_PDNS_URL: http://${WONTON_PDNS_API:-127.0.0.1:8084}
       WONTON_HOME_PDNS_KEY_FILE: /secrets/pdns-api-key
-      WONTON_HOME_CAA_ISSUER: letsencrypt
+      WONTON_HOME_CAA_ISSUER: letsencrypt.org
       WONTON_HOME_FRPS_METRICS_URL: http://${WONTON_FRPS_METRICS:-127.0.0.1:7500}/metrics
       WONTON_HOME_FRPS_METRICS_USER: wonton
+      WONTON_HOME_FRPS_METRICS_PASSWORD_FILE: /secrets/frps-metrics-password
       WONTON_HOME_SYSTEM_TOKEN_FILE: /secrets/system-frpc-token
       WONTON_HOME_SYSTEM_DOMAINS: ${WONTON_PUSH_HOST:?},${WONTON_RELAY_HOST:?},${WONTON_NAMES_HOST:?},${WONTON_OMARCHY_HOST:?},${WONTON_DOMAIN:?},www.${WONTON_DOMAIN:?}
     volumes:
@@ -82,6 +83,7 @@ services:
 
   pdns:
     <<: *hardening
+    user: "0:0"
     image: ${PDNS_IMAGE:?pin PDNS_IMAGE}
     network_mode: host
     cap_add:
@@ -105,6 +107,7 @@ services:
 
   dnsdist:
     <<: *hardening
+    user: "0:0"
     image: ${DNSDIST_IMAGE:?pin DNSDIST_IMAGE}
     network_mode: host
     cap_add:

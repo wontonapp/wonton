@@ -25,11 +25,12 @@ probe "relay health" "https://$RELAY/healthz" 200
 probe "names health" "https://$NAMES/health" 200
 
 for host in "$DOMAIN" "$PUSH" "$RELAY" "$NAMES" "$OMARCHY"; do
-    if openssl s_client -connect "$PUBLIC_IP:443" -servername "$host" </dev/null 2>/dev/null |
-        openssl x509 -noout -checkend 86400 -checkhost "$host" >/dev/null 2>&1; then
-        printf '%-46s tls ok\n' "$host SNI"
+    if openssl s_client -connect "$PUBLIC_IP:443" -servername "$host" \
+        -CAfile /etc/ssl/certs/ca-certificates.crt -verify_hostname "$host" </dev/null 2>&1 |
+        grep -q 'Verification: OK'; then
+        printf '%-46s tls chain ok\n' "$host SNI"
     else
-        printf '%-46s tls FAIL\n' "$host SNI"
+        printf '%-46s tls chain FAIL\n' "$host SNI"
         fail=1
     fi
 done

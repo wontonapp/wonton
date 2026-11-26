@@ -61,6 +61,8 @@ def run(*args: str) -> None:
 
 def ensure_ca(root: Path) -> tuple[Path, Path]:
     ca_key, ca_crt = root / "secrets/control-ca.key", root / "frps/ca.crt"
+    if ca_key.exists() != ca_crt.exists():
+        sys.exit(f"control CA incomplete: remove both {ca_key} and {ca_crt}, then rerun")
     if not ca_key.exists():
         run("openssl", "req", "-x509", "-newkey", "ec", "-pkeyopt", "ec_paramgen_curve:P-256",
             "-nodes", "-keyout", str(ca_key), "-out", str(ca_crt), "-days", "3650",

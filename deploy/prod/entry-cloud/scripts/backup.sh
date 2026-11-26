@@ -9,7 +9,8 @@ mkdir -p "$DEST/hourly" "$DEST/daily"
 chmod 700 "$DEST"
 
 tar -C / -czf "$DEST/hourly/$STAMP.tgz" \
-    etc/nginx etc/letsencrypt "$ROOT/state" "$ROOT/pdns" "$ROOT/acme-dns-data" "$ROOT/secrets" \
+    etc/nginx etc/letsencrypt var/www/omarchy \
+    "$ROOT/state" "$ROOT/pdns" "$ROOT/acme-dns-data" "$ROOT/secrets" \
     2>/dev/null || true
 chmod 600 "$DEST/hourly/$STAMP.tgz"
 

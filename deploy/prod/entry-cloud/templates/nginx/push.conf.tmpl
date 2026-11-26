@@ -7,8 +7,7 @@ server {
 }
 
 server {
-    listen 127.0.0.1:4443 ssl proxy_protocol;
-    http2 on;
+    listen 127.0.0.1:4443 ssl proxy_protocol http2;
     server_name @PUSH_HOST@;
 
     ssl_certificate /etc/letsencrypt/live/@PUSH_HOST@/fullchain.pem;

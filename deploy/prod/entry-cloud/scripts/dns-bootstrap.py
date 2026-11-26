@@ -2,7 +2,8 @@
 """Create the production zone and its fixed records in PowerDNS.
 
 Idempotent: the zone is created only when absent, records are REPLACEd. Run it
-after compose starts pdns and before the registrar NS switch.
+after compose starts pdns and before the registrar NS switch. Hosts that live
+outside DOMAIN (for example omarchy.online) are skipped, not forced into the zone.
 """
 import json
 import os
@@ -21,16 +22,25 @@ NAMES = os.environ["WONTON_NAMES_HOST"]
 OMARCHY = os.environ["WONTON_OMARCHY_HOST"]
 
 
-def call(method: str, path: str, body: dict | None = None) -> tuple[int, dict]:
+def call(method: str, path: str, body: dict | None = None) -> tuple[int, object]:
     data = None if body is None else json.dumps(body).encode()
     request = urllib.request.Request(PDNS + path, data=data, method=method)
     request.add_header("X-API-Key", open(KEY_FILE).read().strip())
     request.add_header("Content-Type", "application/json")
+    request.add_header("Accept", "application/json")
     try:
         with urllib.request.urlopen(request, timeout=10) as response:
-            return response.status, json.loads(response.read() or b"{}")
+            raw = response.read()
+            status = response.status
     except urllib.error.HTTPError as error:
-        return error.code, json.loads(error.read() or b"{}")
+        raw = error.read()
+        status = error.code
+    except (urllib.error.URLError, OSError) as error:
+        return 0, str(error)
+    text = raw.decode("utf-8", "replace").strip()
+    if text.startswith(("{", "[")):
+        return status, json.loads(text)
+    return status, text
 
 
 def wait() -> None:
@@ -58,7 +68,7 @@ def rr(name: str, kind: str, ttl: int, contents: list[str]) -> dict:
 def main() -> None:
     wait()
     zone_url = f"/api/v1/servers/localhost/zones/{DOMAIN}."
-    status, _ = call("GET", zone_url)
+    status, body = call("GET", zone_url)
     if status == 404:
         status, body = call("POST", "/api/v1/servers/localhost/zones", {
             "name": f"{DOMAIN}.",
@@ -67,8 +77,12 @@ def main() -> None:
         })
         if status not in (200, 201):
             sys.exit(f"create zone failed: {status} {body}")
+    elif status != 200:
+        sys.exit(f"read zone failed: {status} {body}")
 
+    soa = f"ns-auth.{DOMAIN}. hostmaster.{DOMAIN}. {int(time.time())} 10800 3600 604800 3600"
     rrsets = [
+        rr(f"{DOMAIN}.", "SOA", 3600, [soa]),
         rr(f"{DOMAIN}.", "NS", 3600, [f"ns-auth.{DOMAIN}.", f"ns2-auth.{DOMAIN}."]),
         rr(f"ns-auth.{DOMAIN}.", "A", 60, [PUBLIC_IP]),
         rr(f"ns2-auth.{DOMAIN}.", "A", 60, [PUBLIC_IP]),
@@ -76,16 +90,18 @@ def main() -> None:
         rr(f"*.{DOMAIN}.", "A", 60, [PUBLIC_IP]),
         rr(f"www.{DOMAIN}.", "A", 60, [PUBLIC_IP]),
         rr(f"oma.{DOMAIN}.", "A", 60, [PUBLIC_IP]),
-        rr(f"{PUSH}.", "A", 60, [PUBLIC_IP]),
-        rr(f"{RELAY}.", "A", 60, [PUBLIC_IP]),
-        rr(f"{NAMES}.", "A", 60, [PUBLIC_IP]),
-        rr(f"{OMARCHY}.", "A", 60, [PUBLIC_IP]),
         rr(f"auth.{DOMAIN}.", "NS", 60, [f"ns-auth.{DOMAIN}."]),
         rr(f"{DOMAIN}.", "CAA", 60, [
             '0 issue "letsencrypt.org"',
             '0 issuewild "letsencrypt.org"',
         ]),
     ]
+    for label, host in (("push", PUSH), ("relay", RELAY), ("names", NAMES), ("omarchy", OMARCHY)):
+        if host == DOMAIN or host.endswith("." + DOMAIN):
+            rrsets.append(rr(f"{host}.", "A", 60, [PUBLIC_IP]))
+        else:
+            print(f"skip {label}: {host} is outside {DOMAIN}")
+
     status, body = call("PATCH", zone_url, {"rrsets": rrsets})
     if status != 204:
         sys.exit(f"seed records failed: {status} {body}")
