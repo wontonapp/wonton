@@ -330,5 +330,5 @@ fn storage_failure(langs: &Languages, error: PasswordError) -> Response {
 }
 
 #[cfg(test)]
-#[path = "clients_passwords_tests.rs"]
+#[path = "clients_passwords_tests/mod.rs"]
 mod clients_passwords_tests;
