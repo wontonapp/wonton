@@ -14,7 +14,7 @@ use hyper::{HeaderMap, StatusCode};
 use wonton_protocol::{BotRef, SharedBot, SharedBotsState, SharedBotsView};
 
 use super::api::error_response;
-use super::bot_visibility::{bot_access, caller_facts, caller_ready};
+use super::bot_visibility::{bot_access_of, caller_facts, caller_ready};
 use super::{Gateway, TunnelPeer, isolation};
 use crate::plugin::bot_services::DEFAULT_BOT;
 use crate::plugin::contacts::BotListing;
@@ -68,7 +68,8 @@ pub(super) async fn get(
         .iter()
         .filter(|plugin| plugin.chat.is_some())
     {
-        let access = |bot: &BotRef| match bot_access(&gateway, peer, &headers, bot) {
+        // 每一行都用判 `state` 的同一份调用人快照重算；请求进行中换了人或设备，行按 Unknown 而不是另一半事实。
+        let access = |bot: &BotRef| match bot_access_of(&gateway, peer, &headers, bot, &caller) {
             Ok(access) => Ok(access),
             Err(error) => Err(error.to_string()),
         };
