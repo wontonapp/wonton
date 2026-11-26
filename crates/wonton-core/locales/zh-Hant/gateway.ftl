@@ -209,7 +209,14 @@ gateway-install-card-setting = 請求裡填的設定：{ $title } = { $value }
 gateway-install-changed = 卡片發出後 { $id } 的權限、裝置或設定已經改過，沒有升級。請重新發起。
 clients-switch-container = 核心沒有在容器裡執行，無法接入入口網路
 clients-switch-domain = 請先設定網域和有效憑證，再開啟入口
-clients-switch-lan = 區域網路入口尚未開放：轉送容器尚未就緒
+clients-switch-lan = 尚未偵測過這台主機的區域網路位址，請稍後再試
+clients-switch-lan-selection = 選不出區域網路位址，無法開放區域網路入口：{ $reason }
+clients-switch-lan-not-private = 這台主機的區域網路位址（{ $addresses }）不是私有 IPv4 位址，區域網路入口只能開在 10.x、172.16–31.x、192.168.x 上
+clients-switch-lan-wide-subnet = 區域網路位址所在的網段 { $subnet } 超出私有位址範圍，無法只放行區域網路裡的裝置
+clients-switch-lan-unknown-subnet = 不知道區域網路位址 { $address } 所在的網段，無法只放行區域網路裡的裝置
+clients-switch-lan-record-wrong = 區域網路網域指向了 { $found }，請在 DNS 服務商處把記錄改成：{ $record }
+clients-switch-lan-record-missing = 尚無區域網路網域的記錄，請在 DNS 服務商處新增：{ $record }
+clients-switch-lan-record-failed = 查不到區域網路網域的記錄，請稍後再試；需要的記錄是：{ $record }（{ $error }）
 clients-switch-setup = 請先在應用網頁完成首次註冊
 clients-switch-app-unavailable = 應用沒有執行，無法檢查首次註冊狀態
 clients-switch-credentials = 應用尚未成功發出密碼

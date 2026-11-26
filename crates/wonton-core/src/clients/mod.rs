@@ -2,7 +2,7 @@
 //!
 //! `domain` 是自己的域名和运行时签发；`providers` 是服务商预设；`path_rules` 是公开路径的校验；
 //! `credentials` 跑应用里的凭据命令；`pending` 管待完成的签发、换值、吊销和共享密码；
-//! `external_url` 是注入和 `single_host` 改写用的规范对外地址。
+//! `external_url` 是注入和 `single_host` 改写用的规范对外地址；`lan_forward` 是局域网入口用哪个地址、`*.lan` 记录对不对。
 
 pub(crate) mod apply;
 pub(crate) mod credentials;
@@ -13,6 +13,7 @@ pub mod domain;
 mod domain_docker_tests;
 pub mod external_url;
 pub mod gateway_auth;
+pub mod lan_forward;
 pub mod passwords;
 pub mod path_rules;
 #[cfg(test)]

@@ -4,14 +4,18 @@ use std::collections::HashMap;
 
 use super::create::Side;
 use super::options::same_options;
-use super::{CONNECTOR_COMPONENT, ENTRY_COMPONENT, EntryContainers, EntryError};
+use super::{
+    CONNECTOR_COMPONENT, ENTRY_COMPONENT, EntryContainers, EntryError, LAN_FORWARD_COMPONENT,
+};
 use crate::plugin::compose::PullPolicy;
 use crate::plugin::names::{LABEL_COMPONENT, LABEL_MANAGED_BY};
 
 impl EntryContainers {
-    /// 拆栈和卸载时按组件标签删掉两个容器：它们挂着网络，compose `down` 删不掉。
+    /// 拆栈和卸载时按组件标签删掉容器和核心建的网络：它们挂着网络，compose `down` 删不掉。容器全删完再删网络：
+    /// 入口也接在局域网转发的 `lanfwd` 上。
     pub async fn remove_all(&self) -> Result<(), EntryError> {
-        for component in [ENTRY_COMPONENT, CONNECTOR_COMPONENT] {
+        let mut networks = Vec::new();
+        for component in [LAN_FORWARD_COMPONENT, ENTRY_COMPONENT, CONNECTOR_COMPONENT] {
             let found = self
                 .engine
                 .labeled(LABEL_MANAGED_BY, "core", |labels| {
@@ -22,9 +26,10 @@ impl EntryContainers {
             for name in found.containers {
                 self.engine.remove_container(&name).await?;
             }
-            for network in found.networks {
-                self.engine.remove_network(&network).await?;
-            }
+            networks.extend(found.networks);
+        }
+        for network in networks {
+            self.engine.remove_network(&network).await?;
         }
         Ok(())
     }

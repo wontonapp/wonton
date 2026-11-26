@@ -15,10 +15,10 @@ use crate::test_docker::{Names, ensure_image};
 
 /// 客户端容器用的 curl（Apache-2.0）。宿主 curl 经 PROXY 声明的来源永远是网桥地址，
 /// 分不出「另一个来源」，封禁按来源隔离要两个固定地址的客户端。
-const CURL: &str = "curlimages/curl:8.11.1@sha256:c1fe1679c34d9784c1b0d1e5f62ac0a79fca01fb6377cdd33e90473c6f9f9a69";
+pub const CURL: &str = "curlimages/curl:8.11.1@sha256:c1fe1679c34d9784c1b0d1e5f62ac0a79fca01fb6377cdd33e90473c6f9f9a69";
 
 const CONNECTOR_ALIAS: &str = "connector.wonton.internal";
-const SUFFIX: &str = "home.example.test";
+pub(super) const SUFFIX: &str = "home.example.test";
 
 fn write_files(dir: &Path, trust: Trust, setup: &Setup, with_lan: bool) -> String {
     let mut model = Model::federation_only(SUFFIX, "cloud.example.test");
@@ -49,18 +49,18 @@ fn write_files(dir: &Path, trust: Trust, setup: &Setup, with_lan: bool) -> Strin
 }
 
 /// 真连本机 Docker：`Engine::for_test` 是给不碰 Docker 的测试用的桩。
-fn connected_engine() -> Engine {
+pub(super) fn connected_engine() -> Engine {
     Engine::connect().expect("基础设施失败：连不上 Docker")
 }
 
-fn docker(args: &[&str]) -> (bool, String) {
+pub(super) fn docker(args: &[&str]) -> (bool, String) {
     let output = Command::new("docker").args(args).output().unwrap();
     let mut text = String::from_utf8_lossy(&output.stderr).into_owned();
     text.push_str(&String::from_utf8_lossy(&output.stdout));
     (output.status.success(), text)
 }
 
-fn must_docker(args: &[&str]) -> String {
+pub(super) fn must_docker(args: &[&str]) -> String {
     let (ok, text) = docker(args);
     assert!(ok, "docker {args:?} 失败：{text}");
     text
@@ -84,7 +84,7 @@ fn network_args(network: &str, labels: &Names, address: &str, aliases: &[&str]) 
 }
 
 /// 本次运行专属的子网：从实例名派生，彼此不撞，也不撞宿主上常见网段。
-fn subnets(name: &str) -> (String, String) {
+pub(super) fn subnets(name: &str) -> (String, String) {
     let hash = name.bytes().fold(0u32, |hash, byte| {
         hash.wrapping_mul(31).wrapping_add(byte as u32)
     });
@@ -102,7 +102,7 @@ fn owned(args: &[String]) -> Vec<&str> {
     args.iter().map(String::as_str).collect()
 }
 
-const BACKEND_CONFIG: &str = "global\ndefaults\n  mode http\n  timeout connect 5s\n  timeout client 60s\n  timeout server 60s\nfrontend b\n  bind [::]:8484\n  http-request set-var(txn.fail) str(1) if { req.hdr(x-fail) -m found }\n  http-after-response set-header X-Wonton-Auth-Failure 1 if { var(txn.fail) -m found }\n  http-request return status 200 content-type text/plain lf-string \"entry=%[req.hdr(X-Wonton-Entry)] real=%[req.hdr(X-Real-IP)] fwd=%[req.hdr(X-Forwarded-For)] host=%[req.hdr(Host)] und=%[req.hdr(X_Remote_User)]\"\n";
+pub(super) const BACKEND_CONFIG: &str = "global\ndefaults\n  mode http\n  timeout connect 5s\n  timeout client 60s\n  timeout server 60s\nfrontend b\n  bind [::]:8484\n  http-request set-var(txn.fail) str(1) if { req.hdr(x-fail) -m found }\n  http-after-response set-header X-Wonton-Auth-Failure 1 if { var(txn.fail) -m found }\n  http-request return status 200 content-type text/plain lf-string \"entry=%[req.hdr(X-Wonton-Entry)] real=%[req.hdr(X-Real-IP)] fwd=%[req.hdr(X-Forwarded-For)] host=%[req.hdr(Host)] und=%[req.hdr(X_Remote_User)]\"\n";
 
 /// 连接器：PROXY v2 模式下带 `send-proxy-v2`；头信任模式（Cloudflare）是普通 TCP 转发，不带 PROXY 头。
 fn connector_config(proxy: bool) -> String {
@@ -425,11 +425,11 @@ impl Chain {
 }
 
 /// 对端可能以 IPv4 出现在 PROXY 头里，也可能被写成 IPv4 映射的 IPv6（连接器双栈监听时）。
-fn real_is(body: &str, address: &str) -> bool {
+pub(super) fn real_is(body: &str, address: &str) -> bool {
     body.contains(&format!("real={address}")) || body.contains(&format!("real=::ffff:{address}"))
 }
 
-fn wait_loaded(container: &str) {
+pub(super) fn wait_loaded(container: &str) {
     let deadline = Instant::now() + Duration::from_secs(20);
     loop {
         let (_, logs) = docker(&["logs", container]);

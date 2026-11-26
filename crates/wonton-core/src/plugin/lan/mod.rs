@@ -7,11 +7,13 @@
 //! - [`announce`]：`WONTON_ANNOUNCE_ADDRESSES`，启动器声明的宣告地址；
 //! - [`platform`]：从内核串和 DMI 认出桌面虚拟机；
 //! - `state`：主人的选择和上次检测的结果；`grant`：安装和预览；`monitor`：定期检测、地址变了重建容器；
-//!   `settings`：管理接口；[`webui`]：网页端口的开关；[`client`]：第三方客户端的连接信息。
+//!   `settings`：管理接口；[`webui`]：网页端口的开关；[`client`]：第三方客户端的连接信息；
+//!   [`entry_address`]：第三方客户端的局域网入口用哪个地址。
 
 pub mod announce;
 pub mod client;
 pub mod detect;
+pub mod entry_address;
 pub(crate) mod grant;
 mod monitor;
 mod platform;
