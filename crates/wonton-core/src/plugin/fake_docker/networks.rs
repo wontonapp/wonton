@@ -8,7 +8,7 @@ use axum::response::{IntoResponse, Response};
 use ipnet::Ipv4Net;
 use serde_json::{Value, json};
 
-use super::{Resources, gone, json_reply, labeled, labels_of};
+use super::{FakeDocker, Labels, Resources, gone, json_reply, labeled, labels_of, owned_by};
 
 fn reject_create(docker: &mut Resources, body: &Value) -> Option<Response> {
     body["IPAM"]["Config"][0]["Subnet"].as_str()?;
@@ -281,4 +281,69 @@ pub(super) fn endpoint_settings(endpoint: &Value) -> Value {
         .as_str()
         .unwrap_or("127.0.0.1");
     json!({"IPAddress": address, "Aliases": endpoint["Aliases"], "GwPriority": endpoint["GwPriority"]})
+}
+
+impl FakeDocker {
+    pub fn networks(&self) -> Vec<String> {
+        self.lock().networks.keys().cloned().collect()
+    }
+
+    pub fn network_collisions(&self) -> u32 {
+        self.lock().network_collisions
+    }
+
+    /// 放进一个已有的网络，比如核心重启前就装好的插件的网络；`body` 是创建它的请求。
+    pub fn add_network(&self, name: &str, plugin: &str, body: Value) {
+        let mut docker = self.lock();
+        docker.networks.insert(name.to_owned(), owned_by(plugin));
+        docker.network_bodies.insert(name.to_owned(), body);
+    }
+
+    /// 放进一个没有标签的网络，比如主人自己建的。
+    pub fn add_unlabeled_network(&self, name: &str) {
+        let mut docker = self.lock();
+        docker.networks.insert(name.to_owned(), Labels::new());
+        docker.network_bodies.insert(name.to_owned(), json!({}));
+    }
+
+    /// 把已有网络的网段钉成给定值：真实网络建的时候就带了 IPAM，全新安装的 `edge` 就是默认网段。
+    pub fn pin_subnet(&self, name: &str, subnet: &str) {
+        self.lock().network_bodies.insert(
+            name.to_owned(),
+            json!({"IPAM": {"Config": [{"Subnet": subnet}]}}),
+        );
+    }
+
+    /// 模拟主人手动删掉一个网络（或上一代核心清掉过）。
+    pub fn remove_network(&self, name: &str) {
+        let mut docker = self.lock();
+        docker.endpoints.remove(name);
+        docker.network_bodies.remove(name);
+        docker.networks.remove(name);
+    }
+
+    /// 创建网络时的请求。
+    pub fn network(&self, name: &str) -> Option<Value> {
+        self.lock().network_bodies.get(name).cloned()
+    }
+
+    /// 最近一次接入这个网络的容器在网络里的别名。
+    pub fn aliases(&self, network: &str) -> Vec<String> {
+        self.lock()
+            .aliases
+            .get(network)
+            .cloned()
+            .unwrap_or_default()
+    }
+
+    /// 最近一次接入这个网络时要的网关优先级（`EndpointConfig.GwPriority`），没写时为空。
+    pub fn gateway_priority(&self, network: &str) -> Option<i64> {
+        let connection = self.lock().connections.get(network).cloned();
+        connection.and_then(|c| c["EndpointConfig"]["GwPriority"].as_i64())
+    }
+
+    /// 接下来 `times` 次指定网段的建网络，Docker 回 `message`（403）。
+    pub fn reject_pinned_networks(&self, times: u32, message: &str) {
+        self.lock().pinned_network_rejection = Some((times, message.to_owned()));
+    }
 }

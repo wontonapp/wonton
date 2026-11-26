@@ -1,5 +1,7 @@
 //! 假 Docker 的 exec 启动端点。
 
+use std::sync::Arc;
+
 use axum::body::Body;
 use axum::extract::Request;
 use axum::http::{StatusCode, header};
@@ -7,7 +9,7 @@ use axum::response::Response;
 use hyper_util::rt::TokioIo;
 use tokio::io::{AsyncReadExt, AsyncWriteExt};
 
-use super::{FakeDocker, gone};
+use super::{FakeDocker, FakeExec, gone};
 
 /// `POST /exec/<id>/start`：和 Docker 一样升级成原始连接，读完标准输入（客户端关闭写端）后按 Docker 的多路
 /// 复用格式写回标准错误，再关闭连接。
@@ -77,4 +79,27 @@ pub(super) fn start_exec(fake: FakeDocker, id: &str, mut request: Request) -> Re
         .header(header::UPGRADE, "tcp")
         .body(Body::empty())
         .unwrap()
+}
+
+impl FakeDocker {
+    /// 容器里执行的命令由 `handler` 回应。
+    pub fn on_exec(
+        &self,
+        handler: impl Fn(&str, &[String], &[u8]) -> (i64, String) + Send + Sync + 'static,
+    ) {
+        self.lock().exec_handler = Some(Arc::new(handler));
+    }
+
+    /// 容器里执行的命令可分别回应标准输出和标准错误。
+    pub fn on_exec_output(
+        &self,
+        handler: impl Fn(&str, &[String], &[u8]) -> (i64, String, String) + Send + Sync + 'static,
+    ) {
+        self.lock().exec_output_handler = Some(Arc::new(handler));
+    }
+
+    /// 执行过的命令，按顺序。
+    pub fn execs(&self) -> Vec<FakeExec> {
+        self.lock().execs.values().cloned().collect()
+    }
 }
