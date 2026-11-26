@@ -189,7 +189,7 @@ impl OwnerFile {
                     tier: relay.tier,
                 })
                 .collect(),
-            remove: remove.into_iter().map(|url| url.to_string()).collect(),
+            remove: remove.into_iter().map(|url| relay_url_text(&url)).collect(),
         }
     }
 }
@@ -453,7 +453,8 @@ impl RelaySettings {
             if let Some(previous) = seen.insert(relay.url.clone(), relay.tier) {
                 return Err(SaveError::Invalid(format!(
                     "{} 出现了两次（档位 {previous} 和 {}）",
-                    relay.url, relay.tier
+                    relay_url_text(&relay.url),
+                    relay.tier
                 )));
             }
             relays.push(relay);
@@ -586,7 +587,7 @@ fn owner_entry(entry: &RelaySettingUpdate) -> Result<Relay, SaveError> {
     if relay.quic_port == Some(0) {
         return Err(SaveError::Invalid(format!(
             "{}：QUIC 端口不能是 0",
-            relay.url
+            relay_url_text(&relay.url)
         )));
     }
     relay.validate().map_err(SaveError::Invalid)?;

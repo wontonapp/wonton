@@ -561,7 +561,10 @@ fn validate_url(text: &str) -> Result<(String, Option<u16>), CoreError> {
     }
     let relay =
         relay_from_item(url.as_str(), 0).map_err(|reason| invalid("relays-invalid-url", reason))?;
-    Ok((relay.url.to_string(), relay.quic_port))
+    Ok((
+        wonton_tunnel::relays::relay_url_text(&relay.url),
+        relay.quic_port,
+    ))
 }
 
 fn token_value(token: Option<SecretString>) -> Option<SecretString> {

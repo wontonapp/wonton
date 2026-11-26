@@ -402,3 +402,33 @@ fn an_invalid_item_does_not_echo_the_token_into_its_error() {
     assert!(error.contains("<redacted>@relay.example.org"), "{error}");
     assert!(!error.contains("s3cret"), "{error}");
 }
+
+#[test]
+fn url_text_keeps_a_root_slash_and_strips_a_path_slash() {
+    assert_eq!(
+        relay_url_text(&url("https://a.example")),
+        "https://a.example/"
+    );
+    assert_eq!(
+        relay_url_text(&url("https://a.example/relay/")),
+        "https://a.example/relay"
+    );
+    assert_eq!(
+        relay_url_text(&url("https://a.example/relay/?email=a@b")),
+        "https://a.example/relay?email=a@b"
+    );
+}
+
+#[test]
+fn validate_errors_show_the_canonical_url() {
+    let mut relay = relay("https://a.example/relay/", 0);
+    relay.url = url("http://a.example/relay/");
+    let error = relay.validate().unwrap_err();
+    assert!(error.contains("http://a.example/relay："), "{error}");
+    assert!(!error.contains("/relay/："), "{error}");
+
+    relay.url = url("https://a.example/relay/");
+    relay.quic_port = Some(0);
+    let error = relay.validate().unwrap_err();
+    assert!(error.contains("https://a.example/relay："), "{error}");
+}

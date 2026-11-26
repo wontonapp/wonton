@@ -528,3 +528,22 @@ async fn saving_before_any_table_loaded_is_refused() {
     assert!(matches!(error, CoreError::NotReady { .. }), "{error:?}");
     assert_eq!(home.view().relays.phase, Some(RelaySettingsPhase::Ready));
 }
+
+#[test]
+fn a_subpath_snapshot_without_a_trailing_slash_can_be_updated_and_removed() {
+    let mut view = view(vec![
+        entry("https://relay.example.org/relay", 0),
+        entry("https://other.example.org/", 1),
+    ]);
+    update(
+        &mut view,
+        "https://relay.example.org/relay".into(),
+        None,
+        None,
+        Some(2),
+    )
+    .unwrap();
+    assert_eq!(view.entries[1].tier, 2);
+    remove(&mut view, "https://relay.example.org/relay".into()).unwrap();
+    assert_eq!(urls(&view), ["https://other.example.org/"]);
+}

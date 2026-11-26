@@ -80,6 +80,7 @@ services:
       WONTON_ANNOUNCE_ADDRESSES: ${WONTON_DEV_ANNOUNCE_ADDRESSES:-}
       # 中继表（ADR-0048）：默认 n0 的公共中继，要用本地测试中继时自己设。
       WONTON_RELAYS: ${WONTON_DEV_RELAYS:-}
+      WONTON_BUILTIN_RELAYS: ${WONTON_BUILTIN_RELAYS:-}
       WONTON_PUSH_LISTEN: push.wonton.internal:80
       # 发往我们运营的推送中继时的 VAPID 身份（ADR-0003 的 M2，cloud/push-relay）；不设时不带 VAPID 头。
       WONTON_PUSH_VAPID_KEY: ${WONTON_PUSH_VAPID_KEY:-}

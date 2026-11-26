@@ -62,18 +62,21 @@ impl Relay {
     /// 而且得是 https，令牌不走明文。
     pub fn validate(&self) -> Result<(), String> {
         if !self.url.username().is_empty() || self.url.password().is_some() {
-            return Err(format!("{}：地址里不能带 userinfo，令牌要单独放", self.url));
+            return Err(format!(
+                "{}：地址里不能带 userinfo，令牌要单独放",
+                relay_url_text(&self.url)
+            ));
         }
         if self.url.scheme() != "https" {
-            return Err(format!("{}：中继地址要用 https", self.url));
+            return Err(format!("{}：中继地址要用 https", relay_url_text(&self.url)));
         }
         if let Some(token) = &self.token
             && token.expose().is_empty()
         {
-            return Err(format!("{}：令牌不能是空的", self.url));
+            return Err(format!("{}：令牌不能是空的", relay_url_text(&self.url)));
         }
         if self.quic_port == Some(0) {
-            return Err(format!("{}：QUIC 端口不能是 0", self.url));
+            return Err(format!("{}：QUIC 端口不能是 0", relay_url_text(&self.url)));
         }
         Ok(())
     }
@@ -318,17 +321,20 @@ pub fn relay_map(relays: &[Relay], tiers: usize) -> RelayMap {
 
 /// 给界面、发现文件和日志用的规范化文字：根路径保留 `/`，非根路径去掉尾斜杠（`/relay/` → `/relay`）。
 ///
-/// `RelayUrl` 的 `Display` 会省略根路径的 `/`，`Url` 的序列化又会给非根路径补尾斜杠；两边统一成
-/// 这里的一种写法，配对码、连接状态和设置页才对得上。
+/// `Url` 序列化（以及 iroh 1.5 的 `RelayUrl`）会给非根路径补尾斜杠；配对码、连接状态和设置页
+/// 统一成这里的一种写法才互相相等。
 pub fn relay_url_text(url: &RelayUrl) -> String {
     url_text(&url.clone().into())
 }
 
 /// 同 [`relay_url_text`]，参数是已经去过 userinfo/查询/片段的 [`Url`]。
+///
+/// 只看路径部分的斜杠，`?`/`#` 前面也照样去掉（`/relay/?x=1` → `/relay?x=1`）；根路径的 `/` 保留。
 pub fn url_text(url: &Url) -> String {
     let mut text = url.as_str().to_owned();
-    if text.ends_with('/') && url.path() != "/" {
-        text.pop();
+    let cut = text.find(['?', '#']).unwrap_or(text.len());
+    if cut > 0 && text.as_bytes()[cut - 1] == b'/' && url.path() != "/" {
+        text.remove(cut - 1);
     }
     text
 }

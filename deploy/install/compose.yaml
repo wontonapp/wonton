@@ -42,6 +42,8 @@ services:
       WONTON_TUNNEL_PORT: ${WONTON_TUNNEL_PORT:?}
       # 中继表（ADR-0048）：不设时用 n0 的公共中继。
       WONTON_RELAYS: ${WONTON_RELAYS:-}
+      # 内置表的运行时覆盖；不设时用构建进镜像的默认值。
+      WONTON_BUILTIN_RELAYS: ${WONTON_BUILTIN_RELAYS:-}
       # 签名的中继列表和它的验签公钥（可选）。
       WONTON_RELAY_LIST_URL: ${WONTON_RELAY_LIST_URL:-}
       WONTON_RELAY_LIST_PUBKEY: ${WONTON_RELAY_LIST_PUBKEY:-}

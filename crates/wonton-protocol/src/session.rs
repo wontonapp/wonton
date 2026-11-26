@@ -62,7 +62,7 @@ mod tests {
                 message: "服务端拒绝了本设备".into(),
             },
             current_relay: Some(RelayCurrent {
-                url: "https://relay.example.org".into(),
+                url: "https://relay.example.org/".into(),
                 rtt_ms: None,
             }),
             relays: RelaySettingsView::default(),
@@ -71,7 +71,7 @@ mod tests {
                 public_relay: false,
                 lan: true,
                 rtt_ms: 3,
-                relay_url: Some("https://relay.example.org".into()),
+                relay_url: Some("https://relay.example.org/".into()),
             }),
             notice: Some(ConnectionNotice::ServerOffline { retrying: true }),
             details: ConnectionDetails {

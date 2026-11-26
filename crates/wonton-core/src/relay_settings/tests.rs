@@ -613,3 +613,61 @@ async fn turning_n0_off_and_back_on_restores_the_whole_group() {
         assert_eq!(urls, expected, "n0_in_builtin={n0_in_builtin}");
     }
 }
+
+#[tokio::test]
+async fn removed_subpath_urls_are_written_without_a_trailing_slash() {
+    let dir = tempfile::tempdir().unwrap();
+    let path = dir.path().join("relays.json");
+    std::fs::write(&path, r#"{"n0":false,"relays":[]}"#).unwrap();
+    let settings = RelaySettings::open(startup(
+        vec![relay("https://builtin.example/relay/", 0)],
+        None,
+        Some(&path),
+    ))
+    .await
+    .unwrap();
+    settings
+        .save(RelaySettingsUpdate {
+            n0: false,
+            entries: vec![RelaySettingUpdate {
+                url: "https://mine.example/".into(),
+                token: None,
+                quic_port: None,
+                tier: 0,
+            }],
+        })
+        .await
+        .unwrap();
+    let file: serde_json::Value =
+        serde_json::from_str(&std::fs::read_to_string(&path).unwrap()).unwrap();
+    assert_eq!(
+        file["remove"],
+        serde_json::json!(["https://builtin.example/relay"])
+    );
+}
+
+#[tokio::test]
+async fn duplicate_subpath_errors_show_the_canonical_url() {
+    let dir = tempfile::tempdir().unwrap();
+    let path = dir.path().join("relays.json");
+    std::fs::write(&path, r#"{"n0":false,"relays":[]}"#).unwrap();
+    let settings = RelaySettings::open(startup(vec![], None, Some(&path)))
+        .await
+        .unwrap();
+    let entry = RelaySettingUpdate {
+        url: "https://a.example/relay/".into(),
+        token: None,
+        quic_port: None,
+        tier: 0,
+    };
+    let error = settings
+        .save(RelaySettingsUpdate {
+            n0: false,
+            entries: vec![entry.clone(), entry],
+        })
+        .await
+        .unwrap_err();
+    let error = error.to_string();
+    assert!(error.contains("https://a.example/relay 出现"), "{error}");
+    assert!(!error.contains("/relay/ 出现"), "{error}");
+}
