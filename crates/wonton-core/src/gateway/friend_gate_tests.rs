@@ -27,6 +27,8 @@ use wonton_protocol::role_path;
 
 #[path = "friend_gate_approval_tests.rs"]
 mod approval_tests;
+#[path = "friend_gate_bypass_tests.rs"]
+mod bypass_tests;
 #[path = "friend_gate_repair_tests.rs"]
 mod friend_gate_repair_tests;
 #[path = "friend_requests_tests.rs"]
