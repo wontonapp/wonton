@@ -13,7 +13,12 @@ let package = Package(
         .target(
             name: "WontonClient",
             dependencies: ["WontonClientFFI"],
-            linkerSettings: [.linkedFramework("Network"), .linkedFramework("SystemConfiguration")]
+            linkerSettings: [
+                .linkedFramework("Network"),
+                .linkedFramework("SystemConfiguration"),
+                // netdev 0.47 在 iOS 上直接调 res_9_* 解析系统 DNS，静态库里没带这条链接参数。
+                .linkedLibrary("resolv")
+            ]
         )
     ]
 )
