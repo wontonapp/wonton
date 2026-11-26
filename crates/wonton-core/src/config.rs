@@ -324,16 +324,8 @@ impl Config {
             tunnel_port: parse(&get, "WONTON_TUNNEL_PORT", 0)?,
             relays: parse_relays(&get)?,
             builtin_relays: builtin_relays(&get)?,
-            relay_list_url: relay_list_var(
-                &get,
-                "WONTON_RELAY_LIST_URL",
-                "WONTON_BUILTIN_RELAY_LIST_URL",
-            ),
-            relay_list_pubkey: relay_list_var(
-                &get,
-                "WONTON_RELAY_LIST_PUBKEY",
-                "WONTON_BUILTIN_RELAY_LIST_PUBKEY",
-            ),
+            relay_list_url: relay_list_var(&get, "WONTON_RELAY_LIST_URL"),
+            relay_list_pubkey: relay_list_var(&get, "WONTON_RELAY_LIST_PUBKEY"),
             relay_settings_file,
             push_listen: get("WONTON_PUSH_LISTEN").filter(|value| !value.is_empty()),
             push_vapid_key,
@@ -403,12 +395,7 @@ fn builtin_relays(get: &impl Fn(&str) -> Option<String>) -> Result<RelayTable, C
 }
 
 /// 签名列表的地址和公钥：环境变量优先，其次是构建时内置的默认值。
-fn relay_list_var(
-    get: &impl Fn(&str) -> Option<String>,
-    name: &'static str,
-    builtin_name: &'static str,
-) -> Option<String> {
-    let _ = builtin_name;
+fn relay_list_var(get: &impl Fn(&str) -> Option<String>, name: &'static str) -> Option<String> {
     // 编译期常量名不能拼在 `option_env!` 里，按运行时读到的是哪个变量挑。
     let builtin = match name {
         "WONTON_RELAY_LIST_URL" => option_env!("WONTON_BUILTIN_RELAY_LIST_URL"),
