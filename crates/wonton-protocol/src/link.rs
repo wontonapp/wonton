@@ -253,7 +253,7 @@ mod tests {
 
     #[test]
     fn an_old_ask_without_a_room_or_request_id_still_parses() {
-        let json = r#"{"type":"chat","action":{"type":"ask_agent","text":"在吗"}}"#;
+        let json = r#"{"domain":"chat","action":{"type":"ask_agent","text":"在吗"}}"#;
         let action: Action = serde_json::from_str(json).unwrap();
         let Action::Chat {
             action:
