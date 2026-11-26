@@ -266,6 +266,37 @@ mod tests {
 
     use super::*;
 
+    /// 每个字段都得带 uniffi 默认值：Kotlin/Swift 的无参构造 `RelaySettingsView()` 靠它们成立。
+    /// serde 的 `{}` 只测 serde default，把字段上的 `uniffi(default…)` 删掉这条也不会红，所以直接查源码。
+    #[test]
+    fn every_settings_view_field_has_a_uniffi_default() {
+        let source = include_str!("relays.rs");
+        let section = source
+            .split("pub struct RelaySettingsView {")
+            .nth(1)
+            .expect("RelaySettingsView 还在");
+        let fields = section.split('}').next().expect("结构体有结尾");
+        for field in [
+            "phase",
+            "entries",
+            "n0",
+            "locked_by_env",
+            "warnings",
+            "dirty",
+            "load_problem",
+            "save_problem",
+        ] {
+            let marker = format!("pub {field}:");
+            let at = fields.find(&marker).expect("字段还在");
+            let before = fields[..at].trim_end();
+            let attr = before.rsplit('\n').next().unwrap_or("");
+            assert!(
+                attr.contains("uniffi(default"),
+                "{field} 紧挨着的那一行不是 uniffi(default…)：{attr:?}"
+            );
+        }
+    }
+
     #[test]
     fn unknown_source_and_state_fall_back_to_other() {
         assert_eq!(
