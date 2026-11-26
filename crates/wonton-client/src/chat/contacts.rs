@@ -358,12 +358,12 @@ mod tests {
             .map(|contact| contact.name.as_str())
             .collect();
         assert_eq!(names, ["Hermes", "主人的助手"]);
-        assert_eq!(contacts[0].access, Some(BotAccess::Shared));
+        assert_eq!(contacts[0].access, BotAccess::Shared);
         assert_eq!(
             contacts[1].access,
-            Some(BotAccess::Unusable {
+            BotAccess::Unusable {
                 reason: wonton_protocol::BotChatUnavailable::OwnerPrivate
-            })
+            }
         );
     }
 
@@ -387,9 +387,9 @@ mod tests {
         assert_eq!(contacts[0].name, "共享助手");
         assert_eq!(
             contacts[0].access,
-            Some(BotAccess::Unusable {
+            BotAccess::Unusable {
                 reason: wonton_protocol::BotChatUnavailable::BotMissing
-            })
+            }
         );
     }
 
@@ -408,6 +408,6 @@ mod tests {
         let contacts = assemble(&bots, None, &[], Some(&own));
         assert_eq!(contacts.len(), 1);
         assert_eq!(contacts[0].name, "小助手");
-        assert_eq!(contacts[0].access, Some(BotAccess::Own));
+        assert_eq!(contacts[0].access, BotAccess::Own);
     }
 }
