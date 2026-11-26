@@ -16,6 +16,8 @@ struct TabPageCapsule: View {
     let panel: TabPanelMode?
     /// 关掉这一页（面板外）。
     let close: () -> Void
+    /// 关掉这一页：面板里摘掉面板项，整页里弹栈。菜单的“返回”判定要关页时用它。
+    let closePage: () -> Void
     @Environment(\.wontonColors) private var colors
 
     /// 胶囊那一行的高度。带胶囊的整页，网页框从状态栏加这一行下面开始。
@@ -54,7 +56,7 @@ struct TabPageCapsule: View {
             }
             Menu {
                 if session.canGoBack {
-                    Button(TabText.back) { session.webView?.goBack() }
+                    Button(TabText.back) { session.backOrClose(onClosePage: closePage) }
                 }
                 if let takeover { TakeoverButton(takeover: takeover) }
                 Button(TabText.reload) { pages.send(.pages(action: .reloadTab(page: placed))) }
