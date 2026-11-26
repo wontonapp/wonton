@@ -102,13 +102,15 @@ final class BottomPin {
         DispatchQueue.main.asyncAfter(deadline: .now() + WontonTheme.motion.datePillHold, execute: end)
     }
 
-    /// 回到底部按钮：平滑滚过去，途中收到的 contentSize 变化不会被自己的位移当成翻走。
+    /// 回到底部按钮：先掐掉惯性，再平滑滚过去，途中收到的 contentSize 变化不会被自己的位移当成翻走。
     func scrollToBottom() {
         isPinned = true
         heldOffset = nil
         guard let scrollView = scrollView else { return }
-        scrollAnimations += 1
+        // 先占住 `animating`，停惯性引起的那次位移不再交给 holdAtBottom 改写。
         animating = true
+        stopDeceleration()
+        scrollAnimations += 1
         UIView.animate(withDuration: Self.animationDuration, animations: {
             scrollView.contentOffset.y = scrollView.bottomOffset
         }, completion: { [weak self] _ in
@@ -117,13 +119,21 @@ final class BottomPin {
         })
     }
 
+    /// 松手后还在滑时，`contentOffset` 由减速器每帧改写，会在下面盖掉 `UIView.animate`，最后停在惯性自己的落点。
+    /// 按 `isDecelerating` 的说法，`setContentOffset(_:animated: false)` 落到当前位置就是停掉减速（#1092）。
+    private func stopDeceleration() {
+        guard let scrollView, scrollView.isDecelerating else { return }
+        scrollView.setContentOffset(scrollView.contentOffset, animated: false)
+    }
+
     /// 壳自己滚（跳到原消息、摆进房间的落点）：和主人滚一样出浮动日期，停下后照常淡出。
     func noteProgrammaticScroll() { noteScroll() }
 
-    /// 主人发了东西：不管翻到哪，回到底部看结果。
+    /// 主人发了东西：不管翻到哪，回到底部看结果。惯性滑着也当场停下，不然新消息停在视野外。
     func pin() {
         isPinned = true
         heldOffset = nil
+        stopDeceleration()
         stick()
     }
 
@@ -176,8 +186,9 @@ final class BottomPin {
     var snapshot: String {
         let view = scrollView
         let visibleBottom = view == nil ? -1 : visibleBottom
+        let decel = view?.isDecelerating == true ? 1 : 0
         return "pin=\(isPinned) y=\(view?.contentOffset.y ?? -1) bottom=\(view?.bottomOffset ?? -1)"
-            + " visibleBottom=\(visibleBottom) anim=\(scrollAnimations)"
+            + " visibleBottom=\(visibleBottom) anim=\(scrollAnimations) decel=\(decel)"
     }
 
     /// List 排完新行会自己再挪一次 contentOffset，保住原先看到的那一行；键盘弹着、新行比可见区高时新消息就停在可见区下面，

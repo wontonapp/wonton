@@ -1,4 +1,5 @@
 import XCTest
+import ObjectiveC
 
 /// 聊天面板按钮（ADR-0052）的走屏：空面板第 1 级、有页面第 2 级、展开后换级与胶囊退出。
 ///
@@ -303,6 +304,102 @@ final class ChatPanelUITests: XCTestCase { // swiftlint:disable:this type_body_l
         shot("33-scroll-button-bottom")
     }
 
+    /// #1092：惯性还在滑的时候点“回到底部”，要当场打断惯性、落到最新一条。
+    /// 慢拖带 `thenHoldForDuration` 松手时没有速度，这里用不按住的快拖制造减速，趁 `decel=1` 的时候点。
+    func testScrollToBottomInterruptsMomentum() throws {
+        try launch(scheme: "light")
+        guard enterFakeRoom() != nil else {
+            return XCTFail("没进假房间")
+        }
+        // 进房落点的滚动放完再拖，别让两次减速叠在一起。
+        Thread.sleep(forTimeInterval: 1)
+        let list = app.collectionViews.firstMatch
+        // 关掉“每个事件前等 App 空闲”的等待：惯性滑着时 App 一直不空闲，不关掉的话点按钮要等惯性停下才发出去。
+        let swap = swapOutWaitForIdle()
+        defer { if let swap { method_exchangeImplementations(swap.0, swap.1) } }
+        XCTAssertNotNil(swap, "XCUITest 没有 `waitForQuiescenceIncludingAnimationsIdle:`，关不掉空闲等待")
+        let tapped = tapBackToBottomDuringMomentum(list)
+        XCTAssertNotNil(tapped, "没能趁惯性还在的时候点回到底部：\(scrollState())")
+        let light = waitPinnedAtBottom(timeout: 5)
+        attach("after tap \(light)")
+        XCTAssertTrue(light.contains("pin=true") && isAtBottom(light), "惯性中点回到底部没落到最底：\(light)")
+        shot("1092-momentum-bottom-light")
+
+        // 切深色要重启进程：截图用的颜色是启动时定住的，模拟器运行时切系统外观不一定生效。
+        app.terminate()
+        try launch(scheme: "dark")
+        guard enterFakeRoom() != nil else {
+            return XCTFail("深色下没进假房间")
+        }
+        Thread.sleep(forTimeInterval: 1)
+        let darkList = app.collectionViews.firstMatch
+        let tappedDark = tapBackToBottomDuringMomentum(darkList)
+        XCTAssertNotNil(tappedDark, "深色下没能趁惯性点回到底部：\(scrollState())")
+        let dark = waitPinnedAtBottom(timeout: 5)
+        XCTAssertTrue(dark.contains("pin=true") && isAtBottom(dark), "深色下惯性中点回到底部没落到最底：\(dark)")
+        shot("1092-momentum-bottom-dark")
+    }
+
+    /// XCUITest 在每个合成事件前等 App 空闲的那个私有方法：换成空的实现，返回原来的两个 `Method` 给调用方换回去。
+    /// Xcode 26 给这个方法加了 `isPreEvent:`，按带不带它依次找。
+    private func swapOutWaitForIdle() -> (Method, Method)? {
+        guard let processClass = objc_getClass("XCUIApplicationProcess") as? AnyClass else { return nil }
+        let candidates: [(Selector, Selector)] = [
+            (Selector(("waitForQuiescenceIncludingAnimationsIdle:isPreEvent:")),
+             #selector(noWaitForIdle(_:isPreEvent:))),
+            (Selector(("waitForQuiescenceIncludingAnimationsIdle:")),
+             #selector(noWaitForIdle(_:)))
+        ]
+        for (originalSelector, replacementSelector) in candidates {
+            guard let original = class_getInstanceMethod(processClass, originalSelector),
+                  let replacement = class_getInstanceMethod(Self.self, replacementSelector)
+            else { continue }
+            method_exchangeImplementations(original, replacement)
+            return (original, replacement)
+        }
+        return nil
+    }
+
+    @objc private func noWaitForIdle(_ idle: Bool, isPreEvent: Bool) {}
+    @objc private func noWaitForIdle(_ idle: Bool) {}
+
+    /// 快拖一下制造惯性，等 `decel=1` 时点“回到底部”，返回点完那一刻的自述。没等到返回 nil。
+    private func tapBackToBottomDuringMomentum(_ list: XCUIElement) -> String? {
+        for _ in 0..<4 {
+            // 快拖不按住：松手时手指还在动，列表接着惯性滑。速度给得越大，松手后的惯性越长。
+            let start = list.coordinate(withNormalizedOffset: CGVector(dx: 0.5, dy: 0.2))
+            let end = list.coordinate(withNormalizedOffset: CGVector(dx: 0.5, dy: 0.85))
+            start.press(forDuration: 0.02, thenDragTo: end,
+                        withVelocity: XCUIGestureVelocity(20000), thenHoldForDuration: 0)
+            guard let button = anyBottomButton(timeout: 2) else { continue }
+            // `roomScroll` 每 0.25 秒才重写一次：松手那一刻读到的可能还是拖动中的 decel=0，等它翻过来。
+            var state = ""
+            var decelerating = false
+            let spin = Date().addingTimeInterval(1)
+            while Date() < spin, !decelerating {
+                state = scrollState()
+                decelerating = state.contains("decel=1")
+                if !decelerating { usleep(50_000) }
+            }
+            guard decelerating else { continue }
+            attach("tap during momentum \(state)")
+            button.tap()
+            return state
+        }
+        return nil
+    }
+
+    /// 等这一下“回到底部”滚完并贴底，返回当时的自述。
+    private func waitPinnedAtBottom(timeout: TimeInterval) -> String {
+        let deadline = Date().addingTimeInterval(timeout)
+        var state = scrollState()
+        while Date() < deadline, !(state.contains("pin=true") && isAtBottom(state)) {
+            usleep(50_000)
+            state = scrollState()
+        }
+        return state
+    }
+
     /// 未读上百：名字报真实条数，角标只画 99+（ADR-0071）。
     func testBottomBadgeShows99Plus() throws {
         try launch(environment: ["WONTON_UI_FAKE_ARRIVALS": "100"])
@@ -355,7 +452,7 @@ extension ChatPanelUITests {
     /// 整套前置。要真后端的用例传 `needsStack: true`：没有 `PAIRING_CODE` 就跳过，有就配上真开发栈。
     /// 其余用例一律用假数据（`WONTON_UI_FAKE`），夜跑带了配对码也不连后端：房间里的用例不该依赖开发栈装没装 Bot。
     private func launch(arguments: [String] = [], needsStack: Bool = false,
-                        environment: [String: String] = [:]) throws {
+                        environment: [String: String] = [:], scheme: String? = nil) throws {
         app = XCUIApplication()
         app.launchArguments += arguments
         if needsStack {
@@ -372,6 +469,10 @@ extension ChatPanelUITests {
             UITestBackend.enableStateProbe(to: app)
         }
         app.launchEnvironment.merge(environment) { _, new in new }
+        // 这代模拟器运行时切系统外观不一定生效，截图时钉住 `WONTON_SHOT_SCHEME`（WontonTheme 读它）。
+        if let scheme {
+            app.launchEnvironment["WONTON_SHOT_SCHEME"] = scheme
+        }
 
         UITestBackend.launch(app)
         if needsStack {
