@@ -6,22 +6,27 @@
 
 家里一台常开的枢纽（Linux + Docker 主机，或者 Mac、Windows 上的内置 Linux 虚拟机）上跑着一个薄的 Rust 核心容器，它用 Docker
 管理所有插件；其他电脑作为受管设备挂在枢纽下，在自己的工作区里跑 Agent。自托管的 Matrix 服务器（Tuwunel）是所有会话的事实源；
-Agent 和插件都以 Matrix bot 的身份和人对话；手机上的原生 App 由一个厚的 Rust 客户端核心驱动，经 iroh 隧道连回家；推送经我们运营的中继转发密文。
+Agent 和插件都以 Matrix bot 的身份和人对话；手机上的原生 App 由一个厚的 Rust 客户端核心驱动，Web 和桌面共用一套 React 渲染层——
+Web 上每用户一份服务器端核心，浏览器经我们的中继用 WSS 拿 ViewModel；桌面上核心是本机旁路进程；原生移动端和 Electron 的 sidecar
+经 iroh 隧道连回家；推送经我们运营的中继转发密文。
 
 ## 组件总览
 
 ```mermaid
 flowchart LR
-  subgraph Client["手机 / 电脑"]
-    Shell["原生壳\nSwiftUI / Compose"]
+  subgraph Client["手机 / 电脑 / 浏览器"]
+    Shell["原生移动壳\nSwiftUI / Compose"]
+    React["React 渲染层\nPWA / Electron"]
     ClientCore["Rust 客户端核心\nmatrix-rust-sdk · iroh · ViewModel"]
     WebView["小程序 WebView"]
     Shell --> ClientCore
+    React -->|"Electron：本地 stdio 帧"| ClientCore
     WebView --> ClientCore
   end
 
   subgraph Home["家里的枢纽（Linux + Docker 或内置 Linux 虚拟机）"]
     Core["wonton-core\n插件管理 · 网关与配对 · 推送代理\nMCP 总线 · 密钥与存储授权 · 调度器"]
+    WebSession["PWA 的每用户服务器端客户端核心\nWSS：Action 进 · ViewModel 出"]
     Tuwunel["Tuwunel\nMatrix homeserver"]
     Agent["Hermes\n唯一默认内核 · 主 Agent · 多个 profile"]
     Magpie["magpie（可选插件）\n通用模型网关"]
@@ -36,6 +41,7 @@ flowchart LR
 
   subgraph Cloud["我们运营的云端（不存业务数据）"]
     Relay["iroh-relay\niroh-dns-server"]
+    WebRelay["网页中继\n静态文件 + WSS 反向转发"]
     PushRelay["推送中继\ngorush"]
     Catalog["节点列表\n签名静态文件"]
   end
@@ -45,6 +51,9 @@ flowchart LR
 
   ClientCore <-->|"iroh 隧道"| Core
   Core <-->|"iroh 隧道 · 设备密钥"| DeviceAgent
+  React -->|"PWA：WSS（经中继）"| WebRelay
+  WebRelay <-->|"出站 TLS + HMAC"| Core
+  Core -->|"本地套接字"| WebSession
   Core --> Tuwunel
   Agent <--> Tuwunel
   Agent --> Providers
@@ -88,7 +97,7 @@ flowchart LR
 
 | 服务 | 选型 | 说明 |
 | --- | --- | --- |
-| 中继 | 官方 `iroh-relay` 镜像 | 打洞失败时转发隧道流量。准入只认 endpoint ID，见 ADR-0048。 |
+| 中继 | 官方 `iroh-relay` 镜像 + 网页中继 | 打洞失败时转发隧道流量；网页连接全走网页中继（静态文件 + 反向 WSS），按用户限流。准入只认 endpoint ID，见 ADR-0048。 |
 | 发现 | 官方 `iroh-dns-server` 镜像 | 家里服务器换网络后，App 靠它找到新地址。 |
 | 推送中继 | gorush 加一层鉴权 | 只接收密文，转发到 APNs、FCM、华为 HMS。 |
 | 目录 | 签名静态文件 | 中继节点列表。插件的官方索引在 GitHub 上，签名以后也能经这里分发（ADR-0017）。 |
@@ -101,11 +110,11 @@ flowchart LR
 | --- | --- | --- |
 | iOS | SwiftUI | 外加通知扩展（解密推送）；录屏扩展留给 M2 的屏幕共享。 |
 | Android | Jetpack Compose | 默认“保持连接”前台服务；推送是设置里的高级选项：有谷歌服务走 FCM，其余用 UnifiedPush，一律在推送服务内本地解密（ADR-0003）。 |
-| 桌面（M2） | Compose Multiplatform | 与 Android 共享 UI 模块。 |
-| Web（M3） | Compose 编译到 Web | 核心在服务器上运行，浏览器经 WebSocket 收发。 |
-| 客户端核心 | Rust + UniFFI | matrix-rust-sdk、iroh、本地代理、状态、ViewModel（含设置首页 `SettingsViewModel`）、行为测试；壳经一个 `ClientCore.dispatch(Action)` 入口提交按领域包装的操作。 |
+| PWA（第一期） | React | 每用户一份核心、窗口共用，浏览器经中继 WSS，中继按用户限流；详见 ADR-0124。 |
+| 桌面（第二期） | React + 本机 Rust 旁路进程 | 与 PWA 共用 React 渲染层；核心是本机子进程，经 stdio 帧；还带本机服务供手机远程控制（ADR-0081、ADR-0124）。 |
+| 客户端核心 | Rust + UniFFI | matrix-rust-sdk、iroh、本地代理、状态、ViewModel（含设置首页 `SettingsViewModel`）、行为测试；壳经一个 `ClientCore.dispatch(Action)` 入口提交按领域包装的操作。Web 上同一个核心以每用户一个的服务器端进程运行，渲染层走 JSON 帧，不经 UniFFI。 |
 
-界面文字在两端各自的本地化资源里，语言跟随系统，也能按平台惯例单独设置；客户端核心只给类别和原始值，App 的语言经 `Accept-Language` 带给家里的服务器和插件页（ADR-0043）。服务器把语言按人记下，插件经 OIDC 的 `locale` 声明和核心 MCP 的 `wonton__user_locale` 工具按人取，默认语言由插件自己定。
+界面文字在各端各自的本地化资源里，语言跟随系统，也能按平台惯例单独设置；客户端核心只给类别和原始值，App 的语言经 `Accept-Language` 带给家里的服务器和插件页（ADR-0043）。服务器把语言按人记下，插件经 OIDC 的 `locale` 声明和核心 MCP 的 `wonton__user_locale` 工具按人取，默认语言由插件自己定。
 
 客户端核心的“详情”用 `crates/wonton-client/locales` 的 Fluent 目录写，按 `SetLanguages` 第一项（App 在用的语言）协商，不支持的退到英文；一次请求用开始时的语言，日志用英文。连接失败的 `HomeStatus.message`、`ConnectionDetails.last_failure` 和配对失败说明只含本地化原因；原始错误及配对连接地址放进各自的可选 `diagnostic`，壳提供独立、默认收起且可复制的诊断入口。配对详情的实际总耗时与每个交换阶段的限时分别用秒表示，不把阶段限时当作整次耗时。其他详情保留上游原文和错误码。`CoreError` 的字段不变，前缀由客户端注册给协议 crate 的格式化函数按语言生成，不增加 UniFFI 类型。客户端和服务器共用 `wonton-l10n`（目录、CLDR 协商、一致性检查），资源和当前语言各自持有。
 
@@ -131,7 +140,7 @@ iPad 内容窗口共享进程内的 `ClientCore`，不复制主页面栈。每�
 
 分享页的身份是 `TabRef::SharedApp { owner_user_id, plugin_id }`，与本机插件及其他来源的同名插件隔离。
 同一来源的网页共用 `SharedAppsSource.state` 在 `Ready` 中提供的本地代理；连接结束便撤下代理，保留的旧列表不代表授权。
-两端沿用插件页面容器与主题、语言桥，保留分享方的 `web_url`，不借用自家 `HomeViewModel` 的代理。
+各端沿用插件页面容器与主题、语言桥，保留分享方的 `web_url`，不借用自家 `HomeViewModel` 的代理。
 
 设置「我的应用」中的插件行打开既有插件详情，非插件行不提供此入口。家人按角色开放的范围与好友逐项分享仍使用详情里的既有控件；
 授权状态和分享人数由核心提供，在详情中显示，列表行上的分享提示不表示已经授权。
@@ -493,9 +502,11 @@ scripts/             CI 与开发脚本
 | 出口代理 | gost | MIT，独立容器 | 已定（ADR-0023） |
 | 应用发信的收件端 | Mailpit | MIT，独立容器 | 已定（ADR-0056） |
 | HTTP 网关 | 核心内置（axum + hyper） | MIT | 已定（ADR-0006） |
-| 客户端绑定 | UniFFI | MPL-2.0 | 已定 |
+| 客户端绑定 | UniFFI（原生移动） | MPL-2.0 | 已定；Web/Electron 走 JSON 帧（ADR-0124） |
 | Rust 本地化 | fluent-bundle、fluent-langneg（cldr）、unic-langid、fluent-syntax | Apache-2.0 / MIT | 已定 |
-| UI | SwiftUI、Compose Multiplatform | — / Apache-2.0 | 已定 |
+| UI | React（PWA、Electron）；SwiftUI、Compose（原生移动） | MIT / Apache-2.0 | 已定（ADR-0124） |
+| 桌面外壳 | Electron | MIT | 已定（ADR-0124） |
+| 前端类型生成 | ts-rs | MIT | 已定（ADR-0124） |
 | 图标 | Phosphor（白名单加生成，无运行时依赖） | MIT | 已定（ADR-0026） |
 | 相册 | Immich（插件） | AGPL-3.0，独立容器 | 已定 |
 | 文档 | Paperless-ngx（插件） | GPL-3.0，独立容器 | 已定 |
@@ -510,6 +521,6 @@ scripts/             CI 与开发脚本
   模型直连（家里服务器签发临时令牌，工具调用回家执行）；隐私模式在家里跑 LiveKit 插件。客户端核心
   把音频会话和后台模式抽象一次，供通话和插件网页里的音频共用。见 [ADR-0014](adr/0014-reserved-capabilities.md)。
 - **第三方 IM 渠道（M2）**：渠道插件，基于 Hermes 自带的平台或 mautrix 桥。
-- **Web 端（M3）**：核心接口保持可序列化（操作进、ViewModel 出），为浏览器远程使用留路。
+- **桌面端（第二期）**：Electron + React，与 PWA 共用渲染层，核心是本机旁路进程；本机服务供手机远程控制，见 [ADR-0081](adr/0081-local-agent-host.md) 和 #8。渲染层和预览通道见 [ADR-0124](adr/0124-client-react-pwa-electron.md)。
 - **跨机 Bot 通信（M3）**：插件实现，Matrix 联邦走 iroh 或 A2A。
 - **跨枢纽派活与远程桌面（M3 起）**：跨枢纽仍走 Matrix 联邦或 Bot 联系人，不经过设备协议；远程桌面另写 ADR，设备只跑 Agent（ADR-0123）。

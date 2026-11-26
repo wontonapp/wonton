@@ -1,6 +1,6 @@
 # ADR-0014 预留能力：实时通话、音乐、渠道、Web
 
-- 状态：已接受（2026-10-28）。“小程序 JS SDK”一节已被 [ADR-0033](0033-plugin-tabs.md) 取代；“Subsonic 原生音乐页”一节先撤销（主人 2026-11-06 定）、后由 [ADR-0113](0113-media-transport.md) 重新定回原生（主人 2026-11-21 定）
+- 状态：已接受（2026-10-28）。“小程序 JS SDK”一节已被 [ADR-0033](0033-plugin-tabs.md) 取代；“Subsonic 原生音乐页”一节先撤销（主人 2026-11-06 定）、后由 [ADR-0113](0113-media-transport.md) 重新定回原生（主人 2026-11-21 定）；Web 端的时机和渲染由 [ADR-0124](0124-client-react-pwa-electron.md) 定
 
 MVP 只做主干。以下能力现在就在架构上留好位置，之后按耦合程度拆成独立任务并行开发。
 
@@ -33,10 +33,10 @@ MVP 只做主干。以下能力现在就在架构上留好位置，之后按耦�
 
 Telegram、飞书、企业微信等作为可选的渠道插件，基于 Hermes 自带的平台或 mautrix 桥。
 
-## 桌面端（M2）与 Web 端（M3）
+## 桌面端（第二期）与 Web 端（第一期 PWA）
 
-桌面用 Compose Multiplatform，与 Android 共享 UI。Web 把同一套 Compose UI 编译到 Web，核心在服务器上
-运行，浏览器经 WebSocket 收发。
+桌面用 Electron + React，与 PWA 共用 React 渲染层；客户端核心是本机旁路进程，本机服务供手机远程控制（[ADR-0124](0124-client-react-pwa-electron.md)）。
+Web 第一期做 PWA，同一套 React 渲染层，每用户一份核心、所有窗口共用，浏览器经中继收发（详见 [ADR-0124](0124-client-react-pwa-electron.md)）。
 
 ## 跨机 Bot 通信（M3）
 

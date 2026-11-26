@@ -1,6 +1,6 @@
-# Compose 客户端
+# Android 客户端（Compose）
 
-Kotlin Multiplatform 工程：共享 UI 模块、Android 应用，以及桌面端（M2，Compose Multiplatform）。
+Kotlin Multiplatform 工程：共享 Android UI 模块和 Android 应用。Web 与桌面改用 React（[ADR-0124](../../docs/adr/0124-client-react-pwa-electron.md)），不在本目录。
 状态和业务逻辑都在 `crates/wonton-client`，本目录只负责渲染 ViewModel、把用户操作发回核心，
 以及调用平台能力。
 

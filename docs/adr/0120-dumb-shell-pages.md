@@ -1,6 +1,7 @@
 # ADR-0120 界面：核心给页面描述，壳每种组件只写一次
 
 - 状态：提议（2026-11-25）
+- 部分被 [ADR-0124](0124-client-react-pwa-electron.md) 取代（2026-11-26）：Web 与 Electron 的组件由 React 实现一次，原生移动端仍各实现一次；“每种组件每个壳实现一次”改为“React 一次 + 原生移动各一次”，页面契约和版本规则不变
 - 扩展：[ADR-0005](0005-native-clients-thick-core.md)（状态和 ViewModel 在核心、壳只渲染）、
   [ADR-0077](0077-plugin-settings.md)（表单形状由核心给、壳渲染控件子集、未知项要求更新 App，
   这里把同一套做法从一张表单扩到整页）
@@ -68,8 +69,7 @@ PageEmpty { kind: PageEmptyKind, action?: Action }
 ### 2. 组件清单（v1）
 
 
-每种组件在两端各实现一次，落在 `Design/` 已有的控件上，不新画控件。核心只给内容，颜色、字号、圆角、
-间距和栏的材质都由壳按 ADR-0026/0029 的令牌定；格式里不出现色值和尺寸。
+每种组件在 React 渲染层实现一次（Web 与 Electron 共用），原生移动端按各自的平台各实现一次，落在 `Design/` 已有的控件上，不新画控件。核心只给内容，颜色、字号、圆角、间距和栏的材质都由壳按 ADR-0026/0029 的令牌定；格式里不出现色值和尺寸。
 
 | 组件 | 用途 | 落在哪 |
 | --- | --- | --- |
@@ -125,13 +125,13 @@ PageEmpty { kind: PageEmptyKind, action?: Action }
 
 ### 7. 契约、提供方、消费方
 
-- 契约：`crates/wonton-protocol` 的 `PageView` 及其组件枚举，随 UniFFI 生成两端的类型。
+- 契约：`crates/wonton-protocol` 的 `PageView` 及其组件枚举，随 UniFFI 生成原生移动的类型，Web/Electron 经 JSON 帧拿同一份结构。
 - 提供方：客户端核心里每页的 mapper（今天出 ViewModel 的函数改成出 `PageView`），不需要服务器。
-- 消费方：`apps/ios`、`apps/compose` 各一个 `PageRenderer`。
+- 消费方：`apps/ios`、`apps/compose` 各一个原生 `PageRenderer`，`apps/web` 一个 React `PageRenderer`（Web/Electron 共用）。
 - 契约测试：
   - `wonton-protocol` 的金样本例：每种组件一份 JSON，解析、再序列化、未知组件落 `Other`；
-  - `scripts/check-shell-parity.py` 增加组件清单：某个组件只有一个壳实现或两边都没实现时报警；
-  - 两端各一份预览测试读同一份 fixture，同一份 fixture 驱动一条 iOS UI 测试和一条 Android 仪器测试，
+  - `scripts/check-shell-parity.py` 增加组件清单：某个组件只有一个原生壳实现或两边都没实现时报警；React 渲染层按 `apps/web` 的组件白名单对同一份清单；
+  - 各端各一份预览测试读同一份 fixture，同一份 fixture 驱动一条 iOS UI 测试、一条 Android 仪器测试和一条 React 渲染测试，
     断言行数、文字和动作一致；
   - 换页面的提供方（同一页改由另一个核心模块出）时壳不动，作为“换提供方消费方不用改”的验收。
 
