@@ -155,3 +155,32 @@ fn candidates_without_stats_are_skipped() {
     assert_eq!(choose(None, &candidates), Some(1));
     assert_eq!(choose(None, &[None]), None);
 }
+
+fn server_with(addrs: &[&str]) -> EndpointAddr {
+    let mut server =
+        EndpointAddr::new(id()).with_relay_url("https://relay.example".parse().unwrap());
+    for addr in addrs {
+        server = server.with_ip_addr(addr.parse().unwrap());
+    }
+    server
+}
+
+fn ips(server: &EndpointAddr) -> Vec<String> {
+    server.ip_addrs().map(ToString::to_string).collect()
+}
+
+#[test]
+fn fake_addresses_are_dropped_only_next_to_a_real_one() {
+    let mixed = without_fake_ips(server_with(&[
+        "198.18.0.1:18482",
+        "192.168.1.5:18482",
+        "[::ffff:198.19.0.9]:18482",
+    ]));
+    assert_eq!(ips(&mixed), ["192.168.1.5:18482"]);
+    assert_eq!(mixed.relay_urls().count(), 1, "中继不动");
+
+    let alone = server_with(&["198.18.0.1:18482", "198.19.255.254:18482"]);
+    assert_eq!(without_fake_ips(alone.clone()), alone, "只有假地址时照旧");
+    let relay_only = server_with(&[]);
+    assert_eq!(without_fake_ips(relay_only.clone()), relay_only);
+}

@@ -12,6 +12,7 @@ mod suspend;
 
 use attempt::Attempt;
 use check::SlowPath;
+use path::without_fake_ips;
 pub use path::{PathInfo, PathKind, PreferRealPaths, is_fake_ip, path_selector};
 pub use streams::TunnelStreamStats;
 use streams::{StreamCounters, StreamLease, open_stream};
@@ -557,7 +558,7 @@ impl Inner {
             tokio::time::sleep_until(not_before).await;
         }
         self.set_status(TunnelStatus::Connecting);
-        let server_addr = lock(&self.server).clone();
+        let server_addr = without_fake_ips(lock(&self.server).clone());
         let server = server_addr.id.fmt_short();
         let started = Instant::now();
         let deadline = lock(&self.dial).next();
