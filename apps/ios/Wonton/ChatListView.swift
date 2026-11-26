@@ -543,13 +543,11 @@ private struct StartChatView: View {
                         .foregroundStyle(Color(colors.textSecondary))
                 }
                 let usable = contacts.filter { contact in
-                    guard let access = contact.access else { return true }
-                    if case .unusable = access { return false }
+                    if case .unusable = contact.access { return false }
                     return true
                 }
                 let unavailable = contacts.filter { contact in
-                    guard let access = contact.access else { return false }
-                    if case .unusable = access { return true }
+                    if case .unusable = contact.access { return true }
                     return false
                 }
                 if !usable.isEmpty {
@@ -577,7 +575,7 @@ private struct StartChatView: View {
                             } label: {
                                 WontonRow(
                                     title: contact.name,
-                                    value: contact.access.flatMap(botAccessNoticeText).map { String(localized: $0) },
+                                    value: botAccessNoticeText(contact.access).map { String(localized: $0) },
                                     showsForward: true
                                 )
                             }

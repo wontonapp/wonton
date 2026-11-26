@@ -601,8 +601,8 @@ private fun StartChatScreen(
                         if (index > 0) WontonSeparator()
                         WontonRow(
                             contact.name,
-                            value = (contact.access as? BotAccess.Unusable)?.let { botAccessReasonNotice(it.reason) }
-                                ?.let { stringResource(it) },
+                            value = (contact.access as BotAccess.Unusable).let { botAccessReasonNotice(it.reason) }
+                                .let { stringResource(it) },
                             showsForward = true,
                             onClick = contact.userId.takeIf { it.isNotEmpty() }
                                 ?.let { userId -> { onStart(userId, contact) } },
