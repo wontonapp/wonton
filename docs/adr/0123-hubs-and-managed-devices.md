@@ -122,7 +122,7 @@ T3 Code 把“运行环境（Environment）、访问端点（AccessEndpoint）�
 ### 8. 权限：Agent 自己的挡位 + 收件箱
 
 - **挡位由设备上的 Agent 工具自己决定**（M3）。Claude Code、Codex 的允许/拒绝规则、白名单、`settings.json` 都是它们的；我们不改、不复制，只在两边之间搬。
-- 设备的 Agent 发出权限请求时，守护进程把它变成收件箱里的 `confirm`（ADR-0119）：`choices` 固定为 `approve`（允许一次）、`session`（本会话内同类允许）、`always`（总是允许）、`deny`（拒绝）；`deny` 可带 `note`（拒绝并说明），发送方要求理由时 `requires_comment: true`，不新增第五个 choice；`risk` 用 ADR-0036 的 `high`/`very_high`/`highest`。
+- 设备的 Agent 发出权限请求时，守护进程把它变成收件箱里的 `confirm`（ADR-0119）：`choices` 固定为 `approve`（允许一次）、`session`（本会话内同类允许）、`always`（总是允许）、`deny`（拒绝）；`deny` 可带 `comment`（拒绝并说明，≤200 字），发送方要求理由时 `requires_comment: true`，核心校验非空，不新增第五个 choice；`risk` 用 ADR-0036 的 `high`/`very_high`/`highest`。
 - **“总是允许”的键是（设备、来源会话、命令签名）**：同一户、同一任务、同一条命令再来时自动答；改了命令就重新问。跨设备不继承，跨任务默认不继承（任务卡上可以手动“这次也一样”）。
 - 超时默认 10 分钟自动拒绝（ADR-0119 的阻塞条目时限）；批完的条目留审计，App 能回看是设备、哪条命令、谁批的。
 - 权限请求能在收件箱里批，也能在设备的终端里原生批；两边都行，以先进来的为准，另一边收到 settled 后撤卡。
