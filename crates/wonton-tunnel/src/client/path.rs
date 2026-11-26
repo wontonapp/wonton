@@ -7,10 +7,10 @@ use std::net::{IpAddr, SocketAddr};
 use std::sync::Arc;
 use std::time::Duration;
 
-use iroh::TransportAddr;
 use iroh::endpoint::transports::{
     Addr, FourTuple, PathSelection, PathSelectionContext, PathSelector,
 };
+use iroh::{EndpointAddr, TransportAddr};
 
 /// 代理 TUN 的假地址段：198.18.0.0/15，按人话就是 198.18 和 198.19 两个 B 类段。
 const FAKE_IP_NETWORK: u32 = u32::from_be_bytes([198, 18, 0, 0]);
@@ -74,6 +74,26 @@ pub fn is_fake_ip(addr: IpAddr) -> bool {
         u32::MAX << (32 - FAKE_IP_PREFIX)
     };
     u32::from(ip) & mask == FAKE_IP_NETWORK & mask
+}
+
+/// 直连候选里有真地址时去掉代理 TUN 的假地址；只有假地址时原样保留，它是唯一的直连。
+///
+/// iroh 把首包发给全部候选，先回包的那条定成连接的第一条路径，之后只补回中继，别的直连候选不再试；选路器
+/// 也只在已经打开的路径里挑。经代理绕行的假地址一旦先回包，连接就一直绕着走（`tests/tunnel/fake_ip.rs`）。
+pub fn without_fake_ips(server: EndpointAddr) -> EndpointAddr {
+    let fake = |addr: &TransportAddr| matches!(addr, TransportAddr::Ip(ip) if is_fake_ip(ip.ip()));
+    let real = |addr: &TransportAddr| matches!(addr, TransportAddr::Ip(_)) && !fake(addr);
+    if !server.addrs.iter().any(real) {
+        return server;
+    }
+    EndpointAddr {
+        id: server.id,
+        addrs: server
+            .addrs
+            .into_iter()
+            .filter(|addr| !fake(addr))
+            .collect(),
+    }
 }
 
 /// 选路时的优先级，越小越先。假地址排在中继后面：只有别的路径都没有时才用它。
