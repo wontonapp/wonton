@@ -449,4 +449,6 @@ impl AdminRoster for AdminSet {
 #[allow(dead_code)]
 fn unused(_: ChoicePayload, _: ConfirmPayload, _: InboxQuestionAnswer, _: InboxAction) {}
 
-mod store_impl;
+// 存储实现集中在同名的 store 子模块：`inbox::store::store`。
+#[allow(clippy::module_inception)]
+mod store;
