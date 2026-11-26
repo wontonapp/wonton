@@ -1,6 +1,7 @@
 # ADR-0080 静态网页插件：文件交给静态托管插件，核心只存文件、转发和记账；外部网页只存一个地址
 
-- 状态：已接受（2026-11-11，主人定，见“主人已定”）
+2026-11-27：ADR-0127 §1 推翻本篇第 7 节 `link = minimal`：link 不再给安全档位，见 0127 §1、§7。
+- 状态：已接受（2026-11-11，主人定，见“主人已定”）；`link` 不再给安全档位，由 [ADR-0127](0127-plugin-forms-and-install-trust.md) 第 1 节改写（主人 2026-11-27）
 - 补充 [ADR-0066](0066-plugin-forms.md) 第 1 节的运行形态表（那里写着“静态网页以后需要再加”），不取代它
 
 ## 背景
@@ -153,7 +154,7 @@ x-wonton:
   不进下拉面板：面板里住的是 App 的 WebView，外部网页没有可嵌的页面。
 - 打开时用系统自带的 App 内浏览器：iOS 用 `SFSafariViewController`，Android 用 Custom Tabs。顶上显示网址。
 - 不用插件 WebView，不给任何和 App 说话的通道：没有桥，不能发消息、不能调工具（ADR-0033 的桥只给插件自己的网页）。
-- 卸载只删记录。安全档位是 `minimal`（第 7 节）。
+- 卸载只删记录。不给安全档位（[ADR-0127](0127-plugin-forms-and-install-trust.md) 第 1 节）。
 
 ### 6. 第二步：每个静态插件一小块数据存储（WebDAV 子集）
 
@@ -195,7 +196,7 @@ x-wonton:
 
 | 档位 | 条件（取最高的一条） |
 |---|---|
-| `minimal` | `link`；没写 `connect` 的 `static_web` |
+| `minimal` | 没写 `connect` 的 `static_web`（`link` 不给档位，见 [ADR-0127](0127-plugin-forms-and-install-trust.md)） |
 | `standard` | 不满足下面任何一条 |
 | `high` | 声明了 ADR-0036 的“高”级权限，或者 `requires`/`wants` 一个高权限能力（ADR-0053） |
 | `very_high` | 声明了“很高”级权限 |
