@@ -283,6 +283,19 @@ mod tests {
     }
 
     #[test]
+    fn an_ask_with_a_room_and_request_id_round_trips() {
+        let action = Action::Chat {
+            action: ChatAction::AskAgent {
+                text: "在吗".into(),
+                room_id: Some("!dm:home.example".into()),
+                request_id: Some(7),
+            },
+        };
+        let json = serde_json::to_string(&action).unwrap();
+        assert_eq!(serde_json::from_str::<Action>(&json).unwrap(), action);
+    }
+
+    #[test]
     fn every_link_round_trips_through_its_url() {
         let links = [
             AppLink::Tab { tab: TabRef::Chat },

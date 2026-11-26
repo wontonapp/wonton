@@ -148,7 +148,7 @@ pub enum AskState {
 #[cfg_attr(feature = "uniffi", derive(uniffi::Record))]
 pub struct AskProblem {
     pub reason: AskFailure,
-    /// 不含服务器原始消息或输入值的本地化详情，给默认收起的“详情”用。
+    /// 原始原因（含服务器给的说明），给默认收起的“详情”用；没有时为空，主句由壳按类别写。
     pub detail: String,
 }
 
