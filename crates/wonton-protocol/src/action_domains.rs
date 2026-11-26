@@ -5,13 +5,8 @@ use crate::{
     DeviceNetwork, EntryKind, FileId, FontStyle, FriendBlockScope, FriendBlockTarget, InstallPreview,
     MatrixOidcCallback, MatrixOidcLogin, MatrixPasswordLogin, NewPasswordRequest,
     NotificationCategory, OnboardingTip, PluginAudience, PushEndpoint, PushMethod,
-<<<<<<< HEAD
-    PutDomainRequest, PutIngressRequest, RelaySettingsAction, Rgb, SecretString, ShareGrantUpdate,
+    PutIngressRequest, RelaySettingsAction, Rgb, SecretString, ShareGrantUpdate,
     TabRef, TextSize, ThemeMode, UploadSource,
-=======
-    PutIngressRequest, Rgb, SecretString, ShareGrantUpdate, TabRef, TextSize,
-    ThemeMode, UploadSource,
->>>>>>> 7f0b1024 (wip(protocol): 应用内客户端域（omp 关前没提交，原样存下）)
 };
 
 /// 会话列表的操作。
