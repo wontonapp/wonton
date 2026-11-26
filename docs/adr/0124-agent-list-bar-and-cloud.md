@@ -1,13 +1,16 @@
-# ADR-0124 首页、Agent 的云朵形象与第一次出场
+# ADR-0124 Agent 会话列表、可调底栏与云朵形象
 
-- 状态：已接受（2026-11-21）。首页、底栏、出场都是主人 2026-11-21 看着一段界面参考定的；云朵形象、颜色值加素材库、垫圆底由主人在同日定
-- 补充：[ADR-0095](0095-no-tab-bar.md)（根页面、底栏）、[ADR-0026](0026-design-system.md)（Agent 身份色、App 图标）、[ADR-0044](0044-bot-profile-and-status-avatars.md)（头像由核心按素材合成，状态从 4 个加到 6 个）、[ADR-0016](0016-mcp-bus-and-confirmations.md)（首页的待确认卡片）
+- 状态：已接受（2026-11-21）。Agent 会话列表、底栏、出场都是主人 2026-11-21 看着一段界面参考定的；云朵形象、颜色值加素材库、垫圆底由主人在同日定。2026-11-26 主人看过要点后去掉首页和首页卡片，收件箱改成铃铛入口，底栏默认 Agent 会话列表、应用两项，成员和顺序由用户定
+- 补充：[ADR-0095](0095-no-tab-bar.md)（根页面、底栏）、[ADR-0119](0119-pending-inbox.md)（收件箱和铃铛入口）、[ADR-0122](0122-primary-agent-and-profiles.md)（主 Agent、分身和会话列表）、[ADR-0026](0026-design-system.md)（Agent 身份色、App 图标）、[ADR-0044](0044-bot-profile-and-status-avatars.md)（头像由核心按素材合成，状态从 4 个加到 6 个）、[ADR-0016](0016-mcp-bus-and-confirmations.md)（收件箱里的确认卡片）
 
 ## 背景
 
 主人 2026-11-21 给了一段界面参考，原话：“整体风格、布局充分学习视频这种最佳方案。”视频里是一屏只做一件事的首页：一句问候，
 下面一叠主动卡片，底部一条大输入框；三项图标底栏；点 Agent 整屏变成饱和天蓝，一只立体角色弹跳落下、气泡说两句话，只在第一次
 出现；Agent 聊天里它先开口、递出“连接 Gmail”的卡片；应用页两列卡片、长按浮起出“重新排序”“钉到底栏”。
+
+2026-11-26 主人看过定稿要点后去掉了首页：一屏只做一件事的那层换成默认 Agent 的会话列表，主动卡片收进收件箱
+（[ADR-0119](0119-pending-inbox.md)），底栏只剩 Agent、应用两个默认入口。
 
 同一天主人发了两张图定了角色：一朵浅天蓝毛绒云，头顶右侧一只白色螺旋独角、绕着两道棕色条纹，刺绣五官。识别点是云形、浅天蓝、
 单边独角三样，App 图标改用它的原图抠像加蓝白渐变底（见“Agent 的云朵形象”）。第二张是同一风格的六个变体，变了身体颜色、头饰和表情。负责人 2026-11-21 补充：颜色不固定，
@@ -19,53 +22,40 @@
 “应用”网格是盖在聊天上的一层；[ADR-0044](0044-bot-profile-and-status-avatars.md) 定了 Bot 的名字、静态头像和 4 个状态头像，
 头像素材由主人或 Agent 提供；App 没有首页，Bot 第一次打开和普通会话没有两样。
 
-## 主界面：首页、Agent、应用三页，底栏只在三页上
+## 主界面：Agent、应用两页，底栏只在根页上
 
-- 主界面的根是三个平级的页：**首页**、**Agent**、**应用**。根页面从聊天换成首页，开口是选中的那一页。
-- 底栏只在这三页上，三项固定加钉上去的应用，具体见 [ADR-0095](0095-no-tab-bar.md#主界面底栏2026-11-21-补充)。打开任何应用页
-  （插件页、Bot 网页、公网网页、分享页）都是整页、没有底栏，左边缘右滑和 Android 返回键回去；返回落回选中那一页。
-- 会话列表不是根页面，是 [ADR-0095](0095-no-tab-bar.md) 里那种整页：侧边栏“所有会话”一行和通知打开的是它，首页的未读卡片和
-  `wonton://room/…` 直接打开那一间。聊天里返回回到来源页。
-- 设置仍是主界面上唯一的整屏盖子，三页都进得去。配对页在没配对时占着根，和底栏无关。
+- 主界面的根是两个平级的页：**Agent**（默认 Agent 的会话列表）和**应用**，开口是选中的那一页。
+- Agent 页是默认 Agent 的会话列表：主 Agent 一行、分身各一行（[ADR-0122](0122-primary-agent-and-profiles.md)），照最近活动排；
+  一行显示头像、名字、最后一条和未读，点开进那一间会话。列表下面是给默认 Agent 的输入框：左边“+”、占位字“问 <名字> 点什么”、
+  右边麦克风，发送走已有的 [`ChatAction::AskAgent`](../../crates/wonton-protocol/src/action_domains.rs)，进主对话。默认 Agent
+  没装或没选时输入框照常在，点了在上方如实说“还没有主 Agent”，给去设置的入口。语音结果落回输入框，人看过再发，不确定时
+  原文和转换结果都亮出来。
+- 主界面顶部：左上开侧边栏（[ADR-0095](0095-no-tab-bar.md) 的同一个），右上是一枚收件箱铃铛（带未处理数），见“收件箱铃铛”。
+  没有问候语、没有卡片叠。
+- 底栏只在这两个根页上：默认两项 Agent、应用；用户可以从“我的应用”往底栏加、删和拖顺序，成员和顺序存在核心的
+  `app.wonton.layout`，规则见 [ADR-0095](0095-no-tab-bar.md#主界面底栏2026-11-21-补充)。打开任何应用页（插件页、Bot 网页、
+  公网网页、分享页）都是整页、没有底栏，左边缘右滑和 Android 返回键回去；返回落回选中那一页。
+- 会话不是根页，是 [ADR-0095](0095-no-tab-bar.md) 里那种整页：侧边栏“所有会话”和通知打开的是所有会话页（`TabRef::Rooms`），
+  点一间进那一间。聊天里返回回到来源页。
+- 收件箱不是根页、不是底栏的一项：铃铛点开进单独一页，五种条目见 [ADR-0119](0119-pending-inbox.md)。
+- 设置仍是主界面上唯一的整屏盖子，两个根页都进得去。配对页在没配对时占着根，和底栏无关。
 - iPad 和宽屏按 [ADR-0103](0103-ipad-and-large-screens.md) 两栏：底栏画在左列底部，右列照旧是内容；应用页只铺右栏、不带底栏。
 
-主人原话（定三页和底栏，见 [ADR-0095](0095-no-tab-bar.md) 的同日补充）：底栏只在主界面加回，选中项垫浅灰胶囊，图标下面不写字。
+主人原话（底栏和两页，见 [ADR-0095](0095-no-tab-bar.md) 的同日补充和 2026-11-26 修订）：底栏只在主界面加回，默认两项、
+用户可增删排序，选中项垫浅灰胶囊，图标下面不写字。
 
-## 首页
+## 收件箱铃铛
 
-- 一屏只有三样东西：上面的问候、中间一叠主动卡片、底部一条大输入框。没有页面标题，没有分区标签，内容垂直居中，四周大量留白。
-- 问候是时段加名字再一句问句：核心给时段（早晨、下午、晚上、深夜）和主人的名字，句子在壳里按语言拼（[ADR-0043](0043-app-languages.md)）；
-  还没取到名字时只问候，不编一个名字。
-- 左上圆钮开侧边栏（[ADR-0095](0095-no-tab-bar.md) 的同一个侧边栏），右上圆钮起语音（用系统听写把话填进输入框，识别由壳做）。
-- 卡片叠起来只露最上面一张的整张和下面一到两张的顶边，往上滑翻下一张，最后一张之后不再有牌；没有卡片时整叠不画。
-- 输入框：左边“+”、中间占位字“问 Agent 点什么”、右边麦克风。回车或点发送把这句话发给默认 Agent（走已有的
-  [`ChatAction::AskAgent`](../../crates/wonton-protocol/src/action_domains.rs)），核心接着切到 Agent 页，让人看见它。
-  默认 Agent 没装或没选时输入框照常在，点了在输入框上方如实说“还没有默认 Agent”，给去设置的入口。
-- 语音转出来的文字落在输入框里，人看过再发送；听写结果不确定时把原文和转换结果都亮出来，不直接发送。
-- 卡片的内容、排序、上限全部由核心给，壳按类别画，不自己挑不自己排。卡片类别、来源、排序和空状态见“首页卡片的数据来源”。
-- 除了上面这些，这页不加别的说明文字和图形；取卡片失败时是一条轻提示加重试，错误类别由核心给。
+- 主界面两个根页的顶栏右上角一枚小铃铛（Phosphor `Bell`）；旁边的数字只算待回答的条目（[ADR-0119](0119-pending-inbox.md) 的
+  `needing` 计数），为 0 时不显示数字。
+- 点开进收件箱页（`TabRef::Inbox`），是压栈的一页：不从底栏进，也不常驻一个标签；左边缘右滑和 Android 返回键回来源根页。
+- 收件箱页自己的条目、五种类型、回答和已读、角标算法全在 [ADR-0119](0119-pending-inbox.md)；这篇只管入口的位置和数字来源。
+- 主界面不画问候、不画卡片叠；晨报要是有，也作为收件箱的一种条目，不再单开首页。
 
-## 首页卡片的数据来源
+## Agent 会话页：和默认 Agent 的私聊
 
-卡片是 Agent 先开口的地方，每张卡都指回一个已经有来源的事，不新造事件流。
-
-| 类别 | 数据从哪来 | 已有还是新做 | 谁的线 |
-| --- | --- | --- | --- |
-| 待确认 | 核心的确认接口 `GET /_wonton/api/confirmations?after=<版本>`（长轮询，版本变小当新列表），单张 `GET …/{id}`，回答 `POST /_wonton/confirmations/{id}`，停掉放行时段 `DELETE …/{id}/window`；规则见 [ADR-0016](0016-mcp-bus-and-confirmations.md)、[ADR-0024](0024-confirmation-scope.md)、[ADR-0045](0045-family-members.md)，代码在 `crates/wonton-core/src/gateway/confirmations.rs` | 核心有；客户端核心的 `ChatViewModel::pending_confirmations`（`PendingConfirmation`）已经带着标题、请求者、会话和到期时间，首页直接读它，点开复用现有的卡片详情 | 聊天与 Agent 线 |
-| 未读 | `ChatViewModel::rooms` 每行的 `unread_count`（`RoomRow`），系统小组件的 `WidgetSnapshot::rooms` 同源 | 已有 | 聊天与 Agent 线 |
-| 插件事件 | 已装插件的健康事实：插件停止、启动失败、页面出错（`TabState::Failed`、`RoomRow::plugin`）、有可升级版本（`PluginsViewModel::updatable`）；插件不经对话主动发的事件列为待对齐 | 事实已有，汇总成卡片是新做 | 插件底座线 |
-| 晨报 | Hermes 的晨报，产出放哪、核心怎么取、已读状态都没定（主人 11-15 定的下一批） | 新做；晨报设计开工时两条线一起出 ADR，这张卡先留位，不用假数据 | 聊天与 Agent 线 |
-
-- 排序：待确认最先（到期早的在前），然后未读（按会话最近活动），然后插件事件（出错、停止、可升级），最后晨报。同一件事只出一张卡：
-  一个会话既有待确认又有未读时只出待确认那张，数量记在角标上。
-- 上限 5 张，5 张以外的不进首页、不显示个数；这 5 张能一张张翻到底。总数为 0 时首页只剩问候和输入框，不垫骨架、不放示例卡。
-- 卡片被处理掉才消失：确认答完、会话读完、插件问题修好、晨报读过。核心重新算，壳不做本地备忘。
-- 连接断了、最近一次没取到时保留上次的卡片并标不确定；配对还没完成时不出卡片。
-
-## Agent 页：默认 Agent 的私聊
-
-Agent 页是主人和默认 Agent 的私聊，整页就是聊天时间线，底栏留着；它和从会话列表进来的同一个房间是同一份数据、同一个保活，
-不是第二个聊天实例。
+Agent 会话页是主人和默认 Agent 的私聊，整页就是聊天时间线。它从 Agent 列表的一行进来，是压栈的页、不画底栏；它和从“所有会话”
+进来的同一个房间是同一份数据、同一个保活，不是第二个聊天实例。
 
 - 顶上是它的头像（默认表情，不随状态变）、名字；下面一行日期和一行灰字免责：“预览版可能出错，让它动手前先核对”。免责的类别
   由核心给、文字在壳里（[ADR-0043](0043-app-languages.md)）。
@@ -79,13 +69,13 @@ Agent 页是主人和默认 Agent 的私聊，整页就是聊天时间线，底�
 
 ## 应用页
 
-- 两列白色圆角卡片，左上名字、左下小图标，卡片之间大留白；顶上一行很淡的“长按可以钉到底栏”，右上齿轮进设置，
+- 两列白色圆角卡片，左上名字、左下小图标，卡片之间大留白；顶上一行很淡的“长按可以加到 底栏”，右上齿轮进设置，
   最底一条搜索框加麦克风。
 - 排在前面的是一组“我的应用”（顺序同上），用分隔留白和下面“全部应用”分开；下面列全部已装的。搜到的结果单独一屏。
-- 长按一张卡：卡片浮起变亮、背景压暗，出系统 `contextMenu`，两项：“重新排序”“钉到底栏”（已钉的是“从底栏移除”）。
+- 长按一张卡：卡片浮起变亮、背景压暗，出系统 `contextMenu`，两项：“重新排序”“加到 底栏”（已在栏上是“从底栏移除”）。
   长按菜单照 [ADR-0109](0109-chat-like-telegram.md) 用系统菜单，iOS 长按、Android 长按，同现有消息菜单。
 - “重新排序”把当前这一组换成拖动模式，卡片右上出拖动柄，抖一下，拖完点空白处或“完成”退出；拖到最左边一张仍继续拖就移到另一组。
-- 底栏直接按“我的应用”的顺序取钉着的那些，所以拖动改的是同一个顺序，应用页和底栏不会各排一次。
+- “加到 底栏”只决定在不在栏上；栏上的顺序在栏上拖，和“我的应用”的顺序各管各的（[ADR-0095](0095-no-tab-bar.md#主界面底栏2026-11-21-补充)）。
 - 卡片点开就是整页，没有底栏。
 
 ## Agent 的云朵形象
@@ -105,7 +95,7 @@ Agent 页是主人和默认 Agent 的私聊，整页就是聊天时间线，底�
   C 降一半），不存。
 - **角度。** Bot 头像、列表头像用正面（分层只对正面好对齐）。第一次出场的大图用主人原图那张 3/4 侧面，要不要改成正面见“待对齐”。头饰一律长在头顶右侧。
 - **App 图标不重画。** 用主人原图抠出来的那一版（`design/app-icon/mascot/cutout.png`），保留四分之三侧脸、形状和神态，只垫蓝到白的渐变底；
-  iOS 的浅色、深色、着色和 Android 自适应的前景、背景、单色图层都由它合成（2026-11-22 主人定），脚本是 `scripts/generate-app-icon.py`。
+  iOS 的浅色、深色、着色和 Android 自适应的前景、背景、单色图层都由它合成（2026-11-22 主人定），脚本是 `scripts/make-app-icon.py`。
 - 形象只出现在 Agent 的身份时刻：出场、头像、“Agent”那一项的选中图标；其余界面照 [ADR-0026](0026-design-system.md)，
   饱和天蓝只走 `agentIdentity` 令牌（见该篇同日补充）。
 
@@ -173,9 +163,9 @@ Bot 资料页的头像一节改成两个来源，二选一：
 
 ## 第一次出场
 
-只在第一次点开 Agent 页时演一次。
+只在第一次点开 Agent 会话页时演一次。
 
-- **触发**：默认 Agent 的私聊存在、连接着、这个人的“见过出场”没记下，且这一页刚从别处切进来。没装默认 Agent、没连上时顺延到条件成立的第一次。
+- **触发**：默认 Agent 的私聊存在、连接着、这个人的“见过出场”没记下，且这一页刚从 Agent 列表或别处切进来。没装默认 Agent、没连上时顺延到条件成立的第一次。
 - **标记存在服务器上**，跟着人走、跨设备：记在引导（`/_wonton/api/onboarding`）的数据里，用户换新手机再配对不再放一遍；
   引导本来也是每台服务器按人存（[ADR-0034](0034-onboarding-and-help.md)）。真正的动画进度不存，只存“见过”。
 - **可跳过**：动画任一帧点屏幕就停在当前画面，气泡和按钮立刻出来；不额外加“跳过”按钮，点过和看到底一样记成见过。
@@ -183,7 +173,7 @@ Bot 资料页的头像一节改成两个来源，二选一：
   （先叫名字，再问“有什么能帮你分担的？”），下面是标题、两行说明和一个通栏大胶囊“继续”；点“继续”进普通聊天，气泡收起。
 - **无障碍**：大图纯装饰，不读；气泡按顺序读，动画完把焦点放到标题；“减弱动态效果”打开时不做弹跳和眨眼，渐变压到 100ms 内
   （[ADR-0026](0026-design-system.md) 的动效规则），两气泡直接出现；静止时也保持对比度。
-- 出场只挡 Agent 页那一层；人在动画中间切走，回来重演，见过标记在点过或播完时才写。
+- 出场只挡 Agent 会话页那一层；人在动画中间切走，回来重演，见过标记在点过或播完时才写。
 
 ## 插件和 Agent 自己出素材
 
@@ -208,80 +198,53 @@ Bot 资料页的头像一节改成两个来源，二选一：
 
 厚核心、薄壳（[ADR-0005](0005-native-clients-thick-core.md)）：下面这些都住在客户端核心的 Rust 里，壳只渲染和把动作发回去。
 
-- 首页卡片：算什么卡、怎么排、上限、去重、不确定的标记。
-- 底栏的项、顺序、钉选状态；钉满时拒绝并给原因。
+- 收件箱铃铛：未回答数怎么算、音效和红点什么时候出现；收件箱页自己的条目、排序和回答归 [ADR-0119](0119-pending-inbox.md)。
+- 底栏的成员、顺序、上限 6、满了的拒绝；成员和顺序存在 `app.wonton.layout`。
 - 出场：条件、见过标记、气泡的两句话和按钮的先后。
 - 云朵：可选的颜色板、表情、头饰清单（含素材库的读取），合成和上传；壳只在选色器里给 RGB。
-- 输入框发给谁（默认 Agent），以及发送后切到 Agent 页。
+- Agent 列表：主 Agent 和分身各一行、按最近活动排、未读；输入框发给谁（默认 Agent），以及发送后打开 Agent 会话页。
 - 文字只有类别和原始值；句子、按钮名、无障碍标签都在壳的本地化资源里（[ADR-0043](0043-app-languages.md)）。
 
 ### 接口草案
 
 名字和类型是草案，下一张卡照它先提只改接口的 PR，再由实现 PR 落地。
 
-`wonton-protocol` 的类型（改的是 `pages`、`home`、`bot_profile`、`onboarding` 几个模块）：
+`wonton-protocol` 的类型（改的是 `pages`、`inbox`、`bot_profile`、`onboarding` 几个模块）：
 
 ```rust
-/// 主界面的三页。底栏三项固定是它们，钉上去的应用排在后面。
-pub enum MainTab { Home, Agent, Apps }
+/// 底栏的一项：内置入口，或用户从“我的应用”里挑来钉上的一项。
+pub enum BarEntry { Agent, Apps, Pinned(MyAppRef) }
 
-/// 底栏的一项。
-pub struct MainTabItem {
-    pub entry: MainTabEntry,     // Home / Agent / Apps / Pinned(MyAppRef)
+/// 底栏的一项和它的展示。
+pub struct BarItem {
+    pub entry: BarEntry,
     pub label: String,           // 无障碍标签，底栏不写字
-    pub icon: MainTabIcon,       // 固定图标，或插件图标
-    pub badge: u32,              // Home：未读 + 待确认的总数；Agent：默认 Agent 私聊的未读；Apps：出错 + 可升级。0 不画
+    pub icon: BarIcon,           // 固定图标，或插件图标
+    pub badge: u32,              // Agent：主 Agent 会话的未读；Apps：插件出错 + 可升级。0 不画
 }
-pub enum MainTabEntry { Home, Agent, Apps, Pinned(MyAppRef) }
-pub enum MainTabIcon { Home, Agent, Apps, Plugin(PluginIcon) }
+pub enum BarIcon { Agent, Apps, Plugin(PluginIcon) }
 
-pub struct MainTabsViewModel {
-    pub tabs: Vec<MainTabItem>,
-    pub selected: MainTab,
-    pub pin_cap: u32,            // 3
-    pub pin_full: bool,          // 钉满提示，下一次成功钉上时清
+pub struct BarViewModel {
+    pub items: Vec<BarItem>,     // 成员和顺序原样存 app.wonton.layout；默认 [Agent, Apps]
+    pub selected: BarEntry,
+    pub max_items: u32,          // 6
+    pub full: bool,              // 满了，下一次成功加上时清
 }
 ```
 
-- `PagesViewModel`：`root: TabRef` 换成 `tab: MainTab`，删 `shows_apps`；`stack` 只管应用页，压着页面时底栏不画。
-- `PageAction` 增 `SelectMainTab { tab: MainTab }`、`PinToBar { app: MyAppRef }`、`UnpinFromBar { app: MyAppRef }`；
-  `AddMyApp` 加 `pinned: bool`（同时钉上）；`MoveMyApp` 不改，底栏跟着走。钉满时 `PinToBar` 返回 `invalid_input` 带原因。
-- `MyAppEntry` 加 `pinned: bool`，存进 `app.wonton.layout` 的同一条。
-- `TabRef` 只留页面（`Plugin`、`PluginPath`、`Bot`、`Url`、`UiResource`、`SharedApp`、`Widget`）；`Chat` 换成 `Rooms`（会话列表页，侧边栏
-  “所有会话”和通知用），删 `Apps`。`AppLink` 增 `MainTab { tab: MainTab }`，链接是 `wonton://tab/home`、`/tab/agent`、`/tab/apps`，
-  旧的 `tab/chat` 不留；`AppLink::Tab` 仍指页面，会话列表另有 `wonton://rooms`。设置仍走 `wonton://settings`。
-  我的应用仍只收插件和页面（`MyAppRef::Plugin` / `Page { tab }`），三个根页不占钉位。
+- `PagesViewModel`：`tab: TabRef` 改成 `selected: BarEntry`，删 `shows_apps`；`stack` 只管页面（会话页、收件箱页、应用页），
+  压着页面时底栏不画。
+- `PageAction` 增 `SelectBarItem { entry: BarEntry }`、`AddBarItem { app: MyAppRef }`、`RemoveBarItem { entry: BarEntry }`、
+  `MoveBarItem { from: u32, to: u32 }`；`AddMyApp` 不再带 `pinned`。加满 6 时 `AddBarItem` 返回 `invalid_input` 带原因。
+- `MyAppEntry` 不再有 `pinned`；在不在栏上看 `BarViewModel.items` 里有没有这条。
+- `TabRef` 只留页面（`Plugin`、`PluginPath`、`Bot`、`Url`、`UiResource`、`SharedApp`、`Widget`）；`Chat` 换成 `Rooms`（所有会话页，侧边栏
+  “所有会话”和通知用），删 `Apps`，增 `Inbox`。`AppLink` 增 `Bar { entry: BarEntry }`，链接是 `wonton://tab/agent`、`/tab/apps`、
+  `wonton://inbox`，旧的 `tab/home`、`tab/chat` 不留；`AppLink::Tab` 仍指页面，所有会话页另有 `wonton://rooms`。设置仍走 `wonton://settings`。
+  我的应用仍只收插件和页面（`MyAppRef::Plugin` / `Page { tab }`）。
 
 ```rust
-/// 首页。
-pub struct HomeFeedViewModel {
-    pub greeting: Option<HomeGreeting>,
-    pub cards: Vec<HomeCard>,
-    pub uncertain: bool,          // 断线、最近没取到：卡片照留，壳标不确定
-}
-pub struct HomeGreeting { pub part: DayPart, pub name: Option<String> }
-pub enum DayPart { Morning, Afternoon, Evening, Night }
-pub struct HomeCard {
-    pub id: HomeCardId,
-    pub kind: HomeCardKind,       // Confirmation / Unread / PluginEvent / Digest
-    pub title: String,            // 服务器给的原文，或会话名、插件名
-    pub detail: Option<String>,
-    pub icon: Option<PluginIcon>,
-    pub badge: Option<u32>,
-    pub expires_at_ms: Option<u64>, // 确认卡片
-}
-pub enum HomeCardId {
-    Confirmation { id: String },
-    Room { room_id: String },
-    Plugin { plugin_id: String, kind: PluginEventKind },
-    Digest { message_id: String },
-}
-pub enum PluginEventKind { Failed, Stopped, Updatable }
-pub enum HomeAction {
-    Ask { text: String },          // 发给默认 Agent，然后切到 Agent 页
-    OpenCard { id: HomeCardId },   // 卡片的处置全在核心（进房间、开确认详情、开插件页）
-    Refresh,
-}
+/// 收件箱铃铛：数字是待回答条数，点开进收件箱页。
+pub struct InboxBadge { pub needing: u32 }
 ```
 
 ```rust
@@ -324,7 +287,7 @@ pub struct AgentIntroView {
 - `GET /_wonton/api/cloud-assets?plugin=<插件>`：内置、这个人的、这个插件给的素材清单；`GET` 单项带原图。
 - `POST /_wonton/api/cloud-assets`：主人从相册给自己的库加素材（Owner 令牌）。
 - `DELETE …/{id}`：只删人自己库里的。
-- `GET /_wonton/api/home`：首页卡片快照；推送沿用确认和未读各自的现有通道，首页不另开长轮询。
+- `GET /_wonton/api/inbox`：收件箱快照和 `counts.needing`；铃铛的数字直接用它，收件箱页用同一个响应（规则见 [ADR-0119](0119-pending-inbox.md)）。推送沿用确认和未读各自的现有通道，铃铛不另开长轮询。
 - 总线工具 `wonton__add_avatar_asset`，参数见“插件和 Agent 自己出素材”；`wonton__set_profile` 加 `cloud`。
 
 服务器的 Bot 资料写入（[ADR-0044](0044-bot-profile-and-status-avatars.md) 的 `PUT /_wonton/api/bots/{plugin}/profile`）由核心侧自己接，
@@ -332,13 +295,15 @@ pub struct AgentIntroView {
 
 ## 理由
 
-- **首页是 Agent 先开口的地方。** 主人要的是“它替我盯着”，卡片全是有来源的真事（确认、未读、插件坏没坏），不是推荐流；
-  空的时候就是一屏留白加一个输入框，不占地。
+- **收件箱是 Agent 先开口的地方。** 确认、问题、通知、报告都进收件箱（[ADR-0119](0119-pending-inbox.md)），铃铛只带一个数；
+  主界面不摆卡片流，Agent 列表先说得清“和谁在聊”。
 - **图标用原图抠像，不重画。** 角色本身就是识别点，重画一版只会丢神态；抠像已经备好，渐变底只负责让它在桌面上立得起来，
   形状、角度、神态一个不动。
-- **卡片类别由核心算。** 排序、去重、上限、不确定的标记写在 Rust 里，两端一样，也能写行为测试；壳拿到类别只画。
-- **根页面从聊天换成首页。** 聊天是过程，首页是“现在要我做什么”。会话列表仍在，只是挪进侧边栏一行，不再占根。
-- **底栏只在三页。** 应用页照旧决定整页（ADR-0095 的理由没变：自带底栏的网页不和我们的栏叠两行）；主界面三页给得回一眼能点的入口。
+- **收件箱条目的类别由核心算。** 五种条目、排序、去重、上限、不确定的标记写在 Rust 里，两端一样，也能写行为测试；壳拿到类别只画。
+- **根页面从聊天换成 Agent 列表和应用。** 聊天是过程，会话列表先说清和谁在聊；原来的首页要的是“现在要我做什么”，交给收件箱铃铛，
+  不占一屏。
+- **底栏给用户自己排。** 默认 Agent、应用两项；装的应用多了，加不加、放哪由人定，常在的两个入口不用为偶尔用的应用让位。
+- **底栏只在根页。** 应用页照旧决定整页（ADR-0095 的理由没变：自带底栏的网页不和我们的栏叠两行）；两个根页给得回一眼能点的入口。
 - **形象是云，颜色值加素材库。** 固定六色看着够，但“给我的记账 Bot 戴厨师帽”这种要求只能靠素材和任意色值；三层素材分开，
   换一样不动另两样，Agent 也能自己补素材。
 - **由核心合成。** Matrix 资料里的头像必须是真图，别的客户端才看得见（ADR-0044）；三层叠图的自绘逻辑写两遍迟早不一致，
@@ -347,9 +312,13 @@ pub struct AgentIntroView {
 
 ## 没选的方案
 
-- **首页就做成聊天列表。** 现在的根就是列表，改动最小。没选：列表只说得清“和谁说过话”，说不清“哪件事等我点头”；
-  待确认、插件坏了要靠翻会话和看角标，Agent 也没地方先说一句。
-- **底栏项带文字。** 更好认，第一次用不必猜图标。没选：主人定的是三项图标加胶囊，带文字要占两行高度，钉满以后一行挤不下；
+- **保留首页，把卡片搬进收件箱。** 首页“一屏只做一件事”的节奏好看。没选：问候和卡片叠和 Agent 列表、收件箱都在说同一件事，
+  主人 2026-11-26 去掉了首页，真要处理的都在收件箱。
+- **收件箱做成底栏的一项。** 一眼看见、少一次点击。没选：它是“等我处理”的入口，不是常驻导航；放底栏会挤掉 Agent 或应用，
+  也把两种性质混在一起。
+- **底栏固定 Agent、应用，只许加不许删。** 简单，不会把主入口删没。没选：主人要的是加、删、排序都由用户定；删了还能从
+  “我的应用”加回来。
+- **底栏项带文字。** 更好认，第一次用不必猜图标。没选：主人定的是图标加胶囊，带文字要占两行高度，栏满以后一行挤不下；
   图标加读屏标签已经够认。
 - **出场每次都放。** 有仪式感。没选：每天回来都等一段弹跳才摸得到输入框，跳过按钮也成了固定装饰；一次见过就够。
 - **固定六色、不给任意值。** 素材和校验都简单，调色只要一张表。没选：主人明确要取色器；任意值在核心重着色，和六色同一套代码，
@@ -357,12 +326,13 @@ pub struct AgentIntroView {
 - **插件清单里声明云朵素材。** 和插件默认头像同一处。没选：插件卸载就得抽掉素材，同一个插件给两个用户改过的素材也分不开；
   导入进用户库以后和来源插件解耦，卸载不动已选的。
 - **出场标记只存这台设备。** 不用动服务器数据。没选：引导本来按人存在服务器上，换台手机再看一遍同一段介绍是重复；跨设备少一次的代价是新手机不再看到，
-  而 Agent 页的图标摆在那儿。
+  而 Agent 列表里它的头像摆在那儿。
 
 ## 代价与风险
 
-- 首页要多一次取卡片的请求和一次推送处理，断线时得把“不确定”画得出来，不能和“没事”混；空状态和不确定的区分要在两端各验收一次。
-- 卡片叠只露上面一张，第三张往后要滑才知道有；5 张的上限挡住了更多，但顺序由核心定，用户没法调。
+- 铃铛要多一次取收件箱计数的请求和推送处理，断线时得把“不确定”画得出来，不能和“没事”混；空状态和不确定的区分要在两端各验收一次。
+- 收件箱角标只算待回答的条目，通知不计数，用户可能漏看 `notice`；列表里要和待回答的分开显示。
+- 底栏由用户删改，会出现“Agent 不在栏上”的状态；主 Agent 的聊天得从“所有会话”进。
 - 根页面换了、`shows_apps` 没了，`MainNavigationUITests`、`SidebarUITests` 和一串快照都要跟着改；老装置不读新数据，第一版不做迁移。
 - 出场那段动画是自绘的渐变加位移，减弱动态、大字号、窄屏三种情况要各看一次，动效多了容易掉帧。
 - 合成一张 512 的 PNG 加两次上传要几十毫秒到几百毫秒，状态切换快时要靠防抖和缓存压住；低端机上要实测。
@@ -372,12 +342,12 @@ pub struct AgentIntroView {
 
 ## 待对齐
 
-- **插件底座线**：插件不经对话主动上报事件（进展、要人看一眼的事）目前没有通道；首页的“插件事件”先用健康事实，
+- **插件底座线**：插件不经对话主动上报事件（进展、要人看一眼的事）目前没有通道；收件箱的 `notice` 先用健康事实，
   要真事件就缺一个总线上的上报工具。问：这条通道做不做、挂在哪、限什么频。
-- **聊天与 Agent 线**：首页的未读和待确认直接读 `ChatViewModel` 的字段，不另开接口；确认卡片点开进详情是壳的现有页面，
-  首页只给 `HomeCardId`。问：`ChatViewModel` 这两个字段的稳定承诺要不要写进契约测试。
-- **聊天与 Agent 线**：晨报的产出、取法和已读都没有，等晨报设计开工时一起出 ADR；这页只留 `Digest` 类别。
-  问：晨报 ADR 什么时候开、在那之前首页要不要先出这一类。
+- **聊天与 Agent 线**：收件箱的未读和待确认直接读 `ChatViewModel` 的字段，不另开接口；确认卡片点开进详情是壳的现有页面，
+  收件箱只给条目 id。问：`ChatViewModel` 这两个字段的稳定承诺要不要写进契约测试。
+- **聊天与 Agent 线**：晨报的产出、取法和已读都没有，等晨报设计开工时一起出 ADR；在收件箱里按 `page` 或 `notice` 条目留位。
+  问：晨报 ADR 什么时候开、在那之前要不要先出这一类。
 - **Hermes 默认 Agent**：出场的第一句自我介绍由 Agent 自己发还是核心代发（现在草案是 Hermes 侧给文本、核心发），
   以及默认 Agent 的私聊建没建由谁先动。问：Hermes 侧接不接这句。
 - **Bot 资料和 Bot 网页那一路**：云朵编辑器就长在 #934 收过的那节头像里，替换现在“选一张图”的按钮，#798 的工具和 #874 人的头像不动。
@@ -388,14 +358,14 @@ pub struct AgentIntroView {
 ## 待验证
 
 - 合成一张 512 PNG 在 iPhone 12 一档的低端机上的耗时；连切状态时上传和成员事件的实际条数。
-- 首页卡片在断线、切账号、插件卸载时的去留，两端各走一遍。
+- 铃铛的待回答数和收件箱列表在断线、切账号、插件卸载时的一致性，两端各走一遍。
 - 出场在减弱动态、最大辅助字号、深色和窄屏上的样子；跳过手势会不会和左边缘返回打架。
 - 两列卡片在大字号下的换行和长按菜单的位置。
 
 ## 关联
-
 [ADR-0005](0005-native-clients-thick-core.md)、[ADR-0016](0016-mcp-bus-and-confirmations.md)、[ADR-0024](0024-confirmation-scope.md)、
 [ADR-0026](0026-design-system.md)、[ADR-0029](0029-platform-material.md)、[ADR-0034](0034-onboarding-and-help.md)、
 [ADR-0041](0041-app-links-and-shortcuts.md)、[ADR-0043](0043-app-languages.md)、[ADR-0044](0044-bot-profile-and-status-avatars.md)、
 [ADR-0054](0054-bot-command-menu.md)、[ADR-0095](0095-no-tab-bar.md)、[ADR-0100](0100-system-entry.md)、
-[ADR-0103](0103-ipad-and-large-screens.md)、[ADR-0108](0108-hermes-default-kernel.md)、[ADR-0109](0109-chat-like-telegram.md)
+[ADR-0103](0103-ipad-and-large-screens.md)、[ADR-0108](0108-hermes-default-kernel.md)、[ADR-0109](0109-chat-like-telegram.md)、
+[ADR-0119](0119-pending-inbox.md)、[ADR-0122](0122-primary-agent-and-profiles.md)
