@@ -125,6 +125,9 @@ final class SafeAreaUITests: XCTestCase {
     private func assertContinuousBackground(_ captured: Capture) throws {
         // Three-pixel-wide patches in the page margin avoid the clock, island, home indicator and page
         // content: the page's 16pt `spacing.pageInset` gutter stays empty, so 10pt in still leaves 6pt.
+        // Percentage-of-screen-width sampling cannot work (#856): on a 320pt-wide screen the system clock
+        // spans 5%–15% of the width and the notification icons 17%–28%, so samples must land inside the
+        // 16pt pageInset, 3px wide — the same rule as Android.
         // The patch starts on the 10pt line, converted to device pixels (1pt = `scale` px); patches are
         // addressed by their centre, so the column adds half a 3px patch.
         let scale = CGFloat(captured.image.width) / app.frame.width
@@ -137,8 +140,10 @@ final class SafeAreaUITests: XCTestCase {
         if let pageLeft = captured.pageLeft {
             // The sidebar covers the screen's left edge and clips the page's right one, so sample the
             // shifted page's own 16pt page inset instead: 10pt inside the page edge, patch clear of the
-            // 40pt rounded corner. 7% / 93% of the height keep it in the page's top and bottom safe
-            // margins, clear of the clock, the island and the home indicator.
+            // 40pt rounded corner. Percentage-of-screen-width sampling would hit the clock or icons
+            // (#856: 5%–15% and 17%–28% of a 320pt screen); 3px wide inside the 16pt inset is Android's
+            // rule. 7% / 93% of the height keep it in the page's top and bottom safe margins, clear of
+            // the clock, the island and the home indicator.
             columns = [((pageLeft * scale) + inset) / CGFloat(captured.image.width)]
             edges = [0.07, 0.93]
         }
