@@ -8,6 +8,7 @@ App 里的文字按这里写（ADR-0043）。翻译不逐句对照原文：先�
 | --- | --- | --- | --- | --- |
 | 云吞 | Wonton | 雲吞 | Wonton | App 名字 |
 | 家里的服务器 | home server | 家用伺服器 | 自宅サーバー | 装着 Wonton 的那台主机，对用户只说这个，不说“核心” |
+| 枢纽 | hub | 樞紐 | ハブ | 架构术语：一户一台常开的服务器；界面上仍叫“家里的服务器” |
 | 应用 | app | iOS：App；Android：應用程式 | アプリ | 装在家里服务器上的插件，对用户都叫应用 |
 | App（手机上的 Wonton） | Wonton | 雲吞 | Wonton | 除简体外都直接写名字，免得和上一行的“应用”撞 |
 | 插件 | plugin | 外掛程式 | プラグイン | 只在给开发者看的地方用（插件作者、插件包） |
@@ -17,6 +18,7 @@ App 里的文字按这里写（ADR-0043）。翻译不逐句对照原文：先�
 | 配对 | pair | 配對 | ペアリング | 手机和家里的服务器建立信任 |
 | 添加设备 | Add Device | 新增裝置 | デバイスを追加 | 让另一台手机配对同一台服务器 |
 | 设备 | device | 裝置 | デバイス | |
+| 受管设备 / 受管电脑 | managed device | 受管裝置 | 管理対象デバイス | 挂在枢纽下、跑 Agent 的电脑；界面上叫“电脑” |
 | 主机 | computer | 主機 | ホスト | 跑家里服务器的那台机器，讲安装命令时用 |
 | 底栏 | iOS：Tab Bar；Android：Navigation bar | iOS：標籤列；Android：底部導覽列 | iOS：タブバー；Android：ナビゲーションバー | |
 | 固定到底栏 | iOS：Add to Tab Bar；Android：Pin to navigation bar | iOS：加到標籤列；Android：固定到底部導覽列 | iOS：タブバーに追加；Android：ナビゲーションバーに追加 | |
@@ -24,6 +26,10 @@ App 里的文字按这里写（ADR-0043）。翻译不逐句对照原文：先�
 | 引导 | Setup（动词 Set Up） | 初始設定 | セットアップ | 配对后的几步 |
 | 你的资料 | Your Profile | 個人資料 | プロフィール | |
 | Agent | agent | Agent | エージェント | 驱动 Bot 的程序 |
+| 主 Agent | primary agent | 主 Agent | メインエージェント | 一个人默认的那个 Agent，就是他的第一个私人 Bot；界面上叫“主助手” |
+| 分身（profile） | profile | 分身 | プロフィール | 用户另建的独立身份，独立 Matrix 账号和私聊；英文界面用 Profile |
+| 派活 | dispatch | 派活 | 仕事を渡す | 让某台设备上的 Agent 去干一件事 |
+| 工作区 | workspace | 工作區 | ワークスペース | 设备上给一个任务专用的目录 |
 | 默认 Agent | Default Agent | 預設 Agent | デフォルトのエージェント | |
 | Bot | bot | Bot | ボット | 类别名，英文界面也不改叫 Assistant；每个 Bot 有自己的名字，指具体的那一个时写它的名字 |
 | 成员 | member | 成員 | メンバー | 服务器主人邀请进来的人，每人一个账号；设置里的入口也叫这个，不说“家人” |
@@ -36,6 +42,7 @@ App 里的文字按这里写（ADR-0043）。翻译不逐句对照原文：先�
 | 服务商 | provider | 供應商 | プロバイダー | 模型的服务商 |
 | key | API key | API 金鑰 | APIキー | |
 | 确认卡片 | approval request | 確認請求 | 確認カード | 聊天里要主人点确认的那张卡片 |
+| 允许一次 / 总是允许 / 拒绝 / 拒绝并说明 | Allow Once / Always Allow / Deny / Deny with Reason | 允許一次 / 總是允許 / 拒絕 / 拒絕並說明 | 1 回許可 / 常に許可 / 拒否 / 理由付きで拒否 | 设备上的权限请求的四个回答 |
 | 每次都问 / 始终允许 | Ask Every Time / Always Allow | iOS：每次詢問 / 永遠允許；Android：每次都詢問 / 一律允許 | 毎回確認 / 常に許可 | |
 | 聊天记录备份 | Chat Backup | 聊天記錄備份 | チャットのバックアップ | |
 | 恢复密钥 | Recovery Key | 復原金鑰 | 復旧キー | |

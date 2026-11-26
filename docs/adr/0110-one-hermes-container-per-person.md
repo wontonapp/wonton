@@ -1,6 +1,6 @@
 # ADR-0110 同一个人的多个 Bot 默认共用他的一个 Hermes 容器，也可单独运行；Bot 由核心统一管理
 
-- 状态：已接受（主人 2026-11-20 定运行方式和个数，其余按推荐批），取舍见“已定”
+- 状态：已接受（主人 2026-11-20 定运行方式和个数，其余按推荐批），取舍见“已定”；2026-11-26 部分修订（[ADR-0122](0122-primary-agent-and-profiles.md)）：主 Agent、profile 与辅助对话的身份模型，运行方式和容器边界不变
 - 修订：[ADR-0108](0108-hermes-default-kernel.md) 第 1 节“私人 Bot 之间保持独立容器”；[ADR-0045](0045-family-members.md) 的“每个 Bot 一组容器”、
   私人 Bot 的命名、“名单变了核心重建这个 Bot 的服务”和 `WONTON_MATRIX_ALLOWED_USERS` 的注入方式；[ADR-0044](0044-bot-profile-and-status-avatars.md)
   按插件改资料的接口（改成按 Bot），资料加简介和角色两项
@@ -37,6 +37,7 @@ profile”，名字、标题和头像存在 profile 的 `profile.yaml`（`displa
 - **一个 Bot 就是一个具名 profile**，profile 名就是核心的 Bot 名（核心的 Bot 名规则是 Hermes profile 名规则的子集）。
 - **默认 profile 只当宿主，不承载 Bot**：没有 Matrix 账号，不收消息。每个 Bot 都能同样地增删、换组，容器的进程环境里也没有任何
   一个 Bot 的值（第 5 节）。
+- 主 Agent 是这个人的第一个非默认 profile；默认 profile 仍只当宿主（ADR-0122）。
 - 插件规范删掉“每个 Bot 一组容器”。插件的 `bots` 改为“每个运行组一组服务，加四条 Bot 命令”（第 2 节）。
 - profile 不是安全隔离（ADR-0108 第 1 节照旧）：同组的数据都属于同一个人，信任边界是归属人；想让某个 Bot 和自己的其他 Bot 隔开，
   就让它单独运行（第 6 节）。
@@ -161,6 +162,7 @@ profile 有而记录没有的不服务，如实报出。
 - 同一容器的 Bot 经上游 Bot Chat、`message_agent` 直接互发，以及“讨论模式”：不开放，另写 ADR。Bot 之间经 Matrix 互发照旧走
   ADR-0045 的联系人、频率和跳数。插件不建名为“Bot Chat”的会话。
 - 模型接入照 ADR-0108：新 Bot 从所在组的宿主 profile 复制模型配置，之后各自可改。
+- 主 Agent、profile 与旁聊（辅助对话）的区别、profile 的创建和切换见 [ADR-0122](0122-primary-agent-and-profiles.md)。
 
 ## 理由
 
