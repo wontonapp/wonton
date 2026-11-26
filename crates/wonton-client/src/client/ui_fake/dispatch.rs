@@ -7,6 +7,9 @@ use wonton_protocol::{
     PanelItem, PanelScope, PanelSource, TabRef,
 };
 
+use super::super::ClientCore;
+use super::tabs::fake_open;
+
 /// 假数据下问过几次 Bot；`WONTON_UI_FAKE_ASK=contact_required_once` 用它只让第一次失败。
 static UI_FAKE_ASKS: AtomicUsize = AtomicUsize::new(0);
 
