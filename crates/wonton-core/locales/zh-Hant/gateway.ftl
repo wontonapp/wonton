@@ -83,7 +83,6 @@ gateway-denied = 這部裝置沒有配對或已被移除，要重新配對；命
 gateway-cross-site-api = 應用程式管理介面不接受其他網頁發出的請求
 gateway-disk-space = 無法查詢磁碟空間：{ $error }
 gateway-invalid-lan-choice = 請求內容不是區域網路設定的選項：{ $error }
-gateway-invalid-relay-settings = 請求內容不是中繼表設定：{ $error }
 gateway-icon-not-found = 沒有這張圖片
 gateway-icon-failed = 無法處理圖示：{ $error }
 

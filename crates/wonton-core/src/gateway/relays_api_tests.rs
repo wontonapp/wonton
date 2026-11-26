@@ -134,7 +134,7 @@ async fn a_body_that_is_not_json_is_refused() {
     // 消息要是本地化文案，别把键名当文案发出去。
     assert_ne!(
         reply.json()["error"]["message"].as_str().unwrap(),
-        "gateway-invalid-relay-settings"
+        "relay-settings-invalid-json"
     );
 }
 

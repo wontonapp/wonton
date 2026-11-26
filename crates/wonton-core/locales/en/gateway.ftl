@@ -83,7 +83,6 @@ gateway-denied = This device isn't paired or has been removed; pair it again. Co
 gateway-cross-site-api = The app management API doesn't accept requests from other web pages
 gateway-disk-space = Can't check disk space: { $error }
 gateway-invalid-lan-choice = The request body isn't a local-network setting choice: { $error }
-gateway-invalid-relay-settings = The request body isn't a relay table setting: { $error }
 gateway-icon-not-found = No such image
 gateway-icon-failed = Can't process the icon: { $error }
 

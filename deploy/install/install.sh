@@ -163,6 +163,10 @@ lan_addresses=${WONTON_LAN_ADDRESSES-$(saved WONTON_LAN_ADDRESSES)}
 announce_addresses=${WONTON_ANNOUNCE_ADDRESSES-$(saved WONTON_ANNOUNCE_ADDRESSES)}
 # 不用 `:-`：环境变量设成空就是取消上次的设置，回到数据目录的 relays.json（没有就只用 n0）。
 relays=${WONTON_RELAYS-$(saved WONTON_RELAYS)}
+# 运行时覆盖内置表（构建参数只是兜底）；空串表示取消之前记下的值。
+builtin_relays=${WONTON_BUILTIN_RELAYS-$(saved WONTON_BUILTIN_RELAYS)}
+push_vapid_key=${WONTON_PUSH_VAPID_KEY-$(saved WONTON_PUSH_VAPID_KEY)}
+push_vapid_subject=${WONTON_PUSH_VAPID_SUBJECT-$(saved WONTON_PUSH_VAPID_SUBJECT)}
 relay_list_url=${WONTON_RELAY_LIST_URL-$(saved WONTON_RELAY_LIST_URL)}
 relay_list_pubkey=${WONTON_RELAY_LIST_PUBKEY-$(saved WONTON_RELAY_LIST_PUBKEY)}
 relays_file=${WONTON_RELAYS_FILE-$(saved WONTON_RELAYS_FILE)}
@@ -570,6 +574,12 @@ write_config() {
   # 带上主人的设置：核心启动时也查，但那时容器会一直重启，要等满 10 分钟才报错，这里当场说清楚。
   [ -z "$relays" ] || fits_env "$relays" ||
     die "WONTON_RELAYS 里不能有空格和引号这些字符，令牌里的特殊字符写成百分号编码"
+  [ -z "$builtin_relays" ] || fits_env "$builtin_relays" ||
+    die "WONTON_BUILTIN_RELAYS 里不能有空格和引号这些字符"
+  [ -z "$push_vapid_key" ] || fits_env "$push_vapid_key" ||
+    die "WONTON_PUSH_VAPID_KEY 里不能有空格和引号这些字符"
+  [ -z "$push_vapid_subject" ] || fits_env "$push_vapid_subject" ||
+    die "WONTON_PUSH_VAPID_SUBJECT 里不能有空格和引号这些字符"
   prepare_entry_env
   # “不要名字”的坐标核心运行时也要用，现在就查，别等装完才发现签不出。
   if [ "${WONTON_MATRIX_NAME_MODE:-given}" = none ] && entry_missing; then init_failed; fi
@@ -611,6 +621,9 @@ TZ=$tz
 WONTON_LAN_ADDRESSES=$lan_addresses
 WONTON_ANNOUNCE_ADDRESSES=$announce_addresses
 WONTON_RELAYS=$relays
+WONTON_BUILTIN_RELAYS=$builtin_relays
+WONTON_PUSH_VAPID_KEY=$push_vapid_key
+WONTON_PUSH_VAPID_SUBJECT=$push_vapid_subject
 WONTON_EGRESS_PROXY=$egress_proxy
 WONTON_DOH_URL=$doh_url
 EOF

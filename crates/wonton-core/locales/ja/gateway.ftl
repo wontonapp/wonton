@@ -83,7 +83,6 @@ gateway-denied = このデバイスはペアリングされていないか、削
 gateway-cross-site-api = アプリ管理APIは他のWebページからのリクエストを受け付けません
 gateway-disk-space = ディスク容量を確認できません：{ $error }
 gateway-invalid-lan-choice = リクエストボディはローカルネットワーク設定の選択ではありません：{ $error }
-gateway-invalid-relay-settings = リクエストボディはリレー表の設定ではありません：{ $error }
 gateway-icon-not-found = その画像はありません
 gateway-icon-failed = アイコンを処理できません：{ $error }
 

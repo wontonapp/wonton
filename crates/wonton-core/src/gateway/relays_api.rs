@@ -56,7 +56,7 @@ pub async fn put(
                 "invalid_input",
                 &l10n::text(
                     &languages(&headers),
-                    "gateway-invalid-relay-settings",
+                    "relay-settings-invalid-json",
                     &[("error", error.to_string().into())],
                 ),
             );

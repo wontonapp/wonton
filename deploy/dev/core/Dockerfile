@@ -69,8 +69,8 @@ ARG WONTON_BUILD_COMMIT
 # 发版的版本号（release.yml 传入，不带 v），编进核心给状态页、--version 等显示；别的构建不传，核心显示为开发版。
 ARG WONTON_VERSION
 # 编译进核心的内置中继表（ADR-0048，`WONTON_BUILTIN_RELAYS` 的写法）。默认空：公开构建只预置 n0，我们的地址
-# 和令牌不进公开构建。要预置时 `dev.sh build --build-arg WONTON_BUILTIN_RELAYS=…`；它只在构建时生效，
-# 运行时的同名环境变量不参与。
+# 和令牌不进公开构建。要预置时 `dev.sh build --build-arg WONTON_BUILTIN_RELAYS=…`；运行时的同名环境变量
+# 优先，构建进来的值只在运行时没设时兜底。
 ARG WONTON_BUILTIN_RELAYS
 ENV WONTON_BUILTIN_RELAYS=$WONTON_BUILTIN_RELAYS
 
