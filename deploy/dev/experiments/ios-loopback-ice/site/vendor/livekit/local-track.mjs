@@ -1,4 +1,4 @@
-// 由 livekit-client.esm.mjs（livekit-client@2.23.0）第 22968-24345 行按职责切出，行为不变。
+// 由 livekit-client.esm.mjs（livekit-client@2.23.0）第 22968-24345 行按职责切出，行为不变；mediaTrackToLocalTrack 已抽到 local-track-factory.mjs。
 import { _ } from './protobuf-helpers.mjs';
 import { __awaiter, __rest, _slicedToArray } from './tslib.mjs';
 import { AudioTrackFeature } from './protobuf-messages-enums.mjs';

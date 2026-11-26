@@ -1,4 +1,4 @@
-// 由 livekit-client.esm.mjs（livekit-client@2.23.0）第 23980-23989 行按职责切出，行为不变。
+// 由 livekit-client.esm.mjs（livekit-client@2.23.0）第 23979-23989 行按职责切出，行为不变。
 import { TrackInvalidError } from './errors.mjs';
 import { LocalAudioTrack } from './local-track.mjs';
 import { LocalVideoTrack } from './local-video-track.mjs';
