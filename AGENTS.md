@@ -79,8 +79,9 @@
 - 提交前运行 `bash scripts/check.sh`（行数门禁、冲突标记检查、格式、Clippy、测试），和 CI 的 Rust 部分一致；Swift、Kotlin 的检查在各自的工作流里。
 - 依赖 Docker 的测试标 `#[ignore = "需要 Docker，…"]`。`check.sh` 连得上 Docker 就一起运行，连不上就跳过并打印手动运行的
   命令。跳过不等于通过：PR 说明里写明没跑。CI 分两处跑：PR 上的“Rust”跑默认的测试，故意让 Docker 不可用，保证它们
-  不依赖 Docker，是合并门槛；“Rust Docker 测试”运行这些标了 `#[ignore]` 的，合进 `main` 之后才跑，不挡合并，
-  Docker 不可用即失败。合并前想先跑，在 Actions 页对自己的分支手动触发 `rust-docker`。
+  不依赖 Docker，是合并门槛；“Rust Docker 测试”跑这些标了 `#[ignore]` 的，改了相关路径的 PR 上由 gate 当合并门槛跑，
+  合后和定时照常兜底，Docker 不可用即失败。规则和取舍见 [.github/workflows/README.md](.github/workflows/README.md)。
+  合并前想先跑，在 Actions 页对自己的分支手动触发 `rust-docker`。
 - CI 用 `plugin check-index` 检查官方索引（wonton-store）里的每个清单这份核心都读得懂、都渲染得出来（不再注入的变量当场失败）。
   改清单写法或注入变量的 PR 要先让索引换成新核心读得懂的写法，否则 CI 失败。
 - 没有 `/var/run/docker.sock`（OrbStack、Colima 等）时，`check.sh` 从当前 Docker context 取 `DOCKER_HOST`；
@@ -138,7 +139,7 @@
   - 协议排队：改了 `crates/wonton-protocol` 的 PR 串行合，不是队首就报排位等着，轮到时自动合。
 - 改了 `crates/wonton-protocol` 的 PR，`main` 在分支切出之后又改过协议时，lint 的“改了协议的 PR 基于最新 main”一步失败：
   先 `git rebase origin/main`、解完冲突再推。只在 PR 的 CI 跑时判断一次；没改协议的 PR 不受影响。
-- 慢的合进 `main` 之后跑，不挡合并：Docker 集成测试、界面测试、镜像构建。新加的测试按这个分界放，哪个工作流在哪一边见
+- 慢的合进 `main` 之后跑，不挡合并：界面测试、镜像构建。新加的测试按这个分界放，哪个工作流在哪一边见
   [.github/workflows/README.md](.github/workflows/README.md)。
 - 必需检查只有 `gate` 工作流末尾的“gate 汇总”一个：PR 要等的检查都由 `gate.yml` 调用，它的 `changes` 作业判断改动范围，
   没改到的重作业报 skipped。新的快检查加进 `gate` 调用的工作流，规则集不用动。

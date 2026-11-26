@@ -11,11 +11,14 @@
 
 ## 合并门槛和合后测试
 
-PR 合并前只等快检查：格式、Clippy、detekt、SwiftLint、行数门禁、编译、不依赖 Docker 的单元测试和截图比对
-（`gate.yml` 调用的 `lint`、`rust`、`ios`、`android`），目标是十分钟内出结果。慢的挪到合进 `main` 之后跑，不挡合并：
+PR 合并前等的是快检查：格式、Clippy、detekt、SwiftLint、行数门禁、编译、不依赖 Docker 的单元测试和截图比对
+（`gate.yml` 调用的 `lint`、`rust`、`ios`、`android`），目标是十分钟内出结果；另加只在改到相关路径时才跑的 Docker 集成测试
+（见下面的 `rust-docker.yml`，中位二十几分钟），跑完才合。其它慢的挪到合进 `main` 之后跑，不挡合并：
 
-- `rust-docker.yml`：依赖 Docker 的集成测试。`push` 到 `main` 时按路径触发，每次合并单独跑一遍、不互相取消，
-  红了能按那次提交标题里的 `(#N)` 找到弄红的 PR；合并前想先跑，在 Actions 页对分支手动触发。
+- `rust-docker.yml`：依赖 Docker 的集成测试。改了它路径范围（核心的聊天、存储、推送等代码）的 PR 由 `gate.yml` 的 `docker` 作业
+  调用、算合并门槛，`gate 汇总` 等它的结果，草稿 PR 不跑；`push` 到 `main` 时仍按同一份路径触发，每次合并单独跑一遍、
+  不互相取消，红了能按那次提交标题里的 `(#N)` 找到弄红的 PR。`chat::push_method::background_messages_are_collected_and_cleared_on_foreground`
+  已知会在同步慢时 60 秒超时（PR #1081 首次跑实测），红了先手动重跑；根因另开卡修，这里不加 retry。
 - `ios.yml` 的模拟器构建（WontonTests）在只改了 wonton-client 依赖的其余 crate、依赖版本或工具链时：这些不改导出给
   Swift 的接口，很少弄坏 iOS。改到 Swift 这边或接口（`apps/ios`、设计生成、`wonton-protocol`、`wonton-client`）的
   PR 上照常跑、算必需检查：iOS 在 PR 上红的多半是这几处，挪到合后会让 main 一天红好几次。范围和理由写在 `ios.yml` 开头。
@@ -28,14 +31,15 @@ PR 合并前只等快检查：格式、Clippy、detekt、SwiftLint、行数门�
   组件发布仍须先取得对应范围的许可。
 
 合后的测试红了，谁合的谁 30 分钟内修，修不好 revert（见 AGENTS.md“Git 与协作”）。快慢的分界按“能不能十分钟内
-出结果”定：新加的测试要起容器、走界面流程（UI 测试）或要构建镜像的，放进合后的工作流，不放进必需检查。
+出结果”定：新加的测试要起容器、走界面流程（UI 测试）或要构建镜像的，放进合后的工作流，不放进必需检查；
+Docker 集成测试例外：新加的 Docker 测试进 `rust-docker` 套件，改到相关路径的 PR 合并前跑，UI 测试和镜像构建仍放合后。
 
 ## 必需检查：gate 汇总
 
 - 规则集只配一个检查：`gate.yml` 末尾的 `gate 汇总`。`gate` 里一个 `changes` 作业按改动范围给出 `rust`、`ios`、
-  `android` 三个开关，再用 `workflow_call` 调用 `lint.yml` 和改到的那几个重工作流；汇总 `needs` 全部、`if: always()`，
+  `android`、`docker` 四个开关，再用 `workflow_call` 调用 `lint.yml` 和改到的那几个重工作流（`docker` 调 `rust-docker.yml`）；汇总 `needs` 全部、`if: always()`，
   任一依赖 failure 或 cancelled 就红，success 和 skipped 算过。汇总只干这一件事（一小段 shell，不引第三方 action），
-  草稿 PR 上也起来报一个通过。
+  草稿 PR 上也起来报结果，重作业全被跳过时判红。
 - 一次推送只起 `changes`、`lint`、汇总三个轻作业，加改到的重作业。之前四个工作流各有自己的改动范围和汇总，一次推送
   八个轻作业，各占一台 runner。
 - 被调用的作业检查名是“调用方 / 作业名”（如 `rust / 格式`）。Rust 测试分片被跳过时 matrix 不展开，检查名会留成带
@@ -53,16 +57,17 @@ PR 合并前只等快检查：格式、Clippy、detekt、SwiftLint、行数门�
   `deploy/dev/matrix/`、`deploy/dev/core/compose.yaml`、`deploy/dev/core/Dockerfile`），
   `deploy/dev` 其余的只给本机开发栈（开发索引 `core/store/`、`experiments/`、smoke 脚本），改了不跑重作业；
   新的 `include_str!` 指向 `deploy/` 时要补进列表。只改 `.md` 的 PR 每个工作流都跳过（`apps/compose/` 下的也算）。
-  新增依赖或测试输入时必须同步维护；定时和手动运行不按路径过滤。`rust-docker` 不是必需检查，路径直接写在
-  `push` 触发器上，和 `gate.yml` 里 `rust` 的列表要一起维护。
-- 草稿 PR 上 `changes` 和 `rust`、`ios`、`android` 都不起，只有 lint 和汇总；lint 只跑冲突标记和密钥扫描（同一个作业的
+  新增依赖或测试输入时必须同步维护；定时和手动运行不按路径过滤。`rust-docker` 的路径范围写在它的 `push` 触发器上，
+  `gate.yml` 的 `docker` 过滤复制同一份（PR 上由 `gate` 按它决定跑不跑），两处要一起维护。
+- 草稿 PR 上 `changes` 和 `rust`、`ios`、`android`、`docker` 都不起，只有 lint 和汇总；lint 只跑冲突标记和密钥扫描（同一个作业的
   相邻两步）。转 ready（`ready_for_review`）按改动范围运行。
 - PR 运行和 `main` 上的 `push` 运行都 `cancel-in-progress`：反正要重跑，旧的别继续占名额；定时运行跑完（组名单列）。`gate` 整轮取消时调用的重作业跟着取消；
-  被调用的工作流自己的并发组名带前缀（`rust-`、`ios-`、`android-`），和 `gate-` 不重名，否则 GitHub 判成调用方和
+  被调用的工作流自己的并发组名带前缀（`rust-`、`rust-docker-`、`ios-`、`android-`），和 `gate-` 不重名，否则 GitHub 判成调用方和
   被调用方互相等待。
 - `cache.yml` 不取消进行中的运行，否则 main 忙时缓存几乎写不回去；并发组按作业分，同一作业只跑一个、只留最新一个等着。
 - 合并进 main 不重跑快检查（规则集不要求 PR 先追上 `main`，两个各自绿的 PR 合在一起才出的错靠下面的定时兜底）；
-  `push` 到 main 跑 `gate`（只有 lint）、`rust-docker`、`ios` 和 `android-size`（改到各自路径时）、main-image，`cache.yml` 用和 PR 作业一样的 key
+  `push` 到 main 跑 `gate`（lint 和全量 rust；docker 由 `rust-docker.yml` 自己的 push 按路径跑）、`ios` 和 `android-size`
+  （改到各自路径时）、main-image，`cache.yml` 用和 PR 作业一样的 key
   把编译缓存编一遍存下来（只编不跑）。每天定时（`schedule`，02:00 起错开）把 Rust、Docker、Android、iOS 和体积门禁
   全量跑一遍兜底。
 - 打标签（`labeled`）不进 `ios.yml`、`android.yml`：那会用一次标签事件重跑整轮日常作业，而且跳过的那轮会把之前
@@ -109,7 +114,7 @@ PR 合并前只等快检查：格式、Clippy、detekt、SwiftLint、行数门�
 
 ## 汇总作业的条件
 
-`rust.yml`、`ios.yml`、`android.yml`、`android-size.yml` 的定时和手动运行不经过 `gate`，没有改动范围，全量运行。`gate` 里重作业的 `if`
+`rust.yml`、`ios.yml`、`android.yml`、`android-size.yml`、`rust-docker.yml` 的定时和手动运行不经过 `gate`，没有改动范围，全量运行。`gate` 里重作业的 `if`
 以 `!cancelled()` 开头、再看开关；汇总用 `always()`，判断成功、跳过或失败都照常报告。范围判断失败会让汇总
 变红，不会伪装成没改动。
 
