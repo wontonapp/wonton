@@ -243,10 +243,43 @@ mod tests {
         let action = Action::Chat {
             action: ChatAction::AskAgent {
                 text: "明天几点下雨？".into(),
+                room_id: None,
+                request_id: None,
             },
         };
         let json = serde_json::to_string(&action).unwrap();
         assert_eq!(serde_json::from_str::<Action>(&json).unwrap(), action);
+    }
+
+    #[test]
+    fn an_old_ask_without_a_room_or_request_id_still_parses() {
+        let json = r#"{"type":"chat","action":{"type":"ask_agent","text":"在吗"}}"#;
+        let action: Action = serde_json::from_str(json).unwrap();
+        let Action::Chat {
+            action:
+                ChatAction::AskAgent {
+                    text,
+                    room_id,
+                    request_id,
+                },
+        } = action
+        else {
+            panic!("expected an ask action");
+        };
+        assert_eq!(text, "在吗");
+        assert_eq!(room_id, None);
+        assert_eq!(request_id, None);
+        // 老壳不带这两个字段，序列化也不写空值。
+        let encoded = serde_json::to_string(&Action::Chat {
+            action: ChatAction::AskAgent {
+                text: "在吗".into(),
+                room_id: None,
+                request_id: None,
+            },
+        })
+        .unwrap();
+        assert!(!encoded.contains("room_id"));
+        assert!(!encoded.contains("request_id"));
     }
 
     #[test]

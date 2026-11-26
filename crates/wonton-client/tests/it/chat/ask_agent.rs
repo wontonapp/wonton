@@ -17,7 +17,9 @@ async fn asking_joins_the_bots_chat_and_sends_the_question() {
     assert!(matches!(
         phone.dispatch(Action::Chat {
             action: wonton_protocol::ChatAction::AskAgent {
-                text: "明天下雨吗".to_owned()
+                text: "明天下雨吗".to_owned(),
+                room_id: None,
+                request_id: None,
             }
         }),
         Err(CoreError::NotReady { .. })
@@ -68,6 +70,8 @@ async fn asking_joins_the_bots_chat_and_sends_the_question() {
         .dispatch(Action::Chat {
             action: wonton_protocol::ChatAction::AskAgent {
                 text: "  明天下雨吗 ".to_owned(),
+                room_id: None,
+                request_id: None,
             },
         })
         .unwrap();

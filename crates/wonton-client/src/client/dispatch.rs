@@ -215,7 +215,7 @@ impl ClientCore {
 
     fn chat_action(&self, scope: &Scope, action: ChatAction) -> Result<(), CoreError> {
         match action {
-            ChatAction::AskAgent { text } => {
+            ChatAction::AskAgent { text, .. } => {
                 if scope.home.view().status != HomeStatus::Connected {
                     return Err(CoreError::NotReady {
                         reason: l10n!(CATALOG, language(), "chat-default-agent-unverified"),
