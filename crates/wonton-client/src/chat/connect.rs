@@ -8,7 +8,8 @@ use std::time::Duration;
 
 use wonton_protocol::{ChatAccount, ChatFailure, ChatSync, HomeStatus, ProxySettings};
 
-use super::{Active, ChatLink, failure, lock};
+use super::link::Active;
+use super::{ChatLink, failure, lock};
 
 /// 登录到哪里：经家里的本地代理登录配对的服务器，或者直连外部 Matrix 账号的 homeserver（ADR-0051）。
 /// `HomeOffline` 是本机还有那台服务器的会话、本地代理却还没起来（隧道没通）：先不带代理恢复，代理来了再由带代理的

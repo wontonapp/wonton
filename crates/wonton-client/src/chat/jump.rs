@@ -16,7 +16,7 @@ use wonton_protocol::{
 /// 胶囊最多往前翻这么多页（ADR-0121 §5）。
 const MAX_PAGES: u32 = 30;
 
-use super::PAGE;
+use super::link_send::PAGE;
 use super::timeline::TimelineSubscription;
 use super::util::lock;
 
