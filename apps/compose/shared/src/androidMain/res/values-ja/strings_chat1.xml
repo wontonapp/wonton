@@ -43,4 +43,10 @@
     <!-- Value on the Settings row: backup or recovery is running. -->
     <string name="chat_backup_value_in_progress">処理中</string>
     <string name="chat_plugin_stopped">このエージェントは停止しています。返信を受け取るには起動してください。</string>
+    <string name="chat_ask_failed_bot_not_ready">この Bot はまだ準備できていません。</string>
+    <string name="chat_ask_failed_read_only_room">ここは通知チャンネルで、Bot には届きません。</string>
+    <string name="chat_ask_failed_contact_required">この Bot はまだあなたを連絡先として登録していません。</string>
+    <string name="chat_ask_failed_transport">家のサーバーに接続できません。</string>
+    <string name="chat_ask_failed_upstream">家のサーバーでエラーが起きました。</string>
+    <string name="chat_ask_failed_other">メッセージを送信できませんでした。</string>
 </resources>

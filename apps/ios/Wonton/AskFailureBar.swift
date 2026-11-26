@@ -39,14 +39,14 @@ private extension AskFailure {
         case .noBot: String(localized: .Chat1.chatAskFailedNoBot)
         case .botNotReady: String(localized: .Chat1.chatAskFailedBotNotReady)
         case .botProblem: String(localized: .Chat1.chatAskFailedBotProblem)
-        case .notInRoom: String(localized: .Chat1.chatAskFailedNotInRoom)
-        case .readOnlyRoom: String(localized: .Chat1.chatAskFailedReadOnlyRoom)
-        case .contactRequired: String(localized: .Chat1.chatAskFailedContactRequired)
-        case .transportUnavailable: String(localized: .Chat1.chatAskFailedTransport)
+        case .notInRoom: String(localized: .Chat0.chatAskFailedNotInRoom)
+        case .readOnlyRoom: String(localized: .Chat0.chatAskFailedReadOnlyRoom)
+        case .contactRequired: String(localized: .Chat0.chatAskFailedContactRequired)
+        case .transportUnavailable: String(localized: .Chat0.chatAskFailedTransport)
         case .forbidden: String(localized: .Chat1.chatAskFailedForbidden)
         case .notReady: String(localized: .Chat1.chatAskFailedNotReady)
         case .upstream: String(localized: .Chat1.chatAskFailedUpstream)
-        case .other: String(localized: .Chat1.chatAskFailedOther)
+        case .other: String(localized: .Chat0.chatAskFailedOther)
         }
     }
 }

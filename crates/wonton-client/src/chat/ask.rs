@@ -135,7 +135,12 @@ impl ChatLink {
                 .create_direct_chat(bot, false)
                 .await
                 .map_err(|error| (None, error))?,
-            (None, None) => return Err((None, Error::NotReady("没有目标".to_owned()))),
+            (None, None) => {
+                return Err((
+                    None,
+                    Error::NotReady(l10n!(CATALOG, language(), "chat-ask-target-missing")),
+                ));
+            }
         };
         if send {
             session
