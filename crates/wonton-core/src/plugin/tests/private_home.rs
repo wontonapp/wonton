@@ -594,3 +594,73 @@ async fn missing_room_checkpoint_recovers_the_marked_room_instead_of_creating_an
         .await
         .unwrap();
 }
+
+#[tokio::test]
+async fn deleting_a_bot_removes_only_its_own_volume() {
+    let bed = Bed::start().await;
+    bed.docker.set_image_volumes("echo", &["/cache"]);
+    let alice = bed
+        .manager
+        .ensure_member_bot(&id(), "alice", "alice")
+        .await
+        .unwrap();
+    bed.manager
+        .ensure_member_bot(&id(), "bob", "bob")
+        .await
+        .unwrap();
+    let before = bed.docker.volumes();
+    let alice_volume = before
+        .iter()
+        .find(|v| v.contains("--alice"))
+        .cloned()
+        .expect("alice 的稳定卷");
+    let bob_volume = before
+        .iter()
+        .find(|v| v.contains("--bob"))
+        .cloned()
+        .expect("bob 的稳定卷");
+    bed.manager
+        .remove_member_bot(&alice, "alice", false)
+        .await
+        .unwrap();
+    let after = bed.docker.volumes();
+    assert!(!after.contains(&alice_volume), "删 Bot 不留数据要删它的卷");
+    assert!(after.contains(&bob_volume), "别的 Bot 的卷不能连坐");
+}
+
+#[tokio::test]
+async fn reinstalling_a_bot_after_uninstall_keeps_the_same_volume() {
+    let bed = Bed::start().await;
+    bed.docker.set_image_volumes("echo", &["/cache"]);
+    let alice = bed
+        .manager
+        .ensure_member_bot(&id(), "alice", "alice")
+        .await
+        .unwrap();
+    let volume = bed
+        .docker
+        .volumes()
+        .into_iter()
+        .find(|v| v.contains("--alice"))
+        .expect("alice 的稳定卷");
+    bed.manager
+        .remove_member_bot(&alice, "alice", true)
+        .await
+        .unwrap();
+    assert!(
+        bed.docker.volumes().contains(&volume),
+        "卸载保数据时卷要留着"
+    );
+    bed.manager
+        .uninstall(&id(), false, &super::langs())
+        .await
+        .unwrap();
+    bed.manager
+        .install(&compose("echo"), &permissions(), super::langs())
+        .await
+        .unwrap();
+    assert!(
+        bed.docker.volumes().contains(&volume),
+        "重装要挂回原来的卷，不能新建一个"
+    );
+}

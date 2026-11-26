@@ -167,6 +167,8 @@ struct Resources {
     https_proxy: Option<String>,
     /// 镜像 → 它自带的 `Healthcheck`（Docker 的 JSON 写法），没设的没有。
     image_healthchecks: BTreeMap<String, Value>,
+    /// 镜像 → 它自带的 `VOLUME` 路径（Docker 的 JSON 写法），没设的没有；测试稳定卷要用。
+    image_volumes: BTreeMap<String, Vec<String>>,
     /// 容器名 → 跑完时的（退出码，标准输出，标准错误），`wait` 和 `logs` 按它回答；没设的以 0 退出、没有输出。
     outputs: BTreeMap<String, (i64, String, String)>,
     /// 下次容器更新时返回 Docker 错误；`None` 恢复正常。
