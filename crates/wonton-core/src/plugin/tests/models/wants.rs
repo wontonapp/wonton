@@ -11,7 +11,7 @@ fn consumer_wanting_models() -> String {
 }
 
 #[tokio::test]
-pub(super) async fn wants_models_gets_variables_and_credentials() {
+pub(crate) async fn wants_models_gets_variables_and_credentials() {
     let bed = bed().await;
     bed.manager
         .install(&consumer_wanting_models(), &[], super::langs())
@@ -41,7 +41,7 @@ pub(super) async fn wants_models_gets_variables_and_credentials() {
 
 /// 老清单升级到 `wants: [models]`：原来的凭据留着，不当成“新版本不要了”吊销。
 #[tokio::test]
-pub(super) async fn an_upgrade_from_the_old_permission_keeps_the_credential() {
+pub(crate) async fn an_upgrade_from_the_old_permission_keeps_the_credential() {
     let bed = bed().await;
     bed.manager
         .install(&consumer(), &models(), super::langs())
@@ -77,7 +77,7 @@ pub(super) async fn an_upgrade_from_the_old_permission_keeps_the_credential() {
 
 /// 没有网关：`wants` 只是可选依赖，照样装，变量是空字符串，详情页一条轻提示。
 #[tokio::test]
-pub(super) async fn wants_without_gateway_installs_with_empty_variables() {
+pub(crate) async fn wants_without_gateway_installs_with_empty_variables() {
     let bed = bed_without_gateway().await;
     bed.manager
         .install(&consumer_wanting_models(), &[], super::langs())
@@ -92,7 +92,7 @@ pub(super) async fn wants_without_gateway_installs_with_empty_variables() {
 
 /// Bot 服务按 Bot 签凭据，全插件服务和 `WONTON_MODEL_API_KEY` 都不落空。用 `wants` 判定。
 #[tokio::test]
-pub(super) async fn wants_models_bot_services_get_their_own_credential() {
+pub(crate) async fn wants_models_bot_services_get_their_own_credential() {
     let bed = bed().await;
     let source = package(
         "  gateway:\n    image: hermes\n    environment:\n      KEY: ${WONTON_MODEL_API_KEY}\n  \

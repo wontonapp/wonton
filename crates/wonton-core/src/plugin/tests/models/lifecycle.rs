@@ -3,7 +3,7 @@
 use super::*;
 
 #[tokio::test]
-pub(super) async fn uninstall_revokes_the_credential() {
+pub(crate) async fn uninstall_revokes_the_credential() {
     let bed = bed().await;
     let id = PluginId::parse("app.test").unwrap();
     bed.manager
@@ -34,7 +34,7 @@ pub(super) async fn uninstall_revokes_the_credential() {
 }
 
 #[tokio::test]
-pub(super) async fn installs_without_a_gateway_and_the_variables_come_up_empty() {
+pub(crate) async fn installs_without_a_gateway_and_the_variables_come_up_empty() {
     // 没有网关：照样装，状态照常 Running，模型变量全是空字符串。
     let (docker, engine) = FakeDocker::start().await;
     let dir = tempfile::tempdir().unwrap();
@@ -60,7 +60,7 @@ pub(super) async fn installs_without_a_gateway_and_the_variables_come_up_empty()
 }
 
 #[tokio::test]
-pub(super) async fn the_gateway_arriving_later_issues_and_rebuilds_the_consumer() {
+pub(crate) async fn the_gateway_arriving_later_issues_and_rebuilds_the_consumer() {
     let bed = bed_without_gateway().await;
     bed.manager
         .install(&consumer(), &models(), super::langs())
@@ -77,7 +77,7 @@ pub(super) async fn the_gateway_arriving_later_issues_and_rebuilds_the_consumer(
 }
 
 #[tokio::test]
-pub(super) async fn an_install_waits_for_a_gateway_that_is_still_starting() {
+pub(crate) async fn an_install_waits_for_a_gateway_that_is_still_starting() {
     // 默认 Bot 和网关一起装时，签发会赶上网关还在起：要等它就绪，不能拿空变量收场。
     let bed = bed().await;
     let gateway = PluginId::parse("system.models").unwrap();
@@ -100,7 +100,7 @@ pub(super) async fn an_install_waits_for_a_gateway_that_is_still_starting() {
 }
 
 #[tokio::test]
-pub(super) async fn a_restored_consumer_without_a_listed_entry_is_connected_by_its_record() {
+pub(crate) async fn a_restored_consumer_without_a_listed_entry_is_connected_by_its_record() {
     // restore 回来的插件没有店里的那份条目：网关事后到达时也要按记录接上，不能整条跳过。
     let bed = bed_without_gateway().await;
     let id = PluginId::parse("app.test").unwrap();
@@ -124,7 +124,7 @@ pub(super) async fn a_restored_consumer_without_a_listed_entry_is_connected_by_i
 }
 
 #[tokio::test]
-pub(super) async fn the_gateway_coming_back_again_leaves_connected_consumers_alone() {
+pub(crate) async fn the_gateway_coming_back_again_leaves_connected_consumers_alone() {
     let bed = bed().await;
     bed.manager
         .install(&consumer(), &models(), super::langs())
@@ -142,7 +142,7 @@ pub(super) async fn the_gateway_coming_back_again_leaves_connected_consumers_alo
 }
 
 #[tokio::test]
-pub(super) async fn a_failed_issue_still_installs_and_the_hint_carries_the_reason() {
+pub(crate) async fn a_failed_issue_still_installs_and_the_hint_carries_the_reason() {
     let bed = bed().await;
     bed.docker
         .on_exec(|_, cmd, _| match cmd.get(2).map(String::as_str) {
@@ -186,7 +186,7 @@ pub(super) async fn a_failed_issue_still_installs_and_the_hint_carries_the_reaso
 }
 
 #[tokio::test]
-pub(super) async fn uninstalling_the_gateway_leaves_the_consumer_running_and_the_hint_returns() {
+pub(crate) async fn uninstalling_the_gateway_leaves_the_consumer_running_and_the_hint_returns() {
     let bed = bed().await;
     bed.manager
         .install(&consumer(), &models(), super::langs())
@@ -227,7 +227,7 @@ pub(super) async fn uninstalling_the_gateway_leaves_the_consumer_running_and_the
 }
 
 #[tokio::test]
-pub(super) async fn only_one_gateway_can_be_installed() {
+pub(crate) async fn only_one_gateway_can_be_installed() {
     let bed = bed().await;
     let port = fake_gateway(Keys::default()).await;
     let err = bed

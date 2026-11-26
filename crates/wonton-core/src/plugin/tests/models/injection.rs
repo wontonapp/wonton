@@ -3,7 +3,7 @@
 use super::*;
 
 #[tokio::test]
-pub(super) async fn consumers_get_their_own_verified_credential_through_the_core() {
+pub(crate) async fn consumers_get_their_own_verified_credential_through_the_core() {
     let bed = bed().await;
     bed.manager
         .install(&consumer(), &models(), super::langs())
@@ -45,7 +45,7 @@ pub(super) async fn consumers_get_their_own_verified_credential_through_the_core
 }
 
 #[tokio::test]
-pub(super) async fn bot_services_get_the_bot_credential_and_shared_services_the_plugin_one() {
+pub(crate) async fn bot_services_get_the_bot_credential_and_shared_services_the_plugin_one() {
     let bed = bed().await;
     let source = package(
         "  gateway:\n    image: hermes\n    environment:\n      KEY: ${WONTON_MODEL_API_KEY}\n  \

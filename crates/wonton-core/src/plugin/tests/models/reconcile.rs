@@ -3,7 +3,7 @@
 use super::*;
 
 #[tokio::test]
-pub(super) async fn the_gateway_gets_lost_or_stale_credentials_back_from_the_core() {
+pub(crate) async fn the_gateway_gets_lost_or_stale_credentials_back_from_the_core() {
     let bed = bed().await;
     bed.manager
         .install(&consumer(), &models(), super::langs())
@@ -24,7 +24,7 @@ pub(super) async fn the_gateway_gets_lost_or_stale_credentials_back_from_the_cor
 }
 
 #[tokio::test]
-pub(super) async fn a_rebuild_keeps_the_recorded_vars_even_when_the_gateway_is_gone() {
+pub(crate) async fn a_rebuild_keeps_the_recorded_vars_even_when_the_gateway_is_gone() {
     let (docker, engine) = FakeDocker::start().await;
     let keys = Keys::default();
     let script = keys.clone();
@@ -91,7 +91,7 @@ pub(super) async fn a_rebuild_keeps_the_recorded_vars_even_when_the_gateway_is_g
 }
 
 #[tokio::test]
-pub(super) async fn a_record_without_bot_keys_still_reads_and_the_plugin_comes_up() {
+pub(crate) async fn a_record_without_bot_keys_still_reads_and_the_plugin_comes_up() {
     let bed = bed().await;
     bed.manager
         .install(&consumer(), &models(), super::langs())
@@ -132,7 +132,7 @@ pub(super) async fn a_record_without_bot_keys_still_reads_and_the_plugin_comes_u
 /// 对账失败：容器状态不动（不撒谎说“异常”），原因写进详情页的轻提示；巡检按原值补发，
 /// 网关还拒绝就一直带着原因，容器和凭据都不换。
 #[tokio::test]
-pub(super) async fn a_failed_reconcile_keeps_the_container_running_and_carries_the_reason() {
+pub(crate) async fn a_failed_reconcile_keeps_the_container_running_and_carries_the_reason() {
     let bed = bed().await;
     bed.manager
         .install(&consumer(), &models(), super::langs())
@@ -207,7 +207,7 @@ pub(super) async fn a_failed_reconcile_keeps_the_container_running_and_carries_t
 /// 凭据命令的结局未知（#643 的超时）：容器照常运行、原因写明；命令在引擎侧完成后，
 /// 巡检自己对账恢复，不重启、不重建、不换钥匙、不补发写命令。
 #[tokio::test]
-pub(super) async fn an_unknown_command_outcome_recovers_once_the_command_settles() {
+pub(crate) async fn an_unknown_command_outcome_recovers_once_the_command_settles() {
     let bed = bed().await;
     bed.manager
         .install(&consumer(), &models(), super::langs())
@@ -297,7 +297,7 @@ pub(super) async fn an_unknown_command_outcome_recovers_once_the_command_settles
 /// 命令创建了但根本没启动（Docker 报没在跑、也没有退出码）：结局其实已经定了。
 /// 巡检按原值补发一次，网关收下就恢复，不重建容器。
 #[tokio::test]
-pub(super) async fn an_unknown_command_that_never_started_settles_and_retries() {
+pub(crate) async fn an_unknown_command_that_never_started_settles_and_retries() {
     let bed = bed().await;
     bed.manager
         .install(&consumer(), &models(), super::langs())
@@ -334,7 +334,7 @@ pub(super) async fn an_unknown_command_that_never_started_settles_and_retries() 
 /// 凭据命令进行中网关容器重启：Docker 把 exec 记录丢掉了，不能一直卡在“结局未知”。
 /// 命令也许已经在重启前落地，重新验证同一份凭据就能确定。
 #[tokio::test]
-pub(super) async fn an_unknown_command_whose_exec_vanished_recovers_by_verifying() {
+pub(crate) async fn an_unknown_command_whose_exec_vanished_recovers_by_verifying() {
     let bed = bed().await;
     bed.manager
         .install(&consumer(), &models(), super::langs())
@@ -372,7 +372,7 @@ pub(super) async fn an_unknown_command_whose_exec_vanished_recovers_by_verifying
 }
 
 #[tokio::test]
-pub(super) async fn the_watch_retries_a_failed_reconcile_and_the_consumer_recovers() {
+pub(crate) async fn the_watch_retries_a_failed_reconcile_and_the_consumer_recovers() {
     let bed = bed().await;
     bed.manager
         .install(&consumer(), &models(), super::langs())
@@ -443,7 +443,7 @@ fn stored_keys(bed: &Bed) -> BTreeMap<String, String> {
 }
 
 #[tokio::test]
-pub(super) async fn a_failed_retry_still_tries_the_rest_and_replaces_only_the_failed_value() {
+pub(crate) async fn a_failed_retry_still_tries_the_rest_and_replaces_only_the_failed_value() {
     let _ = tracing_subscriber::fmt()
         .with_max_level(tracing::Level::WARN)
         .with_test_writer()
