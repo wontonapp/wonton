@@ -42,15 +42,6 @@ pub fn required(name: &str) -> Result<String> {
     env::var(name).with_context(|| format!("missing {name}"))
 }
 
-fn secret(name: &str) -> Result<String> {
-    let path = required(name)?;
-    let value = std::fs::read_to_string(path)?.trim().to_owned();
-    if value.is_empty() {
-        bail!("empty secret {name}");
-    }
-    Ok(value)
-}
-
 pub fn valid_label(label: &str) -> bool {
     !label.is_empty()
         && label.len() <= 63
@@ -63,6 +54,23 @@ pub fn valid_label(label: &str) -> bool {
 
 impl Config {
     pub fn from_env() -> Result<Self> {
+        Self::from_lookup(|name| env::var(name).ok())
+    }
+
+    /// Parse from an explicit lookup so tests do not race on process env.
+    pub fn from_lookup<F>(lookup: F) -> Result<Self>
+    where
+        F: Fn(&str) -> Option<String>,
+    {
+        let required = |name: &str| lookup(name).with_context(|| format!("missing {name}"));
+        let secret = |name: &str| -> Result<String> {
+            let path = required(name)?;
+            let value = std::fs::read_to_string(path)?.trim().to_owned();
+            if value.is_empty() {
+                bail!("empty secret {name}");
+            }
+            Ok(value)
+        };
         let zone = required("WONTON_HOME_ZONE")?;
         if !zone.split('.').all(valid_label) {
             bail!("invalid zone");
@@ -77,8 +85,8 @@ impl Config {
             bail!("ACME update URL must be HTTPS without query/fragment");
         }
         let system = match (
-            env::var("WONTON_HOME_SYSTEM_TOKEN_FILE").ok(),
-            env::var("WONTON_HOME_SYSTEM_DOMAINS").ok(),
+            lookup("WONTON_HOME_SYSTEM_TOKEN_FILE"),
+            lookup("WONTON_HOME_SYSTEM_DOMAINS"),
         ) {
             (None, None) => None,
             (Some(path), Some(domains)) => {

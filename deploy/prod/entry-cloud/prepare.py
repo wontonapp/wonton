@@ -73,6 +73,8 @@ def ensure_ca(root: Path) -> tuple[Path, Path]:
             "-nodes", "-keyout", str(ca_key), "-out", str(ca_crt), "-days", "3650",
             "-subj", "/CN=wonton entry control CA")
         ca_key.chmod(0o600)
+    # certbot writes 0600/0644 under live, but nginx workers read the copy.
+    ca_crt.chmod(0o644)
     return ca_key, ca_crt
 
 
@@ -111,12 +113,16 @@ def main() -> None:
     values = load_env(Path(args.env_file))
     values["DOMAIN"] = need(values, "WONTON_DOMAIN")
     values["PUBLIC_IP"] = need(values, "WONTON_PUBLIC_IP")
+    values["LISTEN_IP"] = values.get("WONTON_LISTEN_IP") or values["PUBLIC_IP"]
     for key, short in (("WONTON_PUSH_HOST", "PUSH_HOST"), ("WONTON_RELAY_HOST", "RELAY_HOST"),
                        ("WONTON_NAMES_HOST", "NAMES_HOST"), ("WONTON_OMARCHY_HOST", "OMARCHY_HOST")):
         values[short] = need(values, key)
     values["PUBLIC_SERVICE_URL"] = f"https://{values['NAMES_HOST']}"
+    values["WONTON_CERTS_DIR"] = values.get("WONTON_CERTS_DIR") or str(Path(args.root) / "certs")
+    values["SITE_ALIAS"] = need(values, "WONTON_SITE_ALIAS")
+    values["OMARCHY_ALIAS_DOMAIN"] = f"{values['SITE_ALIAS']}.{values['DOMAIN']}"
     values["OMARCHY_ALT_DOMAIN"] = (
-        "" if values["OMARCHY_HOST"] == f"omarchy.{values['DOMAIN']}" else f"omarchy.{values['DOMAIN']}"
+        "" if values["OMARCHY_HOST"] == values["OMARCHY_ALIAS_DOMAIN"] else values["OMARCHY_ALIAS_DOMAIN"]
     )
     # Filled from the generated secret below; do not generate a second value.
 
@@ -144,11 +150,11 @@ def main() -> None:
     render(TEMPLATES / "acme-dns.cfg.tmpl", root / "acme-dns/config.cfg", values, 0o640)
     render(TEMPLATES / "bootstrap/install.sh", root / "bootstrap/install.sh", values, 0o644)
 
-    le_root = Path(values.get("WONTON_LE_ROOT", "/etc/letsencrypt/live"))
+    certs_dir = Path(values["WONTON_CERTS_DIR"])
     for host in (values["WONTON_PUSH_HOST"], values["WONTON_RELAY_HOST"],
-                 values["WONTON_NAMES_HOST"], values["WONTON_OMARCHY_HOST"], values["DOMAIN"],
+                 values["WONTON_NAMES_HOST"], values["DOMAIN"],
                  f"www.{values['DOMAIN']}"):
-        ensure_placeholder_cert(host, le_root)
+        ensure_placeholder_cert(host, certs_dir)
 
     for template in sorted((TEMPLATES / "nginx").glob("*.conf.tmpl")):
         dest = root / "nginx" / template.name.removesuffix(".tmpl")

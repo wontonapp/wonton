@@ -9,6 +9,7 @@ name: ${COMPOSE_PROJECT_NAME:-wonton-entry}
 x-hardening: &hardening
   restart: unless-stopped
   read_only: true
+  mem_limit: 128m
   tmpfs:
     - /tmp
   security_opt:
@@ -39,6 +40,7 @@ services:
 
   home:
     <<: *hardening
+    mem_limit: 256m
     image: ${WONTON_HOME_IMAGE:?build and pin WONTON_HOME_IMAGE}
     network_mode: host
     depends_on:
@@ -66,7 +68,7 @@ services:
       WONTON_HOME_FRPS_METRICS_USER: wonton
       WONTON_HOME_FRPS_METRICS_PASSWORD_FILE: /secrets/frps-metrics-password
       WONTON_HOME_SYSTEM_TOKEN_FILE: /secrets/system-frpc-token
-      WONTON_HOME_SYSTEM_DOMAINS: ${WONTON_PUSH_HOST:?},${WONTON_RELAY_HOST:?},${WONTON_NAMES_HOST:?},${WONTON_OMARCHY_HOST:?},${WONTON_DOMAIN:?},www.${WONTON_DOMAIN:?},omarchy.${WONTON_DOMAIN:?}
+      WONTON_HOME_SYSTEM_DOMAINS: ${WONTON_HOME_SYSTEM_DOMAINS:?set in .env}
     volumes:
       - ${WONTON_ENTRY_ROOT:?}/state:/state
       - ${WONTON_ENTRY_ROOT:?}/secrets:/secrets:ro
@@ -107,6 +109,7 @@ services:
 
   dnsdist:
     <<: *hardening
+    mem_limit: 64m
     user: "0:0"
     image: ${DNSDIST_IMAGE:?pin DNSDIST_IMAGE}
     network_mode: host
@@ -128,6 +131,7 @@ services:
 
   acme-dns:
     <<: *hardening
+    mem_limit: 64m
     image: ${ACME_DNS_IMAGE:?pin ACME_DNS_IMAGE}
     network_mode: host
     cap_add:
@@ -143,11 +147,14 @@ services:
 
   system-frpc:
     <<: *hardening
+    mem_limit: 64m
     image: ${FRPC_IMAGE:?pin FRPC_IMAGE}
     network_mode: host
     entrypoint: ["/usr/bin/frpc", "-c", "/etc/frpc/system-frpc.toml"]
     depends_on:
       frps:
+        condition: service_healthy
+      home:
         condition: service_healthy
     volumes:
       - ${WONTON_ENTRY_ROOT:?}/frpc:/etc/frpc:ro

@@ -2,8 +2,9 @@
 """Create the production zone and its fixed records in PowerDNS.
 
 Idempotent: the zone is created only when absent, records are REPLACEd. Run it
-after compose starts pdns and before the registrar NS switch. Hosts that live
-outside DOMAIN (for example omarchy.online) are skipped, not forced into the zone.
+after compose starts pdns and before the registrar NS switch. Fixed host
+records outside DOMAIN are skipped; extra in-zone A labels come from
+WONTON_BOOTSTRAP_EXTRA_A.
 """
 import json
 import os
@@ -20,6 +21,7 @@ PUSH = os.environ["WONTON_PUSH_HOST"]
 RELAY = os.environ["WONTON_RELAY_HOST"]
 NAMES = os.environ["WONTON_NAMES_HOST"]
 OMARCHY = os.environ["WONTON_OMARCHY_HOST"]
+EXTRA_A = [item.strip() for item in os.environ.get("WONTON_BOOTSTRAP_EXTRA_A", "").split(",") if item.strip()]
 
 
 def call(method: str, path: str, body: dict | None = None) -> tuple[int, object]:
@@ -80,7 +82,7 @@ def main() -> None:
     elif status != 200:
         sys.exit(f"read zone failed: {status} {body}")
 
-    soa = f"ns-auth.{DOMAIN}. hostmaster.{DOMAIN}. {int(time.time())} 10800 3600 604800 3600"
+    soa = f"ns-auth.{DOMAIN}. hostmaster.{DOMAIN}. {int(time.time())} 10800 3600 604800 300"
     rrsets = [
         rr(f"{DOMAIN}.", "SOA", 3600, [soa]),
         rr(f"{DOMAIN}.", "NS", 3600, [f"ns-auth.{DOMAIN}.", f"ns2-auth.{DOMAIN}."]),
@@ -89,8 +91,6 @@ def main() -> None:
         rr(f"{DOMAIN}.", "A", 60, [PUBLIC_IP]),
         rr(f"*.{DOMAIN}.", "A", 60, [PUBLIC_IP]),
         rr(f"www.{DOMAIN}.", "A", 60, [PUBLIC_IP]),
-        rr(f"oma.{DOMAIN}.", "A", 60, [PUBLIC_IP]),
-        rr(f"omarchy.{DOMAIN}.", "A", 60, [PUBLIC_IP]),
         rr(f"auth.{DOMAIN}.", "NS", 60, [f"ns-auth.{DOMAIN}."]),
         rr(f"{DOMAIN}.", "CAA", 60, [
             '0 issue "letsencrypt.org"',
@@ -102,6 +102,8 @@ def main() -> None:
             rrsets.append(rr(f"{host}.", "A", 60, [PUBLIC_IP]))
         else:
             print(f"skip {label}: {host} is outside {DOMAIN}")
+    for label in EXTRA_A:
+        rrsets.append(rr(f"{label}.{DOMAIN}.", "A", 60, [PUBLIC_IP]))
 
     status, body = call("PATCH", zone_url, {"rrsets": rrsets})
     if status != 204:

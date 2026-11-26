@@ -131,7 +131,9 @@ pub async fn handle(State(app): State<Arc<App>>, Json(mut request): Json<Hook>) 
         }
         return Json(json!({"reject":false,"unchange":true}));
     }
-    if !login && now().saturating_sub(runtime.metrics_at) > 65 {
+    // The system identity never accounts per-home usage, so stale relay metrics
+    // must not take push/relay/names down with it.
+    if !is_system && !login && now().saturating_sub(runtime.metrics_at) > 65 {
         return reject("relay quota metrics unavailable");
     }
     if let Some(home) = home {

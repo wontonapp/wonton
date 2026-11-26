@@ -10,8 +10,8 @@ server {
     listen 127.0.0.1:4443 ssl proxy_protocol http2;
     server_name @RELAY_HOST@;
 
-    ssl_certificate /etc/letsencrypt/live/@RELAY_HOST@/fullchain.pem;
-    ssl_certificate_key /etc/letsencrypt/live/@RELAY_HOST@/privkey.pem;
+    ssl_certificate @WONTON_CERTS_DIR@/@RELAY_HOST@/fullchain.pem;
+    ssl_certificate_key @WONTON_CERTS_DIR@/@RELAY_HOST@/privkey.pem;
     ssl_protocols TLSv1.2 TLSv1.3;
 
     access_log /var/log/nginx/@RELAY_HOST@.access.log;

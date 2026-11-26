@@ -574,87 +574,41 @@ fn quota_month_uses_calendar_utc_not_fixed_thirty_day_windows() {
     assert_eq!(crate::metrics::utc_month(2678400), 1970 * 12 + 1);
 }
 
-#[tokio::test]
-async fn system_identity_is_limited_to_operator_allowlist() {
-    let token = "system-secret";
-    let fixture = Fixture::with_system(Some(System {
-        domains: vec!["push.homes.test".into(), "omarchy.online".into()],
-        token_hash: crate::store::hash(token.as_bytes()),
-    }))
-    .await;
-    assert_eq!(
-        fixture.hook("Login", "system", token, json!({})).await["reject"],
-        false
-    );
-    let https = json!({"proxy_type":"https","proxy_name":"system.push","custom_domains":["push.homes.test"]});
-    let admitted = fixture.hook("NewProxy", "system", token, https).await;
-    assert_eq!(admitted["reject"], false);
-    assert_eq!(admitted["content"]["bandwidth_limit"], "20MB");
-    let external = json!({"proxy_type":"http","proxy_name":"system.omarchy","custom_domains":["omarchy.online"]});
-    assert_eq!(
-        fixture.hook("NewProxy", "system", token, external).await["reject"],
-        false
-    );
-    let multi = json!({"proxy_type":"https","proxy_name":"system.multi","custom_domains":["push.homes.test","omarchy.online"]});
-    assert_eq!(
-        fixture.hook("NewProxy", "system", token, multi).await["reject"],
-        false
-    );
-    let unknown =
-        json!({"proxy_type":"https","proxy_name":"system.bad","custom_domains":["bad.homes.test"]});
-    assert_eq!(
-        fixture.hook("NewProxy", "system", token, unknown).await["reject"],
-        true
-    );
-    assert_eq!(
-        fixture.hook("Login", "system", "wrong", json!({})).await["reject"],
-        true
-    );
-}
-
-#[tokio::test]
-async fn system_identity_is_rejected_when_not_configured() {
-    let fixture = Fixture::new().await;
-    let rejected = fixture.hook("Login", "system", "any", json!({})).await;
-    assert_eq!(rejected["reject"], true);
-    assert_eq!(rejected["reject_reason"], "system access not configured");
-}
-
 #[test]
 fn home_proxy_domains_accept_apex_and_one_wildcard() {
     let d = |value: &str| json!(value);
     assert!(crate::hooks::home_domains_ok(
-        &[d("peng.homes.test")],
-        "peng",
+        &[d("alice.homes.test")],
+        "alice",
         "homes.test"
     ));
     assert!(crate::hooks::home_domains_ok(
-        &[d("peng.homes.test"), d("*.peng.homes.test")],
-        "peng",
+        &[d("alice.homes.test"), d("*.alice.homes.test")],
+        "alice",
         "homes.test"
     ));
     assert!(crate::hooks::home_domains_ok(
-        &[d("*.peng.homes.test")],
-        "peng",
+        &[d("*.alice.homes.test")],
+        "alice",
         "homes.test"
     ));
     assert!(!crate::hooks::home_domains_ok(
         &[d("other.homes.test")],
-        "peng",
+        "alice",
         "homes.test"
     ));
     assert!(!crate::hooks::home_domains_ok(
-        &[d("peng.homes.test"), d("other.homes.test")],
-        "peng",
+        &[d("alice.homes.test"), d("other.homes.test")],
+        "alice",
         "homes.test"
     ));
     assert!(!crate::hooks::home_domains_ok(
         &[
-            d("peng.homes.test"),
-            d("*.peng.homes.test"),
+            d("alice.homes.test"),
+            d("*.alice.homes.test"),
             d("extra.homes.test")
         ],
-        "peng",
+        "alice",
         "homes.test"
     ));
 }
@@ -703,32 +657,9 @@ async fn wildcard_proxy_still_uses_one_of_five_slots() {
     );
 }
 
-struct EnvRestore(Vec<&'static str>);
-
-impl EnvRestore {
-    fn set(key: &'static str, value: &str) -> Self {
-        // SAFETY: only tests in this module read env; from_env is not called elsewhere.
-        unsafe { std::env::set_var(key, value) };
-        Self(vec![key])
-    }
-
-    fn add(mut self, key: &'static str, value: &str) -> Self {
-        unsafe { std::env::set_var(key, value) };
-        self.0.push(key);
-        self
-    }
-}
-
-impl Drop for EnvRestore {
-    fn drop(&mut self) {
-        for key in &self.0 {
-            unsafe { std::env::remove_var(key) };
-        }
-    }
-}
-
 #[test]
 fn config_from_env_parses_operator_system_identity() {
+    use std::collections::BTreeMap;
     let dir = tempfile::tempdir().unwrap();
     let token = dir.path().join("system-token");
     std::fs::write(&token, "sys\n").unwrap();
@@ -736,41 +667,58 @@ fn config_from_env_parses_operator_system_identity() {
     std::fs::write(&pdns_key, "pdns\n").unwrap();
     let metrics = dir.path().join("metrics-password");
     std::fs::write(&metrics, "metrics\n").unwrap();
-
-    let _guard = EnvRestore::set("WONTON_HOME_ZONE", "homes.test")
-        .add(
+    let values: BTreeMap<&str, String> = [
+        ("WONTON_HOME_ZONE", "homes.test".to_owned()),
+        (
             "WONTON_HOME_STATE",
-            dir.path().join("state.json").to_str().unwrap(),
-        )
-        .add("WONTON_HOME_RELAY_IP", "203.0.113.10")
-        .add("WONTON_HOME_RELAY_HOST", "relay.homes.test")
-        .add("WONTON_HOME_RELAY_PORT", "443")
-        .add("WONTON_HOME_RELAY_SERVER_NAME", "relay.homes.test")
-        .add("WONTON_HOME_ACME_URL", "https://names.homes.test/acme")
-        .add("WONTON_HOME_ACME_INTERNAL_URL", "http://127.0.0.1:8054")
-        .add("WONTON_HOME_PDNS_URL", "http://127.0.0.1:8084")
-        .add("WONTON_HOME_PDNS_KEY_FILE", pdns_key.to_str().unwrap())
-        .add("WONTON_HOME_CAA_ISSUER", "letsencrypt.org")
-        .add(
+            dir.path().join("state.json").to_str().unwrap().to_owned(),
+        ),
+        ("WONTON_HOME_RELAY_IP", "203.0.113.10".to_owned()),
+        ("WONTON_HOME_RELAY_HOST", "relay.homes.test".to_owned()),
+        ("WONTON_HOME_RELAY_PORT", "443".to_owned()),
+        (
+            "WONTON_HOME_RELAY_SERVER_NAME",
+            "relay.homes.test".to_owned(),
+        ),
+        (
+            "WONTON_HOME_ACME_URL",
+            "https://names.homes.test/acme".to_owned(),
+        ),
+        (
+            "WONTON_HOME_ACME_INTERNAL_URL",
+            "http://127.0.0.1:8054".to_owned(),
+        ),
+        ("WONTON_HOME_PDNS_URL", "http://127.0.0.1:8084".to_owned()),
+        (
+            "WONTON_HOME_PDNS_KEY_FILE",
+            pdns_key.to_str().unwrap().to_owned(),
+        ),
+        ("WONTON_HOME_CAA_ISSUER", "letsencrypt.org".to_owned()),
+        (
             "WONTON_HOME_FRPS_METRICS_URL",
-            "http://127.0.0.1:7500/metrics",
-        )
-        .add("WONTON_HOME_FRPS_METRICS_USER", "wonton")
-        .add(
+            "http://127.0.0.1:7500/metrics".to_owned(),
+        ),
+        ("WONTON_HOME_FRPS_METRICS_USER", "wonton".to_owned()),
+        (
             "WONTON_HOME_FRPS_METRICS_PASSWORD_FILE",
-            metrics.to_str().unwrap(),
-        )
-        .add("WONTON_HOME_SYSTEM_TOKEN_FILE", token.to_str().unwrap())
-        .add(
+            metrics.to_str().unwrap().to_owned(),
+        ),
+        (
+            "WONTON_HOME_SYSTEM_TOKEN_FILE",
+            token.to_str().unwrap().to_owned(),
+        ),
+        (
             "WONTON_HOME_SYSTEM_DOMAINS",
-            "push.homes.test,omarchy.online",
-        );
-    let config = crate::config::Config::from_env().unwrap();
+            "push.homes.test,site.example".to_owned(),
+        ),
+    ]
+    .into_iter()
+    .collect();
+    let config = crate::config::Config::from_lookup(|key| values.get(key).cloned()).unwrap();
     let system = config.system.expect("system identity parsed");
-    assert_eq!(system.domains, ["push.homes.test", "omarchy.online"]);
+    assert_eq!(system.domains, ["push.homes.test", "site.example"]);
     assert!(crate::store::matches("sys", &system.token_hash));
 }
-
 #[test]
 fn system_frpc_template_names_are_bare_valid_labels() {
     let text = include_str!("../../../deploy/prod/entry-cloud/templates/system-frpc.toml.tmpl");
@@ -780,6 +728,7 @@ fn system_frpc_template_names_are_bare_valid_labels() {
         .map(|name| name.trim_end_matches('"'))
         .collect();
     assert_eq!(names.len(), 9, "{names:?}");
+    assert!(names.contains(&"relay-http"), "{names:?}");
     for name in names {
         assert!(crate::config::valid_label(name), "{name}");
     }
@@ -793,58 +742,10 @@ fn production_compose_carries_acme_url_caa_and_metrics_password_file() {
     assert!(
         text.contains("WONTON_HOME_FRPS_METRICS_PASSWORD_FILE: /secrets/frps-metrics-password")
     );
-    assert!(text.contains(",omarchy.${WONTON_DOMAIN:?}"));
+    assert!(
+        text.contains("WONTON_HOME_SYSTEM_DOMAINS: ${WONTON_HOME_SYSTEM_DOMAINS:?set in .env}")
+    );
 }
 
-#[tokio::test]
-async fn empty_custom_domains_are_ignored_for_system_and_home() {
-    let system_fixture = Fixture::with_system(Some(System {
-        domains: vec!["push.homes.test".into()],
-        token_hash: crate::store::hash(b"sys"),
-    }))
-    .await;
-    let system = "sys";
-    let accepted = system_fixture
-        .hook(
-            "NewProxy",
-            "system",
-            system,
-            json!({"proxy_type":"https","proxy_name":"system.empty","custom_domains":["push.homes.test", ""]}),
-        )
-        .await;
-    assert_eq!(accepted["reject"], false);
-    let all_empty = system_fixture
-        .hook(
-            "NewProxy",
-            "system",
-            system,
-            json!({"proxy_type":"https","proxy_name":"system.blank","custom_domains":[""]}),
-        )
-        .await;
-    assert_eq!(all_empty["reject"], true);
-
-    let home_fixture = Fixture::new().await;
-    let response = home_fixture
-        .register(&key(1), &home_fixture.invite().await)
-        .await;
-    let home = response["home"].as_str().unwrap();
-    let token = response["frp_token"].as_str().unwrap();
-    let accepted = home_fixture
-        .hook(
-            "NewProxy",
-            home,
-            token,
-            json!({"proxy_type":"https","proxy_name":format!("{home}.empty"),"custom_domains":[format!("{home}.homes.test"), ""]}),
-        )
-        .await;
-    assert_eq!(accepted["reject"], false);
-    let all_empty = home_fixture
-        .hook(
-            "NewProxy",
-            home,
-            token,
-            json!({"proxy_type":"https","proxy_name":format!("{home}.blank"),"custom_domains":[""]}),
-        )
-        .await;
-    assert_eq!(all_empty["reject"], true);
-}
+#[path = "tests_system.rs"]
+mod system_tests;
