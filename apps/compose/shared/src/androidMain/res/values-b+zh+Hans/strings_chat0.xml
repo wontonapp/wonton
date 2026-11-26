@@ -49,4 +49,5 @@
     <!-- Status line on the chat list: signing in failed for a temporary reason and the app is retrying by itself. -->
     <string name="chat_status_reconnecting">正在重连…</string>
     <string name="chat_plugin_starting">正在启动 Agent…</string>
+    <string name="chat_start_unavailable">暂时不能聊</string>
 </resources>

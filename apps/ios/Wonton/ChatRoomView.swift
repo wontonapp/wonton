@@ -243,7 +243,7 @@ private extension ChatRoomView {
                     selectedConfirmation = nil
                     showingConfirmations = true
                 }
-                if let notice = botChatNotice {
+                if let notice = botAccessNotice {
                     BotChatNoticeRow(text: notice)
                 }
                 if !isReadOnly, threadRoot == nil, onboarding.viewModel.defaultBotVisibility == .visible,
@@ -658,41 +658,61 @@ private extension ChatRoomView {
     }
 
     /// 这个私聊的 Bot 现在能不能聊；房间里没这条事实时退回 Bot 列表，普通人私聊为空。
-    var botChat: BotChatAvailability? {
+    var botAccess: BotAccess? {
         let row = model.viewModel.rooms.first { $0.roomId == roomId }
-        if let chat = row?.botChat { return chat }
+        if let access = row?.bot?.access { return access }
         return row?.directUserId.flatMap { user in
-            model.viewModel.bots.first { $0.userId == user }?.availability
+            model.viewModel.bots.first { $0.userId == user }.map { asBotAccess($0.availability) }
         }
     }
 
     /// 不能聊时输入框上方写一句为什么；能用或不是 Bot 时为空。
-    var botChatNotice: LocalizedStringResource? {
-        guard let availability = botChat else { return nil }
-        switch availability {
-        case .available:
-            return nil
-        case let .unavailable(reason):
-            switch reason {
-            case .ownerPrivate: return .Chat.roomBotOtherPrivate
-            case .grantNotActive: return .Chat.roomBotGrantRevoked
-            default: return .Chat.roomBotUnavailable
-            }
-        case .unknown:
-            return .Chat.roomBotUnknown
-        }
+    var botAccessNotice: LocalizedStringResource? {
+        guard let access = botAccess else { return nil }
+        return botAccessNoticeText(access)
+>>>>>>> 6642389a (feat(chat): 两端按 Bot 可达清单显示原因)
     }
 
     /// 确定的不能用才拦发送；资格未知（离线、老核心）照常发，进离线队列。
     var canSend: Bool {
-        guard let availability = botChat else { return true }
-        if case .unavailable = availability { return false }
+        guard let access = botAccess else { return true }
+        if case .unusable = access { return false }
         return true
     }
 
     var sendBlockedProblem: Problem? {
-        guard !canSend, let notice = botChatNotice else { return nil }
+        guard !canSend, let notice = botAccessNotice else { return nil }
         return Problem(title: String(localized: notice))
+    }
+}
+
+/// 不能聊的原因；能用时为空。新建聊天和房间提示共用同一套文字。
+func botAccessNoticeText(_ access: BotAccess) -> LocalizedStringResource? {
+    switch access {
+    case .own, .shared, .contact:
+        return nil
+    case .unknown:
+        return .Chat.roomBotUnknown
+    case let .unusable(reason):
+        switch reason {
+        case .ownerPrivate: return .Chat.roomBotOwnerPrivate
+        case .grantNotActive: return .Chat.roomBotGrantRevoked
+        case .roleLacksSharedBots: return .Chat.roomBotRoleLacksSharedBots
+        case .appNotShared: return .Chat.roomBotAppNotShared
+        case .contactPending: return .Chat.roomBotContactPending
+        case .contactDeclined: return .Chat.roomBotContactDeclined
+        case .botMissing: return .Chat.roomBotMissing
+        default: return .Chat.roomBotUnavailable
+        }
+    }
+}
+
+/// 旧字段只有能不能时，补一个按原因分类的访问结论，供只认 BotAccess 的界面用。
+private func asBotAccess(_ availability: BotChatAvailability) -> BotAccess {
+    switch availability {
+    case .available: return .contact
+    case .unknown: return .unknown
+    case let .unavailable(reason): return .unusable(reason: reason)
     }
 }
 

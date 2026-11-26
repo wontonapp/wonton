@@ -461,6 +461,36 @@
           }
         }
       }
+    },
+    "chat.start.unavailable": {
+      "comment": "新建聊天里不能用的 Bot 分组标题。",
+      "extractionState": "manual",
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Can't chat yet"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "暂时不能聊"
+          }
+        },
+        "zh-Hant": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "暫時不能聊"
+          }
+        },
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "まだ話せません"
+          }
+        }
+      }
     }
   }
 }
