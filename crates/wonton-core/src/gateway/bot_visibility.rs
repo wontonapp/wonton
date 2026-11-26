@@ -72,7 +72,9 @@ pub(super) fn bot_identity_and_contact_facts(
     })
 }
 
-/// 当前请求人能不能明确用这个 Bot（[`BotAccess`]）；身份、成员或角色读不明时未知。
+/// 当前请求人能不能明确用这个 Bot（[`BotAccess`]）；身份、成员或角色读不明时未知。列表走 [`bot_access_of`]，
+/// 这里只留给不持有调用人快照的测试。
+#[cfg(test)]
 pub(super) fn bot_access(
     gateway: &Gateway,
     peer: Option<TunnelPeer>,
