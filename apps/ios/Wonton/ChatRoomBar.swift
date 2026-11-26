@@ -3,13 +3,13 @@ import WontonClient
 
 /// 主对话的顶栏（ADR-0109 第 9 节）：左边返回，中间一枚胶囊写名字和状态行（“正在输入…”也在这里），右边圆头像；
 /// 几样都是浮在消息上的玻璃（ADR-0107），栏本身不垫底，消息从下面滚过去。
-/// 点头像或标题进对方的资料页；通话、旁聊这两个房间入口排在头像左边。面板的入口在资料页里（ADR-0052）。
+/// 点头像进对方的资料页；名字胶囊只显示名字和状态，不再另做一个入口。通话、旁聊这两个房间入口排在头像左边。面板的入口在资料页里（ADR-0052）。
 struct ChatRoomBar<Trailing: View>: View {
     let title: String
     let avatar: AnyView?
     /// 有人正在输入时状态行写的字（ADR-0109 第 8 节）；没人输入为空。
     var typing: String?
-    /// 点头像或标题去的地方；没有资料页的房间为空，这时两样都只是显示。
+    /// 点头像去的地方；没有资料页的房间为空，这时头像只是显示。
     var openProfile: (() -> Void)?
     @ViewBuilder let trailing: Trailing
     @Environment(\.wontonColors) private var colors
@@ -50,6 +50,7 @@ struct ChatRoomBar<Trailing: View>: View {
                 .foregroundStyle(Color(colors.textPrimary))
                 .lineLimit(1)
                 .accessibilityAddTraits(.isHeader)
+                .accessibilityIdentifier("roomTopBarTitle")
             if let typing {
                 Text(typing)
                     .wontonText(WontonTheme.typography.barStatus)
@@ -65,10 +66,8 @@ struct ChatRoomBar<Trailing: View>: View {
         }
         .padding(.horizontal, WontonTheme.spacing.s12)
         .frame(minHeight: WontonTheme.size.chatControl)
-        .chatGlass(in: Capsule(), interactive: openProfile != nil)
-        .contentShape(Capsule())
-        // 不包成按钮：包了以后名字和状态行在无障碍树里并成一个元素。读屏从头像那个按钮进资料页。
-        .onTapGesture { openProfile?() }
+        // 不包成按钮：包了以后名字和状态行在无障碍树里并成一个元素。头像是唯一的资料页入口，读屏也从头像那个按钮进。
+        .chatGlass(in: Capsule())
     }
 
     @ViewBuilder private var avatarView: some View {

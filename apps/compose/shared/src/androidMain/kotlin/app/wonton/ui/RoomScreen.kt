@@ -521,7 +521,7 @@ private fun RoomBar(
         showsStatus = true,
         showsStatusLine = true,
         avatar = barAvatar,
-        titleClick = profileBot?.let { open -> { onOpenBotProfile(open.bot) } },
+        avatarClick = profileBot?.let { open -> { onOpenBotProfile(open.bot) } },
         avatarLabel = stringResource(R.string.bot_profile_open),
         centeredTitle = !isDirect,
         actions = {
