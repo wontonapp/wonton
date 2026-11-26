@@ -416,7 +416,8 @@ impl Bots {
         if let Some(row) = row {
             return Some(RoomBot {
                 bot: row.bot.clone(),
-                user_id: row.user_id.clone().unwrap_or_default(),
+                // 缺记录的行没有自己的 Matrix ID：用房间里一直记着的那一个，发消息/建私聊不空着。
+                user_id: row.user_id.clone().unwrap_or_else(|| user_id.unwrap_or_default().to_owned()),
                 title: row.title.clone(),
                 access: row.access,
             });

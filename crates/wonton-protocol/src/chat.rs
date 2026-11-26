@@ -265,8 +265,13 @@ pub struct ChatContact {
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub side_chat_room_id: Option<String>,
     /// 对方是 Bot 时当前请求人的 [`BotAccess`]；普通人联系人默认 [`BotAccess::Unknown`]。
-    #[serde(default)]
+    /// 未知时不写进 wire，旧解析端缺字段按默认值处理。
+    #[serde(default, skip_serializing_if = "is_unknown_access")]
     pub access: crate::BotAccess,
+}
+
+fn is_unknown_access(access: &crate::BotAccess) -> bool {
+    *access == crate::BotAccess::Unknown
 }
 
 /// 本设备的 Matrix 账号。
@@ -733,6 +738,22 @@ mod tests {
             own_private_bot: None,
             own_private_bot_problem: None,
         }
+    }
+
+    #[test]
+    fn a_person_contact_omits_the_unknown_access() {
+        let contact = ChatContact {
+            user_id: "@bob:home".into(),
+            name: "Bob".into(),
+            bot: None,
+            side_chat_room_id: None,
+            access: crate::BotAccess::Unknown,
+        };
+        let wire = serde_json::to_value(&contact).unwrap();
+        assert!(wire.get("access").is_none());
+        // 旧解析端缺字段按默认 Unknown，和新端一致。
+        let back: ChatContact = serde_json::from_value(wire).unwrap();
+        assert_eq!(back.access, crate::BotAccess::Unknown);
     }
 
     /// 契约：聊天的 ViewModel、操作和错误都能经 JSON 往返，供将来的 Web 端经 WebSocket 收发。
