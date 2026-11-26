@@ -99,6 +99,7 @@ jobs:
               - "rust-toolchain.toml"
               - ".github/workflows/cache.yml"
               - ".github/workflows/ios.yml"
+              - ".github/workflows/ios-size.yml"
               - "!**/*.md"
             android:
               - "apps/compose/**"
@@ -178,7 +179,7 @@ jobs:
         run: cargo clippy --workspace --all-targets --locked -- -D warnings
 
   ios:
-    name: iOS 模拟器核心（只编不跑）
+    name: iOS 核心产物（只编不跑）
     needs: changes
     if: ${{ !cancelled() && (github.event_name != 'push' || needs.changes.outputs.ios == 'true' || needs.changes.outputs.core == 'true') }}
     concurrency:
@@ -216,13 +217,13 @@ jobs:
             apps/ios/WontonClient/build/WontonClientFFI.xcframework
             apps/ios/WontonClient/Sources/WontonClient/Generated
           key: ${{ steps.core.outputs.key }}
-      - name: 安装 rust-toolchain.toml 指定的工具链和 iOS 模拟器 target
-        if: steps.corecache.outputs.cache-hit != 'true'
+      - name: 安装 rust-toolchain.toml 指定的工具链和两个 iOS target
+        # 真机那份给下面给 ios-size.yml 的 release 核心；模拟器那份给 debug 核心。
         run: |
           rustup toolchain install
-          rustup target add aarch64-apple-ios-sim
-      - if: steps.corecache.outputs.cache-hit != 'true'
-        uses: Swatinem/rust-cache@d1527c8f67ef9af357290475d4af4b0fab8f12e0 # v2
+          rustup target add aarch64-apple-ios aarch64-apple-ios-sim
+      # 不跟 corecache 走：核心产物命中也还要编 release，包里的依赖层得先恢复。
+      - uses: Swatinem/rust-cache@d1527c8f67ef9af357290475d4af4b0fab8f12e0 # v2
         with:
           shared-key: rust-ios
           save-if: ${{ github.ref == 'refs/heads/main' || github.event_name == 'workflow_dispatch' }}
@@ -238,6 +239,11 @@ jobs:
             apps/ios/WontonClient/build/WontonClientFFI.xcframework
             apps/ios/WontonClient/Sources/WontonClient/Generated
           key: ${{ steps.core.outputs.key }}
+      - name: 编译 Rust 核心（release；ios-size.yml 的 App 体积作业用）
+        # 体积门禁要编一份 release 核心，放在这里随 main 的缓存一起编好，那边只增量链接。
+        env:
+          WONTON_IOS_TARGETS: aarch64-apple-ios
+        run: apps/ios/scripts/build-core.sh release
 
   android:
     name: Android 核心（只编不跑）

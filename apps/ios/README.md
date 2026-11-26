@@ -118,6 +118,18 @@ xcodegen generate --spec apps/ios/project.yml
 然后用 Xcode 打开 `apps/ios/Wonton.xcodeproj` 运行。改了 Rust 代码后重新运行 `build-core.sh`；
 增删 Swift 文件后重新运行 `xcodegen`。模拟器只支持 Apple 芯片的 Mac。
 
+发版归档用 Release，核心也要 release 的，**顺序反过来：先 `apps/ios/scripts/build-core.sh release`，再归档**：
+
+```bash
+xcodebuild -project apps/ios/Wonton.xcodeproj -scheme Wonton -configuration Release \
+  -destination 'generic/platform=iOS' -archivePath build/Wonton.xcarchive archive
+```
+
+Release 的配置在归档时把符号全剥掉（`project.yml` 的 `DEPLOYMENT_POSTPROCESSING`、`STRIP_STYLE=all`），函数名和
+行号只留在归档目录的 `dSYMs/` 里：崩溃栈要还原就靠它，归档和 dSYM 一起留，别删上一次的。体积用
+`WONTON_MAX_APP_MB=<上限> bash scripts/check-app-size.sh build/Wonton.xcarchive` 量，它打成 ipa 报下载大小、
+按位置列各部分、查主二进制是不是真剥过，超上限就退出 1；CI 在 `ios-size.yml` 里跑同一支脚本。
+
 真机要用自己的开发团队签名：在 Xcode 里登录 Apple ID 后，命令行这样构建（团队 ID 是开发证书的 OU）：
 
 ```bash

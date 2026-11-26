@@ -6,7 +6,7 @@
   “Rust Docker 测试”（Docker 28 镜像自带）、核心镜像和发版镜像的 amd64 构建。
 - `ubuntu-24.04-arm`：发版镜像的 arm64 构建，和 amd64 各自构建后由 merge 作业合成多架构 manifest。
 - `macos-26`：SwiftLint。
-- `xcode-27`：iOS 模拟器构建。选这个镜像是为对上开发机（mini）的 Xcode 27.1；作业里显式
+- `xcode-27`：iOS 模拟器构建和 Release 体积归档。选这个镜像是为对上开发机（mini）的 Xcode 27.1；作业里显式
   `xcode-select /Applications/Xcode_27.1.app`，镜像以后把默认版本升上去也不受影响。
 
 ## 合并门槛和合后测试
@@ -24,6 +24,8 @@ PR 合并前等的是快检查：格式、Clippy、detekt、SwiftLint、行数�
   PR 上照常跑、算必需检查：iOS 在 PR 上红的多半是这几处，挪到合后会让 main 一天红好几次。范围和理由写在 `ios.yml` 开头。
   合进 main 的连续运行只留最新那次（`cancel-in-progress`）：结果只对旧提交有意义，iOS 的作业一次要编十几分钟，
   留着旧的在争名额；被取消的旧提交按提交标题里的 `(#N)` 归到它的 PR。
+- `ios-size.yml`：Release App 体积门禁。要编一份 release 核心、归档一份 App（二十分钟上下），只按 `push` 到 main 的
+  iOS 路径、每天定时和手动触发；失败留 dSYM 和体积报告，供还原崩溃栈。
 - `main-image.yml`：核心镜像构建。
 - `nightly-ui.yml`：两端的界面测试（XCUITest、设备上的 androidTest），只定时和手动。
 - `release.yml`：版本标签发布核心及组件镜像；手动触发仅接受 main，按 `component` 单独发布远端 MCP 连接器，
@@ -112,9 +114,16 @@ Docker 集成测试例外：新加的 Docker 测试进 `rust-docker` 套件，�
 只按 `push` 到 main 的 android 路径、每天定时和手动触发。它出 arm64 Release 包并跑 `scripts/check-apk-size.sh`
 （上限 53 MB），失败时把符号和 R8 映射表传成产物、留 14 天；成功不传（mapping.txt 一百多 MB，每次都存太占产物存储）。
 
+## Release App 体积（`ios-size.yml`）
+
+和 Android 的 `android-size.yml` 同一个角色：只按 `push` 到 main 的 iOS 路径、每天定时和手动触发，不在 `gate` 里。
+它出 arm64 的 Release 归档（不签名）并跑 `scripts/check-app-size.sh`：打成 ipa 量下载大小、按位置列出各部分、
+查主二进制还剩多少符号，任何一项超标就失败；失败时把 dSYM 和体积报告传成产物、留 14 天。上限取修后大小 +15%，
+和 APK 同一个口径。Release 核心由 `cache.yml` 在 main 上预编（和 APK 一样），这边只增量链接。
+
 ## 汇总作业的条件
 
-`rust.yml`、`ios.yml`、`android.yml`、`android-size.yml`、`rust-docker.yml` 的定时和手动运行不经过 `gate`，没有改动范围，全量运行。`gate` 里重作业的 `if`
+`rust.yml`、`ios.yml`、`android.yml`、`android-size.yml`、`ios-size.yml`、`rust-docker.yml` 的定时和手动运行不经过 `gate`，没有改动范围，全量运行。`gate` 里重作业的 `if`
 以 `!cancelled()` 开头、再看开关；汇总用 `always()`，判断成功、跳过或失败都照常报告。范围判断失败会让汇总
 变红，不会伪装成没改动。
 
