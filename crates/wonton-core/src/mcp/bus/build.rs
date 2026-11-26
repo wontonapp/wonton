@@ -92,4 +92,25 @@ impl Bus {
     pub fn attach_matrix(&self, matrix: Option<Arc<crate::matrix::Matrix>>, owner: String) {
         let _ = self.matrix.set(Cards { matrix, owner });
     }
+
+    /// 接上收件箱。没接时收件箱工具和接口如实报不可用。
+    pub fn attach_inbox(&self, inbox: Arc<crate::inbox::Inbox>) {
+        if self.inbox.set(inbox).is_err() {
+            tracing::warn!("收件箱接了两次，用先接上的");
+        }
+    }
+
+    /// 接上调用链的服务（ADR-0061 第 10 节）。只接一次。
+    pub fn attach_agent_chains(&self, chains: Arc<crate::gateway::agent_chains::AgentChains>) {
+        if self.agent_chains.set(chains).is_err() {
+            tracing::warn!("调用链的服务接了两次，用先接上的");
+        }
+    }
+
+    /// 接上好友名单（ADR-0051）。只接一次。
+    pub fn attach_friends(&self, friends: Arc<crate::friends::Friends>) {
+        if self.friends.set(friends).is_err() {
+            tracing::warn!("好友名单接了两次，用先接上的");
+        }
+    }
 }
