@@ -195,3 +195,83 @@ async fn assert_mismatched_homeserver_is_an_error(
     assert_eq!(reply.error_kind(), Some("invalid_bot_record"));
     assert!(!reply.text().contains("@private:elsewhere"));
 }
+
+/// 有私人 Bot 的家人：默认 Agent 是自己的 Bot。角色里没有私人 Bot 的人：还是插件的默认 Bot。
+/// 有私人 Bot、还在建的人：身份显示为待核实，不静默退回默认 Bot。
+#[tokio::test]
+async fn a_private_bot_member_defaults_to_their_own_bot() {
+    let PrivateBotFixture {
+        h,
+        app,
+        _matrix_state,
+        plugin,
+        devices,
+    } = installed_whoami_with_private_bot().await;
+    let private = wonton_protocol::BotRef {
+        plugin_id: "app.whoami".into(),
+        bot: "user-mia".into(),
+    };
+    h.members.reserve_private_bot("mia", &private).unwrap();
+    h.members.private_bot_ready("mia", &private).unwrap();
+    h.manager.bot_records_for_test(
+        &plugin,
+        &[
+            (
+                "default",
+                "@private:test",
+                wonton_protocol::BotKeeper::User {
+                    username: "owner".into(),
+                },
+                "owner-token",
+            ),
+            (
+                "user-mia",
+                "@mia-bot:test",
+                wonton_protocol::BotKeeper::User {
+                    username: "mia".into(),
+                },
+                "mia-token",
+            ),
+        ],
+    );
+    let path = "/_wonton/api/plugins/app.whoami";
+    let own = send_as(&app, Some(devices[0]), Method::GET, CORE, path, &[], "").await;
+    assert_eq!(own.status, StatusCode::OK, "{}", own.text());
+    assert_eq!(own.json()["installed"]["bot_user_id"], "@mia-bot:test");
+    assert_eq!(own.json()["installed"]["default_bot_visibility"], "visible");
+
+    // 能看这个应用、但角色里没有私人 Bot 的人：还是插件的默认 Bot。
+    let mut permissions = h.roles.get("admin").unwrap().permissions;
+    permissions.private_bot = false;
+    let role = h
+        .roles
+        .create(&wonton_protocol::RoleDraft {
+            name: "no-privbte-bot".into(),
+            permissions,
+        })
+        .unwrap();
+    h.members.set_role("lee", &role.id).unwrap();
+    let shared = send_as(&app, Some(devices[1]), Method::GET, CORE, path, &[], "").await;
+    assert_eq!(shared.status, StatusCode::OK, "{}", shared.text());
+    assert_eq!(shared.json()["installed"]["bot_user_id"], "@private:test");
+
+    // 有私人 Bot、还在建：不说成“就是默认 Bot”，也不把插件列表打成错误。
+    h.members
+        .invite(MemberRecord {
+            role_id: "admin".into(),
+            wants_private_bot: true,
+            ..MemberRecord::for_test("amy")
+        })
+        .unwrap();
+    h.members.mark_joined("amy").unwrap();
+    let device = SecretKey::generate().public();
+    h.tunnel
+        .devices
+        .add_if(device, None, Some("amy".into()), |_| true)
+        .unwrap();
+    let pending = send_as(&app, Some(device), Method::GET, CORE, path, &[], "").await;
+    assert_eq!(pending.status, StatusCode::OK, "{}", pending.text());
+    // 私人 Bot 还没建好时退回插件的默认 Bot：能先聊，建好再换成自己的。
+    assert_eq!(pending.json()["installed"]["bot_user_id"], "@private:test");
+    let _ = h;
+}

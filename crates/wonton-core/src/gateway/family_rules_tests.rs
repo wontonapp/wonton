@@ -7,7 +7,7 @@ use std::collections::BTreeSet;
 use std::net::SocketAddr;
 use std::sync::Arc;
 use std::sync::atomic::{AtomicU64, Ordering};
-use wonton_protocol::BotKeeper;
+use wonton_protocol::{BotKeeper, GatewayRefusal};
 
 use crate::plugin::PluginId;
 use axum::Router;
@@ -424,7 +424,11 @@ async fn public_create_room_is_refused_on_both_entries() {
                     .await
             };
             assert_eq!(status, StatusCode::FORBIDDEN, "{from} {responded}");
-            assert_eq!(responded["errcode"], "M_FORBIDDEN", "{from}");
+            assert_eq!(
+                responded["errcode"],
+                GatewayRefusal::PublicRoom.errcode(),
+                "{from}"
+            );
             assert_eq!(home.refusal(&headers), Some("public_room"), "{from}");
             assert!(
                 home.fake
