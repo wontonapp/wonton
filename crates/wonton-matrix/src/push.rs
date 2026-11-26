@@ -140,19 +140,34 @@ impl MatrixSession {
     }
 
     /// 注册一个后台通知的回调（ADR-0003 的“设计：保持连接”）：同步循环里出现该通知的事件（sliding sync 的
-    /// 通知在本机按账号的推送规则评估，和服务器给 pusher 的判断一致），取回那条消息、按推送同样的方式映射，
-    /// 交给 `on_notification`。按推送规则不用通知、已撤回的事件不会到这里；取回失败写日志，不回调。缺房间
-    /// 密钥时先交占位，密钥晚到会再交一次同一个事件的通知，占位要换成正文。会话释放后不再触发。
+    /// 通知在本机按账号的推送规则评估，和服务器给 pusher 的判断一致），先问 `should_notify`（前台、或事件
+    /// 早于进后台时已知的最新一条，就不取回），再取回那条消息、按推送同样的方式映射交给 `on_notification`。
+    /// 按推送规则不用通知、已撤回的事件不会到这里；取回失败写日志，不回调。缺房间密钥时先交占位，密钥晚到
+    /// 会再交一次同一个事件的通知，占位要换成正文。会话释放后不再触发。
     pub async fn register_background_notifications(
         &self,
+        should_notify: impl Fn(&str, Option<u64>) -> bool + Send + Sync + Clone + 'static,
         on_notification: impl Fn(BackgroundNotification) + Send + Sync + Clone + 'static,
     ) {
         let fetcher = self.fetcher();
         self.client
             .register_notification_handler(move |notification, room, _client| {
                 let fetcher = fetcher.clone();
+                let should_notify = should_notify.clone();
                 let on_notification = on_notification.clone();
                 async move {
+                    // 事件本体是 raw 的，解开才拿得到时间：首轮同步和重放会把看过的旧消息再送一遍，
+                    // 先按时间挡掉，省下一次经隧道的取回，也不让它们再弹一遍通知。
+                    let origin_server_ts = match &notification.event {
+                        RawAnySyncOrStrippedTimelineEvent::Sync(event) => event
+                            .deserialize()
+                            .ok()
+                            .map(|event| u64::from(event.origin_server_ts().0)),
+                        RawAnySyncOrStrippedTimelineEvent::Stripped(_) => None,
+                    };
+                    if !should_notify(room.room_id().as_str(), origin_server_ts) {
+                        return;
+                    }
                     // SDK 的通知回调是一个接一个等完的；取回消息要经隧道，可能要几秒，放后台跑，
                     // 不拖住同步循环。
                     tokio::spawn(fetcher.fetch(

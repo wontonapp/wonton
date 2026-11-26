@@ -261,6 +261,11 @@ impl MatrixSession {
         let sync = SyncService::builder(client.clone())
             .with_room_list_conn_id(next_room_list_conn_id(&config.store).await.to_owned())
             .with_share_pos(false)
+            // 房间列表默认每个房间只带 1 条最新事件（SDK 的 DEFAULT_LIST_TIMELINE_LIMIT）。同步被压住时
+            // 一个响应可能横跨好几条消息，只带最新一条就会把窗口里更早的丢掉；服务端位置也已经推过去，
+            // 那条再也不补，后台通知照不到。跟房间订阅的默认上限一样放到 20：够覆盖一次正常追赶，
+            // 超过 20 条的积压仍会漏通知（打开房间可以往回翻时间线）。
+            .with_room_list_timeline_limit(20)
             .build()
             .await
             .map_err(|error| Error::from(&error))?;

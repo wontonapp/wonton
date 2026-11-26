@@ -18,6 +18,7 @@ use wonton_protocol::{
 #[cfg(all(test, feature = "ui-fake"))]
 use super::TimelineKey;
 use super::avatar_files;
+use super::background::NotifyBoundary;
 use super::bots;
 use super::confirmation::Answers;
 use super::connect;
@@ -98,6 +99,9 @@ pub(crate) struct ChatLink {
     pub(super) typing_stops: Mutex<Vec<TimelineKey>>,
     /// App 在后台：保持连接下同步到的该通知的消息收集进 `background_notifications`。
     pub(super) background: AtomicBool,
+    /// 进后台那一刻每个房间已经知道的、别人发的最新消息时间：首轮同步、连接重来和重放带回来的更早的
+    /// 消息是看过的旧消息，不再弹通知；只在 `background` 为真时有意义。
+    pub(super) notify_boundary: NotifyBoundary,
     pub(super) verification: Mutex<Option<verification::Control>>,
     /// “添加设备”页开着、还能自动接受一个新设备的确认请求（ADR-0087）。
     pub(super) handoff_armed: AtomicBool,

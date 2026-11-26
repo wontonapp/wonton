@@ -11,7 +11,7 @@ use wonton_protocol::SettingsEntry;
 use wonton_protocol::{TimelineAction, TimelineTarget};
 
 use super::push::endpoint;
-use super::support::{Home, Phone, ToDeviceHold, WAIT};
+use super::support::{Home, Phone, ToDeviceHold, WAIT, is_room_list};
 use super::{accept_the_bots_encrypted_invite, accept_the_bots_invite};
 
 /// 自己带出去的那条会同步回来，但不该进后台通知；同一条别的照常收集。
@@ -351,6 +351,154 @@ async fn background_messages_are_collected_and_cleared_on_foreground() {
         !phone.chat().background_notifications.is_empty(),
         "后台的网络变化不该清空后台通知"
     );
+}
+
+/// 房间列表这条连接已经发过多少条滑动同步请求。
+fn room_list_requests(home: &Home) -> usize {
+    home.sync_requests()
+        .iter()
+        .filter(|request| is_room_list(&request["conn_id"]))
+        .count()
+}
+
+/// 等到条件成立，超过 [`WAIT`] 算失败。
+async fn wait_until(what: &str, mut check: impl FnMut() -> bool) {
+    let deadline = std::time::Instant::now() + WAIT;
+    while !check() {
+        assert!(
+            std::time::Instant::now() < deadline,
+            "{what}：{WAIT:?} 内没到"
+        );
+        tokio::time::sleep(std::time::Duration::from_millis(20)).await;
+    }
+}
+
+/// 后台通知里这几条文字的条目。
+fn notified_texts(phone: &Phone) -> Vec<String> {
+    phone
+        .chat()
+        .background_notifications
+        .iter()
+        .filter_map(|notice| match &notice.content {
+            PushContent::Message {
+                summary: MessageSummary::Text { text },
+            } => Some(text.clone()),
+            _ => None,
+        })
+        .collect()
+}
+
+/// 同步断掉期间 Bot 连发的消息，恢复后要一条不落地进后台通知：一次追赶的响应会横跨好几条消息，
+/// 房间列表只带最新一条时更早的会被截掉，服务端位置又已经推过去，那条再也不补，通知就漏了。
+#[tokio::test(flavor = "multi_thread")]
+#[ignore = "需要 Docker，用 --include-ignored 运行"]
+async fn messages_sent_while_sync_is_down_all_notify_after_it_comes_back() {
+    let dir = tempfile::tempdir().unwrap();
+    let phone = Phone::open(dir.path());
+    let home = Home::start(&[phone.device_id()]).await;
+    phone.connect(&home);
+    phone.signed_in().await;
+    let bot = home.bot("hermes", "Hermes").await;
+    let room_id = accept_the_bots_invite(&home, &phone, &bot).await;
+    let bot_room = bot.open_room(&room_id).await.expect("Bot 打开私聊");
+
+    phone
+        .dispatch(Action::Home {
+            action: wonton_protocol::HomeAction::AppBackgrounded,
+        })
+        .unwrap();
+    // 手机的 Matrix 连不上：同步停住，三条都落在恢复后的同一个追赶窗口里。
+    home.set_matrix_down(true);
+    for text in ["一", "二", "三"] {
+        bot_room.send_text(text, &[]).await.expect("Bot 发消息");
+    }
+    home.set_matrix_down(false);
+    // 网络恢复马上重试，不等同步自己的退避。
+    phone
+        .dispatch(Action::Home {
+            action: wonton_protocol::HomeAction::NetworkChanged {
+                network: DeviceNetwork::Wifi,
+            },
+        })
+        .unwrap();
+
+    let texts = phone
+        .wait_chat("三条都进后台通知", |view| {
+            let texts: Vec<String> = view
+                .background_notifications
+                .iter()
+                .filter_map(|notice| match &notice.content {
+                    PushContent::Message {
+                        summary: MessageSummary::Text { text },
+                    } => Some(text.clone()),
+                    _ => None,
+                })
+                .collect();
+            ["一", "二", "三"]
+                .iter()
+                .all(|wanted| texts.iter().any(|text| text == wanted))
+                .then_some(texts)
+        })
+        .await;
+    assert_eq!(texts.len(), 3, "只该有这三条：{texts:?}");
+}
+
+/// 后台里同步从头重来一次（`M_UNKNOWN_POS`，比如进程被系统拉起）会把房间里最近的消息当首轮再送一遍；
+/// 已经看过的旧消息不该再弹通知，之后的新消息照弹。
+#[tokio::test(flavor = "multi_thread")]
+#[ignore = "需要 Docker，用 --include-ignored 运行"]
+async fn a_background_resync_does_not_notify_already_seen_messages() {
+    let dir = tempfile::tempdir().unwrap();
+    let phone = Phone::open(dir.path());
+    let home = Home::start(&[phone.device_id()]).await;
+    phone.connect(&home);
+    phone.signed_in().await;
+    let bot = home.bot("hermes", "Hermes").await;
+    let room_id = accept_the_bots_invite(&home, &phone, &bot).await;
+    let bot_room = bot.open_room(&room_id).await.expect("Bot 打开私聊");
+
+    for text in ["一", "二", "三"] {
+        bot_room.send_text(text, &[]).await.expect("Bot 发消息");
+    }
+    // 前台看完全部三条：进后台时这三条已经是看过的旧消息。
+    phone
+        .wait_chat("三条都同步到前台", preview_has(room_id.as_str(), "三"))
+        .await;
+    assert!(phone.chat().background_notifications.is_empty());
+
+    phone
+        .dispatch(Action::Home {
+            action: wonton_protocol::HomeAction::AppBackgrounded,
+        })
+        .unwrap();
+    let before = room_list_requests(&home);
+    home.expire_room_list_sync();
+    // 重来的第一轮把最近的消息当首轮送回来，等这轮处理完（下一轮请求发出去）再发新的。
+    wait_until("重来的同步走完一轮", || {
+        room_list_requests(&home) >= before + 2
+    })
+    .await;
+
+    bot_room.send_text("四", &[]).await.expect("Bot 发消息");
+    phone
+        .wait_chat("新的那条进后台通知", |view| {
+            view.background_notifications
+                .iter()
+                .find(|notice| {
+                    notice.content
+                        == PushContent::Message {
+                            summary: MessageSummary::Text {
+                                text: "四".to_owned(),
+                            },
+                        }
+                })
+                .map(|_| ())
+        })
+        .await;
+    // 再多走一轮同步：重放里如果还有旧消息被当成新通知，这时也已经进了视图。
+    let after = room_list_requests(&home);
+    wait_until("通知落定", || room_list_requests(&home) > after).await;
+    assert_eq!(notified_texts(&phone), ["四"]);
 }
 
 /// 房间密钥晚于等待上限才到时（同步被压住时实测晚 6.6–9.1 秒），占位先进后台通知；密钥到了核心回填，
