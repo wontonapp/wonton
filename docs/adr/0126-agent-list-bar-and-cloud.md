@@ -209,7 +209,7 @@ Bot 资料页的头像一节改成两个来源，二选一：
 
 名字和类型是草案，下一张卡照它先提只改接口的 PR，再由实现 PR 落地。
 
-`wonton-protocol` 的类型（改的是 `pages`、`inbox`、`bot_profile`、`onboarding` 几个模块）：
+`wonton-protocol` 的类型（改的是 `pages`、`panel`、`inbox`、`bot_profile`、`onboarding` 几个模块）：
 
 ```rust
 /// 底栏的一项：内置入口，或用户从“我的应用”里挑来加到 底栏的一项。

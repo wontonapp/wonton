@@ -194,7 +194,7 @@ def save_checked(image, path, side, alpha=False):
         sys.exit(f"{path.name} 尺寸 {written.size}，不是 {side}×{side}")
     if alpha and ("A" not in written.getbands() or written.getchannel("A").getextrema() != (0, 255)):
         sys.exit(f"{path.name} 没有透明边：alpha 要有 0 和 255")
-    if ImageStat.Stat(written.convert("L")).stddev[0] < 1:
+    if max(ImageStat.Stat(written).stddev) < 1:
         sys.exit(f"{path.name} 几乎是一块纯色，像是没画上")
 
 

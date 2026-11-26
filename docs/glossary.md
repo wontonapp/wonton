@@ -22,8 +22,8 @@ App 里的文字按这里写（ADR-0043）。翻译不逐句对照原文：先�
 | 主机 | computer | 主機 | ホスト | 跑家里服务器的那台机器，讲安装命令时用 |
 | 底栏 | iOS：Tab Bar；Android：Navigation bar | iOS：標籤列；Android：底部導覽列 | iOS：タブバー；Android：ナビゲーションバー | |
 | 加到 底栏 | iOS：Add to Tab Bar；Android：Add to navigation bar | iOS：加到標籤列；Android：加到底部導覽列 | iOS：タブバーに追加；Android：ナビゲーションバーに追加 | 应用页长按、我的应用编辑态；应用卸载时一起拿掉 |
-| 从底栏移除 | iOS：Remove from Tab Bar；Android：Unpin from navigation bar | iOS：從標籤列移除；Android：從底部導覽列取消固定 | iOS：タブバーから外す；Android：ナビゲーションバーから外す | |
-| 原来的首页 | old Home | 原本的首頁 | 元のホーム | 2026-11-26 撤掉的主界面第一页；现在第一个根页是 Agent 的会话列表，其他文档里说“首页”都指旧版 |
+| 从底栏移除 | iOS：Remove from Tab Bar；Android：Remove from navigation bar | iOS：從標籤列移除；Android：從底部導覽列移除 | iOS：タブバーから外す；Android：ナビゲーションバーから外す | |
+| 原来的首页 | old Home | 原本的首頁 | 元のホーム | 2026-11-26 撤掉的主界面第一页；现在第一个根页是 Agent 的会话列表，单独说的“首页”指旧版 |
 | 云朵 | cloud | 雲朵 | クラウド | Agent 的形象，每个 Bot 一只 |
 | 全屏 | Full Screen | 全螢幕 | 全画面 | |
 | 引导 | Setup（动词 Set Up） | 初始設定 | セットアップ | 配对后的几步 |
