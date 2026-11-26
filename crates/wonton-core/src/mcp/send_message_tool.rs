@@ -193,7 +193,8 @@ async fn ask_and_enqueue(
     );
     // 卡片认到这条链：链被停时随停撤回（等的人拿到 chain_stopped，不入队）。
     // 停链抢在认链和绑卡之间时，停链那一遍已经收不到这张卡片了：绑上之后回查，是停的就当场撤回。
-    if bind_card(&bus, &caller_placeholder, None, &card.id, "发消息卡片").outcome == Bound::Withdrawn {
+    if bind_card(&bus, &caller, None, &card.id, "发消息卡片").outcome == Bound::Withdrawn {
+        return bus.refused(&caller, &name, &args, &Refusal::Cancelled, None);
     }
     match bus.confirmations().deliver(&card, answered).await {
         Ok(chosen)

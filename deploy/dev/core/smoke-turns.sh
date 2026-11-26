@@ -31,6 +31,10 @@ new_chain() {
   return 1
 }
 stop_chain() { t -X POST "$core_url/_wonton/api/agent/chains/$1/stop" | json status; }
+# 卡片在确认列表里的状态（latest_card 是“ID 状态 ”连成的一行，按 ID 取它后面的状态）。
+card_state() { latest_card | tr ' ' '\n' | awk -v id="$1" 'prev == id { print; exit } { prev = $0 }'; }
+# 还在等回答的卡片 ID，一行一个。
+pending_cards() { latest_card | tr ' ' '\n' | awk 'prev != "" && $0 == "pending" { print prev } { prev = $0 }' | sort; }
 # 分段跑对着保留下来的栈时，前面几步的变量都没有：凭据、Hermes 的账号和私聊、主人的 Matrix 令牌现查一次。
 # 放在这里而不是加载时：它要用 start_phone 起出来的凭据，也要用上面的 chains。
 seed_smoke_only() {
@@ -266,8 +270,8 @@ probe_in_hermes_room "$asked" --wait 300 --settle 60 --text "$(send_text "$sent_
 asking=$!
 card_id="$(pending_card)" || fail "Hermes 发私聊没有发确认卡片：$(cat "$asked")"
 expect "主人拒绝" "$(answer_with reject "$card_id")" 200
-for _ in $(seq 30); do [[ "$(latest_card)" == "$card_id rejected" ]] && break; sleep 1; done
-expect "卡片显示拒绝了" "$(latest_card)" "$card_id rejected"
+for _ in $(seq 30); do [[ "$(card_state "$card_id")" == rejected ]] && break; sleep 1; done
+expect "卡片显示拒绝了" "$(card_state "$card_id")" rejected
 wait "$asking" || true
 
 before="$(chain_ids)"
@@ -276,8 +280,8 @@ asking=$!
 card_id="$(pending_card)" || fail "Hermes 发私聊没有发确认卡片：$(cat "$asked")"
 chain="$(new_chain "$before" "$(mxid owner)" "$hermes_room")" || fail "链列表里没有这一轮：$(chains)"
 expect "卡片等着时主人停掉这一轮" "$(stop_chain "$chain")" stopped
-for _ in $(seq 30); do [[ "$(latest_card)" != "$card_id pending" ]] && break; sleep 1; done
-[[ "$(latest_card)" != "$card_id pending" ]] || fail "停链以后卡片还在等主人回答（停的链 $chain，卡片 $card_id，链列表：$(chains)；发消息的审计：$(docker exec "$core" sh -c "grep '\"send_message\"' '$WONTON_DEV_DATA/core/audit.jsonl' | tail -3")）"
+for _ in $(seq 30); do [[ "$(card_state "$card_id")" != pending ]] && break; sleep 1; done
+[[ "$(card_state "$card_id")" != pending ]] || fail "停链以后卡片还在等主人回答（停的链 $chain，卡片 $card_id，链列表：$(chains)；发消息的审计：$(docker exec "$core" sh -c "grep '\"send_message\"' '$WONTON_DEV_DATA/core/audit.jsonl' | tail -3")）"
 ok "停链以后卡片撤回了（$(latest_card)）"
 [[ "$(answer_with approve "$card_id")" != 200 ]] || fail "撤回的卡片还能批准"
 ok "撤回的卡片批准不了"
@@ -311,11 +315,11 @@ probe_as_mom "$mom_heard" --wait 600 --match "$sent_window" --text "用终端工
 mom_listening=$!
 for _ in $(seq 180); do (($(sleeping 120) > 0)) && break; sleep 1; done
 (($(sleeping 120) > 0)) || fail "妈妈让 Hermes 跑的命令没有跑起来"
-last_card="$(latest_card)"
+last_cards="$(pending_cards)"
 asked="$(mktemp)"
 probe_in_hermes_room "$asked" --wait 300 --settle 60 --text "$(send_text "$sent_window")" ||
   fail "Hermes 没回答：$(cat "$asked")"
-expect "主人说的、收件人在放行时段里：不发卡片" "$(latest_card)" "$last_card"
+expect "主人说的、收件人在放行时段里：不发卡片" "$(pending_cards)" "$last_cards"
 wait "$mom_listening" || fail "妈妈没收到放行时段里的私聊：$(cat "$mom_heard")；审计：$(sent_audit "$sent_window")"
 ok "妈妈收到了主人让发的私聊，没有再问主人"
 expect "审计：这条按放行时段直接发出" "$(sent_audit "$sent_window" | grep -c '^allowed 已发出')" 1

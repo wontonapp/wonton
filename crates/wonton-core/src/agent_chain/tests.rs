@@ -172,8 +172,6 @@ fn rounds_stop_at_the_limit_and_a_new_grant_reopens_it() {
 
 /// 停链交出链上活的轮次和待答的卡片；之后用这条链的消息开轮、进链都是 `stopped`。
 /// 停是幂等的：再停一次不重复交出已经交过的，但停以后才挂上的卡片照样交出去。
-/// 停链交出链上活的轮次和待答的卡片；之后用这条链的消息开轮、进链都是 `stopped`。
-/// 停是幂等的：再停一次不重复交出已经交过的，但停以后才挂上的卡片照样交出去。
 #[test]
 fn stopping_returns_live_turns_and_pending_cards_then_refuses_everything() {
     let h = harness();
