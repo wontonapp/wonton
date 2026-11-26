@@ -30,14 +30,14 @@
   右边麦克风，发送走已有的 [`ChatAction::AskAgent`](../../crates/wonton-protocol/src/action_domains.rs)，进主对话。默认 Agent
   没装或没选时输入框照常在，点了在上方如实说“还没有主 Agent”，给去设置的入口。语音结果落回输入框，人看过再发，不确定时
   原文和转换结果都亮出来。
-- 主界面顶部：左上开侧边栏（[ADR-0095](0095-no-tab-bar.md) 的同一个），右上是一枚收件箱铃铛（带未处理数），见“收件箱铃铛”。
+- 主界面顶部：左上开侧边栏（[ADR-0095](0095-no-tab-bar.md) 的同一个），右上是一枚收件箱铃铛（带未处理数），见“收件箱铃铛”；侧边栏里同一入口在“新聊天”下面。
   没有问候语、没有卡片叠。
 - 底栏只在这两个根页上：默认两项 Agent、应用；用户可以从“我的应用”往底栏加、删和拖顺序，成员和顺序存在核心的
-  `app.wonton.layout`，规则见 [ADR-0095](0095-no-tab-bar.md#主界面底栏2026-11-21-补充)。打开任何应用页（插件页、Bot 网页、
+  `app.wonton.layout`，规则见 [ADR-0095](0095-no-tab-bar.md#主界面底栏2026-11-21-补充2026-11-26-修订)。打开任何应用页（插件页、Bot 网页、
   公网网页、分享页）都是整页、没有底栏，左边缘右滑和 Android 返回键回去；返回落回选中那一页。
 - 会话不是根页，是 [ADR-0095](0095-no-tab-bar.md) 里那种整页：侧边栏“所有会话”和通知打开的是所有会话页（`TabRef::Rooms`），
   点一间进那一间。聊天里返回回到来源页。
-- 收件箱不是根页、不是底栏的一项：铃铛点开进单独一页，五种条目见 [ADR-0119](0119-pending-inbox.md)。
+- 收件箱不是根页、不是底栏的一项：顶栏铃铛和侧边栏同一行都点开进单独一页，五种条目见 [ADR-0119](0119-pending-inbox.md)。
 - 设置仍是主界面上唯一的整屏盖子，两个根页都进得去。配对页在没配对时占着根，和底栏无关。
 - iPad 和宽屏按 [ADR-0103](0103-ipad-and-large-screens.md) 两栏：底栏画在左列底部，右列照旧是内容；应用页只铺右栏、不带底栏。
 
@@ -46,8 +46,8 @@
 
 ## 收件箱铃铛
 
-- 主界面两个根页的顶栏右上角一枚小铃铛（Phosphor `Bell`）；旁边的数字只算待回答的条目（[ADR-0119](0119-pending-inbox.md) 的
-  `needing` 计数），为 0 时不显示数字。
+- 主界面两个根页的顶栏右上角一枚小铃铛（Phosphor `Bell`）——图标库现在只有 `bell-ringing.svg`，`Bell` 要补；旁边的数字只算待回答的条目（[ADR-0119](0119-pending-inbox.md) 的
+  `needing` 计数），为 0 时不显示数字。侧边栏“新聊天”下面是同一个入口，点开同一页。
 - 点开进收件箱页（`TabRef::Inbox`），是压栈的一页：不从底栏进，也不常驻一个标签；左边缘右滑和 Android 返回键回来源根页。
 - 收件箱页自己的条目、五种类型、回答和已读、角标算法全在 [ADR-0119](0119-pending-inbox.md)；这篇只管入口的位置和数字来源。
 - 主界面不画问候、不画卡片叠；晨报要是有，也作为收件箱的一种条目，不再单开首页。
@@ -64,7 +64,7 @@ Agent 会话页是主人和默认 Agent 的私聊，整页就是聊天时间线�
   之后开场白走已有的命令菜单卡片（[ADR-0054](0054-bot-command-menu.md)）。
 - Agent 在聊天里递出的连接、安装、授权卡片全走已有的确认卡片（[ADR-0016](0016-mcp-bus-and-confirmations.md) 的
   `ConfirmationCard`：`ConfirmationCategory::ToolCall` 带所属插件和“连接”按钮），点完在片后的 `Succeeded` 结果卡上有“打开”“放到底栏”
-  （ADR-0016 第 6 条）。不新造通道、不新造卡片类型；插件没装时 Agent 递的是安装的那张卡，装好再递连接。
+  （ADR-0016 第 5 条）。不新造通道、不新造卡片类型；插件没装时 Agent 递的是安装的那张卡，装好再递连接。
 - 房间没连上、插件在启动时照 ADR-0044 的分工显示状态，不把等待画成成功。
 
 ## 应用页
@@ -75,7 +75,7 @@ Agent 会话页是主人和默认 Agent 的私聊，整页就是聊天时间线�
 - 长按一张卡：卡片浮起变亮、背景压暗，出系统 `contextMenu`，两项：“重新排序”“加到 底栏”（已在栏上是“从底栏移除”）。
   长按菜单照 [ADR-0109](0109-chat-like-telegram.md) 用系统菜单，iOS 长按、Android 长按，同现有消息菜单。
 - “重新排序”把当前这一组换成拖动模式，卡片右上出拖动柄，抖一下，拖完点空白处或“完成”退出；拖到最左边一张仍继续拖就移到另一组。
-- “加到 底栏”只决定在不在栏上；栏上的顺序在栏上拖，和“我的应用”的顺序各管各的（[ADR-0095](0095-no-tab-bar.md#主界面底栏2026-11-21-补充)）。
+- “加到 底栏”只决定在不在栏上；栏上的顺序在栏上拖，和“我的应用”的顺序各管各的（[ADR-0095](0095-no-tab-bar.md#主界面底栏2026-11-21-补充2026-11-26-修订)）。
 - 卡片点开就是整页，没有底栏。
 
 ## Agent 的云朵形象
@@ -88,8 +88,8 @@ Agent 会话页是主人和默认 Agent 的私聊，整页就是聊天时间线�
 - **颜色是任意颜色值，不是固定几色。** 主人用取色器选 RGB，薄荷绿、薰衣草紫、蜜桃橙、樱花粉、奶油黄、浅天蓝是六个预设。
   核心拿身体模板按颜色值重着色：模板的明暗照留，色相和彩度取所选颜色（OKLCH 里换 L 和 C）。彩度太低时给一个最低值，
   不然会变成一块灰。
-- **头饰七种，素材已有**：奶白色的螺旋角（两道棕色条纹，是默认）加卷曲条纹角、紫色条纹睡帽、闪电、白色绒球、黄色小独角、蓝色条纹独角；另有“不戴”。头饰只由人挑，不随状态变。
-- **九个表情，素材已有（另有一套总览图）**：笑脸（默认，也是空闲）、思考、干活、困（睡着）、晕（出错）、吃惊（有事要你看）、笑哭、生气、吐舌斜眼。五个能给人挑的默认表情是笑脸、笑哭、吐舌斜眼、吃惊、生气（生气只给人挑，不用于状态）。
+- **头饰七种，素材要补**：奶白色的螺旋角（两道棕色条纹，是默认）加卷曲条纹角、紫色条纹睡帽、闪电、白色绒球、黄色小独角、蓝色条纹独角；另有“不戴”。头饰只由人挑，不随状态变。
+- **九个表情，素材要补（另有一套总览图待补）**：笑脸（默认，也是空闲）、思考、干活、困（睡着）、晕（出错）、吃惊（有事要你看）、笑哭、生气、吐舌斜眼。五个能给人挑的默认表情是笑脸、笑哭、吐舌斜眼、吃惊、生气（生气只给人挑，不用于状态）。
 - **表情按状态换，颜色和头饰不动。** 表情和状态的对应见“状态头像”。
 - **每人一张极浅的圆底**：从身体色提亮，画成直径等于画布的圆，合成时垫在最底下，不加描边。底色由核心算（身体色 OKLCH 的 L 提亮，
   C 降一半），不存。
@@ -112,7 +112,7 @@ crate，MIT 或 Apache-2.0，已在核心里），垫上圆底，以 Bot 的身�
 
 ### 素材库存在哪
 
-- **内置素材**编进核心的可执行文件（`crates` 下 `wonton-core/assets/cloud/`）：六色的预设值、九张表情、七个头饰；素材已有，带一张总览图。升级核心才换。
+- **内置素材**编进核心的可执行文件（`crates` 下 `wonton-core/assets/cloud/`，目前还没有这个目录）：六色的预设值、九张表情、七个头饰；素材和一张总览图都得先补进树里。升级核心才换。
 - **用户素材库**在服务器数据目录 `core/bot-assets/<用户 Matrix ID>/`，按人分：一个人挑给管家，不影响别人的记账 Bot。目录名去掉 `@`、`:` 换 `_`。
   人删掉的自定义素材一起删；素材被哪个 Bot 用着时先换回同类的内置素材再删。
 - **插件和 Agent 加的素材**落进同一个用户素材库，走同一个导入入口（见“Agent 自己出素材”）；插件包里不另设素材格式。
@@ -198,7 +198,7 @@ Bot 资料页的头像一节改成两个来源，二选一：
 
 厚核心、薄壳（[ADR-0005](0005-native-clients-thick-core.md)）：下面这些都住在客户端核心的 Rust 里，壳只渲染和把动作发回去。
 
-- 收件箱铃铛：未回答数怎么算、音效和红点什么时候出现；收件箱页自己的条目、排序和回答归 [ADR-0119](0119-pending-inbox.md)。
+- 收件箱铃铛：未回答数怎么算、红点什么时候出现；收件箱页自己的条目、排序和回答归 [ADR-0119](0119-pending-inbox.md)。
 - 底栏的成员、顺序、上限 6、满了的拒绝；成员和顺序存在 `app.wonton.layout`。
 - 出场：条件、见过标记、气泡的两句话和按钮的先后。
 - 云朵：可选的颜色板、表情、头饰清单（含素材库的读取），合成和上传；壳只在选色器里给 RGB。
@@ -212,8 +212,8 @@ Bot 资料页的头像一节改成两个来源，二选一：
 `wonton-protocol` 的类型（改的是 `pages`、`inbox`、`bot_profile`、`onboarding` 几个模块）：
 
 ```rust
-/// 底栏的一项：内置入口，或用户从“我的应用”里挑来钉上的一项。
-pub enum BarEntry { Agent, Apps, Pinned(MyAppRef) }
+/// 底栏的一项：内置入口，或用户从“我的应用”里挑来加到 底栏的一项。
+pub enum BarEntry { Agent, Apps, App(MyAppRef) }
 
 /// 底栏的一项和它的展示。
 pub struct BarItem {
@@ -222,25 +222,25 @@ pub struct BarItem {
     pub icon: BarIcon,           // 固定图标，或插件图标
     pub badge: u32,              // Agent：主 Agent 会话的未读；Apps：插件出错 + 可升级。0 不画
 }
-pub enum BarIcon { Agent, Apps, Plugin(PluginIcon) }
+pub enum BarIcon { Agent, Apps, App(PluginIcon) }
 
 pub struct BarViewModel {
     pub items: Vec<BarItem>,     // 成员和顺序原样存 app.wonton.layout；默认 [Agent, Apps]
-    pub selected: BarEntry,
     pub max_items: u32,          // 6
     pub full: bool,              // 满了，下一次成功加上时清
 }
 ```
 
-- `PagesViewModel`：`tab: TabRef` 改成 `selected: BarEntry`，删 `shows_apps`；`stack` 只管页面（会话页、收件箱页、应用页），
+- `PagesViewModel`：`root: TabRef` 换成 `tab: BarEntry`（当前选中的栏项），删 `shows_apps`；`stack` 只管页面（会话页、收件箱页、应用页），
   压着页面时底栏不画。
 - `PageAction` 增 `SelectBarItem { entry: BarEntry }`、`AddBarItem { app: MyAppRef }`、`RemoveBarItem { entry: BarEntry }`、
-  `MoveBarItem { from: u32, to: u32 }`；`AddMyApp` 不再带 `pinned`。加满 6 时 `AddBarItem` 返回 `invalid_input` 带原因。
-- `MyAppEntry` 不再有 `pinned`；在不在栏上看 `BarViewModel.items` 里有没有这条。
+  `MoveBarItem { from: u32, to: u32 }`；`AddMyApp` 保持现有字段（`app`/`title`/`index`），不加 `pinned`。加满 6 时 `AddBarItem` 返回 `invalid_input` 带原因。
+- `MyAppEntry` 保持现有字段（`app`/`title`），不加 `pinned`；在不在栏上看 `BarViewModel.items` 里有没有这条。
+- `LayoutSettings` 增 `bar: Vec<BarEntry>`（成员和顺序）。
 - `TabRef` 只留页面（`Plugin`、`PluginPath`、`Bot`、`Url`、`UiResource`、`SharedApp`、`Widget`）；`Chat` 换成 `Rooms`（所有会话页，侧边栏
-  “所有会话”和通知用），删 `Apps`，增 `Inbox`。`AppLink` 增 `Bar { entry: BarEntry }`，链接是 `wonton://tab/agent`、`/tab/apps`、
-  `wonton://inbox`，旧的 `tab/home`、`tab/chat` 不留；`AppLink::Tab` 仍指页面，所有会话页另有 `wonton://rooms`。设置仍走 `wonton://settings`。
-  我的应用仍只收插件和页面（`MyAppRef::Plugin` / `Page { tab }`）。
+  “所有会话”和通知用），删 `Apps`，增 `Inbox`。
+- 链接统一走 `wonton://tab/agent`、`/tab/apps` 选根页，`wonton://inbox`、`wonton://rooms` 打开页面；`tab/home` 从没进过实现、这次直接用
+  `tab/agent`，`tab/chat` 也不再发。`AppLink::Tab` 仍指页面。设置仍走 `wonton://settings`。我的应用仍只收插件和页面。
 
 ```rust
 /// 收件箱铃铛：数字是待回答条数，点开进收件箱页。
@@ -353,7 +353,8 @@ pub struct AgentIntroView {
 - **Bot 资料和 Bot 网页那一路**：云朵编辑器就长在 #934 收过的那节头像里，替换现在“选一张图”的按钮，#798 的工具和 #874 人的头像不动。
   `BotActivity` 加两个值、`app.wonton.avatars` 加两个键、`BotView` 加字段都在协议里，他们负责的 Bot 资料写入和 web 端要跟着认；
   接口 PR 出来后请他们先看。问：资料页和 web 端谁先改、接口 PR 要不要等他们一起。
-- **设计**：素材（身体、九张表情、七种头饰、锚点表）已备，总览图在；素材命名由设计补。App 图标已按原图抠像加蓝白渐变底生成。问：出场大图用 3/4 还是正面、动画稿什么时候能看。
+- **输入框语音**：麦克风和语音转文字是 [ADR-0109](0109-chat-like-telegram.md) 之后的新能力，核心里现在没有 speech 相关代码；转写放壳的系统听写还是核心、权限和断网失败怎么显示都没定。问：这轮做不做。
+- **设计**：素材（身体、九张表情、七种头饰、锚点表）和总览图都还要补，命名由设计定；App 图标已按原图抠像加蓝白渐变底生成。问：出场大图用 3/4 还是正面、动画稿什么时候能看。
 
 ## 待验证
 

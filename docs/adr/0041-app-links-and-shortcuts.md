@@ -18,6 +18,7 @@ App 里能直接打开的地方是 `AppLink`，写成 `wonton://` 链接。编�
 | --- | --- |
 | `wonton://tab/agent`、`/tab/apps` | 主界面根页 Agent、应用，落地到那一页、弹空页面栈（[ADR-0126](0126-agent-list-bar-and-cloud.md)） |
 | `wonton://inbox` | 收件箱页（`TabRef::Inbox`），压栈，不选底栏项（[ADR-0119](0119-pending-inbox.md)） |
+| `wonton://rooms` | 所有会话页（`TabRef::Rooms`），侧边栏那一行的同一个 |
 | `wonton://tab/plugin/<插件>`、`/tab/plugin/<插件>/<页面>` | 插件页；没加到 底栏的也整页盖在主界面上打开 |
 | `wonton://new-chat` | 发起私聊 |
 | `wonton://agent-chat` | 和默认 Agent 的聊天 |

@@ -41,7 +41,7 @@
 
 ### 主界面：Agent + 应用两页 + 侧边栏，应用整页打开
 - 根页面是 Agent（默认 Agent 的会话列表）和应用，Agent 是开口那一页；主界面底下是底栏，默认 Agent、应用两项，用户可加、删、排序，见“主界面底栏”。
-  左上角的按钮和左边缘右滑打开现有的侧边栏（上下文菜单、所有会话、我的应用、商店、设置、新聊天）。
+  左上角的按钮和左边缘右滑打开现有的侧边栏（上下文菜单、所有会话、收件箱、我的应用、商店、设置、新聊天）。
   两个根页和底栏的其余内容见 [ADR-0126](0126-agent-list-bar-and-cloud.md#主界面agent应用两页底栏只在根页上)。
 - 侧边栏跟手拖动，松手按共享的 `WontonTheme.gesture` 距离和速度阈值决定开合，没过就弹回。快甩也必须有最小实际距离，不能轻碰就打开；不要求慢拖超过半屏，规则见 [ADR-0026](0026-design-system.md#其他令牌)。
 - 应用页（插件页、插件里的某一页、Bot 网页、公网网页、分享页）只有一种打开方式：整页，铺满内容区（见“铺满”）。窄屏内容区是整个屏幕；宽屏两栏只铺右栏，左列保持可操作，见 [大屏布局](0103-ipad-and-large-screens.md#2-宽屏布局两栏宽度自适应)。
@@ -106,7 +106,7 @@
 
 ### 侧边栏的"我的应用"
 
-- "我的应用"是用户选放哪些、拖成什么顺序的唯一列表。它是侧边栏列表里唯一可编辑的组；所有会话、商店、设置、新聊天是固定行，不在其中。
+- "我的应用"是用户选放哪些、拖成什么顺序的唯一列表。它是侧边栏列表里唯一可编辑的组；所有会话、收件箱、商店、设置、新聊天是固定行，不在其中。
   底栏是用户从它里挑出来、自己排序的一份成员表，最多 6 项、默认 Agent、应用两项，不跟它的顺序走，见“主界面底栏”。
 - 一行的单位是插件。Bot 插件开和它的私聊，其余插件开它的第一个页面、第二个页面由插件自己的导航进。面板里"钉"上来的插件里的某一页和公网网页也作为独立行加进来，标题可以改。
 - "全部应用"（网格页）永远列全部已装插件，长按有"加到我的应用"；已经在里面的是"从我的应用移除"。
@@ -173,7 +173,7 @@
 
 - 核心模块 `tabs` 更名 `pages`，`TabsLink` → `PagesLink`；`TabsViewModel` → `PagesViewModel`，`TabItem` → `OpenPage`，`TabsProblem` → `PagesProblem`，`PlacedTab::Bar` → `PlacedTab::Page`，`PinTarget::Bar` → `PinTarget::MyApps`，`SettingsEntry::BottomBar` → `SettingsEntry::MyApps`，本机文件 `tabs.json` → `layout.json`。
 - `TabRef` 的名字不改，它是"页面引用"，面板、侧边栏、深链共用；`TabPage`、`TabState`、`TabIcon`、`TabLayout`、`TabLoadFailure`、`TabCandidate` 都留着（面板和整页状态页在用）。改名 `TabRef` 要动 545 处、跨面板和深链，收益只是一个字。
-- 新动作：`OpenPage`、`ClosePage`、`AddMyApp`（不再带 `pinned`）、`RemoveMyApp`、`MoveMyApp`、`SetAutoAddApps`；2026-11-21 再加
+- 新动作：`OpenPage`、`ClosePage`、`AddMyApp`（保持现有字段）、`RemoveMyApp`、`MoveMyApp`、`SetAutoAddApps`；2026-11-21 再加
   `SelectBarItem`、`AddBarItem`、`RemoveBarItem`、`MoveBarItem`。删动作：`SelectTab`、`CloseTabOverlay`、`PinTab`、`UnpinTab`、`MoveTab`、
   `SetTabLabels`、`SetTabDisplay`、`EnterFullscreen`、`ExitFullscreen`。
 - 删类型：`TabDisplay`、`TabDisplayChoice`、`TabDisplaySetting`、`PagesViewModel.show_bar/labels/full`、`TabPage.display/opens_fullscreen/fullscreen`、`TabItem.removable`。

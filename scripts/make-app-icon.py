@@ -13,7 +13,7 @@ import sys
 from pathlib import Path
 
 try:
-    from PIL import Image, ImageDraw, ImageFilter, ImageOps
+    from PIL import Image, ImageDraw, ImageFilter, ImageOps, ImageStat
 except ImportError:
     sys.exit("要 Pillow：python3 -m pip install pillow")
 
@@ -186,6 +186,18 @@ def write_text(path, content):
     path.write_text(content)
 
 
+def save_checked(image, path, side, alpha=False):
+    """保存后回读：尺寸对、该透明的有透明边、不是一块纯色。"""
+    image.save(path, optimize=True)
+    written = Image.open(path)
+    if written.size != (side, side):
+        sys.exit(f"{path.name} 尺寸 {written.size}，不是 {side}×{side}")
+    if alpha and ("A" not in written.getbands() or written.getchannel("A").getextrema() != (0, 255)):
+        sys.exit(f"{path.name} 没有透明边：alpha 要有 0 和 255")
+    if ImageStat.Stat(written.convert("L")).stddev[0] < 1:
+        sys.exit(f"{path.name} 几乎是一块纯色，像是没画上")
+
+
 def ios_app_icon(body):
     directory = XCASSETS / "AppIcon.appiconset"
     replace_dir(directory)
@@ -200,7 +212,7 @@ def ios_app_icon(body):
             # 同像素的尺寸（40@3x 和 60@2x 都是 120px）只存一份文件，两条都指过去。
             filename = by_pixels.get(side) or f"{name}-{points}@{scale}x.png"
             if side not in by_pixels:
-                full.resize((side, side), Image.LANCZOS).save(directory / filename, optimize=True)
+                save_checked(full.resize((side, side), Image.LANCZOS), directory / filename, side)
                 by_pixels[side] = filename
             images.append(
                 {
@@ -215,7 +227,7 @@ def ios_app_icon(body):
         # 1024 只给商店校验用，默认外观一份就够；dark/tinted 的 1024 可选，不放省约 1 MB。
         if appearances is None:
             filename = f"{name}-1024.png"
-            full.save(directory / filename, optimize=True)
+            save_checked(full, directory / filename, 1024)
             images.append({**extra, "filename": filename, "idiom": "universal", "platform": "ios", "size": "1024x1024"})
     write_json(directory / "Contents.json", {"images": images, **XCASSETS_INFO})
 
@@ -241,7 +253,7 @@ def ios_launch(body):
         for scale in (2, 3):
             side = LAUNCH_POINTS * scale
             filename = f"{name}@{scale}x.png"
-            place(side, FILL, body, shadow=False).save(glyph / filename, optimize=True)
+            save_checked(place(side, FILL, body, shadow=False), glyph / filename, side, alpha=True)
             images.append({**extra, "filename": filename, "idiom": "universal", "scale": f"{scale}x"})
     write_json(glyph / "Contents.json", {"images": images, **XCASSETS_INFO})
 
@@ -258,11 +270,11 @@ def android(body):
     if obsolete.exists():
         obsolete.unlink()
     (RES / "drawable-nodpi").mkdir(parents=True, exist_ok=True)
-    android_foreground(body).save(RES / "drawable-nodpi/ic_launcher_foreground.png")
+    save_checked(android_foreground(body), RES / "drawable-nodpi/ic_launcher_foreground.png", ANDROID_SIDE, alpha=True)
     monochrome = android_monochrome(body)
-    monochrome.save(RES / "drawable-nodpi/ic_launcher_monochrome.png")
+    save_checked(monochrome, RES / "drawable-nodpi/ic_launcher_monochrome.png", ANDROID_SIDE, alpha=True)
     # 通知栏小图标单独出：自适应图标 0.52 的安全区在 24dp 的通知图标里太小。
-    android_monochrome(body, FILL).save(RES / "drawable-nodpi/notification_glyph.png", optimize=True)
+    save_checked(android_monochrome(body, FILL), RES / "drawable-nodpi/notification_glyph.png", ANDROID_SIDE, alpha=True)
     write_text(RES / "mipmap-anydpi/ic_launcher.xml", android_adaptive_icon())
     android_launch(body)
 
@@ -309,8 +321,11 @@ def android_launch(body):
     if obsolete.exists():
         obsolete.unlink()
     (RES / "drawable-nodpi").mkdir(parents=True, exist_ok=True)
-    place(ANDROID_LAUNCH_SIDE, ANDROID_LAUNCH_FILL, body, shadow=False).save(
-        RES / "drawable-nodpi/launch_glyph.png", optimize=True
+    save_checked(
+        place(ANDROID_LAUNCH_SIDE, ANDROID_LAUNCH_FILL, body, shadow=False),
+        RES / "drawable-nodpi/launch_glyph.png",
+        ANDROID_LAUNCH_SIDE,
+        alpha=True,
     )
 
 
