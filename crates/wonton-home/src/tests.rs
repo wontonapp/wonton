@@ -795,3 +795,56 @@ fn production_compose_carries_acme_url_caa_and_metrics_password_file() {
     );
     assert!(text.contains(",omarchy.${WONTON_DOMAIN:?}"));
 }
+
+#[tokio::test]
+async fn empty_custom_domains_are_ignored_for_system_and_home() {
+    let system_fixture = Fixture::with_system(Some(System {
+        domains: vec!["push.homes.test".into()],
+        token_hash: crate::store::hash(b"sys"),
+    }))
+    .await;
+    let system = "sys";
+    let accepted = system_fixture
+        .hook(
+            "NewProxy",
+            "system",
+            system,
+            json!({"proxy_type":"https","proxy_name":"system.empty","custom_domains":["push.homes.test", ""]}),
+        )
+        .await;
+    assert_eq!(accepted["reject"], false);
+    let all_empty = system_fixture
+        .hook(
+            "NewProxy",
+            "system",
+            system,
+            json!({"proxy_type":"https","proxy_name":"system.blank","custom_domains":[""]}),
+        )
+        .await;
+    assert_eq!(all_empty["reject"], true);
+
+    let home_fixture = Fixture::new().await;
+    let response = home_fixture
+        .register(&key(1), &home_fixture.invite().await)
+        .await;
+    let home = response["home"].as_str().unwrap();
+    let token = response["frp_token"].as_str().unwrap();
+    let accepted = home_fixture
+        .hook(
+            "NewProxy",
+            home,
+            token,
+            json!({"proxy_type":"https","proxy_name":format!("{home}.empty"),"custom_domains":[format!("{home}.homes.test"), ""]}),
+        )
+        .await;
+    assert_eq!(accepted["reject"], false);
+    let all_empty = home_fixture
+        .hook(
+            "NewProxy",
+            home,
+            token,
+            json!({"proxy_type":"https","proxy_name":format!("{home}.blank"),"custom_domains":[""]}),
+        )
+        .await;
+    assert_eq!(all_empty["reject"], true);
+}

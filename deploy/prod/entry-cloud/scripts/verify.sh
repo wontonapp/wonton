@@ -25,7 +25,7 @@ probe "push health" "https://$PUSH/healthz" 200
 probe "relay health" "https://$RELAY/healthz" 200
 probe "names health" "https://$NAMES/health" 200
 
-for host in "$DOMAIN" "$PUSH" "$RELAY" "$NAMES" "$OMARCHY"; do
+for host in "$DOMAIN" "$PUSH" "$RELAY" "$NAMES" "$OMARCHY" "omarchy.$DOMAIN"; do
     if openssl s_client -connect "$PUBLIC_IP:443" -servername "$host" \
         -CAfile /etc/ssl/certs/ca-certificates.crt -verify_hostname "$host" </dev/null 2>&1 |
         grep -q 'Verification: OK'; then

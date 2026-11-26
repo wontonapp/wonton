@@ -46,7 +46,14 @@ pub(crate) fn home_domains_ok(domains: &[Value], label: &str, zone: &str) -> boo
 /// Returns the proxy name when a `NewProxy` request may be admitted, or `None`
 /// when its type, domains, or name are outside the caller's allowlist.
 fn proxy_name<'a>(app: &App, label: &str, is_system: bool, content: &'a Value) -> Option<&'a str> {
-    let domains = content["custom_domains"].as_array()?;
+    // frps ignores empty customDomains entries and prepare.py uses "" when the
+    // omarchy alias equals the main name; drop them before the allowlist checks.
+    let domains: Vec<Value> = content["custom_domains"]
+        .as_array()?
+        .iter()
+        .filter(|domain| !domain.as_str().is_some_and(str::is_empty))
+        .cloned()
+        .collect();
     let name = content["proxy_name"].as_str()?;
     let proxy_type = content["proxy_type"].as_str();
     let domains_ok = if is_system {
@@ -59,7 +66,7 @@ fn proxy_name<'a>(app: &App, label: &str, is_system: bool, content: &'a Value) -
                     .is_some_and(|d| allowlist.is_some_and(|a| a.iter().any(|x| x.as_str() == d)))
             })
     } else {
-        proxy_type == Some("https") && home_domains_ok(domains, label, &app.config.zone)
+        proxy_type == Some("https") && home_domains_ok(&domains, label, &app.config.zone)
     };
     if !domains_ok
         || content["subdomain"].as_str().is_some_and(|s| !s.is_empty())
