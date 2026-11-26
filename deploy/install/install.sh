@@ -333,7 +333,7 @@ proxy_for_containers() {
 # .env 不加引号，这些字符会被 docker compose 或 sh 另作解释。
 fits_env() {
   case "$1" in
-    *[[:space:]\$\'\"\`\\\#]*) return 1 ;;
+    *[[:space:]\$\'\"\`\\]*) return 1 ;;
   esac
 }
 
@@ -573,13 +573,19 @@ write_config() {
   info "生成密钥和配置（已有的沿用）"
   # 带上主人的设置：核心启动时也查，但那时容器会一直重启，要等满 10 分钟才报错，这里当场说清楚。
   [ -z "$relays" ] || fits_env "$relays" ||
-    die "WONTON_RELAYS 里不能有空格和引号这些字符，令牌里的特殊字符写成百分号编码"
+    die "WONTON_RELAYS 里不能有空格和引号这些字符；令牌里的特殊字符写成百分号编码，QUIC 端口直接写 #端口（如 #7843）"
   [ -z "$builtin_relays" ] || fits_env "$builtin_relays" ||
-    die "WONTON_BUILTIN_RELAYS 里不能有空格和引号这些字符"
+    die "WONTON_BUILTIN_RELAYS 里不能有空格和引号这些字符；QUIC 端口直接写 #端口（如 #7843）"
   [ -z "$push_vapid_key" ] || fits_env "$push_vapid_key" ||
     die "WONTON_PUSH_VAPID_KEY 里不能有空格和引号这些字符"
   [ -z "$push_vapid_subject" ] || fits_env "$push_vapid_subject" ||
     die "WONTON_PUSH_VAPID_SUBJECT 里不能有空格和引号这些字符"
+  [ -z "$relay_list_url" ] || fits_env "$relay_list_url" ||
+    die "WONTON_RELAY_LIST_URL 里不能有空格和引号这些字符"
+  [ -z "$relay_list_pubkey" ] || fits_env "$relay_list_pubkey" ||
+    die "WONTON_RELAY_LIST_PUBKEY 里不能有空格和引号这些字符"
+  [ -z "$relays_file" ] || fits_env "$relays_file" ||
+    die "WONTON_RELAYS_FILE 里不能有空格和引号这些字符"
   prepare_entry_env
   # “不要名字”的坐标核心运行时也要用，现在就查，别等装完才发现签不出。
   if [ "${WONTON_MATRIX_NAME_MODE:-given}" = none ] && entry_missing; then init_failed; fi
