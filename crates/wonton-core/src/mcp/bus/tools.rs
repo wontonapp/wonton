@@ -328,7 +328,7 @@ impl Bus {
         with_failure(&failure.message, failure.kind)
     }
 
-    fn record(
+    pub(super) fn record(
         &self,
         caller: &Caller,
         name: &str,
