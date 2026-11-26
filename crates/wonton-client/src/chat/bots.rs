@@ -10,7 +10,7 @@ use tokio::time::Instant;
 use wonton_matrix::{MatrixSession, UserProfile};
 use wonton_protocol::{
     AVATARS_FIELD, AvatarImage, AvatarKind, AvatarMedia, BotAccess, BotActivity, BotActivityFacts,
-    BotChatAvailability, BotRef, BotView, ChatForm, ChatViewModel, CoreError, HomeStatus,
+    BotChatAvailability, BotChatUnavailable, BotRef, BotView, ChatForm, ChatViewModel, CoreError, HomeStatus,
     InstalledPlugins, MediaHandle, RoomBot, SharedBot, SharedBotsState, SharedBotsView,
     StateAvatar, StateAvatars,
 };
@@ -354,7 +354,8 @@ impl Bots {
             }
             drop(local);
             bots.publish_contacts();
-            bots.changed.notify_one();
+            // 多个等待者（房间行、活动刷新）都该重算；notify_one 只叫醒一个。
+            bots.changed.notify_waiters();
         });
     }
 
@@ -389,24 +390,48 @@ impl Bots {
 
     /// 房间里的对方是 Bot 时给出身份和可用性：以核心的可达清单为准；外站 Bot、旧核心或清单还没到时退回活动快照，
     /// 退不出仍是 `None`（当普通人，输入照常）。
-    pub(super) fn room_bot(&self, user_id: &str) -> Option<RoomBot> {
-        if let Some(row) = lock(&self.local).shared.as_ref().and_then(|shared| {
-            shared
-                .iter()
-                .find(|row| row.user_id.as_deref() == Some(user_id))
-        }) {
+    pub(super) fn room_bot(&self, user_id: Option<&str>, room_name: &str) -> Option<RoomBot> {
+        let shared = lock(&self.local);
+        let row = user_id
+            .and_then(|user_id| {
+                shared
+                    .shared
+                    .as_ref()?
+                    .iter()
+                    .find(|row| row.user_id.as_deref() == Some(user_id))
+            })
+            .or_else(|| {
+                // 记录没建出来的行没有 Matrix ID，按插件显示名和房间名对上；同名时只当提示，不当发送资格。
+                shared.shared.as_ref()?.iter().find(|row| {
+                    row.user_id.is_none()
+                        && matches!(
+                            row.access,
+                            BotAccess::Unusable {
+                                reason: BotChatUnavailable::BotMissing
+                            }
+                        )
+                        && row.title == room_name
+                })
+            });
+        if let Some(row) = row {
             return Some(RoomBot {
                 bot: row.bot.clone(),
-                user_id: user_id.to_owned(),
+                user_id: row.user_id.clone().unwrap_or_default(),
                 title: row.title.clone(),
                 access: row.access,
             });
         }
+        drop(shared);
         let view = self.view.borrow();
-        let bot = view.bots.iter().find(|bot| bot.user_id == user_id)?;
+        let bot = user_id
+            .and_then(|user_id| view.bots.iter().find(|bot| bot.user_id == user_id))
+            .or_else(|| {
+                // 旧核心/联邦对不上 ID 时，按显示名找一次；找不到仍是普通人。
+                view.bots.iter().find(|bot| bot.name == room_name)
+            })?;
         Some(RoomBot {
             bot: bot.bot.clone(),
-            user_id: user_id.to_owned(),
+            user_id: bot.user_id.clone(),
             title: bot.name.clone(),
             access: bot.availability.into(),
         })
