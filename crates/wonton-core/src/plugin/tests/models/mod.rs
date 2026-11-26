@@ -6,8 +6,8 @@
 mod injection;
 mod lifecycle;
 mod reconcile;
-
 mod support;
+mod wants;
 
 // 测试函数由测试框架按定义注册，编译器看不到这些重导出的使用；留着保住旧路径 tests::models::<测试名>。
 #[allow(unused_imports)]
@@ -17,6 +17,8 @@ pub(super) use lifecycle::*;
 #[allow(unused_imports)]
 pub(super) use reconcile::*;
 pub(super) use support::*;
+#[allow(unused_imports)]
+pub(super) use wants::*;
 
 pub(super) use std::collections::BTreeMap;
 pub(super) use std::sync::{Arc, Mutex};
