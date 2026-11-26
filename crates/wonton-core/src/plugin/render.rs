@@ -274,9 +274,7 @@ pub(super) fn dry_run_context(package: &PluginPackage) -> InstallContext {
         config_store: root.join("core").join("configs"),
         shares,
         app_url: webui.map(|_| url.clone()),
-        external_url: (manifest.clients.as_ref().is_some_and(|c| c.http.is_some())
-            || manifest.webui.as_ref().is_some_and(|webui| webui.guests))
-        .then(|| url.clone()),
+        external_url: crate::plugin::manifest_clients::served(manifest).then(|| url.clone()),
         oidc: webui.filter(|w| w.sso == Sso::Oidc).map(|_| OidcVars {
             issuer: "http://auth.wonton.invalid".into(),
             client_id: manifest.id.to_string(),

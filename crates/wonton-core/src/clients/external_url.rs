@@ -2,17 +2,20 @@
 //! `single_host` 的请求按它改写 `Host`。公网访问总开关不参与计算。
 //!
 //! 值只来自主人自己打开的入口；公网优先，其次局域网，都没开时是 App 内经隧道的地址。
+//! 入口快照（[`crate::clients::state`]）在记录或域名变化时算好存着，请求热路径不读盘。
 
 use crate::clients::state::ClientsEntries;
+use crate::config::PublicUrls;
 use crate::gateway::Gateway;
 use crate::plugin::manifest::PluginId;
 use crate::plugin::store::InstalledRecord;
 
 pub const VAR: &str = "WONTON_EXTERNAL_URL";
-/// 局域网入口端口（`WONTON_CLIENT_PORT`，ADR-0021）。
+/// 局域网入口端口（`WONTON_CLIENT_PORT`，ADR-0021）；App 里显示的地址也用它，端口只有这一个来源。
 pub const DEFAULT_CLIENT_PORT: u16 = 8483;
 
-fn client_port() -> u16 {
+/// 局域网入口端口：`WONTON_CLIENT_PORT` 解析失败或为 0 时用 8483。
+pub fn lan_port() -> u16 {
     std::env::var("WONTON_CLIENT_PORT")
         .ok()
         .and_then(|value| value.parse().ok())
@@ -31,46 +34,27 @@ pub fn value(
         return Some(format!("https://{label}.{suffix}"));
     }
     if let (true, Some(label), Some(suffix)) = (entries.lan, label, suffix) {
-        return Some(format!("https://{label}.lan.{suffix}:{}", client_port()));
+        return Some(format!("https://{label}.lan.{suffix}:{}", lan_port()));
     }
     app_url.map(str::to_owned)
 }
 
-/// `single_host` 请求改写用：这个插件的当前值和 `scheme://主机[:端口]` 的两段。
-pub async fn for_installed(gateway: &Gateway, id: &PluginId) -> Option<String> {
-    let record = match gateway.plugins.store().load(id) {
-        Ok(record) => record,
-        Err(error) => {
-            tracing::error!(plugin = %id, %error, "读不到插件记录，规范对外地址按没有记录算");
-            None
-        }
-    };
-    match &record {
-        Some(record) => for_record(gateway, record).await,
-        None => {
-            let app_url = app_origin(gateway, id);
-            value(ClientsEntries::default(), None, None, Some(&app_url))
-        }
-    }
+/// 核心经隧道给这个插件的地址（`WONTON_APP_URL` 的值；没有网页的插件也照样给）。
+pub fn app_origin(public: &PublicUrls, id: &PluginId) -> String {
+    public.origin(&public.plugin_host(&id.slug()))
 }
 
-/// 安装、重建时注入的值：记录可能还没有（全新安装），按全关算。
+/// 安装、重建时注入的值：记录可能还没有（全新安装），按全关算。开关热路径不算，见
+/// [`crate::clients::state::State`]。
 pub async fn for_record(gateway: &Gateway, record: &InstalledRecord) -> Option<String> {
     let suffix = current_suffix(gateway);
-    let app_url = app_origin(gateway, &record.id);
+    let app_url = app_origin(&gateway.public, &record.id);
     value(
         record.clients_entries,
         record.entry_label.as_deref(),
         suffix.as_deref(),
         Some(&app_url),
     )
-}
-
-/// 核心经隧道给这个插件的地址（`WONTON_APP_URL` 的值；没有网页的插件也照样给）。
-pub fn app_origin(gateway: &Gateway, id: &PluginId) -> String {
-    gateway
-        .public
-        .origin(&gateway.public.plugin_host(&id.slug()))
 }
 
 /// 解析成（协议，主机带端口）；值是核心自己拼的，格式固定。
@@ -115,7 +99,7 @@ mod tests {
         };
         assert_eq!(
             value(entries, Some("app"), Some("example.test"), Some(APP)).unwrap(),
-            format!("https://app.lan.example.test:{}", client_port())
+            format!("https://app.lan.example.test:{}", lan_port())
         );
     }
 

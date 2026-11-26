@@ -170,6 +170,11 @@ pub(super) async fn dispatch(
                 password: pass.revoke.clone(),
             }
         });
+    // 规范对外地址只在声明了 `single_host` 时改写 `Host`（ADR-0089 第 5 节）；值在入口快照里算好。
+    let external = clients
+        .http
+        .single_host
+        .then_some(resolved.external_url.as_str());
     strip_entry_headers(req.headers_mut(), route.proxy.as_deref());
     // 代加的身份头在剥头之后注入：插件声明的同名头已删，这里是唯一来源（ADR-0021「接口」）。
     if let Some(pass) = &pass {
@@ -179,7 +184,7 @@ pub(super) async fn dispatch(
         }
     }
     forward_to_plugin(
-        gateway, req, &route, clients, upstream, cancel, &path, &langs, format,
+        gateway, req, &route, clients, upstream, cancel, &path, &langs, format, external,
     )
     .await
 }
@@ -196,6 +201,7 @@ async fn forward_to_plugin(
     path: &str,
     langs: &Languages,
     format: pages::Format,
+    external_url: Option<&str>,
 ) -> Response {
     // 入口容器写的真实来源；解析不出就不写，不编一个。
     let client = req
@@ -206,17 +212,11 @@ async fn forward_to_plugin(
         .map(|ip| SocketAddr::new(ip, 0));
     // 关开关断的是这个入口已有的连接：守卫从这进转发层，已升级的连接立即断。
     req.extensions_mut().insert(cancel);
-    let external = clients.http.single_host;
-    let external = if external {
-        crate::clients::external_url::for_installed(gateway, &route.id).await
-    } else {
-        None
-    };
     let forwarded = proxy::Forwarded {
         web_user: None,
         client,
         scheme: "https",
-        external_url: external.as_deref(),
+        external_url,
     };
     let target = proxy::Target {
         endpoint: upstream,

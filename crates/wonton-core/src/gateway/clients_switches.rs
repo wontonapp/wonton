@@ -19,8 +19,6 @@ use crate::clients::state::Kind;
 use crate::plugin::languages::Languages;
 use crate::plugin::manager::ClientPlugin;
 
-const LAN_PORT: u16 = 8483;
-
 pub(super) fn routes() -> Router<Arc<Gateway>> {
     Router::new()
         .route(&wonton_protocol::clients_path(), get(list))
@@ -176,11 +174,12 @@ async fn client_view(
         )
     })?;
     let lan_url = suffix.and_then(|suffix| {
-        client
-            .record
-            .clients_entries
-            .lan
-            .then(|| format!("https://{label}.lan.{suffix}:{LAN_PORT}"))
+        client.record.clients_entries.lan.then(|| {
+            format!(
+                "https://{label}.lan.{suffix}:{}",
+                crate::clients::external_url::lan_port()
+            )
+        })
     });
     let public_url = suffix.and_then(|suffix| {
         (client.record.clients_entries.public && gateway.public_access_enabled())
