@@ -4,6 +4,7 @@ use std::path::PathBuf;
 use std::sync::Arc;
 
 use futures_util::future::BoxFuture;
+use hyper::HeaderMap;
 use hyper::header::{AUTHORIZATION, ORIGIN};
 use serde_json::{Value, json};
 use wonton_protocol::{BotKeeper, ContactEvent, ContactState};
