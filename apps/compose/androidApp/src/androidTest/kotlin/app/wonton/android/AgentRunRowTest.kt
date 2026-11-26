@@ -162,6 +162,7 @@ class AgentRunRowTest {
         choices = choices,
         senderName = "Echo",
         timestampMs = timestampMs,
+        unreadAnchor = false,
     )
 
     private fun waiting() = fixture(AgentRunState.Waiting, cardId = "card-1")

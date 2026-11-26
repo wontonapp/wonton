@@ -607,15 +607,35 @@ impl ChatLink {
             TimelineAction::SetTyping { target, typing } => {
                 self.set_typing(&TimelineKey::parse(&target)?, typing)
             }
-            // 未读跳转（ADR-0121）：这一步只接住动作，行为在下一个 PR。
-            TimelineAction::JumpToFirstUnread { .. }
-            | TimelineAction::JumpToNextMention { .. }
-            | TimelineAction::UnreadAnchorSeen { .. } => self.unread_action(),
+            TimelineAction::JumpToFirstUnread { target } => {
+                self.jump_to_unread(&TimelineKey::parse(&target)?, false)
+            }
+            TimelineAction::JumpToNextMention { target } => {
+                self.jump_to_unread(&TimelineKey::parse(&target)?, true)
+            }
+            TimelineAction::UnreadAnchorSeen { target, item_id } => {
+                self.subscription(&TimelineKey::parse(&target)?)?
+                    .unread_anchor_seen(item_id);
+                Ok(())
+            }
         }
     }
 
-    /// 未读跳转的动作（ADR-0121）：行为在核心 PR 里接，这一步先收下不报错。
-    fn unread_action(&self) -> Result<(), CoreError> {
+    /// 取好读位置和未读数再让跳转状态机去分页（ADR-0121），别在分派里等网络。
+    fn jump_to_unread(&self, key: &TimelineKey, mention: bool) -> Result<(), CoreError> {
+        let subscription = self.subscription(key)?;
+        let room = self.opened(key)?;
+        self.runtime.spawn(async move {
+            let position = subscription
+                .unread_read_item()
+                .or(room.read_position().await.map(|id| id.to_string()));
+            let unread = u32::try_from(room.unread_messages().await).unwrap_or(u32::MAX);
+            if mention {
+                subscription.jump_to_next_mention(position, unread);
+            } else {
+                subscription.jump_to_first_unread(position, unread);
+            }
+        });
         Ok(())
     }
 
