@@ -2,8 +2,9 @@
 """夜跑失败上报：按失败的测试开 issue；同一条测试已经有开着的 issue 就在上面留言。
 
 两个端用同一份：iOS 从 .xcresult 里取失败的用例，Android 从 JUnit XML 里取。没有解析到失败用例
-（构建或前置步骤炸了）时报一条作业级 issue。JUnit 的 assumption 跳过（AGP 记成 failure/error，type、
-message 或正文带 AssumptionViolatedException）不算失败。`GH_TOKEN` 由工作流给，仓库用 `--repo` 传。
+（构建或前置步骤炸了）时报一条作业级 issue。JUnit 的 assumption 跳过不算失败：`type`、`message`
+或正文第一行冒号前的异常类名是 AssumptionViolatedException（含子类）或 TestAbortedException 就当跳过；
+堆栈里的 `Caused by:`、断言消息里的 `expected: <...>` 不参与判断。`GH_TOKEN` 由工作流给，仓库用 `--repo` 传。
 """
 
 import argparse
@@ -16,7 +17,7 @@ from pathlib import Path
 
 TITLE_PREFIX = "夜跑失败："
 
-# JUnit 4 的 assumption（含旧 internal 包和子类）与 JUnit 5 的 TestAbortedException。
+# JUnit 4 的 assumption（含旧 internal 包和子类）与 JUnit 5 的 TestAbortedException；只按类名认。
 ASSUMPTION_EXCEPTIONS = ("AssumptionViolatedException", "TestAbortedException")
 
 
@@ -57,9 +58,21 @@ def android_failures(results_dir: str) -> list[str]:
     return failures
 
 
+def is_assumption_class(name: str) -> bool:
+    """类名的 . 或 $ 分段结尾是假设异常（子类、内部类也算）。"""
+    return any(segment.endswith(ASSUMPTION_EXCEPTIONS) for segment in name.strip().replace("$", ".").split("."))
+
+
+def leading_class(value: str) -> str:
+    """`类名: 消息` 里冒号前的类名；`expected: <...>`、`Caused by: ...` 取到 expected、Caused by。"""
+    return value.split("\n", 1)[0].split(":", 1)[0].strip()
+
+
 def problem_is_assumption(problem: ET.Element) -> bool:
-    text = " ".join((problem.get("type", ""), problem.get("message", ""), problem.text or ""))
-    return any(name in text for name in ASSUMPTION_EXCEPTIONS)
+    first_line = (problem.text or "").lstrip().split("\n", 1)[0]
+    return is_assumption_class(problem.get("type", "")) or any(
+        is_assumption_class(leading_class(value)) for value in (problem.get("message", ""), first_line)
+    )
 
 
 def gh(*args: str) -> str:
@@ -86,7 +99,7 @@ def main() -> int:
         except ET.ParseError:
             failures = []
     failures = sorted(set(filter(None, failures)))
-    # 不知道是哪个用例失败时也要报，不然构建挂了一直没人知道。
+    # 不知道是哪个用例失败时也要报（构建或前置步骤炸了，或这晚只剩 assumption 跳过），不然一直没人知道。
     if not failures:
         failures = ["作业"]
 
