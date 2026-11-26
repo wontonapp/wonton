@@ -53,6 +53,7 @@ gateway-name-models = モデルゲートウェイ
 # TLS入口コンテナの後ろにあるクライアント入口（ADR-0021）。
 gateway-entry-header-invalid = 入口ゲートウェイがこのリクエストに正しい印を付けていません
 gateway-entry-closed = この入口は開いていません。オーナーがWontonアプリで開けられます
+gateway-public-access-off = 外部からのアクセスはオフです。オーナーがWontonアプリでオンにできます
 gateway-entry-public-denied = 公開アドレスからはこのパスにアクセスできません
 gateway-entry-setup-pending = まずこのアプリのウェブページで初回登録を済ませてから、もう一度お試しください
 gateway-entry-auth-required = Wontonで発行したこのアプリのパスワードでサインインしてください
@@ -180,6 +181,7 @@ clients-credentials-missing-command = マニフェストに { $op } コマンド
 clients-credentials-failed = アプリ内のコマンドが失敗しました：{ $error }
 gateway-entry-credentials-not-issued = アプリのパスワードがまだないため、入口は閉じたままです
 clients-domain-read-failed = ドメイン設定を読めませんでした：{ $error }
+clients-public-access-save-failed = 外部アクセスのスイッチを保存できませんでした：{ $error }
 gateway-chains-disabled = 自宅サーバーで呼び出しの連鎖の台帳が有効になっていません
 
 # agent_acp の転送（ADR-0061 第 5 ブロック）：接続時の拒否とフレームごとのエラーを、種別付きで利用者に返す。

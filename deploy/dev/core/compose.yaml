@@ -85,6 +85,9 @@ services:
       # 发往我们运营的推送中继时的 VAPID 身份（ADR-0003 的 M2，cloud/push-relay）；不设时不带 VAPID 头。
       WONTON_PUSH_VAPID_KEY: ${WONTON_PUSH_VAPID_KEY:-}
       WONTON_PUSH_VAPID_SUBJECT: ${WONTON_PUSH_VAPID_SUBJECT:-}
+      # 8484 的入口监听：入口容器把公网/局域网的请求从这里送进核心。主网关不在这张地址上收连接（ADR-0021）。
+      WONTON_ENTRY_LISTEN: entry-gateway.wonton.internal:8484
+      WONTON_EXCLUDE_LISTEN: entry-gateway.wonton.internal
       # 通话插件验 OpenID 令牌时连服务器名的 443（ADR-0096）。
       WONTON_MATRIX_RTC_LISTEN: 0.0.0.0:443
       # 系统服务都用带点的别名：核心也接在每个插件网络上，插件的服务名会成为那里的别名。服务名不能带点，这些名字抢不走；
@@ -137,6 +140,8 @@ services:
       core:
         # 文件钩子、联邦出站代理和推送监听只在这个网络上，与正式安装一致。
         aliases: [files-hooks.wonton.internal, federation-proxy.wonton.internal, push.wonton.internal]
+      clients:
+        aliases: [entry-gateway.wonton.internal]
     depends_on:
       hydra:
         condition: service_healthy
@@ -338,6 +343,12 @@ networks:
     external: true
     name: ${WONTON_DEV_PROJECT:-wonton-dev-core}_core
 
+  # 入口容器和核心之间的专用网络。入口容器由核心按入口设置建；没有设置时就空着。
+  clients:
+    internal: true
+    driver_opts:
+      com.docker.network.bridge.gateway_mode_ipv4: isolated
+      com.docker.network.bridge.gateway_mode_ipv6: isolated
 volumes:
   hydra:
   tuwunel:

@@ -107,36 +107,61 @@ pub fn render(
 /// 连接器的固定配置：路由器把公网端口转到宿主，连接器在宿主上收、带 PROXY 头交给入口。
 pub const CONNECTOR_CONFIG: &str = "global\n  maxconn 1024\ndefaults\n  mode tcp\n  timeout connect 5s\n  timeout client 60s\n  timeout server 60s\nfrontend public\n  bind :8443\n  default_backend entry\nbackend entry\n  server entry entry-edge.wonton.internal:8443 send-proxy-v2\n";
 
-/// 一轮要写的入口配置：实际服务的后缀、连接器地址和家名服务。
+/// 一轮要写的入口配置：实际服务的后缀、连接器地址、家名服务和公网访问总开关。
 pub struct Config<'a> {
     pub domain: &'a str,
     pub connector: &'a str,
     pub registration: Option<&'a Registration>,
     pub relay_ca: Option<&'a Path>,
+    /// 公网访问总开关；关着时公网前端的证书列表为空。
+    pub public: bool,
 }
 
 /// 按给定模型重写入口配置和两份 crt-list（对账发现网络地址和装机时不一样时用）。落盘和权限照旧。
-pub fn write_model(install_dir: &Path, model: &crate::entry_haproxy::Model) -> anyhow::Result<()> {
+/// 内容没变的文件不重写，返回有没有文件真的改了。
+pub fn write_model(
+    install_dir: &Path,
+    model: &crate::entry_haproxy::Model,
+) -> anyhow::Result<bool> {
     let directory = install_dir.join("entry");
     std::fs::create_dir_all(&directory)?;
     let rendered = crate::entry_haproxy::render(model).map_err(anyhow::Error::msg)?;
-    write_mounted_config(&directory.join("haproxy.cfg"), &rendered.config)?;
+    let mut changed =
+        write_mounted_config_changed(&directory.join("haproxy.cfg"), &rendered.config)?;
     std::fs::create_dir_all(directory.join("certs"))?;
-    crate::install::write_private(
+    changed |= write_private_changed(
         &directory.join("certs/public.crt-list"),
         &rendered.public_crt_list,
     )?;
-    crate::install::write_private(
+    changed |= write_private_changed(
         &directory.join("certs/lan.crt-list"),
         &rendered.lan_crt_list,
     )?;
-    Ok(())
+    Ok(changed)
+}
+
+fn write_private_changed(path: &Path, text: &str) -> anyhow::Result<bool> {
+    if std::fs::read_to_string(path).ok().as_deref() == Some(text) {
+        return Ok(false);
+    }
+    crate::install::write_private(path, text)?;
+    Ok(true)
+}
+
+/// 和 [`write_mounted_config`] 一样写单文件挂载，但内容没变就不动文件。
+fn write_mounted_config_changed(path: &Path, text: &str) -> anyhow::Result<bool> {
+    if std::fs::read_to_string(path).ok().as_deref() == Some(text) {
+        return Ok(false);
+    }
+    write_mounted_config(path, text)?;
+    Ok(true)
 }
 
 /// 入口模型：只有联邦，连接器地址按实际网段。
 fn model(config: &Config) -> crate::entry_haproxy::Model {
     let mut model = crate::entry_haproxy::Model::federation_only(config.domain, config.domain);
     model.connectors = vec![config.connector.to_owned()];
+    model.public = config.public;
     model
 }
 
@@ -210,6 +235,7 @@ pub fn write(install_dir: &Path, settings: &EntrySettings) -> anyhow::Result<()>
             connector: crate::entry_haproxy::CONNECTOR_ADDRESS,
             registration: settings.registration.as_ref(),
             relay_ca: settings.relay_ca.as_deref(),
+            public: true,
         },
     )?;
     Ok(())

@@ -53,6 +53,7 @@ gateway-name-models = 模型閘道
 # TLS 入口容器後面的客戶端入口（ADR-0021）。
 gateway-entry-header-invalid = 入口閘道沒有給這個請求標上正確的記號
 gateway-entry-closed = 這個入口沒有開啟，主人可以在 Wonton 應用程式裡開啟
+gateway-public-access-off = 公網訪問已關，主人可以在 Wonton 應用程式裡開啟
 gateway-entry-public-denied = 公網位址上存取不了這個路徑
 gateway-entry-setup-pending = 請先在這個應用程式的網頁上完成首次註冊，然後再試
 gateway-entry-auth-required = 請用在雲吞裡給這個應用程式發的專用密碼登入
@@ -180,6 +181,7 @@ clients-credentials-missing-command = 清單裡沒有 { $op } 命令
 clients-credentials-failed = 應用裡的命令失敗：{ $error }
 gateway-entry-credentials-not-issued = 應用還沒有密碼，入口先不開
 clients-domain-read-failed = 網域設定讀不了：{ $error }
+clients-public-access-save-failed = 公網訪問開關儲存不了：{ $error }
 gateway-chains-disabled = 家裡的伺服器沒有啟用呼叫鏈帳本
 
 # agent_acp 的轉發（ADR-0061 第 5 塊）：建連時的拒絕和逐幀轉發裡的錯誤，按類別回給使用方。

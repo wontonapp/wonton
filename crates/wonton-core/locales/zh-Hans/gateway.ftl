@@ -53,6 +53,7 @@ gateway-name-models = 模型网关
 # TLS 入口容器后面的客户端入口（ADR-0021）。
 gateway-entry-header-invalid = 入口网关没有给这个请求打上正确的标记
 gateway-entry-closed = 这个入口没有打开，主人可以在 Wonton 应用里打开
+gateway-public-access-off = 公网访问已关，主人可以在 Wonton 应用里打开
 gateway-entry-public-denied = 公网地址上访问不了这个路径
 gateway-entry-setup-pending = 请先在这个应用的网页上完成首次注册，然后再试
 gateway-entry-auth-required = 请用在云吞里给这个应用发的专用密码登录
@@ -180,6 +181,7 @@ clients-credentials-missing-command = 清单里没有 { $op } 命令
 clients-credentials-failed = 应用里的命令失败：{ $error }
 gateway-entry-credentials-not-issued = 应用还没有密码，入口先不开
 clients-domain-read-failed = 域名设置读不了：{ $error }
+clients-public-access-save-failed = 公网访问开关保存不了：{ $error }
 gateway-chains-disabled = 家里的服务器没有启用调用链账本
 
 # agent_acp 的转发（ADR-0061 第 5 块）：建连时的拒绝和逐帧转发里的错误，按类别回给使用方。

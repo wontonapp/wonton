@@ -5,6 +5,8 @@ use std::sync::Arc;
 use std::sync::atomic::{AtomicUsize, Ordering};
 use std::time::Duration;
 
+use wonton_protocol::GateState;
+
 use serde_json::{Value, json};
 
 use super::{
@@ -142,7 +144,15 @@ impl Rig {
     }
 
     async fn reconcile(&self, settings: Option<&EntrySettings>) -> Result<(), EntryError> {
-        self.containers.reconcile(settings).await
+        self.reconcile_with(settings, true).await
+    }
+
+    async fn reconcile_with(
+        &self,
+        settings: Option<&EntrySettings>,
+        public: bool,
+    ) -> Result<(), EntryError> {
+        self.containers.reconcile(settings, public).await
     }
 
     fn created(&self, name: &str) -> Value {
@@ -609,7 +619,7 @@ async fn core_outside_container_reports_core_not_in_container() {
         Instance::default(),
         None,
     );
-    let error = here.reconcile(Some(&settings())).await.unwrap_err();
+    let error = here.reconcile(Some(&settings()), true).await.unwrap_err();
     assert_eq!(error.category(), "core_not_in_container");
     assert_eq!(
         error.to_string(),
@@ -617,7 +627,7 @@ async fn core_outside_container_reports_core_not_in_container() {
     );
     assert_eq!(rig.others(), Vec::<String>::new());
     // 没有设置时是空操作：开发栈没有入口设置不该每次启动都报错。
-    here.reconcile(None).await.unwrap();
+    here.reconcile(None, true).await.unwrap();
 }
 
 /// 家名服务（中继）时连接器是 frpc，读它的配置和 frps 的 CA。
@@ -1037,9 +1047,9 @@ async fn previous_compose_containers_are_adopted() {
 async fn a_changed_publish_port_recreates_the_connector() {
     let rig = Rig::new().await;
     let containers = rig.containers.with_binding("127.0.0.1", "18443");
-    containers.reconcile(Some(&settings())).await.unwrap();
+    containers.reconcile(Some(&settings()), true).await.unwrap();
     let containers = containers.with_binding("127.0.0.1", "18444");
-    containers.reconcile(Some(&settings())).await.unwrap();
+    containers.reconcile(Some(&settings()), true).await.unwrap();
     assert_eq!(rig.docker.creations("wonton-connector"), 2);
     assert_eq!(
         rig.docker.created("wonton-connector").unwrap_or_default()["HostConfig"]["PortBindings"]["8443/tcp"],
@@ -1056,7 +1066,10 @@ async fn a_failed_recreate_reports_and_waits_for_retry() {
     let containers = rig.containers.with_binding("127.0.0.1", "18443");
     rig.docker
         .fail_next_create("wonton-connector", "bind: address already in use");
-    let error = containers.reconcile(Some(&settings())).await.unwrap_err();
+    let error = containers
+        .reconcile(Some(&settings()), true)
+        .await
+        .unwrap_err();
     assert_eq!(error.category(), "conflict");
     // 旧容器已按换法删掉，新的没建成：入口缺席，等下一次对账。
     assert!(
@@ -1065,7 +1078,7 @@ async fn a_failed_recreate_reports_and_waits_for_retry() {
             .contains(&"wonton-connector".to_owned())
     );
     // 下一次对账建回来（fail_next_create 已在失败那次被消费）。
-    containers.reconcile(Some(&settings())).await.unwrap();
+    containers.reconcile(Some(&settings()), true).await.unwrap();
     assert_eq!(
         rig.docker.created("wonton-connector").unwrap_or_default()["HostConfig"]["PortBindings"]["8443/tcp"],
         json!([{"HostIp": "127.0.0.1", "HostPort": "18443"}])
@@ -1166,4 +1179,112 @@ fn federation_registration() -> crate::home_service::Registration {
         "relay": {"host": "relay.example.test", "port": 443, "server_name": "relay.example.test"}
     }))
     .unwrap()
+}
+
+/// 关掉总开关：连接器删掉、入口留着、公网证书列表清空，入口被告知重读配置。
+#[tokio::test]
+async fn switch_off_removes_the_connector_and_empties_the_public_list() {
+    let rig = Rig::new().await;
+    rig.reconcile(Some(&settings())).await.unwrap();
+    let reloads = rig.reloads();
+    let states = rig
+        .containers
+        .apply_public_access(Some(&settings()), false)
+        .await;
+    assert_eq!(states.connector, GateState::Done);
+    assert!(states.crt_list == GateState::Done, "{states:?}");
+    assert!(states.core == GateState::Done);
+    assert!(
+        !rig.docker
+            .containers()
+            .contains(&"wonton-connector".to_owned())
+    );
+    assert!(rig.docker.containers().contains(&"wonton-entry".to_owned()));
+    assert_eq!(
+        std::fs::read_to_string(rig.dir.path().join("entry/certs/public.crt-list"))
+            .unwrap_or_default(),
+        ""
+    );
+    assert_eq!(rig.reloads(), reloads + 1, "入口要重读配置");
+}
+
+/// 重新打开：连接器回来、公网证书列表恢复。
+#[tokio::test]
+async fn switch_on_restores_the_connector_and_the_public_list() {
+    let rig = Rig::new().await;
+    rig.reconcile(Some(&settings())).await.unwrap();
+    rig.containers
+        .apply_public_access(Some(&settings()), false)
+        .await;
+    let states = rig
+        .containers
+        .apply_public_access(Some(&settings()), true)
+        .await;
+    assert_eq!(states.connector, GateState::Done);
+    assert!(states.crt_list == GateState::Done, "{states:?}");
+    assert!(
+        rig.docker
+            .containers()
+            .contains(&"wonton-connector".to_owned())
+    );
+    let list = std::fs::read_to_string(rig.dir.path().join("entry/certs/public.crt-list")).unwrap();
+    assert!(list.contains("k3f9qzab.example.test"), "{list}");
+}
+
+/// 同一个开关值重复下发不重建、不重写配置、不重载入口。
+#[tokio::test]
+async fn the_same_switch_value_does_not_rebuild_or_reload() {
+    let rig = Rig::new().await;
+    let dir = rig.dir.path().to_owned();
+    std::fs::write(
+        dir.join("entry/settings.json"),
+        serde_json::to_vec(&settings()).unwrap(),
+    )
+    .unwrap();
+    let access = Arc::new(
+        crate::entry_access::EntryAccess::open(dir.join("data/core/entry-access.json")).unwrap(),
+    );
+    access
+        .save(wonton_protocol::PublicAccess { enabled: true })
+        .unwrap();
+    let containers = Arc::new(rig.containers.clone());
+    let admin = crate::entry_access::EntryAdmin::new(access, Some(containers), dir);
+    admin.apply(true).await.unwrap();
+    admin.apply(false).await.unwrap();
+    let creations = rig.docker.creations("wonton-entry");
+    let writes = rig.docker.writes().len();
+    let reloads = rig.reloads();
+    admin.apply(false).await.unwrap();
+    assert_eq!(rig.docker.creations("wonton-entry"), creations, "不重建");
+    assert_eq!(rig.docker.writes().len(), writes, "不重写入口配置");
+    assert_eq!(rig.reloads(), reloads, "不重载入口");
+}
+
+/// 上一次崩在写盘和重载之间：文件还是旧值，下一次对账改回来并让入口重读一次。
+#[tokio::test]
+async fn reconcile_fixes_a_stale_list_and_reloads_once() {
+    let rig = Rig::new().await;
+    rig.reconcile(Some(&settings())).await.unwrap();
+    std::fs::write(
+        rig.dir.path().join("entry/certs/public.crt-list"),
+        "stale.example.test\n",
+    )
+    .unwrap();
+    let reloads = rig.reloads();
+    rig.reconcile_with(Some(&settings()), false).await.unwrap();
+    assert_eq!(
+        std::fs::read_to_string(rig.dir.path().join("entry/certs/public.crt-list")).unwrap(),
+        ""
+    );
+    assert_eq!(rig.reloads(), reloads + 1, "改了就重读一次");
+}
+
+/// 配置没变：第二次对账不重写文件、不重载入口。
+#[tokio::test]
+async fn an_unchanged_reconcile_does_not_reload() {
+    let rig = Rig::new().await;
+    rig.reconcile(Some(&settings())).await.unwrap();
+    let reloads = rig.reloads();
+    rig.reconcile(Some(&settings())).await.unwrap();
+    assert_eq!(rig.reloads(), reloads);
 }

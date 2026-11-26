@@ -8,6 +8,7 @@
 mod code;
 mod forwarder;
 mod harness;
+mod public_access;
 mod removal;
 mod requests;
 
@@ -403,14 +404,19 @@ impl TestCore {
 
 /// `a` 出码、`b` 扫码、`a` 的主人同意，两边都配对成立。
 async fn pair(a: &TestCore, b: &TestCore) {
+    pair_named(a, b, "a.example.internal", "b.example.internal").await;
+}
+
+/// 同 [`pair`]，服务器名由调用方给（私用名的测试用）。
+async fn pair_named(a: &TestCore, b: &TestCore, a_name: &str, b_name: &str) {
     let code = a.peers.issue_code();
     b.scan_code(&code, a).await.unwrap();
-    a.request_now("b.example.internal");
-    a.approve("b.example.internal").await.unwrap();
-    a.wait_paired("b.example.internal").await;
-    b.wait_paired("a.example.internal").await;
-    a.wait_paired_names("b.example.internal").await;
-    b.wait_paired_names("a.example.internal").await;
+    a.request_now(b_name);
+    a.approve(b_name).await.unwrap();
+    a.wait_paired(b_name).await;
+    b.wait_paired(a_name).await;
+    a.wait_paired_names(b_name).await;
+    b.wait_paired_names(a_name).await;
 }
 
 /// 全流程：出码 → 扫码（等对方同意）→ 出码方主人同意 → 两边记成已配对、名单更新、主人身份记上。

@@ -25,6 +25,7 @@ pub mod clients;
 pub mod config;
 pub mod contacts;
 pub mod device;
+pub mod entry_access;
 pub mod entry_certificate;
 pub mod entry_compose;
 pub mod entry_containers;

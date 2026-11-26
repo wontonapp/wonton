@@ -16,6 +16,8 @@ use super::Gateway;
 use super::clients_entry;
 use super::entry_federation;
 use super::matrix::matrix_error;
+use super::{api, pages};
+use crate::l10n;
 
 /// 只应绑定在核心私有网络中，由 TLS 入口容器转入；不能和主网关的路由合并。
 pub fn router(gateway: Arc<Gateway>) -> Router {
@@ -39,17 +41,25 @@ pub fn router(gateway: Arc<Gateway>) -> Router {
 }
 
 async fn dispatch(gateway: Arc<Gateway>, req: Request) -> Response {
+    let public = public_marker(&req);
     let Some(matrix) = &gateway.matrix else {
         return entry_federation::unavailable();
     };
     let server_name = matrix.server_name();
     if entry_federation::matches_host(&req, server_name) {
+        // 总开关关着时公网上的联邦和发现整个不伺候；经 iroh 的配对前端不带这个标记，不受影响。
+        if public && gateway.entry_closed() {
+            return entry_federation::unavailable();
+        }
         if super::friend_requests::is_public(req.uri().path()) {
             return super::friend_requests::request(gateway.clone(), req).await;
         }
         return entry_federation::dispatch(&gateway, matrix, req).await;
     }
     if let Some((label, kind)) = clients_entry::split_host(&req, server_name) {
+        if public && gateway.entry_closed() {
+            return public_access_off(&req);
+        }
         return clients_entry::dispatch(&gateway, req, label, kind).await;
     }
     matrix_error(
@@ -59,3 +69,24 @@ async fn dispatch(gateway: Arc<Gateway>, req: Request) -> Response {
         "入口只伺候本机服务器名和插件的入口名字",
     )
 }
+
+/// 入口容器给公网前端打的标记，恰好一个 `public` 才算。局域网前端打 `lan`，8449 的配对前端不打。
+fn public_marker(req: &Request) -> bool {
+    let mut values = req.headers().get_all("x-wonton-entry").iter();
+    values.next().and_then(|value| value.to_str().ok()) == Some("public") && values.next().is_none()
+}
+
+fn public_access_off(req: &Request) -> Response {
+    let langs = api::languages(req.headers());
+    pages::error(
+        StatusCode::SERVICE_UNAVAILABLE,
+        "entry_closed",
+        &l10n::text(&langs, "gateway-public-access-off", &[]),
+        &langs,
+        pages::Format::of(req.headers()),
+    )
+}
+
+#[cfg(test)]
+#[path = "entry_public_access_tests.rs"]
+mod entry_public_access_tests;

@@ -53,6 +53,7 @@ gateway-name-models = model gateway
 # Client entries behind the TLS entry container (ADR-0021).
 gateway-entry-header-invalid = The entry gateway didn't label this request correctly
 gateway-entry-closed = This entry is turned off; the owner can turn it on in the Wonton app
+gateway-public-access-off = Public access is off; the owner can turn it on in the Wonton app
 gateway-entry-public-denied = This path isn't available on the public address
 gateway-entry-setup-pending = Finish the app's first-time setup on its web page first, then try again
 gateway-entry-auth-required = Sign in with the app password issued in Wonton
@@ -180,6 +181,7 @@ clients-credentials-missing-command = The app manifest has no { $op } command
 clients-credentials-failed = The command in the app failed: { $error }
 gateway-entry-credentials-not-issued = The app has no password yet, so its entry stays closed
 clients-domain-read-failed = Couldn't read the domain settings: { $error }
+clients-public-access-save-failed = Couldn't save the public access switch: { $error }
 gateway-chains-disabled = The home server doesn't have the call chain ledger enabled
 
 # agent_acp forwarding (ADR-0061, block 5): connect-time refusals and per-frame errors, returned to the consumer by category.
