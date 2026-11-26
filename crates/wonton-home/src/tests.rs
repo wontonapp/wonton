@@ -412,6 +412,49 @@ async fn suspension_removes_dns_and_rejects_all_admission_hooks() {
 }
 
 #[tokio::test]
+async fn new_proxy_accepts_apex_plus_one_wildcard() {
+    let fixture = Fixture::new().await;
+    let response = fixture.register(&key(1), &fixture.invite().await).await;
+    let home = response["home"].as_str().unwrap().to_owned();
+    let token = response["frp_token"].as_str().unwrap().to_owned();
+    let apex = format!("{home}.homes.test");
+    let wildcard = format!("*.{apex}");
+    let proxy = |name: &str, domains: Vec<String>| json!({"proxy_type":"https","proxy_name":format!("{home}.{name}"),"custom_domains":domains});
+    let wildcard_last = fixture
+        .hook(
+            "NewProxy",
+            &home,
+            &token,
+            proxy("matrix", vec![apex.clone(), wildcard.clone()]),
+        )
+        .await;
+    assert_eq!(wildcard_last["reject"], false);
+    let wildcard_first = fixture
+        .hook(
+            "NewProxy",
+            &home,
+            &token,
+            proxy("matrix", vec![wildcard.clone(), apex.clone()]),
+        )
+        .await;
+    assert_eq!(wildcard_first["reject"], false);
+
+    let three = proxy(
+        "matrix",
+        vec![apex.clone(), wildcard.clone(), "x.homes.test".into()],
+    );
+    assert_eq!(
+        fixture.hook("NewProxy", &home, &token, three).await["reject"],
+        true
+    );
+    let neighbor = proxy("matrix", vec![apex, "*.other.homes.test".into()]);
+    assert_eq!(
+        fixture.hook("NewProxy", &home, &token, neighbor).await["reject"],
+        true
+    );
+}
+
+#[tokio::test]
 async fn caa_first_binding_is_effective_and_changes_have_stable_cooldown() {
     let fixture = Fixture::new().await;
     let response = fixture.register(&key(1), &fixture.invite().await).await;
@@ -489,15 +532,17 @@ async fn proxy_ownership_and_entry_quota_cannot_be_bypassed() {
     let response = fixture.register(&key(1), &fixture.invite().await).await;
     let home = response["home"].as_str().unwrap();
     let token = response["frp_token"].as_str().unwrap();
+    // 插件子域的通配名可以单独出现，也可以和家名一起；别家的名字和不带家名的名字不行。
     for domain in [
-        format!("*.{home}.homes.test"),
         format!("lan.{home}.homes.test"),
         format!("x.lan.{home}.homes.test"),
         "another.homes.test".into(),
     ] {
         assert_eq!(fixture.hook("NewProxy",home,token,json!({"proxy_type":"https","proxy_name":format!("{home}.bad"),"custom_domains":[domain]})).await["reject"],true);
     }
-    for n in 0..5 {
+    assert_eq!(fixture.hook("NewProxy",home,token,json!({"proxy_type":"https","proxy_name":format!("{home}.wild"),"custom_domains":[format!("*.{home}.homes.test")]})).await["reject"],false);
+    // 已经有 wild 一个名额，只能再收 4 个。
+    for n in 0..4 {
         assert_eq!(fixture.hook("NewProxy",home,token,json!({"proxy_type":"https","proxy_name":format!("{home}.p{n}"),"custom_domains":[format!("p{n}.{home}.homes.test")]})).await["reject"],false);
     }
     assert_eq!(fixture.hook("NewProxy",home,token,json!({"proxy_type":"https","proxy_name":format!("{home}.sixth"),"custom_domains":[format!("sixth.{home}.homes.test")]})).await["reject"],true);

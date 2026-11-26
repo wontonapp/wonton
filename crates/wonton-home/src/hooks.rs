@@ -26,6 +26,22 @@ pub fn allowed_domain(domain: &str, home: &str, zone: &str) -> bool {
             .is_some_and(|label| label != "lan" && valid_label(label))
 }
 
+/// 一个家可以登记家名，或者家名 + 一个 `*.<家>` 通配（插件子域）：一个 proxy 覆盖所有插件名，
+/// 又不让它抢邻居的名字。
+pub fn home_domains_ok(domains: &[Value], home: &str, zone: &str) -> bool {
+    let wildcard = format!("*.{home}.{zone}");
+    matches!(domains.len(), 1 | 2)
+        && domains.iter().all(|domain| {
+            domain
+                .as_str()
+                .is_some_and(|d| d == wildcard || allowed_domain(d, home, zone))
+        })
+        && (domains.len() == 1
+            || domains
+                .iter()
+                .any(|domain| domain.as_str() == Some(wildcard.as_str())))
+}
+
 pub async fn handle(State(app): State<Arc<App>>, Json(mut request): Json<Hook>) -> Json<Value> {
     let login = request.op == "Login";
     if !matches!(
@@ -77,15 +93,14 @@ pub async fn handle(State(app): State<Arc<App>>, Json(mut request): Json<Hook>) 
         let Some(domains) = content["custom_domains"].as_array() else {
             return reject("missing custom domain");
         };
-        let Some(domain) = domains.first().and_then(Value::as_str) else {
+        if domains.is_empty() || domains.iter().any(|domain| domain.as_str().is_none()) {
             return reject("invalid domain");
-        };
+        }
         let Some(name) = content["proxy_name"].as_str() else {
             return reject("missing proxy name");
         };
         if content["proxy_type"] != "https"
-            || domains.len() != 1
-            || !allowed_domain(domain, label, &app.config.zone)
+            || !home_domains_ok(domains, label, &app.config.zone)
             || content["subdomain"].as_str().is_some_and(|s| !s.is_empty())
             || content["group"].as_str().is_some_and(|s| !s.is_empty())
             || !name

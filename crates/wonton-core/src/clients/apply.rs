@@ -388,6 +388,14 @@ fn certificate_ready(certificate: &CertificateState) -> bool {
     )
 }
 
+/// 公网访问总开关变化后重算所有入口（crt-list 里放不放公网标签、核心放不放行）。
+///
+/// 和入口开关 PUT 共用一把锁；失败时开关状态已经改过，入口运行循环会按新状态重试。
+pub(crate) async fn reapply_public_access(gateway: &Gateway) -> Result<(), ApplyError> {
+    let _serial = gateway.clients_apply.lock().await;
+    apply_model(gateway, None).await
+}
+
 async fn apply_model(
     gateway: &Gateway,
     opening: Option<(&PluginId, Kind)>,

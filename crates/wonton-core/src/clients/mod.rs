@@ -19,4 +19,5 @@ pub(crate) mod pending;
 #[cfg(test)]
 mod pending_tests;
 pub mod providers;
+pub mod public_access;
 pub(crate) mod state;

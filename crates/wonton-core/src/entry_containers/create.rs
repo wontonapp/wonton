@@ -87,12 +87,29 @@ impl EntryContainers {
             body: ContainerCreateBody {
                 user: Some(self.user()?),
                 cmd: Some(command),
-                env: Some(
-                    ["HTTP_PROXY", "HTTPS_PROXY", "http_proxy", "https_proxy"]
-                        .into_iter()
-                        .map(|name| format!("{name}="))
-                        .collect(),
-                ),
+                env: Some({
+                    let mut env: Vec<String> =
+                        ["HTTP_PROXY", "HTTPS_PROXY", "http_proxy", "https_proxy"]
+                            .into_iter()
+                            .map(|name| format!("{name}="))
+                            .collect();
+                    // frpc 只在启动时读配置：把配置内容摘要放进环境变量，内容一变 `same_options` 就判重建。
+                    if component == CONNECTOR_COMPONENT {
+                        let name = if target.registration.is_some() {
+                            "frpc.json"
+                        } else {
+                            "connector.cfg"
+                        };
+                        if let Ok(bytes) = std::fs::read(self.install_dir.join("entry").join(name))
+                        {
+                            use std::hash::{Hash, Hasher};
+                            let mut hasher = std::collections::hash_map::DefaultHasher::new();
+                            bytes.hash(&mut hasher);
+                            env.push(format!("WONTON_CONNECTOR_SPEC={:016x}", hasher.finish()));
+                        }
+                    }
+                    env
+                }),
                 labels: Some(self.labels(component)),
                 // Docker 重启时停容器用它。不写就跟镜像的 StopSignal 走，镜像改了可能来不及排空连接。
                 stop_signal: Some("SIGTERM".to_owned()),

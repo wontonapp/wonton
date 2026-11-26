@@ -15,7 +15,7 @@ use tokio::sync::watch;
 
 use super::matrix::matrix_error;
 use super::{Gateway, api, pages, proxy, session};
-use crate::clients::gateway_auth::{self, Attempt};
+use crate::clients::gateway_auth::{self, Attempt, CredentialsAttempt};
 use crate::clients::path_rules::{self, PathRules};
 use crate::clients::state::Kind;
 use crate::entry_haproxy::model::AUTH_FAILURE_HEADER;
@@ -328,10 +328,11 @@ async fn auth_reject(
                 format,
             ));
         }
-        return match gateway_auth::parse_password(req.headers()) {
-            Attempt::Missing => Err(denied(langs, format, false)),
-            Attempt::Invalid => Err(denied(langs, format, true)),
-            Attempt::Password(value) => {
+        return match gateway_auth::parse_credentials(req.headers()) {
+            // 应用自己的登录页、`/.well-known` 和服务端自己的 Bearer 会话令牌：不归核心验，原样转给应用。
+            CredentialsAttempt::Missing | CredentialsAttempt::NonBasic => Ok(None),
+            CredentialsAttempt::Invalid => Err(denied(langs, format, true)),
+            CredentialsAttempt::Password(value) => {
                 let matched = store
                     .match_password(route.id.as_str(), &value)
                     .map_err(|error| {
