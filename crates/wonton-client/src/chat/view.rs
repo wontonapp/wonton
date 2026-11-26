@@ -709,7 +709,7 @@ mod tests {
         bots.insert(
             "@private:s".to_owned(),
             BotChatAvailability::Unavailable {
-                reason: BotChatUnavailable::OtherPrivateBot,
+                reason: BotChatUnavailable::OwnerPrivate,
             },
         );
         bots.insert(

@@ -159,7 +159,7 @@ async fn a_person_contact_grant_toggles_chat_availability() {
     assert_eq!(
         chat_availability(&fixture.gateway, &facts),
         BotChatAvailability::Unavailable {
-            reason: BotChatUnavailable::OtherPrivateBot
+            reason: BotChatUnavailable::OwnerPrivate
         }
     );
 
@@ -176,7 +176,7 @@ async fn a_person_contact_grant_toggles_chat_availability() {
     assert_eq!(
         chat_availability(&fixture.gateway, &facts),
         BotChatAvailability::Unavailable {
-            reason: BotChatUnavailable::OtherPrivateBot
+            reason: BotChatUnavailable::OwnerPrivate
         }
     );
 
@@ -189,7 +189,7 @@ async fn a_person_contact_grant_toggles_chat_availability() {
         assert_eq!(
             chat_availability(&fixture.gateway, &facts),
             BotChatAvailability::Unavailable {
-                reason: BotChatUnavailable::OtherPrivateBot
+                reason: BotChatUnavailable::OwnerPrivate
             },
             "{state}"
         );

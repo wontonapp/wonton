@@ -111,7 +111,7 @@ pub enum BotChatUnavailable {
     OwnerPrivate,
     /// 邀请过，还没成立：等主人同意或等对方接受。
     ContactPending,
-    /// 授权过，现在没有成立的联系人记录。
+    /// 授权过，现在没有成立的联系人记录。旧核心还会发；新核心的拒绝/查无此人发 [`Self::ContactDeclined`]，这个值留给旧端。
     GrantNotActive,
     /// 对方拒绝过，或对方服务器上没这个人。
     ContactDeclined,

@@ -215,7 +215,7 @@ mod tests {
                 "主人的助手",
                 "@private:s",
                 BotChatAvailability::Unavailable {
-                    reason: wonton_protocol::BotChatUnavailable::OtherPrivateBot,
+                    reason: wonton_protocol::BotChatUnavailable::OwnerPrivate,
                 },
             ),
             bot("还没核实", "@unsure:s", BotChatAvailability::Unknown),
