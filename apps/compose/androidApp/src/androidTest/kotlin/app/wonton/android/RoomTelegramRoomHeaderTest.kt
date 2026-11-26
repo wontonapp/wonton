@@ -52,16 +52,17 @@ class RoomTelegramRoomHeaderTest : RoomTelegramCase() {
     }
 
     @Test
-    fun barTitleAndAvatarOpenBotProfile() {
+    fun avatarOpensBotProfileTitleIsDisplayOnly() {
         val profile = compose.onNodeWithTag("bot-profile")
-        // 入口只剩头像一个，顶栏里没有额外的信息按钮。
+        // 入口只剩头像一个，顶栏里没有额外的信息按钮，名字也不再是第二个入口。
         compose.onAllNodesWithContentDescription(string(R.string.bot_profile_open)).assertCountEquals(1)
         compose.onNodeWithTag("roomTopBarTitle").performClick()
-        profile.assertIsDisplayed()
+        compose.waitForIdle()
+        profile.assertDoesNotExist()
         // 资料页自己的返回按钮跟页面一起出现；系统返回按早了会把整个 Activity 关掉。
-        compose.onNodeWithContentDescription(string(R.string.design_back)).performClick()
         compose.onNodeWithTag("roomTopBarAvatar").performClick()
         profile.assertIsDisplayed()
+        compose.onNodeWithContentDescription(string(R.string.design_back)).performClick()
         screenshot("bar-profile")
     }
 }

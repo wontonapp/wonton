@@ -43,6 +43,33 @@ final class BotProfilePlainUITests: XCTestCase {
         shot("profile-expanded")
     }
 
+    /// 顶栏只有一个资料页入口：名字只是显示，点它不跳；点头像才进资料页（ADR-0109 第 9 节）。
+    func testAvatarIsTheOnlyProfileEntry() {
+        // 浅色、深色各跑一遍：系统外观在这代模拟器运行时不一定生效，用截图钩子钉住。
+        relaunch(scheme: "light")
+        tap(app.buttons[Self.directRoom])
+        let title = app.staticTexts["roomTopBarTitle"]
+        XCTAssertTrue(title.waitForExistence(timeout: 10), "顶栏没有名字\n\(app.debugDescription)")
+        title.tap()
+        XCTAssertFalse(app.staticTexts["botProfileName"].waitForExistence(timeout: 1), "点名字也进了资料页，入口重复")
+        shot("bar-light")
+        // 深色要在启动前切。
+        relaunch(scheme: "dark")
+        tap(app.buttons[Self.directRoom])
+        XCTAssertTrue(app.staticTexts["roomTopBarTitle"].waitForExistence(timeout: 10), "深色顶栏没有名字\n\(app.debugDescription)")
+        sleep(1)
+        shot("bar-dark")
+        tap(app.buttons["roomTopBarAvatar"])
+        XCTAssertTrue(app.staticTexts["botProfileName"].waitForExistence(timeout: 10), "点头像没进资料页\n\(app.debugDescription)")
+    }
+
+    /// 用固定外观重启 App：和截图走查共用 `WONTON_SHOT_SCHEME`，不依赖模拟器的系统外观。
+    private func relaunch(scheme: String) {
+        app.terminate()
+        app.launchEnvironment["WONTON_SHOT_SCHEME"] = scheme
+        UITestBackend.launch(app)
+    }
+
     private func contains(_ text: String) -> Bool {
         app.staticTexts.containing(NSPredicate(format: "label CONTAINS %@", text)).firstMatch.exists
     }

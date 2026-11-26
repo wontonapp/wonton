@@ -338,11 +338,11 @@ class RoomPanelGestureTest {
         compose.waitForIdle()
     }
 
-    /** 点顶栏标题进 Bot 资料页，再从那里的按钮打开房间面板，等到整页。 */
+    /** 点顶栏头像进 Bot 资料页，再从那里的按钮打开房间面板，等到整页。 */
     private fun openPanelFromProfile() {
         compose.onNodeWithText("Echo").performClick()
         compose.waitUntil(10_000) { compose.onAllNodes(hasSetTextAction()).fetchSemanticsNodes().size == 1 }
-        compose.onNodeWithTag("roomTopBarTitle").performClick()
+        compose.onNodeWithTag("roomTopBarAvatar").performClick()
         compose.onNodeWithTag("bot-profile").assertIsDisplayed()
         openButton.performTouchInput { click() }
         awaitFull()

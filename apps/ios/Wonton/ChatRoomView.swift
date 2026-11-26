@@ -179,7 +179,7 @@ private extension ChatRoomView {
                     .frame(height: WontonTheme.size.chatControl)
                     .chatGlass(in: Capsule(), interactive: true)
             }
-            // 和 Bot 的私聊：点顶栏的头像或标题进它的资料页（ADR-0044、ADR-0109 第 9 节），不另放按钮。
+            // 和 Bot 的私聊：点顶栏的头像进它的资料页（ADR-0044、ADR-0109 第 9 节），不另放按钮。
             if supportsSideChats {
                 ChatGlassButton(
                     icon: .compose, label: String(localized: .Chat.sideChatNew), identifier: "sideChatNew"
@@ -607,7 +607,7 @@ private extension ChatRoomView {
         return AnyView(RoomAvatar(row: row, model: model, plugins: plugins, size: WontonTheme.size.chatControl))
     }
 
-    /// 点顶栏的头像或标题：和 Bot 的私聊进它的资料页（ADR-0044），别的房间没有资料页。
+    /// 点顶栏的头像：和 Bot 的私聊进它的资料页（ADR-0044），别的房间没有资料页。
     var profileAction: (() -> Void)? {
         guard let bot else { return nil }
         return { openProfile(bot.bot) }
