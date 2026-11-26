@@ -143,7 +143,7 @@ pub(super) async fn forward(
         let mut check = tokio::time::interval(std::time::Duration::from_secs(1));
         check.set_missed_tick_behavior(tokio::time::MissedTickBehavior::Delay);
         loop {
-            view.refresh_unread(room, &bots).await;
+            view.refresh_unread(room, &entries, &bots).await;
             let sent = tokio::select! {
                     batch = diffs.next() => {
                         let Some(batch) = batch else { return };
@@ -156,7 +156,7 @@ pub(super) async fn forward(
                             Err(broadcast::error::RecvError::Lagged(_)) => {}
                             Err(broadcast::error::RecvError::Closed) => return,
                         }
-                        view.refresh_unread(room, &bots).await;
+                        view.refresh_unread(room, &entries, &bots).await;
                         let unread_moved =
                             view.scroll != TimelineScroll::Bottom && view.unread != view.sent_unread;
                         if !unread_moved && view.call == view.sent_call && !view.bots_changed() {
@@ -208,7 +208,7 @@ pub(super) async fn forward(
                         let new_bots =
                             BotsView::of(&chat.borrow_and_update(), &sender.confirmations(), ready)
                                 .with_side_chats(bots.side_chats().clone());
-                        view.refresh_unread(room, &new_bots).await;
+                        view.refresh_unread(room, &entries, &new_bots).await;
                         let relinked =
                             relinked_batch(&entries, &read, plugins, sender, &mut view, &new_bots, &previews);
                         bots = new_bots;
@@ -238,7 +238,7 @@ pub(super) async fn forward(
                             continue;
                         }
                         view.scroll = next;
-                        view.refresh_unread(room, &bots).await;
+                        view.refresh_unread(room, &entries, &bots).await;
                         Batch::Sent(send(sender, &entries, Vec::new(), &mut view, None), false)
                     }
                     changed = chat.changed() => {
@@ -259,7 +259,7 @@ pub(super) async fn forward(
                             &new_bots,
                             &previews,
                         );
-                        view.refresh_unread(room, &new_bots).await;
+                        view.refresh_unread(room, &entries, &new_bots).await;
                         // 名单先存下来再判断跳不跳：改动已经被 borrow_and_update 消费掉，不存就丢了，
                         // 之后的批次会拿旧名单算（diff 为空和 bots_changed 不成立时尤其会走到 continue）。
                         bots = new_bots;

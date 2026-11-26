@@ -117,6 +117,7 @@ impl BotsView {
             choices: status.choices.clone(),
             sender_name: sender_name.to_owned(),
             timestamp_ms,
+            unread_anchor: false,
         }
     }
 }

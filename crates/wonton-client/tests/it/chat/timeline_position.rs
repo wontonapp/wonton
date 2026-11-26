@@ -1,8 +1,8 @@
-//! 时间线的位置（ADR-0071）：翻走期间来的消息数、回到底部、重进房间停在已读标记，都由核心算。
+//! 时间线的位置（ADR-0071、ADR-0121）：翻走期间来的消息数、回到最新、重进房间停在最新，都由核心算。
 
 use std::time::Duration;
 
-use wonton_client::{Action, RoomMembership, TimelineContent, TimelineScroll, TimelineViewport};
+use wonton_client::{Action, RoomMembership, TimelineScroll, TimelineViewport};
 use wonton_matrix::{ChatRoom, MatrixSession, OwnedRoomId};
 use wonton_protocol::{TimelineAction, TimelineTarget};
 
@@ -187,14 +187,12 @@ async fn stale_read_requests_do_not_advance_a_scrolled_away_room() {
     drop(timeline);
     let mut reopened = chat.timeline().await;
     let first = reopened.next().await;
-    assert_ne!(
-        first.anchor,
-        reopened.items.last().map(|item| item.id.clone())
+    assert_eq!(
+        first.unread_jump.as_ref().map(|jump| jump.count),
+        Some(1),
+        "服务器上还没读的那条仍在胶囊里"
     );
-    assert!(matches!(
-        first.viewport,
-        TimelineViewport::Away { new_messages: 1 }
-    ));
+    assert_eq!(first.viewport, TimelineViewport::Bottom);
     reopened.report_scroll(TimelineScroll::Bottom).await;
     chat.read().await;
     assert_eq!(chat.unread(), 0);
@@ -239,13 +237,10 @@ async fn new_messages_only_raise_the_number_until_the_shell_reports_the_bottom()
     chat.wait_unread(2).await;
     drop(timeline);
 
-    // 两条已加载的未读让重进落点在最新一条之前，固定首批 Away，不能误当成之后翻走的回报。
+    // 进房停在最新一条（ADR-0121），先报翻走再等数字，别把初始的底部当成翻走。
     let mut timeline = chat.timeline().await;
     timeline.next().await;
-    assert_eq!(
-        timeline.viewport(),
-        TimelineViewport::Away { new_messages: 2 }
-    );
+    assert_eq!(timeline.viewport(), TimelineViewport::Bottom);
     timeline.report_scroll(TimelineScroll::Bottom).await;
     chat.read().await;
 
@@ -265,6 +260,7 @@ async fn new_messages_only_raise_the_number_until_the_shell_reports_the_bottom()
         .until("三条新消息都到了", |item| text(item, "三"))
         .await;
     chat.wait_unread(2).await;
+    timeline.report_scroll(TimelineScroll::Away).await;
     until_the_number_matches(&mut timeline, &chat).await;
     assert!(
         chat.unread() >= 2,
@@ -278,6 +274,48 @@ async fn new_messages_only_raise_the_number_until_the_shell_reports_the_bottom()
     assert!(unread >= 2, "报到底本身不挪已读位置，未读还是 {unread}");
     chat.read().await;
     assert_eq!(chat.unread(), 0);
+}
+
+/// 通话状态跟着房间走：有人加入后第一批是 true，清掉后下一批 false（ADR-0096、ADR-0121 的回归）。
+#[tokio::test(flavor = "multi_thread")]
+#[ignore = "需要 Docker，用 --include-ignored 运行"]
+async fn call_active_follows_the_room() {
+    let chat = Chat::open(tempfile::tempdir().unwrap()).await;
+    let mut timeline = chat.timeline().await;
+    let first = timeline.next().await;
+    assert!(!first.call_active);
+
+    chat._bot
+        .join_call(&chat.room_id)
+        .await
+        .expect("Bot 加入通话");
+    let ringing = tokio::time::timeout(WAIT, async {
+        loop {
+            let update = timeline.next().await;
+            if update.call_active {
+                return update;
+            }
+        }
+    })
+    .await
+    .expect("时间线报通话中");
+    assert!(ringing.call_active);
+
+    chat._bot
+        .leave_call(&chat.room_id)
+        .await
+        .expect("Bot 离开通话");
+    let quiet = tokio::time::timeout(WAIT, async {
+        loop {
+            let update = timeline.next().await;
+            if !update.call_active {
+                return update;
+            }
+        }
+    })
+    .await
+    .expect("时间线报通话结束");
+    assert!(!quiet.call_active);
 }
 
 /// 等核心报的数字和聊天列表那一行的读数一致。未读数与条数可能差一两条，两边同源即可。
@@ -305,10 +343,10 @@ async fn until_the_number_matches(timeline: &mut Timeline, chat: &Chat) {
     }
 }
 
-/// 有未读时重进房间：首批的落点是已读标记（“以下是新消息”），不是最新一条；位置是翻走的数字。
+/// 有未读时重进房间：停在最新一条（ADR-0121），未读靠右上角胶囊回看。
 #[tokio::test(flavor = "multi_thread")]
 #[ignore = "需要 Docker，用 --include-ignored 运行"]
-async fn reopening_with_unread_stops_at_the_read_marker() {
+async fn reopening_with_unread_stops_at_the_latest_message() {
     let chat = Chat::open(tempfile::tempdir().unwrap()).await;
     chat.bot_says("先来一条").await;
     let mut timeline = chat.timeline().await;
@@ -324,15 +362,28 @@ async fn reopening_with_unread_stops_at_the_read_marker() {
 
     let mut timeline = chat.timeline().await;
     let first = timeline.next().await;
-    assert_eq!(first.anchor.as_deref(), Some("__read_marker"));
-    assert!(
-        timeline
-            .items
-            .iter()
-            .any(|item| item.id == "__read_marker" && item.content == TimelineContent::ReadMarker),
-        "落点是列表里的已读标记"
-    );
-    assert_eq!(first.viewport, TimelineViewport::Away { new_messages: 3 });
+    let latest = timeline.items.last().expect("列表里有最新一条").id.clone();
+    let first_unread = timeline
+        .items
+        .iter()
+        .find(|item| text(item, "一").is_some())
+        .expect("未读第一条还在")
+        .id
+        .clone();
+    assert_eq!(first.anchor.as_deref(), Some(latest.as_str()));
+    assert_eq!(first.viewport, TimelineViewport::Bottom);
+    let jump = first.unread_jump.as_ref().expect("有未读就有胶囊");
+    assert_eq!(jump.count, 3);
+    assert_eq!(jump.anchor_item_id.as_deref(), Some(first_unread.as_str()));
+    let anchor = timeline
+        .items
+        .iter()
+        .find(|item| item.id == first_unread)
+        .unwrap();
+    assert!(matches!(
+        &anchor.content,
+        wonton_client::TimelineContent::Message { message } if message.unread_anchor
+    ));
 }
 
 /// 没有未读时重进：落点是最新一条，列表贴着底部。
@@ -355,10 +406,10 @@ async fn reopening_without_unread_stops_at_the_latest_message() {
     assert_eq!(first.viewport, TimelineViewport::Bottom);
 }
 
-/// 重启核心再进：已读位置在服务器上，落点还是已读标记，未读数照旧。
+/// 重启核心再进：已读位置在服务器上，落点仍是最新一条，胶囊还在；未读数照旧。
 #[tokio::test(flavor = "multi_thread")]
 #[ignore = "需要 Docker，用 --include-ignored 运行"]
-async fn a_restart_still_stops_at_the_read_marker() {
+async fn a_restart_still_stops_at_the_latest_message() {
     let chat = Chat::open(tempfile::tempdir().unwrap()).await;
     chat.bot_says("先来一条").await;
     let mut timeline = chat.timeline().await;
@@ -375,6 +426,8 @@ async fn a_restart_still_stops_at_the_read_marker() {
     let chat = chat.restart().await;
     let mut timeline = chat.timeline().await;
     let first = timeline.next().await;
-    assert_eq!(first.anchor.as_deref(), Some("__read_marker"));
-    assert_eq!(first.viewport, TimelineViewport::Away { new_messages: 3 });
+    let latest = timeline.items.last().expect("列表里有最新一条").id.clone();
+    assert_eq!(first.anchor.as_deref(), Some(latest.as_str()));
+    assert_eq!(first.viewport, TimelineViewport::Bottom);
+    assert_eq!(first.unread_jump.as_ref().map(|jump| jump.count), Some(3));
 }

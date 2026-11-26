@@ -83,7 +83,7 @@ pub(crate) fn room_row(
         .as_ref()
         .and_then(|user| bots.get(user.as_str()).copied());
     RoomRow {
-        unread_mentions: 0,
+        unread_mentions: room.unread_mentions,
         layout,
         room_id: room.room_id.to_string(),
         name: room.name,
@@ -255,7 +255,8 @@ fn timeline_message(
     );
     let send_state = send_state(message.status);
     TimelineMessage {
-        mentions_me: false,
+        mentions_me: message.mentions_me,
+        unread_anchor: false,
         event_id,
         sender_id,
         sender_name: message.sender_name,
@@ -697,6 +698,7 @@ mod tests {
             is_friend: false,
             latest: None,
             unread_count: 0,
+            unread_mentions: 0,
             call_active: false,
         }
     }

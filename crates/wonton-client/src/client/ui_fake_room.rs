@@ -601,6 +601,7 @@ pub(super) fn text_message(
     }
     TimelineMessage {
         mentions_me: false,
+        unread_anchor: false,
         actions,
         event_id: Some(event_id),
         sender_id: sender.into(),
@@ -653,6 +654,7 @@ fn photo_item(index: usize, position: usize, count: Option<u32>) -> TimelineItem
         content: TimelineContent::Message {
             message: TimelineMessage {
                 mentions_me: false,
+                unread_anchor: false,
                 event_id: Some(event_id.clone()),
                 sender_id: sender_id.into(),
                 sender_name: sender_name.into(),

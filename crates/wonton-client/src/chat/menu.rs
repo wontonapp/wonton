@@ -12,7 +12,7 @@ use wonton_matrix::{EntryKind, MessageBody, OwnedEventId, OwnedRoomId, TimelineE
 use wonton_protocol::{
     BackPagination, ChatViewModel, ConfirmationView, CoreError, KeyNotice, MessageAction,
     MessageContent, QuotedMessage, TimelineContent, TimelineDiff, TimelineItem, TimelineUpdate,
-    TimelineViewport,
+    TimelineViewport, UnreadJump,
 };
 
 use super::jump::Live;
@@ -271,6 +271,7 @@ impl Outbox {
         anchor: Option<String>,
         call_active: bool,
         room_bots: Option<Vec<String>>,
+        unread_jump: Option<UnreadJump>,
     ) -> Result<(), ()> {
         lock(&self.runs).apply(&mut diffs);
         let scroll_to_bottom = lock(&self.menus).apply(&diffs) || self.live.jumps.take_bottom();
@@ -292,7 +293,7 @@ impl Outbox {
         let (commands, omitted) = self.live.tables.values();
         self.sender
             .send(TimelineUpdate {
-                unread_jump: None,
+                unread_jump,
                 diffs,
                 back_pagination,
                 viewport,
@@ -437,6 +438,7 @@ mod tests {
             content: TimelineContent::Message {
                 message: wonton_protocol::TimelineMessage {
                     mentions_me: false,
+                    unread_anchor: false,
                     event_id: Some(format!("${id}:x")),
                     sender_id: "@bot:x".to_owned(),
                     sender_name: "Bot".to_owned(),
@@ -536,6 +538,7 @@ mod tests {
             content: TimelineContent::Message {
                 message: wonton_protocol::TimelineMessage {
                     mentions_me: false,
+                    unread_anchor: false,
                     event_id: None,
                     sender_id: "@owner:example.com".into(),
                     sender_name: "Owner".into(),
@@ -569,6 +572,7 @@ mod tests {
                     away,
                     None,
                     false,
+                    None,
                     None,
                 )
                 .unwrap()

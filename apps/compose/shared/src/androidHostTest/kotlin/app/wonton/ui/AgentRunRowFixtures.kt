@@ -49,6 +49,7 @@ object AgentRunRowFixtures {
         senderName = senderName,
         // 0 = 不带发送时间：已等待那行不显示，参考图不吃真实时钟。
         timestampMs = timestampMs,
+        unreadAnchor = false,
     )
 
     val working = row(AgentRunState.Working, step = "Reading files")
