@@ -247,13 +247,6 @@ impl PluginManager {
     ) -> Result<(), InstallError> {
         let store = self.store.model_keys();
         let _commands = store.commands.lock().await;
-        if !self.settle_model_command().await? {
-            return Err(unavailable(crate::l10n::text(
-                langs,
-                "plugin-settings-models-command-outcome-unknown",
-                &[],
-            )));
-        }
         let container = self
             .engine
             .inspect_container(&route.credentials_container)
@@ -266,6 +259,13 @@ impl PluginManager {
                     &[("gateway", route.id.as_str().into())],
                 ))
             })?;
+        if !self.settle_model_command(Some(&container)).await? {
+            return Err(unavailable(crate::l10n::text(
+                langs,
+                "plugin-settings-models-command-outcome-unknown",
+                &[],
+            )));
+        }
         let argv: Vec<String> = argv
             .iter()
             .map(|arg| arg.replace(NAME_PLACEHOLDER, name))
