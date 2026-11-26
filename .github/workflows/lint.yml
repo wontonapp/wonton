@@ -96,6 +96,9 @@ jobs:
       - name: 许可表检查自己的用例
         if: steps.changes.outputs.source == 'true'
         run: python3 -m unittest discover -s scripts/licenses -t scripts -p '*_test.py'
+      - name: 夜跑报告脚本自己的用例
+        if: steps.changes.outputs.source == 'true'
+        run: python3 -m unittest discover -s .github/scripts
       - name: 开发栈端口检查自己的用例
         if: steps.changes.outputs.source == 'true'
         run: python3 -m unittest discover -s scripts/dev_ports -t scripts
