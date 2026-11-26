@@ -47,10 +47,10 @@ final class FirstScreenUITests: XCTestCase {
             app.debugDescription)
         row.tap()
         XCTAssertTrue(
-            app.staticTexts["Not paired with your home server yet"].waitForExistence(timeout: 10),
+            app.descendants(matching: .any)["store-not-paired"].waitForExistence(timeout: 10),
             app.debugDescription)
         XCTAssertTrue(app.buttons["Pair now"].exists)
-        XCTAssertFalse(app.staticTexts["Can't reach your home server"].exists)
+        XCTAssertFalse(app.descendants(matching: .any)["problem-view"].exists)
         let shot = XCTAttachment(screenshot: XCUIScreen.main.screenshot())
         shot.name = shotName
         shot.lifetime = .keepAlways

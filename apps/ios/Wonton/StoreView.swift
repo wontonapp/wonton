@@ -85,7 +85,8 @@ extension StoreView {
                     .padding(.vertical, WontonTheme.spacing.s8)
                 }
                 if let store = model.viewModel.store {
-                    if case let .failed(problem) = model.viewModel.storeLoad {
+                    if case let .failed(problem) = model.viewModel.storeLoad,
+                       problem.reason != .notPaired {
                         ProblemRow(problem: problem.problem) {
                             model.refreshStore(force: true)
                         }
@@ -142,9 +143,11 @@ extension StoreView {
                 .foregroundStyle(Color(colors.textSecondary))
             Button(String(localized: .Store.storeGoPair)) { dismiss() }
                 .buttonStyle(WontonButtonStyle(kind: .secondary))
+                .accessibilityIdentifier("store-go-pair")
         }
         .multilineTextAlignment(.center)
         .padding(WontonTheme.spacing.s32)
+        .accessibilityIdentifier("store-not-paired")
     }
 
     private func statusMessage(_ message: LocalizedStringResource, canLoad: Bool = false) -> some View {

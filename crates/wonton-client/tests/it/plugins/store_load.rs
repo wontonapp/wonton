@@ -4,7 +4,7 @@ use std::time::Duration;
 
 use axum::http::Method;
 use tokio::sync::watch;
-use wonton_client::{Action, HomeStatus, PluginFailure, StoreLoadState};
+use wonton_client::{Action, HomeFailure, HomeStatus, PluginFailure, StoreLoadState};
 use wonton_protocol::PluginAction;
 
 use super::rig::{Canned, Rig, WAIT, core_error, listing, running};
@@ -113,6 +113,58 @@ async fn pairing_later_loads_a_store_that_waited_for_it() {
         .await;
     assert_eq!(view.store, Some(listing()));
     assert_eq!(rig.core.seen(&Method::GET, STORE).len(), 1);
+}
+
+/// 一开始没配对，商店说还没配对；一建连就要离开这个状态，配对后的建连失败要说成连不上。
+#[tokio::test]
+async fn the_store_leaves_not_paired_as_soon_as_connecting_starts() {
+    let rig = Rig::new().await.without_periodic_checks();
+    refresh_store(&rig, false);
+    rig.wait_for(|view| view.store_load == StoreLoadState::NotPaired)
+        .await;
+
+    rig.app.set_home_status_for_test(HomeStatus::Connecting);
+    rig.wait_for(|view| view.store_load == StoreLoadState::WaitingForConnection)
+        .await;
+
+    rig.app.set_home_status_for_test(HomeStatus::Disconnected {
+        reason: HomeFailure::TransportUnavailable,
+        message: "connect timed out".into(),
+    });
+    let view = rig
+        .wait_for(|view| {
+            matches!(
+                view.store_load,
+                StoreLoadState::Failed { ref problem }
+                    if problem.reason == PluginFailure::TransportUnavailable
+            )
+        })
+        .await;
+    assert!(view.store.is_none());
+}
+
+/// 配对过、隧道断了：商店这次刷新报连不上，不是还没配对。
+#[tokio::test]
+async fn a_dropped_connection_reports_transport_failure_from_the_store() {
+    let rig = Rig::new().await.without_periodic_checks();
+    rig.connected().await;
+    rig.drop_home().await;
+    let deadline = std::time::Instant::now() + WAIT;
+    while !matches!(rig.app.home().status, HomeStatus::Disconnected { .. }) {
+        assert!(std::time::Instant::now() < deadline, "连接没有断开");
+        tokio::time::sleep(Duration::from_millis(20)).await;
+    }
+    refresh_store(&rig, false);
+    let view = rig
+        .wait_for(|view| {
+            matches!(
+                view.store_load,
+                StoreLoadState::Failed { ref problem }
+                    if problem.reason == PluginFailure::TransportUnavailable
+            )
+        })
+        .await;
+    assert!(view.store.is_none());
 }
 
 #[tokio::test]

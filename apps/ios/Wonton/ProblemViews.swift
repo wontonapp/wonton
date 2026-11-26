@@ -588,6 +588,7 @@ struct ProblemView: View {
         }
         .multilineTextAlignment(.center)
         .padding(WontonTheme.spacing.s32)
+        .accessibilityIdentifier("problem-view")
     }
 }
 
