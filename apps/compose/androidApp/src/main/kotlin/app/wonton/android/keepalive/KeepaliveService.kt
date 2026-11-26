@@ -107,7 +107,7 @@ class KeepaliveService : Service() {
             PendingIntent.FLAG_IMMUTABLE,
         )
         return Notification.Builder(this, CHANNEL_ID)
-            .setSmallIcon(R.drawable.launch_glyph)
+            .setSmallIcon(R.drawable.notification_glyph)
             .setContentTitle(getString(title))
             .setContentIntent(open)
             .setCategory(Notification.CATEGORY_SERVICE)
