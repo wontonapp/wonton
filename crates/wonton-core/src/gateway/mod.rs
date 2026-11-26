@@ -116,6 +116,10 @@ pub use send_limits::{SendLimiter, SendLimits};
 mod relays_api;
 mod session;
 mod settings_api;
+mod shared_bots;
+#[cfg(test)]
+#[path = "shared_bots_tests.rs"]
+mod shared_bots_tests;
 mod sso;
 mod store_api;
 mod tool_policy;
