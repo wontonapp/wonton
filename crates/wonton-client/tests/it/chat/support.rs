@@ -46,7 +46,9 @@ use endpoint::loopback_endpoint;
 use fake_core::fake_core;
 pub(super) use io::{read_body, relay};
 
-pub const WAIT: Duration = Duration::from_secs(60);
+/// 一次等待的上限。换服务器、隧道刚抖过时，旧会话的 `stop_sync` 可能先挂住几十秒，`wait_ready`/`signed_in` 要熬过
+/// 这段窗口；CI 的 Docker 作业挤在几核里，登录比本机慢得多，60s 会先到。nextest 的 docker 档案 10 分钟内杀掉测试。
+pub const WAIT: Duration = Duration::from_secs(300);
 /// 探针的间隔。探针只在本地看会话装没装好，不碰网络；隔一会儿再看是给换服务器、重连留插进来的空档。
 const SIGNED_IN_PROBE: Duration = Duration::from_millis(25);
 /// 探通之后还要把这一份会话盯住这么久，没被换掉、也没断开，才算真的就位：隧道刚抖过时会话会马上又被收起来。
@@ -919,7 +921,16 @@ impl Phone {
                         return;
                     }
                 }
-                Err(error) => last = Some(error.to_string()),
+                Err(error) => {
+                    let view = self.chat();
+                    eprintln!(
+                        "wait_ready: NotReady while account={:?} sync={:?} rooms={} err={error}",
+                        view.account,
+                        view.sync,
+                        view.rooms.len()
+                    );
+                    last = Some(error.to_string());
+                }
             }
             let now = tokio::time::Instant::now();
             if now >= deadline {
