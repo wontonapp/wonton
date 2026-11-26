@@ -4,6 +4,7 @@
 # 用法：apps/ios/scripts/build-core.sh [debug|release]
 # 环境变量 WONTON_IOS_TARGETS 指定 Rust target，默认真机加 Apple 芯片模拟器；
 # CI 只构建模拟器：WONTON_IOS_TARGETS=aarch64-apple-ios-sim。
+# 环境变量 WONTON_RELEASE_OPT_LEVEL 覆盖 release 的 opt-level（默认 z，比 Swift 侧的 -Osize 还省一档）。
 # 环境变量 WONTON_CORE_PREBUILT=1 表示 XCFramework 和 Swift 绑定已经取回来了（CI 按内容哈希拿到同一份核心的产物，
 # 见 .github/workflows/README.md 的“核心产物”）：不编核心，只补许可清单和版本号；产物缺了直接报错。
 #
@@ -17,8 +18,13 @@ case "$profile" in
   *) echo "未知的构建类型：${profile}（只支持 debug 或 release）" >&2; exit 2 ;;
 esac
 
-# 安装包体积（#887）：Swift 侧用 -Osize，Rust 侧对应 opt-level=s。只影响 iOS 的 release，不动别的平台。
-if [ "$cargo_profile" = release ]; then export CARGO_PROFILE_RELEASE_OPT_LEVEL=s; fi
+# 安装包体积（#887）：只影响 iOS 的 release，不动别的平台，也不改运行逻辑。
+if [ "$cargo_profile" = release ]; then
+  # Swift 侧用 -Osize，Rust 侧对应 opt-level=z（比 -Osize 还省一档）。换回 s 可以少花点编译时间、热点快一点、包大一点。
+  export CARGO_PROFILE_RELEASE_OPT_LEVEL="${CARGO_PROFILE_RELEASE_OPT_LEVEL:-${WONTON_RELEASE_OPT_LEVEL:-z}}"
+  # 一个 codegen unit：先在一个单元里内联，再删没人用的副本。多单元时各单元里的同一份通用代码删不掉。
+  export CARGO_PROFILE_RELEASE_CODEGEN_UNITS=1
+fi
 
 # 假数据入口（cargo feature ui-fake）：Debug 默认带上（原生壳只在 Debug 里调它），Release 不带，发布包
 # 编不进去。WONTON_UI_FAKE=1/0 强制开/关，夜跑的 UI 测试显式传 1。

@@ -1,0 +1,129 @@
+name: ios-size
+
+# Release App 体积门禁，合进 main 之后跑，不挡合并：要编一份 release 核心、归档一份 App，冷缓存十几分钟，比 PR 要等的
+# 快检查（ios.yml）慢。每天定时兜底一次，也可以手动触发。失败时留 dSYM 和体积报告（dSYM 是崩溃栈还原函数名和行号的
+# 唯一来源，剥掉的只是装进 App 的那份符号）。
+on:
+  push:
+    branches: [main]
+    # 不是必需检查，路径直接写在触发器上。比 gate.yml 的 ios 范围多了两处：能改核心代码本身或依赖清单的
+    # （crates、Cargo.*、vendor、工具链），和决定产物怎么编、从哪取缓存的（cache.yml、ios.yml、本文、体积脚本）。
+    # 少了 core_artifacts/（这里不走核心产物缓存，每次现编）和 gate.yml（不经过 gate）。和 gate 一样排除测试与 .md。
+    paths:
+      - "apps/ios/**"
+      - "design/**"
+      - "scripts/generate-design.py"
+      - "crates/wonton-client/**"
+      - "crates/wonton-l10n/**"
+      - "crates/wonton-matrix/**"
+      - "crates/wonton-protocol/**"
+      - "crates/wonton-tunnel/**"
+      - "Cargo.toml"
+      - "vendor/**"
+      - "Cargo.lock"
+      - "rust-toolchain.toml"
+      - "scripts/check-app-size.sh"
+      - ".github/workflows/ios-size.yml"
+      - ".github/workflows/cache.yml"
+      - ".github/workflows/ios.yml"
+      - "!**/*.md"
+      - "!crates/**/tests/**"
+      - "!crates/**/benches/**"
+      - "!crates/**/tests.rs"
+      - "!crates/**/*_tests.rs"
+  schedule:
+    - cron: "45 4 * * *"
+  workflow_dispatch:
+
+# 同一分支又推了新提交，旧的取消：结果只对旧提交有意义。定时跑完为止。
+concurrency:
+  group: "${{ github.event_name == 'schedule' && 'ios-size-nightly' || format('ios-size-{0}', github.ref) }}"
+  cancel-in-progress: ${{ github.event_name != 'schedule' }}
+
+# 和 ios.yml、cache.yml 的环境变量一模一样：rust-cache 的 key 里带 CARGO_* 的哈希，这边少写一个、写别的值，
+# 就恢复不到 cache.yml 在 main 上编好的 release 核心。
+env:
+  CARGO_INCREMENTAL: "0"
+  CARGO_PROFILE_DEV_DEBUG: line-tables-only
+  # 和 ios.yml、cache.yml 同一个值：rust-cache 的键里带它，缺了这条就恢复不到 main 上预编的 release 核心；
+  # Release 的符号也只留行号，dSYM 才还原得到 file:line（剥掉的只是装进 App 的那份）。
+  CARGO_PROFILE_RELEASE_DEBUG: line-tables-only
+
+permissions:
+  contents: read
+
+jobs:
+  release-size:
+    name: Release App 体积
+    runs-on: xcode-27
+    # 编核心（release 冷缓存十几分钟）加归档、量体积。超时把日志留下来看卡在哪一步。
+    timeout-minutes: 90
+    steps:
+      - uses: actions/checkout@fbc6f3992d24b796d5a048ff273f7fcc4a7b6c09 # v5
+        with:
+          persist-credentials: false
+      - name: 用 Xcode 27.1（和开发机 mini 上的一致）
+        run: |
+          if ! xcodebuild -version | head -1 | grep -q "Xcode 27.1"; then
+            sudo xcode-select -s /Applications/Xcode_27.1.app
+          fi
+      - name: 安装 rust-toolchain.toml 指定的工具链和 iOS 真机 target
+        run: |
+          rustup toolchain install
+          rustup target add aarch64-apple-ios
+      - uses: Swatinem/rust-cache@d1527c8f67ef9af357290475d4af4b0fab8f12e0 # v2
+        with:
+          # 和 ios.yml 同一个 key：cache.yml 在 main 上编好的 release 核心在这里增量链接。
+          # 只读，不写：一次 main 合并两条运行抢着写同一个 key 的话，后写的会盖掉先写的。
+          shared-key: rust-ios
+          save-if: false
+      - name: 安装 XcodeGen（版本和 sha256 固定）
+        env:
+          XCODEGEN_VERSION: "2.46.0"
+        run: |
+          curl -sSfL -o "$RUNNER_TEMP/xcodegen.zip" \
+            "https://github.com/yonaskolb/XcodeGen/releases/download/$XCODEGEN_VERSION/xcodegen.zip"
+          echo "4d9e34b62172d645eed6457cac13fc222569974098ef4ee9c3368bedf0196806  $RUNNER_TEMP/xcodegen.zip" | shasum -a 256 -c -
+          mkdir -p "$RUNNER_TEMP/xcodegen"
+          unzip -q -o "$RUNNER_TEMP/xcodegen.zip" -d "$RUNNER_TEMP/xcodegen"
+          echo "$RUNNER_TEMP/xcodegen/xcodegen/bin" >> "$GITHUB_PATH"
+      - name: 编译 Rust 核心（release，真机）
+        env:
+          WONTON_IOS_TARGETS: aarch64-apple-ios
+          WONTON_VERSION: 0.0.1
+        run: apps/ios/scripts/build-core.sh release
+      - name: 生成 Xcode 工程并归档（不签名）
+        run: |
+          xcodegen generate --spec apps/ios/project.yml
+          xcodebuild -version
+          xcodebuild archive \
+            -project apps/ios/Wonton.xcodeproj \
+            -scheme Wonton \
+            -configuration Release \
+            -destination "generic/platform=iOS" \
+            -archivePath "$RUNNER_TEMP/Wonton.xcarchive" \
+            -derivedDataPath "$RUNNER_TEMP/DerivedData" \
+            ARCHS=arm64 \
+            CODE_SIGNING_ALLOWED=NO
+      # 上限是修后大小 +15%：留得下正常的依赖和代码增长，挡得住符号没剥、编成多架构、塞进调试资源这类成倍的回退。
+      - name: 检查体积
+        env:
+          WONTON_MAX_APP_MB: "33"
+        # 报告每轮都写进作业摘要，涨没涨一眼看得见；超标或符号没剥掉照样让这一步失败。
+        run: |
+          set +e
+          bash scripts/check-app-size.sh "$RUNNER_TEMP/Wonton.xcarchive" 2>&1 | tee "$RUNNER_TEMP/app-size.txt"
+          rc=${PIPESTATUS[0]}
+          cat "$RUNNER_TEMP/app-size.txt" >> "$GITHUB_STEP_SUMMARY"
+          exit "$rc"
+      # 崩了或超限也要拿到 dSYM，才还原得出崩在哪个函数。
+      - name: 失败时存 dSYM 和体积报告
+        if: ${{ failure() }}
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4.6.2
+        with:
+          name: ios-release-symbols-${{ github.run_attempt }}
+          path: |
+            ${{ runner.temp }}/Wonton.xcarchive/dSYMs
+            ${{ runner.temp }}/app-size.txt
+          retention-days: 14
+          if-no-files-found: ignore
