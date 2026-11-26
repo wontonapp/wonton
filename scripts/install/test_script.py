@@ -414,6 +414,34 @@ class InstallTest(unittest.TestCase):
         self.assertEqual(result.returncode, 0, result.stderr)
         self.assertNotIn("WONTON_INSTALL_TIMEOUT_SECS", self.env())
 
+    def test_relay_fragment_and_vapid_survive_a_rerun(self):
+        self.digests["ghcr.io/wontonapp/wonton-core:stable"] = [
+            "ghcr.io/wontonapp/wonton-core@sha256:" + "d" * 64
+        ]
+        relays = "https://token@relay.example.org#7843;n0"
+        builtin = "https://relay.example.org#7843,n0"
+
+        # QUIC 端口是 #端口：fits_env 不能把 # 当 shell 特殊字符挡掉。
+        result = self.run_install(
+            WONTON_RELAYS=relays,
+            WONTON_BUILTIN_RELAYS=builtin,
+            WONTON_PUSH_VAPID_KEY="cHJpdmF0ZQ",
+            WONTON_PUSH_VAPID_SUBJECT="mailto:ops@example.com",
+        )
+        self.assertEqual(result.returncode, 0, result.stderr)
+        env = self.env()
+        self.assertEqual(env["WONTON_RELAYS"], relays)
+        self.assertEqual(env["WONTON_BUILTIN_RELAYS"], builtin)
+
+        # 升级重写 .env 时经 saved 读回，不用再给。
+        result = self.run_install(entry=False)
+        self.assertEqual(result.returncode, 0, result.stderr)
+        env = self.env()
+        self.assertEqual(env["WONTON_RELAYS"], relays)
+        self.assertEqual(env["WONTON_BUILTIN_RELAYS"], builtin)
+        self.assertEqual(env["WONTON_PUSH_VAPID_KEY"], "cHJpdmF0ZQ")
+        self.assertEqual(env["WONTON_PUSH_VAPID_SUBJECT"], "mailto:ops@example.com")
+
     def pull_failure(self, error, **extra):
         result = self.run_install(FAKE_DOCKER_PULL_ERROR=error, **extra)
         self.assertNotEqual(result.returncode, 0)

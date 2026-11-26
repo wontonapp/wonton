@@ -160,7 +160,7 @@ impl OwnIdentity {
             relays: tunnel
                 .relays()
                 .iter()
-                .map(|relay| relay.url.to_string())
+                .map(|relay| wonton_tunnel::relays::relay_url_text(&relay.url))
                 .collect(),
             addrs: tunnel.direct_addrs(),
         }

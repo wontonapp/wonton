@@ -166,7 +166,7 @@ async fn later_direct_path_survives_restart(empty_report: bool) {
     let view = restarted
         .wait_for(|view| view.status == HomeStatus::Connected && view.proxy.is_some())
         .await;
-    assert!(view.path.is_some_and(|path| !path.relay));
+    assert!(view.path.as_ref().is_some_and(|path| !path.relay));
     let (status, body) = get(&view.proxy.unwrap(), WEB_URL, "/after-relay-outage", true).await;
     assert_eq!((status, body.as_str()), (200, "/after-relay-outage"));
     drop(restarted);

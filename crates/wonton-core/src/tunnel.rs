@@ -37,6 +37,8 @@ use tokio::time::timeout;
 use tower::ServiceExt;
 use wonton_tunnel::pair::PairProtocol;
 use wonton_tunnel::relays::{FALLBACK_AFTER, Relay, RelayTable};
+
+use crate::relay_settings::RelaySettings;
 use wonton_tunnel::{PeerStream, TunnelListener, TunnelServer};
 
 use crate::device::Devices;
@@ -53,8 +55,8 @@ pub struct Tunnel {
     pub endpoint: Endpoint,
     /// 手机连隧道用的 UDP 端口：核心在容器里时是宿主上发布的端口，配对码里的直连地址用它。
     pub port: u16,
-    /// 中继表（ADR-0048），报给 App 连接信息用的就是它。
-    relays: RelayTable,
+    /// 中继表（ADR-0048）：报给 App 连接信息、配对码和设置页用的都是它，主人改完当场换。
+    relays: Arc<RelaySettings>,
     lan_addresses: watch::Receiver<BTreeSet<IpAddr>>,
 }
 
@@ -66,7 +68,7 @@ impl Tunnel {
         owner_languages: OwnerLanguages,
         endpoint: Endpoint,
         port: u16,
-        relays: RelayTable,
+        relays: Arc<RelaySettings>,
         lan_addresses: watch::Receiver<BTreeSet<IpAddr>>,
     ) -> Self {
         let port = if port == 0 {
@@ -105,7 +107,12 @@ impl Tunnel {
     /// 全部中继，服务器换到哪个中继第一个包都能到（ADR-0032「连接方式」）。
     pub fn relays(&self) -> Vec<Relay> {
         let home = self.endpoint.addr().relay_urls().next().cloned();
-        order_relays(home, &self.relays)
+        order_relays(home, &self.relays.table())
+    }
+
+    /// 设置页用的中继表句柄。
+    pub fn relay_settings(&self) -> &Arc<RelaySettings> {
+        &self.relays
     }
 }
 
@@ -179,7 +186,11 @@ fn rustls_pemfile_roots(
     Ok(roots)
 }
 
-pub async fn bind(key: SecretKey, port: u16, table: &RelayTable) -> anyhow::Result<Endpoint> {
+pub async fn bind(
+    key: SecretKey,
+    port: u16,
+    table: &RelayTable,
+) -> anyhow::Result<(Endpoint, wonton_tunnel::relays::TierFallbackHandle)> {
     let mut builder = Endpoint::builder(presets::N0)
         .secret_key(key)
         .relay_mode(RelayMode::Custom(wonton_tunnel::relays::relay_map(
@@ -207,13 +218,13 @@ pub async fn bind(key: SecretKey, port: u16, table: &RelayTable) -> anyhow::Resu
         builder = builder.ca_tls_config(CaTlsConfig::custom_roots(roots));
     }
     let endpoint = builder.bind().await.context("绑定隧道 endpoint")?;
-    let _fallback = wonton_tunnel::relays::spawn_tier_fallback(
+    let fallback = wonton_tunnel::relays::spawn_tier_fallback(
         endpoint.clone(),
         table.clone(),
         FALLBACK_AFTER,
         None,
     );
-    Ok(endpoint)
+    Ok((endpoint, fallback))
 }
 
 /// 把手机能到达的地址宣告给 iroh，跟着 `addresses` 变：核心在 Docker 里，iroh 自己只看得到容器内的地址，打洞信令里没有
@@ -747,6 +758,7 @@ mod tests {
                     .map(|(tier, url)| Relay {
                         url: url.clone(),
                         token: None,
+                        quic_port: None,
                         tier: tier as u8,
                     })
                     .collect(),
@@ -827,7 +839,7 @@ mod tests {
             Some(value) => unsafe { std::env::set_var("WONTON_TUNNEL_BIND", value) },
             None => unsafe { std::env::remove_var("WONTON_TUNNEL_BIND") },
         }
-        let endpoint = bound.unwrap();
+        let (endpoint, _fallback) = bound.unwrap();
         let bound = endpoint.bound_sockets();
         assert_eq!(bound.len(), 1, "只绑一个地址：{bound:?}");
         assert_eq!(bound[0].ip(), Ipv4Addr::LOCALHOST);

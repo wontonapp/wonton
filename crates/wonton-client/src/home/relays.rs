@@ -23,6 +23,7 @@ use wonton_protocol::{
 use super::HomeLink;
 use crate::chat::proxy_url;
 use crate::l10n::{CATALOG, language};
+use wonton_tunnel::relays::relay_from_item;
 
 /// 固定的管理接口路径，拼在连接信息给的核心地址上。
 const PATH: &str = "/_wonton/api/relays";
@@ -145,6 +146,13 @@ impl HomeLink {
 
     /// 把整张表交给核心。交出去的是发起这一刻的那一份；回来之前不许再改、也不许再存。
     fn save_relays(self: &Arc<Self>) -> Result<(), CoreError> {
+        {
+            let view = self.view();
+            // 还没从核心取到过表时保存会把服务端的表清空。
+            if view.relays.phase.is_none() {
+                return Err(not_ready("relays-not-loaded"));
+            }
+        }
         let target = self
             .relay_target()
             .map_err(|reason| CoreError::NotReady { reason })?;
@@ -157,6 +165,10 @@ impl HomeLink {
             }
             if relays.locked_by_env {
                 return Err(not_ready("relays-locked"));
+            }
+            // 一次都没成功取到过表时 entries 是空的，交上去等于把服务端由内置和签名列表来的项全删了。
+            if state.snapshot.is_none() {
+                return Err(not_ready("relays-not-loaded"));
             }
             state.epoch += 1;
             (state.epoch, update_from(relays))
@@ -380,7 +392,7 @@ fn add(
     tier: Option<u8>,
 ) -> Result<(), CoreError> {
     editable(view)?;
-    let url = validate_url(&url)?;
+    let (url, fragment_port) = validate_url(&url)?;
     if view.entries.iter().any(|entry| entry.url == url) {
         return Err(invalid("relays-duplicate", url));
     }
@@ -394,7 +406,7 @@ fn add(
     view.entries.push(RelaySettingEntry {
         url,
         token: token_value(token),
-        quic_port,
+        quic_port: quic_port.or(fragment_port),
         tier,
         source: RelaySource::Settings,
         state: RelayState::Unknown,
@@ -405,7 +417,7 @@ fn add(
 }
 
 /// 三个可选字段的空值含义同协议里的 [`RelaySettingsAction::Update`]：令牌空着不动、给空串清掉；
-/// 端口空着清掉；档位空着不动。
+/// 端口空着清掉（地址里的 `#端口` 在参数空着时生效）；档位空着不动。
 fn update(
     view: &mut RelaySettingsView,
     url: String,
@@ -414,7 +426,7 @@ fn update(
     tier: Option<u8>,
 ) -> Result<(), CoreError> {
     editable(view)?;
-    let url = validate_url(&url)?;
+    let (url, fragment_port) = validate_url(&url)?;
     let entry = entry_mut(view, &url)?;
     if !entry.editable {
         return Err(not_ready("relays-locked"));
@@ -422,7 +434,7 @@ fn update(
     if let Some(token) = token {
         entry.token = token_value(Some(token));
     }
-    entry.quic_port = quic_port;
+    entry.quic_port = quic_port.or(fragment_port);
     if let Some(tier) = tier {
         entry.tier = tier;
     }
@@ -432,7 +444,7 @@ fn update(
 
 fn remove(view: &mut RelaySettingsView, url: String) -> Result<(), CoreError> {
     editable(view)?;
-    let url = validate_url(&url)?;
+    let (url, _) = validate_url(&url)?;
     let index = position(view, &url)?;
     if !view.entries[index].editable {
         return Err(not_ready("relays-locked"));
@@ -453,12 +465,14 @@ fn move_entry(
     before: Option<String>,
 ) -> Result<(), CoreError> {
     editable(view)?;
-    let url = validate_url(&url)?;
+    let (url, _) = validate_url(&url)?;
     let index = position(view, &url)?;
     if !view.entries[index].editable {
         return Err(not_ready("relays-locked"));
     }
-    let before = before.map(|before| validate_url(&before)).transpose()?;
+    let before = before
+        .map(|before| validate_url(&before).map(|(url, _)| url))
+        .transpose()?;
     if let Some(before) = &before
         && before != &url
         && position(view, before).is_err()
@@ -528,7 +542,7 @@ fn entry_mut<'a>(
 
 /// 地址要做核心 `Relay::validate` 的同一套检查：https、不带 userinfo；地址里的空白先去掉，
 /// DNS 根点（FQDN 尾点）也去掉，和核心的 `canonical_url` 写成同一种，同一个地址在两边才相等。
-fn validate_url(text: &str) -> Result<String, CoreError> {
+fn validate_url(text: &str) -> Result<(String, Option<u16>), CoreError> {
     let text = text.trim();
     let mut url = Url::parse(text).map_err(|_| invalid("relays-invalid-url", text.to_owned()))?;
     if url.scheme() != "https" {
@@ -545,7 +559,12 @@ fn validate_url(text: &str) -> Result<String, CoreError> {
                 .expect("stripping the DNS root dot keeps a valid host");
         }
     }
-    Ok(url.to_string())
+    let relay =
+        relay_from_item(url.as_str(), 0).map_err(|reason| invalid("relays-invalid-url", reason))?;
+    Ok((
+        wonton_tunnel::relays::relay_url_text(&relay.url),
+        relay.quic_port,
+    ))
 }
 
 fn token_value(token: Option<SecretString>) -> Option<SecretString> {

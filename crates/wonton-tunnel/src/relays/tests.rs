@@ -8,8 +8,13 @@ fn relay(text: &str, tier: u8) -> Relay {
     Relay {
         url: url(text),
         token: None,
+        quic_port: None,
         tier,
     }
+}
+
+fn table_of(relays: Vec<Relay>) -> RelayTable {
+    RelayTable::from_relays(relays)
 }
 
 #[test]
@@ -299,4 +304,131 @@ fn a_recovered_top_tier_resets_the_timer() {
         step(&mut fallback, start + Duration::from_secs(55), vec![]),
         Some(TierAction::Enable(1))
     );
+}
+
+#[test]
+fn a_remove_marker_deletes_an_earlier_address_and_keeps_its_own() {
+    let table = RelayTable::parse(
+        "https://a.example;https://a.example,https://b.example;!https://a.example",
+    )
+    .unwrap();
+    // 第三档的 `!` 删掉第一档的 a.example，但它自己在第二档写回的 b.example 还在。
+    assert_eq!(table.remove(), [url("https://a.example")]);
+    assert!(table.tier(0).is_empty());
+}
+
+#[test]
+fn a_hash_after_the_host_is_the_quic_port() {
+    let parsed = relay_from_item("https://tok@a.example#7843", 0).unwrap();
+    assert_eq!(parsed.quic_port, Some(7843));
+    assert_eq!(parsed.url.as_str(), "https://a.example/");
+    assert_eq!(parsed.token.unwrap().expose(), "tok");
+    // 不写端口就用 iroh 的默认端口。
+    assert_eq!(
+        relay_from_item("https://a.example", 0).unwrap().quic_port,
+        None
+    );
+    // 0 不是合法端口。
+    assert!(relay_from_item("https://a.example#0", 0).is_err());
+}
+
+#[test]
+fn an_overlay_removes_and_replaces_by_address() {
+    let base = table_of(vec![
+        relay("https://a.example", 0),
+        relay("https://b.example", 0),
+    ]);
+    let overlay = table_of(vec![
+        relay("https://b.example", 1),
+        relay("https://c.example", 0),
+    ])
+    .with_remove(vec![url("https://a.example")]);
+    let merged = overlay.overlay(&base);
+    let urls: Vec<_> = merged.relays().iter().map(|r| r.url.as_str()).collect();
+    assert_eq!(urls, ["https://c.example/", "https://b.example/"]);
+    // a 被删了，b 换到第二档，c 留在第一档。
+    assert_eq!(merged.tier(0)[0].url.as_str(), "https://c.example/");
+    assert_eq!(merged.tier(1)[0].url.as_str(), "https://b.example/");
+}
+
+#[test]
+fn n0_can_be_the_last_tier_or_left_out() {
+    let custom = table_of(vec![relay("https://a.example", 0)]);
+    let with_n0 = custom.with_n0_last(true);
+    assert_eq!(with_n0.tier_count(), 2);
+    assert!(!with_n0.tier(1).is_empty());
+    assert!(is_public_relay(&with_n0.tier(1)[0].url));
+    // 已经显式写了 n0 就不重复加。
+    let explicit = RelayTable::parse("n0;https://a.example").unwrap();
+    let explicit = explicit.with_n0_last(true);
+    assert_eq!(explicit.tier_count(), 2);
+    // 显式写的 n0 待在原档，后面的地址还在下一档。
+    assert!(explicit.tier(0).iter().all(|r| is_public_relay(&r.url)));
+    assert!(explicit.tier(1).iter().all(|r| !is_public_relay(&r.url)));
+    // 不要 n0 就只是原表。
+    assert_eq!(custom.with_n0_last(false).tier_count(), 1);
+}
+
+#[test]
+fn a_blank_item_is_reported_with_its_tier() {
+    let error = RelayTable::parse("https://a.example;;https://b.example").unwrap_err();
+    assert!(error.contains("第 2 档"), "{error}");
+}
+
+#[test]
+fn the_quic_port_reaches_the_relay_config() {
+    let mut relay = self::relay("https://a.example", 0);
+    relay.quic_port = Some(7843);
+    assert_eq!(relay.relay_config().quic.map(|quic| quic.port), Some(7843));
+    relay.quic_port = None;
+    // 空着就是 iroh 的默认端口（7842），不是关掉 QUIC 地址发现。
+    assert_eq!(relay.relay_config().quic.map(|quic| quic.port), Some(7842));
+}
+
+#[test]
+fn an_at_sign_in_the_query_is_not_mistaken_for_userinfo_in_errors() {
+    // 地址合法、只有 query 里带 @：错误/展示不能把它当 userinfo 截断。
+    let parsed = relay_from_item("https://a.example/p?email=a@b", 0);
+    // 地址本身能解析；redact_item 只应影响提示文案。
+    assert!(parsed.is_ok());
+    let shown = redact_item("https://a.example/p?email=a@b");
+    assert_eq!(shown, "https://a.example/p?email=a@b");
+}
+
+#[test]
+fn an_invalid_item_does_not_echo_the_token_into_its_error() {
+    // 地址里带令牌、又是 http：错误信息里不能再出现令牌原文。
+    let error = relay_from_item("http://s3cret@relay.example.org", 0).unwrap_err();
+    assert!(error.contains("<redacted>@relay.example.org"), "{error}");
+    assert!(!error.contains("s3cret"), "{error}");
+}
+
+#[test]
+fn url_text_keeps_a_root_slash_and_strips_a_path_slash() {
+    assert_eq!(
+        relay_url_text(&url("https://a.example")),
+        "https://a.example/"
+    );
+    assert_eq!(
+        relay_url_text(&url("https://a.example/relay/")),
+        "https://a.example/relay"
+    );
+    assert_eq!(
+        relay_url_text(&url("https://a.example/relay/?email=a@b")),
+        "https://a.example/relay?email=a@b"
+    );
+}
+
+#[test]
+fn validate_errors_show_the_canonical_url() {
+    let mut relay = relay("https://a.example/relay/", 0);
+    relay.url = url("http://a.example/relay/");
+    let error = relay.validate().unwrap_err();
+    assert!(error.contains("http://a.example/relay："), "{error}");
+    assert!(!error.contains("/relay/："), "{error}");
+
+    relay.url = url("https://a.example/relay/");
+    relay.quic_port = Some(0);
+    let error = relay.validate().unwrap_err();
+    assert!(error.contains("https://a.example/relay："), "{error}");
 }

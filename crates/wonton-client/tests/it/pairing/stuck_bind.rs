@@ -33,6 +33,7 @@ async fn a_bind_that_never_returns_fails_at_the_bind_deadline() {
     code.relays.push(Relay {
         url: "https://relay.example.com/".parse().unwrap(),
         token: Some(RelayToken::new("18482")),
+        quic_port: None,
         tier: 0,
     });
     phone.pair(&code.to_uri()).unwrap();

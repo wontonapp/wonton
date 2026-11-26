@@ -136,11 +136,13 @@ fn gateway(h: &Harness) -> Gateway {
                     .parse()
                     .unwrap(),
             token: Some(RelayToken::new("relay-admission-secret")),
+            quic_port: None,
             tier: 0,
         },
         Relay {
             url: "https://other.homes.test/".parse().unwrap(),
             token: None,
+            quic_port: None,
             tier: 1,
         },
     ]);
@@ -150,7 +152,7 @@ fn gateway(h: &Harness) -> Gateway {
         Arc::new(|| Languages::from_header(None)),
         h.tunnel.endpoint.clone(),
         0,
-        relays,
+        Arc::new(crate::relay_settings::RelaySettings::for_table(relays)),
         tokio::sync::watch::channel(["192.0.2.10".parse().unwrap()].into()).1,
     );
     Gateway::new(

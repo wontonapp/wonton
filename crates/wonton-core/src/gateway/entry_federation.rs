@@ -115,7 +115,7 @@ fn discovery(gateway: &Gateway, server_name: &str, path: &str) -> Response {
                 .relays()
                 .into_iter()
                 .filter_map(|relay| {
-                    let mut url: url::Url = relay.url.into();
+                    let mut url: url::Url = relay.url.clone().into();
                     if url.scheme() != "https" {
                         return None;
                     }
@@ -124,7 +124,7 @@ fn discovery(gateway: &Gateway, server_name: &str, path: &str) -> Response {
                     url.set_password(None).ok()?;
                     url.set_query(None);
                     url.set_fragment(None);
-                    Some(url.into())
+                    Some(wonton_tunnel::relays::url_text(&url))
                 })
                 .collect(),
         })

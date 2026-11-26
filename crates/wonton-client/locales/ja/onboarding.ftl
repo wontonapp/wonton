@@ -40,6 +40,7 @@ home-proxy-start-failed = アプリのローカル接続プロキシを起動で
 
 home-tunnel-closed = トンネルクライアントが閉じられました
 
+
 home-lan-unsupported = このバージョンのクライアントコアはローカルネットワーク設定に対応していません
 
 home-port-mapping-save-failed = ポートマッピングの設定を保存できませんでした：{ $error }

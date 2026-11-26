@@ -16,8 +16,8 @@ use crate::l10n;
 use super::session::{CORE_COOKIE, CORE_TTL, cookies, set_cookie};
 use super::{
     Gateway, TunnelPeer, api, bots, confirmations, core_upgrade, devices, family, files, friends,
-    isolation, matrix, me, model_settings, onboarding, pages, peers, plugin_audience, push, roles,
-    same_origin_path, settings_api, sso, store_api, tool_policy, with_cookie,
+    isolation, matrix, me, model_settings, onboarding, pages, peers, plugin_audience, push,
+    relays_api, roles, same_origin_path, settings_api, sso, store_api, tool_policy, with_cookie,
 };
 
 /// 确认卡片，和主人对确认的放宽（ADR-0016、ADR-0024）。
@@ -219,6 +219,7 @@ fn me_routes() -> Router<Arc<Gateway>> {
         )
 }
 
+#[allow(clippy::too_many_lines, reason = "路由表，一个接口一行")]
 pub fn routes(gateway: Arc<Gateway>) -> Router {
     Router::new()
         .route("/", get(home))
@@ -288,6 +289,10 @@ pub fn routes(gateway: Arc<Gateway>) -> Router {
             post(core_upgrade::check),
         )
         .route("/_wonton/api/tunnel", get(devices::tunnel))
+        .route(
+            "/_wonton/api/relays",
+            get(relays_api::get).put(relays_api::put),
+        )
         .merge(peer_routes())
         .merge(super::clients_api::routes(gateway.clone()))
         .merge(friend_routes())

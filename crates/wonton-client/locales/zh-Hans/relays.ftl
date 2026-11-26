@@ -5,6 +5,7 @@ relays-not-connected = 还没连上家里的服务器。
 
 # 正在保存中继表，改动要等它存完。
 relays-busy = 正在保存中继表，稍等再改。
+relays-not-loaded = 中继表还没加载出来，先刷新一下。
 
 # 表由 WONTON_RELAYS 环境变量固定，这里改不了。
 relays-locked = 中继表由环境变量固定，这里改不了。

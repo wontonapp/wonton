@@ -479,3 +479,71 @@ async fn an_unknown_phase_can_still_be_edited_and_becomes_ready() {
     assert_eq!(home.view().relays.phase, Some(RelaySettingsPhase::Ready));
     assert!(home.view().relays.dirty);
 }
+
+#[test]
+fn add_takes_the_quic_port_from_the_fragment() {
+    let mut view = view(Vec::new());
+    add(
+        &mut view,
+        "https://relay.example.org.#7843".into(),
+        None,
+        None,
+        Some(0),
+    )
+    .unwrap();
+    assert_eq!(view.entries[0].url, "https://relay.example.org/");
+    assert_eq!(view.entries[0].quic_port, Some(7843));
+}
+
+#[test]
+fn an_explicit_port_wins_over_the_fragment() {
+    let mut view = view(Vec::new());
+    add(
+        &mut view,
+        "https://relay.example.org#7843".into(),
+        None,
+        Some(9000),
+        Some(0),
+    )
+    .unwrap();
+    assert_eq!(view.entries[0].quic_port, Some(9000));
+}
+
+#[tokio::test]
+async fn saving_before_any_table_loaded_is_refused() {
+    let (_dir, home) = idle_home().await;
+    home.view.send_modify(|view| {
+        view.relays.phase = Some(RelaySettingsPhase::Ready);
+        view.proxy = Some(ProxySettings {
+            host: "127.0.0.1".into(),
+            port: 1,
+            username: "u".into(),
+            password: "p".into(),
+            domain: "wonton.localhost".into(),
+        });
+    });
+    *home.core_url.lock().unwrap() = Some("http://127.0.0.1:1/".parse().unwrap());
+    // 一次都没取到过表，entries 是空的；交上去等于把服务端的项全删了。
+    let error = home.save_relays().unwrap_err();
+    assert!(matches!(error, CoreError::NotReady { .. }), "{error:?}");
+    assert_eq!(home.view().relays.phase, Some(RelaySettingsPhase::Ready));
+}
+
+#[test]
+fn a_subpath_snapshot_without_a_trailing_slash_can_be_updated_and_removed() {
+    let mut view = view(vec![
+        entry("https://relay.example.org/relay", 0),
+        entry("https://other.example.org/", 1),
+    ]);
+    update(
+        &mut view,
+        "https://relay.example.org/relay".into(),
+        None,
+        None,
+        Some(2),
+    )
+    .unwrap();
+    assert_eq!(view.entries[1].tier, 2);
+    remove(&mut view, "https://relay.example.org/relay".into()).unwrap();
+    assert_eq!(urls(&view), ["https://other.example.org/"]);
+}
