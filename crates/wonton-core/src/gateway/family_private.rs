@@ -20,6 +20,32 @@ impl Gateway {
     }
 
     pub(super) async fn sync_members_locked(&self) -> Result<(), InstallError> {
+        match self.reconcile_members().await {
+            Ok(()) => Ok(()),
+            Err(error) => Err(self.restrict_private_bots(error).await),
+        }
+    }
+
+    /// 同步半路失败（家庭群、资料、设备、某个人的 Bot……）时，后面的人还没轮到：按持久角色只收紧每个家人的
+    /// 私人 Bot（见 [`crate::plugin::PluginManager::restrict_member_bot_home`]），不建、不放宽。返回原来的错误，
+    /// 收紧失败的原因附在后面。
+    async fn restrict_private_bots(&self, error: InstallError) -> InstallError {
+        let langs = self.plugins.owner_languages();
+        let mut error = error;
+        for member in self.members.list() {
+            let lifecycle = self.members.lifecycle(&member.username);
+            let Some(bot) = member.private_bot.as_ref().or(lifecycle.bot.as_ref()) else {
+                continue;
+            };
+            if let Err(failure) = self.plugins.restrict_member_bot_home(bot).await {
+                tracing::error!(member = %member.username, bot = %bot.bot, error = %failure, "Private Bot restriction failed");
+                error = error.with_note(&langs, &failure.to_string());
+            }
+        }
+        error
+    }
+
+    async fn reconcile_members(&self) -> Result<(), InstallError> {
         let members = self.members.list();
         for member in members
             .iter()

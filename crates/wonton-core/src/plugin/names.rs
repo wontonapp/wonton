@@ -87,6 +87,17 @@ impl Instance {
         format!("{}--{volume}", self.network(slug))
     }
 
+    /// Bot 服务里没有名字的卷（compose 的匿名卷、镜像的 `VOLUME`）：`<Bot 容器名>--v<挂载点摘要>`。名字由
+    /// Bot 和挂载点决定，换容器、核心重启后照样挂回同一个卷；Docker 删容器时只连带删匿名卷，这种按名字挂的不删。
+    /// 挂载点是路径，卷名放不下 `/`，取摘要。
+    pub fn bot_volume(&self, slug: &str, service: &str, bot: &str, target: &str) -> String {
+        use sha2::{Digest, Sha256};
+        let target: std::path::PathBuf = std::path::Path::new(target).components().collect();
+        let digest = Sha256::digest(target.as_os_str().as_encoded_bytes());
+        let hex: String = digest[..6].iter().map(|b| format!("{b:02x}")).collect();
+        format!("{}--v{hex}", self.bot_container(slug, service, bot))
+    }
+
     /// 没声明 `network.egress` 的插件发布局域网端口的网络 `<插件网络>--lan`（ADR-0019）。网络和容器不同名字空间，
     /// 和服务 `lan` 的容器同名也不冲突。
     pub fn lan_network(&self, slug: &str) -> String {

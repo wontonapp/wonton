@@ -20,6 +20,8 @@ pub(super) struct Mounts<'a> {
     pub forced_shares_read_only: bool,
     pub named: &'a BTreeSet<String>,
     pub service: &'a str,
+    /// Bot 服务的容器属于哪个 Bot：它的匿名卷换成这个 Bot 自己的稳定卷（[`super::names::Instance::bot_volume`]）。
+    pub bot: Option<&'a str>,
     pub allow_docker_socket: bool,
     /// 清单声明了 `docker.socket`（必需或可选）。声明了而没开着时跳过那一行，不按普通宿主路径查。
     pub socket_declared: bool,
@@ -113,7 +115,11 @@ impl Mounts<'_> {
         let mut read_only = volume.read_only;
         let source = match (volume.kind, volume.source) {
             (VolumeType::Tmpfs, _) => None,
-            (VolumeType::Volume, None) => None,
+            (VolumeType::Volume, None) => self.bot.map(|bot| {
+                self.ctx
+                    .instance
+                    .bot_volume(&self.ctx.slug, self.service, bot, &volume.target)
+            }),
             (VolumeType::Volume, Some(name)) => {
                 if !self.named.contains(&name) {
                     return Err(self.err(crate::l10n::text(
