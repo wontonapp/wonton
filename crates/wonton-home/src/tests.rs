@@ -1,7 +1,7 @@
 use crate::{
     admin::{self, Command},
     auth::canonical,
-    config::{Config, Relay},
+    config::{Config, Relay, System},
     service::App,
     store::{Store, hex, now, random_token},
 };
@@ -72,6 +72,10 @@ impl Drop for Fixture {
 
 impl Fixture {
     async fn new() -> Self {
+        Self::with_system(None).await
+    }
+
+    async fn with_system(system: Option<System>) -> Self {
         let directory = tempfile::tempdir().unwrap();
         let backend = Arc::new(Upstream::default());
         *backend.metrics.lock().await =
@@ -113,6 +117,7 @@ impl Fixture {
             metrics_url: format!("{upstream_url}/metrics"),
             metrics_user: "metrics".into(),
             metrics_password: "test-password".into(),
+            system,
         };
         let store = Store::open(config.state.clone()).unwrap();
         let app = App::new(config, store).unwrap();
@@ -490,7 +495,6 @@ async fn proxy_ownership_and_entry_quota_cannot_be_bypassed() {
     let home = response["home"].as_str().unwrap();
     let token = response["frp_token"].as_str().unwrap();
     for domain in [
-        format!("*.{home}.homes.test"),
         format!("lan.{home}.homes.test"),
         format!("x.lan.{home}.homes.test"),
         "another.homes.test".into(),
@@ -568,4 +572,128 @@ fn quota_month_uses_calendar_utc_not_fixed_thirty_day_windows() {
     assert_eq!(crate::metrics::utc_month(0), 1970 * 12);
     assert_eq!(crate::metrics::utc_month(2678399), 1970 * 12);
     assert_eq!(crate::metrics::utc_month(2678400), 1970 * 12 + 1);
+}
+
+#[tokio::test]
+async fn system_identity_is_limited_to_operator_allowlist() {
+    let token = "system-secret";
+    let fixture = Fixture::with_system(Some(System {
+        domains: vec!["push.homes.test".into(), "omarchy.online".into()],
+        token_hash: crate::store::hash(token.as_bytes()),
+    }))
+    .await;
+    assert_eq!(
+        fixture.hook("Login", "system", token, json!({})).await["reject"],
+        false
+    );
+    let https = json!({"proxy_type":"https","proxy_name":"system.push","custom_domains":["push.homes.test"]});
+    let admitted = fixture.hook("NewProxy", "system", token, https).await;
+    assert_eq!(admitted["reject"], false);
+    assert_eq!(admitted["content"]["bandwidth_limit"], "5MB");
+    let external = json!({"proxy_type":"http","proxy_name":"system.omarchy","custom_domains":["omarchy.online"]});
+    assert_eq!(
+        fixture.hook("NewProxy", "system", token, external).await["reject"],
+        false
+    );
+    let unknown =
+        json!({"proxy_type":"https","proxy_name":"system.bad","custom_domains":["bad.homes.test"]});
+    assert_eq!(
+        fixture.hook("NewProxy", "system", token, unknown).await["reject"],
+        true
+    );
+    assert_eq!(
+        fixture.hook("Login", "system", "wrong", json!({})).await["reject"],
+        true
+    );
+}
+
+#[tokio::test]
+async fn system_identity_is_rejected_when_not_configured() {
+    let fixture = Fixture::new().await;
+    let rejected = fixture.hook("Login", "system", "any", json!({})).await;
+    assert_eq!(rejected["reject"], true);
+    assert_eq!(rejected["reject_reason"], "system access not configured");
+}
+
+#[test]
+fn home_proxy_domains_accept_apex_and_one_wildcard() {
+    let d = |value: &str| json!(value);
+    assert!(crate::hooks::home_domains_ok(
+        &[d("peng.homes.test")],
+        "peng",
+        "homes.test"
+    ));
+    assert!(crate::hooks::home_domains_ok(
+        &[d("peng.homes.test"), d("*.peng.homes.test")],
+        "peng",
+        "homes.test"
+    ));
+    assert!(crate::hooks::home_domains_ok(
+        &[d("*.peng.homes.test")],
+        "peng",
+        "homes.test"
+    ));
+    assert!(!crate::hooks::home_domains_ok(
+        &[d("other.homes.test")],
+        "peng",
+        "homes.test"
+    ));
+    assert!(!crate::hooks::home_domains_ok(
+        &[d("peng.homes.test"), d("other.homes.test")],
+        "peng",
+        "homes.test"
+    ));
+    assert!(!crate::hooks::home_domains_ok(
+        &[
+            d("peng.homes.test"),
+            d("*.peng.homes.test"),
+            d("extra.homes.test")
+        ],
+        "peng",
+        "homes.test"
+    ));
+}
+
+#[tokio::test]
+async fn wildcard_proxy_still_uses_one_of_five_slots() {
+    let fixture = Fixture::new().await;
+    let response = fixture.register(&key(1), &fixture.invite().await).await;
+    let home = response["home"].as_str().unwrap();
+    let token = response["frp_token"].as_str().unwrap();
+    let proxy = |name: &str, domain: String| json!({"proxy_type":"https","proxy_name":format!("{home}.{name}"),"custom_domains":[domain]});
+    assert_eq!(
+        fixture
+            .hook(
+                "NewProxy",
+                home,
+                token,
+                proxy("wild", format!("*.{home}.homes.test"))
+            )
+            .await["reject"],
+        false
+    );
+    for n in 0..4 {
+        assert_eq!(
+            fixture
+                .hook(
+                    "NewProxy",
+                    home,
+                    token,
+                    proxy(&format!("p{n}"), format!("p{n}.{home}.homes.test")),
+                )
+                .await["reject"],
+            false
+        );
+    }
+    assert_eq!(
+        fixture
+            .hook(
+                "NewProxy",
+                home,
+                token,
+                proxy("sixth", format!("sixth.{home}.homes.test")),
+            )
+            .await["reject"],
+        true
+    );
 }

@@ -1,0 +1,10 @@
+[Unit]
+Description=Snapshot the Wonton entry cloud
+After=network-online.target
+Wants=network-online.target
+
+[Service]
+Type=oneshot
+ExecStart=/opt/wonton-home/scripts/backup.sh
+Nice=10
+IOSchedulingClass=idle

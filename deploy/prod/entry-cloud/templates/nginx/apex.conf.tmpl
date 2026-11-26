@@ -1,0 +1,23 @@
+# The old example page on the apex is gone: keep a permanent redirect so typing
+# the domain still lands somewhere useful. www follows the same rule.
+server {
+    listen 127.0.0.1:4080 proxy_protocol;
+    server_name @DOMAIN@ www.@DOMAIN@;
+    return 301 https://@OMARCHY_HOST@$request_uri;
+}
+
+server {
+    listen 127.0.0.1:4443 ssl proxy_protocol;
+    http2 on;
+    server_name @DOMAIN@ www.@DOMAIN@;
+
+    location /.well-known/acme-challenge/ {
+        root /var/www/letsencrypt;
+    }
+
+    ssl_certificate /etc/letsencrypt/live/@DOMAIN@/fullchain.pem;
+    ssl_certificate_key /etc/letsencrypt/live/@DOMAIN@/privkey.pem;
+    ssl_protocols TLSv1.2 TLSv1.3;
+
+    return 301 https://@OMARCHY_HOST@$request_uri;
+}

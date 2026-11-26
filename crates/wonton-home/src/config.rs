@@ -1,3 +1,4 @@
+use crate::store::hash;
 use anyhow::{Context, Result, bail};
 use serde::Serialize;
 use std::{env, net::Ipv4Addr, path::PathBuf};
@@ -8,6 +9,14 @@ pub struct Relay {
     pub host: String,
     pub port: u16,
     pub server_name: String,
+}
+
+/// Operator-owned frpc identity used for the public entry vhosts (push, relay,
+/// omarchy, bootstrap) that do not belong to a registered home.
+#[derive(Clone)]
+pub struct System {
+    pub domains: Vec<String>,
+    pub token_hash: String,
 }
 
 #[derive(Clone)]
@@ -26,6 +35,7 @@ pub struct Config {
     pub metrics_url: String,
     pub metrics_user: String,
     pub metrics_password: String,
+    pub system: Option<System>,
 }
 
 pub fn required(name: &str) -> Result<String> {
@@ -66,6 +76,40 @@ impl Config {
         if parsed.scheme() != "https" || parsed.query().is_some() || parsed.fragment().is_some() {
             bail!("ACME update URL must be HTTPS without query/fragment");
         }
+        let system = match (
+            env::var("WONTON_HOME_SYSTEM_TOKEN_FILE").ok(),
+            env::var("WONTON_HOME_SYSTEM_DOMAINS").ok(),
+        ) {
+            (None, None) => None,
+            (Some(path), Some(domains)) => {
+                let token = std::fs::read_to_string(&path)
+                    .with_context(|| format!("reading WONTON_HOME_SYSTEM_TOKEN_FILE {path}"))?;
+                let token = token.trim();
+                if token.is_empty() {
+                    bail!("empty system token");
+                }
+                let domains: Vec<String> = domains
+                    .split(',')
+                    .map(str::trim)
+                    .filter(|domain| !domain.is_empty())
+                    .map(str::to_owned)
+                    .collect();
+                if domains.is_empty() {
+                    bail!("empty WONTON_HOME_SYSTEM_DOMAINS");
+                }
+                for domain in &domains {
+                    if domain.split('.').count() < 2 || !domain.split('.').all(valid_label) {
+                        bail!("invalid system domain {domain}");
+                    }
+                }
+                Some(System {
+                    domains,
+                    token_hash: hash(token.as_bytes()),
+                })
+            }
+            (Some(_), None) => bail!("WONTON_HOME_SYSTEM_DOMAINS missing"),
+            (None, Some(_)) => bail!("WONTON_HOME_SYSTEM_TOKEN_FILE missing"),
+        };
         Ok(Self {
             listen: env::var("WONTON_HOME_LISTEN").unwrap_or_else(|_| "127.0.0.1:8080".into()),
             hook_listen: env::var("WONTON_HOME_HOOK_LISTEN")
@@ -82,6 +126,7 @@ impl Config {
             acme_internal: required("WONTON_HOME_ACME_INTERNAL_URL")?,
             pdns_url: required("WONTON_HOME_PDNS_URL")?,
             pdns_key: secret("WONTON_HOME_PDNS_KEY_FILE")?,
+            system,
             issuer,
             metrics_url: required("WONTON_HOME_FRPS_METRICS_URL")?,
             metrics_user: required("WONTON_HOME_FRPS_METRICS_USER")?,

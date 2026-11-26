@@ -1,0 +1,29 @@
+# Unchanged public site, only moved behind system-frpc. Keep the existing root
+# from the backup when migrating; this template is the minimal shape.
+server {
+    listen 127.0.0.1:4080 proxy_protocol;
+    server_name @OMARCHY_HOST@;
+    return 301 https://$host$request_uri;
+}
+
+server {
+    listen 127.0.0.1:4443 ssl proxy_protocol;
+    http2 on;
+    server_name @OMARCHY_HOST@;
+
+    ssl_certificate /etc/letsencrypt/live/@OMARCHY_HOST@/fullchain.pem;
+    ssl_certificate_key /etc/letsencrypt/live/@OMARCHY_HOST@/privkey.pem;
+    ssl_protocols TLSv1.2 TLSv1.3;
+
+    root /var/www/omarchy;
+    index index.html;
+    access_log /var/log/nginx/@OMARCHY_HOST@.access.log;
+
+    location /.well-known/acme-challenge/ {
+        root /var/www/letsencrypt;
+    }
+
+    location / {
+        try_files $uri $uri/ =404;
+    }
+}

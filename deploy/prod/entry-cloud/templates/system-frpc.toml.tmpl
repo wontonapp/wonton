@@ -1,0 +1,87 @@
+# Operator-owned frpc identity for the fixed public vhosts. It terminates no
+# TLS: each proxy forwards raw bytes to nginx's loopback listener, adding
+# PROXY v2 so nginx and the apps still see the client source address.
+serverAddr = "127.0.0.1"
+serverPort = 443
+user = "system"
+metadatas.token = "@SYSTEM_TOKEN@"
+
+log.to = "console"
+log.level = "info"
+
+transport.tls.enable = true
+transport.tls.disableCustomTLSFirstByte = false
+transport.tls.serverName = "@RELAY_HOST@"
+transport.tls.trustedCaFile = "/etc/frps-tls/ca.crt"
+
+[[proxies]]
+name = "system.push-https"
+type = "https"
+customDomains = ["@PUSH_HOST@"]
+localIP = "127.0.0.1"
+localPort = 4443
+transport.proxyProtocolVersion = "v2"
+
+[[proxies]]
+name = "system.push-http"
+type = "http"
+customDomains = ["@PUSH_HOST@"]
+localIP = "127.0.0.1"
+localPort = 4080
+transport.proxyProtocolVersion = "v2"
+
+[[proxies]]
+name = "system.relay-https"
+type = "https"
+customDomains = ["@RELAY_HOST@"]
+localIP = "127.0.0.1"
+localPort = 4443
+transport.proxyProtocolVersion = "v2"
+
+[[proxies]]
+name = "system.omarchy-https"
+type = "https"
+customDomains = ["@OMARCHY_HOST@"]
+localIP = "127.0.0.1"
+localPort = 4443
+transport.proxyProtocolVersion = "v2"
+
+[[proxies]]
+name = "system.omarchy-http"
+type = "http"
+customDomains = ["@OMARCHY_HOST@"]
+localIP = "127.0.0.1"
+localPort = 4080
+transport.proxyProtocolVersion = "v2"
+
+[[proxies]]
+name = "system.names-https"
+type = "https"
+customDomains = ["@NAMES_HOST@"]
+localIP = "127.0.0.1"
+localPort = 4443
+transport.proxyProtocolVersion = "v2"
+
+[[proxies]]
+name = "system.names-http"
+type = "http"
+customDomains = ["@NAMES_HOST@"]
+localIP = "127.0.0.1"
+localPort = 4080
+transport.proxyProtocolVersion = "v2"
+
+[[proxies]]
+name = "system.apex-https"
+type = "https"
+customDomains = ["@DOMAIN@", "www.@DOMAIN@"]
+localIP = "127.0.0.1"
+localPort = 4443
+transport.proxyProtocolVersion = "v2"
+
+[[proxies]]
+name = "system.apex-http"
+type = "http"
+customDomains = ["@DOMAIN@", "www.@DOMAIN@"]
+localIP = "127.0.0.1"
+localPort = 4080
+transport.proxyProtocolVersion = "v2"

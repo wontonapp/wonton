@@ -1,0 +1,55 @@
+# names.<domain> is the only host homes talk to before they are registered:
+# the install one-liner and the signed control plane both live here.
+server {
+    listen 127.0.0.1:4080 proxy_protocol;
+    server_name @NAMES_HOST@;
+    return 301 https://$host$request_uri;
+}
+
+server {
+    listen 127.0.0.1:4443 ssl proxy_protocol;
+    http2 on;
+    server_name @NAMES_HOST@;
+
+    ssl_certificate /etc/letsencrypt/live/@NAMES_HOST@/fullchain.pem;
+    ssl_certificate_key /etc/letsencrypt/live/@NAMES_HOST@/privkey.pem;
+    ssl_protocols TLSv1.2 TLSv1.3;
+
+    access_log /var/log/nginx/@NAMES_HOST@.access.log;
+
+    client_max_body_size 1m;
+
+    location = /install.sh {
+        root @WONTON_ENTRY_ROOT@/bootstrap;
+        add_header Cache-Control "no-store";
+        default_type text/x-shellscript;
+    }
+
+    # One URL per invite: /i/<code> returns a tiny script that runs the
+    # upstream installer with both service and invite already wired.
+    location ~ "^/i/(?<code>[A-Za-z0-9_-]{8,128})$" {
+        default_type text/x-shellscript;
+        add_header Cache-Control "no-store";
+        return 200 '#!/bin/sh
+set -eu
+printf "%s" "$1" > /run/wonton-entry-invite
+export WONTON_CLIENT_SERVICE=https://@NAMES_HOST@
+export WONTON_CLIENT_INVITE_FILE=/run/wonton-entry-invite
+curl -fsSL https://raw.githubusercontent.com/wontonapp/wonton-install/main/install.sh | sh
+';
+    }
+
+    location /.well-known/acme-challenge/ {
+        root /var/www/letsencrypt;
+    }
+
+    location / {
+        proxy_pass http://127.0.0.1:8082;
+        proxy_http_version 1.1;
+        proxy_set_header Host $host;
+        proxy_set_header X-Real-IP $remote_addr;
+        proxy_set_header X-Forwarded-For $proxy_add_x_forwarded_for;
+        proxy_set_header X-Forwarded-Proto https;
+        proxy_read_timeout 75s;
+    }
+}
