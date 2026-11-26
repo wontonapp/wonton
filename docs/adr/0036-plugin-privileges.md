@@ -31,8 +31,9 @@
      最高级插件的工具（如宿主终端），平时每次发卡片；主人给这个 Bot 开了危险模式、消息来自主人私聊时不发（[ADR-0091](0091-danger-mode.md)）。
      宿主指服务器；用户自己电脑上的 Agent 见 [ADR-0081](0081-local-agent-host.md)，不给危险模式。
   2. Bot 装任何高权限插件都走确认卡片（ADR-0033），危险模式是唯一的例外（ADR-0091）。
-  3. 声明了终端服务（清单 `terminal.service`）的插件是第 1 条的唯一例外，只在那一个服务上：`cap.SYS_ADMIN` 只用来在那一档的容器里挂 FUSE，
-     `docker.socket` 只用来 `docker exec` 进那个容器，风险级别不变。见 [ADR-0125](0125-bot-terminal-tiers.md) 第 3、5 节。
+  3. 声明了终端服务（清单 `terminal.service`）的插件是第 1 条的唯一例外：`cap.SYS_ADMIN` 只加在那一个服务上，只用来在那一档的容器里挂 FUSE；
+     `docker.socket` 只加在网关服务上（Mirage 后端在网关里 `docker exec` 进那个容器）。终端容器本身没有 socket。风险级别不变。
+     见 [ADR-0125](0125-bot-terminal-tiers.md) 第 3、5 节。
 
 ### 写法：compose 用标准字段，权限里声明
 

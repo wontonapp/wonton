@@ -96,10 +96,10 @@
 | `choice` | `questions`: 1–4 题；每题 `id` 必填、`header` ≤12 字、`question` ≤200 字、2–4 个 `options`（`id` 必填、`label` ≤40 字、`description` ≤100 字、`recommended?`、可选 `preview` ≤4 KiB），或者 0 个（只有输入框）；`multi_select`（默认 false）、`note_enabled`（默认 false）、`skippable`（默认 false）；永远有 `other`（≤2000 字） | `answers`: 每题 `{selected: [option_id], other?, note?, skipped?}`；整张 `decline` | 阻塞 10 分钟；异步 7 天 | 是 |
 | `page` | `resource_uri`（`ui://…`，MCP Apps 资源）或 `file_id`（附件）；`caption` ≤120 字；`network_domains?` 最多 20 个（`https://`、`wss://`，可 `https://*.example.com`）；`actions` 0–3（`id` 限 `[a-z0-9_-]{1,32}`，`label` ≤40 字，`style`: default/primary/destructive，`requires_comment?`） | `{action_id?, comment?}` 或 `acknowledge` | 30 天 | 有 `actions` 时是 |
 | `recap` | `summary` 2–3 句、≤400 字；`question?`；`actions` 1–2（同 page） | `{action_id}`、`acknowledge` 或 `decline` | 7 天 | 有问题/动作时是 |
-| `confirm` | `title`、`body` ≤2000 字、`detail?` ≤8000 字、`risk`（`high`/`very_high`/`highest`）；固定 `choices`（`approve`/`deny`；发送方支持时加 `session`/`deny_session`，需要跨会话记住的再加 `always`） | 固定 choice | 10 分钟；配对不过期 | 是 |
+| `confirm` | `title`、`body` ≤2000 字、`detail?` ≤8000 字、`risk`（`high`/`very_high`/`highest`）；固定 `choices`（`approve`/`deny`；发送方支持时加 `session`/`deny_session`，需要跨会话记住的再加 `always`；最多 5 个，通知上最多显示 3 个按钮，多的打开 App） | 固定 choice | 10 分钟；配对不过期 | 是 |
 | `notice` | `title`、`body` ≤2000 字、`level`（`info`/`warning`/`critical`）、可选 `link`（只收 `https:`/`http:`/`wonton:`）、可选 1 个 `action`（同 page） | `acknowledge` 或 `action_id` | 30 天 | 否（只点未读） |
 
-`choice_id` 的语义由发送方按这套固定词挑（如终端 ask 的 `deny_session` 表示本会话不再问），回答方按 id 逐条映射，不把“拒绝一次”和“总是拒绝”合并成一个方向。
+`confirm` 的 `action` 直接用这些字面档名，回答方按字面逐条映射（如终端 ask 的 `deny_session` 表示本会话不再问），不把“拒绝一次”和“本会话拒绝”合并成一个方向；`choice_id` 只给 `/agent/permissions` 那条线上回显用。
 
 `title` 和 `caption` 都 ≤120 字；所有文本字段超限就报 `invalid_input`，不截断。`choice` 的 `preview` 是**静态** HTML 片段（去掉 `<script>`，≤4 KiB），由宿主放进沙箱渲染；CSP 固定为 `default-src 'none'; script-src 'none'; style-src 'unsafe-inline'; img-src 'self' data:; font-src 'self' data:; connect-src 'none'`，只允许内联样式和 `data:` 图片/字体，不能跑脚本、不能联网；要脚本或联网就用 `page`。
 
@@ -236,7 +236,7 @@ wonton__inbox_cancel  { "item_id": "q-01J…", "reason": "任务提前结束" }
 ```jsonc
 {
   "answer_id": "01J…",             // 客户端生成，幂等
-  "action": "submit",              // submit | decline | acknowledge | action | approve | deny | session | always
+  "action": "submit",              // submit | decline | acknowledge | action | approve | deny | session | deny_session | always
   "answers": [{ "question_id": "q0", "selected": ["nas"], "other": null, "note": "2 号盘" }],
   "action_id": null,
   "comment": null
@@ -246,7 +246,7 @@ wonton__inbox_cancel  { "item_id": "q-01J…", "reason": "任务提前结束" }
 - `selected` 是选项 id，不是 label；label 只在界面显示。`other` 是自填；`note` 是备注；单选最多一项，多选 0–4 项。
 - 每题默认必答；Agent 可以设 `skippable: true`，跳过就是 `{skipped: true}`。整张 `decline` 不带 `answers`。
 - `action_id` 必须在这条条目的 `actions` 里；页面/收尾的按钮就是这样回。`requires_comment` 时 `comment` 必填（≤200 字）。
-- `confirm` 的 `action` 直接用档名 `approve`/`deny`/`session`/`always`，不填 `action_id`；`acknowledge` 只对 `notice`、无动作的 `page`、无问题的 `recap` 有效。
+- `confirm` 的 `action` 直接用档名 `approve`/`deny`/`session`/`deny_session`/`always`（最多 5 个；通知上最多 3 个按钮），不填 `action_id`；`acknowledge` 只对 `notice`、无动作的 `page`、无问题的 `recap` 有效。
 - 敏感操作分两种：核心自己的确认卡片（工具放行、装插件、受控发送）由核心在主人允许后继续那份挂起的调用；Agent 用 `inbox_confirm` 只是问一个固定选择，答案回到 Agent，执行由 Agent 侧再做。两种都走同一个 `confirm` 界面和审计，不能互相代替。
 
 **阻塞和异步**：
@@ -380,7 +380,7 @@ POST /_wonton/api/inbox/workers
 - `recap`：≤2 个 action 直接给按钮；否则打开。
 - `page`：只给“打开”；页面底下的动作在详情里。无动作页面给“知道了”。
 - `notice`：有 `action` 时给这个动作，另一个位置留给“知道了”；有 link 且仍有空位时再给“打开”。没有 action 时只给“知道了”（有 link 再加“打开”）。
-- 系统按钮最多 3 个（Apple 上限 4，留一个给“打开”）。核心保留的 `approve`/`deny`/`session`/`always`/`acknowledge`/`open` 由 App 本地化；插件自己的 `action_id` 用发送方给的 `label`（≤40 字），未知 id 用 label 兜底。
+- 系统按钮最多 3 个（Apple 上限 4，留一个给“打开”）。核心保留的 `approve`/`deny`/`session`/`deny_session`/`always`/`acknowledge`/`open` 由 App 本地化；插件自己的 `action_id` 用发送方给的 `label`（≤40 字），未知 id 用 label 兜底。
 - 答完立刻把通知从其他设备撤下（`revision` 长轮询）；答的动作也写审计。
 
 **列表**：按“阻塞且最快到期 → 阻塞 → 非阻塞问题 → 有动作的页面 → 通知 → 已处理”排；同组内按到期时间/时间倒序。阻塞条目显示“对方在等”和倒计时；非阻塞显示“只是告知”。第一版不做搜索、筛选、分组设置、全部已读。
