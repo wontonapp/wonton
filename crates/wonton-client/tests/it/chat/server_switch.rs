@@ -118,6 +118,7 @@ async fn switching_back_keeps_the_first_servers_chat() {
     let (_, on_a) = phone.signed_in().await;
     let a_bot = a.bot("hermes", "Hermes").await;
     let a_room = accept_the_bots_invite(&a, &phone, &a_bot).await;
+    phone.wait_ready().await;
     let timeline = phone
         .subscribe_timeline(TimelineTarget {
             room_id: a_room.to_string(),

@@ -204,6 +204,7 @@ async fn a_side_chat_is_a_card_in_the_main_timeline_with_its_own_timeline() {
     );
 
     // 开旁聊：根是卡片，第一句话进了话题。
+    setup.phone.wait_ready().await;
     let root = setup
         .phone
         .start_side_chat(
@@ -296,6 +297,7 @@ async fn a_late_room_key_redecrypts_a_thread_reply() {
     let mut main = open_main(&setup).await;
     // 扣下 Bot 的 to-device：它的房间密钥到不了手机，回复是密文。
     hold.hold(true);
+    setup.phone.wait_ready().await;
     let root = setup
         .phone
         .start_side_chat(setup.room.to_string(), "整理照片".to_owned())
@@ -364,6 +366,7 @@ async fn a_late_room_key_redecrypts_a_thread_reply() {
 async fn an_early_opened_side_chat_receives_the_first_message_and_the_reply() {
     let setup = setup().await;
     let mut main = open_main(&setup).await;
+    setup.phone.wait_ready().await;
     let root = setup
         .phone
         .start_side_chat(
@@ -451,6 +454,7 @@ async fn an_early_opened_side_chat_receives_the_first_message_and_the_reply() {
 async fn an_image_sent_in_a_side_chat_stays_in_the_thread() {
     let setup = setup().await;
     let mut main = open_main(&setup).await;
+    setup.phone.wait_ready().await;
     let root = setup
         .phone
         .start_side_chat(setup.room.to_string(), "整理照片".to_owned())
@@ -521,6 +525,7 @@ async fn an_image_sent_in_a_side_chat_stays_in_the_thread() {
 async fn a_thread_reply_lost_from_the_timeline_is_rebuilt_back() {
     let setup = setup().await;
     let mut main = open_main(&setup).await;
+    setup.phone.wait_ready().await;
     let root = setup
         .phone
         .start_side_chat(setup.room.to_string(), "整理照片".to_owned())
@@ -635,6 +640,7 @@ async fn a_root_that_fails_to_send_leaves_no_side_chat() {
     let setup = setup().await;
     let mut main = open_main(&setup).await;
 
+    setup.phone.wait_ready().await;
     let empty = setup
         .phone
         .start_side_chat(setup.room.to_string(), "  \n ".to_owned())
@@ -645,6 +651,7 @@ async fn a_root_that_fails_to_send_leaves_no_side_chat() {
     );
 
     setup.home.fail_sends(true);
+    setup.phone.wait_ready().await;
     let failed = setup
         .phone
         .start_side_chat(setup.room.to_string(), "整理照片".to_owned())

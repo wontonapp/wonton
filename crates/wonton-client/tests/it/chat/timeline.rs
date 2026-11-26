@@ -53,6 +53,7 @@ impl Timeline {
 
     /// 打开主对话（`thread_root` 为 `None`）或一个旁聊的时间线。
     pub async fn open_target(phone: &Phone, room_id: &str, thread_root: Option<&str>) -> Self {
+        phone.wait_ready().await;
         let subscription = phone
             .subscribe_timeline(TimelineTarget {
                 room_id: room_id.to_owned(),

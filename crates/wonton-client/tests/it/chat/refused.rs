@@ -88,6 +88,7 @@ async fn a_refused_join_is_not_reported_as_an_expired_login() {
     let (_dir, home, phone) = signed_in().await;
     let room_id = invited_by_the_bot(&home, &phone).await;
     home.refuse_matrix("/join", 403, "M_FORBIDDEN");
+    phone.wait_ready().await;
     phone
         .dispatch(Action::Chat {
             action: wonton_protocol::ChatAction::JoinRoom {

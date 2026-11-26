@@ -167,6 +167,9 @@ pub enum ChatAction {
     SkipKeyHandoff,
     /// 清掉 `ChatViewModel::problem`。
     DismissChatProblem,
+    /// 只确认会话装好没有：没登录返回 `NotReady`，登录了什么都不做、直接成功。给壳和测试在真正 dispatch 前自查
+    /// （例如等到登录真的能用再发第一条），不碰房间、不写账号数据。
+    CheckReady,
     /// 按卡片上的 `answer`、`choice_id` 回答；结果在 [`ConfirmationView`](crate::ConfirmationView)，已经在发或已答完时不重复发送。
     /// 答案为 `Unknown` 返回 `InvalidInput`；服务器未连接时返回 `NotReady`。
     AnswerConfirmation {

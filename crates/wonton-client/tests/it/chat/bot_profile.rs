@@ -227,6 +227,7 @@ async fn direct_room(phone: &Phone, bot: &MatrixSession) -> wonton_matrix::Owned
                 .cloned()
         })
         .await;
+    phone.wait_ready().await;
     phone
         .dispatch(Action::Chat {
             action: wonton_protocol::ChatAction::JoinRoom {

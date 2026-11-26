@@ -623,6 +623,7 @@ async fn phone_with_undecryptable_history() -> (
             .then_some(())
     })
     .await;
+    new.wait_ready().await;
     let subscription = new
         .subscribe_timeline(TimelineTarget {
             room_id: room_id.as_str().to_owned(),
