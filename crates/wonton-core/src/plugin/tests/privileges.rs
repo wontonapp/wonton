@@ -262,6 +262,63 @@ fn agent_and_bot_manifests_reject_very_high_and_highest_permissions() {
     }
 }
 
+/// ADR-0125：声明了 terminal 的 Bot 插件，只在这一个服务上可以申请 SYS_ADMIN 和 docker socket。
+#[test]
+fn a_terminal_service_may_ask_for_fuse_and_the_socket() {
+    let compose = "  web:\n    image: nginx\n    devices: ['/dev/fuse:/dev/fuse']\n    cap_add: [SYS_ADMIN]\n    volumes: ['/var/run/docker.sock:/var/run/docker.sock']";
+    let manifest = "  bots: {services: [web]}\n  terminal: {service: web}\n  permissions: [matrix.bot, devices./dev/fuse, cap.SYS_ADMIN, docker.socket]";
+    PluginPackage::parse(&package(compose, manifest), &langs()).unwrap();
+
+    // 没声明 terminal 时照旧拒绝。
+    let high_risk = message(
+        "plugin-install-priv-agent-high-risk",
+        &[("permission", "cap.SYS_ADMIN")],
+    );
+    let no_terminal = "  bots: {services: [web]}\n  permissions: [matrix.bot, cap.SYS_ADMIN]";
+    let err = PluginPackage::parse(
+        &package(
+            "  web:\n    image: nginx\n    cap_add: [SYS_ADMIN]",
+            no_terminal,
+        ),
+        &langs(),
+    )
+    .unwrap_err()
+    .to_string();
+    assert!(err.contains(&high_risk), "{err}");
+
+    // 终端服务只放开这两项，别的很高权限仍然拒绝。
+    let high_risk = message(
+        "plugin-install-priv-agent-high-risk",
+        &[("permission", "cap.NET_ADMIN")],
+    );
+    let other = "  bots: {services: [web]}\n  terminal: {service: web}\n  permissions: [matrix.bot, cap.NET_ADMIN]";
+    let err = PluginPackage::parse(
+        &package(
+            "  web:\n    image: nginx\n    cap_add: [NET_ADMIN]",
+            other,
+        ),
+        &langs(),
+    )
+    .unwrap_err()
+    .to_string();
+    assert!(err.contains(&high_risk), "{err}");
+}
+
+#[test]
+fn a_terminal_service_must_be_a_bot_service() {
+    let manifest = "  bots: {services: [web]}\n  terminal: {service: sidecar}\n  permissions: [matrix.bot]";
+    let err = PluginPackage::parse(
+        &package("  web:\n    image: nginx", manifest),
+        &langs(),
+    )
+    .unwrap_err()
+    .to_string();
+    assert!(
+        err.contains("terminal.service sidecar 不在 bots.services 里"),
+        "{err}"
+    );
+}
+
 #[test]
 fn fixed_devices_need_permission_and_reach_host_config() {
     let missing = package(

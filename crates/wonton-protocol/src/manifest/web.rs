@@ -139,3 +139,11 @@ pub struct BotProfile {
 pub struct BotServices {
     pub services: Vec<String>,
 }
+
+/// Bot 的终端服务（ADR-0125）：`service` 必须是 `bots.services` 里的一项，核心在这个服务上兑现
+/// `devices./dev/fuse`、`cap.SYS_ADMIN` 和 `docker.socket`。
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(deny_unknown_fields)]
+pub struct TerminalService {
+    pub service: String,
+}
