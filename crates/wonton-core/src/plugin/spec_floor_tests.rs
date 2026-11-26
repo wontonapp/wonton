@@ -666,6 +666,8 @@ const EXPECTED: &[(&str, &str)] = &[
     ("0.16", "x-wonton.provides.<名字>.operations"),
     ("0.16", "x-wonton.provides.<名字>.kinds"),
     ("0.16", "permission models 退役"),
+    // 0.17
+    ("0.17", "x-wonton.terminal"),
 ];
 
 #[test]
@@ -719,4 +721,14 @@ fn permission_models_is_retired_from_0_16() {
     assert!(found[0].contains("permission models"), "{found:?}");
     assert!(found[0].contains("wants: [models]"), "{found:?}");
     assert!(problems(&document("0.15", manifest, plain())).is_empty());
+}
+
+/// 0.17 起清单可以写 `terminal`：写到 0.16 报不合格，0.17 通过。
+#[test]
+fn terminal_needs_0_17() {
+    let manifest = json!({"bots": {"services": ["sidecar"]}, "terminal": {"service": "sidecar"}});
+    let found = problems(&document("0.16", manifest.clone(), plain()));
+    assert_eq!(found.len(), 1, "{found:?}");
+    assert!(found[0].contains("x-wonton.terminal"), "{found:?}");
+    assert!(problems(&document("0.17", manifest, plain())).is_empty());
 }

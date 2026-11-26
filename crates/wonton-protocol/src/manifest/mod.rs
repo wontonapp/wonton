@@ -48,7 +48,7 @@ pub use static_web::{LinkSpec, StaticWebSpec};
 pub use tabs::ManifestTab;
 pub use web::{
     Accounts, BotProfile, BotServices, OidcClient, ProxyCredentials, RoleClaim, Sso,
-    TokenAuthMethod, WebUi,
+    TerminalService, TokenAuthMethod, WebUi,
 };
 pub use widget::MatrixWidget;
 /// 多语言文本：语言到文字。App 要的语言没有时的回退见 `Languages`。
@@ -165,6 +165,10 @@ pub struct Manifest {
     pub bot: Option<BotProfile>,
     #[serde(default)]
     pub bots: Option<BotServices>,
+    /// 这个插件的 Bot 有一个终端容器（ADR-0125）：`service` 指 `bots.services` 的一项，
+    /// 核心在那个服务上兑现 `devices./dev/fuse`、`cap.SYS_ADMIN` 和 `docker.socket`。
+    #[serde(default)]
+    pub terminal: Option<TerminalService>,
     #[serde(default)]
     pub agent: Option<AgentSpec>,
     /// 给其他插件提供的能力，见规范“模型网关”。
