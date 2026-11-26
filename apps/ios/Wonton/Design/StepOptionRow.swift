@@ -100,7 +100,8 @@ extension StepOptionRow where Leading == EmptyView, Trailing == EmptyView {
     init(title: String, description: String? = nil, isSelected: Bool, blocked: String? = nil,
          neutralSelection: Bool = false, select: @escaping () -> Void) {
         self.init(title: title, description: description, isSelected: isSelected, blocked: blocked,
-                  neutralSelection: neutralSelection, select: select, leading: { EmptyView() }, trailing: { EmptyView() })
+                  neutralSelection: neutralSelection, select: select,
+                  leading: { EmptyView() }, trailing: { EmptyView() })
     }
 }
 
