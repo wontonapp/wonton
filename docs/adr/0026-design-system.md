@@ -1,6 +1,6 @@
 # ADR-0026 App 的外观：两端统一自绘、黑白加可换的重点色、Phosphor 图标
 
-- 状态：已接受（2026-11-03）。“两端一模一样”这个前提已被 [ADR-0029](0029-platform-material.md) 改成令牌共用、栏和菜单按平台；被取代的段落就地标出。2026-11-21 补充 Agent 身份色和 App 图标（[ADR-0124](0124-agent-list-bar-and-cloud.md)）
+- 状态：已接受（2026-11-03）。“两端一模一样”这个前提已被 [ADR-0029](0029-platform-material.md) 改成令牌共用、栏和菜单按平台；被取代的段落就地标出。2026-11-21 补充 Agent 身份色和 App 图标（[ADR-0126](0126-agent-list-bar-and-cloud.md)）
 
 ## 背景
 
@@ -11,7 +11,7 @@
 1. 两端一模一样，走 Telegram 的路子，工作量大也认。
 2. 黑白为主，重点色有纸质磨砂的质感。默认 `#FEEBEA`，用户可以换，每台设备各自设置。
 3. 图标统一用 Phosphor。
-4. App 图标是甲骨文“云”，墨色字配米白底（后来换成主人原图的抠像加蓝白渐变底，见 [ADR-0124](0124-agent-list-bar-and-cloud.md)）。
+4. App 图标是甲骨文“云”，墨色字配米白底（后来换成主人原图的抠像加蓝白渐变底，见 [ADR-0126](0126-agent-list-bar-and-cloud.md)）。
 5. 插件图标用上游官方标志，原版不滥用。
 
 本篇不改 [ADR-0005](0005-native-clients-thick-core.md)：壳还是 SwiftUI 和 Compose，自绘的是控件的样子，不是换渲染层。
@@ -91,7 +91,7 @@
 - 浅色：保持来源色相，往上提亮到既在 `canvas` 上看得见（≥ 1.5:1），又让 `agentInk` 在它上面 ≥ 4.5:1；彩度不低于 0.06，免得提亮后
   变灰。深色：同一色相落进固定的暗档，`agentInk` 取提亮的那一档。
 - `agentBacking` 是默认身体色的圆底令牌。主人给 Bot 换了身体色以后，核心按同一规则（OKLCH 的 L 提亮、C 降一半）从那只 Bot 的身体色
-  现算，不走令牌，见 [ADR-0124](0124-agent-list-bar-and-cloud.md#头像分层和素材库)。
+  现算，不走令牌，见 [ADR-0126](0126-agent-list-bar-and-cloud.md#头像分层和素材库)。
 - 只用在：出场的整屏渐变、“Agent”那一项的选中图标、Agent 和 Bot 的头像圆底。**不用在：**主按钮（仍是 `primary`）、聊天气泡、
   `accentFill` 的场合（选中胶囊、自已的气泡）、插件图标、未读角标、列表选中。
 - 推导放核心的常量里，和重点色一样写颜色网格测试；键写在 `design/tokens.toml`，两端只读生成结果。iOS 的玻璃照 [ADR-0107](0107-ios-liquid-glass.md)。
