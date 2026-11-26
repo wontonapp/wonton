@@ -71,6 +71,27 @@ fn view(status: PluginState) -> PluginsViewModel {
 }
 
 #[test]
+fn a_room_with_a_missing_bot_record_matches_the_plugin_by_bot_ref() {
+    let mut rooms = rooms();
+    rooms[0].direct_user_id = None;
+    rooms[0].bot = Some(RoomBot {
+        bot: wonton_protocol::BotRef {
+            plugin_id: "app.agent".into(),
+            bot: "default".into(),
+        },
+        user_id: String::new(),
+        title: "Agent".into(),
+        access: wonton_protocol::BotAccess::Unusable {
+            reason: wonton_protocol::BotChatUnavailable::BotMissing,
+        },
+    });
+    let mut plugins = view(PluginState::Stopped);
+
+    assert!(refresh(&mut rooms, &plugins));
+    assert_eq!(rooms[0].plugin.as_ref().unwrap().plugin_id, "app.agent");
+}
+
+#[test]
 fn stopped_starting_failed_and_running_are_distinct_without_changing_send_permissions() {
     let mut rooms = rooms();
     let mut plugins = view(PluginState::Stopped);
