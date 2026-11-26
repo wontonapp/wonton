@@ -23,18 +23,22 @@ const COMPOSE: &[(&str, &str)] = &[
 
 const SIGNAL: &str = "kill_container(";
 
-/// 生产源码：不算 `*_tests.rs`、`tests.rs`、`tests/` 目录和引擎里 `kill_container` 本身的定义。
+/// 生产源码：不算 `*_tests.rs`、`tests.rs`、`tests/` 目录和引擎自己的 `plugin/docker/`
+/// （`kill_container` 本身在那里定义）。
 fn sources() -> Vec<PathBuf> {
     fn walk(dir: &Path, found: &mut Vec<PathBuf>) {
         for entry in std::fs::read_dir(dir).unwrap() {
             let path = entry.unwrap().path();
             if path.is_dir() {
-                if path.file_name().is_some_and(|name| name != "tests") {
+                if path
+                    .file_name()
+                    .is_some_and(|name| name != "tests" && name != "docker")
+                {
                     walk(&path, found);
                 }
             } else if path.extension().is_some_and(|extension| extension == "rs") {
                 let name = path.file_name().unwrap().to_string_lossy().into_owned();
-                if !name.ends_with("_tests.rs") && name != "tests.rs" && name != "docker.rs" {
+                if !name.ends_with("_tests.rs") && name != "tests.rs" {
                     found.push(path);
                 }
             }
