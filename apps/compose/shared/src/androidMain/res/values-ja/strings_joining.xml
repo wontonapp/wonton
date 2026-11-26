@@ -3,6 +3,4 @@
     <string name="joining_failure_rejected">管理者が参加リクエストを断りました</string>
     <string name="joining_failure_code_used">この招待コードは使用済みです</string>
     <string name="joining_next_invite">管理者に新しい招待コードを発行してもらってください。</string>
-    <string name="joining_failure_pending_approval">管理者の承認待ち</string>
-    <string name="joining_hint_pending">承認されると自動で続行します</string>
 </resources>

@@ -73,7 +73,10 @@ async fn put_domain_requires_terms() {
     let mut put = request(None);
     put.accept_terms = false;
     let error = domain(dir.path()).save(put).await.err().unwrap();
-    assert!(matches!(error, DomainError::Invalid(_)), "{error}");
+    assert!(
+        matches!(error, DomainError::Invalid(_) | DomainError::InvalidKey(_)),
+        "{error}"
+    );
 }
 
 #[tokio::test]
@@ -84,7 +87,7 @@ async fn provider_name_charset_only() {
     put.provider = "Cloudflare_DNS".into();
     assert!(matches!(
         domain(dir.path()).save(put.clone()).await,
-        Err(DomainError::Invalid(_))
+        Err(DomainError::Invalid(_) | DomainError::InvalidKey(_))
     ));
     // 核心不按服务商分支：不在任何预设里的代码照样收下。
     put.provider = "notapreset1".into();
@@ -124,7 +127,7 @@ async fn external_certificate_conflicts() {
     fs::write(path, serde_json::to_vec(&settings).unwrap()).unwrap();
     assert!(matches!(
         domain(dir.path()).save(request(None)).await,
-        Err(DomainError::Conflict(_))
+        Err(DomainError::Conflict(_) | DomainError::ConflictKey(_))
     ));
 }
 
@@ -136,7 +139,7 @@ async fn suffix_fixed_when_server_name_set() {
     let mut put = request(Some("other.example.test"));
     assert!(matches!(
         clients.save(put.clone()).await,
-        Err(DomainError::Conflict(_))
+        Err(DomainError::Conflict(_) | DomainError::ConflictKey(_))
     ));
     put.suffix = None;
     assert!(clients.save(put).await.is_ok());
@@ -385,7 +388,7 @@ async fn credentials_accept_backslash_and_dollar_but_not_single_quote() {
     put.credentials[0].value = SecretString::new("it's");
     assert!(matches!(
         domain(dir.path()).save(put).await,
-        Err(DomainError::Invalid(_))
+        Err(DomainError::Invalid(_) | DomainError::InvalidKey(_))
     ));
 }
 
@@ -461,7 +464,7 @@ async fn first_provider_requires_credentials() {
     put.credentials.clear();
     assert!(matches!(
         clients.save(put).await,
-        Err(DomainError::Invalid(_))
+        Err(DomainError::Invalid(_) | DomainError::InvalidKey(_))
     ));
     assert!(!dir.path().join("entry/domain.json").exists());
 }
@@ -478,7 +481,7 @@ async fn changed_provider_requires_its_own_credentials() {
     put.credentials.clear();
     assert!(matches!(
         clients.save(put).await,
-        Err(DomainError::Invalid(_))
+        Err(DomainError::Invalid(_) | DomainError::InvalidKey(_))
     ));
     assert_eq!(
         fs::read(dir.path().join("entry/domain.json")).unwrap(),

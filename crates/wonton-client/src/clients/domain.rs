@@ -9,7 +9,7 @@ use std::sync::{Arc, Mutex};
 use tokio::runtime::Handle;
 use tokio::sync::watch::Sender as WatchSender;
 use wonton_protocol::{
-    CaaState, CertificateState, ClientsAction, ClientsDomainCertificate, ClientsDomainProvider,
+    CertificateState, ClientsAction, ClientsDomainCertificate, ClientsDomainProvider,
     ClientsDomainState, ClientsDomainViewModel, ClientsFailure, ClientsProblem, CoreError,
     CredentialEntry, DnsProviderPreset, DomainSettings, ProxySettings, PutDomainRequest,
     SecretString,
@@ -174,7 +174,7 @@ impl ClientsDomainLink {
                 let view = build(domain, presets, &selection);
                 self.view.send_modify(|current| *current = view);
             }
-            Err(failure) => self.fail(failure),
+            Err(failure) => self.fail_load(failure),
         }
     }
 
@@ -234,9 +234,17 @@ impl ClientsDomainLink {
             )
         };
         let suffix = if editable {
-            let suffix = suffix.unwrap_or_default().trim().to_owned();
+            let suffix = normalize_suffix(&suffix.unwrap_or_default());
             if suffix.is_empty() {
                 return Err(invalid(text("clients-domain-suffix", &[])));
+            }
+            if !suffix.bytes().all(|byte| {
+                byte.is_ascii_lowercase() || byte.is_ascii_digit() || byte == b'-' || byte == b'.'
+            }) || suffix.starts_with('.')
+                || suffix.ends_with('.')
+                || suffix.contains("..")
+            {
+                return Err(invalid(text("clients-domain-suffix-invalid", &[])));
             }
             Some(suffix)
         } else {
@@ -313,15 +321,31 @@ impl ClientsDomainLink {
                     link.view.send_modify(|view| {
                         view.saving = false;
                         view.problem = None;
+                        view.state = ClientsDomainState::Ready;
                         apply(view, domain);
                     });
                 }
-                Err(failure) => link.fail(failure),
+                Err(failure) => link.fail_action(failure),
             }
         });
     }
 
-    fn fail(&self, failure: api::Failure) {
+    /// 首次取设置失败：整页进失败态，壳给一句话和重试（重试就是 `RefreshDomain`）。
+    fn fail_load(&self, failure: api::Failure) {
+        tracing::debug!(
+            kind = failure.problem.kind.as_str(),
+            "clients domain load failed"
+        );
+        let problem = failure.problem;
+        self.view.send_modify(|view| {
+            view.saving = false;
+            view.problem = Some(problem.clone());
+            view.state = ClientsDomainState::Failed { problem };
+        });
+    }
+
+    /// 保存/重试被拒：页面和表单还在，只提示这一条。
+    fn fail_action(&self, failure: api::Failure) {
         tracing::debug!(
             kind = failure.problem.kind.as_str(),
             "clients domain operation failed"
@@ -451,12 +475,6 @@ fn apply(view: &mut ClientsDomainViewModel, domain: DomainSettings) {
         other => (other, false, None),
     };
     let suffix = domain.suffix;
-    let caa_record = match (&suffix, domain.caa) {
-        (Some(suffix), CaaState::Missing | CaaState::Mismatch) if !suffix.is_empty() => Some(
-            format!("{suffix}. CAA 0 issue \"letsencrypt.org; validationmethods=dns-01\""),
-        ),
-        _ => None,
-    };
     view.suffix = suffix;
     view.suffix_editable = domain.suffix_editable;
     view.credentials_set = domain.credentials_set;
@@ -467,12 +485,18 @@ fn apply(view: &mut ClientsDomainViewModel, domain: DomainSettings) {
         details,
     };
     view.caa = domain.caa;
-    view.caa_record = caa_record;
+    view.caa_record = domain.caa_record;
     view.lan_record = domain.lan_record;
+    view.lan_target = domain.lan_target;
     view.lan_record_name = view.suffix.as_ref().map(|suffix| format!("*.lan.{suffix}"));
 }
 
-/// “其他”的 `键=值` 原文：一行一项，键去掉两边空白；写错的行报第几行。
+/// 域名去掉两边空白、末尾的点和大小写差异；其余校验交给 core。
+fn normalize_suffix(raw: &str) -> String {
+    raw.trim().trim_end_matches('.').to_ascii_lowercase()
+}
+
+/// “其他”的 `键=值` 原文：一行一项，键和值都去掉两边空白；写错的行报第几行。
 fn parse_other(raw: &str) -> Result<Vec<CredentialEntry>, CoreError> {
     let mut entries = Vec::new();
     for (index, line) in raw.lines().enumerate() {
@@ -488,6 +512,7 @@ fn parse_other(raw: &str) -> Result<Vec<CredentialEntry>, CoreError> {
         };
         let (name, value) = line.split_once('=').ok_or_else(line_error)?;
         let name = name.trim();
+        let value = value.trim();
         if name.is_empty() {
             return Err(line_error());
         }

@@ -26,7 +26,13 @@ pub struct DomainSettings {
     pub terms_accepted: bool,
     pub certificate: CertificateState,
     pub caa: CaaState,
+    /// 建议加的那条 CAA `issue` 记录（整条，含 accounturi 和当前 CA 身份）；认不出 CA 或账号时为空。
+    #[serde(default)]
+    pub caa_record: Option<String>,
     pub lan_record: LanRecordState,
+    /// `*.lan.<后缀>` 应指向的本机局域网地址；选不出时为空。
+    #[serde(default)]
+    pub lan_target: Option<String>,
 }
 
 /// `PUT` [`clients_domain_path`](crate::clients_domain_path) 的请求体。

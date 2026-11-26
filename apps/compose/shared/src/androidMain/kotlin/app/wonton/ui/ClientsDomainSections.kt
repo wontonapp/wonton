@@ -153,6 +153,7 @@ internal fun CertificateSection(view: ClientsDomainViewModel, send: (Action) -> 
                 text = stringResource(R.string.clients_domain_retry),
                 onClick = { send(Action.Clients(ClientsAction.RetryCertificate)) },
                 kind = WontonButtonKind.SECONDARY,
+                enabled = !view.saving,
             )
         }
         view.certificate.details?.let { ProblemDetail(it) }
@@ -187,8 +188,9 @@ internal fun LanSection(view: ClientsDomainViewModel) {
             )
             else -> SupportingText(stringResource(R.string.clients_domain_lan_unknown))
         }
-        view.lanRecordName?.let {
-            RecordRow("$it A ${stringResource(R.string.clients_domain_lan_address)}")
+        view.lanRecordName?.let { name ->
+            val target = view.lanTarget ?: stringResource(R.string.clients_domain_lan_address)
+            RecordRow("$name A $target")
         }
     }
 }

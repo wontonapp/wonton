@@ -2,6 +2,8 @@ clients-domain-terms = Accept the Let's Encrypt subscriber agreement first
 
 clients-domain-suffix = Enter a domain
 
+clients-domain-suffix-invalid = Use lowercase letters, digits, “-” and “.”
+
 clients-domain-provider = Choose a DNS provider
 
 clients-domain-credentials = Fill in the provider's credentials

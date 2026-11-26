@@ -88,64 +88,6 @@
           }
         }
       }
-    },
-    "joining.failure.pendingApproval" : {
-      "localizations" : {
-        "en" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "Waiting for an admin to approve"
-          }
-        },
-        "zh-Hans" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "等待管理员同意"
-          }
-        },
-        "zh-Hant" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "等待管理員同意"
-          }
-        },
-        "ja" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "管理者の承認待ち"
-          }
-        }
-      },
-      "extractionState" : "manual"
-    },
-    "joining.nextStep.pending" : {
-      "localizations" : {
-        "en" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "We'll continue automatically once an admin approves."
-          }
-        },
-        "zh-Hans" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "管理员同意后会自动继续配对。"
-          }
-        },
-        "zh-Hant" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "管理員同意後會自動繼續配對。"
-          }
-        },
-        "ja" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "承認されると自動で続行します。"
-          }
-        }
-      },
-      "extractionState" : "manual"
     }
   }
 }

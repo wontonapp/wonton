@@ -87,6 +87,8 @@ impl CertificateManager {
         // 其余请求照旧走代理。
         if let Ok(url) = url::Url::parse(&self.config.directory_url)
             && let Some(host) = url.host_str()
+            // 公网目录（Let's Encrypt 生产/staging）要靠宿主的代理出网，不能绕开；容器名和局域网地址才直连。
+            && (!host.contains('.') || host.parse::<std::net::IpAddr>().is_ok())
         {
             let existing = std::env::var("NO_PROXY")
                 .or_else(|_| std::env::var("no_proxy"))

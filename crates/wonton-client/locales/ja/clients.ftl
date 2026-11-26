@@ -2,6 +2,8 @@ clients-domain-terms = 先に Let's Encrypt の加入者契約に同意してく
 
 clients-domain-suffix = ドメインを入力してください
 
+clients-domain-suffix-invalid = 小文字の英数字と「-」「.」だけを使ってください
+
 clients-domain-provider = DNS プロバイダーを選んでください
 
 clients-domain-credentials = プロバイダーの認証情報を入力してください

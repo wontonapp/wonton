@@ -6,8 +6,9 @@
 //!
 //! 凭据只在签发时写成 lego 的 dotenv（0600），只挂进 lego 容器，用完删掉。
 
-use std::collections::BTreeMap;
+use std::collections::{BTreeMap, BTreeSet};
 use std::io::Cursor;
+use std::net::{IpAddr, Ipv4Addr};
 use std::path::{Path, PathBuf};
 use std::sync::Arc;
 use std::sync::atomic::{AtomicUsize, Ordering};
@@ -15,11 +16,12 @@ use std::sync::atomic::{AtomicUsize, Ordering};
 use anyhow::{Context, Result, bail, ensure};
 use serde::{Deserialize, Serialize};
 use tokio::sync::Mutex;
+use tokio::sync::watch;
 use wonton_protocol::{
     CaaState, CertificateState, CredentialEntry, DomainSettings, LanRecordState, PutDomainRequest,
 };
 
-use crate::entry_certificate::{CertificateConfig, CertificateManager, validate_domain};
+use crate::entry_certificate::{CertificateConfig, CertificateManager};
 use crate::entry_settings::{EntrySettings, parse_resolvers};
 use crate::matrix::NoticeRoom;
 use crate::plugin::docker::Engine;
@@ -66,6 +68,12 @@ impl Store {
 /// 设置项的失败，接口按类别回 400 或 409。
 #[derive(Debug, thiserror::Error)]
 pub enum DomainError {
+    /// 固定说法，值是 `gateway.ftl` 的 id，接口按 App 的语言写。
+    #[error("{0}")]
+    InvalidKey(&'static str),
+    #[error("{0}")]
+    ConflictKey(&'static str),
+    /// 动态说法（读文件、解析外部返回值失败）。
     #[error("{0}")]
     Invalid(String),
     #[error("{0}")]
@@ -91,6 +99,8 @@ pub struct Domain {
     pub(crate) pending: AtomicUsize,
     /// 设置文件的读写锁，签发不占着它。
     writes: Mutex<()>,
+    /// 选出来的局域网地址（隧道宣告的那组）；设置页据此给 A 记录该指向哪里。
+    lan: std::sync::Mutex<Option<watch::Receiver<BTreeSet<IpAddr>>>>,
     /// CAA 结果的短缓存（后缀加账号为键，60 秒）：设置页刷新别每次都等 DNS。
     caa_cache: Mutex<Option<(std::time::Instant, String, CaaState)>>,
     /// 新证书发布后叫醒续期循环：下一轮对账按新证书重写入口配置再重载。
@@ -121,9 +131,18 @@ impl Domain {
             issuance: Mutex::new(()),
             pending: AtomicUsize::new(0),
             writes: Mutex::new(()),
+            lan: std::sync::Mutex::new(None),
             caa_cache: Mutex::new(None),
             refresh: tokio::sync::Notify::new(),
         })
+    }
+
+    /// 接上局域网地址的广播；设置页的 `*.lan` 记录从这里取该指向的地址。
+    pub fn set_lan(&self, addresses: watch::Receiver<BTreeSet<IpAddr>>) {
+        *self
+            .lan
+            .lock()
+            .unwrap_or_else(|poisoned| poisoned.into_inner()) = Some(addresses);
     }
 
     /// 装机时定的服务器名（`entry/settings.json` 的 `domain`）。有它后缀就不能改。
@@ -268,6 +287,7 @@ impl Domain {
     pub async fn view(&self) -> Result<DomainSettings> {
         let store = self.effective()?;
         let fixed = self.fixed_suffix()?;
+        let (lan_record, lan_target) = self.lan_state(&store).await;
         Ok(DomainSettings {
             suffix: fixed.clone().or(store.suffix.clone()),
             suffix_editable: fixed.is_none(),
@@ -278,7 +298,9 @@ impl Domain {
             terms_accepted: store.terms_accepted,
             certificate: self.certificate_state(&store),
             caa: self.caa_state(&store).await,
-            lan_record: LanRecordState::Unknown,
+            caa_record: self.caa_record(&store).await,
+            lan_record,
+            lan_target,
         })
     }
 
@@ -286,9 +308,7 @@ impl Domain {
     /// 凭据为空时沿用已存的；家名服务的安装本来就不用服务商和凭据，两者也都可空。
     pub async fn save(self: &Arc<Self>, request: PutDomainRequest) -> Result<Saved, DomainError> {
         if !request.accept_terms {
-            return Err(DomainError::Invalid(
-                "先勾选 Let's Encrypt 的订户协议".into(),
-            ));
+            return Err(DomainError::InvalidKey("clients-domain-terms-required"));
         }
         let settings = EntrySettings::load(&self.install_dir).map_err(invalid)?;
         // 主人自己放了 site.pem 的安装不跑 ACME：收下设置也没人签，直接说清楚。
@@ -296,8 +316,8 @@ impl Domain {
             .as_ref()
             .is_some_and(|settings| settings.external_certificate)
         {
-            return Err(DomainError::Conflict(
-                "装的是自己的证书（WONTON_ENTRY_CERTIFICATE=external），核心不签发".into(),
+            return Err(DomainError::ConflictKey(
+                "clients-domain-external-certificate",
             ));
         }
         let registered = settings
@@ -324,9 +344,7 @@ impl Domain {
                             .as_deref()
                             .is_some_and(|value| value != fixed)
                         {
-                            return Err(DomainError::Conflict(
-                                "服务器名已经定了，后缀只能换服务商和凭据".into(),
-                            ));
+                            return Err(DomainError::ConflictKey("clients-domain-fixed-suffix"));
                         }
                         fixed.clone()
                     }
@@ -335,8 +353,12 @@ impl Domain {
                             .suffix
                             .clone()
                             .or_else(|| previous.clone())
-                            .ok_or_else(|| DomainError::Invalid("先填一个后缀".into()))?;
-                        validate_domain(&suffix).map_err(invalid)?;
+                            .ok_or_else(|| {
+                                DomainError::InvalidKey("clients-domain-suffix-required")
+                            })?;
+                        if let Some(id) = suffix_problem(&suffix) {
+                            return Err(DomainError::InvalidKey(id));
+                        }
                         suffix
                     }
                 };
@@ -353,8 +375,8 @@ impl Domain {
                     && !(registered && provider.is_empty())
                     && (provider_changed || !store.has_credentials())
                 {
-                    return Err(DomainError::Invalid(
-                        "首次配置或换服务商时要一起提交这个服务商的凭据".into(),
+                    return Err(DomainError::InvalidKey(
+                        "clients-domain-credentials-required",
                     ));
                 }
                 store.suffix = Some(suffix);
@@ -444,7 +466,11 @@ impl Domain {
         // 都写成旧的，续期从此对不上。
         match self.effective() {
             Ok(current) if current.clone().issuance_snapshot() == snapshot.issuance_snapshot() => {
-                self.issue_locked(&current).await
+                if self.fresh(&current) {
+                    tracing::info!("证书还新且上次没失败，跳过重复的签发");
+                } else {
+                    self.issue_locked(&current).await;
+                }
             }
             Ok(_) => {
                 tracing::info!("签发任务排队期间设置已变更，跳过这次（按新设置另排的任务负责）");
@@ -454,6 +480,22 @@ impl Domain {
             }
         }
         self.pending.fetch_sub(1, Ordering::SeqCst);
+    }
+
+    /// 证书还新（到期超过 30 天）且上一次没失败：重复点保存/重试不必再签一次。
+    fn fresh(&self, store: &Store) -> bool {
+        if store.last_error.is_some() {
+            return false;
+        }
+        let now_ms = std::time::SystemTime::now()
+            .duration_since(std::time::UNIX_EPOCH)
+            .map(|elapsed| elapsed.as_millis() as u64)
+            .unwrap_or(0);
+        matches!(
+            self.certificate_state(store),
+            CertificateState::Valid { not_after_ms }
+                if not_after_ms > now_ms + 30 * 24 * 60 * 60 * 1000
+        )
     }
 
     /// 持有签发锁时真正跑一轮签发；结果进设置文件，失败原证书保留。
@@ -635,21 +677,24 @@ impl Domain {
         fallback.flatten()
     }
 
+    /// 当前 CA 的身份和本机账号：CAA 记录和判定都要这两样。
+    async fn caa_binding(&self, store: &Store) -> Option<(String, String)> {
+        let acme = self.acme().ok()?;
+        // 认不出当前 CA 的身份就不猜：显示 Unknown，签发路径会当场拒绝。
+        let identity = crate::entry_dns::caa_identity(&acme.directory_url)?;
+        let manager = self.manager(store).ok()?;
+        let account = manager.account_uri().ok()?;
+        Some((account, identity))
+    }
+
     async fn caa_state(&self, store: &Store) -> CaaState {
         let Some(suffix) = store.suffix.as_deref() else {
             return CaaState::Unknown;
         };
+        let Some((account, identity)) = self.caa_binding(store).await else {
+            return CaaState::Unknown;
+        };
         let Ok(acme) = self.acme() else {
-            return CaaState::Unknown;
-        };
-        // 认不出当前 CA 的身份就不猜：显示 Unknown，签发路径会当场拒绝。
-        let Some(identity) = crate::entry_dns::caa_identity(&acme.directory_url) else {
-            return CaaState::Unknown;
-        };
-        let Ok(manager) = self.manager(store) else {
-            return CaaState::Unknown;
-        };
-        let Ok(account) = manager.account_uri() else {
             return CaaState::Unknown;
         };
         let key = format!("{suffix}|{account}|{identity}");
@@ -667,6 +712,56 @@ impl Domain {
         state
     }
 
+    /// `*.lan` 现在指哪、该指哪：选不出本机地址就是 Unknown（不猜）；查不到 DNS 也只给目标。
+    async fn lan_state(&self, store: &Store) -> (LanRecordState, Option<String>) {
+        let Some(suffix) = store.suffix.as_deref() else {
+            return (LanRecordState::Unknown, None);
+        };
+        let Some(target) = self.lan_address() else {
+            return (LanRecordState::Unknown, None);
+        };
+        let target = target.to_string();
+        let Ok(acme) = self.acme() else {
+            return (LanRecordState::Unknown, Some(target));
+        };
+        match crate::entry_dns::lan_a(suffix, &acme.resolvers).await {
+            Ok(found) if found.is_empty() => (LanRecordState::Missing, Some(target)),
+            Ok(found) if found.iter().any(|ip| ip.to_string() == target) => {
+                (LanRecordState::Ok, Some(target))
+            }
+            Ok(found) => (
+                LanRecordState::Wrong {
+                    found: found[0].to_string(),
+                },
+                Some(target),
+            ),
+            Err(_) => (LanRecordState::Unknown, Some(target)),
+        }
+    }
+
+    /// 广播里第一个 IPv4（`A` 记录只收 v4）。
+    fn lan_address(&self) -> Option<Ipv4Addr> {
+        let guard = self
+            .lan
+            .lock()
+            .unwrap_or_else(|poisoned| poisoned.into_inner());
+        let receiver = guard.as_ref()?;
+        let addresses = receiver.borrow().clone();
+        addresses.into_iter().find_map(|address| match address {
+            IpAddr::V4(v4) => Some(v4),
+            IpAddr::V6(_) => None,
+        })
+    }
+
+    /// 照抄就能变成 `Bound` 的那条 `issue` 记录（RFC 8657 限定到本机账号）。
+    async fn caa_record(&self, store: &Store) -> Option<String> {
+        let suffix = store.suffix.as_deref()?;
+        let (account, identity) = self.caa_binding(store).await?;
+        Some(format!(
+            "{suffix}. CAA 0 issue \"{identity}; accounturi={account}; validationmethods=dns-01\""
+        ))
+    }
+
     async fn notify(&self, id: &str, error: &str) {
         let Some(notices) = &self.notices else {
             return;
@@ -679,6 +774,28 @@ impl Domain {
             tracing::error!(%error, "入口状态通知失败");
         }
     }
+}
+
+/// 后缀不合法时给哪条本地化说法；规则和 `validate_domain` 一致，只是按 App 的语言分。
+fn suffix_problem(suffix: &str) -> Option<&'static str> {
+    if suffix.is_empty() || suffix.len() > 253 || !suffix.contains('.') {
+        return Some("clients-domain-suffix-invalid");
+    }
+    if suffix.split('.').any(|label| {
+        label.is_empty()
+            || label.len() > 63
+            || label.starts_with('-')
+            || label.ends_with('-')
+            || !label
+                .bytes()
+                .all(|c| c.is_ascii_lowercase() || c.is_ascii_digit() || c == b'-')
+    }) {
+        return Some("clients-domain-suffix-invalid");
+    }
+    if suffix.parse::<std::net::IpAddr>().is_ok() {
+        return Some("clients-domain-suffix-ip");
+    }
+    None
 }
 
 fn invalid(error: anyhow::Error) -> DomainError {

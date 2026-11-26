@@ -6,7 +6,10 @@ use std::sync::atomic::Ordering;
 
 use tokio::sync::watch;
 
-use wonton_protocol::{CoreError, PagesViewModel, TimelineTarget};
+use wonton_protocol::{
+    CaaState, ClientsDomainCertificate, ClientsDomainProvider, ClientsDomainState,
+    ClientsDomainViewModel, CoreError, LanRecordState, PagesViewModel, TimelineTarget,
+};
 
 use super::super::ClientCore;
 use super::super::ui_fake_devices;
@@ -91,7 +94,7 @@ impl ClientCore {
             friends: watch::Sender::new(current.friends.borrow().clone()),
             family: watch::Sender::new(current.family.borrow().clone()),
             bot_contacts: watch::Sender::new(current.bot_contacts.borrow().clone()),
-            clients_domain: watch::Sender::new(current.clients_domain.borrow().clone()),
+            clients_domain: watch::Sender::new(fake_clients_domain()),
             // 假数据下设置页带着当前值：真设置页的构建循环订阅着被丢弃的旧接收器，开起来会停在
             // 未配对的状态，设置里的“添加设备”走不通。
             settings: watch::Sender::new(ui_fake_settings::fake_settings(
@@ -109,5 +112,43 @@ impl ClientCore {
             .views
             .write()
             .unwrap_or_else(|poisoned| poisoned.into_inner()) = views;
+    }
+}
+
+/// 假设置页：已配好一个后缀、deSEC 一项，证书和 CAA 都停在需要处理的状态。
+fn fake_clients_domain() -> ClientsDomainViewModel {
+    ClientsDomainViewModel {
+        state: ClientsDomainState::Ready,
+        suffix: Some("wonton.lan".into()),
+        suffix_editable: true,
+        providers: vec![
+            ClientsDomainProvider {
+                code: Some("desec".into()),
+                name: "deSEC".into(),
+                recommended: true,
+                signup_url: Some("https://desec.io".into()),
+                credential_vars: vec!["DESEC_TOKEN".into()],
+            },
+            ClientsDomainProvider {
+                code: None,
+                name: String::new(),
+                recommended: false,
+                signup_url: None,
+                credential_vars: Vec::new(),
+            },
+        ],
+        selected_provider: Some("desec".into()),
+        credential_vars: vec!["DESEC_TOKEN".into()],
+        terms_accepted: true,
+        certificate: ClientsDomainCertificate::default(),
+        caa: CaaState::Missing,
+        caa_record: Some(
+            "wonton.lan. CAA 0 issue \"letsencrypt.org; accounturi=https://acme-v02.api.letsencrypt.org/acme/acct/1; validationmethods=dns-01\""
+                .into(),
+        ),
+        lan_record: LanRecordState::Missing,
+        lan_record_name: Some("*.lan.wonton.lan".into()),
+        lan_target: Some("192.0.2.10".into()),
+        ..ClientsDomainViewModel::default()
     }
 }

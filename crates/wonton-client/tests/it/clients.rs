@@ -49,7 +49,9 @@ fn domain(
         terms_accepted,
         certificate,
         caa: CaaState::Missing,
+        caa_record: None,
         lan_record: LanRecordState::Ok,
+        lan_target: None,
     })
     .unwrap()
 }
@@ -288,4 +290,114 @@ async fn other_provider_parses_key_values() {
             {"name": "FOO", "value": "bar"},
         ])
     );
+}
+
+/// GET 失败要落成失败态（壳才有话和重试），重试成功后回 Ready。
+#[tokio::test]
+async fn load_failure_is_a_failed_page_and_retry_recovers() {
+    let rig = Rig::new().await;
+    rig.core
+        .answer_always(Method::GET, &dns_providers_path(), Canned(200, presets()));
+    rig.core.answer_always(
+        Method::GET,
+        &clients_domain_path(),
+        Canned(
+            StatusCode::UNPROCESSABLE_ENTITY.as_u16(),
+            json!({"error": {"kind": "core_not_in_container", "message": "core is not in its container"}})
+                .to_string(),
+        ),
+    );
+    rig.connected().await;
+    rig.app
+        .dispatch(wonton_client::Action::Clients {
+            action: ClientsAction::RefreshDomain,
+        })
+        .unwrap();
+    let failed = wait_domain(&rig, |view| {
+        matches!(view.state, ClientsDomainState::Failed { .. })
+    })
+    .await;
+    assert!(
+        matches!(&failed.state, ClientsDomainState::Failed { .. }),
+        "{failed:?}"
+    );
+
+    rig.core.answer_always(
+        Method::GET,
+        &clients_domain_path(),
+        Canned(
+            200,
+            domain(Some("desec"), true, false, true, CertificateState::None),
+        ),
+    );
+    rig.app
+        .dispatch(wonton_client::Action::Clients {
+            action: ClientsAction::RefreshDomain,
+        })
+        .unwrap();
+    let ready = wait_domain(&rig, |view| view.state == ClientsDomainState::Ready).await;
+    assert_eq!(ready.suffix.as_deref(), Some("example.test"));
+}
+
+/// CAA 整条记录和 `*.lan` 的目标地址都由服务端给，客户端不改写。
+#[tokio::test]
+async fn caa_record_and_lan_target_come_from_the_server() {
+    let rig = Rig::new().await;
+    let mut json: Value = serde_json::from_str(&domain(
+        Some("desec"),
+        true,
+        true,
+        true,
+        CertificateState::None,
+    ))
+    .unwrap();
+    json["caa_record"] = Value::String(
+        "example.test. CAA 0 issue \"pebble; accounturi=https://pebble:14000/acme/acct/1; validationmethods=dns-01\""
+            .into(),
+    );
+    json["lan_target"] = Value::String("192.0.2.10".into());
+    ready(&rig, json.to_string()).await;
+    let view = rig.app.clients_domain();
+    assert_eq!(
+        view.caa_record.as_deref(),
+        Some(
+            "example.test. CAA 0 issue \"pebble; accounturi=https://pebble:14000/acme/acct/1; validationmethods=dns-01\""
+        )
+    );
+    assert_eq!(view.lan_target.as_deref(), Some("192.0.2.10"));
+    assert_eq!(view.lan_record_name.as_deref(), Some("*.lan.example.test"));
+}
+
+/// 后缀在客户端就规范成小写、去掉末尾点，再交给核心。
+#[tokio::test]
+async fn suffix_is_lowercased_and_dot_trimmed() {
+    let rig = Rig::new().await;
+    ready(
+        &rig,
+        domain(Some("desec"), true, true, true, CertificateState::None),
+    )
+    .await;
+    rig.core.answer_always(
+        Method::PUT,
+        &clients_domain_path(),
+        Canned(
+            200,
+            domain(Some("desec"), true, true, true, CertificateState::None),
+        ),
+    );
+    rig.app
+        .dispatch(wonton_client::Action::Clients {
+            action: save(
+                Some("Example.TEST."),
+                Some("desec"),
+                vec![("DESEC_TOKEN", "secret")],
+                "",
+                true,
+            ),
+        })
+        .unwrap();
+    wait_domain(&rig, |view| !view.saving).await;
+    let seen = rig.core.seen(&Method::PUT, &clients_domain_path());
+    let body: Value = serde_json::from_str(&seen[0].body).unwrap();
+    assert_eq!(body["suffix"], "example.test");
 }

@@ -45,10 +45,13 @@ pub struct ClientsDomainViewModel {
     pub certificate: ClientsDomainCertificate,
     /// CAA 现在对不对；建议加时 `record` 是整条记录。
     pub caa: CaaState,
+    /// 建议加的那条 CAA 记录（整条，核心拼好）；只在需要加时给。
     pub caa_record: Option<String>,
     pub lan_record: LanRecordState,
     /// `*.lan.<后缀>` 里“要加的那一条”的名字部分；没有后缀时为空。
     pub lan_record_name: Option<String>,
+    /// 这条 A 记录该指向的本机局域网地址；选不出时为空，壳显示占位。
+    pub lan_target: Option<String>,
     /// 选中的是 deSEC：壳在“详情”里放注册和限定令牌的步骤。
     pub desec: bool,
     /// 正在保存。
@@ -74,6 +77,7 @@ impl Default for ClientsDomainViewModel {
             caa_record: None,
             lan_record: LanRecordState::Unknown,
             lan_record_name: None,
+            lan_target: None,
             desec: false,
             saving: false,
             problem: None,

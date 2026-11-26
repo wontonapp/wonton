@@ -256,12 +256,18 @@ final class ClientsDomainWalkthroughTests: XCTestCase {
     /// CAA 建议整条可复制；`*.lan` 记录也在这一页。
     private func assertCaaAndLan() {
         XCTAssertTrue(app.staticTexts["CAA"].waitForExistence(timeout: 20), "没有 CAA 一节")
-        XCTAssertTrue(
-            app.staticTexts.matching(NSPredicate(format: "label CONTAINS 'CAA 0 issue'")).firstMatch.exists,
-            "CAA 没有给出记录"
-        )
+        // 整条记录要能直接照抄：带当前 CA 身份（开发栈是 pebble）、本机账号和 dns-01，缺一条都到不了“已限定”。
+        let caa = app.staticTexts.matching(
+            NSPredicate(format: "label CONTAINS 'CAA 0 issue \"pebble;' AND label CONTAINS 'accounturi=' AND label CONTAINS 'validationmethods=dns-01'")
+        ).firstMatch
+        XCTAssertTrue(caa.exists, "CAA 记录不完整：\(app.debugDescription)")
         shot("06-caa")
         app.swipeUp()
+        // 局域网记录要写出具体地址，不是“this host's LAN address”占位。
+        let lan = app.staticTexts.matching(
+            NSPredicate(format: "label BEGINSWITH '*.lan.' AND label CONTAINS ' A 192.168.'")
+        ).firstMatch
+        XCTAssertTrue(lan.exists, "局域网记录没写地址：\(app.debugDescription)")
         shot("07-lan")
     }
 

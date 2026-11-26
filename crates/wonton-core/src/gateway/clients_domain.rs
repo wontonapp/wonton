@@ -58,6 +58,12 @@ pub async fn save_domain(
     };
     let saved = match clients.save(request).await {
         Ok(saved) => saved,
+        Err(crate::clients::domain::DomainError::InvalidKey(id)) => {
+            return failure(ClientsFailure::InvalidInput, &l10n::text(&langs, id, &[]));
+        }
+        Err(crate::clients::domain::DomainError::ConflictKey(id)) => {
+            return failure(ClientsFailure::Conflict, &l10n::text(&langs, id, &[]));
+        }
         Err(crate::clients::domain::DomainError::Invalid(message)) => {
             return failure(ClientsFailure::InvalidInput, &message);
         }

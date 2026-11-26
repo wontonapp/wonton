@@ -129,7 +129,8 @@ extension ClientsDomainView {
             case .unknown, .other: secondary(String(localized: .Clients.clientsDomainLanUnknown))
             }
             if let name = viewModel.lanRecordName {
-                recordLine("\(name) A \(String(localized: .Clients.clientsDomainLanAddress))")
+                let target = viewModel.lanTarget ?? String(localized: .Clients.clientsDomainLanAddress)
+                recordLine("\(name) A \(target)")
             }
         }
     }

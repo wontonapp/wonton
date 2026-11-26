@@ -87,9 +87,13 @@ fn domain() -> DomainSettings {
             error: "propagation timed out".into(),
         },
         caa: CaaState::Missing,
+        caa_record: Some(
+            "example.test. CAA 0 issue \"letsencrypt.org; accounturi=https://acme-v02.api.letsencrypt.org/acme/acct/1; validationmethods=dns-01\"".into(),
+        ),
         lan_record: LanRecordState::Wrong {
             found: "192.0.2.1".into(),
         },
+        lan_target: Some("192.0.2.10".into()),
     }
 }
 
