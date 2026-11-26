@@ -125,16 +125,17 @@ pub(super) fn caller_ready(gateway: &Gateway, caller: &CallerFacts) -> bool {
 }
 
 fn access_of(gateway: &Gateway, bot: &BotRef, facts: &BotIdentityAndContactFacts) -> BotAccess {
+    // 记录有没有，和调用人认不认得出来无关：没建出来的行照样说“缺记录”，不先说“不知道”。
+    let Some(record) = facts.bot.as_ref() else {
+        return BotAccess::Unusable {
+            reason: BotChatUnavailable::BotMissing,
+        };
+    };
     if !caller_ready(gateway, &facts.caller) {
         return BotAccess::Unknown;
     }
     let CallerFacts::Known { person, .. } = &facts.caller else {
         return BotAccess::Unknown;
-    };
-    let Some(record) = facts.bot.as_ref() else {
-        return BotAccess::Unusable {
-            reason: BotChatUnavailable::BotMissing,
-        };
     };
     // 自己的 Bot 和已经成立的联系人不靠 `open_apps` 才成立：Matrix 那边照样收。
     if matches!(&record.listing.keeper, BotKeeper::User { username } if username == &person.username)

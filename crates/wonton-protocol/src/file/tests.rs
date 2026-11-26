@@ -517,6 +517,7 @@ fn room_row(room_id: &str, name: &str) -> RoomRow {
         direct_user_id: None,
         plugin: None,
         bot_chat: None,
+        bot: None,
         is_encrypted: true,
         is_read_only: false,
         membership: crate::RoomMembership::Joined,

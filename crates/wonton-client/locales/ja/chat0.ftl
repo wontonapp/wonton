@@ -116,3 +116,4 @@ chat-window-ended =
     }
 
 chat-choice-send-failed-rejected = 送れませんでした：自宅サーバーに拒否されました。（{ $error }）
+chat-my-bot = マイ Bot

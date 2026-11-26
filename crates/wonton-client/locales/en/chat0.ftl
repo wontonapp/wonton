@@ -128,3 +128,4 @@ chat-window-ended =
     }
 
 chat-choice-send-failed-rejected = Not sent: the home server refused it. ({ $error })
+chat-my-bot = My Bot

@@ -17,6 +17,7 @@ impl Bots {
         });
         self.view.send_modify(|view| view.bots = views);
         drop(local);
+        self.publish_contacts();
         self.update_activity();
         for id in refresh {
             self.refresh(&id);

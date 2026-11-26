@@ -28,6 +28,7 @@ fn empty_view() -> ChatViewModel {
         },
         installing_bots: Vec::new(),
         rooms: Vec::new(),
+        shared_contacts: Vec::new(),
         problem: None,
         push: wonton_protocol::PushStatus::NoEndpoint,
         pending_confirmations: Vec::new(),
