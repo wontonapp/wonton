@@ -90,7 +90,7 @@
 
 ### 5. 清单和规范的改动
 
-- 清单新增顶层 `terminal: { service: terminal }`：`service` 必须是 `bots.services` 里的一项，写别的服务、写不存在的服务都不合法。核心靠它找终端服务，设置页和状态也靠它。清单 `spec` 从 0.12 升到 0.16（核心现行支持的版本）；老核心读 0.16 清单在安装时拒绝，不会悄悄忽略新字段。
+- 清单新增顶层 `terminal: { service: terminal }`：`service` 必须是 `bots.services` 里的一项，写别的服务、写不存在的服务都不合法。核心靠它找终端服务，设置页和状态也靠它。清单 `spec` 从 0.16 升到 0.17：实现 PR 里 bump 核心的 `SPEC_VERSION` 并在 `spec_floor` 表加 `terminal` 这一行；老核心读 0.17 清单在安装时拒绝，不会悄悄忽略新字段。
 - 修订 ADR-0036 的“两条不变”第 1 条（原文已就地标注）：声明了 `terminal` 的插件，**只在这一个服务上**可以申请 `devices./dev/fuse`（高，本来就可以）、`cap.SYS_ADMIN`（最高）和 `docker.socket`（最高，可选、默认随档 2 打开）；别的插件仍然不能申请很高和最高级。风险级别不变，安装确认照旧把两项最高风险单独醒目列出，并加一句“给这个 Bot 的终端容器”。
 - ADR-0036 的“两条不变”改成三条（原文已改）：宿主 shell 仍然没有；容器内 shell 不等于宿主，终端容器的 `SYS_ADMIN` 只用来挂 FUSE；`SYS_ADMIN` 只加在终端服务，socket 只在网关（Mirage 后端在网关）。ADR-0091 的“危险模式压过所有每次都问”也已就地补上“档 2 的 ask 卡片例外”。
 - 校验沿用现有成对规则：清单声明权限、compose 写字段、核心校验两边对得上；`cap.SYS_ADMIN`/`docker.socket` 出现在别的服务上、或 `terminal.service` 不在 `bots.services` 里，清单不合法。
@@ -163,7 +163,7 @@
 8. 家人 Bot 的 ask 只发给归属人；管理员视图能看到。
 9. 变更档位时的重启时延和对正在跑的会话的影响。
 10. `bash -lc 'rm …'`、`env rm`、`xargs rm` 怎么绕过规则；按 argv 前缀匹配或策略脚本哪个够用。
-11. 0.16 清单在旧核心上的拒绝文案。
+11. 0.17 清单在旧核心上的拒绝文案。
 12. `deny` 记录带 `session` 时，Mirage 是否真的不再问（`_spent`/`waiting` 会不会消费 deny 答案）。
 
 ## 验证结果
