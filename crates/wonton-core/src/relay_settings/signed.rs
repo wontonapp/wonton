@@ -42,7 +42,7 @@ pub(super) async fn fetch(
         .build()
         .map_err(|error| format!("建 HTTP 客户端：{error}"))?;
     let data = get(&client, url).await?;
-    let signature_url = format!("{url}.minisig");
+    let signature_url = signature_url(url)?;
     let signature_text = get(&client, &signature_url).await?;
     let signature_text = String::from_utf8(signature_text)
         .map_err(|_| "签名文件不是 UTF-8 的 minisign 签名".to_owned())?;
@@ -72,6 +72,15 @@ fn verified(data: &[u8], signature_text: &str, public_key_b64: &str) -> Result<R
     .to_layer()
     .map(|layer| layer.relays)
     .map_err(|reason| format!("签名列表不合法：{reason}"))
+}
+
+/// 签名和列表同目录、同查询：`…/relays.json?x=1` 的签名是 `…/relays.json.minisig?x=1`，
+/// 不在 query 后面直接拼 `.minisig`。
+fn signature_url(url: &str) -> Result<String, String> {
+    let mut parsed =
+        reqwest::Url::parse(url).map_err(|error| format!("列表地址不合法：{error}"))?;
+    parsed.set_path(&format!("{}.minisig", parsed.path()));
+    Ok(parsed.into())
 }
 
 async fn get(client: &reqwest::Client, url: &str) -> Result<Vec<u8>, String> {
@@ -110,10 +119,27 @@ fn redact_url(url: &str) -> String {
     let Some((scheme, rest)) = url.split_once("://") else {
         return url.to_owned();
     };
-    match rest.split_once('@') {
-        Some((_, host)) => format!("{scheme}://<redacted>@{host}"),
-        None => url.to_owned(),
-    }
+    // userinfo 只可能在第一个 `/`、`?`、`#` 之前；query 里的 `@` 不算。
+    let end = rest.find(['/', '?', '#']).unwrap_or(rest.len());
+    let (authority, tail) = rest.split_at(end);
+    let authority = match authority.split_once('@') {
+        Some((_, host)) => format!("<redacted>@{host}"),
+        None => authority.to_owned(),
+    };
+    // query 里常常是令牌：键保留，值一律打码。
+    let tail = match tail.split_once('?') {
+        Some((head, query)) => {
+            let keys: Vec<_> = query
+                .split('&')
+                .filter(|pair| !pair.is_empty())
+                .map(|pair| pair.split('=').next().unwrap_or(pair))
+                .map(|key| format!("{key}=<redacted>"))
+                .collect();
+            format!("{head}?{}", keys.join("&"))
+        }
+        None => tail.to_owned(),
+    };
+    format!("{scheme}://{authority}{tail}")
 }
 
 #[cfg(test)]
@@ -172,6 +198,32 @@ mod tests {
         assert_eq!(
             redact_url("https://relay.example.org"),
             "https://relay.example.org"
+        );
+    }
+
+    #[test]
+    fn the_signature_url_gets_a_sig_path_before_the_query() {
+        assert_eq!(
+            signature_url("https://relay.example.org/a/relays.json?token=x").unwrap(),
+            "https://relay.example.org/a/relays.json.minisig?token=x"
+        );
+    }
+
+    #[test]
+    fn a_query_token_is_redacted_in_errors() {
+        let shown = redact_url("https://relay.example.org/relays.json?token=x&v=1");
+        assert_eq!(
+            shown,
+            "https://relay.example.org/relays.json?token=<redacted>&v=<redacted>"
+        );
+        assert!(!shown.contains("=x"));
+    }
+
+    #[test]
+    fn an_at_sign_in_the_query_is_not_mistaken_for_userinfo() {
+        assert_eq!(
+            redact_url("https://relay.example.org/p?email=a@b&v=1"),
+            "https://relay.example.org/p?email=<redacted>&v=<redacted>"
         );
     }
 

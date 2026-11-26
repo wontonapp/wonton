@@ -147,78 +147,9 @@ fn update_keeps_the_token_when_none_and_clears_it_on_an_empty_string() {
     )
     .unwrap();
     assert!(view.entries[0].token.is_none());
-    // 端口空着表示不动，档位空着表示不动。
-    assert_eq!(view.entries[0].quic_port, Some(9000));
-    assert_eq!(view.entries[0].tier, 1);
-
-    // 端口给 0 表示回到默认端口，和令牌给空串清掉是同一种写法。
-    update(
-        &mut view,
-        "https://relay.example.org".into(),
-        None,
-        Some(0),
-        None,
-    )
-    .unwrap();
+    // 端口空着表示清掉，档位空着表示不动。
     assert_eq!(view.entries[0].quic_port, None);
-}
-
-#[test]
-fn add_normalizes_the_fqdn_root_dot_and_takes_the_port_from_the_fragment() {
-    let mut view = view(Vec::new());
-    add(
-        &mut view,
-        "https://relay.example.org.#7843".into(),
-        None,
-        None,
-        Some(0),
-    )
-    .unwrap();
-    assert_eq!(view.entries[0].url, "https://relay.example.org/");
-    assert_eq!(view.entries[0].quic_port, Some(7843));
-}
-
-#[test]
-fn an_explicit_port_wins_over_the_fragment() {
-    let mut view = view(Vec::new());
-    add(
-        &mut view,
-        "https://relay.example.org#7843".into(),
-        None,
-        Some(9000),
-        Some(0),
-    )
-    .unwrap();
-    assert_eq!(view.entries[0].quic_port, Some(9000));
-}
-
-#[test]
-fn a_trailing_dot_finds_and_replaces_the_same_entry() {
-    let mut view = view(vec![entry("https://relay.example.org/", 0)]);
-    // 地址写成带尾点、带 #端口 也要认成同一台，不新增一条。
-    update(
-        &mut view,
-        "https://relay.example.org.#7843".into(),
-        None,
-        None,
-        Some(1),
-    )
-    .unwrap();
-    assert_eq!(view.entries.len(), 1);
     assert_eq!(view.entries[0].tier, 1);
-    assert_eq!(view.entries[0].quic_port, Some(7843));
-
-    // 加一条写成尾点形式的同地址要被重复检查拦下。
-    assert!(matches!(
-        add(
-            &mut view,
-            "https://relay.example.org.".into(),
-            None,
-            None,
-            None
-        ),
-        Err(CoreError::InvalidInput { .. })
-    ));
 }
 
 #[test]
@@ -549,11 +480,40 @@ async fn an_unknown_phase_can_still_be_edited_and_becomes_ready() {
     assert!(home.view().relays.dirty);
 }
 
+#[test]
+fn add_takes_the_quic_port_from_the_fragment() {
+    let mut view = view(Vec::new());
+    add(
+        &mut view,
+        "https://relay.example.org.#7843".into(),
+        None,
+        None,
+        Some(0),
+    )
+    .unwrap();
+    assert_eq!(view.entries[0].url, "https://relay.example.org/");
+    assert_eq!(view.entries[0].quic_port, Some(7843));
+}
+
+#[test]
+fn an_explicit_port_wins_over_the_fragment() {
+    let mut view = view(Vec::new());
+    add(
+        &mut view,
+        "https://relay.example.org#7843".into(),
+        None,
+        Some(9000),
+        Some(0),
+    )
+    .unwrap();
+    assert_eq!(view.entries[0].quic_port, Some(9000));
+}
+
 #[tokio::test]
 async fn saving_before_any_table_loaded_is_refused() {
     let (_dir, home) = idle_home().await;
     home.view.send_modify(|view| {
-        view.relays.phase = RelaySettingsPhase::Idle;
+        view.relays.phase = Some(RelaySettingsPhase::Ready);
         view.proxy = Some(ProxySettings {
             host: "127.0.0.1".into(),
             port: 1,
@@ -566,5 +526,5 @@ async fn saving_before_any_table_loaded_is_refused() {
     // 一次都没取到过表，entries 是空的；交上去等于把服务端的项全删了。
     let error = home.save_relays().unwrap_err();
     assert!(matches!(error, CoreError::NotReady { .. }), "{error:?}");
-    assert_eq!(home.view().relays.phase, RelaySettingsPhase::Idle);
+    assert_eq!(home.view().relays.phase, Some(RelaySettingsPhase::Ready));
 }

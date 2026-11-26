@@ -11,8 +11,8 @@
 //! 内置的 n0 公共中继默认总在最后一档兜底（ADR-0048）；主人配置写 `no-n0`（环境变量）或
 //! `"n0": false`（文件）就去掉。
 //!
-//! 换表当场生效：差的地址 `remove_relay`、新地址 `insert_relay`（iroh#4642：换掉已有的项不会重连，
-//! 所以地址或令牌变了先删再插），回退任务换一张表从头算。只有最优先一档放进 endpoint。
+//! 换表当场生效：旧表和新表出现过的地址全部撤出 map，只放新表最优先一档，回退任务换表从头算。
+//! 地址或令牌变了靠先删再插让 iroh 重新握手（iroh#4642：换掉已有的项不会重连）。
 
 mod file;
 mod signed;
@@ -227,6 +227,9 @@ struct State {
     file: Option<PathBuf>,
     endpoint: Option<Endpoint>,
     fallback: Option<TierFallbackHandle>,
+    /// 我们要求 endpoint 持有的中继地址，attach 时记第一档、换表时按撤/插更新。
+    /// 回退任务自己插进来的高档不在这里（它在同一张表上操作），换表时按 `old ∪ new` 清。
+    mapped: std::collections::BTreeSet<RelayUrl>,
 }
 
 /// 一台服务器现在的中继表。
@@ -291,7 +294,12 @@ impl RelaySettings {
             Some(env) => env.clone(),
             None => match &startup.file {
                 Some(path) => match std::fs::read_to_string(path) {
-                    Ok(text) => file::parse(path, &text)?,
+                    Ok(text) => {
+                        if let Some(warning) = file::permission_warning(path) {
+                            warnings.push(warning);
+                        }
+                        file::parse(path, &text)?
+                    }
                     Err(error) if error.kind() == std::io::ErrorKind::NotFound => OwnerLayer {
                         relays: RelayTable::default(),
                         n0: true,
@@ -323,6 +331,7 @@ impl RelaySettings {
                 file: startup.file,
                 endpoint: None,
                 fallback: None,
+                mapped: std::collections::BTreeSet::new(),
             }),
             apply: Mutex::new(()),
         })
@@ -350,6 +359,7 @@ impl RelaySettings {
                 file: None,
                 endpoint: None,
                 fallback: None,
+                mapped: std::collections::BTreeSet::new(),
             }),
             apply: Mutex::new(()),
         }
@@ -360,6 +370,13 @@ impl RelaySettings {
         let mut state = self.state.write().expect("中继表锁中毒");
         state.endpoint = Some(endpoint);
         state.fallback = Some(fallback);
+        // bind 只放了最优先一档；记录它是为了换表时对得上，高档由回退任务自己插。
+        state.mapped = state
+            .resolved
+            .tier(0)
+            .iter()
+            .map(|relay| relay.url.clone())
+            .collect();
     }
 
     /// 只给测试：把这张表标成由环境变量固定，`save` 一律回 [`SaveError::Locked`]。
@@ -445,53 +462,78 @@ impl RelaySettings {
             relays: RelayTable::from_relays(relays),
             n0: update.n0,
         };
+        let (old, file_to_write) = {
+            let state = self.state.read().expect("中继表锁中毒");
+            let old = state.resolved.clone();
+            let file_to_write = file.as_ref().map(|path| {
+                let keep: std::collections::BTreeSet<_> = owner
+                    .relays
+                    .relays()
+                    .iter()
+                    .map(|relay| relay.url.clone())
+                    .collect();
+                // n0 兜底那一组可能不在 base 里（base 只有内置和签名），不把它们算进 lower
+                // 的话，删掉的 n0 地址没记进 remove，下次启动会被自动加回来。表里一项 n0 都
+                // 没有时当作「就要 n0 兜底」，把 n0 从 lower 里去掉，这样把 n0 关掉再打开能
+                // 整组补回来。
+                let mut lower = lower_urls(&state.base);
+                let draft_has_n0 = owner
+                    .relays
+                    .relays()
+                    .iter()
+                    .any(|relay| is_public_relay(&relay.url));
+                if update.n0 {
+                    if draft_has_n0 {
+                        lower.extend(n0_relays(0).map(|relay| relay.url));
+                    } else {
+                        lower.retain(|url| !is_public_relay(url));
+                    }
+                }
+                let remove = lower
+                    .into_iter()
+                    .filter(|url| !keep.contains(url))
+                    .collect();
+                (path.clone(), OwnerFile::from_layer(&owner, remove))
+            });
+            (old, file_to_write)
+        };
         let resolved = resolve(&base, &owner);
-        if let Some(path) = &file {
-            let keep: std::collections::BTreeSet<_> = owner
-                .relays
-                .relays()
-                .iter()
-                .map(|relay| relay.url.clone())
-                .collect();
-            // n0 兜底那一组可能不在 base 里（base 只有内置和签名），不把它们算进 lower 的话，删掉
-            // 的 n0 地址没记进 remove，下次启动会被自动加回来。表里一项 n0 都没有时当作「就要
-            // n0 兜底」，把 n0 从 lower 里去掉，这样把 n0 关掉再打开能整组补回来。
-            let mut lower = lower_urls(&base);
-            let draft_has_n0 = owner
-                .relays
-                .relays()
-                .iter()
-                .any(|relay| is_public_relay(&relay.url));
-            if update.n0 {
-                if draft_has_n0 {
-                    lower.extend(n0_relays(0).map(|relay| relay.url));
-                } else {
-                    lower.retain(|url| !is_public_relay(url));
+        // 先把 endpoint 换到新表；失败就换回旧表，状态和文件都还没动。
+        if let Err(error) = self.sync_endpoint(&old, &resolved).await {
+            self.rollback_endpoint(&resolved, &old).await;
+            return Err(SaveError::Apply(error.to_string()));
+        }
+        if let Some((path, file)) = file_to_write
+            && let Err(error) = file::write(&path, &file)
+        {
+            self.rollback_endpoint(&resolved, &old).await;
+            return Err(SaveError::Store(error.to_string()));
+        }
+        // endpoint 已经换好了才提交状态：中途失败时内存里仍是旧表，重启再按文件来。
+        {
+            let mut state = self.state.write().expect("中继表锁中毒");
+            state.owner = owner;
+            state.resolved = resolved.clone();
+            state.sources = sources_of(&state.base, &state.signed, &state.owner);
+            // 文件刚被写成 0600，之前那条 0644 的权限警告要重新算，不能留在设置页上。
+            if let Some(path) = &file {
+                let prefix = format!("{} 的权限", path.display());
+                state
+                    .warnings
+                    .retain(|warning| !warning.starts_with(&prefix));
+                if let Some(warning) = file::permission_warning(path) {
+                    state.warnings.push(warning);
                 }
             }
-            let remove = lower
-                .into_iter()
-                .filter(|url| !keep.contains(url))
-                .collect();
-            let file = OwnerFile::from_layer(&owner, remove);
-            file::write(path, &file).map_err(|error| SaveError::Store(error.to_string()))?;
         }
-        let old = {
-            let mut state = self.state.write().expect("中继表锁中毒");
-            let old = std::mem::replace(&mut state.resolved, resolved.clone());
-            state.owner = owner;
-            state.sources = sources_of(&state.base, &state.signed, &state.owner);
-            old
-        };
-        self.apply_map(&old, &resolved)
-            .await
-            .map_err(|error| SaveError::Apply(error.to_string()))?;
         Ok(self.snapshot())
     }
 
-    /// 只把最优先一档放进 endpoint；令牌或端口变了的地址先删再插，让 iroh 重新握手。低档只撤掉
-    /// 表里已经换掉或删掉的旧项，插回由回退任务负责。
-    async fn apply_map(&self, old: &RelayTable, new: &RelayTable) -> anyhow::Result<()> {
+    /// 把 endpoint 的中继换成 `new`：先把两张表里出现过的地址全部撤出 map（回退任务插进来的高档
+    /// 也在 `old` 里），只把新表最优先一档放回去，再让回退任务按新表从头算。
+    ///
+    /// 只同步第一档会留下旧高档：删掉/换了令牌的档 1、2 一直留在 map 里继续被拨。
+    async fn sync_endpoint(&self, old: &RelayTable, new: &RelayTable) -> anyhow::Result<()> {
         let (endpoint, fallback_attached) = {
             let state = self.state.read().expect("中继表锁中毒");
             (state.endpoint.clone(), state.fallback.as_ref().map(|_| ()))
@@ -499,38 +541,21 @@ impl RelaySettings {
         let Some(endpoint) = endpoint else {
             return Ok(());
         };
-        let first_tier = |table: &RelayTable| -> Vec<Relay> {
-            if table.tier_count() == 0 {
-                Vec::new()
-            } else {
-                table.tier(0).to_vec()
-            }
-        };
-        let before = first_tier(old);
-        let after = first_tier(new);
-        for relay in &before {
-            let keep = after.iter().any(|next| same_connection(next, relay));
-            if !keep {
-                endpoint.remove_relay(&relay.url).await;
-            }
+        if endpoint.is_closed() {
+            anyhow::bail!("隧道 endpoint 已关闭，中继表换不了");
         }
-        for relay in &after {
-            let existing = before
-                .iter()
-                .any(|previous| same_connection(previous, relay));
-            if !existing {
+        for relay in old.relays().iter().chain(new.relays()) {
+            endpoint.remove_relay(&relay.url).await;
+            let mut state = self.state.write().expect("中继表锁中毒");
+            state.mapped.remove(&relay.url);
+        }
+        if new.tier_count() > 0 {
+            for relay in new.tier(0) {
                 endpoint
                     .insert_relay(relay.url.clone(), Arc::new(relay.relay_config()))
                     .await;
-            }
-        }
-        // 低档（1 档起）由回退任务按需插进 endpoint，这里只把表里已经换掉或删掉的撤出来：
-        // iroh 的 insert_relay 对已存在的地址不重连、不换令牌，留着旧项会让新令牌永远不生效。
-        // 撤掉后回退任务启用这一档时按新表重插（代价是切档前照旧有 FALLBACK_AFTER 的等待）。
-        for relay in old.relays().iter().filter(|relay| relay.tier > 0) {
-            let keep = new.relays().iter().any(|next| same_connection(next, relay));
-            if !keep {
-                endpoint.remove_relay(&relay.url).await;
+                let mut state = self.state.write().expect("中继表锁中毒");
+                state.mapped.insert(relay.url.clone());
             }
         }
         if fallback_attached.is_some() {
@@ -541,11 +566,13 @@ impl RelaySettings {
         }
         Ok(())
     }
-}
 
-/// 两条表项是不是同一个连接（地址、令牌、端口都一样）。
-fn same_connection(left: &Relay, right: &Relay) -> bool {
-    left.url == right.url && left.token == right.token && left.quic_port == right.quic_port
+    /// 换表失败时把 endpoint 换回旧表。换不回来只记日志：内存里仍是旧表，重启会按文件恢复。
+    async fn rollback_endpoint(&self, attempted: &RelayTable, old: &RelayTable) {
+        if let Err(error) = self.sync_endpoint(attempted, old).await {
+            tracing::warn!(%error, "中继表：换表失败后回滚 endpoint 也失败");
+        }
+    }
 }
 
 fn owner_entry(entry: &RelaySettingUpdate) -> Result<Relay, SaveError> {

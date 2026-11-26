@@ -124,7 +124,12 @@ fn discovery(gateway: &Gateway, server_name: &str, path: &str) -> Response {
                     url.set_password(None).ok()?;
                     url.set_query(None);
                     url.set_fragment(None);
-                    Some(url.into())
+                    // `Url` 的序列化会给非空路径补尾斜杠，配对码和连接信息用不带的那种；GET/HEAD 一致。
+                    let mut text = url.as_str().to_owned();
+                    if text.ends_with('/') && url.path() != "/" {
+                        text.pop();
+                    }
+                    Some(text)
                 })
                 .collect(),
         })
