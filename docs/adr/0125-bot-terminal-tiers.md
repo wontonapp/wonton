@@ -56,6 +56,7 @@
 | `devices: ["/dev/fuse:/dev/fuse"]` | 终端服务 | `mirage-fuse` 在容器里挂 FUSE 视图 |
 | `cap_add: ["SYS_ADMIN"]` | 终端服务 | 容器里 `mount()` 只认这个能力；能挂 FUSE 就是这个能力给的全部 |
 | `/var/run/docker.sock`（可选权限，默认随档 2 打开） | **只有网关服务** | 网关里的 Mirage 后端要 `docker exec` 进终端容器；终端容器本身没有 docker |
+| `security_opt: [apparmor:unconfined]`（`security.opt`，最高） | 终端服务 | docker-default 的 AppArmor 不让容器 `mount` FUSE；豁免整份 profile |
 | 不挂宿主目录 | — | 视图是 FUSE 挂上来的，不是 bind mount |
 | 不给 `network_mode: host`、不给 `privileged`、不给设备、不给 GPU | — | 需要时由插件按既有权限另申请 |
 
@@ -91,7 +92,7 @@
 ### 5. 清单和规范的改动
 
 - 清单新增顶层 `terminal: { service: terminal }`：`service` 必须是 `bots.services` 里的一项，写别的服务、写不存在的服务都不合法。核心靠它找终端服务，设置页和状态也靠它。清单 `spec` 从 0.16 升到 0.17：实现 PR 里 bump 核心的 `SPEC_VERSION` 并在 `spec_floor` 表加 `terminal` 这一行；老核心读 0.17 清单在安装时拒绝，不会悄悄忽略新字段。
-- 修订 ADR-0036 的“两条不变”第 1 条（原文已就地标注）：声明了 `terminal` 的插件，**只在这一个服务上**可以申请 `devices./dev/fuse`（高，本来就可以）、`cap.SYS_ADMIN`（最高）和 `docker.socket`（最高，可选、默认随档 2 打开）；别的插件仍然不能申请很高和最高级。风险级别不变，安装确认照旧把两项最高风险单独醒目列出，并加一句“给这个 Bot 的终端容器”。
+- 修订 ADR-0036 的“两条不变”第 1 条（原文已就地标注）：声明了 `terminal` 的插件，**只在这一个服务上**可以申请 `devices./dev/fuse`（高，本来就可以）、`cap.SYS_ADMIN`（最高）、`docker.socket`（最高，可选、默认随档 2 打开）和 `security.opt`（最高，只用来关掉 AppArmor 的 docker-default）；别的插件仍然不能申请很高和最高级。风险级别不变，安装确认照旧把两项最高风险单独醒目列出，并加一句“给这个 Bot 的终端容器”。
 - ADR-0036 的“两条不变”改成三条（原文已改）：宿主 shell 仍然没有；容器内 shell 不等于宿主，终端容器的 `SYS_ADMIN` 只用来挂 FUSE；`SYS_ADMIN` 只加在终端服务，socket 只在网关（Mirage 后端在网关）。ADR-0091 的“危险模式压过所有每次都问”也已就地补上“档 2 的 ask 卡片例外”。
 - 校验沿用现有成对规则：清单声明权限、compose 写字段、核心校验两边对得上；`cap.SYS_ADMIN`/`docker.socket` 出现在别的服务上、或 `terminal.service` 不在 `bots.services` 里，清单不合法。
 - 契约（新能力检查单）：ask 的线上格式是 HTTP JSON（见第 4 节），核心侧是 `AgentPermissionRequest`；提供方是 Mirage 的 fork（`ask_url` 回调）；消费方是 Hermes 的终端后端。随试点交一份契约 fixture（`pilot/contract/ask.json`：`approve`/`session`/`deny`/`deny_session` 四组 action，加超时、不可达、回包读不懂三组请求/回答样例）和按它跑的映射测试；换提供方时只实现同一份协议，消费方不改。
@@ -168,4 +169,10 @@
 
 ## 验证结果
 
-（试点完成后回填：命令、输出和本轮结果 `tasks/mirage-pilot.result.md` 的路径；上一轮证据是 `tasks/mirage-test.result.md`。）
+试点在 194 开发栈（`miragepilot`，fork 分支 `wonton/on-ask`）跑，完整记录和命令在 `tasks/mirage-pilot.result.md`，上一轮证据在 `tasks/mirage-test.result.md`。
+
+- 已验证：容器里的 `cat` 和 `python3` 读隐藏的 `.env` 都是 `Permission denied`；`pip`/`wget` 的 ask 落成 `policy denied`（126）；ask 的四种回答、超时、不可达、回包读不懂七组契约全过；超时按拒绝。
+- 部分：`allow` 的“本会话”只在同一会话内生效（同一命令第二次不问，`[1,0]`）；共享模型的 500/超时会打穿用例，跑批自带三次重试。
+- 仍开：待验证 4/5/6/7/8/9/10/12 未做，逐条在结果文件的“没做/未验证”。
+- 安装侧新发现：**一次跑批超过 480 秒会把插件判成 `degraded`**（即使容器 RUNNING/HEALTHY），所以跑批服务要常驻并只靠 `/health` 就绪（常驻后再放宽 healthcheck 的超时和重试，避免共享机器上一次抖动被判死）。
+- 权限侧新发现：只给 `SYS_ADMIN` 还不够，docker-default 的 AppArmor 会挡容器里的 `mount`，终端服务必须带 `security_opt: [apparmor:unconfined]`；这也成了清单的第四个最高权限项（见第 5 节）。
