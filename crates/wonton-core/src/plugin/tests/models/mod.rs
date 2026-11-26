@@ -5,6 +5,7 @@
 
 mod injection;
 mod lifecycle;
+mod reconcile;
 
 mod support;
 
@@ -13,6 +14,8 @@ mod support;
 pub(super) use injection::*;
 #[allow(unused_imports)]
 pub(super) use lifecycle::*;
+#[allow(unused_imports)]
+pub(super) use reconcile::*;
 pub(super) use support::*;
 
 pub(super) use std::collections::BTreeMap;
