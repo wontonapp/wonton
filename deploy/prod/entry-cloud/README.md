@@ -121,7 +121,7 @@ certbot certonly --webroot -w /var/www/letsencrypt \
 for h in "$WONTON_NAMES_HOST" "$WONTON_PUSH_HOST" "$WONTON_RELAY_HOST"; do
   certbot certonly --webroot -w /var/www/letsencrypt -d "$h" --email "$WONTON_ACME_EMAIL" --agree-tos --non-interactive
 done
-certbot certonly --webroot -w /var/www/letsencrypt \
+certbot certonly --expand --webroot -w /var/www/letsencrypt \
   -d "$WONTON_OMARCHY_HOST" -d "omarchy.$WONTON_DOMAIN" \
   --email "$WONTON_ACME_EMAIL" --agree-tos --non-interactive
 systemctl reload nginx

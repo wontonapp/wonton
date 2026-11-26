@@ -51,7 +51,12 @@ def secret(path: Path, mode: int = 0o600) -> str:
 
 def render(template: Path, dest: Path, values: dict[str, str], mode: int = 0o644) -> None:
     text = template.read_text()
-    rendered = re.sub(r"@([A-Z0-9_]+)@", lambda m: need(values, m.group(1)), text)
+    # Empty is meaningful for the optional omarchy alias when it equals the main name.
+    rendered = re.sub(
+        r"@([A-Z0-9_]+)@",
+        lambda m: values.get(m.group(1), "") if m.group(1) == "OMARCHY_ALT_DOMAIN" else need(values, m.group(1)),
+        text,
+    )
     write(dest, rendered, mode)
 
 
@@ -110,6 +115,9 @@ def main() -> None:
                        ("WONTON_NAMES_HOST", "NAMES_HOST"), ("WONTON_OMARCHY_HOST", "OMARCHY_HOST")):
         values[short] = need(values, key)
     values["PUBLIC_SERVICE_URL"] = f"https://{values['NAMES_HOST']}"
+    values["OMARCHY_ALT_DOMAIN"] = (
+        "" if values["OMARCHY_HOST"] == f"omarchy.{values['DOMAIN']}" else f"omarchy.{values['DOMAIN']}"
+    )
     # Filled from the generated secret below; do not generate a second value.
 
     root = Path(args.root)

@@ -20,6 +20,7 @@ probe() {
 probe "apex https" "https://$DOMAIN/" 301
 probe "www https" "https://www.$DOMAIN/" 301
 probe "omarchy https" "https://$OMARCHY/" 200
+probe "omarchy alias https" "https://omarchy.$DOMAIN/" 200
 probe "push health" "https://$PUSH/healthz" 200
 probe "relay health" "https://$RELAY/healthz" 200
 probe "names health" "https://$NAMES/health" 200

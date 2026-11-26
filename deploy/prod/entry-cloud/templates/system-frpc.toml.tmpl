@@ -39,33 +39,17 @@ localPort = 4443
 transport.proxyProtocolVersion = "v2"
 
 [[proxies]]
-name = "omarchy-dns-https"
-type = "https"
-customDomains = ["omarchy.@DOMAIN@"]
-localIP = "127.0.0.1"
-localPort = 4443
-transport.proxyProtocolVersion = "v2"
-
-[[proxies]]
 name = "omarchy-https"
 type = "https"
-customDomains = ["@OMARCHY_HOST@"]
+customDomains = ["@OMARCHY_HOST@", "@OMARCHY_ALT_DOMAIN@"]
 localIP = "127.0.0.1"
 localPort = 4443
-transport.proxyProtocolVersion = "v2"
-
-[[proxies]]
-name = "omarchy-dns-http"
-type = "http"
-customDomains = ["omarchy.@DOMAIN@"]
-localIP = "127.0.0.1"
-localPort = 4080
 transport.proxyProtocolVersion = "v2"
 
 [[proxies]]
 name = "omarchy-http"
 type = "http"
-customDomains = ["@OMARCHY_HOST@"]
+customDomains = ["@OMARCHY_HOST@", "@OMARCHY_ALT_DOMAIN@"]
 localIP = "127.0.0.1"
 localPort = 4080
 transport.proxyProtocolVersion = "v2"

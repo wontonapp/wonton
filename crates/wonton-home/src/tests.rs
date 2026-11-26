@@ -779,7 +779,7 @@ fn system_frpc_template_names_are_bare_valid_labels() {
         .filter_map(|line| line.trim().strip_prefix("name = \""))
         .map(|name| name.trim_end_matches('"'))
         .collect();
-    assert_eq!(names.len(), 11, "{names:?}");
+    assert_eq!(names.len(), 9, "{names:?}");
     for name in names {
         assert!(crate::config::valid_label(name), "{name}");
     }
