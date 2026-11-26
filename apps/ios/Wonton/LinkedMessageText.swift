@@ -2,6 +2,41 @@ import SwiftUI
 import UIKit
 import WontonClient
 
+/// 带链接那一块的属性串：每个片段自己的字体和属性，末尾接一段 `.clear` 的占位。
+/// 和 `RichTextInline` 是同一条占位规则，只是这里给 UITextView 用 NSAttributedString，两种串合不成一个类型。
+enum LinkedMessageAttributes {
+    static func text(
+        _ block: RichBlock, ink: Color, fontSize: CGFloat, line: CGFloat, reserve: String?
+    ) -> NSAttributedString {
+        let text = NSMutableAttributedString(string: "")
+        let paragraph = NSMutableParagraphStyle()
+        paragraph.lineSpacing = max(0, line - UIFont.systemFont(ofSize: fontSize).lineHeight)
+        for span in block.spans {
+            var font = span.code ? UIFont.monospacedSystemFont(ofSize: fontSize, weight: .regular)
+                : UIFont.systemFont(ofSize: fontSize, weight: block.kind == .heading ? .medium : .regular)
+            var traits = font.fontDescriptor.symbolicTraits
+            if span.bold { traits.insert(.traitBold) }
+            if span.italic { traits.insert(.traitItalic) }
+            if let descriptor = font.fontDescriptor.withSymbolicTraits(traits) {
+                font = UIFont(descriptor: descriptor, size: fontSize)
+            }
+            var attributes: [NSAttributedString.Key: Any] = [
+                .font: font, .foregroundColor: UIColor(ink), .paragraphStyle: paragraph
+            ]
+            if span.strike { attributes[.strikethroughStyle] = NSUnderlineStyle.single.rawValue }
+            if span.code { attributes[.backgroundColor] = UIColor(ink.opacity(WontonTheme.ratio.codeFill)) }
+            if let link = span.link, let url = URL(string: link.url) { attributes[.link] = url }
+            text.append(NSAttributedString(string: span.text, attributes: attributes))
+        }
+        if let reserve {
+            text.append(NSAttributedString(string: reserve, attributes: [
+                .foregroundColor: UIColor.clear, .font: UIFont.preferredFont(forTextStyle: .caption1)
+            ]))
+        }
+        return text
+    }
+}
+
 /// UITextView supplies per-link menus and accessibility; classification stays in RichLink from the core.
 struct LinkedMessageText: UIViewRepresentable {
     let block: RichBlock
@@ -54,32 +89,7 @@ struct LinkedMessageText: UIViewRepresentable {
     func makeCoordinator() -> Coordinator { Coordinator(parent: self) }
 
     private var attributedText: NSAttributedString {
-        let text = NSMutableAttributedString(string: "")
-        let paragraph = NSMutableParagraphStyle()
-        paragraph.lineSpacing = max(0, line - UIFont.systemFont(ofSize: fontSize).lineHeight)
-        for span in block.spans {
-            var font = span.code ? UIFont.monospacedSystemFont(ofSize: fontSize, weight: .regular)
-                : UIFont.systemFont(ofSize: fontSize, weight: block.kind == .heading ? .medium : .regular)
-            var traits = font.fontDescriptor.symbolicTraits
-            if span.bold { traits.insert(.traitBold) }
-            if span.italic { traits.insert(.traitItalic) }
-            if let descriptor = font.fontDescriptor.withSymbolicTraits(traits) {
-                font = UIFont(descriptor: descriptor, size: fontSize)
-            }
-            var attributes: [NSAttributedString.Key: Any] = [
-                .font: font, .foregroundColor: UIColor(ink), .paragraphStyle: paragraph
-            ]
-            if span.strike { attributes[.strikethroughStyle] = NSUnderlineStyle.single.rawValue }
-            if span.code { attributes[.backgroundColor] = UIColor(ink.opacity(WontonTheme.ratio.codeFill)) }
-            if let link = span.link, let url = URL(string: link.url) { attributes[.link] = url }
-            text.append(NSAttributedString(string: span.text, attributes: attributes))
-        }
-        if let reserve {
-            text.append(NSAttributedString(string: reserve, attributes: [
-                .foregroundColor: UIColor.clear, .font: UIFont.preferredFont(forTextStyle: .caption1)
-            ]))
-        }
-        return text
+        LinkedMessageAttributes.text(block, ink: ink, fontSize: fontSize, line: line, reserve: reserve)
     }
 
     @MainActor
