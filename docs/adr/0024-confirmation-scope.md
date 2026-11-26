@@ -1,6 +1,6 @@
 # ADR-0024 确认的授权粒度：放宽、撤销和主人亲自操作
 
-- 状态：已接受（2026-11-03）。取舍由主人确认（见“已定”）。补充 ADR-0016。判定的第 1 步已被 [ADR-0027](0027-bot-save-file.md) 和 [ADR-0033](0033-plugin-tabs.md) 取代：Bot 更新自己写的插件，权限没变宽时不发卡片；家人和有 Bot 联系人的 Bot 怎么放宽由 [ADR-0045](0045-family-members.md) 定；非归属人发起的轮次不放宽，见 [ADR-0083](0083-bot-contacts-and-group-chat.md)。2026-11-12 主人加了“每次都问的三类”（见该节），“没选的做法”里排除 `destructiveHint` 的那条随之改写。2026-11-26 加 `wonton__dispatch_task` 例外（[ADR-0123](0123-hubs-and-managed-devices.md)）。 2026-11-27 “始终允许”加“选中的工具”粒度，远端 MCP 装好后变了的工具不吃放宽（[ADR-0127](0127-plugin-forms-and-install-trust.md) 第 3、5 节）。
+- 状态：已接受（2026-11-03）。取舍由主人确认（见“已定”）。补充 ADR-0016。判定的第 1 步已被 [ADR-0027](0027-bot-save-file.md) 和 [ADR-0033](0033-plugin-tabs.md) 取代：Bot 更新自己写的插件，权限没变宽时不发卡片；家人和有 Bot 联系人的 Bot 怎么放宽由 [ADR-0045](0045-family-members.md) 定；非归属人发起的轮次不放宽，见 [ADR-0083](0083-bot-contacts-and-group-chat.md)。 2026-11-27：ADR-0127 §3 加了“只放行点名的工具”这档粒度，本 ADR 的判定第 2 步、接口表、`policy.json` 形状、审计 `basis` 要跟着补（清单见 ADR-0127 §3），实现前以本 ADR 为准。2026-11-12 主人加了“每次都问的三类”（见该节），“没选的做法”里排除 `destructiveHint` 的那条随之改写。2026-11-26 加 `wonton__dispatch_task` 例外（[ADR-0123](0123-hubs-and-managed-devices.md)）。 2026-11-27 “始终允许”加“选中的工具”粒度，远端 MCP 装好后变了的工具不吃放宽（[ADR-0127](0127-plugin-forms-and-install-trust.md) 第 3、5 节）。
 
 ## 背景
 

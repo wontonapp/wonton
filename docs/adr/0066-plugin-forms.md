@@ -328,7 +328,7 @@
   核心按 `input` 值展开后经 `X-Wonton-Remote-Url` 交给连接器；连接器不再读密钥库。连接器生成的错误和日志不写完整地址、
   路径、查询参数或请求头值，不转述可能回显这些内容的底层传输错误。
 - **装时握手是 `POST /_wonton/probe`，返回分类 JSON。** 请求体是 `url`、`auth` 和核心展开后的 `headers`；返回
-  `outcome`、可选 `http_status`、不含密钥的 `detail`、可选工具名 `tools`。成功时完成初始化通知，再按协商的协议版本和
+  `outcome`、可选 `http_status`、不含密钥的 `detail`、可选工具定义 `tools`（已被 ADR-0127 §5 改写：名字、说明、`inputSchema`、注解都要返回，预览时也探）。成功时完成初始化通知，再按协商的协议版本和
   会话取工具，用完删除会话；OAuth 的授权接口另按第 3a 节实现。此细则取代早期公开规范里的 GET/204 简写。
 - **兼容旧式 HTTP+SSE（主人 2026-11-14 定）。** 先试 Streamable HTTP；初始化 POST 回 400/404/405 时再 GET，
   首个有效事件为 `endpoint` 才切换旧传输，握手分类仍为 `legacy_sse`，不再据此拒装。旧传输保持一条远端 SSE，
