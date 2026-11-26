@@ -7,7 +7,9 @@ use futures_util::future::BoxFuture;
 use hyper::HeaderMap;
 use hyper::header::{AUTHORIZATION, ORIGIN};
 use serde_json::{Value, json};
-use wonton_protocol::{BotKeeper, ContactEvent, ContactState};
+use wonton_protocol::{
+    AppScope, BotAccess, BotKeeper, ContactEvent, ContactState, DEFAULT_INVITE_ROLE, RoleDraft,
+};
 
 use super::*;
 use crate::contacts::tests::{FakeDirectory, FakeEffects, FakeInvites};
@@ -51,6 +53,7 @@ impl Fixture {
             harness.http.clone(),
             harness.tunnel.clone(),
         );
+        open_all_apps(&gateway);
         Self { gateway, harness }
     }
 
@@ -129,6 +132,27 @@ impl Fixture {
     }
 }
 
+/// 种子角色默认一个应用都不开放；本文件的用例只测 Bot 归属和联系人，让角色能打开插件。
+fn open_all_apps(gateway: &Gateway) {
+    for id in ["admin", "family", "child", DEFAULT_INVITE_ROLE] {
+        let Some(role) = gateway.roles.get(id) else {
+            continue;
+        };
+        let mut permissions = role.permissions.clone();
+        permissions.open_apps = AppScope::All;
+        gateway
+            .roles
+            .update(
+                &role.id,
+                &RoleDraft {
+                    name: id.to_owned(),
+                    permissions,
+                },
+            )
+            .unwrap();
+    }
+}
+
 fn bot(name: &str) -> BotRef {
     BotRef {
         plugin_id: PLUGIN.into(),
@@ -189,7 +213,7 @@ async fn a_person_contact_grant_toggles_chat_availability() {
         assert_eq!(
             chat_availability(&fixture.gateway, &facts),
             BotChatAvailability::Unavailable {
-                reason: BotChatUnavailable::OwnerPrivate
+                reason: BotChatUnavailable::ContactPending,
             },
             "{state}"
         );
@@ -214,11 +238,75 @@ async fn a_person_contact_grant_toggles_chat_availability() {
         assert_eq!(
             chat_availability(&fixture.gateway, &facts),
             BotChatAvailability::Unavailable {
-                reason: BotChatUnavailable::GrantNotActive
+                reason: BotChatUnavailable::ContactDeclined
             },
             "{state}"
         );
     }
+}
+
+fn access(fixture: &Fixture, peer: TunnelPeer, reference: &BotRef) -> BotAccess {
+    bot_access(&fixture.gateway, Some(peer), &HeaderMap::new(), reference).unwrap()
+}
+
+#[tokio::test]
+async fn app_scope_and_shared_bots_gate_access_before_contacts() {
+    let fixture = Fixture::new().await;
+    let alice = fixture.member("alice", "@alice:test");
+    let reference = bot("shared");
+    fixture.seed(&[(
+        "shared",
+        "@shared:test",
+        BotKeeper::Household,
+        "!shared-home:test",
+    )]);
+    fixture.gateway.members.set_role("alice", "family").unwrap();
+
+    let family = fixture.gateway.roles.get("family").unwrap();
+    let mut permissions = family.permissions.clone();
+    permissions.open_apps = AppScope::Selected {
+        plugin_ids: vec!["app.other".into()],
+    };
+    fixture
+        .gateway
+        .roles
+        .update(
+            "family",
+            &RoleDraft {
+                name: "family".into(),
+                permissions,
+            },
+        )
+        .unwrap();
+    assert_eq!(
+        access(&fixture, alice, &reference),
+        BotAccess::Unusable {
+            reason: BotChatUnavailable::AppNotShared
+        }
+    );
+
+    // 插件开了、角色能听共享 Bot：共享。
+    fixture.gateway.members.set_role("alice", "admin").unwrap();
+    assert_eq!(access(&fixture, alice, &reference), BotAccess::Shared);
+}
+
+#[tokio::test]
+async fn household_bot_without_shared_bots_says_role_lacks_it() {
+    let fixture = Fixture::new().await;
+    let alice = fixture.member("alice", "@alice:test");
+    let reference = bot("shared");
+    fixture.seed(&[(
+        "shared",
+        "@shared:test",
+        BotKeeper::Household,
+        "!shared-home:test",
+    )]);
+    assert_eq!(
+        access(&fixture, alice, &reference),
+        BotAccess::Unusable {
+            reason: BotChatUnavailable::RoleLacksSharedBots
+        }
+    );
 }
 
 #[tokio::test]
@@ -253,7 +341,7 @@ async fn ownership_and_role_decide_own_shared_and_other_bots() {
     assert_eq!(
         availability(alice, &bot("shared")),
         BotChatAvailability::Unavailable {
-            reason: BotChatUnavailable::Other
+            reason: BotChatUnavailable::RoleLacksSharedBots
         }
     );
     fixture.gateway.members.set_role("alice", "family").unwrap();
@@ -263,9 +351,7 @@ async fn ownership_and_role_decide_own_shared_and_other_bots() {
     );
     assert_eq!(
         availability(alice, &bot("future")),
-        BotChatAvailability::Unavailable {
-            reason: BotChatUnavailable::Other
-        }
+        BotChatAvailability::Unknown
     );
 }
 
