@@ -3,6 +3,7 @@
 use bollard::models::{MountType, RestartPolicyNameEnum};
 
 use super::compose::DependCondition;
+pub(super) use super::docker;
 use super::hostdir::Owner;
 use super::manifest::{Permission, Sso};
 use super::package::{PackageError, PluginPackage};
