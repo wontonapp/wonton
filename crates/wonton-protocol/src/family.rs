@@ -856,6 +856,14 @@ mod tests {
             .unwrap(),
             json!({"state": "unusable", "reason": "app_not_shared"})
         );
+        // 记录缺失走同一层 tag：`state` 不能丢，否则客户端分不出“用不了”和“不知道”。
+        assert_eq!(
+            serde_json::to_value(BotAccess::Unusable {
+                reason: BotChatUnavailable::BotMissing
+            })
+            .unwrap(),
+            json!({"state": "unusable", "reason": "bot_missing"})
+        );
         assert_eq!(
             serde_json::from_value::<BotAccess>(json!({"state": "team"})).unwrap(),
             BotAccess::Unknown
@@ -867,6 +875,15 @@ mod tests {
         assert_eq!(
             serde_json::from_value::<BotChatUnavailable>(json!("owner_private")).unwrap(),
             BotChatUnavailable::OwnerPrivate
+        );
+        // 旧核心还会发旧值，别让它掉进 `Other`。
+        assert_eq!(
+            serde_json::from_value::<BotChatUnavailable>(json!("other_private_bot")).unwrap(),
+            BotChatUnavailable::OwnerPrivate
+        );
+        assert_eq!(
+            serde_json::to_value(BotChatUnavailable::OwnerPrivate).unwrap(),
+            json!("owner_private")
         );
     }
 

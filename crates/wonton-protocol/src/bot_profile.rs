@@ -107,7 +107,8 @@ pub enum BotChatAvailability {
 #[cfg_attr(feature = "uniffi", derive(uniffi::Enum))]
 #[serde(rename_all = "snake_case")]
 pub enum BotChatUnavailable {
-    /// 别人的私人 Bot，没给这个人授权。
+    /// 别人的私人 Bot，没给这个人授权。旧核心还发 `other_private_bot`，反序列化接受。
+    #[serde(alias = "other_private_bot")]
     OwnerPrivate,
     /// 邀请过，还没成立：等主人同意或等对方接受。
     ContactPending,
