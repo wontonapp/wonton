@@ -1,6 +1,6 @@
 # ADR-0123 一户一个枢纽、其他电脑是受管设备：主 Agent 派活，设备上的 herdr 执行，权限进收件箱
 
-- 状态：提议（2026-11-26 主人早会定 M1–M8、H2 方向，按这些决定起草；2026-11-26 主人拍板“枢纽”“受管设备”不当界面词、服务器叫家里的服务器、设备显示电脑自己的名字、第一版一台电脑只挂一个枢纽；只有电脑主人能把活派到自己的电脑、设置里可开“家人也能用”；第一版设备只支持 Mac 和 Linux；总是允许只任务内有效、可选 7 天、换工作区重新问；设备 Agent 用电脑自己登录的账号、不传凭据；产物不自动清理；主管派活不问；全部拍板项已写入正文）
+- 状态：提议（2026-11-26 主人早会定 M1–M8、H2 方向，按这些决定起草；2026-11-26 主人拍板“枢纽”“受管设备”不当界面词、服务器叫家里的服务器、设备显示电脑自己的名字、第一版一台电脑只挂一个枢纽；只有电脑主人能把活派到自己的电脑、设置里可开“家人也能用”；第一版设备只支持 macOS 和 Linux；总是允许只任务内有效、可选 7 天、换工作区重新问；设备 Agent 用电脑自己登录的账号、不传凭据；产物不自动清理；主管派活不问；全部拍板项已写入正文）
 - 关联：[ADR-0015](0015-small-components-standard-interfaces.md)（小部件、标准接口、新能力检查单）、[ADR-0009](0009-identity-pairing-sso.md)（配对码）、[ADR-0004](0004-iroh-tunnel.md) 与 [ADR-0048](0048-relay-table.md)（隧道、中继）、[ADR-0072](0072-tunnel-udp.md)（隧道传 UDP）、[ADR-0061](0061-agent-runtime-and-frontends.md) 与 [ADR-0081](0081-local-agent-host.md)（Agent 运行时、远端 Agent 主机）、[ADR-0016](0016-mcp-bus-and-confirmations.md) 与 [ADR-0119](0119-pending-inbox.md)（确认与收件箱）、[ADR-0110](0110-one-hermes-container-per-person.md) 与 [ADR-0122](0122-primary-agent-and-profiles.md)（一人一容器、主 Agent 与 profile）、[ADR-0062](0062-desktop-vm-host.md)（Mac、Windows 上的隐藏 Linux 虚拟机）、[ADR-0042](0042-multiple-servers.md)（一台手机连多台服务器）
 - 部分取代：[ADR-0081](0081-local-agent-host.md) 的“电脑只是一个 ACP 运行时、桥和令牌留在服务器”的范围（设备上跑 herdr 和守护进程，见第 4、5 节）；ACP 仍是设备与 Agent 之间的协议之一，但设备控制面不再是 ACP
 
@@ -28,7 +28,7 @@ T3 Code 把“运行环境（Environment）、访问端点（AccessEndpoint）�
 | 设备守护进程（device daemon） | 我们发布和签名的小进程。只做设备侧的入网、任务拉起、权限转发、产物收集和心跳；没有 Matrix 令牌，没有住户密钥 |
 | 派活（dispatch） | 主 Agent 经核心 MCP 工具把一个任务交给某台设备。派活本身不弹确认，设备授权是事先给的 |
 | 任务（task） | 一次派活。有目标设备、工作区、交代、截止时间和权限挡位。任务记录、会话和审批都在枢纽上 |
-| 工作区（workspace） | 设备上任务专用的目录，从仓库检出或直接指定；不属于任何 profile，任务结束按策略保留或清理 |
+| 工作区（workspace） | 设备上任务专用的目录，从仓库检出或直接指定；不属于任何 profile，第一版任务结束不自动清理、用户手动删 |
 | 调度器（dispatcher） | 核心里的服务：设备注册表、任务表、路由、队列、产物核对、权限桥接 |
 | 监工（supervisor） | 枢纽上的任务会话记录和状态机：进度、审批、追问、产物、结论；App 在这里看和接手 |
 
@@ -38,7 +38,7 @@ T3 Code 把“运行环境（Environment）、访问端点（AccessEndpoint）�
 
 - **一户一个枢纽**，默认就是家里的服务器；可以是 Linux 主机，也可以是 Mac、Windows 上的内置虚拟机（ADR-0062）。枢纽 7×24 在线，跑核心、Tuwunel、调度器、监工和收件箱；不允许进入睡眠模式才算合格，睡着了就按离线处理。
 - 界面词：服务器一律叫“家里的服务器”，设备显示电脑自己的名字（如“某某的 MacBook”），界面不出现“枢纽”“受管设备”。
-- **一台设备只属于一个枢纽。** 第一版一台电脑只挂一个枢纽，不能同时注册两个；换枢纽就是迁移或重新入网，同一时刻只有一个守护进程实例和一把设备密钥（第 9 节）。
+- **一台设备只属于一个枢纽。** 第一版一台电脑只挂一个枢纽，不能同时注册两个；换枢纽就是迁移或重新入网，同一时刻只有一个守护进程实例和一把设备密钥（第 4、5 节）。
 - **枢纽自己也是一台设备**（`hub-local`），默认存在、默认执行器；没有额外电脑的家庭只用这一台也能派活。它和别的设备走同一套任务协议，核心不给自己开后门。
 - 一个家庭只装一套核心：枢纽就是 ADR-0009 的“服务器”。设备是它下面的执行面，不跑核心、不跑 Tuwunel、不存住户身份。
 
@@ -54,6 +54,8 @@ T3 Code 把“运行环境（Environment）、访问端点（AccessEndpoint）�
 
 设备上**不跑**：核心、Tuwunel、Matrix 客户端、profile 记忆。设备 Agent 用自己的工作区、自己的登录、自己的技能；邻居的 profile 和记忆留在枢纽（M4）。
 
+和 [ADR-0081](0081-local-agent-host.md)、[ADR-0124](0124-client-react-pwa-electron.md) 的 Electron 三角色不是一回事：受管设备是枢纽下的执行面（守护进程 + herdr，执行派活），不是 Matrix 客户端；Electron 包是客户端、本机 Agent 主机、被控端三个角色，本机 Agent 主机是 Bot 的 ACP 运行身份，被控端是远程桌面。同一台电脑可以同时是受管设备又开着 Electron：设备守护进程用设备密钥，Agent 主机用主机身份，两把钥匙、两个开关，不复用；设备守护进程不跑 Matrix 客户端，Electron 的客户端和主机是另一组进程。本 ADR 与 #1084 都改 0081 和 ARCHITECTURE：先合一个、另一个 rebase，合完核对 `0081:3-4` 自洽。
+
 ### 3. 枢纽上跑什么
 
 - 调度器、设备注册表、任务表、队列、监工、收件箱桥、产物核对和审计。
@@ -63,11 +65,11 @@ T3 Code 把“运行环境（Environment）、访问端点（AccessEndpoint）�
 
 ### 4. 设备加入、身份和信任
 
-- **配对码来自枢纽**，格式照 ADR-0009，一次性、10 分钟、绑定一个住户；在已配对的管理设备上出码。设备守护进程装上后输码，生成设备密钥对（ed25519），把公钥和指纹交给枢纽。
-- **管理员在枢纽的 App 里核对指纹后批准**：设备名、系统、架构、可用 Agent、工作区根、磁盘剩余都列在批准页；批准后设备才拿到任务。设备没有 Matrix 账号，进不了群、答不了卡片。
+- **配对码来自枢纽**，格式照 ADR-0009，一次性、10 分钟、绑定一个住户；在已配对的设备上出码（住户自己的或管理员的）。设备守护进程装上后输码，生成设备密钥对（ed25519），把公钥和指纹交给枢纽。
+- **住户批自己的电脑，管理员可批任何设备**：住户本人在已配对设备上核对指纹后批准；管理员可批准任何设备（含家人和别人的）。批准页列设备名、系统、架构、可用 Agent、工作区根、磁盘剩余；批准后设备才拿到任务。设备没有 Matrix 账号，进不了群、答不了卡片。
 - **设备密钥即设备身份。** 枢纽按设备 ID 记录，密钥轮换 = 重新入网；吊销 = 枢纽删公钥并断开隧道，设备下一次心跳被拒。
 - **设备默认不可信**：可能装了恶意 Agent、被拿走、连过不安全的网络。枢纽只信两件事——设备签名的心跳和产物哈希；设备说的“做完了”要核对（第 8 节）。
-- **设备归属人**是批准它的住户；归属人管“谁能在这台设备上派活”和“能访问哪些目录”。默认只有归属人自己；归属人可在设备设置里打开“家人也能用”，打开后家人能往这台电脑派活，任务仍在电脑上登录的那一个用户下跑。
+- **设备归属人**是批准它的住户（管理员代批时归设备使用者）；归属人管“谁能在这台设备上派活”和“能访问哪些目录”。默认只有归属人自己；归属人可在设备设置里打开“家人也能用”，打开后家人能往这台电脑派活，任务仍在电脑上登录的那一个用户下跑。
 
 ### 5. 设备控制面：守护进程 + iroh，不用 SSH
 
@@ -86,7 +88,7 @@ T3 Code 把“运行环境（Environment）、访问端点（AccessEndpoint）�
 
 ### 6. MCP 任务工具的形状
 
-派活是一个核心 MCP 工具，归在 `wonton__` 前缀下。新增权限项 `tasks`（进插件规范的权限表和安装预览），默认只给主 Agent，其他 profile 按需打开（ADR-0122）。
+派活是一个核心 MCP 工具，归在 `wonton__` 前缀下。新增权限项 `tasks`（进插件规范的权限表和安装预览），第一版只有主 Agent 能派活，其他 profile 以后按需打开、默认关（ADR-0122）。
 
 ```json
 // wonton__dispatch_task
@@ -105,6 +107,14 @@ T3 Code 把“运行环境（Environment）、访问端点（AccessEndpoint）�
 → { "task_id": "…", "device": "…", "state": "queued", "why": "auto 选它的原因" }
 ```
 
+`permission` 是给守护进程选 Agent 启动参数和提示的三档，不替代 Agent 原生审批（M3）；映射以适配层实测为准：
+
+| 档 | 允许什么 | 示意映射 |
+| --- | --- | --- |
+| `read_only` | 读文件、跑只读命令，不写工作区 | Claude Code `--permission-mode plan`；Codex `--sandbox read-only` |
+| `standard` | 工作区读写、装依赖、跑测试（默认） | Claude Code `--permission-mode default`；Codex `--sandbox workspace-write` |
+| `trusted` | 任意命令、网络和包管理，仍按原生审批逐次问 | Claude Code `--permission-mode acceptEdits`；Codex `--sandbox danger-full-access` |
+
 - `device: "auto"` 由调度器按第 7 节挑；挑不出来回 `no_device` 和候选原因（离线、没装这个 Agent、没有目录、负载高、没授权），不静默换到枢纽本地。
 - 返回是异步的：工具立刻回 `task_id`，进度、审批、产物经 `wonton__task_status` 和收件箱回；主 Agent 不阻塞等结果。
 - `wonton__task_status` 只读：状态、阶段、最后活动、待批项、产物引用；`wonton__task_cancel` 发取消，幂等。
@@ -115,7 +125,7 @@ T3 Code 把“运行环境（Environment）、访问端点（AccessEndpoint）�
 
 - **路由由主 Agent 发起、调度器决定**（M2：不每次问用户）。输入：设备能力（系统、架构、装了什么 Agent）、存在与负载、工作区匹配（仓库在不在那台机器上）、住户授权、用户偏好（“这台机器只跑 Mac 的活”）。主 Agent 可以指定 `device`，也可以交给 `auto`。
 - **决定要能解释**：任务卡写明“派到 <设备名>，因为它有仓库副本 / 因为 X 不可用”，用户能一键“换一台”“总用这台”“别用这台”。
-- **主管派活不问，已授权的电脑直接派**：设备授权和 Agent 自己的权限挡位是事先给的（第 5 节、ADR-0024），第一次也不弹确认；真正要人拍的每一步由 Agent 自己的审批触发（第 8 节）。
+- **主管派活不问，已授权的电脑直接派**：设备授权和 Agent 自己的权限挡位是事先给的（第 4 节、ADR-0024），第一次也不弹确认；真正要人拍的每一步由 Agent 自己的审批触发（第 8 节）。
 - **排队只在枢纽**：设备离线、满负载、超过并发就排队，队列条目带截止时间。设备上线后按先来后到投递；同一住户的队列有上限。
 - **不在任务中途换设备**：设备掉线先标 `offline`，宽限期后标 `uncertain`，不自动到另一台重跑（可能有半成品）；用户看到后手动“重派”或“继续等”。
 - **过期作废并通知（M5）**：过了 `deadline_at` 或超过队列上限，任务标 `expired`，给发起人和设备归属人各一条收件箱 `notice`（warning），写清哪台设备、为什么没排上或过期、有没有留产物；主 Agent 收到 `recap`，可决定重派。不无限等，不自动重派。
@@ -230,4 +240,4 @@ T3 Code 把“运行环境（Environment）、访问端点（AccessEndpoint）�
 
 ## 关联
 
-[ADR-0004](0004-iroh-tunnel.md)、[ADR-0048](0048-relay-table.md)、[ADR-0072](0072-tunnel-udp.md)（隧道、中继、UDP）、[ADR-0009](0009-identity-pairing-sso.md)（配对码）、[ADR-0015](0015-small-components-standard-interfaces.md)（标准接口与检查单）、[ADR-0016](0016-mcp-bus-and-confirmations.md)、[ADR-0119](0119-pending-inbox.md)（确认、收件箱、worker 桥）、[ADR-0061](0061-agent-runtime-and-frontends.md)、[ADR-0081](0081-local-agent-host.md)（运行时与远端主机）、[ADR-0062](0062-desktop-vm-host.md)（Mac、Windows 的虚拟机枢纽）、[ADR-0110](0110-one-hermes-container-per-person.md)、[ADR-0122](0122-primary-agent-and-profiles.md)（主 Agent 与 profile）、[ADR-0042](0042-multiple-servers.md)（App 连多个枢纽）、[ADR-0023](0023-egress-proxy.md)（出口代理）。
+[ADR-0004](0004-iroh-tunnel.md)、[ADR-0048](0048-relay-table.md)、[ADR-0072](0072-tunnel-udp.md)（隧道、中继、UDP）、[ADR-0009](0009-identity-pairing-sso.md)（配对码）、[ADR-0015](0015-small-components-standard-interfaces.md)（标准接口与检查单）、[ADR-0016](0016-mcp-bus-and-confirmations.md)、[ADR-0119](0119-pending-inbox.md)（确认、收件箱、worker 桥）、[ADR-0124](0124-client-react-pwa-electron.md)（Electron 三角色边界）、[ADR-0061](0061-agent-runtime-and-frontends.md)、[ADR-0081](0081-local-agent-host.md)（运行时与远端主机）、[ADR-0062](0062-desktop-vm-host.md)（Mac、Windows 的虚拟机枢纽）、[ADR-0110](0110-one-hermes-container-per-person.md)、[ADR-0122](0122-primary-agent-and-profiles.md)（主 Agent 与 profile）、[ADR-0042](0042-multiple-servers.md)（App 连多个枢纽）、[ADR-0023](0023-egress-proxy.md)（出口代理）。

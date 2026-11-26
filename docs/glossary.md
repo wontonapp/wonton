@@ -26,7 +26,7 @@ App 里的文字按这里写（ADR-0043）。翻译不逐句对照原文：先�
 | 引导 | Setup（动词 Set Up） | 初始設定 | セットアップ | 配对后的几步 |
 | 你的资料 | Your Profile | 個人資料 | プロフィール | |
 | Agent | agent | Agent | エージェント | 驱动 Bot 的程序 |
-| 主 Agent | primary agent | 主 Agent | メインエージェント | 一个人默认的那个 Agent，就是他的第一个私人 Bot；名字由用户起，界面身份标签叫“主管”（英文界面 Lead） |
+| 主 Agent | primary agent | 主 Agent | メインエージェント | 一个人默认的那个 Agent，就是他的第一个私人 Bot；名字由用户起，界面身份标签叫“主管”（英文界面 Lead，暂定） |
 | 分身（profile） | profile | 分身 | プロフィール | 用户另建的独立身份，独立 Matrix 账号和私聊；界面一律叫“分身”，不出现 profile，英文界面用 Profile |
 | 派活 | dispatch | 派活 | 仕事を渡す | 让某台设备上的 Agent 去干一件事 |
 | 工作区 | workspace | 工作區 | ワークスペース | 设备上给一个任务专用的目录 |
@@ -37,12 +37,12 @@ App 里的文字按这里写（ADR-0043）。翻译不逐句对照原文：先�
 | 权限项 | permission item | 權限項目 | 権限項目 | 一种管理能力（比如“装、删、升级应用”“管理成员”）；接口和工具声明要哪一项，缺了就说明缺哪一项 |
 | 私人 Bot | private bot | 私人 Bot | 個人ボット | 归一个人所有的 Bot，邀请成员时可以顺手建一个 |
 | 旁聊 | side chat | 旁聊 | サイドチャット | 和同一个 AI 另开的一段对话，上下文是新的，收在主对话里（ADR-0093）；不说“话题”“线程” |
-| 共享 Bot | shared bot | 共享 Bot | 共有ボット | 主人建的全家共用的 Bot |
+| 共享 Bot | shared bot | 共享 Bot | 共有ボット | 主人建的全家共用的 Bot；也是 profile，但不是任何人的分身 |
 | 模型 | model | 模型 | モデル | AI 模型 |
 | 服务商 | provider | 供應商 | プロバイダー | 模型的服务商 |
 | key | API key | API 金鑰 | APIキー | |
 | 确认卡片 | approval request | 確認請求 | 確認カード | 聊天里要主人点确认的那张卡片 |
-| 允许一次 / 总是允许 / 拒绝 / 拒绝并说明 | Allow Once / Always Allow / Deny / Deny with Reason | 允許一次 / 總是允許 / 拒絕 / 拒絕並說明 | 1 回許可 / 常に許可 / 拒否 / 理由付きで拒否 | 设备上的权限请求的四个回答 |
+| 允许一次 / 本会话 / 总是允许 / 拒绝 / 拒绝并说明 | Allow Once / This Session / Always Allow / Deny / Deny with Reason | 允許一次 / 本會話 / 總是允許 / 拒絕 / 拒絕並說明 | 1 回許可 / このセッション / 常に許可 / 拒否 / 理由付きで拒否 | 设备上的权限请求的四个 choice；拒绝可带理由 |
 | 每次都问 / 始终允许 | Ask Every Time / Always Allow | iOS：每次詢問 / 永遠允許；Android：每次都詢問 / 一律允許 | 毎回確認 / 常に許可 | |
 | 聊天记录备份 | Chat Backup | 聊天記錄備份 | チャットのバックアップ | |
 | 恢复密钥 | Recovery Key | 復原金鑰 | 復旧キー | |
