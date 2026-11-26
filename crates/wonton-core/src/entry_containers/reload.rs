@@ -19,6 +19,11 @@ const READ_SLICE: Duration = Duration::from_secs(1);
 const PENDING: Duration = Duration::from_secs(10);
 
 impl EntryContainers {
+    /// 让入口的 HAProxy 主进程软重载，见 [`reload`]。
+    pub async fn reload(&self, addr: &str) -> Result<(), EntryError> {
+        self.reload_checked(addr).await
+    }
+
     pub(super) async fn reload_checked(&self, addr: &str) -> Result<(), EntryError> {
         let found = self
             .engine

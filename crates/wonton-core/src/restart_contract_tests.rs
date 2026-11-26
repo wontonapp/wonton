@@ -146,10 +146,24 @@ fn a_signalled_container_comes_back_after_a_docker_restart() {
 }
 
 /// 核心自己建的容器（入口、连接器）不经过 compose：创建请求里逐项锁住重启策略。
+///
+/// 创建代码在 `src/entry_containers/` 的各个文件里，扫整个模块（不算测试文件）。
 #[test]
 fn core_created_containers_come_back_after_a_docker_restart() {
-    let path = Path::new(env!("CARGO_MANIFEST_DIR")).join("src/entry_containers.rs");
-    let text = std::fs::read_to_string(&path).unwrap();
+    let module = Path::new(env!("CARGO_MANIFEST_DIR")).join("src/entry_containers");
+    let mut files: Vec<PathBuf> = std::fs::read_dir(&module)
+        .unwrap()
+        .map(|entry| entry.unwrap().path())
+        .filter(|path| {
+            path.extension().is_some_and(|extension| extension == "rs")
+                && path.file_name().is_some_and(|name| name != "tests.rs")
+        })
+        .collect();
+    files.sort();
+    let text: String = files
+        .iter()
+        .map(|path| std::fs::read_to_string(path).unwrap())
+        .collect();
     for policy in text.match_indices("RestartPolicyNameEnum::") {
         assert!(
             text[policy.0..].starts_with("RestartPolicyNameEnum::ALWAYS"),
