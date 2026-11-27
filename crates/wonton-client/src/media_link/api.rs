@@ -2,7 +2,7 @@
 //! `X-Wonton-Device`（值是这台设备的隧道身份），不带的核心一律拒。
 //!
 //! 失败一律折成 [`MediaFailure`]：核心回了信封就照它；隧道层报的错、连不上、超时算 `transport_unavailable`；
-//! 回了别的东西算 `protocol`。
+//! 没有信封的按状态码分（见 [`classify`]）。队列改动的 409 不是失败，体是当前队列（[`QueueReply`]）。
 
 use std::time::Duration;
 
@@ -11,7 +11,8 @@ use reqwest::{Client, Method, RequestBuilder, Response};
 use serde::Serialize;
 use serde::de::DeserializeOwned;
 use url::Url;
-use wonton_protocol::media::{MediaFailure, MediaFailureCode, WONTON_DEVICE_HEADER};
+use wonton_protocol::media::api::{QueueChange, queue_path};
+use wonton_protocol::media::{MediaFailure, MediaFailureCode, Queue, WONTON_DEVICE_HEADER};
 use wonton_tunnel::ERROR_HEADER;
 
 use crate::chat::proxy_url;
@@ -32,6 +33,12 @@ pub(crate) fn failure(code: MediaFailureCode, message: impl Into<String>) -> Med
 
 fn unreachable(error: &reqwest::Error) -> MediaFailure {
     failure(MediaFailureCode::TransportUnavailable, error.to_string())
+}
+
+/// 队列改动的回应：改成了，或别处先改了（核心回 409，体是当前队列）。
+pub(crate) enum QueueReply {
+    Applied(Queue),
+    Stale(Queue),
 }
 
 /// 这次连接要用的 HTTP 客户端。本地代理换了服务器才变，每次操作开始时取一次。
@@ -107,6 +114,30 @@ impl MediaApi {
         send(self.json(Method::POST, path, body)).await.map(drop)
     }
 
+    pub(crate) async fn change_queue(
+        &self,
+        change: &QueueChange,
+    ) -> Result<QueueReply, MediaFailure> {
+        let response = self
+            .json(Method::POST, &queue_path(), change)
+            .send()
+            .await
+            .map_err(|e| unreachable(&e))?;
+        let stale = response.status() == reqwest::StatusCode::CONFLICT
+            && !response.headers().contains_key(ERROR_HEADER);
+        let response = if stale {
+            response
+        } else {
+            check(response).await?
+        };
+        let queue = read(response).await?;
+        Ok(if stale {
+            QueueReply::Stale(queue)
+        } else {
+            QueueReply::Applied(queue)
+        })
+    }
+
     fn json(&self, method: Method, path: &str, body: &impl Serialize) -> RequestBuilder {
         self.request(method, path)
             .timeout(CONTROL_TIMEOUT)
@@ -118,6 +149,10 @@ impl MediaApi {
 /// 发出去，成功的原样返回，失败的折成信封。
 pub(crate) async fn send(request: RequestBuilder) -> Result<Response, MediaFailure> {
     let response = request.send().await.map_err(|e| unreachable(&e))?;
+    check(response).await
+}
+
+async fn check(response: Response) -> Result<Response, MediaFailure> {
     if response.status().is_success() {
         return Ok(response);
     }
@@ -131,7 +166,8 @@ pub(crate) async fn send(request: RequestBuilder) -> Result<Response, MediaFailu
     Err(classify(status.as_u16(), tunnel.as_deref(), &body))
 }
 
-/// 没成功的回应算什么：隧道层写了错就是隧道不通；核心回了信封照信封；都不是按协议错报，原状态码进详情。
+/// 没成功的回应算什么：隧道层写了错就是隧道不通；核心回了信封照信封；没有信封的按状态码分——401/403 是
+/// 权限、404/410 是东西没了、5xx 是那头出错，其余算协议对不上。原状态码进详情。
 pub(crate) fn classify(status: u16, tunnel: Option<&str>, body: &[u8]) -> MediaFailure {
     if let Some(code) = tunnel {
         let category = if code == "unauthorized" {
@@ -142,9 +178,15 @@ pub(crate) fn classify(status: u16, tunnel: Option<&str>, body: &[u8]) -> MediaF
         return failure(category, format!("隧道：{code}（HTTP {status}）"));
     }
     serde_json::from_slice::<MediaFailure>(body).unwrap_or_else(|_| {
+        let code = match status {
+            401 | 403 => MediaFailureCode::PermissionDenied,
+            404 | 410 => MediaFailureCode::MediaGone,
+            500..=599 => MediaFailureCode::UpstreamError,
+            _ => MediaFailureCode::Protocol,
+        };
         failure(
-            MediaFailureCode::Protocol,
-            format!("核心回了 HTTP {status}，不是媒体接口的错误信封"),
+            code,
+            format!("核心回了 HTTP {status}，没有媒体接口的错误信封"),
         )
     })
 }

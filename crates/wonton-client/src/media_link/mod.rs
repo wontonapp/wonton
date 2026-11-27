@@ -11,6 +11,7 @@ mod loopback;
 #[cfg(test)]
 mod loopback_tests;
 mod profile;
+mod queue;
 mod state;
 mod subscription;
 #[cfg(test)]
@@ -22,8 +23,8 @@ use std::sync::{Arc, Mutex, MutexGuard, Weak};
 use tokio::runtime::Handle;
 use tokio::sync::watch;
 use wonton_protocol::media::api::{
-    MEDIA_API_PREFIX, QueueChange, SessionList, TaskList, queue_path, session_control_path,
-    session_path, session_stop_path, sessions_path, tasks_path,
+    MEDIA_API_PREFIX, SessionList, TaskList, queue_path, session_control_path, session_path,
+    session_stop_path, sessions_path, tasks_path,
 };
 use wonton_protocol::media::provider::{ItemsPage, ItemsQuery, PlaybackStopped};
 use wonton_protocol::media::{
@@ -135,17 +136,22 @@ impl MediaLink {
         MediaApi::connect(&self.home)
     }
 
-    /// 拉服务器上这个人的任务和会话，换掉本地的。
+    /// 拉服务器上这个人的任务、会话和队列，换掉本地的。
     pub(crate) async fn sync(&self) -> Result<(), MediaFailure> {
         let pulled = async {
             let api = self.api()?;
             let tasks: TaskList = api.get(&tasks_path()).await?;
             let sessions: SessionList = api.get(&sessions_path()).await?;
-            Ok::<_, MediaFailure>((tasks.tasks, sessions.sessions))
+            Ok::<_, MediaFailure>((api, tasks.tasks, sessions.sessions))
         };
         match pulled.await {
-            Ok((tasks, sessions)) => {
+            Ok((api, tasks, sessions)) => {
                 self.update(|local| local.align(tasks, sessions));
+                // 队列单独拉：拉不到不挡任务和会话的对齐，原因记在播放视图上。壳改队列要带它的版本。
+                match api.get::<Queue>(&queue_path()).await {
+                    Ok(queue) => self.update(|local| local.put_queue(queue)),
+                    Err(failure) => self.update(|local| local.playback_failed(failure)),
+                }
                 Ok(())
             }
             Err(failure) => {
@@ -159,7 +165,7 @@ impl MediaLink {
         match action {
             MediaAction::StartUpload { .. } | MediaAction::StartDownload { .. } => {
                 Err(CoreError::NotReady {
-                    reason: "media transfers are executed by the transfer worker, which is not wired yet".into(),
+                    reason: "上传、下载的字节由传输执行层负责，这一版的客户端核还没有它".into(),
                 })
             }
             // 新核心发的新动作，这一版跳过（AGENTS.md 的向前兼容）。
@@ -167,8 +173,9 @@ impl MediaLink {
             action => {
                 let link = self.clone();
                 self.runtime.spawn(async move {
-                    if let Err(failure) = link.send(action).await {
-                        link.update(|local| local.playback_failed(failure));
+                    match link.send(action).await {
+                        Ok(()) => link.update(Local::playback_succeeded),
+                        Err(failure) => link.update(|local| local.playback_failed(failure)),
                     }
                 });
                 Ok(())
@@ -203,9 +210,11 @@ impl MediaLink {
                 self.update(|local| local.put_session(read));
             }
             MediaAction::Queue { revision, op, .. } => {
-                let change = QueueChange { revision, op };
-                let queue: Queue = api.post(&queue_path(), &change).await?;
-                self.update(|local| local.put_queue(queue));
+                let before = self.lock().queue().cloned();
+                queue::change(&api, before.as_ref(), revision, op, |queue| {
+                    self.update(|local| local.put_queue(queue));
+                })
+                .await?;
             }
             MediaAction::StartUpload { .. }
             | MediaAction::StartDownload { .. }
@@ -266,17 +275,18 @@ fn player_state(session: Option<&PlaybackSession>) -> PlayerState {
             position_ms: 0,
         };
     };
+    // 暂停先于缓冲：暂停中换曲、重取计划途中也是暂停，不该显示转圈。
     let phase = if session.stop_reason.is_some() || session.state.is_terminal() {
         PlayerPhase::Stopped
+    } else if matches!(
+        session.state,
+        TaskState::Paused(_) | TaskState::WaitingNetwork | TaskState::WaitingPower
+    ) {
+        PlayerPhase::Paused
     } else if session.plan.is_none() {
         PlayerPhase::Buffering
     } else {
-        match session.state {
-            TaskState::Paused(_) | TaskState::WaitingNetwork | TaskState::WaitingPower => {
-                PlayerPhase::Paused
-            }
-            _ => PlayerPhase::Playing,
-        }
+        PlayerPhase::Playing
     };
     PlayerState {
         phase,

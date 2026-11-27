@@ -171,6 +171,27 @@ fn player_state_follows_the_session() {
     let waiting = session(None);
     assert_eq!(player_state(Some(&waiting)).phase, PlayerPhase::Buffering);
     assert_eq!(player_state(Some(&waiting)).position_ms, 4_000);
+    // 暂停中正在重取计划：还是暂停。
+    let mut paused = session(None);
+    paused.state = TaskState::Paused(wonton_protocol::media::PauseReason::User);
+    assert_eq!(player_state(Some(&paused)).phase, PlayerPhase::Paused);
+}
+
+#[test]
+fn a_playback_failure_stays_until_the_next_action_lands() {
+    let mut local = Local::default();
+    let current = session(None);
+    local.put_session(current.clone());
+    local.playback_failed(MediaFailure {
+        code: MediaFailureCode::TransportUnavailable,
+        message: "断了".into(),
+        retry_after_secs: None,
+    });
+    // 同一条会话的回应不算“下一次成了”的信号，动作成了才清。
+    local.put_session(current);
+    assert!(local.playback_view().unwrap().failure.is_some());
+    local.playback_succeeded();
+    assert!(local.playback_view().unwrap().failure.is_none());
 }
 
 #[tokio::test]
@@ -226,10 +247,15 @@ fn failures_keep_the_cores_category_and_name_the_tunnel() {
         classify(502, Some("unreachable"), b"").code,
         MediaFailureCode::TransportUnavailable
     );
-    assert_eq!(
-        classify(500, None, b"<html>").code,
-        MediaFailureCode::Protocol
-    );
+    // 没有信封的按状态码分：权限、东西没了、那头出错，其余才算协议对不上。
+    for (status, code) in [
+        (401, MediaFailureCode::PermissionDenied),
+        (404, MediaFailureCode::MediaGone),
+        (500, MediaFailureCode::UpstreamError),
+        (418, MediaFailureCode::Protocol),
+    ] {
+        assert_eq!(classify(status, None, b"<html>").code, code, "{status}");
+    }
 }
 
 fn support(mime_types: &[&str]) -> PlayerSupport {

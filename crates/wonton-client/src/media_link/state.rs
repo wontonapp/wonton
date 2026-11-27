@@ -93,6 +93,15 @@ impl Local {
         self.queue = Some(queue);
     }
 
+    pub(crate) fn queue(&self) -> Option<&Queue> {
+        self.queue.as_ref()
+    }
+
+    /// 这台设备的一次播放动作成了：上一次的失败不再挂着。
+    pub(crate) fn playback_succeeded(&mut self) {
+        self.playback_failure = None;
+    }
+
     pub(crate) fn media_view(&self) -> MediaViewModel {
         let mut tasks: Vec<&MediaTask> = self.tasks.values().collect();
         tasks.sort_by_key(|task| std::cmp::Reverse(task.created_at));
