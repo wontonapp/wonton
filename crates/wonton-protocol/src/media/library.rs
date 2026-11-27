@@ -38,6 +38,11 @@ pub fn library_item_path(id: &str) -> String {
     format!("{PATH_LIBRARY}/items/{id}")
 }
 
+/// 一个人物的头像（提供方裁好的脸）。
+pub fn person_thumbnail_path(id: &str) -> String {
+    format!("{PATH_LIBRARY_PEOPLE}/{id}/thumbnail")
+}
+
 /// 一条的字节，`Range` 原样过。
 pub fn library_content_path(id: &str, rendition: &Rendition) -> String {
     format!(
@@ -136,7 +141,7 @@ pub struct PersonRef {
     pub name: String,
 }
 
-/// `GET /library/people` 的回包；只列有名字的。头像按人物 id 取不在这里，缩略图用他出现过的一条。
+/// `GET /library/people` 的回包；只列有名字的，头像按 [`person_thumbnail_path`] 取。
 #[derive(Serialize, Deserialize, Debug, Clone, PartialEq)]
 pub struct People {
     pub people: Vec<PersonEntry>,
@@ -147,9 +152,6 @@ pub struct People {
 pub struct PersonEntry {
     pub id: String,
     pub name: String,
-    /// 他出现过的一条，壳拿它的缩略图当头像
-    #[serde(default, skip_serializing_if = "Option::is_none")]
-    pub cover: Option<String>,
 }
 
 /// 相册是谁的。家庭账号是共享相册的库主（ADR-0113 第 6 节），壳单列“家庭相册”。
@@ -384,6 +386,7 @@ mod tests {
         assert_eq!(timeline_bucket_path("2026-11"), "/library/timeline/2026-11");
         assert_eq!(album_path("al1"), "/library/albums/al1");
         assert_eq!(library_item_path("a1"), "/library/items/a1");
+        assert_eq!(person_thumbnail_path("p1"), "/library/people/p1/thumbnail");
         assert_eq!(
             library_content_path("a1", &Rendition::Live),
             "/library/items/a1/content?rendition=live"
@@ -535,7 +538,6 @@ mod tests {
             people: vec![PersonEntry {
                 id: "p1".into(),
                 name: "奶奶".into(),
-                cover: Some("a1".into()),
             }],
         };
         assert_eq!(roundtrip(&people), people);

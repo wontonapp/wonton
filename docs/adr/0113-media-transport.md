@@ -296,6 +296,7 @@ Immich 没有标准，客户端核直讲它就是给一个具体插件开特例�
 | `/library/albums/{id}?cursor=` | `GET` | `AlbumPage` |
 | `/library/search?q=&people=&place=&from=&to=&kind=&favorite=&cursor=` | `GET` | `AssetPage`；`q` 按画面内容搜 |
 | `/library/people` | `GET` | `People`：有名字的人物，搜索页按人筛 |
+| `/library/people/{id}/thumbnail` | `GET` | 人物头像的字节 |
 | `/library/items/{id}` | `GET` | `PhotoDetail`：EXIF、地点、人物 |
 | `/library/items/{id}/content?rendition=` | `GET` | 字节；档位 `thumbnail`/`preview`/`original`/`playback`/`live`，`Range` 原样过 |
 | `/library/actions` | `POST` | 体 `LibraryAction`（收藏、建相册、加进/移出相册、共享给家人、进回收站、恢复），回 `LibraryActionResult` |
