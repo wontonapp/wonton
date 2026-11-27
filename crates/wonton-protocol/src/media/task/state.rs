@@ -78,7 +78,8 @@ impl TaskState {
         )
     }
 
-    /// 能不能从自己变到 `to`。排队和准备阶段可以直接取消（`Queued` 也行，见接口清单）；等待条件和暂停中
+    /// 能不能从自己变到 `to`。排队和准备阶段可以直接取消（`Queued` 也行，见接口清单）；排队中也能暂停、
+    /// 等条件（设备还没开始取字节的下载，用户照样能停）；等待条件和暂停中
     /// 可以回队、互换原因，也能直接失败；终态不可逆，再跑就是新任务。未知状态（`Other`）的规则只有服务端
     /// 知道：可以进它，从它出来算非法。
     pub fn transition(self, to: Self) -> Result<Self, IllegalTransition> {
@@ -88,35 +89,35 @@ impl TaskState {
             (_, Self::Other(_)) => !self.is_terminal(),
             _ => matches!(
                 (&self, &to),
-                (Self::Queued, Self::Preparing | Self::Cancelled)
-                    | (
-                        Self::Preparing,
-                        Self::Running
-                            | Self::Done
-                            | Self::Partial
-                            | Self::Failed(_)
-                            | Self::Cancelled
-                    )
-                    | (
-                        Self::Running,
-                        Self::Paused(_)
-                            | Self::WaitingNetwork
-                            | Self::WaitingPower
-                            | Self::Done
-                            | Self::Partial
-                            | Self::Failed(_)
-                            | Self::Cancelled
-                    )
-                    | (
-                        Self::Paused(_) | Self::WaitingNetwork | Self::WaitingPower,
-                        Self::Queued
-                            | Self::Running
-                            | Self::Paused(_)
-                            | Self::WaitingNetwork
-                            | Self::WaitingPower
-                            | Self::Failed(_)
-                            | Self::Cancelled
-                    )
+                (
+                    Self::Queued,
+                    Self::Preparing
+                        | Self::Paused(_)
+                        | Self::WaitingNetwork
+                        | Self::WaitingPower
+                        | Self::Cancelled
+                ) | (
+                    Self::Preparing,
+                    Self::Running | Self::Done | Self::Partial | Self::Failed(_) | Self::Cancelled
+                ) | (
+                    Self::Running,
+                    Self::Paused(_)
+                        | Self::WaitingNetwork
+                        | Self::WaitingPower
+                        | Self::Done
+                        | Self::Partial
+                        | Self::Failed(_)
+                        | Self::Cancelled
+                ) | (
+                    Self::Paused(_) | Self::WaitingNetwork | Self::WaitingPower,
+                    Self::Queued
+                        | Self::Running
+                        | Self::Paused(_)
+                        | Self::WaitingNetwork
+                        | Self::WaitingPower
+                        | Self::Failed(_)
+                        | Self::Cancelled
+                )
             ),
         };
         if legal {

@@ -14,13 +14,13 @@ pub(crate) fn panel() -> Vec<PanelItem> {
     vec![PanelItem {
         tab: TabRef::Url { url: url.clone() },
         page: TabPage {
-            native: None,
             title: "Player".into(),
             icon: TabIcon::Plugin { icon: None },
             url: Some(url),
             layout: TabLayout::default(),
             state: TabState::Ready,
             reload: 0,
+            native: None,
             opens_in_browser: false,
         },
         attention: false,
@@ -34,13 +34,13 @@ pub(crate) fn panel() -> Vec<PanelItem> {
 pub(crate) fn corner() -> Option<(TabRef, TabPage)> {
     let url = format!("{}corner", fixture_url()?);
     let page = TabPage {
-        native: None,
         title: "Corner".into(),
         icon: TabIcon::Plugin { icon: None },
         url: Some(url.clone()),
         layout: TabLayout::default(),
         state: TabState::Ready,
         reload: 0,
+        native: None,
         opens_in_browser: false,
     };
     Some((TabRef::Url { url }, page))

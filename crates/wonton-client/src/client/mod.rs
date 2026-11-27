@@ -47,6 +47,7 @@ mod confirmations;
 mod dispatch;
 mod limits;
 mod media;
+mod media_sources;
 mod music;
 mod my_avatar;
 mod page_color;

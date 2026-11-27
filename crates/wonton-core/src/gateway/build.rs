@@ -65,6 +65,7 @@ impl Gateway {
             notices: None,
             notify_limiter: notify_limit::Limiter::default(),
             files: None,
+            media: None,
             audit: None,
             tusd: None,
             upgrades: None,
@@ -189,6 +190,13 @@ impl Gateway {
     #[must_use]
     pub fn with_files(mut self, files: Option<Arc<crate::files::Files>>) -> Self {
         self.files = files;
+        self
+    }
+
+    /// 接上媒体服务：`/_wonton/api/media/…` 这才可用。
+    #[must_use]
+    pub fn with_media(mut self, media: Option<Arc<crate::media::Media>>) -> Self {
+        self.media = media;
         self
     }
 

@@ -186,13 +186,13 @@ pub(super) fn build_page(
         .unwrap_or_else(|| metadata(state, bot, None));
     let _ = plugins;
     TabPage {
-        native: None,
         title: metadata.title,
         icon: metadata.icon,
         url,
         layout: metadata.layout,
         state: state_value,
         reload: state.reloads.get(placed).copied().unwrap_or_default(),
+        native: None,
         opens_in_browser: browser,
     }
 }

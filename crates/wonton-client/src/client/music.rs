@@ -62,7 +62,7 @@ impl ClientCore {
         plugin_id: String,
         page: MusicPage,
     ) -> Arc<MusicPageSubscription> {
-        let link = self.scope().music.clone();
+        let link = self.music_link();
         let page = link.open(plugin_id, page);
         let mut receiver = page.subscribe();
         receiver.mark_changed();
@@ -80,7 +80,7 @@ impl ClientCore {
         plugin_id: String,
         action: MusicAction,
     ) -> Option<wonton_protocol::music::MusicProblem> {
-        let link = self.scope().music.clone();
+        let link = self.music_link();
         self.scope()
             .run(async move { Ok(link.star(&plugin_id, action).await) })
             .await
@@ -94,7 +94,7 @@ impl ClientCore {
 
     /// 一首歌的歌词。
     pub async fn music_lyrics(&self, plugin_id: String, song_id: String) -> MusicLyricsState {
-        let link = self.scope().music.clone();
+        let link = self.music_link();
         let result = self
             .scope()
             .run(async move { Ok(link.lyrics(&plugin_id, &song_id).await) })
@@ -119,11 +119,22 @@ impl ClientCore {
         cover: String,
         size: u32,
     ) -> Option<Vec<u8>> {
-        let link = self.scope().music.clone();
+        let link = self.music_link();
         self.scope()
             .run(async move { Ok(link.cover(&plugin_id, &cover, size).await) })
             .await
             .ok()
             .flatten()
+    }
+}
+
+impl ClientCore {
+    /// 音乐页用的浏览层：假数据入口下是本机的假曲库。
+    fn music_link(&self) -> Arc<MusicLink> {
+        #[cfg(feature = "ui-fake")]
+        if self.ui_fake.load(std::sync::atomic::Ordering::SeqCst) {
+            return super::ui_fake::music_link(&self.root);
+        }
+        self.scope().music.clone()
     }
 }

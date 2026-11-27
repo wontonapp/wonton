@@ -29,7 +29,7 @@ impl Queue {
 }
 
 /// 队列的播放顺序。新版本新加的模式落在 `Other`。
-#[derive(Debug, Clone, PartialEq)]
+#[derive(Debug, Clone, PartialEq, Eq)]
 #[cfg_attr(feature = "uniffi", derive(uniffi::Enum))]
 pub enum QueueMode {
     Sequential,

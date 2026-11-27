@@ -1,5 +1,7 @@
 #[path = "family_private_files_tests.rs"]
 mod files;
+#[path = "family_private_media_tests.rs"]
+mod media;
 #[path = "family_private_permissions_tests.rs"]
 mod permissions;
 #[path = "family_private_volume_docker_tests.rs"]
@@ -95,6 +97,7 @@ impl Bed {
             }),
             files,
             None,
+            None,
         );
         gateway
             .plugins
@@ -129,6 +132,7 @@ impl Bed {
         data_owner: crate::plugin::hostdir::Owner,
         files: bool,
         docker: Option<&crate::plugin::names::Instance>,
+        media: Option<Arc<crate::media::Media>>,
     ) -> Arc<Gateway> {
         let profile = OwnerStore::for_test(dir, &owner());
         let public = PublicUrls {
@@ -180,7 +184,7 @@ impl Bed {
         .with_roles(Arc::new(Roles::open(dir.join("roles.json")).unwrap()))
         .with_matrix(Some(matrix));
         let files = files.then(|| files::service(&gateway));
-        Arc::new(gateway.with_files(files))
+        Arc::new(gateway.with_files(files).with_media(media))
     }
 
     async fn call(&self, method: Method, path: &str, body: Value) -> Reply {
@@ -213,6 +217,11 @@ impl Bed {
     }
 
     async fn reopen(&mut self) {
+        self.reopen_with(self.gateway.media.clone()).await;
+    }
+
+    /// 同 [`Self::reopen`]，换上 `media`。
+    async fn reopen_with(&mut self, media: Option<Arc<crate::media::Media>>) {
         let members = Arc::new(Members::open(self.dir.path().join("members.json")).unwrap());
         let ids = fs::metadata(self.dir.path()).unwrap();
         self.gateway = Self::gateway(
@@ -227,6 +236,7 @@ impl Bed {
             },
             true,
             None,
+            media,
         );
         self.gateway.plugins.restore().await.unwrap();
     }
@@ -398,6 +408,7 @@ async fn a_home_whose_ownership_cannot_be_fixed_is_reported_as_missing_permissio
         members,
         foreign,
         false,
+        None,
         None,
     );
     let id = {

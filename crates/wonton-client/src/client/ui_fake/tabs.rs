@@ -61,28 +61,31 @@ pub(super) fn fake_open(tab: TabRef) -> Option<(TabRef, TabPage)> {
 }
 
 pub(super) fn fake_page(tab: &TabRef) -> Option<TabPage> {
+    if let Some(page) = super::music::page(tab) {
+        return Some(page);
+    }
     if *tab == call_widget().tab {
         return Some(TabPage {
-            native: None,
             title: "Call".into(),
             icon: TabIcon::Plugin { icon: None },
             url: Some(web_url(CALL_PLUGIN)),
             layout: TabLayout::EdgeToEdge,
             state: TabState::Ready,
             reload: 0,
+            native: None,
             opens_in_browser: false,
         });
     }
     let TabRef::Plugin { plugin_id, .. } = tab else {
         if let TabRef::Bot { bot, .. } = tab {
             return Some(TabPage {
-                native: None,
                 title: bot.bot.clone(),
                 icon: TabIcon::Plugin { icon: None },
                 url: Some(web_url(&bot.plugin_id)),
                 layout: TabLayout::default(),
                 state: TabState::Ready,
                 reload: 0,
+                native: None,
                 opens_in_browser: false,
             });
         }
@@ -90,7 +93,6 @@ pub(super) fn fake_page(tab: &TabRef) -> Option<TabPage> {
     };
     let (title, _, kind) = WEB_APPS.iter().find(|(_, id, _)| id == plugin_id)?;
     Some(TabPage {
-        native: None,
         title: (*title).into(),
         icon: TabIcon::Plugin { icon: None },
         url: Some(web_url(plugin_id)),
@@ -103,6 +105,7 @@ pub(super) fn fake_page(tab: &TabRef) -> Option<TabPage> {
             },
         },
         reload: 0,
+        native: None,
         opens_in_browser: false,
     })
 }

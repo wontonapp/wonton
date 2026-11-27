@@ -1,10 +1,11 @@
 //! 页面栈、我的应用和面板的 ViewModel 映射。
 
 use url::Url;
+use wonton_protocol::media::MediaBrowse;
 use wonton_protocol::{
-    CoreError, InstalledPlugin, MyAppRef, OpenPage, PagesViewModel, PanelEntry, PanelItem,
-    PanelScope, PanelSource, PlacedTab, PluginState, PluginsViewModel, SidebarApp, SidebarBadge,
-    SidebarOpen, TabIcon, TabLayout, TabLoadFailure, TabPage, TabRef, TabState,
+    CoreError, InstalledPlugin, MyAppRef, NativePage, OpenPage, PagesViewModel, PanelEntry,
+    PanelItem, PanelScope, PanelSource, PlacedTab, PluginState, PluginsViewModel, SidebarApp,
+    SidebarBadge, SidebarOpen, TabIcon, TabLayout, TabLoadFailure, TabPage, TabRef, TabState,
 };
 
 use super::panel_view::main_panel;
@@ -229,9 +230,20 @@ pub(super) fn build_page(
     let browser =
         plugin.is_some_and(|p| crate::browser::opens_in_browser(p, crate::browser::ENGINE));
     TabPage {
-        native: None,
         opens_in_browser: own_page && browser,
+        native: plugin.and_then(|p| native_page(&stored.tab, p)),
         ..page
+    }
+}
+
+/// 插件的入口页能换成原生界面时是哪一个：只换入口（`page` 为空的 `TabRef::Plugin`），钉住的子页和“网页版”照旧开网页。
+fn native_page(tab: &TabRef, plugin: &InstalledPlugin) -> Option<NativePage> {
+    let TabRef::Plugin { page: None, .. } = tab else {
+        return None;
+    };
+    match plugin.media_browse {
+        Some(MediaBrowse::OpenSubsonic) => Some(NativePage::Music),
+        Some(MediaBrowse::Other(_)) | None => None,
     }
 }
 
@@ -256,13 +268,13 @@ pub(crate) fn page_from_metadata(
     _plugins: &PluginsViewModel,
 ) -> TabPage {
     TabPage {
-        native: None,
         title: metadata.title,
         icon: metadata.icon,
         url,
         layout: normalize_layout(metadata.layout),
         state: state_value,
         reload: state.reloads.get(placed).copied().unwrap_or_default(),
+        native: None,
         opens_in_browser: false,
     }
 }
