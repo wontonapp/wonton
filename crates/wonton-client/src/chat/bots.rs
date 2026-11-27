@@ -10,9 +10,9 @@ use tokio::time::Instant;
 use wonton_matrix::{MatrixSession, UserProfile};
 use wonton_protocol::{
     AVATARS_FIELD, AvatarImage, AvatarKind, AvatarMedia, BotAccess, BotActivity, BotActivityFacts,
-    BotChatAvailability, BotChatUnavailable, BotRef, BotView, ChatForm, ChatViewModel, CoreError,
-    HomeStatus, InstalledPlugins, MediaHandle, RoomBot, SharedBot, SharedBotsState, SharedBotsView,
-    StateAvatar, StateAvatars,
+    BotChatAvailability, BotChatUnavailable, BotRef, BotView, ChatContact, ChatForm, ChatViewModel,
+    CoreError, HomeStatus, InstalledPlugins, MediaHandle, RoomBot, RoomRow, SharedBot,
+    SharedBotsState, SharedBotsView, StateAvatar, StateAvatars,
 };
 
 use super::bot_activity::{Activity, synthesize};
@@ -488,14 +488,8 @@ impl Bots {
     /// 把当前能选的人合成进 ViewModel；壳只按搜索词过滤，不自己拼。
     pub(super) fn publish_contacts(&self) {
         let contacts = {
-            let local = lock(&self.local);
-            let view = self.view.borrow();
-            contacts::assemble(
-                &view.bots,
-                local.shared.as_deref(),
-                &view.rooms,
-                view.own_private_bot.as_ref(),
-            )
+            let rooms = self.view.borrow().rooms.clone();
+            self.contacts_for(&rooms)
         };
         self.view.send_if_modified(|view| {
             if view.shared_contacts == contacts {
@@ -503,6 +497,29 @@ impl Bots {
             }
             view.shared_contacts = contacts;
             true
+        });
+    }
+
+    /// 联系人按给定的房间行合成：调用方要把房间行和联系人放进同一次视图写入。
+    fn contacts_for(&self, rooms: &[RoomRow]) -> Vec<ChatContact> {
+        let local = lock(&self.local);
+        let view = self.view.borrow();
+        contacts::assemble(
+            &view.bots,
+            local.shared.as_deref(),
+            rooms,
+            view.own_private_bot.as_ref(),
+        )
+    }
+
+    /// 房间行和联系人候选一起换：只看视图的壳不会撞上“房间已经认成旁聊、联系人还没跟上”的中间态。
+    pub(super) fn publish_rooms_and_contacts(&self, rooms: Vec<RoomRow>) {
+        let contacts = self.contacts_for(&rooms);
+        self.view.send_modify(|view| {
+            view.rooms = rooms;
+            if view.shared_contacts != contacts {
+                view.shared_contacts = contacts;
+            }
         });
     }
 
