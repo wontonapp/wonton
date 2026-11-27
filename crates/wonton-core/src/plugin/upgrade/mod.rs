@@ -6,6 +6,7 @@ mod dependencies;
 mod offers;
 mod record;
 mod run;
+mod run_rollback;
 mod run_swap;
 
 use std::sync::Arc;
