@@ -15,6 +15,8 @@ final class VideoModel {
     /// 每有一次播放停下并报给了核心就加一：看过、接着看的位置变了，详情页据此重取。
     private(set) var playbackEnded = 0
     private var reportedSupport = false
+    /// 每点一次播放加一；在路上的起播回来时号对不上（又点了一次、离开了详情）就作废。
+    private var playTicket = 0
 
     init(core: ClientCore) {
         self.core = core
@@ -57,10 +59,19 @@ final class VideoModel {
         core.videoOffline(itemId: itemId)
     }
 
-    /// 失败了的下载再来一次，接着上次下到的地方。
+    /// 失败了的下载再来一次，接着上次下到的地方。上一次还没回来时客户端核不再开一个。
     func retryDownload(_ itemId: String) async {
         do {
-            _ = try await core.videoRetryDownload(itemId: itemId)
+            try await core.videoRetryDownload(itemId: itemId)
+        } catch {
+            actionProblem = error.videoProblem
+        }
+    }
+
+    /// 暂停了的下载接着下。
+    func resumeDownload(_ itemId: String) async {
+        do {
+            try await core.videoResumeDownload(itemId: itemId)
         } catch {
             actionProblem = error.videoProblem
         }
@@ -74,43 +85,60 @@ final class VideoModel {
         }
     }
 
+    /// 在路上的起播作废：回来的会话停掉，不弹播放器。
+    func abandonPendingPlay() {
+        playTicket += 1
+    }
+
     /// 起播：有写完的离线副本放本机文件，否则让核心开会话。在放的先关掉、等它的界面收完。
     func play(_ item: MediaItemRef, title: String, from position: UInt64, audio: UInt16?, subtitle: UInt16?) async {
+        playTicket += 1
+        let ticket = playTicket
         if let old = player {
             player = nil
             await old.shut()
         }
+        guard ticket == playTicket else { return }
         reportSupport()
         if case let .ready(path) = core.videoOffline(itemId: item.id) {
-            let session = await offlineSession(item, from: position)
             let local = URL(fileURLWithPath: path)
-            open(VideoPlayerController(core: core, local: local, session: session, title: title, from: position))
+            let player = VideoPlayerController(core: core, local: local, title: title, from: position)
+            open(player)
+            attachSession(to: player, item, from: position, audio: audio, subtitle: subtitle)
             return
         }
         do {
             let playback = try await core.videoPlay(item: item, positionMs: position, audio: audio, subtitle: subtitle)
+            guard ticket == playTicket else {
+                // 又点了一次或离开了：这个会话没人放，停掉。
+                try? await core.videoStop(session: playback.session, positionMs: position, finished: false)
+                return
+            }
             guard let player = VideoPlayerController(core: core, playback: playback, title: title) else {
                 actionProblem = Problem(title: String(localized: .Video2.videoPlaybackFailed), detail: playback.url)
                 return
             }
             open(player)
         } catch {
-            actionProblem = error.videoProblem
+            if ticket == playTicket { actionProblem = error.videoProblem }
         }
     }
 
-    /// 放离线副本也尽量开个会话，好记接着看的位置和看完；几秒内开不成（连不上家里）就不记，照放。
-    private func offlineSession(_ item: MediaItemRef, from position: UInt64) async -> String? {
+    /// 放离线副本也尽量开个会话，好记接着看的位置和看完。播放器先放着不等它：连不上家里时开会话要等到超时。
+    /// 会话回来时播放器还在就挂上，已经关了就停掉；开不成就不记。
+    private func attachSession(
+        to player: VideoPlayerController,
+        _ item: MediaItemRef,
+        from position: UInt64,
+        audio: UInt16?,
+        subtitle: UInt16?
+    ) {
         let core = core
-        let attempt = Task {
-            try await core.videoPlay(item: item, positionMs: position, audio: nil, subtitle: nil).session
+        Task {
+            let playback = try? await core.videoPlay(item: item, positionMs: position, audio: audio, subtitle: subtitle)
+            guard let session = playback?.session else { return }
+            player.attach(session: session)
         }
-        let timer = Task {
-            try await Task.sleep(for: .seconds(3))
-            attempt.cancel()
-        }
-        defer { timer.cancel() }
-        return try? await attempt.value
     }
 
     private func open(_ player: VideoPlayerController) {
