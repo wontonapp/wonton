@@ -3,10 +3,10 @@
 # UDP 7842 的 QUIC 地址发现直接对公网（安全组要放行 7842/udp，下面启动后会自检）。按 cloud/iroh-relay/README.md 的部署一节使用。
 #
 # 可以重复跑：已有的 config.toml、令牌、证书都不覆盖；同版本二进制不重下。
-#   bash install.sh                                  # 装服务 + vhost + 签 relay.808cbd.com 的证书
-#   bash install.sh --no-cert                        # 只装服务，不签证书
-#   bash install.sh --offline-binary /tmp/iroh-relay # 用已经下好的官方二进制（会校验版本）
-#   bash install.sh --email ops@example.com          # 主机上还没有 certbot 账号时
+#   DOMAIN=relay.example.com bash install.sh          # 必填；装服务 + vhost + 签该域证书
+#   DOMAIN=relay.example.com bash install.sh --no-cert # 只装服务，不签证书
+#   DOMAIN=relay.example.com bash install.sh --offline-binary /tmp/iroh-relay # 用已下好的二进制
+#   DOMAIN=relay.example.com bash install.sh --email ops@example.com          # 主机还没有 certbot 账号时
 #
 # 需要 root；宿主机不用 Docker。上游版本和 sha256 在 release.env。
 set -euo pipefail
@@ -19,14 +19,37 @@ PREFIX=/opt/wonton-iroh-relay
 ETC=/etc/wonton-iroh-relay
 STATE=/var/lib/wonton-iroh-relay
 USER=wonton-iroh-relay
-DOMAIN=relay.808cbd.com
-OWNER_DOMAIN=808cbd.com
-CERT_DIR=/etc/letsencrypt/live/$DOMAIN
+# 域名没有默认值：不给 DOMAIN 就退出，避免把真实域漏进仓库。
+DOMAIN=${DOMAIN:-}
+# 这台机的主人域名（可选）：只用来把 certbot 装错的证书路径换回去。
+OWNER_DOMAIN=${OWNER_DOMAIN:-}
+CERT_DIR=
 DEPLOY_HOOK=/etc/letsencrypt/renewal-hooks/deploy/wonton-iroh-relay.sh
 
 die() {
     echo "install: $*" >&2
     exit 1
+}
+
+# DOMAIN 必填；OWNER_DOMAIN 可选。CERT_DIR 由 DOMAIN 推出来。
+require_domain() {
+    [[ -n $DOMAIN ]] || die "缺 DOMAIN：DOMAIN=relay.example.com $0"
+    [[ $DOMAIN =~ ^[a-z0-9]([a-z0-9.-]*[a-z0-9])?$ ]] ||
+        die "DOMAIN=$DOMAIN 不是合法域名（只收小写字母、数字、点和短横线）"
+    if [[ -n $OWNER_DOMAIN && ! $OWNER_DOMAIN =~ ^[a-z0-9]([a-z0-9.-]*[a-z0-9])?$ ]]; then
+        die "OWNER_DOMAIN=$OWNER_DOMAIN 不是合法域名"
+    fi
+    CERT_DIR=/etc/letsencrypt/live/$DOMAIN
+}
+
+# 把模板里的 @DOMAIN@ 换成 $DOMAIN，按给定权限装到目标路径（默认 0644）。
+render_template() {
+    local template=$1 target=$2 mode=${3:-0644}
+    local tmp
+    tmp=$(mktemp)
+    sed "s|@DOMAIN@|$DOMAIN|g" "$template" >"$tmp"
+    install -m "$mode" "$tmp" "$target"
+    rm -f "$tmp"
 }
 
 need_root() {
@@ -81,7 +104,7 @@ install_binary() {
 install_files() {
     install -m 0644 "$HERE/wonton-iroh-relay.service" /etc/systemd/system/wonton-iroh-relay.service
     install -d -m 0755 "$(dirname "$DEPLOY_HOOK")"
-    install -m 0755 "$HERE/nginx/cert-deploy-hook.sh" "$DEPLOY_HOOK"
+    render_template "$HERE/nginx/cert-deploy-hook.sh.template" "$DEPLOY_HOOK" 0755
 }
 
 # 配置和令牌只在缺失时生成，重跑不覆盖主人的改动。
@@ -105,15 +128,16 @@ ensure_config() {
 install_vhost() {
     local source=$1
     local target=/etc/nginx/sites-available/$DOMAIN
-    install -m 0644 "$source" "$target"
+    render_template "$source" "$target"
     ln -sfn "$target" "/etc/nginx/sites-enabled/$DOMAIN"
     nginx -t
     systemctl reload nginx
 }
 
-# certbot --nginx 按 server_name 找块时会被主人的 *.808cbd.com 骗到，把证书装到 808cbd.com 块上；
-# 装完把主人块的证书路径换回去。
+# certbot --nginx 按 server_name 找块时会被主人的通配符块骗到，把证书装到主人域名的块上；
+# 装完把主人块的证书路径换回去。没有 OWNER_DOMAIN 时跳过。
 restore_owner_cert() {
+    [[ -n $OWNER_DOMAIN ]] || return 0
     local owner=/etc/nginx/sites-available/$OWNER_DOMAIN
     if [[ ! -f $owner ]]; then
         echo "install: 警告：找不到 $owner，没把主人的证书路径换回去；nginx -T 里核对一下" >&2
@@ -128,7 +152,7 @@ ensure_cert() {
         echo "install: 证书已存在，跳过签发"
     else
         command -v certbot >/dev/null || die "缺 certbot（apt install certbot python3-certbot-nginx）"
-        install_vhost "$HERE/nginx/relay.bootstrap.conf"
+        install_vhost "$HERE/nginx/relay.bootstrap.conf.template"
         local -a account=()
         [[ -n $email ]] && account=(--email "$email")
         certbot --nginx -d "$DOMAIN" --redirect --non-interactive --agree-tos "${account[@]}"
@@ -210,6 +234,8 @@ main() {
         esac
     done
 
+    require_domain
+
     need_root
     WORK=$(mktemp -d)
     trap 'rm -rf "$WORK"' EXIT
@@ -227,18 +253,18 @@ main() {
 
     if ((cert)); then
         ensure_cert "$email"
-        install_vhost "$HERE/nginx/relay.808cbd.com.conf"
+        install_vhost "$HERE/nginx/relay.conf.template"
         systemctl restart wonton-iroh-relay.service
         wait_healthy
         post_start_check
         curl --noproxy '*' -fsS --resolve "$DOMAIN:443:127.0.0.1" -o /dev/null -w "公网 vhost /healthz %{http_code}\n" "https://$DOMAIN/healthz"
     elif [[ -d $CERT_DIR ]]; then
-        install_vhost "$HERE/nginx/relay.808cbd.com.conf"
+        install_vhost "$HERE/nginx/relay.conf.template"
         systemctl restart wonton-iroh-relay.service
         wait_healthy
         post_start_check
     else
-        install_vhost "$HERE/nginx/relay.bootstrap.conf"
+        install_vhost "$HERE/nginx/relay.bootstrap.conf.template"
         if systemctl restart wonton-iroh-relay.service; then
             post_start_check
         else

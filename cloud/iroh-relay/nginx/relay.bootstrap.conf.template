@@ -1,9 +1,9 @@
 # 首次签证书前的临时 vhost：只开 80，留给 certbot 走 http-01。
-# 签完 install.sh 会用 relay.808cbd.com.conf 覆盖。
+# 签完 install.sh 会用正式 vhost 覆盖。
 server {
     listen 80;
     listen [::]:80;
-    server_name relay.808cbd.com;
+    server_name @DOMAIN@;
 
     location /.well-known/acme-challenge/ {
         root /var/www/html;

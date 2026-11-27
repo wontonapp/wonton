@@ -1,4 +1,5 @@
 # 推送中继
+`DOMAIN` 必填、没有默认值；本目录的例子统一用 `push.example.com`，真实部署值放公开仓之外。`OWNER_DOMAIN` 可选，只用于把 certbot 装错的证书路径换回去。
 
 ADR-0003 的 M2：家里服务器按 Web Push（RFC 8030）把**已经加密给设备**的通知发到这里（RFC 8291 的
 aes128gcm），这里把它交给 [gorush](https://github.com/appleboy/gorush)，由 gorush 发到 APNs 或 FCM。
@@ -14,7 +15,7 @@ aes128gcm），这里把它交给 [gorush](https://github.com/appleboy/gorush)�
 
 ```
 Tuwunel ──pushkey──▶ 核心（加密给设备的公钥）
-                        │  POST https://push.808cbd.com/push/<设备令牌>
+                        │  POST https://$DOMAIN/push/<设备令牌>
                         │  Authorization: vapid t=<JWT>, k=<公钥>
                         ▼
                      nginx（只反代回环）
@@ -104,16 +105,17 @@ bash server-add.sh my-home <公钥> 120 60
 Ubuntu，root，不用 Docker：
 
 ```bash
-bash install.sh                       # 起服务、装 vhost、签 push.808cbd.com 的证书
-bash install.sh --no-cert             # 只装服务
-bash install.sh --offline-binary /tmp/gorush --no-cert   # 离线
+# DOMAIN 必填；真值从 ~/wonton-dev/deploy-private/ 取，这里用示例域演示
+DOMAIN=push.example.com bash install.sh                       # 起服务、装 vhost、签证书
+DOMAIN=push.example.com bash install.sh --no-cert             # 只装服务
+DOMAIN=push.example.com bash install.sh --offline-binary /tmp/gorush --no-cert   # 离线
 ```
 
-脚本可重复跑：已有的配置、密钥、证书都不覆盖，已经下过同版本的 gorush 也不重下。nginx 的 vhost 只写
-`server_name push.808cbd.com`，每次都先 `nginx -t` 再 reload。
+脚本可重复跑：已有的配置、密钥、证书都不覆盖，已经下过同版本的 gorush 也不重下。nginx 的 vhost 模板里只写
+`server_name @DOMAIN@`，每次渲染后先 `nginx -t` 再 reload。
 
-certbot 按 `server_name` 找块时会被主站 `808cbd` 的 `*.808cbd.com` 骗到，把推送证书装到主站块上；脚本装完证书后
-把主站块的两行 `ssl_certificate` 换回 `808cbd.com` 的证书，再装自己的 vhost。
+certbot 按 `server_name` 找块时会被主站的通配符块骗到，把推送证书装到主站块上；只要设了 `OWNER_DOMAIN`，脚本装完证书后
+就把主站块的两行 `ssl_certificate` 换回主人域的证书，再装自己的 vhost。
 
 文件：
 
@@ -121,12 +123,12 @@ certbot 按 `server_name` 找块时会被主站 `808cbd` 的 `*.808cbd.com` 骗�
 | --- | --- |
 | `/opt/wonton-push-relay/relay.py` | 包装器 |
 | `/opt/wonton-push-relay/gorush` | gorush 1.22.0（下载时校验 sha256） |
-| `/etc/wonton-push-relay/relay.json` | 监听、上游、`origin`、兜底正文、上限 |
+| `/etc/wonton-push-relay/relay.json` | 由 `relay.json.template` 渲染的监听、上游、`origin`、兜底正文、上限 |
 | `/etc/wonton-push-relay/gorush.yml` | gorush 配置（只听回环，日志不落令牌和正文） |
 | `/etc/wonton-push-relay/apns.p8` | APNs 钥匙，`0640 root:wonton-push` |
 | `/etc/wonton-push-relay/servers.d/*.json` | 登记的服务器和服务端限速 |
 | `/var/lib/wonton-push-relay/` | 服务用户的家目录，不存东西 |
-| `/etc/nginx/sites-available/push.808cbd.com` | vhost |
+| `/etc/nginx/sites-available/$DOMAIN` | vhost（由 `nginx/push.conf.template` 或引导模板渲染） |
 
 两个单元都以 `wonton-push` 用户跑、只监听回环、`ProtectSystem=strict`，崩了 2 秒后重起，开机自启。
 
@@ -135,8 +137,11 @@ certbot 按 `server_name` 找块时会被主站 `808cbd` 的 `*.808cbd.com` 骗�
 ```bash
 systemctl is-active wonton-push-relay wonton-push-gorush      # active
 curl -sS -o /dev/null -w '%{http_code}\n' http://127.0.0.1:8790/healthz   # 200
-curl -sS -o /dev/null -w '%{http_code}\n' https://push.808cbd.com/push/$(printf 'ab%.0s' {1..32})  # 401
+curl -sS -o /dev/null -w '%{http_code}\n' https://$DOMAIN/push/$(printf 'ab%.0s' {1..32})  # 401
 journalctl -u wonton-push-relay -n 20                          # 一行一条请求
+
+# 域名必填行为测试（不用 root、不连网）
+bash test/domain-required-test.sh
 ```
 
 签名请求的写法见 `verify.sh`（要一台登记过的服务器，或者用 `vapid-keygen.py` 现造一把再

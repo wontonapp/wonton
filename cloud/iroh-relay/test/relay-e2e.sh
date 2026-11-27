@@ -67,7 +67,7 @@ need() {
 # 1. 部署件必须在。缺哪个报哪个（这是写部署件之前的红）。
 missing=()
 for f in config.toml.example relay.env.example wonton-iroh-relay.service install.sh uninstall.sh \
-    nginx/relay.808cbd.com.conf nginx/relay.bootstrap.conf nginx/cert-deploy-hook.sh; do
+    nginx/relay.conf.template nginx/relay.bootstrap.conf.template nginx/cert-deploy-hook.sh.template; do
     [[ -e $HERE/$f ]] || missing+=("$f")
 done
 if ((${#missing[@]})); then
@@ -75,6 +75,19 @@ if ((${#missing[@]})); then
 fi
 
 for c in docker openssl curl cargo jq sha256sum ss; do need "$c"; done
+
+# DOMAIN 必填：没给、给了非法值都要在 root 检查之前退出；合法值通过（都在子 shell 里跑，不污染测试）。
+if env -u DOMAIN bash -c '. "$1"; require_domain' _ "$HERE/install.sh" 2>"$TMP/no-domain.err"; then
+    fail_hard "没给 DOMAIN 也过了"
+fi
+grep -q '缺 DOMAIN' "$TMP/no-domain.err" || fail_hard "缺 DOMAIN 的报错文案不对：$(cat "$TMP/no-domain.err")"
+if DOMAIN='bad_domain' bash -c '. "$1"; require_domain' _ "$HERE/install.sh" 2>/dev/null; then
+    fail_hard "非法 DOMAIN 也过了"
+fi
+DOMAIN=relay.example.com bash -c '. "$1"; require_domain' _ "$HERE/install.sh" ||
+    fail_hard "合法 DOMAIN 被拒"
+pass "DOMAIN 必填（缺/非法都退出，合法通过）"
+
 # 准入判定用例：缺 [access] 节时上游默认 everyone，不能误报成 shared_token。
 # shellcheck source=../install.sh
 . "$HERE/install.sh"
@@ -187,16 +200,16 @@ pass "QAD 对外监听 0.0.0.0:$QAD_PORT"
 
 # 6. nginx 终结 TLS，按 WebSocket Upgrade 反代到中继（部署配置本身过一遍 sed）。
 # 宿主机可能已经占着 80/443，所以测试里把两个 listen 都挪到空闲端口（只改测试的绑定，不改文件语义）。
-sed -e "s#listen 443 ssl;#listen 127.0.0.1:$TLS_PORT ssl;#" \
+sed -e "s|@DOMAIN@|localhost|g" \
+    -e "s#listen 443 ssl;#listen 127.0.0.1:$TLS_PORT ssl;#" \
     -e "s#^    listen 80;#    listen 127.0.0.1:$HTTP_REDIRECT_PORT;#" \
     -e '/listen \[::\]:443 ssl;/d' \
     -e '/listen \[::\]:80;/d' \
-    -e "s#server_name relay.808cbd.com;#server_name localhost;#" \
-    -e "s#/etc/letsencrypt/live/relay.808cbd.com/fullchain.pem#/tls/fullchain.pem#" \
-    -e "s#/etc/letsencrypt/live/relay.808cbd.com/privkey.pem#/tls/privkey.pem#" \
+    -e "s#/etc/letsencrypt/live/localhost/fullchain.pem#/tls/fullchain.pem#" \
+    -e "s#/etc/letsencrypt/live/localhost/privkey.pem#/tls/privkey.pem#" \
     -e "s#127.0.0.1:8742#127.0.0.1:$HTTP_PORT#" \
-    -e "s#/var/log/nginx/relay.808cbd.com.access.log#/dev/stdout#" \
-    "$HERE/nginx/relay.808cbd.com.conf" > "$TMP/nginx.conf"
+    -e "s#/var/log/nginx/localhost.access.log#/dev/stdout#" \
+    "$HERE/nginx/relay.conf.template" > "$TMP/nginx.conf"
 docker run --rm -d --name "$NGINX_NAME" --network host \
     -v "$TMP/nginx.conf:/etc/nginx/conf.d/default.conf:ro" \
     -v "$TMP/tls:/tls:ro" "$NGINX_IMAGE" >/dev/null

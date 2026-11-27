@@ -1,10 +1,10 @@
 #!/usr/bin/env bash
 # 在公网主机上装推送中继。可以重复跑：已有的配置、密钥和证书都不覆盖。
 #
-#   bash install.sh                 # 装服务 + vhost + 签 push.808cbd.com 的证书
-#   bash install.sh --no-cert       # 只装服务，不碰证书
-#   bash install.sh --offline-binary /tmp/gorush   # 用已经下好的 gorush
-#   bash install.sh --email ops@example.com        # 主机上还没有 certbot 账号时
+#   DOMAIN=push.example.com bash install.sh          # 必填；装服务 + vhost + 签该域证书
+#   DOMAIN=push.example.com bash install.sh --no-cert # 只装服务，不碰证书
+#   DOMAIN=push.example.com bash install.sh --offline-binary /tmp/gorush   # 用已下好的 gorush
+#   DOMAIN=push.example.com bash install.sh --email ops@example.com        # 主机还没有 certbot 账号时
 #
 # 需要 root；宿主机本身不用 Docker。
 set -euo pipefail
@@ -17,15 +17,37 @@ PREFIX=/opt/wonton-push-relay
 ETC=/etc/wonton-push-relay
 STATE=/var/lib/wonton-push-relay
 USER=wonton-push
-DOMAIN=push.808cbd.com
-# 这台还跑着主人的站；certbot 按 server_name 找块时，808cbd 的通配符会让它改错块。
-OWNER_DOMAIN=808cbd.com
+# 域名没有默认值：不给 DOMAIN 就退出，避免把真实域漏进仓库。
+DOMAIN=${DOMAIN:-}
+# 这台机的主人域名（可选）：只用来把 certbot 装错的证书路径换回去。
+OWNER_DOMAIN=${OWNER_DOMAIN:-}
 HERE=$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)
-CERT_DIR=/etc/letsencrypt/live/$DOMAIN
+CERT_DIR=
 
 die() {
     echo "install: $*" >&2
     exit 1
+}
+
+# DOMAIN 必填；OWNER_DOMAIN 可选。CERT_DIR 由 DOMAIN 推出来。
+require_domain() {
+    [[ -n $DOMAIN ]] || die "缺 DOMAIN：DOMAIN=push.example.com $0"
+    [[ $DOMAIN =~ ^[a-z0-9]([a-z0-9.-]*[a-z0-9])?$ ]] ||
+        die "DOMAIN=$DOMAIN 不是合法域名（只收小写字母、数字、点和短横线）"
+    if [[ -n $OWNER_DOMAIN && ! $OWNER_DOMAIN =~ ^[a-z0-9]([a-z0-9.-]*[a-z0-9])?$ ]]; then
+        die "OWNER_DOMAIN=$OWNER_DOMAIN 不是合法域名"
+    fi
+    CERT_DIR=/etc/letsencrypt/live/$DOMAIN
+}
+
+# 把模板里的 @DOMAIN@ 换成 $DOMAIN，按给定权限装到目标路径（默认 0644）。
+render_template() {
+    local template=$1 target=$2 mode=${3:-0644}
+    local tmp
+    tmp=$(mktemp)
+    sed "s|@DOMAIN@|$DOMAIN|g" "$template" >"$tmp"
+    install -m "$mode" "$tmp" "$target"
+    rm -f "$tmp"
 }
 
 need_root() {
@@ -45,7 +67,7 @@ install_files() {
     install -m 0644 "$HERE/wonton-push-relay.service" /etc/systemd/system/wonton-push-relay.service
     install -m 0644 "$HERE/wonton-push-gorush.service" /etc/systemd/system/wonton-push-gorush.service
     if [[ ! -e "$ETC/relay.json" ]]; then
-        install -m 0644 "$HERE/relay.json" "$ETC/relay.json"
+        render_template "$HERE/relay.json.template" "$ETC/relay.json"
     fi
     if [[ ! -e "$ETC/gorush.yml" ]]; then
         install -m 0644 "$HERE/gorush.yml" "$ETC/gorush.yml"
@@ -84,9 +106,9 @@ ensure_fake_key() {
 
 install_vhost() {
     local target=/etc/nginx/sites-available/$DOMAIN
-    local source=$HERE/nginx/push.bootstrap.conf
-    [[ -d $CERT_DIR ]] && source=$HERE/nginx/push.808cbd.com.conf
-    install -m 0644 "$source" "$target"
+    local source=$HERE/nginx/push.bootstrap.conf.template
+    [[ -d $CERT_DIR ]] && source=$HERE/nginx/push.conf.template
+    render_template "$source" "$target"
     ln -sfn "$target" "/etc/nginx/sites-enabled/$DOMAIN"
     nginx -t
     systemctl reload nginx
@@ -98,15 +120,16 @@ fcm_hint() {
     echo "install: 没有 FCM 服务账号，gorush 的 Android 保持关闭（见 README 的“FCM 配置”）"
 }
 
-# certbot 会把推送证书装到主人的 808cbd 块上（它的 server_name 有 *.808cbd.com），换回主人自己的证书。
+# certbot 会把推送证书装到主人的通配符块上，换回主人自己的证书。没有 OWNER_DOMAIN 时跳过。
 restore_owner_cert() {
+    [[ -n $OWNER_DOMAIN ]] || return 0
     local owner=/etc/nginx/sites-available/$OWNER_DOMAIN
     [[ -f $owner ]] || return 0
     sed -i "s#/etc/letsencrypt/live/$DOMAIN/#/etc/letsencrypt/live/$OWNER_DOMAIN/#g" "$owner"
 }
 
 finalize_vhost() {
-    install -m 0644 "$HERE/nginx/push.808cbd.com.conf" "/etc/nginx/sites-available/$DOMAIN"
+    render_template "$HERE/nginx/push.conf.template" "/etc/nginx/sites-available/$DOMAIN"
     nginx -t
     systemctl reload nginx
 }
@@ -147,6 +170,8 @@ main() {
         esac
     done
 
+    require_domain
+
     need_root
     command -v openssl >/dev/null || die "缺 openssl"
     command -v curl >/dev/null || die "缺 curl"
@@ -182,5 +207,6 @@ main() {
     echo "install: 把家里服务器的 VAPID 公钥写进 $ETC/servers.d/<名字>.json 后才能真发"
 }
 
-main "$@"
-exit $?
+if [[ ${BASH_SOURCE[0]} == "$0" ]]; then
+    main "$@"
+fi

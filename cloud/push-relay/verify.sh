@@ -1,11 +1,11 @@
 #!/usr/bin/env bash
 # 用一把登记过的 VAPID 私钥发一条签名请求，看中继回什么。密文是随机字节（服务端不解密）。
 #
-#   bash verify.sh --key /etc/wonton/push-vapid.key
+#   DOMAIN=push.example.com bash verify.sh --key /etc/wonton/push-vapid.key
 #   bash verify.sh --key k --url http://127.0.0.1:8790 --token $(printf 'ab%.0s' {1..32})
 set -euo pipefail
 
-url=https://push.808cbd.com
+url=${DOMAIN:+https://$DOMAIN}
 token=$(printf 'ab%.0s' {1..32})
 key=""
 urgency=high
@@ -19,6 +19,8 @@ while (($#)); do
         *) echo "verify: 不认识的参数 $1" >&2; exit 2 ;;
     esac
 done
+
+[[ -n $url ]] || { echo "verify: 缺 DOMAIN：给 --url 或设 DOMAIN（如 DOMAIN=push.example.com）" >&2; exit 2; }
 
 [[ -n $key && -r $key ]] || { echo "verify: 要给 --key 且读得到" >&2; exit 2; }
 
