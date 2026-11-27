@@ -27,7 +27,7 @@ skip() {
     echo "SKIP $*"
 }
 
-# install.sh 建的是 config.toml 0640、relay.env 0600；比这更严（600/400）也收，组或其他可读写就报。
+# install.sh 建的是 config.toml 0640、relay.env 0600；两者都只收 600/640，超过 640 就报。
 check_private_file() {
     file=$1
     label=$2
