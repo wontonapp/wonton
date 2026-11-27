@@ -67,7 +67,8 @@ struct MainView: View {
             chat.path = [.chatBackup]
         })
 
-        .fullScreenCover(isPresented: $showsSettings) {
+        // 系统 sheet（11-27 主人）：往下拉跟手关，列表在顶上时下拉才关；关闭在右上角（wontonSheetScreen）。
+        .sheet(isPresented: $showsSettings) {
             // 参数多，闭包先写成带类型的局部量，不写时整条表达式类型检查会超时。
             let openPlugin: (PluginEntry) -> Void = { showsSettings = false; open($0) }
             let checkInstalled: () -> Void = { showsSettings = false; pages.open(.apps) }

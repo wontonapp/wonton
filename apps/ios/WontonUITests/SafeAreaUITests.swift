@@ -55,7 +55,7 @@ final class SafeAreaUITests: XCTestCase {
         XCTAssertTrue(collapse.waitForNonExistence(timeout: 10))
         captures.append(try capture("my-apps"))
 
-        // The apps entry is a full-screen cover without a fixture-backed dismissal action.
+        // The apps entry has no fixture-backed way back to the chat list.
         // Relaunch the same fixture rather than relying on core navigation mutations it does not implement.
         app.terminate()
         UITestBackend.launch(app)
@@ -63,14 +63,16 @@ final class SafeAreaUITests: XCTestCase {
         let settingsEntry = try XCTUnwrap(UITestSidebar.row(app, labels: ["Settings"]))
         settingsEntry.tap()
         // The chat list's backup-reminder dismiss button is labelled Close too and stays in the tree
-        // behind the cover, so skip it by identifier; the cover slides in, so wait until its button
+        // behind the sheet, so skip it by identifier; the sheet slides up, so wait until its button
         // stops moving before capturing.
         let close = app.buttons.matching(NSPredicate(
             format: "label == %@ AND identifier != %@", "Close", "chat-backup-reminder-dismiss"
         )).firstMatch
         XCTAssertTrue(close.waitForExistence(timeout: 10), app.debugDescription)
         XCTAssertNotNil(waitForStableFrame(close, timeout: 10), app.debugDescription)
-        captures.append(try capture("settings"))
+        // Settings is a system sheet: its top edge sits below the status bar, which shows the dimmed chat
+        // list instead, so only the home-indicator band is the sheet's own safe area to fill.
+        captures.append(try capture("settings", edges: [0.98]))
 
         // These are layout assertions, not copy assertions. Backgrounds may extend; controls must not.
         XCTAssertGreaterThanOrEqual(rootButtonFrame.minY, 44)
@@ -108,9 +110,13 @@ final class SafeAreaUITests: XCTestCase {
         let image: CGImage
         /// Left edge of the shifted main page; only set while the sidebar is open.
         let pageLeft: CGFloat?
+        /// Heights (fraction of the screen) of the system bands that must match the page middle.
+        let edges: [CGFloat]
     }
 
-    private func capture(_ entry: String, pageLeft: CGFloat? = nil) throws -> Capture {
+    private func capture(
+        _ entry: String, pageLeft: CGFloat? = nil, edges: [CGFloat] = [0.02, 0.98]
+    ) throws -> Capture {
         // XCUIScreen, not app.screenshot(): status bar and home-indicator pixels are part of the contract.
         let screenshot = XCUIScreen.main.screenshot()
         let image = try XCTUnwrap(screenshot.image.cgImage)
@@ -119,7 +125,7 @@ final class SafeAreaUITests: XCTestCase {
         attachment.name = name
         attachment.lifetime = .keepAlways
         add(attachment)
-        return Capture(name: name, image: image, pageLeft: pageLeft)
+        return Capture(name: name, image: image, pageLeft: pageLeft, edges: edges)
     }
 
     private func assertContinuousBackground(_ captured: Capture) throws {
@@ -136,7 +142,6 @@ final class SafeAreaUITests: XCTestCase {
             inset / CGFloat(captured.image.width),
             1 - inset / CGFloat(captured.image.width),
         ]
-        var edges: [CGFloat] = [0.02, 0.98]
         if let pageLeft = captured.pageLeft {
             // The sidebar covers the screen's left edge and clips the page's right one, so sample the
             // shifted page's own 16pt page inset instead: 10pt inside the page edge, patch clear of the
@@ -145,7 +150,6 @@ final class SafeAreaUITests: XCTestCase {
             // rule. 7% / 93% of the height keep it in the page's top and bottom safe margins, clear of
             // the clock, the island and the home indicator.
             columns = [((pageLeft * scale) + inset) / CGFloat(captured.image.width)]
-            edges = [0.07, 0.93]
             // 侧栏打开时列表行和滚动指示器就在屏幕中部，middle 会偏几个色阶（实测 9），
             // 所以这个场景改比上下两条边缘，不再用 middle。
             let top = try patch(captured.image, x: columns[0], y: 0.07)
@@ -155,7 +159,7 @@ final class SafeAreaUITests: XCTestCase {
         }
         for column in columns {
             let middle = try patch(captured.image, x: column, y: 0.5)
-            for edge in edges {
+            for edge in captured.edges {
                 let systemArea = try patch(captured.image, x: column, y: edge)
                 assertMatches(systemArea, middle, context: "\(captured.name) x=\(column), y=\(edge)")
             }
