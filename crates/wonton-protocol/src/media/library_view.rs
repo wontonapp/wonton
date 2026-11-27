@@ -93,8 +93,8 @@ pub struct PhotoTile {
     /// 实况/动态照片，动态部分按 [`PhotoRendition::Live`] 取
     pub live: bool,
     pub favorite: bool,
-    /// 别人的条目写是谁的，壳据此标来源；本人的为空
-    pub owner: Option<PhotoUser>,
+    /// 谁的：不是 `Me` 就不是本人的，壳据此标来源
+    pub owner: PhotoTileOwner,
     /// ThumbHash 的 base64，缩略图到之前的占位
     pub thumbhash: Option<String>,
 }
@@ -155,6 +155,19 @@ pub enum PhotoAlbumOwner {
     Other {
         raw: String,
     },
+}
+
+/// 条目是谁的。
+#[derive(Serialize, Deserialize, Debug, Clone, PartialEq, Eq)]
+#[cfg_attr(feature = "uniffi", derive(uniffi::Enum))]
+#[serde(tag = "type", rename_all = "snake_case")]
+pub enum PhotoTileOwner {
+    Me,
+    Person {
+        user: PhotoUser,
+    },
+    /// 别人的，但主人不是这台服务器上的哪位家人；没有名字可写
+    Unknown,
 }
 
 /// 条目的主人、相册的成员：本机的人（不是提供方认出的人物）。
@@ -610,7 +623,13 @@ impl From<&PhotoAsset> for PhotoTile {
             duration_ms: asset.duration_ms,
             live: asset.live,
             favorite: asset.favorite,
-            owner: asset.owner.as_deref().map(PhotoUser::unnamed),
+            owner: match (&asset.owner, asset.owner_unknown) {
+                (Some(user_id), _) => PhotoTileOwner::Person {
+                    user: PhotoUser::unnamed(user_id),
+                },
+                (None, true) => PhotoTileOwner::Unknown,
+                (None, false) => PhotoTileOwner::Me,
+            },
             thumbhash: asset.thumbhash.clone(),
         }
     }
@@ -734,6 +753,33 @@ mod tests {
         assert_eq!(
             PhotoUser::unnamed("not-a-matrix-id").name,
             "not-a-matrix-id"
+        );
+        assert_eq!(
+            PhotoAlbumOwner::from(&AlbumOwner::Unknown),
+            PhotoAlbumOwner::Unknown
+        );
+    }
+
+    #[test]
+    fn tiles_are_mine_only_without_an_owner_of_either_kind() {
+        let wire = |owner: serde_json::Value| -> PhotoAsset {
+            let mut raw = serde_json::json!({"id": "a", "kind": "photo", "taken_at": 1});
+            raw.as_object_mut()
+                .unwrap()
+                .extend(owner.as_object().unwrap().clone());
+            serde_json::from_value(raw).unwrap()
+        };
+        let owner = |raw| PhotoTile::from(&wire(raw)).owner;
+        assert_eq!(owner(serde_json::json!({})), PhotoTileOwner::Me);
+        assert_eq!(
+            owner(serde_json::json!({"owner_unknown": true})),
+            PhotoTileOwner::Unknown
+        );
+        assert_eq!(
+            owner(serde_json::json!({"owner": "@mom:example.com"})),
+            PhotoTileOwner::Person {
+                user: PhotoUser::unnamed("@mom:example.com")
+            }
         );
     }
 

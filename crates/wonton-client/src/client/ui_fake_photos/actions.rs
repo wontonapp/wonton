@@ -5,7 +5,7 @@ use wonton_protocol::media::library::{ActionFailure, Album, AlbumOwner, LibraryA
 use wonton_protocol::media::library_view::{
     PhotoAlbumOwner, PhotoAlbumRow, PhotoAlbumView, PhotoDay, PhotoDetailView, PhotoEdit,
     PhotoInfo, PhotoLocation, PhotoPage, PhotoPerson, PhotoSearch, PhotoSearchView,
-    PhotoSourceState, PhotoTile, PhotosAction, PhotosViewModel,
+    PhotoSourceState, PhotoTile, PhotoTileOwner, PhotosAction, PhotosViewModel,
 };
 use wonton_protocol::media::{MediaFailure, MediaFailureCode, MediaKind};
 
@@ -244,7 +244,7 @@ fn edit_library(view: &mut PhotosViewModel, edit: &PhotoEdit) {
     let failed: Vec<ActionFailure> = edit
         .ids()
         .iter()
-        .filter(|id| find_tile(view, id).is_some_and(|tile| tile.owner.is_some()))
+        .filter(|id| find_tile(view, id).is_some_and(|tile| tile.owner != PhotoTileOwner::Me))
         .map(|id| ActionFailure {
             id: id.clone(),
             failure: MediaFailure {

@@ -170,6 +170,9 @@ async fn albums_are_split_by_owner_and_open_page_by_page() {
     rig.core
         .photos
         .album(album("al4", "?", AlbumOwner::Other("guest".into())), &[]);
+    rig.core
+        .photos
+        .album(album("al5", "?", AlbumOwner::Unknown), &[]);
     rig.connected().await;
     open(&rig);
     let view = photos(&rig, "相册列表", |view| !view.albums.mine.is_empty()).await;
@@ -178,7 +181,7 @@ async fn albums_are_split_by_owner_and_open_page_by_page() {
     };
     assert_eq!(titles(&view.albums.mine), ["al1"]);
     assert_eq!(titles(&view.albums.household), ["al2"]);
-    assert_eq!(titles(&view.albums.shared_with_me), ["al3", "al4"]);
+    assert_eq!(titles(&view.albums.shared_with_me), ["al3", "al4", "al5"]);
     assert_eq!(view.albums.mine[0].count, 3);
 
     send(&rig, PhotosAction::OpenAlbum { id: "al1".into() }).unwrap();

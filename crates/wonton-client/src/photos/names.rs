@@ -4,7 +4,7 @@
 use std::collections::HashMap;
 
 use wonton_protocol::media::library_view::{
-    PhotoAlbumOwner, PhotoAlbumRow, PhotoTile, PhotoUser, PhotosViewModel,
+    PhotoAlbumOwner, PhotoAlbumRow, PhotoTile, PhotoTileOwner, PhotoUser, PhotosViewModel,
 };
 
 pub(crate) fn name_people(view: &mut PhotosViewModel) {
@@ -48,8 +48,8 @@ pub(crate) fn name_people(view: &mut PhotosViewModel) {
 }
 
 fn name_tile(tile: &mut PhotoTile, names: &HashMap<&str, &str>) {
-    if let Some(owner) = &mut tile.owner {
-        name(owner, names);
+    if let PhotoTileOwner::Person { user } = &mut tile.owner {
+        name(user, names);
     }
 }
 

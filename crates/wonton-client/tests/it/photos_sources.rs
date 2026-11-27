@@ -9,7 +9,7 @@ use wonton_protocol::media::MediaFailureCode;
 use wonton_protocol::media::choices::SHARE_TARGETS_PATH;
 use wonton_protocol::media::library::AlbumOwner;
 use wonton_protocol::media::library_view::{
-    PhotoAlbumOwner, PhotoSourceState, PhotoUser, PhotosAction, PhotosViewModel,
+    PhotoAlbumOwner, PhotoSourceState, PhotoTileOwner, PhotoUser, PhotosAction, PhotosViewModel,
 };
 
 use crate::photos::{november, november_open, open, photos, send};
@@ -175,7 +175,9 @@ async fn a_member_who_cannot_manage_members_still_gets_the_share_list() {
     assert!(view.share_targets.people.is_empty());
 }
 
-fn album_people(view: &PhotosViewModel) -> (Option<PhotoUser>, Vec<PhotoUser>, Option<PhotoUser>) {
+fn album_people(
+    view: &PhotosViewModel,
+) -> (Option<PhotoUser>, Vec<PhotoUser>, Option<PhotoTileOwner>) {
     let row = &view.albums.shared_with_me[0];
     let owner = match &row.owner {
         PhotoAlbumOwner::Person { user } => Some(user.clone()),
@@ -187,7 +189,7 @@ fn album_people(view: &PhotosViewModel) -> (Option<PhotoUser>, Vec<PhotoUser>, O
         .first()
         .and_then(|month| month.days.first())
         .and_then(|day| day.tiles.first())
-        .and_then(|tile| tile.owner.clone());
+        .map(|tile| tile.owner.clone());
     (owner, row.members.clone(), tile)
 }
 
@@ -218,7 +220,11 @@ async fn owners_and_members_are_named_from_the_share_list_or_by_their_id() {
     let dad = user("@dad:example.com", "dad");
     assert_eq!(
         album_people(&view),
-        (Some(mom), vec![dad.clone()], Some(dad))
+        (
+            Some(mom),
+            vec![dad.clone()],
+            Some(PhotoTileOwner::Person { user: dad })
+        )
     );
 
     // 名单取不成：显示名不再可信，退回本地部分。

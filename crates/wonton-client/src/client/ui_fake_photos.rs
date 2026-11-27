@@ -17,8 +17,8 @@ use std::sync::atomic::Ordering;
 use wonton_protocol::media::library_view::{
     PhotoAlbumOwner, PhotoAlbumRow, PhotoAlbums, PhotoDay, PhotoEditKind, PhotoMonth, PhotoPeople,
     PhotoPerson, PhotoRendition, PhotoShareTarget, PhotoShareTargets, PhotoSource,
-    PhotoSourceState, PhotoSources, PhotoTile, PhotoTimeline, PhotoUser, PhotosAction,
-    PhotosViewModel,
+    PhotoSourceState, PhotoSources, PhotoTile, PhotoTileOwner, PhotoTimeline, PhotoUser,
+    PhotosAction, PhotosViewModel,
 };
 use wonton_protocol::media::{MediaError, MediaFailure, MediaFailureCode, MediaKind};
 
@@ -161,7 +161,7 @@ fn tile(id: &str, taken_at: u64, kind: MediaKind) -> PhotoTile {
         aspect: Some(4.0 / 3.0),
         live: false,
         favorite: false,
-        owner: None,
+        owner: PhotoTileOwner::Me,
         thumbhash: Some(THUMBHASHES[pick].to_owned()),
     }
 }
@@ -191,7 +191,9 @@ fn november() -> PhotoMonth {
     let mut favorite = photo("fake-favorite", 1);
     favorite.favorite = true;
     let mut from_mom = photo("fake-from-mom", 1);
-    from_mom.owner = Some(PhotoUser::unnamed(MOM));
+    from_mom.owner = PhotoTileOwner::Person {
+        user: PhotoUser::unnamed(MOM),
+    };
     from_mom.aspect = Some(3.0 / 4.0);
     let mut tall = photo("fake-tall", 2);
     tall.aspect = Some(9.0 / 16.0);
