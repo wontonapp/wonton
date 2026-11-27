@@ -32,7 +32,11 @@ sha2 = { workspace = true }
 # MIT OR Apache-2.0。配对请求和回应的 JSON。
 serde = { workspace = true }
 serde_json = { workspace = true }
+# ISC AND (Apache-2.0 OR ISC)。联邦出站两端终结 TLS（ADR-0112）：根库和自写校验器。
+rustls = { workspace = true }
 thiserror = { workspace = true }
+# MIT OR Apache-2.0。两端握手的异步包装。
+tokio-rustls = { workspace = true, features = ["aws_lc_rs", "tls12"] }
 tokio = { workspace = true, features = ["rt-multi-thread", "macros", "net", "io-util", "sync", "time"] }
 tracing = { workspace = true }
 # MIT OR Apache-2.0。二维码里的配对码是一个 wonton:// 地址。

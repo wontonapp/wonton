@@ -87,6 +87,9 @@ services:
       WONTON_FEDERATION_LISTEN: federation-proxy.wonton.internal:8448
       # 配对联邦的证书材料（ADR-0112）：核心在隧道两端终结 TLS 时用。
       WONTON_PEER_TLS_DIR: ${WONTON_INSTALL_DIR}/secrets/peer-tls
+      # 配对服务器经代理取 userinfo 时，核心给它出示的是本机 CA 签的证书；这个信任包让同一进程里的请求方验得过。
+      # 隧道也用它当 iroh 中继的根（系统根都在这份里）。
+      WONTON_SHARE_CA_FILE: ${WONTON_INSTALL_DIR}/secrets/peer-tls/trust.pem
       WONTON_PUSH_LISTEN: push.wonton.internal:80
       # 发往我们运营的推送中继时的 VAPID 身份（ADR-0003 的 M2，cloud/push-relay）；不设时不带 VAPID 头。
       WONTON_PUSH_VAPID_KEY: ${WONTON_PUSH_VAPID_KEY:-}

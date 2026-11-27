@@ -27,7 +27,8 @@ use super::tests::{
 };
 use crate::http::{HttpClient, RequestBody};
 
-const WAIT: Duration = Duration::from_secs(15);
+// 共享 CI 主机和 194 一样慢：中继 online、单次 HTTP 都给足时间，别把慢当失败。
+const WAIT: Duration = Duration::from_secs(60);
 
 /// Tuwunel 要连回测试进程里的转发组件。Linux 上宿主的防火墙（比如 ufw）常常挡住容器到宿主的连接（CI 的
 /// runner 上实测），回环地址不受影响，所以 Tuwunel 用宿主的网络、只听回环地址，端口由它自己挑（同
@@ -56,13 +57,18 @@ fn two_installs_on_one_host_federate_through_the_core_proxy() {
     runtime.block_on(async {
         let pairings: Pairings = Arc::default();
         let (relays, _, _relay) = run_relay_server().await.unwrap();
-        let a = Core::start(&pairings, &relays).await;
-        let b = Core::start(&pairings, &relays).await;
-        // 两套同时起，谁也不指定子网。
+        // 两套同时起，谁也不指定子网。先 init 出证书材料，核心的转发组件要用这台安装自己的 CA；
+        // 代理地址要等转发组件监听端口出来，再由 launch 写进配置。
         let (dir_a, dir_b) = (tempfile::tempdir().unwrap(), tempfile::tempdir().unwrap());
+        let stack_a = Stack::prepare(dir_a.path());
+        let stack_b = Stack::prepare(dir_b.path());
+        let a = Core::start(&pairings, &relays, &stack_a.peer_tls_dir).await;
+        let b = Core::start(&pairings, &relays, &stack_b.peer_tls_dir).await;
+        let (a_tls, b_tls) = (stack_a.peer_tls_dir.clone(), stack_b.peer_tls_dir.clone());
         let (stack_a, stack_b) = std::thread::scope(|scope| {
-            let started_a = scope.spawn(|| Stack::start(dir_a.path(), a.proxy_port));
-            let started_b = scope.spawn(|| Stack::start(dir_b.path(), b.proxy_port));
+            let (a_tls, b_tls) = (a_tls.clone(), b_tls.clone());
+            let started_a = scope.spawn(move || stack_a.launch(a.proxy_port, &b_tls));
+            let started_b = scope.spawn(move || stack_b.launch(b.proxy_port, &a_tls));
             (started_a.join().unwrap(), started_b.join().unwrap())
         });
         pairings.lock().unwrap().extend([
@@ -135,7 +141,7 @@ impl Core {
     /// 和正式的核心一样带中继：宿主上 Docker 增删网卡时 iroh 在原端口重新绑定 UDP，同进程正在起子进程
     /// （docker CLI）时子进程在 exec 前还拿着这个 fd，绑定报 AddrInUse；只有 IP 传输的 endpoint 会因此
     /// 整个关掉，有中继的只丢直连（iroh 1.4.1，Linux 上实测）。
-    async fn start(pairings: &Pairings, relays: &RelayMap) -> Self {
+    async fn start(pairings: &Pairings, relays: &RelayMap, peer_tls: &Path) -> Self {
         let endpoint = Endpoint::builder(presets::Minimal)
             .secret_key(SecretKey::generate())
             .clear_ip_transports()
@@ -149,6 +155,11 @@ impl Core {
         tokio::time::timeout(WAIT, endpoint.online())
             .await
             .expect("测试中继应在几秒内连上");
+        // 测试进程就是“核心”：用这台安装自己的 CA 给 Tuwunel 出示证书（Tuwunel 的 trust.pem 就信它）；
+        // pin 先不查（返回 None，走待钉窗口放行）。
+        let tls =
+            crate::matrix::federation_tls::forwarder(peer_tls, Arc::new(|_: &str| None), None)
+                .unwrap();
         let (paired, paired_rx) = watch::channel(BTreeSet::new());
         let table = pairings.clone();
         // 不用宿主网络时容器经 host-gateway 连进来，所以绑在所有地址上；正式安装只绑在核心的内部网络上。
@@ -159,6 +170,7 @@ impl Core {
             paired_rx,
             Duration::from_millis(500),
             Duration::from_secs(3),
+            Some(tls),
         )
         .await
         .unwrap();
@@ -196,49 +208,68 @@ struct Stack {
     registration_secret: String,
     federation_port: u16,
     proxy: String,
+    /// 这台安装自己的证书材料，核心出站用它当 CA。
+    peer_tls_dir: std::path::PathBuf,
+    /// 挂进容器的材料：自己的 peer.pem/key + 双方 CA 拼成的 trust.pem（A 的核心要给 B 的 Tuwunel
+    /// 出示 A CA 签的证书，B 得同时信 A、B 两个 CA）。
+    bundle: std::path::PathBuf,
 }
 
 impl Stack {
-    /// `wonton-core init` 写出安装目录，把配置里的代理地址换成测试进程里转发组件的地址。
-    fn start(dir: &Path, proxy_port: u16) -> Self {
+    /// `wonton-core init` 先写出安装目录和本机证书材料；代理地址要等转发组件监听端口出来再写，
+    /// 所以起容器拆到 [`Self::launch`]。
+    fn prepare(dir: &Path) -> Self {
         crate::install::init(dir, None).unwrap();
         let secrets = dir.join("secrets");
         let read = |name: &str| std::fs::read_to_string(secrets.join(name)).unwrap();
-        let config = std::fs::read_to_string(dir.join("secrets/tuwunel/wonton-fed.toml")).unwrap();
-        let proxy_host = if HOST_NETWORK {
-            "127.0.0.1"
-        } else {
-            "host.docker.internal"
-        };
-        let config = config.replace(PROXY_ADDR, &format!("{proxy_host}:{proxy_port}"));
-        std::fs::write(dir.join("secrets/tuwunel/wonton-fed.toml"), config).unwrap();
-        // 1122 这一支还没有核心终结出站 TLS（那是 1123）：测试里的转发器是原样透明转发，所以让 Tuwunel
-        // 自己用 init 生成的 peer.pem 终结，并放宽校验接受对方的自签叶；trust.pem 仍按正式写法挂进来，
-        // 1123 起改成核心出示 CA 签的证书、由 Tuwunel 用 trust.pem 验证。
-        let tuwenel = std::fs::read_to_string(dir.join("secrets/tuwunel/tuwunel.toml")).unwrap();
-        let tuwenel = tuwenel.replace(
-            "allow_invalid_tls_certificates = false",
-            "allow_invalid_tls_certificates = true",
-        ) + "\n[global.tls]\ncerts = \"/etc/wonton-peer-tls/peer.pem\"\nkey = \"/etc/wonton-peer-tls/peer.key\"\ndual_protocol = true\n";
+        // 入站 TLS 还是 Tuwunel 自己的事（server.rs：入站半段还没接，流原样交给 Tuwunel）；核心只终结
+        // 出站。所以这里保留 [global.tls] 让 Tuwunel 当 TLS 服务端；allow_invalid 保持 false，Tuwunel 必须
+        // 真的用挂进来的 trust.pem 验过核心按 CONNECT 目标名签的那张证书（出站由核心当客户端）。
+        let tuwenel = std::fs::read_to_string(dir.join("secrets/tuwunel/tuwunel.toml")).unwrap()
+            + "\n[global.tls]\ncerts = \"/etc/wonton-peer-tls/peer.pem\"\nkey = \"/etc/wonton-peer-tls/peer.key\"\ndual_protocol = true\n";
         std::fs::write(dir.join("secrets/tuwunel/tuwunel.toml"), tuwenel).unwrap();
         let token = crate::secret::random_token();
-        let mut stack = Self {
+        Self {
             dir: dir.to_owned(),
             network: (!HOST_NETWORK).then(|| format!("fedproxy-test-{token}")),
             container: format!("fedproxy-test-{token}"),
             server_name: read("matrix-server-name").trim().to_owned(),
             registration_secret: read("matrix-registration-secret").trim().to_owned(),
-            proxy: format!("{proxy_host}:{proxy_port}"),
+            proxy: String::new(),
             federation_port: 0,
+            peer_tls_dir: crate::peer_tls::dir(&secrets),
+            bundle: dir.join("entry-peer-tls"),
+        }
+    }
+
+    /// 核心的转发组件已经在监听：把代理地址写进配置、起 Tuwunel，等它报出监听端口。
+    fn launch(mut self, proxy_port: u16, other_trust: &Path) -> Self {
+        // 自己的叶照旧；信任包拼上对方 CA（自己的 trust.pem 本来就有系统根和本机 CA）。
+        std::fs::create_dir_all(&self.bundle).unwrap();
+        for name in ["peer.pem", "peer.key"] {
+            std::fs::copy(self.peer_tls_dir.join(name), self.bundle.join(name)).unwrap();
+        }
+        let mut trust = std::fs::read(self.peer_tls_dir.join("trust.pem")).unwrap();
+        trust.extend(std::fs::read(other_trust.join("trust.pem")).unwrap());
+        std::fs::write(self.bundle.join("trust.pem"), trust).unwrap();
+        let proxy_host = if HOST_NETWORK {
+            "127.0.0.1"
+        } else {
+            "host.docker.internal"
         };
-        if let Some(network) = &stack.network {
+        let config =
+            std::fs::read_to_string(self.dir.join("secrets/tuwunel/wonton-fed.toml")).unwrap();
+        let config = config.replace(PROXY_ADDR, &format!("{proxy_host}:{proxy_port}"));
+        std::fs::write(self.dir.join("secrets/tuwunel/wonton-fed.toml"), config).unwrap();
+        self.proxy = format!("{proxy_host}:{proxy_port}");
+        if let Some(network) = &self.network {
             docker(&["network", "create", network]);
         }
-        docker(&stack.run_args());
-        stack.federation_port = if HOST_NETWORK {
-            stack.listening_port()
+        docker(&self.run_args());
+        self.federation_port = if HOST_NETWORK {
+            self.listening_port()
         } else {
-            let mapped = docker(&["port", &stack.container, "8448/tcp"]);
+            let mapped = docker(&["port", &self.container, "8448/tcp"]);
             mapped
                 .lines()
                 .next()
@@ -246,12 +277,13 @@ impl Stack {
                 .and_then(|port| port.parse().ok())
                 .unwrap_or_else(|| panic!("读不出映射的端口：{mapped}"))
         };
-        stack
+        self
     }
 
     /// 用宿主网络时 Tuwunel 自己挑的端口，从它的日志里读（客户端和联邦同一个端口）。
     fn listening_port(&self) -> u16 {
-        let deadline = Instant::now() + Duration::from_secs(60);
+        // 共享主机过载时 Tuwunel 光 RocksDB open 就能近一分钟：和 wait_ready 一样放宽，别把慢当死。
+        let deadline = Instant::now() + Duration::from_secs(240);
         loop {
             let logs = docker(&["logs", &self.container]);
             let port = logs.lines().rev().find_map(|line| {
@@ -317,11 +349,20 @@ impl Stack {
         }
         let install_dir = self.dir.to_string_lossy();
         for volume in strings(&tuwunel["volumes"]) {
+            if volume.starts_with("${WONTON_INSTALL_DIR}/secrets/peer-tls:") {
+                continue;
+            }
             if volume.starts_with("${WONTON_INSTALL_DIR}/") {
                 let mount = volume.replace("${WONTON_INSTALL_DIR}", &install_dir);
                 args.extend(["--volume".to_owned(), mount]);
             }
         }
+        args.extend([
+            "--volume".to_owned(),
+            format!("{}:/etc/wonton-peer-tls:ro", self.bundle.display()),
+        ]);
+        // 慢启动时失败日志里要看得出卡在哪一步；只在失败时被 CI 打出来。
+        args.extend(["--env".to_owned(), "RUST_LOG=tuwunel=debug".to_owned()]);
         args.push(image());
         args.extend(strings(&tuwunel["command"]));
         args
@@ -405,13 +446,13 @@ fn docker<S: AsRef<std::ffi::OsStr>>(args: &[S]) -> String {
     String::from_utf8(output.stdout).unwrap()
 }
 
-/// 重试到成功为止，一分钟内不成功就带最后一次的错误返回。
+/// 重试到成功为止，四分钟内不成功就带最后一次的错误返回。
 async fn until<F, Fut>(what: &str, mut attempt: F) -> Result<(), String>
 where
     F: FnMut() -> Fut,
     Fut: std::future::Future<Output = Result<(), String>>,
 {
-    let deadline = Instant::now() + Duration::from_secs(60);
+    let deadline = Instant::now() + Duration::from_secs(240);
     loop {
         match attempt().await {
             Ok(()) => return Ok(()),
