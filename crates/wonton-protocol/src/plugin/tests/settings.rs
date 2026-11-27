@@ -86,6 +86,7 @@ fn confirmation_cards_and_answers_carry_settings() {
         devices: Vec::new(),
         requester: None,
         origin: None,
+        on_behalf: None,
         audience: crate::CardAudience::Keeper,
         answered_by: None,
         category: None,

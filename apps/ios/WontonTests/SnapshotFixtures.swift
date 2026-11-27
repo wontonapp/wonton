@@ -3,6 +3,8 @@ import SwiftUI
 import UIKit
 import WontonClient
 
+typealias Some<T> = Optional<T>
+
 @testable import Wonton
 
 /// 截图测试（`SnapshotTests`）的固定数据和界面组装。
@@ -47,6 +49,78 @@ enum SnapshotFixtures {
             PairingView(model: homeModel(core: core), camera: .unsupported, deviceName: "iPhone")
                 .toolbar(.hidden, for: .navigationBar)
         }
+    }
+
+    /// 成员页的固定数据：一个管理员，两条待批请求，两个成员（一个还没加入、码要过期了）。
+    static func familyViewModel() -> FamilyViewModel {
+        let access = FamilyAccess(
+            userId: "@owner:home.example", username: "owner", displayName: "Owner",
+            isOwner: false, roleId: Some("family"), roleName: Some("Family"),
+            permissions: strictestPermissions(manageMembers: true)
+        )
+        let members = [
+            MemberRow(
+                username: "ada", userId: "@ada:home.example", displayName: "Ada Lovelace",
+                email: nil, status: .joined, roleId: "family", roleName: Some("Family"),
+                roleTemplate: Some(.family), privateBot: nil, code: nil
+            ),
+            MemberRow(
+                username: "grace", userId: "@grace:home.example", displayName: "Grace Hopper",
+                email: nil, status: .invited, roleId: "child", roleName: nil,
+                roleTemplate: Some(.child), privateBot: nil,
+                code: MemberCode(expiresAtMs: timestampMs + 3_600_000, expired: false)
+            ),
+        ]
+        let requests = [
+            JoinRequestRow(
+                id: "r1", username: "linus", displayName: "Linus", roleId: "friend",
+                roleName: nil, roleTemplate: Some(.friend), deviceName: "Linus' phone",
+                requestedAtMs: timestampMs
+            ),
+        ]
+        let roles = [
+            RoleDef(id: "admin", name: "", template: .admin, permissions: strictestPermissions(), people: 0),
+            RoleDef(id: "family", name: "", template: .family, permissions: strictestPermissions(), people: 1),
+            RoleDef(id: "child", name: "", template: .child, permissions: strictestPermissions(), people: 1),
+            RoleDef(id: "friend", name: "", template: .friend, permissions: strictestPermissions(), people: 0),
+        ]
+        return FamilyViewModel(
+            access: access,
+            members: MembersViewModel(loading: false, members: members, problem: nil),
+            joinRequests: JoinRequestsViewModel(loading: false, requests: requests, problem: nil),
+            roles: RolesViewModel(loading: false, roles: roles, defaultInviteRole: "friend", problem: nil),
+            invite: nil
+        )
+    }
+
+    static func strictestPermissions(manageMembers: Bool = false) -> Permissions {
+        Permissions(
+            openApps: .selected(pluginIds: []), pluginAdmin: .noApps, installApps: .askAdmin,
+            modelSettings: false, serverSettings: false, manageMembers: manageMembers,
+            addFriends: .allow, shareApps: false, ai: .readOnly, privilegedTools: false,
+            privateBot: true, sharedBots: true, lendOwnBot: false
+        )
+    }
+
+    static func members(core: ClientCore) -> some View {
+        NavigationStack {
+            MembersView(core: core, viewModel: familyViewModel(), plugins: PluginsModel(core: core))
+        }
+    }
+
+    static func joinInvite() -> some View {
+        let role = JoinRoleView(
+            roleId: "child",
+            name: nil,
+            template: .child,
+            abilities: [
+                JoinAbility(item: .openApps, state: .allowed),
+                JoinAbility(item: .installApps, state: .needsAdmin),
+                JoinAbility(item: .ai, state: .needsAdmin),
+                JoinAbility(item: .privateBot, state: .allowed),
+            ]
+        )
+        return JoinInviteView(role: role, invitedBy: "Owner", retry: {}) {}
     }
 
     static func chatList(core: ClientCore) -> some View {

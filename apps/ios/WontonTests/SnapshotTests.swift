@@ -111,6 +111,15 @@ final class SnapshotTests: XCTestCase {
         assert(SnapshotFixtures.chatRoom(core: core), testName: "testChatRoom", line: #line)
     }
 
+    func testMembers() throws {
+        let core = try makeCore()
+        assert(SnapshotFixtures.members(core: core), testName: "testMembers", line: #line)
+    }
+
+    func testJoinInvite() throws {
+        assert(SnapshotFixtures.joinInvite(), testName: "testJoinInvite", line: #line)
+    }
+
     func testSettings() throws {
         let core = try makeCore()
         assert(SnapshotFixtures.settings(core: core), testName: "testSettings", line: #line)

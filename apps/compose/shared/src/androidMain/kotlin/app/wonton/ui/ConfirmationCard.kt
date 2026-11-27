@@ -51,6 +51,7 @@ import java.util.Date
 
 /** 核心给出卡片内容和风险类别；壳本地化固定提示，按钮状态仍由核心决定。 */
 @OptIn(ExperimentalLayoutApi::class)
+@Suppress("CyclomaticComplexMethod")
 @Composable
 fun ConfirmationCardView(view: ConfirmationView, onAction: (Action) -> Unit) {
     val card = view.card
@@ -93,6 +94,7 @@ fun ConfirmationCardView(view: ConfirmationView, onAction: (Action) -> Unit) {
             )
         }
         CardDeviceSection(cardDevices, view)
+        AdministratorLines(card)
         card.answeredBy
             ?.takeIf { card.audience == CardAudience.ADMINS }
             ?.let { answeredBy ->

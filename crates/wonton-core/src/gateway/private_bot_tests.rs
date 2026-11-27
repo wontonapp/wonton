@@ -30,6 +30,7 @@ impl Rig {
         let home = Harness::start(None).await;
         home.members
             .invite(MemberRecord {
+                invited_by: None,
                 role_id: "family".into(),
                 wants_private_bot: wants,
                 private_bot: ready,

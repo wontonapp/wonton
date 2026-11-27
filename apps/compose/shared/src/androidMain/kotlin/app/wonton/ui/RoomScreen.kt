@@ -350,6 +350,9 @@ private fun RoomScreen(
                         },
                         botNotice = botNotice,
                         botCanSend = botCanSend,
+                        botShared = bot?.shared == true,
+                        botUserId = bot?.userId,
+                        botDanger = bot?.danger?.enabled == true,
                         plugins = plugins,
                         onOpenBotProfile = onOpenBotProfile,
                     )
@@ -538,6 +541,7 @@ private fun RoomBar(
 }
 
 /** 消息列表、传输条和输入栏。打开失败时列表位置换成原因和重试。 */
+@Suppress("LongMethod", "CyclomaticComplexMethod")
 @Composable
 private fun Conversation(
     core: ClientCore,
@@ -559,6 +563,9 @@ private fun Conversation(
     plugins: PluginsState,
     botNotice: Int?,
     botCanSend: Boolean,
+    botShared: Boolean,
+    botUserId: String?,
+    botDanger: Boolean,
     onOpenBotProfile: (BotRef) -> Unit,
 ) {
     val density = LocalDensity.current
@@ -567,6 +574,12 @@ private fun Conversation(
     val barInset = LocalWontonTopInset.current
     val panelVisible = LocalChatPanel.current?.visible == true
     val bottomInsets = if (panelVisible) WindowInsets.ime else WindowInsets.ime.union(WindowInsets.navigationBars)
+    val context = androidx.compose.ui.platform.LocalContext.current
+    var sharedBotHintDismissed by remember(target.roomId, botUserId) {
+        mutableStateOf(
+            botUserId?.let { SharedBotHintPrefs.seen(context, target.roomId, it) } == true,
+        )
+    }
     // 命令列表开没开：输入区的菜单键改它，翻时间线先收起来，好把列表让出去；“向下”钮开着时不画。
     var commandMenuShown by remember { mutableStateOf(false) }
     BoxWithConstraints(Modifier.fillMaxSize().windowInsetsPadding(bottomInsets)) {
@@ -580,6 +593,26 @@ private fun Conversation(
                 AgentPluginStatusBanner(plugin, title, plugins.viewModel, onAction)
                 timeline.sideChat?.let { SideChatHeaderLine(it.state) }
                 if (sideChats.unsupportedHint) NoSideChatsHint()
+                // 共享 Bot 私聊顶部的一次记忆提示。
+                if (target.threadRoot == null && botDanger) {
+                    Text(
+                        stringResource(R.string.family_dangerMode),
+                        Modifier.padding(
+                            start = WontonTheme.spacing.pageInset,
+                            top = WontonTheme.spacing.s4,
+                        ),
+                        style = WontonTheme.typography.caption,
+                        color = WontonTheme.colors.danger.toColor(),
+                    )
+                }
+                val showSharedBotHint =
+                    target.threadRoot == null && botShared && botUserId != null && !sharedBotHintDismissed
+                if (showSharedBotHint) {
+                    SharedBotMemoryHint {
+                        sharedBotHintDismissed = true
+                        SharedBotHintPrefs.dismiss(context, target.roomId, botUserId)
+                    }
+                }
                 // 群里能用的 AI；私聊不显示，Bot 本来就在顶栏（ADR-0044）。
                 if (!isDirect && target.threadRoot == null) {
                     RoomAiLine(roomAi, plugins, onOpenBotProfile)

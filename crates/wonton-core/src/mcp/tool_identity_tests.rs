@@ -44,6 +44,7 @@ fn shared_bot() -> Caller {
 fn joined(s: &Setup, username: &str, role_id: &str) {
     s.members
         .invite(MemberRecord {
+            invited_by: None,
             role_id: role_id.to_owned(),
             ..MemberRecord::for_test(username)
         })

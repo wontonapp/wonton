@@ -34,10 +34,13 @@ struct ChatRoomView: View {
     @State private var commandMenuOpen = false
     /// 资料页里点了“打开面板”：每点一次加一，面板宿主跟着打开（ADR-0052）。
     @State private var panelOpenRequests = 0
+    /// 已经关掉的共享 Bot 记忆提示；按“房间 + Bot”记，只出现一次。
+    @State private var hiddenSharedBotHints = SharedBotHintSeen().dismissedKeys
     @Environment(\.panelDeps) private var panelDeps
     @Environment(OnboardingModel.self) private var onboarding
     @Environment(PagesModel.self) private var pages
     @Environment(\.wontonContentRoot) private var isContentRoot
+    @Environment(\.wontonColors) private var colors
 
     init(model: ChatModel, plugins: PluginsModel, roomId: String, threadRoot: String? = nil, title: String) {
         self.model = model
@@ -107,6 +110,16 @@ private extension ChatRoomView {
                 // 从上到下照 Telegram：插件横幅这类提醒在最上，旁聊标题或提示按在它下面，AI 那一行离内容最近。
                 if let plugin = model.viewModel.rooms.first(where: { $0.roomId == roomId })?.plugin {
                     AgentPluginStatusBanner(plugin: plugin, model: plugins)
+                }
+                if threadRoot == nil, bot?.danger?.enabled == true {
+                    Tag(text: String(localized: .Family.familyDangerMode), tint: colors.danger)
+                        .padding(.top, WontonTheme.spacing.s4)
+                }
+                if let hintBot = sharedBotMemoryHint {
+                    SharedBotMemoryHint {
+                        hiddenSharedBotHints.insert("\(roomId)|\(hintBot.userId)")
+                        SharedBotHintSeen().dismiss(roomId: roomId, botUserId: hintBot.userId)
+                    }
                 }
                 if threadRoot != nil {
                     if let state = timeline.sideChat?.state { SideChatHeaderLine(state: state) }
@@ -590,6 +603,13 @@ private extension ChatRoomView {
 @MainActor
 private extension ChatRoomView {
     func sendTimeline(_ action: TimelineAction) { model.send(.timeline(action: action)) }
+
+    /// 私聊对方是共享 Bot（不是自己的私人 Bot）时，第一次进来挂一条记忆提示。
+    var sharedBotMemoryHint: BotView? {
+        guard threadRoot == nil, let bot else { return nil }
+        if case let .ready(_, ownUserId, _, _) = model.viewModel.ownPrivateBot, ownUserId == bot.userId { return nil }
+        return hiddenSharedBotHints.contains("\(roomId)|\(bot.userId)") ? nil : bot
+    }
 
     var isDirect: Bool {
         model.viewModel.rooms.first { $0.roomId == roomId }?.isDirect ?? false

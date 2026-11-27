@@ -76,6 +76,7 @@ async fn ask_all(
         let langs = bus.languages_for(ask.recipient.as_deref());
         let draft = draft(&stopped, hops, &langs);
         let audience = Audience {
+            on_behalf: None,
             recipients: crate::mcp::Recipients::Keeper(ask.recipient.clone()),
             requester: Some(ConfirmationRequester::Bot {
                 bot: BotRef {

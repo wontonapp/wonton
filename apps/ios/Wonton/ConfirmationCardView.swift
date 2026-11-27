@@ -47,7 +47,9 @@ struct ConfirmationCardView: View {
                 .disabled(view.card.state != .pending || view.sending != nil)
             }
             deviceChoicesView
+            onBehalfLine
             answeredByLine
+            adminWaitingLine
             state
             if let window = view.window {
                 self.window(window)
@@ -301,6 +303,36 @@ extension ConfirmationCardView {
     /// 缺必填密钥、设置没填对或必选的串口没选时，不能同意。
     private var inputsBlocked: Bool {
         missingRequiredSecret(view.card.secretInputs, secrets) || settingsBlocked || deviceSection?.ready == false
+    }
+
+
+    /// 谁请主人办这件事：核心把行动者写成“用户名/device:…”，这里换成“替某某”。
+    /// 协议还没有专门的字段（见 brief 第 3 节），先认这个已有的写法。
+    @ViewBuilder private var onBehalfLine: some View {
+        if let behalf = view.card.onBehalf {
+            Text(.Family.familyCardOnBehalf(behalf.displayName))
+                .wontonText(WontonTheme.typography.supporting)
+        } else if let name = onBehalfName {
+            Text(.Family.familyCardOnBehalf(name))
+                .wontonText(WontonTheme.typography.supporting)
+        }
+    }
+
+    private var onBehalfName: String? {
+        for line in view.card.lines {
+            if line.text == "owner_token" { return String(localized: .Family.familyCardOwner) }
+            let parts = line.text.split(separator: "/", maxSplits: 1)
+            if parts.count == 2, parts[1].hasPrefix("device:") { return String(parts[0]) }
+        }
+        return nil
+    }
+
+    /// 管理员卡片还没人答时，说清在等谁，别让别的管理员以为不用管。
+    @ViewBuilder private var adminWaitingLine: some View {
+        if view.card.audience == .admins, view.card.state == .pending, view.card.answeredBy == nil {
+            Text(.Family.familyCardWaitingAdmins)
+                .wontonText(WontonTheme.typography.supporting)
+        }
     }
 
     /// 管理员卡片已被别的管理员答过时，显示是谁处理的。

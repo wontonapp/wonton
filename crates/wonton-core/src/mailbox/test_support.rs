@@ -81,6 +81,7 @@ pub(super) async fn home() -> Home {
     let (tunnel, members) = crate::gateway::fakes::loopback_tunnel(dir.path()).await;
     members
         .invite(MemberRecord {
+            invited_by: None,
             display_name: "Alice".into(),
             wants_private_bot: false,
             ..MemberRecord::for_test("alice")

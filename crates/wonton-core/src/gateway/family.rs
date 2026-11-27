@@ -70,6 +70,18 @@ pub async fn invite(
     {
         return denied;
     }
+    let invited_by = gateway
+        .device_person(peer.map(|peer| peer.0))
+        .map(|person| {
+            if person.is_owner() {
+                gateway.owner.owner().display_name
+            } else {
+                gateway
+                    .members
+                    .get(&person.username)
+                    .map_or(person.username, |member| member.display_name)
+            }
+        });
     let invite: MemberInvite = match serde_json::from_value(body) {
         Ok(invite) => invite,
         Err(error) => {
@@ -119,6 +131,7 @@ pub async fn invite(
         user_id: matrix.user_id(&username),
         username,
         display_name: display_name.to_owned(),
+        invited_by,
         email: None,
         status: MemberStatus::Invited,
         role_id,

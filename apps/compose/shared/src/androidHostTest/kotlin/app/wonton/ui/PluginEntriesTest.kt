@@ -46,6 +46,9 @@ class PluginEntriesTest {
         installFailure = null,
         tunnelPorts = emptyList(),
         matrixWidget = null,
+        botShared = false,
+        botDanger = false,
+        botDangerCanToggle = false,
     )
 
     private fun hasChat(entries: List<PluginEntry>) = entries.any { it is PluginEntry.Chat }

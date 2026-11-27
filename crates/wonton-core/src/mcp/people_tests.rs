@@ -35,6 +35,7 @@ x-wonton:
 fn invite(s: &Setup, username: &str) {
     s.members
         .invite(MemberRecord {
+            invited_by: None,
             username: username.into(),
             user_id: format!("@{username}:wonton.localhost"),
             display_name: username.into(),

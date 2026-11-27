@@ -853,3 +853,29 @@ async fn writing_settings_recreates_the_bot_with_its_identity_kept() {
     }
     assert!(bed.token_valid(&after["TOKEN"]));
 }
+
+/// 列表里的默认 Bot 带“是共享 Bot 还是私人 Bot”和“危险模式开着没”（ADR-0088、ADR-0091）。
+#[tokio::test]
+async fn listings_mark_shared_bots_and_danger_mode() {
+    let bed = Bed::start().await;
+    let m = bed.manager();
+    m.install(&agent(), &granted_with_tools(), super::langs())
+        .await
+        .unwrap();
+    let owner_listing = m.installed_plugin(&id(), &super::langs()).unwrap();
+    assert!(!owner_listing.bot_shared, "默认 Bot 先是主人的私人 Bot");
+    assert!(owner_listing.bot_danger_can_toggle);
+
+    m.add_bot(&id(), "family", BotKeeper::Household)
+        .await
+        .unwrap();
+    m.tool_policy()
+        .set_danger(id().as_str(), "default", true)
+        .unwrap();
+    let listing = m.installed_plugin(&id(), &super::langs()).unwrap();
+    assert!(
+        !listing.bot_shared,
+        "共享 Bot 是额外的 Bot，默认 Bot 仍是主人的"
+    );
+    assert!(listing.bot_danger, "危险模式应由列表带出来");
+}

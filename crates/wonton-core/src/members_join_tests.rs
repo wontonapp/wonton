@@ -8,6 +8,31 @@ use super::{JoinCheck, MemberEvent, MemberRecord, Members};
 use crate::device::Devices;
 
 #[test]
+fn a_join_request_carries_the_inviter() {
+    let dir = tempfile::tempdir().unwrap();
+    let members = Members::open(dir.path().join("members.json")).unwrap();
+    let devices = Devices::open(dir.path().join("devices.json")).unwrap();
+    let mut record = MemberRecord::for_test("alice");
+    record.invited_by = Some("Owner".to_owned());
+    members.invite(record).unwrap();
+    let code = members.issue_pairing_code("alice").unwrap();
+    assert_eq!(
+        members
+            .request_join(
+                code.secret.expose(),
+                SecretKey::generate().public(),
+                "手机",
+                &devices,
+            )
+            .unwrap(),
+        JoinCheck::Pending {
+            role_id: "friend".into(),
+            invited_by: Some("Owner".into()),
+        }
+    );
+}
+
+#[test]
 fn approval_survives_restart_and_expires_at_the_original_deadline() {
     let dir = tempfile::tempdir().unwrap();
     let path = dir.path().join("members.json");
@@ -25,7 +50,10 @@ fn approval_survives_restart_and_expires_at_the_original_deadline() {
         members
             .request_join(code.secret.expose(), endpoint, "手机", &devices)
             .unwrap(),
-        JoinCheck::Pending("friend".into())
+        JoinCheck::Pending {
+            role_id: "friend".into(),
+            invited_by: None
+        }
     );
     let id = members.join_requests()[0].id.clone();
     assert!(
@@ -96,7 +124,7 @@ fn racing_endpoints_share_one_claim_and_revocation_cannot_pair_back() {
     assert_eq!(
         results
             .iter()
-            .filter(|(_, result)| matches!(result, JoinCheck::Pending(_)))
+            .filter(|(_, result)| matches!(result, JoinCheck::Pending { .. }))
             .count(),
         1
     );
@@ -110,7 +138,7 @@ fn racing_endpoints_share_one_claim_and_revocation_cannot_pair_back() {
     assert_eq!(members.join_requests().len(), 1);
     let endpoint = results
         .iter()
-        .find(|(_, result)| matches!(result, JoinCheck::Pending(_)))
+        .find(|(_, result)| matches!(result, JoinCheck::Pending { .. }))
         .unwrap()
         .0;
     members
@@ -257,7 +285,10 @@ fn reused_request_still_answers_the_retired_code_as_used() {
         members
             .request_join(second.secret.expose(), phone, "手机", &devices)
             .unwrap(),
-        JoinCheck::Pending("friend".into())
+        JoinCheck::Pending {
+            role_id: "friend".into(),
+            invited_by: None,
+        }
     );
     // 复用之后旧码仍按记录回答：别的设备交回是“码已用过”。
     let other = SecretKey::generate().public();
@@ -272,6 +303,9 @@ fn reused_request_still_answers_the_retired_code_as_used() {
         members
             .request_join(first.secret.expose(), phone, "手机", &devices)
             .unwrap(),
-        JoinCheck::Pending("friend".into())
+        JoinCheck::Pending {
+            role_id: "friend".into(),
+            invited_by: None,
+        }
     );
 }

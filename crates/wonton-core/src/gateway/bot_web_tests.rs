@@ -97,6 +97,7 @@ pub(super) async fn setup(h: &Harness) -> Arc<AtomicUsize> {
 pub(super) fn member(h: &Harness) -> iroh::EndpointId {
     h.members
         .invite(MemberRecord {
+            invited_by: None,
             username: "mia".into(),
             user_id: "@mia:test".into(),
             display_name: "Mia".into(),

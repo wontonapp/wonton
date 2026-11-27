@@ -101,6 +101,7 @@ pub(super) fn answer(
 
 pub(super) fn card() -> ConfirmationCard {
     ConfirmationCard {
+        on_behalf: None,
         id: CARD_ID.into(),
         state: ConfirmationState::Pending,
         title: "Echo wants to install Home Hub".into(),
