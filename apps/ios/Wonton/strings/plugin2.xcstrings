@@ -32,6 +32,36 @@
         }
       }
     },
+    "plugin.dependencyNoProvider": {
+      "comment": "No app in the store provides this capability.",
+      "extractionState": "manual",
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "No provider in the store"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "商店里没有提供方"
+          }
+        },
+        "zh-Hant": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "商店裡沒有提供方"
+          }
+        },
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "ストアに提供元がありません"
+          }
+        }
+      }
+    },
     "plugin.dependencyNotConnected": {
       "comment": "$provider is the app title, $capability the capability name. The owner can connect it here.",
       "extractionState": "manual",
@@ -58,6 +88,36 @@
           "stringUnit": {
             "state": "translated",
             "value": "「%1$@」にまだ接続していないため、「%2$@」は使えません。"
+          }
+        }
+      }
+    },
+    "plugin.dependencyOptional": {
+      "comment": "An optional capability that has no provider.",
+      "extractionState": "manual",
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Optional: %1$@"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "可选：「%1$@」"
+          }
+        },
+        "zh-Hant": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "可選：「%1$@」"
+          }
+        },
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "任意：「%1$@」"
           }
         }
       }

@@ -199,3 +199,50 @@ extension PluginTask {
         return nil
     }
 }
+
+/// 详情页列出缺的必需和可选能力（ADR-0053）：商店详情不打开确认页也要看得到缺什么、有没有提供方。
+struct PluginMissingCapabilities: View {
+    let requires: [MissingCapability]
+    let wants: [MissingCapability]
+    @Environment(\.wontonColors) private var colors
+
+    var body: some View {
+        if !requires.isEmpty || !wants.isEmpty {
+            DetailSection(title: String(localized: .Plugin0.pluginDependenciesMissing)) {
+                ForEach(requires, id: \.capability) { missing in
+                    row(missing, required: true)
+                }
+                ForEach(wants, id: \.capability) { missing in
+                    row(missing, required: false)
+                }
+            }
+        }
+    }
+
+    private func row(_ missing: MissingCapability, required: Bool) -> some View {
+        VStack(alignment: .leading, spacing: WontonTheme.spacing.s4) {
+            HStack(spacing: WontonTheme.spacing.s8) {
+                let label: LocalizedStringResource = required
+                    ? .Plugin0.pluginDependencyRequires(missing.capability)
+                    : .Plugin2.pluginDependencyOptional(missing.capability)
+                Text(label)
+                    .wontonText(WontonTheme.typography.body)
+                    .foregroundStyle(Color(colors.textPrimary))
+                if missing.thirdParty {
+                    Tag(text: String(localized: .Install.installProviderThirdParty), tint: colors.textSecondary)
+                }
+            }
+            if missing.providers.isEmpty {
+                Text(.Plugin2.pluginDependencyNoProvider)
+                    .wontonText(WontonTheme.typography.supporting)
+                    .foregroundStyle(Color(required ? colors.warning : colors.textSecondary))
+            } else {
+                Text(.Plugin3.pluginDependencyProvidedBy(
+                    missing.providers.map(\.title).joined(separator: ", ")
+                ))
+                .wontonText(WontonTheme.typography.supporting)
+                .foregroundStyle(Color(colors.textSecondary))
+            }
+        }
+    }
+}

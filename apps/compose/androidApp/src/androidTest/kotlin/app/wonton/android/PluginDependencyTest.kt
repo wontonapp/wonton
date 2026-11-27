@@ -46,6 +46,17 @@ class PluginDependencyTest {
     }
 
     @Test
+    fun providerInstallListsWantingApps() {
+        openStore()
+        scroll().performScrollToNode(hasText("qBittorrent"))
+        compose.onNodeWithText("qBittorrent").performClick()
+        compose.onNodeWithText(strings.getString(R.string.store_get)).performClick()
+        compose.onNodeWithText(strings.getString(R.string.install_wants_connected_title)).performScrollTo()
+        compose.onNodeWithText("Audio Book").performScrollTo()
+        shot("install-wanting")
+    }
+
+    @Test
     fun uninstallProviderShowsDependents() {
         compose.onNodeWithText("qBittorrent").performScrollTo().performClick()
         scroll().performScrollToNode(hasText(strings.getString(R.string.plugin_uninstall_action)))

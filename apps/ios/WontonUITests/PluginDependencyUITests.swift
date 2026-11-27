@@ -16,12 +16,7 @@ final class PluginDependencyUITests: XCTestCase {
     }
 
     func testInstallPreviewListsTheProviderWithItsPermissions() {
-        openApps()
-        tap("Store")
-        XCTAssertTrue(
-            app.staticTexts["Photo Vault"].firstMatch.waitForExistence(timeout: 10),
-            "商店没打开\n\(app.debugDescription)"
-        )
+        openStore()
         let link = app.buttons.matching(NSPredicate(format: "label CONTAINS[c] %@", "Autobangumi")).firstMatch
         for _ in 0..<10 where !link.exists {
             app.swipeUp()
@@ -50,11 +45,35 @@ final class PluginDependencyUITests: XCTestCase {
             "确认页没有列出提供方的权限\n\(app.debugDescription)"
         )
         XCTAssertTrue(app.staticTexts["API key"].firstMatch.exists, "确认页没有列出提供方要填的密钥")
+
         XCTAssertTrue(
             app.staticTexts["indexer"].firstMatch.exists,
             "缺的可选能力没有列出来"
         )
         attach("install-provider")
+    }
+
+    func testProviderInstallListsWantingApps() {
+        openStore()
+        let target = app.staticTexts["qBittorrent"].firstMatch
+        for _ in 0..<12 where !target.isHittable {
+            app.swipeUp()
+        }
+        XCTAssertTrue(target.isHittable, "商店里没有能点的 qBittorrent\n\(app.debugDescription)")
+        target.tap()
+        XCTAssertTrue(
+            app.staticTexts["The household's downloads"].firstMatch.waitForExistence(timeout: 10),
+            "没打开详情页\n\(app.debugDescription)"
+        )
+        let install = app.buttons.matching(NSPredicate(format: "label IN %@", ["Install", "Get"])).firstMatch
+        XCTAssertTrue(install.waitForExistence(timeout: 10), "详情页没有获取按钮\n\(app.debugDescription)")
+        install.tap()
+        XCTAssertTrue(
+            app.staticTexts["These apps want it"].firstMatch.waitForExistence(timeout: 10),
+            "确认页没有列出想用这个提供方的应用\n\(app.debugDescription)"
+        )
+        XCTAssertTrue(app.staticTexts["Audio Book"].firstMatch.exists, "想用的应用没列出来")
+        attach("install-wanting")
     }
 
     func testUninstallProviderShowsDependents() {
@@ -89,6 +108,15 @@ final class PluginDependencyUITests: XCTestCase {
         )
         XCTAssertTrue(app.buttons["Start qBittorrent"].firstMatch.exists, "提示没有启动的下一步")
         attach("dependency-problem")
+    }
+
+    private func openStore() {
+        openApps()
+        tap("Store")
+        XCTAssertTrue(
+            app.staticTexts["Photo Vault"].firstMatch.waitForExistence(timeout: 10),
+            "商店没打开\n\(app.debugDescription)"
+        )
     }
 
     private func openApps() {

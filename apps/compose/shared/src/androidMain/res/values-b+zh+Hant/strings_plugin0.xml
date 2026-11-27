@@ -37,4 +37,7 @@
     <string name="plugin_dependency_missing">沒有提供「%1$s」的插件，這個應用程式少點能力。</string>
     <string name="plugin_capability_follow_default">跟預設</string>
     <string name="plugin_uninstall_preview_failed">沒能查清還有誰在用它。</string>
+    <string name="plugin_dependencyOptional">可選：「%1$@」</string>
+    <string name="plugin_dependencyProvidedBy">由 %1$@ 提供</string>
+    <string name="plugin_dependencies_missing">缺少的能力</string>
 </resources>

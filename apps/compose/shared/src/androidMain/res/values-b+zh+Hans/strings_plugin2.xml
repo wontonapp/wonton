@@ -46,4 +46,6 @@
     <string name="plugin_uninstall_in_use">这些应用还在用「%1$s」</string>
     <string name="plugin_uninstall_unused_providers">这些也没人用了：</string>
     <string name="plugin_uninstall_checking">正在看还有谁在用它…</string>
+    <string name="plugin_dependenciesMissing">缺少的能力</string>
+    <string name="plugin_dependencyRequires">需要「%1$@」</string>
 </resources>

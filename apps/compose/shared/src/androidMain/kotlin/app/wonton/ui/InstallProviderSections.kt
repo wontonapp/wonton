@@ -23,6 +23,7 @@ import app.wonton.protocol.CoreException
 import app.wonton.protocol.InstallPreview
 import app.wonton.protocol.InstallProvider
 import app.wonton.protocol.SelectedProvider
+import app.wonton.ui.design.WontonButton
 import app.wonton.ui.design.WontonNotice
 import app.wonton.ui.design.WontonRadioRow
 import app.wonton.ui.design.WontonSwitch
@@ -43,13 +44,17 @@ fun InstallProviderSections(
     preview: InstallPreview,
     plugins: PluginsState,
     onUpdate: (InstallPreview) -> Unit,
+    onFillProfile: () -> Unit,
 ) {
     val scope = rememberCoroutineScope()
     var switching by remember(preview.id) { mutableStateOf<String?>(null) }
     var problem by remember(preview.id) { mutableStateOf<Problem?>(null) }
+    if (preview.wantingPlugins.isNotEmpty()) {
+        ConnectedSection(preview, onUpdate)
+    }
     preview.installProviders.forEach { section ->
         val wrong = stringResource(R.string.install_provider_wrong, section.capability)
-        CapabilitySection(section, preview, switching, onUpdate) { candidate ->
+        CapabilitySection(section, preview, switching, onUpdate, onFillProfile) { candidate ->
             switching = candidate.id
             scope.launch {
                 try {
@@ -75,98 +80,13 @@ fun InstallProviderSections(
 }
 
 @Composable
-private fun CapabilitySection(
-    section: InstallProvider,
-    preview: InstallPreview,
-    switching: String?,
-    onUpdate: (InstallPreview) -> Unit,
-    onSelect: (CapabilityProvider) -> Unit,
-) {
-    val colors = WontonTheme.colors
-    DetailSection(stringResource(R.string.install_required_capabilities)) {
-        Row(
-            horizontalArrangement = Arrangement.spacedBy(WontonTheme.spacing.s8),
-            verticalAlignment = Alignment.CenterVertically,
-        ) {
-            Text(
-                section.capability, style = WontonTheme.typography.itemTitle,
-                color = colors.textPrimary.toColor(),
-            )
-            if (section.thirdParty) {
-                Tag(stringResource(R.string.install_provider_third_party), colors.textSecondary)
-            }
-        }
-        if (section.providers.isEmpty()) {
-            WontonNotice(WontonIcon.Blocked, stringResource(R.string.install_provider_missing))
-        }
-        if (section.providers.size > 1) {
-            section.providers.forEach { candidate ->
-                CandidateRow(candidate, section.selected?.provider?.id, switching, onSelect)
-            }
-        }
-        section.selected?.let { selected ->
-            SelectedProviderSection(
-                consumer = preview.title,
-                capability = section.capability,
-                selected = selected,
-                preview = preview,
-                onUpdate = onUpdate,
-            )
-        }
-    }
-}
-
-@Composable
-private fun CandidateRow(
-    candidate: CapabilityProvider,
-    selected: String?,
-    switching: String?,
-    onSelect: (CapabilityProvider) -> Unit,
-) {
-    WontonRadioRow(
-        candidate.title,
-        selected == candidate.id,
-        switching == null,
-        { onSelect(candidate) },
-        value = if (candidate.highPrivilege) {
-            stringResource(R.string.install_provider_high_privilege)
-        } else {
-            null
-        },
-        valueTint = if (candidate.highPrivilege) WontonTheme.colors.warning else null,
-    )
-}
-
-@Composable
-private fun WantsSection(preview: InstallPreview) {
-    val colors = WontonTheme.colors
-    DetailSection(stringResource(R.string.install_optional_capabilities)) {
-        preview.missingWants.forEach { missing ->
-            Row(
-                horizontalArrangement = Arrangement.spacedBy(WontonTheme.spacing.s8),
-                verticalAlignment = Alignment.CenterVertically,
-            ) {
-                Text(missing.capability, style = WontonTheme.typography.body, color = colors.textPrimary.toColor())
-                if (missing.thirdParty) {
-                    Tag(stringResource(R.string.install_provider_third_party), colors.textSecondary)
-                }
-            }
-            Text(
-                stringResource(R.string.install_wants_missing, missing.capability),
-                style = WontonTheme.typography.supporting,
-                color = colors.textSecondary.toColor(),
-            )
-        }
-    }
-}
-
-@Composable
-private fun SelectedProviderSection(
+internal fun SelectedProviderSection(
     consumer: String,
     capability: String,
     selected: SelectedProvider,
     preview: InstallPreview,
     onUpdate: (InstallPreview) -> Unit,
+    onFillProfile: () -> Unit,
 ) {
     val colors = WontonTheme.colors
     Column(
@@ -199,7 +119,11 @@ private fun SelectedProviderSection(
             )
         }
         selected.preview.blocked?.let { WontonNotice(WontonIcon.Blocked, it) }
-        selected.preview.missingProfile?.let { WontonNotice(WontonIcon.Info, it, isError = false) }
+        selected.preview.missingProfile?.let {
+            WontonNotice(WontonIcon.Info, it, isError = false) {
+                WontonButton(stringResource(R.string.install_fill_profile), onFillProfile)
+            }
+        }
         if (selected.preview.notices.isNotEmpty()) NoticeLines(selected.preview.notices)
         if (selected.preview.permissions.isNotEmpty()) {
             Text(
@@ -268,6 +192,10 @@ private fun InstallPreview.withDevices(capability: String, id: String) =
             devices = toggleDevice(selected.preview.devices.orEmpty(), id),
         ))
     }
+
+internal fun InstallPreview.withConnected(id: String, on: Boolean): InstallPreview = copy(
+    connectedPlugins = if (on) connectedPlugins + id else connectedPlugins - id,
+)
 
 private fun InstallPreview.withLan(capability: String, on: Boolean) =
     withSelected(capability) { selected ->

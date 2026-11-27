@@ -46,4 +46,6 @@
     <string name="plugin_uninstall_in_use">これらのアプリがまだ「%1$s」を使っています</string>
     <string name="plugin_uninstall_unused_providers">ほかに使っているアプリはありません：</string>
     <string name="plugin_uninstall_checking">まだ使っているアプリを確認しています…</string>
+    <string name="plugin_dependenciesMissing">不足している機能</string>
+    <string name="plugin_dependencyRequires">「%1$@」が必要</string>
 </resources>

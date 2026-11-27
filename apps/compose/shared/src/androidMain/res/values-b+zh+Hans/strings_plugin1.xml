@@ -21,4 +21,7 @@
     <string name="plugin_dependency_stopped">「%1$s」没在运行，这个应用现在用不了它。</string>
     <string name="plugin_capabilities_title">能力</string>
     <string name="plugin_uninstall_stop_dependents">先停它们</string>
+    <string name="plugin_dependencyNoProvider">商店里没有提供方</string>
+    <string name="plugin_dependency_requires">需要「%1$s」</string>
+    <string name="plugin_dependency_provided_by">由 %1$s 提供</string>
 </resources>

@@ -7,11 +7,13 @@ struct InstallProviderSections: View {
     let model: PluginsModel
     let preview: InstallPreview
     let update: (InstallPreview) -> Void
+    let fillProfile: () -> Void
     @State private var switching: String?
     @State private var problem: Problem?
     @Environment(\.wontonColors) private var colors
 
     var body: some View {
+        if !preview.wantingPlugins.isEmpty { connectedSection }
         ForEach(preview.installProviders, id: \.capability) { section in
             DetailSection(title: String(localized: .Install.installRequiredCapabilities)) {
                 VStack(alignment: .leading, spacing: WontonTheme.spacing.s8) {
@@ -49,6 +51,24 @@ struct InstallProviderSections: View {
             }
         }
         if let problem { ProblemNotice(problem: problem) }
+    }
+
+    /// 装的是提供方：已装并想用这个能力的插件，勾选的才接上（ADR-0053 第 3 条）。
+    private var connectedSection: some View {
+        DetailSection(title: String(localized: .Install.installWantsConnectedTitle)) {
+            ForEach(preview.wantingPlugins, id: \.id) { plugin in
+                StepOptionRow(
+                    title: plugin.title,
+                    isSelected: preview.connectedPlugins.contains(plugin.id),
+                    neutralSelection: true,
+                    select: { toggleConnected(plugin.id) },
+                    leading: { EmptyView() },
+                    trailing: {
+                        if plugin.highPrivilege { highPrivilegeTag }
+                    }
+                )
+            }
+        }
     }
 
     private var thirdPartyTag: some View {
@@ -99,7 +119,10 @@ struct InstallProviderSections: View {
                 WontonNotice(icon: .blocked, title: blocked)
             }
             if let missing = selected.preview.missingProfile {
-                WontonNotice(icon: .info, title: missing, isError: false)
+                WontonNotice(icon: .info, title: missing, isError: false) {
+                    Button(String(localized: .Install.installFillProfile), action: fillProfile)
+                        .buttonStyle(WontonButtonStyle())
+                }
             }
             if !selected.preview.notices.isEmpty { NoticeLines(lines: selected.preview.notices) }
             if !selected.preview.permissions.isEmpty {
@@ -193,6 +216,16 @@ struct InstallProviderSections: View {
             }), let line = preview.installProviders[index].selected?.preview.permissions
                 .firstIndex(where: { $0.permission == permission }) else { return }
             preview.installProviders[index].selected?.preview.permissions[line].enabled = isOn
+        }
+    }
+
+    private func toggleConnected(_ id: String) {
+        mutate { preview in
+            if preview.connectedPlugins.contains(id) {
+                preview.connectedPlugins.removeAll { $0 == id }
+            } else {
+                preview.connectedPlugins.append(id)
+            }
         }
     }
 

@@ -932,6 +932,36 @@
         }
       }
     },
+    "install.wantsConnectedTitle": {
+      "comment": "Section listing installed apps that want this provider; checked ones are connected.",
+      "extractionState": "manual",
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "These apps want it"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "这些应用想用它"
+          }
+        },
+        "zh-Hant": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "這些應用程式想用它"
+          }
+        },
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "これらのアプリが使いたがっています"
+          }
+        }
+      }
+    },
     "install.wantsMissing": {
       "comment": "$capability is an optional capability with no provider. The app still installs.",
       "extractionState": "manual",

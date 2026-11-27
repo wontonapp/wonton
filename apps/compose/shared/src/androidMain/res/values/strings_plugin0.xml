@@ -45,4 +45,7 @@
     <string name="plugin_dependency_missing">Nothing provides %1$s; this app works without it.</string>
     <string name="plugin_capability_follow_default">Use the default</string>
     <string name="plugin_uninstall_preview_failed">Couldn’t check what still needs it.</string>
+    <string name="plugin_dependencyOptional">Optional: %1$@</string>
+    <string name="plugin_dependencyProvidedBy">Provided by %1$@</string>
+    <string name="plugin_dependencies_missing">Missing capabilities</string>
 </resources>

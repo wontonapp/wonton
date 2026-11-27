@@ -20,7 +20,6 @@ import app.wonton.protocol.CoreException
 import app.wonton.protocol.DependencyNextStep
 import app.wonton.protocol.PluginAction
 import app.wonton.protocol.PluginDetail
-import app.wonton.protocol.PluginHint
 import app.wonton.ui.design.WontonButton
 import app.wonton.ui.design.WontonButtonKind
 import app.wonton.ui.design.WontonNotice
@@ -116,7 +115,6 @@ fun PluginCapabilityChoices(
         }
         problem?.let { ProblemNotice(it) }
     }
-    colors.textPrimary.toColor()
 }
 
 @Composable
@@ -193,7 +191,3 @@ fun UninstallDependents(
         }
     }
 }
-
-/** 提示里用的提供方（壳只读）。 */
-@Suppress("unused")
-private fun PluginHint.providerRef(): CapabilityProviderRef? = provider

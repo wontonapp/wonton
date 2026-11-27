@@ -37,4 +37,7 @@
     <string name="plugin_dependency_missing">「%1$s」の提供元がないため、このアプリは少し機能が減ります。</string>
     <string name="plugin_capability_follow_default">既定を使う</string>
     <string name="plugin_uninstall_preview_failed">まだ使っているアプリを確認できませんでした。</string>
+    <string name="plugin_dependencyOptional">任意：「%1$@」</string>
+    <string name="plugin_dependencyProvidedBy">%1$@ が提供</string>
+    <string name="plugin_dependencies_missing">不足している機能</string>
 </resources>

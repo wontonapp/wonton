@@ -258,6 +258,7 @@ fn preview() -> InstallPreview {
             providers: Vec::new(),
         }],
         wanting_plugins: Vec::new(),
+        connected_plugins: Vec::new(),
         upgrade_from: None,
         release_notes: None,
         missing_profile: None,

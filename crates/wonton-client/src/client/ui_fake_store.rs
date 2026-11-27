@@ -23,10 +23,15 @@ pub(super) fn listing() -> StoreListing {
         },
         added: Vec::new(),
         community: StoreSection {
-            plugins: vec![
-                item("LAN Scan", LAN_SOURCE, None),
-                item("Autobangumi", super::ui_fake_install::CONSUMER_SOURCE, None),
-            ],
+            plugins: {
+                let mut bangumi =
+                    item("Autobangumi", super::ui_fake_install::CONSUMER_SOURCE, None);
+                bangumi.id = super::ui_fake_install::store_id();
+                let mut downloader =
+                    item("qBittorrent", super::ui_fake_install::PROVIDER_SOURCE, None);
+                downloader.id = super::ui_fake_install::provider_store_id();
+                vec![item("LAN Scan", LAN_SOURCE, None), bangumi, downloader]
+            },
             fetched_at_ms: Some(1_793_000_000_000),
             problem: None,
             unreadable: Vec::new(),
@@ -81,9 +86,11 @@ pub(super) fn detail(route: &PluginDetailRoute) -> Option<PluginDetail> {
     };
     let mut detail = super::ui_fake_plugin_detail::app(&id_of(source), title, summary, None);
     detail.source = Some(source.clone());
+    // 商店那一行和装着的那一份是不同的 ID：不然详情会被当成已装的，只给“打开”。
     if source == super::ui_fake_install::CONSUMER_SOURCE {
-        // 商店那一行和装着的那一份是不同的 ID：不然详情会被当成已装的，只给“打开”。
         detail.id = super::ui_fake_install::store_id();
+    } else if source == super::ui_fake_install::PROVIDER_SOURCE {
+        detail.id = super::ui_fake_install::provider_store_id();
     }
     Some(detail)
 }

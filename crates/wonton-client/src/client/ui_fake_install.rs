@@ -26,6 +26,10 @@ pub(super) fn store_id() -> String {
     format!("{}-store", id_of(CONSUMER_SOURCE))
 }
 
+pub(super) fn provider_store_id() -> String {
+    format!("{}-store", id_of(PROVIDER_SOURCE))
+}
+
 /// 这个来源的安装预览；假数据里没有别的来源。
 pub(super) fn preview(source: &str) -> Option<InstallPreview> {
     match source {
@@ -118,6 +122,11 @@ fn provider() -> InstallPreview {
         url: None,
         required: true,
     }];
+    preview.wanting_plugins = vec![CapabilityProviderRef {
+        id: "app.example.audiobook".into(),
+        title: "Audio Book".into(),
+        high_privilege: true,
+    }];
     preview.notices.push(wonton_protocol::CardLine {
         text: "Autobangumi will be able to use the downloader through Wonton".into(),
         emphasis: true,
@@ -186,6 +195,7 @@ fn base(source: &str, title: &str) -> InstallPreview {
         missing_requires: Vec::new(),
         missing_wants: Vec::new(),
         wanting_plugins: Vec::new(),
+        connected_plugins: Vec::new(),
         upgrade_from: None,
         release_notes: None,
         blocked: None,

@@ -68,7 +68,7 @@ internal fun UninstallDialog(target: UninstallTarget, plugins: PluginsState, onD
         outcome == null -> UninstallCheckingDialog(title, onDismiss)
         outcome is UninstallOutcome.InUse -> UninstallInUseDialog(
             title, target, (outcome as UninstallOutcome.InUse).dependents, onDismiss,
-            onTogether = { dependents -> uninstall(true, dependents) },
+            onTogether = { dependents -> uninstall(false, dependents) },
             onStop = { dependents ->
                 onDismiss()
                 dependents.forEach { plugins.send(Action.Plugins(PluginAction.StopPlugin(it))) }

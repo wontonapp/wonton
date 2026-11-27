@@ -57,4 +57,5 @@
     <string name="install_provider_wrong">「%1$s」的來源取回來的是別的插件。</string>
     <string name="install_provider_permission_title">「%1$s」要的權限</string>
     <string name="install_provider_secret_title">「%1$s」要填的金鑰</string>
+    <string name="install_wants_connected_title">這些應用程式想用它</string>
 </resources>

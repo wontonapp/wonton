@@ -34,4 +34,6 @@
     <string name="plugin_clear_failure_message">The app’s data will be kept.</string>
     <string name="plugin_dependency_not_connected">%1$s isn’t connected yet, so %2$s doesn’t work.</string>
     <string name="plugin_uninstall_together">Uninstall them too</string>
+    <string name="plugin_dependency_optional">Optional: %1$s</string>
+    <string name="plugin_dependency_no_provider">No provider in the store</string>
 </resources>

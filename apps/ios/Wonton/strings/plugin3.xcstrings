@@ -92,6 +92,36 @@
         }
       }
     },
+    "plugin.dependencyProvidedBy": {
+      "comment": "Which apps in the store offer it. $providers is a list.",
+      "extractionState": "manual",
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Provided by %1$@"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "由 %1$@ 提供"
+          }
+        },
+        "zh-Hant": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "由 %1$@ 提供"
+          }
+        },
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "%1$@ が提供"
+          }
+        }
+      }
+    },
     "plugin.dependencyStart": {
       "comment": "Button that starts the app $provider, which this app requires.",
       "extractionState": "manual",

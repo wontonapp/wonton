@@ -144,7 +144,8 @@ impl PluginsLink {
             devices,
             lan_webui,
             install_together: Vec::new(),
-            connect_plugins: Vec::new(),
+            // 主人勾选的高权限使用方（ADR-0053 第 3 条）；提供方内层一律为空。
+            connect_plugins: preview.connected_plugins.clone(),
             remote_oauth: None,
         };
         let link = self.clone();
@@ -816,8 +817,7 @@ fn install_together(preview: &InstallPreview) -> Result<Vec<InstallTogether>, Co
     if preview.install_providers.is_empty() {
         return Ok(Vec::new());
     }
-    let mut chosen = HashSet::new();
-    let mut together = Vec::new();
+    let mut together: Vec<InstallTogether> = Vec::new();
     for section in &preview.install_providers {
         let Some(selected) = section.selected.as_ref() else {
             return Err(CoreError::NotReady {
@@ -829,7 +829,12 @@ fn install_together(preview: &InstallPreview) -> Result<Vec<InstallTogether>, Co
                 ),
             });
         };
-        if !chosen.insert(selected.provider.id.as_str()) {
+        // 同一个提供方补几个能力只装一次；几节里填的密钥合到这一份决定上。
+        if let Some(existing) = together
+            .iter_mut()
+            .find(|together| together.id == selected.provider.id)
+        {
+            existing.request.secrets.extend(selected.secrets.clone());
             continue;
         }
         together.push(provider_install(selected)?);

@@ -50,4 +50,6 @@
     <string name="plugin_uninstall_in_use">These apps still need %1$s</string>
     <string name="plugin_uninstall_unused_providers">Nothing else uses these:</string>
     <string name="plugin_uninstall_checking">Checking what still needs it…</string>
+    <string name="plugin_dependenciesMissing">Missing capabilities</string>
+    <string name="plugin_dependencyRequires">Needs %1$@</string>
 </resources>

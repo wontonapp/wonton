@@ -32,6 +32,36 @@
         }
       }
     },
+    "plugin.dependenciesMissing": {
+      "comment": "Section heading listing capabilities the app lacks.",
+      "extractionState": "manual",
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Missing capabilities"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "缺少的能力"
+          }
+        },
+        "zh-Hant": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "缺少的能力"
+          }
+        },
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "不足している機能"
+          }
+        }
+      }
+    },
     "plugin.dependencyMissing": {
       "comment": "$capability is an optional capability with no provider in the store.",
       "extractionState": "manual",
@@ -58,6 +88,36 @@
           "stringUnit": {
             "state": "translated",
             "value": "「%1$@」の提供元がないため、このアプリは少し機能が減ります。"
+          }
+        }
+      }
+    },
+    "plugin.dependencyRequires": {
+      "comment": "A required capability the app needs. $capability is the capability name.",
+      "extractionState": "manual",
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Needs %1$@"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "需要「%1$@」"
+          }
+        },
+        "zh-Hant": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "需要「%1$@」"
+          }
+        },
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "「%1$@」が必要"
           }
         }
       }

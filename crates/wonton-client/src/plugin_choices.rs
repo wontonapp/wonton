@@ -74,6 +74,12 @@ pub fn install_providers_ready(preview: InstallPreview) -> bool {
                     .iter()
                     .filter(|input| input.required)
                     .all(|input| selected.secrets.contains_key(&input.name))
+                // 必选的串口没选时也不能确认（ADR-0036）。
+                && crate::device_choices::device_choices(
+                    selected.preview.devices.clone().unwrap_or_default(),
+                    selected.preview.permissions.clone(),
+                )
+                .is_none_or(|choices| choices.ready)
         })
     })
 }

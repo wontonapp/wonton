@@ -326,7 +326,7 @@ private fun PreviewContent(
         }
         if (preview.notices.isNotEmpty()) NoticeLines(preview.notices)
         if (preview.installProviders.isNotEmpty() || preview.missingWants.isNotEmpty()) {
-            InstallProviderSections(preview, plugins, onUpdate)
+            InstallProviderSections(preview, plugins, onUpdate, onFillProfile)
         }
         PreviewInputs(preview, choices, secrets, onSecret)
         PreviewExtras(preview, plugins, choices)

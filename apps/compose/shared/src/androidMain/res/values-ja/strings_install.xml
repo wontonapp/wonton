@@ -57,4 +57,5 @@
     <string name="install_provider_wrong">「%1$s」の取得元は別のプラグインでした。</string>
     <string name="install_provider_permission_title">「%1$s」が求める権限</string>
     <string name="install_provider_secret_title">「%1$s」が求めるシークレット</string>
+    <string name="install_wants_connected_title">これらのアプリが使いたがっています</string>
 </resources>

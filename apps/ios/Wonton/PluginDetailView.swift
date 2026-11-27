@@ -121,6 +121,9 @@ struct PluginDetailView: View {
                         }
                     }
                     PluginDependencyHints(model: model, detail: detail) { loaded = .success($0) }
+                    PluginMissingCapabilities(
+                        requires: detail.missingRequires, wants: detail.missingWants
+                    )
                     if isInstalled, isOwner, !detail.capabilityProviders.isEmpty {
                         PluginCapabilityChoices(model: model, detail: detail) { loaded = .success($0) }
                     }

@@ -77,9 +77,8 @@ struct InstallConfirmView: View {
         case let .success(preview):
             PreviewContent(model: model, preview: preview, lanWebui: $lanWebui, enabled: $enabled,
                            devices: $devices, audience: $audience, secrets: $secrets,
-                           update: { loaded = .success($0) }) {
-                isFillingProfile = true
-            }
+                           update: { loaded = .success($0) },
+                           fillProfile: { isFillingProfile = true })
         }
     }
 
@@ -221,7 +220,9 @@ private struct PreviewContent: View {
                 }
                 if !preview.notices.isEmpty { NoticeLines(lines: preview.notices) }
                 if !preview.installProviders.isEmpty || !preview.missingWants.isEmpty {
-                    InstallProviderSections(model: model, preview: preview, update: update)
+                    InstallProviderSections(
+                        model: model, preview: preview, update: update, fillProfile: fillProfile
+                    )
                 }
                 if let binding = Binding($audience) {
                     PluginAudienceSection(audience: binding)

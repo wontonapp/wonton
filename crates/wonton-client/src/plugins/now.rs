@@ -721,6 +721,7 @@ mod tests {
             missing_requires: Vec::new(),
             missing_wants: Vec::new(),
             wanting_plugins: Vec::new(),
+            connected_plugins: Vec::new(),
             upgrade_from: None,
             release_notes: None,
             missing_profile: None,

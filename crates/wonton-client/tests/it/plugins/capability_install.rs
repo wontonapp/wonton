@@ -475,3 +475,39 @@ async fn one_provider_for_two_capabilities_keeps_each_section() {
             .unwrap();
     assert_eq!(sent["install_together"].as_array().unwrap().len(), 1);
 }
+
+/// 主人勾选的 `wanting_plugins` 只进外层请求的 `connect_plugins`，随批安装的提供方内层保持空（ADR-0053 第 3 条）。
+#[tokio::test]
+async fn checked_wanting_plugins_go_into_the_outer_request_only() {
+    let rig = Rig::new().await;
+    rig.connected().await;
+    let mut consumer = consumer_preview();
+    consumer.wanting_plugins = vec![wonton_protocol::CapabilityProviderRef {
+        id: "app.music".to_owned(),
+        title: "音乐".to_owned(),
+        high_privilege: true,
+    }];
+    answer_previews(&rig, &consumer, &provider_preview());
+
+    let mut shown = rig
+        .app
+        .preview_install("github:owner/app.photos".to_owned())
+        .await
+        .unwrap();
+    assert!(shown.connected_plugins.is_empty(), "默认一个都不接");
+    shown.connected_plugins.push("app.music".to_owned());
+    install(&rig, shown);
+    let state = rig
+        .task("app.photos", |state| *state != PluginTaskState::Running)
+        .await;
+    assert_eq!(state, PluginTaskState::Succeeded);
+
+    let sent: serde_json::Value =
+        serde_json::from_str(&rig.core.seen(&Method::POST, "/_wonton/api/plugins")[0].body)
+            .unwrap();
+    assert_eq!(sent["connect_plugins"], serde_json::json!(["app.music"]));
+    assert_eq!(
+        sent["install_together"][0]["request"]["connect_plugins"],
+        serde_json::json!([])
+    );
+}
