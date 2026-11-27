@@ -4,8 +4,8 @@
 use wonton_protocol::media::library::{ActionFailure, Album, AlbumOwner, LibraryActionResult};
 use wonton_protocol::media::library_view::{
     PhotoAlbumOwner, PhotoAlbumRow, PhotoAlbumView, PhotoDay, PhotoDetailView, PhotoEdit,
-    PhotoInfo, PhotoLocation, PhotoPage, PhotoPerson, PhotoSearch, PhotoSearchView, PhotoTile,
-    PhotosAction, PhotosViewModel,
+    PhotoInfo, PhotoLocation, PhotoPage, PhotoPerson, PhotoSearch, PhotoSearchView,
+    PhotoSourceState, PhotoTile, PhotosAction, PhotosViewModel,
 };
 use wonton_protocol::media::{MediaFailure, MediaFailureCode, MediaKind};
 
@@ -25,6 +25,13 @@ pub(super) fn apply(view: &mut PhotosViewModel, action: PhotosAction, mode: Fake
             {
                 *view = super::opening(FakeMode::Library);
             }
+        }
+        // 两家里挑了一家：照真核心，记下来再取库。
+        PhotosAction::ChooseSource { id } => {
+            if view.sources.state == PhotoSourceState::Choose {
+                *view = super::opening(FakeMode::Library);
+            }
+            view.sources = super::ready(Some(id));
         }
         PhotosAction::Refresh | PhotosAction::LoadMoreAlbum | PhotosAction::LoadMoreSearch => {}
         PhotosAction::OpenMonth { month } => open_month(view, &month, false),

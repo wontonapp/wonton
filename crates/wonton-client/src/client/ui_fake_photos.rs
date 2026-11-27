@@ -2,7 +2,8 @@
 //! 页面上的操作照真核心的规则改视图（[`actions`]），不发请求；照片的字节现画一张图（[`picture`]），
 //! 视频和实况的动态部分没有，如实报插件不可用。
 //!
-//! `WONTON_UI_FAKE_PHOTOS` 换开场：`source_required`（要先选相册插件）、`unavailable`（插件没在跑）、
+//! `WONTON_UI_FAKE_PHOTOS` 换开场：`choose_source`（装了两家、没定默认，让用户挑）、`not_installed`（没有能用的
+//! 相册插件）、`source_required`（挑过之后核心仍要选相册插件）、`unavailable`（插件没在跑）、
 //! `denied`（这个人没被授权）、`empty`（库是空的）、`share_denied`（有内容，但读不到家人名单，共享时没人可选）；
 //! 不设就是有内容的库。
 
@@ -15,8 +16,8 @@ use std::sync::atomic::Ordering;
 
 use wonton_protocol::media::library_view::{
     PhotoAlbumOwner, PhotoAlbumRow, PhotoAlbums, PhotoDay, PhotoEditKind, PhotoMonth, PhotoPeople,
-    PhotoPerson, PhotoRendition, PhotoShareTarget, PhotoShareTargets, PhotoTile, PhotoTimeline,
-    PhotosAction, PhotosViewModel,
+    PhotoPerson, PhotoRendition, PhotoShareTarget, PhotoShareTargets, PhotoSource,
+    PhotoSourceState, PhotoSources, PhotoTile, PhotoTimeline, PhotosAction, PhotosViewModel,
 };
 use wonton_protocol::media::{MediaError, MediaFailure, MediaFailureCode, MediaKind};
 
@@ -47,6 +48,8 @@ const NOTHING: &str = "没有";
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub(super) enum FakeMode {
     Library,
+    ChooseSource,
+    NotInstalled,
     SourceRequired,
     Unavailable,
     Denied,
@@ -57,6 +60,8 @@ pub(super) enum FakeMode {
 impl FakeMode {
     fn from_env() -> Self {
         match std::env::var("WONTON_UI_FAKE_PHOTOS").as_deref() {
+            Ok("choose_source") => Self::ChooseSource,
+            Ok("not_installed") => Self::NotInstalled,
             Ok("source_required") => Self::SourceRequired,
             Ok("unavailable") => Self::Unavailable,
             Ok("denied") => Self::Denied,
@@ -228,16 +233,47 @@ fn november() -> PhotoMonth {
     }
 }
 
-/// 能共享给的家人：相册成员里的 `mom` 也在。
+/// 能共享给的人：相册成员里的 `mom` 也在，主人没填显示名。
 fn family() -> PhotoShareTargets {
-    let person = |username: &str, display_name: &str| PhotoShareTarget {
-        username: username.to_owned(),
-        display_name: display_name.to_owned(),
+    let person = |username: &str, display_name: Option<&str>| PhotoShareTarget {
+        user_id: format!("@{username}:example.com"),
+        display_name: display_name.map(str::to_owned),
     };
     PhotoShareTargets {
         loading: false,
         problem: None,
-        people: vec![person("mom", "妈妈"), person("dad", "爸爸")],
+        people: vec![
+            person("owner", None),
+            person("mom", Some("妈妈")),
+            person("dad", Some("爸爸")),
+        ],
+    }
+}
+
+/// 假的相册插件：`Library` 之类的开场只装了第一家，`choose_source` 两家都装了。
+pub(super) fn candidates() -> Vec<PhotoSource> {
+    let source = |id: &str, title: &str| PhotoSource {
+        id: id.to_owned(),
+        title: title.to_owned(),
+        is_default: false,
+    };
+    vec![
+        source("app.immich", "Immich"),
+        source("app.photoprism", "PhotoPrism"),
+    ]
+}
+
+/// 定下来了：只装了一家，或者用户挑了 `chosen`。
+pub(super) fn ready(chosen: Option<String>) -> PhotoSources {
+    let mut candidates = candidates();
+    if chosen.is_none() {
+        candidates.truncate(1);
+    }
+    PhotoSources {
+        state: PhotoSourceState::Ready,
+        problem: None,
+        candidates,
+        chosen,
     }
 }
 
@@ -262,6 +298,7 @@ fn library() -> PhotosViewModel {
         ..PhotoMonth::default()
     };
     PhotosViewModel {
+        sources: ready(None),
         timeline: PhotoTimeline {
             loading: false,
             problem: None,
@@ -326,6 +363,7 @@ fn failed(code: MediaFailureCode, message: &str) -> PhotosViewModel {
             ..PhotoPeople::default()
         },
         actions_problem: problem,
+        sources: ready(None),
         ..PhotosViewModel::default()
     }
 }
@@ -333,6 +371,21 @@ fn failed(code: MediaFailureCode, message: &str) -> PhotosViewModel {
 pub(super) fn opening(mode: FakeMode) -> PhotosViewModel {
     match mode {
         FakeMode::Library => library(),
+        FakeMode::ChooseSource => PhotosViewModel {
+            sources: PhotoSources {
+                state: PhotoSourceState::Choose,
+                candidates: candidates(),
+                ..PhotoSources::default()
+            },
+            ..PhotosViewModel::default()
+        },
+        FakeMode::NotInstalled => PhotosViewModel {
+            sources: PhotoSources {
+                state: PhotoSourceState::NotInstalled,
+                ..PhotoSources::default()
+            },
+            ..PhotosViewModel::default()
+        },
         FakeMode::SourceRequired => failed(
             MediaFailureCode::SourceRequired,
             "more than one media source provides library; pass ?source=",
@@ -346,6 +399,7 @@ pub(super) fn opening(mode: FakeMode) -> PhotosViewModel {
             "403: this person is not on the app's access list",
         ),
         FakeMode::Empty => PhotosViewModel {
+            sources: ready(None),
             share_targets: family(),
             actions: Some(all_actions()),
             ..PhotosViewModel::default()
@@ -353,8 +407,9 @@ pub(super) fn opening(mode: FakeMode) -> PhotosViewModel {
         FakeMode::ShareDenied => PhotosViewModel {
             share_targets: PhotoShareTargets {
                 problem: Some(MediaFailure {
-                    code: MediaFailureCode::PermissionDenied,
-                    message: "403: reading the member list needs manage_members".to_owned(),
+                    code: MediaFailureCode::TransportUnavailable,
+                    message: "share-targets: the tunnel dropped before the core answered"
+                        .to_owned(),
                     retry_after_secs: None,
                 }),
                 ..PhotoShareTargets::default()

@@ -397,11 +397,11 @@ async fn edits_change_only_what_succeeded_and_list_what_did_not() {
 async fn failures_keep_the_category_the_core_gave() {
     let rig = Rig::new().await;
     november(&rig);
-    // 没连上：不发请求，按传输不可用报。
+    // 没连上：问不了用哪家，不发请求，按传输不可用报。
     open(&rig);
-    let view = photos(&rig, "没连上", |view| view.timeline.problem.is_some()).await;
+    let view = photos(&rig, "没连上", |view| view.sources.problem.is_some()).await;
     assert_eq!(
-        view.timeline.problem.unwrap().code,
+        view.sources.problem.unwrap().code,
         MediaFailureCode::TransportUnavailable
     );
     // 连上后自己补取。
@@ -611,39 +611,4 @@ async fn bytes_before_connecting_say_the_home_is_unreachable_in_the_loader() {
         .await
         .unwrap();
     assert_eq!(get(&url, None).await.status(), 503);
-}
-
-#[tokio::test]
-async fn sharing_offers_the_joined_family_except_me_and_says_when_it_may_not() {
-    let rig = Rig::new().await;
-    rig.core.family.manager();
-    rig.core.family.add_member("bob", "admin");
-    rig.core.family.add_member("mom", "child");
-    rig.connected().await;
-    open(&rig);
-    let view = photos(&rig, "能共享给的家人", |view| {
-        !view.share_targets.loading && !view.share_targets.people.is_empty()
-    })
-    .await;
-    let names: Vec<_> = view
-        .share_targets
-        .people
-        .iter()
-        .map(|person| person.username.as_str())
-        .collect();
-    assert_eq!(names, ["mom"]);
-    assert_eq!(view.share_targets.problem, None);
-
-    // 没有“管理成员”读不到名单：如实说没权限，不留旧名单。
-    rig.core.family.member_without_managing();
-    send(&rig, PhotosAction::Refresh).unwrap();
-    let view = photos(&rig, "没权限", |view| {
-        !view.share_targets.loading && view.share_targets.problem.is_some()
-    })
-    .await;
-    assert_eq!(
-        view.share_targets.problem.unwrap().code,
-        MediaFailureCode::PermissionDenied
-    );
-    assert!(view.share_targets.people.is_empty());
 }

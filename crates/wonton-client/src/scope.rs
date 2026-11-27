@@ -406,6 +406,7 @@ impl Scope {
             handle.clone(),
             home.clone(),
             media.clone(),
+            dir,
             views.map(|v| v.photos.clone()),
         );
         let bot_contacts = BotContactsLink::new(

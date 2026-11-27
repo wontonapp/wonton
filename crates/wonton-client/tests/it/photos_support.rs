@@ -1,5 +1,6 @@
 //! 假核心里的相册：`/_wonton/api/media/library/…` 按提供方的形状回时间线、相册、搜索、人物、详情和字节，
 //! 写操作照真的记账（收藏、进回收站、恢复，建相册、加进、移出、共享），逐条失败按测试塞进来的回。
+//! `/sources` 和 `/share-targets` 回测试定的名单，没定时是一家相册插件、主人和一个家人。
 //!
 //! 隧道和请求记录用 `plugins::rig` 的；要整个接口失败时用 rig 的预设回应，它排在这里前面。
 
@@ -9,6 +10,9 @@ use std::sync::Mutex;
 use axum::body::Body;
 use axum::http::{HeaderMap, Method, StatusCode, Uri};
 use axum::response::{IntoResponse, Response};
+use wonton_protocol::media::choices::{
+    MediaSource, MediaSources, SHARE_TARGETS_PATH, ShareTarget, ShareTargets,
+};
 use wonton_protocol::media::library::{
     ActionFailure, Album, AlbumOwner, AlbumPage, Albums, AssetPage, LibraryAction,
     LibraryActionKind, LibraryActionResult, LibraryFeatures, People, PersonEntry, PhotoAsset,
@@ -17,6 +21,8 @@ use wonton_protocol::media::library::{
 use wonton_protocol::media::{MediaFailure, MediaFailureCode, MediaKind};
 
 const PREFIX: &str = "/_wonton/api/media/library";
+const SOURCES: &str = "/_wonton/api/media/sources";
+pub const PHOTOS_SOURCE: &str = "app.example.photos";
 
 /// 每页几条：小，好测翻页。
 const PAGE: usize = 2;
@@ -34,6 +40,23 @@ pub struct PhotosFake {
     bytes: Mutex<HashMap<(String, String), Vec<u8>>>,
     /// 写操作里这些 id 逐条失败。
     refuse: Mutex<HashMap<String, MediaFailure>>,
+    sources: Mutex<Option<Vec<MediaSource>>>,
+    share_targets: Mutex<Option<Vec<ShareTarget>>>,
+}
+
+pub fn source(id: &str, is_default: bool) -> MediaSource {
+    MediaSource {
+        id: id.to_owned(),
+        title: id.to_uppercase(),
+        is_default,
+    }
+}
+
+pub fn target(username: &str) -> ShareTarget {
+    ShareTarget {
+        user_id: format!("@{username}:example.com"),
+        display_name: Some(username.to_uppercase()),
+    }
 }
 
 pub fn asset(id: &str, taken_at: u64) -> PhotoAsset {
@@ -74,6 +97,14 @@ pub fn envelope(code: MediaFailureCode, message: &str) -> String {
 }
 
 impl PhotosFake {
+    pub fn sources(&self, sources: Vec<MediaSource>) {
+        *self.sources.lock().unwrap() = Some(sources);
+    }
+
+    pub fn share_targets(&self, people: Vec<ShareTarget>) {
+        *self.share_targets.lock().unwrap() = Some(people);
+    }
+
     pub fn month(&self, month: &str, assets: Vec<PhotoAsset>) {
         self.months.lock().unwrap().push((month.to_owned(), assets));
     }
@@ -183,6 +214,16 @@ pub fn respond(
     headers: &HeaderMap,
     body: &[u8],
 ) -> Option<Response> {
+    if method == Method::GET && uri.path() == SOURCES {
+        let sources = fake.sources.lock().unwrap().clone();
+        let sources = sources.unwrap_or_else(|| vec![source(PHOTOS_SOURCE, false)]);
+        return Some(json(MediaSources { sources }));
+    }
+    if method == Method::GET && uri.path() == SHARE_TARGETS_PATH {
+        let people = fake.share_targets.lock().unwrap().clone();
+        let people = people.unwrap_or_else(|| vec![target("owner"), target("mom")]);
+        return Some(json(ShareTargets { people }));
+    }
     let rest = uri.path().strip_prefix(PREFIX)?;
     let segments: Vec<String> = rest
         .split('/')
