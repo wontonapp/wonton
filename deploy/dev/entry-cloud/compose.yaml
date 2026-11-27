@@ -88,7 +88,7 @@ services:
         ipv4_address: ${WONTON_ENTRY_BOOTSTRAP_IP:?}
 
   iroh:
-    image: n0computer/iroh-relay:v1.4.1@sha256:f73d0028e9dcb08372d65ae48ec84e4c875812d754877c074a10658e3948d5d3
+    image: n0computer/iroh-relay:v1.5.0@sha256:50a2f5697d8f69537037503c81b989be17eeb694dbb2d3fdfd5418c9a71c8ec6
     command: ["-c", "/config/relay.toml"]
     volumes:
       - ./.runtime/iroh:/config:ro

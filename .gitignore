@@ -33,3 +33,7 @@ __pycache__/
 
 # 通话冒烟用的插件包副本（真身在插件仓库，脚本用 PKG 指过来）
 deploy/dev/calls/plugin/
+
+# dev.sh 快路径 marker（脚本自动 touch，退出清 .dev-no-deps）
+.dev-no-build
+.dev-no-deps

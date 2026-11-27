@@ -800,7 +800,14 @@ case "${1:-}" in
     export WONTON_BUILD_COMMIT="${WONTON_BUILD_COMMIT:-$(build_commit)}"
     mkdir -p "$here/.data" && printf '%s' "$WONTON_DEV_PORT" > "$here/.data/dev-port"
     ensure_core_network
-    if [[ -n "${WONTON_DEV_BUILD_PROXY:-}" ]]; then
+    # 只改了 compose 环境（不动 Cargo 工作区）时不想每轮都重建镜像：worktree 根放 .dev-no-build 就跳过构建。
+    # 开发栈的 Dockerfile 上下文只有工作区，环境在 .env 里，compose up 自己会按新环境重建容器。
+    # .dev-no-deps 再进一步：只重建 core，不重跑 hydra-migrate（共用机上它会卡十几分钟不退出）。
+    if [[ -f "$repo/.dev-no-deps" ]]; then
+      compose up -d --no-deps --wait core
+    elif [[ -f "$repo/.dev-no-build" ]]; then
+      compose up -d
+    elif [[ -n "${WONTON_DEV_BUILD_PROXY:-}" ]]; then
       build_image -q --target dev --build-arg WONTON_BUILD_COMMIT -t "wonton-core:${WONTON_CORE_IMAGE_TAG:-dev}" -f "$here/Dockerfile" "$repo" >/dev/null
       compose up -d --wait
     else
