@@ -137,6 +137,7 @@ async fn a_taken_server_name_is_refused() {
     let error = impostor.scan_code(&code, &a).await.unwrap_err();
     assert_eq!(error, PeerError::AlreadyPaired);
 }
+
 /// 查找函数的规则：一个服务器名只会解析到配对时绑定的 endpoint ID，没配对和删掉之后都查不到。
 #[tokio::test]
 async fn a_server_name_resolves_only_to_its_bound_endpoint() {
