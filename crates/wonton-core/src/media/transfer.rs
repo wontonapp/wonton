@@ -3,6 +3,8 @@
 //!
 //! 上传的一批里：全成 `Done`、全败 `Failed`、有成有败 `Partial`；失败项进 `partial_failures`。
 
+use std::cell::Cell;
+
 use wonton_protocol::media::{
     FailedItem, ItemState, MediaFailure, MediaTask, TaskId, TaskState, TaskTarget, UploadItem,
 };
@@ -10,9 +12,27 @@ use wonton_protocol::media::{
 use super::task_service::{TaskService, TaskServiceError};
 
 impl TaskService {
-    /// 设备开始传（开一项上传、来取下载的字节）。规则见 [`Self::start`]。
-    pub fn begin(&self, task: TaskId) -> Result<MediaTask, TaskServiceError> {
-        self.change(task, |task| self.start(task))
+    /// 设备开始传（开一项上传、来取下载的字节）。排队的先进 `Preparing` 看配额，上传记在 `provider` 那家：
+    /// 放不下就落 `Failed`，回 [`TaskServiceError::Refused`]；放得下再按 [`Self::start`] 走。
+    pub fn begin(
+        &self,
+        task: TaskId,
+        provider: Option<&str>,
+    ) -> Result<MediaTask, TaskServiceError> {
+        let task = self.change(task, |task| {
+            if matches!(task.state, TaskState::Queued) {
+                self.move_to(task, TaskState::Preparing)?;
+                if let Some(failure) = self.admit(task, provider)? {
+                    task.next_attempt_at = None;
+                    return self.move_to(task, TaskState::Failed(failure));
+                }
+            }
+            self.start(task)
+        })?;
+        match task.state {
+            TaskState::Failed(failure) => Err(TaskServiceError::Refused(failure)),
+            _ => Ok(task),
+        }
     }
 
     /// 排队的经 `Preparing` 进 `Running`；暂停、等条件的直接回 `Running`（设备又来传字节就是在传）；
@@ -45,12 +65,25 @@ impl TaskService {
         })
     }
 
-    /// 一项在提供方入库了。
-    pub fn finish_item(&self, task: TaskId, item: &str) -> Result<MediaTask, TaskServiceError> {
-        self.change_item(task, item, |entry| {
+    /// 一项在提供方入库了，按它的大小记到 `provider` 那家的上传账上；已经记过完成的不再记。
+    pub fn finish_item(
+        &self,
+        task: TaskId,
+        item: &str,
+        provider: &str,
+    ) -> Result<MediaTask, TaskServiceError> {
+        let newly_done = Cell::new(None);
+        let changed = self.change_item(task, item, |entry| {
+            if !matches!(entry.state, ItemState::Done) {
+                newly_done.set(Some(entry.size));
+            }
             entry.upload_offset = entry.size;
             entry.state = ItemState::Done;
-        })
+        })?;
+        if let Some(size) = newly_done.get() {
+            self.charge_upload(&changed, provider, size)?;
+        }
+        Ok(changed)
     }
 
     /// 一项不用传了：提供方收尾时说库里已有同一张。
@@ -96,9 +129,10 @@ impl TaskService {
         })
     }
 
-    /// 下载写完了。还没进 `Running` 的（暂停那一刻正好写完、手机上本来就有）先进，再落 `Done`。
+    /// 下载写完了。还没进 `Running` 的（暂停那一刻正好写完、手机上本来就有）先进，再落 `Done`，写下的字节
+    /// 记到这台设备的离线账上。字节已经在手机上了，这里不再看配额。
     pub fn complete(&self, task: TaskId) -> Result<MediaTask, TaskServiceError> {
-        self.change(task, |task| {
+        let done = self.change(task, |task| {
             if !matches!(task.state, TaskState::Running | TaskState::Preparing) {
                 self.start(task)?;
             }
@@ -106,7 +140,9 @@ impl TaskService {
                 task.progress.done = total;
             }
             self.move_to(task, TaskState::Done)
-        })
+        })?;
+        self.charge_offline(&done)?;
+        Ok(done)
     }
 
     /// 先写这一项（条目单独一张表），再重读任务按各项合计进度、看是不是都有了结果。

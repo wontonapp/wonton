@@ -15,6 +15,7 @@ use wonton_protocol::media::{
 
 use super::{Caller, MediaQuery, reply, service_failure};
 use crate::gateway::Gateway;
+use crate::media::Ledger;
 use crate::media::session_service::unix_now_ms;
 use crate::plugin::media_source::failure;
 
@@ -94,6 +95,22 @@ pub(super) async fn create(
         }
         let source = named_source(&gateway, &caller, &mut task, create.options.source).await?;
         let store = &caller.media.store;
+        // 点了名的上传放不下就不建任务；没点名的在开始传、选定那家时再看（`TaskService::begin`）。
+        if let (TaskTarget::Upload(items), Some(source)) = (&task.target, &source) {
+            let want = items
+                .iter()
+                .map(|item| item.size)
+                .fold(0, u64::saturating_add);
+            store
+                .check_quota(
+                    &task.person,
+                    Ledger::ProviderUpload,
+                    Some(source),
+                    None,
+                    want,
+                )
+                .map_err(|e| service_failure(&e))?;
+        }
         store.create_task(&task).map_err(|e| service_failure(&e))?;
         if let Some(source) = source {
             store

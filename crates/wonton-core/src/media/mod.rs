@@ -1,8 +1,8 @@
 //! 媒体与传输（ADR-0113）在服务器核的存储层与状态机。
 //!
 //! [`store`] 是任务、播放会话、队列与配额账本的唯一落点；[`task_service`] 是任务状态机，字节在走时
-//! 任务怎么变在 `transfer`；[`session_service`] 管播放会话的状态与接管。[`provider`] 选提供方、按人签
-//! 凭据。HTTP 在 `gateway::media`，事件不在这里。
+//! 任务怎么变在 `transfer`，配额的拒与记在 `quota`；[`session_service`] 管播放会话的状态与接管。
+//! [`provider`] 选提供方、按人签凭据。HTTP 在 `gateway::media`，事件不在这里。
 
 use std::path::Path;
 use std::sync::Arc;
@@ -10,6 +10,7 @@ use std::sync::Arc;
 mod leave;
 pub(crate) mod prefetch;
 pub(crate) mod provider;
+mod quota;
 pub mod session_service;
 pub mod store;
 pub mod task_service;

@@ -142,7 +142,7 @@ Queued → Preparing → Running ⇄ Paused{reason} / WaitingNetwork / WaitingPo
 
 **失败分类。** 以 `wonton-protocol/src/file/mod.rs:97-142` 的 `FileFailure` 为底，**保留它的本地、传输、协议、上游四组**（`local_source_unavailable`、`local_permission_denied`、`local_storage_full`、`local_io`、`transport_unavailable`、`protocol`、`plugin_unavailable`、`upstream_error`），再加 `AuthenticationRequired`、`UnsupportedByDevice`、`RateLimited`、`MediaGone`、`ServerStorageFull`。服务端空间不足和手机空间不足分成两个码，壳才知道该去清哪边；`device_no_response` 只出现在工具结果里，不进任务失败枚举。失败即停，不藏错误：状态转 `Failed{failure}`，失败原文和类别都进视图与事件（`media.task.failed`），Agent 能看到完整原因。
 
-**配额与清理。** 服务器核记两个账本：每个提供方的上传总量上限（按人）和每台设备的离线下载占用上限（按人按设备）。超限在 `Preparing` 就拒；拒的回执和 `QuotaView` 都分两项（`provider_upload`、`device_offline`），各带自己的 `used`/`limit`，壳据此出“去清服务器”还是“去清手机”。设备用 `GET /quota` 读这两项，只回汇总：上传是这个人在各提供方的合计，离线是他各台设备的合计，不分家分台列。离线占用以设备为准：设备删了副本、被系统清了、重装了 App 都用 `PUT /offline` 报一次现在一共占多少，核心记成它，不靠逐项扣减对账；两次上报之间下载写完时核心往上加。账按设备分开记，一台上报只覆盖它自己那份，配额看这个人所有设备之和；设备被移除或这个人退出家庭时，那台的份额清零。离线文件的清理只由用户或 Agent 显式发起；App 在系统存储告急时只提示，不自行删。
+**配额与清理。** 服务器核记两个账本：每个提供方的上传总量上限（按人）和每台设备的离线下载占用上限（按人按设备）。超限在 `Preparing` 就拒（点了名来源的上传在建任务时就看，放不下不建），任务落 `Failed`，字节一个不走；上传在提供方入库时记（提供方说重复的不记），下载在写完时记。下载按还差的字节看配额、写完按整份记，所以续下的任务最多比上限多出续下前已经写了的那部分。上传账只增不减：它记的是经核心传上去的量，提供方那边删了，契约里既没有删除事件、也没有按人查用量的接口，核心看不到，要回收得先给提供方契约加接口（待定第 5 条）。记账和任务落状态不在同一个事务里，两步之间核心挂了会少记这一笔：离线账在设备下一次 `PUT /offline` 时对齐，上传账就少记了；只会少记、不会多记，所以不为它把两处写合成一个事务。拒的回执和 `QuotaView` 都分两项（`provider_upload`、`device_offline`），各带自己的 `used`/`limit`，壳据此出“去清服务器”还是“去清手机”。设备用 `GET /quota` 读这两项，只回汇总：上传是这个人在各提供方的合计，离线是他各台设备的合计，不分家分台列。离线占用以设备为准：设备删了副本、被系统清了、重装了 App 都用 `PUT /offline` 报一次现在一共占多少，核心记成它，不靠逐项扣减对账；两次上报之间下载写完时核心往上加。账按设备分开记，一台上报只覆盖它自己那份，配额看这个人所有设备之和；设备被移除或这个人退出家庭时，那台的份额清零。离线文件的清理只由用户或 Agent 显式发起；App 在系统存储告急时只提示，不自行删。
 
 **后台限制。** iOS 的传输走 `URLSession` 后台会话：它不需要声明后台模式，系统在自己事件里把 App 拉起来并交回结果；只有批量枚举相册、整理这类不跑完会被打断的活才用 `BGProcessingTask`，那才要加 `processing`（现在只有 `audio`，`apps/ios/project.yml:69`）。`PHPhotoLibrary` 给的是内存数据，后台会话只能用文件，客户端核先落临时分片文件，传完删；空间不足先算再落。Android 传输走 `WorkManager` 加 `dataSync` 前台服务，一天总时长 6 小时（[FGS 超时](https://developer.android.com/develop/background-work/services/fgs/timeout)）；超过 6 小时的任务（大库首次备份）必须分批，批与批之间落回 `WaitingPower` 或 `Queued`。
 
@@ -463,3 +463,4 @@ Immich 没有标准，客户端核直讲它就是给一个具体插件开特例�
 2. **Chromecast 接收端走哪条回连通道**：公网入口、中继、只许局网三选。推荐先只局网，外网与 ADR-0003 中继一起定。
 3. **ADR-0114 冲突项**：本篇直接用 0114 的第 3 项（事件与唤醒）、第 6 项（深链）名字；若 0114 事件载荷字段与本篇 `MediaFailure` 撞，以 0114 为准、本篇改引用。底座线复审时定。
 4. **离线下载配额默认值**（每人每设备 GB）：本篇未定，交给拆卡时按真机容量实测后填，暂定不限、只显占用。
+5. **上传账的回收**：提供方契约加按人报用量（或删除事件），核心据此对账；定下来之前上传账只增，用户在提供方那边删了东西额度不回。
