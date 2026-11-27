@@ -3,21 +3,18 @@
 //! 列表由 matrix-sdk-ui 的 `RoomListService` 维护（和 Element X 一样），排序也用它的：正在发送的在前，
 //! 其余按最近活动，再按名字。
 
-use crate::Draft;
 use crate::Error;
 use crate::MatrixSession;
 use crate::MessageBody;
 use crate::Result;
-use matrix_sdk::ComposerDraft;
-use matrix_sdk::ComposerDraftType;
 use matrix_sdk::Room;
 use matrix_sdk::RoomState;
-use matrix_sdk::ruma::EventId;
 use matrix_sdk::ruma::OwnedRoomId;
 use matrix_sdk::ruma::OwnedUserId;
 use matrix_sdk::ruma::RoomId;
 
 mod direct;
+mod draft;
 mod join;
 mod list;
 mod send;
@@ -92,45 +89,6 @@ pub struct LatestMessage {
     pub timestamp_ms: u64,
     /// 这一条属于旁聊（根、结果行、话题里的消息）时，旁聊的标题和结果行（ADR-0093 §4）。
     pub side_chat: Option<crate::side_chat::LatestSideChat>,
-}
-
-impl MatrixSession {
-    pub async fn draft(&self, room_id: &RoomId, thread: Option<&EventId>) -> Result<Option<Draft>> {
-        let room = self.joined(room_id)?;
-        Ok(room.load_composer_draft(thread).await?.map(|draft| Draft {
-            body: draft.plain_text,
-            reply_to: match draft.draft_type {
-                ComposerDraftType::Reply { event_id } => Some(event_id),
-                ComposerDraftType::NewMessage | ComposerDraftType::Edit { .. } => None,
-            },
-        }))
-    }
-    pub async fn save_draft(
-        &self,
-        room_id: &RoomId,
-        thread: Option<&EventId>,
-        draft: &Draft,
-    ) -> Result<()> {
-        let room = self.joined(room_id)?;
-        if draft.body.is_empty() && draft.reply_to.is_none() {
-            room.clear_composer_draft(thread).await?;
-        } else {
-            let draft = ComposerDraft {
-                plain_text: draft.body.clone(),
-                // 不发格式化内容，正文就是原文。
-                html_text: None,
-                draft_type: match &draft.reply_to {
-                    Some(event_id) => ComposerDraftType::Reply {
-                        event_id: event_id.clone(),
-                    },
-                    None => ComposerDraftType::NewMessage,
-                },
-                attachments: Vec::new(),
-            };
-            room.save_composer_draft(draft, thread).await?;
-        }
-        Ok(())
-    }
 }
 
 impl MatrixSession {
