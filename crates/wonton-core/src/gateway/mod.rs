@@ -21,6 +21,7 @@
 
 pub mod agent_chains;
 mod agent_chains_api;
+mod agent_models;
 pub mod agent_outbox;
 mod agent_permission;
 mod api;

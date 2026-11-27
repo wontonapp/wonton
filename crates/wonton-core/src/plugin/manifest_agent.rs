@@ -2,7 +2,7 @@
 
 use super::manifest::{Manifest, ManifestError, PluginKind};
 
-pub use wonton_protocol::manifest::{AgentProtocol, AgentSpec};
+pub use wonton_protocol::manifest::{AgentModels, AgentProtocol, AgentSpec};
 
 pub(super) fn validate(manifest: &Manifest) -> Result<(), ManifestError> {
     if manifest.kind == PluginKind::Agent && manifest.agent.is_none() {
@@ -25,6 +25,38 @@ pub(super) fn validate(manifest: &Manifest) -> Result<(), ManifestError> {
             ));
         }
         validate_mount("agent.skills.mount", &skills.mount)?;
+    }
+    if let Some(models) = &agent.models {
+        validate_models(manifest, models)?;
+    }
+    Ok(())
+}
+
+/// `agent.models`：只给 Agent 插件；写了 `bots` 的插件，命令要在每个 Bot 自己的那组服务里跑，否则一个 Bot 的 key
+/// 会存进所有 Bot 共用的容器。
+fn validate_models(manifest: &Manifest, models: &AgentModels) -> Result<(), ManifestError> {
+    if manifest.kind != PluginKind::Agent {
+        return Err(ManifestError::Invalid(
+            "agent.models requires kind: agent".to_owned(),
+        ));
+    }
+    if models.service.trim().is_empty()
+        || models
+            .command
+            .first()
+            .is_none_or(|program| program.trim().is_empty())
+    {
+        return Err(ManifestError::Invalid(
+            "agent.models needs a service and a non-empty command".to_owned(),
+        ));
+    }
+    if manifest.bots.is_some()
+        && !super::bot_services::bot_services(manifest).contains(models.service.as_str())
+    {
+        return Err(ManifestError::Invalid(format!(
+            "agent.models.service `{}` must be listed in bots.services: the command runs for one Bot at a time",
+            models.service
+        )));
     }
     Ok(())
 }
