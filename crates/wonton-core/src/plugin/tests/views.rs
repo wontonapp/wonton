@@ -576,3 +576,60 @@ async fn invalid_icons_fail_the_preview_and_the_install() {
     assert_eq!(err.kind(), "invalid_input");
     assert!(m.installed(&english()).plugins.is_empty());
 }
+
+/// 声明了 `provides.media_source.browse` 的插件，已安装列表把它带给客户端：点开进原生界面；没声明的为空。
+#[tokio::test]
+async fn installed_plugins_carry_the_declared_browse_standard() {
+    let listener = TcpListener::bind("127.0.0.1:0").await.unwrap();
+    let port = listener.local_addr().unwrap().port();
+    tokio::spawn(async move {
+        axum::serve(listener, Router::new().route("/", get(|| async { "ok" })))
+            .await
+            .unwrap();
+    });
+    let (_docker, engine) = FakeDocker::start().await;
+    let dir = tempfile::tempdir().unwrap();
+    let manager = manager_with(engine, &dir);
+    let yaml = package(
+        "  web:\n    image: nginx:1.27\n  adapter:\n    image: nginx:1.27",
+        &format!(
+            "  webui: {{service: web, port: {port}, sso: proxy, proxy: {{headers: {{Remote-User: '{{user}}'}}}}}}\n  \
+             provides:\n    media_source:\n      service: adapter\n      port: 8090\n      operations: [playback]\n      \
+             kinds: [audio]\n      browse: opensubsonic\n      credentials: {{issue: [i, '{{name}}'], revoke: [r, '{{name}}']}}\n  \
+             permissions: []"
+        ),
+    )
+    .replace("spec: '0.5'", "spec: '0.17'")
+    .replace("id: app.test", "id: app.music");
+    let music = PluginPackage::parse(&yaml, &super::langs()).unwrap();
+    manager
+        .install_package(music, &[], super::langs())
+        .await
+        .unwrap();
+    let plain = package(
+        "  web:\n    image: nginx:1.27",
+        &format!("  webui: {{service: web, port: {port}}}\n  permissions: []"),
+    )
+    .replace("id: app.test", "id: app.plain");
+    let plain = PluginPackage::parse(&plain, &super::langs()).unwrap();
+    manager
+        .install_package(plain, &[], super::langs())
+        .await
+        .unwrap();
+
+    let installed = manager.installed(&english());
+    let browse = |id: &str| {
+        installed
+            .plugins
+            .iter()
+            .find(|plugin| plugin.id == id)
+            .unwrap()
+            .media_browse
+            .clone()
+    };
+    assert_eq!(
+        browse("app.music"),
+        Some(wonton_protocol::media::MediaBrowse::OpenSubsonic)
+    );
+    assert_eq!(browse("app.plain"), None);
+}

@@ -666,6 +666,8 @@ const EXPECTED: &[(&str, &str)] = &[
     ("0.16", "x-wonton.provides.<名字>.operations"),
     ("0.16", "x-wonton.provides.<名字>.kinds"),
     ("0.16", "permission models 退役"),
+    // 0.17
+    ("0.17", "x-wonton.provides.<名字>.browse"),
 ];
 
 #[test]

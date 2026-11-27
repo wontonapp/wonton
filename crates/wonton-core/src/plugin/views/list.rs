@@ -220,6 +220,10 @@ impl PluginManager {
                         .collect()
                 },
             ),
+            media_browse: manifest
+                .and_then(|m| m.provides.as_ref())
+                .and_then(|p| p.capabilities.get(wonton_protocol::media::MEDIA_CAPABILITY))
+                .and_then(|service| service.browse.clone()),
             matrix_widget: manifest.and_then(super::super::manifest_widget::plugin_widget),
         }
     }

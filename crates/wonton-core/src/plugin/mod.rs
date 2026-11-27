@@ -75,6 +75,7 @@ pub mod manager;
 mod manager_options;
 pub mod manifest;
 mod manifest_agent;
+mod manifest_browse;
 mod manifest_clients;
 mod manifest_device;
 mod manifest_gpu_images;
