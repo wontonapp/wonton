@@ -60,7 +60,7 @@ fn lower_half(subnet: Ipv4Net) -> Option<Ipv4Net> {
 
 /// 插件网络的地址配置。
 #[derive(Debug, Clone, PartialEq, Eq)]
-pub(super) struct Layout {
+pub(crate) struct Layout {
     pub subnet: Ipv4Net,
     /// `isolated` 的网络 Docker 不分配网关。
     pub gateway: Option<String>,
@@ -69,7 +69,7 @@ pub(super) struct Layout {
 }
 
 /// 第一个 IPv4 网段的配置。
-pub(super) fn layout_of(network: &NetworkInspect) -> Option<Layout> {
+pub(crate) fn layout_of(network: &NetworkInspect) -> Option<Layout> {
     let configs = network.ipam.as_ref()?.config.as_ref()?;
     configs.iter().find_map(|config| {
         Some(Layout {

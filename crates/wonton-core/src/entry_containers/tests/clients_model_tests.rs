@@ -5,8 +5,7 @@ use super::test_support::*;
 #[tokio::test]
 async fn open_lan_writes_lan_crt_list_and_reloads() {
     let rig = Rig::new().await;
-    let containers = rig.containers.clone().with_lan_forward_available(true);
-    containers
+    rig.containers
         .apply_clients_model(
             &settings(),
             true,

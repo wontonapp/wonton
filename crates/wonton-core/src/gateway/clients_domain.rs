@@ -9,7 +9,7 @@ use axum::extract::State;
 use axum::response::{IntoResponse, Response};
 use hyper::HeaderMap;
 use hyper::header::HeaderValue;
-use wonton_protocol::{DnsProviderPreset, PutDomainRequest};
+use wonton_protocol::{DnsProviderPreset, DomainSettings, PutDomainRequest};
 
 use super::Gateway;
 use super::api::languages;
@@ -26,7 +26,7 @@ pub async fn domain(State(gateway): State<Arc<Gateway>>, headers: HeaderMap) -> 
         return unavailable(&langs);
     };
     match clients.view().await {
-        Ok(view) => no_store(Json(view).into_response()),
+        Ok(view) => no_store(Json(with_lan_record(&gateway, view)).into_response()),
         Err(error) => failure(
             ClientsFailure::Other,
             &l10n::text(
@@ -36,6 +36,14 @@ pub async fn domain(State(gateway): State<Arc<Gateway>>, headers: HeaderMap) -> 
             ),
         ),
     }
+}
+
+/// `*.lan` 记录对不对由局域网检测查（[`crate::clients::lan_forward`]），不在域名设置里。
+fn with_lan_record(gateway: &Gateway, mut view: DomainSettings) -> DomainSettings {
+    if let Some(entry) = &gateway.entry {
+        view.lan_record = entry.lan().record_state();
+    }
+    view
 }
 
 /// `PUT /_wonton/clients/domain`
@@ -65,7 +73,7 @@ pub async fn save_domain(
             &l10n::text(&langs, "clients-domain-read-failed", &[]),
         );
     };
-    let mut response = no_store(Json(view).into_response());
+    let mut response = no_store(Json(with_lan_record(&gateway, view)).into_response());
     if saved.suffix_changed {
         response.headers_mut().insert(
             SUFFIX_CHANGED_HEADER,

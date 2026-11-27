@@ -2,9 +2,10 @@
 
 use bollard::models::NetworkCreateRequest;
 
+use super::lan_forward::LanLink;
 use super::{
     CONNECTOR_ALIAS, CONNECTOR_COMPONENT, ENTRY_CLIENTS_ALIAS, ENTRY_COMPONENT, ENTRY_EDGE_ALIAS,
-    EntryContainers, EntryError,
+    ENTRY_LANFWD_ALIAS, EntryContainers, EntryError,
 };
 use crate::entry_haproxy::{CONNECTOR_ADDRESS, ENTRY_EDGE_ADDRESS};
 use crate::plugin::core_address::Endpoint;
@@ -20,23 +21,15 @@ pub(super) struct Networks {
     /// [`CONNECTOR_ADDRESS`]/[`ENTRY_EDGE_ADDRESS`]）。
     pub(super) connector: String,
     entry: String,
+    /// 局域网转发和入口之间的 `lanfwd`：有插件开过局域网入口才建，建了入口就一直接着。
+    pub(super) lan: Option<LanLink>,
 }
 
 impl EntryContainers {
     /// compose 给主项目渲染的网络名：`<项目>_clients`。项目名从核心自己的标签读，开发栈和正式安装不写死；
     /// 项目名也用来认上一版 compose 建的同名容器。
     pub(super) async fn networks(&self, core: &str) -> Result<(String, Networks), EntryError> {
-        let labels = self
-            .engine
-            .inspect_container(core)
-            .await?
-            .and_then(|info| info.config)
-            .and_then(|config| config.labels)
-            .unwrap_or_default();
-        let project = labels
-            .get("com.docker.compose.project")
-            .ok_or_else(|| EntryError::NetworkMissing("compose 项目标签".to_owned()))?
-            .clone();
+        let project = self.project(core).await?;
         let network = |key: &str| format!("{project}_{key}");
         let mut networks = Networks {
             clients: network("clients"),
@@ -44,6 +37,7 @@ impl EntryContainers {
             relay: network("relay"),
             connector: CONNECTOR_ADDRESS.to_owned(),
             entry: ENTRY_EDGE_ADDRESS.to_owned(),
+            lan: None,
         };
         // `clients` 核心自己在用，compose 会建；`edge`、`relay` 没有任何 compose 服务引用，compose 跳过它们
         // （实测：全新安装时这两张网络不存在），所以由核心按原来的参数建。
@@ -77,7 +71,23 @@ impl EntryContainers {
         networks.connector = offset(2);
         networks.entry = offset(3);
         self.ensure_network(&networks.relay, None, false).await?;
+        networks.lan = self.lan_link(&project, false).await?;
         Ok((project, networks))
+    }
+
+    /// 核心所在的 compose 项目名。
+    pub(super) async fn project(&self, core: &str) -> Result<String, EntryError> {
+        let labels = self
+            .engine
+            .inspect_container(core)
+            .await?
+            .and_then(|info| info.config)
+            .and_then(|config| config.labels)
+            .unwrap_or_default();
+        labels
+            .get("com.docker.compose.project")
+            .cloned()
+            .ok_or_else(|| EntryError::NetworkMissing("compose 项目标签".to_owned()))
     }
 
     /// 建一张由核心管的网络（不存在才建）。`subnet` 给了就固定网段；`isolated` 的网络两侧网关都关掉，
@@ -145,7 +155,7 @@ impl EntryContainers {
     }
 }
 
-/// 接哪些网络：入口同时接 `clients` 供核心的 8484 用；连接器只在 `edge` 上被入口认，出网走 `relay`。
+/// 接哪些网络：入口同时接 `clients` 供核心的 8484 用，有 `lanfwd` 时也接上；连接器只在 `edge` 上被入口认，出网走 `relay`。
 pub(super) fn endpoints(component: &str, networks: &Networks) -> Vec<(String, Endpoint)> {
     if component == CONNECTOR_COMPONENT {
         return vec![
@@ -161,7 +171,7 @@ pub(super) fn endpoints(component: &str, networks: &Networks) -> Vec<(String, En
             (networks.relay.clone(), Endpoint::default()),
         ];
     }
-    vec![
+    let mut endpoints = vec![
         (
             networks.edge.clone(),
             Endpoint {
@@ -177,5 +187,17 @@ pub(super) fn endpoints(component: &str, networks: &Networks) -> Vec<(String, En
                 ..Endpoint::default()
             },
         ),
-    ]
+    ];
+    // 局域网前端绑在入口的这个地址上，只认局域网转发；入口不进 `lanpub`（ADR-0021“网络规则”）。
+    if let Some(link) = &networks.lan {
+        endpoints.push((
+            link.network.clone(),
+            Endpoint {
+                address: Some(link.entry.to_string()),
+                aliases: vec![ENTRY_LANFWD_ALIAS.to_owned()],
+                gw_priority: None,
+            },
+        ));
+    }
+    endpoints
 }
