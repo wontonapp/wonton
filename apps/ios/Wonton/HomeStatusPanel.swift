@@ -47,7 +47,11 @@ struct HomeStatusPanel: View {
     }
 
     private var needsTheOwner: Bool {
-        home.notice == .deviceRejected || home.notice == .versionMismatch || home.notice == .relayRejected
+        guard let notice = home.notice else { return false }
+        switch notice {
+        case .deviceRejected, .versionMismatch, .relayRejected: true
+        default: false
+        }
     }
 
     private var connection: String {

@@ -149,6 +149,7 @@ fun connectionBarStatus(
 private fun ConnectionLine(notice: ConnectionNotice, onRetry: () -> Unit, onOpen: (SettingsSubpage) -> Unit) {
     val colors = WontonTheme.colors
     val retrying = notice.retrying == true
+    val warning = notice is ConnectionNotice.DeviceRejected || notice is ConnectionNotice.RelayRejected
     Column(Modifier.fillMaxWidth(), verticalArrangement = Arrangement.spacedBy(WontonTheme.spacing.s8)) {
         if (retrying) {
             Row(
@@ -170,8 +171,7 @@ private fun ConnectionLine(notice: ConnectionNotice, onRetry: () -> Unit, onOpen
             Text(
                 notice.sentence,
                 style = WontonTheme.typography.body,
-                color = (if (notice is ConnectionNotice.DeviceRejected || notice is ConnectionNotice.RelayRejected) colors.warning else colors.textPrimary)
-                    .toColor(),
+                color = (if (warning) colors.warning else colors.textPrimary).toColor(),
             )
         }
         Row(horizontalArrangement = Arrangement.spacedBy(WontonTheme.spacing.s8)) {

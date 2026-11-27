@@ -34,6 +34,14 @@ extension ConnectionNotice {
         }
     }
 
+    /// 要警告色的两种：配对失效和中继拒绝，都要人动手。
+    fileprivate var warns: Bool {
+        switch self {
+        case .deviceRejected, .relayRejected: true
+        default: false
+        }
+    }
+
     /// 以核心通知为准，避免 HomeStatus.Connecting 掩盖超时后恢复的重试入口。
     var retrying: Bool? {
         switch self {
@@ -107,10 +115,7 @@ struct ConnectionLine: View {
             } else {
                 Text(notice.sentence)
                     .wontonText(WontonTheme.typography.body)
-                    .foregroundStyle(Color(
-                        notice == .deviceRejected || notice == .relayRejected
-                            ? colors.warning : colors.textPrimary
-                    ))
+                    .foregroundStyle(Color(notice.warns ? colors.warning : colors.textPrimary))
             }
             HStack(spacing: WontonTheme.spacing.s8) {
                 if notice == .deviceRejected {

@@ -102,19 +102,19 @@ impl RelayView {
         if !self.url.username().is_empty() || self.url.password().is_some() {
             return Err(format!(
                 "{}：地址里不能带 userinfo，令牌要单独放",
-                relay_url_text(&self.url)
+                wire_url_text(&self.url)
             ));
         }
         if self.url.scheme() != "https" {
-            return Err(format!("{}：中继地址要用 https", relay_url_text(&self.url)));
+            return Err(format!("{}：中继地址要用 https", wire_url_text(&self.url)));
         }
         if let Some(token) = &self.token
             && token.expose().is_empty()
         {
-            return Err(format!("{}：令牌不能是空的", relay_url_text(&self.url)));
+            return Err(format!("{}：令牌不能是空的", wire_url_text(&self.url)));
         }
         if self.quic_port == Some(0) {
-            return Err(format!("{}：QUIC 端口不能是 0", relay_url_text(&self.url)));
+            return Err(format!("{}：QUIC 端口不能是 0", wire_url_text(&self.url)));
         }
         Ok(())
     }
@@ -383,6 +383,14 @@ pub fn relay_map(relays: &[RelayView], tiers: usize) -> RelayMap {
 /// 统一成这里的一种写法才互相相等。
 pub fn relay_url_text(url: &RelayUrl) -> String {
     url_text(&url.clone().into())
+}
+
+/// 报错时打的地址：去掉 userinfo，令牌不进错误串、日志和配对页。
+fn wire_url_text(url: &RelayUrl) -> String {
+    let mut url: Url = url.clone().into();
+    url.set_username("").ok();
+    url.set_password(None).ok();
+    url_text(&url)
 }
 
 /// 同 [`relay_url_text`]，参数是已经去过 userinfo/查询/片段的 [`Url`]。

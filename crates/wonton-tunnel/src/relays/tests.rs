@@ -104,9 +104,14 @@ fn wire_entries_must_not_carry_the_token_in_the_url() {
     let mut entry = relay("https://a.example", 0);
     assert_eq!(entry.validate(), Ok(()));
     entry.url = "https://tok@a.example".parse().unwrap();
-    assert!(entry.validate().unwrap_err().contains("userinfo"));
-    entry.url = "http://a.example".parse().unwrap();
-    assert!(entry.validate().unwrap_err().contains("https"));
+    let error = entry.validate().unwrap_err();
+    assert!(error.contains("userinfo"), "{error}");
+    // 报错串里不能再带一遍令牌。
+    assert!(!error.contains("tok"), "{error}");
+    entry.url = "http://tok@a.example".parse().unwrap();
+    let error = entry.validate().unwrap_err();
+    assert!(error.contains("https"), "{error}");
+    assert!(!error.contains("tok"), "{error}");
     entry = relay("https://a.example", 0);
     entry.token = Some(RelayToken::new(""));
     assert!(entry.validate().unwrap_err().contains("空"));
