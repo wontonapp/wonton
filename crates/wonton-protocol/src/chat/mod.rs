@@ -5,7 +5,7 @@
 
 use serde::{Deserialize, Serialize};
 
-use crate::{ChatLayout, SecretString, VerificationFlow};
+use crate::ChatLayout;
 
 mod ask;
 mod contacts;
@@ -19,189 +19,6 @@ mod session;
 #[cfg(test)]
 mod tests;
 mod view;
-
-/// 本设备的 Matrix 账号。
-#[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize)]
-#[cfg_attr(feature = "uniffi", derive(uniffi::Enum))]
-#[serde(tag = "type", rename_all = "snake_case")]
-pub enum ChatAccount {
-    /// 还没有登录：家里的服务器还没连上，或者还没拿到登录凭据。
-    SignedOut,
-    /// 正在登录，或者正在恢复上次保存的会话。
-    SigningIn,
-    /// 已登录。会话存在本机，重启后直接恢复，不用重新登录。
-    SignedIn {
-        /// Matrix 用户 ID，如 `@owner:home.example`。
-        user_id: String,
-        /// 本设备在服务器上的设备 ID。
-        device_id: String,
-    },
-    /// 上一次登录因为暂时的原因没成功（连不上、Matrix 还没就绪），核心正按退避自动重试，不用用户操作。
-    /// `reason`、`message` 是上一次失败的原因。
-    Reconnecting {
-        reason: ChatFailure,
-        message: String,
-    },
-    /// 登录失败、不会自动重试（App 回到前台时再试一次），或者会话已失效。`Unauthorized` 表示这台设备被吊销了，
-    /// 要主人重新配对。
-    Failed {
-        reason: ChatFailure,
-        message: String,
-    },
-}
-
-/// 同步状态。
-#[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize)]
-#[cfg_attr(feature = "uniffi", derive(uniffi::Enum))]
-#[serde(tag = "type", rename_all = "snake_case")]
-pub enum ChatSync {
-    /// 没在同步：还没登录，或者 App 在后台。
-    Idle,
-    /// 正在同步，房间列表还没收全。
-    Starting,
-    /// 正常同步中。
-    Running,
-    /// 同步因错误停止。核心会在网络恢复或回到前台时重试；`Unauthorized` 不会重试。
-    Failed {
-        reason: ChatFailure,
-        message: String,
-    },
-}
-
-/// 聊天相关失败的原因，壳据此决定怎么提示（AGENTS.md：错误必须区分原因）。
-#[derive(Clone, Copy, Debug, PartialEq, Eq, Serialize, Deserialize)]
-#[cfg_attr(feature = "uniffi", derive(uniffi::Enum))]
-#[serde(rename_all = "snake_case")]
-pub enum ChatFailure {
-    /// 连不上 Matrix 服务器：隧道没连上、网络断开或请求超时。
-    TransportUnavailable,
-    /// 登录失效：登录凭据无效或过期、设备已被吊销、账号已停用。要重新登录或配对。
-    Unauthorized,
-    /// 登录有效，但服务器不让做这件事：没有权限、对方屏蔽了自己。不是要重新登录。
-    Forbidden,
-    /// 对方服务器还没和这台配对（ADR-0050）：跨服务器的私聊要先在“其他服务器”里配对。
-    ServerNotPaired,
-    /// 对方服务器的公网访问关着（ADR-0090 第 2 节）：经公网才联系得到的对方暂时收不到，要等对方重新打开。
-    PeerPublicAccessOff,
-    /// 前置条件不满足：服务器缺少必需的能力，或者要操作的房间还没同步到本机。
-    NotReady,
-    /// 服务器或 Matrix SDK 出错。
-    Upstream,
-    /// 输入非法。
-    InvalidInput,
-    /// 比这个壳新的类别。
-    #[serde(other)]
-    Other,
-}
-
-/// 后台操作失败的说明。
-#[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize)]
-#[cfg_attr(feature = "uniffi", derive(uniffi::Record))]
-pub struct ChatProblem {
-    pub reason: ChatFailure,
-    /// 给人看的说明，包含失败的操作和原因。
-    pub message: String,
-}
-
-/// 端到端加密的状态。设备密钥、交叉签名密钥和密钥备份都存在本机的存储里，重启后不丢。
-#[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize)]
-#[cfg_attr(feature = "uniffi", derive(uniffi::Record))]
-pub struct EncryptionStatus {
-    pub verification: DeviceVerification,
-    pub recovery: RecoveryStatus,
-    /// 刚设置好恢复时生成的恢复密钥，主人用它在别的设备上取回加密消息的密钥。只在主人确认已经另外保存
-    /// （[`ChatAction::ConfirmRecoveryKeySaved`](crate::ChatAction::ConfirmRecoveryKeySaved)）之前给出，确认后核心
-    /// 把它从快照和本机清掉；其余时候为空。
-    pub recovery_key: Option<SecretString>,
-    /// 聊天列表需要主人处理的备份提醒；文字和跳转由原生壳呈现。
-    pub backup_reminder: Option<BackupReminder>,
-    /// 本设备没验证，账号里有别的已验证设备：可以请它确认（[`ChatAction::StartDeviceVerification`](crate::ChatAction::StartDeviceVerification)），和输入恢复密钥并列。
-    ///
-    /// [`ChatAction::StartDeviceVerification`](crate::ChatAction::StartDeviceVerification)：请求另一个已验证设备确认。
-    pub can_verify_with_other_device: bool,
-    /// 备份页显不显示“重置备份”（[`ChatAction::ResetRecovery`](crate::ChatAction::ResetRecovery)）：只在缺密钥、备份残缺时显示——恢复残缺，或者账号
-    /// 还没有备份而本设备又没验证。备份完好不显示，新密钥还没确认保存也不显示（还没抄下来就作废）。
-    #[serde(default)]
-    pub can_reset: bool,
-    /// 备份页的下一步给主人看什么。核心按恢复状态算好（ADR-0076），壳只按类别画，不再自己判断。
-    #[serde(default)]
-    pub recovery_next_step: RecoveryNextStep,
-    /// 正在进行或刚结束的设备确认（ADR-0046），本设备发起的和收到的都在这里。
-    pub verification_flow: Option<VerificationFlow>,
-    /// 加设备时的密钥交接（ADR-0087）：本设备是刚加进来、在等密钥的新设备，或者是开着“添加设备”页、替新设备交出
-    /// 密钥的旧设备。没在交接时为空。
-    #[serde(default)]
-    #[cfg_attr(feature = "uniffi", uniffi(default = None))]
-    pub key_handoff: Option<crate::KeyHandoff>,
-}
-
-/// 备份页的下一步给主人看什么（ADR-0076）。核心按恢复状态算好，壳只按类别画，不自己判断。
-#[derive(Clone, Copy, Debug, Default, PartialEq, Eq, Serialize, Deserialize)]
-#[cfg_attr(feature = "uniffi", derive(uniffi::Enum))]
-#[serde(rename_all = "snake_case")]
-pub enum RecoveryNextStep {
-    /// 输入恢复密钥：账号设过备份、本设备缺密钥，账号里也没有能确认本设备的其他已验证设备。
-    EnterKey,
-    /// 两条路并列：请账号里别的已验证设备确认本设备，或者输入恢复密钥，主人选一条。
-    ChooseDeviceOrKey,
-    /// 走设备确认这条路：流程已经在进行时这一屏就是流程，还没开始时壳画“请另一台设备确认”的入口按钮
-    /// （账号还没有备份，输恢复密钥没用，确认是拿到密钥的唯一路）。
-    ShowFlow,
-    /// 恢复正在进行，壳画进度。
-    Progress,
-    /// 刚加进来的设备在等另一台设备交出密钥（ADR-0087）：壳画交接页，不提恢复密钥。
-    WaitForOtherDevice,
-    /// 没有要主人做的：备份完好，或者状态还没同步到。
-    #[default]
-    None,
-    /// 更新的核心给出的类别：壳不画下一步。
-    #[serde(other)]
-    Other,
-}
-
-/// 聊天备份需要主人处理的事项。
-#[derive(Clone, Copy, Debug, PartialEq, Eq, Serialize, Deserialize)]
-#[cfg_attr(feature = "uniffi", derive(uniffi::Enum))]
-#[serde(rename_all = "snake_case")]
-pub enum BackupReminder {
-    SaveRecoveryKey,
-    EnterRecoveryKey,
-    /// 密钥交接还没完成，主人先进了聊天列表（ADR-0087）：提醒只说“在另一台设备上继续”，点了回到交接页。
-    ContinueOnOtherDevice,
-    #[serde(other)]
-    Other,
-}
-
-/// 本设备有没有被自己账号的交叉签名身份验证过。验证过的设备能解密历史消息，别人也会信任它。
-#[derive(Clone, Copy, Debug, PartialEq, Eq, Serialize, Deserialize)]
-#[cfg_attr(feature = "uniffi", derive(uniffi::Enum))]
-#[serde(rename_all = "snake_case")]
-pub enum DeviceVerification {
-    /// 还不知道，比如还没登录或者还在同步。
-    Unknown,
-    Verified,
-    /// 账号已经有交叉签名身份，但本设备还没被验证：用恢复密钥恢复即可。
-    Unverified,
-}
-
-/// 恢复（密钥备份加秘密存储）的状态。
-#[derive(Clone, Copy, Debug, PartialEq, Eq, Serialize, Deserialize)]
-#[cfg_attr(feature = "uniffi", derive(uniffi::Enum))]
-#[serde(rename_all = "snake_case")]
-pub enum RecoveryStatus {
-    /// 还不知道，比如还没登录或者还在同步。
-    Unknown,
-    /// 账号还没设置恢复：已验证的设备在聊天会话就绪后自动开启。
-    Disabled,
-    /// 正在设置或恢复。
-    InProgress,
-    /// 已设置，本设备也拿到了全部秘密。
-    Enabled,
-    /// 账号设置过恢复，但本设备还没拿到秘密：用
-    /// [`ChatAction::RecoverEncryption`](crate::ChatAction::RecoverEncryption) 输入恢复密钥；密钥丢了或者备份残缺，
-    /// 用 [`ChatAction::ResetRecovery`](crate::ChatAction::ResetRecovery) 重置。
-    Incomplete,
-}
 
 /// 房间里的 Bot 对方：精确到插件里的 Bot 名，和当前请求人能不能聊。
 #[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize)]
@@ -376,7 +193,11 @@ impl std::fmt::Debug for ImageThumbnail {
 
 pub use ask::{AskFailure, AskProblem, AskReceipt, AskState};
 pub use contacts::ChatContact;
+pub use encryption::{
+    BackupReminder, DeviceVerification, EncryptionStatus, RecoveryNextStep, RecoveryStatus,
+};
 pub use install::{BotInstallRow, BotInstallState};
 pub use own_bot::{OwnBotFailure, OwnBotProblem, OwnPrivateBotView};
 pub use pending::PendingConfirmation;
+pub use session::{ChatAccount, ChatFailure, ChatProblem, ChatSync};
 pub use view::ChatViewModel;
