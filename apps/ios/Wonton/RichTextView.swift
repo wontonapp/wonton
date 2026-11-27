@@ -26,6 +26,41 @@ struct RichTextView: View {
     }
 }
 
+/// 一段正文的文字：块里的片段接末尾那段透明占位。占位得能按 `.clear` 前景色认出来（ADR-0109 第 3 节），
+/// 不靠空格或 NBSP 的写法：时间自带普通空格，回执才是 NBSP。
+/// 带链接的块走 `LinkedMessageText` 的 UITextView，那边自己拼同一段 `.clear`，不走这里。
+enum RichTextInline {
+    static func text(_ block: RichBlock, ink: Color, reserve: String?) -> AttributedString {
+        var text = spans(block, ink: ink)
+        guard let reserve else { return text }
+        var hidden = AttributedString(reserve)
+        hidden.foregroundColor = .clear
+        hidden.font = .caption
+        text.append(hidden)
+        return text
+    }
+
+    private static func spans(_ block: RichBlock, ink: Color) -> AttributedString {
+        block.spans.reduce(into: AttributedString()) { result, span in
+            var part = AttributedString(span.text)
+            var intent: InlinePresentationIntent = []
+            if span.bold { intent.insert(.stronglyEmphasized) }
+            if span.italic { intent.insert(.emphasized) }
+            if span.strike { intent.insert(.strikethrough) }
+            if span.code {
+                intent.insert(.code)
+                part.backgroundColor = ink.opacity(WontonTheme.ratio.codeFill)
+            }
+            part.inlinePresentationIntent = intent
+            if let link = span.link, let url = URL(string: link.url) {
+                part.link = url
+                part.underlineStyle = .single
+            }
+            result.append(part)
+        }
+    }
+}
+
 private struct RichBlockView: View {
     let block: RichBlock
     let ink: Color
@@ -68,38 +103,7 @@ private struct RichBlockView: View {
         if block.spans.contains(where: { $0.link != nil }) {
             LinkedMessageText(block: block, ink: ink, reserve: reserve)
         } else {
-            Text(inline)
-        }
-    }
-
-    private var inline: AttributedString {
-        var text = spans
-        if let reserve {
-            var hidden = AttributedString(reserve)
-            hidden.foregroundColor = .clear
-            hidden.font = .caption
-            text.append(hidden)
-        }
-        return text
-    }
-
-    private var spans: AttributedString {
-        block.spans.reduce(into: AttributedString()) { result, span in
-            var part = AttributedString(span.text)
-            var intent: InlinePresentationIntent = []
-            if span.bold { intent.insert(.stronglyEmphasized) }
-            if span.italic { intent.insert(.emphasized) }
-            if span.strike { intent.insert(.strikethrough) }
-            if span.code {
-                intent.insert(.code)
-                part.backgroundColor = ink.opacity(WontonTheme.ratio.codeFill)
-            }
-            part.inlinePresentationIntent = intent
-            if let link = span.link, let url = URL(string: link.url) {
-                part.link = url
-                part.underlineStyle = .single
-            }
-            result.append(part)
+            Text(RichTextInline.text(block, ink: ink, reserve: reserve))
         }
     }
 }
