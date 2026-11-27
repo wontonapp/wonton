@@ -366,5 +366,19 @@ async fn removing_an_offline_copy_deletes_its_file() {
     downloads.run(&api, new_task_id(), item()).await.unwrap();
     downloads.remove("ep/1").unwrap();
     assert!(downloads.offline("ep/1").is_none());
-    assert_eq!(std::fs::read_dir(&downloads.dir).unwrap().count(), 0);
+    assert_eq!(files_under(&downloads.dir), 0);
+}
+
+fn files_under(dir: &std::path::Path) -> usize {
+    std::fs::read_dir(dir)
+        .unwrap()
+        .flatten()
+        .map(|e| {
+            if e.path().is_dir() {
+                files_under(&e.path())
+            } else {
+                1
+            }
+        })
+        .sum()
 }
