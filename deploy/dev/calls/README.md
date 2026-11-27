@@ -61,7 +61,7 @@ RELAYS='https://<令牌>@relay.808cbd.com,no-n0' STACK=call-smoke HOST=localhost
   STAGE=relay deploy/dev/calls/smoke.sh
 ```
 
-- `RELAYS` 是核心 `WONTON_RELAYS` 的原值（准入令牌写在 userinfo）。表里必须写明 `no-n0`（去掉内置 n0）或 `n0`（保留兜底）：不写按核心默认算保留，检查器会提示。脚本在配对前把它写进 worktree 的 `deploy/dev/core/.env`（`WONTON_DEV_RELAYS`，remote-dev 的 `up` 会推到栈上）、重起核心，再核对核心容器的环境变量和 `/_wonton/api/tunnel` 的返回：表项要和 `RELAYS` 逐项相同（地址、令牌、档位），有 `no-n0` 时不能出现 n0，响应要有 `endpoint_id` 和 `direct_addrs`；原文落 `relay-table.json`。跑完还原 `.env`。只换表不想每轮重编核心时，脚本会 touch worktree 根的 `.dev-no-build`（跳过镜像构建）和 `.dev-no-deps`（只 `compose up --no-deps core`，不重跑在共用机上会卡十几分钟的 `hydra-migrate`），退出时清掉 `.dev-no-deps`。
+- `RELAYS` 是核心 `WONTON_RELAYS` 的原值（准入令牌写在 userinfo）。表里要写明 `n0`（在写的档展开整组内置 n0）或 `no-n0`（去掉核心兜底）：不写按核心默认算保留，检查器会提示；`no-n0` 只去掉兜底，显式写的 n0（关键字或 n0 URL）照样保留。脚本在配对前把它写进 worktree 的 `deploy/dev/core/.env`（`WONTON_DEV_RELAYS`，remote-dev 的 `up` 会推到栈上）、重起核心，再核对核心容器的环境变量和 `/_wonton/api/tunnel` 的返回：表项要和 `RELAYS` 逐项相同（地址、令牌、档位；`n0` 关键字按该档整组 n0 吸收），没被显式项吸收的 n0 才算错，响应要有 `endpoint_id` 和 `direct_addrs`；原文落 `relay-table.json`。跑完还原 `.env`。只换表不想每轮重编核心时，脚本会 touch worktree 根的 `.dev-no-build`（跳过镜像构建）和 `.dev-no-deps`（只 `compose up --no-deps core`，不重跑在共用机上会卡十几分钟的 `hydra-migrate`），退出时清掉 `.dev-no-deps`。
 - `RELAY_HOST` 默认从 `RELAYS` 取。`check_tunnel_relay` 要求两端最近的 `CheckedPath` 同时有 `relay: true` 和目标主机；判定行（`设备 a 隧道走中继 relay.808cbd.com：CheckedPath { … }`）进 `run.log` 和 `relay-path-<a|b>.log`，走到 n0 或别的中继都算失败。relay 组在统计后再判一次两端路径；压掉直连后先等两端真的经中继重连再回房间（按 30–40 秒给窗口）。
 - 媒体判定后 `check_relay_continuity` 两端各采 24 秒（每 2 秒一拍）：每拍都要有已连接的候选对，收音频字节逐拍增长且不低于 4 kbit/s（`RELAY_MIN_KBPS` 可改）。速率、丢包、抖动和判据原文都进 `relay-stats-c.log`，采样原件是 `relay-stats-<a|b>.jsonl`。
 - 先 `STAGE=udp` 跑通直连确认链路正常，再 `STAGE=relay`。

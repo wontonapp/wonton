@@ -328,9 +328,7 @@ for tier, tier_text in enumerate(raw.split(";")):
         userinfo, _, hostport = parts.netloc.rpartition("@")
         expected.append({"url": f"{parts.scheme}://{hostport.rstrip('.')}{parts.path or '/'}", "token": unquote(userinfo) or None,
                          "quic_port": int(parts.fragment) if parts.fragment else None, "tier": tier})
-# RELAYS 里两者都写时以 no-n0 为准，n0 关键字不再要求出现。
-if no_n0:
-    expected = [e for e in expected if not e.get("n0")]
+# no-n0 只关核心的内置兜底，不删显式写的 n0（关键字或 URL），所以关键字期望照留。
 default = not no_n0 and not n0_kw
 data = json.load(open(path))
 problem = []
@@ -349,48 +347,46 @@ for entry in data.get("relays") or []:
                  "n0": (parts.hostname or "").rstrip(".").endswith(".iroh.link")})
     row = rows[-1]
     print(f"表项：{row['url']} tier={row['tier']} 令牌={'有' if row['token'] else '无'}{'（n0）' if row['n0'] else ''}")
-def same(want, got): # n0 关键字按档位配任意 n0 项；具体 URL 按地址/令牌/档位比，RELAYS 没写 #端口就不比端口
-    if want.get("n0"):
-        return got["n0"] and (got["tier"] or 0) == (want["tier"] or 0)
+# 分两轮配对（同档内顺序不敏感）：先具体 URL（落在 n0 主机也算显式），再 n0 关键字。
+# 关键字展开的是整组 n0（iroh 默认 4 台、staging 2 台），把该档所有 n0 行都吸收，至少吸到一条才算满足。
+def match_concrete(want, got):
     return (got["url"] == want["url"] and got["token"] == want["token"]
             and (got["tier"] or 0) == (want["tier"] or 0)
             and (want["quic_port"] is None or got["quic_port"] == want["quic_port"]))
-# 逐项配对（同档内顺序不敏感）：每条 RELAYS 必须找到一条相同表项，剩下的多余表项按模式判。
-pool, matched = list(rows), []
-for want in expected:
-    for i, got in enumerate(pool):
-        if same(want, got):
-            matched.append(pool.pop(i))
-            break
-extras = [got for got in pool if got["n0"]]
-for got in pool:
-    if not got["n0"]:
-        problem.append(f"多出来的表项 {got['url']}")
-pool = matched
-if default:
-    # 核心默认在末尾追加 n0（relay_settings 默认 n0=true）：没被 RELAYS 点名的 n0 算兜底，不算多；
-    # RELAYS 里显式写的 n0 URL/关键字仍按普通表项比。
-    top = max((e["tier"] or 0) for e in expected + matched) if expected + matched else 0
-    for got in extras:
-        if (got["tier"] or 0) < top:
-            problem.append(f"n0 兜底 {got['url']} 的档位 {got['tier']} 不在最后一档")
-else:
-    for got in extras:
-        problem.append(f"多出来的表项 {got['url']}")
-    if no_n0:
-        for got in rows:
-            if got["n0"]:
-                problem.append(f"{got['url']} 是 n0，no-n0 没生效")
-left = list(pool)
-for want in expected:
+left, matched = list(rows), []
+for want in (e for e in expected if not e.get("n0")):
     for i, got in enumerate(left):
-        if same(want, got):
-            left.pop(i)
-            break
-    else:
-        problem.append(f"少了表项 {want.get('url') or 'n0'}")
-if len(expected) != len(pool):
-    problem.append(f"表项 {len(pool)} 条，RELAYS 是 {len(expected)} 条")
+        if match_concrete(want, got):
+            matched.append(want); left.pop(i); break
+missing = []
+for want in (e for e in expected if e.get("n0")):
+    got = [r for r in left if r["n0"] and (r["tier"] or 0) == (want["tier"] or 0)]
+    if not got:
+        missing.append(f"第 {want['tier']} 档的 n0")
+    for r in got:
+        left.remove(r)
+for want in expected:
+    if not want.get("n0") and not any(want is m for m in matched):
+        missing.append(want["url"])
+for url in missing:
+    problem.append(f"少了表项 {url}")
+extras = list(left)
+non_n0_extra = [e for e in extras if not e["n0"]]
+n0_extra = [e for e in extras if e["n0"]]
+for got in non_n0_extra:
+    problem.append(f"多出来的表项 {got['url']}")
+if default:
+    # 默认模式核心往 last+1 追加一整组 n0；没写 n0/no-n0 时只有这组算兜底，且必须在最后之后。
+    top = max((e["tier"] or 0) for e in expected) if expected else 0
+    for got in n0_extra:
+        if (got["tier"] or 0) <= top:
+            problem.append(f"n0 兜底 {got['url']} 的档位 {got['tier']} 没在最后一档之后")
+elif n0_extra:
+    # 显式 n0（关键字/URL）下，核心不再追加兜底；多出来的 n0 不是 RELAYS 写的。
+    for got in n0_extra:
+        problem.append(f"多出来的 n0 表项 {got['url']}")
+        if no_n0:
+            problem.append(f"{got['url']} 是 n0，no-n0 没生效")
 for reason in problem:
     print(f"  - {reason}")
 sys.exit(1 if problem else 0)
