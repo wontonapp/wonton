@@ -37,7 +37,8 @@ jobs:
     # push（合进 main）也进这个作业：main 上 rust 一律全跑——合后必须真验一遍，之前只在每天 3 点的定时里跑，
     # 合进 main 的提交到那时之前一次单测都没有（11-13 #470 就是这样合进去的）。ios/android 合后仍交给夜间兜底；
     # docker 合后由 rust-docker.yml 自己的 push 跑，这里不重复触发。
-    if: (github.event_name == 'pull_request' && github.event.pull_request.draft == false) || github.event_name == 'push' || github.event_name == 'workflow_dispatch'
+    # edited 只在改 base 时干活：改 body/title 也发 edited，不挡就整晚重跑全量。
+    if: ((github.event_name == 'pull_request' && github.event.pull_request.draft == false) || github.event_name == 'push' || github.event_name == 'workflow_dispatch') && (github.event.action != 'edited' || github.event.changes.base != null)
     runs-on: ubuntu-24.04
     timeout-minutes: 5
     permissions:
@@ -159,6 +160,7 @@ jobs:
 
   lint:
     name: lint
+    if: ${{ (github.event.action != 'edited' || github.event.changes.base != null) }}
     uses: ./.github/workflows/lint.yml
 
   # 重作业的 if 以 !cancelled() 开头：只要这轮没被取消就按开关判断。开关只有 changes 跑了才有值：
@@ -166,19 +168,19 @@ jobs:
   rust:
     name: rust
     needs: changes
-    if: ${{ !cancelled() && needs.changes.outputs.rust == 'true' }}
+    if: ${{ !cancelled() && needs.changes.outputs.rust == 'true' && (github.event.action != 'edited' || github.event.changes.base != null) }}
     uses: ./.github/workflows/rust.yml
 
   ios:
     name: ios
     needs: changes
-    if: ${{ !cancelled() && needs.changes.outputs.ios == 'true' }}
+    if: ${{ !cancelled() && needs.changes.outputs.ios == 'true' && (github.event.action != 'edited' || github.event.changes.base != null) }}
     uses: ./.github/workflows/ios.yml
 
   android:
     name: android
     needs: changes
-    if: ${{ !cancelled() && needs.changes.outputs.android == 'true' }}
+    if: ${{ !cancelled() && needs.changes.outputs.android == 'true' && (github.event.action != 'edited' || github.event.changes.base != null) }}
     uses: ./.github/workflows/android.yml
 
   # Docker 集成测试。PR 上算合并门槛（changes 的 docker 开关）；main 上不经过这里：
@@ -186,7 +188,7 @@ jobs:
   docker:
     name: docker
     needs: changes
-    if: ${{ !cancelled() && needs.changes.outputs.docker == 'true' }}
+    if: ${{ !cancelled() && needs.changes.outputs.docker == 'true' && (github.event.action != 'edited' || github.event.changes.base != null) }}
     permissions:
       contents: read
       # 拉 ghcr 上的测试镜像副本。
@@ -199,7 +201,7 @@ jobs:
   summary:
     name: gate 汇总
     needs: [changes, lint, rust, ios, android, docker]
-    if: always()
+    if: always() && (github.event.action != 'edited' || github.event.changes.base != null)
     runs-on: ubuntu-24.04
     timeout-minutes: 5
     env:
