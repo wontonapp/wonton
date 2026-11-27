@@ -13,6 +13,8 @@ use crate::plugin::fake_docker::FakeDocker;
 
 mod credentials;
 mod install_env;
+mod prepared_issuance;
+mod queued_issue;
 mod save_validation;
 mod suffix;
 
