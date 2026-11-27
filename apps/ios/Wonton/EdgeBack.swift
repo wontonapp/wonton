@@ -141,10 +141,16 @@ extension UINavigationController: @retroactive UINavigationControllerDelegate {
         super.viewDidDisappear(animated)
         edgeBack?.resetInteractive()
     }
+
+    /// 这个栈在全屏盖子里：根页上的左边缘右滑关掉盖子（`EdgeDismiss`）。
+    func setEdgeDismiss(_ dismiss: EdgeDismiss) {
+        installEdgeBack()
+        edgeBack?.dismiss = dismiss
+    }
 }
 
-/// 左边 `WontonTheme.gesture.edgeWidth` 点内的平移 = 返回。只在该起点、有上一页、没有别的转场时开始；
-/// 起手就在区外的触摸当场失败，等它失败的手势（iOS 26 整片内容的右滑）不会被拖慢。
+/// 左边 `WontonTheme.gesture.edgeWidth` 点内的平移 = 返回。只在该起点、有上一页（或在盖子的根页上能关盖子）、
+/// 没有别的转场时开始；起手就在区外的触摸当场失败，等它失败的手势（iOS 26 整片内容的右滑）不会被拖慢。
 final class EdgeBack: NSObject, UIGestureRecognizerDelegate {
 
     private(set) weak var navigation: UINavigationController?
@@ -152,6 +158,8 @@ final class EdgeBack: NSObject, UIGestureRecognizerDelegate {
     var transition = UIPercentDrivenInteractiveTransition()
     private(set) var isInteractive = false
     var waitsForContent = false
+    /// 盖子里的栈才有：根页上拖动时关盖子。
+    var dismiss: EdgeDismiss?
 
     /// 拖动途中视图被摘掉时复位；不复位的话，下一次返回键的 pop 会拿到没人驱动的交互控制器。
     func resetInteractive() {
@@ -171,20 +179,32 @@ final class EdgeBack: NSObject, UIGestureRecognizerDelegate {
     /// 落点在左边缘里、有上一页、没有别的转场。导航视图为盖住安全区会向左右探出去，左缘为负；
     /// 屏幕上的左缘是 0，分栏时才是列自己的左边。
     private func startsBack(at touch: UITouch) -> Bool {
-        guard let navigation, canPop(navigation) else { return false }
+        guard let navigation, canStart(navigation) else { return false }
         let origin = max(0, navigation.view.convert(CGPoint.zero, to: nil).x)
         return touch.location(in: nil).x - origin <= WontonTheme.gesture.edgeWidth
     }
 
+    private func canStart(_ navigation: UINavigationController) -> Bool {
+        canPop(navigation) || dismissing(navigation) != nil
+    }
+
+    /// 旁聊盖着时外面房间的栈不退（`keepsRoomOnSideChat`）；盖子里自己的栈照常退。
     private func canPop(_ navigation: UINavigationController) -> Bool {
         navigation.viewControllers.count > 1
             && navigation.transitionCoordinator?.isAnimated != true
-            && !UINavigationController.keepsRoomOnSideChat
+            && (dismiss != nil || !UINavigationController.keepsRoomOnSideChat)
+    }
+
+    /// 根页上、标过能关的盖子：返回要关掉的那个盖子。
+    private func dismissing(_ navigation: UINavigationController) -> UIViewController? {
+        guard let dismiss, !dismiss.isDragging, navigation.viewControllers.count == 1,
+              navigation.transitionCoordinator == nil else { return nil }
+        return EdgeDismiss.cover(of: navigation)
     }
 
     /// 竖着先走的让给滚动。
     func gestureRecognizerShouldBegin(_ gesture: UIGestureRecognizer) -> Bool {
-        guard let navigation, canPop(navigation) else { return false }
+        guard let navigation, canStart(navigation) else { return false }
         let velocity = pan.velocity(in: navigation.view)
         return velocity.x > 0 && abs(velocity.x) > abs(velocity.y)
     }
@@ -203,34 +223,46 @@ final class EdgeBack: NSObject, UIGestureRecognizerDelegate {
             pan.cancelOthers()
             transition = UIPercentDrivenInteractiveTransition()
             transition.timingCurve = UICubicTimingParameters(animationCurve: .easeOut)
-            isInteractive = true
-            _ = navigation.popViewController(animated: true)
+            if canPop(navigation) {
+                isInteractive = true
+                _ = navigation.popViewController(animated: true)
+            } else if let cover = dismissing(navigation) {
+                dismiss?.begin(cover)
+            }
             NSLog("EDGE began interactive=%@", String(describing: navigation.transitionCoordinator?.isInteractive))
-            transition.update(progress(move, width))
+            update(progress(move, width))
         case .changed:
-            guard isInteractive else { return }
-            transition.update(progress(move, width))
+            update(progress(move, width))
         case .ended:
-            guard isInteractive else { return }
-            isInteractive = false
             let velocity = pan.releaseVelocity(in: navigation.view)
             let finishes = Self.finishes(progress: progress(move, width), velocity: velocity)
             NSLog("EDGE ended progress=%.2f v=%.0f finishes=%@", progress(move, width), velocity, "\(finishes)")
-            if finishes {
-                transition.finish()
-            } else {
-                transition.cancel()
-            }
+            end(finishing: finishes)
         case .cancelled, .failed:
-            guard isInteractive else { return }
-            isInteractive = false
-            transition.cancel()
+            end(finishing: false)
         default:
             break
         }
     }
 
     private func progress(_ move: CGFloat, _ width: CGFloat) -> CGFloat { min(1, max(0, move / width)) }
+
+    private func update(_ progress: CGFloat) {
+        if isInteractive {
+            transition.update(progress)
+        } else {
+            dismiss?.update(progress)
+        }
+    }
+
+    private func end(finishing: Bool) {
+        if isInteractive {
+            isInteractive = false
+            if finishing { transition.finish() } else { transition.cancel() }
+        } else if dismiss?.isDragging == true {
+            dismiss?.end(finishing: finishing)
+        }
+    }
 
     /// 和系统返回一样：往右甩就完成、往左甩就取消，否则看拖没拖过一半。
     private static func finishes(progress: CGFloat, velocity: CGFloat) -> Bool {
