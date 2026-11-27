@@ -172,3 +172,4 @@ mod access;
 mod availability;
 mod caller_identity;
 mod facts;
+mod request_auth;
