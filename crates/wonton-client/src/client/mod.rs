@@ -49,6 +49,7 @@ mod my_avatar;
 mod page_color;
 mod pages;
 mod plugin_detail;
+mod profile;
 mod push_route;
 mod settings;
 mod share_in;
